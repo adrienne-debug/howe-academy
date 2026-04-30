@@ -322,9 +322,10 @@ function initFb() {
       document.getElementById("fb-dot").className="fb-dot"+(on?"":" off");
       document.getElementById("fb-lbl").textContent=on?"Live":"Offline";
     });
-    db.ref(WK+"/checked").on("value",s=>{ checked=s.val()||{}; renderAll(); });
+    db.ref(WK+"/checked").on("value",s=>{ checked=s.val()||{}; sv(WK+"_checked",checked); renderAll(); });
     db.ref(WK+"/sl").on("value",s=>{ slState=s.val()||{}; renderSkylight(); });
     db.ref(WK+"/supplies").on("value",s=>{ supplies=s.val()||{}; if(tab==="supplies") renderSupplies(); });
+    db.ref(WK+"/history").on("value",s=>{ const fbHist=s.val()||{}; const local=ld(WK+"_history")||{}; const merged={...local,...fbHist}; sv(WK+"_history",merged); if(tab==="history"){ const el=document.getElementById("content"); if(el) renderHistory(el); } });
     db.ref(WK+"/tasks").once("value").then(s=>{ if(s.val()){ weekData.tasks=Object.values(s.val()); renderAll(); }});
     db.ref(WK+"/maggie").once("value").then(s=>{ if(s.val()) weekData.maggie=s.val(); });
   } catch(e){ console.warn("FB offline:",e); }
@@ -1091,15 +1092,34 @@ function selSupDay(d){ supDay=d; renderSupplies(); }
 function renderHistory(el){
   const hist=ld(WK+"_history")||{};
   const n=new Date(), satClose=n.getDay()===6&&n.getHours()>=20;
+  // Filter to only real completion records (not cascade flags or missed markers)
+  const realDone=(id)=>hist[id]&&typeof hist[id]==="object"&&hist[id].ts&&!hist[id].missed&&!hist[id].flag;
   let h='<div class="hist-section">';
-  ["lincoln","ellis","lucy","julian"].forEach(k2=>{
-    const kt=weekData.tasks.filter(t=>t.who===k2);
-    const done=kt.filter(t=>hist[t.id]), missed=satClose?kt.filter(t=>!hist[t.id]):[];
-    if(!done.length&&!missed.length)return;
-    h+='<div class="hist-kid-hdr">'+cap(k2)+'</div>';
-    done.forEach(t=>{ h+='<div class="hist-item"><div class="hist-title">'+t.title+'</div><div class="hist-meta">✓ '+hist[t.id].ts+' · '+(DAY_LBL[t.day]||t.day)+' '+(DAY_DT[t.day]||"")+'</div></div>'; });
-    missed.forEach(t=>{ h+='<div class="hist-item missed"><div class="hist-title">'+t.title+'</div><div class="hist-meta">⚠️ Missed — '+(DAY_LBL[t.day]||t.day)+'</div></div>'; });
-  });
+  const hasTasks=weekData.tasks.length>0;
+  if(!hasTasks){
+    // No task data yet — show raw Firebase history entries
+    const entries=Object.values(hist).filter(v=>v&&v.title&&v.ts&&!v.missed&&!v.flag);
+    if(!entries.length){
+      h+='<div style="padding:24px;text-align:center;color:var(--muted)"><div style="font-size:40px">📋</div><div style="margin-top:8px;font-weight:600">No completed tasks yet</div><div style="font-size:13px;margin-top:4px">Tasks you check off will appear here across all devices.</div></div>';
+    } else {
+      ["lincoln","ellis","lucy","julian"].forEach(k2=>{
+        const kids=entries.filter(e=>e.who===k2); if(!kids.length)return;
+        h+='<div class="hist-kid-hdr">'+cap(k2)+'</div>';
+        kids.forEach(e=>{ h+='<div class="hist-item"><div class="hist-title">'+e.title+'</div><div class="hist-meta">✓ '+e.ts+' · '+(DAY_LBL[e.day]||e.day||"")+'</div></div>'; });
+      });
+    }
+  } else {
+    ["lincoln","ellis","lucy","julian"].forEach(k2=>{
+      const kt=weekData.tasks.filter(t=>t.who===k2);
+      const done=kt.filter(t=>realDone(t.id));
+      const missed=satClose?kt.filter(t=>!realDone(t.id)):[];
+      if(!done.length&&!missed.length)return;
+      h+='<div class="hist-kid-hdr">'+cap(k2)+'</div>';
+      done.forEach(t=>{ h+='<div class="hist-item"><div class="hist-title">'+t.title+'</div><div class="hist-meta">✓ '+hist[t.id].ts+' · '+(DAY_LBL[t.day]||t.day)+' '+(DAY_DT[t.day]||"")+'</div></div>'; });
+      missed.forEach(t=>{ h+='<div class="hist-item missed"><div class="hist-title">'+t.title+'</div><div class="hist-meta">⚠️ Missed — '+(DAY_LBL[t.day]||t.day)+'</div></div>'; });
+    });
+  }
+  if(h==='<div class="hist-section">') h+='<div style="padding:24px;text-align:center;color:var(--muted)"><div style="font-size:40px">📋</div><div style="margin-top:8px;font-weight:600">No completed tasks yet</div><div style="font-size:13px;margin-top:4px">Tasks you check off will appear here across all devices.</div></div>';
   h+='</div>'; el.innerHTML=h;
 }
 
