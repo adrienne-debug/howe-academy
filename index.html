@@ -6,7 +6,7 @@
 <title>Howe Academy</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:ital,wght@0,600;0,700;1,600&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:ital,wght@0,600;0,700;1,600&family=Nunito:wght@400;600;700;800;900&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <style>
@@ -412,6 +412,7 @@ function showTab(t){
   document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===t));
   document.getElementById("day-tabs").style.display=["schedule","supplies"].includes(t)?"flex":"none";
   document.getElementById("kid-filter").style.display=t==="schedule"?"flex":"none";
+  document.getElementById("week-strip").style.display=t==="schedule"?"grid":"none";
   renderAll();
 }
 
@@ -557,36 +558,443 @@ document.getElementById("dlg-ok").onclick=()=>{
 function closeDlg(){ document.getElementById("dlg").style.display="none"; pendingId=null; }
 
 // ── MOM'S PLAN ────────────────────────────────────────────────────
-function renderMomsPlan(el){
-  let h='<div class="mom-section"><div class="laundry-card"><div class="laundry-title">Laundry Rhythm</div>'+
-    ['Start wash|9:30 AM (home days)','Switch to dryer|12:50 PM','Boys fold|4:00 PM','Mom fold|4:15 PM','Theater nights fallback|7:00 PM','Co-Op days|Start on return home'].map(r=>{
-      const[a,b]=r.split("|");
-      return '<div class="laundry-row"><span>'+a+'</span><span style="font-weight:600">'+b+'</span></div>';
-    }).join("")+'</div>';
+// Full weekly planner: power windows, schedule, meals, checklists
 
-  const byDay={};
-  weekData.tasks.filter(t=>t.mom==="required"||t.mom==="maybe").forEach(t=>{
-    if(!byDay[t.day])byDay[t.day]=[];byDay[t.day].push(t);
-  });
-  DAYS.forEach(d=>{
-    if(!byDay[d]||!byDay[d].length)return;
-    const col=DAY_COL[d]||"#666";
-    h+='<div class="mom-day"><div class="mom-day-hdr" style="background:'+col+'">'+DAY_LBL[d]+" · "+(DAY_DT[d]||"")+(CONSTRAINT[d]?"  ⚠️":"")+'</div>';
-    byDay[d].sort((a,b)=>toMin(a.time)-toMin(b.time)).forEach(t=>{
-      const req=t.mom==="required";
-      const ks={lincoln:"#dbeafe|#1e3a5f",ellis:"#dcfce7|#2d5a3d",lucy:"#ede9fe|#5b3a8c"}[t.who]||"#f3f4f6|#333";
-      const[kb,kc]=ks.split("|");
-      h+='<div class="mom-task-row"><div class="mtr-time">'+t.time+'</div><div>'+
-        '<span class="mtr-who" style="background:'+kb+';color:'+kc+'">'+cap(t.who)+'</span>'+
-        '<span class="mtr-badge" style="background:'+(req?"#fee2e2":"#fef9c3")+';color:'+(req?"#991b1b":"#854d0e")+'">'+(req?"Required":"May Need")+'</span>'+
-        '<div class="mtr-title">'+t.title+'</div>'+
-        '<div style="font-size:12px;color:var(--muted);margin-top:2px">'+t.detail.substring(0,80)+(t.detail.length>80?"…":"")+'</div>'+
-        '</div></div>';
+const MP_DATA = {
+  weekLabel: "Week 1 · Crisis Mode",
+  winOfTheDay: "You started the pantry audit — that single step changes everything!",
+  skylightTip: "Open Sidekick → Plan Meals → tell it what's in your fridge. 15 minutes now = zero dinner stress all week.",
+  days: [
+    {
+      id:"sat",label:"Sat",date:"Day 1",isToday:false,
+      powerWindows:{morning:"Pantry audit + laundry #1",golden:"Laundry mountain attack",evening:"Skylight chore setup"},
+      schedule:[
+        {time:"7am",task:"Start laundry — sheets first",note:"Set phone alarm to move in 40 min",tag:"laundry"},
+        {time:"9am",task:"THE PANTRY AUDIT — pull everything out",note:"4 piles: Use now / Use soon / Toss / Donate",tag:"org"},
+        {time:"12pm",task:"Lunch + move laundry to dryer",note:"Start load #2",tag:"laundry"},
+        {time:"12:30",task:"Rest 30 min — seriously",note:"No cleaning. Sit.",tag:"self"},
+        {time:"1pm",task:"Skylight: open Sidekick → Plan Meals",note:"Use your green pile ingredients",tag:"meal"},
+        {time:"3pm",task:"Sort ALL clean laundry by person",note:"Kids fold their own piles",tag:"laundry"},
+        {time:"4pm",task:"Season switch — try items on kids",note:"Donate what doesn't fit TODAY",tag:"org"},
+        {time:"Evening",task:"Set up Skylight chore chart for kids",note:"Add stars & rewards feature",tag:"kids"},
+      ],
+      meal:{name:"Easy Saturday Dinner — Family Favorite",type:"Whatever they love 🎉",isTonight:true},
+      chores:[
+        {text:"Pantry sorted into 4 piles",who:"Mom",done:false},
+        {text:"Laundry mountain sorted by person",who:"Mom",done:false},
+        {text:"Each kid folds + puts away their pile",who:"Kids",done:false},
+        {text:"Donate bag out of the house",who:"Mom",done:false},
+        {text:"Meal plan set up on Skylight",who:"Mom",done:false},
+      ]
+    },
+    {
+      id:"sun",label:"Sun",date:"Day 2",isToday:false,
+      powerWindows:{morning:"Groceries + meal prep",golden:"Kitchen deep clean",evening:"Family review on Skylight"},
+      schedule:[
+        {time:"7am",task:"Laundry load #1 started",note:"Before anything else",tag:"laundry"},
+        {time:"8am",task:"Family breakfast — review Skylight",note:"Everyone sees the meal plan",tag:"kids"},
+        {time:"9am",task:"Grocery pickup or Instacart order",note:"Only what the meal plan needs",tag:"meal"},
+        {time:"10am",task:"Meal prep: chop, marinate, cook grains",note:"30 min saves 45 min every night",tag:"meal"},
+        {time:"1pm",task:"One room deep clean — kitchen today",note:"Zone 1: dishes, pots, utensils",tag:"clean"},
+        {time:"3pm",task:"Rest / kid free time",note:"Protect this hour",tag:"self"},
+        {time:"7pm",task:"10-min family reset blitz",note:"Everyone does their chore list",tag:"kids"},
+      ],
+      meal:{name:"Simple Sunday Roast Chicken",type:"From meal plan 🍗",isTonight:true},
+      chores:[
+        {text:"Groceries ordered or picked up",who:"Mom",done:false},
+        {text:"30-min meal prep done",who:"Mom",done:false},
+        {text:"Kitchen Zone 1 cleared",who:"Mom",done:false},
+        {text:"Skylight updated for the week",who:"Mom",done:false},
+        {text:"Kids chore lists reviewed on Skylight",who:"Kids",done:false},
+      ]
+    },
+    {
+      id:"mon",label:"Mon",date:"Day 3",isToday:true,
+      powerWindows:{morning:"Laundry + 10-min family tidy",golden:"Fold + put away laundry",evening:"Crockpot dinner ready"},
+      schedule:[
+        {time:"6:30am",task:"START LAUNDRY — one load, every morning",note:"Habit first. Coffee second.",tag:"laundry"},
+        {time:"7am",task:"Kids up — breakfast already set out",note:"Cereal/fruit — they handle it",tag:"kids"},
+        {time:"7:30am",task:"10-min family tidy",note:"Everyone helps — kitchen + floor",tag:"clean"},
+        {time:"10am",task:"HOMESCHOOL BEGINS",note:"Do NOT clean during this time",tag:"kids"},
+        {time:"12pm",task:"Move laundry to dryer at lunch",note:"Start load #2 if needed",tag:"laundry"},
+        {time:"3pm",task:"GOLDEN HOUR: fold + put away laundry",note:"Timer on. No distractions.",tag:"laundry"},
+        {time:"4pm",task:"Kids get theater bags ready",note:"Check Skylight for reminders",tag:"kids"},
+        {time:"7:30pm",task:"10-min family reset",note:"Kids earn stars. You don't clean alone.",tag:"kids"},
+      ],
+      meal:{name:"Crockpot Chicken Tacos",type:"Crockpot 🐌 · set it before school",isTonight:true},
+      chores:[
+        {text:"Laundry started before 10am",who:"Mom",done:false},
+        {text:"Fold + put away all weekend laundry",who:"Mom",done:false},
+        {text:"Crockpot set up by 9am",who:"Mom",done:false},
+        {text:"Kids complete Skylight chore list",who:"Kids",done:false},
+        {text:"Kitchen counters clear before bed",who:"All",done:false},
+      ]
+    },
+    {
+      id:"tue",label:"Tue",date:"Day 4",isToday:false,
+      powerWindows:{morning:"Laundry + family tidy",golden:"Vacuum all main areas",evening:"Theater + 10-min reset"},
+      schedule:[
+        {time:"6:30am",task:"Start laundry load",note:"Automatic now. Keep going.",tag:"laundry"},
+        {time:"7:30am",task:"10-min family tidy",note:"Living room floor + kitchen",tag:"clean"},
+        {time:"10am",task:"Homeschool 10am–3pm",note:"Move laundry at lunch",tag:"kids"},
+        {time:"3:30pm",task:"GOLDEN HOUR: vacuum all main areas",note:"Couch cushions, under furniture",tag:"clean"},
+        {time:"4:15pm",task:"Out the door for theater",note:"Dinner prepped to reheat",tag:"kids"},
+        {time:"7:30pm",task:"10-min family reset",note:"Baskets emptied, chores done",tag:"kids"},
+      ],
+      meal:{name:"30-Min Pasta Bake",type:"Quick weeknight 🍝",isTonight:true},
+      chores:[
+        {text:"Laundry started + moved",who:"Mom",done:false},
+        {text:"Vacuum living room, hallway, dining",who:"Mom",done:false},
+        {text:"Kids empty catch-all baskets",who:"Kids",done:false},
+        {text:"Dinner reheated in 15 min",who:"Mom",done:false},
+      ]
+    },
+    {
+      id:"wed",label:"Wed",date:"Day 5",isToday:false,
+      powerWindows:{morning:"Laundry + tidy",golden:"Bathrooms (kids help!)",evening:"Reset + tomorrow's crockpot"},
+      schedule:[
+        {time:"6:30am",task:"Start laundry",note:"Towels or kids clothes",tag:"laundry"},
+        {time:"7:30am",task:"10-min family tidy",note:"Everyone clears their spots",tag:"clean"},
+        {time:"10am",task:"Homeschool",note:"Move laundry at lunch",tag:"kids"},
+        {time:"3:30pm",task:"GOLDEN HOUR: bathrooms",note:"Toilets, sinks, mirrors — assign kids",tag:"clean"},
+        {time:"4pm",task:"Set crockpot for tomorrow",note:"60 sec of prep = done by 3pm Thurs",tag:"meal"},
+        {time:"7:30pm",task:"10-min family reset",note:"Kids earn their stars",tag:"kids"},
+      ],
+      meal:{name:"Leftover Night + Salad",type:"Fridge clean-out 🥗",isTonight:true},
+      chores:[
+        {text:"Laundry started + moved",who:"Mom",done:false},
+        {text:"Kids scrub their own bathroom sink",who:"Kids",done:false},
+        {text:"Mom does toilets + mirrors",who:"Mom",done:false},
+        {text:"Tomorrow's crockpot prepped",who:"Mom",done:false},
+      ]
+    },
+    {
+      id:"thu",label:"Thu",date:"Day 6",isToday:false,
+      powerWindows:{morning:"Laundry + tidy",golden:"Mop + floors",evening:"Hotspot audit"},
+      schedule:[
+        {time:"6:30am",task:"Start laundry",note:"Bedding this week",tag:"laundry"},
+        {time:"7:30am",task:"10-min family tidy",note:"Shoes, bags, floors",tag:"clean"},
+        {time:"10am",task:"Homeschool",note:"Move laundry at lunch",tag:"kids"},
+        {time:"3:30pm",task:"GOLDEN HOUR: sweep then mop",note:"Kitchen + main floors",tag:"clean"},
+        {time:"4pm",task:"Hotspot audit — walk through house",note:"Write top 3 clutter problem spots",tag:"org"},
+        {time:"7:30pm",task:"10-min family reset",note:"Everyone does Skylight chores",tag:"kids"},
+      ],
+      meal:{name:"Crockpot Beef & Veggie Soup",type:"Set this morning 🥣",isTonight:true},
+      chores:[
+        {text:"Laundry started + moved",who:"Mom",done:false},
+        {text:"Sweep all floors before mopping",who:"Mom",done:false},
+        {text:"Mop kitchen and main areas",who:"Mom",done:false},
+        {text:"Write down top 3 hotspot areas",who:"Mom",done:false},
+      ]
+    },
+    {
+      id:"fri",label:"Fri",date:"Day 7",isToday:false,
+      powerWindows:{morning:"Laundry + tidy",golden:"Catch-all basket setup",evening:"Celebrate Week 1!"},
+      schedule:[
+        {time:"6:30am",task:"Start laundry",note:"Last weekday load",tag:"laundry"},
+        {time:"7:30am",task:"10-min family tidy",note:"Prep for the weekend",tag:"clean"},
+        {time:"10am",task:"Homeschool",note:"Move laundry at lunch",tag:"kids"},
+        {time:"3:30pm",task:"GOLDEN HOUR: catch-all basket system",note:"1 bin per person, labeled, visible",tag:"org"},
+        {time:"4pm",task:"Bedroom tidy + reset for weekend",note:"Each kid tidies their own room",tag:"kids"},
+        {time:"7:30pm",task:"Family celebration — you did Week 1!",note:"Pizza, movie, game — your choice",tag:"self"},
+      ],
+      meal:{name:"Family Choice Friday 🎉",type:"Celebration dinner",isTonight:true},
+      chores:[
+        {text:"Laundry started + moved",who:"Mom",done:false},
+        {text:"Catch-all baskets set up for each person",who:"Mom",done:false},
+        {text:"Each kid tidies their own room",who:"Kids",done:false},
+        {text:"School area reset for Monday",who:"All",done:false},
+        {text:"Week 1 celebration — enjoy it!",who:"All",done:false},
+      ]
+    },
+  ],
+  allMeals:[
+    {day:"Sat",name:"Family Favorite Dinner",type:"Your choice"},
+    {day:"Sun",name:"Simple Roast Chicken",type:"From plan"},
+    {day:"Mon",name:"Crockpot Chicken Tacos",type:"Crockpot 🐌"},
+    {day:"Tue",name:"30-Min Pasta Bake",type:"Quick ⚡"},
+    {day:"Wed",name:"Leftover Night + Salad",type:"Fridge 🥗"},
+    {day:"Thu",name:"Crockpot Beef & Veggie Soup",type:"Crockpot 🐌"},
+    {day:"Fri",name:"Family Choice Friday",type:"Celebrate 🎉"},
+  ]
+};
+
+let mpActiveDay = null;
+let mpChoreState = {};
+
+function mpInit() {
+  try {
+    const saved = localStorage.getItem('mp_weekly_data');
+    if (saved) {
+      const data = JSON.parse(saved);
+      if (data.days) {
+        MP_DATA.weekLabel = data.weekLabel || MP_DATA.weekLabel;
+        MP_DATA.winOfTheDay = data.winOfTheDay || MP_DATA.winOfTheDay;
+        MP_DATA.skylightTip = data.skylightTip || MP_DATA.skylightTip;
+        MP_DATA.days = data.days;
+        MP_DATA.allMeals = data.allMeals || MP_DATA.allMeals;
+      }
+    }
+  } catch(e) {}
+  try { const s=localStorage.getItem('mp_chore_state'); mpChoreState=s?JSON.parse(s):{}; } catch(e){}
+  const todayDay = MP_DATA.days.find(d=>d.isToday);
+  mpActiveDay = todayDay ? todayDay.id : MP_DATA.days[0].id;
+}
+
+function renderMomsPlan(el) {
+  if (!mpActiveDay) mpInit();
+  const d = MP_DATA.days.find(x=>x.id===mpActiveDay) || MP_DATA.days[0];
+  const cs = mpChoreState[d.id] || {};
+  const doneCount = d.chores.filter((_,i)=>cs[i]).length;
+  const pct = d.chores.length ? Math.round(doneCount/d.chores.length*100) : 0;
+
+  const tagColors = {
+    laundry:'background:#E8F0F8;color:#2C5F8A',
+    meal:'background:#FDF0E8;color:#E07B39',
+    clean:'background:#DEF2F1;color:#2B7A78',
+    kids:'background:#F0EBF8;color:#6B4C93',
+    org:'background:#EAF4EC;color:#3A7D44',
+    self:'background:#FFFBEA;color:#9A7D0A',
+  };
+
+  const dayStrip = MP_DATA.days.map(x=>`
+    <button onclick="mpSelectDay('${x.id}')" style="
+      flex:0 0 auto;padding:9px 13px;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:700;
+      color:${x.id===mpActiveDay?'#fff':'#9ca3af'};background:${x.id===mpActiveDay?'#2B7A78':'transparent'};
+      border:none;border-radius:8px;cursor:pointer;white-space:nowrap;transition:all 0.2s;
+      ${x.isToday?'position:relative;':''}
+    ">${x.label}<br><span style="font-size:9px;font-weight:600;opacity:0.75">${x.date}</span>${x.isToday?'<span style="position:absolute;top:4px;right:4px;width:6px;height:6px;border-radius:50%;background:#E07B39;display:block"></span>':''}</button>
+  `).join('');
+
+  const scheduleRows = (d.schedule||[]).map(r=>`
+    <div style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid #F0F4F8">
+      <div style="flex:0 0 68px;font-family:'DM Sans',sans-serif;font-size:10px;font-weight:700;color:#2B7A78;text-transform:uppercase;padding-top:2px">${r.time}</div>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:600;color:#1a1a1a;line-height:1.4">${r.task}</div>
+        ${r.note?`<div style="font-size:11px;color:#6b6560;font-style:italic;margin-top:2px">${r.note}</div>`:''}
+      </div>
+      ${r.tag?`<span style="font-size:9px;font-weight:800;text-transform:uppercase;padding:2px 7px;border-radius:10px;${tagColors[r.tag]||'background:#f3f4f6;color:#555'};flex-shrink:0;margin-top:3px">${r.tag}</span>`:''}
+    </div>
+  `).join('');
+
+  const choreItems = d.chores.map((c,i)=>`
+    <div onclick="mpToggleChore('${d.id}',${i})" style="
+      display:flex;align-items:center;gap:10px;padding:9px 11px;
+      background:${cs[i]?'#f0fdf4':'#f8f7f4'};border-radius:9px;cursor:pointer;
+      border:1.5px solid ${cs[i]?'#86efac':'#e8e4de'};margin-bottom:6px;transition:all 0.18s
+    ">
+      <div style="width:20px;height:20px;border-radius:50%;border:2px solid ${cs[i]?'#16a34a':'#2B7A78'};
+        display:flex;align-items:center;justify-content:center;flex-shrink:0;
+        background:${cs[i]?'#16a34a':'#fff'};color:${cs[i]?'#fff':'transparent'};font-size:11px;font-weight:700">${cs[i]?'✓':''}</div>
+      <div style="flex:1;font-size:13px;font-weight:600;color:${cs[i]?'#6b6560':'#1a1a1a'};${cs[i]?'text-decoration:line-through':''}">${c.text}</div>
+      <div style="font-size:10px;color:#6b6560;font-weight:600">${c.who}</div>
+    </div>
+  `).join('');
+
+  const mealOverview = MP_DATA.allMeals.map(m=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:#FDF0E8;border-radius:8px;border-left:3px solid #E07B39">
+      <div style="font-family:'DM Sans',sans-serif;font-size:10px;font-weight:800;color:#E07B39;text-transform:uppercase;flex:0 0 34px">${m.day}</div>
+      <div style="flex:1;font-size:12px;font-weight:700;color:#1a1a1a">${m.name}</div>
+      <div style="font-size:10px;color:#6b6560;font-weight:600">${m.type}</div>
+    </div>
+  `).join('');
+
+  el.innerHTML = `
+    <div style="font-family:'DM Sans',sans-serif;padding-bottom:20px">
+
+      <!-- BANNER -->
+      <div style="background:linear-gradient(135deg,#2B7A78,#3AAFA9);color:#fff;padding:18px 14px 14px;position:relative;overflow:hidden">
+        <div style="position:absolute;top:-25px;right:-25px;width:100px;height:100px;border-radius:50%;background:rgba(255,255,255,0.08)"></div>
+        <div style="position:relative;z-index:1">
+          <div style="font-family:'Fraunces',serif;font-size:22px;font-weight:700;margin-bottom:2px">🌿 Mom's Plan</div>
+          <div style="font-size:12px;opacity:0.85;font-weight:600">Your daily roadmap — meals, cleaning, laundry & wins</div>
+          <div style="display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.3);border-radius:20px;padding:3px 11px;font-size:11px;font-weight:700;margin-top:8px">📅 ${MP_DATA.weekLabel}</div>
+        </div>
+      </div>
+
+      <!-- DAY STRIP -->
+      <div style="display:flex;gap:4px;background:#fff;border-bottom:2px solid #DEF2F1;padding:8px 10px;overflow-x:auto;scrollbar-width:none">
+        ${dayStrip}
+      </div>
+
+      <div style="padding:12px 12px 0;display:flex;flex-direction:column;gap:11px">
+
+        <!-- PROGRESS -->
+        <div style="background:#fff;border-radius:12px;box-shadow:0 2px 12px rgba(43,122,120,0.1);padding:12px 14px">
+          <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:#6b6560;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px">
+            <span>Today's Progress</span><span style="color:#2B7A78">${doneCount}/${d.chores.length} tasks · ${pct}%</span>
+          </div>
+          <div style="height:8px;background:#DEF2F1;border-radius:10px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#2B7A78,#3AAFA9);border-radius:10px;transition:width 0.5s"></div>
+          </div>
+        </div>
+
+        <!-- WIN OF THE WEEK -->
+        <div style="background:linear-gradient(135deg,#F0EBF8,#fff);border:1.5px solid #6B4C93;border-radius:12px;padding:12px 14px;display:flex;gap:10px;align-items:center">
+          <div style="font-size:26px;flex-shrink:0">🏆</div>
+          <div>
+            <strong style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#6B4C93;display:block;margin-bottom:3px">Win of the Week</strong>
+            <p style="font-size:13px;font-weight:600;color:#1a1a1a;line-height:1.4">${MP_DATA.winOfTheDay}</p>
+          </div>
+        </div>
+
+        <!-- POWER WINDOWS -->
+        <div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">
+          <div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#2B7A78;color:#fff;font-weight:800;font-size:13px">
+            <span>⚡</span> Power Windows — ${d.label} ${d.date}
+          </div>
+          <div style="padding:12px 14px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+            <div style="background:#FFFBEA;border-left:3px solid #F0C040;border-radius:8px;padding:10px 8px;text-align:center">
+              <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#6b6560;margin-bottom:3px">☀️ Morning</div>
+              <div style="font-size:11px;font-weight:700;color:#1a1a1a;line-height:1.3">${d.powerWindows.morning}</div>
+            </div>
+            <div style="background:#FDF0E8;border-left:3px solid #E07B39;border-radius:8px;padding:10px 8px;text-align:center">
+              <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#6b6560;margin-bottom:3px">✨ 3–4:30pm</div>
+              <div style="font-size:11px;font-weight:700;color:#1a1a1a;line-height:1.3">${d.powerWindows.golden}</div>
+            </div>
+            <div style="background:#DEF2F1;border-left:3px solid #2B7A78;border-radius:8px;padding:10px 8px;text-align:center">
+              <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#6b6560;margin-bottom:3px">🌙 Evening</div>
+              <div style="font-size:11px;font-weight:700;color:#1a1a1a;line-height:1.3">${d.powerWindows.evening}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TODAY'S SCHEDULE -->
+        <div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">
+          <div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#E07B39;color:#fff;font-weight:800;font-size:13px">
+            <span>📋</span> Today's Schedule
+          </div>
+          <div style="padding:4px 14px 8px">${scheduleRows}</div>
+        </div>
+
+        <!-- TONIGHT'S DINNER -->
+        ${d.meal?`
+        <div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">
+          <div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#E07B39;color:#fff;font-weight:800;font-size:13px">
+            <span>🍽️</span> Tonight's Dinner
+          </div>
+          <div style="padding:12px 14px">
+            <div style="display:flex;align-items:center;gap:10px;padding:9px 11px;background:linear-gradient(90deg,#FDF0E8,#fff);border-radius:9px;border-left:3px solid #2B7A78;box-shadow:0 2px 8px rgba(43,122,120,0.1)">
+              <div style="font-family:'DM Sans',sans-serif;font-size:10px;font-weight:800;color:#2B7A78;text-transform:uppercase;flex:0 0 34px">${d.id.toUpperCase().slice(0,3)}</div>
+              <div style="flex:1">
+                <div style="font-size:13px;font-weight:700;color:#1a1a1a">${d.meal.name}</div>
+                <div style="font-size:11px;color:#6b6560;font-weight:600">${d.meal.type}</div>
+              </div>
+              <span style="font-size:9px;font-weight:800;text-transform:uppercase;padding:2px 7px;border-radius:8px;background:#DEF2F1;color:#2B7A78">Tonight</span>
+            </div>
+          </div>
+        </div>` : ''}
+
+        <!-- WEEK MEALS -->
+        <div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">
+          <div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#3A7D44;color:#fff;font-weight:800;font-size:13px">
+            <span>📅</span> This Week's Meals
+          </div>
+          <div style="padding:12px 14px;display:flex;flex-direction:column;gap:6px">${mealOverview}</div>
+        </div>
+
+        <!-- CHECKLIST -->
+        ${d.chores.length?`
+        <div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">
+          <div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#6B4C93;color:#fff;font-weight:800;font-size:13px">
+            <span>✅</span> Today's Checklist
+          </div>
+          <div style="padding:12px 14px">${choreItems}</div>
+        </div>` : ''}
+
+        <!-- SKYLIGHT TIP -->
+        <div style="background:linear-gradient(135deg,#E8F0F8,#EAF4EC);border:1.5px solid #2C5F8A;border-radius:12px;padding:12px 14px;display:flex;gap:10px;align-items:flex-start">
+          <div style="font-size:22px;flex-shrink:0">📲</div>
+          <div>
+            <strong style="font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;color:#2C5F8A;display:block;margin-bottom:3px">Skylight Tip</strong>
+            <p style="font-size:12px;color:#6b6560;font-weight:500;line-height:1.5">${MP_DATA.skylightTip}</p>
+          </div>
+        </div>
+
+        <!-- UPDATE PLAN / JSON UPLOAD -->
+        <div>
+          <div style="font-family:'DM Sans',sans-serif;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.8px;color:#6b6560;padding:0 2px;margin-bottom:6px">Update This Week's Plan</div>
+          <div onclick="document.getElementById('mp-file-input').click()" style="
+            border:2px dashed #2B7A78;border-radius:14px;padding:20px;text-align:center;
+            background:#DEF2F1;cursor:pointer;transition:all 0.2s
+          " onmouseover="this.style.background='#C8EAE9'" onmouseout="this.style.background='#DEF2F1'">
+            <input type="file" id="mp-file-input" accept=".json" onchange="mpHandleUpload(event)" style="display:none">
+            <div style="font-size:28px;margin-bottom:6px">📤</div>
+            <div style="font-family:'DM Sans',sans-serif;font-size:12px;font-weight:700;color:#2B7A78">Upload Weekly JSON</div>
+            <div style="font-size:11px;color:#6b6560;margin-top:3px">Tap to choose a .json file · replaces this week's plan</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  `;
+}
+
+function mpSelectDay(id) {
+  mpActiveDay = id;
+  const el = document.getElementById('content');
+  renderMomsPlan(el);
+}
+
+function mpToggleChore(dayId, index) {
+  if (!mpChoreState[dayId]) mpChoreState[dayId] = {};
+  mpChoreState[dayId][index] = !mpChoreState[dayId][index];
+  try { localStorage.setItem('mp_chore_state', JSON.stringify(mpChoreState)); } catch(e) {}
+  const el = document.getElementById('content');
+  renderMomsPlan(el);
+  const day = MP_DATA.days.find(d=>d.id===dayId);
+  const total = day.chores.length;
+  const done = Object.values(mpChoreState[dayId]).filter(Boolean).length;
+  if (done === total && total > 0) {
+    const msg = document.createElement('div');
+    msg.textContent = '🎉 All tasks done — you crushed it!';
+    Object.assign(msg.style, {
+      position:'fixed',bottom:'80px',left:'50%',transform:'translateX(-50%)',
+      background:'#2B7A78',color:'#fff',padding:'8px 18px',borderRadius:'20px',
+      fontFamily:"'DM Sans',sans-serif",fontSize:'12px',fontWeight:'700',
+      zIndex:'9999',whiteSpace:'nowrap',opacity:'1',transition:'opacity 0.5s'
     });
-    h+='</div>';
-  });
-  h+='</div>';
-  el.innerHTML=h;
+    document.body.appendChild(msg);
+    setTimeout(()=>{ msg.style.opacity='0'; setTimeout(()=>msg.remove(),500); }, 2500);
+  }
+}
+
+function mpHandleUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.days || !Array.isArray(data.days)) throw new Error('Invalid schema — missing days array');
+      MP_DATA.weekLabel = data.weekLabel || MP_DATA.weekLabel;
+      MP_DATA.winOfTheDay = data.winOfTheDay || MP_DATA.winOfTheDay;
+      MP_DATA.skylightTip = data.skylightTip || MP_DATA.skylightTip;
+      MP_DATA.days = data.days;
+      MP_DATA.allMeals = data.allMeals || MP_DATA.allMeals;
+      mpChoreState = {};
+      try { localStorage.setItem('mp_weekly_data', JSON.stringify(data)); } catch(err) {}
+      try { localStorage.removeItem('mp_chore_state'); } catch(err) {}
+      const todayDay = MP_DATA.days.find(d => d.isToday);
+      mpActiveDay = todayDay ? todayDay.id : MP_DATA.days[0].id;
+      const el = document.getElementById('content');
+      renderMomsPlan(el);
+      const msg = document.createElement('div');
+      msg.textContent = '✅ New week plan loaded!';
+      Object.assign(msg.style, {
+        position:'fixed',bottom:'80px',left:'50%',transform:'translateX(-50%)',
+        background:'#2B7A78',color:'#fff',padding:'8px 18px',borderRadius:'20px',
+        fontFamily:"'DM Sans',sans-serif",fontSize:'12px',fontWeight:'700',
+        zIndex:'9999',whiteSpace:'nowrap',opacity:'1',transition:'opacity 0.5s'
+      });
+      document.body.appendChild(msg);
+      setTimeout(()=>{ msg.style.opacity='0'; setTimeout(()=>msg.remove(),500); }, 2500);
+    } catch(err) {
+      alert('❌ Invalid JSON — ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
 }
 
 // ── SUPPLIES ──────────────────────────────────────────────────────
