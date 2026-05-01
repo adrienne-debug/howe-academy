@@ -386,7 +386,7 @@ function renderSkylight(){
   const mornUndone=SL_KIDS.some(k2=>!getSlot(k2,"morning").done);
   const aftUndone=SL_KIDS.some(k2=>!getSlot(k2,"afternoon").done||!getSlot(k2,"chores").done);
 
-  alertEl.className=""; alertEl.style.display="none"; alertEl.textContent="";
+  alertEl.className=""; alertEl.textContent="";
   if(mornAlert&&mornUndone){
     alertEl.className="morning"; alertEl.textContent="⚠️  10:30 AM check — Morning tasks still unchecked";
   } else if(aftAlert&&aftUndone){
@@ -1180,18 +1180,57 @@ function toggleAdmin(){
 
 // ── ALERTS + CASCADE ──────────────────────────────────────────────
 setInterval(()=>{ if(tab==="schedule")renderSkylight(); },60000);
+
 setInterval(()=>{
   const n=new Date(); if(n.getHours()<22)return;
   const dm={1:"monday",2:"tuesday",3:"wednesday",4:"thursday",5:"friday",6:"saturday"};
+  const nextDay={monday:"tuesday",tuesday:"wednesday",wednesday:"thursday",thursday:"friday",friday:"saturday"};
   const td=dm[n.getDay()]; if(!td)return;
   const last=ld("lastProcDay"); if(last===td)return;
   sv("lastProcDay",td); if(db)db.ref("lastProcDay").set(td);
+
   const hist=ld(WK+"_history")||{};
-  weekData.tasks.filter(t=>t.day===td&&t.cascade&&!checked[t.id]&&t.mom==="required").forEach(t=>{
-    hist[t.id+"_flag"]={id:t.id,title:t.title,who:t.who,day:td,flag:"cascade_mom_required"};
+  const unchecked=weekData.tasks.filter(t=>t.day===td&&t.cascade&&!checked[t.id]);
+
+  unchecked.forEach(t=>{
+    // Log in history as missed on original day
+    hist[t.id+"_flag"]={id:t.id,title:t.title,who:t.who,day:td,flag:"cascade_missed",ts:nowTs()};
+
+    // Copy task to next school day if one exists
+    const nd=nextDay[td]; if(!nd)return;
+
+    // Don't duplicate — check if already cascaded
+    const alreadyCascaded=weekData.tasks.some(x=>x.id===t.id+"_c"&&x.day===nd);
+    if(alreadyCascaded)return;
+
+    const cascadedTask={
+      ...t,
+      id: t.id+"_c",
+      day: nd,
+      time: t.mom==="required" ? "2:00 PM" : t.time, // Mom Required tasks default to afternoon
+      detail: t.detail+" (Cascaded from "+td.charAt(0).toUpperCase()+td.slice(1)+")",
+      cascade: true
+    };
+
+    // For Maggie days (Friday) — never cascade Mom Required into Maggie window
+    if(nd==="friday" && t.mom==="required"){
+      cascadedTask.time="12:00 PM"; // after Mom returns
+    }
+
+    weekData.tasks.push(cascadedTask);
   });
-  sv(WK+"_history",hist); if(db)db.ref(WK+"/history").update(hist);
+
+  // Save updated task list
+  sv(WK+"_tasks", weekData.tasks);
+  sv(WK+"_history", hist);
+  if(db){
+    const obj={};weekData.tasks.forEach(t=>obj[t.id]=t);
+    db.ref(WK+"/tasks").set(obj);
+    db.ref(WK+"/history").update(hist);
+  }
+  renderAll();
 },60000);
+
 setInterval(()=>{
   const n=new Date(); if(n.getDay()!==6||n.getHours()<20)return;
   const hist=ld(WK+"_history")||{};
