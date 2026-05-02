@@ -48,9 +48,9 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 
 /* ── SKYLIGHT ── */
 #skylight-panel{background:#fff;border-bottom:2px solid var(--border);display:none}
-#sl-alert{padding:10px 14px;font-size:12px;font-weight:700;display:none;align-items:center;gap:8px}
-#sl-alert.morning{background:#fff3f3;color:#991b1b;border-bottom:1px solid #fecaca;display:flex}
-#sl-alert.afternoon{background:#fff8f0;color:#92400e;border-bottom:1px solid #fed7aa;display:flex}
+#sl-alert{padding:10px 14px;font-size:12px;font-weight:700;align-items:center;gap:8px;display:none}
+#sl-alert.morning{background:#fff3f3;color:#991b1b;border-bottom:1px solid #fecaca;display:flex!important}
+#sl-alert.afternoon{background:#fff8f0;color:#92400e;border-bottom:1px solid #fed7aa;display:flex!important}
 #sl-grid{padding:12px 12px 8px}
 .sl-header{display:grid;grid-template-columns:70px repeat(4,1fr);margin-bottom:4px}
 .sl-header div{text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px}
@@ -311,6 +311,7 @@ let db=null, weekData={week:WK,tasks:[],maggie:null};
 let checked={}, slState={}, supplies={};
 let tab="schedule", day="monday", kid="all", supDay="all";
 let collCats={}, pendingId=null;
+let archive={};
 
 // ── FIREBASE ──────────────────────────────────────────────────────
 function initFb() {
@@ -328,6 +329,11 @@ function initFb() {
     db.ref(WK+"/history").on("value",s=>{ const fbHist=s.val()||{}; const local=ld(WK+"_history")||{}; const merged={...local,...fbHist}; sv(WK+"_history",merged); if(tab==="history"){ const el=document.getElementById("content"); if(el) renderHistory(el); } });
     db.ref(WK+"/tasks").once("value").then(s=>{ if(s.val()){ weekData.tasks=Object.values(s.val()); renderAll(); }});
     db.ref(WK+"/maggie").once("value").then(s=>{ if(s.val()) weekData.maggie=s.val(); });
+    db.ref("archive").on("value",s=>{
+      archive=s.val()||{};
+      try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
+      if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
+    });
   } catch(e){ console.warn("FB offline:",e); }
 }
 
@@ -341,6 +347,7 @@ function boot() {
   checked=ld(WK+"_checked")||{};
   slState=ld(WK+"_sl")||{};
   supplies=ld(WK+"_supplies")||{};
+  try{ const a=localStorage.getItem("ha_archive"); if(a) archive=JSON.parse(a); }catch(e){}
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────
@@ -497,9 +504,21 @@ function renderWeekStrip(){
 // ── SCHEDULE ──────────────────────────────────────────────────────
 function renderSchedule(el){
   const col=DAY_COL[day]||"#666", pct=dayPct(day);
-  let tasks=weekData.tasks.filter(t=>t.day===day);
+
+  // IDs of tasks that have already cascaded to a future day — hide from original day
+  const cascadedAwayIds=new Set(
+    weekData.tasks.filter(t=>t.id.endsWith("_c")).map(t=>t.id.replace(/_c$/,""))
+  );
+
+  // Tasks belonging to this day, excluding ones that have already cascaded away
+  let tasks=weekData.tasks.filter(t=>t.day===day && !cascadedAwayIds.has(t.id));
   if(kid==="mom") tasks=tasks.filter(t=>t.mom==="required"||t.mom==="maybe");
   else if(kid!=="all") tasks=tasks.filter(t=>t.who===kid);
+
+  // Carried-over tasks: cascaded tasks landing on THIS day
+  let carriedOver=weekData.tasks.filter(t=>t.day===day && t.id.endsWith("_c") && !checked[t.id]);
+  if(kid==="mom") carriedOver=carriedOver.filter(t=>t.mom==="required"||t.mom==="maybe");
+  else if(kid!=="all") carriedOver=carriedOver.filter(t=>t.who===kid);
 
   const tmap={};
   tasks.forEach(t=>{ if(!tmap[t.time])tmap[t.time]=[]; tmap[t.time].push(t); });
@@ -515,6 +534,19 @@ function renderSchedule(el){
     '<div class="day-prog-bar"><div class="day-prog-fill" style="width:'+pct+'%"></div></div></div>';
 
   if(CONSTRAINT[day]) h+='<div class="constraint-alert">'+CONSTRAINT[day]+'</div>';
+
+  // ── CARRIED OVER TRAY ──
+  if(carriedOver.length){
+    h+='<div style="margin:10px 12px 0;border-left:4px solid #6366f1;background:#eef2ff;border-radius:0 10px 10px 0;padding:10px 12px">';
+    h+='<div style="font-size:11px;font-weight:800;color:#4338ca;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.4px">📋 Carried Over</div>';
+    carriedOver.forEach(t=>{
+      // Extract original day name from detail string
+      const fromMatch=t.detail.match(/Cascaded from (\w+)/);
+      const fromDay=fromMatch?fromMatch[1]:"previous day";
+      h+=taskCard(t, fromDay);
+    });
+    h+='</div>';
+  }
 
   h+='<div class="time-slots">';
   let lunchDone=false;
@@ -536,7 +568,7 @@ function lunchBlock(){
     '<div class="task-detail">1:00–2:00 PM · Nothing scheduled during lunch.</div></div></div></div>';
 }
 
-function taskCard(t){
+function taskCard(t, fromDay){
   const done=!!checked[t.id];
   const future=DAYS.indexOf(t.day)>DAYS.indexOf(day);
   const bcls=t.mom==="required"?"req":t.mom==="maybe"?"maybe":"";
@@ -551,13 +583,16 @@ function taskCard(t){
     mb='<span class="mom-badge maybe-badge">May Need Mom</span>';
   }
   const dr=done?'<div class="done-row">✓ '+checked[t.id]+'</div>':"";
+  // Strip the "Cascaded from X" note from detail for display
+  const cleanDetail=t.detail.replace(/\s*\(Cascaded from \w+\)/,"");
+  const carryLabel=fromDay?'<div style="font-size:10px;font-weight:700;color:#4338ca;background:#e0e7ff;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">↩ Carried from '+fromDay+'</div><br>':'';
   return '<div class="task-card '+bcls+(done?" done":"")+(future?" future":"")+'">'+
     '<div class="card-inner">'+
     '<div class="task-cb'+(done?" checked":"")+'" onclick="tapTask(\''+t.id+'\')">'+(done?"✓":"")+'</div>'+
     '<div class="card-body">'+
     '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
-    '<div class="task-title">'+t.title+'</div>'+mb+'</div>'+
-    '<div class="task-detail">'+t.detail+'</div>'+dr+
+    '<div class="task-title">'+carryLabel+t.title+'</div>'+mb+'</div>'+
+    '<div class="task-detail">'+cleanDetail+'</div>'+dr+
     '</div></div></div>';
 }
 
@@ -1092,12 +1127,11 @@ function selSupDay(d){ supDay=d; renderSupplies(); }
 function renderHistory(el){
   const hist=ld(WK+"_history")||{};
   const n=new Date(), satClose=n.getDay()===6&&n.getHours()>=20;
-  // Filter to only real completion records (not cascade flags or missed markers)
   const realDone=(id)=>hist[id]&&typeof hist[id]==="object"&&hist[id].ts&&!hist[id].missed&&!hist[id].flag;
   let h='<div class="hist-section">';
   const hasTasks=weekData.tasks.length>0;
+
   if(!hasTasks){
-    // No task data yet — show raw Firebase history entries
     const entries=Object.values(hist).filter(v=>v&&v.title&&v.ts&&!v.missed&&!v.flag);
     if(!entries.length){
       h+='<div style="padding:24px;text-align:center;color:var(--muted)"><div style="font-size:40px">📋</div><div style="margin-top:8px;font-weight:600">No completed tasks yet</div><div style="font-size:13px;margin-top:4px">Tasks you check off will appear here across all devices.</div></div>';
@@ -1110,17 +1144,108 @@ function renderHistory(el){
     }
   } else {
     ["lincoln","ellis","lucy","julian"].forEach(k2=>{
-      const kt=weekData.tasks.filter(t=>t.who===k2);
+      const kt=weekData.tasks.filter(t=>t.who===k2 && !t.id.endsWith("_c")); // exclude cascade copies
       const done=kt.filter(t=>realDone(t.id));
-      const missed=satClose?kt.filter(t=>!realDone(t.id)):[];
-      if(!done.length&&!missed.length)return;
+
+      // Cascaded-away = has a _c copy, was never checked on original day
+      const cascadedAway=kt.filter(t=>{
+        const hasCopy=weekData.tasks.some(x=>x.id===t.id+"_c");
+        return hasCopy && !realDone(t.id);
+      });
+
+      // Also pull any _flag entries for this kid from history
+      const flagMissed=Object.values(hist).filter(v=>v&&v.flag==="cascade_missed"&&v.who===k2);
+
+      const missed=satClose?kt.filter(t=>!realDone(t.id)&&!weekData.tasks.some(x=>x.id===t.id+"_c")):[];
+
+      if(!done.length&&!cascadedAway.length&&!flagMissed.length&&!missed.length)return;
       h+='<div class="hist-kid-hdr">'+cap(k2)+'</div>';
-      done.forEach(t=>{ h+='<div class="hist-item"><div class="hist-title">'+t.title+'</div><div class="hist-meta">✓ '+hist[t.id].ts+' · '+(DAY_LBL[t.day]||t.day)+' '+(DAY_DT[t.day]||"")+'</div></div>'; });
-      missed.forEach(t=>{ h+='<div class="hist-item missed"><div class="hist-title">'+t.title+'</div><div class="hist-meta">⚠️ Missed — '+(DAY_LBL[t.day]||t.day)+'</div></div>'; });
+
+      done.forEach(t=>{
+        const isCarried=t.id.includes("_c");
+        h+='<div class="hist-item"><div class="hist-title">'+t.title+'</div>'+
+          '<div class="hist-meta">✓ '+hist[t.id].ts+' · '+(DAY_LBL[t.day]||t.day)+' '+(DAY_DT[t.day]||"")+
+          (isCarried?' <span style="font-size:10px;background:#e0e7ff;color:#4338ca;padding:1px 5px;border-radius:6px;font-weight:700">Carried over</span>':'')+
+          '</div></div>';
+      });
+
+      cascadedAway.forEach(t=>{
+        h+='<div class="hist-item" style="border-left:3px solid #f59e0b;background:#fffbeb">'+
+          '<div class="hist-title">'+t.title+'</div>'+
+          '<div class="hist-meta">⚠️ Missed '+(DAY_LBL[t.day]||t.day)+' — carried to next day</div></div>';
+      });
+
+      flagMissed.forEach(f=>{
+        const alreadyShown=cascadedAway.some(t=>t.title===f.title);
+        if(alreadyShown)return;
+        h+='<div class="hist-item" style="border-left:3px solid #f59e0b;background:#fffbeb">'+
+          '<div class="hist-title">'+f.title+'</div>'+
+          '<div class="hist-meta">⚠️ Missed '+(DAY_LBL[f.day]||f.day||"")+' — carried to next day</div></div>';
+      });
+
+      missed.forEach(t=>{
+        h+='<div class="hist-item missed"><div class="hist-title">'+t.title+'</div>'+
+          '<div class="hist-meta">⚠️ Missed — '+(DAY_LBL[t.day]||t.day)+'</div></div>';
+      });
     });
   }
   if(h==='<div class="hist-section">') h+='<div style="padding:24px;text-align:center;color:var(--muted)"><div style="font-size:40px">📋</div><div style="margin-top:8px;font-weight:600">No completed tasks yet</div><div style="font-size:13px;margin-top:4px">Tasks you check off will appear here across all devices.</div></div>';
-  h+='</div>'; el.innerHTML=h;
+  h+='</div>';
+
+  // ── PAST WEEKS from archive ──────────────────────────────────────
+  const archiveKeys=Object.keys(archive).sort().reverse();
+  if(archiveKeys.length){
+    h+='<div style="margin:8px 12px 0"><div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700;padding:12px 0 8px;border-top:2px solid var(--border);color:var(--muted)">Past Weeks</div>';
+    archiveKeys.forEach(wkKey=>{
+      const aw=archive[wkKey];
+      if(!aw)return;
+      const awHist=aw.history||{};
+      const awChecked=aw.checked||{};
+      const awTasks=aw.tasks||[];
+      const totalDone=Object.keys(awChecked).length;
+      const totalTasks=awTasks.filter(t=>!t.id.endsWith("_c")).length;
+      const pct=totalTasks?Math.round(totalDone/totalTasks*100):0;
+      // collapsible header
+      const safeKey=wkKey.replace(/[^a-zA-Z0-9]/g,"_");
+      h+='<div style="background:#fff;border-radius:10px;border:1px solid var(--border);margin-bottom:10px;overflow:hidden">';
+      h+='<div onclick="toggleArchiveWeek(\''+safeKey+'\')" style="padding:12px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;background:var(--header);color:#fff">';
+      h+='<div><div style="font-weight:700;font-size:14px">'+(aw.weekLabel||wkKey)+'</div>';
+      h+='<div style="font-size:11px;opacity:0.7;margin-top:2px">Archived '+( aw.archivedAt||"")+'</div></div>';
+      h+='<div style="text-align:right"><div style="font-size:18px;font-weight:700;color:#a5b4fc">'+pct+'%</div>';
+      h+='<div style="font-size:11px;opacity:0.7">'+totalDone+' / '+totalTasks+' done</div></div></div>';
+      h+='<div id="arch_'+safeKey+'" style="display:none;padding:10px 14px">';
+      // per-kid breakdown
+      ["lincoln","ellis","lucy","julian"].forEach(k2=>{
+        const kidTasks=awTasks.filter(t=>t.who===k2&&!t.id.endsWith("_c"));
+        if(!kidTasks.length)return;
+        const kidDone=kidTasks.filter(t=>awChecked[t.id]);
+        const kidMissed=kidTasks.filter(t=>!awChecked[t.id]);
+        h+='<div style="font-weight:700;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;margin:8px 0 4px">'+cap(k2)+'</div>';
+        kidDone.forEach(t=>{
+          const ts=awChecked[t.id]||"";
+          h+='<div class="hist-item"><div class="hist-title">'+t.title+'</div><div class="hist-meta">✓ '+ts+' · '+(DAY_LBL[t.day]||t.day)+'</div></div>';
+        });
+        kidMissed.forEach(t=>{
+          // check if it was cascaded (has a _c sibling that was done)
+          const carried=awChecked[t.id+"_c"];
+          if(carried){
+            h+='<div class="hist-item" style="border-left:3px solid #f59e0b;background:#fffbeb"><div class="hist-title">'+t.title+'</div><div class="hist-meta">⚠️ Missed '+(DAY_LBL[t.day]||t.day)+' — carried over</div></div>';
+          } else {
+            h+='<div class="hist-item missed"><div class="hist-title">'+t.title+'</div><div class="hist-meta">⚠️ Missed — '+(DAY_LBL[t.day]||t.day)+'</div></div>';
+          }
+        });
+      });
+      h+='</div></div>';
+    });
+    h+='</div>';
+  }
+
+  el.innerHTML=h;
+}
+
+function toggleArchiveWeek(safeKey){
+  const el=document.getElementById("arch_"+safeKey);
+  if(el) el.style.display=el.style.display==="none"?"block":"none";
 }
 
 // ── MAGGIE ────────────────────────────────────────────────────────
@@ -1155,18 +1280,42 @@ function loadJson(){
   r.onload=e=>{
     try{
       const d=JSON.parse(e.target.result);
+
+      // ── ARCHIVE current week before wiping ──────────────────────
+      const currentHist=ld(WK+"_history")||{};
+      const currentTasks=weekData.tasks||[];
+      const currentLabel=weekData.week||WK;
+      const hasAnything=Object.keys(currentHist).length>0||currentTasks.length>0;
+      if(hasAnything){
+        const archiveEntry={
+          weekLabel: currentLabel,
+          archivedAt: nowTs(),
+          history: currentHist,
+          tasks: currentTasks,
+          checked: checked||{}
+        };
+        archive[currentLabel]=archiveEntry;
+        try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
+        if(db){
+          db.ref("archive/"+currentLabel).set(archiveEntry);
+        }
+      }
+
+      // ── Now load new week ───────────────────────────────────────
       weekData=d; checked={}; slState={};
       sv(WK+"_tasks",d.tasks); sv(WK+"_maggie",d.maggie||null);
       sv(WK+"_checked",{}); sv(WK+"_sl",{});
+      sv(WK+"_history",{});
       if(db){
         const obj={};d.tasks.forEach(t=>obj[t.id]=t);
         db.ref(WK+"/tasks").set(obj);
         db.ref(WK+"/checked").set({});
         db.ref(WK+"/sl").set({});
+        db.ref(WK+"/history").set({});
         if(d.maggie)db.ref(WK+"/maggie").set(d.maggie);
       }
       renderAll();
-      document.getElementById("admin-msg").textContent="✅ "+d.week+" loaded — "+d.tasks.length+" tasks.";
+      document.getElementById("admin-msg").textContent="✅ "+d.week+" loaded — "+d.tasks.length+" tasks. Previous week archived.";
     }catch(err){document.getElementById("admin-msg").textContent="❌ "+err.message;}
   };
   r.readAsText(f);
