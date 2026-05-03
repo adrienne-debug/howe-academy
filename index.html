@@ -392,17 +392,26 @@ function getTodayDayName(){
 
 // Returns true if the schedule should be shown (unlocked) for the given kid filter and day
 function isScheduleUnlocked(kidFilter, viewDay){
-  // Only gate today's view
-  const today = getTodayDayName();
-  if(viewDay !== today) return true; // past or future day — always show
+  // Julian has no school tasks — never locked
+  if(kidFilter === "julian") return true;
 
+  // Check if tasks are loaded at all — if tasks array is non-empty but none match this day, unlock
+  // If tasks haven't loaded yet (empty array), stay LOCKED as default safe state
+  if(weekData.tasks.length === 0) return false;
+  const hasTasks = weekData.tasks.some(t => t.day === viewDay);
+  if(!hasTasks) return true; // day exists in week but has no tasks (e.g. wednesday off)
+
+  // All view or Mom view: every kid must have morning checked for this day
+  const wk = weekData.week || WK;
   if(kidFilter === "all" || kidFilter === "mom"){
-    // ALL view: every kid must have morning checked
-    return SL_KIDS.every(k => getSlot(k,"morning").done);
+    return SL_KIDS.every(k => {
+      const key = wk + "_" + viewDay + "_" + k + "_morning";
+      return !!(slState[key] && slState[key].done);
+    });
   }
-  if(kidFilter === "julian") return true; // Julian has no school tasks
-  // Individual kid view: only that kid's morning must be done
-  return getSlot(kidFilter,"morning").done;
+  // Individual kid: just that kid's morning for this day
+  const key = wk + "_" + viewDay + "_" + kidFilter + "_morning";
+  return !!(slState[key] && slState[key].done);
 }
 
 // Scroll to skylight panel so the kid can check off their morning tasks
@@ -416,7 +425,7 @@ function nowTs(){
 }
 
 // ── SKYLIGHT ──────────────────────────────────────────────────────
-function slKey(who,slot){ return day+"_"+who+"_"+slot; }
+function slKey(who,slot){ return (weekData.week||WK)+"_"+day+"_"+who+"_"+slot; }
 function getSlot(who,slot){ return slState[slKey(who,slot)]||{done:false,ts:""}; }
 
 function toggleSlot(who,slot){
