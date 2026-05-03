@@ -192,6 +192,30 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 
 @media print{#app-header,#nav-tabs,#day-tabs,#kid-filter,#week-strip,#admin-btn,#scroll-top,#admin-panel,#skylight-panel{display:none!important}body{background:#fff}}
 
+/* ── SCHEDULE LOCK / BLUR ── */
+.sched-locked-wrap{position:relative}
+.sched-blur{filter:blur(5px);pointer-events:none;user-select:none;transition:filter 0.4s}
+.sched-lock-overlay{
+  position:absolute;top:0;left:0;right:0;bottom:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  z-index:50;cursor:pointer;padding:24px;
+  background:rgba(248,247,244,0.45);
+}
+.lock-bubble{
+  background:#fff;border-radius:18px;padding:22px 24px;text-align:center;
+  box-shadow:0 8px 32px rgba(0,0,0,0.14);border:2px solid var(--border);
+  max-width:280px;
+}
+.lock-icon{font-size:38px;margin-bottom:8px;display:block}
+.lock-title{font-family:'Fraunces',serif;font-size:18px;font-weight:700;color:var(--header);margin-bottom:6px}
+.lock-sub{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:14px}
+.lock-btn{
+  display:inline-block;background:var(--header);color:#fff;
+  font-family:'DM Sans',sans-serif;font-size:12px;font-weight:700;
+  padding:9px 20px;border-radius:20px;border:none;cursor:pointer;
+  letter-spacing:0.2px;
+}
+
 /* ── ACTIVITY IDEAS TAB ── */
 #act-upload-bar{background:#fff;border-bottom:1px solid var(--border);padding:10px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 #act-upload-bar input[type=file]{flex:1;min-width:0;font-size:12px;font-family:'DM Sans',sans-serif;border:1.5px solid var(--border);border-radius:8px;padding:6px 8px;background:#fff;color:var(--text)}
@@ -359,6 +383,33 @@ function toMin(s){
   return h*60+parseInt(p[2]);
 }
 function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+
+// Returns the current weekday as a DAYS string ("monday" etc.), or null if weekend
+function getTodayDayName(){
+  const map={1:"monday",2:"tuesday",3:"wednesday",4:"thursday",5:"friday",6:"saturday"};
+  return map[new Date().getDay()]||null;
+}
+
+// Returns true if the schedule should be shown (unlocked) for the given kid filter and day
+function isScheduleUnlocked(kidFilter, viewDay){
+  // Only gate today's view
+  const today = getTodayDayName();
+  if(viewDay !== today) return true; // past or future day — always show
+
+  if(kidFilter === "all" || kidFilter === "mom"){
+    // ALL view: every kid must have morning checked
+    return SL_KIDS.every(k => getSlot(k,"morning").done);
+  }
+  if(kidFilter === "julian") return true; // Julian has no school tasks
+  // Individual kid view: only that kid's morning must be done
+  return getSlot(kidFilter,"morning").done;
+}
+
+// Scroll to skylight panel so the kid can check off their morning tasks
+function scrollToSkylight(){
+  const el = document.getElementById("skylight-panel");
+  if(el) el.scrollIntoView({behavior:"smooth", block:"start"});
+}
 function nowTs(){
   const n=new Date();
   return n.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"})+" "+n.toLocaleDateString("en-US",{month:"short",day:"numeric"});
@@ -375,6 +426,8 @@ function toggleSlot(who,slot){
   sv(WK+"_sl",slState);
   if(db) db.ref(WK+"/sl/"+k).set(slState[k]);
   renderSkylight();
+  // Re-render schedule so blur clears immediately when morning is checked
+  if(tab==="schedule"){ const c=document.getElementById("content"); if(c) renderSchedule(c); }
 }
 
 function renderSkylight(){
@@ -548,7 +601,19 @@ function renderSchedule(el){
     h+='</div>';
   }
 
-  h+='<div class="time-slots">';
+  // ── SCHEDULE LOCK CHECK ──────────────────────────────────────────
+  const unlocked = isScheduleUnlocked(kid, day);
+  const lockKidName = (kid==="all") ? "everyone" : cap(kid);
+  const lockMsg = (kid==="all")
+    ? "All four kids need to check off their Morning slot in Skylight above."
+    : cap(kid)+"'s Morning slot needs to be checked off in Skylight above.";
+
+  // Wrap the blurred/locked section
+  const innerStart = unlocked
+    ? '<div class="time-slots">'
+    : '<div class="sched-locked-wrap"><div class="sched-blur"><div class="time-slots">';
+
+  h += innerStart;
   let lunchDone=false;
   times.forEach(t=>{
     if(!lunchDone&&toMin(t)>=14*60){ h+=lunchBlock(); lunchDone=true; }
@@ -557,7 +622,22 @@ function renderSchedule(el){
     h+='</div></div>';
   });
   if(!lunchDone&&times.length) h+=lunchBlock();
-  h+='</div>';
+
+  if(!unlocked){
+    // Close the blurred inner wrapper, then add the overlay
+    h+='</div></div>'; // close .time-slots and .sched-blur
+    h+='<div class="sched-lock-overlay" onclick="scrollToSkylight()">'+
+      '<div class="lock-bubble">'+
+      '<span class="lock-icon">🔒</span>'+
+      '<div class="lock-title">Schedule Locked</div>'+
+      '<div class="lock-sub">'+lockMsg+'</div>'+
+      '<button class="lock-btn">↑ Go to Morning Check-In</button>'+
+      '</div></div>';
+    h+='</div>'; // close .sched-locked-wrap
+  } else {
+    h+='</div>'; // close .time-slots
+  }
+
   el.innerHTML=h;
 }
 
