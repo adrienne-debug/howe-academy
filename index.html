@@ -359,7 +359,6 @@ const sv=(k,v)=>{ try{localStorage.setItem(k,JSON.stringify(v));}catch(e){} };
 const ld=k=>{ try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;} };
 
 function boot() {
-  // WK is already set from localStorage at declaration — use it for all keys
   const t=ld(WK+"_tasks"); if(t) weekData.tasks=t;
   weekData.week=WK;
   const m=ld(WK+"_maggie"); if(m) weekData.maggie=m;
@@ -408,7 +407,7 @@ function isScheduleUnlocked(kidFilter, viewDay){
   if(!hasTasks) return true; // day exists in week but has no tasks (e.g. wednesday off)
 
   // All view or Mom view: every kid must have morning checked for this day
-  const wk = weekData.week || WK;
+  const wk = activeWk();
   if(kidFilter === "all" || kidFilter === "mom"){
     return SL_KIDS.every(k => {
       const key = wk + "_" + viewDay + "_" + k + "_morning";
@@ -445,17 +444,20 @@ function nowTs(){
 }
 
 // ── SKYLIGHT ──────────────────────────────────────────────────────
-function slKey(who,slot){ return (weekData.week||WK)+"_"+day+"_"+who+"_"+slot; }
+// Single source of truth for the active week label — used by both
+// slKey and isScheduleUnlocked so they always match each other.
+function activeWk(){ return weekData.week||WK; }
+function slKey(who,slot){ return activeWk()+"_"+day+"_"+who+"_"+slot; }
 function getSlot(who,slot){ return slState[slKey(who,slot)]||{done:false,ts:""}; }
 
 function toggleSlot(who,slot){
   const k=slKey(who,slot), cur=getSlot(who,slot);
   const ts=cur.done?"":nowTs();
   slState[k]={done:!cur.done,ts};
-  sv(WK+"_sl",slState);
-  if(db) db.ref(WK+"/sl/"+k).set(slState[k]);
+  const wk=activeWk();
+  sv(wk+"_sl",slState);
+  if(db) db.ref(wk+"/sl/"+k).set(slState[k]);
   renderSkylight();
-  // Re-render schedule so blur clears immediately when morning is checked
   if(tab==="schedule"){ const c=document.getElementById("content"); if(c) renderSchedule(c); }
 }
 
@@ -624,10 +626,8 @@ function renderSchedule(el){
     ? "All four kids need to check off their Morning slot in Skylight above."
     : cap(kid)+"'s Morning slot needs to be checked off in Skylight above.";
 
-  // Open blur wrapper — carried-over tray AND time-slots live inside it
   if(!unlocked) h+='<div class="sched-locked-wrap"><div class="sched-blur">';
 
-  // ── CARRIED OVER TRAY (blurred when locked) ──
   if(carriedOver.length){
     h+='<div style="margin:10px 12px 0;border-left:4px solid #6366f1;background:#eef2ff;border-radius:0 10px 10px 0;padding:10px 12px">';
     h+='<div style="font-size:11px;font-weight:800;color:#4338ca;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.4px">📋 Carried Over</div>';
@@ -1397,47 +1397,41 @@ function loadJson(){
   r.onload=e=>{
     try{
       const d=JSON.parse(e.target.result);
-      if(!d.week||!d.tasks){document.getElementById("admin-msg").textContent="❌ JSON missing week or tasks field.";return;}
+      if(!d.week||!d.tasks){document.getElementById("admin-msg").textContent="❌ JSON missing week or tasks.";return;}
 
-      // ── isSameWeek: compare incoming week label to what's active ──
-      // Read activeWK from localStorage — immune to Firebase async echoes
       const activeWK=localStorage.getItem("ha_active_wk")||WK;
       const isSameWeek=!!(d.week===activeWK);
 
       if(isSameWeek){
-        // ── SAME WEEK — preserve everything, just update tasks/meta ──
-        // Snapshot checked + history from localStorage RIGHT NOW before
-        // any Firebase listener can overwrite them with stale data
         const lsChecked=ld(activeWK+"_checked")||{};
         const memChecked=checked||{};
         const snapChecked=Object.keys(lsChecked).length>=Object.keys(memChecked).length?lsChecked:memChecked;
         const snapHist=ld(activeWK+"_history")||{};
+        const snapSl=ld(activeWK+"_sl")||slState||{};
 
-        // Update WK and all state
         WK=activeWK;
-        weekData=d; checked=snapChecked;
+        weekData=d; checked=snapChecked; slState=snapSl;
         if(d.supplies&&Array.isArray(d.supplies)){SUP=d.supplies;sv(WK+"_supplies_def",d.supplies);}
         if(d.supplyCategories&&Array.isArray(d.supplyCategories)) SUP_CATS=d.supplyCategories;
         applyWeekMeta(d);
-
         sv(WK+"_tasks",d.tasks);
         sv(WK+"_maggie",d.maggie||null);
         sv(WK+"_checked",snapChecked);
         sv(WK+"_history",snapHist);
+        sv(WK+"_sl",snapSl);
         sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
-
         if(db){
           const obj={};d.tasks.forEach(t=>obj[t.id]=t);
           db.ref(WK+"/tasks").set(obj);
           if(Object.keys(snapChecked).length) db.ref(WK+"/checked").set(snapChecked);
           if(Object.keys(snapHist).length) db.ref(WK+"/history").set(snapHist);
+          if(Object.keys(snapSl).length) db.ref(WK+"/sl").set(snapSl);
           if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
         }
         renderAll(); runCascade();
         document.getElementById("admin-msg").textContent="✅ "+d.week+" updated — "+d.tasks.length+" tasks. Completions & history preserved.";
 
       } else {
-        // ── NEW WEEK — archive old, wipe state, load fresh ──
         const oldWK=activeWK;
         const snapHist=ld(oldWK+"_history")||{};
         const snapTasks=weekData.tasks||[];
@@ -1449,22 +1443,18 @@ function loadJson(){
           try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
           if(db) db.ref("archive/"+oldWK).set(entry);
         }
-
-        // Switch WK to new week — all storage keys now follow d.week
         WK=d.week;
         localStorage.setItem("ha_active_wk",WK);
         weekData=d; checked={}; slState={};
         if(d.supplies&&Array.isArray(d.supplies)){SUP=d.supplies;sv(WK+"_supplies_def",d.supplies);}
         if(d.supplyCategories&&Array.isArray(d.supplyCategories)) SUP_CATS=d.supplyCategories;
         applyWeekMeta(d);
-
         sv(WK+"_tasks",d.tasks);
         sv(WK+"_maggie",d.maggie||null);
         sv(WK+"_checked",{});
         sv(WK+"_sl",{});
         sv(WK+"_history",{});
         sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
-
         if(db){
           const obj={};d.tasks.forEach(t=>obj[t.id]=t);
           db.ref(WK+"/tasks").set(obj);
@@ -1490,8 +1480,6 @@ function toggleAdmin(){
 // ── ALERTS + CASCADE ──────────────────────────────────────────────
 setInterval(()=>{ if(tab==="schedule")renderSkylight(); },60000);
 
-// runCascade — safe to call at boot or anytime.
-// Uses _c suffix as duplicate guard — a task can only ever get one cascaded copy.
 function runCascade(){
   const nextDay={monday:"tuesday",tuesday:"wednesday",wednesday:"thursday",thursday:"friday",friday:"saturday"};
   const dayJsIdx={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
@@ -1500,7 +1488,7 @@ function runCascade(){
   let changed=false;
   const hist=ld(WK+"_history")||{};
   dayOrder.forEach(td=>{
-    if(dayJsIdx[td]>=todayIdx) return; // only past days
+    if(dayJsIdx[td]>=todayIdx) return;
     const unchecked=weekData.tasks.filter(t=>t.day===td&&t.cascade&&!checked[t.id]);
     unchecked.forEach(t=>{
       if(!hist[t.id+"_flag"]){
@@ -1508,7 +1496,7 @@ function runCascade(){
         changed=true;
       }
       const nd=nextDay[td]; if(!nd) return;
-      if(weekData.tasks.some(x=>x.id===t.id+"_c")) return; // duplicate guard
+      if(weekData.tasks.some(x=>x.id===t.id+"_c")) return;
       weekData.tasks.push({...t,id:t.id+"_c",day:nd,
         time:(t.mom==="required"||nd==="friday")?"2:00 PM":t.time,
         detail:t.detail+" (Cascaded from "+td.charAt(0).toUpperCase()+td.slice(1)+")",cascade:true});
