@@ -625,8 +625,8 @@ function renderSchedule(el){
     : cap(kid)+"'s Morning slot needs to be checked off in Skylight above.";
 
   // ── CARRIED OVER TRAY ──
-  // Wrapped in its own sched-blur when locked — blurs visually but pointer-events:none
-  // means taps pass through, so skylight above stays fully tappable.
+  // Has its own sched-blur when locked — blurs visually but pointer-events:none
+  // means taps pass through, keeping skylight fully tappable above.
   if(carriedOver.length){
     if(!unlocked) h+='<div class="sched-blur">';
     h+='<div style="margin:10px 12px 0;border-left:4px solid #6366f1;background:#eef2ff;border-radius:0 10px 10px 0;padding:10px 12px">';
@@ -640,7 +640,7 @@ function renderSchedule(el){
     if(!unlocked) h+='</div>';
   }
 
-  // ── MAIN SCHEDULE LOCK — original structure, overlay only covers time-slots ──
+  // Main schedule — original lock structure, overlay only covers time-slots
   const innerStart = unlocked
     ? '<div class="time-slots">'
     : '<div class="sched-locked-wrap"><div class="sched-blur"><div class="time-slots">';
@@ -1402,9 +1402,23 @@ function loadJson(){
   r.onload=e=>{
     try{
       const d=JSON.parse(e.target.result);
-      if(!d.week||!d.tasks){document.getElementById("admin-msg").textContent="❌ JSON missing week or tasks.";return;}
+      // ── Lunch block validation — warn if any tasks fall in 1:00-2:00 PM ──
+      const lunchConflicts=(d.tasks||[]).filter(t=>{
+        const p=t.time&&t.time.match(/(\d+):(\d+)\s*(AM|PM)/i); if(!p)return false;
+        let h=parseInt(p[1]); const mn=parseInt(p[2]);
+        if(p[3].toUpperCase()==="PM"&&h!==12)h+=12;
+        if(p[3].toUpperCase()==="AM"&&h===12)h=0;
+        const m=h*60+mn; return m>=780&&m<840; // 1:00-2:00 PM = 780-840 min
+      });
+      if(lunchConflicts.length){
+        const names=lunchConflicts.map(t=>t.id+"("+t.day+" "+t.time+")").join(", ");
+        document.getElementById("admin-msg").textContent="⚠️ "+lunchConflicts.length+" task(s) scheduled during lunch (1–2 PM): "+names+". Move these to 2:05 PM or later.";
+        return;
+      }
+
+      // ── Detect same-week vs new week ──────────────────────────────
       const activeWK=localStorage.getItem("ha_active_wk")||WK;
-      const isSameWeek=!!(d.week===activeWK);
+      const isSameWeek=!!(d.week&&d.week===activeWK);
       if(isSameWeek){
         const lsChecked=ld(activeWK+"_checked")||{};
         const memChecked=checked||{};
@@ -1456,6 +1470,7 @@ function loadJson(){
         }
         renderAll(); runCascade();
         document.getElementById("admin-msg").textContent="✅ "+d.week+" loaded — "+d.tasks.length+" tasks. Previous week archived.";
+      }
       }
     }catch(err){document.getElementById("admin-msg").textContent="❌ "+err.message;}
   };
