@@ -292,6 +292,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
     <div class="dlg-actions">
       <button class="dlg-cancel" onclick="closeDlg()">Cancel</button>
       <button class="dlg-ok" id="dlg-ok">Mark Done</button>
+      <button class="dlg-uncheck" id="dlg-uncheck" style="display:none;flex:1;padding:12px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;font-family:'DM Sans',sans-serif;border:none;background:#f3f4f6;color:#374151">↩ Unmark</button>
     </div>
   </div>
 </div>
@@ -313,16 +314,10 @@ const WK = "week3";
 const DAYS = ["monday","tuesday","wednesday","thursday","friday","saturday"];
 const DAY_COL = {monday:"#1e3a5f",tuesday:"#2d5a3d",wednesday:"#5b3a8c",thursday:"#c45e1a",friday:"#b5394a",saturday:"#1a6b5a"};
 const DAY_LBL = {monday:"Monday",tuesday:"Tuesday",wednesday:"Wednesday",thursday:"Thursday",friday:"Friday",saturday:"Saturday"};
-const DAY_DT  = {monday:"Apr 28",tuesday:"Apr 29",wednesday:"Apr 30",thursday:"May 1",friday:"May 2",saturday:"May 3"};
-const CONSTRAINT = {
-  thursday:"⚠️ Co-Op 10 AM–2 PM · School 2–4:15 PM · Theater 4:30 PM",
-  friday:"🌸 Maggie 8:30–12 PM · No Mom Required until noon"
-};
-const WIN = {
-  thursday:"Co-Op 10–2 · School 2:00–4:15 · Theater 4:30",
-  friday:"Maggie 8:30–12 · School starts noon",
-  default:"School 10:00 AM–4:15 PM · Theater 4:30 Mon–Thu"
-};
+// These are overridden at runtime by JSON — do not hardcode dates here
+let DAY_DT  = {};
+let CONSTRAINT = {};
+let WIN = { default:"School 10:00 AM–4:15 PM · Theater 4:30 Mon–Thu" };
 const SL_KIDS  = ["lincoln","ellis","lucy","julian"];
 const SL_KLBL  = {lincoln:"Lincoln",ellis:"Ellis",lucy:"Lucy",julian:"Julian"};
 const SL_KCOL  = {lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#c45e1a"};
@@ -369,10 +364,23 @@ const ld=k=>{ try{return JSON.parse(localStorage.getItem(k));}catch(e){return nu
 function boot() {
   const t=ld(WK+"_tasks"); if(t) weekData.tasks=t;
   const m=ld(WK+"_maggie"); if(m) weekData.maggie=m;
+  const meta=ld(WK+"_meta"); if(meta) applyWeekMeta(meta);
   checked=ld(WK+"_checked")||{};
   slState=ld(WK+"_sl")||{};
   supplies=ld(WK+"_supplies")||{};
   try{ const a=localStorage.getItem("ha_archive"); if(a) archive=JSON.parse(a); }catch(e){}
+}
+
+// ── WEEK META — applied whenever a JSON is loaded ─────────────────
+function applyWeekMeta(d){
+  // Dates: d.dates = { monday:"May 12", tuesday:"May 13", ... }
+  if(d.dates && typeof d.dates === "object") DAY_DT = d.dates;
+  // Constraints: d.constraints = { thursday:"⚠️ Co-Op...", friday:"🌸 Maggie..." }
+  if(d.constraints && typeof d.constraints === "object") CONSTRAINT = d.constraints;
+  else CONSTRAINT = {};
+  // Windows: d.windows = { thursday:"Co-Op 10–2...", default:"School 10:00 AM..." }
+  if(d.windows && typeof d.windows === "object") WIN = d.windows;
+  else WIN = { default:"School 10:00 AM–4:15 PM · Theater 4:30 Mon–Thu" };
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────
@@ -713,14 +721,23 @@ function taskCard(t, fromDay){
 
 // ── TASK TAP ──────────────────────────────────────────────────────
 function tapTask(id){
-  const t=weekData.tasks.find(x=>x.id===id); if(!t||checked[id])return;
+  const t=weekData.tasks.find(x=>x.id===id); if(!t)return;
+  const isDone=!!checked[id];
   const future=DAYS.indexOf(t.day)>DAYS.indexOf(day);
   pendingId=id;
   document.getElementById("dlg-title").textContent=t.title;
-  document.getElementById("dlg-detail").textContent=t.detail;
+  document.getElementById("dlg-detail").textContent=isDone?"Completed: "+checked[id]:t.detail;
   const btn=document.getElementById("dlg-ok");
-  btn.textContent=future?"Mark Done (Future Day)":"✓ Mark Done";
-  btn.style.background=future?"#f59e0b":"#16a34a";
+  const unBtn=document.getElementById("dlg-uncheck");
+  if(isDone){
+    btn.style.display="none";
+    unBtn.style.display="block";
+  } else {
+    btn.style.display="block";
+    btn.textContent=future?"Mark Done (Future Day)":"✓ Mark Done";
+    btn.style.background=future?"#f59e0b":"#16a34a";
+    unBtn.style.display="none";
+  }
   document.getElementById("dlg").style.display="flex";
 }
 document.getElementById("dlg-ok").onclick=()=>{
@@ -731,6 +748,15 @@ document.getElementById("dlg-ok").onclick=()=>{
   const hist=ld(WK+"_history")||{};
   const t=weekData.tasks.find(x=>x.id===pendingId);
   if(t){ hist[pendingId]={id:pendingId,title:t.title,who:t.who,day:t.day,ts}; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+pendingId).set(hist[pendingId]); }
+  closeDlg(); renderAll();
+};
+document.getElementById("dlg-uncheck").onclick=()=>{
+  if(!pendingId)return;
+  delete checked[pendingId]; sv(WK+"_checked",checked);
+  if(db) db.ref(WK+"/checked/"+pendingId).remove();
+  const hist=ld(WK+"_history")||{};
+  delete hist[pendingId]; sv(WK+"_history",hist);
+  if(db) db.ref(WK+"/history/"+pendingId).remove();
   closeDlg(); renderAll();
 };
 function closeDlg(){ document.getElementById("dlg").style.display="none"; pendingId=null; }
@@ -1244,67 +1270,58 @@ function renderHistory(el){
   const n=new Date(), satClose=n.getDay()===6&&n.getHours()>=20;
   const realDone=(id)=>hist[id]&&typeof hist[id]==="object"&&hist[id].ts&&!hist[id].missed&&!hist[id].flag;
   let h='<div class="hist-section">';
-  const hasTasks=weekData.tasks.length>0;
 
-  if(!hasTasks){
-    const entries=Object.values(hist).filter(v=>v&&v.title&&v.ts&&!v.missed&&!v.flag);
-    if(!entries.length){
-      h+='<div style="padding:24px;text-align:center;color:var(--muted)"><div style="font-size:40px">📋</div><div style="margin-top:8px;font-weight:600">No completed tasks yet</div><div style="font-size:13px;margin-top:4px">Tasks you check off will appear here across all devices.</div></div>';
-    } else {
-      ["lincoln","ellis","lucy","julian"].forEach(k2=>{
-        const kids=entries.filter(e=>e.who===k2); if(!kids.length)return;
-        h+='<div class="hist-kid-hdr">'+cap(k2)+'</div>';
-        kids.forEach(e=>{ h+='<div class="hist-item"><div class="hist-title">'+e.title+'</div><div class="hist-meta">✓ '+e.ts+' · '+(DAY_LBL[e.day]||e.day||"")+'</div></div>'; });
-      });
-    }
-  } else {
-    ["lincoln","ellis","lucy","julian"].forEach(k2=>{
-      const kt=weekData.tasks.filter(t=>t.who===k2 && !t.id.endsWith("_c")); // exclude cascade copies
-      const done=kt.filter(t=>realDone(t.id));
-
-      // Cascaded-away = has a _c copy, was never checked on original day
-      const cascadedAway=kt.filter(t=>{
-        const hasCopy=weekData.tasks.some(x=>x.id===t.id+"_c");
-        return hasCopy && !realDone(t.id);
-      });
-
-      // Also pull any _flag entries for this kid from history
-      const flagMissed=Object.values(hist).filter(v=>v&&v.flag==="cascade_missed"&&v.who===k2);
-
-      const missed=satClose?kt.filter(t=>!realDone(t.id)&&!weekData.tasks.some(x=>x.id===t.id+"_c")):[];
-
-      if(!done.length&&!cascadedAway.length&&!flagMissed.length&&!missed.length)return;
-      h+='<div class="hist-kid-hdr">'+cap(k2)+'</div>';
-
-      done.forEach(t=>{
-        const isCarried=t.id.includes("_c");
-        h+='<div class="hist-item"><div class="hist-title">'+t.title+'</div>'+
-          '<div class="hist-meta">✓ '+hist[t.id].ts+' · '+(DAY_LBL[t.day]||t.day)+' '+(DAY_DT[t.day]||"")+
-          (isCarried?' <span style="font-size:10px;background:#e0e7ff;color:#4338ca;padding:1px 5px;border-radius:6px;font-weight:700">Carried over</span>':'')+
-          '</div></div>';
-      });
-
-      cascadedAway.forEach(t=>{
-        h+='<div class="hist-item" style="border-left:3px solid #f59e0b;background:#fffbeb">'+
-          '<div class="hist-title">'+t.title+'</div>'+
-          '<div class="hist-meta">⚠️ Missed '+(DAY_LBL[t.day]||t.day)+' — carried to next day</div></div>';
-      });
-
-      flagMissed.forEach(f=>{
-        const alreadyShown=cascadedAway.some(t=>t.title===f.title);
-        if(alreadyShown)return;
-        h+='<div class="hist-item" style="border-left:3px solid #f59e0b;background:#fffbeb">'+
-          '<div class="hist-title">'+f.title+'</div>'+
-          '<div class="hist-meta">⚠️ Missed '+(DAY_LBL[f.day]||f.day||"")+' — carried to next day</div></div>';
-      });
-
-      missed.forEach(t=>{
-        h+='<div class="hist-item missed"><div class="hist-title">'+t.title+'</div>'+
-          '<div class="hist-meta">⚠️ Missed — '+(DAY_LBL[t.day]||t.day)+'</div></div>';
-      });
+  // Always render from the history LOG — self-contained records survive JSON swaps and dropped days
+  ["lincoln","ellis","lucy","julian"].forEach(k2=>{
+    // DONE: pull straight from history log entries, sorted by day
+    const doneEntries=Object.values(hist).filter(v=>
+      v&&v.who===k2&&v.title&&v.ts&&!v.missed&&!v.flag&&!(v.id&&v.id.endsWith("_c"))
+    ).sort((a,b)=>{
+      const di=DAYS.indexOf(a.day)-DAYS.indexOf(b.day);
+      return di!==0?di:(a.ts||"").localeCompare(b.ts||"");
     });
-  }
-  if(h==='<div class="hist-section">') h+='<div style="padding:24px;text-align:center;color:var(--muted)"><div style="font-size:40px">📋</div><div style="margin-top:8px;font-weight:600">No completed tasks yet</div><div style="font-size:13px;margin-top:4px">Tasks you check off will appear here across all devices.</div></div>';
+
+    // MISSED/CARRIED: only show when week is closed (Saturday 8pm+)
+    const kt=weekData.tasks.filter(t=>t.who===k2&&!t.id.endsWith("_c"));
+    const cascadedAway=satClose?kt.filter(t=>{
+      const hasCopy=weekData.tasks.some(x=>x.id===t.id+"_c");
+      return hasCopy&&!realDone(t.id);
+    }):[];
+    const flagMissed=satClose?Object.values(hist).filter(v=>v&&v.flag==="cascade_missed"&&v.who===k2):[];
+    const missed=satClose?kt.filter(t=>!realDone(t.id)&&!weekData.tasks.some(x=>x.id===t.id+"_c")):[];
+
+    if(!doneEntries.length&&!cascadedAway.length&&!flagMissed.length&&!missed.length)return;
+    h+='<div class="hist-kid-hdr">'+cap(k2)+'</div>';
+
+    doneEntries.forEach(e=>{
+      const isCarried=e.id&&e.id.includes("_c");
+      h+='<div class="hist-item"><div class="hist-title">'+e.title+'</div>'+
+        '<div class="hist-meta">&#10003; '+e.ts+' &middot; '+(DAY_LBL[e.day]||e.day||'')+' '+(DAY_DT[e.day]||'')+
+        (isCarried?' <span style="font-size:10px;background:#e0e7ff;color:#4338ca;padding:1px 5px;border-radius:6px;font-weight:700">Carried over</span>':'')+
+        '</div></div>';
+    });
+
+    cascadedAway.forEach(t=>{
+      h+='<div class="hist-item" style="border-left:3px solid #f59e0b;background:#fffbeb">'+
+        '<div class="hist-title">'+t.title+'</div>'+
+        '<div class="hist-meta">&#9888; Missed '+(DAY_LBL[t.day]||t.day)+' &mdash; carried to next day</div></div>';
+    });
+
+    flagMissed.forEach(f=>{
+      const alreadyShown=cascadedAway.some(t=>t.title===f.title);
+      if(alreadyShown)return;
+      h+='<div class="hist-item" style="border-left:3px solid #f59e0b;background:#fffbeb">'+
+        '<div class="hist-title">'+f.title+'</div>'+
+        '<div class="hist-meta">&#9888; Missed '+(DAY_LBL[f.day]||f.day||'')+' &mdash; carried to next day</div></div>';
+    });
+
+    missed.forEach(t=>{
+      h+='<div class="hist-item missed"><div class="hist-title">'+t.title+'</div>'+
+        '<div class="hist-meta">&#9888; Missed &mdash; '+(DAY_LBL[t.day]||t.day)+'</div></div>';
+    });
+  });
+
+  if(h==='<div class="hist-section">') h+='<div style="padding:24px;text-align:center;color:var(--muted)"><div style="font-size:40px">&#128203;</div><div style="margin-top:8px;font-weight:600">No completed tasks yet</div><div style="font-size:13px;margin-top:4px">Tasks you check off will appear here across all devices.</div></div>';
   h+='</div>';
 
   // ── PAST WEEKS from archive ──────────────────────────────────────
@@ -1320,16 +1337,14 @@ function renderHistory(el){
       const totalDone=Object.keys(awChecked).length;
       const totalTasks=awTasks.filter(t=>!t.id.endsWith("_c")).length;
       const pct=totalTasks?Math.round(totalDone/totalTasks*100):0;
-      // collapsible header
       const safeKey=wkKey.replace(/[^a-zA-Z0-9]/g,"_");
       h+='<div style="background:#fff;border-radius:10px;border:1px solid var(--border);margin-bottom:10px;overflow:hidden">';
       h+='<div onclick="toggleArchiveWeek(\''+safeKey+'\')" style="padding:12px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;background:var(--header);color:#fff">';
       h+='<div><div style="font-weight:700;font-size:14px">'+(aw.weekLabel||wkKey)+'</div>';
-      h+='<div style="font-size:11px;opacity:0.7;margin-top:2px">Archived '+( aw.archivedAt||"")+'</div></div>';
+      h+='<div style="font-size:11px;opacity:0.7;margin-top:2px">Archived '+(aw.archivedAt||'')+'</div></div>';
       h+='<div style="text-align:right"><div style="font-size:18px;font-weight:700;color:#a5b4fc">'+pct+'%</div>';
       h+='<div style="font-size:11px;opacity:0.7">'+totalDone+' / '+totalTasks+' done</div></div></div>';
       h+='<div id="arch_'+safeKey+'" style="display:none;padding:10px 14px">';
-      // per-kid breakdown
       ["lincoln","ellis","lucy","julian"].forEach(k2=>{
         const kidTasks=awTasks.filter(t=>t.who===k2&&!t.id.endsWith("_c"));
         if(!kidTasks.length)return;
@@ -1338,15 +1353,14 @@ function renderHistory(el){
         h+='<div style="font-weight:700;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;margin:8px 0 4px">'+cap(k2)+'</div>';
         kidDone.forEach(t=>{
           const ts=awChecked[t.id]||"";
-          h+='<div class="hist-item"><div class="hist-title">'+t.title+'</div><div class="hist-meta">✓ '+ts+' · '+(DAY_LBL[t.day]||t.day)+'</div></div>';
+          h+='<div class="hist-item"><div class="hist-title">'+t.title+'</div><div class="hist-meta">&#10003; '+ts+' &middot; '+(DAY_LBL[t.day]||t.day)+'</div></div>';
         });
         kidMissed.forEach(t=>{
-          // check if it was cascaded (has a _c sibling that was done)
           const carried=awChecked[t.id+"_c"];
           if(carried){
-            h+='<div class="hist-item" style="border-left:3px solid #f59e0b;background:#fffbeb"><div class="hist-title">'+t.title+'</div><div class="hist-meta">⚠️ Missed '+(DAY_LBL[t.day]||t.day)+' — carried over</div></div>';
+            h+='<div class="hist-item" style="border-left:3px solid #f59e0b;background:#fffbeb"><div class="hist-title">'+t.title+'</div><div class="hist-meta">&#9888; Missed '+(DAY_LBL[t.day]||t.day)+' &mdash; carried over</div></div>';
           } else {
-            h+='<div class="hist-item missed"><div class="hist-title">'+t.title+'</div><div class="hist-meta">⚠️ Missed — '+(DAY_LBL[t.day]||t.day)+'</div></div>';
+            h+='<div class="hist-item missed"><div class="hist-title">'+t.title+'</div><div class="hist-meta">&#9888; Missed &mdash; '+(DAY_LBL[t.day]||t.day)+'</div></div>';
           }
         });
       });
@@ -1420,17 +1434,14 @@ function loadJson(){
       const isSameWeek = (d.week && d.week === (weekData.week || WK));
 
       if(isSameWeek){
-        // Same week: preserve existing checked state and history,
-        // just update the task list. New task IDs start undone automatically.
         const prevChecked = checked || {};
-        const prevHist = ld(WK+"_history") || {};
-
         weekData = d;
         checked = prevChecked;
+        applyWeekMeta(d);
         sv(WK+"_tasks", d.tasks);
         sv(WK+"_maggie", d.maggie || null);
         sv(WK+"_checked", prevChecked);
-        // History untouched — already saved under same key
+        sv(WK+"_meta", {dates:d.dates||{}, constraints:d.constraints||{}, windows:d.windows||{}});
         if(db){
           const obj={}; d.tasks.forEach(t=>obj[t.id]=t);
           db.ref(WK+"/tasks").set(obj);
@@ -1440,11 +1451,12 @@ function loadJson(){
         renderAll();
         document.getElementById("admin-msg").textContent="✅ "+d.week+" updated — "+d.tasks.length+" tasks. Completions & history preserved.";
       } else {
-        // New week: full wipe and archive as before
         weekData=d; checked={}; slState={};
+        applyWeekMeta(d);
         sv(WK+"_tasks",d.tasks); sv(WK+"_maggie",d.maggie||null);
         sv(WK+"_checked",{}); sv(WK+"_sl",{});
         sv(WK+"_history",{});
+        sv(WK+"_meta", {dates:d.dates||{}, constraints:d.constraints||{}, windows:d.windows||{}});
         if(db){
           const obj={};d.tasks.forEach(t=>obj[t.id]=t);
           db.ref(WK+"/tasks").set(obj);
