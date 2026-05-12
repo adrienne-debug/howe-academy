@@ -292,7 +292,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
     <div class="dlg-actions">
       <button class="dlg-cancel" onclick="closeDlg()">Cancel</button>
       <button class="dlg-ok" id="dlg-ok">Mark Done</button>
-      <button class="dlg-uncheck" id="dlg-uncheck" style="display:none;flex:1;padding:12px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;font-family:'DM Sans',sans-serif;border:none;background:#f3f4f6;color:#374151">↩ Unmark</button>
+      <button class="dlg-uncheck" id="dlg-uncheck" style="display:none;flex:1;padding:12px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;font-family:'DM Sans',sans-serif;border:none;background:#f3f4f6;color:#374151">&#x21A9; Unmark</button>
     </div>
   </div>
 </div>
@@ -314,10 +314,7 @@ const WK = "week3";
 const DAYS = ["monday","tuesday","wednesday","thursday","friday","saturday"];
 const DAY_COL = {monday:"#1e3a5f",tuesday:"#2d5a3d",wednesday:"#5b3a8c",thursday:"#c45e1a",friday:"#b5394a",saturday:"#1a6b5a"};
 const DAY_LBL = {monday:"Monday",tuesday:"Tuesday",wednesday:"Wednesday",thursday:"Thursday",friday:"Friday",saturday:"Saturday"};
-// These are overridden at runtime by JSON — do not hardcode dates here
-let DAY_DT  = {};
-let CONSTRAINT = {};
-let WIN = { default:"School 10:00 AM–4:15 PM · Theater 4:30 Mon–Thu" };
+let DAY_DT={}; let CONSTRAINT={}; let WIN={default:"School 10:00 AM–4:15 PM · Theater 4:30 Mon–Thu"};
 const SL_KIDS  = ["lincoln","ellis","lucy","julian"];
 const SL_KLBL  = {lincoln:"Lincoln",ellis:"Ellis",lucy:"Lucy",julian:"Julian"};
 const SL_KCOL  = {lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#c45e1a"};
@@ -364,23 +361,18 @@ const ld=k=>{ try{return JSON.parse(localStorage.getItem(k));}catch(e){return nu
 function boot() {
   const t=ld(WK+"_tasks"); if(t) weekData.tasks=t;
   const m=ld(WK+"_maggie"); if(m) weekData.maggie=m;
-  const meta=ld(WK+"_meta"); if(meta) applyWeekMeta(meta);
+  const meta=ld(WK+"_meta"); if(meta){ weekData.week=weekData.week||meta.week; applyWeekMeta(meta); }
   checked=ld(WK+"_checked")||{};
   slState=ld(WK+"_sl")||{};
   supplies=ld(WK+"_supplies")||{};
   try{ const a=localStorage.getItem("ha_archive"); if(a) archive=JSON.parse(a); }catch(e){}
 }
 
-// ── WEEK META — applied whenever a JSON is loaded ─────────────────
+// ── WEEK META ─────────────────────────────────────────────────────
 function applyWeekMeta(d){
-  // Dates: d.dates = { monday:"May 12", tuesday:"May 13", ... }
-  if(d.dates && typeof d.dates === "object") DAY_DT = d.dates;
-  // Constraints: d.constraints = { thursday:"⚠️ Co-Op...", friday:"🌸 Maggie..." }
-  if(d.constraints && typeof d.constraints === "object") CONSTRAINT = d.constraints;
-  else CONSTRAINT = {};
-  // Windows: d.windows = { thursday:"Co-Op 10–2...", default:"School 10:00 AM..." }
-  if(d.windows && typeof d.windows === "object") WIN = d.windows;
-  else WIN = { default:"School 10:00 AM–4:15 PM · Theater 4:30 Mon–Thu" };
+  if(d.dates&&typeof d.dates==="object") DAY_DT=d.dates;
+  if(d.constraints&&typeof d.constraints==="object") CONSTRAINT=d.constraints; else CONSTRAINT={};
+  if(d.windows&&typeof d.windows==="object") WIN=d.windows; else WIN={default:"School 10:00 AM–4:15 PM · Theater 4:30 Mon–Thu"};
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────
@@ -729,15 +721,8 @@ function tapTask(id){
   document.getElementById("dlg-detail").textContent=isDone?"Completed: "+checked[id]:t.detail;
   const btn=document.getElementById("dlg-ok");
   const unBtn=document.getElementById("dlg-uncheck");
-  if(isDone){
-    btn.style.display="none";
-    unBtn.style.display="block";
-  } else {
-    btn.style.display="block";
-    btn.textContent=future?"Mark Done (Future Day)":"✓ Mark Done";
-    btn.style.background=future?"#f59e0b":"#16a34a";
-    unBtn.style.display="none";
-  }
+  if(isDone){ btn.style.display="none"; unBtn.style.display="block"; }
+  else { btn.style.display="block"; btn.textContent=future?"Mark Done (Future Day)":"✓ Mark Done"; btn.style.background=future?"#f59e0b":"#16a34a"; unBtn.style.display="none"; }
   document.getElementById("dlg").style.display="flex";
 }
 document.getElementById("dlg-ok").onclick=()=>{
@@ -1410,53 +1395,47 @@ function loadJson(){
     try{
       const d=JSON.parse(e.target.result);
 
-      // ── ARCHIVE current week before wiping ──────────────────────
-      const currentHist=ld(WK+"_history")||{};
-      const currentTasks=weekData.tasks||[];
-      const currentLabel=weekData.week||WK;
-      const hasAnything=Object.keys(currentHist).length>0||currentTasks.length>0;
-      if(hasAnything){
-        const archiveEntry={
-          weekLabel: currentLabel,
-          archivedAt: nowTs(),
-          history: currentHist,
-          tasks: currentTasks,
-          checked: checked||{}
-        };
-        archive[currentLabel]=archiveEntry;
-        try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
-        if(db){
-          db.ref("archive/"+currentLabel).set(archiveEntry);
-        }
-      }
-
       // ── Detect same-week update vs new week ────────────────────
-      const isSameWeek = (d.week && d.week === (weekData.week || WK));
+      const activeWeek=weekData.week||(ld(WK+"_meta")||{}).week||WK;
+      const isSameWeek=!!(d.week&&d.week===activeWeek);
 
       if(isSameWeek){
-        const prevChecked = checked || {};
-        weekData = d;
-        checked = prevChecked;
+        // Preserve checked + history — use whichever copy is more complete
+        const memChecked=checked||{};
+        const storedChecked=ld(activeWeek+"_checked")||ld(WK+"_checked")||{};
+        const prevChecked=Object.keys(memChecked).length>=Object.keys(storedChecked).length?memChecked:storedChecked;
+        const prevHist=ld(activeWeek+"_history")||ld(WK+"_history")||{};
+        weekData=d; checked=prevChecked;
         applyWeekMeta(d);
-        sv(WK+"_tasks", d.tasks);
-        sv(WK+"_maggie", d.maggie || null);
-        sv(WK+"_checked", prevChecked);
-        sv(WK+"_meta", {dates:d.dates||{}, constraints:d.constraints||{}, windows:d.windows||{}});
+        sv(WK+"_tasks",d.tasks); sv(WK+"_maggie",d.maggie||null);
+        sv(WK+"_checked",prevChecked); sv(WK+"_history",prevHist);
+        sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
         if(db){
-          const obj={}; d.tasks.forEach(t=>obj[t.id]=t);
+          const obj={};d.tasks.forEach(t=>obj[t.id]=t);
           db.ref(WK+"/tasks").set(obj);
-          db.ref(WK+"/checked").set(prevChecked);
-          if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
+          if(Object.keys(prevChecked).length)db.ref(WK+"/checked").set(prevChecked);
+          if(Object.keys(prevHist).length)db.ref(WK+"/history").set(prevHist);
+          if(d.maggie)db.ref(WK+"/maggie").set(d.maggie);
         }
-        renderAll();
+        renderAll(); runCascade();
         document.getElementById("admin-msg").textContent="✅ "+d.week+" updated — "+d.tasks.length+" tasks. Completions & history preserved.";
       } else {
+        // Archive current week then wipe for new week
+        const currentHist=ld(WK+"_history")||{};
+        const currentTasks=weekData.tasks||[];
+        const hasAnything=Object.keys(currentHist).length>0||currentTasks.length>0;
+        if(hasAnything){
+          const archiveEntry={weekLabel:activeWeek,archivedAt:nowTs(),history:currentHist,tasks:currentTasks,checked:checked||{}};
+          archive[activeWeek]=archiveEntry;
+          try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
+          if(db)db.ref("archive/"+activeWeek).set(archiveEntry);
+        }
         weekData=d; checked={}; slState={};
         applyWeekMeta(d);
         sv(WK+"_tasks",d.tasks); sv(WK+"_maggie",d.maggie||null);
         sv(WK+"_checked",{}); sv(WK+"_sl",{});
         sv(WK+"_history",{});
-        sv(WK+"_meta", {dates:d.dates||{}, constraints:d.constraints||{}, windows:d.windows||{}});
+        sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
         if(db){
           const obj={};d.tasks.forEach(t=>obj[t.id]=t);
           db.ref(WK+"/tasks").set(obj);
@@ -1465,7 +1444,7 @@ function loadJson(){
           db.ref(WK+"/history").set({});
           if(d.maggie)db.ref(WK+"/maggie").set(d.maggie);
         }
-        renderAll();
+        renderAll(); runCascade();
         document.getElementById("admin-msg").textContent="✅ "+d.week+" loaded — "+d.tasks.length+" tasks. Previous week archived.";
       }
     }catch(err){document.getElementById("admin-msg").textContent="❌ "+err.message;}
@@ -1482,55 +1461,60 @@ function toggleAdmin(){
 // ── ALERTS + CASCADE ──────────────────────────────────────────────
 setInterval(()=>{ if(tab==="schedule")renderSkylight(); },60000);
 
-setInterval(()=>{
-  const n=new Date(); if(n.getHours()<22)return;
-  const dm={1:"monday",2:"tuesday",3:"wednesday",4:"thursday",5:"friday",6:"saturday"};
+// runCascade: safe to call at any time — duplicate-proof by task id.
+// Each original task can only ever produce one "_c" copy (checked via id suffix).
+// So opening the app 10 times will never create 10 copies of the same cascaded task.
+// Runs at boot (catches up if app was closed overnight) and once per hour as backup.
+function runCascade(){
   const nextDay={monday:"tuesday",tuesday:"wednesday",wednesday:"thursday",thursday:"friday",friday:"saturday"};
-  const td=dm[n.getDay()]; if(!td)return;
-  const last=ld("lastProcDay"); if(last===td)return;
-  sv("lastProcDay",td); if(db)db.ref("lastProcDay").set(td);
+  const dayJsIdx={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
+  const todayIdx=new Date().getDay();
+  const dayOrder=["monday","tuesday","wednesday","thursday","friday","saturday"];
 
+  let changed=false;
   const hist=ld(WK+"_history")||{};
-  const unchecked=weekData.tasks.filter(t=>t.day===td&&t.cascade&&!checked[t.id]);
 
-  unchecked.forEach(t=>{
-    // Log in history as missed on original day
-    hist[t.id+"_flag"]={id:t.id,title:t.title,who:t.who,day:td,flag:"cascade_missed",ts:nowTs()};
+  dayOrder.forEach(td=>{
+    // Only look at days strictly before today (already over)
+    if(dayJsIdx[td]>=todayIdx) return;
 
-    // Copy task to next school day if one exists
-    const nd=nextDay[td]; if(!nd)return;
+    const unchecked=weekData.tasks.filter(t=>t.day===td&&t.cascade&&!checked[t.id]);
+    unchecked.forEach(t=>{
+      // Flag missed in history (only once)
+      if(!hist[t.id+"_flag"]){
+        hist[t.id+"_flag"]={id:t.id,title:t.title,who:t.who,day:td,flag:"cascade_missed",ts:nowTs()};
+        changed=true;
+      }
+      const nd=nextDay[td]; if(!nd) return;
+      // Duplicate guard — if a _c copy already exists anywhere, skip
+      if(weekData.tasks.some(x=>x.id===t.id+"_c")) return;
 
-    // Don't duplicate — check if already cascaded
-    const alreadyCascaded=weekData.tasks.some(x=>x.id===t.id+"_c"&&x.day===nd);
-    if(alreadyCascaded)return;
-
-    const cascadedTask={
-      ...t,
-      id: t.id+"_c",
-      day: nd,
-      time: t.mom==="required" ? "2:00 PM" : t.time, // Mom Required tasks default to afternoon
-      detail: t.detail+" (Cascaded from "+td.charAt(0).toUpperCase()+td.slice(1)+")",
-      cascade: true
-    };
-
-    // For Maggie days (Friday) — never cascade Mom Required into Maggie window
-    if(nd==="friday" && t.mom==="required"){
-      cascadedTask.time="12:00 PM"; // after Mom returns
-    }
-
-    weekData.tasks.push(cascadedTask);
+      const cascadedTask={
+        ...t,
+        id:t.id+"_c",
+        day:nd,
+        time:t.mom==="required"?"2:00 PM":t.time,
+        detail:t.detail+" (Cascaded from "+td.charAt(0).toUpperCase()+td.slice(1)+")",
+        cascade:true
+      };
+      if(nd==="friday"&&t.mom==="required") cascadedTask.time="2:00 PM";
+      weekData.tasks.push(cascadedTask);
+      changed=true;
+    });
   });
 
-  // Save updated task list
-  sv(WK+"_tasks", weekData.tasks);
-  sv(WK+"_history", hist);
-  if(db){
-    const obj={};weekData.tasks.forEach(t=>obj[t.id]=t);
-    db.ref(WK+"/tasks").set(obj);
-    db.ref(WK+"/history").update(hist);
+  if(changed){
+    sv(WK+"_tasks",weekData.tasks);
+    sv(WK+"_history",hist);
+    if(db){
+      const obj={};weekData.tasks.forEach(t=>obj[t.id]=t);
+      db.ref(WK+"/tasks").set(obj);
+      db.ref(WK+"/history").update(hist);
+    }
+    renderAll();
   }
-  renderAll();
-},60000);
+}
+setInterval(runCascade,3600000); // hourly backup in case app stays open past midnight
 
 setInterval(()=>{
   const n=new Date(); if(n.getDay()!==6||n.getHours()<20)return;
@@ -1794,7 +1778,7 @@ window.addEventListener("scroll",()=>{
 });
 
 // ── INIT ──────────────────────────────────────────────────────────
-boot(); initFb(); renderAll();
+boot(); initFb(); renderAll(); runCascade();
 </script>
 </body>
 </html>
