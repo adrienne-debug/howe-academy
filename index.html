@@ -292,7 +292,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
     <div class="dlg-actions">
       <button class="dlg-cancel" onclick="closeDlg()">Cancel</button>
       <button class="dlg-ok" id="dlg-ok">Mark Done</button>
-      <button class="dlg-uncheck" id="dlg-uncheck" style="display:none;flex:1;padding:12px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;font-family:'DM Sans',sans-serif;border:none;background:#f3f4f6;color:#374151">&#x21A9; Unmark</button>
     </div>
   </div>
 </div>
@@ -314,7 +313,16 @@ const WK = "week3";
 const DAYS = ["monday","tuesday","wednesday","thursday","friday","saturday"];
 const DAY_COL = {monday:"#1e3a5f",tuesday:"#2d5a3d",wednesday:"#5b3a8c",thursday:"#c45e1a",friday:"#b5394a",saturday:"#1a6b5a"};
 const DAY_LBL = {monday:"Monday",tuesday:"Tuesday",wednesday:"Wednesday",thursday:"Thursday",friday:"Friday",saturday:"Saturday"};
-let DAY_DT={}; let CONSTRAINT={}; let WIN={default:"School 10:00 AM–4:15 PM · Theater 4:30 Mon–Thu"};
+const DAY_DT  = {monday:"Apr 28",tuesday:"Apr 29",wednesday:"Apr 30",thursday:"May 1",friday:"May 2",saturday:"May 3"};
+const CONSTRAINT = {
+  thursday:"⚠️ Co-Op 10 AM–2 PM · School 2–4:15 PM · Theater 4:30 PM",
+  friday:"🌸 Maggie 8:30–12 PM · No Mom Required until noon"
+};
+const WIN = {
+  thursday:"Co-Op 10–2 · School 2:00–4:15 · Theater 4:30",
+  friday:"Maggie 8:30–12 · School starts noon",
+  default:"School 10:00 AM–4:15 PM · Theater 4:30 Mon–Thu"
+};
 const SL_KIDS  = ["lincoln","ellis","lucy","julian"];
 const SL_KLBL  = {lincoln:"Lincoln",ellis:"Ellis",lucy:"Lucy",julian:"Julian"};
 const SL_KCOL  = {lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#c45e1a"};
@@ -361,18 +369,10 @@ const ld=k=>{ try{return JSON.parse(localStorage.getItem(k));}catch(e){return nu
 function boot() {
   const t=ld(WK+"_tasks"); if(t) weekData.tasks=t;
   const m=ld(WK+"_maggie"); if(m) weekData.maggie=m;
-  const meta=ld(WK+"_meta"); if(meta){ weekData.week=weekData.week||meta.week; applyWeekMeta(meta); }
   checked=ld(WK+"_checked")||{};
   slState=ld(WK+"_sl")||{};
   supplies=ld(WK+"_supplies")||{};
   try{ const a=localStorage.getItem("ha_archive"); if(a) archive=JSON.parse(a); }catch(e){}
-}
-
-// ── WEEK META ─────────────────────────────────────────────────────
-function applyWeekMeta(d){
-  if(d.dates&&typeof d.dates==="object") DAY_DT=d.dates;
-  if(d.constraints&&typeof d.constraints==="object") CONSTRAINT=d.constraints; else CONSTRAINT={};
-  if(d.windows&&typeof d.windows==="object") WIN=d.windows; else WIN={default:"School 10:00 AM–4:15 PM · Theater 4:30 Mon–Thu"};
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────
@@ -614,19 +614,6 @@ function renderSchedule(el){
 
   if(CONSTRAINT[day]) h+='<div class="constraint-alert">'+CONSTRAINT[day]+'</div>';
 
-  // ── CARRIED OVER TRAY ──
-  if(carriedOver.length){
-    h+='<div style="margin:10px 12px 0;border-left:4px solid #6366f1;background:#eef2ff;border-radius:0 10px 10px 0;padding:10px 12px">';
-    h+='<div style="font-size:11px;font-weight:800;color:#4338ca;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.4px">📋 Carried Over</div>';
-    carriedOver.forEach(t=>{
-      // Extract original day name from detail string
-      const fromMatch=t.detail.match(/Cascaded from (\w+)/);
-      const fromDay=fromMatch?fromMatch[1]:"previous day";
-      h+=taskCard(t, fromDay);
-    });
-    h+='</div>';
-  }
-
   // ── SCHEDULE LOCK CHECK ──────────────────────────────────────────
   const unlocked = isScheduleUnlocked(kid, day);
   const lockKidName = (kid==="all") ? "everyone" : cap(kid);
@@ -634,12 +621,22 @@ function renderSchedule(el){
     ? "All four kids need to check off their Morning slot in Skylight above."
     : cap(kid)+"'s Morning slot needs to be checked off in Skylight above.";
 
-  // Wrap the blurred/locked section
-  const innerStart = unlocked
-    ? '<div class="time-slots">'
-    : '<div class="sched-locked-wrap"><div class="sched-blur"><div class="time-slots">';
+  // Open blur wrapper — both carried-over tray AND time-slots live inside it
+  if(!unlocked) h+='<div class="sched-locked-wrap"><div class="sched-blur">';
 
-  h += innerStart;
+  // ── CARRIED OVER TRAY (blurred when locked) ──
+  if(carriedOver.length){
+    h+='<div style="margin:10px 12px 0;border-left:4px solid #6366f1;background:#eef2ff;border-radius:0 10px 10px 0;padding:10px 12px">';
+    h+='<div style="font-size:11px;font-weight:800;color:#4338ca;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.4px">📋 Carried Over</div>';
+    carriedOver.forEach(t=>{
+      const fromMatch=t.detail.match(/Cascaded from (\w+)/);
+      const fromDay=fromMatch?fromMatch[1]:"previous day";
+      h+=taskCard(t, fromDay);
+    });
+    h+='</div>';
+  }
+
+  h+='<div class="time-slots">';
   let lunchDone=false;
   times.forEach(t=>{
     if(!lunchDone&&toMin(t)>=14*60){ h+=lunchBlock(); lunchDone=true; }
@@ -651,7 +648,8 @@ function renderSchedule(el){
 
   if(!unlocked){
     // Close the blurred inner wrapper, then add the overlay
-    h+='</div></div>'; // close .time-slots and .sched-blur
+    h+='</div>'; // close .time-slots
+    h+='</div>'; // close .sched-blur
     const momPin = kid==="mom"
       ? '<div id="mom-pin-wrap" style="margin-top:12px" onclick="event.stopPropagation()">'+
         '<input id="mom-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="Mom PIN" '+
@@ -713,16 +711,14 @@ function taskCard(t, fromDay){
 
 // ── TASK TAP ──────────────────────────────────────────────────────
 function tapTask(id){
-  const t=weekData.tasks.find(x=>x.id===id); if(!t)return;
-  const isDone=!!checked[id];
+  const t=weekData.tasks.find(x=>x.id===id); if(!t||checked[id])return;
   const future=DAYS.indexOf(t.day)>DAYS.indexOf(day);
   pendingId=id;
   document.getElementById("dlg-title").textContent=t.title;
-  document.getElementById("dlg-detail").textContent=isDone?"Completed: "+checked[id]:t.detail;
+  document.getElementById("dlg-detail").textContent=t.detail;
   const btn=document.getElementById("dlg-ok");
-  const unBtn=document.getElementById("dlg-uncheck");
-  if(isDone){ btn.style.display="none"; unBtn.style.display="block"; }
-  else { btn.style.display="block"; btn.textContent=future?"Mark Done (Future Day)":"✓ Mark Done"; btn.style.background=future?"#f59e0b":"#16a34a"; unBtn.style.display="none"; }
+  btn.textContent=future?"Mark Done (Future Day)":"✓ Mark Done";
+  btn.style.background=future?"#f59e0b":"#16a34a";
   document.getElementById("dlg").style.display="flex";
 }
 document.getElementById("dlg-ok").onclick=()=>{
@@ -733,15 +729,6 @@ document.getElementById("dlg-ok").onclick=()=>{
   const hist=ld(WK+"_history")||{};
   const t=weekData.tasks.find(x=>x.id===pendingId);
   if(t){ hist[pendingId]={id:pendingId,title:t.title,who:t.who,day:t.day,ts}; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+pendingId).set(hist[pendingId]); }
-  closeDlg(); renderAll();
-};
-document.getElementById("dlg-uncheck").onclick=()=>{
-  if(!pendingId)return;
-  delete checked[pendingId]; sv(WK+"_checked",checked);
-  if(db) db.ref(WK+"/checked/"+pendingId).remove();
-  const hist=ld(WK+"_history")||{};
-  delete hist[pendingId]; sv(WK+"_history",hist);
-  if(db) db.ref(WK+"/history/"+pendingId).remove();
   closeDlg(); renderAll();
 };
 function closeDlg(){ document.getElementById("dlg").style.display="none"; pendingId=null; }
@@ -1395,47 +1382,49 @@ function loadJson(){
     try{
       const d=JSON.parse(e.target.result);
 
+      // ── ARCHIVE current week before wiping ──────────────────────
+      const currentHist=ld(WK+"_history")||{};
+      const currentTasks=weekData.tasks||[];
+      const currentLabel=weekData.week||WK;
+      const hasAnything=Object.keys(currentHist).length>0||currentTasks.length>0;
+      if(hasAnything){
+        const archiveEntry={
+          weekLabel: currentLabel,
+          archivedAt: nowTs(),
+          history: currentHist,
+          tasks: currentTasks,
+          checked: checked||{}
+        };
+        archive[currentLabel]=archiveEntry;
+        try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
+        if(db){
+          db.ref("archive/"+currentLabel).set(archiveEntry);
+        }
+      }
+
       // ── Detect same-week update vs new week ────────────────────
-      const activeWeek=weekData.week||(ld(WK+"_meta")||{}).week||WK;
-      const isSameWeek=!!(d.week&&d.week===activeWeek);
+      const isSameWeek = (d.week && d.week === (weekData.week || WK));
 
       if(isSameWeek){
-        // Preserve checked + history — use whichever copy is more complete
-        const memChecked=checked||{};
-        const storedChecked=ld(activeWeek+"_checked")||ld(WK+"_checked")||{};
-        const prevChecked=Object.keys(memChecked).length>=Object.keys(storedChecked).length?memChecked:storedChecked;
-        const prevHist=ld(activeWeek+"_history")||ld(WK+"_history")||{};
-        weekData=d; checked=prevChecked;
-        applyWeekMeta(d);
-        sv(WK+"_tasks",d.tasks); sv(WK+"_maggie",d.maggie||null);
-        sv(WK+"_checked",prevChecked); sv(WK+"_history",prevHist);
-        sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
+        const prevChecked = checked || {};
+        weekData = d;
+        checked = prevChecked;
+        sv(WK+"_tasks", d.tasks);
+        sv(WK+"_maggie", d.maggie || null);
+        sv(WK+"_checked", prevChecked);
         if(db){
-          const obj={};d.tasks.forEach(t=>obj[t.id]=t);
+          const obj={}; d.tasks.forEach(t=>obj[t.id]=t);
           db.ref(WK+"/tasks").set(obj);
-          if(Object.keys(prevChecked).length)db.ref(WK+"/checked").set(prevChecked);
-          if(Object.keys(prevHist).length)db.ref(WK+"/history").set(prevHist);
-          if(d.maggie)db.ref(WK+"/maggie").set(d.maggie);
+          db.ref(WK+"/checked").set(prevChecked);
+          if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
         }
-        renderAll(); runCascade();
+        renderAll();
         document.getElementById("admin-msg").textContent="✅ "+d.week+" updated — "+d.tasks.length+" tasks. Completions & history preserved.";
       } else {
-        // Archive current week then wipe for new week
-        const currentHist=ld(WK+"_history")||{};
-        const currentTasks=weekData.tasks||[];
-        const hasAnything=Object.keys(currentHist).length>0||currentTasks.length>0;
-        if(hasAnything){
-          const archiveEntry={weekLabel:activeWeek,archivedAt:nowTs(),history:currentHist,tasks:currentTasks,checked:checked||{}};
-          archive[activeWeek]=archiveEntry;
-          try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
-          if(db)db.ref("archive/"+activeWeek).set(archiveEntry);
-        }
         weekData=d; checked={}; slState={};
-        applyWeekMeta(d);
         sv(WK+"_tasks",d.tasks); sv(WK+"_maggie",d.maggie||null);
         sv(WK+"_checked",{}); sv(WK+"_sl",{});
         sv(WK+"_history",{});
-        sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
         if(db){
           const obj={};d.tasks.forEach(t=>obj[t.id]=t);
           db.ref(WK+"/tasks").set(obj);
@@ -1444,7 +1433,7 @@ function loadJson(){
           db.ref(WK+"/history").set({});
           if(d.maggie)db.ref(WK+"/maggie").set(d.maggie);
         }
-        renderAll(); runCascade();
+        renderAll();
         document.getElementById("admin-msg").textContent="✅ "+d.week+" loaded — "+d.tasks.length+" tasks. Previous week archived.";
       }
     }catch(err){document.getElementById("admin-msg").textContent="❌ "+err.message;}
@@ -1461,60 +1450,55 @@ function toggleAdmin(){
 // ── ALERTS + CASCADE ──────────────────────────────────────────────
 setInterval(()=>{ if(tab==="schedule")renderSkylight(); },60000);
 
-// runCascade: safe to call at any time — duplicate-proof by task id.
-// Each original task can only ever produce one "_c" copy (checked via id suffix).
-// So opening the app 10 times will never create 10 copies of the same cascaded task.
-// Runs at boot (catches up if app was closed overnight) and once per hour as backup.
-function runCascade(){
+setInterval(()=>{
+  const n=new Date(); if(n.getHours()<22)return;
+  const dm={1:"monday",2:"tuesday",3:"wednesday",4:"thursday",5:"friday",6:"saturday"};
   const nextDay={monday:"tuesday",tuesday:"wednesday",wednesday:"thursday",thursday:"friday",friday:"saturday"};
-  const dayJsIdx={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
-  const todayIdx=new Date().getDay();
-  const dayOrder=["monday","tuesday","wednesday","thursday","friday","saturday"];
+  const td=dm[n.getDay()]; if(!td)return;
+  const last=ld("lastProcDay"); if(last===td)return;
+  sv("lastProcDay",td); if(db)db.ref("lastProcDay").set(td);
 
-  let changed=false;
   const hist=ld(WK+"_history")||{};
+  const unchecked=weekData.tasks.filter(t=>t.day===td&&t.cascade&&!checked[t.id]);
 
-  dayOrder.forEach(td=>{
-    // Only look at days strictly before today (already over)
-    if(dayJsIdx[td]>=todayIdx) return;
+  unchecked.forEach(t=>{
+    // Log in history as missed on original day
+    hist[t.id+"_flag"]={id:t.id,title:t.title,who:t.who,day:td,flag:"cascade_missed",ts:nowTs()};
 
-    const unchecked=weekData.tasks.filter(t=>t.day===td&&t.cascade&&!checked[t.id]);
-    unchecked.forEach(t=>{
-      // Flag missed in history (only once)
-      if(!hist[t.id+"_flag"]){
-        hist[t.id+"_flag"]={id:t.id,title:t.title,who:t.who,day:td,flag:"cascade_missed",ts:nowTs()};
-        changed=true;
-      }
-      const nd=nextDay[td]; if(!nd) return;
-      // Duplicate guard — if a _c copy already exists anywhere, skip
-      if(weekData.tasks.some(x=>x.id===t.id+"_c")) return;
+    // Copy task to next school day if one exists
+    const nd=nextDay[td]; if(!nd)return;
 
-      const cascadedTask={
-        ...t,
-        id:t.id+"_c",
-        day:nd,
-        time:t.mom==="required"?"2:00 PM":t.time,
-        detail:t.detail+" (Cascaded from "+td.charAt(0).toUpperCase()+td.slice(1)+")",
-        cascade:true
-      };
-      if(nd==="friday"&&t.mom==="required") cascadedTask.time="2:00 PM";
-      weekData.tasks.push(cascadedTask);
-      changed=true;
-    });
+    // Don't duplicate — check if already cascaded
+    const alreadyCascaded=weekData.tasks.some(x=>x.id===t.id+"_c"&&x.day===nd);
+    if(alreadyCascaded)return;
+
+    const cascadedTask={
+      ...t,
+      id: t.id+"_c",
+      day: nd,
+      time: t.mom==="required" ? "2:00 PM" : t.time, // Mom Required tasks default to afternoon
+      detail: t.detail+" (Cascaded from "+td.charAt(0).toUpperCase()+td.slice(1)+")",
+      cascade: true
+    };
+
+    // For Maggie days (Friday) — never cascade Mom Required into Maggie window
+    if(nd==="friday" && t.mom==="required"){
+      cascadedTask.time="12:00 PM"; // after Mom returns
+    }
+
+    weekData.tasks.push(cascadedTask);
   });
 
-  if(changed){
-    sv(WK+"_tasks",weekData.tasks);
-    sv(WK+"_history",hist);
-    if(db){
-      const obj={};weekData.tasks.forEach(t=>obj[t.id]=t);
-      db.ref(WK+"/tasks").set(obj);
-      db.ref(WK+"/history").update(hist);
-    }
-    renderAll();
+  // Save updated task list
+  sv(WK+"_tasks", weekData.tasks);
+  sv(WK+"_history", hist);
+  if(db){
+    const obj={};weekData.tasks.forEach(t=>obj[t.id]=t);
+    db.ref(WK+"/tasks").set(obj);
+    db.ref(WK+"/history").update(hist);
   }
-}
-setInterval(runCascade,3600000); // hourly backup in case app stays open past midnight
+  renderAll();
+},60000);
 
 setInterval(()=>{
   const n=new Date(); if(n.getDay()!==6||n.getHours()<20)return;
@@ -1778,7 +1762,7 @@ window.addEventListener("scroll",()=>{
 });
 
 // ── INIT ──────────────────────────────────────────────────────────
-boot(); initFb(); renderAll(); runCascade();
+boot(); initFb(); renderAll();
 </script>
 </body>
 </html>
