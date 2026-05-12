@@ -310,7 +310,7 @@ const FB_CFG = {
 };
 
 // ── CONSTANTS ────────────────────────────────────────────────────
-const WK = "week3";
+let WK = localStorage.getItem("ha_active_wk") || "week3";
 const DAYS = ["monday","tuesday","wednesday","thursday","friday","saturday"];
 const DAY_COL = {monday:"#1e3a5f",tuesday:"#2d5a3d",wednesday:"#5b3a8c",thursday:"#c45e1a",friday:"#b5394a",saturday:"#1a6b5a"};
 const DAY_LBL = {monday:"Monday",tuesday:"Tuesday",wednesday:"Wednesday",thursday:"Thursday",friday:"Friday",saturday:"Saturday"};
@@ -359,9 +359,11 @@ const sv=(k,v)=>{ try{localStorage.setItem(k,JSON.stringify(v));}catch(e){} };
 const ld=k=>{ try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;} };
 
 function boot() {
+  // WK is already set from localStorage at declaration — use it for all keys
   const t=ld(WK+"_tasks"); if(t) weekData.tasks=t;
+  weekData.week=WK;
   const m=ld(WK+"_maggie"); if(m) weekData.maggie=m;
-  const meta=ld(WK+"_meta"); if(meta){ weekData.week=weekData.week||meta.week; applyWeekMeta(meta); }
+  const meta=ld(WK+"_meta"); if(meta) applyWeekMeta(meta);
   checked=ld(WK+"_checked")||{};
   slState=ld(WK+"_sl")||{};
   supplies=ld(WK+"_supplies")||{};
@@ -622,7 +624,7 @@ function renderSchedule(el){
     ? "All four kids need to check off their Morning slot in Skylight above."
     : cap(kid)+"'s Morning slot needs to be checked off in Skylight above.";
 
-  // Open blur wrapper — carried-over tray AND time-slots are both inside it
+  // Open blur wrapper — carried-over tray AND time-slots live inside it
   if(!unlocked) h+='<div class="sched-locked-wrap"><div class="sched-blur">';
 
   // ── CARRIED OVER TRAY (blurred when locked) ──
@@ -1395,29 +1397,35 @@ function loadJson(){
   r.onload=e=>{
     try{
       const d=JSON.parse(e.target.result);
+      if(!d.week||!d.tasks){document.getElementById("admin-msg").textContent="❌ JSON missing week or tasks field.";return;}
 
-      // ── Snapshot state IMMEDIATELY — before Firebase listener can overwrite ──
-      // localStorage is synchronous and immune to Firebase .on() echoes.
-      // Use whichever of memory vs localStorage has more entries.
-      const memChecked=checked||{};
-      const lsChecked=ld(WK+"_checked")||{};
-      const snapChecked=Object.keys(lsChecked).length>=Object.keys(memChecked).length?lsChecked:memChecked;
-      const snapHist=ld(WK+"_history")||{};
-      const snapTasks=weekData.tasks||[];
-      const snapLabel=weekData.week||WK;
-
-      // ── Detect same-week vs new week ────────────────────────────
-      const isSameWeek=!!(d.week&&d.week===snapLabel);
+      // ── isSameWeek: compare incoming week label to what's active ──
+      // Read activeWK from localStorage — immune to Firebase async echoes
+      const activeWK=localStorage.getItem("ha_active_wk")||WK;
+      const isSameWeek=!!(d.week===activeWK);
 
       if(isSameWeek){
-        // Same week: restore snapshot, update tasks/meta, never archive
-        if(d.supplies&&Array.isArray(d.supplies)){ SUP=d.supplies; sv(WK+"_supplies_def",d.supplies); }
+        // ── SAME WEEK — preserve everything, just update tasks/meta ──
+        // Snapshot checked + history from localStorage RIGHT NOW before
+        // any Firebase listener can overwrite them with stale data
+        const lsChecked=ld(activeWK+"_checked")||{};
+        const memChecked=checked||{};
+        const snapChecked=Object.keys(lsChecked).length>=Object.keys(memChecked).length?lsChecked:memChecked;
+        const snapHist=ld(activeWK+"_history")||{};
+
+        // Update WK and all state
+        WK=activeWK;
+        weekData=d; checked=snapChecked;
+        if(d.supplies&&Array.isArray(d.supplies)){SUP=d.supplies;sv(WK+"_supplies_def",d.supplies);}
         if(d.supplyCategories&&Array.isArray(d.supplyCategories)) SUP_CATS=d.supplyCategories;
         applyWeekMeta(d);
-        weekData=d; checked=snapChecked;
-        sv(WK+"_tasks",d.tasks); sv(WK+"_maggie",d.maggie||null);
-        sv(WK+"_checked",snapChecked); sv(WK+"_history",snapHist);
+
+        sv(WK+"_tasks",d.tasks);
+        sv(WK+"_maggie",d.maggie||null);
+        sv(WK+"_checked",snapChecked);
+        sv(WK+"_history",snapHist);
         sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
+
         if(db){
           const obj={};d.tasks.forEach(t=>obj[t.id]=t);
           db.ref(WK+"/tasks").set(obj);
@@ -1427,22 +1435,36 @@ function loadJson(){
         }
         renderAll(); runCascade();
         document.getElementById("admin-msg").textContent="✅ "+d.week+" updated — "+d.tasks.length+" tasks. Completions & history preserved.";
+
       } else {
-        // New week: archive current state then wipe
+        // ── NEW WEEK — archive old, wipe state, load fresh ──
+        const oldWK=activeWK;
+        const snapHist=ld(oldWK+"_history")||{};
+        const snapTasks=weekData.tasks||[];
+        const snapChecked=ld(oldWK+"_checked")||checked||{};
         const hasAnything=Object.keys(snapHist).length>0||snapTasks.length>0;
         if(hasAnything){
-          const entry={weekLabel:snapLabel,archivedAt:nowTs(),history:snapHist,tasks:snapTasks,checked:snapChecked};
-          archive[snapLabel]=entry;
+          const entry={weekLabel:oldWK,archivedAt:nowTs(),history:snapHist,tasks:snapTasks,checked:snapChecked};
+          archive[oldWK]=entry;
           try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
-          if(db) db.ref("archive/"+snapLabel).set(entry);
+          if(db) db.ref("archive/"+oldWK).set(entry);
         }
-        if(d.supplies&&Array.isArray(d.supplies)){ SUP=d.supplies; sv(WK+"_supplies_def",d.supplies); }
+
+        // Switch WK to new week — all storage keys now follow d.week
+        WK=d.week;
+        localStorage.setItem("ha_active_wk",WK);
+        weekData=d; checked={}; slState={};
+        if(d.supplies&&Array.isArray(d.supplies)){SUP=d.supplies;sv(WK+"_supplies_def",d.supplies);}
         if(d.supplyCategories&&Array.isArray(d.supplyCategories)) SUP_CATS=d.supplyCategories;
         applyWeekMeta(d);
-        weekData=d; checked={}; slState={};
-        sv(WK+"_tasks",d.tasks); sv(WK+"_maggie",d.maggie||null);
-        sv(WK+"_checked",{}); sv(WK+"_sl",{}); sv(WK+"_history",{});
+
+        sv(WK+"_tasks",d.tasks);
+        sv(WK+"_maggie",d.maggie||null);
+        sv(WK+"_checked",{});
+        sv(WK+"_sl",{});
+        sv(WK+"_history",{});
         sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
+
         if(db){
           const obj={};d.tasks.forEach(t=>obj[t.id]=t);
           db.ref(WK+"/tasks").set(obj);
@@ -1468,9 +1490,8 @@ function toggleAdmin(){
 // ── ALERTS + CASCADE ──────────────────────────────────────────────
 setInterval(()=>{ if(tab==="schedule")renderSkylight(); },60000);
 
-// runCascade — safe to call at boot or any time.
-// Duplicate-proof: each task can only ever get one _c copy (id-based guard).
-// Runs at boot to catch up if app was closed overnight.
+// runCascade — safe to call at boot or anytime.
+// Uses _c suffix as duplicate guard — a task can only ever get one cascaded copy.
 function runCascade(){
   const nextDay={monday:"tuesday",tuesday:"wednesday",wednesday:"thursday",thursday:"friday",friday:"saturday"};
   const dayJsIdx={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
@@ -1479,7 +1500,7 @@ function runCascade(){
   let changed=false;
   const hist=ld(WK+"_history")||{};
   dayOrder.forEach(td=>{
-    if(dayJsIdx[td]>=todayIdx) return;
+    if(dayJsIdx[td]>=todayIdx) return; // only past days
     const unchecked=weekData.tasks.filter(t=>t.day===td&&t.cascade&&!checked[t.id]);
     unchecked.forEach(t=>{
       if(!hist[t.id+"_flag"]){
@@ -1487,7 +1508,7 @@ function runCascade(){
         changed=true;
       }
       const nd=nextDay[td]; if(!nd) return;
-      if(weekData.tasks.some(x=>x.id===t.id+"_c")) return;
+      if(weekData.tasks.some(x=>x.id===t.id+"_c")) return; // duplicate guard
       weekData.tasks.push({...t,id:t.id+"_c",day:nd,
         time:(t.mom==="required"||nd==="friday")?"2:00 PM":t.time,
         detail:t.detail+" (Cascaded from "+td.charAt(0).toUpperCase()+td.slice(1)+")",cascade:true});
@@ -1496,7 +1517,8 @@ function runCascade(){
   });
   if(changed){
     sv(WK+"_tasks",weekData.tasks); sv(WK+"_history",hist);
-    if(db){ const obj={};weekData.tasks.forEach(t=>obj[t.id]=t); db.ref(WK+"/tasks").set(obj); db.ref(WK+"/history").update(hist); }
+    if(db){ const obj={};weekData.tasks.forEach(t=>obj[t.id]=t);
+      db.ref(WK+"/tasks").set(obj); db.ref(WK+"/history").update(hist); }
     renderAll();
   }
 }
