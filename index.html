@@ -292,6 +292,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
     <div class="dlg-actions">
       <button class="dlg-cancel" onclick="closeDlg()">Cancel</button>
       <button class="dlg-ok" id="dlg-ok">Mark Done</button>
+      <button class="dlg-uncheck" id="dlg-uncheck" style="display:none;flex:1;padding:12px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;font-family:'DM Sans',sans-serif;border:none;background:#f3f4f6;color:#374151">&#x21A9; Unmark</button>
     </div>
   </div>
 </div>
@@ -313,16 +314,7 @@ const WK = "week3";
 const DAYS = ["monday","tuesday","wednesday","thursday","friday","saturday"];
 const DAY_COL = {monday:"#1e3a5f",tuesday:"#2d5a3d",wednesday:"#5b3a8c",thursday:"#c45e1a",friday:"#b5394a",saturday:"#1a6b5a"};
 const DAY_LBL = {monday:"Monday",tuesday:"Tuesday",wednesday:"Wednesday",thursday:"Thursday",friday:"Friday",saturday:"Saturday"};
-const DAY_DT  = {monday:"Apr 28",tuesday:"Apr 29",wednesday:"Apr 30",thursday:"May 1",friday:"May 2",saturday:"May 3"};
-const CONSTRAINT = {
-  thursday:"⚠️ Co-Op 10 AM–2 PM · School 2–4:15 PM · Theater 4:30 PM",
-  friday:"🌸 Maggie 8:30–12 PM · No Mom Required until noon"
-};
-const WIN = {
-  thursday:"Co-Op 10–2 · School 2:00–4:15 · Theater 4:30",
-  friday:"Maggie 8:30–12 · School starts noon",
-  default:"School 10:00 AM–4:15 PM · Theater 4:30 Mon–Thu"
-};
+let DAY_DT={}; let CONSTRAINT={}; let WIN={default:"School 10:00 AM–4:15 PM · Theater 4:30 Mon–Thu"};
 const SL_KIDS  = ["lincoln","ellis","lucy","julian"];
 const SL_KLBL  = {lincoln:"Lincoln",ellis:"Ellis",lucy:"Lucy",julian:"Julian"};
 const SL_KCOL  = {lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#c45e1a"};
@@ -348,7 +340,7 @@ function initFb() {
       document.getElementById("fb-dot").className="fb-dot"+(on?"":" off");
       document.getElementById("fb-lbl").textContent=on?"Live":"Offline";
     });
-    db.ref(WK+"/checked").on("value",s=>{ checked=s.val()||{}; sv(WK+"_checked",checked); renderAll(); });
+    db.ref(WK+"/checked").on("value",s=>{ const v=s.val()||{}; if(Object.keys(v).length===0&&Object.keys(checked).length>0)return; checked=v; sv(WK+"_checked",checked); renderAll(); });
     db.ref(WK+"/sl").on("value",s=>{ slState=s.val()||{}; renderSkylight(); });
     db.ref(WK+"/supplies").on("value",s=>{ supplies=s.val()||{}; if(tab==="supplies") renderSupplies(); });
     db.ref(WK+"/history").on("value",s=>{ const fbHist=s.val()||{}; const local=ld(WK+"_history")||{}; const merged={...local,...fbHist}; sv(WK+"_history",merged); if(tab==="history"){ const el=document.getElementById("content"); if(el) renderHistory(el); } });
@@ -369,10 +361,19 @@ const ld=k=>{ try{return JSON.parse(localStorage.getItem(k));}catch(e){return nu
 function boot() {
   const t=ld(WK+"_tasks"); if(t) weekData.tasks=t;
   const m=ld(WK+"_maggie"); if(m) weekData.maggie=m;
+  const meta=ld(WK+"_meta"); if(meta){ weekData.week=weekData.week||meta.week; applyWeekMeta(meta); }
   checked=ld(WK+"_checked")||{};
   slState=ld(WK+"_sl")||{};
   supplies=ld(WK+"_supplies")||{};
+  const savedSupDef=ld(WK+"_supplies_def"); if(savedSupDef&&Array.isArray(savedSupDef)) SUP=savedSupDef;
   try{ const a=localStorage.getItem("ha_archive"); if(a) archive=JSON.parse(a); }catch(e){}
+}
+
+// ── WEEK META ─────────────────────────────────────────────────────
+function applyWeekMeta(d){
+  if(d.dates&&typeof d.dates==="object") DAY_DT=d.dates;
+  if(d.constraints&&typeof d.constraints==="object") CONSTRAINT=d.constraints; else CONSTRAINT={};
+  if(d.windows&&typeof d.windows==="object") WIN=d.windows; else WIN={default:"School 10:00 AM–4:15 PM · Theater 4:30 Mon–Thu"};
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────
@@ -621,7 +622,7 @@ function renderSchedule(el){
     ? "All four kids need to check off their Morning slot in Skylight above."
     : cap(kid)+"'s Morning slot needs to be checked off in Skylight above.";
 
-  // Open blur wrapper — both carried-over tray AND time-slots live inside it
+  // Open blur wrapper — carried-over tray AND time-slots are both inside it
   if(!unlocked) h+='<div class="sched-locked-wrap"><div class="sched-blur">';
 
   // ── CARRIED OVER TRAY (blurred when locked) ──
@@ -649,7 +650,7 @@ function renderSchedule(el){
   if(!unlocked){
     // Close the blurred inner wrapper, then add the overlay
     h+='</div>'; // close .time-slots
-    h+='</div>'; // close .sched-blur
+    h+='</div></div>'; // close .sched-blur and .sched-locked-wrap
     const momPin = kid==="mom"
       ? '<div id="mom-pin-wrap" style="margin-top:12px" onclick="event.stopPropagation()">'+
         '<input id="mom-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="Mom PIN" '+
@@ -711,14 +712,16 @@ function taskCard(t, fromDay){
 
 // ── TASK TAP ──────────────────────────────────────────────────────
 function tapTask(id){
-  const t=weekData.tasks.find(x=>x.id===id); if(!t||checked[id])return;
+  const t=weekData.tasks.find(x=>x.id===id); if(!t)return;
+  const isDone=!!checked[id];
   const future=DAYS.indexOf(t.day)>DAYS.indexOf(day);
   pendingId=id;
   document.getElementById("dlg-title").textContent=t.title;
-  document.getElementById("dlg-detail").textContent=t.detail;
+  document.getElementById("dlg-detail").textContent=isDone?"Completed: "+checked[id]:t.detail;
   const btn=document.getElementById("dlg-ok");
-  btn.textContent=future?"Mark Done (Future Day)":"✓ Mark Done";
-  btn.style.background=future?"#f59e0b":"#16a34a";
+  const unBtn=document.getElementById("dlg-uncheck");
+  if(isDone){ btn.style.display="none"; unBtn.style.display="block"; }
+  else { btn.style.display="block"; btn.textContent=future?"Mark Done (Future Day)":"✓ Mark Done"; btn.style.background=future?"#f59e0b":"#16a34a"; unBtn.style.display="none"; }
   document.getElementById("dlg").style.display="flex";
 }
 document.getElementById("dlg-ok").onclick=()=>{
@@ -729,6 +732,15 @@ document.getElementById("dlg-ok").onclick=()=>{
   const hist=ld(WK+"_history")||{};
   const t=weekData.tasks.find(x=>x.id===pendingId);
   if(t){ hist[pendingId]={id:pendingId,title:t.title,who:t.who,day:t.day,ts}; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+pendingId).set(hist[pendingId]); }
+  closeDlg(); renderAll();
+};
+document.getElementById("dlg-uncheck").onclick=()=>{
+  if(!pendingId)return;
+  delete checked[pendingId]; sv(WK+"_checked",checked);
+  if(db) db.ref(WK+"/checked/"+pendingId).remove();
+  const hist=ld(WK+"_history")||{};
+  delete hist[pendingId]; sv(WK+"_history",hist);
+  if(db) db.ref(WK+"/history/"+pendingId).remove();
   closeDlg(); renderAll();
 };
 function closeDlg(){ document.getElementById("dlg").style.display="none"; pendingId=null; }
@@ -1174,7 +1186,7 @@ function mpHandleUpload(event) {
 }
 
 // ── SUPPLIES ──────────────────────────────────────────────────────
-const SUP=[
+let SUP_DEFAULT=[
   {id:"s1",name:"AAS Level 1 Book",detail:"Lincoln spelling — every school day",days:["monday","tuesday","wednesday","thursday","friday"],cat:"Books and Workbooks"},
   {id:"s2",name:"Letter Tiles (AAS)",detail:"Tile review and word building daily",days:["monday","tuesday","wednesday","thursday","friday"],cat:"Books and Workbooks"},
   {id:"s3",name:"Singapore Math 5A",detail:"Lincoln Ch.3 this week",days:["monday","tuesday","wednesday","thursday","friday"],cat:"Books and Workbooks"},
@@ -1205,7 +1217,9 @@ const SUP=[
   {id:"s28",name:"Bubble wand + solution",detail:"Julian + Lucy afternoons",days:["tuesday","thursday"],cat:"Music Movement and Outdoor"},
   {id:"s29",name:"Picture books 5–10",detail:"Julian quiet time + Lucy reads to Julian",days:["monday","tuesday","wednesday","thursday","friday"],cat:"Books and Quiet Time"},
 ];
-const SUP_CATS=["Books and Workbooks","Tech and Prep","Art and Craft","Building and Play","Sensory and Science","Games and Puzzles","Music Movement and Outdoor","Playdough Station","Books and Quiet Time"];
+const SUP_CATS_DEFAULT=["Books and Workbooks","Tech and Prep","Art and Craft","Building and Play","Sensory and Science","Games and Puzzles","Music Movement and Outdoor","Playdough Station","Books and Quiet Time"];
+let SUP=[...SUP_DEFAULT];
+let SUP_CATS=[...SUP_CATS_DEFAULT];
 
 function renderSupplies(el){
   const con=el||document.getElementById("content"); if(!con)return;
@@ -1382,58 +1396,62 @@ function loadJson(){
     try{
       const d=JSON.parse(e.target.result);
 
-      // ── ARCHIVE current week before wiping ──────────────────────
-      const currentHist=ld(WK+"_history")||{};
-      const currentTasks=weekData.tasks||[];
-      const currentLabel=weekData.week||WK;
-      const hasAnything=Object.keys(currentHist).length>0||currentTasks.length>0;
-      if(hasAnything){
-        const archiveEntry={
-          weekLabel: currentLabel,
-          archivedAt: nowTs(),
-          history: currentHist,
-          tasks: currentTasks,
-          checked: checked||{}
-        };
-        archive[currentLabel]=archiveEntry;
-        try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
-        if(db){
-          db.ref("archive/"+currentLabel).set(archiveEntry);
-        }
-      }
+      // ── Snapshot state IMMEDIATELY — before Firebase listener can overwrite ──
+      // localStorage is synchronous and immune to Firebase .on() echoes.
+      // Use whichever of memory vs localStorage has more entries.
+      const memChecked=checked||{};
+      const lsChecked=ld(WK+"_checked")||{};
+      const snapChecked=Object.keys(lsChecked).length>=Object.keys(memChecked).length?lsChecked:memChecked;
+      const snapHist=ld(WK+"_history")||{};
+      const snapTasks=weekData.tasks||[];
+      const snapLabel=weekData.week||WK;
 
-      // ── Detect same-week update vs new week ────────────────────
-      const isSameWeek = (d.week && d.week === (weekData.week || WK));
+      // ── Detect same-week vs new week ────────────────────────────
+      const isSameWeek=!!(d.week&&d.week===snapLabel);
 
       if(isSameWeek){
-        const prevChecked = checked || {};
-        weekData = d;
-        checked = prevChecked;
-        sv(WK+"_tasks", d.tasks);
-        sv(WK+"_maggie", d.maggie || null);
-        sv(WK+"_checked", prevChecked);
+        // Same week: restore snapshot, update tasks/meta, never archive
+        if(d.supplies&&Array.isArray(d.supplies)){ SUP=d.supplies; sv(WK+"_supplies_def",d.supplies); }
+        if(d.supplyCategories&&Array.isArray(d.supplyCategories)) SUP_CATS=d.supplyCategories;
+        applyWeekMeta(d);
+        weekData=d; checked=snapChecked;
+        sv(WK+"_tasks",d.tasks); sv(WK+"_maggie",d.maggie||null);
+        sv(WK+"_checked",snapChecked); sv(WK+"_history",snapHist);
+        sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
         if(db){
-          const obj={}; d.tasks.forEach(t=>obj[t.id]=t);
+          const obj={};d.tasks.forEach(t=>obj[t.id]=t);
           db.ref(WK+"/tasks").set(obj);
-          db.ref(WK+"/checked").set(prevChecked);
+          if(Object.keys(snapChecked).length) db.ref(WK+"/checked").set(snapChecked);
+          if(Object.keys(snapHist).length) db.ref(WK+"/history").set(snapHist);
           if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
         }
-        renderAll();
+        renderAll(); runCascade();
         document.getElementById("admin-msg").textContent="✅ "+d.week+" updated — "+d.tasks.length+" tasks. Completions & history preserved.";
       } else {
+        // New week: archive current state then wipe
+        const hasAnything=Object.keys(snapHist).length>0||snapTasks.length>0;
+        if(hasAnything){
+          const entry={weekLabel:snapLabel,archivedAt:nowTs(),history:snapHist,tasks:snapTasks,checked:snapChecked};
+          archive[snapLabel]=entry;
+          try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
+          if(db) db.ref("archive/"+snapLabel).set(entry);
+        }
+        if(d.supplies&&Array.isArray(d.supplies)){ SUP=d.supplies; sv(WK+"_supplies_def",d.supplies); }
+        if(d.supplyCategories&&Array.isArray(d.supplyCategories)) SUP_CATS=d.supplyCategories;
+        applyWeekMeta(d);
         weekData=d; checked={}; slState={};
         sv(WK+"_tasks",d.tasks); sv(WK+"_maggie",d.maggie||null);
-        sv(WK+"_checked",{}); sv(WK+"_sl",{});
-        sv(WK+"_history",{});
+        sv(WK+"_checked",{}); sv(WK+"_sl",{}); sv(WK+"_history",{});
+        sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
         if(db){
           const obj={};d.tasks.forEach(t=>obj[t.id]=t);
           db.ref(WK+"/tasks").set(obj);
           db.ref(WK+"/checked").set({});
           db.ref(WK+"/sl").set({});
           db.ref(WK+"/history").set({});
-          if(d.maggie)db.ref(WK+"/maggie").set(d.maggie);
+          if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
         }
-        renderAll();
+        renderAll(); runCascade();
         document.getElementById("admin-msg").textContent="✅ "+d.week+" loaded — "+d.tasks.length+" tasks. Previous week archived.";
       }
     }catch(err){document.getElementById("admin-msg").textContent="❌ "+err.message;}
@@ -1450,55 +1468,39 @@ function toggleAdmin(){
 // ── ALERTS + CASCADE ──────────────────────────────────────────────
 setInterval(()=>{ if(tab==="schedule")renderSkylight(); },60000);
 
-setInterval(()=>{
-  const n=new Date(); if(n.getHours()<22)return;
-  const dm={1:"monday",2:"tuesday",3:"wednesday",4:"thursday",5:"friday",6:"saturday"};
+// runCascade — safe to call at boot or any time.
+// Duplicate-proof: each task can only ever get one _c copy (id-based guard).
+// Runs at boot to catch up if app was closed overnight.
+function runCascade(){
   const nextDay={monday:"tuesday",tuesday:"wednesday",wednesday:"thursday",thursday:"friday",friday:"saturday"};
-  const td=dm[n.getDay()]; if(!td)return;
-  const last=ld("lastProcDay"); if(last===td)return;
-  sv("lastProcDay",td); if(db)db.ref("lastProcDay").set(td);
-
+  const dayJsIdx={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
+  const todayIdx=new Date().getDay();
+  const dayOrder=["monday","tuesday","wednesday","thursday","friday","saturday"];
+  let changed=false;
   const hist=ld(WK+"_history")||{};
-  const unchecked=weekData.tasks.filter(t=>t.day===td&&t.cascade&&!checked[t.id]);
-
-  unchecked.forEach(t=>{
-    // Log in history as missed on original day
-    hist[t.id+"_flag"]={id:t.id,title:t.title,who:t.who,day:td,flag:"cascade_missed",ts:nowTs()};
-
-    // Copy task to next school day if one exists
-    const nd=nextDay[td]; if(!nd)return;
-
-    // Don't duplicate — check if already cascaded
-    const alreadyCascaded=weekData.tasks.some(x=>x.id===t.id+"_c"&&x.day===nd);
-    if(alreadyCascaded)return;
-
-    const cascadedTask={
-      ...t,
-      id: t.id+"_c",
-      day: nd,
-      time: t.mom==="required" ? "2:00 PM" : t.time, // Mom Required tasks default to afternoon
-      detail: t.detail+" (Cascaded from "+td.charAt(0).toUpperCase()+td.slice(1)+")",
-      cascade: true
-    };
-
-    // For Maggie days (Friday) — never cascade Mom Required into Maggie window
-    if(nd==="friday" && t.mom==="required"){
-      cascadedTask.time="12:00 PM"; // after Mom returns
-    }
-
-    weekData.tasks.push(cascadedTask);
+  dayOrder.forEach(td=>{
+    if(dayJsIdx[td]>=todayIdx) return;
+    const unchecked=weekData.tasks.filter(t=>t.day===td&&t.cascade&&!checked[t.id]);
+    unchecked.forEach(t=>{
+      if(!hist[t.id+"_flag"]){
+        hist[t.id+"_flag"]={id:t.id,title:t.title,who:t.who,day:td,flag:"cascade_missed",ts:nowTs()};
+        changed=true;
+      }
+      const nd=nextDay[td]; if(!nd) return;
+      if(weekData.tasks.some(x=>x.id===t.id+"_c")) return;
+      weekData.tasks.push({...t,id:t.id+"_c",day:nd,
+        time:(t.mom==="required"||nd==="friday")?"2:00 PM":t.time,
+        detail:t.detail+" (Cascaded from "+td.charAt(0).toUpperCase()+td.slice(1)+")",cascade:true});
+      changed=true;
+    });
   });
-
-  // Save updated task list
-  sv(WK+"_tasks", weekData.tasks);
-  sv(WK+"_history", hist);
-  if(db){
-    const obj={};weekData.tasks.forEach(t=>obj[t.id]=t);
-    db.ref(WK+"/tasks").set(obj);
-    db.ref(WK+"/history").update(hist);
+  if(changed){
+    sv(WK+"_tasks",weekData.tasks); sv(WK+"_history",hist);
+    if(db){ const obj={};weekData.tasks.forEach(t=>obj[t.id]=t); db.ref(WK+"/tasks").set(obj); db.ref(WK+"/history").update(hist); }
+    renderAll();
   }
-  renderAll();
-},60000);
+}
+setInterval(runCascade,3600000);
 
 setInterval(()=>{
   const n=new Date(); if(n.getDay()!==6||n.getHours()<20)return;
@@ -1762,7 +1764,7 @@ window.addEventListener("scroll",()=>{
 });
 
 // ── INIT ──────────────────────────────────────────────────────────
-boot(); initFb(); renderAll();
+boot(); initFb(); renderAll(); runCascade();
 </script>
 </body>
 </html>
