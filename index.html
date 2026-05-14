@@ -290,6 +290,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .pace-wk-name{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;margin-bottom:2px}
 .pace-wk-val{font-family:'Fraunces',serif;font-size:20px;font-weight:700}
 .pace-wk-of{font-size:10px;color:var(--muted);margin-top:1px}
+.pace-config-grid{display:grid;grid-template-columns:1fr 90px;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+.pace-config-label{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;margin-bottom:3px}
+.pace-config-input{width:100%;padding:6px 8px;font-size:12px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;background:#fff;color:var(--text);outline:none}
+.pace-auto-info{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;padding:8px 10px;background:#f8f7f4;border-radius:8px;font-size:11px;color:var(--muted);line-height:1}
+.pace-auto-num{font-weight:700;color:var(--text)}
+.pace-num-input{width:54px;padding:4px 6px;font-size:12px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;background:#fff;color:var(--text);outline:none;text-align:center}
 </style>
 </head>
 <body>
@@ -2039,26 +2045,39 @@ function deletePaceSubject(kid, key){
   renderAll();
 }
 
-function adjustPaceLesson(kid, key, delta){
-  const subjs = (paceData.subjects&&paceData.subjects[kid])||{};
-  const s = subjs[key];
+function paceAutoCount(kid, keyword){
+  if(!keyword) return 0;
+  const kw=keyword.toLowerCase();
+  let count=0;
+  weekData.tasks.filter(t=>t.who===kid&&!t.id.endsWith("_c")).forEach(t=>{
+    if((checked[t.id]||checked[t.id+"_c"])&&t.title.toLowerCase().includes(kw)) count++;
+  });
+  Object.values(archive).forEach(aw=>{
+    const awChecked=aw.checked||{};
+    (aw.tasks||[]).filter(t=>t.who===kid&&!t.id.endsWith("_c")).forEach(t=>{
+      if((awChecked[t.id]||awChecked[t.id+"_c"])&&t.title.toLowerCase().includes(kw)) count++;
+    });
+  });
+  return count;
+}
+
+function updatePaceField(kid, key, field, value){
+  const s=((paceData.subjects&&paceData.subjects[kid])||{})[key];
   if(!s) return;
-  const newCur = Math.max(0, Math.min((s.current||0)+delta, s.total||999));
-  savePaceSubject(kid, key, {...s, current:newCur});
-  renderAll();
+  savePaceSubject(kid, key, {...s, [field]:value});
 }
 
 function addPaceSubject(kid){
-  const labelEl = document.getElementById("pace-new-label-"+kid);
-  const totalEl = document.getElementById("pace-new-total-"+kid);
-  if(!labelEl||!totalEl) return;
-  const label = labelEl.value.trim();
-  const total = parseInt(totalEl.value)||0;
-  if(!label||!total){ labelEl.style.borderColor="#f87171"; return; }
+  const labelEl=document.getElementById("pace-new-label-"+kid);
+  const kwEl=document.getElementById("pace-new-kw-"+kid);
+  const totalEl=document.getElementById("pace-new-total-"+kid);
+  if(!labelEl||!kwEl||!totalEl) return;
+  const label=labelEl.value.trim(), keyword=kwEl.value.trim(), total=parseInt(totalEl.value)||0;
+  if(!label||!keyword||!total){ labelEl.style.borderColor="#f87171"; return; }
   labelEl.style.borderColor="";
-  const key = label.toLowerCase().replace(/[^a-z0-9]/g,"_")+"_"+Date.now();
-  savePaceSubject(kid, key, {label, total, current:0});
-  labelEl.value=""; totalEl.value="";
+  const key=label.toLowerCase().replace(/[^a-z0-9]/g,"_")+"_"+Date.now();
+  savePaceSubject(kid, key, {label, keyword, total, offset:0, adjust:0});
+  labelEl.value=""; kwEl.value=""; totalEl.value="";
   renderAll();
 }
 
@@ -2110,7 +2129,12 @@ function renderPace(el){
 
     // summary: how many on-track/ahead/behind
     let aheadN=0, onN=0, behindN=0;
-    keys.forEach(sk=>{ const st=paceStatus(kidSubjs[sk].current||0,kidSubjs[sk].total||0); if(st==="ahead")aheadN++; else if(st==="behind")behindN++; else onN++; });
+    keys.forEach(sk=>{
+      const s=kidSubjs[sk];
+      const cur=(s.offset||0)+paceAutoCount(k,s.keyword||"")+(s.adjust||0);
+      const st=paceStatus(cur,s.total||0);
+      if(st==="ahead")aheadN++; else if(st==="behind")behindN++; else onN++;
+    });
     const summaryStr = keys.length ? (behindN?behindN+' behind':aheadN?aheadN+' ahead':'All on track') : 'No subjects yet';
 
     h+='<div class="pace-kid-card">'+
@@ -2131,7 +2155,9 @@ function renderPace(el){
 
       keys.forEach(sk=>{
         const s=kidSubjs[sk];
-        const cur=s.current||0; const tot=s.total||1;
+        const autoC=paceAutoCount(k,s.keyword||"");
+        const offset=s.offset||0, adjust=s.adjust||0;
+        const cur=offset+autoC+adjust, tot=s.total||1;
         const pct=Math.min(100,Math.round(cur/tot*100));
         const status=paceStatus(cur,tot);
         const barCol=status==="ahead"?"#16a34a":status==="behind"?"#ef4444":"#3b82f6";
@@ -2139,18 +2165,33 @@ function renderPace(el){
         h+='<div class="pace-subject-row">'+
           '<div class="pace-subj-hdr">'+
           '<span class="pace-subj-name">'+s.label+'</span>'+
-          '<span class="pace-subj-nums">Lesson '+cur+' / '+tot+'</span></div>'+
+          '<span class="pace-subj-nums">'+cur+' / '+tot+' done</span></div>'+
           '<div class="pace-bar"><div class="pace-bar-fill" style="width:'+pct+'%;background:'+barCol+'"></div></div>'+
           '<div class="pace-status-row">'+
           '<span class="pace-badge '+status+'">'+paceStatusLabel(status)+'</span>'+
           '<span class="pace-pct">'+pct+'% complete</span></div>';
 
         if(isEditing){
-          h+='<div class="pace-edit-row">'+
-            '<button class="pace-adj-btn" onclick="adjustPaceLesson(\''+k+'\',\''+sk+'\',-1)">&#8722;</button>'+
-            '<span style="font-size:12px;font-weight:700;min-width:70px;text-align:center;color:var(--muted)">Lesson '+cur+'</span>'+
-            '<button class="pace-adj-btn" onclick="adjustPaceLesson(\''+k+'\',\''+sk+'\',1)">+</button>'+
-            '<button class="pace-del-btn" onclick="deletePaceSubject(\''+k+'\',\''+sk+'\')">Remove</button></div>';
+          h+='<div class="pace-config-grid">'+
+            '<div><div class="pace-config-label">Keyword in task title</div>'+
+            '<input class="pace-config-input" value="'+(s.keyword||'')+'" placeholder="e.g. AAS Spelling" '+
+            'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'keyword\',this.value)"/></div>'+
+            '<div><div class="pace-config-label">Total</div>'+
+            '<input class="pace-config-input" type="number" min="1" value="'+(s.total||'')+'" '+
+            'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'total\',parseInt(this.value)||0)"/></div>'+
+            '</div>'+
+            '<div class="pace-auto-info">'+
+            '<span>Auto: <span class="pace-auto-num">'+autoC+'</span></span>'+
+            '<span style="color:var(--border)">+</span>'+
+            '<span>Offset: <input class="pace-num-input" type="number" min="0" value="'+offset+'" '+
+            'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'offset\',parseInt(this.value)||0)"/></span>'+
+            '<span style="color:var(--border)">+</span>'+
+            '<span>Adjust: <input class="pace-num-input" type="number" value="'+adjust+'" '+
+            'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'adjust\',parseInt(this.value)||0)"/></span>'+
+            '<span style="color:var(--border)">=</span>'+
+            '<span><span class="pace-auto-num">'+cur+'</span> done</span>'+
+            '<button class="pace-del-btn" style="margin-left:auto" onclick="deletePaceSubject(\''+k+'\',\''+sk+'\')">Remove</button>'+
+            '</div>';
         }
 
         h+='</div>';
@@ -2159,7 +2200,8 @@ function renderPace(el){
       if(isEditing){
         h+='<div class="pace-add-row">'+
           '<input id="pace-new-label-'+k+'" type="text" placeholder="Subject name" maxlength="30"/>'+
-          '<input id="pace-new-total-'+k+'" type="number" placeholder="Total lessons" min="1" max="999" style="width:110px"/>'+
+          '<input id="pace-new-kw-'+k+'" type="text" placeholder="Keyword" maxlength="40"/>'+
+          '<input id="pace-new-total-'+k+'" type="number" placeholder="Total" min="1" max="9999" style="width:70px"/>'+
           '<button class="pace-add-btn" onclick="addPaceSubject(\''+k+'\')">+ Add</button></div>';
       }
 
