@@ -332,6 +332,7 @@ let archive={};
 
 // ── FIREBASE ──────────────────────────────────────────────────────
 let isUploading = false;
+let lastCheckedWrite = 0; // timestamp of last local write to checked
 
 function initFb() {
   try {
@@ -344,11 +345,21 @@ function initFb() {
     });
     db.ref(WK+"/checked").on("value",s=>{
       if(isUploading) return;
-      const v=s.val()||{}; checked=v; sv(WK+"_checked",checked); renderAll();
+      // Ignore Firebase echo for 2s after this device wrote — prevents self-overwrite
+      if(Date.now()-lastCheckedWrite<2000) return;
+      const v=s.val()||{};
+      // Only update if Firebase has MORE entries (never let Firebase wipe local state)
+      if(Object.keys(v).length>=Object.keys(checked).length){
+        checked=v; sv(WK+"_checked",checked); renderAll();
+      }
     });
     db.ref(WK+"/sl").on("value",s=>{
       if(isUploading) return;
-      slState=s.val()||{}; sv(WK+"_sl",slState); renderAll();
+      const v=s.val()||{};
+      // Merge incoming with local — take whichever has more entries per key
+      const merged={...v};
+      Object.keys(slState).forEach(k=>{ if(!merged[k]) merged[k]=slState[k]; });
+      slState=merged; sv(WK+"_sl",slState); renderAll();
     });
     db.ref(WK+"/supplies").on("value",s=>{
       supplies=s.val()||{}; sv(WK+"_supplies",supplies);
@@ -362,11 +373,13 @@ function initFb() {
     });
     db.ref(WK+"/tasks").on("value",s=>{
       if(isUploading) return;
-      if(s.val()){
-        const incoming=Object.values(s.val());
-        if(JSON.stringify(incoming)!==JSON.stringify(weekData.tasks)){
-          weekData.tasks=incoming; sv(WK+"_tasks",incoming); renderAll();
-        }
+      if(!s.val()) return;
+      const incoming=Object.values(s.val());
+      // Compare by sorted task IDs — order-independent, avoids stringify loops
+      const inIds=incoming.map(t=>t.id).sort().join(",");
+      const curIds=weekData.tasks.map(t=>t.id).sort().join(",");
+      if(inIds!==curIds){
+        weekData.tasks=incoming; sv(WK+"_tasks",incoming); renderAll();
       }
     });
     db.ref(WK+"/maggie").on("value",s=>{ if(s.val()) weekData.maggie=s.val(); });
@@ -502,7 +515,7 @@ function toggleSlot(who,slot){
   slState[k]={done:!cur.done,ts};
   const wk=activeWk();
   sv(wk+"_sl",slState);
-  if(db) db.ref(wk+"/sl/"+k).set(slState[k]);
+  if(db) db.ref(wk+"/sl").set(slState); // write full object for consistent sync
   renderSkylight();
   if(tab==="schedule"){ const c=document.getElementById("content"); if(c) renderSchedule(c); }
 }
@@ -786,7 +799,8 @@ document.getElementById("dlg-ok").onclick=()=>{
   if(!pendingId)return;
   const ts=nowTs();
   checked[pendingId]=ts; sv(WK+"_checked",checked);
-  if(db) db.ref(WK+"/checked/"+pendingId).set(ts);
+  lastCheckedWrite=Date.now();
+  if(db) db.ref(WK+"/checked").set(checked); // write full object for consistent sync
   const hist=ld(WK+"_history")||{};
   const t=weekData.tasks.find(x=>x.id===pendingId);
   if(t){ hist[pendingId]={id:pendingId,title:t.title,who:t.who,day:t.day,ts}; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+pendingId).set(hist[pendingId]); }
@@ -795,7 +809,8 @@ document.getElementById("dlg-ok").onclick=()=>{
 document.getElementById("dlg-uncheck").onclick=()=>{
   if(!pendingId)return;
   delete checked[pendingId]; sv(WK+"_checked",checked);
-  if(db) db.ref(WK+"/checked/"+pendingId).remove();
+  lastCheckedWrite=Date.now();
+  if(db) db.ref(WK+"/checked").set(checked); // write full object for consistent sync
   const hist=ld(WK+"_history")||{};
   delete hist[pendingId]; sv(WK+"_history",hist);
   if(db) db.ref(WK+"/history/"+pendingId).remove();
@@ -1506,6 +1521,7 @@ function loadJson(){
           if(db) db.ref("archive/"+oldWK).set(entry);
         }
         WK=d.week; localStorage.setItem("ha_active_wk",WK);
+        if(db) db.ref("ha_active_wk").set(WK);
         weekData=d; checked={}; slState={};
         if(d.supplies&&Array.isArray(d.supplies)){SUP=d.supplies;sv(WK+"_supplies_def",d.supplies);}
         if(d.supplyCategories&&Array.isArray(d.supplyCategories)) SUP_CATS=d.supplyCategories;
@@ -1835,6 +1851,21 @@ window.addEventListener("scroll",()=>{
 
 // ── INIT ──────────────────────────────────────────────────────────
 boot(); initFb(); renderAll(); runCascade();
+// On first load, sync active week from Firebase for devices with no localStorage
+if(db){
+  db.ref("ha_active_wk").once("value").then(s=>{
+    const fbWk=s.val();
+    if(fbWk&&fbWk!==WK){
+      WK=fbWk; localStorage.setItem("ha_active_wk",WK);
+      weekData.week=WK;
+      const t=ld(WK+"_tasks"); if(t) weekData.tasks=t;
+      const meta=ld(WK+"_meta"); if(meta) applyWeekMeta(meta);
+      checked=ld(WK+"_checked")||{};
+      slState=ld(WK+"_sl")||{};
+      renderAll();
+    }
+  }).catch(()=>{});
+}
 </script>
 </body>
 </html>
