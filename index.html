@@ -272,6 +272,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .pace-badge.ahead{background:#dcfce7;color:#15803d}
 .pace-badge.on-track{background:#dbeafe;color:#1d4ed8}
 .pace-badge.behind{background:#fee2e2;color:#991b1b}
+.pace-badge.not-started{background:#f3f4f6;color:#6b7280}
 .pace-pct{font-size:11px;color:var(--muted);font-weight:600}
 
 .pace-edit-row{display:flex;align-items:center;gap:6px;margin-top:6px}
@@ -290,12 +291,22 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .pace-wk-name{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;margin-bottom:2px}
 .pace-wk-val{font-family:'Fraunces',serif;font-size:20px;font-weight:700}
 .pace-wk-of{font-size:10px;color:var(--muted);margin-top:1px}
-.pace-config-grid{display:grid;grid-template-columns:1fr 90px;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+.pace-config-grid{display:grid;grid-template-columns:1fr 80px 80px;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
 .pace-config-label{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;margin-bottom:3px}
 .pace-config-input{width:100%;padding:6px 8px;font-size:12px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;background:#fff;color:var(--text);outline:none}
 .pace-auto-info{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;padding:8px 10px;background:#f8f7f4;border-radius:8px;font-size:11px;color:var(--muted);line-height:1}
 .pace-auto-num{font-weight:700;color:var(--text)}
 .pace-num-input{width:54px;padding:4px 6px;font-size:12px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;background:#fff;color:var(--text);outline:none;text-align:center}
+.pace-plan-section{margin-bottom:20px}
+.pace-plan-edit-btn{padding:3px 10px;border-radius:12px;border:1.5px solid rgba(255,255,255,0.4);background:transparent;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;flex-shrink:0}
+.pace-plan-kid-chip{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,0.18);color:#fff;letter-spacing:0.3px}
+.pace-plan-edit-form{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px}
+.pace-plan-edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.pace-plan-kids-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.pace-plan-kid-toggle{padding:4px 12px;border-radius:14px;font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;border:1.5px solid var(--border);background:#fff;color:var(--muted)}
+.pace-plan-kid-toggle.on{background:var(--header);color:#fff;border-color:transparent}
+.pace-add-plan-row{background:#f8f7f4;border:1px dashed var(--border);border-radius:10px;padding:12px 14px;margin-top:4px}
+.pace-add-plan-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px}
 </style>
 </head>
 <body>
@@ -387,8 +398,9 @@ let tab="schedule", day="monday", kid="all", supDay="all";
 let collCats={}, pendingId=null;
 let archive={};
 let fbWeekRefs=[];
-let paceData={subjects:{}}; // pace/subjects/<kid>/<subjectKey>
+let paceData={subjects:{}, plans:{}};
 let paceEditKid=null;
+let paceEditPlan=null;
 
 // ── FIREBASE ──────────────────────────────────────────────────────
 let isUploading = false;
@@ -515,7 +527,7 @@ function initFb() {
       if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
     });
     db.ref("pace").on("value",s=>{
-      const v=s.val()||{}; paceData={subjects:v.subjects||{}};
+      const v=s.val()||{}; paceData={subjects:v.subjects||{}, plans:v.plans||{}};
       try{localStorage.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
       if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
     });
@@ -1998,30 +2010,43 @@ function toggleActFavOnly(){ actFavOnly=!actFavOnly; renderActFilters(); renderA
 // ── PACE TAB ──────────────────────────────────────────────────────
 const PACE_KIDS = ["lincoln","ellis","lucy","julian"];
 const PACE_KCOL = {lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#c45e1a"};
-const PACE_YEAR_START = new Date("2026-04-20"); // Day 1 of Howe Academy schedule
-const PACE_TOTAL_WEEKS = 36;
 
-function paceWeekNum(){
-  const ms = Date.now() - PACE_YEAR_START.getTime();
-  const wk = Math.floor(ms / (7*24*60*60*1000)) + 1;
-  return Math.max(1, Math.min(wk, PACE_TOTAL_WEEKS));
+const PACE_DEFAULT_PLANS = {
+  summer_session:{label:"Summer Session",start:"2026-04-20",end:"2026-09-01",kids:["ellis","lucy"]},
+  seventh_grade_prep:{label:"7th Grade Prep",start:"2026-04-20",end:"2027-05-01",kids:["lincoln"]}
+};
+
+function planWeekNum(startStr){
+  const ms=Date.now()-new Date(startStr).getTime();
+  return Math.max(1, Math.floor(ms/(7*24*60*60*1000))+1);
 }
 
-function paceStatus(current, total){
+function planTotalWeeks(startStr,endStr){
+  return Math.ceil((new Date(endStr)-new Date(startStr))/(7*24*60*60*1000));
+}
+
+function formatPlanDate(d){
+  return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+}
+
+function paceStatus(current,total,startWeek,weekNum,totalWeeks){
   if(!total) return "on-track";
-  const weekNum = paceWeekNum();
-  const expectedPct = weekNum / PACE_TOTAL_WEEKS;
-  const actualPct = current / total;
-  const diff = actualPct - expectedPct;
-  if(diff > 0.04) return "ahead";
-  if(diff < -0.04) return "behind";
+  const sw=startWeek||1;
+  if(weekNum<sw) return "not-started";
+  const weeksActive=weekNum-sw+1;
+  const weeksTotal=Math.max(1,totalWeeks-sw+1);
+  const diff=(current/total)-(weeksActive/weeksTotal);
+  if(diff>0.04) return "ahead";
+  if(diff<-0.04) return "behind";
   return "on-track";
 }
 
-function paceStatusLabel(s){ return s==="ahead"?"Ahead":s==="behind"?"Behind":"On Track"; }
+function paceStatusLabel(s){
+  return s==="ahead"?"Ahead":s==="behind"?"Behind":s==="not-started"?"Not Started":"On Track";
+}
 
 function paceWeeklyDone(kidFilter){
-  const hist = ld(WK+"_history")||{};
+  const hist=ld(WK+"_history")||{};
   return Object.values(hist).filter(v=>{
     if(!v||!v.ts||v.missed||v.flag) return false;
     if(v.id&&v.id.endsWith("_c")) return false;
@@ -2031,7 +2056,7 @@ function paceWeeklyDone(kidFilter){
   }).length;
 }
 
-function savePaceSubject(kid, key, data){
+function savePaceSubject(kid,key,data){
   if(!paceData.subjects) paceData.subjects={};
   if(!paceData.subjects[kid]) paceData.subjects[kid]={};
   paceData.subjects[kid][key]=data;
@@ -2039,27 +2064,68 @@ function savePaceSubject(kid, key, data){
   if(db) db.ref("pace/subjects/"+kid+"/"+key).set(data);
 }
 
-function deletePaceSubject(kid, key){
+function deletePaceSubject(kid,key){
   if(paceData.subjects&&paceData.subjects[kid]) delete paceData.subjects[kid][key];
   try{localStorage.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
   if(db) db.ref("pace/subjects/"+kid+"/"+key).remove();
   renderAll();
 }
 
+function savePacePlan(key,data){
+  if(!paceData.plans) paceData.plans={};
+  paceData.plans[key]=data;
+  try{localStorage.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
+  if(db) db.ref("pace/plans/"+key).set(data);
+}
+
+function deletePacePlan(key){
+  if(paceData.plans) delete paceData.plans[key];
+  try{localStorage.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
+  if(db) db.ref("pace/plans/"+key).remove();
+  paceEditPlan=null; renderAll();
+}
+
+function togglePlanEdit(key){
+  paceEditPlan=paceEditPlan===key?null:key; renderAll();
+}
+
+function updatePlanField(key,field,value){
+  const p=(paceData.plans||{})[key]; if(!p) return;
+  savePacePlan(key,{...p,[field]:value});
+}
+
+function togglePlanKid(planKey,kidName){
+  const p=(paceData.plans||{})[planKey]; if(!p) return;
+  const kids=[...(p.kids||[])];
+  const i=kids.indexOf(kidName);
+  if(i>=0) kids.splice(i,1); else kids.push(kidName);
+  savePacePlan(planKey,{...p,kids});
+}
+
+function addPacePlan(){
+  const labelEl=document.getElementById("pace-new-plan-label");
+  const startEl=document.getElementById("pace-new-plan-start");
+  const endEl=document.getElementById("pace-new-plan-end");
+  if(!labelEl||!startEl||!endEl) return;
+  const label=labelEl.value.trim(),start=startEl.value,end=endEl.value;
+  if(!label||!start||!end){labelEl.style.borderColor="#f87171";return;}
+  const key=label.toLowerCase().replace(/[^a-z0-9]/g,"_")+"_"+Date.now();
+  savePacePlan(key,{label,start,end,kids:[]});
+  labelEl.value="";startEl.value="";endEl.value="";
+  renderAll();
+}
+
 function parseTaskCount(title){
-  // Page range: pp. 92–95 or pp. 92-95
   let m=title.match(/pp\.\s*(\d+)\s*[–\-]\s*(\d+)/i);
-  if(m) return Math.max(1, parseInt(m[2])-parseInt(m[1])+1);
-  // Module/Lesson range: Modules 4–6 or Mod 10-12
+  if(m) return Math.max(1,parseInt(m[2])-parseInt(m[1])+1);
   m=title.match(/\bMod(?:ules?)?\s+(\d+)\s*[–\-]\s*(\d+)/i);
-  if(m) return Math.max(1, parseInt(m[2])-parseInt(m[1])+1);
-  // Comma-separated modules: Modules 4, 5, 6
+  if(m) return Math.max(1,parseInt(m[2])-parseInt(m[1])+1);
   m=title.match(/\bMod(?:ules?)?\s+([\d][,\d\s]+)/i);
   if(m) return m[1].split(',').filter(x=>x.trim().match(/^\d+$/)).length||1;
   return 1;
 }
 
-function paceAutoCount(kid, keyword){
+function paceAutoCount(kid,keyword){
   if(!keyword) return 0;
   const kw=keyword.toLowerCase();
   let count=0;
@@ -2077,155 +2143,215 @@ function paceAutoCount(kid, keyword){
   return count;
 }
 
-function updatePaceField(kid, key, field, value){
+function updatePaceField(kid,key,field,value){
   const s=((paceData.subjects&&paceData.subjects[kid])||{})[key];
   if(!s) return;
-  savePaceSubject(kid, key, {...s, [field]:value});
+  savePaceSubject(kid,key,{...s,[field]:value});
 }
 
 function addPaceSubject(kid){
   const labelEl=document.getElementById("pace-new-label-"+kid);
   const kwEl=document.getElementById("pace-new-kw-"+kid);
   const totalEl=document.getElementById("pace-new-total-"+kid);
+  const swEl=document.getElementById("pace-new-sw-"+kid);
   if(!labelEl||!kwEl||!totalEl) return;
-  const label=labelEl.value.trim(), keyword=kwEl.value.trim(), total=parseInt(totalEl.value)||0;
-  if(!label||!keyword||!total){ labelEl.style.borderColor="#f87171"; return; }
+  const label=labelEl.value.trim(),keyword=kwEl.value.trim(),total=parseInt(totalEl.value)||0;
+  const startWeek=parseInt(swEl&&swEl.value)||1;
+  if(!label||!keyword||!total){labelEl.style.borderColor="#f87171";return;}
   labelEl.style.borderColor="";
   const key=label.toLowerCase().replace(/[^a-z0-9]/g,"_")+"_"+Date.now();
-  savePaceSubject(kid, key, {label, keyword, total, offset:0, adjust:0});
-  labelEl.value=""; kwEl.value=""; totalEl.value="";
+  savePaceSubject(kid,key,{label,keyword,total,offset:0,adjust:0,startWeek});
+  labelEl.value="";kwEl.value="";totalEl.value="";if(swEl)swEl.value="1";
   renderAll();
 }
 
 function togglePaceEdit(kid){
-  paceEditKid = paceEditKid===kid ? null : kid;
-  renderAll();
+  paceEditKid=paceEditKid===kid?null:kid; renderAll();
 }
 
 function renderPace(el){
-  if(!el){ el=document.getElementById("content"); if(!el)return; }
-  const weekNum = paceWeekNum();
-  const yearPct = Math.round(weekNum/PACE_TOTAL_WEEKS*100);
+  if(!el){el=document.getElementById("content");if(!el)return;}
+
+  // Seed defaults to Firebase if no plans exist yet
+  const hasSavedPlans=paceData.plans&&Object.keys(paceData.plans).length>0;
+  if(!hasSavedPlans) Object.entries(PACE_DEFAULT_PLANS).forEach(([k,v])=>savePacePlan(k,v));
+  const plans=hasSavedPlans?paceData.plans:PACE_DEFAULT_PLANS;
 
   let h='<div id="pace-content">';
-
-  // Year progress banner
-  h+='<div class="pace-year-banner">'+
-    '<div style="flex:1;min-width:0"><div class="pace-year-label">School Year Progress</div>'+
-    '<div class="pace-year-sub">Started Apr 20, 2026 &middot; Week '+weekNum+' of '+PACE_TOTAL_WEEKS+'</div>'+
-    '<div class="pace-year-bar"><div class="pace-year-fill" style="width:'+yearPct+'%"></div></div></div>'+
-    '<div><div class="pace-year-wk">Week '+weekNum+'</div>'+
-    '<div class="pace-year-wklbl">of '+PACE_TOTAL_WEEKS+' &middot; '+yearPct+'% done</div></div>'+
-    '</div>';
 
   // Kid selector
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">';
   [{k:"all",label:"All",col:"#111827"},...PACE_KIDS.map(k=>({k,label:cap(k),col:PACE_KCOL[k]}))].forEach(({k:k2,label,col})=>{
     const on=kid===k2||(k2==="all"&&(kid==="all"||kid==="mom"));
-    h+='<button onclick="selKid(\''+k2+'\')" style="padding:5px 14px;border-radius:20px;border:1.5px solid '+(on?'transparent':' var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+label+'</button>';
+    h+='<button onclick="selKid(\''+k2+'\')" style="padding:5px 14px;border-radius:20px;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+label+'</button>';
   });
   h+='</div>';
 
-  // Weekly done summary — single count based on selected kid
-  const weeklyDone = paceWeeklyDone(kid);
-  const weeklyLabel = (kid==="all"||kid==="mom") ? "tasks done this week (all kids)" : "tasks done this week";
-  const weeklyCol = (kid==="all"||kid==="mom") ? "#111827" : PACE_KCOL[kid]||"#111827";
-  h+='<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px">'+
-    '<div style="font-family:\'Fraunces\',serif;font-size:32px;font-weight:700;color:'+weeklyCol+'">'+weeklyDone+'</div>'+
+  // Weekly done summary
+  const weeklyDone=paceWeeklyDone(kid);
+  const weeklyLabel=(kid==="all"||kid==="mom")?"tasks done this week (all kids)":"tasks done this week";
+  const weeklyCol=(kid==="all"||kid==="mom")?"#111827":PACE_KCOL[kid]||"#111827";
+  h+='<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:12px">'+
+    '<div style="font-family:\'Fraunces\',serif;font-size:28px;font-weight:700;color:'+weeklyCol+'">'+weeklyDone+'</div>'+
     '<div style="font-size:12px;color:var(--muted);font-weight:600;line-height:1.4">'+weeklyLabel+'<br><span style="font-size:11px;font-weight:400">checked off on the schedule</span></div>'+
     '</div>';
 
-  // Per-kid curriculum cards — filter by selected kid
-  const kidsToShow = (kid==="all"||kid==="mom") ? PACE_KIDS : PACE_KIDS.filter(k=>k===kid);
-  kidsToShow.forEach(k=>{
-    const kidSubjs = (paceData.subjects&&paceData.subjects[k])||{};
-    const keys = Object.keys(kidSubjs);
-    const isEditing = paceEditKid===k;
-    const col = PACE_KCOL[k];
+  // Plan sections
+  Object.entries(plans).forEach(([planKey,plan])=>{
+    const planKids=plan.kids||[];
+    const visKids=(kid==="all"||kid==="mom")?planKids:planKids.filter(k=>k===kid);
+    if(visKids.length===0&&kid!=="all"&&kid!=="mom") return;
 
-    // summary: how many on-track/ahead/behind
-    let aheadN=0, onN=0, behindN=0;
-    keys.forEach(sk=>{
-      const s=kidSubjs[sk];
-      const cur=(s.offset||0)+paceAutoCount(k,s.keyword||"")+(s.adjust||0);
-      const st=paceStatus(cur,s.total||0);
-      if(st==="ahead")aheadN++; else if(st==="behind")behindN++; else onN++;
-    });
-    const summaryStr = keys.length ? (behindN?behindN+' behind':aheadN?aheadN+' ahead':'All on track') : 'No subjects yet';
+    const weekNum=planWeekNum(plan.start||"2026-04-20");
+    const totalWeeks=planTotalWeeks(plan.start||"2026-04-20",plan.end||"2026-09-01");
+    const planPct=Math.min(100,Math.round(Math.min(weekNum,totalWeeks)/totalWeeks*100));
+    const isEditingPlan=paceEditPlan===planKey;
 
-    h+='<div class="pace-kid-card">'+
-      '<div class="pace-kid-hdr">'+
-      '<div><div class="pace-kid-name" style="color:'+col+'">'+cap(k)+'</div>'+
-      '<div class="pace-kid-meta">'+summaryStr+(keys.length?' &middot; '+keys.length+' subjects':'')+'</div></div>'+
-      '<div class="pace-kid-actions">'+
-      '<button class="pace-edit-btn'+(isEditing?' active':'')+'" onclick="togglePaceEdit(\''+k+'\')">'+
-      (isEditing?'Done':'Edit')+'</button></div>'+
+    h+='<div class="pace-plan-section">';
+
+    // Plan banner
+    h+='<div class="pace-year-banner" style="align-items:flex-start">'+
+      '<div style="flex:1;min-width:0">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">'+
+      '<div class="pace-year-label">'+plan.label+'</div>'+
+      '<button class="pace-plan-edit-btn" onclick="togglePlanEdit(\''+planKey+'\')">'+
+      (isEditingPlan?'Done':'Edit')+'</button></div>'+
+      '<div class="pace-year-sub">'+formatPlanDate(plan.start||"")+' &ndash; '+formatPlanDate(plan.end||"")+'</div>'+
+      '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px">'+
+      planKids.map(k=>'<span class="pace-plan-kid-chip">'+cap(k)+'</span>').join('')+
+      '</div>'+
+      '<div class="pace-year-bar"><div class="pace-year-fill" style="width:'+planPct+'%"></div></div></div>'+
+      '<div style="text-align:right;flex-shrink:0">'+
+      '<div class="pace-year-wk">Week '+Math.min(weekNum,totalWeeks)+'</div>'+
+      '<div class="pace-year-wklbl">of '+totalWeeks+' &middot; '+planPct+'%</div></div>'+
       '</div>';
 
-    if(keys.length||isEditing){
-      h+='<div class="pace-subjects">';
+    // Plan edit form
+    if(isEditingPlan){
+      h+='<div class="pace-plan-edit-form">'+
+        '<div class="pace-plan-edit-grid">'+
+        '<div><div class="pace-config-label">Plan Name</div>'+
+        '<input class="pace-config-input" value="'+plan.label.replace(/"/g,'&quot;')+'" '+
+        'oninput="updatePlanField(\''+planKey+'\',\'label\',this.value)"/></div>'+
+        '<div></div>'+
+        '<div><div class="pace-config-label">Start Date</div>'+
+        '<input class="pace-config-input" type="date" value="'+(plan.start||'')+'" '+
+        'oninput="updatePlanField(\''+planKey+'\',\'start\',this.value)"/></div>'+
+        '<div><div class="pace-config-label">End Date</div>'+
+        '<input class="pace-config-input" type="date" value="'+(plan.end||'')+'" '+
+        'oninput="updatePlanField(\''+planKey+'\',\'end\',this.value)"/></div>'+
+        '</div>'+
+        '<div class="pace-config-label" style="margin-bottom:6px">Kids in this plan</div>'+
+        '<div class="pace-plan-kids-row">'+
+        PACE_KIDS.map(k=>{
+          const on=(plan.kids||[]).includes(k);
+          return '<button class="pace-plan-kid-toggle'+(on?' on':'')+'" onclick="togglePlanKid(\''+planKey+'\',\''+k+'\')">'+cap(k)+'</button>';
+        }).join('')+
+        '</div>'+
+        '<button class="pace-del-btn" onclick="if(confirm(\'Delete this plan?\'))deletePacePlan(\''+planKey+'\')">Delete Plan</button>'+
+        '</div>';
+    }
 
-      if(!keys.length){
-        h+='<div class="pace-empty">No subjects yet — add one below.</div>';
-      }
-
+    // Kid curriculum cards
+    visKids.forEach(k=>{
+      const kidSubjs=(paceData.subjects&&paceData.subjects[k])||{};
+      const keys=Object.keys(kidSubjs);
+      const isEditing=paceEditKid===k;
+      const col=PACE_KCOL[k];
+      let aheadN=0,onN=0,behindN=0;
       keys.forEach(sk=>{
         const s=kidSubjs[sk];
-        const autoC=paceAutoCount(k,s.keyword||"");
-        const offset=s.offset||0, adjust=s.adjust||0;
-        const cur=offset+autoC+adjust, tot=s.total||1;
-        const pct=Math.min(100,Math.round(cur/tot*100));
-        const status=paceStatus(cur,tot);
-        const barCol=status==="ahead"?"#16a34a":status==="behind"?"#ef4444":"#3b82f6";
+        const cur=(s.offset||0)+paceAutoCount(k,s.keyword||"")+(s.adjust||0);
+        const st=paceStatus(cur,s.total||0,s.startWeek||1,weekNum,totalWeeks);
+        if(st==="ahead")aheadN++; else if(st==="behind")behindN++; else if(st!=="not-started")onN++;
+      });
+      const summaryStr=keys.length?(behindN?behindN+' behind':aheadN?aheadN+' ahead':'All on track'):'No subjects yet';
 
-        h+='<div class="pace-subject-row">'+
-          '<div class="pace-subj-hdr">'+
-          '<span class="pace-subj-name">'+s.label+'</span>'+
-          '<span class="pace-subj-nums">'+cur+' / '+tot+' done</span></div>'+
-          '<div class="pace-bar"><div class="pace-bar-fill" style="width:'+pct+'%;background:'+barCol+'"></div></div>'+
-          '<div class="pace-status-row">'+
-          '<span class="pace-badge '+status+'">'+paceStatusLabel(status)+'</span>'+
-          '<span class="pace-pct">'+pct+'% complete</span></div>';
+      h+='<div class="pace-kid-card">'+
+        '<div class="pace-kid-hdr">'+
+        '<div><div class="pace-kid-name" style="color:'+col+'">'+cap(k)+'</div>'+
+        '<div class="pace-kid-meta">'+summaryStr+(keys.length?' &middot; '+keys.length+' subjects':'')+'</div></div>'+
+        '<div class="pace-kid-actions">'+
+        '<button class="pace-edit-btn'+(isEditing?' active':'')+'" onclick="togglePaceEdit(\''+k+'\')">'+
+        (isEditing?'Done':'Edit')+'</button></div>'+
+        '</div>';
+
+      if(keys.length||isEditing){
+        h+='<div class="pace-subjects">';
+        if(!keys.length) h+='<div class="pace-empty">No subjects yet — add one below.</div>';
+
+        keys.forEach(sk=>{
+          const s=kidSubjs[sk];
+          const autoC=paceAutoCount(k,s.keyword||"");
+          const offset=s.offset||0,adjust=s.adjust||0,sw=s.startWeek||1;
+          const cur=offset+autoC+adjust,tot=s.total||1;
+          const pct=Math.min(100,Math.round(cur/tot*100));
+          const status=paceStatus(cur,tot,sw,weekNum,totalWeeks);
+          const barCol=status==="ahead"?"#16a34a":status==="behind"?"#ef4444":status==="not-started"?"#d1d5db":"#3b82f6";
+
+          h+='<div class="pace-subject-row">'+
+            '<div class="pace-subj-hdr">'+
+            '<span class="pace-subj-name">'+s.label+'</span>'+
+            '<span class="pace-subj-nums">'+cur+' / '+tot+' done</span></div>'+
+            '<div class="pace-bar"><div class="pace-bar-fill" style="width:'+pct+'%;background:'+barCol+'"></div></div>'+
+            '<div class="pace-status-row">'+
+            '<span class="pace-badge '+status+'">'+paceStatusLabel(status)+'</span>'+
+            '<span class="pace-pct">'+pct+'% complete'+(sw>1&&weekNum<sw?' &middot; starts wk '+sw:'')+'</span></div>';
+
+          if(isEditing){
+            h+='<div class="pace-config-grid">'+
+              '<div><div class="pace-config-label">Keyword</div>'+
+              '<input class="pace-config-input" value="'+(s.keyword||'').replace(/"/g,'&quot;')+'" placeholder="e.g. AAS Spelling" '+
+              'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'keyword\',this.value)"/></div>'+
+              '<div><div class="pace-config-label">Total</div>'+
+              '<input class="pace-config-input" type="number" min="1" value="'+(s.total||'')+'" '+
+              'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'total\',parseInt(this.value)||0)"/></div>'+
+              '<div><div class="pace-config-label">Start Wk</div>'+
+              '<input class="pace-config-input" type="number" min="1" value="'+sw+'" '+
+              'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'startWeek\',parseInt(this.value)||1)"/></div>'+
+              '</div>'+
+              '<div class="pace-auto-info">'+
+              '<span>Auto: <span class="pace-auto-num">'+autoC+'</span></span>'+
+              '<span style="color:var(--border)">+</span>'+
+              '<span>Offset: <input class="pace-num-input" type="number" min="0" value="'+offset+'" '+
+              'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'offset\',parseInt(this.value)||0)"/></span>'+
+              '<span style="color:var(--border)">+</span>'+
+              '<span>Adjust: <input class="pace-num-input" type="number" value="'+adjust+'" '+
+              'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'adjust\',parseInt(this.value)||0)"/></span>'+
+              '<span style="color:var(--border)">=</span>'+
+              '<span><span class="pace-auto-num">'+cur+'</span> done</span>'+
+              '<button class="pace-del-btn" style="margin-left:auto" onclick="deletePaceSubject(\''+k+'\',\''+sk+'\')">Remove</button>'+
+              '</div>';
+          }
+          h+='</div>';
+        });
 
         if(isEditing){
-          h+='<div class="pace-config-grid">'+
-            '<div><div class="pace-config-label">Keyword in task title</div>'+
-            '<input class="pace-config-input" value="'+(s.keyword||'')+'" placeholder="e.g. AAS Spelling" '+
-            'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'keyword\',this.value)"/></div>'+
-            '<div><div class="pace-config-label">Total</div>'+
-            '<input class="pace-config-input" type="number" min="1" value="'+(s.total||'')+'" '+
-            'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'total\',parseInt(this.value)||0)"/></div>'+
-            '</div>'+
-            '<div class="pace-auto-info">'+
-            '<span>Auto: <span class="pace-auto-num">'+autoC+'</span></span>'+
-            '<span style="color:var(--border)">+</span>'+
-            '<span>Offset: <input class="pace-num-input" type="number" min="0" value="'+offset+'" '+
-            'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'offset\',parseInt(this.value)||0)"/></span>'+
-            '<span style="color:var(--border)">+</span>'+
-            '<span>Adjust: <input class="pace-num-input" type="number" value="'+adjust+'" '+
-            'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'adjust\',parseInt(this.value)||0)"/></span>'+
-            '<span style="color:var(--border)">=</span>'+
-            '<span><span class="pace-auto-num">'+cur+'</span> done</span>'+
-            '<button class="pace-del-btn" style="margin-left:auto" onclick="deletePaceSubject(\''+k+'\',\''+sk+'\')">Remove</button>'+
-            '</div>';
+          h+='<div class="pace-add-row">'+
+            '<input id="pace-new-label-'+k+'" type="text" placeholder="Subject name" maxlength="30"/>'+
+            '<input id="pace-new-kw-'+k+'" type="text" placeholder="Keyword" maxlength="40"/>'+
+            '<input id="pace-new-total-'+k+'" type="number" placeholder="Total" min="1" max="9999" style="width:60px"/>'+
+            '<input id="pace-new-sw-'+k+'" type="number" placeholder="Wk" min="1" title="Start week" style="width:44px"/>'+
+            '<button class="pace-add-btn" onclick="addPaceSubject(\''+k+'\')">+ Add</button></div>';
         }
-
         h+='</div>';
-      });
-
-      if(isEditing){
-        h+='<div class="pace-add-row">'+
-          '<input id="pace-new-label-'+k+'" type="text" placeholder="Subject name" maxlength="30"/>'+
-          '<input id="pace-new-kw-'+k+'" type="text" placeholder="Keyword" maxlength="40"/>'+
-          '<input id="pace-new-total-'+k+'" type="number" placeholder="Total" min="1" max="9999" style="width:70px"/>'+
-          '<button class="pace-add-btn" onclick="addPaceSubject(\''+k+'\')">+ Add</button></div>';
       }
-
       h+='</div>';
-    }
+    });
 
     h+='</div>';
   });
+
+  // Add plan form
+  h+='<div class="pace-add-plan-row">'+
+    '<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.3px">Add New Plan</div>'+
+    '<div class="pace-add-plan-grid">'+
+    '<div><div class="pace-config-label">Name</div><input id="pace-new-plan-label" class="pace-config-input" type="text" placeholder="e.g. Summer Session"/></div>'+
+    '<div><div class="pace-config-label">Start Date</div><input id="pace-new-plan-start" class="pace-config-input" type="date"/></div>'+
+    '<div><div class="pace-config-label">End Date</div><input id="pace-new-plan-end" class="pace-config-input" type="date"/></div>'+
+    '</div>'+
+    '<button class="pace-add-btn" onclick="addPacePlan()">+ Add Plan</button>'+
+    '</div>';
 
   h+='</div>';
   el.innerHTML=h;
