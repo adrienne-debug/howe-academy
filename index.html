@@ -245,7 +245,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 <body>
 
 <div id="app-header">
-  <div class="header-title">Howe <span>Academy</span></div>
+  <div class="header-title">Howe <span>Academy</span></div><div style="font-size:9px;color:#6b7280;margin-top:1px">v2.0</div>
   <div id="fb-status"><span class="fb-dot off" id="fb-dot"></span><span id="fb-lbl">Offline</span></div>
 </div>
 
@@ -332,7 +332,8 @@ let archive={};
 
 // ── FIREBASE ──────────────────────────────────────────────────────
 let isUploading = false;
-let lastCheckedWrite = 0; // timestamp of last local write to checked
+let lastCheckedWrite = 0;
+function dbg(msg){ console.log("[HA]",msg); try{if(db)db.ref("_debug").push({msg,wk:WK,t:Date.now()});}catch(e){} }
 
 function initFb() {
   try {
@@ -344,11 +345,10 @@ function initFb() {
       document.getElementById("fb-lbl").textContent=on?"Live":"Offline";
     });
     db.ref(WK+"/checked").on("value",s=>{
-      if(isUploading) return;
-      // Ignore Firebase echo for 2s after this device wrote — prevents self-overwrite
-      if(Date.now()-lastCheckedWrite<2000) return;
+      if(isUploading){ dbg("skip:uploading"); return; }
+      if(Date.now()-lastCheckedWrite<2000){ dbg("skip:echo"); return; }
       const v=s.val()||{};
-      // Only update if Firebase has MORE entries (never let Firebase wipe local state)
+      dbg("FB checked keys="+Object.keys(v).length+" local="+Object.keys(checked).length);
       if(Object.keys(v).length>=Object.keys(checked).length){
         checked=v; sv(WK+"_checked",checked); renderAll();
       }
@@ -356,7 +356,6 @@ function initFb() {
     db.ref(WK+"/sl").on("value",s=>{
       if(isUploading) return;
       const v=s.val()||{};
-      // Merge incoming with local — take whichever has more entries per key
       const merged={...v};
       Object.keys(slState).forEach(k=>{ if(!merged[k]) merged[k]=slState[k]; });
       slState=merged; sv(WK+"_sl",slState); renderAll();
@@ -375,12 +374,9 @@ function initFb() {
       if(isUploading) return;
       if(!s.val()) return;
       const incoming=Object.values(s.val());
-      // Compare by sorted task IDs — order-independent, avoids stringify loops
       const inIds=incoming.map(t=>t.id).sort().join(",");
       const curIds=weekData.tasks.map(t=>t.id).sort().join(",");
-      if(inIds!==curIds){
-        weekData.tasks=incoming; sv(WK+"_tasks",incoming); renderAll();
-      }
+      if(inIds!==curIds){ dbg("tasks updated count="+incoming.length); weekData.tasks=incoming; sv(WK+"_tasks",incoming); renderAll(); }
     });
     db.ref(WK+"/maggie").on("value",s=>{ if(s.val()) weekData.maggie=s.val(); });
     db.ref("archive").on("value",s=>{
@@ -515,7 +511,7 @@ function toggleSlot(who,slot){
   slState[k]={done:!cur.done,ts};
   const wk=activeWk();
   sv(wk+"_sl",slState);
-  if(db) db.ref(wk+"/sl").set(slState); // write full object for consistent sync
+  if(db) db.ref(wk+"/sl").set(slState);
   renderSkylight();
   if(tab==="schedule"){ const c=document.getElementById("content"); if(c) renderSchedule(c); }
 }
@@ -800,7 +796,8 @@ document.getElementById("dlg-ok").onclick=()=>{
   const ts=nowTs();
   checked[pendingId]=ts; sv(WK+"_checked",checked);
   lastCheckedWrite=Date.now();
-  if(db) db.ref(WK+"/checked").set(checked); // write full object for consistent sync
+  dbg("write checked id="+pendingId+" n="+Object.keys(checked).length);
+  if(db) db.ref(WK+"/checked").set(checked);
   const hist=ld(WK+"_history")||{};
   const t=weekData.tasks.find(x=>x.id===pendingId);
   if(t){ hist[pendingId]={id:pendingId,title:t.title,who:t.who,day:t.day,ts}; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+pendingId).set(hist[pendingId]); }
@@ -810,7 +807,8 @@ document.getElementById("dlg-uncheck").onclick=()=>{
   if(!pendingId)return;
   delete checked[pendingId]; sv(WK+"_checked",checked);
   lastCheckedWrite=Date.now();
-  if(db) db.ref(WK+"/checked").set(checked); // write full object for consistent sync
+  dbg("write uncheck id="+pendingId+" n="+Object.keys(checked).length);
+  if(db) db.ref(WK+"/checked").set(checked);
   const hist=ld(WK+"_history")||{};
   delete hist[pendingId]; sv(WK+"_history",hist);
   if(db) db.ref(WK+"/history/"+pendingId).remove();
@@ -1851,21 +1849,19 @@ window.addEventListener("scroll",()=>{
 
 // ── INIT ──────────────────────────────────────────────────────────
 boot(); initFb(); renderAll(); runCascade();
-// On first load, sync active week from Firebase for devices with no localStorage
-if(db){
-  db.ref("ha_active_wk").once("value").then(s=>{
+setTimeout(()=>{
+  if(db) db.ref("ha_active_wk").once("value").then(s=>{
     const fbWk=s.val();
+    dbg("ha_active_wk FB="+fbWk+" local="+WK);
     if(fbWk&&fbWk!==WK){
-      WK=fbWk; localStorage.setItem("ha_active_wk",WK);
-      weekData.week=WK;
+      WK=fbWk; localStorage.setItem("ha_active_wk",WK); weekData.week=WK;
       const t=ld(WK+"_tasks"); if(t) weekData.tasks=t;
       const meta=ld(WK+"_meta"); if(meta) applyWeekMeta(meta);
-      checked=ld(WK+"_checked")||{};
-      slState=ld(WK+"_sl")||{};
+      checked=ld(WK+"_checked")||{}; slState=ld(WK+"_sl")||{};
       renderAll();
     }
   }).catch(()=>{});
-}
+},500);
 </script>
 </body>
 </html>
