@@ -1981,9 +1981,15 @@ function paceStatus(current, total){
 
 function paceStatusLabel(s){ return s==="ahead"?"Ahead":s==="behind"?"Behind":"On Track"; }
 
-function paceWeeklyDone(kidName){
+function paceWeeklyDone(kidFilter){
   const hist = ld(WK+"_history")||{};
-  return Object.values(hist).filter(v=>v&&v.who===kidName&&v.ts&&!v.missed&&!v.flag&&!(v.id&&v.id.endsWith("_c"))).length;
+  return Object.values(hist).filter(v=>{
+    if(!v||!v.ts||v.missed||v.flag) return false;
+    if(v.id&&v.id.endsWith("_c")) return false;
+    if(v.title&&v.title.toLowerCase().includes("lunch")) return false;
+    if(kidFilter==="all"||kidFilter==="mom") return true;
+    return v.who===kidFilter;
+  }).length;
 }
 
 function savePaceSubject(kid, key, data){
@@ -2045,19 +2051,26 @@ function renderPace(el){
     '<div class="pace-year-wklbl">of '+PACE_TOTAL_WEEKS+' &middot; '+yearPct+'% done</div></div>'+
     '</div>';
 
-  // Weekly done summary
-  h+='<div class="pace-weekly-card">';
-  PACE_KIDS.forEach(k=>{
-    const done=paceWeeklyDone(k);
-    h+='<div class="pace-wk-cell">'+
-      '<div class="pace-wk-name" style="color:'+PACE_KCOL[k]+'">'+cap(k)+'</div>'+
-      '<div class="pace-wk-val" style="color:'+PACE_KCOL[k]+'">'+done+'</div>'+
-      '<div class="pace-wk-of">this wk</div></div>';
+  // Kid selector
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">';
+  [{k:"all",label:"All",col:"#111827"},...PACE_KIDS.map(k=>({k,label:cap(k),col:PACE_KCOL[k]}))].forEach(({k:k2,label,col})=>{
+    const on=kid===k2||(k2==="all"&&(kid==="all"||kid==="mom"));
+    h+='<button onclick="selKid(\''+k2+'\')" style="padding:5px 14px;border-radius:20px;border:1.5px solid '+(on?'transparent':' var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+label+'</button>';
   });
   h+='</div>';
 
-  // Per-kid curriculum cards
-  PACE_KIDS.forEach(k=>{
+  // Weekly done summary — single count based on selected kid
+  const weeklyDone = paceWeeklyDone(kid);
+  const weeklyLabel = (kid==="all"||kid==="mom") ? "tasks done this week (all kids)" : "tasks done this week";
+  const weeklyCol = (kid==="all"||kid==="mom") ? "#111827" : PACE_KCOL[kid]||"#111827";
+  h+='<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px">'+
+    '<div style="font-family:\'Fraunces\',serif;font-size:32px;font-weight:700;color:'+weeklyCol+'">'+weeklyDone+'</div>'+
+    '<div style="font-size:12px;color:var(--muted);font-weight:600;line-height:1.4">'+weeklyLabel+'<br><span style="font-size:11px;font-weight:400">checked off on the schedule</span></div>'+
+    '</div>';
+
+  // Per-kid curriculum cards — filter by selected kid
+  const kidsToShow = (kid==="all"||kid==="mom") ? PACE_KIDS : PACE_KIDS.filter(k=>k===kid);
+  kidsToShow.forEach(k=>{
     const kidSubjs = (paceData.subjects&&paceData.subjects[k])||{};
     const keys = Object.keys(kidSubjs);
     const isEditing = paceEditKid===k;
