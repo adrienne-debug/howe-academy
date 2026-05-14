@@ -331,79 +331,71 @@ let collCats={}, pendingId=null;
 let archive={};
 
 // ── FIREBASE ──────────────────────────────────────────────────────
-// Flag set during JSON upload to suppress Firebase listener echoes
 let isUploading = false;
-
-// Holds active listener refs so they can be torn down when WK changes
-let fbListeners = [];
-function unbindListeners(){
-  fbListeners.forEach(({ref,ev})=>{ try{ ref.off(ev); }catch(e){} });
-  fbListeners = [];
-}
-function bindListeners(){
-  if(!db) return;
-  unbindListeners();
-  const wk=WK;
-
-  const refChecked=db.ref(wk+"/checked");
-  refChecked.on("value",s=>{ if(isUploading)return; const v=s.val()||{}; checked=v; sv(wk+"_checked",checked); renderAll(); });
-  fbListeners.push({ref:refChecked,ev:"value"});
-
-  const refSl=db.ref(wk+"/sl");
-  refSl.on("value",s=>{ if(isUploading)return; slState=s.val()||{}; sv(wk+"_sl",slState); renderAll(); });
-  fbListeners.push({ref:refSl,ev:"value"});
-
-  const refSup=db.ref(wk+"/supplies");
-  refSup.on("value",s=>{ supplies=s.val()||{}; sv(wk+"_supplies",supplies); if(tab==="supplies")renderSupplies(); });
-  fbListeners.push({ref:refSup,ev:"value"});
-
-  const refHist=db.ref(wk+"/history");
-  refHist.on("value",s=>{ if(isUploading)return; const fbHist=s.val()||{}; const local=ld(wk+"_history")||{}; const merged={...local,...fbHist}; sv(wk+"_history",merged); if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);} });
-  fbListeners.push({ref:refHist,ev:"value"});
-
-  const refTasks=db.ref(wk+"/tasks");
-  refTasks.on("value",s=>{ if(isUploading)return; if(s.val()){ const incoming=Object.values(s.val()); if(JSON.stringify(incoming)!==JSON.stringify(weekData.tasks)){ weekData.tasks=incoming; sv(wk+"_tasks",incoming); renderAll(); } } });
-  fbListeners.push({ref:refTasks,ev:"value"});
-
-  // meta: syncs dates/constraints/windows to all devices when JSON uploaded
-  const refMeta=db.ref(wk+"/meta");
-  refMeta.on("value",s=>{ if(s.val()&&!isUploading){ applyWeekMeta(s.val()); sv(wk+"_meta",s.val()); renderAll(); } });
-  fbListeners.push({ref:refMeta,ev:"value"});
-
-  db.ref(wk+"/maggie").once("value").then(s=>{ if(s.val()) weekData.maggie=s.val(); });
-
-  const refArchive=db.ref("archive");
-  refArchive.on("value",s=>{ archive=s.val()||{}; try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){} if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);} });
-  fbListeners.push({ref:refArchive,ev:"value"});
-}
 
 function initFb() {
   try {
     firebase.initializeApp(FB_CFG);
     db = firebase.database();
-
     db.ref(".info/connected").on("value",s=>{
       const on=s.val()===true;
       document.getElementById("fb-dot").className="fb-dot"+(on?"":" off");
       document.getElementById("fb-lbl").textContent=on?"Live":"Offline";
     });
-
-    // Read the active week from Firebase — ensures all devices agree on current week
-    db.ref("activeWk").once("value").then(s=>{
-      const fbWk=s.val();
-      if(fbWk && fbWk!==WK){
-        // Another device set a new week — sync to it before binding listeners
-        WK=fbWk; localStorage.setItem("ha_active_wk",WK); weekData.week=WK;
-        const t=ld(WK+"_tasks"); if(t) weekData.tasks=t;
-        const meta=ld(WK+"_meta"); if(meta) applyWeekMeta(meta);
-        checked=ld(WK+"_checked")||{};
-        slState=ld(WK+"_sl")||{};
+    db.ref(WK+"/checked").on("value",s=>{
+      if(isUploading) return;
+      const v=s.val()||{}; checked=v; sv(WK+"_checked",checked); renderAll();
+    });
+    db.ref(WK+"/sl").on("value",s=>{
+      if(isUploading) return;
+      slState=s.val()||{}; sv(WK+"_sl",slState); renderAll();
+    });
+    db.ref(WK+"/supplies").on("value",s=>{
+      supplies=s.val()||{}; sv(WK+"_supplies",supplies);
+      if(tab==="supplies") renderSupplies();
+    });
+    db.ref(WK+"/history").on("value",s=>{
+      if(isUploading) return;
+      const fbHist=s.val()||{}; const local=ld(WK+"_history")||{};
+      const merged={...local,...fbHist}; sv(WK+"_history",merged);
+      if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
+    });
+    db.ref(WK+"/tasks").on("value",s=>{
+      if(isUploading) return;
+      if(s.val()){
+        const incoming=Object.values(s.val());
+        if(JSON.stringify(incoming)!==JSON.stringify(weekData.tasks)){
+          weekData.tasks=incoming; sv(WK+"_tasks",incoming); renderAll();
+        }
       }
-      bindListeners();
-      renderAll();
-      runCascade();
-    }).catch(()=>{ bindListeners(); renderAll(); runCascade(); });
-
+    });
+    db.ref(WK+"/maggie").on("value",s=>{ if(s.val()) weekData.maggie=s.val(); });
+    db.ref("archive").on("value",s=>{
+      archive=s.val()||{};
+      try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
+      if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
+    });
+    // Activity favorites cross-device sync
+    db.ref("act_favs").on("value",s=>{
+      if(s.val()) actFavs=s.val();
+      if(tab==="activities") renderActCards();
+    });
+    // Mom's Plan cross-device sync
+    db.ref("mp_data").on("value",s=>{
+      if(!s.val()) return;
+      const data=s.val();
+      MP_DATA.weekLabel=data.weekLabel||MP_DATA.weekLabel;
+      MP_DATA.winOfTheDay=data.winOfTheDay||MP_DATA.winOfTheDay;
+      MP_DATA.skylightTip=data.skylightTip||MP_DATA.skylightTip;
+      MP_DATA.days=data.days||MP_DATA.days;
+      MP_DATA.allMeals=data.allMeals||MP_DATA.allMeals;
+      try{localStorage.setItem('mp_weekly_data',JSON.stringify(data));}catch(e){}
+      if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+    });
+    db.ref("mp_chore_state").on("value",s=>{
+      if(s.val()) mpChoreState=s.val();
+      if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+    });
   } catch(e){ console.warn("FB offline:",e); }
 }
 
@@ -421,13 +413,9 @@ function boot() {
   supplies=ld(WK+"_supplies")||{};
   const savedSupDef=ld(WK+"_supplies_def"); if(savedSupDef&&Array.isArray(savedSupDef)) SUP=savedSupDef;
   try{ const a=localStorage.getItem("ha_archive"); if(a) archive=JSON.parse(a); }catch(e){}
-}
-
-// ── WEEK META ─────────────────────────────────────────────────────
-function applyWeekMeta(d){
-  if(d.dates&&typeof d.dates==="object") DAY_DT=d.dates;
-  if(d.constraints&&typeof d.constraints==="object") CONSTRAINT=d.constraints; else CONSTRAINT={};
-  if(d.windows&&typeof d.windows==="object") WIN=d.windows; else WIN={default:"School 10:00 AM–4:15 PM · Theater 4:30 Mon–Thu"};
+  try{ const af=localStorage.getItem('act_favs'); if(af) actFavs=JSON.parse(af); }catch(e){}
+  try{ const mp=localStorage.getItem("mp_weekly_data"); if(mp){const d=JSON.parse(mp);MP_DATA.weekLabel=d.weekLabel||MP_DATA.weekLabel;MP_DATA.winOfTheDay=d.winOfTheDay||MP_DATA.winOfTheDay;MP_DATA.skylightTip=d.skylightTip||MP_DATA.skylightTip;MP_DATA.days=d.days||MP_DATA.days;MP_DATA.allMeals=d.allMeals||MP_DATA.allMeals;} }catch(e){}
+  try{ const mc=localStorage.getItem("mp_chore_state"); if(mc) mpChoreState=JSON.parse(mc); }catch(e){}
 }
 
 // ── WEEK META ─────────────────────────────────────────────────────
@@ -558,7 +546,7 @@ function renderSkylight(){
         const cls=s.done?"done":(pulse?"alert":"");
         const bg=s.done?SL_KCOL[k2]+"22":"";
         const bc=s.done?SL_KCOL[k2]:"";
-        h2+='<div class="sl-cell"><div class="sl-dot '+cls+'" style="'+(s.done?'background:'+bg+';border-color:'+bc+';color:'+SL_KCOL[k2]:'')+'" title="'+(s.done?s.ts:'Not checked')+'">'+( s.done?"✓":"")+'</div></div>';
+        h2+='<div class="sl-cell"><div class="sl-dot '+cls+'" style="'+(s.done?'background:'+bg+';border-color:'+bc+';color:'+SL_KCOL[k2]:'')+'" title="'+(s.done?s.ts:'Not checked')+'" onclick="toggleSlot(\''+k2+'\',\''+slot+'\')">'+( s.done?"✓":"")+'</div></div>';
       });
       h2+='</div>';
     });
@@ -616,8 +604,13 @@ function renderDayTabs(){
 }
 function selDay(d){ day=d; renderAll(); }
 function dayPct(d){
-  const dt=weekData.tasks.filter(t=>t.day===d); if(!dt.length)return 0;
-  return Math.round(dt.filter(t=>checked[t.id]).length/dt.length*100);
+  // Exclude _c (cascaded copy) tasks from denominator — they were already
+  // counted on their original day. Only count originals + their own completions.
+  const orig=weekData.tasks.filter(t=>t.day===d&&!t.id.endsWith("_c"));
+  const casc=weekData.tasks.filter(t=>t.day===d&&t.id.endsWith("_c"));
+  const total=orig.length+casc.length; if(!total)return 0;
+  const done=weekData.tasks.filter(t=>t.day===d&&!!checked[t.id]).length;
+  return Math.round(done/total*100);
 }
 
 // ── KID FILTER ────────────────────────────────────────────────────
@@ -633,7 +626,10 @@ function selKid(k){ if(k !== "mom") momPinUnlocked=false; kid=k; renderAll(); }
 function renderWeekStrip(){
   const el=document.getElementById("week-strip");
   if(tab!=="schedule"){ el.style.display="none"; return; }
-  const all=weekData.tasks.length, done=weekData.tasks.filter(t=>checked[t.id]).length;
+  // Count: originals not cascaded away + cascade copies. Exclude originals that were replaced by _c.
+  const cascadedAwayInStrip=new Set(weekData.tasks.filter(t=>t.id.endsWith("_c")).map(t=>t.id.replace(/_c$/,"")));
+  const countable=weekData.tasks.filter(t=>!cascadedAwayInStrip.has(t.id)||!!checked[t.id]);
+  const all=countable.length, done=countable.filter(t=>checked[t.id]).length;
   const pct=all?Math.round(done/all*100):0;
   el.style.display="grid";
   el.innerHTML=
@@ -652,13 +648,13 @@ function renderSchedule(el){
     weekData.tasks.filter(t=>t.id.endsWith("_c")).map(t=>t.id.replace(/_c$/,""))
   );
 
-  // Tasks belonging to this day, excluding ones that have already cascaded away
-  let tasks=weekData.tasks.filter(t=>t.day===day && !cascadedAwayIds.has(t.id));
+  // Tasks for this day — cascaded-away tasks shown only if completed
+  let tasks=weekData.tasks.filter(t=>t.day===day && (!cascadedAwayIds.has(t.id) || !!checked[t.id]));
   if(kid==="mom") tasks=tasks.filter(t=>t.mom==="required"||t.mom==="maybe");
   else if(kid!=="all") tasks=tasks.filter(t=>t.who===kid);
 
   // Carried-over tasks: cascaded tasks landing on THIS day
-  let carriedOver=weekData.tasks.filter(t=>t.day===day && t.id.endsWith("_c") && !checked[t.id]);
+  let carriedOver=weekData.tasks.filter(t=>t.day===day && t.id.endsWith("_c"));
   if(kid==="mom") carriedOver=carriedOver.filter(t=>t.mom==="required"||t.mom==="maybe");
   else if(kid!=="all") carriedOver=carriedOver.filter(t=>t.who===kid);
 
@@ -679,13 +675,10 @@ function renderSchedule(el){
 
   // ── SCHEDULE LOCK CHECK ──────────────────────────────────────────
   const unlocked = isScheduleUnlocked(kid, day);
-  const lockKidName = (kid==="all") ? "everyone" : cap(kid);
   const lockMsg = (kid==="all")
     ? "All four kids need to check off their Morning slot in Skylight above."
     : cap(kid)+"'s Morning slot needs to be checked off in Skylight above.";
 
-  // Carried-over tray: own sched-blur when locked so it blurs visually
-  // but pointer-events:none means taps pass through to skylight above
   if(carriedOver.length){
     if(!unlocked) h+='<div class="sched-blur">';
     h+='<div style="margin:10px 12px 0;border-left:4px solid #6366f1;background:#eef2ff;border-radius:0 10px 10px 0;padding:10px 12px">';
@@ -706,12 +699,12 @@ function renderSchedule(el){
   h += innerStart;
   let lunchDone=false;
   times.forEach(t=>{
-    if(!lunchDone&&toMin(t)>=14*60){ h+=lunchBlock(); lunchDone=true; }
+    if(!lunchDone&&toMin(t)>=13*60){ h+=lunchBlock(); lunchDone=true; }
     h+='<div class="time-row"><div class="time-pill">'+t+'</div><div class="slot-tasks">';
     tmap[t].forEach(tk=>{ h+=taskCard(tk); });
     h+='</div></div>';
   });
-  if(!lunchDone&&times.length) h+=lunchBlock();
+  if(!lunchDone&&times.length&&toMin(times[times.length-1])<13*60) h+=lunchBlock();
 
   if(!unlocked){
     // Close the blurred inner wrapper, then add the overlay
@@ -1193,6 +1186,7 @@ function mpToggleChore(dayId, index) {
   if (!mpChoreState[dayId]) mpChoreState[dayId] = {};
   mpChoreState[dayId][index] = !mpChoreState[dayId][index];
   try { localStorage.setItem('mp_chore_state', JSON.stringify(mpChoreState)); } catch(e) {}
+  if(db) db.ref("mp_chore_state").set(mpChoreState);
   const el = document.getElementById('content');
   renderMomsPlan(el);
   const day = MP_DATA.days.find(d=>d.id===dayId);
@@ -1228,6 +1222,8 @@ function mpHandleUpload(event) {
       mpChoreState = {};
       try { localStorage.setItem('mp_weekly_data', JSON.stringify(data)); } catch(err) {}
       try { localStorage.removeItem('mp_chore_state'); } catch(err) {}
+      // Sync Mom's Plan to Firebase so all devices stay current
+      if(db){ db.ref("mp_data").set(data); db.ref("mp_chore_state").set({}); }
       const todayDay = MP_DATA.days.find(d => d.isToday);
       mpActiveDay = todayDay ? todayDay.id : MP_DATA.days[0].id;
       const el = document.getElementById('content');
@@ -1435,11 +1431,11 @@ function renderMaggie(el){
   const mt=weekData.tasks.filter(t=>mag.days.includes(t.day)&&t.mom!=="required");
   const bk={};mt.forEach(t=>{if(!bk[t.who])bk[t.who]=[];bk[t.who].push(t);});
   let h='<div class="mag-section">'+
-    '<div class="mag-hdr-card"><div style="font-size:13px;opacity:0.85;margin-bottom:4px">'+mag.days.map(d=>DAY_LBL[d]).join(", ")+" · "+mag.hours+'</div>'+
-    '<div class="mag-return">Mom back at '+mag.mom_return+'</div>'+
-    '<div class="mag-sub">Mom Required tasks begin at '+mag.mom_return+'</div></div>'+
+    '<div class="mag-hdr-card"><div style="font-size:13px;opacity:0.85;margin-bottom:4px">'+mag.days.map(d=>{const hrs=mag['hours_'+d]||mag.hours||'';return DAY_LBL[d]+(hrs?' · '+hrs:'');}).join(' &amp; ')+'</div>'+
+    '<div class="mag-return">Mom back: '+mag.days.map(d=>{const ret=mag['mom_return_'+d]||mag.mom_return||'';return DAY_LBL[d]+(ret?' at '+ret:'');}).join(', ')+'</div>'+
+    '<div class="mag-sub">Mom Required tasks begin after Mom returns</div></div>'+
     '<div class="mag-prep"><div style="font-weight:700;font-size:14px;margin-bottom:8px">Before Maggie Arrives</div>'+
-    '<div style="font-size:13px;line-height:1.8">All devices logged in + ready<br>Lucy program list visible<br>Snacks: '+(mag.snacks||"TBD")+'<br>Meals: '+(mag.meals||"TBD")+'<br>Mom returns: '+mag.mom_return+'</div></div>';
+    '<div style="font-size:13px;line-height:1.8">All devices logged in + ready<br>Lucy program list visible<br>Snacks: '+(mag.snacks||"TBD")+'<br>Meals: '+(mag.meals||"TBD")+'<br>Mom returns: '+mag.days.map(d=>mag['mom_return_'+d]||mag.mom_return||'').filter(Boolean).join(' / ')+'</div></div>';
   ["lincoln","ellis","lucy"].forEach(k2=>{
     const ts=(bk[k2]||[]).sort((a,b)=>toMin(a.time)-toMin(b.time)); if(!ts.length)return;
     const col={lincoln:DAY_COL.monday,ellis:DAY_COL.tuesday,lucy:DAY_COL.wednesday}[k2];
@@ -1461,27 +1457,19 @@ function loadJson(){
     try{
       const d=JSON.parse(e.target.result);
       if(!d.week||!d.tasks){document.getElementById("admin-msg").textContent="❌ JSON missing week or tasks.";return;}
-
-      // Lunch block validation
       const lunchConflicts=(d.tasks||[]).filter(t=>{
         const p=t.time&&t.time.match(/(\d+):(\d+)\s*(AM|PM)/i); if(!p)return false;
-        let h=parseInt(p[1]); const mn=parseInt(p[2]);
-        if(p[3].toUpperCase()==="PM"&&h!==12)h+=12;
-        if(p[3].toUpperCase()==="AM"&&h===12)h=0;
-        const m=h*60+mn; return m>=780&&m<840;
+        let h=parseInt(p[1]); if(p[3].toUpperCase()==="PM"&&h!==12)h+=12; if(p[3].toUpperCase()==="AM"&&h===12)h=0;
+        const m=h*60+parseInt(p[2]); return m>=780&&m<840;
       });
       if(lunchConflicts.length){
         const names=lunchConflicts.map(t=>t.id+"("+t.day+" "+t.time+")").join(", ");
         document.getElementById("admin-msg").textContent="⚠️ "+lunchConflicts.length+" task(s) during lunch (1–2 PM): "+names+". Move to 2:05 PM or later.";
         return;
       }
-
-      // Set upload flag — suppresses Firebase listener echoes during write
       isUploading=true;
-
       const activeWK=localStorage.getItem("ha_active_wk")||WK;
       const isSameWeek=!!(d.week===activeWK);
-
       if(isSameWeek){
         const lsChecked=ld(activeWK+"_checked")||{};
         const memChecked=checked||{};
@@ -1502,7 +1490,6 @@ function loadJson(){
           if(Object.keys(snapHist).length) db.ref(WK+"/history").set(snapHist);
           if(Object.keys(snapSl).length) db.ref(WK+"/sl").set(snapSl);
           if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
-          db.ref(WK+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
         }
         renderAll(); runCascade();
         document.getElementById("admin-msg").textContent="✅ "+d.week+" updated — "+d.tasks.length+" tasks. Completions & history preserved.";
@@ -1531,21 +1518,12 @@ function loadJson(){
           db.ref(WK+"/tasks").set(obj);
           db.ref(WK+"/checked").set({}); db.ref(WK+"/sl").set({}); db.ref(WK+"/history").set({});
           if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
-          db.ref(WK+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
-          db.ref("activeWk").set(WK); // tells all other devices the new week
         }
-        bindListeners(); // rebind all listeners to new WK path
         renderAll(); runCascade();
         document.getElementById("admin-msg").textContent="✅ "+d.week+" loaded — "+d.tasks.length+" tasks. Previous week archived.";
       }
-
-      // Release upload lock after 3 seconds — enough time for Firebase writes to settle
       setTimeout(()=>{ isUploading=false; },3000);
-
-    }catch(err){
-      isUploading=false;
-      document.getElementById("admin-msg").textContent="❌ "+err.message;
-    }
+    }catch(err){ isUploading=false; document.getElementById("admin-msg").textContent="❌ "+err.message; }
   };
   r.readAsText(f);
 }
@@ -1745,6 +1723,9 @@ function actCatLabel(id){ for(var i=0;i<ACT_CATS.length;i++) if(ACT_CATS[i].id==
 
 function toggleActFav(id){
   actFavs[id]=!actFavs[id];
+  if(!actFavs[id]) delete actFavs[id];
+  try{localStorage.setItem('act_favs',JSON.stringify(actFavs));}catch(e){}
+  if(db) db.ref("act_favs").set(actFavs);
   if(tab==='activities'){ renderActFilters(); renderActCards(); }
 }
 
@@ -1853,7 +1834,7 @@ window.addEventListener("scroll",()=>{
 });
 
 // ── INIT ──────────────────────────────────────────────────────────
-boot(); initFb(); runCascade();
+boot(); initFb(); renderAll(); runCascade();
 </script>
 </body>
 </html>
