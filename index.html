@@ -331,26 +331,79 @@ let collCats={}, pendingId=null;
 let archive={};
 
 // ── FIREBASE ──────────────────────────────────────────────────────
+// Flag set during JSON upload to suppress Firebase listener echoes
+let isUploading = false;
+
+// Holds active listener refs so they can be torn down when WK changes
+let fbListeners = [];
+function unbindListeners(){
+  fbListeners.forEach(({ref,ev})=>{ try{ ref.off(ev); }catch(e){} });
+  fbListeners = [];
+}
+function bindListeners(){
+  if(!db) return;
+  unbindListeners();
+  const wk=WK;
+
+  const refChecked=db.ref(wk+"/checked");
+  refChecked.on("value",s=>{ if(isUploading)return; const v=s.val()||{}; checked=v; sv(wk+"_checked",checked); renderAll(); });
+  fbListeners.push({ref:refChecked,ev:"value"});
+
+  const refSl=db.ref(wk+"/sl");
+  refSl.on("value",s=>{ if(isUploading)return; slState=s.val()||{}; sv(wk+"_sl",slState); renderAll(); });
+  fbListeners.push({ref:refSl,ev:"value"});
+
+  const refSup=db.ref(wk+"/supplies");
+  refSup.on("value",s=>{ supplies=s.val()||{}; sv(wk+"_supplies",supplies); if(tab==="supplies")renderSupplies(); });
+  fbListeners.push({ref:refSup,ev:"value"});
+
+  const refHist=db.ref(wk+"/history");
+  refHist.on("value",s=>{ if(isUploading)return; const fbHist=s.val()||{}; const local=ld(wk+"_history")||{}; const merged={...local,...fbHist}; sv(wk+"_history",merged); if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);} });
+  fbListeners.push({ref:refHist,ev:"value"});
+
+  const refTasks=db.ref(wk+"/tasks");
+  refTasks.on("value",s=>{ if(isUploading)return; if(s.val()){ const incoming=Object.values(s.val()); if(JSON.stringify(incoming)!==JSON.stringify(weekData.tasks)){ weekData.tasks=incoming; sv(wk+"_tasks",incoming); renderAll(); } } });
+  fbListeners.push({ref:refTasks,ev:"value"});
+
+  // meta: syncs dates/constraints/windows to all devices when JSON uploaded
+  const refMeta=db.ref(wk+"/meta");
+  refMeta.on("value",s=>{ if(s.val()&&!isUploading){ applyWeekMeta(s.val()); sv(wk+"_meta",s.val()); renderAll(); } });
+  fbListeners.push({ref:refMeta,ev:"value"});
+
+  db.ref(wk+"/maggie").once("value").then(s=>{ if(s.val()) weekData.maggie=s.val(); });
+
+  const refArchive=db.ref("archive");
+  refArchive.on("value",s=>{ archive=s.val()||{}; try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){} if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);} });
+  fbListeners.push({ref:refArchive,ev:"value"});
+}
+
 function initFb() {
   try {
     firebase.initializeApp(FB_CFG);
     db = firebase.database();
+
     db.ref(".info/connected").on("value",s=>{
       const on=s.val()===true;
       document.getElementById("fb-dot").className="fb-dot"+(on?"":" off");
       document.getElementById("fb-lbl").textContent=on?"Live":"Offline";
     });
-    db.ref(WK+"/checked").on("value",s=>{ const v=s.val()||{}; if(Object.keys(v).length===0&&Object.keys(checked).length>0)return; checked=v; sv(WK+"_checked",checked); renderAll(); });
-    db.ref(WK+"/sl").on("value",s=>{ slState=s.val()||{}; renderSkylight(); });
-    db.ref(WK+"/supplies").on("value",s=>{ supplies=s.val()||{}; if(tab==="supplies") renderSupplies(); });
-    db.ref(WK+"/history").on("value",s=>{ const fbHist=s.val()||{}; const local=ld(WK+"_history")||{}; const merged={...local,...fbHist}; sv(WK+"_history",merged); if(tab==="history"){ const el=document.getElementById("content"); if(el) renderHistory(el); } });
-    db.ref(WK+"/tasks").once("value").then(s=>{ if(s.val()){ weekData.tasks=Object.values(s.val()); renderAll(); }});
-    db.ref(WK+"/maggie").once("value").then(s=>{ if(s.val()) weekData.maggie=s.val(); });
-    db.ref("archive").on("value",s=>{
-      archive=s.val()||{};
-      try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
-      if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
-    });
+
+    // Read the active week from Firebase — ensures all devices agree on current week
+    db.ref("activeWk").once("value").then(s=>{
+      const fbWk=s.val();
+      if(fbWk && fbWk!==WK){
+        // Another device set a new week — sync to it before binding listeners
+        WK=fbWk; localStorage.setItem("ha_active_wk",WK); weekData.week=WK;
+        const t=ld(WK+"_tasks"); if(t) weekData.tasks=t;
+        const meta=ld(WK+"_meta"); if(meta) applyWeekMeta(meta);
+        checked=ld(WK+"_checked")||{};
+        slState=ld(WK+"_sl")||{};
+      }
+      bindListeners();
+      renderAll();
+      runCascade();
+    }).catch(()=>{ bindListeners(); renderAll(); runCascade(); });
+
   } catch(e){ console.warn("FB offline:",e); }
 }
 
@@ -368,6 +421,13 @@ function boot() {
   supplies=ld(WK+"_supplies")||{};
   const savedSupDef=ld(WK+"_supplies_def"); if(savedSupDef&&Array.isArray(savedSupDef)) SUP=savedSupDef;
   try{ const a=localStorage.getItem("ha_archive"); if(a) archive=JSON.parse(a); }catch(e){}
+}
+
+// ── WEEK META ─────────────────────────────────────────────────────
+function applyWeekMeta(d){
+  if(d.dates&&typeof d.dates==="object") DAY_DT=d.dates;
+  if(d.constraints&&typeof d.constraints==="object") CONSTRAINT=d.constraints; else CONSTRAINT={};
+  if(d.windows&&typeof d.windows==="object") WIN=d.windows; else WIN={default:"School 10:00 AM–4:15 PM · Theater 4:30 Mon–Thu"};
 }
 
 // ── WEEK META ─────────────────────────────────────────────────────
@@ -624,9 +684,8 @@ function renderSchedule(el){
     ? "All four kids need to check off their Morning slot in Skylight above."
     : cap(kid)+"'s Morning slot needs to be checked off in Skylight above.";
 
-  // ── CARRIED OVER TRAY ──
-  // Has its own sched-blur when locked — blurs visually but pointer-events:none
-  // means taps pass through, keeping skylight fully tappable above.
+  // Carried-over tray: own sched-blur when locked so it blurs visually
+  // but pointer-events:none means taps pass through to skylight above
   if(carriedOver.length){
     if(!unlocked) h+='<div class="sched-blur">';
     h+='<div style="margin:10px 12px 0;border-left:4px solid #6366f1;background:#eef2ff;border-radius:0 10px 10px 0;padding:10px 12px">';
@@ -640,7 +699,6 @@ function renderSchedule(el){
     if(!unlocked) h+='</div>';
   }
 
-  // Main schedule — original lock structure, overlay only covers time-slots
   const innerStart = unlocked
     ? '<div class="time-slots">'
     : '<div class="sched-locked-wrap"><div class="sched-blur"><div class="time-slots">';
@@ -1402,23 +1460,28 @@ function loadJson(){
   r.onload=e=>{
     try{
       const d=JSON.parse(e.target.result);
-      // ── Lunch block validation — warn if any tasks fall in 1:00-2:00 PM ──
+      if(!d.week||!d.tasks){document.getElementById("admin-msg").textContent="❌ JSON missing week or tasks.";return;}
+
+      // Lunch block validation
       const lunchConflicts=(d.tasks||[]).filter(t=>{
         const p=t.time&&t.time.match(/(\d+):(\d+)\s*(AM|PM)/i); if(!p)return false;
         let h=parseInt(p[1]); const mn=parseInt(p[2]);
         if(p[3].toUpperCase()==="PM"&&h!==12)h+=12;
         if(p[3].toUpperCase()==="AM"&&h===12)h=0;
-        const m=h*60+mn; return m>=780&&m<840; // 1:00-2:00 PM = 780-840 min
+        const m=h*60+mn; return m>=780&&m<840;
       });
       if(lunchConflicts.length){
         const names=lunchConflicts.map(t=>t.id+"("+t.day+" "+t.time+")").join(", ");
-        document.getElementById("admin-msg").textContent="⚠️ "+lunchConflicts.length+" task(s) scheduled during lunch (1–2 PM): "+names+". Move these to 2:05 PM or later.";
+        document.getElementById("admin-msg").textContent="⚠️ "+lunchConflicts.length+" task(s) during lunch (1–2 PM): "+names+". Move to 2:05 PM or later.";
         return;
       }
 
-      // ── Detect same-week vs new week ──────────────────────────────
+      // Set upload flag — suppresses Firebase listener echoes during write
+      isUploading=true;
+
       const activeWK=localStorage.getItem("ha_active_wk")||WK;
-      const isSameWeek=!!(d.week&&d.week===activeWK);
+      const isSameWeek=!!(d.week===activeWK);
+
       if(isSameWeek){
         const lsChecked=ld(activeWK+"_checked")||{};
         const memChecked=checked||{};
@@ -1439,6 +1502,7 @@ function loadJson(){
           if(Object.keys(snapHist).length) db.ref(WK+"/history").set(snapHist);
           if(Object.keys(snapSl).length) db.ref(WK+"/sl").set(snapSl);
           if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
+          db.ref(WK+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
         }
         renderAll(); runCascade();
         document.getElementById("admin-msg").textContent="✅ "+d.week+" updated — "+d.tasks.length+" tasks. Completions & history preserved.";
@@ -1467,11 +1531,21 @@ function loadJson(){
           db.ref(WK+"/tasks").set(obj);
           db.ref(WK+"/checked").set({}); db.ref(WK+"/sl").set({}); db.ref(WK+"/history").set({});
           if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
+          db.ref(WK+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
+          db.ref("activeWk").set(WK); // tells all other devices the new week
         }
+        bindListeners(); // rebind all listeners to new WK path
         renderAll(); runCascade();
         document.getElementById("admin-msg").textContent="✅ "+d.week+" loaded — "+d.tasks.length+" tasks. Previous week archived.";
       }
-    }catch(err){document.getElementById("admin-msg").textContent="❌ "+err.message;}
+
+      // Release upload lock after 3 seconds — enough time for Firebase writes to settle
+      setTimeout(()=>{ isUploading=false; },3000);
+
+    }catch(err){
+      isUploading=false;
+      document.getElementById("admin-msg").textContent="❌ "+err.message;
+    }
   };
   r.readAsText(f);
 }
@@ -1779,7 +1853,7 @@ window.addEventListener("scroll",()=>{
 });
 
 // ── INIT ──────────────────────────────────────────────────────────
-boot(); initFb(); renderAll(); runCascade();
+boot(); initFb(); runCascade();
 </script>
 </body>
 </html>
