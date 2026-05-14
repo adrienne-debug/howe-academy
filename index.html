@@ -329,67 +329,116 @@ let checked={}, slState={}, supplies={};
 let tab="schedule", day="monday", kid="all", supDay="all";
 let collCats={}, pendingId=null;
 let archive={};
+let fbWeekRefs=[];
 
 // ── FIREBASE ──────────────────────────────────────────────────────
 let isUploading = false;
 let lastCheckedWrite = 0;
 function dbg(msg){ console.log("[HA]",msg); try{if(db)db.ref("_debug").push({msg,wk:WK,t:Date.now()});}catch(e){} }
 
+// Detach all week-scoped listeners, then re-attach for the given week.
+// Called on first load and whenever WK changes (new week upload or cross-device week switch).
+function detachWeekListeners(){
+  fbWeekRefs.forEach(r=>{ try{ r.off(); }catch(e){} });
+  fbWeekRefs=[];
+}
+
+function attachWeekListeners(wk){
+  detachWeekListeners();
+
+  const r1=db.ref(wk+"/checked");
+  r1.on("value",s=>{
+    if(isUploading){ dbg("skip:uploading"); return; }
+    if(Date.now()-lastCheckedWrite<2000){ dbg("skip:echo"); return; }
+    const v=s.val()||{};
+    dbg("FB checked keys="+Object.keys(v).length+" local="+Object.keys(checked).length);
+    if(Object.keys(v).length>=Object.keys(checked).length){
+      checked=v; sv(wk+"_checked",checked); renderAll();
+    }
+  });
+  fbWeekRefs.push(r1);
+
+  const r2=db.ref(wk+"/sl");
+  r2.on("value",s=>{
+    if(isUploading) return;
+    const v=s.val()||{};
+    const merged={...v};
+    Object.keys(slState).forEach(k=>{ if(!merged[k]) merged[k]=slState[k]; });
+    slState=merged; sv(wk+"_sl",slState); renderAll();
+  });
+  fbWeekRefs.push(r2);
+
+  const r3=db.ref(wk+"/supplies");
+  r3.on("value",s=>{
+    supplies=s.val()||{}; sv(wk+"_supplies",supplies);
+    if(tab==="supplies") renderSupplies();
+  });
+  fbWeekRefs.push(r3);
+
+  const r4=db.ref(wk+"/history");
+  r4.on("value",s=>{
+    if(isUploading) return;
+    const fbHist=s.val()||{}; const local=ld(wk+"_history")||{};
+    const merged={...local,...fbHist}; sv(wk+"_history",merged);
+    if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
+  });
+  fbWeekRefs.push(r4);
+
+  const r5=db.ref(wk+"/tasks");
+  r5.on("value",s=>{
+    if(isUploading) return;
+    if(!s.val()) return;
+    const incoming=Object.values(s.val());
+    const inIds=incoming.map(t=>t.id).sort().join(",");
+    const curIds=weekData.tasks.map(t=>t.id).sort().join(",");
+    if(inIds!==curIds){ dbg("tasks updated count="+incoming.length); weekData.tasks=incoming; sv(wk+"_tasks",incoming); renderAll(); }
+  });
+  fbWeekRefs.push(r5);
+
+  const r6=db.ref(wk+"/maggie");
+  r6.on("value",s=>{ if(s.val()) weekData.maggie=s.val(); });
+  fbWeekRefs.push(r6);
+}
+
 function initFb() {
   try {
     firebase.initializeApp(FB_CFG);
     db = firebase.database();
+
     db.ref(".info/connected").on("value",s=>{
       const on=s.val()===true;
       document.getElementById("fb-dot").className="fb-dot"+(on?"":" off");
       document.getElementById("fb-lbl").textContent=on?"Live":"Offline";
     });
-    db.ref(WK+"/checked").on("value",s=>{
-      if(isUploading){ dbg("skip:uploading"); return; }
-      if(Date.now()-lastCheckedWrite<2000){ dbg("skip:echo"); return; }
-      const v=s.val()||{};
-      dbg("FB checked keys="+Object.keys(v).length+" local="+Object.keys(checked).length);
-      if(Object.keys(v).length>=Object.keys(checked).length){
-        checked=v; sv(WK+"_checked",checked); renderAll();
+
+    // Attach week listeners immediately so the app works offline.
+    // The ha_active_wk listener below will re-attach if the week differs.
+    attachWeekListeners(WK);
+
+    // Persistent cross-device active-week sync.
+    // Fires immediately on connect and any time another device changes the week.
+    db.ref("ha_active_wk").on("value",s=>{
+      const fbWk=s.val();
+      if(fbWk && fbWk!==WK){
+        dbg("ha_active_wk changed FB="+fbWk+" local="+WK);
+        WK=fbWk; localStorage.setItem("ha_active_wk",WK); weekData.week=WK;
+        const t=ld(WK+"_tasks"); if(t) weekData.tasks=t;
+        const meta=ld(WK+"_meta"); if(meta) applyWeekMeta(meta);
+        checked=ld(WK+"_checked")||{}; slState=ld(WK+"_sl")||{};
+        attachWeekListeners(WK);
+        renderAll();
       }
     });
-    db.ref(WK+"/sl").on("value",s=>{
-      if(isUploading) return;
-      const v=s.val()||{};
-      const merged={...v};
-      Object.keys(slState).forEach(k=>{ if(!merged[k]) merged[k]=slState[k]; });
-      slState=merged; sv(WK+"_sl",slState); renderAll();
-    });
-    db.ref(WK+"/supplies").on("value",s=>{
-      supplies=s.val()||{}; sv(WK+"_supplies",supplies);
-      if(tab==="supplies") renderSupplies();
-    });
-    db.ref(WK+"/history").on("value",s=>{
-      if(isUploading) return;
-      const fbHist=s.val()||{}; const local=ld(WK+"_history")||{};
-      const merged={...local,...fbHist}; sv(WK+"_history",merged);
-      if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
-    });
-    db.ref(WK+"/tasks").on("value",s=>{
-      if(isUploading) return;
-      if(!s.val()) return;
-      const incoming=Object.values(s.val());
-      const inIds=incoming.map(t=>t.id).sort().join(",");
-      const curIds=weekData.tasks.map(t=>t.id).sort().join(",");
-      if(inIds!==curIds){ dbg("tasks updated count="+incoming.length); weekData.tasks=incoming; sv(WK+"_tasks",incoming); renderAll(); }
-    });
-    db.ref(WK+"/maggie").on("value",s=>{ if(s.val()) weekData.maggie=s.val(); });
+
     db.ref("archive").on("value",s=>{
       archive=s.val()||{};
       try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
       if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
     });
-    // Activity favorites cross-device sync
     db.ref("act_favs").on("value",s=>{
       if(s.val()) actFavs=s.val();
       if(tab==="activities") renderActCards();
     });
-    // Mom's Plan cross-device sync
     db.ref("mp_data").on("value",s=>{
       if(!s.val()) return;
       const data=s.val();
@@ -689,16 +738,20 @@ function renderSchedule(el){
     : cap(kid)+"'s Morning slot needs to be checked off in Skylight above.";
 
   if(carriedOver.length){
-    if(!unlocked) h+='<div class="sched-blur">';
-    h+='<div style="margin:10px 12px 0;border-left:4px solid #6366f1;background:#eef2ff;border-radius:0 10px 10px 0;padding:10px 12px">';
-    h+='<div style="font-size:11px;font-weight:800;color:#4338ca;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.4px">📋 Carried Over</div>';
+    let coHtml='<div style="margin:10px 12px 0;border-left:4px solid #6366f1;background:#eef2ff;border-radius:0 10px 10px 0;padding:10px 12px">'+
+      '<div style="font-size:11px;font-weight:800;color:#4338ca;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.4px">📋 Carried Over</div>';
     carriedOver.forEach(t=>{
       const fromMatch=t.detail.match(/Cascaded from (\w+)/);
       const fromDay=fromMatch?fromMatch[1]:"previous day";
-      h+=taskCard(t, fromDay);
+      coHtml+=taskCard(t, fromDay);
     });
-    h+='</div>';
-    if(!unlocked) h+='</div>';
+    coHtml+='</div>';
+    if(!unlocked){
+      h+='<div class="sched-locked-wrap"><div class="sched-blur">'+coHtml+'</div>'+
+        '<div class="sched-lock-overlay" onclick="scrollToSkylight()"></div></div>';
+    } else {
+      h+=coHtml;
+    }
   }
 
   const innerStart = unlocked
@@ -1532,6 +1585,7 @@ function loadJson(){
           db.ref(WK+"/tasks").set(obj);
           db.ref(WK+"/checked").set({}); db.ref(WK+"/sl").set({}); db.ref(WK+"/history").set({});
           if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
+          attachWeekListeners(WK);
         }
         renderAll(); runCascade();
         document.getElementById("admin-msg").textContent="✅ "+d.week+" loaded — "+d.tasks.length+" tasks. Previous week archived.";
@@ -1849,19 +1903,6 @@ window.addEventListener("scroll",()=>{
 
 // ── INIT ──────────────────────────────────────────────────────────
 boot(); initFb(); renderAll(); runCascade();
-setTimeout(()=>{
-  if(db) db.ref("ha_active_wk").once("value").then(s=>{
-    const fbWk=s.val();
-    dbg("ha_active_wk FB="+fbWk+" local="+WK);
-    if(fbWk&&fbWk!==WK){
-      WK=fbWk; localStorage.setItem("ha_active_wk",WK); weekData.week=WK;
-      const t=ld(WK+"_tasks"); if(t) weekData.tasks=t;
-      const meta=ld(WK+"_meta"); if(meta) applyWeekMeta(meta);
-      checked=ld(WK+"_checked")||{}; slState=ld(WK+"_sl")||{};
-      renderAll();
-    }
-  }).catch(()=>{});
-},500);
 </script>
 </body>
 </html>
