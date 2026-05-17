@@ -418,6 +418,11 @@ function detachWeekListeners(){
 function attachWeekListeners(wk){
   detachWeekListeners();
 
+  // Meta first — so DAY_DT is populated before the checked listener fires runCascade
+  const r7=db.ref(wk+"/meta");
+  r7.on("value",s=>{ if(isUploading||!s.val()) return; applyWeekMeta(s.val()); sv(wk+"_meta",s.val()); renderAll(); });
+  fbWeekRefs.push(r7);
+
   const r1=db.ref(wk+"/checked");
   r1.on("value",s=>{
     if(isUploading){ dbg("skip:uploading"); return; }
@@ -470,10 +475,6 @@ function attachWeekListeners(wk){
   const r6=db.ref(wk+"/maggie");
   r6.on("value",s=>{ if(s.val()) weekData.maggie=s.val(); });
   fbWeekRefs.push(r6);
-
-  const r7=db.ref(wk+"/meta");
-  r7.on("value",s=>{ if(isUploading||!s.val()) return; applyWeekMeta(s.val()); sv(wk+"_meta",s.val()); renderAll(); });
-  fbWeekRefs.push(r7);
 }
 
 function initFb() {
@@ -1739,6 +1740,8 @@ function runCascade(){
   const dayJsIdx={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
   const todayIdx=new Date().getDay()||7; // Sunday=0 → treat as 7 so all school days count as past
   const dayOrder=["monday","tuesday","wednesday","thursday","friday","saturday"];
+  // Safety: on Sunday, don't cascade unless calendar dates are loaded — avoids cascading next week's tasks
+  if(todayIdx===7 && !dayOrder.some(d=>DAY_DT[d])) return;
   let changed=false;
   const hist=ld(WK+"_history")||{};
   const todayMidnight=new Date(); todayMidnight.setHours(0,0,0,0);
