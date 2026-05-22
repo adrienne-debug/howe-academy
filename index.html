@@ -406,6 +406,7 @@ let paceEditPlan=null;
 // ── FIREBASE ──────────────────────────────────────────────────────
 let isUploading = false;
 let lastCheckedWrite = 0;
+let fbCheckedLoaded = false;
 function dbg(msg){ console.log("[HA]",msg); try{if(db)db.ref("_debug").push({msg,wk:WK,t:Date.now()});}catch(e){} }
 
 // Detach all week-scoped listeners, then re-attach for the given week.
@@ -418,10 +419,11 @@ function detachWeekListeners(){
 function attachWeekListeners(wk){
   detachWeekListeners();
   DAY_DT={}; // Clear stale dates so Sunday guard fires until meta arrives
+  fbCheckedLoaded=false; // Reset so cascade waits for fresh checked state from Firebase
 
   // Meta first — runCascade inside so cascade always runs after dates are loaded
   const r7=db.ref(wk+"/meta");
-  r7.on("value",s=>{ if(isUploading||!s.val()) return; applyWeekMeta(s.val()); sv(wk+"_meta",s.val()); runCascade(); renderAll(); });
+  r7.on("value",s=>{ if(isUploading||!s.val()) return; applyWeekMeta(s.val()); sv(wk+"_meta",s.val()); if(fbCheckedLoaded) runCascade(); renderAll(); });
   fbWeekRefs.push(r7);
 
   const r1=db.ref(wk+"/checked");
@@ -431,6 +433,7 @@ function attachWeekListeners(wk){
     const v=s.val()||{};
     dbg("FB checked keys="+Object.keys(v).length+" local="+Object.keys(checked).length);
     checked=v; sv(wk+"_checked",checked);
+    fbCheckedLoaded=true;
     runCascade();
     renderAll();
   });
