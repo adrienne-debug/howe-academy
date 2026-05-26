@@ -347,7 +347,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
   <div class="admin-row">
     <input type="file" id="json-input" accept=".json"/>
     <button class="btn-p" onclick="loadJson()">Upload JSON</button>
-    <button class="btn-s" onclick="window.print()">Print PDF</button>
+    <button class="btn-s" onclick="printSchedule()">Print PDF</button>
     <button class="btn-s" onclick="toggleAdmin()">Close</button>
   </div>
   <div id="admin-msg"></div>
@@ -1511,7 +1511,7 @@ function renderHistory(el){
   ["lincoln","ellis","lucy","julian"].forEach(k2=>{
     // DONE: pull straight from history log entries, sorted by day
     const doneEntries=Object.values(hist).filter(v=>
-      v&&v.who===k2&&v.title&&v.ts&&!v.missed&&!v.flag&&!(v.id&&v.id.endsWith("_c"))
+      v&&v.who===k2&&v.title&&v.ts&&!v.missed&&!v.flag
     ).sort((a,b)=>{
       const di=DAYS.indexOf(a.day)-DAYS.indexOf(b.day);
       return di!==0?di:(a.ts||"").localeCompare(b.ts||"");
@@ -1521,7 +1521,7 @@ function renderHistory(el){
     const kt=weekData.tasks.filter(t=>t.who===k2&&!t.id.endsWith("_c"));
     const cascadedAway=satClose?kt.filter(t=>{
       const hasCopy=weekData.tasks.some(x=>x.id===t.id+"_c");
-      return hasCopy&&!realDone(t.id);
+      return hasCopy&&!realDone(t.id)&&!realDone(t.id+"_c");
     }):[];
     const flagMissed=satClose?Object.values(hist).filter(v=>v&&v.flag==="cascade_missed"&&v.who===k2):[];
     const missed=satClose?kt.filter(t=>!realDone(t.id)&&!weekData.tasks.some(x=>x.id===t.id+"_c")):[];
@@ -1530,10 +1530,23 @@ function renderHistory(el){
     h+='<div class="hist-kid-hdr">'+cap(k2)+'</div>';
 
     doneEntries.forEach(e=>{
-      const isCarried=e.id&&e.id.includes("_c");
+      const isCarried=e.id&&e.id.endsWith("_c");
+      let carriedBadge="";
+      if(isCarried){
+        const origId=e.id.replace(/_c$/,"");
+        const origTask=weekData.tasks.find(t=>t.id===origId);
+        let fromDay="";
+        if(origTask){
+          fromDay=DAY_LBL[origTask.day]||origTask.day||"";
+        } else {
+          const cascTask=weekData.tasks.find(t=>t.id===e.id);
+          if(cascTask){const m=cascTask.detail.match(/Cascaded from (\w+)/i);if(m)fromDay=m[1];}
+        }
+        carriedBadge=' <span style="font-size:10px;background:#e0e7ff;color:#4338ca;padding:1px 5px;border-radius:6px;font-weight:700">Carried over'+(fromDay?' from '+fromDay:'')+' </span>';
+      }
       h+='<div class="hist-item"><div class="hist-title">'+e.title+'</div>'+
         '<div class="hist-meta">&#10003; '+e.ts+' &middot; '+(DAY_LBL[e.day]||e.day||'')+' '+(DAY_DT[e.day]||'')+
-        (isCarried?' <span style="font-size:10px;background:#e0e7ff;color:#4338ca;padding:1px 5px;border-radius:6px;font-weight:700">Carried over</span>':'')+
+        carriedBadge+
         '</div></div>';
     });
 
@@ -1570,7 +1583,7 @@ function renderHistory(el){
       const awHist=aw.history||{};
       const awChecked=aw.checked||{};
       const awTasks=aw.tasks||[];
-      const totalDone=Object.keys(awChecked).length;
+      const totalDone=awTasks.filter(t=>!t.id.endsWith("_c")&&(awChecked[t.id]||awChecked[t.id+"_c"])).length;
       const totalTasks=awTasks.filter(t=>!t.id.endsWith("_c")).length;
       const pct=totalTasks?Math.round(totalDone/totalTasks*100):0;
       const safeKey=wkKey.replace(/[^a-zA-Z0-9]/g,"_");
@@ -1586,12 +1599,14 @@ function renderHistory(el){
       ["lincoln","ellis","lucy","julian"].forEach(k2=>{
         const kidTasks=awTasks.filter(t=>t.who===k2&&!t.id.endsWith("_c"));
         if(!kidTasks.length)return;
-        const kidDone=kidTasks.filter(t=>awChecked[t.id]);
-        const kidMissed=kidTasks.filter(t=>!awChecked[t.id]);
+        const kidDone=kidTasks.filter(t=>awChecked[t.id]||awChecked[t.id+"_c"]);
+        const kidMissed=kidTasks.filter(t=>!awChecked[t.id]&&!awChecked[t.id+"_c"]);
         h+='<div style="font-weight:700;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;margin:8px 0 4px">'+cap(k2)+'</div>';
         kidDone.forEach(t=>{
-          const ts=awChecked[t.id]||"";
-          h+='<div class="hist-item"><div class="hist-title">'+t.title+'</div><div class="hist-meta">&#10003; '+ts+' &middot; '+(DAY_LBL[t.day]||t.day)+'</div></div>';
+          const ts=awChecked[t.id]||awChecked[t.id+"_c"]||"";
+          const wasCascade=!awChecked[t.id]&&awChecked[t.id+"_c"];
+          const badge=wasCascade?' <span style="font-size:10px;background:#e0e7ff;color:#4338ca;padding:1px 5px;border-radius:6px;font-weight:700">Carried over</span>':'';
+          h+='<div class="hist-item"><div class="hist-title">'+t.title+badge+'</div><div class="hist-meta">&#10003; '+ts+' &middot; '+(DAY_LBL[t.day]||t.day)+'</div></div>';
         });
         kidMissed.forEach(t=>{
           const carried=awChecked[t.id+"_c"];
@@ -1734,6 +1749,75 @@ function loadJson(){
 function toggleAdmin(){
   const p=document.getElementById("admin-panel");
   p.style.display=p.style.display==="none"?"block":"none";
+}
+
+function printSchedule(){
+  const kids=["lincoln","ellis","lucy"];
+  const names={lincoln:"Lincoln",ellis:"Ellis",lucy:"Lucy"};
+  const momColors={required:"#fde8d8",maybe:"#fdf6e3",none:"#ffffff"};
+  const momLabels={required:"★",maybe:"◆",none:""};
+  const days=DAYS.filter(d=>weekData.tasks.some(t=>t.day===d));
+
+  function fmtTime(t){
+    t=t.trim();
+    if(t.endsWith("AM")) return t.slice(0,-3).trim()+"a";
+    if(t.endsWith("PM")) return t.slice(0,-3).trim()+"p";
+    return t;
+  }
+  function cleanTitle(t){
+    return t.replace(/^[\u{1F000}-\u{1FFFF}\u{2600}-\u{27FF}\u{1F300}-\u{1FAFF}]\s*/u,"").trim();
+  }
+
+  let pages="";
+  for(const day of days){
+    const dateStr=DAY_DT[day]||"";
+    const constraint=CONSTRAINT[day]||"";
+    const window_=WIN[day]||WIN["default"]||"";
+    const constraintHtml=constraint
+      ? `<div style="background:#fff2cc;color:#7d4c00;font-size:8.5pt;font-weight:bold;padding:3px 8px;margin-bottom:5px;border-left:3px solid #f0a500">${constraint}</div>`
+      : "";
+
+    let cols="";
+    for(const kid of kids){
+      const tasks=weekData.tasks.filter(t=>t.day===day&&t.who===kid&&!t.id.endsWith("_c"));
+      let rows="";
+      for(const t of tasks){
+        const bg=momColors[t.mom]||"#fff";
+        const star=momLabels[t.mom]||"";
+        const starHtml=star?`<span style="font-size:7pt;margin-left:3px;color:#c0541a">${star}</span>`:"";
+        rows+=`<div style="display:grid;grid-template-columns:52px 1fr;border-bottom:1px solid #eee;background:${bg}">
+          <div style="background:#f5f5f5;color:#555;font-size:7.5pt;padding:3px 4px;text-align:right;border-right:1px solid #e0e0e0;white-space:nowrap">${fmtTime(t.time)}</div>
+          <div style="padding:3px 6px;font-size:8pt;line-height:1.3">${cleanTitle(t.title)}${starHtml}</div>
+        </div>`;
+      }
+      if(!rows) rows=`<div style="padding:8px;color:#aaa;font-size:8pt;text-align:center">—</div>`;
+      cols+=`<div style="border:1px solid #ccc;border-radius:3px;overflow:hidden">
+        <div style="background:#2c5f8a;color:#fff;font-weight:bold;font-size:10pt;padding:4px 8px;text-align:center">${names[kid]}</div>
+        ${rows}
+      </div>`;
+    }
+
+    pages+=`<div style="width:100%;page-break-after:always;padding:8px 10px 4px">
+      <div style="background:#1a1a1a;color:#fff;font-size:11pt;font-weight:bold;padding:5px 10px;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center">
+        <span>${day.charAt(0).toUpperCase()+day.slice(1)} — ${dateStr}</span>
+        <span style="font-size:8pt;font-weight:normal;color:#ccc">${window_}</span>
+      </div>
+      ${constraintHtml}
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">${cols}</div>
+      <div style="margin-top:6px;font-size:7.5pt;color:#666;text-align:right">★ Mom Required &nbsp;&nbsp; ◆ May need Mom</div>
+    </div>`;
+  }
+
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>${(WK||"week").replace("week","Week ")} Schedule</title>
+    <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:9pt;color:#222}
+    @media print{@page{size:landscape;margin:0.4in}div[style*="page-break-after:always"]:last-child{page-break-after:avoid}}</style>
+    </head><body>${pages}</body></html>`;
+
+  const w=window.open("","_blank");
+  w.document.write(html);
+  w.document.close();
+  w.onload=function(){w.print();};
 }
 
 // ── ALERTS + CASCADE ──────────────────────────────────────────────
@@ -2102,8 +2186,8 @@ function paceStatus(current,total,startWeek,weekNum,totalWeeks){
   const weeksActive=weekNum-sw+1;
   const weeksTotal=Math.max(1,totalWeeks-sw+1);
   const diff=(current/total)-(weeksActive/weeksTotal);
-  if(diff>0.04) return "ahead";
-  if(diff<-0.04) return "behind";
+  if(diff>0.08) return "ahead";
+  if(diff<-0.08) return "behind";
   return "on-track";
 }
 
