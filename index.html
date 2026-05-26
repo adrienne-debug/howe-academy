@@ -406,6 +406,7 @@ let histTab="log"; // "log" | "attendance"
 let attEditUnlocked=false;
 const ATT_PIN="1234"; // change to preferred PIN
 let attOverrides={}; // {wkKey:{day:{kid:true/false}}}
+let coExclusions={}; // {wkKey:{taskId:true}} — carry-overs the user has explicitly unchecked
 
 // ── FIREBASE ──────────────────────────────────────────────────────
 let isUploading = false;
@@ -561,6 +562,11 @@ function initFb() {
       try{localStorage.setItem("ha_att_overrides",JSON.stringify(attOverrides));}catch(e){}
       if(tab==="history"&&histTab==="attendance"){const el=document.getElementById("content");if(el)renderHistory(el);}
     });
+    db.ref("co_excl").on("value",s=>{
+      if(s.val()) coExclusions=s.val();
+      try{localStorage.setItem("ha_co_excl",JSON.stringify(coExclusions));}catch(e){}
+      if(tab==="history"&&histTab==="carryover"){const el=document.getElementById("content");if(el)renderHistory(el);}
+    });
   } catch(e){ console.warn("FB offline:",e); }
 }
 
@@ -583,6 +589,7 @@ function boot() {
   try{ const mc=localStorage.getItem("mp_chore_state"); if(mc) mpChoreState=JSON.parse(mc); }catch(e){}
   try{ const pc=localStorage.getItem("ha_pace"); if(pc) paceData=JSON.parse(pc); }catch(e){}
   try{ const ao=localStorage.getItem("ha_att_overrides"); if(ao) attOverrides=JSON.parse(ao); }catch(e){}
+  try{ const ce=localStorage.getItem("ha_co_excl"); if(ce) coExclusions=JSON.parse(ce); }catch(e){}
 }
 
 // ── WEEK META ─────────────────────────────────────────────────────
@@ -1679,29 +1686,54 @@ function getCarryOverPool(){
   const awChecked=prev.checked||{};
   const curIds=new Set((weekData.tasks||[]).map(t=>t.id));
   // Mirror exactly what the history log shows as pink "missed" items:
-  // non-_c base tasks where neither the original nor its _c was checked
+  // non-_c base tasks where neither the original nor its _c was checked.
+  // included = true by default; only false if user explicitly unchecked it.
+  const excl=coExclusions[WK]||{};
   const tasks=(prev.tasks||[])
     .filter(t=>!t.id.endsWith("_c")&&!awChecked[t.id]&&!awChecked[t.id+"_c"])
     .map(t=>({...t,id:t.id+"_c",day:"monday",cascade:true,
-      included:curIds.has(t.id+"_c"),
+      included:!excl[t.id+"_c"],
       prevWeek:prev.weekLabel||"prev week"}));
   return {prev,tasks};
 }
 
+// Auto-add any non-excluded carry-over tasks that aren't yet in weekData.tasks.
+// Called when opening the Carry-overs tab so tasks are always in sync with the UI.
+function _syncCarryOvers(){
+  const pool=getCarryOverPool();
+  let changed=false;
+  pool.tasks.filter(t=>t.included&&!weekData.tasks.some(x=>x.id===t.id)).forEach(t=>{
+    weekData.tasks.push({...t,included:undefined,prevWeek:undefined,
+      detail:(t.detail||t.title||"")+" (Carried from "+(t.prevWeek||"prev week")+")"});
+    changed=true;
+  });
+  if(changed){
+    sv(WK+"_tasks",weekData.tasks);
+    lastTasksWrite=Date.now();
+    if(db){const obj={};weekData.tasks.forEach(t=>obj[t.id]=t);db.ref(WK+"/tasks").set(obj);}
+  }
+}
+
 function toggleCarryOver(taskId,include){
+  if(!coExclusions[WK]) coExclusions[WK]={};
   if(include){
+    // Re-check: remove from exclusions, add back to task list
+    delete coExclusions[WK][taskId];
     if(!weekData.tasks.some(x=>x.id===taskId)){
       const pool=getCarryOverPool();
       const t=pool.tasks.find(x=>x.id===taskId);
-      if(!t) return;
-      const detail=(t.detail||t.title||"")+" (Carried from "+(t.prevWeek||"prev week")+")";
-      weekData.tasks.push({...t,detail,included:undefined,prevWeek:undefined});
+      if(t) weekData.tasks.push({...t,included:undefined,prevWeek:undefined,
+        detail:(t.detail||t.title||"")+" (Carried from "+(t.prevWeek||"prev week")+")"});
     }
   } else {
+    // Uncheck: add to exclusions, remove from task list
+    coExclusions[WK][taskId]=true;
     weekData.tasks=weekData.tasks.filter(x=>x.id!==taskId);
     delete checked[taskId]; sv(WK+"_checked",checked);
     if(db) db.ref(WK+"/checked").set(checked);
   }
+  try{localStorage.setItem("ha_co_excl",JSON.stringify(coExclusions));}catch(e){}
+  if(db) db.ref("co_excl/"+WK).set(coExclusions[WK]);
   sv(WK+"_tasks",weekData.tasks);
   lastTasksWrite=Date.now();
   if(db){const obj={};weekData.tasks.forEach(t=>obj[t.id]=t);db.ref(WK+"/tasks").set(obj);}
@@ -1739,7 +1771,7 @@ function renderCarryOverHtml(pool){
   return h+'</div>';
 }
 
-function setHistTab(t){ histTab=t; const el=document.getElementById("content"); if(el&&tab==="history") renderHistory(el); }
+function setHistTab(t){ histTab=t; if(t==="carryover") _syncCarryOvers(); const el=document.getElementById("content"); if(el&&tab==="history") renderHistory(el); }
 function toggleAttWk(k){ const el=document.getElementById("attwk_"+k); if(el) el.style.display=el.style.display==="none"?"block":"none"; }
 
 function buildKidAttendance(kid){
@@ -1996,8 +2028,9 @@ function loadJson(){
           (_archPrev.tasks||[]).filter(t=>!t.id.endsWith("_c")&&!_awc[t.id]&&!_awc[t.id+"_c"])
             .forEach(t=>{
               const _cId=t.id+"_c";
-              if(newIds.has(_cId)) return;         // already present
-              if((snapChecked||{})[_cId]) return;  // already completed this week
+              if(newIds.has(_cId)) return;                        // already present
+              if((snapChecked||{})[_cId]) return;               // already completed this week
+              if((coExclusions[d.week]||{})[_cId]) return;      // user explicitly excluded
               d.tasks.push({...t,id:_cId,day:"monday",cascade:true,
                 detail:(t.detail||t.title||"")+" (Carried from "+(_archPrev.weekLabel||"prev week")+")"});
               newIds.add(_cId);
