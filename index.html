@@ -1897,11 +1897,31 @@ function loadJson(){
         const snapChecked={...lsChecked,...memChecked};
         const snapHist=ld(activeWK+"_history")||{};
         const snapSl=ld(activeWK+"_sl")||slState||{};
-        // Re-attach cross-week carry-over _c tasks (from a previous week) that aren't in the fresh JSON.
-        // Their base IDs won't exist in d.tasks, so a plain same-week re-upload would wipe them out.
+        // Re-attach cross-week carry-over tasks:
+        // Pass 1 — grab any _c tasks still alive in weekData.tasks whose base isn't in the new JSON
         const newIds=new Set(d.tasks.map(t=>t.id));
         (weekData.tasks||[]).filter(t=>t.id.endsWith("_c")&&!newIds.has(t.id)&&!newIds.has(baseId(t.id)))
           .forEach(t=>{ d.tasks.push(t); newIds.add(t.id); });
+        // Pass 2 — reconstruct from the most-recent archive in case carry-overs were already wiped
+        const _archPrev=Object.values(archive||{}).filter(a=>a&&a.tasks&&a.weekLabel!==d.week)
+          .sort((a,b)=>((b.archivedAt||"")>(a.archivedAt||""))?1:-1)[0];
+        if(_archPrev){
+          const _seen=new Set();
+          (_archPrev.tasks||[]).forEach(t=>{
+            if(!t.cascade) return;
+            const _base=baseId(t.id);
+            if(_seen.has(_base)) return;
+            if(newIds.has(_base)) return;
+            if(chainDone(_base,_archPrev.checked||{},_archPrev.tasks||[])) return;
+            const _cId=_base+"_c";
+            if(newIds.has(_cId)) return;
+            if((snapChecked||{})[_cId]) return;
+            _seen.add(_base);
+            d.tasks.push({...t,id:_cId,day:"monday",cascade:true,
+              detail:(t.detail||"")+" (Carried from "+(_archPrev.weekLabel||"prev week")+")"});
+            newIds.add(_cId);
+          });
+        }
         WK=activeWK; weekData=d; checked=snapChecked; slState=snapSl;
         if(d.supplies&&Array.isArray(d.supplies)){SUP=d.supplies;sv(WK+"_supplies_def",d.supplies);}
         if(d.supplyCategories&&Array.isArray(d.supplyCategories)) SUP_CATS=d.supplyCategories;
