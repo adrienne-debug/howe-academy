@@ -410,7 +410,10 @@ let attOverrides={}; // {wkKey:{day:{kid:true/false}}}
 // ── FIREBASE ──────────────────────────────────────────────────────
 let isUploading = false;
 let lastCheckedWrite = 0;
+let lastTasksWrite = 0;
 let fbCheckedLoaded = false;
+let fbTasksLoaded = false;
+let cascadeDebounce = null;
 function dbg(msg){ console.log("[HA]",msg); try{if(db)db.ref("_debug").push({msg,wk:WK,t:Date.now()});}catch(e){} }
 
 // Detach all week-scoped listeners, then re-attach for the given week.
@@ -423,11 +426,13 @@ function detachWeekListeners(){
 function attachWeekListeners(wk){
   detachWeekListeners();
   DAY_DT={}; // Clear stale dates so Sunday guard fires until meta arrives
-  fbCheckedLoaded=false; // Reset so cascade waits for fresh checked state from Firebase
+  fbCheckedLoaded=false; // Reset so cascade waits for fresh data from Firebase
+  fbTasksLoaded=false;
+  clearTimeout(cascadeDebounce);
 
   // Meta first — runCascade inside so cascade always runs after dates are loaded
   const r7=db.ref(wk+"/meta");
-  r7.on("value",s=>{ if(isUploading||!s.val()) return; applyWeekMeta(s.val()); sv(wk+"_meta",s.val()); if(fbCheckedLoaded) runCascade(); renderAll(); });
+  r7.on("value",s=>{ if(isUploading||!s.val()) return; applyWeekMeta(s.val()); sv(wk+"_meta",s.val()); schedCascade(); renderAll(); });
   fbWeekRefs.push(r7);
 
   const r1=db.ref(wk+"/checked");
@@ -438,7 +443,7 @@ function attachWeekListeners(wk){
     dbg("FB checked keys="+Object.keys(v).length+" local="+Object.keys(checked).length);
     checked=v; sv(wk+"_checked",checked);
     fbCheckedLoaded=true;
-    runCascade();
+    schedCascade();
     renderAll();
   });
   fbWeekRefs.push(r1);
@@ -473,10 +478,16 @@ function attachWeekListeners(wk){
   r5.on("value",s=>{
     if(isUploading) return;
     if(!s.val()) return;
+    // Suppress echo from our own cascade writes (prevents runaway cascade chains)
+    if(Date.now()-lastTasksWrite<3000){ dbg("skip:tasks echo"); return; }
     const incoming=Object.values(s.val());
+    const firstLoad=!fbTasksLoaded;
+    fbTasksLoaded=true;
     const inIds=incoming.map(t=>t.id).sort().join(",");
     const curIds=weekData.tasks.map(t=>t.id).sort().join(",");
-    if(inIds!==curIds){ dbg("tasks updated count="+incoming.length); weekData.tasks=incoming; sv(wk+"_tasks",incoming); renderAll(); if(fbCheckedLoaded) runCascade(); }
+    if(inIds!==curIds){ dbg("tasks updated count="+incoming.length); weekData.tasks=incoming; sv(wk+"_tasks",incoming); renderAll(); }
+    // Schedule cascade on first load OR when another device changed the task set
+    if(firstLoad || inIds!==curIds) schedCascade();
   });
   fbWeekRefs.push(r5);
 
@@ -1902,6 +1913,7 @@ function loadJson(){
           if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
           db.ref(WK+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
         }
+        fbCheckedLoaded=true; fbTasksLoaded=true;
         renderAll(); runCascade();
         document.getElementById("admin-msg").textContent="✅ "+d.week+" updated — "+d.tasks.length+" tasks. Completions & history preserved.";
       } else {
@@ -1940,6 +1952,7 @@ function loadJson(){
           db.ref(WK+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
           attachWeekListeners(WK);
         }
+        fbCheckedLoaded=true; fbTasksLoaded=true;
         renderAll(); runCascade();
         document.getElementById("admin-msg").textContent="✅ "+d.week+" loaded — "+d.tasks.length+" tasks. Previous week archived.";
       }
@@ -2027,6 +2040,13 @@ function printSchedule(){
 // ── ALERTS + CASCADE ──────────────────────────────────────────────
 setInterval(()=>{ if(tab==="schedule")renderSkylight(); },60000);
 
+// Debounced cascade scheduler — collapses multiple rapid listener fires into one cascade run.
+// Only runs when BOTH checked and tasks have been loaded from Firebase.
+function schedCascade(){
+  clearTimeout(cascadeDebounce);
+  cascadeDebounce=setTimeout(()=>{ if(fbCheckedLoaded&&fbTasksLoaded) runCascade(); },2000);
+}
+
 function runCascade(){
   const nextDay={monday:"tuesday",tuesday:"wednesday",wednesday:"thursday",thursday:"friday",friday:"saturday"};
   const dayJsIdx={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
@@ -2069,12 +2089,13 @@ function runCascade(){
   });
   if(changed){
     sv(WK+"_tasks",weekData.tasks); sv(WK+"_history",hist);
+    lastTasksWrite=Date.now(); // suppress the echo from our own write
     if(db){ const obj={};weekData.tasks.forEach(t=>obj[t.id]=t);
       db.ref(WK+"/tasks").set(obj); db.ref(WK+"/history").update(hist); }
     renderAll();
   }
 }
-setInterval(runCascade,3600000);
+setInterval(()=>{ if(fbCheckedLoaded&&fbTasksLoaded) runCascade(); },3600000);
 
 setInterval(()=>{
   const n=new Date(); if(n.getDay()!==6||n.getHours()<20)return;
