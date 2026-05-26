@@ -1666,9 +1666,15 @@ function toggleArchiveWeek(safeKey){
 // ── CARRY-OVER REVIEW ────────────────────────────────────────────
 function getCarryOverPool(){
   const curWeek=weekData.week||WK;
+  // Sort archived weeks by week number (descending) — archivedAt is a formatted string,
+  // not a sortable timestamp, so we parse the numeric week number instead.
   const archEntries=Object.values(archive||{})
     .filter(a=>a&&a.tasks&&a.weekLabel!==curWeek)
-    .sort((a,b)=>((b.archivedAt||"")>(a.archivedAt||""))?1:-1);
+    .sort((a,b)=>{
+      const na=parseInt((a.weekLabel||"0").replace(/\D/g,"")||"0");
+      const nb=parseInt((b.weekLabel||"0").replace(/\D/g,"")||"0");
+      return nb-na; // highest week number = most recent
+    });
   if(!archEntries.length) return {prev:null,tasks:[]};
   const prev=archEntries[0];
   const curIds=new Set((weekData.tasks||[]).map(t=>t.id));
@@ -1678,8 +1684,8 @@ function getCarryOverPool(){
     if(!t.cascade) return;
     const _base=baseId(t.id);
     if(seen.has(_base)) return;
-    if(curIds.has(_base)) return; // base task lives in current week (not a carry-over)
-    if(chainDone(_base,prev.checked||{},prev.tasks||[])) return; // completed last week
+    // Skip if this task was completed at any point last week
+    if(chainDone(_base,prev.checked||{},prev.tasks||[])) return;
     seen.add(_base);
     const cId=_base+"_c";
     tasks.push({...t,id:cId,day:"monday",cascade:true,
