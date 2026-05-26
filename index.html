@@ -434,15 +434,6 @@ function attachWeekListeners(wk){
     dbg("FB checked keys="+Object.keys(v).length+" local="+Object.keys(checked).length);
     checked=v; sv(wk+"_checked",checked);
     fbCheckedLoaded=true;
-    // Prune orphan _c tasks: if any version in a task's chain was completed,
-    // remove all _c copies so they don't pile up on Saturday.
-    const snap=weekData.tasks.slice();
-    const pruned=snap.filter(t=>!t.id.endsWith("_c")||!chainDone(baseId(t.id),v,snap));
-    if(pruned.length!==snap.length){
-      weekData.tasks=pruned; sv(WK+"_tasks",pruned);
-      if(db){const obj={};pruned.forEach(t=>obj[t.id]=t);db.ref(WK+"/tasks").set(obj);}
-      dbg("pruned "+(snap.length-pruned.length)+" orphan cascade tasks");
-    }
     runCascade();
     renderAll();
   });
@@ -481,7 +472,7 @@ function attachWeekListeners(wk){
     const incoming=Object.values(s.val());
     const inIds=incoming.map(t=>t.id).sort().join(",");
     const curIds=weekData.tasks.map(t=>t.id).sort().join(",");
-    if(inIds!==curIds){ dbg("tasks updated count="+incoming.length); weekData.tasks=incoming; sv(wk+"_tasks",incoming); renderAll(); }
+    if(inIds!==curIds){ dbg("tasks updated count="+incoming.length); weekData.tasks=incoming; sv(wk+"_tasks",incoming); renderAll(); if(fbCheckedLoaded) runCascade(); }
   });
   fbWeekRefs.push(r5);
 
@@ -1839,6 +1830,18 @@ function runCascade(){
   const dayOrder=["monday","tuesday","wednesday","thursday","friday","saturday"];
   // Safety: on Sunday, don't cascade unless calendar dates are loaded — avoids cascading next week's tasks
   if(todayIdx===7 && !dayOrder.some(d=>DAY_DT[d])) return;
+
+  // Prune orphan _c tasks whose original was completed — runs whenever both tasks + checked are loaded
+  if(fbCheckedLoaded){
+    const snap=weekData.tasks.slice();
+    const pruned=snap.filter(t=>!t.id.endsWith("_c")||!chainDone(baseId(t.id),checked,snap));
+    if(pruned.length!==snap.length){
+      weekData.tasks=pruned; sv(WK+"_tasks",pruned);
+      if(db){const obj={};pruned.forEach(t=>obj[t.id]=t);db.ref(WK+"/tasks").set(obj);}
+      dbg("pruned "+(snap.length-pruned.length)+" orphan cascade tasks");
+    }
+  }
+
   let changed=false;
   const hist=ld(WK+"_history")||{};
   const todayMidnight=new Date(); todayMidnight.setHours(0,0,0,0);
