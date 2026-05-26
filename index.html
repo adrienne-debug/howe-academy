@@ -530,6 +530,7 @@ function initFb() {
     db.ref("archive").on("value",s=>{
       archive=s.val()||{};
       try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
+      _autoFillWeekDates();
       if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
       if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
     });
@@ -1970,6 +1971,37 @@ function printAttendance(onlyKid){
     '<p style="font-size:9pt;color:#666">NC Requirement: 9 months (~180 days/year) &nbsp;·&nbsp; Generated: '+nowTs()+'</p>'+
     '<hr>'+body+'</body></html>';
   const w=window.open("","_blank"); w.document.write(html); w.document.close(); w.onload=()=>w.print();
+}
+
+// One-time auto-fill of Mon–Fri dates for weeks 1–6 (no skips, starts Apr 20 2026)
+const _WEEK_DATES={
+  week1:{monday:"Apr 20",tuesday:"Apr 21",wednesday:"Apr 22",thursday:"Apr 23",friday:"Apr 24"},
+  week2:{monday:"Apr 27",tuesday:"Apr 28",wednesday:"Apr 29",thursday:"Apr 30",friday:"May 1"},
+  week3:{monday:"May 4",tuesday:"May 5",wednesday:"May 6",thursday:"May 7",friday:"May 8"},
+  week4:{monday:"May 11",tuesday:"May 12",wednesday:"May 13",thursday:"May 14",friday:"May 15"},
+  week5:{monday:"May 18",tuesday:"May 19",wednesday:"May 20",thursday:"May 21",friday:"May 22"},
+  week6:{monday:"May 25",tuesday:"May 26",wednesday:"May 27",thursday:"May 28",friday:"May 29"}
+};
+let _weekDatesFilled=false;
+function _autoFillWeekDates(){
+  if(_weekDatesFilled) return;
+  _weekDatesFilled=true;
+  let anyChange=false;
+  Object.entries(_WEEK_DATES).forEach(([wkKey,dayDates])=>{
+    if(!archive[wkKey]) return;
+    if(!archive[wkKey].dates) archive[wkKey].dates={};
+    Object.entries(dayDates).forEach(([day,dateStr])=>{
+      if(archive[wkKey].dates[day]) return; // don't overwrite existing
+      archive[wkKey].dates[day]=dateStr;
+      if(db) db.ref("archive/"+wkKey+"/dates/"+day).set(dateStr);
+      anyChange=true;
+    });
+  });
+  if(anyChange){
+    try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
+    const el=document.getElementById("content");
+    if(el&&tab==="history") renderHistory(el);
+  }
 }
 
 function addManualAttWeek(label){
