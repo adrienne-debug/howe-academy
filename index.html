@@ -1983,25 +1983,25 @@ function loadJson(){
         const newIds=new Set(d.tasks.map(t=>t.id));
         (weekData.tasks||[]).filter(t=>t.id.endsWith("_c")&&!newIds.has(t.id)&&!newIds.has(baseId(t.id)))
           .forEach(t=>{ d.tasks.push(t); newIds.add(t.id); });
-        // Pass 2 — reconstruct from the most-recent archive in case carry-overs were already wiped
+        // Pass 2 — reconstruct from the most-recent archive in case carry-overs were already wiped.
+        // Same filter as the Carry-overs tab: all base tasks not completed in any form.
         const _archPrev=Object.values(archive||{}).filter(a=>a&&a.tasks&&a.weekLabel!==d.week)
-          .sort((a,b)=>((b.archivedAt||"")>(a.archivedAt||""))?1:-1)[0];
+          .sort((a,b)=>{
+            const na=parseInt((a.weekLabel||"0").replace(/\D/g,"")||"0");
+            const nb=parseInt((b.weekLabel||"0").replace(/\D/g,"")||"0");
+            return nb-na;
+          })[0];
         if(_archPrev){
-          const _seen=new Set();
-          (_archPrev.tasks||[]).forEach(t=>{
-            if(!t.cascade) return;
-            const _base=baseId(t.id);
-            if(_seen.has(_base)) return;
-            if(newIds.has(_base)) return;
-            if(chainDone(_base,_archPrev.checked||{},_archPrev.tasks||[])) return;
-            const _cId=_base+"_c";
-            if(newIds.has(_cId)) return;
-            if((snapChecked||{})[_cId]) return;
-            _seen.add(_base);
-            d.tasks.push({...t,id:_cId,day:"monday",cascade:true,
-              detail:(t.detail||"")+" (Carried from "+(_archPrev.weekLabel||"prev week")+")"});
-            newIds.add(_cId);
-          });
+          const _awc=_archPrev.checked||{};
+          (_archPrev.tasks||[]).filter(t=>!t.id.endsWith("_c")&&!_awc[t.id]&&!_awc[t.id+"_c"])
+            .forEach(t=>{
+              const _cId=t.id+"_c";
+              if(newIds.has(_cId)) return;         // already present
+              if((snapChecked||{})[_cId]) return;  // already completed this week
+              d.tasks.push({...t,id:_cId,day:"monday",cascade:true,
+                detail:(t.detail||t.title||"")+" (Carried from "+(_archPrev.weekLabel||"prev week")+")"});
+              newIds.add(_cId);
+            });
         }
         WK=activeWK; weekData=d; checked=snapChecked; slState=snapSl;
         if(d.supplies&&Array.isArray(d.supplies)){SUP=d.supplies;sv(WK+"_supplies_def",d.supplies);}
@@ -2034,13 +2034,15 @@ function loadJson(){
           try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
           if(db) db.ref("archive/"+oldWK).set(entry);
         }
-        // Carry unchecked cascade tasks from old week into Monday of new week
-        const prevCascadedAway=new Set(snapTasks.filter(t=>t.id.endsWith("_c")).map(t=>t.id.replace(/_c$/,"")));
-        snapTasks.forEach(t=>{
-          if(!t.cascade||snapChecked[t.id]||prevCascadedAway.has(t.id)) return;
-          d.tasks.push({...t,id:t.id+"_c",day:"monday",
-            detail:t.detail+" (Cascaded from "+t.day.charAt(0).toUpperCase()+t.day.slice(1)+")",cascade:true});
-        });
+        // Carry ALL uncompleted tasks from old week into Monday of new week.
+        // Same filter as Carry-overs tab: base tasks where neither original nor _c was checked.
+        snapTasks.filter(t=>!t.id.endsWith("_c")&&!snapChecked[t.id]&&!snapChecked[t.id+"_c"])
+          .forEach(t=>{
+            const cId=t.id+"_c";
+            if(!d.tasks.some(x=>x.id===cId))
+              d.tasks.push({...t,id:cId,day:"monday",cascade:true,
+                detail:(t.detail||t.title||"")+" (Carried from "+oldWK+")"});
+          });
         WK=d.week; localStorage.setItem("ha_active_wk",WK);
         if(db) db.ref("ha_active_wk").set(WK);
         weekData=d; checked={}; slState={};
