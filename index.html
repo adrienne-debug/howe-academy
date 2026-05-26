@@ -434,6 +434,15 @@ function attachWeekListeners(wk){
     dbg("FB checked keys="+Object.keys(v).length+" local="+Object.keys(checked).length);
     checked=v; sv(wk+"_checked",checked);
     fbCheckedLoaded=true;
+    // Prune orphan _c tasks: if any version in a task's chain was completed,
+    // remove all _c copies so they don't pile up on Saturday.
+    const snap=weekData.tasks.slice();
+    const pruned=snap.filter(t=>!t.id.endsWith("_c")||!chainDone(baseId(t.id),v,snap));
+    if(pruned.length!==snap.length){
+      weekData.tasks=pruned; sv(WK+"_tasks",pruned);
+      if(db){const obj={};pruned.forEach(t=>obj[t.id]=t);db.ref(WK+"/tasks").set(obj);}
+      dbg("pruned "+(snap.length-pruned.length)+" orphan cascade tasks");
+    }
     runCascade();
     renderAll();
   });
@@ -2275,6 +2284,7 @@ function parseTaskCount(title){
   return 1;
 }
 
+function baseId(id){ let b=id; while(b.endsWith("_c"))b=b.slice(0,-2); return b; }
 function chainDone(origId, checkedObj, tasksArr){
   if(checkedObj[origId]) return true;
   let id=origId+"_c";
@@ -2568,7 +2578,7 @@ window.addEventListener("scroll",()=>{
 });
 
 // ── INIT ──────────────────────────────────────────────────────────
-boot(); initFb(); renderAll(); runCascade();
+boot(); initFb(); renderAll();
 </script>
 </body>
 </html>
