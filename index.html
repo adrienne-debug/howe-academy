@@ -402,6 +402,7 @@ let fbWeekRefs=[];
 let paceData={subjects:{}, plans:{}};
 let paceEditKid=null;
 let paceEditPlan=null;
+let histTab="log"; // "log" | "attendance"
 
 // ── FIREBASE ──────────────────────────────────────────────────────
 let isUploading = false;
@@ -1494,12 +1495,19 @@ function histKidStatsRow(tasks, checkedObj){
 }
 
 function renderHistory(el){
+  const _btn=(on)=>'flex:1;padding:8px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?'var(--header)':'transparent')+';color:'+(on?'#fff':'var(--muted)');
+  let h='<div style="display:flex;gap:6px;padding:12px 12px 4px">';
+  h+='<button onclick="setHistTab(\'log\')" style="'+_btn(histTab==="log")+'">History Log</button>';
+  h+='<button onclick="setHistTab(\'attendance\')" style="'+_btn(histTab==="attendance")+'">Attendance</button>';
+  h+='</div>';
+  if(histTab==="attendance"){ h+=renderAttendanceHtml(); el.innerHTML=h; return; }
+
   const hist=ld(WK+"_history")||{};
   const n=new Date(), satClose=n.getDay()===6&&n.getHours()>=20;
   const realDone=(id)=>hist[id]&&typeof hist[id]==="object"&&hist[id].ts&&!hist[id].missed&&!hist[id].flag;
 
   // Current week summary card
-  let h='<div style="background:var(--header);color:#fff;border-radius:12px;margin:12px 12px 4px;padding:14px 16px">';
+  h+='<div style="background:var(--header);color:#fff;border-radius:12px;margin:12px 12px 4px;padding:14px 16px">';
   h+='<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700">'+(weekData.week||WK).replace("week","Week ")+'</div>';
   h+='<div style="font-size:11px;opacity:0.6;margin-top:1px">Current week</div>';
   h+=histKidStatsRow(weekData.tasks, checked);
@@ -1630,6 +1638,122 @@ function toggleArchiveWeek(safeKey){
   if(el) el.style.display=el.style.display==="none"?"block":"none";
 }
 
+function setHistTab(t){ histTab=t; const el=document.getElementById("content"); if(el&&tab==="history") renderHistory(el); }
+function toggleAttWk(k){ const el=document.getElementById("attwk_"+k); if(el) el.style.display=el.style.display==="none"?"block":"none"; }
+
+function buildKidAttendance(kid){
+  const weeks=[]; const todayMid=new Date(); todayMid.setHours(0,0,0,0);
+  Object.keys(archive).sort().forEach(wkKey=>{
+    const aw=archive[wkKey];
+    const awt=(aw.tasks||[]).filter(t=>t.who===kid&&!t.id.endsWith("_c"));
+    const awc=aw.checked||{}; const awd=aw.dates||{};
+    const days=[];
+    DAYS.forEach(d=>{ const dt=awt.filter(t=>t.day===d); if(!dt.length)return;
+      days.push({day:d,date:awd[d]||null,attended:dt.some(t=>awc[t.id]||awc[t.id+"_c"]),past:true}); });
+    if(days.length) weeks.push({wkKey,label:(aw.weekLabel||wkKey).replace("week","Week "),days,archived:true});
+  });
+  const cur=(weekData.tasks||[]).filter(t=>t.who===kid&&!t.id.endsWith("_c"));
+  const curDays=[];
+  DAYS.forEach(d=>{ const dt=cur.filter(t=>t.day===d); if(!dt.length)return;
+    const ds=DAY_DT[d]||""; let past=true;
+    if(ds){ const p=new Date(ds+", "+new Date().getFullYear()); p.setHours(0,0,0,0); past=p<=todayMid; }
+    curDays.push({day:d,date:ds,attended:dt.some(t=>checked[t.id]||checked[t.id+"_c"]),past}); });
+  if(curDays.length) weeks.push({wkKey:WK,label:(WK||"week").replace("week","Week "),days:curDays,current:true});
+  const total=weeks.reduce((s,w)=>s+w.days.filter(d=>d.past&&d.attended).length,0);
+  return {weeks,total};
+}
+
+function renderAttendanceHtml(){
+  const GOAL=180, kids=["lincoln","ellis","lucy"];
+  const KC={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c"};
+  const atd={}; kids.forEach(k=>atd[k]=buildKidAttendance(k));
+
+  let h='<div style="padding:12px">';
+  // Summary card
+  h+='<div style="background:var(--header);color:#fff;border-radius:12px;padding:14px 16px;margin-bottom:12px">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700;margin-bottom:10px">School Year Attendance</div>';
+  kids.forEach(k=>{
+    const n=atd[k].total, pct=Math.min(100,Math.round(n/GOAL*100));
+    h+='<div style="margin-bottom:8px">';
+    h+='<div style="display:flex;justify-content:space-between;margin-bottom:3px">';
+    h+='<span style="font-size:12px;font-weight:700">'+cap(k)+'</span>';
+    h+='<span style="font-size:12px;opacity:0.8">'+n+' / '+GOAL+' days ('+pct+'%)</span></div>';
+    h+='<div style="height:6px;border-radius:3px;background:rgba(255,255,255,0.2)">';
+    h+='<div style="height:100%;border-radius:3px;background:#a5b4fc;width:'+pct+'%"></div></div></div>';
+  });
+  h+='<div style="font-size:10px;opacity:0.5;margin-top:2px">NC requires 9 months of operation (~180 days/year) · Attended = at least 1 task completed</div>';
+  h+='</div>';
+
+  // Weekly rows
+  const allWks=[];
+  kids.forEach(k=>atd[k].weeks.forEach(w=>{ if(!allWks.find(x=>x.wkKey===w.wkKey)) allWks.push(w); }));
+  allWks.forEach(wk=>{
+    const sk=wk.wkKey.replace(/[^a-zA-Z0-9]/g,"_");
+    const wkTotals=kids.map(k=>{ const w=atd[k].weeks.find(x=>x.wkKey===wk.wkKey); return w?w.days.filter(d=>d.past&&d.attended).length:0; });
+    h+='<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden">';
+    h+='<div onclick="toggleAttWk(\''+sk+'\')" style="padding:9px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;background:var(--header);color:#fff">';
+    h+='<span style="font-weight:700;font-size:13px">'+wk.label+(wk.current?' <span style="font-size:10px;opacity:0.55;font-weight:400">(current)</span>':'')+'</span>';
+    h+='<span style="font-size:11px;opacity:0.7">'+kids.map((k,i)=>cap(k)+' '+wkTotals[i]+'d').join(' · ')+'</span></div>';
+    h+='<div id="attwk_'+sk+'" style="display:none">';
+    h+='<div style="display:grid;grid-template-columns:130px 1fr 1fr 1fr;padding:4px 14px;background:#f3f4f6;border-bottom:1px solid var(--border)">';
+    h+='<div style="font-size:10px;color:var(--muted);font-weight:700">DAY</div>';
+    kids.forEach(k=>h+='<div style="text-align:center;font-size:10px;font-weight:700;color:'+KC[k]+'">'+cap(k).toUpperCase()+'</div>');
+    h+='</div>';
+    const allDays=[];
+    kids.forEach(k=>{ const w=atd[k].weeks.find(x=>x.wkKey===wk.wkKey); if(w) w.days.forEach(d=>{ if(!allDays.find(x=>x.day===d.day)) allDays.push({day:d.day,date:d.date,past:d.past}); }); });
+    allDays.sort((a,b)=>DAYS.indexOf(a.day)-DAYS.indexOf(b.day));
+    allDays.forEach(dayObj=>{
+      const lbl=(DAY_LBL[dayObj.day]||dayObj.day)+(dayObj.date?' '+dayObj.date:'');
+      h+='<div style="display:grid;grid-template-columns:130px 1fr 1fr 1fr;align-items:center;padding:6px 14px;border-bottom:1px solid #f0f0f0;background:'+(dayObj.past?'#fff':'#fafafa')+'">';
+      h+='<div style="font-size:11px;font-weight:600;color:var(--muted)">'+lbl+'</div>';
+      kids.forEach(k=>{
+        const w=atd[k].weeks.find(x=>x.wkKey===wk.wkKey);
+        const d=w?w.days.find(x=>x.day===dayObj.day):null;
+        h+='<div style="text-align:center">';
+        if(!d) h+='<span style="color:#d1d5db;font-size:12px">—</span>';
+        else if(!dayObj.past) h+='<span style="font-size:10px;color:#9ca3af">upcoming</span>';
+        else if(d.attended) h+='<span style="font-size:15px;font-weight:700;color:'+KC[k]+'">✓</span>';
+        else h+='<span style="font-size:10px;color:#ef4444;font-weight:700">absent</span>';
+        h+='</div>';
+      });
+      h+='</div>';
+    });
+    h+='</div></div>';
+  });
+
+  h+='<button onclick="printAttendance()" style="width:100%;margin-top:4px;padding:11px;background:var(--header);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer">🖨 Print Attendance Record</button>';
+  h+='</div>';
+  return h;
+}
+
+function printAttendance(){
+  const GOAL=180, kids=["lincoln","ellis","lucy"];
+  const atd={}; kids.forEach(k=>atd[k]=buildKidAttendance(k));
+  let body='';
+  kids.forEach(k=>{
+    const d=atd[k], pct=Math.min(100,Math.round(d.total/GOAL*100));
+    body+='<h2>'+cap(k)+'  <span style="font-size:11pt;font-weight:400;color:#555">'+d.total+' / '+GOAL+' days attended ('+pct+'%)</span></h2>';
+    body+='<table><thead><tr><th>Week</th><th>Day</th><th>Date</th><th>Status</th></tr></thead><tbody>';
+    d.weeks.forEach(wk=>{
+      wk.days.filter(day=>day.past).forEach(day=>{
+        body+='<tr><td>'+wk.label+'</td><td>'+(DAY_LBL[day.day]||day.day)+'</td><td>'+(day.date||'—')+'</td>';
+        body+='<td class="'+(day.attended?'att-p':'att-a')+'">'+(day.attended?'Present':'Absent')+'</td></tr>';
+      });
+    });
+    body+='</tbody></table>';
+  });
+  const html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Howe Academy — Attendance Record</title>'+
+    '<style>body{font-family:Arial,sans-serif;font-size:10pt;color:#222;max-width:680px;margin:0 auto;padding:24px}'+
+    'h1{font-size:15pt}h2{font-size:12pt;margin:18px 0 5px;border-bottom:1px solid #ccc;padding-bottom:3px}'+
+    'table{width:100%;border-collapse:collapse;margin-bottom:6px}th{background:#1a1a1a;color:#fff;padding:4px 8px;text-align:left;font-size:9pt}'+
+    'td{padding:3px 8px;border-bottom:1px solid #eee;font-size:9pt}.att-p{color:#16a34a;font-weight:700}.att-a{color:#ef4444}'+
+    '@media print{@page{size:portrait;margin:0.5in}}</style></head><body>'+
+    '<h1>Howe Academy — Attendance Record</h1>'+
+    '<p style="font-size:9pt;color:#666">NC Requirement: 9 months (~180 days/year) &nbsp;·&nbsp; Generated: '+nowTs()+'</p>'+
+    '<hr>'+body+'</body></html>';
+  const w=window.open("","_blank"); w.document.write(html); w.document.close(); w.onload=()=>w.print();
+}
+
 // ── MAGGIE ────────────────────────────────────────────────────────
 function renderMaggie(el){
   const mag=weekData.maggie;
@@ -1707,7 +1831,7 @@ function loadJson(){
         const snapChecked={...(ld(oldWK+"_checked")||{}), ...checked};
         const hasAnything=Object.keys(snapHist).length>0||snapTasks.length>0;
         if(hasAnything){
-          const entry={weekLabel:oldWK,archivedAt:nowTs(),history:snapHist,tasks:snapTasks,checked:snapChecked};
+          const entry={weekLabel:oldWK,archivedAt:nowTs(),history:snapHist,tasks:snapTasks,checked:snapChecked,dates:{...DAY_DT}};
           archive[oldWK]=entry;
           try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
           if(db) db.ref("archive/"+oldWK).set(entry);
