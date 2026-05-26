@@ -1698,12 +1698,25 @@ function getCarryOverPool(){
 }
 
 // Auto-add any non-excluded carry-over tasks that aren't yet in weekData.tasks.
-// Called when opening the Carry-overs tab so tasks are always in sync with the UI.
+// Figures out the correct school day to place them on (today or next upcoming day).
 function _syncCarryOvers(){
   const pool=getCarryOverPool();
+  // Find the current or next upcoming school day based on calendar dates + day-of-week
+  const _dayOrder=["monday","tuesday","wednesday","thursday","friday"];
+  const _jsIdx={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5};
+  const _todayIdx=new Date().getDay()||7; // Sunday→7
+  const _todayMid=new Date(); _todayMid.setHours(0,0,0,0);
+  let targetDay="monday";
+  for(const _d of _dayOrder){
+    // Use calendar date if available, otherwise fall back to day-of-week index
+    if(DAY_DT[_d]){
+      const _cal=new Date(DAY_DT[_d]+", "+_todayMid.getFullYear()); _cal.setHours(0,0,0,0);
+      if(_cal>=_todayMid){ targetDay=_d; break; }
+    } else if(_jsIdx[_d]>=_todayIdx){ targetDay=_d; break; }
+  }
   let changed=false;
   pool.tasks.filter(t=>t.included&&!weekData.tasks.some(x=>x.id===t.id)).forEach(t=>{
-    weekData.tasks.push({...t,included:undefined,prevWeek:undefined,
+    weekData.tasks.push({...t,day:targetDay,included:undefined,prevWeek:undefined,
       detail:(t.detail||t.title||"")+" (Carried from "+(t.prevWeek||"prev week")+")"});
     changed=true;
   });
@@ -1711,7 +1724,7 @@ function _syncCarryOvers(){
     sv(WK+"_tasks",weekData.tasks);
     lastTasksWrite=Date.now();
     if(db){const obj={};weekData.tasks.forEach(t=>obj[t.id]=t);db.ref(WK+"/tasks").set(obj);}
-    schedCascade(); // cascade newly-added tasks to today if Monday has already passed
+    renderAll();
   }
 }
 
