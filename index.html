@@ -1516,11 +1516,16 @@ function histKidStatsRow(tasks, checkedObj){
 
 function renderHistory(el){
   const _btn=(on)=>'flex:1;padding:8px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?'var(--header)':'transparent')+';color:'+(on?'#fff':'var(--muted)');
+  const _coPool=getCarryOverPool();
+  const _coPending=_coPool.tasks.filter(t=>!t.included).length;
+  const _coTotal=_coPool.tasks.length;
   let h='<div style="display:flex;gap:6px;padding:12px 12px 4px">';
   h+='<button onclick="setHistTab(\'log\')" style="'+_btn(histTab==="log")+'">History Log</button>';
+  h+='<button onclick="setHistTab(\'carryover\')" style="'+_btn(histTab==="carryover")+'">Carry-overs'+(_coTotal?'<span style="margin-left:4px;background:'+(histTab==="carryover"?'rgba(255,255,255,0.25)':'var(--header)')+';color:#fff;border-radius:10px;padding:1px 6px;font-size:10px">'+_coTotal+'</span>':'')+'</button>';
   h+='<button onclick="setHistTab(\'attendance\')" style="'+_btn(histTab==="attendance")+'">Attendance</button>';
   h+='</div>';
   if(histTab==="attendance"){ h+=renderAttendanceHtml(); el.innerHTML=h; return; }
+  if(histTab==="carryover"){ h+=renderCarryOverHtml(_coPool); el.innerHTML=h; return; }
 
   const hist=ld(WK+"_history")||{};
   const n=new Date(), satClose=n.getDay()===6&&n.getHours()>=20;
@@ -1656,6 +1661,83 @@ function renderHistory(el){
 function toggleArchiveWeek(safeKey){
   const el=document.getElementById("arch_"+safeKey);
   if(el) el.style.display=el.style.display==="none"?"block":"none";
+}
+
+// ── CARRY-OVER REVIEW ────────────────────────────────────────────
+function getCarryOverPool(){
+  const curWeek=weekData.week||WK;
+  const archEntries=Object.values(archive||{})
+    .filter(a=>a&&a.tasks&&a.weekLabel!==curWeek)
+    .sort((a,b)=>((b.archivedAt||"")>(a.archivedAt||""))?1:-1);
+  if(!archEntries.length) return {prev:null,tasks:[]};
+  const prev=archEntries[0];
+  const curIds=new Set((weekData.tasks||[]).map(t=>t.id));
+  const seen=new Set();
+  const tasks=[];
+  (prev.tasks||[]).forEach(t=>{
+    if(!t.cascade) return;
+    const _base=baseId(t.id);
+    if(seen.has(_base)) return;
+    if(curIds.has(_base)) return; // base task lives in current week (not a carry-over)
+    if(chainDone(_base,prev.checked||{},prev.tasks||[])) return; // completed last week
+    seen.add(_base);
+    const cId=_base+"_c";
+    tasks.push({...t,id:cId,day:"monday",cascade:true,
+      included:curIds.has(cId),
+      prevWeek:prev.weekLabel||"prev week"});
+  });
+  return {prev,tasks};
+}
+
+function toggleCarryOver(taskId,include){
+  if(include){
+    if(!weekData.tasks.some(x=>x.id===taskId)){
+      const pool=getCarryOverPool();
+      const t=pool.tasks.find(x=>x.id===taskId);
+      if(!t) return;
+      const detail=(t.detail||t.title||"")+" (Carried from "+(t.prevWeek||"prev week")+")";
+      weekData.tasks.push({...t,detail,included:undefined,prevWeek:undefined});
+    }
+  } else {
+    weekData.tasks=weekData.tasks.filter(x=>x.id!==taskId);
+    delete checked[taskId]; sv(WK+"_checked",checked);
+    if(db) db.ref(WK+"/checked").set(checked);
+  }
+  sv(WK+"_tasks",weekData.tasks);
+  lastTasksWrite=Date.now();
+  if(db){const obj={};weekData.tasks.forEach(t=>obj[t.id]=t);db.ref(WK+"/tasks").set(obj);}
+  const el=document.getElementById("content"); if(el&&tab==="history") renderHistory(el);
+}
+
+function renderCarryOverHtml(pool){
+  const KC={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c"};
+  let h='<div style="padding:12px">';
+  if(!pool.prev){
+    h+='<div style="text-align:center;padding:40px 20px;color:var(--muted);font-size:13px">No previous week in archive yet.</div>';
+    return h+'</div>';
+  }
+  const prevLabel=(pool.prev.weekLabel||"prev week").replace("week","Week ");
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5">';
+  h+='Tasks from <strong>'+prevLabel+'</strong> that were not completed. Checked = appears on Monday this week.</div>';
+  if(!pool.tasks.length){
+    h+='<div style="text-align:center;padding:30px 20px;color:#16a34a;font-size:13px;font-weight:700">✅ All tasks from '+prevLabel+' were completed!</div>';
+    return h+'</div>';
+  }
+  ["lincoln","ellis","lucy"].forEach(k=>{
+    const kt=pool.tasks.filter(t=>t.who===k); if(!kt.length) return;
+    h+='<div style="margin-bottom:14px">';
+    h+='<div style="font-size:11px;font-weight:800;color:'+KC[k]+';margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">'+cap(k)+'</div>';
+    kt.forEach(t=>{
+      const on=t.included;
+      h+='<div style="display:flex;align-items:center;gap:10px;background:var(--card);border:1.5px solid '+(on?'#16a34a55':'var(--border)')+';border-radius:10px;padding:10px 12px;margin-bottom:6px;cursor:pointer" onclick="toggleCarryOver(\''+t.id+'\','+(!on)+')">';
+      h+='<div style="width:22px;height:22px;flex-shrink:0;border-radius:6px;border:2px solid '+(on?'#16a34a':'var(--border)')+';background:'+(on?'#16a34a':'transparent')+';display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;pointer-events:none">'+(on?'✓':'')+'</div>';
+      h+='<div style="flex:1"><div style="font-size:13px;font-weight:600;color:'+(on?'var(--text)':'var(--muted)')+'">'+(on?'':'<s>')+t.title+(on?'':'</s>')+'</div>';
+      h+='<div style="font-size:11px;color:var(--muted)">'+(t.time||"")+(t.day?' · '+cap(t.day):'')+'</div></div>';
+      h+='</div>';
+    });
+    h+='</div>';
+  });
+  return h+'</div>';
 }
 
 function setHistTab(t){ histTab=t; const el=document.getElementById("content"); if(el&&tab==="history") renderHistory(el); }
