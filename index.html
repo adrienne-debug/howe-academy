@@ -1789,7 +1789,14 @@ function renderCarryOverHtml(pool){
 }
 
 function setHistTab(t){ histTab=t; if(t==="carryover") _syncCarryOvers(); const el=document.getElementById("content"); if(el&&tab==="history") renderHistory(el); }
-function toggleAttWk(k){ const el=document.getElementById("attwk_"+k); if(el) el.style.display=el.style.display==="none"?"block":"none"; }
+const _attOpenWks=new Set();
+function toggleAttWk(k){
+  const el=document.getElementById("attwk_"+k);
+  if(!el) return;
+  const opening=el.style.display==="none";
+  el.style.display=opening?"block":"none";
+  if(opening) _attOpenWks.add(k); else _attOpenWks.delete(k);
+}
 
 function buildKidAttendance(kid){
   const weeks=[]; const todayMid=new Date(); todayMid.setHours(0,0,0,0);
@@ -1888,7 +1895,7 @@ function renderAttendanceHtml(){
     h+='<div onclick="toggleAttWk(\''+sk+'\')" style="padding:9px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;background:var(--header);color:#fff">';
     h+='<span style="font-weight:700;font-size:13px">'+wk.label+(wk.current?' <span style="font-size:10px;opacity:0.55;font-weight:400">(current)</span>':'')+'</span>';
     h+='<span style="font-size:11px;opacity:0.7">'+kids.map((k,i)=>cap(k)+' '+wkTotals[i]+'d').join(' · ')+'</span></div>';
-    h+='<div id="attwk_'+sk+'" style="display:none">';
+    h+='<div id="attwk_'+sk+'" style="display:'+(_attOpenWks.has(sk)?'block':'none')+'">';
     // Column headers
     h+='<div style="display:grid;grid-template-columns:140px 1fr 1fr 1fr;padding:4px 14px;background:#f3f4f6;border-bottom:1px solid var(--border)">';
     h+='<div style="font-size:10px;color:var(--muted);font-weight:700">DAY</div>';
@@ -1897,8 +1904,10 @@ function renderAttendanceHtml(){
     // Day rows — for manually-added empty weeks, show all 5 school days in edit mode
     const allDays=[];
     kids.forEach(k=>{ const w=atd[k].weeks.find(x=>x.wkKey===wk.wkKey); if(w) w.days.forEach(d=>{ if(!allDays.find(x=>x.day===d.day)) allDays.push({day:d.day,date:d.date,past:d.past}); }); });
-    if(wk.empty&&editing){
-      DAYS.forEach(d=>{ if(!allDays.find(x=>x.day===d)) allDays.push({day:d,date:(archive[wk.wkKey]&&archive[wk.wkKey].dates&&archive[wk.wkKey].dates[d])||null,past:true}); });
+    if(editing&&wk.archived){
+      // In edit mode, always show all 5 school days for any archived week
+      const awd=(archive[wk.wkKey]&&archive[wk.wkKey].dates)||{};
+      DAYS.forEach(d=>{ if(!allDays.find(x=>x.day===d)) allDays.push({day:d,date:awd[d]||null,past:true}); });
     }
     allDays.sort((a,b)=>DAYS.indexOf(a.day)-DAYS.indexOf(b.day));
     if(!allDays.length){
