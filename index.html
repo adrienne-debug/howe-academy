@@ -403,6 +403,9 @@ let paceData={subjects:{}, plans:{}};
 let paceEditKid=null;
 let paceEditPlan=null;
 let histTab="log"; // "log" | "attendance"
+let attEditUnlocked=false;
+const ATT_PIN="1234"; // change to preferred PIN
+let attOverrides={}; // {wkKey:{day:{kid:true/false}}}
 
 // ── FIREBASE ──────────────────────────────────────────────────────
 let isUploading = false;
@@ -542,6 +545,11 @@ function initFb() {
       try{localStorage.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
       if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
     });
+    db.ref("att_overrides").on("value",s=>{
+      if(s.val()) attOverrides=s.val();
+      try{localStorage.setItem("ha_att_overrides",JSON.stringify(attOverrides));}catch(e){}
+      if(tab==="history"&&histTab==="attendance"){const el=document.getElementById("content");if(el)renderHistory(el);}
+    });
   } catch(e){ console.warn("FB offline:",e); }
 }
 
@@ -563,6 +571,7 @@ function boot() {
   try{ const mp=localStorage.getItem("mp_weekly_data"); if(mp){const d=JSON.parse(mp);MP_DATA.weekLabel=d.weekLabel||MP_DATA.weekLabel;MP_DATA.winOfTheDay=d.winOfTheDay||MP_DATA.winOfTheDay;MP_DATA.skylightTip=d.skylightTip||MP_DATA.skylightTip;MP_DATA.days=d.days||MP_DATA.days;MP_DATA.allMeals=d.allMeals||MP_DATA.allMeals;} }catch(e){}
   try{ const mc=localStorage.getItem("mp_chore_state"); if(mc) mpChoreState=JSON.parse(mc); }catch(e){}
   try{ const pc=localStorage.getItem("ha_pace"); if(pc) paceData=JSON.parse(pc); }catch(e){}
+  try{ const ao=localStorage.getItem("ha_att_overrides"); if(ao) attOverrides=JSON.parse(ao); }catch(e){}
 }
 
 // ── WEEK META ─────────────────────────────────────────────────────
@@ -1649,7 +1658,9 @@ function buildKidAttendance(kid){
     const awc=aw.checked||{}; const awd=aw.dates||{};
     const days=[];
     DAYS.forEach(d=>{ const dt=awt.filter(t=>t.day===d); if(!dt.length)return;
-      days.push({day:d,date:awd[d]||null,attended:dt.some(t=>awc[t.id]||awc[t.id+"_c"]),past:true}); });
+      const computed=dt.some(t=>awc[t.id]||awc[t.id+"_c"]);
+      const ov=((attOverrides[wkKey]||{})[d]||{})[kid]; const attended=ov!==undefined?ov:computed;
+      days.push({day:d,date:awd[d]||null,attended,past:true}); });
     if(days.length) weeks.push({wkKey,label:(aw.weekLabel||wkKey).replace("week","Week "),days,archived:true});
   });
   const cur=(weekData.tasks||[]).filter(t=>t.who===kid&&!t.id.endsWith("_c"));
@@ -1667,8 +1678,27 @@ function renderAttendanceHtml(){
   const GOAL=180, kids=["lincoln","ellis","lucy"];
   const KC={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c"};
   const atd={}; kids.forEach(k=>atd[k]=buildKidAttendance(k));
+  const editing=attEditUnlocked;
 
   let h='<div style="padding:12px">';
+
+  // PIN prompt or unlock/done button
+  if(!editing){
+    h+='<div style="text-align:right;margin-bottom:6px">';
+    h+='<button onclick="showAttPin()" style="padding:5px 12px;background:transparent;border:1.5px solid var(--border);border-radius:8px;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer">✏️ Edit Records</button></div>';
+    h+='<div id="att-pin-wrap" style="display:none;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px">';
+    h+='<div style="font-size:12px;font-weight:700;margin-bottom:6px">Enter edit PIN</div>';
+    h+='<div style="display:flex;gap:6px">';
+    h+='<input id="att-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="PIN" style="flex:1;padding:7px 10px;border:1.5px solid var(--border);border-radius:7px;font-size:14px;text-align:center" onkeydown="if(event.key===\'Enter\')checkAttPin()">';
+    h+='<button onclick="checkAttPin()" style="padding:7px 14px;background:var(--header);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer">Unlock</button>';
+    h+='<button onclick="document.getElementById(\'att-pin-wrap\').style.display=\'none\'" style="padding:7px 12px;background:transparent;border:1.5px solid var(--border);border-radius:7px;font-size:12px;cursor:pointer">✕</button>';
+    h+='</div><div id="att-pin-err" style="font-size:11px;color:#b5394a;margin-top:4px;min-height:12px"></div></div>';
+  } else {
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;background:#fef9c3;border:1px solid #fde68a;border-radius:8px;padding:7px 12px">';
+    h+='<span style="font-size:12px;font-weight:700;color:#92400e">✏️ Edit mode — tap ✓/absent to toggle, type dates below</span>';
+    h+='<button onclick="lockAttEdit()" style="padding:4px 10px;background:#92400e;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">Done</button></div>';
+  }
+
   // Summary card
   h+='<div style="background:var(--header);color:#fff;border-radius:12px;padding:14px 16px;margin-bottom:12px">';
   h+='<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700;margin-bottom:10px">School Year Attendance</div>';
@@ -1681,7 +1711,7 @@ function renderAttendanceHtml(){
     h+='<div style="height:6px;border-radius:3px;background:rgba(255,255,255,0.2)">';
     h+='<div style="height:100%;border-radius:3px;background:#a5b4fc;width:'+pct+'%"></div></div></div>';
   });
-  h+='<div style="font-size:10px;opacity:0.5;margin-top:2px">NC requires 9 months of operation (~180 days/year) · Attended = at least 1 task completed</div>';
+  h+='<div style="font-size:10px;opacity:0.5;margin-top:2px">NC requires 9 months (~180 days/year) · Attended = at least 1 task completed</div>';
   h+='</div>';
 
   // Weekly rows
@@ -1695,24 +1725,37 @@ function renderAttendanceHtml(){
     h+='<span style="font-weight:700;font-size:13px">'+wk.label+(wk.current?' <span style="font-size:10px;opacity:0.55;font-weight:400">(current)</span>':'')+'</span>';
     h+='<span style="font-size:11px;opacity:0.7">'+kids.map((k,i)=>cap(k)+' '+wkTotals[i]+'d').join(' · ')+'</span></div>';
     h+='<div id="attwk_'+sk+'" style="display:none">';
-    h+='<div style="display:grid;grid-template-columns:130px 1fr 1fr 1fr;padding:4px 14px;background:#f3f4f6;border-bottom:1px solid var(--border)">';
+    // Column headers
+    h+='<div style="display:grid;grid-template-columns:140px 1fr 1fr 1fr;padding:4px 14px;background:#f3f4f6;border-bottom:1px solid var(--border)">';
     h+='<div style="font-size:10px;color:var(--muted);font-weight:700">DAY</div>';
     kids.forEach(k=>h+='<div style="text-align:center;font-size:10px;font-weight:700;color:'+KC[k]+'">'+cap(k).toUpperCase()+'</div>');
     h+='</div>';
+    // Day rows
     const allDays=[];
     kids.forEach(k=>{ const w=atd[k].weeks.find(x=>x.wkKey===wk.wkKey); if(w) w.days.forEach(d=>{ if(!allDays.find(x=>x.day===d.day)) allDays.push({day:d.day,date:d.date,past:d.past}); }); });
     allDays.sort((a,b)=>DAYS.indexOf(a.day)-DAYS.indexOf(b.day));
     allDays.forEach(dayObj=>{
-      const lbl=(DAY_LBL[dayObj.day]||dayObj.day)+(dayObj.date?' '+dayObj.date:'');
-      h+='<div style="display:grid;grid-template-columns:130px 1fr 1fr 1fr;align-items:center;padding:6px 14px;border-bottom:1px solid #f0f0f0;background:'+(dayObj.past?'#fff':'#fafafa')+'">';
-      h+='<div style="font-size:11px;font-weight:600;color:var(--muted)">'+lbl+'</div>';
+      const dayLbl=DAY_LBL[dayObj.day]||dayObj.day;
+      const dateCell=editing&&wk.archived
+        ?'<div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:10px;font-weight:600">'+dayLbl+'</span>'+
+          '<input value="'+(dayObj.date||'')+'" placeholder="e.g. May 18" style="font-size:10px;padding:2px 4px;border:1px solid #d1d5db;border-radius:4px;width:90px" '+
+          'onchange="setAttDate(\''+wk.wkKey+'\',\''+dayObj.day+'\',this.value)"></div>'
+        :'<div style="font-size:11px;font-weight:600;color:var(--muted)">'+dayLbl+(dayObj.date?' '+dayObj.date:'')+'</div>';
+      h+='<div style="display:grid;grid-template-columns:140px 1fr 1fr 1fr;align-items:center;padding:6px 14px;border-bottom:1px solid #f0f0f0;background:'+(dayObj.past?'#fff':'#fafafa')+'">';
+      h+=dateCell;
       kids.forEach(k=>{
         const w=atd[k].weeks.find(x=>x.wkKey===wk.wkKey);
         const d=w?w.days.find(x=>x.day===dayObj.day):null;
+        const hasOv=d&&((attOverrides[wk.wkKey]||{})[dayObj.day]||{})[k]!==undefined;
         h+='<div style="text-align:center">';
         if(!d) h+='<span style="color:#d1d5db;font-size:12px">—</span>';
         else if(!dayObj.past) h+='<span style="font-size:10px;color:#9ca3af">upcoming</span>';
-        else if(d.attended) h+='<span style="font-size:15px;font-weight:700;color:'+KC[k]+'">✓</span>';
+        else if(editing&&dayObj.past){
+          const cur=d.attended;
+          h+='<button onclick="setAttOverride(\''+wk.wkKey+'\',\''+dayObj.day+'\',\''+k+'\','+(cur?'false':'true')+')" '+
+            'style="padding:2px 8px;border-radius:5px;border:1.5px solid '+(cur?KC[k]:'#ef4444')+';background:'+(cur?KC[k]+'22':'#fee2e2')+';'+
+            'color:'+(cur?KC[k]:'#ef4444')+';font-size:11px;font-weight:700;cursor:pointer'+(hasOv?';outline:2px solid #f59e0b':'')+'">'+(cur?'✓ P':'✗ A')+'</button>';
+        } else if(d.attended) h+='<span style="font-size:15px;font-weight:700;color:'+KC[k]+'">✓</span>';
         else h+='<span style="font-size:10px;color:#ef4444;font-weight:700">absent</span>';
         h+='</div>';
       });
@@ -1755,6 +1798,40 @@ function printAttendance(onlyKid){
     '<p style="font-size:9pt;color:#666">NC Requirement: 9 months (~180 days/year) &nbsp;·&nbsp; Generated: '+nowTs()+'</p>'+
     '<hr>'+body+'</body></html>';
   const w=window.open("","_blank"); w.document.write(html); w.document.close(); w.onload=()=>w.print();
+}
+
+function showAttPin(){
+  const w=document.getElementById('att-pin-wrap');
+  if(w) w.style.display='flex';
+}
+function checkAttPin(){
+  const v=(document.getElementById('att-pin-input')||{}).value||'';
+  if(v===ATT_PIN){
+    attEditUnlocked=true;
+    const el=document.getElementById("content"); if(el) renderHistory(el);
+  } else {
+    const err=document.getElementById('att-pin-err'); if(err) err.textContent='Incorrect PIN';
+  }
+}
+function lockAttEdit(){
+  attEditUnlocked=false;
+  const el=document.getElementById("content"); if(el) renderHistory(el);
+}
+function setAttOverride(wkKey,day,kid,val){
+  if(!attOverrides[wkKey]) attOverrides[wkKey]={};
+  if(!attOverrides[wkKey][day]) attOverrides[wkKey][day]={};
+  attOverrides[wkKey][day][kid]=val;
+  try{localStorage.setItem("ha_att_overrides",JSON.stringify(attOverrides));}catch(e){}
+  if(db) db.ref("att_overrides/"+wkKey+"/"+day+"/"+kid).set(val);
+  const el=document.getElementById("content"); if(el) renderHistory(el);
+}
+function setAttDate(wkKey,day,val){
+  if(!archive[wkKey]) return;
+  if(!archive[wkKey].dates) archive[wkKey].dates={};
+  archive[wkKey].dates[day]=val.trim();
+  try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
+  if(db) db.ref("archive/"+wkKey+"/dates/"+day).set(val.trim());
+  const el=document.getElementById("content"); if(el) renderHistory(el);
 }
 
 // ── MAGGIE ────────────────────────────────────────────────────────
