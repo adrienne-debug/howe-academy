@@ -976,6 +976,7 @@ document.getElementById("dlg-ok").onclick=()=>{
   const hist=ld(WK+"_history")||{};
   const t=weekData.tasks.find(x=>x.id===pendingId);
   if(t){ hist[pendingId]={id:pendingId,title:t.title,who:t.who,day:t.day,ts}; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+pendingId).set(hist[pendingId]); }
+  writeSummaryDebounced();
   closeDlg(); renderAll();
 };
 document.getElementById("dlg-uncheck").onclick=()=>{
@@ -987,6 +988,7 @@ document.getElementById("dlg-uncheck").onclick=()=>{
   const hist=ld(WK+"_history")||{};
   delete hist[pendingId]; sv(WK+"_history",hist);
   if(db) db.ref(WK+"/history/"+pendingId).remove();
+  writeSummaryDebounced();
   closeDlg(); renderAll();
 };
 function closeDlg(){ document.getElementById("dlg").style.display="none"; pendingId=null; }
@@ -3056,6 +3058,93 @@ function renderPace(el){
 window.addEventListener("scroll",()=>{
   document.getElementById("scroll-top").style.display=window.scrollY>300?"block":"none";
 });
+
+// ── WEEK SUMMARY EXPORT ───────────────────────────────────────────
+// Computes per-kid completion stats and writes them to Firebase at
+// {WK}/summary so the Python notebook generator can read them via
+// the REST API after the week ends.
+
+function _subjectFromTitle(title){
+  // "💻 TTRS — Mod 19" → "TTRS"
+  const parts=(title||"").split(" ");
+  if(parts.length<2) return title||"";
+  return parts.slice(1).join(" ").split("—")[0].trim();
+}
+
+function computeWeekSummary(){
+  const allTasks=weekData.tasks||[];
+  if(!allTasks.length) return null;
+
+  // IDs that have been cascaded away (original replaced by _c copy)
+  const cascadedAway=new Set(allTasks.filter(t=>t.id.endsWith("_c")).map(t=>t.id.replace(/_c$/,"")));
+
+  const kids=["lincoln","ellis","lucy","julian"];
+  const kidSummaries={};
+
+  kids.forEach(kid=>{
+    const countable=allTasks.filter(t=>
+      t.who===kid &&
+      (!cascadedAway.has(t.id)||!!checked[t.id]) &&
+      !(t.title||"").toLowerCase().includes("lunch")
+    );
+    if(!countable.length) return;
+
+    const doneList=countable.filter(t=>!!checked[t.id]);
+    const total=countable.length;
+    const doneCount=doneList.length;
+    const pct=total?Math.round(doneCount/total*100):0;
+
+    // Days that had at least one task completed
+    const daysDone=[...new Set(doneList.map(t=>t.day))].length;
+
+    // Carry-over candidates: uncompleted cascadeable tasks
+    const carriedOver=countable.filter(t=>t.cascade&&!checked[t.id]).length;
+
+    // Per-subject breakdown
+    const subjStats={};
+    countable.forEach(t=>{
+      const s=_subjectFromTitle(t.title);
+      if(!subjStats[s]) subjStats[s]={total:0,done:0};
+      subjStats[s].total++;
+      if(checked[t.id]) subjStats[s].done++;
+    });
+
+    // Build flat pill lists
+    const subjectsDone=[],subjectsBehind=[];
+    Object.entries(subjStats).forEach(([s,v])=>{
+      if(v.done===v.total) subjectsDone.push(s);
+      else subjectsBehind.push(s);
+    });
+
+    kidSummaries[kid]={
+      tasks_done:doneCount,
+      tasks_total:total,
+      pct,
+      days_done:daysDone,
+      carried_over:carriedOver,
+      subjects_done:subjectsDone,
+      subjects_behind:subjectsBehind,
+      subject_detail:subjStats
+    };
+  });
+
+  return {
+    week:WK,
+    dates:DAY_DT,
+    computed_at:Date.now(),
+    kids:kidSummaries
+  };
+}
+
+let _summaryDebounce=null;
+function writeSummaryDebounced(){
+  if(_summaryDebounce) clearTimeout(_summaryDebounce);
+  _summaryDebounce=setTimeout(()=>{
+    if(!db||!(weekData.tasks||[]).length) return;
+    const s=computeWeekSummary();
+    if(s){ db.ref(WK+"/summary").set(s); dbg("summary written week="+WK); }
+  },4000); // 4s after last checkbox change
+}
 
 // ── INIT ──────────────────────────────────────────────────────────
 boot(); initFb(); renderAll();
