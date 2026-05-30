@@ -530,7 +530,6 @@ function initFb() {
     db.ref("archive").on("value",s=>{
       archive=s.val()||{};
       try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
-      _autoFillWeekDates();
       if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
       if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
     });
@@ -976,7 +975,6 @@ document.getElementById("dlg-ok").onclick=()=>{
   const hist=ld(WK+"_history")||{};
   const t=weekData.tasks.find(x=>x.id===pendingId);
   if(t){ hist[pendingId]={id:pendingId,title:t.title,who:t.who,day:t.day,ts}; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+pendingId).set(hist[pendingId]); }
-  writeSummaryDebounced();
   closeDlg(); renderAll();
 };
 document.getElementById("dlg-uncheck").onclick=()=>{
@@ -988,7 +986,6 @@ document.getElementById("dlg-uncheck").onclick=()=>{
   const hist=ld(WK+"_history")||{};
   delete hist[pendingId]; sv(WK+"_history",hist);
   if(db) db.ref(WK+"/history/"+pendingId).remove();
-  writeSummaryDebounced();
   closeDlg(); renderAll();
 };
 function closeDlg(){ document.getElementById("dlg").style.display="none"; pendingId=null; }
@@ -1791,14 +1788,7 @@ function renderCarryOverHtml(pool){
 }
 
 function setHistTab(t){ histTab=t; if(t==="carryover") _syncCarryOvers(); const el=document.getElementById("content"); if(el&&tab==="history") renderHistory(el); }
-const _attOpenWks=new Set();
-function toggleAttWk(k){
-  const el=document.getElementById("attwk_"+k);
-  if(!el) return;
-  const opening=el.style.display==="none";
-  el.style.display=opening?"block":"none";
-  if(opening) _attOpenWks.add(k); else _attOpenWks.delete(k);
-}
+function toggleAttWk(k){ const el=document.getElementById("attwk_"+k); if(el) el.style.display=el.style.display==="none"?"block":"none"; }
 
 function buildKidAttendance(kid){
   const weeks=[]; const todayMid=new Date(); todayMid.setHours(0,0,0,0);
@@ -1875,21 +1865,9 @@ function renderAttendanceHtml(){
   h+='<div style="font-size:10px;opacity:0.5;margin-top:2px">NC requires 9 months (~180 days/year) · Attended = at least 1 task completed</div>';
   h+='</div>';
 
-  // Weekly rows — include archive weeks that have NO tasks but exist (e.g. manually added weeks)
+  // Weekly rows
   const allWks=[];
   kids.forEach(k=>atd[k].weeks.forEach(w=>{ if(!allWks.find(x=>x.wkKey===w.wkKey)) allWks.push(w); }));
-  Object.keys(archive).sort().forEach(wkKey=>{
-    if(allWks.find(x=>x.wkKey===wkKey)) return; // already included
-    const aw=archive[wkKey];
-    allWks.push({wkKey,label:(aw.weekLabel||wkKey).replace("week","Week "),days:[],archived:true,empty:true});
-  });
-  // Sort all weeks by numeric week number (week1 < week2 < ... current last)
-  allWks.sort((a,b)=>{
-    if(a.current) return 1; if(b.current) return -1;
-    const na=parseInt((a.wkKey||"").replace(/\D/g,"")||"0");
-    const nb=parseInt((b.wkKey||"").replace(/\D/g,"")||"0");
-    return na-nb;
-  });
   allWks.forEach(wk=>{
     const sk=wk.wkKey.replace(/[^a-zA-Z0-9]/g,"_");
     const wkTotals=kids.map(k=>{ const w=atd[k].weeks.find(x=>x.wkKey===wk.wkKey); return w?w.days.filter(d=>d.past&&d.attended).length:0; });
@@ -1897,24 +1875,16 @@ function renderAttendanceHtml(){
     h+='<div onclick="toggleAttWk(\''+sk+'\')" style="padding:9px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;background:var(--header);color:#fff">';
     h+='<span style="font-weight:700;font-size:13px">'+wk.label+(wk.current?' <span style="font-size:10px;opacity:0.55;font-weight:400">(current)</span>':'')+'</span>';
     h+='<span style="font-size:11px;opacity:0.7">'+kids.map((k,i)=>cap(k)+' '+wkTotals[i]+'d').join(' · ')+'</span></div>';
-    h+='<div id="attwk_'+sk+'" style="display:'+(_attOpenWks.has(sk)?'block':'none')+'">';
+    h+='<div id="attwk_'+sk+'" style="display:none">';
     // Column headers
     h+='<div style="display:grid;grid-template-columns:140px 1fr 1fr 1fr;padding:4px 14px;background:#f3f4f6;border-bottom:1px solid var(--border)">';
     h+='<div style="font-size:10px;color:var(--muted);font-weight:700">DAY</div>';
     kids.forEach(k=>h+='<div style="text-align:center;font-size:10px;font-weight:700;color:'+KC[k]+'">'+cap(k).toUpperCase()+'</div>');
     h+='</div>';
-    // Day rows — for manually-added empty weeks, show all 5 school days in edit mode
+    // Day rows
     const allDays=[];
     kids.forEach(k=>{ const w=atd[k].weeks.find(x=>x.wkKey===wk.wkKey); if(w) w.days.forEach(d=>{ if(!allDays.find(x=>x.day===d.day)) allDays.push({day:d.day,date:d.date,past:d.past}); }); });
-    if(editing&&wk.archived){
-      // In edit mode, always show all 5 school days for any archived week
-      const awd=(archive[wk.wkKey]&&archive[wk.wkKey].dates)||{};
-      DAYS.forEach(d=>{ if(!allDays.find(x=>x.day===d)) allDays.push({day:d,date:awd[d]||null,past:true}); });
-    }
     allDays.sort((a,b)=>DAYS.indexOf(a.day)-DAYS.indexOf(b.day));
-    if(!allDays.length){
-      h+='<div style="padding:10px 14px;font-size:12px;color:var(--muted);font-style:italic">No tasks recorded — unlock Edit to add attendance</div>';
-    }
     allDays.forEach(dayObj=>{
       const dayLbl=DAY_LBL[dayObj.day]||dayObj.day;
       const dateCell=editing&&wk.archived
@@ -1927,19 +1897,16 @@ function renderAttendanceHtml(){
       kids.forEach(k=>{
         const w=atd[k].weeks.find(x=>x.wkKey===wk.wkKey);
         const d=w?w.days.find(x=>x.day===dayObj.day):null;
-        // For empty weeks, derive attendance from attOverrides directly
-        const ovVal=((attOverrides[wk.wkKey]||{})[dayObj.day]||{})[k];
-        const hasOv=ovVal!==undefined||(d&&((attOverrides[wk.wkKey]||{})[dayObj.day]||{})[k]!==undefined);
-        const attended=d?d.attended:(ovVal||false);
+        const hasOv=d&&((attOverrides[wk.wkKey]||{})[dayObj.day]||{})[k]!==undefined;
         h+='<div style="text-align:center">';
-        if(editing&&dayObj.past&&wk.archived){
-          const cur=attended;
+        if(!d) h+='<span style="color:#d1d5db;font-size:12px">—</span>';
+        else if(!dayObj.past) h+='<span style="font-size:10px;color:#9ca3af">upcoming</span>';
+        else if(editing&&dayObj.past){
+          const cur=d.attended;
           h+='<button onclick="setAttOverride(\''+wk.wkKey+'\',\''+dayObj.day+'\',\''+k+'\','+(cur?'false':'true')+')" '+
             'style="padding:2px 8px;border-radius:5px;border:1.5px solid '+(cur?KC[k]:'#ef4444')+';background:'+(cur?KC[k]+'22':'#fee2e2')+';'+
             'color:'+(cur?KC[k]:'#ef4444')+';font-size:11px;font-weight:700;cursor:pointer'+(hasOv?';outline:2px solid #f59e0b':'')+'">'+(cur?'✓ P':'✗ A')+'</button>';
-        } else if(!d&&!hasOv) h+='<span style="color:#d1d5db;font-size:12px">—</span>';
-        else if(!dayObj.past) h+='<span style="font-size:10px;color:#9ca3af">upcoming</span>';
-        else if(attended) h+='<span style="font-size:15px;font-weight:700;color:'+KC[k]+'">✓</span>';
+        } else if(d.attended) h+='<span style="font-size:15px;font-weight:700;color:'+KC[k]+'">✓</span>';
         else h+='<span style="font-size:10px;color:#ef4444;font-weight:700">absent</span>';
         h+='</div>';
       });
@@ -1982,37 +1949,6 @@ function printAttendance(onlyKid){
     '<p style="font-size:9pt;color:#666">NC Requirement: 9 months (~180 days/year) &nbsp;·&nbsp; Generated: '+nowTs()+'</p>'+
     '<hr>'+body+'</body></html>';
   const w=window.open("","_blank"); w.document.write(html); w.document.close(); w.onload=()=>w.print();
-}
-
-// One-time auto-fill of Mon–Fri dates for weeks 1–6 (no skips, starts Apr 20 2026)
-const _WEEK_DATES={
-  week1:{monday:"Apr 20",tuesday:"Apr 21",wednesday:"Apr 22",thursday:"Apr 23",friday:"Apr 24"},
-  week2:{monday:"Apr 27",tuesday:"Apr 28",wednesday:"Apr 29",thursday:"Apr 30",friday:"May 1"},
-  week3:{monday:"May 4",tuesday:"May 5",wednesday:"May 6",thursday:"May 7",friday:"May 8"},
-  week4:{monday:"May 11",tuesday:"May 12",wednesday:"May 13",thursday:"May 14",friday:"May 15"},
-  week5:{monday:"May 18",tuesday:"May 19",wednesday:"May 20",thursday:"May 21",friday:"May 22"},
-  week6:{monday:"May 25",tuesday:"May 26",wednesday:"May 27",thursday:"May 28",friday:"May 29"}
-};
-let _weekDatesFilled=false;
-function _autoFillWeekDates(){
-  if(_weekDatesFilled) return;
-  _weekDatesFilled=true;
-  let anyChange=false;
-  Object.entries(_WEEK_DATES).forEach(([wkKey,dayDates])=>{
-    if(!archive[wkKey]) return;
-    if(!archive[wkKey].dates) archive[wkKey].dates={};
-    Object.entries(dayDates).forEach(([day,dateStr])=>{
-      if(archive[wkKey].dates[day]) return; // don't overwrite existing
-      archive[wkKey].dates[day]=dateStr;
-      if(db) db.ref("archive/"+wkKey+"/dates/"+day).set(dateStr);
-      anyChange=true;
-    });
-  });
-  if(anyChange){
-    try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
-    const el=document.getElementById("content");
-    if(el&&tab==="history") renderHistory(el);
-  }
 }
 
 function addManualAttWeek(label){
@@ -2323,11 +2259,10 @@ function runCascade(){
   let changed=false;
   const hist=ld(WK+"_history")||{};
   const todayMidnight=new Date(); todayMidnight.setHours(0,0,0,0);
-  const tasksSnapshot=weekData.tasks.slice();
   dayOrder.forEach(td=>{
     if(dayJsIdx[td]>=todayIdx) return;
     if(DAY_DT[td]){const d=new Date(DAY_DT[td]+", "+todayMidnight.getFullYear());d.setHours(0,0,0,0);if(d>=todayMidnight)return;}
-    const unchecked=tasksSnapshot.filter(t=>t.day===td&&t.cascade&&!checked[t.id]);
+    const unchecked=weekData.tasks.filter(t=>t.day===td&&t.cascade&&!checked[t.id]);
     unchecked.forEach(t=>{
       if(!hist[t.id+"_flag"]){
         hist[t.id+"_flag"]={id:t.id,title:t.title,who:t.who,day:td,flag:"cascade_missed",ts:nowTs()};
@@ -3058,93 +2993,6 @@ function renderPace(el){
 window.addEventListener("scroll",()=>{
   document.getElementById("scroll-top").style.display=window.scrollY>300?"block":"none";
 });
-
-// ── WEEK SUMMARY EXPORT ───────────────────────────────────────────
-// Computes per-kid completion stats and writes them to Firebase at
-// {WK}/summary so the Python notebook generator can read them via
-// the REST API after the week ends.
-
-function _subjectFromTitle(title){
-  // "💻 TTRS — Mod 19" → "TTRS"
-  const parts=(title||"").split(" ");
-  if(parts.length<2) return title||"";
-  return parts.slice(1).join(" ").split("—")[0].trim();
-}
-
-function computeWeekSummary(){
-  const allTasks=weekData.tasks||[];
-  if(!allTasks.length) return null;
-
-  // IDs that have been cascaded away (original replaced by _c copy)
-  const cascadedAway=new Set(allTasks.filter(t=>t.id.endsWith("_c")).map(t=>t.id.replace(/_c$/,"")));
-
-  const kids=["lincoln","ellis","lucy","julian"];
-  const kidSummaries={};
-
-  kids.forEach(kid=>{
-    const countable=allTasks.filter(t=>
-      t.who===kid &&
-      (!cascadedAway.has(t.id)||!!checked[t.id]) &&
-      !(t.title||"").toLowerCase().includes("lunch")
-    );
-    if(!countable.length) return;
-
-    const doneList=countable.filter(t=>!!checked[t.id]);
-    const total=countable.length;
-    const doneCount=doneList.length;
-    const pct=total?Math.round(doneCount/total*100):0;
-
-    // Days that had at least one task completed
-    const daysDone=[...new Set(doneList.map(t=>t.day))].length;
-
-    // Carry-over candidates: uncompleted cascadeable tasks
-    const carriedOver=countable.filter(t=>t.cascade&&!checked[t.id]).length;
-
-    // Per-subject breakdown
-    const subjStats={};
-    countable.forEach(t=>{
-      const s=_subjectFromTitle(t.title);
-      if(!subjStats[s]) subjStats[s]={total:0,done:0};
-      subjStats[s].total++;
-      if(checked[t.id]) subjStats[s].done++;
-    });
-
-    // Build flat pill lists
-    const subjectsDone=[],subjectsBehind=[];
-    Object.entries(subjStats).forEach(([s,v])=>{
-      if(v.done===v.total) subjectsDone.push(s);
-      else subjectsBehind.push(s);
-    });
-
-    kidSummaries[kid]={
-      tasks_done:doneCount,
-      tasks_total:total,
-      pct,
-      days_done:daysDone,
-      carried_over:carriedOver,
-      subjects_done:subjectsDone,
-      subjects_behind:subjectsBehind,
-      subject_detail:subjStats
-    };
-  });
-
-  return {
-    week:WK,
-    dates:DAY_DT,
-    computed_at:Date.now(),
-    kids:kidSummaries
-  };
-}
-
-let _summaryDebounce=null;
-function writeSummaryDebounced(){
-  if(_summaryDebounce) clearTimeout(_summaryDebounce);
-  _summaryDebounce=setTimeout(()=>{
-    if(!db||!(weekData.tasks||[]).length) return;
-    const s=computeWeekSummary();
-    if(s){ db.ref(WK+"/summary").set(s); dbg("summary written week="+WK); }
-  },4000); // 4s after last checkbox change
-}
 
 // ── INIT ──────────────────────────────────────────────────────────
 boot(); initFb(); renderAll();
