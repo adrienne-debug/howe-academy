@@ -480,21 +480,18 @@ function attachWeekListeners(wk){
     const fbHist=s.val()||{}; const local=ld(wk+"_history")||{};
     const merged={...local,...fbHist}; sv(wk+"_history",merged);
     histState=merged;
+    const firstHistLoad=!fbHistoryLoaded;
     fbHistoryLoaded=true;
-    // Patch checked: anything history says is done should be marked checked
-    let histPatched=false;
-    Object.keys(histState).forEach(hid=>{
-      const e=histState[hid];
-      if(e&&typeof e==="object"&&e.ts&&!e.missed&&!e.flag&&!checked[hid]){checked[hid]=true;histPatched=true;}
-    });
-    if(histPatched){
-      sv(wk+"_checked",checked);
-      // Write back to Firebase so the restored checks are durable
-      if(db) db.ref(wk+"/checked").update(checked);
-      if(fbCheckedLoaded) renderAll();
+    // On first load only: patch checked from history and trigger cascade so bad _c tasks get pruned
+    if(firstHistLoad){
+      let histPatched=false;
+      Object.keys(histState).forEach(hid=>{
+        const e=histState[hid];
+        if(e&&typeof e==="object"&&e.ts&&!e.missed&&!e.flag&&!checked[hid]){checked[hid]=true;histPatched=true;}
+      });
+      if(histPatched){ sv(wk+"_checked",checked); if(fbCheckedLoaded) renderAll(); }
+      schedCascade();
     }
-    // Always trigger cascade after history loads — it needs history to prune bad _c tasks
-    schedCascade();
     if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
   });
   fbWeekRefs.push(r4);
