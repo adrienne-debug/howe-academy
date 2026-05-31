@@ -393,7 +393,7 @@ const SL_STIM  = {morning:"10:00 AM – 1:00 PM",afternoon:"2:00 – 4:15 PM",ch
 // ── STATE ─────────────────────────────────────────────────────────
 let db=null, weekData={week:WK,tasks:[],maggie:null};
 let momPinUnlocked=false;
-let checked={}, slState={}, supplies={};
+let checked={}, slState={}, supplies={}, histState={};
 const _todayDay=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][new Date().getDay()];
 let tab="schedule", day=["monday","tuesday","wednesday","thursday","friday"].includes(_todayDay)?_todayDay:"monday", kid="all", supDay="all";
 let collCats={}, pendingId=null;
@@ -443,10 +443,9 @@ function attachWeekListeners(wk){
     const v=s.val()||{};
     dbg("FB checked keys="+Object.keys(v).length+" local="+Object.keys(checked).length);
     // Restore any checks that history says are done but are missing from Firebase checked.
-    // History is written per-task (not bulk-overwritten) so it's the reliable source of truth.
-    const hist=ld(wk+"_history")||{};
-    Object.keys(hist).forEach(hid=>{
-      const entry=hist[hid];
+    // Use in-memory histState (updated by the history listener) so timing doesn't matter.
+    Object.keys(histState).forEach(hid=>{
+      const entry=histState[hid];
       if(entry&&typeof entry==="object"&&entry.ts&&!entry.missed&&!entry.flag&&!v[hid]) v[hid]=true;
     });
     checked=v; sv(wk+"_checked",checked);
@@ -478,6 +477,14 @@ function attachWeekListeners(wk){
     if(isUploading) return;
     const fbHist=s.val()||{}; const local=ld(wk+"_history")||{};
     const merged={...local,...fbHist}; sv(wk+"_history",merged);
+    histState=merged;
+    // Patch checked: anything history says is done should be marked checked
+    let histPatched=false;
+    Object.keys(histState).forEach(hid=>{
+      const e=histState[hid];
+      if(e&&typeof e==="object"&&e.ts&&!e.missed&&!e.flag&&!checked[hid]){checked[hid]=true;histPatched=true;}
+    });
+    if(histPatched){sv(wk+"_checked",checked);if(fbCheckedLoaded)renderAll();}
     if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
   });
   fbWeekRefs.push(r4);
