@@ -444,12 +444,6 @@ function attachWeekListeners(wk){
     if(Date.now()-lastCheckedWrite<2000){ dbg("skip:echo"); return; }
     const v=s.val()||{};
     dbg("FB checked keys="+Object.keys(v).length+" local="+Object.keys(checked).length);
-    // Restore any checks that history says are done but are missing from Firebase checked.
-    // Use in-memory histState (updated by the history listener) so timing doesn't matter.
-    Object.keys(histState).forEach(hid=>{
-      const entry=histState[hid];
-      if(entry&&typeof entry==="object"&&entry.ts&&!entry.missed&&!entry.flag&&!v[hid]) v[hid]=true;
-    });
     checked=v; sv(wk+"_checked",checked);
     fbCheckedLoaded=true;
     schedCascade();
@@ -480,18 +474,7 @@ function attachWeekListeners(wk){
     const fbHist=s.val()||{}; const local=ld(wk+"_history")||{};
     const merged={...local,...fbHist}; sv(wk+"_history",merged);
     histState=merged;
-    const firstHistLoad=!fbHistoryLoaded;
-    fbHistoryLoaded=true;
-    // On first load only: patch checked from history and trigger cascade so bad _c tasks get pruned
-    if(firstHistLoad){
-      let histPatched=false;
-      Object.keys(histState).forEach(hid=>{
-        const e=histState[hid];
-        if(e&&typeof e==="object"&&e.ts&&!e.missed&&!e.flag&&!checked[hid]){checked[hid]=true;histPatched=true;}
-      });
-      if(histPatched){ sv(wk+"_checked",checked); if(fbCheckedLoaded) renderAll(); }
-      schedCascade();
-    }
+    if(!fbHistoryLoaded){ fbHistoryLoaded=true; schedCascade(); }
     if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
   });
   fbWeekRefs.push(r4);
@@ -2265,6 +2248,21 @@ function runCascade(){
   const dayOrder=["monday","tuesday","wednesday","thursday","friday","saturday"];
   // Safety: on Sunday, don't cascade unless calendar dates are loaded — avoids cascading next week's tasks
   if(todayIdx===7 && !dayOrder.some(d=>DAY_DT[d])) return;
+
+  // Reconcile: history is the source of truth — restore any checks Firebase lost
+  if(fbHistoryLoaded){
+    const toRestore={};
+    Object.keys(histState).forEach(hid=>{
+      const e=histState[hid];
+      if(e&&typeof e==="object"&&e.ts&&!e.missed&&!e.flag&&!checked[hid]) toRestore[hid]=true;
+    });
+    if(Object.keys(toRestore).length){
+      Object.assign(checked,toRestore);
+      sv(WK+"_checked",checked);
+      if(db) db.ref(WK+"/checked").update(toRestore);
+      dbg("reconciled "+Object.keys(toRestore).length+" checks from history");
+    }
+  }
 
   // Prune orphan _c tasks whose original was completed — runs whenever both tasks + checked are loaded
   if(fbCheckedLoaded){
