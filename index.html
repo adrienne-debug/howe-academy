@@ -414,6 +414,7 @@ let lastCheckedWrite = 0;
 let lastTasksWrite = 0;
 let fbCheckedLoaded = false;
 let fbTasksLoaded = false;
+let fbHistoryLoaded = false;
 let cascadeDebounce = null;
 function dbg(msg){ console.log("[HA]",msg); try{if(db)db.ref("_debug").push({msg,wk:WK,t:Date.now()});}catch(e){} }
 
@@ -429,6 +430,7 @@ function attachWeekListeners(wk){
   DAY_DT={}; // Clear stale dates so Sunday guard fires until meta arrives
   fbCheckedLoaded=false; // Reset so cascade waits for fresh data from Firebase
   fbTasksLoaded=false;
+  fbHistoryLoaded=false;
   clearTimeout(cascadeDebounce);
 
   // Meta first — runCascade inside so cascade always runs after dates are loaded
@@ -478,13 +480,21 @@ function attachWeekListeners(wk){
     const fbHist=s.val()||{}; const local=ld(wk+"_history")||{};
     const merged={...local,...fbHist}; sv(wk+"_history",merged);
     histState=merged;
+    fbHistoryLoaded=true;
     // Patch checked: anything history says is done should be marked checked
     let histPatched=false;
     Object.keys(histState).forEach(hid=>{
       const e=histState[hid];
       if(e&&typeof e==="object"&&e.ts&&!e.missed&&!e.flag&&!checked[hid]){checked[hid]=true;histPatched=true;}
     });
-    if(histPatched){sv(wk+"_checked",checked);if(fbCheckedLoaded)renderAll();}
+    if(histPatched){
+      sv(wk+"_checked",checked);
+      // Write back to Firebase so the restored checks are durable
+      if(db) db.ref(wk+"/checked").update(checked);
+      if(fbCheckedLoaded) renderAll();
+    }
+    // Always trigger cascade after history loads — it needs history to prune bad _c tasks
+    schedCascade();
     if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
   });
   fbWeekRefs.push(r4);
@@ -2110,7 +2120,7 @@ function loadJson(){
           if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
           db.ref(WK+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
         }
-        fbCheckedLoaded=true; fbTasksLoaded=true;
+        fbCheckedLoaded=true; fbTasksLoaded=true; fbHistoryLoaded=true;
         renderAll(); runCascade();
         document.getElementById("admin-msg").textContent="✅ "+d.week+" updated — "+d.tasks.length+" tasks. Completions & history preserved.";
       } else {
@@ -2151,7 +2161,7 @@ function loadJson(){
           db.ref(WK+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
           attachWeekListeners(WK);
         }
-        fbCheckedLoaded=true; fbTasksLoaded=true;
+        fbCheckedLoaded=true; fbTasksLoaded=true; fbHistoryLoaded=true;
         renderAll(); runCascade();
         document.getElementById("admin-msg").textContent="✅ "+d.week+" loaded — "+d.tasks.length+" tasks. Previous week archived.";
       }
@@ -2244,7 +2254,7 @@ setInterval(()=>{ if(tab==="schedule")renderSkylight(); },60000);
 function schedCascade(){
   clearTimeout(cascadeDebounce);
   cascadeDebounce=setTimeout(()=>{
-    if(fbCheckedLoaded&&fbTasksLoaded){
+    if(fbCheckedLoaded&&fbTasksLoaded&&fbHistoryLoaded){
       _syncCarryOvers(); // ensure carry-overs stay in the schedule across reloads
       runCascade();
     }
@@ -2298,7 +2308,7 @@ function runCascade(){
     renderAll();
   }
 }
-setInterval(()=>{ if(fbCheckedLoaded&&fbTasksLoaded) runCascade(); },3600000);
+setInterval(()=>{ if(fbCheckedLoaded&&fbTasksLoaded&&fbHistoryLoaded) runCascade(); },3600000);
 
 setInterval(()=>{
   const n=new Date(); if(n.getDay()!==6||n.getHours()<20)return;
