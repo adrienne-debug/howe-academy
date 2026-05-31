@@ -783,15 +783,13 @@ function renderDayTabs(){
 }
 function selDay(d){ day=d; renderAll(); }
 function dayPct(d){
-  const kidMatch = (t) => kid==="all"||kid==="mom" ? true : t.who===kid;
-  const cascadedAway=new Set(weekData.tasks.filter(t=>t.id.endsWith("_c")).map(t=>t.id.replace(/_c$/,"")));
+  const kidMatch=(t)=>kid==="all"||kid==="mom"?true:t.who===kid;
   const countable=weekData.tasks.filter(t=>
-    t.day===d && kidMatch(t) &&
-    !t.title.toLowerCase().includes("lunch") &&
-    (!cascadedAway.has(t.id) || !!checked[t.id])
+    effectiveDay(t)===d && kidMatch(t) &&
+    !t.title.toLowerCase().includes("lunch")
   );
   const total=countable.length; if(!total) return 0;
-  const done=countable.filter(t=>chainDone(t.id,checked,weekData.tasks)).length;
+  const done=countable.filter(t=>!!checked[t.id]).length;
   return Math.round(done/total*100);
 }
 
@@ -808,11 +806,9 @@ function selKid(k){ if(k !== "mom") momPinUnlocked=false; kid=k; renderAll(); }
 function renderWeekStrip(){
   const el=document.getElementById("week-strip");
   if(tab!=="schedule"){ el.style.display="none"; return; }
-  // Count: originals not cascaded away + cascade copies. Exclude originals that were replaced by _c.
   const kidMatch=t=>kid==="all"||kid==="mom"?true:t.who===kid;
-  const cascadedAwayInStrip=new Set(weekData.tasks.filter(t=>t.id.endsWith("_c")).map(t=>t.id.replace(/_c$/,"")));
-  const countable=weekData.tasks.filter(t=>kidMatch(t)&&(!cascadedAwayInStrip.has(t.id)||!!checked[t.id]));
-  const all=countable.length, done=countable.filter(t=>chainDone(t.id,checked,weekData.tasks)).length;
+  const countable=weekData.tasks.filter(t=>kidMatch(t)&&effectiveDay(t)!=="carryover");
+  const all=countable.length, done=countable.filter(t=>!!checked[t.id]).length;
   const pct=all?Math.round(done/all*100):0;
   el.style.display="grid";
   el.innerHTML=
@@ -826,20 +822,12 @@ function renderWeekStrip(){
 function renderSchedule(el){
   const col=DAY_COL[day]||"#666", pct=dayPct(day);
 
-  // IDs of tasks that have already cascaded to a future day — hide from original day
-  const cascadedAwayIds=new Set(
-    weekData.tasks.filter(t=>t.id.endsWith("_c")).map(t=>t.id.replace(/_c$/,""))
-  );
+  let allDay=weekData.tasks.filter(t=>effectiveDay(t)===day);
+  if(kid==="mom") allDay=allDay.filter(t=>t.mom==="required"||t.mom==="maybe");
+  else if(kid!=="all") allDay=allDay.filter(t=>t.who===kid);
 
-  // Tasks for this day — cascaded-away tasks shown only if completed; _c copies excluded (they show in carriedOver only)
-  let tasks=weekData.tasks.filter(t=>t.day===day && !t.id.endsWith("_c") && (!cascadedAwayIds.has(t.id) || !!checked[t.id]));
-  if(kid==="mom") tasks=tasks.filter(t=>t.mom==="required"||t.mom==="maybe");
-  else if(kid!=="all") tasks=tasks.filter(t=>t.who===kid);
-
-  // Carried-over tasks: cascaded tasks landing on THIS day, excluding any that were cascaded further
-  let carriedOver=weekData.tasks.filter(t=>t.day===day && t.id.endsWith("_c") && (!cascadedAwayIds.has(t.id)||!!checked[t.id]));
-  if(kid==="mom") carriedOver=carriedOver.filter(t=>t.mom==="required"||t.mom==="maybe");
-  else if(kid!=="all") carriedOver=carriedOver.filter(t=>t.who===kid);
+  let tasks=allDay.filter(t=>t.day===day&&!t.id.endsWith("_c"));
+  let carriedOver=allDay.filter(t=>t.day!==day||t.id.endsWith("_c"));
 
   const tmap={};
   tasks.forEach(t=>{ if(!tmap[t.time])tmap[t.time]=[]; tmap[t.time].push(t); });
@@ -866,9 +854,14 @@ function renderSchedule(el){
     let coHtml='<div style="margin:10px 12px 0;border-left:4px solid #6366f1;background:#eef2ff;border-radius:0 10px 10px 0;padding:10px 12px">'+
       '<div style="font-size:11px;font-weight:800;color:#4338ca;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.4px">📋 Carried Over</div>';
     carriedOver.forEach(t=>{
-      const fromMatch=t.detail.match(/Cascaded from (\w+)/);
-      const fromDay=fromMatch?fromMatch[1]:"previous day";
-      coHtml+=taskCard(t, fromDay);
+      let fromLabel;
+      if(t.id.endsWith("_c")){
+        const m=t.detail.match(/Carried from (.+?)\)/);
+        fromLabel="Carried from "+(m?m[1]:"previous week");
+      } else {
+        fromLabel="Originally "+cap(t.day);
+      }
+      coHtml+=taskCard(t, fromLabel);
     });
     coHtml+='</div>';
     if(!unlocked){
@@ -928,7 +921,7 @@ function lunchBlock(){
 }
 
 function taskCard(t, fromDay){
-  const done=chainDone(t.id,checked,weekData.tasks);
+  const done=!!checked[t.id];
   const future=DAYS.indexOf(t.day)>DAYS.indexOf(day);
   const bcls=t.mom==="required"?"req":t.mom==="maybe"?"maybe":"";
   const klbl=cap(t.who);
@@ -944,7 +937,7 @@ function taskCard(t, fromDay){
   const dr=done?'<div class="done-row">✓ '+checked[t.id]+'</div>':"";
   // Strip the "Cascaded from X" note from detail for display
   const cleanDetail=t.detail.replace(/\s*\(Cascaded from \w+\)/,"");
-  const carryLabel=fromDay?'<div style="font-size:10px;font-weight:700;color:#4338ca;background:#e0e7ff;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">↩ Carried from '+fromDay+'</div><br>':'';
+  const carryLabel=fromDay?'<div style="font-size:10px;font-weight:700;color:#4338ca;background:#e0e7ff;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">↩ '+fromDay+'</div><br>':'';
   return '<div class="task-card '+bcls+(done?" done":"")+(future?" future":"")+'">'+
     '<div class="card-inner">'+
     '<div class="task-cb'+(done?" checked":"")+'" onclick="tapTask(\''+t.id+'\')">'+(done?"✓":"")+'</div>'+
@@ -978,7 +971,7 @@ document.getElementById("dlg-ok").onclick=()=>{
   if(db) db.ref(WK+"/checked").set(checked);
   const hist=ld(WK+"_history")||{};
   const t=weekData.tasks.find(x=>x.id===pendingId);
-  if(t){ hist[pendingId]={id:pendingId,title:t.title,who:t.who,day:t.day,ts}; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+pendingId).set(hist[pendingId]); }
+  if(t){ const entry={id:pendingId,title:t.title,who:t.who,day:t.day,checkedOnDay:effectiveDay(t),ts}; hist[pendingId]=entry; histState[pendingId]=entry; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+pendingId).set(entry); }
   closeDlg(); renderAll();
 };
 document.getElementById("dlg-uncheck").onclick=()=>{
@@ -1539,7 +1532,9 @@ function renderHistory(el){
   if(histTab==="carryover"){ h+=renderCarryOverHtml(_coPool); el.innerHTML=h; return; }
 
   const hist=ld(WK+"_history")||{};
-  const n=new Date(), satClose=n.getDay()===6&&n.getHours()>=20;
+  const n=new Date();
+  const _allPast=DAYS.every(d=>{if(!DAY_DT[d])return(({monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6})[d]||0)<(n.getDay()||7);const cd=new Date(DAY_DT[d]+", "+n.getFullYear());cd.setHours(0,0,0,0);const td=new Date();td.setHours(0,0,0,0);return cd<td;});
+  const satClose=_allPast||(n.getDay()===6&&n.getHours()>=20);
   const realDone=(id)=>hist[id]&&typeof hist[id]==="object"&&hist[id].ts&&!hist[id].missed&&!hist[id].flag;
 
   // Current week summary card
@@ -1760,13 +1755,48 @@ function toggleCarryOver(taskId,include){
   const el=document.getElementById("content"); if(el&&tab==="history") renderHistory(el);
 }
 
+function checkOffCarryOver(taskId){
+  const t=weekData.tasks.find(x=>x.id===taskId); if(!t) return;
+  const ts=nowTs();
+  checked[taskId]=ts; sv(WK+"_checked",checked);
+  lastCheckedWrite=Date.now();
+  if(db) db.ref(WK+"/checked").set(checked);
+  const hist=ld(WK+"_history")||{};
+  const entry={id:taskId,title:t.title,who:t.who,day:t.day,checkedOnDay:"carryover",ts};
+  hist[taskId]=entry; histState[taskId]=entry;
+  sv(WK+"_history",hist);
+  if(db) db.ref(WK+"/history/"+taskId).set(entry);
+  renderAll();
+}
+
 function renderCarryOverHtml(pool){
   const KC={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c"};
   let h='<div style="padding:12px">';
-  if(!pool.prev){
-    h+='<div style="text-align:center;padding:40px 20px;color:var(--muted);font-size:13px">No previous week in archive yet.</div>';
+
+  const curCO=weekData.tasks.filter(t=>!t.id.endsWith("_c")&&effectiveDay(t)==="carryover"&&!checked[t.id]);
+  if(curCO.length){
+    h+='<div style="margin-bottom:16px;border-left:4px solid #dc2626;background:#fef2f2;border-radius:0 10px 10px 0;padding:10px 12px">';
+    h+='<div style="font-size:11px;font-weight:800;color:#dc2626;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.4px">This Week — Not Completed</div>';
+    h+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Tap to check off (counts toward this week\'s history).</div>';
+    ["lincoln","ellis","lucy"].forEach(k=>{
+      const kt=curCO.filter(t=>t.who===k); if(!kt.length) return;
+      h+='<div style="font-size:10px;font-weight:700;color:'+KC[k]+';margin:6px 0 4px;text-transform:uppercase">'+cap(k)+'</div>';
+      kt.forEach(t=>{
+        h+='<div style="display:flex;align-items:center;gap:10px;background:#fff;border:1.5px solid #fca5a5;border-radius:10px;padding:10px 12px;margin-bottom:6px;cursor:pointer" onclick="checkOffCarryOver(\''+t.id+'\')">';
+        h+='<div style="width:22px;height:22px;flex-shrink:0;border-radius:6px;border:2px solid #dc2626;background:transparent;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;pointer-events:none"></div>';
+        h+='<div style="flex:1"><div style="font-size:13px;font-weight:600">'+t.title+'</div>';
+        h+='<div style="font-size:11px;color:var(--muted)">Originally '+cap(t.day)+(t.time?' · '+t.time:'')+'</div></div>';
+        h+='</div>';
+      });
+    });
+    h+='</div>';
+  }
+
+  if(!pool.prev&&!curCO.length){
+    h+='<div style="text-align:center;padding:40px 20px;color:var(--muted);font-size:13px">No carry-overs right now.</div>';
     return h+'</div>';
   }
+  if(!pool.prev){ return h+'</div>'; }
   const prevLabel=(pool.prev.weekLabel||"prev week").replace("week","Week ");
   h+='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5">';
   h+='Tasks from <strong>'+prevLabel+'</strong> that were not completed. Checked = appears on Monday this week.</div>';
@@ -2057,6 +2087,20 @@ function loadJson(){
         const memChecked=checked||{};
         const snapChecked={...lsChecked,...memChecked};
         const snapHist=ld(activeWK+"_history")||{};
+        const oldLookup={};
+        (weekData.tasks||[]).forEach(t=>{
+          const key=(t.title||"")+"|"+(t.who||"");
+          if(snapChecked[t.id]) oldLookup[key]={ts:snapChecked[t.id],oldId:t.id};
+        });
+        d.tasks.forEach(t=>{
+          if(snapChecked[t.id]) return;
+          const key=(t.title||"")+"|"+(t.who||"");
+          if(oldLookup[key]){
+            snapChecked[t.id]=oldLookup[key].ts;
+            if(snapHist[oldLookup[key].oldId]&&!snapHist[t.id])
+              snapHist[t.id]={...snapHist[oldLookup[key].oldId],id:t.id};
+          }
+        });
         const snapSl=ld(activeWK+"_sl")||slState||{};
         // Re-attach cross-week carry-over tasks:
         // Pass 1 — grab any _c tasks still alive in weekData.tasks whose base isn't in the new JSON
@@ -2108,6 +2152,10 @@ function loadJson(){
         const snapHist=ld(oldWK+"_history")||{};
         const snapTasks=weekData.tasks||[];
         const snapChecked={...(ld(oldWK+"_checked")||{}), ...checked};
+        snapTasks.filter(t=>!t.id.endsWith("_c")&&!snapChecked[t.id]&&!snapChecked[t.id+"_c"]).forEach(t=>{
+          if(!snapHist[t.id+"_missed"])
+            snapHist[t.id+"_missed"]={id:t.id,title:t.title,who:t.who,day:t.day,ts:"Week Closed",missed:true,momRequired:t.mom==="required"};
+        });
         const hasAnything=Object.keys(snapHist).length>0||snapTasks.length>0;
         if(hasAnything){
           const entry={weekLabel:oldWK,archivedAt:nowTs(),history:snapHist,tasks:snapTasks,checked:snapChecked,dates:{...DAY_DT}};
@@ -2242,77 +2290,37 @@ function schedCascade(){
 }
 
 function runCascade(){
-  const nextDay={monday:"tuesday",tuesday:"wednesday",wednesday:"thursday",thursday:"friday",friday:"saturday"};
-  const dayJsIdx={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
-  const todayIdx=new Date().getDay()||7; // Sunday=0 → treat as 7 so all school days count as past
-  const dayOrder=["monday","tuesday","wednesday","thursday","friday","saturday"];
-  // Safety: on Sunday, don't cascade unless calendar dates are loaded — avoids cascading next week's tasks
-  if(todayIdx===7 && !dayOrder.some(d=>DAY_DT[d])) return;
-
-  // Reconcile: history is the source of truth — restore any checks Firebase lost
-  if(fbHistoryLoaded){
-    const toRestore={};
-    Object.keys(histState).forEach(hid=>{
-      const e=histState[hid];
-      if(e&&typeof e==="object"&&e.ts&&!e.missed&&!e.flag&&!checked[hid]) toRestore[hid]=true;
-    });
-    if(Object.keys(toRestore).length){
-      Object.assign(checked,toRestore);
-      sv(WK+"_checked",checked);
-      if(db) db.ref(WK+"/checked").update(toRestore);
-      dbg("reconciled "+Object.keys(toRestore).length+" checks from history");
-    }
-  }
-
-  // Prune orphan _c tasks whose original was completed — runs whenever both tasks + checked are loaded
-  if(fbCheckedLoaded){
-    const snap=weekData.tasks.slice();
-    const pruned=snap.filter(t=>!t.id.endsWith("_c")||!chainDone(baseId(t.id),checked,snap));
-    if(pruned.length!==snap.length){
-      weekData.tasks=pruned; sv(WK+"_tasks",pruned);
-      if(db){lastTasksWrite=Date.now();const obj={};pruned.forEach(t=>obj[t.id]=t);db.ref(WK+"/tasks").set(obj);}
-      dbg("pruned "+(snap.length-pruned.length)+" orphan cascade tasks");
-    }
-  }
-
-  let changed=false;
-  const hist=ld(WK+"_history")||{};
-  const todayMidnight=new Date(); todayMidnight.setHours(0,0,0,0);
-  dayOrder.forEach(td=>{
-    if(dayJsIdx[td]>=todayIdx) return;
-    if(DAY_DT[td]){const d=new Date(DAY_DT[td]+", "+todayMidnight.getFullYear());d.setHours(0,0,0,0);if(d>=todayMidnight)return;}
-    const unchecked=weekData.tasks.filter(t=>t.day===td&&t.cascade&&!checked[t.id]);
-    unchecked.forEach(t=>{
-      if(!hist[t.id+"_flag"]){
-        hist[t.id+"_flag"]={id:t.id,title:t.title,who:t.who,day:td,flag:"cascade_missed",ts:nowTs()};
-        changed=true;
+  if(!fbHistoryLoaded||!fbCheckedLoaded||!fbTasksLoaded) return;
+  const toRestore={};
+  const histUpdates={};
+  weekData.tasks.forEach(t=>{
+    if(checked[t.id]) return;
+    const h=histState[t.id];
+    if(h&&h.ts&&!h.missed&&!h.flag){ toRestore[t.id]=h.ts; return; }
+    if(t.title&&t.who){
+      for(const k in histState){
+        const v=histState[k];
+        if(v&&v.ts&&!v.missed&&!v.flag&&v.title===t.title&&v.who===t.who){
+          toRestore[t.id]=v.ts;
+          if(!histState[t.id]){ histUpdates[t.id]={...v,id:t.id}; histState[t.id]=histUpdates[t.id]; }
+          break;
+        }
       }
-      const nd=nextDay[td]; if(!nd) return;
-      if(weekData.tasks.some(x=>x.id===t.id+"_c")) return;
-      weekData.tasks.push({...t,id:t.id+"_c",day:nd,
-        time:(t.mom==="required"||nd==="friday")?"2:00 PM":t.time,
-        detail:t.detail+" (Cascaded from "+td.charAt(0).toUpperCase()+td.slice(1)+")",cascade:true});
-      changed=true;
-    });
+    }
   });
-  if(changed){
-    sv(WK+"_tasks",weekData.tasks); sv(WK+"_history",hist);
-    lastTasksWrite=Date.now(); // suppress the echo from our own write
-    if(db){ const obj={};weekData.tasks.forEach(t=>obj[t.id]=t);
-      db.ref(WK+"/tasks").set(obj); db.ref(WK+"/history").update(hist); }
+  if(Object.keys(toRestore).length){
+    Object.assign(checked,toRestore);
+    sv(WK+"_checked",checked);
+    lastCheckedWrite=Date.now();
+    if(db) db.ref(WK+"/checked").update(toRestore);
+    if(Object.keys(histUpdates).length){
+      sv(WK+"_history",histState);
+      if(db) db.ref(WK+"/history").update(histUpdates);
+    }
+    dbg("reconciled "+Object.keys(toRestore).length+" checks from history");
     renderAll();
   }
 }
-setInterval(()=>{ if(fbCheckedLoaded&&fbTasksLoaded&&fbHistoryLoaded) runCascade(); },3600000);
-
-setInterval(()=>{
-  const n=new Date(); if(n.getDay()!==6||n.getHours()<20)return;
-  const hist=ld(WK+"_history")||{};
-  weekData.tasks.filter(t=>!chainDone(t.id,checked,weekData.tasks)).forEach(t=>{
-    if(!hist[t.id])hist[t.id+"_missed"]={id:t.id,title:t.title,who:t.who,day:t.day,ts:"Week Closed",missed:true,momRequired:t.mom==="required"};
-  });
-  sv(WK+"_history",hist); if(db)db.ref(WK+"/history").update(hist);
-},60000);
 
 // ── ACTIVITY IDEAS ────────────────────────────────────────────────
 var ACT_CATS = [
@@ -2754,6 +2762,35 @@ function chainDone(origId, checkedObj, tasksArr){
     id=id+"_c";
   }
   return false;
+}
+function effectiveDay(t){
+  if(t.id.endsWith("_c")) return t.day;
+  if(!t.cascade) return t.day;
+  if(checked[t.id]){
+    const h=histState[t.id];
+    if(h&&h.checkedOnDay) return h.checkedOnDay;
+    return t.day;
+  }
+  const order=["monday","tuesday","wednesday","thursday","friday","saturday"];
+  const todayMid=new Date(); todayMid.setHours(0,0,0,0);
+  const jsDay=new Date().getDay();
+  let idx=order.indexOf(t.day);
+  if(idx<0) return t.day;
+  while(idx<order.length){
+    const d=order[idx];
+    let isPast=false;
+    if(DAY_DT[d]){
+      const cal=new Date(DAY_DT[d]+", "+todayMid.getFullYear());
+      cal.setHours(0,0,0,0);
+      isPast=cal<todayMid;
+    } else {
+      const dIdx={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6}[d]||0;
+      isPast=dIdx<(jsDay||7);
+    }
+    if(!isPast) return d;
+    idx++;
+  }
+  return "carryover";
 }
 function paceAutoCount(kid,keyword){
   if(!keyword) return 0;
