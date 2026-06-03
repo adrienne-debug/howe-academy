@@ -3275,17 +3275,20 @@ const MAST_KID_EMOJI={lincoln:"\u{1F40D}",ellis:"\u{1F916}",lucy:"\u{1F984}",jul
 
 function mastGetPrintNum(){
   const today=new Date().toISOString().slice(0,10);
-  const pl=masteryData.printLog||[];
-  if(Array.isArray(pl)){
-    const e=pl.find(x=>x.date===today);
-    if(e) return e.num;
-    return pl.reduce((m,x)=>Math.max(m,x.num||0),0)+1;
-  }
-  // Object form from Firebase
-  const vals=Object.values(pl);
-  const e2=vals.find(x=>x.date===today);
-  if(e2) return e2.num;
-  return vals.reduce((m,x)=>Math.max(m,x.num||0),0)+1;
+  let pl=masteryData.printLog||[];
+  if(!Array.isArray(pl)) pl=Object.values(pl);
+
+  const existing=pl.find(x=>x.date===today);
+  if(existing) return existing.num;
+
+  // New day — assign next number and save it immediately
+  const maxNum=pl.reduce((m,x)=>Math.max(m,x.num||0),0);
+  const num=maxNum+1;
+  pl.push({date:today,num:num});
+  masteryData.printLog=pl;
+  if(db) db.ref("mastery/printLog").set(pl);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  return num;
 }
 
 function mastIsDue(item,pn){
@@ -3783,7 +3786,7 @@ function _renderMasteryInner(el){
       h+='<div style="padding:8px 14px;text-align:center"><button class="mast-log-btn" onclick="mastCancelLog()">Cancel</button></div>';
     } else {
       h+='<div class="mast-print-bar">';
-      h+='<button class="mast-print-btn" onclick="mastPrintDrill()">\u{1F5A8}\u{FE0F} Print</button>';
+      h+='<button class="mast-print-btn" onclick="mastPrintJulian()">\u{1F5A8}\u{FE0F} Print Flashcards</button>';
       h+='<button class="mast-log-btn" onclick="mastStartLog()" style="margin-left:6px">\u{1F4DD} Log</button></div>';
     }
   } else if(mastLogMode){
@@ -3974,6 +3977,107 @@ function mastPrintDrill(){
   let container=document.getElementById("mast-print-container");
   if(!container){container=document.createElement("div");container.id="mast-print-container";container.className="mast-print-page";document.body.appendChild(container);}
   container.innerHTML=pages;
+  setTimeout(()=>{ window.print(); setTimeout(()=>{ container.innerHTML=""; },1000); },100);
+}
+
+function mastPrintJulian(){
+  let allItems=masteryData.julian||[];
+  if(!Array.isArray(allItems)) allItems=Object.values(allItems);
+  const introItems=allItems.filter(i=>i.status==="introduction");
+  const ladderItems=allItems.filter(i=>i.status!=="introduction");
+
+  const COLOR_MAP={Red:"#ef4444",Blue:"#3b82f6",Green:"#22c55e",Yellow:"#eab308",Orange:"#f97316",Purple:"#a855f7",Pink:"#ec4899",Brown:"#92400e",Black:"#1f2937",White:"#e5e7eb"};
+  const SHAPE_MAP={Circle:'\u{25CF}',Square:'\u{25A0}',Triangle:'\u{25B2}'};
+  const CAT_EMOJI={Letters:"\u{1F524}",Numbers:"\u{1F522}",Colors:"\u{1F3A8}",Shapes:"\u{1F537}",Animals:"\u{1F43E}"};
+  const TIER_LBL={daily:"Daily",every_other_day:"Every Other Day",weekly:"Weekly",bi_weekly:"Bi-Weekly",monthly:"Monthly"};
+  const kc="#c2410c";
+
+  function jVis(it,sz){
+    if(it.imageUrl) return '<img src="'+it.imageUrl+'" style="width:'+sz+'px;height:'+sz+'px;object-fit:contain;border-radius:4px">';
+    if(it.emoji) return '<span style="font-size:'+sz+'px">'+it.emoji+'</span>';
+    if(MAST_ANIMAL_EMOJI[it.prompt]) return '<span style="font-size:'+sz+'px">'+MAST_ANIMAL_EMOJI[it.prompt]+'</span>';
+    const cat=it.subject||"";
+    if(cat==="Colors"&&COLOR_MAP[it.prompt]){const s=Math.round(sz*0.85);return '<div style="width:'+s+'px;height:'+s+'px;border-radius:50%;background:'+COLOR_MAP[it.prompt]+';border:1.5px solid rgba(0,0,0,0.1);display:inline-block"></div>';}
+    if(cat==="Shapes"&&SHAPE_MAP[it.prompt]) return '<span style="font-size:'+sz+'px;color:'+kc+'">'+SHAPE_MAP[it.prompt]+'</span>';
+    return '<span style="font-size:'+sz+'px;font-weight:800;color:'+kc+'">'+it.prompt+'</span>';
+  }
+
+  // Introduction cards grouped by category
+  const introByCat={};
+  introItems.forEach(i=>{const c=i.subject||"Other";if(!introByCat[c])introByCat[c]=[];introByCat[c].push(i);});
+  let introHTML="";
+  Object.entries(introByCat).forEach(([cat,items])=>{
+    let cards="";
+    items.forEach(i=>{
+      const tally=i.tally_dots||0;
+      let dots="";for(let d=0;d<5;d++) dots+='<div style="width:8px;height:8px;border-radius:50%;border:1.5px solid #fed7aa;background:'+(d<tally?kc:"white")+'"></div>';
+      cards+='<div style="border:1.5px solid #fed7aa;border-radius:7px;background:#fff7ed;display:flex;flex-direction:column;align-items:center;padding:5px 3px 4px;width:60px;gap:3px;-webkit-print-color-adjust:exact;print-color-adjust:exact">';
+      cards+='<div style="font-size:24px;line-height:1;min-height:28px;display:flex;align-items:center;justify-content:center">'+jVis(i,24)+'</div>';
+      cards+='<div style="font-size:7px;font-weight:700;color:'+kc+';text-align:center;line-height:1.2">'+i.prompt+'</div>';
+      cards+='<div style="display:flex;gap:2px;align-items:center">'+dots+'<span style="font-size:8px;margin-left:1px">\u{2B50}</span></div>';
+      cards+='</div>';
+    });
+    introHTML+='<div style="font-family:monospace;font-size:7px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:'+kc+';padding-bottom:3px;border-bottom:1.5px solid #fed7aa;margin-bottom:5px">'+(CAT_EMOJI[cat]||"")+' '+cat+'</div>';
+    introHTML+='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px">'+cards+'</div>';
+  });
+  if(!introHTML) introHTML='<div style="font-size:8px;color:#9ca3af;padding:10px">No items in introduction</div>';
+
+  // Ladder cards grouped by tier
+  let ladderHTML="";
+  ["every_other_day","weekly","bi_weekly","monthly"].forEach(tier=>{
+    const tierItems=ladderItems.filter(i=>i.tier===tier);
+    if(!tierItems.length) return;
+    let cards="";
+    tierItems.forEach(i=>{
+      const con=i.consecutive_correct||0;
+      let dots="";for(let d=0;d<3;d++) dots+='<div style="width:8px;height:8px;border-radius:50%;border:1.5px solid #fed7aa;background:'+(d<con?kc:"white")+'"></div>';
+      cards+='<div style="border:1.5px solid #fed7aa;border-radius:6px;background:white;display:flex;align-items:center;padding:4px 7px;gap:6px;margin-bottom:3px">';
+      cards+='<div style="font-size:18px;line-height:1;flex-shrink:0;min-width:22px;text-align:center">'+jVis(i,18)+'</div>';
+      cards+='<div style="font-size:8px;font-weight:600;color:'+kc+';flex:1">'+i.prompt+'</div>';
+      cards+='<div style="display:flex;gap:2px">'+dots+'<span style="font-size:8px">\u{2B50}</span></div>';
+      cards+='</div>';
+    });
+    ladderHTML+='<div style="margin-bottom:6px"><div style="font-family:monospace;font-size:6.5px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;background:'+kc+';color:white;padding:2px 7px;border-radius:3px;display:inline-block;margin-bottom:4px;-webkit-print-color-adjust:exact;print-color-adjust:exact">'+(TIER_LBL[tier]||tier)+'</div>'+cards+'</div>';
+  });
+  if(!ladderHTML) ladderHTML='<div style="font-size:8px;color:#9ca3af;padding:10px">No items on ladder yet \u{2014} fill 5 dots to enter!</div>';
+
+  const today=new Date();
+  const dayN=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][today.getDay()];
+  const monN=["January","February","March","April","May","June","July","August","September","October","November","December"][today.getMonth()];
+  const dateStr=monN+" "+today.getDate()+", "+today.getFullYear();
+  const wkLabel=(weekData.week||WK).replace("week","Week ");
+
+  let page='<div class="mpp-sheet" style="display:flex;flex-direction:column">';
+  page+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
+  page+='<div><div style="font-size:1.1rem;font-weight:700;color:'+kc+'">\u{1F995} Julian</div>';
+  page+='<div style="font-size:0.6rem;color:#6b7280">Pre-K \u{00B7} Left = introduction \u{00B7} fill 5 dots \u{2192} \u{2B50} enters ladder \u{00B7} Right = ladder \u{00B7} 3 in a row \u{2192} moves up</div></div>';
+  page+='<div style="font-family:monospace;font-size:8.5px;color:#9ca3af;text-align:right;line-height:1.7">'+wkLabel+'<br>'+dayN+', '+dateStr+'</div></div>';
+
+  page+='<div style="display:flex;gap:14px;flex:1;min-width:0;width:100%">';
+  page+='<div style="flex:1;min-width:0;border:1.5px solid #fed7aa;border-radius:8px;display:flex;flex-direction:column">';
+  page+='<div style="font-size:8px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:white;background:'+kc+';padding:4px 10px;border-radius:4px;margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact">\u{2B50} Introduction \u{2014} fill 5 dots to enter the ladder</div>';
+  page+='<div style="padding:8px 10px">'+introHTML+'</div></div>';
+
+  page+='<div style="width:220px;flex-shrink:0;border:1.5px solid #fed7aa;border-radius:8px;display:flex;flex-direction:column">';
+  page+='<div style="font-size:8px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:white;background:'+kc+';padding:4px 10px;border-radius:4px;margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact">\u{1FA9C} Ladder \u{2014} 3 in a row \u{2192} moves up</div>';
+  page+='<div style="padding:8px 10px;flex:1;display:flex;flex-direction:column">'+ladderHTML;
+  page+='<div style="margin-top:auto;border-top:1.5px dashed #fed7aa;padding-top:6px">';
+  page+='<div style="font-family:monospace;font-size:6.5px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;background:#16a34a;color:white;padding:2px 7px;border-radius:3px;display:inline-block;margin-bottom:4px;-webkit-print-color-adjust:exact;print-color-adjust:exact">\u{1F389} Graduated!</div>';
+  page+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">';
+  page+='<div style="border:1.5px solid #fed7aa;border-radius:20px;padding:2px 8px;font-size:8px;font-weight:600;color:'+kc+'">\u{2B50} ________</div>';
+  page+='<div style="border:1.5px solid #fed7aa;border-radius:20px;padding:2px 8px;font-size:8px;font-weight:600;color:'+kc+'">\u{2B50} ________</div>';
+  page+='<div style="border:1.5px solid #fed7aa;border-radius:20px;padding:2px 8px;font-size:8px;font-weight:600;color:'+kc+'">\u{2B50} ________</div>';
+  page+='</div></div></div></div>';
+  page+='</div>';
+
+  page+='<div style="margin-top:6px;display:flex;align-items:center;justify-content:space-between;font-size:8px;color:#6b7280">';
+  page+='<span>\u{1F995} Drill streak <span style="display:inline-block;border-bottom:1.5px solid '+kc+';width:26px;height:13px"></span> days</span>';
+  page+='<span>5 intro dots \u{2192} enters ladder \u{00B7} 3 correct in a row \u{2192} moves up \u{00B7} miss \u{2192} drops one tier</span></div>';
+  page+='</div>';
+
+  let container=document.getElementById("mast-print-container");
+  if(!container){container=document.createElement("div");container.id="mast-print-container";container.className="mast-print-page";document.body.appendChild(container);}
+  container.innerHTML=page;
   setTimeout(()=>{ window.print(); setTimeout(()=>{ container.innerHTML=""; },1000); },100);
 }
 
