@@ -3532,6 +3532,7 @@ let mastAddJulianCat="Letters";
 let mastAddCustomSubject="";
 let mastAddImageUrl="";
 let mastAddUploading=false;
+let mastAddProbCount=1;
 
 const MAST_SUBJECTS={
   lincoln:["AAS"],
@@ -3571,34 +3572,62 @@ function mastGetGenerated(item){
   if(!mastGenerating[item.id]&&mastAIKey){
     mastGenerating[item.id]=true;
     const kidLabel=SL_KLBL[masteryKid]||masteryKid;
-    const prompt="Generate exactly ONE practice problem for a homeschool student.\n\nStudent: "+kidLabel+"\nConcept: "+item.prompt+"\nRules/Instructions: "+(item.generationRule||item.definition||"Generate an age-appropriate problem for this concept")+"\n\nRespond with ONLY a JSON object, no markdown, no explanation:\n{\"problem\": \"the problem text the student sees\", \"answer\": \"the correct answer\"}";
+    const count=item.problemCount||1;
+    const tier=item.tier||"daily";
+    const tierLabel=MAST_TIER_LBL[tier]||tier;
+
+    // Difficulty scaling based on tier
+    const diffMap={daily:"beginner — straightforward, one step",every_other_day:"developing — slightly harder, may need two steps",weekly:"intermediate — add a twist or extra step",bi_weekly:"advancing — combine with a related skill",monthly:"challenging — multi-step or requires deeper understanding"};
+    const diffHint=diffMap[tier]||"age-appropriate";
+
+    const countInstr=count>1
+      ?"Generate exactly "+count+" practice problems"
+      :"Generate exactly 1 practice problem";
+
+    const prompt=countInstr+" for a homeschool student.\n\nStudent: "+kidLabel+"\nConcept: "+item.prompt+"\nCurrent mastery tier: "+tierLabel+" (difficulty hint: "+diffHint+")\nRules/Instructions: "+(item.generationRule||item.definition||"Generate an age-appropriate problem for this concept")+"\n\n"+(count>1
+      ?"Respond with ONLY a JSON array, no markdown, no explanation. Each element: {\"problem\": \"...\", \"answer\": \"...\"}\nExample: [{\"problem\":\"5+3=\",\"answer\":\"8\"},{\"problem\":\"7+2=\",\"answer\":\"9\"}]"
+      :"Respond with ONLY a JSON object, no markdown, no explanation:\n{\"problem\": \"the problem text the student sees\", \"answer\": \"the correct answer\"}");
 
     fetch("https://api.anthropic.com/v1/messages",{
       method:"POST",
       headers:{"Content-Type":"application/json","x-api-key":mastAIKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:200,messages:[{role:"user",content:prompt}]})
+      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:count>1?800:200,messages:[{role:"user",content:prompt}]})
     }).then(r=>r.json()).then(data=>{
       try{
         const txt=data.content[0].text.trim();
         const parsed=JSON.parse(txt);
-        const entry={date:today,problem:parsed.problem,answer:parsed.answer};
+        let entry;
+        if(Array.isArray(parsed)){
+          entry={date:today,problems:parsed,problem:parsed.map((p,i)=>(i+1)+". "+p.problem).join("\n"),answer:parsed.map(p=>p.answer).join(", ")};
+        } else {
+          entry={date:today,problems:[parsed],problem:parsed.problem,answer:parsed.answer};
+        }
         mastGeneratedCache[key]=entry;
-        // Cache in Firebase so other devices see the same problem today
         if(db) db.ref("mastery/_genCache/"+item.id).set(entry);
         if(!masteryData._genCache) masteryData._genCache={};
         masteryData._genCache[item.id]=entry;
-      }catch(e){ console.error("Parse error:",e,data); mastGeneratedCache[key]={date:today,problem:"[Generation error — tap to retry]",answer:""}; }
+      }catch(e){ console.error("Parse error:",e,data); mastGeneratedCache[key]={date:today,problems:[],problem:"[Generation error — tap \u{1F504} to retry]",answer:""}; }
       delete mastGenerating[item.id];
       _mastRe();
     }).catch(err=>{
       console.error("API error:",err);
-      mastGeneratedCache[key]={date:today,problem:"[API error — check connection]",answer:""};
+      mastGeneratedCache[key]={date:today,problems:[],problem:"[API error — check connection]",answer:""};
       delete mastGenerating[item.id];
       _mastRe();
     });
   }
 
   return null; // Still loading
+}
+
+function mastRegenerate(itemId){
+  const today=new Date().toISOString().slice(0,10);
+  const key=itemId+"_"+today;
+  delete mastGeneratedCache[key];
+  delete mastGenerating[itemId];
+  if(masteryData._genCache) delete masteryData._genCache[itemId];
+  if(db) db.ref("mastery/_genCache/"+itemId).remove();
+  _mastRe(); // Will trigger mastGetGenerated again
 }
 let mastExpandedId=null;
 let mastSlideIdx=0;
@@ -3803,7 +3832,7 @@ function mastAddItems(){
       const typeInfo=MAST_ITEM_TYPES.find(t=>t.id===mastAddType);
       if(typeInfo&&typeInfo.generated){
         const ruleInput=document.getElementById("mast-add-rule");
-        if(ruleInput&&ruleInput.value.trim()){ item.generationRule=ruleInput.value.trim(); item.generated=true; }
+        if(ruleInput&&ruleInput.value.trim()){ item.generationRule=ruleInput.value.trim(); item.generated=true; item.problemCount=mastAddProbCount||1; }
       } else {
         const defInput=document.getElementById("mast-add-def");
         if(defInput&&defInput.value.trim()){ item.definition=defInput.value.trim(); item.answer=defInput.value.trim(); }
@@ -4147,6 +4176,15 @@ function _renderMasteryInner(el){
         h+='<div class="mast-add-label" style="margin-top:10px">Generation Rule <span style="color:#dc2626">*</span></div>';
         h+='<textarea class="mast-add-textarea" id="mast-add-rule" placeholder="e.g. Generate a 3-digit subtraction problem that requires borrowing. Answer should be positive. Show the problem in vertical format." style="min-height:70px"></textarea>';
         h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Tell the AI exactly how to generate problems. Be specific about difficulty, format, and constraints.</div>';
+
+        h+='<div class="mast-add-label" style="margin-top:10px">Problems per drill</div>';
+        h+='<div class="mast-add-pills">';
+        [1,2,3,5].forEach(n=>{
+          const sel=(!mastAddProbCount&&n===1)||(mastAddProbCount===n);
+          h+='<button class="mast-add-pill'+(sel?" active":"")+'" onclick="mastAddProbCount='+n+';_mastRe()">'+n+'</button>';
+        });
+        h+='</div>';
+        h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">How many fresh problems to generate each time this concept appears in the drill.</div>';
       } else {
         h+='<div class="mast-add-label" style="margin-top:10px">Definition / Answer (optional)</div>';
         h+='<input class="mast-add-input" id="mast-add-def" placeholder="'+(isJ?"e.g. A big cat with a mane":"e.g. The Floss Rule: ff, ll, ss after a short vowel")+'">';
@@ -4293,7 +4331,8 @@ function _renderMasteryInner(el){
       h+='<div class="mast-log-item"'+(isGen?' style="flex-direction:column;align-items:stretch"':'')+'>';
       if(isGen){
         h+='<div style="display:flex;align-items:center;gap:8px;width:100%"><span class="mast-log-num">'+(i+1)+'.</span><span style="font-size:10px;color:var(--muted);font-weight:600">\u{1F9EE} '+it.prompt+'</span></div>';
-        h+='<div style="font-size:14px;font-weight:600;padding:4px 0 6px 26px;white-space:pre-wrap">'+(gen?gen.problem:"\u{23F3} Generating...")+'</div>';
+        h+='<div style="font-size:14px;font-weight:600;padding:4px 0 2px 26px;white-space:pre-wrap">'+(gen?gen.problem:"\u{23F3} Generating...")+'</div>';
+        if(gen) h+='<div style="padding:0 0 6px 26px"><button onclick="event.stopPropagation();mastRegenerate(\''+it.id+'\')" style="font-size:10px;color:var(--muted);background:none;border:none;cursor:pointer;font-family:\'DM Sans\',sans-serif;font-weight:600">\u{1F504} New problem</button></div>';
         h+='<div style="display:flex;gap:6px;padding-left:26px">';
       } else {
         h+='<span class="mast-log-num">'+mi+'</span>';
@@ -4328,6 +4367,7 @@ function _renderMasteryInner(el){
           h+='<span class="mast-ditem-tier" style="background:'+tc+'15;color:'+tc+';margin-left:auto">'+(MAST_TIER_LBL[it.tier]||it.tier)+'</span></div>';
           if(gen){
             h+='<div style="font-size:14px;font-weight:600;padding:6px 0 2px 26px;white-space:pre-wrap">'+gen.problem+'</div>';
+            h+='<div style="padding:2px 0 0 26px"><button onclick="mastRegenerate(\''+it.id+'\')" style="font-size:10px;color:var(--muted);background:none;border:none;cursor:pointer;font-family:\'DM Sans\',sans-serif;font-weight:600">\u{1F504} New problem</button></div>';
           } else {
             h+='<div style="font-size:11px;color:var(--muted);padding:4px 0 2px 26px">\u{23F3} Generating problem...</div>';
           }
