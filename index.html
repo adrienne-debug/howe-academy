@@ -412,6 +412,19 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .mast-item-hist-row:last-child{border-bottom:none}
 .mast-item-hist-date{color:var(--muted);font-weight:500;width:70px;flex-shrink:0}
 
+/* Heat map */
+.mast-hm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:16px}
+.mast-hm-card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px;position:relative;overflow:hidden}
+.mast-hm-card-bar{position:absolute;top:0;left:0;right:0;height:4px;border-radius:12px 12px 0 0}
+.mast-hm-subj{font-size:12px;font-weight:700;margin-bottom:6px}
+.mast-hm-count{font-family:'Fraunces',serif;font-size:22px;font-weight:700;line-height:1}
+.mast-hm-label{font-size:9px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:0.06em}
+.mast-hm-tiers{display:flex;gap:2px;margin-top:8px;height:6px;border-radius:3px;overflow:hidden}
+.mast-hm-tier-seg{height:100%}
+.mast-hm-legend{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;font-size:10px;font-weight:600;color:var(--muted)}
+.mast-hm-legend-dot{width:10px;height:10px;border-radius:3px;display:inline-block;vertical-align:middle;margin-right:3px}
+.mast-hm-all-kids{display:grid;grid-template-columns:1fr;gap:14px}
+
 /* Julian slideshow */
 .mast-slide{background:#fff7ed;border:2px solid #fed7aa;border-radius:20px;padding:20px;text-align:center;min-height:280px;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;touch-action:pan-y}
 .mast-slide-cat{font-size:10px;font-weight:700;color:#c2410c;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px}
@@ -3789,10 +3802,11 @@ function _renderMasteryInner(el){
   h+='<button onclick="mastOpenAdd()" style="width:32px;height:32px;border-radius:50%;border:1.5px solid var(--border);background:#fff;font-size:18px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:'+color+'">+</button>';
   h+='</div>';
 
-  // View tabs: Drill / Scores
+  // View tabs: Drill / Scores / Heat Map
   h+='<div class="mast-view-tabs">';
-  h+='<button class="mast-view-tab'+(mastView==="drill"?" active":"")+'" onclick="mastSetView(\'drill\')">Today\'s Drill</button>';
-  h+='<button class="mast-view-tab'+(mastView==="scores"?" active":"")+'" onclick="mastSetView(\'scores\')">Scores</button></div>';
+  h+='<button class="mast-view-tab'+(mastView==="drill"?" active":"")+'" onclick="mastSetView(\'drill\')">Drill</button>';
+  h+='<button class="mast-view-tab'+(mastView==="scores"?" active":"")+'" onclick="mastSetView(\'scores\')">Scores</button>';
+  h+='<button class="mast-view-tab'+(mastView==="heatmap"?" active":"")+'" onclick="mastSetView(\'heatmap\')">Heat Map</button></div>';
 
   // ── SCORES VIEW ──
   if(mastView==="scores"){
@@ -3931,6 +3945,93 @@ function _renderMasteryInner(el){
         h+='</div>';
       });
     }
+
+    h+='</div>';
+    el.innerHTML=h;
+    return;
+  }
+
+  // ── HEAT MAP VIEW ──
+  if(mastView==="heatmap"){
+    const allKids=["lincoln","ellis","lucy","julian"];
+
+    // Legend
+    h+='<div class="mast-hm-legend">';
+    h+='<span><span class="mast-hm-legend-dot" style="background:#dc2626"></span>Daily</span>';
+    h+='<span><span class="mast-hm-legend-dot" style="background:#ea580c"></span>EOD</span>';
+    h+='<span><span class="mast-hm-legend-dot" style="background:#ca8a04"></span>Weekly</span>';
+    h+='<span><span class="mast-hm-legend-dot" style="background:#65a30d"></span>Bi-Wk</span>';
+    h+='<span><span class="mast-hm-legend-dot" style="background:#0d9488"></span>Monthly</span>';
+    h+='<span><span class="mast-hm-legend-dot" style="background:#7c3aed"></span>Graduated</span>';
+    h+='</div>';
+
+    h+='<div class="mast-hm-all-kids">';
+    allKids.forEach(kid=>{
+      let kitems=masteryData[kid]||[];
+      if(!Array.isArray(kitems)) kitems=Object.values(kitems);
+      if(!kitems.length) return;
+
+      const km=MAST_KID_COL[kid];
+      h+='<div>';
+      h+='<div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700;color:'+km+';margin-bottom:8px">'+MAST_KID_EMOJI[kid]+' '+SL_KLBL[kid]+' <span style="font-size:11px;color:var(--muted);font-weight:500">('+kitems.length+' items)</span></div>';
+
+      // Group by subject
+      const bySubj={};
+      kitems.forEach(i=>{const s=i.subject||"Other";if(!bySubj[s])bySubj[s]=[];bySubj[s].push(i);});
+
+      h+='<div class="mast-hm-grid">';
+      Object.entries(bySubj).forEach(([subj,sitems])=>{
+        const total=sitems.length;
+        // Count per tier
+        const tc={daily:0,every_other_day:0,every_third_day:0,weekly:0,bi_weekly:0,monthly:0,learned:0,graduated:0};
+        let introCount=0;
+        sitems.forEach(i=>{
+          if(i.status==="introduction") introCount++;
+          const t=i.tier||"daily";
+          tc[t]=(tc[t]||0)+1;
+        });
+
+        // Health score: items at higher tiers = healthier
+        const weights={daily:0,every_other_day:1,every_third_day:1.5,weekly:2,bi_weekly:3,monthly:4,learned:5,graduated:5};
+        const maxScore=total*5;
+        const score=sitems.reduce((s,i)=>s+(weights[i.tier||"daily"]||0),0);
+        const health=maxScore?score/maxScore:0;
+        const barCol=health>=0.5?"#16a34a":health>=0.25?"#d97706":"#dc2626";
+        const healthLbl=health>=0.5?"Climbing":health>=0.25?"Mixed":"Needs Work";
+
+        h+='<div class="mast-hm-card">';
+        h+='<div class="mast-hm-card-bar" style="background:'+barCol+'"></div>';
+        h+='<div class="mast-hm-subj">'+subj+'</div>';
+        h+='<div style="display:flex;align-items:baseline;gap:6px">';
+        h+='<div class="mast-hm-count" style="color:'+barCol+'">'+total+'</div>';
+        h+='<div class="mast-hm-label">'+healthLbl+'</div></div>';
+
+        // Tier bar
+        h+='<div class="mast-hm-tiers">';
+        const tierCols={daily:"#dc2626",every_other_day:"#ea580c",every_third_day:"#d97706",weekly:"#ca8a04",bi_weekly:"#65a30d",monthly:"#0d9488",learned:"#2563eb",graduated:"#7c3aed"};
+        MAST_TIER_ORDER.forEach(t=>{
+          if(!tc[t]) return;
+          const pct=Math.round(tc[t]/total*100);
+          h+='<div class="mast-hm-tier-seg" style="width:'+pct+'%;background:'+tierCols[t]+'"></div>';
+        });
+        h+='</div>';
+
+        // Counts
+        h+='<div style="margin-top:6px;font-size:9px;color:var(--muted);line-height:1.6">';
+        if(introCount) h+='<span>\u{2B50}'+introCount+' intro</span> ';
+        if(tc.daily) h+='<span style="color:#dc2626">\u{25CF}'+tc.daily+' daily</span> ';
+        if(tc.every_other_day) h+='<span style="color:#ea580c">\u{25CF}'+tc.every_other_day+' EOD</span> ';
+        if(tc.weekly) h+='<span style="color:#ca8a04">\u{25CF}'+tc.weekly+' wk</span> ';
+        if(tc.bi_weekly) h+='<span style="color:#65a30d">\u{25CF}'+tc.bi_weekly+' bi</span> ';
+        if(tc.monthly) h+='<span style="color:#0d9488">\u{25CF}'+tc.monthly+' mo</span> ';
+        if(tc.graduated) h+='<span style="color:#7c3aed">\u{25CF}'+tc.graduated+' grad</span> ';
+        h+='</div>';
+
+        h+='</div>';
+      });
+      h+='</div></div>';
+    });
+    h+='</div>';
 
     h+='</div>';
     el.innerHTML=h;
