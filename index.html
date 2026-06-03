@@ -381,6 +381,29 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .mast-save-count{font-size:11px;color:var(--muted);font-weight:600}
 .mast-result-msg{padding:12px 14px;text-align:center;font-size:12px;font-weight:600;border-top:1px solid var(--border)}
 
+/* Mastery add items UI */
+.mast-add-card{background:#fff;border:1.5px solid var(--border);border-radius:14px;margin-bottom:16px;overflow:hidden}
+.mast-add-hdr{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.mast-add-title{font-family:'Fraunces',serif;font-size:14px;font-weight:700}
+.mast-add-close{width:28px;height:28px;border-radius:8px;border:none;background:#f3f1ee;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.mast-add-body{padding:12px 14px}
+.mast-add-row{display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap}
+.mast-add-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);margin-bottom:4px}
+.mast-add-input{flex:1;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;min-width:0}
+.mast-add-input:focus{outline:none;border-color:#6366f1}
+.mast-add-textarea{width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;min-height:60px;resize:vertical}
+.mast-add-textarea:focus{outline:none;border-color:#6366f1}
+.mast-add-select{padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:'DM Sans',sans-serif;font-weight:600;background:#fff;cursor:pointer}
+.mast-add-pills{display:flex;gap:4px;flex-wrap:wrap}
+.mast-add-pill{padding:5px 10px;border-radius:14px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif}
+.mast-add-pill.active{background:var(--header);color:#fff;border-color:transparent}
+.mast-add-tabs{display:flex;gap:0;border:1.5px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:12px}
+.mast-add-tab{flex:1;padding:7px 8px;text-align:center;font-size:11px;font-weight:700;cursor:pointer;background:#fff;border:none;font-family:'DM Sans',sans-serif;color:var(--muted)}
+.mast-add-tab.active{background:var(--header);color:#fff}
+.mast-add-submit{padding:10px 20px;border-radius:10px;border:none;background:var(--header);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;width:100%;margin-top:8px}
+.mast-add-submit:disabled{background:#d1d5db;cursor:not-allowed}
+.mast-add-preview{margin-top:8px;padding:8px 10px;background:#f8f7f4;border-radius:8px;font-size:11px;color:var(--muted)}
+
 /* Mastery print */
 .mast-print-page{display:none}
 .mast-print-page *{box-sizing:border-box}
@@ -3314,6 +3337,96 @@ function mastSaveResults(){
   const c=document.getElementById("content"); if(c) renderMastery(c);
 }
 
+// ── ADD ITEMS ─────────────────────────────────────────────────────
+let mastAddMode=false;
+let mastAddTab="single"; // "single" or "batch"
+let mastAddSubject="AAS";
+let mastAddReviewMode="written";
+let mastAddJulianCat="Letters";
+
+const MAST_SUBJECTS={
+  lincoln:["AAS"],
+  ellis:["AAS"],
+  lucy:["AAS"],
+  julian:["Letters","Numbers","Colors","Shapes","Animals"]
+};
+const MAST_MODES={
+  lincoln:["written","recite"],
+  ellis:["written","recite"],
+  lucy:["written","recite"],
+  julian:["flash"]
+};
+
+function mastOpenAdd(){ mastAddMode=true; const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastCloseAdd(){ mastAddMode=false; const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastAddSetTab(t){ mastAddTab=t; const c=document.getElementById("content"); if(c) renderMastery(c); }
+
+function mastAddItems(){
+  const isJulian=masteryKid==="julian";
+  let prompts=[];
+
+  if(mastAddTab==="single"){
+    const input=document.getElementById("mast-add-single");
+    if(!input||!input.value.trim()) return;
+    prompts=[input.value.trim()];
+  } else {
+    const textarea=document.getElementById("mast-add-batch");
+    if(!textarea||!textarea.value.trim()) return;
+    prompts=textarea.value.split(/[,\n]/).map(s=>s.trim()).filter(Boolean);
+  }
+
+  if(!prompts.length) return;
+
+  let items=masteryData[masteryKid];
+  if(!items) items=[];
+  if(!Array.isArray(items)) items=Object.values(items);
+
+  const existingPrompts=new Set(items.map(i=>(i.prompt||"").toLowerCase()));
+  let added=0, skipped=0;
+
+  prompts.forEach(p=>{
+    if(existingPrompts.has(p.toLowerCase())){ skipped++; return; }
+
+    const slug=p.toLowerCase().replace(/[^a-z0-9]/g,"_").substring(0,20);
+    const prefix=masteryKid.substring(0,3);
+    const id=prefix+"_"+slug;
+
+    const item={
+      id:id,
+      subject:isJulian?mastAddJulianCat:mastAddSubject,
+      prompt:p,
+      answer:p,
+      tier:"daily",
+      review_mode:isJulian?"flash":mastAddReviewMode,
+      status:isJulian?"introduction":"active",
+      drop_count:0,
+      consecutive_correct:0,
+      cycle:1
+    };
+    items.push(item);
+    existingPrompts.add(p.toLowerCase());
+    added++;
+  });
+
+  if(!added){
+    alert(skipped+" item(s) already exist, nothing added");
+    return;
+  }
+
+  // Assign cycles for new daily items
+  const dailyCount=items.filter(i=>i.tier==="daily").length;
+  items.filter(i=>i.tier==="daily").forEach((it,idx)=>{it.cycle=(idx%1)+1;});
+
+  // Save to Firebase
+  masteryData[masteryKid]=items;
+  if(db) db.ref("mastery/"+masteryKid).set(items);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+
+  mastAddMode=false;
+  alert(added+" item(s) added"+(skipped?" ("+skipped+" duplicate(s) skipped)":""));
+  const c=document.getElementById("content"); if(c) renderMastery(c);
+}
+
 function renderMastery(el){
   const kids=["lincoln","ellis","lucy","julian"].filter(k=>{
     let items=masteryData[k]; if(!items) return false;
@@ -3330,15 +3443,67 @@ function renderMastery(el){
 
   let h='<div style="padding:12px 12px 80px">';
 
-  // Kid filter
-  h+='<div style="display:flex;gap:6px;margin-bottom:14px;overflow-x:auto">';
+  // Kid filter + add button
+  h+='<div style="display:flex;gap:6px;margin-bottom:14px;overflow-x:auto;align-items:center">';
   kids.forEach(k=>{
     let kitems=masteryData[k]||[]; if(!Array.isArray(kitems)) kitems=Object.values(kitems);
     const active=k===masteryKid;
     h+='<button class="kid-btn'+(active?' active':'')+'" data-kid="'+k+'" onclick="mastSetKid(\''+k+'\')" style="'+(active?'background:'+MAST_KID_COL[k]+';color:#fff;border-color:transparent':'')+'">';
     h+=MAST_KID_EMOJI[k]+' '+SL_KLBL[k]+' <span style="opacity:0.6;font-size:10px">('+kitems.length+')</span></button>';
   });
+  h+='<button onclick="mastOpenAdd()" style="width:32px;height:32px;border-radius:50%;border:1.5px solid var(--border);background:#fff;font-size:18px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:'+color+'">+</button>';
   h+='</div>';
+
+  // Add items card
+  if(mastAddMode){
+    const isJ=masteryKid==="julian";
+    const subjects=MAST_SUBJECTS[masteryKid]||["AAS"];
+    const modes=MAST_MODES[masteryKid]||["written"];
+    h+='<div class="mast-add-card">';
+    h+='<div class="mast-add-hdr"><span class="mast-add-title">'+emoji+' Add Items — '+SL_KLBL[masteryKid]+'</span><button class="mast-add-close" onclick="mastCloseAdd()">\u{2715}</button></div>';
+    h+='<div class="mast-add-body">';
+
+    // Single / Batch tabs
+    h+='<div class="mast-add-tabs">';
+    h+='<button class="mast-add-tab'+(mastAddTab==="single"?" active":"")+'" onclick="mastAddSetTab(\'single\')">Single</button>';
+    h+='<button class="mast-add-tab'+(mastAddTab==="batch"?" active":"")+'" onclick="mastAddSetTab(\'batch\')">Batch</button></div>';
+
+    if(!isJ){
+      // Subject picker
+      if(subjects.length>1){
+        h+='<div class="mast-add-label">Subject</div>';
+        h+='<div class="mast-add-pills" style="margin-bottom:10px">';
+        subjects.forEach(s=>{h+='<button class="mast-add-pill'+(mastAddSubject===s?" active":"")+'" onclick="mastAddSubject=\''+s+'\';const c=document.getElementById(\'content\');if(c)renderMastery(c)">'+s+'</button>';});
+        h+='</div>';
+      }
+      // Review mode picker
+      h+='<div class="mast-add-label">Type</div>';
+      h+='<div class="mast-add-pills" style="margin-bottom:10px">';
+      const modeLabels={written:"\u{270F}\u{FE0F} Written",recite:"\u{1F4E2} Recite",oral:"\u{1F5E3}\u{FE0F} Oral",flash:"\u{1F0CF} Flash"};
+      modes.forEach(m=>{h+='<button class="mast-add-pill'+(mastAddReviewMode===m?" active":"")+'" onclick="mastAddReviewMode=\''+m+'\';const c=document.getElementById(\'content\');if(c)renderMastery(c)">'+(modeLabels[m]||m)+'</button>';});
+      h+='</div>';
+    } else {
+      // Julian category picker
+      h+='<div class="mast-add-label">Category</div>';
+      h+='<div class="mast-add-pills" style="margin-bottom:10px">';
+      const catE={Letters:"\u{1F524}",Numbers:"\u{1F522}",Colors:"\u{1F3A8}",Shapes:"\u{1F537}",Animals:"\u{1F43E}"};
+      subjects.forEach(s=>{h+='<button class="mast-add-pill'+(mastAddJulianCat===s?" active":"")+'" onclick="mastAddJulianCat=\''+s+'\';const c=document.getElementById(\'content\');if(c)renderMastery(c)">'+(catE[s]||"")+' '+s+'</button>';});
+      h+='</div>';
+    }
+
+    // Input
+    if(mastAddTab==="single"){
+      h+='<div class="mast-add-label">'+(isJ?"Item":"Word / Rule")+'</div>';
+      h+='<input class="mast-add-input" id="mast-add-single" placeholder="'+(isJ?"e.g. Dog":"e.g. splash")+'" autocapitalize="off" autocorrect="off">';
+    } else {
+      h+='<div class="mast-add-label">'+(isJ?"Items":"Words / Rules")+' (comma or newline separated)</div>';
+      h+='<textarea class="mast-add-textarea" id="mast-add-batch" placeholder="'+(isJ?"Dog, Elephant, Horse":"splash, crash, brush")+'"></textarea>';
+    }
+
+    h+='<div class="mast-add-preview">New items enter at <strong>daily</strong> tier'+(isJ?' as <strong>introduction</strong>':' with cycle #1')+'</div>';
+    h+='<button class="mast-add-submit" onclick="mastAddItems()">Add to '+SL_KLBL[masteryKid]+'\'s Mastery</button>';
+    h+='</div></div>';
+  }
 
   // Today's drill
   const pn=mastGetPrintNum();
