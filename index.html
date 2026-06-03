@@ -363,6 +363,24 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .mast-jcard-tally{display:flex;gap:2px;justify-content:center;margin-top:4px}
 .mast-jdot{width:7px;height:7px;border-radius:50%;border:1.5px solid #fed7aa}
 
+/* Mastery logging UI */
+.mast-log-btn{padding:7px 16px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;color:var(--text)}
+.mast-log-btn.active{background:#16a34a;color:#fff;border-color:transparent}
+.mast-log-item{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid #f3f1ee}
+.mast-log-item:last-child{border-bottom:none}
+.mast-log-num{font-family:'DM Mono',monospace;font-size:10px;color:#9ca3af;width:18px;flex-shrink:0}
+.mast-log-prompt{font-weight:600;flex:1;font-size:13px}
+.mast-log-btns{display:flex;gap:4px;flex-shrink:0}
+.mast-score-btn{width:34px;height:34px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:'DM Sans',sans-serif;transition:all 0.15s}
+.mast-score-btn.sel-c{background:#dcfce7;border-color:#16a34a;color:#16a34a}
+.mast-score-btn.sel-m{background:#fee2e2;border-color:#dc2626;color:#dc2626}
+.mast-score-btn.sel-t{background:#fef3c7;border-color:#d97706;color:#d97706}
+.mast-save-bar{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-top:1.5px solid var(--border);background:#f8f7f4}
+.mast-save-btn{padding:10px 24px;border-radius:10px;border:none;background:#16a34a;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif}
+.mast-save-btn:disabled{background:#d1d5db;cursor:not-allowed}
+.mast-save-count{font-size:11px;color:var(--muted);font-weight:600}
+.mast-result-msg{padding:12px 14px;text-align:center;font-size:12px;font-weight:600;border-top:1px solid var(--border)}
+
 /* Mastery print */
 .mast-print-page{display:none}
 .mast-print-page *{box-sizing:border-box}
@@ -3222,8 +3240,79 @@ function mastDueItems(kid,pn){
   return due;
 }
 
-function mastSetKid(k){ masteryKid=k; const c=document.getElementById("content"); if(c) renderMastery(c); }
+let mastLogMode=false;
+let mastLogScores={};  // {itemId: "c"|"m"|"~"}
+
+function mastSetKid(k){ masteryKid=k; mastLogMode=false; mastLogScores={}; const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastToggleTier(t){ masteryCollapsed[masteryKid+"_"+t]=!masteryCollapsed[masteryKid+"_"+t]; const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastStartLog(){ mastLogMode=true; mastLogScores={}; const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastCancelLog(){ mastLogMode=false; mastLogScores={}; const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastScore(id,val){ mastLogScores[id]=val; const c=document.getElementById("content"); if(c) renderMastery(c); }
+
+function mastSaveResults(){
+  const pn=mastGetPrintNum();
+  const due=mastDueItems(masteryKid,pn);
+  const TIER_LADDER=["daily","every_other_day","every_third_day","weekly","bi_weekly","monthly","learned","graduated"];
+
+  // Get all items for this kid
+  let items=masteryData[masteryKid];
+  if(!items) return;
+  if(!Array.isArray(items)) items=Object.values(items);
+
+  // Apply results
+  let changes=0;
+  due.forEach(dueItem=>{
+    const score=mastLogScores[dueItem.id];
+    if(!score) return;
+    // Find in items array
+    const item=items.find(i=>i.id===dueItem.id);
+    if(!item) return;
+
+    const oldTier=item.tier||"daily";
+    const oldIdx=TIER_LADDER.indexOf(oldTier);
+    if(oldIdx===-1) return;
+
+    let newIdx=oldIdx;
+    if(score==="c") newIdx=Math.min(oldIdx+1,TIER_LADDER.length-1);
+    else if(score==="m"){ newIdx=Math.max(oldIdx-1,0); item.drop_count=(item.drop_count||0)+1; }
+    // ~ stays same
+
+    const newTier=TIER_LADDER[newIdx];
+    if(newTier!==oldTier){
+      item.tier=newTier;
+      // Assign new cycle: count items already in that tier, wrap within interval
+      const interval=MAST_TIER_INT[newTier];
+      if(interval){
+        const countInTier=items.filter(i=>i.tier===newTier&&i.id!==item.id).length;
+        item.cycle=(countInTier%interval)+1;
+      }
+    }
+    item.consecutive_correct=score==="c"?(item.consecutive_correct||0)+1:0;
+    changes++;
+  });
+
+  if(!changes){ alert("No items scored"); return; }
+
+  // Update printLog with today if not present
+  let pl=masteryData.printLog||[];
+  if(!Array.isArray(pl)) pl=Object.values(pl);
+  const today=new Date().toISOString().slice(0,10);
+  if(!pl.find(e=>e.date===today)) pl.push({date:today,num:pn});
+  masteryData.printLog=pl;
+
+  // Save to Firebase
+  if(db){
+    db.ref("mastery/"+masteryKid).set(items);
+    db.ref("mastery/printLog").set(pl);
+  }
+  // Update local
+  masteryData[masteryKid]=items;
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+
+  mastLogMode=false;
+  mastLogScores={};
+  const c=document.getElementById("content"); if(c) renderMastery(c);
+}
 
 function renderMastery(el){
   const kids=["lincoln","ellis","lucy","julian"].filter(k=>{
@@ -3268,7 +3357,31 @@ function renderMastery(el){
   h+='<div class="mast-drill-pnum">Print #'+pn+'</div></div>';
 
   if(!due.length) h+='<div class="mast-none">Nothing due today \u{1F389}</div>';
-  else {
+  else if(mastLogMode){
+    // ── LOGGING MODE ──
+    h+='<div style="padding:6px 14px 2px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted)">Tap \u{2713} \u{2717} or ~ for each item</div></div>';
+    due.forEach((it,i)=>{
+      const sc=mastLogScores[it.id]||"";
+      const isW=it.review_mode==="written";
+      const mi=isW?(i+1)+".":({recite:"\u{1F4E2}",oral:"\u{1F5E3}\u{FE0F}",flash:"\u{1F0CF}"}[it.review_mode]||"\u{1F5E3}\u{FE0F}");
+      h+='<div class="mast-log-item">';
+      h+='<span class="mast-log-num">'+mi+'</span>';
+      h+='<span class="mast-log-prompt">'+it.prompt+'</span>';
+      h+='<div class="mast-log-btns">';
+      h+='<button class="mast-score-btn'+(sc==="c"?" sel-c":"")+'" onclick="mastScore(\''+it.id+'\',\'c\')">\u{2713}</button>';
+      h+='<button class="mast-score-btn'+(sc==="m"?" sel-m":"")+'" onclick="mastScore(\''+it.id+'\',\'m\')">\u{2717}</button>';
+      h+='<button class="mast-score-btn'+(sc==="~"?" sel-t":"")+'" onclick="mastScore(\''+it.id+'\',\'~\')">~</button>';
+      h+='</div></div>';
+    });
+    const scored=Object.keys(mastLogScores).length;
+    const allScored=scored===due.length;
+    h+='<div class="mast-save-bar">';
+    h+='<span class="mast-save-count">'+scored+' / '+due.length+' scored</span>';
+    h+='<button class="mast-save-btn" onclick="mastSaveResults()"'+(allScored?'':' disabled')+'>Save Results</button>';
+    h+='</div>';
+    h+='<div style="padding:8px 14px;text-align:center"><button class="mast-log-btn" onclick="mastCancelLog()">Cancel</button></div>';
+  } else {
+    // ── NORMAL VIEW ──
     if(dueW.length){
       h+='<div class="mast-section"><div class="mast-section-lbl">\u{270F}\u{FE0F} Written <span class="cnt">'+dueW.length+'</span></div>';
       dueW.forEach((it,i)=>{
@@ -3293,7 +3406,8 @@ function renderMastery(el){
     h+='<div class="mast-print-bar">';
     h+='<label class="mast-print-chk"><input type="checkbox" id="mast-chk-student" checked> Student</label>';
     h+='<label class="mast-print-chk"><input type="checkbox" id="mast-chk-parent" checked> Parent</label>';
-    h+='<button class="mast-print-btn" onclick="mastPrintDrill()">\u{1F5A8}\u{FE0F} Print</button></div>';
+    h+='<button class="mast-print-btn" onclick="mastPrintDrill()">\u{1F5A8}\u{FE0F} Print</button>';
+    h+='<button class="mast-log-btn" onclick="mastStartLog()" style="margin-left:6px">\u{1F4DD} Log</button></div>';
   }
   h+='</div>';
 
