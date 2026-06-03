@@ -372,6 +372,30 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .mast-jcard-tally{display:flex;gap:2px;justify-content:center;margin-top:4px}
 .mast-jdot{width:7px;height:7px;border-radius:50%;border:1.5px solid #fed7aa}
 
+/* Julian slideshow */
+.mast-slide{background:#fff7ed;border:2px solid #fed7aa;border-radius:20px;padding:20px;text-align:center;min-height:280px;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;touch-action:pan-y}
+.mast-slide-cat{font-size:10px;font-weight:700;color:#c2410c;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px}
+.mast-slide-img{font-size:80px;line-height:1;margin-bottom:12px;min-height:90px;display:flex;align-items:center;justify-content:center}
+.mast-slide-img img{max-width:160px;max-height:140px;border-radius:12px;object-fit:contain}
+.mast-slide-name{font-family:'Fraunces',serif;font-size:28px;font-weight:700;color:#c2410c;margin-bottom:8px}
+.mast-slide-tally{display:flex;gap:6px;justify-content:center;margin-bottom:4px}
+.mast-slide-dot{width:14px;height:14px;border-radius:50%;border:2px solid #fed7aa;background:#fff}
+.mast-slide-dot.filled{background:#c2410c}
+.mast-slide-nav{display:flex;align-items:center;justify-content:space-between;margin-top:12px;gap:10px}
+.mast-slide-arrow{width:44px;height:44px;border-radius:50%;border:1.5px solid var(--border);background:#fff;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.mast-slide-arrow:active{background:#f3f1ee}
+.mast-slide-arrow:disabled{opacity:0.3;cursor:not-allowed}
+.mast-slide-counter{font-family:'DM Mono',monospace;font-size:12px;color:var(--muted);font-weight:600}
+.mast-slide-score{display:flex;gap:8px;justify-content:center;margin-top:14px}
+.mast-slide-score-btn{width:56px;height:56px;border-radius:14px;border:2px solid var(--border);background:#fff;font-size:24px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.mast-slide-score-btn:active{transform:scale(0.95)}
+.mast-slide-score-btn.sel-c{background:#dcfce7;border-color:#16a34a;color:#16a34a}
+.mast-slide-score-btn.sel-m{background:#fee2e2;border-color:#dc2626;color:#dc2626}
+.mast-slide-score-btn.sel-t{background:#fef3c7;border-color:#d97706;color:#d97706}
+.mast-slide.scored-c{border-color:#16a34a;background:#f0fdf4}
+.mast-slide.scored-m{border-color:#dc2626;background:#fef2f2}
+.mast-slide.scored-t{border-color:#d97706;background:#fffbeb}
+
 /* Mastery logging UI */
 .mast-log-btn{padding:7px 16px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;color:var(--text)}
 .mast-log-btn.active{background:#16a34a;color:#fff;border-color:transparent}
@@ -3283,9 +3307,9 @@ function mastDueItems(kid,pn){
 let mastLogMode=false;
 let mastLogScores={};  // {itemId: "c"|"m"|"~"}
 
-function mastSetKid(k){ masteryKid=k; mastLogMode=false; mastLogScores={}; const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastSetKid(k){ masteryKid=k; mastLogMode=false; mastLogScores={}; mastSlideIdx=0; const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastToggleTier(t){ masteryCollapsed[masteryKid+"_"+t]=!masteryCollapsed[masteryKid+"_"+t]; const c=document.getElementById("content"); if(c) renderMastery(c); }
-function mastStartLog(){ mastLogMode=true; mastLogScores={}; const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastStartLog(){ mastLogMode=true; mastLogScores={}; mastSlideIdx=0; const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastCancelLog(){ mastLogMode=false; mastLogScores={}; const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastScore(id,val){ mastLogScores[id]=val; const c=document.getElementById("content"); if(c) renderMastery(c); }
 
@@ -3384,6 +3408,7 @@ const MAST_ITEM_TYPES=[
 
 function _mastRe(){ const c=document.getElementById("content"); if(c) renderMastery(c); }
 let mastExpandedId=null;
+let mastSlideIdx=0;
 function mastToggleExpand(id){ mastExpandedId=mastExpandedId===id?null:id; _mastRe(); }
 function mastJulianVis(it){
   if(it.imageUrl) return '<img src="'+it.imageUrl+'" class="mast-jcard-photo">';
@@ -3410,6 +3435,9 @@ function mastSetType(t){ mastAddType=t; _mastRe(); }
 function mastSetSubject(s){ mastAddSubject=s; mastAddCustomSubject=""; _mastRe(); }
 function mastSetCustomSubj(){ mastAddCustomSubject=mastAddCustomSubject||"New"; _mastRe(); }
 function mastSetJulianCat(s){ mastAddJulianCat=s; _mastRe(); }
+function mastSlideNext(){ mastSlideIdx++; _mastRe(); }
+function mastSlidePrev(){ mastSlideIdx--; _mastRe(); }
+function mastSlideScore(id,val){ mastLogScores[id]=val; mastSlideIdx++; _mastRe(); }
 
 function mastUploadImage(file){
   if(!file) return;
@@ -3635,59 +3663,70 @@ function _renderMasteryInner(el){
   h+='<div class="mast-drill-pnum">Print #'+pn+'</div></div>';
 
   if(!due.length) h+='<div class="mast-none">Nothing due today \u{1F389}</div>';
-  else if(masteryKid==="julian"&&mastLogMode){
-    // ── JULIAN LOGGING MODE (visual cards with score buttons) ──
-    h+='<div style="padding:6px 14px 2px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted)">Tap \u{2713} \u{2717} or ~ for each card</div></div>';
-    h+='<div style="padding:8px 14px">';
-    const byCatLog={};
-    due.forEach(it=>{const c=it.subject||"Other";if(!byCatLog[c])byCatLog[c]=[];byCatLog[c].push(it);});
-    const catE={Letters:"\u{1F524}",Numbers:"\u{1F522}",Colors:"\u{1F3A8}",Shapes:"\u{1F537}",Animals:"\u{1F43E}"};
-    Object.entries(byCatLog).forEach(([cat,citems])=>{
-      h+='<div style="font-size:9px;font-weight:700;color:#c2410c;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px">'+(catE[cat]||"")+' '+cat+'</div>';
-      h+='<div class="mast-jgrid" style="margin-bottom:12px">';
-      citems.forEach(it=>{
-        const sc=mastLogScores[it.id]||"";
-        const border=sc==="c"?"#16a34a":sc==="m"?"#dc2626":sc==="~"?"#d97706":"#fed7aa";
-        const bg=sc==="c"?"#f0fdf4":sc==="m"?"#fef2f2":sc==="~"?"#fffbeb":"#fff7ed";
-        h+='<div class="mast-jcard" style="border-color:'+border+';background:'+bg+'">';
-        h+='<div class="mast-jcard-img">'+mastJulianVis(it)+'</div>';
-        h+='<div class="mast-jcard-name">'+it.prompt+'</div>';
-        h+='<div style="display:flex;gap:3px;justify-content:center;margin-top:4px">';
-        h+='<button class="mast-score-btn'+(sc==="c"?" sel-c":"")+'" style="width:24px;height:24px;font-size:11px" onclick="mastScore(\''+it.id+'\',\'c\')">\u{2713}</button>';
-        h+='<button class="mast-score-btn'+(sc==="m"?" sel-m":"")+'" style="width:24px;height:24px;font-size:11px" onclick="mastScore(\''+it.id+'\',\'m\')">\u{2717}</button>';
-        h+='<button class="mast-score-btn'+(sc==="~"?" sel-t":"")+'" style="width:24px;height:24px;font-size:11px" onclick="mastScore(\''+it.id+'\',\'~\')">~</button>';
-        h+='</div></div>';
-      });
-      h+='</div>';
-    });
+  else if(masteryKid==="julian"){
+    // ── JULIAN SLIDESHOW (normal + log mode) ──
+    if(mastSlideIdx<0) mastSlideIdx=0;
+    if(mastSlideIdx>=due.length) mastSlideIdx=due.length-1;
+    const it=due[mastSlideIdx];
+    const catE3={Letters:"\u{1F524}",Numbers:"\u{1F522}",Colors:"\u{1F3A8}",Shapes:"\u{1F537}",Animals:"\u{1F43E}"};
+
+    const sc=mastLogMode?(mastLogScores[it.id]||""):"";
+    const slideClass="mast-slide"+(sc==="c"?" scored-c":sc==="m"?" scored-m":sc==="~"?" scored-t":"");
+
+    h+='<div style="padding:10px 14px">';
+    h+='<div class="'+slideClass+'">';
+    h+='<div class="mast-slide-cat">'+(catE3[it.subject]||"")+' '+(it.subject||"")+'</div>';
+
+    // Big visual
+    let bigVis=it.imageUrl?'<img src="'+it.imageUrl+'" style="max-width:160px;max-height:140px;border-radius:12px;object-fit:contain">':'';
+    if(!bigVis&&it.emoji) bigVis='<span style="font-size:80px">'+it.emoji+'</span>';
+    if(!bigVis&&MAST_ANIMAL_EMOJI[it.prompt]) bigVis='<span style="font-size:80px">'+MAST_ANIMAL_EMOJI[it.prompt]+'</span>';
+    const cat=it.subject||"";
+    if(!bigVis&&cat==="Colors"&&MAST_COLOR_MAP[it.prompt]) bigVis='<div style="width:80px;height:80px;border-radius:50%;background:'+MAST_COLOR_MAP[it.prompt]+';border:2px solid rgba(0,0,0,0.1)"></div>';
+    if(!bigVis&&cat==="Shapes") bigVis='<span style="font-size:80px">'+({Circle:"\u{1F534}",Square:"\u{1F7E7}",Triangle:"\u{1F53A}"}[it.prompt]||it.prompt)+'</span>';
+    if(!bigVis) bigVis='<span style="font-size:64px;font-weight:800;color:#c2410c">'+it.prompt+'</span>';
+    h+='<div class="mast-slide-img">'+bigVis+'</div>';
+
+    h+='<div class="mast-slide-name">'+it.prompt+'</div>';
+
+    // Tally dots
+    const con=it.consecutive_correct||0;
+    h+='<div class="mast-slide-tally">';
+    for(let d=0;d<5;d++) h+='<div class="mast-slide-dot'+(d<con?" filled":"")+'"></div>';
     h+='</div>';
-    const scored=Object.keys(mastLogScores).length;
-    const allScored=scored===due.length;
-    h+='<div class="mast-save-bar"><span class="mast-save-count">'+scored+' / '+due.length+' scored</span>';
-    h+='<button class="mast-save-btn" onclick="mastSaveResults()"'+(allScored?'':' disabled')+'>Save Results</button></div>';
-    h+='<div style="padding:8px 14px;text-align:center"><button class="mast-log-btn" onclick="mastCancelLog()">Cancel</button></div>';
-  } else if(masteryKid==="julian"){
-    // ── JULIAN NORMAL VIEW (visual flashcards) ──
-    h+='<div style="padding:8px 14px">';
-    const byCatDrill={};
-    due.forEach(it=>{const c=it.subject||"Other";if(!byCatDrill[c])byCatDrill[c]=[];byCatDrill[c].push(it);});
-    const catE2={Letters:"\u{1F524}",Numbers:"\u{1F522}",Colors:"\u{1F3A8}",Shapes:"\u{1F537}",Animals:"\u{1F43E}"};
-    Object.entries(byCatDrill).forEach(([cat,citems])=>{
-      h+='<div style="font-size:9px;font-weight:700;color:#c2410c;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px">'+(catE2[cat]||"")+' '+cat+'</div>';
-      h+='<div class="mast-jgrid" style="margin-bottom:10px">';
-      citems.forEach(it=>{
-        const con=it.consecutive_correct||0;
-        let dots="";for(let d=0;d<5;d++) dots+='<div class="mast-jdot" style="'+(d<con?"background:#c2410c;":"")+'"></div>';
-        h+='<div class="mast-jcard"><div class="mast-jcard-img">'+mastJulianVis(it)+'</div>';
-        h+='<div class="mast-jcard-name">'+it.prompt+'</div>';
-        h+='<div class="mast-jcard-tally">'+dots+'</div></div>';
-      });
+
+    // Score buttons (log mode)
+    if(mastLogMode){
+      h+='<div class="mast-slide-score">';
+      h+='<button class="mast-slide-score-btn'+(sc==="c"?" sel-c":"")+'" onclick="mastSlideScore(\''+it.id+'\',\'c\')">\u{2713}</button>';
+      h+='<button class="mast-slide-score-btn'+(sc==="m"?" sel-m":"")+'" onclick="mastSlideScore(\''+it.id+'\',\'m\')">\u{2717}</button>';
+      h+='<button class="mast-slide-score-btn'+(sc==="~"?" sel-t":"")+'" onclick="mastSlideScore(\''+it.id+'\',\'~\')">~</button>';
       h+='</div>';
-    });
+    }
+
+    h+='</div>'; // close slide
+
+    // Navigation arrows + counter
+    h+='<div class="mast-slide-nav">';
+    h+='<button class="mast-slide-arrow" onclick="mastSlidePrev()"'+(mastSlideIdx<=0?' disabled':'')+'">\u{2190}</button>';
+    h+='<span class="mast-slide-counter">'+(mastSlideIdx+1)+' / '+due.length+'</span>';
+    h+='<button class="mast-slide-arrow" onclick="mastSlideNext()"'+(mastSlideIdx>=due.length-1?' disabled':'')+'">\u{2192}</button>';
     h+='</div>';
-    h+='<div class="mast-print-bar">';
-    h+='<button class="mast-print-btn" onclick="mastPrintDrill()">\u{1F5A8}\u{FE0F} Print</button>';
-    h+='<button class="mast-log-btn" onclick="mastStartLog()" style="margin-left:6px">\u{1F4DD} Log</button></div>';
+
+    h+='</div>'; // close padding
+
+    // Bottom bar
+    if(mastLogMode){
+      const scored=Object.keys(mastLogScores).length;
+      const allScored=scored===due.length;
+      h+='<div class="mast-save-bar"><span class="mast-save-count">'+scored+' / '+due.length+' scored</span>';
+      h+='<button class="mast-save-btn" onclick="mastSaveResults()"'+(allScored?'':' disabled')+'>Save Results</button></div>';
+      h+='<div style="padding:8px 14px;text-align:center"><button class="mast-log-btn" onclick="mastCancelLog()">Cancel</button></div>';
+    } else {
+      h+='<div class="mast-print-bar">';
+      h+='<button class="mast-print-btn" onclick="mastPrintDrill()">\u{1F5A8}\u{FE0F} Print</button>';
+      h+='<button class="mast-log-btn" onclick="mastStartLog()" style="margin-left:6px">\u{1F4DD} Log</button></div>';
+    }
   } else if(mastLogMode){
     // ── STANDARD LOGGING MODE ──
     h+='<div style="padding:6px 14px 2px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted)">Tap \u{2713} \u{2717} or ~ for each item</div></div>';
