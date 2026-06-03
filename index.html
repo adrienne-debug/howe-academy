@@ -3327,10 +3327,11 @@ function mastSaveResults(){
   let changes=0;
   due.forEach(dueItem=>{
     const score=mastLogScores[dueItem.id];
-    if(!score) return;
+    if(!score||score==="shown") return; // "shown" already saved by mastSlideShown
     // Find in items array
     const item=items.find(i=>i.id===dueItem.id);
     if(!item) return;
+    if(item.status==="introduction") return; // intro items don't get ladder scoring
 
     const oldTier=item.tier||"daily";
     const oldIdx=TIER_LADDER.indexOf(oldTier);
@@ -3355,7 +3356,8 @@ function mastSaveResults(){
     changes++;
   });
 
-  if(!changes){ alert("No items scored"); return; }
+  const hasShown=Object.values(mastLogScores).some(v=>v==="shown");
+  if(!changes&&!hasShown){ alert("No items scored"); return; }
 
   // Update printLog with today if not present
   let pl=masteryData.printLog||[];
@@ -3438,6 +3440,37 @@ function mastSetJulianCat(s){ mastAddJulianCat=s; _mastRe(); }
 function mastSlideNext(){ mastSlideIdx++; _mastRe(); }
 function mastSlidePrev(){ mastSlideIdx--; _mastRe(); }
 function mastSlideScore(id,val){ mastLogScores[id]=val; mastSlideIdx++; _mastRe(); }
+
+function mastSlideShown(id){
+  // Fill the next tally dot for an introduction item
+  let items=masteryData[masteryKid];
+  if(!items) return;
+  if(!Array.isArray(items)) items=Object.values(items);
+  const item=items.find(i=>i.id===id);
+  if(!item) return;
+
+  const dots=(item.tally_dots||0)+1;
+  item.tally_dots=dots;
+
+  // After 5 dots, promote to ladder
+  if(dots>=5){
+    item.status="active";
+    item.tier="daily";
+    item.cycle=1;
+    item.consecutive_correct=0;
+    item.tally_dots=5;
+  }
+
+  // Save to Firebase
+  masteryData[masteryKid]=items;
+  if(db) db.ref("mastery/"+masteryKid).set(items);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+
+  // Mark as handled for this session so we don't double-tap
+  mastLogScores[id]="shown";
+  mastSlideIdx++;
+  _mastRe();
+}
 
 function mastUploadImage(file){
   if(!file) return;
@@ -3689,19 +3722,43 @@ function _renderMasteryInner(el){
 
     h+='<div class="mast-slide-name">'+it.prompt+'</div>';
 
+    const isIntro=it.status==="introduction";
+    const tallyCount=isIntro?(it.tally_dots||0):(it.consecutive_correct||0);
+    const tallyMax=isIntro?5:3;
+
     // Tally dots
-    const con=it.consecutive_correct||0;
     h+='<div class="mast-slide-tally">';
-    for(let d=0;d<5;d++) h+='<div class="mast-slide-dot'+(d<con?" filled":"")+'"></div>';
+    for(let d=0;d<tallyMax;d++) h+='<div class="mast-slide-dot'+(d<tallyCount?" filled":"")+'"></div>';
+    if(isIntro) h+='<span style="font-size:14px;margin-left:4px">\u{2B50}</span>';
     h+='</div>';
 
-    // Score buttons (log mode)
+    if(isIntro){
+      // Introduction phase label
+      h+='<div style="font-size:10px;color:#9a3412;font-weight:600;margin-top:4px">'+tallyCount+'/5 days shown'+(tallyCount>=5?' \u{2014} entering the ladder!':'')+'</div>';
+    } else {
+      // Ladder phase label
+      h+='<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:4px">'+(MAST_TIER_LBL[it.tier]||it.tier)+' \u{00B7} '+tallyCount+'/3 streak</div>';
+    }
+
+    // Buttons based on mode and phase
     if(mastLogMode){
-      h+='<div class="mast-slide-score">';
-      h+='<button class="mast-slide-score-btn'+(sc==="c"?" sel-c":"")+'" onclick="mastSlideScore(\''+it.id+'\',\'c\')">\u{2713}</button>';
-      h+='<button class="mast-slide-score-btn'+(sc==="m"?" sel-m":"")+'" onclick="mastSlideScore(\''+it.id+'\',\'m\')">\u{2717}</button>';
-      h+='<button class="mast-slide-score-btn'+(sc==="~"?" sel-t":"")+'" onclick="mastSlideScore(\''+it.id+'\',\'~\')">~</button>';
-      h+='</div>';
+      const shown=sc==="shown";
+      if(isIntro&&!shown){
+        // Introduction: just a "Shown" button to fill next dot
+        h+='<div style="margin-top:14px">';
+        h+='<button class="mast-slide-score-btn" style="width:auto;padding:12px 32px;font-size:16px;background:#fff7ed;border-color:#c2410c;color:#c2410c;border-radius:14px" onclick="mastSlideShown(\''+it.id+'\')">\u{1F441}\u{FE0F} Shown Today</button>';
+        h+='</div>';
+      } else if(isIntro&&shown){
+        // Already marked shown
+        h+='<div style="margin-top:14px;font-size:13px;font-weight:700;color:#16a34a">\u{2713} Marked!</div>';
+      } else {
+        // Ladder: score buttons
+        h+='<div class="mast-slide-score">';
+        h+='<button class="mast-slide-score-btn'+(sc==="c"?" sel-c":"")+'" onclick="mastSlideScore(\''+it.id+'\',\'c\')">\u{2713}</button>';
+        h+='<button class="mast-slide-score-btn'+(sc==="m"?" sel-m":"")+'" onclick="mastSlideScore(\''+it.id+'\',\'m\')">\u{2717}</button>';
+        h+='<button class="mast-slide-score-btn'+(sc==="~"?" sel-t":"")+'" onclick="mastSlideScore(\''+it.id+'\',\'~\')">~</button>';
+        h+='</div>';
+      }
     }
 
     h+='</div>'; // close slide
