@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:ital,wght@0,600;0,700;1,600&family=Nunito:wght@400;600;700;800;900&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -403,6 +404,13 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .mast-add-submit{padding:10px 20px;border-radius:10px;border:none;background:var(--header);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;width:100%;margin-top:8px}
 .mast-add-submit:disabled{background:#d1d5db;cursor:not-allowed}
 .mast-add-preview{margin-top:8px;padding:8px 10px;background:#f8f7f4;border-radius:8px;font-size:11px;color:var(--muted)}
+.mast-img-upload{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.mast-img-btn{padding:7px 14px;border-radius:8px;border:1.5px dashed var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;color:var(--muted)}
+.mast-img-btn:active{background:#f3f1ee}
+.mast-img-preview{width:44px;height:44px;border-radius:8px;border:1.5px solid var(--border);object-fit:cover}
+.mast-img-uploading{font-size:10px;color:var(--muted);font-weight:600}
+.mast-card-img{width:100%;max-height:48px;object-fit:contain;border-radius:4px}
+.mast-jcard-photo{width:50px;height:50px;object-fit:cover;border-radius:6px}
 
 /* Mastery print */
 .mast-print-page{display:none}
@@ -3344,6 +3352,8 @@ let mastAddSubject="AAS";
 let mastAddType="spelling_word";
 let mastAddJulianCat="Letters";
 let mastAddCustomSubject="";
+let mastAddImageUrl="";
+let mastAddUploading=false;
 
 const MAST_SUBJECTS={
   lincoln:["AAS"],
@@ -3363,9 +3373,37 @@ const MAST_ITEM_TYPES=[
   {id:"science_vocab",label:"Science Vocab",mode:"oral",icon:"\u{1F52C}"},
 ];
 
-function mastOpenAdd(){ mastAddMode=true; const c=document.getElementById("content"); if(c) renderMastery(c); }
-function mastCloseAdd(){ mastAddMode=false; const c=document.getElementById("content"); if(c) renderMastery(c); }
-function mastAddSetTab(t){ mastAddTab=t; const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastOpenAdd(){ mastAddMode=true; mastAddImageUrl=""; const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastCloseAdd(){ mastAddMode=false; mastAddImageUrl=""; const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastAddSetTab(t){ mastAddTab=t; mastAddImageUrl=""; const c=document.getElementById("content"); if(c) renderMastery(c); }
+
+function mastUploadImage(file){
+  if(!file) return;
+  if(file.size>5*1024*1024){ alert("Image too large (max 5MB)"); return; }
+  mastAddUploading=true;
+  const c=document.getElementById("content"); if(c) renderMastery(c);
+
+  const storage=firebase.storage();
+  const ts=Date.now();
+  const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,"_");
+  const path="mastery_images/"+masteryKid+"/"+ts+"_"+safeName;
+  const ref=storage.ref(path);
+
+  ref.put(file).then(snapshot=>{
+    return snapshot.ref.getDownloadURL();
+  }).then(url=>{
+    mastAddImageUrl=url;
+    mastAddUploading=false;
+    const c=document.getElementById("content"); if(c) renderMastery(c);
+  }).catch(err=>{
+    console.error("Upload failed:",err);
+    alert("Upload failed: "+err.message);
+    mastAddUploading=false;
+    const c=document.getElementById("content"); if(c) renderMastery(c);
+  });
+}
+
+function mastRemoveImage(){ mastAddImageUrl=""; const c=document.getElementById("content"); if(c) renderMastery(c); }
 
 function mastAddItems(){
   const isJulian=masteryKid==="julian";
@@ -3412,6 +3450,8 @@ function mastAddItems(){
       consecutive_correct:0,
       cycle:1
     };
+    // Attach image if single-add with image
+    if(mastAddTab==="single"&&mastAddImageUrl&&prompts.length===1) item.imageUrl=mastAddImageUrl;
     items.push(item);
     existingPrompts.add(p.toLowerCase());
     added++;
@@ -3510,6 +3550,21 @@ function renderMastery(el){
     if(mastAddTab==="single"){
       h+='<div class="mast-add-label">'+(isJ?"Item":"Word / Rule")+'</div>';
       h+='<input class="mast-add-input" id="mast-add-single" placeholder="'+(isJ?"e.g. Dog":"e.g. splash")+'" autocapitalize="off" autocorrect="off">';
+
+      // Image upload (single mode only)
+      h+='<div class="mast-add-label" style="margin-top:10px">Image (optional)</div>';
+      h+='<div class="mast-img-upload">';
+      if(mastAddUploading){
+        h+='<span class="mast-img-uploading">\u{23F3} Uploading...</span>';
+      } else if(mastAddImageUrl){
+        h+='<img src="'+mastAddImageUrl+'" class="mast-img-preview">';
+        h+='<button class="mast-img-btn" onclick="mastRemoveImage()">\u{2715} Remove</button>';
+      } else {
+        h+='<input type="file" id="mast-img-file" accept="image/*" style="display:none" onchange="mastUploadImage(this.files[0])">';
+        h+='<button class="mast-img-btn" onclick="document.getElementById(\'mast-img-file\').click()">\u{1F4F7} Add Photo</button>';
+        h+='<span style="font-size:10px;color:var(--muted)">or take a photo on phone</span>';
+      }
+      h+='</div>';
     } else {
       h+='<div class="mast-add-label">'+(isJ?"Items":"Words / Rules")+' (comma or newline separated)</div>';
       h+='<textarea class="mast-add-textarea" id="mast-add-batch" placeholder="'+(isJ?"Dog, Elephant, Horse":"splash, crash, brush")+'"></textarea>';
@@ -3622,10 +3677,11 @@ function renderMastery(el){
       h+='<div class="mast-jgrid">';
       citems.forEach(i=>{
         let vis=i.emoji||"";
-        if(!vis&&MAST_ANIMAL_EMOJI[i.prompt]) vis=MAST_ANIMAL_EMOJI[i.prompt];
-        if(cat==="Colors"&&MAST_COLOR_MAP[i.prompt]) vis='<div style="width:24px;height:24px;border-radius:50%;background:'+MAST_COLOR_MAP[i.prompt]+';border:1.5px solid rgba(0,0,0,0.1);margin:0 auto"></div>';
-        else if(cat==="Shapes") vis=({Circle:"\u{1F534}",Square:"\u{1F7E7}",Triangle:"\u{1F53A}"})[i.prompt]||i.prompt.charAt(0);
-        else if(!vis) vis='<span style="font-size:18px;font-weight:800;color:#c2410c">'+i.prompt+'</span>';
+        if(i.imageUrl) vis='<img src="'+i.imageUrl+'" class="mast-jcard-photo">';
+        else if(!vis&&MAST_ANIMAL_EMOJI[i.prompt]) vis=MAST_ANIMAL_EMOJI[i.prompt];
+        if(!i.imageUrl&&cat==="Colors"&&MAST_COLOR_MAP[i.prompt]) vis='<div style="width:24px;height:24px;border-radius:50%;background:'+MAST_COLOR_MAP[i.prompt]+';border:1.5px solid rgba(0,0,0,0.1);margin:0 auto"></div>';
+        else if(!i.imageUrl&&cat==="Shapes") vis=({Circle:"\u{1F534}",Square:"\u{1F7E7}",Triangle:"\u{1F53A}"})[i.prompt]||vis||i.prompt.charAt(0);
+        else if(!vis&&!i.imageUrl) vis='<span style="font-size:18px;font-weight:800;color:#c2410c">'+i.prompt+'</span>';
         const con=i.consecutive_correct||0;
         let dots="";for(let d=0;d<5;d++) dots+='<div class="mast-jdot" style="'+(d<con?"background:#c2410c;":"")+'"></div>';
         h+='<div class="mast-jcard"><div class="mast-jcard-img">'+vis+'</div><div class="mast-jcard-name">'+i.prompt+'</div><div class="mast-jcard-tally">'+dots+'</div></div>';
@@ -3650,7 +3706,9 @@ function renderMastery(el){
     ti.forEach(i=>{
       const mode=i.review_mode||"oral";
       const ml={written:"\u{270F}\u{FE0F} Written",recite:"\u{1F4E2} Recite",oral:"\u{1F5E3}\u{FE0F} Oral",flash:"\u{1F0CF} Flash"}[mode]||mode;
-      h+='<div class="mast-irow"><span class="mast-irow-prompt">'+i.prompt+'</span>';
+      h+='<div class="mast-irow">';
+      if(i.imageUrl) h+='<img src="'+i.imageUrl+'" style="width:24px;height:24px;border-radius:4px;object-fit:cover;flex-shrink:0">';
+      h+='<span class="mast-irow-prompt">'+i.prompt+'</span>';
       if(i.drop_count) h+='<span class="mast-irow-drop">\u{2B07}'+i.drop_count+'</span>';
       h+='<span class="mast-irow-mode '+mode+'">'+ml+'</span></div>';
     });
