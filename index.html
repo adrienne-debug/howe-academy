@@ -631,6 +631,9 @@ let paceEditPlan=null;
 let masteryData={};
 let masteryKid="lincoln";
 let masteryCollapsed={};
+let mastAIKey="";
+let mastGeneratedCache={}; // {itemId_date: {problem:"...",answer:"..."}}
+let mastGenerating={}; // {itemId: true} while API call in flight
 let mastView="drill"; // "drill" or "scores"
 let mastScoreItemId=null; // for per-item history
 let mastManualScore=false;
@@ -800,11 +803,11 @@ function initFb() {
     });
     db.ref("mastery").on("value",s=>{
       const v=s.val()||{};
-      // Preserve history separately (it's under mastery/history/ in Firebase)
       masteryData={...v};
       try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
       if(tab==="mastery"){const el=document.getElementById("content");if(el)renderMastery(el);}
     });
+    db.ref("config/anthropic_key").once("value",s=>{ if(s.val()) mastAIKey=s.val(); });
     db.ref("att_overrides").on("value",s=>{
       if(s.val()) attOverrides=s.val();
       try{localStorage.setItem("ha_att_overrides",JSON.stringify(attOverrides));}catch(e){}
@@ -3546,9 +3549,57 @@ const MAST_ITEM_TYPES=[
   {id:"phonogram",label:"Phonogram",mode:"oral",icon:"\u{1F524}"},
   {id:"geography_fact",label:"Geography Fact",mode:"oral",icon:"\u{1F30D}"},
   {id:"science_vocab",label:"Science Vocab",mode:"oral",icon:"\u{1F52C}"},
+  {id:"math_concept",label:"Math Concept",mode:"written",icon:"\u{1F9EE}",generated:true},
+  {id:"grammar_concept",label:"Grammar Concept",mode:"written",icon:"\u{1F4D3}",generated:true},
+  {id:"reading_concept",label:"Reading Concept",mode:"written",icon:"\u{1F4D6}",generated:true},
 ];
 
 function _mastRe(){ const c=document.getElementById("content"); if(c) renderMastery(c); }
+
+function mastGetGenerated(item){
+  const today=new Date().toISOString().slice(0,10);
+  const key=item.id+"_"+today;
+
+  // Check cache
+  if(mastGeneratedCache[key]) return mastGeneratedCache[key];
+
+  // Check Firebase cache
+  const fbCached=masteryData._genCache&&masteryData._genCache[item.id];
+  if(fbCached&&fbCached.date===today){ mastGeneratedCache[key]=fbCached; return fbCached; }
+
+  // Generate if not already in flight
+  if(!mastGenerating[item.id]&&mastAIKey){
+    mastGenerating[item.id]=true;
+    const kidLabel=SL_KLBL[masteryKid]||masteryKid;
+    const prompt="Generate exactly ONE practice problem for a homeschool student.\n\nStudent: "+kidLabel+"\nConcept: "+item.prompt+"\nRules/Instructions: "+(item.generationRule||item.definition||"Generate an age-appropriate problem for this concept")+"\n\nRespond with ONLY a JSON object, no markdown, no explanation:\n{\"problem\": \"the problem text the student sees\", \"answer\": \"the correct answer\"}";
+
+    fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","x-api-key":mastAIKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:200,messages:[{role:"user",content:prompt}]})
+    }).then(r=>r.json()).then(data=>{
+      try{
+        const txt=data.content[0].text.trim();
+        const parsed=JSON.parse(txt);
+        const entry={date:today,problem:parsed.problem,answer:parsed.answer};
+        mastGeneratedCache[key]=entry;
+        // Cache in Firebase so other devices see the same problem today
+        if(db) db.ref("mastery/_genCache/"+item.id).set(entry);
+        if(!masteryData._genCache) masteryData._genCache={};
+        masteryData._genCache[item.id]=entry;
+      }catch(e){ console.error("Parse error:",e,data); mastGeneratedCache[key]={date:today,problem:"[Generation error — tap to retry]",answer:""}; }
+      delete mastGenerating[item.id];
+      _mastRe();
+    }).catch(err=>{
+      console.error("API error:",err);
+      mastGeneratedCache[key]={date:today,problem:"[API error — check connection]",answer:""};
+      delete mastGenerating[item.id];
+      _mastRe();
+    });
+  }
+
+  return null; // Still loading
+}
 let mastExpandedId=null;
 let mastSlideIdx=0;
 let mastEditId=null;
@@ -3747,10 +3798,16 @@ function mastAddItems(){
       consecutive_correct:0,
       cycle:1
     };
-    // Attach definition + image for single-add
+    // Attach definition/rule + image for single-add
     if(mastAddTab==="single"&&prompts.length===1){
-      const defInput=document.getElementById("mast-add-def");
-      if(defInput&&defInput.value.trim()){ item.definition=defInput.value.trim(); item.answer=defInput.value.trim(); }
+      const typeInfo=MAST_ITEM_TYPES.find(t=>t.id===mastAddType);
+      if(typeInfo&&typeInfo.generated){
+        const ruleInput=document.getElementById("mast-add-rule");
+        if(ruleInput&&ruleInput.value.trim()){ item.generationRule=ruleInput.value.trim(); item.generated=true; }
+      } else {
+        const defInput=document.getElementById("mast-add-def");
+        if(defInput&&defInput.value.trim()){ item.definition=defInput.value.trim(); item.answer=defInput.value.trim(); }
+      }
       if(mastAddImageUrl) item.imageUrl=mastAddImageUrl;
     }
     items.push(item);
@@ -4085,8 +4142,15 @@ function _renderMasteryInner(el){
       h+='<div class="mast-add-label">'+(isJ?"Item":"Word / Rule")+'</div>';
       h+='<input class="mast-add-input" id="mast-add-single" placeholder="'+(isJ?"e.g. Dog":"e.g. splash")+'" autocapitalize="off" autocorrect="off">';
 
-      h+='<div class="mast-add-label" style="margin-top:10px">Definition / Answer (optional)</div>';
-      h+='<input class="mast-add-input" id="mast-add-def" placeholder="'+(isJ?"e.g. A big cat with a mane":"e.g. The Floss Rule: ff, ll, ss after a short vowel")+'">';
+      const isGenType=MAST_ITEM_TYPES.find(t=>t.id===mastAddType&&t.generated);
+      if(isGenType){
+        h+='<div class="mast-add-label" style="margin-top:10px">Generation Rule <span style="color:#dc2626">*</span></div>';
+        h+='<textarea class="mast-add-textarea" id="mast-add-rule" placeholder="e.g. Generate a 3-digit subtraction problem that requires borrowing. Answer should be positive. Show the problem in vertical format." style="min-height:70px"></textarea>';
+        h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Tell the AI exactly how to generate problems. Be specific about difficulty, format, and constraints.</div>';
+      } else {
+        h+='<div class="mast-add-label" style="margin-top:10px">Definition / Answer (optional)</div>';
+        h+='<input class="mast-add-input" id="mast-add-def" placeholder="'+(isJ?"e.g. A big cat with a mane":"e.g. The Floss Rule: ff, ll, ss after a short vowel")+'">';
+      }
 
       // Image upload (single mode only)
       h+='<div class="mast-add-label" style="margin-top:10px">Image (optional)</div>';
@@ -4224,10 +4288,18 @@ function _renderMasteryInner(el){
       const sc=mastLogScores[it.id]||"";
       const isW=it.review_mode==="written";
       const mi=isW?(i+1)+".":({recite:"\u{1F4E2}",oral:"\u{1F5E3}\u{FE0F}",flash:"\u{1F0CF}"}[it.review_mode]||"\u{1F5E3}\u{FE0F}");
-      h+='<div class="mast-log-item">';
-      h+='<span class="mast-log-num">'+mi+'</span>';
-      h+='<span class="mast-log-prompt">'+it.prompt+'</span>';
-      h+='<div class="mast-log-btns">';
+      const isGen=it.generated;
+      const gen=isGen?mastGetGenerated(it):null;
+      h+='<div class="mast-log-item"'+(isGen?' style="flex-direction:column;align-items:stretch"':'')+'>';
+      if(isGen){
+        h+='<div style="display:flex;align-items:center;gap:8px;width:100%"><span class="mast-log-num">'+(i+1)+'.</span><span style="font-size:10px;color:var(--muted);font-weight:600">\u{1F9EE} '+it.prompt+'</span></div>';
+        h+='<div style="font-size:14px;font-weight:600;padding:4px 0 6px 26px;white-space:pre-wrap">'+(gen?gen.problem:"\u{23F3} Generating...")+'</div>';
+        h+='<div style="display:flex;gap:6px;padding-left:26px">';
+      } else {
+        h+='<span class="mast-log-num">'+mi+'</span>';
+        h+='<span class="mast-log-prompt">'+it.prompt+'</span>';
+        h+='<div class="mast-log-btns">';
+      }
       h+='<button class="mast-score-btn'+(sc==="c"?" sel-c":"")+'" onclick="mastScore(\''+it.id+'\',\'c\')">\u{2713}</button>';
       h+='<button class="mast-score-btn'+(sc==="m"?" sel-m":"")+'" onclick="mastScore(\''+it.id+'\',\'m\')">\u{2717}</button>';
       h+='<button class="mast-score-btn'+(sc==="~"?" sel-t":"")+'" onclick="mastScore(\''+it.id+'\',\'~\')">~</button>';
@@ -4244,12 +4316,31 @@ function _renderMasteryInner(el){
       h+='<div class="mast-section"><div class="mast-section-lbl">\u{270F}\u{FE0F} Written <span class="cnt">'+dueW.length+'</span></div>';
       dueW.forEach((it,i)=>{
         const tc=MAST_TIER_COL[it.tier]||"#666";
-        const hasDetail=it.answer&&it.answer!==it.prompt||it.definition||it.imageUrl;
-        h+='<div class="mast-ditem'+(hasDetail?" mast-ditem-tap":"")+'"'+(hasDetail?' onclick="mastToggleExpand(\''+it.id+'\')"':'')+'>';
-        h+='<span class="mast-ditem-num">'+(i+1)+'.</span><span class="mast-ditem-prompt">'+it.prompt+'</span>';
-        if(it.drop_count) h+='<span class="mast-irow-drop">\u{2B07}'+it.drop_count+'</span>';
-        h+='<span class="mast-ditem-tier" style="background:'+tc+'15;color:'+tc+'">'+(MAST_TIER_LBL[it.tier]||it.tier)+'</span></div>';
-        if(hasDetail) h+=mastExpandHtml(it);
+        const isGen=it.generated;
+        const gen=isGen?mastGetGenerated(it):null;
+
+        if(isGen){
+          // Concept item — show generated problem
+          h+='<div class="mast-ditem" style="flex-direction:column;align-items:stretch;gap:4px">';
+          h+='<div style="display:flex;align-items:center;gap:8px">';
+          h+='<span class="mast-ditem-num">'+(i+1)+'.</span>';
+          h+='<span style="font-size:10px;color:var(--muted);font-weight:600">\u{1F9EE} '+it.prompt+'</span>';
+          h+='<span class="mast-ditem-tier" style="background:'+tc+'15;color:'+tc+';margin-left:auto">'+(MAST_TIER_LBL[it.tier]||it.tier)+'</span></div>';
+          if(gen){
+            h+='<div style="font-size:14px;font-weight:600;padding:6px 0 2px 26px;white-space:pre-wrap">'+gen.problem+'</div>';
+          } else {
+            h+='<div style="font-size:11px;color:var(--muted);padding:4px 0 2px 26px">\u{23F3} Generating problem...</div>';
+          }
+          h+='</div>';
+        } else {
+          // Regular item
+          const hasDetail=it.answer&&it.answer!==it.prompt||it.definition||it.imageUrl;
+          h+='<div class="mast-ditem'+(hasDetail?" mast-ditem-tap":"")+'"'+(hasDetail?' onclick="mastToggleExpand(\''+it.id+'\')"':'')+'>';
+          h+='<span class="mast-ditem-num">'+(i+1)+'.</span><span class="mast-ditem-prompt">'+it.prompt+'</span>';
+          if(it.drop_count) h+='<span class="mast-irow-drop">\u{2B07}'+it.drop_count+'</span>';
+          h+='<span class="mast-ditem-tier" style="background:'+tc+'15;color:'+tc+'">'+(MAST_TIER_LBL[it.tier]||it.tier)+'</span></div>';
+          if(hasDetail) h+=mastExpandHtml(it);
+        }
       });
       h+='</div>';
     }
