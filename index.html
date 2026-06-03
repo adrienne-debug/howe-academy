@@ -3385,6 +3385,15 @@ const MAST_ITEM_TYPES=[
 function _mastRe(){ const c=document.getElementById("content"); if(c) renderMastery(c); }
 let mastExpandedId=null;
 function mastToggleExpand(id){ mastExpandedId=mastExpandedId===id?null:id; _mastRe(); }
+function mastJulianVis(it){
+  if(it.imageUrl) return '<img src="'+it.imageUrl+'" class="mast-jcard-photo">';
+  if(it.emoji) return it.emoji;
+  if(MAST_ANIMAL_EMOJI[it.prompt]) return MAST_ANIMAL_EMOJI[it.prompt];
+  const cat=it.subject||"";
+  if(cat==="Colors"&&MAST_COLOR_MAP[it.prompt]) return '<div style="width:36px;height:36px;border-radius:50%;background:'+MAST_COLOR_MAP[it.prompt]+';border:1.5px solid rgba(0,0,0,0.1);margin:0 auto"></div>';
+  if(cat==="Shapes") return ({Circle:"\u{1F534}",Square:"\u{1F7E7}",Triangle:"\u{1F53A}"})[it.prompt]||it.prompt.charAt(0);
+  return '<span style="font-size:22px;font-weight:800;color:#c2410c">'+it.prompt+'</span>';
+}
 function mastExpandHtml(it){
   const open=mastExpandedId===it.id;
   let inner="";
@@ -3626,8 +3635,61 @@ function _renderMasteryInner(el){
   h+='<div class="mast-drill-pnum">Print #'+pn+'</div></div>';
 
   if(!due.length) h+='<div class="mast-none">Nothing due today \u{1F389}</div>';
-  else if(mastLogMode){
-    // ── LOGGING MODE ──
+  else if(masteryKid==="julian"&&mastLogMode){
+    // ── JULIAN LOGGING MODE (visual cards with score buttons) ──
+    h+='<div style="padding:6px 14px 2px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted)">Tap \u{2713} \u{2717} or ~ for each card</div></div>';
+    h+='<div style="padding:8px 14px">';
+    const byCatLog={};
+    due.forEach(it=>{const c=it.subject||"Other";if(!byCatLog[c])byCatLog[c]=[];byCatLog[c].push(it);});
+    const catE={Letters:"\u{1F524}",Numbers:"\u{1F522}",Colors:"\u{1F3A8}",Shapes:"\u{1F537}",Animals:"\u{1F43E}"};
+    Object.entries(byCatLog).forEach(([cat,citems])=>{
+      h+='<div style="font-size:9px;font-weight:700;color:#c2410c;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px">'+(catE[cat]||"")+' '+cat+'</div>';
+      h+='<div class="mast-jgrid" style="margin-bottom:12px">';
+      citems.forEach(it=>{
+        const sc=mastLogScores[it.id]||"";
+        const border=sc==="c"?"#16a34a":sc==="m"?"#dc2626":sc==="~"?"#d97706":"#fed7aa";
+        const bg=sc==="c"?"#f0fdf4":sc==="m"?"#fef2f2":sc==="~"?"#fffbeb":"#fff7ed";
+        h+='<div class="mast-jcard" style="border-color:'+border+';background:'+bg+'">';
+        h+='<div class="mast-jcard-img">'+mastJulianVis(it)+'</div>';
+        h+='<div class="mast-jcard-name">'+it.prompt+'</div>';
+        h+='<div style="display:flex;gap:3px;justify-content:center;margin-top:4px">';
+        h+='<button class="mast-score-btn'+(sc==="c"?" sel-c":"")+'" style="width:24px;height:24px;font-size:11px" onclick="mastScore(\''+it.id+'\',\'c\')">\u{2713}</button>';
+        h+='<button class="mast-score-btn'+(sc==="m"?" sel-m":"")+'" style="width:24px;height:24px;font-size:11px" onclick="mastScore(\''+it.id+'\',\'m\')">\u{2717}</button>';
+        h+='<button class="mast-score-btn'+(sc==="~"?" sel-t":"")+'" style="width:24px;height:24px;font-size:11px" onclick="mastScore(\''+it.id+'\',\'~\')">~</button>';
+        h+='</div></div>';
+      });
+      h+='</div>';
+    });
+    h+='</div>';
+    const scored=Object.keys(mastLogScores).length;
+    const allScored=scored===due.length;
+    h+='<div class="mast-save-bar"><span class="mast-save-count">'+scored+' / '+due.length+' scored</span>';
+    h+='<button class="mast-save-btn" onclick="mastSaveResults()"'+(allScored?'':' disabled')+'>Save Results</button></div>';
+    h+='<div style="padding:8px 14px;text-align:center"><button class="mast-log-btn" onclick="mastCancelLog()">Cancel</button></div>';
+  } else if(masteryKid==="julian"){
+    // ── JULIAN NORMAL VIEW (visual flashcards) ──
+    h+='<div style="padding:8px 14px">';
+    const byCatDrill={};
+    due.forEach(it=>{const c=it.subject||"Other";if(!byCatDrill[c])byCatDrill[c]=[];byCatDrill[c].push(it);});
+    const catE2={Letters:"\u{1F524}",Numbers:"\u{1F522}",Colors:"\u{1F3A8}",Shapes:"\u{1F537}",Animals:"\u{1F43E}"};
+    Object.entries(byCatDrill).forEach(([cat,citems])=>{
+      h+='<div style="font-size:9px;font-weight:700;color:#c2410c;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px">'+(catE2[cat]||"")+' '+cat+'</div>';
+      h+='<div class="mast-jgrid" style="margin-bottom:10px">';
+      citems.forEach(it=>{
+        const con=it.consecutive_correct||0;
+        let dots="";for(let d=0;d<5;d++) dots+='<div class="mast-jdot" style="'+(d<con?"background:#c2410c;":"")+'"></div>';
+        h+='<div class="mast-jcard"><div class="mast-jcard-img">'+mastJulianVis(it)+'</div>';
+        h+='<div class="mast-jcard-name">'+it.prompt+'</div>';
+        h+='<div class="mast-jcard-tally">'+dots+'</div></div>';
+      });
+      h+='</div>';
+    });
+    h+='</div>';
+    h+='<div class="mast-print-bar">';
+    h+='<button class="mast-print-btn" onclick="mastPrintDrill()">\u{1F5A8}\u{FE0F} Print</button>';
+    h+='<button class="mast-log-btn" onclick="mastStartLog()" style="margin-left:6px">\u{1F4DD} Log</button></div>';
+  } else if(mastLogMode){
+    // ── STANDARD LOGGING MODE ──
     h+='<div style="padding:6px 14px 2px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted)">Tap \u{2713} \u{2717} or ~ for each item</div></div>';
     due.forEach((it,i)=>{
       const sc=mastLogScores[it.id]||"";
@@ -3644,13 +3706,11 @@ function _renderMasteryInner(el){
     });
     const scored=Object.keys(mastLogScores).length;
     const allScored=scored===due.length;
-    h+='<div class="mast-save-bar">';
-    h+='<span class="mast-save-count">'+scored+' / '+due.length+' scored</span>';
-    h+='<button class="mast-save-btn" onclick="mastSaveResults()"'+(allScored?'':' disabled')+'>Save Results</button>';
-    h+='</div>';
+    h+='<div class="mast-save-bar"><span class="mast-save-count">'+scored+' / '+due.length+' scored</span>';
+    h+='<button class="mast-save-btn" onclick="mastSaveResults()"'+(allScored?'':' disabled')+'>Save Results</button></div>';
     h+='<div style="padding:8px 14px;text-align:center"><button class="mast-log-btn" onclick="mastCancelLog()">Cancel</button></div>';
   } else {
-    // ── NORMAL VIEW ──
+    // ── STANDARD NORMAL VIEW ──
     if(dueW.length){
       h+='<div class="mast-section"><div class="mast-section-lbl">\u{270F}\u{FE0F} Written <span class="cnt">'+dueW.length+'</span></div>';
       dueW.forEach((it,i)=>{
