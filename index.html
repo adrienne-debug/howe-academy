@@ -620,6 +620,12 @@ let masteryKid="lincoln";
 let masteryCollapsed={};
 let mastView="drill"; // "drill" or "scores"
 let mastScoreItemId=null; // for per-item history
+let mastManualScore=false;
+let mastManualDate="";
+let mastManualC=0;
+let mastManualM=0;
+let mastManualT=0;
+let mastManualS=0;
 let histTab="log"; // "log" | "attendance"
 let attEditUnlocked=false;
 const ATT_PIN="1234"; // change to preferred PIN
@@ -3355,7 +3361,56 @@ let mastLogMode=false;
 let mastLogScores={};  // {itemId: "c"|"m"|"~"}
 
 function mastSetKid(k){ masteryKid=k; mastLogMode=false; mastLogScores={}; mastSlideIdx=0; mastScoreItemId=null; const c=document.getElementById("content"); if(c) renderMastery(c); }
-function mastSetView(v){ mastView=v; mastScoreItemId=null; _mastRe(); }
+function mastSetView(v){ mastView=v; mastScoreItemId=null; mastManualScore=false; _mastRe(); }
+function mastOpenManualScore(){ mastManualScore=true; mastManualDate=new Date().toISOString().slice(0,10); mastManualC=0; mastManualM=0; mastManualT=0; mastManualS=0; _mastRe(); }
+function mastCloseManualScore(){ mastManualScore=false; _mastRe(); }
+function mastManualAdj(field,d){
+  if(field==="c") mastManualC=Math.max(0,mastManualC+d);
+  if(field==="m") mastManualM=Math.max(0,mastManualM+d);
+  if(field==="t") mastManualT=Math.max(0,mastManualT+d);
+  if(field==="s") mastManualS=Math.max(0,mastManualS+d);
+  _mastRe();
+}
+function mastSaveManualScore(){
+  const dt=mastManualDate;
+  if(!dt){alert("Pick a date");return;}
+  const scored=mastManualC+mastManualM+mastManualT;
+  const total=scored+mastManualS;
+  if(!total){alert("Enter at least one result");return;}
+  const pct=scored?Math.round(mastManualC/scored*100):0;
+
+  // Figure out print number for that date
+  let pl=masteryData.printLog||[];
+  if(!Array.isArray(pl)) pl=Object.values(pl);
+  const existing=pl.find(e=>e.date===dt);
+  const pn=existing?existing.num:(pl.reduce((m,x)=>Math.max(m,x.num||0),0)+1);
+  if(!existing){ pl.push({date:dt,num:pn}); masteryData.printLog=pl; if(db) db.ref("mastery/printLog").set(pl); }
+
+  const entry={
+    date:dt, printNum:pn, total:total, scored:scored,
+    correct:mastManualC, miss:mastManualM, close:mastManualT, shown:mastManualS,
+    pct:pct, items:[], manual:true
+  };
+
+  const key=dt.replace(/-/g,"");
+  if(!masteryData.history) masteryData.history={};
+  if(!masteryData.history[masteryKid]) masteryData.history[masteryKid]={};
+  masteryData.history[masteryKid][key]=entry;
+  if(db) db.ref("mastery/history/"+masteryKid+"/"+key).set(entry);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+
+  mastManualScore=false;
+  _mastRe();
+}
+function mastDeleteScore(dateKey){
+  if(!confirm("Delete this score entry?")) return;
+  if(masteryData.history&&masteryData.history[masteryKid]){
+    delete masteryData.history[masteryKid][dateKey];
+    if(db) db.ref("mastery/history/"+masteryKid+"/"+dateKey).remove();
+    try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+    _mastRe();
+  }
+}
 function mastShowItemHist(id){ mastScoreItemId=mastScoreItemId===id?null:id; _mastRe(); }
 function mastToggleTier(t){ masteryCollapsed[masteryKid+"_"+t]=!masteryCollapsed[masteryKid+"_"+t]; const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastStartLog(){ mastLogMode=true; mastLogScores={}; mastSlideIdx=0; const c=document.getElementById("content"); if(c) renderMastery(c); }
@@ -3744,6 +3799,46 @@ function _renderMasteryInner(el){
     const hist=masteryData.history&&masteryData.history[masteryKid]?masteryData.history[masteryKid]:{};
     const entries=Object.values(hist).sort((a,b)=>b.date.localeCompare(a.date));
 
+    // Add past score button + form
+    if(mastManualScore){
+      h+='<div class="mast-edit-card">';
+      h+='<div class="mast-edit-hdr"><span class="mast-edit-title">\u{1F4DD} Add Past Score</span>';
+      h+='<button class="mast-add-close" onclick="mastCloseManualScore()">\u{2715}</button></div>';
+      h+='<div class="mast-edit-body">';
+
+      h+='<div class="mast-edit-row"><span class="mast-edit-label">Date</span>';
+      h+='<input type="date" value="'+mastManualDate+'" onchange="mastManualDate=this.value" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:12px"></div>';
+
+      h+='<div class="mast-edit-row"><span class="mast-edit-label">\u{2713} Correct</span>';
+      h+='<div class="mast-edit-val"><button class="mast-edit-adj" onclick="mastManualAdj(\'c\',-1)">\u{2212}</button>';
+      h+='<span class="mast-edit-num" style="color:#16a34a">'+mastManualC+'</span>';
+      h+='<button class="mast-edit-adj" onclick="mastManualAdj(\'c\',1)">+</button></div></div>';
+
+      h+='<div class="mast-edit-row"><span class="mast-edit-label">\u{2717} Miss</span>';
+      h+='<div class="mast-edit-val"><button class="mast-edit-adj" onclick="mastManualAdj(\'m\',-1)">\u{2212}</button>';
+      h+='<span class="mast-edit-num" style="color:#dc2626">'+mastManualM+'</span>';
+      h+='<button class="mast-edit-adj" onclick="mastManualAdj(\'m\',1)">+</button></div></div>';
+
+      h+='<div class="mast-edit-row"><span class="mast-edit-label">~ Close</span>';
+      h+='<div class="mast-edit-val"><button class="mast-edit-adj" onclick="mastManualAdj(\'t\',-1)">\u{2212}</button>';
+      h+='<span class="mast-edit-num" style="color:#d97706">'+mastManualT+'</span>';
+      h+='<button class="mast-edit-adj" onclick="mastManualAdj(\'t\',1)">+</button></div></div>';
+
+      h+='<div class="mast-edit-row"><span class="mast-edit-label">\u{1F441}\u{FE0F} Shown (Julian)</span>';
+      h+='<div class="mast-edit-val"><button class="mast-edit-adj" onclick="mastManualAdj(\'s\',-1)">\u{2212}</button>';
+      h+='<span class="mast-edit-num" style="color:#c2410c">'+mastManualS+'</span>';
+      h+='<button class="mast-edit-adj" onclick="mastManualAdj(\'s\',1)">+</button></div></div>';
+
+      const prevScored=mastManualC+mastManualM+mastManualT;
+      const prevPct=prevScored?Math.round(mastManualC/prevScored*100):0;
+      if(prevScored) h+='<div style="text-align:center;margin-top:8px;font-family:\'Fraunces\',serif;font-size:24px;font-weight:700;color:'+(prevPct>=80?"#16a34a":prevPct>=60?"#d97706":"#dc2626")+'">'+prevPct+'%</div>';
+
+      h+='<button class="mast-edit-save" onclick="mastSaveManualScore()">Save Score</button>';
+      h+='</div></div>';
+    } else {
+      h+='<div style="margin-bottom:14px"><button class="mast-log-btn" onclick="mastOpenManualScore()" style="width:100%;text-align:center;padding:10px">\u{2795} Add Past Score</button></div>';
+    }
+
     if(!entries.length){
       h+='<div class="mast-none">No scores yet. Log a drill to see results here.</div>';
     } else {
@@ -3794,7 +3889,10 @@ function _renderMasteryInner(el){
         h+='<div><div class="mast-score-date">'+dateLbl+' \u{00B7} Print #'+e.printNum+'</div>';
         h+='<div class="mast-score-pct" style="color:'+pctCol+'">'+e.pct+'%</div></div>';
         h+='<div style="text-align:right"><div style="font-size:10px;color:var(--muted)">'+e.scored+' scored'+(e.shown?' + '+e.shown+' shown':'')+'</div>';
-        h+='<div style="font-size:10px;color:var(--muted)">of '+e.total+' due</div></div></div>';
+        h+='<div style="font-size:10px;color:var(--muted)">of '+e.total+' due</div>';
+        const dateKey=e.date.replace(/-/g,"");
+        h+='<button onclick="event.stopPropagation();mastDeleteScore(\''+dateKey+'\')" style="margin-top:4px;font-size:9px;color:#991b1b;background:none;border:none;cursor:pointer;font-weight:600;font-family:\'DM Sans\',sans-serif">\u{1F5D1}\u{FE0F} Delete</button>';
+        h+='</div></div>';
 
         h+='<div class="mast-score-breakdown">';
         if(e.correct) h+='<span class="sc-c">\u{2713} '+e.correct+'</span>';
