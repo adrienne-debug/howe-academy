@@ -385,6 +385,33 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .mast-edit-save{padding:8px 20px;border-radius:10px;border:none;background:#16a34a;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-top:8px;width:100%}
 .mast-edit-del{padding:8px 20px;border-radius:10px;border:1.5px solid #fecaca;background:#fff5f5;color:#991b1b;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-top:6px;width:100%}
 
+/* Mastery scores */
+.mast-view-tabs{display:flex;gap:0;border:1.5px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:14px}
+.mast-view-tab{flex:1;padding:8px 6px;text-align:center;font-size:11px;font-weight:700;cursor:pointer;background:#fff;border:none;font-family:'DM Sans',sans-serif;color:var(--muted)}
+.mast-view-tab.active{background:var(--header);color:#fff}
+.mast-score-card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px}
+.mast-score-date{font-size:10px;color:var(--muted);font-weight:600}
+.mast-score-pct{font-family:'Fraunces',serif;font-size:32px;font-weight:700;line-height:1}
+.mast-score-breakdown{display:flex;gap:12px;margin-top:6px;font-size:11px;font-weight:600}
+.mast-score-breakdown .sc-c{color:#16a34a}.mast-score-breakdown .sc-m{color:#dc2626}.mast-score-breakdown .sc-t{color:#d97706}.mast-score-breakdown .sc-s{color:#c2410c}
+.mast-chart{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px}
+.mast-chart-title{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px}
+.mast-chart-svg{width:100%;height:120px}
+.mast-hist-item{display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid #f3f1ee;font-size:12px;cursor:pointer}
+.mast-hist-item:last-child{border-bottom:none}
+.mast-hist-item:active{background:#f8f7f4}
+.mast-hist-prompt{font-weight:600;flex:1}
+.mast-hist-result{font-size:10px;padding:2px 6px;border-radius:6px;font-weight:600}
+.mast-hist-result.r-c{background:#dcfce7;color:#16a34a}
+.mast-hist-result.r-m{background:#fee2e2;color:#dc2626}
+.mast-hist-result.r-t{background:#fef3c7;color:#d97706}
+.mast-hist-result.r-shown{background:#fff7ed;color:#c2410c}
+.mast-item-hist-card{background:#fff;border:1px solid var(--border);border-radius:12px;margin-bottom:14px;overflow:hidden}
+.mast-item-hist-hdr{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.mast-item-hist-row{display:flex;align-items:center;gap:8px;padding:6px 14px;border-bottom:1px solid #f3f1ee;font-size:11px}
+.mast-item-hist-row:last-child{border-bottom:none}
+.mast-item-hist-date{color:var(--muted);font-weight:500;width:70px;flex-shrink:0}
+
 /* Julian slideshow */
 .mast-slide{background:#fff7ed;border:2px solid #fed7aa;border-radius:20px;padding:20px;text-align:center;min-height:280px;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;touch-action:pan-y}
 .mast-slide-cat{font-size:10px;font-weight:700;color:#c2410c;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px}
@@ -591,6 +618,8 @@ let paceEditPlan=null;
 let masteryData={};
 let masteryKid="lincoln";
 let masteryCollapsed={};
+let mastView="drill"; // "drill" or "scores"
+let mastScoreItemId=null; // for per-item history
 let histTab="log"; // "log" | "attendance"
 let attEditUnlocked=false;
 const ATT_PIN="1234"; // change to preferred PIN
@@ -751,7 +780,9 @@ function initFb() {
       if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
     });
     db.ref("mastery").on("value",s=>{
-      masteryData=s.val()||{};
+      const v=s.val()||{};
+      // Preserve history separately (it's under mastery/history/ in Firebase)
+      masteryData={...v};
       try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
       if(tab==="mastery"){const el=document.getElementById("content");if(el)renderMastery(el);}
     });
@@ -3323,7 +3354,9 @@ function mastDueItems(kid,pn){
 let mastLogMode=false;
 let mastLogScores={};  // {itemId: "c"|"m"|"~"}
 
-function mastSetKid(k){ masteryKid=k; mastLogMode=false; mastLogScores={}; mastSlideIdx=0; const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastSetKid(k){ masteryKid=k; mastLogMode=false; mastLogScores={}; mastSlideIdx=0; mastScoreItemId=null; const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastSetView(v){ mastView=v; mastScoreItemId=null; _mastRe(); }
+function mastShowItemHist(id){ mastScoreItemId=mastScoreItemId===id?null:id; _mastRe(); }
 function mastToggleTier(t){ masteryCollapsed[masteryKid+"_"+t]=!masteryCollapsed[masteryKid+"_"+t]; const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastStartLog(){ mastLogMode=true; mastLogScores={}; mastSlideIdx=0; const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastCancelLog(){ mastLogMode=false; mastLogScores={}; const c=document.getElementById("content"); if(c) renderMastery(c); }
@@ -3384,13 +3417,34 @@ function mastSaveResults(){
   if(!pl.find(e=>e.date===today)) pl.push({date:today,num:pn});
   masteryData.printLog=pl;
 
+  // Build drill history record
+  const drillItems=[];
+  let correct=0,miss=0,close=0,shown=0;
+  due.forEach(d=>{
+    const sc=mastLogScores[d.id];
+    if(!sc) return;
+    if(sc==="shown"){ shown++; drillItems.push({id:d.id,prompt:d.prompt,result:"shown",tier:d.tier||"daily"}); }
+    else { drillItems.push({id:d.id,prompt:d.prompt,result:sc,oldTier:d.tier||"daily"}); if(sc==="c")correct++; else if(sc==="m")miss++; else if(sc==="~")close++; }
+  });
+  const scored=correct+miss+close;
+  const histEntry={
+    date:today, printNum:pn, total:due.length, scored:scored,
+    correct:correct, miss:miss, close:close, shown:shown,
+    pct:scored?Math.round(correct/scored*100):0,
+    items:drillItems
+  };
+
   // Save to Firebase
   if(db){
     db.ref("mastery/"+masteryKid).set(items);
     db.ref("mastery/printLog").set(pl);
+    db.ref("mastery/history/"+masteryKid+"/"+today.replace(/-/g,"")).set(histEntry);
   }
   // Update local
   masteryData[masteryKid]=items;
+  if(!masteryData.history) masteryData.history={};
+  if(!masteryData.history[masteryKid]) masteryData.history[masteryKid]={};
+  masteryData.history[masteryKid][today.replace(/-/g,"")]=histEntry;
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 
   mastLogMode=false;
@@ -3679,6 +3733,111 @@ function _renderMasteryInner(el){
   });
   h+='<button onclick="mastOpenAdd()" style="width:32px;height:32px;border-radius:50%;border:1.5px solid var(--border);background:#fff;font-size:18px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:'+color+'">+</button>';
   h+='</div>';
+
+  // View tabs: Drill / Scores
+  h+='<div class="mast-view-tabs">';
+  h+='<button class="mast-view-tab'+(mastView==="drill"?" active":"")+'" onclick="mastSetView(\'drill\')">Today\'s Drill</button>';
+  h+='<button class="mast-view-tab'+(mastView==="scores"?" active":"")+'" onclick="mastSetView(\'scores\')">Scores</button></div>';
+
+  // ── SCORES VIEW ──
+  if(mastView==="scores"){
+    const hist=masteryData.history&&masteryData.history[masteryKid]?masteryData.history[masteryKid]:{};
+    const entries=Object.values(hist).sort((a,b)=>b.date.localeCompare(a.date));
+
+    if(!entries.length){
+      h+='<div class="mast-none">No scores yet. Log a drill to see results here.</div>';
+    } else {
+      // Trend chart
+      const chartData=entries.slice().reverse().slice(-14); // last 14 sessions
+      if(chartData.length>=2){
+        const w=360,ht=100,pad=20;
+        const step=(w-2*pad)/Math.max(chartData.length-1,1);
+        let pts="";let labels="";
+        chartData.forEach((e,i)=>{
+          const x=pad+i*step;
+          const y=ht-pad-(e.pct/100)*(ht-2*pad);
+          pts+=(i?'L':'M')+x+','+y+' ';
+          if(i===0||i===chartData.length-1||i%3===0){
+            const d=e.date.slice(5);
+            labels+='<text x="'+x+'" y="'+(ht-2)+'" text-anchor="middle" font-size="7" fill="#9ca3af">'+d+'</text>';
+          }
+        });
+        // Dots
+        let dots="";
+        chartData.forEach((e,i)=>{
+          const x=pad+i*step;
+          const y=ht-pad-(e.pct/100)*(ht-2*pad);
+          const col=e.pct>=80?"#16a34a":e.pct>=60?"#d97706":"#dc2626";
+          dots+='<circle cx="'+x+'" cy="'+y+'" r="4" fill="'+col+'" stroke="white" stroke-width="1.5"/>';
+        });
+        h+='<div class="mast-chart"><div class="mast-chart-title">Score Trend</div>';
+        h+='<svg class="mast-chart-svg" viewBox="0 0 '+w+' '+ht+'">';
+        h+='<line x1="'+pad+'" y1="'+(ht-pad)+'" x2="'+(w-pad)+'" y2="'+(ht-pad)+'" stroke="#e5e7eb" stroke-width="1"/>';
+        h+='<line x1="'+pad+'" y1="'+pad+'" x2="'+(w-pad)+'" y2="'+pad+'" stroke="#e5e7eb" stroke-width="0.5" stroke-dasharray="3"/>';
+        h+='<text x="'+(pad-4)+'" y="'+(pad+3)+'" text-anchor="end" font-size="7" fill="#9ca3af">100%</text>';
+        h+='<text x="'+(pad-4)+'" y="'+(ht-pad+3)+'" text-anchor="end" font-size="7" fill="#9ca3af">0%</text>';
+        h+='<path d="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+        h+=dots+labels;
+        h+='</svg></div>';
+      }
+
+      // Daily score cards
+      entries.forEach(e=>{
+        const pctCol=e.pct>=80?"#16a34a":e.pct>=60?"#d97706":"#dc2626";
+        const dateObj=new Date(e.date+"T12:00:00");
+        const dayN=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dateObj.getDay()];
+        const monN=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][dateObj.getMonth()];
+        const dateLbl=dayN+", "+monN+" "+dateObj.getDate();
+
+        h+='<div class="mast-score-card">';
+        h+='<div style="display:flex;align-items:center;justify-content:space-between">';
+        h+='<div><div class="mast-score-date">'+dateLbl+' \u{00B7} Print #'+e.printNum+'</div>';
+        h+='<div class="mast-score-pct" style="color:'+pctCol+'">'+e.pct+'%</div></div>';
+        h+='<div style="text-align:right"><div style="font-size:10px;color:var(--muted)">'+e.scored+' scored'+(e.shown?' + '+e.shown+' shown':'')+'</div>';
+        h+='<div style="font-size:10px;color:var(--muted)">of '+e.total+' due</div></div></div>';
+
+        h+='<div class="mast-score-breakdown">';
+        if(e.correct) h+='<span class="sc-c">\u{2713} '+e.correct+'</span>';
+        if(e.miss) h+='<span class="sc-m">\u{2717} '+e.miss+'</span>';
+        if(e.close) h+='<span class="sc-t">~ '+e.close+'</span>';
+        if(e.shown) h+='<span class="sc-s">\u{1F441}\u{FE0F} '+e.shown+'</span>';
+        h+='</div>';
+
+        // Expandable item list
+        if(e.items&&e.items.length){
+          h+='<div style="margin-top:8px;border-top:1px solid #f3f1ee;padding-top:6px">';
+          e.items.forEach(it=>{
+            const rc=it.result==="c"?"r-c":it.result==="m"?"r-m":it.result==="~"?"r-t":"r-shown";
+            const rl=it.result==="c"?"\u{2713}":it.result==="m"?"\u{2717}":it.result==="~"?"~":"\u{1F441}\u{FE0F}";
+            h+='<div class="mast-hist-item" onclick="mastShowItemHist(\''+it.id+'\')">';
+            h+='<span class="mast-hist-prompt">'+it.prompt+'</span>';
+            h+='<span class="mast-hist-result '+rc+'">'+rl+'</span></div>';
+
+            // Per-item history
+            if(mastScoreItemId===it.id){
+              const allHist=entries.flatMap(en=>(en.items||[]).filter(x=>x.id===it.id).map(x=>({date:en.date,result:x.result})));
+              h+='<div class="mast-item-hist-card">';
+              h+='<div class="mast-item-hist-hdr"><span style="font-weight:700;font-size:13px">'+it.prompt+'</span>';
+              h+='<span style="font-size:10px;color:var(--muted)">'+allHist.length+' session(s)</span></div>';
+              allHist.forEach(ah=>{
+                const arc=ah.result==="c"?"r-c":ah.result==="m"?"r-m":ah.result==="~"?"r-t":"r-shown";
+                const arl=ah.result==="c"?"\u{2713}":ah.result==="m"?"\u{2717}":ah.result==="~"?"~":"\u{1F441}\u{FE0F}";
+                h+='<div class="mast-item-hist-row"><span class="mast-item-hist-date">'+ah.date+'</span>';
+                h+='<span class="mast-hist-result '+arc+'">'+arl+'</span></div>';
+              });
+              h+='</div>';
+            }
+          });
+          h+='</div>';
+        }
+        h+='</div>';
+      });
+    }
+
+    h+='</div>';
+    el.innerHTML=h;
+    return;
+  }
 
   // Add items card
   if(mastAddMode){
