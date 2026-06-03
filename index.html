@@ -357,6 +357,14 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .mast-irow-mode.recite{background:#fef3c7;color:#92400e}
 .mast-irow-mode.flash{background:#ede9fe;color:#5b21b6}
 .mast-irow-drop{font-size:9px;color:#dc2626;font-weight:700}
+.mast-expand{overflow:hidden;max-height:0;transition:max-height 0.2s;padding:0 12px}
+.mast-expand.open{max-height:200px;padding:6px 12px 10px}
+.mast-expand-inner{font-size:12px;color:#4b5563;line-height:1.5;background:#f8f7f4;border-radius:8px;padding:8px 10px}
+.mast-expand-img{max-width:120px;max-height:80px;border-radius:6px;margin-top:6px;object-fit:contain}
+.mast-ditem-tap{cursor:pointer}
+.mast-ditem-tap:active{background:#f8f7f4}
+.mast-irow-tap{cursor:pointer}
+.mast-irow-tap:active{background:#f8f7f4}
 .mast-jgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:8px;padding:10px}
 .mast-jcard{background:#fff7ed;border:1.5px solid #fed7aa;border-radius:10px;padding:8px 4px;text-align:center}
 .mast-jcard-img{font-size:22px;line-height:1;min-height:28px;display:flex;align-items:center;justify-content:center}
@@ -3375,6 +3383,17 @@ const MAST_ITEM_TYPES=[
 ];
 
 function _mastRe(){ const c=document.getElementById("content"); if(c) renderMastery(c); }
+let mastExpandedId=null;
+function mastToggleExpand(id){ mastExpandedId=mastExpandedId===id?null:id; _mastRe(); }
+function mastExpandHtml(it){
+  const open=mastExpandedId===it.id;
+  let inner="";
+  if(it.answer&&it.answer!==it.prompt) inner+='<div>'+it.answer+'</div>';
+  if(it.definition) inner+='<div>'+it.definition+'</div>';
+  if(!inner&&!it.imageUrl) inner='<div style="color:#9ca3af;font-style:italic">No definition yet</div>';
+  if(it.imageUrl) inner+='<img src="'+it.imageUrl+'" class="mast-expand-img">';
+  return '<div class="mast-expand'+(open?" open":"")+'"><div class="mast-expand-inner">'+inner+'</div></div>';
+}
 function mastOpenAdd(){ mastAddMode=true; mastAddImageUrl=""; _mastRe(); }
 function mastCloseAdd(){ mastAddMode=false; mastAddImageUrl=""; _mastRe(); }
 function mastAddSetTab(t){ mastAddTab=t; mastAddImageUrl=""; _mastRe(); }
@@ -3456,8 +3475,12 @@ function mastAddItems(){
       consecutive_correct:0,
       cycle:1
     };
-    // Attach image if single-add with image
-    if(mastAddTab==="single"&&mastAddImageUrl&&prompts.length===1) item.imageUrl=mastAddImageUrl;
+    // Attach definition + image for single-add
+    if(mastAddTab==="single"&&prompts.length===1){
+      const defInput=document.getElementById("mast-add-def");
+      if(defInput&&defInput.value.trim()){ item.definition=defInput.value.trim(); item.answer=defInput.value.trim(); }
+      if(mastAddImageUrl) item.imageUrl=mastAddImageUrl;
+    }
     items.push(item);
     existingPrompts.add(p.toLowerCase());
     added++;
@@ -3559,6 +3582,9 @@ function _renderMasteryInner(el){
       h+='<div class="mast-add-label">'+(isJ?"Item":"Word / Rule")+'</div>';
       h+='<input class="mast-add-input" id="mast-add-single" placeholder="'+(isJ?"e.g. Dog":"e.g. splash")+'" autocapitalize="off" autocorrect="off">';
 
+      h+='<div class="mast-add-label" style="margin-top:10px">Definition / Answer (optional)</div>';
+      h+='<input class="mast-add-input" id="mast-add-def" placeholder="'+(isJ?"e.g. A big cat with a mane":"e.g. The Floss Rule: ff, ll, ss after a short vowel")+'">';
+
       // Image upload (single mode only)
       h+='<div class="mast-add-label" style="margin-top:10px">Image (optional)</div>';
       h+='<div class="mast-img-upload">';
@@ -3629,9 +3655,12 @@ function _renderMasteryInner(el){
       h+='<div class="mast-section"><div class="mast-section-lbl">\u{270F}\u{FE0F} Written <span class="cnt">'+dueW.length+'</span></div>';
       dueW.forEach((it,i)=>{
         const tc=MAST_TIER_COL[it.tier]||"#666";
-        h+='<div class="mast-ditem"><span class="mast-ditem-num">'+(i+1)+'.</span><span class="mast-ditem-prompt">'+it.prompt+'</span>';
+        const hasDetail=it.answer&&it.answer!==it.prompt||it.definition||it.imageUrl;
+        h+='<div class="mast-ditem'+(hasDetail?" mast-ditem-tap":"")+'"'+(hasDetail?' onclick="mastToggleExpand(\''+it.id+'\')"':'')+'>';
+        h+='<span class="mast-ditem-num">'+(i+1)+'.</span><span class="mast-ditem-prompt">'+it.prompt+'</span>';
         if(it.drop_count) h+='<span class="mast-irow-drop">\u{2B07}'+it.drop_count+'</span>';
         h+='<span class="mast-ditem-tier" style="background:'+tc+'15;color:'+tc+'">'+(MAST_TIER_LBL[it.tier]||it.tier)+'</span></div>';
+        if(hasDetail) h+=mastExpandHtml(it);
       });
       h+='</div>';
     }
@@ -3641,8 +3670,10 @@ function _renderMasteryInner(el){
       dueO.forEach(it=>{
         const tc=MAST_TIER_COL[it.tier]||"#666";
         const mi={recite:"\u{1F4E2}",oral:"\u{1F5E3}\u{FE0F}",flash:"\u{1F0CF}"}[it.review_mode]||"\u{1F5E3}\u{FE0F}";
-        h+='<div class="mast-ditem"><span class="mast-ditem-num">'+mi+'</span><span class="mast-ditem-prompt">'+it.prompt+'</span>';
+        h+='<div class="mast-ditem mast-ditem-tap" onclick="mastToggleExpand(\''+it.id+'\')">';
+        h+='<span class="mast-ditem-num">'+mi+'</span><span class="mast-ditem-prompt">'+it.prompt+'</span>';
         h+='<span class="mast-ditem-tier" style="background:'+tc+'15;color:'+tc+'">'+(MAST_TIER_LBL[it.tier]||it.tier)+'</span></div>';
+        h+=mastExpandHtml(it);
       });
       h+='</div>';
     }
@@ -3714,11 +3745,12 @@ function _renderMasteryInner(el){
     ti.forEach(i=>{
       const mode=i.review_mode||"oral";
       const ml={written:"\u{270F}\u{FE0F} Written",recite:"\u{1F4E2} Recite",oral:"\u{1F5E3}\u{FE0F} Oral",flash:"\u{1F0CF} Flash"}[mode]||mode;
-      h+='<div class="mast-irow">';
+      h+='<div class="mast-irow mast-irow-tap" onclick="mastToggleExpand(\''+i.id+'\')">';
       if(i.imageUrl) h+='<img src="'+i.imageUrl+'" style="width:24px;height:24px;border-radius:4px;object-fit:cover;flex-shrink:0">';
       h+='<span class="mast-irow-prompt">'+i.prompt+'</span>';
       if(i.drop_count) h+='<span class="mast-irow-drop">\u{2B07}'+i.drop_count+'</span>';
       h+='<span class="mast-irow-mode '+mode+'">'+ml+'</span></div>';
+      h+=mastExpandHtml(i);
     });
     h+='</div></div>';
   });
