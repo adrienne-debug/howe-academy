@@ -3913,11 +3913,52 @@ function mastRegenerate(itemId){
 }
 let mastExpandedId=null;
 let mastSlideIdx=0;
+let mastListEditMode=false;
+let mastListEditPin="";
 let mastEditId=null;
 let mastEditDots=0;
 let mastEditConsec=0;
 let mastEditTier="";
 function mastToggleExpand(id){ mastExpandedId=mastExpandedId===id?null:id; _mastRe(); }
+
+function mastListEditCheck(val){
+  mastListEditPin=val;
+  if(val==="0329"){ mastListEditMode=true; mastListEditPin=""; _mastRe(); }
+  else if(val.length>=4){ mastListEditPin=""; const el=document.getElementById("mast-list-pin-err"); if(el) el.textContent="Wrong PIN"; }
+}
+function mastListEditClose(){ mastListEditMode=false; _mastRe(); }
+function mastListMove(id,dir){
+  let items=masteryData[masteryKid];
+  if(!items||!Array.isArray(items)) return;
+  const idx=items.findIndex(i=>i.id===id);
+  if(idx<0) return;
+  const newIdx=idx+dir;
+  if(newIdx<0||newIdx>=items.length) return;
+  const tmp=items[idx]; items[idx]=items[newIdx]; items[newIdx]=tmp;
+  masteryData[masteryKid]=items;
+  if(db) db.ref("mastery/"+masteryKid).set(items);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  _mastRe();
+}
+function mastListDelete(id){
+  if(!confirm("Remove this item from the mastery list?")) return;
+  let items=masteryData[masteryKid];
+  if(!items||!Array.isArray(items)) return;
+  masteryData[masteryKid]=items.filter(i=>i.id!==id);
+  if(db) db.ref("mastery/"+masteryKid).set(masteryData[masteryKid]);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  _mastRe();
+}
+function mastListEditItem(id,field,value){
+  let items=masteryData[masteryKid];
+  if(!items||!Array.isArray(items)) return;
+  const it=items.find(i=>i.id===id);
+  if(!it) return;
+  it[field]=value;
+  masteryData[masteryKid]=items;
+  if(db) db.ref("mastery/"+masteryKid).set(items);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+}
 
 function mastEditOpen(id){
   let items=masteryData[masteryKid]||[];
@@ -4724,6 +4765,37 @@ function _renderMasteryInner(el){
     h+='<label class="mast-print-chk"><input type="checkbox" id="mast-chk-parent" checked> Parent</label>';
     h+='<button class="mast-print-btn" onclick="mastPrintDrill()">\u{1F5A8}\u{FE0F} Print</button>';
     h+='<button class="mast-log-btn" onclick="mastStartLog()" style="margin-left:6px">\u{1F4DD} Log</button></div>';
+
+    // ── EDIT LIST (PIN-protected) ──
+    if(mastListEditMode){
+      h+='<div style="margin:14px 0;border:2px solid #6366f1;border-radius:14px;overflow:hidden">';
+      h+='<div style="background:#6366f1;color:#fff;padding:10px 14px;display:flex;align-items:center;justify-content:space-between">';
+      h+='<span style="font-family:\'Fraunces\',serif;font-size:14px;font-weight:700">\u{270F}\u{FE0F} Edit List ('+items.length+' items)</span>';
+      h+='<button onclick="mastListEditClose()" style="background:rgba(255,255,255,0.2);color:#fff;border:none;border-radius:8px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Done</button></div>';
+      items.forEach((it,i)=>{
+        const tc=MAST_TIER_COL[it.tier]||"#666";
+        h+='<div style="display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid #f3f1ee;background:#fff">';
+        h+='<div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0">';
+        h+='<button onclick="mastListMove(\''+it.id+'\',-1)" style="width:28px;height:22px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center"'+(i===0?' disabled style="opacity:0.3;width:28px;height:22px;border:1px solid #d1d5db;border-radius:4px;background:#fff;font-size:12px;display:flex;align-items:center;justify-content:center"':'')+'>▲</button>';
+        h+='<button onclick="mastListMove(\''+it.id+'\',1)" style="width:28px;height:22px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center"'+(i===items.length-1?' disabled style="opacity:0.3;width:28px;height:22px;border:1px solid #d1d5db;border-radius:4px;background:#fff;font-size:12px;display:flex;align-items:center;justify-content:center"':'')+'>▼</button>';
+        h+='</div>';
+        h+='<span style="font-size:11px;color:#9ca3af;font-weight:600;width:22px;text-align:center;flex-shrink:0">'+(i+1)+'</span>';
+        h+='<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+it.prompt+'</div>';
+        if(it.definition) h+='<div style="font-size:10px;color:#6b7280;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+it.definition+'</div>';
+        h+='</div>';
+        h+='<span style="font-size:9px;padding:2px 6px;border-radius:6px;background:'+tc+'15;color:'+tc+';font-weight:700;flex-shrink:0">'+(MAST_TIER_LBL[it.tier]||it.tier)+'</span>';
+        h+='<button onclick="mastListDelete(\''+it.id+'\')" style="width:28px;height:28px;border:none;background:none;cursor:pointer;font-size:14px;flex-shrink:0;color:#dc2626">\u{1F5D1}\u{FE0F}</button>';
+        h+='</div>';
+      });
+      h+='</div>';
+    } else {
+      h+='<div style="text-align:center;padding:4px 14px 0">';
+      h+='<button onclick="document.getElementById(\'mast-list-pin-wrap\').style.display=\'block\'" style="font-size:11px;color:#6366f1;background:none;border:none;cursor:pointer;font-weight:600;font-family:\'DM Sans\',sans-serif">\u{1F512} Edit List Order</button>';
+      h+='<div id="mast-list-pin-wrap" style="display:none;margin-top:8px">';
+      h+='<input type="password" inputmode="numeric" maxlength="4" placeholder="PIN" autocomplete="off" oninput="mastListEditCheck(this.value)" style="width:80px;text-align:center;padding:6px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;letter-spacing:4px;font-family:monospace">';
+      h+='<div id="mast-list-pin-err" style="font-size:10px;color:#dc2626;margin-top:4px;min-height:14px"></div>';
+      h+='</div></div>';
+    }
   }
   h+='</div>';
 
