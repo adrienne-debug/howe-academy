@@ -1242,7 +1242,9 @@ function renderSchedule(el){
   else if(kid!=="all") allDay=allDay.filter(t=>t.who===kid);
 
   let tasks=allDay.filter(t=>t.day===day&&!t.id.endsWith("_c"));
-  let carriedOver=allDay.filter(t=>t.day!==day||t.id.endsWith("_c"));
+  // Only cross-week carry-overs (_c tasks) go in the carried-over section now;
+  // cascade carry-overs get real time slots from the displacement engine
+  let carriedOver=allDay.filter(t=>t.id.endsWith("_c"));
 
   const tmap={};
   tasks.forEach(t=>{ if(!tmap[t.time])tmap[t.time]=[]; tmap[t.time].push(t); });
@@ -1408,13 +1410,14 @@ function taskCard(t, fromDay){
   // Strip the "Cascaded from X" note from detail for display
   const cleanDetail=t.detail.replace(/\s*\(Cascaded from \w+\)/,"");
   const disLabel=t._displaced?'<div style="font-size:10px;font-weight:700;color:#7c3aed;background:#ede9fe;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">&#8618; Moved from '+cap(t._originalDay||"")+'</div><br>':'';
-  const carryLabel=fromDay?'<div style="font-size:10px;font-weight:700;color:#4338ca;background:#e0e7ff;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">↩ '+fromDay+'</div><br>':'';
-  return '<div class="task-card '+bcls+(done?" done":"")+(future?" future":"")+(t._displaced?" displaced":"")+'">'+
+  const cascLabel=(!t._displaced&&t._cascaded)?'<div style="font-size:10px;font-weight:700;color:#6366f1;background:#e0e7ff;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">&#8618; Originally '+cap(t._originalDay||"")+'</div><br>':'';
+  const carryLabel=fromDay?'<div style="font-size:10px;font-weight:700;color:#4338ca;background:#e0e7ff;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">&#8617; '+fromDay+'</div><br>':'';
+  return '<div class="task-card '+bcls+(done?" done":"")+(future?" future":"")+(t._displaced?" displaced":"")+(t._cascaded?" displaced":"")+'">'+
     '<div class="card-inner">'+
     '<div class="task-cb'+(done?" checked":"")+'" onclick="tapTask(\''+t.id+'\')">'+(done?"✓":"")+'</div>'+
     '<div class="card-body">'+
     '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
-    '<div class="task-title">'+disLabel+carryLabel+t.title+'</div>'+mb+'</div>'+
+    '<div class="task-title">'+disLabel+cascLabel+carryLabel+t.title+'</div>'+mb+'</div>'+
     '<div class="task-detail">'+cleanDetail+'</div>'+dr+
     '</div></div></div>';
 }
@@ -5009,8 +5012,8 @@ function _buildSubjectOrder(tasks){
 }
 
 function runDisplacement(){
+  if(!weekData.tasks.length){ displacedResult=null; return; }
   const bos=Object.values(blockouts);
-  if(!bos.length||!weekData.tasks.length){ displacedResult=null; return; }
   const r=rulesData||{};
   const sd=r.schoolDay||{};
   const sdOv=sd.overrides||{};
@@ -5021,6 +5024,7 @@ function runDisplacement(){
 
   var origSubjOrder=_buildSubjectOrder(tasks);
 
+  // 1. Mark blockout-displaced tasks
   const displacedIds=new Set();
   bos.forEach(function(bo){
     var kids=bo.kids||[];
@@ -5031,10 +5035,24 @@ function runDisplacement(){
       if(bS&&bE&&tMin>=bS&&tMin<bE) displacedIds.add(t.id);
     });
   });
-  if(!displacedIds.size){ displacedResult=null; return; }
+
+  // 2. Mark cascade carry-over tasks (unchecked tasks from past days)
+  const cascadeIds=new Set();
+  tasks.forEach(function(t){
+    if(displacedIds.has(t.id)) return;
+    if(checked[t.id]) return;
+    if(t.id.endsWith("_c")) return; // cross-week carry-overs handled separately
+    if(t.title&&t.title.toLowerCase().includes("lunch")) return;
+    var ed=effectiveDay(t);
+    if(ed!==t.day&&ed!=="carryover") cascadeIds.add(t.id);
+  });
+
+  // If nothing to displace or cascade, no engine needed
+  if(!displacedIds.size&&!cascadeIds.size){ displacedResult=null; return; }
 
   var displacedTasks=tasks.filter(function(t){return displacedIds.has(t.id);});
-  var keptTasks=tasks.filter(function(t){return !displacedIds.has(t.id);});
+  var cascadeTasks=tasks.filter(function(t){return cascadeIds.has(t.id);});
+  var keptTasks=tasks.filter(function(t){return !displacedIds.has(t.id)&&!cascadeIds.has(t.id);});
   var working=keptTasks.slice();
 
   function maxFor(subj){return(mp[subj]&&mp[subj].max!=null)?mp[subj].max:999;}
@@ -5048,8 +5066,31 @@ function runDisplacement(){
     if(bab&&(bab.kids||[]).indexOf(t.who)>=0){if(t.mom==="required")return false;if(t.who==="lucy")return false;}
     return true;
   }
-  function _dayStart(d){var ov=sdOv[d];return toMin((ov&&ov.start)||sd.defaultStart||"10:00 AM");}
-  function _dayEnd(d){var ov=sdOv[d];return toMin((ov&&ov.end)||sd.defaultEnd||"4:15 PM");}
+  // Parse start time from WIN strings: "School from 11:00 AM" or "School 10:00 AM–4:15 PM"
+  function _winStart(d){
+    var w=WIN[d]||WIN.default||"";
+    var m=w.match(/(?:from|School)\s+(\d{1,2}:\d{2}\s*[AP]M)/i);
+    return m?toMin(m[1]):0;
+  }
+  function _winEnd(d){
+    var w=WIN[d]||WIN.default||"";
+    var m=w.match(/[–—-]\s*(\d{1,2}:\d{2}\s*[AP]M)/);
+    return m?toMin(m[1]):0;
+  }
+  function _dayStart(d){
+    var ov=sdOv[d];
+    if(ov&&ov.start) return toMin(ov.start);
+    var ws=_winStart(d);
+    if(ws) return ws;
+    return toMin(sd.defaultStart||"10:00 AM");
+  }
+  function _dayEnd(d){
+    var ov=sdOv[d];
+    if(ov&&ov.end) return toMin(ov.end);
+    var we=_winEnd(d);
+    if(we) return we;
+    return toMin(sd.defaultEnd||"4:15 PM");
+  }
   function _dayLS(d){var ov=sdOv[d];return toMin((ov&&ov.lunchStart)||sd.lunchStart||"1:00 PM");}
   function _dayLE(d){var ov=sdOv[d];return toMin((ov&&ov.lunchEnd)||sd.lunchEnd||"2:00 PM");}
 
@@ -5134,46 +5175,105 @@ function runDisplacement(){
     if(!placed){dt._displaced=true;dt._originalDay=dt.day;dt._carryOver=true;carryOver.push(dt);}
   });
 
-  // Re-time receiving days using workflow order
-  var touchedDays=new Set(working.filter(function(t){return t._displaced;}).map(function(t){return t.day;}));
+  // Place cascade carry-over tasks on their effectiveDay
+  cascadeTasks.forEach(function(ct){
+    var ed=effectiveDay(ct);
+    if(ed==="carryover"||!ed){ ct._cascaded=true;ct._originalDay=ct.day;ct._carryOver=true;carryOver.push(ct);return; }
+    if(canPlace(ct,ed)){
+      ct._cascaded=true;ct._originalDay=ct.day;ct.day=ed;
+      working.push(ct);
+    } else {
+      // Try forward from effectiveDay
+      var edIdx=dayOrder.indexOf(ed);
+      var placed2=false;
+      for(var fi=edIdx+1;fi<dayOrder.length&&!placed2;fi++){
+        if(canPlace(ct,dayOrder[fi])){
+          ct._cascaded=true;ct._originalDay=ct.day;ct.day=dayOrder[fi];
+          working.push(ct);placed2=true;
+        }
+      }
+      if(!placed2){ ct._cascaded=true;ct._originalDay=ct.day;ct._carryOver=true;carryOver.push(ct); }
+    }
+  });
+
+  // Re-time receiving days
+  var touchedDays=new Set(working.filter(function(t){return t._displaced||t._cascaded;}).map(function(t){return t.day;}));
+  // Check which touched days also have blockout-displaced tasks (need full re-time)
+  var blockoutDays=new Set(working.filter(function(t){return t._displaced;}).map(function(t){return t.day;}));
+
   touchedDays.forEach(function(d){
     var dStart=_dayStart(d);
     var dEnd=_dayEnd(d);
     var dLunchS=_dayLS(d);
     var dLunchE=_dayLE(d);
-
     var dayTasks=working.filter(function(t){return t.day===d;});
+    var hasBlockoutDisplaced=blockoutDays.has(d);
 
-    // Sort ALL tasks on this day by workflow order per kid, then by original time within tier
-    dayTasks.sort(function(a,b){
-      if(a.who!==b.who) return a.who<b.who?-1:1;
-      var aRank=_getWfOrder(a.who,d,bos);
-      var bRank=_getWfOrder(b.who,d,bos);
-      var aTier=taskTier(a), bTier=taskTier(b);
-      var aR=aRank[aTier]!=null?aRank[aTier]:99;
-      var bR=bRank[bTier]!=null?bRank[bTier]:99;
-      if(aR!==bR) return aR-bR;
-      return toMin(a.time)-toMin(b.time);
-    });
-
-    // Assign times to all tasks on touched days (both original and displaced get re-timed)
-    var kidCursors={};
-    dayTasks.forEach(function(dt){
-      var k=dt.who;
-      if(!kidCursors[k]) kidCursors[k]=dStart;
-      var cursor=kidCursors[k];
-      if(cursor>=dLunchS&&cursor<dLunchE) cursor=dLunchE;
-      if(cursor>=dEnd){
-        dt._carryOver=true;
-        carryOver.push(dt);
-        var idx=working.indexOf(dt);
-        if(idx>=0) working.splice(idx,1);
-        return;
-      }
-      dt.time=fromMin(cursor);
-      cursor+=20;
-      kidCursors[k]=cursor;
-    });
+    if(hasBlockoutDisplaced){
+      // Full re-time: blockout displaced tasks mixed in — sort by workflow order
+      dayTasks.sort(function(a,b){
+        if(a.who!==b.who) return a.who<b.who?-1:1;
+        var aRank=_getWfOrder(a.who,d,bos);
+        var bRank=_getWfOrder(b.who,d,bos);
+        var aTier=taskTier(a), bTier=taskTier(b);
+        var aR=aRank[aTier]!=null?aRank[aTier]:99;
+        var bR=bRank[bTier]!=null?bRank[bTier]:99;
+        if(aR!==bR) return aR-bR;
+        return toMin(a.time)-toMin(b.time);
+      });
+      var kidCursors={};
+      dayTasks.forEach(function(dt){
+        var k=dt.who;
+        if(!kidCursors[k]) kidCursors[k]=dStart;
+        var cursor=kidCursors[k];
+        if(cursor>=dLunchS&&cursor<dLunchE) cursor=dLunchE;
+        if(cursor>=dEnd){
+          dt._carryOver=true;
+          carryOver.push(dt);
+          var idx=working.indexOf(dt);
+          if(idx>=0) working.splice(idx,1);
+          return;
+        }
+        dt.time=fromMin(cursor);
+        cursor+=20;
+        kidCursors[k]=cursor;
+      });
+    } else {
+      // Cascade-only: keep originals at their times, slot cascaded tasks after
+      var newTasks=dayTasks.filter(function(t){return t._cascaded;});
+      var origTasks=dayTasks.filter(function(t){return !t._cascaded;});
+      // Find latest original task end per kid
+      var kidLastTime={};
+      origTasks.forEach(function(t){
+        var tm=toMin(t.time)+20;
+        if(!kidLastTime[t.who]||tm>kidLastTime[t.who]) kidLastTime[t.who]=tm;
+      });
+      // Sort cascaded by workflow order
+      newTasks.sort(function(a,b){
+        if(a.who!==b.who) return a.who<b.who?-1:1;
+        var aRank=_getWfOrder(a.who,d,bos);
+        var bRank=_getWfOrder(b.who,d,bos);
+        var aTier=taskTier(a), bTier=taskTier(b);
+        var aR=aRank[aTier]!=null?aRank[aTier]:99;
+        var bR=bRank[bTier]!=null?bRank[bTier]:99;
+        if(aR!==bR) return aR-bR;
+        return toMin(a.time)-toMin(b.time);
+      });
+      newTasks.forEach(function(dt){
+        var k=dt.who;
+        var cursor=kidLastTime[k]||dStart;
+        if(cursor>=dLunchS&&cursor<dLunchE) cursor=dLunchE;
+        if(cursor>=dEnd){
+          dt._carryOver=true;
+          carryOver.push(dt);
+          var idx=working.indexOf(dt);
+          if(idx>=0) working.splice(idx,1);
+          return;
+        }
+        dt.time=fromMin(cursor);
+        kidLastTime[k]=cursor+20;
+      });
+    }
   });
 
   var violations=runAudit(working,carryOver,bos);
@@ -5473,7 +5573,7 @@ function coAddToSaturday(taskId){
   displacedResult.carryOver=displacedResult.carryOver.filter(c=>c.id!==taskId);
   t._carryOver=false;
   t.day="saturday";
-  t.time=fromMin(toMin("10:00 AM")+displacedResult.tasks.filter(w=>w.day==="saturday"&&w._displaced).length*20);
+  t.time=fromMin(toMin("10:00 AM")+displacedResult.tasks.filter(w=>w.day==="saturday"&&(w._displaced||w._cascaded)).length*20);
   displacedResult.tasks.push(t);
   renderAll();
 }
