@@ -623,6 +623,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
   <button class="nav-tab" onclick="showTab('maggie')" data-tab="maggie">Maggie</button>
   <button class="nav-tab" onclick="showTab('activities')" data-tab="activities">Activity Ideas</button>
   <button class="nav-tab" onclick="showTab('mastery')" data-tab="mastery">Mastery</button>
+  <button class="nav-tab" onclick="showTab('sprint')" data-tab="sprint">Sprint</button>
 </div>
 
 <div id="sched-subtabs" style="display:none"></div>
@@ -1141,6 +1142,7 @@ function renderAll(){
   else if(tab==="activities") renderActivities(c);
   else if(tab==="pace") renderPace(c);
   else if(tab==="mastery") renderMastery(c);
+  else if(tab==="sprint") renderSprint(c);
 }
 
 // ── DAY TABS ──────────────────────────────────────────────────────
@@ -3819,7 +3821,7 @@ let mastAddProbCount=1;
 const MAST_SUBJECTS={
   lincoln:["AAS"],
   ellis:["AAS"],
-  lucy:["AAS"],
+  lucy:["LOE B","Phonics Sprint"],
   julian:["Letters","Numbers","Colors","Shapes","Animals"]
 };
 const MAST_ITEM_TYPES=[
@@ -5773,6 +5775,398 @@ window.addEventListener("scroll",()=>{
 
 // ── INIT ──────────────────────────────────────────────────────────
 boot(); initFb(); renderAll();
+
+// ══════════════════════════════════════════════════════════════════
+// PHONICS SPRINT TAB
+// ══════════════════════════════════════════════════════════════════
+let sprintKid="lucy";
+let sprintSelectedPhono=null;
+let sprintReviewPhonos=[];
+let sprintPillState={diff:"intro",gs:"medium",nw:"yes",ps:"both"};
+let sprintGenerating=false;
+
+const SPRINT_LOE_B=[
+  {pg:"sh",sounds:"/sh/"},{pg:"th",sounds:"/th/·/ð/"},{pg:"ch",sounds:"/ch/·/k/·/sh/"},
+  {pg:"ck",sounds:"/k/"},{pg:"wh",sounds:"/wh/·/h/"},{pg:"ng",sounds:"/ng/"},
+  {pg:"ai",sounds:"/ā/"},{pg:"ay",sounds:"/ā/"},{pg:"ee",sounds:"/ē/"},
+  {pg:"ea",sounds:"/ē/·/ĕ/·/ā/"},{pg:"igh",sounds:"/ī/"},{pg:"oa",sounds:"/ō/"},
+  {pg:"ow",sounds:"/ō/·/ow/"},{pg:"oo",sounds:"/ū/·/ʊ/"},{pg:"ou",sounds:"/ow/·/ō/·/ū/"},
+  {pg:"oi",sounds:"/oi/"},{pg:"oy",sounds:"/oi/"},{pg:"er",sounds:"/er/"},
+  {pg:"ir",sounds:"/er/"},{pg:"ur",sounds:"/er/"},{pg:"ar",sounds:"/ar/"}
+];
+
+const SPRINT_KID_ACTIVE=["lucy","julian"];
+const SPRINT_KID_MSG={
+  lincoln:"Lincoln is past phonics sprints — his fluency work is AAS spelling. Use the Mastery tab to run his AAS drills.",
+  ellis:"Ellis is past phonics sprints — her fluency work is AAS spelling. Use the Mastery tab to run her AAS drills."
+};
+
+function sprintSetKid(k){
+  sprintKid=k;
+  sprintSelectedPhono=null;
+  sprintReviewPhonos=[];
+  sprintPillState={diff:"intro",gs:"medium",nw:"yes",ps:"both"};
+  const c=document.getElementById("content");
+  if(c) renderSprint(c);
+}
+
+function sprintSetPill(groupId,val){
+  sprintPillState[groupId]=val;
+  document.querySelectorAll(".sp-pill-"+groupId).forEach(b=>{
+    b.classList.toggle("active",b.dataset.val===val);
+  });
+}
+
+function sprintSelectPhono(pg){
+  sprintSelectedPhono=SPRINT_LOE_B.find(p=>p.pg===pg)||null;
+  document.querySelectorAll(".sp-phono-btn").forEach(b=>{
+    b.classList.toggle("active",b.dataset.pg===pg);
+  });
+  document.getElementById("sp-custom-phono").value="";
+}
+
+function sprintToggleReview(pg){
+  const idx=sprintReviewPhonos.findIndex(r=>r.pg===pg);
+  if(idx>=0){
+    sprintReviewPhonos.splice(idx,1);
+  } else if(sprintReviewPhonos.length<3){
+    const p=SPRINT_LOE_B.find(x=>x.pg===pg);
+    if(p) sprintReviewPhonos.push(p);
+  }
+  document.querySelectorAll(".sp-review-btn").forEach(b=>{
+    b.classList.toggle("active",!!sprintReviewPhonos.find(r=>r.pg===b.dataset.pg));
+  });
+  const chips=document.getElementById("sp-review-chips");
+  if(chips) chips.innerHTML=sprintReviewPhonos.map(r=>
+    `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;background:#fef3c7;color:#d97706;font-size:12px;font-weight:700;font-family:'DM Mono',monospace">${r.pg}<button onclick="sprintToggleReview('${r.pg}')" style="background:none;border:none;cursor:pointer;color:#d97706;font-size:11px;font-weight:700;padding:0;line-height:1">✕</button></span>`
+  ).join("");
+}
+
+function sprintUpdateGain(){
+  const a=parseInt(document.getElementById("sp-score-a")?.value)||0;
+  const b=parseInt(document.getElementById("sp-score-b")?.value)||0;
+  const el=document.getElementById("sp-gain");
+  if(!el) return;
+  if(a&&b){
+    const gain=b-a, pct=a>0?Math.round((gain/a)*100):0;
+    if(gain>0){el.textContent=`🎉 +${gain} words A→B (${pct}% gain) — decoding is clicking!`;el.style.color="#16a34a";}
+    else if(gain===0){el.textContent="Consistent score — solid foundation, keep drilling.";el.style.color="#d97706";}
+    else{el.textContent="B lower than A — normal early on. Keep going!";el.style.color="#78716c";}
+  } else {
+    el.textContent="Enter scores above to see session gain";
+    el.style.color="#78716c";
+  }
+}
+
+async function sprintGenerate(){
+  if(sprintGenerating) return;
+  const customPhono=document.getElementById("sp-custom-phono")?.value?.trim()||"";
+  const focusPhono=sprintSelectedPhono?sprintSelectedPhono.pg:customPhono;
+  const focusSounds=sprintSelectedPhono?sprintSelectedPhono.sounds:"";
+  if(!focusPhono){
+    const el=document.getElementById("sp-status");
+    if(el){el.textContent="Please select or type a focus phonogram.";el.style.display="block";el.style.background="#fee2e2";el.style.color="#991b1b";}
+    return;
+  }
+
+  const sprintNum=parseInt(document.getElementById("sp-num")?.value||"1");
+  const date=document.getElementById("sp-date")?.value||new Date().toISOString().slice(0,10);
+  const prevBest=parseInt(document.getElementById("sp-prev")?.value||"0")||null;
+  const {diff,gs,nw,ps}=sprintPillState;
+  const gridSizes={small:[3,6],medium:[4,7],large:[5,8]};
+  const [cols,rows]=gridSizes[gs]||[4,7];
+  const total=cols*rows;
+  const revCount=sprintReviewPhonos.length>0?Math.min(Math.floor(total*0.2),sprintReviewPhonos.length*3):0;
+  const nsCount=nw==="yes"?Math.floor(total*0.12):0;
+  const focusCount=total-revCount-nsCount;
+  const diffDesc={intro:"very simple CVC and CVCC single-syllable words — max 6 letters, high success rate",building:"mostly single-syllable with 2-3 two-syllable words",fluency:"mix of single and two-syllable words, varied patterns"}[diff]||"simple single-syllable words";
+  const kidName=SL_KLBL[sprintKid]||"Student";
+
+  sprintGenerating=true;
+  const btn=document.getElementById("sp-gen-btn");
+  if(btn){btn.disabled=true;btn.textContent="Generating A & B...";}
+  const statusEl=document.getElementById("sp-status");
+  if(statusEl) statusEl.style.display="none";
+
+  const makePrompt=(sheet)=>`You are generating a phonics fluency sprint sheet (Sheet ${sheet}) for a homeschool student named ${kidName}.
+FOCUS PHONOGRAM: "${focusPhono}"
+SHEET: ${sheet} — ${sheet==="A"?"first pass, establishes the baseline":"second pass, COMPLETELY DIFFERENT words from Sheet A. Fresh word set, same phonogram."}
+DIFFICULTY: ${diffDesc}
+Generate exactly ${focusCount} focus words containing "${focusPhono}".
+${sprintReviewPhonos.length>0?`Include exactly ${revCount} review words using: ${sprintReviewPhonos.map(r=>r.pg).join(", ")}.`:""}
+${nw==="yes"?`Include exactly ${nsCount} nonsense/pseudo-words following the phonogram pattern. Mark each with * suffix in JSON.`:""}
+${(ps==="both"||ps==="phrases")?`Generate 4 short decodable phrases (3-5 words) using "${focusPhono}". Fun and concrete.`:""}
+${(ps==="both"||ps==="sentences")?`Generate 3 decodable sentences (6-10 words). Sight words allowed: the, a, I, is, was, his, her, said, to, do, of, are, my, we.`:""}
+RULES: All words decodable with LOE Foundations A+B only. ${sheet==="B"?"Completely different word list from Sheet A.":"No repeated words."} Nonsense words marked with * in JSON only.
+Respond ONLY with valid JSON, no markdown:
+{"focusPhono":"${focusPhono}","focusSounds":"${focusSounds}","gridWords":["w1","w2"],"reviewWords":[],"nonsenseWords":[],"phrases":[],"sentences":[]}`;
+
+  try{
+    const apiKey=mastAIKey;
+    const headers={"Content-Type":"application/json","anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"};
+    if(apiKey) headers["x-api-key"]=apiKey;
+    const [resA,resB]=await Promise.all([
+      fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers,body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:makePrompt("A")}]})}),
+      fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers,body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:makePrompt("B")}]})})
+    ]);
+    const [dA,dB]=await Promise.all([resA.json(),resB.json()]);
+    if(dA.error||dB.error) throw new Error("api_error");
+    const pA=JSON.parse(dA.content[0].text.trim().replace(/```json|```/g,""));
+    const pB=JSON.parse(dB.content[0].text.trim().replace(/```json|```/g,""));
+    sprintRenderSheets(pA,pB,{sprintNum,date,prevBest,cols,rows,ps,kidName});
+  } catch(e){
+    sprintRenderSheets(sprintDemoA(focusPhono,focusSounds),sprintDemoB(focusPhono,focusSounds),{sprintNum,date,prevBest,cols,rows,ps,kidName});
+    if(statusEl){statusEl.textContent="⚠️ Using demo content — check that your API key is saved in Firebase at config/anthropic_key.";statusEl.style.display="block";statusEl.style.background="#ede9fe";statusEl.style.color="#5b3a8c";}
+  } finally{
+    sprintGenerating=false;
+    if(btn){btn.disabled=false;btn.textContent="✨ Generate A & B Sprint Sheets";}
+  }
+}
+
+function sprintDemoA(pg,sounds){return{focusPhono:pg||"sh",focusSounds:sounds||"/sh/",gridWords:["ship","shop","shed","shell","fish","dish","wish","rush","flush","brush","shin","shack","shock","shred","shelf","mesh","fresh","clash"],reviewWords:["rain","play","see"],nonsenseWords:["shrop*","shelt*"],phrases:["the big ship","a red fish dish","rush to the shed","wish on a shell"],sentences:["The fish is in the dish on the shelf.","She will rush to the shop and grab the brush.","The ship can flash its bright light at the dock."]};}
+function sprintDemoB(pg,sounds){return{focusPhono:pg||"sh",focusSounds:sounds||"/sh/",gridWords:["shim","shaft","shrub","shift","gush","lush","plush","slush","clash","flash","shrug","shrimp","crush","hush","blush","brash","shawl","smash"],reviewWords:["wait","stay","feet"],nonsenseWords:["shreb*","shoft*"],phrases:["the small shrub","a soft plush fish","gush from the shelf","flash in the shed"],sentences:["The brush fell with a crash on the ship deck.","She can crush the shells with a swift smash.","Flush the cloth and rush it to the shelf."]};}
+
+function sprintRenderSheets(pA,pB,opts){
+  const el=document.getElementById("sp-sheets");
+  if(!el) return;
+  const scoreRow=document.getElementById("sp-score-row");
+  if(scoreRow) scoreRow.style.display="grid";
+  document.getElementById("sp-score-a").value="";
+  document.getElementById("sp-score-b").value="";
+  document.getElementById("sp-gain").textContent="Enter scores above to see session gain";
+  document.getElementById("sp-gain").style.color="#78716c";
+  el.innerHTML=sprintBuildSheet(pA,"A",opts)+sprintBuildSheet(pB,"B",opts);
+}
+
+function sprintBuildSheet(parsed,sheet,{sprintNum,date,prevBest,cols,rows,ps,kidName}){
+  const isA=sheet==="A";
+  const col=isA?"#5b3a8c":"#1e3a5f";
+  const bgLight=isA?"#faf5ff":"#eff6ff";
+  const bdLight=isA?"#c4b5fd":"#93c5fd";
+  const fwCol=isA?"#5b3a8c":"#1e3a5f";
+  const kid=sprintKid;
+  const emoji=MAST_KID_EMOJI[kid]||"🦄";
+  const kidColor=MAST_KID_COL[kid]||col;
+
+  const all=[];
+  (parsed.gridWords||[]).forEach(w=>all.push({w,t:"focus"}));
+  (parsed.reviewWords||[]).forEach(w=>all.push({w,t:"review"}));
+  (parsed.nonsenseWords||[]).forEach(w=>all.push({w:w.replace("*",""),t:"nonsense"}));
+  for(let i=all.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[all[i],all[j]]=[all[j],all[i]];}
+  const needed=cols*rows;
+  while(all.length<needed) all.push({w:"—",t:"focus"});
+  const grid=all.slice(0,needed);
+
+  const dateObj=new Date(date+"T12:00:00");
+  const dateStr=dateObj.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+  const target=prevBest?Math.ceil(prevBest*1.1):null;
+
+  const esc=(s)=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+  const hl=(text)=>text.replace(new RegExp(`(\\w*${esc(parsed.focusPhono)}\\w*)`,"gi"),`<span style="color:${fwCol};font-weight:700">$1</span>`);
+
+  let h=`<div style="background:#fff;border:2px solid ${bdLight};border-radius:14px;overflow:hidden;margin-bottom:18px">`;
+  h+=`<div style="background:${kidColor};color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between">
+    <div>
+      <div style="font-family:'Fraunces',serif;font-size:18px;font-weight:900">${emoji} ${kidName}</div>
+      <div style="font-size:10px;opacity:0.75;margin-top:1px">Phonics Sprint #${String(sprintNum).padStart(3,"0")} · ${dateStr}</div>
+    </div>
+    <div style="font-family:'Fraunces',serif;font-size:44px;font-weight:900;opacity:0.2;line-height:1">${sheet}</div>
+  </div>`;
+  h+=`<div style="padding:13px 15px">`;
+  h+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:13px">`;
+  if(isA&&prevBest){
+    h+=`<div style="border:1.5px solid #c4b5fd;border-radius:10px;padding:9px 12px;background:#faf5ff">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#78716c">🏆 Best</div>
+      <div style="font-family:'DM Mono',monospace;font-size:18px;font-weight:700;color:#d97706">${prevBest}</div>
+      ${target?`<div style="font-size:9px;color:#5b3a8c;font-weight:700">Target: ${target}+</div>`:""}
+    </div>`;
+  } else {
+    h+=`<div style="border:1.5px solid ${bdLight};border-radius:10px;padding:9px 12px;background:${bgLight}">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#78716c">${isA?"🏆 Target":"Sheet A Score"}</div>
+      <div style="height:2px;background:#e2ddd6;border-radius:1px;margin-top:8px"></div>
+      <div style="font-size:9px;color:#78716c;margin-top:3px">words</div>
+    </div>`;
+  }
+  h+=`<div style="border:1.5px solid ${bdLight};border-radius:10px;padding:9px 12px;background:${bgLight}">
+    <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#78716c">✏️ Sheet ${sheet} Score</div>
+    <div style="height:2px;background:#e2ddd6;border-radius:1px;margin-top:8px"></div>
+    <div style="font-size:9px;color:#78716c;margin-top:3px">words / 60s</div>
+  </div></div>`;
+  h+=`<div style="display:inline-flex;align-items:center;gap:6px;background:${bgLight};border-radius:8px;padding:5px 10px;margin-bottom:11px">
+    <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:${col}">Focus</span>
+    <span style="font-family:'DM Mono',monospace;font-size:15px;font-weight:700;color:${col}">${parsed.focusPhono}</span>
+    <span style="font-size:11px;color:${col};opacity:0.65">${parsed.focusSounds||""}</span>
+    <span style="font-size:9px;font-weight:700;color:${col};opacity:0.4;margin-left:2px">Sheet ${sheet}</span>
+  </div>`;
+  h+=`<div style="display:flex;gap:10px;margin-bottom:10px;font-size:9px;font-weight:700;flex-wrap:wrap">
+    <span style="color:#1c1917">● Focus</span>
+    <span style="color:#d97706">● Review</span>
+    <span style="color:#9333ea">● Nonsense*</span>
+  </div>`;
+  h+=`<div style="font-size:9px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#78716c;margin-bottom:7px">Word Grid — read across as fast as you can ▶</div>`;
+  h+=`<div style="border:1px solid #f0ede8;border-radius:10px;overflow:hidden;margin-bottom:15px">`;
+  for(let r=0;r<rows;r++){
+    h+=`<div style="display:flex;border-bottom:${r<rows-1?"1px solid #f0ede8":"none"}">`;
+    h+=`<div style="width:20px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:'DM Mono',monospace;font-size:9px;color:#c4b8ae;border-right:1px solid #f0ede8;background:#faf8f5">${r+1}</div>`;
+    for(let c=0;c<cols;c++){
+      const item=grid[r*cols+c]||{w:"—",t:"focus"};
+      const wc=item.t==="review"?"#d97706":item.t==="nonsense"?"#9333ea":"#1c1917";
+      const fw=item.t==="review"||item.t==="nonsense"?"700":"500";
+      const fi=item.t==="nonsense"?"italic":"normal";
+      h+=`<div style="flex:1;padding:8px 5px;font-family:'DM Mono',monospace;font-size:14px;font-weight:${fw};font-style:${fi};text-align:center;border-right:${c<cols-1?"1px solid #f0ede8":"none"};color:${wc}">${item.w}</div>`;
+    }
+    h+=`</div>`;
+  }
+  h+=`</div>`;
+  const hasBonus=((ps==="both"||ps==="phrases")&&parsed.phrases&&parsed.phrases.length)||((ps==="both"||ps==="sentences")&&parsed.sentences&&parsed.sentences.length);
+  if(ps!=="none"&&hasBonus){
+    h+=`<div style="border:2px dashed #22c55e;border-radius:12px;padding:10px 12px 4px;margin-bottom:14px;position:relative">`;
+    h+=`<div style="position:absolute;top:-11px;left:10px;background:#fff;padding:0 6px;font-size:10px;font-weight:800;color:#16a34a;letter-spacing:0.06em;text-transform:uppercase">📍 Bonus Zone — if you get here, you're flying!</div>`;
+    if((ps==="both"||ps==="phrases")&&parsed.phrases&&parsed.phrases.length){
+      h+=`<div style="font-size:9px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#78716c;margin-top:6px;margin-bottom:6px">Phrases</div>`;
+      parsed.phrases.forEach((ph,i)=>{
+        h+=`<div style="padding:6px 0;border-bottom:1px solid #f5f2ee;font-size:13px;display:flex;gap:8px;align-items:baseline">
+          <span style="font-family:'DM Mono',monospace;font-size:9px;color:#c4b8ae;flex-shrink:0;width:14px">${i+1}.</span>
+          <span>${hl(ph)}</span>
+        </div>`;
+      });
+    }
+    if((ps==="both"||ps==="sentences")&&parsed.sentences&&parsed.sentences.length){
+      h+=`<div style="font-size:9px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#78716c;margin-top:10px;margin-bottom:6px">Sentences</div>`;
+      parsed.sentences.forEach((s,i)=>{
+        h+=`<div style="padding:8px 0;border-bottom:${i<parsed.sentences.length-1?"1px solid #f5f2ee":"none"};font-size:13px;line-height:1.6;display:flex;gap:8px;align-items:flex-start">
+          <span style="font-family:'DM Mono',monospace;font-size:9px;color:#c4b8ae;flex-shrink:0;width:14px;margin-top:3px">${i+1}.</span>
+          <span>${hl(s)}</span>
+        </div>`;
+      });
+    }
+    h+=`</div>`;
+  }
+  h+=`</div>`;
+  h+=`<div style="background:#faf8f5;border-top:1px solid #f0ede8;padding:8px 15px;display:flex;align-items:center;justify-content:space-between">
+    <div style="font-size:9px;color:#78716c;font-style:italic">Only racing yourself ${emoji} · Sheet ${sheet} of 2</div>
+    <div style="font-family:'Fraunces',serif;font-size:10px;font-weight:700;color:#c4b8ae">Howe Academy</div>
+  </div>`;
+  h+=`</div>`;
+  return h;
+}
+
+function renderSprint(el){
+  const kids=["lincoln","ellis","lucy","julian"];
+  const color=MAST_KID_COL[sprintKid]||"#5b3a8c";
+  const isActive=SPRINT_KID_ACTIVE.includes(sprintKid);
+  const today=new Date().toISOString().slice(0,10);
+
+  let h=`<div style="padding:12px 12px 80px">`;
+  h+=`<div style="display:flex;gap:6px;margin-bottom:14px;overflow-x:auto">`;
+  kids.forEach(k=>{
+    const kc=MAST_KID_COL[k]||"#5b3a8c";
+    const active=sprintKid===k;
+    h+=`<button onclick="sprintSetKid('${k}')" style="padding:7px 14px;border-radius:20px;border:1.5px solid ${active?kc:"#e2ddd6"};background:${active?kc:"#fff"};color:${active?"#fff":"#78716c"};font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap">${MAST_KID_EMOJI[k]||""} ${SL_KLBL[k]||k}</button>`;
+  });
+  h+=`</div>`;
+
+  if(!isActive){
+    const msg=SPRINT_KID_MSG[sprintKid]||"Phonics Sprint not configured for this student.";
+    h+=`<div style="background:#fff;border:1.5px solid #e2ddd6;border-radius:14px;padding:32px 20px;text-align:center">
+      <div style="font-size:32px;margin-bottom:10px">${MAST_KID_EMOJI[sprintKid]||"📚"}</div>
+      <div style="font-family:'Fraunces',serif;font-size:16px;font-weight:700;color:${MAST_KID_COL[sprintKid]||"#1c1917"};margin-bottom:8px">${SL_KLBL[sprintKid]} — Phonics Sprint Complete</div>
+      <div style="font-size:13px;color:#78716c;line-height:1.6;max-width:320px;margin:0 auto">${msg}</div>
+      <button onclick="showTab('mastery');mastSetKid('${sprintKid}')" style="margin-top:18px;padding:10px 20px;background:${MAST_KID_COL[sprintKid]};color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Go to Mastery →</button>
+    </div>`;
+    h+=`</div>`;
+    el.innerHTML=h;
+    return;
+  }
+
+  h+=`<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">`;
+  h+=`<div style="font-family:'Fraunces',serif;font-size:16px;font-weight:700;margin-bottom:13px;display:flex;align-items:center;gap:7px">⚙️ Sprint Setup</div>`;
+  h+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+    <div>
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:5px">Sprint #</div>
+      <input id="sp-num" type="number" value="1" min="1" autocomplete="off" style="width:100%;padding:9px 10px;border:1.5px solid #e2ddd6;border-radius:9px;font-size:14px;font-family:'DM Sans',sans-serif"/>
+    </div>
+    <div>
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:5px">Date</div>
+      <input id="sp-date" type="date" value="${today}" autocomplete="off" style="width:100%;padding:9px 10px;border:1.5px solid #e2ddd6;border-radius:9px;font-size:14px;font-family:'DM Sans',sans-serif"/>
+    </div>
+  </div>`;
+  h+=`<div style="margin-bottom:12px">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:5px">Previous Best (Sheet A, words/60s)</div>
+    <input id="sp-prev" type="number" min="0" placeholder="Leave blank for first sprint" autocomplete="off" style="width:100%;padding:9px 10px;border:1.5px solid #e2ddd6;border-radius:9px;font-size:14px;font-family:'DM Sans',sans-serif"/>
+  </div>`;
+  h+=`<div style="margin-bottom:0">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:6px">Difficulty</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">`;
+  [{v:"intro",l:"Intro"},{v:"building",l:"Building"},{v:"fluency",l:"Fluency"}].forEach(({v,l})=>{
+    const act=sprintPillState.diff===v;
+    h+=`<button class="sp-pill-diff" data-val="${v}" onclick="sprintSetPill('diff','${v}')" style="padding:6px 12px;border-radius:20px;border:1.5px solid ${act?color:"#e2ddd6"};background:${act?color:"#fff"};color:${act?"#fff":"#78716c"};font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">${l}</button>`;
+  });
+  h+=`</div></div></div>`;
+
+  h+=`<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">`;
+  h+=`<div style="font-family:'Fraunces',serif;font-size:16px;font-weight:700;margin-bottom:12px">🔤 Focus Phonogram</div>`;
+  h+=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:5px;margin-bottom:12px">`;
+  SPRINT_LOE_B.forEach(p=>{
+    const act=sprintSelectedPhono&&sprintSelectedPhono.pg===p.pg;
+    h+=`<button class="sp-phono-btn" data-pg="${p.pg}" onclick="sprintSelectPhono('${p.pg}')" style="padding:7px 3px;border-radius:9px;border:1.5px solid ${act?color:"#e2ddd6"};background:${act?color:"#fff"};color:${act?"#fff":"#1c1917"};font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Mono',monospace;text-align:center">${p.pg}</button>`;
+  });
+  h+=`</div>`;
+  h+=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:5px">Or type a custom pattern</div>
+  <input id="sp-custom-phono" type="text" placeholder="e.g. silent-e, soft-c..." autocomplete="off" style="width:100%;padding:9px 10px;border:1.5px solid #e2ddd6;border-radius:9px;font-size:14px;font-family:'DM Sans',sans-serif"/>`;
+  h+=`</div>`;
+
+  h+=`<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">`;
+  h+=`<div style="font-family:'Fraunces',serif;font-size:16px;font-weight:700;margin-bottom:6px">🔁 Spiral Review <span style="font-size:12px;font-weight:400;color:#78716c">(optional — up to 3)</span></div>`;
+  h+=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:5px;margin-bottom:8px">`;
+  SPRINT_LOE_B.forEach(p=>{
+    const act=!!sprintReviewPhonos.find(r=>r.pg===p.pg);
+    h+=`<button class="sp-review-btn" data-pg="${p.pg}" onclick="sprintToggleReview('${p.pg}')" style="padding:7px 3px;border-radius:9px;border:1.5px solid ${act?"#d97706":"#e2ddd6"};background:${act?"#fef3c7":"#fff"};color:${act?"#d97706":"#78716c"};font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Mono',monospace;text-align:center">${p.pg}</button>`;
+  });
+  h+=`</div>`;
+  h+=`<div id="sp-review-chips" style="display:flex;gap:4px;flex-wrap:wrap">${sprintReviewPhonos.map(r=>`<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;background:#fef3c7;color:#d97706;font-size:12px;font-weight:700;font-family:'DM Mono',monospace">${r.pg}<button onclick="sprintToggleReview('${r.pg}')" style="background:none;border:none;cursor:pointer;color:#d97706;font-size:11px;font-weight:700;padding:0;line-height:1">✕</button></span>`).join("")}</div>`;
+  h+=`</div>`;
+
+  h+=`<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">`;
+  h+=`<div style="font-family:'Fraunces',serif;font-size:16px;font-weight:700;margin-bottom:13px">🎛️ Options</div>`;
+  const pillGroup=(label,groupId,options)=>{
+    let s=`<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:6px">${label}</div><div style="display:flex;gap:6px;flex-wrap:wrap">`;
+    options.forEach(({v,l})=>{
+      const act=sprintPillState[groupId]===v;
+      s+=`<button class="sp-pill-${groupId}" data-val="${v}" onclick="sprintSetPill('${groupId}','${v}')" style="padding:6px 11px;border-radius:20px;border:1.5px solid ${act?color:"#e2ddd6"};background:${act?color:"#fff"};color:${act?"#fff":"#78716c"};font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap">${l}</button>`;
+    });
+    s+=`</div></div>`;
+    return s;
+  };
+  h+=pillGroup("Grid Size","gs",[{v:"small",l:"Small (3×6)"},{v:"medium",l:"Medium (4×7)"},{v:"large",l:"Large (5×8)"}]);
+  h+=pillGroup("Nonsense Words","nw",[{v:"yes",l:"Yes — a few"},{v:"no",l:"No"}]);
+  h+=pillGroup("Phrases & Sentences","ps",[{v:"both",l:"Both"},{v:"phrases",l:"Phrases only"},{v:"sentences",l:"Sentences only"},{v:"none",l:"Grid only"}]);
+  h+=`</div>`;
+
+  h+=`<div id="sp-status" style="display:none;padding:10px 14px;border-radius:10px;font-size:13px;font-weight:600;margin-bottom:12px"></div>`;
+  h+=`<button id="sp-gen-btn" onclick="sprintGenerate()" style="width:100%;padding:13px;border-radius:12px;border:none;background:${color};color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:16px">✨ Generate A &amp; B Sprint Sheets</button>`;
+
+  h+=`<div id="sp-score-row" style="display:none;background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:13px 15px;margin-bottom:14px">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#78716c;margin-bottom:10px">📊 Session Score Tracker</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div style="border-radius:10px;padding:11px;text-align:center;background:#faf5ff;border:1.5px solid #c4b5fd">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#5b3a8c;margin-bottom:4px">Sheet A — First Pass</div>
+        <input type="number" id="sp-score-a" min="0" placeholder="—" oninput="sprintUpdateGain()" autocomplete="off" style="width:80px;font-family:'DM Mono',monospace;font-size:24px;font-weight:700;color:#5b3a8c;border:none;background:transparent;text-align:center;outline:none;padding:0"/>
+        <div style="font-size:10px;color:#78716c;margin-top:2px">words / 60s</div>
+      </div>
+      <div style="border-radius:10px;padding:11px;text-align:center;background:#eff6ff;border:1.5px solid #93c5fd">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#1e3a5f;margin-bottom:4px">Sheet B — Second Pass</div>
+        <input type="number" id="sp-score-b" min="0" placeholder="—" oninput="sprintUpdateGain()" autocomplete="off" style="width:80px;font-family:'DM Mono',monospace;font-size:24px;font-weight:700;color:#1e3a5f;border:none;background:transparent;text-align:center;outline:none;padding:0"/>
+        <div style="font-size:10px;color:#78716c;margin-top:2px">words / 60s</div>
+      </div>
+    </div>
+    <div id="sp-gain" style="text-align:center;padding-top:8px;border-top:1px solid #e2ddd6;font-size:12px;font-weight:700;color:#78716c">Enter scores above to see session gain</div>
+  </div>`;
+
+  h+=`<div id="sp-sheets"></div>`;
+  h+=`</div>`;
+  el.innerHTML=h;
+}
 </script>
 </body>
 </html>
