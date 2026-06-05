@@ -5790,6 +5790,9 @@ let sprintSelectedPhono=null;
 let sprintReviewPhonos=[];
 let sprintPillState={diff:"intro",gs:"medium",nw:"yes",ps:"both"};
 let sprintGenerating=false;
+let sprintNum=1;
+let sprintDate=new Date().toISOString().slice(0,10);
+let sprintPrevBest="";
 
 const SPRINT_LOE_B=[
   {pg:"sh",sounds:"/sh/"},{pg:"th",sounds:"/th/·/ð/"},{pg:"ch",sounds:"/ch/·/k/·/sh/"},
@@ -5809,22 +5812,26 @@ const SPRINT_KID_MSG={
 
 
 
+function sprintSaveInputs(){
+  const n=document.getElementById("sp-num"); if(n) sprintNum=parseInt(n.value)||1;
+  const d=document.getElementById("sp-date"); if(d) sprintDate=d.value;
+  const p=document.getElementById("sp-prev"); if(p) sprintPrevBest=p.value;
+}
+
 function sprintSetPill(groupId,val){
+  sprintSaveInputs();
   sprintPillState[groupId]=val;
-  document.querySelectorAll(".sp-pill-"+groupId).forEach(b=>{
-    b.classList.toggle("active",b.dataset.val===val);
-  });
+  _mastRe();
 }
 
 function sprintSelectPhono(pg){
+  sprintSaveInputs();
   sprintSelectedPhono=SPRINT_LOE_B.find(p=>p.pg===pg)||null;
-  document.querySelectorAll(".sp-phono-btn").forEach(b=>{
-    b.classList.toggle("active",b.dataset.pg===pg);
-  });
-  document.getElementById("sp-custom-phono").value="";
+  _mastRe();
 }
 
 function sprintToggleReview(pg){
+  sprintSaveInputs();
   const idx=sprintReviewPhonos.findIndex(r=>r.pg===pg);
   if(idx>=0){
     sprintReviewPhonos.splice(idx,1);
@@ -5832,13 +5839,7 @@ function sprintToggleReview(pg){
     const p=SPRINT_LOE_B.find(x=>x.pg===pg);
     if(p) sprintReviewPhonos.push(p);
   }
-  document.querySelectorAll(".sp-review-btn").forEach(b=>{
-    b.classList.toggle("active",!!sprintReviewPhonos.find(r=>r.pg===b.dataset.pg));
-  });
-  const chips=document.getElementById("sp-review-chips");
-  if(chips) chips.innerHTML=sprintReviewPhonos.map(r=>
-    `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;background:#fef3c7;color:#d97706;font-size:12px;font-weight:700;font-family:'DM Mono',monospace">${r.pg}<button onclick="sprintToggleReview('${r.pg}')" style="background:none;border:none;cursor:pointer;color:#d97706;font-size:11px;font-weight:700;padding:0;line-height:1">✕</button></span>`
-  ).join("");
+  _mastRe();
 }
 
 function sprintUpdateGain(){
@@ -5868,9 +5869,10 @@ async function sprintGenerate(){
     return;
   }
 
-  const sprintNum=parseInt(document.getElementById("sp-num")?.value||"1");
-  const date=document.getElementById("sp-date")?.value||new Date().toISOString().slice(0,10);
-  const prevBest=parseInt(document.getElementById("sp-prev")?.value||"0")||null;
+  sprintSaveInputs();
+  const _sprintNum=sprintNum;
+  const date=sprintDate;
+  const prevBest=parseInt(sprintPrevBest||"0")||null;
   const {diff,gs,nw,ps}=sprintPillState;
   const gridSizes={small:[3,6],medium:[4,7],large:[5,8]};
   const [cols,rows]=gridSizes[gs]||[4,7];
@@ -5912,9 +5914,9 @@ Respond ONLY with valid JSON, no markdown:
     if(dA.error||dB.error) throw new Error("api_error");
     const pA=JSON.parse(dA.content[0].text.trim().replace(/```json|```/g,""));
     const pB=JSON.parse(dB.content[0].text.trim().replace(/```json|```/g,""));
-    sprintRenderSheets(pA,pB,{sprintNum,date,prevBest,cols,rows,ps,kidName});
+    sprintRenderSheets(pA,pB,{sprintNum:_sprintNum,date,prevBest,cols,rows,ps,kidName});
   } catch(e){
-    sprintRenderSheets(sprintDemoA(focusPhono,focusSounds),sprintDemoB(focusPhono,focusSounds),{sprintNum,date,prevBest,cols,rows,ps,kidName});
+    sprintRenderSheets(sprintDemoA(focusPhono,focusSounds),sprintDemoB(focusPhono,focusSounds),{sprintNum:_sprintNum,date,prevBest,cols,rows,ps,kidName});
     if(statusEl){statusEl.textContent="⚠️ Using demo content — check that your API key is saved in Firebase at config/anthropic_key.";statusEl.style.display="block";statusEl.style.background="#ede9fe";statusEl.style.color="#5b3a8c";}
   } finally{
     sprintGenerating=false;
@@ -6053,7 +6055,6 @@ function sprintBuildSheet(parsed,sheet,{sprintNum,date,prevBest,cols,rows,ps,kid
 function buildSprintHtml(){
   const color=MAST_KID_COL[masteryKid]||"#5b3a8c";
   const isActive=SPRINT_KID_ACTIVE.includes(masteryKid);
-  const today=new Date().toISOString().slice(0,10);
   let h="";
 
   if(!isActive){
@@ -6072,16 +6073,16 @@ function buildSprintHtml(){
   h+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
     <div>
       <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:5px">Sprint #</div>
-      <input id="sp-num" type="number" value="1" min="1" autocomplete="off" style="width:100%;padding:9px 10px;border:1.5px solid #e2ddd6;border-radius:9px;font-size:14px;font-family:'DM Sans',sans-serif"/>
+      <input id="sp-num" type="number" value="${sprintNum}" min="1" autocomplete="off" style="width:100%;padding:9px 10px;border:1.5px solid #e2ddd6;border-radius:9px;font-size:14px;font-family:'DM Sans',sans-serif"/>
     </div>
     <div>
       <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:5px">Date</div>
-      <input id="sp-date" type="date" value="${today}" autocomplete="off" style="width:100%;padding:9px 10px;border:1.5px solid #e2ddd6;border-radius:9px;font-size:14px;font-family:'DM Sans',sans-serif"/>
+      <input id="sp-date" type="date" value="${sprintDate}" autocomplete="off" style="width:100%;padding:9px 10px;border:1.5px solid #e2ddd6;border-radius:9px;font-size:14px;font-family:'DM Sans',sans-serif"/>
     </div>
   </div>`;
   h+=`<div style="margin-bottom:12px">
     <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:5px">Previous Best (Sheet A, words/60s)</div>
-    <input id="sp-prev" type="number" min="0" placeholder="Leave blank for first sprint" autocomplete="off" style="width:100%;padding:9px 10px;border:1.5px solid #e2ddd6;border-radius:9px;font-size:14px;font-family:'DM Sans',sans-serif"/>
+    <input id="sp-prev" type="number" min="0" value="${sprintPrevBest}" placeholder="Leave blank for first sprint" autocomplete="off" style="width:100%;padding:9px 10px;border:1.5px solid #e2ddd6;border-radius:9px;font-size:14px;font-family:'DM Sans',sans-serif"/>
   </div>`;
   h+=`<div style="margin-bottom:0">
     <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:6px">Difficulty</div>
