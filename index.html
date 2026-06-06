@@ -7626,10 +7626,13 @@ function gwClassifySubjects(kid){
 
 function gwByCategory(kid,tasksDict){
   const subjects=gwGetSubjects(kid);
-  const buckets={computer:[],ipad:[],phone:[],independent:[],maybe_paper:[],required_paper:[]};
+  const buckets={first:[],computer:[],ipad:[],phone:[],independent:[],maybe_paper:[],required_paper:[],last:[]};
   for(const[key,val] of Object.entries(tasksDict)){
     const s=subjects[key];
     if(!s) continue;
+    const rules=s.rules||"";
+    if(rules.includes("first")){ buckets.first.push([key,val]); continue; }
+    if(rules.includes("last")){ buckets.last.push([key,val]); continue; }
     if(s.device==="computer") buckets.computer.push([key,val]);
     else if(s.device==="ipad") buckets.ipad.push([key,val]);
     else if(s.device==="phone") buckets.phone.push([key,val]);
@@ -7716,8 +7719,8 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
 
   // Inject built-in daily subjects into curriculum so getMeta/addTask work
   if(currData&&currData.subjects){
-    const DAILY={morning_nb:{display:"Morning Notebook",device:"book",mom:"none",minutes:5,rules:"",days:"",total:0},
-                 closing_nb:{display:"Closing Notebook",device:"book",mom:"none",minutes:5,rules:"",days:"",total:0}};
+    const DAILY={morning_nb:{display:"Morning Notebook",device:"book",mom:"none",minutes:5,rules:"first",days:"",total:0},
+                 closing_nb:{display:"Closing Notebook",device:"book",mom:"none",minutes:5,rules:"last",days:"",total:0}};
     ["lincoln","ellis","lucy"].forEach(k=>{
       if(!currData.subjects[k]) return;
       for(const[sk,sv] of Object.entries(DAILY)) if(!currData.subjects[k][sk]) currData.subjects[k][sk]=sv;
@@ -7778,14 +7781,6 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
 
   function schedBucket(kid,bucket){ bucket.forEach(([key,val])=>schedule(kid,key,val)); }
 
-  // ── MORNING NOTEBOOKS — first task for each kid ──
-  ["lincoln","ellis","lucy"].forEach(kid=>{
-    if(getMeta(kid,"morning_nb")){
-      addTask(kid,"morning_nb","Daily",schoolStart);
-      sched.kidFree[kid]=schoolStart+(getMeta(kid,"morning_nb").minutes||5);
-    }
-  });
-
   // ── JULIAN NOTEBOOK — 10:00 AM, 10 min ──
   tasks.push({
     id:prefix+(counter++),who:"julian",day:dayName,
@@ -7798,11 +7793,15 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   const e=gwByCategory("ellis",kidAssignments.ellis||{});
   const c=gwByCategory("lucy",kidAssignments.lucy||{});
 
+  // First-of-day subjects (rule: "first")
+  schedBucket("lincoln",l.first);
+  schedBucket("ellis",e.first);
+  schedBucket("lucy",c.first);
+
   // Phase 1
   schedBucket("lincoln",l.computer);
   if(!isMaggie) schedBucket("ellis",e.required_paper);
   else schedBucket("ellis",e.ipad);
-  sched.kidFree.lucy=Math.max(sched.kidFree.lucy,schoolStart+(getMeta("lucy","morning_nb")?5:0));
   schedBucket("lucy",c.phone);
 
   // Phase 2
@@ -7823,39 +7822,17 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
     sched.kidFree.lincoln=Math.max(sched.kidFree.lincoln,maggieEnd);
     sched.kidFree.ellis=Math.max(sched.kidFree.ellis,maggieEnd);
   }
-  // Lincoln: drills before AAS if AAS exists, otherwise start of mom block
-  const hasAAS=l.required_paper.some(([key])=>key==="aas");
-  if(hasAAS){
-    schedBucket("lincoln",l.required_paper.filter(([key])=>key!=="aas"));
-    // Keep drills+AAS together: if pair straddles lunch, push both after
-    const _dm=getMeta("lincoln","drills_l"), _am=getMeta("lincoln","aas");
-    if(_dm&&_am){
-      const _cur=Math.max(sched.kidFree.lincoln,sched.momFree);
-      const _combined=(_dm.minutes||10)+(_am.minutes||20);
-      if(gwSkipLunch(_cur,_combined)>_cur)
-        sched.kidFree.lincoln=Math.max(sched.kidFree.lincoln,GW_LUNCH_END);
-    }
-    if(_dm) schedule("lincoln","drills_l","Practice");
-    schedBucket("lincoln",l.required_paper.filter(([key])=>key==="aas"));
-  } else {
-    if(getMeta("lincoln","drills_l")) schedule("lincoln","drills_l","Practice");
-    schedBucket("lincoln",l.required_paper);
-  }
+  schedBucket("lincoln",l.required_paper);
   if(isMaggie) schedBucket("ellis",e.required_paper);
 
   // Phase 5
   schedBucket("lucy",c.ipad);
   schedBucket("lucy",[...c.independent,...c.maybe_paper,...c.required_paper]);
 
-  // ── CLOSING NOTEBOOKS — last task for each kid ──
-  ["lincoln","ellis","lucy"].forEach(kid=>{
-    if(getMeta(kid,"closing_nb")){
-      let s=sched.kidFree[kid];
-      s=gwSkipLunch(s,5);
-      if(s+5>cutoff) s=cutoff-5;
-      addTask(kid,"closing_nb","Daily",s);
-    }
-  });
+  // Last-of-day subjects (rule: "last")
+  schedBucket("lincoln",l.last);
+  schedBucket("ellis",e.last);
+  schedBucket("lucy",c.last);
 
   tasks.sort((a,b)=>toMin(a.time)-toMin(b.time));
   return {tasks,counter,dropped};
@@ -8038,6 +8015,17 @@ function generateWeek(config){
   // Auto-balance
   balanced=gwAutoBalance(balanced,config.lateStart||{},config.skipDays||[]);
 
+  // Inject daily curriculum subjects (notebooks, drills) into every school day
+  for(const dk of Object.keys(balanced)){
+    if(!balanced[dk]) continue;
+    for(const kid of ["lincoln","ellis","lucy"]){
+      if(!balanced[dk][kid]||!Object.keys(balanced[dk][kid]).length) continue;
+      balanced[dk][kid].morning_nb="Daily";
+      balanced[dk][kid].closing_nb="Daily";
+      if(kid==="lincoln") balanced[dk][kid].drills_l="Practice";
+    }
+  }
+
   const skipSet=new Set((config.skipDays||[]).map(d=>d.toLowerCase()));
   const sortedDates=Object.keys(balanced).sort();
 
@@ -8179,12 +8167,12 @@ function gwCommit(){
     const snapHist=ld(activeWK+"_history")||{};
     const oldLookup={};
     (weekData.tasks||[]).forEach(t=>{
-      const key=(t.title||"")+"|"+(t.who||"");
+      const key=(t.title||"")+"|"+(t.who||"")+"|"+(t.day||"");
       if(snapChecked[t.id]) oldLookup[key]={ts:snapChecked[t.id],oldId:t.id};
     });
     d.tasks.forEach(t=>{
       if(snapChecked[t.id]) return;
-      const key=(t.title||"")+"|"+(t.who||"");
+      const key=(t.title||"")+"|"+(t.who||"")+"|"+(t.day||"");
       if(oldLookup[key]){
         snapChecked[t.id]=oldLookup[key].ts;
         if(snapHist[oldLookup[key].oldId]&&!snapHist[t.id])
