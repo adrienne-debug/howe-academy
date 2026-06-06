@@ -6214,7 +6214,69 @@ function removeConstraint(day){
   patch["constraints/"+day]=null;
   patch["windows/"+day]=null;
   db.ref(WK+"/meta").update(patch);
+  // Re-sort unchecked tasks for this day using normal school-day timing
+  resortDayTasks(day);
   renderAll();
+}
+function resortDayTasks(day){
+  if(!weekData||!weekData.tasks) return;
+  const r=rulesData||{};
+  const sd=r.schoolDay||{};
+  const sdOv=(sd.overrides||{})[day]||{};
+  const schoolStart=toMin(sdOv.start||sd.defaultStart||"10:00 AM");
+  const schoolEnd=toMin(sdOv.end||sd.defaultEnd||"4:15 PM");
+  // Separate checked vs unchecked for this day
+  const dayTasks=weekData.tasks.filter(t=>t.day===day&&!t.id.endsWith("_c"));
+  const done=dayTasks.filter(t=>checked[t.id]);
+  const todo=dayTasks.filter(t=>!checked[t.id]);
+  if(!todo.length) return;
+  // Sort unchecked by current time to preserve relative order
+  todo.sort((a,b)=>toMin(a.time)-toMin(b.time));
+  // Build per-resource cursors starting at default school start (mom available immediately)
+  const cur={comp:schoolStart,ipad:schoolStart,ipadLucy:schoolStart,mom:schoolStart};
+  const kidCur={};
+  // Account for completed tasks' resource usage
+  done.forEach(t=>{
+    const end=toMin(t.time)+(t.dur||20);
+    kidCur[t.who]=Math.max(kidCur[t.who]||0,end);
+    const det=t.detail||"";
+    if(det.includes("Computer.")) cur.comp=Math.max(cur.comp,end);
+    if(det.includes("Ipad.")){
+      if(t.who==="lucy") cur.ipadLucy=Math.max(cur.ipadLucy,end);
+      else cur.ipad=Math.max(cur.ipad,end);
+    }
+    if(t.mom==="required") cur.mom=Math.max(cur.mom,end);
+  });
+  // Place each unchecked task
+  let changed=false;
+  todo.forEach(t=>{
+    const dur=t.dur||20;
+    const det=t.detail||"";
+    const isComp=det.includes("Computer.");
+    const isIpad=det.includes("Ipad.");
+    const reqMom=t.mom==="required";
+    // Earliest start: max of kid cursor, device cursor, mom cursor
+    let s=kidCur[t.who]||schoolStart;
+    if(isComp) s=Math.max(s,cur.comp);
+    if(isIpad) s=Math.max(s,t.who==="lucy"?cur.ipadLucy:cur.ipad);
+    if(reqMom) s=Math.max(s,cur.mom);
+    // Skip lunch
+    s=gwSkipLunch(s,dur);
+    if(s+dur>schoolEnd) s=schoolEnd-dur; // clamp
+    const newTime=fromMin(s);
+    if(newTime!==t.time){ t.time=newTime; changed=true; }
+    // Advance cursors
+    const end=s+dur;
+    kidCur[t.who]=end;
+    if(isComp) cur.comp=end;
+    if(isIpad){ if(t.who==="lucy") cur.ipadLucy=end; else cur.ipad=end; }
+    if(reqMom) cur.mom=end;
+  });
+  if(!changed) return;
+  sv(WK+"_tasks",weekData.tasks);
+  lastTasksWrite=Date.now();
+  const obj={};weekData.tasks.forEach(t=>obj[t.id]=t);
+  db.ref(WK+"/tasks").set(obj);
 }
 function getDayBlockouts(d){
   const out=[];
