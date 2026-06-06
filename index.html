@@ -7012,7 +7012,10 @@ function pnwStartWizard(){
     db.ref("weekConfig/"+nw).once("value",s=>{
       const v=s.val();
       if(v){
-        gwConfig={weekNum:v.weekNum||String(nw),maggie:v.maggie||{},skipDays:v.skipDays||[],lateStart:v.lateStart||{},carSchool:v.carSchool||{},theater:!!v.theater,saturday:!!v.saturday,redistribute:v.redistribute||[]};
+        const rawMag=v.maggie||{};
+        const normMag={};
+        for(const[k,val] of Object.entries(rawMag)) normMag[k]=gwNormMaggie(val);
+        gwConfig={weekNum:v.weekNum||String(nw),maggie:normMag,skipDays:v.skipDays||[],lateStart:v.lateStart||{},carSchool:v.carSchool||{},theater:!!v.theater,saturday:!!v.saturday,redistribute:v.redistribute||[]};
       }
       pnwConfigReady=true;
       renderPlanNextWeek();
@@ -7099,10 +7102,13 @@ function renderPlanNextWeek(){
       h+='<div class="pnw-chip'+(on?" on":"")+'" onclick="pnwToggleMaggie(\''+d+'\')">'+cap(d).substring(0,3)+'</div>';
     });
     h+='</div>';
-    Object.entries(c.maggie).forEach(([d,t])=>{
-      h+='<div style="display:flex;align-items:center;gap:8px;margin-top:6px;padding:4px 0"><span style="font-size:12px;font-weight:600;width:60px">'+cap(d).substring(0,3)+'</span>'+
+    Object.entries(c.maggie).forEach(([d,v])=>{
+      const mg=gwNormMaggie(v);
+      h+='<div style="display:flex;align-items:center;gap:8px;margin-top:6px;padding:4px 0;flex-wrap:wrap"><span style="font-size:12px;font-weight:600;width:44px">'+cap(d).substring(0,3)+'</span>'+
+        '<span style="font-size:11px;color:var(--muted)">Start:</span>'+
+        '<input type="time" value="'+ampmTo24(mg.start)+'" class="pnw-time-input" style="width:95px" onchange="gwConfig.maggie[\''+d+'\'].start=to12h(this.value);renderPlanNextWeek()">'+
         '<span style="font-size:11px;color:var(--muted)">Return:</span>'+
-        '<input type="time" value="'+ampmTo24(t)+'" class="pnw-time-input" onchange="gwConfig.maggie[\''+d+'\']=to12h(this.value);renderPlanNextWeek()"></div>';
+        '<input type="time" value="'+ampmTo24(mg.end)+'" class="pnw-time-input" style="width:95px" onchange="gwConfig.maggie[\''+d+'\'].end=to12h(this.value);renderPlanNextWeek()"></div>';
     });
     h+='</div>';
 
@@ -7258,7 +7264,7 @@ function pnwCheckPin(val){
 
 function pnwToggleMaggie(d){
   if(gwConfig.maggie[d]) delete gwConfig.maggie[d];
-  else gwConfig.maggie[d]="2:00 PM";
+  else gwConfig.maggie[d]={start:"10:00 AM",end:"2:00 PM"};
   renderPlanNextWeek();
 }
 function pnwToggleSkip(d){
@@ -7291,9 +7297,12 @@ function loadWeekConfig(wn){
   db.ref("weekConfig/"+wn).once("value",s=>{
     const v=s.val();
     if(v){
+      const rawMag=v.maggie||{};
+      const normMag={};
+      for(const[k,val] of Object.entries(rawMag)) normMag[k]=gwNormMaggie(val);
       gwConfig={
         weekNum:v.weekNum||wn,
-        maggie:v.maggie||{},
+        maggie:normMag,
         skipDays:v.skipDays||[],
         lateStart:v.lateStart||{},
         carSchool:v.carSchool||{},
@@ -7325,12 +7334,17 @@ function gwToggleCard(key){
   gwConfigOpen[key]=!gwConfigOpen[key]; renderAll();
 }
 
+function gwNormMaggie(v){
+  if(typeof v==="string") return {start:"10:00 AM",end:v};
+  return {start:v.start||"10:00 AM",end:v.end||"2:00 PM"};
+}
 function gwToggleMaggie(d){
   if(gwConfig.maggie[d]) delete gwConfig.maggie[d];
-  else gwConfig.maggie[d]="2:00 PM";
+  else gwConfig.maggie[d]={start:"10:00 AM",end:"2:00 PM"};
   renderAll();
 }
-function gwSetMaggieTime(d,v){ gwConfig.maggie[d]=to12h(v); renderAll(); }
+function gwSetMaggieTime(d,v){ gwConfig.maggie[d].end=to12h(v); renderAll(); }
+function gwSetMaggieStart(d,v){ gwConfig.maggie[d].start=to12h(v); renderAll(); }
 
 function gwToggleSkip(d){
   const i=gwConfig.skipDays.indexOf(d);
@@ -7406,9 +7420,11 @@ function renderWeekConfig(el){
   h+='<div class="rules-card-body">';
   WDAYS.forEach(d=>{
     const on=!!c.maggie[d];
-    h+='<div class="rules-row"><div class="rules-label">'+cap(d)+'</div>';
-    if(on) h+='<input type="time" value="'+ampmTo24(c.maggie[d])+'" class="rules-time" onchange="gwSetMaggieTime(\''+d+'\',this.value)">';
-    h+='<div class="rules-toggle'+(on?" on":"")+'" onclick="gwToggleMaggie(\''+d+'\')"></div></div>';
+    const mg=on?gwNormMaggie(c.maggie[d]):{start:"10:00 AM",end:"2:00 PM"};
+    h+='<div class="rules-row" style="flex-wrap:wrap"><div class="rules-label">'+cap(d)+'</div>';
+    h+='<div class="rules-toggle'+(on?" on":"")+'" onclick="gwToggleMaggie(\''+d+'\')"></div>';
+    if(on) h+='<div style="width:100%;display:flex;gap:6px;margin-top:6px;padding-left:4px;align-items:center"><span style="font-size:11px;color:var(--muted)">Start</span><input type="time" value="'+ampmTo24(mg.start)+'" class="rules-time" onchange="gwSetMaggieStart(\''+d+'\',this.value)"><span style="font-size:11px;color:var(--muted)">Return</span><input type="time" value="'+ampmTo24(mg.end)+'" class="rules-time" onchange="gwSetMaggieTime(\''+d+'\',this.value)"></div>';
+    h+='</div>';
   });
   h+='</div></div>';
 
@@ -7924,9 +7940,10 @@ function generateWeek(config){
   const constraints={};
   const windows={};
   const maggieCfg=config.maggie||{};
-  for(const[dn,momReturn] of Object.entries(maggieCfg)){
-    constraints[dn]="\u{1F338} Maggie \xB7 Mom Required tasks begin at "+momReturn;
-    windows[dn]="Maggie window \xB7 Mom Required from "+momReturn;
+  for(const[dn,raw] of Object.entries(maggieCfg)){
+    const mg=gwNormMaggie(raw);
+    constraints[dn]="\u{1F338} Maggie "+mg.start+"–"+mg.end+" \xB7 Mom Required from "+mg.end;
+    windows[dn]="Maggie "+mg.start+"–"+mg.end+" \xB7 Mom Required from "+mg.end;
   }
   for(const[dn,startTime] of Object.entries(config.lateStart||{})){
     constraints[dn]="\u{1F550} Late start \xB7 School begins at "+startTime;
@@ -7945,13 +7962,14 @@ function generateWeek(config){
   if(Object.keys(maggieCfg).length){
     const magDays=Object.keys(maggieCfg);
     maggieObj={days:magDays};
-    for(const[dn,momReturn] of Object.entries(maggieCfg)){
+    for(const[dn,raw] of Object.entries(maggieCfg)){
+      const mg=gwNormMaggie(raw);
       if(magDays.length===1){
-        maggieObj.hours="10:00 AM - "+momReturn;
-        maggieObj.mom_return=momReturn;
+        maggieObj.hours=mg.start+" - "+mg.end;
+        maggieObj.mom_return=mg.end;
       } else {
-        maggieObj["hours_"+dn]="10:00 AM - "+momReturn;
-        maggieObj["mom_return_"+dn]=momReturn;
+        maggieObj["hours_"+dn]=mg.start+" - "+mg.end;
+        maggieObj["mom_return_"+dn]=mg.end;
       }
     }
   }
@@ -7974,14 +7992,15 @@ function generateWeek(config){
     const schoolStartMin=toMin(schoolStartStr);
 
     const isMaggie=!!maggieCfg[dn];
-    const maggieEndStr=maggieCfg[dn]||schoolStartStr;
-    const maggieEndMin=isMaggie?toMin(maggieEndStr):schoolStartMin;
+    const mgNorm=isMaggie?gwNormMaggie(maggieCfg[dn]):{start:schoolStartStr,end:schoolStartStr};
+    const maggieStartMin=isMaggie?toMin(mgNorm.start):schoolStartMin;
+    const maggieEndMin=isMaggie?toMin(mgNorm.end):schoolStartMin;
     const momAvailable=isMaggie?maggieEndMin:schoolStartMin;
 
     const isCar=!!(config.carSchool||{})[dn];
 
     const dayConfig={
-      schoolStart:schoolStartMin,
+      schoolStart:isMaggie?maggieStartMin:schoolStartMin,
       momAvailable:momAvailable,
       isCarSchool:isCar,
       isMaggie:isMaggie,
