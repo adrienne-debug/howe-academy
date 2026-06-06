@@ -3138,6 +3138,10 @@ function loadJson(){
               newIds.add(_cId);
             });
         }
+        // GC: purge checked/history entries for task IDs not in the new set
+        const commitIds=new Set(d.tasks.map(t=>t.id));
+        for(const id in snapChecked){ if(!commitIds.has(id)) delete snapChecked[id]; }
+        for(const id in snapHist){ if(!commitIds.has(id)) delete snapHist[id]; }
         WK=activeWK; weekData=d; checked=snapChecked; slState=snapSl;
         if(d.supplies&&Array.isArray(d.supplies)){SUP=d.supplies;sv(WK+"_supplies_def",d.supplies);}
         if(d.supplyCategories&&Array.isArray(d.supplyCategories)) SUP_CATS=d.supplyCategories;
@@ -3148,8 +3152,8 @@ function loadJson(){
         if(db){
           const obj={};d.tasks.forEach(t=>obj[t.id]=t);
           db.ref(WK+"/tasks").set(obj);
-          if(Object.keys(snapChecked).length) db.ref(WK+"/checked").update(snapChecked);
-          if(Object.keys(snapHist).length) db.ref(WK+"/history").update(snapHist);
+          db.ref(WK+"/checked").set(snapChecked);
+          db.ref(WK+"/history").set(snapHist);
           if(Object.keys(snapSl).length) db.ref(WK+"/sl").set(snapSl);
           if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
           db.ref(WK+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
@@ -3577,9 +3581,22 @@ function cascadeIntraWeek(){
 
 function runCascade(){
   if(!fbHistoryLoaded||!fbCheckedLoaded||!fbTasksLoaded) return;
+  // GC: remove checked/history entries that don't belong to any current task
+  const taskIds=new Set(weekData.tasks.map(x=>x.id));
+  if(taskIds.size>0){
+    let gcCount=0;
+    for(const id in checked){ if(!taskIds.has(id)){ delete checked[id]; gcCount++; } }
+    for(const id in histState){ if(!taskIds.has(id)){ delete histState[id]; gcCount++; } }
+    if(gcCount){
+      sv(WK+"_checked",checked); sv(WK+"_history",histState);
+      lastCheckedWrite=Date.now();
+      if(db){ db.ref(WK+"/checked").set(checked); db.ref(WK+"/history").set(histState); }
+      dbg("gc: purged "+gcCount+" orphan entries");
+    }
+  }
   const toRestore={};
   const histUpdates={};
-  const currentIds=new Set(weekData.tasks.map(x=>x.id));
+  const currentIds=taskIds;
   weekData.tasks.forEach(t=>{
     if(checked[t.id]) return;
     if(manualUnchecks.has(t.id)) return;
@@ -8258,6 +8275,10 @@ function gwCommit(){
           newIds.add(_cId);
         });
     }
+    // GC: purge checked/history entries for task IDs not in the new set
+    const commitIds=new Set(d.tasks.map(t=>t.id));
+    for(const id in snapChecked){ if(!commitIds.has(id)) delete snapChecked[id]; }
+    for(const id in snapHist){ if(!commitIds.has(id)) delete snapHist[id]; }
     WK=activeWK; weekData=d; checked=snapChecked; slState=snapSl;
     applyWeekMeta(d);
     sv(WK+"_tasks",d.tasks); sv(WK+"_maggie",d.maggie||null);
@@ -8266,8 +8287,8 @@ function gwCommit(){
     if(db){
       const obj={};d.tasks.forEach(t=>obj[t.id]=t);
       db.ref(WK+"/tasks").set(obj);
-      if(Object.keys(snapChecked).length) db.ref(WK+"/checked").update(snapChecked);
-      if(Object.keys(snapHist).length) db.ref(WK+"/history").update(snapHist);
+      db.ref(WK+"/checked").set(snapChecked);
+      db.ref(WK+"/history").set(snapHist);
       if(Object.keys(snapSl).length) db.ref(WK+"/sl").set(snapSl);
       if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
       db.ref(WK+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
