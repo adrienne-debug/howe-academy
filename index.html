@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -703,6 +704,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
     <button class="btn-s" onclick="printSchedule()">Print PDF</button>
     <button class="btn-s" onclick="toggleAdmin()">Close</button>
   </div>
+  <div class="admin-row" style="margin-top:8px">
+    <input type="file" id="xlsx-input" accept=".xlsx,.xls"/>
+    <button class="btn-p" onclick="uploadCurriculum()">Upload Curriculum</button>
+  </div>
   <div id="admin-msg"></div>
 </div>
 
@@ -773,6 +778,8 @@ let fbWeekRefs=[];
 let paceData={subjects:{}, plans:{}};
 let paceEditKid=null;
 let paceEditPlan=null;
+let currData=null;   // curriculum from Firebase (uploaded via admin)
+let currPaceCum={};  // precomputed: currPaceCum[kid][subjectKey][weekNum] = cumulative expected
 let masteryData={};
 let masteryKid="lincoln";
 let masteryCollapsed={};
@@ -801,6 +808,13 @@ const TIER_LBL2={computer:"Computer",independent:"Independent",maybe:"May Need M
 const TIER_COL={computer:"#3b82f6",independent:"#10b981",maybe:"#f59e0b",required:"#ef4444"};
 const DEV_LBL={computer_only:"Computer only",computer_ideal_ipad_backup:"Computer (iPad backup)",ipad_only:"iPad only",phone_backup:"Phone (backup)"};
 const DEV_ICON={computer_only:"&#128187;",computer_ideal_ipad_backup:"&#128187;",ipad_only:"&#128241;",phone_backup:"&#128242;"};
+const CURR_KEY_MAP={
+  "Lincoln Master Schedule":{3:"singapore_l",4:"math_sprints",5:"mr_pages",6:"kumon",7:"lof",8:"aas",9:"ttrs_l",10:"eggspress_l",11:"conventions",12:"dictation",13:"written_expr",14:"wordsmith",15:"ind_read"},
+  "Ellis Master Schedule":{3:"singapore_e",4:"reflex",5:"math_reason",6:"eggspress_e",7:"ttrs_e",8:"lang_smarts",9:"nzk_e",10:"rosetta",11:"hwt",12:"daily_sci",13:"daily_geo",14:"editor_chief",15:"read_detect",16:"word_roots"},
+  "Lucy Master Schedule":{3:"read_eggs",4:"build_story",5:"mathseeds",6:"fast_phon",7:"nzk_l"}
+};
+const CURR_SHEET_KID={"Lincoln Master Schedule":"lincoln","Ellis Master Schedule":"ellis","Lucy Master Schedule":"lucy"};
+const CURR_MIN_WEEK=8;
 function fbArr(v){ if(!v) return v; if(Array.isArray(v)) return v; if(typeof v==="object"&&v!==null){const keys=Object.keys(v);if(keys.length&&keys.every(k=>/^\d+$/.test(k))) return keys.sort((a,b)=>a-b).map(k=>v[k]);} return v; }
 function getRules(){ return rulesData||null; }
 function ampmTo24(s){if(!s)return"";const m=s.match(/(\d+):(\d+)\s*(AM|PM)/i);if(!m)return s;let h=parseInt(m[1]);const mn=m[2];const ap=m[3].toUpperCase();if(ap==="PM"&&h!==12)h+=12;if(ap==="AM"&&h===12)h=0;return String(h).padStart(2,"0")+":"+mn;}
@@ -808,6 +822,9 @@ function to12h(s){if(!s)return"";const p=s.split(":");if(p.length!==2)return s;l
 let schedShowRules=false;
 let schedShowHistory=false;
 let schedShowPace=false;
+let schedShowCurr=false;
+let currViewKid="lincoln";
+let currViewWeek=null;
 let adminPinUnlocked=false;
 let blockouts={};
 let boForm={type:"fullDay",kids:[],start:"",end:"",momReturn:"",day:""};
@@ -986,6 +1003,9 @@ function initFb() {
       try{localStorage.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
       if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
     });
+    db.ref("curriculum").once("value",s=>{
+      if(s.val()){currData=s.val();buildCurrPaceCum();dbg("curriculum loaded: "+Object.keys(currData.subjects||{}).join(","));}
+    });
     db.ref("config/rules").on("value",s=>{
       rulesData=s.val()||null;
       if(tab==="rules"){const el=document.getElementById("content");if(el)renderRules(el);}
@@ -1128,7 +1148,7 @@ function renderSkylight(){
   const gridEl=document.getElementById("sl-grid");
   const indEl=document.getElementById("sl-individual");
 
-  if(kid==="mom"||tab!=="schedule"||schedShowRules||schedShowHistory||schedShowPace){ panel.style.display="none"; return; }
+  if(kid==="mom"||tab!=="schedule"||schedShowRules||schedShowHistory||schedShowPace||schedShowCurr){ panel.style.display="none"; return; }
   panel.style.display="block";
 
   // Alert
@@ -1190,11 +1210,11 @@ function showTab(t){
   tab=t;
   mastAddMode=false; mastLogMode=false; mastLogScores={};
   document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===t));
-  if(t!=="schedule"){ schedShowRules=false; schedShowHistory=false; schedShowPace=false; }
+  if(t!=="schedule"){ schedShowRules=false; schedShowHistory=false; schedShowPace=false; schedShowCurr=false; }
   document.getElementById("sched-subtabs").style.display=t==="schedule"?"flex":"none";
   document.getElementById("day-tabs").style.display=["schedule","supplies"].includes(t)?"flex":"none";
   document.getElementById("kid-filter").style.display=["schedule","history","pace"].includes(t)?"flex":"none";
-  document.getElementById("week-strip").style.display=t==="schedule"&&!schedShowRules&&!schedShowHistory&&!schedShowPace?"grid":"none";
+  document.getElementById("week-strip").style.display=t==="schedule"&&!schedShowRules&&!schedShowHistory&&!schedShowPace&&!schedShowCurr?"grid":"none";
   renderAll();
 }
 
@@ -1202,19 +1222,20 @@ function renderSchedSubtabs(){
   const el=document.getElementById("sched-subtabs");
   if(tab!=="schedule"){el.style.display="none";return;}
   el.style.display="flex";
-  const isSchedule=!schedShowHistory&&!schedShowPace&&!schedShowRules;
+  const isSchedule=!schedShowHistory&&!schedShowPace&&!schedShowRules&&!schedShowCurr;
   const boCnt=Object.keys(blockouts).length;
   el.innerHTML=
-    '<button class="sched-sub'+(isSchedule?" active":"")+'" onclick="schedShowHistory=false;schedShowPace=false;schedShowRules=false;renderAll()">Schedule</button>'+
+    '<button class="sched-sub'+(isSchedule?" active":"")+'" onclick="schedShowHistory=false;schedShowPace=false;schedShowRules=false;schedShowCurr=false;renderAll()">Schedule</button>'+
     '<button class="sched-sub'+(schedShowHistory?" active":"")+'" onclick="toggleSchedHistory()">History</button>'+
     '<button class="sched-sub'+(schedShowPace?" active":"")+'" onclick="toggleSchedPace()">Pace</button>'+
     (boCnt?'<button class="sched-sub" onclick="openBoManager()" style="color:#ef4444">Blockouts<span class="sub-dot" style="background:#ef4444"></span></button>':'')+
-    '<button class="sched-sub'+(schedShowRules?" active":"")+'" onclick="toggleSchedRules()">Rules</button>';
+    '<button class="sched-sub'+(schedShowRules?" active":"")+'" onclick="toggleSchedRules()">Rules</button>'+
+    '<button class="sched-sub'+(schedShowCurr?" active":"")+'" onclick="toggleSchedCurr()">Curriculum</button>';
 }
 function renderAll(){
   renderSchedSubtabs(); renderDayTabs(); renderKidFilter(); renderSkylight(); renderWeekStrip();
-  if(tab==="schedule") document.getElementById("day-tabs").style.display=(schedShowHistory||schedShowPace||schedShowRules)?"none":"flex";
-  const showKidFilter=(tab==="schedule"&&!schedShowRules)||(tab==="history")||(tab==="pace");
+  if(tab==="schedule") document.getElementById("day-tabs").style.display=(schedShowHistory||schedShowPace||schedShowRules||schedShowCurr)?"none":"flex";
+  const showKidFilter=(tab==="schedule"&&!schedShowRules&&!schedShowCurr)||(tab==="history")||(tab==="pace");
   const kf=document.getElementById("kid-filter");
   kf.style.display=showKidFilter?"flex":"none";
   kf.style.top=(tab==="schedule"&&(schedShowHistory||schedShowPace))?"122px":"166px";
@@ -1262,12 +1283,12 @@ function renderKidFilter(){
       return '<button class="kid-btn'+(k===kid?" active":"")+'" data-kid="'+k+'" onclick="selKid(\''+k+'\')">'+cap(k)+badge+'</button>';
     }).join("");
 }
-function selKid(k){ if(k !== "mom") momPinUnlocked=false; kid=k; schedShowRules=false; renderAll(); }
+function selKid(k){ if(k !== "mom") momPinUnlocked=false; kid=k; schedShowRules=false; schedShowCurr=false; renderAll(); }
 
 // ── WEEK STRIP ────────────────────────────────────────────────────
 function renderWeekStrip(){
   const el=document.getElementById("week-strip");
-  if(tab!=="schedule"||schedShowRules||schedShowHistory||schedShowPace){ el.style.display="none"; return; }
+  if(tab!=="schedule"||schedShowRules||schedShowHistory||schedShowPace||schedShowCurr){ el.style.display="none"; return; }
   const kidMatch=t=>kid==="all"||kid==="mom"?true:t.who===kid;
   const countable=getActiveTasks().filter(t=>kidMatch(t)&&effectiveDay(t)!=="carryover");
   const all=countable.length, done=countable.filter(t=>!!checked[t.id]).length;
@@ -1585,12 +1606,14 @@ function checkAdminPin(val,errId){
     setTimeout(()=>{if(err)err.textContent="";if(inp)inp.style.borderColor="var(--border)";},1500);
   }
 }
-function toggleSchedRules(){ schedShowRules=!schedShowRules; schedShowHistory=false; schedShowPace=false; renderAll(); }
-function toggleSchedHistory(){ schedShowHistory=!schedShowHistory; schedShowRules=false; schedShowPace=false; renderAll(); }
-function toggleSchedPace(){ schedShowPace=!schedShowPace; schedShowRules=false; schedShowHistory=false; renderAll(); }
+function toggleSchedRules(){ schedShowRules=!schedShowRules; schedShowHistory=false; schedShowPace=false; schedShowCurr=false; renderAll(); }
+function toggleSchedHistory(){ schedShowHistory=!schedShowHistory; schedShowRules=false; schedShowPace=false; schedShowCurr=false; renderAll(); }
+function toggleSchedPace(){ schedShowPace=!schedShowPace; schedShowRules=false; schedShowHistory=false; schedShowCurr=false; renderAll(); }
+function toggleSchedCurr(){ schedShowCurr=!schedShowCurr; schedShowRules=false; schedShowHistory=false; schedShowPace=false; renderAll(); }
 function renderSchedule(el){
   if(schedShowPace){ renderPace(el); return; }
   if(schedShowHistory){ renderHistory(el); return; }
+  if(schedShowCurr){ renderCurriculumView(el); return; }
   if(schedShowRules){
     if(!adminPinUnlocked){
       el.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center">'+
@@ -3125,6 +3148,227 @@ function loadJson(){
   r.readAsText(f);
 }
 
+// ── CURRICULUM VIEW ───────────────────────────────────────────────
+const CURR_DEV_EMOJI={paper:"\u{1F4C4}",computer:"\u{1F4BB}",ipad:"\u{1F4F1}",phone:"\u{1F4DE}",book:"\u{1F4D6}"};
+const CURR_MOM_BADGE={required:"Mom Required",maybe:"May Need Mom",none:""};
+
+function setCurrViewKid(k){ currViewKid=k; currViewWeek=null; renderAll(); }
+function setCurrViewWeek(w){ currViewWeek=currViewWeek===w?null:w; renderAll(); }
+
+function renderCurriculumView(el){
+  if(!adminPinUnlocked){
+    el.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center">'+
+      '<div style="font-size:48px;margin-bottom:12px">&#128274;</div>'+
+      '<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:700;margin-bottom:4px">Curriculum Locked</div>'+
+      '<div style="font-size:13px;color:var(--muted);margin-bottom:16px">Enter the Mom PIN to view curriculum data.</div>'+
+      '<input id="admin-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="PIN" autocomplete="off" '+
+      'style="width:120px;text-align:center;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:18px;font-weight:700;letter-spacing:8px;font-family:\'DM Sans\',sans-serif" '+
+      'oninput="checkAdminPin(this.value,\'admin-pin-err\')" autofocus>'+
+      '<div id="admin-pin-err" style="font-size:11px;color:#b5394a;margin-top:6px;min-height:14px"></div></div>';
+    setTimeout(()=>{const i=document.getElementById("admin-pin-input");if(i)i.focus();},50);
+    return;
+  }
+
+  if(!currData||!currData.subjects){
+    el.innerHTML='<div style="padding:40px 20px;text-align:center;color:var(--muted)">'+
+      '<div style="font-size:36px;margin-bottom:8px">\u{1F4DA}</div>'+
+      '<div style="font-weight:600;margin-bottom:4px">No curriculum uploaded</div>'+
+      '<div style="font-size:12px">Use the admin panel to upload howe_master_schedule.xlsx</div></div>';
+    return;
+  }
+
+  const kids=Object.keys(CURR_SHEET_KID).map(s=>CURR_SHEET_KID[s]);
+  const k=currViewKid;
+  const subjects=currData.subjects[k]||{};
+  const lessons=currData.lessons[k]||{};
+  const weekDays=currData.weekDays[k]||{};
+  const col={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c"}[k]||"#333";
+
+  let h='<div style="padding:0 4px">';
+
+  // Kid selector
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">';
+  kids.forEach(kid=>{
+    const on=kid===k;
+    const c={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c"}[kid]||"#333";
+    h+='<button onclick="setCurrViewKid(\''+kid+'\')" style="padding:5px 14px;border-radius:20px;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?c:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cap(kid)+'</button>';
+  });
+  h+='</div>';
+
+  // Upload info
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:14px">'+
+    'Uploaded: '+new Date(currData.uploadedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})+
+    ' &middot; '+currData.fileName+'</div>';
+
+  // Subjects table
+  const sKeys=Object.keys(subjects);
+  h+='<div style="font-weight:700;font-size:14px;color:'+col+';margin-bottom:8px">\u{1F4D8} Subjects ('+sKeys.length+')</div>';
+  h+='<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:18px">';
+  sKeys.forEach(sk=>{
+    const s=subjects[sk];
+    const emoji=CURR_DEV_EMOJI[s.device]||"\u{1F4C4}";
+    const momBadge=CURR_MOM_BADGE[s.mom]||"";
+    h+='<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:8px 12px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center">'+
+      '<div style="font-weight:600;font-size:13px">'+emoji+' '+s.display+'</div>'+
+      '<div style="font-size:11px;color:var(--muted)">'+s.total+' lessons</div></div>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">';
+    if(s.minutes) h+='<span style="font-size:10px;background:#f3f4f6;padding:1px 6px;border-radius:6px">'+s.minutes+' min</span>';
+    if(s.days) h+='<span style="font-size:10px;background:#f3f4f6;padding:1px 6px;border-radius:6px">'+s.days+'</span>';
+    if(momBadge) h+='<span style="font-size:10px;background:'+(s.mom==="required"?"#fde8d8":"#fef3c7")+';padding:1px 6px;border-radius:6px;font-weight:600">'+momBadge+'</span>';
+    if(s.rules) h+='<span style="font-size:10px;background:#e0e7ff;padding:1px 6px;border-radius:6px">'+s.rules+'</span>';
+    h+='</div></div>';
+  });
+  h+='</div>';
+
+  // Week map
+  const weekLabels=Object.keys(weekDays).sort((a,b)=>{
+    const na=parseInt(a.match(/\d+/)||[0]); const nb=parseInt(b.match(/\d+/)||[0]); return na-nb;
+  });
+  h+='<div style="font-weight:700;font-size:14px;color:'+col+';margin-bottom:8px">\u{1F5D3} Weeks ('+weekLabels.length+')</div>';
+  h+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:14px">';
+  weekLabels.forEach(wk=>{
+    const days=weekDays[wk]||[];
+    const on=currViewWeek===wk;
+    h+='<button onclick="setCurrViewWeek(\''+wk+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid '+(on?col:'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--text)')+';font-size:11px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+
+      wk+' <span style="opacity:0.6;font-weight:400">('+days.length+'d)</span></button>';
+  });
+  h+='</div>';
+
+  // Day detail when a week is selected
+  if(currViewWeek&&weekDays[currViewWeek]){
+    const dayNums=weekDays[currViewWeek];
+    h+='<div style="font-weight:700;font-size:13px;margin-bottom:8px">'+currViewWeek+' &mdash; Days '+dayNums[0]+'&ndash;'+dayNums[dayNums.length-1]+'</div>';
+    dayNums.forEach(d=>{
+      const lesson=lessons[d];
+      if(!lesson) return;
+      h+='<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:6px">'+
+        '<div style="display:flex;justify-content:space-between;margin-bottom:6px">'+
+        '<div style="font-weight:700;font-size:12px">Day '+d+'</div>'+
+        '<div style="font-size:11px;color:var(--muted)">'+lesson.date+'</div></div>';
+      sKeys.forEach(sk=>{
+        if(!lesson[sk]) return;
+        const s=subjects[sk];
+        const emoji=CURR_DEV_EMOJI[s.device]||"\u{1F4C4}";
+        h+='<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:12px">'+
+          '<span style="color:var(--muted)">'+emoji+' '+s.display+'</span>'+
+          '<span style="font-weight:600">'+lesson[sk]+'</span></div>';
+      });
+      h+='</div>';
+    });
+  }
+
+  h+='</div>';
+  el.innerHTML=h;
+}
+
+// ── CURRICULUM UPLOAD ─────────────────────────────────────────────
+function uploadCurriculum(){
+  const msg=document.getElementById("admin-msg");
+  if(!adminPinUnlocked){msg.textContent="Enter Mom PIN first (Rules tab).";return;}
+  const f=document.getElementById("xlsx-input").files[0];
+  if(!f){msg.textContent="No .xlsx file selected.";return;}
+  if(!db){msg.textContent="Not connected to Firebase.";return;}
+  msg.textContent="Parsing curriculum...";
+  const reader=new FileReader();
+  reader.onerror=()=>{msg.textContent="Failed to read file.";};
+  reader.onload=e=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array",cellDates:true});
+      const curriculum={uploadedAt:new Date().toISOString(),fileName:f.name,subjects:{},lessons:{},weekDays:{}};
+      const empty=v=>{const s=String(v??"").trim();return !s||s==="nan"||s==="NaN"||s==="None"||s==="—"||s==="undefined";};
+      const weekNum=w=>{const m=String(w).match(/Wk\s*(\d+)/i);return m?parseInt(m[1]):0;};
+
+      for(const[sheet,kid] of Object.entries(CURR_SHEET_KID)){
+        if(!wb.SheetNames.includes(sheet)){msg.textContent="Sheet not found: "+sheet;return;}
+        const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheet],{header:1,raw:false,dateNF:'yyyy-mm-dd'});
+        const keyMap=CURR_KEY_MAP[sheet]||{};
+        const headerRow=rows[2]||[];
+        const deviceRow=rows[3]||[];
+        const momRow=rows[4]||[];
+        const minutesRow=rows[5]||[];
+        const rulesRow=rows[6]||[];
+        const daysRow=rows[7]||[];
+
+        const subjects={};
+        for(const[colStr,key] of Object.entries(keyMap)){
+          const c=parseInt(colStr);
+          let display=String(headerRow[c]??"").trim().replace(/\n/g," ").replace(/\s*\([^)]*\)\s*$/,"").trim();
+          if(empty(display))display=key;
+          const device=empty(deviceRow[c])?"paper":String(deviceRow[c]).trim().toLowerCase();
+          const mom=empty(momRow[c])?"none":String(momRow[c]).trim().toLowerCase();
+          const minutes=parseInt(String(minutesRow[c]??"20"))||20;
+          const rules=empty(rulesRow[c])?"":String(rulesRow[c]).trim();
+          const days=empty(daysRow[c])?"":String(daysRow[c]).trim();
+          subjects[key]={display,device,mom,minutes,rules,days,total:0};
+        }
+
+        const lessons={};
+        const wdMap={};
+        for(let r=8;r<rows.length;r++){
+          const row=rows[r];
+          if(!row||!row.length)continue;
+          const dayRaw=row[0];
+          const dayNum=parseInt(String(dayRaw));
+          if(isNaN(dayNum))continue;
+          const wkRaw=String(row[2]??"").trim();
+          if(!wkRaw||weekNum(wkRaw)<CURR_MIN_WEEK)continue;
+
+          let dateStr="";
+          const dateVal=row[1];
+          if(dateVal instanceof Date&&!isNaN(dateVal)){dateStr=dateVal.toISOString().split("T")[0];}
+          else if(dateVal){
+            const s=String(dateVal).trim();
+            const p=Date.parse(s);
+            if(!isNaN(p))dateStr=new Date(p).toISOString().split("T")[0];
+            else dateStr=s;
+          }
+
+          const lesson={week:wkRaw,date:dateStr};
+          let hasData=false;
+          for(const[colStr,key] of Object.entries(keyMap)){
+            const c=parseInt(colStr);
+            const val=row[c];
+            if(!empty(val)){
+              lesson[key]=String(val).trim();
+              subjects[key].total++;
+              hasData=true;
+            }
+          }
+          if(hasData){
+            lessons[dayNum]=lesson;
+            if(!wdMap[wkRaw])wdMap[wkRaw]=[];
+            wdMap[wkRaw].push(dayNum);
+          }
+        }
+
+        for(const wk of Object.keys(wdMap))wdMap[wk].sort((a,b)=>a-b);
+        curriculum.subjects[kid]=subjects;
+        curriculum.lessons[kid]=lessons;
+        curriculum.weekDays[kid]=wdMap;
+      }
+
+      const stats=Object.entries(CURR_SHEET_KID).map(([_,kid])=>{
+        const ns=Object.keys(curriculum.subjects[kid]||{}).length;
+        const nd=Object.keys(curriculum.lessons[kid]||{}).length;
+        const nw=Object.keys(curriculum.weekDays[kid]||{}).length;
+        return kid+": "+ns+" subjects, "+nd+" days, "+nw+" weeks";
+      });
+
+      msg.textContent="Uploading to Firebase...";
+      db.ref("curriculum").set(curriculum).then(()=>{
+        msg.innerHTML="Curriculum uploaded!<br>"+stats.join("<br>");
+      }).catch(err=>{
+        msg.textContent="Firebase error: "+err.message;
+      });
+    }catch(err){
+      msg.textContent="Parse error: "+err.message;
+      console.error("Curriculum parse error:",err);
+    }
+  };
+  reader.readAsArrayBuffer(f);
+}
+
 // ── ADMIN ─────────────────────────────────────────────────────────
 function toggleAdmin(){
   const p=document.getElementById("admin-panel");
@@ -3616,8 +3860,68 @@ function formatPlanDate(d){
   return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
 }
 
-function paceStatus(current,total,startWeek,weekNum,totalWeeks){
+// Build cumulative expected counts from curriculum data
+function buildCurrPaceCum(){
+  currPaceCum={};
+  if(!currData||!currData.weekDays||!currData.lessons||!currData.subjects) return;
+  for(const kid of Object.keys(currData.subjects)){
+    currPaceCum[kid]={};
+    const wdMap=currData.weekDays[kid]||{};
+    const lessons=currData.lessons[kid]||{};
+    const subjectKeys=Object.keys(currData.subjects[kid]||{});
+    // Collect all week numbers, sorted
+    const weekNums=Object.keys(wdMap).map(w=>{const m=w.match(/Wk\s*(\d+)/i);return m?parseInt(m[1]):0;}).filter(n=>n>0);
+    weekNums.sort((a,b)=>a-b);
+    for(const sk of subjectKeys){
+      let cum=0;
+      const byWk={};
+      for(const wn of weekNums){
+        const dayNums=wdMap["Wk "+wn]||[];
+        for(const d of dayNums){if(lessons[d]&&lessons[d][sk])cum++;}
+        byWk[wn]=cum;
+      }
+      currPaceCum[kid][sk]=byWk;
+    }
+  }
+}
+
+// Get current app week number from WK variable (e.g. "week8" → 8)
+function currWeekNum(){
+  const m=(WK||"").match(/(\d+)/);
+  return m?parseInt(m[1]):1;
+}
+
+// Get curriculum-based expected count for a subject through a given week
+function currExpected(kid,subjectKey,weekNum){
+  const byWk=(currPaceCum[kid]||{})[subjectKey];
+  if(!byWk) return null;
+  // Find the closest week <= weekNum
+  let best=null;
+  for(const wn of Object.keys(byWk)){
+    const n=parseInt(wn);
+    if(n<=weekNum&&(best===null||n>best)) best=n;
+  }
+  return best!==null?byWk[best]:null;
+}
+
+// Get keyword for auto-counting: prefer curriculum display name, fall back to pace subject keyword
+function currKeyword(kid,subjectKey,paceSubj){
+  if(currData&&currData.subjects&&currData.subjects[kid]&&currData.subjects[kid][subjectKey]){
+    return currData.subjects[kid][subjectKey].display;
+  }
+  return paceSubj?paceSubj.keyword:"";
+}
+
+function paceStatus(current,total,startWeek,weekNum,totalWeeks,expected){
   if(!total) return "on-track";
+  // Use curriculum expected count when available
+  if(expected!==null&&expected!==undefined){
+    const diff=current-expected;
+    if(diff>=3) return "ahead";
+    if(diff<=-3) return "behind";
+    return "on-track";
+  }
+  // Fallback: linear estimate
   const sw=startWeek||1;
   if(weekNum<sw) return "not-started";
   const weeksActive=weekNum-sw+1;
@@ -3848,15 +4152,29 @@ function renderPace(el){
     keys.forEach(key=>{ if(existing[key]) deletePaceSubject(k,key); });
   });
 
-  // Seed default subjects per kid — only add keys that don't already exist
+  // Seed subjects per kid — prefer curriculum data, fall back to PACE_DEFAULT_SUBJECTS
   ["lincoln","ellis","lucy"].forEach(k=>{
     const existing=(paceData.subjects&&paceData.subjects[k])||{};
-    if(PACE_DEFAULT_SUBJECTS[k]){
-      Object.entries(PACE_DEFAULT_SUBJECTS[k]).forEach(([key,subj])=>{
+    const currSubjects=(currData&&currData.subjects&&currData.subjects[k])||null;
+    const defaults=PACE_DEFAULT_SUBJECTS[k]||{};
+
+    // If curriculum uploaded, sync total + keyword from it
+    if(currSubjects){
+      Object.entries(currSubjects).forEach(([key,cs])=>{
+        const cur=existing[key];
+        const kw=cs.display||key;
+        if(!cur){
+          savePaceSubject(k,key,{label:cs.display,keyword:kw,total:cs.total,offset:0,adjust:0,startWeek:CURR_MIN_WEEK});
+        } else if(cur.total!==cs.total||cur.keyword!==kw){
+          savePaceSubject(k,key,{...cur,total:cs.total,keyword:kw,label:cs.display});
+        }
+      });
+    } else if(Object.keys(defaults).length){
+      // Fallback to hardcoded defaults when no curriculum
+      Object.entries(defaults).forEach(([key,subj])=>{
         if(!existing[key]){
           savePaceSubject(k,key,subj);
         } else {
-          // Always sync startWeek and total from Excel defaults; preserve user offset/adjust
           const cur=existing[key];
           if(cur.startWeek!==subj.startWeek||cur.total!==subj.total){
             savePaceSubject(k,key,{...cur,startWeek:subj.startWeek,total:subj.total});
@@ -3957,10 +4275,13 @@ function renderPace(el){
       const isEditing=paceEditKid===k;
       const col=PACE_KCOL[k];
       let aheadN=0,onN=0,behindN=0;
+      const cwn=currWeekNum();
       keys.forEach(sk=>{
         const s=kidSubjs[sk];
-        const cur=(s.offset||0)+paceAutoCount(k,s.keyword||"")+(s.adjust||0);
-        const st=paceHasPendingCascade(k,s.keyword||"")?"behind":paceStatus(cur,s.total||0,s.startWeek||1,weekNum,totalWeeks);
+        const kw=currKeyword(k,sk,s);
+        const cur=(s.offset||0)+paceAutoCount(k,kw)+(s.adjust||0);
+        const exp=currExpected(k,sk,cwn);
+        const st=paceHasPendingCascade(k,kw)?"behind":paceStatus(cur,s.total||0,s.startWeek||1,weekNum,totalWeeks,exp);
         if(st==="ahead")aheadN++; else if(st==="behind")behindN++; else if(st!=="not-started")onN++;
       });
       const summaryStr=keys.length?(behindN?behindN+' behind':aheadN?aheadN+' ahead':'All on track'):'No subjects yet';
@@ -3980,12 +4301,15 @@ function renderPace(el){
 
         keys.forEach(sk=>{
           const s=kidSubjs[sk];
-          const autoC=paceAutoCount(k,s.keyword||"");
+          const kw=currKeyword(k,sk,s);
+          const autoC=paceAutoCount(k,kw);
           const offset=s.offset||0,adjust=s.adjust||0,sw=s.startWeek||1;
           const cur=offset+autoC+adjust,tot=s.total||1;
           const pct=Math.min(100,Math.round(cur/tot*100));
-          const status=paceHasPendingCascade(k,s.keyword||"")?"behind":paceStatus(cur,tot,sw,weekNum,totalWeeks);
+          const exp=currExpected(k,sk,cwn);
+          const status=paceHasPendingCascade(k,kw)?"behind":paceStatus(cur,tot,sw,weekNum,totalWeeks,exp);
           const barCol=status==="ahead"?"#16a34a":status==="behind"?"#ef4444":status==="not-started"?"#d1d5db":"#3b82f6";
+          const expLabel=exp!==null?' &middot; expected: '+exp+' by Wk '+cwn:'';
 
           h+='<div class="pace-subject-row">'+
             '<div class="pace-subj-hdr">'+
@@ -3994,7 +4318,7 @@ function renderPace(el){
             '<div class="pace-bar"><div class="pace-bar-fill" style="width:'+pct+'%;background:'+barCol+'"></div></div>'+
             '<div class="pace-status-row">'+
             '<span class="pace-badge '+status+'">'+paceStatusLabel(status)+'</span>'+
-            '<span class="pace-pct">'+pct+'% complete'+(sw>1&&weekNum<sw?' &middot; starts wk '+sw:'')+'</span></div>';
+            '<span class="pace-pct">'+pct+'% complete'+expLabel+(sw>1&&weekNum<sw?' &middot; starts wk '+sw:'')+'</span></div>';
 
           if(isEditing){
             h+='<div class="pace-config-grid">'+
@@ -4065,21 +4389,17 @@ const MAST_COLOR_MAP={Red:"#ef4444",Blue:"#3b82f6",Green:"#22c55e",Yellow:"#eab3
 const MAST_KID_COL={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#c45e1a"};
 const MAST_KID_EMOJI={lincoln:"\u{1F40D}",ellis:"\u{1F916}",lucy:"\u{1F984}",julian:"\u{1F995}"};
 
-function mastPeekPrintNum(){
-  const today=new Date().toISOString().slice(0,10);
-  let pl=masteryData.printLog||[];
-  if(!Array.isArray(pl)) pl=Object.values(pl);
-  const existing=pl.find(x=>x.date===today);
-  if(existing) return existing.num;
-  return pl.reduce((m,x)=>Math.max(m,x.num||0),0)+1;
-}
 function mastGetPrintNum(){
   const today=new Date().toISOString().slice(0,10);
   let pl=masteryData.printLog||[];
   if(!Array.isArray(pl)) pl=Object.values(pl);
+
   const existing=pl.find(x=>x.date===today);
   if(existing) return existing.num;
-  const num=pl.reduce((m,x)=>Math.max(m,x.num||0),0)+1;
+
+  // New day — assign next number and save it immediately
+  const maxNum=pl.reduce((m,x)=>Math.max(m,x.num||0),0);
+  const num=maxNum+1;
   pl.push({date:today,num:num});
   masteryData.printLog=pl;
   if(db) db.ref("mastery/printLog").set(pl);
@@ -5033,7 +5353,7 @@ function _renderMasteryInner(el){
   }
 
   // Today's drill
-  const pn=mastPeekPrintNum();
+  const pn=mastGetPrintNum();
   const due=mastDueItems(masteryKid,pn);
   const dueW=due.filter(i=>i.review_mode==="written");
   const dueO=due.filter(i=>i.review_mode!=="written");
@@ -5395,7 +5715,7 @@ function mastPrintDrill(){
   const pParent=document.getElementById("mast-chk-parent")?.checked;
   if(!pStudent&&!pParent){alert("Check at least one sheet");return;}
 
-  const pn=mastPeekPrintNum();
+  const pn=mastGetPrintNum();
   const due=mastDueItems(masteryKid,pn);
   const dueW=due.filter(i=>i.review_mode==="written");
   const color=MAST_KID_COL[masteryKid];
