@@ -7714,6 +7714,18 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   const isFriday=dayName==="friday";
   const cutoff=(theater&&dayName!=="friday"&&dayName!=="saturday")?GW_SCHOOL_END:GW_SCHOOL_END_NO_THEATER;
 
+  // Inject built-in daily subjects into curriculum so getMeta/addTask work
+  if(currData&&currData.subjects){
+    const DAILY={morning_nb:{display:"Morning Notebook",device:"book",mom:"none",minutes:5,rules:"",days:"",total:0},
+                 closing_nb:{display:"Closing Notebook",device:"book",mom:"none",minutes:5,rules:"",days:"",total:0}};
+    ["lincoln","ellis","lucy"].forEach(k=>{
+      if(!currData.subjects[k]) return;
+      for(const[sk,sv] of Object.entries(DAILY)) if(!currData.subjects[k][sk]) currData.subjects[k][sk]=sv;
+    });
+    if(currData.subjects.lincoln&&!currData.subjects.lincoln.drills_l)
+      currData.subjects.lincoln.drills_l={display:"Spelling Drills",device:"paper",mom:"required",minutes:10,rules:"",days:"",total:0};
+  }
+
   const sched=new GWScheduler(schoolStart,momAvailable,cutoff);
   const tasks=[];
   const dropped=[];
@@ -7766,6 +7778,22 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
 
   function schedBucket(kid,bucket){ bucket.forEach(([key,val])=>schedule(kid,key,val)); }
 
+  // ── MORNING NOTEBOOKS — first task for each kid ──
+  ["lincoln","ellis","lucy"].forEach(kid=>{
+    if(getMeta(kid,"morning_nb")){
+      addTask(kid,"morning_nb","Daily",schoolStart);
+      sched.kidFree[kid]=schoolStart+(getMeta(kid,"morning_nb").minutes||5);
+    }
+  });
+
+  // ── JULIAN NOTEBOOK — 10:00 AM, 10 min ──
+  tasks.push({
+    id:prefix+(counter++),who:"julian",day:dayName,
+    time:fromMin(Math.max(schoolStart,600)),dur:10,
+    title:"\u{1F4D6} Notebook — Daily",detail:"Paper. 10 minutes.",
+    mom:"none",cascade:true
+  });
+
   const l=gwByCategory("lincoln",kidAssignments.lincoln||{});
   const e=gwByCategory("ellis",kidAssignments.ellis||{});
   const c=gwByCategory("lucy",kidAssignments.lucy||{});
@@ -7774,7 +7802,7 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   schedBucket("lincoln",l.computer);
   if(!isMaggie) schedBucket("ellis",e.required_paper);
   else schedBucket("ellis",e.ipad);
-  sched.kidFree.lucy=schoolStart;
+  sched.kidFree.lucy=Math.max(sched.kidFree.lucy,schoolStart+(getMeta("lucy","morning_nb")?5:0));
   schedBucket("lucy",c.phone);
 
   // Phase 2
@@ -7795,12 +7823,39 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
     sched.kidFree.lincoln=Math.max(sched.kidFree.lincoln,maggieEnd);
     sched.kidFree.ellis=Math.max(sched.kidFree.ellis,maggieEnd);
   }
-  schedBucket("lincoln",l.required_paper);
+  // Lincoln: drills before AAS if AAS exists, otherwise start of mom block
+  const hasAAS=l.required_paper.some(([key])=>key==="aas");
+  if(hasAAS){
+    schedBucket("lincoln",l.required_paper.filter(([key])=>key!=="aas"));
+    // Keep drills+AAS together: if pair straddles lunch, push both after
+    const _dm=getMeta("lincoln","drills_l"), _am=getMeta("lincoln","aas");
+    if(_dm&&_am){
+      const _cur=Math.max(sched.kidFree.lincoln,sched.momFree);
+      const _combined=(_dm.minutes||10)+(_am.minutes||20);
+      if(gwSkipLunch(_cur,_combined)>_cur)
+        sched.kidFree.lincoln=Math.max(sched.kidFree.lincoln,GW_LUNCH_END);
+    }
+    if(_dm) schedule("lincoln","drills_l","Practice");
+    schedBucket("lincoln",l.required_paper.filter(([key])=>key==="aas"));
+  } else {
+    if(getMeta("lincoln","drills_l")) schedule("lincoln","drills_l","Practice");
+    schedBucket("lincoln",l.required_paper);
+  }
   if(isMaggie) schedBucket("ellis",e.required_paper);
 
   // Phase 5
   schedBucket("lucy",c.ipad);
   schedBucket("lucy",[...c.independent,...c.maybe_paper,...c.required_paper]);
+
+  // ── CLOSING NOTEBOOKS — last task for each kid ──
+  ["lincoln","ellis","lucy"].forEach(kid=>{
+    if(getMeta(kid,"closing_nb")){
+      let s=sched.kidFree[kid];
+      s=gwSkipLunch(s,5);
+      if(s+5>cutoff) s=cutoff-5;
+      addTask(kid,"closing_nb","Daily",s);
+    }
+  });
 
   tasks.sort((a,b)=>toMin(a.time)-toMin(b.time));
   return {tasks,counter,dropped};
