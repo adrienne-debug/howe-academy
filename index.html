@@ -7630,18 +7630,22 @@ function gwClassifySubjects(kid){
 function gwByCategory(kid,tasksDict){
   const subjects=gwGetSubjects(kid);
   const buckets={first:[],computer:[],ipad:[],phone:[],independent:[],maybe_paper:[],required_paper:[],last:[]};
-  for(const[key,val] of Object.entries(tasksDict)){
+  for(const[key,raw] of Object.entries(tasksDict)){
     const s=subjects[key];
     if(!s) continue;
+    // Expand arrays (doubled-up subjects from autoBalance) into separate entries
+    const vals=Array.isArray(raw)?raw:[raw];
     const rules=s.rules||"";
-    if(rules.includes("first")){ buckets.first.push([key,val]); continue; }
-    if(rules.includes("last")){ buckets.last.push([key,val]); continue; }
-    if(s.device==="computer") buckets.computer.push([key,val]);
-    else if(s.device==="ipad") buckets.ipad.push([key,val]);
-    else if(s.device==="phone") buckets.phone.push([key,val]);
-    else if(s.mom==="required") buckets.required_paper.push([key,val]);
-    else if(s.mom==="maybe") buckets.maybe_paper.push([key,val]);
-    else buckets.independent.push([key,val]);
+    for(const val of vals){
+      if(rules.includes("first")){ buckets.first.push([key,val]); continue; }
+      if(rules.includes("last")){ buckets.last.push([key,val]); continue; }
+      if(s.device==="computer") buckets.computer.push([key,val]);
+      else if(s.device==="ipad") buckets.ipad.push([key,val]);
+      else if(s.device==="phone") buckets.phone.push([key,val]);
+      else if(s.mom==="required") buckets.required_paper.push([key,val]);
+      else if(s.mom==="maybe") buckets.maybe_paper.push([key,val]);
+      else buckets.independent.push([key,val]);
+    }
   }
   return buckets;
 }
@@ -7910,6 +7914,26 @@ function gwAutoBalance(dayData,lateStart,skipDays){
       dayDates.push([dk,dn]);
     }
 
+    // Capture original column order: values in Excel day order per subject
+    const origOrder={};
+    for(const[dk] of dayDates){
+      const kt=(dayData[dk]||{})[kid]||{};
+      for(const key of Object.keys(kt)){
+        if(!origOrder[key]) origOrder[key]=[];
+        origOrder[key].push(kt[key]);
+      }
+    }
+
+    // Track slot counts per day per subject (supports doubling up)
+    const slotCount={};
+    for(const[dk] of dayDates){
+      const kt=(dayData[dk]||{})[kid]||{};
+      for(const key of Object.keys(kt)){
+        const sk=dk+"|"+key;
+        slotCount[sk]=1;
+      }
+    }
+
     let changed=true;
     while(changed){
       changed=false;
@@ -7936,35 +7960,55 @@ function gwAutoBalance(dayData,lateStart,skipDays){
             if(rules.includes("sticky")) continue;
             if(rules.includes("no-fri")&&dayName==="friday") continue;
             if(rules.includes("mon-thu")&&!["monday","tuesday","wednesday","thursday"].includes(dayName)) continue;
+            // Only block doubling for max1 subjects (reflex, dictation)
             const dstTasks=(dayData[dk]||{})[kid]||{};
-            if(dstTasks[key]) continue;
+            if(dstTasks[key]!==undefined&&rules.includes("max1")) continue;
             if(dur>room) continue;
 
-            const removedVal=srcTasks[key];
-            delete srcTasks[key];
+            // Decrement source slot count; delete key when count reaches 0
+            const srcSlot=ld2+"|"+key;
+            slotCount[srcSlot]=(slotCount[srcSlot]||1)-1;
+            if(slotCount[srcSlot]<=0){
+              delete slotCount[srcSlot];
+              delete srcTasks[key];
+            }
+            // Increment dest slot count; ensure key exists in dayData
+            const dstSlot=dk+"|"+key;
+            slotCount[dstSlot]=(slotCount[dstSlot]||0)+1;
             if(!dayData[dk]) dayData[dk]={};
             if(!dayData[dk][kid]) dayData[dk][kid]={};
             dayData[dk][kid][key]="TMP";
-
-            // Re-sort values so lesson numbers stay in ascending order
-            const subjDays=[];
-            for(const[sd] of dayDates){
-              if((dayData[sd]||{})[kid]&&(dayData[sd]||{})[kid][key]!==undefined) subjDays.push(sd);
-            }
-            subjDays.sort();
-            const vals=[];
-            for(const sd of subjDays){
-              const v=dayData[sd][kid][key];
-              if(v!=="TMP") vals.push(v);
-            }
-            vals.push(removedVal);
-            for(let i=0;i<subjDays.length;i++) dayData[subjDays[i]][kid][key]=vals[i];
 
             room-=dur;
             dayTotals[dk]+=dur;
             dayTotals[ld2]-=dur;
             changed=true;
           }
+        }
+      }
+    }
+
+    // Reassign values from original column order using slot counts
+    // Earlier values go to earlier days; doubled days get values in order
+    for(const key of Object.keys(origOrder)){
+      const vals=origOrder[key];
+      let vi=0;
+      for(const[dk] of dayDates){
+        const count=slotCount[dk+"|"+key]||0;
+        if(count<=0){
+          // Subject no longer on this day — clean up
+          if(dayData[dk]&&dayData[dk][kid]&&dayData[dk][kid][key]!==undefined)
+            delete dayData[dk][kid][key];
+          continue;
+        }
+        if(!dayData[dk]) dayData[dk]={};
+        if(!dayData[dk][kid]) dayData[dk][kid]={};
+        if(count===1){
+          dayData[dk][kid][key]=vals[vi++];
+        } else {
+          // Multiple on same day: array, earlier values first
+          dayData[dk][kid][key]=vals.slice(vi,vi+count);
+          vi+=count;
         }
       }
     }
