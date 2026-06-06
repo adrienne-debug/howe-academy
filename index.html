@@ -823,6 +823,12 @@ let schedShowRules=false;
 let schedShowHistory=false;
 let schedShowPace=false;
 let schedShowCurr=false;
+let schedShowGenerate=false;
+let gwConfig={weekNum:"",maggie:{},skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:false,redistribute:[]};
+let gwConfigOpen={basic:true,maggie:false,skip:false,late:false,car:false,redist:false};
+let gwResult=null;
+let gwDropped=null;
+let gwStatus="";
 let currViewKid="lincoln";
 let currViewWeek=null;
 let adminPinUnlocked=false;
@@ -1148,7 +1154,7 @@ function renderSkylight(){
   const gridEl=document.getElementById("sl-grid");
   const indEl=document.getElementById("sl-individual");
 
-  if(kid==="mom"||tab!=="schedule"||schedShowRules||schedShowHistory||schedShowPace||schedShowCurr){ panel.style.display="none"; return; }
+  if(kid==="mom"||tab!=="schedule"||schedShowRules||schedShowHistory||schedShowPace||schedShowCurr||schedShowGenerate){ panel.style.display="none"; return; }
   panel.style.display="block";
 
   // Alert
@@ -1210,11 +1216,11 @@ function showTab(t){
   tab=t;
   mastAddMode=false; mastLogMode=false; mastLogScores={};
   document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===t));
-  if(t!=="schedule"){ schedShowRules=false; schedShowHistory=false; schedShowPace=false; schedShowCurr=false; }
+  if(t!=="schedule"){ schedShowRules=false; schedShowHistory=false; schedShowPace=false; schedShowCurr=false; schedShowGenerate=false; }
   document.getElementById("sched-subtabs").style.display=t==="schedule"?"flex":"none";
   document.getElementById("day-tabs").style.display=["schedule","supplies"].includes(t)?"flex":"none";
   document.getElementById("kid-filter").style.display=["schedule","history","pace"].includes(t)?"flex":"none";
-  document.getElementById("week-strip").style.display=t==="schedule"&&!schedShowRules&&!schedShowHistory&&!schedShowPace&&!schedShowCurr?"grid":"none";
+  document.getElementById("week-strip").style.display=t==="schedule"&&!schedShowRules&&!schedShowHistory&&!schedShowPace&&!schedShowCurr&&!schedShowGenerate?"grid":"none";
   renderAll();
 }
 
@@ -1222,20 +1228,21 @@ function renderSchedSubtabs(){
   const el=document.getElementById("sched-subtabs");
   if(tab!=="schedule"){el.style.display="none";return;}
   el.style.display="flex";
-  const isSchedule=!schedShowHistory&&!schedShowPace&&!schedShowRules&&!schedShowCurr;
+  const isSchedule=!schedShowHistory&&!schedShowPace&&!schedShowRules&&!schedShowCurr&&!schedShowGenerate;
   const boCnt=Object.keys(blockouts).length;
   el.innerHTML=
-    '<button class="sched-sub'+(isSchedule?" active":"")+'" onclick="schedShowHistory=false;schedShowPace=false;schedShowRules=false;schedShowCurr=false;renderAll()">Schedule</button>'+
+    '<button class="sched-sub'+(isSchedule?" active":"")+'" onclick="schedShowHistory=false;schedShowPace=false;schedShowRules=false;schedShowCurr=false;schedShowGenerate=false;renderAll()">Schedule</button>'+
     '<button class="sched-sub'+(schedShowHistory?" active":"")+'" onclick="toggleSchedHistory()">History</button>'+
     '<button class="sched-sub'+(schedShowPace?" active":"")+'" onclick="toggleSchedPace()">Pace</button>'+
     (boCnt?'<button class="sched-sub" onclick="openBoManager()" style="color:#ef4444">Blockouts<span class="sub-dot" style="background:#ef4444"></span></button>':'')+
     '<button class="sched-sub'+(schedShowRules?" active":"")+'" onclick="toggleSchedRules()">Rules</button>'+
-    '<button class="sched-sub'+(schedShowCurr?" active":"")+'" onclick="toggleSchedCurr()">Curriculum</button>';
+    '<button class="sched-sub'+(schedShowCurr?" active":"")+'" onclick="toggleSchedCurr()">Curriculum</button>'+
+    '<button class="sched-sub'+(schedShowGenerate?" active":"")+'" onclick="toggleSchedGenerate()">Generate</button>';
 }
 function renderAll(){
   renderSchedSubtabs(); renderDayTabs(); renderKidFilter(); renderSkylight(); renderWeekStrip();
-  if(tab==="schedule") document.getElementById("day-tabs").style.display=(schedShowHistory||schedShowPace||schedShowRules||schedShowCurr)?"none":"flex";
-  const showKidFilter=(tab==="schedule"&&!schedShowRules&&!schedShowCurr)||(tab==="history")||(tab==="pace");
+  if(tab==="schedule") document.getElementById("day-tabs").style.display=(schedShowHistory||schedShowPace||schedShowRules||schedShowCurr||schedShowGenerate)?"none":"flex";
+  const showKidFilter=(tab==="schedule"&&!schedShowRules&&!schedShowCurr&&!schedShowGenerate)||(tab==="history")||(tab==="pace");
   const kf=document.getElementById("kid-filter");
   kf.style.display=showKidFilter?"flex":"none";
   kf.style.top=(tab==="schedule"&&(schedShowHistory||schedShowPace))?"122px":"166px";
@@ -1288,7 +1295,7 @@ function selKid(k){ if(k !== "mom") momPinUnlocked=false; kid=k; schedShowRules=
 // ── WEEK STRIP ────────────────────────────────────────────────────
 function renderWeekStrip(){
   const el=document.getElementById("week-strip");
-  if(tab!=="schedule"||schedShowRules||schedShowHistory||schedShowPace||schedShowCurr){ el.style.display="none"; return; }
+  if(tab!=="schedule"||schedShowRules||schedShowHistory||schedShowPace||schedShowCurr||schedShowGenerate){ el.style.display="none"; return; }
   const kidMatch=t=>kid==="all"||kid==="mom"?true:t.who===kid;
   const countable=getActiveTasks().filter(t=>kidMatch(t)&&effectiveDay(t)!=="carryover");
   const all=countable.length, done=countable.filter(t=>!!checked[t.id]).length;
@@ -1606,14 +1613,16 @@ function checkAdminPin(val,errId){
     setTimeout(()=>{if(err)err.textContent="";if(inp)inp.style.borderColor="var(--border)";},1500);
   }
 }
-function toggleSchedRules(){ schedShowRules=!schedShowRules; schedShowHistory=false; schedShowPace=false; schedShowCurr=false; renderAll(); }
-function toggleSchedHistory(){ schedShowHistory=!schedShowHistory; schedShowRules=false; schedShowPace=false; schedShowCurr=false; renderAll(); }
-function toggleSchedPace(){ schedShowPace=!schedShowPace; schedShowRules=false; schedShowHistory=false; schedShowCurr=false; renderAll(); }
-function toggleSchedCurr(){ schedShowCurr=!schedShowCurr; schedShowRules=false; schedShowHistory=false; schedShowPace=false; renderAll(); }
+function toggleSchedRules(){ schedShowRules=!schedShowRules; schedShowHistory=false; schedShowPace=false; schedShowCurr=false; schedShowGenerate=false; renderAll(); }
+function toggleSchedHistory(){ schedShowHistory=!schedShowHistory; schedShowRules=false; schedShowPace=false; schedShowCurr=false; schedShowGenerate=false; renderAll(); }
+function toggleSchedPace(){ schedShowPace=!schedShowPace; schedShowRules=false; schedShowHistory=false; schedShowCurr=false; schedShowGenerate=false; renderAll(); }
+function toggleSchedCurr(){ schedShowCurr=!schedShowCurr; schedShowRules=false; schedShowHistory=false; schedShowPace=false; schedShowGenerate=false; renderAll(); }
+function toggleSchedGenerate(){ schedShowGenerate=!schedShowGenerate; schedShowRules=false; schedShowHistory=false; schedShowPace=false; schedShowCurr=false; renderAll(); }
 function renderSchedule(el){
   if(schedShowPace){ renderPace(el); return; }
   if(schedShowHistory){ renderHistory(el); return; }
   if(schedShowCurr){ renderCurriculumView(el); return; }
+  if(schedShowGenerate){ renderWeekConfig(el); return; }
   if(schedShowRules){
     if(!adminPinUnlocked){
       el.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center">'+
@@ -6925,6 +6934,866 @@ function buildSprintHtml(){
 
   h+=`<div id="sp-sheets"></div>`;
   return h;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PHASE 2 — WEEK CONFIG UI
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function loadWeekConfig(wn){
+  if(!db||!wn) return;
+  db.ref("weekConfig/"+wn).once("value",s=>{
+    const v=s.val();
+    if(v){
+      gwConfig={
+        weekNum:v.weekNum||wn,
+        maggie:v.maggie||{},
+        skipDays:v.skipDays||[],
+        lateStart:v.lateStart||{},
+        carSchool:v.carSchool||{},
+        theater:!!v.theater,
+        saturday:!!v.saturday,
+        redistribute:v.redistribute||[]
+      };
+    } else {
+      gwConfig.weekNum=wn;
+    }
+    renderAll();
+  });
+}
+
+function saveWeekConfig(){
+  if(!gwConfig.weekNum) return;
+  const c={...gwConfig};
+  if(db) db.ref("weekConfig/"+c.weekNum).set(c);
+  gwShowToast("Config saved for Week "+c.weekNum);
+}
+
+function gwShowToast(msg){
+  gwStatus=msg;
+  renderAll();
+  setTimeout(()=>{ gwStatus=""; renderAll(); },3000);
+}
+
+function gwToggleCard(key){
+  gwConfigOpen[key]=!gwConfigOpen[key]; renderAll();
+}
+
+function gwToggleMaggie(d){
+  if(gwConfig.maggie[d]) delete gwConfig.maggie[d];
+  else gwConfig.maggie[d]="2:00 PM";
+  renderAll();
+}
+function gwSetMaggieTime(d,v){ gwConfig.maggie[d]=to12h(v); renderAll(); }
+
+function gwToggleSkip(d){
+  const i=gwConfig.skipDays.indexOf(d);
+  if(i>=0) gwConfig.skipDays.splice(i,1); else gwConfig.skipDays.push(d);
+  renderAll();
+}
+
+function gwToggleLate(d){
+  if(gwConfig.lateStart[d]) delete gwConfig.lateStart[d];
+  else gwConfig.lateStart[d]="11:00 AM";
+  renderAll();
+}
+function gwSetLateTime(d,v){ gwConfig.lateStart[d]=to12h(v); renderAll(); }
+
+function gwToggleCar(d){
+  if(gwConfig.carSchool[d]) delete gwConfig.carSchool[d];
+  else gwConfig.carSchool[d]={end:"12:00 PM",note:"Travel Day"};
+  renderAll();
+}
+function gwSetCarEnd(d,v){ if(gwConfig.carSchool[d]) gwConfig.carSchool[d].end=to12h(v); renderAll(); }
+function gwSetCarNote(d,v){ if(gwConfig.carSchool[d]) gwConfig.carSchool[d].note=v; }
+
+function gwToggleTheater(){ gwConfig.theater=!gwConfig.theater; renderAll(); }
+function gwToggleSaturday(){ gwConfig.saturday=!gwConfig.saturday; renderAll(); }
+
+function gwAddRedist(){
+  gwConfig.redistribute.push({kid:"ellis",from:"wednesday",to:"tuesday",subjects:"paper"});
+  renderAll();
+}
+function gwRemoveRedist(i){ gwConfig.redistribute.splice(i,1); renderAll(); }
+function gwSetRedist(i,field,val){ gwConfig.redistribute[i][field]=val; renderAll(); }
+
+function renderWeekConfig(el){
+  if(!adminPinUnlocked){
+    el.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center">'+
+      '<div style="font-size:48px;margin-bottom:12px">&#9881;&#65039;</div>'+
+      '<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:700;margin-bottom:4px">Week Generator</div>'+
+      '<div style="font-size:13px;color:var(--muted);margin-bottom:16px">Enter the Mom PIN to configure and generate weeks.</div>'+
+      '<input id="admin-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="PIN" autocomplete="off" '+
+      'style="width:120px;text-align:center;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:18px;font-weight:700;letter-spacing:8px;font-family:\'DM Sans\',sans-serif" '+
+      'oninput="checkAdminPin(this.value,\'admin-pin-err\')" autofocus>'+
+      '<div id="admin-pin-err" style="font-size:11px;color:#b5394a;margin-top:6px;min-height:14px"></div></div>';
+    setTimeout(()=>{const i=document.getElementById("admin-pin-input");if(i)i.focus();},50);
+    return;
+  }
+
+  if(!currData||!currData.subjects){
+    el.innerHTML='<div style="padding:40px 20px;text-align:center;color:var(--muted)">'+
+      '<div style="font-size:36px;margin-bottom:8px">\u{1F4DA}</div>'+
+      '<div style="font-weight:600;margin-bottom:4px">No curriculum uploaded</div>'+
+      '<div style="font-size:12px">Upload howe_master_schedule.xlsx via the admin panel first.</div></div>';
+    return;
+  }
+
+  const WDAYS=["monday","tuesday","wednesday","thursday","friday"];
+  const c=gwConfig;
+  let h='<div class="rules-wrap">';
+  h+='<div class="rules-hdr">Generate Week</div>';
+  h+='<div class="rules-sub">Configure the week, then generate the schedule from curriculum data.</div>';
+
+  if(gwStatus) h+='<div style="background:#dcfce7;border:1px solid #86efac;border-radius:10px;padding:10px 14px;font-size:12px;font-weight:700;color:#15803d;margin-bottom:12px">'+gwStatus+'</div>';
+
+  // ── BASIC ──
+  h+='<div class="rules-card'+(gwConfigOpen.basic?" open":"")+'"><div class="rules-card-hdr" onclick="gwToggleCard(\'basic\')"><div class="rules-card-title">\u{1F4C5} Week &amp; Defaults</div><div class="rules-card-arrow">▶</div></div>';
+  h+='<div class="rules-card-body">';
+  h+='<div class="rules-row"><div class="rules-label">Week Number</div><input type="number" min="1" max="52" value="'+(c.weekNum||"")+'" class="rules-num" style="width:70px" onchange="gwConfig.weekNum=this.value;loadWeekConfig(this.value)"></div>';
+  h+='<div class="rules-row"><div class="rules-label">Theater Week</div><div class="rules-toggle'+(c.theater?" on":"")+'" onclick="gwToggleTheater()"></div></div>';
+  h+='<div class="rules-row"><div class="rules-label">Include Saturday</div><div class="rules-toggle'+(c.saturday?" on":"")+'" onclick="gwToggleSaturday()"></div></div>';
+  h+='</div></div>';
+
+  // ── MAGGIE ──
+  h+='<div class="rules-card'+(gwConfigOpen.maggie?" open":"")+'"><div class="rules-card-hdr" onclick="gwToggleCard(\'maggie\')"><div class="rules-card-title">\u{1F338} Maggie Days</div><div class="rules-card-arrow">▶</div></div>';
+  h+='<div class="rules-card-body">';
+  WDAYS.forEach(d=>{
+    const on=!!c.maggie[d];
+    h+='<div class="rules-row"><div class="rules-label">'+cap(d)+'</div>';
+    if(on) h+='<input type="time" value="'+ampmTo24(c.maggie[d])+'" class="rules-time" onchange="gwSetMaggieTime(\''+d+'\',this.value)">';
+    h+='<div class="rules-toggle'+(on?" on":"")+'" onclick="gwToggleMaggie(\''+d+'\')"></div></div>';
+  });
+  h+='</div></div>';
+
+  // ── SKIP DAYS ──
+  h+='<div class="rules-card'+(gwConfigOpen.skip?" open":"")+'"><div class="rules-card-hdr" onclick="gwToggleCard(\'skip\')"><div class="rules-card-title">\u{274C} Skip Days</div><div class="rules-card-arrow">▶</div></div>';
+  h+='<div class="rules-card-body">';
+  WDAYS.forEach(d=>{
+    const on=c.skipDays.includes(d);
+    h+='<div class="rules-row"><div class="rules-label">'+cap(d)+'</div><div class="rules-toggle'+(on?" on":"")+'" onclick="gwToggleSkip(\''+d+'\')"></div></div>';
+  });
+  h+='</div></div>';
+
+  // ── LATE START ──
+  h+='<div class="rules-card'+(gwConfigOpen.late?" open":"")+'"><div class="rules-card-hdr" onclick="gwToggleCard(\'late\')"><div class="rules-card-title">\u{1F550} Late Start Days</div><div class="rules-card-arrow">▶</div></div>';
+  h+='<div class="rules-card-body">';
+  WDAYS.forEach(d=>{
+    const on=!!c.lateStart[d];
+    h+='<div class="rules-row"><div class="rules-label">'+cap(d)+'</div>';
+    if(on) h+='<input type="time" value="'+ampmTo24(c.lateStart[d])+'" class="rules-time" onchange="gwSetLateTime(\''+d+'\',this.value)">';
+    h+='<div class="rules-toggle'+(on?" on":"")+'" onclick="gwToggleLate(\''+d+'\')"></div></div>';
+  });
+  h+='</div></div>';
+
+  // ── CAR SCHOOL ──
+  h+='<div class="rules-card'+(gwConfigOpen.car?" open":"")+'"><div class="rules-card-hdr" onclick="gwToggleCard(\'car\')"><div class="rules-card-title">\u{1F697} Car School Days</div><div class="rules-card-arrow">▶</div></div>';
+  h+='<div class="rules-card-body">';
+  WDAYS.forEach(d=>{
+    const on=!!c.carSchool[d];
+    h+='<div class="rules-row" style="flex-wrap:wrap"><div class="rules-label">'+cap(d)+'</div>';
+    h+='<div class="rules-toggle'+(on?" on":"")+'" onclick="gwToggleCar(\''+d+'\')"></div>';
+    if(on){
+      h+='<div style="width:100%;display:flex;gap:8px;margin-top:6px;padding-left:4px">';
+      h+='<input type="time" value="'+ampmTo24(c.carSchool[d].end)+'" class="rules-time" onchange="gwSetCarEnd(\''+d+'\',this.value)">';
+      h+='<input type="text" value="'+(c.carSchool[d].note||"")+'" placeholder="Note" style="flex:1;padding:4px 8px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif" onchange="gwSetCarNote(\''+d+'\',this.value)">';
+      h+='</div>';
+    }
+    h+='</div>';
+  });
+  h+='</div></div>';
+
+  // ── REDISTRIBUTION ──
+  h+='<div class="rules-card'+(gwConfigOpen.redist?" open":"")+'"><div class="rules-card-hdr" onclick="gwToggleCard(\'redist\')"><div class="rules-card-title">\u{21C5} Redistribution Rules</div><div class="rules-card-arrow">▶</div></div>';
+  h+='<div class="rules-card-body">';
+  if(c.redistribute.length===0) h+='<div style="font-size:12px;color:var(--muted);padding:8px 0">No redistribution rules. Auto-balance still runs.</div>';
+  c.redistribute.forEach((r,i)=>{
+    h+='<div style="background:var(--bg);border-radius:8px;padding:8px 10px;margin-bottom:6px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">';
+    h+='<select style="padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:11px;font-weight:600" onchange="gwSetRedist('+i+',\'kid\',this.value)">';
+    ["lincoln","ellis","lucy"].forEach(k=>{ h+='<option value="'+k+'"'+(r.kid===k?" selected":"")+'>'+cap(k)+'</option>'; });
+    h+='</select>';
+    h+='<select style="padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:11px" onchange="gwSetRedist('+i+',\'from\',this.value)">';
+    WDAYS.forEach(d=>{ h+='<option value="'+d+'"'+(r.from===d?" selected":"")+'>'+cap(d)+'</option>'; });
+    h+='</select>';
+    h+='<span style="font-size:11px;color:var(--muted)">→</span>';
+    h+='<select style="padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:11px" onchange="gwSetRedist('+i+',\'to\',this.value)">';
+    WDAYS.forEach(d=>{ h+='<option value="'+d+'"'+(r.to===d?" selected":"")+'>'+cap(d)+'</option>'; });
+    h+='</select>';
+    h+='<select style="padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:11px" onchange="gwSetRedist('+i+',\'subjects\',this.value)">';
+    ["paper","ipad","all"].forEach(s=>{ h+='<option value="'+s+'"'+(r.subjects===s?" selected":"")+'>'+s+'</option>'; });
+    h+='</select>';
+    h+='<button style="background:none;border:none;color:#ef4444;font-size:14px;cursor:pointer;padding:2px 6px" onclick="gwRemoveRedist('+i+')">✕</button>';
+    h+='</div>';
+  });
+  h+='<button style="margin-top:6px;padding:6px 14px;border-radius:8px;border:1.5px dashed var(--border);background:#fff;font-size:11px;font-weight:700;cursor:pointer;color:var(--muted);font-family:\'DM Sans\',sans-serif" onclick="gwAddRedist()">+ Add Rule</button>';
+  h+='</div></div>';
+
+  // ── ACTIONS ──
+  h+='<div style="display:flex;gap:8px;margin-top:14px">';
+  h+='<button style="flex:1;padding:10px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif" onclick="saveWeekConfig()">Save Config</button>';
+  h+='<button style="flex:2;padding:12px;border-radius:10px;border:none;background:var(--header);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif" onclick="runGenerateWeek()">\u{2728} Generate Week '+(c.weekNum||"")+'</button>';
+  h+='</div>';
+
+  // ── RESULT / DROPPED ──
+  if(gwResult){
+    const tc=gwResult.tasks.length;
+    const dc=Object.keys(gwResult.dates).length;
+    h+='<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:14px;margin-top:14px">';
+    h+='<div style="font-weight:700;font-size:14px;color:#15803d;margin-bottom:6px">✅ Generated '+gwResult.week.replace("week","Week ")+' — '+tc+' tasks across '+dc+' days</div>';
+    if(gwDropped&&gwDropped.length){
+      const cutoffs=gwDropped.filter(d=>d.reason.includes("CUTOFF"));
+      const rules=gwDropped.filter(d=>!d.reason.includes("CUTOFF"));
+      if(cutoffs.length){
+        h+='<div style="font-size:11px;font-weight:700;color:#991b1b;margin-top:8px">⚠️ Cutoff drops ('+cutoffs.length+'):</div>';
+        cutoffs.forEach(d=>{ h+='<div style="font-size:11px;color:#991b1b;padding:2px 0">'+cap(d.day)+' '+cap(d.kid)+' '+d.key+': '+d.val+'</div>'; });
+      }
+      if(rules.length){
+        h+='<div style="font-size:11px;font-weight:600;color:var(--muted);margin-top:6px">ℹ️ Rule skips ('+rules.length+'):</div>';
+        rules.forEach(d=>{ h+='<div style="font-size:11px;color:var(--muted);padding:2px 0">'+cap(d.day)+' '+cap(d.kid)+' '+d.key+': '+d.reason+'</div>'; });
+      }
+    }
+    h+='<div style="display:flex;gap:8px;margin-top:12px">';
+    h+='<button style="flex:1;padding:10px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif" onclick="gwResult=null;gwDropped=null;renderAll()">Cancel</button>';
+    h+='<button style="flex:2;padding:10px;border-radius:10px;border:none;background:#16a34a;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif" onclick="gwCommit()">✅ Apply to Schedule</button>';
+    h+='</div></div>';
+  }
+
+  h+='</div>';
+  el.innerHTML=h;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PHASE 3 — WEEK GENERATOR (JS PORT OF build_week_json.py)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function gwParseDate(s){
+  const p=s.split("-"); return new Date(parseInt(p[0]),parseInt(p[1])-1,parseInt(p[2]));
+}
+
+const GW_LUNCH_START=780; // 1:00 PM
+const GW_LUNCH_END=840;   // 2:00 PM
+const GW_SCHOOL_END=16*60+15; // 4:15 PM (theater)
+const GW_SCHOOL_END_NO_THEATER=17*60; // 5:00 PM
+const GW_DAY_NAMES=["monday","tuesday","wednesday","thursday","friday","saturday"];
+const GW_DAY_PREFIXES=["m","t","w","th","f","sat"];
+const GW_DEVICE_EMOJI={paper:"\u{1F4C4}",computer:"\u{1F4BB}",ipad:"\u{1F4F1}",phone:"\u{1F4DE}",book:"\u{1F4D6}"};
+const GW_CAR_SAFE_KEYS=new Set(["eggspress_l","ind_read","read_eggs","nzk_l"]);
+
+function gwSkipLunch(start,duration){
+  if(start>=GW_LUNCH_END) return start;
+  if(start+duration<=GW_LUNCH_START) return start;
+  return GW_LUNCH_END;
+}
+
+function gwGetSubjects(kid){
+  if(!currData||!currData.subjects) return {};
+  return currData.subjects[kid]||{};
+}
+
+function gwClassifySubjects(kid){
+  const subjects=gwGetSubjects(kid);
+  const paper=[],computer=[],ipad=[];
+  for(const[key,s] of Object.entries(subjects)){
+    if(s.device==="computer") computer.push(key);
+    else if(s.device==="ipad") ipad.push(key);
+    else paper.push(key);
+  }
+  return {paper,computer,ipad};
+}
+
+function gwByCategory(kid,tasksDict){
+  const subjects=gwGetSubjects(kid);
+  const buckets={computer:[],ipad:[],phone:[],independent:[],maybe_paper:[],required_paper:[]};
+  for(const[key,val] of Object.entries(tasksDict)){
+    const s=subjects[key];
+    if(!s) continue;
+    if(s.device==="computer") buckets.computer.push([key,val]);
+    else if(s.device==="ipad") buckets.ipad.push([key,val]);
+    else if(s.device==="phone") buckets.phone.push([key,val]);
+    else if(s.mom==="required") buckets.required_paper.push([key,val]);
+    else if(s.mom==="maybe") buckets.maybe_paper.push([key,val]);
+    else buckets.independent.push([key,val]);
+  }
+  return buckets;
+}
+
+function gwTaskTitle(kid,key,excelVal,dayName,isCarSchool,ellisHasIpad){
+  const subjects=gwGetSubjects(kid);
+  const s=subjects[key];
+  if(!s) return "\u{1F4C4} "+key+" — "+excelVal;
+  let display=s.display||key;
+  let emoji=GW_DEVICE_EMOJI[s.device]||"\u{1F4C4}";
+
+  if(key==="eggspress_l") emoji=isCarSchool?"\u{1F4DE}":"\u{1F4BB}";
+  if(key==="read_eggs"||key==="nzk_l") emoji=(isCarSchool||ellisHasIpad)?"\u{1F4DE}":"\u{1F4F1}";
+  if(key==="fast_phon"||key==="mathseeds") emoji=isCarSchool?"\u{1F4DE}":"\u{1F4F1}";
+  if(key==="eggspress_e"||key==="nzk_e") emoji="\u{1F4F1}";
+
+  if(key==="mr_pages"){
+    display=excelVal.includes("MR6")?"MR6 Math Reasoning":"MR5 Math Reasoning";
+  }
+  return emoji+" "+display+" — "+excelVal;
+}
+
+function gwSubjectDetail(kid,key){
+  const s=gwGetSubjects(kid)[key];
+  if(!s) return "";
+  const parts=[];
+  if(["paper","computer","ipad","phone"].includes(s.device)) parts.push(cap(s.device)+".");
+  else if(s.device==="book") parts.push(s.minutes+" minutes.");
+  if(s.mom==="required") parts.push("Mom Required.");
+  else if(s.mom==="maybe") parts.push("May need Mom.");
+  const rules=s.rules||"";
+  if(rules.includes("sequential")) parts.push("Sequential.");
+  if(rules.includes("max1")) parts.push("Max 1 per day.");
+  if(rules.includes("mon-thu")) parts.push("Mon–Thu only.");
+  if(rules.includes("no-fri")) parts.push("Not on Fridays.");
+  return parts.join(" ");
+}
+
+class GWScheduler{
+  constructor(schoolStart,momAvailable,cutoff){
+    this.computerFree=schoolStart;
+    this.ipadFree=schoolStart;
+    this.ipadFreeLucy=schoolStart;
+    this.momFree=momAvailable;
+    this.kidFree={lincoln:schoolStart,ellis:schoolStart,lucy:schoolStart};
+    this.cutoff=cutoff;
+  }
+  _earliest(kid,reqComp,reqIpad,reqMom){
+    let t=this.kidFree[kid];
+    if(reqComp) t=Math.max(t,this.computerFree);
+    if(reqIpad) t=Math.max(t,kid==="lucy"?this.ipadFreeLucy:this.ipadFree);
+    if(reqMom) t=Math.max(t,this.momFree);
+    return t;
+  }
+  place(kid,key,duration,reqComp,reqIpad,reqMom){
+    let start=this._earliest(kid,reqComp,reqIpad,reqMom);
+    start=gwSkipLunch(start,duration);
+    const end=start+duration;
+    if(end>this.cutoff) return null;
+    this.kidFree[kid]=end;
+    if(reqComp) this.computerFree=end;
+    if(reqIpad){ if(kid==="lucy") this.ipadFreeLucy=end; else this.ipadFree=end; }
+    if(reqMom) this.momFree=end;
+    return start;
+  }
+}
+
+function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
+  const schoolStart=dayConfig.schoolStart;
+  const momAvailable=dayConfig.momAvailable;
+  const isMaggie=dayConfig.isMaggie;
+  const maggieEnd=dayConfig.maggieEnd;
+  const isCarSchool=dayConfig.isCarSchool;
+  const theater=dayConfig.theater;
+  const dayName=dayConfig.dayName;
+  const isFriday=dayName==="friday";
+  const cutoff=(theater&&dayName!=="friday"&&dayName!=="saturday")?GW_SCHOOL_END:GW_SCHOOL_END_NO_THEATER;
+
+  const sched=new GWScheduler(schoolStart,momAvailable,cutoff);
+  const tasks=[];
+  const dropped=[];
+
+  const ellisHasIpad=["nzk_e","eggspress_e"].some(k=>(kidAssignments.ellis||{})[k]);
+
+  function getMeta(kid,key){
+    return gwGetSubjects(kid)[key]||null;
+  }
+
+  function addTask(kid,key,excelVal,startMin){
+    const s=getMeta(kid,key);
+    if(!s) return;
+    const title=gwTaskTitle(kid,key,excelVal,dayName,isCarSchool,ellisHasIpad);
+    const detail=gwSubjectDetail(kid,key);
+    const taskId=prefix+(counter++);
+    tasks.push({
+      id:taskId,who:kid,day:dayName,time:fromMin(startMin),dur:s.minutes||20,
+      title:title,detail:detail,mom:s.mom||"none",cascade:true
+    });
+  }
+
+  function schedule(kid,key,excelVal){
+    const s=getMeta(kid,key);
+    if(!s) return;
+    const onMaggie=isMaggie&&sched.kidFree[kid]<maggieEnd;
+    const reqMom=(s.mom==="required")&&!onMaggie;
+    if(isCarSchool&&s.device!=="ipad"&&!GW_CAR_SAFE_KEYS.has(key)){
+      dropped.push({kid,day:dayName,key,val:excelVal,reason:"car school day — paper/computer tasks skipped"});
+      return;
+    }
+    const rules=s.rules||"";
+    if(rules.includes("no-fri")&&isFriday){
+      dropped.push({kid,day:dayName,key,val:excelVal,reason:"Not scheduled on Fridays (Excel rule)"});
+      return;
+    }
+    if(rules.includes("mon-thu")&&!["monday","tuesday","wednesday","thursday"].includes(dayName)){
+      dropped.push({kid,day:dayName,key,val:excelVal,reason:"Mon–Thu only (Excel rule)"});
+      return;
+    }
+    const isComp=s.device==="computer";
+    const isIpad=s.device==="ipad";
+    const start=sched.place(kid,key,s.minutes||20,isComp,isIpad,reqMom);
+    if(start===null){
+      dropped.push({kid,day:dayName,key,val:excelVal,reason:"⚠️ RAN PAST SCHOOL-DAY CUTOFF — needs manual placement"});
+      return;
+    }
+    addTask(kid,key,excelVal,start);
+  }
+
+  function schedBucket(kid,bucket){ bucket.forEach(([key,val])=>schedule(kid,key,val)); }
+
+  const l=gwByCategory("lincoln",kidAssignments.lincoln||{});
+  const e=gwByCategory("ellis",kidAssignments.ellis||{});
+  const c=gwByCategory("lucy",kidAssignments.lucy||{});
+
+  // Phase 1
+  schedBucket("lincoln",l.computer);
+  if(!isMaggie) schedBucket("ellis",e.required_paper);
+  else schedBucket("ellis",e.ipad);
+  sched.kidFree.lucy=schoolStart;
+  schedBucket("lucy",c.phone);
+
+  // Phase 2
+  schedBucket("lincoln",l.independent);
+  schedBucket("ellis",e.maybe_paper);
+
+  // Phase 3
+  schedBucket("lincoln",l.maybe_paper);
+  if(!isMaggie){
+    schedBucket("ellis",e.ipad);
+    schedBucket("ellis",e.computer);
+  } else {
+    schedBucket("ellis",e.computer);
+  }
+
+  // Phase 4
+  if(isMaggie){
+    sched.kidFree.lincoln=Math.max(sched.kidFree.lincoln,maggieEnd);
+    sched.kidFree.ellis=Math.max(sched.kidFree.ellis,maggieEnd);
+  }
+  schedBucket("lincoln",l.required_paper);
+  if(isMaggie) schedBucket("ellis",e.required_paper);
+
+  // Phase 5
+  schedBucket("lucy",c.ipad);
+  schedBucket("lucy",[...c.independent,...c.maybe_paper,...c.required_paper]);
+
+  tasks.sort((a,b)=>toMin(a.time)-toMin(b.time));
+  return {tasks,counter,dropped};
+}
+
+function gwApplyRedistribution(dayData,rules){
+  const WDAY_NAMES={0:"monday",1:"tuesday",2:"wednesday",3:"thursday",4:"friday",5:"saturday",6:"sunday"};
+  const dateByName={};
+  for(const dk of Object.keys(dayData)){
+    const d=gwParseDate(dk);
+    const dn=WDAY_NAMES[d.getDay()];
+    if(dn) dateByName[dn]=dk;
+  }
+
+  dayData=JSON.parse(JSON.stringify(dayData));
+
+  for(const rule of rules){
+    const kid=rule.kid;
+    const fromDay=rule.from.toLowerCase();
+    const toDay=rule.to.toLowerCase();
+    const subjects=rule.subjects;
+
+    const fromDate=dateByName[fromDay];
+    const toDate=dateByName[toDay];
+    if(!fromDate||!toDate) continue;
+    const fromKidTasks=(dayData[fromDate]||{})[kid];
+    if(!fromKidTasks||!Object.keys(fromKidTasks).length) continue;
+
+    const cls=gwClassifySubjects(kid);
+    let keysToMove;
+    if(subjects==="paper") keysToMove=Object.keys(fromKidTasks).filter(k=>cls.paper.includes(k));
+    else if(subjects==="ipad") keysToMove=Object.keys(fromKidTasks).filter(k=>cls.ipad.includes(k));
+    else if(subjects==="all") keysToMove=Object.keys(fromKidTasks);
+    else if(Array.isArray(subjects)) keysToMove=subjects.filter(k=>fromKidTasks[k]);
+    else continue;
+
+    if(!keysToMove.length) continue;
+    if(!dayData[toDate]) dayData[toDate]={};
+    if(!dayData[toDate][kid]) dayData[toDate][kid]={};
+
+    for(const key of keysToMove){
+      dayData[toDate][kid][key]=fromKidTasks[key];
+      delete fromKidTasks[key];
+    }
+  }
+  return dayData;
+}
+
+function gwAutoBalance(dayData,lateStart,skipDays){
+  const WDAY_NAMES={0:"monday",1:"tuesday",2:"wednesday",3:"thursday",4:"friday",5:"saturday"};
+  dayData=JSON.parse(JSON.stringify(dayData));
+  const sortedDates=Object.keys(dayData).sort();
+  const skipSet=new Set((skipDays||[]).map(d=>d.toLowerCase()));
+  const DAY_END=toMin("4:00 PM");
+  const LUNCH=60;
+
+  for(const kid of ["lincoln","ellis","lucy"]){
+    const subjects=gwGetSubjects(kid);
+    const durMap={};
+    for(const[k,s] of Object.entries(subjects)) durMap[k]=s.minutes||20;
+    const subjectRules={};
+    for(const[k,s] of Object.entries(subjects)) subjectRules[k]=s.rules||"";
+
+    const dayDates=[];
+    const dayTotals={};
+    for(const dk of sortedDates){
+      const d=gwParseDate(dk);
+      const dn=WDAY_NAMES[d.getDay()];
+      if(!dn||skipSet.has(dn)) continue;
+      const kidTasks=(dayData[dk]||{})[kid]||{};
+      dayTotals[dk]=Object.keys(kidTasks).reduce((sum,k)=>sum+(durMap[k]||20),0);
+      dayDates.push([dk,dn]);
+    }
+
+    let changed=true;
+    while(changed){
+      changed=false;
+      const ranked=[...dayDates].sort((a,b)=>dayTotals[a[0]]-dayTotals[b[0]]);
+
+      for(const[dk,dayName] of ranked){
+        const startStr=(lateStart||{})[dayName]||"10:00 AM";
+        const capacity=DAY_END-toMin(startStr)-LUNCH;
+        let room=capacity-dayTotals[dk];
+        if(room<15) continue;
+
+        const donors=[...dayDates].filter(x=>x[0]!==dk).sort((a,b)=>dayTotals[b[0]]-dayTotals[a[0]]);
+
+        for(const[ld2,lday] of donors){
+          if(room<15) break;
+          if(dayTotals[ld2]<=dayTotals[dk]) continue;
+          const srcTasks=(dayData[ld2]||{})[kid]||{};
+
+          for(const key of Object.keys(srcTasks)){
+            if(room<15) break;
+            const dur=durMap[key]||20;
+            if(dayTotals[ld2]-dur<dayTotals[dk]+dur) continue;
+            const rules=subjectRules[key]||"";
+            if(rules.includes("sticky")) continue;
+            if(rules.includes("no-fri")&&dayName==="friday") continue;
+            if(rules.includes("mon-thu")&&!["monday","tuesday","wednesday","thursday"].includes(dayName)) continue;
+            const dstTasks=(dayData[dk]||{})[kid]||{};
+            if(dstTasks[key]) continue;
+            if(dur>room) continue;
+
+            const removedVal=srcTasks[key];
+            delete srcTasks[key];
+            if(!dayData[dk]) dayData[dk]={};
+            if(!dayData[dk][kid]) dayData[dk][kid]={};
+            dayData[dk][kid][key]="TMP";
+
+            // Re-sort values so lesson numbers stay in ascending order
+            const subjDays=[];
+            for(const[sd] of dayDates){
+              if((dayData[sd]||{})[kid]&&(dayData[sd]||{})[kid][key]!==undefined) subjDays.push(sd);
+            }
+            subjDays.sort();
+            const vals=[];
+            for(const sd of subjDays){
+              const v=dayData[sd][kid][key];
+              if(v!=="TMP") vals.push(v);
+            }
+            vals.push(removedVal);
+            for(let i=0;i<subjDays.length;i++) dayData[subjDays[i]][kid][key]=vals[i];
+
+            room-=dur;
+            dayTotals[dk]+=dur;
+            dayTotals[ld2]-=dur;
+            changed=true;
+          }
+        }
+      }
+    }
+  }
+  return dayData;
+}
+
+function gwReadWeek(weekNum){
+  if(!currData||!currData.weekDays||!currData.lessons) return null;
+  const dayData={};
+  const weekLabel="Wk "+weekNum;
+
+  for(const kid of ["lincoln","ellis","lucy"]){
+    const wdMap=currData.weekDays[kid]||{};
+    const lessons=currData.lessons[kid]||{};
+    const dayNums=wdMap[weekLabel];
+    if(!dayNums||!dayNums.length) continue;
+
+    for(const dn of dayNums){
+      const lesson=lessons[dn];
+      if(!lesson) continue;
+      const dateStr=lesson.date;
+      if(!dateStr) continue;
+      if(!dayData[dateStr]) dayData[dateStr]={};
+      if(!dayData[dateStr][kid]) dayData[dateStr][kid]={};
+
+      const subjects=currData.subjects[kid]||{};
+      for(const key of Object.keys(subjects)){
+        if(lesson[key]&&lesson[key]!=="—"&&lesson[key]!=="nan"){
+          dayData[dateStr][kid][key]=lesson[key];
+        }
+      }
+    }
+  }
+  return dayData;
+}
+
+function generateWeek(config){
+  const weekNum=parseInt(config.weekNum);
+  if(!weekNum) return {error:"Week number required"};
+  const weekLabel="week"+weekNum;
+
+  const dayData=gwReadWeek(weekNum);
+  if(!dayData||!Object.keys(dayData).length) return {error:"No curriculum data found for Wk "+weekNum};
+
+  // Apply redistribution
+  let balanced=config.redistribute&&config.redistribute.length
+    ? gwApplyRedistribution(dayData,config.redistribute)
+    : JSON.parse(JSON.stringify(dayData));
+
+  // Auto-balance
+  balanced=gwAutoBalance(balanced,config.lateStart||{},config.skipDays||[]);
+
+  const skipSet=new Set((config.skipDays||[]).map(d=>d.toLowerCase()));
+  const sortedDates=Object.keys(balanced).sort();
+
+  const WDAY_MAP={0:"sunday",1:"monday",2:"tuesday",3:"wednesday",4:"thursday",5:"friday",6:"saturday"};
+  const dates={};
+  for(const dk of sortedDates){
+    const d=gwParseDate(dk);
+    const dn=WDAY_MAP[d.getDay()];
+    if(!dn||skipSet.has(dn)) continue;
+    if(dn==="saturday"&&!config.saturday) continue;
+    const mon=d.toLocaleDateString("en-US",{month:"long",day:"numeric",timeZone:"UTC"});
+    dates[dn]=mon;
+  }
+
+  // Build constraints, windows, maggie
+  const constraints={};
+  const windows={};
+  const maggieCfg=config.maggie||{};
+  for(const[dn,momReturn] of Object.entries(maggieCfg)){
+    constraints[dn]="\u{1F338} Maggie \xB7 Mom Required tasks begin at "+momReturn;
+    windows[dn]="Maggie window \xB7 Mom Required from "+momReturn;
+  }
+  for(const[dn,startTime] of Object.entries(config.lateStart||{})){
+    constraints[dn]="\u{1F550} Late start \xB7 School begins at "+startTime;
+    windows[dn]="Late start \xB7 School from "+startTime;
+  }
+  for(const[dn,csInfo] of Object.entries(config.carSchool||{})){
+    const note=csInfo.note||"Travel Day";
+    const end=csInfo.end||"12:00 PM";
+    constraints[dn]="\u{1F697} "+note+" \xB7 Car schooling until "+end;
+    windows[dn]=note+" \xB7 Car school until "+end;
+  }
+  const theaterNote=config.theater?" \xB7 Theater 4:30 Mon–Thu":"";
+  windows.default="School 10:00 AM–4:15 PM"+theaterNote;
+
+  let maggieObj=null;
+  if(Object.keys(maggieCfg).length){
+    const magDays=Object.keys(maggieCfg);
+    maggieObj={days:magDays};
+    for(const[dn,momReturn] of Object.entries(maggieCfg)){
+      if(magDays.length===1){
+        maggieObj.hours="10:00 AM - "+momReturn;
+        maggieObj.mom_return=momReturn;
+      } else {
+        maggieObj["hours_"+dn]="10:00 AM - "+momReturn;
+        maggieObj["mom_return_"+dn]=momReturn;
+      }
+    }
+  }
+
+  // Schedule tasks for each day
+  const allTasks=[];
+  const allDropped=[];
+  let taskCounter=1;
+
+  for(const dk of sortedDates){
+    const d=gwParseDate(dk);
+    const dn=WDAY_MAP[d.getDay()];
+    if(!dn||skipSet.has(dn)||!dates[dn]) continue;
+
+    const prefixIdx=GW_DAY_NAMES.indexOf(dn);
+    const prefix=prefixIdx>=0?GW_DAY_PREFIXES[prefixIdx]:"x";
+
+    const schoolStartStr=(config.lateStart||{})[dn]||"10:00 AM";
+    const schoolStartMin=toMin(schoolStartStr);
+
+    const isMaggie=!!maggieCfg[dn];
+    const maggieEndStr=maggieCfg[dn]||schoolStartStr;
+    const maggieEndMin=isMaggie?toMin(maggieEndStr):schoolStartMin;
+    const momAvailable=isMaggie?maggieEndMin:schoolStartMin;
+
+    const isCar=!!(config.carSchool||{})[dn];
+
+    const dayConfig={
+      schoolStart:schoolStartMin,
+      momAvailable:momAvailable,
+      isCarSchool:isCar,
+      isMaggie:isMaggie,
+      maggieEnd:maggieEndMin,
+      theater:!!config.theater,
+      dayName:dn
+    };
+
+    const result=gwBuildDayTasks(balanced[dk]||{},dayConfig,prefix,taskCounter);
+    taskCounter=result.counter;
+    allTasks.push(...result.tasks);
+    allDropped.push(...result.dropped);
+  }
+
+  const output={
+    week:weekLabel,
+    dates:dates,
+    constraints:constraints,
+    windows:windows,
+    tasks:allTasks
+  };
+  if(maggieObj) output.maggie=maggieObj;
+
+  return {result:output,dropped:allDropped};
+}
+
+function runGenerateWeek(){
+  if(!gwConfig.weekNum){
+    gwShowToast("Enter a week number first.");
+    return;
+  }
+  if(!currData||!currData.subjects){
+    gwShowToast("No curriculum loaded. Upload via admin panel.");
+    return;
+  }
+  const gen=generateWeek(gwConfig);
+  if(gen.error){
+    gwShowToast(gen.error);
+    return;
+  }
+  gwResult=gen.result;
+  gwDropped=gen.dropped;
+  renderAll();
+}
+
+function gwCommit(){
+  if(!gwResult) return;
+  // Build a fake file-load event to reuse loadJson's write logic
+  const d=gwResult;
+
+  // Same logic as loadJson
+  isUploading=true;
+  const activeWK=localStorage.getItem("ha_active_wk")||WK;
+  const isSameWeek=(d.week===activeWK);
+
+  if(isSameWeek){
+    const lsChecked=ld(activeWK+"_checked")||{};
+    const memChecked=checked||{};
+    const snapChecked={...lsChecked,...memChecked};
+    const snapHist=ld(activeWK+"_history")||{};
+    const oldLookup={};
+    (weekData.tasks||[]).forEach(t=>{
+      const key=(t.title||"")+"|"+(t.who||"");
+      if(snapChecked[t.id]) oldLookup[key]={ts:snapChecked[t.id],oldId:t.id};
+    });
+    d.tasks.forEach(t=>{
+      if(snapChecked[t.id]) return;
+      const key=(t.title||"")+"|"+(t.who||"");
+      if(oldLookup[key]){
+        snapChecked[t.id]=oldLookup[key].ts;
+        if(snapHist[oldLookup[key].oldId]&&!snapHist[t.id])
+          snapHist[t.id]={...snapHist[oldLookup[key].oldId],id:t.id};
+      }
+    });
+    const snapSl=ld(activeWK+"_sl")||slState||{};
+    // Re-attach carry-overs
+    const newIds=new Set(d.tasks.map(t=>t.id));
+    (weekData.tasks||[]).filter(t=>t.id.endsWith("_c")&&!newIds.has(t.id)&&!newIds.has(baseId(t.id)))
+      .forEach(t=>{ d.tasks.push(t); newIds.add(t.id); });
+    const _archPrev=Object.values(archive||{}).filter(a=>a&&a.tasks&&a.weekLabel!==d.week)
+      .sort((a,b)=>{
+        const na=parseInt((a.weekLabel||"0").replace(/\D/g,"")||"0");
+        const nb=parseInt((b.weekLabel||"0").replace(/\D/g,"")||"0");
+        return nb-na;
+      })[0];
+    if(_archPrev){
+      const _awc=_archPrev.checked||{};
+      (_archPrev.tasks||[]).filter(t=>!t.id.endsWith("_c")&&!_awc[t.id]&&!_awc[t.id+"_c"])
+        .forEach(t=>{
+          const _cId=t.id+"_c";
+          if(newIds.has(_cId)) return;
+          if((snapChecked||{})[_cId]) return;
+          if((coExclusions[d.week]||{})[_cId]) return;
+          d.tasks.push({...t,id:_cId,day:"monday",cascade:true,
+            detail:(t.detail||t.title||"")+" (Carried from "+(_archPrev.weekLabel||"prev week")+")"});
+          newIds.add(_cId);
+        });
+    }
+    WK=activeWK; weekData=d; checked=snapChecked; slState=snapSl;
+    applyWeekMeta(d);
+    sv(WK+"_tasks",d.tasks); sv(WK+"_maggie",d.maggie||null);
+    sv(WK+"_checked",snapChecked); sv(WK+"_history",snapHist); sv(WK+"_sl",snapSl);
+    sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
+    if(db){
+      const obj={};d.tasks.forEach(t=>obj[t.id]=t);
+      db.ref(WK+"/tasks").set(obj);
+      if(Object.keys(snapChecked).length) db.ref(WK+"/checked").update(snapChecked);
+      if(Object.keys(snapHist).length) db.ref(WK+"/history").update(snapHist);
+      if(Object.keys(snapSl).length) db.ref(WK+"/sl").set(snapSl);
+      if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
+      db.ref(WK+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
+    }
+    fbCheckedLoaded=true; fbTasksLoaded=true; fbHistoryLoaded=true;
+  } else {
+    const oldWK=activeWK;
+    const snapHist=ld(oldWK+"_history")||{};
+    const snapTasks=weekData.tasks||[];
+    const snapChecked={...(ld(oldWK+"_checked")||{}),...checked};
+    snapTasks.filter(t=>!t.id.endsWith("_c")&&!snapChecked[t.id]&&!snapChecked[t.id+"_c"]).forEach(t=>{
+      if(!snapHist[t.id+"_missed"])
+        snapHist[t.id+"_missed"]={id:t.id,title:t.title,who:t.who,day:t.day,ts:"Week Closed",missed:true,momRequired:t.mom==="required"};
+    });
+    const hasAnything=Object.keys(snapHist).length>0||snapTasks.length>0;
+    if(hasAnything){
+      const entry={weekLabel:oldWK,archivedAt:nowTs(),history:snapHist,tasks:snapTasks,checked:snapChecked,dates:{...DAY_DT}};
+      archive[oldWK]=entry;
+      try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
+      if(db) db.ref("archive/"+oldWK).set(entry);
+    }
+    snapTasks.filter(t=>!t.id.endsWith("_c")&&!snapChecked[t.id]&&!snapChecked[t.id+"_c"])
+      .forEach(t=>{
+        const cId=t.id+"_c";
+        if(!d.tasks.some(x=>x.id===cId))
+          d.tasks.push({...t,id:cId,day:"monday",cascade:true,
+            detail:(t.detail||t.title||"")+" (Carried from "+oldWK+")"});
+      });
+    WK=d.week; localStorage.setItem("ha_active_wk",WK);
+    if(db) db.ref("ha_active_wk").set(WK);
+    weekData=d; checked={}; slState={};
+    applyWeekMeta(d);
+    sv(WK+"_tasks",d.tasks); sv(WK+"_maggie",d.maggie||null);
+    sv(WK+"_checked",{}); sv(WK+"_sl",{}); sv(WK+"_history",{});
+    sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
+    if(db){
+      const obj={};d.tasks.forEach(t=>obj[t.id]=t);
+      db.ref(WK+"/tasks").set(obj);
+      db.ref(WK+"/checked").set({}); db.ref(WK+"/sl").set({}); db.ref(WK+"/history").set({});
+      if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
+      db.ref(WK+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
+      attachWeekListeners(WK);
+    }
+    fbCheckedLoaded=true; fbTasksLoaded=true; fbHistoryLoaded=true;
+  }
+
+  gwResult=null; gwDropped=null;
+  schedShowGenerate=false;
+  setTimeout(()=>{ isUploading=false; },3000);
+  renderAll(); runCascade();
+  gwShowToast("Week "+gwConfig.weekNum+" applied to schedule!");
 }
 </script>
 </body>
