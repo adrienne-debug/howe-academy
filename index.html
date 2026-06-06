@@ -945,9 +945,9 @@ function attachWeekListeners(wk){
   const r4=db.ref(wk+"/history");
   r4.on("value",s=>{
     if(isUploading) return;
-    const fbHist=s.val()||{}; const local=ld(wk+"_history")||{};
-    const merged={...local,...fbHist}; sv(wk+"_history",merged);
-    histState=merged;
+    const fbHist=s.val()||{};
+    sv(wk+"_history",fbHist);
+    histState=fbHist;
     if(!fbHistoryLoaded){ fbHistoryLoaded=true; schedCascade(); }
     if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
   });
@@ -1889,7 +1889,7 @@ document.getElementById("dlg-ok").onclick=()=>{
   if(db) db.ref(WK+"/checked").set(checked);
   const hist=ld(WK+"_history")||{};
   const t=weekData.tasks.find(x=>x.id===pendingId);
-  if(t){ const entry={id:pendingId,title:t.title,who:t.who,day:t.day,checkedOnDay:effectiveDay(t),ts}; hist[pendingId]=entry; histState[pendingId]=entry; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+pendingId).set(entry); }
+  if(t){ const entry={id:pendingId,title:t.title,who:t.who,day:t.day,checkedOnDay:effectiveDay(t),ts,week:WK}; hist[pendingId]=entry; histState[pendingId]=entry; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+pendingId).set(entry); }
   const doneId=pendingId;
   closeDlg(); renderAll();
   showPaceToast(doneId);
@@ -2746,7 +2746,7 @@ function checkOffCarryOver(taskId){
   lastCheckedWrite=Date.now();
   if(db) db.ref(WK+"/checked").set(checked);
   const hist=ld(WK+"_history")||{};
-  const entry={id:taskId,title:t.title,who:t.who,day:t.day,checkedOnDay:"carryover",ts};
+  const entry={id:taskId,title:t.title,who:t.who,day:t.day,checkedOnDay:"carryover",ts,week:WK};
   hist[taskId]=entry; histState[taskId]=entry;
   sv(WK+"_history",hist);
   if(db) db.ref(WK+"/history/"+taskId).set(entry);
@@ -3584,18 +3584,19 @@ function runCascade(){
     if(checked[t.id]) return;
     if(manualUnchecks.has(t.id)) return;
     const h=histState[t.id];
-    if(h&&h.ts&&!h.missed&&!h.flag){ toRestore[t.id]=h.ts; return; }
+    if(h&&h.ts&&!h.missed&&!h.flag&&(!h.week||h.week===WK)){ toRestore[t.id]=h.ts; return; }
     if(t.title&&t.who){
       const cutoff=Date.now()-7*24*60*60*1000;
       for(const k in histState){
         if(currentIds.has(k)) continue;
         const v=histState[k];
         if(!v||!v.ts||v.missed||v.flag) continue;
-        if(v.title!==t.title||v.who!==t.who) continue;
+        if(v.title!==t.title||v.who!==t.who||v.day!==t.day) continue;
+        if(v.week&&v.week!==WK) continue;
         const tsMs=(typeof v.ts==="number")?v.ts:new Date(v.ts).getTime();
         if(tsMs<cutoff) continue;
         toRestore[t.id]=v.ts;
-        if(!histState[t.id]){ histUpdates[t.id]={...v,id:t.id}; histState[t.id]=histUpdates[t.id]; }
+        if(!histState[t.id]){ histUpdates[t.id]={...v,id:t.id,week:WK}; histState[t.id]=histUpdates[t.id]; }
         break;
       }
     }
