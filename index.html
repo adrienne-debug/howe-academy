@@ -1355,7 +1355,7 @@ function renderWeekStrip(){
 }
 
 // ── DAILY PACE TRACKER ───────────────────────────────────────────
-function dailyPaceTracker(dayTasks){
+function dailyPaceTracker(dayTasks, dayKey){
   const DEFAULT_DUR=20;
   const countable=dayTasks.filter(t=>!t.title.toLowerCase().includes("lunch"));
   if(!countable.length) return "";
@@ -1365,7 +1365,6 @@ function dailyPaceTracker(dayTasks){
   const totalMin=countable.reduce((s,t)=>s+(t.dur||DEFAULT_DUR),0);
   const remainMin=countable.filter(t=>!checked[t.id]).reduce((s,t)=>s+(t.dur||DEFAULT_DUR),0);
 
-  // Expected end = last task's scheduled start + its duration
   const sorted=countable.slice().sort((a,b)=>toMin(a.time)-toMin(b.time));
   const firstTask=sorted[0], lastTask=sorted[sorted.length-1];
   const firstTime=toMin(firstTask.time);
@@ -1380,6 +1379,9 @@ function dailyPaceTracker(dayTasks){
   const now=new Date(), nowMin=now.getHours()*60+now.getMinutes();
   const fmtT=m=>{ let h=Math.floor(m/60),mn=m%60,ap="AM"; if(h>=12){ap="PM";if(h>12)h-=12;} if(h===0)h=12; return h+":"+(mn<10?"0":"")+mn+" "+ap; };
 
+  const isToday = dayKey === _todayDay;
+
+  // All done
   if(doneCount===totalCount){
     const lastTs=doneTasks.reduce((mx,t)=>{ const v=parseCheckTs(checked[t.id]); return v>mx?v:mx; },0);
     const diff=lastTs-expectedEnd;
@@ -1396,6 +1398,25 @@ function dailyPaceTracker(dayTasks){
       '</div></div>';
   }
 
+  // Not today — no real-time pace tracking
+  if(!isToday){
+    if(doneCount===0){
+      return '<div class="pace-tracker not-started">'+
+        '<div class="pace-tracker-icon">\u{1F4CB}</div>'+
+        '<div class="pace-tracker-body"><div class="pace-tracker-status">Not Started</div>'+
+        '<div class="pace-tracker-detail">'+totalCount+' tasks · Target finish '+fmtT(expectedEnd)+'</div></div>'+
+        '<div class="pace-tracker-times"><div class="pace-tracker-col"><div class="pace-tracker-lbl">Target</div><div class="pace-tracker-val">'+fmtT(expectedEnd)+'</div></div></div>'+
+        '</div>';
+    }
+    return '<div class="pace-tracker on-track">'+
+      '<div class="pace-tracker-icon">📋</div>'+
+      '<div class="pace-tracker-body"><div class="pace-tracker-status">'+doneCount+' of '+totalCount+' Done</div>'+
+      '<div class="pace-tracker-detail">'+remainMin+' min remaining · Target finish '+fmtT(expectedEnd)+'</div></div>'+
+      '<div class="pace-tracker-times"><div class="pace-tracker-col"><div class="pace-tracker-lbl">Target</div><div class="pace-tracker-val">'+fmtT(expectedEnd)+'</div></div></div>'+
+      '</div>';
+  }
+
+  // Today, nothing done yet
   if(doneCount===0){
     if(nowMin<firstTime){
       return '<div class="pace-tracker not-started">'+
@@ -1416,10 +1437,9 @@ function dailyPaceTracker(dayTasks){
       '</div></div>';
   }
 
-  // In progress: compare actual check-off pace to scheduled pace
-  // Find how far off actual completions are from their scheduled times
+  // Today, in progress: compare actual check-off pace to scheduled pace
   const deltas=doneTasks.map(t=>{
-    const scheduled=toMin(t.time)+(t.dur||DEFAULT_DUR); // when task should've been done
+    const scheduled=toMin(t.time)+(t.dur||DEFAULT_DUR);
     const actual=parseCheckTs(checked[t.id]);
     return actual>0 ? actual-scheduled : 0;
   }).filter(d=>d!==0);
@@ -1714,7 +1734,7 @@ function renderSchedule(el){
       '</div>';
   }
   h+=renderBlockoutBanners(day);
-  h+=dailyPaceTracker(allDay);
+  h+=dailyPaceTracker(allDay, day);
 
   // ── SCHEDULE LOCK CHECK ──────────────────────────────────────────
   const unlocked = isScheduleUnlocked(kid, day);
