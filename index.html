@@ -7913,19 +7913,27 @@ function gwParseDate(s){
   const p=s.split("-"); return new Date(parseInt(p[0]),parseInt(p[1])-1,parseInt(p[2]));
 }
 
-const GW_LUNCH_START=780; // 1:00 PM
-const GW_LUNCH_END=840;   // 2:00 PM
-const GW_SCHOOL_END=16*60+15; // 4:15 PM (theater)
-const GW_SCHOOL_END_NO_THEATER=17*60; // 5:00 PM
+// Read from Rules tab — falls back to sensible defaults if rules not loaded
+function gwRules(){
+  const r=rulesData||{};
+  const sd=r.schoolDay||{};
+  return {
+    schoolStart: toMin(sd.defaultStart||"10:00 AM"),
+    schoolEnd:   toMin(sd.defaultEnd||"4:15 PM"),
+    lunchStart:  toMin(sd.lunchStart||"1:00 PM"),
+    lunchEnd:    toMin(sd.lunchEnd||"2:00 PM")
+  };
+}
 const GW_DAY_NAMES=["monday","tuesday","wednesday","thursday","friday","saturday"];
 const GW_DAY_PREFIXES=["m","t","w","th","f","sat"];
 const GW_DEVICE_EMOJI={paper:"\u{1F4C4}",computer:"\u{1F4BB}",ipad:"\u{1F4F1}",phone:"\u{1F4DE}",book:"\u{1F4D6}"};
 const GW_CAR_SAFE_KEYS=new Set(["eggspress_l","ind_read","read_eggs","nzk_l"]);
 
 function gwSkipLunch(start,duration){
-  if(start>=GW_LUNCH_END) return start;
-  if(start+duration<=GW_LUNCH_START) return start;
-  return GW_LUNCH_END;
+  const r=gwRules();
+  if(start>=r.lunchEnd) return start;
+  if(start+duration<=r.lunchStart) return start;
+  return r.lunchEnd;
 }
 
 function gwGetSubjects(kid){
@@ -8053,7 +8061,8 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   const theater=dayConfig.theater;
   const dayName=dayConfig.dayName;
   const isFriday=dayName==="friday";
-  const cutoff=(theater&&dayName!=="friday"&&dayName!=="saturday")?GW_SCHOOL_END:GW_SCHOOL_END_NO_THEATER;
+  const r=gwRules();
+  const cutoff=(theater&&dayName!=="friday"&&dayName!=="saturday")?r.schoolEnd:Math.max(r.schoolEnd,17*60);
 
   // Inject built-in daily subjects into curriculum so getMeta/addTask work
   if(currData&&currData.subjects){
@@ -8248,8 +8257,9 @@ function gwAutoBalance(dayData,lateStart,skipDays){
   dayData=JSON.parse(JSON.stringify(dayData));
   const sortedDates=Object.keys(dayData).sort();
   const skipSet=new Set((skipDays||[]).map(d=>d.toLowerCase()));
-  const DAY_END=toMin("4:00 PM");
-  const LUNCH=60;
+  const _rr=gwRules();
+  const DAY_END=_rr.schoolEnd;
+  const LUNCH=_rr.lunchEnd-_rr.lunchStart;
 
   for(const kid of ["lincoln","ellis","lucy"]){
     const subjects=gwGetSubjects(kid);
@@ -8295,7 +8305,7 @@ function gwAutoBalance(dayData,lateStart,skipDays){
       const ranked=[...dayDates].sort((a,b)=>dayTotals[a[0]]-dayTotals[b[0]]);
 
       for(const[dk,dayName] of ranked){
-        const startStr=(lateStart||{})[dayName]||"10:00 AM";
+        const startStr=(lateStart||{})[dayName]||((rulesData&&rulesData.schoolDay&&rulesData.schoolDay.defaultStart)||"10:00 AM");
         const capacity=DAY_END-toMin(startStr)-LUNCH;
         let room=capacity-dayTotals[dk];
         if(room<15) continue;
@@ -8519,7 +8529,8 @@ function generateWeek(config){
     windows[dn]=note+" \xB7 Car school until "+end;
   }
   const theaterNote=config.theater?" \xB7 Theater 4:30 Mon–Thu":"";
-  windows.default="School 10:00 AM–4:15 PM"+theaterNote;
+  const gwR=gwRules();
+  windows.default="School "+fromMin(gwR.schoolStart)+"–"+fromMin(gwR.schoolEnd)+theaterNote;
 
   let sitterObj=null;
   if(Object.keys(sitterCfg).length){
@@ -8552,7 +8563,11 @@ function generateWeek(config){
 
     const idPrefix=d.getFullYear()+"d"+dayOfYear(d)+"_";
 
-    const schoolStartStr=(config.lateStart||{})[dn]||"10:00 AM";
+    // School start: late start override > rules per-day override > rules default
+    const rulesSD=(rulesData&&rulesData.schoolDay)||{};
+    const rulesDayOv=(rulesSD.overrides||{})[dn]||{};
+    const rulesDefaultStart=rulesSD.defaultStart||"10:00 AM";
+    const schoolStartStr=(config.lateStart||{})[dn]||rulesDayOv.start||rulesDefaultStart;
     const schoolStartMin=toMin(schoolStartStr);
 
     const isSitter=!!sitterCfg[dn];
@@ -8600,7 +8615,7 @@ function generateWeek(config){
   })[0]||"monday";
   coTasks.forEach(t=>{
     allTasks.push({
-      id:t.id,who:t.who,day:firstDay,time:t.time||"10:00 AM",dur:t.dur||20,
+      id:t.id,who:t.who,day:firstDay,time:t.time||fromMin(gwRules().schoolStart),dur:t.dur||20,
       title:t.title,detail:(t.detail||t.title||"")+" (Carried from "+(t.prevWeek||"prev week")+")",
       mom:t.mom||"none",cascade:true
     });
