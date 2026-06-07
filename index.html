@@ -811,6 +811,7 @@ const SL_STIM  = {morning:"10:00 AM – 1:00 PM",afternoon:"2:00 – 4:15 PM",ch
 let db=null, weekData={week:WK,tasks:[],babysitter:null};
 let SITTER_NAME="Maggie"; // Editable via Admin — display name for babysitter
 let momPinUnlocked=false;
+let momModeActive=false;
 let checked={}, slState={}, supplies={}, histState={};
 const _todayDay=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][new Date().getDay()];
 let tab="schedule", day=["monday","tuesday","wednesday","thursday","friday"].includes(_todayDay)?_todayDay:"monday", kid="all", supDay="all";
@@ -1144,7 +1145,9 @@ function getTodayDayName(){
 function isScheduleUnlocked(kidFilter, viewDay){
   // Julian has no school tasks — never locked
   if(kidFilter === "julian") return true;
-  // Mom PIN bypass
+  // Mom mode bypass — unlocks all kids
+  if(momModeActive) return true;
+  // Mom PIN bypass (legacy)
   if(kidFilter === "mom" && momPinUnlocked) return true;
 
   // Check if tasks are loaded at all — if tasks array is non-empty but none match this day, unlock
@@ -1172,6 +1175,8 @@ function checkMomPin(val){
   const err = document.getElementById("mom-pin-err");
   if(val === "0329"){
     momPinUnlocked = true;
+    momModeActive = true;
+    kid = "all";
     renderAll();
   } else {
     if(err) err.textContent = "Incorrect PIN";
@@ -1212,7 +1217,7 @@ function renderSkylight(){
   const gridEl=document.getElementById("sl-grid");
   const indEl=document.getElementById("sl-individual");
 
-  if(kid==="mom"||tab!=="schedule"||schedShowAdmin||schedShowHistory||schedShowPace){ panel.style.display="none"; return; }
+  if(kid==="mom"||momModeActive||tab!=="schedule"||schedShowAdmin||schedShowHistory||schedShowPace){ panel.style.display="none"; return; }
   panel.style.display="block";
 
   // Alert
@@ -1342,10 +1347,26 @@ function dayPct(d){
 function renderKidFilter(){
   document.getElementById("kid-filter").innerHTML=
     ["all","lincoln","ellis","lucy","julian","mom"].map(k=>{
-      return '<button class="kid-btn'+(k===kid?" active":"")+'" data-kid="'+k+'" onclick="selKid(\''+k+'\')">'+cap(k)+'</button>';
+      const isActive = k===kid || (k==="mom" && momModeActive);
+      return '<button class="kid-btn'+(isActive?" active":"")+'" data-kid="'+k+'" onclick="selKid(\''+k+'\')">'+
+        (k==="mom" && momModeActive ? "✓ Mom" : cap(k))+'</button>';
     }).join("");
 }
-function selKid(k){ if(k !== "mom") momPinUnlocked=false; kid=k; schedShowAdmin=false; renderAll(); }
+function selKid(k){
+  if(k==="mom"){
+    if(momModeActive){
+      // Click Mom again to exit mom mode
+      momModeActive=false; momPinUnlocked=false; kid="all"; schedShowAdmin=false; renderAll();
+    } else {
+      // Enter mom mode — show PIN prompt
+      kid="mom"; schedShowAdmin=false; renderAll();
+    }
+    return;
+  }
+  // If mom mode is active, keep it active when switching kids
+  if(!momModeActive) momPinUnlocked=false;
+  kid=k; schedShowAdmin=false; renderAll();
+}
 
 // ── WEEK STRIP ────────────────────────────────────────────────────
 function renderWeekStrip(){
