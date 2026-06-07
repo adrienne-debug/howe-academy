@@ -869,6 +869,7 @@ let gwConfigOpen={basic:true,maggie:false,skip:false,late:false,car:false,redist
 let gwResult=null;
 let gwDropped=null;
 let gwCarryOverCount=0;
+let gwCursors=null;
 let gwStatus="";
 let pnwOpen=false;
 let pnwStep=0;
@@ -995,6 +996,10 @@ function attachWeekListeners(wk){
   const r11=db.ref(wk+"/day_bonus_used");
   r11.on("value",s=>{ if(s.val()) sv(wk+"_day_bonus_used",s.val()); });
   fbWeekRefs.push(r11);
+
+  const r12=db.ref(wk+"/cursors");
+  r12.on("value",s=>{ if(s.val()) sv(wk+"_cursors",s.val()); });
+  fbWeekRefs.push(r12);
 }
 
 function initFb() {
@@ -4382,6 +4387,29 @@ function getNextLessons(kid,subjectKey,count){
   const adjust=(paceSubj&&paceSubj.adjust)||0;
   const cursor=offset+autoC+adjust;
   // Return the next N lessons after the cursor
+  const upcoming=[];
+  for(let i=cursor;i<seq.length&&upcoming.length<(count||1);i++){
+    upcoming.push(seq[i]);
+  }
+  return upcoming;
+}
+
+// Compute cursor position for a kid+subject without returning lessons
+// (factored out of getNextLessons for two-tier cursor system)
+function computeSubjectCursor(kid,subjectKey){
+  const paceSubj=((paceData.subjects||{})[kid]||{})[subjectKey];
+  const kws=paceKeywords(kid,subjectKey,paceSubj);
+  const autoC=paceAutoCount(kid,kws);
+  const offset=(paceSubj&&paceSubj.offset)||0;
+  const adjust=(paceSubj&&paceSubj.adjust)||0;
+  return offset+autoC+adjust;
+}
+
+// Get next lessons starting from a pre-computed cursor position
+// (used by regeneration to avoid recalculating via paceAutoCount)
+function getNextLessonsFromCursor(kid,subjectKey,cursor,count){
+  const seq=buildSubjectLessons(kid,subjectKey);
+  if(!seq.length) return [];
   const upcoming=[];
   for(let i=cursor;i<seq.length&&upcoming.length<(count||1);i++){
     upcoming.push(seq[i]);
@@ -8290,12 +8318,19 @@ function gwReadWeek(weekNum){
 }
 
 // Auto-advance version: same schedule pattern as the fixed week but replaces
-// lesson content with cursor-based next lessons from check-off progress
-function gwReadWeekAutoAdvance(weekNum){
+// lesson content with cursor-based next lessons from check-off progress.
+// Two-tier cursor system:
+//   savedCursors provided → regeneration: use stored positions (idempotent)
+//   savedCursors null     → new week: compute from paceAutoCount (history-based)
+// Returns {dayData, cursors} so generateWeek can store the snapshot.
+function gwReadWeekAutoAdvance(weekNum,savedCursors){
   const dayData=gwReadWeek(weekNum);
   if(!dayData) return null;
 
+  const cursors={};
+
   for(const kid of ["lincoln","ellis","lucy"]){
+    cursors[kid]={};
     const subjectSlots={};
     const sortedDates=Object.keys(dayData).sort();
     for(const dateStr of sortedDates){
@@ -8307,7 +8342,12 @@ function gwReadWeekAutoAdvance(weekNum){
     }
     for(const sk of Object.keys(subjectSlots)){
       const dates=subjectSlots[sk];
-      const nextLessons=getNextLessons(kid,sk,dates.length);
+      // Two-tier: use saved cursor if available, otherwise compute fresh
+      const cursor=(savedCursors&&savedCursors[kid]&&savedCursors[kid][sk]!==undefined)
+        ?savedCursors[kid][sk]
+        :computeSubjectCursor(kid,sk);
+      cursors[kid][sk]=cursor;
+      const nextLessons=getNextLessonsFromCursor(kid,sk,cursor,dates.length);
       for(let i=0;i<dates.length;i++){
         if(nextLessons[i]){
           dayData[dates[i]][kid][sk]=nextLessons[i].lesson;
@@ -8317,7 +8357,7 @@ function gwReadWeekAutoAdvance(weekNum){
       }
     }
   }
-  return dayData;
+  return {dayData,cursors};
 }
 
 function generateWeek(config){
@@ -8325,7 +8365,20 @@ function generateWeek(config){
   if(!weekNum) return {error:"Week number required"};
   const weekLabel="week"+weekNum;
 
-  const dayData=config.autoAdvance?gwReadWeekAutoAdvance(weekNum):gwReadWeek(weekNum);
+  let dayData, weekCursors=null;
+  if(config.autoAdvance){
+    // Two-tier cursor: detect regeneration vs new week
+    const activeWK=localStorage.getItem("ha_active_wk")||WK;
+    const isRegen=(weekLabel===activeWK);
+    // Regeneration: load saved cursor snapshot so assignments don't drift
+    const savedCursors=isRegen?(ld(weekLabel+"_cursors")||null):null;
+    const result=gwReadWeekAutoAdvance(weekNum,savedCursors);
+    if(!result) return {error:"No curriculum data found for Wk "+weekNum};
+    dayData=result.dayData;
+    weekCursors=result.cursors;
+  } else {
+    dayData=gwReadWeek(weekNum);
+  }
   if(!dayData||!Object.keys(dayData).length) return {error:"No curriculum data found for Wk "+weekNum};
 
   // Apply redistribution
@@ -8475,7 +8528,7 @@ function generateWeek(config){
   };
   if(maggieObj) output.maggie=maggieObj;
 
-  return {result:output,dropped:allDropped,carryOverCount:coTasks.length};
+  return {result:output,dropped:allDropped,carryOverCount:coTasks.length,cursors:weekCursors};
 }
 
 function runGenerateWeek(){
@@ -8499,6 +8552,7 @@ function runGenerateWeek(){
   gwResult=gen.result;
   gwDropped=gen.dropped;
   gwCarryOverCount=gen.carryOverCount||0;
+  gwCursors=gen.cursors||null;
   renderAll();
 }
 
@@ -8580,6 +8634,11 @@ function gwCommit(){
       if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
       db.ref(WK+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
     }
+    // Regeneration: only save cursor snapshot if none exists yet (backward compat)
+    if(gwCursors&&!ld(WK+"_cursors")){
+      sv(WK+"_cursors",gwCursors);
+      if(db) db.ref(WK+"/cursors").set(gwCursors);
+    }
     fbCheckedLoaded=true; fbTasksLoaded=true; fbHistoryLoaded=true;
   } else {
     const oldWK=activeWK;
@@ -8611,6 +8670,10 @@ function gwCommit(){
     sv(WK+"_tasks",d.tasks); sv(WK+"_maggie",d.maggie||null);
     sv(WK+"_checked",{}); sv(WK+"_sl",{}); sv(WK+"_history",{});
     sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
+    // New week: store cursor snapshot — this is the anchor for all future regenerations
+    if(gwCursors){
+      sv(WK+"_cursors",gwCursors);
+    }
     if(db){
       // Write clean slate BEFORE attaching listeners to prevent stale data bleed
       db.ref(WK+"/checked").set({});
@@ -8620,13 +8683,14 @@ function gwCommit(){
       db.ref(WK+"/tasks").set(obj);
       if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
       db.ref(WK+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
+      if(gwCursors) db.ref(WK+"/cursors").set(gwCursors);
       attachWeekListeners(WK);
     }
     applyWeekMeta(d);
     fbCheckedLoaded=true; fbTasksLoaded=true; fbHistoryLoaded=true;
   }
 
-  gwResult=null; gwDropped=null;
+  gwResult=null; gwDropped=null; gwCursors=null;
    setTimeout(()=>{ isUploading=false; },3000);
   renderAll(); runCascade();
   gwShowToast("Week "+gwConfig.weekNum+" applied to schedule!");
