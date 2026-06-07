@@ -1938,7 +1938,14 @@ document.getElementById("dlg-ok").onclick=()=>{
   if(db) db.ref(WK+"/checked").set(checked);
   const hist=ld(WK+"_history")||{};
   const t=weekData.tasks.find(x=>x.id===pendingId);
-  if(t){ const entry={id:pendingId,title:t.title,who:t.who,day:t.day,checkedOnDay:effectiveDay(t),ts,week:WK}; hist[pendingId]=entry; histState[pendingId]=entry; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+pendingId).set(entry); }
+  if(t){
+    const origDay=t.cascadedFrom||t.day;
+    const origDateStr=DAY_DT[origDay];
+    let daysLate=null;
+    if(origDateStr){const yr=new Date().getFullYear();const od=new Date(origDateStr+", "+yr);const td=new Date();od.setHours(0,0,0,0);td.setHours(0,0,0,0);daysLate=Math.round((td-od)/864e5);}
+    const entry={id:pendingId,title:t.title,who:t.who,day:t.day,originalDay:origDay,checkedOnDay:effectiveDay(t),daysLate:daysLate,ts,week:WK};
+    hist[pendingId]=entry; histState[pendingId]=entry; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+pendingId).set(entry);
+  }
   const doneId=pendingId;
   closeDlg(); renderAll();
   showPaceToast(doneId);
@@ -2467,6 +2474,64 @@ function selSupDay(d){ supDay=d; renderSupplies(); }
 
 // ── HISTORY ───────────────────────────────────────────────────────
 const HIST_KCOL_LIGHT={lincoln:"#93c5fd",ellis:"#86efac",lucy:"#c4b5fd",julian:"#fdba74"};
+function timingStats(histEntries,filterKids){
+  const all={onTime:0,early:0,late:0,totalLateDays:0,carryOver:0,total:0};
+  const byKid={};
+  Object.values(histEntries).forEach(e=>{
+    if(!e||!e.who||e.daysLate===undefined||e.daysLate===null)return;
+    if(filterKids&&!filterKids.includes(e.who))return;
+    if(!byKid[e.who])byKid[e.who]={onTime:0,early:0,late:0,totalLateDays:0,carryOver:0,total:0};
+    const s=byKid[e.who];
+    s.total++; all.total++;
+    if(e.daysLate==="co"){s.carryOver++;all.carryOver++;}
+    else if(e.daysLate===0){s.onTime++;all.onTime++;}
+    else if(e.daysLate<0){s.early++;all.early++;}
+    else{s.late++;s.totalLateDays+=e.daysLate;all.late++;all.totalLateDays+=e.daysLate;}
+  });
+  return {all,byKid};
+}
+function renderTimingCard(histEntries,filterKids){
+  const ts=timingStats(histEntries,filterKids);
+  if(!ts.all.total)return '';
+  const pill=(label,count,bg,fg)=>'<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:'+bg+';color:'+fg+';margin:0 2px">'+label+' '+count+'</span>';
+  let h='<div style="background:rgba(255,255,255,0.07);border-radius:10px;padding:10px 12px;margin-top:8px">';
+  h+='<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:rgba(255,255,255,0.5);margin-bottom:6px">⏱ Completion Timing</div>';
+  const order=["lincoln","ellis","lucy","julian"].filter(k=>ts.byKid[k]);
+  order.forEach(k=>{
+    const s=ts.byKid[k];
+    const col=PACE_KCOL[k]||"#fff";
+    const avgLate=s.late?Math.round(s.totalLateDays/s.late*10)/10:0;
+    h+='<div style="display:flex;align-items:center;gap:6px;margin:4px 0;flex-wrap:wrap">';
+    h+='<span style="font-size:11px;font-weight:700;color:'+col+';min-width:54px">'+cap(k)+'</span>';
+    if(s.onTime)h+=pill('✓',s.onTime,'rgba(34,197,94,0.2)','#4ade80');
+    if(s.early)h+=pill('Early',s.early,'rgba(96,165,250,0.2)','#93c5fd');
+    if(s.late)h+=pill('Late '+avgLate+'d',s.late,'rgba(251,146,60,0.2)','#fb923c');
+    if(s.carryOver)h+=pill('CO',s.carryOver,'rgba(168,85,247,0.2)','#c084fc');
+    h+='</div>';
+  });
+  // overall bar
+  const a=ts.all;
+  if(a.total>1){
+    const pOn=Math.round(a.onTime/a.total*100);
+    const pEarly=Math.round(a.early/a.total*100);
+    const pLate=Math.round(a.late/a.total*100);
+    const pCo=Math.round(a.carryOver/a.total*100);
+    h+='<div style="display:flex;height:6px;border-radius:3px;overflow:hidden;margin-top:6px">';
+    if(pOn)h+='<div style="width:'+pOn+'%;background:#4ade80"></div>';
+    if(pEarly)h+='<div style="width:'+pEarly+'%;background:#93c5fd"></div>';
+    if(pLate)h+='<div style="width:'+pLate+'%;background:#fb923c"></div>';
+    if(pCo)h+='<div style="width:'+pCo+'%;background:#c084fc"></div>';
+    h+='</div>';
+    h+='<div style="display:flex;gap:8px;margin-top:4px;font-size:9px;color:rgba(255,255,255,0.45)">';
+    h+='<span>✓ On time '+pOn+'%</span>';
+    if(pEarly)h+='<span>Early '+pEarly+'%</span>';
+    if(pLate)h+='<span>Late '+pLate+'%</span>';
+    if(pCo)h+='<span>CO '+pCo+'%</span>';
+    h+='</div>';
+  }
+  h+='</div>';
+  return h;
+}
 function histKidStatsRow(tasks, checkedObj){
   let h='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">';
   ["lincoln","ellis","lucy","julian"].forEach(k2=>{
@@ -2516,6 +2581,7 @@ function renderHistory(el){
   h+='<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700">'+(weekData.week||WK).replace("week","Week ")+'</div>';
   h+='<div style="font-size:11px;opacity:0.6;margin-top:1px">Current week</div>';
   h+=histKidStatsRow(weekData.tasks, checked);
+  h+=renderTimingCard(histState,histKids.length<4?histKids:null);
   h+='<div style="text-align:right;margin-top:6px"><button onclick="printWeekReport()" style="padding:5px 12px;border-radius:8px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🖨 Report</button></div>';
   h+='</div>';
 
@@ -2671,7 +2737,9 @@ function renderHistory(el){
       h+='<div style="font-size:11px;opacity:0.7">'+totalDone+' / '+totalTasks+'</div>';
       h+='<button onclick="event.stopPropagation();printWeekReport(\''+wkKey+'\')" style="margin-top:4px;padding:3px 10px;border-radius:6px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);color:#fff;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🖨</button></div></div>';
       h+='<div id="arch_'+safeKey+'" style="display:none">';
-      h+='<div style="background:var(--header);padding:10px 14px 14px;overflow:hidden">'+histKidStatsRow(awTasks,awChecked)+'</div>';
+      h+='<div style="background:var(--header);padding:10px 14px 14px;overflow:hidden">'+histKidStatsRow(awTasks,awChecked);
+      h+=renderTimingCard(awHist,histKids.length<4?histKids:null);
+      h+='</div>';
       // Archived week slot machine points
       const awSlotPts=aw.slot_points||{};
       const awHasAnyPts=["lincoln","ellis","lucy","julian"].some(k2=>{const kd=awSlotPts[k2];return kd&&(typeof kd==="number"?kd>0:Object.values(kd).some(v=>v>0));});
@@ -2825,7 +2893,7 @@ function checkOffCarryOver(taskId){
   lastCheckedWrite=Date.now();
   if(db) db.ref(WK+"/checked").set(checked);
   const hist=ld(WK+"_history")||{};
-  const entry={id:taskId,title:t.title,who:t.who,day:t.day,checkedOnDay:"carryover",ts,week:WK};
+  const entry={id:taskId,title:t.title,who:t.who,day:t.day,originalDay:t.cascadedFrom||t.day,checkedOnDay:"carryover",daysLate:"co",ts,week:WK};
   hist[taskId]=entry; histState[taskId]=entry;
   sv(WK+"_history",hist);
   if(db) db.ref(WK+"/history/"+taskId).set(entry);
@@ -3076,14 +3144,16 @@ function printAttendance(onlyKid){
 
 function printWeekReport(weekKey,filterKid){
   const fk=filterKid||(kid!=="all"&&kid!=="mom"?kid:null);
-  let tasks,chk,dates,label;
+  let tasks,chk,dates,label,hist;
   if(!weekKey||weekKey===WK){
     tasks=weekData.tasks||[];chk=checked||{};dates={...DAY_DT};
     label=(weekData.week||WK).replace("week","Week ");
+    hist=histState||{};
   } else {
     const aw=archive[weekKey]; if(!aw)return;
     tasks=aw.tasks||[];chk=aw.checked||{};dates=aw.dates||{};
     label=(aw.weekLabel||weekKey).replace("week","Week ");
+    hist=aw.history||{};
   }
   if(fk) label+=(' — '+cap(fk));
   const kids=fk?[fk]:["lincoln","ellis","lucy","julian"];
@@ -3128,14 +3198,34 @@ function printWeekReport(weekKey,filterKid){
   });
   const dv=Object.values(dates).filter(Boolean).sort();
   const dateStr=dv.length?dv[0]+' – '+dv[dv.length-1]:'';
-  const html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Howe Academy — '+label+' Report</title>'+
+  let html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Howe Academy — '+label+' Report</title>'+
     '<style>body{font-family:Arial,sans-serif;font-size:10pt;color:#222;max-width:680px;margin:0 auto;padding:24px}'+
     'h1{font-size:16pt;margin-bottom:4px}h2{font-size:12pt;page-break-after:avoid}'+
     '@media print{@page{size:portrait;margin:0.5in}}</style></head><body>'+
     '<h1>Howe Academy — Weekly Completion Report</h1>'+
     '<p style="font-size:10pt;color:#444;margin:2px 0"><strong>'+label+'</strong>'+(dateStr?' &middot; '+dateStr:'')+'</p>'+
     '<p style="font-size:9pt;color:#888;margin:2px 0 10px">Generated '+nowTs()+'</p>'+
-    '<hr style="border:none;border-top:1px solid #ccc;margin:0 0 4px">'+body+'</body></html>';
+    '<hr style="border:none;border-top:1px solid #ccc;margin:0 0 4px">'+body;
+  // Timing stats section (only if data exists)
+  const ts=timingStats(hist,fk?[fk]:null);
+  if(ts.all.total){
+    html+='<div style="page-break-inside:avoid;margin-top:16px;padding-top:10px;border-top:1px solid #ccc">';
+    html+='<h2 style="font-size:11pt;margin:0 0 6px;color:#374151">Completion Timing</h2>';
+    const kidOrder=["lincoln","ellis","lucy","julian"].filter(k=>ts.byKid[k]);
+    kidOrder.forEach(k=>{
+      const s=ts.byKid[k];const avgL=s.late?Math.round(s.totalLateDays/s.late*10)/10:0;
+      const col=PACE_KCOL[k]||"#374151";
+      html+='<div style="margin:3px 0;font-size:9pt"><span style="font-weight:700;color:'+col+'">'+cap(k)+':</span> ';
+      const parts=[];
+      if(s.onTime)parts.push('<span style="color:#16a34a">'+s.onTime+' on time</span>');
+      if(s.early)parts.push('<span style="color:#3b82f6">'+s.early+' early</span>');
+      if(s.late)parts.push('<span style="color:#ea580c">'+s.late+' late (avg '+avgL+'d)</span>');
+      if(s.carryOver)parts.push('<span style="color:#7c3aed">'+s.carryOver+' carry-over</span>');
+      html+=parts.join(' · ')+'</div>';
+    });
+    html+='</div>';
+  }
+  html+='</body></html>';
   const w=window.open("","_blank");w.document.write(html);w.document.close();w.onload=()=>w.print();
 }
 
