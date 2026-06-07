@@ -868,11 +868,13 @@ let gwConfig={weekNum:"",maggie:{},skipDays:[],lateStart:{},carSchool:{},theater
 let gwConfigOpen={basic:true,maggie:false,skip:false,late:false,car:false,redist:false};
 let gwResult=null;
 let gwDropped=null;
+let gwCarryOverCount=0;
 let gwStatus="";
 let pnwOpen=false;
 let pnwStep=0;
 let pnwResult=null;
 let pnwDropped=null;
+let pnwCarryOverCount=0;
 let pnwConfigReady=false;
 let pnwPendingWeek=null;
 let currViewKid="lincoln";
@@ -7031,6 +7033,7 @@ function renderAdminGenerate(el,headerHtml){
       const dc=Object.keys(gwResult.dates).length;
       h+='<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:14px">';
       h+='<div style="font-weight:700;font-size:14px;color:#15803d;margin-bottom:6px">Generated '+gwResult.week.replace("week","Week ")+' — '+tc+' tasks across '+dc+' days</div>';
+      if(gwCarryOverCount) h+='<div style="font-size:12px;font-weight:600;color:#7c3aed;margin-bottom:6px">\u{1F501} '+gwCarryOverCount+' carry-over'+(gwCarryOverCount>1?'s':'')+' included from previous week</div>';
       if(gwDropped&&gwDropped.length){
         const cutoffs=gwDropped.filter(d=>d.reason.includes("CUTOFF"));
         if(cutoffs.length){
@@ -7477,14 +7480,14 @@ function pnwGenerate(){
   }
   const gen=generateWeek(gwConfig);
   if(gen.error){ gwShowToast(gen.error); return; }
-  pnwResult=gen.result; pnwDropped=gen.dropped;
+  pnwResult=gen.result; pnwDropped=gen.dropped; pnwCarryOverCount=gen.carryOverCount||0;
   pnwStep=1;
   renderPlanNextWeek();
 }
 
 function pnwApply(){
   if(!pnwResult) return;
-  gwResult=pnwResult; gwDropped=pnwDropped;
+  gwResult=pnwResult; gwDropped=pnwDropped; gwCarryOverCount=pnwCarryOverCount;
   gwCommit();
   closePlanNextWeek();
 }
@@ -7633,6 +7636,7 @@ function renderPlanNextWeek(){
 
     h+='<div class="pnw-summary"><div class="pnw-summary-big">'+r.week.replace("week","Week ")+'</div>';
     h+='<div class="pnw-summary-sub">'+totalTasks+' tasks across '+totalDays+' days · ~'+Math.round(totalMin/60)+' hrs total';
+    if(pnwCarryOverCount) h+=' · <span style="color:#7c3aed">'+pnwCarryOverCount+' carry-over'+(pnwCarryOverCount>1?'s':'')+'</span>';
     if(totalDropped) h+=' · <span style="color:#991b1b">'+totalDropped+' dropped</span>';
     h+='</div></div>';
 
@@ -8435,6 +8439,21 @@ function generateWeek(config){
     allDropped.push(...result.dropped);
   }
 
+  // Inject carryovers from previous week
+  const coPool=getCarryOverPool();
+  const coTasks=coPool.tasks.filter(t=>t.included);
+  const firstDay=Object.keys(dates).sort((a,b)=>{
+    const ord={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
+    return (ord[a]||9)-(ord[b]||9);
+  })[0]||"monday";
+  coTasks.forEach(t=>{
+    allTasks.push({
+      id:t.id,who:t.who,day:firstDay,time:t.time||"10:00 AM",dur:t.dur||20,
+      title:t.title,detail:(t.detail||t.title||"")+" (Carried from "+(t.prevWeek||"prev week")+")",
+      mom:t.mom||"none",cascade:true
+    });
+  });
+
   const output={
     week:weekLabel,
     dates:dates,
@@ -8444,7 +8463,7 @@ function generateWeek(config){
   };
   if(maggieObj) output.maggie=maggieObj;
 
-  return {result:output,dropped:allDropped};
+  return {result:output,dropped:allDropped,carryOverCount:coTasks.length};
 }
 
 function runGenerateWeek(){
@@ -8467,6 +8486,7 @@ function runGenerateWeek(){
   }
   gwResult=gen.result;
   gwDropped=gen.dropped;
+  gwCarryOverCount=gen.carryOverCount||0;
   renderAll();
 }
 
