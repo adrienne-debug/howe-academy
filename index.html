@@ -716,7 +716,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
   <button class="nav-tab" onclick="showTab('mastery')" data-tab="mastery">Drills</button>
   <button class="nav-tab" onclick="showTab('moms-plan')" data-tab="moms-plan">Mom's Plan</button>
   <button class="nav-tab" onclick="showTab('supplies')" data-tab="supplies">Supplies</button>
-  <button class="nav-tab" onclick="showTab('maggie')" data-tab="maggie">Maggie</button>
+  <button class="nav-tab" onclick="showTab('babysitter')" data-tab="babysitter" id="sitter-tab-btn">Maggie</button>
   <button class="nav-tab" onclick="showTab('activities')" data-tab="activities">Activity Ideas</button>
 </div>
 
@@ -808,7 +808,8 @@ const SL_SLBL  = {morning:"Morning",afternoon:"Afternoon",chores:"Chores"};
 const SL_STIM  = {morning:"10:00 AM – 1:00 PM",afternoon:"2:00 – 4:15 PM",chores:"After school"};
 
 // ── STATE ─────────────────────────────────────────────────────────
-let db=null, weekData={week:WK,tasks:[],maggie:null};
+let db=null, weekData={week:WK,tasks:[],babysitter:null};
+let SITTER_NAME="Maggie"; // Editable via Admin — display name for babysitter
 let momPinUnlocked=false;
 let checked={}, slState={}, supplies={}, histState={};
 const _todayDay=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][new Date().getDay()];
@@ -864,8 +865,8 @@ let schedShowAdmin=false;
 let adminSubTab="rules";
 let schedShowHistory=false;
 let schedShowPace=false;
-let gwConfig={weekNum:"",maggie:{},skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:false,redistribute:[],autoAdvance:true};
-let gwConfigOpen={basic:true,maggie:false,skip:false,late:false,car:false,redist:false};
+let gwConfig={weekNum:"",babysitter:{},withSitter:[],skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:false,redistribute:[],autoAdvance:true};
+let gwConfigOpen={basic:true,babysitter:false,skip:false,late:false,car:false,redist:false};
 let gwResult=null;
 let gwDropped=null;
 let gwCarryOverCount=0;
@@ -973,8 +974,8 @@ function attachWeekListeners(wk){
   });
   fbWeekRefs.push(r5);
 
-  const r6=db.ref(wk+"/maggie");
-  r6.on("value",s=>{ if(s.val()) weekData.maggie=s.val(); });
+  const r6=db.ref(wk+"/babysitter");
+  r6.on("value",s=>{ if(s.val()) weekData.babysitter=s.val(); });
   fbWeekRefs.push(r6);
 
   const r8=db.ref(wk+"/blockouts");
@@ -1038,6 +1039,9 @@ function initFb() {
       if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
       if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
     });
+    db.ref("settings/sitterName").on("value",s=>{
+      if(s.val()){ SITTER_NAME=s.val(); sv("ha_sitter_name",SITTER_NAME); }
+    });
     db.ref("act_favs").on("value",s=>{
       if(s.val()) actFavs=s.val();
       if(tab==="activities") renderActCards();
@@ -1094,9 +1098,10 @@ const sv=(k,v)=>{ try{localStorage.setItem(k,JSON.stringify(v));}catch(e){} };
 const ld=k=>{ try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;} };
 
 function boot() {
+  const sn=ld("ha_sitter_name"); if(sn) SITTER_NAME=sn;
   const t=ld(WK+"_tasks"); if(t) weekData.tasks=t;
   weekData.week=WK;
-  const m=ld(WK+"_maggie"); if(m) weekData.maggie=m;
+  const m=ld(WK+"_babysitter")||ld(WK+"_maggie"); if(m) weekData.babysitter=m;
   const meta=ld(WK+"_meta"); if(meta) applyWeekMeta(meta);
   checked=ld(WK+"_checked")||{};
   slState=ld(WK+"_sl")||{};
@@ -1291,6 +1296,7 @@ function renderSchedSubtabs(){
     '<button class="sched-sub'+(schedShowAdmin?" active":"")+'" onclick="toggleSchedAdmin()">Admin</button>';
 }
 function renderAll(){
+  const stb=document.getElementById("sitter-tab-btn"); if(stb) stb.textContent=SITTER_NAME;
   renderSchedSubtabs(); renderDayTabs(); renderKidFilter(); renderSkylight(); renderWeekStrip();
   if(tab==="schedule") document.getElementById("day-tabs").style.display=(schedShowHistory||schedShowPace||schedShowAdmin)?"none":"flex";
   const showKidFilter=(tab==="schedule"&&!schedShowAdmin)||(tab==="history")||(tab==="pace");
@@ -1302,7 +1308,7 @@ function renderAll(){
   else if(tab==="moms-plan") renderMomsPlan(c);
   else if(tab==="supplies") renderSupplies(c);
   else if(tab==="history") renderHistory(c);
-  else if(tab==="maggie") renderMaggie(c);
+  else if(tab==="babysitter") renderSitter(c);
   else if(tab==="activities") renderActivities(c);
   else if(tab==="pace") renderPace(c);
   else if(tab==="mastery") renderMastery(c);
@@ -3291,19 +3297,26 @@ function setAttDate(wkKey,day,val){
   const el=document.getElementById("content"); if(el) renderHistory(el);
 }
 
-// ── MAGGIE ────────────────────────────────────────────────────────
-function renderMaggie(el){
-  const mag=weekData.maggie;
-  if(!mag){ el.innerHTML='<div style="padding:24px;text-align:center;color:var(--muted)"><div style="font-size:48px">🌸</div><div style="margin-top:8px;font-weight:600">No Maggie days this week</div></div>'; return; }
-  const mt=weekData.tasks.filter(t=>mag.days.includes(t.day)&&t.mom!=="required");
+// ── BABYSITTER TAB ───────────────────────────────────────────────
+function renderSitter(el){
+  const SN=SITTER_NAME;
+  const mag=weekData.babysitter;
+  if(!mag){ el.innerHTML='<div style="padding:24px;text-align:center;color:var(--muted)"><div style="font-size:48px">🌸</div><div style="margin-top:8px;font-weight:600">No '+SN+' days this week</div></div>'; return; }
+  const withKids=mag.withSitter||[];
+  const mt=weekData.tasks.filter(t=>mag.days.includes(t.day)&&t.mom!=="required"&&!withKids.includes(t.who));
   const bk={};mt.forEach(t=>{if(!bk[t.who])bk[t.who]=[];bk[t.who].push(t);});
   let h='<div class="mag-section">'+
     '<div class="mag-hdr-card"><div style="font-size:13px;opacity:0.85;margin-bottom:4px">'+mag.days.map(d=>{const hrs=mag['hours_'+d]||mag.hours||'';return DAY_LBL[d]+(hrs?' · '+hrs:'');}).join(' &amp; ')+'</div>'+
     '<div class="mag-return">Mom back: '+mag.days.map(d=>{const ret=mag['mom_return_'+d]||mag.mom_return||'';return DAY_LBL[d]+(ret?' at '+ret:'');}).join(', ')+'</div>'+
     '<div class="mag-sub">Mom Required tasks begin after Mom returns</div></div>'+
-    '<div class="mag-prep"><div style="font-weight:700;font-size:14px;margin-bottom:8px">Before Maggie Arrives</div>'+
-    '<div style="font-size:13px;line-height:1.8">All devices logged in + ready<br>Lucy program list visible<br>Snacks: '+(mag.snacks||"TBD")+'<br>Meals: '+(mag.meals||"TBD")+'<br>Mom returns: '+mag.days.map(d=>mag['mom_return_'+d]||mag.mom_return||'').filter(Boolean).join(' / ')+'</div></div>';
+    '<div class="mag-prep"><div style="font-weight:700;font-size:14px;margin-bottom:8px">Before '+SN+' Arrives</div>'+
+    '<div style="font-size:13px;line-height:1.8">All devices logged in + ready<br>Program lists visible<br>Snacks: '+(mag.snacks||"TBD")+'<br>Meals: '+(mag.meals||"TBD")+'<br>Mom returns: '+mag.days.map(d=>mag['mom_return_'+d]||mag.mom_return||'').filter(Boolean).join(' / ')+'</div></div>';
+  if(withKids.length){
+    h+='<div class="mag-kid-card"><div class="mag-kid-hdr" style="background:#3b82f6">With '+SN+'</div>'+
+      '<div style="padding:12px;font-size:13px;color:var(--muted)">'+withKids.map(k=>cap(k)).join(', ')+' — no school during '+SN+' time</div></div>';
+  }
   ["lincoln","ellis","lucy"].forEach(k2=>{
+    if(withKids.includes(k2)) return;
     const ts=(bk[k2]||[]).sort((a,b)=>toMin(a.time)-toMin(b.time)); if(!ts.length)return;
     const col={lincoln:DAY_COL.monday,ellis:DAY_COL.tuesday,lucy:DAY_COL.wednesday}[k2];
     h+='<div class="mag-kid-card"><div class="mag-kid-hdr" style="background:'+col+'">'+cap(k2)+' — Independent</div>'+
@@ -3391,7 +3404,7 @@ function loadJson(){
         if(d.supplies&&Array.isArray(d.supplies)){SUP=d.supplies;sv(WK+"_supplies_def",d.supplies);}
         if(d.supplyCategories&&Array.isArray(d.supplyCategories)) SUP_CATS=d.supplyCategories;
         applyWeekMeta(d);
-        sv(WK+"_tasks",d.tasks); sv(WK+"_maggie",d.maggie||null);
+        sv(WK+"_tasks",d.tasks); sv(WK+"_babysitter",d.babysitter||null);
         sv(WK+"_checked",snapChecked); sv(WK+"_history",snapHist); sv(WK+"_sl",snapSl);
         sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
         if(db){
@@ -3400,7 +3413,7 @@ function loadJson(){
           db.ref(WK+"/checked").set(snapChecked);
           db.ref(WK+"/history").set(snapHist);
           if(Object.keys(snapSl).length) db.ref(WK+"/sl").set(snapSl);
-          if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
+          if(d.babysitter) db.ref(WK+"/babysitter").set(d.babysitter);
           db.ref(WK+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
         }
         fbCheckedLoaded=true; fbTasksLoaded=true; fbHistoryLoaded=true;
@@ -3437,14 +3450,14 @@ function loadJson(){
         weekData=d; checked={}; slState={};
         if(d.supplies&&Array.isArray(d.supplies)){SUP=d.supplies;sv(WK+"_supplies_def",d.supplies);}
         if(d.supplyCategories&&Array.isArray(d.supplyCategories)) SUP_CATS=d.supplyCategories;
-        sv(WK+"_tasks",d.tasks); sv(WK+"_maggie",d.maggie||null);
+        sv(WK+"_tasks",d.tasks); sv(WK+"_babysitter",d.babysitter||null);
         sv(WK+"_checked",{}); sv(WK+"_sl",{}); sv(WK+"_history",{});
         sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
         if(db){
           db.ref(WK+"/checked").set({}); db.ref(WK+"/sl").set({}); db.ref(WK+"/history").set({});
           const obj={};d.tasks.forEach(t=>obj[t.id]=t);
           db.ref(WK+"/tasks").set(obj);
-          if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
+          if(d.babysitter) db.ref(WK+"/babysitter").set(d.babysitter);
           db.ref(WK+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
           attachWeekListeners(WK);
         }
@@ -3812,7 +3825,16 @@ function cascadeIntraWeek(){
   if(cursor>0) cursor+=20;
   const dStart=toMin(sdOv.start||sd.defaultStart||"10:00 AM");
   if(cursor<dStart) cursor=dStart;
+  // Check if today is a babysitter day — respect sitter rules for cascaded tasks
+  const mag=weekData.babysitter||{};
+  const isSitterToday=mag.days&&mag.days.includes(today);
+  const sitterReturn=isSitterToday?toMin(mag["mom_return_"+today]||mag.mom_return||"2:00 PM"):0;
+  const sitterKids=mag.withSitter||[];
   weekData.tasks.filter(t=>t.cascadedFrom&&t.day===today&&!checked[t.id]).forEach(t=>{
+    // withSitter kids: ALL tasks after return. Other kids: only mom-required after return.
+    if(isSitterToday&&cursor<sitterReturn){
+      if(sitterKids.includes(t.who)||t.mom==="required") cursor=sitterReturn;
+    }
     if(cursor>=lunchS&&cursor<lunchE) cursor=lunchE;
     if(cursor>=dEnd) cursor=dEnd-20;
     t.time=fromMin(cursor);
@@ -6462,7 +6484,7 @@ function openBoManager(){
     h+='<div style="text-align:center;padding:20px;color:var(--muted)"><div style="font-size:32px;margin-bottom:8px">&#9989;</div><div style="font-weight:600">No active blockouts</div></div>';
   } else {
     bos.forEach(([id,bo])=>{
-      const typeLbl={fullDay:"Full Day",timed:"Timed",babysitter:"Babysitter"}[bo.type]||bo.type;
+      const typeLbl={fullDay:"Full Day",timed:"Timed",babysitter:SITTER_NAME}[bo.type]||bo.type;
       const typeCol={fullDay:"#ef4444",timed:"#f59e0b",babysitter:"#3b82f6"}[bo.type]||"#666";
       const dc=DAY_COL[bo.day]||"#666";
       const kids=(bo.kids||[]).map(k=>cap(k)).join(", ");
@@ -6523,7 +6545,7 @@ function renderBoDialog(){
   // Type selector
   h+='<div class="bo-dlg-lbl">Type</div>';
   h+='<div class="bo-dlg-types">';
-  [{id:"fullDay",icon:"&#128683;",name:"Full Day"},{id:"timed",icon:"&#9200;",name:"Timed"},{id:"babysitter",icon:"&#128118;",name:"Babysitter"}].forEach(t=>{
+  [{id:"fullDay",icon:"&#128683;",name:"Full Day"},{id:"timed",icon:"&#9200;",name:"Timed"},{id:"babysitter",icon:"&#128118;",name:SITTER_NAME}].forEach(t=>{
     h+='<div class="bo-dlg-type'+(f.type===t.id?" sel":"")+'" onclick="boSetType(\''+t.id+'\')">';
     h+='<div class="t-icon">'+t.icon+'</div><div class="t-name">'+t.name+'</div></div>';
   });
@@ -6539,7 +6561,7 @@ function renderBoDialog(){
   h+='</div>';
   // Time fields (timed + babysitter)
   if(f.type==="timed"||f.type==="babysitter"){
-    h+='<div class="bo-dlg-lbl">'+(f.type==="babysitter"?"Babysitter Hours":"Block Window")+'</div>';
+    h+='<div class="bo-dlg-lbl">'+(f.type==="babysitter"?SITTER_NAME+" Hours":"Block Window")+'</div>';
     h+='<div class="bo-dlg-row"><label>Start</label><input type="time" class="rules-time" value="'+f.start+'" onchange="boForm.start=this.value"></div>';
     h+='<div class="bo-dlg-row"><label>End</label><input type="time" class="rules-time" value="'+f.end+'" onchange="boForm.end=this.value"></div>';
   }
@@ -6599,7 +6621,7 @@ function resortDayTasks(day,startOverride,momOverride){
   if(!dayTasks.length) return;
   // Sort by current time to preserve relative order
   dayTasks.sort((a,b)=>toMin(a.time)-toMin(b.time));
-  // Build per-resource cursors — mom may be available later (e.g. Maggie window)
+  // Build per-resource cursors — mom may be available later (e.g. babysitter window)
   const cur={comp:schoolStart,ipad:schoolStart,ipadLucy:schoolStart,mom:momAvail};
   const kidCur={};
   // Place every task through the scheduler
@@ -6670,7 +6692,7 @@ function renderBlockoutBanners(d){
   if(!bos.length) return "";
   let h="";
   bos.forEach(bo=>{
-    const typeLbl={fullDay:"Full Day Block",timed:"Timed Block",babysitter:"Babysitter"}[bo.type]||bo.type;
+    const typeLbl={fullDay:"Full Day Block",timed:"Timed Block",babysitter:SITTER_NAME}[bo.type]||bo.type;
     const typeCol={fullDay:"#ef4444",timed:"#f59e0b",babysitter:"#3b82f6"}[bo.type]||"#666";
     const kids=(bo.kids||[]).map(k=>cap(k)).join(", ");
     let detail="";
@@ -6859,7 +6881,7 @@ function renderRules(el,headerHtml){
     h+='<div class="rules-kid-chip" style="background:'+kc+'">'+cap(k)+'</div>';
     ["normal","babysitter"].forEach(mode=>{
       const steps=fbArr(kw[mode])||[];
-      h+='<div class="rules-section-lbl">'+(mode==="normal"?"Normal Day":"Babysitter Day")+'</div>';
+      h+='<div class="rules-section-lbl">'+(mode==="normal"?"Normal Day":SITTER_NAME+" Day")+'</div>';
       if(steps.length===0){
         h+='<div style="font-size:11px;color:var(--muted);padding:4px 0">'+(mode==="babysitter"?"No tasks during babysitter window":"No steps defined")+'</div>';
       } else {
@@ -7474,17 +7496,17 @@ function openPlanNextWeek(weekNum){
 
 function pnwStartWizard(weekOverride){
   const nw=weekOverride||currWeekNum()+1;
-  gwConfig={weekNum:String(nw),maggie:{},skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:false,redistribute:[],autoAdvance:true};
+  gwConfig={weekNum:String(nw),babysitter:{},withSitter:[],skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:false,redistribute:[],autoAdvance:true};
   pnwStep=0; pnwResult=null; pnwDropped=null; pnwConfigReady=false; pnwOpen=true;
   renderPlanNextWeek();
   if(db){
     db.ref("weekConfig/"+nw).once("value",s=>{
       const v=s.val();
       if(v){
-        const rawMag=v.maggie||{};
+        const rawMag=v.babysitter||v.maggie||{};
         const normMag={};
-        for(const[k,val] of Object.entries(rawMag)) normMag[k]=gwNormMaggie(val);
-        gwConfig={weekNum:v.weekNum||String(nw),maggie:normMag,skipDays:v.skipDays||[],lateStart:v.lateStart||{},carSchool:v.carSchool||{},theater:!!v.theater,saturday:!!v.saturday,redistribute:v.redistribute||[],autoAdvance:true};
+        for(const[k,val] of Object.entries(rawMag)) normMag[k]=gwNormSitter(val);
+        gwConfig={weekNum:v.weekNum||String(nw),babysitter:normMag,withSitter:v.withSitter||[],skipDays:v.skipDays||[],lateStart:v.lateStart||{},carSchool:v.carSchool||{},theater:!!v.theater,saturday:!!v.saturday,redistribute:v.redistribute||[],autoAdvance:true};
       }
       pnwConfigReady=true;
       renderPlanNextWeek();
@@ -7563,26 +7585,37 @@ function renderPlanNextWeek(){
 
   if(pnwStep===0){
     // ── STEP 1: CONFIGURE ──
-    const maggieCount=Object.keys(c.maggie).length;
+    const sitterCount=Object.keys(c.babysitter).length;
     const skipCount=c.skipDays.length;
     const lateCount=Object.keys(c.lateStart).length;
     const carCount=Object.keys(c.carSchool).length;
 
-    h+='<div class="pnw-section"><div class="pnw-section-title">Maggie Days'+(maggieCount?' <span style="font-size:11px;color:#16a34a;font-weight:600">'+maggieCount+' selected</span>':'')+'</div>';
+    h+='<div class="pnw-section"><div class="pnw-section-title">'+SITTER_NAME+' Days'+(sitterCount?' <span style="font-size:11px;color:#16a34a;font-weight:600">'+sitterCount+' selected</span>':'')+'</div>';
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="font-size:11px;color:var(--muted)">Name:</span>'+
+      '<input type="text" value="'+SITTER_NAME+'" class="pnw-time-input" style="width:120px" onchange="SITTER_NAME=this.value.trim()||\'Babysitter\';if(db)db.ref(\'settings/sitterName\').set(SITTER_NAME);sv(\'ha_sitter_name\',SITTER_NAME);renderPlanNextWeek()"></div>';
     h+='<div class="pnw-chip-row">';
     WDAYS.forEach(d=>{
-      const on=!!c.maggie[d];
-      h+='<div class="pnw-chip'+(on?" on":"")+'" onclick="pnwToggleMaggie(\''+d+'\')">'+cap(d).substring(0,3)+'</div>';
+      const on=!!c.babysitter[d];
+      h+='<div class="pnw-chip'+(on?" on":"")+'" onclick="pnwToggleSitter(\''+d+'\')">'+cap(d).substring(0,3)+'</div>';
     });
     h+='</div>';
-    Object.entries(c.maggie).forEach(([d,v])=>{
-      const mg=gwNormMaggie(v);
+    Object.entries(c.babysitter).forEach(([d,v])=>{
+      const mg=gwNormSitter(v);
       h+='<div style="display:flex;align-items:center;gap:8px;margin-top:6px;padding:4px 0;flex-wrap:wrap"><span style="font-size:12px;font-weight:600;width:44px">'+cap(d).substring(0,3)+'</span>'+
         '<span style="font-size:11px;color:var(--muted)">Start:</span>'+
-        '<input type="time" value="'+ampmTo24(mg.start)+'" class="pnw-time-input" style="width:95px" onchange="gwConfig.maggie[\''+d+'\'].start=to12h(this.value);renderPlanNextWeek()">'+
+        '<input type="time" value="'+ampmTo24(mg.start)+'" class="pnw-time-input" style="width:95px" onchange="gwConfig.babysitter[\''+d+'\'].start=to12h(this.value);renderPlanNextWeek()">'+
         '<span style="font-size:11px;color:var(--muted)">Return:</span>'+
-        '<input type="time" value="'+ampmTo24(mg.end)+'" class="pnw-time-input" style="width:95px" onchange="gwConfig.maggie[\''+d+'\'].end=to12h(this.value);renderPlanNextWeek()"></div>';
+        '<input type="time" value="'+ampmTo24(mg.end)+'" class="pnw-time-input" style="width:95px" onchange="gwConfig.babysitter[\''+d+'\'].end=to12h(this.value);renderPlanNextWeek()"></div>';
     });
+    if(sitterCount){
+      h+='<div style="margin-top:10px"><span style="font-size:12px;font-weight:600">With '+SITTER_NAME+'</span> <span style="font-size:11px;color:var(--muted)">(no school during window)</span></div>';
+      h+='<div class="pnw-chip-row" style="margin-top:4px">';
+      ["lincoln","ellis","lucy","julian"].forEach(k=>{
+        const on=(c.withSitter||[]).includes(k);
+        h+='<div class="pnw-chip'+(on?" on":"")+'" onclick="pnwToggleWithSitter(\''+k+'\')">'+cap(k)+'</div>';
+      });
+      h+='</div>';
+    }
     h+='</div>';
 
     h+='<div class="pnw-section"><div class="pnw-section-title">Skip Days'+(skipCount?' <span style="font-size:11px;color:#991b1b;font-weight:600">'+skipCount+' off</span>':'')+'</div>';
@@ -7736,9 +7769,15 @@ function pnwCheckPin(val){
   }
 }
 
-function pnwToggleMaggie(d){
-  if(gwConfig.maggie[d]) delete gwConfig.maggie[d];
-  else gwConfig.maggie[d]={start:"10:00 AM",end:"2:00 PM"};
+function pnwToggleSitter(d){
+  if(gwConfig.babysitter[d]) delete gwConfig.babysitter[d];
+  else gwConfig.babysitter[d]={start:"10:00 AM",end:"2:00 PM"};
+  renderPlanNextWeek();
+}
+function pnwToggleWithSitter(k){
+  if(!gwConfig.withSitter) gwConfig.withSitter=[];
+  const i=gwConfig.withSitter.indexOf(k);
+  if(i>=0) gwConfig.withSitter.splice(i,1); else gwConfig.withSitter.push(k);
   renderPlanNextWeek();
 }
 function pnwToggleSkip(d){
@@ -7771,12 +7810,13 @@ function loadWeekConfig(wn){
   db.ref("weekConfig/"+wn).once("value",s=>{
     const v=s.val();
     if(v){
-      const rawMag=v.maggie||{};
+      const rawMag=v.babysitter||v.maggie||{};
       const normMag={};
-      for(const[k,val] of Object.entries(rawMag)) normMag[k]=gwNormMaggie(val);
+      for(const[k,val] of Object.entries(rawMag)) normMag[k]=gwNormSitter(val);
       gwConfig={
         weekNum:v.weekNum||wn,
-        maggie:normMag,
+        babysitter:normMag,
+        withSitter:v.withSitter||[],
         skipDays:v.skipDays||[],
         lateStart:v.lateStart||{},
         carSchool:v.carSchool||{},
@@ -7808,17 +7848,17 @@ function gwToggleCard(key){
   gwConfigOpen[key]=!gwConfigOpen[key]; renderAll();
 }
 
-function gwNormMaggie(v){
+function gwNormSitter(v){
   if(typeof v==="string") return {start:"10:00 AM",end:v};
   return {start:v.start||"10:00 AM",end:v.end||"2:00 PM"};
 }
-function gwToggleMaggie(d){
-  if(gwConfig.maggie[d]) delete gwConfig.maggie[d];
-  else gwConfig.maggie[d]={start:"10:00 AM",end:"2:00 PM"};
+function gwToggleSitter(d){
+  if(gwConfig.babysitter[d]) delete gwConfig.babysitter[d];
+  else gwConfig.babysitter[d]={start:"10:00 AM",end:"2:00 PM"};
   renderAll();
 }
-function gwSetMaggieTime(d,v){ gwConfig.maggie[d].end=to12h(v); renderAll(); }
-function gwSetMaggieStart(d,v){ gwConfig.maggie[d].start=to12h(v); renderAll(); }
+function gwSetSitterTime(d,v){ gwConfig.babysitter[d].end=to12h(v); renderAll(); }
+function gwSetSitterStart(d,v){ gwConfig.babysitter[d].start=to12h(v); renderAll(); }
 
 function gwToggleSkip(d){
   const i=gwConfig.skipDays.indexOf(d);
@@ -7954,15 +7994,15 @@ function gwSubjectDetail(kid,key){
 }
 
 class GWScheduler{
-  constructor(schoolStart,momAvailable,cutoff,maggieStart,maggieEnd){
+  constructor(schoolStart,momAvailable,cutoff,sitterStart,sitterEnd){
     this.computerFree=schoolStart;
     this.ipadFree=schoolStart;
     this.ipadFreeLucy=schoolStart;
     this.momFree=momAvailable;
     this.kidFree={lincoln:schoolStart,ellis:schoolStart,lucy:schoolStart};
     this.cutoff=cutoff;
-    this.maggieStart=maggieStart||0;
-    this.maggieEnd=maggieEnd||0;
+    this.sitterStart=sitterStart||0;
+    this.sitterEnd=sitterEnd||0;
   }
   _earliest(kid,reqComp,reqIpad,reqMom){
     let t=this.kidFree[kid];
@@ -7974,8 +8014,8 @@ class GWScheduler{
   place(kid,key,duration,reqComp,reqIpad,reqMom){
     let start=this._earliest(kid,reqComp,reqIpad,reqMom);
     start=gwSkipLunch(start,duration);
-    if(reqMom&&this.maggieEnd>this.maggieStart&&start<this.maggieEnd&&start+duration>this.maggieStart){
-      start=this.maggieEnd;
+    if(reqMom&&this.sitterEnd>this.sitterStart&&start<this.sitterEnd&&start+duration>this.sitterStart){
+      start=this.sitterEnd;
       start=gwSkipLunch(start,duration);
     }
     const end=start+duration;
@@ -7991,9 +8031,10 @@ class GWScheduler{
 function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   const schoolStart=dayConfig.schoolStart;
   const momAvailable=dayConfig.momAvailable;
-  const isMaggie=dayConfig.isMaggie;
-  const maggieStart=dayConfig.maggieStart;
-  const maggieEnd=dayConfig.maggieEnd;
+  const isSitter=dayConfig.isSitter;
+  const sitterStart=dayConfig.sitterStart;
+  const sitterEnd=dayConfig.sitterEnd;
+  const withSitter=dayConfig.withSitter||[];
   const isCarSchool=dayConfig.isCarSchool;
   const theater=dayConfig.theater;
   const dayName=dayConfig.dayName;
@@ -8012,7 +8053,7 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
       currData.subjects.lincoln.drills_l={display:"Drills",device:"paper",mom:"required",minutes:5,rules:"priority",days:"",total:0};
   }
 
-  const sched=new GWScheduler(schoolStart,momAvailable,cutoff,maggieStart,maggieEnd);
+  const sched=new GWScheduler(schoolStart,momAvailable,cutoff,sitterStart,sitterEnd);
   const tasks=[];
   const dropped=[];
 
@@ -8080,26 +8121,38 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   schedBucket("ellis",e.first);
   schedBucket("lucy",c.first);
 
-  if(isMaggie){
-    // Maggie day: no-mom tasks first (fill Maggie window), mom-required after return
-    // Lincoln: computer → independent → maybe_paper → [push to maggieEnd] → required_paper
-    schedBucket("lincoln",l.computer);
-    schedBucket("lincoln",l.independent);
-    schedBucket("lincoln",l.maybe_paper);
-    sched.kidFree.lincoln=Math.max(sched.kidFree.lincoln,maggieEnd);
-    schedBucket("lincoln",l.required_paper);
+  if(isSitter){
+    // ── Babysitter day — reads config from rules tab ──
+    // withSitter kids: ALL tasks pushed past sitterEnd (no school during window)
+    // Other kids: no-mom tasks fill window, mom-required after return
+    const kidBuckets=[["lincoln",l],["ellis",e],["lucy",c]];
 
-    // Ellis: computer/ipad first → maybe_paper → independent → required_paper after return
-    schedBucket("ellis",e.computer);
-    schedBucket("ellis",e.ipad);
-    schedBucket("ellis",e.independent||[]);
-    schedBucket("ellis",e.maybe_paper);
-    schedBucket("ellis",e.required_paper);
+    // Phase A: schedule no-mom tasks for kids NOT with babysitter
+    kidBuckets.forEach(([kid,b])=>{
+      if(withSitter.includes(kid)) return; // skip — all tasks go after return
+      schedBucket(kid,b.computer||[]);
+      schedBucket(kid,b.ipad||[]);
+      schedBucket(kid,b.phone||[]);
+      schedBucket(kid,b.independent||[]);
+      schedBucket(kid,b.maybe_paper||[]);
+    });
 
-    // Lucy: phone/ipad first → independent/maybe → required after return
-    schedBucket("lucy",c.phone);
-    schedBucket("lucy",c.ipad);
-    schedBucket("lucy",[...c.independent,...c.maybe_paper,...c.required_paper]);
+    // Phase B: push everyone past babysitter return
+    kidBuckets.forEach(([kid])=>{ sched.kidFree[kid]=Math.max(sched.kidFree[kid],sitterEnd); });
+    sched.momFree=Math.max(sched.momFree,sitterEnd);
+
+    // Phase C: mom-required tasks + ALL tasks for withSitter kids
+    kidBuckets.forEach(([kid,b])=>{
+      if(withSitter.includes(kid)){
+        // This kid was with babysitter — schedule everything now (after return)
+        schedBucket(kid,b.computer||[]);
+        schedBucket(kid,b.ipad||[]);
+        schedBucket(kid,b.phone||[]);
+        schedBucket(kid,b.independent||[]);
+        schedBucket(kid,b.maybe_paper||[]);
+      }
+      schedBucket(kid,b.required_paper||[]);
+    });
   } else {
     // Normal day: original phase order
     // Phase 1
@@ -8431,14 +8484,15 @@ function generateWeek(config){
     dates[dn]=mon;
   }
 
-  // Build constraints, windows, maggie
+  // Build constraints, windows, babysitter
   const constraints={};
   const windows={};
-  const maggieCfg=config.maggie||{};
-  for(const[dn,raw] of Object.entries(maggieCfg)){
-    const mg=gwNormMaggie(raw);
-    constraints[dn]="\u{1F338} Maggie "+mg.start+"–"+mg.end+" \xB7 Mom Required from "+mg.end;
-    windows[dn]="Maggie "+mg.start+"–"+mg.end+" \xB7 Mom Required from "+mg.end;
+  const sitterCfg=config.babysitter||config.maggie||{};
+  const withSitterKids=config.withSitter||[];
+  for(const[dn,raw] of Object.entries(sitterCfg)){
+    const mg=gwNormSitter(raw);
+    constraints[dn]="\u{1F338} "+SITTER_NAME+" "+mg.start+"–"+mg.end+" \xB7 Mom Required from "+mg.end;
+    windows[dn]=SITTER_NAME+" "+mg.start+"–"+mg.end+" \xB7 Mom Required from "+mg.end;
   }
   for(const[dn,startTime] of Object.entries(config.lateStart||{})){
     constraints[dn]="\u{1F550} Late start \xB7 School begins at "+startTime;
@@ -8453,18 +8507,19 @@ function generateWeek(config){
   const theaterNote=config.theater?" \xB7 Theater 4:30 Mon–Thu":"";
   windows.default="School 10:00 AM–4:15 PM"+theaterNote;
 
-  let maggieObj=null;
-  if(Object.keys(maggieCfg).length){
-    const magDays=Object.keys(maggieCfg);
-    maggieObj={days:magDays};
-    for(const[dn,raw] of Object.entries(maggieCfg)){
-      const mg=gwNormMaggie(raw);
+  let sitterObj=null;
+  if(Object.keys(sitterCfg).length){
+    const magDays=Object.keys(sitterCfg);
+    sitterObj={days:magDays};
+    if(withSitterKids.length) sitterObj.withSitter=withSitterKids;
+    for(const[dn,raw] of Object.entries(sitterCfg)){
+      const mg=gwNormSitter(raw);
       if(magDays.length===1){
-        maggieObj.hours=mg.start+" - "+mg.end;
-        maggieObj.mom_return=mg.end;
+        sitterObj.hours=mg.start+" - "+mg.end;
+        sitterObj.mom_return=mg.end;
       } else {
-        maggieObj["hours_"+dn]=mg.start+" - "+mg.end;
-        maggieObj["mom_return_"+dn]=mg.end;
+        sitterObj["hours_"+dn]=mg.start+" - "+mg.end;
+        sitterObj["mom_return_"+dn]=mg.end;
       }
     }
   }
@@ -8486,10 +8541,10 @@ function generateWeek(config){
     const schoolStartStr=(config.lateStart||{})[dn]||"10:00 AM";
     const schoolStartMin=toMin(schoolStartStr);
 
-    const isMaggie=!!maggieCfg[dn];
-    const mgNorm=isMaggie?gwNormMaggie(maggieCfg[dn]):{start:schoolStartStr,end:schoolStartStr};
-    const maggieStartMin=isMaggie?toMin(mgNorm.start):schoolStartMin;
-    const maggieEndMin=isMaggie?toMin(mgNorm.end):schoolStartMin;
+    const isSitter=!!sitterCfg[dn];
+    const mgNorm=isSitter?gwNormSitter(sitterCfg[dn]):{start:schoolStartStr,end:schoolStartStr};
+    const sitterStartMin=isSitter?toMin(mgNorm.start):schoolStartMin;
+    const sitterEndMin=isSitter?toMin(mgNorm.end):schoolStartMin;
     const momAvailable=schoolStartMin;
 
     const isCar=!!(config.carSchool||{})[dn];
@@ -8498,9 +8553,10 @@ function generateWeek(config){
       schoolStart:schoolStartMin,
       momAvailable:momAvailable,
       isCarSchool:isCar,
-      isMaggie:isMaggie,
-      maggieStart:isMaggie?maggieStartMin:0,
-      maggieEnd:isMaggie?maggieEndMin:0,
+      isSitter:isSitter,
+      sitterStart:isSitter?sitterStartMin:0,
+      sitterEnd:isSitter?sitterEndMin:0,
+      withSitter:isSitter?withSitterKids:[],
       theater:!!config.theater,
       dayName:dn
     };
@@ -8543,7 +8599,7 @@ function generateWeek(config){
     windows:windows,
     tasks:allTasks
   };
-  if(maggieObj) output.maggie=maggieObj;
+  if(sitterObj) output.babysitter=sitterObj;
 
   return {result:output,dropped:allDropped,carryOverCount:coTasks.length,cursors:weekCursors};
 }
@@ -8639,7 +8695,7 @@ function gwCommit(){
     for(const id in snapHist){ if(!commitIds.has(id)) delete snapHist[id]; }
     WK=activeWK; weekData=d; checked=snapChecked; slState=snapSl;
     applyWeekMeta(d);
-    sv(WK+"_tasks",d.tasks); sv(WK+"_maggie",d.maggie||null);
+    sv(WK+"_tasks",d.tasks); sv(WK+"_babysitter",d.babysitter||null);
     sv(WK+"_checked",snapChecked); sv(WK+"_history",snapHist); sv(WK+"_sl",snapSl);
     sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
     if(db){
@@ -8648,7 +8704,7 @@ function gwCommit(){
       db.ref(WK+"/checked").set(snapChecked);
       db.ref(WK+"/history").set(snapHist);
       if(Object.keys(snapSl).length) db.ref(WK+"/sl").set(snapSl);
-      if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
+      if(d.babysitter) db.ref(WK+"/babysitter").set(d.babysitter);
       db.ref(WK+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
     }
     // Regeneration: only save cursor snapshot if none exists yet (backward compat)
@@ -8684,7 +8740,7 @@ function gwCommit(){
     WK=d.week; localStorage.setItem("ha_active_wk",WK);
     if(db) db.ref("ha_active_wk").set(WK);
     weekData=d; checked={}; slState={};
-    sv(WK+"_tasks",d.tasks); sv(WK+"_maggie",d.maggie||null);
+    sv(WK+"_tasks",d.tasks); sv(WK+"_babysitter",d.babysitter||null);
     sv(WK+"_checked",{}); sv(WK+"_sl",{}); sv(WK+"_history",{});
     sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
     // New week: store cursor snapshot — this is the anchor for all future regenerations
@@ -8698,7 +8754,7 @@ function gwCommit(){
       db.ref(WK+"/history").set({});
       const obj={};d.tasks.forEach(t=>obj[t.id]=t);
       db.ref(WK+"/tasks").set(obj);
-      if(d.maggie) db.ref(WK+"/maggie").set(d.maggie);
+      if(d.babysitter) db.ref(WK+"/babysitter").set(d.babysitter);
       db.ref(WK+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
       if(gwCursors) db.ref(WK+"/cursors").set(gwCursors);
       attachWeekListeners(WK);
