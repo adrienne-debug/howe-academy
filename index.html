@@ -8027,13 +8027,15 @@ function gwSubjectDetail(kid,key){
 }
 
 class GWScheduler{
-  constructor(schoolStart,momAvailable,cutoff){
+  constructor(schoolStart,momAvailable,cutoff,maggieStart,maggieEnd){
     this.computerFree=schoolStart;
     this.ipadFree=schoolStart;
     this.ipadFreeLucy=schoolStart;
     this.momFree=momAvailable;
     this.kidFree={lincoln:schoolStart,ellis:schoolStart,lucy:schoolStart};
     this.cutoff=cutoff;
+    this.maggieStart=maggieStart||0;
+    this.maggieEnd=maggieEnd||0;
   }
   _earliest(kid,reqComp,reqIpad,reqMom){
     let t=this.kidFree[kid];
@@ -8045,6 +8047,10 @@ class GWScheduler{
   place(kid,key,duration,reqComp,reqIpad,reqMom){
     let start=this._earliest(kid,reqComp,reqIpad,reqMom);
     start=gwSkipLunch(start,duration);
+    if(reqMom&&this.maggieEnd>this.maggieStart&&start<this.maggieEnd&&start+duration>this.maggieStart){
+      start=this.maggieEnd;
+      start=gwSkipLunch(start,duration);
+    }
     const end=start+duration;
     if(end>this.cutoff) return null;
     this.kidFree[kid]=end;
@@ -8059,6 +8065,7 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   const schoolStart=dayConfig.schoolStart;
   const momAvailable=dayConfig.momAvailable;
   const isMaggie=dayConfig.isMaggie;
+  const maggieStart=dayConfig.maggieStart;
   const maggieEnd=dayConfig.maggieEnd;
   const isCarSchool=dayConfig.isCarSchool;
   const theater=dayConfig.theater;
@@ -8078,7 +8085,7 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
       currData.subjects.lincoln.drills_l={display:"Spelling Drills",device:"paper",mom:"required",minutes:5,rules:"",days:"",total:0};
   }
 
-  const sched=new GWScheduler(schoolStart,momAvailable,cutoff);
+  const sched=new GWScheduler(schoolStart,momAvailable,cutoff,maggieStart,maggieEnd);
   const tasks=[];
   const dropped=[];
 
@@ -8103,7 +8110,7 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   function schedule(kid,key,excelVal){
     const s=getMeta(kid,key);
     if(!s) return;
-    const onMaggie=isMaggie&&sched.kidFree[kid]<maggieEnd;
+    const onMaggie=isMaggie&&sched.kidFree[kid]>=maggieStart&&sched.kidFree[kid]<maggieEnd;
     const reqMom=(s.mom==="required")&&!onMaggie;
     if(isCarSchool&&s.device!=="ipad"&&!GW_CAR_SAFE_KEYS.has(key)){
       dropped.push({kid,day:dayName,key,val:excelVal,reason:"car school day — paper/computer tasks skipped"});
@@ -8522,16 +8529,17 @@ function generateWeek(config){
     const mgNorm=isMaggie?gwNormMaggie(maggieCfg[dn]):{start:schoolStartStr,end:schoolStartStr};
     const maggieStartMin=isMaggie?toMin(mgNorm.start):schoolStartMin;
     const maggieEndMin=isMaggie?toMin(mgNorm.end):schoolStartMin;
-    const momAvailable=isMaggie?maggieEndMin:schoolStartMin;
+    const momAvailable=schoolStartMin;
 
     const isCar=!!(config.carSchool||{})[dn];
 
     const dayConfig={
-      schoolStart:isMaggie?maggieStartMin:schoolStartMin,
+      schoolStart:schoolStartMin,
       momAvailable:momAvailable,
       isCarSchool:isCar,
       isMaggie:isMaggie,
-      maggieEnd:maggieEndMin,
+      maggieStart:isMaggie?maggieStartMin:0,
+      maggieEnd:isMaggie?maggieEndMin:0,
       theater:!!config.theater,
       dayName:dn
     };
