@@ -840,7 +840,8 @@ let mastManualT=0;
 let mastManualS=0;
 let histTab="log"; // "log" | "attendance"
 let attEditUnlocked=false;
-const ATT_PIN="0329";
+let APP_PIN=localStorage.getItem("ha_app_pin")||"0329";
+const ATT_PIN=APP_PIN;
 let attOverrides={}; // {wkKey:{day:{kid:true/false}}}
 let coExclusions={}; // {wkKey:{taskId:true}} — carry-overs the user has explicitly unchecked
 let manualUnchecks=new Set(); // task IDs explicitly unchecked this session — runCascade must not override
@@ -1044,6 +1045,9 @@ function initFb() {
     db.ref("settings/sitterName").on("value",s=>{
       if(s.val()){ SITTER_NAME=s.val(); sv("ha_sitter_name",SITTER_NAME); }
     });
+    db.ref("settings/pin").on("value",s=>{
+      if(s.val()){ APP_PIN=s.val(); localStorage.setItem("ha_app_pin",s.val()); }
+    });
     db.ref("act_favs").on("value",s=>{
       if(s.val()) actFavs=s.val();
       if(tab==="activities") renderActCards();
@@ -1174,7 +1178,7 @@ function isScheduleUnlocked(kidFilter, viewDay){
 function checkMomPin(val){
   if(val.length < 4) return;
   const err = document.getElementById("mom-pin-err");
-  if(val === "0329"){
+  if(val === APP_PIN){
     momPinUnlocked = true;
     momModeActive = true;
     kid = "all";
@@ -1625,7 +1629,7 @@ function promptPtsPin(){
 }
 function checkPtsPin(val){
   if(val.length<4)return;
-  if(val==="0329"){
+  if(val===APP_PIN){
     ptsEditUnlocked=true; renderAll();
   } else {
     const err=document.getElementById("pts-pin-err");
@@ -1718,7 +1722,7 @@ function spinSlots(){
 function checkAdminPin(val,errId){
   if(val.length<4) return;
   const err=document.getElementById(errId);
-  if(val==="0329"){
+  if(val===APP_PIN){
     adminPinUnlocked=true;
     renderAll();
   } else {
@@ -1728,6 +1732,37 @@ function checkAdminPin(val,errId){
     setTimeout(()=>{if(err)err.textContent="";if(inp)inp.style.borderColor="var(--border)";},1500);
   }
 }
+function renderPinSettings(el,ah){
+  el.innerHTML=ah+
+    '<div style="padding:16px">'+
+    '<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:700;margin-bottom:4px">Change PIN</div>'+
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:20px">This PIN is used for Mom mode, Admin, Blockouts, Points, and all locked areas.</div>'+
+    '<div style="background:var(--bg);border-radius:12px;padding:16px;border:1px solid var(--border)">'+
+    '<label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">Current PIN</label>'+
+    '<div style="font-size:24px;font-weight:700;letter-spacing:8px;margin-bottom:16px;font-family:monospace">'+APP_PIN+'</div>'+
+    '<label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">New PIN (4 digits)</label>'+
+    '<input id="new-pin-input" type="text" inputmode="numeric" maxlength="4" placeholder="Enter new 4-digit PIN" '+
+    'style="width:160px;text-align:center;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:20px;font-weight:700;letter-spacing:8px;font-family:monospace"/>'+
+    '<div style="margin-top:12px">'+
+    '<button onclick="saveNewPin()" style="padding:8px 20px;border-radius:10px;border:none;background:#111827;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save PIN</button>'+
+    '</div>'+
+    '<div id="pin-save-msg" style="font-size:12px;margin-top:8px;min-height:16px"></div>'+
+    '</div></div>';
+}
+function saveNewPin(){
+  const inp=document.getElementById("new-pin-input");
+  const msg=document.getElementById("pin-save-msg");
+  if(!inp||!msg) return;
+  const val=inp.value.trim();
+  if(!/^\d{4}$/.test(val)){ msg.style.color="#b5394a"; msg.textContent="PIN must be exactly 4 digits."; return; }
+  APP_PIN=val;
+  localStorage.setItem("ha_app_pin",val);
+  if(db) db.ref("settings/pin").set(val);
+  msg.style.color="#16a34a"; msg.textContent="PIN updated!";
+  inp.value="";
+  setTimeout(()=>{ renderAll(); },800);
+}
+
 function toggleSchedAdmin(){ schedShowAdmin=!schedShowAdmin; schedShowHistory=false; schedShowPace=false; renderAll(); }
 function toggleSchedHistory(){ schedShowHistory=!schedShowHistory; schedShowAdmin=false; schedShowPace=false; renderAll(); }
 function toggleSchedPace(){ schedShowPace=!schedShowPace; schedShowAdmin=false; schedShowHistory=false; renderAll(); }
@@ -1749,14 +1784,16 @@ function renderSchedule(el){
       return;
     }
     let ah='<div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:12px">';
-    ["rules","generate","curriculum"].forEach(s=>{
+    ["rules","generate","curriculum","pin"].forEach(s=>{
       const active=adminSubTab===s;
-      ah+='<button style="flex:1;padding:10px 4px;font-size:12px;font-weight:700;border:none;background:none;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:'+(active?"var(--text)":"var(--muted)")+';border-bottom:2px solid '+(active?"var(--header)":"transparent")+';margin-bottom:-2px" onclick="setAdminSub(\''+s+'\')">'+s.charAt(0).toUpperCase()+s.slice(1)+'</button>';
+      const label=s==="pin"?"PIN":s.charAt(0).toUpperCase()+s.slice(1);
+      ah+='<button style="flex:1;padding:10px 4px;font-size:12px;font-weight:700;border:none;background:none;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:'+(active?"var(--text)":"var(--muted)")+';border-bottom:2px solid '+(active?"var(--header)":"transparent")+';margin-bottom:-2px" onclick="setAdminSub(\''+s+'\')">'+label+'</button>';
     });
     ah+='</div>';
     if(adminSubTab==="rules"){ renderRules(el,ah); }
     else if(adminSubTab==="generate"){ renderAdminGenerate(el,ah); }
     else if(adminSubTab==="curriculum"){ renderCurriculumView(el,ah); }
+    else if(adminSubTab==="pin"){ renderPinSettings(el,ah); }
     return;
   }
   const col=DAY_COL[day]||"#666", pct=dayPct(day);
@@ -5195,7 +5232,7 @@ function mastToggleExpand(id){ mastExpandedId=mastExpandedId===id?null:id; _mast
 
 function mastListEditCheck(val){
   mastListEditPin=val;
-  if(val==="0329"){ mastListEditMode=true; mastListEditPin=""; _mastRe(); }
+  if(val===APP_PIN){ mastListEditMode=true; mastListEditPin=""; _mastRe(); }
   else if(val.length>=4){ mastListEditPin=""; const el=document.getElementById("mast-list-pin-err"); if(el) el.textContent="Wrong PIN"; }
 }
 function mastListEditClose(){ mastListEditMode=false; _mastRe(); }
@@ -6564,7 +6601,7 @@ function openBoDialog(d){
       '<div style="font-size:13px;color:var(--muted);margin-bottom:16px">Enter the Mom PIN to manage blockouts.</div>'+
       '<input id="bo-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="PIN" '+
       'style="width:120px;text-align:center;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:18px;font-weight:700;letter-spacing:8px;font-family:\'DM Sans\',sans-serif" '+
-      'oninput="if(this.value.length>=4){if(this.value===\'0329\'){adminPinUnlocked=true;closeBoDialog();openBoDialog(\''+( d||day)+'\');}else{document.getElementById(\'bo-pin-err\').textContent=\'Incorrect PIN\';this.value=\'\';this.style.borderColor=\'#b5394a\';var _t=this;setTimeout(function(){document.getElementById(\'bo-pin-err\').textContent=\'\';_t.style.borderColor=\'var(--border)\';},1500);}}" autofocus>'+
+      'oninput="if(this.value.length>=4){if(this.value===APP_PIN){adminPinUnlocked=true;closeBoDialog();openBoDialog(\''+( d||day)+'\');}else{document.getElementById(\'bo-pin-err\').textContent=\'Incorrect PIN\';this.value=\'\';this.style.borderColor=\'#b5394a\';var _t=this;setTimeout(function(){document.getElementById(\'bo-pin-err\').textContent=\'\';_t.style.borderColor=\'var(--border)\';},1500);}}" autofocus>'+
       '<div id="bo-pin-err" style="font-size:11px;color:#b5394a;margin-top:6px;min-height:14px"></div>'+
       '</div></div>';
     w.style.display="block";
@@ -7833,7 +7870,7 @@ function renderPlanNextWeek(){
 
 function pnwCheckPin(val){
   if(val.length<4) return;
-  if(val==="0329"){
+  if(val===APP_PIN){
     adminPinUnlocked=true;
     pnwStartWizard(pnwPendingWeek||null);
   } else {
