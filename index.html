@@ -8156,16 +8156,17 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   const e=gwByCategory("ellis",kidAssignments.ellis||{});
   const c=gwByCategory("lucy",kidAssignments.lucy||{});
 
-  // First-of-day subjects (rule: "first")
-  schedBucket("lincoln",l.first);
-  schedBucket("ellis",e.first);
-  schedBucket("lucy",c.first);
+  // First-of-day subjects (rule: "first") — skip withSitter kids on babysitter days
+  const kidBuckets=[["lincoln",l],["ellis",e],["lucy",c]];
+  kidBuckets.forEach(([kid,b])=>{
+    if(isSitter&&withSitter.includes(kid)) return; // deferred to Phase C
+    schedBucket(kid,b.first||[]);
+  });
 
   if(isSitter){
     // ── Babysitter day — reads config from rules tab ──
     // withSitter kids: ALL tasks pushed past sitterEnd (no school during window)
     // Other kids: no-mom tasks fill window, mom-required after return
-    const kidBuckets=[["lincoln",l],["ellis",e],["lucy",c]];
 
     // Phase A: schedule no-mom tasks for kids NOT with babysitter
     kidBuckets.forEach(([kid,b])=>{
@@ -8181,15 +8182,17 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
     kidBuckets.forEach(([kid])=>{ sched.kidFree[kid]=Math.max(sched.kidFree[kid],sitterEnd); });
     sched.momFree=Math.max(sched.momFree,sitterEnd);
 
-    // Phase C: mom-required tasks + ALL tasks for withSitter kids
+    // Phase C: mom-required tasks + ALL tasks for withSitter kids (including first/last)
     kidBuckets.forEach(([kid,b])=>{
       if(withSitter.includes(kid)){
         // This kid was with babysitter — schedule everything now (after return)
+        schedBucket(kid,b.first||[]);
         schedBucket(kid,b.computer||[]);
         schedBucket(kid,b.ipad||[]);
         schedBucket(kid,b.phone||[]);
         schedBucket(kid,b.independent||[]);
         schedBucket(kid,b.maybe_paper||[]);
+        schedBucket(kid,b.last||[]);
       }
       schedBucket(kid,b.required_paper||[]);
     });
@@ -8217,10 +8220,11 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
     schedBucket("lucy",[...c.independent,...c.maybe_paper,...c.required_paper]);
   }
 
-  // Last-of-day subjects (rule: "last")
-  schedBucket("lincoln",l.last);
-  schedBucket("ellis",e.last);
-  schedBucket("lucy",c.last);
+  // Last-of-day subjects (rule: "last") — withSitter kids already got theirs in Phase C
+  kidBuckets.forEach(([kid,b])=>{
+    if(isSitter&&withSitter.includes(kid)) return; // already scheduled in Phase C
+    schedBucket(kid,b.last||[]);
+  });
 
   tasks.sort((a,b)=>toMin(a.time)-toMin(b.time));
   return {tasks,counter,dropped};
