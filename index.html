@@ -4417,10 +4417,10 @@ function getNextLessons(kid,subjectKey,count){
 
 // Compute cursor position for a kid+subject without returning lessons
 // (factored out of getNextLessons for two-tier cursor system)
-function computeSubjectCursor(kid,subjectKey){
+function computeSubjectCursor(kid,subjectKey,excludeWeek){
   const paceSubj=((paceData.subjects||{})[kid]||{})[subjectKey];
   const kws=paceKeywords(kid,subjectKey,paceSubj);
-  const autoC=paceAutoCount(kid,kws);
+  const autoC=paceAutoCount(kid,kws,excludeWeek);
   const offset=(paceSubj&&paceSubj.offset)||0;
   const adjust=(paceSubj&&paceSubj.adjust)||0;
   return offset+autoC+adjust;
@@ -4522,15 +4522,18 @@ function effectiveDay(t){
   }
   return "carryover";
 }
-function paceAutoCount(kid,keywords){
+function paceAutoCount(kid,keywords,excludeWeek){
   if(!keywords||!keywords.length) return 0;
   const kws=(typeof keywords==="string"?[keywords]:keywords).map(k=>k.toLowerCase().trim());
   let count=0;
-  weekData.tasks.filter(t=>t.who===kid&&!t.id.endsWith("_c")).forEach(t=>{
-    if(chainDone(t.id,checked,weekData.tasks)&&kws.some(kw=>(t.title||"").toLowerCase().includes(kw)))
-      count+=1;
-  });
+  if(!excludeWeek||excludeWeek!==WK){
+    weekData.tasks.filter(t=>t.who===kid&&!t.id.endsWith("_c")).forEach(t=>{
+      if(chainDone(t.id,checked,weekData.tasks)&&kws.some(kw=>(t.title||"").toLowerCase().includes(kw)))
+        count+=1;
+    });
+  }
   Object.values(archive).forEach(aw=>{
+    if(excludeWeek&&aw.weekLabel===excludeWeek) return;
     const awChecked=aw.checked||{};
     const awTasks=aw.tasks||[];
     awTasks.filter(t=>t.who===kid&&!t.id.endsWith("_c")).forEach(t=>{
@@ -8434,11 +8437,10 @@ function gwReadWeek(weekNum){
 
 // Auto-advance version: same schedule pattern as the fixed week but replaces
 // lesson content with cursor-based next lessons from check-off progress.
-// Two-tier cursor system:
-//   savedCursors provided → regeneration: use stored positions (idempotent)
-//   savedCursors null     → new week: compute from paceAutoCount (history-based)
+// excludeWeek: on regeneration, excludes this week's own tasks from cursor count
+//   so the cursor reflects only prior-week progress (prevents self-counting drift).
 // Returns {dayData, cursors} so generateWeek can store the snapshot.
-function gwReadWeekAutoAdvance(weekNum,savedCursors){
+function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek){
   const dayData=gwReadWeek(weekNum);
   if(!dayData) return null;
 
@@ -8458,9 +8460,10 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors){
     for(const sk of Object.keys(subjectSlots)){
       const dates=subjectSlots[sk];
       // Two-tier: use saved cursor if available, otherwise compute fresh
+      // On regeneration: exclude this week's own tasks so cursor doesn't drift
       const cursor=(savedCursors&&savedCursors[kid]&&savedCursors[kid][sk]!==undefined)
         ?savedCursors[kid][sk]
-        :computeSubjectCursor(kid,sk);
+        :computeSubjectCursor(kid,sk,excludeWeek);
       cursors[kid][sk]=cursor;
       const nextLessons=getNextLessonsFromCursor(kid,sk,cursor,dates.length);
       for(let i=0;i<dates.length;i++){
@@ -8485,9 +8488,11 @@ function generateWeek(config){
     // Two-tier cursor: detect regeneration vs new week
     const activeWK=localStorage.getItem("ha_active_wk")||WK;
     const isRegen=(weekLabel===activeWK);
-    // Regeneration: load saved cursor snapshot so assignments don't drift
-    const savedCursors=isRegen?(ld(weekLabel+"_cursors")||null):null;
-    const result=gwReadWeekAutoAdvance(weekNum,savedCursors);
+    // Regeneration: recompute cursor excluding this week's own checked tasks
+    // so the cursor reflects only progress from prior weeks (not self-counting).
+    // New week: compute normally (prior weeks are in archive, current week is old week).
+    const excludeWeek=isRegen?weekLabel:null;
+    const result=gwReadWeekAutoAdvance(weekNum,null,excludeWeek);
     if(!result) return {error:"No curriculum data found for Wk "+weekNum};
     dayData=result.dayData;
     weekCursors=result.cursors;
@@ -8757,8 +8762,8 @@ function gwCommit(){
       if(d.babysitter) db.ref(WK+"/babysitter").set(d.babysitter);
       db.ref(WK+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
     }
-    // Regeneration: only save cursor snapshot if none exists yet (backward compat)
-    if(gwCursors&&!ld(WK+"_cursors")){
+    // Regeneration: always save fresh cursor snapshot (overwrites stale values)
+    if(gwCursors){
       sv(WK+"_cursors",gwCursors);
       if(db) db.ref(WK+"/cursors").set(gwCursors);
     }
