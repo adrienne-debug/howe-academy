@@ -2516,6 +2516,7 @@ function renderHistory(el){
   h+='<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700">'+(weekData.week||WK).replace("week","Week ")+'</div>';
   h+='<div style="font-size:11px;opacity:0.6;margin-top:1px">Current week</div>';
   h+=histKidStatsRow(weekData.tasks, checked);
+  h+='<div style="text-align:right;margin-top:6px"><button onclick="printWeekReport()" style="padding:5px 12px;border-radius:8px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🖨 Report</button></div>';
   h+='</div>';
 
   // Slot Machine Points card
@@ -2667,7 +2668,8 @@ function renderHistory(el){
       h+='<div><div style="font-weight:700;font-size:14px">'+(aw.weekLabel||wkKey)+'</div>';
       h+='<div style="font-size:11px;opacity:0.6;margin-top:1px">Archived '+(aw.archivedAt||'')+'</div></div>';
       h+='<div style="text-align:right"><div style="font-size:18px;font-weight:700;color:#a5b4fc">'+pct+'%</div>';
-      h+='<div style="font-size:11px;opacity:0.7">'+totalDone+' / '+totalTasks+'</div></div></div>';
+      h+='<div style="font-size:11px;opacity:0.7">'+totalDone+' / '+totalTasks+'</div>';
+      h+='<button onclick="event.stopPropagation();printWeekReport(\''+wkKey+'\')" style="margin-top:4px;padding:3px 10px;border-radius:6px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);color:#fff;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🖨</button></div></div>';
       h+='<div id="arch_'+safeKey+'" style="display:none">';
       h+='<div style="background:var(--header);padding:10px 14px 14px;overflow:hidden">'+histKidStatsRow(awTasks,awChecked)+'</div>';
       // Archived week slot machine points
@@ -3070,6 +3072,69 @@ function printAttendance(onlyKid){
     '<p style="font-size:9pt;color:#666">NC Requirement: 9 months (~180 days/year) &nbsp;·&nbsp; Generated: '+nowTs()+'</p>'+
     '<hr>'+body+'</body></html>';
   const w=window.open("","_blank"); w.document.write(html); w.document.close(); w.onload=()=>w.print();
+}
+
+function printWeekReport(weekKey){
+  let tasks,chk,dates,label;
+  if(!weekKey||weekKey===WK){
+    tasks=weekData.tasks||[];chk=checked||{};dates={...DAY_DT};
+    label=(weekData.week||WK).replace("week","Week ");
+  } else {
+    const aw=archive[weekKey]; if(!aw)return;
+    tasks=aw.tasks||[];chk=aw.checked||{};dates=aw.dates||{};
+    label=(aw.weekLabel||weekKey).replace("week","Week ");
+  }
+  const kids=["lincoln","ellis","lucy","julian"];
+  let body='';
+  kids.forEach(k=>{
+    const kt=tasks.filter(t=>t.who===k&&!t.id.endsWith("_c"));
+    if(!kt.length)return;
+    const subjs={};
+    kt.forEach(t=>{
+      const title=t.title||"";
+      const dash=title.indexOf(" — ");
+      const prefix=dash>0?title.substring(0,dash).replace(/[^\x20-\x7E]/g,"").trim():"Other";
+      const detail=dash>0?title.substring(dash+3).trim():title.replace(/[^\x20-\x7E]/g,"").trim();
+      const isDone=!!(chk[t.id]||chk[t.id+"_c"]);
+      if(!subjs[prefix])subjs[prefix]={done:[],missed:[]};
+      subjs[prefix][isDone?"done":"missed"].push({detail,day:t.day||""});
+    });
+    const totalDone=kt.filter(t=>chk[t.id]||chk[t.id+"_c"]).length;
+    const pct=kt.length?Math.round(totalDone/kt.length*100):0;
+    const col=PACE_KCOL[k]||"#374151";
+    body+='<div style="page-break-inside:avoid;margin-bottom:16px">';
+    body+='<h2 style="color:'+col+';margin:16px 0 6px;border-bottom:2px solid '+col+';padding-bottom:4px">'+cap(k);
+    body+='<span style="float:right;font-size:11pt;font-weight:400;color:#555">'+totalDone+'/'+kt.length+' ('+pct+'%)</span></h2>';
+    Object.keys(subjs).sort().forEach(subj=>{
+      const s=subjs[subj];
+      body+='<div style="margin:4px 0 8px">';
+      body+='<div style="font-weight:700;font-size:10pt;color:#374151;padding:2px 0;border-bottom:1px solid #e5e7eb">'+subj;
+      body+='<span style="font-weight:400;color:#9ca3af;font-size:9pt"> — '+s.done.length+'/'+(s.done.length+s.missed.length)+'</span></div>';
+      s.done.forEach(t=>{
+        body+='<div style="font-size:9pt;color:#16a34a;padding:1px 0 1px 12px">&#10003; '+t.detail;
+        if(t.day)body+=' <span style="color:#9ca3af;font-size:8pt">('+cap(t.day).slice(0,3)+')</span>';
+        body+='</div>';
+      });
+      s.missed.forEach(t=>{
+        body+='<div style="font-size:9pt;color:#dc2626;padding:1px 0 1px 12px">&#10007; '+t.detail;
+        if(t.day)body+=' <span style="color:#9ca3af;font-size:8pt">('+cap(t.day).slice(0,3)+')</span>';
+        body+='</div>';
+      });
+      body+='</div>';
+    });
+    body+='</div>';
+  });
+  const dv=Object.values(dates).filter(Boolean).sort();
+  const dateStr=dv.length?dv[0]+' – '+dv[dv.length-1]:'';
+  const html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Howe Academy — '+label+' Report</title>'+
+    '<style>body{font-family:Arial,sans-serif;font-size:10pt;color:#222;max-width:680px;margin:0 auto;padding:24px}'+
+    'h1{font-size:16pt;margin-bottom:4px}h2{font-size:12pt;page-break-after:avoid}'+
+    '@media print{@page{size:portrait;margin:0.5in}}</style></head><body>'+
+    '<h1>Howe Academy — Weekly Completion Report</h1>'+
+    '<p style="font-size:10pt;color:#444;margin:2px 0"><strong>'+label+'</strong>'+(dateStr?' &middot; '+dateStr:'')+'</p>'+
+    '<p style="font-size:9pt;color:#888;margin:2px 0 10px">Generated '+nowTs()+'</p>'+
+    '<hr style="border:none;border-top:1px solid #ccc;margin:0 0 4px">'+body+'</body></html>';
+  const w=window.open("","_blank");w.document.write(html);w.document.close();w.onload=()=>w.print();
 }
 
 function addManualAttWeek(label){
@@ -4007,6 +4072,31 @@ const PACE_DEFAULT_SUBJECTS = {
   },
 };
 
+// Alt keywords for subjects whose task-title prefixes changed over time
+const PACE_ALT_KEYWORDS={
+  lincoln:{
+    conventions:["Conventions"],dictation:["Dictation"],written_expr:["Written Expression"],
+    mr_pages:["MR5 Math","MR6 Math"],singapore_l:["Singapore"],eggspress_l:["Eggspress"],
+    ttrs_l:["TTRS"],math_sprints:["Math Sprint"],aas:["AAS"],wordsmith:["Wordsmith"],
+    kumon:["Kumon"],lof:["Life of Fred"],ind_read:["Independent Reading"],
+  },
+  ellis:{
+    hwt:["HWT"],lang_smarts:["Language Smarts"],rosetta:["Rosetta Stone"],
+    ttrs_e:["TTRS"],nzk_e:["NZK"],
+  },
+  lucy:{
+    build_story:["Build Story"],fast_phon:["Fast Phonics"],mathseeds:["Mathseeds"],
+    nzk_l:["NZK","Night Zookeeper"],read_eggs:["Reading Eggs —"],
+  },
+};
+
+// Return all keywords (primary + alts) for a kid/subject
+function paceKeywords(kid,sk,paceSubj){
+  const primary=currKeyword(kid,sk,paceSubj);
+  const alts=((PACE_ALT_KEYWORDS[kid]||{})[sk])||[];
+  return primary?[primary,...alts]:alts.length?alts:[];
+}
+
 function planWeekNum(startStr){
   const ms=Date.now()-new Date(startStr).getTime();
   return Math.max(1, Math.floor(ms/(7*24*60*60*1000))+1);
@@ -4189,8 +4279,8 @@ function getNextLessons(kid,subjectKey,count){
   const seq=buildSubjectLessons(kid,subjectKey);
   if(!seq.length) return [];
   const paceSubj=((paceData.subjects||{})[kid]||{})[subjectKey];
-  const kw=currKeyword(kid,subjectKey,paceSubj);
-  const autoC=paceAutoCount(kid,kw);
+  const kws=paceKeywords(kid,subjectKey,paceSubj);
+  const autoC=paceAutoCount(kid,kws);
   const offset=(paceSubj&&paceSubj.offset)||0;
   const adjust=(paceSubj&&paceSubj.adjust)||0;
   const cursor=offset+autoC+adjust;
@@ -4286,35 +4376,34 @@ function effectiveDay(t){
   }
   return "carryover";
 }
-function paceAutoCount(kid,keyword){
-  if(!keyword) return 0;
-  const kw=keyword.toLowerCase().trim();
+function paceAutoCount(kid,keywords){
+  if(!keywords||!keywords.length) return 0;
+  const kws=(typeof keywords==="string"?[keywords]:keywords).map(k=>k.toLowerCase().trim());
   let count=0;
   weekData.tasks.filter(t=>t.who===kid&&!t.id.endsWith("_c")).forEach(t=>{
-    if(chainDone(t.id,checked,weekData.tasks)&&t.title.toLowerCase().includes(kw))
-      count+=parseTaskCount(t.title);
+    if(chainDone(t.id,checked,weekData.tasks)&&kws.some(kw=>(t.title||"").toLowerCase().includes(kw)))
+      count+=1;
   });
   Object.values(archive).forEach(aw=>{
     const awChecked=aw.checked||{};
     const awTasks=aw.tasks||[];
     awTasks.filter(t=>t.who===kid&&!t.id.endsWith("_c")).forEach(t=>{
-      if(chainDone(t.id,awChecked,awTasks)&&t.title.toLowerCase().includes(kw))
-        count+=parseTaskCount(t.title);
+      if(chainDone(t.id,awChecked,awTasks)&&kws.some(kw=>(t.title||"").toLowerCase().includes(kw)))
+        count+=1;
     });
   });
   return count;
 }
 
-function paceHasPendingCascade(kid,keyword){
-  if(!keyword) return false;
-  const kw=keyword.toLowerCase();
-  // Cascade tasks that were themselves re-cascaded to another day
+function paceHasPendingCascade(kid,keywords){
+  if(!keywords||!keywords.length) return false;
+  const kws=(typeof keywords==="string"?[keywords]:keywords).map(k=>k.toLowerCase().trim());
   const furtherCascaded=new Set(weekData.tasks.filter(t=>t.id.endsWith("_c")).map(t=>t.id.replace(/_c$/,"")));
   return weekData.tasks.some(t=>
     t.who===kid&&t.id.endsWith("_c")&&
     !checked[t.id]&&!checked[t.id+"_c"]&&
     !furtherCascaded.has(t.id)&&
-    t.title.toLowerCase().includes(kw)
+    kws.some(kw=>(t.title||"").toLowerCase().includes(kw))
   );
 }
 
@@ -4353,7 +4442,7 @@ function renderPace(el){
   const plans=hasSavedPlans?paceData.plans:PACE_DEFAULT_PLANS;
 
   // Remove stale/duplicate keys seeded during early testing
-  const PACE_STALE_KEYS={ellis:["math_reason"]};
+  const PACE_STALE_KEYS={ellis:["mathematical_reasoning_level_d_1778793604455"]};
   Object.entries(PACE_STALE_KEYS).forEach(([k,keys])=>{
     const existing=(paceData.subjects&&paceData.subjects[k])||{};
     keys.forEach(key=>{ if(existing[key]) deletePaceSubject(k,key); });
@@ -4485,10 +4574,10 @@ function renderPace(el){
       const cwn=currWeekNum();
       keys.forEach(sk=>{
         const s=kidSubjs[sk];
-        const kw=currKeyword(k,sk,s);
-        const cur=(s.offset||0)+paceAutoCount(k,kw)+(s.adjust||0);
+        const kws=paceKeywords(k,sk,s);
+        const cur=(s.offset||0)+paceAutoCount(k,kws)+(s.adjust||0);
         const exp=currExpected(k,sk,cwn);
-        const st=paceHasPendingCascade(k,kw)?"behind":paceStatus(cur,s.total||0,s.startWeek||1,weekNum,totalWeeks,exp);
+        const st=paceHasPendingCascade(k,kws)?"behind":paceStatus(cur,s.total||0,s.startWeek||1,weekNum,totalWeeks,exp);
         if(st==="ahead")aheadN++; else if(st==="behind")behindN++; else if(st!=="not-started")onN++;
       });
       const summaryStr=keys.length?(behindN?behindN+' behind':aheadN?aheadN+' ahead':'All on track'):'No subjects yet';
@@ -4508,15 +4597,17 @@ function renderPace(el){
 
         keys.forEach(sk=>{
           const s=kidSubjs[sk];
-          const kw=currKeyword(k,sk,s);
-          const autoC=paceAutoCount(k,kw);
+          const kws=paceKeywords(k,sk,s);
+          const autoC=paceAutoCount(k,kws);
           const offset=s.offset||0,adjust=s.adjust||0,sw=s.startWeek||1;
           const cur=offset+autoC+adjust,tot=s.total||1;
           const pct=Math.min(100,Math.round(cur/tot*100));
           const exp=currExpected(k,sk,cwn);
-          const status=paceHasPendingCascade(k,kw)?"behind":paceStatus(cur,tot,sw,weekNum,totalWeeks,exp);
+          const status=paceHasPendingCascade(k,kws)?"behind":paceStatus(cur,tot,sw,weekNum,totalWeeks,exp);
           const barCol=status==="ahead"?"#16a34a":status==="behind"?"#ef4444":status==="not-started"?"#d1d5db":"#3b82f6";
-          const expLabel=exp!==null?' &middot; expected: '+exp+' by Wk '+cwn:'';
+          const expPct=exp!==null?Math.min(100,Math.round(exp/tot*100)):null;
+          const diff=exp!==null?cur-exp:null;
+          const expLabel=exp!==null?' &middot; '+(diff>0?diff+' ahead of expected':diff<0?Math.abs(diff)+' behind expected':'on pace for Wk '+cwn):'';
 
           // Next Up from curriculum auto-advance
           const _nextLesson=getNextLessonLabel(k,sk);
@@ -4525,7 +4616,7 @@ function renderPace(el){
             '<div class="pace-subj-hdr">'+
             '<span class="pace-subj-name">'+s.label+'</span>'+
             '<span class="pace-subj-nums">'+cur+' / '+tot+' done</span></div>'+
-            '<div class="pace-bar"><div class="pace-bar-fill" style="width:'+pct+'%;background:'+barCol+'"></div></div>'+
+            '<div class="pace-bar" style="position:relative"><div class="pace-bar-fill" style="width:'+pct+'%;background:'+barCol+'"></div>'+(expPct!==null?'<div style="position:absolute;left:'+expPct+'%;top:-3px;width:2px;height:calc(100% + 6px);background:#374151;border-radius:1px;pointer-events:none" title="Expected: '+exp+'/'+tot+'"></div>':'')+'</div>'+
             '<div class="pace-status-row">'+
             '<span class="pace-badge '+status+'">'+paceStatusLabel(status)+'</span>'+
             '<span class="pace-pct">'+pct+'% complete'+expLabel+(sw>1&&weekNum<sw?' &middot; starts wk '+sw:'')+'</span></div>';
