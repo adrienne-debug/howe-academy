@@ -3302,7 +3302,7 @@ function renderSitter(el){
   const SN=SITTER_NAME;
   const mag=weekData.babysitter;
   if(!mag){ el.innerHTML='<div style="padding:24px;text-align:center;color:var(--muted)"><div style="font-size:48px">🌸</div><div style="margin-top:8px;font-weight:600">No '+SN+' days this week</div></div>'; return; }
-  const withKids=mag.withSitter||[];
+  const withKids=mag.withSitter||(rulesData&&rulesData.withSitter)||[];
   const mt=weekData.tasks.filter(t=>mag.days.includes(t.day)&&t.mom!=="required"&&!withKids.includes(t.who));
   const bk={};mt.forEach(t=>{if(!bk[t.who])bk[t.who]=[];bk[t.who].push(t);});
   let h='<div class="mag-section">'+
@@ -3829,7 +3829,7 @@ function cascadeIntraWeek(){
   const mag=weekData.babysitter||{};
   const isSitterToday=mag.days&&mag.days.includes(today);
   const sitterReturn=isSitterToday?toMin(mag["mom_return_"+today]||mag.mom_return||"2:00 PM"):0;
-  const sitterKids=mag.withSitter||[];
+  const sitterKids=mag.withSitter||(rulesData&&rulesData.withSitter)||[];
   weekData.tasks.filter(t=>t.cascadedFrom&&t.day===today&&!checked[t.id]).forEach(t=>{
     // withSitter kids: ALL tasks after return. Other kids: only mom-required after return.
     if(isSitterToday&&cursor<sitterReturn){
@@ -6393,7 +6393,7 @@ function runDisplacement(){
     var subj=taskSubject(t),mx=maxFor(subj);
     if(mx<999){var ct=0;working.forEach(function(w){if(w.day===d&&taskSubject(w)===subj&&w.who===t.who)ct++;});if(ct>=mx)return false;}
     var bab=null;bos.forEach(function(bo){if(bo.day===d&&bo.type==="babysitter")bab=bo;});
-    if(bab&&(bab.kids||[]).indexOf(t.who)>=0){if(t.mom==="required")return false;if(t.who==="lucy")return false;}
+    if(bab&&(bab.kids||[]).indexOf(t.who)>=0){if(t.mom==="required")return false;var _ws=(weekData.babysitter&&weekData.babysitter.withSitter)||(rulesData&&rulesData.withSitter)||[];if(_ws.indexOf(t.who)>=0)return false;}
     return true;
   }
   function _dayStart(d){var ov=sdOv[d];return toMin((ov&&ov.start)||sd.defaultStart||"10:00 AM");}
@@ -6732,6 +6732,14 @@ function rulesUpdateSitterName(val){
   if(db) db.ref("settings/sitterName").set(SITTER_NAME);
   renderAll();
 }
+function rulesToggleWithSitter(kid){
+  const r=JSON.parse(JSON.stringify(rulesData||{}));
+  if(!r.withSitter) r.withSitter=[];
+  const i=r.withSitter.indexOf(kid);
+  if(i>=0) r.withSitter.splice(i,1); else r.withSitter.push(kid);
+  saveRules(r);
+  renderAll();
+}
 
 function rulesUpdateTime(field,val){
   const r=JSON.parse(JSON.stringify(rulesData));
@@ -6836,6 +6844,15 @@ function renderRules(el,headerHtml){
   h+='<div class="rules-card-body">';
   h+='<div class="rules-row"><div class="rules-label">Name</div><input type="text" class="rules-time" style="width:140px;font-size:13px" value="'+SITTER_NAME+'" autocomplete="off" data-lpignore="true" onchange="rulesUpdateSitterName(this.value)"></div>';
   h+='<div style="font-size:11px;color:var(--muted);padding:4px 0">This name appears everywhere — tab, schedule, blockouts. Set days &amp; times in Plan Next Week.</div>';
+  const ws=(r.withSitter||[]);
+  h+='<div class="rules-section-lbl" style="margin-top:10px">With '+SITTER_NAME+' (no school during window)</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;padding:6px 0">';
+  ["lincoln","ellis","lucy"].forEach(k=>{
+    const on=ws.includes(k);
+    h+='<div class="pnw-chip'+(on?" on":"")+'" onclick="rulesToggleWithSitter(\''+k+'\')">'+cap(k)+'</div>';
+  });
+  h+='</div>';
+  h+='<div style="font-size:11px;color:var(--muted);padding:2px 0">Kids checked here have zero school tasks during babysitter time. Applies to current + future weeks.</div>';
   h+='</div></div>';
 
   // 1. SCHOOL DAY SETTINGS
@@ -7512,7 +7529,7 @@ function openPlanNextWeek(weekNum){
 
 function pnwStartWizard(weekOverride){
   const nw=weekOverride||currWeekNum()+1;
-  gwConfig={weekNum:String(nw),babysitter:{},withSitter:[],skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:false,redistribute:[],autoAdvance:true};
+  gwConfig={weekNum:String(nw),babysitter:{},withSitter:(rulesData&&rulesData.withSitter)||[],skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:false,redistribute:[],autoAdvance:true};
   pnwStep=0; pnwResult=null; pnwDropped=null; pnwConfigReady=false; pnwOpen=true;
   renderPlanNextWeek();
   if(db){
@@ -7522,7 +7539,7 @@ function pnwStartWizard(weekOverride){
         const rawMag=v.babysitter||v.maggie||{};
         const normMag={};
         for(const[k,val] of Object.entries(rawMag)) normMag[k]=gwNormSitter(val);
-        gwConfig={weekNum:v.weekNum||String(nw),babysitter:normMag,withSitter:v.withSitter||[],skipDays:v.skipDays||[],lateStart:v.lateStart||{},carSchool:v.carSchool||{},theater:!!v.theater,saturday:!!v.saturday,redistribute:v.redistribute||[],autoAdvance:true};
+        gwConfig={weekNum:v.weekNum||String(nw),babysitter:normMag,withSitter:v.withSitter||(rulesData&&rulesData.withSitter)||[],skipDays:v.skipDays||[],lateStart:v.lateStart||{},carSchool:v.carSchool||{},theater:!!v.theater,saturday:!!v.saturday,redistribute:v.redistribute||[],autoAdvance:true};
       }
       pnwConfigReady=true;
       renderPlanNextWeek();
