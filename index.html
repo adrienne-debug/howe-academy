@@ -5040,7 +5040,8 @@ const MAST_JULIAN_CURRICULUM={
 };
 function mastJulianSettings(){
   const s=masteryData.julian_settings||{};
-  return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,auto_pull:s.auto_pull!==false};
+  const defaultLadder=["every_other_day","weekly","bi_weekly","monthly","graduated"];
+  return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,auto_pull:s.auto_pull!==false,ladder:s.ladder||defaultLadder};
 }
 function mastCurriculumStatus(){
   let items=masteryData.julian||[];
@@ -5173,8 +5174,7 @@ function mastSaveResults(){
   const pn=mastGetPrintNum();
   const due=mastDueItems(masteryKid,pn);
   const TIER_LADDER_STD=["daily","every_other_day","every_third_day","weekly","bi_weekly","monthly","learned","graduated"];
-  const TIER_LADDER_JULIAN=["every_other_day","weekly","bi_weekly","monthly","graduated"];
-  const TIER_LADDER=masteryKid==="julian"?TIER_LADDER_JULIAN:TIER_LADDER_STD;
+  const TIER_LADDER=masteryKid==="julian"?mastJulianSettings().ladder:TIER_LADDER_STD;
 
   // Get all items for this kid
   let items=masteryData[masteryKid];
@@ -5326,6 +5326,26 @@ function mastPullItem(cat,name){
   masteryData.julian=items;
   if(db) db.ref("mastery/julian").set(items);
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  _mastRe();
+}
+function mastAdminToggleTier(tier){
+  if(!mastAdminLocal) mastAdminInit();
+  const ladder=mastAdminLocal.ladder||["every_other_day","weekly","bi_weekly","monthly","graduated"];
+  const allTiers=["every_other_day","every_third_day","weekly","bi_weekly","monthly","learned","graduated"];
+  if(tier==="graduated") return;
+  const idx=ladder.indexOf(tier);
+  if(idx!==-1){ ladder.splice(idx,1); }
+  else {
+    // Insert in correct order relative to allTiers
+    const pos=allTiers.indexOf(tier);
+    let insertAt=ladder.length-1; // before graduated
+    for(let i=0;i<ladder.length;i++){
+      if(allTiers.indexOf(ladder[i])>pos){ insertAt=i; break; }
+    }
+    ladder.splice(insertAt,0,tier);
+  }
+  mastAdminLocal.ladder=ladder;
+  mastAdminDirty=true;
   _mastRe();
 }
 function mastAdminCheckPin(val){
@@ -5482,10 +5502,10 @@ function mastEditSave(){
   it.tier=mastEditTier;
 
   // If dots hit threshold and still intro, promote
-  const _jset=masteryKid==="julian"?mastJulianSettings():{intro_dots:5};
+  const _jset=masteryKid==="julian"?mastJulianSettings():{intro_dots:5,ladder:["every_other_day"]};
   if(it.status==="introduction"&&mastEditDots>=_jset.intro_dots){
     it.status="active";
-    it.tier="every_other_day";
+    it.tier=_jset.ladder[0]||"every_other_day";
     it.cycle=1;
     it.tally_dots=_jset.intro_dots;
   }
@@ -5593,7 +5613,7 @@ function mastSlideShown(id){
 
   if(dots>=jset.intro_dots){
     item.status="active";
-    item.tier="every_other_day";
+    item.tier=jset.ladder[0]||"every_other_day";
     item.cycle=1;
     item.consecutive_correct=0;
     item.tally_dots=jset.intro_dots;
@@ -5767,6 +5787,43 @@ function renderMastAdmin(){
   h+='<div class="mast-admin-row">';
   h+='<div><div class="mast-admin-label">Auto-Pull from Curriculum</div><div class="mast-admin-desc">Automatically add next item when an intro slot opens</div></div>';
   h+='<button class="mast-admin-toggle'+(s.auto_pull?" on":"")+'" onclick="mastAdminAdj(\'auto_pull\',0)"></button>';
+  h+='</div>';
+
+  // Ladder configuration
+  h+='<div class="mast-admin-row" style="flex-direction:column;align-items:stretch">';
+  h+='<div style="margin-bottom:8px"><div class="mast-admin-label">Ladder Tiers</div><div class="mast-admin-desc">The progression after introduction. Drag to reorder, toggle to include/exclude.</div></div>';
+
+  const allTiers=["every_other_day","every_third_day","weekly","bi_weekly","monthly","learned","graduated"];
+  const ladder=s.ladder||["every_other_day","weekly","bi_weekly","monthly","graduated"];
+  const tierInt={every_other_day:"2 days",every_third_day:"3 days",weekly:"7 days",bi_weekly:"14 days",monthly:"28 days",learned:"60 days",graduated:"Done"};
+
+  // Show current ladder order
+  h+='<div style="margin-bottom:8px">';
+  h+='<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Current ladder (intro \u{2192} graduated)</div>';
+  h+='<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center">';
+  h+='<span style="font-size:11px;font-weight:700;color:#c45e1a;padding:4px 8px;background:#fff7ed;border-radius:6px;border:1px solid #fed7aa">Introduction</span>';
+  h+='<span style="color:var(--muted);font-size:11px">\u{2192}</span>';
+  ladder.forEach((t,i)=>{
+    const col=MAST_TIER_COL[t]||"#666";
+    h+='<span style="font-size:11px;font-weight:700;color:'+col+';padding:4px 8px;background:#fff;border-radius:6px;border:1.5px solid '+col+'">'+(MAST_TIER_LBL[t]||t)+'</span>';
+    if(i<ladder.length-1) h+='<span style="color:var(--muted);font-size:11px">\u{2192}</span>';
+  });
+  h+='</div></div>';
+
+  // Toggle each tier
+  h+='<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;margin-top:8px">Include tiers</div>';
+  allTiers.forEach(t=>{
+    const active=ladder.includes(t);
+    const col=MAST_TIER_COL[t]||"#666";
+    const isGrad=t==="graduated";
+    h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f3f1ee">';
+    h+='<button class="mast-admin-toggle'+(active?" on":"")+'"'+(isGrad?' disabled title="Graduated is always the final tier"':' onclick="mastAdminToggleTier(\''+t+'\')"')+' style="width:36px;height:20px;flex-shrink:0'+(isGrad?';opacity:0.5':'')+'">';
+    h+='</button>';
+    h+='<span style="width:10px;height:10px;border-radius:50%;background:'+col+';flex-shrink:0"></span>';
+    h+='<span style="font-size:12px;font-weight:600">'+(MAST_TIER_LBL[t]||t)+'</span>';
+    h+='<span style="font-size:10px;color:var(--muted)">'+tierInt[t]+'</span>';
+    h+='</div>';
+  });
   h+='</div>';
 
   h+='<div style="display:flex;align-items:center;gap:10px;margin-top:12px">';
@@ -6427,7 +6484,7 @@ function _renderMasteryInner(el){
 
     // ── EDIT LIST (PIN-protected) ──
     if(mastListEditMode){
-      const TIERS=["daily","every_other_day","weekly","bi_weekly","monthly","graduated"];
+      const TIERS=masteryKid==="julian"?["daily"].concat(mastJulianSettings().ladder):["daily","every_other_day","weekly","bi_weekly","monthly","graduated"];
       h+='<div style="margin:14px 0;border:2px solid #6366f1;border-radius:14px;overflow:hidden">';
       h+='<div style="background:#6366f1;color:#fff;padding:10px 14px;display:flex;align-items:center;justify-content:space-between">';
       h+='<span style="font-family:\'Fraunces\',serif;font-size:14px;font-weight:700">\u{270F}\u{FE0F} Edit List ('+items.length+' items)</span>';
@@ -6528,7 +6585,7 @@ function _renderMasteryInner(el){
 
         // Edit panel for this card
         if(mastEditId===i.id){
-          const JTIERS=["every_other_day","weekly","bi_weekly","monthly","graduated"];
+          const JTIERS=mastJulianSettings().ladder;
           h+='<div class="mast-edit-card" style="grid-column:1/-1">';
           h+='<div class="mast-edit-hdr"><span class="mast-edit-title">'+vis+' '+i.prompt+'</span>';
           h+='<button class="mast-add-close" onclick="mastEditClose()">\u{2715}</button></div>';
