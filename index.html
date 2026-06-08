@@ -145,6 +145,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .slot-spin-btn{padding:12px 40px;border-radius:14px;background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff;border:none;font-size:16px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif;letter-spacing:0.5px;transition:transform 0.1s}
 .slot-spin-btn:active{transform:scale(0.95)}
 .slot-spin-btn:disabled{opacity:0.5;cursor:default}
+@keyframes spinPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
 .slot-close-btn{margin-top:12px;padding:8px 20px;border-radius:10px;background:#374151;color:#9ca3af;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif}
 .slot-points-display{position:absolute;top:8px;right:12px;font-size:11px;font-weight:700;color:#fbbf24}
 
@@ -723,7 +724,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 <div id="sched-subtabs" style="display:none"></div>
 <div id="day-tabs"></div>
 <div id="kid-filter"></div>
-<div id="mom-pin-bar" style="display:none;background:#fff;border-bottom:1px solid var(--border);padding:10px 16px;text-align:center"></div>
 
 <!-- SKYLIGHT — top of schedule content -->
 <div id="skylight-panel">
@@ -812,7 +812,6 @@ const SL_STIM  = {morning:"10:00 AM – 1:00 PM",afternoon:"2:00 – 4:15 PM",ch
 let db=null, weekData={week:WK,tasks:[],babysitter:null};
 let SITTER_NAME="Maggie"; // Editable via Admin — display name for babysitter
 let momPinUnlocked=false;
-let momModeActive=false;
 let checked={}, slState={}, supplies={}, histState={};
 const _todayDay=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][new Date().getDay()];
 let tab="schedule", day=["monday","tuesday","wednesday","thursday","friday"].includes(_todayDay)?_todayDay:"monday", kid="all", supDay="all";
@@ -840,9 +839,10 @@ let mastManualT=0;
 let mastManualS=0;
 let histTab="log"; // "log" | "attendance"
 let attEditUnlocked=false;
-let APP_PIN=localStorage.getItem("ha_app_pin")||"0329";
+const ATT_PIN="0329";
 let attOverrides={}; // {wkKey:{day:{kid:true/false}}}
 let coExclusions={}; // {wkKey:{taskId:true}} — carry-overs the user has explicitly unchecked
+let pendingSpins={}; // {taskId: {kid, day}} — earned but not yet spun
 let manualUnchecks=new Set(); // task IDs explicitly unchecked this session — runCascade must not override
 
 // ── RULES STATE ──────────────────────────────────────────────────
@@ -864,7 +864,7 @@ function getRules(){ return rulesData||null; }
 function ampmTo24(s){if(!s)return"";const m=s.match(/(\d+):(\d+)\s*(AM|PM)/i);if(!m)return s;let h=parseInt(m[1]);const mn=m[2];const ap=m[3].toUpperCase();if(ap==="PM"&&h!==12)h+=12;if(ap==="AM"&&h===12)h=0;return String(h).padStart(2,"0")+":"+mn;}
 function to12h(s){if(!s)return"";const p=s.split(":");if(p.length!==2)return s;let h=parseInt(p[0]);const mn=p[1];const ap=h>=12?"PM":"AM";if(h===0)h=12;else if(h>12)h-=12;return h+":"+mn+" "+ap;}
 let schedShowAdmin=false;
-let adminSubTab="settings";
+let adminSubTab="rules";
 let schedShowHistory=false;
 let schedShowPace=false;
 let gwConfig={weekNum:"",babysitter:{},withSitter:[],skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:false,redistribute:[],autoAdvance:true};
@@ -1000,6 +1000,10 @@ function attachWeekListeners(wk){
   r11.on("value",s=>{ if(s.val()) sv(wk+"_day_bonus_used",s.val()); });
   fbWeekRefs.push(r11);
 
+  const r13=db.ref(wk+"/pending_spins");
+  r13.on("value",s=>{ pendingSpins=s.val()||{}; sv(wk+"_pending_spins",pendingSpins); renderAll(); });
+  fbWeekRefs.push(r13);
+
   const r12=db.ref(wk+"/cursors");
   r12.on("value",s=>{ if(s.val()) sv(wk+"_cursors",s.val()); });
   fbWeekRefs.push(r12);
@@ -1044,9 +1048,6 @@ function initFb() {
     db.ref("settings/sitterName").on("value",s=>{
       if(s.val()){ SITTER_NAME=s.val(); sv("ha_sitter_name",SITTER_NAME); }
     });
-    db.ref("settings/pin").on("value",s=>{
-      if(s.val()){ APP_PIN=s.val(); localStorage.setItem("ha_app_pin",s.val()); }
-    });
     db.ref("act_favs").on("value",s=>{
       if(s.val()) actFavs=s.val();
       if(tab==="activities") renderActCards();
@@ -1076,7 +1077,7 @@ function initFb() {
     });
     db.ref("config/rules").on("value",s=>{
       rulesData=s.val()||null;
-      if(tab==="schedule"&&schedShowAdmin&&(adminSubTab==="settings"||adminSubTab==="rules")){renderAll();}
+      if(tab==="rules"){const el=document.getElementById("content");if(el)renderRules(el);}
     });
     db.ref("mastery").on("value",s=>{
       const v=s.val()||{};
@@ -1120,6 +1121,7 @@ function boot() {
   try{ const md=localStorage.getItem("ha_mastery"); if(md) masteryData=JSON.parse(md); }catch(e){}
   try{ const ao=localStorage.getItem("ha_att_overrides"); if(ao) attOverrides=JSON.parse(ao); }catch(e){}
   try{ const ce=localStorage.getItem("ha_co_excl"); if(ce) coExclusions=JSON.parse(ce); }catch(e){}
+  pendingSpins=ld(WK+"_pending_spins")||{};
 }
 
 // ── WEEK META ─────────────────────────────────────────────────────
@@ -1149,9 +1151,7 @@ function getTodayDayName(){
 function isScheduleUnlocked(kidFilter, viewDay){
   // Julian has no school tasks — never locked
   if(kidFilter === "julian") return true;
-  // Mom mode bypass — unlocks all kids
-  if(momModeActive) return true;
-  // Mom PIN bypass (legacy)
+  // Mom PIN bypass
   if(kidFilter === "mom" && momPinUnlocked) return true;
 
   // Check if tasks are loaded at all — if tasks array is non-empty but none match this day, unlock
@@ -1177,10 +1177,8 @@ function isScheduleUnlocked(kidFilter, viewDay){
 function checkMomPin(val){
   if(val.length < 4) return;
   const err = document.getElementById("mom-pin-err");
-  if(val === APP_PIN){
+  if(val === "0329"){
     momPinUnlocked = true;
-    momModeActive = true;
-    kid = "all";
     renderAll();
   } else {
     if(err) err.textContent = "Incorrect PIN";
@@ -1221,7 +1219,7 @@ function renderSkylight(){
   const gridEl=document.getElementById("sl-grid");
   const indEl=document.getElementById("sl-individual");
 
-  if(kid==="mom"||momModeActive||tab!=="schedule"||schedShowAdmin||schedShowHistory||schedShowPace){ panel.style.display="none"; return; }
+  if(kid==="mom"||tab!=="schedule"||schedShowAdmin||schedShowHistory||schedShowPace){ panel.style.display="none"; return; }
   panel.style.display="block";
 
   // Alert
@@ -1351,41 +1349,10 @@ function dayPct(d){
 function renderKidFilter(){
   document.getElementById("kid-filter").innerHTML=
     ["all","lincoln","ellis","lucy","julian","mom"].map(k=>{
-      const isActive = k===kid || (k==="mom" && momModeActive);
-      return '<button class="kid-btn'+(isActive?" active":"")+'" data-kid="'+k+'" onclick="selKid(\''+k+'\')">'+
-        (k==="mom" && momModeActive ? "✓ Mom" : cap(k))+'</button>';
+      return '<button class="kid-btn'+(k===kid?" active":"")+'" data-kid="'+k+'" onclick="selKid(\''+k+'\')">'+cap(k)+'</button>';
     }).join("");
-  // Mom PIN bar — show near top when mom selected but not yet unlocked
-  const pinBar=document.getElementById("mom-pin-bar");
-  if(pinBar){
-    if(kid==="mom" && !momModeActive){
-      pinBar.style.display="block";
-      pinBar.innerHTML='<div style="font-size:13px;font-weight:700;color:#b5394a;margin-bottom:6px">Enter Admin Code</div>'+
-        '<input id="mom-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="off" '+
-        'style="width:100px;text-align:center;font-size:20px;letter-spacing:6px;padding:8px 10px;border:2px solid var(--border);border-radius:8px;font-family:monospace" '+
-        'oninput="checkMomPin(this.value)"/>'+
-        '<div id="mom-pin-err" style="font-size:11px;color:#b5394a;margin-top:4px;min-height:14px"></div>';
-      setTimeout(()=>{const i=document.getElementById("mom-pin-input");if(i)i.focus();},50);
-    } else {
-      pinBar.style.display="none";
-    }
-  }
 }
-function selKid(k){
-  if(k==="mom"){
-    if(momModeActive){
-      // Click Mom again to exit mom mode
-      momModeActive=false; momPinUnlocked=false; kid="all"; schedShowAdmin=false; renderAll();
-    } else {
-      // Enter mom mode — show PIN prompt
-      kid="mom"; schedShowAdmin=false; renderAll();
-    }
-    return;
-  }
-  // If mom mode is active, keep it active when switching kids
-  if(!momModeActive) momPinUnlocked=false;
-  kid=k; schedShowAdmin=false; renderAll();
-}
+function selKid(k){ if(k !== "mom") momPinUnlocked=false; kid=k; schedShowAdmin=false; renderAll(); }
 
 // ── WEEK STRIP ────────────────────────────────────────────────────
 function renderWeekStrip(){
@@ -1553,7 +1520,8 @@ function showPaceToast(taskId){
     // Mark as spun immediately so uncheck+recheck won't offer again
     if(spinType==="day_bonus") markDayBonus(t.who, taskDay);
     else markSpun(taskId);
-    el.innerHTML=msg+' <button class="spin-btn" onclick="openSlotMachine()">🎰 Spin!</button>';
+    addPendingSpin(taskId, t.who, taskDay);
+    el.innerHTML=msg+' <button class="spin-btn" onclick="openSlotMachine(\''+taskId+'\')">🎰 Spin!</button>';
   } else {
     el.textContent=msg;
   }
@@ -1599,6 +1567,17 @@ function markDayBonus(kid,d){
   if(db) db.ref(WK+"/day_bonus_used").set(used);
 }
 
+function addPendingSpin(taskId,kid,d){
+  pendingSpins[taskId]={kid:kid,day:d};
+  sv(WK+"_pending_spins",pendingSpins);
+  if(db) db.ref(WK+"/pending_spins").set(pendingSpins);
+}
+function claimPendingSpin(taskId){
+  delete pendingSpins[taskId];
+  sv(WK+"_pending_spins",pendingSpins);
+  if(db) db.ref(WK+"/pending_spins").set(pendingSpins);
+}
+
 // Points: stored per kid per day
 function getKidPoints(k){
   const pts=ld(WK+"_slot_points")||{};
@@ -1620,6 +1599,7 @@ function addKidPoints(k,pts,d){
 }
 
 let slotSpinDay=null;
+let slotPendingTaskId=null;
 let ptsEditUnlocked=false;
 function promptPtsPin(){
   const w=document.getElementById("pts-pin-wrap"); if(!w)return;
@@ -1628,7 +1608,7 @@ function promptPtsPin(){
 }
 function checkPtsPin(val){
   if(val.length<4)return;
-  if(val===APP_PIN){
+  if(val==="0329"){
     ptsEditUnlocked=true; renderAll();
   } else {
     const err=document.getElementById("pts-pin-err");
@@ -1646,9 +1626,14 @@ function adjPts(kid,d,amt){
   if(db) db.ref(WK+"/slot_points").set(all);
   renderAll();
 }
-function openSlotMachine(){
+function openSlotMachine(taskId){
   if(paceToastTimer) clearTimeout(paceToastTimer);
   document.getElementById("pace-toast").classList.remove("show");
+  if(taskId&&pendingSpins[taskId]){
+    slotKid=pendingSpins[taskId].kid;
+    slotSpinDay=pendingSpins[taskId].day;
+  }
+  slotPendingTaskId=taskId||null;
   const k=slotKid||"lincoln";
   const todayPts=getKidDayPoints(k,slotSpinDay||day);
   const weekPts=getKidPoints(k);
@@ -1714,6 +1699,7 @@ function spinSlots(){
     }
     msgEl.textContent=outcome.msg;
     btn.textContent="Done!";
+    if(slotPendingTaskId){ claimPendingSpin(slotPendingTaskId); slotPendingTaskId=null; }
   },totalTime);
 }
 
@@ -1721,7 +1707,7 @@ function spinSlots(){
 function checkAdminPin(val,errId){
   if(val.length<4) return;
   const err=document.getElementById(errId);
-  if(val===APP_PIN){
+  if(val==="0329"){
     adminPinUnlocked=true;
     renderAll();
   } else {
@@ -1731,39 +1717,6 @@ function checkAdminPin(val,errId){
     setTimeout(()=>{if(err)err.textContent="";if(inp)inp.style.borderColor="var(--border)";},1500);
   }
 }
-function renderSettings(el,ah){
-  if(!el){el=document.getElementById("content");if(!el)return;}
-  const o=id=>rulesOpen[id]?" open":"";
-  let pinHtml=(ah||'');
-  pinHtml+='<div class="rules-wrap">';
-  pinHtml+='<div class="rules-hdr">Change PIN</div>';
-  pinHtml+='<div class="rules-sub">This PIN is used for Mom mode, Admin, Blockouts, Points, and all locked areas.</div>';
-  pinHtml+='<div class="rules-card'+o("pin")+'">';
-  pinHtml+='<div class="rules-card-hdr" onclick="rulesToggleCard(\'pin\')">';
-  pinHtml+='<div class="rules-card-title"><span>&#128272;</span> PIN Settings</div>';
-  pinHtml+='<div class="rules-card-arrow">&#9654;</div></div>';
-  pinHtml+='<div class="rules-card-body">';
-  pinHtml+='<div class="rules-row"><div class="rules-label">Current PIN</div><div style="font-size:18px;font-weight:700;letter-spacing:6px;font-family:monospace">'+APP_PIN+'</div></div>';
-  pinHtml+='<div class="rules-row"><div class="rules-label">New PIN</div><input id="new-pin-input" type="text" inputmode="numeric" maxlength="4" placeholder="4 digits" class="rules-time" style="width:100px;text-align:center;font-size:16px;letter-spacing:6px;font-family:monospace"/></div>';
-  pinHtml+='<div style="padding:8px 0"><button onclick="saveNewPin()" style="padding:6px 16px;border-radius:8px;border:none;background:#111827;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save PIN</button>'+
-    '<span id="pin-save-msg" style="font-size:12px;margin-left:10px"></span></div>';
-  pinHtml+='</div></div></div>';
-  renderRules(el, pinHtml);
-}
-function saveNewPin(){
-  const inp=document.getElementById("new-pin-input");
-  const msg=document.getElementById("pin-save-msg");
-  if(!inp||!msg) return;
-  const val=inp.value.trim();
-  if(!/^\d{4}$/.test(val)){ msg.style.color="#b5394a"; msg.textContent="PIN must be exactly 4 digits."; return; }
-  APP_PIN=val;
-  localStorage.setItem("ha_app_pin",val);
-  if(db) db.ref("settings/pin").set(val);
-  msg.style.color="#16a34a"; msg.textContent="PIN updated!";
-  inp.value="";
-  setTimeout(()=>{ renderAll(); },800);
-}
-
 function toggleSchedAdmin(){ schedShowAdmin=!schedShowAdmin; schedShowHistory=false; schedShowPace=false; renderAll(); }
 function toggleSchedHistory(){ schedShowHistory=!schedShowHistory; schedShowAdmin=false; schedShowPace=false; renderAll(); }
 function toggleSchedPace(){ schedShowPace=!schedShowPace; schedShowAdmin=false; schedShowHistory=false; renderAll(); }
@@ -1785,13 +1738,12 @@ function renderSchedule(el){
       return;
     }
     let ah='<div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:12px">';
-    ["settings","generate","curriculum"].forEach(s=>{
-      const active=adminSubTab===s||(s==="settings"&&adminSubTab==="rules");
-      const label=s.charAt(0).toUpperCase()+s.slice(1);
-      ah+='<button style="flex:1;padding:10px 4px;font-size:12px;font-weight:700;border:none;background:none;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:'+(active?"var(--text)":"var(--muted)")+';border-bottom:2px solid '+(active?"var(--header)":"transparent")+';margin-bottom:-2px" onclick="setAdminSub(\''+s+'\')">'+label+'</button>';
+    ["rules","generate","curriculum"].forEach(s=>{
+      const active=adminSubTab===s;
+      ah+='<button style="flex:1;padding:10px 4px;font-size:12px;font-weight:700;border:none;background:none;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:'+(active?"var(--text)":"var(--muted)")+';border-bottom:2px solid '+(active?"var(--header)":"transparent")+';margin-bottom:-2px" onclick="setAdminSub(\''+s+'\')">'+s.charAt(0).toUpperCase()+s.slice(1)+'</button>';
     });
     ah+='</div>';
-    if(adminSubTab==="settings"||adminSubTab==="rules"){ renderSettings(el,ah); }
+    if(adminSubTab==="rules"){ renderRules(el,ah); }
     else if(adminSubTab==="generate"){ renderAdminGenerate(el,ah); }
     else if(adminSubTab==="curriculum"){ renderCurriculumView(el,ah); }
     return;
@@ -1873,12 +1825,21 @@ function renderSchedule(el){
   if(!unlocked){
     // Close the blurred inner wrapper, then add the overlay
     h+='</div></div>'; // close .time-slots and .sched-blur
+    const momPin = kid==="mom"
+      ? '<div id="mom-pin-wrap" style="margin-top:12px" onclick="event.stopPropagation()">'+
+        '<input id="mom-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="Mom PIN" autocomplete="off" '+
+        'style="width:100px;text-align:center;font-size:18px;letter-spacing:6px;padding:6px 10px;border:2px solid var(--border);border-radius:8px;font-family:monospace" '+
+        'oninput="checkMomPin(this.value)"/>'+
+        '<div id="mom-pin-err" style="font-size:11px;color:#b5394a;margin-top:4px;min-height:14px"></div>'+
+        '</div>'
+      : '';
     h+='<div class="sched-lock-overlay" onclick="scrollToSkylight()">'+
       '<div class="lock-bubble">'+
       '<span class="lock-icon">🔒</span>'+
       '<div class="lock-title">Schedule Locked</div>'+
       '<div class="lock-sub">'+lockMsg+'</div>'+
       '<button class="lock-btn">↑ Go to Morning Check-In</button>'+
+      momPin+
       '</div></div>';
     h+='</div>'; // close .sched-locked-wrap
   } else {
@@ -1981,7 +1942,9 @@ function taskCard(t, fromDay){
   } else if(t.mom==="maybe"){
     mb='<span class="mom-badge maybe-badge">May Need Mom</span>';
   }
+  const hasPending=done&&!!pendingSpins[t.id];
   const dr=done?'<div class="done-row">✓ '+checked[t.id]+'</div>':"";
+  const spinBtn=hasPending?'<div style="margin-top:4px"><button onclick="event.stopPropagation();openSlotMachine(\''+t.id+'\')" style="padding:4px 12px;border-radius:10px;background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;animation:spinPulse 2s ease-in-out infinite">🎰 Spin!</button></div>':"";
   // Strip the "Cascaded from X" note from detail for display
   const cleanDetail=t.detail.replace(/\s*\(Cascaded from \w+\)/,"");
   const disLabel=t._displaced?'<div style="font-size:10px;font-weight:700;color:#7c3aed;background:#ede9fe;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">&#8618; Moved from '+cap(t._originalDay||"")+'</div><br>':'';
@@ -1993,7 +1956,7 @@ function taskCard(t, fromDay){
     '<div class="card-body">'+
     '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
     '<div class="task-title">'+disLabel+carryLabel+cascLabel+t.title+'</div>'+mb+'</div>'+
-    '<div class="task-detail">'+cleanDetail+'</div>'+dr+
+    '<div class="task-detail">'+cleanDetail+'</div>'+dr+spinBtn+
     '</div></div></div>';
 }
 
@@ -3334,7 +3297,7 @@ function showAttPin(){
 }
 function checkAttPin(){
   const v=(document.getElementById('att-pin-input')||{}).value||'';
-  if(v===APP_PIN){
+  if(v===ATT_PIN){
     attEditUnlocked=true;
     const el=document.getElementById("content"); if(el) renderHistory(el);
   } else {
@@ -5232,7 +5195,7 @@ function mastToggleExpand(id){ mastExpandedId=mastExpandedId===id?null:id; _mast
 
 function mastListEditCheck(val){
   mastListEditPin=val;
-  if(val===APP_PIN){ mastListEditMode=true; mastListEditPin=""; _mastRe(); }
+  if(val==="0329"){ mastListEditMode=true; mastListEditPin=""; _mastRe(); }
   else if(val.length>=4){ mastListEditPin=""; const el=document.getElementById("mast-list-pin-err"); if(el) el.textContent="Wrong PIN"; }
 }
 function mastListEditClose(){ mastListEditMode=false; _mastRe(); }
@@ -6601,7 +6564,7 @@ function openBoDialog(d){
       '<div style="font-size:13px;color:var(--muted);margin-bottom:16px">Enter the Mom PIN to manage blockouts.</div>'+
       '<input id="bo-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="PIN" '+
       'style="width:120px;text-align:center;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:18px;font-weight:700;letter-spacing:8px;font-family:\'DM Sans\',sans-serif" '+
-      'oninput="if(this.value.length>=4){if(this.value===APP_PIN){adminPinUnlocked=true;closeBoDialog();openBoDialog(\''+( d||day)+'\');}else{document.getElementById(\'bo-pin-err\').textContent=\'Incorrect PIN\';this.value=\'\';this.style.borderColor=\'#b5394a\';var _t=this;setTimeout(function(){document.getElementById(\'bo-pin-err\').textContent=\'\';_t.style.borderColor=\'var(--border)\';},1500);}}" autofocus>'+
+      'oninput="if(this.value.length>=4){if(this.value===\'0329\'){adminPinUnlocked=true;closeBoDialog();openBoDialog(\''+( d||day)+'\');}else{document.getElementById(\'bo-pin-err\').textContent=\'Incorrect PIN\';this.value=\'\';this.style.borderColor=\'#b5394a\';var _t=this;setTimeout(function(){document.getElementById(\'bo-pin-err\').textContent=\'\';_t.style.borderColor=\'var(--border)\';},1500);}}" autofocus>'+
       '<div id="bo-pin-err" style="font-size:11px;color:#b5394a;margin-top:6px;min-height:14px"></div>'+
       '</div></div>';
     w.style.display="block";
@@ -6805,7 +6768,8 @@ function saveRules(r){
 
 function rulesToggleCard(id){
   rulesOpen[id]=!rulesOpen[id];
-  renderAll();
+  const el=document.getElementById("content");
+  if(el) renderRules(el);
 }
 function rulesUpdateSitterName(val){
   SITTER_NAME=val.trim()||"Babysitter";
@@ -7869,7 +7833,7 @@ function renderPlanNextWeek(){
 
 function pnwCheckPin(val){
   if(val.length<4) return;
-  if(val===APP_PIN){
+  if(val==="0329"){
     adminPinUnlocked=true;
     pnwStartWizard(pnwPendingWeek||null);
   } else {
