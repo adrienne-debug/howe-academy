@@ -668,6 +668,38 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .mast-card-img{width:100%;max-height:48px;object-fit:contain;border-radius:4px}
 .mast-jcard-photo{width:50px;height:50px;object-fit:cover;border-radius:6px}
 
+/* Mastery admin */
+.mast-admin-section{margin-bottom:24px}
+.mast-admin-hdr{font-family:'Fraunces',serif;font-size:15px;font-weight:700;color:#c45e1a;margin-bottom:10px;padding-bottom:6px;border-bottom:1.5px solid var(--border)}
+.mast-admin-card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px}
+.mast-admin-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f3f1ee}
+.mast-admin-row:last-child{border-bottom:none}
+.mast-admin-label{font-size:13px;font-weight:600}
+.mast-admin-desc{font-size:10px;color:var(--muted);margin-top:2px}
+.mast-admin-stepper{display:flex;align-items:center;gap:8px}
+.mast-admin-stepper button{width:32px;height:32px;border-radius:50%;border:1.5px solid var(--border);background:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;color:var(--text)}
+.mast-admin-stepper button:active{background:#f3f1ee}
+.mast-admin-stepper .val{font-size:18px;font-weight:800;min-width:28px;text-align:center;color:#c45e1a}
+.mast-admin-toggle{position:relative;width:44px;height:24px;background:#d1d5db;border-radius:12px;cursor:pointer;transition:background 0.2s;border:none;padding:0}
+.mast-admin-toggle.on{background:#16a34a}
+.mast-admin-toggle::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:left 0.2s}
+.mast-admin-toggle.on::after{left:22px}
+.mast-curr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:8px;margin:10px 0}
+.mast-curr-card{border-radius:10px;padding:8px 4px;text-align:center;cursor:pointer;min-width:60px;transition:transform 0.1s}
+.mast-curr-card:active{transform:scale(0.95)}
+.mast-curr-card.in-rotation{background:#fff7ed;border:1.5px solid #fed7aa}
+.mast-curr-card.graduated{background:#f5f3ff;border:1.5px solid #c4b5fd}
+.mast-curr-card.available{background:#f8f7f4;border:1.5px dashed #d1d5db}
+.mast-curr-card.available:hover{border-color:#c45e1a;background:#fff7ed}
+.mast-curr-card-vis{font-size:22px;line-height:1;min-height:28px;display:flex;align-items:center;justify-content:center}
+.mast-curr-card-name{font-size:9px;font-weight:700;margin-top:3px}
+.mast-curr-cat-hdr{display:flex;align-items:center;gap:8px;margin-top:16px;margin-bottom:4px}
+.mast-curr-cat-title{font-size:13px;font-weight:700}
+.mast-curr-cat-counts{font-size:10px;color:var(--muted)}
+.mast-admin-save{padding:10px 24px;border-radius:10px;border:none;background:#c45e1a;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-top:10px}
+.mast-admin-save:active{opacity:0.85}
+.mast-admin-save:disabled{opacity:0.4;cursor:default}
+
 /* Mastery print */
 .mast-print-page{display:none}
 .mast-print-page *{box-sizing:border-box}
@@ -831,7 +863,10 @@ let masteryCollapsed={};
 let mastAIKey="";
 let mastGeneratedCache={}; // {itemId_date: {problem:"...",answer:"..."}}
 let mastGenerating={}; // {itemId: true} while API call in flight
-let mastView="drill"; // "drill" or "scores"
+let mastView="drill"; // "drill", "scores", "admin", etc.
+let mastAdminLocal=null;
+let mastAdminDirty=false;
+let mastAdminPinOk=false;
 let mastScoreItemId=null; // for per-item history
 let mastManualScore=false;
 let mastManualDate="";
@@ -4996,6 +5031,33 @@ const MAST_ANIMAL_EMOJI={Lion:"\u{1F981}",Giraffe:"\u{1F992}","T-Rex":"\u{1F996}
 const MAST_COLOR_MAP={Red:"#ef4444",Blue:"#3b82f6",Green:"#22c55e",Yellow:"#eab308",Orange:"#f97316",Purple:"#a855f7",Pink:"#ec4899",Brown:"#92400e",Black:"#1f2937",White:"#e5e7eb"};
 const MAST_KID_COL={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#c45e1a"};
 const MAST_KID_EMOJI={lincoln:"\u{1F40D}",ellis:"\u{1F916}",lucy:"\u{1F984}",julian:"\u{1F995}"};
+const MAST_JULIAN_CURRICULUM={
+  Letters:"A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z".split(","),
+  Numbers:Array.from({length:20},(_,i)=>String(i+1)),
+  Colors:["Red","Orange","Yellow","Green","Blue","Purple","Pink","Brown","Black","White"],
+  Shapes:["Circle","Square","Triangle","Rectangle","Star","Heart","Diamond","Oval"],
+  Animals:Object.keys(MAST_ANIMAL_EMOJI)
+};
+function mastJulianSettings(){
+  const s=masteryData.julian_settings||{};
+  return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,auto_pull:s.auto_pull!==false};
+}
+function mastCurriculumStatus(){
+  let items=masteryData.julian||[];
+  if(!Array.isArray(items)) items=Object.values(items);
+  const result={};
+  Object.entries(MAST_JULIAN_CURRICULUM).forEach(([cat,all])=>{
+    const inRotation=[],graduated=[],available=[];
+    all.forEach(name=>{
+      const item=items.find(i=>i.prompt===name&&i.subject===cat);
+      if(!item) available.push(name);
+      else if(item.tier==="graduated") graduated.push(item);
+      else inRotation.push(item);
+    });
+    result[cat]={inRotation,graduated,available};
+  });
+  return result;
+}
 
 function mastGetPrintNum(){
   const today=new Date().toISOString().slice(0,10);
@@ -5028,6 +5090,22 @@ function mastDueItems(kid,pn){
   if(!Array.isArray(items)) items=Object.values(items);
   const due=items.filter(i=>mastIsDue(i,pn));
   due.sort((a,b)=>MAST_TIER_ORDER.indexOf(a.tier||"daily")-MAST_TIER_ORDER.indexOf(b.tier||"daily"));
+  if(kid==="julian"){
+    const settings=mastJulianSettings();
+    const byCat={};
+    due.forEach(item=>{
+      const cat=item.subject||"Other";
+      if(!byCat[cat]) byCat[cat]={active:[],intro:[]};
+      if(item.status==="introduction") byCat[cat].intro.push(item);
+      else byCat[cat].active.push(item);
+    });
+    const capped=[];
+    Object.values(byCat).forEach(bucket=>{
+      const combined=bucket.active.concat(bucket.intro);
+      capped.push(...combined.slice(0,settings.max_per_cat));
+    });
+    return capped;
+  }
   return due;
 }
 
@@ -5215,6 +5293,46 @@ const MAST_ITEM_TYPES=[
 
 function _mastRe(){ const c=document.getElementById("content"); if(c) renderMastery(c); }
 
+function mastAdminInit(){
+  mastAdminLocal={...mastJulianSettings()};
+  mastAdminDirty=false;
+}
+function mastAdminAdj(field,delta){
+  if(!mastAdminLocal) mastAdminInit();
+  if(field==='auto_pull'){ mastAdminLocal.auto_pull=!mastAdminLocal.auto_pull; }
+  else { mastAdminLocal[field]=Math.max(1,(mastAdminLocal[field]||0)+delta); }
+  mastAdminDirty=true;
+  _mastRe();
+}
+function mastAdminSave(){
+  if(!mastAdminLocal) return;
+  masteryData.julian_settings={...mastAdminLocal};
+  if(db) db.ref("mastery/julian_settings").set(mastAdminLocal);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  mastAdminDirty=false;
+  _mastRe();
+}
+function mastPullItem(cat,name){
+  let items=masteryData.julian||[];
+  if(!Array.isArray(items)) items=Object.values(items);
+  if(items.find(i=>i.prompt===name&&i.subject===cat)){ alert(name+" is already in rotation"); return; }
+  const settings=mastJulianSettings();
+  const introCount=items.filter(i=>i.subject===cat&&i.status==="introduction").length;
+  if(introCount>=settings.max_intro_per_cat){ alert(cat+" already has "+introCount+" introduction items (max "+settings.max_intro_per_cat+")"); return; }
+  const slug=name.toLowerCase().replace(/[^a-z0-9]/g,"_").substring(0,20);
+  const item={id:"jul_"+slug,subject:cat,type:cat.toLowerCase(),prompt:name,answer:name,tier:"daily",review_mode:"flash",status:"introduction",drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0};
+  if(cat==="Animals"&&MAST_ANIMAL_EMOJI[name]) item.emoji=MAST_ANIMAL_EMOJI[name];
+  items.push(item);
+  masteryData.julian=items;
+  if(db) db.ref("mastery/julian").set(items);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  _mastRe();
+}
+function mastAdminCheckPin(val){
+  if(val===APP_PIN){ mastAdminPinOk=true; _mastRe(); }
+  else if(val.length>=4){ const el=document.getElementById("mast-admin-pin-err"); if(el) el.textContent="Wrong PIN"; }
+}
+
 function mastGetGenerated(item){
   const today=new Date().toISOString().slice(0,10);
   const key=item.id+"_"+today;
@@ -5363,15 +5481,16 @@ function mastEditSave(){
   it.consecutive_correct=mastEditConsec;
   it.tier=mastEditTier;
 
-  // If dots hit 5 and still intro, promote
-  if(it.status==="introduction"&&mastEditDots>=5){
+  // If dots hit threshold and still intro, promote
+  const _jset=masteryKid==="julian"?mastJulianSettings():{intro_dots:5};
+  if(it.status==="introduction"&&mastEditDots>=_jset.intro_dots){
     it.status="active";
     it.tier="every_other_day";
     it.cycle=1;
-    it.tally_dots=5;
+    it.tally_dots=_jset.intro_dots;
   }
-  // If manually set to intro tier and was active, revert to intro
-  if(mastEditDots<5&&it.status==="active"&&masteryKid==="julian"){
+  // If manually set below threshold and was active, revert to intro
+  if(mastEditDots<_jset.intro_dots&&it.status==="active"&&masteryKid==="julian"){
     it.status="introduction";
     it.tier="daily";
   }
@@ -5468,16 +5587,33 @@ function mastSlideShown(id){
   const item=items.find(i=>i.id===id);
   if(!item) return;
 
+  const jset=masteryKid==="julian"?mastJulianSettings():{intro_dots:5};
   const dots=(item.tally_dots||0)+1;
   item.tally_dots=dots;
 
-  // After 5 dots, promote to ladder (starts at every_other_day — daily was the intro phase)
-  if(dots>=5){
+  if(dots>=jset.intro_dots){
     item.status="active";
     item.tier="every_other_day";
     item.cycle=1;
     item.consecutive_correct=0;
-    item.tally_dots=5;
+    item.tally_dots=jset.intro_dots;
+
+    // Auto-pull next curriculum item if enabled
+    if(masteryKid==="julian"&&jset.auto_pull){
+      const cat=item.subject;
+      const introCount=items.filter(i=>i.subject===cat&&i.status==="introduction"&&i.id!==item.id).length;
+      if(introCount<jset.max_intro_per_cat){
+        const curriculum=MAST_JULIAN_CURRICULUM[cat]||[];
+        const existingPrompts=new Set(items.filter(i=>i.subject===cat).map(i=>i.prompt));
+        const next=curriculum.find(name=>!existingPrompts.has(name));
+        if(next){
+          const slug=next.toLowerCase().replace(/[^a-z0-9]/g,"_").substring(0,20);
+          const newItem={id:"jul_"+slug,subject:cat,type:cat.toLowerCase(),prompt:next,answer:next,tier:"daily",review_mode:"flash",status:"introduction",drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0};
+          if(cat==="Animals"&&MAST_ANIMAL_EMOJI[next]) newItem.emoji=MAST_ANIMAL_EMOJI[next];
+          items.push(newItem);
+        }
+      }
+    }
   }
 
   // Save to Firebase
@@ -5600,6 +5736,119 @@ function mastAddItems(){
   const c=document.getElementById("content"); if(c) renderMastery(c);
 }
 
+function renderMastAdmin(){
+  const s=mastAdminLocal||mastJulianSettings();
+  const catE={Letters:"\u{1F524}",Numbers:"\u{1F522}",Colors:"\u{1F3A8}",Shapes:"\u{1F537}",Animals:"\u{1F43E}"};
+  let h='';
+
+  // ── SECTION 1: DRILL RULES ──
+  h+='<div class="mast-admin-section">';
+  h+='<div class="mast-admin-hdr">\u{2699}\u{FE0F} Drill Rules</div>';
+  h+='<div class="mast-admin-card">';
+
+  const rules=[
+    {key:"intro_dots",label:"Introduction Dots",desc:"How many times shown before entering the ladder",min:1,max:10},
+    {key:"ladder_streak",label:"Ladder Streak",desc:"Consecutive correct answers to advance a tier",min:1,max:10},
+    {key:"max_per_cat",label:"Max Items / Category / Day",desc:"Cap on items per category in the daily drill",min:1,max:20},
+    {key:"max_intro_per_cat",label:"Max New / Category",desc:"Max introduction items allowed per category at once",min:1,max:10}
+  ];
+  rules.forEach(r=>{
+    const val=s[r.key]||1;
+    h+='<div class="mast-admin-row">';
+    h+='<div><div class="mast-admin-label">'+r.label+'</div><div class="mast-admin-desc">'+r.desc+'</div></div>';
+    h+='<div class="mast-admin-stepper">';
+    h+='<button onclick="mastAdminAdj(\''+r.key+'\',-1)"'+(val<=r.min?' disabled':'')+'>−</button>';
+    h+='<span class="val">'+val+'</span>';
+    h+='<button onclick="mastAdminAdj(\''+r.key+'\',1)"'+(val>=r.max?' disabled':'')+'>+</button>';
+    h+='</div></div>';
+  });
+
+  // Auto-pull toggle
+  h+='<div class="mast-admin-row">';
+  h+='<div><div class="mast-admin-label">Auto-Pull from Curriculum</div><div class="mast-admin-desc">Automatically add next item when an intro slot opens</div></div>';
+  h+='<button class="mast-admin-toggle'+(s.auto_pull?" on":"")+'" onclick="mastAdminAdj(\'auto_pull\',0)"></button>';
+  h+='</div>';
+
+  h+='<div style="display:flex;align-items:center;gap:10px;margin-top:12px">';
+  h+='<button class="mast-admin-save" onclick="mastAdminSave()"'+(mastAdminDirty?'':' disabled')+'>Save Changes</button>';
+  if(!mastAdminDirty) h+='<span style="font-size:11px;color:var(--muted)">\u{2713} Saved</span>';
+  else h+='<span style="font-size:11px;color:#d97706">Unsaved changes</span>';
+  h+='</div>';
+  h+='</div></div>';
+
+  // ── SECTION 2: CURRICULUM BANK ──
+  h+='<div class="mast-admin-section">';
+  h+='<div class="mast-admin-hdr">\u{1F4DA} Curriculum Bank</div>';
+
+  const status=mastCurriculumStatus();
+  let totalIn=0,totalGrad=0,totalAvail=0;
+
+  Object.entries(MAST_JULIAN_CURRICULUM).forEach(([cat,allNames])=>{
+    const st=status[cat];
+    totalIn+=st.inRotation.length;
+    totalGrad+=st.graduated.length;
+    totalAvail+=st.available.length;
+
+    h+='<div class="mast-curr-cat-hdr">';
+    h+='<span style="font-size:18px">'+(catE[cat]||"")+'</span>';
+    h+='<span class="mast-curr-cat-title">'+cat+'</span>';
+    h+='<span class="mast-curr-cat-counts">'+st.inRotation.length+' active \u{00B7} '+st.graduated.length+' mastered \u{00B7} '+st.available.length+' available</span>';
+    h+='</div>';
+
+    h+='<div class="mast-curr-grid">';
+
+    // In-rotation items
+    st.inRotation.forEach(item=>{
+      const isIntro=item.status==="introduction";
+      const dots=isIntro?(item.tally_dots||0):(item.consecutive_correct||0);
+      const maxD=isIntro?s.intro_dots:s.ladder_streak;
+      const vis=mastJulianVis(item);
+      const tierLbl=isIntro?"Intro":(MAST_TIER_LBL[item.tier]||item.tier);
+      h+='<div class="mast-curr-card in-rotation" title="'+item.prompt+' — '+tierLbl+' ('+dots+'/'+maxD+')">';
+      h+='<div class="mast-curr-card-vis">'+vis+'</div>';
+      h+='<div class="mast-curr-card-name" style="color:#c2410c">'+item.prompt+'</div>';
+      // Mini dots
+      h+='<div style="display:flex;gap:2px;justify-content:center;margin-top:3px">';
+      for(let d=0;d<maxD;d++) h+='<div style="width:5px;height:5px;border-radius:50%;background:'+(d<dots?"#c45e1a":"#e5e7eb")+'"></div>';
+      h+='</div>';
+      h+='</div>';
+    });
+
+    // Graduated items
+    st.graduated.forEach(item=>{
+      const vis=mastJulianVis(item);
+      h+='<div class="mast-curr-card graduated" title="'+item.prompt+' — Graduated">';
+      h+='<div class="mast-curr-card-vis">'+vis+'</div>';
+      h+='<div class="mast-curr-card-name" style="color:#7c3aed">'+item.prompt+' \u{2713}</div>';
+      h+='</div>';
+    });
+
+    // Available items
+    st.available.forEach(name=>{
+      let vis='<span style="font-size:18px;color:#9ca3af">+</span>';
+      if(cat==="Animals"&&MAST_ANIMAL_EMOJI[name]) vis='<span style="font-size:18px;opacity:0.4">'+MAST_ANIMAL_EMOJI[name]+'</span>';
+      else if(cat==="Colors"&&MAST_COLOR_MAP[name]) vis='<div style="width:22px;height:22px;border-radius:50%;background:'+MAST_COLOR_MAP[name]+';opacity:0.35;margin:0 auto;border:1px solid rgba(0,0,0,0.1)"></div>';
+      else if(cat==="Shapes") vis='<span style="font-size:18px;opacity:0.35">'+(({Circle:"\u{1F534}",Square:"\u{1F7E7}",Triangle:"\u{1F53A}",Rectangle:"\u{25AC}",Star:"\u{2B50}",Heart:"\u{2764}\u{FE0F}",Diamond:"\u{1F537}",Oval:"\u{1F7E2}"})[name]||name.charAt(0))+'</span>';
+      else if(cat==="Letters"||cat==="Numbers") vis='<span style="font-size:16px;font-weight:800;color:#d1d5db">'+name+'</span>';
+
+      h+='<div class="mast-curr-card available" onclick="mastPullItem(\''+cat+'\',\''+name.replace(/'/g,"\\\\'")+'\')" title="Add '+name+' to rotation">';
+      h+='<div class="mast-curr-card-vis">'+vis+'</div>';
+      h+='<div class="mast-curr-card-name" style="color:#9ca3af">'+name+'</div>';
+      h+='</div>';
+    });
+
+    h+='</div>';
+  });
+
+  // Summary bar
+  h+='<div style="margin-top:14px;padding:10px 14px;background:#f8f7f4;border-radius:10px;font-size:12px;font-weight:600;color:var(--muted);text-align:center">';
+  h+=totalIn+' in rotation \u{00B7} '+totalGrad+' mastered \u{00B7} '+totalAvail+' available';
+  h+='</div>';
+
+  h+='</div>';
+  return h;
+}
+
 function renderMastery(el){
   try{ _renderMasteryInner(el); }catch(e){ console.error("Mastery render error:",e); el.innerHTML='<div style="padding:40px;text-align:center;color:#dc2626"><b>Mastery tab error</b><br><span style="font-size:11px;color:#666">'+e.message+'</span></div>'; }
 }
@@ -5630,7 +5879,32 @@ function _renderMasteryInner(el){
   h+='<button class="mast-view-tab'+(mastView==="drill"?" active":"")+'" onclick="mastSetView(\'drill\')">Mastery</button>';
   h+='<button class="mast-view-tab'+(mastView==="sprint"?" active":"")+'" onclick="mastSetView(\'sprint\')">Sprint</button>';
   h+='<button class="mast-view-tab'+(mastView==="scores"?" active":"")+'" onclick="mastSetView(\'scores\')">Scores</button>';
-  h+='<button class="mast-view-tab'+(mastView==="heatmap"?" active":"")+'" onclick="mastSetView(\'heatmap\')">Heat Map</button></div>';
+  h+='<button class="mast-view-tab'+(mastView==="heatmap"?" active":"")+'" onclick="mastSetView(\'heatmap\')">Heat Map</button>';
+  if(masteryKid==="julian") h+='<button class="mast-view-tab'+(mastView==="admin"?" active":"")+'" onclick="mastSetView(\'admin\')">Admin</button>';
+  h+='</div>';
+
+  // ── ADMIN VIEW (Julian only) ──
+  if(mastView==="admin"&&masteryKid==="julian"){
+    if(!mastAdminPinOk){
+      h+='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center">';
+      h+='<div style="font-size:48px;margin-bottom:12px">&#128274;</div>';
+      h+='<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:700;margin-bottom:4px">Admin Locked</div>';
+      h+='<div style="font-size:13px;color:var(--muted);margin-bottom:16px">Enter the Mom PIN to access drill settings.</div>';
+      h+='<input id="mast-admin-pin" type="password" inputmode="numeric" maxlength="4" placeholder="PIN" autocomplete="off" ';
+      h+='style="width:120px;text-align:center;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:18px;font-weight:700;letter-spacing:8px;font-family:\'DM Sans\',sans-serif" ';
+      h+='oninput="mastAdminCheckPin(this.value)" autofocus>';
+      h+='<div id="mast-admin-pin-err" style="font-size:11px;color:#b5394a;margin-top:6px;min-height:14px"></div></div>';
+      h+='</div>';
+      el.innerHTML=h;
+      setTimeout(()=>{const i=document.getElementById("mast-admin-pin");if(i)i.focus();},50);
+      return;
+    }
+    if(!mastAdminLocal) mastAdminInit();
+    h+=renderMastAdmin();
+    h+='</div>';
+    el.innerHTML=h;
+    return;
+  }
 
   // ── SPRINT VIEW ──
   if(mastView==="sprint"){
@@ -6004,8 +6278,9 @@ function _renderMasteryInner(el){
     h+='<div class="mast-slide-name">'+it.prompt+'</div>';
 
     const isIntro=it.status==="introduction";
+    const _js=mastJulianSettings();
     const tallyCount=isIntro?(it.tally_dots||0):(it.consecutive_correct||0);
-    const tallyMax=isIntro?5:3;
+    const tallyMax=isIntro?_js.intro_dots:_js.ladder_streak;
 
     // Tally dots
     h+='<div class="mast-slide-tally">';
@@ -6014,11 +6289,9 @@ function _renderMasteryInner(el){
     h+='</div>';
 
     if(isIntro){
-      // Introduction phase label
-      h+='<div style="font-size:10px;color:#9a3412;font-weight:600;margin-top:4px">'+tallyCount+'/5 days shown'+(tallyCount>=5?' \u{2014} entering the ladder!':'')+'</div>';
+      h+='<div style="font-size:10px;color:#9a3412;font-weight:600;margin-top:4px">'+tallyCount+'/'+_js.intro_dots+' days shown'+(tallyCount>=_js.intro_dots?' \u{2014} entering the ladder!':'')+'</div>';
     } else {
-      // Ladder phase label
-      h+='<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:4px">'+(MAST_TIER_LBL[it.tier]||it.tier)+' \u{00B7} '+tallyCount+'/3 streak</div>';
+      h+='<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:4px">'+(MAST_TIER_LBL[it.tier]||it.tier)+' \u{00B7} '+tallyCount+'/'+_js.ladder_streak+' streak</div>';
     }
 
     // Buttons based on mode and phase
@@ -6261,14 +6534,15 @@ function _renderMasteryInner(el){
           h+='<button class="mast-add-close" onclick="mastEditClose()">\u{2715}</button></div>';
           h+='<div class="mast-edit-body">';
 
-          if(isIntro||mastEditDots<5){
+          const _jse=mastJulianSettings();
+          if(isIntro||mastEditDots<_jse.intro_dots){
             h+='<div class="mast-edit-row"><span class="mast-edit-label">Intro Dots</span>';
             h+='<div class="mast-edit-val"><button class="mast-edit-adj" onclick="mastEditAdjDots(-1)">\u{2212}</button>';
             h+='<span class="mast-edit-num">'+mastEditDots+'</span>';
             h+='<button class="mast-edit-adj" onclick="mastEditAdjDots(1)">+</button></div></div>';
           }
 
-          if(!isIntro||mastEditDots>=5){
+          if(!isIntro||mastEditDots>=_jse.intro_dots){
             h+='<div class="mast-edit-row"><span class="mast-edit-label">Streak</span>';
             h+='<div class="mast-edit-val"><button class="mast-edit-adj" onclick="mastEditAdjConsec(-1)">\u{2212}</button>';
             h+='<span class="mast-edit-num">'+mastEditConsec+'</span>';
@@ -6449,7 +6723,8 @@ function mastPrintJulian(){
   let page='<div class="mpp-sheet" style="display:flex;flex-direction:column">';
   page+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
   page+='<div><div style="font-size:1.1rem;font-weight:700;color:'+kc+'">\u{1F995} Julian</div>';
-  page+='<div style="font-size:0.6rem;color:#6b7280">Pre-K \u{00B7} Left = introduction \u{00B7} fill 5 dots \u{2192} \u{2B50} enters ladder \u{00B7} Right = ladder \u{00B7} 3 in a row \u{2192} moves up</div></div>';
+  const _jps=mastJulianSettings();
+  page+='<div style="font-size:0.6rem;color:#6b7280">Pre-K \u{00B7} Left = introduction \u{00B7} fill '+_jps.intro_dots+' dots \u{2192} \u{2B50} enters ladder \u{00B7} Right = ladder \u{00B7} '+_jps.ladder_streak+' in a row \u{2192} moves up</div></div>';
   page+='<div style="font-family:monospace;font-size:8.5px;color:#9ca3af;text-align:right;line-height:1.7">'+wkLabel+'<br>'+dayN+', '+dateStr+'</div></div>';
 
   page+='<div style="display:flex;gap:14px;flex:1;min-width:0;width:100%">';
