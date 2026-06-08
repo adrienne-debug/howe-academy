@@ -1086,6 +1086,7 @@ function initFb() {
       if(tab==="mastery"){const el=document.getElementById("content");if(el)renderMastery(el);}
     });
     db.ref("config/anthropic_key").once("value",s=>{ if(s.val()) mastAIKey=s.val(); });
+    db.ref("config/slot_config").on("value",s=>{ slotConfig=s.val()||{}; });
     db.ref("att_overrides").on("value",s=>{
       if(s.val()) attOverrides=s.val();
       try{localStorage.setItem("ha_att_overrides",JSON.stringify(attOverrides));}catch(e){}
@@ -1532,17 +1533,24 @@ function showPaceToast(taskId){
 
 // ── SLOT MACHINE ─────────────────────────────────────────────────
 const SLOT_SYMBOLS=["⭐","🔥","💎","🎯","🌟","🍀","❌"];
-const SLOT_OUTCOMES=[
+const SLOT_DEFAULTS=[
   {pts:0,weight:30,msg:"No luck this time!"},
   {pts:2,weight:30,msg:"Nice — 2 points!"},
   {pts:5,weight:20,msg:"Awesome — 5 points!"},
   {pts:10,weight:13,msg:"Amazing — 10 points!"},
   {pts:25,weight:7,msg:"JACKPOT — 25 points!"}
 ];
+let slotConfig={}; // {kid: [{pts,weight,msg},...]} — per-kid overrides from Firebase
+function getSlotOutcomes(kid){
+  if(slotConfig[kid]&&slotConfig[kid].length) return slotConfig[kid];
+  if(slotConfig.default&&slotConfig.default.length) return slotConfig.default;
+  return SLOT_DEFAULTS;
+}
 function pickOutcome(){
+  const outcomes=getSlotOutcomes(slotKid||"lincoln");
   let r=Math.random()*100, cum=0;
-  for(const o of SLOT_OUTCOMES){ cum+=o.weight; if(r<cum) return o; }
-  return SLOT_OUTCOMES[0];
+  for(const o of outcomes){ cum+=o.weight; if(r<cum) return o; }
+  return outcomes[0];
 }
 
 // Anti-cheat: track which tasks already earned a spin
@@ -1740,7 +1748,7 @@ function renderSchedule(el){
       return;
     }
     let ah='<div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:12px">';
-    ["rules","generate","curriculum"].forEach(s=>{
+    ["rules","generate","curriculum","slots"].forEach(s=>{
       const active=adminSubTab===s;
       ah+='<button style="flex:1;padding:10px 4px;font-size:12px;font-weight:700;border:none;background:none;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:'+(active?"var(--text)":"var(--muted)")+';border-bottom:2px solid '+(active?"var(--header)":"transparent")+';margin-bottom:-2px" onclick="setAdminSub(\''+s+'\')">'+s.charAt(0).toUpperCase()+s.slice(1)+'</button>';
     });
@@ -1748,6 +1756,7 @@ function renderSchedule(el){
     if(adminSubTab==="rules"){ renderRules(el,ah); }
     else if(adminSubTab==="generate"){ renderAdminGenerate(el,ah); }
     else if(adminSubTab==="curriculum"){ renderCurriculumView(el,ah); }
+    else if(adminSubTab==="slots"){ renderSlotsConfig(el,ah); }
     return;
   }
   const col=DAY_COL[day]||"#666", pct=dayPct(day);
@@ -7140,6 +7149,73 @@ function renderRules(el,headerHtml){
 
   h+='</div>';
   el.innerHTML=h;
+}
+
+function renderSlotsConfig(el,headerHtml){
+  const kids=["lincoln","ellis","lucy","julian"];
+  let h=headerHtml||"";
+  h+='<div style="padding:0 12px">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700;margin-bottom:4px">🎰 Slot Machine Config</div>';
+  h+='<div style="font-size:12px;color:var(--muted);margin-bottom:16px">Set win odds and point values per kid. Weights are relative — they don\'t need to sum to 100.</div>';
+
+  kids.forEach(kid=>{
+    const rows=slotConfig[kid]&&slotConfig[kid].length?slotConfig[kid]:SLOT_DEFAULTS;
+    const kc=kid==="lincoln"?"#2563eb":kid==="ellis"?"#16a34a":kid==="lucy"?"#9333ea":"#f59e0b";
+    h+='<div style="border:1.5px solid var(--border);border-radius:12px;margin-bottom:12px;overflow:hidden">';
+    h+='<div style="background:'+kc+';color:#fff;padding:8px 14px;font-weight:700;font-size:14px;font-family:\'DM Sans\',sans-serif">'+cap(kid)+'</div>';
+    h+='<div style="padding:10px 14px">';
+    h+='<div style="display:grid;grid-template-columns:60px 60px 1fr;gap:6px;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px"><span>Points</span><span>Weight</span><span>Message</span></div>';
+    rows.forEach((r,i)=>{
+      h+='<div style="display:grid;grid-template-columns:60px 60px 1fr;gap:6px;margin-bottom:4px">';
+      h+='<input type="number" min="0" value="'+r.pts+'" onchange="slotCfgSet(\''+kid+'\','+i+',\'pts\',+this.value)" style="padding:6px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif;text-align:center">';
+      h+='<input type="number" min="1" value="'+r.weight+'" onchange="slotCfgSet(\''+kid+'\','+i+',\'weight\',+this.value)" style="padding:6px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif;text-align:center">';
+      h+='<input type="text" value="'+r.msg+'" onchange="slotCfgSet(\''+kid+'\','+i+',\'msg\',this.value)" style="padding:6px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif">';
+      h+='</div>';
+    });
+    h+='<div style="display:flex;gap:6px;margin-top:6px">';
+    h+='<button onclick="slotCfgAddRow(\''+kid+'\')" style="padding:4px 10px;border-radius:8px;background:var(--header);color:#fff;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Row</button>';
+    if(rows.length>2) h+='<button onclick="slotCfgRemoveRow(\''+kid+'\')" style="padding:4px 10px;border-radius:8px;background:#ef4444;color:#fff;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">− Row</button>';
+    if(slotConfig[kid]) h+='<button onclick="slotCfgReset(\''+kid+'\')" style="padding:4px 10px;border-radius:8px;background:none;border:1.5px solid var(--border);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Reset to Default</button>';
+    h+='</div>';
+    h+='</div></div>';
+  });
+
+  h+='<button onclick="slotCfgCopy()" style="padding:8px 16px;border-radius:10px;background:var(--header);color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-bottom:16px">Copy Lincoln → All Others</button>';
+  h+='<div id="slot-cfg-msg" style="font-size:12px;color:#16a34a;min-height:16px;margin-bottom:12px"></div>';
+  h+='</div>';
+  el.innerHTML=h;
+}
+
+function slotCfgEnsure(kid){
+  if(!slotConfig[kid]||!slotConfig[kid].length) slotConfig[kid]=JSON.parse(JSON.stringify(SLOT_DEFAULTS));
+}
+function slotCfgSet(kid,i,field,val){
+  slotCfgEnsure(kid);
+  slotConfig[kid][i][field]=val;
+  slotCfgSave();
+}
+function slotCfgAddRow(kid){
+  slotCfgEnsure(kid);
+  slotConfig[kid].push({pts:0,weight:10,msg:"New tier"});
+  slotCfgSave(); renderAll();
+}
+function slotCfgRemoveRow(kid){
+  slotCfgEnsure(kid);
+  slotConfig[kid].pop();
+  slotCfgSave(); renderAll();
+}
+function slotCfgReset(kid){
+  delete slotConfig[kid];
+  slotCfgSave(); renderAll();
+}
+function slotCfgCopy(){
+  slotCfgEnsure("lincoln");
+  ["ellis","lucy","julian"].forEach(k=>{ slotConfig[k]=JSON.parse(JSON.stringify(slotConfig["lincoln"])); });
+  slotCfgSave(); renderAll();
+  const m=document.getElementById("slot-cfg-msg"); if(m) m.textContent="Copied Lincoln's config to all kids.";
+}
+function slotCfgSave(){
+  if(db) db.ref("config/slot_config").set(slotConfig);
 }
 
 function renderAdminGenerate(el,headerHtml){
