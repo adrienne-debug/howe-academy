@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:ital,wght@0,600;0,700;1,600&family=Nunito:wght@400;600;700;800;900&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
+<!-- Firebase Storage removed — images compressed client-side and stored as base64 in Realtime DB -->
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -5504,19 +5504,37 @@ function mastCurrAddItem(){
   mastCurrAddName="";mastCurrAddEmoji="";mastCurrAddImg="";mastCurrAddNewCat="";mastCurrAddMode="";mastCurrAddDef="";
   _mastRe();
 }
+function mastCompressImg(file,maxPx,quality){
+  return new Promise((resolve,reject)=>{
+    if(!maxPx) maxPx=400;
+    if(!quality) quality=0.8;
+    const reader=new FileReader();
+    reader.onload=function(e){
+      const img=new Image();
+      img.onload=function(){
+        const canvas=document.createElement("canvas");
+        let w=img.width, h=img.height;
+        if(w>maxPx||h>maxPx){ const r=Math.min(maxPx/w,maxPx/h); w=Math.round(w*r); h=Math.round(h*r); }
+        canvas.width=w; canvas.height=h;
+        const ctx=canvas.getContext("2d");
+        ctx.drawImage(img,0,0,w,h);
+        const dataUrl=canvas.toDataURL("image/jpeg",quality);
+        resolve(dataUrl);
+      };
+      img.onerror=()=>reject(new Error("Could not read image"));
+      img.src=e.target.result;
+    };
+    reader.onerror=()=>reject(new Error("Could not read file"));
+    reader.readAsDataURL(file);
+  });
+}
 function mastCurrUploadImg(file){
   if(!file) return;
-  if(file.size>5*1024*1024){ alert("Image too large (max 5MB)"); return; }
+  if(file.size>10*1024*1024){ alert("Image too large (max 10MB)"); return; }
   mastCurrAddImgUploading=true; _mastRe();
-  const kid=masteryKid||"julian";
-  const _uploadTimeout=setTimeout(()=>{ if(mastCurrAddImgUploading){ mastCurrAddImgUploading=false; alert("Upload timed out — try again or use a smaller image"); _mastRe(); } },15000);
-  const storage=firebase.storage();
-  const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,"_");
-  const ref=storage.ref("mastery_images/"+kid+"/"+Date.now()+"_"+safeName);
-  ref.put(file).then(s=>s.ref.getDownloadURL()).then(url=>{
-    clearTimeout(_uploadTimeout);
-    mastCurrAddImg=url; mastCurrAddEmoji=""; mastCurrAddImgUploading=false; _mastRe();
-  }).catch(err=>{ clearTimeout(_uploadTimeout); alert("Upload failed: "+err.message); mastCurrAddImgUploading=false; _mastRe(); });
+  mastCompressImg(file,400,0.8).then(dataUrl=>{
+    mastCurrAddImg=dataUrl; mastCurrAddEmoji=""; mastCurrAddImgUploading=false; _mastRe();
+  }).catch(err=>{ alert("Image failed: "+err.message); mastCurrAddImgUploading=false; _mastRe(); });
 }
 function mastVisEditOpen(cat,name){
   mastVisEditKey={cat:cat,name:name};
@@ -5541,19 +5559,16 @@ function mastVisEditSet(emoji){
 }
 function mastVisEditUpload(file){
   if(!file||!mastVisEditKey) return;
-  if(file.size>5*1024*1024){ alert("Image too large (max 5MB)"); return; }
+  if(file.size>10*1024*1024){ alert("Image too large (max 10MB)"); return; }
   const kid=masteryKid||"julian";
-  const storage=firebase.storage();
-  const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,"_");
-  const ref=storage.ref("mastery_images/"+kid+"/"+Date.now()+"_"+safeName);
-  ref.put(file).then(s=>s.ref.getDownloadURL()).then(url=>{
-    mastSetVisual(mastVisEditKey.cat,mastVisEditKey.name,{imageUrl:url});
+  mastCompressImg(file,400,0.8).then(dataUrl=>{
+    mastSetVisual(mastVisEditKey.cat,mastVisEditKey.name,{imageUrl:dataUrl});
     let items=masteryData[kid]||[];
     if(!Array.isArray(items)) items=Object.values(items);
     const it=items.find(i=>i.prompt===mastVisEditKey.name&&i.subject===mastVisEditKey.cat);
-    if(it){ it.imageUrl=url; delete it.emoji; masteryData[kid]=items; if(db) db.ref("mastery/"+kid).set(items); try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){} }
+    if(it){ it.imageUrl=dataUrl; delete it.emoji; masteryData[kid]=items; if(db) db.ref("mastery/"+kid).set(items); try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){} }
     mastVisEditKey=null; _mastRe();
-  }).catch(err=>{ alert("Upload failed: "+err.message); });
+  }).catch(err=>{ alert("Image failed: "+err.message); });
 }
 function mastRemoveCustomItem(cat,name){
   if(!confirm("Remove "+name+" from "+cat+" curriculum?")) return;
@@ -5912,25 +5927,15 @@ function mastSlideShown(id){
 
 function mastUploadImage(file){
   if(!file) return;
-  if(file.size>5*1024*1024){ alert("Image too large (max 5MB)"); return; }
+  if(file.size>10*1024*1024){ alert("Image too large (max 10MB)"); return; }
   mastAddUploading=true;
   const c=document.getElementById("content"); if(c) renderMastery(c);
-
-  const storage=firebase.storage();
-  const ts=Date.now();
-  const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,"_");
-  const path="mastery_images/"+masteryKid+"/"+ts+"_"+safeName;
-  const ref=storage.ref(path);
-
-  ref.put(file).then(snapshot=>{
-    return snapshot.ref.getDownloadURL();
-  }).then(url=>{
-    mastAddImageUrl=url;
+  mastCompressImg(file,400,0.8).then(dataUrl=>{
+    mastAddImageUrl=dataUrl;
     mastAddUploading=false;
     const c=document.getElementById("content"); if(c) renderMastery(c);
   }).catch(err=>{
-    console.error("Upload failed:",err);
-    alert("Upload failed: "+err.message);
+    alert("Image failed: "+err.message);
     mastAddUploading=false;
     const c=document.getElementById("content"); if(c) renderMastery(c);
   });
