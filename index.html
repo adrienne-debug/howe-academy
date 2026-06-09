@@ -5396,6 +5396,21 @@ function mastAdminAdj(field,delta){
   mastAdminDirty=true;
   _mastRe();
 }
+function mastAdminAddCatCap(){
+  const sel=document.getElementById("mast-catcap-add");
+  if(!sel) return;
+  let cat=sel.value;
+  if(cat==="__custom__"){
+    cat=prompt("Enter category name:");
+    if(!cat||!cat.trim()) return;
+    cat=cat.trim();
+  }
+  if(!mastAdminLocal) mastAdminInit();
+  if(!mastAdminLocal.cat_caps) mastAdminLocal.cat_caps={};
+  mastAdminLocal.cat_caps[cat]=mastAdminLocal.max_per_cat||5;
+  mastAdminDirty=true;
+  _mastRe();
+}
 function mastAdminCatCap(cat,delta){
   if(!mastAdminLocal) mastAdminInit();
   if(!mastAdminLocal.cat_caps) mastAdminLocal.cat_caps={};
@@ -6175,15 +6190,21 @@ function renderMastAdmin(){
 
   // Per-category cap overrides
   const catCaps=s.cat_caps||{};
-  const allCats=[...new Set((masteryData[masteryKid]||[]).map(i=>i.subject).filter(Boolean))].sort();
-  if(allCats.length){
-    h+='<div class="mast-admin-row" style="flex-direction:column;align-items:stretch">';
-    h+='<div style="margin-bottom:8px"><div class="mast-admin-label">Per-Category Cap Overrides</div><div class="mast-admin-desc">Override the daily cap for specific categories (blank = use default '+(s.max_per_cat||5)+')</div></div>';
-    allCats.forEach(cat=>{
+  const itemCats=[...new Set((masteryData[masteryKid]||[]).map(i=>i.subject).filter(Boolean))];
+  const bankCats=Object.keys(MAST_BANK_MAP[masteryKid]||{});
+  const overrideCats=Object.keys(catCaps);
+  const shownCats=[...new Set([...itemCats,...overrideCats])].sort();
+  const addableCats=[...new Set([...bankCats,...itemCats])].filter(c=>!shownCats.includes(c)).sort();
+
+  h+='<div class="mast-admin-row" style="flex-direction:column;align-items:stretch">';
+  h+='<div style="margin-bottom:8px"><div class="mast-admin-label">Per-Category Cap Overrides</div><div class="mast-admin-desc">Override the daily cap for specific categories (blank = use default '+(s.max_per_cat||5)+')</div></div>';
+  if(shownCats.length){
+    shownCats.forEach(cat=>{
       const cv=catCaps[cat];
       const hasOverride=cv!==undefined&&cv!==null;
+      const inItems=itemCats.includes(cat);
       h+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0">';
-      h+='<span style="flex:1;font-size:12px;font-weight:600">'+(catE[cat]||"")+' '+cat+'</span>';
+      h+='<span style="flex:1;font-size:12px;font-weight:600;'+(inItems?'':'color:var(--muted);font-style:italic')+'">'+(catE[cat]||"")+' '+cat+(inItems?'':' <span style="font-size:9px;font-weight:500">(no items yet)</span>')+'</span>';
       h+='<div class="mast-admin-stepper">';
       h+='<button onclick="mastAdminCatCap(\''+cat.replace(/'/g,"\\\\'")+'\',-1)"'+(hasOverride&&cv<=1?' disabled':'')+'>−</button>';
       h+='<span class="val" style="'+(hasOverride?'color:#c2410c;font-weight:800':'color:var(--muted)')+'">'+( hasOverride?cv:(s.max_per_cat||5))+'</span>';
@@ -6192,8 +6213,19 @@ function renderMastAdmin(){
       if(hasOverride) h+='<button onclick="mastAdminCatCap(\''+cat.replace(/'/g,"\\\\'")+'\',0)" style="font-size:9px;color:#6366f1;background:none;border:none;cursor:pointer;font-weight:600;font-family:\'DM Sans\',sans-serif">reset</button>';
       h+='</div>';
     });
+  } else {
+    h+='<div style="font-size:11px;color:var(--muted);padding:4px 0">No overrides set. All categories use the default cap.</div>';
+  }
+  if(addableCats.length||true){
+    h+='<div style="margin-top:8px;display:flex;align-items:center;gap:6px">';
+    h+='<select id="mast-catcap-add" style="flex:1;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:11px;font-family:\'DM Sans\',sans-serif;background:#fff">';
+    if(addableCats.length) addableCats.forEach(c=>{ h+='<option value="'+c+'">'+(catE[c]||"")+' '+c+'</option>'; });
+    h+='<option value="__custom__">+ Custom category...</option>';
+    h+='</select>';
+    h+='<button onclick="mastAdminAddCatCap()" style="padding:6px 14px;border-radius:8px;border:1.5px solid #c2410c;background:#fff7ed;color:#c2410c;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Add</button>';
     h+='</div>';
   }
+  h+='</div>';
 
   // Auto-pull toggle
   h+='<div class="mast-admin-row">';
