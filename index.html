@@ -2120,11 +2120,12 @@ function celebrateDayComplete(kid){
   titleEl.textContent=cap(kid)+" finished the day!";
   celebSongName="";
 
-  // Pick and play a random song
-  if(celebSongs.length){
-    const song=celebSongs[Math.floor(Math.random()*celebSongs.length)];
+  // Pick and play a song — filtered to this kid's assigned songs
+  const kidSongs=getSongsForKid(kid);
+  if(kidSongs.length){
+    const song=kidSongs[Math.floor(Math.random()*kidSongs.length)];
     celebSongName=song.name||"Celebration!";
-    songEl.textContent=celebSongName;
+    songEl.textContent=kidSongs.length>1?("🎲 "+celebSongName+" (surprise!)"):celebSongName;
     try{
       celebAudio=new Audio(song.url);
       celebAudio.volume=0.7;
@@ -2285,20 +2286,34 @@ function renderSettings(el,ah){
   // Celebration Songs
   pinHtml+='<div class="rules-wrap" style="margin-top:20px">';
   pinHtml+='<div class="rules-hdr">Day Completion Celebration</div>';
-  pinHtml+='<div class="rules-sub">When a kid finishes all tasks for the day, confetti fires and a random song plays. Add songs below — the mystery of which song plays is half the reward.</div>';
+  pinHtml+='<div class="rules-sub">When a kid finishes all tasks, confetti fires and their song plays. Tap kid names on each song to assign it. Multiple songs = surprise pick! No names selected = available to all kids.</div>';
   pinHtml+='<div class="rules-card'+o("celeb_songs")+'">';
   pinHtml+='<div class="rules-card-hdr" onclick="rulesToggleCard(\'celeb_songs\')">';
   pinHtml+='<div class="rules-card-title"><span>🎉</span> Song List</div>';
   pinHtml+='<div class="rules-card-arrow">&#9654;</div></div>';
   pinHtml+='<div class="rules-card-body">';
   if(celebSongs.length){
+    const allKids=["lincoln","ellis","lucy","julian"];
+    const KC2={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#8b4513"};
     celebSongs.forEach((s,i)=>{
-      pinHtml+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;padding:8px;background:var(--bg);border:1.5px solid var(--border);border-radius:10px">';
+      const songKids=s.kids||{};
+      const hasAnyKid=Object.values(songKids).some(v=>v);
+      pinHtml+='<div style="margin-bottom:8px;padding:10px;background:var(--bg);border:1.5px solid var(--border);border-radius:10px">';
+      pinHtml+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">';
       pinHtml+='<div style="flex:1;min-width:0">';
       pinHtml+='<div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(s.name||"Untitled")+'</div>';
-      pinHtml+='<div style="font-size:10px;color:var(--muted)">'+(s.url?"Uploaded":"No file")+'</div>';
+      pinHtml+='<div style="font-size:10px;color:var(--muted)">'+(hasAnyKid?'Selected for specific kids':'All kids (tap names to assign)')+'</div>';
       pinHtml+='</div>';
+      pinHtml+='<button onclick="celebSongPreview('+i+')" style="padding:4px 8px;border-radius:8px;background:var(--header);color:#fff;border:none;font-size:11px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">▶</button>';
       pinHtml+='<button onclick="celebSongRemove('+i+')" style="padding:4px 8px;border-radius:8px;background:#ef4444;color:#fff;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✕</button>';
+      pinHtml+='</div>';
+      // Per-kid toggle buttons
+      pinHtml+='<div style="display:flex;gap:4px;flex-wrap:wrap">';
+      allKids.forEach(k=>{
+        const on=!!songKids[k];
+        pinHtml+='<button onclick="celebSongToggleKid('+i+',\''+k+'\')" style="padding:3px 10px;border-radius:16px;border:1.5px solid '+(on?KC2[k]:'var(--border)')+';background:'+(on?KC2[k]:'transparent')+';color:'+(on?'#fff':'var(--muted)')+';font-size:11px;font-weight:'+(on?'700':'500')+';cursor:pointer;font-family:\'DM Sans\',sans-serif;transition:all 0.15s">'+cap(k)+'</button>';
+      });
+      pinHtml+='</div>';
       pinHtml+='</div>';
     });
   } else {
@@ -2364,6 +2379,32 @@ function celebSongsSave(){
   if(db) db.ref("settings/celebration_songs").set(celebSongs);
   const msg=document.getElementById("celeb-cfg-msg");
   if(msg){ msg.textContent="Saved!"; setTimeout(()=>{if(msg)msg.textContent="";},1500); }
+}
+function celebSongToggleKid(songIdx,kid){
+  if(!celebSongs[songIdx]) return;
+  if(!celebSongs[songIdx].kids) celebSongs[songIdx].kids={};
+  celebSongs[songIdx].kids[kid]=!celebSongs[songIdx].kids[kid];
+  // If all are now off, clear kids obj so it defaults to "all kids"
+  const anyOn=Object.values(celebSongs[songIdx].kids).some(v=>v);
+  if(!anyOn) delete celebSongs[songIdx].kids;
+  celebSongsSave();
+  renderAll();
+}
+function celebSongPreview(songIdx){
+  const s=celebSongs[songIdx];
+  if(!s||!s.url) return;
+  if(celebAudio){ celebAudio.pause(); celebAudio=null; }
+  celebAudio=new Audio(s.url);
+  celebAudio.volume=0.7;
+  celebAudio.play().catch(()=>{});
+  setTimeout(()=>{ if(celebAudio){ celebAudio.pause(); celebAudio=null; } },8000);
+}
+function getSongsForKid(kid){
+  // Return songs assigned to this kid. If a song has no kids property, it's available to all.
+  return celebSongs.filter(s=>{
+    if(!s.kids) return true; // no kid filter = all kids
+    return !!s.kids[kid];
+  });
 }
 function celebTestConfetti(){
   const kid=["lincoln","ellis","lucy","julian"][Math.floor(Math.random()*4)];
