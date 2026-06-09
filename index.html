@@ -5077,6 +5077,8 @@ const MAST_CAT_EMOJI_MAP={
   lucy:{"Sight Words":"\u{1F440}","Math Facts":"\u{2795}","Spelling":"\u{1F4DD}","Science":"\u{1F52C}","Vocabulary":"\u{1F4DA}"}
 };
 const MAST_VOCAB_DEFS={brave:"not afraid, ready to face danger",calm:"quiet and peaceful, not upset",curious:"wanting to learn or know more",eager:"excited and wanting to do something",fierce:"very strong or intense",gentle:"soft and kind, not rough",honest:"always telling the truth",kind:"friendly and caring toward others",loyal:"always faithful and true to someone",proud:"feeling good about something you did",shy:"nervous or quiet around other people",wise:"knowing a lot and making good choices",above:"higher than something else",below:"lower than something else",between:"in the middle of two things",beside:"right next to something",through:"going in one side and out the other",toward:"moving closer to something",against:"touching or pushing on something",beyond:"farther away, past something",ancient:"very, very old",brief:"lasting only a short time",enormous:"really, really big",fragile:"easy to break, delicate",hollow:"empty on the inside",narrow:"not very wide, thin",rapid:"very fast",smooth:"not bumpy, even and flat",steep:"going up or down sharply",vast:"very, very large or wide"};
+const MAST_DEFAULT_CAT_MODES={lucy:{"Sight Words":"flash","Math Facts":"quiz","Spelling":"quiz","Science":"flash","Vocabulary":"flip"}};
+function mastGetCatMode(kid,cat){ const s=masteryData[kid+"_settings"]||{}; if(s.cat_modes&&s.cat_modes[cat]) return s.cat_modes[cat]; return (MAST_DEFAULT_CAT_MODES[kid]||{})[cat]||"flash"; }
 let mastFlipped=false;
 function mastFlip(){ mastFlipped=!mastFlipped; _mastRe(); }
 function mastCurriculumStatus(){
@@ -5352,9 +5354,22 @@ function mastAdminAdj(field,delta){
   mastAdminDirty=true;
   _mastRe();
 }
+function mastAdminCatMode(cat,mode){
+  const kid=masteryKid;
+  const s=masteryData[kid+"_settings"]||{};
+  if(!s.cat_modes) s.cat_modes={};
+  s.cat_modes[cat]=mode;
+  masteryData[kid+"_settings"]=s;
+  if(db) db.ref("mastery/"+kid+"_settings/cat_modes").set(s.cat_modes);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  _mastRe();
+}
 function mastAdminSave(){
   if(!mastAdminLocal) return;
   const kid=masteryKid||"julian";
+  // Preserve cat_modes if they exist
+  const existing=masteryData[kid+"_settings"]||{};
+  if(existing.cat_modes) mastAdminLocal.cat_modes=existing.cat_modes;
   masteryData[kid+"_settings"]={...mastAdminLocal};
   if(db) db.ref("mastery/"+kid+"_settings").set(mastAdminLocal);
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
@@ -5854,7 +5869,9 @@ function mastSlideShown(id){
 
   // Mark as handled for this session so we don't double-tap
   mastLogScores[id]="shown";
-  mastSlideIdx++;
+  // Only advance slideshow if the item is flash/flip (in the slideshow), not quiz (in the list)
+  const _shMode=mastGetCatMode(masteryKid,item.subject);
+  if(_shMode==="flash"||_shMode==="flip") mastSlideIdx++;
   _mastRe();
 }
 
@@ -6043,6 +6060,29 @@ function renderMastAdmin(){
   else h+='<span style="font-size:11px;color:#d97706">Unsaved changes</span>';
   h+='</div>';
   h+='</div></div>';
+
+  // ── SECTION 1B: CATEGORY MODES (quiz/flip/flash) ──
+  if(MAST_DEFAULT_CAT_MODES[masteryKid]){
+    h+='<div class="mast-admin-section">';
+    h+='<div class="mast-admin-hdr">\u{1F3AF} Category Modes</div>';
+    h+='<div class="mast-admin-card">';
+    h+='<div class="mast-admin-desc" style="margin-bottom:10px">Choose how each category is displayed during drills.</div>';
+    const _modes=["flash","flip","quiz"];
+    const _modeLabels={flash:"\u{26A1} Flash",flip:"\u{1F504} Flip",quiz:"\u{1F4DD} Quiz"};
+    const _modeDescs={flash:"Big flashcard slideshow",flip:"Tap to flip (shows definition)",quiz:"Numbered list like Lincoln\u{2019}s"};
+    const allCats=Object.keys(MAST_DEFAULT_CAT_MODES[masteryKid]);
+    allCats.forEach(mcat=>{
+      const curMode=mastGetCatMode(masteryKid,mcat);
+      const mEmoji=catE[mcat]||"";
+      h+='<div class="mast-admin-row">';
+      h+='<div><div class="mast-admin-label">'+mEmoji+' '+mcat+'</div><div class="mast-admin-desc">'+(_modeDescs[curMode]||"")+'</div></div>';
+      h+='<select style="padding:6px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:12px;font-weight:600;font-family:\'DM Sans\',sans-serif;background:#fff;color:var(--text);cursor:pointer" onchange="mastAdminCatMode(\''+mcat+'\',this.value)">';
+      _modes.forEach(m=>{ h+='<option value="'+m+'"'+(curMode===m?' selected':'')+'>'+_modeLabels[m]+'</option>'; });
+      h+='</select>';
+      h+='</div>';
+    });
+    h+='</div></div>';
+  }
 
   // ── SECTION 2: CURRICULUM BANK ──
   h+='<div class="mast-admin-section">';
@@ -6634,11 +6674,16 @@ function _renderMasteryInner(el){
 
   if(!due.length) h+='<div class="mast-none">Nothing due today \u{1F389}</div>';
   else if(MAST_FLASH_KIDS.has(masteryKid)){
-    // ── FLASHCARD SLIDESHOW (normal + log mode) ──
-    if(mastSlideIdx<0) mastSlideIdx=0;
-    if(mastSlideIdx>=due.length) mastSlideIdx=due.length-1;
-    const it=due[mastSlideIdx];
+    // ── Split items by category mode ──
     const catE3=MAST_CAT_EMOJI_MAP[masteryKid]||{};
+    const dueFlash=due.filter(i=>{ const m=mastGetCatMode(masteryKid,i.subject); return m==="flash"||m==="flip"; });
+    const dueQuiz=due.filter(i=>mastGetCatMode(masteryKid,i.subject)==="quiz");
+
+    // ── FLASHCARD SLIDESHOW for flash/flip items ──
+    if(dueFlash.length){
+    if(mastSlideIdx<0) mastSlideIdx=0;
+    if(mastSlideIdx>=dueFlash.length) mastSlideIdx=dueFlash.length-1;
+    const it=dueFlash[mastSlideIdx];
 
     const sc=mastLogMode?(mastLogScores[it.id]||""):"";
     const slideClass="mast-slide"+(sc==="c"?" scored-c":sc==="m"?" scored-m":sc==="~"?" scored-t":"");
@@ -6657,6 +6702,7 @@ function _renderMasteryInner(el){
     if(!bigVis&&cat==="Shapes") bigVis='<span style="font-size:280px">'+({Circle:"\u{1F534}",Square:"\u{1F7E7}",Triangle:"\u{1F53A}"}[it.prompt]||it.prompt)+'</span>';
     if(!bigVis) bigVis='<span style="font-size:200px;font-weight:800;color:#c2410c">'+it.prompt+'</span>';
     const _vocabDef=MAST_VOCAB_DEFS[it.prompt.toLowerCase()];
+    const _catMode=mastGetCatMode(masteryKid,cat);
     const isIntro=it.status==="introduction";
     const _js=mastJulianSettings();
     const tallyCount=isIntro?(it.tally_dots||0):(it.consecutive_correct||0);
@@ -6668,7 +6714,7 @@ function _renderMasteryInner(el){
     if(isIntro) _tallyH+='<div style="font-size:10px;color:#9a3412;font-weight:600;margin-top:4px">'+tallyCount+'/'+_js.intro_dots+' days shown</div>';
     else _tallyH+='<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:4px">'+(MAST_TIER_LBL[it.tier]||it.tier)+' \u{00B7} '+tallyCount+'/'+_js.ladder_streak+' streak</div>';
 
-    if(cat==="Vocabulary"&&_vocabDef){
+    if(_catMode==="flip"&&_vocabDef){
       h+='<div class="mast-flip-wrap'+(mastFlipped?" flipped":"")+'" onclick="mastFlip()">';
       h+='<div class="mast-flip-inner">';
       h+='<div class="mast-flip-front">';
@@ -6694,15 +6740,12 @@ function _renderMasteryInner(el){
     if(mastLogMode){
       const shown=sc==="shown";
       if(isIntro&&!shown){
-        // Introduction: just a "Shown" button to fill next dot
         h+='<div style="margin-top:14px">';
         h+='<button class="mast-slide-score-btn" style="width:auto;padding:12px 32px;font-size:16px;background:#fff7ed;border-color:#c2410c;color:#c2410c;border-radius:14px" onclick="mastSlideShown(\''+it.id+'\')">\u{1F441}\u{FE0F} Shown Today</button>';
         h+='</div>';
       } else if(isIntro&&shown){
-        // Already marked shown
         h+='<div style="margin-top:14px;font-size:13px;font-weight:700;color:#16a34a">\u{2713} Marked!</div>';
       } else {
-        // Ladder: score buttons
         h+='<div class="mast-slide-score">';
         h+='<button class="mast-slide-score-btn'+(sc==="c"?" sel-c":"")+'" onclick="mastSlideScore(\''+it.id+'\',\'c\')">\u{2713}</button>';
         h+='<button class="mast-slide-score-btn'+(sc==="m"?" sel-m":"")+'" onclick="mastSlideScore(\''+it.id+'\',\'m\')">\u{2717}</button>';
@@ -6713,16 +6756,66 @@ function _renderMasteryInner(el){
 
     h+='</div>'; // close slide
 
-    // Navigation arrows + counter
     h+='<div class="mast-slide-nav">';
     h+='<button class="mast-slide-arrow" onclick="mastSlidePrev()"'+(mastSlideIdx<=0?' disabled':'')+'">\u{2190}</button>';
-    h+='<span class="mast-slide-counter">'+(mastSlideIdx+1)+' / '+due.length+'</span>';
-    h+='<button class="mast-slide-arrow" onclick="mastSlideNext()"'+(mastSlideIdx>=due.length-1?' disabled':'')+'">\u{2192}</button>';
+    h+='<span class="mast-slide-counter">'+(mastSlideIdx+1)+' / '+dueFlash.length+'</span>';
+    h+='<button class="mast-slide-arrow" onclick="mastSlideNext()"'+(mastSlideIdx>=dueFlash.length-1?' disabled':'')+'">\u{2192}</button>';
     h+='</div>';
 
     h+='</div>'; // close padding
+    } // end dueFlash
 
-    // Bottom bar
+    // ── QUIZ LIST for quiz-mode items (Lincoln-style) ──
+    if(dueQuiz.length){
+      // Group quiz items by category
+      const qCats={};
+      dueQuiz.forEach(it=>{ if(!qCats[it.subject]) qCats[it.subject]=[]; qCats[it.subject].push(it); });
+      Object.entries(qCats).forEach(([qcat,qitems])=>{
+        const qEmoji=catE3[qcat]||"";
+        h+='<div class="mast-section"><div class="mast-section-lbl">'+qEmoji+' '+qcat+' <span class="cnt">'+qitems.length+'</span></div>';
+        qitems.forEach((it,i)=>{
+          const tc=MAST_TIER_COL[it.tier]||"#666";
+          const qIsIntro=it.status==="introduction";
+          if(mastLogMode){
+            const qsc=mastLogScores[it.id]||"";
+            if(qIsIntro){
+              const qshown=qsc==="shown";
+              h+='<div class="mast-log-item">';
+              h+='<span class="mast-log-num">'+(i+1)+'.</span>';
+              h+='<span class="mast-log-prompt">'+it.prompt+'</span>';
+              if(qcat==="Spelling"&&!qshown) h+='<span style="font-size:9px;color:#6366f1;margin-left:4px">say letters aloud</span>';
+              h+='<div class="mast-log-btns">';
+              if(!qshown) h+='<button class="mast-score-btn" style="width:auto;padding:6px 14px;font-size:11px;color:#c2410c;border-color:#c2410c" onclick="mastSlideShown(\''+it.id+'\')">\u{1F441}\u{FE0F} Shown</button>';
+              else h+='<span style="font-size:11px;font-weight:700;color:#16a34a">\u{2713}</span>';
+              h+='</div></div>';
+            } else {
+              h+='<div class="mast-log-item">';
+              h+='<span class="mast-log-num">'+(i+1)+'.</span>';
+              h+='<span class="mast-log-prompt">'+it.prompt+'</span>';
+              h+='<div class="mast-log-btns">';
+              h+='<button class="mast-score-btn'+(qsc==="c"?" sel-c":"")+'" onclick="mastScore(\''+it.id+'\',\'c\')">\u{2713}</button>';
+              h+='<button class="mast-score-btn'+(qsc==="m"?" sel-m":"")+'" onclick="mastScore(\''+it.id+'\',\'m\')">\u{2717}</button>';
+              h+='<button class="mast-score-btn'+(qsc==="~"?" sel-t":"")+'" onclick="mastScore(\''+it.id+'\',\'~\')">~</button>';
+              h+='</div></div>';
+            }
+          } else {
+            h+='<div class="mast-ditem">';
+            h+='<span class="mast-ditem-num">'+(i+1)+'.</span><span class="mast-ditem-prompt">'+it.prompt+'</span>';
+            if(qIsIntro){
+              const qDots=it.tally_dots||0;const qJs=mastJulianSettings();
+              h+='<span style="font-size:9px;color:#9a3412;font-weight:600">'+qDots+'/'+qJs.intro_dots+'</span>';
+              if(qcat==="Spelling") h+='<span style="font-size:8px;color:#6366f1;margin-left:4px">spell aloud</span>';
+            } else {
+              if(it.drop_count) h+='<span class="mast-irow-drop">\u{2B07}'+it.drop_count+'</span>';
+            }
+            h+='<span class="mast-ditem-tier" style="background:'+tc+'15;color:'+tc+'">'+(qIsIntro?'Intro':(MAST_TIER_LBL[it.tier]||it.tier))+'</span></div>';
+          }
+        });
+        h+='</div>';
+      });
+    }
+
+    // Bottom bar (covers all items)
     if(mastLogMode){
       const scored=Object.keys(mastLogScores).length;
       const allScored=scored===due.length;
@@ -6731,7 +6824,7 @@ function _renderMasteryInner(el){
       h+='<div style="padding:8px 14px;text-align:center"><button class="mast-log-btn" onclick="mastCancelLog()">Cancel</button></div>';
     } else {
       h+='<div class="mast-print-bar">';
-      h+='<button class="mast-print-btn" onclick="mastPrintJulian()">\u{1F5A8}\u{FE0F} Print Flashcards</button>';
+      if(dueFlash.length) h+='<button class="mast-print-btn" onclick="mastPrintJulian()">\u{1F5A8}\u{FE0F} Print Flashcards</button>';
       h+='<button class="mast-log-btn" onclick="mastStartLog()" style="margin-left:6px">\u{1F4DD} Log</button></div>';
     }
   } else if(mastLogMode){
