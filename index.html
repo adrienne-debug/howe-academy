@@ -5310,6 +5310,7 @@ let mastAddTab="single"; // "single" or "batch"
 let mastAddSubject="AAS";
 let mastAddType="spelling_word";
 let mastAddJulianCat="Letters";
+let mastAddItemMode=""; // "", "flash", "flip", "quiz" — blank = use category default
 let mastAddCustomSubject="";
 let mastAddImageUrl="";
 let mastAddUploading=false;
@@ -5827,13 +5828,14 @@ function mastExpandHtml(it){
 
   return '<div class="mast-expand'+(open?" open":"")+'"><div class="mast-expand-inner">'+inner+'</div></div>';
 }
-function mastOpenAdd(){ mastAddMode=true; mastAddImageUrl=""; _mastRe(); }
-function mastCloseAdd(){ mastAddMode=false; mastAddImageUrl=""; _mastRe(); }
+function mastOpenAdd(){ mastAddMode=true; mastAddImageUrl=""; mastAddItemMode=""; _mastRe(); }
+function mastCloseAdd(){ mastAddMode=false; mastAddImageUrl=""; mastAddItemMode=""; _mastRe(); }
 function mastAddSetTab(t){ mastAddTab=t; mastAddImageUrl=""; _mastRe(); }
 function mastSetType(t){ mastAddType=t; _mastRe(); }
 function mastSetSubject(s){ mastAddSubject=s; mastAddCustomSubject=""; _mastRe(); }
 function mastSetCustomSubj(){ mastAddCustomSubject=mastAddCustomSubject||"New"; _mastRe(); }
-function mastSetJulianCat(s){ mastAddJulianCat=s; _mastRe(); }
+function mastSetJulianCat(s){ mastAddJulianCat=s; mastAddItemMode=""; _mastRe(); }
+function mastSetAddItemMode(m){ mastAddItemMode=m; _mastRe(); }
 function mastSlideNext(){ mastSlideIdx++; mastFlipped=false; _mastRe(); }
 function mastSlidePrev(){ mastSlideIdx--; mastFlipped=false; _mastRe(); }
 function mastSlideScore(id,val){ mastLogScores[id]=val; mastSlideIdx++; mastFlipped=false; _mastRe(); }
@@ -5979,11 +5981,31 @@ function mastAddItems(){
     items.push(item);
     existingPrompts.add(p.toLowerCase());
     added++;
+
+    // Save flip definition if provided
+    if(isJulian&&mastAddTab==="single"&&prompts.length===1){
+      const _aMode=mastAddItemMode||mastGetCatMode(masteryKid,mastAddJulianCat);
+      if(_aMode==="flip"){
+        const defInput=document.getElementById("mast-add-def");
+        if(defInput&&defInput.value.trim()){
+          const s=masteryData[masteryKid+"_settings"]||{};
+          if(!s.definitions) s.definitions={};
+          s.definitions[p]=defInput.value.trim();
+          masteryData[masteryKid+"_settings"]=s;
+          if(db) db.ref("mastery/"+masteryKid+"_settings/definitions").set(s.definitions);
+        }
+      }
+    }
   });
 
   if(!added){
     alert(skipped+" item(s) already exist, nothing added");
     return;
+  }
+
+  // If mode was changed from category default, update the category mode
+  if(isJulian&&mastAddItemMode&&mastAddItemMode!==mastGetCatMode(masteryKid,mastAddJulianCat)){
+    mastAdminCatMode(mastAddJulianCat,mastAddItemMode);
   }
 
   // Assign cycles for new daily items
@@ -5996,6 +6018,7 @@ function mastAddItems(){
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 
   mastAddMode=false;
+  mastAddItemMode="";
   alert(added+" item(s) added"+(skipped?" ("+skipped+" duplicate(s) skipped)":""));
   const c=document.getElementById("content"); if(c) renderMastery(c);
 }
@@ -6642,12 +6665,24 @@ function _renderMasteryInner(el){
       }
       h+='</div>';
     } else {
-      // Julian category picker
+      // Julian/Lucy category picker
       h+='<div class="mast-add-label">Category</div>';
       h+='<div class="mast-add-pills" style="margin-bottom:10px">';
       const _catE=MAST_CAT_EMOJI_MAP[masteryKid]||{};
       subjects.forEach(s=>{h+='<button class="mast-add-pill'+(mastAddJulianCat===s?" active":"")+'" onclick="mastSetJulianCat(\''+s+'\')">'+(_catE[s]||"")+' '+s+'</button>';});
       h+='</div>';
+
+      // Mode picker (flash/flip/quiz)
+      const _curAddMode=mastAddItemMode||mastGetCatMode(masteryKid,mastAddJulianCat);
+      h+='<div class="mast-add-label">Display Mode</div>';
+      h+='<div class="mast-add-pills" style="margin-bottom:10px">';
+      h+='<button class="mast-add-pill'+(_curAddMode==="flash"?" active":"")+'" onclick="mastSetAddItemMode(\'flash\')">\u{26A1} Flash</button>';
+      h+='<button class="mast-add-pill'+(_curAddMode==="flip"?" active":"")+'" onclick="mastSetAddItemMode(\'flip\')">\u{1F504} Flip</button>';
+      h+='<button class="mast-add-pill'+(_curAddMode==="quiz"?" active":"")+'" onclick="mastSetAddItemMode(\'quiz\')">\u{1F4DD} Quiz</button>';
+      h+='</div>';
+      if(_curAddMode!==mastGetCatMode(masteryKid,mastAddJulianCat)){
+        h+='<div style="font-size:10px;color:#d97706;margin-bottom:8px">\u{26A0}\u{FE0F} This differs from the category default. It will change the category mode to <strong>'+_curAddMode+'</strong>.</div>';
+      }
     }
 
     // Input
@@ -6655,6 +6690,7 @@ function _renderMasteryInner(el){
       h+='<div class="mast-add-label">'+(isJ?"Item":"Word / Rule")+'</div>';
       h+='<input class="mast-add-input" id="mast-add-single" placeholder="'+(isJ?"e.g. Dog":"e.g. splash")+'" autocapitalize="off" autocorrect="off" autocomplete="off">';
 
+      const _addMode=isJ?(mastAddItemMode||mastGetCatMode(masteryKid,mastAddJulianCat)):"";
       const isGenType=MAST_ITEM_TYPES.find(t=>t.id===mastAddType&&t.generated);
       if(isGenType){
         h+='<div class="mast-add-label" style="margin-top:10px">Generation Rule <span style="color:#dc2626">*</span></div>';
@@ -6669,6 +6705,10 @@ function _renderMasteryInner(el){
         });
         h+='</div>';
         h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">How many fresh problems to generate each time this concept appears in the drill.</div>';
+      } else if(_addMode==="flip"){
+        h+='<div class="mast-add-label" style="margin-top:10px">Definition (flip card back) <span style="color:#7c3aed">*</span></div>';
+        h+='<input class="mast-add-input" id="mast-add-def" placeholder="e.g. not afraid, ready to face danger" autocomplete="off" style="border-color:#c7d2fe">';
+        h+='<div style="font-size:10px;color:#7c3aed;margin-top:4px">\u{1F504} This text will show when the card is tapped/flipped</div>';
       } else {
         h+='<div class="mast-add-label" style="margin-top:10px">Definition / Answer (optional)</div>';
         h+='<input class="mast-add-input" id="mast-add-def" placeholder="'+(isJ?"e.g. A big cat with a mane":"e.g. The Floss Rule: ff, ll, ss after a short vowel")+'" autocomplete="off">';
