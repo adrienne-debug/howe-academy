@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:ital,wght@0,600;0,700;1,600&family=Nunito:wght@400;600;700;800;900&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-<!-- Firebase Storage removed — images compressed client-side and stored as base64 in Realtime DB -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -2091,17 +2091,21 @@ function renderSettings(el,ah){
   pinHtml+='<div class="rules-card-body">';
   if(celebSongs.length){
     celebSongs.forEach((s,i)=>{
-      pinHtml+='<div style="display:grid;grid-template-columns:1fr 1fr 36px;gap:6px;margin-bottom:4px;align-items:center">';
-      pinHtml+='<input type="text" value="'+(s.name||"")+'" placeholder="Song name" onchange="celebSongSet('+i+',\'name\',this.value)" style="padding:6px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif">';
-      pinHtml+='<input type="text" value="'+(s.url||"")+'" placeholder="Audio URL (mp3)" onchange="celebSongSet('+i+',\'url\',this.value)" style="padding:6px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif">';
-      pinHtml+='<button onclick="celebSongRemove('+i+')" style="padding:4px;border-radius:8px;background:#ef4444;color:#fff;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✕</button>';
+      pinHtml+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;padding:8px;background:var(--bg);border:1.5px solid var(--border);border-radius:10px">';
+      pinHtml+='<div style="flex:1;min-width:0">';
+      pinHtml+='<div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(s.name||"Untitled")+'</div>';
+      pinHtml+='<div style="font-size:10px;color:var(--muted)">'+(s.url?"Uploaded":"No file")+'</div>';
+      pinHtml+='</div>';
+      pinHtml+='<button onclick="celebSongRemove('+i+')" style="padding:4px 8px;border-radius:8px;background:#ef4444;color:#fff;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✕</button>';
       pinHtml+='</div>';
     });
   } else {
-    pinHtml+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-style:italic">No songs added yet. Add a song name and an audio URL (direct link to .mp3).</div>';
+    pinHtml+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-style:italic">No songs added yet. Tap "Upload Song" to add an MP3.</div>';
   }
+  pinHtml+='<div id="celeb-upload-status" style="font-size:12px;color:var(--muted);min-height:16px;margin-bottom:4px"></div>';
+  pinHtml+='<input type="file" id="celeb-file-input" accept="audio/mpeg,audio/mp3,.mp3" onchange="celebSongUpload(this)" style="display:none">';
   pinHtml+='<div style="display:flex;gap:6px;margin-top:8px">';
-  pinHtml+='<button onclick="celebSongAdd()" style="padding:5px 12px;border-radius:8px;background:var(--header);color:#fff;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Add Song</button>';
+  pinHtml+='<button onclick="document.getElementById(\'celeb-file-input\').click()" style="padding:5px 12px;border-radius:8px;background:var(--header);color:#fff;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Upload Song</button>';
   pinHtml+='<button onclick="celebTestConfetti()" style="padding:5px 12px;border-radius:8px;background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🎉 Test</button>';
   pinHtml+='</div>';
   pinHtml+='<div id="celeb-cfg-msg" style="font-size:12px;color:#16a34a;min-height:16px;margin-top:6px"></div>';
@@ -2110,20 +2114,49 @@ function renderSettings(el,ah){
   renderRules(el, pinHtml);
 }
 
-function celebSongAdd(){
-  celebSongs.push({name:"",url:""});
-  celebSongsSave();
-  renderAll();
+function celebSongUpload(input){
+  const file=input.files&&input.files[0];
+  if(!file) return;
+  if(!file.type.match(/audio\/(mpeg|mp3)/)){
+    alert("Please select an MP3 file."); input.value=""; return;
+  }
+  if(file.size>15*1024*1024){
+    alert("File too large (max 15 MB)."); input.value=""; return;
+  }
+  const status=document.getElementById("celeb-upload-status");
+  if(status) status.textContent="Uploading "+file.name+"…";
+  const safeName=Date.now()+"_"+file.name.replace(/[^a-zA-Z0-9._-]/g,"_");
+  const ref=firebase.storage().ref("songs/"+safeName);
+  const task=ref.put(file);
+  task.on("state_changed",
+    snap=>{
+      const pct=Math.round((snap.bytesTransferred/snap.totalBytes)*100);
+      if(status) status.textContent="Uploading… "+pct+"%";
+    },
+    err=>{
+      if(status) status.textContent="Upload failed: "+err.message;
+      input.value="";
+    },
+    ()=>{
+      task.snapshot.ref.getDownloadURL().then(url=>{
+        const name=file.name.replace(/\.[^.]+$/,"").replace(/^\d+[-_ ]+/,"");
+        celebSongs.push({name:name,url:url});
+        celebSongsSave();
+        if(status) status.textContent="";
+        input.value="";
+        renderAll();
+      });
+    }
+  );
 }
 function celebSongRemove(i){
+  const song=celebSongs[i];
+  if(song&&song.url&&song.url.includes("firebasestorage")){
+    try{ firebase.storage().refFromURL(song.url).delete().catch(()=>{}); }catch(e){}
+  }
   celebSongs.splice(i,1);
   celebSongsSave();
   renderAll();
-}
-function celebSongSet(i,field,val){
-  if(!celebSongs[i]) return;
-  celebSongs[i][field]=val;
-  celebSongsSave();
 }
 function celebSongsSave(){
   if(db) db.ref("settings/celebration_songs").set(celebSongs);
@@ -10125,7 +10158,7 @@ function gwByCategory(kid,tasksDict){
   const buckets={first:[],computer:[],ipad:[],phone:[],independent:[],maybe_paper:[],required_paper:[],last:[]};
   for(const[key,raw] of Object.entries(tasksDict)){
     const s=subjects[key];
-    if(!s) continue;
+    if(!s||s.paused) continue;
     // Expand arrays (doubled-up subjects from autoBalance) into separate entries
     const vals=Array.isArray(raw)?raw:[raw];
     const rules=s.rules||"";
@@ -10133,19 +10166,22 @@ function gwByCategory(kid,tasksDict){
       if(rules.includes("first")){ buckets.first.push([key,val]); continue; }
       if(rules.includes("last")){ buckets.last.push([key,val]); continue; }
       if(s.device==="computer") buckets.computer.push([key,val]);
-      else if(s.device==="ipad") buckets.ipad.push([key,val]);
+      else if(s.device==="ipad"||s.device==="ipad/phone") buckets.ipad.push([key,val]);
       else if(s.device==="phone") buckets.phone.push([key,val]);
       else if(s.mom==="required") buckets.required_paper.push([key,val]);
       else if(s.mom==="maybe") buckets.maybe_paper.push([key,val]);
       else buckets.independent.push([key,val]);
     }
   }
-  // Sort required_paper so priority items come first
-  buckets.required_paper.sort((a,b)=>{
-    const aP=(subjects[a[0]]&&(subjects[a[0]].rules||"").includes("priority"))?0:1;
-    const bP=(subjects[b[0]]&&(subjects[b[0]].rules||"").includes("priority"))?0:1;
-    return aP-bP;
+  // Sort all buckets: high priority first, then priority rule, then low last
+  const prioRank={"high":0,"normal":2,"low":3};
+  const sortBucket=(arr)=>arr.sort((a,b)=>{
+    const sa=subjects[a[0]], sb=subjects[b[0]];
+    const aR=(sa&&(sa.rules||"").includes("priority"))?1:prioRank[sa&&sa.priority||"normal"]||2;
+    const bR=(sb&&(sb.rules||"").includes("priority"))?1:prioRank[sb&&sb.priority||"normal"]||2;
+    return aR-bR;
   });
+  ["computer","ipad","phone","independent","maybe_paper","required_paper"].forEach(k=>sortBucket(buckets[k]));
   return buckets;
 }
 
@@ -10474,6 +10510,9 @@ function gwAutoBalance(dayData,lateStart,skipDays){
             if(rules.includes("sticky")) continue;
             if(rules.includes("no-fri")&&dayName==="friday") continue;
             if(rules.includes("mon-thu")&&!["monday","tuesday","wednesday","thursday"].includes(dayName)) continue;
+            const allowed=subjects[key]&&subjects[key].allowedDays||[];
+            const dayAbbr={monday:"Mon",tuesday:"Tue",wednesday:"Wed",thursday:"Thu",friday:"Fri",saturday:"Sat"}[dayName];
+            if(allowed.length&&dayAbbr&&!allowed.includes(dayAbbr)) continue;
             // Only block doubling for max1 subjects (reflex, dictation)
             const dstTasks=(dayData[dk]||{})[kid]||{};
             if(dstTasks[key]!==undefined&&rules.includes("max1")) continue;
@@ -10551,6 +10590,7 @@ function gwReadWeek(weekNum){
 
       const subjects=currData.subjects[kid]||{};
       for(const key of Object.keys(subjects)){
+        if(subjects[key].paused) continue;
         if(lesson[key]&&lesson[key]!=="—"&&lesson[key]!=="nan"){
           dayData[dateStr][kid][key]=lesson[key];
         }
@@ -10569,12 +10609,15 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek){
   const dayData=gwReadWeek(weekNum);
   if(!dayData) return null;
 
+  const WDAY_ABBR={0:"Sun",1:"Mon",2:"Tue",3:"Wed",4:"Thu",5:"Fri",6:"Sat"};
+  const sortedDates=Object.keys(dayData).sort();
+
   const cursors={};
 
   for(const kid of ["lincoln","ellis","lucy"]){
     cursors[kid]={};
+    const subjects=currData.subjects[kid]||{};
     const subjectSlots={};
-    const sortedDates=Object.keys(dayData).sort();
     for(const dateStr of sortedDates){
       if(!dayData[dateStr]||!dayData[dateStr][kid]) continue;
       for(const sk of Object.keys(dayData[dateStr][kid])){
@@ -10582,20 +10625,54 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek){
         subjectSlots[sk].push(dateStr);
       }
     }
+
+    // Inject in-app subjects (lessonSeq, no Excel data) onto matching days
+    for(const[sk,s] of Object.entries(subjects)){
+      if(s.paused) continue;
+      if(subjectSlots[sk]) continue;
+      if(!s.lessonSeq||!s.lessonSeq.length) continue;
+      const rules=s.rules||"";
+      if(rules.includes("first")||rules.includes("last")) continue;
+      const allowed=s.allowedDays||[];
+      const matchDates=sortedDates.filter(d=>{
+        if(!allowed.length) return true;
+        const dObj=gwParseDate(d);
+        const abbr=WDAY_ABBR[dObj.getDay()];
+        return abbr&&allowed.includes(abbr);
+      });
+      if(!matchDates.length) continue;
+      subjectSlots[sk]=matchDates;
+      for(const d of matchDates){
+        if(!dayData[d][kid]) dayData[d][kid]={};
+        dayData[d][kid][sk]="TMP";
+      }
+    }
+
     for(const sk of Object.keys(subjectSlots)){
       const dates=subjectSlots[sk];
-      // Two-tier: use saved cursor if available, otherwise compute fresh
-      // On regeneration: exclude this week's own tasks so cursor doesn't drift
       const cursor=(savedCursors&&savedCursors[kid]&&savedCursors[kid][sk]!==undefined)
         ?savedCursors[kid][sk]
         :computeSubjectCursor(kid,sk,excludeWeek);
       cursors[kid][sk]=cursor;
-      const nextLessons=getNextLessonsFromCursor(kid,sk,cursor,dates.length);
+
+      // Respect carryoverCap: limit extra lessons beyond normal pace
+      const s=subjects[sk];
+      const cap=(s&&s.carryoverCap!==undefined&&s.carryoverCap!==null)?s.carryoverCap:2;
+      let slotsToFill=dates.length;
+      if(cap>=0){
+        const total=s&&s.total||0;
+        const seq=buildSubjectLessons(kid,sk);
+        const remaining=seq.length-cursor;
+        if(remaining<=0) slotsToFill=0;
+        else if(remaining<slotsToFill) slotsToFill=Math.min(slotsToFill,dates.length+cap);
+      }
+
+      const nextLessons=getNextLessonsFromCursor(kid,sk,cursor,slotsToFill);
       for(let i=0;i<dates.length;i++){
-        if(nextLessons[i]){
+        if(i<slotsToFill&&nextLessons[i]){
           dayData[dates[i]][kid][sk]=nextLessons[i].lesson;
         } else {
-          delete dayData[dates[i]][kid][sk];
+          if(dayData[dates[i]]&&dayData[dates[i]][kid]) delete dayData[dates[i]][kid][sk];
         }
       }
     }
@@ -10635,16 +10712,22 @@ function generateWeek(config){
   balanced=gwAutoBalance(balanced,config.lateStart||{},config.skipDays||[]);
 
   // Inject daily curriculum subjects (notebooks, drills) into every school day — reads from curriculum data
+  const _WDAY_ABBR2={0:"Sun",1:"Mon",2:"Tue",3:"Wed",4:"Thu",5:"Fri",6:"Sat"};
   for(const dk of Object.keys(balanced)){
     if(!balanced[dk]) continue;
+    const dkDate=gwParseDate(dk);
+    const dkAbbr=_WDAY_ABBR2[dkDate.getDay()];
     for(const kid of ["lincoln","ellis","lucy"]){
       if(!balanced[dk][kid]||!Object.keys(balanced[dk][kid]).length) continue;
       const subs=currData&&currData.subjects[kid]||{};
       for(const sk of Object.keys(subs)){
+        if(subs[sk].paused) continue;
         const r=subs[sk].rules||"";
-        if(r.includes("first")||r.includes("last")) balanced[dk][kid][sk]=subs[sk].display||"Daily";
+        if(!r.includes("first")&&!r.includes("last")) continue;
+        const al=subs[sk].allowedDays||[];
+        if(al.length&&dkAbbr&&!al.includes(dkAbbr)) continue;
+        balanced[dk][kid][sk]=subs[sk].display||"Daily";
       }
-      if(subs.drills_l&&!subs.drills_l.paused) balanced[dk][kid].drills_l="Practice";
     }
   }
 
