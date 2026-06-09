@@ -5089,7 +5089,7 @@ function mastDrillSettings(){
   const kid=masteryKid||"julian";
   const s=masteryData[kid+"_settings"]||{};
   const defaultLadder=["every_other_day","weekly","bi_weekly","monthly","graduated"];
-  return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,auto_pull:s.auto_pull!==false,ladder:s.ladder||defaultLadder};
+  return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,auto_pull:s.auto_pull!==false,ladder:s.ladder||defaultLadder,cat_caps:s.cat_caps||{}};
 }
 const MAST_BANK_MAP={julian:MAST_JULIAN_BANK,lucy:MAST_LUCY_BANK,ellis:MAST_ELLIS_BANK,lincoln:MAST_LINCOLN_BANK};
 const MAST_CAT_EMOJI_MAP={
@@ -5180,9 +5180,10 @@ function mastDueItems(kid,pn){
     else byCat[cat].active.push(item);
   });
   const capped=[];
-  Object.values(byCat).forEach(bucket=>{
+  Object.entries(byCat).forEach(([cat,bucket])=>{
     const combined=bucket.active.concat(bucket.intro);
-    capped.push(...combined.slice(0,settings.max_per_cat));
+    const cap=settings.cat_caps[cat]??settings.max_per_cat;
+    capped.push(...combined.slice(0,cap));
   });
   return capped;
 }
@@ -5392,6 +5393,17 @@ function mastAdminAdj(field,delta){
   if(!mastAdminLocal) mastAdminInit();
   if(field==='auto_pull'){ mastAdminLocal.auto_pull=!mastAdminLocal.auto_pull; }
   else { mastAdminLocal[field]=Math.max(1,(mastAdminLocal[field]||0)+delta); }
+  mastAdminDirty=true;
+  _mastRe();
+}
+function mastAdminCatCap(cat,delta){
+  if(!mastAdminLocal) mastAdminInit();
+  if(!mastAdminLocal.cat_caps) mastAdminLocal.cat_caps={};
+  if(delta===0){ delete mastAdminLocal.cat_caps[cat]; }
+  else {
+    const cur=mastAdminLocal.cat_caps[cat]??(mastAdminLocal.max_per_cat||5);
+    mastAdminLocal.cat_caps[cat]=Math.max(1,cur+delta);
+  }
   mastAdminDirty=true;
   _mastRe();
 }
@@ -6160,6 +6172,28 @@ function renderMastAdmin(){
     h+='<button onclick="mastAdminAdj(\''+r.key+'\',1)"'+(val>=r.max?' disabled':'')+'>+</button>';
     h+='</div></div>';
   });
+
+  // Per-category cap overrides
+  const catCaps=s.cat_caps||{};
+  const allCats=[...new Set((masteryData[masteryKid]||[]).map(i=>i.subject).filter(Boolean))].sort();
+  if(allCats.length){
+    h+='<div class="mast-admin-row" style="flex-direction:column;align-items:stretch">';
+    h+='<div style="margin-bottom:8px"><div class="mast-admin-label">Per-Category Cap Overrides</div><div class="mast-admin-desc">Override the daily cap for specific categories (blank = use default '+(s.max_per_cat||5)+')</div></div>';
+    allCats.forEach(cat=>{
+      const cv=catCaps[cat];
+      const hasOverride=cv!==undefined&&cv!==null;
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0">';
+      h+='<span style="flex:1;font-size:12px;font-weight:600">'+(catE[cat]||"")+' '+cat+'</span>';
+      h+='<div class="mast-admin-stepper">';
+      h+='<button onclick="mastAdminCatCap(\''+cat.replace(/'/g,"\\\\'")+'\',-1)"'+(hasOverride&&cv<=1?' disabled':'')+'>−</button>';
+      h+='<span class="val" style="'+(hasOverride?'color:#c2410c;font-weight:800':'color:var(--muted)')+'">'+( hasOverride?cv:(s.max_per_cat||5))+'</span>';
+      h+='<button onclick="mastAdminCatCap(\''+cat.replace(/'/g,"\\\\'")+'\',1)">+</button>';
+      h+='</div>';
+      if(hasOverride) h+='<button onclick="mastAdminCatCap(\''+cat.replace(/'/g,"\\\\'")+'\',0)" style="font-size:9px;color:#6366f1;background:none;border:none;cursor:pointer;font-weight:600;font-family:\'DM Sans\',sans-serif">reset</button>';
+      h+='</div>';
+    });
+    h+='</div>';
+  }
 
   // Auto-pull toggle
   h+='<div class="mast-admin-row">';
