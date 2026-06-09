@@ -8521,10 +8521,65 @@ function runDisplacement(){
   const sd=r.schoolDay||{};
   const sdOv=sd.overrides||{};
   const mp=r.maxPerDay||{};
+  const wf=r.workflow||{};
   const dayOrder=["monday","tuesday","wednesday","thursday","friday","saturday"];
   const tasks=JSON.parse(JSON.stringify(weekData.tasks));
   const carryOver=[];
 
+  // ── Helpers ──
+  function maxFor(subj){return(mp[subj]&&mp[subj].max!=null)?mp[subj].max:999;}
+  function _dayStart(d){var ov=sdOv[d];return toMin((ov&&ov.start)||sd.defaultStart||"10:00 AM");}
+  function _dayEnd(d){var ov=sdOv[d];return toMin((ov&&ov.end)||sd.defaultEnd||"4:15 PM");}
+  function _dayLS(d){var ov=sdOv[d];return toMin((ov&&ov.lunchStart)||sd.lunchStart||"1:00 PM");}
+  function _dayLE(d){var ov=sdOv[d];return toMin((ov&&ov.lunchEnd)||sd.lunchEnd||"2:00 PM");}
+  function _isNotebook(t){return(t.title||"").includes("Notebook");}
+  function _isMorningNb(t){return(t.title||"").includes("Morning Notebook");}
+  function _isClosingNb(t){return(t.title||"").includes("Closing Notebook");}
+
+  // Workflow-order sort weight for a task (lower = earlier)
+  function _wfWeight(t){
+    if(_isMorningNb(t)) return -1000;
+    if(_isClosingNb(t)) return 1000;
+    const kidWf=wf[t.who];
+    if(!kidWf) return 0;
+    const steps=kidWf.normal||[];
+    const tier=taskTier(t);
+    const subj=taskSubject(t);
+    for(let i=0;i<steps.length;i++){
+      const s=steps[i];
+      if(s.tier===tier){ const subs=(s.subjects||[]); if(!subs.length||subs.indexOf(subj)>=0) return i; }
+    }
+    return 500;
+  }
+
+  // Check if kid is a withSitter kid
+  const _sitterKids=(weekData.babysitter&&weekData.babysitter.withSitter)||(r.withSitter)||[];
+
+  // Latest blockout end for a kid on a day (timed only)
+  function _boEnd(d,who){
+    let latest=0;
+    bos.forEach(function(bo){
+      if(bo.day!==d||bo.type==="fullDay") return;
+      if((bo.kids||[]).indexOf(who)<0) return;
+      var e=toMin(bo.end||"");
+      if(e>latest) latest=e;
+    });
+    return latest;
+  }
+  // Is there a fullDay blockout for kid on day?
+  function _fullDay(d,who){
+    var fd=false;
+    bos.forEach(function(bo){if(bo.day===d&&bo.type==="fullDay"&&(bo.kids||[]).indexOf(who)>=0)fd=true;});
+    return fd;
+  }
+  // Mom return time on a day (from babysitter data)
+  function _momReturn(d){
+    var mag=weekData.babysitter||{};
+    if(!mag.days||mag.days.indexOf(d)<0) return 0;
+    return toMin(mag["mom_return_"+d]||mag.mom_return||"2:00 PM");
+  }
+
+  // ── Phase 0: Identify displaced tasks ──
   const displacedIds=new Set();
   bos.forEach(function(bo){
     var kids=bo.kids||[];
@@ -8541,66 +8596,119 @@ function runDisplacement(){
   var keptTasks=tasks.filter(function(t){return !displacedIds.has(t.id);});
   var working=keptTasks.slice();
 
-  function maxFor(subj){return(mp[subj]&&mp[subj].max!=null)?mp[subj].max:999;}
+  // ── Phase 1: Same-day placement after blockout (timed only) ──
+  // Group displaced tasks by day
+  var byDay={};
+  displacedTasks.forEach(function(dt){ if(!byDay[dt.day]) byDay[dt.day]=[]; byDay[dt.day].push(dt); });
+  var needsCrossDay=[];
+
+  Object.keys(byDay).forEach(function(d){
+    if(_fullDay(d,byDay[d][0].who)){
+      // Full-day blockout — all go to cross-day
+      byDay[d].forEach(function(dt){ needsCrossDay.push(dt); });
+      return;
+    }
+    var dEnd=_dayEnd(d), dLunchS=_dayLS(d), dLunchE=_dayLE(d);
+    var momRet=_momReturn(d);
+
+    // Sort: Morning Notebook first, then workflow order, then Closing Notebook last
+    byDay[d].sort(function(a,b){ return _wfWeight(a)-_wfWeight(b); });
+
+    // Find the latest existing (non-displaced) task end on this day
+    var keptOnDay=working.filter(function(t){return t.day===d;});
+    var latestKept=0;
+    keptOnDay.forEach(function(t){ var e=toMin(t.time)+20; if(e>latestKept) latestKept=e; });
+
+    // Per-kid cursor: starts at max(blockout end, latest kept task end)
+    var kidCursors={};
+
+    byDay[d].forEach(function(dt){
+      var boE=_boEnd(d,dt.who);
+      if(!kidCursors[dt.who]) kidCursors[dt.who]=Math.max(boE, latestKept);
+      var cursor=kidCursors[dt.who];
+
+      // Mom-required tasks must wait for mom return
+      if(dt.mom==="required"&&momRet>cursor) cursor=momRet;
+      // withSitter kids: all tasks after mom return
+      if(_sitterKids.indexOf(dt.who)>=0&&momRet>cursor) cursor=momRet;
+
+      // Skip lunch
+      if(cursor>=dLunchS&&cursor<dLunchE) cursor=dLunchE;
+
+      // Check maxPerDay
+      var subj=taskSubject(dt), mx=maxFor(subj);
+      if(mx<999){
+        var ct=0; working.forEach(function(w){if(w.day===d&&taskSubject(w)===subj&&w.who===dt.who)ct++;});
+        if(ct>=mx){ needsCrossDay.push(dt); return; }
+      }
+
+      if(cursor<dEnd){
+        dt._displaced=true; dt._originalDay=dt.day;
+        dt.time=fromMin(cursor);
+        working.push(dt);
+        kidCursors[dt.who]=cursor+20;
+      } else {
+        needsCrossDay.push(dt);
+      }
+    });
+  });
+
+  // ── Phase 2: Cross-day placement (later days first, then Saturday catch-all) ──
   function canPlace(t,d){
-    var blocked=false;
-    bos.forEach(function(bo){if(bo.day===d&&bo.type==="fullDay"&&(bo.kids||[]).indexOf(t.who)>=0)blocked=true;});
-    if(blocked)return false;
+    if(_fullDay(d,t.who)) return false;
     var subj=taskSubject(t),mx=maxFor(subj);
     if(mx<999){var ct=0;working.forEach(function(w){if(w.day===d&&taskSubject(w)===subj&&w.who===t.who)ct++;});if(ct>=mx)return false;}
     var bab=null;bos.forEach(function(bo){if(bo.day===d&&bo.type==="babysitter")bab=bo;});
-    if(bab&&(bab.kids||[]).indexOf(t.who)>=0){if(t.mom==="required")return false;var _ws=(weekData.babysitter&&weekData.babysitter.withSitter)||(rulesData&&rulesData.withSitter)||[];if(_ws.indexOf(t.who)>=0)return false;}
+    if(bab&&(bab.kids||[]).indexOf(t.who)>=0){if(t.mom==="required")return false;if(_sitterKids.indexOf(t.who)>=0)return false;}
     return true;
   }
-  function _dayStart(d){var ov=sdOv[d];return toMin((ov&&ov.start)||sd.defaultStart||"10:00 AM");}
-  function _dayEnd(d){var ov=sdOv[d];return toMin((ov&&ov.end)||sd.defaultEnd||"4:15 PM");}
-  function _dayLS(d){var ov=sdOv[d];return toMin((ov&&ov.lunchStart)||sd.lunchStart||"1:00 PM");}
-  function _dayLE(d){var ov=sdOv[d];return toMin((ov&&ov.lunchEnd)||sd.lunchEnd||"2:00 PM");}
 
-  displacedTasks.sort(function(a,b){return toMin(a.time)-toMin(b.time);});
+  needsCrossDay.sort(function(a,b){ return _wfWeight(a)-_wfWeight(b); });
 
-  displacedTasks.forEach(function(dt){
-    var origIdx=dayOrder.indexOf(dt.day);
+  needsCrossDay.forEach(function(dt){
+    var origIdx=dayOrder.indexOf(dt._originalDay||dt.day);
     var placed=false;
-    for(var di=origIdx+1;di<dayOrder.length&&!placed;di++){
+    // Try later days (not Saturday yet)
+    for(var di=origIdx+1;di<dayOrder.length-1&&!placed;di++){
       if(canPlace(dt,dayOrder[di])){
-        dt._displaced=true;dt._originalDay=dt.day;dt.day=dayOrder[di];
+        dt._displaced=true;dt._originalDay=dt._originalDay||dt.day;dt.day=dayOrder[di];
         working.push(dt);placed=true;
       }
     }
+    // Try earlier days
     if(!placed){
       for(var di2=origIdx-1;di2>=0&&!placed;di2--){
         if(canPlace(dt,dayOrder[di2])){
-          dt._displaced=true;dt._originalDay=dt.day;dt.day=dayOrder[di2];
+          dt._displaced=true;dt._originalDay=dt._originalDay||dt.day;dt.day=dayOrder[di2];
           working.push(dt);placed=true;
         }
       }
     }
-    if(!placed){dt._displaced=true;dt._originalDay=dt.day;dt._carryOver=true;carryOver.push(dt);}
+    // Saturday catch-all
+    if(!placed&&canPlace(dt,"saturday")){
+      dt._displaced=true;dt._originalDay=dt._originalDay||dt.day;dt.day="saturday";
+      working.push(dt);placed=true;
+    }
+    if(!placed){dt._displaced=true;dt._originalDay=dt._originalDay||dt.day;dt._carryOver=true;carryOver.push(dt);}
   });
 
-  // Re-time receiving days
-  var touchedDays=new Set(working.filter(function(t){return t._displaced;}).map(function(t){return t.day;}));
+  // ── Phase 3: Re-time receiving days ──
+  var touchedDays=new Set(working.filter(function(t){return t._displaced&&!byDay[t.day];}).map(function(t){return t.day;}));
   touchedDays.forEach(function(d){
     var dStart=_dayStart(d);
     var dEnd=_dayEnd(d);
     var dLunchS=_dayLS(d);
     var dLunchE=_dayLE(d);
 
-    // Get all tasks on this day, sorted by: original tasks first (by time), then displaced
     const dayTasks=working.filter(t=>t.day===d);
     dayTasks.sort((a,b)=>{
-      // Originals keep their time, displaced go after
       if(!a._displaced&&!b._displaced) return toMin(a.time)-toMin(b.time);
       if(!a._displaced) return -1;
       if(!b._displaced) return 1;
-      // Both displaced: sort by original time
-      return toMin(a.time)-toMin(b.time);
+      return _wfWeight(a)-_wfWeight(b);
     });
 
-    // Assign times to displaced tasks only (keep originals at their times)
     let cursor=dStart;
-    // Find the latest original task end time
     const originals=dayTasks.filter(t=>!t._displaced);
     if(originals.length){
       const lastOrig=Math.max(...originals.map(t=>toMin(t.time)))+20;
@@ -8608,9 +8716,7 @@ function runDisplacement(){
     }
 
     dayTasks.filter(t=>t._displaced).forEach(dt=>{
-      // Skip lunch
       if(cursor>=dLunchS&&cursor<dLunchE) cursor=dLunchE;
-      // Skip past school end
       if(cursor>=dEnd){
         dt._carryOver=true;
         carryOver.push(dt);
@@ -8619,7 +8725,7 @@ function runDisplacement(){
         return;
       }
       dt.time=fromMin(cursor);
-      cursor+=20; // 20 min per task
+      cursor+=20;
     });
   });
 
