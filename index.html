@@ -8596,60 +8596,75 @@ function runDisplacement(){
   var keptTasks=tasks.filter(function(t){return !displacedIds.has(t.id);});
   var working=keptTasks.slice();
 
-  // ── Phase 1: Same-day placement after blockout (timed only) ──
-  // Group displaced tasks by day
+  // ── Phase 1: Rebuild blockout day — all tasks re-timed in workflow order ──
   var byDay={};
   displacedTasks.forEach(function(dt){ if(!byDay[dt.day]) byDay[dt.day]=[]; byDay[dt.day].push(dt); });
   var needsCrossDay=[];
 
   Object.keys(byDay).forEach(function(d){
-    if(_fullDay(d,byDay[d][0].who)){
-      // Full-day blockout — all go to cross-day
+    // Full-day blockout — everything goes cross-day
+    var anyFullDay=false;
+    bos.forEach(function(bo){if(bo.day===d&&bo.type==="fullDay") anyFullDay=true;});
+    if(anyFullDay){
       byDay[d].forEach(function(dt){ needsCrossDay.push(dt); });
       return;
     }
+
     var dEnd=_dayEnd(d), dLunchS=_dayLS(d), dLunchE=_dayLE(d);
     var momRet=_momReturn(d);
 
-    // Sort: Morning Notebook first, then workflow order, then Closing Notebook last
-    byDay[d].sort(function(a,b){ return _wfWeight(a)-_wfWeight(b); });
+    // Pull kept tasks OFF working — we'll rebuild the whole day
+    var keptOnDay=[];
+    working=working.filter(function(t){
+      if(t.day===d){ keptOnDay.push(t); return false; }
+      return true;
+    });
 
-    // Find the latest existing (non-displaced) task end on this day
-    var keptOnDay=working.filter(function(t){return t.day===d;});
-    var latestKept=0;
-    keptOnDay.forEach(function(t){ var e=toMin(t.time)+20; if(e>latestKept) latestKept=e; });
+    // Combine kept + displaced, group by kid
+    var allOnDay=keptOnDay.concat(byDay[d]);
+    var kids={};
+    allOnDay.forEach(function(t){ if(!kids[t.who]) kids[t.who]=[]; kids[t.who].push(t); });
 
-    // Per-kid cursor: starts at max(blockout end, latest kept task end)
-    var kidCursors={};
-
-    byDay[d].forEach(function(dt){
-      var boE=_boEnd(d,dt.who);
-      if(!kidCursors[dt.who]) kidCursors[dt.who]=Math.max(boE, latestKept);
-      var cursor=kidCursors[dt.who];
-
-      // Mom-required tasks must wait for mom return
-      if(dt.mom==="required"&&momRet>cursor) cursor=momRet;
-      // withSitter kids: all tasks after mom return
-      if(_sitterKids.indexOf(dt.who)>=0&&momRet>cursor) cursor=momRet;
-
-      // Skip lunch
-      if(cursor>=dLunchS&&cursor<dLunchE) cursor=dLunchE;
-
-      // Check maxPerDay
-      var subj=taskSubject(dt), mx=maxFor(subj);
-      if(mx<999){
-        var ct=0; working.forEach(function(w){if(w.day===d&&taskSubject(w)===subj&&w.who===dt.who)ct++;});
-        if(ct>=mx){ needsCrossDay.push(dt); return; }
+    Object.keys(kids).forEach(function(who){
+      var boE=_boEnd(d,who);
+      if(!boE){ // no timed blockout for this kid — keep original times
+        kids[who].forEach(function(t){ working.push(t); });
+        return;
       }
+      // Sort: Morning Notebook → workflow order → Closing Notebook
+      kids[who].sort(function(a,b){ return _wfWeight(a)-_wfWeight(b); });
 
-      if(cursor<dEnd){
-        dt._displaced=true; dt._originalDay=dt.day;
-        dt.time=fromMin(cursor);
-        working.push(dt);
-        kidCursors[dt.who]=cursor+20;
-      } else {
-        needsCrossDay.push(dt);
-      }
+      var cursor=boE;
+      // withSitter or mom-required: start at mom return
+      if(_sitterKids.indexOf(who)>=0&&momRet>cursor) cursor=momRet;
+
+      kids[who].forEach(function(t){
+        var c=cursor;
+        if(t.mom==="required"&&momRet>c) c=momRet;
+        if(c>=dLunchS&&c<dLunchE) c=dLunchE;
+
+        // maxPerDay check
+        var subj=taskSubject(t), mx=maxFor(subj);
+        if(mx<999){
+          var ct=0; working.forEach(function(w){if(w.day===d&&taskSubject(w)===subj&&w.who===who)ct++;});
+          if(ct>=mx){ if(displacedIds.has(t.id)){needsCrossDay.push(t);}else{working.push(t);} return; }
+        }
+
+        if(c<dEnd){
+          if(displacedIds.has(t.id)){ t._displaced=true; t._originalDay=t._originalDay||d; }
+          t.time=fromMin(c);
+          working.push(t);
+          cursor=c+20;
+        } else {
+          if(displacedIds.has(t.id)){
+            needsCrossDay.push(t);
+          } else {
+            // Originally kept task that no longer fits — also needs placement
+            t._displaced=true; t._originalDay=d;
+            needsCrossDay.push(t);
+          }
+        }
+      });
     });
   });
 
@@ -8692,7 +8707,8 @@ function runDisplacement(){
     if(!placed){dt._displaced=true;dt._originalDay=dt._originalDay||dt.day;dt._carryOver=true;carryOver.push(dt);}
   });
 
-  // ── Phase 3: Re-time receiving days ──
+  // ── Phase 3: Re-time receiving days (overflow → Saturday) ──
+  var satOverflow=[];
   var touchedDays=new Set(working.filter(function(t){return t._displaced&&!byDay[t.day];}).map(function(t){return t.day;}));
   touchedDays.forEach(function(d){
     var dStart=_dayStart(d);
@@ -8718,16 +8734,45 @@ function runDisplacement(){
     dayTasks.filter(t=>t._displaced).forEach(dt=>{
       if(cursor>=dLunchS&&cursor<dLunchE) cursor=dLunchE;
       if(cursor>=dEnd){
-        dt._carryOver=true;
-        carryOver.push(dt);
+        // Overflow — route to Saturday instead of carry-over
         const idx=working.indexOf(dt);
         if(idx>=0) working.splice(idx,1);
+        if(d!=="saturday"&&canPlace(dt,"saturday")){
+          dt.day="saturday";
+          working.push(dt);
+          satOverflow.push(dt);
+        } else {
+          dt._carryOver=true;
+          carryOver.push(dt);
+        }
         return;
       }
       dt.time=fromMin(cursor);
       cursor+=20;
     });
   });
+
+  // Re-time Saturday overflow tasks
+  if(satOverflow.length){
+    var satEnd=_dayEnd("saturday"), satLS=_dayLS("saturday"), satLE=_dayLE("saturday");
+    var satTasks=working.filter(t=>t.day==="saturday"&&t._displaced);
+    satTasks.sort((a,b)=>_wfWeight(a)-_wfWeight(b));
+    var satOrig=working.filter(t=>t.day==="saturday"&&!t._displaced);
+    var sCursor=_dayStart("saturday");
+    if(satOrig.length) sCursor=Math.max(sCursor,Math.max(...satOrig.map(t=>toMin(t.time)))+20);
+    satTasks.forEach(dt=>{
+      if(sCursor>=satLS&&sCursor<satLE) sCursor=satLE;
+      if(sCursor>=satEnd){
+        dt._carryOver=true;
+        carryOver.push(dt);
+        const idx=working.indexOf(dt);
+        if(idx>=0) working.splice(idx,1);
+        return;
+      }
+      dt.time=fromMin(sCursor);
+      sCursor+=20;
+    });
+  }
 
   displacedResult={tasks:working,carryOver};
 }
