@@ -5474,6 +5474,45 @@ function mastRemoveCustomItem(cat,name){
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
+function mastDeleteItem(cat,name){
+  if(!confirm("Are you sure you want to delete \""+name+"\" from "+cat+"?\n\nThis will remove it from rotation and all progress will be lost.")) return;
+  let items=masteryData.julian||[];
+  if(!Array.isArray(items)) items=Object.values(items);
+  masteryData.julian=items.filter(i=>!(i.prompt===name&&i.subject===cat));
+  if(db) db.ref("mastery/julian").set(masteryData.julian);
+  const ci=masteryData.julian_custom_items||[];
+  if(ci.some(i=>i.cat===cat&&i.name===name)){
+    masteryData.julian_custom_items=ci.filter(i=>!(i.cat===cat&&i.name===name));
+    if(db) db.ref("mastery/julian_custom_items").set(masteryData.julian_custom_items);
+  }
+  mastSetVisual(cat,name,null);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  _mastRe();
+}
+function mastDeleteCategory(cat){
+  const isHardcoded=!!MAST_JULIAN_CURRICULUM[cat];
+  let items=masteryData.julian||[];
+  if(!Array.isArray(items)) items=Object.values(items);
+  const catItems=items.filter(i=>i.subject===cat);
+  const msg=isHardcoded
+    ?"Are you sure you want to remove all "+catItems.length+" "+cat+" items from rotation?\n\n(The category will remain in the curriculum bank since it's built-in.)"
+    :"Are you sure you want to delete the entire \""+cat+"\" category?\n\nThis will remove "+catItems.length+" item(s) from rotation and delete all custom items in this category.";
+  if(!confirm(msg)) return;
+  masteryData.julian=items.filter(i=>i.subject!==cat);
+  if(db) db.ref("mastery/julian").set(masteryData.julian);
+  const ci=masteryData.julian_custom_items||[];
+  const catCustom=ci.filter(i=>i.cat===cat);
+  if(catCustom.length){
+    masteryData.julian_custom_items=ci.filter(i=>i.cat!==cat);
+    if(db) db.ref("mastery/julian_custom_items").set(masteryData.julian_custom_items);
+  }
+  const vis=masteryData.julian_visuals||{};
+  const prefix=cat+"_";
+  Object.keys(vis).forEach(k=>{ if(k.startsWith(prefix)) delete vis[k]; });
+  if(db) db.ref("mastery/julian_visuals").set(vis);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  _mastRe();
+}
 function mastGetGenerated(item){
   const today=new Date().toISOString().slice(0,10);
   const key=item.id+"_"+today;
@@ -5978,6 +6017,8 @@ function renderMastAdmin(){
     h+='<span style="font-size:18px">'+(catE[cat]||"")+'</span>';
     h+='<span class="mast-curr-cat-title">'+cat+'</span>';
     h+='<span class="mast-curr-cat-counts">'+st.inRotation.length+' active \u{00B7} '+st.graduated.length+' mastered \u{00B7} '+st.available.length+' available</span>';
+    const isCustCat=!MAST_JULIAN_CURRICULUM[cat];
+    if(st.inRotation.length||st.graduated.length||isCustCat) h+='<button onclick="mastDeleteCategory(\''+cat+'\')" style="border:none;background:none;font-size:12px;cursor:pointer;padding:2px 6px;color:#dc2626;margin-left:auto" title="Delete category">\u{1F5D1}\u{FE0F}</button>';
     h+='</div>';
 
     h+='<div class="mast-curr-grid">';
@@ -5989,21 +6030,26 @@ function renderMastAdmin(){
       const maxD=isIntro?s.intro_dots:s.ladder_streak;
       const vis=mastJulianVis(item);
       const tierLbl=isIntro?"Intro":(MAST_TIER_LBL[item.tier]||item.tier);
-      h+='<div class="mast-curr-card in-rotation" onclick="mastVisEditOpen(\''+cat+'\',\''+item.prompt.replace(/'/g,"\\\\'")+'\')" title="'+item.prompt+' — '+tierLbl+' ('+dots+'/'+maxD+') \u{00B7} tap to set visual">';
+      h+='<div class="mast-curr-card in-rotation" style="position:relative">';
+      h+='<div onclick="mastVisEditOpen(\''+cat+'\',\''+item.prompt.replace(/'/g,"\\\\'")+'\')" title="'+item.prompt+' — '+tierLbl+' ('+dots+'/'+maxD+') \u{00B7} tap to set visual">';
       h+='<div class="mast-curr-card-vis">'+vis+'</div>';
       h+='<div class="mast-curr-card-name" style="color:#c2410c">'+item.prompt+'</div>';
       h+='<div style="display:flex;gap:2px;justify-content:center;margin-top:3px">';
       for(let d=0;d<maxD;d++) h+='<div style="width:5px;height:5px;border-radius:50%;background:'+(d<dots?"#c45e1a":"#e5e7eb")+'"></div>';
-      h+='</div>';
+      h+='</div></div>';
+      h+='<button onclick="event.stopPropagation();mastDeleteItem(\''+cat+'\',\''+item.prompt.replace(/'/g,"\\\\'")+'\')" style="position:absolute;top:2px;right:2px;border:none;background:none;font-size:9px;cursor:pointer;padding:2px;color:#dc2626;opacity:0.5" title="Delete item">\u{2715}</button>';
       h+='</div>';
     });
 
     // Graduated items
     st.graduated.forEach(item=>{
       const vis=mastJulianVis(item);
-      h+='<div class="mast-curr-card graduated" onclick="mastVisEditOpen(\''+cat+'\',\''+item.prompt.replace(/'/g,"\\\\'")+'\')" title="'+item.prompt+' — Graduated \u{00B7} tap to set visual">';
+      h+='<div class="mast-curr-card graduated" style="position:relative">';
+      h+='<div onclick="mastVisEditOpen(\''+cat+'\',\''+item.prompt.replace(/'/g,"\\\\'")+'\')" title="'+item.prompt+' — Graduated \u{00B7} tap to set visual">';
       h+='<div class="mast-curr-card-vis">'+vis+'</div>';
       h+='<div class="mast-curr-card-name" style="color:#7c3aed">'+item.prompt+' \u{2713}</div>';
+      h+='</div>';
+      h+='<button onclick="event.stopPropagation();mastDeleteItem(\''+cat+'\',\''+item.prompt.replace(/'/g,"\\\\'")+'\')" style="position:absolute;top:2px;right:2px;border:none;background:none;font-size:9px;cursor:pointer;padding:2px;color:#dc2626;opacity:0.5" title="Delete item">\u{2715}</button>';
       h+='</div>';
     });
 
