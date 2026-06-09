@@ -5089,7 +5089,7 @@ function mastDrillSettings(){
   const kid=masteryKid||"julian";
   const s=masteryData[kid+"_settings"]||{};
   const defaultLadder=["every_other_day","weekly","bi_weekly","monthly","graduated"];
-  return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,auto_pull:s.auto_pull!==false,ladder:s.ladder||defaultLadder,cat_caps:s.cat_caps||{}};
+  return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,auto_pull:s.auto_pull!==false,ladder:s.ladder||defaultLadder,cat_caps:s.cat_caps||{},miss_drop:s.miss_drop||"reset",close_behavior:s.close_behavior||"stay",drop_threshold:s.drop_threshold??0,tier_streaks:s.tier_streaks||{}};
 }
 const MAST_BANK_MAP={julian:MAST_JULIAN_BANK,lucy:MAST_LUCY_BANK,ellis:MAST_ELLIS_BANK,lincoln:MAST_LINCOLN_BANK};
 const MAST_CAT_EMOJI_MAP={
@@ -5273,21 +5273,41 @@ function mastSaveResults(){
     if(oldIdx===-1) return;
 
     let newIdx=oldIdx;
-    if(score==="c") newIdx=Math.min(oldIdx+1,TIER_LADDER.length-1);
-    else if(score==="m"){ newIdx=0; item.drop_count=(item.drop_count||0)+1; }
-    // ~ stays same
+    const _ds=mastDrillSettings();
+    const _tierStreak=_ds.tier_streaks[oldTier]??_ds.ladder_streak;
+    if(score==="c"){
+      const cc=(item.consecutive_correct||0)+1;
+      if(cc>=_tierStreak) newIdx=Math.min(oldIdx+1,TIER_LADDER.length-1);
+    } else if(score==="m"){
+      if(_ds.miss_drop==="one") newIdx=Math.max(0,oldIdx-1);
+      else newIdx=0;
+      item.drop_count=(item.drop_count||0)+1;
+      if(_ds.drop_threshold>0&&item.drop_count>=_ds.drop_threshold){
+        item.status="introduction"; item.tally_dots=0; item.consecutive_correct=0; item.drop_count=0;
+      }
+    } else if(score==="~"){
+      if(_ds.close_behavior==="count"){
+        const cc=(item.consecutive_correct||0)+1;
+        if(cc>=_tierStreak) newIdx=Math.min(oldIdx+1,TIER_LADDER.length-1);
+      } else if(_ds.close_behavior==="drop"){
+        newIdx=Math.max(0,oldIdx-1);
+      }
+    }
 
     const newTier=TIER_LADDER[newIdx];
     if(newTier!==oldTier){
       item.tier=newTier;
-      // Assign new cycle: count items already in that tier, wrap within interval
+      item.consecutive_correct=0;
       const interval=MAST_TIER_INT[newTier];
       if(interval){
         const countInTier=items.filter(i=>i.tier===newTier&&i.id!==item.id).length;
         item.cycle=(countInTier%interval)+1;
       }
+    } else if(score==="c"||(score==="~"&&_ds.close_behavior==="count")){
+      item.consecutive_correct=(item.consecutive_correct||0)+1;
+    } else {
+      item.consecutive_correct=0;
     }
-    item.consecutive_correct=score==="c"?(item.consecutive_correct||0)+1:0;
     changes++;
   });
 
@@ -5392,6 +5412,9 @@ function mastAdminInit(){
 function mastAdminAdj(field,delta){
   if(!mastAdminLocal) mastAdminInit();
   if(field==='auto_pull'){ mastAdminLocal.auto_pull=!mastAdminLocal.auto_pull; }
+  else if(field==='miss_drop'){ mastAdminLocal.miss_drop=mastAdminLocal.miss_drop==="reset"?"one":"reset"; }
+  else if(field==='close_behavior'){ const opts=["stay","count","drop"]; const ci=opts.indexOf(mastAdminLocal.close_behavior||"stay"); mastAdminLocal.close_behavior=opts[(ci+1)%opts.length]; }
+  else if(field==='drop_threshold'){ mastAdminLocal.drop_threshold=Math.max(0,(mastAdminLocal.drop_threshold||0)+delta); }
   else { mastAdminLocal[field]=Math.max(1,(mastAdminLocal[field]||0)+delta); }
   mastAdminDirty=true;
   _mastRe();
@@ -5418,6 +5441,17 @@ function mastAdminCatCap(cat,delta){
   else {
     const cur=mastAdminLocal.cat_caps[cat]??(mastAdminLocal.max_per_cat||5);
     mastAdminLocal.cat_caps[cat]=Math.max(1,cur+delta);
+  }
+  mastAdminDirty=true;
+  _mastRe();
+}
+function mastAdminTierStreak(tier,delta){
+  if(!mastAdminLocal) mastAdminInit();
+  if(!mastAdminLocal.tier_streaks) mastAdminLocal.tier_streaks={};
+  if(delta===0){ delete mastAdminLocal.tier_streaks[tier]; }
+  else {
+    const cur=mastAdminLocal.tier_streaks[tier]??(mastAdminLocal.ladder_streak||3);
+    mastAdminLocal.tier_streaks[tier]=Math.max(1,Math.min(10,cur+delta));
   }
   mastAdminDirty=true;
   _mastRe();
@@ -6173,7 +6207,7 @@ function renderMastAdmin(){
 
   const rules=[
     {key:"intro_dots",label:"Introduction Dots",desc:"How many times shown before entering the ladder",min:1,max:10},
-    {key:"ladder_streak",label:"Ladder Streak",desc:"Consecutive correct answers to advance a tier",min:1,max:10},
+    {key:"ladder_streak",label:"Ladder Streak",desc:"Default consecutive correct to advance (per-tier overrides below)",min:1,max:10},
     {key:"max_per_cat",label:"Max Items / Category / Day",desc:"Cap on items per category in the daily drill",min:1,max:20},
     {key:"max_intro_per_cat",label:"Max New / Category",desc:"Max introduction items allowed per category at once",min:1,max:10}
   ];
@@ -6260,14 +6294,50 @@ function renderMastAdmin(){
     const active=ladder.includes(t);
     const col=MAST_TIER_COL[t]||"#666";
     const isGrad=t==="graduated";
+    const tierSk=s.tier_streaks&&s.tier_streaks[t];
+    const hasTierStreak=tierSk!==undefined&&tierSk!==null;
+    const skVal=hasTierStreak?tierSk:(s.ladder_streak||3);
     h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f3f1ee">';
     h+='<button class="mast-admin-toggle'+(active?" on":"")+'"'+(isGrad?' disabled title="Graduated is always the final tier"':' onclick="mastAdminToggleTier(\''+t+'\')"')+' style="width:36px;height:20px;flex-shrink:0'+(isGrad?';opacity:0.5':'')+'">';
     h+='</button>';
     h+='<span style="width:10px;height:10px;border-radius:50%;background:'+col+';flex-shrink:0"></span>';
-    h+='<span style="font-size:12px;font-weight:600">'+(MAST_TIER_LBL[t]||t)+'</span>';
+    h+='<span style="flex:1;font-size:12px;font-weight:600">'+(MAST_TIER_LBL[t]||t)+'</span>';
     h+='<span style="font-size:10px;color:var(--muted)">'+tierInt[t]+'</span>';
+    if(!isGrad&&active){
+      h+='<span style="font-size:9px;color:var(--muted);margin-left:auto">streak</span>';
+      h+='<div style="display:flex;align-items:center;gap:2px;margin-left:2px">';
+      h+='<button onclick="mastAdminTierStreak(\''+t+'\',-1)" style="width:18px;height:18px;border-radius:4px;border:1px solid var(--border);background:#fff;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center"'+(skVal<=1?' disabled':'')+'>−</button>';
+      h+='<span style="font-size:11px;font-weight:700;min-width:16px;text-align:center;'+(hasTierStreak?'color:#c2410c':'color:var(--muted)')+'">'+skVal+'</span>';
+      h+='<button onclick="mastAdminTierStreak(\''+t+'\',1)" style="width:18px;height:18px;border-radius:4px;border:1px solid var(--border);background:#fff;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center"'+(skVal>=10?' disabled':'')+'>+</button>';
+      if(hasTierStreak) h+='<button onclick="mastAdminTierStreak(\''+t+'\',0)" style="width:16px;height:16px;border-radius:50%;border:1px solid #fca5a5;background:#fef2f2;color:#dc2626;font-size:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-left:2px">\u{2715}</button>';
+      h+='</div>';
+    }
     h+='</div>';
   });
+  h+='</div>';
+
+  // Ladder behavior options
+  h+='<div style="margin-top:12px;border-top:1px solid #f3f1ee;padding-top:10px">';
+  h+='<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px">Ladder behavior</div>';
+  const missDrop=s.miss_drop||"reset";
+  h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0">';
+  h+='<div style="flex:1"><div class="mast-admin-label">On Miss</div><div class="mast-admin-desc">What happens when an answer is wrong</div></div>';
+  h+='<button onclick="mastAdminAdj(\'miss_drop\',0)" style="padding:5px 12px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;min-width:130px;text-align:center">'+(missDrop==="reset"?"\u{21E3} Drop to first tier":"\u{2193} Drop one tier")+'</button>';
+  h+='</div>';
+  const closeBeh=s.close_behavior||"stay";
+  const closeLbl={stay:"Stay (reset streak)",count:"\u{2713} Count toward streak",drop:"\u{2193} Drop one tier"};
+  h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0">';
+  h+='<div style="flex:1"><div class="mast-admin-label">On Close (~)</div><div class="mast-admin-desc">Almost-right answer behavior</div></div>';
+  h+='<button onclick="mastAdminAdj(\'close_behavior\',0)" style="padding:5px 12px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;min-width:130px;text-align:center">'+(closeLbl[closeBeh]||closeBeh)+'</button>';
+  h+='</div>';
+  const dropTh=s.drop_threshold||0;
+  h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0">';
+  h+='<div style="flex:1"><div class="mast-admin-label">Drop Threshold</div><div class="mast-admin-desc">Total misses before item restarts introduction'+(dropTh===0?' (off)':' ('+dropTh+')')+'</div></div>';
+  h+='<div class="mast-admin-stepper">';
+  h+='<button onclick="mastAdminAdj(\'drop_threshold\',-1)"'+(dropTh<=0?' disabled':'')+'>−</button>';
+  h+='<span class="val">'+(dropTh===0?"Off":dropTh)+'</span>';
+  h+='<button onclick="mastAdminAdj(\'drop_threshold\',1)"'+(dropTh>=10?' disabled':'')+'>+</button>';
+  h+='</div></div>';
   h+='</div>';
 
   h+='<div style="display:flex;align-items:center;gap:10px;margin-top:12px">';
@@ -6313,7 +6383,7 @@ function renderMastAdmin(){
     st.inRotation.forEach(item=>{
       const isIntro=item.status==="introduction";
       const dots=isIntro?(item.tally_dots||0):(item.consecutive_correct||0);
-      const maxD=isIntro?s.intro_dots:s.ladder_streak;
+      const maxD=isIntro?s.intro_dots:(s.tier_streaks[item.tier]??s.ladder_streak);
       const vis=mastItemVis(item);
       const tierLbl=isIntro?"Intro":(MAST_TIER_LBL[item.tier]||item.tier);
       h+='<div class="mast-curr-card in-rotation" style="position:relative">';
@@ -6995,13 +7065,13 @@ function _renderMasteryInner(el){
     const _catMode=mastGetCatMode(masteryKid,cat);
     const _js=mastDrillSettings();
     const tallyCount=isIntro?(it.tally_dots||0):(it.consecutive_correct||0);
-    const tallyMax=isIntro?_js.intro_dots:_js.ladder_streak;
+    const tallyMax=isIntro?_js.intro_dots:(_js.tier_streaks[it.tier]??_js.ladder_streak);
     let _tallyH='<div class="mast-slide-tally">';
     for(let d=0;d<tallyMax;d++) _tallyH+='<div class="mast-slide-dot'+(d<tallyCount?" filled":"")+'"></div>';
     if(isIntro) _tallyH+='<span style="font-size:14px;margin-left:4px">\u{2B50}</span>';
     _tallyH+='</div>';
     if(isIntro) _tallyH+='<div style="font-size:10px;color:#9a3412;font-weight:600;margin-top:4px">'+tallyCount+'/'+_js.intro_dots+' days shown</div>';
-    else _tallyH+='<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:4px">'+(MAST_TIER_LBL[it.tier]||it.tier)+' \u{00B7} '+tallyCount+'/'+_js.ladder_streak+' streak</div>';
+    else _tallyH+='<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:4px">'+(MAST_TIER_LBL[it.tier]||it.tier)+' \u{00B7} '+tallyCount+'/'+(_js.tier_streaks[it.tier]??_js.ladder_streak)+' streak</div>';
 
     if(_catMode==="flip"){
       h+='<div class="mast-flip-wrap'+(mastFlipped?" flipped":"")+'" onclick="mastFlip()">';
