@@ -8539,26 +8539,25 @@ function runDisplacement(){
   function _isClosingNb(t){return(t.title||"").includes("Closing Notebook");}
 
   // Workflow-order sort weight for a task (lower = earlier)
-  // Uses babysitter workflow on sitter days, normal otherwise
-  function _wfWeight(t,d){
+  // d=day override, opts.momBack=true forces normal workflow (mom is home)
+  function _wfWeight(t,d,opts){
     if(_isClosingNb(t)) return 1000;
     if(_isMorningNb(t)) return -1;
     const kidWf=wf[t.who];
     if(!kidWf) return 0;
-    const isSitterDay=!!(weekData.babysitter&&weekData.babysitter.days&&weekData.babysitter.days.indexOf(d||t.day)>=0);
-    const steps=(isSitterDay?kidWf.babysitter:kidWf.normal)||kidWf.normal||[];
+    const useSitter=!(opts&&opts.momBack)&&!!(weekData.babysitter&&weekData.babysitter.days&&weekData.babysitter.days.indexOf(d||t.day)>=0);
+    const steps=(useSitter?kidWf.babysitter:kidWf.normal)||kidWf.normal||[];
     const tier=taskTier(t);
     const subj=taskSubject(t).toLowerCase();
     const cs=currData&&currData.subjects&&currData.subjects[t.who];
     if(cs){for(const sk in cs){if((cs[sk].rules||"").includes("first")){var lbl=(cs[sk].label||sk.replace(/_/g," ")).toLowerCase();if((t.title||"").toLowerCase().includes(lbl)) return -1;}}}
+    // Subject-name match across ALL steps first (workflow assigns subjects
+    // regardless of device tier — e.g. Reading Eggspress is "independent")
     for(let i=0;i<steps.length;i++){
-      const s=steps[i];
-      if(s.tier===tier){
-        const subs=s.subjects||[];
-        if(!subs.length) return i*10;
-        for(let j=0;j<subs.length;j++){ if(subj.includes(subs[j].toLowerCase())) return i*10+j; }
-      }
+      const subs=steps[i].subjects||[];
+      for(let j=0;j<subs.length;j++){ if(subj.includes(subs[j].toLowerCase())) return i*10+j; }
     }
+    // Fallback: match by tier if no subject matched
     for(let i=0;i<steps.length;i++){ if(steps[i].tier===tier) return i*10+9; }
     return 500;
   }
@@ -8642,8 +8641,10 @@ function runDisplacement(){
         kids[who].forEach(function(t){ working.push(t); });
         return;
       }
-      // Sort: Morning Notebook → workflow order → Closing Notebook
-      kids[who].sort(function(a,b){ return _wfWeight(a)-_wfWeight(b); });
+      // If blockout ends after mom returns, use normal workflow (mom is home)
+      var momIsBack=momRet>0&&boE>=momRet;
+      var wfOpts=momIsBack?{momBack:true}:null;
+      kids[who].sort(function(a,b){ return _wfWeight(a,d,wfOpts)-_wfWeight(b,d,wfOpts); });
 
       var cursor=boE;
       // withSitter or mom-required: start at mom return
