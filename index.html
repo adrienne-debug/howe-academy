@@ -1060,6 +1060,8 @@ let smapAddKid=null;   // kid for "add subject" sheet
 let smapViewMode="week"; // "week" | "month" | "session"
 let smapMonth=null;    // YYYY-MM for month view (null = current month)
 let currData=null;   // curriculum from Firebase (uploaded via admin)
+let currInnerTab="subjects"; // "subjects" | "plans" — inner tab within Admin Curriculum
+let currPlansKid="all"; // kid filter for Plans & Map tab
 let currPaceCum={};  // precomputed: currPaceCum[kid][subjectKey][weekNum] = cumulative expected
 let masteryData={};
 let masteryKid="lincoln";
@@ -4406,24 +4408,42 @@ function renderCurriculumView(el,headerHtml){
     return;
   }
 
+  // Inner tab bar: Subjects | Plans — outside any wrapper so sticky works
+  let h=(headerHtml||'');
+  h+='<div style="position:sticky;top:156px;z-index:89;background:var(--bg);display:flex;gap:0;margin:0;padding:0 4px;border-bottom:2px solid var(--border)">';
+  ["subjects","plans"].forEach(tab=>{
+    const on=currInnerTab===tab;
+    const label=tab==="subjects"?"Subjects":"Plans & Map";
+    h+='<button style="flex:1;padding:9px 4px;font-size:12px;font-weight:700;border:none;background:none;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:'+(on?"var(--text)":"var(--muted)")+';border-bottom:2px solid '+(on?"var(--header)":"transparent")+';margin-bottom:-2px" onclick="setCurrInnerTab(\''+tab+'\')">'+label+'</button>';
+  });
+  h+='</div>';
+
+  // Plans tab — render plan management
+  if(currInnerTab==="plans"){
+    el.innerHTML=h;
+    renderCurrPlans(el);
+    return;
+  }
+
+  // Subjects tab — needs curriculum data
   if(!currData||!currData.subjects){
-    el.innerHTML=(headerHtml||'')+'<div style="padding:40px 20px;text-align:center;color:var(--muted)">'+
+    el.innerHTML=h+'<div style="padding:40px 20px;text-align:center;color:var(--muted)">'+
       '<div style="font-size:36px;margin-bottom:8px">\u{1F4DA}</div>'+
       '<div style="font-weight:600;margin-bottom:4px">No curriculum uploaded</div>'+
       '<div style="font-size:12px">Use the admin panel to upload howe_master_schedule.xlsx</div></div>';
     return;
   }
 
+  h+='<div style="padding:0 4px">';
+
   const kids=["lincoln","ellis","lucy","julian"];
   const k=currViewKid;
   const subjects=currData.subjects[k]||{};
   const col={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#b45309"}[k]||"#333";
 
-  let h=(headerHtml||'')+'<div style="padding:0 4px">';
-
   // Kid selector — sticky below subtab bar
   const nw=currWeekNum()+1;
-  h+='<div style="position:sticky;top:156px;z-index:89;background:var(--bg);padding:10px 0 8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">';
+  h+='<div style="position:sticky;top:194px;z-index:88;background:var(--bg);padding:10px 0 8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">';
   kids.forEach(kid=>{
     const on=kid===k;
     const c={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#b45309"}[kid]||"#333";
@@ -4571,6 +4591,267 @@ function renderCurriculumView(el,headerHtml){
 
   h+='</div>';
   el.innerHTML=h;
+}
+
+function renderCurrPlans(el){
+  syncPaceData();
+  const plans=paceData.plans&&Object.keys(paceData.plans).length>0?paceData.plans:PACE_DEFAULT_PLANS;
+
+  let h='<div style="padding:0 4px;margin-top:10px">';
+
+  // Kid selector for plans view
+  h+='<div style="position:sticky;top:194px;z-index:88;background:var(--bg);padding:10px 0 8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">';
+  [{k:"all",label:"All",col:"#111827"},...PACE_KIDS.map(k=>({k,label:cap(k),col:PACE_KCOL[k]}))].forEach(({k:k2,label,col})=>{
+    const on=currPlansKid===k2;
+    h+='<button onclick="currPlansKid=\''+k2+'\';renderAll()" style="padding:5px 14px;border-radius:20px;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+label+'</button>';
+  });
+  h+='</div>';
+
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:700;margin:0 0 4px">Plans &amp; Session Maps</div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:14px">Create plans, generate session maps, and manage scheduling.</div>';
+
+  Object.entries(plans).forEach(([planKey,plan])=>{
+    const planKids=plan.kids||[];
+    // Filter by selected kid
+    if(currPlansKid!=="all"&&!planKids.includes(currPlansKid)) return;
+    const visKids=currPlansKid==="all"?planKids:planKids.filter(k=>k===currPlansKid);
+    const weekNum=planWeekNum(plan.start||"2026-04-20");
+    const totalWeeks=planTotalWeeks(plan.start||"2026-04-20",plan.end||"2026-09-01");
+    const ssTotal=sessionSchoolDays(plan);
+    const ssRemain=sessionSchoolDaysFromToday(plan);
+    const ssDone=Math.max(0,ssTotal.school-ssRemain.school);
+    const planPct=ssTotal.school?Math.min(100,Math.round(ssDone/ssTotal.school*100)):0;
+    const isEditingPlan=paceEditPlan===planKey;
+
+    h+='<div class="pace-plan-section">';
+
+    // Plan banner with edit controls
+    h+='<div class="pace-year-banner" style="align-items:flex-start">'+
+      '<div style="flex:1;min-width:0">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">'+
+      '<div class="pace-year-label">'+plan.label+'</div>'+
+      '<button class="pace-plan-edit-btn" onclick="togglePlanEdit(\''+planKey+'\')">'+
+      (isEditingPlan?'Done':'Edit')+'</button>'+
+      (sessionMapData[planKey]?(smapViewPlan===planKey?
+        '<button class="pace-plan-edit-btn" style="background:var(--header);color:#fff" onclick="smapToggle(\''+planKey+'\')">✕</button>':
+        '<button class="pace-plan-edit-btn" onclick="smapToggle(\''+planKey+'\')">Map</button>'):'')+'</div>'+
+      '<div class="pace-year-sub">'+formatPlanDate(plan.start||"")+' &ndash; '+formatPlanDate(plan.end||"")+'</div>'+
+      '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px">'+
+      planKids.map(k=>'<span class="pace-plan-kid-chip">'+cap(k)+'</span>').join('')+
+      '</div>'+
+      '<div class="pace-year-bar"><div class="pace-year-fill" style="width:'+planPct+'%"></div></div>'+
+      (sessionMapData[planKey]?(function(){
+        const ac=plan.autoCommit||false;
+        return '<div style="display:flex;align-items:center;gap:6px;margin-top:6px">'+
+          '<button onclick="updatePlanField(\''+planKey+'\',\'autoCommit\','+(!ac)+');renderAll()" style="width:32px;height:18px;border-radius:9px;border:none;background:'+(ac?'#2563eb':'#d1d5db')+';cursor:pointer;position:relative;transition:background .2s;flex-shrink:0"><span style="position:absolute;top:2px;'+(ac?'right:2px':'left:2px')+';width:14px;height:14px;border-radius:50%;background:#fff;transition:all .2s"></span></button>'+
+          '<span style="font-size:10px;color:'+(ac?'#2563eb':'var(--muted)')+';font-weight:'+(ac?'700':'500')+'">Auto-Commit'+(ac?' On':'')+'</span></div>';
+      })():'')+'</div>'+
+      '<div style="text-align:right;flex-shrink:0">'+
+      '<div class="pace-year-wk">'+ssDone+' days</div>'+
+      '<div class="pace-year-wklbl">of '+ssTotal.school+(ssTotal.off?' ('+ssTotal.off+' off)':'')+'</div>'+
+      '<div class="pace-year-wklbl">Wk '+Math.min(weekNum,totalWeeks)+' &middot; '+planPct+'%</div></div>'+
+      '</div>';
+
+    // Plan edit form
+    if(isEditingPlan){
+      h+='<div class="pace-plan-edit-form">'+
+        '<div class="pace-plan-edit-grid">'+
+        '<div><div class="pace-config-label">Plan Name</div>'+
+        '<input class="pace-config-input" value="'+plan.label.replace(/"/g,'&quot;')+'" '+
+        'oninput="updatePlanField(\''+planKey+'\',\'label\',this.value)"/></div>'+
+        '<div></div>'+
+        '<div><div class="pace-config-label">Start Date</div>'+
+        '<input class="pace-config-input" type="date" value="'+(plan.start||'')+'" '+
+        'oninput="updatePlanField(\''+planKey+'\',\'start\',this.value)"/></div>'+
+        '<div><div class="pace-config-label">End Date</div>'+
+        '<input class="pace-config-input" type="date" value="'+(plan.end||'')+'" '+
+        'oninput="updatePlanField(\''+planKey+'\',\'end\',this.value)"/></div>'+
+        '</div>'+
+        '<div class="pace-config-label" style="margin-bottom:6px">Kids in this plan</div>'+
+        '<div class="pace-plan-kids-row">'+
+        PACE_KIDS.map(k=>{
+          const on=(plan.kids||[]).includes(k);
+          return '<button class="pace-plan-kid-toggle'+(on?' on':'')+'" onclick="togglePlanKid(\''+planKey+'\',\''+k+'\')">'+cap(k)+'</button>';
+        }).join('')+
+        '</div>'+
+        '<div class="pace-config-label" style="margin-bottom:6px">School days</div>'+
+        '<div class="pace-plan-kids-row">'+
+        ["Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>{
+          const on=(plan.schoolDays||["Mon","Tue","Wed","Thu","Fri"]).includes(d);
+          return '<button class="pace-plan-kid-toggle'+(on?' on':'')+'" onclick="togglePlanSchoolDay(\''+planKey+'\',\''+d+'\')">'+d+'</button>';
+        }).join('')+
+        '</div>'+
+        (function(){
+          const ss=sessionSchoolDays(plan);
+          const sr=sessionSchoolDaysFromToday(plan);
+          return '<div style="font-size:11px;color:var(--muted);margin:8px 0 10px">'+
+            ss.school+' school days total'+
+            (ss.off?' &middot; '+ss.off+' off':'')+
+            ' &middot; '+sr.school+' remaining</div>';
+        })()+
+        (function(){
+          const sm=sessionMapData[planKey];
+          let h2='<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">';
+          h2+='<button style="padding:6px 14px;border-radius:8px;border:none;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif" onclick="(function(){var r=generateSessionMap(\''+planKey+'\');if(r.error){alert(r.error)}else{renderAll()}})()">'+
+            (sm?'Regenerate Map':'Generate Map')+'</button>';
+          if(sm) h2+='<button style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif" onclick="if(confirm(\'Clear session map?\'))clearSessionMap(\''+planKey+'\')">Clear</button>';
+          h2+='</div>';
+          if(sm){
+            const st=sm.stats||{};
+            const genDate=sm.generatedAt?new Date(sm.generatedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"";
+            h2+='<div style="padding:10px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;margin-bottom:10px;font-size:11px">';
+            h2+='<div style="font-weight:700;color:#15803d;margin-bottom:4px">Session Map Active</div>';
+            h2+='<div style="color:#166534">'+st.subjectCount+' subjects mapped across '+st.schoolDays+' school days ('+st.weeks+' weeks)</div>';
+            h2+='<div style="color:var(--muted);margin-top:2px">Generated '+genDate+'</div>';
+            h2+='</div>';
+          }
+          return h2;
+        })()+
+        (function(){
+          const sm=sessionMapData[planKey];
+          if(!sm) return '';
+          const ac=plan.autoCommit||false;
+          return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:8px 12px;background:'+(ac?'#eff6ff':'#f9fafb')+';border:1px solid '+(ac?'#93c5fd':'var(--border)')+';border-radius:8px">'+
+            '<button onclick="updatePlanField(\''+planKey+'\',\'autoCommit\','+(!ac)+')" style="width:36px;height:20px;border-radius:10px;border:none;background:'+(ac?'#2563eb':'#d1d5db')+';cursor:pointer;position:relative;transition:background .2s"><span style="position:absolute;top:2px;'+(ac?'right:2px':'left:2px')+';width:16px;height:16px;border-radius:50%;background:#fff;transition:all .2s"></span></button>'+
+            '<div><div style="font-size:12px;font-weight:700;color:'+(ac?'#1e40af':'#333')+'">Auto-Commit</div>'+
+            '<div style="font-size:10px;color:var(--muted)">Automatically commit the weekly schedule from session map on page load</div></div></div>';
+        })()+
+        '<button class="pace-del-btn" onclick="if(confirm(\'Delete this plan?\'))deletePacePlan(\''+planKey+'\')">Delete Plan</button>'+
+        '</div>';
+    }
+
+    // Kid pacing cards with edit controls
+    visKids.forEach(k=>{
+      const kidSubjs=(paceData.subjects&&paceData.subjects[k])||{};
+      const _currSubs=(currData&&currData.subjects&&currData.subjects[k])||{};
+      const keys=Object.keys(kidSubjs).filter(sk=>{
+        if(_currSubs[sk]&&_currSubs[sk].tracking==="daily") return false;
+        if((kidSubjs[sk].total||0)===0) return false;
+        return true;
+      });
+      const isEditing=paceEditKid===k;
+      const col=PACE_KCOL[k];
+      let aheadN=0,onN=0,behindN=0;
+      const cwn=currWeekNum();
+      keys.forEach(sk=>{
+        const s=kidSubjs[sk];
+        const kws=paceKeywords(k,sk,s);
+        const cur=(s.offset||0)+paceAutoCount(k,kws)+(s.adjust||0);
+        const exp=currExpected(k,sk,cwn);
+        const st=paceHasPendingCascade(k,kws)?"behind":paceStatus(cur,s.total||0,s.startWeek||1,weekNum,totalWeeks,exp);
+        if(st==="ahead")aheadN++; else if(st==="behind")behindN++; else if(st!=="not-started")onN++;
+      });
+      const summaryStr=keys.length?(behindN?behindN+' behind':aheadN?aheadN+' ahead':'All on track'):'No subjects yet';
+
+      h+='<div class="pace-kid-card">'+
+        '<div class="pace-kid-hdr">'+
+        '<div><div class="pace-kid-name" style="color:'+col+'">'+cap(k)+'</div>'+
+        '<div class="pace-kid-meta">'+summaryStr+(keys.length?' &middot; '+keys.length+' subjects':'')+'</div></div>'+
+        '<div class="pace-kid-actions">'+
+        '<button class="pace-edit-btn'+(isEditing?' active':'')+'" onclick="togglePaceEdit(\''+k+'\')">'+
+        (isEditing?'Done':'Edit')+'</button></div>'+
+        '</div>';
+
+      if(keys.length||isEditing){
+        h+='<div class="pace-subjects">';
+        if(!keys.length) h+='<div class="pace-empty">No subjects yet — add one below.</div>';
+
+        keys.forEach(sk=>{
+          const s=kidSubjs[sk];
+          const kws=paceKeywords(k,sk,s);
+          const autoC=paceAutoCount(k,kws);
+          const offset=s.offset||0,adjust=s.adjust||0,sw=s.startWeek||1;
+          const cur=offset+autoC+adjust,tot=s.total||1;
+          const pct=Math.min(100,Math.round(cur/tot*100));
+          const exp=currExpected(k,sk,cwn);
+          const status=paceHasPendingCascade(k,kws)?"behind":paceStatus(cur,tot,sw,weekNum,totalWeeks,exp);
+          const barCol=status==="ahead"?"#16a34a":status==="behind"?"#ef4444":status==="not-started"?"#d1d5db":"#3b82f6";
+          const expPct=exp!==null?Math.min(100,Math.round(exp/tot*100)):null;
+          const diff=exp!==null?cur-exp:null;
+          const expLabel=exp!==null?' &middot; '+(diff>0?diff+' ahead of expected':diff<0?Math.abs(diff)+' behind expected':'on pace for Wk '+cwn):'';
+          const _nextLesson=getNextLessonLabel(k,sk);
+
+          h+='<div class="pace-subject-row">'+
+            '<div class="pace-subj-hdr">'+
+            '<span class="pace-subj-name">'+s.label+'</span>'+
+            '<span class="pace-subj-nums">'+cur+' / '+tot+' done</span></div>'+
+            '<div class="pace-bar" style="position:relative"><div class="pace-bar-fill" style="width:'+pct+'%;background:'+barCol+'"></div>'+(expPct!==null?'<div style="position:absolute;left:'+expPct+'%;top:-3px;width:2px;height:calc(100% + 6px);background:#374151;border-radius:1px;pointer-events:none" title="Expected: '+exp+'/'+tot+'"></div>':'')+'</div>'+
+            '<div class="pace-status-row">'+
+            '<span class="pace-badge '+status+'">'+paceStatusLabel(status)+'</span>'+
+            '<span class="pace-pct">'+pct+'% complete'+expLabel+(sw>1&&weekNum<sw?' &middot; starts wk '+sw:'')+'</span></div>';
+
+          if(_nextLesson){
+            h+='<div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding:4px 8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px">'+
+              '<span style="font-size:10px;font-weight:700;color:#16a34a;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap">Next up</span>'+
+              '<span style="font-size:12px;color:#15803d;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_nextLesson+'</span></div>';
+          } else if(cur>=tot&&tot>0){
+            h+='<div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding:4px 8px;background:#fef9c3;border:1px solid #fde68a;border-radius:6px">'+
+              '<span style="font-size:10px;font-weight:700;color:#a16207;text-transform:uppercase;letter-spacing:0.3px">Complete</span>'+
+              '<span style="font-size:12px;color:#92400e;font-weight:500">All lessons finished!</span></div>';
+          }
+
+          if(isEditing){
+            h+='<div class="pace-config-grid">'+
+              '<div><div class="pace-config-label">Keyword</div>'+
+              '<input class="pace-config-input" value="'+(s.keyword||'').replace(/"/g,'&quot;')+'" placeholder="e.g. AAS Spelling" '+
+              'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'keyword\',this.value)"/></div>'+
+              '<div><div class="pace-config-label">Total</div>'+
+              '<input class="pace-config-input" type="number" min="1" value="'+(s.total||'')+'" '+
+              'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'total\',parseInt(this.value)||0)"/></div>'+
+              '<div><div class="pace-config-label">Start Wk</div>'+
+              '<input class="pace-config-input" type="number" min="1" value="'+sw+'" '+
+              'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'startWeek\',parseInt(this.value)||1)"/></div>'+
+              '</div>'+
+              '<div class="pace-auto-info">'+
+              '<span>Auto: <span class="pace-auto-num">'+autoC+'</span></span>'+
+              '<span style="color:var(--border)">+</span>'+
+              '<span>Offset: <input class="pace-num-input" type="number" min="0" value="'+offset+'" '+
+              'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'offset\',parseInt(this.value)||0)"/></span>'+
+              '<span style="color:var(--border)">+</span>'+
+              '<span>Adjust: <input class="pace-num-input" type="number" value="'+adjust+'" '+
+              'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'adjust\',parseInt(this.value)||0)"/></span>'+
+              '<span style="color:var(--border)">=</span>'+
+              '<span><span class="pace-auto-num">'+cur+'</span> done</span>'+
+              '<button class="pace-del-btn" style="margin-left:auto" onclick="deletePaceSubject(\''+k+'\',\''+sk+'\')">Remove</button>'+
+              '</div>';
+          }
+          h+='</div>';
+        });
+
+        if(isEditing){
+          h+='<div class="pace-add-row">'+
+            '<input id="pace-new-label-'+k+'" type="text" placeholder="Subject name" maxlength="30"/>'+
+            '<input id="pace-new-kw-'+k+'" type="text" placeholder="Keyword" maxlength="40"/>'+
+            '<input id="pace-new-total-'+k+'" type="number" placeholder="Total" min="1" max="9999" style="width:60px"/>'+
+            '<input id="pace-new-sw-'+k+'" type="number" placeholder="Wk" min="1" title="Start week" style="width:44px"/>'+
+            '<button class="pace-add-btn" onclick="addPaceSubject(\''+k+'\')">+ Add</button></div>';
+        }
+        h+='</div>';
+      }
+      h+='</div>';
+    });
+
+    if(smapViewPlan===planKey) h+=smapRenderEditor(planKey,plan);
+
+    h+='</div>';
+  });
+
+  // Add plan form
+  h+='<div class="pace-add-plan-row">'+
+    '<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.3px">Add New Plan</div>'+
+    '<div class="pace-add-plan-grid">'+
+    '<div><div class="pace-config-label">Name</div><input id="pace-new-plan-label" class="pace-config-input" type="text" placeholder="e.g. Summer Session"/></div>'+
+    '<div><div class="pace-config-label">Start Date</div><input id="pace-new-plan-start" class="pace-config-input" type="date"/></div>'+
+    '<div><div class="pace-config-label">End Date</div><input id="pace-new-plan-end" class="pace-config-input" type="date"/></div>'+
+    '</div>'+
+    '<button class="pace-add-btn" onclick="addPacePlan()">+ Add Plan</button>'+
+    '</div>';
+
+  h+='</div>';
+  // Append plans content below the inner tab bar already in el
+  const wrap=document.createElement('div');
+  wrap.innerHTML=h;
+  el.appendChild(wrap.firstChild);
 }
 
 function ceBuildCard(sk,s,kid){
@@ -5890,7 +6171,8 @@ function schedCascade(){
 }
 
 function cascadeIntraWeek(){
-  const dayOrder=["monday","tuesday","wednesday","thursday","friday"];
+  const dayOrder=["monday","tuesday","wednesday","thursday","friday","saturday"];
+  const JS_DAY_MAP={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
   const todayMid=new Date(); todayMid.setHours(0,0,0,0);
   const jsDay=new Date().getDay()||7;
   let today=null;
@@ -5898,11 +6180,13 @@ function cascadeIntraWeek(){
     if(DAY_DT[d]){
       const cal=new Date(DAY_DT[d]+", "+todayMid.getFullYear()); cal.setHours(0,0,0,0);
       if(cal.getTime()===todayMid.getTime()){ today=d; break; }
-    } else if({monday:1,tuesday:2,wednesday:3,thursday:4,friday:5}[d]===jsDay){ today=d; break; }
+    } else if(JS_DAY_MAP[d]===jsDay){ today=d; break; }
   }
   if(!today) return;
   const todayIdx=dayOrder.indexOf(today);
-  let changed=false;
+
+  // Collect unchecked tasks from past days (don't move them yet)
+  const pastTasks=[];
   weekData.tasks.forEach(t=>{
     if(t.id.endsWith("_c")) return;
     if(checked[t.id]) return;
@@ -5912,40 +6196,99 @@ function cascadeIntraWeek(){
     if(DAY_DT[t.day]){
       const cal=new Date(DAY_DT[t.day]+", "+todayMid.getFullYear()); cal.setHours(0,0,0,0);
       isPast=cal<todayMid;
-    } else { isPast={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5}[t.day]<jsDay; }
+    } else { isPast=(JS_DAY_MAP[t.day]||0)<jsDay; }
     if(!isPast) return;
     t.cascadedFrom=t.cascadedFrom||t.day;
-    t.day=today;
-    changed=true;
+    pastTasks.push(t);
   });
-  if(!changed) return;
+  if(!pastTasks.length) return;
+
   const r=rulesData||{};
   const sd=r.schoolDay||{};
-  const sdOv=(sd.overrides||{})[today]||{};
-  const dEnd=toMin(sdOv.end||sd.defaultEnd||"4:15 PM");
-  const lunchS=toMin(sdOv.lunchStart||sd.lunchStart||"1:00 PM");
-  const lunchE=toMin(sdOv.lunchEnd||sd.lunchEnd||"2:00 PM");
-  const existing=weekData.tasks.filter(t=>!t.cascadedFrom&&t.day===today);
-  let cursor=0;
-  existing.forEach(t=>{ const m=toMin(t.time); if(m>cursor) cursor=m; });
-  if(cursor>0) cursor+=20;
-  const dStart=toMin(sdOv.start||sd.defaultStart||"10:00 AM");
-  if(cursor<dStart) cursor=dStart;
-  // Check if today is a babysitter day — respect sitter rules for cascaded tasks
   const mag=weekData.babysitter||{};
-  const isSitterToday=mag.days&&mag.days.includes(today);
-  const sitterReturn=isSitterToday?toMin(mag["mom_return_"+today]||mag.mom_return||"2:00 PM"):0;
   const sitterKids=mag.withSitter||(rulesData&&rulesData.withSitter)||[];
-  weekData.tasks.filter(t=>t.cascadedFrom&&t.day===today&&!checked[t.id]).forEach(t=>{
-    // withSitter kids: ALL tasks after return. Other kids: only mom-required after return.
-    if(isSitterToday&&cursor<sitterReturn){
-      if(sitterKids.includes(t.who)||t.mom==="required") cursor=sitterReturn;
+  const wf=(r.workflow)||{};
+
+  // Workflow-aware sort weight — matches _wfWeight in runDisplacement
+  function cascadeWeight(t,dn){
+    const title=(t.title||"").toLowerCase();
+    if(title.includes("closing notebook")) return 1000;
+    if(title.includes("morning notebook")) return -1;
+    // Check curriculum "first"/"last" rules
+    const cs=currData&&currData.subjects&&currData.subjects[t.who];
+    if(cs){for(const sk in cs){if((cs[sk].rules||"").includes("first")){const lbl=(cs[sk].label||sk.replace(/_/g," ")).toLowerCase();if(title.includes(lbl)) return -1;}}}
+    const kidWf=wf[t.who];
+    if(!kidWf) return 500;
+    const useSitter=!!(mag.days&&mag.days.indexOf(dn)>=0);
+    const steps=(useSitter?kidWf.babysitter:kidWf.normal)||kidWf.normal||[];
+    const subj=taskSubject(t).toLowerCase();
+    // Subject-name match first
+    for(let i=0;i<steps.length;i++){
+      const subs=steps[i].subjects||[];
+      for(let j=0;j<subs.length;j++){ if(subj.includes(subs[j].toLowerCase())) return i*10+j; }
     }
-    if(cursor>=lunchS&&cursor<lunchE) cursor=lunchE;
-    if(cursor>=dEnd) cursor=dEnd-20;
-    t.time=fromMin(cursor);
-    cursor+=20;
-  });
+    // Fallback: tier match
+    const tier=taskTier(t);
+    for(let i=0;i<steps.length;i++){ if(steps[i].tier===tier) return i*10+9; }
+    return 500;
+  }
+
+  // Distribute tasks across today and remaining days, overflowing when full
+  let taskIdx=0;
+  const unplaced=[...pastTasks]; // copy so we can sort per-day
+  const placed=new Set();
+  for(let di=todayIdx; di<dayOrder.length&&placed.size<pastTasks.length; di++){
+    const dn=dayOrder[di];
+    const sdOv=(sd.overrides||{})[dn]||{};
+    const dStart=toMin(sdOv.start||sd.defaultStart||"10:00 AM");
+    const dEnd=toMin(sdOv.end||sd.defaultEnd||"4:15 PM");
+    const lunchS=toMin(sdOv.lunchStart||sd.lunchStart||"1:00 PM");
+    const lunchE=toMin(sdOv.lunchEnd||sd.lunchEnd||"2:00 PM");
+    const isSitterDay=mag.days&&mag.days.includes(dn);
+    const sitterReturn=isSitterDay?toMin(mag["mom_return_"+dn]||mag.mom_return||"2:00 PM"):0;
+
+    // Sort remaining tasks by workflow order for this day
+    const remaining=unplaced.filter(t=>!placed.has(t));
+    remaining.sort((a,b)=>cascadeWeight(a,dn)-cascadeWeight(b,dn));
+
+    // Find latest task already on this day (original + previously cascaded)
+    let cursor=0;
+    weekData.tasks.forEach(t=>{
+      if(t.day!==dn||placed.has(t)) return;
+      if(remaining.includes(t)) return; // skip tasks we're about to place
+      const m=toMin(t.time);
+      if(m>cursor) cursor=m;
+    });
+    if(cursor>0) cursor+=20;
+    if(cursor<dStart) cursor=dStart;
+
+    // Place tasks on this day until it's full
+    for(const t of remaining){
+      // Sitter constraint: withSitter kids or mom-required wait for sitter return
+      if(isSitterDay&&cursor<sitterReturn){
+        if(sitterKids.includes(t.who)||t.mom==="required") cursor=sitterReturn;
+      }
+      if(cursor>=lunchS&&cursor<lunchE) cursor=lunchE;
+      // If past end of school day, overflow to next day
+      if(cursor>=dEnd) break;
+      t.day=dn;
+      t.time=fromMin(cursor);
+      placed.add(t);
+      cursor+=20;
+    }
+  }
+
+  // Safety net: if tasks remain after Saturday, stack at end of Saturday
+  const leftover=pastTasks.filter(t=>!placed.has(t));
+  if(leftover.length){
+    const sdOvSat=(sd.overrides||{})["saturday"]||{};
+    const dEndSat=toMin(sdOvSat.end||sd.defaultEnd||"4:15 PM");
+    leftover.forEach(t=>{
+      t.day="saturday";
+      t.time=fromMin(dEndSat-20);
+    });
+  }
+
   sv(WK+"_tasks",weekData.tasks);
   lastTasksWrite=Date.now();
   if(db){const obj={};weekData.tasks.forEach(t=>obj[t.id]=t);db.ref(WK+"/tasks").set(obj);}
@@ -6439,6 +6782,47 @@ function deletePaceSubject(kid,key){
   try{localStorage.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
   if(db) db.ref("pace/subjects/"+kid+"/"+key).remove();
   renderAll();
+}
+
+function setCurrInnerTab(tab){ currInnerTab=tab; renderAll(); }
+
+function syncPaceData(){
+  const hasSavedPlans=paceData.plans&&Object.keys(paceData.plans).length>0;
+  if(!hasSavedPlans) Object.entries(PACE_DEFAULT_PLANS).forEach(([k,v])=>savePacePlan(k,v));
+
+  const PACE_STALE_KEYS={ellis:["mathematical_reasoning_level_d_1778793604455"]};
+  Object.entries(PACE_STALE_KEYS).forEach(([k,keys])=>{
+    const existing=(paceData.subjects&&paceData.subjects[k])||{};
+    keys.forEach(key=>{ if(existing[key]) deletePaceSubject(k,key); });
+  });
+
+  ["lincoln","ellis","lucy"].forEach(k=>{
+    const existing=(paceData.subjects&&paceData.subjects[k])||{};
+    const currSubjects=(currData&&currData.subjects&&currData.subjects[k])||null;
+    const defaults=PACE_DEFAULT_SUBJECTS[k]||{};
+    if(currSubjects){
+      Object.entries(currSubjects).forEach(([key,cs])=>{
+        const cur=existing[key];
+        const kw=cs.display||key;
+        if(!cur){
+          savePaceSubject(k,key,{label:cs.display,keyword:kw,total:cs.total,offset:0,adjust:0,startWeek:CURR_MIN_WEEK});
+        } else if(cur.total!==cs.total||cur.keyword!==kw){
+          savePaceSubject(k,key,{...cur,total:cs.total,keyword:kw,label:cs.display});
+        }
+      });
+    } else if(Object.keys(defaults).length){
+      Object.entries(defaults).forEach(([key,subj])=>{
+        if(!existing[key]){
+          savePaceSubject(k,key,subj);
+        } else {
+          const cur=existing[key];
+          if(cur.startWeek!==subj.startWeek||cur.total!==subj.total){
+            savePaceSubject(k,key,{...cur,startWeek:subj.startWeek,total:subj.total});
+          }
+        }
+      });
+    }
+  });
 }
 
 function savePacePlan(key,data){
@@ -7183,49 +7567,8 @@ function togglePaceEdit(kid){
 function renderPace(el){
   if(!el){el=document.getElementById("content");if(!el)return;}
 
-  // Seed defaults to Firebase if no plans exist yet
-  const hasSavedPlans=paceData.plans&&Object.keys(paceData.plans).length>0;
-  if(!hasSavedPlans) Object.entries(PACE_DEFAULT_PLANS).forEach(([k,v])=>savePacePlan(k,v));
-  const plans=hasSavedPlans?paceData.plans:PACE_DEFAULT_PLANS;
-
-  // Remove stale/duplicate keys seeded during early testing
-  const PACE_STALE_KEYS={ellis:["mathematical_reasoning_level_d_1778793604455"]};
-  Object.entries(PACE_STALE_KEYS).forEach(([k,keys])=>{
-    const existing=(paceData.subjects&&paceData.subjects[k])||{};
-    keys.forEach(key=>{ if(existing[key]) deletePaceSubject(k,key); });
-  });
-
-  // Seed subjects per kid — prefer curriculum data, fall back to PACE_DEFAULT_SUBJECTS
-  ["lincoln","ellis","lucy"].forEach(k=>{
-    const existing=(paceData.subjects&&paceData.subjects[k])||{};
-    const currSubjects=(currData&&currData.subjects&&currData.subjects[k])||null;
-    const defaults=PACE_DEFAULT_SUBJECTS[k]||{};
-
-    // If curriculum uploaded, sync total + keyword from it
-    if(currSubjects){
-      Object.entries(currSubjects).forEach(([key,cs])=>{
-        const cur=existing[key];
-        const kw=cs.display||key;
-        if(!cur){
-          savePaceSubject(k,key,{label:cs.display,keyword:kw,total:cs.total,offset:0,adjust:0,startWeek:CURR_MIN_WEEK});
-        } else if(cur.total!==cs.total||cur.keyword!==kw){
-          savePaceSubject(k,key,{...cur,total:cs.total,keyword:kw,label:cs.display});
-        }
-      });
-    } else if(Object.keys(defaults).length){
-      // Fallback to hardcoded defaults when no curriculum
-      Object.entries(defaults).forEach(([key,subj])=>{
-        if(!existing[key]){
-          savePaceSubject(k,key,subj);
-        } else {
-          const cur=existing[key];
-          if(cur.startWeek!==subj.startWeek||cur.total!==subj.total){
-            savePaceSubject(k,key,{...cur,startWeek:subj.startWeek,total:subj.total});
-          }
-        }
-      });
-    }
-  });
+  syncPaceData();
+  const plans=paceData.plans&&Object.keys(paceData.plans).length>0?paceData.plans:PACE_DEFAULT_PLANS;
 
   let h='<div id="pace-content">';
 
@@ -7255,7 +7598,7 @@ function renderPace(el){
     '<div class="day-prog-bar" style="margin-top:0"><div class="day-prog-fill" style="width:'+weeklyPct+'%;background:'+weeklyCol+'"></div></div>'+
     '</div>';
 
-  // Plan sections
+  // Plan sections — READ-ONLY progress view
   Object.entries(plans).forEach(([planKey,plan])=>{
     const planKids=plan.kids||[];
     const visKids=(kid==="all"||kid==="mom")?planKids:planKids.filter(k=>k===kid);
@@ -7267,111 +7610,35 @@ function renderPace(el){
     const ssRemain=sessionSchoolDaysFromToday(plan);
     const ssDone=Math.max(0,ssTotal.school-ssRemain.school);
     const planPct=ssTotal.school?Math.min(100,Math.round(ssDone/ssTotal.school*100)):0;
-    const isEditingPlan=paceEditPlan===planKey;
-    const sdLabel=(plan.schoolDays||["Mon","Tue","Wed","Thu","Fri"]).join(", ");
 
     h+='<div class="pace-plan-section">';
 
-    // Plan banner
+    // Plan banner — read-only (no Edit/Map/Auto-Commit controls)
     h+='<div class="pace-year-banner" style="align-items:flex-start">'+
       '<div style="flex:1;min-width:0">'+
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">'+
-      '<div class="pace-year-label">'+plan.label+'</div>'+
-      '<button class="pace-plan-edit-btn" onclick="togglePlanEdit(\''+planKey+'\')">'+
-      (isEditingPlan?'Done':'Edit')+'</button>'+
-      (sessionMapData[planKey]?(smapViewPlan===planKey?
-        '<button class="pace-plan-edit-btn" style="background:var(--header);color:#fff" onclick="smapToggle(\''+planKey+'\')">✕</button>':
-        '<button class="pace-plan-edit-btn" onclick="smapToggle(\''+planKey+'\')">Map</button>'):'')+'</div>'+
+      '<div class="pace-year-label">'+plan.label+'</div></div>'+
       '<div class="pace-year-sub">'+formatPlanDate(plan.start||"")+' &ndash; '+formatPlanDate(plan.end||"")+'</div>'+
       '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px">'+
       planKids.map(k=>'<span class="pace-plan-kid-chip">'+cap(k)+'</span>').join('')+
       '</div>'+
       '<div class="pace-year-bar"><div class="pace-year-fill" style="width:'+planPct+'%"></div></div>'+
-      (sessionMapData[planKey]?(function(){
-        const ac=plan.autoCommit||false;
-        return '<div style="display:flex;align-items:center;gap:6px;margin-top:6px">'+
-          '<button onclick="updatePlanField(\''+planKey+'\',\'autoCommit\','+(!ac)+');renderAll()" style="width:32px;height:18px;border-radius:9px;border:none;background:'+(ac?'#2563eb':'#d1d5db')+';cursor:pointer;position:relative;transition:background .2s;flex-shrink:0"><span style="position:absolute;top:2px;'+(ac?'right:2px':'left:2px')+';width:14px;height:14px;border-radius:50%;background:#fff;transition:all .2s"></span></button>'+
-          '<span style="font-size:10px;color:'+(ac?'#2563eb':'var(--muted)')+';font-weight:'+(ac?'700':'500')+'">Auto-Commit'+(ac?' On':'')+'</span></div>';
-      })():'')+'</div>'+
+      '</div>'+
       '<div style="text-align:right;flex-shrink:0">'+
       '<div class="pace-year-wk">'+ssDone+' days</div>'+
       '<div class="pace-year-wklbl">of '+ssTotal.school+(ssTotal.off?' ('+ssTotal.off+' off)':'')+'</div>'+
       '<div class="pace-year-wklbl">Wk '+Math.min(weekNum,totalWeeks)+' &middot; '+planPct+'%</div></div>'+
       '</div>';
 
-    // Plan edit form
-    if(isEditingPlan){
-      h+='<div class="pace-plan-edit-form">'+
-        '<div class="pace-plan-edit-grid">'+
-        '<div><div class="pace-config-label">Plan Name</div>'+
-        '<input class="pace-config-input" value="'+plan.label.replace(/"/g,'&quot;')+'" '+
-        'oninput="updatePlanField(\''+planKey+'\',\'label\',this.value)"/></div>'+
-        '<div></div>'+
-        '<div><div class="pace-config-label">Start Date</div>'+
-        '<input class="pace-config-input" type="date" value="'+(plan.start||'')+'" '+
-        'oninput="updatePlanField(\''+planKey+'\',\'start\',this.value)"/></div>'+
-        '<div><div class="pace-config-label">End Date</div>'+
-        '<input class="pace-config-input" type="date" value="'+(plan.end||'')+'" '+
-        'oninput="updatePlanField(\''+planKey+'\',\'end\',this.value)"/></div>'+
-        '</div>'+
-        '<div class="pace-config-label" style="margin-bottom:6px">Kids in this plan</div>'+
-        '<div class="pace-plan-kids-row">'+
-        PACE_KIDS.map(k=>{
-          const on=(plan.kids||[]).includes(k);
-          return '<button class="pace-plan-kid-toggle'+(on?' on':'')+'" onclick="togglePlanKid(\''+planKey+'\',\''+k+'\')">'+cap(k)+'</button>';
-        }).join('')+
-        '</div>'+
-        '<div class="pace-config-label" style="margin-bottom:6px">School days</div>'+
-        '<div class="pace-plan-kids-row">'+
-        ["Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>{
-          const on=(plan.schoolDays||["Mon","Tue","Wed","Thu","Fri"]).includes(d);
-          return '<button class="pace-plan-kid-toggle'+(on?' on':'')+'" onclick="togglePlanSchoolDay(\''+planKey+'\',\''+d+'\')">'+d+'</button>';
-        }).join('')+
-        '</div>'+
-        (function(){
-          const ss=sessionSchoolDays(plan);
-          const sr=sessionSchoolDaysFromToday(plan);
-          return '<div style="font-size:11px;color:var(--muted);margin:8px 0 10px">'+
-            ss.school+' school days total'+
-            (ss.off?' &middot; '+ss.off+' off':'')+
-            ' &middot; '+sr.school+' remaining</div>';
-        })()+
-        (function(){
-          const sm=sessionMapData[planKey];
-          let h2='<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">';
-          h2+='<button style="padding:6px 14px;border-radius:8px;border:none;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif" onclick="(function(){var r=generateSessionMap(\''+planKey+'\');if(r.error){alert(r.error)}else{renderAll()}})()">'+
-            (sm?'Regenerate Map':'Generate Map')+'</button>';
-          if(sm) h2+='<button style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif" onclick="if(confirm(\'Clear session map?\'))clearSessionMap(\''+planKey+'\')">Clear</button>';
-          h2+='</div>';
-          if(sm){
-            const st=sm.stats||{};
-            const genDate=sm.generatedAt?new Date(sm.generatedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"";
-            h2+='<div style="padding:10px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;margin-bottom:10px;font-size:11px">';
-            h2+='<div style="font-weight:700;color:#15803d;margin-bottom:4px">Session Map Active</div>';
-            h2+='<div style="color:#166534">'+st.subjectCount+' subjects mapped across '+st.schoolDays+' school days ('+st.weeks+' weeks)</div>';
-            h2+='<div style="color:var(--muted);margin-top:2px">Generated '+genDate+'</div>';
-            h2+='</div>';
-          }
-          return h2;
-        })()+
-        (function(){
-          const sm=sessionMapData[planKey];
-          if(!sm) return '';
-          const ac=plan.autoCommit||false;
-          return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:8px 12px;background:'+(ac?'#eff6ff':'#f9fafb')+';border:1px solid '+(ac?'#93c5fd':'var(--border)')+';border-radius:8px">'+
-            '<button onclick="updatePlanField(\''+planKey+'\',\'autoCommit\','+(!ac)+')" style="width:36px;height:20px;border-radius:10px;border:none;background:'+(ac?'#2563eb':'#d1d5db')+';cursor:pointer;position:relative;transition:background .2s"><span style="position:absolute;top:2px;'+(ac?'right:2px':'left:2px')+';width:16px;height:16px;border-radius:50%;background:#fff;transition:all .2s"></span></button>'+
-            '<div><div style="font-size:12px;font-weight:700;color:'+(ac?'#1e40af':'#333')+'">Auto-Commit</div>'+
-            '<div style="font-size:10px;color:var(--muted)">Automatically commit the weekly schedule from session map on page load</div></div></div>';
-        })()+
-        '<button class="pace-del-btn" onclick="if(confirm(\'Delete this plan?\'))deletePacePlan(\''+planKey+'\')">Delete Plan</button>'+
-        '</div>';
-    }
-
-    // Kid curriculum cards
+    // Kid curriculum cards — read-only (no Edit button, no config forms)
     visKids.forEach(k=>{
       const kidSubjs=(paceData.subjects&&paceData.subjects[k])||{};
-      const keys=Object.keys(kidSubjs);
-      const isEditing=paceEditKid===k;
+      const _currSubs=(currData&&currData.subjects&&currData.subjects[k])||{};
+      const keys=Object.keys(kidSubjs).filter(sk=>{
+        if(_currSubs[sk]&&_currSubs[sk].tracking==="daily") return false;
+        if((kidSubjs[sk].total||0)===0) return false;
+        return true;
+      });
       const col=PACE_KCOL[k];
       let aheadN=0,onN=0,behindN=0;
       const cwn=currWeekNum();
@@ -7389,15 +7656,10 @@ function renderPace(el){
         '<div class="pace-kid-hdr">'+
         '<div><div class="pace-kid-name" style="color:'+col+'">'+cap(k)+'</div>'+
         '<div class="pace-kid-meta">'+summaryStr+(keys.length?' &middot; '+keys.length+' subjects':'')+'</div></div>'+
-        '<div class="pace-kid-actions">'+
-        '<button class="pace-edit-btn'+(isEditing?' active':'')+'" onclick="togglePaceEdit(\''+k+'\')">'+
-        (isEditing?'Done':'Edit')+'</button></div>'+
         '</div>';
 
-      if(keys.length||isEditing){
+      if(keys.length){
         h+='<div class="pace-subjects">';
-        if(!keys.length) h+='<div class="pace-empty">No subjects yet — add one below.</div>';
-
         keys.forEach(sk=>{
           const s=kidSubjs[sk];
           const kws=paceKeywords(k,sk,s);
@@ -7411,8 +7673,6 @@ function renderPace(el){
           const expPct=exp!==null?Math.min(100,Math.round(exp/tot*100)):null;
           const diff=exp!==null?cur-exp:null;
           const expLabel=exp!==null?' &middot; '+(diff>0?diff+' ahead of expected':diff<0?Math.abs(diff)+' behind expected':'on pace for Wk '+cwn):'';
-
-          // Next Up from curriculum auto-advance
           const _nextLesson=getNextLessonLabel(k,sk);
 
           h+='<div class="pace-subject-row">'+
@@ -7424,7 +7684,6 @@ function renderPace(el){
             '<span class="pace-badge '+status+'">'+paceStatusLabel(status)+'</span>'+
             '<span class="pace-pct">'+pct+'% complete'+expLabel+(sw>1&&weekNum<sw?' &middot; starts wk '+sw:'')+'</span></div>';
 
-          // Show "Next Up" when curriculum data is available
           if(_nextLesson){
             h+='<div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding:4px 8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px">'+
               '<span style="font-size:10px;font-weight:700;color:#16a34a;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap">Next up</span>'+
@@ -7434,63 +7693,15 @@ function renderPace(el){
               '<span style="font-size:10px;font-weight:700;color:#a16207;text-transform:uppercase;letter-spacing:0.3px">Complete</span>'+
               '<span style="font-size:12px;color:#92400e;font-weight:500">All lessons finished!</span></div>';
           }
-
-          if(isEditing){
-            h+='<div class="pace-config-grid">'+
-              '<div><div class="pace-config-label">Keyword</div>'+
-              '<input class="pace-config-input" value="'+(s.keyword||'').replace(/"/g,'&quot;')+'" placeholder="e.g. AAS Spelling" '+
-              'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'keyword\',this.value)"/></div>'+
-              '<div><div class="pace-config-label">Total</div>'+
-              '<input class="pace-config-input" type="number" min="1" value="'+(s.total||'')+'" '+
-              'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'total\',parseInt(this.value)||0)"/></div>'+
-              '<div><div class="pace-config-label">Start Wk</div>'+
-              '<input class="pace-config-input" type="number" min="1" value="'+sw+'" '+
-              'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'startWeek\',parseInt(this.value)||1)"/></div>'+
-              '</div>'+
-              '<div class="pace-auto-info">'+
-              '<span>Auto: <span class="pace-auto-num">'+autoC+'</span></span>'+
-              '<span style="color:var(--border)">+</span>'+
-              '<span>Offset: <input class="pace-num-input" type="number" min="0" value="'+offset+'" '+
-              'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'offset\',parseInt(this.value)||0)"/></span>'+
-              '<span style="color:var(--border)">+</span>'+
-              '<span>Adjust: <input class="pace-num-input" type="number" value="'+adjust+'" '+
-              'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'adjust\',parseInt(this.value)||0)"/></span>'+
-              '<span style="color:var(--border)">=</span>'+
-              '<span><span class="pace-auto-num">'+cur+'</span> done</span>'+
-              '<button class="pace-del-btn" style="margin-left:auto" onclick="deletePaceSubject(\''+k+'\',\''+sk+'\')">Remove</button>'+
-              '</div>';
-          }
           h+='</div>';
         });
-
-        if(isEditing){
-          h+='<div class="pace-add-row">'+
-            '<input id="pace-new-label-'+k+'" type="text" placeholder="Subject name" maxlength="30"/>'+
-            '<input id="pace-new-kw-'+k+'" type="text" placeholder="Keyword" maxlength="40"/>'+
-            '<input id="pace-new-total-'+k+'" type="number" placeholder="Total" min="1" max="9999" style="width:60px"/>'+
-            '<input id="pace-new-sw-'+k+'" type="number" placeholder="Wk" min="1" title="Start week" style="width:44px"/>'+
-            '<button class="pace-add-btn" onclick="addPaceSubject(\''+k+'\')">+ Add</button></div>';
-        }
         h+='</div>';
       }
       h+='</div>';
     });
 
-    if(smapViewPlan===planKey) h+=smapRenderEditor(planKey,plan);
-
     h+='</div>';
   });
-
-  // Add plan form
-  h+='<div class="pace-add-plan-row">'+
-    '<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.3px">Add New Plan</div>'+
-    '<div class="pace-add-plan-grid">'+
-    '<div><div class="pace-config-label">Name</div><input id="pace-new-plan-label" class="pace-config-input" type="text" placeholder="e.g. Summer Session"/></div>'+
-    '<div><div class="pace-config-label">Start Date</div><input id="pace-new-plan-start" class="pace-config-input" type="date"/></div>'+
-    '<div><div class="pace-config-label">End Date</div><input id="pace-new-plan-end" class="pace-config-input" type="date"/></div>'+
-    '</div>'+
-    '<button class="pace-add-btn" onclick="addPacePlan()">+ Add Plan</button>'+
-    '</div>';
 
   h+='</div>';
   el.innerHTML=h;
