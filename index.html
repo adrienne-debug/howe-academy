@@ -9,7 +9,7 @@
 <title>Howe Academy</title>
 <script>
 // Force cache bust: if URL doesn't have current version, redirect with it
-(function(){var v=5;var u=new URL(location.href);if(u.searchParams.get('_v')!==''+v){u.searchParams.set('_v',v);location.replace(u.href);}})();
+(function(){if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return;var v=6;var u=new URL(location.href);if(u.searchParams.get('_v')!==''+v){u.searchParams.set('_v',v);location.replace(u.href);}})();
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -1033,7 +1033,7 @@ const FB_CFG = {
 };
 
 // ── CODE VERSION — bump to force all devices to reload ──────────
-const CODE_VERSION = 5;
+const CODE_VERSION = 6;
 
 // ── CONSTANTS ────────────────────────────────────────────────────
 let WK = localStorage.getItem("ha_active_wk") || "week3";
@@ -6272,8 +6272,8 @@ function cascadeIntraWeek(){
   }
 
   // Distribute tasks across today and remaining days, overflowing when full
-  let taskIdx=0;
-  const unplaced=[...pastTasks]; // copy so we can sort per-day
+  // Fair distribution: round-robin across kids so no one kid hogs all early days
+  const unplaced=[...pastTasks];
   const placed=new Set();
   for(let di=todayIdx; di<dayOrder.length&&placed.size<pastTasks.length; di++){
     const dn=dayOrder[di];
@@ -6285,37 +6285,63 @@ function cascadeIntraWeek(){
     const isSitterDay=mag.days&&mag.days.includes(dn);
     const sitterReturn=isSitterDay?toMin(mag["mom_return_"+dn]||mag.mom_return||"2:00 PM"):0;
 
-    // Sort remaining tasks: group by kid, then workflow order within each kid
     const remaining=unplaced.filter(t=>!placed.has(t));
-    remaining.sort((a,b)=>{
-      if(a.who!==b.who) return a.who.localeCompare(b.who);
-      return cascadeWeight(a,dn)-cascadeWeight(b,dn);
-    });
+    if(!remaining.length) break;
 
-    // Find latest task already on this day (original + previously cascaded)
+    // Group remaining by kid, sort each kid's tasks by workflow
+    const byKid={};
+    remaining.forEach(t=>{
+      if(!byKid[t.who]) byKid[t.who]=[];
+      byKid[t.who].push(t);
+    });
+    const kidNames=Object.keys(byKid).sort();
+    kidNames.forEach(k=>byKid[k].sort((a,b)=>cascadeWeight(a,dn)-cascadeWeight(b,dn)));
+
+    // Find latest task already on this day
     let cursor=0;
     weekData.tasks.forEach(t=>{
       if(t.day!==dn||placed.has(t)) return;
-      if(remaining.includes(t)) return; // skip tasks we're about to place
+      if(remaining.includes(t)) return;
       const m=toMin(t.time);
       if(m>cursor) cursor=m;
     });
     if(cursor>0) cursor+=20;
     if(cursor<dStart) cursor=dStart;
 
-    // Place tasks on this day until it's full
-    for(const t of remaining){
-      // Sitter constraint: withSitter kids or mom-required wait for sitter return
-      if(isSitterDay&&cursor<sitterReturn){
-        if(sitterKids.includes(t.who)||t.mom==="required") cursor=sitterReturn;
+    // Count available slots on this day
+    let slotCursor=cursor, slots=0;
+    while(slotCursor<dEnd){
+      if(slotCursor>=lunchS&&slotCursor<lunchE) slotCursor=lunchE;
+      if(slotCursor>=dEnd) break;
+      slots++; slotCursor+=20;
+    }
+
+    // Divide slots proportionally among kids (by their remaining task count)
+    const totalRemaining=remaining.length;
+    const kidSlots={};
+    let assigned=0;
+    kidNames.forEach((k,i)=>{
+      if(i===kidNames.length-1){ kidSlots[k]=slots-assigned; }
+      else{ const share=Math.round(slots*byKid[k].length/totalRemaining); kidSlots[k]=share; assigned+=share; }
+    });
+
+    // Place tasks: kid blocks in sequence, each kid gets their fair share
+    for(const k of kidNames){
+      const kidTasks=byKid[k];
+      let placedForKid=0;
+      for(const t of kidTasks){
+        if(placedForKid>=kidSlots[k]) break;
+        if(isSitterDay&&cursor<sitterReturn){
+          if(sitterKids.includes(t.who)||t.mom==="required") cursor=sitterReturn;
+        }
+        if(cursor>=lunchS&&cursor<lunchE) cursor=lunchE;
+        if(cursor>=dEnd) break;
+        t.day=dn;
+        t.time=fromMin(cursor);
+        placed.add(t);
+        cursor+=20;
+        placedForKid++;
       }
-      if(cursor>=lunchS&&cursor<lunchE) cursor=lunchE;
-      // If past end of school day, overflow to next day
-      if(cursor>=dEnd) break;
-      t.day=dn;
-      t.time=fromMin(cursor);
-      placed.add(t);
-      cursor+=20;
     }
   }
 
