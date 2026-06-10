@@ -1026,7 +1026,7 @@ const FB_CFG = {
 };
 
 // ── CODE VERSION — bump to force all devices to reload ──────────
-const CODE_VERSION = 3;
+const CODE_VERSION = 4;
 
 // ── CONSTANTS ────────────────────────────────────────────────────
 let WK = localStorage.getItem("ha_active_wk") || "week3";
@@ -1147,6 +1147,21 @@ let fbCheckedLoaded = false;
 let fbTasksLoaded = false;
 let fbHistoryLoaded = false;
 let cascadeDebounce = null;
+let fbTasksHighWater = 0; // max task count ever seen from Firebase — guards against accidental wipes
+function safeWriteTasks(reason){
+  // Guard: never write tasks to Firebase if we'd be dropping below 50% of what we've seen
+  if(!db) return;
+  const count = weekData.tasks.length;
+  if(fbTasksHighWater > 20 && count < fbTasksHighWater * 0.5){
+    dbg("BLOCKED task write ("+reason+"): only "+count+" tasks vs high-water "+fbTasksHighWater);
+    return;
+  }
+  const obj={};
+  weekData.tasks.forEach(t=>obj[t.id]=t);
+  lastTasksWrite=Date.now();
+  db.ref(WK+"/tasks").set(obj);
+  dbg("wrote tasks ("+reason+"): "+count);
+}
 function dbg(msg){ console.log("[HA]",msg); try{if(db)db.ref("_debug").push({msg,wk:WK,t:Date.now()});}catch(e){} }
 
 // Detach all week-scoped listeners, then re-attach for the given week.
@@ -1218,6 +1233,8 @@ function attachWeekListeners(wk){
     // Suppress echo from our own cascade writes (prevents runaway cascade chains)
     if(Date.now()-lastTasksWrite<3000){ dbg("skip:tasks echo"); return; }
     const incoming=Object.values(s.val());
+    // Track high-water mark to prevent accidental wipes
+    if(incoming.length>fbTasksHighWater) fbTasksHighWater=incoming.length;
     const firstLoad=!fbTasksLoaded;
     fbTasksLoaded=true;
     const inIds=incoming.map(t=>t.id).sort().join(",");
@@ -3795,8 +3812,7 @@ function _syncCarryOvers(){
   });
   if(changed){
     sv(WK+"_tasks",weekData.tasks);
-    lastTasksWrite=Date.now();
-    if(db){const obj={};weekData.tasks.forEach(t=>obj[t.id]=t);db.ref(WK+"/tasks").set(obj);}
+    safeWriteTasks("displacement");
     renderAll();
   }
 }
@@ -3822,8 +3838,7 @@ function toggleCarryOver(taskId,include){
   try{localStorage.setItem("ha_co_excl",JSON.stringify(coExclusions));}catch(e){}
   if(db) db.ref("co_excl/"+WK).set(coExclusions[WK]);
   sv(WK+"_tasks",weekData.tasks);
-  lastTasksWrite=Date.now();
-  if(db){const obj={};weekData.tasks.forEach(t=>obj[t.id]=t);db.ref(WK+"/tasks").set(obj);}
+  safeWriteTasks("co-exclusion");
   const el=document.getElementById("content"); if(el&&tab==="history") renderHistory(el);
 }
 
@@ -6307,8 +6322,7 @@ function cascadeIntraWeek(){
   }
 
   sv(WK+"_tasks",weekData.tasks);
-  lastTasksWrite=Date.now();
-  if(db){const obj={};weekData.tasks.forEach(t=>obj[t.id]=t);db.ref(WK+"/tasks").set(obj);}
+  safeWriteTasks("cascade");
   renderAll();
 }
 
@@ -10718,9 +10732,7 @@ function resortDayTasks(day,startOverride,momOverride){
   });
   if(!changed) return;
   sv(WK+"_tasks",weekData.tasks);
-  lastTasksWrite=Date.now();
-  const obj={};weekData.tasks.forEach(t=>obj[t.id]=t);
-  db.ref(WK+"/tasks").set(obj);
+  safeWriteTasks("runDisplacement");
 }
 function getDayBlockouts(d){
   const out=[];
