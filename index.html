@@ -6356,6 +6356,75 @@ function cascadeIntraWeek(){
     });
   }
 
+  // ── Lesson-order pass: ensure sequential lessons stay in day order ──
+  // For any subject that has a cascaded task, collect all tasks for that
+  // subject+kid, sort lessons naturally, sort slots by day, then assign
+  // so earlier lessons always land on earlier (or same) days.
+  const subjectGroups={};
+  weekData.tasks.forEach(t=>{
+    if(t.id.endsWith("_c")) return;
+    const subj=taskSubject(t);
+    const key=t.who+"|"+subj;
+    if(!subjectGroups[key]) subjectGroups[key]=[];
+    subjectGroups[key].push(t);
+  });
+
+  // Extract lesson detail from title (part after " — ")
+  function lessonKey(t){
+    const m=(t.title||"").match(/—\s*(.+)$/);
+    return m?m[1].trim():"";
+  }
+  // Natural sort: "4d" < "4e" < "5a" < "L2-7" < "L2-8"
+  function natCmp(a,b){
+    const ra=/(\d+)|(\D+)/g;
+    const pa=a.match(ra)||[], pb=b.match(ra)||[];
+    for(let i=0;i<Math.max(pa.length,pb.length);i++){
+      const xa=pa[i]||"", xb=pb[i]||"";
+      const na=parseInt(xa), nb=parseInt(xb);
+      if(!isNaN(na)&&!isNaN(nb)){ if(na!==nb) return na-nb; }
+      else{ const c=xa.localeCompare(xb); if(c!==0) return c; }
+    }
+    return 0;
+  }
+
+  for(const key in subjectGroups){
+    const grp=subjectGroups[key];
+    // Only reorder groups that have at least one cascaded task
+    if(!grp.some(t=>t.cascadedFrom)) continue;
+    // Only reorder among UNCHECKED tasks — checked ones are done, don't touch them
+    const uncheckedGrp=grp.filter(t=>!checked[t.id]);
+    if(uncheckedGrp.length<2) continue;
+
+    // Sort by lesson detail (natural order)
+    const byLesson=[...uncheckedGrp].sort((a,b)=>natCmp(lessonKey(a),lessonKey(b)));
+
+    // Sort by day+time order (the slots)
+    const dayIdx=d=>dayOrder.indexOf(d);
+    const bySlot=[...uncheckedGrp].sort((a,b)=>{
+      if(a.day!==b.day) return dayIdx(a.day)-dayIdx(b.day);
+      return toMin(a.time)-toMin(b.time);
+    });
+
+    // Check if order already matches — skip if so
+    let needSwap=false;
+    for(let i=0;i<byLesson.length;i++){
+      if(byLesson[i].id!==bySlot[i].id){ needSwap=true; break; }
+    }
+    if(!needSwap) continue;
+
+    // Swap: assign lesson content to slots in order
+    // Keep each slot's day/time/cascadedFrom, move the lesson content
+    const slots=bySlot.map(t=>({day:t.day,time:t.time,cascadedFrom:t.cascadedFrom}));
+    for(let i=0;i<byLesson.length;i++){
+      const t=byLesson[i];
+      t.day=slots[i].day;
+      t.time=slots[i].time;
+      // Preserve cascadedFrom only if this task was actually cascaded
+      if(slots[i].cascadedFrom && !t.cascadedFrom) t.cascadedFrom=slots[i].cascadedFrom;
+      else if(!slots[i].cascadedFrom && t.cascadedFrom) delete t.cascadedFrom;
+    }
+  }
+
   sv(WK+"_tasks",weekData.tasks);
   safeWriteTasks("cascade");
   renderAll();
