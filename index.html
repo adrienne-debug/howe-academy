@@ -7758,6 +7758,118 @@ function togglePaceEdit(kid){
   paceEditKid=paceEditKid===kid?null:kid; renderAll();
 }
 
+// ── FINISH LINE: projected completion per subject from the resolved pattern ──
+function _todayStr(){
+  const n=new Date();
+  return n.getFullYear()+"-"+String(n.getMonth()+1).padStart(2,"0")+"-"+String(n.getDate()).padStart(2,"0");
+}
+function _maxPlanWeek(){
+  let mx=0;
+  if(currData&&currData.weekDays){
+    for(const kid of Object.keys(currData.weekDays)){
+      for(const lbl of Object.keys(currData.weekDays[kid]||{})){
+        const m=lbl.match(/Wk\s*(\d+)/i);
+        if(m) mx=Math.max(mx,parseInt(m[1]));
+      }
+    }
+  }
+  return mx;
+}
+// Future slot dates per kid per subject, from this week forward (today onward).
+// Walks resolveWeekSlots so calendar (and later, manual overrides) are respected.
+function computeFutureSlots(){
+  const out={};
+  if(!currData||!currData.subjects) return out;
+  const fromWk=currWeekNum(), maxWk=_maxPlanWeek(), today=_todayStr();
+  for(let w=fromWk;w<=maxWk;w++){
+    const resolved=resolveWeekSlots(w);
+    if(!resolved) continue;
+    for(const kid of Object.keys(resolved.slots)){
+      if(!out[kid]) out[kid]={};
+      const ks=resolved.slots[kid];
+      for(const sk of Object.keys(ks)){
+        if(!out[kid][sk]) out[kid][sk]=[];
+        for(const d of ks[sk]){
+          if(w===fromWk&&d<today) continue; // earlier this week — already past
+          out[kid][sk].push(d);
+        }
+      }
+    }
+  }
+  for(const kid of Object.keys(out)) for(const sk of Object.keys(out[kid])) out[kid][sk].sort();
+  return out;
+}
+function computeFinishLines(forKid){
+  const rows=[];
+  if(!currData||!currData.subjects) return rows;
+  const kids=(forKid==="all"||forKid==="mom")?["lincoln","ellis","lucy","julian"]:[forKid];
+  const future=computeFutureSlots();
+  for(const kid of kids){
+    const subs=currData.subjects[kid]||{};
+    for(const sk of Object.keys(subs)){
+      const s=subs[sk];
+      if(!s||s.paused||s.tracking==="daily") continue;
+      const seq=buildSubjectLessons(kid,sk);
+      if(!seq.length) continue;
+      let cursor=0;
+      try{ cursor=computeSubjectCursor(kid,sk); }catch(e){}
+      const remaining=Math.max(0,seq.length-cursor);
+      const slots=(future[kid]||{})[sk]||[];
+      const lastPlanned=slots.length?slots[slots.length-1]:null;
+      let projDate=null, overflow=0, status;
+      if(remaining===0){ status="done"; }
+      else if(remaining<=slots.length){
+        projDate=slots[remaining-1];
+        status="ontime";
+      } else {
+        overflow=remaining-slots.length;
+        // estimate past plan end using the subject's average weekly pace
+        const weeksLeft=Math.max(1,_maxPlanWeek()-currWeekNum()+1);
+        const perWeek=slots.length/weeksLeft;
+        if(perWeek<=0){ status="stalled"; }
+        else {
+          const extraWeeks=Math.ceil(overflow/perWeek);
+          const base=lastPlanned?gwParseDate(lastPlanned):new Date();
+          base.setDate(base.getDate()+extraWeeks*7);
+          projDate=base.getFullYear()+"-"+String(base.getMonth()+1).padStart(2,"0")+"-"+String(base.getDate()).padStart(2,"0");
+          status="red";
+        }
+      }
+      if(status==="ontime"&&lastPlanned&&projDate>lastPlanned) status="amber";
+      rows.push({kid,sk,display:s.display||sk,remaining,slots:slots.length,lastPlanned,projDate,overflow,status});
+    }
+  }
+  return rows;
+}
+function renderFinishLine(forKid){
+  const rows=computeFinishLines(forKid);
+  if(!rows.length) return "";
+  const fmt=d=>{ if(!d) return "—"; const o=gwParseDate(d); return o.toLocaleDateString("en-US",{month:"short",day:"numeric"}); };
+  const COLS={done:"#10b981",ontime:"#10b981",amber:"#f59e0b",red:"#ef4444",stalled:"#9ca3af"};
+  const LBLS={done:"Done ✓",ontime:"",amber:"",red:"",stalled:"No slots"};
+  let h='<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:14px">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
+  h+='<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:0.4px;color:var(--muted)">\u{1F3C1} Finish Line</div>';
+  h+='<div style="font-size:10px;color:var(--muted)">projected from remaining lessons &times; planned slots</div></div>';
+  const byKid={};
+  rows.forEach(r=>{ if(!byKid[r.kid]) byKid[r.kid]=[]; byKid[r.kid].push(r); });
+  Object.keys(byKid).forEach(k=>{
+    if(Object.keys(byKid).length>1) h+='<div style="font-size:11px;font-weight:700;color:'+(PACE_KCOL[k]||"#111827")+';margin:8px 0 4px">'+cap(k)+'</div>';
+    byKid[k].sort((a,b)=>({red:0,stalled:1,amber:2,ontime:3,done:4})[a.status]-({red:0,stalled:1,amber:2,ontime:3,done:4})[b.status]);
+    byKid[k].forEach(r=>{
+      const col=COLS[r.status];
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px">';
+      h+='<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.display)+'</span>';
+      h+='<span style="color:var(--muted);font-size:11px;flex-shrink:0">'+r.remaining+' left &middot; '+r.slots+' slots</span>';
+      h+='<span data-finish-pill="'+k+'|'+r.sk+'" style="flex-shrink:0;font-weight:700;font-size:11px;padding:2px 8px;border-radius:10px;background:'+col+'18;color:'+col+'">'
+        +(LBLS[r.status]||fmt(r.projDate)+(r.status==="red"?" ⚠":""))+'</span>';
+      h+='</div>';
+    });
+  });
+  h+='</div>';
+  return h;
+}
+
 function renderPace(el){
   if(!el){el=document.getElementById("content");if(!el)return;}
 
@@ -7791,6 +7903,9 @@ function renderPace(el){
     '</div>'+
     '<div class="day-prog-bar" style="margin-top:0"><div class="day-prog-fill" style="width:'+weeklyPct+'%;background:'+weeklyCol+'"></div></div>'+
     '</div>';
+
+  // Finish Line — projected completion per subject (calendar- and override-aware)
+  try{ h+=renderFinishLine(kid); }catch(e){ console.log("[HA] finish line error",e); }
 
   // Plan sections — READ-ONLY progress view
   Object.entries(plans).forEach(([planKey,plan])=>{
