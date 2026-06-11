@@ -1131,6 +1131,7 @@ let gwConfig={weekNum:"",babysitter:{},withSitter:[],skipDays:[],lateStart:{},ca
 let gwConfigOpen={basic:true,babysitter:false,skip:false,late:false,car:false,redist:false};
 let gwResult=null;
 let gwDropped=null;
+let gwCalendarSkips=null; // [{date,reason,kids:[...]}] — calendar days the generator skipped
 let gwCarryOverCount=0;
 let gwCursors=null;
 let gwStatus="";
@@ -11624,6 +11625,13 @@ function renderAdminGenerate(el,headerHtml){
       h+='<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:14px">';
       h+='<div style="font-weight:700;font-size:14px;color:#15803d;margin-bottom:6px">Generated '+gwResult.week.replace("week","Week ")+' — '+tc+' tasks across '+dc+' days</div>';
       if(gwCarryOverCount) h+='<div style="font-size:12px;font-weight:600;color:#7c3aed;margin-bottom:6px">\u{1F501} '+gwCarryOverCount+' carry-over'+(gwCarryOverCount>1?'s':'')+' included from previous week</div>';
+      if(gwCalendarSkips&&gwCalendarSkips.length){
+        gwCalendarSkips.forEach(s=>{
+          const sd=gwParseDate(s.date);
+          const lbl=sd.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",timeZone:"UTC"});
+          h+='<div style="font-size:12px;font-weight:600;color:#0369a1;margin-bottom:4px">\u{1F4C5} '+lbl+' skipped — '+esc(s.reason)+' ('+s.kids.map(cap).join(", ")+')</div>';
+        });
+      }
       if(gwDropped&&gwDropped.length){
         const cutoffs=gwDropped.filter(d=>d.reason.includes("CUTOFF"));
         if(cutoffs.length){
@@ -12077,7 +12085,7 @@ function tryAutoCommit(){
       cfg.weekNum=String(nw);
       const gen=generateWeek(cfg);
       if(gen.error){console.log("[HA] auto-commit skipped:",gen.error);return;}
-      gwConfig=cfg;gwResult=gen.result;gwDropped=gen.dropped;gwCarryOverCount=gen.carryOverCount||0;
+      gwConfig=cfg;gwResult=gen.result;gwDropped=gen.dropped;gwCarryOverCount=gen.carryOverCount||0;gwCalendarSkips=gen.calendarSkips||null;
       gwCommit();
       console.log("[HA] auto-committed week "+nw+" from session map");
       gwShowToast("Week "+nw+" auto-committed from session map");
@@ -12094,6 +12102,7 @@ function pnwGenerate(){
   const gen=generateWeek(gwConfig);
   if(gen.error){ gwShowToast(gen.error); return; }
   pnwResult=gen.result; pnwDropped=gen.dropped; pnwCarryOverCount=gen.carryOverCount||0;
+  gwCalendarSkips=gen.calendarSkips||null;
   pnwStep=1;
   renderPlanNextWeek();
 }
@@ -12966,6 +12975,7 @@ function gwReadWeek(weekNum){
       if(!lesson) continue;
       const dateStr=lesson.date;
       if(!dateStr) continue;
+      if(smapIsKidOff(kid,dateStr)) continue; // calendar vacation/holiday/kid-off — slots vanish, cursors carry content forward
       if(!dayData[dateStr]) dayData[dateStr]={};
       if(!dayData[dateStr][kid]) dayData[dateStr][kid]={};
 
@@ -12981,24 +12991,22 @@ function gwReadWeek(weekNum){
   return dayData;
 }
 
-// Auto-advance version: same schedule pattern as the fixed week but replaces
-// lesson content with cursor-based next lessons from check-off progress.
-// excludeWeek: on regeneration, excludes this week's own tasks from cursor count
-//   so the cursor reflects only prior-week progress (prevents self-counting drift).
-// Returns {dayData, cursors} so generateWeek can store the snapshot.
-function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek){
+// Pattern-only walker: which subjects occupy slots on which dates for a week,
+// after Excel grid + session maps + in-app subjects + calendar are applied.
+// Shared by the generator, Finish Line math, and the Lesson Map editor so all
+// three always agree. Returns {dayData, slots:{kid:{sk:[dateStr,...]}}}.
+function resolveWeekSlots(weekNum){
   const dayData=gwReadWeek(weekNum);
   if(!dayData) return null;
 
   const WDAY_ABBR={0:"Sun",1:"Mon",2:"Tue",3:"Wed",4:"Thu",5:"Fri",6:"Sat"};
   const sortedDates=Object.keys(dayData).sort();
-
-  const cursors={};
+  const slots={};
 
   for(const kid of ["lincoln","ellis","lucy","julian"]){
-    cursors[kid]={};
     const subjects=currData.subjects[kid]||{};
     const subjectSlots={};
+    slots[kid]=subjectSlots;
     for(const dateStr of sortedDates){
       if(!dayData[dateStr]||!dayData[dateStr][kid]) continue;
       for(const sk of Object.keys(dayData[dateStr][kid])){
@@ -13013,6 +13021,7 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek){
       if(!sm||!sm.map) continue;
       const ov=sm.overrides||{};
       for(const dateStr of sortedDates){
+        if(smapIsKidOff(kid,dateStr)) continue;
         const kidMap=(sm.map[dateStr]||{})[kid];
         const dayOv=(ov[dateStr]||{})[kid]||{};
         const removed=new Set(dayOv.removed||[]);
@@ -13041,6 +13050,7 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek){
       if(!isDaily&&(!s.lessonSeq||!s.lessonSeq.length)) continue;
       const allowed=s.allowedDays||[];
       const matchDates=sortedDates.filter(d=>{
+        if(smapIsKidOff(kid,d)) return false;
         if(!allowed.length) return true;
         const dObj=gwParseDate(d);
         const abbr=WDAY_ABBR[dObj.getDay()];
@@ -13060,6 +13070,26 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek){
         dayData[d][kid][sk]="TMP";
       }
     }
+  }
+  return {dayData,slots};
+}
+
+// Auto-advance version: same schedule pattern as the fixed week but replaces
+// lesson content with cursor-based next lessons from check-off progress.
+// excludeWeek: on regeneration, excludes this week's own tasks from cursor count
+//   so the cursor reflects only prior-week progress (prevents self-counting drift).
+// Returns {dayData, cursors} so generateWeek can store the snapshot.
+function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek){
+  const resolved=resolveWeekSlots(weekNum);
+  if(!resolved) return null;
+  const dayData=resolved.dayData;
+
+  const cursors={};
+
+  for(const kid of ["lincoln","ellis","lucy","julian"]){
+    cursors[kid]={};
+    const subjects=currData.subjects[kid]||{};
+    const subjectSlots=resolved.slots[kid]||{};
 
     for(const sk of Object.keys(subjectSlots)){
       const dates=subjectSlots[sk];
@@ -13115,6 +13145,24 @@ function generateWeek(config){
     dayData=gwReadWeek(weekNum);
   }
   if(!dayData||!Object.keys(dayData).length) return {error:"No curriculum data found for Wk "+weekNum};
+
+  // Calendar-skipped dates for this week (vacation/holiday/kid-off) — surfaced in preview
+  const calendarSkips=[];
+  (function(){
+    const seen={};
+    for(const kid of ["lincoln","ellis","lucy","julian"]){
+      const wdMap=(currData.weekDays||{})[kid]||{};
+      const lessons=(currData.lessons||{})[kid]||{};
+      for(const dn of (wdMap["Wk "+weekNum]||[])){
+        const l=lessons[dn]; if(!l||!l.date) continue;
+        const why=smapIsKidOff(kid,l.date);
+        if(!why) continue;
+        if(!seen[l.date]) seen[l.date]={date:l.date,reason:why,kids:[]};
+        if(seen[l.date].kids.indexOf(kid)<0) seen[l.date].kids.push(kid);
+      }
+    }
+    Object.values(seen).sort((a,b)=>a.date.localeCompare(b.date)).forEach(s=>calendarSkips.push(s));
+  })();
 
   // Apply redistribution
   let balanced=config.redistribute&&config.redistribute.length
@@ -13280,7 +13328,7 @@ function generateWeek(config){
   };
   if(sitterObj) output.babysitter=sitterObj;
 
-  return {result:output,dropped:allDropped,carryOverCount:coTasks.length,cursors:weekCursors};
+  return {result:output,dropped:allDropped,carryOverCount:coTasks.length,cursors:weekCursors,calendarSkips};
 }
 
 function runGenerateWeek(){
@@ -13305,6 +13353,7 @@ function runGenerateWeek(){
   gwDropped=gen.dropped;
   gwCarryOverCount=gen.carryOverCount||0;
   gwCursors=gen.cursors||null;
+  gwCalendarSkips=gen.calendarSkips||null;
   renderAll();
 }
 
