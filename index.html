@@ -1362,6 +1362,7 @@ function initFb() {
       if(!calendarData.vacations) calendarData.vacations={};
       if(!calendarData.kidOverrides) calendarData.kidOverrides={};
       try{localStorage.setItem("ha_calendar",JSON.stringify(calendarData));}catch(e){}
+      if(currData) buildCurrPaceCum();
       if(tab==="schedule"&&schedShowAdmin&&adminSubTab==="calendar"){const el=document.getElementById("content");if(el)renderAll();}
     });
     db.ref("sessionMaps").on("value",s=>{
@@ -1371,6 +1372,7 @@ function initFb() {
     db.ref("scheduleOverrides").on("value",s=>{
       scheduleOverrides=s.val()||{};
       try{localStorage.setItem("ha_sched_overrides",JSON.stringify(scheduleOverrides));}catch(e){}
+      if(currData) buildCurrPaceCum();
       if(tab==="schedule"||tab==="pace"){const el=document.getElementById("content");if(el)renderAll();}
     });
     db.ref("archive").on("value",s=>{
@@ -6962,7 +6964,16 @@ function buildCurrPaceCum(){
       const byWk={};
       for(const wn of weekNums){
         const dayNums=wdMap["Wk "+wn]||[];
-        for(const d of dayNums){if(lessons[d]&&lessons[d][sk])cum++;}
+        for(const d of dayNums){
+          const l=lessons[d]; if(!l) continue;
+          const date=l.date||"";
+          // Expected pace honors the calendar and Lesson Map edits: off days and
+          // removed slots don't count; manually added slots do.
+          const off=date&&(smapIsKidOff(kid,date)||schedOvKidOff(kid,date));
+          const ovv=date?(schedOv(date,kid)||{}):{};
+          if(l[sk]&&!off&&!(ovv.removed||{})[sk]) cum++;
+          if(!off&&(ovv.added||{})[sk]) cum++;
+        }
         byWk[wn]=cum;
       }
       currPaceCum[kid][sk]=byWk;
@@ -7963,9 +7974,10 @@ function computeFutureSlots(){
   const out={};
   if(!currData||!currData.subjects) return out;
   const fromWk=currWeekNum(), maxWk=_maxPlanWeek(), today=_todayStr();
-  for(let w=fromWk;w<=maxWk;w++){
+  for(let w=fromWk;w<=maxWk+52;w++){
     const resolved=resolveWeekSlots(w);
-    if(!resolved) continue;
+    if(!resolved){ if(w>maxWk) break; continue; }
+    let any=false;
     for(const kid of Object.keys(resolved.slots)){
       if(!out[kid]) out[kid]={};
       const ks=resolved.slots[kid];
@@ -7974,9 +7986,11 @@ function computeFutureSlots(){
         for(const d of ks[sk]){
           if(w===fromWk&&d<today) continue; // earlier this week — already past
           out[kid][sk].push(d);
+          any=true;
         }
       }
     }
+    if(w>maxWk&&!any) break; // past the grid and no synthesized slots — stop walking
   }
   for(const kid of Object.keys(out)) for(const sk of Object.keys(out[kid])) out[kid][sk].sort();
   return out;
@@ -8023,6 +8037,61 @@ function computeFinishLines(forKid){
   }
   return rows;
 }
+
+// Finish Line "Extend": append make-up slots on synthesized weeks past the plan
+// end, following the subject's usual weekday pattern. Show slip → extend on tap.
+function flExtendSubject(kid,sk){
+  if(!currData||!currData.subjects) return;
+  const subs=currData.subjects[kid]||{};
+  const s=subs[sk]; if(!s) return;
+  const seq=buildSubjectLessons(kid,sk);
+  let cursor=0; try{cursor=computeSubjectCursor(kid,sk);}catch(e){}
+  const remaining=Math.max(0,seq.length-cursor);
+  const have=(((computeFutureSlots()[kid])||{})[sk]||[]).length;
+  let need=remaining-have;
+  if(need<=0){ if(typeof gwShowToast==="function") gwShowToast((s.display||sk)+" already has enough planned slots."); return; }
+  // Weekday pattern from grid history; fallback to allowedDays, then Mon–Fri
+  const wdCounts={};
+  const lessons=(currData.lessons||{})[kid]||{};
+  for(const dn of Object.keys(lessons)){
+    const l=lessons[dn];
+    if(l&&l.date&&l[sk]&&l[sk]!=="—"&&l[sk]!=="nan"){ const wd=gwParseDate(l.date).getDay(); wdCounts[wd]=(wdCounts[wd]||0)+1; }
+  }
+  let wds=Object.keys(wdCounts).map(Number).sort((a,b)=>a-b);
+  if(!wds.length){
+    const M={Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6,Sun:0};
+    const al=s.allowedDays||[];
+    wds=al.length?al.map(a=>M[a]).filter(x=>x!=null):[1,2,3,4,5];
+  }
+  const mx=_maxPlanWeek();
+  let wk=mx+1, added=0, guard=0, lastDate=null;
+  while(need>0&&guard<60){
+    const range=gwWeekDateRange(wk);
+    if(!range) break;
+    const mon=gwParseDate(range.start);
+    for(const wd of wds){
+      if(need<=0) break;
+      const dt=new Date(mon); dt.setDate(dt.getDate()+((wd+6)%7));
+      const f=dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");
+      if(smapIsKidOff(kid,f)) continue;
+      const cur=schedOv(f,kid)||{};
+      if(cur.dayOff) continue;
+      if(cur.added&&cur.added[sk]) continue;
+      if(!scheduleOverrides[f]) scheduleOverrides[f]={};
+      if(!scheduleOverrides[f][kid]) scheduleOverrides[f][kid]={};
+      if(!scheduleOverrides[f][kid].added) scheduleOverrides[f][kid].added={};
+      scheduleOverrides[f][kid].added[sk]=true;
+      need--; added++; lastDate=f;
+    }
+    wk++; guard++;
+  }
+  if(added){
+    saveScheduleOverrides();
+    buildCurrPaceCum();
+    if(typeof gwShowToast==="function") gwShowToast("Extended "+(s.display||sk)+": +"+added+" make-up slot"+(added>1?"s":"")+(lastDate?" through "+lastDate:""));
+  }
+  renderAll();
+}
 function renderFinishLine(forKid){
   const rows=computeFinishLines(forKid);
   if(!rows.length) return "";
@@ -8045,6 +8114,7 @@ function renderFinishLine(forKid){
       h+='<span style="color:var(--muted);font-size:11px;flex-shrink:0">'+r.remaining+' left &middot; '+r.slots+' slots</span>';
       h+='<span data-finish-pill="'+k+'|'+r.sk+'" style="flex-shrink:0;font-weight:700;font-size:11px;padding:2px 8px;border-radius:10px;background:'+col+'18;color:'+col+'">'
         +(LBLS[r.status]||fmt(r.projDate)+(r.status==="red"?" ⚠":""))+'</span>';
+      if(r.status==="red") h+='<button onclick="flExtendSubject(\''+k+'\',\''+r.sk+'\')" style="flex-shrink:0;border:1px solid #ef4444;background:#fff;color:#ef4444;border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Extend</button>';
       h+='</div>';
     });
   });
@@ -13256,6 +13326,36 @@ function gwAutoBalance(dayData,lateStart,skipDays){
   return dayData;
 }
 
+// Mon..Sun date range for a plan week — extrapolates past the grid so
+// synthesized make-up weeks (Finish Line "Extend") can be generated.
+function gwWeekDateRange(weekNum){
+  if(!currData||!currData.weekDays||!currData.lessons) return null;
+  let anyDate=null;
+  for(const kid of Object.keys(currData.weekDays)){
+    const dayNums=(currData.weekDays[kid]||{})["Wk "+weekNum]||[];
+    for(const dn of dayNums){ const l=(currData.lessons[kid]||{})[dn]; if(l&&l.date){anyDate=l.date;break;} }
+    if(anyDate) break;
+  }
+  let mon;
+  if(anyDate){ mon=gwParseDate(anyDate); }
+  else {
+    const mx=_maxPlanWeek();
+    if(weekNum<=mx) return null;
+    let anchor=null;
+    for(const kid of Object.keys(currData.weekDays)){
+      const dayNums=(currData.weekDays[kid]||{})["Wk "+mx]||[];
+      for(const dn of dayNums){ const l=(currData.lessons[kid]||{})[dn]; if(l&&l.date&&(!anchor||l.date<anchor)) anchor=l.date; }
+    }
+    if(!anchor) return null;
+    mon=gwParseDate(anchor);
+    mon.setDate(mon.getDate()+(weekNum-mx)*7);
+  }
+  mon.setDate(mon.getDate()-((mon.getDay()+6)%7));
+  const end=new Date(mon); end.setDate(end.getDate()+6);
+  const f=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  return {start:f(mon),end:f(end)};
+}
+
 function gwReadWeek(weekNum){
   if(!currData||!currData.weekDays||!currData.lessons) return null;
   const dayData={};
@@ -13284,6 +13384,28 @@ function gwReadWeek(weekNum){
         if(ovRm[key]) continue; // Lesson Map: subject manually removed from this day
         if(lesson[key]&&lesson[key]!=="—"&&lesson[key]!=="nan"){
           dayData[dateStr][kid][key]=lesson[key];
+        }
+      }
+    }
+  }
+
+  // Inject manual additions on dates the grid doesn't carry — including
+  // synthesized make-up weeks past the plan's end (Finish Line "Extend").
+  const range=gwWeekDateRange(weekNum);
+  if(range){
+    for(const dateStr of Object.keys(scheduleOverrides||{})){
+      if(dateStr<range.start||dateStr>range.end) continue;
+      for(const kid of Object.keys(scheduleOverrides[dateStr]||{})){
+        const ov=scheduleOverrides[dateStr][kid];
+        if(!ov||!ov.added||ov.dayOff) continue;
+        if(smapIsKidOff(kid,dateStr)) continue;
+        for(const sk of Object.keys(ov.added)){
+          const subj=((currData.subjects||{})[kid]||{})[sk];
+          if(!subj||subj.paused) continue;
+          if(dayData[dateStr]&&dayData[dateStr][kid]&&dayData[dateStr][kid][sk]) continue;
+          if(!dayData[dateStr]) dayData[dateStr]={};
+          if(!dayData[dateStr][kid]) dayData[dateStr][kid]={};
+          dayData[dateStr][kid][sk]="TMP";
         }
       }
     }
