@@ -10435,6 +10435,19 @@ function runDisplacement(){
     return 500;
   }
 
+  // Is this task's subject marked "sequential" in the curriculum? (matched by display name)
+  function _isSeqSubject(t){
+    if(!currData||!currData.subjects) return false;
+    var subs=currData.subjects[t.who]||{};
+    var subjL=taskSubject(t).toLowerCase();
+    for(var sk in subs){
+      var s=subs[sk];
+      if(!s||s.paused) continue;
+      if(((s.display||sk).trim().toLowerCase())===subjL) return (s.rules||"").includes("sequential");
+    }
+    return false;
+  }
+
   // Check if kid is a withSitter kid
   const _sitterKids=(weekData.babysitter&&weekData.babysitter.withSitter)||(r.withSitter)||[];
 
@@ -10561,10 +10574,12 @@ function runDisplacement(){
   });
 
   // ── Phase 2: Cross-day placement (later days first, then Saturday catch-all) ──
-  function canPlace(t,d){
+  // relaxMax: Saturday is the catch-up day — a sequential subject may double up there
+  // (the Phase 4 re-sequencer keeps the lesson numbers in order).
+  function canPlace(t,d,relaxMax){
     if(_fullDay(d,t.who)) return false;
     var subj=taskSubject(t),mx=maxFor(subj);
-    if(mx<999){var ct=0;working.forEach(function(w){if(w.day===d&&taskSubject(w)===subj&&w.who===t.who)ct++;});if(ct>=mx)return false;}
+    if(mx<999&&!(relaxMax&&_isSeqSubject(t))){var ct=0;working.forEach(function(w){if(w.day===d&&taskSubject(w)===subj&&w.who===t.who)ct++;});if(ct>=mx)return false;}
     var bab=null;bos.forEach(function(bo){if(bo.day===d&&bo.type==="babysitter")bab=bo;});
     if(bab&&(bab.kids||[]).indexOf(t.who)>=0){if(t.mom==="required")return false;if(_sitterKids.indexOf(t.who)>=0)return false;}
     return true;
@@ -10592,7 +10607,7 @@ function runDisplacement(){
       }
     }
     // Saturday catch-all
-    if(!placed&&canPlace(dt,"saturday")){
+    if(!placed&&canPlace(dt,"saturday",true)){
       dt._displaced=true;dt._originalDay=dt._originalDay||dt.day;dt.day="saturday";
       working.push(dt);placed=true;
     }
@@ -10630,7 +10645,7 @@ function runDisplacement(){
         // Overflow — route to Saturday instead of carry-over
         const idx=working.indexOf(dt);
         if(idx>=0) working.splice(idx,1);
-        if(d!=="saturday"&&canPlace(dt,"saturday")){
+        if(d!=="saturday"&&canPlace(dt,"saturday",true)){
           dt.day="saturday";
           working.push(dt);
           satOverflow.push(dt);
@@ -10655,7 +10670,7 @@ function runDisplacement(){
     // Sort Saturday: ascending by original day, then workflow order within each day
     var _dayIdx={monday:0,tuesday:1,wednesday:2,thursday:3,friday:4,saturday:5};
     satTasks.sort((a,b)=>{
-      var da=_dayIdx[a._originalDay||"saturday"]||5, db=_dayIdx[b._originalDay||"saturday"]||5;
+      var da=_dayIdx[a._originalDay]!=null?_dayIdx[a._originalDay]:5, db=_dayIdx[b._originalDay]!=null?_dayIdx[b._originalDay]:5;
       if(da!==db) return da-db;
       return _wfWeight(a,"saturday")-_wfWeight(b,"saturday");
     });
@@ -10682,6 +10697,16 @@ function runDisplacement(){
         if(dt.mom==="required"&&momBusy[m]) continue;      // one Mom Required at a time
         if(devBusy[dv]&&devBusy[dv][m]) continue;          // one per device at a time
         slot=m;break;
+      }
+      if(slot<0){
+        // Official day is full — stack overtime (up to 3h past end) before giving up to carry-over
+        for(var m2=Math.max(satEnd,from);m2<satEnd+180;m2+=20){
+          if(m2>=satLS&&m2<satLE) continue;
+          if(kidBusy[dt.who]&&kidBusy[dt.who][m2]) continue;
+          if(dt.mom==="required"&&momBusy[m2]) continue;
+          if(devBusy[dv]&&devBusy[dv][m2]) continue;
+          slot=m2;break;
+        }
       }
       if(slot<0){
         dt._carryOver=true;
