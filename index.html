@@ -1091,6 +1091,7 @@ let mastManualM=0;
 let mastManualT=0;
 let mastManualS=0;
 let calendarData={holidays:{}, vacations:{}, kidOverrides:{}}; // global calendar for session scheduling
+let scheduleOverrides={}; // {dateStr:{kid:{dayOff:true, removed:{sk:true}, added:{sk:true}}}} — manual Lesson Map edits
 let calAddMode=null; // null | "holiday" | "vacation" | "override"
 let calEditId=null;  // id of holiday/vacation being edited
 let calOverrideKid=null; // kid selected for override add
@@ -1367,6 +1368,11 @@ function initFb() {
       sessionMapData=s.val()||{};
       try{localStorage.setItem("ha_sessionMaps",JSON.stringify(sessionMapData));}catch(e){}
     });
+    db.ref("scheduleOverrides").on("value",s=>{
+      scheduleOverrides=s.val()||{};
+      try{localStorage.setItem("ha_sched_overrides",JSON.stringify(scheduleOverrides));}catch(e){}
+      if(tab==="schedule"||tab==="pace"){const el=document.getElementById("content");if(el)renderAll();}
+    });
     db.ref("archive").on("value",s=>{
       archive=s.val()||{};
       try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
@@ -1460,6 +1466,7 @@ function boot() {
   try{ const ce=localStorage.getItem("ha_co_excl"); if(ce) coExclusions=JSON.parse(ce); }catch(e){}
   try{ const cms=localStorage.getItem("ha_co_manual_sat"); if(cms) coManualSat=JSON.parse(cms); }catch(e){}
   try{ const cal=localStorage.getItem("ha_calendar"); if(cal){const d=JSON.parse(cal);calendarData={holidays:d.holidays||{},vacations:d.vacations||{},kidOverrides:d.kidOverrides||{}};} }catch(e){}
+  try{ const so=localStorage.getItem("ha_sched_overrides"); if(so) scheduleOverrides=JSON.parse(so); }catch(e){}
   try{ const sm=localStorage.getItem("ha_sessionMaps"); if(sm) sessionMapData=JSON.parse(sm); }catch(e){}
   pendingSpins=ld(WK+"_pending_spins")||{};
 }
@@ -7226,6 +7233,27 @@ function smapIsKidOff(kid,dateStr){
   if(o&&o.school===false) return o.note||"Off";
   if(o&&o.school===true) return null;
   return smapIsOff(dateStr);
+}
+
+// ── SCHEDULE OVERRIDES: manual Lesson Map edits (per date, per kid) ──────────
+function schedOv(dateStr,kid){ return ((scheduleOverrides||{})[dateStr]||{})[kid]||null; }
+function schedOvKidOff(kid,dateStr){ const o=schedOv(dateStr,kid); return !!(o&&o.dayOff); }
+function saveScheduleOverrides(){
+  try{localStorage.setItem("ha_sched_overrides",JSON.stringify(scheduleOverrides));}catch(e){}
+  if(db) db.ref("scheduleOverrides").set(scheduleOverrides);
+}
+// Mutate one date+kid override entry, pruning empties so Firebase stays clean
+function setSchedOverride(dateStr,kid,mut){
+  if(!scheduleOverrides[dateStr]) scheduleOverrides[dateStr]={};
+  if(!scheduleOverrides[dateStr][kid]) scheduleOverrides[dateStr][kid]={};
+  mut(scheduleOverrides[dateStr][kid]);
+  const o=scheduleOverrides[dateStr][kid];
+  if(o.removed&&!Object.keys(o.removed).length) delete o.removed;
+  if(o.added&&!Object.keys(o.added).length) delete o.added;
+  if(!o.dayOff) delete o.dayOff;
+  if(!Object.keys(o).length) delete scheduleOverrides[dateStr][kid];
+  if(!Object.keys(scheduleOverrides[dateStr]).length) delete scheduleOverrides[dateStr];
+  saveScheduleOverrides();
 }
 
 function smapGetSubjects(planKey,dateStr,kid){
@@ -13091,12 +13119,15 @@ function gwReadWeek(weekNum){
       const dateStr=lesson.date;
       if(!dateStr) continue;
       if(smapIsKidOff(kid,dateStr)) continue; // calendar vacation/holiday/kid-off — slots vanish, cursors carry content forward
+      if(schedOvKidOff(kid,dateStr)) continue; // Lesson Map: day manually turned off for this kid
       if(!dayData[dateStr]) dayData[dateStr]={};
       if(!dayData[dateStr][kid]) dayData[dateStr][kid]={};
 
+      const ovRm=(schedOv(dateStr,kid)||{}).removed||{};
       const subjects=currData.subjects[kid]||{};
       for(const key of Object.keys(subjects)){
         if(subjects[key].paused) continue;
+        if(ovRm[key]) continue; // Lesson Map: subject manually removed from this day
         if(lesson[key]&&lesson[key]!=="—"&&lesson[key]!=="nan"){
           dayData[dateStr][kid][key]=lesson[key];
         }
@@ -13136,14 +13167,16 @@ function resolveWeekSlots(weekNum){
       if(!sm||!sm.map) continue;
       const ov=sm.overrides||{};
       for(const dateStr of sortedDates){
-        if(smapIsKidOff(kid,dateStr)) continue;
+        if(smapIsKidOff(kid,dateStr)||schedOvKidOff(kid,dateStr)) continue;
         const kidMap=(sm.map[dateStr]||{})[kid];
         const dayOv=(ov[dateStr]||{})[kid]||{};
         const removed=new Set(dayOv.removed||[]);
         const added=dayOv.added||[];
         const autoKeys=kidMap?Object.keys(kidMap).filter(sk=>!removed.has(sk)):[];
         const allKeys=[...new Set([...autoKeys,...added])];
+        const ovRm2=(schedOv(dateStr,kid)||{}).removed||{};
         for(const sk of allKeys){
+          if(ovRm2[sk]) continue; // Lesson Map removal beats session-map injection
           if(subjectSlots[sk]) continue;
           if(!subjects[sk]||subjects[sk].paused) continue;
           if(!subjectSlots[sk]) subjectSlots[sk]=[];
@@ -13165,7 +13198,8 @@ function resolveWeekSlots(weekNum){
       if(!isDaily&&(!s.lessonSeq||!s.lessonSeq.length)) continue;
       const allowed=s.allowedDays||[];
       const matchDates=sortedDates.filter(d=>{
-        if(smapIsKidOff(kid,d)) return false;
+        if(smapIsKidOff(kid,d)||schedOvKidOff(kid,d)) return false;
+        if((schedOv(d,kid)||{}).removed&&(schedOv(d,kid)||{}).removed[sk]) return false;
         if(!allowed.length) return true;
         const dObj=gwParseDate(d);
         const abbr=WDAY_ABBR[dObj.getDay()];
@@ -13185,6 +13219,22 @@ function resolveWeekSlots(weekNum){
         dayData[d][kid][sk]="TMP";
       }
     }
+
+    // Manual Lesson Map additions (scheduleOverrides.added) — densify days on purpose
+    for(const dateStr of sortedDates){
+      const ov=schedOv(dateStr,kid);
+      if(!ov||!ov.added||ov.dayOff) continue;
+      for(const sk of Object.keys(ov.added)){
+        if(!subjects[sk]||subjects[sk].paused) continue;
+        if(!subjectSlots[sk]) subjectSlots[sk]=[];
+        if(subjectSlots[sk].indexOf(dateStr)>=0) continue;
+        subjectSlots[sk].push(dateStr);
+        if(!dayData[dateStr][kid]) dayData[dateStr][kid]={};
+        dayData[dateStr][kid][sk]="TMP";
+      }
+    }
+    // Keep slot dates chronological so cursor fill assigns lessons in order
+    for(const sk of Object.keys(subjectSlots)) subjectSlots[sk].sort();
   }
   return {dayData,slots};
 }
