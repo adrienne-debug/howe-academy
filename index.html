@@ -7331,6 +7331,19 @@ function smapIsKidOff(kid,dateStr){
 // ── SCHEDULE OVERRIDES: manual Lesson Map edits (per date, per kid) ──────────
 function schedOv(dateStr,kid){ return ((scheduleOverrides||{})[dateStr]||{})[kid]||null; }
 function schedOvKidOff(kid,dateStr){ const o=schedOv(dateStr,kid); return !!(o&&o.dayOff); }
+// Flag-aware variants: generation previews ignore auto entries (_gwOff/_gwRm,
+// written at commit from one-off generator settings) so the wizard's current
+// config drives the preview, while pace/Finish Line/suggestions respect them.
+function _ovOffX(kid,dateStr,ignoreAuto){
+  const o=schedOv(dateStr,kid);
+  if(!o||!o.dayOff) return false;
+  return !(ignoreAuto&&o._gwOff);
+}
+function _ovRmX(kid,dateStr,sk,ignoreAuto){
+  const o=schedOv(dateStr,kid);
+  if(!o||!o.removed||!o.removed[sk]) return false;
+  return !(ignoreAuto&&o._gwRm&&o._gwRm[sk]);
+}
 function saveScheduleOverrides(){
   try{localStorage.setItem("ha_sched_overrides",JSON.stringify(scheduleOverrides));}catch(e){}
   if(db) db.ref("scheduleOverrides").set(scheduleOverrides);
@@ -7343,10 +7356,85 @@ function setSchedOverride(dateStr,kid,mut){
   const o=scheduleOverrides[dateStr][kid];
   if(o.removed&&!Object.keys(o.removed).length) delete o.removed;
   if(o.added&&!Object.keys(o.added).length) delete o.added;
-  if(!o.dayOff) delete o.dayOff;
+  if(!o.dayOff){ delete o.dayOff; delete o._gwOff; }
+  if(o._gwRm){
+    for(const sk of Object.keys(o._gwRm)){ if(!o.removed||!o.removed[sk]) delete o._gwRm[sk]; }
+    if(!Object.keys(o._gwRm).length) delete o._gwRm;
+  }
   if(!Object.keys(o).length) delete scheduleOverrides[dateStr][kid];
   if(!Object.keys(scheduleOverrides[dateStr]).length) delete scheduleOverrides[dateStr];
   saveScheduleOverrides();
+}
+
+// On commit, record the generation's one-off shape choices (skip-days, Saturday
+// left off, car-school drops) as auto-tagged overrides so pace drift, Finish
+// Line, suggestions, and the Lesson Map all see the week as actually planned.
+// Auto entries are cleared and rewritten on every commit of that week; manual
+// Lesson Map edits are never touched.
+function gwSyncConfigOverrides(weekNum,config,dropped){
+  const range=gwWeekDateRange(weekNum);
+  if(!range) return;
+  const KIDS=["lincoln","ellis","lucy","julian"];
+  const dayDate={};
+  const mon=gwParseDate(range.start);
+  ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"].forEach((dn,i)=>{
+    const dt=new Date(mon); dt.setDate(dt.getDate()+i);
+    dayDate[dn]=dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");
+  });
+  // 1) Clear this week's previous auto entries
+  for(const dateStr of Object.keys(scheduleOverrides||{})){
+    if(dateStr<range.start||dateStr>range.end) continue;
+    for(const kid of Object.keys(scheduleOverrides[dateStr]||{})){
+      const o=scheduleOverrides[dateStr][kid];
+      if(o._gwOff){ delete o.dayOff; delete o._gwOff; }
+      if(o._gwRm){
+        for(const sk of Object.keys(o._gwRm)){ if(o.removed) delete o.removed[sk]; }
+        delete o._gwRm;
+      }
+      if(o.removed&&!Object.keys(o.removed).length) delete o.removed;
+      if(o.added&&!Object.keys(o.added).length) delete o.added;
+      if(!Object.keys(o).length) delete scheduleOverrides[dateStr][kid];
+    }
+    if(!Object.keys(scheduleOverrides[dateStr]).length) delete scheduleOverrides[dateStr];
+  }
+  // 2) Skip-days → auto day off for everyone
+  const offDays=(config.skipDays||[]).map(d=>d.toLowerCase());
+  // Saturday left off counts as a cut only when the grid planned Saturday lessons
+  if(!config.saturday){
+    const satDate=dayDate.saturday;
+    let satPlanned=false;
+    if(currData&&currData.lessons){
+      for(const kid of Object.keys(currData.lessons)){
+        const lessons=currData.lessons[kid]||{};
+        for(const dn of Object.keys(lessons)){ if(lessons[dn]&&lessons[dn].date===satDate){ satPlanned=true; break; } }
+        if(satPlanned) break;
+      }
+    }
+    if(satPlanned) offDays.push("saturday");
+  }
+  offDays.forEach(dn=>{
+    const dateStr=dayDate[dn]; if(!dateStr) return;
+    KIDS.forEach(kid=>{
+      if(!scheduleOverrides[dateStr]) scheduleOverrides[dateStr]={};
+      if(!scheduleOverrides[dateStr][kid]) scheduleOverrides[dateStr][kid]={};
+      scheduleOverrides[dateStr][kid].dayOff=true;
+      scheduleOverrides[dateStr][kid]._gwOff=true;
+    });
+  });
+  // 3) Car-school drops → auto removed slots
+  (dropped||[]).forEach(dp=>{
+    if(!dp||!dp.reason||dp.reason.indexOf("car school")<0) return;
+    const dateStr=dayDate[(dp.day||"").toLowerCase()]; if(!dateStr||!dp.kid||!dp.key) return;
+    if(!scheduleOverrides[dateStr]) scheduleOverrides[dateStr]={};
+    if(!scheduleOverrides[dateStr][dp.kid]) scheduleOverrides[dateStr][dp.kid]={};
+    const o=scheduleOverrides[dateStr][dp.kid];
+    if(!o.removed) o.removed={};
+    if(!o._gwRm) o._gwRm={};
+    o.removed[dp.key]=true;
+    o._gwRm[dp.key]=true;
+  });
+  saveScheduleOverrides();
+  buildCurrPaceCum();
 }
 
 // ── LESSON MAP EDITOR actions ──
@@ -13429,7 +13517,7 @@ function gwWeekDateRange(weekNum){
   return {start:f(mon),end:f(end)};
 }
 
-function gwReadWeek(weekNum){
+function gwReadWeek(weekNum,ignoreAuto){
   if(!currData||!currData.weekDays||!currData.lessons) return null;
   const dayData={};
   const weekLabel="Wk "+weekNum;
@@ -13446,15 +13534,14 @@ function gwReadWeek(weekNum){
       const dateStr=lesson.date;
       if(!dateStr) continue;
       if(smapIsKidOff(kid,dateStr)) continue; // calendar vacation/holiday/kid-off — slots vanish, cursors carry content forward
-      if(schedOvKidOff(kid,dateStr)) continue; // Lesson Map: day manually turned off for this kid
+      if(_ovOffX(kid,dateStr,ignoreAuto)) continue; // Lesson Map: day turned off for this kid
       if(!dayData[dateStr]) dayData[dateStr]={};
       if(!dayData[dateStr][kid]) dayData[dateStr][kid]={};
 
-      const ovRm=(schedOv(dateStr,kid)||{}).removed||{};
       const subjects=currData.subjects[kid]||{};
       for(const key of Object.keys(subjects)){
         if(subjects[key].paused) continue;
-        if(ovRm[key]) continue; // Lesson Map: subject manually removed from this day
+        if(_ovRmX(kid,dateStr,key,ignoreAuto)) continue; // Lesson Map: subject removed from this day
         if(lesson[key]&&lesson[key]!=="—"&&lesson[key]!=="nan"){
           dayData[dateStr][kid][key]=lesson[key];
         }
@@ -13470,7 +13557,8 @@ function gwReadWeek(weekNum){
       if(dateStr<range.start||dateStr>range.end) continue;
       for(const kid of Object.keys(scheduleOverrides[dateStr]||{})){
         const ov=scheduleOverrides[dateStr][kid];
-        if(!ov||!ov.added||ov.dayOff) continue;
+        if(!ov||!ov.added) continue;
+        if(_ovOffX(kid,dateStr,ignoreAuto)) continue;
         if(smapIsKidOff(kid,dateStr)) continue;
         for(const sk of Object.keys(ov.added)){
           const subj=((currData.subjects||{})[kid]||{})[sk];
@@ -13490,8 +13578,8 @@ function gwReadWeek(weekNum){
 // after Excel grid + session maps + in-app subjects + calendar are applied.
 // Shared by the generator, Finish Line math, and the Lesson Map editor so all
 // three always agree. Returns {dayData, slots:{kid:{sk:[dateStr,...]}}}.
-function resolveWeekSlots(weekNum){
-  const dayData=gwReadWeek(weekNum);
+function resolveWeekSlots(weekNum,ignoreAuto){
+  const dayData=gwReadWeek(weekNum,ignoreAuto);
   if(!dayData) return null;
 
   const WDAY_ABBR={0:"Sun",1:"Mon",2:"Tue",3:"Wed",4:"Thu",5:"Fri",6:"Sat"};
@@ -13516,16 +13604,15 @@ function resolveWeekSlots(weekNum){
       if(!sm||!sm.map) continue;
       const ov=sm.overrides||{};
       for(const dateStr of sortedDates){
-        if(smapIsKidOff(kid,dateStr)||schedOvKidOff(kid,dateStr)) continue;
+        if(smapIsKidOff(kid,dateStr)||_ovOffX(kid,dateStr,ignoreAuto)) continue;
         const kidMap=(sm.map[dateStr]||{})[kid];
         const dayOv=(ov[dateStr]||{})[kid]||{};
         const removed=new Set(dayOv.removed||[]);
         const added=dayOv.added||[];
         const autoKeys=kidMap?Object.keys(kidMap).filter(sk=>!removed.has(sk)):[];
         const allKeys=[...new Set([...autoKeys,...added])];
-        const ovRm2=(schedOv(dateStr,kid)||{}).removed||{};
         for(const sk of allKeys){
-          if(ovRm2[sk]) continue; // Lesson Map removal beats session-map injection
+          if(_ovRmX(kid,dateStr,sk,ignoreAuto)) continue; // Lesson Map removal beats session-map injection
           if(subjectSlots[sk]) continue;
           if(!subjects[sk]||subjects[sk].paused) continue;
           if(!subjectSlots[sk]) subjectSlots[sk]=[];
@@ -13547,8 +13634,8 @@ function resolveWeekSlots(weekNum){
       if(!isDaily&&(!s.lessonSeq||!s.lessonSeq.length)) continue;
       const allowed=s.allowedDays||[];
       const matchDates=sortedDates.filter(d=>{
-        if(smapIsKidOff(kid,d)||schedOvKidOff(kid,d)) return false;
-        if((schedOv(d,kid)||{}).removed&&(schedOv(d,kid)||{}).removed[sk]) return false;
+        if(smapIsKidOff(kid,d)||_ovOffX(kid,d,ignoreAuto)) return false;
+        if(_ovRmX(kid,d,sk,ignoreAuto)) return false;
         if(!allowed.length) return true;
         const dObj=gwParseDate(d);
         const abbr=WDAY_ABBR[dObj.getDay()];
@@ -13572,7 +13659,8 @@ function resolveWeekSlots(weekNum){
     // Manual Lesson Map additions (scheduleOverrides.added) — densify days on purpose
     for(const dateStr of sortedDates){
       const ov=schedOv(dateStr,kid);
-      if(!ov||!ov.added||ov.dayOff) continue;
+      if(!ov||!ov.added) continue;
+      if(_ovOffX(kid,dateStr,ignoreAuto)) continue;
       for(const sk of Object.keys(ov.added)){
         if(!subjects[sk]||subjects[sk].paused) continue;
         if(!subjectSlots[sk]) subjectSlots[sk]=[];
@@ -13593,8 +13681,8 @@ function resolveWeekSlots(weekNum){
 // excludeWeek: on regeneration, excludes this week's own tasks from cursor count
 //   so the cursor reflects only prior-week progress (prevents self-counting drift).
 // Returns {dayData, cursors} so generateWeek can store the snapshot.
-function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek){
-  const resolved=resolveWeekSlots(weekNum);
+function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
+  const resolved=resolveWeekSlots(weekNum,ignoreAuto);
   if(!resolved) return null;
   const dayData=resolved.dayData;
 
@@ -13646,12 +13734,15 @@ function generateWeek(config){
     // so the cursor reflects only progress from prior weeks (not self-counting).
     // New week: compute normally (prior weeks are in archive, current week is old week).
     const excludeWeek=isRegen?weekLabel:null;
-    const result=gwReadWeekAutoAdvance(weekNum,null,excludeWeek);
+    // ignoreAuto: the wizard's current skip-day/Saturday/car settings drive the
+    // preview — auto overrides from a PREVIOUS commit of this week are ignored
+    // (they're cleared and rewritten from the new settings at commit).
+    const result=gwReadWeekAutoAdvance(weekNum,null,excludeWeek,true);
     if(!result) return {error:"No curriculum data found for Wk "+weekNum};
     dayData=result.dayData;
     weekCursors=result.cursors;
   } else {
-    dayData=gwReadWeek(weekNum);
+    dayData=gwReadWeek(weekNum,true);
   }
   if(!dayData||!Object.keys(dayData).length) return {error:"No curriculum data found for Wk "+weekNum};
 
@@ -13870,6 +13961,13 @@ function gwCommit(){
   if(!gwResult) return;
   // Build a fake file-load event to reuse loadJson's write logic
   const d=gwResult;
+
+  // Record this generation's one-off shape choices as auto overrides so the
+  // Lesson Map, pace drift, and Finish Line see the week as actually planned
+  try{
+    const wn=parseInt((d.week||"").replace(/\D/g,""));
+    if(wn) gwSyncConfigOverrides(wn,gwConfig||{},gwDropped||[]);
+  }catch(e){ console.log("[HA] override sync error",e); }
 
   // Same logic as loadJson
   isUploading=true;
