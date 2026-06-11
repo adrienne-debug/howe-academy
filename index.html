@@ -4658,6 +4658,21 @@ function renderCurriculumView(el,headerHtml){
         idxMap[sk]=dm;
       });
       h+='<div style="font-weight:700;font-size:13px;margin-bottom:8px">'+currViewWeek+' — Days '+dayNums[0]+'–'+dayNums[dayNums.length-1]+'</div>';
+      const _sugg=lmComputeSuggestions(k,currViewWeek);
+      if(_sugg.length){
+        h+='<div style="background:#f5f3ff;border-left:4px solid #8b5cf6;border-radius:0 10px 10px 0;padding:10px 12px;margin-bottom:10px">';
+        h+='<div style="font-size:11px;font-weight:800;color:#6d28d9;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px">Make-up suggestions</div>';
+        _sugg.forEach(sg=>{
+          const o=gwParseDate(sg.date);
+          const lbl=o.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+          h+='<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12px">';
+          h+='<span style="flex:1;min-width:0">+1 '+esc(sg.display)+' &rarr; '+lbl+(sg.second?' <span style="font-size:9px;color:#6d28d9">(2nd that day)</span>':'')+'</span>';
+          h+='<button onclick="lmAddSubj(\''+k+'\',\''+sg.date+'\',\''+sg.sk+'\')" style="border:1px solid #8b5cf6;background:#fff;color:#6d28d9;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0">Add</button>';
+          h+='</div>';
+        });
+        h+='<div style="font-size:10px;color:#6d28d9;margin-top:4px">Check the Pace tab’s Finish Line after accepting to see the impact.</div>';
+        h+='</div>';
+      }
       dayNums.forEach(d=>{
         const lesson=lessons[d];
         if(!lesson) return;
@@ -7329,6 +7344,70 @@ function lmOpenAdd(kid,dateStr){
   const key=kid+"|"+dateStr;
   lmAddOpen=(lmAddOpen===key?null:key);
   renderAll();
+}
+
+// Suggest make-up slots for a week's cut days / removed subjects.
+// Suggest-and-confirm: nothing is added until mom taps Add (writes an `added` override).
+// carryoverCap (per subject, default 2) limits how many make-up slots get suggested.
+function lmComputeSuggestions(k,weekLabel){
+  if(!currData||!currData.subjects) return [];
+  const lessons=(currData.lessons||{})[k]||{};
+  const dayNums=((currData.weekDays||{})[k]||{})[weekLabel]||[];
+  const subs=currData.subjects[k]||{};
+  const WD={0:"Sun",1:"Mon",2:"Tue",3:"Wed",4:"Thu",5:"Fri",6:"Sat"};
+  const days=[];
+  for(const d of dayNums){
+    const l=lessons[d]; if(!l||!l.date) continue;
+    const ov=schedOv(l.date,k)||{};
+    const off=!!ov.dayOff||!!smapIsKidOff(k,l.date);
+    const present={};
+    Object.keys(subs).forEach(sk=>{ if(l[sk]&&l[sk]!=="—"&&l[sk]!=="nan"&&!(ov.removed||{})[sk]&&!subs[sk].paused) present[sk]=true; });
+    Object.keys(ov.added||{}).forEach(sk=>{ present[sk]=true; });
+    days.push({date:l.date,off,present,ov,excel:l});
+  }
+  // Lost slots this week: whole off days + individually removed subjects
+  const lost={};
+  days.forEach(dy=>{
+    if(dy.off){
+      Object.keys(subs).forEach(sk=>{ if(dy.excel[sk]&&dy.excel[sk]!=="—"&&dy.excel[sk]!=="nan"&&!subs[sk].paused) lost[sk]=(lost[sk]||0)+1; });
+    } else {
+      Object.keys(dy.ov.removed||{}).forEach(sk=>{ if(dy.excel[sk]) lost[sk]=(lost[sk]||0)+1; });
+    }
+  });
+  // Slots already added back this week count as compensation
+  days.forEach(dy=>{ if(!dy.off) Object.keys(dy.ov.added||{}).forEach(sk=>{ if(lost[sk]) lost[sk]--; }); });
+  const gwR=gwRules();
+  const dayCap=(gwR.schoolEnd-gwR.schoolStart)-((gwR.lunchEnd||0)-(gwR.lunchStart||0));
+  const sugg=[];
+  for(const sk of Object.keys(lost)){
+    const s=subs[sk]; if(!s||s.paused) continue;
+    const maxSugg=(s.carryoverCap!==undefined&&s.carryoverCap!==null)?s.carryoverCap:2;
+    let need=Math.min(lost[sk],maxSugg);
+    if(need<=0) continue;
+    const al=s.allowedDays||[]; const rl=s.rules||"";
+    const isSeq=rl.includes("sequential");
+    const tryDays=(allowSecond)=>{
+      for(const dy of days){
+        if(need<=0) break;
+        if(dy.off) continue;
+        const abbr=WD[gwParseDate(dy.date).getDay()];
+        if(al.length&&abbr&&!al.includes(abbr)) continue;
+        if(rl.includes("no-fri")&&abbr==="Fri") continue;
+        if(rl.includes("mon-thu")&&["Fri","Sat","Sun"].includes(abbr)) continue;
+        if(!allowSecond&&dy.present[sk]) continue;
+        if(allowSecond&&(!dy.present[sk]||(dy.ov.added||{})[sk])) continue;
+        let mins=0;
+        Object.keys(dy.present).forEach(psk=>{ mins+=(subs[psk]&&subs[psk].minutes)||20; });
+        if(mins+(s.minutes||20)>dayCap) continue;
+        sugg.push({sk,date:dy.date,display:s.display||sk,second:allowSecond});
+        dy.present[sk]=true;
+        need--;
+      }
+    };
+    tryDays(false);
+    if(need>0&&isSeq) tryDays(true); // sequential subjects may double up as a 2nd lesson
+  }
+  return sugg;
 }
 
 function smapGetSubjects(planKey,dateStr,kid){
@@ -13338,17 +13417,12 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek){
         :computeSubjectCursor(kid,sk,excludeWeek);
       cursors[kid][sk]=cursor;
 
-      // Respect carryoverCap: limit extra lessons beyond normal pace
-      const s=subjects[sk];
-      const cap=(s&&s.carryoverCap!==undefined&&s.carryoverCap!==null)?s.carryoverCap:2;
-      let slotsToFill=dates.length;
-      if(cap>=0){
-        const total=s&&s.total||0;
-        const seq=buildSubjectLessons(kid,sk);
-        const remaining=seq.length-cursor;
-        if(remaining<=0) slotsToFill=0;
-        else if(remaining<slotsToFill) slotsToFill=Math.min(slotsToFill,dates.length+cap);
-      }
+      // Every planned slot fills with the next lesson; a finished subject stops filling.
+      // (carryoverCap now governs how many make-up slots the Lesson Map suggests —
+      // the old limit here could never bind and was dead code.)
+      const seq=buildSubjectLessons(kid,sk);
+      const remaining=seq.length-cursor;
+      let slotsToFill=remaining<=0?0:dates.length;
 
       const nextLessons=getNextLessonsFromCursor(kid,sk,cursor,slotsToFill);
       for(let i=0;i<dates.length;i++){
