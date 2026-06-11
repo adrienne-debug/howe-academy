@@ -1072,7 +1072,8 @@ let smapMonth=null;    // YYYY-MM for month view (null = current month)
 let currData=null;   // curriculum from Firebase (uploaded via admin)
 let currInnerTab="subjects"; // "subjects" | "plans" — inner tab within Admin Curriculum
 let currPlansKid="all"; // kid filter for Plans & Map tab
-let currPaceCum={};  // precomputed: currPaceCum[kid][subjectKey][weekNum] = cumulative expected
+let currPaceCum={};  // precomputed: currPaceCum[kid][subjectKey][weekNum] = cumulative expected (calendar/edit-aware)
+let currPaceCumBase={}; // same shape, but the ORIGINAL Excel plan — untouched by calendar or Lesson Map edits
 let masteryData={};
 let masteryKid="lincoln";
 let masteryCollapsed={};
@@ -4922,18 +4923,21 @@ function renderCurrPlans(el){
           const cur=offset+autoC+adjust,tot=s.total||1;
           const pct=Math.min(100,Math.round(cur/tot*100));
           const exp=currExpected(k,sk,cwn);
+          const expB=currExpectedBase(k,sk,cwn);
           const status=paceHasPendingCascade(k,kws)?"behind":paceStatus(cur,tot,sw,weekNum,totalWeeks,exp);
           const barCol=status==="ahead"?"#16a34a":status==="behind"?"#ef4444":status==="not-started"?"#d1d5db":"#3b82f6";
           const expPct=exp!==null?Math.min(100,Math.round(exp/tot*100)):null;
+          const expBPct=(expB!==null&&exp!==null&&expB!==exp)?Math.min(100,Math.round(expB/tot*100)):null;
           const diff=exp!==null?cur-exp:null;
-          const expLabel=exp!==null?' &middot; '+(diff>0?diff+' ahead of expected':diff<0?Math.abs(diff)+' behind expected':'on pace for Wk '+cwn):'';
+          const planDelta=(exp!==null&&expB!==null&&exp!==expB)?' &middot; plan '+((exp-expB)>0?'+':'')+(exp-expB)+' vs Excel':'';
+          const expLabel=(exp!==null?' &middot; '+(diff>0?diff+' ahead of expected':diff<0?Math.abs(diff)+' behind expected':'on pace for Wk '+cwn):'')+planDelta;
           const _nextLesson=getNextLessonLabel(k,sk);
 
           h+='<div class="pace-subject-row">'+
             '<div class="pace-subj-hdr">'+
             '<span class="pace-subj-name">'+s.label+'</span>'+
             '<span class="pace-subj-nums">'+cur+' / '+tot+' done</span></div>'+
-            '<div class="pace-bar" style="position:relative"><div class="pace-bar-fill" style="width:'+pct+'%;background:'+barCol+'"></div>'+(expPct!==null?'<div style="position:absolute;left:'+expPct+'%;top:-3px;width:2px;height:calc(100% + 6px);background:#374151;border-radius:1px;pointer-events:none" title="Expected: '+exp+'/'+tot+'"></div>':'')+'</div>'+
+            '<div class="pace-bar" style="position:relative"><div class="pace-bar-fill" style="width:'+pct+'%;background:'+barCol+'"></div>'+(expPct!==null?'<div style="position:absolute;left:'+expPct+'%;top:-3px;width:2px;height:calc(100% + 6px);background:#374151;border-radius:1px;pointer-events:none" title="Expected (edited plan): '+exp+'/'+tot+'"></div>':'')+(expBPct!==null?'<div style="position:absolute;left:'+expBPct+'%;top:-3px;width:2px;height:calc(100% + 6px);background:#9ca3af;opacity:0.65;pointer-events:none;border-radius:1px" title="Original Excel plan: '+expB+'/'+tot+'"></div>':'')+'</div>'+
             '<div class="pace-status-row">'+
             '<span class="pace-badge '+status+'">'+paceStatusLabel(status)+'</span>'+
             '<span class="pace-pct">'+pct+'% complete'+expLabel+(sw>1&&weekNum<sw?' &middot; starts wk '+sw:'')+'</span></div>';
@@ -6950,9 +6954,11 @@ function formatPlanDate(d){
 // Build cumulative expected counts from curriculum data
 function buildCurrPaceCum(){
   currPaceCum={};
+  currPaceCumBase={};
   if(!currData||!currData.weekDays||!currData.lessons||!currData.subjects) return;
   for(const kid of Object.keys(currData.subjects)){
     currPaceCum[kid]={};
+    currPaceCumBase[kid]={};
     const wdMap=currData.weekDays[kid]||{};
     const lessons=currData.lessons[kid]||{};
     const subjectKeys=Object.keys(currData.subjects[kid]||{});
@@ -6960,13 +6966,14 @@ function buildCurrPaceCum(){
     const weekNums=Object.keys(wdMap).map(w=>{const m=w.match(/Wk\s*(\d+)/i);return m?parseInt(m[1]):0;}).filter(n=>n>0);
     weekNums.sort((a,b)=>a-b);
     for(const sk of subjectKeys){
-      let cum=0;
-      const byWk={};
+      let cum=0,cumBase=0;
+      const byWk={},byWkBase={};
       for(const wn of weekNums){
         const dayNums=wdMap["Wk "+wn]||[];
         for(const d of dayNums){
           const l=lessons[d]; if(!l) continue;
           const date=l.date||"";
+          if(l[sk]) cumBase++; // original Excel plan, as written
           // Expected pace honors the calendar and Lesson Map edits: off days and
           // removed slots don't count; manually added slots do.
           const off=date&&(smapIsKidOff(kid,date)||schedOvKidOff(kid,date));
@@ -6974,9 +6981,10 @@ function buildCurrPaceCum(){
           if(l[sk]&&!off&&!(ovv.removed||{})[sk]) cum++;
           if(!off&&(ovv.added||{})[sk]) cum++;
         }
-        byWk[wn]=cum;
+        byWk[wn]=cum;byWkBase[wn]=cumBase;
       }
       currPaceCum[kid][sk]=byWk;
+      currPaceCumBase[kid][sk]=byWkBase;
     }
   }
 }
@@ -6992,6 +7000,18 @@ function currExpected(kid,subjectKey,weekNum){
   const byWk=(currPaceCum[kid]||{})[subjectKey];
   if(!byWk) return null;
   // Find the closest week <= weekNum
+  let best=null;
+  for(const wn of Object.keys(byWk)){
+    const n=parseInt(wn);
+    if(n<=weekNum&&(best===null||n>best)) best=n;
+  }
+  return best!==null?byWk[best]:null;
+}
+
+// Same as currExpected but against the ORIGINAL Excel plan (no calendar/edits)
+function currExpectedBase(kid,subjectKey,weekNum){
+  const byWk=(currPaceCumBase[kid]||{})[subjectKey];
+  if(!byWk) return null;
   let best=null;
   for(const wn of Object.keys(byWk)){
     const n=parseInt(wn);
@@ -8229,18 +8249,21 @@ function renderPace(el){
           const cur=offset+autoC+adjust,tot=s.total||1;
           const pct=Math.min(100,Math.round(cur/tot*100));
           const exp=currExpected(k,sk,cwn);
+          const expB=currExpectedBase(k,sk,cwn);
           const status=paceHasPendingCascade(k,kws)?"behind":paceStatus(cur,tot,sw,weekNum,totalWeeks,exp);
           const barCol=status==="ahead"?"#16a34a":status==="behind"?"#ef4444":status==="not-started"?"#d1d5db":"#3b82f6";
           const expPct=exp!==null?Math.min(100,Math.round(exp/tot*100)):null;
+          const expBPct=(expB!==null&&exp!==null&&expB!==exp)?Math.min(100,Math.round(expB/tot*100)):null;
           const diff=exp!==null?cur-exp:null;
-          const expLabel=exp!==null?' &middot; '+(diff>0?diff+' ahead of expected':diff<0?Math.abs(diff)+' behind expected':'on pace for Wk '+cwn):'';
+          const planDelta=(exp!==null&&expB!==null&&exp!==expB)?' &middot; plan '+((exp-expB)>0?'+':'')+(exp-expB)+' vs Excel':'';
+          const expLabel=(exp!==null?' &middot; '+(diff>0?diff+' ahead of expected':diff<0?Math.abs(diff)+' behind expected':'on pace for Wk '+cwn):'')+planDelta;
           const _nextLesson=getNextLessonLabel(k,sk);
 
           h+='<div class="pace-subject-row">'+
             '<div class="pace-subj-hdr">'+
             '<span class="pace-subj-name">'+s.label+'</span>'+
             '<span class="pace-subj-nums">'+cur+' / '+tot+' done</span></div>'+
-            '<div class="pace-bar" style="position:relative"><div class="pace-bar-fill" style="width:'+pct+'%;background:'+barCol+'"></div>'+(expPct!==null?'<div style="position:absolute;left:'+expPct+'%;top:-3px;width:2px;height:calc(100% + 6px);background:#374151;border-radius:1px;pointer-events:none" title="Expected: '+exp+'/'+tot+'"></div>':'')+'</div>'+
+            '<div class="pace-bar" style="position:relative"><div class="pace-bar-fill" style="width:'+pct+'%;background:'+barCol+'"></div>'+(expPct!==null?'<div style="position:absolute;left:'+expPct+'%;top:-3px;width:2px;height:calc(100% + 6px);background:#374151;border-radius:1px;pointer-events:none" title="Expected (edited plan): '+exp+'/'+tot+'"></div>':'')+(expBPct!==null?'<div style="position:absolute;left:'+expBPct+'%;top:-3px;width:2px;height:calc(100% + 6px);background:#9ca3af;opacity:0.65;pointer-events:none;border-radius:1px" title="Original Excel plan: '+expB+'/'+tot+'"></div>':'')+'</div>'+
             '<div class="pace-status-row">'+
             '<span class="pace-badge '+status+'">'+paceStatusLabel(status)+'</span>'+
             '<span class="pace-pct">'+pct+'% complete'+expLabel+(sw>1&&weekNum<sw?' &middot; starts wk '+sw:'')+'</span></div>';
@@ -10878,13 +10901,61 @@ function runDisplacement(){
     return toMin(mag["mom_return_"+d]||mag.mom_return||"2:00 PM");
   }
 
+  // "Checked before the blockout started" — ahead-of-schedule tasks keep their
+  // original slot; tasks checked after the blockout began were done in their
+  // displaced slot and must stay displaced (otherwise they snap back into the
+  // blockout window and the freed slot pulls another task into the day).
+  function _chkStamp(id){
+    var ts=checked&&checked[id];
+    if(typeof ts!=="string") return null;
+    var m=ts.match(/(\d{1,2}):(\d{2})\s*(AM|PM)\s+([A-Za-z]{3,})\s+(\d{1,2})/i);
+    if(!m) return null;
+    var h=parseInt(m[1])%12; if(/pm/i.test(m[3])) h+=12;
+    return {mon:m[4].slice(0,3).toLowerCase(),day:parseInt(m[5]),min:h*60+parseInt(m[2])};
+  }
+  var _MONIDX={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+  function _boDayLabel(dayName){
+    var lbl=(typeof DAY_DT==="object"&&DAY_DT&&DAY_DT[dayName])||"";
+    if(!lbl&&dayName==="saturday"&&DAY_DT&&DAY_DT.friday){
+      var fd=new Date(DAY_DT.friday+", "+new Date().getFullYear());
+      fd.setDate(fd.getDate()+1);
+      lbl=fd.toLocaleDateString("en-US",{month:"long",day:"numeric"});
+    }
+    return lbl;
+  }
+  function _mdm(d){ return {mon:d.getMonth(),day:d.getDate(),min:d.getHours()*60+d.getMinutes()}; }
+  function _mdmCmp(a,b){ return (a.mon-b.mon)||(a.day-b.day)||(a.min-b.min); }
+  function _checkedBeforeBlockout(t,bo){
+    if(!(checked&&checked[t.id])) return false;   // not checked — displacement rules apply
+    var chk=_chkStamp(t.id);
+    if(!chk) return true;                          // undatable check — conservative: stays
+    var chkT={mon:_MONIDX[chk.mon],day:chk.day,min:chk.min};
+    if(chkT.mon==null) return true;
+    // The blockout takes effect at the LATER of its window start (on its day)
+    // and the moment it was entered into the app. Tasks checked before that
+    // moment were done at their original slots (ahead of schedule, or before
+    // mom added the blockout) and keep them; tasks checked after were done in
+    // their displaced slots and stay displaced.
+    var lbl=_boDayLabel(bo.day);
+    var p=lbl.match(/([A-Za-z]+)\s+(\d{1,2})/);
+    if(!p) return true;
+    var bm=_MONIDX[p[1].slice(0,3).toLowerCase()];
+    if(bm==null) return true;
+    var eff={mon:bm,day:parseInt(p[2]),min:(bo.type==="fullDay")?0:toMin(bo.start||"")};
+    if(bo.created){
+      var cT=_mdm(new Date(bo.created));
+      if(_mdmCmp(cT,eff)>0) eff=cT;
+    }
+    return _mdmCmp(chkT,eff)<0;
+  }
+
   // ── Phase 0: Identify displaced tasks ──
   const displacedIds=new Set();
   bos.forEach(function(bo){
     var kids=bo.kids||[];
     tasks.forEach(function(t){
       if(t.day!==bo.day||kids.indexOf(t.who)<0) return;
-      if(checked&&checked[t.id]) return; // already done — stays in the blockout, no displacement
+      if(_checkedBeforeBlockout(t,bo)) return; // done ahead of schedule — keeps its original slot
       if(bo.type==="fullDay"){ displacedIds.add(t.id); return; }
       var tMin=toMin(t.time), bS=toMin(bo.start||""), bE=toMin(bo.end||"");
       if(bS&&bE&&tMin>=bS&&tMin<bE) displacedIds.add(t.id);
@@ -10926,9 +10997,11 @@ function runDisplacement(){
     allOnDay.forEach(function(t){ if(!kids[t.who]) kids[t.who]=[]; kids[t.who].push(t); });
 
     Object.keys(kids).forEach(function(who){
-      // Checked-off tasks keep their original time — done is done, don't re-time or cascade
+      // Checked tasks keep their time unless they were displaced (checked after the
+      // blockout started) — those rebuild with the rest so they hold the slot they
+      // were actually done in, and checking one doesn't pull a new task into the day.
       kids[who]=kids[who].filter(function(t){
-        if(checked&&checked[t.id]){ working.push(t); return false; }
+        if(checked&&checked[t.id]&&!displacedIds.has(t.id)){ working.push(t); return false; }
         return true;
       });
       if(!kids[who].length) return;
