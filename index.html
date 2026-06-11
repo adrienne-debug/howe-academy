@@ -10448,6 +10448,41 @@ function runDisplacement(){
     return false;
   }
 
+  // Sticky config for a task via curriculum: partner display name + before/after, or null
+  function _stickyCfg(t){
+    if(!currData||!currData.subjects) return null;
+    var subs=currData.subjects[t.who]||{};
+    var subjL=taskSubject(t).toLowerCase();
+    for(var sk in subs){
+      var s=subs[sk];
+      if(!s||s.paused) continue;
+      if(((s.display||sk).trim().toLowerCase())!==subjL) continue;
+      if(!(s.rules||"").includes("sticky")||!s.stickyWith||s.stickyWith===sk) return null;
+      var p=subs[s.stickyWith];
+      return {partner:(((p&&p.display)||s.stickyWith).trim().toLowerCase()),order:s.stickyOrder||"after"};
+    }
+    return null;
+  }
+  // Re-order an array in place so sticky tasks sit immediately before/after
+  // their partner (same kid). Tasks whose partner isn't present stay put.
+  function _applySticky(arr){
+    arr.slice().forEach(function(t){
+      var cfg=_stickyCfg(t);
+      if(!cfg) return;
+      var partner=null;
+      for(var j=0;j<arr.length;j++){
+        if(arr[j]!==t&&arr[j].who===t.who&&taskSubject(arr[j]).toLowerCase()===cfg.partner){partner=arr[j];break;}
+      }
+      if(!partner) return;
+      var ti=arr.indexOf(t);
+      if(ti<0) return;
+      arr.splice(ti,1);
+      var pi=arr.indexOf(partner);
+      arr.splice(cfg.order==="before"?pi:pi+1,0,t);
+    });
+    return arr;
+  }
+
   // Check if kid is a withSitter kid
   const _sitterKids=(weekData.babysitter&&weekData.babysitter.withSitter)||(r.withSitter)||[];
 
@@ -10538,6 +10573,7 @@ function runDisplacement(){
       var momIsBack=momRet>0&&boE>=momRet;
       var wfOpts=momIsBack?{momBack:true}:null;
       kids[who].sort(function(a,b){ return _wfWeight(a,d,wfOpts)-_wfWeight(b,d,wfOpts); });
+      _applySticky(kids[who]);
 
       var cursor=boE;
       // withSitter or mom-required: start at mom return
@@ -10587,9 +10623,22 @@ function runDisplacement(){
 
   needsCrossDay.sort(function(a,b){ return _wfWeight(a)-_wfWeight(b); });
 
-  needsCrossDay.forEach(function(dt){
+  function _placeCrossDay(dt){
     var origIdx=dayOrder.indexOf(dt._originalDay||dt.day);
     var placed=false;
+    // Sticky: try the partner's current day first so the pair stays together
+    var scfg=_stickyCfg(dt);
+    if(scfg){
+      var partner=null;
+      for(var wi=0;wi<working.length;wi++){
+        var w=working[wi];
+        if(w!==dt&&w.who===dt.who&&taskSubject(w).toLowerCase()===scfg.partner){partner=w;break;}
+      }
+      if(partner&&partner.day&&canPlace(dt,partner.day,partner.day==="saturday")){
+        dt._displaced=true;dt._originalDay=dt._originalDay||dt.day;dt.day=partner.day;
+        working.push(dt);placed=true;
+      }
+    }
     // Try later days (not Saturday yet)
     for(var di=origIdx+1;di<dayOrder.length-1&&!placed;di++){
       if(canPlace(dt,dayOrder[di])){
@@ -10612,7 +10661,10 @@ function runDisplacement(){
       working.push(dt);placed=true;
     }
     if(!placed){dt._displaced=true;dt._originalDay=dt._originalDay||dt.day;dt._carryOver=true;carryOver.push(dt);}
-  });
+  }
+  // Non-sticky tasks place first so sticky partners' destinations are settled
+  needsCrossDay.filter(function(t){return !_stickyCfg(t);}).forEach(_placeCrossDay);
+  needsCrossDay.filter(function(t){return !!_stickyCfg(t);}).forEach(_placeCrossDay);
 
   // ── Phase 3: Re-time receiving days (overflow → Saturday) ──
   var satOverflow=[];
@@ -10639,7 +10691,7 @@ function runDisplacement(){
       cursor=Math.max(cursor,lastOrig);
     }
 
-    dayTasks.filter(t=>t._displaced).forEach(dt=>{
+    _applySticky(dayTasks.filter(t=>t._displaced)).forEach(dt=>{
       if(cursor>=dLunchS&&cursor<dLunchE) cursor=dLunchE;
       if(cursor>=dEnd){
         // Overflow — route to Saturday instead of carry-over
@@ -10674,6 +10726,7 @@ function runDisplacement(){
       if(da!==db) return da-db;
       return _wfWeight(a,"saturday")-_wfWeight(b,"saturday");
     });
+    _applySticky(satTasks);
     // Occupancy grid from tasks already fixed on Saturday (non-displaced)
     var kidBusy={}, momBusy={}, devBusy={computer:{},ipad:{},phone:{}};
     function _mark(t,m){
@@ -12483,6 +12536,27 @@ function gwByCategory(kid,tasksDict){
     return aR-bR;
   });
   ["computer","ipad","phone","independent","maybe_paper","required_paper"].forEach(k=>sortBucket(buckets[k]));
+  // Sticky rule: pull the subject out of its natural bucket and insert it
+  // immediately before/after its partner so the pair schedules back-to-back.
+  const bucketNames=Object.keys(buckets);
+  for(const[key,s] of Object.entries(subjects)){
+    if(!s||s.paused) continue;
+    if(!(s.rules||"").includes("sticky")||!s.stickyWith||s.stickyWith===key) continue;
+    let pBn=null;
+    for(const bn of bucketNames){
+      if(buckets[bn].some(e=>e[0]===s.stickyWith)){ pBn=bn; break; }
+    }
+    if(!pBn) continue; // partner not scheduled this day — stay in natural bucket
+    const entries=[];
+    for(const bn of bucketNames){
+      for(let i=buckets[bn].length-1;i>=0;i--){
+        if(buckets[bn][i][0]===key) entries.unshift(buckets[bn].splice(i,1)[0]);
+      }
+    }
+    if(!entries.length) continue;
+    const pIdx=buckets[pBn].findIndex(e=>e[0]===s.stickyWith);
+    buckets[pBn].splice((s.stickyOrder==="before")?pIdx:pIdx+1,0,...entries);
+  }
   return buckets;
 }
 
@@ -12753,6 +12827,11 @@ function gwAutoBalance(dayData,lateStart,skipDays){
     for(const[k,s] of Object.entries(subjects)) durMap[k]=s.minutes||20;
     const subjectRules={};
     for(const[k,s] of Object.entries(subjects)) subjectRules[k]=s.rules||"";
+    // Subjects something sticks to can't move days either, or the pair splits
+    const stickyTargets=new Set();
+    for(const[k,s] of Object.entries(subjects)){
+      if((s.rules||"").includes("sticky")&&s.stickyWith) stickyTargets.add(s.stickyWith);
+    }
 
     const dayDates=[];
     const dayTotals={};
@@ -12809,6 +12888,7 @@ function gwAutoBalance(dayData,lateStart,skipDays){
             if(dayTotals[ld2]-dur<dayTotals[dk]+dur) continue;
             const rules=subjectRules[key]||"";
             if(rules.includes("sticky")) continue;
+            if(stickyTargets.has(key)) continue;
             if(rules.includes("no-fri")&&dayName==="friday") continue;
             if(rules.includes("mon-thu")&&!["monday","tuesday","wednesday","thursday"].includes(dayName)) continue;
             const allowed=subjects[key]&&subjects[key].allowedDays||[];
