@@ -1101,6 +1101,7 @@ let attEditUnlocked=false;
 let APP_PIN=localStorage.getItem("ha_app_pin")||"0329";
 let attOverrides={}; // {wkKey:{day:{kid:true/false}}}
 let coExclusions={}; // {wkKey:{taskId:true}} — carry-overs the user has explicitly unchecked
+let coManualSat={}; // {wkKey:{taskId:true}} — displaced carry-overs mom pushed to Saturday (persisted)
 let pendingSpins={}; // {taskId: {kid, day}} — earned but not yet spun
 let manualUnchecks=new Set(); // task IDs explicitly unchecked this session — runCascade must not override
 
@@ -1289,6 +1290,22 @@ function attachWeekListeners(wk){
   const r12=db.ref(wk+"/cursors");
   r12.on("value",s=>{ if(s.val()) sv(wk+"_cursors",s.val()); });
   fbWeekRefs.push(r12);
+
+  const r15=db.ref(wk+"/co_manual_sat");
+  r15.on("value",s=>{
+    const v=s.val();
+    if(v){
+      coManualSat[wk]=v;
+      try{localStorage.setItem("ha_co_manual_sat",JSON.stringify(coManualSat));}catch(e){}
+    } else if(coManualSat[wk]&&Object.keys(coManualSat[wk]).length){
+      // Firebase empty but this device has local choices — sync them up (listener refires)
+      r15.set(coManualSat[wk]);
+      return;
+    }
+    runDisplacement();
+    if(tab==="schedule") renderAll();
+  });
+  fbWeekRefs.push(r15);
 }
 
 function initFb() {
@@ -1440,6 +1457,7 @@ function boot() {
   try{ const md=localStorage.getItem("ha_mastery"); if(md) masteryData=JSON.parse(md); }catch(e){}
   try{ const ao=localStorage.getItem("ha_att_overrides"); if(ao) attOverrides=JSON.parse(ao); }catch(e){}
   try{ const ce=localStorage.getItem("ha_co_excl"); if(ce) coExclusions=JSON.parse(ce); }catch(e){}
+  try{ const cms=localStorage.getItem("ha_co_manual_sat"); if(cms) coManualSat=JSON.parse(cms); }catch(e){}
   try{ const cal=localStorage.getItem("ha_calendar"); if(cal){const d=JSON.parse(cal);calendarData={holidays:d.holidays||{},vacations:d.vacations||{},kidOverrides:d.kidOverrides||{}};} }catch(e){}
   try{ const sm=localStorage.getItem("ha_sessionMaps"); if(sm) sessionMapData=JSON.parse(sm); }catch(e){}
   pendingSpins=ld(WK+"_pending_spins")||{};
@@ -2754,15 +2772,21 @@ function renderSchedule(el){
   }
 
   // Carry-over alert from displacement — mom view only
-  if(momModeActive&&displacedResult&&displacedResult.carryOver&&displacedResult.carryOver.length){
-    const co=displacedResult.carryOver;
+  const _msatMap=coManualSat[WK]||{};
+  const _msatTasks=(momModeActive&&displacedResult)?displacedResult.tasks.filter(t=>_msatMap[t.id]&&t.day==="saturday"):[];
+  if(momModeActive&&displacedResult&&((displacedResult.carryOver&&displacedResult.carryOver.length)||_msatTasks.length)){
+    const co=displacedResult.carryOver||[];
     const kidMatch=t=>true;
     const vis=co.filter(kidMatch);
-    if(vis.length){
+    if(vis.length||_msatTasks.length){
       const isReflex=t=>(taskSubject(t)||"").toLowerCase().includes("reflex");
-      h+='<div style="margin:12px;border-left:4px solid #ef4444;background:#fef2f2;border-radius:0 10px 10px 0;padding:12px">';
-      h+='<div style="font-size:11px;font-weight:800;color:#991b1b;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px">&#9888; Carry-Over Alert — '+vis.length+' task(s) couldn\'t fit</div>';
-      h+='<div style="font-size:12px;color:#7f1d1d;margin-bottom:8px">These tasks were displaced but no day had room.</div>';
+      h+='<div style="margin:12px;border-left:4px solid '+(vis.length?'#ef4444':'#1a6b5a')+';background:'+(vis.length?'#fef2f2':'#f0fdf4')+';border-radius:0 10px 10px 0;padding:12px">';
+      if(vis.length){
+        h+='<div style="font-size:11px;font-weight:800;color:#991b1b;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px">&#9888; Carry-Over Alert — '+vis.length+' task(s) couldn\'t fit</div>';
+        h+='<div style="font-size:12px;color:#7f1d1d;margin-bottom:8px">These tasks were displaced but no day had room.</div>';
+      } else {
+        h+='<div style="font-size:11px;font-weight:800;color:#1a6b5a;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px">&#10003; Carry-Overs Resolved — added to Saturday</div>';
+      }
       vis.forEach(t=>{
         const skipped=!!(coExclusions[WK]&&coExclusions[WK][t.id]);
         const reflexDefault=isReflex(t)&&!skipped;
@@ -2781,6 +2805,16 @@ function renderSchedule(el){
         } else {
           h+='<div style="font-size:11px;color:var(--muted);font-style:italic">Skipped — <button onclick="coUnskipTask(\''+t.id+'\')" style="background:none;border:none;color:#3b82f6;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;font-size:11px;text-decoration:underline">undo</button></div>';
         }
+        h+='</div>';
+      });
+      _msatTasks.forEach(t=>{
+        h+='<div style="background:#fff;border:1.5px solid #a7f3d0;border-radius:10px;padding:10px 12px;margin-bottom:6px">';
+        h+='<div style="display:flex;align-items:center;gap:8px">';
+        h+='<span class="kid-badge badge-'+t.who+'" style="font-size:10px">'+cap(t.who)+'</span>';
+        h+='<span style="font-size:13px;font-weight:600;flex:1">'+t.title+'</span>';
+        h+='<span style="font-size:10px;color:#1a6b5a;font-weight:700">Saturday '+t.time+'</span>';
+        h+='</div>';
+        h+='<div style="font-size:11px;color:var(--muted);font-style:italic;margin-top:4px">Added to Saturday — <button onclick="coRemoveFromSaturday(\''+t.id+'\')" style="background:none;border:none;color:#3b82f6;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;font-size:11px;text-decoration:underline">undo</button></div>';
         h+='</div>';
       });
       h+='</div>';
@@ -10662,6 +10696,33 @@ function runDisplacement(){
     });
   })();
 
+  // ── Phase 3.6: Re-apply persisted "+ Saturday" choices from the carry-over alert ──
+  var msat=coManualSat[WK]||{};
+  if(Object.keys(msat).length&&carryOver.length){
+    var msStart=_dayStart("saturday"), msEnd=_dayEnd("saturday"), msLS=_dayLS("saturday"), msLE=_dayLE("saturday");
+    for(var ci=carryOver.length-1;ci>=0;ci--){
+      var co2=carryOver[ci];
+      if(!msat[co2.id]) continue;
+      carryOver.splice(ci,1);
+      co2._carryOver=false;
+      co2.day="saturday";
+      var dv2=taskDevice(co2), slot2=msEnd; // nothing free — stack at end of day (mom chose to force it)
+      var satNow=working.filter(function(w){return w.day==="saturday";});
+      for(var m3=msStart;m3<msEnd+180;m3+=20){
+        if(m3>=msLS&&m3<msLE) continue;
+        var blocked=satNow.some(function(w){
+          if(toMin(w.time)!==m3) return false;
+          if(w.who===co2.who) return true;
+          if(co2.mom==="required"&&w.mom==="required") return true;
+          return dv2!=="paper"&&taskDevice(w)===dv2;
+        });
+        if(!blocked){slot2=m3;break;}
+      }
+      co2.time=fromMin(slot2);
+      working.push(co2);
+    }
+  }
+
   // ── Phase 4: Re-sequence "sequential" subjects so lessons stay in day order ──
   if(currData&&currData.subjects){
     var _dOrd={monday:0,tuesday:1,wednesday:2,thursday:3,friday:4,saturday:5};
@@ -10920,40 +10981,19 @@ function getDayBlockouts(d){
   return out;
 }
 function coAddToSaturday(taskId){
-  // Find the carry-over task and manually add it to Saturday in the working list
-  if(!displacedResult) return;
-  const t=displacedResult.carryOver.find(c=>c.id===taskId);
-  if(!t) return;
-  // Remove from carry-over, add to tasks on Saturday
-  displacedResult.carryOver=displacedResult.carryOver.filter(c=>c.id!==taskId);
-  t._carryOver=false;
-  t.day="saturday";
-  // Find earliest parallel slot respecting overlap rules (kid busy / Mom Required / device)
-  (function(){
-    const sd=(rulesData&&rulesData.schoolDay)||{};
-    const ov=(sd.overrides||{})["saturday"]||{};
-    const sStart=toMin(ov.start||sd.defaultStart||"10:00 AM");
-    const sEnd=toMin(ov.end||sd.defaultEnd||"4:15 PM");
-    const lS=toMin(ov.lunchStart||sd.lunchStart||"1:00 PM");
-    const lE=toMin(ov.lunchEnd||sd.lunchEnd||"2:00 PM");
-    const sat=displacedResult.tasks.filter(w=>w.day==="saturday");
-    const dv=taskDevice(t);
-    function blockedAt(m){
-      return sat.some(w=>{
-        if(toMin(w.time)!==m) return false;
-        if(w.who===t.who) return true;
-        if(t.mom==="required"&&w.mom==="required") return true;
-        return dv!=="paper"&&taskDevice(w)===dv;
-      });
-    }
-    let slot=sEnd; // nothing free — stack at end of day (mom chose to force it)
-    for(let m=sStart;m<sEnd;m+=20){
-      if(m>=lS&&m<lE) continue;
-      if(!blockedAt(m)){slot=m;break;}
-    }
-    t.time=fromMin(slot);
-  })();
-  displacedResult.tasks.push(t);
+  // Persist the choice — runDisplacement re-applies it on every recompute (incl. reloads & other devices)
+  if(!coManualSat[WK]) coManualSat[WK]={};
+  coManualSat[WK][taskId]=true;
+  try{localStorage.setItem("ha_co_manual_sat",JSON.stringify(coManualSat));}catch(e){}
+  if(db) db.ref(WK+"/co_manual_sat").set(coManualSat[WK]);
+  runDisplacement();
+  renderAll();
+}
+function coRemoveFromSaturday(taskId){
+  if(coManualSat[WK]) delete coManualSat[WK][taskId];
+  try{localStorage.setItem("ha_co_manual_sat",JSON.stringify(coManualSat));}catch(e){}
+  if(db) db.ref(WK+"/co_manual_sat").set(coManualSat[WK]||{});
+  runDisplacement();
   renderAll();
 }
 function coSkipTask(taskId){
