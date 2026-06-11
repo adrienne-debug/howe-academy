@@ -10562,6 +10562,7 @@ function runDisplacement(){
   var satOverflow=[];
   var touchedDays=new Set(working.filter(function(t){return t._displaced&&!byDay[t.day];}).map(function(t){return t.day;}));
   touchedDays.forEach(function(d){
+    if(d==="saturday") return; // Saturday is re-timed in parallel below
     var dStart=_dayStart(d);
     var dEnd=_dayEnd(d);
     var dLunchS=_dayLS(d);
@@ -10603,10 +10604,13 @@ function runDisplacement(){
     });
   });
 
-  // Re-time Saturday overflow tasks
-  if(satOverflow.length){
-    var satEnd=_dayEnd("saturday"), satLS=_dayLS("saturday"), satLE=_dayLE("saturday");
+  // Re-time displaced Saturday tasks — kids work in PARALLEL (same overlap rules as weekdays):
+  // one Mom Required at a time, one computer/iPad/phone at a time, nothing during lunch,
+  // each kid does one task at a time in workflow order.
+  (function(){
     var satTasks=working.filter(t=>t.day==="saturday"&&t._displaced);
+    if(!satTasks.length) return;
+    var satStart=_dayStart("saturday"), satEnd=_dayEnd("saturday"), satLS=_dayLS("saturday"), satLE=_dayLE("saturday");
     // Sort Saturday: ascending by original day, then workflow order within each day
     var _dayIdx={monday:0,tuesday:1,wednesday:2,thursday:3,friday:4,saturday:5};
     satTasks.sort((a,b)=>{
@@ -10614,22 +10618,42 @@ function runDisplacement(){
       if(da!==db) return da-db;
       return _wfWeight(a,"saturday")-_wfWeight(b,"saturday");
     });
-    var satOrig=working.filter(t=>t.day==="saturday"&&!t._displaced);
-    var sCursor=_dayStart("saturday");
-    if(satOrig.length) sCursor=Math.max(sCursor,Math.max(...satOrig.map(t=>toMin(t.time)))+20);
+    // Occupancy grid from tasks already fixed on Saturday (non-displaced)
+    var kidBusy={}, momBusy={}, devBusy={computer:{},ipad:{},phone:{}};
+    function _mark(t,m){
+      if(!kidBusy[t.who]) kidBusy[t.who]={};
+      kidBusy[t.who][m]=1;
+      if(t.mom==="required") momBusy[m]=1;
+      var dv=taskDevice(t);
+      if(devBusy[dv]) devBusy[dv][m]=1;
+    }
+    working.forEach(function(t){
+      if(t.day==="saturday"&&!t._displaced) _mark(t,toMin(t.time));
+    });
+    var kidNext={}; // per-kid cursor — keeps each kid's tasks sequential
     satTasks.forEach(dt=>{
-      if(sCursor>=satLS&&sCursor<satLE) sCursor=satLE;
-      if(sCursor>=satEnd){
+      var from=Math.max(satStart,kidNext[dt.who]||0);
+      var dv=taskDevice(dt);
+      var slot=-1;
+      for(var m=from;m<satEnd;m+=20){
+        if(m>=satLS&&m<satLE) continue;                    // lunch block
+        if(kidBusy[dt.who]&&kidBusy[dt.who][m]) continue;  // kid already working
+        if(dt.mom==="required"&&momBusy[m]) continue;      // one Mom Required at a time
+        if(devBusy[dv]&&devBusy[dv][m]) continue;          // one per device at a time
+        slot=m;break;
+      }
+      if(slot<0){
         dt._carryOver=true;
         carryOver.push(dt);
         const idx=working.indexOf(dt);
         if(idx>=0) working.splice(idx,1);
         return;
       }
-      dt.time=fromMin(sCursor);
-      sCursor+=20;
+      dt.time=fromMin(slot);
+      _mark(dt,slot);
+      kidNext[dt.who]=slot+20;
     });
-  }
+  })();
 
   // ── Phase 4: Re-sequence "sequential" subjects so lessons stay in day order ──
   if(currData&&currData.subjects){
@@ -10897,7 +10921,31 @@ function coAddToSaturday(taskId){
   displacedResult.carryOver=displacedResult.carryOver.filter(c=>c.id!==taskId);
   t._carryOver=false;
   t.day="saturday";
-  t.time=fromMin(toMin("10:00 AM")+displacedResult.tasks.filter(w=>w.day==="saturday"&&w._displaced).length*20);
+  // Find earliest parallel slot respecting overlap rules (kid busy / Mom Required / device)
+  (function(){
+    const sd=(rulesData&&rulesData.schoolDay)||{};
+    const ov=(sd.overrides||{})["saturday"]||{};
+    const sStart=toMin(ov.start||sd.defaultStart||"10:00 AM");
+    const sEnd=toMin(ov.end||sd.defaultEnd||"4:15 PM");
+    const lS=toMin(ov.lunchStart||sd.lunchStart||"1:00 PM");
+    const lE=toMin(ov.lunchEnd||sd.lunchEnd||"2:00 PM");
+    const sat=displacedResult.tasks.filter(w=>w.day==="saturday");
+    const dv=taskDevice(t);
+    function blockedAt(m){
+      return sat.some(w=>{
+        if(toMin(w.time)!==m) return false;
+        if(w.who===t.who) return true;
+        if(t.mom==="required"&&w.mom==="required") return true;
+        return dv!=="paper"&&taskDevice(w)===dv;
+      });
+    }
+    let slot=sEnd; // nothing free — stack at end of day (mom chose to force it)
+    for(let m=sStart;m<sEnd;m+=20){
+      if(m>=lS&&m<lE) continue;
+      if(!blockedAt(m)){slot=m;break;}
+    }
+    t.time=fromMin(slot);
+  })();
   displacedResult.tasks.push(t);
   renderAll();
 }
@@ -11307,7 +11355,7 @@ function renderRules(el,headerHtml){
     });
   }
   h+='<div class="rules-section-lbl" style="margin-top:10px">Saturday Rules</div>';
-  h+='<div style="font-size:11px;color:var(--muted);padding:4px 0">Overflow day — receives displaced tasks when weekdays are full.</div>';
+  h+='<div style="font-size:11px;color:var(--muted);padding:4px 0">Overflow day — receives displaced tasks when weekdays are full. Kids work in parallel (same overlap rules as weekdays).</div>';
   if(sat.computer_sequence){
     const seq=fbArr(sat.computer_sequence)||[];
     h+='<div class="rules-row"><div class="rules-label">Computer order</div><div class="rules-val">'+seq.join(" > ").replace(/_/g," ")+'</div></div>';
