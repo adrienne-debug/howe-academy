@@ -4673,10 +4673,10 @@ function renderCurriculumView(el,headerHtml){
     });
     h+='</div>';
     if(lmViewMode==="subject"){
-      h+='<div style="font-size:10px;color:var(--muted);margin:0 0 8px">Tap Move on a slot to put that lesson on a different week or day. Changes apply when the week is next generated.</div>';
+      h+='<div style="font-size:10px;color:var(--muted);margin:0 0 8px">Tap Move on a slot to put that lesson on a different week or day. &#9650;&#9660; set where it runs within its day. Changes apply when the week is next generated.</div>';
       h+=lmRenderSubjectView(k,subjects,weekLabels,weekDays,lessons,col);
     } else {
-    h+='<div style="font-size:10px;color:var(--muted);margin:0 0 8px">Tap a week to edit days. Changes apply when the week is next generated or regenerated.</div>';
+    h+='<div style="font-size:10px;color:var(--muted);margin:0 0 8px">Tap a week to edit days; &#9650;&#9660; set a day&rsquo;s run order, Move sends a subject to another day. Changes apply when the week is next generated or regenerated.</div>';
     h+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:14px">';
     weekLabels.forEach(wk=>{
       const days=weekDays[wk]||[];
@@ -4731,6 +4731,7 @@ function renderCurriculumView(el,headerHtml){
         const dateStr=lesson.date||"";
         const calOff=dateStr?smapIsKidOff(k,dateStr):null;
         const ovr=dateStr?(schedOv(dateStr,k)||{}):{};
+        const hasCustomOrd=!!(_normOrderArr(ovr.order)||[]).length;
         const manualOff=!!ovr.dayOff;
         const rm=ovr.removed||{};
         const added=ovr.added||{};
@@ -4743,34 +4744,73 @@ function renderCurriculumView(el,headerHtml){
         h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
         h+='<div style="font-weight:700;font-size:12px">'+(allDone&&!offState?"&#10003; ":"")+'Day '+d
           +(calOff?' <span style="color:#0369a1;font-weight:600;font-size:10px">&middot; '+esc(calOff)+'</span>':'')
-          +(manualOff?' <span style="color:#991b1b;font-weight:600;font-size:10px">&middot; Day off</span>':'')+'</div>';
+          +(manualOff?' <span style="color:#991b1b;font-weight:600;font-size:10px">&middot; Day off</span>':'')
+          +(hasCustomOrd&&!offState?' <span style="font-size:9px;font-weight:800;color:#7c3aed;background:#f5f3ff;border-radius:6px;padding:1px 5px">CUSTOM ORDER</span>':'')+'</div>';
         h+='<div style="display:flex;align-items:center;gap:8px">';
+        if(hasCustomOrd&&!offState&&dateStr) h+='<button onclick="lmResetOrder(\''+k+'\',\''+dateStr+'\')" style="background:none;border:none;color:#7c3aed;font-size:10px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif;padding:0">reset order</button>';
         h+='<div style="font-size:11px;color:var(--muted)">'+dateStr+(dayTotal&&!offState?' &middot; '+dayDone+'/'+dayTotal:'')+'</div>';
         if(!calOff&&dateStr&&!allDone) h+='<button onclick="lmToggleDayOff(\''+k+'\',\''+dateStr+'\')" style="border:1px solid '+(manualOff?'#1a6b5a':'var(--border)')+';background:'+(manualOff?'#f0fdf4':'#fff')+';color:'+(manualOff?'#1a6b5a':'var(--muted)')+';border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(manualOff?'restore day':'day off')+'</button>';
         h+='</div></div>';
         if(!offState){
-          sKeys.forEach(sk=>{
-            if(!lesson[sk]) return;
-            const s=subjects[sk];
-            const emoji=CURR_DEV_EMOJI[s.device]||"\u{1F4C4}";
-            const isRm=!!rm[sk];
-            const idx=(idxMap[sk]||{})[d];
-            const done=!isRm&&idx!==undefined&&idx<cursorMap[sk];
-            h+='<div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:12px;'+((done||isRm)?"opacity:0.5;text-decoration:line-through;":"")+'">';
-            h+='<span style="color:var(--muted);flex:1;min-width:0">'+(done?"&#10003; ":"")+emoji+' '+esc(s.display)+'</span>';
-            h+='<span style="font-weight:600">'+esc(lesson[sk])+'</span>';
-            if(dateStr&&!done){
-              if(isRm) h+='<button onclick="lmRestoreSubj(\''+k+'\',\''+dateStr+'\',\''+sk+'\')" style="background:none;border:none;color:#3b82f6;font-size:10px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif">undo</button>';
-              else h+='<button onclick="lmRemoveSubj(\''+k+'\',\''+dateStr+'\',\''+sk+'\')" style="background:none;border:none;color:#9ca3af;font-size:14px;font-weight:700;cursor:pointer;padding:0 3px;line-height:1">&times;</button>';
-            }
-            h+='</div>';
-          });
-          Object.keys(added).forEach(sk=>{
+          // Rows render in the day's effective run order (saved override, else
+          // the generator's natural sequence) so the ▲▼ arrows match reality.
+          const runOrd=dateStr?lmDayRunOrder(k,dateStr,lesson):sKeys.filter(sk=>lesson[sk]);
+          const canReorder=!!dateStr&&runOrd.length>1;
+          const arrowBtns=(sk,oi)=>{
+            if(!canReorder) return '';
+            let a='<button onclick="lmNudgeSubj(\''+k+'\',\''+dateStr+'\',\''+sk+'\',-1)"'+(oi===0?' disabled':'')+' style="border:none;background:none;cursor:pointer;font-size:13px;padding:0 2px;line-height:1;opacity:'+(oi===0?'0.2':'0.6')+'">&#9650;</button>';
+            a+='<button onclick="lmNudgeSubj(\''+k+'\',\''+dateStr+'\',\''+sk+'\',1)"'+(oi===runOrd.length-1?' disabled':'')+' style="border:none;background:none;cursor:pointer;font-size:13px;padding:0 2px;line-height:1;opacity:'+(oi===runOrd.length-1?'0.2':'0.6')+'">&#9660;</button>';
+            return a;
+          };
+          const moveBtn=(sk,isAdd)=>'<button onclick="lmOpenMove(\''+dateStr+'\','+(isAdd?'true':'false')+',\''+sk+'\')" style="border:1px solid var(--border);background:#fff;color:var(--muted);border-radius:7px;padding:2px 6px;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0">'+((lmMovePick&&lmMovePick.date===dateStr&&lmMovePick.sk===sk)?'close':'Move')+'</button>';
+          const pickerIfOpen=(sk)=>{ if(dateStr&&lmMovePick&&lmMovePick.date===dateStr&&lmMovePick.sk===sk) h+=lmRenderMovePicker(k,sk,col,weekLabels,weekDays,lessons); };
+          const addedRow=(sk,second,oi)=>{
             const s=subjects[sk]; if(!s) return;
             const emoji=CURR_DEV_EMOJI[s.device]||"\u{1F4C4}";
             h+='<div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:12px">';
-            h+='<span style="color:var(--muted);flex:1;min-width:0">'+emoji+' '+esc(s.display)+' <span style="font-size:9px;font-weight:800;color:#1a6b5a;background:#f0fdf4;border-radius:6px;padding:1px 5px">ADDED</span></span>';
+            h+='<span style="color:var(--muted);flex:1;min-width:0">'+emoji+' '+esc(s.display)+' <span style="font-size:9px;font-weight:800;color:#1a6b5a;background:#f0fdf4;border-radius:6px;padding:1px 5px">ADDED'+(second?' &middot; 2nd':'')+'</span></span>';
+            if(!second){ h+=arrowBtns(sk,oi); h+=moveBtn(sk,true); }
             h+='<button onclick="lmAddSubj(\''+k+'\',\''+dateStr+'\',\''+sk+'\')" style="background:none;border:none;color:#9ca3af;font-size:14px;font-weight:700;cursor:pointer;padding:0 3px;line-height:1">&times;</button>';
+            h+='</div>';
+            if(!second) pickerIfOpen(sk);
+          };
+          runOrd.forEach((sk,oi)=>{
+            const s=subjects[sk]; if(!s) return;
+            const hasExcel=!!(lesson[sk]&&lesson[sk]!=="—"&&lesson[sk]!=="nan");
+            if(!hasExcel){ addedRow(sk,false,oi); return; } // make-up slot in the run order
+            const emoji=CURR_DEV_EMOJI[s.device]||"\u{1F4C4}";
+            const idx=(idxMap[sk]||{})[d];
+            const done=idx!==undefined&&idx<cursorMap[sk];
+            h+='<div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:12px;'+(done?"opacity:0.5;text-decoration:line-through;":"")+'">';
+            h+='<span style="color:var(--muted);flex:1;min-width:0">'+(done?"&#10003; ":"")+emoji+' '+esc(s.display)+'</span>';
+            h+='<span style="font-weight:600">'+esc(lesson[sk])+'</span>';
+            if(dateStr&&!done){
+              h+=arrowBtns(sk,oi);
+              h+=moveBtn(sk,false);
+              h+='<button onclick="lmRemoveSubj(\''+k+'\',\''+dateStr+'\',\''+sk+'\')" style="background:none;border:none;color:#9ca3af;font-size:14px;font-weight:700;cursor:pointer;padding:0 3px;line-height:1">&times;</button>';
+            }
+            h+='</div>';
+            if(!done) pickerIfOpen(sk);
+            if(added[sk]) addedRow(sk,true,oi); // 2nd lesson of the same subject that day
+          });
+          // Grid cells the generator ignores ("—"/"nan") — keep visible as before
+          sKeys.forEach(sk=>{
+            if(!lesson[sk]||rm[sk]||runOrd.includes(sk)) return;
+            const s=subjects[sk];
+            h+='<div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:12px">';
+            h+='<span style="color:var(--muted);flex:1;min-width:0">'+(CURR_DEV_EMOJI[s.device]||"\u{1F4C4}")+' '+esc(s.display)+'</span>';
+            h+='<span style="font-weight:600">'+esc(lesson[sk])+'</span>';
+            if(dateStr) h+='<button onclick="lmRemoveSubj(\''+k+'\',\''+dateStr+'\',\''+sk+'\')" style="background:none;border:none;color:#9ca3af;font-size:14px;font-weight:700;cursor:pointer;padding:0 3px;line-height:1">&times;</button>';
+            h+='</div>';
+          });
+          // Removed subjects: struck rows with undo, parked after the live lineup
+          sKeys.forEach(sk=>{
+            if(!lesson[sk]||!rm[sk]) return;
+            const s=subjects[sk];
+            h+='<div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:12px;opacity:0.5;text-decoration:line-through;">';
+            h+='<span style="color:var(--muted);flex:1;min-width:0">'+(CURR_DEV_EMOJI[s.device]||"\u{1F4C4}")+' '+esc(s.display)+'</span>';
+            h+='<span style="font-weight:600">'+esc(lesson[sk])+'</span>';
+            if(dateStr) h+='<button onclick="lmRestoreSubj(\''+k+'\',\''+dateStr+'\',\''+sk+'\')" style="background:none;border:none;color:#3b82f6;font-size:10px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif">undo</button>';
             h+='</div>';
           });
           if(dateStr){
@@ -7419,6 +7459,7 @@ function setSchedOverride(dateStr,kid,mut){
   const o=scheduleOverrides[dateStr][kid];
   if(o.removed&&!Object.keys(o.removed).length) delete o.removed;
   if(o.added&&!Object.keys(o.added).length) delete o.added;
+  if(o.order&&(!Array.isArray(o.order)||o.order.length<2)) delete o.order;
   if(!o.dayOff){ delete o.dayOff; delete o._gwOff; }
   if(o._gwRm){
     for(const sk of Object.keys(o._gwRm)){ if(!o.removed||!o.removed[sk]) delete o._gwRm[sk]; }
@@ -7551,6 +7592,99 @@ function lmOpenAdd(kid,dateStr){
   renderAll();
 }
 
+// ── LESSON MAP per-day run order (scheduleOverrides[date][kid].order) ────────
+// Firebase can hand a saved array back as an index-keyed object; normalize.
+function _normOrderArr(a){
+  if(!a) return null;
+  if(Array.isArray(a)) return a.filter(Boolean);
+  if(typeof a==="object") return Object.keys(a).sort((x,y)=>x-y).map(i=>a[i]).filter(Boolean);
+  return null;
+}
+function lmLessonByDate(kid,dateStr){
+  const lessons=((currData||{}).lessons||{})[kid]||{};
+  for(const dn of Object.keys(lessons)){ const l=lessons[dn]; if(l&&l.date===dateStr) return l; }
+  return null;
+}
+// Effective run order for a kid's day: the saved override (filtered to the
+// subjects actually present) if any, else the generator's natural sequence —
+// first rules, then device/category flow buckets, then last rules — so the
+// first arrow tap freezes exactly what generation would do, changing only
+// that one swap.
+function lmDayRunOrder(kid,dateStr,lesson){
+  if(lesson===undefined) lesson=lmLessonByDate(kid,dateStr);
+  const ov=schedOv(dateStr,kid)||{};
+  const subjects=((currData||{}).subjects||{})[kid]||{};
+  const present=[];
+  for(const sk of Object.keys(subjects)){
+    if(subjects[sk].paused) continue;
+    if(ov.removed&&ov.removed[sk]) continue;
+    const hasExcel=lesson&&lesson[sk]&&lesson[sk]!=="—"&&lesson[sk]!=="nan";
+    if(hasExcel||(ov.added&&ov.added[sk])) present.push(sk);
+  }
+  const saved=_normOrderArr(ov.order);
+  if(saved&&saved.length){
+    const out=[],seen={};
+    for(const sk of saved){ if(present.includes(sk)&&!seen[sk]){ out.push(sk); seen[sk]=true; } }
+    for(const sk of present){ if(!seen[sk]) out.push(sk); }
+    return out;
+  }
+  const dict={};
+  present.forEach(sk=>{ dict[sk]=(lesson&&lesson[sk])||"x"; });
+  const b=gwByCategory(kid,dict);
+  const flow=(currData.flowOrder&&currData.flowOrder[kid])||["computer","ipad","phone","independent","maybe_paper","required_paper"];
+  const seq=[];
+  (b.first||[]).forEach(en=>seq.push(en[0]));
+  flow.forEach(cat=>{ (b[cat]||[]).forEach(en=>seq.push(en[0])); });
+  (b.last||[]).forEach(en=>seq.push(en[0]));
+  present.forEach(sk=>{ if(!seq.includes(sk)) seq.push(sk); }); // category missing from flow list
+  return [...new Set(seq)];
+}
+function lmNudgeSubj(kid,dateStr,sk,dir){
+  const ord=lmDayRunOrder(kid,dateStr);
+  const i=ord.indexOf(sk), j=i+dir;
+  if(i<0||j<0||j>=ord.length) return;
+  ord[i]=ord[j]; ord[j]=sk;
+  setSchedOverride(dateStr,kid,o=>{ o.order=ord; });
+  renderAll();
+}
+function lmResetOrder(kid,dateStr){
+  setSchedOverride(dateStr,kid,o=>{ delete o.order; });
+  renderAll();
+}
+
+// Shared week→day Move picker, used by By Subject rows and By Week day cards.
+function lmRenderMovePicker(k,sk,col,weekLabels,weekDays,lessons){
+  const today=_todayStr();
+  const WD={0:"Sun",1:"Mon",2:"Tue",3:"Wed",4:"Thu",5:"Fri",6:"Sat"};
+  const fmtD=ds=>{ const o=gwParseDate(ds); return WD[o.getDay()]+" "+o.toLocaleDateString("en-US",{month:"short",day:"numeric"}); };
+  let p='<div style="background:#f8f7f4;border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin:4px 0 6px">';
+  p+='<div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px">Move to&hellip;</div>';
+  p+='<div style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:6px">';
+  weekLabels.forEach(wk=>{
+    const ls=(weekDays[wk]||[]).map(d=>lessons[d]).filter(Boolean);
+    if(ls.length&&ls.every(l=>l.date&&l.date<today)) return; // fully past weeks hidden
+    const on=lmMoveWeek===wk;
+    p+='<button onclick="lmPickMoveWeek(\''+wk+'\')" style="padding:3px 8px;border-radius:7px;border:1px solid '+(on?col:'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--text)')+';font-size:10px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+wk+'</button>';
+  });
+  p+='</div>';
+  if(lmMoveWeek&&weekDays[lmMoveWeek]){
+    p+='<div style="display:flex;flex-wrap:wrap;gap:3px">';
+    (weekDays[lmMoveWeek]||[]).forEach(d2=>{
+      const l2=lessons[d2]; if(!l2||!l2.date) return;
+      const date2=l2.date;
+      if(date2<today) return;
+      if(smapIsKidOff(k,date2)||schedOvKidOff(k,date2)) return;
+      const ov2=schedOv(date2,k)||{};
+      const hasIt=(l2[sk]&&l2[sk]!=="—"&&l2[sk]!=="nan"&&!(ov2.removed&&ov2.removed[sk]))||(ov2.added&&ov2.added[sk]);
+      p+='<button onclick="lmMoveSlot(\''+k+'\',\''+sk+'\',\''+date2+'\')" style="padding:3px 8px;border-radius:7px;border:1px solid var(--border);background:#fff;font-size:10px;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+fmtD(date2)+(hasIt?' &#9888;':'')+'</button>';
+    });
+    p+='</div>';
+    p+='<div style="font-size:9px;color:var(--muted);margin-top:4px">&#9888; = already has this subject that day</div>';
+  }
+  p+='</div>';
+  return p;
+}
+
 // ── LESSON MAP "BY SUBJECT" view: see and move one subject's slots across weeks ──
 let lmViewMode="week";   // "week" | "subject"
 let lmSubjKey=null;      // selected subject in by-subject view
@@ -7558,8 +7692,8 @@ let lmMovePick=null;     // {date, added} — slot whose Move picker is open
 let lmMoveWeek=null;     // week label chosen inside the move picker
 function lmSetView(m){ lmViewMode=m; lmMovePick=null; lmMoveWeek=null; renderAll(); }
 function lmSelSubj(sk){ lmSubjKey=sk; lmMovePick=null; lmMoveWeek=null; renderAll(); }
-function lmOpenMove(date,isAdded){
-  lmMovePick=(lmMovePick&&lmMovePick.date===date)?null:{date:date,added:!!isAdded};
+function lmOpenMove(date,isAdded,sk){
+  lmMovePick=(lmMovePick&&lmMovePick.date===date&&lmMovePick.sk===sk)?null:{date:date,added:!!isAdded,sk:sk};
   lmMoveWeek=null;
   renderAll();
 }
@@ -7601,35 +7735,6 @@ function lmRenderSubjectView(k,subjects,weekLabels,weekDays,lessons,col){
   const WD={0:"Sun",1:"Mon",2:"Tue",3:"Wed",4:"Thu",5:"Fri",6:"Sat"};
   const fmtD=ds=>{ const o=gwParseDate(ds); return WD[o.getDay()]+" "+o.toLocaleDateString("en-US",{month:"short",day:"numeric"}); };
 
-  function movePicker(){
-    let p='<div style="background:#f8f7f4;border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin:4px 0 6px">';
-    p+='<div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px">Move to&hellip;</div>';
-    p+='<div style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:6px">';
-    weekLabels.forEach(wk=>{
-      const ls=(weekDays[wk]||[]).map(d=>lessons[d]).filter(Boolean);
-      if(ls.length&&ls.every(l=>l.date&&l.date<today)) return; // fully past weeks hidden
-      const on=lmMoveWeek===wk;
-      p+='<button onclick="lmPickMoveWeek(\''+wk+'\')" style="padding:3px 8px;border-radius:7px;border:1px solid '+(on?col:'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--text)')+';font-size:10px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+wk+'</button>';
-    });
-    p+='</div>';
-    if(lmMoveWeek&&weekDays[lmMoveWeek]){
-      p+='<div style="display:flex;flex-wrap:wrap;gap:3px">';
-      (weekDays[lmMoveWeek]||[]).forEach(d2=>{
-        const l2=lessons[d2]; if(!l2||!l2.date) return;
-        const date2=l2.date;
-        if(date2<today) return;
-        if(smapIsKidOff(k,date2)||schedOvKidOff(k,date2)) return;
-        const ov2=schedOv(date2,k)||{};
-        const hasIt=(l2[sk]&&l2[sk]!=="—"&&l2[sk]!=="nan"&&!(ov2.removed&&ov2.removed[sk]))||(ov2.added&&ov2.added[sk]);
-        p+='<button onclick="lmMoveSlot(\''+k+'\',\''+sk+'\',\''+date2+'\')" style="padding:3px 8px;border-radius:7px;border:1px solid var(--border);background:#fff;font-size:10px;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+fmtD(date2)+(hasIt?' &#9888;':'')+'</button>';
-      });
-      p+='</div>';
-      p+='<div style="font-size:9px;color:var(--muted);margin-top:4px">&#9888; = already has this subject that day</div>';
-    }
-    p+='</div>';
-    return p;
-  }
-
   const gridDates=new Set();
   weekLabels.forEach(wk=>{ (weekDays[wk]||[]).forEach(d=>{ const l=lessons[d]; if(l&&l.date) gridDates.add(l.date); }); });
 
@@ -7652,14 +7757,23 @@ function lmRenderSubjectView(k,subjects,weekLabels,weekDays,lessons,col){
       rows+='<span style="color:var(--muted);width:86px;flex-shrink:0">'+fmtD(date)+'</span>';
       rows+='<span style="flex:1;min-width:0;'+((done||isRm||offRow)?"text-decoration:line-through;":"")+'">'+(done?"&#10003; ":"")+(hasExcel?esc(l[sk]):'<span style="font-size:9px;font-weight:800;color:#1a6b5a;background:#f0fdf4;border-radius:6px;padding:1px 5px">MAKE-UP</span>')+'</span>';
       if(offRow) rows+='<span style="font-size:9px;font-weight:800;color:#0369a1;background:#e0f2fe;border-radius:6px;padding:1px 5px;flex-shrink:0;text-transform:uppercase;letter-spacing:0.3px">'+esc(offWhy)+'</span>';
+      if(!done&&!isRm&&!offRow){
+        const runOrd=lmDayRunOrder(k,date,l);
+        const pos=runOrd.indexOf(sk);
+        if(pos>=0&&runOrd.length>1){
+          rows+='<span title="Run order within the day" style="font-size:9px;color:var(--muted);flex-shrink:0">'+(pos+1)+'/'+runOrd.length+'</span>';
+          rows+='<button onclick="lmNudgeSubj(\''+k+'\',\''+date+'\',\''+sk+'\',-1)"'+(pos===0?' disabled':'')+' style="border:none;background:none;cursor:pointer;font-size:12px;padding:0 1px;line-height:1;opacity:'+(pos===0?'0.2':'0.6')+';flex-shrink:0">&#9650;</button>';
+          rows+='<button onclick="lmNudgeSubj(\''+k+'\',\''+date+'\',\''+sk+'\',1)"'+(pos===runOrd.length-1?' disabled':'')+' style="border:none;background:none;cursor:pointer;font-size:12px;padding:0 1px;line-height:1;opacity:'+(pos===runOrd.length-1?'0.2':'0.6')+';flex-shrink:0">&#9660;</button>';
+        }
+      }
       if(isRm){
         rows+='<button onclick="lmRestoreSubj(\''+k+'\',\''+date+'\',\''+sk+'\')" style="background:none;border:none;color:#3b82f6;font-size:10px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif;flex-shrink:0">undo</button>';
       } else if(!done){
-        rows+='<button onclick="lmOpenMove(\''+date+'\','+(hasExcel?'false':'true')+')" style="border:1px solid var(--border);background:#fff;color:var(--muted);border-radius:7px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0">'+(lmMovePick&&lmMovePick.date===date?'close':'Move')+'</button>';
+        rows+='<button onclick="lmOpenMove(\''+date+'\','+(hasExcel?'false':'true')+',\''+sk+'\')" style="border:1px solid var(--border);background:#fff;color:var(--muted);border-radius:7px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0">'+((lmMovePick&&lmMovePick.date===date&&lmMovePick.sk===sk)?'close':'Move')+'</button>';
         if(!hasExcel) rows+='<button onclick="lmAddSubj(\''+k+'\',\''+date+'\',\''+sk+'\')" style="background:none;border:none;color:#9ca3af;font-size:13px;font-weight:700;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0">&times;</button>';
       }
       rows+='</div>';
-      if(lmMovePick&&lmMovePick.date===date) rows+=movePicker();
+      if(lmMovePick&&lmMovePick.date===date&&lmMovePick.sk===sk) rows+=lmRenderMovePicker(k,sk,col,weekLabels,weekDays,lessons);
     });
     if(rows){
       h+='<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin-bottom:6px">';
@@ -13479,6 +13593,23 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   const e=gwByCategory("ellis",kidAssignments.ellis||{});
   const c=gwByCategory("lucy",kidAssignments.lucy||{});
 
+  // Lesson Map per-day run order (scheduleOverrides[date][kid].order).
+  // Rank-sort inside each bucket so babysitter-day phases honor it best-effort;
+  // normal days additionally schedule ranked subjects as an explicit sequence.
+  const dayOrder={};
+  [["lincoln",l],["ellis",e],["lucy",c]].forEach(([kid,bk])=>{
+    const a=dayConfig.dateStr?_normOrderArr((schedOv(dayConfig.dateStr,kid)||{}).order):null;
+    if(!a||!a.length) return;
+    dayOrder[kid]=a;
+    const rnk={}; a.forEach((sk,i)=>{ rnk[sk]=i; });
+    ["computer","ipad","phone","independent","maybe_paper","required_paper"].forEach(cat=>{
+      bk[cat].sort((x,y)=>{
+        const rx=rnk[x[0]]!==undefined?rnk[x[0]]:1e9, ry=rnk[y[0]]!==undefined?rnk[y[0]]:1e9;
+        return rx-ry;
+      });
+    });
+  });
+
   // First-of-day subjects (rule: "first") — skip withSitter kids on babysitter days
   const kidBuckets=[["lincoln",l],["ellis",e],["lucy",c]];
   kidBuckets.forEach(([kid,b])=>{
@@ -13526,7 +13657,20 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
     const defaultFlow=["computer","ipad","phone","independent","maybe_paper","required_paper"];
     [["lincoln",l],["ellis",e],["lucy",c]].forEach(([kid,b])=>{
       const flow=flowOrder[kid]||defaultFlow;
-      flow.forEach(cat=>{ if(b[cat]&&b[cat].length) schedBucket(kid,b[cat]); });
+      if(dayOrder[kid]){
+        // Explicit per-day sequence from the Lesson Map: ranked subjects run
+        // in that exact order (across buckets), unranked ones follow via the
+        // normal category flow. The scheduler still resolves device and mom
+        // conflicts; sequence per kid is preserved because placement is
+        // monotonic per kid.
+        const pool=[];
+        flow.forEach(cat=>{ (b[cat]||[]).forEach(en=>pool.push(en)); });
+        const rnk={}; dayOrder[kid].forEach((sk,i)=>{ rnk[sk]=i; });
+        pool.filter(en=>rnk[en[0]]!==undefined).sort((x,y)=>rnk[x[0]]-rnk[y[0]]).forEach(en=>schedule(kid,en[0],en[1]));
+        pool.filter(en=>rnk[en[0]]===undefined).forEach(en=>schedule(kid,en[0],en[1]));
+      } else {
+        flow.forEach(cat=>{ if(b[cat]&&b[cat].length) schedBucket(kid,b[cat]); });
+      }
     });
   }
 
@@ -14167,7 +14311,8 @@ function generateWeek(config){
       sitterEnd:isSitter?sitterEndMin:0,
       withSitter:isSitter?withSitterKids:[],
       theater:!!config.theater,
-      dayName:dn
+      dayName:dn,
+      dateStr:dk
     };
 
     const result=gwBuildDayTasks(balanced[dk]||{},dayConfig,idPrefix,taskCounter);
