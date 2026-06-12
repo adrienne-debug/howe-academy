@@ -11256,14 +11256,22 @@ function runDisplacement(){
       return _wfWeight(a,"saturday")-_wfWeight(b,"saturday");
     });
     _applySticky(satTasks);
-    // Occupancy grid from tasks already fixed on Saturday (non-displaced)
-    var kidBusy={}, momBusy={}, devBusy={computer:{},ipad:{},phone:{}};
+    // Occupancy grid from tasks already fixed on Saturday (non-displaced).
+    // Device lanes mirror GWScheduler: one computer, one shared iPad for
+    // Lincoln/Ellis/Julian, and Lucy's OWN iPad — her independent work never
+    // waits on the boys' device queue.
+    var kidBusy={}, momBusy={}, devBusy={computer:{},ipad:{},ipadLucy:{},phone:{}};
+    function _laneOf(t){
+      var dv=taskDevice(t);
+      if(dv==="ipad"&&t.who==="lucy") return "ipadLucy";
+      return dv;
+    }
     function _mark(t,m){
       if(!kidBusy[t.who]) kidBusy[t.who]={};
       kidBusy[t.who][m]=1;
       if(t.mom==="required") momBusy[m]=1;
-      var dv=taskDevice(t);
-      if(devBusy[dv]) devBusy[dv][m]=1;
+      var lane=_laneOf(t);
+      if(devBusy[lane]) devBusy[lane][m]=1;
     }
     working.forEach(function(t){
       if(t.day==="saturday"&&!t._displaced) _mark(t,toMin(t.time));
@@ -11271,13 +11279,13 @@ function runDisplacement(){
     var kidNext={}; // per-kid cursor — keeps each kid's tasks sequential
     satTasks.forEach(dt=>{
       var from=Math.max(satStart,kidNext[dt.who]||0);
-      var dv=taskDevice(dt);
+      var lane=_laneOf(dt);
       var slot=-1;
       for(var m=from;m<satEnd;m+=20){
         if(m>=satLS&&m<satLE) continue;                    // lunch block
         if(kidBusy[dt.who]&&kidBusy[dt.who][m]) continue;  // kid already working
         if(dt.mom==="required"&&momBusy[m]) continue;      // one Mom Required at a time
-        if(devBusy[dv]&&devBusy[dv][m]) continue;          // one per device at a time
+        if(devBusy[lane]&&devBusy[lane][m]) continue;      // one per device lane at a time
         slot=m;break;
       }
       if(slot<0){
@@ -11286,7 +11294,7 @@ function runDisplacement(){
           if(m2>=satLS&&m2<satLE) continue;
           if(kidBusy[dt.who]&&kidBusy[dt.who][m2]) continue;
           if(dt.mom==="required"&&momBusy[m2]) continue;
-          if(devBusy[dv]&&devBusy[dv][m2]) continue;
+          if(devBusy[lane]&&devBusy[lane][m2]) continue;
           slot=m2;break;
         }
       }
@@ -11321,7 +11329,9 @@ function runDisplacement(){
           if(toMin(w.time)!==m3) return false;
           if(w.who===co2.who) return true;
           if(co2.mom==="required"&&w.mom==="required") return true;
-          return dv2!=="paper"&&taskDevice(w)===dv2;
+          if(dv2==="paper"||taskDevice(w)!==dv2) return false;
+          if(dv2==="ipad"&&((w.who==="lucy")!==(co2.who==="lucy"))) return false; // Lucy has her own iPad
+          return true;
         });
         if(!blocked){slot2=m3;break;}
       }
