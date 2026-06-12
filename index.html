@@ -4639,7 +4639,17 @@ function renderCurriculumView(el,headerHtml){
   });
   if(weekLabels.length){
     h+='<div class="ce-section-hdr" style="color:'+col+';margin-top:14px">Lesson Map ('+weekLabels.length+' weeks)</div>';
-    h+='<div style="font-size:10px;color:var(--muted);margin:-4px 0 8px">Tap a week to edit days. Changes apply when the week is next generated or regenerated.</div>';
+    h+='<div style="display:flex;gap:4px;margin:2px 0 8px">';
+    [["week","By Week"],["subject","By Subject"]].forEach(p=>{
+      const on=lmViewMode===p[0];
+      h+='<button onclick="lmSetView(\''+p[0]+'\')" style="padding:4px 12px;border-radius:8px;border:1.5px solid '+(on?col:'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--text)')+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+p[1]+'</button>';
+    });
+    h+='</div>';
+    if(lmViewMode==="subject"){
+      h+='<div style="font-size:10px;color:var(--muted);margin:0 0 8px">Tap Move on a slot to put that lesson on a different week or day. Changes apply when the week is next generated.</div>';
+      h+=lmRenderSubjectView(k,subjects,weekLabels,weekDays,lessons,col);
+    } else {
+    h+='<div style="font-size:10px;color:var(--muted);margin:0 0 8px">Tap a week to edit days. Changes apply when the week is next generated or regenerated.</div>';
     h+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:14px">';
     weekLabels.forEach(wk=>{
       const days=weekDays[wk]||[];
@@ -4746,6 +4756,7 @@ function renderCurriculumView(el,headerHtml){
         h+='</div>';
       });
     }
+    } // end by-week mode
   }
 
   h+='</div>';
@@ -7463,6 +7474,139 @@ function lmOpenAdd(kid,dateStr){
   const key=kid+"|"+dateStr;
   lmAddOpen=(lmAddOpen===key?null:key);
   renderAll();
+}
+
+// ── LESSON MAP "BY SUBJECT" view: see and move one subject's slots across weeks ──
+let lmViewMode="week";   // "week" | "subject"
+let lmSubjKey=null;      // selected subject in by-subject view
+let lmMovePick=null;     // {date, added} — slot whose Move picker is open
+let lmMoveWeek=null;     // week label chosen inside the move picker
+function lmSetView(m){ lmViewMode=m; lmMovePick=null; lmMoveWeek=null; renderAll(); }
+function lmSelSubj(sk){ lmSubjKey=sk; lmMovePick=null; lmMoveWeek=null; renderAll(); }
+function lmOpenMove(date,isAdded){
+  lmMovePick=(lmMovePick&&lmMovePick.date===date)?null:{date:date,added:!!isAdded};
+  lmMoveWeek=null;
+  renderAll();
+}
+function lmPickMoveWeek(wk){ lmMoveWeek=wk; renderAll(); }
+// Moving a slot = remove it from the old date + add it on the new one (or
+// un-remove on the target if it was removed there before). Same override
+// layer the generator, pace drift, and Finish Line already respect.
+function lmMoveSlot(kid,sk,toDate){
+  if(!lmMovePick) return;
+  const fromDate=lmMovePick.date, wasAdded=lmMovePick.added;
+  if(toDate!==fromDate){
+    setSchedOverride(toDate,kid,o=>{
+      if(o.removed&&o.removed[sk]) delete o.removed[sk];
+      else { if(!o.added)o.added={}; o.added[sk]=true; }
+    });
+    setSchedOverride(fromDate,kid,o=>{
+      if(wasAdded){ if(o.added) delete o.added[sk]; }
+      else { if(!o.removed)o.removed={}; o.removed[sk]=true; }
+    });
+  }
+  lmMovePick=null; lmMoveWeek=null;
+  renderAll();
+}
+function lmRenderSubjectView(k,subjects,weekLabels,weekDays,lessons,col){
+  const sks=Object.keys(subjects).filter(sk=>!subjects[sk].paused);
+  if(!lmSubjKey||!subjects[lmSubjKey]||subjects[lmSubjKey].paused) lmSubjKey=sks[0]||null;
+  let h='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px">';
+  sks.forEach(sk2=>{
+    const on=lmSubjKey===sk2;
+    h+='<button onclick="lmSelSubj(\''+sk2+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid '+(on?col:'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--text)')+';font-size:11px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+esc(subjects[sk2].display||sk2)+'</button>';
+  });
+  h+='</div>';
+  if(!lmSubjKey) return h;
+  const sk=lmSubjKey;
+  let cursor=0; try{ cursor=computeSubjectCursor(k,sk); }catch(e){}
+  const seq=buildSubjectLessons(k,sk);
+  const dm={}; seq.forEach((e,i)=>{ dm[e.dayNum]=i; });
+  const today=_todayStr();
+  const WD={0:"Sun",1:"Mon",2:"Tue",3:"Wed",4:"Thu",5:"Fri",6:"Sat"};
+  const fmtD=ds=>{ const o=gwParseDate(ds); return WD[o.getDay()]+" "+o.toLocaleDateString("en-US",{month:"short",day:"numeric"}); };
+
+  function movePicker(){
+    let p='<div style="background:#f8f7f4;border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin:4px 0 6px">';
+    p+='<div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px">Move to&hellip;</div>';
+    p+='<div style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:6px">';
+    weekLabels.forEach(wk=>{
+      const ls=(weekDays[wk]||[]).map(d=>lessons[d]).filter(Boolean);
+      if(ls.length&&ls.every(l=>l.date&&l.date<today)) return; // fully past weeks hidden
+      const on=lmMoveWeek===wk;
+      p+='<button onclick="lmPickMoveWeek(\''+wk+'\')" style="padding:3px 8px;border-radius:7px;border:1px solid '+(on?col:'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--text)')+';font-size:10px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+wk+'</button>';
+    });
+    p+='</div>';
+    if(lmMoveWeek&&weekDays[lmMoveWeek]){
+      p+='<div style="display:flex;flex-wrap:wrap;gap:3px">';
+      (weekDays[lmMoveWeek]||[]).forEach(d2=>{
+        const l2=lessons[d2]; if(!l2||!l2.date) return;
+        const date2=l2.date;
+        if(date2<today) return;
+        if(smapIsKidOff(k,date2)||schedOvKidOff(k,date2)) return;
+        const ov2=schedOv(date2,k)||{};
+        const hasIt=(l2[sk]&&l2[sk]!=="—"&&l2[sk]!=="nan"&&!(ov2.removed&&ov2.removed[sk]))||(ov2.added&&ov2.added[sk]);
+        p+='<button onclick="lmMoveSlot(\''+k+'\',\''+sk+'\',\''+date2+'\')" style="padding:3px 8px;border-radius:7px;border:1px solid var(--border);background:#fff;font-size:10px;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+fmtD(date2)+(hasIt?' &#9888;':'')+'</button>';
+      });
+      p+='</div>';
+      p+='<div style="font-size:9px;color:var(--muted);margin-top:4px">&#9888; = already has this subject that day</div>';
+    }
+    p+='</div>';
+    return p;
+  }
+
+  const gridDates=new Set();
+  weekLabels.forEach(wk=>{ (weekDays[wk]||[]).forEach(d=>{ const l=lessons[d]; if(l&&l.date) gridDates.add(l.date); }); });
+
+  weekLabels.forEach(wk=>{
+    const dayNums=weekDays[wk]||[];
+    let rows='';
+    dayNums.forEach(d=>{
+      const l=lessons[d]; if(!l||!l.date) return;
+      const date=l.date;
+      const ov=schedOv(date,k)||{};
+      const hasExcel=l[sk]&&l[sk]!=="—"&&l[sk]!=="nan";
+      const isAdd=!!(ov.added&&ov.added[sk]);
+      if(!hasExcel&&!isAdd) return;
+      const isRm=hasExcel&&!!(ov.removed&&ov.removed[sk]);
+      const offWhy=smapIsKidOff(k,date)||(ov.dayOff?"Day off":null);
+      const idx=dm[d];
+      const done=hasExcel&&!isRm&&idx!==undefined&&idx<cursor;
+      rows+='<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;'+((done||isRm)?"opacity:0.55;":"")+'">';
+      rows+='<span style="color:var(--muted);width:86px;flex-shrink:0">'+fmtD(date)+'</span>';
+      rows+='<span style="flex:1;min-width:0;'+((done||isRm)?"text-decoration:line-through;":"")+'">'+(done?"&#10003; ":"")+(hasExcel?esc(l[sk]):'<span style="font-size:9px;font-weight:800;color:#1a6b5a;background:#f0fdf4;border-radius:6px;padding:1px 5px">MAKE-UP</span>')+'</span>';
+      if(offWhy&&!done&&!isRm) rows+='<span style="font-size:9px;color:#0369a1;font-weight:700;flex-shrink:0">'+esc(offWhy)+'</span>';
+      if(isRm){
+        rows+='<button onclick="lmRestoreSubj(\''+k+'\',\''+date+'\',\''+sk+'\')" style="background:none;border:none;color:#3b82f6;font-size:10px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif;flex-shrink:0">undo</button>';
+      } else if(!done){
+        rows+='<button onclick="lmOpenMove(\''+date+'\','+(hasExcel?'false':'true')+')" style="border:1px solid var(--border);background:#fff;color:var(--muted);border-radius:7px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0">'+(lmMovePick&&lmMovePick.date===date?'close':'Move')+'</button>';
+        if(!hasExcel) rows+='<button onclick="lmAddSubj(\''+k+'\',\''+date+'\',\''+sk+'\')" style="background:none;border:none;color:#9ca3af;font-size:13px;font-weight:700;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0">&times;</button>';
+      }
+      rows+='</div>';
+      if(lmMovePick&&lmMovePick.date===date) rows+=movePicker();
+    });
+    if(rows){
+      h+='<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin-bottom:6px">';
+      h+='<div style="font-weight:700;font-size:11px;margin-bottom:4px;color:'+col+'">'+wk+'</div>'+rows+'</div>';
+    }
+  });
+
+  // Beyond-grid make-up days (created by Finish Line "Extend")
+  let ext='';
+  Object.keys(scheduleOverrides||{}).sort().forEach(date=>{
+    const ov=schedOv(date,k);
+    if(!ov||!ov.added||!ov.added[sk]||gridDates.has(date)) return;
+    ext+='<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px">';
+    ext+='<span style="color:var(--muted);width:86px;flex-shrink:0">'+fmtD(date)+'</span>';
+    ext+='<span style="flex:1"><span style="font-size:9px;font-weight:800;color:#7c3aed;background:#f5f3ff;border-radius:6px;padding:1px 5px">EXTENDED</span></span>';
+    ext+='<button onclick="lmAddSubj(\''+k+'\',\''+date+'\',\''+sk+'\')" style="background:none;border:none;color:#9ca3af;font-size:13px;font-weight:700;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0">&times;</button>';
+    ext+='</div>';
+  });
+  if(ext){
+    h+='<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin-bottom:6px">';
+    h+='<div style="font-weight:700;font-size:11px;margin-bottom:4px;color:#7c3aed">Extended days</div>'+ext+'</div>';
+  }
+  return h;
 }
 
 // Suggest make-up slots for a week's cut days / removed subjects.
