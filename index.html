@@ -4680,9 +4680,11 @@ function renderCurriculumView(el,headerHtml){
     h+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:14px">';
     weekLabels.forEach(wk=>{
       const days=weekDays[wk]||[];
+      const dated=days.map(d=>lessons[d]).filter(l=>l&&l.date);
+      const allOff=dated.length>0&&dated.every(l=>!!(smapIsKidOff(k,l.date)||schedOvKidOff(k,l.date)));
       const on=currViewWeek===wk;
-      h+='<button onclick="setCurrViewWeek(\''+wk+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid '+(on?col:'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--text)')+';font-size:11px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+
-        wk+' <span style="opacity:0.6;font-weight:400">('+days.length+'d)</span></button>';
+      h+='<button onclick="setCurrViewWeek(\''+wk+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid '+(on?col:'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--text)')+';font-size:11px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif'+(allOff?';opacity:0.65':'')+'">'+
+        wk+' <span style="opacity:0.6;font-weight:400">('+(allOff?'off':days.length+'d')+')</span></button>';
     });
     h+='</div>';
 
@@ -4711,6 +4713,16 @@ function renderCurriculumView(el,headerHtml){
           h+='</div>';
         });
         h+='<div style="font-size:10px;color:#6d28d9;margin-top:4px">Check the Pace tab’s Finish Line after accepting to see the impact.</div>';
+        h+='</div>';
+      }
+      // Whole week on break: make-up suggestions can't land in-week, so say
+      // plainly what happens instead of showing five dimmed cards unexplained.
+      const _datedDays=dayNums.map(d=>lessons[d]).filter(l=>l&&l.date);
+      const _allOff=_datedDays.length>0&&_datedDays.every(l=>!!(smapIsKidOff(k,l.date)||schedOvKidOff(k,l.date)));
+      if(_allOff){
+        const _why=smapIsKidOff(k,_datedDays[0].date)||"days off";
+        h+='<div style="background:#e0f2fe;border-left:4px solid #0369a1;border-radius:0 10px 10px 0;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#0c4a6e">';
+        h+='<span style="font-weight:800">Whole week off &middot; '+esc(_why)+'.</span> Nothing is lost &mdash; generated weeks skip these days and the lessons carry forward, shifting the finish date out. Check Pace &rarr; Finish Line for the impact, or use By Subject &rarr; Move to reslot a specific lesson.';
         h+='</div>';
       }
       dayNums.forEach(d=>{
@@ -7350,11 +7362,24 @@ function smapGetWeekDates(plan,weekOffset){
   return dates;
 }
 
+// String range compares only work on zero-padded YYYY-MM-DD; normalize so
+// entries saved as "2026-6-2", with ISO time suffixes, or via legacy field
+// names still match.
+function calNormDate(d){
+  if(!d) return null;
+  const m=String(d).trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  return m?m[1]+"-"+m[2].padStart(2,"0")+"-"+m[3].padStart(2,"0"):String(d);
+}
 function smapIsOff(dateStr){
-  const h=calendarData.holidays||{};
-  for(const v of Object.values(h)){if(dateStr>=(v.start||v.date)&&dateStr<=(v.end||v.start||v.date)) return v.name||"Holiday";}
-  const vc=calendarData.vacations||{};
-  for(const v of Object.values(vc)){if(dateStr>=v.start&&dateStr<=v.end) return v.name||"Vacation";}
+  const ds=calNormDate(dateStr);
+  for(const v of Object.values(calendarData.holidays||{})){
+    const s=calNormDate(v.start||v.date), e=calNormDate(v.end||v.start||v.date);
+    if(s&&ds>=s&&ds<=e) return v.name||"Holiday";
+  }
+  for(const v of Object.values(calendarData.vacations||{})){
+    const s=calNormDate(v.start||v.date), e=calNormDate(v.end||v.start||v.date);
+    if(s&&ds>=s&&ds<=e) return v.name||"Vacation";
+  }
   return null;
 }
 
@@ -7622,10 +7647,11 @@ function lmRenderSubjectView(k,subjects,weekLabels,weekDays,lessons,col){
       const offWhy=smapIsKidOff(k,date)||(ov.dayOff?"Day off":null);
       const idx=dm[d];
       const done=hasExcel&&!isRm&&idx!==undefined&&idx<cursor;
-      rows+='<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;'+((done||isRm)?"opacity:0.55;":"")+'">';
+      const offRow=!!offWhy&&!done&&!isRm; // slot sits on a no-school day — it won't run as shown
+      rows+='<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;'+((done||isRm)?"opacity:0.55;":(offRow?"opacity:0.6;":""))+'">';
       rows+='<span style="color:var(--muted);width:86px;flex-shrink:0">'+fmtD(date)+'</span>';
-      rows+='<span style="flex:1;min-width:0;'+((done||isRm)?"text-decoration:line-through;":"")+'">'+(done?"&#10003; ":"")+(hasExcel?esc(l[sk]):'<span style="font-size:9px;font-weight:800;color:#1a6b5a;background:#f0fdf4;border-radius:6px;padding:1px 5px">MAKE-UP</span>')+'</span>';
-      if(offWhy&&!done&&!isRm) rows+='<span style="font-size:9px;color:#0369a1;font-weight:700;flex-shrink:0">'+esc(offWhy)+'</span>';
+      rows+='<span style="flex:1;min-width:0;'+((done||isRm||offRow)?"text-decoration:line-through;":"")+'">'+(done?"&#10003; ":"")+(hasExcel?esc(l[sk]):'<span style="font-size:9px;font-weight:800;color:#1a6b5a;background:#f0fdf4;border-radius:6px;padding:1px 5px">MAKE-UP</span>')+'</span>';
+      if(offRow) rows+='<span style="font-size:9px;font-weight:800;color:#0369a1;background:#e0f2fe;border-radius:6px;padding:1px 5px;flex-shrink:0;text-transform:uppercase;letter-spacing:0.3px">'+esc(offWhy)+'</span>';
       if(isRm){
         rows+='<button onclick="lmRestoreSubj(\''+k+'\',\''+date+'\',\''+sk+'\')" style="background:none;border:none;color:#3b82f6;font-size:10px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif;flex-shrink:0">undo</button>';
       } else if(!done){
