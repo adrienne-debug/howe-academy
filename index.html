@@ -4784,6 +4784,10 @@ function renderCurriculumView(el,headerHtml){
             h+='<div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:12px;'+(done?"opacity:0.5;text-decoration:line-through;":"")+'">';
             h+='<span style="color:var(--muted);flex:1;min-width:0">'+(done?"&#10003; ":"")+emoji+' '+esc(s.display)+'</span>';
             h+='<span style="font-weight:600">'+esc(lesson[sk])+'</span>';
+            if(!done&&dateStr){
+              const mirror=lmSchedCheckState(k,sk,dateStr);
+              if(mirror&&mirror.done) h+='<span title="'+esc(mirror.title||"")+'" style="font-size:9px;font-weight:800;color:#1a6b5a;background:#f0fdf4;border-radius:6px;padding:1px 5px;flex-shrink:0">&#10003; on schedule</span>';
+            }
             if(dateStr&&!done){
               h+=arrowBtns(sk,oi);
               h+=moveBtn(sk,false);
@@ -7652,6 +7656,46 @@ function lmResetOrder(kid,dateStr){
   renderAll();
 }
 
+// ── LIVE SCHEDULE MIRROR: surface this week's checkmarks on the Lesson Map ──
+// Strikes follow lesson content (auto-advance cursor), so when a kid is
+// catching up the strike lands on the oldest open slot — possibly another
+// day's card. This answers the other question, "was this subject checked off
+// on THIS day's schedule?", straight from the live checked state.
+function lmSchedCheckState(kid,sk,dateStr){
+  if(!dateStr||!weekData||!weekData.tasks||!weekData.tasks.length) return null;
+  const sig=WK+"|"+JSON.stringify(DAY_DT);
+  if(lmSchedCheckState._sig!==sig){
+    const m={}; const yr=new Date().getFullYear();
+    (DAYS||[]).forEach(d=>{
+      if(!DAY_DT[d]) return;
+      const dt=new Date(DAY_DT[d]+", "+yr);
+      if(isNaN(dt.getTime())) return;
+      m[dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0")]=d;
+    });
+    if(!Object.values(m).includes("saturday")&&DAY_DT.friday){
+      const fd=new Date(DAY_DT.friday+", "+yr);
+      if(!isNaN(fd.getTime())){
+        fd.setDate(fd.getDate()+1);
+        m[fd.getFullYear()+"-"+String(fd.getMonth()+1).padStart(2,"0")+"-"+String(fd.getDate()).padStart(2,"0")]="saturday";
+      }
+    }
+    lmSchedCheckState._map=m; lmSchedCheckState._sig=sig;
+  }
+  const dayName=lmSchedCheckState._map[dateStr];
+  if(!dayName) return null; // date outside the live schedule week
+  const paceSubj=((paceData.subjects||{})[kid]||{})[sk];
+  const kws=paceKeywords(kid,sk,paceSubj).map(s=>String(s).toLowerCase().trim());
+  if(!kws.length) return null;
+  let has=false,done=false,title=null;
+  for(const t of weekData.tasks){
+    if(t.who!==kid||(t.day||"")!==dayName) continue;
+    if(!kws.some(kw=>(t.title||"").toLowerCase().includes(kw))) continue;
+    has=true;
+    if(chainDone(t.id,checked,weekData.tasks)){ done=true; if(!title) title=t.title; }
+  }
+  return has?{done,title}:null;
+}
+
 // Shared week→day Move picker, used by By Subject rows and By Week day cards.
 function lmRenderMovePicker(k,sk,col,weekLabels,weekDays,lessons){
   const today=_todayStr();
@@ -7758,6 +7802,8 @@ function lmRenderSubjectView(k,subjects,weekLabels,weekDays,lessons,col){
       rows+='<span style="flex:1;min-width:0;'+((done||isRm||offRow)?"text-decoration:line-through;":"")+'">'+(done?"&#10003; ":"")+(hasExcel?esc(l[sk]):'<span style="font-size:9px;font-weight:800;color:#1a6b5a;background:#f0fdf4;border-radius:6px;padding:1px 5px">MAKE-UP</span>')+'</span>';
       if(offRow) rows+='<span style="font-size:9px;font-weight:800;color:#0369a1;background:#e0f2fe;border-radius:6px;padding:1px 5px;flex-shrink:0;text-transform:uppercase;letter-spacing:0.3px">'+esc(offWhy)+'</span>';
       if(!done&&!isRm&&!offRow){
+        const mirror=lmSchedCheckState(k,sk,date);
+        if(mirror&&mirror.done) rows+='<span title="'+esc(mirror.title||"")+'" style="font-size:9px;font-weight:800;color:#1a6b5a;background:#f0fdf4;border-radius:6px;padding:1px 5px;flex-shrink:0">&#10003; on schedule</span>';
         const runOrd=lmDayRunOrder(k,date,l);
         const pos=runOrd.indexOf(sk);
         if(pos>=0&&runOrd.length>1){
