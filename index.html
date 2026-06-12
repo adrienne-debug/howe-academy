@@ -4614,6 +4614,15 @@ function renderCurriculumView(el,headerHtml){
   });
   h+='</div>';
 
+  // Finish Line target date — drives red/amber on the Pace tab
+  const tgtVal=((currData.targetEnd||{})[k])||"";
+  h+='<div class="ce-section-hdr" style="color:'+col+'">Finish Line Target</div>';
+  h+='<div style="font-size:10px;color:var(--muted);margin-bottom:8px">Subjects projected to finish after this date show red on the Pace tab; overflow that still lands by it shows amber. Leave empty to flag anything that overflows the planned grid.</div>';
+  h+='<div style="background:#f9fafb;border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:16px;display:flex;align-items:center;gap:10px">';
+  h+='<input type="date" value="'+tgtVal+'" onchange="ceSetTargetEnd(\''+k+'\',this.value)" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:13px">';
+  if(tgtVal) h+='<button onclick="ceSetTargetEnd(\''+k+'\',\'\')" style="border:none;background:none;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif">clear</button>';
+  h+='</div>';
+
   // Subject cards
   const sKeys=Object.keys(subjects);
   const active=sKeys.filter(sk=>!subjects[sk].paused);
@@ -5421,6 +5430,13 @@ function ceFlowEnsure(kid,subj){
   }
 }
 
+function ceSetTargetEnd(kid,val){
+  if(!currData.targetEnd) currData.targetEnd={};
+  if(val){ currData.targetEnd[kid]=val; db.ref("curriculum/targetEnd/"+kid).set(val); }
+  else { delete currData.targetEnd[kid]; db.ref("curriculum/targetEnd/"+kid).remove(); }
+  renderAll();
+}
+
 function ceFlowMove(kid,idx,dir){
   if(!currData.flowOrder) currData.flowOrder={};
   const flow=currData.flowOrder[kid]||["computer","ipad","phone","independent","maybe_paper","required_paper"];
@@ -5844,6 +5860,10 @@ function uploadCurriculum(){
     try{
       const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array",cellDates:true});
       const curriculum={uploadedAt:new Date().toISOString(),fileName:f.name,subjects:{},lessons:{},weekDays:{}};
+      // Re-upload replaces the whole curriculum node — carry over settings
+      // that live beside the grid so they survive (flow order, targets).
+      if(currData&&currData.flowOrder) curriculum.flowOrder=currData.flowOrder;
+      if(currData&&currData.targetEnd) curriculum.targetEnd=currData.targetEnd;
       const empty=v=>{const s=String(v??"").trim();return !s||s==="nan"||s==="NaN"||s==="None"||s==="—"||s==="undefined";};
       const weekNum=w=>{const m=String(w).match(/Wk\s*(\d+)/i);return m?parseInt(m[1]):0;};
 
@@ -8520,7 +8540,16 @@ function computeFinishLines(forKid){
         }
       }
       if(status==="ontime"&&lastPlanned&&projDate>lastPlanned) status="amber";
-      rows.push({kid,sk,display:s.display||sk,remaining,slots:slots.length,lastPlanned,projDate,overflow,status});
+      // Target finish date (Curriculum → Finish Line Target): red only when
+      // the projection slips past it; grid overflow that still lands by the
+      // target is amber — those weeks just aren't planned yet. No target set
+      // = old behavior (red on any grid overflow).
+      const target=calNormDate(((currData.targetEnd||{})[kid])||null);
+      if(target&&projDate){
+        if(status==="red"&&projDate<=target) status="amber";
+        else if((status==="ontime"||status==="amber")&&projDate>target) status="red";
+      }
+      rows.push({kid,sk,display:s.display||sk,remaining,slots:slots.length,lastPlanned,projDate,overflow,status,target});
     }
   }
   return rows;
@@ -8596,7 +8625,10 @@ function renderFinishLine(forKid){
   const byKid={};
   rows.forEach(r=>{ if(!byKid[r.kid]) byKid[r.kid]=[]; byKid[r.kid].push(r); });
   Object.keys(byKid).forEach(k=>{
-    if(Object.keys(byKid).length>1) h+='<div style="font-size:11px;font-weight:700;color:'+(PACE_KCOL[k]||"#111827")+';margin:8px 0 4px">'+cap(k)+'</div>';
+    const tgt=byKid[k][0]&&byKid[k][0].target;
+    const tgtChip=tgt?' <span style="font-weight:600;font-size:9px;color:var(--muted)">&middot; target '+fmt(tgt)+'</span>':'';
+    if(Object.keys(byKid).length>1) h+='<div style="font-size:11px;font-weight:700;color:'+(PACE_KCOL[k]||"#111827")+';margin:8px 0 4px">'+cap(k)+tgtChip+'</div>';
+    else if(tgt) h+='<div style="font-size:10px;font-weight:600;color:var(--muted);margin:0 0 4px">target '+fmt(tgt)+'</div>';
     byKid[k].sort((a,b)=>({red:0,stalled:1,amber:2,ontime:3,done:4})[a.status]-({red:0,stalled:1,amber:2,ontime:3,done:4})[b.status]);
     byKid[k].forEach(r=>{
       const col=COLS[r.status];
@@ -8605,7 +8637,7 @@ function renderFinishLine(forKid){
       h+='<span style="color:var(--muted);font-size:11px;flex-shrink:0">'+r.remaining+' left &middot; '+r.slots+' slots</span>';
       h+='<span data-finish-pill="'+k+'|'+r.sk+'" style="flex-shrink:0;font-weight:700;font-size:11px;padding:2px 8px;border-radius:10px;background:'+col+'18;color:'+col+'">'
         +(LBLS[r.status]||fmt(r.projDate)+(r.status==="red"?" ⚠":""))+'</span>';
-      if(r.status==="red"&&(momModeActive||adminPinUnlocked)) h+='<button onclick="flExtendSubject(\''+k+'\',\''+r.sk+'\')" style="flex-shrink:0;border:1px solid #ef4444;background:#fff;color:#ef4444;border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Extend</button>';
+      if((r.status==="red"||r.status==="amber")&&(momModeActive||adminPinUnlocked)) h+='<button onclick="flExtendSubject(\''+k+'\',\''+r.sk+'\')" style="flex-shrink:0;border:1px solid '+(r.status==="red"?"#ef4444":"#f59e0b")+';background:#fff;color:'+(r.status==="red"?"#ef4444":"#b45309")+';border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Extend</button>';
       h+='</div>';
     });
   });
