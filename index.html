@@ -1376,6 +1376,10 @@ function initFb() {
       if(currData) buildCurrPaceCum();
       if(tab==="schedule"||tab==="pace"){const el=document.getElementById("content");if(el)renderAll();}
     });
+    db.ref("shape_sigs").on("value",s=>{
+      committedShapeSigs=s.val()||{};
+      try{localStorage.setItem("ha_shape_sigs",JSON.stringify(committedShapeSigs));}catch(e){}
+    });
     db.ref("archive").on("value",s=>{
       archive=s.val()||{};
       try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
@@ -1417,7 +1421,7 @@ function initFb() {
       tryAutoCommit();
     });
     db.ref("curriculum").once("value",s=>{
-      if(s.val()){currData=s.val();buildCurrPaceCum();dbg("curriculum loaded: "+Object.keys(currData.subjects||{}).join(","));runDisplacement();if(tab==="schedule")renderAll();}
+      if(s.val()){currData=s.val();buildCurrPaceCum();dbg("curriculum loaded: "+Object.keys(currData.subjects||{}).join(","));runDisplacement();if(tab==="schedule")renderAll();setTimeout(autoGenerateWeekIfNeeded,3000);}
     });
     db.ref("config/rules").on("value",s=>{
       rulesData=s.val()||null;
@@ -1470,6 +1474,7 @@ function boot() {
   try{ const cms=localStorage.getItem("ha_co_manual_sat"); if(cms) coManualSat=JSON.parse(cms); }catch(e){}
   try{ const cal=localStorage.getItem("ha_calendar"); if(cal){const d=JSON.parse(cal);calendarData={holidays:d.holidays||{},vacations:d.vacations||{},kidOverrides:d.kidOverrides||{}};} }catch(e){}
   try{ const so=localStorage.getItem("ha_sched_overrides"); if(so) scheduleOverrides=JSON.parse(so); }catch(e){}
+  try{ const ss=localStorage.getItem("ha_shape_sigs"); if(ss) committedShapeSigs=JSON.parse(ss); }catch(e){}
   try{ const sm=localStorage.getItem("ha_sessionMaps"); if(sm) sessionMapData=JSON.parse(sm); }catch(e){}
   pendingSpins=ld(WK+"_pending_spins")||{};
 }
@@ -2780,6 +2785,28 @@ function renderSchedule(el){
     h+='</div>'; // close .sched-locked-wrap
   } else {
     h+='</div>'; // close .time-slots
+  }
+
+  // Mom notices: auto-generated week + structure drift since commit
+  if(momModeActive){
+    let agn=null; try{agn=JSON.parse(localStorage.getItem("ha_autogen_notice")||"null");}catch(e){}
+    if(agn&&("week"+agn.week)===WK){
+      h+='<div style="margin:12px;border-left:4px solid #1a6b5a;background:#f0fdf4;border-radius:0 10px 10px 0;padding:10px 12px;display:flex;align-items:center;gap:10px">';
+      h+='<div style="flex:1;min-width:0"><div style="font-size:11px;font-weight:800;color:#1a6b5a;text-transform:uppercase;letter-spacing:0.4px">&#10024; Week '+agn.week+' generated automatically</div>';
+      h+='<div style="font-size:11px;color:#166534;margin-top:2px">Built from the Calendar + Lesson Map. Review to tweak and regenerate.</div></div>';
+      h+='<button onclick="agReview()" style="border:1px solid #1a6b5a;background:#fff;color:#1a6b5a;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0">Review</button>';
+      h+='<button onclick="agDismiss()" style="background:none;border:none;color:#9ca3af;font-size:15px;font-weight:700;cursor:pointer;flex-shrink:0">&times;</button>';
+      h+='</div>';
+    }
+    try{
+      if(weekShapeChanged()){
+        h+='<div style="margin:12px;border-left:4px solid #f59e0b;background:#fffbeb;border-radius:0 10px 10px 0;padding:10px 12px;display:flex;align-items:center;gap:10px">';
+        h+='<div style="flex:1;min-width:0"><div style="font-size:11px;font-weight:800;color:#92400e;text-transform:uppercase;letter-spacing:0.4px">Schedule structure changed</div>';
+        h+='<div style="font-size:11px;color:#78350f;margin-top:2px">Lesson Map or Calendar edits aren\'t in this week\'s schedule yet.</div></div>';
+        h+='<button onclick="openPlanNextWeek('+currWeekNum()+')" style="border:1px solid #f59e0b;background:#fff;color:#92400e;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0">Regenerate</button>';
+        h+='</div>';
+      }
+    }catch(e){}
   }
 
   // Carry-over alert from displacement — mom view only
@@ -7447,6 +7474,29 @@ function gwSyncConfigOverrides(weekNum,config,dropped){
   saveScheduleOverrides();
   buildCurrPaceCum();
 }
+
+// ── WEEK SHAPE SIGNATURE: detect structure edits made AFTER a week was built ──
+// Snapshot of the resolved pattern is stored at commit; if Lesson Map or
+// Calendar edits later change the active week's pattern, a banner offers
+// one-tap regeneration (last-minute schedule changes, forgotten edits).
+let committedShapeSigs={}; // {weekLabel: signature-at-commit}
+function weekShapeSig(weekNum){
+  const r=resolveWeekSlots(weekNum);
+  if(!r) return "";
+  const kids=Object.keys(r.slots).sort();
+  return JSON.stringify(kids.map(k2=>{
+    const ks=r.slots[k2];
+    return [k2,Object.keys(ks).sort().map(sk=>[sk,ks[sk]])];
+  }));
+}
+function weekShapeChanged(){
+  const stored=committedShapeSigs[WK];
+  if(!stored) return false;
+  const cur=weekShapeSig(currWeekNum());
+  return !!cur&&cur!==stored;
+}
+function agDismiss(){ try{localStorage.removeItem("ha_autogen_notice");}catch(e){} renderAll(); }
+function agReview(){ try{localStorage.removeItem("ha_autogen_notice");}catch(e){} openPlanNextWeek(currWeekNum()); }
 
 // ── LESSON MAP EDITOR actions ──
 let lmAddOpen=null; // "kid|dateStr" when the add-subject picker is open
@@ -13878,6 +13928,54 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
   return {dayData,cursors};
 }
 
+// Which plan week does a date fall in? (Mon–Sun ranges; null past the grid)
+function weekNumForDate(dateStr){
+  const mx=_maxPlanWeek();
+  for(let w=1;w<=mx;w++){
+    const r=gwWeekDateRange(w);
+    if(r&&dateStr>=r.start&&dateStr<=r.end) return w;
+  }
+  return null;
+}
+// Does the Excel grid plan Saturday lessons for week wn?
+function gwSatPlanned(wn){
+  const r=gwWeekDateRange(wn);
+  if(!r||!currData||!currData.lessons) return false;
+  const m=gwParseDate(r.start); m.setDate(m.getDate()+5);
+  const sat=m.getFullYear()+"-"+String(m.getMonth()+1).padStart(2,"0")+"-"+String(m.getDate()).padStart(2,"0");
+  for(const kid of Object.keys(currData.lessons)){
+    const lessons=currData.lessons[kid]||{};
+    for(const dn of Object.keys(lessons)){ if(lessons[dn]&&lessons[dn].date===sat) return true; }
+  }
+  return false;
+}
+
+// ── AUTO-GENERATE: when a new plan week has started and no schedule exists,
+// build and commit it with a clean default config — the Calendar and Lesson
+// Map drive the shape. A review banner appears; the wizard can regenerate
+// with different settings anytime (auto overrides are cleared per commit).
+let _autoGenTried=false;
+function autoGenerateWeekIfNeeded(){
+  if(_autoGenTried) return;
+  if(!db||!currData||!currData.subjects||!currData.weekDays||!currData.lessons) return;
+  const wn=weekNumForDate(_todayStr());
+  if(!wn||wn<=currWeekNum()) return; // still inside (or behind) the active week
+  _autoGenTried=true;
+  db.ref("week"+wn+"/tasks").once("value",s=>{
+    if(s.val()&&Object.keys(s.val()).length) return; // another device already built it
+    const cfg={weekNum:String(wn),babysitter:{},withSitter:[],skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:gwSatPlanned(wn),redistribute:[],autoAdvance:true};
+    const gen=generateWeek(cfg);
+    if(gen.error){ dbg("auto-gen wk"+wn+" skipped: "+gen.error); return; }
+    gwConfig=cfg;
+    gwResult=gen.result; gwDropped=gen.dropped; gwCarryOverCount=gen.carryOverCount||0;
+    gwCursors=gen.cursors||null; gwCalendarSkips=gen.calendarSkips||null;
+    gwCommit();
+    try{localStorage.setItem("ha_autogen_notice",JSON.stringify({week:wn,ts:Date.now()}));}catch(e){}
+    dbg("auto-generated week "+wn);
+    renderAll();
+  });
+}
+
 function generateWeek(config){
   const weekNum=parseInt(config.weekNum);
   if(!weekNum) return {error:"Week number required"};
@@ -14121,10 +14219,17 @@ function gwCommit(){
   const d=gwResult;
 
   // Record this generation's one-off shape choices as auto overrides so the
-  // Lesson Map, pace drift, and Finish Line see the week as actually planned
+  // Lesson Map, pace drift, and Finish Line see the week as actually planned,
+  // then snapshot the resolved structure for later change detection.
   try{
     const wn=parseInt((d.week||"").replace(/\D/g,""));
-    if(wn) gwSyncConfigOverrides(wn,gwConfig||{},gwDropped||[]);
+    if(wn){
+      gwSyncConfigOverrides(wn,gwConfig||{},gwDropped||[]);
+      const sig=weekShapeSig(wn);
+      committedShapeSigs[d.week]=sig;
+      try{localStorage.setItem("ha_shape_sigs",JSON.stringify(committedShapeSigs));}catch(e2){}
+      if(db) db.ref("shape_sigs/"+d.week).set(sig);
+    }
   }catch(e){ console.log("[HA] override sync error",e); }
 
   // Same logic as loadJson
