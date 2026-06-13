@@ -8905,24 +8905,60 @@ function parsePageNum(text){
 // assuming each book started at page 1 (books were begun before the app). Books
 // are detected by the label stem minus the page tokens ("mr5" vs "mr6"), and
 // each book's max page is banked so MR5→MR6 doesn't reset the count.
-function subjectPagesReached(kid,sk){
-  const seq=buildSubjectLessons(kid,sk);
+// Label stem minus the page tokens — identifies the book ("MR5 pp.148"→"MR5").
+function _bookKey(t){ return String(t||'').replace(/\b(?:pp?|pg|pgs|page|pages)\.?\s*\d+\s*(?:[–\-]\s*\d+)?/ig,'').replace(/\s+/g,' ').trim(); }
+// Pages worked through over seq[0..uptoIdx], banked per book (each book starts
+// at page 1) so MR5→MR6 sums instead of resetting. null when not page-based.
+function _bankedPages(seq,uptoIdx){
   if(!seq.length) return null;
-  let cursor=0; try{cursor=computeSubjectCursor(kid,sk);}catch(e){}
-  const upto=Math.min(Math.max(cursor,0),seq.length-1); // include where they are now
-  const bookKey=t=>String(t||'').replace(/\b(?:pp?|pg|pgs|page|pages)\.?\s*\d+\s*(?:[–\-]\s*\d+)?/ig,'').replace(/\s+/g,' ').trim().toLowerCase();
+  const upto=Math.min(Math.max(uptoIdx,0),seq.length-1);
   let total=0,isPaged=false,curBook=null,curMax=0;
   for(let i=0;i<=upto;i++){
     const p=parsePageNum(seq[i].lesson);
     if(p===null) continue;
     isPaged=true;
-    const bk=bookKey(seq[i].lesson);
+    const bk=_bookKey(seq[i].lesson).toLowerCase();
     if(curBook===null) curBook=bk;
     else if(bk!==curBook){ total+=curMax; curBook=bk; curMax=0; }
     if(p>curMax) curMax=p;
   }
   if(isPaged) total+=curMax;
   return isPaged?total:null;
+}
+function subjectPagesReached(kid,sk){
+  let cursor=0; try{cursor=computeSubjectCursor(kid,sk);}catch(e){}
+  return _bankedPages(buildSubjectLessons(kid,sk),cursor);
+}
+// One subject's beginning→end progress for the Pace bars: pages for workbooks
+// (page X of Y across all its books), lessons otherwise.
+function subjectProgress(kid,sk){
+  const s=((paceData.subjects||{})[kid]||{})[sk];
+  const _cs=((currData&&currData.subjects)||{})[kid]||{};
+  if(!s||(_cs[sk]&&_cs[sk].tracking==="daily")) return null;
+  const totL=s.total||0; if(totL<=0) return null;
+  let cur=0; try{cur=computeSubjectCursor(kid,sk);}catch(e){}
+  const seq=buildSubjectLessons(kid,sk);
+  const curP=_bankedPages(seq,cur);
+  if(curP!==null){
+    const totP=_bankedPages(seq,seq.length-1)||curP;
+    return {label:s.label||sk,unit:'page',cur:Math.min(curP,totP),total:totP,pct:totP?Math.min(100,Math.round(curP/totP*100)):0,done:cur>=totL};
+  }
+  return {label:s.label||sk,unit:'lesson',cur:Math.min(cur,totL),total:totL,pct:Math.min(100,Math.round(cur/totL*100)),done:cur>=totL};
+}
+// Books inside a page-based subject + whether each is finished (cursor past its
+// last lesson) — feeds the wins list with "finished MR5" milestones.
+function subjectBooks(kid,sk){
+  const seq=buildSubjectLessons(kid,sk);
+  if(!seq.length) return [];
+  let cursor=0; try{cursor=computeSubjectCursor(kid,sk);}catch(e){}
+  const books=[];
+  seq.forEach((e,i)=>{
+    if(parsePageNum(e.lesson)===null) return;
+    const nm=_bookKey(e.lesson), key=nm.toLowerCase();
+    const last=books[books.length-1];
+    if(!last||last.key!==key) books.push({name:nm,key,lastIdx:i}); else last.lastIdx=i;
+  });
+  return books.map(b=>({name:b.name,finished:cursor>b.lastIdx}));
 }
 // Lifetime "how far you've come" totals — fully derived (no stored counter to
 // drift): lessons from the cursor (offset already folds in pre-app lessons),
@@ -8946,9 +8982,65 @@ function lifetimeTotals(kidFilter){
   if(starts.length){ const d=new Date(starts[0]+"T12:00:00"); if(!isNaN(d)) since=d.toLocaleDateString("en-US",{month:"long",year:"numeric"}); }
   return {pages,lessons,since};
 }
+// A week "counts as done" when ≥ the core floor of its countable tasks are
+// complete (same rule as the per-kid week). null = no countable tasks (a full
+// break week) so it neither counts nor breaks a streak.
+function weekCompletionPct(tasks,checkedObj,kidFilter){
+  const arr=tasks||[], ck=checkedObj||{};
+  const all=(kidFilter==null||kidFilter==="all"||kidFilter==="mom");
+  const cascAway=new Set(arr.filter(t=>t.id.endsWith("_c")).map(t=>t.id.replace(/_c$/,"")));
+  const countable=arr.filter(t=>(all||t.who===kidFilter)&&(!cascAway.has(t.id)||!!ck[t.id])&&!(t.title||"").toLowerCase().includes("lunch"));
+  if(!countable.length) return null;
+  const done=countable.filter(t=>chainDone(t.id,ck,arr)).length;
+  return Math.round(done/countable.length*100);
+}
+// Core-week streak + finished count — derived from archive + the live week.
+// Break weeks (null pct) are skipped so a vacation doesn't reset a streak; the
+// in-progress week only extends the streak once it meets the floor.
+function paceStreak(kidFilter){
+  const weeks=[];
+  Object.values(archive||{}).forEach(aw=>{
+    const num=parseInt(((aw.weekLabel||"").match(/\d+/)||[0])[0])||0;
+    const pct=weekCompletionPct(aw.tasks,aw.checked,kidFilter);
+    if(pct===null) return;
+    weeks.push({num,met:pct>=PACE_CORE_FLOOR});
+  });
+  const curNum=currWeekNum();
+  if(!weeks.some(w=>w.num===curNum)){
+    const cur=weekCompletionPct(weekData.tasks,checked,kidFilter);
+    if(cur!==null&&cur>=PACE_CORE_FLOOR) weeks.push({num:curNum,met:true});
+  }
+  weeks.sort((a,b)=>a.num-b.num);
+  let streak=0;
+  for(let i=weeks.length-1;i>=0;i--){ if(weeks[i].met) streak++; else break; }
+  return {finished:weeks.filter(w=>w.met).length,streak,weeks:weeks.length};
+}
+// Wins feed: finished books (📖, page subjects) + fully-completed non-page
+// subjects (🎉). Page subjects are represented by their books, so they're not
+// double-listed as completed subjects.
+function paceWins(kidFilter){
+  const s=paceStreak(kidFilter);
+  const kids=(kidFilter&&kidFilter!=="all"&&kidFilter!=="mom")?[kidFilter]:PACE_KIDS;
+  const done=[],books=[];
+  for(const k of kids){
+    const kidSubjs=(paceData.subjects&&paceData.subjects[k])||{};
+    const _cs=(currData&&currData.subjects&&currData.subjects[k])||{};
+    for(const sk of Object.keys(kidSubjs)){
+      const sub=kidSubjs[sk];
+      if(_cs[sk]&&_cs[sk].tracking==="daily") continue;
+      const tot=sub.total||0; if(tot<=0) continue;
+      let cur=0; try{cur=computeSubjectCursor(k,sk);}catch(e){}
+      const bks=subjectBooks(k,sk);
+      bks.forEach(b=>{ if(b.finished) books.push({kid:k,name:b.name}); });
+      if(cur>=tot&&!bks.length) done.push({kid:k,subject:sub.label||sk});
+    }
+  }
+  return {finished:s.finished,streak:s.streak,done,books};
+}
 
-// GLANCE Pace view — kid-facing + mom's fast check. Reassurance, not dense
-// tables; detailed projections/adjustments live in Admin → Progress.
+// GLANCE Pace view — kid + mom accomplishment dashboard. NOT the this-week/daily
+// tracker (that's on the Schedule); this is "how far you've come": book progress
+// beginning→end, pages, weeks accomplished, wins. Steering lives in Admin → Progress.
 function renderPace(el){
   if(!el){el=document.getElementById("content");if(!el)return;}
   syncPaceData();
@@ -8962,59 +9054,54 @@ function renderPace(el){
     });
     h+='</div>';
   }
-  // This week (overall, for the bar + verdict)
-  const weeklyCol=(kid==="all"||kid==="mom")?"#111827":PACE_KCOL[kid]||"#111827";
-  const _wkMatch=t=>(kid==="all"||kid==="mom")?true:t.who===kid;
-  const _wkCascAway=new Set(weekData.tasks.filter(t=>t.id.endsWith("_c")).map(t=>t.id.replace(/_c$/,"")));
-  const _wkCountable=weekData.tasks.filter(t=>_wkMatch(t)&&(!_wkCascAway.has(t.id)||!!checked[t.id])&&!(t.title||"").toLowerCase().includes("lunch"));
-  const weeklyTotal=_wkCountable.length;
-  const weeklyDone=_wkCountable.filter(t=>chainDone(t.id,checked,weekData.tasks)).length;
-  const weeklyPct=weeklyTotal?Math.min(100,Math.round(weeklyDone/weeklyTotal*100)):0;
 
-  // Per-kid rollup, computed once → drives the verdict and the per-kid lines
-  const _chip=(t,fg,bg,bd)=>'<span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:10px;background:'+bg+';border:1px solid '+bd+';color:'+fg+';white-space:nowrap">'+t+'</span>';
-  const _green=t=>_chip(t,'#15803d','#f0fdf4','#bbf7d0'), _amber=t=>_chip(t,'#92400e','#fffbeb','#fde68a');
-  const glanceKids=(kid==="all"||kid==="mom")?PACE_KIDS:[kid];
-  const roll=glanceKids.map(k=>({k,st:paceKidStatus(k),wk:paceKidWeek(k)})).filter(r=>r.st.subjects||r.wk.total);
-
-  // Verdict banner — one positive glance, then the this-week bar
-  h+=paceVerdictHtml(roll,weeklyPct);
-  h+='<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:14px">'+
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
-    '<div style="font-size:12px;font-weight:600;color:var(--muted)">This week</div>'+
-    '<div style="font-size:12px;font-weight:700;color:'+weeklyCol+'">'+weeklyPct+'%</div></div>'+
-    '<div class="day-prog-bar" style="margin-top:0"><div class="day-prog-fill" style="width:'+weeklyPct+'%;background:'+weeklyCol+'"></div></div></div>';
-
-  // Per-kid glance — core-week-met leads when a kid is behind ideal pace, so
-  // "behind stretch but did the week" reads as the success it is.
-  roll.forEach(({k,st,wk})=>{
-    const col=PACE_KCOL[k];
-    const behind=st.subjects&&st.behindN>0;
-    const chips=[];
-    if(wk.met&&(behind||!st.subjects)) chips.push(_green('Core week met ✓'));
-    if(st.subjects){
-      if(!behind) chips.push(_green('On track ✓'));
-      else chips.push(_amber((st.onN+st.aheadN)+' of '+st.subjects+' on track · '+st.behindN+' to nudge'));
-    }
-    h+='<div class="pace-kid-card" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">'+
-      '<div class="pace-kid-name" style="color:'+col+'">'+cap(k)+'</div>'+
-      '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">'+chips.join('')+'</div>'+
-      '</div>';
-  });
-  // Look how far you've come — warm lifetime closer (derived; counts pre-app work)
+  // ── Accomplishment header: pages, lessons, weeks done, streak ──────────────
   const _lt=lifetimeTotals(kid);
-  if(_lt.lessons>0||_lt.pages>0){
-    const who=(kid==="all"||kid==="mom")?'your family has':cap(kid)+' has';
-    const since=_lt.since?' since '+_lt.since:'';
-    let line;
-    if(_lt.pages>0&&_lt.lessons>0) line=who+' worked through <b>'+_lt.pages.toLocaleString()+' pages</b> and completed <b>'+_lt.lessons.toLocaleString()+' lessons</b>'+since+'. 🎉';
-    else if(_lt.pages>0) line=who+' worked through <b>'+_lt.pages.toLocaleString()+' pages</b>'+since+'. 🎉';
-    else line=who+' completed <b>'+_lt.lessons.toLocaleString()+' lessons</b>'+since+'. 🎉';
-    h+='<div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:12px;padding:12px 14px;margin-top:12px">'+
-      '<div style="font-size:10px;font-weight:800;color:#7c3aed;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px">Look how far you’ve come</div>'+
-      '<div style="font-size:13px;color:#581c87;line-height:1.45">'+line+'</div></div>';
+  const _stk=paceStreak(kid);
+  const who=(kid==="all"||kid==="mom")?'Your family':cap(kid);
+  const stat=(n,l)=>'<div style="flex:1;min-width:64px;text-align:center;background:#fff;border:1px solid #e9d5ff;border-radius:10px;padding:8px 6px"><div style="font-size:22px;font-weight:800;color:#6b21a8;font-family:\'Fraunces\',serif;line-height:1.1">'+n+'</div><div style="font-size:10px;color:#7c3aed;font-weight:600;margin-top:2px">'+l+'</div></div>';
+  const tiles=[];
+  if(_lt.pages>0) tiles.push(stat(_lt.pages.toLocaleString(),'pages'));
+  if(_lt.lessons>0) tiles.push(stat(_lt.lessons.toLocaleString(),'lessons'));
+  tiles.push(stat(_stk.finished,'weeks done'));
+  if(_stk.streak>=2) tiles.push(stat('🔥 '+_stk.streak,'week streak'));
+  h+='<div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:12px;padding:14px;margin-bottom:12px">'+
+    '<div style="font-size:10px;font-weight:800;color:#7c3aed;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:10px">'+who+'’s progress'+(_lt.since?' · since '+_lt.since:'')+'</div>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">'+tiles.join('')+'</div></div>';
+
+  // ── Per-kid book progress: beginning → end of each book/subject ────────────
+  const showKids=(kid==="all"||kid==="mom")?PACE_KIDS:[kid];
+  showKids.forEach(k=>{
+    const kidSubjs=(paceData.subjects&&paceData.subjects[k])||{};
+    const bars=Object.keys(kidSubjs).map(sk=>subjectProgress(k,sk)).filter(Boolean);
+    if(!bars.length) return;
+    bars.sort((a,b)=>(a.done-b.done)||(b.pct-a.pct)); // in-progress first, nearest-done first
+    const col=PACE_KCOL[k];
+    h+='<div class="pace-kid-card"><div class="pace-kid-name" style="color:'+col+';margin-bottom:8px">'+cap(k)+'</div>';
+    bars.forEach(b=>{
+      const lbl=b.unit==='page'?('page '+b.cur.toLocaleString()+' of '+b.total.toLocaleString()):(b.cur+' of '+b.total+' lessons');
+      h+='<div style="margin-bottom:9px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin-bottom:3px">'+
+        '<span style="font-weight:600">'+esc(b.label)+(b.done?' <span style="color:#16a34a">✓</span>':'')+'</span>'+
+        '<span style="color:var(--muted);font-size:11px">'+lbl+' · '+b.pct+'%</span></div>'+
+        '<div class="pace-bar"><div class="pace-bar-fill" style="width:'+b.pct+'%;background:'+(b.done?'#16a34a':col)+'"></div></div>'+
+        '</div>';
+    });
+    h+='</div>';
+  });
+
+  // ── Wins: finished books + completed subjects ──────────────────────────────
+  const _win=paceWins(kid);
+  if(_win.books.length||_win.done.length){
+    const nm=(o,key)=>((kid==="all"||kid==="mom")?cap(o.kid)+' ':'')+'finished <b>'+esc(o[key])+'</b>';
+    let items='';
+    _win.books.slice(0,10).forEach(b=>{ items+='<div style="font-size:12px;color:#166534;padding:2px 0">📖 '+nm(b,'name')+'</div>'; });
+    _win.done.slice(0,10).forEach(d=>{ items+='<div style="font-size:12px;color:#166534;padding:2px 0">🎉 '+nm(d,'subject')+'</div>'; });
+    h+='<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:12px 14px;margin-top:10px">'+
+      '<div style="font-size:10px;font-weight:800;color:#15803d;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px">Wins 🎉</div>'+items+'</div>';
   }
-  if(roll.length) h+='<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">Finish dates &amp; adjustments live in <b>Admin → Progress</b></div>';
+
+  if(showKids.some(k=>Object.keys((paceData.subjects&&paceData.subjects[k])||{}).length)) h+='<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:10px">Finish dates, pacing &amp; adjustments live in <b>Admin → Progress</b></div>';
   h+='</div>';
   el.innerHTML=h;
 }
@@ -9066,6 +9153,10 @@ function renderProgress(el,headerHtml){
     '</div>'+
     '<div class="day-prog-bar" style="margin-top:0"><div class="day-prog-fill" style="width:'+weeklyPct+'%;background:'+weeklyCol+'"></div></div>'+
     '</div>';
+
+  // Steering summary — the verdict/on-track read lives with the depth view
+  const _roll=((kid==="all"||kid==="mom")?PACE_KIDS:[kid]).map(k=>({k,st:paceKidStatus(k),wk:paceKidWeek(k)})).filter(r=>r.st.subjects||r.wk.total);
+  h+=paceVerdictHtml(_roll,weeklyPct);
 
   // Finish Line — projected completion per subject (calendar- and override-aware)
   try{ h+=renderFinishLine(kid); }catch(e){ console.log("[HA] finish line error",e); }
