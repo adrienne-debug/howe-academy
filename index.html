@@ -4675,6 +4675,17 @@ function renderCurriculumView(el,headerHtml){
   });
   if(weekLabels.length){
     h+='<div class="ce-section-hdr" style="color:'+col+';margin-top:14px">Lesson Map ('+weekLabels.length+' weeks)</div>';
+    // Calendar drift: lessons on break days, or week numbers disagreeing with
+    // the calendar (and between kids). One confirmed action fixes all kids.
+    const _alignP=alignPlanPreview();
+    if(_alignP.any){
+      let tot=0,drift=false;
+      Object.values(_alignP.kids).forEach(x=>{ tot+=x.onBreak; if(x.relabeled) drift=true; });
+      h+='<div style="background:#f5f3ff;border-left:4px solid #8b5cf6;border-radius:0 10px 10px 0;padding:10px 12px;margin:0 0 8px">';
+      h+='<div style="font-size:12px;color:#4c1d95;margin-bottom:6px">'+(tot?('<b>'+tot+' lesson'+(tot>1?'s':'')+' sit on holiday/vacation days.</b> '):'')+(drift?'Week numbers drift from the calendar between kids. ':'')+'Aligning slides those lessons to the next school days for every kid and renumbers weeks so Wk N is the same calendar week for everyone &mdash; break weeks stay visible with nothing scheduled.</div>';
+      h+='<button onclick="alignPlanApply()" style="border:1px solid #8b5cf6;background:#fff;color:#6d28d9;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Align weeks with calendar&hellip;</button>';
+      h+='</div>';
+    }
     h+='<div style="display:flex;gap:4px;margin:2px 0 8px">';
     [["week","By Week"],["subject","By Subject"]].forEach(p=>{
       const on=lmViewMode===p[0];
@@ -4687,10 +4698,14 @@ function renderCurriculumView(el,headerHtml){
     } else {
     h+='<div style="font-size:10px;color:var(--muted);margin:0 0 8px">Tap a week to edit days; &#9650;&#9660; set a day&rsquo;s run order, Move sends a subject to another day. Changes apply when the week is next generated or regenerated.</div>';
     h+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:14px">';
-    weekLabels.forEach(wk=>{
+    // Full numeric range: week labels with no slots (break weeks after
+    // alignment) still get a pill so holidays stay visible.
+    const _wkNums=weekLabels.map(w=>parseInt((w.match(/\d+/)||[0])[0])||0).filter(n=>n>0);
+    const _wkAll=[]; if(_wkNums.length){ for(let n=Math.min(..._wkNums);n<=Math.max(..._wkNums);n++) _wkAll.push("Wk "+n); }
+    _wkAll.forEach(wk=>{
       const days=weekDays[wk]||[];
       const dated=days.map(d=>lessons[d]).filter(l=>l&&l.date);
-      const allOff=dated.length>0&&dated.every(l=>!!(smapIsKidOff(k,l.date)||schedOvKidOff(k,l.date)));
+      const allOff=!days.length||(dated.length>0&&dated.every(l=>!!(smapIsKidOff(k,l.date)||schedOvKidOff(k,l.date))));
       const on=currViewWeek===wk;
       h+='<button onclick="setCurrViewWeek(\''+wk+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid '+(on?col:'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--text)')+';font-size:11px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif'+(allOff?';opacity:0.65':'')+'">'+
         wk+' <span style="opacity:0.6;font-weight:400">('+(allOff?'off':days.length+'d')+')</span></button>';
@@ -4847,6 +4862,9 @@ function renderCurriculumView(el,headerHtml){
         }
         h+='</div>';
       });
+    } else if(currViewWeek&&!weekDays[currViewWeek]){
+      const _gn=parseInt((currViewWeek.match(/\d+/)||[0])[0])||0;
+      if(_gn) h+=lmRenderOffWeek(k,col,_gn);
     }
     } // end by-week mode
   }
@@ -7674,6 +7692,147 @@ function lmNudgeSubj(kid,dateStr,sk,dir){
 function lmResetOrder(kid,dateStr){
   setSchedOverride(dateStr,kid,o=>{ delete o.order; });
   renderAll();
+}
+
+// ── ALIGN WEEKS WITH CALENDAR ────────────────────────────────────────────────
+// One confirmed action, all kids: slide lessons sitting on calendar breaks to
+// the next school days (cascading the rest of the plan, skipping later breaks
+// it runs into), then renumber week labels so "Wk N" means the same calendar
+// week for every kid. Break weeks keep their number and show as off — visible
+// but nothing scheduled (the Lucy pattern, by request).
+function lmWeekAnchor(){
+  const t=gwParseDate(_todayStr());
+  t.setDate(t.getDate()-((t.getDay()+6)%7));
+  return {mon:t,num:currWeekNum()};
+}
+function lmWeekNumOfDate(ds){
+  const a=lmWeekAnchor();
+  const d=gwParseDate(ds); d.setDate(d.getDate()-((d.getDay()+6)%7));
+  return a.num+Math.round((d-a.mon)/(7*86400000));
+}
+function lmWeekMonday(weekNum){
+  const a=lmWeekAnchor();
+  const d=new Date(a.mon); d.setDate(d.getDate()+(weekNum-a.num)*7);
+  return d;
+}
+function alignPlanPreview(){
+  const out={any:false,kids:{}};
+  if(!currData||!currData.lessons||!currData.weekDays) return out;
+  const F=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  const today=_todayStr();
+  for(const kid of Object.keys(currData.lessons)){
+    const lessons=currData.lessons[kid]||{};
+    const dns=Object.keys(lessons).map(Number).filter(n=>!isNaN(n)&&lessons[n]&&lessons[n].date).sort((a,b)=>a-b);
+    if(!dns.length) continue;
+    const wdSet=new Set(dns.map(dn=>gwParseDate(lessons[dn].date).getDay()));
+    // old label per dayNum (authoritative: weekDays grouping)
+    const oldLabel={};
+    for(const w of Object.keys(currData.weekDays[kid]||{})){ for(const dn of currData.weekDays[kid][w]) oldLabel[dn]=w; }
+    let reflow=false, prev=null, firstBreak=null, moved=0, onBreak=0;
+    const newDates={};
+    for(const dn of dns){
+      const cur=lessons[dn].date;
+      if(!reflow){
+        const off=cur>=today?smapIsOff(cur):null; // past stays put
+        if(off){ reflow=true; firstBreak=firstBreak||off; }
+        if(off) onBreak++;
+        if(!reflow){ newDates[dn]=cur; prev=cur; continue; }
+      } else if(cur>=today&&smapIsOff(cur)) onBreak++;
+      let d=prev?gwParseDate(prev):gwParseDate(cur);
+      if(prev) d.setDate(d.getDate()+1);
+      while(true){
+        const ds=F(d);
+        if(wdSet.has(d.getDay())&&!smapIsOff(ds)) break;
+        d.setDate(d.getDate()+1);
+      }
+      const ds=F(d);
+      newDates[dn]=ds; if(ds!==cur) moved++;
+      prev=ds;
+    }
+    // relabel everything by calendar week of its (new) date
+    const newWeekDays={}, weekFieldFix={};
+    let relabeled=0;
+    for(const dn of dns){
+      const lbl="Wk "+lmWeekNumOfDate(newDates[dn]);
+      if(!newWeekDays[lbl]) newWeekDays[lbl]=[];
+      newWeekDays[lbl].push(dn);
+      if(oldLabel[dn]!==lbl) relabeled++;
+      if(lessons[dn].week!==undefined&&lessons[dn].week!==lbl) weekFieldFix[dn]=lbl;
+    }
+    for(const lbl of Object.keys(newWeekDays)) newWeekDays[lbl].sort((a,b)=>a-b);
+    if(moved||relabeled){
+      out.any=true;
+      out.kids[kid]={moved,onBreak,relabeled,firstBreak,
+        oldEnd:lessons[dns[dns.length-1]].date,newEnd:newDates[dns[dns.length-1]],
+        newDates,newWeekDays,weekFieldFix};
+    }
+  }
+  return out;
+}
+function alignPlanApply(){
+  const p=alignPlanPreview();
+  if(!p.any){ if(typeof gwShowToast==="function") gwShowToast("Weeks already aligned with the calendar."); return; }
+  let msg="Align everyone's weeks with the calendar?\n";
+  for(const kid of Object.keys(p.kids)){
+    const k=p.kids[kid];
+    msg+="\n"+cap(kid)+": ";
+    if(k.onBreak) msg+=k.onBreak+" lessons sit on "+(k.firstBreak||"break")+" days — everything after slides to the next school days (last day "+k.oldEnd+" → "+k.newEnd+").";
+    else msg+="week numbers renumber to match the calendar ("+k.relabeled+" slots).";
+  }
+  msg+="\n\nBreak weeks will show as off with nothing scheduled. Weeks already generated on the Schedule are not touched.";
+  if(!confirm(msg)) return;
+  const updates={};
+  for(const kid of Object.keys(p.kids)){
+    const k=p.kids[kid];
+    for(const dn of Object.keys(k.newDates)){
+      if(k.newDates[dn]!==currData.lessons[kid][dn].date){
+        currData.lessons[kid][dn].date=k.newDates[dn];
+        updates["lessons/"+kid+"/"+dn+"/date"]=k.newDates[dn];
+      }
+    }
+    for(const dn of Object.keys(k.weekFieldFix)){
+      currData.lessons[kid][dn].week=k.weekFieldFix[dn];
+      updates["lessons/"+kid+"/"+dn+"/week"]=k.weekFieldFix[dn];
+    }
+    currData.weekDays[kid]=k.newWeekDays;
+    updates["weekDays/"+kid]=k.newWeekDays;
+  }
+  currData.lastEdit=new Date().toISOString();
+  updates["lastEdit"]=currData.lastEdit;
+  db.ref("curriculum").update(updates);
+  buildCurrPaceCum();
+  if(typeof gwShowToast==="function") gwShowToast("Weeks aligned — break weeks are now empty for everyone.");
+  renderAll();
+}
+// Synthesized view for a week label with no slots (a break week after
+// alignment): visible day cards, holiday name, nothing scheduled.
+function lmRenderOffWeek(k,col,weekNum){
+  const mon=lmWeekMonday(weekNum);
+  const lessons=(currData.lessons||{})[k]||{};
+  const wdSet=new Set(Object.keys(lessons).map(dn=>lessons[dn]&&lessons[dn].date?gwParseDate(lessons[dn].date).getDay():null).filter(x=>x!==null));
+  if(!wdSet.size) [1,2,3,4,5].forEach(x=>wdSet.add(x));
+  let h='<div style="font-weight:700;font-size:13px;margin-bottom:8px">Wk '+weekNum+' &mdash; no school</div>';
+  let why=null;
+  const cards=[];
+  for(let i=0;i<7;i++){
+    const d=new Date(mon); d.setDate(d.getDate()+i);
+    if(!wdSet.has(d.getDay())) continue;
+    const ds=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+    const off=smapIsKidOff(k,ds);
+    if(off&&!why) why=off;
+    cards.push({ds,label:d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}),off});
+  }
+  h+='<div style="background:#e0f2fe;border-left:4px solid #0369a1;border-radius:0 10px 10px 0;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#0c4a6e">';
+  h+='<span style="font-weight:800">'+esc(why||"Break")+'.</span> Nothing is scheduled this week &mdash; lessons continue on the next school day.';
+  h+='</div>';
+  cards.forEach(c=>{
+    h+='<div style="background:#f8f7f4;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:6px;opacity:0.75">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center">';
+    h+='<div style="font-weight:700;font-size:12px">'+c.label+(c.off?' <span style="color:#0369a1;font-weight:600;font-size:10px">&middot; '+esc(c.off)+'</span>':'')+'</div>';
+    h+='<div style="font-size:11px;color:var(--muted)">'+c.ds+'</div>';
+    h+='</div></div>';
+  });
+  return h;
 }
 
 // ── LIVE SCHEDULE MIRROR: surface this week's checkmarks on the Lesson Map ──
