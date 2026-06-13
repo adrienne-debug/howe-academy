@@ -4682,7 +4682,7 @@ function renderCurriculumView(el,headerHtml){
     });
     h+='</div>';
     if(lmViewMode==="subject"){
-      h+='<div style="font-size:10px;color:var(--muted);margin:0 0 8px">Tap Move on a slot to put that lesson on a different week or day. &#9650;&#9660; set where it runs within its day. Changes apply when the week is next generated.</div>';
+      h+='<div style="font-size:10px;color:var(--muted);margin:0 0 8px">Tap Move on a slot to put that lesson on a different week or day. &#9650;&#9660; set where it runs within its day; &#9998; edits the lesson text (page numbers etc.). Changes apply when the week is next generated.</div>';
       h+=lmRenderSubjectView(k,subjects,weekLabels,weekDays,lessons,col);
     } else {
     h+='<div style="font-size:10px;color:var(--muted);margin:0 0 8px">Tap a week to edit days; &#9650;&#9660; set a day&rsquo;s run order, Move sends a subject to another day. Changes apply when the week is next generated or regenerated.</div>';
@@ -7754,8 +7754,32 @@ let lmViewMode="week";   // "week" | "subject"
 let lmSubjKey=null;      // selected subject in by-subject view
 let lmMovePick=null;     // {date, added} — slot whose Move picker is open
 let lmMoveWeek=null;     // week label chosen inside the move picker
-function lmSetView(m){ lmViewMode=m; lmMovePick=null; lmMoveWeek=null; renderAll(); }
-function lmSelSubj(sk){ lmSubjKey=sk; lmMovePick=null; lmMoveWeek=null; renderAll(); }
+let lmEditSlot=null;     // "kid|dayNum|sk" whose lesson text is being edited
+function lmSetView(m){ lmViewMode=m; lmMovePick=null; lmMoveWeek=null; lmEditSlot=null; renderAll(); }
+function lmSelSubj(sk){ lmSubjKey=sk; lmMovePick=null; lmMoveWeek=null; lmEditSlot=null; renderAll(); }
+function lmEditSlotOpen(kid,dayNum,sk){
+  lmEditSlot=kid+"|"+dayNum+"|"+sk;
+  lmMovePick=null; lmMoveWeek=null;
+  renderAll();
+  setTimeout(()=>{ const i=document.getElementById("lm-edit-inp"); if(i){ i.focus(); i.select(); } },60);
+}
+function lmEditSlotCancel(){ lmEditSlot=null; renderAll(); }
+// Edit one grid slot's lesson text (page numbers etc.) in place. Content-only:
+// the sequence keeps the same slots, so cursors, counts and scheduling shape
+// are untouched — the new text just flows to future generations and views.
+// Blank = cancel (drop a slot with × on its By Week day card instead).
+function lmSaveSlotText(kid,dayNum,sk,val){
+  val=String(val||"").trim();
+  const lk=((currData||{}).lessons||{})[kid];
+  if(!val||!lk||!lk[dayNum]||!lk[dayNum][sk]){ lmEditSlot=null; renderAll(); return; }
+  lk[dayNum][sk]=val;
+  currData.lastEdit=new Date().toISOString();
+  db.ref("curriculum/lessons/"+kid+"/"+dayNum+"/"+sk).set(val);
+  db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  buildCurrPaceCum();
+  lmEditSlot=null;
+  renderAll();
+}
 function lmOpenMove(date,isAdded,sk){
   lmMovePick=(lmMovePick&&lmMovePick.date===date&&lmMovePick.sk===sk)?null:{date:date,added:!!isAdded,sk:sk};
   lmMoveWeek=null;
@@ -7819,6 +7843,13 @@ function lmRenderSubjectView(k,subjects,weekLabels,weekDays,lessons,col){
       const offRow=!!offWhy&&!done&&!isRm; // slot sits on a no-school day — it won't run as shown
       rows+='<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;'+((done||isRm)?"opacity:0.55;":(offRow?"opacity:0.6;":""))+'">';
       rows+='<span style="color:var(--muted);width:86px;flex-shrink:0">'+fmtD(date)+'</span>';
+      if(lmEditSlot===k+"|"+d+"|"+sk&&hasExcel&&!done&&!isRm){
+        rows+='<input id="lm-edit-inp" type="text" value="'+esc(l[sk])+'" onkeydown="if(event.key===\'Enter\')lmSaveSlotText(\''+k+'\','+d+',\''+sk+'\',this.value);else if(event.key===\'Escape\')lmEditSlotCancel()" style="flex:1;min-width:0;padding:4px 8px;border:1.5px solid '+col+';border-radius:7px;font-size:12px;font-family:\'DM Sans\',sans-serif">';
+        rows+='<button onclick="lmSaveSlotText(\''+k+'\','+d+',\''+sk+'\',document.getElementById(\'lm-edit-inp\').value)" style="flex-shrink:0;border:none;background:'+col+';color:#fff;border-radius:7px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save</button>';
+        rows+='<button onclick="lmEditSlotCancel()" style="flex-shrink:0;background:none;border:none;color:var(--muted);font-size:10px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif">cancel</button>';
+        rows+='</div>';
+        return;
+      }
       rows+='<span style="flex:1;min-width:0;'+((done||isRm||offRow)?"text-decoration:line-through;":"")+'">'+(done?"&#10003; ":"")+(hasExcel?esc(l[sk]):'<span style="font-size:9px;font-weight:800;color:#1a6b5a;background:#f0fdf4;border-radius:6px;padding:1px 5px">MAKE-UP</span>')+'</span>';
       if(offRow) rows+='<span style="font-size:9px;font-weight:800;color:#0369a1;background:#e0f2fe;border-radius:6px;padding:1px 5px;flex-shrink:0;text-transform:uppercase;letter-spacing:0.3px">'+esc(offWhy)+'</span>';
       if(!done&&!isRm&&!offRow){
@@ -7835,6 +7866,7 @@ function lmRenderSubjectView(k,subjects,weekLabels,weekDays,lessons,col){
       if(isRm){
         rows+='<button onclick="lmRestoreSubj(\''+k+'\',\''+date+'\',\''+sk+'\')" style="background:none;border:none;color:#3b82f6;font-size:10px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif;flex-shrink:0">undo</button>';
       } else if(!done){
+        if(hasExcel) rows+='<button onclick="lmEditSlotOpen(\''+k+'\','+d+',\''+sk+'\')" title="Edit lesson text / page numbers" style="background:none;border:none;color:#9ca3af;font-size:12px;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0">&#9998;</button>';
         rows+='<button onclick="lmOpenMove(\''+date+'\','+(hasExcel?'false':'true')+',\''+sk+'\')" style="border:1px solid var(--border);background:#fff;color:var(--muted);border-radius:7px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0">'+((lmMovePick&&lmMovePick.date===date&&lmMovePick.sk===sk)?'close':'Move')+'</button>';
         if(!hasExcel) rows+='<button onclick="lmAddSubj(\''+k+'\',\''+date+'\',\''+sk+'\')" style="background:none;border:none;color:#9ca3af;font-size:13px;font-weight:700;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0">&times;</button>';
       }
