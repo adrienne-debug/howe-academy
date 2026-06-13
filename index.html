@@ -8907,30 +8907,52 @@ function parsePageNum(text){
 // each book's max page is banked so MR5→MR6 doesn't reset the count.
 // Label stem minus the page tokens — identifies the book ("MR5 pp.148"→"MR5").
 function _bookKey(t){ return String(t||'').replace(/\b(?:pp?|pg|pgs|page|pages)\.?\s*\d+\s*(?:[–\-]\s*\d+)?/ig,'').replace(/\s+/g,' ').trim(); }
-// Pages worked through over seq[0..uptoIdx], banked per book (each book starts
-// at page 1) so MR5→MR6 sums instead of resetting. null when not page-based.
+// Contiguous book runs in a subject's sequence. A new book starts on a label
+// change OR a page reset (the number drops — "starts back at 1"), which is how
+// multi-book subjects like MR5→MR6 are split. Non-page lessons are skipped.
+function _bookRuns(seq){
+  const runs=[]; let prev=null;
+  (seq||[]).forEach((e,i)=>{
+    const p=parsePageNum(e.lesson); if(p===null) return;
+    const key=_bookKey(e.lesson).toLowerCase();
+    const last=runs[runs.length-1];
+    if(!last||last.key!==key||(prev!==null&&p<prev)) runs.push({name:_bookKey(e.lesson),key,firstIdx:i,lastIdx:i,maxPage:p});
+    else { last.lastIdx=i; if(p>last.maxPage) last.maxPage=p; }
+    prev=p;
+  });
+  return runs;
+}
+// Pages worked through seq[0..uptoIdx], banked per book (each book starts at
+// page 1) so MR5→MR6 sums. null when not page-based. Lifetime total uses this.
 function _bankedPages(seq,uptoIdx){
-  if(!seq.length) return null;
-  const upto=Math.min(Math.max(uptoIdx,0),seq.length-1);
-  let total=0,isPaged=false,curBook=null,curMax=0;
-  for(let i=0;i<=upto;i++){
-    const p=parsePageNum(seq[i].lesson);
-    if(p===null) continue;
-    isPaged=true;
-    const bk=_bookKey(seq[i].lesson).toLowerCase();
-    if(curBook===null) curBook=bk;
-    else if(bk!==curBook){ total+=curMax; curBook=bk; curMax=0; }
-    if(p>curMax) curMax=p;
+  const runs=_bookRuns(seq); if(!runs.length) return null;
+  const upto=Math.min(Math.max(uptoIdx,0),(seq.length||1)-1);
+  let total=0;
+  for(const r of runs){
+    if(r.firstIdx>upto) break;
+    if(r.lastIdx<=upto){ total+=r.maxPage; continue; }
+    let mx=0; for(let i=r.firstIdx;i<=upto;i++){ const p=parsePageNum(seq[i].lesson); if(p!==null&&p>mx) mx=p; }
+    total+=mx;
   }
-  if(isPaged) total+=curMax;
-  return isPaged?total:null;
+  return total;
 }
 function subjectPagesReached(kid,sk){
   let cursor=0; try{cursor=computeSubjectCursor(kid,sk);}catch(e){}
   return _bankedPages(buildSubjectLessons(kid,sk),cursor);
 }
-// One subject's beginning→end progress for the Pace bars: pages for workbooks
-// (page X of Y across all its books), lessons otherwise.
+// Current book the kid is in: page reached within it + that book's last page.
+// Counter restarts per book (a fresh book reads as page X of its own total).
+function subjectCurrentBook(seq,cursor){
+  const runs=_bookRuns(seq); if(!runs.length) return null;
+  const upto=Math.min(Math.max(cursor,0),(seq.length||1)-1);
+  let cur=runs[0];
+  for(const r of runs){ if(r.firstIdx<=upto) cur=r; else break; }
+  const end=Math.min(upto,cur.lastIdx);
+  let curPage=0; for(let i=cur.firstIdx;i<=end;i++){ const p=parsePageNum(seq[i].lesson); if(p!==null&&p>curPage) curPage=p; }
+  return {name:cur.name,curPage,totalPage:cur.maxPage,bookCount:runs.length};
+}
+// One subject's progress for the Pace bars: CURRENT book for workbooks (page X
+// of Y in the book they're holding, resets per book), lessons otherwise.
 function subjectProgress(kid,sk){
   const s=((paceData.subjects||{})[kid]||{})[sk];
   const _cs=((currData&&currData.subjects)||{})[kid]||{};
@@ -8938,27 +8960,18 @@ function subjectProgress(kid,sk){
   const totL=s.total||0; if(totL<=0) return null;
   let cur=0; try{cur=computeSubjectCursor(kid,sk);}catch(e){}
   const seq=buildSubjectLessons(kid,sk);
-  const curP=_bankedPages(seq,cur);
-  if(curP!==null){
-    const totP=_bankedPages(seq,seq.length-1)||curP;
-    return {label:s.label||sk,unit:'page',cur:Math.min(curP,totP),total:totP,pct:totP?Math.min(100,Math.round(curP/totP*100)):0,done:cur>=totL};
+  const cb=subjectCurrentBook(seq,cur);
+  if(cb){
+    return {label:s.label||sk,unit:'page',cur:cb.curPage,total:cb.totalPage,pct:cb.totalPage?Math.min(100,Math.round(cb.curPage/cb.totalPage*100)):0,done:cur>=totL,book:(cb.bookCount>1?cb.name:null)};
   }
-  return {label:s.label||sk,unit:'lesson',cur:Math.min(cur,totL),total:totL,pct:Math.min(100,Math.round(cur/totL*100)),done:cur>=totL};
+  return {label:s.label||sk,unit:'lesson',cur:Math.min(cur,totL),total:totL,pct:Math.min(100,Math.round(cur/totL*100)),done:cur>=totL,book:null};
 }
 // Books inside a page-based subject + whether each is finished (cursor past its
 // last lesson) — feeds the wins list with "finished MR5" milestones.
 function subjectBooks(kid,sk){
-  const seq=buildSubjectLessons(kid,sk);
-  if(!seq.length) return [];
+  const seq=buildSubjectLessons(kid,sk); if(!seq.length) return [];
   let cursor=0; try{cursor=computeSubjectCursor(kid,sk);}catch(e){}
-  const books=[];
-  seq.forEach((e,i)=>{
-    if(parsePageNum(e.lesson)===null) return;
-    const nm=_bookKey(e.lesson), key=nm.toLowerCase();
-    const last=books[books.length-1];
-    if(!last||last.key!==key) books.push({name:nm,key,lastIdx:i}); else last.lastIdx=i;
-  });
-  return books.map(b=>({name:b.name,finished:cursor>b.lastIdx}));
+  return _bookRuns(seq).map(r=>({name:r.name,finished:cursor>r.lastIdx}));
 }
 // Lifetime "how far you've come" totals — fully derived (no stored counter to
 // drift): lessons from the cursor (offset already folds in pre-app lessons),
@@ -9091,7 +9104,7 @@ function renderPace(el){
     const col=PACE_KCOL[k];
     h+='<div class="pace-kid-card"><div class="pace-kid-name" style="color:'+col+';margin-bottom:8px">'+cap(k)+'</div>';
     bars.forEach(b=>{
-      const lbl=b.unit==='page'?('page '+b.cur.toLocaleString()+' of '+b.total.toLocaleString()):(b.cur+' of '+b.total+' lessons');
+      const lbl=b.unit==='page'?((b.book?esc(b.book)+' · ':'')+'page '+b.cur.toLocaleString()+' of '+b.total.toLocaleString()):(b.cur+' of '+b.total+' lessons');
       h+='<div style="margin-bottom:9px">'+
         '<div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin-bottom:3px">'+
         '<span style="font-weight:600">'+esc(b.label)+(b.done?' <span style="color:#16a34a">✓</span>':'')+'</span>'+
