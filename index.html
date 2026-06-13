@@ -8856,6 +8856,45 @@ function paceKidStatus(k){
   });
   return {subjects:keys.length,aheadN,onN,behindN,behindSubs};
 }
+// This week's task completion for one kid (same countable rule as the weekly
+// bar). The "core week" floor is the reassurance bar — distinct from ideal
+// curriculum pace — so a kid behind the stretch still reads as success once
+// the week's real work is done.
+const PACE_CORE_FLOOR=80; // % of countable tasks that counts as "core week met"
+function paceKidWeek(k){
+  const cascAway=new Set(weekData.tasks.filter(t=>t.id.endsWith("_c")).map(t=>t.id.replace(/_c$/,"")));
+  const countable=weekData.tasks.filter(t=>t.who===k&&(!cascAway.has(t.id)||!!checked[t.id])&&!(t.title||"").toLowerCase().includes("lunch"));
+  const total=countable.length;
+  const done=countable.filter(t=>chainDone(t.id,checked,weekData.tasks)).length;
+  const pct=total?Math.round(done/total*100):0;
+  return {done,total,pct,met:total>0&&pct>=PACE_CORE_FLOOR};
+}
+// One synthesized verdict line. Worst-kid sets the tone but the headline is
+// always worded positively — never alarm-red — and names the single nudge when
+// there is exactly one. roll = [{k,st,wk}] precomputed by renderPace.
+function paceVerdictHtml(roll,weeklyPct){
+  if(!roll.length) return '';
+  const single=roll.length===1;
+  const withSub=roll.filter(r=>r.st.subjects);
+  const onPace=withSub.filter(r=>r.st.behindN===0).length;
+  const behind=withSub.filter(r=>r.st.behindN>0);
+  const coreMet=roll.filter(r=>r.wk.met).length;
+  let bg,bd,fg,icon,head;
+  if(behind.length===0){ bg='#f0fdf4';bd='#bbf7d0';fg='#15803d';icon='🌟'; head=single?cap(roll[0].k)+' is on track':'You’re on track'; }
+  else if(behind.length<=2){ bg='#eff6ff';bd='#bfdbfe';fg='#1e40af';icon='👍'; head='Mostly on track'; }
+  else { bg='#fffbeb';bd='#fde68a';fg='#92400e';icon='🧭'; head='A few subjects to focus on'; }
+  const parts=[];
+  if(withSub.length&&!single) parts.push(onPace+' of '+withSub.length+' kids on pace');
+  parts.push(weeklyPct+'% of this week done');
+  if(coreMet) parts.push(coreMet+(single?' core week met':' core week'+(coreMet>1?'s':'')+' met'));
+  let nudge='';
+  if(behind.length===1&&behind[0].st.behindN===1) nudge=' One nudge: '+(single?'':cap(behind[0].k)+'’s ')+behind[0].st.behindSubs[0]+'.';
+  else if(behind.length>=1) nudge=' To nudge: '+behind.map(b=>cap(b.k)).join(', ')+'.';
+  return '<div style="background:'+bg+';border:1px solid '+bd+';border-radius:12px;padding:12px 14px;margin-bottom:12px">'+
+    '<div style="font-size:15px;font-weight:800;color:'+fg+'">'+icon+' '+head+'</div>'+
+    '<div style="font-size:12px;color:'+fg+';opacity:0.95;margin-top:3px">'+parts.filter(Boolean).join(' · ')+'.'+nudge+'</div>'+
+    '</div>';
+}
 
 // GLANCE Pace view — kid-facing + mom's fast check. Reassurance, not dense
 // tables; detailed projections/adjustments live in Admin → Progress.
@@ -8872,7 +8911,7 @@ function renderPace(el){
     });
     h+='</div>';
   }
-  // This week
+  // This week (overall, for the bar + verdict)
   const weeklyCol=(kid==="all"||kid==="mom")?"#111827":PACE_KCOL[kid]||"#111827";
   const _wkMatch=t=>(kid==="all"||kid==="mom")?true:t.who===kid;
   const _wkCascAway=new Set(weekData.tasks.filter(t=>t.id.endsWith("_c")).map(t=>t.id.replace(/_c$/,"")));
@@ -8880,26 +8919,38 @@ function renderPace(el){
   const weeklyTotal=_wkCountable.length;
   const weeklyDone=_wkCountable.filter(t=>chainDone(t.id,checked,weekData.tasks)).length;
   const weeklyPct=weeklyTotal?Math.min(100,Math.round(weeklyDone/weeklyTotal*100)):0;
+
+  // Per-kid rollup, computed once → drives the verdict and the per-kid lines
+  const _chip=(t,fg,bg,bd)=>'<span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:10px;background:'+bg+';border:1px solid '+bd+';color:'+fg+';white-space:nowrap">'+t+'</span>';
+  const _green=t=>_chip(t,'#15803d','#f0fdf4','#bbf7d0'), _amber=t=>_chip(t,'#92400e','#fffbeb','#fde68a');
+  const glanceKids=(kid==="all"||kid==="mom")?PACE_KIDS:[kid];
+  const roll=glanceKids.map(k=>({k,st:paceKidStatus(k),wk:paceKidWeek(k)})).filter(r=>r.st.subjects||r.wk.total);
+
+  // Verdict banner — one positive glance, then the this-week bar
+  h+=paceVerdictHtml(roll,weeklyPct);
   h+='<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:14px">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
     '<div style="font-size:12px;font-weight:600;color:var(--muted)">This week</div>'+
     '<div style="font-size:12px;font-weight:700;color:'+weeklyCol+'">'+weeklyPct+'%</div></div>'+
     '<div class="day-prog-bar" style="margin-top:0"><div class="day-prog-fill" style="width:'+weeklyPct+'%;background:'+weeklyCol+'"></div></div></div>';
-  // Per-kid glance — one positive line each, no subject tables
-  const glanceKids=(kid==="all"||kid==="mom")?PACE_KIDS:[kid];
-  let shown=0;
-  glanceKids.forEach(k=>{
-    const col=PACE_KCOL[k]; const st=paceKidStatus(k);
-    if(!st.subjects) return;
-    shown++;
-    const ok=st.behindN===0;
-    const line=ok?'All on track ✓':(st.onN+st.aheadN)+' of '+st.subjects+' on track · '+st.behindN+' to nudge';
-    h+='<div class="pace-kid-card" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'+
+
+  // Per-kid glance — core-week-met leads when a kid is behind ideal pace, so
+  // "behind stretch but did the week" reads as the success it is.
+  roll.forEach(({k,st,wk})=>{
+    const col=PACE_KCOL[k];
+    const behind=st.subjects&&st.behindN>0;
+    const chips=[];
+    if(wk.met&&(behind||!st.subjects)) chips.push(_green('Core week met ✓'));
+    if(st.subjects){
+      if(!behind) chips.push(_green('On track ✓'));
+      else chips.push(_amber((st.onN+st.aheadN)+' of '+st.subjects+' on track · '+st.behindN+' to nudge'));
+    }
+    h+='<div class="pace-kid-card" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">'+
       '<div class="pace-kid-name" style="color:'+col+'">'+cap(k)+'</div>'+
-      '<span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:10px;background:'+(ok?'#f0fdf4':'#fffbeb')+';border:1px solid '+(ok?'#bbf7d0':'#fde68a')+';color:'+(ok?'#15803d':'#92400e')+'">'+line+'</span>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">'+chips.join('')+'</div>'+
       '</div>';
   });
-  if(shown) h+='<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">Finish dates &amp; adjustments live in <b>Admin → Progress</b></div>';
+  if(roll.length) h+='<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">Finish dates &amp; adjustments live in <b>Admin → Progress</b></div>';
   h+='</div>';
   el.innerHTML=h;
 }
