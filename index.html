@@ -8945,14 +8945,37 @@ function subjectPagesReached(kid,sk){
 function subjectCurrentBook(seq,cursor){
   const runs=_bookRuns(seq); if(!runs.length) return null;
   const upto=Math.min(Math.max(cursor,0),(seq.length||1)-1);
-  let cur=runs[0];
-  for(const r of runs){ if(r.firstIdx<=upto) cur=r; else break; }
+  let cur=runs[0],idx=0;
+  runs.forEach((r,i)=>{ if(r.firstIdx<=upto){ cur=r; idx=i; } });
   const end=Math.min(upto,cur.lastIdx);
   let curPage=0; for(let i=cur.firstIdx;i<=end;i++){ const p=parsePageNum(seq[i].lesson); if(p!==null&&p>curPage) curPage=p; }
-  return {name:cur.name,curPage,totalPage:cur.maxPage,bookCount:runs.length};
+  return {name:cur.name,curPage,totalPage:cur.maxPage,bookCount:runs.length,bookNum:idx+1};
 }
-// One subject's progress for the Pace bars: CURRENT book for workbooks (page X
-// of Y in the book they're holding, resets per book), lessons otherwise.
+// Book/volume token in a lesson label ("5A Ch.6 L5"→"5A", "Book 2"→"Book 2").
+// null for plain lessons and filler ("Complete", "Testing", "Review").
+function _lessonBookKey(t){
+  const m=String(t||'').match(/\b(\d+[A-Z]|Book\s*\d+|Level\s*\d+|Unit\s*\d+|Vol\.?\s*\d+)\b/i);
+  return m?m[1].replace(/\s+/g,' ').trim():null;
+}
+// Current book for a lesson-based multi-book subject (e.g. Singapore 5A/5B/6A/6B):
+// which volume they're in now + lessons done/total within it. Filler rows
+// (Complete/Testing, no volume token) are ignored. null = not multi-book.
+function subjectLessonCurrentBook(seq,cursor){
+  const keys=(seq||[]).map(e=>_lessonBookKey(e.lesson));
+  const order=[]; keys.forEach(k=>{ if(k&&!order.includes(k)) order.push(k); });
+  if(order.length<2) return null;
+  const upto=Math.min(Math.max(cursor,0),seq.length-1);
+  let curKey=null;
+  for(let i=upto;i>=0;i--){ if(keys[i]){ curKey=keys[i]; break; } }
+  if(!curKey){ for(let i=upto+1;i<seq.length;i++){ if(keys[i]){ curKey=keys[i]; break; } } }
+  if(!curKey) return null;
+  let total=0,done=0;
+  keys.forEach((k,i)=>{ if(k===curKey){ total++; if(i<cursor) done++; } });
+  return {name:curKey,curLesson:done,totalLesson:total,bookNum:order.indexOf(curKey)+1,bookCount:order.length};
+}
+// One subject's progress for the Pace bars: CURRENT book — pages for workbooks,
+// volume for lesson-based multi-book subjects — both reset per book; plain
+// lessons otherwise.
 function subjectProgress(kid,sk){
   const s=((paceData.subjects||{})[kid]||{})[sk];
   const _cs=((currData&&currData.subjects)||{})[kid]||{};
@@ -8962,7 +8985,11 @@ function subjectProgress(kid,sk){
   const seq=buildSubjectLessons(kid,sk);
   const cb=subjectCurrentBook(seq,cur);
   if(cb){
-    return {label:s.label||sk,unit:'page',cur:cb.curPage,total:cb.totalPage,pct:cb.totalPage?Math.min(100,Math.round(cb.curPage/cb.totalPage*100)):0,done:cur>=totL,book:(cb.bookCount>1?cb.name:null)};
+    return {label:s.label||sk,unit:'page',cur:cb.curPage,total:cb.totalPage,pct:cb.totalPage?Math.min(100,Math.round(cb.curPage/cb.totalPage*100)):0,done:cur>=totL,book:(cb.bookCount>1?cb.name:null),bookNum:cb.bookNum,bookCount:cb.bookCount};
+  }
+  const lb=subjectLessonCurrentBook(seq,cur);
+  if(lb){
+    return {label:s.label||sk,unit:'lesson',cur:lb.curLesson,total:lb.totalLesson,pct:lb.totalLesson?Math.min(100,Math.round(lb.curLesson/lb.totalLesson*100)):0,done:cur>=totL,book:lb.name,bookNum:lb.bookNum,bookCount:lb.bookCount};
   }
   return {label:s.label||sk,unit:'lesson',cur:Math.min(cur,totL),total:totL,pct:Math.min(100,Math.round(cur/totL*100)),done:cur>=totL,book:null};
 }
@@ -9104,7 +9131,8 @@ function renderPace(el){
     const col=PACE_KCOL[k];
     h+='<div class="pace-kid-card"><div class="pace-kid-name" style="color:'+col+';margin-bottom:8px">'+cap(k)+'</div>';
     bars.forEach(b=>{
-      const lbl=b.unit==='page'?((b.book?esc(b.book)+' · ':'')+'page '+b.cur.toLocaleString()+' of '+b.total.toLocaleString()):(b.cur+' of '+b.total+' lessons');
+      const _bk=b.book?esc(b.book)+(b.bookCount>1?' <span style="opacity:0.6">(book '+b.bookNum+' of '+b.bookCount+')</span>':'')+' · ':'';
+      const lbl=b.unit==='page'?(_bk+'page '+b.cur.toLocaleString()+' of '+b.total.toLocaleString()):(_bk+b.cur+' of '+b.total+' lessons');
       h+='<div style="margin-bottom:9px">'+
         '<div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin-bottom:3px">'+
         '<span style="font-weight:600">'+esc(b.label)+(b.done?' <span style="color:#16a34a">✓</span>':'')+'</span>'+
