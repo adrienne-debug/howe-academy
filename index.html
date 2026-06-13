@@ -2676,7 +2676,7 @@ function renderSchedule(el){
       return;
     }
     let ah='<div style="position:sticky;top:118px;z-index:90;background:var(--bg);display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:0">';
-    ["settings","curriculum","calendar"].forEach(s=>{
+    ["settings","curriculum","progress","calendar"].forEach(s=>{
       const active=adminSubTab===s||(s==="settings"&&adminSubTab==="rules");
       const label=s.charAt(0).toUpperCase()+s.slice(1);
       ah+='<button style="flex:1;padding:10px 4px;font-size:12px;font-weight:700;border:none;background:none;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:'+(active?"var(--text)":"var(--muted)")+';border-bottom:2px solid '+(active?"var(--header)":"transparent")+';margin-bottom:-2px" onclick="setAdminSub(\''+s+'\')">'+label+'</button>';
@@ -2685,6 +2685,7 @@ function renderSchedule(el){
     if(adminSubTab==="settings"||adminSubTab==="rules"){ renderSettings(el,ah); }
     else if(adminSubTab==="generate"){ renderAdminGenerate(el,ah); }
     else if(adminSubTab==="curriculum"){ renderCurriculumView(el,ah); }
+    else if(adminSubTab==="progress"){ renderProgress(el,ah); }
     else if(adminSubTab==="calendar"){ renderCalendarView(el,ah); }
     return;
   }
@@ -8831,13 +8832,99 @@ function renderFinishLine(forKid){
   return h;
 }
 
+// Per-kid pace rollup, shared by the glance Pace view and Admin → Progress.
+function paceKidPlan(k){
+  const plans=(paceData.plans&&Object.keys(paceData.plans).length)?paceData.plans:PACE_DEFAULT_PLANS;
+  for(const pk of Object.keys(plans)){ if((plans[pk].kids||[]).includes(k)) return plans[pk]; }
+  return null;
+}
+function paceKidStatus(k){
+  const kidSubjs=(paceData.subjects&&paceData.subjects[k])||{};
+  const _cs=(currData&&currData.subjects&&currData.subjects[k])||{};
+  const keys=Object.keys(kidSubjs).filter(sk=>!(_cs[sk]&&_cs[sk].tracking==="daily")&&(kidSubjs[sk].total||0)>0);
+  const plan=paceKidPlan(k);
+  const weekNum=plan?planWeekNum(plan.start||"2026-04-20"):1;
+  const totalWeeks=plan?planTotalWeeks(plan.start||"2026-04-20",plan.end||"2026-09-01"):40;
+  const cwn=currWeekNum();
+  let aheadN=0,onN=0,behindN=0; const behindSubs=[];
+  keys.forEach(sk=>{
+    const s=kidSubjs[sk]; const kws=paceKeywords(k,sk,s);
+    const cur=(s.offset||0)+paceAutoCount(k,kws)+(s.adjust||0);
+    const exp=currExpected(k,sk,cwn);
+    const st=paceHasPendingCascade(k,kws)?"behind":paceStatus(cur,s.total||0,s.startWeek||1,weekNum,totalWeeks,exp);
+    if(st==="ahead")aheadN++; else if(st==="behind"){behindN++; behindSubs.push(s.label||sk);} else if(st!=="not-started")onN++;
+  });
+  return {subjects:keys.length,aheadN,onN,behindN,behindSubs};
+}
+
+// GLANCE Pace view — kid-facing + mom's fast check. Reassurance, not dense
+// tables; detailed projections/adjustments live in Admin → Progress.
 function renderPace(el){
   if(!el){el=document.getElementById("content");if(!el)return;}
+  syncPaceData();
+  let h='<div id="pace-content">';
+  // Kid selector (hide inside schedule tab — the main kid filter handles it)
+  if(!schedShowPace){
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">';
+    [{k:"all",label:"All",col:"#111827"},...PACE_KIDS.map(k=>({k,label:cap(k),col:PACE_KCOL[k]}))].forEach(({k:k2,label,col})=>{
+      const on=kid===k2||(k2==="all"&&(kid==="all"||kid==="mom"));
+      h+='<button onclick="selKid(\''+k2+'\')" style="padding:5px 14px;border-radius:20px;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+label+'</button>';
+    });
+    h+='</div>';
+  }
+  // This week
+  const weeklyCol=(kid==="all"||kid==="mom")?"#111827":PACE_KCOL[kid]||"#111827";
+  const _wkMatch=t=>(kid==="all"||kid==="mom")?true:t.who===kid;
+  const _wkCascAway=new Set(weekData.tasks.filter(t=>t.id.endsWith("_c")).map(t=>t.id.replace(/_c$/,"")));
+  const _wkCountable=weekData.tasks.filter(t=>_wkMatch(t)&&(!_wkCascAway.has(t.id)||!!checked[t.id])&&!(t.title||"").toLowerCase().includes("lunch"));
+  const weeklyTotal=_wkCountable.length;
+  const weeklyDone=_wkCountable.filter(t=>chainDone(t.id,checked,weekData.tasks)).length;
+  const weeklyPct=weeklyTotal?Math.min(100,Math.round(weeklyDone/weeklyTotal*100)):0;
+  h+='<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:14px">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
+    '<div style="font-size:12px;font-weight:600;color:var(--muted)">This week</div>'+
+    '<div style="font-size:12px;font-weight:700;color:'+weeklyCol+'">'+weeklyPct+'%</div></div>'+
+    '<div class="day-prog-bar" style="margin-top:0"><div class="day-prog-fill" style="width:'+weeklyPct+'%;background:'+weeklyCol+'"></div></div></div>';
+  // Per-kid glance — one positive line each, no subject tables
+  const glanceKids=(kid==="all"||kid==="mom")?PACE_KIDS:[kid];
+  let shown=0;
+  glanceKids.forEach(k=>{
+    const col=PACE_KCOL[k]; const st=paceKidStatus(k);
+    if(!st.subjects) return;
+    shown++;
+    const ok=st.behindN===0;
+    const line=ok?'All on track ✓':(st.onN+st.aheadN)+' of '+st.subjects+' on track · '+st.behindN+' to nudge';
+    h+='<div class="pace-kid-card" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'+
+      '<div class="pace-kid-name" style="color:'+col+'">'+cap(k)+'</div>'+
+      '<span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:10px;background:'+(ok?'#f0fdf4':'#fffbeb')+';border:1px solid '+(ok?'#bbf7d0':'#fde68a')+';color:'+(ok?'#15803d':'#92400e')+'">'+line+'</span>'+
+      '</div>';
+  });
+  if(shown) h+='<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">Finish dates &amp; adjustments live in <b>Admin → Progress</b></div>';
+  h+='</div>';
+  el.innerHTML=h;
+}
+
+// DEPTH view (Admin → Progress, PIN-gated): Finish Line projections, Extend,
+// and the full per-subject pace cards with expected-pace markers + drift.
+function renderProgress(el,headerHtml){
+  if(!el){el=document.getElementById("content");if(!el)return;}
+  if(!adminPinUnlocked){
+    el.innerHTML=(headerHtml||'')+'<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center">'+
+      '<div style="font-size:48px;margin-bottom:12px">\u{1F512}</div>'+
+      '<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:700;margin-bottom:4px">Progress Locked</div>'+
+      '<div style="font-size:13px;color:var(--muted);margin-bottom:16px">Enter the Mom PIN to view detailed progress.</div>'+
+      '<input id="admin-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="PIN" autocomplete="off" '+
+      'style="width:120px;text-align:center;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:18px;font-weight:700;letter-spacing:8px;font-family:\'DM Sans\',sans-serif" '+
+      'oninput="checkAdminPin(this.value,\'admin-pin-err\')" autofocus>'+
+      '<div id="admin-pin-err" style="font-size:11px;color:#b5394a;margin-top:6px;min-height:14px"></div></div>';
+    setTimeout(()=>{const i=document.getElementById("admin-pin-input");if(i)i.focus();},50);
+    return;
+  }
 
   syncPaceData();
   const plans=paceData.plans&&Object.keys(paceData.plans).length>0?paceData.plans:PACE_DEFAULT_PLANS;
 
-  let h='<div id="pace-content">';
+  let h=(headerHtml||'')+'<div id="pace-content" style="padding:0 4px">';
 
   // Kid selector (hide when inside schedule tab — main kid filter handles it)
   if(!schedShowPace){
