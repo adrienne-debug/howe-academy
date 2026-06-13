@@ -8952,10 +8952,15 @@ function subjectCurrentBook(seq,cursor){
   return {name:cur.name,curPage,totalPage:cur.maxPage,bookCount:runs.length,bookNum:idx+1};
 }
 // Book/volume token in a lesson label ("5A Ch.6 L5"→"5A", "Book 2"→"Book 2").
-// null for plain lessons and filler ("Complete", "Testing", "Review").
+// Volume letter must be UPPERCASE so lowercase lesson codes ("5a") aren't
+// mistaken for volumes. null for plain lessons and filler (Complete/Testing).
 function _lessonBookKey(t){
-  const m=String(t||'').match(/\b(\d+[A-Z]|Book\s*\d+|Level\s*\d+|Unit\s*\d+|Vol\.?\s*\d+)\b/i);
-  return m?m[1].replace(/\s+/g,' ').trim():null;
+  const s=String(t||'');
+  let m=s.match(/\b(\d+[A-Z])\b/);
+  if(m) return m[1];
+  m=s.match(/\b(Book|Level|Unit|Vol)\.?\s*(\d+)\b/i);
+  if(m) return m[1].charAt(0).toUpperCase()+m[1].slice(1).toLowerCase()+' '+m[2];
+  return null;
 }
 // Current book for a lesson-based multi-book subject (e.g. Singapore 5A/5B/6A/6B):
 // which volume they're in now + lessons done/total within it. Filler rows
@@ -8963,7 +8968,10 @@ function _lessonBookKey(t){
 function subjectLessonCurrentBook(seq,cursor){
   const keys=(seq||[]).map(e=>_lessonBookKey(e.lesson));
   const order=[]; keys.forEach(k=>{ if(k&&!order.includes(k)) order.push(k); });
-  if(order.length<2) return null;
+  // Real volumes: a handful of books, each spanning several lessons. Reject
+  // many-tiny "books" (those are lesson codes, not volumes — e.g. "5a","5b"…).
+  const keyed=keys.filter(Boolean).length;
+  if(order.length<2||order.length>8||keyed/order.length<3) return null;
   const upto=Math.min(Math.max(cursor,0),seq.length-1);
   let curKey=null;
   for(let i=upto;i>=0;i--){ if(keys[i]){ curKey=keys[i]; break; } }
