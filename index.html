@@ -1159,9 +1159,12 @@ let fbTasksLoaded = false;
 let fbHistoryLoaded = false;
 let cascadeDebounce = null;
 let fbTasksHighWater = 0; // max task count ever seen from Firebase — guards against accidental wipes
+// Dry-run mode (?dryrun=1 or localStorage ha_dryrun=1): reads work, writes are no-ops.
+// Lets us smoke-test the modified app against live data WITHOUT mutating Firebase.
+function _dryRun(){ try{ return /[?&]dryrun=1/.test(location.search)||localStorage.getItem("ha_dryrun")==="1"; }catch(e){ return false; } }
 function safeWriteTasks(reason){
   // Guard: never write tasks to Firebase if we'd be dropping below 50% of what we've seen
-  if(!db) return;
+  if(!db||_dryRun()) return;
   const count = weekData.tasks.length;
   if(fbTasksHighWater > 20 && count < fbTasksHighWater * 0.5){
     dbg("BLOCKED task write ("+reason+"): only "+count+" tasks vs high-water "+fbTasksHighWater);
@@ -1315,6 +1318,24 @@ function initFb() {
   try {
     firebase.initializeApp(FB_CFG);
     db = firebase.database();
+
+    // DRY-RUN: neutralize every Firebase write (reads stay live) so the modified app
+    // can be smoke-tested against real data without ever mutating the kids' schedule.
+    if(_dryRun()){
+      try{
+        const _origRef=db.ref.bind(db);
+        const _patch=(ref)=>{
+          ref.set=()=>Promise.resolve(); ref.update=()=>Promise.resolve(); ref.remove=()=>Promise.resolve();
+          ref.transaction=()=>Promise.resolve({committed:false});
+          ref.push=()=>_patch(Object.assign({},ref,{key:"dry_"+Math.random().toString(36).slice(2)}));
+          const _child=ref.child&&ref.child.bind(ref);
+          if(_child) ref.child=(p)=>_patch(_child(p));
+          return ref;
+        };
+        db.ref=(p)=>_patch(_origRef(p));
+        console.warn("⚠️ HA DRY-RUN active — Firebase writes are disabled (reads live).");
+      }catch(e){ console.warn("dryrun patch failed",e); }
+    }
 
     db.ref(".info/connected").on("value",s=>{
       const on=s.val()===true;
@@ -6538,11 +6559,18 @@ function cascadeIntraWeek(){
     return 500;
   }
 
-  // Distribute tasks across today and remaining days, overflowing when full
-  // Fair distribution: round-robin across kids so no one kid hogs all early days
-  const unplaced=[...pastTasks];
-  const placed=new Set();
-  for(let di=todayIdx; di<dayOrder.length&&placed.size<pastTasks.length; di++){
+  // Distribute past unchecked tasks across today→Saturday via the shared packer.
+  // Each day packs around the tasks already there; whatever doesn't fit chains to the
+  // next day. Kids pack in parallel, duration-aware (no proportional-slot hack), and
+  // calendar off-days are skipped per kid (decision #9).
+  function _cascDate(dn){
+    if(!DAY_DT[dn]) return null;
+    const d=new Date(DAY_DT[dn]+", "+todayMid.getFullYear());
+    if(isNaN(d.getTime())) return null;
+    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  }
+  let pool=pastTasks.slice();
+  for(let di=todayIdx; di<dayOrder.length&&pool.length; di++){
     const dn=dayOrder[di];
     const sdOv=(sd.overrides||{})[dn]||{};
     const dStart=toMin(sdOv.start||sd.defaultStart||"10:00 AM");
@@ -6551,76 +6579,29 @@ function cascadeIntraWeek(){
     const lunchE=toMin(sdOv.lunchEnd||sd.lunchEnd||"2:00 PM");
     const isSitterDay=mag.days&&mag.days.includes(dn);
     const sitterReturn=isSitterDay?toMin(mag["mom_return_"+dn]||mag.mom_return||"2:00 PM"):0;
-
-    const remaining=unplaced.filter(t=>!placed.has(t));
-    if(!remaining.length) break;
-
-    // Group remaining by kid, sort each kid's tasks by workflow
-    const byKid={};
-    remaining.forEach(t=>{
-      if(!byKid[t.who]) byKid[t.who]=[];
-      byKid[t.who].push(t);
-    });
-    const kidNames=Object.keys(byKid).sort();
-    kidNames.forEach(k=>byKid[k].sort((a,b)=>cascadeWeight(a,dn)-cascadeWeight(b,dn)));
-
-    // Find latest task already on this day
-    let cursor=0;
-    weekData.tasks.forEach(t=>{
-      if(t.day!==dn||placed.has(t)) return;
-      if(remaining.includes(t)) return;
-      const m=toMin(t.time);
-      if(m>cursor) cursor=m;
-    });
-    if(cursor>0) cursor+=20;
-    if(cursor<dStart) cursor=dStart;
-
-    // Count available slots on this day
-    let slotCursor=cursor, slots=0;
-    while(slotCursor<dEnd){
-      if(slotCursor>=lunchS&&slotCursor<lunchE) slotCursor=lunchE;
-      if(slotCursor>=dEnd) break;
-      slots++; slotCursor+=20;
-    }
-
-    // Divide slots proportionally among kids (by their remaining task count)
-    const totalRemaining=remaining.length;
-    const kidSlots={};
-    let assigned=0;
-    kidNames.forEach((k,i)=>{
-      if(i===kidNames.length-1){ kidSlots[k]=slots-assigned; }
-      else{ const share=Math.round(slots*byKid[k].length/totalRemaining); kidSlots[k]=share; assigned+=share; }
-    });
-
-    // Place tasks: kid blocks in sequence, each kid gets their fair share
-    for(const k of kidNames){
-      const kidTasks=byKid[k];
-      let placedForKid=0;
-      for(const t of kidTasks){
-        if(placedForKid>=kidSlots[k]) break;
-        if(isSitterDay&&cursor<sitterReturn){
-          if(sitterKids.includes(t.who)||t.mom==="required") cursor=sitterReturn;
-        }
-        if(cursor>=lunchS&&cursor<lunchE) cursor=lunchE;
-        if(cursor>=dEnd) break;
-        t.day=dn;
-        t.time=fromMin(cursor);
-        placed.add(t);
-        cursor+=20;
-        placedForKid++;
-      }
-    }
+    const dStr=_cascDate(dn);
+    const offHere=t=>!!(dStr&&smapIsKidOff(t.who,dStr)); // holiday/vacation/kid-off → wait for a later day
+    const tryHere=pool.filter(t=>!offHere(t));
+    if(!tryHere.length) continue;
+    // Order by kid then workflow weight (mirrors the prior per-kid blocks).
+    tryHere.sort((a,b)=> (a.who<b.who?-1:a.who>b.who?1:0) || (cascadeWeight(a,dn)-cascadeWeight(b,dn)));
+    // Tasks already on this day (not part of the cascade pool) get packed around.
+    const poolSet=new Set(pool);
+    const existing=weekData.tasks.filter(t=>t.day===dn&&!t.id.endsWith("_c")&&!poolSet.has(t));
+    tryHere.forEach(t=>{ t.day=dn; });
+    const isLast=(di===dayOrder.length-1);
+    const kidStart={}; if(isSitterDay) sitterKids.forEach(k=>{ kidStart[k]=sitterReturn; });
+    const overflow=packAround(existing,tryHere,{start:dStart,end:dEnd,lunchStart:lunchS,lunchEnd:lunchE,
+      momStart:sitterReturn,kidStart:kidStart,allowOvertime:isLast,overtimeMax:240});
+    const overflowSet=new Set(overflow);
+    pool=pool.filter(t=>overflowSet.has(t)||offHere(t)); // carry overflow + off-here tasks to the next day
   }
 
-  // Safety net: if tasks remain after Saturday, stack at end of Saturday
-  const leftover=pastTasks.filter(t=>!placed.has(t));
-  if(leftover.length){
+  // Safety net: anything still unplaced (e.g. off every remaining day) stacks at Saturday's end.
+  if(pool.length){
     const sdOvSat=(sd.overrides||{})["saturday"]||{};
     const dEndSat=toMin(sdOvSat.end||sd.defaultEnd||"4:15 PM");
-    leftover.forEach(t=>{
-      t.day="saturday";
-      t.time=fromMin(dEndSat-20);
-    });
+    pool.forEach(t=>{ t.day="saturday"; t.time=fromMin(dEndSat-20); });
   }
 
   // ── Lesson-order pass: ensure sequential lessons stay in day order ──
@@ -11844,6 +11825,7 @@ function mastPrintCards(){
 
 // ── DISPLACEMENT ENGINE ──────────────────────────────────────────
 let displacedResult=null; // {tasks:[], carryOver:[]}
+let lastAudit=[]; // auditSchedule() violations for the live schedule ([] = all clear)
 function getActiveTasks(){ return displacedResult?displacedResult.tasks:weekData.tasks; }
 
 function taskDevice(t){
@@ -11870,6 +11852,56 @@ function taskTier(t){
   return "independent";
 }
 
+// AUDIT_START (node-harness extraction boundary)
+// Real validator behind the Rules "Audit Checklist" card. Derives its checks from the
+// live Rules (overlap set, max-per-day, school-day lunch, calendar off-days) for a set
+// of scheduled tasks and returns a list of violations — [] means all clear. Replaces the
+// old hardcoded-subject checklist; runs after every displacement (see runDisplacement).
+function auditSchedule(tasks){
+  if(!tasks||!tasks.length) return [];
+  const r=rulesData||{}, ovc=r.overlap||{}, mp=r.maxPerDay||{}, sd=r.schoolDay||{}, sdOv=sd.overrides||{};
+  const nv=fbArr(ovc.never_simultaneous);
+  const neverSet=new Set((nv&&nv.length)?nv:["mom_required","computer","ipad"]);
+  const v=[];
+  const lane=t=>{ const dv=t.device||taskDevice(t); return (dv==="ipad"&&t.who==="lucy")?"ipadLucy":dv; };
+  const dateOf=d=>{
+    let lbl=DAY_DT[d];
+    if(!lbl&&d==="saturday"&&DAY_DT.friday){ const f=new Date(DAY_DT.friday+", "+new Date().getFullYear()); f.setDate(f.getDate()+1); return f.getFullYear()+"-"+String(f.getMonth()+1).padStart(2,"0")+"-"+String(f.getDate()).padStart(2,"0"); }
+    if(!lbl) return null;
+    const dt=new Date(lbl+", "+new Date().getFullYear());
+    return isNaN(dt.getTime())?null:dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");
+  };
+  const byDay={};
+  tasks.forEach(t=>{ if(!t||!t.day||t.day==="carryover") return; if(String(t.id||"").endsWith("_c")) return; (byDay[t.day]=byDay[t.day]||[]).push(t); });
+  for(const day in byDay){
+    const o=sdOv[day]||{};
+    const ls=toMin(o.lunchStart||sd.lunchStart||"1:00 PM"), le=toMin(o.lunchEnd||sd.lunchEnd||"2:00 PM");
+    const lbl=DAY_LBL[day]||day;
+    const ts=byDay[day].map(t=>({t,s:toMin(t.time),e:toMin(t.time)+(t.dur||20)}));
+    const ds=dateOf(day);
+    ts.forEach(x=>{
+      if(le>ls&&x.s<le&&x.e>ls) v.push(lbl+": "+cap(x.t.who)+" — "+taskSubject(x.t)+" runs through lunch");
+      if(ds){ const off=smapIsKidOff(x.t.who,ds); if(off) v.push(lbl+": "+cap(x.t.who)+" scheduled on "+off); }
+    });
+    for(let i=0;i<ts.length;i++)for(let j=i+1;j<ts.length;j++){
+      const a=ts[i],b=ts[j]; if(!(a.s<b.e&&b.s<a.e)) continue;
+      if(a.t.who===b.t.who){ v.push(lbl+": "+cap(a.t.who)+" double-booked at "+a.t.time); continue; }
+      if(neverSet.has("computer")&&lane(a.t)==="computer"&&lane(b.t)==="computer") v.push(lbl+": two computer tasks at once");
+      if(neverSet.has("ipad")&&lane(a.t)==="ipad"&&lane(b.t)==="ipad") v.push(lbl+": two iPad tasks at once");
+      if(neverSet.has("mom_required")&&a.t.mom==="required"&&b.t.mom==="required") v.push(lbl+": two Mom-Required at once");
+    }
+    const cnt={};
+    ts.forEach(x=>{ const k=taskSubject(x.t)+"|"+x.t.who; cnt[k]=(cnt[k]||0)+1; });
+    for(const k in cnt){ const subj=k.split("|")[0], cfg=mp[subj]; if(!cfg) continue;
+      const cap2=(day==="saturday"&&cfg.saturday_max!=null)?cfg.saturday_max:cfg.max;
+      if(cap2!=null&&cnt[k]>cap2) v.push(lbl+": "+subj+" over max-per-day ("+cnt[k]+" > "+cap2+")");
+    }
+  }
+  return [...new Set(v)];
+}
+// AUDIT_END
+
+// RUNDISP_START (node-harness extraction boundary)
 function runDisplacement(){
   const bos=Object.values(blockouts);
   if(!bos.length||!weekData.tasks.length){ displacedResult=null; return; }
@@ -12107,49 +12139,67 @@ function runDisplacement(){
       kids[who].sort(function(a,b){ return _wfWeight(a,d,wfOpts)-_wfWeight(b,d,wfOpts); });
       _applySticky(kids[who]);
 
-      var cursor=boE;
+      var cursorStart=boE;
       // withSitter or mom-required: start at mom return
-      if(_sitterKids.indexOf(who)>=0&&momRet>cursor) cursor=momRet;
+      if(_sitterKids.indexOf(who)>=0&&momRet>cursorStart) cursorStart=momRet;
 
+      // maxPerDay selection (timing handled by packAround below). Excess displaced
+      // tasks go cross-day; excess kept tasks stay as-is (matches prior behavior).
+      var toPlace=[];
       kids[who].forEach(function(t){
-        var c=cursor;
-        if(t.mom==="required"&&momRet>c) c=momRet;
-        if(c>=dLunchS&&c<dLunchE) c=dLunchE;
-
-        var isDone=!!(checked&&checked[t.id]);
-        // maxPerDay check — done tasks are history, caps don't apply to them
-        var subj=taskSubject(t), mx=maxFor(subj);
-        if(mx<999&&!isDone){
-          var ct=0; working.forEach(function(w){if(w.day===d&&taskSubject(w)===subj&&w.who===who)ct++;});
-          if(ct>=mx){ if(displacedIds.has(t.id)){needsCrossDay.push(t);}else{working.push(t);} return; }
-        }
-
-        // Done tasks never leave their own day — they already happened here, so
-        // they stack past the day's end rather than displacing to another day
-        // (where they'd render nowhere but still eat that day's early slots).
-        if(c<dEnd||isDone){
-          if(displacedIds.has(t.id)){ t._displaced=true; t._originalDay=t._originalDay||d; }
-          t.time=fromMin(c);
-          working.push(t);
-          cursor=c+20;
-        } else {
-          if(displacedIds.has(t.id)){
-            needsCrossDay.push(t);
-          } else {
-            // Originally kept task that no longer fits — also needs placement
-            t._displaced=true; t._originalDay=d;
-            needsCrossDay.push(t);
+        if(!(checked&&checked[t.id])){
+          var subj=taskSubject(t), mx=maxFor(subj);
+          if(mx<999){
+            var ct=0;
+            working.forEach(function(w){if(w.day===d&&taskSubject(w)===subj&&w.who===who)ct++;});
+            toPlace.forEach(function(w){if(taskSubject(w)===subj)ct++;});
+            if(ct>=mx){ if(displacedIds.has(t.id)){needsCrossDay.push(t);}else{working.push(t);} return; }
           }
         }
+        toPlace.push(t);
       });
+      if(!toPlace.length) return;
+      function _markDisp(t){ if(displacedIds.has(t.id)){ t._displaced=true; t._originalDay=t._originalDay||d; } }
+      var _ctx={start:_dayStart(d),end:dEnd,lunchStart:dLunchS,lunchEnd:dLunchE,momStart:momRet,kidStart:{},overtimeMax:240};
+      _ctx.kidStart[who]=cursorStart;
+
+      // Live (unchecked) tasks pack from the blockout end; anything past day-end goes cross-day.
+      var live=toPlace.filter(function(t){return !(checked&&checked[t.id]);});
+      var over=packAround(working.filter(function(t){return t.day===d;}),live,Object.assign({},_ctx,{allowOvertime:false}));
+      var overSet=new Set(over);
+      live.forEach(function(t){
+        if(overSet.has(t)){ t._displaced=true; t._originalDay=t._originalDay||d; needsCrossDay.push(t); }
+        else { _markDisp(t); working.push(t); }
+      });
+
+      // Done tasks never leave their own day — stack past day-end (overtime) around the rest.
+      var done=toPlace.filter(function(t){return checked&&checked[t.id];});
+      if(done.length){
+        packAround(working.filter(function(t){return t.day===d;}),done,Object.assign({},_ctx,{allowOvertime:true}));
+        done.forEach(function(t){ _markDisp(t); working.push(t); });
+      }
     });
   });
 
   // ── Phase 2: Cross-day placement (later days first, then Saturday catch-all) ──
   // relaxMax: Saturday is the catch-up day — a sequential subject may double up there
   // (the Phase 4 re-sequencer keeps the lesson numbers in order).
+  // Resolve a weekday name to its calendar date (YYYY-MM-DD) for off-day checks.
+  function _dateOfDay(d){
+    var lbl=DAY_DT[d];
+    if(!lbl&&d==="saturday"&&DAY_DT.friday){
+      var fd=new Date(DAY_DT.friday+", "+new Date().getFullYear()); fd.setDate(fd.getDate()+1);
+      return fd.getFullYear()+"-"+String(fd.getMonth()+1).padStart(2,"0")+"-"+String(fd.getDate()).padStart(2,"0");
+    }
+    if(!lbl) return null;
+    var dt=new Date(lbl+", "+new Date().getFullYear());
+    if(isNaN(dt.getTime())) return null;
+    return dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");
+  }
   function canPlace(t,d,relaxMax){
     if(_fullDay(d,t.who)) return false;
+    var _ds=_dateOfDay(d);
+    if(_ds&&smapIsKidOff(t.who,_ds)) return false; // calendar holiday/vacation/kid-off — never place here
     var subj=taskSubject(t),mx=maxFor(subj);
     if(mx<999&&!(relaxMax&&_isSeqSubject(t))){var ct=0;working.forEach(function(w){if(w.day===d&&taskSubject(w)===subj&&w.who===t.who)ct++;});if(ct>=mx)return false;}
     var bab=null;bos.forEach(function(bo){if(bo.day===d&&bo.type==="babysitter")bab=bo;});
@@ -12202,149 +12252,72 @@ function runDisplacement(){
   needsCrossDay.filter(function(t){return !_stickyCfg(t);}).forEach(_placeCrossDay);
   needsCrossDay.filter(function(t){return !!_stickyCfg(t);}).forEach(_placeCrossDay);
 
-  // ── Phase 3: Re-time receiving days (overflow → Saturday) ──
-  var satOverflow=[];
+  // ── Phase 3: Re-time receiving days through packDay (overflow → Saturday) ──
   var touchedDays=new Set(working.filter(function(t){return t._displaced&&!byDay[t.day];}).map(function(t){return t.day;}));
   touchedDays.forEach(function(d){
-    if(d==="saturday") return; // Saturday is re-timed in parallel below
-    var dStart=_dayStart(d);
-    var dEnd=_dayEnd(d);
-    var dLunchS=_dayLS(d);
-    var dLunchE=_dayLE(d);
-
-    const dayTasks=working.filter(t=>t.day===d);
-    dayTasks.sort((a,b)=>{
-      if(!a._displaced&&!b._displaced) return toMin(a.time)-toMin(b.time);
-      if(!a._displaced) return -1;
-      if(!b._displaced) return 1;
-      return _wfWeight(a)-_wfWeight(b);
-    });
-
-    let cursor=dStart;
-    const originals=dayTasks.filter(t=>!t._displaced);
-    if(originals.length){
-      const lastOrig=Math.max(...originals.map(t=>toMin(t.time)))+20;
-      cursor=Math.max(cursor,lastOrig);
-    }
-
-    _applySticky(dayTasks.filter(t=>t._displaced)).forEach(dt=>{
-      if(cursor>=dLunchS&&cursor<dLunchE) cursor=dLunchE;
-      if(cursor>=dEnd){
-        // Overflow — route to Saturday instead of carry-over
-        const idx=working.indexOf(dt);
-        if(idx>=0) working.splice(idx,1);
-        if(d!=="saturday"&&canPlace(dt,"saturday",true)){
-          dt.day="saturday";
-          working.push(dt);
-          satOverflow.push(dt);
-        } else {
-          dt._carryOver=true;
-          carryOver.push(dt);
-        }
-        return;
-      }
-      dt.time=fromMin(cursor);
-      cursor+=20;
+    if(d==="saturday") return; // Saturday is re-timed below
+    var displacedOnD=working.filter(function(t){return t.day===d&&t._displaced;});
+    if(!displacedOnD.length) return;
+    // Order displaced by workflow; _packFit seeds past the day's kept originals.
+    displacedOnD.sort(function(a,b){ return _wfWeight(a,d)-_wfWeight(b,d); });
+    _applySticky(displacedOnD);
+    _packFit(d,displacedOnD,false).forEach(function(dt){
+      // Didn't fit this day → route to Saturday (packed below), else carry-over.
+      var idx=working.indexOf(dt); if(idx>=0) working.splice(idx,1);
+      if(canPlace(dt,"saturday",true)){ dt.day="saturday"; dt._originalDay=dt._originalDay||d; working.push(dt); }
+      else { dt._carryOver=true; carryOver.push(dt); }
     });
   });
 
-  // Re-time displaced Saturday tasks — kids work in PARALLEL (same overlap rules as weekdays):
-  // one Mom Required at a time, one computer/iPad/phone at a time, nothing during lunch,
-  // each kid does one task at a time in workflow order.
+  // ── Re-time a day's displaced tasks through the shared packer (packDay) ──
+  // Duration-aware, all kids in parallel (one Mom / one computer / one shared iPad,
+  // Lucy on her own iPad), nothing during lunch, fitting AROUND any already-fixed
+  // (checked / earlier-placed) work on that day. allowOvertime stacks up to 3h past
+  // the day's end (Saturday catch-up) before a task is returned as overflow.
+  // Shared by blockout receiving-days, the Saturday re-time, and manual "+Saturday".
+  // PACKSAT_START (node-harness extraction boundary)
+  function _packFit(day,newTasks,allowOvertime){
+    if(!newTasks.length) return [];
+    var newSet=new Set(newTasks);
+    var existing=working.filter(function(t){return t.day===day&&!newSet.has(t);});
+    return packAround(existing,newTasks,{start:_dayStart(day),end:_dayEnd(day),
+      lunchStart:_dayLS(day),lunchEnd:_dayLE(day),allowOvertime:allowOvertime,overtimeMax:180});
+  }
+  // PACKSAT_END
   (function(){
-    var satTasks=working.filter(t=>t.day==="saturday"&&t._displaced);
+    var satTasks=working.filter(function(t){return t.day==="saturday"&&t._displaced;});
     if(!satTasks.length) return;
-    var satStart=_dayStart("saturday"), satEnd=_dayEnd("saturday"), satLS=_dayLS("saturday"), satLE=_dayLE("saturday");
-    // Sort Saturday: ascending by original day, then workflow order within each day
+    // Order: ascending by original day, then workflow order within each day; sticky pairs adjacent.
     var _dayIdx={monday:0,tuesday:1,wednesday:2,thursday:3,friday:4,saturday:5};
-    satTasks.sort((a,b)=>{
+    satTasks.sort(function(a,b){
       var da=_dayIdx[a._originalDay]!=null?_dayIdx[a._originalDay]:5, db=_dayIdx[b._originalDay]!=null?_dayIdx[b._originalDay]:5;
       if(da!==db) return da-db;
       return _wfWeight(a,"saturday")-_wfWeight(b,"saturday");
     });
     _applySticky(satTasks);
-    // Occupancy grid from tasks already fixed on Saturday (non-displaced).
-    // Device lanes mirror GWScheduler: one computer, one shared iPad for
-    // Lincoln/Ellis/Julian, and Lucy's OWN iPad — her independent work never
-    // waits on the boys' device queue.
-    var kidBusy={}, momBusy={}, devBusy={computer:{},ipad:{},ipadLucy:{},phone:{}};
-    function _laneOf(t){
-      var dv=taskDevice(t);
-      if(dv==="ipad"&&t.who==="lucy") return "ipadLucy";
-      return dv;
-    }
-    function _mark(t,m){
-      if(!kidBusy[t.who]) kidBusy[t.who]={};
-      kidBusy[t.who][m]=1;
-      if(t.mom==="required") momBusy[m]=1;
-      var lane=_laneOf(t);
-      if(devBusy[lane]) devBusy[lane][m]=1;
-    }
-    working.forEach(function(t){
-      if(t.day==="saturday"&&!t._displaced) _mark(t,toMin(t.time));
-    });
-    var kidNext={}; // per-kid cursor — keeps each kid's tasks sequential
-    satTasks.forEach(dt=>{
-      var from=Math.max(satStart,kidNext[dt.who]||0);
-      var lane=_laneOf(dt);
-      var slot=-1;
-      for(var m=from;m<satEnd;m+=20){
-        if(m>=satLS&&m<satLE) continue;                    // lunch block
-        if(kidBusy[dt.who]&&kidBusy[dt.who][m]) continue;  // kid already working
-        if(dt.mom==="required"&&momBusy[m]) continue;      // one Mom Required at a time
-        if(devBusy[lane]&&devBusy[lane][m]) continue;      // one per device lane at a time
-        slot=m;break;
-      }
-      if(slot<0){
-        // Official day is full — stack overtime (up to 3h past end) before giving up to carry-over
-        for(var m2=Math.max(satEnd,from);m2<satEnd+180;m2+=20){
-          if(m2>=satLS&&m2<satLE) continue;
-          if(kidBusy[dt.who]&&kidBusy[dt.who][m2]) continue;
-          if(dt.mom==="required"&&momBusy[m2]) continue;
-          if(devBusy[lane]&&devBusy[lane][m2]) continue;
-          slot=m2;break;
-        }
-      }
-      if(slot<0){
-        dt._carryOver=true;
-        carryOver.push(dt);
-        const idx=working.indexOf(dt);
-        if(idx>=0) working.splice(idx,1);
-        return;
-      }
-      dt.time=fromMin(slot);
-      _mark(dt,slot);
-      kidNext[dt.who]=slot+20;
+    _packFit("saturday",satTasks,true).forEach(function(dt){
+      dt._carryOver=true; carryOver.push(dt);
+      var idx=working.indexOf(dt); if(idx>=0) working.splice(idx,1);
     });
   })();
 
   // ── Phase 3.6: Re-apply persisted "+ Saturday" choices from the carry-over alert ──
   var msat=coManualSat[WK]||{};
   if(Object.keys(msat).length&&carryOver.length){
-    var msStart=_dayStart("saturday"), msEnd=_dayEnd("saturday"), msLS=_dayLS("saturday"), msLE=_dayLE("saturday");
+    var _manualSat=[];
     for(var ci=carryOver.length-1;ci>=0;ci--){
       var co2=carryOver[ci];
       if(!msat[co2.id]) continue;
       carryOver.splice(ci,1);
-      co2._carryOver=false;
-      co2.day="saturday";
-      var dv2=taskDevice(co2), slot2=msEnd; // nothing free — stack at end of day (mom chose to force it)
-      var satNow=working.filter(function(w){return w.day==="saturday";});
-      for(var m3=msStart;m3<msEnd+180;m3+=20){
-        if(m3>=msLS&&m3<msLE) continue;
-        var blocked=satNow.some(function(w){
-          if(toMin(w.time)!==m3) return false;
-          if(w.who===co2.who) return true;
-          if(co2.mom==="required"&&w.mom==="required") return true;
-          if(dv2==="paper"||taskDevice(w)!==dv2) return false;
-          if(dv2==="ipad"&&((w.who==="lucy")!==(co2.who==="lucy"))) return false; // Lucy has her own iPad
-          return true;
-        });
-        if(!blocked){slot2=m3;break;}
-      }
-      co2.time=fromMin(slot2);
+      co2._carryOver=false; co2._displaced=true; co2._originalDay=co2._originalDay||co2.day; co2.day="saturday";
       working.push(co2);
+      _manualSat.push(co2);
     }
+    // Pack mom's forced picks around what's already on Saturday; if they still won't fit
+    // in 3h overtime they go back to carry-over (never silently dropped).
+    _packFit("saturday",_manualSat,true).forEach(function(dt){
+      dt._carryOver=true; var idx=working.indexOf(dt); if(idx>=0) working.splice(idx,1); carryOver.push(dt);
+    });
   }
 
   // ── Phase 4: Re-sequence "sequential" subjects so lessons stay in day order ──
@@ -12412,7 +12385,21 @@ function runDisplacement(){
   }
 
   displacedResult={tasks:working,carryOver};
+
+  // ── Audit the live schedule + verify nothing was silently dropped ──
+  // Non-essential: a bug in the audit must NEVER break scheduling, so guard it.
+  try{
+    lastAudit=auditSchedule(working);
+    var seen={}; working.forEach(function(t){seen[t.id]=1;}); carryOver.forEach(function(t){seen[t.id]=1;});
+    var nd=(rulesData&&rulesData.nothingDropsOff)||{}, exMap=nd.exception||{};
+    var _canDrop=function(t){ var subj=(taskSubject(t)||"").toLowerCase(); for(var k in exMap){ if(exMap[k]&&exMap[k].can_drop&&subj.indexOf(k.toLowerCase())>=0) return true; } return false; };
+    tasks.forEach(function(t){
+      if(String(t.id).endsWith("_c")||(checked&&checked[t.id])) return;
+      if(!seen[t.id]&&!_canDrop(t)) lastAudit.push((DAY_LBL[t.day]||t.day||"?")+": "+cap(t.who)+" — "+taskSubject(t)+" was dropped (not placed or carried over)");
+    });
+  }catch(e){ lastAudit=[]; dbg&&dbg("auditSchedule error: "+e.message); }
 }
+// RUNDISP_END
 
 // ── BLOCKOUT SYSTEM ──────────────────────────────────────────────
 function openBoManager(){
@@ -12560,39 +12547,19 @@ function resortDayTasks(day,startOverride,momOverride){
   const schoolStart=startOverride!=null?startOverride:toMin(sdOv.start||sd.defaultStart||"10:00 AM");
   const momAvail=momOverride!=null?momOverride:schoolStart;
   const schoolEnd=toMin(sdOv.end||sd.defaultEnd||"4:15 PM");
-  // Get ALL tasks for this day (checked or not) — re-sort the whole day
+  const lunchS=toMin(sdOv.lunchStart||sd.lunchStart||"1:00 PM");
+  const lunchE=toMin(sdOv.lunchEnd||sd.lunchEnd||"2:00 PM");
+  // ALL tasks for this day (checked or not), in current time order — re-sort the whole day.
   const dayTasks=weekData.tasks.filter(t=>t.day===day&&!t.id.endsWith("_c"));
   if(!dayTasks.length) return;
-  // Sort by current time to preserve relative order
   dayTasks.sort((a,b)=>toMin(a.time)-toMin(b.time));
-  // Build per-resource cursors — mom may be available later (e.g. babysitter window)
-  const cur={comp:schoolStart,ipad:schoolStart,ipadLucy:schoolStart,mom:momAvail};
-  const kidCur={};
-  // Place every task through the scheduler
-  let changed=false;
-  dayTasks.forEach(t=>{
-    const dur=t.dur||20;
-    const det=t.detail||"";
-    const isComp=det.includes("Computer.");
-    const isIpad=det.includes("Ipad.");
-    const reqMom=t.mom==="required";
-    // Earliest start: max of kid cursor, device cursor, mom cursor
-    let s=kidCur[t.who]||schoolStart;
-    if(isComp) s=Math.max(s,cur.comp);
-    if(isIpad) s=Math.max(s,t.who==="lucy"?cur.ipadLucy:cur.ipad);
-    if(reqMom) s=Math.max(s,cur.mom);
-    // Skip lunch
-    s=gwSkipLunch(s,dur);
-    if(s+dur>schoolEnd) s=schoolEnd-dur; // clamp
-    const newTime=fromMin(s);
-    if(newTime!==t.time){ t.time=newTime; changed=true; }
-    // Advance cursors
-    const end=s+dur;
-    kidCur[t.who]=end;
-    if(isComp) cur.comp=end;
-    if(isIpad){ if(t.who==="lucy") cur.ipadLucy=end; else cur.ipad=end; }
-    if(reqMom) cur.mom=end;
-  });
+  // Re-time through the shared packer (packAround): duration-aware, all kids parallel,
+  // device by stamped t.device (legacy fallback taskDevice), Mom may start later
+  // (babysitter window). Overtime keeps everything on the day instead of overlapping.
+  const before={}; dayTasks.forEach(t=>{ before[t.id]=t.time; });
+  packAround([],dayTasks,{start:schoolStart,end:schoolEnd,lunchStart:lunchS,lunchEnd:lunchE,
+    momStart:momAvail,allowOvertime:true,overtimeMax:240});
+  const changed=dayTasks.some(t=>before[t.id]!==t.time);
   if(!changed) return;
   sv(WK+"_tasks",weekData.tasks);
   safeWriteTasks("runDisplacement");
@@ -12769,8 +12736,20 @@ function rulesUpdateMax(subj,field,val){
   const r=JSON.parse(JSON.stringify(rulesData));
   if(!r.maxPerDay) r.maxPerDay={};
   if(!r.maxPerDay[subj]) r.maxPerDay[subj]={};
-  if(field==="max") r.maxPerDay[subj].max=val===""?null:parseInt(val);
+  if(field==="max"||field==="saturday_max") r.maxPerDay[subj][field]=(val===""?null:parseInt(val));
   else r.maxPerDay[subj][field]=!r.maxPerDay[subj][field];
+  saveRules(r);
+}
+function rulesRemoveMax(subj){
+  const r=JSON.parse(JSON.stringify(rulesData));
+  if(r.maxPerDay) delete r.maxPerDay[subj];
+  saveRules(r);
+}
+function rulesAddMax(subj){
+  if(!subj) return;
+  const r=JSON.parse(JSON.stringify(rulesData));
+  if(!r.maxPerDay) r.maxPerDay={};
+  if(!r.maxPerDay[subj]) r.maxPerDay[subj]={max:1};
   saveRules(r);
 }
 
@@ -12835,7 +12814,7 @@ function renderRules(el,headerHtml){
   const ws=(r.withSitter||[]);
   h+='<div class="rules-section-lbl" style="margin-top:10px">With '+SITTER_NAME+' (no school during window)</div>';
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;padding:6px 0">';
-  ["lincoln","ellis","lucy"].forEach(k=>{
+  ["lincoln","ellis","lucy","julian"].forEach(k=>{
     const on=ws.includes(k);
     h+='<div class="pnw-chip'+(on?" on":"")+'" onclick="rulesToggleWithSitter(\''+k+'\')">'+cap(k)+'</div>';
   });
@@ -12896,7 +12875,7 @@ function renderRules(el,headerHtml){
   h+='<div class="rules-card-title"><span>&#128260;</span> Workflow Orders</div>';
   h+='<div class="rules-card-arrow">&#9654;</div></div>';
   h+='<div class="rules-card-body">';
-  ["lincoln","ellis","lucy"].forEach(k=>{
+  ["lincoln","ellis","lucy","julian"].forEach(k=>{
     const kc=SL_KCOL[k]||"#666";
     const kw=wf[k]||{};
     h+='<div class="rules-kid-chip" style="background:'+kc+'">'+cap(k)+'</div>';
@@ -12984,14 +12963,16 @@ function renderRules(el,headerHtml){
   h+='<div class="rules-card-title"><span>&#128290;</span> Max-Per-Day Limits</div>';
   h+='<div class="rules-card-arrow">&#9654;</div></div>';
   h+='<div class="rules-card-body">';
+  h+='<div style="font-size:11px;color:var(--muted);padding-bottom:8px">Caps how many times a subject runs in a day (blank = no cap). Sat = Saturday-specific cap.</div>';
   Object.entries(mp).forEach(([subj,cfg])=>{
     h+='<div class="rules-row" style="flex-wrap:wrap">';
     h+='<div class="rules-label">'+subj+(cfg.kid?' <span style="font-size:10px;color:var(--muted)">('+cfg.kid+')</span>':'')+'</div>';
     h+='<div style="display:flex;align-items:center;gap:6px">';
-    if(cfg.max!=null){
-      h+='<span style="font-size:11px;color:var(--muted)">Max/day:</span>';
-      h+='<input type="number" class="rules-num" min="0" max="10" value="'+cfg.max+'" onchange="rulesUpdateMax(\''+subj+'\',\'max\',this.value)">';
-    }
+    h+='<span style="font-size:11px;color:var(--muted)">Max/day</span>';
+    h+='<input type="number" class="rules-num" min="0" max="10" value="'+(cfg.max!=null?cfg.max:"")+'" onchange="rulesUpdateMax(\''+subj+'\',\'max\',this.value)">';
+    h+='<span style="font-size:11px;color:var(--muted);margin-left:4px">Sat</span>';
+    h+='<input type="number" class="rules-num" min="0" max="10" value="'+(cfg.saturday_max!=null?cfg.saturday_max:"")+'" onchange="rulesUpdateMax(\''+subj+'\',\'saturday_max\',this.value)">';
+    h+='<button onclick="rulesRemoveMax(\''+subj+'\')" title="Remove cap" style="margin-left:4px;border:none;background:none;color:#ef4444;cursor:pointer;font-size:16px;font-weight:700;line-height:1;font-family:\'DM Sans\',sans-serif">&times;</button>';
     h+='</div>';
     if(cfg.never_babysitter){
       h+='<div style="display:flex;align-items:center;gap:6px;width:100%;padding-top:4px">';
@@ -13002,11 +12983,20 @@ function renderRules(el,headerHtml){
     if(cfg.sequential_within_peak){
       h+='<div style="width:100%;font-size:11px;color:var(--muted);font-style:italic;padding-top:2px">Sequential within peak — finish peak before next</div>';
     }
-    if(cfg.saturday_max!=null){
-      h+='<div style="width:100%;font-size:11px;color:var(--muted);padding-top:2px">Saturday max: '+cfg.saturday_max+'/day</div>';
-    }
     h+='</div>';
   });
+  (function(){
+    var allSubs={}; ["lincoln","ellis","lucy","julian"].forEach(function(k){ var s=(currData&&currData.subjects&&currData.subjects[k])||{}; for(var key in s){ if(!s[key].paused) allSubs[s[key].display||key]=1; } });
+    var addable=Object.keys(allSubs).filter(function(d){return !mp[d];}).sort();
+    if(addable.length){
+      h+='<div style="display:flex;align-items:center;gap:6px;padding-top:10px;border-top:1px solid var(--border);margin-top:6px">';
+      h+='<select id="mp-add-sel" class="rules-time" style="flex:1;font-size:12px"><option value="">Add a subject cap…</option>';
+      addable.forEach(function(d){ h+='<option value="'+esc(d)+'">'+esc(d)+'</option>'; });
+      h+='</select>';
+      h+='<button onclick="var v=document.getElementById(\'mp-add-sel\').value; if(v) rulesAddMax(v);" style="padding:5px 14px;border:1px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Add</button>';
+      h+='</div>';
+    }
+  })();
   h+='</div></div>';
 
   // 6. CARRY-OVER & SATURDAY
@@ -13043,39 +13033,60 @@ function renderRules(el,headerHtml){
   }
   h+='</div></div>';
 
+  // 6.5 PER-SUBJECT SETTINGS — read-only mirror of the Subjects page
+  h+='<div class="rules-card'+o("mirror")+'">';
+  h+='<div class="rules-card-hdr" onclick="rulesToggleCard(\'mirror\')">';
+  h+='<div class="rules-card-title"><span>&#128218;</span> Per-Subject Settings</div>';
+  h+='<div class="rules-card-arrow">&#9654;</div></div>';
+  h+='<div class="rules-card-body">';
+  h+='<div style="font-size:11px;color:var(--muted);padding-bottom:6px">A read-only view of every subject — duration, device, Mom, and rules. These live on the Subjects page; edit them there.</div>';
+  h+='<button onclick="setAdminSub(\'curriculum\')" style="padding:6px 14px;border:1px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-bottom:10px">&#9998; Edit on Subjects page &rarr;</button>';
+  ["lincoln","ellis","lucy","julian"].forEach(function(k){
+    var subs=(currData&&currData.subjects&&currData.subjects[k])||{};
+    var keys=Object.keys(subs).filter(function(sk){return !subs[sk].paused;}).sort(function(a,b){return (subs[a].display||a).localeCompare(subs[b].display||b);});
+    if(!keys.length) return;
+    h+='<div class="rules-kid-chip" style="background:'+(SL_KCOL[k]||"#666")+'">'+cap(k)+'</div>';
+    keys.forEach(function(sk){
+      var s=subs[sk], rl=s.rules||"", flags=[];
+      if(s.mom==="required") flags.push("Mom"); else if(s.mom==="maybe") flags.push("Mom?");
+      ["sequential","sticky","first","last","no-fri","mon-thu","max1"].forEach(function(f){ if(rl.includes(f)) flags.push(f); });
+      h+='<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px solid #f9fafb">';
+      h+='<span>'+(GW_DEVICE_EMOJI[s.device]||GW_DEVICE_EMOJI.paper)+'</span>';
+      h+='<span style="flex:1;min-width:0">'+esc(s.display||sk)+'</span>';
+      h+='<span style="font-size:11px;color:var(--muted);flex-shrink:0">'+(s.minutes||20)+'m</span>';
+      if(flags.length) h+='<span style="font-size:10px;color:var(--muted);flex-shrink:0">'+esc(flags.join(" · "))+'</span>';
+      h+='</div>';
+    });
+    h+='<div style="height:8px"></div>';
+  });
+  h+='</div></div>';
+
   // 7. AUDIT CHECKLIST
   h+='<div class="rules-card'+o("audit")+'">';
   h+='<div class="rules-card-hdr" onclick="rulesToggleCard(\'audit\')">';
   h+='<div class="rules-card-title"><span>&#9989;</span> Audit Checklist</div>';
   h+='<div class="rules-card-arrow">&#9654;</div></div>';
   h+='<div class="rules-card-body">';
-  h+='<div style="font-size:11px;color:var(--muted);padding-bottom:8px">The engine checks all of these after every displacement.</div>';
-  const audits=[
-    "No two Mom Required tasks at same time",
-    "No two computer tasks at same time",
-    "No two iPad tasks at same time",
-    "No kid has two tasks in same slot",
-    "No tasks in lunch block",
-    "Lincoln first on computer every day",
-    "Ellis gets iPad before Lucy",
-    "Each day follows correct workflow order",
-    "Dictation max 1/day",
-    "Reflex max 1/day",
-    "Reading Eggs (Lucy) max 1/day",
-    "NZK (Lucy) max 1/day",
-    "Mom Required never in babysitter window",
-    "Lucy — no tasks during babysitter window",
-    "Devices dispersed equally across days",
-    "Per-subject order maintained across week",
-    "Nothing silently dropped",
-    "Saturday only if weekday overflow",
-    "Math Sprints never in babysitter window",
-    "Dictation never in babysitter window (unless Mom home)"
-  ];
-  audits.forEach((a,i)=>{
-    h+='<div style="display:flex;gap:8px;padding:4px 0;font-size:12px;border-bottom:1px solid #f9fafb">';
-    h+='<span style="color:#16a34a;font-weight:700;width:20px;text-align:right;flex-shrink:0">'+(i+1)+'.</span>';
-    h+='<span>'+a+'</span></div>';
+  h+='<div style="font-size:11px;color:var(--muted);padding-bottom:8px">Live check of this week’s schedule — derived from the rules above, re-run after every change.</div>';
+  let _aud=[]; try{ _aud=auditSchedule(getActiveTasks()); }catch(e){ _aud=[]; }
+  if(!_aud.length){
+    h+='<div style="display:flex;align-items:center;gap:8px;background:#f0fdf4;border:1px solid #16a34a55;border-radius:8px;padding:10px 12px;margin-bottom:10px">';
+    h+='<span style="font-size:18px">✅</span><span style="font-size:13px;font-weight:700;color:#166534">All clear — no conflicts in this week’s schedule</span></div>';
+  } else {
+    h+='<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:10px 12px;margin-bottom:10px">';
+    h+='<div style="font-size:12px;font-weight:800;color:#991b1b;margin-bottom:6px">⚠️ '+_aud.length+' issue'+(_aud.length>1?'s':'')+' found</div>';
+    _aud.forEach(function(a){ h+='<div style="font-size:12px;color:#7f1d1d;padding:2px 0">• '+esc(a)+'</div>'; });
+    h+='</div>';
+  }
+  h+='<div class="rules-section-lbl">What it checks</div>';
+  ["No kid double-booked; nothing in the lunch block",
+   "One Mom-Required / one computer / one shared iPad at a time (from Overlap Rules)",
+   "Lucy’s iPad runs independently of the boys’",
+   "Per-subject Max-Per-Day not exceeded (incl. Saturday max)",
+   "Nothing on a calendar off-day (holiday / vacation / kid-off)",
+   "Nothing silently dropped — every task is placed or on the carry-over list"
+  ].forEach(function(c){
+    h+='<div style="display:flex;gap:8px;padding:3px 0;font-size:12px;color:var(--muted)"><span style="color:#16a34a;flex-shrink:0">✓</span><span>'+c+'</span></div>';
   });
   h+='</div></div>';
 
@@ -14023,6 +14034,7 @@ function gwParseDate(s){
 }
 
 // Read from Rules tab — falls back to sensible defaults if rules not loaded
+// GWGEN_START (node-harness extraction boundary — generator + helpers + packer)
 function gwRules(){
   const r=rulesData||{};
   const sd=r.schoolDay||{};
@@ -14148,6 +14160,89 @@ function gwSubjectDetail(kid,key){
   return parts.join(" ");
 }
 
+// ====== SHARED DAY-PACKER — additive, not yet wired (plan: elegant-chasing-lark) ======
+// PACKDAY_START
+// One duration-aware packer that all four scheduling engines will share.
+// Pure arithmetic (minutes-from-midnight) so it can be unit-tested in isolation.
+// Items must already be ordered per kid (category rank + sticky); packDay only
+// resolves resource/time conflicts and reports what didn't fit.
+//
+//   item: { id, who, lane, durMin, momRequired, droppable }
+//     lane in computer | ipad | ipadLucy | phone | paper   ("paper"/""/unknown = no device lane)
+//   ctx:  { start, end, lunchStart, lunchEnd,        // minutes from midnight
+//           sitterStart, sitterEnd,                   // 0/0 when no babysitter window
+//           kidStart, laneStart, momStart,            // per-kid / per-lane / Mom earliest — seed past already-fixed (checked) work
+//           lanes,                                    // contending device lanes (default below)
+//           allowOvertime, overtimeMax }              // Saturday catch-up: stack past `end`
+//   -> { byId:{id:startMin}, placed:[{id,start}], overflow:[item], dropped:[item] }
+//      overflow = couldn't fit and must be re-homed/carried (never silently lost);
+//      dropped  = couldn't fit AND flagged droppable (e.g. reflex).
+function packDay(items, ctx){
+  ctx = ctx || {};
+  const dayStart = ctx.start || 0;
+  const LANES = ctx.lanes || ["computer","ipad","ipadLucy","phone"];
+  const laneSet = {}; LANES.forEach(l => { laneSet[l] = true; });
+  const lunchS = ctx.lunchStart, lunchE = ctx.lunchEnd, hasLunch = (lunchE > lunchS);
+  const skipLunch = (start, dur) => {
+    if(!hasLunch || start >= lunchE || start + dur <= lunchS) return start;
+    return lunchE;
+  };
+  const res = {}; LANES.forEach(l => { res[l] = Math.max(dayStart, (ctx.laneStart && ctx.laneStart[l]) || 0); });
+  let momFree = Math.max(dayStart, ctx.momStart || 0);
+  const kidFree = {};
+  const hardEnd = ctx.allowOvertime ? (ctx.end + (ctx.overtimeMax || 180)) : ctx.end;
+  const placed = [], overflow = [], dropped = [], byId = {};
+  for(const it of (items || [])){
+    const kid = it.who, dur = it.durMin || 20;
+    const lane = (it.lane && laneSet[it.lane]) ? it.lane : null;
+    let from = Math.max(dayStart, kidFree[kid] || 0, (ctx.kidStart && ctx.kidStart[kid]) || 0);
+    if(lane) from = Math.max(from, res[lane]);
+    if(it.momRequired) from = Math.max(from, momFree);
+    let start = skipLunch(from, dur);
+    // A Mom-required task can't run during the babysitter window — defer to mom's return.
+    if(it.momRequired && ctx.sitterEnd > ctx.sitterStart && start < ctx.sitterEnd && start + dur > ctx.sitterStart){
+      start = skipLunch(ctx.sitterEnd, dur);
+    }
+    if(start + dur > hardEnd){ (it.droppable ? dropped : overflow).push(it); continue; }
+    const end = start + dur;
+    kidFree[kid] = end;
+    if(lane) res[lane] = end;
+    if(it.momRequired) momFree = end;
+    placed.push({ id: it.id, start }); byId[it.id] = start;
+  }
+  return { byId, placed, overflow, dropped };
+}
+// PACKDAY_END
+
+// PACKAROUND_START
+// Pack `newTasks` into a day AROUND already-fixed `existing` tasks, via packDay.
+// Seeds per-kid / per-lane / Mom cursors past the fixed work (and past any ctx
+// floors), mutates each placed task's .time, and returns the tasks that didn't fit
+// (overflow — never dropped here). Shared by displacement (_packFit), the daily
+// cascade, and the day re-sort so every engine packs identically.
+//   existing / newTasks: task objects {id, who, time, dur, device, mom}
+//   ctx: {start, end, lunchStart, lunchEnd, momStart?, kidStart?, allowOvertime?, overtimeMax?}
+function packAround(existing, newTasks, ctx){
+  if(!newTasks || !newTasks.length) return [];
+  function laneOf(t){ var dv=t.device||taskDevice(t); return (dv==="ipad"&&t.who==="lucy")?"ipadLucy":dv; }
+  var dStart=ctx.start;
+  var laneStart={}, momStart=Math.max(dStart, ctx.momStart||0), kidStart={};
+  if(ctx.kidStart){ for(var k in ctx.kidStart) kidStart[k]=Math.max(dStart, ctx.kidStart[k]||0); }
+  (existing||[]).forEach(function(t){
+    var end=toMin(t.time)+(t.dur||20), lane=laneOf(t);
+    if(lane&&lane!=="paper") laneStart[lane]=Math.max(laneStart[lane]||dStart,end);
+    kidStart[t.who]=Math.max(kidStart[t.who]||dStart,end);
+    if(t.mom==="required") momStart=Math.max(momStart,end);
+  });
+  var items=newTasks.map(function(t){ return {id:t.id,who:t.who,lane:laneOf(t),durMin:t.dur||20,momRequired:t.mom==="required"}; });
+  var packed=packDay(items,{start:dStart,end:ctx.end,lunchStart:ctx.lunchStart,lunchEnd:ctx.lunchEnd,
+    kidStart:kidStart,laneStart:laneStart,momStart:momStart,allowOvertime:!!ctx.allowOvertime,overtimeMax:ctx.overtimeMax||180,lanes:ctx.lanes});
+  var byId={}; newTasks.forEach(function(t){byId[t.id]=t;});
+  packed.placed.forEach(function(p){ byId[p.id].time=fromMin(p.start); });
+  return packed.overflow.map(function(it){ return byId[it.id]; });
+}
+// PACKAROUND_END
+
 class GWScheduler{
   constructor(schoolStart,momAvailable,cutoff,sitterStart,sitterEnd){
     this.computerFree=schoolStart;
@@ -14183,6 +14278,25 @@ class GWScheduler{
   }
 }
 
+// Workflow-order rank for a curriculum subject (lower = earlier), read from the Rules →
+// Workflow Orders. Mirrors the displacement engine's _wfWeight but from curriculum
+// metadata. morning/first → very early; closing/last → very late; else by the kid's
+// workflow steps (subject match, then device/Mom tier), else neutral.
+function gwWorkflowRank(kid, key, s, dayName, isSitterDay){
+  const disp=(s.display||key||"");
+  const rules=s.rules||"";
+  if(/closing notebook/i.test(disp)||rules.includes("last")) return 1000;
+  if(/morning notebook/i.test(disp)||rules.includes("first")) return -1;
+  const wf=(rulesData&&rulesData.workflow)||{};
+  const kidWf=wf[kid]; if(!kidWf) return 500;
+  const steps=fbArr(isSitterDay?kidWf.babysitter:kidWf.normal)||fbArr(kidWf.normal)||[];
+  const tier=(s.device==="computer"||s.device==="ipad"||s.device==="phone")?"computer":(s.mom==="required"?"required":(s.mom==="maybe"?"maybe":"independent"));
+  const subjL=disp.trim().toLowerCase();
+  for(let i=0;i<steps.length;i++){ const subs=fbArr((steps[i]||{}).subjects)||[]; for(let j=0;j<subs.length;j++){ if(subjL.includes(String(subs[j]).toLowerCase())) return i*10+j; } }
+  for(let i=0;i<steps.length;i++){ if((steps[i]||{}).tier===tier) return i*10+9; }
+  return 500;
+}
+
 function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   const schoolStart=dayConfig.schoolStart;
   const momAvailable=dayConfig.momAvailable;
@@ -14199,159 +14313,105 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
 
   // Notebooks and drills are now managed as regular curriculum subjects — no hardcoded injection needed
 
-  const sched=new GWScheduler(schoolStart,momAvailable,cutoff,sitterStart,sitterEnd);
   const tasks=[];
   const dropped=[];
+  const meta={};   // item id -> {kid,key,excelVal,s} | {notebook:true}
+  const items=[];  // ordered placeable proto-tasks fed to the shared packer
 
   const ellisHasIpad=["nzk_e","eggspress_e"].some(k=>(kidAssignments.ellis||{})[k]);
+  function getMeta(kid,key){ return gwGetSubjects(kid)[key]||null; }
 
-  function getMeta(kid,key){
-    return gwGetSubjects(kid)[key]||null;
-  }
-
-  function addTask(kid,key,excelVal,startMin){
-    const s=getMeta(kid,key);
-    if(!s) return;
-    const title=gwTaskTitle(kid,key,excelVal,dayName,isCarSchool,ellisHasIpad);
-    const detail=gwSubjectDetail(kid,key);
-    const taskId=prefix+(counter++);
-    tasks.push({
-      id:taskId,who:kid,day:dayName,time:fromMin(startMin),dur:s.minutes||20,
-      title:title,detail:detail,mom:s.mom||"none",cascade:true
-    });
-  }
-
-  function schedule(kid,key,excelVal){
-    const s=getMeta(kid,key);
-    if(!s) return;
-    const reqMom=(s.mom==="required");
-    if(isCarSchool&&s.device!=="ipad"&&!GW_CAR_SAFE_KEYS.has(key)){
-      dropped.push({kid,day:dayName,key,val:excelVal,reason:"car school day — paper/computer tasks skipped"});
-      return;
-    }
+  // Turn a (kid,key) into an ordered item, applying the day-skip rules (car-school / no-fri / mon-thu).
+  function pushItem(kid,key,excelVal){
+    const s=getMeta(kid,key); if(!s) return;
+    if(isCarSchool&&s.device!=="ipad"&&!GW_CAR_SAFE_KEYS.has(key)){ dropped.push({kid,day:dayName,key,val:excelVal,reason:"car school day — paper/computer tasks skipped"}); return; }
     const rules=s.rules||"";
-    if(rules.includes("no-fri")&&isFriday){
-      dropped.push({kid,day:dayName,key,val:excelVal,reason:"Not scheduled on Fridays (Excel rule)"});
-      return;
-    }
-    if(rules.includes("mon-thu")&&!["monday","tuesday","wednesday","thursday"].includes(dayName)){
-      dropped.push({kid,day:dayName,key,val:excelVal,reason:"Mon–Thu only (Excel rule)"});
-      return;
-    }
-    const isComp=s.device==="computer";
-    const isIpad=s.device==="ipad";
-    const start=sched.place(kid,key,s.minutes||20,isComp,isIpad,reqMom);
-    if(start===null){
-      dropped.push({kid,day:dayName,key,val:excelVal,reason:"⚠️ RAN PAST SCHOOL-DAY CUTOFF — needs manual placement"});
-      return;
-    }
-    addTask(kid,key,excelVal,start);
+    if(rules.includes("no-fri")&&isFriday){ dropped.push({kid,day:dayName,key,val:excelVal,reason:"Not scheduled on Fridays (Excel rule)"}); return; }
+    if(rules.includes("mon-thu")&&!["monday","tuesday","wednesday","thursday"].includes(dayName)){ dropped.push({kid,day:dayName,key,val:excelVal,reason:"Mon–Thu only (Excel rule)"}); return; }
+    const id=prefix+(counter++);
+    items.push({id,who:kid,device:s.device||"paper",dur:s.minutes||20,mom:s.mom||"none"});
+    meta[id]={kid,key,excelVal,s};
   }
+  function pushBucket(kid,bucket){ (bucket||[]).forEach(([key,val])=>pushItem(kid,key,val)); }
 
-  function schedBucket(kid,bucket){ bucket.forEach(([key,val])=>schedule(kid,key,val)); }
+  // Julian's daily notebook (legacy hardcoded subject — migrates to curriculum later).
+  const _jnbId=prefix+(counter++);
+  items.push({id:_jnbId,who:"julian",device:"paper",dur:10,mom:"none"});
+  meta[_jnbId]={notebook:true};
 
-  // ── JULIAN NOTEBOOK — 10:00 AM, 10 min ──
-  tasks.push({
-    id:prefix+(counter++),who:"julian",day:dayName,
-    time:fromMin(Math.max(schoolStart,600)),dur:10,
-    title:"\u{1F4D6} Notebook — Daily",detail:"Paper. 10 minutes.",
-    mom:"none",cascade:true
-  });
+  const buckets={
+    lincoln:gwByCategory("lincoln",kidAssignments.lincoln||{}),
+    ellis:gwByCategory("ellis",kidAssignments.ellis||{}),
+    lucy:gwByCategory("lucy",kidAssignments.lucy||{}),
+    julian:gwByCategory("julian",kidAssignments.julian||{})
+  };
+  const KIDS=["lincoln","ellis","lucy","julian"]; // Julian is a first-class kid now
 
-  const l=gwByCategory("lincoln",kidAssignments.lincoln||{});
-  const e=gwByCategory("ellis",kidAssignments.ellis||{});
-  const c=gwByCategory("lucy",kidAssignments.lucy||{});
-
-  // Lesson Map per-day run order (scheduleOverrides[date][kid].order).
-  // Rank-sort inside each bucket so babysitter-day phases honor it best-effort;
-  // normal days additionally schedule ranked subjects as an explicit sequence.
+  // Lesson Map per-day run order (scheduleOverrides[date][kid].order): rank-sort each bucket.
   const dayOrder={};
-  [["lincoln",l],["ellis",e],["lucy",c]].forEach(([kid,bk])=>{
+  KIDS.forEach(kid=>{
+    const bk=buckets[kid];
     const a=dayConfig.dateStr?_normOrderArr((schedOv(dayConfig.dateStr,kid)||{}).order):null;
     if(!a||!a.length) return;
     dayOrder[kid]=a;
     const rnk={}; a.forEach((sk,i)=>{ rnk[sk]=i; });
     ["computer","ipad","phone","independent","maybe_paper","required_paper"].forEach(cat=>{
-      bk[cat].sort((x,y)=>{
-        const rx=rnk[x[0]]!==undefined?rnk[x[0]]:1e9, ry=rnk[y[0]]!==undefined?rnk[y[0]]:1e9;
-        return rx-ry;
-      });
+      (bk[cat]||[]).sort((x,y)=>{ const rx=rnk[x[0]]!==undefined?rnk[x[0]]:1e9, ry=rnk[y[0]]!==undefined?rnk[y[0]]:1e9; return rx-ry; });
     });
   });
 
-  // First-of-day subjects (rule: "first") — skip withSitter kids on babysitter days
-  const kidBuckets=[["lincoln",l],["ellis",e],["lucy",c]];
-  kidBuckets.forEach(([kid,b])=>{
-    if(isSitter&&withSitter.includes(kid)) return; // deferred to Phase C
-    schedBucket(kid,b.first||[]);
-  });
-
-  if(isSitter){
-    // ── Babysitter day — reads config from rules tab ──
-    // withSitter kids: ALL tasks pushed past sitterEnd (no school during window)
-    // Other kids: no-mom tasks fill window, mom-required after return
-
-    // Phase A: schedule no-mom tasks for kids NOT with babysitter
-    kidBuckets.forEach(([kid,b])=>{
-      if(withSitter.includes(kid)) return; // skip — all tasks go after return
-      schedBucket(kid,b.computer||[]);
-      schedBucket(kid,b.ipad||[]);
-      schedBucket(kid,b.phone||[]);
-      schedBucket(kid,b.independent||[]);
-      schedBucket(kid,b.maybe_paper||[]);
+  // Order each kid's tasks by their Workflow Orders (Mom-required-first, etc.), with a
+  // Lesson-Map per-day override taking precedence, then INTERLEAVE round-robin across
+  // kids so a shared resource (Mom especially) is allocated fairly per step instead of
+  // one kid at a time — this lets each kid's first/Mom work claim the morning rather than
+  // waiting for another kid's whole day to be placed first.
+  // Group base keeps first-of-day (morning notebook) always earliest and last-of-day
+  // (closing notebook) always latest; workflow rank (or an explicit Lesson-Map order)
+  // sorts the middle. Without the base, a Lesson-Map order could shove a "first" task late.
+  function collectKid(kid){
+    const b=buckets[kid], out=[];
+    ["first","computer","ipad","phone","independent","maybe_paper","required_paper","last"].forEach(function(cat){
+      var base=cat==="first"?-1000:(cat==="last"?1000:0);
+      (b[cat]||[]).forEach(function(en){ out.push({key:en[0],val:en[1],base:base}); });
     });
-
-    // Phase B: push everyone past babysitter return
-    kidBuckets.forEach(([kid])=>{ sched.kidFree[kid]=Math.max(sched.kidFree[kid],sitterEnd); });
-    sched.momFree=Math.max(sched.momFree,sitterEnd);
-
-    // Phase C: mom-required tasks + ALL tasks for withSitter kids (including first/last)
-    kidBuckets.forEach(([kid,b])=>{
-      if(withSitter.includes(kid)){
-        // This kid was with babysitter — schedule everything now (after return)
-        schedBucket(kid,b.first||[]);
-        schedBucket(kid,b.computer||[]);
-        schedBucket(kid,b.ipad||[]);
-        schedBucket(kid,b.phone||[]);
-        schedBucket(kid,b.independent||[]);
-        schedBucket(kid,b.maybe_paper||[]);
-        schedBucket(kid,b.last||[]);
-      }
-      schedBucket(kid,b.required_paper||[]);
-    });
-  } else {
-    // Normal day: read flow order from curriculum data
-    const flowOrder=currData&&currData.flowOrder||{};
-    const kidCats={lincoln:l,ellis:e,lucy:c};
-    const defaultFlow=["computer","ipad","phone","independent","maybe_paper","required_paper"];
-    [["lincoln",l],["ellis",e],["lucy",c]].forEach(([kid,b])=>{
-      const flow=flowOrder[kid]||defaultFlow;
-      if(dayOrder[kid]){
-        // Explicit per-day sequence from the Lesson Map: ranked subjects run
-        // in that exact order (across buckets), unranked ones follow via the
-        // normal category flow. The scheduler still resolves device and mom
-        // conflicts; sequence per kid is preserved because placement is
-        // monotonic per kid.
-        const pool=[];
-        flow.forEach(cat=>{ (b[cat]||[]).forEach(en=>pool.push(en)); });
-        const rnk={}; dayOrder[kid].forEach((sk,i)=>{ rnk[sk]=i; });
-        pool.filter(en=>rnk[en[0]]!==undefined).sort((x,y)=>rnk[x[0]]-rnk[y[0]]).forEach(en=>schedule(kid,en[0],en[1]));
-        pool.filter(en=>rnk[en[0]]===undefined).forEach(en=>schedule(kid,en[0],en[1]));
-      } else {
-        flow.forEach(cat=>{ if(b[cat]&&b[cat].length) schedBucket(kid,b[cat]); });
-      }
-    });
+    return out;
   }
+  function _feedRank(kid,e){
+    var dord=dayOrder[kid];
+    if(dord){ var di=dord.indexOf(e.key); if(di>=0) return e.base+di; } // explicit Lesson-Map order within the group
+    return e.base+gwWorkflowRank(kid,e.key,getMeta(kid,e.key)||{},dayName,isSitter);
+  }
+  const perKid={};
+  KIDS.forEach(function(kid){ var list=collectKid(kid); list.sort(function(a,b){return _feedRank(kid,a)-_feedRank(kid,b);}); perKid[kid]=list; });
+  const kidStart={};
+  if(isSitter) KIDS.forEach(function(kid){ if(withSitter.includes(kid)) kidStart[kid]=sitterEnd; });
+  var _maxLen=0; KIDS.forEach(function(k){ if(perKid[k].length>_maxLen) _maxLen=perKid[k].length; });
+  for(var _i=0;_i<_maxLen;_i++){ KIDS.forEach(function(kid){ var e=perKid[kid][_i]; if(e) pushItem(kid,e.key,e.val); }); }
 
-  // Last-of-day subjects (rule: "last") — withSitter kids already got theirs in Phase C
-  kidBuckets.forEach(([kid,b])=>{
-    if(isSitter&&withSitter.includes(kid)) return; // already scheduled in Phase C
-    schedBucket(kid,b.last||[]);
+  // Place everything through the shared packer (no phone lane, to match the prior
+  // generator; Mom deferred past the sitter return on babysitter days).
+  const overflow=packAround([],items,{start:schoolStart,end:cutoff,lunchStart:r.lunchStart,lunchEnd:r.lunchEnd,
+    kidStart:kidStart,momStart:(isSitter?sitterEnd:0),lanes:["computer","ipad","ipadLucy"]});
+  const overflowSet=new Set(overflow);
+  items.forEach(it=>{
+    const mm=meta[it.id];
+    if(overflowSet.has(it)){
+      if(!mm.notebook) dropped.push({kid:mm.kid,day:dayName,key:mm.key,val:mm.excelVal,reason:"⚠️ RAN PAST SCHOOL-DAY CUTOFF — needs manual placement"});
+      return;
+    }
+    if(mm.notebook){
+      tasks.push({id:it.id,who:"julian",day:dayName,time:it.time,dur:10,title:"\u{1F4D6} Notebook — Daily",detail:"Paper. 10 minutes.",mom:"none",cascade:true,device:"paper",subjectKey:"notebook"});
+      return;
+    }
+    const s=mm.s;
+    tasks.push({id:it.id,who:mm.kid,day:dayName,time:it.time,dur:s.minutes||20,
+      title:gwTaskTitle(mm.kid,mm.key,mm.excelVal,dayName,isCarSchool,ellisHasIpad),
+      detail:gwSubjectDetail(mm.kid,mm.key),mom:s.mom||"none",cascade:true,device:s.device||"paper",subjectKey:mm.key});
   });
-
   tasks.sort((a,b)=>toMin(a.time)-toMin(b.time));
   return {tasks,counter,dropped};
 }
+// GWGEN_END
 
 function gwApplyRedistribution(dayData,rules){
   const WDAY_NAMES={0:"monday",1:"tuesday",2:"wednesday",3:"thursday",4:"friday",5:"saturday",6:"sunday"};
@@ -15011,7 +15071,7 @@ function generateWeek(config){
     allTasks.push({
       id:t.id,who:t.who,day:firstDay,time:t.time||fromMin(gwRules().schoolStart),dur:t.dur||20,
       title:t.title,detail:(t.detail||t.title||"")+" (Carried from "+(t.prevWeek||"prev week")+")",
-      mom:t.mom||"none",cascade:true
+      mom:t.mom||"none",cascade:true,device:t.device||taskDevice(t),subjectKey:t.subjectKey
     });
   });
 
