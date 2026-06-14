@@ -1143,6 +1143,8 @@ let pnwResult=null;
 let pnwDropped=null;
 let pnwCarryOverCount=0;
 let pnwConfigReady=false;
+let pnwExpandedDay=null; // Plan-Week preview: which day's detailed schedule is expanded
+let pnwExpandedKid=null; // Plan-Week preview: optional kid filter for the expanded day (null = all kids)
 let pnwPendingWeek=null;
 let currViewKid="lincoln";
 let currViewWeek=null;
@@ -13659,7 +13661,7 @@ function pnwGenerate(){
   if(gen.error){ gwShowToast(gen.error); return; }
   pnwResult=gen.result; pnwDropped=gen.dropped; pnwCarryOverCount=gen.carryOverCount||0;
   gwCalendarSkips=gen.calendarSkips||null;
-  pnwStep=1;
+  pnwStep=1; pnwExpandedDay=null; pnwExpandedKid=null;
   renderPlanNextWeek();
 }
 
@@ -13847,8 +13849,9 @@ function renderPlanNextWeek(){
       dayTasks.forEach(t=>{ kidCounts[t.who]=(kidCounts[t.who]||0)+1; });
 
       h+='<div class="pnw-day-card" style="border-left:3px solid '+(DAY_COL[dn]||"#666")+'">';
-      h+='<div class="pnw-day-hdr"><div><div class="pnw-day-name" style="color:'+(DAY_COL[dn]||"#666")+'">'+(DAY_LBL[dn]||dn)+'</div><div class="pnw-day-date">'+dt+'</div></div>';
-      h+='<div style="font-size:20px;font-weight:700;font-family:\'Fraunces\',serif;color:'+(DAY_COL[dn]||"#666")+'">'+dayTasks.length+'</div></div>';
+      const _exp=(pnwExpandedDay===dn);
+      h+='<div class="pnw-day-hdr" style="cursor:pointer" onclick="pnwToggleDay(\''+dn+'\')"><div><div class="pnw-day-name" style="color:'+(DAY_COL[dn]||"#666")+'">'+(DAY_LBL[dn]||dn)+'</div><div class="pnw-day-date">'+dt+' · tap to '+(_exp?'hide':'view')+'</div></div>';
+      h+='<div style="display:flex;align-items:center;gap:10px"><div style="font-size:20px;font-weight:700;font-family:\'Fraunces\',serif;color:'+(DAY_COL[dn]||"#666")+'">'+dayTasks.length+'</div><span style="font-size:12px;color:var(--muted)">'+(_exp?"▾":"▸")+'</span></div></div>';
 
       h+='<div class="pnw-day-stats">';
       h+='<div class="pnw-stat"><div class="pnw-stat-val">'+dayTasks.length+'</div><div class="pnw-stat-lbl">Tasks</div></div>';
@@ -13858,7 +13861,8 @@ function renderPlanNextWeek(){
 
       h+='<div class="pnw-day-kids">';
       Object.entries(kidCounts).sort((a,b)=>b[1]-a[1]).forEach(([k,cnt])=>{
-        h+='<span class="pnw-kid-pill" style="background:'+(KID_COL[k]||"#666")+'">'+cap(k)+' · '+cnt+'</span>';
+        const _ka=(pnwExpandedDay===dn&&pnwExpandedKid===k);
+        h+='<span class="pnw-kid-pill" onclick="event.stopPropagation();pnwShowKid(\''+dn+'\',\''+k+'\')" title="Tap for '+cap(k)+'’s schedule" style="cursor:pointer;background:'+(KID_COL[k]||"#666")+(_ka?';box-shadow:0 0 0 2px #fff,0 0 0 4px '+(KID_COL[k]||"#666"):'')+'">'+cap(k)+' · '+cnt+'</span>';
       });
       h+='</div>';
 
@@ -13867,6 +13871,32 @@ function renderPlanNextWeek(){
       }
       if(cutoffs.length){
         h+='<div class="pnw-dropped">⚠️ '+cutoffs.length+' task(s) ran past cutoff: '+cutoffs.map(d=>cap(d.kid)+' '+d.key).join(', ')+'</div>';
+      }
+      if(_exp){
+        const _lunchS=(rulesData&&rulesData.schoolDay&&rulesData.schoolDay.lunchStart)||"1:00 PM";
+        const _lunchMin=toMin(_lunchS);
+        let _list=dayTasks.slice(); if(pnwExpandedKid) _list=_list.filter(t=>t.who===pnwExpandedKid);
+        const _sorted=_list.sort((a,b)=>toMin(a.time)-toMin(b.time)||(a.who<b.who?-1:1));
+        h+='<div style="padding:2px 14px 10px;border-top:1px solid #f3f4f6">';
+        if(pnwExpandedKid) h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:11px"><span style="font-weight:700;color:'+(KID_COL[pnwExpandedKid]||"#666")+'">'+cap(pnwExpandedKid)+'’s schedule</span><button onclick="event.stopPropagation();pnwShowKid(\''+dn+'\',\''+pnwExpandedKid+'\')" style="margin-left:auto;background:none;border:none;color:#3b82f6;font-size:11px;font-weight:600;cursor:pointer;text-decoration:underline;font-family:inherit">show all kids</button></div>';
+        if(!_sorted.length) h+='<div style="font-size:12px;color:var(--muted);padding:8px 0">No tasks this day.</div>';
+        let _lunchShown=false, _prevTime=null;
+        _sorted.forEach((t,i)=>{
+          if(!_lunchShown && i>0 && toMin(t.time)>=_lunchMin){
+            h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 0;font-size:11px;color:#b45309;font-weight:700"><span style="width:62px;flex-shrink:0">'+_lunchS+'</span><span style="flex:1;height:1px;background:#fde68a"></span><span>🍽 Lunch</span><span style="flex:1;height:1px;background:#fde68a"></span></div>';
+            _lunchShown=true; _prevTime=null;
+          }
+          const _newT=(t.time!==_prevTime); _prevTime=t.time;
+          const _mt=t.mom==="required"?'<span style="font-size:9px;font-weight:700;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:1px 5px;flex-shrink:0">Mom</span>':t.mom==="maybe"?'<span style="font-size:9px;font-weight:700;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:1px 5px;flex-shrink:0">Mom?</span>':'';
+          h+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-top:'+(_newT?"1px solid #f3f4f6":"none")+'">'+
+            '<span style="width:62px;flex-shrink:0;color:#6b7280;font-weight:700;font-size:11px">'+(_newT?t.time:'')+'</span>'+
+            (pnwExpandedKid?'':'<span style="background:'+(KID_COL[t.who]||"#666")+';color:#fff;font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;flex-shrink:0">'+cap(t.who)+'</span>')+
+            '<span style="flex:1;font-size:12px;font-weight:600;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(t.title||"")+'</span>'+
+            _mt+
+            '<span style="color:#9ca3af;font-size:11px;flex-shrink:0">'+(t.dur||20)+'m</span>'+
+          '</div>';
+        });
+        h+='</div>';
       }
       h+='</div>';
     });
@@ -13929,6 +13959,8 @@ function pnwToggleCar(d){
   else gwConfig.carSchool[d]={end:"12:00 PM",note:"Travel Day"};
   renderPlanNextWeek();
 }
+function pnwToggleDay(d){ pnwExpandedDay=(pnwExpandedDay===d?null:d); pnwExpandedKid=null; renderPlanNextWeek(); }
+function pnwShowKid(d,k){ if(pnwExpandedDay===d&&pnwExpandedKid===k){ pnwExpandedKid=null; } else { pnwExpandedDay=d; pnwExpandedKid=k; } renderPlanNextWeek(); }
 
 function pnwSaveAndGenerate(){
   if(db&&gwConfig.weekNum) db.ref("weekConfig/"+gwConfig.weekNum).set({...gwConfig});
