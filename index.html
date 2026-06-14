@@ -4612,31 +4612,26 @@ function renderCurriculumView(el,headerHtml){
     h+='</div>';
   }
 
-  // Flow order UI — auto-add any missing categories from active subjects
-  const flowOrder=currData.flowOrder&&currData.flowOrder[k]||["computer","ipad","phone","independent","maybe_paper","required_paper"];
-  const sKeysAll=Object.keys(subjects);
-  sKeysAll.forEach(sk=>{
-    if(subjects[sk].paused) return;
-    const cat=ceFlowCat(subjects[sk]);
-    if(cat&&!flowOrder.includes(cat)){
-      flowOrder.push(cat);
-      if(!currData.flowOrder) currData.flowOrder={};
-      currData.flowOrder[k]=flowOrder;
-      db.ref("curriculum/flowOrder/"+k).set(flowOrder);
-    }
-  });
-  const flowLabels={computer:"\u{1F4BB} Computer",ipad:"\u{1F4F1} iPad/Phone",phone:"\u{1F4F1} Phone",independent:"\u{1F4C4} Paper (Independent)",maybe_paper:"\u{1F4C4} Paper (May Need Mom)",required_paper:"\u{1F4C4} Paper (Mom Required)"};
+  // Scheduling Flow Order — read-only MIRROR of Rules → Workflow Orders (the single source
+  // of truth the generator + displacement actually use). Editing happens in Rules; this
+  // reflects it live, and the Lesson Map day order (lmDayRunOrder) follows the same ranking.
+  const wfSteps=fbArr((((rulesData||{}).workflow||{})[k]||{}).normal)||[];
   h+='<div class="ce-section-hdr" style="color:'+col+'">Scheduling Flow Order</div>';
-  h+='<div style="font-size:10px;color:var(--muted);margin-bottom:8px">The order device blocks are scheduled in. First block gets the earliest time slots.</div>';
+  h+='<div style="font-size:10px;color:var(--muted);margin-bottom:8px">Mirrors <b>Rules &rarr; Workflow Orders</b> &mdash; the order subjects are scheduled in. Edit it there; changes flow here and reorder the Lesson Map automatically.</div>';
   h+='<div style="background:#f9fafb;border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:16px">';
-  flowOrder.forEach((cat,i)=>{
-    h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:#fff;border:1px solid var(--border);border-radius:8px;margin-bottom:4px">';
-    h+='<span style="font-size:11px;font-weight:700;color:var(--muted);width:18px">'+(i+1)+'</span>';
-    h+='<span style="flex:1;font-size:13px;font-weight:600">'+(flowLabels[cat]||cat)+'</span>';
-    h+='<button onclick="ceFlowMove(\''+k+'\','+i+',-1)" style="border:none;background:none;cursor:pointer;font-size:16px;padding:2px 6px;opacity:'+(i===0?0.2:0.7)+'"'+(i===0?' disabled':'')+'>&#9650;</button>';
-    h+='<button onclick="ceFlowMove(\''+k+'\','+i+',1)" style="border:none;background:none;cursor:pointer;font-size:16px;padding:2px 6px;opacity:'+(i===flowOrder.length-1?0.2:0.7)+'"'+(i===flowOrder.length-1?' disabled':'')+'>&#9660;</button>';
-    h+='</div>';
-  });
+  if(!wfSteps.length){
+    h+='<div style="font-size:11px;color:var(--muted);padding:4px 2px">No workflow steps set for '+cap(k)+' yet &mdash; add them in Rules &rarr; Workflow Orders.</div>';
+  } else {
+    wfSteps.forEach((st,i)=>{
+      const subjs=fbArr(st.subjects)||[];
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:#fff;border:1px solid var(--border);border-radius:8px;margin-bottom:4px">';
+      h+='<span style="font-size:11px;font-weight:700;color:#fff;background:'+(TIER_COL[st.tier]||"#94a3b8")+';width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">'+(i+1)+'</span>';
+      h+='<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">'+(st.label||TIER_LBL2[st.tier]||st.tier||"—")+'</div>';
+      if(subjs.length) h+='<div style="font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+subjs.join(", ")+'</div>';
+      h+='</div></div>';
+    });
+  }
+  h+='<button onclick="setAdminSub(\'rules\')" style="margin-top:4px;border:1px solid var(--border);background:#fff;color:var(--header);border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">&#9998; Edit in Rules &rarr; Workflow</button>';
   h+='</div>';
 
   // Finish Line target date — drives red/amber on the Pace tab
@@ -5220,7 +5215,6 @@ function ceSaveField(field,val){
   if(!currData||!ceEditKid||!ceEditKey||!db) return;
   currData.subjects[ceEditKid][ceEditKey][field]=val;
   db.ref("curriculum/subjects/"+ceEditKid+"/"+ceEditKey+"/"+field).set(val);
-  if(field==="device"||field==="mom") ceFlowEnsure(ceEditKid,currData.subjects[ceEditKid][ceEditKey]);
   currData.lastEdit=new Date().toISOString();
   db.ref("curriculum/lastEdit").set(currData.lastEdit);
 }
@@ -5475,47 +5469,10 @@ function ceRenderEditSheet(){
   });
 }
 
-function ceFlowCat(subj){
-  const rules=subj.rules||"";
-  if(rules.includes("first")||rules.includes("last")) return null;
-  const dev=subj.device||"paper";
-  if(dev==="computer") return "computer";
-  if(dev==="ipad"||dev==="phone"||dev==="ipad/phone") return "ipad";
-  if(subj.mom==="required") return "required_paper";
-  if(subj.mom==="maybe") return "maybe_paper";
-  return "independent";
-}
-
-function ceFlowEnsure(kid,subj){
-  const cat=ceFlowCat(subj);
-  if(!cat) return;
-  if(!currData.flowOrder) currData.flowOrder={};
-  const flow=currData.flowOrder[kid]||["computer","ipad","phone","independent","maybe_paper","required_paper"];
-  if(!flow.includes(cat)){
-    flow.push(cat);
-    currData.flowOrder[kid]=flow;
-    db.ref("curriculum/flowOrder/"+kid).set(flow);
-  }
-}
-
 function ceSetTargetEnd(kid,val){
   if(!currData.targetEnd) currData.targetEnd={};
   if(val){ currData.targetEnd[kid]=val; db.ref("curriculum/targetEnd/"+kid).set(val); }
   else { delete currData.targetEnd[kid]; db.ref("curriculum/targetEnd/"+kid).remove(); }
-  renderAll();
-}
-
-function ceFlowMove(kid,idx,dir){
-  if(!currData.flowOrder) currData.flowOrder={};
-  const flow=currData.flowOrder[kid]||["computer","ipad","phone","independent","maybe_paper","required_paper"];
-  const newIdx=idx+dir;
-  if(newIdx<0||newIdx>=flow.length) return;
-  const item=flow.splice(idx,1)[0];
-  flow.splice(newIdx,0,item);
-  currData.flowOrder[kid]=flow;
-  db.ref("curriculum/flowOrder/"+kid).set(flow);
-  currData.lastEdit=new Date().toISOString();
-  db.ref("curriculum/lastEdit").set(currData.lastEdit);
   renderAll();
 }
 
@@ -5861,7 +5818,6 @@ function ceAddSave(){
   if(f.stickyWith){ subj.stickyWith=f.stickyWith; subj.stickyOrder=f.stickyOrder||"after"; }
   currData.subjects[kid][key]=subj;
   db.ref("curriculum/subjects/"+kid+"/"+key).set(subj);
-  ceFlowEnsure(kid,subj);
   currData.lastEdit=new Date().toISOString();
   db.ref("curriculum/lastEdit").set(currData.lastEdit);
   ceCloseSheet();
@@ -5944,8 +5900,7 @@ function uploadCurriculum(){
       const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array",cellDates:true});
       const curriculum={uploadedAt:new Date().toISOString(),fileName:f.name,subjects:{},lessons:{},weekDays:{}};
       // Re-upload replaces the whole curriculum node — carry over settings
-      // that live beside the grid so they survive (flow order, targets).
-      if(currData&&currData.flowOrder) curriculum.flowOrder=currData.flowOrder;
+      // that live beside the grid so they survive (targets).
       if(currData&&currData.targetEnd) curriculum.targetEnd=currData.targetEnd;
       const empty=v=>{const s=String(v??"").trim();return !s||s==="nan"||s==="NaN"||s==="None"||s==="—"||s==="undefined";};
       const weekNum=w=>{const m=String(w).match(/Wk\s*(\d+)/i);return m?parseInt(m[1]):0;};
@@ -6150,6 +6105,25 @@ function downloadCurrTemplate(){
   instrWs["!cols"]=[{wch:20},{wch:60}];
   XLSX.utils.book_append_sheet(wb,instrWs,"Instructions");
   XLSX.writeFile(wb,"howe_curriculum_template.xlsx");
+}
+
+// Export the live committed week as weekN.json for the desktop notebook generators.
+// Schema matches build_week_json: {week, dates, constraints, windows, tasks:[{id,who,day,time,dur,title,detail,mom,cascade,...}]}
+function downloadWeekJSON(){
+  const tasks=(weekData.tasks||[]).filter(t=>!String(t.id||"").endsWith("_c"));
+  if(!tasks.length){ alert("No tasks in the current week yet — generate & commit a week first."); return; }
+  const out={
+    week:WK,
+    dates:DAY_DT||{},
+    constraints:(typeof CONSTRAINT!=="undefined"?CONSTRAINT:{}),
+    windows:(typeof WIN!=="undefined"?WIN:{}),
+    tasks:tasks
+  };
+  const blob=new Blob([JSON.stringify(out,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url; a.download=WK+".json"; document.body.appendChild(a); a.click();
+  setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},120);
 }
 
 // ── GLOBAL CALENDAR ────────────────────────────────────────────────
@@ -7743,16 +7717,13 @@ function lmDayRunOrder(kid,dateStr,lesson){
     for(const sk of present){ if(!seen[sk]) out.push(sk); }
     return out;
   }
-  const dict={};
-  present.forEach(sk=>{ dict[sk]=(lesson&&lesson[sk])||"x"; });
-  const b=gwByCategory(kid,dict);
-  const flow=(currData.flowOrder&&currData.flowOrder[kid])||["computer","ipad","phone","independent","maybe_paper","required_paper"];
-  const seq=[];
-  (b.first||[]).forEach(en=>seq.push(en[0]));
-  flow.forEach(cat=>{ (b[cat]||[]).forEach(en=>seq.push(en[0])); });
-  (b.last||[]).forEach(en=>seq.push(en[0]));
-  present.forEach(sk=>{ if(!seq.includes(sk)) seq.push(sk); }); // category missing from flow list
-  return [...new Set(seq)];
+  // Default order: follow Rules → Workflow Orders (the same gwWorkflowRank the generator
+  // uses), so the Lesson Map mirrors Rules and re-sorts whenever the workflow changes.
+  // Equal ranks keep their present order (stable). Replaces the retired currData.flowOrder.
+  return present.slice().sort((a,b)=>{
+    const d=gwWorkflowRank(kid,a,subjects[a]||{},null,false)-gwWorkflowRank(kid,b,subjects[b]||{},null,false);
+    return d||(present.indexOf(a)-present.indexOf(b));
+  });
 }
 function lmNudgeSubj(kid,dateStr,sk,dir){
   const ord=lmDayRunOrder(kid,dateStr);
@@ -13265,6 +13236,7 @@ function renderAdminGenerate(el,headerHtml){
     h+='<button onclick="openPlanNextWeek('+cw+')" style="flex:1;padding:12px;border-radius:14px;border:1.5px solid var(--border);background:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Regenerate Week '+cw+'</button>';
     h+='<button onclick="openPlanNextWeek('+nw+')" style="flex:1;padding:12px;border-radius:14px;border:none;background:linear-gradient(135deg,#111827,#1e3a5f);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;box-shadow:0 2px 8px rgba(0,0,0,0.15)">Plan Week '+nw+' →</button>';
     h+='</div>';
+    h+='<div style="margin:0 0 14px"><button onclick="downloadWeekJSON()" style="width:100%;padding:10px;border-radius:12px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:700;color:#1f2937;cursor:pointer;font-family:\'DM Sans\',sans-serif">⬇️ Download '+WK.replace("week","Week ")+' JSON — for notebooks</button><div style="font-size:11px;color:var(--muted);margin-top:5px;line-height:1.4">Exports the current committed week to feed the notebook generators (replaces the Excel→JSON step).</div></div>';
     if(gwStatus) h+='<div style="background:#dcfce7;border:1px solid #86efac;border-radius:10px;padding:10px 14px;font-size:12px;font-weight:700;color:#15803d;margin-bottom:12px">'+gwStatus+'</div>';
     if(gwResult){
       const tc=gwResult.tasks.length;
