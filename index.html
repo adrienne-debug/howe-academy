@@ -12837,7 +12837,15 @@ function rulesUpdateDeviceQueue(device,val){
   const r=JSON.parse(JSON.stringify(rulesData));
   if(!r.devices) r.devices={};
   if(!r.devices.queue) r.devices.queue={};
-  r.devices.queue[device]=val;
+  if(val==="") delete r.devices.queue[device];
+  else r.devices.queue[device]=parseInt(val);
+  saveRules(r);
+}
+function rulesUpdateSaturday(field,val){
+  const r=JSON.parse(JSON.stringify(rulesData));
+  if(!r.saturday) r.saturday={};
+  if(val==="") delete r.saturday[field];
+  else r.saturday[field]=parseInt(val);
   saveRules(r);
 }
 
@@ -12976,19 +12984,22 @@ function renderRules(el,headerHtml){
   h+='<div class="rules-card-arrow">&#9654;</div></div>';
   h+='<div class="rules-card-body">';
   h+='<div class="rules-section-lbl">Device Assignments</div>';
-  ["computer_only","computer_ideal_ipad_backup","ipad_only","phone_backup"].forEach(dk=>{
-    const subjs=fbArr(dv[dk])||[];
-    if(!subjs.length) return;
-    h+='<div class="rules-device-row">';
-    h+='<div class="rules-device-icon">'+(DEV_ICON[dk]||"")+'</div>';
-    h+='<div class="rules-device-lbl">'+(DEV_LBL[dk]||dk)+'</div>';
-    h+='<div class="rules-device-subj">'+subjs.join(", ")+'</div>';
-    h+='</div>';
-  });
+  h+='<div style="font-size:11px;color:var(--muted);padding-bottom:6px">Mirrors each subject\'s device from the Subjects page — edit it there.</div>';
+  (function(){
+    var groups={computer:[],ipad:[],phone:[],paper:[]};
+    ["lincoln","ellis","lucy","julian"].forEach(function(k){ var s=(currData&&currData.subjects&&currData.subjects[k])||{}; for(var key in s){ if(s[key].paused) continue; var d=s[key].device||"paper"; if(d==="ipad/phone") d="ipad"; if(!groups[d]) groups[d]=[]; groups[d].push(s[key].display||key); } });
+    [["computer","\u{1F4BB}","Computer"],["ipad","\u{1F4F1}","iPad"],["phone","\u{1F4DE}","Phone"],["paper","\u{1F4C4}","Paper"]].forEach(function(g){
+      var list=(groups[g[0]]||[]).sort();
+      if(!list.length) return;
+      h+='<div class="rules-device-row"><div class="rules-device-icon">'+g[1]+'</div><div class="rules-device-lbl">'+g[2]+'</div><div class="rules-device-subj">'+esc(list.join(", "))+'</div></div>';
+    });
+    h+='<button onclick="setAdminSub(\'curriculum\')" style="margin-top:6px;padding:5px 10px;border:1px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">&#9998; Edit on Subjects page &rarr;</button>';
+  })();
   h+='<div class="rules-section-lbl" style="margin-top:10px">Device Priority Queue</div>';
+  h+='<div style="font-size:11px;color:var(--muted);padding-bottom:4px">Tie-break when two kids need the same device (lower = first).</div>';
   const dq=dv.queue||{};
-  h+='<div class="rules-row"><div class="rules-label">Computer — always first</div><div class="rules-val">'+(dq.computer||"—")+'</div></div>';
-  h+='<div class="rules-row"><div class="rules-label">iPad — priority when shared</div><div class="rules-val">'+(dq.ipad||"—")+'</div></div>';
+  h+='<div class="rules-row"><div class="rules-label">Computer — always first</div><input type="number" class="rules-num" min="0" max="9" value="'+(dq.computer!=null?dq.computer:"")+'" onchange="rulesUpdateDeviceQueue(\'computer\',this.value)"></div>';
+  h+='<div class="rules-row"><div class="rules-label">iPad — priority when shared</div><input type="number" class="rules-num" min="0" max="9" value="'+(dq.ipad!=null?dq.ipad:"")+'" onchange="rulesUpdateDeviceQueue(\'ipad\',this.value)"></div>';
   h+='</div></div>';
 
   // 4. OVERLAP RULES
@@ -13083,7 +13094,7 @@ function renderRules(el,headerHtml){
     const seq=fbArr(sat.computer_sequence)||[];
     h+='<div class="rules-row"><div class="rules-label">Computer order</div><div class="rules-val">'+seq.join(" > ").replace(/_/g," ")+'</div></div>';
   }
-  if(sat.reflex_max!=null) h+='<div class="rules-row"><div class="rules-label">Reflex max</div><div class="rules-val">'+sat.reflex_max+'/day</div></div>';
+  h+='<div class="rules-row"><div class="rules-label">Reflex max <span style="font-size:10px;color:var(--muted)">(Sat/day, blank = none)</span></div><input type="number" class="rules-num" min="0" max="10" value="'+(sat.reflex_max!=null?sat.reflex_max:"")+'" onchange="rulesUpdateSaturday(\'reflex_max\',this.value)"></div>';
   if(sat.lucy_max){
     Object.entries(sat.lucy_max).forEach(([subj,mx])=>{
       h+='<div class="rules-row"><div class="rules-label">'+subj+' (Lucy) max</div><div class="rules-val">'+mx+'/day</div></div>';
@@ -13121,6 +13132,24 @@ function renderRules(el,headerHtml){
     });
     h+='<div style="height:8px"></div>';
   });
+  h+='</div></div>';
+
+  // 6.7 CALENDAR — read-only mirror of the Calendar admin (off-days block every engine)
+  h+='<div class="rules-card'+o("cal")+'">';
+  h+='<div class="rules-card-hdr" onclick="rulesToggleCard(\'cal\')">';
+  h+='<div class="rules-card-title"><span>&#128197;</span> Calendar</div>';
+  h+='<div class="rules-card-arrow">&#9654;</div></div>';
+  h+='<div class="rules-card-body">';
+  h+='<div style="font-size:11px;color:var(--muted);padding-bottom:6px">Holidays &amp; vacations block placement on those days for every engine. Edit them in the Calendar section.</div>';
+  (function(){
+    var t=new Date(), tISO=t.getFullYear()+"-"+String(t.getMonth()+1).padStart(2,"0")+"-"+String(t.getDate()).padStart(2,"0");
+    function up(map){ return Object.values(map||{}).filter(function(e){return e&&((e.end||e.start||"")>=tISO);}).sort(function(a,b){return (a.start||"").localeCompare(b.start||"");}); }
+    function line(e,icon){ var range=(!e.end||e.end===e.start)?(e.start||""):(e.start+" → "+e.end); h+='<div class="rules-row"><div class="rules-label">'+icon+' '+esc(e.name||"(unnamed)")+'</div><div class="rules-val">'+esc(range)+'</div></div>'; }
+    var hols=up(calendarData.holidays), vacs=up(calendarData.vacations);
+    if(!hols.length&&!vacs.length){ h+='<div style="font-size:12px;color:var(--muted);padding:4px 0">No upcoming holidays or vacations.</div>'; }
+    else { hols.forEach(function(e){ line(e,"\u{1F389}"); }); vacs.forEach(function(e){ line(e,"\u{2708}\u{FE0F}"); }); }
+    h+='<button onclick="setAdminSub(\'calendar\')" style="margin-top:6px;padding:5px 10px;border:1px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">&#9998; Edit in Calendar &rarr;</button>';
+  })();
   h+='</div></div>';
 
   // 7. AUDIT CHECKLIST
