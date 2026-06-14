@@ -2827,7 +2827,7 @@ function renderSchedule(el){
       if(weekShapeChanged()){
         h+='<div style="margin:12px;border-left:4px solid #f59e0b;background:#fffbeb;border-radius:0 10px 10px 0;padding:10px 12px;display:flex;align-items:center;gap:10px">';
         h+='<div style="flex:1;min-width:0"><div style="font-size:11px;font-weight:800;color:#92400e;text-transform:uppercase;letter-spacing:0.4px">Schedule structure changed</div>';
-        h+='<div style="font-size:11px;color:#78350f;margin-top:2px">Lesson Map or Calendar edits aren\'t in this week\'s schedule yet.</div></div>';
+        h+='<div style="font-size:11px;color:#78350f;margin-top:2px">Rules, subject, Lesson Map, or Calendar changes aren\'t in this week\'s schedule yet.</div></div>';
         h+='<button onclick="openPlanNextWeek('+currWeekNum()+')" style="border:1px solid #f59e0b;background:#fff;color:#92400e;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0">Regenerate</button>';
         h+='</div>';
       }
@@ -7613,21 +7613,69 @@ function gwSyncConfigOverrides(weekNum,config,dropped){
 // Calendar edits later change the active week's pattern, a banner offers
 // one-tap regeneration (last-minute schedule changes, forgotten edits).
 let committedShapeSigs={}; // {weekLabel: signature-at-commit}
+// SHAPESIG_START (node-harness extraction boundary)
+// Canonical JSON: recursively sort object keys so equal data always stringifies the
+// same way (Firebase can return keys in a different order between sessions).
+function _sortKeysDeep(x){
+  if(Array.isArray(x)) return x.map(_sortKeysDeep);
+  if(x&&typeof x==="object"){ const o={}; Object.keys(x).sort().forEach(k=>{o[k]=_sortKeysDeep(x[k]);}); return o; }
+  return x;
+}
+// Placement signature: inputs that DON'T move a subject to a different day (so the slot
+// signature below misses them) but DO change how the day packs, so editing them should
+// nudge "regenerate to apply." Two parts: per-subject attrs (scoped to the subjects
+// actually scheduled this week) + the global Rules the packers read.
+function _placementSig(kids,slots,subjects,rd){
+  const attrs=kids.map(k2=>{
+    const ks=slots[k2]||{}, ksub=subjects[k2]||{};
+    return [k2,Object.keys(ks).sort().map(sk=>{
+      const s=ksub[sk]||{};
+      return [sk,s.minutes,s.device,s.mom,s.stickyWith,s.stickyOrder,s.rules,s.category];
+    })];
+  });
+  const rules={
+    schoolDay:rd.schoolDay||null,                     // start/end/lunch + per-day overrides
+    workflow:rd.workflow||null,                       // category order per kid
+    overlap:rd.overlap||null,                         // never/ok simultaneous
+    deviceQueue:(rd.devices&&rd.devices.queue)||null, // device priority tie-break
+    maxPerDay:rd.maxPerDay||null,                     // includes saturday_max per subject
+    saturday:rd.saturday||null,                       // reflex_max / lucy_max / computer_sequence
+    nothingDropsOff:rd.nothingDropsOff||null
+  };
+  return JSON.stringify(_sortKeysDeep([attrs,rules]));
+}
+// Compare a current signature to a committed one. The slot part (before the \n) keeps the
+// original byte-for-byte format and is always comparable; the placement part is only
+// compared when the stored snapshot also carries it — so weeks committed before the
+// signature was extended still get structure-drift detection, without a spurious banner
+// the first time they're seen.
+function _sigChanged(cur,stored){
+  if(!stored||!cur||cur===stored) return false;
+  const ci=cur.indexOf("\n"), si=stored.indexOf("\n");
+  const curSlots=ci>=0?cur.slice(0,ci):cur, storedSlots=si>=0?stored.slice(0,si):stored;
+  if(curSlots!==storedSlots) return true;   // a subject moved to a different day
+  if(si<0) return false;                    // pre-extension snapshot: no placement baseline to diff
+  return cur.slice(ci+1)!==stored.slice(si+1);
+}
 function weekShapeSig(weekNum){
   const r=resolveWeekSlots(weekNum);
   if(!r) return "";
   const kids=Object.keys(r.slots).sort();
-  return JSON.stringify(kids.map(k2=>{
+  // Part 1 (unchanged format): which subject lands on which day, per kid.
+  const slotsSig=JSON.stringify(kids.map(k2=>{
     const ks=r.slots[k2];
     return [k2,Object.keys(ks).sort().map(sk=>[sk,ks[sk]])];
   }));
+  // Part 2: placement attrs + Rules. Joined by \n, which never appears literally in
+  // JSON.stringify output, so the two parts stay cleanly separable for _sigChanged.
+  return slotsSig+"\n"+_placementSig(kids,r.slots,(currData&&currData.subjects)||{},rulesData||{});
 }
 function weekShapeChanged(){
   const stored=committedShapeSigs[WK];
   if(!stored) return false;
-  const cur=weekShapeSig(currWeekNum());
-  return !!cur&&cur!==stored;
+  return _sigChanged(weekShapeSig(currWeekNum()),stored);
 }
+// SHAPESIG_END
 function agDismiss(){ try{localStorage.removeItem("ha_autogen_notice");}catch(e){} renderAll(); }
 function agReview(){ try{localStorage.removeItem("ha_autogen_notice");}catch(e){} openPlanNextWeek(currWeekNum()); }
 
