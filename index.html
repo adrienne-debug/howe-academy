@@ -6108,8 +6108,30 @@ function downloadCurrTemplate(){
   XLSX.writeFile(wb,"howe_curriculum_template.xlsx");
 }
 
+// Build the app's calendar/edit-aware pace targets in the pace_targets.json schema:
+//   {kid:{subjectKey:{total, byWeek:[cum_wk1, cum_wk2, ...]}}}  — byWeek is 0-indexed (byWeek[w-1] = cumulative through week w)
+function paceTargetsFromApp(){
+  try{ if(typeof buildCurrPaceCum==="function") buildCurrPaceCum(); }catch(e){}
+  const out={}, subj=(typeof currData!=="undefined"&&currData.subjects)||{};
+  const cum=(typeof currPaceCum!=="undefined"&&currPaceCum)||{};
+  for(const kid of Object.keys(cum)){
+    out[kid]={};
+    for(const sk of Object.keys(cum[kid]||{})){
+      const m=cum[kid][sk]||{};
+      const wns=Object.keys(m).map(Number).filter(n=>n>0).sort((a,b)=>a-b);
+      const maxW=wns.length?wns[wns.length-1]:0;
+      const byWeek=[]; let last=0;
+      for(let w=1; w<=maxW; w++){ if(m[w]!==undefined) last=m[w]; byWeek.push(last); }
+      const total=(((subj[kid]||{})[sk]||{}).total)||(byWeek.length?byWeek[byWeek.length-1]:0)||1;
+      out[kid][sk]={total:total, byWeek:byWeek};
+    }
+  }
+  return out;
+}
+
 // Export the live committed week as weekN.json for the desktop notebook generators.
-// Schema matches build_week_json: {week, dates, constraints, windows, tasks:[{id,who,day,time,dur,title,detail,mom,cascade,...}]}
+// Schema matches build_week_json + a `pace` block from the app's current targets:
+//   {week, dates, constraints, windows, tasks:[{id,who,day,time,dur,title,detail,mom,cascade,...}], pace:{kid:{sk:{total,byWeek[]}}}}
 function downloadWeekJSON(){
   const tasks=(weekData.tasks||[]).filter(t=>!String(t.id||"").endsWith("_c"));
   if(!tasks.length){ alert("No tasks in the current week yet — generate & commit a week first."); return; }
@@ -6118,7 +6140,8 @@ function downloadWeekJSON(){
     dates:DAY_DT||{},
     constraints:(typeof CONSTRAINT!=="undefined"?CONSTRAINT:{}),
     windows:(typeof WIN!=="undefined"?WIN:{}),
-    tasks:tasks
+    tasks:tasks,
+    pace:paceTargetsFromApp()
   };
   const blob=new Blob([JSON.stringify(out,null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob);
