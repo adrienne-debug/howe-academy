@@ -9657,8 +9657,20 @@ function mastSaveResults(){
     if(item.status==="introduction") return; // intro items don't get ladder scoring
 
     const oldTier=item.tier||"daily";
-    const oldIdx=TIER_LADDER.indexOf(oldTier);
-    if(oldIdx===-1) return;
+    let oldIdx=TIER_LADDER.indexOf(oldTier);
+    if(oldIdx===-1){
+      // Item sits on a tier that isn't a rung on this kid's ladder — e.g. a legacy
+      // "daily"/"learned" item, or a rung (like every_third_day) that was later removed
+      // from the ladder. It still shows up as "due", so without this the score would be
+      // silently discarded and the item could never progress. Snap it onto the nearest
+      // rung at or below its position in the global tier order, then score it normally.
+      const gpos=MAST_TIER_ORDER.indexOf(oldTier);
+      oldIdx=0;
+      for(let k=0;k<TIER_LADDER.length;k++){
+        if(MAST_TIER_ORDER.indexOf(TIER_LADDER[k])<=gpos) oldIdx=k;
+      }
+      item.tier=TIER_LADDER[oldIdx]; // normalize so it's on-ladder even if it doesn't advance this round
+    }
 
     let newIdx=oldIdx;
     const _ds=mastDrillSettings();
@@ -14208,6 +14220,99 @@ function gwGetSubjects(kid){
   return currData.subjects[kid]||{};
 }
 
+// ====== SHARED CURRICULUM — combined subjects (plan: shared-curriculum-combined-subjects) ======
+// SHAREDCURR_START
+// A combined subject = ONE block taught to 2+ kids at the same time (Mom teaches once).
+// Stored as a group registry (currData.groups[gk]) = single source of truth for the
+// shared attributes + the one canonical lesson sequence + the one shared cursor; each
+// participant carries a thin auto-managed stub subjects[kid][gk]={sharedGroup:gk}. These
+// helpers are pure/additive (S1) — nothing routes through them yet.
+function isGroupStub(s){ return !!(s&&s.sharedGroup); }
+function isCombinedTask(t){ return !!(t&&t.groupId); }
+function getGroup(gk){ return ((currData&&currData.groups)||{})[gk]||null; }
+
+// Active participants = group members whose per-kid stub exists and isn't paused.
+function groupParticipants(gk){
+  var g=getGroup(gk); if(!g) return [];
+  return (g.participants||[]).filter(function(k){
+    var sub=(((currData&&currData.subjects)||{})[k]||{})[gk];
+    return sub&&!sub.paused;
+  });
+}
+
+// gwGetSubjects, but each membership stub is resolved to look like a normal subject by
+// merging the group's shared attributes onto it (so gwByCategory / the generator can treat
+// a combined block like any other subject). Dangling stubs (no group) pass through as-is.
+function gwGetSubjectsResolved(kid){
+  var raw=gwGetSubjects(kid), out={};
+  for(var key in raw){
+    var s=raw[key];
+    if(s&&s.sharedGroup){
+      var g=getGroup(s.sharedGroup);
+      if(!g){ out[key]=s; continue; }
+      out[key]={ display:g.display, device:g.device, mom:g.mom, minutes:g.minutes,
+        rules:g.rules, allowedDays:g.allowedDays, timesPerWeek:g.timesPerWeek,
+        total:g.total, priority:g.priority, tracking:g.tracking,
+        sharedGroup:s.sharedGroup, _group:true, _groupKey:s.sharedGroup,
+        paused:!!(g.paused||s.paused) };
+    } else out[key]=s;
+  }
+  return out;
+}
+
+// Canonical lesson sequence for a group: explicit lessonSeq, else auto-numbered from total.
+function buildGroupLessons(gk){
+  var g=getGroup(gk); if(!g) return [];
+  if(g.lessonSeq&&g.lessonSeq.length) return g.lessonSeq.map(function(l,i){ return {dayNum:90000+i,lesson:l,date:""}; });
+  var total=g.total||0, out=[];
+  for(var i=0;i<total;i++) out.push({dayNum:90000+i,lesson:"Lesson "+(i+1),date:""});
+  return out;
+}
+
+// How many group blocks have been TAUGHT (decision #3): a scheduled day-block counts when
+// ≥1 participant is checked off. Counted once per distinct day+time block (not per kid), so
+// the per-kid fan-out never multiplies the count. Mirrors paceAutoCount's week+archive sweep.
+function groupAutoCount(gk,excludeWeek){
+  if(!gk) return 0;
+  var count=0;
+  function tally(tasks,checkedMap,label){
+    if(excludeWeek&&label===excludeWeek) return;
+    var byBlock={};
+    (tasks||[]).forEach(function(t){
+      if(t&&t.groupId===gk&&!String(t.id||"").endsWith("_c")){
+        var k=(t.day||"")+"|"+(t.time||"");
+        (byBlock[k]=byBlock[k]||[]).push(t);
+      }
+    });
+    for(var bk in byBlock){
+      if(byBlock[bk].some(function(t){ return chainDone(t.id,checkedMap,tasks); })) count+=1;
+    }
+  }
+  if(!excludeWeek||excludeWeek!==WK) tally(weekData.tasks,checked,WK);
+  var currStart=currFirstWeekNum();
+  Object.values(archive).forEach(function(aw){
+    var awNum=parseInt(((aw.weekLabel||"").match(/\d+/)||[0])[0])||0;
+    if(awNum>0&&awNum<currStart) return;
+    tally(aw.tasks,aw.checked||{},aw.weekLabel);
+  });
+  return count;
+}
+
+// One shared cursor for the whole group (advance together). offset/adjust mirror paceData.
+function computeGroupCursor(gk,excludeWeek){
+  var g=getGroup(gk); if(!g) return 0;
+  return (g.offset||0)+groupAutoCount(gk,excludeWeek)+(g.adjust||0);
+}
+
+// The next N lessons for a group from its shared cursor (rendered identically for all kids).
+function getNextGroupLessons(gk,count){
+  var seq=buildGroupLessons(gk); if(!seq.length) return [];
+  var cursor=computeGroupCursor(gk), out=[];
+  for(var i=cursor;i<seq.length&&out.length<(count||1);i++) out.push(seq[i]);
+  return out;
+}
+// SHAREDCURR_END
+
 function gwClassifySubjects(kid){
   const subjects=gwGetSubjects(kid);
   const paper=[],computer=[],ipad=[];
@@ -14313,8 +14418,12 @@ function gwSubjectDetail(kid,key){
 // Items must already be ordered per kid (category rank + sticky); packDay only
 // resolves resource/time conflicts and reports what didn't fit.
 //
-//   item: { id, who, lane, durMin, momRequired, droppable }
+//   item: { id, who, lane, durMin, momRequired, droppable, participants? }
 //     lane in computer | ipad | ipadLucy | phone | paper   ("paper"/""/unknown = no device lane)
+//     participants:[kid,...] (len>=2) = a COMBINED block — co-scheduled across all
+//       participants at one time; it blocks every participant's kidFree but advances the
+//       lane and momFree ONCE (Mom teaches them together — the intentional exception to
+//       the "no two Mom-required at once" rule, which still holds BETWEEN blocks).
 //   ctx:  { start, end, lunchStart, lunchEnd,        // minutes from midnight
 //           sitterStart, sitterEnd,                   // 0/0 when no babysitter window
 //           kidStart, laneStart, momStart,            // per-kid / per-lane / Mom earliest — seed past already-fixed (checked) work
@@ -14339,9 +14448,12 @@ function packDay(items, ctx){
   const hardEnd = ctx.allowOvertime ? (ctx.end + (ctx.overtimeMax || 180)) : ctx.end;
   const placed = [], overflow = [], dropped = [], byId = {};
   for(const it of (items || [])){
-    const kid = it.who, dur = it.durMin || 20;
+    // A combined block lists its participants; a normal task is just its one `who`.
+    const kids = (it.participants && it.participants.length) ? it.participants : [it.who];
+    const dur = it.durMin || 20;
     const lane = (it.lane && laneSet[it.lane]) ? it.lane : null;
-    let from = Math.max(dayStart, kidFree[kid] || 0, (ctx.kidStart && ctx.kidStart[kid]) || 0);
+    let from = dayStart;
+    for(const k of kids) from = Math.max(from, kidFree[k] || 0, (ctx.kidStart && ctx.kidStart[k]) || 0);
     if(lane) from = Math.max(from, res[lane]);
     if(it.momRequired) from = Math.max(from, momFree);
     let start = skipLunch(from, dur);
@@ -14351,9 +14463,9 @@ function packDay(items, ctx){
     }
     if(start + dur > hardEnd){ (it.droppable ? dropped : overflow).push(it); continue; }
     const end = start + dur;
-    kidFree[kid] = end;
+    for(const k of kids) kidFree[k] = end;   // every participant is busy for the block…
     if(lane) res[lane] = end;
-    if(it.momRequired) momFree = end;
+    if(it.momRequired) momFree = end;         // …but the lane and Mom advance only ONCE
     placed.push({ id: it.id, start }); byId[it.id] = start;
   }
   return { byId, placed, overflow, dropped };
