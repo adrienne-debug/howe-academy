@@ -9578,8 +9578,22 @@ function mastDueItems(kid,pn){
 
 let mastLogMode=false;
 let mastLogScores={};  // {itemId: "c"|"m"|"~"}
+let mastLogDeck=null;  // frozen [id,...] for the active logging session (stops mid-drill reshuffle)
 
-function mastSetKid(k){ masteryKid=k; mastLogMode=false; mastLogScores={}; mastSlideIdx=0; mastScoreItemId=null; mastAdminLocal=null; const cats=Object.keys(MAST_BANK_MAP[k]||{}); mastAddCat=cats[0]||""; const c=document.getElementById("content"); if(c) renderMastery(c); }
+// While a logging session is active, drill a FROZEN snapshot of the deck (taken at
+// mastStartLog) so intro graduations / auto-pulled cards can't reorder or grow it mid-
+// session — that reshuffle was re-showing or skipping cards. Each frozen id is looked up
+// in live data so tally/status still update; only order + membership are pinned.
+function mastSessionDue(pn){
+  if(mastLogMode&&mastLogDeck){
+    let all=masteryData[masteryKid]; if(!Array.isArray(all)) all=Object.values(all||{});
+    const byId={}; all.forEach(i=>{ if(i&&i.id) byId[i.id]=i; });
+    return mastLogDeck.map(id=>byId[id]).filter(Boolean);
+  }
+  return mastDueItems(masteryKid,pn);
+}
+
+function mastSetKid(k){ masteryKid=k; mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastSlideIdx=0; mastScoreItemId=null; mastAdminLocal=null; const cats=Object.keys(MAST_BANK_MAP[k]||{}); mastAddCat=cats[0]||""; const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastSetView(v){ mastView=v; mastScoreItemId=null; mastManualScore=false; _mastRe(); }
 function mastOpenManualScore(){ mastManualScore=true; mastManualDate=new Date().toISOString().slice(0,10); mastManualC=0; mastManualM=0; mastManualT=0; mastManualS=0; _mastRe(); }
 function mastCloseManualScore(){ mastManualScore=false; _mastRe(); }
@@ -9632,13 +9646,13 @@ function mastDeleteScore(dateKey){
 }
 function mastShowItemHist(id){ mastScoreItemId=mastScoreItemId===id?null:id; _mastRe(); }
 function mastToggleTier(t){ masteryCollapsed[masteryKid+"_"+t]=!masteryCollapsed[masteryKid+"_"+t]; const c=document.getElementById("content"); if(c) renderMastery(c); }
-function mastStartLog(){ mastLogMode=true; mastLogScores={}; mastSlideIdx=0; const c=document.getElementById("content"); if(c) renderMastery(c); }
-function mastCancelLog(){ mastLogMode=false; mastLogScores={}; const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastStartLog(){ mastLogMode=true; mastLogScores={}; mastSlideIdx=0; mastLogDeck=mastDueItems(masteryKid,mastGetPrintNum()).map(i=>i.id); const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastCancelLog(){ mastLogMode=false; mastLogScores={}; mastLogDeck=null; const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastScore(id,val){ mastLogScores[id]=val; const c=document.getElementById("content"); if(c) renderMastery(c); }
 
 function mastSaveResults(){
   const pn=mastGetPrintNum();
-  const due=mastDueItems(masteryKid,pn);
+  const due=mastSessionDue(pn);
   const TIER_LADDER=mastDrillSettings().ladder;
 
   // Get all items for this kid
@@ -9753,6 +9767,7 @@ function mastSaveResults(){
 
   mastLogMode=false;
   mastLogScores={};
+  mastLogDeck=null;
   const c=document.getElementById("content"); if(c) renderMastery(c);
 }
 
@@ -10359,7 +10374,7 @@ function mastEditDelete(){
 function mastShapeVis(name,px){
   const em={Circle:"\u{1F534}",Square:"\u{1F7E7}",Triangle:"\u{1F53A}",Star:"\u{2B50}",Heart:"❤️",Diamond:"\u{1F537}"}[name];
   if(em) return em;
-  if(name==="Rectangle") return '<span style="display:inline-block;width:'+Math.round(px*1.6)+'px;max-width:80%;height:'+px+'px;background:#a855f7;border-radius:'+Math.max(2,Math.round(px*0.09))+'px;vertical-align:middle"></span>';
+  if(name==="Rectangle") return '<span style="display:inline-block;width:'+Math.round(px*1.6)+'px;max-width:80%;height:'+px+'px;background:#a855f7;vertical-align:middle"></span>';
   if(name==="Oval") return '<span style="display:inline-block;width:'+Math.round(px*1.5)+'px;max-width:80%;height:'+px+'px;background:#22c55e;border-radius:50%;vertical-align:middle"></span>';
   return name.charAt(0);
 }
@@ -11432,7 +11447,7 @@ function _renderMasteryInner(el){
 
   // Today's drill
   const pn=mastGetPrintNum();
-  const due=mastDueItems(masteryKid,pn);
+  const due=mastSessionDue(pn);
   // Split items: slideshow (learning + ladder flash/flip) vs quiz list (ladder quiz only)
   const slideItems=due.filter(i=>i.status==="introduction"||!mastItemIsQuiz(masteryKid,i));
   const quizItems=due.filter(i=>i.status!=="introduction"&&mastItemIsQuiz(masteryKid,i));
