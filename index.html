@@ -12034,6 +12034,12 @@ function runDisplacement(){
   function _dayEnd(d){var ov=sdOv[d];return toMin((ov&&ov.end)||sd.defaultEnd||"4:15 PM");}
   function _dayLS(d){var ov=sdOv[d];return toMin((ov&&ov.lunchStart)||sd.lunchStart||"1:00 PM");}
   function _dayLE(d){var ov=sdOv[d];return toMin((ov&&ov.lunchEnd)||sd.lunchEnd||"2:00 PM");}
+  // Never re-time TODAY's work into an elapsed slot: when the day being packed is
+  // today, start no earlier than the current clock time. A blockout added at 5pm
+  // then pushes leftover work to a later day instead of dropping it at 2pm.
+  // (_dispNowMin lets the node harness pin "now"; the app reads the real clock.)
+  function _nowMin(){ return (typeof _dispNowMin==="number")?_dispNowMin:(new Date().getHours()*60+new Date().getMinutes()); }
+  function _floorStart(d,s){ return d===_todayDay?Math.max(s,_nowMin()):s; }
   function _isNotebook(t){return(t.title||"").includes("Notebook");}
   function _isMorningNb(t){return(t.title||"").includes("Morning Notebook");}
   function _isClosingNb(t){return(t.title||"").includes("Closing Notebook");}
@@ -12277,8 +12283,9 @@ function runDisplacement(){
       _ctx.kidStart[who]=cursorStart;
 
       // Live (unchecked) tasks pack from the blockout end; anything past day-end goes cross-day.
+      // On TODAY, also floor at "now" so leftover work can't land in an already-elapsed slot.
       var live=toPlace.filter(function(t){return !(checked&&checked[t.id]);});
-      var over=packAround(working.filter(function(t){return t.day===d;}),live,Object.assign({},_ctx,{allowOvertime:false}));
+      var over=packAround(working.filter(function(t){return t.day===d;}),live,Object.assign({},_ctx,{allowOvertime:false,start:_floorStart(d,_ctx.start)}));
       var overSet=new Set(over);
       live.forEach(function(t){
         if(overSet.has(t)){ t._displaced=true; t._originalDay=t._originalDay||d; needsCrossDay.push(t); }
@@ -12393,7 +12400,7 @@ function runDisplacement(){
     if(!newTasks.length) return [];
     var newSet=new Set(newTasks);
     var existing=working.filter(function(t){return t.day===day&&!newSet.has(t);});
-    return packAround(existing,newTasks,{start:_dayStart(day),end:_dayEnd(day),
+    return packAround(existing,newTasks,{start:_floorStart(day,_dayStart(day)),end:_dayEnd(day),
       lunchStart:_dayLS(day),lunchEnd:_dayLE(day),allowOvertime:allowOvertime,overtimeMax:180});
   }
   // PACKSAT_END
