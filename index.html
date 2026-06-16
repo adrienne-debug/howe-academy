@@ -9605,6 +9605,17 @@ function mastSessionDue(pn){
   return mastDueItems(masteryKid,pn);
 }
 
+// Shuffle items WITHIN each category while keeping the categories in their existing order,
+// so a drill stays grouped (all Letters, all Numbers…) but the order inside each group
+// varies every session. Fisher–Yates per category run.
+function mastShuffleDeck(list){
+  const order=[], groups={};
+  list.forEach(it=>{ const c=(it&&it.subject)||"Other"; if(!groups[c]){ groups[c]=[]; order.push(c); } groups[c].push(it); });
+  const out=[];
+  order.forEach(c=>{ const g=groups[c]; for(let i=g.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=g[i]; g[i]=g[j]; g[j]=t; } out.push(...g); });
+  return out;
+}
+
 function mastSetKid(k){ masteryKid=k; mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastSlideIdx=0; mastScoreItemId=null; mastAdminLocal=null; const cats=Object.keys(MAST_BANK_MAP[k]||{}); mastAddCat=cats[0]||""; const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastSetView(v){ mastView=v; mastScoreItemId=null; mastManualScore=false; _mastRe(); }
 function mastOpenManualScore(){ mastManualScore=true; mastManualDate=new Date().toISOString().slice(0,10); mastManualC=0; mastManualM=0; mastManualT=0; mastManualS=0; _mastRe(); }
@@ -9658,7 +9669,7 @@ function mastDeleteScore(dateKey){
 }
 function mastShowItemHist(id){ mastScoreItemId=mastScoreItemId===id?null:id; _mastRe(); }
 function mastToggleTier(t){ masteryCollapsed[masteryKid+"_"+t]=!masteryCollapsed[masteryKid+"_"+t]; const c=document.getElementById("content"); if(c) renderMastery(c); }
-function mastStartLog(){ mastLogMode=true; mastLogScores={}; mastSlideIdx=0; mastLogDeck=mastDueItems(masteryKid,mastGetPrintNum()).map(i=>i.id); const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastStartLog(){ mastLogMode=true; mastLogScores={}; mastSlideIdx=0; mastLogDeck=mastShuffleDeck(mastDueItems(masteryKid,mastGetPrintNum())).map(i=>i.id); const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastCancelLog(){ mastLogMode=false; mastLogScores={}; mastLogDeck=null; const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastScore(id,val){ mastLogScores[id]=val; const c=document.getElementById("content"); if(c) renderMastery(c); }
 
@@ -10475,8 +10486,12 @@ function mastSlideShown(id){
 
   if(dots>=jset.intro_dots){
     item.status="active";
-    item.tier=jset.ladder[0]||"every_other_day";
-    item.cycle=1;
+    const _gtier=jset.ladder[0]||"every_other_day";
+    item.tier=_gtier;
+    // Spread graduates across the tier's cycles instead of all landing on cycle 1, which
+    // bunched every-other-day items onto the same drills and left alternate drills empty.
+    const _giv=MAST_TIER_INT[_gtier];
+    item.cycle=_giv?(items.filter(i=>i.tier===_gtier&&i.id!==item.id).length%_giv)+1:1;
     item.consecutive_correct=0;
     item.tally_dots=jset.intro_dots;
 
