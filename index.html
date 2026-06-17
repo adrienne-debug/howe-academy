@@ -9590,20 +9590,27 @@ function mastDueItems(kid,pn){
 
 let mastLogMode=false;
 let mastLogScores={};  // {itemId: "c"|"m"|"~"}
-let mastLogDeck=null;  // frozen [id,...] for the active logging session (stops mid-drill reshuffle)
+let mastLogDeck=null;  // frozen [id,...] shuffle for the current quiz — built at first view/print, reused through logging so the printed sheet and the on-screen log always match
+let mastSessionKey=""; // due-set signature the frozen deck was built for (re-shuffle when the quiz's contents change, never mid-log)
 
-// While a logging session is active, drill a FROZEN snapshot of the deck (taken at
-// mastStartLog) so intro graduations / auto-pulled cards can't reorder or grow it mid-
-// session — that reshuffle was re-showing or skipping cards. Each frozen id is looked up
-// in live data so tally/status still update; only order + membership are pinned.
-function mastSessionDue(pn){
-  if(mastLogMode&&mastLogDeck){
-    let all=masteryData[masteryKid]; if(!Array.isArray(all)) all=Object.values(all||{});
-    const byId={}; all.forEach(i=>{ if(i&&i.id) byId[i.id]=i; });
-    return mastLogDeck.map(id=>byId[id]).filter(Boolean);
+// One shuffled order per quiz, FROZEN from the first view/print all the way through logging, so
+// the printed sheet and the on-screen log are always in the SAME order — clicking Log never
+// reshuffles the deck under the parent. The shuffle is (re)built only when the due-set changes
+// AND we're not mid-log; logging pins both order and membership so intro graduations / auto-
+// pulled cards (mastSlideShown) can't reorder or grow the deck mid-session. Frozen ids are
+// looked up in live data so tally/status stay current; only order + membership are pinned.
+function mastOrderedDue(pn){
+  const due=mastDueItems(masteryKid,pn);
+  const key=masteryKid+"|"+due.map(i=>i.id).join(",");
+  if(!mastLogDeck || (!mastLogMode && mastSessionKey!==key)){
+    mastLogDeck=mastShuffleDeck(due).map(i=>i.id);
+    mastSessionKey=key;
   }
-  return mastDueItems(masteryKid,pn);
+  let all=masteryData[masteryKid]; if(!Array.isArray(all)) all=Object.values(all||{});
+  const byId={}; all.forEach(i=>{ if(i&&i.id) byId[i.id]=i; });
+  return mastLogDeck.map(id=>byId[id]).filter(Boolean);
 }
+function mastSessionDue(pn){ return mastOrderedDue(pn); }
 
 // Shuffle items WITHIN each category while keeping the categories in their existing order,
 // so a drill stays grouped (all Letters, all Numbers…) but the order inside each group
@@ -9616,7 +9623,7 @@ function mastShuffleDeck(list){
   return out;
 }
 
-function mastSetKid(k){ masteryKid=k; mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastSlideIdx=0; mastScoreItemId=null; mastAdminLocal=null; const cats=Object.keys(MAST_BANK_MAP[k]||{}); mastAddCat=cats[0]||""; const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastSetKid(k){ masteryKid=k; mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastSessionKey=""; mastSlideIdx=0; mastScoreItemId=null; mastAdminLocal=null; const cats=Object.keys(MAST_BANK_MAP[k]||{}); mastAddCat=cats[0]||""; const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastSetView(v){ mastView=v; mastScoreItemId=null; mastManualScore=false; _mastRe(); }
 function mastOpenManualScore(){ mastManualScore=true; mastManualDate=new Date().toISOString().slice(0,10); mastManualC=0; mastManualM=0; mastManualT=0; mastManualS=0; _mastRe(); }
 function mastCloseManualScore(){ mastManualScore=false; _mastRe(); }
@@ -9669,8 +9676,8 @@ function mastDeleteScore(dateKey){
 }
 function mastShowItemHist(id){ mastScoreItemId=mastScoreItemId===id?null:id; _mastRe(); }
 function mastToggleTier(t){ masteryCollapsed[masteryKid+"_"+t]=!masteryCollapsed[masteryKid+"_"+t]; const c=document.getElementById("content"); if(c) renderMastery(c); }
-function mastStartLog(){ mastLogMode=true; mastLogScores={}; mastSlideIdx=0; mastLogDeck=mastShuffleDeck(mastDueItems(masteryKid,mastGetPrintNum())).map(i=>i.id); const c=document.getElementById("content"); if(c) renderMastery(c); }
-function mastCancelLog(){ mastLogMode=false; mastLogScores={}; mastLogDeck=null; const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastStartLog(){ mastLogMode=true; mastLogScores={}; mastSlideIdx=0; mastOrderedDue(mastGetPrintNum()); /* reuse the frozen quiz order (or build it now if going straight to Log) — never reshuffle */ const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastCancelLog(){ mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastSessionKey=""; const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastScore(id,val){ mastLogScores[id]=val; const c=document.getElementById("content"); if(c) renderMastery(c); }
 
 function mastSaveResults(){
@@ -9791,6 +9798,7 @@ function mastSaveResults(){
   mastLogMode=false;
   mastLogScores={};
   mastLogDeck=null;
+  mastSessionKey="";  // next quiz gets a fresh shuffle
   const c=document.getElementById("content"); if(c) renderMastery(c);
 }
 
@@ -11806,7 +11814,7 @@ function mastPrintDrill(){
   if(!pStudent&&!pParent){alert("Check at least one sheet");return;}
 
   const pn=mastGetPrintNum();
-  const due=mastDueItems(masteryKid,pn);
+  const due=mastOrderedDue(pn);  // same frozen shuffle the on-screen log uses, so the paper and the log match exactly
   const dueW=due.filter(i=>i.review_mode==="written");
   const color=MAST_KID_COL[masteryKid];
   const label=SL_KLBL[masteryKid];
