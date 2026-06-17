@@ -1460,6 +1460,7 @@ function initFb() {
     });
     db.ref("config/anthropic_key").once("value",s=>{ if(s.val()) mastAIKey=s.val(); });
     db.ref("config/slot_config").on("value",s=>{ slotConfig=s.val()||{}; });
+    db.ref("config/spin_rules").on("value",s=>{ spinRules=s.val()||{}; try{localStorage.setItem("ha_spin_rules",JSON.stringify(spinRules));}catch(e){} });
     db.ref("att_overrides").on("value",s=>{
       if(s.val()) attOverrides=s.val();
       try{localStorage.setItem("ha_att_overrides",JSON.stringify(attOverrides));}catch(e){}
@@ -1501,6 +1502,7 @@ function boot() {
   try{ const ss=localStorage.getItem("ha_shape_sigs"); if(ss) committedShapeSigs=JSON.parse(ss); }catch(e){}
   try{ const sm=localStorage.getItem("ha_sessionMaps"); if(sm) sessionMapData=JSON.parse(sm); }catch(e){}
   pendingSpins=ld(WK+"_pending_spins")||{};
+  try{ const sr=localStorage.getItem("ha_spin_rules"); if(sr) spinRules=JSON.parse(sr); }catch(e){}
 }
 
 // ── WEEK META ─────────────────────────────────────────────────────
@@ -1902,15 +1904,72 @@ function dailyPaceTracker(dayTasks, dayKey){
 
 let paceToastTimer=null;
 let slotKid=null;
+// ── ON-TIME / PLANNED-TIME ENGINE ────────────────────────────────
+// The displayed schedule re-flows unchecked work toward "now" (now-floor) and around
+// blockouts, so a task's *current* time is a moving target. To judge whether a kid was
+// actually on time we compare against the ORIGINAL planned time, which lives in weekData
+// and is never re-flowed. Cascaded / past-day tasks are late by definition. A Mom blockout
+// that covered the slot does NOT count against the kid (deadline shifts to the displaced time).
+function _nowMinClock(){ const n=new Date(); return n.getHours()*60+n.getMinutes(); }
+function _blockoutEndMin(kid,dayName,sM,eM){
+  const bos=weekData&&weekData.blockouts; if(!bos) return NaN;
+  let maxEnd=NaN;
+  Object.keys(bos).forEach(k=>{
+    const b=bos[k]; if(!b||b.type!=="timed"||b.day!==dayName) return;
+    if(b.kids&&b.kids.length&&b.kids.indexOf(kid)<0) return;
+    const bs=toMin(b.start), be=toMin(b.end);
+    if(!isFinite(bs)||!isFinite(be)) return;
+    if(isFinite(sM)&&isFinite(eM)&&sM<be&&eM>bs){ if(!isFinite(maxEnd)||be>maxEnd) maxEnd=be; }
+  });
+  return maxEnd;
+}
+function plannedInfo(t){
+  const base=(weekData.tasks||[]).find(x=>x.id===t.id)||t;
+  const cascaded=!!base.cascadedFrom;
+  const pday=base.cascadedFrom||base.day;
+  const startMin=toMin(base.time);
+  const endMin=isFinite(startMin)?startMin+(base.dur||20):NaN;
+  const todayIdx=DAYS.indexOf(_todayDay), pIdx=DAYS.indexOf(pday);
+  const isToday=pIdx>=0&&pIdx===todayIdx;
+  const isPast=pIdx>=0&&pIdx<todayIdx;
+  const boEnd=_blockoutEndMin(t.who,pday,startMin,endMin);
+  const hasBlock=isFinite(boEnd);
+  // Fair deadline: on today's own work use the original time (defeats the now-floor dawdle);
+  // but if a blockout legitimately reshuffled the day, honor the displaced time instead.
+  const dt=displacedResult?displacedResult.tasks.find(x=>x.id===t.id):null;
+  let deadlineEnd;
+  if(isToday && !hasBlock)      deadlineEnd=endMin;
+  else if(dt)                   deadlineEnd=toMin(dt.time)+(dt.dur||base.dur||20);
+  else if(hasBlock)             deadlineEnd=Math.max(endMin||boEnd,boEnd);
+  else                          deadlineEnd=endMin;
+  const nowM=_nowMinClock();
+  const isLateNow=cascaded||isPast||(isToday&&isFinite(deadlineEnd)&&nowM>deadlineEnd+5);
+  return {base,cascaded,day:pday,startMin,endMin,deadlineEnd,timeStr:base.time,isToday,isPast,isLateNow};
+}
+// Pure decision (no DOM) — unit-tested in /tmp/ha_spin.test.js.
+function decideSpin(o){
+  // o: {isLastTask, dayBonusClaimed, alreadySpun, isToday, hardLate, diff, mode}
+  if(o.isLastTask && !o.dayBonusClaimed)
+    return {canSpin:true, spinType:"day_bonus", tier:"normal", cls:"ahead"};
+  const behind = !!o.hardLate || (o.isToday && o.diff>5);
+  if(!behind){
+    const ahead = o.isToday && o.diff<=-3;
+    if(o.alreadySpun) return {canSpin:false, spinType:null, tier:"normal", cls:ahead?"ahead":"on-track"};
+    return {canSpin:true, spinType:ahead?"ahead":"on_track", tier:"normal", cls:ahead?"ahead":"on-track"};
+  }
+  // behind — branch on the kid's mode
+  if(o.mode==="strict")  return {canSpin:false, spinType:null, tier:"normal", cls:"behind"};
+  if(o.alreadySpun)      return {canSpin:false, spinType:null, tier:"normal", cls:"behind"};
+  if(o.mode==="tiered")  return {canSpin:true,  spinType:"late_consol", tier:"consolation", cls:"behind"};
+  return {canSpin:true, spinType:"late_full", tier:"normal", cls:"behind"}; // lenient
+}
 function showPaceToast(taskId){
-  const DEFAULT_DUR=20;
   const t=weekData.tasks.find(x=>x.id===taskId); if(!t) return;
-  // Use displaced time if available (blockout shifts the real schedule)
-  const dt=displacedResult?displacedResult.tasks.find(x=>x.id===taskId):null;
-  const taskTime=dt?dt.time:t.time;
-  const scheduledEnd=toMin(taskTime)+(t.dur||DEFAULT_DUR);
-  const now=new Date(), nowMin=now.getHours()*60+now.getMinutes();
   const el=document.getElementById("pace-toast"); if(!el) return;
+  // Timeliness is judged against the ORIGINAL planned time (see plannedInfo), not the re-flowed display time.
+  const pi=plannedInfo(t);
+  const dt=displacedResult?displacedResult.tasks.find(x=>x.id===taskId):null;
+  const nowMin=_nowMinClock();
 
   // Check if this was the kid's last task for the day (use displaced day/tasks if active)
   const taskDay=dt?dt.day:effectiveDay(t);
@@ -1919,29 +1978,41 @@ function showPaceToast(taskId){
   const kidDayDone=kidDayTasks.filter(x=>!!checked[x.id]).length;
   const isLastTask=kidDayDone===kidDayTasks.length;
 
-  // Only use real-time pace comparison when checking off on today's actual day
-  const isToday=taskDay===_todayDay;
-  const diff=isToday?(nowMin-scheduledEnd):0;
+  // Timeliness vs the fair deadline (original time on normal days; displaced time on blockout days)
+  const isToday=pi.isToday;
+  const deadlineEnd=isFinite(pi.deadlineEnd)?pi.deadlineEnd:pi.endMin;
+  const diff=isToday?(isFinite(deadlineEnd)?(nowMin-deadlineEnd):0):0;
   const absDiff=Math.abs(diff);
 
   // Anti-cheat: check if this task (or day bonus) already earned a spin
   const alreadySpun=hasSpun(taskId);
   const dayBonusClaimed=hasDayBonus(t.who, taskDay);
 
-  let cls, msg, canSpin=false, spinType=null;
-  if(isLastTask && !dayBonusClaimed){
-    cls="ahead"; canSpin=true; spinType="day_bonus";
-    msg="🎉 "+cap(t.who)+" finished the day! Bonus spin!";
-    setTimeout(()=>celebrateDayComplete(t.who),600);
-  } else if(!alreadySpun && diff<=-3){
-    cls="ahead"; canSpin=true; spinType="ahead";
-    msg="⚡ "+absDiff+" min ahead — great pace!";
-  } else if(!alreadySpun && diff<=5){
-    cls="on-track"; canSpin=true; spinType="on_track";
-    msg=isToday?"✅ Right on schedule!":"✅ Task complete!";
-  } else {
-    cls=diff<=5?"on-track":"behind";
-    msg=diff<=-3?"⚡ "+absDiff+" min ahead — great pace!":diff<=5?"✅ Right on schedule!":"⏰ "+absDiff+" min behind — you can do it!";
+  // Catch-up bonus: clearing backlog while ahead earns a DOUBLE spin, regardless of timing/mode.
+  if(t._catchUp && !alreadySpun){
+    markSpun(taskId);
+    slotKid=t.who; slotSpinDay=taskDay;
+    addPendingSpin(taskId, t.who, taskDay, "normal", 2);
+    el.className="pace-toast ahead";
+    el.innerHTML="⚡⚡ Caught one up — DOUBLE spin! <button class=\"spin-btn\" onclick=\"openSlotMachine('"+taskId+"')\">🎰🎰 Spin!</button>";
+    el.classList.add("show");
+    if(paceToastTimer) clearTimeout(paceToastTimer);
+    paceToastTimer=setTimeout(()=>{ el.classList.remove("show"); }, 9000);
+    return;
+  }
+
+  const mode=spinRuleFor(t.who);
+  const dec=decideSpin({isLastTask:isLastTask,dayBonusClaimed:dayBonusClaimed,alreadySpun:alreadySpun,isToday:isToday,hardLate:(pi.cascaded||pi.isPast),diff:diff,mode:mode});
+  const cls=dec.cls, canSpin=dec.canSpin, spinType=dec.spinType;
+  if(spinType==="day_bonus"){ setTimeout(()=>celebrateDayComplete(t.who),600); setTimeout(()=>maybeOfferCatchUp(t.who),3200); }
+  let msg;
+  switch(spinType){
+    case "day_bonus": msg="🎉 "+cap(t.who)+" finished the day! Bonus spin!"; break;
+    case "ahead":     msg="⚡ "+absDiff+" min ahead — great pace!"; break;
+    case "on_track":  msg=isToday?"✅ Right on schedule!":"✅ Task complete!"; break;
+    case "late_consol": msg="⏰ A little behind — small spin!"; break;
+    case "late_full":   msg="✅ Done! 🎰"; break;
+    default: msg=pi.isLateNow?("⏰ "+(isToday?absDiff+" min behind — ":"")+"the 🎰 is for on-time work. Let's catch up!"):"✅ Task complete!";
   }
   el.className="pace-toast "+cls;
   slotKid=t.who;
@@ -1950,7 +2021,7 @@ function showPaceToast(taskId){
     // Mark as spun immediately so uncheck+recheck won't offer again
     if(spinType==="day_bonus") markDayBonus(t.who, taskDay);
     else markSpun(taskId);
-    addPendingSpin(taskId, t.who, taskDay);
+    addPendingSpin(taskId, t.who, taskDay, dec.tier);
     el.innerHTML=msg+' <button class="spin-btn" onclick="openSlotMachine(\''+taskId+'\')">🎰 Spin!</button>';
   } else {
     el.textContent=msg;
@@ -1970,7 +2041,23 @@ const SLOT_DEFAULTS=[
   {pts:25,weight:7,msg:"JACKPOT — 25 points!"}
 ];
 let slotConfig={}; // {kid: [{pts,weight,msg},...]} — per-kid overrides from Firebase
+let spinRules={}; // {kid:"strict"|"tiered"|"lenient"} — how a LATE check-off affects the spin. Default strict (on-time only).
+let slotTier="normal"; // "normal" | "consolation" — set when a spin is opened, drives the odds table
+function spinRuleFor(kid){ return (spinRules&&spinRules[kid])||"strict"; }
+function setSpinRule(kid,val){
+  spinRules[kid]=val;
+  try{localStorage.setItem("ha_spin_rules",JSON.stringify(spinRules));}catch(e){}
+  if(db) db.ref("config/spin_rules").set(spinRules);
+  renderAll();
+}
+// Weak odds for a "late" consolation spin (tiered mode) — mostly nothing, never a jackpot
+const SLOT_CONSOLATION=[
+  {pts:0,weight:60,msg:"A little late — no points this time."},
+  {pts:1,weight:28,msg:"A little late — 1 point."},
+  {pts:2,weight:12,msg:"A little late — 2 points."}
+];
 function getSlotOutcomes(kid){
+  if(slotTier==="consolation") return SLOT_CONSOLATION;
   if(slotConfig[kid]&&slotConfig[kid].length) return slotConfig[kid];
   if(slotConfig.default&&slotConfig.default.length) return slotConfig.default;
   return SLOT_DEFAULTS;
@@ -2004,8 +2091,8 @@ function markDayBonus(kid,d){
   if(db) db.ref(WK+"/day_bonus_used").set(used);
 }
 
-function addPendingSpin(taskId,kid,d){
-  pendingSpins[taskId]={kid:kid,day:d};
+function addPendingSpin(taskId,kid,d,tier,spins){
+  pendingSpins[taskId]={kid:kid,day:d,tier:tier||"normal",spins:spins||1};
   sv(WK+"_pending_spins",pendingSpins);
   if(db) db.ref(WK+"/pending_spins").set(pendingSpins);
 }
@@ -2037,6 +2124,7 @@ function addKidPoints(k,pts,d){
 
 let slotSpinDay=null;
 let slotPendingTaskId=null;
+let slotSpinsLeft=1, slotAccumPts=0; // double-spin support: spins remaining + points across spins
 let ptsEditUnlocked=false;
 function promptPtsPin(){
   const w=document.getElementById("pts-pin-wrap"); if(!w)return;
@@ -2069,12 +2157,15 @@ function openSlotMachine(taskId){
   if(taskId&&pendingSpins[taskId]){
     slotKid=pendingSpins[taskId].kid;
     slotSpinDay=pendingSpins[taskId].day;
-  }
+    slotTier=pendingSpins[taskId].tier||"normal";
+    slotSpinsLeft=pendingSpins[taskId].spins||1;
+  } else { slotTier="normal"; slotSpinsLeft=1; }
+  slotAccumPts=0;
   slotPendingTaskId=taskId||null;
   const k=slotKid||"lincoln";
   const todayPts=getKidDayPoints(k,slotSpinDay||day);
   const weekPts=getKidPoints(k);
-  document.getElementById("slot-kid-name").textContent=cap(k)+"'s Spin";
+  document.getElementById("slot-kid-name").textContent=cap(k)+(slotSpinsLeft>1?"'s DOUBLE Spin! 🎰🎰":"'s Spin");
   document.getElementById("slot-pts-display").textContent="Today ⭐"+todayPts+" · Week ⭐"+weekPts;
   document.getElementById("slot-result").className="slot-result";
   document.getElementById("slot-result").textContent="";
@@ -2136,20 +2227,86 @@ function spinSlots(){
       resEl.className="slot-result show zero";
     }
     msgEl.textContent=outcome.msg;
-    btn.textContent="Done!";
-    btn.disabled=false;
-    btn.onclick=closeSlotMachine;
-    if(slotPendingTaskId){
-      // Track per-task spin result for admin panel
-      var sr=ld(WK+"_spin_results")||{};
-      sr[slotPendingTaskId]={pts:outcome.pts,kid:k,day:d,ts:Date.now()};
-      sv(WK+"_spin_results",sr);
-      if(db) db.ref(WK+"/spin_results").set(sr);
-      claimPendingSpin(slotPendingTaskId); slotPendingTaskId=null;
+    slotAccumPts+=outcome.pts;
+    slotSpinsLeft--;
+    if(slotSpinsLeft>0){
+      // Double-spin: let them pull the lever again before we close out.
+      btn.textContent="🎰 SPIN AGAIN! ("+slotSpinsLeft+" left)";
+      btn.disabled=false;
+      btn.onclick=spinSlots;
+    } else {
+      btn.textContent="Done!";
+      btn.disabled=false;
+      btn.onclick=closeSlotMachine;
+      if(slotPendingTaskId){
+        // Track per-task spin result for admin panel (total across all spins)
+        var sr=ld(WK+"_spin_results")||{};
+        sr[slotPendingTaskId]={pts:slotAccumPts,kid:k,day:d,ts:Date.now()};
+        sv(WK+"_spin_results",sr);
+        if(db) db.ref(WK+"/spin_results").set(sr);
+        claimPendingSpin(slotPendingTaskId); slotPendingTaskId=null;
+      }
     }
   },totalTime);
 }
 function getSpinResult(taskId){ var sr=ld(WK+"_spin_results")||{}; return sr[taskId]||null; }
+
+// ── AHEAD-OF-SCHEDULE CATCH-UP OFFER ─────────────────────────────
+// When a kid finishes their planned day with time to spare and backlog exists, offer
+// to pull ONE carry-over task forward for a double spin. Opt-in only; never touches
+// work still sitting in its planned day.
+function _catchUpBacklog(kid){
+  return weekData.tasks.filter(t=>!t.id.endsWith("_c") && t._carryNext && !checked[t.id] && t.who===kid);
+}
+function maybeOfferCatchUp(kid){
+  if(document.getElementById("catchup-offer")) return;        // one offer at a time
+  const co=_catchUpBacklog(kid);
+  if(!co.length) return;                                      // no backlog → nothing to offer
+  const sd=(rulesData&&rulesData.schoolDay)||{};
+  if(_nowMinClock()>=toMin(sd.defaultEnd||"4:15 PM")) return; // day's over → no time to get ahead
+  const order=["monday","tuesday","wednesday","thursday","friday","saturday"];
+  co.sort((a,b)=>{
+    const da=order.indexOf(a.cascadedFrom||a.day), db2=order.indexOf(b.cascadedFrom||b.day);
+    if(da!==db2) return da-db2;                               // oldest backlog first
+    return (a.title||"").localeCompare(b.title||"");
+  });
+  showCatchUpOffer(kid, co[0]);
+}
+function showCatchUpOffer(kid, task){
+  const KC={lincoln:"#2563eb",ellis:"#16a34a",lucy:"#9333ea",julian:"#f59e0b"};
+  const ov=document.createElement("div");
+  ov.id="catchup-offer";
+  ov.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;font-family:'DM Sans',sans-serif;padding:20px";
+  ov.innerHTML='<div style="background:#fff;border-radius:18px;padding:24px 20px;max-width:340px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.35)">'+
+    '<div style="font-size:42px;line-height:1;margin-bottom:8px">🎉⚡</div>'+
+    '<div style="font-size:19px;font-weight:800;color:'+(KC[kid]||"#111")+';margin-bottom:6px">'+cap(kid)+", you're ahead!</div>"+
+    '<div style="font-size:13px;color:#555;line-height:1.4">Want to knock out a catch-up task for a <b>DOUBLE spin</b>? 🎰🎰</div>'+
+    '<div style="font-size:13px;font-weight:700;background:#fef3c7;color:#b45309;border-radius:10px;padding:9px 11px;margin:12px 0">'+task.title+'</div>'+
+    '<div style="display:flex;gap:8px;margin-top:6px">'+
+      '<button onclick="declineCatchUp()" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid #e5e7eb;background:#fff;color:#666;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">No thanks</button>'+
+      '<button onclick="acceptCatchUp(\''+task.id+'\')" style="flex:2;padding:12px;border-radius:12px;border:none;background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">Yes! Let\'s go 🎰🎰</button>'+
+    '</div></div>';
+  document.body.appendChild(ov);
+}
+function declineCatchUp(){ const o=document.getElementById("catchup-offer"); if(o) o.remove(); }
+function acceptCatchUp(taskId){
+  const o=document.getElementById("catchup-offer"); if(o) o.remove();
+  const t=weekData.tasks.find(x=>x.id===taskId); if(!t) return;
+  // Pull it into today as a pinned, double-spin catch-up (recompile leaves _catchUp alone).
+  delete t._carryNext;
+  t._catchUp=true;
+  t.cascadedFrom=t.cascadedFrom||t.day;
+  t.day=_todayDay;
+  const sd=(rulesData&&rulesData.schoolDay)||{};
+  let last=toMin(sd.defaultStart||"10:00 AM");
+  weekData.tasks.forEach(x=>{ if(x.who===t.who&&x.day===_todayDay&&!x._carryNext&&x.id!==t.id&&x.time){ const e=toMin(x.time)+(x.dur||20); if(e>last) last=e; } });
+  t.time=fromMin(Math.max(last,_nowMinClock()));
+  sv(WK+"_tasks",weekData.tasks);
+  safeWriteTasks("catchup");
+  const el=document.getElementById("pace-toast");
+  if(el){ el.className="pace-toast ahead"; el.textContent="🎯 Added to today — finish it for a 🎰🎰 double spin!"; el.classList.add("show"); if(paceToastTimer) clearTimeout(paceToastTimer); paceToastTimer=setTimeout(()=>{el.classList.remove("show");},5000); }
+  renderAll();
+}
 
 // ── SPIN & POINTS ADMIN (Mom View) ──────────────────────────────
 function renderSpinAdmin(d){
@@ -2529,6 +2686,31 @@ function renderSettings(el,ah){
     if(kid==="lincoln") pinHtml+='<button onclick="slotCfgCopy()" style="padding:4px 10px;border-radius:8px;background:linear-gradient(135deg,#2563eb,#1e40af);color:#fff;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Copy → All Others</button>';
     pinHtml+='</div>';
     if(kid==="lincoln") pinHtml+='<div id="slot-cfg-msg" style="font-size:12px;color:#16a34a;min-height:16px;margin-top:6px"></div>';
+    pinHtml+='</div></div>';
+  });
+  pinHtml+='</div>';
+
+  // Spin Timing Rule (per kid) — how a LATE check-off affects the 🎰
+  pinHtml+='<div class="rules-wrap" style="margin-top:20px">';
+  pinHtml+='<div class="rules-hdr">Spin Timing Rule</div>';
+  pinHtml+='<div class="rules-sub">Whether a <b>late</b> check-off still earns a spin. "On time" is measured against each task\'s <b>original</b> planned time, so the schedule re-flowing later in the day won\'t hand out free spins — but blockouts you add don\'t count against the kids. The day-finish bonus spin always fires, and every kid sees a "⏰ Was due" banner on slipped tasks no matter which rule is set.</div>';
+  const SR_OPTS=[
+    ["strict","On-time only","Late = no spin (just the banner + a gentle nudge). Sharpest urgency."],
+    ["tiered","On-time wins bigger","Late still spins, but on weak odds — no jackpot. Gentle."],
+    ["lenient","Always spins","Late earns a normal spin. No time pressure (the old behavior)."]
+  ];
+  kids.forEach(kid=>{
+    const cur=spinRuleFor(kid);
+    const kc=kid==="lincoln"?"#2563eb":kid==="ellis"?"#16a34a":kid==="lucy"?"#9333ea":"#f59e0b";
+    pinHtml+='<div style="margin-bottom:10px;padding:10px 12px;background:var(--bg);border:1.5px solid var(--border);border-radius:10px">';
+    pinHtml+='<div style="font-size:13px;font-weight:700;margin-bottom:7px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+kc+';margin-right:6px"></span>'+cap(kid)+'</div>';
+    pinHtml+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+    SR_OPTS.forEach(opt=>{
+      const val=opt[0], lbl=opt[1], desc=opt[2], on=cur===val;
+      pinHtml+='<button onclick="setSpinRule(\''+kid+'\',\''+val+'\')" style="flex:1;min-width:130px;padding:8px 10px;border-radius:9px;border:1.5px solid '+(on?kc:'var(--border)')+';background:'+(on?kc:'transparent')+';color:'+(on?'#fff':'var(--muted)')+';cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:left">'+
+        '<div style="font-size:12px;font-weight:700">'+lbl+'</div>'+
+        '<div style="font-size:10px;font-weight:500;margin-top:2px;opacity:'+(on?0.92:0.7)+'">'+desc+'</div></button>';
+    });
     pinHtml+='</div></div>';
   });
   pinHtml+='</div>';
@@ -2983,12 +3165,16 @@ function taskCard(t, fromDay){
   const disLabel=(t._displaced&&t._originalDay&&t._originalDay!==t.day)?'<div style="font-size:10px;font-weight:700;color:#7c3aed;background:#ede9fe;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">&#8618; Moved from '+cap(t._originalDay)+'</div><br>':'';
   const carryLabel=fromDay?'<div style="font-size:10px;font-weight:700;color:#4338ca;background:#e0e7ff;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">↩ '+fromDay+'</div><br>':'';
   const cascLabel=t.cascadedFrom?'<div style="font-size:10px;font-weight:700;color:#b45309;background:#fef3c7;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">↩ From '+cap(t.cascadedFrom)+'</div><br>':'';
+  // "Was due" banner — shows the ORIGINAL planned time on any not-yet-done task that has slipped past it
+  const _pi=plannedInfo(t);
+  const lateLabel=(!done&&_pi.isLateNow&&_pi.timeStr)?'<div style="font-size:10px;font-weight:700;color:#b91c1c;background:#fee2e2;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">⏰ Was due '+_pi.timeStr+(_pi.cascaded?" ("+cap(_pi.day)+")":"")+'</div><br>':'';
+  const cuLabel=(t._catchUp&&!done)?'<div style="font-size:10px;font-weight:800;color:#92400e;background:#fde68a;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">⚡ Catch-up · 🎰🎰 double spin</div><br>':'';
   return '<div class="task-card '+bcls+(done?" done":"")+(future?" future":"")+(t._displaced?" displaced":"")+'">'+
     '<div class="card-inner">'+
     '<div class="task-cb'+(done?" checked":"")+'" onclick="tapTask(\''+t.id+'\')">'+(done?"✓":"")+'</div>'+
     '<div class="card-body">'+
     '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
-    '<div class="task-title">'+disLabel+carryLabel+cascLabel+t.title+'</div>'+mb+'</div>'+
+    '<div class="task-title">'+disLabel+carryLabel+cascLabel+lateLabel+cuLabel+t.title+'</div>'+mb+'</div>'+
     '<div class="task-detail">'+cleanDetail+'</div>'+dr+spinBtn+
     '</div></div></div>';
 }
@@ -4008,9 +4194,9 @@ function renderCarryOverHtml(pool){
 
   const curCO=weekData.tasks.filter(t=>!t.id.endsWith("_c")&&effectiveDay(t)==="carryover"&&!checked[t.id]);
   if(curCO.length){
-    h+='<div style="margin-bottom:16px;border-left:4px solid #dc2626;background:#fef2f2;border-radius:0 10px 10px 0;padding:10px 12px">';
-    h+='<div style="font-size:11px;font-weight:800;color:#dc2626;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.4px">This Week — Not Completed</div>';
-    h+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Tap to check off (counts toward this week\'s history).</div>';
+    h+='<div style="margin-bottom:16px;border-left:4px solid #b45309;background:#fffbeb;border-radius:0 10px 10px 0;padding:10px 12px">';
+    h+='<div style="font-size:11px;font-weight:800;color:#b45309;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.4px">Carries to Next Week</div>';
+    h+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Didn\'t fit this week — these roll into next week. Tap to knock one out early.</div>';
     ["lincoln","ellis","lucy","julian"].forEach(k=>{
       const kt=curCO.filter(t=>t.who===k); if(!kt.length) return;
       h+='<div style="font-size:10px;font-weight:700;color:'+(KC[k]||'#444')+';margin:6px 0 4px;text-transform:uppercase">'+cap(k)+'</div>';
@@ -6539,6 +6725,68 @@ function schedCascade(){
   },2000);
 }
 
+// ── EVEN WEEK PLANNER ────────────────────────────────────────────
+// Deterministic load-balancer + per-subject spreader for the daily recompile.
+// PURE (no DOM / no globals) so it can be unit-tested in isolation — see
+// /tmp/ha_evenweek.test.js. Given each kid's available days, a per-day minute
+// BUDGET (already net of lunch, blockout, and fixed work), and the pool of owed
+// tasks {id,who,subject,dur,lesson,day}, it returns the day each task should land
+// on plus the ids that don't fit (→ carry to next week).
+//   • Subjects spread across days (soft target = ceil(count / #days)) so 6 of one
+//     subject over 3 days aims for 2/2/2 instead of all on the first day.
+//   • Days level by minutes (each task → the kid's lightest day that still fits).
+//   • "Keep current day" tiebreak minimizes churn so the schedule doesn't bounce.
+function planEvenWeek(input){
+  const days0=input.days||[];
+  const dayIndex={}; days0.forEach((d,i)=>{ dayIndex[d]=i; });
+  function natCmp(a,b){
+    a=String(a||""); b=String(b||"");
+    const ra=/(\d+)|(\D+)/g, pa=a.match(ra)||[], pb=b.match(ra)||[];
+    for(let i=0;i<Math.max(pa.length,pb.length);i++){
+      const xa=pa[i]||"", xb=pb[i]||"", na=parseInt(xa), nb=parseInt(xb);
+      if(!isNaN(na)&&!isNaN(nb)){ if(na!==nb) return na-nb; }
+      else { const c=xa.localeCompare(xb); if(c!==0) return c; }
+    }
+    return 0;
+  }
+  const dayOf={}, carry=[];
+  (input.kids||[]).forEach(kid=>{
+    const budget=(input.budget||{})[kid]||{};
+    const days=days0.filter(d=>(budget[d]||0)>0);
+    const mine=(input.tasks||[]).filter(t=>t.who===kid);
+    if(!days.length){ mine.forEach(t=>carry.push(t.id)); return; }
+    const load={}; days.forEach(d=>{ load[d]=0; });
+    const subjCount={}; // subject -> {day:count}
+    const groups={};
+    mine.forEach(t=>{ const s=t.subject||""; (groups[s]=groups[s]||[]).push(t); });
+    Object.keys(groups).sort().forEach(subj=>{
+      const list=groups[subj].slice().sort((a,b)=>natCmp(a.lesson,b.lesson));
+      const target=Math.ceil(list.length/days.length);
+      subjCount[subj]={};
+      list.forEach(t=>{
+        const dur=t.dur||20;
+        const fits=days.filter(d=>(load[d]+dur)<=budget[d]);
+        if(!fits.length){ carry.push(t.id); return; }
+        const under=fits.filter(d=>(subjCount[subj][d]||0)<target);
+        const pickFrom=under.length?under:fits;
+        let best=pickFrom[0];
+        for(const d of pickFrom){
+          if(d===best) continue;
+          const lb=load[d], bb=load[best];
+          if(lb<bb){ best=d; continue; }
+          if(lb>bb) continue;
+          const dCur=(d===t.day)?0:1, bCur=(best===t.day)?0:1;       // prefer staying put
+          if(dCur<bCur){ best=d; continue; }
+          if(dCur===bCur && dayIndex[d]<dayIndex[best]) best=d;       // then earliest day
+        }
+        dayOf[t.id]=best; load[best]+=dur; subjCount[subj][best]=(subjCount[subj][best]||0)+1;
+      });
+    });
+  });
+  return {dayOf,carry};
+}
+let _lastCascadeSig=""; // skip-write guard: last {id:day|time} signature we wrote
+
 function cascadeIntraWeek(){
   const dayOrder=["monday","tuesday","wednesday","thursday","friday","saturday"];
   const JS_DAY_MAP={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
@@ -6564,98 +6812,122 @@ function cascadeIntraWeek(){
     }
   });
 
-  // Collect unchecked tasks from past days (don't move them yet)
-  const pastTasks=[];
-  weekData.tasks.forEach(t=>{
-    if(t.id.endsWith("_c")) return;
-    if(checked[t.id]) return;
-    const idx=dayOrder.indexOf(t.day);
-    if(idx<0||idx>=todayIdx) return;
-    let isPast=false;
-    if(DAY_DT[t.day]){
-      const cal=new Date(DAY_DT[t.day]+", "+todayMid.getFullYear()); cal.setHours(0,0,0,0);
-      isPast=cal<todayMid;
-    } else { isPast=(JS_DAY_MAP[t.day]||0)<jsDay; }
-    if(!isPast) return;
-    t.cascadedFrom=t.cascadedFrom||t.day;
-    pastTasks.push(t);
-  });
-  if(!pastTasks.length) return;
-
+  // ── RECOMPILE: pool every owed task, then redistribute it evenly across the
+  // remaining school days — level minutes AND spread each subject across days —
+  // beach- and blockout-aware. Overflow carries to next week (week 10 after the beach).
   const r=rulesData||{};
   const sd=r.schoolDay||{};
   const mag=weekData.babysitter||{};
   const sitterKids=mag.withSitter||(rulesData&&rulesData.withSitter)||[];
-  const wf=(r.workflow)||{};
+  const KIDS=["lincoln","ellis","lucy","julian"];
+  const nowMin=new Date().getHours()*60+new Date().getMinutes();
 
-  // Workflow-aware sort weight — matches _wfWeight in runDisplacement
-  function cascadeWeight(t,dn){
-    const title=(t.title||"").toLowerCase();
-    if(title.includes("closing notebook")) return 1000;
-    if(title.includes("morning notebook")) return -1;
-    // Check curriculum "first"/"last" rules
-    const cs=currData&&currData.subjects&&currData.subjects[t.who];
-    if(cs){for(const sk in cs){if((cs[sk].rules||"").includes("first")){const lbl=(cs[sk].label||sk.replace(/_/g," ")).toLowerCase();if(title.includes(lbl)) return -1;}}}
-    const kidWf=wf[t.who];
-    if(!kidWf) return 500;
-    const useSitter=!!(mag.days&&mag.days.indexOf(dn)>=0);
-    const steps=(useSitter?kidWf.babysitter:kidWf.normal)||kidWf.normal||[];
-    const subj=taskSubject(t).toLowerCase();
-    // Subject-name match first
-    for(let i=0;i<steps.length;i++){
-      const subs=steps[i].subjects||[];
-      for(let j=0;j<subs.length;j++){ if(subj.includes(subs[j].toLowerCase())) return i*10+j; }
-    }
-    // Fallback: tier match
-    const tier=taskTier(t);
-    for(let i=0;i<steps.length;i++){ if(steps[i].tier===tier) return i*10+9; }
-    return 500;
-  }
-
-  // Distribute past unchecked tasks across today→Saturday via the shared packer.
-  // Each day packs around the tasks already there; whatever doesn't fit chains to the
-  // next day. Kids pack in parallel, duration-aware (no proportional-slot hack), and
-  // calendar off-days are skipped per kid (decision #9).
   function _cascDate(dn){
     if(!DAY_DT[dn]) return null;
     const d=new Date(DAY_DT[dn]+", "+todayMid.getFullYear());
     if(isNaN(d.getTime())) return null;
     return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
   }
-  let pool=pastTasks.slice();
-  for(let di=todayIdx; di<dayOrder.length&&pool.length; di++){
-    const dn=dayOrder[di];
-    const sdOv=(sd.overrides||{})[dn]||{};
-    const dStart=toMin(sdOv.start||sd.defaultStart||"10:00 AM");
-    const dEnd=toMin(sdOv.end||sd.defaultEnd||"4:15 PM");
-    const lunchS=toMin(sdOv.lunchStart||sd.lunchStart||"1:00 PM");
-    const lunchE=toMin(sdOv.lunchEnd||sd.lunchEnd||"2:00 PM");
-    const isSitterDay=mag.days&&mag.days.includes(dn);
-    const sitterReturn=isSitterDay?toMin(mag["mom_return_"+dn]||mag.mom_return||"2:00 PM"):0;
-    const dStr=_cascDate(dn);
-    const offHere=t=>!!(dStr&&smapIsKidOff(t.who,dStr)); // holiday/vacation/kid-off → wait for a later day
-    const tryHere=pool.filter(t=>!offHere(t));
-    if(!tryHere.length) continue;
-    // Order by kid then workflow weight (mirrors the prior per-kid blocks).
-    tryHere.sort((a,b)=> (a.who<b.who?-1:a.who>b.who?1:0) || (cascadeWeight(a,dn)-cascadeWeight(b,dn)));
-    // Tasks already on this day (not part of the cascade pool) get packed around.
-    const poolSet=new Set(pool);
-    const existing=weekData.tasks.filter(t=>t.day===dn&&!t.id.endsWith("_c")&&!poolSet.has(t));
-    tryHere.forEach(t=>{ t.day=dn; });
-    const isLast=(di===dayOrder.length-1);
-    const kidStart={}; if(isSitterDay) sitterKids.forEach(k=>{ kidStart[k]=sitterReturn; });
-    const overflow=packAround(existing,tryHere,{start:dStart,end:dEnd,lunchStart:lunchS,lunchEnd:lunchE,
-      momStart:sitterReturn,kidStart:kidStart,allowOvertime:isLast,overtimeMax:240});
-    const overflowSet=new Set(overflow);
-    pool=pool.filter(t=>overflowSet.has(t)||offHere(t)); // carry overflow + off-here tasks to the next day
+  const _isNb=t=>/notebook/i.test(t.title||"");
+  const _isClosing=t=>/closing notebook/i.test(t.title||"");
+  const _isMorning=t=>/morning notebook/i.test(t.title||"");
+  const _lessonOf=t=>{ const m=(t.title||"").match(/—\s*(.+)$/); return m?m[1].trim():""; };
+  function _win(dn){
+    const o=(sd.overrides||{})[dn]||{};
+    return {start:toMin(o.start||sd.defaultStart||"10:00 AM"), end:toMin(o.end||sd.defaultEnd||"4:15 PM"),
+            lunchS:toMin(o.lunchStart||sd.lunchStart||"1:00 PM"), lunchE:toMin(o.lunchEnd||sd.lunchEnd||"2:00 PM")};
+  }
+  // Minutes a kid is unavailable inside [ws,we] = union(lunch, timed blockouts) — no double-counting.
+  function _unavailMin(kid,dn,ws,we,lunchS,lunchE){
+    const iv=[[lunchS,lunchE]];
+    const bos=weekData&&weekData.blockouts;
+    if(bos) Object.keys(bos).forEach(k=>{ const b=bos[k];
+      if(b&&b.type==="timed"&&b.day===dn&&(!b.kids||!b.kids.length||b.kids.indexOf(kid)>=0)){
+        const bs=toMin(b.start), be=toMin(b.end); if(isFinite(bs)&&isFinite(be)) iv.push([bs,be]);
+      }});
+    const cl=iv.map(p=>[Math.max(p[0],ws),Math.min(p[1],we)]).filter(p=>p[1]>p[0]).sort((a,b)=>a[0]-b[0]);
+    let tot=0,cs=-1,ce=-1;
+    cl.forEach(p=>{ if(p[0]>ce){ if(ce>cs)tot+=ce-cs; cs=p[0];ce=p[1]; } else ce=Math.max(ce,p[1]); });
+    if(ce>cs)tot+=ce-cs; return tot;
   }
 
-  // Safety net: anything still unplaced (e.g. off every remaining day) stacks at Saturday's end.
-  if(pool.length){
-    const sdOvSat=(sd.overrides||{})["saturday"]||{};
-    const dEndSat=toMin(sdOvSat.end||sd.defaultEnd||"4:15 PM");
-    pool.forEach(t=>{ t.day="saturday"; t.time=fromMin(dEndSat-20); });
+  // Candidate days = today → end-of-week that have a real date and aren't off for everyone.
+  // (Saturday has no date in the week meta when it's off — e.g. the beach week — so it drops.)
+  const candDays=[];
+  for(let di=todayIdx; di<dayOrder.length; di++){
+    const dn=dayOrder[di], ds=_cascDate(dn);
+    if(ds && !smapIsOff(ds)) candDays.push(dn);
   }
+  if(!candDays.length) return;
+
+  // Pool = every unchecked, non-carry, non-notebook task still owed. Notebooks, checked,
+  // and accepted catch-up tasks (_catchUp — pinned to today by the ahead-of-schedule bonus) stay put.
+  const pool=weekData.tasks.filter(t=>!t.id.endsWith("_c") && !checked[t.id] && !_isNb(t) && !t._catchUp);
+  if(!pool.length) return;
+
+  // Per-kid per-day minute budget = window − unavailable(lunch+blockout) − fixed(checked+notebook).
+  // For TODAY the window starts at "now" so we never assign work into an already-elapsed slot.
+  const budget={}; KIDS.forEach(k=>{ budget[k]={}; });
+  candDays.forEach(dn=>{
+    const w=_win(dn), ds=_cascDate(dn);
+    const ws=(dn===today)?Math.max(w.start,nowMin):w.start;
+    KIDS.forEach(kid=>{
+      if(smapIsKidOff(kid,ds)){ budget[kid][dn]=0; return; }
+      let fx=0;
+      weekData.tasks.forEach(t=>{ if(!t.id.endsWith("_c")&&t.who===kid&&t.day===dn&&(checked[t.id]||_isNb(t)||t._catchUp)) fx+=(t.dur||20); });
+      const un=_unavailMin(kid,dn,ws,w.end,w.lunchS,w.lunchE);
+      budget[kid][dn]=Math.max(0,(w.end-ws)-un-fx);
+    });
+  });
+
+  // Tag tasks that slipped from a past day so the "↩ From X" chip still shows.
+  pool.forEach(t=>{ if(dayOrder.indexOf(t.day)<todayIdx) t.cascadedFrom=t.cascadedFrom||t.day; });
+
+  const plan=planEvenWeek({ kids:KIDS, days:candDays, budget:budget,
+    tasks:pool.map(t=>({id:t.id,who:t.who,subject:taskSubject(t),dur:t.dur||20,lesson:_lessonOf(t),day:t.day})) });
+
+  // Apply day assignments; genuine overflow → carry to next week.
+  const carrySet=new Set(plan.carry);
+  pool.forEach(t=>{
+    if(carrySet.has(t.id)){ t._carryNext=true; return; }
+    delete t._carryNext;
+    const nd=plan.dayOf[t.id];
+    if(nd && nd!==t.day){ t.cascadedFrom=t.cascadedFrom||t.day; t.day=nd; }
+  });
+
+  // Time each day around its fixed work (checked + Morning notebook); Closing notebook stays last.
+  candDays.forEach(dn=>{
+    const w=_win(dn);
+    const ws=(dn===today)?Math.max(w.start,nowMin):w.start;
+    const isSitterDay=mag.days&&mag.days.includes(dn);
+    const sitterReturn=isSitterDay?toMin(mag["mom_return_"+dn]||mag.mom_return||"2:00 PM"):0;
+    const kidStart={}; if(isSitterDay) sitterKids.forEach(k=>{ kidStart[k]=sitterReturn; });
+    // A morning blockout (starts at/before day open) pushes that kid's start to the block's end,
+    // so base times land after it instead of relying on the displacement overlay to fix them.
+    const _bos=weekData&&weekData.blockouts;
+    if(_bos) KIDS.forEach(kid=>{ let be0=0;
+      Object.keys(_bos).forEach(k=>{ const b=_bos[k];
+        if(b&&b.type==="timed"&&b.day===dn&&(!b.kids||!b.kids.length||b.kids.indexOf(kid)>=0)){
+          const bs=toMin(b.start), bend=toMin(b.end);
+          if(isFinite(bs)&&isFinite(bend)&&bs<=ws&&bend>ws) be0=Math.max(be0,bend);
+        }});
+      if(be0>0) kidStart[kid]=Math.max(kidStart[kid]||ws,be0);
+    });
+    const onDay=weekData.tasks.filter(t=>!t.id.endsWith("_c")&&t.day===dn&&!t._carryNext);
+    const fixed=onDay.filter(t=>checked[t.id]||_isMorning(t));
+    const movers=onDay.filter(t=>!checked[t.id]&&!_isNb(t));
+    if(movers.length){
+      const overflow=packAround(fixed,movers,{start:ws,end:w.end,lunchStart:w.lunchS,lunchEnd:w.lunchE,
+        momStart:sitterReturn,kidStart:kidStart,allowOvertime:false});
+      (overflow||[]).forEach(t=>{ if(!t._catchUp) t._carryNext=true; }); // a chosen catch-up never bounces back out
+    }
+    // Closing notebooks land after the kid's last placed task of the day.
+    onDay.filter(t=>!checked[t.id]&&_isClosing(t)).forEach(t=>{
+      let last=ws;
+      weekData.tasks.forEach(x=>{ if(x.who===t.who&&x.day===dn&&!x._carryNext&&!_isClosing(x)){ const e=toMin(x.time)+(x.dur||20); if(e>last) last=e; } });
+      t.time=fromMin(last);
+    });
+  });
 
   // ── Lesson-order pass: ensure sequential lessons stay in day order ──
   // For any subject that has a cascaded task, collect all tasks for that
@@ -6692,8 +6964,8 @@ function cascadeIntraWeek(){
     const grp=subjectGroups[key];
     // Only reorder groups that have at least one cascaded task
     if(!grp.some(t=>t.cascadedFrom)) continue;
-    // Only reorder among UNCHECKED tasks — checked ones are done, don't touch them
-    const uncheckedGrp=grp.filter(t=>!checked[t.id]);
+    // Only reorder among UNCHECKED, still-scheduled tasks (carried-to-next-week ones have no slot)
+    const uncheckedGrp=grp.filter(t=>!checked[t.id]&&!t._carryNext);
     if(uncheckedGrp.length<2) continue;
 
     // Sort by lesson detail (natural order)
@@ -6726,6 +6998,10 @@ function cascadeIntraWeek(){
     }
   }
 
+  // Skip the write entirely when nothing changed (deterministic recompute ⇒ no churn loop).
+  const _sig=weekData.tasks.map(t=>t.id+":"+(t._carryNext?"CO":t.day)+"|"+(t.time||"")).sort().join(",");
+  if(_sig===_lastCascadeSig){ renderAll(); return; }
+  _lastCascadeSig=_sig;
   sv(WK+"_tasks",weekData.tasks);
   safeWriteTasks("cascade");
   renderAll();
@@ -8625,6 +8901,7 @@ function chainDone(origId, checkedObj, tasksArr){
 }
 function effectiveDay(t){
   if(t.id.endsWith("_c")) return t.day;
+  if(t._carryNext && !checked[t.id]) return "carryover"; // recompile deferred it past this week
   if(checked[t.id]){
     const h=histState[t.id];
     if(h&&h.checkedOnDay) return h.checkedOnDay;
