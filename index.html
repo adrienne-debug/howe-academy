@@ -9605,17 +9605,6 @@ function mastSessionDue(pn){
   return mastDueItems(masteryKid,pn);
 }
 
-// Shuffle items WITHIN each category while keeping the categories in their existing order,
-// so a drill stays grouped (all Letters, all Numbers…) but the order inside each group
-// varies every session. Fisher–Yates per category run.
-function mastShuffleDeck(list){
-  const order=[], groups={};
-  list.forEach(it=>{ const c=(it&&it.subject)||"Other"; if(!groups[c]){ groups[c]=[]; order.push(c); } groups[c].push(it); });
-  const out=[];
-  order.forEach(c=>{ const g=groups[c]; for(let i=g.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=g[i]; g[i]=g[j]; g[j]=t; } out.push(...g); });
-  return out;
-}
-
 function mastSetKid(k){ masteryKid=k; mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastSlideIdx=0; mastScoreItemId=null; mastAdminLocal=null; const cats=Object.keys(MAST_BANK_MAP[k]||{}); mastAddCat=cats[0]||""; const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastSetView(v){ mastView=v; mastScoreItemId=null; mastManualScore=false; _mastRe(); }
 function mastOpenManualScore(){ mastManualScore=true; mastManualDate=new Date().toISOString().slice(0,10); mastManualC=0; mastManualM=0; mastManualT=0; mastManualS=0; _mastRe(); }
@@ -9669,7 +9658,7 @@ function mastDeleteScore(dateKey){
 }
 function mastShowItemHist(id){ mastScoreItemId=mastScoreItemId===id?null:id; _mastRe(); }
 function mastToggleTier(t){ masteryCollapsed[masteryKid+"_"+t]=!masteryCollapsed[masteryKid+"_"+t]; const c=document.getElementById("content"); if(c) renderMastery(c); }
-function mastStartLog(){ mastLogMode=true; mastLogScores={}; mastSlideIdx=0; mastLogDeck=mastShuffleDeck(mastDueItems(masteryKid,mastGetPrintNum())).map(i=>i.id); const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastStartLog(){ mastLogMode=true; mastLogScores={}; mastSlideIdx=0; mastLogDeck=mastDueItems(masteryKid,mastGetPrintNum()).map(i=>i.id); const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastCancelLog(){ mastLogMode=false; mastLogScores={}; mastLogDeck=null; const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastScore(id,val){ mastLogScores[id]=val; const c=document.getElementById("content"); if(c) renderMastery(c); }
 
@@ -10486,12 +10475,8 @@ function mastSlideShown(id){
 
   if(dots>=jset.intro_dots){
     item.status="active";
-    const _gtier=jset.ladder[0]||"every_other_day";
-    item.tier=_gtier;
-    // Spread graduates across the tier's cycles instead of all landing on cycle 1, which
-    // bunched every-other-day items onto the same drills and left alternate drills empty.
-    const _giv=MAST_TIER_INT[_gtier];
-    item.cycle=_giv?(items.filter(i=>i.tier===_gtier&&i.id!==item.id).length%_giv)+1:1;
+    item.tier=jset.ladder[0]||"every_other_day";
+    item.cycle=1;
     item.consecutive_correct=0;
     item.tally_dots=jset.intro_dots;
 
@@ -12383,87 +12368,37 @@ function runDisplacement(){
   var noteHome=needsCrossDay.filter(_isNotebook);
   var _ti=dayOrder.indexOf(_todayDay); if(_ti<0) _ti=0;
 
-  function _isSitterDay(d){ return !!(weekData.babysitter&&weekData.babysitter.days&&weekData.babysitter.days.indexOf(d)>=0); }
-  // Generator-parity run order for a task on day d: Morning Notebook first, Closing last;
-  // a saved Lesson-Map day order wins for the middle, else the SAME gwWorkflowRank the
-  // generator uses — so re-packing a day reproduces the generator's order (no scramble).
-  function _flowRank(t,d){
-    if(_isMorningNb(t)) return -1000;
-    if(_isClosingNb(t)) return 1000;
-    var so=(typeof scheduleOverrides!=="undefined"&&scheduleOverrides)||{};
-    var ov=_normOrderArr(((so[_dateOfDay(d)]||{})[t.who]||{}).order);
-    if(ov&&ov.length){ var i=ov.indexOf(t.subjectKey); if(i>=0) return i; }
-    var s=gwGetSubjects(t.who)[t.subjectKey]||{device:t.device,mom:t.mom,display:taskSubject(t)};
-    return gwWorkflowRank(t.who,t.subjectKey,s,d,_isSitterDay(d));
-  }
-  // Re-pack day d the way the GENERATOR builds a day: pull its unchecked tasks (plus any
-  // bumped `extra`), order each kid by _flowRank and INTERLEAVE round-robin across kids
-  // (so Mom/devices are shared fairly per step), pack around the day's checked work, and
-  // place each kid's Closing Notebook last. Bumped work lands in its proper flow tier and
-  // the rest of the day shifts to fit — the whole day stays in flow order, matching what a
-  // fresh generate would produce. Day start floored to "now" if today; overflow → carry.
-  function _place(d,extra){
-    var fixed=[], pool=[];
-    working=working.filter(function(t){
-      if(t.day!==d) return true;
-      if(checked&&checked[t.id]){ fixed.push(t); return true; } // done work stays put
-      pool.push(t); return false;
-    });
-    (extra||[]).forEach(function(t){ pool.push(t); });
-    if(!pool.length) return;
-    var extraSet=new Set(extra||[]);
-    var closings=pool.filter(_isClosingNb), nonClose=pool.filter(function(t){return !_isClosingNb(t);});
-    var perKid={}; nonClose.forEach(function(t){ (perKid[t.who]||(perKid[t.who]=[])).push(t); });
-    var kk=Object.keys(perKid);
-    kk.forEach(function(k){ perKid[k].sort(function(a,b){return _flowRank(a,d)-_flowRank(b,d);}); _applySticky(perKid[k]); });
-    var maxLen=0; kk.forEach(function(k){ if(perKid[k].length>maxLen)maxLen=perKid[k].length; });
-    var ordered=[]; for(var i=0;i<maxLen;i++) kk.forEach(function(k){ if(perKid[k][i]) ordered.push(perKid[k][i]); });
-    var momRet=_momReturn(d), ks={};
-    ordered.forEach(function(t){ var s=_boEnd(d,t.who); if(_sitterKids.indexOf(t.who)>=0&&momRet>s)s=momRet; if(s)ks[t.who]=s; });
-    var overflow=packAround(fixed,ordered,{start:_floorStart(d,_dayStart(d)),end:_dayEnd(d),
-      lunchStart:_dayLS(d),lunchEnd:_dayLE(d),momStart:momRet,kidStart:ks,
-      allowOvertime:(d==="saturday"),overtimeMax:180,lanes:["computer","ipad","ipadLucy"]});
-    var overSet=new Set(overflow), owners={};
-    ordered.forEach(function(t){
-      if(overSet.has(t)){ t._displaced=true; t._originalDay=t._originalDay||(extraSet.has(t)?t.day:d); if(carry.indexOf(t)<0)carry.push(t); return; }
-      if(extraSet.has(t)){ t._displaced=true; t._originalDay=t._originalDay||t.day; var ci=carry.indexOf(t); if(ci>=0)carry.splice(ci,1); }
-      t.day=d; working.push(t); owners[t.who]=1;
-    });
-    closings.forEach(function(c){ c.day=d; working.push(c); owners[c.who]=1; });
-    Object.keys(owners).forEach(function(k){ _closingLast(d,k); });
-  }
-
-  // Distribute bumped classes BALANCED across the open days: assign each to the kid's
-  // EARLIEST-ending eligible day (with room before the day's end) so the load levels out
-  // instead of piling onto the first open day. endMap/pendD track each (day|kid)'s running
-  // finish time + per-subject counts as we assign. Then pack each day; a final greedy pass
-  // mops up anything the real packer couldn't fit; the rest carries over.
-  var openDays=dayOrder.slice(_ti);
-  var endMap={}, pendD={};
-  function _seedEnd(d,who){ var e=_floorStart(d,_dayStart(d)),b=_boEnd(d,who); if(b>e)e=b;
-    working.forEach(function(t){ if(t.day===d&&t.who===who&&!_isClosingNb(t)){ var x=toMin(t.time)+(t.dur||20); if(x>e)e=x; } }); return e; }
-  function _endOf(d,who){ var k=d+"|"+who; return endMap[k]!=null?endMap[k]:(endMap[k]=_seedEnd(d,who)); }
-  function _fits(t,d){ return _eligibleOn(t,d,(pendD[d]||(pendD[d]={}))) && (_endOf(d,t.who)+(t.dur||20) <= _dayEnd(d)+((d==="saturday")?180:0)); }
-  var assigned={};
-  carry.slice().forEach(function(t){
-    var best=null,bestE=1e9;
-    for(var i=0;i<openDays.length;i++){ var d=openDays[i];
-      if(!_fits(t,d)) continue;
-      var e=_endOf(d,t.who); if(e<bestE){ bestE=e; best=d; } }
-    if(!best) return; // nothing fits in the assignment model → mop-up / carry-over handles it
-    (assigned[best]||(assigned[best]=[])).push(t);
-    pendD[best][t.who+"|"+taskSubject(t)]=(pendD[best][t.who+"|"+taskSubject(t)]||0)+1;
-    endMap[best+"|"+t.who]=_endOf(best,t.who)+(t.dur||20);
-    var ci=carry.indexOf(t); if(ci>=0) carry.splice(ci,1);
-  });
-  openDays.forEach(function(d){ if(assigned[d]&&assigned[d].length) _place(d,assigned[d]); });
-  // Greedy mop-up (earliest day first) for anything the real packer couldn't fit.
-  openDays.forEach(function(d){
+  // Fill one remaining day with the bumped classes that fit, packed AROUND the day's
+  // existing work — but NOT its closing notebook, which is pushed to the very end after,
+  // so bumped work always lands before the wrap-up. Day start is floored to "now" when
+  // the day is today; overflow stays in carry for the next day.
+  function _fillDay(d){
     if(!carry.length) return;
     var pend={};
-    var take=carry.filter(function(t){ if(!_eligibleOn(t,d,pend)) return false; var k=t.who+"|"+taskSubject(t); pend[k]=(pend[k]||0)+1; return true; });
-    if(take.length) _place(d,take);
-  });
+    var take=carry.filter(function(t){
+      if(!_eligibleOn(t,d,pend)) return false;
+      var k=t.who+"|"+taskSubject(t); pend[k]=(pend[k]||0)+1; return true;
+    });
+    if(!take.length) return;
+    take.sort(function(a,b){ return _wfWeight(a,d)-_wfWeight(b,d); });
+    _applySticky(take);
+    var momRet=_momReturn(d), ks={};
+    take.forEach(function(t){ var s=_boEnd(d,t.who); if(_sitterKids.indexOf(t.who)>=0&&momRet>s)s=momRet; if(s)ks[t.who]=s; });
+    var existing=working.filter(function(t){return t.day===d&&!_isClosingNb(t);});
+    var overflow=packAround(existing,take,{start:_floorStart(d,_dayStart(d)),end:_dayEnd(d),
+      lunchStart:_dayLS(d),lunchEnd:_dayLE(d),momStart:momRet,kidStart:ks,
+      allowOvertime:(d==="saturday"),overtimeMax:180});
+    var overSet=new Set(overflow), moved={};
+    take.forEach(function(t){
+      if(overSet.has(t)) return; // didn't fit → leave in carry for the next day
+      t._displaced=true; t._originalDay=t._originalDay||t.day; t.day=d; working.push(t); moved[t.who]=1;
+      var ci=carry.indexOf(t); if(ci>=0) carry.splice(ci,1);
+    });
+    Object.keys(moved).forEach(function(who){ _closingLast(d,who); });
+  }
+  // Today (floored to "now") through Friday in order, then Saturday with overtime.
+  dayOrder.slice(_ti).forEach(function(d){ if(d!=="saturday") _fillDay(d); });
+  _fillDay("saturday");
 
   // Notebooks return to their own day (a blocked day still keeps its own Morning-first /
   // Closing-last bookends — they never travel to another day and double up).
