@@ -9692,6 +9692,7 @@ function mastSaveResults(){
 
   // Apply results
   let changes=0;
+  const touched=[];  // cards whose ladder state changed — for a targeted, non-destructive write
   due.forEach(dueItem=>{
     const score=mastLogScores[dueItem.id];
     if(!score||score==="shown") return; // "shown" already saved by mastSlideShown
@@ -9752,6 +9753,7 @@ function mastSaveResults(){
     } else {
       item.consecutive_correct=0;
     }
+    touched.push(item);
     changes++;
   });
 
@@ -9782,9 +9784,24 @@ function mastSaveResults(){
     items:drillItems
   };
 
-  // Save to Firebase
+  // Save to Firebase — write ONLY the cards that changed, field by field, instead of
+  // overwriting the kid's whole list. A whole-list set() is last-writer-wins: a second
+  // open tab/device holding older data would silently revert these ladder climbs (the drill
+  // history is keyed separately by date, so it survives — exactly the symptom we hit). A
+  // targeted update touches only the scored cards, so concurrent drilling can't clobber it.
   if(db){
-    db.ref("mastery/"+masteryKid).set(items);
+    const upd={};
+    touched.forEach(it=>{
+      const ix=items.indexOf(it);
+      if(ix<0) return;
+      upd[ix+"/tier"]=it.tier;
+      upd[ix+"/consecutive_correct"]=it.consecutive_correct||0;
+      upd[ix+"/cycle"]=it.cycle||1;
+      upd[ix+"/drop_count"]=it.drop_count||0;
+      upd[ix+"/status"]=it.status||"active";
+      upd[ix+"/tally_dots"]=it.tally_dots??0;
+    });
+    db.ref("mastery/"+masteryKid).update(upd);
     db.ref("mastery/printLog").set(pl);
     db.ref("mastery/history/"+masteryKid+"/"+today.replace(/-/g,"")).set(histEntry);
   }
@@ -9953,7 +9970,7 @@ function mastPullItem(cat,name){
   }
   items.push(item);
   masteryData[kid]=items;
-  if(db) db.ref("mastery/"+kid).set(items);
+  mastPutCards(kid,items,[item]);
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
@@ -10130,7 +10147,7 @@ function mastVisEditSet(emoji){
     if(emoji){ it.emoji=emoji; delete it.imageUrl; }
     else { delete it.emoji; }
     masteryData[kid]=items;
-    if(db) db.ref("mastery/"+kid).set(items);
+    mastPutCards(kid,items,[it]);
     try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
   mastVisEditKey=null; _mastRe();
@@ -10144,7 +10161,7 @@ function mastVisEditUpload(file){
     let items=masteryData[kid]||[];
     if(!Array.isArray(items)) items=Object.values(items);
     const it=items.find(i=>i.prompt===mastVisEditKey.name&&i.subject===mastVisEditKey.cat);
-    if(it){ it.imageUrl=dataUrl; delete it.emoji; masteryData[kid]=items; if(db) db.ref("mastery/"+kid).set(items); try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){} }
+    if(it){ it.imageUrl=dataUrl; delete it.emoji; masteryData[kid]=items; mastPutCards(kid,items,[it]); try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){} }
     mastVisEditKey=null; _mastRe();
   }).catch(err=>{ alert("Image failed: "+err.message); });
 }
@@ -10165,7 +10182,7 @@ function mastUnpullItem(cat,name){
   const item=items.find(i=>i.prompt===name&&i.subject===cat);
   if(!item||item.status!=="introduction"||(item.tally_dots||0)>0) return;
   masteryData[kid]=items.filter(i=>i!==item);
-  if(db) db.ref("mastery/"+kid).set(masteryData[kid]);
+  mastRemoveByIds(kid,[item.id]);
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
@@ -10174,8 +10191,9 @@ function mastDeleteItem(cat,name){
   const kid=masteryKid||"julian";
   let items=masteryData[kid]||[];
   if(!Array.isArray(items)) items=Object.values(items);
+  const _rm=items.filter(i=>i.prompt===name&&i.subject===cat).map(i=>i.id);
   masteryData[kid]=items.filter(i=>!(i.prompt===name&&i.subject===cat));
-  if(db) db.ref("mastery/"+kid).set(masteryData[kid]);
+  mastRemoveByIds(kid,_rm);
   const ci=masteryData[kid+"_custom_items"]||[];
   if(ci.some(i=>i.cat===cat&&i.name===name)){
     masteryData[kid+"_custom_items"]=ci.filter(i=>!(i.cat===cat&&i.name===name));
@@ -10196,8 +10214,9 @@ function mastDeleteCategory(cat){
     ?"Are you sure you want to remove all "+catItems.length+" "+cat+" items from rotation?\n\n(The category will remain in the curriculum bank since it's built-in.)"
     :"Are you sure you want to delete the entire \""+cat+"\" category?\n\nThis will remove "+catItems.length+" item(s) from rotation and delete all custom items in this category.";
   if(!confirm(msg)) return;
+  const _rm=items.filter(i=>i.subject===cat).map(i=>i.id);
   masteryData[kid]=items.filter(i=>i.subject!==cat);
-  if(db) db.ref("mastery/"+kid).set(masteryData[kid]);
+  mastRemoveByIds(kid,_rm);
   const ci=masteryData[kid+"_custom_items"]||[];
   const catCustom=ci.filter(i=>i.cat===cat);
   if(catCustom.length){
@@ -10318,7 +10337,7 @@ function mastListMove(id,dir){
   if(newIdx<0||newIdx>=items.length) return;
   const tmp=items[idx]; items[idx]=items[newIdx]; items[newIdx]=tmp;
   masteryData[masteryKid]=items;
-  if(db) db.ref("mastery/"+masteryKid).set(items);
+  mastPutCards(masteryKid,items,[items[idx],items[newIdx]]);
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
@@ -10327,7 +10346,7 @@ function mastListDelete(id){
   let items=masteryData[masteryKid];
   if(!items||!Array.isArray(items)) return;
   masteryData[masteryKid]=items.filter(i=>i.id!==id);
-  if(db) db.ref("mastery/"+masteryKid).set(masteryData[masteryKid]);
+  mastRemoveByIds(masteryKid,[id]);
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
@@ -10338,7 +10357,7 @@ function mastListEditItem(id,field,value){
   if(!it) return;
   it[field]=value;
   masteryData[masteryKid]=items;
-  if(db) db.ref("mastery/"+masteryKid).set(items);
+  mastPutCards(masteryKid,items,[it]);
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 }
 
@@ -10382,7 +10401,7 @@ function mastEditSave(){
   }
 
   masteryData[masteryKid]=items;
-  if(db) db.ref("mastery/"+masteryKid).set(items);
+  mastPutCards(masteryKid,items,[it]);
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   mastEditId=null;
   _mastRe();
@@ -10394,7 +10413,7 @@ function mastEditDelete(){
   if(!Array.isArray(items)) items=Object.values(items);
   items=items.filter(i=>i.id!==mastEditId);
   masteryData[masteryKid]=items;
-  if(db) db.ref("mastery/"+masteryKid).set(items);
+  mastRemoveByIds(masteryKid,[mastEditId]);
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   mastEditId=null;
   _mastRe();
@@ -10480,6 +10499,26 @@ function mastSlideNext(){ mastSlideIdx++; mastFlipped=false; _mastRe(); }
 function mastSlidePrev(){ mastSlideIdx--; mastFlipped=false; _mastRe(); }
 function mastSlideScore(id,val){ mastLogScores[id]=val; mastSlideIdx++; mastFlipped=false; _mastRe(); }
 
+// ── Concurrency-safe mastery writes ───────────────────────────────────────────
+// Writing a kid's WHOLE card array with set() is last-writer-wins: a second open
+// tab/device holding older data silently reverts real progress. These helpers touch
+// only the cards that actually changed, so concurrent drilling/editing can't clobber.
+function mastPutCards(kid,items,cards){            // in-place edit / add / reorder
+  if(!db||!cards||!cards.length) return;
+  const upd={};
+  cards.forEach(c=>{ const ix=items.indexOf(c); if(ix>=0) upd[ix]=c; });
+  if(Object.keys(upd).length) db.ref("mastery/"+kid).update(upd);
+}
+function mastRemoveByIds(kid,ids){                 // delete — re-read freshest, drop by id
+  if(!db||!ids||!ids.length) return;
+  const rm=new Set(ids);
+  db.ref("mastery/"+kid).transaction(cur=>{
+    if(cur==null) return cur;
+    const arr=Array.isArray(cur)?cur:Object.values(cur);
+    return arr.filter(x=>x&&!rm.has(x.id));
+  });
+}
+
 function mastSlideShown(id){
   // Fill the next tally dot for an introduction item
   let items=masteryData[masteryKid];
@@ -10492,6 +10531,7 @@ function mastSlideShown(id){
   const dots=(item.tally_dots||0)+1;
   item.tally_dots=dots;
 
+  let _pulledNew=null;
   if(dots>=jset.intro_dots){
     item.status="active";
     const _gtier=jset.ladder[0]||"every_other_day";
@@ -10518,15 +10558,28 @@ function mastSlideShown(id){
           if(cat==="Animals"&&MAST_ANIMAL_EMOJI[next]) newItem.emoji=MAST_ANIMAL_EMOJI[next];
           const _apVis=mastGetVisual(cat,next);
           if(_apVis){ if(typeof _apVis==="string") newItem.emoji=_apVis; else if(_apVis.imageUrl) newItem.imageUrl=_apVis.imageUrl; }
-          items.push(newItem);
+          items.push(newItem); _pulledNew=newItem;
         }
       }
     }
   }
 
-  // Save to Firebase
+  // Save to Firebase — update only THIS card (and any freshly auto-pulled card), not the
+  // kid's whole list, so a second open tab/device can't revert it with stale data.
   masteryData[masteryKid]=items;
-  if(db) db.ref("mastery/"+masteryKid).set(items);
+  if(db){
+    const ix=items.indexOf(item);
+    const upd={};
+    if(ix>=0){
+      upd[ix+"/tally_dots"]=item.tally_dots??0;
+      upd[ix+"/status"]=item.status||"introduction";
+      upd[ix+"/tier"]=item.tier||"daily";
+      upd[ix+"/cycle"]=item.cycle||1;
+      upd[ix+"/consecutive_correct"]=item.consecutive_correct||0;
+    }
+    if(_pulledNew){ const nix=items.indexOf(_pulledNew); if(nix>=0) upd[nix]=_pulledNew; }
+    db.ref("mastery/"+masteryKid).update(upd);
+  }
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 
   // Mark as handled for this session so we don't double-tap
@@ -10576,6 +10629,7 @@ function mastAddItems(){
 
   const existingPrompts=new Set(items.map(i=>(i.prompt||"").toLowerCase()));
   let added=0, skipped=0;
+  const newItems=[];
 
   prompts.forEach(p=>{
     if(existingPrompts.has(p.toLowerCase())){ skipped++; return; }
@@ -10612,7 +10666,7 @@ function mastAddItems(){
       }
       if(mastAddImageUrl) item.imageUrl=mastAddImageUrl;
     }
-    items.push(item);
+    items.push(item); newItems.push(item);
     existingPrompts.add(p.toLowerCase());
     added++;
 
@@ -10648,7 +10702,7 @@ function mastAddItems(){
 
   // Save to Firebase
   masteryData[masteryKid]=items;
-  if(db) db.ref("mastery/"+masteryKid).set(items);
+  mastPutCards(masteryKid,items,newItems);
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 
   mastAddMode=false;
