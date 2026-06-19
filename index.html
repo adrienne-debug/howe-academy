@@ -12576,14 +12576,42 @@ function runDisplacement(){
   var noteHome=needsCrossDay.filter(_isNotebook);
   var _ti=dayOrder.indexOf(_todayDay); if(_ti<0) _ti=0;
 
+  // ── Subject-spread: give each bumped class a target day (the eligible day with the FEWEST
+  // of its subject, then the lightest day) so a subject doesn't pile on one receiving day.
+  // Each class waits for its day in _fillDay; overflow chains forward (fill the holes).
+  var _spreadDays=[]; for(var _si=_ti; _si<dayOrder.length; _si++){ if(dayOrder[_si]!=="saturday") _spreadDays.push(dayOrder[_si]); }
+  var _prefDay={};
+  (function(){
+    var subjCnt={}, totCnt={};
+    working.forEach(function(t){
+      if(checked&&checked[t.id]) return;
+      if(dayOrder.indexOf(t.day)<_ti) return;
+      totCnt[t.who+"|"+t.day]=(totCnt[t.who+"|"+t.day]||0)+1;
+      subjCnt[t.who+"|"+t.day+"|"+taskSubject(t)]=(subjCnt[t.who+"|"+t.day+"|"+taskSubject(t)]||0)+1;
+    });
+    carry.forEach(function(t){
+      var who=t.who, subj=taskSubject(t);
+      var days=_spreadDays.filter(function(d){ return _eligibleOn(t,d,{}); });
+      if(!days.length) days=_spreadDays.length?_spreadDays.slice():[_todayDay];
+      var best=days[0], bSc=Infinity, bTc=Infinity;
+      days.forEach(function(d){ var sc=subjCnt[who+"|"+d+"|"+subj]||0, tc=totCnt[who+"|"+d]||0; if(sc<bSc||(sc===bSc&&tc<bTc)){ best=d; bSc=sc; bTc=tc; } });
+      _prefDay[t.id]=best;
+      subjCnt[who+"|"+best+"|"+subj]=(subjCnt[who+"|"+best+"|"+subj]||0)+1;
+      totCnt[who+"|"+best]=(totCnt[who+"|"+best]||0)+1;
+    });
+  })();
+  function _prefIdxD(t){ var i=dayOrder.indexOf(_prefDay[t.id]); return i<0?_ti:i; }
+
   // Fill one remaining day with the bumped classes that fit, packed AROUND the day's
   // existing work — but NOT its closing notebook, which is pushed to the very end after,
   // so bumped work always lands before the wrap-up. Day start is floored to "now" when
   // the day is today; overflow stays in carry for the next day.
   function _fillDay(d){
     if(!carry.length) return;
+    var dIdx=dayOrder.indexOf(d);
     var pend={};
     var take=carry.filter(function(t){
+      if(_prefIdxD(t)>dIdx) return false; // wait for the assigned day; overflow chains forward
       if(!_eligibleOn(t,d,pend)) return false;
       var k=t.who+"|"+taskSubject(t); pend[k]=(pend[k]||0)+1; return true;
     });
