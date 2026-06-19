@@ -6564,8 +6564,14 @@ function cascadeIntraWeek(){
     }
   });
 
-  // Collect unchecked tasks from past days (don't move them yet)
-  const pastTasks=[];
+  // Notebooks are day-bookends — never swept into the work pool (they'd cluster with
+  // regular work or land in the wrong slot). Detected by subjectKey or title.
+  const _isMorn=t=>t.subjectKey==="morning_nb"||(t.title||"").toLowerCase().includes("morning notebook");
+  const _isClose=t=>t.subjectKey==="closing_nb"||(t.title||"").toLowerCase().includes("closing notebook");
+  const _isNote=t=>_isMorn(t)||_isClose(t);
+  // Collect unchecked tasks from past days (don't move them yet). Notebooks go to a
+  // separate list so they keep their bookend treatment instead of clustering.
+  const pastTasks=[], pastNotes=[];
   weekData.tasks.forEach(t=>{
     if(t.id.endsWith("_c")) return;
     if(checked[t.id]) return;
@@ -6578,9 +6584,9 @@ function cascadeIntraWeek(){
     } else { isPast=(JS_DAY_MAP[t.day]||0)<jsDay; }
     if(!isPast) return;
     t.cascadedFrom=t.cascadedFrom||t.day;
-    pastTasks.push(t);
+    if(_isNote(t)) pastNotes.push(t); else pastTasks.push(t);
   });
-  if(!pastTasks.length) return;
+  if(!pastTasks.length&&!pastNotes.length) return;
 
   const r=rulesData||{};
   const sd=r.schoolDay||{};
@@ -6617,12 +6623,60 @@ function cascadeIntraWeek(){
   // next day. Kids pack in parallel, duration-aware (no proportional-slot hack), and
   // calendar off-days are skipped per kid (decision #9).
   function _cascDate(dn){
-    if(!DAY_DT[dn]) return null;
+    if(!DAY_DT[dn]){
+      // Saturday usually has no week-meta date — derive it as Friday + 1 so off-day checks
+      // (e.g. a beach-trip Saturday) work for it too.
+      if(dn==="saturday"&&DAY_DT.friday){
+        const fd=new Date(DAY_DT.friday+", "+todayMid.getFullYear()); fd.setDate(fd.getDate()+1);
+        return fd.getFullYear()+"-"+String(fd.getMonth()+1).padStart(2,"0")+"-"+String(fd.getDate()).padStart(2,"0");
+      }
+      return null;
+    }
     const d=new Date(DAY_DT[dn]+", "+todayMid.getFullYear());
     if(isNaN(d.getTime())) return null;
     return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
   }
   let pool=pastTasks.slice();
+  // ── Subject-spread: give each (kid|subject)'s lessons a round-robin TARGET day across
+  // the kid's remaining eligible weekdays (in lesson order), so the same subject doesn't
+  // pile on one day. A task waits for its target day; if it doesn't fit it chains forward
+  // (the "fill the holes" fallback). Saturday stays overflow-only.
+  const _prefDay=new Map();
+  (function(){
+    const wdays=[];
+    for(let si=todayIdx; si<dayOrder.length; si++){ if(dayOrder[si]!=="saturday") wdays.push(dayOrder[si]); }
+    const poolSet=new Set(pool);
+    // Seed per-(kid|day) counts with the work ALREADY on each receiving day, so a swept
+    // subject lands where there's the LEAST of it — not just balanced within the swept pool.
+    const subjCnt={}, totCnt={};
+    weekData.tasks.forEach(t=>{
+      if(t.id.endsWith("_c")||checked[t.id]||poolSet.has(t)||_isNote(t)) return;
+      totCnt[t.who+"|"+t.day]=(totCnt[t.who+"|"+t.day]||0)+1;
+      subjCnt[t.who+"|"+t.day+"|"+taskSubject(t)]=(subjCnt[t.who+"|"+t.day+"|"+taskSubject(t)]||0)+1;
+    });
+    // Assign each swept task to the eligible day with the FEWEST of its subject, then the
+    // lightest day overall — spread subjects first, then fill the holes. Lesson order keeps
+    // sequential subjects landing earliest-first.
+    const ordered=pool.slice().sort((a,b)=> (a.who<b.who?-1:a.who>b.who?1:0) || (cascadeWeight(a,today)-cascadeWeight(b,today)) || natCmp(lessonKey(a),lessonKey(b)));
+    ordered.forEach(function(t){
+      const who=t.who, subj=taskSubject(t);
+      const days=wdays.filter(function(dn){ const ds=_cascDate(dn); return !(ds&&smapIsKidOff(who,ds)); });
+      const useDays=days.length?days:[today];
+      let best=useDays[0], bestSc=Infinity, bestTc=Infinity;
+      useDays.forEach(function(dn){
+        const sc=subjCnt[who+"|"+dn+"|"+subj]||0, tc=totCnt[who+"|"+dn]||0;
+        if(sc<bestSc||(sc===bestSc&&tc<bestTc)){ best=dn; bestSc=sc; bestTc=tc; }
+      });
+      _prefDay.set(t,best);
+      subjCnt[who+"|"+best+"|"+subj]=(subjCnt[who+"|"+best+"|"+subj]||0)+1;
+      totCnt[who+"|"+best]=(totCnt[who+"|"+best]||0)+1;
+    });
+  })();
+  const _prefIdx=t=>{ const i=dayOrder.indexOf(_prefDay.get(t)); return i<0?todayIdx:i; };
+  // Now-floor: on TODAY, place swept work no earlier than the current clock time so catch-up
+  // never lands in an already-elapsed slot (after school ends, today is full → work flows to
+  // later open days). Harness can pin the clock via _cascNowMin.
+  const _nowMin=(typeof _cascNowMin==="number")?_cascNowMin:(function(){var n=new Date();return n.getHours()*60+n.getMinutes();})();
   for(let di=todayIdx; di<dayOrder.length&&pool.length; di++){
     const dn=dayOrder[di];
     const sdOv=(sd.overrides||{})[dn]||{};
@@ -6634,7 +6688,7 @@ function cascadeIntraWeek(){
     const sitterReturn=isSitterDay?toMin(mag["mom_return_"+dn]||mag.mom_return||"2:00 PM"):0;
     const dStr=_cascDate(dn);
     const offHere=t=>!!(dStr&&smapIsKidOff(t.who,dStr)); // holiday/vacation/kid-off → wait for a later day
-    const tryHere=pool.filter(t=>!offHere(t));
+    const tryHere=pool.filter(t=>!offHere(t)&&_prefIdx(t)<=di); // wait for the assigned day; overflow chains forward
     if(!tryHere.length) continue;
     // Order by kid then workflow weight (mirrors the prior per-kid blocks).
     tryHere.sort((a,b)=> (a.who<b.who?-1:a.who>b.who?1:0) || (cascadeWeight(a,dn)-cascadeWeight(b,dn)));
@@ -6643,18 +6697,66 @@ function cascadeIntraWeek(){
     const existing=weekData.tasks.filter(t=>t.day===dn&&!t.id.endsWith("_c")&&!poolSet.has(t));
     tryHere.forEach(t=>{ t.day=dn; });
     const isLast=(di===dayOrder.length-1);
-    const kidStart={}; if(isSitterDay) sitterKids.forEach(k=>{ kidStart[k]=sitterReturn; });
-    const overflow=packAround(existing,tryHere,{start:dStart,end:dEnd,lunchStart:lunchS,lunchEnd:lunchE,
+    const _floor=(dn===today)?_nowMin:0;
+    const kidStart={}; if(isSitterDay) sitterKids.forEach(k=>{ kidStart[k]=Math.max(sitterReturn,_floor); });
+    const overflow=packAround(existing,tryHere,{start:Math.max(dStart,_floor),end:dEnd,lunchStart:lunchS,lunchEnd:lunchE,
       momStart:sitterReturn,kidStart:kidStart,allowOvertime:isLast,overtimeMax:240});
     const overflowSet=new Set(overflow);
-    pool=pool.filter(t=>overflowSet.has(t)||offHere(t)); // carry overflow + off-here tasks to the next day
+    // Keep overflow + off-here tasks AND tasks still waiting for a later assigned day —
+    // don't drop a task just because it wasn't tried on this day yet.
+    pool=pool.filter(t=>overflowSet.has(t)||offHere(t)||_prefIdx(t)>di);
   }
 
-  // Safety net: anything still unplaced (e.g. off every remaining day) stacks at Saturday's end.
+  // Safety net: anything still unplaced stacks at the end of the LAST remaining day the kid
+  // is NOT off — so a beach/holiday Saturday is skipped (work lands on the last working day
+  // rather than a vacation day). If every remaining day is off it stays put (renders as carry-over).
   if(pool.length){
-    const sdOvSat=(sd.overrides||{})["saturday"]||{};
-    const dEndSat=toMin(sdOvSat.end||sd.defaultEnd||"4:15 PM");
-    pool.forEach(t=>{ t.day="saturday"; t.time=fromMin(dEndSat-20); });
+    pool.forEach(function(t){
+      for(let di=dayOrder.length-1; di>=todayIdx; di--){
+        const dn=dayOrder[di], ds=_cascDate(dn);
+        if(ds&&smapIsKidOff(t.who,ds)) continue;
+        const ov=(sd.overrides||{})[dn]||{};
+        t.day=dn; t.time=fromMin(toMin(ov.end||sd.defaultEnd||"4:15 PM")-20); break;
+      }
+    });
+  }
+
+  // ── Notebooks: place each swept (past-day) notebook on the first eligible day, right
+  // after that day's same-type notebook — never dumped into a work slot, and stacked only
+  // as a last resort (its own day is already gone). Closing → end of day; Morning → after
+  // the day's morning notebook.
+  pastNotes.forEach(function(nb){
+    for(let di=todayIdx; di<dayOrder.length; di++){
+      const dn=dayOrder[di];
+      const ds=_cascDate(dn);
+      if(ds&&smapIsKidOff(nb.who,ds)) continue;
+      nb.day=dn;
+      const mine=weekData.tasks.filter(t=>t!==nb&&t.who===nb.who&&t.day===dn&&!t.id.endsWith("_c"));
+      if(_isMorn(nb)){
+        const sibs=mine.filter(_isMorn).sort((a,b)=>toMin(a.time)-toMin(b.time));
+        const sib=sibs[sibs.length-1];
+        nb.time=sib?fromMin(toMin(sib.time)+(sib.dur||20)):(mine.length?fromMin(Math.min.apply(null,mine.map(t=>toMin(t.time)))):nb.time);
+      } else {
+        let lastEnd=0; mine.forEach(t=>{ const e=toMin(t.time)+(t.dur||20); if(e>lastEnd)lastEnd=e; });
+        nb.time=lastEnd?fromMin(lastEnd):nb.time;
+      }
+      break;
+    }
+  });
+
+  // Keep each receiving day's Closing Notebook last — after swept work and any moved
+  // notebook land, push closings to just after that kid's last other task so nothing sits
+  // after the wrap-up (a stacked closing sits right behind the day's own).
+  for(let di=todayIdx; di<dayOrder.length; di++){
+    const dn=dayOrder[di]; const byKid={};
+    weekData.tasks.forEach(t=>{ if(t.day===dn&&!t.id.endsWith("_c")&&!checked[t.id]){ (byKid[t.who]=byKid[t.who]||[]).push(t); } });
+    Object.keys(byKid).forEach(function(who){
+      const mine=byKid[who], closes=mine.filter(_isClose), others=mine.filter(t=>!_isClose(t));
+      if(!closes.length||!others.length) return;
+      let lastEnd=0; others.forEach(t=>{ const e=toMin(t.time)+(t.dur||20); if(e>lastEnd)lastEnd=e; });
+      closes.sort((a,b)=>toMin(a.time)-toMin(b.time));
+      closes.forEach((c,i)=>{ c.time=fromMin(lastEnd+i*(c.dur||20)); });
+    });
   }
 
   // ── Lesson-order pass: ensure sequential lessons stay in day order ──
@@ -6690,6 +6792,7 @@ function cascadeIntraWeek(){
 
   for(const key in subjectGroups){
     const grp=subjectGroups[key];
+    if(_isNote(grp[0])) continue; // notebooks are bookends, not sequential lessons
     // Only reorder groups that have at least one cascaded task
     if(!grp.some(t=>t.cascadedFrom)) continue;
     // Only reorder among UNCHECKED tasks — checked ones are done, don't touch them
