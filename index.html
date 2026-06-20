@@ -5100,8 +5100,7 @@ function renderCurrPlans(el){
               '<input class="pace-config-input" value="'+(s.keyword||'').replace(/"/g,'&quot;')+'" placeholder="e.g. AAS Spelling" '+
               'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'keyword\',this.value)"/></div>'+
               '<div><div class="pace-config-label">Total</div>'+
-              '<input class="pace-config-input" type="number" min="1" value="'+(s.total||'')+'" '+
-              'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'total\',parseInt(this.value)||0)"/></div>'+
+              '<div class="pace-config-input" style="background:#f8f7f4;color:var(--muted)">'+(s.total||'—')+'</div></div>'+
               '<div><div class="pace-config-label">Start Wk</div>'+
               '<input class="pace-config-input" type="number" min="1" value="'+sw+'" '+
               'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'startWeek\',parseInt(this.value)||1)"/></div>'+
@@ -5225,6 +5224,23 @@ function ceSetCount(field,targetTotal){
     total:(buildSubjectLessons(kid,key)||[]).length||0,offset:0,adjust:0,paceAdjust:0,startWeek:1};
   const base=((ps.offset)||0)+paceAutoCount(kid,paceKeywords(kid,key,ps));
   savePaceSubject(kid,key,{...ps,[field]:((targetTotal|0)-base)});
+  ceRenderEditSheet();
+}
+// Total = the progress DENOMINATOR (s.total). It's independent of the lesson sequence and
+// the cursor (buildSubjectLessons ignores it), so editing it never moves the generator. Only
+// guard: Completed can't exceed Total — if it would, pull paceAdjust down so Completed == Total
+// (cursor stays put). This is the "move Completed with it" the logic needs.
+function ceSetTotal(newTotal){
+  if(!currData||!ceEditKid||!ceEditKey) return;
+  const kid=ceEditKid, key=ceEditKey;
+  const cur=((paceData.subjects&&paceData.subjects[kid])||{})[key];
+  const sub=ceGetSubject()||{};
+  const ps=cur||{label:sub.display||key,keyword:sub.display||key,total:0,offset:0,adjust:0,paceAdjust:0,startWeek:1};
+  const t=Math.max(1,newTotal|0);
+  const next={...ps,total:t};
+  const base=((ps.offset)||0)+paceAutoCount(kid,paceKeywords(kid,key,ps));
+  if(base+((ps.paceAdjust)||0)>t) next.paceAdjust=t-base;
+  savePaceSubject(kid,key,next);
   ceRenderEditSheet();
 }
 // Minutes stepper: update the value + the displayed number in place — no full sheet
@@ -5442,7 +5458,7 @@ function ceRenderEditSheet(){
   const _nextLabel=(seq[cursorPos]&&seq[cursorPos].lesson)||'—';
   h+='<div class="ce-sheet-lbl">Completed (progress)</div>';
   h+='<div class="pace-auto-info">';
-  h+='<span><input class="pace-num-input" type="number" min="0" value="'+_done+'" onchange="ceSetCount(\'paceAdjust\',parseInt(this.value)||0)"/> of '+(_total||'?')+'</span>';
+  h+='<span><input class="pace-num-input" type="number" min="0" value="'+_done+'" onchange="ceSetCount(\'paceAdjust\',parseInt(this.value)||0)"/> of <input class="pace-num-input" type="number" min="1" value="'+_total+'" onchange="ceSetTotal(parseInt(this.value)||1)"/></span>';
   h+='<span style="color:var(--muted)">· '+_auto+' checked off in-app</span>';
   h+='</div>';
   h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">What\'s been done — feeds the progress bars, tiles &amp; on-track status. Does NOT change the schedule.</div>';
@@ -5452,7 +5468,7 @@ function ceRenderEditSheet(){
   h+='</div>';
   h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Where the generator picks up next. Does NOT change your progress numbers.</div>';
 
-  h+='<div class="ce-sheet-lbl">Lessons ('+seq.length+' total, cursor at '+cursorPos+')</div>';
+  h+='<div class="ce-sheet-lbl">Lesson list ('+seq.length+' entries · cursor at '+cursorPos+')</div>';
   if(hasExcelLessons){
     h+='<div style="max-height:150px;overflow-y:auto;border:1.5px solid var(--border);border-radius:10px;padding:6px 10px;margin-bottom:4px">';
     seq.forEach((l,i)=>{
