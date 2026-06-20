@@ -5037,7 +5037,7 @@ function renderCurrPlans(el){
       keys.forEach(sk=>{
         const s=kidSubjs[sk];
         const kws=paceKeywords(k,sk,s);
-        const cur=(s.offset||0)+paceAutoCount(k,kws)+(s.adjust||0);
+        const cur=(s.offset||0)+paceAutoCount(k,kws)+(s.paceAdjust||0);
         const exp=currExpected(k,sk,cwn);
         const st=paceHasPendingCascade(k,kws)?"behind":paceStatus(cur,s.total||0,s.startWeek||1,weekNum,totalWeeks,exp);
         if(st==="ahead")aheadN++; else if(st==="behind")behindN++; else if(st!=="not-started")onN++;
@@ -5062,7 +5062,7 @@ function renderCurrPlans(el){
           const kws=paceKeywords(k,sk,s);
           const autoC=paceAutoCount(k,kws);
           const offset=s.offset||0,adjust=s.adjust||0,sw=s.startWeek||1;
-          const cur=offset+autoC+adjust,tot=s.total||1;
+          const cur=offset+autoC+(s.paceAdjust||0),tot=s.total||1;
           const pct=Math.min(100,Math.round(cur/tot*100));
           const exp=currExpected(k,sk,cwn);
           const expB=currExpectedBase(k,sk,cwn);
@@ -5107,14 +5107,8 @@ function renderCurrPlans(el){
               'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'startWeek\',parseInt(this.value)||1)"/></div>'+
               '</div>'+
               '<div class="pace-auto-info">'+
-              '<span>Auto: <span class="pace-auto-num">'+autoC+'</span></span>'+
-              '<span style="color:var(--border)">+</span>'+
-              '<span>Offset: <span class="pace-auto-num">'+offset+'</span></span>'+
-              '<span style="color:var(--border)">+</span>'+
-              '<span>Adjust: <span class="pace-auto-num">'+adjust+'</span></span>'+
-              '<span style="color:var(--border)">=</span>'+
-              '<span><span class="pace-auto-num">'+cur+'</span> done</span>'+
-              '<span style="font-size:9px;color:var(--muted)">&#9998; edit Offset/Adjust on the Subjects tab</span>'+
+              '<span>Completed: <span class="pace-auto-num">'+cur+'</span> of '+(s.total||0)+'</span>'+
+              '<span style="font-size:9px;color:var(--muted)">&#9998; edit on the Subjects tab</span>'+
               '<button class="pace-del-btn" style="margin-left:auto" onclick="deletePaceSubject(\''+k+'\',\''+sk+'\')">Remove</button>'+
               '</div>';
           }
@@ -5218,18 +5212,19 @@ function ceSaveField(field,val){
   currData.lastEdit=new Date().toISOString();
   db.ref("curriculum/lastEdit").set(currData.lastEdit);
 }
-// Offset/Adjust steer the lesson cursor and live in paceData (what the generator reads
-// via computeSubjectCursor) — NOT in curriculum/subjects. Edited on the Subjects card;
-// ensure a pace entry exists for this subject before writing, then refresh the sheet so
-// the readout + lesson list update in place.
-function ceSavePaceCursor(field,val){
+// The two lesson-position counts live in paceData (read by computeSubjectDone for pacing
+// and computeSubjectCursor for the generator), NOT in curriculum/subjects. Each input sets
+// a TARGET total; we store the offset-relative correction so the shown count equals it.
+// field='paceAdjust' (Completed/progress, generator-independent) or 'adjust' (the cursor).
+function ceSetCount(field,targetTotal){
   if(!currData||!ceEditKid||!ceEditKey) return;
   const kid=ceEditKid, key=ceEditKey;
   const cur=((paceData.subjects&&paceData.subjects[kid])||{})[key];
   const sub=ceGetSubject()||{};
-  const base=cur||{label:sub.display||key,keyword:sub.display||key,
-    total:(buildSubjectLessons(kid,key)||[]).length||0,offset:0,adjust:0,startWeek:1};
-  savePaceSubject(kid,key,{...base,[field]:val});
+  const ps=cur||{label:sub.display||key,keyword:sub.display||key,
+    total:(buildSubjectLessons(kid,key)||[]).length||0,offset:0,adjust:0,paceAdjust:0,startWeek:1};
+  const base=((ps.offset)||0)+paceAutoCount(kid,paceKeywords(kid,key,ps));
+  savePaceSubject(kid,key,{...ps,[field]:((targetTotal|0)-base)});
   ceRenderEditSheet();
 }
 // Minutes stepper: update the value + the displayed number in place — no full sheet
@@ -5435,23 +5430,27 @@ function ceRenderEditSheet(){
   let cursorPos=0;
   try{ cursorPos=computeSubjectCursor(ceEditKid,ceEditKey); }catch(e){}
 
-  // Lesson position — Offset/Adjust steer the cursor (written to paceData, read by the
-  // generator). Auto = checked-off lessons counted live; cursorPos = Auto + Offset + Adjust.
-  const _paceSub=((paceData.subjects&&paceData.subjects[ceEditKid])||{})[ceEditKey];
-  const _autoC=paceAutoCount(ceEditKid,paceKeywords(ceEditKid,ceEditKey,_paceSub));
-  const _off=(_paceSub&&_paceSub.offset)||0;
-  const _adj=(_paceSub&&_paceSub.adjust)||0;
-  h+='<div class="ce-sheet-lbl">Lesson Position</div>';
+  // Lesson position — TWO independent counts. "Completed (progress)" feeds the pacing /
+  // accomplishment views (computeSubjectDone, uses paceAdjust); "Schedule next-lesson" is
+  // the generator cursor (computeSubjectCursor, uses adjust). Editing one never moves the
+  // other; both seed from the same live Auto count, so they default equal.
+  const _ps=((paceData.subjects&&paceData.subjects[ceEditKid])||{})[ceEditKey];
+  const _auto=paceAutoCount(ceEditKid,paceKeywords(ceEditKid,ceEditKey,_ps));
+  const _offset=(_ps&&_ps.offset)||0;
+  const _done=_offset+_auto+((_ps&&_ps.paceAdjust)||0);
+  const _total=(s.total||seq.length||0);
+  const _nextLabel=(seq[cursorPos]&&seq[cursorPos].lesson)||'—';
+  h+='<div class="ce-sheet-lbl">Completed (progress)</div>';
   h+='<div class="pace-auto-info">';
-  h+='<span>Auto: <span class="pace-auto-num">'+_autoC+'</span></span>';
-  h+='<span style="color:var(--border)">+</span>';
-  h+='<span>Offset: <input class="pace-num-input" type="number" min="0" value="'+_off+'" onchange="ceSavePaceCursor(\'offset\',parseInt(this.value)||0)"/></span>';
-  h+='<span style="color:var(--border)">+</span>';
-  h+='<span>Adjust: <input class="pace-num-input" type="number" value="'+_adj+'" onchange="ceSavePaceCursor(\'adjust\',parseInt(this.value)||0)"/></span>';
-  h+='<span style="color:var(--border)">=</span>';
-  h+='<span><span class="pace-auto-num">'+cursorPos+'</span> done</span>';
+  h+='<span><input class="pace-num-input" type="number" min="0" value="'+_done+'" onchange="ceSetCount(\'paceAdjust\',parseInt(this.value)||0)"/> of '+(_total||'?')+'</span>';
+  h+='<span style="color:var(--muted)">· '+_auto+' checked off in-app</span>';
   h+='</div>';
-  h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Auto counts checked-off lessons. Offset shifts where counting starts; Adjust nudges the cursor &plusmn;. Both feed the generator.</div>';
+  h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">What\'s been done — feeds the progress bars, tiles &amp; on-track status. Does NOT change the schedule.</div>';
+  h+='<div class="ce-sheet-lbl">Schedule next-lesson</div>';
+  h+='<div class="pace-auto-info">';
+  h+='<span><input class="pace-num-input" type="number" min="0" value="'+cursorPos+'" onchange="ceSetCount(\'adjust\',parseInt(this.value)||0)"/> done · next: <b>'+esc(_nextLabel)+'</b></span>';
+  h+='</div>';
+  h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Where the generator picks up next. Does NOT change your progress numbers.</div>';
 
   h+='<div class="ce-sheet-lbl">Lessons ('+seq.length+' total, cursor at '+cursorPos+')</div>';
   if(hasExcelLessons){
@@ -8689,6 +8688,18 @@ function computeSubjectCursor(kid,subjectKey,excludeWeek){
   const adjust=(paceSubj&&paceSubj.adjust)||0;
   return offset+autoC+adjust;
 }
+// "Completed so far" for the ACCOMPLISHMENT/pacing views — mirrors computeSubjectCursor but
+// uses paceAdjust (progress-only) instead of adjust (generator-only). Lets you log completed
+// work so the dashboard reads true WITHOUT moving where the generator picks up. Defaults
+// equal to the cursor (paceAdjust 0 → same as Auto+offset).
+function computeSubjectDone(kid,subjectKey,excludeWeek){
+  const paceSubj=((paceData.subjects||{})[kid]||{})[subjectKey];
+  const kws=paceKeywords(kid,subjectKey,paceSubj);
+  const autoC=paceAutoCount(kid,kws,excludeWeek);
+  const offset=(paceSubj&&paceSubj.offset)||0;
+  const paceAdjust=(paceSubj&&paceSubj.paceAdjust)||0;
+  return offset+autoC+paceAdjust;
+}
 
 // Get next lessons starting from a pre-computed cursor position
 // (used by regeneration to avoid recalculating via paceAutoCount)
@@ -9063,7 +9074,7 @@ function paceKidStatus(k){
   let aheadN=0,onN=0,behindN=0; const behindSubs=[];
   keys.forEach(sk=>{
     const s=kidSubjs[sk]; const kws=paceKeywords(k,sk,s);
-    const cur=(s.offset||0)+paceAutoCount(k,kws)+(s.adjust||0);
+    const cur=(s.offset||0)+paceAutoCount(k,kws)+(s.paceAdjust||0);
     const exp=currExpected(k,sk,cwn);
     const st=paceHasPendingCascade(k,kws)?"behind":paceStatus(cur,s.total||0,s.startWeek||1,weekNum,totalWeeks,exp);
     if(st==="ahead")aheadN++; else if(st==="behind"){behindN++; behindSubs.push(s.label||sk);} else if(st!=="not-started")onN++;
@@ -9151,7 +9162,7 @@ function _bankedPages(seq,uptoIdx){
   return total;
 }
 function subjectPagesReached(kid,sk){
-  let cursor=0; try{cursor=computeSubjectCursor(kid,sk);}catch(e){}
+  let cursor=0; try{cursor=computeSubjectDone(kid,sk);}catch(e){}
   return _bankedPages(buildSubjectLessons(kid,sk),cursor);
 }
 // Current book the kid is in: page reached within it + that book's last page.
@@ -9226,7 +9237,7 @@ function subjectProgress(kid,sk){
   const _cs=((currData&&currData.subjects)||{})[kid]||{};
   if(!s||(_cs[sk]&&_cs[sk].tracking==="daily")) return null;
   const totL=s.total||0; if(totL<=0) return null;
-  let cur=0; try{cur=computeSubjectCursor(kid,sk);}catch(e){}
+  let cur=0; try{cur=computeSubjectDone(kid,sk);}catch(e){}
   const seq=buildSubjectLessons(kid,sk);
   const cb=subjectCurrentBook(seq,cur);
   if(cb){
@@ -9248,7 +9259,7 @@ function subjectProgress(kid,sk){
 // last lesson) — feeds the wins list with "finished MR5" milestones.
 function subjectBooks(kid,sk){
   const seq=buildSubjectLessons(kid,sk); if(!seq.length) return [];
-  let cursor=0; try{cursor=computeSubjectCursor(kid,sk);}catch(e){}
+  let cursor=0; try{cursor=computeSubjectDone(kid,sk);}catch(e){}
   return _bookRuns(seq).map(r=>({name:r.name,finished:cursor>r.lastIdx}));
 }
 // Lifetime "how far you've come" totals — fully derived (no stored counter to
@@ -9261,7 +9272,7 @@ function lifetimeTotals(kidFilter){
     const subs=(currData&&currData.subjects&&currData.subjects[k])||{};
     for(const sk of Object.keys(subs)){
       if(subs[sk].paused) continue;
-      let cursor=0; try{cursor=computeSubjectCursor(k,sk);}catch(e){}
+      let cursor=0; try{cursor=computeSubjectDone(k,sk);}catch(e){}
       lessons+=Math.max(0,cursor);
       const pg=subjectPagesReached(k,sk);
       if(pg) pages+=pg;
@@ -9320,7 +9331,7 @@ function paceWins(kidFilter){
       const sub=kidSubjs[sk];
       if(_cs[sk]&&_cs[sk].tracking==="daily") continue;
       const tot=sub.total||0; if(tot<=0) continue;
-      let cur=0; try{cur=computeSubjectCursor(k,sk);}catch(e){}
+      let cur=0; try{cur=computeSubjectDone(k,sk);}catch(e){}
       const bks=subjectBooks(k,sk);
       bks.forEach(b=>{ if(b.finished) books.push({kid:k,name:b.name}); });
       if(cur>=tot&&!bks.length) done.push({kid:k,subject:sub.label||sk});
@@ -9520,7 +9531,7 @@ function renderProgress(el,headerHtml){
       keys.forEach(sk=>{
         const s=kidSubjs[sk];
         const kws=paceKeywords(k,sk,s);
-        const cur=(s.offset||0)+paceAutoCount(k,kws)+(s.adjust||0);
+        const cur=(s.offset||0)+paceAutoCount(k,kws)+(s.paceAdjust||0);
         const exp=currExpected(k,sk,cwn);
         const st=paceHasPendingCascade(k,kws)?"behind":paceStatus(cur,s.total||0,s.startWeek||1,weekNum,totalWeeks,exp);
         if(st==="ahead")aheadN++; else if(st==="behind")behindN++; else if(st!=="not-started")onN++;
@@ -9540,7 +9551,7 @@ function renderProgress(el,headerHtml){
           const kws=paceKeywords(k,sk,s);
           const autoC=paceAutoCount(k,kws);
           const offset=s.offset||0,adjust=s.adjust||0,sw=s.startWeek||1;
-          const cur=offset+autoC+adjust,tot=s.total||1;
+          const cur=offset+autoC+(s.paceAdjust||0),tot=s.total||1;
           const pct=Math.min(100,Math.round(cur/tot*100));
           const exp=currExpected(k,sk,cwn);
           const expB=currExpectedBase(k,sk,cwn);
