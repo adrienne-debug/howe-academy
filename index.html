@@ -5109,13 +5109,12 @@ function renderCurrPlans(el){
               '<div class="pace-auto-info">'+
               '<span>Auto: <span class="pace-auto-num">'+autoC+'</span></span>'+
               '<span style="color:var(--border)">+</span>'+
-              '<span>Offset: <input class="pace-num-input" type="number" min="0" value="'+offset+'" '+
-              'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'offset\',parseInt(this.value)||0)"/></span>'+
+              '<span>Offset: <span class="pace-auto-num">'+offset+'</span></span>'+
               '<span style="color:var(--border)">+</span>'+
-              '<span>Adjust: <input class="pace-num-input" type="number" value="'+adjust+'" '+
-              'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'adjust\',parseInt(this.value)||0)"/></span>'+
+              '<span>Adjust: <span class="pace-auto-num">'+adjust+'</span></span>'+
               '<span style="color:var(--border)">=</span>'+
               '<span><span class="pace-auto-num">'+cur+'</span> done</span>'+
+              '<span style="font-size:9px;color:var(--muted)">&#9998; edit Offset/Adjust on the Subjects tab</span>'+
               '<button class="pace-del-btn" style="margin-left:auto" onclick="deletePaceSubject(\''+k+'\',\''+sk+'\')">Remove</button>'+
               '</div>';
           }
@@ -5218,6 +5217,20 @@ function ceSaveField(field,val){
   db.ref("curriculum/subjects/"+ceEditKid+"/"+ceEditKey+"/"+field).set(val);
   currData.lastEdit=new Date().toISOString();
   db.ref("curriculum/lastEdit").set(currData.lastEdit);
+}
+// Offset/Adjust steer the lesson cursor and live in paceData (what the generator reads
+// via computeSubjectCursor) — NOT in curriculum/subjects. Edited on the Subjects card;
+// ensure a pace entry exists for this subject before writing, then refresh the sheet so
+// the readout + lesson list update in place.
+function ceSavePaceCursor(field,val){
+  if(!currData||!ceEditKid||!ceEditKey) return;
+  const kid=ceEditKid, key=ceEditKey;
+  const cur=((paceData.subjects&&paceData.subjects[kid])||{})[key];
+  const sub=ceGetSubject()||{};
+  const base=cur||{label:sub.display||key,keyword:sub.display||key,
+    total:(buildSubjectLessons(kid,key)||[]).length||0,offset:0,adjust:0,startWeek:1};
+  savePaceSubject(kid,key,{...base,[field]:val});
+  ceRenderEditSheet();
 }
 // Minutes stepper: update the value + the displayed number in place — no full sheet
 // re-render, so you keep your place while tapping up/down.
@@ -5421,6 +5434,25 @@ function ceRenderEditSheet(){
   const hasExcelLessons=currData&&currData.lessons&&currData.lessons[ceEditKid]&&seq.length&&seq[0].dayNum<90000;
   let cursorPos=0;
   try{ cursorPos=computeSubjectCursor(ceEditKid,ceEditKey); }catch(e){}
+
+  // Lesson position — Offset/Adjust steer the cursor (written to paceData, read by the
+  // generator). Auto = checked-off lessons counted live; cursorPos = Auto + Offset + Adjust.
+  const _paceSub=((paceData.subjects&&paceData.subjects[ceEditKid])||{})[ceEditKey];
+  const _autoC=paceAutoCount(ceEditKid,paceKeywords(ceEditKid,ceEditKey,_paceSub));
+  const _off=(_paceSub&&_paceSub.offset)||0;
+  const _adj=(_paceSub&&_paceSub.adjust)||0;
+  h+='<div class="ce-sheet-lbl">Lesson Position</div>';
+  h+='<div class="pace-auto-info">';
+  h+='<span>Auto: <span class="pace-auto-num">'+_autoC+'</span></span>';
+  h+='<span style="color:var(--border)">+</span>';
+  h+='<span>Offset: <input class="pace-num-input" type="number" min="0" value="'+_off+'" onchange="ceSavePaceCursor(\'offset\',parseInt(this.value)||0)"/></span>';
+  h+='<span style="color:var(--border)">+</span>';
+  h+='<span>Adjust: <input class="pace-num-input" type="number" value="'+_adj+'" onchange="ceSavePaceCursor(\'adjust\',parseInt(this.value)||0)"/></span>';
+  h+='<span style="color:var(--border)">=</span>';
+  h+='<span><span class="pace-auto-num">'+cursorPos+'</span> done</span>';
+  h+='</div>';
+  h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Auto counts checked-off lessons. Offset shifts where counting starts; Adjust nudges the cursor &plusmn;. Both feed the generator.</div>';
+
   h+='<div class="ce-sheet-lbl">Lessons ('+seq.length+' total, cursor at '+cursorPos+')</div>';
   if(hasExcelLessons){
     h+='<div style="max-height:150px;overflow-y:auto;border:1.5px solid var(--border);border-radius:10px;padding:6px 10px;margin-bottom:4px">';
