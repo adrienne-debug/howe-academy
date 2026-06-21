@@ -4688,14 +4688,12 @@ function renderCurriculumView(el,headerHtml){
       h+='</div>';
     }
     h+='<div style="display:flex;gap:4px;margin:2px 0 8px">';
-    [["week","By Week"],["subject","By Subject"],["month","Calendar"]].forEach(p=>{
+    [["week","By Week"],["subject","By Subject"]].forEach(p=>{
       const on=lmViewMode===p[0];
       h+='<button onclick="lmSetView(\''+p[0]+'\')" style="padding:4px 12px;border-radius:8px;border:1.5px solid '+(on?col:'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--text)')+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+p[1]+'</button>';
     });
     h+='</div>';
-    if(lmViewMode==="month"){
-      h+=lmRenderCalendar();
-    } else if(lmViewMode==="subject"){
+    if(lmViewMode==="subject"){
       h+='<div style="font-size:10px;color:var(--muted);margin:0 0 8px">Tap Move on a slot to put that lesson on a different week or day; &#9998; edits the lesson text (page numbers etc.). Changes apply when the week is next generated.</div>';
       h+=lmRenderSubjectView(k,subjects,weekLabels,weekDays,lessons,col);
     } else {
@@ -6277,8 +6275,8 @@ function renderCalendarView(el, headerHtml){
     '<div class="gcal-stat"><div class="gcal-stat-val">'+vacationCount+'</div><div class="gcal-stat-lbl">Vacations</div></div>'+
   '</div>';
 
-  // ── Mini month preview ──
-  h+=calRenderMonthPreview();
+  // ── Month calendar (lessons placed on academic days) ──
+  h+=lmRenderCalendar();
 
   // ── Holidays section ──
   h+='<div class="gcal-section">';
@@ -8266,6 +8264,13 @@ function lmCalDayChips(ds,scope,cellMap){
   });
   return out;
 }
+// Day type from the calendar (matches the Calendar tab's holiday/vacation colors).
+function _lmDayKind(ds){
+  const dn=calNormDate(ds);
+  for(const v of Object.values(calendarData.holidays||{})){ const s=calNormDate(v.start||v.date),e=calNormDate(v.end||v.start||v.date); if(s&&dn>=s&&dn<=e) return "holiday"; }
+  for(const v of Object.values(calendarData.vacations||{})){ const s=calNormDate(v.start||v.date),e=calNormDate(v.end||v.start||v.date); if(s&&dn>=s&&dn<=e) return "vacation"; }
+  return null;
+}
 function lmCalGrid(weeks,scope,data,ym){
   const KC={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#b45309"};
   const MON=["#0F6E56","#534AB7","#993C1D","#185FA5","#854F0B","#993556"];
@@ -8280,14 +8285,18 @@ function lmCalGrid(weeks,scope,data,ym){
       const d=new Date(mon); d.setDate(d.getDate()+i);
       const ds=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
       const cur=(d.getFullYear()*12+d.getMonth())===ym;
-      const mc=MON[d.getMonth()%6];
       const reasons=scope.map(function(kid){return smapIsKidOff(kid,ds);});
       const off=reasons.length&&reasons.every(function(r){return !!r;});
+      const kind=_lmDayKind(ds);
       const isToday=ds===today;
-      h+='<div onclick="lmCalOpenDay(\''+ds+'\')" style="background:'+(cur?"#fff":"#f6f6f8")+';'+(isToday?"border:2px solid var(--header);":"border:0.5px solid var(--border);")+'border-radius:8px;padding:6px 7px;min-height:82px;cursor:pointer;'+(off?"opacity:0.7;":"")+'">';
-      h+='<div style="display:flex;align-items:baseline;gap:4px;margin-bottom:4px"><span style="font-size:10px;color:var(--muted)">'+WD[d.getDay()]+'</span><span style="font-size:12px;font-weight:700;color:'+mc+'">'+(cur?"":SH[d.getMonth()]+" ")+d.getDate()+'</span>'+(isToday?'<span style="font-size:9px;color:var(--header);margin-left:auto">today</span>':'')+'</div>';
+      let bg="#f0fdf4", tcol="#15803d";
+      if(!cur){ bg="#f6f6f8"; tcol="#9ca3af"; }
+      else if(kind==="holiday"){ bg="#fef3c7"; tcol="#92400e"; }
+      else if(kind==="vacation"||off){ bg="#fef2f2"; tcol="#991b1b"; }
+      h+='<div onclick="lmCalOpenDay(\''+ds+'\')" style="background:'+bg+';'+(isToday?"border:2px solid var(--header);":"border:0.5px solid var(--border);")+'border-radius:8px;padding:6px 7px;min-height:82px;cursor:pointer">';
+      h+='<div style="display:flex;align-items:baseline;gap:4px;margin-bottom:4px"><span style="font-size:10px;color:var(--muted)">'+WD[d.getDay()]+'</span><span style="font-size:12px;font-weight:700;color:'+tcol+'">'+(cur?"":SH[d.getMonth()]+" ")+d.getDate()+'</span>'+(isToday?'<span style="font-size:9px;color:var(--header);margin-left:auto">today</span>':'')+'</div>';
       if(off){
-        h+='<div style="font-size:10px;color:var(--muted);font-style:italic">'+esc(String(reasons.find(function(r){return !!r;})||"Off"))+'</div>';
+        h+='<div style="font-size:10px;color:'+tcol+';font-style:italic">'+esc(String(reasons.find(function(r){return !!r;})||"Off"))+'</div>';
       } else {
         const chips=lmCalDayChips(ds,scope,data.cellMap);
         chips.slice(0,4).forEach(function(c){
@@ -8314,7 +8323,7 @@ function lmRenderCalendar(){
   let h='';
   h+='<div style="display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:12px">';
   h+='<button onclick="lmCalNav(-1)" aria-label="Previous month" style="width:34px;height:34px;border:1px solid var(--border);background:#fff;border-radius:9px;cursor:pointer;font-size:19px;line-height:1">&#8249;</button>';
-  h+='<span style="font-size:22px;font-weight:700;text-align:center;min-width:200px;color:'+mc+'">'+esc(monthLbl)+'</span>';
+  h+='<span style="font-size:22px;font-weight:700;text-align:center;min-width:200px;color:var(--text)">'+esc(monthLbl)+'</span>';
   h+='<button onclick="lmCalNav(1)" aria-label="Next month" style="width:34px;height:34px;border:1px solid var(--border);background:#fff;border-radius:9px;cursor:pointer;font-size:19px;line-height:1">&#8250;</button>';
   h+='</div>';
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center">';
@@ -8322,6 +8331,11 @@ function lmRenderCalendar(){
   h+='<button onclick="lmCalSetKid(\'all\')" style="font-size:12px;padding:4px 12px;border-radius:999px;border:1.5px solid '+(allOn?"transparent":"var(--border)")+';background:'+(allOn?"#111827":"#fff")+';color:'+(allOn?"#fff":"var(--muted)")+';cursor:pointer;font-family:\'DM Sans\',sans-serif">All kids</button>';
   KIDS.forEach(function(kid){ const on=lmCalKid===kid; h+='<button onclick="lmCalSetKid(\''+kid+'\')" style="font-size:12px;padding:4px 12px;border-radius:999px;border:1.5px solid '+(on?"transparent":"var(--border)")+';background:'+(on?KC[kid]:"#fff")+';color:'+(on?"#fff":KC[kid])+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cap(kid)+'</button>'; });
   h+='<button onclick="lmCalPrint()" style="margin-left:auto;border:1px solid var(--border);background:#fff;border-radius:8px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Print</button>';
+  h+='</div>';
+  h+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin:0 0 8px;font-size:10px;color:var(--muted)">';
+  h+='<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:#f0fdf4;border:0.5px solid #bbf7d0"></span>School</span>';
+  h+='<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:#fef2f2;border:0.5px solid #fecaca"></span>Vacation</span>';
+  h+='<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:#fef3c7;border:0.5px solid #fde68a"></span>Holiday</span>';
   h+='</div>';
   h+='<div style="display:grid;grid-template-columns:38px repeat(5,1fr);gap:6px;margin-bottom:6px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px"><div></div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div></div>';
   h+=weeks.length?('<div style="display:grid;grid-template-columns:38px repeat(5,1fr);gap:6px">'+lmCalGrid(weeks,scope,data,ym)+'</div>'):('<div style="padding:24px;text-align:center;color:var(--muted);font-size:12px">No school weeks in '+esc(monthLbl)+'.</div>');
