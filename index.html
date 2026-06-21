@@ -8851,7 +8851,7 @@ function lmComputeSuggestions(k,weekLabel){
       }
     };
     tryDays(false);
-    if(need>0&&isSeq) tryDays(true); // sequential subjects may double up as a 2nd lesson
+    if(need>0&&isSeq&&!rl.includes("max1")) tryDays(true); // sequential subjects may double up — but max1 (once-a-day, e.g. Reflex) never does
   }
   return sugg;
 }
@@ -14753,16 +14753,6 @@ function renderPlanNextWeek(){
     h+='<div class="pnw-chip'+(c.saturday?" on":"")+'" onclick="gwConfig.saturday=!gwConfig.saturday;renderPlanNextWeek()">Include Saturday</div>';
     h+='</div></div>';
 
-    if(c.redistribute.length){
-      h+='<div class="pnw-section"><div class="pnw-section-title">Redistribution Rules <span style="font-size:11px;color:var(--muted);font-weight:500">'+c.redistribute.length+' rule(s)</span></div>';
-      c.redistribute.forEach((r,i)=>{
-        h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:10px;padding:8px 12px;margin-bottom:6px;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600">'+
-          cap(r.kid)+' · '+cap(r.from)+' → '+cap(r.to)+' ('+r.subjects+')'+
-          '<button style="margin-left:auto;background:none;border:none;color:#ef4444;font-size:14px;cursor:pointer" onclick="gwConfig.redistribute.splice('+i+',1);renderPlanNextWeek()">✕</button></div>';
-      });
-      h+='</div>';
-    }
-
   } else if(pnwStep===1){
     // ── STEP 2: PREVIEW ──
     const r=pnwResult;
@@ -15012,13 +15002,6 @@ function gwSetCarNote(d,v){ if(gwConfig.carSchool[d]) gwConfig.carSchool[d].note
 function gwToggleTheater(){ gwConfig.theater=!gwConfig.theater; renderAll(); }
 function gwToggleSaturday(){ gwConfig.saturday=!gwConfig.saturday; renderAll(); }
 
-function gwAddRedist(){
-  gwConfig.redistribute.push({kid:"ellis",from:"wednesday",to:"tuesday",subjects:"paper"});
-  renderAll();
-}
-function gwRemoveRedist(i){ gwConfig.redistribute.splice(i,1); renderAll(); }
-function gwSetRedist(i,field,val){ gwConfig.redistribute[i][field]=val; renderAll(); }
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // PHASE 3 — WEEK GENERATOR (JS PORT OF build_week_json.py)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -15148,17 +15131,6 @@ function getNextGroupLessons(gk,count){
   return out;
 }
 // SHAREDCURR_END
-
-function gwClassifySubjects(kid){
-  const subjects=gwGetSubjects(kid);
-  const paper=[],computer=[],ipad=[];
-  for(const[key,s] of Object.entries(subjects)){
-    if(s.device==="computer") computer.push(key);
-    else if(s.device==="ipad") ipad.push(key);
-    else paper.push(key);
-  }
-  return {paper,computer,ipad};
-}
 
 function gwByCategory(kid,tasksDict){
   const subjects=gwGetSubjects(kid);
@@ -15480,7 +15452,20 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   const kidStart={};
   if(isSitter) KIDS.forEach(function(kid){ if(withSitter.includes(kid)) kidStart[kid]=sitterEnd; });
   var _maxLen=0; KIDS.forEach(function(k){ if(perKid[k].length>_maxLen) _maxLen=perKid[k].length; });
-  for(var _i=0;_i<_maxLen;_i++){ KIDS.forEach(function(kid){ var e=perKid[kid][_i]; if(e) pushItem(kid,e.key,e.val); }); }
+  // Round-robin across kids by step so Mom/devices are shared fairly. Exception: a
+  // doubled subject (two of the same key, adjacent after the stable sort) is emitted as
+  // one back-to-back block, so its copies pack consecutively (one time-block) instead of
+  // getting a gap from another kid's same-lane task slotting between them.
+  var _emitted={}; KIDS.forEach(function(k){ _emitted[k]=0; });
+  for(var _i=0;_i<_maxLen;_i++){
+    KIDS.forEach(function(kid){
+      var list=perKid[kid];
+      if(_i>=list.length||_emitted[kid]>_i) return; // already emitted as part of a block
+      var e=list[_i]; pushItem(kid,e.key,e.val); _emitted[kid]=_i+1;
+      var j=_i+1;
+      while(j<list.length&&list[j].key===e.key){ pushItem(kid,list[j].key,list[j].val); _emitted[kid]=j+1; j++; }
+    });
+  }
 
   // Place everything through the shared packer (no phone lane, to match the prior
   // generator; Mom deferred past the sitter return on babysitter days).
@@ -15506,49 +15491,6 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   return {tasks,counter,dropped};
 }
 // GWGEN_END
-
-function gwApplyRedistribution(dayData,rules){
-  const WDAY_NAMES={0:"monday",1:"tuesday",2:"wednesday",3:"thursday",4:"friday",5:"saturday",6:"sunday"};
-  const dateByName={};
-  for(const dk of Object.keys(dayData)){
-    const d=gwParseDate(dk);
-    const dn=WDAY_NAMES[d.getDay()];
-    if(dn) dateByName[dn]=dk;
-  }
-
-  dayData=JSON.parse(JSON.stringify(dayData));
-
-  for(const rule of rules){
-    const kid=rule.kid;
-    const fromDay=rule.from.toLowerCase();
-    const toDay=rule.to.toLowerCase();
-    const subjects=rule.subjects;
-
-    const fromDate=dateByName[fromDay];
-    const toDate=dateByName[toDay];
-    if(!fromDate||!toDate) continue;
-    const fromKidTasks=(dayData[fromDate]||{})[kid];
-    if(!fromKidTasks||!Object.keys(fromKidTasks).length) continue;
-
-    const cls=gwClassifySubjects(kid);
-    let keysToMove;
-    if(subjects==="paper") keysToMove=Object.keys(fromKidTasks).filter(k=>cls.paper.includes(k));
-    else if(subjects==="ipad") keysToMove=Object.keys(fromKidTasks).filter(k=>cls.ipad.includes(k));
-    else if(subjects==="all") keysToMove=Object.keys(fromKidTasks);
-    else if(Array.isArray(subjects)) keysToMove=subjects.filter(k=>fromKidTasks[k]);
-    else continue;
-
-    if(!keysToMove.length) continue;
-    if(!dayData[toDate]) dayData[toDate]={};
-    if(!dayData[toDate][kid]) dayData[toDate][kid]={};
-
-    for(const key of keysToMove){
-      dayData[toDate][kid][key]=fromKidTasks[key];
-      delete fromKidTasks[key];
-    }
-  }
-  return dayData;
-}
 
 function gwAutoBalance(dayData,lateStart,skipDays){
   const WDAY_NAMES={0:"monday",1:"tuesday",2:"wednesday",3:"thursday",4:"friday",5:"saturday"};
@@ -15882,6 +15824,52 @@ function resolveWeekSlots(weekNum,ignoreAuto){
 // excludeWeek: on regeneration, excludes this week's own tasks from cursor count
 //   so the cursor reflects only prior-week progress (prevents self-counting drift).
 // Returns {dayData, cursors} so generateWeek can store the snapshot.
+// ── CATCH-UP SLOTS (generation only) ─────────────────────────────────
+// Pick up to `want` extra dates this week for a behind subject: lightest allowed
+// school days that have room and don't already carry the subject. Mirrors the
+// make-up suggester's fit rules. Returns [] when nothing fits — the backlog then
+// rolls to a later week via the cursor (never dropped). See gwReadWeekAutoAdvance.
+function gwCatchupExtraDates(kid,sk,s,existingDates,want,dayData){
+  if(want<=0) return [];
+  const WD={0:"Sun",1:"Mon",2:"Tue",3:"Wed",4:"Thu",5:"Fri",6:"Sat"};
+  const al=s.allowedDays||[], rl=s.rules||"";
+  const max1=rl.includes("max1");                 // once-per-day subjects (e.g. Reflex) never double
+  const gwR=gwRules();
+  const dayCap=(gwR.schoolEnd-gwR.schoolStart)-((gwR.lunchEnd||0)-(gwR.lunchStart||0));
+  const subs=currData.subjects[kid]||{};
+  const myMin=s.minutes||20;
+  const cnt={}; existingDates.forEach(d=>{cnt[d]=(cnt[d]||0)+1;}); // current per-day count of this subject
+  const days=[];
+  for(const date of Object.keys(dayData)){
+    const kidDay=dayData[date]&&dayData[date][kid];
+    if(!kidDay) continue;                          // kid off / nothing scheduled that day
+    const abbr=WD[gwParseDate(date).getDay()];
+    if(abbr==="Sat"||abbr==="Sun") continue;
+    if(al.length&&abbr&&!al.includes(abbr)) continue;
+    if(rl.includes("no-fri")&&abbr==="Fri") continue;
+    if(rl.includes("mon-thu")&&["Fri","Sat","Sun"].includes(abbr)) continue;
+    let load=0;
+    for(const psk of Object.keys(kidDay)) load+=(subs[psk]&&subs[psk].minutes)||20;
+    days.push({date,load,have:cnt[date]||0});
+  }
+  // Tier 0 fills empty days (no doubling); tier 1 doubles to at most one extra per day —
+  // skipped for max1 subjects so they stay once-a-day. Each tier takes the lightest fitting
+  // day first so extra work spreads out, and never pushes a day past its time cap (overflow
+  // just isn't placed and rolls forward via the cursor).
+  const picks=[];
+  const fillTier=(tier)=>{
+    const open=days.filter(d=>d.have===tier&&d.load+myMin<=dayCap)
+                   .sort((a,b)=>a.load-b.load||a.date.localeCompare(b.date));
+    for(const d of open){
+      if(picks.length>=want) break;
+      picks.push(d.date); d.have++; d.load+=myMin;
+    }
+  };
+  fillTier(0);
+  if(!max1) fillTier(1);
+  return picks.slice(0,want);
+}
+
 function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
   const resolved=resolveWeekSlots(weekNum,ignoreAuto);
   if(!resolved) return null;
@@ -15902,18 +15890,39 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
       cursors[kid][sk]=cursor;
 
       // Every planned slot fills with the next lesson; a finished subject stops filling.
-      // (carryoverCap now governs how many make-up slots the Lesson Map suggests —
-      // the old limit here could never bind and was dead code.)
       const seq=buildSubjectLessons(kid,sk);
+
+      // CATCH-UP: if behind the Excel plan, add up to carryoverCap extra slots this
+      // week (lightest allowed days with room) so the cursor serves the backlog now
+      // instead of sliding the finish date out forever. Capped, fit-checked, never
+      // doubles a day; overflow stays behind and catches up later — never dropped.
+      const _cs=subjects[sk]||{}, _crl=_cs.rules||"";
+      if(seq.length>cursor&&!_crl.includes("first")&&!_crl.includes("last")){
+        const expEnter=currExpectedBase(kid,sk,weekNum-1);
+        const cap=(_cs.carryoverCap!=null)?_cs.carryoverCap:2;
+        const want=Math.min(Math.max(0,(expEnter==null?0:expEnter-cursor)),cap,(seq.length-cursor)-dates.length);
+        if(want>0){
+          gwCatchupExtraDates(kid,sk,_cs,dates,want,dayData).forEach(d=>{ dates.push(d); });
+          dates.sort(); // duplicate dates (doubled days) now sit adjacent
+        }
+      }
+
       const remaining=seq.length-cursor;
       let slotsToFill=remaining<=0?0:dates.length;
 
       const nextLessons=getNextLessonsFromCursor(kid,sk,cursor,slotsToFill);
       for(let i=0;i<dates.length;i++){
+        const dt=dates[i];
+        const dup=i>0&&dates[i]===dates[i-1]; // a day getting a second of this subject → array
         if(i<slotsToFill&&nextLessons[i]){
-          dayData[dates[i]][kid][sk]=nextLessons[i].lesson;
-        } else {
-          if(dayData[dates[i]]&&dayData[dates[i]][kid]) delete dayData[dates[i]][kid][sk];
+          if(dup){
+            const cur=dayData[dt][kid][sk];
+            dayData[dt][kid][sk]=(Array.isArray(cur)?cur:[cur]).concat(nextLessons[i].lesson);
+          } else {
+            dayData[dt][kid][sk]=nextLessons[i].lesson;
+          }
+        } else if(!dup){
+          if(dayData[dt]&&dayData[dt][kid]) delete dayData[dt][kid][sk];
         }
       }
     }
@@ -16013,10 +16022,7 @@ function generateWeek(config){
     Object.values(seen).sort((a,b)=>a.date.localeCompare(b.date)).forEach(s=>calendarSkips.push(s));
   })();
 
-  // Apply redistribution
-  let balanced=config.redistribute&&config.redistribute.length
-    ? gwApplyRedistribution(dayData,config.redistribute)
-    : JSON.parse(JSON.stringify(dayData));
+  let balanced=JSON.parse(JSON.stringify(dayData));
 
   // Auto-balance
   balanced=gwAutoBalance(balanced,config.lateStart||{},config.skipDays||[]);
