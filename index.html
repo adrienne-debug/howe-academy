@@ -8175,14 +8175,29 @@ function lmCalData(){
       const n=parseInt((String(e.week||"").match(/\d+/)||[0])[0]); if(n) wkSet[n]=true;
     });
   });
-  return {cellMap:cellMap, weekNums:Object.keys(wkSet).map(Number).sort(function(a,b){return a-b;})};
+  const present=Object.keys(wkSet).map(Number).sort(function(a,b){return a-b;});
+  let weekNums=present;
+  if(present.length){ weekNums=[]; for(let w=present[0];w<=present[present.length-1];w++) weekNums.push(w); }
+  return {cellMap:cellMap, weekNums:weekNums};
 }
-function _lmWeekYM(wn){ const r=gwWeekDateRange(wn); if(!r) return null; const d=gwParseDate(r.start); return d.getFullYear()*12+d.getMonth(); }
+// Monday Date for any week — uses gwWeekDateRange when the week has lessons, else EXTRAPOLATES
+// from the nearest dated week (week numbers advance exactly 7 days). Lets fully-empty break
+// weeks (e.g. a whole beach week with no lessons) still render with their real dates.
+function _lmWeekMon(wn){
+  const r=gwWeekDateRange(wn); if(r) return gwParseDate(r.start);
+  const lim=(_maxPlanWeek()||wn)+12;
+  for(let off=1;off<=lim;off++){
+    let rr=gwWeekDateRange(wn-off); if(rr){ const d=gwParseDate(rr.start); d.setDate(d.getDate()+off*7); return d; }
+    rr=gwWeekDateRange(wn+off); if(rr){ const d=gwParseDate(rr.start); d.setDate(d.getDate()-off*7); return d; }
+  }
+  return null;
+}
+function _lmWeekYM(wn){ const d=_lmWeekMon(wn); if(!d) return null; return d.getFullYear()*12+d.getMonth(); }
 function _lmMonthRange(data){
   if(!data.weekNums.length) return null;
   let a=_lmWeekYM(data.weekNums[0]); let b=a;
-  const rl=gwWeekDateRange(data.weekNums[data.weekNums.length-1]);
-  if(rl){ const d=gwParseDate(rl.start); d.setDate(d.getDate()+4); b=d.getFullYear()*12+d.getMonth(); }
+  const dl=_lmWeekMon(data.weekNums[data.weekNums.length-1]);
+  if(dl){ const d=new Date(dl); d.setDate(d.getDate()+4); b=d.getFullYear()*12+d.getMonth(); }
   if(a==null) a=b; if(b==null) b=a;
   return (a==null)?null:{min:a,max:b};
 }
@@ -8197,8 +8212,7 @@ function _lmCalYM(data){
 function _lmWeeksInMonth(data,ym){
   const out=[];
   data.weekNums.forEach(function(wn){
-    const r=gwWeekDateRange(wn); if(!r) return;
-    const mon=gwParseDate(r.start);
+    const mon=_lmWeekMon(wn); if(!mon) return;
     for(let i=0;i<5;i++){ const d=new Date(mon); d.setDate(d.getDate()+i); if(d.getFullYear()*12+d.getMonth()===ym){ out.push(wn); return; } }
   });
   return out;
@@ -8229,9 +8243,8 @@ function lmCalGrid(weeks,scope,data,ym){
   const today=_todayStr();
   let h='';
   weeks.forEach(function(wn){
-    const range=gwWeekDateRange(wn); if(!range) return;
+    const mon=_lmWeekMon(wn); if(!mon) return;
     h+='<div onclick="lmCalJump('+wn+')" style="display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;cursor:pointer;color:'+(wn===currWeekNum()?"var(--header)":"var(--muted)")+'">Wk '+wn+'</div>';
-    const mon=gwParseDate(range.start);
     for(let i=0;i<5;i++){
       const d=new Date(mon); d.setDate(d.getDate()+i);
       const ds=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
@@ -8304,8 +8317,7 @@ function lmCalPrint(){
   const scope=(lmCalKid==="all")?KIDS:[lmCalKid];
   let rows='';
   weeks.forEach(function(wn){
-    const range=gwWeekDateRange(wn); if(!range) return;
-    const mon=gwParseDate(range.start);
+    const mon=_lmWeekMon(wn); if(!mon) return;
     rows+='<tr><td class="wk">Wk '+wn+'</td>';
     for(let i=0;i<5;i++){
       const d=new Date(mon); d.setDate(d.getDate()+i);
