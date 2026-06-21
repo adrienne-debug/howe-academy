@@ -8230,11 +8230,15 @@ function lmCalDayPopup(ds,data){
   let body='';
   const scope=(lmCalKid==="all")?KIDS:[lmCalKid];
   scope.forEach(function(kid){
-    const off=smapIsKidOff(kid,ds);
+    const off=_lmKidOff(kid,ds);
     const e=(data.cellMap[ds]||{})[kid];
     const subs=(currData.subjects||{})[kid]||{};
+    const ov=schedOv(ds,kid)||{};
     const items=[];
-    if(e) Object.keys(e).forEach(function(key){ if(key==="date"||key==="week") return; const s=subs[key]; if(!s||s.paused) return; const v=e[key]; if(v==null||v==="—"||v==="nan"||!String(v).trim()) return; items.push({disp:s.display||key,val:v}); });
+    if(!off){
+      if(e) Object.keys(e).forEach(function(key){ if(key==="date"||key==="week") return; if(ov.removed&&ov.removed[key]) return; const s=subs[key]; if(!s||s.paused) return; const v=e[key]; if(v==null||v==="—"||v==="nan"||!String(v).trim()) return; items.push({disp:s.display||key,val:v}); });
+      if(ov.added) Object.keys(ov.added).forEach(function(key){ if(!ov.added[key]) return; const s=subs[key]; if(!s||s.paused) return; items.push({disp:s.display||key,val:"(make-up)"}); });
+    }
     if(!off&&!items.length) return;
     body+='<div style="margin-bottom:12px"><div style="display:flex;align-items:center;gap:7px;margin-bottom:5px"><span style="width:9px;height:9px;border-radius:50%;background:'+(KC[kid]||"#888")+'"></span><span style="font-size:13px;font-weight:700;color:'+(KC[kid]||"#333")+'">'+cap(kid)+'</span></div>';
     if(off) body+='<div style="font-size:12px;color:var(--muted);font-style:italic;padding-left:16px">'+esc(String(off))+'</div>';
@@ -8249,17 +8253,32 @@ function lmCalDayPopup(ds,data){
   h+='</div></div>';
   return h;
 }
+// Whether a kid is off this day — Calendar tab holidays/vacations/kidOverrides (smapIsKidOff)
+// OR a Lesson Map "day off" override (scheduleOverrides).
+function _lmKidOff(kid,ds){
+  const r=smapIsKidOff(kid,ds); if(r) return r;
+  const o=schedOv(ds,kid); return (o&&o.dayOff)?"Day off":null;
+}
 function lmCalDayChips(ds,scope,cellMap){
   const out=[];
   scope.forEach(function(kid){
-    const e=(cellMap[ds]||{})[kid]; if(!e) return;
+    if(_lmKidOff(kid,ds)) return;
     const subs=(currData.subjects||{})[kid]||{};
-    Object.keys(e).forEach(function(key){
+    const ov=schedOv(ds,kid)||{};
+    const e=(cellMap[ds]||{})[kid];
+    if(e) Object.keys(e).forEach(function(key){
       if(key==="date"||key==="week") return;
+      if(ov.removed&&ov.removed[key]) return;
       const s=subs[key]; if(!s||s.paused) return;
       const val=e[key]; if(val==null||val==="—"||val==="nan"||!String(val).trim()) return;
       const short=String(s.display||key).split(/[\s—–\/-]/)[0];
       out.push({kid:kid, text:short+" "+val});
+    });
+    if(ov.added) Object.keys(ov.added).forEach(function(key){
+      if(!ov.added[key]) return;
+      const s=subs[key]; if(!s||s.paused) return;
+      const short=String(s.display||key).split(/[\s—–\/-]/)[0];
+      out.push({kid:kid, text:short+" (make-up)"});
     });
   });
   return out;
@@ -8285,7 +8304,7 @@ function lmCalGrid(weeks,scope,data,ym){
       const d=new Date(mon); d.setDate(d.getDate()+i);
       const ds=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
       const cur=(d.getFullYear()*12+d.getMonth())===ym;
-      const reasons=scope.map(function(kid){return smapIsKidOff(kid,ds);});
+      const reasons=scope.map(function(kid){return _lmKidOff(kid,ds);});
       const off=reasons.length&&reasons.every(function(r){return !!r;});
       const kind=_lmDayKind(ds);
       const isToday=ds===today;
@@ -8371,7 +8390,7 @@ function lmCalPrint(){
     for(let i=0;i<5;i++){
       const d=new Date(mon); d.setDate(d.getDate()+i);
       const ds=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
-      const reasons=scope.map(function(kid){return smapIsKidOff(kid,ds);});
+      const reasons=scope.map(function(kid){return _lmKidOff(kid,ds);});
       const off=reasons.length&&reasons.every(function(r){return !!r;});
       let cell='<div class="dn">'+((d.getFullYear()*12+d.getMonth())!==ym?["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()]+" ":"")+d.getDate()+'</div>';
       if(off) cell+='<div class="off">'+esc(String(reasons.find(function(r){return !!r;})||"Off"))+'</div>';
