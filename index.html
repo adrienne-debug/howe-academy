@@ -8149,6 +8149,7 @@ let lmCalKid="all";      // calendar: kid filter ("all" | kid)
 let lmCalDay=null;       // calendar: date string of the open day-detail popup (null = closed)
 let lmMovePick=null;     // {date, added} — slot whose Move picker is open
 let lmMoveWeek=null;     // week label chosen inside the move picker
+let lmLastMove=null;     // {kid,sk,fromDate,toDate,snapFrom,snapTo} — last move, for Undo
 let lmEditSlot=null;     // "kid|dayNum|sk" whose lesson text is being edited
 function lmSetView(m){ lmViewMode=m; lmMovePick=null; lmMoveWeek=null; lmEditSlot=null; renderAll(); }
 
@@ -8443,6 +8444,7 @@ function lmMoveSlot(kid,sk,toDate){
   if(!lmMovePick) return;
   const fromDate=lmMovePick.date, wasAdded=lmMovePick.added;
   if(toDate!==fromDate){
+    _lmSnapMove(kid,sk,fromDate,toDate);
     setSchedOverride(toDate,kid,o=>{
       if(o.removed&&o.removed[sk]) delete o.removed[sk];
       else { if(!o.added)o.added={}; o.added[sk]=true; }
@@ -8542,9 +8544,26 @@ function lmRenderSubjectView(k,subjects,weekLabels,weekDays,lessons,col){
   return h;
 }
 
+// Snapshot the two affected override entries before a move so it can be undone.
+function _lmSnapMove(kid,sk,fromDate,toDate){
+  const cp=function(o){ return o?JSON.parse(JSON.stringify(o)):null; };
+  lmLastMove={kid:kid,sk:sk,fromDate:fromDate,toDate:toDate,snapFrom:cp(schedOv(fromDate,kid)),snapTo:cp(schedOv(toDate,kid))};
+}
+function _lmRestoreOverride(date,kid,snap){
+  if(!scheduleOverrides[date]) scheduleOverrides[date]={};
+  if(snap) scheduleOverrides[date][kid]=snap; else if(scheduleOverrides[date]) delete scheduleOverrides[date][kid];
+  if(scheduleOverrides[date]&&!Object.keys(scheduleOverrides[date]).length) delete scheduleOverrides[date];
+}
+function lmUndoMove(){
+  if(!lmLastMove) return; const m=lmLastMove;
+  _lmRestoreOverride(m.fromDate,m.kid,m.snapFrom);
+  _lmRestoreOverride(m.toDate,m.kid,m.snapTo);
+  lmLastMove=null; saveScheduleOverrides(); renderAll();
+}
 // Move a subject's slot to another DAY (writes scheduleOverrides like lmMoveSlot, no picker).
 function lmMoveDay(kid,sk,fromDate,toDate,wasAdded){
   if(!toDate||toDate===fromDate) return;
+  _lmSnapMove(kid,sk,fromDate,toDate);
   setSchedOverride(toDate,kid,function(o){ if(o.removed&&o.removed[sk]) delete o.removed[sk]; else { if(!o.added)o.added={}; o.added[sk]=true; } });
   setSchedOverride(fromDate,kid,function(o){ if(wasAdded){ if(o.added) delete o.added[sk]; } else { if(!o.removed)o.removed={}; o.removed[sk]=true; } });
   renderAll();
@@ -8570,6 +8589,11 @@ function lmRenderSubjectGrid(k,subjects,weekLabels,weekDays,lessons,col){
   h+='</div>';
   if(!allMode&&!lmSubjKey) return h+'<div style="font-size:12px;color:var(--muted);padding:16px;text-align:center">No subjects for '+cap(k)+'.</div>';
   const sk=lmSubjKey;
+  if(lmLastMove){
+    const lm=lmLastMove; const _o=gwParseDate(lm.toDate); const tdisp=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][_o.getDay()]+" "+_o.toLocaleDateString("en-US",{month:"short",day:"numeric"});
+    const sdisp=(subjects[lm.sk]&&subjects[lm.sk].display)||lm.sk;
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:6px 10px;margin-bottom:8px;font-size:11px;color:#3730a3"><span>Moved <b>'+esc(sdisp)+'</b> to '+esc(tdisp)+' (make-up)</span><button onclick="lmUndoMove()" style="border:1px solid #6366f1;background:#fff;color:#4338ca;border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">&#8617; Undo</button></div>';
+  }
   const wkNums=weekLabels.map(function(w){return parseInt((w.match(/\d+/)||[0])[0])||0;}).filter(function(n){return n>0;}).sort(function(a,b){return a-b;});
   if(!wkNums.length) return h+'<div style="font-size:12px;color:var(--muted);padding:16px;text-align:center">No weeks yet.</div>';
   const minWk=wkNums[0], maxWk=wkNums[wkNums.length-1];
