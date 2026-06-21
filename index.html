@@ -5470,15 +5470,18 @@ function ceRenderEditSheet(){
 
   h+='<div class="ce-sheet-lbl">Lesson list ('+seq.length+' entries · cursor at '+cursorPos+')</div>';
   if(hasExcelLessons){
-    h+='<div style="max-height:150px;overflow-y:auto;border:1.5px solid var(--border);border-radius:10px;padding:6px 10px;margin-bottom:4px">';
+    h+='<div style="max-height:170px;overflow-y:auto;border:1.5px solid var(--border);border-radius:10px;padding:6px 8px;margin-bottom:4px">';
     seq.forEach((l,i)=>{
       const done=i<cursorPos;
       const current=i===cursorPos;
-      h+='<div style="font-size:11px;padding:1px 0;'+(done?"opacity:0.4;text-decoration:line-through":"")+(current?";font-weight:700;color:var(--header)":"")+'">'+
-        (done?"&#10003; ":"")+(current?"&#9654; ":"")+l.lesson+'</div>';
+      const mark=current?"&#9654;":done?"&#10003;":"";
+      h+='<div style="display:flex;align-items:center;gap:6px;padding:1px 0">'+
+        '<span style="width:12px;flex:none;text-align:center;font-size:11px;color:'+(current?"var(--header)":"var(--muted)")+'">'+mark+'</span>'+
+        '<input type="text" value="'+esc(l.lesson)+'" onchange="ceEditLesson('+l.dayNum+',this.value)" style="flex:1;min-width:0;padding:3px 7px;font-size:11px;border:1px solid var(--border);border-radius:6px;font-family:\'DM Sans\',sans-serif;background:#fff;color:var(--text)'+(done?";opacity:0.55":"")+(current?";font-weight:700;border-color:var(--header)":"")+'">'+
+        '</div>';
     });
     h+='</div>';
-    h+='<div style="font-size:10px;color:var(--muted)">From Excel — edit the spreadsheet and re-upload to change these.</div>';
+    h+='<div style="font-size:10px;color:var(--muted)">Rename a lesson here — it applies everywhere and in future generation. &#9888; Re-uploading the master spreadsheet overwrites these.</div>';
   } else if(s.lessonSeq&&s.lessonSeq.length){
     h+='<textarea id="ce-edit-lessons" class="ce-sheet-input" style="min-height:100px;resize:vertical;font-size:11px;line-height:1.5" onchange="ceSaveLessonSeq(this.value)">';
     s.lessonSeq.forEach((l,i)=>{
@@ -5617,6 +5620,22 @@ function ceSaveLessonSeq(val){
   const lines=val.split("\n").map(l=>l.trim()).filter(Boolean);
   ceSaveField("lessonSeq",lines);
   ceSaveField("total",lines.length);
+}
+// Rename one Excel-sourced lesson in place. Writes to currData.lessons — the curriculum
+// source the generator reads via buildSubjectLessons — so the new name flows everywhere
+// (pace, next-lesson) and into future generation (the curriculum-changed banner nudges a
+// regenerate to apply it to the current week). NB: re-uploading the master spreadsheet
+// overwrites these in-app edits. No re-render (keeps focus/scroll while editing rows).
+function ceEditLesson(dayNum,val){
+  if(!currData||!ceEditKid||!ceEditKey||!db) return;
+  const kid=ceEditKid, key=ceEditKey, v=(val||"").trim();
+  if(!currData.lessons) currData.lessons={};
+  if(!currData.lessons[kid]) currData.lessons[kid]={};
+  if(!currData.lessons[kid][dayNum]) currData.lessons[kid][dayNum]={};
+  currData.lessons[kid][dayNum][key]=v;
+  db.ref("curriculum/lessons/"+kid+"/"+dayNum+"/"+key).set(v);
+  currData.lastEdit=new Date().toISOString();
+  db.ref("curriculum/lastEdit").set(currData.lastEdit);
 }
 
 function ceDeleteSubject(){
