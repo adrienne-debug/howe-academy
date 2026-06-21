@@ -8152,7 +8152,7 @@ function lmRenderMovePicker(k,sk,col,weekLabels,weekDays,lessons){
 // ── LESSON MAP "BY SUBJECT" view: see and move one subject's slots across weeks ──
 let lmViewMode="week";   // "week" | "subject" | "month"
 let lmSubjKey=null;      // selected subject in by-subject view
-let lmCalStart=null;     // calendar: first week number shown (null = current week)
+let lmCalYM=null;        // calendar: target month as (year*12+month), null = current
 let lmCalKid="all";      // calendar: kid filter ("all" | kid)
 let lmMovePick=null;     // {date, added} — slot whose Move picker is open
 let lmMoveWeek=null;     // week label chosen inside the move picker
@@ -8177,14 +8177,34 @@ function lmCalData(){
   });
   return {cellMap:cellMap, weekNums:Object.keys(wkSet).map(Number).sort(function(a,b){return a-b;})};
 }
-function _lmCalStartWk(data){
-  const w=data.weekNums; if(!w.length) return 1;
-  const mn=w[0], mx=w[w.length-1], top=Math.max(mn,mx-3);
-  let s=(lmCalStart!==null)?lmCalStart:(w.indexOf(currWeekNum())>=0?currWeekNum():mn);
-  return Math.max(mn,Math.min(top,s));
+function _lmWeekYM(wn){ const r=gwWeekDateRange(wn); if(!r) return null; const d=gwParseDate(r.start); return d.getFullYear()*12+d.getMonth(); }
+function _lmMonthRange(data){
+  if(!data.weekNums.length) return null;
+  let a=_lmWeekYM(data.weekNums[0]); let b=a;
+  const rl=gwWeekDateRange(data.weekNums[data.weekNums.length-1]);
+  if(rl){ const d=gwParseDate(rl.start); d.setDate(d.getDate()+4); b=d.getFullYear()*12+d.getMonth(); }
+  if(a==null) a=b; if(b==null) b=a;
+  return (a==null)?null:{min:a,max:b};
 }
-function lmCalNav(delta){ lmCalStart=_lmCalStartWk(lmCalData())+delta; renderAll(); }
-function lmCalJump(wk){ lmCalStart=wk; renderAll(); }
+function _lmCalYM(data){
+  const now=new Date(); const nowYM=now.getFullYear()*12+now.getMonth();
+  const rng=_lmMonthRange(data); if(!rng) return nowYM;
+  const cw=_lmWeekYM(currWeekNum());
+  let ym=(lmCalYM!==null)?lmCalYM:(cw!=null?cw:rng.min);
+  return Math.max(rng.min,Math.min(rng.max,ym));
+}
+// Weeks whose Mon–Fri intersect the target month (a straddling week appears in both months).
+function _lmWeeksInMonth(data,ym){
+  const out=[];
+  data.weekNums.forEach(function(wn){
+    const r=gwWeekDateRange(wn); if(!r) return;
+    const mon=gwParseDate(r.start);
+    for(let i=0;i<5;i++){ const d=new Date(mon); d.setDate(d.getDate()+i); if(d.getFullYear()*12+d.getMonth()===ym){ out.push(wn); return; } }
+  });
+  return out;
+}
+function lmCalNav(delta){ lmCalYM=_lmCalYM(lmCalData())+delta; renderAll(); }
+function lmCalJump(wk){ const ym=_lmWeekYM(wk); if(ym!=null) lmCalYM=ym; renderAll(); }
 function lmCalSetKid(kid){ lmCalKid=kid; renderAll(); }
 function lmCalDayChips(ds,scope,cellMap){
   const out=[];
@@ -8201,8 +8221,11 @@ function lmCalDayChips(ds,scope,cellMap){
   });
   return out;
 }
-function lmCalGrid(weeks,scope,data){
+function lmCalGrid(weeks,scope,data,ym){
   const KC={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#b45309"};
+  const MON=["#0F6E56","#534AB7","#993C1D","#185FA5","#854F0B","#993556"];
+  const WD={0:"Sun",1:"Mon",2:"Tue",3:"Wed",4:"Thu",5:"Fri",6:"Sat"};
+  const SH={0:"Jan",1:"Feb",2:"Mar",3:"Apr",4:"May",5:"Jun",6:"Jul",7:"Aug",8:"Sep",9:"Oct",10:"Nov",11:"Dec"};
   const today=_todayStr();
   let h='';
   weeks.forEach(function(wn){
@@ -8212,11 +8235,13 @@ function lmCalGrid(weeks,scope,data){
     for(let i=0;i<5;i++){
       const d=new Date(mon); d.setDate(d.getDate()+i);
       const ds=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+      const cur=(d.getFullYear()*12+d.getMonth())===ym;
+      const mc=MON[d.getMonth()%6];
       const reasons=scope.map(function(kid){return smapIsKidOff(kid,ds);});
       const off=reasons.length&&reasons.every(function(r){return !!r;});
       const isToday=ds===today;
-      h+='<div style="background:#fff;'+(isToday?"border:2px solid var(--header);":"border:0.5px solid var(--border);")+'border-radius:8px;padding:6px 7px;min-height:82px;'+(off?"opacity:0.65;background:#f9fafb;":"")+'">';
-      h+='<div style="font-size:12px;color:var(--muted);margin-bottom:4px">'+d.getDate()+(isToday?' <span style="font-size:9px;color:var(--header)">today</span>':'')+'</div>';
+      h+='<div style="background:'+(cur?"#fff":"#f6f6f8")+';'+(isToday?"border:2px solid var(--header);":"border:0.5px solid var(--border);")+'border-radius:8px;padding:6px 7px;min-height:82px;'+(off?"opacity:0.7;":"")+'">';
+      h+='<div style="display:flex;align-items:baseline;gap:4px;margin-bottom:4px"><span style="font-size:10px;color:var(--muted)">'+WD[d.getDay()]+'</span><span style="font-size:12px;font-weight:700;color:'+mc+'">'+(cur?"":SH[d.getMonth()]+" ")+d.getDate()+'</span>'+(isToday?'<span style="font-size:9px;color:var(--header);margin-left:auto">today</span>':'')+'</div>';
       if(off){
         h+='<div style="font-size:10px;color:var(--muted);font-style:italic">'+esc(String(reasons.find(function(r){return !!r;})||"Off"))+'</div>';
       } else {
@@ -8237,21 +8262,17 @@ function lmRenderCalendar(){
   if(!data.weekNums.length) return '<div style="font-size:12px;color:var(--muted);padding:24px;text-align:center">No dated lessons yet — upload a master schedule first.</div>';
   const KIDS=["lincoln","ellis","lucy","julian"];
   const KC={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#b45309"};
-  const mx=data.weekNums[data.weekNums.length-1];
-  const start=_lmCalStartWk(data);
-  const weeks=[]; for(let i=0;i<4;i++){ if(start+i<=mx) weeks.push(start+i); }
+  const MON=["#0F6E56","#534AB7","#993C1D","#185FA5","#854F0B","#993556"];
+  const ym=_lmCalYM(data); const Y=Math.floor(ym/12), M=ym%12, mc=MON[M%6];
+  const weeks=_lmWeeksInMonth(data,ym);
   const scope=(lmCalKid==="all")?KIDS:[lmCalKid];
-  const r0=gwWeekDateRange(weeks[0]), rN=gwWeekDateRange(weeks[weeks.length-1]);
-  let monthLbl="";
-  if(r0&&rN){ const a=gwParseDate(r0.start), b=gwParseDate(rN.start); b.setDate(b.getDate()+4);
-    const ma=a.toLocaleDateString("en-US",{month:"short"}), mb=b.toLocaleDateString("en-US",{month:"short"});
-    monthLbl=(ma===mb?ma:ma+" – "+mb)+" "+b.getFullYear(); }
+  const monthLbl=new Date(Y,M,1).toLocaleDateString("en-US",{month:"long",year:"numeric"});
   let h='';
   h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap">';
   h+='<div style="display:flex;align-items:center;gap:6px">';
-  h+='<button onclick="lmCalNav(-4)" aria-label="Earlier weeks" style="width:30px;height:30px;border:1px solid var(--border);background:#fff;border-radius:8px;cursor:pointer;font-size:16px;line-height:1">&#8249;</button>';
-  h+='<span style="font-size:15px;font-weight:700;min-width:120px;text-align:center">'+esc(monthLbl)+'</span>';
-  h+='<button onclick="lmCalNav(4)" aria-label="Later weeks" style="width:30px;height:30px;border:1px solid var(--border);background:#fff;border-radius:8px;cursor:pointer;font-size:16px;line-height:1">&#8250;</button>';
+  h+='<button onclick="lmCalNav(-1)" aria-label="Previous month" style="width:30px;height:30px;border:1px solid var(--border);background:#fff;border-radius:8px;cursor:pointer;font-size:16px;line-height:1">&#8249;</button>';
+  h+='<span style="font-size:16px;font-weight:700;min-width:150px;text-align:center;color:'+mc+'">'+esc(monthLbl)+'</span>';
+  h+='<button onclick="lmCalNav(1)" aria-label="Next month" style="width:30px;height:30px;border:1px solid var(--border);background:#fff;border-radius:8px;cursor:pointer;font-size:16px;line-height:1">&#8250;</button>';
   h+='</div>';
   h+='<button onclick="lmCalPrint()" style="border:1px solid var(--border);background:#fff;border-radius:8px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Print</button>';
   h+='</div>';
@@ -8261,7 +8282,7 @@ function lmRenderCalendar(){
   KIDS.forEach(function(kid){ const on=lmCalKid===kid; h+='<button onclick="lmCalSetKid(\''+kid+'\')" style="font-size:12px;padding:4px 12px;border-radius:999px;border:1.5px solid '+(on?"transparent":"var(--border)")+';background:'+(on?KC[kid]:"#fff")+';color:'+(on?"#fff":KC[kid])+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cap(kid)+'</button>'; });
   h+='</div>';
   h+='<div style="display:grid;grid-template-columns:38px repeat(5,1fr);gap:6px;margin-bottom:6px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px"><div></div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div></div>';
-  h+='<div style="display:grid;grid-template-columns:38px repeat(5,1fr);gap:6px">'+lmCalGrid(weeks,scope,data)+'</div>';
+  h+=weeks.length?('<div style="display:grid;grid-template-columns:38px repeat(5,1fr);gap:6px">'+lmCalGrid(weeks,scope,data,ym)+'</div>'):('<div style="padding:24px;text-align:center;color:var(--muted);font-size:12px">No school weeks in '+esc(monthLbl)+'.</div>');
   h+='<div style="margin-top:16px"><div style="font-size:11px;color:var(--muted);margin-bottom:7px">Jump to week</div><div style="display:flex;flex-wrap:wrap;gap:4px">';
   data.weekNums.forEach(function(w){
     const inView=weeks.indexOf(w)>=0, cur=w===currWeekNum();
@@ -8278,8 +8299,8 @@ function lmCalPrint(){
   const data=lmCalData(); if(!data.weekNums.length) return;
   const KIDS=["lincoln","ellis","lucy","julian"];
   const KC={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#b45309"};
-  const mx=data.weekNums[data.weekNums.length-1], start=_lmCalStartWk(data);
-  const weeks=[]; for(let i=0;i<4;i++){ if(start+i<=mx) weeks.push(start+i); }
+  const ym=_lmCalYM(data);
+  const weeks=_lmWeeksInMonth(data,ym);
   const scope=(lmCalKid==="all")?KIDS:[lmCalKid];
   let rows='';
   weeks.forEach(function(wn){
@@ -8291,15 +8312,14 @@ function lmCalPrint(){
       const ds=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
       const reasons=scope.map(function(kid){return smapIsKidOff(kid,ds);});
       const off=reasons.length&&reasons.every(function(r){return !!r;});
-      let cell='<div class="dn">'+d.getDate()+'</div>';
+      let cell='<div class="dn">'+((d.getFullYear()*12+d.getMonth())!==ym?["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()]+" ":"")+d.getDate()+'</div>';
       if(off) cell+='<div class="off">'+esc(String(reasons.find(function(r){return !!r;})||"Off"))+'</div>';
       else lmCalDayChips(ds,scope,data.cellMap).forEach(function(c){ cell+='<div class="ch"><span class="dot" style="background:'+(KC[c.kid]||"#888")+'"></span>'+esc(c.text)+'</div>'; });
       rows+='<td>'+cell+'</td>';
     }
     rows+='</tr>';
   });
-  const r0=gwWeekDateRange(weeks[0]);
-  const title=r0?gwParseDate(r0.start).toLocaleDateString("en-US",{month:"long",year:"numeric"}):"Lesson plan";
+  const title=new Date(Math.floor(ym/12),ym%12,1).toLocaleDateString("en-US",{month:"long",year:"numeric"});
   const win=window.open("","_blank"); if(!win) return;
   win.document.write('<html><head><title>Lesson plan — '+title+'</title><style>'+
     'body{font-family:Arial,Helvetica,sans-serif;margin:24px;color:#111}h1{font-size:18px;margin:0 0 14px}'+
