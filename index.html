@@ -8232,7 +8232,7 @@ function lmCalDayPopup(ds,data){
     const items=[];
     if(!off){
       if(e) Object.keys(e).forEach(function(key){ if(key==="date"||key==="week") return; if(ov.removed&&ov.removed[key]) return; const s=subs[key]; if(!s||s.paused) return; const v=e[key]; if(v==null||v==="—"||v==="nan"||!String(v).trim()) return; items.push({disp:s.display||key,val:v}); });
-      if(ov.added) Object.keys(ov.added).forEach(function(key){ if(!ov.added[key]) return; const s=subs[key]; if(!s||s.paused) return; items.push({disp:s.display||key,val:"(make-up)"}); });
+      if(ov.added) Object.keys(ov.added).forEach(function(key){ if(!ov.added[key]) return; const s=subs[key]; if(!s||s.paused) return; const av=ov.added[key]; items.push({disp:s.display||key,val:(typeof av==='string'&&av.trim())?av:"(make-up)"}); });
     }
     if(!off&&!items.length) return;
     body+='<div style="margin-bottom:12px"><div style="display:flex;align-items:center;gap:7px;margin-bottom:5px"><span style="width:9px;height:9px;border-radius:50%;background:'+(KC[kid]||"#888")+'"></span><span style="font-size:13px;font-weight:700;color:'+(KC[kid]||"#333")+'">'+cap(kid)+'</span></div>';
@@ -8273,7 +8273,7 @@ function lmCalDayChips(ds,scope,cellMap){
       if(!ov.added[key]) return;
       const s=subs[key]; if(!s||s.paused) return;
       const short=String(s.display||key).split(/[\s—–\/-]/)[0];
-      out.push({kid:kid, text:short+" (make-up)"});
+      out.push({kid:kid, text:short+" "+((typeof ov.added[key]==='string'&&ov.added[key].trim())?ov.added[key]:"(make-up)")});
     });
   });
   return out;
@@ -8419,6 +8419,16 @@ function lmEditSlotCancel(){ lmEditSlot=null; renderAll(); }
 // the sequence keeps the same slots, so cursors, counts and scheduling shape
 // are untouched — the new text just flows to future generations and views.
 // Blank = cancel (drop a slot with × on its By Week day card instead).
+// Edit a moved-in (added) slot's lesson text — lives in scheduleOverrides, not currData.lessons.
+function lmEditAddedOpen(kid,date,sk){
+  lmEditSlot="ADD|"+kid+"|"+date+"|"+sk; lmMovePick=null; renderAll();
+  setTimeout(function(){ const i=document.getElementById("lm-edit-inp"); if(i){ i.focus(); i.select(); } },60);
+}
+function lmSaveAddedText(kid,date,sk,val){
+  val=String(val||"").trim();
+  setSchedOverride(date,kid,function(o){ if(!o.added)o.added={}; o.added[sk]=val||true; });
+  lmEditSlot=null; renderAll();
+}
 function lmSaveSlotText(kid,dayNum,sk,val){
   val=String(val||"").trim();
   const lk=((currData||{}).lessons||{})[kid];
@@ -8445,9 +8455,10 @@ function lmMoveSlot(kid,sk,toDate){
   const fromDate=lmMovePick.date, wasAdded=lmMovePick.added;
   if(toDate!==fromDate){
     _lmSnapMove(kid,sk,fromDate,toDate);
+    const _mv=_lmMovingVal(kid,sk,fromDate,wasAdded);
     setSchedOverride(toDate,kid,o=>{
       if(o.removed&&o.removed[sk]) delete o.removed[sk];
-      else { if(!o.added)o.added={}; o.added[sk]=true; }
+      else { if(!o.added)o.added={}; o.added[sk]=_mv; }
     });
     setSchedOverride(fromDate,kid,o=>{
       if(wasAdded){ if(o.added) delete o.added[sk]; }
@@ -8560,11 +8571,21 @@ function lmUndoMove(){
   _lmRestoreOverride(m.toDate,m.kid,m.snapTo);
   lmLastMove=null; saveScheduleOverrides(); renderAll();
 }
+// The lesson value being moved — base value (currData.lessons) or an existing added value —
+// stored on the target so the moved-in slot shows the real lesson text, not a generic make-up.
+function _lmLessonEntry(kid,date){ const ls=((currData||{}).lessons||{})[kid]||{}; for(const dn in ls){ if(ls[dn]&&ls[dn].date===date) return ls[dn]; } return null; }
+function _lmMovingVal(kid,sk,fromDate,wasAdded){
+  let v=null;
+  if(wasAdded){ const fo=schedOv(fromDate,kid); v=(fo&&fo.added)?fo.added[sk]:null; }
+  else { const e=_lmLessonEntry(kid,fromDate); v=e?e[sk]:null; }
+  return (typeof v==='string'&&v.trim()&&v!=="—"&&v!=="nan")?v:true;
+}
 // Move a subject's slot to another DAY (writes scheduleOverrides like lmMoveSlot, no picker).
 function lmMoveDay(kid,sk,fromDate,toDate,wasAdded){
   if(!toDate||toDate===fromDate) return;
   _lmSnapMove(kid,sk,fromDate,toDate);
-  setSchedOverride(toDate,kid,function(o){ if(o.removed&&o.removed[sk]) delete o.removed[sk]; else { if(!o.added)o.added={}; o.added[sk]=true; } });
+  const val=_lmMovingVal(kid,sk,fromDate,wasAdded);
+  setSchedOverride(toDate,kid,function(o){ if(o.removed&&o.removed[sk]){ delete o.removed[sk]; } else { if(!o.added)o.added={}; o.added[sk]=val; } });
   setSchedOverride(fromDate,kid,function(o){ if(wasAdded){ if(o.added) delete o.added[sk]; } else { if(!o.removed)o.removed={}; o.removed[sk]=true; } });
   renderAll();
 }
@@ -8622,7 +8643,7 @@ function lmRenderSubjectGrid(k,subjects,weekLabels,weekDays,lessons,col){
         const has=!!(l&&l[sk2]&&l[sk2]!=="—"&&l[sk2]!=="nan"&&!(ov.removed&&ov.removed[sk2]));
         const add=!!(ov.added&&ov.added[sk2]);
         if(!has&&!add) return; any=true;
-        h+='<div onclick="lmSelSubj(\''+sk2+'\')" title="Edit" style="cursor:pointer;font-size:10px;line-height:1.3;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="font-weight:700">'+esc(subjShort(sk2))+'</span> '+(has?esc(l[sk2]):'<span style="font-size:8px;font-weight:800;color:#1a6b5a">MK</span>')+'</div>';
+        h+='<div onclick="lmSelSubj(\''+sk2+'\')" title="Edit" style="cursor:pointer;font-size:10px;line-height:1.3;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="font-weight:700">'+esc(subjShort(sk2))+'</span> '+(has?esc(l[sk2]):((typeof (ov.added||{})[sk2]==='string'&&((ov.added||{})[sk2]||'').trim())?esc((ov.added||{})[sk2])+' ':'')+'<span style="font-size:8px;font-weight:800;color:#1a6b5a">MK</span>')+'</div>';
       });
       if(!any) h+='<div style="color:#e5e7eb;font-size:16px;text-align:center;margin-top:18px">&middot;</div>';
     } else {
@@ -8637,8 +8658,16 @@ function lmRenderSubjectGrid(k,subjects,weekLabels,weekDays,lessons,col){
         } else {
           const showBase=hasExcel&&!isRm;
           if(showBase) h+='<div onclick="lmEditSlotOpen(\''+k+'\','+dn+',\''+sk+'\')" title="Tap to edit" style="cursor:pointer;font-size:12px;line-height:1.3;word-break:break-word">'+esc(l[sk])+'</div>';
-          if(isAdd) h+='<div style="font-size:9px;font-weight:800;color:#1a6b5a;background:#f0fdf4;border-radius:6px;padding:1px 5px;display:inline-block'+(showBase?';margin-top:4px':'')+'">MAKE-UP</div>';
-          const canPrev=i>0&&schoolF[i-1], canNext=i<4&&schoolF[i+1], fromAdded=!showBase;
+          if(isAdd){
+            const av=ov.added[sk]; const avStr=(typeof av==='string'&&av.trim())?av:null;
+            if(lmEditSlot==='ADD|'+k+'|'+ds+'|'+sk){
+              h+='<input id="lm-edit-inp" type="text" value="'+esc(avStr||'')+'" placeholder="lesson" onkeydown="if(event.key===\'Enter\')lmSaveAddedText(\''+k+'\',\''+ds+'\',\''+sk+'\',this.value);else if(event.key===\'Escape\')lmEditSlotCancel()" style="width:100%;box-sizing:border-box;'+(showBase?'margin-top:4px;':'')+'padding:3px 5px;border:1.5px solid '+col+';border-radius:6px;font-size:11px;font-family:\'DM Sans\',sans-serif">';
+              h+='<div style="display:flex;gap:6px;margin-top:4px"><button onclick="lmSaveAddedText(\''+k+'\',\''+ds+'\',\''+sk+'\',document.getElementById(\'lm-edit-inp\').value)" style="border:none;background:'+col+';color:#fff;border-radius:6px;padding:3px 9px;font-size:10px;font-weight:700;cursor:pointer">Save</button><button onclick="lmEditSlotCancel()" style="background:none;border:none;color:var(--muted);font-size:10px;cursor:pointer;text-decoration:underline">cancel</button></div>';
+            } else {
+              h+='<div onclick="lmEditAddedOpen(\''+k+'\',\''+ds+'\',\''+sk+'\')" title="Tap to edit (moved-in lesson)" style="cursor:pointer;'+(showBase?'margin-top:4px;':'')+'font-size:12px;line-height:1.3;word-break:break-word">'+(avStr?esc(avStr)+' ':'')+'<span style="font-size:8px;font-weight:800;color:#1a6b5a;background:#f0fdf4;border-radius:5px;padding:1px 4px;white-space:nowrap">make-up</span></div>';
+            }
+          }
+          const canPrev=i>0&&schoolF[i-1], canNext=i<4&&schoolF[i+1], fromAdded=isAdd;
           h+='<div style="display:flex;gap:4px;margin-top:6px">';
           h+='<button '+(canPrev?'onclick="lmMoveDay(\''+k+'\',\''+sk+'\',\''+ds+'\',\''+dates[i-1]+'\','+fromAdded+')"':'disabled')+' title="'+(canPrev?"Move to "+WD3[i-1]:"")+'" style="flex:1;border:1px solid var(--border);background:#fff;border-radius:6px;padding:2px 0;font-size:11px;cursor:'+(canPrev?"pointer":"default")+';color:'+(canPrev?"var(--text)":"#e5e7eb")+'">&#9664;</button>';
           h+='<button '+(canNext?'onclick="lmMoveDay(\''+k+'\',\''+sk+'\',\''+ds+'\',\''+dates[i+1]+'\','+fromAdded+')"':'disabled')+' title="'+(canNext?"Move to "+WD3[i+1]:"")+'" style="flex:1;border:1px solid var(--border);background:#fff;border-radius:6px;padding:2px 0;font-size:11px;cursor:'+(canNext?"pointer":"default")+';color:'+(canNext?"var(--text)":"#e5e7eb")+'">&#9654;</button>';
