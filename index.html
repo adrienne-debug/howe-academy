@@ -1602,7 +1602,7 @@ function renderSkylight(){
   const gridEl=document.getElementById("sl-grid");
   const indEl=document.getElementById("sl-individual");
 
-  if(kid==="mom"||momModeActive||tab!=="schedule"||schedShowAdmin||schedShowHistory||schedShowPace){ panel.style.display="none"; return; }
+  if(kid==="mom"||momModeActive||tab!=="schedule"||schedShowAdmin||schedShowHistory||schedShowPace||scheduleBreakToday()){ panel.style.display="none"; return; }
   panel.style.display="block";
 
   // Alert
@@ -1704,6 +1704,9 @@ function renderAll(){
 
 // ── DAY TABS ──────────────────────────────────────────────────────
 function renderDayTabs(){
+  // During a holiday/vacation the Schedule shows a single "no school" card, so
+  // hide the day picker to avoid showing stale last-week days above it.
+  if(scheduleBreakToday()){ const _dt=document.getElementById("day-tabs"); if(_dt) _dt.innerHTML=""; return; }
   const at=getActiveTasks();
   const ds=at.length
     ?[...new Set(at.map(t=>t.day))].sort((a,b)=>DAYS.indexOf(a)-DAYS.indexOf(b))
@@ -1776,7 +1779,7 @@ function selKid(k){
 // ── WEEK STRIP ────────────────────────────────────────────────────
 function renderWeekStrip(){
   const el=document.getElementById("week-strip");
-  if(tab!=="schedule"||schedShowAdmin||schedShowHistory||schedShowPace){ el.style.display="none"; return; }
+  if(tab!=="schedule"||schedShowAdmin||schedShowHistory||schedShowPace||scheduleBreakToday()){ el.style.display="none"; return; }
   const kidMatch=t=>kid==="all"||kid==="mom"?true:t.who===kid;
   const countable=getActiveTasks().filter(t=>kidMatch(t)&&effectiveDay(t)!=="carryover");
   const all=countable.length, done=countable.filter(t=>!!checked[t.id]).length;
@@ -2683,6 +2686,81 @@ function toggleSchedAdmin(){ schedShowAdmin=!schedShowAdmin; schedShowHistory=fa
 function toggleSchedHistory(){ schedShowHistory=!schedShowHistory; schedShowAdmin=false; schedShowPace=false; renderAll(); }
 function toggleSchedPace(){ schedShowPace=!schedShowPace; schedShowAdmin=false; schedShowHistory=false; renderAll(); }
 function setAdminSub(s){ adminSubTab=s; renderAll(); }
+// ── VACATION / HOLIDAY BANNER ────────────────────────────────────────
+// When today is a calendar break (holiday or vacation), the Schedule shows a
+// friendly "no school" card instead of stale/last-week tasks. Copy varies by
+// break type, name, and the day so it doesn't read the same every morning.
+function scheduleBreakToday(){
+  if(!calendarData) return null;
+  const ds=calNormDate(_todayStr());
+  const scan=(coll,type)=>{
+    for(const v of Object.values(coll||{})){
+      const s=calNormDate(v.start||v.date), e=calNormDate(v.end||v.start||v.date);
+      if(s&&ds>=s&&ds<=e) return {name:v.name||(type==="holiday"?"Holiday":"Vacation"),type,start:s,end:e};
+    }
+    return null;
+  };
+  // Holidays take precedence over vacations (same order smapIsOff uses).
+  return scan(calendarData.holidays,"holiday")||scan(calendarData.vacations,"vacation");
+}
+// First weekday strictly after today that isn't a calendar off-day and sits in a
+// real plan week — i.e. the day school actually picks back up. Capped so a
+// misconfigured calendar can never loop forever.
+function _nextSchoolDayAfterToday(){
+  const d=gwParseDate(_todayStr());
+  for(let i=0;i<200;i++){
+    d.setDate(d.getDate()+1);
+    const ymd=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+    const wd=d.getDay();
+    if(wd===0||wd===6) continue;             // weekend
+    if(smapIsOff(ymd)) continue;             // still on a break
+    if(weekNumForDate(ymd)===null) continue; // no-plan-week gap
+    return ymd;
+  }
+  return null;
+}
+function renderScheduleBreakCard(brk){
+  const isVac=brk.type==="vacation";
+  const nm=brk.name||(isVac?"Vacation":"Holiday");
+  const low=nm.toLowerCase();
+  let emoji=isVac?"\u{1F334}":"\u{1F389}"; // 🌴 / 🎉
+  const emojiMap=[["beach","\u{1F3D6}️"],["christmas","\u{1F384}"],["thanksgiv","\u{1F983}"],
+    ["spring","\u{1F338}"],["labor","\u{1F6E0}️"],["memorial","\u{1F1FA}\u{1F1F8}"],
+    ["president","\u{1F3A9}"],["mlk","\u{1F54A}️"],["new year","\u{1F386}"],
+    ["easter","\u{1F423}"],["snow","❄️"],["summer","☀️"]];
+  for(const[k,e] of emojiMap){ if(low.includes(k)){ emoji=e; break; } }
+  // Rotating sub-line — beach gets its own flavor, else by type; rotates daily.
+  const beachLines=["Toes in the sand, not in the books.","Sun, waves, and zero worksheets.",
+    "Make sandcastles, not spelling lists.","The ocean doesn't assign homework.",
+    "Salt water cures everything — even math."];
+  const vacLines=["Rest up — the lessons will keep.","Adventure now, arithmetic later.",
+    "Make memories today; school can wait.","Time to recharge together.","Soak up every minute."];
+  const holLines=["A well-earned day to slow down.","Enjoy the day off together.",
+    "No bells today — just rest.","Take it easy; back to it soon.","Family first today."];
+  const lines=low.includes("beach")?beachLines:(isVac?vacLines:holLines);
+  const dayIdx=Math.floor(gwParseDate(_todayStr()).getTime()/86400000);
+  const sub=lines[((dayIdx%lines.length)+lines.length)%lines.length];
+  // When does school resume, and is it just today or the whole week?
+  const resume=_nextSchoolDayAfterToday();
+  let scope="No school today.", resumeTxt="";
+  if(resume){
+    const r=gwParseDate(resume), t=gwParseDate(_todayStr());
+    const days=Math.round((r-t)/86400000);
+    scope=days<=1?"No school today.":"No school this week.";
+    const wkday=r.toLocaleDateString("en-US",{weekday:"long",timeZone:"UTC"});
+    const md=r.toLocaleDateString("en-US",{month:"long",day:"numeric",timeZone:"UTC"});
+    resumeTxt=days<=1?"Back tomorrow":("Back "+wkday+", "+md);
+  }
+  return '<div style="padding:52px 24px;text-align:center;display:flex;flex-direction:column;align-items:center">'+
+    '<div style="font-size:64px;line-height:1;margin-bottom:14px">'+emoji+'</div>'+
+    '<div style="font-family:\'Fraunces\',serif;font-size:27px;font-weight:700;color:var(--text);margin-bottom:4px">'+esc(nm)+'</div>'+
+    '<div style="font-size:13px;font-weight:800;color:#1a6b5a;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:14px">'+scope+'</div>'+
+    '<div style="font-size:15px;color:var(--muted);max-width:300px;margin-bottom:'+(resumeTxt?"20px":"0")+'">'+sub+'</div>'+
+    (resumeTxt?'<div style="display:inline-flex;align-items:center;gap:8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:999px;padding:9px 18px">'+
+      '<span style="font-size:14px">\u{1F4C5}</span>'+
+      '<span style="font-size:13px;font-weight:700;color:#166534">'+resumeTxt+'</span></div>':'')+
+    '</div>';
+}
 function renderSchedule(el){
   if(schedShowPace){ renderPace(el); return; }
   if(schedShowHistory){ renderHistory(el); return; }
@@ -2713,6 +2791,10 @@ function renderSchedule(el){
     else if(adminSubTab==="calendar"){ renderCalendarView(el,ah); }
     return;
   }
+  // On a holiday/vacation, replace the (often stale last-week) tasks with a
+  // friendly "no school" card. Top nav stays, so Admin/Pace are still reachable.
+  const _brk=scheduleBreakToday();
+  if(_brk){ el.innerHTML=renderScheduleBreakCard(_brk); return; }
   function _dayDate(d){
     if(DAY_DT[d]) return DAY_DT[d];
     if(d==="saturday"&&DAY_DT.friday){
