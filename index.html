@@ -4688,12 +4688,14 @@ function renderCurriculumView(el,headerHtml){
       h+='</div>';
     }
     h+='<div style="display:flex;gap:4px;margin:2px 0 8px">';
-    [["week","By Week"],["subject","By Subject"]].forEach(p=>{
+    [["week","By Week"],["subject","By Subject"],["month","Calendar"]].forEach(p=>{
       const on=lmViewMode===p[0];
       h+='<button onclick="lmSetView(\''+p[0]+'\')" style="padding:4px 12px;border-radius:8px;border:1.5px solid '+(on?col:'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--text)')+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+p[1]+'</button>';
     });
     h+='</div>';
-    if(lmViewMode==="subject"){
+    if(lmViewMode==="month"){
+      h+=lmRenderCalendar();
+    } else if(lmViewMode==="subject"){
       h+='<div style="font-size:10px;color:var(--muted);margin:0 0 8px">Tap Move on a slot to put that lesson on a different week or day; &#9998; edits the lesson text (page numbers etc.). Changes apply when the week is next generated.</div>';
       h+=lmRenderSubjectView(k,subjects,weekLabels,weekDays,lessons,col);
     } else {
@@ -8148,12 +8150,168 @@ function lmRenderMovePicker(k,sk,col,weekLabels,weekDays,lessons){
 }
 
 // ── LESSON MAP "BY SUBJECT" view: see and move one subject's slots across weeks ──
-let lmViewMode="week";   // "week" | "subject"
+let lmViewMode="week";   // "week" | "subject" | "month"
 let lmSubjKey=null;      // selected subject in by-subject view
+let lmCalStart=null;     // calendar: first week number shown (null = current week)
+let lmCalKid="all";      // calendar: kid filter ("all" | kid)
 let lmMovePick=null;     // {date, added} — slot whose Move picker is open
 let lmMoveWeek=null;     // week label chosen inside the move picker
 let lmEditSlot=null;     // "kid|dayNum|sk" whose lesson text is being edited
 function lmSetView(m){ lmViewMode=m; lmMovePick=null; lmMoveWeek=null; lmEditSlot=null; renderAll(); }
+
+// ── MONTH / 4-WEEK CALENDAR VIEW (all kids, read-only) ──────────────────────
+// Places planned lessons on their calendar dates from currData.lessons. Read-only —
+// no writes. Color by kid; week-numbered rows; clickable week scrubber; print.
+function lmCalData(){
+  const KIDS=["lincoln","ellis","lucy","julian"];
+  const cellMap={}, wkSet={};
+  KIDS.forEach(function(kid){
+    const wd=((currData&&currData.weekDays)||{})[kid]||{};
+    Object.keys(wd).forEach(function(lbl){ const n=parseInt((String(lbl).match(/\d+/)||[0])[0]); if(n) wkSet[n]=true; });
+    const lessons=((currData&&currData.lessons)||{})[kid]||{};
+    Object.keys(lessons).forEach(function(dn){
+      const e=lessons[dn]; if(!e||!e.date) return;
+      (cellMap[e.date]=cellMap[e.date]||{})[kid]=e;
+      const n=parseInt((String(e.week||"").match(/\d+/)||[0])[0]); if(n) wkSet[n]=true;
+    });
+  });
+  return {cellMap:cellMap, weekNums:Object.keys(wkSet).map(Number).sort(function(a,b){return a-b;})};
+}
+function _lmCalStartWk(data){
+  const w=data.weekNums; if(!w.length) return 1;
+  const mn=w[0], mx=w[w.length-1], top=Math.max(mn,mx-3);
+  let s=(lmCalStart!==null)?lmCalStart:(w.indexOf(currWeekNum())>=0?currWeekNum():mn);
+  return Math.max(mn,Math.min(top,s));
+}
+function lmCalNav(delta){ lmCalStart=_lmCalStartWk(lmCalData())+delta; renderAll(); }
+function lmCalJump(wk){ lmCalStart=wk; renderAll(); }
+function lmCalSetKid(kid){ lmCalKid=kid; renderAll(); }
+function lmCalDayChips(ds,scope,cellMap){
+  const out=[];
+  scope.forEach(function(kid){
+    const e=(cellMap[ds]||{})[kid]; if(!e) return;
+    const subs=(currData.subjects||{})[kid]||{};
+    Object.keys(e).forEach(function(key){
+      if(key==="date"||key==="week") return;
+      const s=subs[key]; if(!s||s.paused) return;
+      const val=e[key]; if(val==null||val==="—"||val==="nan"||!String(val).trim()) return;
+      const short=String(s.display||key).split(/[\s—–\/-]/)[0];
+      out.push({kid:kid, text:short+" "+val});
+    });
+  });
+  return out;
+}
+function lmCalGrid(weeks,scope,data){
+  const KC={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#b45309"};
+  const today=_todayStr();
+  let h='';
+  weeks.forEach(function(wn){
+    const range=gwWeekDateRange(wn); if(!range) return;
+    h+='<div onclick="lmCalJump('+wn+')" style="display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;cursor:pointer;color:'+(wn===currWeekNum()?"var(--header)":"var(--muted)")+'">Wk '+wn+'</div>';
+    const mon=gwParseDate(range.start);
+    for(let i=0;i<5;i++){
+      const d=new Date(mon); d.setDate(d.getDate()+i);
+      const ds=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+      const reasons=scope.map(function(kid){return smapIsKidOff(kid,ds);});
+      const off=reasons.length&&reasons.every(function(r){return !!r;});
+      const isToday=ds===today;
+      h+='<div style="background:#fff;'+(isToday?"border:2px solid var(--header);":"border:0.5px solid var(--border);")+'border-radius:8px;padding:6px 7px;min-height:82px;'+(off?"opacity:0.65;background:#f9fafb;":"")+'">';
+      h+='<div style="font-size:12px;color:var(--muted);margin-bottom:4px">'+d.getDate()+(isToday?' <span style="font-size:9px;color:var(--header)">today</span>':'')+'</div>';
+      if(off){
+        h+='<div style="font-size:10px;color:var(--muted);font-style:italic">'+esc(String(reasons.find(function(r){return !!r;})||"Off"))+'</div>';
+      } else {
+        const chips=lmCalDayChips(ds,scope,data.cellMap);
+        chips.slice(0,4).forEach(function(c){
+          h+='<div style="display:flex;align-items:center;gap:5px;font-size:11px;line-height:1.3;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="width:7px;height:7px;border-radius:50%;background:'+(KC[c.kid]||"#888")+';flex:none"></span>'+esc(c.text)+'</div>';
+        });
+        if(chips.length>4) h+='<div style="font-size:11px;color:var(--muted);margin-top:1px">+'+(chips.length-4)+' more</div>';
+        else if(!chips.length) h+='<div style="font-size:10px;color:var(--border)">&mdash;</div>';
+      }
+      h+='</div>';
+    }
+  });
+  return h;
+}
+function lmRenderCalendar(){
+  const data=lmCalData();
+  if(!data.weekNums.length) return '<div style="font-size:12px;color:var(--muted);padding:24px;text-align:center">No dated lessons yet — upload a master schedule first.</div>';
+  const KIDS=["lincoln","ellis","lucy","julian"];
+  const KC={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#b45309"};
+  const mx=data.weekNums[data.weekNums.length-1];
+  const start=_lmCalStartWk(data);
+  const weeks=[]; for(let i=0;i<4;i++){ if(start+i<=mx) weeks.push(start+i); }
+  const scope=(lmCalKid==="all")?KIDS:[lmCalKid];
+  const r0=gwWeekDateRange(weeks[0]), rN=gwWeekDateRange(weeks[weeks.length-1]);
+  let monthLbl="";
+  if(r0&&rN){ const a=gwParseDate(r0.start), b=gwParseDate(rN.start); b.setDate(b.getDate()+4);
+    const ma=a.toLocaleDateString("en-US",{month:"short"}), mb=b.toLocaleDateString("en-US",{month:"short"});
+    monthLbl=(ma===mb?ma:ma+" – "+mb)+" "+b.getFullYear(); }
+  let h='';
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap">';
+  h+='<div style="display:flex;align-items:center;gap:6px">';
+  h+='<button onclick="lmCalNav(-4)" aria-label="Earlier weeks" style="width:30px;height:30px;border:1px solid var(--border);background:#fff;border-radius:8px;cursor:pointer;font-size:16px;line-height:1">&#8249;</button>';
+  h+='<span style="font-size:15px;font-weight:700;min-width:120px;text-align:center">'+esc(monthLbl)+'</span>';
+  h+='<button onclick="lmCalNav(4)" aria-label="Later weeks" style="width:30px;height:30px;border:1px solid var(--border);background:#fff;border-radius:8px;cursor:pointer;font-size:16px;line-height:1">&#8250;</button>';
+  h+='</div>';
+  h+='<button onclick="lmCalPrint()" style="border:1px solid var(--border);background:#fff;border-radius:8px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Print</button>';
+  h+='</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">';
+  const allOn=lmCalKid==="all";
+  h+='<button onclick="lmCalSetKid(\'all\')" style="font-size:12px;padding:4px 12px;border-radius:999px;border:1.5px solid '+(allOn?"transparent":"var(--border)")+';background:'+(allOn?"#111827":"#fff")+';color:'+(allOn?"#fff":"var(--muted)")+';cursor:pointer;font-family:\'DM Sans\',sans-serif">All kids</button>';
+  KIDS.forEach(function(kid){ const on=lmCalKid===kid; h+='<button onclick="lmCalSetKid(\''+kid+'\')" style="font-size:12px;padding:4px 12px;border-radius:999px;border:1.5px solid '+(on?"transparent":"var(--border)")+';background:'+(on?KC[kid]:"#fff")+';color:'+(on?"#fff":KC[kid])+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cap(kid)+'</button>'; });
+  h+='</div>';
+  h+='<div style="display:grid;grid-template-columns:38px repeat(5,1fr);gap:6px;margin-bottom:6px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px"><div></div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div></div>';
+  h+='<div style="display:grid;grid-template-columns:38px repeat(5,1fr);gap:6px">'+lmCalGrid(weeks,scope,data)+'</div>';
+  h+='<div style="margin-top:16px"><div style="font-size:11px;color:var(--muted);margin-bottom:7px">Jump to week</div><div style="display:flex;flex-wrap:wrap;gap:4px">';
+  data.weekNums.forEach(function(w){
+    const inView=weeks.indexOf(w)>=0, cur=w===currWeekNum();
+    let st='font-size:11px;min-width:22px;text-align:center;padding:3px 6px;border-radius:6px;cursor:pointer;';
+    if(cur) st+='background:var(--header);color:#fff;';
+    else if(inView) st+='background:#eef2ff;color:var(--header);';
+    else st+='border:0.5px solid var(--border);color:var(--muted);';
+    h+='<span onclick="lmCalJump('+w+')" style="'+st+'" title="Week '+w+'">'+w+'</span>';
+  });
+  h+='</div></div>';
+  return h;
+}
+function lmCalPrint(){
+  const data=lmCalData(); if(!data.weekNums.length) return;
+  const KIDS=["lincoln","ellis","lucy","julian"];
+  const KC={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#b45309"};
+  const mx=data.weekNums[data.weekNums.length-1], start=_lmCalStartWk(data);
+  const weeks=[]; for(let i=0;i<4;i++){ if(start+i<=mx) weeks.push(start+i); }
+  const scope=(lmCalKid==="all")?KIDS:[lmCalKid];
+  let rows='';
+  weeks.forEach(function(wn){
+    const range=gwWeekDateRange(wn); if(!range) return;
+    const mon=gwParseDate(range.start);
+    rows+='<tr><td class="wk">Wk '+wn+'</td>';
+    for(let i=0;i<5;i++){
+      const d=new Date(mon); d.setDate(d.getDate()+i);
+      const ds=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+      const reasons=scope.map(function(kid){return smapIsKidOff(kid,ds);});
+      const off=reasons.length&&reasons.every(function(r){return !!r;});
+      let cell='<div class="dn">'+d.getDate()+'</div>';
+      if(off) cell+='<div class="off">'+esc(String(reasons.find(function(r){return !!r;})||"Off"))+'</div>';
+      else lmCalDayChips(ds,scope,data.cellMap).forEach(function(c){ cell+='<div class="ch"><span class="dot" style="background:'+(KC[c.kid]||"#888")+'"></span>'+esc(c.text)+'</div>'; });
+      rows+='<td>'+cell+'</td>';
+    }
+    rows+='</tr>';
+  });
+  const r0=gwWeekDateRange(weeks[0]);
+  const title=r0?gwParseDate(r0.start).toLocaleDateString("en-US",{month:"long",year:"numeric"}):"Lesson plan";
+  const win=window.open("","_blank"); if(!win) return;
+  win.document.write('<html><head><title>Lesson plan — '+title+'</title><style>'+
+    'body{font-family:Arial,Helvetica,sans-serif;margin:24px;color:#111}h1{font-size:18px;margin:0 0 14px}'+
+    'table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #ccc;vertical-align:top;padding:5px;font-size:10px}'+
+    'th{background:#f3f4f6;font-size:11px}td.wk,th.wk{width:36px;text-align:center;font-weight:bold;background:#f9fafb}'+
+    '.dn{color:#666;font-size:11px;margin-bottom:3px}.ch{display:flex;align-items:center;gap:4px;margin-bottom:1px}'+
+    '.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}.off{color:#999;font-style:italic}'+
+    '</style></head><body><h1>Lesson plan — '+title+(lmCalKid!=="all"?" · "+cap(lmCalKid):"")+'</h1>'+
+    '<table><thead><tr><th class="wk"></th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th></tr></thead><tbody>'+rows+'</tbody></table></body></html>');
+  win.document.close();
+  setTimeout(function(){ try{win.focus();win.print();}catch(e){} },300);
+}
 function lmSelSubj(sk){ lmSubjKey=sk; lmMovePick=null; lmMoveWeek=null; lmEditSlot=null; renderAll(); }
 function lmEditSlotOpen(kid,dayNum,sk){
   lmEditSlot=kid+"|"+dayNum+"|"+sk;
