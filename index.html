@@ -13636,6 +13636,12 @@ function rulesUpdateTime(field,val){
   r.schoolDay[field]=to12h(val);
   saveRules(r);
 }
+function rulesUpdateStackGap(val){
+  const r=JSON.parse(JSON.stringify(rulesData||{}));
+  r.stackGap=Math.max(0,Math.min(90,parseInt(val)||0));
+  saveRules(r);
+  renderAll();
+}
 function rulesUpdateDayOverride(day,field,val){
   const r=JSON.parse(JSON.stringify(rulesData));
   if(!r.schoolDay) r.schoolDay={};
@@ -13809,6 +13815,23 @@ function renderRules(el,headerHtml){
     });
     h+='</div>';
   }
+  h+='</div></div>';
+
+  // 1b. SCHEDULE BALANCING — how aggressively the generator evens out the days
+  const _sg=(rulesData&&typeof rulesData.stackGap==="number")?rulesData.stackGap:40;
+  h+='<div class="rules-card'+o("balance")+'">';
+  h+='<div class="rules-card-hdr" onclick="rulesToggleCard(\'balance\')">';
+  h+='<div class="rules-card-title"><span>&#9878;&#65039;</span> Schedule Balancing</div>';
+  h+='<div class="rules-card-arrow">&#9654;</div></div>';
+  h+='<div class="rules-card-body">';
+  h+='<div class="rules-section-lbl">Spread vs. stack</div>';
+  h+='<div class="rules-row"><div class="rules-label">Double up only past a gap of</div>'+
+     '<div style="display:flex;align-items:center;gap:10px">'+
+     '<input type="range" min="0" max="90" step="10" value="'+_sg+'" '+
+     'oninput="var v=document.getElementById(\'stackGapVal\');if(v)v.textContent=this.value+\' min\'" '+
+     'onchange="rulesUpdateStackGap(this.value)" style="width:140px">'+
+     '<span id="stackGapVal" style="font-size:13px;font-weight:700;min-width:48px">'+_sg+' min</span></div></div>';
+  h+='<div style="font-size:11px;color:var(--muted);padding:8px 0 0;line-height:1.5">The generator spreads each subject across different days first. It doubles a subject onto one day only when that day would otherwise be more than this many minutes lighter than another. <strong>Lower</strong> = more even days, but more doubling up. <strong>Higher</strong> = fewer doubles, but days can be less even. Catch-up doubles and the once-a-day (<code>max1</code>) rule are unaffected. Default 40.</div>';
   h+='</div></div>';
 
   // 2. WORKFLOW ORDERS
@@ -15019,7 +15042,8 @@ function gwRules(){
     schoolStart: toMin(sd.defaultStart||"10:00 AM"),
     schoolEnd:   toMin(sd.defaultEnd||"4:15 PM"),
     lunchStart:  toMin(sd.lunchStart||"1:00 PM"),
-    lunchEnd:    toMin(sd.lunchEnd||"2:00 PM")
+    lunchEnd:    toMin(sd.lunchEnd||"2:00 PM"),
+    stackGap:    (typeof r.stackGap==="number")?r.stackGap:40  // min-gap before the balancer doubles a subject onto a day
   };
 }
 const GW_DAY_NAMES=["monday","tuesday","wednesday","thursday","friday","saturday"];
@@ -15520,7 +15544,7 @@ function gwAutoBalance(dayData,lateStart,skipDays){
       const dn=WDAY_NAMES[d.getDay()];
       if(!dn||skipSet.has(dn)) continue;
       const kidTasks=(dayData[dk]||{})[kid]||{};
-      dayTotals[dk]=Object.keys(kidTasks).reduce((sum,k)=>sum+(durMap[k]||20),0);
+      dayTotals[dk]=Object.keys(kidTasks).reduce((sum,k)=>sum+(durMap[k]||20)*(Array.isArray(kidTasks[k])?kidTasks[k].length:1),0); // array = a doubled-up day, count each copy
       dayDates.push([dk,dn]);
     }
 
@@ -15544,6 +15568,11 @@ function gwAutoBalance(dayData,lateStart,skipDays){
       }
     }
 
+    // Spread subjects across days FIRST (pass 1, no stacking), then stack the same
+    // subject on a day only as a last resort (pass 2), and only to close a still-large
+    // minute gap. Small imbalances are left alone rather than doubling a subject up.
+    const STACK_GAP_MIN=_rr.stackGap;
+    for(const allowStack of [false,true]){
     let changed=true;
     while(changed){
       changed=false;
@@ -15574,9 +15603,12 @@ function gwAutoBalance(dayData,lateStart,skipDays){
             const allowed=subjects[key]&&subjects[key].allowedDays||[];
             const dayAbbr={monday:"Mon",tuesday:"Tue",wednesday:"Wed",thursday:"Thu",friday:"Fri",saturday:"Sat"}[dayName];
             if(allowed.length&&dayAbbr&&!allowed.includes(dayAbbr)) continue;
-            // Only block doubling for max1 subjects (reflex, dictation)
             const dstTasks=(dayData[dk]||{})[kid]||{};
-            if(dstTasks[key]!==undefined&&rules.includes("max1")) continue;
+            if(dstTasks[key]!==undefined){            // this move would stack the subject on dk
+              if(rules.includes("max1")) continue;     // max1 (reflex, dictation) never stacks
+              if(!allowStack) continue;                // pass 1: keep subjects spread across days
+              if(dayTotals[ld2]-dayTotals[dk]<=STACK_GAP_MIN) continue; // pass 2: only to close a big gap
+            }
             if(dur>room) continue;
 
             // Decrement source slot count; delete key when count reaches 0
@@ -15601,6 +15633,7 @@ function gwAutoBalance(dayData,lateStart,skipDays){
         }
       }
     }
+    } // end pass loop: spread first, then stack to close big gaps
 
     // Reassign values from original column order using slot counts
     // Earlier values go to earlier days; doubled days get values in order
@@ -15838,6 +15871,13 @@ function gwCatchupExtraDates(kid,sk,s,existingDates,want,dayData){
   const dayCap=(gwR.schoolEnd-gwR.schoolStart)-((gwR.lunchEnd||0)-(gwR.lunchStart||0));
   const subs=currData.subjects[kid]||{};
   const myMin=s.minutes||20;
+  // Reserve room for the daily subjects (first/last notebooks/drills) that get
+  // injected into every working day AFTER catch-up runs, so they aren't in dayData
+  // yet. Without this the day looks lighter than it'll be and an extra slot could
+  // overflow the cutoff and get dropped. Conservative (sums all dailies).
+  let dailyBuf=0;
+  for(const dk in subs){ const dr=(subs[dk]&&subs[dk].rules)||""; if(!subs[dk].paused&&(dr.includes("first")||dr.includes("last"))) dailyBuf+=subs[dk].minutes||20; }
+  const effCap=dayCap-dailyBuf;
   const cnt={}; existingDates.forEach(d=>{cnt[d]=(cnt[d]||0)+1;}); // current per-day count of this subject
   const days=[];
   for(const date of Object.keys(dayData)){
@@ -15858,7 +15898,7 @@ function gwCatchupExtraDates(kid,sk,s,existingDates,want,dayData){
   // just isn't placed and rolls forward via the cursor).
   const picks=[];
   const fillTier=(tier)=>{
-    const open=days.filter(d=>d.have===tier&&d.load+myMin<=dayCap)
+    const open=days.filter(d=>d.have===tier&&d.load+myMin<=effCap)
                    .sort((a,b)=>a.load-b.load||a.date.localeCompare(b.date));
     for(const d of open){
       if(picks.length>=want) break;
