@@ -10187,8 +10187,11 @@ function mastDrillSettings(){
   const kid=masteryKid||"julian";
   const s=masteryData[kid+"_settings"]||{};
   const defaultLadder=["every_other_day","weekly","bi_weekly","monthly","graduated"];
-  return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,auto_pull:s.auto_pull!==false,ladder:s.ladder||defaultLadder,cat_caps:s.cat_caps||{},miss_drop:s.miss_drop||"reset",close_behavior:s.close_behavior||"stay",drop_threshold:s.drop_threshold??0,tier_streaks:s.tier_streaks||{}};
+  return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,auto_pull:s.auto_pull!==false,ladder:s.ladder||defaultLadder,cat_caps:s.cat_caps||{},cat_intro_dots:s.cat_intro_dots||{},miss_drop:s.miss_drop||"reset",close_behavior:s.close_behavior||"stay",drop_threshold:s.drop_threshold??0,tier_streaks:s.tier_streaks||{}};
 }
+// How many introduction dots a card in `cat` needs before it enters the ladder.
+// Mirrors cat_caps: a per-category override, else the global intro_dots default.
+function mastIntroDotsFor(cat,s){ s=s||mastDrillSettings(); const o=s.cat_intro_dots||{}; return (cat!=null&&o[cat]!=null)?o[cat]:s.intro_dots; }
 const MAST_BANK_MAP={julian:MAST_JULIAN_BANK,lucy:MAST_LUCY_BANK,ellis:MAST_ELLIS_BANK,lincoln:MAST_LINCOLN_BANK};
 const MAST_CAT_EMOJI_MAP={
   julian:{Letters:"\u{1F524}",Numbers:"\u{1F522}",Colors:"\u{1F3A8}",Shapes:"\u{1F537}",Animals:"\u{1F43E}",Counting:"\u{1F995}",Dinosaurs:"\u{1F996}"},
@@ -10601,6 +10604,32 @@ function mastAdminCatCap(cat,delta){
   else {
     const cur=mastAdminLocal.cat_caps[cat]??(mastAdminLocal.max_per_cat||5);
     mastAdminLocal.cat_caps[cat]=Math.max(1,cur+delta);
+  }
+  mastAdminDirty=true;
+  _mastRe();
+}
+function mastAdminAddCatIntro(){
+  const sel=document.getElementById("mast-catintro-add");
+  if(!sel) return;
+  let cat=sel.value;
+  if(cat==="__custom__"){
+    cat=prompt("Enter category name:");
+    if(!cat||!cat.trim()) return;
+    cat=cat.trim();
+  }
+  if(!mastAdminLocal) mastAdminInit();
+  if(!mastAdminLocal.cat_intro_dots) mastAdminLocal.cat_intro_dots={};
+  mastAdminLocal.cat_intro_dots[cat]=mastAdminLocal.intro_dots||5;
+  mastAdminDirty=true;
+  _mastRe();
+}
+function mastAdminCatIntro(cat,delta){
+  if(!mastAdminLocal) mastAdminInit();
+  if(!mastAdminLocal.cat_intro_dots) mastAdminLocal.cat_intro_dots={};
+  if(delta===0){ delete mastAdminLocal.cat_intro_dots[cat]; }
+  else {
+    const cur=mastAdminLocal.cat_intro_dots[cat]??(mastAdminLocal.intro_dots||5);
+    mastAdminLocal.cat_intro_dots[cat]=Math.max(1,cur+delta);
   }
   mastAdminDirty=true;
   _mastRe();
@@ -11086,13 +11115,14 @@ function mastEditSave(){
 
   // If dots hit threshold and still intro, promote
   const _jset=mastDrillSettings();
-  if(it.status==="introduction"&&mastEditDots>=_jset.intro_dots){
+  const _need=mastIntroDotsFor(it.subject,_jset);
+  if(it.status==="introduction"&&mastEditDots>=_need){
     it.status="active";
     it.tier=_jset.ladder[0]||"every_other_day";
     it.cycle=1;
-    it.tally_dots=_jset.intro_dots;
+    it.tally_dots=_need;
   }
-  if(mastEditDots<_jset.intro_dots&&it.status==="active"){
+  if(mastEditDots<_need&&it.status==="active"){
     it.status="introduction";
     it.tier="daily";
   }
@@ -11245,7 +11275,8 @@ function mastSlideShown(id){
   item.tally_dots=dots;
 
   let _pulledNew=null;
-  if(dots>=jset.intro_dots){
+  const _need=mastIntroDotsFor(item.subject,jset);
+  if(dots>=_need){
     item.status="active";
     const _gtier=jset.ladder[0]||"every_other_day";
     item.tier=_gtier;
@@ -11254,7 +11285,7 @@ function mastSlideShown(id){
     const _giv=MAST_TIER_INT[_gtier];
     item.cycle=_giv?(items.filter(i=>i.tier===_gtier&&i.id!==item.id).length%_giv)+1:1;
     item.consecutive_correct=0;
-    item.tally_dots=jset.intro_dots;
+    item.tally_dots=_need;
 
     // Auto-pull next curriculum item if enabled
     if(jset.auto_pull){
@@ -11490,6 +11521,43 @@ function renderMastAdmin(){
   }
   h+='</div>';
 
+  // Per-category intro-dots overrides (mirrors the cap overrides above)
+  const catIntro=s.cat_intro_dots||{};
+  const introOverrideCats=Object.keys(catIntro);
+  const introShownCats=[...new Set([...itemCats,...introOverrideCats])].sort();
+  const introAddableCats=[...new Set([...bankCats,...itemCats])].filter(c=>!introShownCats.includes(c)).sort();
+
+  h+='<div class="mast-admin-row" style="flex-direction:column;align-items:stretch">';
+  h+='<div style="margin-bottom:8px"><div class="mast-admin-label">Per-Category Intro Dots Overrides</div><div class="mast-admin-desc">Override the introduction dots for specific categories (blank = use default '+(s.intro_dots||5)+')</div></div>';
+  if(introShownCats.length){
+    introShownCats.forEach(cat=>{
+      const cv=catIntro[cat];
+      const hasOverride=cv!==undefined&&cv!==null;
+      const inItems=itemCats.includes(cat);
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0">';
+      h+='<span style="flex:1;font-size:12px;font-weight:600;'+(inItems?'':'color:var(--muted);font-style:italic')+'">'+(catE[cat]||"")+' '+cat+(inItems?'':' <span style="font-size:9px;font-weight:500">(no items yet)</span>')+'</span>';
+      h+='<div class="mast-admin-stepper">';
+      h+='<button onclick="mastAdminCatIntro(\''+cat.replace(/'/g,"\\\\'")+'\',-1)"'+(hasOverride&&cv<=1?' disabled':'')+'>−</button>';
+      h+='<span class="val" style="'+(hasOverride?'color:#c2410c;font-weight:800':'color:var(--muted)')+'">'+( hasOverride?cv:(s.intro_dots||5))+'</span>';
+      h+='<button onclick="mastAdminCatIntro(\''+cat.replace(/'/g,"\\\\'")+'\',1)">+</button>';
+      h+='</div>';
+      h+='<button onclick="mastAdminCatIntro(\''+cat.replace(/'/g,"\\\\'")+'\',0)" style="width:22px;height:22px;border-radius:50%;border:1.5px solid '+(hasOverride?'#fca5a5':'#e5e7eb')+';background:'+(hasOverride?'#fef2f2':'#f9fafb')+';color:'+(hasOverride?'#dc2626':'#d1d5db')+';font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0"'+(hasOverride?'':' disabled')+'>\u{2715}</button>';
+      h+='</div>';
+    });
+  } else {
+    h+='<div style="font-size:11px;color:var(--muted);padding:4px 0">No overrides set. All categories use the default intro dots.</div>';
+  }
+  if(introAddableCats.length||true){
+    h+='<div style="margin-top:8px;display:flex;align-items:center;gap:6px">';
+    h+='<select id="mast-catintro-add" style="flex:1;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:11px;font-family:\'DM Sans\',sans-serif;background:#fff">';
+    if(introAddableCats.length) introAddableCats.forEach(c=>{ h+='<option value="'+c+'">'+(catE[c]||"")+' '+c+'</option>'; });
+    h+='<option value="__custom__">+ Custom category...</option>';
+    h+='</select>';
+    h+='<button onclick="mastAdminAddCatIntro()" style="padding:6px 14px;border-radius:8px;border:1.5px solid #c2410c;background:#fff7ed;color:#c2410c;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Add</button>';
+    h+='</div>';
+  }
+  h+='</div>';
+
   // Auto-pull toggle
   h+='<div class="mast-admin-row">';
   h+='<div><div class="mast-admin-label">Auto-Pull from Database</div><div class="mast-admin-desc">Automatically add next item when an intro slot opens</div></div>';
@@ -11612,7 +11680,7 @@ function renderMastAdmin(){
     st.inRotation.forEach(item=>{
       const isIntro=item.status==="introduction";
       const dots=isIntro?(item.tally_dots||0):(item.consecutive_correct||0);
-      const maxD=isIntro?s.intro_dots:(s.tier_streaks[item.tier]??s.ladder_streak);
+      const maxD=isIntro?mastIntroDotsFor(item.subject,s):(s.tier_streaks[item.tier]??s.ladder_streak);
       const vis=mastItemVis(item);
       const tierLbl=isIntro?"Intro":(MAST_TIER_LBL[item.tier]||item.tier);
       h+='<div class="mast-curr-card in-rotation" style="position:relative">';
@@ -12236,13 +12304,15 @@ function _renderMasteryInner(el){
 
     if(isJ){
       const _jset=mastDrillSettings();
+      const _addCat=mastAddCustomSubject||mastAddCat;
+      const _addDots=mastIntroDotsFor(_addCat,_jset);
       h+='<div class="mast-add-label">Start In</div>';
       h+='<div class="mast-add-pills" style="margin-bottom:10px">';
-      h+='<button class="mast-add-pill'+(mastAddStartMode==="learn"?" active":"")+'" onclick="mastAddStartMode=\'learn\';_mastRe()">\u{2B50} Learn First ('+_jset.intro_dots+' days)</button>';
+      h+='<button class="mast-add-pill'+(mastAddStartMode==="learn"?" active":"")+'" onclick="mastAddStartMode=\'learn\';_mastRe()">\u{2B50} Learn First ('+_addDots+' days)</button>';
       h+='<button class="mast-add-pill'+(mastAddStartMode==="ladder"?" active":"")+'" onclick="mastAddStartMode=\'ladder\';_mastRe()">\u{1F4CA} Straight to Ladder</button>';
       h+='</div>';
     }
-    h+='<div class="mast-add-preview">New items enter '+(isJ?(mastAddStartMode==="learn"?'as <strong>introduction</strong> (shown '+mastDrillSettings().intro_dots+' times before scoring)':'at <strong>'+mastDrillSettings().ladder[0]+'</strong> tier on the ladder'):'at <strong>daily</strong> tier with cycle #1')+'</div>';
+    h+='<div class="mast-add-preview">New items enter '+(isJ?(mastAddStartMode==="learn"?'as <strong>introduction</strong> (shown '+mastIntroDotsFor(mastAddCustomSubject||mastAddCat)+' times before scoring)':'at <strong>'+mastDrillSettings().ladder[0]+'</strong> tier on the ladder'):'at <strong>daily</strong> tier with cycle #1')+'</div>';
     h+='<button class="mast-add-submit" onclick="mastAddItems()">Add to '+SL_KLBL[masteryKid]+'\'s Mastery</button>';
     h+='</div></div>';
   }
@@ -12295,12 +12365,12 @@ function _renderMasteryInner(el){
     const _catMode=mastGetCatMode(masteryKid,cat);
     const _js=mastDrillSettings();
     const tallyCount=isIntro?(it.tally_dots||0):(it.consecutive_correct||0);
-    const tallyMax=isIntro?_js.intro_dots:(_js.tier_streaks[it.tier]??_js.ladder_streak);
+    const tallyMax=isIntro?mastIntroDotsFor(it.subject,_js):(_js.tier_streaks[it.tier]??_js.ladder_streak);
     let _tallyH='<div class="mast-slide-tally">';
     for(let d=0;d<tallyMax;d++) _tallyH+='<div class="mast-slide-dot'+(d<tallyCount?" filled":"")+'"></div>';
     if(isIntro) _tallyH+='<span style="font-size:14px;margin-left:4px">\u{2B50}</span>';
     _tallyH+='</div>';
-    if(isIntro) _tallyH+='<div style="font-size:10px;color:#9a3412;font-weight:600;margin-top:4px">'+tallyCount+'/'+_js.intro_dots+' days shown</div>';
+    if(isIntro) _tallyH+='<div style="font-size:10px;color:#9a3412;font-weight:600;margin-top:4px">'+tallyCount+'/'+tallyMax+' days shown</div>';
     else _tallyH+='<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:4px">'+(MAST_TIER_LBL[it.tier]||it.tier)+' \u{00B7} '+tallyCount+'/'+(_js.tier_streaks[it.tier]??_js.ladder_streak)+' streak</div>';
 
     if(_catMode==="flip"){
@@ -12454,7 +12524,7 @@ function _renderMasteryInner(el){
           const vis=mastItemVis(i);
           const dotCount=i.tally_dots||0;
           const _js2=mastDrillSettings();
-          const dotMax=_js2.intro_dots;
+          const dotMax=mastIntroDotsFor(i.subject,_js2);
           let dots="";for(let d=0;d<dotMax;d++) dots+='<div class="mast-jdot" style="'+(d<dotCount?"background:#c2410c;":"")+'"></div>';
           h+='<div class="mast-jcard" style="cursor:pointer" onclick="mastEditOpen(\''+i.id+'\')">';
           h+='<div class="mast-jcard-img">'+vis+'</div><div class="mast-jcard-name">'+i.prompt+'</div>';
@@ -12472,7 +12542,7 @@ function _renderMasteryInner(el){
             h+='<div class="mast-edit-val"><button class="mast-edit-adj" onclick="mastEditAdjDots(-1)">\u{2212}</button>';
             h+='<span class="mast-edit-num">'+mastEditDots+'</span>';
             h+='<button class="mast-edit-adj" onclick="mastEditAdjDots(1)">+</button></div></div>';
-            if(mastEditDots>=_jse2.intro_dots){
+            if(mastEditDots>=mastIntroDotsFor(i.subject,_jse2)){
               h+='<div class="mast-edit-row"><span class="mast-edit-label">Streak</span>';
               h+='<div class="mast-edit-val"><button class="mast-edit-adj" onclick="mastEditAdjConsec(-1)">\u{2212}</button>';
               h+='<span class="mast-edit-num">'+mastEditConsec+'</span>';
