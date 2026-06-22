@@ -12778,7 +12778,6 @@ function auditSchedule(tasks){
   const nv=fbArr(ovc.never_simultaneous);
   const neverSet=new Set((nv&&nv.length)?nv:["mom_required","computer","ipad"]);
   const v=[];
-  const lane=t=>{ const dv=t.device||taskDevice(t); return (dv==="ipad"&&t.who==="lucy")?"ipadLucy":dv; };
   const dateOf=d=>{
     let lbl=DAY_DT[d];
     if(!lbl&&d==="saturday"&&DAY_DT.friday){ const f=new Date(DAY_DT.friday+", "+new Date().getFullYear()); f.setDate(f.getDate()+1); return f.getFullYear()+"-"+String(f.getMonth()+1).padStart(2,"0")+"-"+String(f.getDate()).padStart(2,"0"); }
@@ -12801,10 +12800,17 @@ function auditSchedule(tasks){
     for(let i=0;i<ts.length;i++)for(let j=i+1;j<ts.length;j++){
       const a=ts[i],b=ts[j]; if(!(a.s<b.e&&b.s<a.e)) continue;
       if(a.t.who===b.t.who){ v.push(lbl+": "+cap(a.t.who)+" double-booked at "+a.t.time); continue; }
-      if(neverSet.has("computer")&&lane(a.t)==="computer"&&lane(b.t)==="computer") v.push(lbl+": two computer tasks at once");
-      if(neverSet.has("ipad")&&lane(a.t)==="ipad"&&lane(b.t)==="ipad") v.push(lbl+": two iPad tasks at once");
       if(neverSet.has("mom_required")&&a.t.mom==="required"&&b.t.mom==="required") v.push(lbl+": two Mom-Required at once");
     }
+    // Device pools: computers (cap N) and the shared iPad+phone screen pool (cap M).
+    // Flag only when more tasks overlap than there are devices. Lucy's iPad is her own
+    // device (covered by the per-kid double-book check, so it's excluded from the pool).
+    const _caps=gwDeviceCaps();
+    const _maxConc=(fn)=>{ const iv=ts.filter(x=>fn(x.t)).map(x=>[x.s,x.e]); let mx=0; for(let p=0;p<iv.length;p++){ let c=0; for(let q=0;q<iv.length;q++){ if(iv[q][0]<iv[p][1]&&iv[p][0]<iv[q][1]) c++; } if(c>mx) mx=c; } return mx; };
+    const _scr=t=>{ const dv=t.device||taskDevice(t); if(dv==="ipad"&&t.who==="lucy") return false; return dv==="ipad"||dv==="phone"||dv==="ipad/phone"; };
+    const _comp=t=>(t.device||taskDevice(t))==="computer";
+    if(neverSet.has("computer")&&_maxConc(_comp)>_caps.computer) v.push(lbl+": more than "+_caps.computer+" computer task(s) at once");
+    if(neverSet.has("ipad")&&_maxConc(_scr)>_caps.screen) v.push(lbl+": more than "+_caps.screen+" screen (iPad/phone) task(s) at once");
     const cnt={};
     ts.forEach(x=>{ const k=taskSubject(x.t)+"|"+x.t.who; cnt[k]=(cnt[k]||0)+1; });
     for(const k in cnt){ const subj=k.split("|")[0], cfg=mp[subj]; if(!cfg) continue;
@@ -13654,6 +13660,13 @@ function rulesUpdateStackGap(val){
   saveRules(r);
   renderAll();
 }
+function rulesUpdateDevice(field,val){
+  const r=JSON.parse(JSON.stringify(rulesData||{}));
+  if(!r.devices) r.devices={};
+  r.devices[field]=Math.max(1,Math.min(6,parseInt(val)||1));
+  saveRules(r);
+  renderAll();
+}
 function rulesUpdateDayOverride(day,field,val){
   const r=JSON.parse(JSON.stringify(rulesData));
   if(!r.schoolDay) r.schoolDay={};
@@ -13856,6 +13869,19 @@ function renderRules(el,headerHtml){
      'oninput="var v=document.getElementById(\'stackGapVal\');if(v)v.textContent=this.value+\' min\'" '+
      'onchange="rulesUpdateStackGap(this.value)" style="width:120px">'+
      '<span id="stackGapVal" style="font-size:12px;font-weight:700;min-width:46px">'+_sg+' min</span></div></div></div>';
+  h+='</div></div>';
+
+  // 1c. DEVICES — how many shared devices the family has (feeds the packer's lane pools)
+  const _dv=gwDeviceCaps();
+  h+='<div class="rules-card'+o("devices")+'">';
+  h+='<div class="rules-card-hdr" onclick="rulesToggleCard(\'devices\')">';
+  h+='<div class="rules-card-title"><span>&#128241;</span> Devices</div>';
+  h+='<div class="rules-card-arrow">&#9654;</div></div>';
+  h+='<div class="rules-card-body">';
+  h+='<div class="rules-section-lbl">How many shared devices?</div>';
+  h+='<div class="rules-row"><div class="rules-label">Screen devices (iPad / phone)</div><input type="number" min="1" max="6" class="rules-time" style="width:64px;text-align:center" value="'+_dv.screen+'" onchange="rulesUpdateDevice(\'screen\',this.value)"></div>';
+  h+='<div class="rules-row"><div class="rules-label">Computers</div><input type="number" min="1" max="6" class="rules-time" style="width:64px;text-align:center" value="'+_dv.computer+'" onchange="rulesUpdateDevice(\'computer\',this.value)"></div>';
+  h+='<div style="font-size:11px;color:var(--muted);padding:8px 0 0;line-height:1.5">The generator never schedules more kids on a kind of device than you have. iPad and phone are one shared screen pool (the same apps run on both), so 2 lets two kids do screen work at the same time; a 3rd waits.</div>';
   h+='</div></div>';
 
   // 2. WORKFLOW ORDERS
@@ -15070,6 +15096,12 @@ function gwRules(){
     stackGap:    (typeof r.stackGap==="number")?r.stackGap:40  // min-gap before the balancer doubles a subject onto a day
   };
 }
+// How many of each shared device the family has, for the packer's lane pools.
+// screen = the iPad + phone pool (interchangeable); computer = computers.
+function gwDeviceCaps(){
+  const d=(rulesData&&rulesData.devices)||{};
+  return { computer:Math.max(1,parseInt(d.computer)||1), screen:Math.max(1,parseInt(d.screen)||2) };
+}
 const GW_DAY_NAMES=["monday","tuesday","wednesday","thursday","friday","saturday"];
 const GW_DAY_PREFIXES=["m","t","w","th","f","sat"];
 const GW_DEVICE_EMOJI={paper:"\u{1F4C4}",computer:"\u{1F4BB}",ipad:"\u{1F4F1}",phone:"\u{1F4DE}",book:"\u{1F4D6}"};
@@ -15291,14 +15323,17 @@ function gwSubjectDetail(kid,key){
 function packDay(items, ctx){
   ctx = ctx || {};
   const dayStart = ctx.start || 0;
-  const LANES = ctx.lanes || ["computer","ipad","ipadLucy","phone"];
+  const LANES = ctx.lanes || ["computer","screen","ipadLucy"];
   const laneSet = {}; LANES.forEach(l => { laneSet[l] = true; });
+  const laneCap = ctx.laneCap || {};
+  const capOf = l => Math.max(1, laneCap[l] || (l === "screen" ? 2 : 1)); // screen = iPad+phone pool
   const lunchS = ctx.lunchStart, lunchE = ctx.lunchEnd, hasLunch = (lunchE > lunchS);
   const skipLunch = (start, dur) => {
     if(!hasLunch || start >= lunchE || start + dur <= lunchS) return start;
     return lunchE;
   };
-  const res = {}; LANES.forEach(l => { res[l] = Math.max(dayStart, (ctx.laneStart && ctx.laneStart[l]) || 0); });
+  // Each lane is a pool of `capOf(l)` devices; res[l][i] = when device i is free.
+  const res = {}; LANES.forEach(l => { const seed = Math.max(dayStart, (ctx.laneStart && ctx.laneStart[l]) || 0); res[l] = []; for(let i=0;i<capOf(l);i++) res[l].push(seed); });
   let momFree = Math.max(dayStart, ctx.momStart || 0);
   const kidFree = {};
   const hardEnd = ctx.allowOvertime ? (ctx.end + (ctx.overtimeMax || 180)) : ctx.end;
@@ -15310,7 +15345,8 @@ function packDay(items, ctx){
     const lane = (it.lane && laneSet[it.lane]) ? it.lane : null;
     let from = dayStart;
     for(const k of kids) from = Math.max(from, kidFree[k] || 0, (ctx.kidStart && ctx.kidStart[k]) || 0);
-    if(lane) from = Math.max(from, res[lane]);
+    let lanePick = -1;
+    if(lane){ const pool = res[lane]; lanePick = 0; for(let i=1;i<pool.length;i++) if(pool[i] < pool[lanePick]) lanePick = i; from = Math.max(from, pool[lanePick]); }
     if(it.momRequired) from = Math.max(from, momFree);
     let start = skipLunch(from, dur);
     // A Mom-required task can't run during the babysitter window — defer to mom's return.
@@ -15320,8 +15356,8 @@ function packDay(items, ctx){
     if(start + dur > hardEnd){ (it.droppable ? dropped : overflow).push(it); continue; }
     const end = start + dur;
     for(const k of kids) kidFree[k] = end;   // every participant is busy for the block…
-    if(lane) res[lane] = end;
-    if(it.momRequired) momFree = end;         // …but the lane and Mom advance only ONCE
+    if(lane) res[lane][lanePick] = end;       // …the chosen device in the pool advances…
+    if(it.momRequired) momFree = end;         // …and Mom advances ONCE
     placed.push({ id: it.id, start }); byId[it.id] = start;
   }
   return { byId, placed, overflow, dropped };
@@ -15338,7 +15374,7 @@ function packDay(items, ctx){
 //   ctx: {start, end, lunchStart, lunchEnd, momStart?, kidStart?, allowOvertime?, overtimeMax?}
 function packAround(existing, newTasks, ctx){
   if(!newTasks || !newTasks.length) return [];
-  function laneOf(t){ var dv=t.device||taskDevice(t); return (dv==="ipad"&&t.who==="lucy")?"ipadLucy":dv; }
+  function laneOf(t){ var dv=t.device||taskDevice(t); if(dv==="ipad"&&t.who==="lucy") return "ipadLucy"; if(dv==="ipad"||dv==="phone"||dv==="ipad/phone") return "screen"; return dv; }
   var dStart=ctx.start;
   var laneStart={}, momStart=Math.max(dStart, ctx.momStart||0), kidStart={};
   if(ctx.kidStart){ for(var k in ctx.kidStart) kidStart[k]=Math.max(dStart, ctx.kidStart[k]||0); }
@@ -15350,7 +15386,7 @@ function packAround(existing, newTasks, ctx){
   });
   var items=newTasks.map(function(t){ return {id:t.id,who:t.who,lane:laneOf(t),durMin:t.dur||20,momRequired:t.mom==="required"}; });
   var packed=packDay(items,{start:dStart,end:ctx.end,lunchStart:ctx.lunchStart,lunchEnd:ctx.lunchEnd,
-    kidStart:kidStart,laneStart:laneStart,momStart:momStart,allowOvertime:!!ctx.allowOvertime,overtimeMax:ctx.overtimeMax||180,lanes:ctx.lanes});
+    kidStart:kidStart,laneStart:laneStart,momStart:momStart,allowOvertime:!!ctx.allowOvertime,overtimeMax:ctx.overtimeMax||180,lanes:ctx.lanes,laneCap:ctx.laneCap});
   var byId={}; newTasks.forEach(function(t){byId[t.id]=t;});
   packed.placed.forEach(function(p){ byId[p.id].time=fromMin(p.start); });
   return packed.overflow.map(function(it){ return byId[it.id]; });
@@ -15518,7 +15554,7 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   // Place everything through the shared packer (no phone lane, to match the prior
   // generator; Mom deferred past the sitter return on babysitter days).
   const overflow=packAround([],items,{start:schoolStart,end:cutoff,lunchStart:r.lunchStart,lunchEnd:r.lunchEnd,
-    kidStart:kidStart,momStart:(isSitter?sitterEnd:0),lanes:["computer","ipad","ipadLucy"]});
+    kidStart:kidStart,momStart:(isSitter?sitterEnd:0),lanes:["computer","screen","ipadLucy"],laneCap:gwDeviceCaps()});
   const overflowSet=new Set(overflow);
   items.forEach(it=>{
     const mm=meta[it.id];
