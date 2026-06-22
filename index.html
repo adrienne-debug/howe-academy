@@ -13667,6 +13667,12 @@ function rulesUpdateDevice(field,val){
   saveRules(r);
   renderAll();
 }
+function rulesUpdateSaturdayOverflow(on){
+  const r=JSON.parse(JSON.stringify(rulesData||{}));
+  r.saturdayOverflow=!!on;
+  saveRules(r);
+  renderAll();
+}
 function rulesUpdateDayOverride(day,field,val){
   const r=JSON.parse(JSON.stringify(rulesData));
   if(!r.schoolDay) r.schoolDay={};
@@ -13869,6 +13875,10 @@ function renderRules(el,headerHtml){
      'oninput="var v=document.getElementById(\'stackGapVal\');if(v)v.textContent=this.value+\' min\'" '+
      'onchange="rulesUpdateStackGap(this.value)" style="width:120px">'+
      '<span id="stackGapVal" style="font-size:12px;font-weight:700;min-width:46px">'+_sg+' min</span></div></div></div>';
+  const _satOv=(!rulesData||rulesData.saturdayOverflow!==false);
+  h+='<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px"><div class="rules-row"><div class="rules-label">Use Saturday for overflow</div>'+
+     '<button onclick="rulesUpdateSaturdayOverflow('+(!_satOv)+')" style="padding:6px 16px;border-radius:10px;border:1.5px solid '+(_satOv?'#1a6b5a':'var(--border)')+';background:'+(_satOv?'#1a6b5a':'#fff')+';color:'+(_satOv?'#fff':'var(--text)')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(_satOv?'On':'Off')+'</button></div>'+
+     '<div style="font-size:11px;color:var(--muted);padding:6px 0 0;line-height:1.5">When a week has more work than fits Mon–Fri, the extra spills onto Saturday before rolling to next week. Turn off if you never do Saturday school — the extra rolls straight to next week.</div></div>';
   h+='</div></div>';
 
   // 1c. DEVICES — how many shared devices the family has (feeds the packer's lane pools)
@@ -14851,6 +14861,7 @@ function renderPlanNextWeek(){
     h+='<div class="pnw-summary-sub">'+totalTasks+' tasks across '+totalDays+' days · ~'+Math.round(totalMin/60)+' hrs total';
     if(pnwCarryOverCount) h+=' · <span style="color:#7c3aed">'+pnwCarryOverCount+' carry-over'+(pnwCarryOverCount>1?'s':'')+'</span>';
     if(totalDropped) h+=' · <span style="color:#991b1b">'+totalDropped+' dropped</span>';
+    if(r.rolledToNextWeek) h+=' · <span style="color:#b45309" title="Over capacity this week — these roll to next week, where the cursor picks them up">'+r.rolledToNextWeek+' moved to next week</span>';
     h+='</div></div>';
     const smapPlans=Object.entries(paceData.plans||{}).filter(([k,p])=>sessionMapData[k]&&sessionMapData[k].map);
     if(smapPlans.length){
@@ -16241,7 +16252,7 @@ function generateWeek(config){
 
   function dayOfYear(dt){ const jan1=new Date(dt.getFullYear(),0,0); return Math.floor((dt-jan1)/86400000); }
 
-  let _carry=null, _lastDk=null;
+  let _carry=null, _lastDk=null, _rolled=0;
   for(const dk of sortedDates){
     const d=gwParseDate(dk);
     const dn=WDAY_MAP[d.getDay()];
@@ -16288,11 +16299,13 @@ function generateWeek(config){
     (result.dropped||[]).forEach(dp=>{ if(String(dp.reason||"").includes("CUTOFF")) _cut.push(dp); else allDropped.push(dp); });
     _carry=_cut.length?gwCarryFromDrops(_cut):null;
   }
-  // Leftovers off the last weekday spill to a synthesized Saturday; whatever still
-  // doesn't fit rolls to next week — the cursor regenerates it, so nothing is lost.
+  // Leftovers off the last weekday spill to a synthesized Saturday (unless the family
+  // turned Saturday-overflow off); whatever still doesn't fit rolls to next week — the
+  // cursor regenerates it, so nothing is lost. _rolled counts what moved to next week.
   if(gwHasCarry(_carry)&&_lastDk){
     const _ld=gwParseDate(_lastDk);
-    if(WDAY_MAP[_ld.getDay()]!=="saturday"){
+    const _useSat = !rulesData || rulesData.saturdayOverflow!==false; // default on
+    if(_useSat && WDAY_MAP[_ld.getDay()]!=="saturday"){
       const _sat=new Date(_ld); _sat.setDate(_sat.getDate()+1);
       const _satDk=_sat.getFullYear()+"-"+String(_sat.getMonth()+1).padStart(2,"0")+"-"+String(_sat.getDate()).padStart(2,"0");
       const _ds=((rulesData&&rulesData.schoolDay&&rulesData.schoolDay.defaultStart)||"10:00 AM");
@@ -16301,9 +16314,11 @@ function generateWeek(config){
         _sat.getFullYear()+"d"+dayOfYear(_sat)+"_",taskCounter);
       taskCounter=_satRes.counter;
       if(_satRes.tasks.length){ allTasks.push(..._satRes.tasks); dates.saturday=_sat.toLocaleDateString("en-US",{month:"long",day:"numeric",timeZone:"UTC"}); }
-      // _satRes overflow → next week (cursor regenerates); not placed.
+      _rolled += (_satRes.dropped||[]).filter(dp=>String(dp.reason||"").includes("CUTOFF")).length; // Saturday's own overflow → next week
+    } else {
+      // Saturday off, or last day was already Saturday → the rest rolls to next week.
+      for(const _k in _carry) for(const _s in _carry[_k]) _rolled += _carry[_k][_s].length;
     }
-    // last day was already Saturday → _carry rolls to next week.
   }
 
   // Tag the catch-up sessions so a parent can see why a subject runs extra this
@@ -16352,7 +16367,8 @@ function generateWeek(config){
     dates:dates,
     constraints:constraints,
     windows:windows,
-    tasks:allTasks
+    tasks:allTasks,
+    rolledToNextWeek:_rolled
   };
   if(sitterObj) output.babysitter=sitterObj;
 
