@@ -119,5 +119,38 @@ const gwCarryToAssignments = new Function(extractFn("gwCarryToAssignments") + ";
   ok("single carried value unwraps; multiple stays an array", a.ellis.ttrs === "M5" && JSON.stringify(a.ellis.sci) === JSON.stringify(["U1", "U2"]), JSON.stringify(a));
 })();
 
+// ── Cross-week handoff: the cursor regenerates rolled/unfinished work ─────────
+// The overflow rescue doesn't hand anything to next week — it just doesn't place
+// the residual. Next week's cursor (offset + check-off count + adjust) advances by
+// exactly the lessons that got placed AND checked off, so rolled-over (and any
+// unfinished) lessons come right back, in order, same numbers, with no duplication.
+const SEQ = []; for (let i = 0; i < 25; i++) SEQ.push({ lesson: "L" + (i + 1) });
+const getNextLessonsFromCursor = new Function("buildSubjectLessons",
+  extractFn("getNextLessonsFromCursor") + "; return getNextLessonsFromCursor;")(() => SEQ);
+const nums = arr => arr.map(x => x.lesson);
+
+// 13) Rolled-over lessons regenerate next week, same numbers and order, no dupes.
+(() => {
+  const cursor = 12;                                                  // 12 done -> next is L13
+  const week1 = nums(getNextLessonsFromCursor("k", "s", cursor, 8));  // L13..L20
+  const placed = week1.slice(0, 5);                                   // L13..L17 fit this week
+  const rolled = week1.slice(5);                                      // L18..L20 roll to next week
+  const nextCursor = cursor + placed.length;                         // all placed checked off -> +5
+  const week2 = nums(getNextLessonsFromCursor("k", "s", nextCursor, 8)); // L18..L25
+  ok("rolled lessons return next week (same numbers/order)",
+     JSON.stringify(week2.slice(0, rolled.length)) === JSON.stringify(rolled), "rolled=" + rolled + " week2=" + week2);
+  ok("no duplication: placed lessons don't reappear next week",
+     placed.every(l => week2.indexOf(l) < 0), "week2=" + week2);
+})();
+
+// 14) Unfinished placed work rides the same mechanism (cursor only counts check-offs).
+(() => {
+  const cursor = 12;                                                  // placed L13..L17, rolled L18..L20
+  const nextCursor = cursor + 3;                                      // kid only checked off L13..L15
+  const week2 = nums(getNextLessonsFromCursor("k", "s", nextCursor, 8)); // L16..L23
+  ok("unfinished + rolled both come back, in order",
+     week2.slice(0, 5).join() === ["L16", "L17", "L18", "L19", "L20"].join(), "week2=" + week2);
+})();
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
