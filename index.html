@@ -3065,12 +3065,13 @@ function taskCard(t, fromDay){
   const disLabel=(t._displaced&&t._originalDay&&t._originalDay!==t.day)?'<div style="font-size:10px;font-weight:700;color:#7c3aed;background:#ede9fe;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">&#8618; Moved from '+cap(t._originalDay)+'</div><br>':'';
   const carryLabel=fromDay?'<div style="font-size:10px;font-weight:700;color:#4338ca;background:#e0e7ff;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">↩ '+fromDay+'</div><br>':'';
   const cascLabel=t.cascadedFrom?'<div style="font-size:10px;font-weight:700;color:#b45309;background:#fef3c7;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">↩ From '+cap(t.cascadedFrom)+'</div><br>':'';
+  const catchupLabel=t.catchup?'<div style="font-size:10px;font-weight:700;color:#0f766e;background:#ccfbf1;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px" title="Extra session to catch up on this subject">↻ Catch-up</div><br>':'';
   return '<div class="task-card '+bcls+(done?" done":"")+(future?" future":"")+(t._displaced?" displaced":"")+'">'+
     '<div class="card-inner">'+
     '<div class="task-cb'+(done?" checked":"")+'" onclick="tapTask(\''+t.id+'\')">'+(done?"✓":"")+'</div>'+
     '<div class="card-body">'+
     '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
-    '<div class="task-title">'+disLabel+carryLabel+cascLabel+t.title+'</div>'+mb+'</div>'+
+    '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+t.title+'</div>'+mb+'</div>'+
     '<div class="task-detail">'+cleanDetail+'</div>'+dr+spinBtn+
     '</div></div></div>';
 }
@@ -15928,6 +15929,7 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
   const dayData=resolved.dayData;
 
   const cursors={};
+  const catchup={};  // {kid:{sk:nExtraSessions}} — how many catch-up slots were added this week
 
   for(const kid of ["lincoln","ellis","lucy","julian"]){
     cursors[kid]={};
@@ -15954,8 +15956,10 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
         const cap=(_cs.carryoverCap!=null)?_cs.carryoverCap:2;
         const want=Math.min(Math.max(0,(expEnter==null?0:expEnter-cursor)),cap,(seq.length-cursor)-dates.length);
         if(want>0){
-          gwCatchupExtraDates(kid,sk,_cs,dates,want,dayData).forEach(d=>{ dates.push(d); });
+          const added=gwCatchupExtraDates(kid,sk,_cs,dates,want,dayData);
+          added.forEach(d=>{ dates.push(d); });
           dates.sort(); // duplicate dates (doubled days) now sit adjacent
+          if(added.length){ (catchup[kid]=catchup[kid]||{})[sk]=added.length; }
         }
       }
 
@@ -15979,7 +15983,7 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
       }
     }
   }
-  return {dayData,cursors};
+  return {dayData,cursors,catchup};
 }
 
 // Which plan week does a date fall in? (Mon–Sun ranges; null past the grid)
@@ -16035,7 +16039,7 @@ function generateWeek(config){
   if(!weekNum) return {error:"Week number required"};
   const weekLabel="week"+weekNum;
 
-  let dayData, weekCursors=null;
+  let dayData, weekCursors=null, weekCatchup=null;
   if(config.autoAdvance){
     // Two-tier cursor: detect regeneration vs new week
     const activeWK=localStorage.getItem("ha_active_wk")||WK;
@@ -16051,6 +16055,7 @@ function generateWeek(config){
     if(!result) return {error:"No curriculum data found for Wk "+weekNum};
     dayData=result.dayData;
     weekCursors=result.cursors;
+    weekCatchup=result.catchup;
   } else {
     dayData=gwReadWeek(weekNum,true);
   }
@@ -16200,6 +16205,22 @@ function generateWeek(config){
     taskCounter=result.counter;
     allTasks.push(...result.tasks);
     allDropped.push(...result.dropped);
+  }
+
+  // Tag the catch-up sessions so a parent can see why a subject runs extra this
+  // week. Catch-up added N sessions for a (kid,subject); mark that many of the
+  // subject's tasks (the latest by day/time) — robust to the balancer reshuffling
+  // which day each lands on. The flag rides on the task and persists at commit.
+  if(weekCatchup){
+    const _dord={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
+    for(const kid of Object.keys(weekCatchup)){
+      for(const sk of Object.keys(weekCatchup[kid])){
+        const n=weekCatchup[kid][sk];
+        const st=allTasks.filter(t=>t.who===kid&&t.subjectKey===sk);
+        st.sort((a,b)=>((_dord[a.day]||9)-(_dord[b.day]||9))||(toMin(a.time)-toMin(b.time)));
+        for(let i=Math.max(0,st.length-n);i<st.length;i++) st[i].catchup=true;
+      }
+    }
   }
 
   // Inject carryovers from previous week
