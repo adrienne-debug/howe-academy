@@ -16081,6 +16081,34 @@ function autoGenerateWeekIfNeeded(){
   });
 }
 
+// ── OVERFLOW ROLL-FORWARD ────────────────────────────────────────────
+// When a day runs past the cutoff, its leftover lessons roll to the next
+// weekday (then Saturday, then next week) instead of being dropped. These keep
+// the cursor's order: a carried lesson is always LOWER-numbered than the day it
+// lands on already has, so prepending it never puts a lesson after a higher one.
+function gwCarryFromDrops(drops){
+  const c={};
+  (drops||[]).forEach(d=>{ if(!c[d.kid]) c[d.kid]={}; if(!c[d.kid][d.key]) c[d.kid][d.key]=[]; c[d.kid][d.key].push(d.val); });
+  return c;
+}
+function gwMergeCarry(dayInput,carry){
+  for(const kid of Object.keys(carry)){
+    if(!dayInput[kid]) dayInput[kid]={};
+    for(const sk of Object.keys(carry[kid])){
+      const ex=dayInput[kid][sk];
+      const exArr = ex===undefined?[]:(Array.isArray(ex)?ex.slice():[ex]);
+      const merged=carry[kid][sk].concat(exArr); // carried (lower lessons) first → order preserved
+      dayInput[kid][sk]=merged.length===1?merged[0]:merged;
+    }
+  }
+}
+function gwCarryToAssignments(carry){
+  const out={};
+  for(const kid of Object.keys(carry)){ out[kid]={}; for(const sk of Object.keys(carry[kid])){ const v=carry[kid][sk]; out[kid][sk]=v.length===1?v[0]:v.slice(); } }
+  return out;
+}
+function gwHasCarry(c){ return c && Object.keys(c).some(k=>Object.keys(c[k]).length); }
+
 function generateWeek(config){
   const weekNum=parseInt(config.weekNum);
   if(!weekNum) return {error:"Week number required"};
@@ -16213,10 +16241,14 @@ function generateWeek(config){
 
   function dayOfYear(dt){ const jan1=new Date(dt.getFullYear(),0,0); return Math.floor((dt-jan1)/86400000); }
 
+  let _carry=null, _lastDk=null;
   for(const dk of sortedDates){
     const d=gwParseDate(dk);
     const dn=WDAY_MAP[d.getDay()];
     if(!dn||skipSet.has(dn)||!dates[dn]) continue;
+    // Re-home the previous day's past-cutoff leftovers into this day, in lesson order.
+    if(_carry){ if(!balanced[dk]) balanced[dk]={}; gwMergeCarry(balanced[dk],_carry); _carry=null; }
+    _lastDk=dk;
 
     const idPrefix=d.getFullYear()+"d"+dayOfYear(d)+"_";
 
@@ -16251,7 +16283,27 @@ function generateWeek(config){
     const result=gwBuildDayTasks(balanced[dk]||{},dayConfig,idPrefix,taskCounter);
     taskCounter=result.counter;
     allTasks.push(...result.tasks);
-    allDropped.push(...result.dropped);
+    // Past-cutoff overflow rolls to the next day; other drops (car-school, no-fri…) stand.
+    const _cut=[];
+    (result.dropped||[]).forEach(dp=>{ if(String(dp.reason||"").includes("CUTOFF")) _cut.push(dp); else allDropped.push(dp); });
+    _carry=_cut.length?gwCarryFromDrops(_cut):null;
+  }
+  // Leftovers off the last weekday spill to a synthesized Saturday; whatever still
+  // doesn't fit rolls to next week — the cursor regenerates it, so nothing is lost.
+  if(gwHasCarry(_carry)&&_lastDk){
+    const _ld=gwParseDate(_lastDk);
+    if(WDAY_MAP[_ld.getDay()]!=="saturday"){
+      const _sat=new Date(_ld); _sat.setDate(_sat.getDate()+1);
+      const _satDk=_sat.getFullYear()+"-"+String(_sat.getMonth()+1).padStart(2,"0")+"-"+String(_sat.getDate()).padStart(2,"0");
+      const _ds=((rulesData&&rulesData.schoolDay&&rulesData.schoolDay.defaultStart)||"10:00 AM");
+      const _satRes=gwBuildDayTasks(gwCarryToAssignments(_carry),
+        {schoolStart:toMin(_ds),momAvailable:toMin(_ds),isCarSchool:false,isSitter:false,sitterStart:0,sitterEnd:0,withSitter:[],theater:false,dayName:"saturday",dateStr:_satDk},
+        _sat.getFullYear()+"d"+dayOfYear(_sat)+"_",taskCounter);
+      taskCounter=_satRes.counter;
+      if(_satRes.tasks.length){ allTasks.push(..._satRes.tasks); dates.saturday=_sat.toLocaleDateString("en-US",{month:"long",day:"numeric",timeZone:"UTC"}); }
+      // _satRes overflow → next week (cursor regenerates); not placed.
+    }
+    // last day was already Saturday → _carry rolls to next week.
   }
 
   // Tag the catch-up sessions so a parent can see why a subject runs extra this

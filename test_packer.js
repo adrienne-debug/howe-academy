@@ -88,5 +88,36 @@ const screenTask = (id, who) => ({ id, who, lane: "screen", durMin: 30 });
   ok("past-cutoff task overflows", r.overflow.length === 1 && r.overflow[0] === "a", JSON.stringify(r.overflow));
 })();
 
+// ── Overflow roll-forward helpers (sequence-preserving cascade) ──────────────
+const gwCarryFromDrops = new Function(extractFn("gwCarryFromDrops") + "; return gwCarryFromDrops;")();
+const gwMergeCarry = new Function(extractFn("gwMergeCarry") + "; return gwMergeCarry;")();
+const gwCarryToAssignments = new Function(extractFn("gwCarryToAssignments") + "; return gwCarryToAssignments;")();
+
+// 9) Drops collapse into a {kid:{subject:[vals]}} carry.
+(() => {
+  const c = gwCarryFromDrops([{ kid: "lincoln", key: "math", val: "L13" }, { kid: "lincoln", key: "math", val: "L14" }]);
+  ok("carry collects leftover values per kid/subject", JSON.stringify(c) === JSON.stringify({ lincoln: { math: ["L13", "L14"] } }), JSON.stringify(c));
+})();
+
+// 10) Merging a carry prepends the (lower) carried lesson BEFORE the day's existing one.
+(() => {
+  const day = { lincoln: { math: "L14" } };
+  gwMergeCarry(day, { lincoln: { math: ["L13"] } });
+  ok("carried lesson lands before the higher one (order kept)", JSON.stringify(day.lincoln.math) === JSON.stringify(["L13", "L14"]), JSON.stringify(day.lincoln.math));
+})();
+
+// 11) Merging into a subject the day doesn't have just adds it.
+(() => {
+  const day = { lincoln: {} };
+  gwMergeCarry(day, { lincoln: { math: ["L13"] } });
+  ok("carry into an empty subject sets the value", day.lincoln.math === "L13", JSON.stringify(day.lincoln.math));
+})();
+
+// 12) Carry → day-assignments shape (single value vs array).
+(() => {
+  const a = gwCarryToAssignments({ ellis: { ttrs: ["M5"], sci: ["U1", "U2"] } });
+  ok("single carried value unwraps; multiple stays an array", a.ellis.ttrs === "M5" && JSON.stringify(a.ellis.sci) === JSON.stringify(["U1", "U2"]), JSON.stringify(a));
+})();
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
