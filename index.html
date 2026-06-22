@@ -9458,15 +9458,26 @@ function computeFinishLines(forKid){
       let cursor=0;
       try{ cursor=computeSubjectCursor(kid,sk); }catch(e){}
       const remaining=Math.max(0,seq.length-cursor);
+      // Credit catch-up: a behind subject that can catch up (not max1, not a daily)
+      // clears its deficit via extra slots, so it needs that many FEWER planned slots
+      // to finish. Without this the projection reads as if the subject stays behind
+      // forever. max1 (once-a-day, e.g. Reflex) can't double, so it gets no credit.
+      let catchupCredit=0;
+      const _flr=s.rules||"";
+      if(!_flr.includes("first")&&!_flr.includes("last")&&!_flr.includes("max1")){
+        const _cap=(s.carryoverCap!=null)?s.carryoverCap:2;
+        if(_cap>0){ const _exp=currExpectedBase(kid,sk,currWeekNum()-1); catchupCredit=Math.min(Math.max(0,(_exp==null?0:_exp-cursor)),remaining); }
+      }
+      const effRemaining=Math.max(0,remaining-catchupCredit);
       const slots=(future[kid]||{})[sk]||[];
       const lastPlanned=slots.length?slots[slots.length-1]:null;
       let projDate=null, overflow=0, status;
       if(remaining===0){ status="done"; }
-      else if(remaining<=slots.length){
-        projDate=slots[remaining-1];
+      else if(effRemaining<=slots.length){
+        projDate=slots[Math.max(0,effRemaining-1)]||lastPlanned;
         status="ontime";
       } else {
-        overflow=remaining-slots.length;
+        overflow=effRemaining-slots.length;
         // estimate past plan end using the subject's average weekly pace
         const weeksLeft=Math.max(1,_maxPlanWeek()-currWeekNum()+1);
         const perWeek=slots.length/weeksLeft;
