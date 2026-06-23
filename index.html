@@ -10187,11 +10187,14 @@ function mastDrillSettings(){
   const kid=masteryKid||"julian";
   const s=masteryData[kid+"_settings"]||{};
   const defaultLadder=["every_other_day","weekly","bi_weekly","monthly","graduated"];
-  return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,auto_pull:s.auto_pull!==false,ladder:s.ladder||defaultLadder,cat_caps:s.cat_caps||{},cat_intro_dots:s.cat_intro_dots||{},miss_drop:s.miss_drop||"reset",close_behavior:s.close_behavior||"stay",drop_threshold:s.drop_threshold??0,tier_streaks:s.tier_streaks||{}};
+  return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,auto_pull:s.auto_pull!==false,ladder:s.ladder||defaultLadder,cat_caps:s.cat_caps||{},cat_intro_dots:s.cat_intro_dots||{},cat_intro_max:s.cat_intro_max||{},miss_drop:s.miss_drop||"reset",close_behavior:s.close_behavior||"stay",drop_threshold:s.drop_threshold??0,tier_streaks:s.tier_streaks||{}};
 }
 // How many introduction dots a card in `cat` needs before it enters the ladder.
 // Mirrors cat_caps: a per-category override, else the global intro_dots default.
 function mastIntroDotsFor(cat,s){ s=s||mastDrillSettings(); const o=s.cat_intro_dots||{}; return (cat!=null&&o[cat]!=null)?o[cat]:s.intro_dots; }
+// How many items in `cat` may sit in introduction at once (the "Max New / Category"
+// cap). Mirrors cat_caps: a per-category override, else the global max_intro_per_cat.
+function mastIntroMaxFor(cat,s){ s=s||mastDrillSettings(); const o=s.cat_intro_max||{}; return (cat!=null&&o[cat]!=null)?o[cat]:s.max_intro_per_cat; }
 const MAST_BANK_MAP={julian:MAST_JULIAN_BANK,lucy:MAST_LUCY_BANK,ellis:MAST_ELLIS_BANK,lincoln:MAST_LINCOLN_BANK};
 const MAST_CAT_EMOJI_MAP={
   julian:{Letters:"\u{1F524}",Numbers:"\u{1F522}",Colors:"\u{1F3A8}",Shapes:"\u{1F537}",Animals:"\u{1F43E}",Counting:"\u{1F995}",Dinosaurs:"\u{1F996}"},
@@ -10654,6 +10657,32 @@ function mastAdminCatIntro(cat,delta){
   mastAdminDirty=true;
   _mastRe();
 }
+function mastAdminAddCatIntroMax(){
+  const sel=document.getElementById("mast-catintromax-add");
+  if(!sel) return;
+  let cat=sel.value;
+  if(cat==="__custom__"){
+    cat=prompt("Enter category name:");
+    if(!cat||!cat.trim()) return;
+    cat=cat.trim();
+  }
+  if(!mastAdminLocal) mastAdminInit();
+  if(!mastAdminLocal.cat_intro_max) mastAdminLocal.cat_intro_max={};
+  mastAdminLocal.cat_intro_max[cat]=mastAdminLocal.max_intro_per_cat||3;
+  mastAdminDirty=true;
+  _mastRe();
+}
+function mastAdminCatIntroMax(cat,delta){
+  if(!mastAdminLocal) mastAdminInit();
+  if(!mastAdminLocal.cat_intro_max) mastAdminLocal.cat_intro_max={};
+  if(delta===0){ delete mastAdminLocal.cat_intro_max[cat]; }
+  else {
+    const cur=mastAdminLocal.cat_intro_max[cat]??(mastAdminLocal.max_intro_per_cat||3);
+    mastAdminLocal.cat_intro_max[cat]=Math.max(1,cur+delta);
+  }
+  mastAdminDirty=true;
+  _mastRe();
+}
 function mastAdminTierStreak(tier,delta){
   if(!mastAdminLocal) mastAdminInit();
   if(!mastAdminLocal.tier_streaks) mastAdminLocal.tier_streaks={};
@@ -10704,7 +10733,8 @@ function mastPullItem(cat,name){
   if(items.find(i=>i.prompt===name&&i.subject===cat)){ alert(name+" is already in rotation"); return; }
   const settings=mastDrillSettings();
   const introCount=items.filter(i=>i.subject===cat&&i.status==="introduction").length;
-  if(introCount>=settings.max_intro_per_cat){ alert(cat+" already has "+introCount+" introduction items (max "+settings.max_intro_per_cat+")"); return; }
+  const _introMax=mastIntroMaxFor(cat,settings);
+  if(introCount>=_introMax){ alert(cat+" already has "+introCount+" introduction items (max "+_introMax+")"); return; }
   const slug=name.toLowerCase().replace(/[^a-z0-9]/g,"_").substring(0,20);
   const prefix=kid.substring(0,3);
   const item={id:prefix+"_"+slug,subject:cat,type:cat.toLowerCase(),prompt:name,answer:name,tier:"daily",review_mode:"flash",status:"introduction",drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0};
@@ -11311,7 +11341,7 @@ function mastSlideShown(id){
     if(jset.auto_pull){
       const cat=item.subject;
       const introCount=items.filter(i=>i.subject===cat&&i.status==="introduction"&&i.id!==item.id).length;
-      if(introCount<jset.max_intro_per_cat){
+      if(introCount<mastIntroMaxFor(cat,jset)){
         const curriculum=mastFullBank()[cat]||[];
         const existingPrompts=new Set(items.filter(i=>i.subject===cat).map(i=>i.prompt));
         const next=curriculum.find(name=>!existingPrompts.has(name));
@@ -11574,6 +11604,43 @@ function renderMastAdmin(){
     h+='<option value="__custom__">+ Custom category...</option>';
     h+='</select>';
     h+='<button onclick="mastAdminAddCatIntro()" style="padding:6px 14px;border-radius:8px;border:1.5px solid #c2410c;background:#fff7ed;color:#c2410c;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Add</button>';
+    h+='</div>';
+  }
+  h+='</div>';
+
+  // Per-category "Max New / Category" overrides (mirrors the cap & intro-dots overrides above)
+  const catIntroMax=s.cat_intro_max||{};
+  const imaxOverrideCats=Object.keys(catIntroMax);
+  const imaxShownCats=[...new Set([...itemCats,...imaxOverrideCats])].sort();
+  const imaxAddableCats=[...new Set([...bankCats,...itemCats])].filter(c=>!imaxShownCats.includes(c)).sort();
+
+  h+='<div class="mast-admin-row" style="flex-direction:column;align-items:stretch">';
+  h+='<div style="margin-bottom:8px"><div class="mast-admin-label">Per-Category New-Items Overrides</div><div class="mast-admin-desc">Override how many items may be in introduction at once for specific categories (blank = use default '+(s.max_intro_per_cat||3)+')</div></div>';
+  if(imaxShownCats.length){
+    imaxShownCats.forEach(cat=>{
+      const cv=catIntroMax[cat];
+      const hasOverride=cv!==undefined&&cv!==null;
+      const inItems=itemCats.includes(cat);
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0">';
+      h+='<span style="flex:1;font-size:12px;font-weight:600;'+(inItems?'':'color:var(--muted);font-style:italic')+'">'+(catE[cat]||"")+' '+cat+(inItems?'':' <span style="font-size:9px;font-weight:500">(no items yet)</span>')+'</span>';
+      h+='<div class="mast-admin-stepper">';
+      h+='<button onclick="mastAdminCatIntroMax(\''+cat.replace(/'/g,"\\\\'")+'\',-1)"'+(hasOverride&&cv<=1?' disabled':'')+'>−</button>';
+      h+='<span class="val" style="'+(hasOverride?'color:#c2410c;font-weight:800':'color:var(--muted)')+'">'+( hasOverride?cv:(s.max_intro_per_cat||3))+'</span>';
+      h+='<button onclick="mastAdminCatIntroMax(\''+cat.replace(/'/g,"\\\\'")+'\',1)">+</button>';
+      h+='</div>';
+      h+='<button onclick="mastAdminCatIntroMax(\''+cat.replace(/'/g,"\\\\'")+'\',0)" style="width:22px;height:22px;border-radius:50%;border:1.5px solid '+(hasOverride?'#fca5a5':'#e5e7eb')+';background:'+(hasOverride?'#fef2f2':'#f9fafb')+';color:'+(hasOverride?'#dc2626':'#d1d5db')+';font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0"'+(hasOverride?'':' disabled')+'>\u{2715}</button>';
+      h+='</div>';
+    });
+  } else {
+    h+='<div style="font-size:11px;color:var(--muted);padding:4px 0">No overrides set. All categories use the default.</div>';
+  }
+  if(imaxAddableCats.length||true){
+    h+='<div style="margin-top:8px;display:flex;align-items:center;gap:6px">';
+    h+='<select id="mast-catintromax-add" style="flex:1;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:11px;font-family:\'DM Sans\',sans-serif;background:#fff">';
+    if(imaxAddableCats.length) imaxAddableCats.forEach(c=>{ h+='<option value="'+c+'">'+(catE[c]||"")+' '+c+'</option>'; });
+    h+='<option value="__custom__">+ Custom category...</option>';
+    h+='</select>';
+    h+='<button onclick="mastAdminAddCatIntroMax()" style="padding:6px 14px;border-radius:8px;border:1.5px solid #c2410c;background:#fff7ed;color:#c2410c;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Add</button>';
     h+='</div>';
   }
   h+='</div>';
