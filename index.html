@@ -10472,6 +10472,76 @@ function mastKnowledgeType(item){
   if(MAST_PROCEDURE_FLUENCY_TYPES.has(t)) return "procedure_fluency";
   return "fact_association";
 }
+
+// --- R2 (gate): mastGateState + manual Sprint-switch resolution + untimed-accuracy helper. ---
+// Still DORMANT — pure, consumed by nobody. gate_tier (default "weekly") and sprint_default
+// (default OFF) are READ from the per-kid settings object passed in; the gate self-defaults, so
+// mastDrillSettings() is untouched here and nothing in the live settings flow changes. R3 ships
+// the UI that writes these per-kid controls.
+
+// Is `tier` at or above `gateTier` in the canonical tier progression? Uses the global
+// MAST_TIER_ORDER (not a kid's ladder subset) so an off-ladder tier still compares sanely.
+// "weekly" is the default gate = the docs' "Box 3+".
+function mastTierAtLeast(tier,gateTier){
+  const a=MAST_TIER_ORDER.indexOf(tier||"daily");
+  const b=MAST_TIER_ORDER.indexOf(gateTier||"weekly");
+  if(a<0||b<0) return false;
+  return a>=b;
+}
+
+// Manual Sprint switch — most-specific wins: item.sprintEnabled ?? cat_sprint[deck] ?? per-kid
+// sprint_default (shipped OFF). Decks ≈ subject for v1, so the per-deck map is keyed by subject.
+// `false` is a real "off" (not nullish), so an explicit false at any level is honored — this is
+// how the docs' "no sprint" decks stay Leitner-only no matter how accurate they get.
+function mastSprintSwitch(item,settings){
+  settings=settings||{};
+  const itemSw=item?item.sprintEnabled:undefined;
+  const cat=item?item.subject:undefined;
+  const catSw=(cat!=null)?(settings.cat_sprint||{})[cat]:undefined;
+  return !!(itemSw ?? catSw ?? settings.sprint_default ?? false);
+}
+
+// Rolling untimed accuracy for one item, derived from the existing mastery/history records
+// (history[kid][YYYYMMDD].items[] of {id,result}; result "c"/"m"/"~", "shown" = exposure-only).
+// "c" counts as correct; "m"/"~" do not (conservative — a "close" shouldn't read as accurate);
+// "shown" is skipped. opts.window = most-recent-N scored attempts (0/absent = all-time). Returns
+// a 0..1 fraction, or null when the item has no scored attempts yet (no signal -> tier test alone).
+function mastUntimedAccuracy(history,kid,itemId,opts){
+  opts=opts||{};
+  const window=opts.window||0;
+  const kh=(history&&history[kid])||{};
+  const keys=Object.keys(kh).sort().reverse(); // YYYYMMDD desc = most-recent first
+  let correct=0,total=0;
+  for(const k of keys){
+    const entry=kh[k]; if(!entry) continue;
+    let its=entry.items;
+    if(!Array.isArray(its)) its=its?Object.values(its):[];
+    for(const it of its){
+      if(!it||it.id!==itemId||it.result==="shown") continue;
+      total++;
+      if(it.result==="c") correct++;
+      if(window&&total>=window) break;
+    }
+    if(window&&total>=window) break;
+  }
+  return total?correct/total:null;
+}
+
+// The gate: "leitner" | "sprintEligible" | "neverDrill". concept/transfer never drill; everything
+// else ladders (leitner) until it is "ready" — at/above the gate tier OR >=90% rolling untimed
+// accuracy — AND the manual Sprint switch resolves ON; only then is it sprintEligible. A ready
+// item whose switch is OFF stays Leitner-only forever. `accuracy` is precomputed (e.g. via
+// mastUntimedAccuracy) and passed in so the gate stays pure; null/absent = no accuracy signal, so
+// readiness falls to the tier test alone.
+function mastGateState(item,settings,accuracy){
+  settings=settings||{};
+  const kt=mastKnowledgeType(item);
+  if(kt==="concept"||kt==="transfer") return "neverDrill";
+  const ready = mastTierAtLeast(item&&item.tier,settings.gate_tier||"weekly")
+             || (typeof accuracy==="number" && accuracy>=0.9);
+  if(!ready) return "leitner";
+  return mastSprintSwitch(item,settings) ? "sprintEligible" : "leitner";
+}
 // RETRIEVAL_END
 
 function _mastRe(){
