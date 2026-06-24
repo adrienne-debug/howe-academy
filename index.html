@@ -1682,7 +1682,42 @@ function renderSchedSubtabs(){
     '<button class="sched-sub'+(schedShowHistory?" active":"")+'" onclick="toggleSchedHistory()">History</button>'+
     '<button class="sched-sub'+(schedShowAdmin?" active":"")+'" onclick="toggleSchedAdmin()">Admin</button>';
 }
-function renderAll(){
+// ── In-place re-render guard ──────────────────────────────────────
+// A rebuild used to "blip": the page jumped to the top and any text typed into an
+// uncontrolled field got wiped whenever a stepper/toggle/check-off fired. _preserveUI
+// snapshots scroll, in-progress field values, and focus/caret around the rebuild and
+// restores them — but only restores SCROLL when the view didn't change, so genuine
+// view switches (tab/day/kid/sub-tab) still reset to the top as expected.
+function _viewSig(){
+  try{ return [tab,schedShowAdmin,schedShowHistory,schedShowPace,
+    (typeof adminSubTab!=="undefined"?adminSubTab:""),
+    (typeof histTab!=="undefined"?histTab:""),
+    (typeof mastView!=="undefined"?mastView:""),
+    day,kid].join("|"); }catch(e){ return null; }
+}
+let _uiLastSig=null;
+function _preserveUI(fn){
+  const c=document.getElementById("content");
+  if(!c){ fn(); return; }
+  const sig=_viewSig();
+  const sameView=(sig!==null&&sig===_uiLastSig);
+  const sx=window.scrollX, sy=window.scrollY;
+  const vals={};
+  c.querySelectorAll("input[id],textarea[id]").forEach(el=>{ if(el.type!=="file") vals[el.id]=el.value; });
+  const act=document.activeElement;
+  const focusId=(act&&act.id&&c.contains(act))?act.id:null;
+  let selS=null,selE=null;
+  if(focusId&&("selectionStart" in act)){ try{ selS=act.selectionStart; selE=act.selectionEnd; }catch(e){} }
+  fn();
+  // Restore typed text only where the rebuilt field came back empty — controlled inputs
+  // (value driven by a variable) re-render with their value and are left untouched.
+  Object.keys(vals).forEach(id=>{ const el=document.getElementById(id); if(el&&el.type!=="file"&&el.value===""&&vals[id]!=="") el.value=vals[id]; });
+  if(focusId){ const el=document.getElementById(focusId); if(el){ try{ el.focus({preventScroll:true}); if(selS!=null&&("setSelectionRange" in el)) el.setSelectionRange(selS,selE); }catch(e){} } }
+  if(sameView) window.scrollTo(sx,sy);
+  _uiLastSig=sig;
+}
+function renderAll(){ _preserveUI(_renderAllInner); }
+function _renderAllInner(){
   const stb=document.getElementById("sitter-tab-btn"); if(stb) stb.textContent=SITTER_NAME;
   renderSchedSubtabs(); renderDayTabs(); renderKidFilter(); renderSkylight(); renderWeekStrip();
   if(tab==="schedule") document.getElementById("day-tabs").style.display=(schedShowHistory||schedShowPace||schedShowAdmin)?"none":"flex";
@@ -4244,7 +4279,7 @@ function addManualAttWeek(label){
   archive[wkKey]=entry;
   try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
   if(db) db.ref("archive/"+wkKey).set(entry);
-  const el=document.getElementById("content"); if(el) renderHistory(el);
+  _preserveUI(function(){ const el=document.getElementById("content"); if(el) renderHistory(el); });
 }
 
 function showAddWeekForm(){
@@ -4260,14 +4295,14 @@ function checkAttPin(){
   const v=(document.getElementById('att-pin-input')||{}).value||'';
   if(v===APP_PIN){
     attEditUnlocked=true;
-    const el=document.getElementById("content"); if(el) renderHistory(el);
+    _preserveUI(function(){ const el=document.getElementById("content"); if(el) renderHistory(el); });
   } else {
     const err=document.getElementById('att-pin-err'); if(err) err.textContent='Incorrect PIN';
   }
 }
 function lockAttEdit(){
   attEditUnlocked=false;
-  const el=document.getElementById("content"); if(el) renderHistory(el);
+  _preserveUI(function(){ const el=document.getElementById("content"); if(el) renderHistory(el); });
 }
 function setAttOverride(wkKey,day,kid,val){
   if(!attOverrides[wkKey]) attOverrides[wkKey]={};
@@ -4275,7 +4310,7 @@ function setAttOverride(wkKey,day,kid,val){
   attOverrides[wkKey][day][kid]=val;
   try{localStorage.setItem("ha_att_overrides",JSON.stringify(attOverrides));}catch(e){}
   if(db) db.ref("att_overrides/"+wkKey+"/"+day+"/"+kid).set(val);
-  const el=document.getElementById("content"); if(el) renderHistory(el);
+  _preserveUI(function(){ const el=document.getElementById("content"); if(el) renderHistory(el); });
 }
 function setAttDate(wkKey,day,val){
   if(!archive[wkKey]) return;
@@ -4283,7 +4318,7 @@ function setAttDate(wkKey,day,val){
   archive[wkKey].dates[day]=val.trim();
   try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
   if(db) db.ref("archive/"+wkKey+"/dates/"+day).set(val.trim());
-  const el=document.getElementById("content"); if(el) renderHistory(el);
+  _preserveUI(function(){ const el=document.getElementById("content"); if(el) renderHistory(el); });
 }
 
 // ── BABYSITTER TAB ───────────────────────────────────────────────
