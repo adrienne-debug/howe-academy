@@ -1084,6 +1084,7 @@ let mastGenerating={}; // {itemId: true} while API call in flight
 let mastView="drill"; // "drill", "scores", "admin", etc.
 let mastAdminLocal=null;
 let mastAdminDirty=false;
+let mastOverrideExtraCats=[];  // transient: categories surfaced in the consolidated per-category overrides UI but not yet given an override (not persisted)
 let mastAdminPinOk=false;
 let mastScoreItemId=null; // for per-item history
 let mastManualScore=false;
@@ -10474,6 +10475,7 @@ function _mastRe(){
 function mastAdminInit(){
   mastAdminLocal={...mastDrillSettings()};
   mastAdminDirty=false;
+  mastOverrideExtraCats=[];
   const cats=Object.keys(MAST_BANK_MAP[masteryKid]||{});
   if(cats.length) mastBankAddCat=cats[0];
 }
@@ -10487,8 +10489,8 @@ function mastAdminAdj(field,delta){
   mastAdminDirty=true;
   _mastRe();
 }
-function mastAdminAddCatCap(){
-  const sel=document.getElementById("mast-catcap-add");
+function mastAdminAddCatOverride(){
+  const sel=document.getElementById("mast-cat-override-add");
   if(!sel) return;
   let cat=sel.value;
   if(cat==="__custom__"){
@@ -10496,10 +10498,9 @@ function mastAdminAddCatCap(){
     if(!cat||!cat.trim()) return;
     cat=cat.trim();
   }
-  if(!mastAdminLocal) mastAdminInit();
-  if(!mastAdminLocal.cat_caps) mastAdminLocal.cat_caps={};
-  mastAdminLocal.cat_caps[cat]=mastAdminLocal.max_per_cat||5;
-  mastAdminDirty=true;
+  // Surface the category as a configurable row. Transient (not persisted) — a row only
+  // sticks across reloads once it actually has an override set via the knobs below.
+  if(!mastOverrideExtraCats.includes(cat)) mastOverrideExtraCats.push(cat);
   _mastRe();
 }
 function mastAdminCatCap(cat,delta){
@@ -10513,21 +10514,6 @@ function mastAdminCatCap(cat,delta){
   mastAdminDirty=true;
   _mastRe();
 }
-function mastAdminAddCatIntro(){
-  const sel=document.getElementById("mast-catintro-add");
-  if(!sel) return;
-  let cat=sel.value;
-  if(cat==="__custom__"){
-    cat=prompt("Enter category name:");
-    if(!cat||!cat.trim()) return;
-    cat=cat.trim();
-  }
-  if(!mastAdminLocal) mastAdminInit();
-  if(!mastAdminLocal.cat_intro_dots) mastAdminLocal.cat_intro_dots={};
-  mastAdminLocal.cat_intro_dots[cat]=mastAdminLocal.intro_dots||5;
-  mastAdminDirty=true;
-  _mastRe();
-}
 function mastAdminCatIntro(cat,delta){
   if(!mastAdminLocal) mastAdminInit();
   if(!mastAdminLocal.cat_intro_dots) mastAdminLocal.cat_intro_dots={};
@@ -10536,21 +10522,6 @@ function mastAdminCatIntro(cat,delta){
     const cur=mastAdminLocal.cat_intro_dots[cat]??(mastAdminLocal.intro_dots||5);
     mastAdminLocal.cat_intro_dots[cat]=Math.max(1,cur+delta);
   }
-  mastAdminDirty=true;
-  _mastRe();
-}
-function mastAdminAddCatIntroMax(){
-  const sel=document.getElementById("mast-catintromax-add");
-  if(!sel) return;
-  let cat=sel.value;
-  if(cat==="__custom__"){
-    cat=prompt("Enter category name:");
-    if(!cat||!cat.trim()) return;
-    cat=cat.trim();
-  }
-  if(!mastAdminLocal) mastAdminInit();
-  if(!mastAdminLocal.cat_intro_max) mastAdminLocal.cat_intro_max={};
-  mastAdminLocal.cat_intro_max[cat]=mastAdminLocal.max_intro_per_cat||3;
   mastAdminDirty=true;
   _mastRe();
 }
@@ -11414,117 +11385,56 @@ function renderMastAdmin(){
     h+='</div></div>';
   });
 
-  // Per-category cap overrides
+  // Per-category overrides — one consolidated control for all three knobs (daily cap,
+  // intro dots, max-new). Each category row carries its three overrides inline and reuses
+  // the existing per-knob handlers. mastOverrideExtraCats surfaces a not-yet-active
+  // category so it can be configured (transient — not persisted until a knob is set).
   const catCaps=s.cat_caps||{};
+  const catIntro=s.cat_intro_dots||{};
+  const catIntroMax=s.cat_intro_max||{};
   const itemCats=[...new Set((masteryData[masteryKid]||[]).map(i=>i.subject).filter(Boolean))];
   const bankCats=Object.keys(MAST_BANK_MAP[masteryKid]||{});
-  const overrideCats=Object.keys(catCaps);
-  const shownCats=[...new Set([...itemCats,...overrideCats])].sort();
-  const addableCats=[...new Set([...bankCats,...itemCats])].filter(c=>!shownCats.includes(c)).sort();
+  const coShownCats=[...new Set([...itemCats,...Object.keys(catCaps),...Object.keys(catIntro),...Object.keys(catIntroMax),...mastOverrideExtraCats])].sort();
+  const coAddableCats=[...new Set([...bankCats,...itemCats])].filter(c=>!coShownCats.includes(c)).sort();
+  const _capDef=s.max_per_cat||5, _dotDef=s.intro_dots||5, _newDef=s.max_intro_per_cat||3;
+  const coKnob=(cat,label,cur,def,fn)=>{
+    const has=cur!==undefined&&cur!==null; const esc=cat.replace(/'/g,"\\\\'");
+    let k='<div style="display:flex;align-items:center;gap:4px">';
+    k+='<span style="font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;min-width:26px">'+label+'</span>';
+    k+='<div class="mast-admin-stepper">';
+    k+='<button onclick="'+fn+'(\''+esc+'\',-1)"'+(has&&cur<=1?' disabled':'')+'>\u{2212}</button>';
+    k+='<span class="val" style="'+(has?'color:#c2410c;font-weight:800':'color:var(--muted)')+'">'+(has?cur:def)+'</span>';
+    k+='<button onclick="'+fn+'(\''+esc+'\',1)">+</button>';
+    k+='</div>';
+    k+='<button onclick="'+fn+'(\''+esc+'\',0)" title="Clear override"'+(has?'':' disabled')+' style="width:18px;height:18px;border-radius:50%;border:1.5px solid '+(has?'#fca5a5':'#ececec')+';background:'+(has?'#fef2f2':'#fafafa')+';color:'+(has?'#dc2626':'#dcdcdc')+';font-size:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">\u{2715}</button>';
+    k+='</div>';
+    return k;
+  };
 
   h+='<div class="mast-admin-row" style="flex-direction:column;align-items:stretch">';
-  h+='<div style="margin-bottom:8px"><div class="mast-admin-label">Per-Category Cap Overrides</div><div class="mast-admin-desc">Override the daily cap for specific categories (blank = use default '+(s.max_per_cat||5)+')</div></div>';
-  if(shownCats.length){
-    shownCats.forEach(cat=>{
-      const cv=catCaps[cat];
-      const hasOverride=cv!==undefined&&cv!==null;
+  h+='<div style="margin-bottom:8px"><div class="mast-admin-label">Per-Category Overrides</div><div class="mast-admin-desc">Override any knob for a specific category — blank uses the default (Cap <b>'+_capDef+'</b> \u{00B7} Intro Dots <b>'+_dotDef+'</b> \u{00B7} Max New <b>'+_newDef+'</b>).</div></div>';
+  if(coShownCats.length){
+    coShownCats.forEach(cat=>{
       const inItems=itemCats.includes(cat);
-      h+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0">';
-      h+='<span style="flex:1;font-size:12px;font-weight:600;'+(inItems?'':'color:var(--muted);font-style:italic')+'">'+(catE[cat]||"")+' '+cat+(inItems?'':' <span style="font-size:9px;font-weight:500">(no items yet)</span>')+'</span>';
-      h+='<div class="mast-admin-stepper">';
-      h+='<button onclick="mastAdminCatCap(\''+cat.replace(/'/g,"\\\\'")+'\',-1)"'+(hasOverride&&cv<=1?' disabled':'')+'>−</button>';
-      h+='<span class="val" style="'+(hasOverride?'color:#c2410c;font-weight:800':'color:var(--muted)')+'">'+( hasOverride?cv:(s.max_per_cat||5))+'</span>';
-      h+='<button onclick="mastAdminCatCap(\''+cat.replace(/'/g,"\\\\'")+'\',1)">+</button>';
+      h+='<div style="padding:6px 0;border-bottom:1px solid #f3f1ee">';
+      h+='<div style="font-size:12px;font-weight:600;margin-bottom:5px;'+(inItems?'':'color:var(--muted);font-style:italic')+'">'+(catE[cat]||"")+' '+cat+(inItems?'':' <span style="font-size:9px;font-weight:500">(no items yet)</span>')+'</div>';
+      h+='<div style="display:flex;gap:14px;flex-wrap:wrap">';
+      h+=coKnob(cat,'Cap',catCaps[cat],_capDef,'mastAdminCatCap');
+      h+=coKnob(cat,'Dots',catIntro[cat],_dotDef,'mastAdminCatIntro');
+      h+=coKnob(cat,'New',catIntroMax[cat],_newDef,'mastAdminCatIntroMax');
       h+='</div>';
-      h+='<button onclick="mastAdminCatCap(\''+cat.replace(/'/g,"\\\\'")+'\',0)" style="width:22px;height:22px;border-radius:50%;border:1.5px solid '+(hasOverride?'#fca5a5':'#e5e7eb')+';background:'+(hasOverride?'#fef2f2':'#f9fafb')+';color:'+(hasOverride?'#dc2626':'#d1d5db')+';font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0"'+(hasOverride?'':' disabled')+'>\u{2715}</button>';
       h+='</div>';
     });
   } else {
-    h+='<div style="font-size:11px;color:var(--muted);padding:4px 0">No overrides set. All categories use the default cap.</div>';
+    h+='<div style="font-size:11px;color:var(--muted);padding:4px 0">No overrides set. Every category uses the defaults above.</div>';
   }
-  if(addableCats.length||true){
-    h+='<div style="margin-top:8px;display:flex;align-items:center;gap:6px">';
-    h+='<select id="mast-catcap-add" style="flex:1;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:11px;font-family:\'DM Sans\',sans-serif;background:#fff">';
-    if(addableCats.length) addableCats.forEach(c=>{ h+='<option value="'+c+'">'+(catE[c]||"")+' '+c+'</option>'; });
-    h+='<option value="__custom__">+ Custom category...</option>';
-    h+='</select>';
-    h+='<button onclick="mastAdminAddCatCap()" style="padding:6px 14px;border-radius:8px;border:1.5px solid #c2410c;background:#fff7ed;color:#c2410c;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Add</button>';
-    h+='</div>';
-  }
+  h+='<div style="margin-top:8px;display:flex;align-items:center;gap:6px">';
+  h+='<select id="mast-cat-override-add" style="flex:1;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:11px;font-family:\'DM Sans\',sans-serif;background:#fff">';
+  if(coAddableCats.length) coAddableCats.forEach(c=>{ h+='<option value="'+c+'">'+(catE[c]||"")+' '+c+'</option>'; });
+  h+='<option value="__custom__">+ Custom category...</option>';
+  h+='</select>';
+  h+='<button onclick="mastAdminAddCatOverride()" style="padding:6px 14px;border-radius:8px;border:1.5px solid #c2410c;background:#fff7ed;color:#c2410c;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Add</button>';
   h+='</div>';
-
-  // Per-category intro-dots overrides (mirrors the cap overrides above)
-  const catIntro=s.cat_intro_dots||{};
-  const introOverrideCats=Object.keys(catIntro);
-  const introShownCats=[...new Set([...itemCats,...introOverrideCats])].sort();
-  const introAddableCats=[...new Set([...bankCats,...itemCats])].filter(c=>!introShownCats.includes(c)).sort();
-
-  h+='<div class="mast-admin-row" style="flex-direction:column;align-items:stretch">';
-  h+='<div style="margin-bottom:8px"><div class="mast-admin-label">Per-Category Intro Dots Overrides</div><div class="mast-admin-desc">Override the introduction dots for specific categories (blank = use default '+(s.intro_dots||5)+')</div></div>';
-  if(introShownCats.length){
-    introShownCats.forEach(cat=>{
-      const cv=catIntro[cat];
-      const hasOverride=cv!==undefined&&cv!==null;
-      const inItems=itemCats.includes(cat);
-      h+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0">';
-      h+='<span style="flex:1;font-size:12px;font-weight:600;'+(inItems?'':'color:var(--muted);font-style:italic')+'">'+(catE[cat]||"")+' '+cat+(inItems?'':' <span style="font-size:9px;font-weight:500">(no items yet)</span>')+'</span>';
-      h+='<div class="mast-admin-stepper">';
-      h+='<button onclick="mastAdminCatIntro(\''+cat.replace(/'/g,"\\\\'")+'\',-1)"'+(hasOverride&&cv<=1?' disabled':'')+'>−</button>';
-      h+='<span class="val" style="'+(hasOverride?'color:#c2410c;font-weight:800':'color:var(--muted)')+'">'+( hasOverride?cv:(s.intro_dots||5))+'</span>';
-      h+='<button onclick="mastAdminCatIntro(\''+cat.replace(/'/g,"\\\\'")+'\',1)">+</button>';
-      h+='</div>';
-      h+='<button onclick="mastAdminCatIntro(\''+cat.replace(/'/g,"\\\\'")+'\',0)" style="width:22px;height:22px;border-radius:50%;border:1.5px solid '+(hasOverride?'#fca5a5':'#e5e7eb')+';background:'+(hasOverride?'#fef2f2':'#f9fafb')+';color:'+(hasOverride?'#dc2626':'#d1d5db')+';font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0"'+(hasOverride?'':' disabled')+'>\u{2715}</button>';
-      h+='</div>';
-    });
-  } else {
-    h+='<div style="font-size:11px;color:var(--muted);padding:4px 0">No overrides set. All categories use the default intro dots.</div>';
-  }
-  if(introAddableCats.length||true){
-    h+='<div style="margin-top:8px;display:flex;align-items:center;gap:6px">';
-    h+='<select id="mast-catintro-add" style="flex:1;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:11px;font-family:\'DM Sans\',sans-serif;background:#fff">';
-    if(introAddableCats.length) introAddableCats.forEach(c=>{ h+='<option value="'+c+'">'+(catE[c]||"")+' '+c+'</option>'; });
-    h+='<option value="__custom__">+ Custom category...</option>';
-    h+='</select>';
-    h+='<button onclick="mastAdminAddCatIntro()" style="padding:6px 14px;border-radius:8px;border:1.5px solid #c2410c;background:#fff7ed;color:#c2410c;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Add</button>';
-    h+='</div>';
-  }
-  h+='</div>';
-
-  // Per-category "Max New / Category" overrides (mirrors the cap & intro-dots overrides above)
-  const catIntroMax=s.cat_intro_max||{};
-  const imaxOverrideCats=Object.keys(catIntroMax);
-  const imaxShownCats=[...new Set([...itemCats,...imaxOverrideCats])].sort();
-  const imaxAddableCats=[...new Set([...bankCats,...itemCats])].filter(c=>!imaxShownCats.includes(c)).sort();
-
-  h+='<div class="mast-admin-row" style="flex-direction:column;align-items:stretch">';
-  h+='<div style="margin-bottom:8px"><div class="mast-admin-label">Per-Category New-Items Overrides</div><div class="mast-admin-desc">Override how many items may be in introduction at once for specific categories (blank = use default '+(s.max_intro_per_cat||3)+')</div></div>';
-  if(imaxShownCats.length){
-    imaxShownCats.forEach(cat=>{
-      const cv=catIntroMax[cat];
-      const hasOverride=cv!==undefined&&cv!==null;
-      const inItems=itemCats.includes(cat);
-      h+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0">';
-      h+='<span style="flex:1;font-size:12px;font-weight:600;'+(inItems?'':'color:var(--muted);font-style:italic')+'">'+(catE[cat]||"")+' '+cat+(inItems?'':' <span style="font-size:9px;font-weight:500">(no items yet)</span>')+'</span>';
-      h+='<div class="mast-admin-stepper">';
-      h+='<button onclick="mastAdminCatIntroMax(\''+cat.replace(/'/g,"\\\\'")+'\',-1)"'+(hasOverride&&cv<=1?' disabled':'')+'>−</button>';
-      h+='<span class="val" style="'+(hasOverride?'color:#c2410c;font-weight:800':'color:var(--muted)')+'">'+( hasOverride?cv:(s.max_intro_per_cat||3))+'</span>';
-      h+='<button onclick="mastAdminCatIntroMax(\''+cat.replace(/'/g,"\\\\'")+'\',1)">+</button>';
-      h+='</div>';
-      h+='<button onclick="mastAdminCatIntroMax(\''+cat.replace(/'/g,"\\\\'")+'\',0)" style="width:22px;height:22px;border-radius:50%;border:1.5px solid '+(hasOverride?'#fca5a5':'#e5e7eb')+';background:'+(hasOverride?'#fef2f2':'#f9fafb')+';color:'+(hasOverride?'#dc2626':'#d1d5db')+';font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0"'+(hasOverride?'':' disabled')+'>\u{2715}</button>';
-      h+='</div>';
-    });
-  } else {
-    h+='<div style="font-size:11px;color:var(--muted);padding:4px 0">No overrides set. All categories use the default.</div>';
-  }
-  if(imaxAddableCats.length||true){
-    h+='<div style="margin-top:8px;display:flex;align-items:center;gap:6px">';
-    h+='<select id="mast-catintromax-add" style="flex:1;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:11px;font-family:\'DM Sans\',sans-serif;background:#fff">';
-    if(imaxAddableCats.length) imaxAddableCats.forEach(c=>{ h+='<option value="'+c+'">'+(catE[c]||"")+' '+c+'</option>'; });
-    h+='<option value="__custom__">+ Custom category...</option>';
-    h+='</select>';
-    h+='<button onclick="mastAdminAddCatIntroMax()" style="padding:6px 14px;border-radius:8px;border:1.5px solid #c2410c;background:#fff7ed;color:#c2410c;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Add</button>';
-    h+='</div>';
-  }
   h+='</div>';
 
   // Auto-pull toggle
