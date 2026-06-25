@@ -10648,6 +10648,35 @@ function mastNeverDrillItems(items){
   if(!Array.isArray(items)) items=Object.values(items||{});
   return items.filter(i=>i&&mastIsNeverDrill(i));
 }
+
+// --- R6 (insight surfacing): two SELF-REFERENCED metrics — deck-mastery % (share of a deck in
+// mastered tiers) and the Sprint personal-best trend. No grade norms anywhere: always vs the kid's
+// own deck / own history.
+const MAST_MASTERY_TIER_DEFAULT="monthly"; // "mastered" = at/above this tier (the monthly+ retention band)
+// Share of a deck (one subject, or all items) sitting in mastered tiers. Denominator = on-ladder
+// items (excludes introduction + never-drill); numerator = those at/above masteryTier.
+function mastDeckMastery(items,masteryTier){
+  if(!Array.isArray(items)) items=Object.values(items||{});
+  masteryTier=masteryTier||MAST_MASTERY_TIER_DEFAULT;
+  const onLadder=items.filter(i=>i&&i.status!=="introduction"&&!mastIsNeverDrill(i));
+  const total=onLadder.length;
+  const mastered=onLadder.filter(i=>mastTierAtLeast(i.tier,masteryTier)).length;
+  return {total,mastered,pct:total?Math.round(mastered/total*100):0};
+}
+// Personal-best progression over logged sprint sessions (a running max of each session's best).
+// entries: [{date,a,b,best,...}] (array or Firebase object). Returns the series + the current PB.
+function mastSprintBestTrend(entries){
+  if(!Array.isArray(entries)) entries=Object.values(entries||{});
+  const sorted=entries.filter(e=>e&&(e.best!=null||e.a!=null||e.b!=null)).slice()
+    .sort((x,y)=>String(x.date||x.ts||"").localeCompare(String(y.date||y.ts||"")));
+  let run=0;
+  const series=sorted.map(e=>{
+    const best=(e.best!=null)?e.best:Math.max(e.a||0,e.b||0);
+    const isPB=best>run; if(isPB) run=best;
+    return {date:e.date||null,a:e.a??null,b:e.b??null,best,runningBest:run,isPB,deck:e.deck||null};
+  });
+  return {series,count:series.length,currentBest:run,lastIsPB:series.length?series[series.length-1].isPB:false};
+}
 // RETRIEVAL_END
 
 function _mastRe(){
@@ -12168,6 +12197,29 @@ function _renderMasteryInner(el){
       h+='<div style="margin-bottom:14px"><button class="mast-log-btn" onclick="mastOpenManualScore()" style="width:100%;text-align:center;padding:10px">\u{2795} Add Past Score</button></div>';
     }
 
+    // R6: Sprint personal-best trend — self-referenced (vs the kid's own best), no grade norm.
+    const _sl=(masteryData.sprintLog&&masteryData.sprintLog[masteryKid])?masteryData.sprintLog[masteryKid]:null;
+    const _st=_sl?mastSprintBestTrend(_sl):null;
+    if(_st&&_st.count){
+      const _maxB=Math.max(1,..._st.series.map(s=>s.best));
+      h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">';
+      h+='<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px">';
+      h+='<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700">\u{1F3C3} Sprint Personal Best</div>';
+      h+='<div style="font-family:\'DM Mono\',monospace;font-size:20px;font-weight:800;color:#5b3a8c">'+_st.currentBest+' <span style="font-size:10px;color:#78716c;font-weight:600">words/60s</span></div>';
+      h+='</div>';
+      _st.series.slice(-10).reverse().forEach(s=>{
+        const w=Math.round(s.best/_maxB*100);
+        h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">';
+        h+='<div style="width:88px;font-size:9px;color:#78716c;line-height:1.2">'+(s.date||"")+(s.deck?'<br><span style="opacity:.7">'+s.deck+'</span>':'')+'</div>';
+        h+='<div style="flex:1;background:#f3f1ee;border-radius:6px;height:14px;position:relative;overflow:hidden"><div style="position:absolute;left:0;top:0;bottom:0;width:'+w+'%;background:'+(s.isPB?"#16a34a":"#c4b5fd")+'"></div></div>';
+        h+='<div style="width:28px;text-align:right;font-family:\'DM Mono\',monospace;font-size:12px;font-weight:700">'+s.best+'</div>';
+        h+=s.isPB?'<span style="font-size:11px">\u{1F3C6}</span>':'<span style="display:inline-block;width:13px"></span>';
+        h+='</div>';
+      });
+      h+='<div style="font-size:10px;color:var(--muted);margin-top:6px;text-align:center">Only racing themselves \u{2014} \u{1F3C6} marks a new personal best.</div>';
+      h+='</div>';
+    }
+
     if(!entries.length){
       h+='<div class="mast-none">No scores yet. Log a drill to see results here.</div>';
     } else {
@@ -12320,6 +12372,10 @@ function _renderMasteryInner(el){
         h+='<div style="display:flex;align-items:baseline;gap:6px">';
         h+='<div class="mast-hm-count" style="color:'+barCol+'">'+total+'</div>';
         h+='<div class="mast-hm-label">'+healthLbl+'</div></div>';
+
+        // R6: deck-mastery % — share of the deck in mastered tiers (self-referenced, no grade norm).
+        const _dm=mastDeckMastery(sitems);
+        if(_dm.total) h+='<div style="font-size:10px;font-weight:700;color:#0d9488;margin-top:3px">\u{1F393} '+_dm.pct+'% mastered <span style="color:var(--muted);font-weight:500">('+_dm.mastered+'/'+_dm.total+' at monthly+)</span></div>';
 
         // Tier bar
         h+='<div class="mast-hm-tiers">';
@@ -14593,6 +14649,30 @@ function sprintUpdateGain(){
   }
 }
 
+// R6: log a finished sprint session so the personal-best trend (Scores view) can build. Parent-
+// initiated, low-frequency; appended with push() so concurrent devices can't clobber the log.
+function sprintLogResult(){
+  const a=parseInt(document.getElementById("sp-score-a")?.value)||0;
+  const b=parseInt(document.getElementById("sp-score-b")?.value)||0;
+  if(!a&&!b){ alert("Enter a Sheet A and/or B score first."); return; }
+  const best=Math.max(a,b);
+  const deck=sprintSource==="drill"
+    ? (sprintDeck==="__all__"?"All decks":sprintDeck)
+    : (sprintSelectedPhono?sprintSelectedPhono.pg:(document.getElementById("sp-custom-phono")?.value?.trim()||"phonogram"));
+  const date=sprintSource==="drill"?sprintDate:(document.getElementById("sp-date")?.value||sprintDate);
+  const entry={date,deck,a:a||null,b:b||null,best,ts:Date.now(),src:sprintSource};
+  const kid=masteryKid;
+  if(!masteryData.sprintLog) masteryData.sprintLog={};
+  if(!Array.isArray(masteryData.sprintLog[kid])) masteryData.sprintLog[kid]=Object.values(masteryData.sprintLog[kid]||{});
+  masteryData.sprintLog[kid].push(entry);
+  if(db) db.ref("mastery/sprintLog/"+kid).push(entry);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  const t=mastSprintBestTrend(masteryData.sprintLog[kid]);
+  const el=document.getElementById("sp-gain");
+  if(el){ el.textContent=t.lastIsPB?("\u{1F3C6} New personal best — "+best+" words/60s!"):("Logged \u{2713}  Personal best: "+t.currentBest+" words/60s"); el.style.color="#16a34a"; }
+  const btn=document.getElementById("sp-log-btn"); if(btn){ btn.textContent="\u{2713} Logged"; btn.disabled=true; }
+}
+
 async function sprintGenerate(){
   if(sprintGenerating) return;
   const customPhono=document.getElementById("sp-custom-phono")?.value?.trim()||"";
@@ -15004,6 +15084,7 @@ function sprintScoreRowHtml(){
       </div>
     </div>
     <div id="sp-gain" style="text-align:center;padding-top:8px;border-top:1px solid #e2ddd6;font-size:12px;font-weight:700;color:#78716c">Enter scores above to see session gain</div>
+    <button id="sp-log-btn" onclick="sprintLogResult()" style="width:100%;margin-top:10px;padding:9px;border-radius:10px;border:1.5px solid #5b3a8c;background:#fff;color:#5b3a8c;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">📈 Log result &amp; track personal best</button>
   </div>`;
 }
 
