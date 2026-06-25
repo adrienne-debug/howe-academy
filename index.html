@@ -10148,7 +10148,7 @@ function mastDueItems(kid,pn){
   let items=masteryData[kid];
   if(!items) return [];
   if(!Array.isArray(items)) items=Object.values(items);
-  const due=items.filter(i=>mastIsDue(i,pn));
+  const due=items.filter(i=>mastIsDue(i,pn)&&!mastIsNeverDrill(i));  // R5: never-drill items never assemble
   due.sort((a,b)=>MAST_TIER_ORDER.indexOf(a.tier||"daily")-MAST_TIER_ORDER.indexOf(b.tier||"daily"));
   const _mk=masteryKid; masteryKid=kid; const settings=mastDrillSettings(); masteryKid=_mk;
   const byCat={};
@@ -10286,6 +10286,7 @@ function mastSaveResults(){
     const item=items.find(i=>i.id===dueItem.id);
     if(!item) return;
     if(item.status==="introduction") return; // intro items don't get ladder scoring
+    if(mastIsNeverDrill(item)) return; // R5: concept/transfer are discuss/teach — never scored/laddered
 
     const oldTier=item.tier||"daily";
     let oldIdx=TIER_LADDER.indexOf(oldTier);
@@ -10634,6 +10635,18 @@ function mastDynamicClear(item){
 function mastDynamicDeck(items,source){
   if(!Array.isArray(items)) items=Object.values(items||{});
   return items.filter(i=>i&&i.dynamic&&(!source||i.dynSource===source));
+}
+
+// --- R5 (never-drill guard): concept/transfer items are "discuss / teach" — excluded from drill
+// assembly + scoring and surfaced so Mom sees them, but NEVER auto-drilled. Reuses the R1 map
+// (these only ever exist via an explicit knowledge_type tag).
+function mastIsNeverDrill(item){
+  const kt=mastKnowledgeType(item);
+  return kt==="concept"||kt==="transfer";
+}
+function mastNeverDrillItems(items){
+  if(!Array.isArray(items)) items=Object.values(items||{});
+  return items.filter(i=>i&&mastIsNeverDrill(i));
 }
 // RETRIEVAL_END
 
@@ -12478,6 +12491,22 @@ function _renderMasteryInner(el){
   const dayN=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][today.getDay()];
   const monN=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][today.getMonth()];
   const dateStr=dayN+", "+monN+" "+today.getDate();
+
+  // R5: discuss/teach surface — concept/transfer items are never drilled, so list them here (above
+  // the drill) so they aren't forgotten. Read-only; tapping is the parent's cue to talk it through.
+  let _allItems=masteryData[masteryKid]||[]; if(!Array.isArray(_allItems)) _allItems=Object.values(_allItems);
+  const _nd=mastNeverDrillItems(_allItems);
+  if(_nd.length){
+    h+='<div style="background:#faf5ff;border:1.5px solid #d8b4fe;border-radius:14px;padding:12px 14px;margin-bottom:14px">';
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700;color:#6d28d9;margin-bottom:3px">\u{1F5E3}\u{FE0F} Discuss / Teach <span style="font-size:12px;font-weight:600;color:#9333ea">('+_nd.length+')</span></div>';
+    h+='<div style="font-size:11px;color:#7c3aed;opacity:0.85;margin-bottom:9px">Concepts &amp; transfer skills \u{2014} talk these through, don’t drill them. Not scored.</div>';
+    h+='<div style="display:flex;flex-wrap:wrap;gap:5px">';
+    _nd.forEach(it=>{
+      const ktl=mastKnowledgeType(it)==="transfer"?"transfer":"concept";
+      h+='<span style="font-size:12px;font-weight:600;background:#fff;border:1px solid #e9d5ff;color:#1c1917;border-radius:10px;padding:4px 10px">'+(it.prompt||it.id)+' <span style="font-size:9px;font-weight:700;color:#9333ea;text-transform:uppercase">'+ktl+'</span></span>';
+    });
+    h+='</div></div>';
+  }
 
   h+='<div class="mast-drill">';
   h+='<div class="mast-drill-hdr" style="border-bottom:1.5px solid '+color+'">';
