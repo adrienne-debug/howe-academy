@@ -1085,6 +1085,7 @@ let mastView="drill"; // "drill", "scores", "admin", etc.
 let mastAdminLocal=null;
 let mastAdminDirty=false;
 let mastOverrideExtraCats=[];  // transient: categories surfaced in the consolidated per-category overrides UI but not yet given an override (not persisted)
+let mastDynamicCapNotice=false;  // R4: set when a miss couldn't join the active-review deck (at cap) — surfaced, never silent
 let mastAdminPinOk=false;
 let mastScoreItemId=null; // for per-item history
 let mastManualScore=false;
@@ -10070,7 +10071,7 @@ function mastDrillSettings(){
   const kid=masteryKid||"julian";
   const s=masteryData[kid+"_settings"]||{};
   const defaultLadder=["every_other_day","weekly","bi_weekly","monthly","graduated"];
-  return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,auto_pull:s.auto_pull!==false,ladder:s.ladder||defaultLadder,cat_caps:s.cat_caps||{},cat_intro_dots:s.cat_intro_dots||{},cat_intro_max:s.cat_intro_max||{},miss_drop:s.miss_drop||"reset",close_behavior:s.close_behavior||"stay",drop_threshold:s.drop_threshold??0,tier_streaks:s.tier_streaks||{},gate_tier:s.gate_tier||"weekly",sprint_default:s.sprint_default===true,cat_sprint:s.cat_sprint||{}};
+  return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,auto_pull:s.auto_pull!==false,ladder:s.ladder||defaultLadder,cat_caps:s.cat_caps||{},cat_intro_dots:s.cat_intro_dots||{},cat_intro_max:s.cat_intro_max||{},miss_drop:s.miss_drop||"reset",close_behavior:s.close_behavior||"stay",drop_threshold:s.drop_threshold??0,tier_streaks:s.tier_streaks||{},gate_tier:s.gate_tier||"weekly",sprint_default:s.sprint_default===true,cat_sprint:s.cat_sprint||{},dynamic_decks:s.dynamic_decks===true,dynamic_cap:s.dynamic_cap??24};
 }
 // How many introduction dots a card in `cat` needs before it enters the ladder.
 // Mirrors cat_caps: a per-category override, else the global intro_dots default.
@@ -10338,6 +10339,13 @@ function mastSaveResults(){
     } else {
       item.consecutive_correct=0;
     }
+    // R4: dynamic "active review" deck — gated by dynamic_decks (default OFF). A miss flags the item
+    // (recording the tier it fell from); a climb back to that tier graduates it. Cap is surfaced.
+    if(score==="m"){
+      if(mastDynamicShouldAdd(items,item,_ds)) mastDynamicMark(item,oldTier);
+      else if(_ds.dynamic_decks&&!item.dynamic&&mastDynamicEligible(item)) mastDynamicCapNotice=true;
+    }
+    if(item.dynamic&&mastDynamicShouldPrune(item,_ds)) mastDynamicClear(item);
     touched.push(item);
     changes++;
   });
@@ -10385,6 +10393,11 @@ function mastSaveResults(){
       upd[ix+"/drop_count"]=it.drop_count||0;
       upd[ix+"/status"]=it.status||"active";
       upd[ix+"/tally_dots"]=it.tally_dots??0;
+      // R4: persist (or clear, via null) the dynamic active-review flags on the same targeted write.
+      upd[ix+"/dynamic"]=it.dynamic?true:null;
+      upd[ix+"/dynSource"]=it.dynamic?(it.dynSource||null):null;
+      upd[ix+"/dynFromTier"]=it.dynamic?(it.dynFromTier||null):null;
+      upd[ix+"/dynAddedAt"]=it.dynamic?(it.dynAddedAt||null):null;
     });
     db.ref("mastery/"+masteryKid).update(upd);
     db.ref("mastery/printLog").set(pl);
@@ -10570,6 +10583,58 @@ function mastSprintPool(kid,opts){
     return mastGateState(it,settings,acc)==="sprintEligible";
   });
 }
+
+// --- R4 (dynamic decks): a missed tracked fact joins the kid's dynamic "active review" set — a
+// flag on the EXISTING item (no duplicate), so nothing is ever copied or, on graduation, deleted
+// (the fact always lives in its home deck). It auto-graduates when it climbs back to the tier it
+// fell from. Gated behind the per-kid `dynamic_decks` setting (default OFF) — pure mechanism here,
+// wired into mastSaveResults' miss/correct branches. Idempotent, capped, never drops silently.
+const MAST_DYNAMIC_CAP_DEFAULT=24;
+// Only drillable facts/procedures can join active-review; concept/transfer (never-drill) cannot.
+function mastDynamicEligible(item){
+  const kt=mastKnowledgeType(item);
+  return kt==="fact_association"||kt==="procedure_fluency";
+}
+function mastDynamicCount(items){
+  if(!Array.isArray(items)) items=Object.values(items||{});
+  return items.filter(i=>i&&i.dynamic).length;
+}
+// Should a just-missed item be flagged dynamic? Idempotent (no if already dynamic), eligible-only,
+// gated, and capped — at cap it returns false and the caller surfaces it (mastDynamicCapNotice),
+// so a miss is never silently swallowed (the tier still drops via the normal ladder regardless).
+function mastDynamicShouldAdd(items,item,settings){
+  settings=settings||{};
+  if(!settings.dynamic_decks) return false;
+  if(!item||item.dynamic) return false;
+  if(!mastDynamicEligible(item)) return false;
+  const cap=settings.dynamic_cap||MAST_DYNAMIC_CAP_DEFAULT;
+  return mastDynamicCount(items)<cap;
+}
+// Flag in place, recording the tier it fell from (the graduation target). Returns the item.
+function mastDynamicMark(item,fromTier){
+  item.dynamic=true;
+  item.dynSource=item.subject||null;
+  item.dynFromTier=fromTier||item.tier||"daily";
+  if(!item.dynAddedAt) item.dynAddedAt=Date.now();
+  return item;
+}
+// Has a dynamic item re-mastered — climbed back to (or above) the tier it fell from?
+function mastDynamicShouldPrune(item,settings){
+  if(!item||!item.dynamic) return false;
+  const from=item.dynFromTier||(settings&&settings.gate_tier)||"weekly";
+  return mastTierAtLeast(item.tier,from);
+}
+// Graduate: clear the flag only (the item itself is untouched in its home deck). Returns the item.
+function mastDynamicClear(item){
+  delete item.dynamic; delete item.dynSource; delete item.dynFromTier; delete item.dynAddedAt;
+  return item;
+}
+// The current dynamic "active review" set, optionally limited to one source deck (e.g. "Math Facts"
+// -> the docs' "missed math facts" deck).
+function mastDynamicDeck(items,source){
+  if(!Array.isArray(items)) items=Object.values(items||{});
+  return items.filter(i=>i&&i.dynamic&&(!source||i.dynSource===source));
+}
 // RETRIEVAL_END
 
 function _mastRe(){
@@ -10605,6 +10670,8 @@ function mastAdminAdj(field,delta){
   if(!mastAdminLocal) mastAdminInit();
   if(field==='auto_pull'){ mastAdminLocal.auto_pull=!mastAdminLocal.auto_pull; }
   else if(field==='sprint_default'){ mastAdminLocal.sprint_default=!mastAdminLocal.sprint_default; }
+  else if(field==='dynamic_decks'){ mastAdminLocal.dynamic_decks=!mastAdminLocal.dynamic_decks; }
+  else if(field==='dynamic_cap'){ mastAdminLocal.dynamic_cap=Math.max(1,(mastAdminLocal.dynamic_cap??24)+delta); }
   else if(field==='miss_drop'){ mastAdminLocal.miss_drop=mastAdminLocal.miss_drop==="reset"?"one":"reset"; }
   else if(field==='close_behavior'){ const opts=["stay","count","drop"]; const ci=opts.indexOf(mastAdminLocal.close_behavior||"stay"); mastAdminLocal.close_behavior=opts[(ci+1)%opts.length]; }
   else if(field==='drop_threshold'){ mastAdminLocal.drop_threshold=Math.max(0,(mastAdminLocal.drop_threshold||0)+delta); }
@@ -11615,6 +11682,37 @@ function renderMastAdmin(){
   h+='<div><div class="mast-admin-label">Sprint Switch Default</div><div class="mast-admin-desc">Default for this kid’s decks: should accurate items progress into timed sprints? Per-deck/per-item overrides win. Shipped OFF.</div></div>';
   h+='<button class="mast-admin-toggle'+(s.sprint_default?" on":"")+'" onclick="mastAdminAdj(\'sprint_default\',0)"></button>';
   h+='</div>';
+
+  // R4 — dynamic "active review" deck: on a missed drill, a tracked fact joins a self-pruning
+  // review set; it graduates when it climbs back to the tier it fell from. Default OFF.
+  h+='<div class="mast-admin-row">';
+  h+='<div><div class="mast-admin-label">\u{1F501} Active-Review Deck</div><div class="mast-admin-desc">When a fact is missed in drills, add it to a self-pruning review set; it graduates once it re-masters. Concept/transfer never join.</div></div>';
+  h+='<button class="mast-admin-toggle'+(s.dynamic_decks?" on":"")+'" onclick="mastAdminAdj(\'dynamic_decks\',0)"></button>';
+  h+='</div>';
+  if(s.dynamic_decks){
+    const _dcap=s.dynamic_cap??24;
+    h+='<div class="mast-admin-row">';
+    h+='<div><div class="mast-admin-label">Active-Review Cap</div><div class="mast-admin-desc">Most facts allowed in active review at once (a full deck is flagged, never silently dropped).</div></div>';
+    h+='<div class="mast-admin-stepper">';
+    h+='<button onclick="mastAdminAdj(\'dynamic_cap\',-1)"'+(_dcap<=1?' disabled':'')+'>\u{2212}</button>';
+    h+='<span class="val">'+_dcap+'</span>';
+    h+='<button onclick="mastAdminAdj(\'dynamic_cap\',1)">+</button>';
+    h+='</div></div>';
+    // Read-only view of what's currently in active review (+ the never-silent cap notice).
+    let _dynItems=masteryData[masteryKid]||[]; if(!Array.isArray(_dynItems)) _dynItems=Object.values(_dynItems);
+    const _dyn=mastDynamicDeck(_dynItems);
+    h+='<div class="mast-admin-row" style="flex-direction:column;align-items:stretch">';
+    h+='<div style="margin-bottom:6px"><div class="mast-admin-label">In Active Review ('+_dyn.length+'/'+_dcap+')</div></div>';
+    if(mastDynamicCapNotice) h+='<div style="font-size:11px;color:#b91c1c;background:#fee2e2;border-radius:8px;padding:6px 9px;margin-bottom:6px">\u{26A0}\u{FE0F} A recent miss couldn’t join — the deck is full. Graduate some or raise the cap.</div>';
+    if(_dyn.length){
+      h+='<div style="display:flex;flex-wrap:wrap;gap:5px">';
+      _dyn.forEach(it=>{ h+='<span style="font-size:11px;font-weight:600;background:#eef2ff;color:#3730a3;border-radius:10px;padding:3px 9px">'+(it.prompt||it.id)+' <span style="opacity:.6">'+(it.dynSource||"")+'</span></span>'; });
+      h+='</div>';
+    } else {
+      h+='<div style="font-size:11px;color:var(--muted)">Empty — missed facts will appear here automatically.</div>';
+    }
+    h+='</div>';
+  }
 
   // Ladder configuration
   h+='<div class="mast-admin-row" style="flex-direction:column;align-items:stretch">';
