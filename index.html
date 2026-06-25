@@ -10070,7 +10070,7 @@ function mastDrillSettings(){
   const kid=masteryKid||"julian";
   const s=masteryData[kid+"_settings"]||{};
   const defaultLadder=["every_other_day","weekly","bi_weekly","monthly","graduated"];
-  return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,auto_pull:s.auto_pull!==false,ladder:s.ladder||defaultLadder,cat_caps:s.cat_caps||{},cat_intro_dots:s.cat_intro_dots||{},cat_intro_max:s.cat_intro_max||{},miss_drop:s.miss_drop||"reset",close_behavior:s.close_behavior||"stay",drop_threshold:s.drop_threshold??0,tier_streaks:s.tier_streaks||{}};
+  return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,auto_pull:s.auto_pull!==false,ladder:s.ladder||defaultLadder,cat_caps:s.cat_caps||{},cat_intro_dots:s.cat_intro_dots||{},cat_intro_max:s.cat_intro_max||{},miss_drop:s.miss_drop||"reset",close_behavior:s.close_behavior||"stay",drop_threshold:s.drop_threshold??0,tier_streaks:s.tier_streaks||{},gate_tier:s.gate_tier||"weekly",sprint_default:s.sprint_default===true,cat_sprint:s.cat_sprint||{}};
 }
 // How many introduction dots a card in `cat` needs before it enters the ladder.
 // Mirrors cat_caps: a per-category override, else the global intro_dots default.
@@ -10542,6 +10542,34 @@ function mastGateState(item,settings,accuracy){
   if(!ready) return "leitner";
   return mastSprintSwitch(item,settings) ? "sprintEligible" : "leitner";
 }
+
+// --- R3 (sprint pool): the set of sprintEligible items for a kid, the source the Sprint view
+// assembles a "from drill items" set from. FIRST consumer of the gate (R3 wires it into the UI).
+// Pure over its inputs: pass opts.items/opts.settings/opts.history for testing; in the app they
+// default to the live masteryData / mastDrillSettings(). Filters:
+//   opts.deck / opts.subject     -> only that deck (deck ≈ subject for v1)
+//   opts.activeSubjects (array)  -> "current-week alignment": restrict to these subjects. Drill
+//                                   items carry no week field, so this is an explicit opt (off by
+//                                   default); the deck picker is the practical week-focus control.
+// Introduction-status items are excluded (not laddering yet). Accuracy (>=90% branch of the gate)
+// is read per-item from opts.history when provided.
+function mastSprintPool(kid,opts){
+  opts=opts||{};
+  let items=opts.items;
+  if(items==null) items=(typeof masteryData!=="undefined"&&masteryData[kid])||[];
+  if(!Array.isArray(items)) items=Object.values(items);
+  const settings=opts.settings||(typeof mastDrillSettings==="function"?mastDrillSettings():{});
+  const history=opts.history;
+  const deck=opts.deck||opts.subject||null;
+  const active=Array.isArray(opts.activeSubjects)?opts.activeSubjects:null;
+  return items.filter(it=>{
+    if(!it||it.status==="introduction") return false;
+    if(deck&&it.subject!==deck) return false;
+    if(active&&!active.includes(it.subject)) return false;
+    const acc=history?mastUntimedAccuracy(history,kid,it.id,opts.accuracyOpts):undefined;
+    return mastGateState(it,settings,acc)==="sprintEligible";
+  });
+}
 // RETRIEVAL_END
 
 function _mastRe(){
@@ -10576,10 +10604,31 @@ function mastAdminInit(){
 function mastAdminAdj(field,delta){
   if(!mastAdminLocal) mastAdminInit();
   if(field==='auto_pull'){ mastAdminLocal.auto_pull=!mastAdminLocal.auto_pull; }
+  else if(field==='sprint_default'){ mastAdminLocal.sprint_default=!mastAdminLocal.sprint_default; }
   else if(field==='miss_drop'){ mastAdminLocal.miss_drop=mastAdminLocal.miss_drop==="reset"?"one":"reset"; }
   else if(field==='close_behavior'){ const opts=["stay","count","drop"]; const ci=opts.indexOf(mastAdminLocal.close_behavior||"stay"); mastAdminLocal.close_behavior=opts[(ci+1)%opts.length]; }
   else if(field==='drop_threshold'){ mastAdminLocal.drop_threshold=Math.max(0,(mastAdminLocal.drop_threshold||0)+delta); }
   else { mastAdminLocal[field]=Math.max(1,(mastAdminLocal[field]||0)+delta); }
+  mastAdminDirty=true;
+  _mastRe();
+}
+// R3: per-kid sprint gate tier (Daily…Monthly) — the threshold an item must reach before it's
+// sprint-eligible (also satisfied by >=90% untimed accuracy). Default "weekly" = the docs' Box 3+.
+function mastAdminSetGateTier(tier){
+  if(!mastAdminLocal) mastAdminInit();
+  mastAdminLocal.gate_tier=tier;
+  mastAdminDirty=true;
+  _mastRe();
+}
+// R3: per-category Sprint switch (deck level of item.sprintEnabled ?? cat_sprint[deck] ?? sprint_default).
+// Tri-state: ON -> OFF -> inherit(default). Cleared back to inherit by deleting the key.
+function mastAdminCatSprint(cat){
+  if(!mastAdminLocal) mastAdminInit();
+  if(!mastAdminLocal.cat_sprint) mastAdminLocal.cat_sprint={};
+  const cur=mastAdminLocal.cat_sprint[cat];
+  if(cur===undefined) mastAdminLocal.cat_sprint[cat]=true;        // inherit -> ON
+  else if(cur===true) mastAdminLocal.cat_sprint[cat]=false;       // ON -> OFF
+  else delete mastAdminLocal.cat_sprint[cat];                      // OFF -> inherit
   mastAdminDirty=true;
   _mastRe();
 }
@@ -11486,6 +11535,7 @@ function renderMastAdmin(){
   const catCaps=s.cat_caps||{};
   const catIntro=s.cat_intro_dots||{};
   const catIntroMax=s.cat_intro_max||{};
+  const catSprint=s.cat_sprint||{};  // R3: per-deck Sprint switch (true/false/undefined=inherit)
   const itemCats=[...new Set((masteryData[masteryKid]||[]).map(i=>i.subject).filter(Boolean))];
   const bankCats=Object.keys(MAST_BANK_MAP[masteryKid]||{});
   const coShownCats=[...new Set([...itemCats,...Object.keys(catCaps),...Object.keys(catIntro),...Object.keys(catIntroMax),...mastOverrideExtraCats])].sort();
@@ -11504,6 +11554,16 @@ function renderMastAdmin(){
     k+='</div>';
     return k;
   };
+  // R3: per-deck Sprint switch pill — tap cycles ON → OFF → inherit(kid default). Resolves the
+  // middle tier of item.sprintEnabled ?? cat_sprint[deck] ?? sprint_default.
+  const coSprint=(cat)=>{
+    const v=catSprint[cat]; const esc=cat.replace(/'/g,"\\\\'");
+    let lbl,bg,bd,fg;
+    if(v===true){ lbl="Sprint ON"; bg="#16a34a"; bd="#16a34a"; fg="#fff"; }
+    else if(v===false){ lbl="Sprint OFF"; bg="#fff"; bd="#fca5a5"; fg="#dc2626"; }
+    else { lbl="Sprint: "+(s.sprint_default?"on":"off")+" (default)"; bg="#fafafa"; bd="var(--border)"; fg="var(--muted)"; }
+    return '<button onclick="mastAdminCatSprint(\''+esc+'\')" title="Tap: ON \u{2192} OFF \u{2192} inherit default" style="padding:5px 10px;border-radius:14px;border:1.5px solid '+bd+';background:'+bg+';color:'+fg+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+lbl+'</button>';
+  };
 
   h+='<div class="mast-admin-row" style="flex-direction:column;align-items:stretch">';
   h+='<div style="margin-bottom:8px"><div class="mast-admin-label">Per-Category Overrides</div><div class="mast-admin-desc">Override any knob for a specific category — blank uses the default (Cap <b>'+_capDef+'</b> \u{00B7} Intro Dots <b>'+_dotDef+'</b> \u{00B7} Max New <b>'+_newDef+'</b>).</div></div>';
@@ -11516,6 +11576,7 @@ function renderMastAdmin(){
       h+=coKnob(cat,'Cap',catCaps[cat],_capDef,'mastAdminCatCap');
       h+=coKnob(cat,'Dots',catIntro[cat],_dotDef,'mastAdminCatIntro');
       h+=coKnob(cat,'New',catIntroMax[cat],_newDef,'mastAdminCatIntroMax');
+      h+=coSprint(cat);
       h+='</div>';
       h+='</div>';
     });
@@ -11535,6 +11596,24 @@ function renderMastAdmin(){
   h+='<div class="mast-admin-row">';
   h+='<div><div class="mast-admin-label">Auto-Pull from Database</div><div class="mast-admin-desc">Automatically add next item when an intro slot opens</div></div>';
   h+='<button class="mast-admin-toggle'+(s.auto_pull?" on":"")+'" onclick="mastAdminAdj(\'auto_pull\',0)"></button>';
+  h+='</div>';
+
+  // R3 — Sprint gate: per-kid threshold + master sprint switch. An item is sprint-eligible once it
+  // reaches the gate tier (or ≥90% untimed accuracy) AND its Sprint switch resolves ON. Default
+  // switch OFF, so progressing a deck into timed sprints is always an intentional choice.
+  h+='<div class="mast-admin-row" style="flex-direction:column;align-items:stretch">';
+  h+='<div style="margin-bottom:8px"><div class="mast-admin-label">\u{1F3C3} Sprint Gate Tier</div><div class="mast-admin-desc">An item becomes sprint-eligible once it reaches this tier (or hits 90% untimed accuracy). Higher = more accuracy required before timing.</div></div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+  ["daily","every_other_day","every_third_day","weekly","bi_weekly","monthly"].forEach(t=>{
+    const act=(s.gate_tier||"weekly")===t;
+    const col=MAST_TIER_COL[t]||"#666";
+    h+='<button onclick="mastAdminSetGateTier(\''+t+'\')" style="padding:6px 11px;border-radius:20px;border:1.5px solid '+(act?col:"var(--border)")+';background:'+(act?col:"#fff")+';color:'+(act?"#fff":"var(--muted)")+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+(MAST_TIER_LBL[t]||t)+'</button>';
+  });
+  h+='</div></div>';
+
+  h+='<div class="mast-admin-row">';
+  h+='<div><div class="mast-admin-label">Sprint Switch Default</div><div class="mast-admin-desc">Default for this kid’s decks: should accurate items progress into timed sprints? Per-deck/per-item overrides win. Shipped OFF.</div></div>';
+  h+='<button class="mast-admin-toggle'+(s.sprint_default?" on":"")+'" onclick="mastAdminAdj(\'sprint_default\',0)"></button>';
   h+='</div>';
 
   // Ladder configuration
@@ -14317,6 +14396,11 @@ let sprintGenerating=false;
 let sprintNum=1;
 let sprintDate=new Date().toISOString().slice(0,10);
 let sprintPrevBest="";
+// R3: Sprint view source — "phonogram" (the existing LOE generator) or "drill" (assemble a set
+// from this kid's gate-cleared, switch-ON drill items via mastSprintPool). Default phonogram so
+// existing behavior is unchanged on load. sprintDeck filters the drill-items pool by subject.
+let sprintSource="phonogram";
+let sprintDeck="__all__";
 
 const SPRINT_LOE_B=[
   {pg:"sh",sounds:"/sh/"},{pg:"th",sounds:"/th/·/ð/"},{pg:"ch",sounds:"/ch/·/k/·/sh/"},
@@ -14466,7 +14550,8 @@ function sprintRenderSheets(pA,pB,opts){
   el.innerHTML=sprintBuildSheet(pA,"A",opts)+sprintBuildSheet(pB,"B",opts);
 }
 
-function sprintBuildSheet(parsed,sheet,{sprintNum,date,prevBest,cols,rows,ps,kidName}){
+function sprintBuildSheet(parsed,sheet,{sprintNum,date,prevBest,cols,rows,ps,kidName,sheetLabel}){
+  sheetLabel=sheetLabel||"Phonics Sprint";  // R3: drill-item sprints pass their own label
   const isA=sheet==="A";
   const col=isA?"#5b3a8c":"#1e3a5f";
   const bgLight=isA?"#faf5ff":"#eff6ff";
@@ -14496,7 +14581,7 @@ function sprintBuildSheet(parsed,sheet,{sprintNum,date,prevBest,cols,rows,ps,kid
   h+=`<div style="background:${kidColor};color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between">
     <div>
       <div style="font-family:'Fraunces',serif;font-size:18px;font-weight:900">${emoji} ${kidName}</div>
-      <div style="font-size:10px;opacity:0.75;margin-top:1px">Phonics Sprint #${String(sprintNum).padStart(3,"0")} · ${dateStr}</div>
+      <div style="font-size:10px;opacity:0.75;margin-top:1px">${sheetLabel} #${String(sprintNum).padStart(3,"0")} · ${dateStr}</div>
     </div>
     <div style="font-family:'Fraunces',serif;font-size:44px;font-weight:900;opacity:0.2;line-height:1">${sheet}</div>
   </div>`;
@@ -14579,10 +14664,116 @@ function sprintBuildSheet(parsed,sheet,{sprintNum,date,prevBest,cols,rows,ps,kid
   return h;
 }
 
+// R3: Sprint source handlers + the "from drill items" view — assembles the gate-cleared, switch-ON
+// set via mastSprintPool and builds offline A/B sprint sheets from it. No Firebase writes (the score
+// tracker is the same in-memory UI the phonogram sprint uses).
+function sprintSetSource(src){ sprintSource=src; _mastRe(); }
+function sprintSetDeck(val){ sprintDeck=val; _mastRe(); }
+// R3: build A/B sprint sheets straight from the gate-cleared pool — offline (no API): A and B are
+// the same set, shuffled independently inside sprintBuildSheet, so the kid reads it twice and the
+// A→B gain measures fluency. Reuses the phonogram sheet/score pipeline.
+function sprintGenerateFromPool(){
+  const settings=mastDrillSettings();
+  let items=masteryData[masteryKid]||[];
+  if(!Array.isArray(items)) items=Object.values(items);
+  const deckFilter=sprintDeck==="__all__"?null:sprintDeck;
+  const pool=mastSprintPool(masteryKid,{items,settings,history:masteryData.history,deck:deckFilter});
+  if(!pool.length) return;
+  const words=pool.map(it=>String(it.prompt||it.answer||it.id));
+  const cols=4;
+  const rows=Math.max(3,Math.min(10,Math.ceil(words.length/cols)));
+  const mk=()=>({focusPhono:deckFilter||"All decks",focusSounds:"",gridWords:words.slice(),reviewWords:[],nonsenseWords:[],phrases:[],sentences:[]});
+  sprintRenderSheets(mk(),mk(),{sprintNum,date:sprintDate,prevBest:null,cols,rows,ps:"none",kidName:(SL_KLBL[masteryKid]||"Student"),sheetLabel:(deckFilter||"All decks")+" Sprint"});
+}
+function buildSprintSourceToggle(color){
+  const opt=(v,l)=>{
+    const act=sprintSource===v;
+    return '<button onclick="sprintSetSource(\''+v+'\')" style="flex:1;padding:9px 10px;border-radius:10px;border:1.5px solid '+(act?color:"#e2ddd6")+';background:'+(act?color:"#fff")+';color:'+(act?"#fff":"#78716c")+';font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+l+'</button>';
+  };
+  let s='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:10px;margin-bottom:14px">';
+  s+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:7px">Sprint Source</div>';
+  s+='<div style="display:flex;gap:8px">'+opt("phonogram","\u{1F524} Phonogram")+opt("drill","\u{1F5C2}\u{FE0F} From drill items")+'</div>';
+  return s+'</div>';
+}
+function buildSprintFromDrillHtml(color){
+  const catE=MAST_CAT_EMOJI_MAP[masteryKid]||{};
+  const settings=mastDrillSettings();
+  let items=masteryData[masteryKid]||[];
+  if(!Array.isArray(items)) items=Object.values(items);
+  const history=masteryData.history;
+  const deckFilter=sprintDeck==="__all__"?null:sprintDeck;
+  const decks=[...new Set(items.map(i=>i.subject).filter(Boolean))].sort();
+  const pool=mastSprintPool(masteryKid,{items,settings,history,deck:deckFilter});
+  // Diagnostics for the before/after: classify the rest of the (deck-scoped, non-intro) items.
+  const scoped=items.filter(i=>i&&i.status!=="introduction"&&(!deckFilter||i.subject===deckFilter));
+  let nReady=0,nSwitchOff=0,nNotReady=0,nNever=0;
+  scoped.forEach(it=>{
+    const kt=mastKnowledgeType(it);
+    if(kt==="concept"||kt==="transfer"){ nNever++; return; }
+    const acc=history?mastUntimedAccuracy(history,masteryKid,it.id):undefined;
+    const ready=mastTierAtLeast(it.tier,settings.gate_tier||"weekly")||(typeof acc==="number"&&acc>=0.9);
+    if(!ready){ nNotReady++; return; }
+    if(mastSprintSwitch(it,settings)) nReady++; else nSwitchOff++;
+  });
+  const gateLbl=MAST_TIER_LBL[settings.gate_tier]||settings.gate_tier;
+  let h='';
+  // Deck filter
+  h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700;margin-bottom:4px">\u{1F5C2}\u{FE0F} Sprint Set \u{2014} from drill items</div>';
+  h+='<div style="font-size:12px;color:#78716c;line-height:1.5;margin-bottom:12px">Gate-cleared, switch-ON items (tier \u{2265} <b>'+gateLbl+'</b> or \u{2265}90% untimed accuracy). Set the gate &amp; switches in <b>Admin \u{2192} Sprint Gate</b>.</div>';
+  h+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:6px">Deck</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+  const deckPill=(v,l)=>{ const act=sprintDeck===v; return '<button onclick="sprintSetDeck(\''+v.replace(/'/g,"\\\\'")+'\')" style="padding:6px 11px;border-radius:20px;border:1.5px solid '+(act?color:"#e2ddd6")+';background:'+(act?color:"#fff")+';color:'+(act?"#fff":"#78716c")+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+l+'</button>'; };
+  h+=deckPill("__all__","All decks");
+  decks.forEach(d=>{ h+=deckPill(d,((catE[d]||"")+" "+d).trim()); });
+  h+='</div></div>';
+  // Summary + breakdown
+  h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">';
+  h+='<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:10px"><span style="font-family:\'Fraunces\',serif;font-size:28px;font-weight:800;color:'+color+'">'+pool.length+'</span><span style="font-size:13px;color:#78716c;font-weight:600">item'+(pool.length===1?"":"s")+' in this sprint set</span></div>';
+  const chip=(n,lbl,bg,fg)=> n>0 ? '<span style="padding:3px 10px;border-radius:12px;background:'+bg+';color:'+fg+';font-size:11px;font-weight:700">'+n+' '+lbl+'</span>' : '';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+  h+=chip(nReady,'eligible','#dcfce7','#15803d');
+  h+=chip(nSwitchOff,'switch off','#fee2e2','#b91c1c');
+  h+=chip(nNotReady,'not ready yet','#fef9c3','#a16207');
+  h+=chip(nNever,'never-drill','#ede9fe','#6d28d9');
+  if(!nReady&&!nSwitchOff&&!nNotReady&&!nNever) h+='<span style="font-size:11px;color:#a8a29e">No drillable items'+(deckFilter?" in this deck":"")+' yet.</span>';
+  h+='</div></div>';
+  // The set, or a guided empty state
+  if(pool.length){
+    h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:4px 14px">';
+    pool.forEach(it=>{
+      const col=MAST_TIER_COL[it.tier]||"#666";
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f3f1ee">';
+      h+='<span style="flex:1;font-size:14px;font-weight:600;color:#1c1917">'+(it.prompt||it.id)+'</span>';
+      h+='<span style="font-size:10px;color:#78716c">'+((catE[it.subject]||"")+" "+(it.subject||"")).trim()+'</span>';
+      h+='<span style="font-size:10px;font-weight:700;color:'+col+';padding:2px 7px;border-radius:6px;border:1px solid '+col+'">'+(MAST_TIER_LBL[it.tier]||it.tier||"")+'</span>';
+      h+='</div>';
+    });
+    h+='</div>';
+    // R3: build offline A/B sprint sheets from this pooled set (two shuffles = first/second pass).
+    h+='<button onclick="sprintGenerateFromPool()" style="width:100%;padding:13px;border-radius:12px;border:none;background:'+color+';color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin:14px 0 16px">\u{2728} Generate A &amp; B sprint sheets ('+pool.length+' item'+(pool.length===1?'':'s')+')</button>';
+    h+=sprintScoreRowHtml();
+    h+='<div id="sp-sheets"></div>';
+  } else {
+    let msg;
+    if(nSwitchOff>0) msg="<b>"+nSwitchOff+"</b> accurate item"+(nSwitchOff===1?" is":"s are")+" ready to sprint, but the Sprint switch is OFF for "+(deckFilter?"this deck":"this kid")+". Turn it on in <b>Admin \u{2192} Sprint Gate</b> (kid default) or the per-deck pill in <b>Per-Category Overrides</b>.";
+    else if(nNotReady>0) msg="Nothing has cleared the gate yet \u{2014} "+nNotReady+" item"+(nNotReady===1?" is":"s are")+" still climbing toward <b>"+gateLbl+"</b> (or 90% untimed accuracy).";
+    else if(nNever>0) msg="The only items here are <b>concept/transfer</b> \u{2014} those are flagged to teach &amp; discuss, never auto-sprinted.";
+    else msg="No drill items"+(deckFilter?" in this deck":"")+" to sprint yet. Add items in the Mastery tab first.";
+    h+='<div style="background:#faf8f5;border:1.5px dashed #e2ddd6;border-radius:14px;padding:24px 18px;text-align:center;font-size:13px;color:#78716c;line-height:1.6">'+msg+'</div>';
+  }
+  return h;
+}
+
 function buildSprintHtml(){
   const color=MAST_KID_COL[masteryKid]||"#5b3a8c";
   const isActive=SPRINT_KID_ACTIVE.includes(masteryKid);
   let h="";
+
+  // R3: source toggle sits above everything. "From drill items" works for ALL kids (anyone with
+  // drill items), so it short-circuits before the phonogram-only isActive gate below.
+  h+=buildSprintSourceToggle(color);
+  if(sprintSource==="drill") return h+buildSprintFromDrillHtml(color);
 
   if(!isActive){
     const msg=SPRINT_KID_MSG[masteryKid]||"Phonics Sprint not configured for this student.";
@@ -14662,7 +14853,16 @@ function buildSprintHtml(){
   h+=`<div id="sp-status" style="display:none;padding:10px 14px;border-radius:10px;font-size:13px;font-weight:600;margin-bottom:12px"></div>`;
   h+=`<button id="sp-gen-btn" onclick="sprintGenerate()" style="width:100%;padding:13px;border-radius:12px;border:none;background:${color};color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:16px">✨ Generate A &amp; B Sprint Sheets</button>`;
 
-  h+=`<div id="sp-score-row" style="display:none;background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:13px 15px;margin-bottom:14px">
+  h+=sprintScoreRowHtml();
+
+  h+=`<div id="sp-sheets"></div>`;
+  return h;
+}
+
+// R3: the A→B "first pass / second pass" score tracker, shared by both Sprint sources (phonogram
+// and from-drill-items). Verbatim extraction of the original inline block — same IDs, no change.
+function sprintScoreRowHtml(){
+  return `<div id="sp-score-row" style="display:none;background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:13px 15px;margin-bottom:14px">
     <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#78716c;margin-bottom:10px">📊 Session Score Tracker</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
       <div style="border-radius:10px;padding:11px;text-align:center;background:#faf5ff;border:1.5px solid #c4b5fd">
@@ -14678,9 +14878,6 @@ function buildSprintHtml(){
     </div>
     <div id="sp-gain" style="text-align:center;padding-top:8px;border-top:1px solid #e2ddd6;font-size:12px;font-weight:700;color:#78716c">Enter scores above to see session gain</div>
   </div>`;
-
-  h+=`<div id="sp-sheets"></div>`;
-  return h;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
