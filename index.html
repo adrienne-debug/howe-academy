@@ -11241,6 +11241,33 @@ function mastListEditItem(id,field,value){
   mastPutCards(masteryKid,items,[it]);
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 }
+// R7: per-item knowledge_type override. "" = Auto (delete the field -> derive from type via the R1
+// map). Tagging concept/transfer makes the item never-drill (R5): it leaves the quiz and appears in
+// Discuss / Teach. Persisted on the same targeted card write as the other Edit-List fields.
+function mastListSetKnowledgeType(id,kt){
+  let items=masteryData[masteryKid];
+  if(!items||!Array.isArray(items)) return;
+  const it=items.find(i=>i.id===id);
+  if(!it) return;
+  if(kt) it.knowledge_type=kt; else delete it.knowledge_type;
+  masteryData[masteryKid]=items;
+  mastPutCards(masteryKid,items,[it]);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  _mastRe();
+}
+// R7: per-item Sprint switch override (most-specific tier of item.sprintEnabled ?? cat_sprint ??
+// sprint_default). null = Inherit (delete -> fall to deck/kid default).
+function mastListSetSprint(id,val){
+  let items=masteryData[masteryKid];
+  if(!items||!Array.isArray(items)) return;
+  const it=items.find(i=>i.id===id);
+  if(!it) return;
+  if(val===null||val===undefined) delete it.sprintEnabled; else it.sprintEnabled=val;
+  masteryData[masteryKid]=items;
+  mastPutCards(masteryKid,items,[it]);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  _mastRe();
+}
 
 function mastEditOpen(id){
   let items=masteryData[masteryKid]||[];
@@ -12866,6 +12893,29 @@ function _renderMasteryInner(el){
         h+='</div>';
         h+='<button onclick="event.stopPropagation();var v=Math.min(3,('+((it.consecutive_correct||0))+')+1);mastListEditItem(\''+it.id+'\',\'consecutive_correct\',v);_mastRe()" style="width:32px;height:32px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;font-size:16px;cursor:pointer;font-weight:700">+</button>';
         if(it.drop_count) h+='<span style="font-size:10px;color:#dc2626;font-weight:600">\u{2B07}'+it.drop_count+' drops</span>';
+        h+='</div>';
+        // R7: per-item knowledge type. "" = Auto (derived from type). concept/transfer = never-drill.
+        const _autoKt=mastKnowledgeType({type:it.type});
+        const _curKt=it.knowledge_type||"";
+        h+='<div style="font-size:10px;font-weight:700;color:#4338ca;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Knowledge Type</div>';
+        h+='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">';
+        [{v:"",l:"Auto ("+_autoKt.replace("_"," ")+")"},{v:"fact_association",l:"Fact"},{v:"procedure_fluency",l:"Procedure"},{v:"concept",l:"Concept"},{v:"transfer",l:"Transfer"}].forEach(o=>{
+          const sel=_curKt===o.v;
+          const nd=(o.v==="concept"||o.v==="transfer");
+          const ac=sel?(nd?"#9333ea":"#4338ca"):"#d1d5db";
+          h+='<button onclick="event.stopPropagation();mastListSetKnowledgeType(\''+it.id+'\',\''+o.v+'\')" style="padding:4px 10px;border-radius:10px;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;border:1.5px solid '+ac+';background:'+(sel?ac+'20':'#fff')+';color:'+(sel?ac:'#6b7280')+'">'+o.l+'</button>';
+        });
+        h+='</div>';
+        if(_curKt==="concept"||_curKt==="transfer") h+='<div style="font-size:9px;color:#9333ea;margin-bottom:10px">\u{1F5E3}\u{FE0F} Discuss / teach only \u{2014} won’t drill or score.</div>'; else h+='<div style="height:6px"></div>';
+        // R7: per-item Sprint override (most specific level; Inherit falls to deck/kid default).
+        const _csp=it.sprintEnabled;
+        h+='<div style="font-size:10px;font-weight:700;color:#4338ca;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Sprint (this item)</div>';
+        h+='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px">';
+        [{v:null,l:"Inherit"},{v:true,l:"On"},{v:false,l:"Off"}].forEach(o=>{
+          const sel=(o.v===null)?(_csp===undefined||_csp===null):(_csp===o.v);
+          const ac=sel?(o.v===false?"#dc2626":o.v===true?"#16a34a":"#4338ca"):"#d1d5db";
+          h+='<button onclick="event.stopPropagation();mastListSetSprint(\''+it.id+'\','+(o.v===null?"null":o.v)+')" style="padding:4px 10px;border-radius:10px;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;border:1.5px solid '+ac+';background:'+(sel?ac+'20':'#fff')+';color:'+(sel?ac:'#6b7280')+'">'+o.l+'</button>';
+        });
         h+='</div>';
         h+='<button onclick="event.stopPropagation();mastListDelete(\''+it.id+'\')" style="width:100%;padding:8px;border-radius:8px;border:1.5px solid #fca5a5;background:#fef2f2;color:#dc2626;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F5D1}\u{FE0F} Remove Item</button>';
         h+='</div>';
