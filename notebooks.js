@@ -2575,12 +2575,794 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
   }
 
   /* ============================================================================
+   *  LUCY  (1st grade — unicorn 🦄)
+   *  Ported from lucy_notebook_generator.py. Reuses fontFacesCss/dotted/FONTS_OK
+   *  (No Tears HWT) + the calendar helpers (DOW_ABBR/dowIndex/aroundDay/…).
+   *  CSS + curriculum (blends/subtraction/focus/pace) injected from source.
+   *  Coloring/activity PDFs are purchased Etsy art that can't be redistributed →
+   *  all PDF slots render Lucy's built-in placeholders (the BYOA "ship empty"
+   *  path); in-app PDF upload (PDF.js) is a future add.
+   * ========================================================================== */
+
+  var LUCY_CSS = "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n  :root {\n    --lu-dark:   #2d1b69; --lu-mid:    #7c3aed; --lu-light:  #ddd6fe;\n    --lu-pale:   #f5f3ff; --lu-pink:   #be185d; --lu-plight: #fbcfe8;\n    --lu-ppale:  #fdf2f8; --lu-gold:   #d97706; --lu-gpale:  #fffbeb;\n    --ink:       #1c1c1e; --muted:     #6b7280; --border:    #d1d5db; --white:     #ffffff;\n    --bb-pink:   #f472b6; --bb-rose:   #fb7185; --bb-lilac:  #c084fc;\n    --bb-pale:   #fdf2f8; --bb-rpale:  #fff1f2; --bb-lpale:  #faf5ff; --bb-border: #f9a8d4;\n  }\n  /* PRINT-TUNED PALETTE \u2014 applies only when printing; screen stays vivid.\n     Clean the deep purple, strengthen pale lilac/pink tints, darken muted text. */\n  @media print {\n    :root {\n      --lu-dark:   #3b2880;\n      --lu-light:  #c4b8fa;\n      --lu-pale:   #ece7fb;\n      --lu-plight: #f6b3d6;\n      --lu-ppale:  #fbe7f1;\n      --lu-gpale:  #fdf3d3;\n      --muted:     #555c67;\n      --border:    #b9bec7;\n    }\n  }\n  body { font-family:'Nunito',sans-serif; background:#c4b5fd; padding:40px 20px; display:flex; flex-direction:column; align-items:center; gap:48px; }\n  .page-label { font-family:'Nunito',sans-serif; font-size:10px; letter-spacing:0.12em; font-weight:700; text-transform:uppercase; color:#666; margin-bottom:-40px; align-self:flex-start; margin-left:calc(50% - 4.25in); }\n  .page { width:8.5in; height:11in; background:var(--white); box-shadow:0 4px 40px rgba(0,0,0,0.18); border-radius:3px; display:flex; flex-direction:column; overflow:hidden; }\n  /* HEADER */\n  .header { background:var(--lu-dark); padding:12px 40px 10px; display:flex; justify-content:space-between; align-items:flex-end; flex-shrink:0; }\n  .header-eyebrow { font-family:'Nunito',sans-serif; font-size:8.5px; font-weight:800; letter-spacing:0.16em; text-transform:uppercase; color:var(--lu-light); margin-bottom:3px; opacity:0.9; }\n  .header-name    { font-family:'Fredoka One',cursive; font-size:24px; color:#fff; line-height:1; letter-spacing:0.01em; }\n  .header-sub     { font-family:'Nunito',sans-serif; font-size:10.5px; color:rgba(255,255,255,0.45); margin-top:3px; font-weight:600; }\n  .header-right   { text-align:right; }\n  .header-week    { font-family:'Fredoka One',cursive; font-size:16px; color:#f9a8d4; }\n  .header-date    { font-family:'Nunito',sans-serif; font-size:9px; font-weight:700; color:rgba(255,255,255,0.32); margin-top:3px; letter-spacing:0.04em; }\n  .unicorn-badge  { display:inline-flex; align-items:center; gap:4px; background:rgba(219,39,119,0.2); border:1px solid rgba(219,39,119,0.35); border-radius:20px; padding:2px 10px; font-family:'Nunito',sans-serif; font-size:8.5px; font-weight:800; letter-spacing:0.1em; color:#fbcfe8; text-transform:uppercase; margin-top:5px; }\n  /* ACCENT BAR */\n  .accent-bar { height:5px; flex-shrink:0; background:repeating-linear-gradient(90deg,#f9a8d4 0px,#f9a8d4 10px,#c4b5fd 10px,#c4b5fd 18px,#fbcfe8 18px,#fbcfe8 26px,#e9d5ff 26px,#e9d5ff 34px,#fda4af 34px,#fda4af 42px,#c4b5fd 42px,#c4b5fd 50px,#f9a8d4 50px); }\n  /* BODY */\n  .body { padding:6px 40px 5px; flex:1; display:flex; flex-direction:column; gap:4px; overflow:hidden; min-height:0; }\n  .slabel { font-family:'Nunito',sans-serif; font-size:8.5px; font-weight:800; letter-spacing:0.14em; text-transform:uppercase; color:var(--lu-pink); margin-bottom:4px; }\n  /* MOOD */\n  .mood-row    { display:flex; align-items:center; justify-content:space-between; background:var(--lu-pale); border:1.5px solid var(--lu-light); border-radius:10px; padding:4px 16px; flex-shrink:0; }\n  .mood-label  { font-size:13px; font-weight:600; color:var(--lu-dark); }\n  .mood-faces  { display:flex; gap:22px; align-items:center; }\n  .mood-opt    { display:flex; flex-direction:column; align-items:center; gap:3px; }\n  .mood-circle { width:34px; height:34px; border-radius:50%; border:2px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:18px; background:white; }\n  .mood-circle.sm { width:28px; height:28px; font-size:15px; }\n  .mood-word   { font-size:8px; color:var(--muted); font-family:'Nunito',sans-serif; font-weight:700; }\n  /* LAYOUT */\n  .col2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; min-height:0; }\n  /* BEGINNING / CLOSING BOOKENDS */\n  .bookend { display:flex; align-items:center; gap:11px; border-radius:12px; padding:3px 14px; flex-shrink:0; border:2.5px solid var(--lu-mid); }\n  .bookend-start { background:var(--lu-gpale); border-color:var(--lu-gold); }\n  .bookend-close { background:var(--lu-ppale); border-color:var(--lu-pink); }\n  .bookend-icon { font-size:23px; line-height:1; flex-shrink:0; }\n  .bookend-title { font-family:'Fredoka One',cursive; font-size:18px; color:var(--lu-dark); line-height:1.05; }\n  .bookend-sub { font-size:10px; font-weight:700; color:var(--lu-mid); margin-top:1px; }\n  .bookend-badge { margin-left:auto; font-family:'Nunito',sans-serif; font-size:9px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:#fff; background:var(--lu-mid); padding:3px 11px; border-radius:20px; flex-shrink:0; }\n  .bookend-start .bookend-badge { background:var(--lu-gold); }\n  /* CARDS */\n  .card        { border-radius:10px; padding:7px 12px; }\n  .card-purple { background:var(--lu-pale);  border:1.5px solid var(--lu-light); }\n  .card-pink   { background:var(--lu-ppale); border:1.5px solid var(--lu-plight); }\n  .card-gold   { background:var(--lu-gpale); border:1.5px solid #e8d9a8; }\n  .card-plain  { background:#f9fafb;          border:1.5px solid var(--border); }\n  /* PILLS */\n  .pill        { display:inline-flex; align-items:center; gap:3px; font-size:10.5px; font-weight:600; padding:4px 10px; border-radius:20px; margin:2px 3px 2px 0; }\n  .pill-paper  { background:#dbeafe; color:#1d4ed8; }\n  .pill-screen { background:#ede9fe; color:#6d28d9; }\n  /* SKILL TABLE */\n  .skill-table { width:100%; border-collapse:collapse; }\n  .skill-table thead tr { background:var(--lu-dark); }\n  .skill-table thead th { padding:3px 7px; color:white; font-size:9px; font-weight:600; letter-spacing:0.04em; text-align:center; }\n  .skill-table thead th:first-child { text-align:left; border-radius:5px 0 0 0; }\n  .skill-table thead th:last-child  { border-radius:0 5px 0 0; }\n  .skill-table tbody tr { border-bottom:1px solid #f0f0f0; }\n  .skill-table tbody tr:nth-child(even) { background:var(--lu-pale); }\n  .skill-table tbody td { padding:3px 8px; font-size:12px; color:var(--ink); }\n  .skill-table tbody td:not(:first-child) { text-align:center; }\n  .bubble { display:inline-block; width:17px; height:17px; border-radius:50%; border:1.5px solid #c8c4f4; background:white; }\n  /* BLEND CARD */\n  .blend-card { background:var(--lu-gpale); border:1.5px solid #e8d9a8; border-radius:10px; padding:7px 12px; display:flex; flex-direction:column; gap:0; min-height:0; }\n  .blend-display { display:flex; align-items:center; gap:6px; margin:4px 0 6px; flex-wrap:wrap; }\n  .blend-part { font-family:'Fredoka One',cursive; font-size:28px; color:var(--lu-dark); background:var(--lu-light); padding:4px 12px; border-radius:8px; line-height:1; }\n  .blend-plus, .blend-arrow { font-size:22px; color:var(--lu-mid); font-weight:700; line-height:1; }\n  .blend-word { font-family:'Fredoka One',cursive; font-size:28px; color:var(--lu-pink); line-height:1; }\n  .blend-words-label { font-size:12px; font-weight:600; color:var(--ink); margin-bottom:6px; }\n  .blend-words { display:flex; gap:6px; margin-bottom:6px; flex-wrap:wrap; }\n  .bword { font-size:15px; font-weight:700; color:var(--lu-dark); background:white; border:1.5px solid var(--lu-light); border-radius:6px; padding:4px 11px; }\n  .blend-write-area { display:flex; flex-direction:column; gap:0; }\n  .blend-draw-box { flex:1; min-height:0; border:2px dashed #e8d9a8; border-radius:8px; background:#fffdf5; position:relative; margin-top:5px; }\n  .blend-draw-hint { position:absolute; bottom:6px; left:10px; font-size:10px; color:#e8d9a8; font-style:italic; }\n  .write-prompt { font-size:12px; font-weight:600; color:var(--ink); margin-bottom:5px; }\n  /* Handwriting Without Tears (No Tears font) \u2014 dotted trace of the focus word */\n  .nt-trace { font-family:'NoTears','Nunito',sans-serif; line-height:1.3; white-space:nowrap; overflow:hidden;\n               font-feature-settings:\"liga\" 1,\"dlig\" 1,\"calt\" 1; color:#c3b0e6; margin-bottom:2px; }\n  /* CALENDAR TIME (days / date / month / season / weather) */\n  .lu-cal { background:var(--lu-pale); border:1.5px solid var(--lu-light); border-radius:11px;\n             padding:5px 14px; flex-shrink:0; display:flex; flex-direction:column; gap:5px; }\n  .lu-dow-strip { display:flex; gap:5px; }\n  .lu-dow-chip { flex:1; text-align:center; font-size:11px; font-weight:700; color:var(--lu-dark);\n                  background:white; border:1.5px solid var(--lu-light); border-radius:8px; padding:3px 0; }\n  .lu-dow-chip.wk { background:#fdf2f8; color:var(--lu-pink); border-color:var(--lu-plight); }\n  .lu-dow-chip.on { background:var(--lu-mid); color:#fff; border-color:var(--lu-mid); box-shadow:0 0 0 2px var(--lu-light); }\n  .lu-cal-row { display:flex; align-items:center; justify-content:space-between; gap:10px; }\n  .lu-date { font-size:12px; font-weight:600; color:var(--ink); display:flex; align-items:center; gap:7px; flex:1; }\n  .lu-date b { color:var(--lu-mid); }\n  .lu-dateline { flex:1; border-bottom:2px solid #d1d5db; height:20px; min-width:110px; }\n  .lu-ms { font-size:12px; font-weight:700; color:var(--lu-dark); white-space:nowrap; }\n  .lu-wf { display:flex; gap:9px; flex-shrink:0; }\n  .lu-wf-g { flex:1; display:flex; align-items:center; gap:7px; background:var(--lu-gpale);\n              border:1.5px solid #e8d9a8; border-radius:10px; padding:4px 12px; }\n  .lu-wf-l { font-size:10.5px; font-weight:800; color:var(--lu-pink); white-space:nowrap; }\n  .lu-wx { font-size:18px; line-height:1; }\n  /* MONTHS OF THE YEAR page */\n  .mo-season { display:flex; align-items:stretch; gap:9px; border-radius:13px; padding:7px 11px; border:2px solid; flex:1; }\n  .mo-season-tag { display:flex; flex-direction:column; align-items:center; justify-content:center; min-width:78px; gap:2px; }\n  .mo-season-emoji { font-size:32px; line-height:1; }\n  .mo-season-name { font-family:'Fredoka One',cursive; font-size:14px; }\n  .mo-months { flex:1; display:flex; gap:8px; }\n  .mo-card { flex:1; background:white; border:2px solid; border-radius:11px; padding:7px 4px; text-align:center;\n              display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; position:relative; }\n  .mo-name { font-family:'Fredoka One',cursive; font-size:16px; line-height:1.05; color:var(--lu-dark); }\n  .mo-num { font-size:9px; font-weight:800; color:var(--muted); }\n  .mo-card.now { box-shadow:inset 0 0 0 3px var(--lu-gold); }\n  .mo-star { position:absolute; top:2px; right:5px; font-size:11px; }\n  /* ALL ABOUT ME (address / phone \u2014 safety info) */\n  .aam-card { background:var(--lu-pale); border:1.5px solid var(--lu-light); border-radius:12px;\n               padding:8px 16px; display:flex; flex-direction:column; gap:4px; }\n  .aam-label { font-family:'Nunito',sans-serif; font-size:9px; font-weight:800; letter-spacing:0.12em;\n                text-transform:uppercase; color:var(--lu-pink); }\n  .aam-model { font-family:'Fredoka One',cursive; font-size:25px; color:var(--lu-dark); line-height:1.15; }\n  .aam-blank { border-bottom:2px dashed var(--lu-light); height:30px; }\n  .aam-practice-label { font-size:10px; font-weight:800; color:var(--lu-mid); margin-top:auto; }\n  .aam-safety { background:#fff1f2; border:1.5px solid #fecdd3; border-radius:10px; padding:8px 15px;\n                 font-size:11.5px; color:#9f1239; line-height:1.5; flex-shrink:0; }\n  .aam-safety b { color:#be123c; }\n  /* Handwriting Without Tears double-line writing guide + trace\u2192write practice */\n  .hwt-line { height:30px; position:relative; margin:24px 0 4px;\n               border-bottom:2.5px solid #8a83bd; background:rgba(124,58,237,0.05); }\n  .hwt-line::before { content:''; position:absolute; left:0; right:0; top:0; border-top:2px solid #b0aad8; }\n  .aam-practice { margin-top:5px; display:flex; flex-direction:column; gap:3px; }\n  .aam-trace-label, .aam-write-label { font-size:10px; font-weight:800; color:var(--lu-mid); }\n  .aam-write-label { margin-top:6px; }\n  .write-line    { border-bottom:2px solid #d1d5db; height:29px; margin-bottom:3px; }\n  .write-line:last-child { margin-bottom:0; }\n  .write-line-sm { border-bottom:1.5px solid #d1d5db; height:24px; margin-bottom:3px; }\n  .write-line-sm:last-child { margin-bottom:0; }\n  /* SUBTRACTION */\n  .sub-problems { display:flex; gap:24px; align-items:flex-start; justify-content:center; margin:2px 0 6px; }\n  .sub-problem  { display:flex; align-items:center; gap:7px; }\n  .sub-num  { font-family:'Fredoka One',cursive; font-size:30px; color:var(--ink); line-height:1; }\n  .sub-op   { font-size:25px; color:var(--lu-mid); font-weight:700; line-height:1; }\n  .sub-eq   { font-size:25px; color:var(--ink); font-weight:700; line-height:1; }\n  .sub-blank { border-bottom:3px solid var(--ink); min-width:44px; height:34px; display:inline-block; margin-bottom:-3px; }\n  /* NUMBER LINE */\n  .nl-label { font-size:9px; color:var(--muted); font-family:'Nunito',sans-serif; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:5px; }\n  .nl-track { display:flex; justify-content:space-between; align-items:flex-end; background:white; border:1.5px solid var(--lu-light); border-radius:8px; padding:4px 10px; }\n  .nl-num { display:flex; flex-direction:column; align-items:center; gap:3px; font-family:'Fredoka One',cursive; font-size:13px; color:var(--lu-dark); min-width:14px; text-align:center; }\n  .nl-tick { width:2px; height:8px; background:var(--lu-mid); border-radius:1px; }\n  .nl-tick.big { height:12px; background:var(--lu-dark); }\n  /* REFLECTION / GRATITUDE */\n  .reflection-prompt { font-size:13px; font-weight:600; color:var(--ink); margin-bottom:7px; line-height:1.4; }\n  .grat-item { display:flex; align-items:flex-end; gap:8px; margin-bottom:6px; }\n  .grat-item:last-child { margin-bottom:0; }\n  .grat-num  { font-family:'Fredoka One',cursive; font-size:18px; color:var(--lu-plight); line-height:1; padding-bottom:2px; min-width:16px; }\n  .grat-line { flex:1; border-bottom:2px solid #e5e7eb; height:26px; }\n  .divider { height:1px; background:#e5e7eb; flex-shrink:0; }\n  /* FOOTER */\n  .footer { background:var(--lu-dark); padding:5px 40px; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; }\n  .footer-txt { font-family:'Nunito',sans-serif; font-size:8.5px; font-weight:700; color:rgba(255,255,255,0.35); letter-spacing:0.08em; text-transform:uppercase; }\n  /* LEFT COL */\n  .left-col { display:flex; flex-direction:column; gap:6px; min-height:0; height:100%; }\n  .left-col .card-plain { flex-shrink:0; }\n  .left-col .skill-wrap { flex:1; min-height:0; display:flex; flex-direction:column; }\n  /* WEEKLY PAGE EXTRAS */\n  .summary-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:5px; margin-bottom:6px; }\n  .stat-box { background:rgba(255,255,255,0.08); border-radius:7px; padding:6px 5px; text-align:center; }\n  .stat-num { font-family:'Fraunces',serif; font-size:20px; font-weight:700; color:var(--lu-light); line-height:1; }\n  .stat-lbl { font-size:7.5px; opacity:0.45; margin-top:3px; font-family:'Nunito',sans-serif; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; }\n  .s-pills  { display:flex; flex-wrap:wrap; gap:4px; }\n  .s-pill   { font-size:9.5px; font-weight:600; padding:2px 8px; border-radius:20px; }\n  .s-done   { background:rgba(221,214,254,0.2); color:var(--lu-light); }\n  .s-ahead  { background:rgba(217,119,6,0.2); color:#fde68a; }\n  .pace-card { background:var(--lu-pale); border:1.5px solid var(--lu-light); border-radius:10px; padding:10px 14px; }\n  .pace-row  { display:flex; align-items:center; margin-bottom:6px; gap:8px; }\n  .pace-row:last-child { margin-bottom:0; }\n  .pace-subj { font-size:12px; font-weight:600; color:var(--ink); min-width:130px; }\n  .pace-bar-wrap { flex:1; height:7px; background:#e5e7eb; border-radius:4px; overflow:hidden; }\n  .pace-bar  { height:100%; border-radius:4px; background:var(--lu-mid); }\n  .pace-bar.ahead { background:var(--lu-gold); }\n  .pace-badge { font-family:'Nunito',sans-serif; font-size:8px; font-weight:800; padding:2px 8px; border-radius:20px; min-width:68px; text-align:center; }\n  .badge-on  { background:#dcfce7; color:#166534; }\n  .badge-ah  { background:#fef9c3; color:#854d0e; }\n  .sched-grid { display:grid; gap:10px; }\n  .sched-col  { border-radius:9px; overflow:hidden; border:1.5px solid var(--border); }\n  .sched-head { background:var(--lu-dark); color:white; padding:8px 12px; }\n  .sched-day-name { font-family:'Fraunces',serif; font-size:15px; font-weight:700; line-height:1; margin-bottom:3px; }\n  .sched-date-lbl { font-family:'Nunito',sans-serif; font-size:8px; font-weight:700; opacity:0.5; letter-spacing:0.02em; }\n  .sched-tasks { padding:8px 11px; background:white; }\n  .sched-row  { font-size:12px; color:var(--ink); padding:4px 0; border-bottom:1px solid #f0f0f0; line-height:1.3; }\n  .sched-row:last-child { border-bottom:none; }\n  .sched-screen { color:#6d28d9; }\n  /* END OF WEEK */\n  .draw-box { flex:1; min-height:180px; border:2px dashed var(--lu-light); border-radius:10px; background:#fafafa; position:relative; }\n  .draw-hint { position:absolute; bottom:8px; left:12px; font-size:12px; color:#ccc; font-style:italic; }\n  /* TEACHING COMPANION */\n  .companion-header { background:#1e1048; }\n  .teach-banner { background:var(--lu-gpale); border:1.5px solid #e8d9a8; border-radius:8px; padding:8px 14px; font-size:11px; color:#4a3800; line-height:1.6; }\n  .key-section { border:1.5px solid var(--border); border-radius:10px; overflow:hidden; }\n  .key-head    { background:var(--lu-dark); color:white; padding:6px 12px; font-family:'Nunito',sans-serif; font-size:8.5px; font-weight:800; letter-spacing:0.12em; text-transform:uppercase; }\n  .key-body    { padding:8px 12px; }\n  .key-row     { display:flex; align-items:flex-start; gap:8px; padding:5px 0; border-bottom:1px solid #f0f0f0; font-size:11px; line-height:1.45; }\n  .key-row:last-child { border-bottom:none; }\n  .key-label   { font-family:'Nunito',sans-serif; font-size:7.5px; font-weight:800; color:var(--lu-pink); text-transform:uppercase; letter-spacing:0.08em; min-width:54px; flex-shrink:0; padding-top:2px; }\n  .key-ans     { font-weight:700; color:var(--lu-dark); }\n  .carry-box   { border:1.5px dashed var(--border); border-radius:8px; padding:9px 13px; }\n  .carry-title { font-family:'Nunito',sans-serif; font-size:8.5px; font-weight:800; letter-spacing:0.12em; text-transform:uppercase; color:var(--lu-pink); margin-bottom:6px; }\n  .parent-badge { display:inline-block; background:rgba(255,255,255,0.14); color:rgba(255,255,255,0.6); font-family:'Nunito',sans-serif; font-weight:700; font-size:7px; letter-spacing:0.15em; text-transform:uppercase; padding:2px 7px; border-radius:20px; margin-left:8px; vertical-align:middle; }\n  /* BRAIN BREAK */\n  .bb-stripe { height:5px; background:linear-gradient(90deg,#f472b6,#c084fc,#fb7185,#c084fc,#f472b6); flex-shrink:0; }\n  .bb-top { padding:9px 40px 7px; border-bottom:1.5px solid var(--bb-border); flex-shrink:0; display:flex; justify-content:space-between; align-items:center; background:var(--bb-pale); }\n  .bb-top-title { font-family:'Fredoka One',cursive; font-size:20px; color:#be185d; letter-spacing:0.01em; }\n  .bb-top-badge { font-family:'Nunito',sans-serif; font-size:9px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#f9a8d4; }\n  .bb-body { padding:12px 40px 8px; flex:1; display:flex; flex-direction:column; gap:10px; overflow:hidden; min-height:0; }\n  .bb-label { font-family:'Fredoka One',cursive; font-size:13px; color:#be185d; margin-bottom:4px; letter-spacing:0.01em; }\n  .bb-draw { border:2.5px dashed #f9a8d4; border-radius:12px; background:#fff7fb; position:relative; }\n  .bb-draw-hint { position:absolute; bottom:8px; left:12px; font-family:'Nunito',sans-serif; font-size:11px; color:#fad1e8; font-style:italic; white-space:nowrap; }\n  .bb-footer { padding:5px 40px; border-top:1.5px solid var(--bb-border); flex-shrink:0; display:flex; justify-content:space-between; align-items:center; background:var(--bb-pale); }\n  .bb-footer-txt { font-family:'Nunito',sans-serif; font-size:8px; font-weight:600; color:#f9a8d4; letter-spacing:0.06em; text-transform:uppercase; }\n  .bb-card { background:white; border:2px solid var(--bb-border); border-radius:12px; padding:10px 14px; }\n  .bb-card-lilac { background:var(--bb-lpale); border:2px solid #e9d5ff; border-radius:12px; padding:10px 14px; }\n  .bb-card-rose  { background:var(--bb-rpale); border:2px solid #fecdd3; border-radius:12px; padding:10px 14px; }\n  .pattern-box { display:flex; align-items:center; gap:6px; margin-bottom:10px; }\n  .pattern-slot { width:42px; height:42px; border:2px dashed #f9a8d4; border-radius:8px; background:#fff7fb; display:flex; align-items:center; justify-content:center; flex-shrink:0; }\n  @media print {\n    @page { size: letter portrait; margin: 0; }\n    * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }\n    body { background:white; padding:0; gap:0; }\n    .page { box-shadow:none; border-radius:0; break-after:page; page-break-after:always; overflow:hidden; }\n    .page:last-of-type { break-after:avoid; page-break-after:avoid; }\n    .page-label { display:none; }\n  }";
+  var LUCY_DATA = {"blends": [{"digraph": "sh", "part2": "ip", "word": "ship", "words": ["shop", "shell", "shed", "shine", "wish"]}, {"digraph": "ch", "part2": "op", "word": "chop", "words": ["chip", "chin", "chest", "much", "each"]}, {"digraph": "th", "part2": "is", "word": "this", "words": ["that", "them", "think", "with", "bath"]}, {"digraph": "wh", "part2": "en", "word": "when", "words": ["what", "where", "which", "whip", "while"]}, {"digraph": "sh", "part2": "ut", "word": "shut", "words": ["show", "sheep", "shelf", "shock", "fresh"]}], "subtraction": [[[5, 2], [7, 4], [9, 3]], [[8, 3], [6, 2], [10, 4]], [[9, 5], [7, 3], [10, 6]], [[8, 4], [9, 7], [10, 3]], [[7, 5], [8, 6], [10, 7]]], "focus": [{"emoji": "📚", "label": "Blending", "detail": "sh · ch · th · wh digraphs", "sub": "Fast Phonics Peak 9 → 10"}, {"emoji": "🔢", "label": "Subtraction", "detail": "Subtracting within 10", "sub": "Brand new — daily practice"}], "pace": [{"subject": "Reading Eggs", "pct": 85, "status": "ahead"}, {"subject": "Fast Phonics", "pct": 68, "status": "on"}, {"subject": "Night Zookeeper", "pct": 78, "status": "ahead"}, {"subject": "Mathseeds", "pct": 62, "status": "on"}], "category_labels": {"unicorn": ["🦄 Color Me!", "Use your favorite colors to make this unicorn magical! ✨"], "fairy": ["🧚 Color Me!", "Color this fairy with your most magical colors! ✨"], "mermaid": ["🧜 Color Me!", "Make this mermaid sparkle with beautiful colors! 🌊"]}, "category_order": ["unicorn", "fairy", "mermaid"], "day_badges": {"monday": "🌸 Fresh Start!", "tuesday": "🦄 You've Got This", "wednesday": "🌈 Halfway There!", "thursday": "✨ Almost Friday!", "friday": "🌟 Finish Strong!"}}; // {blends, subtraction, focus, pace, category_labels, category_order, day_badges}
+
+  function luPillType(title) { title = String(title || ""); return (title.indexOf("📞") === 0 || title.indexOf("💻") === 0 || title.indexOf("📱") === 0) ? "pill-screen" : "pill-paper"; }
+  function luSubjectName(title) { var t = String(title || "").replace(/^[^A-Za-z0-9]+/, "").trim(); return t.split(" — ")[0].trim(); }
+  function luTasksForDay(tasks, day) { return (tasks || []).filter(function (t) { return t.who === "lucy" && t.day === day; }); }
+  function luNumberLine() {
+    var ticks = "";
+    for (var i = 0; i < 11; i++) { var big = (i % 5 === 0) ? " big" : ""; ticks += '<div class="nl-num"><div class="nl-tick' + big + '"></div>' + i + '</div>'; }
+    return '<div class="number-line-wrap">\n  <div class="nl-label">Jump back on the number line to help:</div>\n  <div class="nl-track">' + ticks + '</div>\n</div>';
+  }
+  function luFooter(left, right) { return '<div class="footer">\n  <div class="footer-txt">' + left + '</div>\n  <div style="font-size:14px;">🦄</div>\n  <div class="footer-txt">' + right + '</div>\n</div>'; }
+  function luStdHeader(eyebrow, name, sub, weekLabel, dateLabel, badge) {
+    return '<div class="header">\n  <div>\n    <div class="header-eyebrow">' + eyebrow + '</div>\n    <div class="header-name">' + name + '</div>\n    <div class="header-sub">' + sub + '</div>\n  </div>\n  <div class="header-right">\n    <div class="header-week">' + weekLabel + '</div>\n    <div class="header-date">' + dateLabel + '</div>\n    <div class="unicorn-badge">' + badge + '</div>\n  </div>\n</div>\n<div class="accent-bar"></div>';
+  }
+  function luShell(pagesHtml, title) {
+    return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n<title>' + title + '</title>\n' +
+      '<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,600;0,700;1,500&family=DM+Sans:wght@400;500;600;700&family=Fredoka+One&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">\n' +
+      '<style>\n' + fontFacesCss() + '\n' + LUCY_CSS + '\n</style>\n</head>\n<body>\n' + pagesHtml + '\n</body>\n</html>';
+  }
+  function luPractice(texts, nWrite, traceSize) {
+    nWrite = nWrite || 1; traceSize = traceSize || 32;
+    var rows = (texts || []).filter(function (t) { return FONTS_OK && t; }).map(function (t) { return '<div class="nt-trace" style="font-size:' + traceSize + 'px;">' + dotted(t) + '</div>'; }).join("");
+    var trace = rows ? '<div class="aam-trace-label">✏️ Trace it:</div>' + rows : '';
+    var writes = ""; for (var i = 0; i < nWrite; i++) writes += '<div class="hwt-line"></div>';
+    return '<div class="aam-practice">' + trace + '<div class="aam-write-label">✏️ Now write it:</div>' + writes + '</div>';
+  }
+
+  function luPageWeeklyReview(weekNum, weekDates, days, dates, tasks, prevStats, paceData, focusAreas) {
+    var prevWeek = weekNum - 1, ps = prevStats || {};
+    var g = function (k) { return ps[k] != null ? ps[k] : '-'; };
+    var statHtml = '\n<div class="summary-stats">\n  <div class="stat-box"><div class="stat-num">' + g('days') + '</div><div class="stat-lbl">Days Done</div></div>\n  <div class="stat-box"><div class="stat-num">' + g('apps') + '</div><div class="stat-lbl">Apps Done</div></div>\n  <div class="stat-box"><div class="stat-num">' + g('completion') + '</div><div class="stat-lbl">Completion</div></div>\n  <div class="stat-box"><div class="stat-num">' + g('carried') + '</div><div class="stat-lbl">Carried Over</div></div>\n</div>';
+    var pillsHtml = (ps.highlights || []).map(function (h) { return '<div class="s-pill s-done">✓ ' + h + '</div>'; }).join("") + (ps.ahead || []).map(function (a) { return '<div class="s-pill s-ahead">⭐ ' + a + ' — ahead of pace!</div>'; }).join("");
+    var colors = [["rgba(190,24,93,0.18)", "rgba(190,24,93,0.3)", "#fbcfe8"], ["rgba(124,58,237,0.18)", "rgba(124,58,237,0.3)", "var(--lu-light)"]];
+    var focusHtml = (focusAreas || []).slice(0, 2).map(function (fa, i) {
+      var c = colors[i] || colors[0];
+      return '<div style="background:' + c[0] + ';border:1px solid ' + c[1] + ';border-radius:8px;padding:7px 10px;">\n  <div style="font-size:8px;color:' + c[2] + ';font-family:\'Nunito\',sans-serif;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:3px;">' + (fa.emoji || '') + ' ' + (fa.label || '') + '</div>\n  <div style="font-size:11.5px;color:rgba(255,255,255,0.85);line-height:1.5;">' + (fa.detail || '') + '<br><span style="color:rgba(255,255,255,0.45);font-size:9.5px;">' + (fa.sub || '') + '</span></div>\n</div>';
+    }).join("");
+    var schedHtml = (days || []).map(function (day) {
+      var dayTasks = luTasksForDay(tasks, day), dateStr = dates[day] || "";
+      var rows = dayTasks.map(function (t) { var cls = luPillType(t.title) === "pill-screen" ? " sched-screen" : ""; return '<div class="sched-row' + cls + '">' + String(t.title || "").split(" — ")[0] + '</div>\n'; }).join("");
+      return '<div class="sched-col">\n  <div class="sched-head"><div class="sched-day-name">' + cap(day) + '</div><div class="sched-date-lbl">' + dateStr + '</div></div>\n  <div class="sched-tasks">' + rows + '</div>\n</div>';
+    }).join("");
+    var colCount = (days || []).length;
+    var paceHtml = (paceData || []).map(function (p) {
+      var ahead = p.status === "ahead", barCls = ahead ? " ahead" : "", badgeCls = ahead ? "badge-ah" : "badge-on", badgeTxt = ahead ? "Ahead 🌟" : "On Track";
+      return '<div class="pace-row">\n  <div class="pace-subj">' + p.subject + '</div>\n  <div class="pace-bar-wrap"><div class="pace-bar' + barCls + '" style="width:' + p.pct + '%"></div></div>\n  <div class="pace-badge ' + badgeCls + '">' + badgeTxt + '</div>\n</div>';
+    }).join("");
+    return `<div class="page-label">Weekly Overview — Monday kick-off</div>
+<div class="page">
+${luStdHeader("Howe Academy · 1st Grade · Weekly Review", "Lucy's Weekly Review", "last week · this week's plan · pace check", "Week " + weekNum, weekDates, "🦄 Keep Shining")}
+<div class="body">
+
+  <div style="flex-shrink:0;">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;">
+      <div class="slabel" style="margin-bottom:0;">Last week's stats — Week ${prevWeek}</div>
+      <div class="slabel" style="margin-bottom:0;">This week we're working on</div>
+    </div>
+    <div style="background:var(--lu-dark);border-radius:11px;padding:10px 16px;display:grid;grid-template-columns:1.2fr auto 0.8fr;gap:0;align-items:start;color:white;">
+      <div style="padding-right:16px;">
+        <div style="font-family:'Fraunces',serif;font-size:11px;font-weight:700;opacity:0.85;margin-bottom:6px;">Week ${prevWeek}</div>
+        ${statHtml}
+        <div class="s-pills">${pillsHtml}</div>
+      </div>
+      <div style="width:1px;background:rgba(255,255,255,0.1);align-self:stretch;margin:0 2px;"></div>
+      <div style="padding-left:14px;display:flex;flex-direction:column;gap:6px;">${focusHtml}</div>
+    </div>
+  </div>
+
+  <div style="flex-shrink:0;">
+    <div class="slabel">This week's schedule</div>
+    <div class="sched-grid" style="grid-template-columns:repeat(${colCount},1fr);">
+      ${schedHtml}
+    </div>
+  </div>
+
+  <div style="flex-shrink:0;">
+    <div class="slabel">Pace check — where Lucy stands this week</div>
+    <div class="pace-card">${paceHtml}</div>
+  </div>
+
+  <div class="card card-plain" style="flex:1;display:flex;flex-direction:column;">
+    <div class="slabel">Notes for this week</div>
+    <div style="flex:1;display:flex;flex-direction:column;justify-content:space-evenly;">
+      <div class="write-line-sm"></div><div class="write-line-sm"></div>
+      <div class="write-line-sm"></div><div class="write-line-sm"></div>
+      <div class="write-line-sm"></div>
+    </div>
+  </div>
+
+</div>
+${luFooter("Howe Academy · Lucy Howe · Weekly Review", "Week " + weekNum + " · " + weekDates)}
+</div>`;
+  }
+
+  function luPageBb1(weekNum, b64Dotdot) {
+    var leftCol = b64Dotdot
+      ? '\n    <div style="display:flex;flex-direction:column;gap:5px;">\n      <div class="bb-label">💜 Connect the dots — then color your picture!</div>\n      <div style="flex:1;display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:12px;border:2px solid #fce7f3;">\n        <img src="data:image/png;base64,' + b64Dotdot + '" style="max-width:100%;max-height:100%;object-fit:contain;" alt="dot-to-dot"/>\n      </div>\n    </div>'
+      : '\n    <div style="display:flex;flex-direction:column;gap:5px;">\n      <div class="bb-label">💜 Connect 1 → 12 to make a shape! Then color it!</div>\n      <div style="display:flex;justify-content:center;align-items:center;flex:1;">\n        <div style="font-family:Fredoka One,cursive;color:#f9a8d4;font-size:14px;text-align:center;">Dot-to-dot coming soon! ✨</div>\n      </div>\n    </div>';
+    return `<div class="page-label">Brain Break — back of Monday (double-sided)</div>
+<div class="page">
+<div class="bb-stripe"></div>
+<div class="bb-top">
+  <div class="bb-top-title">🎀 Brain Break · Challenge 1</div>
+  <div class="bb-top-badge">Howe Academy · Week ${weekNum} · Lucy</div>
+</div>
+<div class="bb-body">
+  <div style="display:flex;flex-direction:column;flex:1;min-height:0;gap:8px;">${leftCol}
+
+    <div style="display:flex;flex-direction:column;min-height:0;">
+      <div class="bb-label">🐾 Now draw your favorite animal in the box!</div>
+      <div class="bb-draw" style="flex:1;min-height:80px;"><div class="bb-draw-hint">🐶 🐱 🦊 🐰 🐻 🦄 — draw it here!</div></div>
+    </div>
+  </div>
+</div>
+<div class="bb-footer">
+  <div class="bb-footer-txt">Howe Academy · Brain Break · Week ${weekNum}</div>
+  <div style="font-size:13px;">🎀</div>
+  <div class="bb-footer-txt">Back of Monday · Challenge 1</div>
+</div>
+</div>`;
+  }
+
+  function luPageMonths(weekNum, weekDates, currentMonth) {
+    var band = { Winter: ["#eff6ff", "#bfdbfe", "#2563eb"], Spring: ["#f0fdf4", "#bbf7d0", "#16a34a"], Summer: ["#fffbeb", "#fde68a", "#d97706"], Fall: ["#fff7ed", "#fed7aa", "#c2410c"] };
+    var cur = String(currentMonth || "").trim().toLowerCase();
+    var rows = SEASONS.map(function (s) {
+      var name = s[0], emoji = s[1], months = s[2], b = band[name] || ["#fff", "#ddd", "#333"];
+      var cards = months.map(function (m) {
+        var mnum = MONTHS.indexOf(m) + 1, now = (m.toLowerCase() === cur) ? " now" : "", star = (m.toLowerCase() === cur) ? '<span class="mo-star">⭐</span>' : "";
+        return '<div class="mo-card' + now + '" style="border-color:' + b[1] + ';">' + star + '<div class="mo-name">' + m + '</div><div class="mo-num">month ' + mnum + '</div></div>';
+      }).join("");
+      return '<div class="mo-season" style="background:' + b[0] + ';border-color:' + b[1] + ';"><div class="mo-season-tag"><div class="mo-season-emoji">' + emoji + '</div><div class="mo-season-name" style="color:' + b[2] + ';">' + name + '</div></div><div class="mo-months">' + cards + '</div></div>';
+    }).join("");
+    return `<div class="page-label">Months of the Year — Week ${weekNum}</div>
+<div class="page">
+${luStdHeader("Howe Academy · 1st Grade · Calendar", "Months of the Year", "12 months · 4 seasons · sing them!", "Week " + weekNum, weekDates, "📅 Calendar")}
+<div class="body" style="gap:9px;">
+  <div class="mood-row" style="flex-shrink:0;">
+    <div class="mood-label">🎵 Sing: "January, February, March, April…" &nbsp;⭐ = this month</div>
+    <div style="font-size:11px;font-weight:700;color:var(--lu-mid);">🎂 circle your birthday month!</div>
+  </div>
+  ${rows}
+</div>
+${luFooter("Howe Academy · Lucy Howe · Calendar", weekDates)}
+</div>`;
+  }
+
+  function luPageAllAboutMe(weekNum, weekDates, p) {
+    p = p || {};
+    var name = String(p.name || "").trim();
+    var addrLines = (p.address || []).map(function (a) { return String(a).trim(); }).filter(Boolean);
+    var mom = String(p.mom_phone || "").trim(), dad = String(p.dad_phone || "").trim();
+    var model = function (val) { return val ? '<div class="aam-model">' + val + '</div>' : '<div class="aam-blank"></div>'; };
+    var addrModel = addrLines.length ? addrLines.map(function (a) { return '<div class="aam-model">' + a + '</div>'; }).join("") : '<div class="aam-blank"></div><div class="aam-blank"></div>';
+    return `<div class="page-label">All About Me — Week ${weekNum}</div>
+<div class="page">
+${luStdHeader("Howe Academy · 1st Grade · Safety", "All About Me", "important things to know by heart", "Week " + weekNum, weekDates, "💛 Keep Safe")}
+<div class="body" style="gap:11px; justify-content:space-between;">
+  <div class="mood-row" style="flex-shrink:0;">
+    <div class="mood-label">💛 Learn these BY HEART — practice till you can say them with your eyes closed!</div>
+    <div style="font-size:11px;font-weight:700;color:var(--lu-mid);">🙈 cover &amp; say it out loud</div>
+  </div>
+
+  <div class="aam-card">
+    <div class="aam-label">🙋 My Full Name</div>
+    ${model(name)}
+    ${luPractice([name], 1, 34)}
+  </div>
+
+  <div class="aam-card">
+    <div class="aam-label">🏠 Where I Live — My Address</div>
+    ${addrModel}
+    ${luPractice(addrLines, 2, 34)}
+  </div>
+
+  <div class="col2">
+    <div class="aam-card">
+      <div class="aam-label">📱 Mom's Phone Number</div>
+      ${model(mom)}
+      ${luPractice([mom], 1, 31)}
+    </div>
+    <div class="aam-card">
+      <div class="aam-label">📱 Dad's Phone Number</div>
+      ${model(dad)}
+      ${luPractice([dad], 1, 31)}
+    </div>
+  </div>
+
+  <div class="aam-safety">🚨 If there is an emergency, call <b>911</b>. Only share these with grown-ups who keep you safe — a parent, a teacher, a police officer, or a firefighter.</div>
+</div>
+${luFooter("Howe Academy · Lucy Howe · Keep this private 🔒", weekDates)}
+</div>`;
+  }
+
+  function luPageDaily(weekNum, day, dateStr, tasks, blend, subProblems, badge, year) {
+    var dayTasks = luTasksForDay(tasks, day);
+    var pills = dayTasks.map(function (t) { return '<span class="pill ' + luPillType(t.title) + '">' + String(t.title || "").split(" — ")[0] + '</span>\n'; }).join("");
+    var rows = dayTasks.map(function (t) { return '<tr><td>' + luSubjectName(t.title) + '</td><td><span class="bubble"></span></td><td><span class="bubble"></span></td><td><span class="bubble"></span></td></tr>\n'; }).join("");
+    var subHtml = (subProblems || []).map(function (ab) { return '<div class="sub-problem"><span class="sub-num">' + ab[0] + '</span><span class="sub-op">−</span><span class="sub-num">' + ab[1] + '</span><span class="sub-eq">=</span><span class="sub-blank"></span></div>\n'; }).join("");
+    var bl = blend, wordsHtml = (bl.words || []).map(function (w) { return '<span class="bword">' + w + '</span>'; }).join("");
+    var writeBlock = FONTS_OK
+      ? '<div class="write-prompt">Trace it, then write it yourself:</div><div class="nt-trace" style="font-size:31px;">' + dotted(bl.word) + '</div>'
+      : '<div class="write-prompt">Write your favorite ' + bl.digraph + ' word:</div>';
+    var tidx = dowIndex(day), ar = aroundDay(day), tod = ar[1];
+    var cmonth = monthFromDate(dateStr), seas = seasonOfMonth(cmonth), sname = seas[0], semoji = seas[1];
+    var dowChips = ""; for (var i = 0; i < DOW_ABBR.length; i++) { var cls = (i === tidx) ? "lu-dow-chip on" : ((i === 0 || i === 6) ? "lu-dow-chip wk" : "lu-dow-chip"); dowChips += '<div class="' + cls + '">' + DOW_ABBR[i] + '</div>'; }
+    var msHtml = (cmonth ? "📅 " + cmonth : "") + (sname ? " · " + semoji + " " + sname : "");
+    var luWeather = ["☀️", "⛅", "☁️", "🌧️", "❄️", "🌬️"].map(function (e) { return '<span class="lu-wx">' + e + '</span>'; }).join("");
+    var traceDate = (dateStr && year) ? (dateStr + ", " + year) : dateStr;
+    var dateBlock = (FONTS_OK && traceDate) ? '<div class="nt-trace" style="font-size:25px;">' + dotted(traceDate) + '</div>' : '<div class="lu-dateline"></div>';
+    return `<div class="page-label">Daily Page — ${cap(day)}</div>
+<div class="page">
+${luStdHeader("Howe Academy · 1st Grade · Daily Notebook", "Lucy's Daily Page", "learn · practice · shine", cap(day), dateStr, badge)}
+<div class="body">
+
+  <div class="bookend bookend-start">
+    <div class="bookend-icon">🌅</div>
+    <div class="bookend-title">Start Here! · Morning Notebook</div>
+    <div class="bookend-badge">Start</div>
+  </div>
+
+  <div class="lu-cal">
+    <div class="lu-dow-strip">${dowChips}</div>
+    <div class="lu-cal-row">
+      <div class="lu-date">📅 Today is <b>${tod}</b> — trace today's date:</div>
+      <div class="lu-ms">${msHtml}</div>
+    </div>
+    ${dateBlock}
+  </div>
+
+  <div class="lu-wf">
+    <div class="lu-wf-g">
+      <span class="lu-wf-l">☁️ Weather? circle one</span>
+      ${luWeather}
+    </div>
+    <div class="lu-wf-g" style="flex:0 0 auto;">
+      <span class="lu-wf-l">How I feel?</span>
+      <div class="mood-circle sm">😴</div>
+      <div class="mood-circle sm">😐</div>
+      <div class="mood-circle sm">🙂</div>
+      <div class="mood-circle sm">🌟</div>
+    </div>
+  </div>
+
+  <div class="col2" style="flex:2.35;min-height:0;">
+    <div class="left-col">
+      <div class="card card-plain" style="flex:1;padding:8px 12px;">
+        <div class="slabel">Today's apps and work — check off as you go</div>
+        <div>${pills}</div>
+      </div>
+    </div>
+    <div class="blend-card" style="display:flex;flex-direction:column;">
+      <div class="slabel">Blend of the day · ${bl.digraph}</div>
+      <div class="blend-display">
+        <span class="blend-part">${bl.digraph}</span>
+        <span class="blend-plus">+</span>
+        <span class="blend-part">${bl.part2}</span>
+        <span class="blend-arrow">→</span>
+        <span class="blend-word">${bl.word}</span>
+      </div>
+      <div class="blend-words-label">Say these <strong>${bl.digraph}</strong> words out loud:</div>
+      <div class="blend-words">${wordsHtml}</div>
+      <div class="blend-write-area">
+        ${writeBlock}
+        <div class="write-line"></div>
+      </div>
+      <div class="blend-draw-box" style="flex:1;"><div class="blend-draw-hint">✏️ draw a picture of the word!</div></div>
+    </div>
+  </div>
+
+  <div class="divider" style="flex-shrink:0;"></div>
+
+  <div class="card card-purple" style="flex:1.05;min-height:0;display:flex;flex-direction:column;justify-content:space-between;">
+    <div class="slabel">Subtraction practice — try your best!</div>
+    <div class="sub-problems">${subHtml}</div>
+    ${luNumberLine()}
+  </div>
+
+  <div class="divider" style="flex-shrink:0;"></div>
+
+  <div class="bookend bookend-close">
+    <div class="bookend-icon">🌙</div>
+    <div class="bookend-title">All Done! · Closing Notebook</div>
+    <div class="bookend-badge">Last</div>
+  </div>
+
+  <div class="col2" style="flex:2.1;min-height:0;">
+    <div style="display:flex;flex-direction:column;gap:6px;min-height:0;">
+      <div class="card card-pink" style="flex-shrink:0;">
+        <div class="slabel">How did school feel today?</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="font-size:12px;font-weight:600;color:var(--lu-dark);">Circle one:</div>
+          <div style="display:flex;gap:14px;">
+            <div class="mood-opt"><div class="mood-circle sm">😩</div><div class="mood-word">Tough</div></div>
+            <div class="mood-opt"><div class="mood-circle sm">😐</div><div class="mood-word">Okay</div></div>
+            <div class="mood-opt"><div class="mood-circle sm">😊</div><div class="mood-word">Good</div></div>
+            <div class="mood-opt"><div class="mood-circle sm">🏆</div><div class="mood-word">Amazing!</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="skill-wrap" style="flex:1;display:flex;flex-direction:column;">
+        <div class="slabel">How did I do? · now that I finished, circle one</div>
+        <table class="skill-table" style="flex:1;">
+          <thead><tr><th>Subject</th><th>Easy!</th><th>Getting it</th><th>Need help</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px;min-height:0;">
+      <div class="card card-plain" style="flex:1;display:flex;flex-direction:column;">
+        <div class="slabel">Something I learned today</div>
+        <div class="reflection-prompt">Write or draw one thing:</div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;">
+          <div class="write-line"></div>
+        </div>
+      </div>
+      <div class="card card-plain" style="flex-shrink:0;display:flex;flex-direction:column;">
+        <div class="slabel">3 things I'm thankful for 💜</div>
+        <div style="margin-top:6px;">
+          <div class="grat-item"><div class="grat-num">1</div><div class="grat-line"></div></div>
+          <div class="grat-item"><div class="grat-num">2</div><div class="grat-line"></div></div>
+          <div class="grat-item"><div class="grat-num">3</div><div class="grat-line"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+${luFooter("Howe Academy · Lucy Howe · Daily", cap(day) + " · " + dateStr)}
+</div>`;
+  }
+
+  function luPageBb2Coloring(weekNum, b64, category) {
+    var lbl = LUCY_DATA.category_labels[category] || ["🎨 Color Me!", "Color this page with your most magical colors! ✨"];
+    var title = lbl[0], prompt = lbl[1];
+    var imgHtml = b64 ? '<img src="data:image/png;base64,' + b64 + '" style="max-width:100%;max-height:100%;object-fit:contain;" alt="Coloring page"/>' : '<div style="font-family:Fredoka One,cursive;font-size:18px;color:#fce7f3;text-align:center;">Coloring page — add your image here!</div>';
+    return `<div class="page-label">Brain Break — back of Tuesday (double-sided)</div>
+<div class="page">
+<div class="bb-stripe"></div>
+<div class="bb-top">
+  <div class="bb-top-title">${title} · Challenge 2</div>
+  <div class="bb-top-badge">Howe Academy · Week ${weekNum} · Lucy</div>
+</div>
+<div class="bb-body">
+  <div style="text-align:center;flex-shrink:0;">
+    <div class="bb-label" style="font-size:15px;text-align:center;">${prompt}</div>
+  </div>
+  <div style="flex:1;display:flex;justify-content:center;align-items:center;min-height:0;">
+    ${imgHtml}
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;flex-shrink:0;">
+    <div class="bb-card-rose" style="display:flex;flex-direction:column;gap:5px;">
+      <div class="bb-label" style="font-size:11px;">🌟 Give it a name!</div>
+      <div style="border-bottom:2.5px solid #fecdd3;height:28px;"></div>
+      <div class="bb-label" style="font-size:11px;margin-top:4px;">✨ Its magic power?</div>
+      <div style="border-bottom:2.5px solid #fecdd3;height:28px;"></div>
+    </div>
+    <div class="bb-card-lilac" style="display:flex;flex-direction:column;gap:5px;">
+      <div class="bb-label" style="font-size:11px;">💭 What's it thinking?</div>
+      <div style="flex:1;min-height:70px;border:2px dashed #e9d5ff;border-radius:8px;background:white;position:relative;"><span style="position:absolute;bottom:6px;left:10px;font-size:11px;color:#e9d5ff;font-style:italic;">draw a thought bubble!</span></div>
+    </div>
+    <div class="bb-card" style="display:flex;flex-direction:column;gap:5px;">
+      <div class="bb-label" style="font-size:11px;">🌈 Favorite color used?</div>
+      <div style="border-bottom:2.5px solid #fecdd3;height:28px;"></div>
+      <div class="bb-label" style="font-size:11px;margin-top:4px;">⭐ Star rating!</div>
+      <div style="font-size:22px;letter-spacing:4px;color:#fce7f3;">★★★★★</div>
+    </div>
+  </div>
+</div>
+<div class="bb-footer">
+  <div class="bb-footer-txt">Howe Academy · Brain Break · Week ${weekNum}</div>
+  <div style="font-size:13px;">🦄</div>
+  <div class="bb-footer-txt">Back of Tuesday · Challenge 2</div>
+</div>
+</div>`;
+  }
+
+  function luPageBb3(weekNum, b64Symmetry, b64Pattern) {
+    var leftCol = b64Symmetry
+      ? '\n    <div style="display:flex;flex-direction:column;gap:5px;">\n      <div class="bb-label">✏️ Finish the other half — make it match!</div>\n      <div style="flex:1;display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:12px;">\n        <img src="data:image/png;base64,' + b64Symmetry + '" style="max-width:100%;max-height:100%;object-fit:contain;" alt="symmetry drawing"/>\n      </div>\n    </div>'
+      : '\n    <div style="display:flex;flex-direction:column;gap:5px;">\n      <div class="bb-label">✏️ Finish the other half — make it match!</div>\n      <div class="bb-draw" style="flex:1;min-height:120px;"><div class="bb-draw-hint">✏️ Mirror drawing</div></div>\n    </div>';
+    var patternTail = b64Pattern
+      ? '<div style="flex:1;display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:10px;border:2px solid #fce7f3;min-height:80px;"><img src="data:image/png;base64,' + b64Pattern + '" style="max-width:100%;max-height:100%;object-fit:contain;" alt="pattern activity"/></div>'
+      : '<div class="bb-draw" style="flex:1;min-height:80px;"><div class="bb-draw-hint">🔷 more patterns!</div></div>';
+    return `<div class="page-label">Brain Break — back of Wednesday (double-sided)</div>
+<div class="page">
+<div class="bb-stripe"></div>
+<div class="bb-top">
+  <div class="bb-top-title">✨ Mirror &amp; Patterns! · Challenge 3</div>
+  <div class="bb-top-badge">Howe Academy · Week ${weekNum} · Lucy</div>
+</div>
+<div class="bb-body">
+  <div style="display:grid;grid-template-columns:1.1fr 1fr;gap:16px;flex:1;min-height:0;">${leftCol}
+
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <div class="bb-label">🔷 What shape comes next? Draw it in the box!</div>
+      <div class="bb-card" style="display:flex;flex-direction:column;gap:12px;flex-shrink:0;">
+        <div style="display:flex;align-items:center;gap:4px;flex-wrap:nowrap;">
+          <svg viewBox="0 0 36 36" width="34" height="34"><path d="M18,29 Q9,22 8,15 Q7,7 18,10 Q29,7 28,15 Q27,22 18,29Z" fill="white" stroke="#f472b6" stroke-width="3"/></svg>
+          <svg viewBox="0 0 36 36" width="34" height="34"><polygon points="18,4 21,14 32,14 23,20 26,30 18,24 10,30 13,20 4,14 15,14" fill="white" stroke="#c084fc" stroke-width="2.5"/></svg>
+          <svg viewBox="0 0 36 36" width="34" height="34"><path d="M18,29 Q9,22 8,15 Q7,7 18,10 Q29,7 28,15 Q27,22 18,29Z" fill="white" stroke="#f472b6" stroke-width="3"/></svg>
+          <svg viewBox="0 0 36 36" width="34" height="34"><polygon points="18,4 21,14 32,14 23,20 26,30 18,24 10,30 13,20 4,14 15,14" fill="white" stroke="#c084fc" stroke-width="2.5"/></svg>
+          <svg viewBox="0 0 36 36" width="34" height="34"><path d="M18,29 Q9,22 8,15 Q7,7 18,10 Q29,7 28,15 Q27,22 18,29Z" fill="white" stroke="#f472b6" stroke-width="3"/></svg>
+          <span style="font-family:Fredoka One,cursive;font-size:18px;color:#f9a8d4;padding:0 2px;">→</span>
+          <div style="width:40px;height:40px;border:2.5px dashed #f9a8d4;border-radius:8px;background:#fff7fb;flex-shrink:0;"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px;flex-wrap:nowrap;">
+          <svg viewBox="0 0 40 40" width="40" height="40"><circle cx="20" cy="20" r="17" fill="white" stroke="#fb7185" stroke-width="3"/></svg>
+          <svg viewBox="0 0 40 40" width="40" height="40"><circle cx="20" cy="20" r="9"  fill="white" stroke="#fb7185" stroke-width="2.5"/></svg>
+          <svg viewBox="0 0 40 40" width="40" height="40"><circle cx="20" cy="20" r="17" fill="white" stroke="#fb7185" stroke-width="3"/></svg>
+          <svg viewBox="0 0 40 40" width="40" height="40"><circle cx="20" cy="20" r="9"  fill="white" stroke="#fb7185" stroke-width="2.5"/></svg>
+          <span style="font-family:Fredoka One,cursive;font-size:18px;color:#f9a8d4;padding:0 2px;">→</span>
+          <div style="width:40px;height:40px;border:2.5px dashed #f9a8d4;border-radius:8px;background:#fff7fb;flex-shrink:0;"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px;flex-wrap:nowrap;">
+          <svg viewBox="0 0 36 36" width="34" height="34"><polygon points="18,4 33,33 3,33" fill="white" stroke="#c084fc" stroke-width="3"/></svg>
+          <svg viewBox="0 0 36 36" width="34" height="34"><circle cx="18" cy="18" r="14" fill="white" stroke="#f472b6" stroke-width="3"/></svg>
+          <svg viewBox="0 0 36 36" width="34" height="34"><polygon points="18,4 33,33 3,33" fill="white" stroke="#c084fc" stroke-width="3"/></svg>
+          <svg viewBox="0 0 36 36" width="34" height="34"><circle cx="18" cy="18" r="14" fill="white" stroke="#f472b6" stroke-width="3"/></svg>
+          <svg viewBox="0 0 36 36" width="34" height="34"><polygon points="18,4 33,33 3,33" fill="white" stroke="#c084fc" stroke-width="3"/></svg>
+          <span style="font-family:Fredoka One,cursive;font-size:18px;color:#f9a8d4;padding:0 2px;">→</span>
+          <div style="width:40px;height:40px;border:2.5px dashed #f9a8d4;border-radius:8px;background:#fff7fb;flex-shrink:0;"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px;flex-wrap:nowrap;">
+          <svg viewBox="0 0 34 34" width="32" height="32"><path d="M17,27 Q9,20 8,14 Q7,7 17,10 Q27,7 26,14 Q25,20 17,27Z" fill="white" stroke="#f472b6" stroke-width="3"/></svg>
+          <svg viewBox="0 0 34 34" width="32" height="32"><path d="M17,27 Q9,20 8,14 Q7,7 17,10 Q27,7 26,14 Q25,20 17,27Z" fill="white" stroke="#f472b6" stroke-width="3"/></svg>
+          <svg viewBox="0 0 34 34" width="32" height="32"><polygon points="17,3 20,12 30,12 22,18 25,27 17,22 9,27 12,18 4,12 14,12" fill="white" stroke="#c084fc" stroke-width="2.5"/></svg>
+          <svg viewBox="0 0 34 34" width="32" height="32"><path d="M17,27 Q9,20 8,14 Q7,7 17,10 Q27,7 26,14 Q25,20 17,27Z" fill="white" stroke="#f472b6" stroke-width="3"/></svg>
+          <svg viewBox="0 0 34 34" width="32" height="32"><path d="M17,27 Q9,20 8,14 Q7,7 17,10 Q27,7 26,14 Q25,20 17,27Z" fill="white" stroke="#f472b6" stroke-width="3"/></svg>
+          <span style="font-family:Fredoka One,cursive;font-size:18px;color:#f9a8d4;padding:0 2px;">→</span>
+          <div style="width:40px;height:40px;border:2.5px dashed #f9a8d4;border-radius:8px;background:#fff7fb;flex-shrink:0;"></div>
+        </div>
+        <div style="border-top:1.5px solid #fce7f3;padding-top:5px;font-family:Fredoka One,cursive;font-size:11px;color:#f9a8d4;">
+          Answers: ⭐ &nbsp;·&nbsp; big ○ &nbsp;·&nbsp; ○ &nbsp;·&nbsp; ⭐
+        </div>
+      </div>
+      ${patternTail}
+    </div>
+  </div>
+</div>
+<div class="bb-footer">
+  <div class="bb-footer-txt">Howe Academy · Brain Break · Week ${weekNum}</div>
+  <div style="font-size:13px;">✨</div>
+  <div class="bb-footer-txt">Back of Wednesday · Challenge 3</div>
+</div>
+</div>`;
+  }
+
+  function luPageBb4(weekNum, b64Maze) {
+    var rightCol = b64Maze
+      ? '\n    <div style="display:flex;flex-direction:column;gap:5px;">\n      <div class="bb-label">🌸 Find your way through the maze!</div>\n      <div style="flex:1;display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:12px;border:2px solid #fce7f3;">\n        <img src="data:image/png;base64,' + b64Maze + '" style="max-width:100%;max-height:100%;object-fit:contain;" alt="maze"/>\n      </div>\n    </div>'
+      : '\n    <div style="display:flex;flex-direction:column;gap:5px;">\n      <div class="bb-label">🌸 Find your way through the maze!</div>\n      <div class="bb-draw" style="flex:1;min-height:120px;"><div class="bb-draw-hint">🌸 Maze coming soon!</div></div>\n    </div>';
+    return `<div class="page-label">Brain Break — back of Thursday (double-sided)</div>
+<div class="page">
+<div class="bb-stripe"></div>
+<div class="bb-top">
+  <div class="bb-top-title">🌸 Maze Time! · Challenge 4</div>
+  <div class="bb-top-badge">Howe Academy · Week ${weekNum} · Lucy</div>
+</div>
+<div class="bb-body" style="display:flex;flex-direction:column;gap:10px;">
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;flex:1;min-height:0;">
+    <div style="display:flex;flex-direction:column;gap:5px;">
+      <div class="bb-label">🦋 Draw what's at the end of the maze!</div>
+      <div class="bb-draw" style="flex:1;min-height:0;"><div class="bb-draw-hint">🌸 🦋 🌈 🏰 — what did you find?</div></div>
+    </div>
+${rightCol}
+  </div>
+
+  <div style="flex-shrink:0;">
+    <div class="bb-label" style="font-size:12px;">💜 Draw 3 things you'd bring on an adventure!</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:4px;">
+      <div class="bb-draw" style="min-height:100px;"><div class="bb-draw-hint">thing 1</div></div>
+      <div class="bb-draw" style="min-height:100px;"><div class="bb-draw-hint">thing 2</div></div>
+      <div class="bb-draw" style="min-height:100px;"><div class="bb-draw-hint">thing 3</div></div>
+    </div>
+  </div>
+
+</div>
+<div class="bb-footer">
+  <div class="bb-footer-txt">Howe Academy · Brain Break · Week ${weekNum}</div>
+  <div style="font-size:13px;">🌸</div>
+  <div class="bb-footer-txt">Back of Thursday · Challenge 4</div>
+</div>
+</div>`;
+  }
+
+  function luPageCreative(weekNum) {
+    return `<div class="page-label">Creative Page — back of Friday (double-sided)</div>
+<div class="page">
+<div style="height:5px;background:linear-gradient(90deg,#f472b6,#c084fc,#fb7185,#c084fc,#f472b6);flex-shrink:0;"></div>
+<div style="padding:10px 40px 8px;background:var(--bb-pale);border-bottom:1.5px solid var(--bb-border);flex-shrink:0;display:flex;justify-content:space-between;align-items:center;">
+  <div>
+    <div style="font-family:'Fredoka One',cursive;font-size:24px;color:#be185d;">🎨 My Creative Page!</div>
+    <div style="font-family:'Nunito',sans-serif;font-size:9px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#f9a8d4;margin-top:2px;">draw · color · create — anything you want!</div>
+  </div>
+  <div style="text-align:right;">
+    <div style="font-family:'Fredoka One',cursive;font-size:16px;color:#f472b6;">Week ${weekNum} Done! 🌟</div>
+    <div style="font-family:'Nunito',sans-serif;font-size:9px;font-weight:700;color:#f9a8d4;margin-top:2px;">Amazing job, Lucy! 🦄</div>
+  </div>
+</div>
+<div style="padding:10px 40px 8px;flex:1;display:flex;flex-direction:column;gap:10px;overflow:hidden;min-height:0;">
+  <div style="background:white;border:2px solid var(--bb-border);border-radius:12px;padding:7px 18px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+    <div style="font-family:'Fredoka One',cursive;font-size:14px;color:#be185d;">You finished Week ${weekNum}! Way to go!</div>
+    <div style="font-size:20px;display:flex;gap:8px;">🦄🌈⭐🎉💜</div>
+  </div>
+  <div style="flex:2;display:flex;flex-direction:column;min-height:0;">
+    <div style="font-family:'Fredoka One',cursive;font-size:14px;color:#be185d;margin-bottom:5px;">✏️ Draw ANYTHING you want here — this is YOUR page!</div>
+    <div style="flex:1;min-height:0;border:3px dashed #f9a8d4;border-radius:14px;background:#fff7fb;position:relative;">
+      <span style="position:absolute;top:10px;left:12px;font-size:22px;opacity:0.2;">🌸</span>
+      <span style="position:absolute;top:10px;right:12px;font-size:22px;opacity:0.2;">⭐</span>
+      <span style="position:absolute;bottom:10px;left:12px;font-size:22px;opacity:0.2;">🦋</span>
+      <span style="position:absolute;bottom:10px;right:12px;font-size:22px;opacity:0.2;">🌈</span>
+      <div style="position:absolute;bottom:10px;left:16px;font-family:'Nunito',sans-serif;font-size:12px;color:#fad1e8;font-style:italic;">your masterpiece goes here ✨</div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;flex-shrink:0;">
+    <div class="bb-card-rose" style="display:flex;flex-direction:column;gap:5px;">
+      <div style="font-family:'Fredoka One',cursive;font-size:12px;color:#be185d;">👨‍👩‍👧 Draw your family!</div>
+      <div style="height:100px;border:2px dashed #fecdd3;border-radius:8px;background:white;"></div>
+    </div>
+    <div class="bb-card-lilac" style="display:flex;flex-direction:column;gap:5px;">
+      <div style="font-family:'Fredoka One',cursive;font-size:12px;color:#9333ea;">🍕 Draw your favorite food!</div>
+      <div style="height:100px;border:2px dashed #e9d5ff;border-radius:8px;background:white;"></div>
+    </div>
+    <div class="bb-card" style="display:flex;flex-direction:column;gap:5px;">
+      <div style="font-family:'Fredoka One',cursive;font-size:12px;color:#be185d;">🏠 Draw your dream house!</div>
+      <div style="height:100px;border:2px dashed #f9a8d4;border-radius:8px;background:white;"></div>
+    </div>
+  </div>
+</div>
+<div style="padding:5px 40px;border-top:1.5px solid var(--bb-border);background:var(--bb-pale);flex-shrink:0;display:flex;justify-content:space-between;align-items:center;">
+  <div style="font-family:'Nunito',sans-serif;font-size:8px;font-weight:600;color:#f9a8d4;letter-spacing:0.06em;text-transform:uppercase;">Howe Academy · Lucy Howe · Creative Page</div>
+  <div style="font-size:14px;">🦄</div>
+  <div style="font-family:'Nunito',sans-serif;font-size:8px;font-weight:600;color:#f9a8d4;letter-spacing:0.06em;text-transform:uppercase;">Week ${weekNum} · Back of Friday</div>
+</div>
+</div>`;
+  }
+
+  function luPageEndOfWeek(weekNum, weekDates, blends, subtraction, days, tasks) {
+    var allSubjects = [], seen = {};
+    (days || []).forEach(function (day) {
+      luTasksForDay(tasks, day).forEach(function (t) { var s = luSubjectName(t.title); if (!seen[s]) { seen[s] = 1; allSubjects.push(s); } });
+    });
+    var forTable = allSubjects.concat(["Blending (" + blends.map(function (b) { return b.digraph; }).join(" · ") + ")", "Subtraction"]);
+    var rows = forTable.map(function (s) { return '<tr><td>' + s + '</td><td><span class="bubble"></span></td><td><span class="bubble"></span></td><td><span class="bubble"></span></td></tr>\n'; }).join("");
+    var blendBoxes = blends.map(function (bl) {
+      var sample = (bl.words || []).slice(0, 3).join(" · ");
+      return '<div style="text-align:center;">\n  <div style="font-family:\'Fraunces\',serif;font-size:24px;font-weight:700;color:var(--lu-dark);background:var(--lu-light);padding:5px 14px;border-radius:8px;">' + bl.digraph + '</div>\n  <div style="font-size:9px;color:var(--muted);margin-top:3px;font-family:\'Nunito\',sans-serif;font-weight:700;">' + sample + '</div>\n</div>';
+    }).join("");
+    var ansHtml = "";
+    (subtraction || []).forEach(function (dayProbs) {
+      (dayProbs || []).forEach(function (ab) {
+        var a = ab[0], b = ab[1];
+        ansHtml += '<div style="display:flex;align-items:center;gap:6px;"><span style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:700;color:var(--ink);">' + a + '−' + b + '</span><span style="font-size:18px;color:var(--ink);font-weight:700;">=</span><span style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:var(--lu-mid);">' + (a - b) + '</span></div>\n';
+      });
+    });
+    return `<div class="page-label">End of Week — Wrap-Up</div>
+<div class="page">
+${luStdHeader("Howe Academy · 1st Grade · End of Week", "Lucy's Weekly Wrap-Up", "how I did · what I loved · next week", "Week " + weekNum, weekDates, "🌈 Week Complete!")}
+<div class="body">
+
+  <div style="flex-shrink:0;">
+    <div class="slabel">How did I do this week? · circle one per row</div>
+    <table class="skill-table">
+      <thead><tr><th>Subject</th><th>Easy!</th><th>Getting it</th><th>Need help</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>
+
+  <div class="divider" style="flex-shrink:0;"></div>
+
+  <div class="col2" style="flex-shrink:0;">
+    <div class="card card-gold">
+      <div class="slabel">Blends I practiced this week</div>
+      <div style="display:flex;gap:10px;margin:8px 0 10px;flex-wrap:wrap;">${blendBoxes}</div>
+      <div class="write-prompt" style="font-size:12px;">My favorite blend word this week was:</div>
+      <div class="write-line"></div>
+    </div>
+    <div class="card card-purple">
+      <div class="slabel">Subtraction answers — circle any that were tricky</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;margin:8px 0 6px;">${ansHtml}</div>
+    </div>
+  </div>
+
+  <div class="divider" style="flex-shrink:0;"></div>
+
+  <div class="col2" style="flex:1;min-height:0;">
+    <div style="display:flex;flex-direction:column;height:100%;">
+      <div class="slabel">My favorite thing from this week — draw it!</div>
+      <div class="draw-box" style="flex:1;min-height:200px;"><div class="draw-hint">✏️ draw here</div></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;height:100%;">
+      <div class="card card-pink" style="flex:1;display:flex;flex-direction:column;">
+        <div class="slabel">My best moment this week</div>
+        <div class="reflection-prompt" style="font-size:12px;">Write one sentence:</div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:space-evenly;">
+          <div class="write-line"></div><div class="write-line"></div><div class="write-line"></div>
+        </div>
+      </div>
+      <div class="card card-plain" style="flex:1;display:flex;flex-direction:column;">
+        <div class="slabel">Next week I want to work on</div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:space-evenly;">
+          <div class="write-line"></div><div class="write-line"></div><div class="write-line"></div>
+        </div>
+      </div>
+      <div class="card card-plain" style="flex-shrink:0;">
+        <div class="slabel">Mom's notes</div>
+        <div class="write-line-sm"></div><div class="write-line-sm"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+${luFooter("Howe Academy · Lucy Howe · End of Week", "Week " + weekNum + " · " + weekDates)}
+</div>`;
+  }
+
+  function luPageTeachingCompanion(weekNum, weekDates, days, tasks, blends, subtraction, teachNotes) {
+    var DAY_NAMES = { monday: "Monday", tuesday: "Tuesday", wednesday: "Wednesday", thursday: "Thursday", friday: "Friday" };
+    var subKeyRows = "";
+    (days || []).forEach(function (day, i) {
+      if (i < subtraction.length) {
+        var ansStr = (subtraction[i] || []).map(function (ab) { return ab[0] + "−" + ab[1] + "=" + (ab[0] - ab[1]); }).join(" &nbsp;&nbsp; ");
+        subKeyRows += '<div class="key-row"><div class="key-label">' + (DAY_NAMES[day] || cap(day)) + '</div><div><span class="key-ans">' + ansStr + '</span></div></div>\n';
+      }
+    });
+    var tips = {
+      "sh": '"sh" is one sound — like shushing someone: <em>shhh</em>. It\'s not separate s + h. Model: "Listen — <strong>ship</strong>. Do you hear the sh at the start?"',
+      "ch": 'Like a train: <em>ch-ch-ch</em>. Common mix-up with sh. Exaggerate the mouth shape — ch pushes forward more. Have her put her hand in front of her mouth and feel the air.',
+      "th": 'Two types — voiced (<em>this, that, them</em>) and unvoiced (<em>think, three, bath</em>). She doesn\'t need the rule — just practice both. Tongue tip peeks out between the teeth slightly.',
+      "wh": 'In American speech, "wh" sounds like "w." The key skill is visual recognition — she should see "wh" and know it starts question words: what, when, where, which, why.'
+    };
+    var blendTipRows = blends.map(function (bl) {
+      var dg = bl.digraph, tip = tips[dg] || ('Practice "' + dg + '" words from today\'s blend card. Read them aloud together first.');
+      return '<div class="key-row"><div class="key-label" style="min-width:28px;">' + dg + '</div><div style="font-size:11px;color:var(--ink);line-height:1.5;">' + tip + '</div></div>\n';
+    }).join("");
+    var allApps = {}, appOrder = [];
+    (days || []).forEach(function (day) {
+      luTasksForDay(tasks, day).forEach(function (t) {
+        var s = luSubjectName(t.title);
+        if (!allApps[s]) { allApps[s] = []; appOrder.push(s); }
+        var parts = String(t.title || "").split(" — ");
+        allApps[s].push(parts.length > 1 ? parts[1] : "");
+      });
+    });
+    var appRows = appOrder.map(function (app) {
+      var detailStr = allApps[app].filter(Boolean).join(", ");
+      return '<div class="key-row"><div class="key-label">' + app.slice(0, 10) + '</div><div style="font-size:10.5px;color:var(--muted);line-height:1.5;">' + detailStr + '</div></div>\n';
+    }).join("");
+    var extra = teachNotes ? '<div class="carry-box"><div class="carry-title">Extra notes this week</div><div style="font-size:11px;color:var(--ink);line-height:1.7;">' + teachNotes + '</div></div>' : "";
+    return `<div class="page-label">Teaching Companion — Mom's Guide · Not for Lucy</div>
+<div class="page">
+<div class="header companion-header">
+  <div>
+    <div class="header-eyebrow">Howe Academy · 1st Grade · Teaching Companion</div>
+    <div class="header-name">Mom's Guide <span class="parent-badge">not for Lucy</span></div>
+    <div class="header-sub">answer keys · blend tips · what to watch · notes</div>
+  </div>
+  <div class="header-right">
+    <div class="header-week">Week ${weekNum}</div>
+    <div class="header-date">${weekDates}</div>
+  </div>
+</div>
+<div class="accent-bar"></div>
+<div class="body">
+
+  <div class="teach-banner" style="flex-shrink:0;">
+    <strong style="font-size:9px;letter-spacing:0.06em;text-transform:uppercase;">How to use this page —</strong>
+    Check subtraction answers <em>with</em> Lucy right after she finishes — immediate feedback matters most at this age.
+    For blending, listen to her say the words aloud; correct gently by modeling the sound yourself, not by labeling it wrong.
+    Keep every correction warm and short — 30 seconds max. Celebrate effort out loud every single day.
+  </div>
+
+  <div class="col2" style="flex:1;min-height:0;gap:14px;align-items:start;">
+
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <div class="key-section">
+        <div class="key-head">Subtraction Answers — All Five Days</div>
+        <div class="key-body">
+          ${subKeyRows}
+          <div class="key-row"><div class="key-label">Watch for</div><div style="font-size:10.5px;color:var(--muted);line-height:1.55;">Common struggle: larger minus small (e.g. 10−3, 10−4). Have her use the number line on the page. Counting back on fingers is completely normal and expected. The goal is understanding "take away," not memorized facts.</div></div>
+        </div>
+      </div>
+      <div class="key-section">
+        <div class="key-head">App Lessons This Week</div>
+        <div class="key-body">${appRows}</div>
+      </div>
+      <div class="key-section">
+        <div class="key-head">🌙 Closing Notebook — Reflection Coaching</div>
+        <div class="key-body" style="font-size:11px;color:var(--ink);line-height:1.5;">
+          After school, spend about a minute on Lucy's <strong>"All Done"</strong> page together:
+          <div style="margin-top:4px;">• <strong>"Something I learned"</strong> — let her draw or say it; scribe for her if she'd rather talk.</div>
+          <div>• <strong>"How did I do?"</strong> — celebrate the <em>Easy!</em> rows out loud; gently ask about any <em>Need help</em>.</div>
+          <div style="margin-top:4px;color:var(--lu-mid);font-weight:700;">Keep it happy and quick — lots of praise.</div>
+        </div>
+      </div>
+      ${extra}
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <div class="key-section">
+        <div class="key-head">Blend Teaching Tips — This Week's Digraphs</div>
+        <div class="key-body">${blendTipRows}</div>
+      </div>
+      <div class="carry-box">
+        <div class="carry-title">Quick wins to celebrate this week</div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
+          <div class="write-line-sm"></div>
+          <div class="write-line-sm"></div>
+          <div class="write-line-sm"></div>
+        </div>
+      </div>
+      <div class="carry-box">
+        <div class="carry-title">Carry-forward for next week</div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
+          <div class="write-line-sm"></div>
+          <div class="write-line-sm"></div>
+          <div class="write-line-sm"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekNum + " · " + weekDates)}
+</div>`;
+  }
+
+  function generateLucy(ctx) {
+    ctx = ctx || {};
+    var weekData = ctx.weekData || {};
+    if (Array.isArray(weekData)) weekData = weekData[0] || {};
+    var weekNum = ctx.weekNum;
+    if (typeof weekNum === "string") { var dd = weekNum.replace(/\D/g, ""); weekNum = dd ? parseInt(dd, 10) : weekNum; }
+    var wn = parseInt(weekNum, 10) || 1;
+    var weekDates = ctx.weekDates || "";
+    var tasks = weekData.tasks || [], dates = weekData.dates || {};
+    var DAY_ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday"];
+    var days = DAY_ORDER.filter(function (d) { return dates.hasOwnProperty(d); });
+    var blends = LUCY_DATA.blends, subtraction = LUCY_DATA.subtraction, focus = LUCY_DATA.focus, pace = LUCY_DATA.pace;
+    var prevStats = ctx.prevStats || {};   // dashes until the shared history wiring
+    var category = LUCY_DATA.category_order[((wn - 1) % LUCY_DATA.category_order.length + LUCY_DATA.category_order.length) % LUCY_DATA.category_order.length];
+    var curMonth = days.length ? monthFromDate(dates[days[0]] || "") : "";
+    var ym = /\b(\d{4})\b/.exec(weekDates || ""); var year = ym ? ym[1] : "";
+
+    var parts = [];
+    parts.push(luPageWeeklyReview(wn, weekDates, days, dates, tasks, prevStats, pace, focus));
+    parts.push(luPageMonths(wn, weekDates, curMonth));
+    parts.push(luPageAllAboutMe(wn, weekDates, null)); // PII-safe blank template
+    days.forEach(function (day, i) {
+      var dateStr = dates[day] || "";
+      var blend = (i < blends.length) ? blends[i] : blends[blends.length - 1];
+      var subPrbs = (i < subtraction.length) ? subtraction[i] : [];
+      var badge = LUCY_DATA.day_badges[day] || "🦄 Great Work!";
+      parts.push(luPageDaily(wn, day, dateStr, tasks, blend, subPrbs, badge, year));
+      if (day === "monday") parts.push(luPageBb1(wn, null));
+      else if (day === "tuesday") parts.push(luPageBb2Coloring(wn, null, category));
+      else if (day === "wednesday") parts.push(luPageBb3(wn, null, null));
+      else if (day === "thursday") parts.push(luPageBb4(wn, null));
+      else if (day === "friday") parts.push(luPageCreative(wn));
+    });
+    parts.push(luPageEndOfWeek(wn, weekDates, blends, subtraction, days, tasks));
+
+    var student = luShell(parts.join("\n"), "Lucy's Notebook — Week " + wn);
+    var companion = luPageTeachingCompanion(wn, weekDates, days, tasks, blends, subtraction, ctx.teachNotes || "");
+    var parent = luShell(companion, "Lucy's Parent Companion — Week " + wn);
+    return { student: student, parent: parent };
+  }
+
+  /* ============================================================================
    *  PUBLIC API
    * ========================================================================== */
 
   var GENERATORS = {
     lincoln: { label: "Lincoln (5th 🐍)", build: generateLincoln },
     ellis: { label: "Ellis (4th 🤖)", build: generateEllis },
+    lucy: { label: "Lucy (1st 🦄)", build: generateLucy },
     julian: { label: "Julian (Pre-K 🦕)", build: generateJulian }
   };
 
