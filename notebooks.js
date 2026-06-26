@@ -1763,7 +1763,7 @@
   }
 
   function enPageMoneyLife(t, weekNum) {
-    var skills = LN_EXTRA.enrich.life_skills_lincoln;
+    var skills = EN_LIFE_SKILLS[(t.name || "").toLowerCase()] || EN_LIFE_SKILLS.ellis || LN_EXTRA.enrich.life_skills_lincoln;
     var wk = Math.max(parseInt(weekNum, 10) || 1, 1);
     var focus = skills[(wk - 1) % skills.length];
     var skillRows = skills.map(function (s) {
@@ -1958,11 +1958,628 @@
   }
 
   /* ============================================================================
+   *  ELLIS  (4th grade — Transformers 🤖)
+   *  Ported from ellis_notebook_generator.py. Self-contained: own banks + CSS
+   *  (_css(), includes <style>) + brain-break (word-search/scramble/riddle/WYR)
+   *  + daily page + 2 parent pages. Reuses the enrichment pages (ellis theme)
+   *  + a Notes page. Logo (../Transformer/11.svg) → 🤖 (won't resolve in-app).
+   *  Header still reads "3rd Grade" — faithful to the Python source string.
+   * ========================================================================== */
+
+  var ELLIS_CSS = "\n<style>\n@page { size: letter portrait; margin: 0; }\n:root {\n  --tf-dark:      #0A1628;\n  --tf-navy:      #142038;\n  --tf-mid:       #1C3256;\n  --tf-red:       #C41E1E;\n  --tf-red-lt:    #E03030;\n  --tf-yellow:    #F5C200;\n  --tf-silver:    #8EA5C4;\n  --tf-silver-lt: #B8CDDF;\n  --tf-light:     #EBF0F7;\n  --tf-white:     #F9FBFD;\n  --acc-read:     #1A3A6E;\n  --acc-lang:     #5A1A1A;\n  --acc-math:     #0D4A2A;\n}\n/* PRINT-TUNED PALETTE \u2014 applies only when printing; screen stays vivid.\n   Clean the near-black navies (less muddy on inkjet) and deepen the yellow (weakest ink). */\n@media print {\n  :root {\n    --tf-dark:   #16273f;\n    --tf-navy:   #1c2e49;\n    --tf-mid:    #25416b;\n    --tf-yellow: #e0a800;\n  }\n}\n* { box-sizing:border-box; margin:0; padding:0; }\n@media print {\n  body { -webkit-print-color-adjust:exact; print-color-adjust:exact; }\n  .page { page-break-after:always; }\n}\nbody { background:#3a3a3a; font-family:'Nunito',sans-serif; font-size:10.5px; color:#1a1a2e; }\n.page { width:816px; height:1056px; background:var(--tf-white); margin:0 auto 24px;\n        display:flex; flex-direction:column; overflow:hidden; }\n\n/* \u2500\u2500 header \u2500\u2500 */\n.page-header { height:68px; flex-shrink:0; background:var(--tf-dark);\n  background-image:linear-gradient(rgba(255,255,255,0.025) 1px,transparent 1px);\n  background-size:100% 16px; display:flex; align-items:center; gap:14px;\n  padding:0 22px; position:relative; }\n.page-header::before { content:''; position:absolute; top:0; left:0; right:0; height:4px;\n  background:linear-gradient(90deg,var(--tf-red) 0%,var(--tf-yellow) 40%,var(--tf-red) 100%); }\n.page-header::after  { content:''; position:absolute; bottom:0; left:0; right:0; height:2px;\n  background:linear-gradient(90deg,transparent,var(--tf-red) 20%,var(--tf-yellow) 50%,var(--tf-red) 80%,transparent);\n  opacity:0.55; }\n.logo-slot { width:48px; height:52px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }\n.logo-slot img { width:48px; height:52px; object-fit:contain; }\n.hdr-divider { width:1px; height:40px; background:rgba(245,194,0,0.25); flex-shrink:0; }\n.header-titles { flex:1; }\n.header-academy { font-family:'Orbitron',sans-serif; font-size:8px; font-weight:600;\n  color:var(--tf-silver); letter-spacing:0.22em; text-transform:uppercase; margin-bottom:3px; }\n.header-main { font-family:'Orbitron',sans-serif; font-size:19px; font-weight:900;\n  color:#fff; letter-spacing:0.04em; text-transform:uppercase; line-height:1; }\n.header-main .hl { color:var(--tf-yellow); }\n.hdr-chevron { color:var(--tf-red); font-size:22px; flex-shrink:0; opacity:0.7; }\n.header-info { flex-shrink:0; text-align:right; }\n.header-tag { font-family:'Orbitron',sans-serif; font-size:7px; color:var(--tf-silver);\n  letter-spacing:0.2em; text-transform:uppercase; display:block; margin-bottom:3px; }\n.header-week-badge { background:var(--tf-red); color:#fff; font-family:'Orbitron',sans-serif;\n  font-size:13px; font-weight:700; letter-spacing:0.1em; padding:3px 10px;\n  border-radius:2px; display:inline-block; }\n.header-sub-info { font-family:'Orbitron',sans-serif; font-size:7px; color:var(--tf-silver);\n  letter-spacing:0.12em; margin-top:3px; }\n\n/* \u2500\u2500 body \u2500\u2500 */\n.page-body { flex:1; overflow:hidden; padding:6px 20px 5px;\n  display:flex; flex-direction:column; gap:2px; }\n\n/* \u2500\u2500 section labels \u2500\u2500 */\n.sec-label { font-family:'Orbitron',sans-serif; font-size:7.5px; font-weight:700;\n  letter-spacing:0.18em; text-transform:uppercase; padding:1px 8px 1px 5px;\n  border-radius:2px; display:inline-flex; align-items:center; gap:5px;\n  margin-bottom:1px; flex-shrink:0; }\n.sec-label::before { content:'\u25b6'; font-size:5.5px; opacity:0.8; }\n.sec-red   { background:var(--tf-red);    color:#fff; }\n.sec-navy  { background:var(--tf-dark);   color:var(--tf-silver-lt); }\n.sec-gold  { background:var(--tf-yellow); color:var(--tf-dark); }\n.sec-green { background:#0D4A2A;          color:#a8e6c0; }\n.sec-lang  { background:var(--acc-lang);  color:#ffcccc; }\n\n/* \u2500\u2500 cards \u2500\u2500 */\n.card { border-radius:3px; padding:4px 9px; }\n.card-read { background:#ddeeff; border-left:3px solid var(--acc-read); }\n.card-lang { background:#ffe8e8; border-left:3px solid var(--tf-red); }\n.card-math { background:#daf0e6; border-left:3px solid var(--acc-math); }\n.card-word { background:#fff3c0; border-left:3px solid var(--tf-yellow); }\n.card-sub  { background:#eef0fb; border-left:3px solid #3344aa; }\n\n/* \u2500\u2500 beginning / closing bookends \u2014 make the Morning & Closing Notebook obvious \u2500\u2500 */\n.bookend { display:flex; align-items:center; gap:10px; border-radius:3px; padding:3px 12px;\n  flex-shrink:0; border:2px solid var(--tf-dark); margin-bottom:1px; }\n.bookend-start { background:linear-gradient(135deg,#fff3c0,#fffaf0); border-color:var(--tf-yellow); }\n.bookend-close { background:linear-gradient(135deg,#dde7f5,#eef4fb); border-color:var(--tf-mid); }\n.bookend-icon { font-size:18px; line-height:1; flex-shrink:0; }\n.bookend-title { font-family:'Orbitron',sans-serif; font-size:12px; font-weight:900; color:var(--tf-dark);\n  letter-spacing:0.04em; text-transform:uppercase; line-height:1.1; }\n.bookend-sub { font-family:'Orbitron',sans-serif; font-size:7px; font-weight:600; color:var(--tf-mid);\n  letter-spacing:0.1em; text-transform:uppercase; margin-top:2px; }\n.bookend-badge { margin-left:auto; font-family:'Orbitron',sans-serif; font-size:8px; font-weight:700;\n  letter-spacing:0.08em; text-transform:uppercase; color:#fff; background:var(--tf-red);\n  padding:3px 9px; border-radius:2px; flex-shrink:0; }\n.bookend-start .bookend-badge { background:var(--tf-yellow); color:var(--tf-dark); }\n\n/* \u2500\u2500 questions \u2500\u2500 */\n.q-tag { display:inline-flex; align-items:center; justify-content:center;\n  width:18px; height:18px; background:var(--tf-red); color:#fff;\n  border-radius:50%; font-family:'Orbitron',sans-serif; font-size:8px;\n  font-weight:700; flex-shrink:0; }\n.q-row  { display:flex; gap:6px; align-items:flex-start; margin-bottom:3px; }\n.q-text { font-size:9.5px; line-height:1.25; flex:1; }\n.choices { display:flex; flex-direction:column; gap:2px; margin-top:2px; margin-left:24px; }\n.choice-row { display:flex; align-items:center; gap:5px; font-size:9px; line-height:1.18; }\n.choice-letter { display:inline-flex; align-items:center; justify-content:center;\n  width:15px; height:15px; border:1.5px solid; border-radius:50%;\n  font-size:8px; font-weight:700; font-family:'Orbitron',sans-serif; flex-shrink:0; }\n.choice-letter.correct { background:var(--tf-red); color:#fff; border-color:var(--tf-red); }\n.choice-letter.plain   { border-color:#aaa; color:#555; }\n.passage-block { background:white; border:1px solid #c8d8ec; border-radius:3px;\n  padding:4px 7px; font-size:9px; line-height:1.28; margin-bottom:3px; }\n.passage-title { font-family:'Orbitron',sans-serif; font-size:7px; font-weight:700;\n  color:var(--acc-read); letter-spacing:0.1em; margin-bottom:3px; }\n.skill-note { background:rgba(28,50,86,0.07); border-left:2px solid var(--tf-silver);\n  padding:2px 6px; font-size:8.5px; color:#445; font-style:italic; margin-top:4px;\n  border-radius:0 2px 2px 0; }\n\n/* \u2500\u2500 write lines \u2500\u2500 */\n/* \u2500\u2500 2-col skill check \u2500\u2500 */\n.sc-grid { display:grid; grid-template-columns:1fr 1fr; gap:1px 6px; }\n.sc-item { display:flex; align-items:center; gap:4px; padding:2px 3px;\n  border-bottom:1px solid rgba(14,32,56,0.06); min-width:0; }\n.sc-subj { flex:1; font-size:8px; color:var(--tf-dark); font-weight:600;\n  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }\n.sc-bubbles { display:flex; gap:4px; flex-shrink:0; }\n\n.grat-item { display:flex; align-items:center; gap:7px; margin-bottom:2px; }\n.grat-num  { font-family:'Orbitron',sans-serif; font-size:10px; font-weight:700;\n  color:var(--tf-yellow); background:var(--tf-dark); width:18px; height:18px;\n  border-radius:50%; display:flex; align-items:center; justify-content:center;\n  flex-shrink:0; }\n.grat-line { flex:1; border-bottom:1.5px solid rgba(196,30,30,0.18); height:15px; }\n.write-line { height:22px; border-bottom:1px solid rgba(196,30,30,0.12);\n  background:linear-gradient(transparent 20px,rgba(245,194,0,0.07) 20px); margin-bottom:1px; }\n\n/* \u2500\u2500 mood \u2500\u2500 */\n.mood-row  { display:flex; gap:10px; align-items:center; }\n.mood-item { display:flex; flex-direction:column; align-items:center; }\n.mood-circle { width:24px; height:24px; border:2px solid var(--tf-red); border-radius:50%;\n  display:flex; align-items:center; justify-content:center; font-size:16px;\n  background:white; flex-shrink:0; }\n.mood-label { font-family:'Orbitron',sans-serif; font-size:5.5px; color:var(--tf-silver);\n  text-align:center; margin-top:2px; letter-spacing:0.05em; }\n\n/* \u2500\u2500 subjects checklist \u2500\u2500 */\n.sub-grid { display:grid; grid-template-columns:1fr 1fr; gap:3px 10px; }\n.sub-item { display:flex; align-items:center; gap:6px; font-size:9.5px; height:22px; }\n.sub-box  { width:14px; height:14px; border:2px solid var(--tf-red); border-radius:2px;\n  background:white; flex-shrink:0; }\n.sub-note { font-size:8px; color:#888; margin-left:auto; font-style:italic; }\n\n/* \u2500\u2500 word of day \u2500\u2500 */\n.word-big { font-family:'Orbitron',sans-serif; font-size:14px; font-weight:700;\n  color:var(--tf-dark); letter-spacing:0.05em; }\n.word-pos  { font-family:'Orbitron',sans-serif; font-size:6.5px; background:var(--tf-yellow);\n  color:var(--tf-dark); padding:1px 5px; border-radius:2px; margin-left:5px; letter-spacing:0.1em; }\n.word-def  { font-size:9.5px; color:#444; line-height:1.2; margin:2px 0 1px; }\n.word-ex   { font-size:9px; color:#555; font-style:italic; line-height:1.2; }\n.word-ex strong { font-style:normal; color:var(--tf-dark); font-weight:800; }\n\n/* \u2500\u2500 Iowa scores table \u2500\u2500 */\n.iowa-table { width:100%; border-collapse:collapse; }\n.iowa-table tr { border-bottom:1px solid rgba(14,32,56,0.08); }\n.iowa-table td { padding:2.5px 5px; font-size:9.5px; }\n.iowa-table .subj { font-weight:700; color:var(--tf-dark); }\n.iowa-table .stat { text-align:center; font-family:'Orbitron',sans-serif; font-size:8px; }\n.iowa-badge { display:inline-block; padding:1px 5px; border-radius:2px;\n  font-family:'Orbitron',sans-serif; font-size:6.5px; font-weight:700; letter-spacing:0.05em; }\n.badge-focus   { background:#C41E1E; color:#fff; }\n.badge-growing { background:#F5C200; color:#111; }\n.badge-strong  { background:#1a5c2e; color:#fff; }\n.badge-elite   { background:#0A1628; color:var(--tf-yellow); }\n\n/* \u2500\u2500 stat boxes \u2500\u2500 */\n.stat-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:8px; }\n.stat-box  { background:var(--tf-dark); border-radius:3px; padding:5px 6px;\n  text-align:center; border-top:2px solid var(--tf-red); }\n.stat-num  { font-family:'Orbitron',sans-serif; font-size:18px; font-weight:900;\n  color:#fff; line-height:1; }\n.stat-label { font-family:'Orbitron',sans-serif; font-size:6px; color:var(--tf-silver);\n  letter-spacing:0.15em; text-transform:uppercase; margin-top:2px; }\n\n/* \u2500\u2500 pacing \u2500\u2500 */\n.pace-item  { margin-bottom:2px; }\n.pace-label { font-family:'Orbitron',sans-serif; font-size:7px; color:var(--tf-dark);\n  letter-spacing:0.08em; display:flex; justify-content:space-between;\n  align-items:center; margin-bottom:2px; }\n.pace-track { height:10px; background:rgba(14,32,56,0.1); border-radius:2px; overflow:hidden; }\n.pace-fill  { height:100%; border-radius:2px; }\n\n/* \u2500\u2500 weekly schedule \u2500\u2500 */\n.sched-grid { display:grid; gap:4px; }\n.sched-day-col { border-radius:3px; overflow:hidden; border:1px solid rgba(14,32,56,0.12); }\n.sched-day-head { background:var(--tf-mid); color:#fff; padding:4px 8px;\n  font-family:'Orbitron',sans-serif; font-size:8px; font-weight:700;\n  letter-spacing:0.1em; display:flex; justify-content:space-between; align-items:baseline; }\n.sched-date { font-size:6.5px; opacity:0.6; font-weight:400; letter-spacing:0.05em; }\n.sched-tasks { background:white; padding:3px 6px; }\n.sched-task-row { font-size:8.5px; color:#1a1a2e; padding:1px 0;\n  border-bottom:1px solid #f0f0f0; line-height:1.3; }\n.sched-task-row:last-child { border-bottom:none; }\n.sched-mom-req   { color:#7a1a1a; }\n.sched-mom-maybe { color:#5a3a00; }\n\n/* \u2500\u2500 brain break \u2500\u2500 */\n.ws-table { border-collapse:collapse; }\n.ws-cell  { width:20px; height:20px; text-align:center; vertical-align:middle;\n  font-family:'Orbitron',sans-serif; font-size:9.5px; font-weight:600;\n  color:var(--tf-dark); border:0.5px solid rgba(14,32,56,0.1); }\n.bb-riddle-q    { font-size:9.5px; font-weight:700; color:var(--tf-dark); line-height:1.35; }\n.bb-riddle-line { height:18px; border-bottom:1px solid rgba(196,30,30,0.15); margin-top:3px; }\n.bb-riddle-ans  { font-size:7.5px; color:#bbb; font-style:italic; margin-top:1px; }\n.bb-scrambled   { font-family:'Orbitron',sans-serif; font-size:11px; font-weight:700;\n  color:var(--tf-red); letter-spacing:0.15em; }\n.bb-blank       { flex:1; border-bottom:1.5px solid rgba(14,32,56,0.25); height:18px; }\n.draw-box   { border:2px dashed rgba(196,30,30,0.35); border-radius:4px;\n  position:relative; flex:1; min-height:80px; }\n.draw-label { position:absolute; top:6px; left:10px; font-family:'Orbitron',sans-serif;\n  font-size:7px; color:rgba(196,30,30,0.35); letter-spacing:0.2em; text-transform:uppercase; }\n.wyr-card { background:var(--tf-light); border:1.5px solid var(--tf-silver);\n  border-radius:3px; padding:6px 8px; margin-bottom:5px; }\n.wyr-q    { font-size:9.5px; font-weight:700; color:var(--tf-dark); line-height:1.35; margin-bottom:4px; }\n.wyr-line { height:18px; border-bottom:1px solid rgba(196,30,30,0.15); }\n\n/* \u2500\u2500 daily skill status check \u2500\u2500 */\n.skill-check { width:100%; border-collapse:collapse; margin-top:5px;\n  border-top:1px solid rgba(196,30,30,0.18); padding-top:4px; }\n.skill-check thead tr th { font-family:'Orbitron',sans-serif; font-size:6px; font-weight:700;\n  color:var(--tf-silver); text-transform:uppercase; letter-spacing:0.07em;\n  padding:3px 3px 2px; text-align:center; border-bottom:1px solid rgba(196,30,30,0.2); }\n.skill-check thead tr th:first-child { text-align:left; min-width:80px; }\n.skill-check tbody tr td { padding:2px 3px; font-size:8.5px; color:var(--tf-dark); line-height:1.4; }\n.skill-check tbody tr td:not(:first-child) { text-align:center; }\n.skill-check tbody tr:not(:last-child) td { border-bottom:1px solid rgba(14,32,56,0.06); }\n.sk-bubble { width:13px; height:13px; border:1.5px solid rgba(196,30,30,0.45);\n  border-radius:50%; display:inline-block; vertical-align:middle; }\n\n/* \u2500\u2500 parent companion \u2500\u2500 */\n.companion-accent { height:3px; flex-shrink:0;\n  background:linear-gradient(90deg,var(--tf-red),var(--tf-yellow),var(--tf-red)); }\n.parent-badge { display:inline-block; font-family:'Orbitron',sans-serif; font-size:7px;\n  font-weight:700; letter-spacing:0.12em; color:var(--tf-dark); background:var(--tf-yellow);\n  padding:2px 8px; border-radius:2px; margin-left:8px; vertical-align:middle; }\n.constraint-banner { background:rgba(245,194,0,0.15); border:1.5px solid rgba(245,194,0,0.4);\n  border-radius:4px; padding:6px 10px; font-size:9px; color:var(--tf-dark);\n  margin-bottom:6px; flex-shrink:0; }\n.key-day  { font-family:'Orbitron',sans-serif; font-size:11px; font-weight:700; color:var(--tf-dark); }\n.key-date { font-family:'Orbitron',sans-serif; font-size:7px; color:var(--tf-silver);\n  letter-spacing:0.08em; margin-left:6px; }\n.key-row  { display:flex; align-items:baseline; gap:8px; padding:3px 0;\n  border-bottom:1px solid rgba(14,32,56,0.08); font-size:9.5px; }\n.key-row:last-child { border-bottom:none; }\n.key-label { font-family:'Orbitron',sans-serif; font-size:7px; color:var(--tf-silver);\n  text-transform:uppercase; letter-spacing:0.08em; min-width:52px; flex-shrink:0; }\n.key-ans  { font-weight:700; color:var(--tf-dark); }\n.key-sub  { color:#888; font-size:9px; }\n.record-box  { border:1.5px solid rgba(14,32,56,0.15); border-radius:4px; padding:7px 10px; }\n.record-day  { font-family:'Orbitron',sans-serif; font-size:9px; font-weight:700;\n  color:var(--tf-red); margin-bottom:5px; }\n.record-line { height:18px; border-bottom:1px solid rgba(14,32,56,0.12); margin-bottom:1px; }\n.carry-box   { border:2px dashed rgba(14,32,56,0.2); border-radius:4px; padding:8px 12px; }\n.carry-title { font-family:'Orbitron',sans-serif; font-size:8px; font-weight:700;\n  color:var(--tf-red); letter-spacing:0.1em; margin-bottom:6px; }\n\n/* \u2500\u2500 footer \u2500\u2500 */\n.page-footer { background:var(--tf-dark); height:18px; display:flex; align-items:center;\n  justify-content:space-between; padding:0 22px; flex-shrink:0;\n  border-top:1px solid var(--tf-red); }\n.footer-text { font-family:'Orbitron',sans-serif; font-size:6.5px; color:var(--tf-silver);\n  letter-spacing:0.2em; text-transform:uppercase; }\n</style>\n";              // full _css(), already wrapped in <style>
+  var ELLIS_DATA = {"banks": {"passages": [{"id": "p01", "title": "📡 The Bridge at Sector Seven", "passage": "Optimus Prime stood at the edge of the bridge. The Decepticons had already taken the energon cubes from the warehouse. He knew his team was counting on him. <em>A good leader doesn't rush in,</em> he thought. <em>A good leader makes a plan.</em> He turned to Bumblebee. \"We go in quiet,\" he said. \"No blasters until we have to.\"", "q1_text": "What can you figure out about Optimus Prime from this story?", "q1_choices": [["A", "He is scared of the Decepticons."], ["B", "He thinks carefully before acting."], ["C", "He wants Bumblebee to fight alone."], ["D", "He does not care about his team."]], "q1_ans": "B", "q1_skill": "Making inferences from character actions and words", "q2_text": "Why does Optimus Prime say \"No blasters until we have to\"?", "q2_choices": [["A", "He forgot to bring his blaster."], ["B", "Bumblebee is too young to use a blaster."], ["C", "He wants the mission to stay quiet and controlled."], ["D", "The warehouse doors are locked."]], "q2_ans": "C", "q2_skill": "Author's purpose / character motivation"}, {"id": "p02", "title": "📡 Bumblebee's Choice", "passage": "Bumblebee found a small injured bird near the base. He could keep moving — the mission was urgent — or he could stop. He looked at the bird. It was shaking. <em>Autobots protect all living things,</em> he remembered. He set down his equipment and carefully moved the bird to a safe spot under the roots of a large tree. He was two minutes late. Optimus said nothing, but he nodded.", "q1_text": "What does Bumblebee's choice tell you about him?", "q1_choices": [["A", "He doesn't care about his mission."], ["B", "He is kind even when it costs him time."], ["C", "He is afraid of Optimus Prime."], ["D", "He forgot where the base was."]], "q1_ans": "B", "q1_skill": "Inferring character traits from actions", "q2_text": "Why does Optimus nod at the end of the story?", "q2_choices": [["A", "He is telling Bumblebee to go back and get the bird."], ["B", "He is showing he approves of what Bumblebee did."], ["C", "He is angry and doesn't want to speak."], ["D", "He agrees the mission went perfectly."]], "q2_ans": "B", "q2_skill": "Inferring meaning from a character's action"}, {"id": "p03", "title": "📡 The Lost Signal", "passage": "Jazz picked up a weak signal from deep in the forest. It could be a Decepticon trap or it could be a survivor calling for help. He had no way to know for sure. He thought about turning back. Then he thought about what it would feel like to leave someone behind. He kept walking toward the signal.", "q1_text": "What is the main problem Jazz faces in this story?", "q1_choices": [["A", "His radio is broken and he cannot call for help."], ["B", "He must decide whether to follow a signal that might be dangerous."], ["C", "He is lost in the forest and cannot find his way out."], ["D", "The Decepticons have already captured his team."]], "q1_ans": "B", "q1_skill": "Identifying central conflict / problem", "q2_text": "What most likely makes Jazz keep walking toward the signal?", "q2_choices": [["A", "He knows the signal is safe."], ["B", "Optimus Prime ordered him to go."], ["C", "He does not want to abandon someone who might need help."], ["D", "The forest path only goes one direction."]], "q2_ans": "C", "q2_skill": "Inferring motivation from context"}, {"id": "p04", "title": "📡 Ironhide's Lesson", "passage": "Ironhide had been a warrior for a long time. Young Autobots often asked him how he stayed so strong. He always gave the same answer: \"I don't win every fight. I just never stop getting up.\" One cadet thought Ironhide meant it was fine to lose. But another cadet understood. She wrote those words on her practice wall and read them every morning.", "q1_text": "What does Ironhide mean when he says \"I just never stop getting up\"?", "q1_choices": [["A", "He has never lost a fight in his life."], ["B", "He always wakes up early for practice."], ["C", "His strength comes from not giving up after failure."], ["D", "He is too heavy to stay on the ground."]], "q1_ans": "C", "q1_skill": "Inferring meaning of figurative / idiomatic language", "q2_text": "How are the two cadets different in the story?", "q2_choices": [["A", "One is stronger; the other is weaker."], ["B", "One misunderstands the lesson; the other truly understands it."], ["C", "One likes Ironhide; the other does not."], ["D", "One writes on the wall; the other erases it."]], "q2_ans": "B", "q2_skill": "Compare and contrast characters / details"}, {"id": "p05", "title": "📡 Two Sides of Cybertron", "passage": "On Cybertron, the Autobots and Decepticons did not always fight. Long ago, they built cities together. They shared their energy and their ideas. Then one group decided that power was more important than peace. The war began slowly — first with arguments, then with choices, and finally with weapons. Ratchet, the medic, often said: \"The saddest part of any war is that it didn't have to happen.\"", "q1_text": "According to the passage, how did the war on Cybertron begin?", "q1_choices": [["A", "The Autobots attacked the Decepticons without warning."], ["B", "It started slowly with arguments and choices before turning into fighting."], ["C", "A meteor hit Cybertron and divided the planet in two."], ["D", "The Decepticons ran out of energon and became desperate."]], "q1_ans": "B", "q1_skill": "Identifying sequence / cause and effect", "q2_text": "What does Ratchet's quote most likely mean?", "q2_choices": [["A", "Wars are always caused by meteors."], ["B", "Ratchet is happy the war happened."], ["C", "The war could have been avoided if different choices had been made."], ["D", "Ratchet does not know how the war started."]], "q2_ans": "C", "q2_skill": "Inferring meaning from a character's statement"}, {"id": "p06", "title": "📡 The Energon Garden", "passage": "Wheeljack had an idea no one had tried before. Instead of searching for energon, why not grow it? He spent three months building a special chamber. Many Autobots laughed. But when the first energon crystals appeared, those same Autobots came back to congratulate him. \"The ones who try strange things,\" Wheeljack said with a grin, \"are the ones who find new answers.\"", "q1_text": "What lesson does this story teach?", "q1_choices": [["A", "Energon is easy to find if you look hard enough."], ["B", "Trying new ideas, even ones that seem strange, can lead to success."], ["C", "Autobots should always laugh at each other's plans."], ["D", "Growing crystals takes exactly three months."]], "q1_ans": "B", "q1_skill": "Identifying theme / central message", "q2_text": "How do the other Autobots' feelings change from the beginning to the end?", "q2_choices": [["A", "They go from excited to disappointed."], ["B", "They go from confused to angry."], ["C", "They go from doubtful and mocking to congratulating Wheeljack."], ["D", "They stay the same throughout the story."]], "q2_ans": "C", "q2_skill": "Tracking change in character reaction across a text"}, {"id": "p07", "title": "📡 Ratchet's Promise", "passage": "Ratchet made a promise the day he became a medic: he would help any living thing, Autobot or Decepticon. One night, a wounded Decepticon scout dragged itself to the Autobot base. The other Autobots raised their weapons. Ratchet stepped forward. \"Stand down,\" he said quietly. \"A medic keeps his promise.\"", "q1_text": "What does Ratchet's action show about his character?", "q1_choices": [["A", "He is friends with the Decepticons."], ["B", "He is afraid of the other Autobots."], ["C", "He keeps his promises even when it is difficult."], ["D", "He thinks the Decepticons are always good."]], "q1_ans": "C", "q1_skill": "Inferring character trait from action", "q2_text": "Why do the other Autobots raise their weapons?", "q2_choices": [["A", "They are practicing their aim."], ["B", "They are threatened by the presence of a Decepticon."], ["C", "Ratchet asked them to."], ["D", "They want to help the wounded Decepticon."]], "q2_ans": "B", "q2_skill": "Using context to infer a character's reason"}, {"id": "p08", "title": "📡 The Map Inside", "passage": "Perceptor could remember every map he had ever seen. Other Autobots relied on computers to navigate. Perceptor just closed his eyes. During the power outage at the base, when all systems went dark, it was Perceptor who led the team through the tunnels safely. He did not say \"I told you so.\" He just kept walking, calling out each turn before they reached it.", "q1_text": "How is Perceptor different from the other Autobots?", "q1_choices": [["A", "He is the fastest runner on the team."], ["B", "He navigates from memory instead of relying on computers."], ["C", "He built the tunnels under the base."], ["D", "He is the only one who can fix the power systems."]], "q1_ans": "B", "q1_skill": "Compare and contrast / identifying a character's unique trait", "q2_text": "What does \"He did not say 'I told you so'\" tell you about Perceptor?", "q2_choices": [["A", "He forgot he had warned the team."], ["B", "He was too scared to speak."], ["C", "He is humble and focused on helping, not on being right."], ["D", "He disagreed with the team's decision."]], "q2_ans": "C", "q2_skill": "Inferring character trait from what a character does NOT do"}], "lang": [{"id": "l01", "bad": "\"yesterday me and bumblebee finded the energon cube in the old building\"", "q_text": "Which version fixes ALL the errors?", "choices": [["A", "Yesterday me and Bumblebee found the energon cube in the old building."], ["B", "Yesterday Bumblebee and I found the energon cube in the old building."], ["C", "Yesterday Bumblebee and me finded the Energon cube in the old building."], ["D", "Yesterday I and Bumblebee found the energon cube in the old building."]], "answer": "B", "errors": "capital letter · subject pronoun (I not me) · irregular past tense (found)"}, {"id": "l02", "bad": "\"optimus prime dont want nobody to get hurt during the mission\"", "q_text": "Which version fixes ALL the errors?", "choices": [["A", "Optimus Prime doesn't want nobody to get hurt during the mission."], ["B", "Optimus Prime don't want anyone to get hurt during the mission."], ["C", "Optimus Prime doesn't want anyone to get hurt during the mission."], ["D", "optimus prime doesn't want anyone to get hurt during the mission."]], "answer": "C", "errors": "capital letter · subject-verb agreement (doesn't) · double negative (nobody→anyone)"}, {"id": "l03", "bad": "\"the three autobots — jazz bumblebee and ironhide — runned to the warehouse\"", "q_text": "Which version fixes ALL the errors?", "choices": [["A", "The three Autobots — Jazz, Bumblebee, and Ironhide — ran to the warehouse."], ["B", "The three autobots — Jazz, Bumblebee, and Ironhide — ran to the warehouse."], ["C", "The three Autobots — Jazz Bumblebee and Ironhide — ran to the warehouse."], ["D", "The three Autobots — Jazz, Bumblebee, and Ironhide — runned to the warehouse."]], "answer": "A", "errors": "capital (Autobots) · commas in series · irregular past tense (ran)"}, {"id": "l04", "bad": "\"bumblebee said im going to protect you no matter what\"", "q_text": "Which version fixes ALL the errors?", "choices": [["A", "Bumblebee said, \"I'm going to protect you no matter what.\""], ["B", "bumblebee said \"Im going to protect you no matter what.\""], ["C", "Bumblebee said \"Im going to protect you, no matter what\""], ["D", "Bumblebee said, I'm going to protect you no matter what."]], "answer": "A", "errors": "capital letter · comma before quoted speech · quotation marks · apostrophe in I'm"}, {"id": "l05", "bad": "\"she holded the energon crystal careful so it wouldnt break\"", "q_text": "Which version fixes ALL the errors?", "choices": [["A", "She held the energon crystal careful so it wouldn't break."], ["B", "She held the energon crystal carefully so it wouldn't break."], ["C", "She holded the energon crystal carefully so it wouldn't break."], ["D", "She held the energon crystal carefully so it would'nt break."]], "answer": "B", "errors": "irregular past tense (held) · adverb form (carefully) · apostrophe in wouldn't"}, {"id": "l06", "bad": "\"the decepticons flyed over the mountains and landed near the river\"", "q_text": "Which version fixes ALL the errors?", "choices": [["A", "The Decepticons flyed over the mountains and landed near the river."], ["B", "The decepticons flew over the mountains and landed near the river."], ["C", "The Decepticons flew over the mountains and landed near the river."], ["D", "The Decepticons flew over the Mountains and landed near the river."]], "answer": "C", "errors": "capital (Decepticons) · irregular past tense (flew) · no capital for common noun (mountains)"}, {"id": "l07", "bad": "\"me and my sister seen optimus prime at the movie theater last saturday\"", "q_text": "Which version fixes ALL the errors?", "choices": [["A", "Me and my sister saw Optimus Prime at the movie theater last Saturday."], ["B", "My sister and me seen Optimus Prime at the movie theater last Saturday."], ["C", "My sister and I saw Optimus Prime at the movie theater last Saturday."], ["D", "My sister and I seen Optimus Prime at the movie theater last Saturday."]], "answer": "C", "errors": "subject pronoun (My sister and I) · irregular past tense (saw) · capital (Optimus Prime, Saturday)"}, {"id": "l08", "bad": "\"ratchet the medic fixed ironhides arm quick after the battle\"", "q_text": "Which version fixes ALL the errors?", "choices": [["A", "Ratchet the medic, fixed Ironhide's arm quickly after the battle."], ["B", "Ratchet, the medic, fixed Ironhide's arm quickly after the battle."], ["C", "Ratchet, the medic, fixed Ironhides arm quickly after the battle."], ["D", "Ratchet, the medic, fixed Ironhide's arm quick after the battle."]], "answer": "B", "errors": "commas around appositive · possessive apostrophe (Ironhide's) · adverb form (quickly)"}, {"id": "l09", "bad": "\"its important to keep your promises because trust is hard to rebuilded\"", "q_text": "Which version fixes ALL the errors?", "choices": [["A", "It's important to keep your promises because trust is hard to rebuild."], ["B", "Its important to keep your promises because trust is hard to rebuild."], ["C", "It's important to keep your promises, because trust is hard to rebuilded."], ["D", "It's important to keep your promises because trust is hard to rebuilded."]], "answer": "A", "errors": "apostrophe in it's · no comma before because (essential clause) · verb form (rebuild, not rebuilded)"}, {"id": "l10", "bad": "\"when the alarm went off everyone runned to they positions in the base\"", "q_text": "Which version fixes ALL the errors?", "choices": [["A", "When the alarm went off, everyone ran to their positions in the base."], ["B", "When the alarm went off everyone ran to their positions in the base."], ["C", "When the alarm went off, everyone ran to they positions in the base."], ["D", "When the alarm went off, everyone runned to their positions in the base."]], "answer": "A", "errors": "comma after intro clause · irregular past tense (ran) · pronoun (their not they)"}, {"id": "l11", "bad": "\"both of the boys wanted to watch the transformers movie but there parents said no\"", "q_text": "Which version fixes ALL the errors?", "choices": [["A", "Both of the boys wanted to watch the Transformers movie, but their parents said no."], ["B", "Both of the boys wanted to watch the Transformers movie but there parents said no."], ["C", "Both of the boys wanted to watch the transformers movie, but their parents said no."], ["D", "Both of the boys wanted to watch the Transformers Movie, but their parents said no."]], "answer": "A", "errors": "capital (Transformers) · comma before coordinating conjunction · there/their"}, {"id": "l12", "bad": "\"the fastest autobot on cybertron is bumblebee he can outrun any decepticon\"", "q_text": "Which version fixes ALL the errors?", "choices": [["A", "The fastest Autobot on Cybertron is Bumblebee. He can outrun any Decepticon."], ["B", "The fastest Autobot on Cybertron is Bumblebee, he can outrun any Decepticon."], ["C", "The fastest autobot on Cybertron is Bumblebee. He can outrun any Decepticon."], ["D", "The fastest Autobot on cybertron is Bumblebee. He can outrun any Decepticon."]], "answer": "A", "errors": "capitals (Autobot, Cybertron, Decepticon) · run-on sentence → period between clauses"}], "math": [{"id": "m01", "q": "Bumblebee collected energon cubes for 6 days. He collected 7 cubes each day. How many cubes did he collect in all?", "choices": [["A", "36"], ["B", "40"], ["C", "42"], ["D", "48"]], "answer": "C", "skill": "Multiplication facts", "work": "6 × 7 = ?"}, {"id": "m02", "q": "The Autobots had 48 energon cubes. They split them equally among 6 teams. How many cubes did each team get?", "choices": [["A", "6"], ["B", "7"], ["C", "8"], ["D", "9"]], "answer": "C", "skill": "Division facts / equal groups", "work": "48 ÷ 6 = ?"}, {"id": "m03", "q": "Optimus Prime drove 127 miles on Monday and 94 miles on Tuesday. How many miles did he drive in all?", "choices": [["A", "211"], ["B", "221"], ["C", "223"], ["D", "231"]], "answer": "B", "skill": "3-digit addition with regrouping", "work": "127 + 94 = ?"}, {"id": "m04", "q": "There were 215 Autobots. After the battle, 78 needed repairs. How many Autobots did NOT need repairs?", "choices": [["A", "127"], ["B", "137"], ["C", "143"], ["D", "147"]], "answer": "B", "skill": "3-digit subtraction with regrouping", "work": "215 − 78 = ?"}, {"id": "m05", "q": "Bumblebee's tank holds 24 gallons of fuel. He used ¾ of the tank on one mission. How many gallons did he use?", "choices": [["A", "6"], ["B", "12"], ["C", "18"], ["D", "21"]], "answer": "C", "skill": "Fraction of a whole number", "work": "¾ × 24 = ?"}, {"id": "m06", "q": "Ironhide is 32 feet tall. Jazz is 25 feet tall. How much taller is Ironhide than Jazz?", "choices": [["A", "5 ft"], ["B", "6 ft"], ["C", "7 ft"], ["D", "8 ft"]], "answer": "C", "skill": "Subtraction / comparison", "work": "32 − 25 = ?"}, {"id": "m07", "q": "Each Autobot needs 9 energon cubes per day. There are 8 Autobots at the base. How many cubes are needed per day in all?", "choices": [["A", "63"], ["B", "72"], ["C", "81"], ["D", "56"]], "answer": "B", "skill": "Multiplication facts", "work": "9 × 8 = ?"}, {"id": "m08", "q": "Ratchet has 5 repair kits. Each kit has 12 tools. How many tools does he have in all?", "choices": [["A", "55"], ["B", "60"], ["C", "65"], ["D", "70"]], "answer": "B", "skill": "Multiplication facts / arrays", "work": "5 × 12 = ?"}, {"id": "m09", "q": "The energon pipeline is 3 km long. The Autobots have repaired ⅓ of it. How many km have they repaired?", "choices": [["A", "1 km"], ["B", "2 km"], ["C", "1.5 km"], ["D", "3 km"]], "answer": "A", "skill": "Unit fraction of a whole number", "work": "⅓ × 3 = ?"}, {"id": "m10", "q": "Wheeljack made 4 batches of energon crystals. Each batch had 15 crystals. He gave away 18 crystals. How many does he have left?", "choices": [["A", "32"], ["B", "38"], ["C", "42"], ["D", "47"]], "answer": "C", "skill": "Multi-step: multiplication then subtraction", "work": "(4 × 15) − 18 = ?"}, {"id": "m11", "q": "A box holds 9 energon cubes. Bumblebee needs 63 cubes. How many full boxes does he need?", "choices": [["A", "5"], ["B", "6"], ["C", "7"], ["D", "8"]], "answer": "C", "skill": "Division / real-world division", "work": "63 ÷ 9 = ?"}, {"id": "m12", "q": "The Autobot base is a rectangle 40 feet long and 25 feet wide. What is the perimeter?", "choices": [["A", "65 ft"], ["B", "100 ft"], ["C", "120 ft"], ["D", "130 ft"]], "answer": "D", "skill": "Perimeter of a rectangle", "work": "2 × (40 + 25) = ?"}, {"id": "m13", "q": "Jazz traveled 56 miles in 7 equal trips. How far was each trip?", "choices": [["A", "6 mi"], ["B", "7 mi"], ["C", "8 mi"], ["D", "9 mi"]], "answer": "C", "skill": "Division: equal groups", "work": "56 ÷ 7 = ?"}, {"id": "m14", "q": "Optimus Prime has 3 trucks. Each truck can carry 250 pounds. How many pounds can all 3 trucks carry?", "choices": [["A", "600 lbs"], ["B", "700 lbs"], ["C", "750 lbs"], ["D", "800 lbs"]], "answer": "C", "skill": "Multiplication with multiples of 10/100", "work": "3 × 250 = ?"}, {"id": "m15", "q": "A missions log shows 145 missions in January and 128 in February. How many missions total?", "choices": [["A", "263"], ["B", "271"], ["C", "273"], ["D", "283"]], "answer": "C", "skill": "3-digit addition", "work": "145 + 128 = ?"}], "words": [{"id": "v01", "word": "TRANSFORM", "pos": "verb", "def": "To change completely from one form into another.", "ex": "Optimus Prime can <strong>transform</strong> from a robot into a truck in seconds.", "root": "Latin trans- (across) + formare (to shape)", "word_family": ["transformation", "transformed", "transformer", "transforming"]}, {"id": "v02", "word": "ENERGIZE", "pos": "verb", "def": "To give energy or power to something.", "ex": "The energon cube will <strong>energize</strong> all the Autobots for the mission.", "root": "Greek energeia (activity) — en- (in) + ergon (work)", "word_family": ["energy", "energized", "energetic", "energizing"]}, {"id": "v03", "word": "DETECT", "pos": "verb", "def": "To discover or notice something, especially something hard to find.", "ex": "Jazz used his sensors to <strong>detect</strong> the hidden Decepticon signal.", "root": "Latin detectus — de- (un-) + tegere (to cover) → to uncover", "word_family": ["detection", "detective", "detector", "detected", "undetected"]}, {"id": "v04", "word": "ASSEMBLE", "pos": "verb", "def": "To come together or bring things together in one place.", "ex": "Optimus Prime called the team to <strong>assemble</strong> at the base.", "root": "Old French assembler — ad- (to) + simul (together)", "word_family": ["assembly", "assembled", "assembling", "reassemble", "assemblage"]}, {"id": "v05", "word": "DECODE", "pos": "verb", "def": "To figure out the meaning of a secret or hidden message.", "ex": "Perceptor worked hard to <strong>decode</strong> the Decepticon transmission.", "root": "de- (reverse) + code (system of signals)", "word_family": ["decoding", "decoder", "decoded", "encode", "code", "codebreaker"]}, {"id": "v06", "word": "TRANSMIT", "pos": "verb", "def": "To send a message or signal from one place to another.", "ex": "Bumblebee used his radio to <strong>transmit</strong> a warning to Optimus Prime.", "root": "Latin trans- (across) + mittere (to send)", "word_family": ["transmission", "transmitted", "transmitter", "transmitting", "submit", "omit"]}, {"id": "v07", "word": "DEFEND", "pos": "verb", "def": "To protect something or someone from danger.", "ex": "The Autobots gathered to <strong>defend</strong> the city from the Decepticons.", "root": "Latin defendere — de- (away) + fendere (to strike)", "word_family": ["defense", "defensive", "defender", "defended", "offend", "fend"]}, {"id": "v08", "word": "CONVERT", "pos": "verb", "def": "To change something from one form or use to another.", "ex": "Wheeljack figured out how to <strong>convert</strong> sunlight into energon.", "root": "Latin convertere — con- (together) + vertere (to turn)", "word_family": ["conversion", "converted", "converter", "convertible", "revert", "divert", "invert"]}, {"id": "v09", "word": "MONITOR", "pos": "verb / noun", "def": "To watch or check something carefully over time.", "ex": "Ratchet kept a close watch to <strong>monitor</strong> Ironhide's injury.", "root": "Latin monere (to warn, to advise)", "word_family": ["monitoring", "monitored", "monitor (screen)", "admonish", "premonition"]}, {"id": "v10", "word": "MISSION", "pos": "noun", "def": "An important task or job that someone is sent to do.", "ex": "Every Autobot trained hard to be ready for the next <strong>mission</strong>.", "root": "Latin missio — mittere (to send)", "word_family": ["missionary", "commission", "omission", "permission", "submission", "transmit"]}, {"id": "v11", "word": "STRATEGY", "pos": "noun", "def": "A careful plan for reaching a goal.", "ex": "Optimus Prime thought of a clever <strong>strategy</strong> to outsmart the enemy.", "root": "Greek strategos — stratos (army) + agein (to lead)", "word_family": ["strategic", "strategist", "strategize", "strategies", "tactics"]}, {"id": "v12", "word": "PRECISION", "pos": "noun", "def": "Doing something exactly right, with no mistakes.", "ex": "Ironhide's aim was known for its <strong>precision</strong> — he never missed.", "root": "Latin praecisus — prae- (before) + caedere (to cut) → cut short, exact", "word_family": ["precise", "precisely", "imprecise", "precision-made", "accuracy"]}]}, "pace_map": {"singapore_e": "Singapore Math 3B", "reflex": "Reflex Math", "ttrs_e": "TTRS", "lang_smarts": "Language Smarts", "nzk_e": "NZK", "hwt": "HWT", "daily_sci": "Daily Science", "daily_geo": "Daily Geography", "math_reason": "Math Reasoning", "eggspress_e": "Reading Eggspress", "rosetta": "Rosetta Stone"}, "pace_priority": ["singapore_e", "lang_smarts", "math_reason", "ttrs_e", "reflex", "daily_sci"], "theme": {"name": "Ellis", "grade": "4th Grade", "body_font": "'DM Sans',system-ui,sans-serif", "display_font": "'Orbitron',sans-serif", "header_bg": "#0A1628", "eyebrow": "#8EA5C4", "accent_bar": "linear-gradient(90deg,#C41E1E 0%,#F5C200 45%,#C41E1E 100%)", "badge_bg": "#C41E1E", "badge_text": "#ffffff", "ink": "#16273f", "muted": "#5a6b85", "pale": "#EBF0F7", "pale2": "#fef6da", "accent": "#1C3256", "gold": "#a87f00", "line": "#9bb0cc", "card_bd": "#cdd9e8", "footer_emoji": "🤖"}};              // {banks:{passages,lang,math,words}, pace_map, pace_priority, theme}
+  var EN_LIFE_SKILLS = {"ellis": ["Make my bed", "Make a simple snack/meal", "Tidy my room", "Fold & put away laundry", "Pack my backpack", "Write a thank-you note", "Wash the dishes", "Take out the trash", "Tie my shoes & a tie", "Basic first aid (a cut)"], "lincoln": ["Cook a simple meal (stovetop)", "Do a load of laundry start→finish", "Make a grocery list & budget", "Write a thank-you note / email", "Basic first aid + when to get help", "Use a knife & basic tools safely", "Manage my own time / planner", "Be home alone responsibly", "Make change & check a receipt", "Clean a whole room"]};      // {lincoln:[...], ellis:[...]} — shared by enrichment Money&Life
+
+  function ellPad2(n) { n = String(n); return n.length < 2 ? ("0" + n) : n; }
+  var ELL_ICON = { "📄": 1, "💻": 1, "📱": 1, "📞": 1, "📖": 1 };
+  function ellTaskIcon(title) { title = String(title || ""); for (var e in ELL_ICON) if (title.indexOf(e) === 0) return e; return ""; }
+  function ellShorten(title) {
+    title = String(title || "");
+    for (var e in ELL_ICON) { if (title.indexOf(e) === 0) { title = title.slice(e.length).trim(); break; } }
+    if (title.indexOf(" — ") >= 0) title = title.split(" — ")[0].trim();
+    return title;
+  }
+  function ellStripTags(s) { return String(s || "").replace(/<[^>]+>/g, ""); }
+  function ellPick(bank, weekNum, dayIdx) { var n = bank.length; var i = (((parseInt(weekNum, 10) || 1) - 1) * 5 + dayIdx) % n; if (i < 0) i += n; return bank[i]; }
+  function ellGetAnsText(choices, letter) { var f = (choices || []).filter(function (ch) { return ch[0] === letter; })[0]; return f ? f[1] : ""; }
+
+  function ellSchedule(weekData) {
+    var tasks = (weekData.tasks || []).filter(function (t) { return t.who === "ellis"; });
+    var dm = weekData.dates || {};
+    var order = [], byDay = {};
+    tasks.forEach(function (t) { var d = t.day || "unknown"; if (!byDay[d]) { byDay[d] = []; order.push(d); } byDay[d].push(t); });
+    var cols = "";
+    order.forEach(function (day) {
+      var lbl = dm[day] || "", rows = "";
+      byDay[day].forEach(function (t) {
+        var emoji = ellTaskIcon(t.title || ""), short = ellShorten(t.title || "");
+        var momCls = t.mom === "required" ? "sched-mom-req" : (t.mom === "maybe" ? "sched-mom-maybe" : "");
+        rows += '<div class="sched-task-row ' + momCls + '">' + emoji + ' ' + short + '</div>\n';
+      });
+      cols += '<div class="sched-day-col">\n  <div class="sched-day-head">' + cap(day) + '<span class="sched-date">' + lbl + '</span></div>\n  <div class="sched-tasks">' + rows + '</div>\n</div>\n';
+    });
+    return '<div class="sched-grid">' + cols + '</div>';
+  }
+  function ellPaceBars(paceRows) {
+    return (paceRows || []).map(function (row) {
+      var name = row[0], pct = row[1], status = row[2];
+      var barColor = status === "ahead" ? "linear-gradient(90deg,#1a6a2e,#2a9a4e)" : (status === "behind" ? "linear-gradient(90deg,#C41E1E,#E03030)" : "linear-gradient(90deg,var(--tf-red),var(--tf-red-lt))");
+      var badgeText = status === "ahead" ? "Ahead" : (status === "behind" ? "Behind" : "On Track");
+      var badgeColor = status === "ahead" ? "background:#1a6a2e;color:#fff" : (status === "behind" ? "background:#C41E1E;color:#fff" : "background:#142038;color:#B8CDDF");
+      return '<div class="pace-item">\n  <div class="pace-label">\n    <span>' + name + '</span>\n    <span style="font-family:\'Orbitron\',sans-serif;font-size:6px;' + badgeColor + ';padding:1px 5px;border-radius:2px;letter-spacing:0.08em;">' + badgeText + '</span>\n  </div>\n  <div class="pace-track"><div class="pace-fill" style="width:' + pct + '%;background:' + barColor + '"></div></div>\n</div>\n';
+    }).join("");
+  }
+  function ellSummaryStats(summary, weekNum) {
+    if (!summary || !Object.keys(summary).length) {
+      return '<div style="font-size:8.5px;color:rgba(255,255,255,0.35);font-style:italic;padding:6px 0;">Last week\'s check-offs will appear here automatically once Ellis completes tasks in the app.</div>';
+    }
+    var done = summary.tasks_done != null ? summary.tasks_done : "?", total = summary.tasks_total != null ? summary.tasks_total : "?";
+    var pct = summary.pct != null ? summary.pct : "?", days = summary.days_done != null ? summary.days_done : "?", carry = summary.carried_over != null ? summary.carried_over : 0;
+    var subjDone = summary.subjects_done || [], subjBehind = summary.subjects_behind || [];
+    var doneChips = subjDone.map(function (s) { return '<span style="display:inline-block;background:rgba(10,200,100,0.18);color:#0d4a2a;border:1px solid rgba(10,180,80,0.4);border-radius:3px;padding:1px 5px;font-size:7px;margin:1px 2px 1px 0;">' + s + '</span>'; }).join("");
+    var behindChips = subjBehind.map(function (s) { return '<span style="display:inline-block;background:rgba(196,30,30,0.12);color:#7a0a0a;border:1px solid rgba(196,30,30,0.3);border-radius:3px;padding:1px 5px;font-size:7px;margin:1px 2px 1px 0;">' + s + '</span>'; }).join("");
+    var subjHtml = "";
+    if (doneChips) subjHtml += '<div style="margin-top:4px;"><div style="font-size:7px;font-weight:700;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:.08em;margin-bottom:2px;">✓ Done</div>' + doneChips + '</div>';
+    if (behindChips) subjHtml += '<div style="margin-top:4px;"><div style="font-size:7px;font-weight:700;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:.08em;margin-bottom:2px;">⚡ Still Going</div>' + behindChips + '</div>';
+    return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:4px;">\n  <div class="stat-box"><div class="stat-num">' + days + '</div><div class="stat-label">Days Done</div></div>\n  <div class="stat-box"><div class="stat-num">' + done + '/' + total + '</div><div class="stat-label">Tasks</div></div>\n  <div class="stat-box" style="border-top-color:var(--tf-yellow);">\n    <div class="stat-num" style="color:var(--tf-yellow);font-size:18px;">' + pct + '%</div>\n    <div class="stat-label">Completion</div>\n  </div>\n  <div class="stat-box">\n    <div class="stat-num" style="font-size:18px;">' + carry + '</div>\n    <div class="stat-label">Carry-Over</div>\n  </div>\n</div>' + subjHtml;
+  }
+  function ellSkillCheck(dayTasks) {
+    var items = "", seen = {};
+    (dayTasks || []).forEach(function (t) {
+      var subj = ellShorten(t.title || "");
+      if (!subj || seen[subj]) return;
+      seen[subj] = 1;
+      var emoji = ellTaskIcon(t.title || "");
+      items += '<div class="sc-item"><span class="sc-subj">' + emoji + ' ' + subj + '</span><span class="sc-bubbles"><span class="sk-bubble"></span><span class="sk-bubble"></span><span class="sk-bubble"></span></span></div>\n';
+    });
+    if (!items) return "";
+    return '<div style="font-size:7px;color:#999;margin-bottom:3px;">😊 easy &nbsp; 😐 medium &nbsp; 😤 hard — circle one per mission</div>' + '<div class="sc-grid">' + items + '</div>';
+  }
+  function ellChoiceRows(choices, correctAns) {
+    return (choices || []).map(function (ch) {
+      var ltr = ch[0], txt = ch[1], isC = (ltr === correctAns);
+      var bg = isC ? "background:rgba(10,180,80,0.15);border:1px solid rgba(10,180,80,0.35);" : "";
+      var clr = isC ? "#0d4a2a" : "#666", bold = isC ? "font-weight:700;" : "";
+      var tick = isC ? '<span style="margin-left:auto;font-size:6.5px;color:#0d6631;font-weight:700;">✓</span>' : "";
+      return '<div style="display:flex;align-items:center;gap:4px;margin:0;' + bg + 'border-radius:2px;padding:1px 4px;"><span style="font-family:\'Orbitron\',sans-serif;font-size:7px;font-weight:700;color:' + clr + ';flex-shrink:0;">' + ltr + '</span><span style="font-size:7.5px;color:' + clr + ';' + bold + '">' + txt + '</span>' + tick + '</div>\n';
+    }).join("");
+  }
+  function ellHeader(academyLine, mainLeft, mainHl, badgeLabel, badgeVal, subInfo) {
+    return '<div class="page-header">\n  <div class="logo-slot" style="display:flex;align-items:center;justify-content:center;font-size:30px;line-height:1;">🤖</div>\n  <div class="hdr-divider"></div>\n  <div class="header-titles">\n    <div class="header-academy">' + academyLine + '</div>\n    <div class="header-main">' + mainLeft + ' <span class="hl">' + mainHl + '</span></div>\n  </div>\n  <div class="hdr-chevron">›</div>\n  <div class="header-info">\n    <span class="header-tag">' + badgeLabel + '</span>\n    <span class="header-week-badge">' + badgeVal + '</span>\n    <div class="header-sub-info">' + subInfo + '</div>\n  </div>\n</div>';
+  }
+  function ellFooter(left, right) { right = right || "Autobots Roll Out 🤖"; return '<div class="page-footer">\n  <span class="footer-text">' + left + '</span>\n  <span class="footer-text">' + right + '</span>\n</div>'; }
+  function ellDivider() { return '<div style="width:1px;background:linear-gradient(to bottom,var(--tf-red),var(--tf-silver),var(--tf-red));opacity:0.25;flex-shrink:0;"></div>'; }
+  function ellShell(body) {
+    return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n<title>Ellis Howe Notebook</title>\n<link rel="preconnect" href="https://fonts.googleapis.com">\n<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">\n' + ELLIS_CSS + '\n</head>\n<body>\n' + body + '\n</body>\n</html>';
+  }
+
+  function enPageNotes(t) {
+    var body = '<div style="flex:1;min-height:0;border:1.5px solid ' + t.card_bd + ';border-radius:9px;background:repeating-linear-gradient(transparent,transparent 33px,' + t.line + ' 33px,' + t.line + ' 34.5px);"></div>';
+    return enShell(t, "Howe Academy · " + t.grade, "Notes &amp; Scratch", "extra space to think, plan &amp; work it out", "✏️ Notes", body);
+  }
+
+  // static word-search grid + word list (same for every brain-break)
+  var ELL_WS_GRID = '<table class="ws-table">' + ["ENERGONABC", "AUTOBOTPQR", "DFGHIJKRIM", "LMNOPQRIKE", "ZYXWVUTMST", "TARMORUEVW", "ROBOTCDAFG", "HIJKLMNROP", "QRSTUVWOXY", "ZABCDEFRGH"].map(function (row) {
+    return '<tr>' + row.split("").map(function (ch) { return '<td class="ws-cell">' + ch + '</td>'; }).join("") + '</tr>';
+  }).join("") + '</table>';
+  var ELL_WORD_LIST_HTML = '<div style="font-family:\'Orbitron\',sans-serif;font-size:6.5px;color:var(--tf-dark);letter-spacing:0.15em;margin:5px 0 4px;">WORDS TO FIND:</div>\n<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;">\n' +
+    ["ENERGON", "AUTOBOT", "PRIME", "ARMOR", "ROBOT"].map(function (w) {
+      return '<div style="display:flex;align-items:center;gap:5px;"><div style="width:10px;height:10px;border:1.5px solid var(--tf-red);border-radius:2px;flex-shrink:0;"></div><span style="font-family:\'Orbitron\',sans-serif;font-size:8px;font-weight:700;">' + w + '</span></div>';
+    }).join("\n") + '</div>';
+
+  function ellBrainBreakPage(position, weekNum) {
+    var challengeNum = ellPad2(position + 1);
+    var riddles = [
+      ["I roll on four wheels but I'm more than a truck. Big, brave, and I never give up. Who am I?", "Optimus Prime"],
+      ["I change my shape from one thing to two — a vehicle and a robot through and through. What am I?", "A Transformer"],
+      ["I'm small and yellow, full of cheer, the bravest Autobot who protects those dear. Who am I?", "Bumblebee"],
+      ["I fix and heal and never fight, but I keep every Autobot in the fight. Who am I?", "Ratchet"]
+    ];
+    var rp = riddles[position % riddles.length];
+    var riddleHtml = '<div style="margin-bottom:6px;">\n  <div class="bb-riddle-q">' + rp[0] + '</div>\n  <div class="bb-riddle-line"></div>\n  <div class="bb-riddle-ans">Answer: ' + rp[1] + '</div>\n</div>';
+    var scrambles = [["MRIEP", "PRIME"], ["OMRAR", "ARMOR"], ["ORBTO", "ROBOT"], ["DLHISE", "SHIELD"], ["TOBTAU", "AUTOBOT"], ["GRONEEN", "ENERGON"]];
+    var scIdx = (position * 4) % scrambles.length, scSet = [];
+    for (var si = 0; si < 4; si++) scSet.push(scrambles[(scIdx + si) % scrambles.length]);
+    var scrambleHtml = '<div style="font-size:8.5px;color:#666;margin-bottom:4px;">Rearrange the letters to reveal a Transformers word!</div>\n';
+    scSet.forEach(function (sc) { scrambleHtml += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;"><span class="bb-scrambled">' + sc[0] + '</span><span style="font-size:9px;color:#999;">→</span><div class="bb-blank"></div></div>\n'; });
+    var wyrPairs = [["transform into a race car 🏎️", "a fighter jet ✈️"], ["be Optimus Prime for a day 🤖", "be Bumblebee for a day 🐝"], ["have Ironhide's strength 💪", "Jazz's speed ⚡"], ["live on Cybertron 🌍", "Earth 🌎"]];
+    var wyr = wyrPairs[position % wyrPairs.length];
+    var wyrHtml = '<div class="wyr-card">\n  <div class="wyr-q">Would you rather ' + wyr[0] + ' OR ' + wyr[1] + '? Circle your pick and write why!</div>\n  <div class="wyr-line"></div><div class="wyr-line"></div>\n</div>';
+    return `<!-- BRAIN BREAK #${position + 1} -->
+<div class="page">
+${ellHeader("Autobot Training Facility · Week " + weekNum, "TRAINING", "SIMULATION", "Challenge", challengeNum, "BRAIN BREAK")}
+
+  <div class="page-body" style="flex-direction:row;gap:14px;">
+
+    <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:5px;">
+      <div class="sec-label sec-red">📡 Signal Decoding — Word Search</div>
+      ${ELL_WS_GRID}
+      ${ELL_WORD_LIST_HTML}
+      <div style="flex:1;min-height:50px;border:2px dashed rgba(196,30,30,0.28);border-radius:4px;position:relative;
+           background:linear-gradient(rgba(245,194,0,0.03) 1px,transparent 1px);background-size:100% 22px;">
+        <span style="position:absolute;top:6px;left:8px;font-family:'Orbitron',sans-serif;
+          font-size:6.5px;color:rgba(196,30,30,0.28);letter-spacing:0.15em;text-transform:uppercase;">Bonus sketch</span>
+      </div>
+      <div style="background:var(--tf-dark);border-radius:3px;padding:7px 10px;border-top:2px solid var(--tf-yellow);flex-shrink:0;">
+        <div style="font-family:'Orbitron',sans-serif;font-size:7px;color:var(--tf-yellow);letter-spacing:0.15em;margin-bottom:4px;">⚡ POWER-UP MOVE!</div>
+        <div style="font-size:9px;color:var(--tf-silver-lt);line-height:1.45;">Do 10 "Transformer" jumping jacks! Arms up = transform pose. Crouch = vehicle mode. GO! 🤖</div>
+      </div>
+    </div>
+
+    ${ellDivider()}
+
+    <div style="flex:1;display:flex;flex-direction:column;gap:7px;">
+      <div class="sec-label sec-navy">🔀 Scrambled Intel</div>
+      ${scrambleHtml}
+      <div class="sec-label sec-red">🧠 Autobot Riddle</div>
+      ${riddleHtml}
+      <div class="sec-label sec-gold" style="color:var(--tf-dark);">⚡ Would You Rather?</div>
+      ${wyrHtml}
+      <div class="sec-label sec-navy">✏️ Mission Doodle Zone</div>
+      <div style="font-size:8.5px;color:#666;margin-bottom:3px;">Design your own Autobot! Name + one special power.</div>
+      <div class="draw-box" style="flex:1;">
+        <div class="draw-label">DRAW YOUR AUTOBOT HERE</div>
+        <div style="position:absolute;bottom:6px;left:10px;right:8px;font-family:'Orbitron',sans-serif;
+          font-size:6.5px;color:rgba(14,32,56,0.18);letter-spacing:0.07em;">NAME: _____________________ &nbsp; POWER: _____________________</div>
+      </div>
+    </div>
+  </div>
+
+${ellFooter("Howe Academy · Training Simulation · Week " + weekNum + " · Challenge " + (position + 1))}
+</div>`;
+  }
+
+  function ellWeeklyPage(weekNum, weekDates, weekData, paceRows, summary, prevWeekNum) {
+    var sched = ellSchedule(weekData), pacing = ellPaceBars(paceRows), stats = ellSummaryStats(summary, prevWeekNum);
+    var nDays = Object.keys(weekData.dates || {}).length;
+    var schedStyled = sched.replace('<div class="sched-grid">', '<div class="sched-grid" style="grid-template-columns:repeat(' + nDays + ',1fr);">');
+    return `<!-- PAGE 1: MISSION BRIEFING (Weekly) -->
+<div class="page">
+${ellHeader("Howe Academy · 3rd Grade · Samuel Ellis Howe", "MISSION", "BRIEFING", "Week", ellPad2(weekNum), weekDates)}
+
+  <div class="page-body" style="flex-direction:row;gap:14px;">
+
+    <div style="width:220px;flex-shrink:0;display:flex;flex-direction:column;gap:4px;">
+      <div class="sec-label sec-red">Last Mission Report — Week ${prevWeekNum}</div>
+      ${stats}
+
+      <div class="sec-label sec-navy">Field Intel — Iowa Scores</div>
+      <table class="iowa-table">
+        <tr><td class="subj">Word Analysis</td><td class="stat">GE 1.4</td><td class="stat">21st</td><td><span class="iowa-badge badge-focus">FOCUS</span></td></tr>
+        <tr><td class="subj">Reading</td>       <td class="stat">GE 1.6</td><td class="stat">22nd</td><td><span class="iowa-badge badge-focus">FOCUS</span></td></tr>
+        <tr><td class="subj">Language</td>      <td class="stat">GE 1.9</td><td class="stat">34th</td><td><span class="iowa-badge badge-growing">GROWING</span></td></tr>
+        <tr><td class="subj">Vocabulary</td>    <td class="stat">GE 1.8</td><td class="stat">35th</td><td><span class="iowa-badge badge-growing">GROWING</span></td></tr>
+        <tr><td class="subj">Mathematics</td>   <td class="stat">GE 3.2</td><td class="stat">90th</td><td><span class="iowa-badge badge-strong">STRONG</span></td></tr>
+        <tr><td class="subj">Science</td>       <td class="stat">GE 3.8</td><td class="stat">93rd</td><td><span class="iowa-badge badge-elite">ELITE</span></td></tr>
+        <tr><td class="subj">Social Studies</td><td class="stat">GE 3.9</td><td class="stat">95th</td><td><span class="iowa-badge badge-elite">ELITE</span></td></tr>
+      </table>
+
+      <div style="flex:1;min-height:50px;border:2px dashed rgba(196,30,30,0.25);border-radius:4px;position:relative;
+           background:linear-gradient(rgba(245,194,0,0.03) 1px,transparent 1px);background-size:100% 22px;">
+        <span style="position:absolute;top:6px;left:8px;font-family:'Orbitron',sans-serif;
+          font-size:6.5px;color:rgba(196,30,30,0.25);letter-spacing:0.15em;text-transform:uppercase;">Notes &amp; doodles</span>
+      </div>
+    </div>
+
+    ${ellDivider()}
+
+    <div style="flex:1;display:flex;flex-direction:column;gap:5px;">
+      <div class="sec-label sec-navy">This Week's Schedule</div>
+      ${schedStyled}
+
+      <div class="sec-label sec-red" style="margin-top:2px;">Mission Progress</div>
+      <div style="display:flex;flex-direction:column;gap:2px;">${pacing}</div>
+
+      <div style="flex:1;display:flex;flex-direction:column;gap:2px;">
+        <div class="sec-label sec-gold" style="color:var(--tf-dark);">Command Notes</div>
+        <div class="write-line"></div><div class="write-line"></div><div class="write-line"></div>
+        <div class="write-line"></div><div class="write-line"></div>
+        <div style="flex:1;min-height:40px;margin-top:4px;border:2px dashed rgba(196,30,30,0.22);
+             border-radius:4px;position:relative;">
+          <span style="position:absolute;top:5px;left:8px;font-family:'Orbitron',sans-serif;
+            font-size:6.5px;color:rgba(196,30,30,0.22);letter-spacing:0.15em;text-transform:uppercase;">Weekly sketch</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+${ellFooter("Howe Academy · Mission Briefing · Week " + weekNum)}
+</div>`;
+  }
+
+  function ellDailyPage(dayName, dateStr, weekNum, dayTasks, passage, lang, mathQ, word) {
+    var dayCap = cap(dayName);
+    var skillCheckHtml = ellSkillCheck(dayTasks);
+    function choiceRows(choices) { return (choices || []).map(function (ch) { return '<div class="choice-row"><div class="choice-letter plain">' + ch[0] + '</div><span>' + ch[1] + '</span></div>\n'; }).join(""); }
+    var pChoices = choiceRows(passage.q1_choices), lChoices = choiceRows(lang.choices), mChoices = choiceRows(mathQ.choices);
+    return `<!-- DAILY PAGE: ${dayCap.toUpperCase()} -->
+<div class="page">
+${ellHeader("Daily Operations · Week " + weekNum, "<span class='hl'>" + dayCap.toUpperCase() + "</span> —", "" + dateStr, "Year", "2026", "3RD GRADE")}
+
+  <div class="page-body">
+
+    <div class="bookend bookend-start">
+      <div class="bookend-icon">🤖</div>
+      <div>
+        <div class="bookend-title">Boot Up · Morning Notebook</div>
+        <div class="bookend-sub">Do this first — before your missions</div>
+      </div>
+      <div class="bookend-badge">Start</div>
+    </div>
+
+    <div class="sec-label sec-navy">🤖 Morning System Check</div>
+    <div class="mood-row" style="margin-bottom:2px;">
+      <div class="mood-item"><div class="mood-circle">😴</div><div class="mood-label">OFFLINE</div></div>
+      <div class="mood-item"><div class="mood-circle">😕</div><div class="mood-label">LOW POWER</div></div>
+      <div class="mood-item"><div class="mood-circle">😐</div><div class="mood-label">STANDBY</div></div>
+      <div class="mood-item"><div class="mood-circle">😊</div><div class="mood-label">ONLINE</div></div>
+      <div class="mood-item"><div class="mood-circle">🤩</div><div class="mood-label">MAX POWER</div></div>
+    </div>
+
+    <div class="sec-label sec-red">🎯 Iowa Reading — Test Prep</div>
+    <div class="card card-read">
+      <div class="passage-block">
+        <div class="passage-title">${passage.title}</div>
+        ${passage.passage}
+      </div>
+      <div class="q-row">
+        <div class="q-tag">1</div>
+        <div class="q-text">${passage.q1_text}</div>
+      </div>
+      <div class="choices">${pChoices}</div>
+      <div class="skill-note">⚙️ Skill: ${passage.q1_skill}</div>
+    </div>
+
+    <div class="sec-label sec-lang">✏️ Language — Fix It Up</div>
+    <div class="card card-lang">
+      <div style="font-size:10px;font-weight:700;color:#7a1a1a;margin-bottom:4px;">Fix the sentence. Circle errors, then rewrite correctly.</div>
+      <div style="background:white;border:1px solid #e8b8b8;border-radius:3px;padding:5px 8px;font-size:10px;font-style:italic;margin-bottom:4px;">${lang.bad}</div>
+      <div class="q-row">
+        <div class="q-tag" style="background:var(--acc-lang);">2</div>
+        <div class="q-text">${lang.q_text}</div>
+      </div>
+      <div class="choices">${lChoices}</div>
+    </div>
+
+    <div class="sec-label sec-green">🔢 Iowa Math — Problem Solving</div>
+    <div class="card card-math">
+      <div class="q-row">
+        <div class="q-tag" style="background:var(--acc-math);">3</div>
+        <div class="q-text">${mathQ.q}</div>
+      </div>
+      <div class="choices">${mChoices}</div>
+    </div>
+
+    <div class="sec-label sec-gold" style="color:var(--tf-dark);">⚡ Word of the Day</div>
+    <div class="card card-word">
+      <div style="display:flex;align-items:baseline;gap:4px;margin-bottom:3px;">
+        <div class="word-big">${word.word}</div>
+        <span class="word-pos">${word.pos}</span>
+      </div>
+      <div class="word-def">${word.def}</div>
+      <div class="word-ex">${word.ex}</div>
+      <div class="write-line" style="margin-top:4px;"></div>
+      <div style="font-size:8px;color:#888;margin-top:2px;">Write your own sentence ↑</div>
+    </div>
+
+    <div class="bookend bookend-close">
+      <div class="bookend-icon">🔋</div>
+      <div>
+        <div class="bookend-title">Power Down · Closing Notebook</div>
+        <div class="bookend-sub">Do this last — log how today went</div>
+      </div>
+      <div class="bookend-badge">Last</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;flex-shrink:0;">
+      <div>
+        <div class="sec-label sec-navy">🔋 End-of-Day Power Level</div>
+        <div class="mood-row">
+          <div class="mood-item"><div class="mood-circle" style="font-size:13px;">😴</div><div class="mood-label">DRAINED</div></div>
+          <div class="mood-item"><div class="mood-circle" style="font-size:13px;">😕</div><div class="mood-label">LOW</div></div>
+          <div class="mood-item"><div class="mood-circle" style="font-size:13px;">😐</div><div class="mood-label">OK</div></div>
+          <div class="mood-item"><div class="mood-circle" style="font-size:13px;">😊</div><div class="mood-label">GOOD</div></div>
+          <div class="mood-item"><div class="mood-circle" style="font-size:13px;">🤩</div><div class="mood-label">CHARGED</div></div>
+        </div>
+      </div>
+      <div>
+        <div class="sec-label sec-navy">⚙️ How Hard Was Each Mission? <span style="font-weight:400;letter-spacing:0;text-transform:none;opacity:0.85;">— rate now you've done them</span></div>
+        <div class="card card-sub" style="padding:5px 8px;">
+          ${skillCheckHtml}
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;flex-shrink:0;">
+      <div>
+        <div class="sec-label sec-red">🧠 Mission Debrief</div>
+        <div class="card card-sub" style="padding:4px 8px;">
+          <div style="font-size:9px;font-weight:700;color:var(--tf-mid);margin-bottom:1px;">One thing that clicked today:</div>
+          <div class="write-line" style="height:14px;"></div>
+          <div style="font-size:9px;font-weight:700;color:var(--tf-mid);margin:3px 0 1px;">One thing to remember tomorrow:</div>
+          <div class="write-line" style="height:14px;"></div>
+        </div>
+      </div>
+      <div>
+        <div class="sec-label sec-gold" style="color:var(--tf-dark);">🌟 Gratitude Log</div>
+        <div style="font-size:8px;color:#666;margin-bottom:4px;">Write 3 things you're grateful for today:</div>
+        <div class="grat-item"><div class="grat-num">1</div><div class="grat-line"></div></div>
+        <div class="grat-item"><div class="grat-num">2</div><div class="grat-line"></div></div>
+        <div class="grat-item"><div class="grat-num">3</div><div class="grat-line"></div></div>
+      </div>
+    </div>
+
+  </div>
+
+${ellFooter("Howe Academy · Daily Operations · Week " + weekNum + " · " + dayCap)}
+</div>`;
+  }
+
+  function ellCreativePage(weekNum, weekDates) {
+    var lines = '<div class="write-line"></div>'.repeat(22);
+    return `<!-- CREATIVE LAUNCH -->
+<div class="page">
+${ellHeader("Howe Academy · Week " + weekNum + " Creative Mission", "CREATIVE", "LAUNCH", "End of", "WK " + weekNum, "FIELD JOURNAL")}
+
+  <div class="page-body" style="flex-direction:row;gap:14px;">
+
+    <div style="flex:1;display:flex;flex-direction:column;gap:7px;">
+      <div class="sec-label sec-red">✍️ Mission Story — Write Your Own!</div>
+      <div style="background:linear-gradient(135deg,#0A1628,#1C3256);border-radius:4px;padding:10px 12px;
+           border-left:3px solid var(--tf-yellow);flex-shrink:0;">
+        <div style="font-family:'Orbitron',sans-serif;font-size:7px;color:var(--tf-yellow);letter-spacing:0.2em;margin-bottom:6px;">⚡ YOUR MISSION PROMPT:</div>
+        <div style="font-size:10px;color:var(--tf-silver-lt);line-height:1.5;font-weight:600;">You just discovered you can transform! Write a story about your
+          <em style="color:var(--tf-yellow);">first day</em> as a Transformer.
+          What do you turn into? What mission do you go on? Who helps you?</div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:1px;min-height:0;">
+        <div style="font-family:'Orbitron',sans-serif;font-size:6.5px;color:rgba(14,32,56,0.28);
+          letter-spacing:0.12em;text-transform:uppercase;margin-bottom:2px;">Begin your story here ↓</div>
+        ${lines}
+      </div>
+      <div style="flex-shrink:0;">
+        <div class="sec-label sec-navy">🔋 Week ${weekNum} Final Debrief</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px 10px;">
+          <div><div style="font-family:'Orbitron',sans-serif;font-size:6.5px;color:var(--tf-red);letter-spacing:0.1em;margin-bottom:2px;">BEST MOMENT:</div>
+            <div class="write-line"></div><div class="write-line"></div></div>
+          <div><div style="font-family:'Orbitron',sans-serif;font-size:6.5px;color:var(--tf-red);letter-spacing:0.1em;margin-bottom:2px;">SOMETHING I LEARNED:</div>
+            <div class="write-line"></div><div class="write-line"></div></div>
+          <div><div style="font-family:'Orbitron',sans-serif;font-size:6.5px;color:var(--tf-red);letter-spacing:0.1em;margin-bottom:2px;">MY GOAL NEXT WEEK:</div>
+            <div class="write-line"></div><div class="write-line"></div></div>
+          <div><div style="font-family:'Orbitron',sans-serif;font-size:6.5px;color:var(--tf-red);letter-spacing:0.1em;margin-bottom:2px;">I'M PROUD I:</div>
+            <div class="write-line"></div><div class="write-line"></div></div>
+        </div>
+      </div>
+    </div>
+
+    ${ellDivider()}
+
+    <div style="width:270px;flex-shrink:0;display:flex;flex-direction:column;gap:8px;">
+      <div class="sec-label sec-red">🎨 Design Your Transformer</div>
+      <div style="font-size:8.5px;color:#555;margin-bottom:3px;">Draw your Transformer form — panels, jets, wheels, weapons, colors!</div>
+      <div style="height:210px;border:2px dashed rgba(196,30,30,0.35);border-radius:4px;position:relative;
+           background:radial-gradient(circle at 50% 50%,rgba(245,194,0,0.04) 0%,transparent 70%),
+           linear-gradient(rgba(245,194,0,0.03) 1px,transparent 1px);background-size:100% 22px;">
+        <span style="position:absolute;top:6px;left:10px;font-family:'Orbitron',sans-serif;
+          font-size:7px;color:rgba(196,30,30,0.28);letter-spacing:0.15em;text-transform:uppercase;">Your Transformer form</span>
+        <span style="position:absolute;bottom:8px;left:10px;right:8px;font-family:'Orbitron',sans-serif;
+          font-size:6px;color:rgba(14,32,56,0.18);letter-spacing:0.07em;">VEHICLE MODE: ______________________ &nbsp; POWER: ______________________</span>
+      </div>
+      <div class="sec-label sec-gold" style="color:var(--tf-dark);">⚡ Autobot Code Name</div>
+      <div style="background:#eef0fb;border:1px solid #c0caee;border-radius:4px;padding:7px 10px;">
+        <div style="font-size:8.5px;color:#333;line-height:1.5;margin-bottom:5px;">Use your initials to build a code name!</div>
+        <table style="border-collapse:collapse;width:100%;margin-bottom:6px;">
+          <tr style="background:var(--tf-dark);">
+            <td style="font-family:'Orbitron',sans-serif;font-size:6.5px;color:var(--tf-yellow);padding:3px 5px;">INITIAL</td>
+            <td style="font-size:8px;color:var(--tf-silver);padding:3px 5px;text-align:center;">→</td>
+            <td style="font-family:'Orbitron',sans-serif;font-size:6.5px;color:var(--tf-yellow);padding:3px 5px;">CODE PREFIX</td>
+          </tr>
+          <tr style="border-bottom:1px solid #c0caee;"><td style="padding:2px 5px;font-family:'Orbitron',sans-serif;font-size:9px;font-weight:700;color:var(--tf-red);">E</td><td style="padding:2px 5px;font-size:8px;color:#555;text-align:center;">→</td><td style="padding:2px 5px;font-family:'Orbitron',sans-serif;font-size:9px;font-weight:700;color:var(--tf-dark);">ELECTRO</td></tr>
+          <tr style="border-bottom:1px solid #c0caee;background:#f7f8ff;"><td style="padding:2px 5px;font-family:'Orbitron',sans-serif;font-size:9px;font-weight:700;color:var(--tf-red);">S</td><td style="padding:2px 5px;font-size:8px;color:#555;text-align:center;">→</td><td style="padding:2px 5px;font-family:'Orbitron',sans-serif;font-size:9px;font-weight:700;color:var(--tf-dark);">STEALTH</td></tr>
+          <tr><td style="padding:2px 5px;font-family:'Orbitron',sans-serif;font-size:9px;font-weight:700;color:var(--tf-red);">H</td><td style="padding:2px 5px;font-size:8px;color:#555;text-align:center;">→</td><td style="padding:2px 5px;font-family:'Orbitron',sans-serif;font-size:9px;font-weight:700;color:var(--tf-dark);">HYPER</td></tr>
+        </table>
+        <div style="font-family:'Orbitron',sans-serif;font-size:6.5px;color:var(--tf-red);letter-spacing:0.12em;margin-bottom:4px;">MY AUTOBOT CODE NAME:</div>
+        <div style="height:24px;border-bottom:2px solid var(--tf-red);background:rgba(196,30,30,0.04);border-radius:2px 2px 0 0;"></div>
+      </div>
+      <div class="sec-label sec-navy">🤖 This Week's Favorite</div>
+      <div style="background:var(--tf-light);border:1.5px solid var(--tf-silver);border-radius:4px;padding:7px 10px;flex:1;display:flex;flex-direction:column;gap:3px;">
+        <div style="font-size:8.5px;color:#555;">My favorite Transformer this week:</div>
+        <div class="write-line"></div>
+        <div style="font-size:8.5px;color:#555;margin-top:2px;">Because:</div>
+        <div class="write-line"></div><div class="write-line"></div>
+        <div style="font-size:8.5px;color:#555;margin-top:2px;">If I could talk to them I'd say:</div>
+        <div class="write-line"></div><div class="write-line"></div>
+      </div>
+    </div>
+
+  </div>
+
+${ellFooter("Howe Academy · Creative Launch · Week " + weekNum, "Mission Complete — Roll Out! 🤖")}
+</div>`;
+  }
+
+  function ellParentPage1(weekNum, weekDates, dayAssignments, weekNotes) {
+    var constraintHtml = "";
+    if (weekNotes && weekNotes.length) constraintHtml = '<div class="constraint-banner"><strong>THIS WEEK:</strong>  ' + weekNotes.join("  ·  ") + '</div>';
+    var dayCards = (dayAssignments || []).map(function (da) {
+      var passage = da.passage, lang = da.lang, mathQ = da.math_q, word = da.word;
+      var q1l = passage.q1_ans || "?", q1t = ellGetAnsText(passage.q1_choices || [], q1l);
+      var q2l = passage.q2_ans || "?", q2t = ellGetAnsText(passage.q2_choices || [], q2l);
+      var lal = lang.answer || "?", lat = ellGetAnsText(lang.choices || [], lal);
+      var mal = mathQ.answer || "?", mat = ellGetAnsText(mathQ.choices || [], mal);
+      var wordDef = word.def || "", wordShort = wordDef.slice(0, 55).replace(/\s+$/, "") + (wordDef.length > 55 ? "…" : "");
+      return '<div class="card card-plain" style="padding:7px 11px;">' +
+        '<div style="margin-bottom:5px;"><span class="key-day">' + cap(da.day) + '</span><span class="key-date">' + da.date + '</span></div>' +
+        '<div class="key-row"><div class="key-label">Word</div><div><span class="key-ans">' + word.word + '</span><span class="key-sub"> — ' + wordShort + '</span></div></div>' +
+        '<div class="key-row"><div class="key-label">Iowa R Q1</div><div><span class="key-ans">(' + q1l + ')</span><span class="key-sub"> ' + q1t.slice(0, 55) + ' — ' + (passage.q1_skill || "") + '</span></div></div>' +
+        '<div class="key-row"><div class="key-label">Iowa R Q2</div><div><span class="key-ans">(' + q2l + ')</span><span class="key-sub"> ' + q2t.slice(0, 55) + ' — ' + (passage.q2_skill || "") + '</span></div></div>' +
+        '<div class="key-row"><div class="key-label">Language</div><div><span class="key-ans">(' + lal + ')</span><span class="key-sub"> ' + lat.slice(0, 60) + '</span></div></div>' +
+        '<div class="key-row"><div class="key-label">Math</div><div><span class="key-ans">(' + mal + ')</span><span class="key-sub"> ' + mat.slice(0, 55) + ' — ' + (mathQ.skill || "") + '</span></div></div>' +
+        '</div>\n';
+    }).join("");
+    var wordCards = (dayAssignments || []).map(function (da) {
+      var word = da.word, wFamily = (word.word_family || []).join(", "), wUsage = ellStripTags(word.ex || word.usage || "");
+      return '<div class="card card-word" style="border:1.5px solid #d4a820;background:#f5f0e8;padding:7px 10px;">' +
+        '<div style="margin-bottom:4px;"><span class="key-day" style="color:var(--tf-red);">' + word.word + '</span><span class="key-date">' + cap(da.day) + ' · ' + da.date + '</span></div>' +
+        '<div class="key-row"><div class="key-label">Meaning</div><div style="font-size:9px;color:#333;">' + (word.def || "") + '</div></div>' +
+        '<div class="key-row"><div class="key-label">Root</div><div style="font-size:8.5px;color:#555;">' + (word.root || "") + '</div></div>' +
+        '<div class="key-row"><div class="key-label">Usage</div><div style="font-size:8.5px;color:#555;font-style:italic;">' + wUsage + '</div></div>' +
+        '<div class="key-row"><div class="key-label">Family</div><div style="font-size:8.5px;color:#555;">' + wFamily + '</div></div>' +
+        '</div>\n';
+    }).join("");
+    return `<!-- PARENT PAGE 1 -->
+<div class="page">
+${ellHeader("TEACHING COMPANION · PARENT REFERENCE", "ANSWER", "KEYS", "WEEK", ellPad2(weekNum), "Parent Only")}
+
+  <div class="companion-accent"></div>
+
+  <div class="page-body">
+
+    ${constraintHtml}
+
+    <div class="sec-label sec-red">📋 Daily Answer Keys — Word · Iowa Reading Q1+Q2 · Language · Math</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      ${dayCards}
+    </div>
+
+    <div style="height:1px;background:rgba(14,32,56,0.1);margin:6px 0 4px;flex-shrink:0;"></div>
+
+    <div class="sec-label sec-gold" style="color:var(--tf-dark);">📖 Word of the Day — Full Reference</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      ${wordCards}
+    </div>
+
+  </div>
+
+${ellFooter("Howe Academy · Parent Guide · Answer Keys · Week " + weekNum)}
+</div>`;
+  }
+
+  function ellParentPage2(weekNum, weekDates, dayAssignments) {
+    var fullKeys = (dayAssignments || []).map(function (da) {
+      var passage = da.passage, lang = da.lang, mathQ = da.math_q;
+      var q1Rows = ellChoiceRows(passage.q1_choices || [], passage.q1_ans || "");
+      var q2Rows = ellChoiceRows(passage.q2_choices || [], passage.q2_ans || "");
+      var laRows = ellChoiceRows(lang.choices || [], lang.answer || "");
+      var maRows = ellChoiceRows(mathQ.choices || [], mathQ.answer || "");
+      return '<div style="border:1.5px solid rgba(14,32,56,0.12);border-radius:4px;padding:5px 8px;font-size:8px;overflow:hidden;">' +
+        '<div style="font-family:\'Orbitron\',sans-serif;font-size:8.5px;font-weight:700;color:var(--tf-red);margin-bottom:3px;border-bottom:1px solid rgba(196,30,30,0.2);padding-bottom:3px;">' + cap(da.day).toUpperCase() + '<span style="font-size:6.5px;color:var(--tf-silver);font-weight:400;margin-left:6px;">' + da.date + '</span></div>' +
+        '<div style="font-size:7.5px;font-weight:700;color:var(--tf-dark);margin:2px 0 1px;">📡 ' + ellStripTags(passage.title || "") + ' — Q1</div>' +
+        '<div style="font-size:7.5px;color:#444;margin-bottom:1px;">' + (passage.q1_text || "") + '</div>' + q1Rows +
+        '<div style="font-size:7.5px;font-weight:700;color:var(--tf-dark);margin:3px 0 1px;">Q2</div>' +
+        '<div style="font-size:7.5px;color:#444;margin-bottom:1px;">' + (passage.q2_text || "") + '</div>' + q2Rows +
+        '<div style="font-size:7.5px;font-weight:700;color:#8b0000;margin:3px 0 1px;">✏️ Language</div>' +
+        '<div style="font-size:7px;font-style:italic;color:#8b0000;margin-bottom:1px;">' + ellStripTags(lang.bad || "") + '</div>' + laRows +
+        '<div style="font-size:6.5px;color:#777;margin:1px 0 2px;">Errors: ' + (lang.errors || "") + '</div>' +
+        '<div style="font-size:7.5px;font-weight:700;color:var(--tf-dark);margin:2px 0 1px;">🔢 Math</div>' +
+        '<div style="font-size:7.5px;color:#444;margin-bottom:1px;">' + ellStripTags(mathQ.q || "") + '</div>' + maRows +
+        '</div>\n';
+    }).join("");
+    var iowaFocus = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">' +
+      '<div style="background:rgba(196,30,30,0.08);border-radius:3px;padding:5px 7px;"><div style="font-family:\'Orbitron\',sans-serif;font-size:6.5px;color:var(--tf-red);font-weight:700;margin-bottom:2px;">WORD ANALYSIS · 21st %ile · GE 1.4</div><div style="font-size:7.5px;color:#333;">Phonics, blends, syllable types. Sound it out before guessing.</div></div>' +
+      '<div style="background:rgba(196,30,30,0.08);border-radius:3px;padding:5px 7px;"><div style="font-family:\'Orbitron\',sans-serif;font-size:6.5px;color:var(--tf-red);font-weight:700;margin-bottom:2px;">READING · 22nd %ile · GE 1.6</div><div style="font-size:7.5px;color:#333;">Main idea, inference, vocabulary in context. Ask "what did you picture?"</div></div>' +
+      '<div style="background:rgba(20,50,90,0.07);border-radius:3px;padding:5px 7px;"><div style="font-family:\'Orbitron\',sans-serif;font-size:6.5px;color:var(--tf-dark);font-weight:700;margin-bottom:2px;">LANGUAGE · 34th %ile · GE 1.9</div><div style="font-size:7.5px;color:#333;">Capitalization, punctuation, usage. Fix-It sentences build error detection.</div></div>' +
+      '<div style="background:rgba(20,50,90,0.07);border-radius:3px;padding:5px 7px;"><div style="font-family:\'Orbitron\',sans-serif;font-size:6.5px;color:var(--tf-dark);font-weight:700;margin-bottom:2px;">VOCAB · 35th %ile · GE 1.8</div><div style="font-size:7.5px;color:#333;">Context clues, synonyms, antonyms. Word of the Day builds this directly.</div></div>' +
+      '</div>';
+    var record = (dayAssignments || []).map(function (da) {
+      return '<div class="record-box"><div class="record-day">' + cap(da.day) + '<span class="key-date"> ' + da.date + '</span></div><div class="record-line"></div><div class="record-line"></div><div class="record-line"></div></div>\n';
+    }).join("");
+    return `<!-- PARENT PAGE 2 -->
+<div class="page">
+${ellHeader("TEACHING COMPANION · PARENT REFERENCE", "FULL", "KEYS", "WEEK", ellPad2(weekNum), "Parent Only")}
+
+  <div class="companion-accent"></div>
+
+  <div class="page-body" style="flex-direction:row;gap:14px;">
+
+    <div style="flex:1;display:flex;flex-direction:column;gap:4px;min-width:0;overflow:hidden;">
+      <div class="sec-label sec-red">📡 Full Answer Keys — All Days</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:6px;flex:1;min-height:0;overflow:hidden;">
+        ${fullKeys}
+      </div>
+    </div>
+
+    <div style="width:195px;flex-shrink:0;display:flex;flex-direction:column;gap:7px;">
+
+      <div class="sec-label sec-gold" style="color:var(--tf-dark);">🎯 Iowa Focus Areas</div>
+      ${iowaFocus}
+
+      <div style="height:1px;background:rgba(14,32,56,0.1);flex-shrink:0;"></div>
+
+      <div class="sec-label sec-navy">📝 Running Record</div>
+      <div style="display:flex;flex-direction:column;gap:5px;">
+        ${record}
+      </div>
+
+      <div style="height:1px;background:rgba(14,32,56,0.1);flex-shrink:0;"></div>
+
+      <div class="sec-label sec-navy">📌 Flag for Week ${weekNum + 1}</div>
+      <div class="carry-box" style="flex:1;min-height:50px;">
+        <div class="carry-title">CARRY-FORWARD NOTES</div>
+        <div class="record-line"></div>
+        <div class="record-line"></div>
+        <div class="record-line"></div>
+      </div>
+
+    </div>
+
+  </div>
+
+${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
+</div>`;
+  }
+
+  function generateEllis(ctx) {
+    ctx = ctx || {};
+    var weekData = ctx.weekData || {};
+    if (Array.isArray(weekData)) weekData = weekData[0] || {};
+    var weekNum = ctx.weekNum;
+    if (typeof weekNum === "string") { var dd = weekNum.replace(/\D/g, ""); weekNum = dd ? parseInt(dd, 10) : weekNum; }
+    var wn = parseInt(weekNum, 10) || 1;
+    var datesMap = weekData.dates || {};
+    var orderedDays = Object.keys(datesMap);
+    var ellisTasks = (weekData.tasks || []).filter(function (t) { return t.who === "ellis"; });
+    var year = new Date().getFullYear();
+    var dateVals = orderedDays.map(function (d) { return datesMap[d]; });
+    var weekDates = ctx.weekDates || (dateVals.length ? (dateVals[0] + "–" + dateVals[dateVals.length - 1] + ", " + year) : ("Week " + wn));
+    var prevWeek = wn - 1;
+    var paceRows = ELLIS_DATA.pace_priority.map(function (k) { return [ELLIS_DATA.pace_map[k] || k, 38, "on"]; });
+    var summary = ctx.prevSummary || {};
+    var T = ELLIS_DATA.theme;
+
+    var pages = [];
+    pages.push(ellWeeklyPage(wn, weekDates, weekData, paceRows, summary, prevWeek));
+    pages.push(ellBrainBreakPage(0, wn));
+    pages.push(enPageAllAboutMe(T, null, wn));
+    pages.push(enPageMoneyLife(T, wn));
+    pages.push(enPageMemoryCivics(T, wn));
+    pages.push(enPageNotes(T));
+
+    var dayAssignments = [];
+    orderedDays.forEach(function (day, i) {
+      var dateStr = datesMap[day] || "";
+      var dayTasks = ellisTasks.filter(function (t) { return t.day === day; });
+      var passage = ellPick(ELLIS_DATA.banks.passages, wn, i);
+      var lang = ellPick(ELLIS_DATA.banks.lang, wn, i);
+      var mathQ = ellPick(ELLIS_DATA.banks.math, wn, i);
+      var word = ellPick(ELLIS_DATA.banks.words, wn, i);
+      pages.push(ellDailyPage(day, dateStr, wn, dayTasks, passage, lang, mathQ, word));
+      dayAssignments.push({ day: day, date: dateStr, day_tasks: dayTasks, passage: passage, lang: lang, math_q: mathQ, word: word });
+      pages.push(i < orderedDays.length - 1 ? ellBrainBreakPage(i + 1, wn) : ellCreativePage(wn, weekDates));
+    });
+
+    var cp1 = ellParentPage1(wn, weekDates, dayAssignments, ctx.weekNotes || []);
+    var cp2 = ellParentPage2(wn, weekDates, dayAssignments);
+    return { student: ellShell(pages.join("\n\n")), parent: ellShell(cp1 + "\n\n" + cp2) };
+  }
+
+  /* ============================================================================
    *  PUBLIC API
    * ========================================================================== */
 
   var GENERATORS = {
     lincoln: { label: "Lincoln (5th 🐍)", build: generateLincoln },
+    ellis: { label: "Ellis (4th 🤖)", build: generateEllis },
     julian: { label: "Julian (Pre-K 🦕)", build: generateJulian }
   };
 
