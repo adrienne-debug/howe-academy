@@ -49,10 +49,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .kid-btn{padding:5px 12px;border-radius:20px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;font-family:'DM Sans',sans-serif}
 .kid-btn.active{color:#fff;border-color:transparent}
 .kid-btn[data-kid="all"].active{background:#111827}
-.kid-btn[data-kid="lincoln"].active{background:#1e3a5f}
-.kid-btn[data-kid="ellis"].active{background:#2d5a3d}
-.kid-btn[data-kid="lucy"].active{background:#5b3a8c}
-.kid-btn[data-kid="julian"].active{background:#c45e1a}
+/* kid-btn active + .badge-<kid> colors injected from ROSTER_DEF (see FAMILY IDENTITY) */
 .kid-btn[data-kid="mom"].active{background:#b5394a}
 
 /* ── SKYLIGHT ── */
@@ -173,10 +170,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .card-body{flex:1;min-width:0}
 .card-header{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap}
 .kid-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;flex-shrink:0;margin-top:1px}
-.badge-lincoln{background:#dbeafe;color:#1e3a5f}
-.badge-ellis{background:#dcfce7;color:#2d5a3d}
-.badge-lucy{background:#ede9fe;color:#5b3a8c}
-.badge-julian{background:#ffedd5;color:#c45e1a}
 .mom-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:auto}
 .req-badge{background:#fee2e2;color:#991b1b}
 .maybe-badge{background:#fef9c3;color:#854d0e}
@@ -1050,9 +1043,29 @@ const DAYS = ["monday","tuesday","wednesday","thursday","friday","saturday"];
 const DAY_COL = {monday:"#1e3a5f",tuesday:"#2d5a3d",wednesday:"#5b3a8c",thursday:"#c45e1a",friday:"#b5394a",saturday:"#1a6b5a"};
 const DAY_LBL = {monday:"Monday",tuesday:"Tuesday",wednesday:"Wednesday",thursday:"Thursday",friday:"Friday",saturday:"Saturday"};
 let DAY_DT={}; let CONSTRAINT={}; let WIN={default:"School 10:00 AM–4:15 PM · Theater 4:30 Mon–Thu"};
-const SL_KIDS  = ["lincoln","ellis","lucy","julian"];
-const SL_KLBL  = {lincoln:"Lincoln",ellis:"Ellis",lucy:"Lucy",julian:"Julian"};
-const SL_KCOL  = {lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#c45e1a"};
+// ── FAMILY IDENTITY — single source of truth. Edit in Admin → Settings → Family (saved to Firebase),
+//    or change FAMILY_DEFAULT below for the built-in default. ──
+const FAMILY_DEFAULT = [
+  {id:"lincoln", name:"Lincoln", color:"#1e3a5f", badge:"#dbeafe", schoolAge:true},
+  {id:"ellis",   name:"Ellis",   color:"#2d5a3d", badge:"#dcfce7", schoolAge:true},
+  {id:"lucy",    name:"Lucy",    color:"#5b3a8c", badge:"#ede9fe", schoolAge:true},
+  {id:"julian",  name:"Julian",  color:"#c45e1a", badge:"#ffedd5", schoolAge:false}, // Pre-K: no 180-day attendance, separate drills track
+];
+// Loaded synchronously from the localStorage cache (kept in sync with Firebase settings/family); defaults to FAMILY_DEFAULT
+const ROSTER_DEF = (function(){
+  try{ var v=JSON.parse(localStorage.getItem("ha_family")||"null");
+       if(Array.isArray(v)&&v.length&&v.every(function(k){return k&&k.id&&k.name&&k.color;})) return v; }catch(e){}
+  return FAMILY_DEFAULT;
+})();
+const ROSTER       = ROSTER_DEF.map(k=>k.id);                         // all kids, in roster order
+const SCHOOL_KIDS  = ROSTER_DEF.filter(k=>k.schoolAge).map(k=>k.id);  // excludes Pre-K
+const KID_NAME     = Object.fromEntries(ROSTER_DEF.map(k=>[k.id,k.name]));   // {lincoln:"Lincoln",...}
+const KID_COLOR    = Object.fromEntries(ROSTER_DEF.map(k=>[k.id,k.color]));  // {lincoln:"#1e3a5f",...}
+// Kid identity CSS (kid-button active bg + name badge) injected from ROSTER_DEF — keeps colors single-sourced
+(function(){var s=document.createElement("style");s.textContent=ROSTER_DEF.map(function(k){return '.kid-btn[data-kid="'+k.id+'"].active{background:'+k.color+'}.badge-'+k.id+'{background:'+(k.badge||'#eee')+';color:'+k.color+'}';}).join("");(document.head||document.documentElement).appendChild(s);})();
+const SL_KIDS  = [...ROSTER];
+const SL_KLBL  = {...KID_NAME};
+const SL_KCOL  = {...KID_COLOR};
 const SL_SLOTS = ["morning","afternoon","chores"];
 const SL_SLBL  = {morning:"Morning",afternoon:"Afternoon",chores:"Chores"};
 const SL_STIM  = {morning:"10:00 AM – 1:00 PM",afternoon:"2:00 – 4:15 PM",chores:"After school"};
@@ -1426,6 +1439,14 @@ function initFb() {
     db.ref("settings/pin").on("value",s=>{
       if(s.val()){ APP_PIN=s.val(); localStorage.setItem("ha_app_pin",s.val()); }
     });
+    db.ref("settings/family").on("value",s=>{
+      var v=s.val();
+      if(v&&!Array.isArray(v)&&typeof v==="object") v=Object.values(v);
+      if(Array.isArray(v)&&v.length){
+        var str=JSON.stringify(v);
+        if(str!==localStorage.getItem("ha_family")){ localStorage.setItem("ha_family",str); location.reload(); }
+      }
+    });
     db.ref("settings/celebration_songs").on("value",s=>{
       if(s.val()) celebSongs=Object.values(s.val());
     });
@@ -1527,7 +1548,7 @@ function toMin(s){
   if(p[3].toUpperCase()==="AM"&&h===12)h=0;
   return h*60+parseInt(p[2]);
 }
-function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+function cap(s){ if(typeof KID_NAME!=="undefined"&&KID_NAME&&KID_NAME[s]) return KID_NAME[s]; s=String(s); return s.charAt(0).toUpperCase()+s.slice(1); }
 
 // Returns the current weekday as a DAYS string ("monday" etc.), or null if weekend
 function getTodayDayName(){
@@ -1786,7 +1807,7 @@ function dayPct(d){
 // ── KID FILTER ────────────────────────────────────────────────────
 function renderKidFilter(){
   document.getElementById("kid-filter").innerHTML=
-    ["all","lincoln","ellis","lucy","julian","mom"].map(k=>{
+    ["all",...ROSTER,"mom"].map(k=>{
       const isActive = k===kid || (k==="mom" && momModeActive);
       return '<button class="kid-btn'+(isActive?" active":"")+'" data-kid="'+k+'" onclick="selKid(\''+k+'\')">'+
         (k==="mom" && momModeActive ? "✓ Mom" : cap(k))+'</button>';
@@ -2200,7 +2221,7 @@ function getSpinResult(taskId){ var sr=ld(WK+"_spin_results")||{}; return sr[tas
 
 // ── SPIN & POINTS ADMIN (Mom View) ──────────────────────────────
 function renderSpinAdmin(d){
-  const allKids=["lincoln","ellis","lucy","julian"];
+  const allKids=[...ROSTER];
   // Filter to current kid toggle — show all when kid==="all", just one otherwise
   const showKids=(kid==="all")?allKids:allKids.filter(k=>k===kid);
   if(!showKids.length) return '';
@@ -2533,6 +2554,7 @@ function renderSettings(el,ah){
   if(!el){el=document.getElementById("content");if(!el)return;}
   const o=id=>rulesOpen[id]?" open":"";
   let pinHtml=(ah||'');
+  pinHtml+=renderFamilyCard();
   pinHtml+='<div class="rules-wrap">';
   pinHtml+='<div class="rules-hdr">Change PIN</div>';
   pinHtml+='<div class="rules-sub">This PIN is used for Mom mode, Admin, Blockouts, Points, and all locked areas.</div>';
@@ -2548,7 +2570,7 @@ function renderSettings(el,ah){
   pinHtml+='</div></div></div>';
 
   // Adjust Slots card
-  const kids=["lincoln","ellis","lucy","julian"];
+  const kids=[...ROSTER];
   pinHtml+='<div class="rules-wrap" style="margin-top:20px">';
   pinHtml+='<div class="rules-hdr">Adjust Slots</div>';
   pinHtml+='<div class="rules-sub">Set win odds and point values per kid. Weights are relative — they don\'t need to sum to 100.</div>';
@@ -2590,8 +2612,8 @@ function renderSettings(el,ah){
   pinHtml+='<div class="rules-card-arrow">&#9654;</div></div>';
   pinHtml+='<div class="rules-card-body">';
   if(celebSongs.length){
-    const allKids=["lincoln","ellis","lucy","julian"];
-    const KC2={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#8b4513"};
+    const allKids=[...ROSTER];
+    const KC2=KID_COLOR;
     celebSongs.forEach((s,i)=>{
       const songKids=s.kids||{};
       const hasAnyKid=Object.values(songKids).some(v=>v);
@@ -2626,6 +2648,59 @@ function renderSettings(el,ah){
   pinHtml+='</div></div></div>';
 
   renderRules(el, pinHtml);
+}
+
+/* ── Family editor (Admin → Settings → Family): add / remove kids + edit names & colors ──
+   Edits build a working copy (familyEdit); Save writes Firebase settings/family + localStorage and reloads. */
+let familyEdit=null;
+function familyEditInit(){ if(!familyEdit) familyEdit=JSON.parse(JSON.stringify(ROSTER_DEF)); return familyEdit; }
+function famTint(hex){ hex=String(hex||"#888888").replace("#",""); if(hex.length===3) hex=hex.split("").map(function(c){return c+c;}).join(""); var n=parseInt(hex,16); if(isNaN(n)) return "#eeeeee"; var r=(n>>16)&255,g=(n>>8)&255,b=n&255,m=function(v){return Math.round(v+(255-v)*0.85);}; return "#"+[m(r),m(g),m(b)].map(function(v){return v.toString(16).padStart(2,"0");}).join(""); }
+function famSlug(s){ return String(s||"").toLowerCase().replace(/[^a-z0-9]/g,""); }
+function famSet(i,field,val){ familyEditInit(); if(!familyEdit[i]) return; familyEdit[i][field]=val; if(field==="color") familyEdit[i].badge=famTint(val); }
+function famAdd(){ familyEditInit(); familyEdit.push({id:null,name:"",color:"#6b7280",badge:famTint("#6b7280"),schoolAge:true}); renderAll(); }
+function famRemove(i){ familyEditInit(); var k=familyEdit[i]; if(!k) return; if(k.id&&!confirm("Remove "+(k.name||"this kid")+"? They'll be hidden everywhere, but their saved work is kept and comes back if you re-add them with the same name.")) return; familyEdit.splice(i,1); renderAll(); }
+function famSave(){
+  var list=familyEdit||ROSTER_DEF, seen={}, out=[];
+  for(var i=0;i<list.length;i++){
+    var k=list[i], name=String(k.name||"").trim();
+    if(!name){ alert("Every kid needs a name."); return; }
+    var id=k.id||famSlug(name)||("kid"+(out.length+1)), base=id, n=2;
+    while(seen[id]){ id=base+n; n++; } seen[id]=1;
+    var color=k.color||"#6b7280";
+    out.push({id:id,name:name,color:color,badge:k.badge||famTint(color),schoolAge:!!k.schoolAge});
+  }
+  if(!out.length){ alert("You need at least one kid."); return; }
+  var msg=document.getElementById("fam-save-msg"); if(msg){ msg.textContent="Saving…"; msg.style.color="var(--muted)"; }
+  localStorage.setItem("ha_family",JSON.stringify(out));
+  var done=function(){ location.reload(); };
+  if(typeof db!=="undefined"&&db){ db.ref("settings/family").set(out).then(done).catch(done); } else { done(); }
+}
+function renderFamilyCard(){
+  var o=function(id){ return rulesOpen[id]?" open":""; };
+  var list=familyEdit||ROSTER_DEF;
+  var h='<div class="rules-wrap">';
+  h+='<div class="rules-hdr">Family</div>';
+  h+='<div class="rules-sub">Add your kids and set each one\'s name and color. Renaming is always safe. Removing a kid hides them but keeps their saved work. Saving syncs to every device and reloads the app.</div>';
+  h+='<div class="rules-card'+o("family")+'">';
+  h+='<div class="rules-card-hdr" onclick="rulesToggleCard(\'family\')">';
+  h+='<div class="rules-card-title"><span>\u{1F46A}</span> Kids</div>';
+  h+='<div class="rules-card-arrow">▶</div></div>';
+  h+='<div class="rules-card-body">';
+  list.forEach(function(k,i){
+    h+='<div style="display:grid;grid-template-columns:30px 1fr auto 30px;gap:8px;align-items:center;margin-bottom:8px">';
+    h+='<input type="color" value="'+(k.color||"#6b7280")+'" onchange="famSet('+i+',\'color\',this.value)" title="Color" style="width:30px;height:30px;border:none;background:none;cursor:pointer;padding:0">';
+    h+='<input type="text" value="'+esc(k.name||"")+'" placeholder="Name" oninput="famSet('+i+',\'name\',this.value)" style="padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:\'DM Sans\',sans-serif;min-width:0">';
+    h+='<label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap"><input type="checkbox" '+(k.schoolAge?"checked":"")+' onchange="famSet('+i+',\'schoolAge\',this.checked)">School-age</label>';
+    h+='<button onclick="famRemove('+i+')" title="Remove" style="width:30px;height:30px;border-radius:8px;background:#ef4444;color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer">✕</button>';
+    h+='</div>';
+  });
+  h+='<div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">';
+  h+='<button onclick="famAdd()" style="padding:6px 14px;border-radius:8px;background:var(--header);color:#fff;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Add Kid</button>';
+  h+='<button onclick="famSave()" style="padding:6px 16px;border-radius:8px;background:#111827;color:#fff;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save Family</button>';
+  h+='<span id="fam-save-msg" style="font-size:12px;color:#c45e1a">'+(familyEdit?"Unsaved changes — Save to apply (reloads)":"")+'</span>';
+  h+='</div>';
+  h+='</div></div></div>';
+  return h;
 }
 
 function celebSongUpload(input){
@@ -2704,7 +2779,7 @@ function getSongsForKid(kid){
   });
 }
 function celebTestConfetti(){
-  const kid=["lincoln","ellis","lucy","julian"][Math.floor(Math.random()*4)];
+  const kid=[...ROSTER][Math.floor(Math.random()*ROSTER.length)];
   // Temporarily clear the anti-repeat flag so test works
   const u=ld(WK+"_celeb_used")||{}; const key=kid+"_"+day; const had=u[key]; delete u[key]; sv(WK+"_celeb_used",u);
   celebrateDayComplete(kid);
@@ -3701,7 +3776,7 @@ function renderTimingCard(histEntries,filterKids){
   const pill=(label,count,bg,fg)=>'<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:'+bg+';color:'+fg+';margin:0 2px">'+label+' '+count+'</span>';
   let h='<div style="background:rgba(255,255,255,0.07);border-radius:10px;padding:10px 12px;margin-top:8px">';
   h+='<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:rgba(255,255,255,0.5);margin-bottom:6px">⏱ Completion Timing</div>';
-  const order=["lincoln","ellis","lucy","julian"].filter(k=>ts.byKid[k]);
+  const order=[...ROSTER].filter(k=>ts.byKid[k]);
   order.forEach(k=>{
     const s=ts.byKid[k];
     const col=PACE_KCOL[k]||"#fff";
@@ -3739,7 +3814,7 @@ function renderTimingCard(histEntries,filterKids){
 }
 function histKidStatsRow(tasks, checkedObj){
   let h='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">';
-  ["lincoln","ellis","lucy","julian"].forEach(k2=>{
+  [...ROSTER].forEach(k2=>{
     const col=HIST_KCOL_LIGHT[k2];
     const kt=tasks.filter(t=>t.who===k2&&!t.id.endsWith("_c"));
     if(!kt.length){h+='<div></div>';return;}
@@ -3759,7 +3834,7 @@ function histKidStatsRow(tasks, checkedObj){
 }
 
 function renderHistory(el){
-  const histKids=(schedShowHistory&&kid!=="all"&&kid!=="mom")?[kid]:["lincoln","ellis","lucy","julian"];
+  const histKids=(schedShowHistory&&kid!=="all"&&kid!=="mom")?[kid]:[...ROSTER];
   const _btn=(on)=>'flex:1;padding:8px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?'var(--header)':'transparent')+';color:'+(on?'#fff':'var(--muted)');
   let h='<div style="display:flex;gap:6px;padding:12px 12px 4px">';
   h+='<button onclick="setHistTab(\'log\')" style="'+_btn(histTab==="log")+'">History Log</button>';
@@ -3799,7 +3874,7 @@ function renderHistory(el){
   if(!ptsEditUnlocked){
     // Read-only view
     h+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px">';
-    ["lincoln","ellis","lucy","julian"].forEach(k2=>{
+    [...ROSTER].forEach(k2=>{
       const kd=slotPts[k2];
       const weekTotal=!kd?0:typeof kd==="number"?kd:Object.values(kd).reduce((s,x)=>s+x,0);
       h+='<div style="background:rgba(255,255,255,0.08);border-radius:8px;padding:8px;text-align:center">';
@@ -3819,7 +3894,7 @@ function renderHistory(el){
   } else {
     // Editable view — per kid, per day with +/- buttons
     h+='<div style="margin-top:10px">';
-    ["lincoln","ellis","lucy","julian"].forEach(k2=>{
+    [...ROSTER].forEach(k2=>{
       h+='<div style="background:rgba(255,255,255,0.08);border-radius:8px;padding:10px;margin-bottom:6px">';
       h+='<div style="font-size:12px;font-weight:700;color:'+HIST_KCOL_LIGHT[k2]+';margin-bottom:6px">'+cap(k2)+' — Week total: ⭐'+getKidPoints(k2)+'</div>';
       h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px">';
@@ -3942,12 +4017,12 @@ function renderHistory(el){
       h+='</div>';
       // Archived week slot machine points
       const awSlotPts=aw.slot_points||{};
-      const awHasAnyPts=["lincoln","ellis","lucy","julian"].some(k2=>{const kd=awSlotPts[k2];return kd&&(typeof kd==="number"?kd>0:Object.values(kd).some(v=>v>0));});
+      const awHasAnyPts=[...ROSTER].some(k2=>{const kd=awSlotPts[k2];return kd&&(typeof kd==="number"?kd>0:Object.values(kd).some(v=>v>0));});
       if(awHasAnyPts){
         h+='<div style="background:#1a1a2e;border-radius:0;padding:12px 14px">';
         h+='<div style="font-family:\'Fraunces\',serif;font-size:13px;font-weight:700;color:#fbbf24;margin-bottom:8px">🎰 Slot Machine Points</div>';
         h+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">';
-        ["lincoln","ellis","lucy","julian"].forEach(k2=>{
+        [...ROSTER].forEach(k2=>{
           const kd=awSlotPts[k2];
           const wkTotal=!kd?0:typeof kd==="number"?kd:Object.values(kd).reduce((s,x)=>s+x,0);
           h+='<div style="background:rgba(255,255,255,0.08);border-radius:8px;padding:6px;text-align:center">';
@@ -3966,7 +4041,7 @@ function renderHistory(el){
         h+='</div></div>';
       }
       h+='<div style="padding:10px 14px">';
-      ["lincoln","ellis","lucy","julian"].forEach(k2=>{
+      [...ROSTER].forEach(k2=>{
         const kidTasks=awTasks.filter(t=>t.who===k2&&!t.id.endsWith("_c"));
         if(!kidTasks.length)return;
         const kidDone=kidTasks.filter(t=>awChecked[t.id]||awChecked[t.id+"_c"]);
@@ -4061,8 +4136,8 @@ function buildKidAttendance(kid){
 }
 
 function renderAttendanceHtml(){
-  const GOAL=180, kids=["lincoln","ellis","lucy"];
-  const KC={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#8b4513"};
+  const GOAL=180, kids=[...SCHOOL_KIDS];
+  const KC=KID_COLOR;
   const atd={}; kids.forEach(k=>atd[k]=buildKidAttendance(k));
   const editing=attEditUnlocked;
 
@@ -4159,14 +4234,14 @@ function renderAttendanceHtml(){
 
   h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-top:4px">';
   h+='<button onclick="printAttendance(null)" style="padding:11px;background:var(--header);color:#fff;border:none;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer">🖨 All</button>';
-  ["lincoln","ellis","lucy"].forEach(k=>h+='<button onclick="printAttendance(\''+k+'\')" style="padding:11px;background:var(--header);color:#fff;border:none;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer">🖨 '+cap(k)+'</button>');
+  [...SCHOOL_KIDS].forEach(k=>h+='<button onclick="printAttendance(\''+k+'\')" style="padding:11px;background:var(--header);color:#fff;border:none;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer">🖨 '+cap(k)+'</button>');
   h+='</div>';
   h+='</div>';
   return h;
 }
 
 function printAttendance(onlyKid){
-  const GOAL=180, kids=onlyKid?[onlyKid]:["lincoln","ellis","lucy"];
+  const GOAL=180, kids=onlyKid?[onlyKid]:[...SCHOOL_KIDS];
   const atd={}; kids.forEach(k=>atd[k]=buildKidAttendance(k));
   let body='';
   kids.forEach(k=>{
@@ -4207,7 +4282,7 @@ function printWeekReport(weekKey,filterKid){
     hist=aw.history||{};
   }
   if(fk) label+=(' — '+cap(fk));
-  const kids=fk?[fk]:["lincoln","ellis","lucy","julian"];
+  const kids=fk?[fk]:[...ROSTER];
   let body='';
   kids.forEach(k=>{
     const kt=tasks.filter(t=>t.who===k&&!t.id.endsWith("_c"));
@@ -4262,7 +4337,7 @@ function printWeekReport(weekKey,filterKid){
   if(ts.all.total){
     html+='<div style="page-break-inside:avoid;margin-top:16px;padding-top:10px;border-top:1px solid #ccc">';
     html+='<h2 style="font-size:11pt;margin:0 0 6px;color:#374151">Completion Timing</h2>';
-    const kidOrder=["lincoln","ellis","lucy","julian"].filter(k=>ts.byKid[k]);
+    const kidOrder=[...ROSTER].filter(k=>ts.byKid[k]);
     kidOrder.forEach(k=>{
       const s=ts.byKid[k];const avgL=s.late?Math.round(s.totalLateDays/s.late*10)/10:0;
       const col=PACE_KCOL[k]||"#374151";
@@ -4349,7 +4424,7 @@ function renderSitter(el){
     h+='<div class="mag-kid-card"><div class="mag-kid-hdr" style="background:#3b82f6">With '+SN+'</div>'+
       '<div style="padding:12px;font-size:13px;color:var(--muted)">'+withKids.map(k=>cap(k)).join(', ')+' — no school during '+SN+' time</div></div>';
   }
-  ["lincoln","ellis","lucy"].forEach(k2=>{
+  [...SCHOOL_KIDS].forEach(k2=>{
     if(withKids.includes(k2)) return;
     const ts=(bk[k2]||[]).sort((a,b)=>toMin(a.time)-toMin(b.time)); if(!ts.length)return;
     const col={lincoln:DAY_COL.monday,ellis:DAY_COL.tuesday,lucy:DAY_COL.wednesday}[k2];
@@ -4574,17 +4649,17 @@ function renderCurriculumView(el,headerHtml){
 
   h+='<div style="padding:0 4px">';
 
-  const kids=["lincoln","ellis","lucy","julian"];
+  const kids=[...ROSTER];
   const k=currViewKid;
   const subjects=currData.subjects[k]||{};
-  const col={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#b45309"}[k]||"#333";
+  const col=KID_COLOR[k]||"#333";
 
   // Kid selector — sticky below subtab bar
   const nw=currWeekNum()+1;
   h+='<div style="position:sticky;top:194px;z-index:88;background:var(--bg);padding:10px 0 8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">';
   kids.forEach(kid=>{
     const on=kid===k;
-    const c={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#b45309"}[kid]||"#333";
+    const c=KID_COLOR[kid]||"#333";
     h+='<button onclick="setCurrViewKid(\''+kid+'\')" style="padding:5px 14px;border-radius:20px;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?c:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cap(kid)+'</button>';
   });
   h+='<button onclick="downloadCurrTemplate()" style="margin-left:auto;padding:5px 12px;border-radius:20px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">Template</button>';
@@ -5258,7 +5333,7 @@ function ceRenderEditSheet(){
   const s=ceGetSubject();
   if(!s) return;
   const w=document.getElementById("ce-sheet-wrap");
-  const col={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#b45309"}[ceEditKid]||"#333";
+  const col=KID_COLOR[ceEditKid]||"#333";
   const emoji=CURR_DEV_EMOJI[s.device]||"\u{1F4C4}";
 
   let h='<div class="ce-sheet" onclick="if(event.target===this)ceCloseSheet()"><div class="ce-sheet-box">';
@@ -5617,7 +5692,7 @@ function ceRenderAddSheet(){
   const w=document.getElementById("ce-sheet-wrap");
   const kid=ceAddKid;
   const f=ceAddForm;
-  const col={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#b45309"}[kid]||"#333";
+  const col=KID_COLOR[kid]||"#333";
 
   let h='<div class="ce-sheet" onclick="if(event.target===this)ceCloseSheet()"><div class="ce-sheet-box">';
   h+='<div class="ce-sheet-title">Add Subject for '+cap(kid)+'</div>';
@@ -5940,11 +6015,15 @@ function uploadCurriculum(){
       isDynamic=fmt.dynamic;
 
       if(isDynamic){
+        // Match each sheet to a kid by id OR display name, normalized to alphanumerics
+        // (so a sheet named "Mary Jane" matches id "maryjane"). Exact match wins; substring is the fallback.
+        const _norm=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
         for(const sheet of wb.SheetNames){
-          const sheetLower=sheet.toLowerCase().trim();
-          const kidMatch=SL_KIDS.find(k=>sheetLower.includes(k));
+          const sheetN=_norm(sheet);
+          if(sheet.toLowerCase().trim()==="instructions") continue;
+          const kidMatch=(ROSTER_DEF.find(k=>sheetN&&(sheetN===_norm(k.id)||sheetN===_norm(k.name)))||
+                          ROSTER_DEF.find(k=>sheetN&&(sheetN.includes(_norm(k.id))||sheetN.includes(_norm(k.name))))||{}).id;
           if(kidMatch) sheetKids[sheet]=kidMatch;
-          else if(sheetLower==="instructions") continue;
           else{
             const known=CURR_SHEET_KID[sheet];
             if(known) sheetKids[sheet]=known;
@@ -6160,7 +6239,7 @@ function paceTargetsFromApp(){
 // auto-tracks his real drills instead of a stale snapshot. Same shape as mastery_slim.json.
 function masteryFromApp(){
   const out={};
-  for(const kid of ["lincoln","ellis","lucy","julian"]){
+  for(const kid of [...ROSTER]){
     if(Array.isArray(masteryData[kid])) out[kid]=masteryData[kid];
   }
   return out;
@@ -6186,6 +6265,66 @@ function downloadWeekJSON(){
   const a=document.createElement("a");
   a.href=url; a.download=WK+".json"; document.body.appendChild(a); a.click();
   setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},120);
+}
+
+// ── IN-APP NOTEBOOK GENERATOR ──────────────────────────────────────
+// Builds print-ready student notebooks right in the app (no terminal/Python).
+// notebooks.js is loaded ONCE on first use as a classic <script> tag — works
+// under file:// preview AND GitHub Pages, and stays off the page-load path.
+// Data contract = the same shape downloadWeekJSON() builds (dates + drills).
+let _haNbLibPromise=null;
+function haLoadNotebooksLib(){
+  if(window.HoweNotebooks) return Promise.resolve(window.HoweNotebooks);
+  if(_haNbLibPromise) return _haNbLibPromise;
+  _haNbLibPromise=new Promise((resolve,reject)=>{
+    const s=document.createElement("script");
+    s.src="notebooks.js";
+    s.onload=()=>{ window.HoweNotebooks?resolve(window.HoweNotebooks):reject(new Error("notebooks.js loaded but HoweNotebooks missing")); };
+    s.onerror=()=>{ _haNbLibPromise=null; reject(new Error("could not load notebooks.js")); };
+    document.head.appendChild(s);
+  });
+  return _haNbLibPromise;
+}
+function haNbContext(kid){
+  let dates={}; try{ dates=Object.assign({},DAY_DT); }catch(e){}
+  const year=new Date().getFullYear();
+  const weekDates=(window.HoweNotebooks&&window.HoweNotebooks.weekDatesRange)?window.HoweNotebooks.weekDatesRange(dates,year):"";
+  let mastery={}; try{ if(typeof masteryFromApp==="function") mastery=masteryFromApp(); }catch(e){}
+  return { weekData:{dates:dates}, weekNum:WK, weekDates:weekDates, masteryItems:(mastery[kid]||[]) };
+}
+function haNbOpen(kid,which){
+  const lib=window.HoweNotebooks; if(!lib){ alert("Notebook builder not loaded yet."); return; }
+  try{
+    const out=lib.generate(kid, haNbContext(kid));
+    const html=(which==="parent")?(out.parent||out.student):out.student;
+    const fname=kid+"_"+WK+"_"+(which==="parent"?"parent":"notebook")+".html";
+    lib.openHtml(html, fname);
+  }catch(e){ alert("Notebook generation failed: "+e.message); console.error(e); }
+}
+async function haOpenNotebookPicker(){
+  let lib;
+  try{ lib=await haLoadNotebooksLib(); }
+  catch(e){ alert("Couldn't load the notebook builder ("+e.message+").\nMake sure notebooks.js is deployed next to index.html."); return; }
+  const old=document.getElementById("haNbOverlay"); if(old) old.remove();
+  const kids=Object.keys(lib.GENERATORS||{});
+  const wkLabel=String(WK).replace("week","Week ");
+  const rows=kids.map(k=>{
+    const g=lib.GENERATORS[k];
+    return `<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;font-weight:700;font-size:13px;color:#1f2937">${g.label}</div>
+      <button onclick="haNbOpen('${k}','student')" style="padding:7px 12px;border-radius:9px;border:none;background:#ea580c;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">📓 Notebook</button>
+      <button onclick="haNbOpen('${k}','parent')" style="padding:7px 12px;border-radius:9px;border:1.5px solid var(--border);background:#fff;color:#1f2937;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">👩‍🏫 Parent</button>
+    </div>`;
+  }).join("");
+  const html=`<div id="haNbOverlay" onclick="if(event.target===this)this.remove()" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px;font-family:'DM Sans',sans-serif">
+    <div style="background:#fff;border-radius:18px;max-width:460px;width:100%;padding:20px 22px;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+      <div style="font-size:16px;font-weight:800;color:#9a3412">📓 Generate Notebooks — ${wkLabel}</div>
+      <div style="font-size:11.5px;color:var(--muted);margin:6px 0 10px;line-height:1.45">Opens a print-ready notebook in a new tab — print from there (Cmd/Ctrl+P, "Background graphics" ON). Built live from this week's dates + each kid's drills.</div>
+      ${rows||'<div style="font-size:12px;color:var(--muted);padding:12px 0">No generators available.</div>'}
+      <button onclick="document.getElementById('haNbOverlay').remove()" style="margin-top:14px;width:100%;padding:9px;border-radius:10px;border:1.5px solid var(--border);background:#f9fafb;font-size:12px;font-weight:700;color:#6b7280;cursor:pointer;font-family:'DM Sans',sans-serif">Close</button>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML("beforeend", html);
 }
 
 // ── GLOBAL CALENDAR ────────────────────────────────────────────────
@@ -6301,7 +6440,7 @@ function renderCalendarView(el, headerHtml){
   h+='<div class="gcal-hdr"><span>Per-Kid Overrides</span></div>';
   h+='<p style="font-size:11px;color:var(--muted);margin-bottom:10px">Individual exceptions — a kid can have school on a holiday, or an extra day off that only applies to them.</p>';
   h+='<div class="gcal-card">';
-  ["lincoln","ellis","lucy","julian"].forEach(k=>{
+  [...ROSTER].forEach(k=>{
     const col=SL_KCOL[k]||"#666";
     const ovs=Object.entries((calendarData.kidOverrides||{})[k]||{}).sort((a,b)=>a[0].localeCompare(b[0]));
     h+='<div class="gcal-override-kid">';
@@ -6482,8 +6621,8 @@ function toggleAdmin(){
 }
 
 function printSchedule(){
-  const kids=["lincoln","ellis","lucy"];
-  const names={lincoln:"Lincoln",ellis:"Ellis",lucy:"Lucy"};
+  const kids=[...SCHOOL_KIDS];
+  const names=KID_NAME;
   const momColors={required:"#fde8d8",maybe:"#fdf6e3",none:"#ffffff"};
   const momLabels={required:"★",maybe:"◆",none:""};
   const days=DAYS.filter(d=>weekData.tasks.some(t=>t.day===d));
@@ -7728,8 +7867,8 @@ function setActAge(id){ actAge=id; renderActAgeFilters(); renderActCards(); }
 function toggleActFavOnly(){ actFavOnly=!actFavOnly; renderActFilters(); renderActCards(); }
 
 // ── PACE TAB ──────────────────────────────────────────────────────
-const PACE_KIDS = ["lincoln","ellis","lucy","julian"];
-const PACE_KCOL = {lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#c45e1a"};
+const PACE_KIDS = [...ROSTER];
+const PACE_KCOL = KID_COLOR;
 
 const PACE_DEFAULT_PLANS = {
   summer_session:{label:"Summer Session",start:"2026-04-20",end:"2026-09-01",kids:["ellis","lucy"],schoolDays:["Mon","Tue","Wed","Thu"]},
@@ -7950,7 +8089,7 @@ function syncPaceData(){
     keys.forEach(key=>{ if(existing[key]) deletePaceSubject(k,key); });
   });
 
-  ["lincoln","ellis","lucy"].forEach(k=>{
+  [...SCHOOL_KIDS].forEach(k=>{
     const existing=(paceData.subjects&&paceData.subjects[k])||{};
     const currSubjects=(currData&&currData.subjects&&currData.subjects[k])||null;
     const defaults=PACE_DEFAULT_SUBJECTS[k]||{};
@@ -8248,7 +8387,7 @@ function setSchedOverride(dateStr,kid,mut){
 function gwSyncConfigOverrides(weekNum,config,dropped){
   const range=gwWeekDateRange(weekNum);
   if(!range) return;
-  const KIDS=["lincoln","ellis","lucy","julian"];
+  const KIDS=[...ROSTER];
   const dayDate={};
   const mon=gwParseDate(range.start);
   ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"].forEach((dn,i)=>{
@@ -8698,7 +8837,7 @@ function lmSetView(m){ lmViewMode=m; lmMovePick=null; lmMoveWeek=null; lmEditSlo
 // Places planned lessons on their calendar dates from currData.lessons. Read-only —
 // no writes. Color by kid; week-numbered rows; clickable week scrubber; print.
 function lmCalData(){
-  const KIDS=["lincoln","ellis","lucy","julian"];
+  const KIDS=[...ROSTER];
   const cellMap={}, wkSet={};
   KIDS.forEach(function(kid){
     const wd=((currData&&currData.weekDays)||{})[kid]||{};
@@ -8759,8 +8898,8 @@ function lmCalOpenDay(ds){ lmCalDay=ds; renderAll(); }
 function lmCalCloseDay(){ lmCalDay=null; renderAll(); }
 // Day-detail popup — clicking a calendar cell shows EVERY item that day for all kids.
 function lmCalDayPopup(ds,data){
-  const KIDS=["lincoln","ellis","lucy","julian"];
-  const KC={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#b45309"};
+  const KIDS=[...ROSTER];
+  const KC=KID_COLOR;
   const d=gwParseDate(ds);
   const dlabel=d.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"});
   let body='';
@@ -8827,7 +8966,7 @@ function _lmDayKind(ds){
   return null;
 }
 function lmCalGrid(weeks,scope,data,ym){
-  const KC={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#b45309"};
+  const KC=KID_COLOR;
   const MON=["#0F6E56","#534AB7","#993C1D","#185FA5","#854F0B","#993556"];
   const WD={0:"Sun",1:"Mon",2:"Tue",3:"Wed",4:"Thu",5:"Fri",6:"Sat"};
   const SH={0:"Jan",1:"Feb",2:"Mar",3:"Apr",4:"May",5:"Jun",6:"Jul",7:"Aug",8:"Sep",9:"Oct",10:"Nov",11:"Dec"};
@@ -8869,8 +9008,8 @@ function lmCalGrid(weeks,scope,data,ym){
 function lmRenderCalendar(){
   const data=lmCalData();
   if(!data.weekNums.length) return '<div style="font-size:12px;color:var(--muted);padding:24px;text-align:center">No dated lessons yet — upload a master schedule first.</div>';
-  const KIDS=["lincoln","ellis","lucy","julian"];
-  const KC={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#b45309"};
+  const KIDS=[...ROSTER];
+  const KC=KID_COLOR;
   const MON=["#0F6E56","#534AB7","#993C1D","#185FA5","#854F0B","#993556"];
   const ym=_lmCalYM(data); const Y=Math.floor(ym/12), M=ym%12, mc=MON[M%6];
   const weeks=_lmWeeksInMonth(data,ym);
@@ -8914,8 +9053,8 @@ function lmRenderCalendar(){
 }
 function lmCalPrint(){
   const data=lmCalData(); if(!data.weekNums.length) return;
-  const KIDS=["lincoln","ellis","lucy","julian"];
-  const KC={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#b45309"};
+  const KIDS=[...ROSTER];
+  const KC=KID_COLOR;
   const ym=_lmCalYM(data);
   const weeks=_lmWeeksInMonth(data,ym);
   const scope=(lmCalKid==="all")?KIDS:[lmCalKid];
@@ -9407,7 +9546,7 @@ function smapRenderEditor(planKey,plan){
 
   const kids=plan.kids||[];
   const dates=smapGetWeekDates(plan,smapViewWeek);
-  const KCOL={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#c45e1a"};
+  const KCOL=KID_COLOR;
   const today=new Date().toISOString().slice(0,10);
   const planStart=plan.start||"";
   const planEnd=plan.end||"";
@@ -9499,7 +9638,7 @@ function smapRenderEditor(planKey,plan){
 function smapRenderMonth(planKey,plan){
   const sm=sessionMapData[planKey];
   const kids=plan.kids||[];
-  const KCOL={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#c45e1a"};
+  const KCOL=KID_COLOR;
   const today=new Date().toISOString().slice(0,10);
   if(!smapMonth) smapMonth=today.slice(0,7);
   const[yr,mo]=smapMonth.split("-").map(Number);
@@ -9548,7 +9687,7 @@ function smapRenderMonth(planKey,plan){
 function smapRenderSession(planKey,plan){
   const sm=sessionMapData[planKey];
   const kids=plan.kids||[];
-  const KCOL={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#c45e1a"};
+  const KCOL=KID_COLOR;
   const today=new Date().toISOString().slice(0,10);
   const start=plan.start||today;
   const end=plan.end||today;
@@ -9904,7 +10043,7 @@ function computeFutureSlots(){
 function computeFinishLines(forKid){
   const rows=[];
   if(!currData||!currData.subjects) return rows;
-  const kids=(forKid==="all"||forKid==="mom")?["lincoln","ellis","lucy","julian"]:[forKid];
+  const kids=(forKid==="all"||forKid==="mom")?[...ROSTER]:[forKid];
   const future=computeFutureSlots();
   for(const kid of kids){
     const subs=currData.subjects[kid]||{};
@@ -12688,7 +12827,7 @@ function renderMastery(el){
   try{ _renderMasteryInner(el); }catch(e){ console.error("Mastery render error:",e); el.innerHTML='<div style="padding:40px;text-align:center;color:#dc2626"><b>Mastery tab error</b><br><span style="font-size:11px;color:#666">'+e.message+'</span></div>'; }
 }
 function _renderMasteryInner(el){
-  const kids=["lincoln","ellis","lucy","julian"];
+  const kids=[...ROSTER];
   if(!kids.includes(masteryKid)) masteryKid=kids[0];
 
   let items=masteryData[masteryKid]||[];
@@ -12919,7 +13058,7 @@ function _renderMasteryInner(el){
 
   // ── HEAT MAP VIEW ──
   if(mastView==="heatmap"){
-    const allKids=["lincoln","ellis","lucy","julian"];
+    const allKids=[...ROSTER];
 
     // Legend
     h+='<div class="mast-hm-legend">';
@@ -14343,7 +14482,7 @@ function openBoDialog(d){
     setTimeout(()=>{const i=document.getElementById("bo-pin-input");if(i)i.focus();},50);
     return;
   }
-  boForm={type:"fullDay",kids:["lincoln","ellis","lucy"],start:"",end:"",momReturn:"",day:d||day};
+  boForm={type:"fullDay",kids:[...SCHOOL_KIDS],start:"",end:"",momReturn:"",day:d||day};
   renderBoDialog();
 }
 function closeBoDialog(){ document.getElementById("bo-dlg-wrap").style.display="none"; }
@@ -14370,7 +14509,7 @@ function renderBoDialog(){
   // Kids
   h+='<div class="bo-dlg-lbl">Kids Affected</div>';
   h+='<div class="bo-dlg-kids">';
-  ["lincoln","ellis","lucy","julian"].forEach(k=>{
+  [...ROSTER].forEach(k=>{
     const sel=f.kids.includes(k);
     const kc=SL_KCOL[k]||"#666";
     h+='<button class="bo-dlg-kid'+(sel?" sel":"")+'" style="'+(sel?"background:"+kc+";color:#fff":"color:"+kc)+'" onclick="boToggleKid(\''+k+'\')">'+cap(k)+'</button>';
@@ -14523,7 +14662,7 @@ function renderDisplacementSummary(day, kid){
     // Group by kid
     const byKid={};
     vm.forEach(t=>{ if(!byKid[t.who]) byKid[t.who]=[]; byKid[t.who].push(t); });
-    const kidOrder=["lincoln","ellis","lucy","julian"];
+    const kidOrder=[...ROSTER];
     kidOrder.forEach(k=>{
       if(!byKid[k]||!byKid[k].length) return;
       h+='<div style="margin-bottom:6px">';
@@ -14544,7 +14683,7 @@ function renderDisplacementSummary(day, kid){
     vs.forEach(t=>{ if(!byKidS[t.who]) byKidS[t.who]=[]; byKidS[t.who].push(t); });
     h+='<div style="font-size:11px;color:#991b1b;font-weight:600;margin-top:4px">';
     const parts=[];
-    ["lincoln","ellis","lucy","julian"].forEach(k=>{
+    [...ROSTER].forEach(k=>{
       if(byKidS[k]) parts.push(cap(k)+': '+byKidS[k].length);
     });
     h+=parts.join(', ')+' couldn\'t fit — see carry-over ↓</div>';
@@ -14727,7 +14866,7 @@ function renderRules(el,headerHtml){
   const ws=(r.withSitter||[]);
   h+='<div class="rules-section-lbl" style="margin-top:10px">With '+SITTER_NAME+' (no school during window)</div>';
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;padding:6px 0">';
-  ["lincoln","ellis","lucy","julian"].forEach(k=>{
+  [...ROSTER].forEach(k=>{
     const on=ws.includes(k);
     h+='<div class="pnw-chip'+(on?" on":"")+'" onclick="rulesToggleWithSitter(\''+k+'\')">'+cap(k)+'</div>';
   });
@@ -14834,7 +14973,7 @@ function renderRules(el,headerHtml){
   h+='<div class="rules-card-title"><span>&#128260;</span> Workflow Orders</div>';
   h+='<div class="rules-card-arrow">&#9654;</div></div>';
   h+='<div class="rules-card-body">';
-  ["lincoln","ellis","lucy","julian"].forEach(k=>{
+  [...ROSTER].forEach(k=>{
     const kc=SL_KCOL[k]||"#666";
     const kw=wf[k]||{};
     h+='<div class="rules-kid-chip" style="background:'+kc+'">'+cap(k)+'</div>';
@@ -14876,7 +15015,7 @@ function renderRules(el,headerHtml){
   h+='<div style="font-size:11px;color:var(--muted);padding-bottom:6px">Mirrors each subject\'s device from the Subjects page — edit it there.</div>';
   (function(){
     var groups={computer:[],ipad:[],phone:[],paper:[]};
-    ["lincoln","ellis","lucy","julian"].forEach(function(k){ var s=(currData&&currData.subjects&&currData.subjects[k])||{}; for(var key in s){ if(s[key].paused) continue; var d=s[key].device||"paper"; if(d==="ipad/phone") d="ipad"; if(!groups[d]) groups[d]=[]; groups[d].push(s[key].display||key); } });
+    [...ROSTER].forEach(function(k){ var s=(currData&&currData.subjects&&currData.subjects[k])||{}; for(var key in s){ if(s[key].paused) continue; var d=s[key].device||"paper"; if(d==="ipad/phone") d="ipad"; if(!groups[d]) groups[d]=[]; groups[d].push(s[key].display||key); } });
     [["computer","\u{1F4BB}","Computer"],["ipad","\u{1F4F1}","iPad"],["phone","\u{1F4DE}","Phone"],["paper","\u{1F4C4}","Paper"]].forEach(function(g){
       var list=(groups[g[0]]||[]).sort();
       if(!list.length) return;
@@ -14948,7 +15087,7 @@ function renderRules(el,headerHtml){
     h+='</div>';
   });
   (function(){
-    var allSubs={}; ["lincoln","ellis","lucy","julian"].forEach(function(k){ var s=(currData&&currData.subjects&&currData.subjects[k])||{}; for(var key in s){ if(!s[key].paused) allSubs[s[key].display||key]=1; } });
+    var allSubs={}; [...ROSTER].forEach(function(k){ var s=(currData&&currData.subjects&&currData.subjects[k])||{}; for(var key in s){ if(!s[key].paused) allSubs[s[key].display||key]=1; } });
     var addable=Object.keys(allSubs).filter(function(d){return !mp[d];}).sort();
     if(addable.length){
       h+='<div style="display:flex;align-items:center;gap:6px;padding-top:10px;border-top:1px solid var(--border);margin-top:6px">';
@@ -15003,7 +15142,7 @@ function renderRules(el,headerHtml){
   h+='<div class="rules-card-body">';
   h+='<div style="font-size:11px;color:var(--muted);padding-bottom:6px">A read-only view of every subject — duration, device, Mom, and rules. These live on the Subjects page; edit them there.</div>';
   h+='<button onclick="setAdminSub(\'curriculum\')" style="padding:6px 14px;border:1px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-bottom:10px">&#9998; Edit on Subjects page &rarr;</button>';
-  ["lincoln","ellis","lucy","julian"].forEach(function(k){
+  [...ROSTER].forEach(function(k){
     var subs=(currData&&currData.subjects&&currData.subjects[k])||{};
     var keys=Object.keys(subs).filter(function(sk){return !subs[sk].paused;}).sort(function(a,b){return (subs[a].display||a).localeCompare(subs[b].display||b);});
     if(!keys.length) return;
@@ -15075,7 +15214,7 @@ function renderRules(el,headerHtml){
 }
 
 function renderSlotsConfig(el,headerHtml){
-  const kids=["lincoln","ellis","lucy","julian"];
+  const kids=[...ROSTER];
   let h=headerHtml||"";
   h+='<div style="padding:0 12px">';
   h+='<div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700;margin-bottom:4px">🎰 Slot Machine Config</div>';
@@ -15154,7 +15293,8 @@ function renderAdminGenerate(el,headerHtml){
     h+='<button onclick="openPlanNextWeek('+cw+')" style="flex:1;padding:12px;border-radius:14px;border:1.5px solid var(--border);background:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Regenerate Week '+cw+'</button>';
     h+='<button onclick="openPlanNextWeek('+nw+')" style="flex:1;padding:12px;border-radius:14px;border:none;background:linear-gradient(135deg,#111827,#1e3a5f);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;box-shadow:0 2px 8px rgba(0,0,0,0.15)">Plan Week '+nw+' →</button>';
     h+='</div>';
-    h+='<div style="margin:0 0 14px"><button onclick="downloadWeekJSON()" style="width:100%;padding:10px;border-radius:12px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:700;color:#1f2937;cursor:pointer;font-family:\'DM Sans\',sans-serif">⬇️ Download '+WK.replace("week","Week ")+' JSON — for notebooks</button><div style="font-size:11px;color:var(--muted);margin-top:5px;line-height:1.4">Exports the current committed week to feed the notebook generators (replaces the Excel→JSON step).</div></div>';
+    h+='<div style="margin:0 0 8px"><button onclick="haOpenNotebookPicker()" style="width:100%;padding:10px;border-radius:12px;border:1.5px solid #fed7aa;background:#fff7ed;font-size:12px;font-weight:700;color:#9a3412;cursor:pointer;font-family:\'DM Sans\',sans-serif">📓 Generate Notebooks — in-app (beta)</button><div style="font-size:11px;color:var(--muted);margin-top:5px;line-height:1.4">Builds print-ready notebooks right here, no terminal. Julian first; more kids coming.</div></div>';
+    h+='<div style="margin:0 0 14px"><button onclick="downloadWeekJSON()" style="width:100%;padding:10px;border-radius:12px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:700;color:#1f2937;cursor:pointer;font-family:\'DM Sans\',sans-serif">⬇️ Download '+WK.replace("week","Week ")+' JSON — for notebooks</button><div style="font-size:11px;color:var(--muted);margin-top:5px;line-height:1.4">Exports the current committed week to feed the desktop generators (the older Python path).</div></div>';
     if(gwStatus) h+='<div style="background:#dcfce7;border:1px solid #86efac;border-radius:10px;padding:10px 14px;font-size:12px;font-weight:700;color:#15803d;margin-bottom:12px">'+gwStatus+'</div>';
     if(gwResult){
       const tc=gwResult.tasks.length;
@@ -15862,7 +16002,7 @@ function renderPlanNextWeek(){
     if(sitterCount){
       h+='<div style="margin-top:10px"><span style="font-size:12px;font-weight:600">With '+SITTER_NAME+'</span> <span style="font-size:11px;color:var(--muted)">(no school during window)</span></div>';
       h+='<div class="pnw-chip-row" style="margin-top:4px">';
-      ["lincoln","ellis","lucy","julian"].forEach(k=>{
+      [...ROSTER].forEach(k=>{
         const on=(c.withSitter||[]).includes(k);
         h+='<div class="pnw-chip'+(on?" on":"")+'" onclick="pnwToggleWithSitter(\''+k+'\')">'+cap(k)+'</div>';
       });
@@ -15947,7 +16087,7 @@ function renderPlanNextWeek(){
       h+='<span style="color:#3b82f6">'+smapPlans.map(([_,p])=>p.label).join(", ")+'</span></div>';
     }
 
-    const KID_COL={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#c45e1a"};
+    const KID_COL=KID_COLOR;
     const dayOrder=["monday","tuesday","wednesday","thursday","friday","saturday"];
     const sortedDays=Object.keys(r.dates).sort((a,b)=>dayOrder.indexOf(a)-dayOrder.indexOf(b));
 
@@ -16584,7 +16724,7 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
     lucy:gwByCategory("lucy",kidAssignments.lucy||{}),
     julian:gwByCategory("julian",kidAssignments.julian||{})
   };
-  const KIDS=["lincoln","ellis","lucy","julian"]; // Julian is a first-class kid now
+  const KIDS=[...ROSTER]; // Julian is a first-class kid now
 
   // Lesson Map per-day run order (scheduleOverrides[date][kid].order): rank-sort each bucket.
   const dayOrder={};
@@ -16674,7 +16814,7 @@ function gwAutoBalance(dayData,lateStart,skipDays){
   const DAY_END=_rr.schoolEnd;
   const LUNCH=_rr.lunchEnd-_rr.lunchStart;
 
-  for(const kid of ["lincoln","ellis","lucy","julian"]){
+  for(const kid of [...ROSTER]){
     const subjects=gwGetSubjects(kid);
     const durMap={};
     for(const[k,s] of Object.entries(subjects)) durMap[k]=s.minutes||20;
@@ -16847,7 +16987,7 @@ function gwReadWeek(weekNum,ignoreAuto){
   const dayData={};
   const weekLabel="Wk "+weekNum;
 
-  for(const kid of ["lincoln","ellis","lucy","julian"]){
+  for(const kid of [...ROSTER]){
     const wdMap=currData.weekDays[kid]||{};
     const lessons=currData.lessons[kid]||{};
     const dayNums=wdMap[weekLabel];
@@ -16911,7 +17051,7 @@ function resolveWeekSlots(weekNum,ignoreAuto){
   const sortedDates=Object.keys(dayData).sort();
   const slots={};
 
-  for(const kid of ["lincoln","ellis","lucy","julian"]){
+  for(const kid of [...ROSTER]){
     const subjects=currData.subjects[kid]||{};
     const subjectSlots={};
     slots[kid]=subjectSlots;
@@ -17076,7 +17216,7 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
   const cursors={};
   const catchup={};  // {kid:{sk:nExtraSessions}} — how many catch-up slots were added this week
 
-  for(const kid of ["lincoln","ellis","lucy","julian"]){
+  for(const kid of [...ROSTER]){
     cursors[kid]={};
     const subjects=currData.subjects[kid]||{};
     const subjectSlots=resolved.slots[kid]||{};
@@ -17238,7 +17378,7 @@ function generateWeek(config){
   const calendarSkips=[];
   (function(){
     const seen={};
-    for(const kid of ["lincoln","ellis","lucy","julian"]){
+    for(const kid of [...ROSTER]){
       const wdMap=(currData.weekDays||{})[kid]||{};
       const lessons=(currData.lessons||{})[kid]||{};
       for(const dn of (wdMap["Wk "+weekNum]||[])){
@@ -17263,7 +17403,7 @@ function generateWeek(config){
     if(!balanced[dk]) continue;
     const dkDate=gwParseDate(dk);
     const dkAbbr=_WDAY_ABBR2[dkDate.getDay()];
-    for(const kid of ["lincoln","ellis","lucy","julian"]){
+    for(const kid of [...ROSTER]){
       if(!balanced[dk][kid]||!Object.keys(balanced[dk][kid]).length) continue;
       const subs=currData&&currData.subjects[kid]||{};
       for(const sk of Object.keys(subs)){
