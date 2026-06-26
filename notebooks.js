@@ -762,10 +762,1207 @@
   }
 
   /* ============================================================================
+   *  LINCOLN  (5th grade — snakes 🐍)
+   *  Ported from notebook_generator.py. The big NOTEBOOK_CSS and the five
+   *  question banks are injected straight from the Python source (faithful, not
+   *  hand-transcribed). Brain-break + enrichment pages deferred to a later pass.
+   * ========================================================================== */
+
+  var LINCOLN_CSS = "\n  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n\n  :root {\n    --green-dark:  #1a3a2a;\n    --green-mid:   #2d6a4f;\n    --green-light: #b7e4c7;\n    --green-pale:  #f2faf5;\n    --gold:        #c9a84c;\n    --gold-pale:   #fdf8ee;\n    --ink:         #1c1c1e;\n    --muted:       #6b7280;\n    --border:      #d1d5db;\n    --white:       #ffffff;\n  }\n\n  /* PRINT-TUNED PALETTE \u2014 applies only when printing; the screen stays vivid.\n     Inkjet on plain paper renders golds/light-greens weak and pale tints washed,\n     so deepen those and darken muted text for legibility. */\n  @media print {\n    :root {\n      --green-dark:  #21503a;\n      --green-light: #8ed2a8;\n      --green-pale:  #e8f4ec;\n      --gold:        #b1882f;\n      --gold-pale:   #f6ecd6;\n      --muted:       #555c67;\n      --border:      #b9bec7;\n    }\n  }\n\n  body {\n    font-family: 'DM Sans', sans-serif;\n    background: #d8d8d8;\n    padding: 40px 20px;\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    gap: 48px;\n  }\n\n  .page-label {\n    font-family: 'DM Mono', monospace;\n    font-size: 10px;\n    letter-spacing: 0.2em;\n    text-transform: uppercase;\n    color: #888;\n    margin-bottom: -40px;\n    align-self: flex-start;\n    margin-left: calc(50% - 4.25in);\n  }\n\n  .page {\n    width: 8.5in;\n    height: 11in;\n    background: var(--white);\n    box-shadow: 0 4px 40px rgba(0,0,0,0.2);\n    border-radius: 3px;\n    display: flex;\n    flex-direction: column;\n    overflow: hidden;\n  }\n\n  .header {\n    background: var(--green-dark);\n    padding: 13px 40px 11px;\n    display: flex;\n    justify-content: space-between;\n    align-items: flex-end;\n    flex-shrink: 0;\n  }\n  .header-eyebrow {\n    font-family: 'DM Mono', monospace;\n    font-size: 8px;\n    letter-spacing: 0.2em;\n    text-transform: uppercase;\n    color: var(--green-light);\n    margin-bottom: 3px;\n    opacity: 0.8;\n  }\n  .header-name {\n    font-family: 'Fraunces', serif;\n    font-size: 22px;\n    font-weight: 700;\n    color: #fff;\n    line-height: 1;\n  }\n  .header-sub {\n    font-size: 10.5px;\n    color: rgba(255,255,255,0.4);\n    margin-top: 3px;\n  }\n  .header-right { text-align: right; }\n  .header-week {\n    font-family: 'Fraunces', serif;\n    font-size: 15px;\n    font-weight: 600;\n    color: var(--gold);\n  }\n  .header-date {\n    font-family: 'DM Mono', monospace;\n    font-size: 9px;\n    color: rgba(255,255,255,0.35);\n    margin-top: 3px;\n    letter-spacing: 0.05em;\n  }\n\n  .accent-bar {\n    height: 5px;\n    flex-shrink: 0;\n    background: repeating-linear-gradient(\n      90deg,\n      var(--green-mid) 0px, var(--green-mid) 18px,\n      var(--gold) 18px, var(--gold) 22px,\n      var(--green-mid) 22px, var(--green-mid) 40px\n    );\n  }\n\n  .body {\n    padding: 6px 40px 5px;\n    flex: 1;\n    display: flex;\n    flex-direction: column;\n    gap: 4px;\n    overflow: hidden;\n  }\n\n  .slabel {\n    font-family: 'DM Mono', monospace;\n    font-size: 8px;\n    letter-spacing: 0.18em;\n    text-transform: uppercase;\n    color: var(--green-mid);\n    font-weight: 500;\n    margin-bottom: 4px;\n  }\n\n  .mood-row {\n    display: flex;\n    align-items: center;\n    justify-content: space-between;\n    background: var(--green-pale);\n    border: 1.5px solid var(--green-light);\n    border-radius: 10px;\n    padding: 3px 16px;\n    flex-shrink: 0;\n  }\n  .mood-label { font-size: 12px; font-weight: 600; color: var(--green-dark); }\n  .mood-faces { display: flex; gap: 14px; align-items: center; }\n  .mood-opt { display: flex; flex-direction: column; align-items: center; gap: 3px; }\n  .mood-circle {\n    width: 26px; height: 26px; border-radius: 50%;\n    border: 2px solid var(--border);\n    display: flex; align-items: center; justify-content: center;\n    font-size: 15px; background: white;\n  }\n  .mood-circle.sm { width: 28px; height: 28px; font-size: 16px; }\n  .mood-word { font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace; }\n\n  .col2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }\n  .col3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }\n\n  .card { border-radius: 10px; padding: 5px 11px; }\n  .card-green { background: var(--green-pale); border: 1.5px solid var(--green-light); }\n  .card-gold  { background: var(--gold-pale);  border: 1.5px solid #e8d9a8; }\n  .card-plain { background: #f9fafb;           border: 1.5px solid var(--border); }\n\n  .pill {\n    display: inline-flex; align-items: center; gap: 3px;\n    font-size: 10px; font-weight: 600;\n    padding: 3px 9px; border-radius: 20px;\n    margin: 2px 3px 2px 0;\n  }\n  .pill-paper  { background: #dbeafe; color: #1d4ed8; }\n  .pill-screen { background: #ede9fe; color: #6d28d9; }\n\n  .skill-table { width: 100%; border-collapse: collapse; }\n  .skill-table thead tr { background: var(--green-dark); }\n  .skill-table thead th {\n    padding: 4px 8px; color: white;\n    font-size: 8.5px; font-weight: 600;\n    letter-spacing: 0.04em; text-align: center;\n  }\n  .skill-table thead th:first-child { text-align: left; border-radius: 5px 0 0 0; }\n  .skill-table thead th:last-child  { border-radius: 0 5px 0 0; }\n  .skill-table tbody tr { border-bottom: 1px solid #f0f0f0; }\n  .skill-table tbody tr:nth-child(even) { background: var(--green-pale); }\n  .skill-table tbody td { padding: 2px 8px; font-size: 11px; color: var(--ink); }\n  .skill-table tbody td:not(:first-child) { text-align: center; }\n  .bubble {\n    display: inline-block; width: 15px; height: 15px;\n    border-radius: 50%; border: 1.5px solid #c8d4c8; background: white;\n  }\n\n  .word-main {\n    font-family: 'Fraunces', serif;\n    font-size: 22px; font-weight: 700;\n    color: var(--green-dark); line-height: 1;\n  }\n  .word-pos {\n    font-family: 'DM Mono', monospace;\n    font-size: 9px; color: var(--muted);\n    font-style: italic; margin-left: 6px;\n  }\n  .word-def {\n    font-size: 12px; line-height: 1.38;\n    color: var(--ink); margin: 4px 0 5px;\n    padding-bottom: 4px;\n    border-bottom: 1px dashed #e2d09a;\n  }\n  .write-prompt { font-size: 11px; font-weight: 600; color: var(--ink); margin-bottom: 6px; }\n  .write-line { border-bottom: 1.5px solid #d1d5db; height: 23px; margin-bottom: 3px; }\n\n  .q-tag {\n    display: inline-flex; align-items: center; gap: 4px;\n    background: var(--gold); color: white;\n    font-family: 'DM Mono', monospace; font-size: 8px;\n    letter-spacing: 0.1em; text-transform: uppercase;\n    padding: 3px 9px; border-radius: 20px;\n    margin-bottom: 4px; font-weight: 500;\n  }\n  .q-text { font-size: 12px; font-weight: 600; color: var(--ink); margin-bottom: 4px; line-height: 1.32; }\n  .choices { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 14px; }\n  .choice { font-size: 11px; color: var(--ink); display: flex; align-items: flex-start; gap: 6px; line-height: 1.28; }\n  .c-letter {\n    display: inline-flex; align-items: center; justify-content: center;\n    width: 18px; height: 18px; border-radius: 50%;\n    border: 1.5px solid var(--border);\n    font-size: 10px; font-weight: 700; color: var(--muted);\n    flex-shrink: 0; margin-top: 1px; background: white;\n  }\n\n  .reflection-prompt { font-size: 12px; font-weight: 600; color: var(--ink); margin-bottom: 6px; line-height: 1.4; }\n  .divider { height: 1px; background: #e5e7eb; flex-shrink: 0; }\n\n  /* Beginning / Closing bookend banners \u2014 make the Morning & Closing Notebook obvious */\n  .bookend {\n    display: flex; align-items: center; gap: 11px;\n    border-radius: 10px; padding: 2px 12px; flex-shrink: 0;\n    border: 2px solid var(--green-mid);\n  }\n  .bookend-start { background: linear-gradient(135deg, var(--gold-pale), #fffdf5); border-color: var(--gold); }\n  .bookend-close { background: var(--green-pale); border-color: var(--green-mid); }\n  .bookend-icon { font-size: 16px; line-height: 1; flex-shrink: 0; }\n  .bookend-title { font-family: 'Fraunces', serif; font-size: 14px; font-weight: 700; color: var(--green-dark); line-height: 1.05; }\n  .bookend-sub { font-size: 10px; font-weight: 600; color: var(--green-mid); letter-spacing: 0.02em; margin-top: 1px; }\n  .bookend-badge {\n    margin-left: auto; font-family: 'DM Mono', monospace; font-size: 8px;\n    letter-spacing: 0.12em; text-transform: uppercase; color: white;\n    background: var(--green-mid); padding: 3px 10px; border-radius: 20px; flex-shrink: 0; font-weight: 600;\n  }\n  .bookend-start .bookend-badge { background: var(--gold); }\n\n  .grat-item { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 5px; }\n  .grat-item:last-child { margin-bottom: 0; }\n  .grat-num { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 700; color: var(--green-light); line-height: 1; padding-bottom: 2px; min-width: 14px; }\n  .grat-line { flex: 1; border-bottom: 1.5px solid #e5e7eb; height: 17px; }\n\n  .footer {\n    background: var(--green-dark);\n    padding: 5px 40px;\n    display: flex; justify-content: space-between; align-items: center;\n    flex-shrink: 0;\n  }\n  .footer-txt {\n    font-family: 'DM Mono', monospace; font-size: 8px;\n    color: rgba(255,255,255,0.28); letter-spacing: 0.1em; text-transform: uppercase;\n  }\n  .footer-snake { font-size: 13px; }\n\n  /* Weekly-only */\n  .summary-card { background: var(--green-dark); color: white; border-radius: 11px; padding: 11px 14px; }\n  .summary-title { font-family: 'Fraunces', serif; font-size: 12px; font-weight: 700; color: white; opacity: 0.85; margin-bottom: 6px; }\n  .summary-stats { display: grid; grid-template-columns: repeat(4,1fr); gap: 5px; margin-bottom: 6px; }\n  .stat-box { background: rgba(255,255,255,0.08); border-radius: 7px; padding: 6px 5px; text-align: center; }\n  .stat-num { font-family: 'Fraunces', serif; font-size: 20px; font-weight: 700; color: var(--green-light); line-height: 1; }\n  .stat-lbl { font-size: 8px; opacity: 0.45; margin-top: 3px; font-family: 'DM Mono', monospace; letter-spacing: 0.05em; text-transform: uppercase; }\n  .s-pills { display: flex; flex-wrap: wrap; gap: 4px; }\n  .s-pill { font-size: 9.5px; font-weight: 600; padding: 2px 8px; border-radius: 20px; }\n  .s-done   { background: rgba(183,228,199,0.18); color: var(--green-light); }\n  .s-behind { background: rgba(239,68,68,0.18); color: #fca5a5; }\n  .s-ahead  { background: rgba(201,168,76,0.18); color: var(--gold); }\n\n  .pace-card { background: var(--green-pale); border: 1.5px solid var(--green-light); border-radius: 10px; padding: 8px 12px; }\n  .pace-row { display: flex; align-items: center; margin-bottom: 4px; gap: 8px; }\n  .pace-row:last-child { margin-bottom: 0; }\n  .pace-subj { font-size: 10.5px; font-weight: 600; color: var(--ink); min-width: 105px; }\n  .pace-bar-wrap { flex: 1; height: 6px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }\n  .pace-bar { height: 100%; border-radius: 4px; background: var(--green-mid); }\n  .pace-bar.behind { background: #ef4444; }\n  .pace-bar.ahead  { background: var(--gold); }\n  .pace-badge { font-family: 'DM Mono', monospace; font-size: 8px; font-weight: 500; padding: 2px 7px; border-radius: 20px; min-width: 55px; text-align: center; }\n  .badge-on  { background: #dcfce7; color: #166534; }\n  .badge-ah  { background: #fef9c3; color: #854d0e; }\n  .badge-beh { background: #fee2e2; color: #991b1b; }\n\n  /* Schedule grid */\n  .sched-grid { display: grid; gap: 10px; }\n  .sched-col { border-radius: 9px; overflow: hidden; border: 1.5px solid var(--border); }\n  .sched-head { background: var(--green-dark); color: white; padding: 7px 11px; }\n  .sched-day-name { font-family: 'Fraunces', serif; font-size: 14px; font-weight: 700; line-height: 1; margin-bottom: 3px; }\n  .sched-date-lbl { font-family: 'DM Mono', monospace; font-size: 8px; opacity: 0.5; letter-spacing: 0.05em; }\n  .sched-tasks { padding: 7px 10px; background: white; }\n  .sched-row { font-size: 10.5px; color: var(--ink); padding: 3px 0; border-bottom: 1px solid #f0f0f0; line-height: 1.35; display: flex; align-items: baseline; gap: 3px; }\n  .sched-row:last-child { border-bottom: none; }\n  .sched-screen { color: #6d28d9; }\n  .sched-read   { color: var(--green-mid); }\n\n  .passage-tag { display: inline-flex; align-items: center; gap: 4px; background: var(--gold); color: white; font-family: 'DM Mono', monospace; font-size: 8px; letter-spacing: 0.1em; text-transform: uppercase; padding: 3px 9px; border-radius: 20px; margin-bottom: 5px; font-weight: 500; }\n  .passage-text { font-size: 11.5px; line-height: 1.55; color: var(--ink); margin-bottom: 6px; }\n  .passage-text em { font-style: normal; font-weight: 700; color: var(--green-dark); border-bottom: 1.5px solid var(--gold); padding-bottom: 1px; }\n  .wq { margin-bottom: 5px; }\n  .wq:last-child { margin-bottom: 0; }\n  .wq-num { font-family: 'DM Mono', monospace; font-size: 8.5px; font-weight: 500; color: var(--green-mid); margin-bottom: 2px; }\n  .wq-text { font-size: 12px; font-weight: 600; color: var(--ink); margin-bottom: 4px; line-height: 1.4; }\n\n  /* \u2500\u2500 Teaching Companion \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n  .companion-accent {\n    height: 5px; flex-shrink: 0;\n    background: repeating-linear-gradient(\n      90deg,\n      #1e2d40 0px, #1e2d40 18px,\n      #c9a84c 18px, #c9a84c 22px,\n      #1e2d40 22px, #1e2d40 40px\n    );\n  }\n  .parent-badge {\n    display: inline-block; background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.7);\n    font-family: 'DM Mono', monospace; font-size: 7px;\n    letter-spacing: 0.15em; text-transform: uppercase;\n    padding: 2px 7px; border-radius: 20px; margin-left: 8px;\n    vertical-align: middle;\n  }\n  .constraint-banner {\n    background: #fffbeb; border: 1.5px solid #f59e0b;\n    border-radius: 8px; padding: 7px 12px;\n    font-size: 11px; color: #78350f; line-height: 1.5;\n  }\n  .constraint-banner strong { color: #78350f; font-size: 10px; letter-spacing: 0.05em; }\n  .key-day  { font-family: 'Fraunces', serif; font-size: 11px; font-weight: 700; color: #1e2d40; }\n  .key-date { font-family: 'DM Mono', monospace; font-size: 7px; color: var(--muted); letter-spacing: 0.08em; margin-left: 6px; }\n  .key-row  {\n    display: flex; align-items: baseline; gap: 5px;\n    font-size: 10.5px; padding: 2px 0;\n    border-bottom: 1px solid #f0f0f0; line-height: 1.35;\n  }\n  .key-row:last-child { border-bottom: none; }\n  .key-label { font-family: 'DM Mono', monospace; font-size: 7px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; min-width: 48px; flex-shrink: 0; }\n  .key-ans   { font-weight: 700; color: #1e2d40; }\n  .key-sub   { color: var(--muted); font-size: 9px; }\n  .word-detail { padding: 5px 9px; }\n  .word-detail-name  { font-family: 'Fraunces', serif; font-size: 13px; font-weight: 700; color: var(--green-dark); line-height: 1; }\n  .word-detail-pos   { font-family: 'DM Mono', monospace; font-size: 8px; color: var(--muted); font-style: italic; }\n  .word-detail-def   { font-size: 10px; line-height: 1.4; color: var(--ink); margin: 3px 0 2px; }\n  .word-detail-ex    { font-size: 9px; color: var(--muted); line-height: 1.35; font-style: italic; }\n  .record-box   { border: 1.5px solid var(--border); border-radius: 8px; padding: 7px 11px; }\n  .record-day   { font-family: 'Fraunces', serif; font-size: 12px; font-weight: 700; color: var(--green-dark); margin-bottom: 5px; }\n  .record-lines { display: flex; flex-direction: column; gap: 4px; }\n  .carry-box    { border: 1.5px dashed var(--border); border-radius: 8px; padding: 9px 14px; }\n  .carry-title  {\n    font-family: 'DM Mono', monospace; font-size: 8px;\n    letter-spacing: 0.18em; text-transform: uppercase;\n    color: var(--green-mid); margin-bottom: 7px;\n  }\n  .ans-circle {\n    display: inline-flex; align-items: center; justify-content: center;\n    width: 18px; height: 18px; border-radius: 50%;\n    background: var(--green-mid); color: white;\n    font-size: 10px; font-weight: 700;\n    flex-shrink: 0; margin-top: 1px;\n  }\n  .choice-correct { font-weight: 600; color: var(--green-dark); }\n\n  /* \u2500\u2500 Brain Break & Creative Pages \u2500\u2500 */\n  .bb-sec-label {\n    font-family: 'DM Mono', monospace; font-size: 8px; text-transform: uppercase;\n    letter-spacing: 0.15em; color: var(--green-mid);\n    border-bottom: 1px solid var(--green-light); padding-bottom: 3px; margin-bottom: 8px;\n  }\n  /* Maze */\n  .maze-wrap { line-height: 0; display: inline-block; }\n  .maze-wrap table { border-collapse: collapse; }\n  .maze-wrap td { box-sizing: border-box; }\n  .mz-n { border-top: 2px solid var(--ink) !important; }\n  .mz-s { border-bottom: 2px solid var(--ink) !important; }\n  .mz-e { border-right: 2px solid var(--ink) !important; }\n  .mz-w { border-left: 2px solid var(--ink) !important; }\n  .mz-start { background: #d4edda !important; }\n  .mz-end   { background: #ffeaa7 !important; }\n  /* Sudoku 6\u00d76 */\n  .su-wrap table { border-collapse: collapse; }\n  .su-wrap td { text-align: center; vertical-align: middle; border: 1px solid #ccc; font-size: 16px; font-weight: 700; color: var(--ink); }\n  .su-box-right  { border-right:  2.5px solid var(--ink) !important; }\n  .su-box-bottom { border-bottom: 2.5px solid var(--ink) !important; }\n  .su-given { color: var(--green-dark); }\n  /* Number sequences */\n  .seq-row  { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; flex-wrap: wrap; }\n  .seq-num  { display: inline-flex; align-items: center; justify-content: center;\n               min-width: 38px; height: 32px; background: var(--page-bg);\n               border: 1.5px solid var(--green-light); border-radius: 5px;\n               font-weight: 700; font-size: 14px; color: var(--ink); padding: 0 4px; }\n  .seq-blank { border: 1.5px dashed var(--green-mid); background: white; color: white; }\n  .seq-arr  { color: var(--muted); font-size: 12px; }\n  /* Riddles */\n  .riddle-item { margin-bottom: 10px; }\n  .riddle-q    { font-size: 12px; font-weight: 600; color: var(--ink); line-height: 1.55; }\n  .riddle-line { border-bottom: 1px solid var(--border); height: 22px; margin-top: 4px; }\n  /* Caesar cipher */\n  .cipher-row  { font-family: 'DM Mono', monospace; font-size: 9px; color: var(--muted); margin-bottom: 2px; }\n  .cipher-msg  { font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 700; letter-spacing: 0.1em; color: var(--ink); margin: 6px 0 4px; word-break: break-all; }\n  .cipher-blank { border-bottom: 1.5px solid var(--ink); height: 24px; margin-top: 6px; }\n  /* Logic grid */\n  .logic-grid table { border-collapse: collapse; margin-top: 8px; }\n  .logic-grid th, .logic-grid td { border: 1px solid #bbb; text-align: center; vertical-align: middle; font-size: 9.5px; padding: 3px; }\n  .logic-grid th { background: var(--page-bg); font-weight: 700; color: var(--green-dark); }\n  .lg-row-hdr { text-align: left !important; padding-left: 6px !important; font-weight: 700; color: var(--green-dark); background: var(--page-bg); }\n  /* Creative writing prompts */\n  .creative-item { border-left: 3px solid var(--green-mid); padding: 6px 14px; margin-bottom: 12px; }\n  .creative-num  { font-family: 'DM Mono', monospace; font-size: 8px; text-transform: uppercase; letter-spacing: 0.15em; color: var(--green-mid); margin-bottom: 4px; }\n  .creative-q    { font-size: 12.5px; font-weight: 600; color: var(--ink); line-height: 1.55; margin-bottom: 8px; }\n  .creative-line { border-bottom: 1px solid var(--border); height: 22px; }\n\n  @media print {\n    @page { size: letter portrait; margin: 0; }\n    * {\n      -webkit-print-color-adjust: exact !important;\n      print-color-adjust: exact !important;\n      color-adjust: exact !important;\n    }\n    body { background: white; padding: 0; gap: 0; }\n    .page {\n      box-shadow: none; border-radius: 0;\n      width: 8.5in; height: 11in;\n      break-after: page; page-break-after: always; overflow: hidden;\n    }\n    .page:last-of-type { break-after: avoid; page-break-after: avoid; }\n    .page-label { display: none; }\n  }\n";
+  var LINCOLN_DATA = {"banks": {"cogat_verbal": [{"id": "cv01", "tag": "🐍 CogAT · Verbal Analogy", "text": "SCALE is to SNAKE as FEATHER is to ___", "choices": [{"l": "A", "t": "fish"}, {"l": "B", "t": "bird"}, {"l": "C", "t": "nest"}, {"l": "D", "t": "fly"}], "ans": "B"}, {"id": "cv02", "tag": "🐍 CogAT · Verbal Analogy", "text": "VENOM is to FANGS as INK is to ___", "choices": [{"l": "A", "t": "paper"}, {"l": "B", "t": "pen"}, {"l": "C", "t": "color"}, {"l": "D", "t": "write"}], "ans": "B"}, {"id": "cv03", "tag": "🐍 CogAT · Verbal Analogy", "text": "HIBERNATE is to BEAR as MIGRATE is to ___", "choices": [{"l": "A", "t": "snake"}, {"l": "B", "t": "turtle"}, {"l": "C", "t": "bird"}, {"l": "D", "t": "fish"}], "ans": "C"}, {"id": "cv04", "tag": "🐍 CogAT · Verbal Analogy", "text": "SHED is to SKIN as MOLT is to ___", "choices": [{"l": "A", "t": "shell"}, {"l": "B", "t": "feathers"}, {"l": "C", "t": "scales"}, {"l": "D", "t": "color"}], "ans": "B"}, {"id": "cv05", "tag": "🐍 CogAT · Verbal Analogy", "text": "HISS is to WARNING as WAIL is to ___", "choices": [{"l": "A", "t": "singing"}, {"l": "B", "t": "grief"}, {"l": "C", "t": "sleep"}, {"l": "D", "t": "joy"}], "ans": "B"}, {"id": "cv06", "tag": "🐍 CogAT · Verbal Analogy", "text": "COLD is to DORMANT as WARM is to ___", "choices": [{"l": "A", "t": "frozen"}, {"l": "B", "t": "active"}, {"l": "C", "t": "tired"}, {"l": "D", "t": "still"}], "ans": "B"}, {"id": "cv07", "tag": "🐍 CogAT · Verbal Analogy", "text": "PREDATOR is to HUNT as PREY is to ___", "choices": [{"l": "A", "t": "chase"}, {"l": "B", "t": "attack"}, {"l": "C", "t": "flee"}, {"l": "D", "t": "bite"}], "ans": "C"}, {"id": "cv08", "tag": "🐍 CogAT · Verbal Analogy", "text": "CAMOUFLAGE is to HIDE as SPEED is to ___", "choices": [{"l": "A", "t": "rest"}, {"l": "B", "t": "stop"}, {"l": "C", "t": "escape"}, {"l": "D", "t": "swim"}], "ans": "C"}, {"id": "cv09", "tag": "🐍 CogAT · Verbal Analogy", "text": "EGG is to HATCH as SEED is to ___", "choices": [{"l": "A", "t": "wilt"}, {"l": "B", "t": "dry"}, {"l": "C", "t": "water"}, {"l": "D", "t": "sprout"}], "ans": "D"}, {"id": "cv10", "tag": "🐍 CogAT · Verbal Analogy", "text": "NOCTURNAL is to NIGHT as DIURNAL is to ___", "choices": [{"l": "A", "t": "dawn"}, {"l": "B", "t": "dusk"}, {"l": "C", "t": "day"}, {"l": "D", "t": "moon"}], "ans": "C"}, {"id": "cv11", "tag": "🐍 CogAT · Verbal Analogy", "text": "COLD-BLOODED is to REPTILE as WARM-BLOODED is to ___", "choices": [{"l": "A", "t": "fish"}, {"l": "B", "t": "insect"}, {"l": "C", "t": "snake"}, {"l": "D", "t": "mammal"}], "ans": "D"}, {"id": "cv12", "tag": "🐍 CogAT · Verbal Analogy", "text": "PYTHON is to CONSTRICT as COBRA is to ___", "choices": [{"l": "A", "t": "coil"}, {"l": "B", "t": "burrow"}, {"l": "C", "t": "strike"}, {"l": "D", "t": "rattle"}], "ans": "C"}, {"id": "cv13", "tag": "🐍 CogAT · Verbal Analogy", "text": "AMBUSH is to PATIENCE as SPRINT is to ___", "choices": [{"l": "A", "t": "rest"}, {"l": "B", "t": "speed"}, {"l": "C", "t": "distance"}, {"l": "D", "t": "finish"}], "ans": "B"}, {"id": "cv14", "tag": "🐍 CogAT · Verbal Analogy", "text": "TONGUE is to TASTE as EAR is to ___", "choices": [{"l": "A", "t": "smell"}, {"l": "B", "t": "see"}, {"l": "C", "t": "hear"}, {"l": "D", "t": "feel"}], "ans": "C"}, {"id": "cv15", "tag": "🐍 CogAT · Verbal Analogy", "text": "SKELETON is to BONES as FOREST is to ___", "choices": [{"l": "A", "t": "leaves"}, {"l": "B", "t": "roots"}, {"l": "C", "t": "trees"}, {"l": "D", "t": "branches"}], "ans": "C"}, {"id": "cv16", "tag": "🐍 CogAT · Verbal Analogy", "text": "ARMOR is to PROTECT as CAMOUFLAGE is to ___", "choices": [{"l": "A", "t": "attack"}, {"l": "B", "t": "conceal"}, {"l": "C", "t": "reveal"}, {"l": "D", "t": "decorate"}], "ans": "B"}, {"id": "cv17", "tag": "🐍 CogAT · Verbal Analogy", "text": "REPTILE is to SCALES as MAMMAL is to ___", "choices": [{"l": "A", "t": "claws"}, {"l": "B", "t": "fur"}, {"l": "C", "t": "feathers"}, {"l": "D", "t": "shell"}], "ans": "B"}, {"id": "cv18", "tag": "🐍 CogAT · Verbal Analogy", "text": "FANG is to VENOM as THORN is to ___", "choices": [{"l": "A", "t": "beauty"}, {"l": "B", "t": "pain"}, {"l": "C", "t": "leaf"}, {"l": "D", "t": "root"}], "ans": "B"}, {"id": "cv19", "tag": "🐍 CogAT · Verbal Analogy", "text": "SILENT is to STEALTHY as LOUD is to ___", "choices": [{"l": "A", "t": "quiet"}, {"l": "B", "t": "obvious"}, {"l": "C", "t": "hidden"}, {"l": "D", "t": "careful"}], "ans": "B"}, {"id": "cv20", "tag": "🐍 CogAT · Verbal Analogy", "text": "DESERT is to HOT as TUNDRA is to ___", "choices": [{"l": "A", "t": "cold"}, {"l": "B", "t": "wet"}, {"l": "C", "t": "green"}, {"l": "D", "t": "flat"}], "ans": "A"}, {"id": "cv21", "tag": "🐍 CogAT · Verbal Analogy", "text": "FLICK is to TONGUE as WAG is to ___", "choices": [{"l": "A", "t": "arm"}, {"l": "B", "t": "ear"}, {"l": "C", "t": "nose"}, {"l": "D", "t": "tail"}], "ans": "D"}, {"id": "cv22", "tag": "🐍 CogAT · Verbal Analogy", "text": "APEX is to PREDATOR as BASE is to ___", "choices": [{"l": "A", "t": "prey"}, {"l": "B", "t": "ground"}, {"l": "C", "t": "rock"}, {"l": "D", "t": "food"}], "ans": "A"}, {"id": "cv23", "tag": "🐍 CogAT · Verbal Analogy", "text": "CAMOUFLAGE is to BLEND as ARMOR is to ___", "choices": [{"l": "A", "t": "hide"}, {"l": "B", "t": "shine"}, {"l": "C", "t": "deflect"}, {"l": "D", "t": "escape"}], "ans": "C"}, {"id": "cv24", "tag": "🐍 CogAT · Verbal Analogy", "text": "EMERGE is to BURROW as SURFACE is to ___", "choices": [{"l": "A", "t": "air"}, {"l": "B", "t": "deep"}, {"l": "C", "t": "dive"}, {"l": "D", "t": "water"}], "ans": "D"}], "iowa_math": [{"id": "im01", "skill": "elapsed_time", "tag": "🕐 Iowa · Elapsed Time", "text": "A ball python hunts from 6:45 PM to 8:20 PM. How long did it hunt?", "choices": [{"l": "A", "t": "1 hr 15 min"}, {"l": "B", "t": "1 hr 35 min"}, {"l": "C", "t": "1 hr 45 min"}, {"l": "D", "t": "2 hr 20 min"}], "ans": "B"}, {"id": "im02", "skill": "elapsed_time", "tag": "🕐 Iowa · Elapsed Time", "text": "Lincoln starts reading at 10:15 AM and stops at 11:50 AM. How long did he read?", "choices": [{"l": "A", "t": "1 hr 25 min"}, {"l": "B", "t": "1 hr 35 min"}, {"l": "C", "t": "1 hr 45 min"}, {"l": "D", "t": "2 hr 5 min"}], "ans": "B"}, {"id": "im03", "skill": "elapsed_time", "tag": "🕐 Iowa · Elapsed Time", "text": "A snake shed began at 2:30 PM and finished at 5:05 PM. How long did it take?", "choices": [{"l": "A", "t": "2 hr 15 min"}, {"l": "B", "t": "2 hr 25 min"}, {"l": "C", "t": "2 hr 35 min"}, {"l": "D", "t": "2 hr 45 min"}], "ans": "C"}, {"id": "im04", "skill": "elapsed_time", "tag": "🕐 Iowa · Elapsed Time", "text": "A science experiment starts at 9:40 AM and ends at 12:15 PM. How long does it run?", "choices": [{"l": "A", "t": "2 hr 25 min"}, {"l": "B", "t": "2 hr 35 min"}, {"l": "C", "t": "2 hr 45 min"}, {"l": "D", "t": "3 hr 15 min"}], "ans": "B"}, {"id": "im05", "skill": "elapsed_time", "tag": "🕐 Iowa · Elapsed Time", "text": "A king snake was active from 7:55 PM to 11:10 PM. How long was it active?", "choices": [{"l": "A", "t": "3 hr 5 min"}, {"l": "B", "t": "3 hr 15 min"}, {"l": "C", "t": "3 hr 25 min"}, {"l": "D", "t": "4 hr 5 min"}], "ans": "B"}, {"id": "im06", "skill": "elapsed_time", "tag": "🕐 Iowa · Elapsed Time", "text": "Math class begins at 10:35 AM and ends at 12:00 PM. How long is math class?", "choices": [{"l": "A", "t": "1 hr 15 min"}, {"l": "B", "t": "1 hr 25 min"}, {"l": "C", "t": "1 hr 35 min"}, {"l": "D", "t": "1 hr 45 min"}], "ans": "B"}, {"id": "im07", "skill": "elapsed_time", "tag": "🕐 Iowa · Elapsed Time", "text": "Lincoln's school day runs from 10:00 AM to 4:15 PM. How long is that?", "choices": [{"l": "A", "t": "5 hr 45 min"}, {"l": "B", "t": "6 hr 5 min"}, {"l": "C", "t": "6 hr 15 min"}, {"l": "D", "t": "6 hr 25 min"}], "ans": "C"}, {"id": "im08", "skill": "multi_step", "tag": "🔢 Iowa · Multi-Step", "text": "A reptile store sells 3 corn snakes for $45 each and 2 ball pythons for $80 each. What is the total cost?", "choices": [{"l": "A", "t": "$215"}, {"l": "B", "t": "$235"}, {"l": "C", "t": "$295"}, {"l": "D", "t": "$315"}], "ans": "B"}, {"id": "im09", "skill": "multi_step", "tag": "🔢 Iowa · Multi-Step", "text": "Lincoln does 12 math problems per day. He has done 3 days of work. He needs 60 total. How many more days to finish?", "choices": [{"l": "A", "t": "1 day"}, {"l": "B", "t": "2 days"}, {"l": "C", "t": "3 days"}, {"l": "D", "t": "4 days"}], "ans": "B"}, {"id": "im10", "skill": "multi_step", "tag": "🔢 Iowa · Multi-Step", "text": "A snake needs to eat every 10 days. If it last ate on Day 1 and today is Day 34, how many times has it eaten (not counting Day 1)?", "choices": [{"l": "A", "t": "2"}, {"l": "B", "t": "3"}, {"l": "C", "t": "4"}, {"l": "D", "t": "5"}], "ans": "B"}, {"id": "im11", "skill": "multi_step", "tag": "🔢 Iowa · Multi-Step", "text": "A terrarium is 36 inches long. Two hides take up 8 inches each. How many inches are left for the snake to move?", "choices": [{"l": "A", "t": "18 in"}, {"l": "B", "t": "20 in"}, {"l": "C", "t": "22 in"}, {"l": "D", "t": "24 in"}], "ans": "B"}, {"id": "im12", "skill": "multi_step", "tag": "🔢 Iowa · Multi-Step", "text": "A king cobra weighs 9 kg. A ball python weighs 1.5 kg. How many ball pythons equal the cobra's weight?", "choices": [{"l": "A", "t": "4"}, {"l": "B", "t": "5"}, {"l": "C", "t": "6"}, {"l": "D", "t": "7"}], "ans": "C"}, {"id": "im13", "skill": "multi_step", "tag": "🔢 Iowa · Multi-Step", "text": "Lincoln earns 5 points per spelling word and 3 points per math problem. He got 8 spelling words and 10 math problems right. What is his score?", "choices": [{"l": "A", "t": "60"}, {"l": "B", "t": "65"}, {"l": "C", "t": "70"}, {"l": "D", "t": "75"}], "ans": "C"}, {"id": "im14", "skill": "multi_step", "tag": "🔢 Iowa · Multi-Step", "text": "A herpetology club has 24 members. Half are boys. A third of the boys own snakes. How many boys own snakes?", "choices": [{"l": "A", "t": "3"}, {"l": "B", "t": "4"}, {"l": "C", "t": "5"}, {"l": "D", "t": "6"}], "ans": "B"}, {"id": "im15", "skill": "fractions", "tag": "½ Iowa · Fractions", "text": "A snake terrarium is 3/4 full of substrate. Another is 1/2 full. How much more substrate does the first have?", "choices": [{"l": "A", "t": "1/4"}, {"l": "B", "t": "1/3"}, {"l": "C", "t": "1/2"}, {"l": "D", "t": "2/3"}], "ans": "A"}, {"id": "im16", "skill": "fractions", "tag": "½ Iowa · Fractions", "text": "Lincoln finished 2/5 of his reading on Monday and 1/5 on Tuesday. What fraction has he finished?", "choices": [{"l": "A", "t": "1/5"}, {"l": "B", "t": "2/5"}, {"l": "C", "t": "3/5"}, {"l": "D", "t": "4/5"}], "ans": "C"}, {"id": "im17", "skill": "fractions", "tag": "½ Iowa · Fractions", "text": "A bowl of crickets is 5/6 full. The snake eats 2/6 of the bowl. What fraction is left?", "choices": [{"l": "A", "t": "1/6"}, {"l": "B", "t": "2/6"}, {"l": "C", "t": "3/6"}, {"l": "D", "t": "4/6"}], "ans": "C"}, {"id": "im18", "skill": "fractions", "tag": "½ Iowa · Fractions", "text": "Which fraction is greater: 3/4 or 5/8?", "choices": [{"l": "A", "t": "5/8, because 8 > 4"}, {"l": "B", "t": "3/4, because it equals 6/8"}, {"l": "C", "t": "They are equal"}, {"l": "D", "t": "Cannot compare"}], "ans": "B"}, {"id": "im19", "skill": "fractions", "tag": "½ Iowa · Fractions", "text": "Lincoln has 1 and 1/3 cups of mealworms. He uses 2/3 of a cup. How much does he have left?", "choices": [{"l": "A", "t": "1/3"}, {"l": "B", "t": "2/3"}, {"l": "C", "t": "1"}, {"l": "D", "t": "1 and 2/3"}], "ans": "B"}, {"id": "im20", "skill": "fractions", "tag": "½ Iowa · Fractions", "text": "A snake grew 3/10 of a meter in the first year and 4/10 of a meter the second. How much total growth?", "choices": [{"l": "A", "t": "1/10 m"}, {"l": "B", "t": "7/10 m"}, {"l": "C", "t": "7/20 m"}, {"l": "D", "t": "12/10 m"}], "ans": "B"}, {"id": "im21", "skill": "fractions", "tag": "½ Iowa · Fractions", "text": "If 3/8 of a class prefers reptiles and 2/8 prefer mammals, what fraction prefers something else?", "choices": [{"l": "A", "t": "1/8"}, {"l": "B", "t": "2/8"}, {"l": "C", "t": "3/8"}, {"l": "D", "t": "5/8"}], "ans": "C"}, {"id": "im22", "skill": "measurement", "tag": "📏 Iowa · Measurement", "text": "A reticulated python is 6 meters long. How many centimeters is that?", "choices": [{"l": "A", "t": "60 cm"}, {"l": "B", "t": "600 cm"}, {"l": "C", "t": "6,000 cm"}, {"l": "D", "t": "60,000 cm"}], "ans": "B"}, {"id": "im23", "skill": "measurement", "tag": "📏 Iowa · Measurement", "text": "A terrarium holds 20 gallons. 1 gallon ≈ 3.785 liters. About how many liters is that?", "choices": [{"l": "A", "t": "About 57 L"}, {"l": "B", "t": "About 66 L"}, {"l": "C", "t": "About 76 L"}, {"l": "D", "t": "About 85 L"}], "ans": "C"}, {"id": "im24", "skill": "measurement", "tag": "📏 Iowa · Measurement", "text": "A corn snake weighs 450 grams. There are 1,000 grams in a kilogram. How many kilograms does it weigh?", "choices": [{"l": "A", "t": "0.045 kg"}, {"l": "B", "t": "0.45 kg"}, {"l": "C", "t": "4.5 kg"}, {"l": "D", "t": "45 kg"}], "ans": "B"}, {"id": "im25", "skill": "measurement", "tag": "📏 Iowa · Measurement", "text": "A snake enclosure is 4 feet long and 2 feet wide. What is its area?", "choices": [{"l": "A", "t": "6 sq ft"}, {"l": "B", "t": "8 sq ft"}, {"l": "C", "t": "10 sq ft"}, {"l": "D", "t": "12 sq ft"}], "ans": "B"}, {"id": "im26", "skill": "measurement", "tag": "📏 Iowa · Measurement", "text": "A hognose snake is 18 inches long. A king cobra is 12 feet long. How many times longer is the cobra? (12 in = 1 ft)", "choices": [{"l": "A", "t": "6 times"}, {"l": "B", "t": "7 times"}, {"l": "C", "t": "8 times"}, {"l": "D", "t": "9 times"}], "ans": "C"}, {"id": "im27", "skill": "measurement", "tag": "📏 Iowa · Measurement", "text": "A heating pad uses 8 watts for 6 hours. Total energy = watts × hours. How many watt-hours is that?", "choices": [{"l": "A", "t": "14 Wh"}, {"l": "B", "t": "36 Wh"}, {"l": "C", "t": "48 Wh"}, {"l": "D", "t": "56 Wh"}], "ans": "C"}, {"id": "im28", "skill": "measurement", "tag": "📏 Iowa · Measurement", "text": "The temperature in a hot spot is 95°F. The cool side is 75°F. What is the difference in temperature?", "choices": [{"l": "A", "t": "15°F"}, {"l": "B", "t": "20°F"}, {"l": "C", "t": "25°F"}, {"l": "D", "t": "30°F"}], "ans": "B"}], "conventions": [{"id": "cf01", "error": "pronoun", "tag": "✏️ Conventions · Pronouns", "sentence": "Me and my brother seen a snake at the park yesterday.", "corrected": "My brother and I saw a snake at the park yesterday."}, {"id": "cf02", "error": "pronoun", "tag": "✏️ Conventions · Pronouns", "sentence": "Him and his friend builded the reptile exhibit for science fair.", "corrected": "He and his friend built the reptile exhibit for the science fair."}, {"id": "cf03", "error": "pronoun", "tag": "✏️ Conventions · Pronouns", "sentence": "The teacher gave Lucy and I the snake identification book.", "corrected": "The teacher gave Lucy and me the snake identification book."}, {"id": "cf04", "error": "pronoun", "tag": "✏️ Conventions · Pronouns", "sentence": "Us kids have always been interested in reptiles.", "corrected": "We kids have always been interested in reptiles."}, {"id": "cf05", "error": "pronoun", "tag": "✏️ Conventions · Pronouns", "sentence": "Between you and I, that corn snake is the prettiest one.", "corrected": "Between you and me, that corn snake is the prettiest one."}, {"id": "cf06", "error": "pronoun", "tag": "✏️ Conventions · Pronouns", "sentence": "Her and Mom found a garter snake under the garden stones.", "corrected": "She and Mom found a garter snake under the garden stones."}, {"id": "cf07", "error": "pronoun", "tag": "✏️ Conventions · Pronouns", "sentence": "The guide telled my family and I about the bog turtle habitat.", "corrected": "The guide told my family and me about the bog turtle habitat."}, {"id": "cf08", "error": "agreement", "tag": "✏️ Conventions · Agreement", "sentence": "The snakes in the glass tank was sleeping under the heat lamp.", "corrected": "The snakes in the glass tank were sleeping under the heat lamp."}, {"id": "cf09", "error": "agreement", "tag": "✏️ Conventions · Agreement", "sentence": "Neither the lizard nor the snakes was eating their food.", "corrected": "Neither the lizard nor the snakes were eating their food."}, {"id": "cf10", "error": "agreement", "tag": "✏️ Conventions · Agreement", "sentence": "The group of herpetologists were disagreeing about the species name.", "corrected": "The group of herpetologists was disagreeing about the species name."}, {"id": "cf11", "error": "agreement", "tag": "✏️ Conventions · Agreement", "sentence": "Every one of the eggs have a unique shell pattern.", "corrected": "Every one of the eggs has a unique shell pattern."}, {"id": "cf12", "error": "agreement", "tag": "✏️ Conventions · Agreement", "sentence": "The color of a snake's scales change when it sheds.", "corrected": "The color of a snake's scales changes when it sheds."}, {"id": "cf13", "error": "agreement", "tag": "✏️ Conventions · Agreement", "sentence": "Either the python or the boas needs a larger enclosure.", "corrected": "Either the python or the boas need a larger enclosure."}, {"id": "cf14", "error": "agreement", "tag": "✏️ Conventions · Agreement", "sentence": "The results of the experiment shows that corn snakes prefer hiding.", "corrected": "The results of the experiment show that corn snakes prefer hiding."}, {"id": "cf15", "error": "comma", "tag": "✏️ Conventions · Commas", "sentence": "The ball python coiled up and then waited patiently for its meal.", "corrected": "The ball python coiled up, and then it waited patiently for its meal."}, {"id": "cf16", "error": "comma", "tag": "✏️ Conventions · Commas", "sentence": "In the wild corn snakes hunt mice voles and other small rodents.", "corrected": "In the wild, corn snakes hunt mice, voles, and other small rodents."}, {"id": "cf17", "error": "comma", "tag": "✏️ Conventions · Commas", "sentence": "Although snakes have no ears they can feel vibrations through the ground.", "corrected": "Although snakes have no ears, they can feel vibrations through the ground."}, {"id": "cf18", "error": "comma", "tag": "✏️ Conventions · Commas", "sentence": "Lincoln loves reptiles but he has never owned a snake himself.", "corrected": "Lincoln loves reptiles, but he has never owned a snake himself."}, {"id": "cf19", "error": "comma", "tag": "✏️ Conventions · Commas", "sentence": "The herpetologist examined the snake weighed it and recorded the results.", "corrected": "The herpetologist examined the snake, weighed it, and recorded the results."}, {"id": "cf20", "error": "comma", "tag": "✏️ Conventions · Commas", "sentence": "After shedding its skin the gopher snake looked brighter than before.", "corrected": "After shedding its skin, the gopher snake looked brighter than before."}, {"id": "cf21", "error": "comma", "tag": "✏️ Conventions · Commas", "sentence": "The vet who specializes in reptiles said the snake was very healthy.", "corrected": "The vet, who specializes in reptiles, said the snake was very healthy."}, {"id": "cf22", "error": "apostrophe", "tag": "✏️ Conventions · Apostrophes", "sentence": "The snakes scales are its most noticeable feature.", "corrected": "The snake's scales are its most noticeable feature."}, {"id": "cf23", "error": "apostrophe", "tag": "✏️ Conventions · Apostrophes", "sentence": "Its very unusual for a python to refuse its meal two weeks in a row.", "corrected": "It's very unusual for a python to refuse its meal two weeks in a row."}, {"id": "cf24", "error": "apostrophe", "tag": "✏️ Conventions · Apostrophes", "sentence": "The herpetologists findings were published in the journals latest issue.", "corrected": "The herpetologist's findings were published in the journal's latest issue."}, {"id": "cf25", "error": "apostrophe", "tag": "✏️ Conventions · Apostrophes", "sentence": "The zoos reptile exhibit doesnt open until 10:00 AM on weekdays.", "corrected": "The zoo's reptile exhibit doesn't open until 10:00 AM on weekdays."}, {"id": "cf26", "error": "apostrophe", "tag": "✏️ Conventions · Apostrophes", "sentence": "Lincolns favorite thing about snakes is how they're so quiet and calm.", "corrected": "Lincoln's favorite thing about snakes is how they're so quiet and calm."}, {"id": "cf27", "error": "apostrophe", "tag": "✏️ Conventions · Apostrophes", "sentence": "Its scales were so bright after the shed that we couldnt stop looking.", "corrected": "Its scales were so bright after the shed that we couldn't stop looking."}, {"id": "cf28", "error": "apostrophe", "tag": "✏️ Conventions · Apostrophes", "sentence": "The two pythons enclosures are side by side on the shelving unit.", "corrected": "The two pythons' enclosures are side by side on the shelving unit."}], "words": [{"id": "w01", "word": "strain", "pos": "verb / noun", "def": "To push or pull with all your effort; also a particular type or variety of something.", "ex1": "He had to <strong>strain</strong> to lift the heavy cage.", "ex2": "Scientists discovered a new <strong>strain</strong> of bacteria in the cave."}, {"id": "w02", "word": "trait", "pos": "noun", "def": "A quality or feature that makes a person, animal, or thing what it is.", "ex1": "Patience is a useful <strong>trait</strong> for a snake keeper.", "ex2": "Her most admirable <strong>trait</strong> is her curiosity."}, {"id": "w03", "word": "obtain", "pos": "verb", "def": "To get or acquire something, usually through effort.", "ex1": "The python was able to <strong>obtain</strong> its meal by staying still.", "ex2": "You must <strong>obtain</strong> permission before borrowing equipment."}, {"id": "w04", "word": "sustain", "pos": "verb", "def": "To keep something going over a long period; to support or nourish.", "ex1": "A healthy habitat can <strong>sustain</strong> a large reptile population.", "ex2": "She worked hard to <strong>sustain</strong> her focus during the long exam."}, {"id": "w05", "word": "contain", "pos": "verb", "def": "To hold something within limits; to include or consist of.", "ex1": "The terrarium must safely <strong>contain</strong> the hognose snake.", "ex2": "This chapter will <strong>contain</strong> everything you need to know."}, {"id": "w06", "word": "convey", "pos": "verb", "def": "To carry or transport something; to communicate a feeling or idea.", "ex1": "A slow tongue-flick can <strong>convey</strong> that a snake is calm.", "ex2": "His letter tried to <strong>convey</strong> how much he appreciated her help."}, {"id": "w07", "word": "display", "pos": "verb / noun", "def": "To show something openly; the act of showing something.", "ex1": "The cobra will <strong>display</strong> its hood when it feels threatened.", "ex2": "The museum's reptile <strong>display</strong> drew a large crowd."}, {"id": "w08", "word": "retreat", "pos": "verb / noun", "def": "To move back or withdraw from a difficult situation.", "ex1": "When cornered, the lizard chose to <strong>retreat</strong> into the brush.", "ex2": "The army's <strong>retreat</strong> saved many lives."}, {"id": "w09", "word": "reveal", "pos": "verb", "def": "To make something known that was hidden or unknown.", "ex1": "Shedding skin can <strong>reveal</strong> a snake's brilliant new colors.", "ex2": "The letter will <strong>reveal</strong> the answer at the end."}, {"id": "w10", "word": "appeal", "pos": "verb / noun", "def": "To attract or interest someone; a request for something important.", "ex1": "The king snake's banded pattern has great visual <strong>appeal</strong>.", "ex2": "Her <strong>appeal</strong> for help finally got a response."}, {"id": "w11", "word": "defeat", "pos": "verb / noun", "def": "To win against an opponent; the state of having lost.", "ex1": "Even after one <strong>defeat</strong>, she kept practicing her math facts.", "ex2": "The mongoose could <strong>defeat</strong> a cobra in a quick battle."}, {"id": "w12", "word": "compete", "pos": "verb", "def": "To strive against others to achieve the same goal.", "ex1": "Multiple snake species <strong>compete</strong> for the same territory.", "ex2": "She trains every day so she can <strong>compete</strong> at the state level."}, {"id": "w13", "word": "extreme", "pos": "adjective", "def": "At the very end of a scale; much more than usual.", "ex1": "Pit vipers can survive in <strong>extreme</strong> desert conditions.", "ex2": "The storm brought <strong>extreme</strong> cold to the region overnight."}, {"id": "w14", "word": "supreme", "pos": "adjective", "def": "Highest in rank, power, or quality; the very best.", "ex1": "The crocodile is the <strong>supreme</strong> predator of the river.", "ex2": "She put forth <strong>supreme</strong> effort on the final test."}, {"id": "w15", "word": "sway", "pos": "verb / noun", "def": "To move slowly back and forth; to influence someone's opinion.", "ex1": "Charmed cobras <strong>sway</strong> in response to movement, not music.", "ex2": "His calm speech began to <strong>sway</strong> even his critics."}, {"id": "w16", "word": "spray", "pos": "verb / noun", "def": "To scatter liquid in tiny drops; a stream of fine drops.", "ex1": "The spitting cobra can <strong>spray</strong> venom up to two meters.", "ex2": "A light <strong>spray</strong> of mist keeps the terrarium humid."}, {"id": "w17", "word": "betray", "pos": "verb", "def": "To be disloyal; or to accidentally reveal something.", "ex1": "A single scale out of place can <strong>betray</strong> where the snake is hiding.", "ex2": "He tried to stay calm, but his voice <strong>betrayed</strong> his nerves."}, {"id": "w18", "word": "detail", "pos": "noun / verb", "def": "A small but important piece of information or part of something.", "ex1": "Every <strong>detail</strong> of a snake's scale pattern can identify its species.", "ex2": "The author used precise <strong>detail</strong> to bring the jungle to life."}, {"id": "w19", "word": "approach", "pos": "verb / noun", "def": "To come near to something; a method or way of doing something.", "ex1": "The hawk's silent <strong>approach</strong> gave the lizard no warning.", "ex2": "A patient <strong>approach</strong> works best when training a nervous animal."}, {"id": "w20", "word": "throat", "pos": "noun", "def": "The passage in your neck used for breathing, swallowing, and speaking.", "ex1": "Some frogs show bright color on their <strong>throat</strong> to warn predators.", "ex2": "She had to clear her <strong>throat</strong> before answering the question."}, {"id": "w21", "word": "boast", "pos": "verb / noun", "def": "To brag or talk too proudly about yourself.", "ex1": "Some snakes <strong>boast</strong> striking patterns that warn away enemies.", "ex2": "It's better to let your work speak than to <strong>boast</strong> about it."}, {"id": "w22", "word": "coast", "pos": "verb / noun", "def": "Land that meets the sea; also to glide along without effort.", "ex1": "Sea snakes are found along tropical <strong>coasts</strong> worldwide.", "ex2": "She finished early and let herself <strong>coast</strong> through the last problems."}, {"id": "w23", "word": "plain", "pos": "adjective / noun", "def": "Simple, without decoration; or a large flat area of open land.", "ex1": "The <strong>plain</strong>-looking gopher snake mimics the rattlesnake perfectly.", "ex2": "The great <strong>plain</strong> stretched as far as the eye could see."}, {"id": "w24", "word": "await", "pos": "verb", "def": "To wait for something that is coming; to be in store for someone.", "ex1": "The ambush predator will <strong>await</strong> its prey without moving for hours.", "ex2": "A big surprise <strong>awaits</strong> you at the end of the chapter."}, {"id": "w25", "word": "grain", "pos": "noun", "def": "A small, hard seed; also the pattern of lines in wood or stone.", "ex1": "Sand is made of millions of tiny <strong>grains</strong> of rock.", "ex2": "The <strong>grain</strong> of the wood made each board look unique."}, {"id": "w26", "word": "claim", "pos": "verb / noun", "def": "To say something is yours or that something is true; the statement itself.", "ex1": "Scientists <strong>claim</strong> that some snakes can sense earthquakes early.", "ex2": "His <strong>claim</strong> about the world record needs to be verified."}, {"id": "w27", "word": "complete", "pos": "adjective / verb", "def": "Whole, with nothing missing; to finish something fully.", "ex1": "A <strong>complete</strong> shed means the snake's skin came off in one piece.", "ex2": "You must <strong>complete</strong> every problem before turning in the test."}, {"id": "w28", "word": "repeat", "pos": "verb / noun", "def": "To do or say something again.", "ex1": "The reed snake will <strong>repeat</strong> its display until the threat is gone.", "ex2": "Practice means you <strong>repeat</strong> the skill until it becomes automatic."}], "fallback_passages": [{"week": 0, "tag": "🐍 CogAT · Verbal Battery · Reading", "lexile_note": "~800L", "html": "Most people think of snakes as cold and <em>indifferent</em> animals, but keepers who spend real time with them describe something more interesting. Ball pythons appear to <em>distinguish</em> between familiar and unfamiliar handlers — they settle more quickly with people they regularly interact with. Hognose snakes are known for elaborate <em>theatrics</em>: when threatened, they flatten their necks, hiss loudly, and if that fails, roll onto their backs and play dead. Even the speed of a snake's tongue flick is <em>meaningful</em> — a slow, steady flick signals calm exploration, while rapid flickering indicates heightened alertness. These behaviors suggest that snakes respond actively to their environment in ways that reward patient observation.", "q1_stem": "What does <em>theatrics</em> most likely mean here?", "q1": [{"l": "A", "t": "dangerous attacks"}, {"l": "B", "t": "dramatic behavior"}, {"l": "C", "t": "silent movement"}, {"l": "D", "t": "hiding and camouflage"}], "q1_ans": "B", "q2_stem": "What is the main point of this passage?", "q2": [{"l": "A", "t": "Ball pythons are the best pet snakes"}, {"l": "B", "t": "Snakes behave in more complex ways than most expect"}, {"l": "C", "t": "Tongue flicks help snakes find food"}, {"l": "D", "t": "People should not fear snakes"}], "q2_ans": "B"}, {"week": 0, "tag": "🐍 CogAT · Verbal Battery · Reading", "lexile_note": "~820L", "html": "When a snake <em>molts</em>, or sheds its skin, the process reveals far more than new scales. Shedding is a sign of health — a well-fed snake in good conditions sheds regularly, while one that is stressed or dehydrated often produces an incomplete shed. Before the molt begins, the snake's eyes turn a milky blue as the outer layer begins to separate, and the animal typically becomes less <em>receptive</em> to handling. The shed begins at the lips and peels back in one continuous piece, like removing a sock inside-out. Keepers often examine the shed carefully: a full, unbroken skin means the enclosure conditions are <em>optimal</em>, while a shed in fragments may signal that humidity needs adjusting.", "q1_stem": "What does <em>receptive</em> most likely mean in this passage?", "q1": [{"l": "A", "t": "open and willing"}, {"l": "B", "t": "aggressive and alert"}, {"l": "C", "t": "hungry and searching"}, {"l": "D", "t": "slow and tired"}], "q1_ans": "A", "q2_stem": "According to the passage, what does a fragmented shed usually mean?", "q2": [{"l": "A", "t": "The snake is preparing to hibernate"}, {"l": "B", "t": "The snake has grown too large"}, {"l": "C", "t": "The enclosure humidity needs adjustment"}, {"l": "D", "t": "The snake is about to eat"}], "q2_ans": "C"}, {"week": 0, "tag": "🐍 CogAT · Verbal Battery · Reading", "lexile_note": "~840L", "html": "Pit vipers — including rattlesnakes, cottonmouths, and copperheads — possess a remarkable sensory organ that most vertebrates lack entirely. Located between the eye and the nostril, the pit organ detects <em>infrared radiation</em>, essentially allowing the snake to sense heat. This gives pit vipers a significant <em>advantage</em> in hunting warm-blooded prey, particularly at night when other visual cues are limited. Experiments have shown that a pit viper can accurately strike a warm target even when fully blinded. The organ is sensitive enough to detect temperature differences of less than 0.003 degrees Celsius, making it one of the most <em>precise</em> biological sensors in the animal kingdom. Scientists are now studying the pit organ to develop better heat-sensing technology for human use.", "q1_stem": "What does <em>precise</em> mean as used in the passage?", "q1": [{"l": "A", "t": "large and powerful"}, {"l": "B", "t": "exactly accurate"}, {"l": "C", "t": "fast and efficient"}, {"l": "D", "t": "easy to understand"}], "q1_ans": "B", "q2_stem": "Why do pit vipers have an advantage hunting at night?", "q2": [{"l": "A", "t": "Their eyes see better in the dark than other animals"}, {"l": "B", "t": "They move silently and cannot be heard"}, {"l": "C", "t": "They can detect heat from prey even without light"}, {"l": "D", "t": "They are immune to cold temperatures"}], "q2_ans": "C"}]}, "iowa_default": {"test_date": "March 2026", "iowa": [{"subject": "Conventions", "ge": "2.9", "npr": "12th", "flag": "focus"}, {"subject": "Reading", "ge": "3.7", "npr": "27th", "flag": "growing"}, {"subject": "Computation", "ge": "4.6", "npr": "44th", "flag": "building"}, {"subject": "Mathematics", "ge": "5.8", "npr": "70th", "flag": "strong"}, {"subject": "Vocabulary", "ge": "8.0", "npr": "97th", "flag": "elite"}], "cogat": {"verbal": "90th", "quantitative": "31st", "nonverbal": "38th"}}}; // {banks:{cogat_verbal,iowa_math,conventions,words,fallback_passages}, iowa_default}
+  var LINCOLN_CONFIG = {
+    student: "lincoln", student_short: "Lincoln", student_full: "James Lincoln Howe",
+    grade: "5th Grade", theme_emoji: "🐍",
+    prep_slot_1: "cogat_verbal", prep_slot_2: "iowa_math", prep_slot_3: "conventions",
+    aas_level: 2
+  };
+
+  var LN_SCREEN_EMOJI = { "💻": 1, "📞": 1, "📱": 1, "🖥️": 1, "🎮": 1, "📲": 1 };
+  var LN_PAPER_EMOJI = { "📄": 1, "📋": 1, "📝": 1, "✏️": 1, "📖": 1, "📚": 1, "🗒️": 1 };
+
+  function lnClassifyTitle(title) {
+    title = String(title || "");
+    var sp = title.indexOf(" ");
+    if (sp < 0) return ["other", title.trim()];
+    var emoji = title.slice(0, sp).trim(), rest = title.slice(sp + 1);
+    var subject = rest.split("—")[0].trim();
+    if (LN_SCREEN_EMOJI[emoji]) return ["screen", subject];
+    if (LN_PAPER_EMOJI[emoji]) return ["paper", subject];
+    return ["other", subject];
+  }
+  function lnDaySubjects(tasks, student, day) {
+    var r = [];
+    (tasks || []).forEach(function (t) { if (t.who === student && t.day === day) r.push(lnClassifyTitle(t.title || "")); });
+    return r;
+  }
+  function lnSkillSubjects(tasks, student, maxRows) {
+    maxRows = maxRows || 6;
+    var freq = {};
+    (tasks || []).forEach(function (t) {
+      if (t.who === student) { var c = lnClassifyTitle(t.title || ""); if (c[0] === "paper") freq[c[1]] = (freq[c[1]] || 0) + 1; }
+    });
+    return Object.keys(freq).sort(function (a, b) { return (freq[b] - freq[a]) || (a < b ? -1 : a > b ? 1 : 0); }).slice(0, maxRows);
+  }
+  function lnPaceRows(tasks, student) { return lnSkillSubjects(tasks, student, 6).map(function (s) { return [s, 70, "on"]; }); }
+  // Deterministic, log-free item pick: advance 5/week, one per day, cycling the bank.
+  function lnPick(bank, weekNum, dayIdx) { var n = bank.length; var i = (((parseInt(weekNum, 10) || 1) - 1) * 5 + dayIdx) % n; if (i < 0) i += n; return bank[i]; }
+
+  function lnChoices(choices) {
+    var rows = (choices || []).map(function (c) { return '<div class="choice"><div class="c-letter">' + c.l + '</div> ' + c.t + '</div>\n'; }).join("");
+    return '<div class="choices">\n' + rows + '</div>';
+  }
+  function lnAnsweredChoices(choices, correct) {
+    var rows = (choices || []).map(function (c) {
+      return c.l === correct
+        ? '<div class="choice"><div class="ans-circle">' + c.l + '</div> <span class="choice-correct">' + c.t + '</span></div>\n'
+        : '<div class="choice"><div class="c-letter">' + c.l + '</div> ' + c.t + '</div>\n';
+    }).join("");
+    return '<div class="choices">\n' + rows + '</div>';
+  }
+  function lnQuestionCard(q, cardClass, tagStyle) {
+    cardClass = cardClass || "card-gold";
+    var ts = tagStyle ? (' style="' + tagStyle + '"') : "";
+    return '<div class="card ' + cardClass + '" style="padding:8px 12px;">\n' +
+      '  <div class="q-tag" style="margin-bottom:6px;"' + ts + '>' + q.tag + '</div>\n' +
+      '  <div class="q-text" style="font-size:12.5px;margin-bottom:7px;">' + q.text + '</div>\n' +
+      '  ' + lnChoices(q.choices) + '\n</div>';
+  }
+  function lnSubjectPills(daySubjects) {
+    return (daySubjects || []).map(function (c) {
+      var css = c[0] === "screen" ? "pill-screen" : "pill-paper", icon = c[0] === "screen" ? "💻" : "📄";
+      return '<span class="pill ' + css + '">' + icon + ' ' + c[1] + '</span>\n';
+    }).join("");
+  }
+  function lnSkillTable(subjects) {
+    var rows = (subjects || []).map(function (s) {
+      return '<tr><td>' + s + '</td><td><span class="bubble"></span></td><td><span class="bubble"></span></td><td><span class="bubble"></span></td></tr>\n';
+    }).join("");
+    return '<table class="skill-table">\n  <thead><tr>\n    <th>Subject</th><th>Got It</th><th>Working On It</th><th>Need Help</th>\n  </tr></thead>\n  <tbody>' + rows + '</tbody>\n</table>';
+  }
+  function lnWordCard(word) {
+    return '<div class="card card-gold">\n' +
+      '  <div class="slabel">Word of the day — AAS Level ' + (word.aas_level || 2) + '</div>\n' +
+      '  <div style="display:flex;align-items:baseline;gap:7px;margin-bottom:6px;">\n' +
+      '    <div class="word-main">' + word.word + '</div>\n    <div class="word-pos">' + word.pos + '</div>\n  </div>\n' +
+      '  <div class="word-def">\n    ' + word.def + '\n    <br>\n    <span style="font-style:italic;color:var(--muted);font-size:11px;">"' + word.ex1 + '"</span>\n  </div>\n' +
+      '  <div class="write-prompt" style="margin-bottom:3px;">Now write your own sentence:</div>\n  <div class="write-line"></div>\n</div>';
+  }
+  function lnWordDetails(dayAssignments) {
+    return (dayAssignments || []).map(function (da) {
+      var w = da.word;
+      return '<div class="card card-gold word-detail">' +
+        '<div style="margin-bottom:2px;"><span class="key-day">' + cap(da.day) + '</span><span class="key-date">' + da.date + '</span></div>' +
+        '<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:2px;"><span class="word-detail-name">' + w.word + '</span><span class="word-detail-pos">' + w.pos + '</span></div>' +
+        '<div class="word-detail-def">' + w.def + '</div>' +
+        '<div class="word-detail-ex">' + w.ex1 + '<br>' + w.ex2 + '</div></div>';
+    }).join("");
+  }
+  function lnSummaryStats(summary, prevWeekNum) {
+    var days, done, pct, co, sDone, sBehind;
+    if (summary) {
+      days = summary.days_done != null ? summary.days_done : "?";
+      done = summary.tasks_done != null ? summary.tasks_done : "?";
+      pct = (summary.pct != null ? summary.pct : "?") + "%";
+      co = summary.carried_over != null ? summary.carried_over : "?";
+      sDone = summary.subjects_done || []; sBehind = summary.subjects_behind || [];
+    } else { days = "?"; done = "?"; pct = "?%"; co = "?"; sDone = []; sBehind = []; }
+    var boxes = '<div class="summary-stats">\n' +
+      '  <div class="stat-box"><div class="stat-num">' + days + '</div><div class="stat-lbl">Days Done</div></div>\n' +
+      '  <div class="stat-box"><div class="stat-num">' + done + '</div><div class="stat-lbl">Tasks Done</div></div>\n' +
+      '  <div class="stat-box"><div class="stat-num">' + pct + '</div><div class="stat-lbl">Completion</div></div>\n' +
+      '  <div class="stat-box"><div class="stat-num">' + co + '</div><div class="stat-lbl">Carried Over</div></div>\n</div>';
+    var pills;
+    if (sDone.length || sBehind.length) {
+      var p = "";
+      sDone.forEach(function (s) { p += '<div class="s-pill s-done">✓ ' + s + '</div>\n'; });
+      sBehind.forEach(function (s) { p += '<div class="s-pill s-behind">⚠ ' + s + ' — behind</div>\n'; });
+      pills = '<div class="s-pills">' + p + '</div>';
+    } else {
+      pills = '<div class="s-pills"><div class="s-pill s-done" style="font-size:8.5px;opacity:0.6;font-style:italic;">Check off tasks in app → auto-fills Week ' + (prevWeekNum + 1) + '</div></div>';
+    }
+    return boxes + "\n" + pills;
+  }
+  function lnIowaScores(scoresData) {
+    var fm = {
+      focus: { color: "#fca5a5", weight: "700", bg: "rgba(239,68,68,0.22)", label: "🎯 #1 focus" },
+      growing: { color: "rgba(255,255,255,0.55)", weight: "normal", bg: "rgba(255,255,255,0.07)", label: "📈 growing" },
+      building: { color: "rgba(255,255,255,0.55)", weight: "normal", bg: "rgba(255,255,255,0.07)", label: "⚡ building" },
+      strong: { color: "var(--green-light)", weight: "normal", bg: "rgba(183,228,199,0.13)", label: "✓ strong" },
+      elite: { color: "var(--gold)", weight: "700", bg: "rgba(201,168,76,0.18)", label: "🏆 elite" },
+      neutral: { color: "rgba(255,255,255,0.55)", weight: "normal", bg: "rgba(255,255,255,0.07)", label: "—" }
+    };
+    var rows = "";
+    (scoresData.iowa || []).forEach(function (s) {
+      var f = fm[s.flag] || fm.neutral;
+      rows += '\n<div style="font-size:10.5px;color:' + f.color + ';font-weight:' + f.weight + ';">' + s.subject + '</div>' +
+        '\n<div style="font-size:10.5px;color:' + f.color + ';font-weight:' + f.weight + ';text-align:right;">' + s.ge + '</div>' +
+        '\n<div style="font-size:10.5px;color:' + f.color + ';font-weight:' + f.weight + ';text-align:right;">' + s.npr + '</div>' +
+        '\n<div><span style="font-size:7.5px;background:' + f.bg + ';color:' + f.color + ';border-radius:20px;padding:1px 7px;font-family:\'DM Mono\',monospace;">' + f.label + '</span></div>';
+    });
+    var cg = scoresData.cogat || {};
+    return '<div style="padding-left:14px;">\n' +
+      '  <div style="font-size:8px;color:rgba(255,255,255,0.4);font-family:\'DM Mono\',monospace;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:5px;">Why We Work Hard</div>\n' +
+      '  <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:4px 8px;align-items:center;">\n' +
+      '    <div style="font-size:6.5px;color:rgba(255,255,255,0.3);font-family:\'DM Mono\',monospace;letter-spacing:0.08em;text-transform:uppercase;">Subject</div>\n' +
+      '    <div style="font-size:6.5px;color:rgba(255,255,255,0.3);font-family:\'DM Mono\',monospace;text-align:right;">GE</div>\n' +
+      '    <div style="font-size:6.5px;color:rgba(255,255,255,0.3);font-family:\'DM Mono\',monospace;text-align:right;">%ile</div>\n' +
+      '    <div></div>' + rows + '\n  </div>\n' +
+      '  <div style="margin-top:5px;padding-top:4px;border-top:1px solid rgba(255,255,255,0.1);">\n' +
+      '    <div style="font-size:8px;color:rgba(255,255,255,0.3);font-family:\'DM Mono\',monospace;">CogAT: Verbal <span style="color:var(--green-light);">' + (cg.verbal || "—") + '</span> · Q <span style="color:#fca5a5;">' + (cg.quantitative || "—") + '</span> · NV <span style="color:#fca5a5;">' + (cg.nonverbal || "—") + '</span></div>\n  </div>\n</div>';
+  }
+  function lnScheduleHtml(weekData, student) {
+    var tasks = (weekData.tasks || []).filter(function (t) { return t.who === student; });
+    var dm = weekData.dates || {};
+    var order = [], byDay = {};
+    tasks.forEach(function (t) { var d = t.day || ""; if (d && dm.hasOwnProperty(d)) { if (!byDay[d]) { byDay[d] = []; order.push(d); } byDay[d].push(t); } });
+    if (!order.length) return "";
+    var cols = "";
+    order.forEach(function (day) {
+      var lbl = dm[day] || "", rows = "";
+      byDay[day].forEach(function (t) {
+        var short = String(t.title || "").split(" — ")[0].trim();
+        var cls = short.indexOf("💻") === 0 ? "sched-screen" : (short.indexOf("📖") === 0 ? "sched-read" : "");
+        rows += '<div class="sched-row ' + cls + '">' + short + '</div>\n';
+      });
+      cols += '<div class="sched-col">\n  <div class="sched-head">\n    <div class="sched-day-name">' + cap(day) + '</div>\n    <div class="sched-date-lbl">' + lbl + '</div>\n  </div>\n  <div class="sched-tasks">' + rows + '</div>\n</div>';
+    });
+    return '<div class="sched-grid" style="grid-template-columns:repeat(' + order.length + ',1fr);">' + cols + '</div>';
+  }
+  function lnAnsText(q) {
+    var letter = q.ans || "";
+    if (letter) { var f = (q.choices || []).filter(function (c) { return c.l === letter; })[0]; return ["(" + letter + ")", f ? f.t : ""]; }
+    if (q.corrected) return ["Fix:", q.corrected];
+    return ["(?)", ""];
+  }
+
+  function lnFullHtml(title, pagesHtml) {
+    return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n' +
+      '<title>' + title + '</title>\n' +
+      '<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,600;0,700;1,500&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">\n' +
+      '<style>\n' + LINCOLN_CSS + '\n' +
+      '.page { width:8.5in !important; max-width:8.5in !important; height:11in !important; padding:0 !important; overflow:hidden !important; }\n' +
+      '.page.drill-sheet { padding:14px 26px !important; }\n' +
+      '@media print { .page { height:11in !important; overflow:hidden !important; } }\n' +
+      '</style>\n</head>\n<body>\n\n' + pagesHtml + '\n\n</body>\n</html>';
+  }
+
+  function lnDailyPage(dayName, dateStr, weekNum, config, daySubjects, skillSubjects, word, q1, q2, q3) {
+    var ss = config.student_short, sf = config.student_full || ss, grade = config.grade, te = config.theme_emoji || "🐍";
+    var pills = lnSubjectPills(daySubjects), skill = lnSkillTable(skillSubjects), wordH = lnWordCard(word);
+    var q1H = lnQuestionCard(q1), q2H = lnQuestionCard(q2);
+    var q3H = `<div class="card card-plain" style="padding:6px 13px;">
+  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:5px;">
+    <div class="q-tag" style="background:var(--green-mid);margin-bottom:0;flex-shrink:0;">${q3.tag}</div>
+    <div style="font-size:12px;color:var(--ink);font-style:italic;">"${q3.sentence}"</div>
+  </div>
+  <div class="write-prompt" style="font-size:10.5px;margin-bottom:4px;">Write the corrected sentence:</div>
+  <div class="write-line"></div>
+</div>`;
+    var dayCap = cap(dayName);
+    return `<div class="page-label">Daily Page — ${dayCap}</div>
+<div class="page">
+
+  <div class="header">
+    <div>
+      <div class="header-eyebrow">Howe Academy · ${grade} · Daily Notebook</div>
+      <div class="header-name">${ss}'s Daily Page</div>
+      <div class="header-sub">track · practice · reflect</div>
+    </div>
+    <div class="header-right">
+      <div class="header-week">${dayCap}</div>
+      <div class="header-date">${dateStr}</div>
+    </div>
+  </div>
+  <div class="accent-bar"></div>
+
+  <div class="body">
+
+    <div class="bookend bookend-start">
+      <div class="bookend-icon">🌅</div>
+      <div>
+        <div class="bookend-title">Start Here · Morning Notebook</div>
+        <div class="bookend-sub">Do this first — before your subjects</div>
+      </div>
+      <div class="bookend-badge">Step 1</div>
+    </div>
+
+    <div>
+      <div class="slabel">How I'm feeling right now</div>
+      <div class="mood-row" style="padding:3px 16px;">
+        <div class="mood-label">Circle one:</div>
+        <div class="mood-faces">
+          <div class="mood-opt"><div class="mood-circle">😴</div><div class="mood-word">Tired</div></div>
+          <div class="mood-opt"><div class="mood-circle">😕</div><div class="mood-word">Off</div></div>
+          <div class="mood-opt"><div class="mood-circle">😐</div><div class="mood-word">Okay</div></div>
+          <div class="mood-opt"><div class="mood-circle">🙂</div><div class="mood-word">Good</div></div>
+          <div class="mood-opt"><div class="mood-circle">🔥</div><div class="mood-word">Locked In</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-plain" style="padding:4px 12px;">
+      <div style="display:flex;align-items:flex-end;gap:8px;">
+        <div class="q-tag" style="background:var(--green-mid);margin-bottom:0;flex-shrink:0;">🔁 Recall</div>
+        <div style="font-size:10.5px;font-weight:600;color:var(--ink);flex-shrink:0;padding-bottom:1px;">From memory — use <em>yesterday's</em> word in a sentence:</div>
+        <div class="write-line" style="flex:1;height:16px;margin:0;"></div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <div class="slabel" style="margin-bottom:0;">Test prep — 3 questions today</div>
+      <div class="col2">
+        ${q1H}
+        ${q2H}
+      </div>
+      ${q3H}
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="col2">
+      <div class="card card-plain" style="padding:8px 12px;">
+        <div class="slabel">Today's subjects — check off as you go</div>
+        <div>${pills}</div>
+      </div>
+      ${wordH}
+    </div>
+
+    <div class="bookend bookend-close">
+      <div class="bookend-icon">🌙</div>
+      <div>
+        <div class="bookend-title">Close the Day · Closing Notebook</div>
+        <div class="bookend-sub">Do this last — look back on today</div>
+      </div>
+      <div class="bookend-badge">Last</div>
+    </div>
+
+    <div class="col2">
+
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div class="card card-green">
+          <div class="slabel">How school felt today</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div style="font-size:11.5px;font-weight:600;color:var(--green-dark);">Circle one to close:</div>
+            <div style="display:flex;gap:10px;">
+              <div class="mood-opt"><div class="mood-circle sm">😩</div><div class="mood-word">Rough</div></div>
+              <div class="mood-opt"><div class="mood-circle sm">😐</div><div class="mood-word">Fine</div></div>
+              <div class="mood-opt"><div class="mood-circle sm">😊</div><div class="mood-word">Good</div></div>
+              <div class="mood-opt"><div class="mood-circle sm">🏆</div><div class="mood-word">Crushed it</div></div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="slabel">Skill self-check — now you've done them, circle one per row</div>
+          ${skill}
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div class="card card-plain" style="padding:6px 12px;">
+          <div class="slabel">Look back on today</div>
+          <div class="reflection-prompt" style="margin-bottom:2px;">One thing that clicked or surprised you:</div>
+          <div class="write-line" style="height:16px;"></div>
+          <div class="reflection-prompt" style="margin:3px 0 2px;">One thing to remember for tomorrow:</div>
+          <div class="write-line" style="height:16px;"></div>
+        </div>
+        <div class="card card-plain" style="flex:1;justify-content:center;display:flex;flex-direction:column;">
+          <div class="slabel">3 things I'm grateful for today</div>
+          <div style="margin-top:4px;">
+            <div class="grat-item"><div class="grat-num">1</div><div class="grat-line"></div></div>
+            <div class="grat-item"><div class="grat-num">2</div><div class="grat-line"></div></div>
+            <div class="grat-item"><div class="grat-num">3</div><div class="grat-line"></div></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <div class="footer">
+    <div class="footer-txt">Howe Academy · ${sf} · Daily</div>
+    <div class="footer-snake">${te}</div>
+    <div class="footer-txt">${dayCap} · ${dateStr}</div>
+  </div>
+
+</div>`;
+  }
+
+  function lnWeeklyPage(weekNum, weekDates, prevWeekNum, prevWeekDates, config, scheduleHtml, passage, scoresData, paceSubjects, prevSummary) {
+    var ss = config.student_short, sf = config.student_full || ss, grade = config.grade, te = config.theme_emoji || "🐍";
+    var iowaH = lnIowaScores(scoresData);
+    var paceRows = (paceSubjects || []).slice(0, 6).map(function (row) {
+      var name = row[0], pct = row[1], status = row[2];
+      var barClass = status === "ahead" ? "ahead" : (status === "behind" ? "behind" : "");
+      var badgeClass = status === "ahead" ? "badge-ah" : (status === "behind" ? "badge-beh" : "badge-on");
+      var badgeText = status === "ahead" ? "Ahead" : (status === "behind" ? "Behind" : "On Track");
+      return `<div class="pace-row">
+  <div class="pace-subj">${name}</div>
+  <div class="pace-bar-wrap"><div class="pace-bar ${barClass}" style="width:${pct}%"></div></div>
+  <div class="pace-badge ${badgeClass}">${badgeText}</div>
+</div>`;
+    }).join("");
+    return `<div class="page-label">Weekly Overview — Monday kick-off</div>
+<div class="page">
+
+  <div class="header">
+    <div>
+      <div class="header-eyebrow">Howe Academy · ${grade} · Weekly Review</div>
+      <div class="header-name">${ss}'s Weekly Review</div>
+      <div class="header-sub">last week · this week's schedule · pace</div>
+    </div>
+    <div class="header-right">
+      <div class="header-week">Week ${weekNum}</div>
+      <div class="header-date">${weekDates}</div>
+    </div>
+  </div>
+  <div class="accent-bar"></div>
+
+  <div class="body">
+
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;">
+        <div class="slabel" style="margin-bottom:0;">Last week's stats — Week ${prevWeekNum}</div>
+        <div class="slabel" style="margin-bottom:0;">Iowa baseline · ${scoresData.test_date || "March 2026"}</div>
+      </div>
+      <div style="background:var(--green-dark);border-radius:11px;padding:9px 14px;display:grid;grid-template-columns:1.2fr auto 0.85fr;gap:0;align-items:start;color:white;">
+
+        <div style="padding-right:16px;">
+          <div class="summary-title">Week ${prevWeekNum}${prevWeekDates ? (" · " + prevWeekDates) : ""}</div>
+          ${lnSummaryStats(prevSummary, prevWeekNum)}
+        </div>
+
+        <div style="width:1px;background:rgba(255,255,255,0.1);align-self:stretch;margin:0 2px;"></div>
+
+        ${iowaH}
+
+      </div>
+    </div>
+
+    <div>
+      <div class="slabel">This week's schedule</div>
+      ${scheduleHtml}
+    </div>
+
+    <div>
+      <div class="slabel">Pace check — where I stand this week</div>
+      <div class="pace-card">${paceRows}</div>
+    </div>
+
+    <div class="card card-plain">
+      <div class="slabel">Notes for this week</div>
+      <div class="write-line"></div>
+      <div class="write-line"></div>
+      <div class="write-line"></div>
+      <div class="write-line"></div>
+    </div>
+
+  </div>
+
+  <div class="footer">
+    <div class="footer-txt">Howe Academy · ${sf} · Weekly Review</div>
+    <div class="footer-snake">${te}</div>
+    <div class="footer-txt">Week ${weekNum} · ${weekDates}</div>
+  </div>
+
+</div>`;
+  }
+
+  function lnEndOfWeekPage(weekNum, weekDates, config, skillSubjects, passage) {
+    var ss = config.student_short, sf = config.student_full || ss, grade = config.grade, te = config.theme_emoji || "🐍";
+    var passageTag = passage.tag || "🐍 CogAT · Verbal Battery · Reading";
+    var passageText = passage.html || "";
+    var q1Stem = passage.q1_stem || "What does the highlighted word mean?";
+    var q1Choices = passage.q1 || [];
+    var q2Stem = passage.q2_stem || "What is the main point of this passage?";
+    var q2Choices = passage.q2 || [];
+    var q1ChoicesHtml = q1Choices.length ? lnChoices(q1Choices) : "";
+    var q2ChoicesHtml = q2Choices.length ? lnChoices(q2Choices) : "";
+    return `<div class="page-label">End of Week — Skill Check · Test Prep · Reflection</div>
+<div class="page">
+
+  <div class="header">
+    <div>
+      <div class="header-eyebrow">Howe Academy · ${grade} · End of Week</div>
+      <div class="header-name">${ss}'s Weekly Wrap-Up</div>
+      <div class="header-sub">skill check · test prep · reflection</div>
+    </div>
+    <div class="header-right">
+      <div class="header-week">Week ${weekNum}</div>
+      <div class="header-date">${weekDates}</div>
+    </div>
+  </div>
+  <div class="accent-bar"></div>
+
+  <div class="body">
+
+    <div>
+      <div class="slabel">Skill self-check — circle one per row</div>
+      ${lnSkillTable(skillSubjects)}
+    </div>
+
+    <div class="divider"></div>
+
+    <div>
+      <div class="slabel">Test prep — read &amp; answer</div>
+      <div class="card card-gold">
+        <div class="passage-tag">${passageTag}</div>
+        <p class="passage-text">${passageText}</p>
+        <div class="col2" style="gap:8px 18px;">
+          <div class="wq">
+            <div class="wq-num">Question 1</div>
+            <div class="wq-text">${q1Stem}</div>
+            ${q1ChoicesHtml}
+          </div>
+          <div class="wq">
+            <div class="wq-num">Question 2</div>
+            <div class="wq-text">${q2Stem}</div>
+            ${q2ChoicesHtml}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="col2">
+
+      <div class="card card-green">
+        <div class="slabel">My goal for next week</div>
+        <div class="reflection-prompt">One subject to focus on + one thing I want to do better:</div>
+        <div class="write-line"></div>
+        <div class="write-line"></div>
+        <div class="write-line"></div>
+      </div>
+
+      <div class="card card-plain">
+        <div class="slabel">One win from this week</div>
+        <div class="reflection-prompt">Something I'm proud of or that surprised me:</div>
+        <div class="write-line"></div>
+        <div class="write-line"></div>
+        <div class="write-line"></div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <div class="footer">
+    <div class="footer-txt">Howe Academy · ${sf} · End of Week</div>
+    <div class="footer-snake">${te}</div>
+    <div class="footer-txt">Week ${weekNum} · ${weekDates}</div>
+  </div>
+
+</div>`;
+  }
+
+  function lnCompanionP1(weekNum, weekDates, config, dayAssignments, weekNotes) {
+    var ss = config.student_short, grade = config.grade, te = config.theme_emoji || "🐍";
+    var constraintHtml = "";
+    if (weekNotes && weekNotes.length) constraintHtml = '<div class="constraint-banner"><strong>THIS WEEK:</strong>  ' + weekNotes.join("  ·  ") + '</div>';
+    var dayCards = "";
+    (dayAssignments || []).forEach(function (da) {
+      var dayName = cap(da.day), dateStr = da.date, word = da.word;
+      var a1 = lnAnsText(da.q1), a2 = lnAnsText(da.q2), a3 = lnAnsText(da.q3);
+      var wordShort = String(word.def || "").split(";")[0].replace(/\.+$/, "");
+      dayCards += '<div class="card card-plain" style="padding:5px 9px;">' +
+        '<div style="margin-bottom:3px;"><span class="key-day">' + dayName + '</span><span class="key-date">' + dateStr + '</span></div>' +
+        '<div class="key-row"><div class="key-label">Word</div><div><span class="key-ans">' + word.word + '</span> <span class="key-sub">— ' + wordShort + '</span></div></div>' +
+        '<div class="key-row"><div class="key-label">Q1</div><div><span class="key-ans">' + a1[0] + '</span> <span class="key-sub">' + a1[1] + ' — ' + da.q1.tag + '</span></div></div>' +
+        '<div class="key-row"><div class="key-label">Q2</div><div><span class="key-ans">' + a2[0] + '</span> <span class="key-sub">' + a2[1] + ' — ' + da.q2.tag + '</span></div></div>' +
+        '<div class="key-row"><div class="key-label">Q3</div><div><span class="key-ans">' + a3[0] + '</span> <span class="key-sub">' + a3[1] + ' — ' + da.q3.tag + '</span></div></div>' +
+        '</div>';
+    });
+    var wordDetails = lnWordDetails(dayAssignments);
+    return `<div class="page-label">Teaching Companion — Page 1 · Answer Keys</div>
+<div class="page">
+
+  <div class="header" style="background:#1e2d40;">
+    <div>
+      <div class="header-eyebrow">Howe Academy · ${grade} · Parent Reference</div>
+      <div style="display:flex;align-items:center;gap:0;">
+        <div class="header-name" style="display:inline;">${ss}'s Teaching Companion</div>
+        <span class="parent-badge">Parent Only</span>
+      </div>
+      <div class="header-sub">daily answer keys · word of the day</div>
+    </div>
+    <div class="header-right">
+      <div class="header-week">Week ${weekNum}</div>
+      <div class="header-date">${weekDates}</div>
+    </div>
+  </div>
+  <div class="companion-accent"></div>
+
+  <div class="body">
+
+    ${constraintHtml}
+
+    <div class="slabel">🌅 Morning Notebook — Daily Answer Keys · Word · Q1 (CogAT Verbal) · Q2 (Iowa Math) · Q3 (Conventions)</div>
+    <div class="col2" style="gap:6px;">
+      ${dayCards}
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="slabel">🌙 Closing Notebook — Reflection Coaching</div>
+    <div class="card card-green" style="padding:7px 12px;font-size:11px;color:var(--ink);line-height:1.5;">
+      <div style="margin-bottom:4px;">Sit with ${ss} for ~2 minutes at the end of each day. Read his Closing answers — don't grade them.</div>
+      <div style="display:flex;flex-direction:column;gap:3px;">
+        <div><strong>"One thing that clicked"</strong> — if it's blank, ask: <em>"What made sense today that didn't before?"</em></div>
+        <div><strong>"Remember for tomorrow"</strong> — help him land on ONE concrete thing: a fact, a step, or a goal.</div>
+        <div><strong>Quick Recall warm-up</strong> — check it against yesterday's word below; a reasonable sentence is a win.</div>
+      </div>
+      <div style="margin-top:4px;font-size:10px;color:var(--green-mid);font-weight:600;">Keep it warm and under 2 minutes — the habit of looking back matters more than the writing.</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="slabel">Word of the Day — Full Definitions for Discussion</div>
+    <div class="col2" style="gap:6px;">
+      ${wordDetails}
+    </div>
+
+  </div>
+
+  <div class="footer" style="background:#1e2d40;">
+    <div class="footer-txt">Howe Academy · ${ss}'s Teaching Companion · Parent Reference</div>
+    <div class="footer-snake">${te}</div>
+    <div class="footer-txt">Week ${weekNum} · ${weekDates}</div>
+  </div>
+
+</div>`;
+  }
+
+  function lnCompanionP2(weekNum, weekDates, config, passage, schoolDays, datesMap) {
+    var ss = config.student_short, grade = config.grade, te = config.theme_emoji || "🐍";
+    var passageTag = passage.tag || "🐍 CogAT · Verbal Battery · Reading";
+    var passageHtml = passage.html || "";
+    var q1Stem = passage.q1_stem || "", q1Choices = passage.q1 || [], q1Ans = passage.q1_ans || "";
+    var q2Stem = passage.q2_stem || "", q2Choices = passage.q2 || [], q2Ans = passage.q2_ans || "";
+    var q1H = lnAnsweredChoices(q1Choices, q1Ans), q2H = lnAnsweredChoices(q2Choices, q2Ans);
+    var recordHtml = "";
+    (schoolDays || []).forEach(function (day) {
+      var dateStr = datesMap[day] || "";
+      recordHtml += '<div class="record-box"><div class="record-day">' + cap(day) + '<span class="key-date">' + dateStr + '</span></div><div class="record-lines"><div class="record-line"></div><div class="record-line"></div><div class="record-line"></div></div></div>';
+    });
+    return `<div class="page-label">Teaching Companion — Page 2 · Passage + Running Record</div>
+<div class="page">
+
+  <div class="header" style="background:#1e2d40;">
+    <div>
+      <div class="header-eyebrow">Howe Academy · ${grade} · Parent Reference</div>
+      <div style="display:flex;align-items:center;gap:0;">
+        <div class="header-name" style="display:inline;">${ss}'s Teaching Companion</div>
+        <span class="parent-badge">Parent Only</span>
+      </div>
+      <div class="header-sub">end-of-week passage · answers marked · running record</div>
+    </div>
+    <div class="header-right">
+      <div class="header-week">Week ${weekNum}</div>
+      <div class="header-date">${weekDates}</div>
+    </div>
+  </div>
+  <div class="companion-accent"></div>
+
+  <div class="body">
+
+    <div class="slabel">End-of-Week Passage — Correct Answers Marked</div>
+    <div class="card card-gold" style="padding:9px 13px;">
+      <div class="passage-tag">${passageTag}</div>
+      <p class="passage-text">${passageHtml}</p>
+      <div class="col2" style="gap:8px 18px;">
+        <div class="wq">
+          <div class="wq-num">Question 1</div>
+          <div class="wq-text">${q1Stem}</div>
+          ${q1H}
+        </div>
+        <div class="wq">
+          <div class="wq-num">Question 2</div>
+          <div class="wq-text">${q2Stem}</div>
+          ${q2H}
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="slabel">Running Record — Notes Per Day</div>
+    <div class="col2" style="gap:8px;">
+      ${recordHtml}
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="carry-box">
+      <div class="carry-title">Carry-Forward Notes — Flag for Week ${weekNum + 1}</div>
+      <div class="write-line"></div>
+      <div class="write-line"></div>
+      <div class="write-line"></div>
+    </div>
+
+  </div>
+
+  <div class="footer" style="background:#1e2d40;">
+    <div class="footer-txt">Howe Academy · ${ss}'s Teaching Companion · Parent Reference</div>
+    <div class="footer-snake">${te}</div>
+    <div class="footer-txt">Week ${weekNum} · ${weekDates}</div>
+  </div>
+
+</div>`;
+  }
+
+  /* ============================================================================
+   *  LINCOLN — brain-break puzzle pages + enrichment pages (full-parity pass)
+   *  Banks/data injected from notebook_generator.py + enrichment_pages.py.
+   *  Procedural puzzles (maze/sudoku/sequences) use a JS seeded PRNG, so they're
+   *  valid + varied per week but NOT byte-identical to Python's Mersenne Twister.
+   * ========================================================================== */
+
+  var LN_EXTRA = {"bb": {"riddles": [["I have scales but can't be weighed, and I move without legs. What am I?", "A snake"], ["The more you take, the more you leave behind. What am I?", "Footsteps"], ["I speak without a mouth and hear without ears. I have no body, but I come alive with wind.", "An echo"], ["What has hands but can't clap?", "A clock"], ["I'm light as a feather, but the strongest person can't hold me for more than a minute.", "Your breath"], ["What gets wetter as it dries?", "A towel"], ["What can you catch but not throw?", "A cold"], ["I have cities, but no houses live there. Mountains, but no trees. Water, but no fish. What am I?", "A map"], ["What goes up but never comes down?", "Your age"], ["I have a tail and a head, but no body. What am I?", "A coin"], ["What has one eye but cannot see?", "A needle"], ["The more you remove from me, the larger I get. What am I?", "A hole"], ["What is full of holes but still holds water?", "A sponge"], ["What comes once in a minute, twice in a moment, but never in a thousand years?", "The letter M"], ["What has keys, space, but no room — you can enter but can't go inside?", "A keyboard"], ["I'm always hungry and must be fed. The finger I touch will turn red. What am I?", "Fire"], ["What kind of tree can you carry in your hand?", "A palm tree"], ["I have a neck but no head, and two arms but no hands. What am I?", "A shirt"], ["What goes through towns and over hills but never moves?", "A road"], ["What is so fragile that saying its name breaks it?", "Silence"], ["A cowboy rides into town on Friday, stays 3 days, and leaves on Friday. How?", "Friday is the horse's name"], ["I have branches but no leaves, no trunk, and no fruit. What am I?", "A bank"], ["I run all day, have a mouth but never talk, a head but never weep, a bed but never sleep.", "A river"], ["What invention lets you look right through a wall?", "A window"], ["What goes around the world but stays in a corner?", "A stamp"], ["I have hands that wave but never say hello, and a face you check but don't greet. What am I?", "A clock"]], "cipher_msgs": ["SNAKES FLICK THEIR TONGUES TO SMELL THE AIR", "PYTHONS SQUEEZE THEIR PREY WITH GREAT FORCE", "COBRAS SPREAD THEIR HOODS TO LOOK BIGGER", "SOME LIZARDS CAN REGROW A LOST TAIL", "REPTILES ARE COLD BLOODED ANIMALS", "CROCODILES HAVE THE STRONGEST BITE ON EARTH", "GECKOS CAN WALK ON CEILINGS AND WALLS", "BOA CONSTRICTORS CAN GROW OVER TEN FEET LONG", "TURTLES HAVE LIVED ON EARTH FOR MILLIONS OF YEARS", "CHAMELEONS CHANGE COLOR TO SHOW THEIR MOOD"], "logic_puzzles": [{"intro": "Four friends each chose one reptile at the pet store.", "clues": ["1. Ana's pet has no legs.", "2. Bo's pet can live over 100 years.", "3. Cole's pet can walk up walls.", "4. Dex's pet is green with a spiky back."], "rows": ["Ana", "Bo", "Cole", "Dex"], "cols": ["Gecko", "Snake", "Turtle", "Iguana"], "ans": {"Ana": "Snake", "Bo": "Turtle", "Cole": "Gecko", "Dex": "Iguana"}}, {"intro": "Three scientists study reptiles in different habitats.", "clues": ["1. Jade is not in the desert.", "2. Kim studies sea turtles.", "3. The desert researcher studies Gila monsters."], "rows": ["Jade", "Kim", "Leo"], "cols": ["Desert", "Ocean", "Rainforest"], "ans": {"Jade": "Rainforest", "Kim": "Ocean", "Leo": "Desert"}}, {"intro": "Three snake eggs will hatch on different days.", "clues": ["1. The red egg hatches first.", "2. The blue egg does not hatch on Wednesday.", "3. The green egg hatches in the middle."], "rows": ["Red Egg", "Green Egg", "Blue Egg"], "cols": ["Monday", "Wednesday", "Friday"], "ans": {"Red Egg": "Monday", "Green Egg": "Wednesday", "Blue Egg": "Friday"}}, {"intro": "Four explorers each found a reptile on a different continent.", "clues": ["1. Finn found a Komodo dragon (lives in Asia).", "2. The Africa explorer found a chameleon.", "3. Gabi saw the chameleon.", "4. Hugo found a Gila monster (lives in North America)."], "rows": ["Finn", "Gabi", "Hugo", "Isla"], "cols": ["Asia", "Africa", "N. America", "S. America"], "ans": {"Finn": "Asia", "Gabi": "Africa", "Hugo": "N. America", "Isla": "S. America"}}, {"intro": "Three friends each drew a different reptile.", "clues": ["1. Maya drew the snake.", "2. Olive did not draw the lizard.", "3. Nate drew the last remaining reptile."], "rows": ["Maya", "Nate", "Olive"], "cols": ["Snake", "Lizard", "Crocodile"], "ans": {"Maya": "Snake", "Nate": "Lizard", "Olive": "Crocodile"}}, {"intro": "Four snakes are each a different length.", "clues": ["1. Albert is longer than Cora.", "2. Benny is the shortest snake.", "3. Duke is the longest snake.", "4. Cora is not 6 ft."], "rows": ["Albert", "Benny", "Cora", "Duke"], "cols": ["2 ft", "4 ft", "6 ft", "8 ft"], "ans": {"Albert": "6 ft", "Benny": "2 ft", "Cora": "4 ft", "Duke": "8 ft"}}], "creative_sets": [["You find a tiny dragon egg in your backyard. What do you do, and what is the dragon like?", "Design the ultimate reptile habitat — what would it look like, and what would live there?", "If a wise old tortoise could give you one piece of advice, what would it say?"], ["You wake up and can suddenly understand what reptiles are thinking. Describe your first hour.", "Write a weather report from the perspective of a desert lizard on a blazing hot day.", "Invent a brand-new reptile species. Name it, describe it, and explain where it lives."], ["A king cobra challenges you to a trivia contest. What subject do you pick? How does it go?", "If you could be any reptile for one day, which would you choose and why?", "Imagine a world where reptiles ruled the land. What would cities look like?"], ["Write the opening of a story that starts: 'The snake had been waiting in that tree for three days...'", "You are a herpetologist on your first expedition. Describe your first discovery.", "Design a board game about reptiles. What are the rules, and how do you win?"], ["A green anaconda is your pet. Describe a normal Tuesday in your house.", "You receive a package containing a perfectly preserved dinosaur egg. What happens next?", "Write a haiku (5-7-5 syllables) about a snake shedding its skin. Then write a second one."]]}, "enrich": {"theme_lincoln": {"name": "Lincoln", "grade": "5th Grade", "body_font": "'DM Sans',system-ui,sans-serif", "display_font": "'Fraunces',Georgia,serif", "header_bg": "#1a3a2a", "eyebrow": "#b7e4c7", "accent_bar": "repeating-linear-gradient(90deg,#c9a84c 0 13px,#2d6a4f 13px 26px,#b7e4c7 26px 33px)", "badge_bg": "#c9a84c", "badge_text": "#1a3a2a", "ink": "#1c2b22", "muted": "#5a6b60", "pale": "#f2faf5", "pale2": "#fdf8ee", "accent": "#2d6a4f", "gold": "#9a7d24", "line": "#b9b08e", "card_bd": "#cfe4d6", "footer_emoji": "🐍"}, "life_skills_lincoln": ["Cook a simple meal (stovetop)", "Do a load of laundry start→finish", "Make a grocery list & budget", "Write a thank-you note / email", "Basic first aid + when to get help", "Use a knife & basic tools safely", "Manage my own time / planner", "Be home alone responsibly", "Make change & check a receipt", "Clean a whole room"], "knots": [["Square Knot", "join two ropes or tie a bundle"], ["Bowline", "a loop that won't slip — rescue & rigging"], ["Two Half-Hitches", "tie a rope to a post or tree"], ["Clove Hitch", "start a lashing / secure a line"]], "wilderness_skills": [["Build a Fire", "Gather tinder → kindling → fuel. Stack a teepee, light the tinder, feed it slowly. Never leave it — drown it cold when you're done."], ["Build a Shelter", "Lean branches against a ridgepole and pile on leaves &amp; debris for a roof. Keep it small so your own body heat warms it."], ["Find &amp; Purify Water", "Head downhill — water collects in low ground. Boil it one full minute before drinking to kill the germs."], ["Tie a Bowline", "The loop that won't slip — for rescue &amp; rigging. \"The rabbit comes out of the hole, around the tree, and back down the hole.\""], ["Read a Compass", "Red points North — \"put red in the shed.\" Turn the whole map until its north lines up with the needle, then pick your landmark."], ["Signal for Help", "Three of anything means HELP — 3 whistle blasts, 3 fires, 3 flashes. Flash sunlight at a plane with a mirror or phone screen."], ["Spot Poison Ivy", "\"Leaves of three, let it be.\" Shiny, pointed leaflets in groups of three — don't touch. Wash with soap right away if you do."], ["Pack the 10 Essentials", "Water · food · extra layers · rain jacket · flashlight · fire starter · first-aid · knife · map &amp; compass · sun protection."], ["Predict the Weather", "Ring around the moon → rain soon. Birds &amp; bugs go quiet before a storm. \"Red sky at morning, sailors take warning.\""], ["Find North by Day", "Stand a stick up, mark the shadow's tip, wait 15 minutes, mark it again. First mark is West, second is East — face them and North is ahead."], ["First Aid for a Cut", "Rinse it clean, press with a cloth to stop the bleeding, then cover it. Get a grown-up for anything deep or that won't stop."], ["Leave No Trace", "Pack out everything you pack in. Stay on the trail, watch animals from far away, and leave rocks &amp; plants where they are."], ["Forage Safely", "Never eat a plant, mushroom, or berry unless you are 100% sure what it is. When in doubt, go without."], ["Cross a Stream", "Unbuckle your pack first so you could drop it. Face upstream, shuffle sideways, and use a sturdy stick as a third leg."]], "pledge": "I pledge allegiance to the Flag of the United States of America, and to the Republic for which it stands, one Nation under God, indivisible, with liberty and justice for all.", "preamble": "We the People of the United States, in Order to form a more perfect Union, establish Justice, insure domestic Tranquility, provide for the common defence, promote the general Welfare, and secure the Blessings of Liberty to ourselves and our Posterity, do ordain and establish this Constitution for the United States of America.", "branches": [["🏛️", "Legislative", "Congress", "makes the laws"], ["🇺🇸", "Executive", "the President", "carries out the laws"], ["⚖️", "Judicial", "the Courts", "decides what laws mean"]], "states_capitals": [["Alabama", "Montgomery"], ["Alaska", "Juneau"], ["Arizona", "Phoenix"], ["Arkansas", "Little Rock"], ["California", "Sacramento"], ["Colorado", "Denver"], ["Connecticut", "Hartford"], ["Delaware", "Dover"], ["Florida", "Tallahassee"], ["Georgia", "Atlanta"], ["Hawaii", "Honolulu"], ["Idaho", "Boise"], ["Illinois", "Springfield"], ["Indiana", "Indianapolis"], ["Iowa", "Des Moines"], ["Kansas", "Topeka"], ["Kentucky", "Frankfort"], ["Louisiana", "Baton Rouge"], ["Maine", "Augusta"], ["Maryland", "Annapolis"], ["Massachusetts", "Boston"], ["Michigan", "Lansing"], ["Minnesota", "St. Paul"], ["Mississippi", "Jackson"], ["Missouri", "Jefferson City"], ["Montana", "Helena"], ["Nebraska", "Lincoln"], ["Nevada", "Carson City"], ["New Hampshire", "Concord"], ["New Jersey", "Trenton"], ["New Mexico", "Santa Fe"], ["New York", "Albany"], ["North Carolina", "Raleigh"], ["North Dakota", "Bismarck"], ["Ohio", "Columbus"], ["Oklahoma", "Oklahoma City"], ["Oregon", "Salem"], ["Pennsylvania", "Harrisburg"], ["Rhode Island", "Providence"], ["South Carolina", "Columbia"], ["South Dakota", "Pierre"], ["Tennessee", "Nashville"], ["Texas", "Austin"], ["Utah", "Salt Lake City"], ["Vermont", "Montpelier"], ["Virginia", "Richmond"], ["Washington", "Olympia"], ["West Virginia", "Charleston"], ["Wisconsin", "Madison"], ["Wyoming", "Cheyenne"]], "presidents": [["1st", "George Washington", "1789–1797", "Led the army in the Revolution and set the two-term tradition. \"Father of his Country.\""], ["2nd", "John Adams", "1797–1801", "A Founding Father and the first president to live in the White House."], ["3rd", "Thomas Jefferson", "1801–1809", "Wrote the Declaration of Independence and doubled the country with the Louisiana Purchase."], ["4th", "James Madison", "1809–1817", "\"Father of the Constitution\"; led the nation through the War of 1812."], ["5th", "James Monroe", "1817–1825", "The Monroe Doctrine told Europe to stay out of the Americas."], ["6th", "John Quincy Adams", "1825–1829", "Son of John Adams; later fought against slavery in Congress."], ["7th", "Andrew Jackson", "1829–1837", "The first \"common man\" president — you'll find him on the $20 bill."], ["8th", "Martin Van Buren", "1837–1841", "The first president born as a United States citizen."], ["9th", "William Henry Harrison", "1841", "Gave the longest inaugural speech, but served only about a month."], ["10th", "John Tyler", "1841–1845", "The first vice president to take over when a president died."], ["11th", "James K. Polk", "1845–1849", "The country stretched all the way to the Pacific under him."], ["12th", "Zachary Taylor", "1849–1850", "A famous war-hero general; died early in his term."], ["13th", "Millard Fillmore", "1850–1853", "Helped open trade between America and Japan."], ["14th", "Franklin Pierce", "1853–1857", "Served as the country argued more and more over slavery."], ["15th", "James Buchanan", "1857–1861", "The only president who never married."], ["16th", "Abraham Lincoln", "1861–1865", "Held the country together through the Civil War and ended slavery."], ["17th", "Andrew Johnson", "1865–1869", "The first president ever to be impeached by Congress."], ["18th", "Ulysses S. Grant", "1869–1877", "The winning Union general before he became president."], ["19th", "Rutherford B. Hayes", "1877–1881", "Won one of the closest elections ever — by a single electoral vote."], ["20th", "James A. Garfield", "1881", "One of the shortest presidencies — only about six months."], ["21st", "Chester A. Arthur", "1881–1885", "Reformed how people get government jobs — by merit, not favors."], ["22nd", "Grover Cleveland", "1885–1889", "The only president to serve two terms that weren't back-to-back."], ["23rd", "Benjamin Harrison", "1889–1893", "Grandson of President William Henry Harrison."], ["24th", "Grover Cleveland", "1893–1897", "Back again! His second term, four years after his first."], ["25th", "William McKinley", "1897–1901", "Led the country during the Spanish-American War."], ["26th", "Theodore Roosevelt", "1901–1909", "Protected the National Parks; the teddy bear is named after him."], ["27th", "William Howard Taft", "1909–1913", "Later became Chief Justice — the only person to lead two branches of government."], ["28th", "Woodrow Wilson", "1913–1921", "Led the United States through World War I."], ["29th", "Warren G. Harding", "1921–1923", "Promised a \"return to normal\" after the war."], ["30th", "Calvin Coolidge", "1923–1929", "Nicknamed \"Silent Cal\" — a man of very few words."], ["31st", "Herbert Hoover", "1929–1933", "The Great Depression began during his presidency."], ["32nd", "Franklin D. Roosevelt", "1933–1945", "Led through the Great Depression and WWII — the only president elected four times."], ["33rd", "Harry S. Truman", "1945–1953", "Ended World War II. His desk sign read, \"The buck stops here.\""], ["34th", "Dwight D. Eisenhower", "1953–1961", "A WWII general who built the interstate highway system."], ["35th", "John F. Kennedy", "1961–1963", "Challenged America to land a man on the Moon."], ["36th", "Lyndon B. Johnson", "1963–1969", "Signed the Civil Rights Act into law."], ["37th", "Richard Nixon", "1969–1974", "Opened relations with China; later resigned from office."], ["38th", "Gerald Ford", "1974–1977", "The only president never elected president or vice president."], ["39th", "Jimmy Carter", "1977–1981", "A peanut farmer who later won the Nobel Peace Prize."], ["40th", "Ronald Reagan", "1981–1989", "A movie actor before politics; \"Tear down this wall.\""], ["41st", "George H. W. Bush", "1989–1993", "President as the Cold War came to an end."], ["42nd", "Bill Clinton", "1993–2001", "The economy boomed during his two terms."], ["43rd", "George W. Bush", "2001–2009", "President during 9/11; son of the 41st president."], ["44th", "Barack Obama", "2009–2017", "The first Black president of the United States."], ["45th", "Donald Trump", "2017–2021", "A businessman and TV host before he entered politics."], ["46th", "Joe Biden", "2021–2025", "Had served eight years as vice president under Obama."], ["47th", "Donald Trump", "2025–", "Returned to office for a second, non-consecutive term."]]}}; // {bb:{riddles,cipher_msgs,logic_puzzles,creative_sets}, enrich:{theme_lincoln,life_skills_lincoln,knots,wilderness_skills,pledge,preamble,branches,states_capitals,presidents}}
+
+  // ── seeded PRNG (mulberry32) + Python-random-equivalent helpers ──
+  function lnRng(seed) {
+    var s = (seed >>> 0) || 1;
+    return function () {
+      s |= 0; s = (s + 0x6D2B79F5) | 0;
+      var t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function lnRngInt(r, lo, hi) { return lo + Math.floor(r() * (hi - lo + 1)); }      // inclusive, like randint
+  function lnRngChoice(r, arr) { return arr[Math.floor(r() * arr.length)]; }
+  function lnRngShuffle(r, arr) { for (var i = arr.length - 1; i > 0; i--) { var j = Math.floor(r() * (i + 1)); var t = arr[i]; arr[i] = arr[j]; arr[j] = t; } return arr; }
+  function lnRngSample(r, arr, k) { var c = arr.slice(); lnRngShuffle(r, c); return c.slice(0, Math.min(k, c.length)); }
+
+  // ── Maze (iterative backtracking) ──
+  function lnMakeMaze(cols, rows, seed) {
+    var r = lnRng(seed);
+    var grid = [], visited = [];
+    for (var y = 0; y < rows; y++) { grid.push([]); visited.push([]); for (var x = 0; x < cols; x++) { grid[y].push({ N: false, S: false, E: false, W: false }); visited[y].push(false); } }
+    var opp = { N: 'S', S: 'N', E: 'W', W: 'E' };
+    var dirs = [['N', 0, -1], ['S', 0, 1], ['E', 1, 0], ['W', -1, 0]];
+    var stack = [[0, 0]]; visited[0][0] = true;
+    while (stack.length) {
+      var cur = stack[stack.length - 1], cx = cur[0], cy = cur[1];
+      var nb = [];
+      for (var d = 0; d < dirs.length; d++) {
+        var nx = cx + dirs[d][1], ny = cy + dirs[d][2];
+        if (nx >= 0 && nx < cols && ny >= 0 && ny < rows && !visited[ny][nx]) nb.push([dirs[d][0], nx, ny]);
+      }
+      if (nb.length) {
+        var ch = lnRngChoice(r, nb);
+        grid[cy][cx][ch[0]] = true; grid[ch[2]][ch[1]][opp[ch[0]]] = true;
+        visited[ch[2]][ch[1]] = true; stack.push([ch[1], ch[2]]);
+      } else stack.pop();
+    }
+    return grid;
+  }
+  function lnMazeHtml(cols, rows, seed, px) {
+    px = px || 22;
+    var grid = lnMakeMaze(cols, rows, seed);
+    var fs = Math.max(8, Math.floor(px * 0.55));
+    var base = 'width:' + px + 'px;height:' + px + 'px;font-size:' + fs + 'px;line-height:' + px + 'px;text-align:center;box-sizing:border-box;';
+    var buf = [];
+    for (var r2 = 0; r2 < rows; r2++) {
+      buf.push('<tr>');
+      for (var c = 0; c < cols; c++) {
+        var o = grid[r2][c], cls = [];
+        if (!o.N) cls.push('mz-n'); if (!o.S) cls.push('mz-s'); if (!o.E) cls.push('mz-e'); if (!o.W) cls.push('mz-w');
+        var label = '';
+        if (r2 === 0 && c === 0) { cls.push('mz-start'); label = '▶'; }
+        else if (r2 === rows - 1 && c === cols - 1) { cls.push('mz-end'); label = '★'; }
+        buf.push('<td class="' + cls.join(' ') + '" style="' + base + '">' + label + '</td>');
+      }
+      buf.push('</tr>');
+    }
+    return '<div class="maze-wrap"><table>' + buf.join('') + '</table></div>';
+  }
+
+  // ── 6×6 Sudoku ──
+  function lnMakeSudoku6(seed) {
+    var r = lnRng(seed);
+    var base = [[1, 2, 3, 4, 5, 6], [4, 5, 6, 1, 2, 3], [2, 3, 4, 5, 6, 1], [5, 6, 1, 2, 3, 4], [3, 4, 5, 6, 1, 2], [6, 1, 2, 3, 4, 5]];
+    var digits = [1, 2, 3, 4, 5, 6]; lnRngShuffle(r, digits);
+    var map = {}; for (var i = 0; i < 6; i++) map[i + 1] = digits[i];
+    var sol = base.map(function (row) { return row.map(function (v) { return map[v]; }); });
+    [0, 2, 4].forEach(function (band) { if (r() < 0.5) { var tmp = sol[band]; sol[band] = sol[band + 1]; sol[band + 1] = tmp; } });
+    [0, 3].forEach(function (st) {
+      var order = [st, st + 1, st + 2]; lnRngShuffle(r, order);
+      for (var rr = 0; rr < 6; rr++) { var seg = order.map(function (c) { return sol[rr][c]; }); sol[rr][st] = seg[0]; sol[rr][st + 1] = seg[1]; sol[rr][st + 2] = seg[2]; }
+    });
+    var puzzle = sol.map(function (row) { return row.slice(); });
+    var cells = []; for (var a = 0; a < 6; a++) for (var b = 0; b < 6; b++) cells.push([a, b]);
+    lnRngShuffle(r, cells);
+    cells.slice(0, 18).forEach(function (rc) { puzzle[rc[0]][rc[1]] = 0; });
+    return [puzzle, sol];
+  }
+  function lnSudoku6Html(puzzle, px) {
+    px = px || 32;
+    var rowsHtml = [];
+    for (var r2 = 0; r2 < 6; r2++) {
+      var cells = [];
+      for (var c = 0; c < 6; c++) {
+        var val = puzzle[r2][c], cls = [];
+        if (c === 2) cls.push('su-box-right');
+        if (r2 === 1 || r2 === 3) cls.push('su-box-bottom');
+        if (val) cls.push('su-given');
+        cells.push('<td class="' + cls.join(' ') + '" style="width:' + px + 'px;height:' + px + 'px;">' + (val ? String(val) : '&nbsp;') + '</td>');
+      }
+      rowsHtml.push('<tr>' + cells.join('') + '</tr>');
+    }
+    return '<div class="su-wrap"><table>' + rowsHtml.join('') + '</table></div>';
+  }
+
+  // ── Riddles ──
+  function lnRiddlesHtml(seed, count, showAnswers) {
+    count = count || 2; if (showAnswers === undefined) showAnswers = true;
+    var r = lnRng(seed + 1234);
+    var chosen = lnRngSample(r, LN_EXTRA.bb.riddles, Math.min(count, LN_EXTRA.bb.riddles.length));
+    return chosen.map(function (qa) {
+      var ans = showAnswers ? '<div style="font-size:8px;color:#c8c8c8;margin-top:3px;font-style:italic;">Answer: ' + qa[1] + '</div>' : '';
+      return '<div class="riddle-item"><div class="riddle-q">' + qa[0] + '</div><div class="riddle-line"></div>' + ans + '</div>';
+    }).join("\n");
+  }
+
+  // ── Number sequences ──
+  function lnSequencesHtml(seed, count) {
+    count = count || 3;
+    var r = lnRng(seed + 7777);
+    var types = ['arithmetic', 'geometric', 'squares', 'fibonacci_like', 'alternating'];
+    lnRngShuffle(r, types);
+    function make(t) {
+      if (t === 'arithmetic') { var s = lnRngInt(r, 1, 20), d = lnRngChoice(r, [2, 3, 4, 5, 7, 10]); var o = []; for (var i = 0; i < 5; i++) o.push(s + d * i); return o; }
+      if (t === 'geometric') { var s2 = lnRngChoice(r, [1, 2, 3]), rr = lnRngChoice(r, [2, 3]); var o2 = []; for (var i2 = 0; i2 < 5; i2++) o2.push(s2 * Math.pow(rr, i2)); return o2; }
+      if (t === 'squares') { var off = lnRngInt(r, 1, 4); var o3 = []; for (var i3 = 0; i3 < 5; i3++) o3.push((off + i3) * (off + i3)); return o3; }
+      if (t === 'fibonacci_like') { var a = lnRngInt(r, 1, 6), b = lnRngInt(r, 1, 6); var seq = [a, b]; while (seq.length < 5) seq.push(seq[seq.length - 1] + seq[seq.length - 2]); return seq; }
+      var s3 = lnRngInt(r, 10, 40), plus = lnRngInt(r, 6, 14), minus = lnRngInt(r, 2, plus - 1); var sq = [s3]; for (var i4 = 0; i4 < 4; i4++) sq.push(i4 % 2 === 0 ? sq[sq.length - 1] + plus : sq[sq.length - 1] - minus); return sq;
+    }
+    var parts = [];
+    for (var i = 0; i < count; i++) {
+      var nums = make(types[i % types.length]), boxes = [];
+      for (var j = 0; j < nums.length; j++) {
+        boxes.push(j === nums.length - 1 ? '<span class="seq-num seq-blank">&nbsp;&nbsp;&nbsp;</span>' : '<span class="seq-num">' + nums[j] + '</span>');
+        if (j < nums.length - 1) boxes.push('<span class="seq-arr">→</span>');
+      }
+      parts.push('<div class="seq-row">' + boxes.join('') + '<span style="font-size:9px;color:#c8c8c8;margin-left:8px;">(' + nums[nums.length - 1] + ')</span></div>');
+    }
+    return parts.join("\n");
+  }
+
+  // ── Caesar cipher ──
+  function lnCipherHtml(seed) {
+    var r = lnRng(seed + 5555);
+    var shift = (seed % 5) + 2;
+    var msg = lnRngChoice(r, LN_EXTRA.bb.cipher_msgs);
+    function enc(text, s) { var out = ""; for (var i = 0; i < text.length; i++) { var ch = text[i]; out += (ch >= 'A' && ch <= 'Z') ? String.fromCharCode((ch.charCodeAt(0) - 65 + s) % 26 + 65) : ch; } return out; }
+    var plain = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    return '<div class="cipher-row">Plain: &nbsp;' + plain + '</div>' +
+      '<div class="cipher-row">Code:  &nbsp;' + enc(plain, shift) + '</div>' +
+      '<div style="font-size:9px;color:var(--muted);margin:5px 0 3px;">Each letter shifts +' + shift + ' places. Decode the message below:</div>' +
+      '<div class="cipher-msg">' + enc(msg, shift) + '</div>' +
+      '<div class="cipher-blank"></div>' +
+      '<div class="cipher-blank" style="margin-top:6px;"></div>' +
+      '<div style="font-size:8px;color:#c8c8c8;margin-top:4px;font-style:italic;">Answer: ' + msg + '</div>';
+  }
+
+  // ── Logic grid ──
+  function lnLogicPuzzleHtml(seed) {
+    var puzzles = LN_EXTRA.bb.logic_puzzles;
+    var p = puzzles[seed % puzzles.length];
+    var colW = Math.max(52, Math.floor(320 / Math.max(p.cols.length, 1)));
+    var header = '<th style="width:85px;border:1px solid #bbb;background:var(--page-bg);"></th>' +
+      p.cols.map(function (c) { return '<th style="width:' + colW + 'px;border:1px solid #bbb;background:var(--page-bg);font-size:9px;">' + c + '</th>'; }).join("");
+    var gridRows = p.rows.map(function (rl) {
+      return '<tr><td class="lg-row-hdr" style="width:85px;font-size:9px;">' + rl + '</td>' +
+        p.cols.map(function () { return '<td style="width:' + colW + 'px;height:28px;border:1px solid #bbb;">&nbsp;</td>'; }).join("") + '</tr>';
+    }).join("");
+    var clues = p.clues.map(function (c) { return '<div style="font-size:10.5px;color:var(--ink);line-height:1.7;">' + c + '</div>'; }).join("");
+    var ansText = Object.keys(p.ans).map(function (k) { return k + ' = ' + p.ans[k]; }).join(" · ");
+    return '<div style="font-size:11px;color:var(--ink);line-height:1.55;margin-bottom:7px;">' + p.intro + '</div>' +
+      clues + '<div class="logic-grid"><table><tr>' + header + '</tr>' + gridRows + '</table></div>' +
+      '<div style="font-size:8px;color:#c8c8c8;margin-top:6px;font-style:italic;">Answer: ' + ansText + '</div>';
+  }
+
+  function lnBbShell(weekNum, position, titleEmoji, titleText, bodyHtml) {
+    var top = '<div style="height:3px;background:linear-gradient(90deg,var(--green-light),var(--green-mid));margin-bottom:12px;border-radius:2px;"></div>' +
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;">' +
+      '<span style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700;color:var(--green-dark);">' + titleEmoji + '&nbsp;' + titleText + '</span>' +
+      '<span style="font-family:\'DM Mono\',monospace;font-size:8px;text-transform:uppercase;letter-spacing:0.15em;color:var(--muted);">Week&nbsp;' + weekNum + '&nbsp;·&nbsp;Challenge&nbsp;' + (position + 1) + '</span></div>';
+    var doodle = '<div style="flex:1;min-height:70px;margin-top:12px;border:1.5px dashed var(--green-light);border-radius:8px;position:relative;">' +
+      '<span style="position:absolute;top:6px;left:10px;font-family:\'DM Mono\',monospace;font-size:8px;text-transform:uppercase;letter-spacing:0.15em;color:var(--green-light);">✏️ Doodle</span></div>';
+    var foot = '<div style="margin-top:10px;padding-top:7px;border-top:1px solid var(--green-light);">' +
+      '<span style="font-family:\'DM Mono\',monospace;font-size:7.5px;color:var(--muted);">Howe Academy · Brain Break · Week ' + weekNum + '</span></div>';
+    return '<div class="page"><div style="display:flex;flex-direction:column;height:100%;padding:18px 40px 14px;box-sizing:border-box;">' +
+      top + '<div style="overflow:hidden;">' + bodyHtml + '</div>' + doodle + foot + '</div></div>';
+  }
+
+  function lnBrainBreakPage(position, weekNum) {
+    var seed = weekNum * 100 + position, layout = position % 4, body;
+    if (layout === 0) {
+      body = '<div style="text-align:center;margin-bottom:14px;">' +
+        '<div class="bb-sec-label" style="text-align:left;">🐍 Find Your Way Out</div>' + lnMazeHtml(18, 11, seed, 22) +
+        '<div style="font-size:9px;color:var(--muted);margin-top:4px;">▶ = Start &nbsp;&nbsp; ★ = End</div></div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">' +
+        '<div><div class="bb-sec-label">🔢 What Comes Next?</div>' + lnSequencesHtml(seed, 3) + '</div>' +
+        '<div><div class="bb-sec-label">💭 Riddles</div>' + lnRiddlesHtml(seed, 2) + '</div></div>';
+    } else if (layout === 1) {
+      var sp = lnMakeSudoku6(seed);
+      body = '<div style="display:grid;grid-template-columns:auto 1fr;gap:22px;align-items:start;margin-bottom:14px;">' +
+        '<div><div class="bb-sec-label">🔢 Sudoku 6×6</div>' +
+        '<div style="font-size:10px;color:var(--muted);margin-bottom:8px;">Each row, column, and 2×3 box must contain<br>the digits 1–6 exactly once.</div>' + lnSudoku6Html(sp[0], 32) + '</div>' +
+        '<div><div class="bb-sec-label">💭 Riddles</div>' + lnRiddlesHtml(seed, 3) + '</div></div>' +
+        '<div><div class="bb-sec-label">🔢 What Comes Next?</div>' + lnSequencesHtml(seed, 2) + '</div>';
+    } else if (layout === 2) {
+      body = '<div style="display:grid;grid-template-columns:1fr auto;gap:22px;align-items:start;margin-bottom:14px;">' +
+        '<div><div class="bb-sec-label">🔐 Secret Code</div>' + lnCipherHtml(seed) + '</div>' +
+        '<div><div class="bb-sec-label">🐍 Mini Maze</div>' + lnMazeHtml(14, 9, seed + 1, 22) +
+        '<div style="font-size:9px;color:var(--muted);margin-top:4px;">▶ = Start &nbsp;&nbsp; ★ = End</div></div></div>' +
+        '<div><div class="bb-sec-label">🔢 What Comes Next?</div>' + lnSequencesHtml(seed, 3) + '</div>';
+    } else {
+      body = '<div style="margin-bottom:16px;"><div class="bb-sec-label">🧩 Logic Puzzle</div>' + lnLogicPuzzleHtml(seed) + '</div>' +
+        '<div><div class="bb-sec-label">💭 Riddles</div>' + lnRiddlesHtml(seed, 3) + '</div>';
+    }
+    return lnBbShell(weekNum, position, '🧠', 'Brain Break', body);
+  }
+
+  function lnCreativePage(weekNum) {
+    var sets = LN_EXTRA.bb.creative_sets;
+    var promptSet = sets[weekNum % sets.length].slice();
+    lnRngShuffle(lnRng(weekNum * 999), promptSet);
+    var featured = promptSet[0];
+    var top = '<div style="height:3px;background:linear-gradient(90deg,var(--green-light),var(--green-mid));margin-bottom:12px;border-radius:2px;"></div>' +
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;">' +
+      '<span style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700;color:var(--green-dark);">✏️&nbsp;Draw &amp; Imagine</span>' +
+      '<span style="font-family:\'DM Mono\',monospace;font-size:8px;text-transform:uppercase;letter-spacing:0.15em;color:var(--muted);">Week&nbsp;' + weekNum + '&nbsp;·&nbsp;Creative&nbsp;Corner</span></div>';
+    var prompt = '<div class="creative-item" style="margin-bottom:10px;"><div class="creative-num">This Week\'s Prompt</div>' +
+      '<div class="creative-q">' + featured + '</div><div class="creative-line" style="margin-bottom:6px;"></div><div class="creative-line"></div></div>';
+    var doodle = '<div style="flex:1;border:1.5px dashed var(--green-light);border-radius:10px;position:relative;min-height:340px;">' +
+      '<span style="position:absolute;top:8px;left:12px;font-family:\'DM Mono\',monospace;font-size:8px;text-transform:uppercase;letter-spacing:0.15em;color:var(--green-light);">✏️ Doodle</span></div>';
+    var foot = '<div style="margin-top:10px;padding-top:7px;border-top:1px solid var(--green-light);">' +
+      '<span style="font-family:\'DM Mono\',monospace;font-size:7.5px;color:var(--muted);">Howe Academy · Creative Corner · Week ' + weekNum + '</span></div>';
+    return '<div class="page"><div style="display:flex;flex-direction:column;height:100%;padding:18px 40px 14px;box-sizing:border-box;">' +
+      top + prompt + doodle + foot + '</div></div>';
+  }
+
+  // ── Enrichment pages (themed, inline-styled) ──
+  function enShell(t, eyebrow, title, sub, badge, bodyHtml, bodyStyle) {
+    bodyStyle = bodyStyle || "gap:9px;";
+    return '<div class="page" style="font-family:' + t.body_font + '; color:' + t.ink + ';">\n' +
+      '  <div style="background:' + t.header_bg + ';padding:13px 32px 11px;display:flex;justify-content:space-between;align-items:flex-end;flex-shrink:0;">\n' +
+      '    <div>\n' +
+      '      <div style="font-size:9px;font-weight:800;letter-spacing:0.16em;text-transform:uppercase;color:' + t.eyebrow + ';margin-bottom:3px;">' + eyebrow + '</div>\n' +
+      '      <div style="font-family:' + t.display_font + ';font-size:25px;font-weight:800;color:#fff;line-height:1.02;">' + title + '</div>\n' +
+      '      <div style="font-size:10.5px;color:rgba(255,255,255,0.5);margin-top:4px;font-weight:600;">' + sub + '</div>\n' +
+      '    </div>\n' +
+      '    <div style="display:inline-block;background:' + t.badge_bg + ';color:' + t.badge_text + ';font-size:10.5px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;padding:4px 12px;border-radius:5px;white-space:nowrap;">' + badge + '</div>\n' +
+      '  </div>\n' +
+      '  <div style="height:6px;flex-shrink:0;background:' + t.accent_bar + ';"></div>\n' +
+      '  <div style="flex:1;display:flex;flex-direction:column;' + bodyStyle + 'padding:11px 30px 9px;overflow:hidden;min-height:0;">\n' +
+      bodyHtml + '\n' +
+      '  </div>\n' +
+      '  <div style="background:' + t.header_bg + ';padding:5px 32px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">\n' +
+      '    <div style="font-size:8.5px;font-weight:700;color:rgba(255,255,255,0.42);letter-spacing:0.08em;text-transform:uppercase;">Howe Academy · ' + t.name + ' · Keep this private 🔒</div>\n' +
+      '    <div style="font-size:13px;">' + t.footer_emoji + '</div>\n' +
+      '  </div>\n</div>';
+  }
+  function enSlabel(t, txt) { return '<div style="font-size:9px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:' + t.accent + ';margin-bottom:5px;">' + txt + '</div>'; }
+  function enLine(t, n, h) { n = n || 1; h = h || 23; var out = ""; for (var i = 0; i < n; i++) out += '<div style="border-bottom:2px solid ' + t.line + ';height:' + h + 'px;"></div>'; return out; }
+  function enCompassSvg(t) {
+    return '<svg viewBox="0 0 120 120" width="86" height="86" xmlns="http://www.w3.org/2000/svg">' +
+      '<circle cx="60" cy="60" r="52" fill="#fff" stroke="' + t.accent + '" stroke-width="2.5"/>' +
+      '<polygon points="60,13 67,60 60,53 53,60" fill="#c0392b"/>' +
+      '<polygon points="60,107 53,60 60,67 67,60" fill="' + t.accent + '"/>' +
+      '<circle cx="60" cy="60" r="3.5" fill="' + t.ink + '"/>' +
+      '<text x="60" y="27" text-anchor="middle" font-size="14" font-weight="800" fill="#c0392b">N</text>' +
+      '<text x="100" y="65" text-anchor="middle" font-size="13" font-weight="800" fill="' + t.ink + '">E</text>' +
+      '<text x="60" y="103" text-anchor="middle" font-size="13" font-weight="800" fill="' + t.ink + '">S</text>' +
+      '<text x="21" y="65" text-anchor="middle" font-size="13" font-weight="800" fill="' + t.ink + '">W</text></svg>';
+  }
+  function enDipperSvg(t) {
+    var bowl = [[18, 64], [44, 70], [46, 48], [20, 44], [18, 64]];
+    var handle = [[46, 48], [70, 52], [94, 46], [112, 34]];
+    function poly(p) { return p.map(function (xy) { return xy[0] + "," + xy[1]; }).join(" "); }
+    var stars = bowl.slice(0, -1).concat(handle).map(function (xy) { return '<circle cx="' + xy[0] + '" cy="' + xy[1] + '" r="2.6" fill="' + t.accent + '"/>'; }).join("");
+    return '<svg viewBox="0 0 200 96" width="178" height="86" xmlns="http://www.w3.org/2000/svg">' +
+      '<polyline points="' + poly(bowl) + '" fill="none" stroke="' + t.accent + '" stroke-width="1" opacity="0.45"/>' +
+      '<polyline points="' + poly(handle) + '" fill="none" stroke="' + t.accent + '" stroke-width="1" opacity="0.45"/>' + stars +
+      '<line x1="20" y1="44" x2="150" y2="16" stroke="' + t.gold + '" stroke-width="1.3" stroke-dasharray="3 4"/>' +
+      '<text x="150" y="22" font-size="20" fill="' + t.gold + '">★</text>' +
+      '<text x="167" y="20" font-size="9.5" font-weight="800" fill="' + t.ink + '">North</text>' +
+      '<text x="167" y="31" font-size="9.5" font-weight="800" fill="' + t.ink + '">Star</text></svg>';
+  }
+
+  function enPageAllAboutMe(t, info, weekNum) {
+    info = info || {};
+    var hide = {}; (info.hide || []).forEach(function (k) { hide[k] = 1; });
+    var quizMode = (Math.max(parseInt(weekNum, 10) || 1, 1) % 2 === 0);
+    function g(k) { return quizMode ? "" : String(info[k] || "").trim(); }
+    var name = g("name"), addr = g("address");
+    var momn = g("mom_name"), momc = g("mom_phone"), momw = g("mom_work");
+    var dadn = g("dad_name"), dadc = g("dad_phone"), dadw = g("dad_work");
+    var myph = g("my_phone"), myem = g("my_email");
+    var emer = g("emergency"), doc = g("doctor"), meet = g("meet");
+    function field(label, value, span) {
+      span = span || 1;
+      var inner = value
+        ? '<div style="font-family:' + t.display_font + ';font-size:16px;font-weight:700;color:' + t.ink + ';line-height:1.25;">' + value + '</div>'
+        : '<div style="border-bottom:2px solid ' + t.line + ';height:22px;margin-top:5px;"></div>';
+      return '<div style="grid-column:span ' + span + ';background:' + t.pale + ';border:1.5px solid ' + t.card_bd + ';border-radius:10px;padding:7px 13px;">' +
+        '<div style="font-size:8px;font-weight:800;letter-spacing:0.09em;text-transform:uppercase;color:' + t.accent + ';">' + label + '</div>' + inner + '</div>';
+    }
+    function parent(role, rkey, nm, cell, work) {
+      var rows = "";
+      [["Name", nm, rkey + "_name"], ["Cell", cell, rkey + "_phone"], ["Work", work, rkey + "_work"]].forEach(function (it) {
+        if (hide[it[2]]) return;
+        var v = it[1]
+          ? '<span style="font-family:' + t.display_font + ';font-weight:700;color:' + t.ink + ';">' + it[1] + '</span>'
+          : '<span style="display:inline-block;border-bottom:1.5px solid ' + t.line + ';min-width:130px;height:15px;"></span>';
+        rows += '<div style="font-size:11.5px;margin-top:3px;"><span style="color:' + t.muted + ';font-weight:700;">' + it[0] + ': </span>' + v + '</div>';
+      });
+      return '<div style="background:' + t.pale + ';border:1.5px solid ' + t.card_bd + ';border-radius:10px;padding:7px 13px;">' +
+        '<div style="font-size:8px;font-weight:800;letter-spacing:0.09em;text-transform:uppercase;color:' + t.accent + ';">' + role + '</div>' + rows + '</div>';
+    }
+    var banner, banBg, banBd, badge, eyebrowTail, sub;
+    if (quizMode) {
+      banner = "<strong>Test yourself — no peeking!</strong> Fill in everything below from memory, then check it against a study week or ask a parent.";
+      banBg = "#fff1f2"; banBd = "#fecdd3"; badge = "🧠 Memory Test"; eyebrowTail = "Memory Test"; sub = "cover the answers — write them from memory";
+    } else {
+      banner = "<strong>Know these by heart.</strong> In an emergency a grown-up may not be there — you might need to give your address or call a parent yourself.";
+      banBg = t.pale2; banBd = t.gold + "55"; badge = "💛 Keep Safe"; eyebrowTail = "Safety"; sub = "important things to know by heart";
+    }
+    var showPh = !hide["my_phone"], showEm = !hide["my_email"], cLabel = null, cVal = "";
+    if (showPh && showEm) { cLabel = "📱 My Phone / Email"; cVal = [myph, myem].filter(Boolean).join(" · "); }
+    else if (showEm) { cLabel = "📧 My Email"; cVal = myem; }
+    else if (showPh) { cLabel = "📱 My Phone"; cVal = myph; }
+    var cells = [field("🙋 My Full Name", name), field("🏠 Home Address", addr),
+      parent("👩 Mom", "mom", momn, momc, momw), parent("👨 Dad", "dad", dadn, dadc, dadw)];
+    if (cLabel) cells.push(field(cLabel, cVal));
+    if (!hide["emergency"]) cells.push(field("🚑 Emergency Contact (out of town)", emer));
+    if (!hide["doctor"]) cells.push(field("🩺 Doctor / Allergies", doc));
+    if (!hide["meet"]) cells.push(field("📍 If we're separated, meet at", meet));
+    if (cells.length % 2 === 1) cells[cells.length - 1] = cells[cells.length - 1].replace("grid-column:span 1", "grid-column:span 2");
+    var gridCells = cells.join("\n      ");
+    var body =
+      '    <div style="background:' + banBg + ';border:1.5px solid ' + banBd + ';border-radius:10px;padding:8px 15px;font-size:11.5px;line-height:1.5;flex-shrink:0;">\n      ' + banner + '\n    </div>\n' +
+      '    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;flex-shrink:0;">\n      ' + gridCells + '\n    </div>\n' +
+      '    <div style="background:#fff1f2;border:1.5px solid #fecdd3;border-radius:10px;padding:8px 15px;flex-shrink:0;">\n' +
+      '      <div style="font-size:9px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:#9f1239;margin-bottom:3px;">🚨 Calling 911</div>\n' +
+      '      <div style="font-size:11px;color:#9f1239;line-height:1.55;">Stay calm. Say: <strong>"I need help at [your address]. [What\'s wrong]. My name is [name]."</strong> Don\'t hang up until they say you can.</div>\n    </div>\n' +
+      '    <div style="flex:1;min-height:0;background:' + t.pale + ';border:1.5px solid ' + t.card_bd + ';border-radius:11px;padding:10px 16px;display:flex;flex-direction:column;">\n' +
+      '      ' + enSlabel(t, "✍️ Quiz Yourself — cover the page and write these from memory") + '\n' +
+      '      <div style="flex:1;display:flex;flex-direction:column;justify-content:space-around;min-height:0;">\n' +
+      '        <div><div style="font-size:11px;font-weight:700;color:' + t.muted + ';">My full address</div>' + enLine(t, 1, 26) + '</div>\n' +
+      '        <div style="display:flex;gap:18px;">\n' +
+      '          <div style="flex:1;"><div style="font-size:11px;font-weight:700;color:' + t.muted + ';">Mom\'s number</div>' + enLine(t, 1, 26) + '</div>\n' +
+      '          <div style="flex:1;"><div style="font-size:11px;font-weight:700;color:' + t.muted + ';">Dad\'s number</div>' + enLine(t, 1, 26) + '</div>\n' +
+      '        </div>\n' +
+      '        <div><div style="font-size:11px;font-weight:700;color:' + t.muted + ';">My full name</div>' + enLine(t, 1, 26) + '</div>\n' +
+      '      </div>\n    </div>';
+    return enShell(t, "Howe Academy · " + t.grade + " · " + eyebrowTail, "All About Me", sub, badge, body, "gap:8px;");
+  }
+
+  function enPageMoneyLife(t, weekNum) {
+    var skills = LN_EXTRA.enrich.life_skills_lincoln;
+    var wk = Math.max(parseInt(weekNum, 10) || 1, 1);
+    var focus = skills[(wk - 1) % skills.length];
+    var skillRows = skills.map(function (s) {
+      return '<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:' + t.ink + ';padding:5px 0;"><span style="width:16px;height:16px;border:2px solid ' + t.accent + ';border-radius:4px;flex-shrink:0;"></span>' + s + '</div>';
+    }).join("");
+    var probs = [["$5.00", "$3.75"], ["$10.00", "$6.40"], ["$20.00", "$13.25"]];
+    var change = probs.map(function (pc) {
+      return '<div style="font-size:12px;color:' + t.ink + ';margin:3px 0;">Paid <strong>' + pc[0] + '</strong> for <strong>' + pc[1] + '</strong> → change: <span style="display:inline-block;border-bottom:2px solid ' + t.line + ';min-width:70px;height:16px;"></span></div>';
+    }).join("");
+    var body = `    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;flex:1;min-height:0;">
+      <div style="display:flex;flex-direction:column;gap:9px;min-height:0;">
+        <div style="background:${t.pale};border:1.5px solid ${t.card_bd};border-radius:11px;padding:9px 14px;">
+          ${enSlabel(t, "💰 Save · Spend · Give")}
+          <div style="font-size:11.5px;color:${t.ink};line-height:1.5;">When you earn or get money, split it. If you get <strong>$10</strong>:</div>
+          <div style="display:flex;gap:8px;margin-top:6px;text-align:center;">
+            <div style="flex:1;background:${t.pale2};border:1.5px solid ${t.gold}66;border-radius:9px;padding:6px 4px;"><div style="font-size:18px;">🏦</div><div style="font-size:9px;font-weight:800;color:${t.accent};">SAVE</div><div style="border-bottom:2px solid ${t.line};height:18px;margin-top:3px;"></div></div>
+            <div style="flex:1;background:${t.pale2};border:1.5px solid ${t.gold}66;border-radius:9px;padding:6px 4px;"><div style="font-size:18px;">🛒</div><div style="font-size:9px;font-weight:800;color:${t.accent};">SPEND</div><div style="border-bottom:2px solid ${t.line};height:18px;margin-top:3px;"></div></div>
+            <div style="flex:1;background:${t.pale2};border:1.5px solid ${t.gold}66;border-radius:9px;padding:6px 4px;"><div style="font-size:18px;">🎁</div><div style="font-size:9px;font-weight:800;color:${t.accent};">GIVE</div><div style="border-bottom:2px solid ${t.line};height:18px;margin-top:3px;"></div></div>
+          </div>
+        </div>
+        <div style="background:${t.pale};border:1.5px solid ${t.card_bd};border-radius:11px;padding:9px 14px;">
+          ${enSlabel(t, "🔁 Needs vs. Wants — sort 3 of each")}
+          <div style="display:flex;gap:8px;">
+            <div style="flex:1;"><div style="font-size:10px;font-weight:800;color:${t.accent};margin-bottom:3px;">NEEDS</div>${enLine(t, 3, 18)}</div>
+            <div style="flex:1;"><div style="font-size:10px;font-weight:800;color:${t.accent};margin-bottom:3px;">WANTS</div>${enLine(t, 3, 18)}</div>
+          </div>
+        </div>
+        <div style="background:${t.pale};border:1.5px solid ${t.card_bd};border-radius:11px;padding:9px 14px;flex:1;min-height:0;">
+          ${enSlabel(t, "🧮 Making Change")}
+          ${change}
+          <div style="font-size:10px;color:${t.muted};margin-top:5px;font-style:italic;">💡 Interest = money the bank pays YOU for saving (or you pay THEM for borrowing).</div>
+        </div>
+      </div>
+      <div style="background:${t.pale};border:1.5px solid ${t.card_bd};border-radius:11px;padding:9px 14px;display:flex;flex-direction:column;min-height:0;">
+        ${enSlabel(t, "✅ Things I Can Do Myself")}
+        <div style="font-size:10px;color:${t.muted};margin-bottom:5px;">check one off each time you do it</div>
+        ${skillRows}
+        <div style="margin-top:auto;padding-top:9px;">
+          <div style="background:${t.pale2};border:1.5px solid ${t.gold};border-radius:9px;padding:7px 11px;">
+            <div style="font-size:9px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:${t.gold};">🎯 Skill Focus This Week</div>
+            <div style="font-size:13px;font-weight:800;color:${t.ink};margin:2px 0 4px;line-height:1.15;">${focus}</div>
+            <div style="font-size:10px;color:${t.muted};">✏️ I did it on my own on: <span style="display:inline-block;border-bottom:1.5px solid ${t.line};min-width:90px;height:13px;"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+    return enShell(t, "Howe Academy · " + t.grade + " · Life Skills", "Money &amp; Life Skills", "real-world skills the apps don't teach", "💪 Grow Up Strong", body);
+  }
+
+  function enPageWilderness(t, weekNum) {
+    var wk = Math.max(parseInt(weekNum, 10) || 1, 1);
+    var skill = LN_EXTRA.enrich.wilderness_skills[(wk - 1) % LN_EXTRA.enrich.wilderness_skills.length];
+    var knots = LN_EXTRA.enrich.knots.map(function (nu) {
+      return '<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:11.5px;"><span style="width:15px;height:15px;border:2px solid ' + t.accent + ';border-radius:4px;flex-shrink:0;"></span><span><strong style="color:' + t.ink + ';">' + nu[0] + '</strong> <span style="color:' + t.muted + ';">— ' + nu[1] + '</span></span></div>';
+    }).join("");
+    var stopData = [["S", "Stop", "sit down, stay calm, don't wander"], ["T", "Think", "how did I get here? what do I have?"], ["O", "Observe", "look around — landmarks, shelter, water"], ["P", "Plan", "stay put & signal, or follow water downhill"]];
+    var stop = stopData.map(function (x) {
+      return '<div style="display:flex;gap:9px;align-items:baseline;padding:3px 0;font-size:12px;"><span style="font-family:' + t.display_font + ';font-weight:800;color:' + t.gold + ';font-size:16px;width:18px;">' + x[0] + '</span><span style="color:' + t.ink + ';"><strong>' + x[1] + '</strong> — ' + x[2] + '</span></div>';
+    }).join("");
+    function card(inner, flex) { flex = flex || "1"; return '<div style="flex:' + flex + ';background:' + t.pale + ';border:1.5px solid ' + t.card_bd + ';border-radius:11px;padding:9px 14px;min-height:0;display:flex;flex-direction:column;">' + inner + '</div>'; }
+    var body = `    <div style="background:${t.pale2};border:1.5px solid ${t.gold};border-radius:10px;padding:9px 16px;flex-shrink:0;">
+      <div style="font-size:9px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:${t.gold};">🔦 Skill of the Week</div>
+      <div style="font-family:${t.display_font};font-size:17px;font-weight:800;color:${t.ink};line-height:1.1;margin:1px 0 2px;">${skill[0]}</div>
+      <div style="font-size:11px;color:${t.ink};line-height:1.45;">${skill[1]}</div>
+      <div style="font-size:9.5px;color:${t.muted};font-style:italic;margin-top:3px;">🏔️ Like Sam in <em>My Side of the Mountain</em> — master one skill at a time.</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;flex:1;min-height:0;">
+      <div style="display:flex;flex-direction:column;gap:9px;min-height:0;">
+        ${card(enSlabel(t, "🧭 If you're LOST — S.T.O.P.") + stop)}
+        ${card(enSlabel(t, "🪢 Knots to Know — practice each") + knots)}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px;min-height:0;">
+        ${card(enSlabel(t, "🧭 Map &amp; Compass") + '<div style="display:flex;align-items:center;gap:12px;"><div>' + enCompassSvg(t) + '</div><div style="font-size:11.5px;color:' + t.ink + ';line-height:1.5;">North · East · South · West.<br>The sun <strong>rises in the East</strong> 🌅 and <strong>sets in the West</strong> 🌇.</div></div>')}
+        ${card(enSlabel(t, "⭐ Find North at Night") + '<div style="text-align:center;">' + enDipperSvg(t) + '</div><div style="font-size:11px;color:' + t.ink + ';line-height:1.45;">Find the <strong>Big Dipper</strong> — its two end stars point to the <strong>North Star</strong>. That way is NORTH.</div>')}
+      </div>
+    </div>
+    <div style="background:${t.pale};border:1.5px solid ${t.card_bd};border-radius:11px;padding:8px 14px;flex-shrink:0;">
+      ${enSlabel(t, "🍃 Nature Signs &amp; My Field Journal")}
+      <div style="font-size:11px;color:${t.ink};line-height:1.5;">☁️ "Red sky at night, sailor's delight; red sky at morning, sailors take warning." · 🐾 Look for animal tracks &amp; scat · 💧 Find water by heading downhill.</div>
+      <div style="font-size:10.5px;font-weight:800;color:${t.accent};margin-top:6px;">🔭 Something I observed outside today:</div>
+      ${enLine(t, 1, 22)}
+    </div>`;
+    return enShell(t, "Howe Academy · " + t.grade + " · Outdoors", "Wilderness &amp; Survival", "skills for the trail", "🏕️ Explorer", body, "gap:8px;");
+  }
+
+  function enPageMemoryCivics(t, weekNum) {
+    var E = LN_EXTRA.enrich;
+    var branches = E.branches.map(function (b) {
+      return '<div style="flex:1;background:' + t.pale2 + ';border:1.5px solid ' + t.gold + '55;border-radius:9px;padding:7px 9px;"><div style="font-size:16px;">' + b[0] + '</div><div style="font-family:' + t.display_font + ';font-size:13px;font-weight:800;color:' + t.accent + ';line-height:1.1;">' + b[1] + '</div><div style="font-size:10px;color:' + t.ink + ';margin-top:2px;"><strong>' + b[2] + '</strong> ' + b[3] + '</div></div>';
+    }).join("");
+    var wk = Math.max(parseInt(weekNum, 10) || 1, 1);
+    var sc = E.states_capitals, start = ((wk - 1) * 5) % sc.length;
+    var pres = E.presidents[(wk - 1) % E.presidents.length];
+    var five = []; for (var i = 0; i < 5; i++) five.push(sc[(start + i) % sc.length]);
+    var learn = five.slice(0, 3).map(function (s) { return '<div style="font-size:11.5px;color:' + t.ink + ';padding:2px 0;"><strong>' + s[0] + '</strong> → ' + s[1] + '</div>'; }).join("");
+    var quiz = five.slice(3).map(function (s) { return '<div style="font-size:11.5px;color:' + t.ink + ';padding:2px 0;">' + s[0] + ' → <span style="display:inline-block;border-bottom:2px solid ' + t.line + ';min-width:120px;height:15px;"></span></div>'; }).join("");
+    var recite = ["The Pledge of Allegiance", "The Preamble to the Constitution", "The 3 Branches of Government", "This week's 5 states &amp; capitals"];
+    var recRows = recite.map(function (r) { return '<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:' + t.ink + ';padding:3px 0;"><span style="width:15px;height:15px;border:2px solid ' + t.accent + ';border-radius:4px;flex-shrink:0;"></span>' + r + '</div>'; }).join("");
+    var body = `    <div style="background:${t.pale};border:1.5px solid ${t.card_bd};border-radius:11px;padding:9px 15px;flex-shrink:0;">
+      ${enSlabel(t, "🇺🇸 The Pledge of Allegiance — hand over your heart")}
+      <div style="font-size:12.5px;line-height:1.6;color:${t.ink};font-style:italic;">${E.pledge}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1.25fr 1fr;gap:9px;flex-shrink:0;align-items:stretch;">
+      <div style="background:${t.pale};border:1.5px solid ${t.card_bd};border-radius:11px;padding:9px 15px;">
+        ${enSlabel(t, "📜 Preamble to the Constitution")}
+        <div style="font-size:11.5px;line-height:1.55;color:${t.ink};font-style:italic;">${E.preamble}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;">
+        ${enSlabel(t, "🏛️ 3 Branches of Government")}
+        <div style="display:flex;gap:6px;flex:1;">${branches}</div>
+      </div>
+    </div>
+    <div style="background:${t.pale};border:1.5px solid ${t.card_bd};border-radius:11px;padding:9px 15px;flex-shrink:0;">
+      ${enSlabel(t, "🗺️ States &amp; Capitals — this week's 5 (set #" + (Math.floor(start / 5) + 1) + " of 10)")}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px 18px;">
+        <div><div style="font-size:9px;font-weight:800;color:${t.accent};margin-bottom:3px;">LEARN THESE</div>${learn}</div>
+        <div><div style="font-size:9px;font-weight:800;color:${t.accent};margin-bottom:3px;">QUIZ — WRITE THE CAPITAL</div>${quiz}</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1.05fr 1fr;gap:9px;flex-shrink:0;align-items:stretch;">
+      <div style="background:${t.pale2};border:1.5px solid ${t.gold}55;border-radius:11px;padding:9px 15px;display:flex;flex-direction:column;">
+        ${enSlabel(t, "🎩 President of the Week")}
+        <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
+          <span style="font-family:${t.display_font};font-size:14px;font-weight:800;color:${t.accent};line-height:1.1;">${pres[1]}</span>
+          <span style="font-size:10px;color:${t.muted};font-weight:700;">${pres[0]} · ${pres[2]}</span>
+        </div>
+        <div style="font-size:10.5px;color:${t.ink};line-height:1.45;margin-top:3px;">${pres[3]}</div>
+      </div>
+      <div style="background:${t.pale};border:1.5px solid ${t.card_bd};border-radius:11px;padding:9px 15px;">
+        ${enSlabel(t, "🎖️ I Can Recite These — check when you can")}
+        ${recRows}
+      </div>
+    </div>`;
+    return enShell(t, "Howe Academy · " + t.grade + " · Memory Work", "Memory Work &amp; Civics", "know your country by heart", "🇺🇸 Citizen", body, "gap:11px; justify-content:space-between;");
+  }
+
+  function generateLincoln(ctx) {
+    ctx = ctx || {};
+    var weekData = ctx.weekData || {};
+    if (Array.isArray(weekData)) weekData = weekData[0] || {};
+    if (Array.isArray(weekData)) weekData = weekData[0] || {};
+    var weekNum = ctx.weekNum;
+    if (typeof weekNum === "string") { var dd = weekNum.replace(/\D/g, ""); weekNum = dd ? parseInt(dd, 10) : weekNum; }
+    var weekDates = ctx.weekDates || "";
+    var cfg = LINCOLN_CONFIG, student = cfg.student;
+    var tasks = weekData.tasks || [];
+    var datesMap = weekData.dates || {};
+    var schoolDays = Object.keys(datesMap);
+    var skillSubjects = lnSkillSubjects(tasks, student, 6);
+    var paceRows = lnPaceRows(tasks, student);
+    var scores = LINCOLN_DATA.iowa_default;
+    var passages = LINCOLN_DATA.banks.fallback_passages;
+    var wn = parseInt(weekNum, 10) || 1;
+    var passage = passages[((wn - 1) % passages.length + passages.length) % passages.length] || passages[0] || {};
+    var prevWeekNum = wn - 1;
+    var scheduleHtml = lnScheduleHtml(weekData, student);
+
+    var weeklyH = lnWeeklyPage(weekNum, weekDates, prevWeekNum, "", cfg, scheduleHtml, passage, scores, paceRows, ctx.prevSummary || null);
+    var eowH = lnEndOfWeekPage(weekNum, weekDates, cfg, skillSubjects, passage);
+
+    var slotBanks = { cogat_verbal: LINCOLN_DATA.banks.cogat_verbal, iowa_math: LINCOLN_DATA.banks.iowa_math, conventions: LINCOLN_DATA.banks.conventions };
+    var bank1 = slotBanks[cfg.prep_slot_1] || LINCOLN_DATA.banks.cogat_verbal;
+    var bank2 = slotBanks[cfg.prep_slot_2] || LINCOLN_DATA.banks.iowa_math;
+    var bank3 = slotBanks[cfg.prep_slot_3] || LINCOLN_DATA.banks.conventions;
+
+    var dailyPages = [], dayAssignments = [];
+    schoolDays.forEach(function (day, i) {
+      var dateStr = datesMap[day];
+      var daySubjects = lnDaySubjects(tasks, student, day);
+      var word = Object.assign({}, lnPick(LINCOLN_DATA.banks.words, weekNum, i)); word.aas_level = cfg.aas_level;
+      var q1 = lnPick(bank1, weekNum, i), q2 = lnPick(bank2, weekNum, i), q3 = lnPick(bank3, weekNum, i);
+      dailyPages.push(lnDailyPage(day, dateStr, weekNum, cfg, daySubjects, skillSubjects, word, q1, q2, q3));
+      dayAssignments.push({ day: day, date: dateStr, word: word, q1: q1, q2: q2, q3: q3 });
+    });
+
+    // Full page order: weekly · bb0 · 4 enrichment · (day · bb)×4 · day5 · creative · eow
+    var T = LN_EXTRA.enrich.theme_lincoln;
+    var parts = [weeklyH, lnBrainBreakPage(0, wn),
+      enPageAllAboutMe(T, null, wn), enPageMoneyLife(T, wn), enPageWilderness(T, wn), enPageMemoryCivics(T, wn)];
+    dailyPages.forEach(function (dp, i) {
+      parts.push(dp);
+      parts.push(i < dailyPages.length - 1 ? lnBrainBreakPage(i + 1, wn) : lnCreativePage(wn));
+    });
+    parts.push(eowH);
+    var student_html = lnFullHtml(cfg.student_short + "'s Notebook — Week " + weekNum, parts.join("\n\n\n"));
+
+    var cp1 = lnCompanionP1(weekNum, weekDates, cfg, dayAssignments, ctx.weekNotes || []);
+    var cp2 = lnCompanionP2(weekNum, weekDates, cfg, passage, schoolDays, datesMap);
+    var parent_html = lnFullHtml(cfg.student_short + "'s Teaching Companion — Week " + weekNum, cp1 + "\n\n\n" + cp2);
+
+    return { student: student_html, parent: parent_html };
+  }
+
+  /* ============================================================================
    *  PUBLIC API
    * ========================================================================== */
 
   var GENERATORS = {
+    lincoln: { label: "Lincoln (5th 🐍)", build: generateLincoln },
     julian: { label: "Julian (Pre-K 🦕)", build: generateJulian }
   };
 
