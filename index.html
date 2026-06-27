@@ -936,9 +936,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 
 <div id="nav-tabs">
   <button class="nav-tab active" onclick="showTab('schedule')" data-tab="schedule">Schedule</button>
-  <button class="nav-tab" onclick="showTab('mastery')" data-tab="mastery">Drills</button>
+  <button class="nav-tab" onclick="showTab('mastery')" data-tab="mastery">Mastery</button>
   <button class="nav-tab" onclick="showTab('moms-plan')" data-tab="moms-plan">Mom's Plan</button>
-  <button class="nav-tab" onclick="showTab('supplies')" data-tab="supplies">Supplies</button>
   <button class="nav-tab" onclick="showTab('babysitter')" data-tab="babysitter" id="sitter-tab-btn">Maggie</button>
   <button class="nav-tab" onclick="showTab('activities')" data-tab="activities">Activity Ideas</button>
 </div>
@@ -1693,7 +1692,7 @@ function renderSkylight(){
 function showTab(t){
   tab=t;
   mastAddMode=false; mastLogMode=false; mastLogScores={};
-  document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===t));
+  document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===t||(t==="supplies"&&b.dataset.tab==="schedule")));
   if(t!=="schedule"){ schedShowAdmin=false; schedShowHistory=false; schedShowPace=false; }
   document.getElementById("sched-subtabs").style.display=t==="schedule"?"flex":"none";
   document.getElementById("day-tabs").style.display=["schedule","supplies"].includes(t)?"flex":"none";
@@ -1769,9 +1768,17 @@ function _renderAllInner(){
 
 // ── DAY TABS ──────────────────────────────────────────────────────
 function renderDayTabs(){
+  // Supplies button — pinned to the right of the day row. Opens supplies for the
+  // day you're viewing (links the supplies list to the schedule). Toggles back.
+  // Built before the break check so it stays reachable even on holiday/vacation days.
+  const onSupp=tab==="supplies";
+  const suppBtn='<button class="day-tab'+(onSupp?" active":"")+'" style="--day-color:#0891b2;position:sticky;right:0;margin-left:auto;flex-shrink:0;background:#fff;box-shadow:-10px 0 8px -7px rgba(0,0,0,.18);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0" '+
+    'onclick="'+(onSupp?"showTab('schedule')":"openSuppliesForDay()")+'" title="Supplies for this day">'+
+    '<span style="font-size:15px;line-height:1.1">\u{1F9FA}</span>'+
+    '<span style="font-size:9px;font-weight:700;letter-spacing:.3px">Supplies</span></button>';
   // During a holiday/vacation the Schedule shows a single "no school" card, so
-  // hide the day picker to avoid showing stale last-week days above it.
-  if(scheduleBreakToday()){ const _dt=document.getElementById("day-tabs"); if(_dt) _dt.innerHTML=""; return; }
+  // hide the day picker — but keep the Supplies button on the row.
+  if(scheduleBreakToday()){ const _dt=document.getElementById("day-tabs"); if(_dt) _dt.innerHTML=suppBtn; return; }
   const at=getActiveTasks();
   const ds=at.length
     ?[...new Set(at.map(t=>t.day))].sort((a,b)=>DAYS.indexOf(a)-DAYS.indexOf(b))
@@ -1781,7 +1788,7 @@ function renderDayTabs(){
     const todayTag=d===_todayDay?'<span style="display:block;font-family:\'Fraunces\',serif;font-size:9px;font-weight:700;color:#a5b4fc;letter-spacing:1.5px;margin-bottom:-1px">TODAY</span>':"";
     return '<button class="day-tab'+(d===day?" active":"")+'" style="--day-color:'+col+'" onclick="selDay(\''+d+'\')">'+
       todayTag+(DAY_LBL[d]||d)+'<span class="day-pct" style="color:'+(d===day?col:"#9ca3af")+'">'+pct+'%</span></button>';
-  }).join("");
+  }).join("")+suppBtn;
   // Sync kid-filter sticky top to actual height of day-tabs
   requestAnimationFrame(()=>{
     const dt=document.getElementById("day-tabs");
@@ -2897,7 +2904,7 @@ function renderSchedule(el){
       return;
     }
     let ah='<div style="position:sticky;top:118px;z-index:90;background:var(--bg);display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:0">';
-    ["settings","curriculum","progress","calendar"].forEach(s=>{
+    ["settings","curriculum","calendar"].forEach(s=>{
       const active=adminSubTab===s||(s==="settings"&&adminSubTab==="rules");
       const label=s.charAt(0).toUpperCase()+s.slice(1);
       ah+='<button style="flex:1;padding:10px 4px;font-size:12px;font-weight:700;border:none;background:none;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:'+(active?"var(--text)":"var(--muted)")+';border-bottom:2px solid '+(active?"var(--header)":"transparent")+';margin-bottom:-2px" onclick="setAdminSub(\''+s+'\')">'+label+'</button>';
@@ -2906,7 +2913,6 @@ function renderSchedule(el){
     if(adminSubTab==="settings"||adminSubTab==="rules"){ renderSettings(el,ah); }
     else if(adminSubTab==="generate"){ renderAdminGenerate(el,ah); }
     else if(adminSubTab==="curriculum"){ renderCurriculumView(el,ah); }
-    else if(adminSubTab==="progress"){ renderProgress(el,ah); }
     else if(adminSubTab==="calendar"){ renderCalendarView(el,ah); }
     return;
   }
@@ -3751,6 +3757,12 @@ function renderSupplies(el){
 function togSup(id){ supplies[id]=!supplies[id]; sv(WK+"_supplies",supplies); if(db)db.ref(WK+"/supplies/"+id).set(supplies[id]); renderSupplies(); }
 function togCat(c){ collCats[c]=!collCats[c]; renderSupplies(); }
 function selSupDay(d){ supDay=d; renderSupplies(); }
+// Open the Supplies view pre-filtered to the day currently selected on the schedule.
+function openSuppliesForDay(){
+  const wd=["monday","tuesday","wednesday","thursday","friday"];
+  supDay=wd.includes(day)?day:"all";
+  showTab("supplies");
+}
 
 // ── HISTORY ───────────────────────────────────────────────────────
 const HIST_KCOL_LIGHT={lincoln:"#93c5fd",ellis:"#86efac",lucy:"#c4b5fd",julian:"#fdba74"};
@@ -5156,6 +5168,9 @@ function renderCurrPlans(el){
 
     h+='</div>';
   });
+
+  // Finish Line — projected completion per subject (folded in from the former Admin → Progress tab)
+  try{ h+=renderFinishLine(currPlansKid); }catch(e){ console.log("[HA] finish line error",e); }
 
   // Add plan form
   h+='<div class="pace-add-plan-row">'+
@@ -10194,7 +10209,7 @@ function renderFinishLine(forKid){
   return h;
 }
 
-// Per-kid pace rollup, shared by the glance Pace view and Admin → Progress.
+// Per-kid pace rollup. Now unused — was the steering read for the former Admin → Progress tab.
 function paceKidPlan(k){
   const plans=(paceData.plans&&Object.keys(paceData.plans).length)?paceData.plans:PACE_DEFAULT_PLANS;
   for(const pk of Object.keys(plans)){ if((plans[pk].kids||[]).includes(k)) return plans[pk]; }
@@ -10491,7 +10506,7 @@ function paceEncouragement(lt,stk,win){
 
 // GLANCE Pace view — kid + mom accomplishment dashboard. NOT the this-week/daily
 // tracker (that's on the Schedule); this is "how far you've come": book progress
-// beginning→end, pages, weeks accomplished, wins. Steering lives in Admin → Progress.
+// beginning→end, pages, weeks accomplished, wins. Steering lives in Admin → Curriculum.
 function renderPace(el){
   if(!el){el=document.getElementById("content");if(!el)return;}
   syncPaceData();
@@ -10561,174 +10576,7 @@ function renderPace(el){
 
   // Encouraging closer — the warm banner Adrienne liked, now progress-aware
   h+='<div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:12px;padding:13px 14px;margin-top:12px;text-align:center"><div style="font-size:13px;color:#581c87;font-weight:600;line-height:1.45">'+paceEncouragement(_lt,_stk,_win)+'</div></div>';
-  if(showKids.some(k=>Object.keys((paceData.subjects&&paceData.subjects[k])||{}).length)) h+='<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:10px">Finish dates, pacing &amp; adjustments live in <b>Admin → Progress</b></div>';
-  h+='</div>';
-  el.innerHTML=h;
-}
-
-// DEPTH view (Admin → Progress, PIN-gated): Finish Line projections, Extend,
-// and the full per-subject pace cards with expected-pace markers + drift.
-function renderProgress(el,headerHtml){
-  if(!el){el=document.getElementById("content");if(!el)return;}
-  if(!adminPinUnlocked){
-    el.innerHTML=(headerHtml||'')+'<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center">'+
-      '<div style="font-size:48px;margin-bottom:12px">\u{1F512}</div>'+
-      '<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:700;margin-bottom:4px">Progress Locked</div>'+
-      '<div style="font-size:13px;color:var(--muted);margin-bottom:16px">Enter the Mom PIN to view detailed progress.</div>'+
-      '<input id="admin-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="PIN" autocomplete="off" '+
-      'style="width:120px;text-align:center;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:18px;font-weight:700;letter-spacing:8px;font-family:\'DM Sans\',sans-serif" '+
-      'oninput="checkAdminPin(this.value,\'admin-pin-err\')" autofocus>'+
-      '<div id="admin-pin-err" style="font-size:11px;color:#b5394a;margin-top:6px;min-height:14px"></div></div>';
-    setTimeout(()=>{const i=document.getElementById("admin-pin-input");if(i)i.focus();},50);
-    return;
-  }
-
-  syncPaceData();
-  const plans=paceData.plans&&Object.keys(paceData.plans).length>0?paceData.plans:PACE_DEFAULT_PLANS;
-
-  let h=(headerHtml||'')+'<div id="pace-content" style="padding:0 4px">';
-
-  // Kid selector (hide when inside schedule tab — main kid filter handles it)
-  if(!schedShowPace){
-    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">';
-    [{k:"all",label:"All",col:"#111827"},...PACE_KIDS.map(k=>({k,label:cap(k),col:PACE_KCOL[k]}))].forEach(({k:k2,label,col})=>{
-      const on=kid===k2||(k2==="all"&&(kid==="all"||kid==="mom"));
-      h+='<button onclick="selKid(\''+k2+'\')" style="padding:5px 14px;border-radius:20px;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+label+'</button>';
-    });
-    h+='</div>';
-  }
-
-  // Weekly progress bar
-  const weeklyCol=(kid==="all"||kid==="mom")?"#111827":PACE_KCOL[kid]||"#111827";
-  const _wkMatch=t=>(kid==="all"||kid==="mom")?true:t.who===kid;
-  const _wkCascAway=new Set(weekData.tasks.filter(t=>t.id.endsWith("_c")).map(t=>t.id.replace(/_c$/,"")));
-  const _wkCountable=weekData.tasks.filter(t=>_wkMatch(t)&&(!_wkCascAway.has(t.id)||!!checked[t.id])&&!(t.title||"").toLowerCase().includes("lunch"));
-  const weeklyTotal=_wkCountable.length;
-  const weeklyDone=_wkCountable.filter(t=>chainDone(t.id,checked,weekData.tasks)).length;
-  const weeklyPct=weeklyTotal?Math.min(100,Math.round(weeklyDone/weeklyTotal*100)):0;
-  h+='<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:14px">'+
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
-    '<div style="font-size:12px;font-weight:600;color:var(--muted)">This week</div>'+
-    '<div style="font-size:12px;font-weight:700;color:'+weeklyCol+'">'+weeklyPct+'%</div>'+
-    '</div>'+
-    '<div class="day-prog-bar" style="margin-top:0"><div class="day-prog-fill" style="width:'+weeklyPct+'%;background:'+weeklyCol+'"></div></div>'+
-    '</div>';
-
-  // Steering summary — the verdict/on-track read lives with the depth view
-  const _roll=((kid==="all"||kid==="mom")?PACE_KIDS:[kid]).map(k=>({k,st:paceKidStatus(k),wk:paceKidWeek(k)})).filter(r=>r.st.subjects||r.wk.total);
-  h+=paceVerdictHtml(_roll,weeklyPct);
-
-  // Finish Line — projected completion per subject (calendar- and override-aware)
-  try{ h+=renderFinishLine(kid); }catch(e){ console.log("[HA] finish line error",e); }
-
-  // Plan sections — READ-ONLY progress view
-  Object.entries(plans).forEach(([planKey,plan])=>{
-    const planKids=plan.kids||[];
-    const visKids=(kid==="all"||kid==="mom")?planKids:planKids.filter(k=>k===kid);
-    if(visKids.length===0&&kid!=="all"&&kid!=="mom") return;
-
-    const weekNum=planWeekNum(plan.start||"2026-04-20");
-    const totalWeeks=planTotalWeeks(plan.start||"2026-04-20",plan.end||"2026-09-01");
-    const ssTotal=sessionSchoolDays(plan);
-    const ssRemain=sessionSchoolDaysFromToday(plan);
-    const ssDone=Math.max(0,ssTotal.school-ssRemain.school);
-    const planPct=ssTotal.school?Math.min(100,Math.round(ssDone/ssTotal.school*100)):0;
-
-    h+='<div class="pace-plan-section">';
-
-    // Plan banner — read-only (no Edit/Map/Auto-Commit controls)
-    h+='<div class="pace-year-banner" style="align-items:flex-start">'+
-      '<div style="flex:1;min-width:0">'+
-      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">'+
-      '<div class="pace-year-label">'+plan.label+'</div></div>'+
-      '<div class="pace-year-sub">'+formatPlanDate(plan.start||"")+' &ndash; '+formatPlanDate(plan.end||"")+'</div>'+
-      '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px">'+
-      planKids.map(k=>'<span class="pace-plan-kid-chip">'+cap(k)+'</span>').join('')+
-      '</div>'+
-      '<div class="pace-year-bar"><div class="pace-year-fill" style="width:'+planPct+'%"></div></div>'+
-      '</div>'+
-      '<div style="text-align:right;flex-shrink:0">'+
-      '<div class="pace-year-wk">'+ssDone+' days</div>'+
-      '<div class="pace-year-wklbl">of '+ssTotal.school+(ssTotal.off?' ('+ssTotal.off+' off)':'')+'</div>'+
-      '<div class="pace-year-wklbl">Wk '+Math.min(weekNum,totalWeeks)+' &middot; '+planPct+'%</div></div>'+
-      '</div>';
-
-    // Kid curriculum cards — read-only (no Edit button, no config forms)
-    visKids.forEach(k=>{
-      const kidSubjs=(paceData.subjects&&paceData.subjects[k])||{};
-      const _currSubs=(currData&&currData.subjects&&currData.subjects[k])||{};
-      const keys=Object.keys(kidSubjs).filter(sk=>{
-        if(_currSubs[sk]&&_currSubs[sk].tracking==="daily") return false;
-        if((kidSubjs[sk].total||0)===0) return false;
-        return true;
-      });
-      const col=PACE_KCOL[k];
-      let aheadN=0,onN=0,behindN=0;
-      const cwn=currWeekNum();
-      keys.forEach(sk=>{
-        const s=kidSubjs[sk];
-        const kws=paceKeywords(k,sk,s);
-        const cur=(s.offset||0)+paceAutoCount(k,kws)+(s.paceAdjust||0);
-        const exp=currExpected(k,sk,cwn);
-        const st=paceHasPendingCascade(k,kws)?"behind":paceStatus(cur,s.total||0,s.startWeek||1,weekNum,totalWeeks,exp);
-        if(st==="ahead")aheadN++; else if(st==="behind")behindN++; else if(st!=="not-started")onN++;
-      });
-      const summaryStr=keys.length?(behindN?behindN+' behind':aheadN?aheadN+' ahead':'All on track'):'No subjects yet';
-
-      h+='<div class="pace-kid-card">'+
-        '<div class="pace-kid-hdr">'+
-        '<div><div class="pace-kid-name" style="color:'+col+'">'+cap(k)+'</div>'+
-        '<div class="pace-kid-meta">'+summaryStr+(keys.length?' &middot; '+keys.length+' subjects':'')+'</div></div>'+
-        '</div>';
-
-      if(keys.length){
-        h+='<div class="pace-subjects">';
-        keys.forEach(sk=>{
-          const s=kidSubjs[sk];
-          const kws=paceKeywords(k,sk,s);
-          const autoC=paceAutoCount(k,kws);
-          const offset=s.offset||0,adjust=s.adjust||0,sw=s.startWeek||1;
-          const cur=offset+autoC+(s.paceAdjust||0),tot=s.total||1;
-          const pct=Math.min(100,Math.round(cur/tot*100));
-          const exp=currExpected(k,sk,cwn);
-          const expB=currExpectedBase(k,sk,cwn);
-          const status=paceHasPendingCascade(k,kws)?"behind":paceStatus(cur,tot,sw,weekNum,totalWeeks,exp);
-          const barCol=status==="ahead"?"#16a34a":status==="behind"?"#ef4444":status==="not-started"?"#d1d5db":"#3b82f6";
-          const expPct=exp!==null?Math.min(100,Math.round(exp/tot*100)):null;
-          const expBPct=(expB!==null&&exp!==null&&expB!==exp)?Math.min(100,Math.round(expB/tot*100)):null;
-          const diff=exp!==null?cur-exp:null;
-          const planDelta=(exp!==null&&expB!==null&&exp!==expB)?' &middot; plan '+((exp-expB)>0?'+':'')+(exp-expB)+' vs Excel':'';
-          const expLabel=(exp!==null?' &middot; '+(diff>0?diff+' ahead of expected':diff<0?Math.abs(diff)+' behind expected':'on pace for Wk '+cwn):'')+planDelta;
-          const _nextLesson=getNextLessonLabel(k,sk);
-
-          h+='<div class="pace-subject-row">'+
-            '<div class="pace-subj-hdr">'+
-            '<span class="pace-subj-name">'+s.label+'</span>'+
-            '<span class="pace-subj-nums">'+cur+' / '+tot+' done</span></div>'+
-            '<div class="pace-bar" style="position:relative"><div class="pace-bar-fill" style="width:'+pct+'%;background:'+barCol+'"></div>'+(expPct!==null?'<div style="position:absolute;left:'+expPct+'%;top:-3px;width:2px;height:calc(100% + 6px);background:#374151;border-radius:1px;pointer-events:none" title="Expected (edited plan): '+exp+'/'+tot+'"></div>':'')+(expBPct!==null?'<div style="position:absolute;left:'+expBPct+'%;top:-3px;width:2px;height:calc(100% + 6px);background:#9ca3af;opacity:0.65;pointer-events:none;border-radius:1px" title="Original Excel plan: '+expB+'/'+tot+'"></div>':'')+'</div>'+
-            '<div class="pace-status-row">'+
-            '<span class="pace-badge '+status+'">'+paceStatusLabel(status)+'</span>'+
-            '<span class="pace-pct">'+pct+'% complete'+expLabel+(sw>1&&weekNum<sw?' &middot; starts wk '+sw:'')+'</span></div>';
-
-          if(_nextLesson){
-            h+='<div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding:4px 8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px">'+
-              '<span style="font-size:10px;font-weight:700;color:#16a34a;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap">Next up</span>'+
-              '<span style="font-size:12px;color:#15803d;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_nextLesson+'</span></div>';
-          } else if(cur>=tot&&tot>0){
-            h+='<div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding:4px 8px;background:#fef9c3;border:1px solid #fde68a;border-radius:6px">'+
-              '<span style="font-size:10px;font-weight:700;color:#a16207;text-transform:uppercase;letter-spacing:0.3px">Complete</span>'+
-              '<span style="font-size:12px;color:#92400e;font-weight:500">All lessons finished!</span></div>';
-          }
-          h+='</div>';
-        });
-        h+='</div>';
-      }
-      h+='</div>';
-    });
-
-    h+='</div>';
-  });
-
+  if(showKids.some(k=>Object.keys((paceData.subjects&&paceData.subjects[k])||{}).length)) h+='<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:10px">Finish dates, pacing &amp; adjustments live in <b>Admin → Curriculum</b></div>';
   h+='</div>';
   el.innerHTML=h;
 }
@@ -12852,7 +12700,7 @@ function _renderMasteryInner(el){
 
   // View tabs: Drill / Scores / Heat Map
   h+='<div class="mast-view-tabs" style="margin-top:8px;margin-bottom:0">';
-  h+='<button class="mast-view-tab'+(mastView==="drill"?" active":"")+'" onclick="mastSetView(\'drill\')">Mastery</button>';
+  h+='<button class="mast-view-tab'+(mastView==="drill"?" active":"")+'" onclick="mastSetView(\'drill\')">Drills</button>';
   h+='<button class="mast-view-tab'+(mastView==="sprint"?" active":"")+'" onclick="mastSetView(\'sprint\')">Sprint</button>';
   h+='<button class="mast-view-tab'+(mastView==="scores"?" active":"")+'" onclick="mastSetView(\'scores\')">Scores</button>';
   h+='<button class="mast-view-tab'+(mastView==="heatmap"?" active":"")+'" onclick="mastSetView(\'heatmap\')">Heat Map</button>';
