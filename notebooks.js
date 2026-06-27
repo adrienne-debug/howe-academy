@@ -3420,11 +3420,88 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     return !!w;
   }
 
+  // ── Combined parent guide: merge every kid's parent companion into ONE printable doc.
+  // Each kid's CSS is scoped to a .<kid>-sec wrapper so their themes can't collide.
+  function scopeCss(css, scope) {
+    css = css.replace(/\/\*[\s\S]*?\*\//g, ""); // drop comments first (simpler brace matching)
+    function scopeSelector(sel) {
+      return sel.split(",").map(function (one) {
+        one = one.trim(); if (!one) return "";
+        if (one === ":root" || one === "html" || one === "body") return scope;
+        if (one.indexOf(":root") === 0) return scope + one.slice(5);      // :root.x → .sec.x
+        if (one.indexOf("html ") === 0) return scope + " " + one.slice(5);
+        if (one.indexOf("body ") === 0) return scope + " " + one.slice(5);
+        return scope + " " + one;                                          // .page, *, etc. → .sec .page
+      }).filter(Boolean).join(", ");
+    }
+    function walk(s) {
+      var out = "", i = 0;
+      while (i < s.length) {
+        var ch = s[i];
+        if (/\s/.test(ch)) { out += ch; i++; continue; }
+        if (ch === "@") {
+          var j = i; while (j < s.length && s[j] !== "{" && s[j] !== ";") j++;
+          var prelude = s.slice(i, j);
+          if (j >= s.length || s[j] === ";") { out += prelude + (s[j] === ";" ? ";" : ""); i = j + 1; continue; }
+          var k = j + 1, depth = 1;
+          while (k < s.length && depth > 0) { if (s[k] === "{") depth++; else if (s[k] === "}") depth--; k++; }
+          var inner = s.slice(j + 1, k - 1);
+          var name = prelude.trim().split(/[\s(]/)[0];
+          if (name === "@media" || name === "@supports") out += prelude + "{" + walk(inner) + "}";
+          else if (name === "@font-face") { /* drop — embedded once globally */ }
+          else out += prelude + "{" + inner + "}"; // @page, @keyframes — leave as-is (harmless if duped)
+          i = k; continue;
+        }
+        var b = i; while (b < s.length && s[b] !== "{" && s[b] !== "}") b++;
+        if (s[b] !== "{") { i = b + 1; continue; }
+        var sel = s.slice(i, b);
+        var c = b + 1, d = 1;
+        while (c < s.length && d > 0) { if (s[c] === "{") d++; else if (s[c] === "}") d--; c++; }
+        var body = s.slice(b + 1, c - 1);
+        var scoped = scopeSelector(sel);
+        if (scoped) out += scoped + "{" + body + "}";
+        i = c;
+      }
+      return out;
+    }
+    return walk(css);
+  }
+
+  function combinedParent(ctxByKid, opts) {
+    opts = opts || {};
+    var order = ["lincoln", "ellis", "lucy", "julian"];
+    var sections = "", styles = "", links = {}, any = false;
+    order.forEach(function (kid) {
+      var ctx = ctxByKid[kid]; if (!ctx) return;
+      var html = generate(kid, ctx).parent; if (!html) return;
+      any = true;
+      (html.match(/<link[^>]+fonts\.(?:googleapis|gstatic)\.com[^>]*>/g) || []).forEach(function (l) { links[l] = 1; });
+      var css = (html.match(/<style[^>]*>[\s\S]*?<\/style>/gi) || []).map(function (blk) {
+        return blk.replace(/<\/?style[^>]*>/gi, "");
+      }).join("\n");
+      var sec = "." + kid + "-sec";
+      styles += "\n/* ===== " + kid + " ===== */\n" + scopeCss(css, sec);
+      var body = (html.match(/<body[^>]*>([\s\S]*?)<\/body>/i) || [, ""])[1];
+      var brk = sections ? ' style="break-before:page;page-break-before:always;"' : "";
+      sections += '\n<div class="' + kid + '-sec"' + brk + '>\n' + body + '\n</div>\n';
+    });
+    if (!any) throw new Error("No parent guides to combine (no kid data).");
+    var title = opts.title || "Howe Academy — Parent Guide (all kids)";
+    return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n<title>' + title + '</title>\n' +
+      '<link rel="preconnect" href="https://fonts.googleapis.com">\n<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n' +
+      Object.keys(links).join("\n") + "\n" +
+      '<style>\n' + fontFacesCss() + "\n" +
+      "  body { margin:0; background:#d8d8d8; }\n" +
+      "  @media print { @page { size: letter portrait; margin: 0; } }\n" +
+      styles + "\n</style>\n</head>\n<body>\n" + sections + "\n</body>\n</html>";
+  }
+
   window.HoweNotebooks = {
     version: "1-julian",
     fontsOk: FONTS_OK,
     GENERATORS: GENERATORS,
     generate: generate,
+    combinedParent: combinedParent,
     openHtml: openHtml,
     weekDatesRange: weekDatesRange,
     // exposed for testing
