@@ -3342,7 +3342,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       var badge = LUCY_DATA.day_badges[day] || "🦄 Great Work!";
       parts.push(luPageDaily(wn, day, dateStr, tasks, blend, subPrbs, badge, year));
       if (day === "monday") parts.push(luPageBb1(wn, null));
-      else if (day === "tuesday") parts.push(luPageBb2Coloring(wn, null, category));
+      else if (day === "tuesday") parts.push(luPageBb2Coloring(wn, ctx.coloring || null, category));
       else if (day === "wednesday") parts.push(luPageBb3(wn, null, null));
       else if (day === "thursday") parts.push(luPageBb4(wn, null));
       else if (day === "friday") parts.push(luPageCreative(wn));

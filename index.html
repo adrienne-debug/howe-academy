@@ -1120,6 +1120,11 @@ let calendarData={holidays:{}, vacations:{}, kidOverrides:{}}; // global calenda
 // rest of the app's data; flows into each kid's safety page at generate time. NOT in any shared file.
 let notebookPersonal={}; try{ const _np=localStorage.getItem("ha_nb_personal"); if(_np) notebookPersonal=JSON.parse(_np); }catch(e){}
 let nbSelectedKid="lincoln"; // currently-selected kid in the Notebook tab
+// Lucy's uploaded coloring image (rasterized PDF page → PNG base64). DEVICE-ONLY
+// (localStorage, never Firebase/public) — it's a copy of purchased art, kept private.
+let nbColoring={}; try{ const _nc=localStorage.getItem("ha_nb_coloring"); if(_nc) nbColoring=JSON.parse(_nc); }catch(e){}
+let _nbColoringDoc=null; // transient PDF.js doc for paging through this session's upload
+let _nbColoringPdfPromise=null; // lazy pdf.js loader
 let scheduleOverrides={}; // {dateStr:{kid:{dayOff:true, removed:{sk:true}, added:{sk:true}}}} — manual Lesson Map edits
 let calAddMode=null; // null | "holiday" | "vacation" | "override"
 let calEditId=null;  // id of holiday/vacation being edited
@@ -6387,7 +6392,8 @@ function haNbContext(kid){
     }
   }catch(e){}
   try{ pace=haPaceRows(kid); }catch(e){}
-  return { weekData:{dates:dates, tasks:tasks}, weekNum:WK, weekDates:weekDates, masteryItems:(mastery[kid]||[]), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace };
+  let coloring=null; try{ if(kid==="lucy"&&nbColoring.lucy&&nbColoring.lucy.b64) coloring=nbColoring.lucy.b64; }catch(e){}
+  return { weekData:{dates:dates, tasks:tasks}, weekNum:WK, weekDates:weekDates, masteryItems:(mastery[kid]||[]), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring };
 }
 function haNbOpen(kid,which){
   const lib=window.HoweNotebooks; if(!lib){ alert("Notebook builder not loaded yet."); return; }
@@ -7891,6 +7897,62 @@ function nbSavePersonal(kid){
   const msg=document.getElementById("nbp-msg-"+kid);
   if(msg){ msg.textContent="Saved ✓ — shows on the next notebook you generate."; setTimeout(()=>{ const m=document.getElementById("nbp-msg-"+kid); if(m)m.textContent=""; },3500); }
 }
+// ── Lucy coloring upload (PDF.js, rasterized in-browser, device-only) ──
+function nbLoadPdfJs(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if(_nbColoringPdfPromise) return _nbColoringPdfPromise;
+  _nbColoringPdfPromise=new Promise((resolve,reject)=>{
+    const base="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
+    const s=document.createElement("script"); s.src=base+"pdf.min.js";
+    s.onload=()=>{
+      // A cross-origin Worker (from a CDN) is blocked and hangs getDocument — so fetch the
+      // worker script (cdnjs allows CORS) and wrap it in a same-origin blob URL.
+      fetch(base+"pdf.worker.min.js").then(r=>r.text()).then(code=>{
+        try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc=URL.createObjectURL(new Blob([code],{type:"application/javascript"})); }catch(e){}
+        resolve(window.pdfjsLib);
+      }).catch(()=>{ try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc=base+"pdf.worker.min.js"; }catch(e){} resolve(window.pdfjsLib); });
+    };
+    s.onerror=()=>{ _nbColoringPdfPromise=null; reject(new Error("could not load the PDF reader (offline?)")); };
+    document.head.appendChild(s);
+  });
+  return _nbColoringPdfPromise;
+}
+async function nbRenderColoringPage(pageNum){
+  if(!_nbColoringDoc) return;
+  const total=_nbColoringDoc.numPages, pn=Math.max(1,Math.min(pageNum||1,total));
+  const page=await _nbColoringDoc.getPage(pn);
+  const viewport=page.getViewport({scale:1.5});
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.round(viewport.width); canvas.height=Math.round(viewport.height);
+  // Bound the render so a stuck renderer can never hang the UI — fail with a message instead.
+  const task=page.render({canvasContext:canvas.getContext("2d"),viewport:viewport});
+  await Promise.race([task.promise, new Promise((_,rej)=>setTimeout(()=>{ try{task.cancel();}catch(e){} rej(new Error("rendering timed out — try a different PDF")); },30000))]);
+  const b64=(canvas.toDataURL("image/png").split(",")[1])||"";
+  nbColoring.lucy={ b64:b64, page:pn, pages:total };
+  try{ localStorage.setItem("ha_nb_coloring",JSON.stringify(nbColoring)); }
+  catch(e){ const m=document.getElementById("nbc-msg"); if(m) m.textContent="⚠️ Image too big to save on this device — try a smaller PDF."; delete nbColoring.lucy; return; }
+  renderNotebook();
+}
+async function nbColoringUpload(input){
+  const f=input&&input.files&&input.files[0]; if(!f) return;
+  const m=document.getElementById("nbc-msg"); if(m) m.textContent="Reading PDF…";
+  try{
+    await nbLoadPdfJs();
+    const buf=await f.arrayBuffer();
+    _nbColoringDoc=await window.pdfjsLib.getDocument({data:buf}).promise;
+    await nbRenderColoringPage(1);
+  }catch(e){ const m2=document.getElementById("nbc-msg"); if(m2) m2.textContent="❌ "+(e.message||"Couldn't read that PDF."); }
+}
+function nbColoringStep(delta){
+  if(!_nbColoringDoc){ const m=document.getElementById("nbc-msg"); if(m) m.textContent="Re-upload the PDF to pick a different page."; return; }
+  const cur=(nbColoring.lucy&&nbColoring.lucy.page)||1;
+  nbRenderColoringPage(cur+delta).catch(()=>{});
+}
+function nbColoringRemove(){
+  delete nbColoring.lucy; _nbColoringDoc=null;
+  try{ localStorage.setItem("ha_nb_coloring",JSON.stringify(nbColoring)); }catch(e){}
+  renderNotebook();
+}
 function renderNotebook(el){
   const con=el||document.getElementById("content"); if(!con)return;
   haLoadNotebooksLib().catch(()=>{}); // warm the engine so the Generate buttons are ready
@@ -7924,6 +7986,26 @@ function renderNotebook(el){
   } else {
     formHtml='<div style="margin-top:14px;font-size:11.5px;color:var(--muted);line-height:1.45">Julian’s pages come straight from his drills — no personal info needed.</div>';
   }
+  // Lucy-only: upload a coloring PDF → fills her coloring page (device-only)
+  let coloringHtml="";
+  if(sel==="lucy"){
+    const c=nbColoring.lucy; let inner;
+    if(c&&c.b64){
+      inner='<div style="display:flex;gap:12px;align-items:flex-start">'+
+        '<img src="data:image/png;base64,'+c.b64+'" style="width:88px;height:114px;object-fit:contain;border:1.5px solid var(--border);border-radius:8px;background:#fff" alt="coloring preview"/>'+
+        '<div style="flex:1">'+
+          '<div style="font-size:11.5px;color:var(--text);font-weight:700;margin-bottom:6px">Saved ✓ — fills Lucy’s coloring page</div>'+
+          (c.pages>1?'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><button onclick="nbColoringStep(-1)" style="padding:4px 11px;border-radius:8px;border:1.5px solid var(--border);background:#fff;cursor:pointer;font-weight:700">◀</button><span style="font-size:11px;color:var(--muted)">Page '+c.page+' of '+c.pages+'</span><button onclick="nbColoringStep(1)" style="padding:4px 11px;border-radius:8px;border:1.5px solid var(--border);background:#fff;cursor:pointer;font-weight:700">▶</button></div>':'')+
+          '<div style="display:flex;gap:8px"><label style="padding:6px 12px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:700;cursor:pointer">Replace<input type="file" accept="application/pdf,.pdf" onchange="nbColoringUpload(this)" style="display:none"></label><button onclick="nbColoringRemove()" style="padding:6px 12px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:700;color:#b91c1c;cursor:pointer">Remove</button></div>'+
+        '</div></div>';
+    } else {
+      inner='<label style="display:inline-block;padding:8px 14px;border-radius:9px;border:1.5px dashed #c084fc;background:#faf5ff;color:#7c3aed;font-size:12px;font-weight:700;cursor:pointer">📄 Upload coloring PDF<input type="file" accept="application/pdf,.pdf" onchange="nbColoringUpload(this)" style="display:none"></label>';
+    }
+    coloringHtml='<div style="margin-top:14px;background:#fafafe;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px">'+
+      '<div style="font-size:12px;font-weight:800;color:#7c3aed;margin-bottom:2px">🎨 Coloring page (optional)</div>'+
+      '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:10px">Upload your own coloring PDF — one page fills Lucy’s coloring sheet. Stored on this device only, never shared.</div>'+
+      inner+'<div id="nbc-msg" style="font-size:11px;color:var(--muted);margin-top:8px"></div></div>';
+  }
   con.innerHTML=
     '<div style="max-width:560px;margin:0 auto;padding:20px 18px;font-family:\'DM Sans\',sans-serif">'+
       '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">'+
@@ -7939,6 +8021,7 @@ function renderNotebook(el){
           '<button onclick="haNbOpen(\''+sel+'\',\'parent\')" style="flex:1;padding:10px;border-radius:10px;border:1.5px solid var(--border);background:#fff;color:#1f2937;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">👩‍🏫 Parent</button>'+
         '</div>'+
         formHtml+
+        coloringHtml+
       '</div>'+
     '</div>';
 }
