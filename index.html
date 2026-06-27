@@ -1120,20 +1120,12 @@ let calendarData={holidays:{}, vacations:{}, kidOverrides:{}}; // global calenda
 // rest of the app's data; flows into each kid's safety page at generate time. NOT in any shared file.
 let notebookPersonal={}; try{ const _np=localStorage.getItem("ha_nb_personal"); if(_np) notebookPersonal=JSON.parse(_np); }catch(e){}
 let nbSelectedKid="lincoln"; // currently-selected kid in the Notebook tab
-// Lucy's uploaded coloring image (rasterized PDF page → PNG base64). DEVICE-ONLY
-// (localStorage, never Firebase/public) — it's a copy of purchased art, kept private.
-// Lucy's activity pages, by category: {coloring:{b64,page,pages,mode}, dotdot:{...}, symmetry:{...}, maze:{...}, pattern:{...}}
-let nbColoring={}; try{ const _nc=localStorage.getItem("ha_nb_coloring"); if(_nc) nbColoring=JSON.parse(_nc); }catch(e){}
-if(nbColoring&&nbColoring.lucy&&!nbColoring.coloring){ nbColoring.coloring=nbColoring.lucy; delete nbColoring.lucy; } // migrate old single-coloring entry
-["coloring","dotdot","symmetry","maze","pattern"].forEach(_c=>{ const _e=nbColoring[_c]; if(_e&&_e.b64&&!_e.books){ _e.books=[{id:"legacy",name:"My pages",pages:_e.pages||1}]; _e.curBook="legacy"; _e.curPage=_e.page||1; delete _e.page; delete _e.pages; } }); // migrate single-book → books[]
-let _nbActDoc={}; // transient PDF.js docs per category {coloring:doc, dotdot:doc, ...}
-let _nbColoringPdfPromise=null; // lazy pdf.js loader
-// Synced activity-book LIBRARY (metadata only): {coloring:[{name,url,pages}], dotdot:[...], symmetry:[...], maze:[...], pattern:[...]}.
-// The PDFs live in Firebase Storage (per-family, like songs); this just records what's there so every device knows.
-// Heavy rasterized pages are cached per-device (nbActImg / localStorage), rotated by week.
+// Lucy's activity-page LIBRARY, SYNCED across the family's devices. PNG pages live in Firebase
+// Storage (per-family, private — like the celebration songs); RTDB node "notebookActivities"
+// records the metadata so every device knows what's there. Shape per category:
+// {mode:"auto"|"manual", curBook, curPage, books:[{id, name, pages, imgs:{1:url,2:url,...}}]}
 let nbActivities={}; try{ const _na=localStorage.getItem("ha_nb_activities"); if(_na) nbActivities=JSON.parse(_na); }catch(e){}
-let nbActImg={}; // in-memory rasterized current-week pages: {coloring:b64, dotdot:b64, ...}
-let _nbActPdfCache={}; // url → loaded PDF.js doc (this session), to avoid re-downloading
+let _nbColoringPdfPromise=null; // lazy pdf.js loader (used to rasterize pages on upload)
 let scheduleOverrides={}; // {dateStr:{kid:{dayOff:true, removed:{sk:true}, added:{sk:true}}}} — manual Lesson Map edits
 let calAddMode=null; // null | "holiday" | "vacation" | "override"
 let calEditId=null;  // id of holiday/vacation being edited
@@ -1457,9 +1449,13 @@ function initFb() {
       if(tab==="notebook"){const el=document.getElementById("content");if(el&&!document.activeElement?.id?.startsWith("nbp-"))renderNotebook(el);}
     });
     db.ref("notebookActivities").on("value",s=>{
-      nbActivities=s.val()||{};
-      // RTDB stores empty arrays as missing — normalize each category to an array
-      ["coloring","dotdot","symmetry","maze","pattern"].forEach(c=>{ if(!Array.isArray(nbActivities[c])) nbActivities[c]=nbActivities[c]?Object.values(nbActivities[c]):[]; });
+      const v=s.val()||{};
+      // RTDB returns arrays as objects when sparse — normalize books[]; migrate old urls[] → imgs{} map
+      ["coloring","dotdot","symmetry","maze","pattern"].forEach(cat=>{
+        const c=v[cat]; if(c&&c.books){ c.books=Array.isArray(c.books)?c.books:Object.values(c.books);
+          c.books.forEach(b=>{ if(b&&b.urls&&!b.imgs){ const arr=Array.isArray(b.urls)?b.urls:Object.values(b.urls); b.imgs={}; arr.forEach((u,i)=>{ if(u) b.imgs[i+1]=u; }); if(!b.pages) b.pages=arr.length; delete b.urls; } }); }
+      });
+      nbActivities=v;
       try{localStorage.setItem("ha_nb_activities",JSON.stringify(nbActivities));}catch(e){}
       if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);}
     });
@@ -6409,7 +6405,7 @@ function haNbContext(kid){
   }catch(e){}
   try{ pace=haPaceRows(kid); }catch(e){}
   let coloring=null,dotdot=null,symmetry=null,maze=null,pattern=null;
-  try{ if(kid==="lucy"){ const g=c=>(nbColoring[c]&&nbColoring[c].b64)||null; coloring=g("coloring"); dotdot=g("dotdot"); symmetry=g("symmetry"); maze=g("maze"); pattern=g("pattern"); } }catch(e){}
+  try{ if(kid==="lucy"){ coloring=nbActCurUrl("coloring"); dotdot=nbActCurUrl("dotdot"); symmetry=nbActCurUrl("symmetry"); maze=nbActCurUrl("maze"); pattern=nbActCurUrl("pattern"); } }catch(e){}
   return { weekData:{dates:dates, tasks:tasks}, weekNum:WK, weekDates:weekDates, masteryItems:(mastery[kid]||[]), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern };
 }
 function haNbOpen(kid,which){
@@ -7942,96 +7938,109 @@ function nbLoadPdfJs(){
   });
   return _nbColoringPdfPromise;
 }
-// Persist uploaded activity PDFs in IndexedDB (too big for localStorage) so AUTO mode
-// renders a fresh page each week without re-uploading. Generic over activity category.
-function nbIdbOpen(){
-  return new Promise((res,rej)=>{ const r=indexedDB.open("ha_notebook",1);
-    r.onupgradeneeded=()=>{ const d=r.result; if(!d.objectStoreNames.contains("pdfs")) d.createObjectStore("pdfs"); };
-    r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
-}
-async function nbIdbPut(key,blob){ const d=await nbIdbOpen(); return new Promise((res,rej)=>{ const t=d.transaction("pdfs","readwrite"); t.objectStore("pdfs").put(blob,key); t.oncomplete=()=>res(); t.onerror=()=>rej(t.error); }); }
-async function nbIdbGet(key){ const d=await nbIdbOpen(); return new Promise((res,rej)=>{ const t=d.transaction("pdfs","readonly"); const q=t.objectStore("pdfs").get(key); q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); }); }
-async function nbIdbDel(key){ try{ const d=await nbIdbOpen(); return new Promise(res=>{ const t=d.transaction("pdfs","readwrite"); t.objectStore("pdfs").delete(key); t.oncomplete=()=>res(); t.onerror=()=>res(); }); }catch(e){} }
-function nbActIdbKey(cat, bookId){ return bookId==="legacy" ? ("lucy_"+cat) : ("lucy_"+cat+"_"+bookId); }
-async function nbActEnsureDoc(cat, bookId){
-  const k=cat+"_"+bookId;
-  if(_nbActDoc[k]) return _nbActDoc[k];
-  const blob=await nbIdbGet(nbActIdbKey(cat,bookId)); if(!blob) return null;
-  await nbLoadPdfJs();
-  _nbActDoc[k]=await window.pdfjsLib.getDocument({data:await blob.arrayBuffer()}).promise;
-  return _nbActDoc[k];
-}
-// Which book+page this week — round-robin across books (so they ALTERNATE week to week),
-// advancing the page within a book each time it comes back around. One book = plain weekly paging.
+// ── Lucy activity pages — SYNCED across the family's devices via Firebase Storage (PNG pages)
+// + RTDB metadata (nbActivities / node "notebookActivities"). On upload we rasterize every page
+// once HERE (where render works), upload the PNGs, and save their URLs; other devices just
+// <img src=url> — no re-render, no cross-origin PDF fetch. Private to this family's own Firebase.
+// round-robin week target → {bookId, page, name} (books ALTERNATE week to week)
 function nbActWeekTarget(cat){
-  const c=nbColoring[cat]; if(!c||!c.books||!c.books.length) return null;
+  const c=nbActivities[cat]; if(!c||!c.books||!c.books.length) return null;
   const n=c.books.length, wn=parseInt(String(WK).replace(/\D/g,""),10)||1;
   const bi=((wn-1)%n+n)%n, cycle=Math.floor((wn-1)/n), bk=c.books[bi], pages=bk.pages||1;
   return { bookId:bk.id, page:((cycle%pages)+pages)%pages+1, name:bk.name };
 }
-function nbActFlat(cat){ const c=nbColoring[cat], out=[]; if(c&&c.books) c.books.forEach(b=>{ for(let p=1;p<=(b.pages||1);p++) out.push({bookId:b.id,page:p,name:b.name}); }); return out; }
-async function nbActRender(cat, bookId, pageNum, mode){
-  const doc=await nbActEnsureDoc(cat, bookId); if(!doc) return;
-  const total=doc.numPages, pn=Math.max(1,Math.min(pageNum||1,total));
-  const page=await doc.getPage(pn);
-  const vp=page.getViewport({scale:1.5});
-  const canvas=document.createElement("canvas"); canvas.width=Math.round(vp.width); canvas.height=Math.round(vp.height);
-  // Bound the render so a stuck renderer can never hang the UI.
-  const task=page.render({canvasContext:canvas.getContext("2d"),viewport:vp});
-  await Promise.race([task.promise, new Promise((_,rej)=>setTimeout(()=>{ try{task.cancel();}catch(e){} rej(new Error("rendering timed out — try a different PDF")); },30000))]);
-  const b64=(canvas.toDataURL("image/png").split(",")[1])||"";
-  const c=nbColoring[cat]||{books:[]}; c.b64=b64; c.curBook=bookId; c.curPage=pn; c.mode=mode||c.mode||"auto"; nbColoring[cat]=c;
-  try{ localStorage.setItem("ha_nb_coloring",JSON.stringify(nbColoring)); }catch(e){ const m=document.getElementById("nbc-msg-"+cat); if(m) m.textContent="⚠️ Image too big to save on this device."; }
+// flatten the READY pages across books — imgs is a page→url map, so partial uploads stay correct
+function nbActFlat(cat){ const c=nbActivities[cat], out=[]; if(c&&c.books) c.books.forEach(b=>{ const im=b.imgs||{}; for(let p=1;p<=(b.pages||0);p++){ if(im[p]) out.push({bookId:b.id,page:p,name:b.name,url:im[p]}); } }); return out; }
+// the image URL to print for this category right now (auto = this week's alternating page; manual = pinned)
+function nbActCurUrl(cat){
+  const c=nbActivities[cat]; if(!c||!c.books||!c.books.length) return null;
+  let bookId, page;
+  if(c.mode==="manual" && c.curBook){ bookId=c.curBook; page=c.curPage||1; }
+  else { const t=nbActWeekTarget(cat); if(!t) return null; bookId=t.bookId; page=t.page; }
+  const bk=c.books.find(b=>b.id===bookId)||c.books[0]; if(!bk) return null;
+  const im=bk.imgs||{};
+  if(im[page]) return im[page];
+  for(let p=page;p>=1;p--){ if(im[p]) return im[p]; }   // fall back to a nearby ready page while the rest upload
+  const ks=Object.keys(im); return ks.length?im[ks[0]]:null;
 }
-async function nbActEnsureWeek(cat){
-  const c=nbColoring[cat]; if(!c||c.mode==="manual"||!c.books||!c.books.length) return;
-  const t=nbActWeekTarget(cat); if(!t) return;
-  if(c.curBook===t.bookId && c.curPage===t.page && c.b64) return;   // already on this week's page
-  try{ await nbActRender(cat,t.bookId,t.page,"auto"); renderNotebook(); }catch(e){}
-}
+async function nbActSaveMeta(){ try{ if(typeof db!=="undefined"&&db) await db.ref("notebookActivities").set(nbActivities); }catch(e){} }
 async function nbActUpload(input, cat){
   const f=input&&input.files&&input.files[0]; if(!f) return;
-  const m=document.getElementById("nbc-msg-"+cat); if(m) m.textContent="Reading PDF…";
+  const say=s=>{ const mm=document.getElementById("nbc-msg-"+cat); if(mm) mm.textContent=s; }; // re-fetch: panel re-renders mid-upload
+  if(typeof firebase==="undefined"||!firebase.storage){ say("❌ Sync unavailable (Storage not loaded)."); return; }
   try{
+    say("Reading PDF…");
     await nbLoadPdfJs();
-    const id=Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36);
     const doc=await window.pdfjsLib.getDocument({data:await f.arrayBuffer()}).promise;
-    _nbActDoc[cat+"_"+id]=doc;
-    try{ await nbIdbPut("lucy_"+cat+"_"+id, f); }catch(e){}      // persist this book for weekly auto-rotation
-    const c=nbColoring[cat]||{mode:"auto",books:[]}; if(!c.books) c.books=[];
-    c.books.push({ id:id, name:(f.name||"book").replace(/\.pdf$/i,"").slice(0,28), pages:doc.numPages });
-    nbColoring[cat]=c;
-    try{ localStorage.setItem("ha_nb_coloring",JSON.stringify(nbColoring)); }catch(e){}
-    if(c.mode!=="manual"){ const t=nbActWeekTarget(cat); if(t) await nbActRender(cat,t.bookId,t.page,"auto"); }
-    else if(!c.b64){ await nbActRender(cat,id,1,"manual"); }
+    const MAX=24, total=Math.min(doc.numPages, MAX);
+    const id=Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36);
+    const name=(f.name||"book").replace(/\.pdf$/i,"").slice(0,28);
+    const dir="notebookActivities/"+cat+"/"+id+"/";
+    // render one page → lightweight JPEG (white bg so transparent PDFs don't go black)
+    const renderBlob=async(p)=>{
+      const page=await doc.getPage(p);
+      const vp=page.getViewport({scale:1.4});
+      const canvas=document.createElement("canvas"); canvas.width=Math.round(vp.width); canvas.height=Math.round(vp.height);
+      const ctx2d=canvas.getContext("2d"); ctx2d.fillStyle="#fff"; ctx2d.fillRect(0,0,canvas.width,canvas.height);
+      const task=page.render({canvasContext:ctx2d,viewport:vp});
+      await Promise.race([task.promise, new Promise((_,rej)=>setTimeout(()=>{ try{task.cancel();}catch(e){} rej(new Error("rendering timed out on page "+p)); },30000))]);
+      return new Promise(res=>canvas.toBlob(res,"image/jpeg",0.82));
+    };
+    const putBlob=async(p,blob)=>{ const ref=firebase.storage().ref(dir+"p"+p+".jpg");
+      await Promise.race([ ref.put(blob), new Promise((_,rej)=>setTimeout(()=>rej(new Error("upload timed out — Storage is still blocked (check Storage rules in Firebase)")),25000)) ]);
+      return ref.getDownloadURL(); };
+    // find-or-create this book in the CURRENT nbActivities (robust to the RTDB listener reassigning it mid-upload)
+    const getBook=()=>{ if(!nbActivities[cat]) nbActivities[cat]={mode:"auto",books:[]}; if(!nbActivities[cat].books) nbActivities[cat].books=[]; let b=nbActivities[cat].books.find(x=>x.id===id); if(!b){ b={id:id,name:name,pages:total,imgs:{}}; nbActivities[cat].books.push(b); } if(!b.imgs) b.imgs={}; return b; };
+    // pick the page THIS WEEK actually needs, so generation is correct the instant the book appears
+    const existing=(nbActivities[cat]&&nbActivities[cat].books&&nbActivities[cat].books.length)||0;
+    const n=existing+1, wn=parseInt(String(WK).replace(/\D/g,""),10)||1, bi=((wn-1)%n+n)%n;
+    const first=(bi===existing) ? (Math.floor((wn-1)/n)%total)+1 : 1;  // this book's turn → its week page; else page 1
+    // 1) INSTANT: render+upload that one page, save + show the book right away
+    say("Adding “"+name+"”…");
+    const imgs={}; imgs[first]=await putBlob(first, await renderBlob(first));
+    getBook().imgs[first]=imgs[first];
+    await nbActSaveMeta(); renderNotebook();
+    if(total<=1){ say("✓ Added “"+name+"” — synced to your devices."); return; }
+    say("Ready! Adding the other pages in the background… (1/"+total+")");
+    // 2) BACKGROUND: remaining pages — render sequentially (low CPU), upload concurrently
+    let done=1; const ups=[];
+    for(let p=1;p<=total;p++){ if(p===first) continue;
+      const blob=await renderBlob(p);
+      ups.push(putBlob(p,blob).then(u=>{ imgs[p]=u; done++; say("Adding the other pages in the background… ("+done+"/"+total+")"); }));
+    }
+    await Promise.all(ups);
+    const b=getBook(); b.imgs=imgs; b.pages=total;
+    await nbActSaveMeta();
+    say("✓ Added “"+name+"” ("+total+" pages) — synced to all your devices.");
     renderNotebook();
-  }catch(e){ const m2=document.getElementById("nbc-msg-"+cat); if(m2) m2.textContent="❌ "+(e.message||"Couldn't read that PDF."); }
+  }catch(e){ say("❌ "+(e.message||"Couldn't add that PDF.")); }
 }
 function nbActStep(cat, delta){
-  const c=nbColoring[cat]; if(!c||!c.books||!c.books.length) return;
+  const c=nbActivities[cat]; if(!c||!c.books||!c.books.length) return;
   const flat=nbActFlat(cat); if(!flat.length) return;
-  let idx=flat.findIndex(x=>x.bookId===c.curBook && x.page===c.curPage); if(idx<0) idx=0;
+  // start from where we are now: manual → pinned page; auto → this week's target page
+  let curBook=c.curBook, curPage=c.curPage;
+  if(c.mode!=="manual"){ const t=nbActWeekTarget(cat); if(t){ curBook=t.bookId; curPage=t.page; } }
+  let idx=flat.findIndex(x=>x.bookId===curBook && x.page===curPage); if(idx<0) idx=0;
   idx=((idx+delta)%flat.length+flat.length)%flat.length;          // wrap through all books' pages
-  const t=flat[idx];
-  const m=document.getElementById("nbc-msg-"+cat); if(m) m.textContent="Loading page…";
-  nbActRender(cat,t.bookId,t.page,"manual").then(()=>renderNotebook()).catch(e=>{ const mm=document.getElementById("nbc-msg-"+cat); if(mm) mm.textContent="❌ "+(e.message||"render failed"); });
+  c.mode="manual"; c.curBook=flat[idx].bookId; c.curPage=flat[idx].page;
+  nbActSaveMeta(); renderNotebook();
 }
 function nbActSetAuto(cat, on){
-  const c=nbColoring[cat]; if(!c) return;
-  c.mode=on?"auto":"manual";
-  try{ localStorage.setItem("ha_nb_coloring",JSON.stringify(nbColoring)); }catch(e){}
-  if(on) nbActEnsureWeek(cat); else renderNotebook();
+  const c=nbActivities[cat]; if(!c) return;
+  if(on){ c.mode="auto"; }
+  else { c.mode="manual"; const t=nbActWeekTarget(cat); if(t){ c.curBook=t.bookId; c.curPage=t.page; } } // start manual from this week's page
+  nbActSaveMeta(); renderNotebook();
 }
-function nbActRemoveBook(cat, bookId){
-  const c=nbColoring[cat]; if(!c||!c.books) return;
+async function nbActRemoveBook(cat, bookId){
+  const c=nbActivities[cat]; if(!c||!c.books) return;
   c.books=c.books.filter(b=>b.id!==bookId);
-  delete _nbActDoc[cat+"_"+bookId];
-  nbIdbDel(nbActIdbKey(cat,bookId));
-  if(!c.books.length){ delete nbColoring[cat]; }
-  else if(c.curBook===bookId){ c.b64=null; c.curBook=null; c.curPage=null; }
-  try{ localStorage.setItem("ha_nb_coloring",JSON.stringify(nbColoring)); }catch(e){}
-  if(nbColoring[cat] && nbColoring[cat].mode!=="manual") nbActEnsureWeek(cat);
+  if(c.curBook===bookId){ c.curBook=null; c.curPage=null; }
+  if(!c.books.length) delete nbActivities[cat];
+  await nbActSaveMeta();
   renderNotebook();
+  // best-effort: delete this book's PNGs from Storage
+  try{ const dir=firebase.storage().ref("notebookActivities/"+cat+"/"+bookId); const lst=await dir.listAll(); await Promise.all(lst.items.map(it=>it.delete().catch(()=>{}))); }catch(e){}
 }
 function renderNotebook(el){
   const con=el||document.getElementById("content"); if(!con)return;
@@ -8070,18 +8079,21 @@ function renderNotebook(el){
   let coloringHtml="";
   if(sel==="lucy"){
     const actSlot=(meta2)=>{
-      const cat=meta2.cat, c=nbColoring[cat], books=(c&&c.books)||[]; let inner;
+      const cat=meta2.cat, c=nbActivities[cat], books=(c&&c.books)||[]; let inner;
       if(books.length){
         const isAuto=!c||c.mode!=="manual";
-        if(isAuto) setTimeout(()=>nbActEnsureWeek(cat),0); // keep auto on this week's alternating page
         const bs="padding:3px 9px;border-radius:7px;border:1.5px solid var(--border);background:#fff;cursor:pointer;font-weight:700";
-        const curBook=books.find(x=>x.id===(c&&c.curBook)), curName=curBook?curBook.name:"";
-        const flatLen=books.reduce((s,b)=>s+(b.pages||1),0);
+        let curName="", curPage=1;
+        if(isAuto){ const t=nbActWeekTarget(cat); if(t){ curName=t.name; curPage=t.page; } }
+        else { const b=books.find(x=>x.id===c.curBook); curName=b?b.name:(books[0].name); curPage=(c&&c.curPage)||1; }
+        const curUrl=nbActCurUrl(cat);
+        const ready=b=>Object.keys(b.imgs||{}).length;
+        const flatLen=nbActFlat(cat).length;
         const autoBtn='<button onclick="nbActSetAuto(\''+cat+'\','+(isAuto?'false':'true')+')" style="display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:7px;border:1.5px solid '+(isAuto?'#7c3aed':'var(--border)')+';background:'+(isAuto?'#f5f3ff':'#fff')+';color:'+(isAuto?'#6d28d9':'#6b7280')+';font-size:10.5px;font-weight:700;cursor:pointer">'+(isAuto?'🔄 Auto ✓':'🔄 Auto')+'</button>';
-        const stepper=(flatLen>1?'<span style="display:inline-flex;align-items:center;gap:6px;margin-left:8px"><button onclick="nbActStep(\''+cat+'\',-1)" style="'+bs+'">◀</button><span style="font-size:10.5px;color:var(--muted)">'+(isAuto?'wk → ':'📌 ')+(curName?curName+' ':'')+'p'+((c&&c.curPage)||1)+'</span><button onclick="nbActStep(\''+cat+'\',1)" style="'+bs+'">▶</button></span>':'');
-        const bookList=books.map(b=>'<div style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--muted);padding:1px 0">📕 '+b.name+' <span style="opacity:.6">'+b.pages+'pg</span><button onclick="nbActRemoveBook(\''+cat+'\',\''+b.id+'\')" title="remove this book" style="margin-left:auto;border:none;background:none;color:#b91c1c;cursor:pointer;font-weight:800;font-size:13px;line-height:1">×</button></div>').join('');
+        const stepper=(flatLen>1?'<span style="display:inline-flex;align-items:center;gap:6px;margin-left:8px"><button onclick="nbActStep(\''+cat+'\',-1)" style="'+bs+'">◀</button><span style="font-size:10.5px;color:var(--muted)">'+(isAuto?'wk → ':'📌 ')+(curName?curName+' ':'')+'p'+curPage+'</span><button onclick="nbActStep(\''+cat+'\',1)" style="'+bs+'">▶</button></span>':'');
+        const bookList=books.map(b=>{ const r=ready(b), pg=b.pages||r||1, busy=r<pg; return '<div style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--muted);padding:1px 0">📕 '+b.name+' <span style="opacity:.6">'+(busy?(r+'/'+pg+' pg ⬆'):(pg+'pg'))+'</span><button onclick="nbActRemoveBook(\''+cat+'\',\''+b.id+'\')" title="remove this book" style="margin-left:auto;border:none;background:none;color:#b91c1c;cursor:pointer;font-weight:800;font-size:13px;line-height:1">×</button></div>'; }).join('');
         inner='<div style="display:flex;gap:10px;align-items:flex-start">'+
-          ((c&&c.b64)?'<img src="data:image/png;base64,'+c.b64+'" style="width:50px;height:65px;object-fit:contain;border:1.5px solid var(--border);border-radius:6px;background:#fff"/>':'')+
+          (curUrl?'<img src="'+curUrl+'" style="width:50px;height:65px;object-fit:contain;border:1.5px solid var(--border);border-radius:6px;background:#fff"/>':'')+
           '<div style="flex:1">'+
             '<div style="margin-bottom:6px">'+autoBtn+stepper+'</div>'+
             bookList+
@@ -8096,7 +8108,7 @@ function renderNotebook(el){
     };
     coloringHtml='<div style="margin-top:14px;background:#fafafe;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px 4px">'+
       '<div style="font-size:12px;font-weight:800;color:#7c3aed;margin-bottom:2px">🎨 Activity pages (optional)</div>'+
-      '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:2px">Upload your activity PDFs — add <b>several books</b> per type (unicorn, mermaid…) and they <b>alternate each week</b>. <b>Auto</b> picks a fresh one; arrows pin a page. Stored on this device, never shared.</div>'+
+      '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:2px">Upload your activity PDFs — add <b>several books</b> per type (unicorn, mermaid…) and they <b>alternate each week</b>. <b>Auto</b> picks a fresh one; arrows pin a page. <b>Synced to all your devices</b> (private to your family).</div>'+
       NB_ACT_CATS.map(actSlot).join('')+'</div>';
   }
   con.innerHTML=
