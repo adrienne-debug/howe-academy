@@ -1942,7 +1942,7 @@
     // Full page order: weekly · bb0 · 4 enrichment · (day · bb)×4 · day5 · creative · eow
     var T = LN_EXTRA.enrich.theme_lincoln;
     var parts = [weeklyH, lnBrainBreakPage(0, wn),
-      enPageAllAboutMe(T, null, wn), enPageMoneyLife(T, wn), enPageWilderness(T, wn), enPageMemoryCivics(T, wn)];
+      enPageAllAboutMe(T, ctx.personal || null, wn), enPageMoneyLife(T, wn), enPageWilderness(T, wn), enPageMemoryCivics(T, wn)];
     dailyPages.forEach(function (dp, i) {
       parts.push(dp);
       parts.push(i < dailyPages.length - 1 ? lnBrainBreakPage(i + 1, wn) : lnCreativePage(wn));
@@ -2551,7 +2551,7 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
     var pages = [];
     pages.push(ellWeeklyPage(wn, weekDates, weekData, paceRows, summary, prevWeek));
     pages.push(ellBrainBreakPage(0, wn));
-    pages.push(enPageAllAboutMe(T, null, wn));
+    pages.push(enPageAllAboutMe(T, ctx.personal || null, wn));
     pages.push(enPageMoneyLife(T, wn));
     pages.push(enPageMemoryCivics(T, wn));
     pages.push(enPageNotes(T));
@@ -3334,7 +3334,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     var parts = [];
     parts.push(luPageWeeklyReview(wn, weekDates, days, dates, tasks, prevStats, pace, focus));
     parts.push(luPageMonths(wn, weekDates, curMonth));
-    parts.push(luPageAllAboutMe(wn, weekDates, null)); // PII-safe blank template
+    parts.push(luPageAllAboutMe(wn, weekDates, ctx.personal || null)); // personal info from the Notebook tab (or blank)
     days.forEach(function (day, i) {
       var dateStr = dates[day] || "";
       var blend = (i < blends.length) ? blends[i] : blends[blends.length - 1];

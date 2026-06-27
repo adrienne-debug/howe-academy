@@ -1116,6 +1116,10 @@ let mastManualM=0;
 let mastManualT=0;
 let mastManualS=0;
 let calendarData={holidays:{}, vacations:{}, kidOverrides:{}}; // global calendar for session scheduling
+// Per-kid private "All About Me" info for the notebooks (name/address/phones). Synced like the
+// rest of the app's data; flows into each kid's safety page at generate time. NOT in any shared file.
+let notebookPersonal={}; try{ const _np=localStorage.getItem("ha_nb_personal"); if(_np) notebookPersonal=JSON.parse(_np); }catch(e){}
+let nbSelectedKid="lincoln"; // currently-selected kid in the Notebook tab
 let scheduleOverrides={}; // {dateStr:{kid:{dayOff:true, removed:{sk:true}, added:{sk:true}}}} — manual Lesson Map edits
 let calAddMode=null; // null | "holiday" | "vacation" | "override"
 let calEditId=null;  // id of holiday/vacation being edited
@@ -1432,6 +1436,11 @@ function initFb() {
       try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
       if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
       if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
+    });
+    db.ref("notebookPersonal").on("value",s=>{
+      notebookPersonal=s.val()||{};
+      try{localStorage.setItem("ha_nb_personal",JSON.stringify(notebookPersonal));}catch(e){}
+      if(tab==="notebook"){const el=document.getElementById("content");if(el&&!document.activeElement?.id?.startsWith("nbp-"))renderNotebook(el);}
     });
     db.ref("settings/sitterName").on("value",s=>{
       if(s.val()){ SITTER_NAME=s.val(); sv("ha_sitter_name",SITTER_NAME); }
@@ -6308,7 +6317,17 @@ function haNbContext(kid){
   const year=new Date().getFullYear();
   const weekDates=(window.HoweNotebooks&&window.HoweNotebooks.weekDatesRange)?window.HoweNotebooks.weekDatesRange(dates,year):"";
   let mastery={}; try{ if(typeof masteryFromApp==="function") mastery=masteryFromApp(); }catch(e){}
-  return { weekData:{dates:dates, tasks:tasks}, weekNum:WK, weekDates:weekDates, masteryItems:(mastery[kid]||[]) };
+  // Private "All About Me" info (if entered in the Notebook tab). Lucy's address is a list of lines.
+  let personal=null;
+  try{
+    const pr=(notebookPersonal&&notebookPersonal[kid])||{};
+    if(pr.name||pr.address||pr.mom_phone||pr.dad_phone){
+      personal = (kid==="lucy")
+        ? { name:pr.name||"", address:(pr.address?[pr.address]:[]), mom_phone:pr.mom_phone||"", dad_phone:pr.dad_phone||"" }
+        : { name:pr.name||"", address:pr.address||"", mom_phone:pr.mom_phone||"", dad_phone:pr.dad_phone||"" };
+    }
+  }catch(e){}
+  return { weekData:{dates:dates, tasks:tasks}, weekNum:WK, weekDates:weekDates, masteryItems:(mastery[kid]||[]), personal:personal };
 }
 function haNbOpen(kid,which){
   const lib=window.HoweNotebooks; if(!lib){ alert("Notebook builder not loaded yet."); return; }
@@ -7794,31 +7813,74 @@ function loadActJson(){
   r.readAsText(f);
 }
 
-// NOTEBOOK TAB — blank placeholder for now. Will grow into view/customize/generate
-// of the kids' printable notebooks.
+// NOTEBOOK TAB — per-kid hub: pick a kid → generate notebook/parent + enter their
+// private "All About Me" info. Generation is the SAME engine (haNbOpen → notebooks.js)
+// reached by the admin "Generate Notebooks" button.
+const NB_KIDS=[
+  {k:"lincoln",label:"Lincoln (5th 🐍)",aam:true},
+  {k:"ellis",  label:"Ellis (4th 🤖)",  aam:true},
+  {k:"lucy",   label:"Lucy (1st 🦄)",    aam:true},
+  {k:"julian", label:"Julian (Pre-K 🦕)",aam:false}
+];
+function nbSelectKid(kid){ nbSelectedKid=kid; renderNotebook(); }
+function nbSavePersonal(kid){
+  const gv=id=>{ const e=document.getElementById(id); return e?e.value.trim():""; };
+  notebookPersonal[kid]={ name:gv("nbp-name-"+kid), address:gv("nbp-addr-"+kid), mom_phone:gv("nbp-mom-"+kid), dad_phone:gv("nbp-dad-"+kid) };
+  try{ localStorage.setItem("ha_nb_personal",JSON.stringify(notebookPersonal)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db) db.ref("notebookPersonal").set(notebookPersonal); }catch(e){}
+  const msg=document.getElementById("nbp-msg-"+kid);
+  if(msg){ msg.textContent="Saved ✓ — shows on the next notebook you generate."; setTimeout(()=>{ const m=document.getElementById("nbp-msg-"+kid); if(m)m.textContent=""; },3500); }
+}
 function renderNotebook(el){
   const con=el||document.getElementById("content"); if(!con)return;
+  haLoadNotebooksLib().catch(()=>{}); // warm the engine so the Generate buttons are ready
   const wkLabel=String(WK).replace("week","Week ");
-  // Same generation engine as the admin "Generate Notebooks" button — shared
-  // via haNbPickerRows + haNbOpen. This tab is just a second entry point.
+  const sel=NB_KIDS.find(x=>x.k===nbSelectedKid)?nbSelectedKid:"lincoln";
+  const meta=NB_KIDS.find(x=>x.k===sel);
+  const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
+  const chips=NB_KIDS.map(x=>{
+    const on=x.k===sel;
+    return '<button onclick="nbSelectKid(\''+x.k+'\')" style="padding:7px 13px;border-radius:20px;border:1.5px solid '+(on?'#ea580c':'var(--border)')+';background:'+(on?'#fff7ed':'#fff')+';color:'+(on?'#9a3412':'#1f2937')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+x.label+'</button>';
+  }).join("");
+  let formHtml="";
+  if(meta.aam){
+    const p=(notebookPersonal&&notebookPersonal[sel])||{};
+    const fld=(lab,id,val,ph)=>'<label style="display:block;margin-bottom:8px"><span style="display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:2px">'+lab+'</span><input id="'+id+'" value="'+esc(val)+'" placeholder="'+esc(ph||'')+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif"></label>';
+    formHtml=
+      '<div style="margin-top:14px;background:#fafafe;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px">'+
+        '<div style="font-size:12px;font-weight:800;color:#9a3412;margin-bottom:2px">🔒 Personal info — for the “All About Me” safety page</div>'+
+        '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:10px">Private to your app (synced across your devices), never written into any shared file. Leave blank for a fill-in template.</div>'+
+        fld("Full name","nbp-name-"+sel,p.name,"First Middle Last")+
+        fld("Home address","nbp-addr-"+sel,p.address,"Street address")+
+        '<div style="display:flex;gap:10px">'+
+          '<div style="flex:1">'+fld("Mom’s phone","nbp-mom-"+sel,p.mom_phone,"")+'</div>'+
+          '<div style="flex:1">'+fld("Dad’s phone","nbp-dad-"+sel,p.dad_phone,"")+'</div>'+
+        '</div>'+
+        '<div style="display:flex;align-items:center;gap:10px;margin-top:2px">'+
+          '<button onclick="nbSavePersonal(\''+sel+'\')" style="padding:8px 16px;border-radius:9px;border:none;background:#7c3aed;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save info</button>'+
+          '<span id="nbp-msg-'+sel+'" style="font-size:11px;font-weight:700;color:#16a34a"></span>'+
+        '</div>'+
+      '</div>';
+  } else {
+    formHtml='<div style="margin-top:14px;font-size:11.5px;color:var(--muted);line-height:1.45">Julian’s pages come straight from his drills — no personal info needed.</div>';
+  }
   con.innerHTML=
-    '<div style="max-width:560px;margin:0 auto;padding:24px 18px;font-family:\'DM Sans\',sans-serif">'+
+    '<div style="max-width:560px;margin:0 auto;padding:20px 18px;font-family:\'DM Sans\',sans-serif">'+
       '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">'+
         '<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:var(--text)">\u{1F4D3} Notebooks</div>'+
         '<div style="font-size:13px;font-weight:700;color:#9a3412">— '+wkLabel+'</div>'+
       '</div>'+
-      '<div style="font-size:12.5px;color:var(--muted);line-height:1.5;margin-bottom:16px">Builds a print-ready notebook in a new tab from this week’s dates + each kid’s drills. Print from there (Cmd/Ctrl+P, “Background graphics” ON). The 👩‍🏫 Parent button gives the teaching companion / answer keys.</div>'+
-      '<div id="nbTabBody" style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:4px 16px 10px">'+
-        '<div style="font-size:12px;color:var(--muted);padding:14px 0">Loading the notebook builder…</div>'+
+      '<div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:14px">Pick a kid, then generate. Print from the new tab (Cmd/Ctrl+P, “Background graphics” ON).</div>'+
+      '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px">'+chips+'</div>'+
+      '<div style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:16px">'+
+        '<div style="font-size:15px;font-weight:800;color:#1f2937;margin-bottom:10px">'+meta.label+'</div>'+
+        '<div style="display:flex;gap:8px">'+
+          '<button onclick="haNbOpen(\''+sel+'\',\'student\')" style="flex:1;padding:10px;border-radius:10px;border:none;background:#ea580c;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">📓 Notebook</button>'+
+          '<button onclick="haNbOpen(\''+sel+'\',\'parent\')" style="flex:1;padding:10px;border-radius:10px;border:1.5px solid var(--border);background:#fff;color:#1f2937;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">👩‍🏫 Parent</button>'+
+        '</div>'+
+        formHtml+
       '</div>'+
     '</div>';
-  haLoadNotebooksLib().then(lib=>{
-    const body=document.getElementById("nbTabBody");
-    if(body) body.innerHTML=haNbPickerRows(lib);
-  }).catch(e=>{
-    const body=document.getElementById("nbTabBody");
-    if(body) body.innerHTML='<div style="font-size:12px;color:#b91c1c;padding:14px 0">Couldn’t load the notebook builder ('+((e&&e.message)||e)+'). If you just deployed, hard-refresh and try again.</div>';
-  });
 }
 
 function renderActivities(el){
