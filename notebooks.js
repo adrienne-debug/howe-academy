@@ -2679,9 +2679,15 @@ ${luFooter("Howe Academy · Lucy Howe · Weekly Review", "Week " + weekNum + " �
 </div>`;
   }
 
+  // Accept either a full image src (Storage URL or data: URI) or a bare base64 string.
+  function luImgSrc(v) {
+    if (!v) return "";
+    return (v.indexOf("http") === 0 || v.indexOf("data:") === 0) ? v : ("data:image/png;base64," + v);
+  }
+
   function luPageBb1(weekNum, b64Dotdot) {
     var leftCol = b64Dotdot
-      ? '\n    <div style="display:flex;flex-direction:column;gap:5px;">\n      <div class="bb-label">💜 Connect the dots — then color your picture!</div>\n      <div style="flex:1;display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:12px;border:2px solid #fce7f3;">\n        <img src="data:image/png;base64,' + b64Dotdot + '" style="max-width:100%;max-height:100%;object-fit:contain;" alt="dot-to-dot"/>\n      </div>\n    </div>'
+      ? '\n    <div style="display:flex;flex-direction:column;gap:5px;">\n      <div class="bb-label">💜 Connect the dots — then color your picture!</div>\n      <div style="flex:1;display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:12px;border:2px solid #fce7f3;">\n        <img src="' + luImgSrc(b64Dotdot) + '" style="max-width:100%;max-height:100%;object-fit:contain;" alt="dot-to-dot"/>\n      </div>\n    </div>'
       : '\n    <div style="display:flex;flex-direction:column;gap:5px;">\n      <div class="bb-label">💜 Connect 1 → 12 to make a shape! Then color it!</div>\n      <div style="display:flex;justify-content:center;align-items:center;flex:1;">\n        <div style="font-family:Fredoka One,cursive;color:#f9a8d4;font-size:14px;text-align:center;">Dot-to-dot coming soon! ✨</div>\n      </div>\n    </div>';
     return `<div class="page-label">Brain Break — back of Monday (double-sided)</div>
 <div class="page">
@@ -2920,7 +2926,7 @@ ${luFooter("Howe Academy · Lucy Howe · Daily", cap(day) + " · " + dateStr)}
   function luPageBb2Coloring(weekNum, b64, category) {
     var lbl = LUCY_DATA.category_labels[category] || ["🎨 Color Me!", "Color this page with your most magical colors! ✨"];
     var title = lbl[0], prompt = lbl[1];
-    var imgHtml = b64 ? '<img src="data:image/png;base64,' + b64 + '" style="max-width:100%;max-height:100%;object-fit:contain;" alt="Coloring page"/>' : '<div style="font-family:Fredoka One,cursive;font-size:18px;color:#fce7f3;text-align:center;">Coloring page — add your image here!</div>';
+    var imgHtml = b64 ? '<img src="' + luImgSrc(b64) + '" style="max-width:100%;max-height:100%;object-fit:contain;" alt="Coloring page"/>' : '<div style="font-family:Fredoka One,cursive;font-size:18px;color:#fce7f3;text-align:center;">Coloring page — add your image here!</div>';
     return `<div class="page-label">Brain Break — back of Tuesday (double-sided)</div>
 <div class="page">
 <div class="bb-stripe"></div>
@@ -2964,10 +2970,10 @@ ${luFooter("Howe Academy · Lucy Howe · Daily", cap(day) + " · " + dateStr)}
 
   function luPageBb3(weekNum, b64Symmetry, b64Pattern) {
     var leftCol = b64Symmetry
-      ? '\n    <div style="display:flex;flex-direction:column;gap:5px;">\n      <div class="bb-label">✏️ Finish the other half — make it match!</div>\n      <div style="flex:1;display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:12px;">\n        <img src="data:image/png;base64,' + b64Symmetry + '" style="max-width:100%;max-height:100%;object-fit:contain;" alt="symmetry drawing"/>\n      </div>\n    </div>'
+      ? '\n    <div style="display:flex;flex-direction:column;gap:5px;">\n      <div class="bb-label">✏️ Finish the other half — make it match!</div>\n      <div style="flex:1;display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:12px;">\n        <img src="' + luImgSrc(b64Symmetry) + '" style="max-width:100%;max-height:100%;object-fit:contain;" alt="symmetry drawing"/>\n      </div>\n    </div>'
       : '\n    <div style="display:flex;flex-direction:column;gap:5px;">\n      <div class="bb-label">✏️ Finish the other half — make it match!</div>\n      <div class="bb-draw" style="flex:1;min-height:120px;"><div class="bb-draw-hint">✏️ Mirror drawing</div></div>\n    </div>';
     var patternTail = b64Pattern
-      ? '<div style="flex:1;display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:10px;border:2px solid #fce7f3;min-height:80px;"><img src="data:image/png;base64,' + b64Pattern + '" style="max-width:100%;max-height:100%;object-fit:contain;" alt="pattern activity"/></div>'
+      ? '<div style="flex:1;display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:10px;border:2px solid #fce7f3;min-height:80px;"><img src="' + luImgSrc(b64Pattern) + '" style="max-width:100%;max-height:100%;object-fit:contain;" alt="pattern activity"/></div>'
       : '<div class="bb-draw" style="flex:1;min-height:80px;"><div class="bb-draw-hint">🔷 more patterns!</div></div>';
     return `<div class="page-label">Brain Break — back of Wednesday (double-sided)</div>
 <div class="page">
@@ -3035,7 +3041,7 @@ ${luFooter("Howe Academy · Lucy Howe · Daily", cap(day) + " · " + dateStr)}
 
   function luPageBb4(weekNum, b64Maze) {
     var rightCol = b64Maze
-      ? '\n    <div style="display:flex;flex-direction:column;gap:5px;">\n      <div class="bb-label">🌸 Find your way through the maze!</div>\n      <div style="flex:1;display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:12px;border:2px solid #fce7f3;">\n        <img src="data:image/png;base64,' + b64Maze + '" style="max-width:100%;max-height:100%;object-fit:contain;" alt="maze"/>\n      </div>\n    </div>'
+      ? '\n    <div style="display:flex;flex-direction:column;gap:5px;">\n      <div class="bb-label">🌸 Find your way through the maze!</div>\n      <div style="flex:1;display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:12px;border:2px solid #fce7f3;">\n        <img src="' + luImgSrc(b64Maze) + '" style="max-width:100%;max-height:100%;object-fit:contain;" alt="maze"/>\n      </div>\n    </div>'
       : '\n    <div style="display:flex;flex-direction:column;gap:5px;">\n      <div class="bb-label">🌸 Find your way through the maze!</div>\n      <div class="bb-draw" style="flex:1;min-height:120px;"><div class="bb-draw-hint">🌸 Maze coming soon!</div></div>\n    </div>';
     return `<div class="page-label">Brain Break — back of Thursday (double-sided)</div>
 <div class="page">
