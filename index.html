@@ -7962,7 +7962,7 @@ function nbActCurUrl(cat){
 async function nbActSaveMeta(){ try{ if(typeof db!=="undefined"&&db) await db.ref("notebookActivities").set(nbActivities); }catch(e){} }
 async function nbActUpload(input, cat){
   const f=input&&input.files&&input.files[0]; if(!f) return;
-  const m=document.getElementById("nbc-msg-"+cat), say=s=>{ if(m) m.textContent=s; };
+  const say=s=>{ const mm=document.getElementById("nbc-msg-"+cat); if(mm) mm.textContent=s; }; // re-fetch: panel re-renders mid-upload
   if(typeof firebase==="undefined"||!firebase.storage){ say("❌ Sync unavailable (Storage not loaded)."); return; }
   try{
     say("Reading PDF…");
@@ -7971,20 +7971,24 @@ async function nbActUpload(input, cat){
     const MAX=24, total=Math.min(doc.numPages, MAX);
     const id=Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36);
     const name=(f.name||"book").replace(/\.pdf$/i,"").slice(0,28);
-    const urls=[];
+    const dir="notebookActivities/"+cat+"/"+id+"/";
+    // Render pages one at a time (PDF.js needs that), but fire each upload off WITHOUT waiting —
+    // so uploads run concurrently and overlap with the next render instead of serializing.
+    const urls=new Array(total); let up=0;
+    const ups=[];
     for(let p=1;p<=total;p++){
-      say("Rendering page "+p+" of "+total+"…");
+      say("Preparing pages… (uploaded "+up+"/"+total+")");
       const page=await doc.getPage(p);
-      const vp=page.getViewport({scale:1.5});
+      const vp=page.getViewport({scale:1.4});
       const canvas=document.createElement("canvas"); canvas.width=Math.round(vp.width); canvas.height=Math.round(vp.height);
-      const task=page.render({canvasContext:canvas.getContext("2d"),viewport:vp});
+      const ctx2d=canvas.getContext("2d"); ctx2d.fillStyle="#fff"; ctx2d.fillRect(0,0,canvas.width,canvas.height); // opaque white bg
+      const task=page.render({canvasContext:ctx2d,viewport:vp});
       await Promise.race([task.promise, new Promise((_,rej)=>setTimeout(()=>{ try{task.cancel();}catch(e){} rej(new Error("rendering timed out on page "+p)); },30000))]);
       const blob=await new Promise(res=>canvas.toBlob(res,"image/png"));
-      say("Uploading page "+p+" of "+total+"…");
-      const ref=firebase.storage().ref("notebookActivities/"+cat+"/"+id+"/p"+p+".png");
-      await ref.put(blob);
-      urls.push(await ref.getDownloadURL());
+      const idx=p-1, ref=firebase.storage().ref(dir+"p"+p+".png");
+      ups.push(ref.put(blob).then(()=>ref.getDownloadURL()).then(u=>{ urls[idx]=u; up++; say("Uploading pages… ("+up+"/"+total+")"); }));
     }
+    await Promise.all(ups);
     if(!nbActivities[cat]) nbActivities[cat]={mode:"auto",books:[]};
     if(!nbActivities[cat].books) nbActivities[cat].books=[];
     nbActivities[cat].books.push({ id:id, name:name, pages:total, urls:urls });
