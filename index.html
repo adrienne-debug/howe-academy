@@ -6449,6 +6449,59 @@ function haNbCombinedParent(){
     lib.openHtml(html, "parent_guide_all_kids_"+WK+".html");
   }catch(e){ alert("Combined parent guide failed: "+e.message); console.error(e); }
 }
+
+// ── In-app reading-story generation (Lincoln) ───────────────────────────────────
+// Your Anthropic key is stored ONLY in this device's localStorage — never in the public
+// source, never in Firebase. The browser calls Claude directly; only the STORY is synced.
+function haGetKey(){ try{ return localStorage.getItem("ha_anthropic_key")||""; }catch(e){ return ""; } }
+function haSaveKey(){ const el=document.getElementById("nbs-key"); if(!el) return; const k=el.value.trim();
+  try{ if(k) localStorage.setItem("ha_anthropic_key",k); else localStorage.removeItem("ha_anthropic_key"); }catch(e){}
+  if(tab==="notebook"){ const el2=document.getElementById("content"); if(el2) renderNotebook(el2); } }
+function haClearKey(){ try{ localStorage.removeItem("ha_anthropic_key"); }catch(e){}
+  if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); } }
+const HA_PASSAGE_TOPICS=["how ball pythons sense their environment","how snakes shed their skin","pit viper heat sensing","how constrictors hunt","venomous snake defense behaviors","sea snake adaptations","how snakes navigate without limbs","rattlesnake rattle biology","king cobra intelligence","garter snake hibernation"];
+function haPassagePrompt(lexile, topic, usedTopics){
+  return 'Generate a CogAT-style reading comprehension passage for a 5th-grade student named Lincoln.\n\n'+
+  'REQUIREMENTS:\n- Lexile target: '+lexile+'L (approximately '+lexile+' Lexile)\n- Topic: '+topic+' (snake/reptile theme)\n'+
+  '- Length: 90–120 words\n- Include exactly 3–4 vocabulary words embedded in the passage. Mark each with [VOCAB:word] so I can highlight them.\n'+
+  '- The passage should be factual, interesting, and reward careful reading.\n- Avoid "indifferent," "distinguish," "theatrics," "meaningful" (already used).\n'+
+  '- Do NOT use these previously used topics: '+usedTopics+'\n\n'+
+  'Then provide exactly 2 questions with 4 answer choices each:\n- Question 1: vocabulary-in-context (ask about one of the [VOCAB:word] words)\n- Question 2: main idea or inference\n\n'+
+  'OUTPUT FORMAT (use exactly these markers, no extra text):\nPASSAGE_TEXT:\n<passage with [VOCAB:word] markers inline>\n\n'+
+  'Q1_STEM: <question text asking about a specific word>\nQ1_A: <choice A text>\nQ1_B: <choice B text>\nQ1_C: <choice C text>\nQ1_D: <choice D text>\nQ1_ANS: <letter>\n\n'+
+  'Q2_STEM: <question text>\nQ2_A: <choice A text>\nQ2_B: <choice B text>\nQ2_C: <choice C text>\nQ2_D: <choice D text>\nQ2_ANS: <letter>';
+}
+function haParsePassage(raw, topic){
+  const ex=(key)=>{ const m=raw.match(new RegExp(key+":\\s*([\\s\\S]+?)(?=\\n[A-Z0-9_]+:|$)")); return m?m[1].trim():""; };
+  const html=ex("PASSAGE_TEXT").replace(/\[VOCAB:(.*?)\]/g,"<em>$1</em>");
+  const ch=(p)=>[{l:"A",t:ex(p+"_A")},{l:"B",t:ex(p+"_B")},{l:"C",t:ex(p+"_C")},{l:"D",t:ex(p+"_D")}];
+  const an=(p)=>(ex(p+"_ANS")||"").toUpperCase().slice(0,1);
+  return { topic:topic, tag:"🐍 CogAT · Verbal Battery · Reading", html:html, q1_stem:ex("Q1_STEM"), q1:ch("Q1"), q1_ans:an("Q1"), q2_stem:ex("Q2_STEM"), q2:ch("Q2"), q2_ans:an("Q2") };
+}
+async function haGenerateStory(kid){
+  const key=haGetKey(); const msg=(s)=>{ const m=document.getElementById("nbs-msg"); if(m) m.textContent=s; };
+  if(!key){ msg("Add your API key first."); return; }
+  try{
+    msg("✨ Generating with Claude… (10–20 sec)");
+    const wn=parseInt(String(WK).replace(/\D/g,""),10)||1;
+    const lexile=750+10*(wn-1);
+    const used=[]; if(notebookStories[kid]) Object.values(notebookStories[kid]).forEach(p=>{ if(p&&p.topic) used.push(p.topic); });
+    let topic=HA_PASSAGE_TOPICS[(wn-1)%HA_PASSAGE_TOPICS.length];
+    if(used.indexOf(topic)>=0){ const t=HA_PASSAGE_TOPICS.find(x=>used.indexOf(x)<0); if(t) topic=t; }
+    const prompt=haPassagePrompt(lexile, topic, used.slice(-6).join(", ")||"none");
+    const resp=await fetch("https://api.anthropic.com/v1/messages",{ method:"POST",
+      headers:{ "content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true" },
+      body:JSON.stringify({ model:"claude-sonnet-4-6", max_tokens:1200, messages:[{role:"user",content:prompt}] }) });
+    if(!resp.ok){ const t=await resp.text(); throw new Error("Claude API "+resp.status+" — "+t.slice(0,160)); }
+    const data=await resp.json();
+    const txt=(data.content&&data.content[0]&&data.content[0].text)||"";
+    const passage=haParsePassage(txt, topic);
+    if(!passage.html){ throw new Error("Couldn’t read the story back — try again."); }
+    await db.ref("notebookStories/"+kid+"/week"+wn).set(passage);
+    msg("✓ Story saved! It’s in this week’s notebook now.");
+    if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
+  }catch(e){ msg("❌ "+(e.message||"generation failed")); console.error(e); }
+}
 // Shared kid-picker rows — used by BOTH the admin overlay (haOpenNotebookPicker)
 // and the Notebook top tab (renderNotebook), so generation is ONE engine
 // (haNbOpen → notebooks.js) reached through two convenient entry points.
@@ -8108,6 +8161,25 @@ function renderNotebook(el){
   } else {
     formHtml='<div style="margin-top:14px;font-size:11.5px;color:var(--muted);line-height:1.45">Julian’s pages come straight from his drills — no personal info needed.</div>';
   }
+  // Lincoln-only: generate his reading story in-app via Claude (key stays device-local)
+  let storyHtml="";
+  if(sel==="lincoln"){
+    const key=haGetKey();
+    const wn=parseInt(String(WK).replace(/\D/g,""),10)||1;
+    const hasStory=!!(notebookStories.lincoln && notebookStories.lincoln["week"+wn] && notebookStories.lincoln["week"+wn].html);
+    const keyRow=key
+      ? '<div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)">🔑 API key saved on this device ✓ <button onclick="haClearKey()" style="border:none;background:none;color:#b91c1c;cursor:pointer;font-weight:700;font-size:11px">Remove</button></div>'
+      : '<div><div style="display:flex;gap:6px"><input id="nbs-key" type="password" placeholder="sk-ant-…" autocomplete="off" style="flex:1;padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:monospace"><button onclick="haSaveKey()" style="padding:7px 12px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-size:12px;font-weight:700;cursor:pointer">Save key</button></div>'
+        +'<div style="font-size:10.5px;color:var(--muted);margin-top:5px;line-height:1.45">🔒 Stored only on this device — never shared, never in the app’s code. Skip this on a shared/public computer.</div></div>';
+    const genBtn=key
+      ? '<button onclick="haGenerateStory(\'lincoln\')" style="width:100%;padding:10px;border-radius:10px;border:none;background:#16a34a;color:#fff;font-size:13px;font-weight:800;cursor:pointer;margin-top:8px">✨ '+(hasStory?'Regenerate':'Generate')+' Lincoln’s Week '+wn+' story</button>'
+      : '';
+    storyHtml='<div style="margin-top:14px;background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:12px;padding:12px 14px">'+
+      '<div style="font-size:12px;font-weight:800;color:#15803d;margin-bottom:2px">📖 Reading story (AI)</div>'+
+      '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:8px">Generate Lincoln’s custom CogAT passage with Claude. '+(hasStory?'<b>This week: a story is saved ✓</b>':'This week: using the built-in fallback passage.')+'</div>'+
+      keyRow+genBtn+
+      '<div id="nbs-msg" style="font-size:11px;color:var(--muted);margin-top:8px"></div></div>';
+  }
   // Lucy-only: upload a coloring PDF → fills her coloring page (device-only)
   let coloringHtml="";
   if(sel==="lucy"){
@@ -8170,6 +8242,7 @@ function renderNotebook(el){
           '<button onclick="haNbOpen(\''+sel+'\',\'parent\')" style="flex:1;padding:10px;border-radius:10px;border:1.5px solid var(--border);background:#fff;color:#1f2937;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">👩‍🏫 Parent</button>'+
         '</div>'+
         formHtml+
+        storyHtml+
         coloringHtml+
       '</div>'+
     '</div>';
