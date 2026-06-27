@@ -2685,6 +2685,24 @@ ${luFooter("Howe Academy · Lucy Howe · Weekly Review", "Week " + weekNum + " �
     return (v.indexOf("http") === 0 || v.indexOf("data:") === 0) ? v : ("data:image/png;base64," + v);
   }
 
+  // A full blank sheet — the cut-safe BACK of a paper-doll page when printed double-sided.
+  function luBlankPage() {
+    return '<div class="page-label">Blank — back of a paper-doll page (leave empty so the doll cuts out clean)</div>\n' +
+      '<div class="page" style="background:var(--white);"></div>';
+  }
+
+  // A full-bleed paper-doll page: the image fills the sheet so Lucy can cut it out. The little
+  // title sits up top, outside the doll, so it ends up on the scrap. Always paired with a blank back.
+  function luPageDoll(imgUrl, label) {
+    return '<div class="page-label">Paper doll — cut out (blank on the back)</div>\n' +
+      '<div class="page" style="display:flex;flex-direction:column;background:var(--white);padding:0.3in;">' +
+        '<div style="flex-shrink:0;text-align:center;font-family:Fredoka One,cursive;color:#f9a8d4;font-size:13px;letter-spacing:0.04em;margin-bottom:6px;">✂️ ' + label + '</div>' +
+        '<div style="flex:1;display:flex;justify-content:center;align-items:center;min-height:0;">' +
+          '<img src="' + luImgSrc(imgUrl) + '" style="max-width:100%;max-height:100%;object-fit:contain;" alt="paper doll"/>' +
+        '</div>' +
+      '</div>';
+  }
+
   function luPageBb1(weekNum, b64Dotdot) {
     var leftCol = b64Dotdot
       ? '\n    <div style="display:flex;flex-direction:column;gap:5px;">\n      <div class="bb-label">💜 Connect the dots — then color your picture!</div>\n      <div style="flex:1;display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:12px;border:2px solid #fce7f3;">\n        <img src="' + luImgSrc(b64Dotdot) + '" style="max-width:100%;max-height:100%;object-fit:contain;" alt="dot-to-dot"/>\n      </div>\n    </div>'
@@ -3354,6 +3372,15 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       else if (day === "friday") parts.push(luPageCreative(wn));
     });
     parts.push(luPageEndOfWeek(wn, weekDates, blends, subtraction, days, tasks));
+
+    // Paper dolls — doll figure (always) + this week's outfit, each on its OWN sheet with a blank
+    // back so Lucy can cut them out without losing anything on the reverse. Goes last in the book.
+    var dolls = ctx.dolls;
+    if (dolls && (dolls.doll || dolls.outfit)) {
+      if (parts.length % 2 === 1) parts.push(luBlankPage()); // pad so the first doll lands on a sheet FRONT
+      if (dolls.doll) { parts.push(luPageDoll(dolls.doll, "Paper doll — cut me out!")); parts.push(luBlankPage()); }
+      if (dolls.outfit) { parts.push(luPageDoll(dolls.outfit, "Outfit — cut me out!")); parts.push(luBlankPage()); }
+    }
 
     var student = luShell(parts.join("\n"), "Lucy's Notebook — Week " + wn);
     var companion = luPageTeachingCompanion(wn, weekDates, days, tasks, blends, subtraction, ctx.teachNotes || "");

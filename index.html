@@ -6404,9 +6404,20 @@ function haNbContext(kid){
     }
   }catch(e){}
   try{ pace=haPaceRows(kid); }catch(e){}
-  let coloring=null,dotdot=null,symmetry=null,maze=null,pattern=null;
-  try{ if(kid==="lucy"){ coloring=nbActCurUrl("coloring"); dotdot=nbActCurUrl("dotdot"); symmetry=nbActCurUrl("symmetry"); maze=nbActCurUrl("maze"); pattern=nbActCurUrl("pattern"); } }catch(e){}
-  return { weekData:{dates:dates, tasks:tasks}, weekNum:WK, weekDates:weekDates, masteryItems:(mastery[kid]||[]), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern };
+  let coloring=null,dotdot=null,symmetry=null,maze=null,pattern=null,dolls=null;
+  try{ if(kid==="lucy"){ coloring=nbActCurUrl("coloring"); dotdot=nbActCurUrl("dotdot"); symmetry=nbActCurUrl("symmetry"); maze=nbActCurUrl("maze"); pattern=nbActCurUrl("pattern");
+    // Paper dolls: doll figure (page 1, every week) + a rotating outfit (pages 2..N). Books alternate weekly.
+    const dc=nbActivities["dolls"];
+    if(dc && dc.books && dc.books.length){
+      const n=dc.books.length, wn=parseInt(String(WK).replace(/\D/g,""),10)||1;
+      const bi=((wn-1)%n+n)%n, bk=dc.books[bi], im=bk.imgs||{}, pages=bk.pages||1;
+      const dollUrl=im[1]||(Object.keys(im).length?im[Object.keys(im)[0]]:null);
+      let outfitUrl=null;
+      if(pages>1){ const cycle=Math.floor((wn-1)/n), op=2+(cycle%(pages-1)); outfitUrl=im[op]||null; }
+      if(dollUrl||outfitUrl) dolls={ doll:dollUrl, outfit:outfitUrl };
+    }
+  } }catch(e){}
+  return { weekData:{dates:dates, tasks:tasks}, weekNum:WK, weekDates:weekDates, masteryItems:(mastery[kid]||[]), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls };
 }
 function haNbOpen(kid,which){
   const lib=window.HoweNotebooks; if(!lib){ alert("Notebook builder not loaded yet."); return; }
@@ -7907,7 +7918,8 @@ const NB_ACT_CATS=[
   {cat:"dotdot",   label:"🔢 Dot-to-dot", hint:"back of Monday"},
   {cat:"symmetry", label:"✨ Symmetry",   hint:"back of Wednesday"},
   {cat:"pattern",  label:"🔷 Patterns",   hint:"back of Wednesday"},
-  {cat:"maze",     label:"🌀 Maze",       hint:"back of Thursday"}
+  {cat:"maze",     label:"🌀 Maze",       hint:"back of Thursday"},
+  {cat:"dolls",    label:"🎎 Paper dolls", hint:"doll + a new outfit weekly · blank backs to cut", doll:true}
 ];
 function nbSelectKid(kid){ nbSelectedKid=kid; renderNotebook(); }
 function nbSavePersonal(kid){
@@ -8081,26 +8093,36 @@ function renderNotebook(el){
     const actSlot=(meta2)=>{
       const cat=meta2.cat, c=nbActivities[cat], books=(c&&c.books)||[]; let inner;
       if(books.length){
-        const isAuto=!c||c.mode!=="manual";
-        const bs="padding:3px 9px;border-radius:7px;border:1.5px solid var(--border);background:#fff;cursor:pointer;font-weight:700";
-        let curName="", curPage=1;
-        if(isAuto){ const t=nbActWeekTarget(cat); if(t){ curName=t.name; curPage=t.page; } }
-        else { const b=books.find(x=>x.id===c.curBook); curName=b?b.name:(books[0].name); curPage=(c&&c.curPage)||1; }
-        const curUrl=nbActCurUrl(cat);
         const ready=b=>Object.keys(b.imgs||{}).length;
-        const flatLen=nbActFlat(cat).length;
-        const autoBtn='<button onclick="nbActSetAuto(\''+cat+'\','+(isAuto?'false':'true')+')" style="display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:7px;border:1.5px solid '+(isAuto?'#7c3aed':'var(--border)')+';background:'+(isAuto?'#f5f3ff':'#fff')+';color:'+(isAuto?'#6d28d9':'#6b7280')+';font-size:10.5px;font-weight:700;cursor:pointer">'+(isAuto?'🔄 Auto ✓':'🔄 Auto')+'</button>';
-        const stepper=(flatLen>1?'<span style="display:inline-flex;align-items:center;gap:6px;margin-left:8px"><button onclick="nbActStep(\''+cat+'\',-1)" style="'+bs+'">◀</button><span style="font-size:10.5px;color:var(--muted)">'+(isAuto?'wk → ':'📌 ')+(curName?curName+' ':'')+'p'+curPage+'</span><button onclick="nbActStep(\''+cat+'\',1)" style="'+bs+'">▶</button></span>':'');
         const bookList=books.map(b=>{ const r=ready(b), pg=b.pages||r||1, busy=r<pg; return '<div style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--muted);padding:1px 0">📕 '+b.name+' <span style="opacity:.6">'+(busy?(r+'/'+pg+' pg ⬆'):(pg+'pg'))+'</span><button onclick="nbActRemoveBook(\''+cat+'\',\''+b.id+'\')" title="remove this book" style="margin-left:auto;border:none;background:none;color:#b91c1c;cursor:pointer;font-weight:800;font-size:13px;line-height:1">×</button></div>'; }).join('');
+        const addBtn='<div style="margin-top:6px"><label style="display:inline-block;padding:4px 10px;border-radius:7px;border:1.5px dashed #c084fc;background:#faf5ff;color:#7c3aed;font-size:10.5px;font-weight:700;cursor:pointer">➕ Add '+(meta2.doll?'a doll set':'a book')+'<input type="file" accept="application/pdf,.pdf" onchange="nbActUpload(this,\''+cat+'\')" style="display:none"></label></div>';
+        let thumbUrl, controlRow;
+        if(meta2.doll){
+          // Paper dolls: doll figure (page 1) every week + a rotating outfit; no manual stepper.
+          const n=books.length, wn=parseInt(String(WK).replace(/\D/g,""),10)||1, bi=((wn-1)%n+n)%n, bk=books[bi], im=bk.imgs||{}, pages=bk.pages||1;
+          thumbUrl=im[1]||(Object.keys(im).length?im[Object.keys(im)[0]]:null);
+          const outfit = pages>1 ? ('outfit '+(1+((Math.floor((wn-1)/n))%(pages-1)))+' of '+(pages-1)) : 'no outfits in this set yet';
+          controlRow='<div style="font-size:10.5px;color:var(--muted);line-height:1.4">✂️ This week: <b>'+bk.name+'</b> doll + '+outfit+' — each on its own sheet with a <b>blank back</b> to cut.</div>';
+        } else {
+          const isAuto=!c||c.mode!=="manual";
+          const bs="padding:3px 9px;border-radius:7px;border:1.5px solid var(--border);background:#fff;cursor:pointer;font-weight:700";
+          let curName="", curPage=1;
+          if(isAuto){ const t=nbActWeekTarget(cat); if(t){ curName=t.name; curPage=t.page; } }
+          else { const b=books.find(x=>x.id===c.curBook); curName=b?b.name:(books[0].name); curPage=(c&&c.curPage)||1; }
+          thumbUrl=nbActCurUrl(cat);
+          const flatLen=nbActFlat(cat).length;
+          const autoBtn='<button onclick="nbActSetAuto(\''+cat+'\','+(isAuto?'false':'true')+')" style="display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:7px;border:1.5px solid '+(isAuto?'#7c3aed':'var(--border)')+';background:'+(isAuto?'#f5f3ff':'#fff')+';color:'+(isAuto?'#6d28d9':'#6b7280')+';font-size:10.5px;font-weight:700;cursor:pointer">'+(isAuto?'🔄 Auto ✓':'🔄 Auto')+'</button>';
+          const stepper=(flatLen>1?'<span style="display:inline-flex;align-items:center;gap:6px;margin-left:8px"><button onclick="nbActStep(\''+cat+'\',-1)" style="'+bs+'">◀</button><span style="font-size:10.5px;color:var(--muted)">'+(isAuto?'wk → ':'📌 ')+(curName?curName+' ':'')+'p'+curPage+'</span><button onclick="nbActStep(\''+cat+'\',1)" style="'+bs+'">▶</button></span>':'');
+          controlRow=autoBtn+stepper;
+        }
         inner='<div style="display:flex;gap:10px;align-items:flex-start">'+
-          (curUrl?'<img src="'+curUrl+'" style="width:50px;height:65px;object-fit:contain;border:1.5px solid var(--border);border-radius:6px;background:#fff"/>':'')+
+          (thumbUrl?'<img src="'+thumbUrl+'" style="width:50px;height:65px;object-fit:contain;border:1.5px solid var(--border);border-radius:6px;background:#fff"/>':'')+
           '<div style="flex:1">'+
-            '<div style="margin-bottom:6px">'+autoBtn+stepper+'</div>'+
-            bookList+
-            '<div style="margin-top:6px"><label style="display:inline-block;padding:4px 10px;border-radius:7px;border:1.5px dashed #c084fc;background:#faf5ff;color:#7c3aed;font-size:10.5px;font-weight:700;cursor:pointer">➕ Add a book<input type="file" accept="application/pdf,.pdf" onchange="nbActUpload(this,\''+cat+'\')" style="display:none"></label></div>'+
+            '<div style="margin-bottom:6px">'+controlRow+'</div>'+
+            bookList+addBtn+
           '</div></div>';
       } else {
-        inner='<label style="display:inline-block;padding:6px 12px;border-radius:8px;border:1.5px dashed #c084fc;background:#faf5ff;color:#7c3aed;font-size:11px;font-weight:700;cursor:pointer">📄 Upload PDF<input type="file" accept="application/pdf,.pdf" onchange="nbActUpload(this,\''+cat+'\')" style="display:none"></label>';
+        inner='<label style="display:inline-block;padding:6px 12px;border-radius:8px;border:1.5px dashed #c084fc;background:#faf5ff;color:#7c3aed;font-size:11px;font-weight:700;cursor:pointer">📄 Upload '+(meta2.doll?'doll PDF':'PDF')+'<input type="file" accept="application/pdf,.pdf" onchange="nbActUpload(this,\''+cat+'\')" style="display:none"></label>';
       }
       return '<div style="padding:10px 0;border-top:1px solid var(--border)">'+
         '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px"><span style="font-size:12px;font-weight:800;color:#1f2937">'+meta2.label+'</span><span style="font-size:10px;color:var(--muted)">'+meta2.hint+'</span></div>'+
