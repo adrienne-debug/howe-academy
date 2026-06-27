@@ -1917,7 +1917,9 @@
     var scores = LINCOLN_DATA.iowa_default;
     var passages = LINCOLN_DATA.banks.fallback_passages;
     var wn = parseInt(weekNum, 10) || 1;
-    var passage = passages[((wn - 1) % passages.length + passages.length) % passages.length] || passages[0] || {};
+    // Use this week's stored story if one exists (offline/proxy-generated, synced via Firebase); else the built-in fallback.
+    var passage = (ctx.passage && (ctx.passage.html || ctx.passage.q1_stem)) ? ctx.passage
+      : (passages[((wn - 1) % passages.length + passages.length) % passages.length] || passages[0] || {});
     var prevWeekNum = wn - 1;
     var scheduleHtml = lnScheduleHtml(weekData, student);
 

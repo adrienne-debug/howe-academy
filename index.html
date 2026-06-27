@@ -1125,6 +1125,9 @@ let nbSelectedKid="lincoln"; // currently-selected kid in the Notebook tab
 // records the metadata so every device knows what's there. Shape per category:
 // {mode:"auto"|"manual", curBook, curPage, books:[{id, name, pages, imgs:{1:url,2:url,...}}]}
 let nbActivities={}; try{ const _na=localStorage.getItem("ha_nb_activities"); if(_na) nbActivities=JSON.parse(_na); }catch(e){}
+// Per-kid, per-week reading STORIES (passage + comprehension Qs), synced. Generated offline (key
+// stays off the public app) or later by a server proxy; the app just reads {kid:{weekN:{...}}}.
+let notebookStories={}; try{ const _ns=localStorage.getItem("ha_nb_stories"); if(_ns) notebookStories=JSON.parse(_ns); }catch(e){}
 let _nbColoringPdfPromise=null; // lazy pdf.js loader (used to rasterize pages on upload)
 let scheduleOverrides={}; // {dateStr:{kid:{dayOff:true, removed:{sk:true}, added:{sk:true}}}} — manual Lesson Map edits
 let calAddMode=null; // null | "holiday" | "vacation" | "override"
@@ -1442,6 +1445,11 @@ function initFb() {
       try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
       if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
       if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
+    });
+    db.ref("notebookStories").on("value",s=>{
+      notebookStories=s.val()||{};
+      try{localStorage.setItem("ha_nb_stories",JSON.stringify(notebookStories));}catch(e){}
+      if(tab==="notebook"){const el=document.getElementById("content");if(el&&!document.activeElement?.id?.startsWith("nbs-"))renderNotebook(el);}
     });
     db.ref("notebookPersonal").on("value",s=>{
       notebookPersonal=s.val()||{};
@@ -6407,6 +6415,7 @@ function haNbContext(kid){
     }
   }catch(e){}
   try{ pace=haPaceRows(kid); }catch(e){}
+  let passage=null; try{ if(notebookStories[kid]) passage=notebookStories[kid][WK]||null; }catch(e){} // this week's stored reading story
   let coloring=null,dotdot=null,symmetry=null,maze=null,pattern=null,dolls=null;
   try{ if(kid==="lucy"){ coloring=nbActCurUrl("coloring"); dotdot=nbActCurUrl("dotdot"); symmetry=nbActCurUrl("symmetry"); maze=nbActCurUrl("maze"); pattern=nbActCurUrl("pattern");
     // Paper dolls: doll figure (page 1, every week) + a rotating outfit (pages 2..N). Books alternate weekly.
@@ -6420,7 +6429,7 @@ function haNbContext(kid){
       if(dollUrl||outfitUrl) dolls={ doll:dollUrl, outfit:outfitUrl };
     }
   } }catch(e){}
-  return { weekData:{dates:dates, tasks:tasks}, weekNum:WK, weekDates:weekDates, masteryItems:(mastery[kid]||[]), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls };
+  return { weekData:{dates:dates, tasks:tasks}, weekNum:WK, weekDates:weekDates, masteryItems:(mastery[kid]||[]), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage };
 }
 function haNbOpen(kid,which){
   const lib=window.HoweNotebooks; if(!lib){ alert("Notebook builder not loaded yet."); return; }
