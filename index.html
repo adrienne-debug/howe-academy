@@ -6311,6 +6311,55 @@ function haLoadNotebooksLib(){
   });
   return _haNbLibPromise;
 }
+// Previous-week completion summary for a kid, from the archived snapshot (tasks + checked
+// stored together → no stale-id mismatch). Powers the notebooks' "last week" stats.
+function haPrevWeekSummary(kid){
+  try{
+    const curN=parseInt(String(WK).replace(/\D/g,""),10)||0;
+    if(curN<=1) return null;
+    const aw=(typeof archive!=="undefined"&&archive)?archive["week"+(curN-1)]:null;
+    if(!aw||!Array.isArray(aw.tasks)||!aw.tasks.length) return null;
+    const chk=aw.checked||{};
+    const isDone=t=>!!(chk[t.id]||chk[t.id+"_c"]);
+    const kt=aw.tasks.filter(t=>t.who===kid&&!String(t.id||"").endsWith("_c"));
+    if(!kt.length) return null;
+    const done=kt.filter(isDone).length, total=kt.length, pct=total?Math.round(done/total*100):0;
+    const byDay={}; kt.forEach(t=>{ const d=t.day||"?"; (byDay[d]=byDay[d]||{n:0,d:0}); byDay[d].n++; if(isDone(t))byDay[d].d++; });
+    let daysDone=0; for(const d in byDay){ if(byDay[d].n>0&&byDay[d].d===byDay[d].n) daysDone++; }
+    const sname=t=>String(t.title||"").replace(/^[^A-Za-z0-9]+/,"").split(" — ")[0].trim();
+    const META={"Morning Notebook":1,"Closing Notebook":1,"Drills":1,"Mastery":1}; // not real subjects — keep out of the done/behind pills
+    const bySub={}; kt.forEach(t=>{ const s=sname(t); if(!s||META[s])return; (bySub[s]=bySub[s]||{n:0,d:0}); bySub[s].n++; if(isDone(t))bySub[s].d++; });
+    const sdone=[],sbehind=[]; for(const s in bySub){ (bySub[s].d===bySub[s].n?sdone:sbehind).push(s); }
+    sdone.sort(); sbehind.sort();
+    return { days_done:daysDone, tasks_done:done, tasks_total:total, pct:pct, carried_over:Math.max(0,total-done), subjects_done:sdone, subjects_behind:sbehind };
+  }catch(e){ return null; }
+}
+// Live pace bars: real per-subject progress % + ahead/on/behind vs the calendar-aware
+// expected pace. Returns null on any trouble → generators fall back to their defaults.
+function haPaceRows(kid){
+  try{
+    if(typeof subjectProgress!=="function") return null;
+    if(typeof buildCurrPaceCum==="function"){ try{ buildCurrPaceCum(); }catch(e){} }
+    const curN=parseInt(String(WK).replace(/\D/g,""),10)||1;
+    const subs=((typeof currData!=="undefined"&&currData.subjects)||{})[kid] || ((typeof paceData!=="undefined"&&paceData.subjects)||{})[kid] || {};
+    const cum=((typeof currPaceCum!=="undefined"&&currPaceCum)||{})[kid]||{};
+    const rows=[];
+    for(const sk of Object.keys(subs)){
+      let p=null; try{ p=subjectProgress(kid,sk); }catch(e){}
+      if(!p||p.pct==null) continue;
+      let status="on";
+      try{
+        let actual=0; try{ actual=computeSubjectDone(kid,sk); }catch(e){}
+        const expected=(cum[sk]&&cum[sk][curN])||0;
+        if(expected>0) status=(actual<expected-0.5)?"behind":(actual>expected+0.5?"ahead":"on");
+        else if(p.done) status="ahead";
+      }catch(e){}
+      rows.push({subject:p.label||sk, pct:p.pct, status:status});
+      if(rows.length>=6) break;
+    }
+    return rows.length?rows:null;
+  }catch(e){ return null; }
+}
 function haNbContext(kid){
   let dates={}; try{ dates=Object.assign({},DAY_DT); }catch(e){}
   let tasks=[]; try{ tasks=(weekData.tasks||[]).filter(t=>!String(t.id||"").endsWith("_c")); }catch(e){}
@@ -6327,7 +6376,18 @@ function haNbContext(kid){
         : { name:pr.name||"", address:pr.address||"", mom_phone:pr.mom_phone||"", dad_phone:pr.dad_phone||"" };
     }
   }catch(e){}
-  return { weekData:{dates:dates, tasks:tasks}, weekNum:WK, weekDates:weekDates, masteryItems:(mastery[kid]||[]), personal:personal };
+  // Real "last week" stats (from the archive) + live pace bars — shaped for each kid.
+  let prevSummary=null, prevStats=null, pace=null;
+  try{
+    const sm=haPrevWeekSummary(kid);
+    if(sm){
+      prevSummary={ days_done:sm.days_done, tasks_done:sm.tasks_done, tasks_total:sm.tasks_total, pct:sm.pct, carried_over:sm.carried_over, subjects_done:sm.subjects_done, subjects_behind:sm.subjects_behind };
+      const pw=(parseInt(String(WK).replace(/\D/g,""),10)||1)-1;
+      prevStats={ week:pw, days:sm.days_done, apps:sm.tasks_done, completion:sm.pct+"%", carried:sm.carried_over, highlights:sm.subjects_done.slice(0,6), ahead:[] };
+    }
+  }catch(e){}
+  try{ pace=haPaceRows(kid); }catch(e){}
+  return { weekData:{dates:dates, tasks:tasks}, weekNum:WK, weekDates:weekDates, masteryItems:(mastery[kid]||[]), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace };
 }
 function haNbOpen(kid,which){
   const lib=window.HoweNotebooks; if(!lib){ alert("Notebook builder not loaded yet."); return; }

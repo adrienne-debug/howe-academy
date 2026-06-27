@@ -1913,7 +1913,7 @@
     var datesMap = weekData.dates || {};
     var schoolDays = Object.keys(datesMap);
     var skillSubjects = lnSkillSubjects(tasks, student, 6);
-    var paceRows = lnPaceRows(tasks, student);
+    var paceRows = (ctx.pace && ctx.pace.length) ? ctx.pace.map(function (p) { return [p.subject, p.pct, p.status]; }) : lnPaceRows(tasks, student);
     var scores = LINCOLN_DATA.iowa_default;
     var passages = LINCOLN_DATA.banks.fallback_passages;
     var wn = parseInt(weekNum, 10) || 1;
@@ -2544,7 +2544,7 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
     var dateVals = orderedDays.map(function (d) { return datesMap[d]; });
     var weekDates = ctx.weekDates || (dateVals.length ? (dateVals[0] + "–" + dateVals[dateVals.length - 1] + ", " + year) : ("Week " + wn));
     var prevWeek = wn - 1;
-    var paceRows = ELLIS_DATA.pace_priority.map(function (k) { return [ELLIS_DATA.pace_map[k] || k, 38, "on"]; });
+    var paceRows = (ctx.pace && ctx.pace.length) ? ctx.pace.map(function (p) { return [p.subject, p.pct, p.status]; }) : ELLIS_DATA.pace_priority.map(function (k) { return [ELLIS_DATA.pace_map[k] || k, 38, "on"]; });
     var summary = ctx.prevSummary || {};
     var T = ELLIS_DATA.theme;
 
@@ -3325,7 +3325,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     var tasks = weekData.tasks || [], dates = weekData.dates || {};
     var DAY_ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday"];
     var days = DAY_ORDER.filter(function (d) { return dates.hasOwnProperty(d); });
-    var blends = LUCY_DATA.blends, subtraction = LUCY_DATA.subtraction, focus = LUCY_DATA.focus, pace = LUCY_DATA.pace;
+    var blends = LUCY_DATA.blends, subtraction = LUCY_DATA.subtraction, focus = LUCY_DATA.focus, pace = (ctx.pace && ctx.pace.length) ? ctx.pace : LUCY_DATA.pace;
     var prevStats = ctx.prevStats || {};   // dashes until the shared history wiring
     var category = LUCY_DATA.category_order[((wn - 1) % LUCY_DATA.category_order.length + LUCY_DATA.category_order.length) % LUCY_DATA.category_order.length];
     var curMonth = days.length ? monthFromDate(dates[days[0]] || "") : "";
