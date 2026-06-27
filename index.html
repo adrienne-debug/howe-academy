@@ -1125,6 +1125,7 @@ let nbSelectedKid="lincoln"; // currently-selected kid in the Notebook tab
 // Lucy's activity pages, by category: {coloring:{b64,page,pages,mode}, dotdot:{...}, symmetry:{...}, maze:{...}, pattern:{...}}
 let nbColoring={}; try{ const _nc=localStorage.getItem("ha_nb_coloring"); if(_nc) nbColoring=JSON.parse(_nc); }catch(e){}
 if(nbColoring&&nbColoring.lucy&&!nbColoring.coloring){ nbColoring.coloring=nbColoring.lucy; delete nbColoring.lucy; } // migrate old single-coloring entry
+["coloring","dotdot","symmetry","maze","pattern"].forEach(_c=>{ const _e=nbColoring[_c]; if(_e&&_e.b64&&!_e.books){ _e.books=[{id:"legacy",name:"My pages",pages:_e.pages||1}]; _e.curBook="legacy"; _e.curPage=_e.page||1; delete _e.page; delete _e.pages; } }); // migrate single-book → books[]
 let _nbActDoc={}; // transient PDF.js docs per category {coloring:doc, dotdot:doc, ...}
 let _nbColoringPdfPromise=null; // lazy pdf.js loader
 // Synced activity-book LIBRARY (metadata only): {coloring:[{name,url,pages}], dotdot:[...], symmetry:[...], maze:[...], pattern:[...]}.
@@ -7951,16 +7952,26 @@ function nbIdbOpen(){
 async function nbIdbPut(key,blob){ const d=await nbIdbOpen(); return new Promise((res,rej)=>{ const t=d.transaction("pdfs","readwrite"); t.objectStore("pdfs").put(blob,key); t.oncomplete=()=>res(); t.onerror=()=>rej(t.error); }); }
 async function nbIdbGet(key){ const d=await nbIdbOpen(); return new Promise((res,rej)=>{ const t=d.transaction("pdfs","readonly"); const q=t.objectStore("pdfs").get(key); q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); }); }
 async function nbIdbDel(key){ try{ const d=await nbIdbOpen(); return new Promise(res=>{ const t=d.transaction("pdfs","readwrite"); t.objectStore("pdfs").delete(key); t.oncomplete=()=>res(); t.onerror=()=>res(); }); }catch(e){} }
-async function nbActEnsureDoc(cat){
-  if(_nbActDoc[cat]) return _nbActDoc[cat];
-  const blob=await nbIdbGet("lucy_"+cat); if(!blob) return null;
+function nbActIdbKey(cat, bookId){ return bookId==="legacy" ? ("lucy_"+cat) : ("lucy_"+cat+"_"+bookId); }
+async function nbActEnsureDoc(cat, bookId){
+  const k=cat+"_"+bookId;
+  if(_nbActDoc[k]) return _nbActDoc[k];
+  const blob=await nbIdbGet(nbActIdbKey(cat,bookId)); if(!blob) return null;
   await nbLoadPdfJs();
-  _nbActDoc[cat]=await window.pdfjsLib.getDocument({data:await blob.arrayBuffer()}).promise;
-  return _nbActDoc[cat];
+  _nbActDoc[k]=await window.pdfjsLib.getDocument({data:await blob.arrayBuffer()}).promise;
+  return _nbActDoc[k];
 }
-function nbActWeekPage(pages){ pages=pages||1; const wn=parseInt(String(WK).replace(/\D/g,""),10)||1; return ((wn-1)%pages+pages)%pages+1; }
-async function nbActRender(cat, pageNum, mode){
-  const doc=await nbActEnsureDoc(cat); if(!doc) return;
+// Which book+page this week — round-robin across books (so they ALTERNATE week to week),
+// advancing the page within a book each time it comes back around. One book = plain weekly paging.
+function nbActWeekTarget(cat){
+  const c=nbColoring[cat]; if(!c||!c.books||!c.books.length) return null;
+  const n=c.books.length, wn=parseInt(String(WK).replace(/\D/g,""),10)||1;
+  const bi=((wn-1)%n+n)%n, cycle=Math.floor((wn-1)/n), bk=c.books[bi], pages=bk.pages||1;
+  return { bookId:bk.id, page:((cycle%pages)+pages)%pages+1, name:bk.name };
+}
+function nbActFlat(cat){ const c=nbColoring[cat], out=[]; if(c&&c.books) c.books.forEach(b=>{ for(let p=1;p<=(b.pages||1);p++) out.push({bookId:b.id,page:p,name:b.name}); }); return out; }
+async function nbActRender(cat, bookId, pageNum, mode){
+  const doc=await nbActEnsureDoc(cat, bookId); if(!doc) return;
   const total=doc.numPages, pn=Math.max(1,Math.min(pageNum||1,total));
   const page=await doc.getPage(pn);
   const vp=page.getViewport({scale:1.5});
@@ -7969,31 +7980,41 @@ async function nbActRender(cat, pageNum, mode){
   const task=page.render({canvasContext:canvas.getContext("2d"),viewport:vp});
   await Promise.race([task.promise, new Promise((_,rej)=>setTimeout(()=>{ try{task.cancel();}catch(e){} rej(new Error("rendering timed out — try a different PDF")); },30000))]);
   const b64=(canvas.toDataURL("image/png").split(",")[1])||"";
-  const keepMode=mode||(nbColoring[cat]&&nbColoring[cat].mode)||"auto";
-  nbColoring[cat]={ b64:b64, page:pn, pages:total, mode:keepMode };
+  const c=nbColoring[cat]||{books:[]}; c.b64=b64; c.curBook=bookId; c.curPage=pn; c.mode=mode||c.mode||"auto"; nbColoring[cat]=c;
   try{ localStorage.setItem("ha_nb_coloring",JSON.stringify(nbColoring)); }catch(e){ const m=document.getElementById("nbc-msg-"+cat); if(m) m.textContent="⚠️ Image too big to save on this device."; }
 }
 async function nbActEnsureWeek(cat){
-  const c=nbColoring[cat]; if(!c||c.mode!=="auto") return;
-  const want=nbActWeekPage(c.pages);
-  if(c.page===want&&c.b64) return;               // already on this week's page
-  try{ await nbActRender(cat,want,"auto"); renderNotebook(); }catch(e){}
+  const c=nbColoring[cat]; if(!c||c.mode==="manual"||!c.books||!c.books.length) return;
+  const t=nbActWeekTarget(cat); if(!t) return;
+  if(c.curBook===t.bookId && c.curPage===t.page && c.b64) return;   // already on this week's page
+  try{ await nbActRender(cat,t.bookId,t.page,"auto"); renderNotebook(); }catch(e){}
 }
 async function nbActUpload(input, cat){
   const f=input&&input.files&&input.files[0]; if(!f) return;
   const m=document.getElementById("nbc-msg-"+cat); if(m) m.textContent="Reading PDF…";
   try{
     await nbLoadPdfJs();
-    _nbActDoc[cat]=await window.pdfjsLib.getDocument({data:await f.arrayBuffer()}).promise;
-    try{ await nbIdbPut("lucy_"+cat, f); }catch(e){}            // persist for weekly auto-rotation
-    await nbActRender(cat, nbActWeekPage(_nbActDoc[cat].numPages), "auto");
+    const id=Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36);
+    const doc=await window.pdfjsLib.getDocument({data:await f.arrayBuffer()}).promise;
+    _nbActDoc[cat+"_"+id]=doc;
+    try{ await nbIdbPut("lucy_"+cat+"_"+id, f); }catch(e){}      // persist this book for weekly auto-rotation
+    const c=nbColoring[cat]||{mode:"auto",books:[]}; if(!c.books) c.books=[];
+    c.books.push({ id:id, name:(f.name||"book").replace(/\.pdf$/i,"").slice(0,28), pages:doc.numPages });
+    nbColoring[cat]=c;
+    try{ localStorage.setItem("ha_nb_coloring",JSON.stringify(nbColoring)); }catch(e){}
+    if(c.mode!=="manual"){ const t=nbActWeekTarget(cat); if(t) await nbActRender(cat,t.bookId,t.page,"auto"); }
+    else if(!c.b64){ await nbActRender(cat,id,1,"manual"); }
     renderNotebook();
   }catch(e){ const m2=document.getElementById("nbc-msg-"+cat); if(m2) m2.textContent="❌ "+(e.message||"Couldn't read that PDF."); }
 }
 function nbActStep(cat, delta){
-  const c=nbColoring[cat]; if(!c) return;
+  const c=nbColoring[cat]; if(!c||!c.books||!c.books.length) return;
+  const flat=nbActFlat(cat); if(!flat.length) return;
+  let idx=flat.findIndex(x=>x.bookId===c.curBook && x.page===c.curPage); if(idx<0) idx=0;
+  idx=((idx+delta)%flat.length+flat.length)%flat.length;          // wrap through all books' pages
+  const t=flat[idx];
   const m=document.getElementById("nbc-msg-"+cat); if(m) m.textContent="Loading page…";
-  nbActRender(cat, Math.max(1,Math.min((c.page||1)+delta, c.pages||1)), "manual").then(()=>renderNotebook()).catch(e=>{ const mm=document.getElementById("nbc-msg-"+cat); if(mm) mm.textContent="❌ "+(e.message||"render failed"); });
+  nbActRender(cat,t.bookId,t.page,"manual").then(()=>renderNotebook()).catch(e=>{ const mm=document.getElementById("nbc-msg-"+cat); if(mm) mm.textContent="❌ "+(e.message||"render failed"); });
 }
 function nbActSetAuto(cat, on){
   const c=nbColoring[cat]; if(!c) return;
@@ -8001,10 +8022,15 @@ function nbActSetAuto(cat, on){
   try{ localStorage.setItem("ha_nb_coloring",JSON.stringify(nbColoring)); }catch(e){}
   if(on) nbActEnsureWeek(cat); else renderNotebook();
 }
-function nbActRemove(cat){
-  delete nbColoring[cat]; delete _nbActDoc[cat];
+function nbActRemoveBook(cat, bookId){
+  const c=nbColoring[cat]; if(!c||!c.books) return;
+  c.books=c.books.filter(b=>b.id!==bookId);
+  delete _nbActDoc[cat+"_"+bookId];
+  nbIdbDel(nbActIdbKey(cat,bookId));
+  if(!c.books.length){ delete nbColoring[cat]; }
+  else if(c.curBook===bookId){ c.b64=null; c.curBook=null; c.curPage=null; }
   try{ localStorage.setItem("ha_nb_coloring",JSON.stringify(nbColoring)); }catch(e){}
-  nbIdbDel("lucy_"+cat);
+  if(nbColoring[cat] && nbColoring[cat].mode!=="manual") nbActEnsureWeek(cat);
   renderNotebook();
 }
 function renderNotebook(el){
@@ -8044,18 +8070,22 @@ function renderNotebook(el){
   let coloringHtml="";
   if(sel==="lucy"){
     const actSlot=(meta2)=>{
-      const cat=meta2.cat, c=nbColoring[cat]; let inner;
-      if(c&&c.b64){
-        const isAuto=c.mode!=="manual";
-        if(isAuto) setTimeout(()=>nbActEnsureWeek(cat),0); // keep auto pinned to this week's page
+      const cat=meta2.cat, c=nbColoring[cat], books=(c&&c.books)||[]; let inner;
+      if(books.length){
+        const isAuto=!c||c.mode!=="manual";
+        if(isAuto) setTimeout(()=>nbActEnsureWeek(cat),0); // keep auto on this week's alternating page
         const bs="padding:3px 9px;border-radius:7px;border:1.5px solid var(--border);background:#fff;cursor:pointer;font-weight:700";
+        const curBook=books.find(x=>x.id===(c&&c.curBook)), curName=curBook?curBook.name:"";
+        const flatLen=books.reduce((s,b)=>s+(b.pages||1),0);
         const autoBtn='<button onclick="nbActSetAuto(\''+cat+'\','+(isAuto?'false':'true')+')" style="display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:7px;border:1.5px solid '+(isAuto?'#7c3aed':'var(--border)')+';background:'+(isAuto?'#f5f3ff':'#fff')+';color:'+(isAuto?'#6d28d9':'#6b7280')+';font-size:10.5px;font-weight:700;cursor:pointer">'+(isAuto?'🔄 Auto ✓':'🔄 Auto')+'</button>';
-        const stepper=(c.pages>1?'<span style="display:inline-flex;align-items:center;gap:6px;margin-left:8px"><button onclick="nbActStep(\''+cat+'\',-1)" style="'+bs+'">◀</button><span style="font-size:10.5px;color:var(--muted)">'+(isAuto?'wk → pg ':'📌 pg ')+c.page+'/'+c.pages+'</span><button onclick="nbActStep(\''+cat+'\',1)" style="'+bs+'">▶</button></span>':'');
+        const stepper=(flatLen>1?'<span style="display:inline-flex;align-items:center;gap:6px;margin-left:8px"><button onclick="nbActStep(\''+cat+'\',-1)" style="'+bs+'">◀</button><span style="font-size:10.5px;color:var(--muted)">'+(isAuto?'wk → ':'📌 ')+(curName?curName+' ':'')+'p'+((c&&c.curPage)||1)+'</span><button onclick="nbActStep(\''+cat+'\',1)" style="'+bs+'">▶</button></span>':'');
+        const bookList=books.map(b=>'<div style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--muted);padding:1px 0">📕 '+b.name+' <span style="opacity:.6">'+b.pages+'pg</span><button onclick="nbActRemoveBook(\''+cat+'\',\''+b.id+'\')" title="remove this book" style="margin-left:auto;border:none;background:none;color:#b91c1c;cursor:pointer;font-weight:800;font-size:13px;line-height:1">×</button></div>').join('');
         inner='<div style="display:flex;gap:10px;align-items:flex-start">'+
-          '<img src="data:image/png;base64,'+c.b64+'" style="width:50px;height:65px;object-fit:contain;border:1.5px solid var(--border);border-radius:6px;background:#fff"/>'+
+          ((c&&c.b64)?'<img src="data:image/png;base64,'+c.b64+'" style="width:50px;height:65px;object-fit:contain;border:1.5px solid var(--border);border-radius:6px;background:#fff"/>':'')+
           '<div style="flex:1">'+
             '<div style="margin-bottom:6px">'+autoBtn+stepper+'</div>'+
-            '<div style="display:flex;gap:6px"><label style="padding:4px 10px;border-radius:7px;border:1.5px solid var(--border);background:#fff;font-size:10.5px;font-weight:700;cursor:pointer">Replace<input type="file" accept="application/pdf,.pdf" onchange="nbActUpload(this,\''+cat+'\')" style="display:none"></label><button onclick="nbActRemove(\''+cat+'\')" style="padding:4px 10px;border-radius:7px;border:1.5px solid var(--border);background:#fff;font-size:10.5px;font-weight:700;color:#b91c1c;cursor:pointer">Remove</button></div>'+
+            bookList+
+            '<div style="margin-top:6px"><label style="display:inline-block;padding:4px 10px;border-radius:7px;border:1.5px dashed #c084fc;background:#faf5ff;color:#7c3aed;font-size:10.5px;font-weight:700;cursor:pointer">➕ Add a book<input type="file" accept="application/pdf,.pdf" onchange="nbActUpload(this,\''+cat+'\')" style="display:none"></label></div>'+
           '</div></div>';
       } else {
         inner='<label style="display:inline-block;padding:6px 12px;border-radius:8px;border:1.5px dashed #c084fc;background:#faf5ff;color:#7c3aed;font-size:11px;font-weight:700;cursor:pointer">📄 Upload PDF<input type="file" accept="application/pdf,.pdf" onchange="nbActUpload(this,\''+cat+'\')" style="display:none"></label>';
@@ -8066,7 +8096,7 @@ function renderNotebook(el){
     };
     coloringHtml='<div style="margin-top:14px;background:#fafafe;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px 4px">'+
       '<div style="font-size:12px;font-weight:800;color:#7c3aed;margin-bottom:2px">🎨 Activity pages (optional)</div>'+
-      '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:2px">Upload your activity PDFs — each fills its spot in Lucy’s brain breaks. <b>Auto</b> rotates a fresh page each week; arrows pin one. Stored on this device, never shared.</div>'+
+      '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:2px">Upload your activity PDFs — add <b>several books</b> per type (unicorn, mermaid…) and they <b>alternate each week</b>. <b>Auto</b> picks a fresh one; arrows pin a page. Stored on this device, never shared.</div>'+
       NB_ACT_CATS.map(actSlot).join('')+'</div>';
   }
   con.innerHTML=
