@@ -8105,18 +8105,42 @@ function syncPaceData(){
     keys.forEach(key=>{ if(existing[key]) deletePaceSubject(k,key); });
   });
 
+  // Prune pace entries for daily-tracked subjects (drills, reflex, notebooks). They're
+  // never pace-tracked; the old sync created them before daily subjects were skipped.
+  // Self-healing: removed inline (no renderAll) since the sync's caller renders after.
+  let _prunedDaily=false;
+  [...SCHOOL_KIDS].forEach(k=>{
+    const ps=(paceData.subjects&&paceData.subjects[k])||{};
+    const cs=(currData&&currData.subjects&&currData.subjects[k])||{};
+    Object.keys(ps).forEach(key=>{
+      if(cs[key]&&cs[key].tracking==="daily"){
+        delete paceData.subjects[k][key];
+        if(db) db.ref("pace/subjects/"+k+"/"+key).remove();
+        _prunedDaily=true;
+      }
+    });
+  });
+  if(_prunedDaily){ try{localStorage.setItem("ha_pace",JSON.stringify(paceData));}catch(e){} }
+
   [...SCHOOL_KIDS].forEach(k=>{
     const existing=(paceData.subjects&&paceData.subjects[k])||{};
     const currSubjects=(currData&&currData.subjects&&currData.subjects[k])||null;
     const defaults=PACE_DEFAULT_SUBJECTS[k]||{};
     if(currSubjects){
       Object.entries(currSubjects).forEach(([key,cs])=>{
+        // Daily-tracked subjects (drills, reflex, notebooks) have no lesson total and
+        // aren't pace-tracked — every Pace view already filters them out. Skip them here
+        // too: a daily subject with no `total` would write `undefined`, which Firebase
+        // rejects, aborting the whole sync (every curriculum subject after it then stops
+        // syncing). The `|| 0` is a belt-and-suspenders guard for any other missing total.
+        if(cs.tracking==="daily") return;
         const cur=existing[key];
         const kw=cs.display||key;
+        const _t=cs.total||0;
         if(!cur){
-          savePaceSubject(k,key,{label:cs.display,keyword:kw,total:cs.total,offset:0,adjust:0,startWeek:CURR_MIN_WEEK});
-        } else if(cur.total!==cs.total||cur.keyword!==kw){
-          savePaceSubject(k,key,{...cur,total:cs.total,keyword:kw,label:cs.display});
+          savePaceSubject(k,key,{label:cs.display||key,keyword:kw,total:_t,offset:0,adjust:0,startWeek:CURR_MIN_WEEK});
+        } else if(cur.total!==_t||cur.keyword!==kw){
+          savePaceSubject(k,key,{...cur,total:_t,keyword:kw,label:cs.display||key});
         }
       });
     } else if(Object.keys(defaults).length){
