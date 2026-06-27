@@ -1125,6 +1125,12 @@ let nbSelectedKid="lincoln"; // currently-selected kid in the Notebook tab
 let nbColoring={}; try{ const _nc=localStorage.getItem("ha_nb_coloring"); if(_nc) nbColoring=JSON.parse(_nc); }catch(e){}
 let _nbColoringDoc=null; // transient PDF.js doc for paging through this session's upload
 let _nbColoringPdfPromise=null; // lazy pdf.js loader
+// Synced activity-book LIBRARY (metadata only): {coloring:[{name,url,pages}], dotdot:[...], symmetry:[...], maze:[...], pattern:[...]}.
+// The PDFs live in Firebase Storage (per-family, like songs); this just records what's there so every device knows.
+// Heavy rasterized pages are cached per-device (nbActImg / localStorage), rotated by week.
+let nbActivities={}; try{ const _na=localStorage.getItem("ha_nb_activities"); if(_na) nbActivities=JSON.parse(_na); }catch(e){}
+let nbActImg={}; // in-memory rasterized current-week pages: {coloring:b64, dotdot:b64, ...}
+let _nbActPdfCache={}; // url → loaded PDF.js doc (this session), to avoid re-downloading
 let scheduleOverrides={}; // {dateStr:{kid:{dayOff:true, removed:{sk:true}, added:{sk:true}}}} — manual Lesson Map edits
 let calAddMode=null; // null | "holiday" | "vacation" | "override"
 let calEditId=null;  // id of holiday/vacation being edited
@@ -1446,6 +1452,13 @@ function initFb() {
       notebookPersonal=s.val()||{};
       try{localStorage.setItem("ha_nb_personal",JSON.stringify(notebookPersonal));}catch(e){}
       if(tab==="notebook"){const el=document.getElementById("content");if(el&&!document.activeElement?.id?.startsWith("nbp-"))renderNotebook(el);}
+    });
+    db.ref("notebookActivities").on("value",s=>{
+      nbActivities=s.val()||{};
+      // RTDB stores empty arrays as missing — normalize each category to an array
+      ["coloring","dotdot","symmetry","maze","pattern"].forEach(c=>{ if(!Array.isArray(nbActivities[c])) nbActivities[c]=nbActivities[c]?Object.values(nbActivities[c]):[]; });
+      try{localStorage.setItem("ha_nb_activities",JSON.stringify(nbActivities));}catch(e){}
+      if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);}
     });
     db.ref("settings/sitterName").on("value",s=>{
       if(s.val()){ SITTER_NAME=s.val(); sv("ha_sitter_name",SITTER_NAME); }
@@ -7917,40 +7930,70 @@ function nbLoadPdfJs(){
   });
   return _nbColoringPdfPromise;
 }
-async function nbRenderColoringPage(pageNum){
-  if(!_nbColoringDoc) return;
-  const total=_nbColoringDoc.numPages, pn=Math.max(1,Math.min(pageNum||1,total));
-  const page=await _nbColoringDoc.getPage(pn);
-  const viewport=page.getViewport({scale:1.5});
-  const canvas=document.createElement("canvas");
-  canvas.width=Math.round(viewport.width); canvas.height=Math.round(viewport.height);
-  // Bound the render so a stuck renderer can never hang the UI — fail with a message instead.
-  const task=page.render({canvasContext:canvas.getContext("2d"),viewport:viewport});
+// Persist the uploaded coloring PDF in IndexedDB (too big for localStorage) so AUTO mode
+// can render a fresh page each week without re-uploading.
+function nbIdbOpen(){
+  return new Promise((res,rej)=>{ const r=indexedDB.open("ha_notebook",1);
+    r.onupgradeneeded=()=>{ const d=r.result; if(!d.objectStoreNames.contains("pdfs")) d.createObjectStore("pdfs"); };
+    r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
+}
+async function nbIdbPut(key,blob){ const d=await nbIdbOpen(); return new Promise((res,rej)=>{ const t=d.transaction("pdfs","readwrite"); t.objectStore("pdfs").put(blob,key); t.oncomplete=()=>res(); t.onerror=()=>rej(t.error); }); }
+async function nbIdbGet(key){ const d=await nbIdbOpen(); return new Promise((res,rej)=>{ const t=d.transaction("pdfs","readonly"); const q=t.objectStore("pdfs").get(key); q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); }); }
+async function nbIdbDel(key){ try{ const d=await nbIdbOpen(); return new Promise(res=>{ const t=d.transaction("pdfs","readwrite"); t.objectStore("pdfs").delete(key); t.oncomplete=()=>res(); t.onerror=()=>res(); }); }catch(e){} }
+async function nbEnsureColoringDoc(){
+  if(_nbColoringDoc) return _nbColoringDoc;
+  const blob=await nbIdbGet("lucy_coloring"); if(!blob) return null;
+  await nbLoadPdfJs();
+  _nbColoringDoc=await window.pdfjsLib.getDocument({data:await blob.arrayBuffer()}).promise;
+  return _nbColoringDoc;
+}
+function nbColoringWeekPage(pages){ pages=pages||1; const wn=parseInt(String(WK).replace(/\D/g,""),10)||1; return ((wn-1)%pages+pages)%pages+1; }
+async function nbColoringRender(pageNum, mode){
+  const doc=await nbEnsureColoringDoc(); if(!doc) return;
+  const total=doc.numPages, pn=Math.max(1,Math.min(pageNum||1,total));
+  const page=await doc.getPage(pn);
+  const vp=page.getViewport({scale:1.5});
+  const canvas=document.createElement("canvas"); canvas.width=Math.round(vp.width); canvas.height=Math.round(vp.height);
+  // Bound the render so a stuck renderer can never hang the UI.
+  const task=page.render({canvasContext:canvas.getContext("2d"),viewport:vp});
   await Promise.race([task.promise, new Promise((_,rej)=>setTimeout(()=>{ try{task.cancel();}catch(e){} rej(new Error("rendering timed out — try a different PDF")); },30000))]);
   const b64=(canvas.toDataURL("image/png").split(",")[1])||"";
-  nbColoring.lucy={ b64:b64, page:pn, pages:total };
-  try{ localStorage.setItem("ha_nb_coloring",JSON.stringify(nbColoring)); }
-  catch(e){ const m=document.getElementById("nbc-msg"); if(m) m.textContent="⚠️ Image too big to save on this device — try a smaller PDF."; delete nbColoring.lucy; return; }
-  renderNotebook();
+  const keepMode=mode||(nbColoring.lucy&&nbColoring.lucy.mode)||"auto";
+  nbColoring.lucy={ b64:b64, page:pn, pages:total, mode:keepMode };
+  try{ localStorage.setItem("ha_nb_coloring",JSON.stringify(nbColoring)); }catch(e){ const m=document.getElementById("nbc-msg"); if(m) m.textContent="⚠️ Image too big to save on this device."; }
+}
+async function nbColoringEnsureWeek(){
+  const c=nbColoring.lucy; if(!c||c.mode!=="auto") return;
+  const want=nbColoringWeekPage(c.pages);
+  if(c.page===want&&c.b64) return;               // already on this week's page
+  try{ await nbColoringRender(want,"auto"); renderNotebook(); }catch(e){}
 }
 async function nbColoringUpload(input){
   const f=input&&input.files&&input.files[0]; if(!f) return;
   const m=document.getElementById("nbc-msg"); if(m) m.textContent="Reading PDF…";
   try{
     await nbLoadPdfJs();
-    const buf=await f.arrayBuffer();
-    _nbColoringDoc=await window.pdfjsLib.getDocument({data:buf}).promise;
-    await nbRenderColoringPage(1);
+    _nbColoringDoc=await window.pdfjsLib.getDocument({data:await f.arrayBuffer()}).promise;
+    try{ await nbIdbPut("lucy_coloring", f); }catch(e){}        // persist for weekly auto-rotation
+    await nbColoringRender(nbColoringWeekPage(_nbColoringDoc.numPages), "auto");
+    renderNotebook();
   }catch(e){ const m2=document.getElementById("nbc-msg"); if(m2) m2.textContent="❌ "+(e.message||"Couldn't read that PDF."); }
 }
 function nbColoringStep(delta){
-  if(!_nbColoringDoc){ const m=document.getElementById("nbc-msg"); if(m) m.textContent="Re-upload the PDF to pick a different page."; return; }
-  const cur=(nbColoring.lucy&&nbColoring.lucy.page)||1;
-  nbRenderColoringPage(cur+delta).catch(()=>{});
+  const c=nbColoring.lucy; if(!c) return;
+  const m=document.getElementById("nbc-msg"); if(m) m.textContent="Loading page…";
+  nbColoringRender(Math.max(1,Math.min((c.page||1)+delta, c.pages||1)), "manual").then(()=>renderNotebook()).catch(e=>{ const mm=document.getElementById("nbc-msg"); if(mm) mm.textContent="❌ "+(e.message||"render failed"); });
+}
+function nbColoringSetAuto(on){
+  const c=nbColoring.lucy; if(!c) return;
+  c.mode=on?"auto":"manual";
+  try{ localStorage.setItem("ha_nb_coloring",JSON.stringify(nbColoring)); }catch(e){}
+  if(on) nbColoringEnsureWeek(); else renderNotebook();
 }
 function nbColoringRemove(){
   delete nbColoring.lucy; _nbColoringDoc=null;
   try{ localStorage.setItem("ha_nb_coloring",JSON.stringify(nbColoring)); }catch(e){}
+  nbIdbDel("lucy_coloring");
   renderNotebook();
 }
 function renderNotebook(el){
@@ -7991,11 +8034,16 @@ function renderNotebook(el){
   if(sel==="lucy"){
     const c=nbColoring.lucy; let inner;
     if(c&&c.b64){
+      const isAuto=c.mode!=="manual";
+      if(isAuto) setTimeout(nbColoringEnsureWeek,0); // keep auto pinned to this week's page
+      const bs="padding:4px 11px;border-radius:8px;border:1.5px solid var(--border);background:#fff;cursor:pointer;font-weight:700";
+      const autoBtn='<button onclick="nbColoringSetAuto('+(isAuto?'false':'true')+')" style="display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:8px;border:1.5px solid '+(isAuto?'#7c3aed':'var(--border)')+';background:'+(isAuto?'#f5f3ff':'#fff')+';color:'+(isAuto?'#6d28d9':'#6b7280')+';font-size:11px;font-weight:700;cursor:pointer;margin-bottom:8px">'+(isAuto?'🔄 Auto — new page each week ✓':'🔄 Turn on weekly auto-rotation')+'</button>';
+      const stepper=(c.pages>1?'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><button onclick="nbColoringStep(-1)" style="'+bs+'">◀</button><span style="font-size:11px;color:var(--muted)">'+(isAuto?'this week → page ':'📌 pinned to page ')+c.page+' of '+c.pages+'</span><button onclick="nbColoringStep(1)" style="'+bs+'">▶</button></div>':'');
       inner='<div style="display:flex;gap:12px;align-items:flex-start">'+
         '<img src="data:image/png;base64,'+c.b64+'" style="width:88px;height:114px;object-fit:contain;border:1.5px solid var(--border);border-radius:8px;background:#fff" alt="coloring preview"/>'+
         '<div style="flex:1">'+
           '<div style="font-size:11.5px;color:var(--text);font-weight:700;margin-bottom:6px">Saved ✓ — fills Lucy’s coloring page</div>'+
-          (c.pages>1?'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><button onclick="nbColoringStep(-1)" style="padding:4px 11px;border-radius:8px;border:1.5px solid var(--border);background:#fff;cursor:pointer;font-weight:700">◀</button><span style="font-size:11px;color:var(--muted)">Page '+c.page+' of '+c.pages+'</span><button onclick="nbColoringStep(1)" style="padding:4px 11px;border-radius:8px;border:1.5px solid var(--border);background:#fff;cursor:pointer;font-weight:700">▶</button></div>':'')+
+          autoBtn+stepper+
           '<div style="display:flex;gap:8px"><label style="padding:6px 12px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:700;cursor:pointer">Replace<input type="file" accept="application/pdf,.pdf" onchange="nbColoringUpload(this)" style="display:none"></label><button onclick="nbColoringRemove()" style="padding:6px 12px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:700;color:#b91c1c;cursor:pointer">Remove</button></div>'+
         '</div></div>';
     } else {
@@ -8003,7 +8051,7 @@ function renderNotebook(el){
     }
     coloringHtml='<div style="margin-top:14px;background:#fafafe;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px">'+
       '<div style="font-size:12px;font-weight:800;color:#7c3aed;margin-bottom:2px">🎨 Coloring page (optional)</div>'+
-      '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:10px">Upload your own coloring PDF — one page fills Lucy’s coloring sheet. Stored on this device only, never shared.</div>'+
+      '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:10px">Upload your coloring PDF — <b>Auto</b> rotates to a fresh page each week, or use the arrows to pin a specific one. Stored on this device, never shared.</div>'+
       inner+'<div id="nbc-msg" style="font-size:11px;color:var(--muted);margin-top:8px"></div></div>';
   }
   con.innerHTML=
