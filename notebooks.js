@@ -3467,14 +3467,55 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     return walk(css);
   }
 
+  // A title/divider page that opens each kid's section (ported from combine_parent_docs.py).
+  function cpDividerPage(name, grade, color, weekNum, weekDates) {
+    return '<div class="page-label">Parent Companion — ' + name + ' Section</div>\n' +
+      '<div class="page" style="display:flex;flex-direction:column;justify-content:center;align-items:flex-start;padding:0 1.1in;background:#fafaf8;">' +
+        '<div style="width:48px;height:3px;background:' + color + ';margin-bottom:36px;border-radius:1px;"></div>' +
+        '<div style="font-family:\'Fraunces\',Georgia,serif;font-size:11px;font-weight:600;letter-spacing:0.2em;text-transform:uppercase;color:#9ca3af;margin-bottom:14px;">' + grade + ' &nbsp;·&nbsp; Howe Academy</div>' +
+        '<div style="font-family:\'Fraunces\',Georgia,serif;font-size:72px;font-weight:700;color:#1c1c1e;line-height:1;letter-spacing:-1px;">' + name + '</div>' +
+        '<div style="font-family:\'DM Sans\',\'Nunito\',sans-serif;font-size:14px;color:#9ca3af;margin-top:18px;letter-spacing:0.04em;">Parent Reference &nbsp;·&nbsp; Week ' + weekNum + ' &nbsp;·&nbsp; ' + weekDates + '</div>' +
+        '<div style="width:48px;height:3px;background:' + color + ';margin-top:40px;border-radius:1px;opacity:0.35;"></div>' +
+      '</div>';
+  }
+  // The cover/index page listing every kid in the packet (ported from combine_parent_docs.py).
+  function cpCoverPage(weekNum, weekDates, children) {
+    var rows = children.map(function (c) {
+      return '<div style="display:flex;align-items:baseline;gap:0;padding:10px 0;border-bottom:1px solid #e5e7eb;">' +
+        '<div style="font-family:\'Fraunces\',Georgia,serif;font-size:18px;font-weight:700;color:#1c1c1e;min-width:110px;">' + c.name + '</div>' +
+        '<div style="font-family:\'DM Sans\',\'Nunito\',sans-serif;font-size:11px;color:#9ca3af;font-weight:500;letter-spacing:0.06em;text-transform:uppercase;">' + c.grade + '</div>' +
+      '</div>';
+    }).join("");
+    return '<div class="page-label">Parent Companion — Cover</div>\n' +
+      '<div class="page" style="display:flex;flex-direction:column;justify-content:space-between;padding:0.85in 1.1in;background:#fff;">' +
+        '<div>' +
+          '<div style="font-family:\'DM Sans\',\'Nunito\',sans-serif;font-size:10px;font-weight:600;letter-spacing:0.18em;text-transform:uppercase;color:#9ca3af;margin-bottom:32px;">Howe Academy &nbsp;·&nbsp; Parent Companion</div>' +
+          '<div style="font-family:\'Fraunces\',Georgia,serif;font-size:80px;font-weight:700;color:#1c1c1e;line-height:0.95;letter-spacing:-2px;">Week<br>' + weekNum + '</div>' +
+          '<div style="font-family:\'DM Sans\',\'Nunito\',sans-serif;font-size:16px;color:#6b7280;margin-top:20px;letter-spacing:0.02em;">' + weekDates + '</div>' +
+        '</div>' +
+        '<div>' +
+          '<div style="font-family:\'DM Sans\',\'Nunito\',sans-serif;font-size:10px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#9ca3af;margin-bottom:12px;">This packet includes</div>' +
+          '<div style="width:100%;">' + rows + '</div>' +
+        '</div>' +
+        '<div style="font-family:\'DM Sans\',\'Nunito\',sans-serif;font-size:10px;color:#d1d5db;letter-spacing:0.06em;text-transform:uppercase;">Parent reference only &nbsp;·&nbsp; Not for student use &nbsp;·&nbsp; Print double-sided</div>' +
+      '</div>';
+  }
+
   function combinedParent(ctxByKid, opts) {
     opts = opts || {};
     var order = ["lincoln", "ellis", "lucy", "julian"];
-    var sections = "", styles = "", links = {}, any = false;
+    var META = {
+      lincoln: { name: "Lincoln", grade: "5th Grade", color: "#1e2d40" },
+      ellis:   { name: "Ellis",   grade: "4th Grade", color: "#7c2d12" },
+      lucy:    { name: "Lucy",    grade: "1st Grade", color: "#be185d" },
+      julian:  { name: "Julian",  grade: "Pre-K",     color: "#c2410c" }
+    };
+    var sections = "", styles = "", links = {}, present = [], wk = "", wd = "";
     order.forEach(function (kid) {
       var ctx = ctxByKid[kid]; if (!ctx) return;
       var html = generate(kid, ctx).parent; if (!html) return;
-      any = true;
+      if (!wk) { wk = (String(ctx.weekNum || "").match(/\d+/) || [ctx.weekNum || ""])[0]; wd = ctx.weekDates || ""; }
+      present.push(kid);
       (html.match(/<link[^>]+fonts\.(?:googleapis|gstatic)\.com[^>]*>/g) || []).forEach(function (l) { links[l] = 1; });
       var css = (html.match(/<style[^>]*>[\s\S]*?<\/style>/gi) || []).map(function (blk) {
         return blk.replace(/<\/?style[^>]*>/gi, "");
@@ -3482,18 +3523,24 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       var sec = "." + kid + "-sec";
       styles += "\n/* ===== " + kid + " ===== */\n" + scopeCss(css, sec);
       var body = (html.match(/<body[^>]*>([\s\S]*?)<\/body>/i) || [, ""])[1];
-      var brk = sections ? ' style="break-before:page;page-break-before:always;"' : "";
-      sections += '\n<div class="' + kid + '-sec"' + brk + '>\n' + body + '\n</div>\n';
+      var m = META[kid];
+      var divider = cpDividerPage(m.name, m.grade, m.color, wk, wd);
+      // each kid section starts on a fresh sheet, opening with its divider page
+      sections += '\n<div class="' + kid + '-sec" style="break-before:page;page-break-before:always;">\n' + divider + "\n" + body + "\n</div>\n";
     });
-    if (!any) throw new Error("No parent guides to combine (no kid data).");
-    var title = opts.title || "Howe Academy — Parent Guide (all kids)";
+    if (!present.length) throw new Error("No parent guides to combine (no kid data).");
+    var cover = '<div class="cover-sec">\n' + cpCoverPage(wk, wd, present.map(function (k) { return META[k]; })) + "\n</div>";
+    var title = opts.title || ("Howe Academy — Parent Guide (Week " + wk + ")");
     return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n<title>' + title + '</title>\n' +
       '<link rel="preconnect" href="https://fonts.googleapis.com">\n<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n' +
+      '<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,500&family=DM+Sans:wght@400;500;600;700&family=Nunito:wght@400;600;700;800&family=Fredoka+One&display=swap" rel="stylesheet">\n' +
       Object.keys(links).join("\n") + "\n" +
       '<style>\n' + fontFacesCss() + "\n" +
-      "  body { margin:0; background:#d8d8d8; }\n" +
-      "  @media print { @page { size: letter portrait; margin: 0; } }\n" +
-      styles + "\n</style>\n</head>\n<body>\n" + sections + "\n</body>\n</html>";
+      "  body { margin:0; background:#e5e7eb; font-family:'DM Sans','Nunito',sans-serif; }\n" +
+      "  .page { width:8.5in; height:11in; background:#fff; overflow:hidden; display:flex; flex-direction:column; margin:0 auto 24px; box-shadow:0 2px 12px rgba(0,0,0,0.08); }\n" +
+      "  .page-label { font-size:9px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:#9ca3af; padding:4px 8px; }\n" +
+      "  @media print { @page { size: letter portrait; margin: 0; } .page-label { display:none; } body { background:#fff; } .page { margin:0; box-shadow:none; } }\n" +
+      styles + "\n</style>\n</head>\n<body>\n" + cover + "\n" + sections + "\n</body>\n</html>";
   }
 
   window.HoweNotebooks = {
