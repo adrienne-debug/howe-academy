@@ -6319,14 +6319,13 @@ function haNbOpen(kid,which){
     lib.openHtml(html, fname);
   }catch(e){ alert("Notebook generation failed: "+e.message); console.error(e); }
 }
-async function haOpenNotebookPicker(){
-  let lib;
-  try{ lib=await haLoadNotebooksLib(); }
-  catch(e){ alert("Couldn't load the notebook builder ("+e.message+").\nMake sure notebooks.js is deployed next to index.html."); return; }
-  const old=document.getElementById("haNbOverlay"); if(old) old.remove();
-  const kids=Object.keys(lib.GENERATORS||{});
-  const wkLabel=String(WK).replace("week","Week ");
-  const rows=kids.map(k=>{
+// Shared kid-picker rows — used by BOTH the admin overlay (haOpenNotebookPicker)
+// and the Notebook top tab (renderNotebook), so generation is ONE engine
+// (haNbOpen → notebooks.js) reached through two convenient entry points.
+function haNbPickerRows(lib){
+  const kids=Object.keys((lib&&lib.GENERATORS)||{});
+  if(!kids.length) return '<div style="font-size:12px;color:var(--muted);padding:12px 0">No generators available.</div>';
+  return kids.map(k=>{
     const g=lib.GENERATORS[k];
     return `<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border)">
       <div style="flex:1;font-weight:700;font-size:13px;color:#1f2937">${g.label}</div>
@@ -6334,11 +6333,18 @@ async function haOpenNotebookPicker(){
       <button onclick="haNbOpen('${k}','parent')" style="padding:7px 12px;border-radius:9px;border:1.5px solid var(--border);background:#fff;color:#1f2937;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">👩‍🏫 Parent</button>
     </div>`;
   }).join("");
+}
+async function haOpenNotebookPicker(){
+  let lib;
+  try{ lib=await haLoadNotebooksLib(); }
+  catch(e){ alert("Couldn't load the notebook builder ("+e.message+").\nMake sure notebooks.js is deployed next to index.html."); return; }
+  const old=document.getElementById("haNbOverlay"); if(old) old.remove();
+  const wkLabel=String(WK).replace("week","Week ");
   const html=`<div id="haNbOverlay" onclick="if(event.target===this)this.remove()" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px;font-family:'DM Sans',sans-serif">
     <div style="background:#fff;border-radius:18px;max-width:460px;width:100%;padding:20px 22px;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
       <div style="font-size:16px;font-weight:800;color:#9a3412">📓 Generate Notebooks — ${wkLabel}</div>
       <div style="font-size:11.5px;color:var(--muted);margin:6px 0 10px;line-height:1.45">Opens a print-ready notebook in a new tab — print from there (Cmd/Ctrl+P, "Background graphics" ON). Built live from this week's dates + each kid's drills.</div>
-      ${rows||'<div style="font-size:12px;color:var(--muted);padding:12px 0">No generators available.</div>'}
+      ${haNbPickerRows(lib)}
       <button onclick="document.getElementById('haNbOverlay').remove()" style="margin-top:14px;width:100%;padding:9px;border-radius:10px;border:1.5px solid var(--border);background:#f9fafb;font-size:12px;font-weight:700;color:#6b7280;cursor:pointer;font-family:'DM Sans',sans-serif">Close</button>
     </div>
   </div>`;
@@ -7792,10 +7798,27 @@ function loadActJson(){
 // of the kids' printable notebooks.
 function renderNotebook(el){
   const con=el||document.getElementById("content"); if(!con)return;
-  con.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:64px 24px;text-align:center;color:var(--muted)">'+
-    '<div style="font-size:48px;margin-bottom:12px">\u{1F4D3}</div>'+
-    '<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:var(--text);margin-bottom:6px">Notebooks</div>'+
-    '<div style="font-size:13px;max-width:300px;line-height:1.5">Coming soon — view, customize, and generate each kid’s notebook here.</div></div>';
+  const wkLabel=String(WK).replace("week","Week ");
+  // Same generation engine as the admin "Generate Notebooks" button — shared
+  // via haNbPickerRows + haNbOpen. This tab is just a second entry point.
+  con.innerHTML=
+    '<div style="max-width:560px;margin:0 auto;padding:24px 18px;font-family:\'DM Sans\',sans-serif">'+
+      '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">'+
+        '<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:var(--text)">\u{1F4D3} Notebooks</div>'+
+        '<div style="font-size:13px;font-weight:700;color:#9a3412">— '+wkLabel+'</div>'+
+      '</div>'+
+      '<div style="font-size:12.5px;color:var(--muted);line-height:1.5;margin-bottom:16px">Builds a print-ready notebook in a new tab from this week’s dates + each kid’s drills. Print from there (Cmd/Ctrl+P, “Background graphics” ON). The 👩‍🏫 Parent button gives the teaching companion / answer keys.</div>'+
+      '<div id="nbTabBody" style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:4px 16px 10px">'+
+        '<div style="font-size:12px;color:var(--muted);padding:14px 0">Loading the notebook builder…</div>'+
+      '</div>'+
+    '</div>';
+  haLoadNotebooksLib().then(lib=>{
+    const body=document.getElementById("nbTabBody");
+    if(body) body.innerHTML=haNbPickerRows(lib);
+  }).catch(e=>{
+    const body=document.getElementById("nbTabBody");
+    if(body) body.innerHTML='<div style="font-size:12px;color:#b91c1c;padding:14px 0">Couldn’t load the notebook builder ('+((e&&e.message)||e)+'). If you just deployed, hard-refresh and try again.</div>';
+  });
 }
 
 function renderActivities(el){
