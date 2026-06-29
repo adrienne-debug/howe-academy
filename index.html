@@ -1178,6 +1178,7 @@ let pnwOpen=false;
 let pnwStep=0;
 let pnwResult=null;
 let pnwDropped=null;
+let pnwError=null;
 let pnwCarryOverCount=0;
 let pnwConfigReady=false;
 let pnwExpandedDay=null; // Plan-Week preview: which day's detailed schedule is expanded
@@ -16199,10 +16200,28 @@ function openPlanNextWeek(weekNum){
   pnwStartWizard(weekNum);
 }
 
+// True if any kid has curriculum (lesson days) mapped to "Wk n"
+function gwWeekExists(n){
+  const wd=(currData&&currData.weekDays)||{};
+  for(const kid of [...ROSTER]){
+    const days=(wd[kid]||{})["Wk "+n];
+    if(days&&days.length) return true;
+  }
+  return false;
+}
+// Next week number at/after `start` that actually has curriculum — skips
+// gap weeks left behind when a vacation renumbered the plan (e.g. Week 10
+// after a beach trip). Falls back to `start` if nothing is found ahead.
+function gwNextRealWeek(start){
+  let n=start;
+  for(let i=0;i<120;i++,n++){ if(gwWeekExists(n)) return n; }
+  return start;
+}
+
 function pnwStartWizard(weekOverride){
-  const nw=weekOverride||currWeekNum()+1;
+  const nw=weekOverride||gwNextRealWeek(currWeekNum()+1);
   gwConfig={weekNum:String(nw),babysitter:{},withSitter:(rulesData&&rulesData.withSitter)||[],skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:false,redistribute:[],autoAdvance:true};
-  pnwStep=0; pnwResult=null; pnwDropped=null; pnwConfigReady=false; pnwOpen=true;
+  pnwStep=0; pnwResult=null; pnwDropped=null; pnwError=null; pnwConfigReady=false; pnwOpen=true;
   renderPlanNextWeek();
   if(db){
     db.ref("weekConfig/"+nw).once("value",s=>{
@@ -16255,7 +16274,8 @@ function pnwGenerate(){
     return;
   }
   const gen=generateWeek(gwConfig);
-  if(gen.error){ gwShowToast(gen.error); return; }
+  if(gen.error){ pnwError=gen.error; renderPlanNextWeek(); return; }
+  pnwError=null;
   pnwResult=gen.result; pnwDropped=gen.dropped; pnwCarryOverCount=gen.carryOverCount||0;
   gwCalendarSkips=gen.calendarSkips||null;
   pnwStep=1; pnwExpandedDay=null; pnwExpandedKid=null;
@@ -16311,6 +16331,13 @@ function renderPlanNextWeek(){
   h+='</div>';
 
   h+='<div class="pnw-body">';
+
+  if(pnwError){
+    h+='<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:12px 14px;font-size:13px;color:#991b1b;margin-bottom:14px;line-height:1.45">'+
+       '<div style="font-weight:700;margin-bottom:2px">⚠️ Couldn’t generate Week '+c.weekNum+'</div>'+
+       '<div>'+pnwError+'</div>'+
+       '<div style="margin-top:6px;color:#7f1d1d;font-size:12px">If this week falls on a vacation or break, it was renumbered out of the plan — try the next week number.</div></div>';
+  }
 
   if(pnwStep===0){
     // ── STEP 1: CONFIGURE ──
