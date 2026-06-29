@@ -1842,6 +1842,7 @@ function dayPct(d){
   const kidMatch=(t)=>kid==="all"||kid==="mom"?true:t.who===kid;
   const countable=getActiveTasks().filter(t=>
     effectiveDay(t)===d && kidMatch(t) &&
+    !t.id.endsWith("_c") &&   // _c carryovers are read-only banner mirrors — counted via their scheduled twin
     !t.title.toLowerCase().includes("lunch")
   );
   const total=countable.length; if(!total) return 0;
@@ -1891,7 +1892,7 @@ function renderWeekStrip(){
   const el=document.getElementById("week-strip");
   if(tab!=="schedule"||schedShowAdmin||schedShowHistory||schedShowPace||scheduleBreakToday()){ el.style.display="none"; return; }
   const kidMatch=t=>kid==="all"||kid==="mom"?true:t.who===kid;
-  const countable=getActiveTasks().filter(t=>kidMatch(t)&&effectiveDay(t)!=="carryover");
+  const countable=getActiveTasks().filter(t=>kidMatch(t)&&effectiveDay(t)!=="carryover"&&!t.id.endsWith("_c"));
   const all=countable.length, done=countable.filter(t=>!!checked[t.id]).length;
   const pct=all?Math.round(done/all*100):0;
   el.style.display="grid";
@@ -1905,7 +1906,7 @@ function renderWeekStrip(){
 // ── DAILY PACE TRACKER ───────────────────────────────────────────
 function dailyPaceTracker(dayTasks, dayKey){
   const DEFAULT_DUR=20;
-  const countable=dayTasks.filter(t=>!t.title.toLowerCase().includes("lunch"));
+  const countable=dayTasks.filter(t=>!t.id.endsWith("_c")&&!t.title.toLowerCase().includes("lunch"));
   if(!countable.length) return "";
 
   const doneTasks=countable.filter(t=>!!checked[t.id]);
@@ -17974,14 +17975,11 @@ function generateWeek(config){
   }
 
   // Inject carryovers from previous week.
-  // ALWAYS skip a carryover whose lesson is already on this week's schedule (by kid +
-  // title) — whether it got there via auto-advance replay or a fresh cursor that
-  // re-placed it. Otherwise the same lesson lands twice (a standalone _c duplicate of
-  // a lesson already spread through the week). Genuinely-missed lessons not scheduled
-  // this week have no match here, so they still carry over.
+  // When auto-advance is on, the cursor replays unchecked curriculum lessons,
+  // so skip carryovers whose title matches a task already generated for that kid.
   const coPool=getCarryOverPool();
   let coTasks=coPool.tasks.filter(t=>t.included);
-  if(coTasks.length){
+  if(config.autoAdvance&&coTasks.length){
     const genTitles={};
     allTasks.forEach(t=>{
       const k=t.who+"|"+(t.title||"").toLowerCase();
