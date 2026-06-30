@@ -12649,8 +12649,28 @@ function mastAddItems(){
   let added=0, skipped=0;
   const newItems=[];
 
+  // ── Park & auto-introduce (Learn First only) ──────────────────────────────
+  // Quick-add used to make EVERY item an introduction at once, ignoring the per-category
+  // intro cap. Now we register each new item in the bank (custom_items) so it has a home and
+  // shows in the Mastery Database, then start only up to the cap; the rest stay "available"
+  // (no item created) and auto_pull promotes them as the current ones graduate.
+  const _subjPark = isJ?(mastAddCustomSubject||mastAddCat):(mastAddCustomSubject||mastAddSubject);
+  const _learnPark = isJ && mastAddStartMode==="learn";
+  let _introSlots = Infinity, _parked = 0, _bank0 = null;
+  if(_learnPark){
+    if(!masteryData[masteryKid+"_custom_items"]) masteryData[masteryKid+"_custom_items"]=[];
+    _bank0 = mastFullBank();
+    _introSlots = Math.max(0, mastIntroMaxFor(_subjPark, mastDrillSettings()) - items.filter(i=>i.subject===_subjPark && i.status==="introduction").length);
+  }
+
   prompts.forEach(p=>{
     if(existingPrompts.has(p.toLowerCase())){ skipped++; return; }
+    if(_learnPark){
+      const _ci=masteryData[masteryKid+"_custom_items"];
+      if(!(_bank0[_subjPark]&&_bank0[_subjPark].includes(p)) && !_ci.some(c=>c.cat===_subjPark&&c.name===p)) _ci.push({cat:_subjPark,name:p});
+      if(_introSlots>0){ _introSlots--; }                                  // room: start learning
+      else { _parked++; existingPrompts.add(p.toLowerCase()); added++; return; }  // park as "available"
+    }
 
     const slug=p.toLowerCase().replace(/[^a-z0-9]/g,"_").substring(0,20);
     const prefix=masteryKid.substring(0,3);
@@ -12721,11 +12741,15 @@ function mastAddItems(){
   // Save to Firebase
   masteryData[masteryKid]=items;
   mastPutCards(masteryKid,items,newItems);
+  if(_learnPark && db) db.ref("mastery/"+masteryKid+"_custom_items").set(masteryData[masteryKid+"_custom_items"]);  // persist the bank (parked + started)
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 
   mastAddMode=false;
   mastAddItemMode="";
-  alert(added+" item(s) added"+(skipped?" ("+skipped+" duplicate(s) skipped)":""));
+  const _dupMsg=skipped?" ("+skipped+" duplicate(s) skipped)":"";
+  alert(_learnPark
+    ? ((added-_parked)+" started learning"+(_parked?", "+_parked+" parked — they'll start as room opens":"")+_dupMsg)
+    : (added+" item(s) added"+_dupMsg));
   const c=document.getElementById("content"); if(c) renderMastery(c);
 }
 
