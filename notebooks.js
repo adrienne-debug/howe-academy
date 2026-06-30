@@ -3542,7 +3542,16 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       "  .page { width:8.5in; height:11in; background:#fff; overflow:hidden; display:flex; flex-direction:column; margin:0 auto 24px; box-shadow:0 2px 12px rgba(0,0,0,0.08); }\n" +
       "  .page-label { font-size:9px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:#9ca3af; padding:4px 8px; }\n" +
       "  @media print { @page { size: letter portrait; margin: 0; } .page-label { display:none; } body { background:#fff; } .page { margin:0; box-shadow:none; } }\n" +
-      styles + "\n</style>\n</head>\n<body>\n" + cover + "\n" + sections + "\n</body>\n</html>";
+      styles + "\n" +
+      // ── Final override — force EVERY section's pages to one canonical size. Each kid's CSS is
+      //    scoped to `.kid-sec .page`, which out-specifics the base `.page` rule; if a kid's
+      //    notebook sizes pages differently (e.g. Ellis uses 816px×1056px while the rest use
+      //    8.5in×11in), the packet prints with mismatched page sizes. This !important block,
+      //    emitted LAST, normalizes them all. Ported from combine_parent_docs._OVERRIDE_CSS.
+      "  /* ── Final page-size override (normalizes mixed in/px child sizing) ── */\n" +
+      "  .page { width:8.5in !important; height:11in !important; min-height:11in !important; max-height:11in !important; overflow:hidden !important; }\n" +
+      "  @media print { .page { width:8.5in !important; height:11in !important; min-height:11in !important; max-height:11in !important; margin:0 !important; box-shadow:none !important; overflow:hidden !important; } }\n" +
+      "</style>\n</head>\n<body>\n" + cover + "\n" + sections + "\n</body>\n</html>";
   }
 
   window.HoweNotebooks = {
