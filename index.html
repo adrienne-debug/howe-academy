@@ -11738,7 +11738,11 @@ function mastSprintBestTrend(entries){
   const series=sorted.map(e=>{
     const best=(e.best!=null)?e.best:Math.max(e.a||0,e.b||0);
     const isPB=best>run; if(isPB) run=best;
-    return {date:e.date||null,a:e.a??null,b:e.b??null,best,runningBest:run,isPB,deck:e.deck||null};
+    const gain=(e.gain!=null)?e.gain:((e.a!=null&&e.b!=null)?e.b-e.a:null);
+    const gainPct=(e.gainPct!=null)?e.gainPct:((e.a&&e.b)?Math.round((e.b-e.a)/e.a*100):null);
+    return {date:e.date||null,a:e.a??null,b:e.b??null,best,runningBest:run,isPB,deck:e.deck||null,
+      gain,gainPct,pctA:e.pctA??null,pctB:e.pctB??null,total:e.total??null,snum:e.snum??null,src:e.src||null,
+      diff:e.diff||null,gs:e.gs||null,nw:e.nw||null,ps:e.ps||null};
   });
   return {series,count:series.length,currentBest:run,lastIsPB:series.length?series[series.length-1].isPB:false};
 }
@@ -13299,14 +13303,76 @@ function _renderMasteryInner(el){
       h+='<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700">\u{1F3C3} Sprint Personal Best</div>';
       h+='<div style="font-family:\'DM Mono\',monospace;font-size:20px;font-weight:800;color:#5b3a8c">'+_st.currentBest+' <span style="font-size:10px;color:#78716c;font-weight:600">words/60s</span></div>';
       h+='</div>';
+      // Bar/dot color = difficulty level reached (Intro→amber, Building→teal, Fluency→deep green); 🏆 still marks a PB.
+      const lvlCol=(d)=>d==='intro'?'#f59e0b':d==='building'?'#14b8a6':d==='fluency'?'#15803d':'#c4b5fd';
+      // Progress graph — words/60s per session over time, dots colored by level, dashed line = personal-best high-water mark.
+      const _sd=_st.series;
+      if(_sd.length>=2){
+        const maxY=Math.max(1,..._sd.map(s=>s.best));
+        const gw=360,ght=120,gp=24;
+        const stepX=(gw-2*gp)/Math.max(_sd.length-1,1);
+        const gx=i=>gp+i*stepX, gy=v=>ght-gp-(v/maxY)*(ght-2*gp);
+        let bestPath='',pbPath='',dots='',labels='';
+        _sd.forEach((s,i)=>{
+          const X=gx(i),Y=gy(s.best);
+          bestPath+=(i?'L':'M')+X.toFixed(1)+','+Y.toFixed(1)+' ';
+          const PY=gy(s.runningBest);
+          if(i===0){ pbPath+='M'+X.toFixed(1)+','+PY.toFixed(1)+' '; }
+          else { const prevPY=gy(_sd[i-1].runningBest); pbPath+='L'+X.toFixed(1)+','+prevPY.toFixed(1)+' L'+X.toFixed(1)+','+PY.toFixed(1)+' '; }
+          dots+='<circle cx="'+X.toFixed(1)+'" cy="'+Y.toFixed(1)+'" r="4" fill="'+lvlCol(s.diff)+'" stroke="#fff" stroke-width="1.5"/>';
+          if(s.isPB) dots+='<circle cx="'+X.toFixed(1)+'" cy="'+Y.toFixed(1)+'" r="6.5" fill="none" stroke="#1c1917" stroke-width="0.9" stroke-dasharray="2 1.5"/>';
+          if(i===0||i===_sd.length-1||i%2===0) labels+='<text x="'+X.toFixed(1)+'" y="'+(ght-6)+'" text-anchor="middle" font-size="7" fill="#9ca3af">'+String(s.date||'').slice(5)+'</text>';
+        });
+        const areaPath=bestPath+'L'+gx(_sd.length-1).toFixed(1)+','+(ght-gp)+' L'+gx(0).toFixed(1)+','+(ght-gp)+' Z';
+        h+='<div style="margin:2px 0 12px">';
+        h+='<div style="font-size:9px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#78716c;margin-bottom:3px">Words / 60s over time</div>';
+        h+='<svg viewBox="0 0 '+gw+' '+ght+'" style="width:100%;height:auto;display:block">';
+        h+='<line x1="'+gp+'" y1="'+(ght-gp)+'" x2="'+(gw-gp)+'" y2="'+(ght-gp)+'" stroke="#e5e7eb" stroke-width="1"/>';
+        h+='<line x1="'+gp+'" y1="'+gp+'" x2="'+(gw-gp)+'" y2="'+gp+'" stroke="#e5e7eb" stroke-width="0.5" stroke-dasharray="3"/>';
+        h+='<text x="'+(gp-4)+'" y="'+(gp+3)+'" text-anchor="end" font-size="7" fill="#9ca3af">'+maxY+'</text>';
+        h+='<text x="'+(gp-4)+'" y="'+(ght-gp+3)+'" text-anchor="end" font-size="7" fill="#9ca3af">0</text>';
+        h+='<path d="'+areaPath+'" fill="#5b3a8c" opacity="0.06"/>';
+        h+='<path d="'+pbPath+'" fill="none" stroke="#5b3a8c" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.55"/>';
+        h+='<path d="'+bestPath+'" fill="none" stroke="#8b7bb8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+        h+=dots+labels;
+        h+='</svg>';
+        h+='<div style="display:flex;gap:11px;justify-content:center;flex-wrap:wrap;margin-top:5px;font-size:9px;color:#78716c">';
+        h+='<span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f59e0b;margin-right:3px;vertical-align:middle"></span>Intro</span>';
+        h+='<span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#14b8a6;margin-right:3px;vertical-align:middle"></span>Building</span>';
+        h+='<span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#15803d;margin-right:3px;vertical-align:middle"></span>Fluency</span>';
+        h+='<span style="opacity:.85"><span style="display:inline-block;width:13px;border-top:1.5px dashed #5b3a8c;margin-right:3px;vertical-align:middle"></span>Personal best</span>';
+        h+='</div></div>';
+      }
       _st.series.slice(-10).reverse().forEach(s=>{
         const w=Math.round(s.best/_maxB*100);
         h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">';
         h+='<div style="width:88px;font-size:9px;color:#78716c;line-height:1.2">'+(s.date||"")+(s.deck?'<br><span style="opacity:.7">'+s.deck+'</span>':'')+'</div>';
-        h+='<div style="flex:1;background:#f3f1ee;border-radius:6px;height:14px;position:relative;overflow:hidden"><div style="position:absolute;left:0;top:0;bottom:0;width:'+w+'%;background:'+(s.isPB?"#16a34a":"#c4b5fd")+'"></div></div>';
+        h+='<div style="flex:1;background:#f3f1ee;border-radius:6px;height:14px;position:relative;overflow:hidden"><div style="position:absolute;left:0;top:0;bottom:0;width:'+w+'%;background:'+lvlCol(s.diff)+'"></div></div>';
         h+='<div style="width:28px;text-align:right;font-family:\'DM Mono\',monospace;font-size:12px;font-weight:700">'+s.best+'</div>';
         h+=s.isPB?'<span style="font-size:11px">\u{1F3C6}</span>':'<span style="display:inline-block;width:13px"></span>';
         h+='</div>';
+        // Detail line: A→B gain, % of sheet, and the drill settings that were on
+        const dCol=(g)=>g>0?'#16a34a':g<0?'#dc2626':'#78716c';
+        let det='';
+        if(s.a!=null&&s.b!=null){
+          det+='<b style="font-family:\'DM Mono\',monospace">A '+s.a+' → B '+s.b+'</b>';
+          if(s.gain!=null) det+=' <span style="color:'+dCol(s.gain)+';font-weight:700">'+(s.gain>0?'+':'')+s.gain+(s.gainPct!=null?' ('+(s.gainPct>0?'+':'')+s.gainPct+'%)':'')+'</span>';
+        } else if(s.a!=null){ det+='<b style="font-family:\'DM Mono\',monospace">A '+s.a+'</b>'; }
+        else if(s.b!=null){ det+='<b style="font-family:\'DM Mono\',monospace">B '+s.b+'</b>'; }
+        if(s.pctA!=null||s.pctB!=null){
+          const pp=[]; if(s.pctA!=null)pp.push('A '+s.pctA+'%'); if(s.pctB!=null)pp.push('B '+s.pctB+'%');
+          det+=' <span style="color:#78716c">· '+pp.join(' · ')+' of sheet</span>';
+        }
+        const gsL={small:'3×6',medium:'4×7',large:'5×8'};
+        const chips=[];
+        if(s.snum!=null) chips.push('#'+String(s.snum).padStart(3,'0'));
+        if(s.diff) chips.push(s.diff.charAt(0).toUpperCase()+s.diff.slice(1));
+        if(s.gs&&gsL[s.gs]) chips.push(gsL[s.gs]+(s.total!=null?' ('+s.total+'w)':''));
+        else if(s.total!=null) chips.push(s.total+'w');
+        if(s.nw==='yes') chips.push('+nonsense');
+        if(s.ps&&s.ps!=='none') chips.push(s.ps==='both'?'phrases+sent.':s.ps);
+        const chipHtml=chips.length?chips.map(c=>'<span style="display:inline-block;background:#f3f1ee;border-radius:8px;padding:1px 7px;font-size:9px;color:#6b5b8c;font-weight:600;margin:2px 3px 0 0">'+c+'</span>').join(''):'';
+        if(det||chipHtml) h+='<div style="margin:1px 0 9px 96px;font-size:10px;color:#1c1917;line-height:1.55">'+det+(chipHtml?'<br>'+chipHtml:'')+'</div>';
       });
       h+='<div style="font-size:10px;color:var(--muted);margin-top:6px;text-align:center">Only racing themselves \u{2014} \u{1F3C6} marks a new personal best.</div>';
       h+='</div>';
@@ -13316,7 +13382,7 @@ function _renderMasteryInner(el){
       h+='<div class="mast-none">No scores yet. Log a drill to see results here.</div>';
     } else {
       // Trend chart
-      const chartData=entries.slice().reverse().slice(-14); // last 14 sessions
+      const chartData=entries.filter(e=>e.scored).slice().reverse().slice(-14); // last 14 SCORED sessions (skip learning-only)
       if(chartData.length>=2){
         const w=360,ht=100,pad=20;
         const step=(w-2*pad)/Math.max(chartData.length-1,1);
@@ -13360,7 +13426,12 @@ function _renderMasteryInner(el){
         h+='<div class="mast-score-card">';
         h+='<div style="display:flex;align-items:center;justify-content:space-between">';
         h+='<div><div class="mast-score-date">'+dateLbl+' \u{00B7} Print #'+e.printNum+'</div>';
-        h+='<div class="mast-score-pct" style="color:'+pctCol+'">'+e.pct+'%</div></div>';
+        // Learning-only session (everything still introduction, nothing scored on the ladder yet):
+        // a 0% reads like a failing grade, so show a calm "Learning" label instead — the % only
+        // appears once items graduate onto the ladder and are actually scored.
+        h+=(e.scored?'<div class="mast-score-pct" style="color:'+pctCol+'">'+e.pct+'%</div>'
+                    :'<div class="mast-score-pct" style="color:#6366f1;font-size:15px">\u{1F4D8} Learning</div>');
+        h+='</div>';
         h+='<div style="text-align:right"><div style="font-size:10px;color:var(--muted)">'+e.scored+' scored'+(e.shown?' + '+e.shown+' shown':'')+'</div>';
         h+='<div style="font-size:10px;color:var(--muted)">of '+e.total+' due</div>';
         const dateKey=e.date.replace(/-/g,"");
@@ -15776,7 +15847,14 @@ function sprintLogResult(){
     ? (sprintDeck==="__all__"?"All decks":sprintDeck)
     : (sprintSelectedPhono?sprintSelectedPhono.pg:(document.getElementById("sp-custom-phono")?.value?.trim()||"phonogram"));
   const date=sprintSource==="drill"?sprintDate:(document.getElementById("sp-date")?.value||sprintDate);
-  const entry={date,deck,a:a||null,b:b||null,best,ts:Date.now(),src:sprintSource};
+  const la=sprintLive&&sprintLive.A, lb=sprintLive&&sprintLive.B;  // % finished from the live timer, if used
+  const pctA=(la&&typeof la.pct==='number')?la.pct:null, pctB=(lb&&typeof lb.pct==='number')?lb.pct:null;
+  const isPhon=sprintSource!=="drill";  // grid/difficulty pills only apply to the phonogram source
+  const gain=(a&&b)?(b-a):null, gainPct=(a&&b)?Math.round((b-a)/a*100):null;
+  const total=(la&&typeof la.total==='number')?la.total:((lb&&typeof lb.total==='number')?lb.total:null);  // words per sheet
+  const entry={date,deck,a:a||null,b:b||null,best,pctA,pctB,gain,gainPct,total,snum:sprintNum,
+    diff:isPhon?sprintPillState.diff:null,gs:isPhon?sprintPillState.gs:null,nw:isPhon?sprintPillState.nw:null,ps:isPhon?sprintPillState.ps:null,
+    ts:Date.now(),src:sprintSource};
   const kid=masteryKid;
   if(!masteryData.sprintLog) masteryData.sprintLog={};
   if(!Array.isArray(masteryData.sprintLog[kid])) masteryData.sprintLog[kid]=Object.values(masteryData.sprintLog[kid]||{});
@@ -15864,6 +15942,7 @@ function sprintDemoB(pg,sounds){return{focusPhono:pg||"sh",focusSounds:sounds||"
 function sprintRenderSheets(pA,pB,opts){
   const el=document.getElementById("sp-sheets");
   if(!el) return;
+  sprintLiveClearAll();  // stop any live timers from a prior generation before re-rendering
   const scoreRow=document.getElementById("sp-score-row");
   if(scoreRow) scoreRow.style.display="grid";
   document.getElementById("sp-score-a").value="";
@@ -15892,6 +15971,7 @@ function sprintBuildSheet(parsed,sheet,{sprintNum,date,prevBest,cols,rows,ps,kid
   const needed=cols*rows;
   while(all.length<needed) all.push({w:"—",t:"focus"});
   const grid=all.slice(0,needed);
+  const realCount=grid.filter(g=>g.w!=="—").length;  // tappable words (excludes "—" filler) for the live timer
 
   const dateObj=new Date(date+"T12:00:00");
   const dateStr=dateObj.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
@@ -15939,17 +16019,26 @@ function sprintBuildSheet(parsed,sheet,{sprintNum,date,prevBest,cols,rows,ps,kid
     <span style="color:#d97706">● Review</span>
     <span style="color:#9333ea">● Nonsense*</span>
   </div>`;
-  h+=`<div style="font-size:9px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#78716c;margin-bottom:7px">Word Grid — read across as fast as you can ▶</div>`;
+  h+=`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:${bgLight};border:1.5px solid ${bdLight};border-radius:10px;padding:9px 12px;margin-bottom:11px">
+    <button id="sp-timer-btn-${sheet}" data-col="${col}" onclick="sprintLiveToggle('${sheet}',${realCount})" style="padding:8px 14px;border-radius:9px;border:none;background:${col};color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">▶ Start 60s</button>
+    <div id="sp-timer-disp-${sheet}" style="font-family:'DM Mono',monospace;font-size:24px;font-weight:700;color:${col};min-width:62px;text-align:center">1:00</div>
+    <div style="font-size:11px;color:#78716c;line-height:1.35">Read <span id="sp-timer-count-${sheet}" style="font-weight:700;color:${col}">0</span>/${realCount}<br>tap each word she reads</div>
+  </div>`;
+  h+=`<div id="sp-timer-res-${sheet}" style="display:none;background:#dcfce7;border:1.5px solid #86efac;border-radius:10px;padding:9px 12px;margin-bottom:11px;font-size:13px;font-weight:700;color:#15803d;text-align:center"></div>`;
+  h+=`<div style="font-size:9px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#78716c;margin-bottom:7px">Word Grid — tap each word as she reads it ▶</div>`;
   h+=`<div style="border:1px solid #f0ede8;border-radius:10px;overflow:hidden;margin-bottom:15px">`;
   for(let r=0;r<rows;r++){
     h+=`<div style="display:flex;border-bottom:${r<rows-1?"1px solid #f0ede8":"none"}">`;
     h+=`<div style="width:20px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:'DM Mono',monospace;font-size:9px;color:#c4b8ae;border-right:1px solid #f0ede8;background:#faf8f5">${r+1}</div>`;
     for(let c=0;c<cols;c++){
-      const item=grid[r*cols+c]||{w:"—",t:"focus"};
+      const pos=r*cols+c;
+      const item=grid[pos]||{w:"—",t:"focus"};
       const wc=item.t==="review"?"#d97706":item.t==="nonsense"?"#9333ea":"#1c1917";
       const fw=item.t==="review"||item.t==="nonsense"?"700":"500";
       const fi=item.t==="nonsense"?"italic":"normal";
-      h+=`<div style="flex:1;padding:8px 5px;font-family:'DM Mono',monospace;font-size:14px;font-weight:${fw};font-style:${fi};text-align:center;border-right:${c<cols-1?"1px solid #f0ede8":"none"};color:${wc}">${item.w}</div>`;
+      const real=item.w!=="—";  // live-timer: only real words are tappable
+      const liveAttr=real?` id="sp-cell-${sheet}-${pos}" class="sp-live-cell-${sheet}" data-wc="${wc}" data-fw="${fw}" onclick="sprintLiveTap('${sheet}',${pos})"`:"";
+      h+=`<div${liveAttr} style="flex:1;padding:8px 5px;font-family:'DM Mono',monospace;font-size:14px;font-weight:${fw};font-style:${fi};text-align:center;border-right:${c<cols-1?"1px solid #f0ede8":"none"};color:${wc}${real?";cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none":""}">${item.w}</div>`;
     }
     h+=`</div>`;
   }
@@ -16202,6 +16291,57 @@ function sprintScoreRowHtml(){
     <div id="sp-gain" style="text-align:center;padding-top:8px;border-top:1px solid #e2ddd6;font-size:12px;font-weight:700;color:#78716c">Enter scores above to see session gain</div>
     <button id="sp-log-btn" onclick="sprintLogResult()" style="width:100%;margin-top:10px;padding:9px;border-radius:10px;border:1.5px solid #5b3a8c;background:#fff;color:#5b3a8c;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">📈 Log result &amp; track personal best</button>
   </div>`;
+}
+
+// ── Interactive timed sprint (tap-along). Each generated sheet gets its own 60s
+// countdown: tap Start, then tap a word = read correctly (tap again to undo a mis-tap).
+// At 0:00 (or Stop) the grid locks; the count auto-fills the Session Score Tracker so
+// the existing "Log result" path records it in the Sprint Personal Best trend, and the
+// % of the sheet is stored alongside. State keyed by sheet ("A"/"B"). No Firebase writes.
+let sprintLive={};
+function sprintLiveClearAll(){
+  Object.values(sprintLive||{}).forEach(st=>{ if(st&&st.timerId) clearInterval(st.timerId); });
+  sprintLive={};
+}
+function sprintLivePaint(sheet){
+  const st=sprintLive[sheet]; if(!st) return;
+  const disp=document.getElementById('sp-timer-disp-'+sheet);
+  if(disp){ const r=Math.max(0,st.remaining); disp.textContent=Math.floor(r/60)+':'+String(r%60).padStart(2,'0'); }
+}
+function sprintLiveStart(sheet,total){
+  const prev=sprintLive[sheet]; if(prev&&prev.timerId) clearInterval(prev.timerId);
+  document.querySelectorAll('.sp-live-cell-'+sheet).forEach(c=>{ c.style.background=''; c.style.color=c.dataset.wc; c.style.fontWeight=c.dataset.fw; });
+  const st={running:true,remaining:60,total:total,count:0,tapped:{},timerId:null,pct:null};
+  sprintLive[sheet]=st;
+  const btn=document.getElementById('sp-timer-btn-'+sheet);
+  if(btn){ btn.textContent='■ Stop'; btn.style.background='#dc2626'; }
+  const res=document.getElementById('sp-timer-res-'+sheet); if(res) res.style.display='none';
+  const cd=document.getElementById('sp-timer-count-'+sheet); if(cd) cd.textContent='0';
+  sprintLivePaint(sheet);
+  st.timerId=setInterval(()=>{ st.remaining--; sprintLivePaint(sheet); if(st.remaining<=0) sprintLiveEnd(sheet); },1000);
+}
+function sprintLiveToggle(sheet,total){
+  const st=sprintLive[sheet];
+  if(st&&st.running) sprintLiveEnd(sheet); else sprintLiveStart(sheet,total);
+}
+function sprintLiveTap(sheet,pos){
+  const st=sprintLive[sheet]; if(!st||!st.running) return;
+  const cell=document.getElementById('sp-cell-'+sheet+'-'+pos); if(!cell) return;
+  if(st.tapped[pos]){ delete st.tapped[pos]; st.count--; cell.style.background=''; cell.style.color=cell.dataset.wc; cell.style.fontWeight=cell.dataset.fw; }
+  else { st.tapped[pos]=true; st.count++; cell.style.background='#dcfce7'; cell.style.color='#15803d'; cell.style.fontWeight='700'; }
+  const cd=document.getElementById('sp-timer-count-'+sheet); if(cd) cd.textContent=st.count;
+}
+function sprintLiveEnd(sheet){
+  const st=sprintLive[sheet]; if(!st) return;
+  if(st.timerId) clearInterval(st.timerId);
+  st.running=false; st.remaining=Math.max(0,st.remaining);
+  st.pct=st.total>0?Math.round(st.count/st.total*100):0;
+  const disp=document.getElementById('sp-timer-disp-'+sheet); if(disp) disp.textContent='Time!';
+  const btn=document.getElementById('sp-timer-btn-'+sheet); if(btn){ btn.textContent='↻ Redo'; btn.style.background=btn.dataset.col||''; }
+  const res=document.getElementById('sp-timer-res-'+sheet);
+  if(res){ res.style.display='block'; res.innerHTML='✓ '+st.count+' read · '+st.pct+'% of the sheet'; }
+  const inp=document.getElementById('sp-score-'+sheet.toLowerCase());
+  if(inp){ inp.value=st.count; if(typeof sprintUpdateGain==='function') sprintUpdateGain(); }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
