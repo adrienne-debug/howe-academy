@@ -3012,6 +3012,7 @@ function renderSchedule(el){
   h+=renderBlockoutBanners(day);
   if(momModeActive&&(kid==="mom"||kid==="all")) h+=renderDisplacementSummary(day, kid);
   h+=dailyPaceTracker(allDay, day);
+  h+=renderClaimQueue();
 
   // ── SCHEDULE LOCK CHECK ──────────────────────────────────────────
   const unlocked = isScheduleUnlocked(kid, day);
@@ -3284,6 +3285,39 @@ function momReject(id){
   if(claimed[id]!=null){ delete claimed[id]; sv(WK+"_claimed",claimed); if(db) db.ref(WK+"/claimed/"+id).remove(); }
   renderAll();
   if(typeof gwShowToast==="function") gwShowToast("Sent back — not done yet.");
+}
+// Mom-mode roundup of everything kids have claimed but Mom hasn't approved yet,
+// so she can clear them from one place instead of scrolling the day for ⏳ cards.
+// Week-wide; narrows to the viewed kid when a single kid is selected.
+function renderClaimQueue(){
+  if(!momHere()) return "";
+  const items=[];
+  Object.keys(claimed).forEach(id=>{
+    if(claimed[id]==null||checked[id]) return;
+    const t=weekData.tasks.find(x=>x.id===id);
+    if(!t) return;
+    if(kid!=="all"&&kid!=="mom"&&t.who!==kid) return;
+    items.push({id,t});
+  });
+  if(!items.length) return "";
+  const byKid={};
+  items.forEach(o=>{ (byKid[o.t.who]=byKid[o.t.who]||[]).push(o); });
+  let h='<div style="margin:10px 12px 0;border-radius:12px;border:1px solid #f59e0b;background:#fffbeb;padding:12px 14px">';
+  h+='<div style="font-size:13px;font-weight:800;color:#b45309;margin-bottom:8px">⏳ '+items.length+' waiting for your check</div>';
+  Object.keys(byKid).forEach(k=>{
+    h+='<div style="margin-bottom:6px">';
+    h+='<div style="font-size:11px;font-weight:700;color:'+(PACE_KCOL[k]||"#111827")+';margin-bottom:2px">'+cap(k)+'</div>';
+    byKid[k].forEach(o=>{
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0">';
+      h+='<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">'+esc(taskSubject(o.t))+' <span style="color:var(--muted);font-size:10px">'+claimed[o.id]+'</span></span>';
+      h+='<button onclick="momApprove(\''+o.id+'\')" style="flex-shrink:0;padding:4px 12px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Approve</button>';
+      h+='<button onclick="momReject(\''+o.id+'\')" style="flex-shrink:0;padding:4px 10px;border-radius:8px;border:1px solid #ef4444;background:#fff;color:#ef4444;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✗</button>';
+      h+='</div>';
+    });
+    h+='</div>';
+  });
+  h+='</div>';
+  return h;
 }
 
 // Score entry overlay (built on the fly). mode: "approve" finalizes a claim;
