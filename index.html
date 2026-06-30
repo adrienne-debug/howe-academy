@@ -1079,6 +1079,8 @@ let celebSongs=[];
 let momPinUnlocked=false;
 let momModeActive=false;
 let checked={}, slState={}, supplies={}, histState={};
+let claimed={};            // {taskId: ts} — kid says done, awaiting Mom's verify (doesn't count until approved)
+let pendingClaimMode=false; // dlg-ok writes a claim instead of a real check-off
 const _todayDay=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][new Date().getDay()];
 let tab="schedule", day=["monday","tuesday","wednesday","thursday","friday"].includes(_todayDay)?_todayDay:"monday", kid="all", supDay="all";
 let collCats={}, pendingId=null;
@@ -1254,6 +1256,15 @@ function attachWeekListeners(wk){
   });
   fbWeekRefs.push(r1);
 
+  const r16=db.ref(wk+"/claimed");
+  r16.on("value",s=>{
+    if(isUploading) return;
+    claimed=s.val()||{};
+    sv(wk+"_claimed",claimed);
+    renderAll();
+  });
+  fbWeekRefs.push(r16);
+
   const r2=db.ref(wk+"/sl");
   r2.on("value",s=>{
     if(isUploading) return;
@@ -1414,7 +1425,7 @@ function initFb() {
         WK=fbWk; localStorage.setItem("ha_active_wk",WK); weekData.week=WK;
         const t=ld(WK+"_tasks"); if(t) weekData.tasks=t;
         const meta=ld(WK+"_meta"); if(meta) applyWeekMeta(meta);
-        checked=ld(WK+"_checked")||{}; slState=ld(WK+"_sl")||{};
+        checked=ld(WK+"_checked")||{}; slState=ld(WK+"_sl")||{}; claimed=ld(WK+"_claimed")||{};
         attachWeekListeners(WK);
         renderAll();
       }
@@ -1551,6 +1562,7 @@ function boot() {
   const m=ld(WK+"_babysitter")||ld(WK+"_maggie"); if(m) weekData.babysitter=m;
   const meta=ld(WK+"_meta"); if(meta) applyWeekMeta(meta);
   checked=ld(WK+"_checked")||{};
+  claimed=ld(WK+"_claimed")||{};
   slState=ld(WK+"_sl")||{};
   supplies=ld(WK+"_supplies")||{};
   const savedSupDef=ld(WK+"_supplies_def"); if(savedSupDef&&Array.isArray(savedSupDef)) SUP=savedSupDef;
@@ -1993,15 +2005,12 @@ function dailyPaceTracker(dayTasks, dayKey){
       '</div></div>';
   }
 
-  // Today, in progress: compare actual check-off pace to scheduled pace
-  const deltas=doneTasks.map(t=>{
-    const scheduled=toMin(t.time)+(t.dur||DEFAULT_DUR);
-    const actual=parseCheckTs(checked[t.id]);
-    return actual>0 ? actual-scheduled : 0;
-  }).filter(d=>d!==0);
-  const avgDrift=deltas.length ? Math.round(deltas.reduce((s,d)=>s+d,0)/deltas.length) : 0;
-  const projEnd=expectedEnd+avgDrift;
-  const cls=avgDrift<=-5?"ahead":avgDrift<=10?"on-track":"behind";
+  // Today, in progress: project the finish from the clock — remaining work
+  // measured from right now — so the estimate slides as time passes instead of
+  // freezing on the average check-off drift. Status follows the same projection.
+  const projEnd=nowMin+remainMin;
+  const diff=projEnd-expectedEnd;
+  const cls=diff<=-5?"ahead":diff<=10?"on-track":"behind";
   const icon=cls==="ahead"?"⚡":cls==="on-track"?"✅":"⏰";
   const label=cls==="ahead"?"Ahead of Schedule":cls==="on-track"?"On Schedule":"Behind Schedule";
 
@@ -2017,7 +2026,7 @@ function dailyPaceTracker(dayTasks, dayKey){
 
 let paceToastTimer=null;
 let slotKid=null;
-function showPaceToast(taskId){
+function showPaceToast(taskId, doneMinOverride){
   const DEFAULT_DUR=20;
   const t=weekData.tasks.find(x=>x.id===taskId); if(!t) return;
   // Use displaced time if available (blockout shifts the real schedule)
@@ -2034,9 +2043,11 @@ function showPaceToast(taskId){
   const kidDayDone=kidDayTasks.filter(x=>!!checked[x.id]).length;
   const isLastTask=kidDayDone===kidDayTasks.length;
 
-  // Only use real-time pace comparison when checking off on today's actual day
+  // Only use real-time pace comparison when checking off on today's actual day.
+  // doneMinOverride lets Mom-approval judge the spin off the kid's claim time.
   const isToday=taskDay===_todayDay;
-  const diff=isToday?(nowMin-scheduledEnd):0;
+  const doneMin=(doneMinOverride!=null)?doneMinOverride:nowMin;
+  const diff=isToday?(doneMin-scheduledEnd):0;
   const absDiff=Math.abs(diff);
 
   // Anti-cheat: check if this task (or day bonus) already earned a spin
@@ -3213,11 +3224,142 @@ function notebookBlock(){
     '</div></div></div>';
 }
 
+// ── MOM CHECK (verify) + SCORES ──────────────────────────────────
+function momHere(){ return momModeActive||adminPinUnlocked; }
+function subjCfg(t){
+  if(!t||!currData||!currData.subjects) return null;
+  return (currData.subjects[t.who]||{})[t.subjectKey]||null;
+}
+// A task needs Mom's approval when the kid's master switch is on AND the
+// subject opted in. Tasks with no matching subject (notebooks, reflex) never gate.
+function needsVerify(t){
+  if(!t) return false;
+  if(!((currData&&currData.momVerifyKid)||{})[t.who]) return false;
+  const s=subjCfg(t);
+  return !!(s&&s.momVerify);
+}
+function scoredType(t){ const s=subjCfg(t); return (s&&s.scored)?(s.scoreType||"points"):null; }
+function tsToMin(ts){
+  const p=(ts||"").match(/(\d+):(\d+)\s*(AM|PM)/i); if(!p) return null;
+  let h=parseInt(p[1]); if(/PM/i.test(p[3])&&h!==12) h+=12; if(/AM/i.test(p[3])&&h===12) h=0;
+  return h*60+parseInt(p[2]);
+}
+function scoreLabel(sc){
+  if(!sc) return "";
+  if(sc.pct!=null) return sc.pct+"%";
+  if(sc.rating!=null) return "★".repeat(sc.rating)+"☆".repeat(Math.max(0,5-sc.rating));
+  if(sc.got!=null){ let s=String(sc.got)+(sc.max!=null?"/"+sc.max:""); if(sc.max) s+=" ("+Math.round(sc.got/sc.max*100)+"%)"; return s; }
+  return "";
+}
+// Write a real (verified) completion + history entry. score optional.
+function finalizeDone(id, doneTs, score){
+  checked[id]=doneTs; sv(WK+"_checked",checked); lastCheckedWrite=Date.now();
+  if(db) db.ref(WK+"/checked").set(checked);
+  if(claimed[id]!=null){ delete claimed[id]; sv(WK+"_claimed",claimed); if(db) db.ref(WK+"/claimed/"+id).remove(); }
+  const hist=ld(WK+"_history")||{};
+  const t=weekData.tasks.find(x=>x.id===id);
+  if(t){
+    const origDay=t.cascadedFrom||t.day;
+    const origDateStr=DAY_DT[origDay];
+    let daysLate=null;
+    if(origDateStr){const yr=new Date().getFullYear();const od=new Date(origDateStr+", "+yr);const td=new Date();od.setHours(0,0,0,0);td.setHours(0,0,0,0);daysLate=Math.round((td-od)/864e5);}
+    const entry={id:id,title:t.title,who:t.who,day:t.day,originalDay:origDay,checkedOnDay:effectiveDay(t),daysLate:daysLate,ts:doneTs,week:WK};
+    if(score) entry.score=score;
+    hist[id]=entry; histState[id]=entry; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+id).set(entry);
+  }
+}
+// Mom approves a kid's claim. Done-time = the kid's claim time (so a late
+// approval never penalizes the kid), and the spin is judged off that time.
+function momApprove(id){
+  if(!momHere()) return;
+  const t=weekData.tasks.find(x=>x.id===id); if(!t) return;
+  const claimTs=claimed[id]||nowTs();
+  if(scoredType(t)){ openScoreDialog(id, claimTs, "approve"); return; }
+  finalizeDone(id, claimTs, null);
+  renderAll();
+  showPaceToast(id, tsToMin(claimTs));
+}
+function momReject(id){
+  if(!momHere()) return;
+  if(claimed[id]!=null){ delete claimed[id]; sv(WK+"_claimed",claimed); if(db) db.ref(WK+"/claimed/"+id).remove(); }
+  renderAll();
+  if(typeof gwShowToast==="function") gwShowToast("Sent back — not done yet.");
+}
+
+// Score entry overlay (built on the fly). mode: "approve" finalizes a claim;
+// "edit" just attaches/updates a score on an already-done task.
+let scorePending=null;
+function openScoreDialog(id, doneTs, mode){
+  const t=weekData.tasks.find(x=>x.id===id); if(!t) return;
+  const type=scoredType(t)||"points";
+  const existing=(histState[id]&&histState[id].score)||null;
+  scorePending={id, doneTs, mode, type};
+  let body="";
+  if(type==="points"){
+    body='<div style="display:flex;align-items:center;gap:10px;justify-content:center">'+
+      '<input id="score-got" inputmode="numeric" value="'+(existing&&existing.got!=null?existing.got:"")+'" placeholder="got" style="width:72px;text-align:center;font-size:22px;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-family:\'DM Sans\',sans-serif">'+
+      '<span style="font-size:22px;color:var(--muted)">/</span>'+
+      '<input id="score-max" inputmode="numeric" value="'+(existing&&existing.max!=null?existing.max:"")+'" placeholder="out of" style="width:72px;text-align:center;font-size:22px;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-family:\'DM Sans\',sans-serif"></div>';
+  } else if(type==="percent"){
+    body='<div style="text-align:center"><input id="score-got" inputmode="numeric" value="'+(existing&&existing.pct!=null?existing.pct:"")+'" placeholder="0–100" style="width:110px;text-align:center;font-size:24px;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-family:\'DM Sans\',sans-serif"><span style="font-size:22px;color:var(--muted)"> %</span></div>';
+  } else {
+    body='<div id="score-rating" style="display:flex;gap:8px;justify-content:center;font-size:38px;line-height:1">';
+    for(let i=1;i<=5;i++) body+='<span data-star="'+i+'" onclick="scoreSetRating('+i+')" style="cursor:pointer;color:#f59e0b;opacity:'+((existing&&existing.rating>=i)?'1':'0.25')+'">★</span>';
+    body+='</div>';
+  }
+  let ov=document.getElementById("score-dlg");
+  if(ov) ov.remove();
+  ov=document.createElement("div");
+  ov.id="score-dlg"; ov.className="dlg-overlay"; ov.style.display="flex"; ov.style.zIndex="9999";
+  ov.innerHTML='<div class="dlg-box" style="max-width:340px">'+
+    '<div class="dlg-title">Score — '+esc(taskSubject(t))+'</div>'+
+    '<div class="dlg-detail" style="margin-bottom:14px">'+esc(cap(t.who))+'</div>'+
+    body+
+    '<div style="display:flex;gap:8px;margin-top:18px">'+
+    '<button onclick="scoreCancel()" style="flex:1;padding:12px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;border:none;background:#f3f4f6;color:#374151">'+(mode==="approve"?"Skip score":"Cancel")+'</button>'+
+    '<button onclick="scoreSave()" style="flex:1;padding:12px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;border:none;background:#16a34a;color:#fff">'+(mode==="approve"?"Approve ✓":"Save")+'</button>'+
+    '</div></div>';
+  document.body.appendChild(ov);
+}
+function scoreSetRating(n){
+  if(!scorePending) return; scorePending.rating=n;
+  document.querySelectorAll('#score-rating [data-star]').forEach(el=>{ el.style.opacity=(parseInt(el.getAttribute("data-star"))<=n)?"1":"0.25"; });
+}
+function scoreClose(){ const ov=document.getElementById("score-dlg"); if(ov) ov.remove(); scorePending=null; }
+function scoreCancel(){
+  const sp=scorePending;
+  if(sp&&sp.mode==="approve"){ scoreClose(); finalizeDone(sp.id, sp.doneTs, null); renderAll(); showPaceToast(sp.id, tsToMin(sp.doneTs)); return; }
+  scoreClose();
+}
+function scoreSave(){
+  if(!scorePending) return;
+  const sp=scorePending; let score=null;
+  if(sp.type==="points"){
+    const g=document.getElementById("score-got"), m=document.getElementById("score-max");
+    const gv=g&&g.value!==""?Number(g.value):null, mv=m&&m.value!==""?Number(m.value):null;
+    if(gv!=null) score={got:gv}; if(score&&mv!=null) score.max=mv;
+  } else if(sp.type==="percent"){
+    const g=document.getElementById("score-got"); const gv=g&&g.value!==""?Number(g.value):null;
+    if(gv!=null) score={pct:gv};
+  } else {
+    if(sp.rating>0) score={rating:sp.rating};
+  }
+  if(sp.mode==="approve"){
+    scoreClose(); finalizeDone(sp.id, sp.doneTs, score); renderAll(); showPaceToast(sp.id, tsToMin(sp.doneTs));
+  } else {
+    // edit: patch score onto the existing done entry
+    const hist=ld(WK+"_history")||{};
+    if(hist[sp.id]){ if(score) hist[sp.id].score=score; else delete hist[sp.id].score; sv(WK+"_history",hist); histState[sp.id]=hist[sp.id]; if(db) db.ref(WK+"/history/"+sp.id).set(hist[sp.id]); }
+    scoreClose(); renderAll();
+  }
+}
+
 function taskCard(t, fromDay, readOnly, doneId){
   // doneId: mirror another task's checked-state (used by the read-only "Carried Over"
   // box, which links each item to the lesson already sitting in the schedule).
   const srcId=doneId||t.id;
   const done=!!checked[srcId];
+  const claimedHere=!done&&!!claimed[srcId];
   const future=DAYS.indexOf(t.day)>DAYS.indexOf(day);
   const bcls=t.mom==="required"?"req":t.mom==="maybe"?"maybe":"";
   const klbl=cap(t.who);
@@ -3231,7 +3373,18 @@ function taskCard(t, fromDay, readOnly, doneId){
     mb='<span class="mom-badge maybe-badge">May Need Mom</span>';
   }
   const hasPending=!readOnly&&done&&!!pendingSpins[t.id];
-  const dr=done?'<div class="done-row">✓ '+checked[srcId]+'</div>':"";
+  const _he=histState[srcId];
+  const scoreChip=(done&&_he&&_he.score)?' <span style="display:inline-block;margin-left:6px;font-size:10px;font-weight:700;color:#3730a3;background:#e0e7ff;padding:1px 7px;border-radius:8px">📊 '+scoreLabel(_he.score)+'</span>':"";
+  let dr=done?'<div class="done-row">✓ '+checked[srcId]+scoreChip+'</div>':"";
+  if(claimedHere){
+    if(momHere()&&!readOnly){
+      dr='<div class="done-row" style="background:#fffbeb;color:#b45309;display:flex;align-items:center;gap:6px;flex-wrap:wrap">⏳ Claimed '+claimed[srcId]+
+        '<button onclick="event.stopPropagation();momApprove(\''+srcId+'\')" style="padding:3px 10px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Approve</button>'+
+        '<button onclick="event.stopPropagation();momReject(\''+srcId+'\')" style="padding:3px 10px;border-radius:8px;border:1px solid #ef4444;background:#fff;color:#ef4444;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✗ Not yet</button></div>';
+    } else {
+      dr='<div class="done-row" style="background:#fffbeb;color:#b45309">⏳ Waiting for Mom — '+claimed[srcId]+'</div>';
+    }
+  }
   const spinBtn=hasPending?'<div style="margin-top:4px"><button onclick="event.stopPropagation();openSlotMachine(\''+t.id+'\')" style="padding:4px 12px;border-radius:10px;background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;animation:spinPulse 2s ease-in-out infinite">🎰 Spin!</button></div>':"";
   // Strip the "Cascaded from X" note from detail for display
   const cleanDetail=t.detail.replace(/\s*\(Cascaded from \w+\)/,"");
@@ -3239,9 +3392,9 @@ function taskCard(t, fromDay, readOnly, doneId){
   const carryLabel=fromDay?'<div style="font-size:10px;font-weight:700;color:#4338ca;background:#e0e7ff;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">↩ '+fromDay+'</div><br>':'';
   const cascLabel=t.cascadedFrom?'<div style="font-size:10px;font-weight:700;color:#b45309;background:#fef3c7;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">↩ From '+cap(t.cascadedFrom)+'</div><br>':'';
   const catchupLabel=t.catchup?'<div style="font-size:10px;font-weight:700;color:#0f766e;background:#ccfbf1;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px" title="Extra session to catch up on this subject">↻ Catch-up</div><br>':'';
-  return '<div class="task-card '+bcls+(done?" done":"")+(future?" future":"")+(t._displaced?" displaced":"")+'">'+
+  return '<div class="task-card '+bcls+(done?" done":"")+(future?" future":"")+(t._displaced?" displaced":"")+'"'+(claimedHere?' style="border-left:3px solid #f59e0b;background:#fffbeb"':'')+'>'+
     '<div class="card-inner">'+
-    '<div class="task-cb'+(done?" checked":"")+(readOnly?" readonly":"")+'"'+(readOnly?"":' onclick="tapTask(\''+t.id+'\')"')+'>'+(done?"✓":"")+'</div>'+
+    '<div class="task-cb'+(done?" checked":"")+(readOnly?" readonly":"")+'"'+(claimedHere?' style="border-color:#f59e0b;color:#f59e0b;background:#fffbeb"':'')+(readOnly?"":' onclick="tapTask(\''+t.id+'\')"')+'>'+(done?"✓":claimedHere?"⏳":"")+'</div>'+
     '<div class="card-body">'+
     '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
     '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+t.title+'</div>'+mb+'</div>'+
@@ -3253,47 +3406,70 @@ function taskCard(t, fromDay, readOnly, doneId){
 function tapTask(id){
   const t=weekData.tasks.find(x=>x.id===id); if(!t)return;
   const isDone=!!checked[id];
+  const isClaimed=!isDone&&!!claimed[id];
   const future=DAYS.indexOf(t.day)>DAYS.indexOf(day);
-  pendingId=id;
-  document.getElementById("dlg-title").textContent=t.title;
-  document.getElementById("dlg-detail").textContent=isDone?"Completed: "+checked[id]:t.detail;
+  pendingId=id; pendingClaimMode=false;
   const btn=document.getElementById("dlg-ok");
   const unBtn=document.getElementById("dlg-uncheck");
-  if(isDone){ btn.style.display="none"; unBtn.style.display="block"; }
-  else { btn.style.display="block"; btn.textContent=future?"Mark Done (Future Day)":"✓ Mark Done"; btn.style.background=future?"#f59e0b":"#16a34a"; unBtn.style.display="none"; }
+  document.getElementById("dlg-title").textContent=t.title;
+  if(isDone){
+    document.getElementById("dlg-detail").textContent="Completed: "+checked[id];
+    btn.style.display="none"; unBtn.style.display="block"; unBtn.innerHTML="&#x21A9; Unmark";
+    document.getElementById("dlg").style.display="flex"; return;
+  }
+  if(isClaimed){
+    // Mom approves from the card; from the dialog a kid can only retract their own claim
+    document.getElementById("dlg-detail").textContent="⏳ Waiting for Mom to check this off (you marked it at "+claimed[id]+").";
+    btn.style.display="none"; unBtn.style.display="block"; unBtn.innerHTML="&#x21A9; Undo my check";
+    document.getElementById("dlg").style.display="flex"; return;
+  }
+  // Not done, not claimed — when this subject needs Mom's check and Mom isn't here, the tap becomes a claim
+  const verify=needsVerify(t)&&!momHere();
+  pendingClaimMode=verify;
+  document.getElementById("dlg-detail").textContent=verify?(t.detail+"  —  Mom will check this off before it counts."):t.detail;
+  btn.style.display="block"; unBtn.style.display="none";
+  btn.textContent=verify?"✓ I'm done — send to Mom":(future?"Mark Done (Future Day)":"✓ Mark Done");
+  btn.style.background=verify?"#f59e0b":(future?"#f59e0b":"#16a34a");
   document.getElementById("dlg").style.display="flex";
 }
 document.getElementById("dlg-ok").onclick=()=>{
   if(!pendingId)return;
+  const id=pendingId;
+  const t=weekData.tasks.find(x=>x.id===id);
   const ts=nowTs();
-  checked[pendingId]=ts; sv(WK+"_checked",checked);
-  lastCheckedWrite=Date.now();
-  dbg("write checked id="+pendingId+" n="+Object.keys(checked).length);
-  if(db) db.ref(WK+"/checked").set(checked);
-  const hist=ld(WK+"_history")||{};
-  const t=weekData.tasks.find(x=>x.id===pendingId);
-  if(t){
-    const origDay=t.cascadedFrom||t.day;
-    const origDateStr=DAY_DT[origDay];
-    let daysLate=null;
-    if(origDateStr){const yr=new Date().getFullYear();const od=new Date(origDateStr+", "+yr);const td=new Date();od.setHours(0,0,0,0);td.setHours(0,0,0,0);daysLate=Math.round((td-od)/864e5);}
-    const entry={id:pendingId,title:t.title,who:t.who,day:t.day,originalDay:origDay,checkedOnDay:effectiveDay(t),daysLate:daysLate,ts,week:WK};
-    hist[pendingId]=entry; histState[pendingId]=entry; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+pendingId).set(entry);
+  if(pendingClaimMode){
+    // Kid says done — park it as a claim until Mom approves (doesn't count yet)
+    claimed[id]=ts; sv(WK+"_claimed",claimed);
+    if(db) db.ref(WK+"/claimed/"+id).set(ts);
+    dbg("write claim id="+id);
+    closeDlg(); renderAll();
+    if(typeof gwShowToast==="function") gwShowToast("Sent to Mom to check ✓");
+    return;
   }
-  const doneId=pendingId;
+  finalizeDone(id, ts, null);
+  dbg("write checked id="+id+" n="+Object.keys(checked).length);
   closeDlg(); renderAll();
-  showPaceToast(doneId);
+  showPaceToast(id);
+  // Mom marking a scored subject done directly → let her record a score
+  if(momHere()&&t&&scoredType(t)) openScoreDialog(id, ts, "edit");
 };
 document.getElementById("dlg-uncheck").onclick=()=>{
   if(!pendingId)return;
-  manualUnchecks.add(pendingId);
-  delete checked[pendingId]; sv(WK+"_checked",checked);
+  const id=pendingId;
+  // Retract a pending claim (kid undoing their own "I'm done")
+  if(claimed[id]!=null&&!checked[id]){
+    delete claimed[id]; sv(WK+"_claimed",claimed);
+    if(db) db.ref(WK+"/claimed/"+id).remove();
+    closeDlg(); renderAll(); return;
+  }
+  manualUnchecks.add(id);
+  delete checked[id]; sv(WK+"_checked",checked);
   lastCheckedWrite=Date.now();
-  dbg("write uncheck id="+pendingId+" n="+Object.keys(checked).length);
+  dbg("write uncheck id="+id+" n="+Object.keys(checked).length);
   if(db) db.ref(WK+"/checked").set(checked);
   const hist=ld(WK+"_history")||{};
-  delete hist[pendingId]; delete histState[pendingId]; sv(WK+"_history",hist);
-  if(db) db.ref(WK+"/history/"+pendingId).remove();
+  delete hist[id]; delete histState[id]; sv(WK+"_history",hist);
+  if(db) db.ref(WK+"/history/"+id).remove();
   closeDlg(); schedCascade(); renderAll();
 };
 function closeDlg(){ document.getElementById("dlg").style.display="none"; pendingId=null; }
@@ -4021,9 +4197,12 @@ function renderHistory(el){
         }
         carriedBadge=' <span style="font-size:10px;background:#e0e7ff;color:#4338ca;padding:1px 5px;border-radius:6px;font-weight:700">Carried over'+(fromDay?' from '+fromDay:'')+' </span>';
       }
-      h+='<div class="hist-item"><div class="hist-title">'+e.title+'</div>'+
+      const scChip=e.score?' <span style="font-size:10px;font-weight:700;color:#3730a3;background:#e0e7ff;padding:1px 7px;border-radius:8px">📊 '+scoreLabel(e.score)+'</span>':'';
+      const _et=weekData.tasks.find(x=>x.id===e.id);
+      const scBtn=(momHere()&&_et&&scoredType(_et))?' <button onclick="openScoreDialog(\''+e.id+'\',\''+(e.ts||"")+'\',\'edit\')" style="border:none;background:none;color:var(--header);font-size:10px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif">'+(e.score?'edit':'＋ score')+'</button>':'';
+      h+='<div class="hist-item"><div class="hist-title">'+e.title+scChip+'</div>'+
         '<div class="hist-meta">&#10003; '+e.ts+' &middot; '+(DAY_LBL[e.day]||e.day||'')+' '+(DAY_DT[e.day]||'')+
-        carriedBadge+
+        carriedBadge+scBtn+
         '</div></div>';
     });
 
@@ -4747,6 +4926,14 @@ function renderCurriculumView(el,headerHtml){
   if(tgtVal) h+='<button onclick="ceSetTargetEnd(\''+k+'\',\'\')" style="border:none;background:none;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif">clear</button>';
   h+='</div>';
 
+  // Mom Check master (per kid) — gates the per-subject "Require Mom check" toggles
+  const _mvOn=!!((currData.momVerifyKid||{})[k]);
+  h+='<div class="ce-section-hdr" style="color:'+col+'">Mom Check</div>';
+  h+='<div style="background:#f9fafb;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:10px">';
+  h+='<div style="font-size:12px;color:var(--text);min-width:0"><b>Require my approval</b> for '+cap(k)+'’s checked-off work<div style="font-size:10px;color:var(--muted);margin-top:2px">Then choose which subjects need it inside each subject’s settings.</div></div>';
+  h+='<button onclick="ceToggleMomVerifyKid(\''+k+'\')" style="flex-shrink:0;border:none;border-radius:14px;padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;background:'+(_mvOn?'#16a34a':'#e5e7eb')+';color:'+(_mvOn?'#fff':'#6b7280')+'">'+(_mvOn?'ON':'OFF')+'</button>';
+  h+='</div>';
+
   // Subject cards
   const sKeys=Object.keys(subjects);
   const active=sKeys.filter(sk=>!subjects[sk].paused);
@@ -5301,6 +5488,18 @@ function ceSaveField(field,val){
   currData.lastEdit=new Date().toISOString();
   db.ref("curriculum/lastEdit").set(currData.lastEdit);
 }
+function ceToggleField(field){
+  if(!currData||!ceEditKid||!ceEditKey) return;
+  const cur=!!currData.subjects[ceEditKid][ceEditKey][field];
+  ceSaveField(field,!cur);
+}
+function ceToggleMomVerifyKid(k){
+  if(!currData) return;
+  if(!currData.momVerifyKid) currData.momVerifyKid={};
+  currData.momVerifyKid[k]=!currData.momVerifyKid[k];
+  if(db) db.ref("curriculum/momVerifyKid/"+k).set(currData.momVerifyKid[k]);
+  renderAll();
+}
 // The two lesson-position counts live in paceData (read by computeSubjectDone for pacing
 // and computeSubjectCursor for the generator), NOT in curriculum/subjects. Each input sets
 // a TARGET total; we store the offset-relative correction so the shown count equals it.
@@ -5518,6 +5717,29 @@ function ceRenderEditSheet(){
   h+='<div class="ce-chip'+(trk==="daily"?" sel":"")+'" onclick="ceSaveField(\'tracking\',\'daily\');ceRenderEditSheet()">Daily (no lesson #)</div>';
   h+='</div>';
   h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">'+(trk==="daily"?"Shows up each scheduled day without tracking lesson numbers":"Lessons advance in order and track progress with a cursor")+'</div>';
+
+  // Mom Check (per subject) — requires the kid's master switch (in the kid header) to take effect
+  const _mvKid=!!((currData.momVerifyKid||{})[ceEditKid]);
+  h+='<div class="ce-sheet-lbl">Mom Check</div>';
+  h+='<div class="ce-chips">';
+  h+='<div class="ce-chip'+(s.momVerify?" sel":"")+'" onclick="ceToggleField(\'momVerify\');ceRenderEditSheet()">'+(s.momVerify?"✓ Required":"Off")+'</div>';
+  h+='</div>';
+  h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">'+(s.momVerify?"Kid’s check waits for your approval before it counts.":"Kid’s check counts immediately.")+(s.momVerify&&!_mvKid?' <b style="color:#b45309">⚠ Turn on Mom Check for '+cap(ceEditKid)+' (kid header) for this to take effect.</b>':'')+'</div>';
+
+  // Record Score (per subject) + format picker
+  h+='<div class="ce-sheet-lbl">Record Score</div>';
+  h+='<div class="ce-chips">';
+  h+='<div class="ce-chip'+(s.scored?" sel":"")+'" onclick="ceToggleField(\'scored\');ceRenderEditSheet()">'+(s.scored?"✓ On":"Off")+'</div>';
+  h+='</div>';
+  if(s.scored){
+    const _st=s.scoreType||"points";
+    h+='<div class="ce-chips" style="margin-top:6px">';
+    [["points","Points (18/20)"],["percent","Percent (90%)"],["rating","Rating (★)"]].forEach(o=>{
+      h+='<div class="ce-chip'+(_st===o[0]?" sel":"")+'" onclick="ceSaveField(\'scoreType\',\''+o[0]+'\');ceRenderEditSheet()">'+o[1]+'</div>';
+    });
+    h+='</div>';
+    h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Mom records the score when approving (or via 📊 on a done task in History).</div>';
+  }
 
   if(trk!=="daily"){
   // Carryover cap stepper
@@ -7234,6 +7456,9 @@ function runCascade(){
     let gcCount=0;
     for(const id in checked){ if(!taskIds.has(id)){ delete checked[id]; gcCount++; } }
     for(const id in histState){ if(!taskIds.has(id)){ delete histState[id]; gcCount++; } }
+    let claimGc=false;
+    for(const id in claimed){ if(!taskIds.has(id)){ delete claimed[id]; claimGc=true; } }
+    if(claimGc){ sv(WK+"_claimed",claimed); if(db) db.ref(WK+"/claimed").set(claimed); }
     if(gcCount){
       sv(WK+"_checked",checked); sv(WK+"_history",histState);
       lastCheckedWrite=Date.now();
