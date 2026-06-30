@@ -3548,9 +3548,12 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       //    notebook sizes pages differently (e.g. Ellis uses 816px×1056px while the rest use
       //    8.5in×11in), the packet prints with mismatched page sizes. This !important block,
       //    emitted LAST, normalizes them all. Ported from combine_parent_docs._OVERRIDE_CSS.
-      "  /* ── Final page-size override (normalizes mixed in/px child sizing) ── */\n" +
-      "  .page { width:8.5in !important; height:11in !important; min-height:11in !important; max-height:11in !important; overflow:hidden !important; }\n" +
-      "  @media print { .page { width:8.5in !important; height:11in !important; min-height:11in !important; max-height:11in !important; margin:0 !important; box-shadow:none !important; overflow:hidden !important; } }\n" +
+      "  /* ── Final page-size override. box-sizing:border-box is the key fix: the cover/divider\n" +
+      "     pages carry inch-based padding but the cover sits OUTSIDE any kid-section, so nothing\n" +
+      "     reset its box model → content-box added the padding ON TOP of 8.5×11, blowing the cover\n" +
+      "     up to ~10.7×12.7in. border-box keeps padding inside the page. Also normalizes Ellis's px. ── */\n" +
+      "  .page { box-sizing:border-box !important; width:8.5in !important; height:11in !important; min-height:11in !important; max-height:11in !important; overflow:hidden !important; }\n" +
+      "  @media print { .page { box-sizing:border-box !important; width:8.5in !important; height:11in !important; min-height:11in !important; max-height:11in !important; margin:0 !important; box-shadow:none !important; overflow:hidden !important; } }\n" +
       "</style>\n</head>\n<body>\n" + cover + "\n" + sections + "\n</body>\n</html>";
   }
 
