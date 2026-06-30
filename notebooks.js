@@ -3472,7 +3472,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
   // A title/divider page that opens each kid's section (ported from combine_parent_docs.py).
   function cpDividerPage(name, grade, color, weekNum, weekDates) {
     return '<div class="page-label">Parent Companion — ' + name + ' Section</div>\n' +
-      '<div class="page" style="display:flex;flex-direction:column;justify-content:center;align-items:flex-start;padding:0 1.1in;background:#fafaf8;">' +
+      '<div class="page" style="display:flex;flex-direction:column;justify-content:center;align-items:flex-start;padding:0 1.1in;background:#fff;">' +
         '<div style="width:48px;height:3px;background:' + color + ';margin-bottom:36px;border-radius:1px;"></div>' +
         '<div style="font-family:\'Fraunces\',Georgia,serif;font-size:11px;font-weight:600;letter-spacing:0.2em;text-transform:uppercase;color:#9ca3af;margin-bottom:14px;">' + grade + ' &nbsp;·&nbsp; Howe Academy</div>' +
         '<div style="font-family:\'Fraunces\',Georgia,serif;font-size:72px;font-weight:700;color:#1c1c1e;line-height:1;letter-spacing:-1px;">' + name + '</div>' +
