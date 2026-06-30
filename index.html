@@ -2340,7 +2340,7 @@ function renderSpinAdmin(d){
 
         h+='<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;margin-bottom:3px;border-radius:8px;background:rgba(255,255,255,0.04)">';
         h+='<span style="font-size:11px;width:16px;text-align:center">'+(done?'✓':'○')+'</span>';
-        h+='<span style="font-size:11px;flex:1;color:'+(done?'rgba(255,255,255,0.7)':'rgba(255,255,255,0.4)')+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+t.title.replace(/^[📖📄💻📞📱]\s*/,'').substring(0,28)+'</span>';
+        h+='<span style="font-size:11px;flex:1;color:'+(done?'rgba(255,255,255,0.7)':'rgba(255,255,255,0.4)')+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(taskSubjLabel(t))+'</span>';
         h+='<span style="font-size:10px;color:'+statusColor+';font-weight:700;min-width:50px;text-align:right">'+statusIcon+' '+statusText+'</span>';
         if(isPending){
           h+='<button onclick="openSlotMachine(\''+t.id+'\')" style="padding:2px 6px;border-radius:5px;border:1px solid rgba(251,191,36,0.4);background:rgba(251,191,36,0.2);color:#fbbf24;font-size:9px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Spin</button>';
@@ -3244,6 +3244,10 @@ function scoredType(t){ const s=subjCfg(t); return (s&&s.scored)?(s.scoreType||"
 // (e.g. "📄 Editor in Chief — Pg 43–45" → "Pg 43–45"). Used to tell the kid
 // which page to leave open and to show Mom what to check/score.
 function taskLessonRef(t){ const m=(t&&t.title||"").match(/[—–]\s*(.+)$/); return m?m[1].trim():""; }
+// Clean subject name for a task: prefer the curriculum display name, fall back
+// to the title's subject portion. Used to label slot-point rows by subject.
+function taskSubjDisplay(t){ const s=subjCfg(t); return (s&&s.display)||taskSubject(t); }
+function taskSubjLabel(t){ const r=taskLessonRef(t); return taskSubjDisplay(t)+(r?" — "+r:""); }
 function tsToMin(ts){
   const p=(ts||"").match(/(\d+):(\d+)\s*(AM|PM)/i); if(!p) return null;
   let h=parseInt(p[1]); if(/PM/i.test(p[3])&&h!==12) h+=12; if(/AM/i.test(p[3])&&h===12) h=0;
@@ -4169,6 +4173,31 @@ function renderHistory(el){
       h+='</div>';
     });
     h+='</div>';
+    // Points by subject — per-task spin results, labeled by subject
+    const _spinRes=ld(WK+"_spin_results")||{};
+    const _earned={};
+    Object.keys(_spinRes).forEach(id=>{
+      const r=_spinRes[id]; if(!r||!(r.pts>0)) return;
+      const t=weekData.tasks.find(x=>x.id===id); if(!t) return;
+      (_earned[r.kid]=_earned[r.kid]||[]).push({label:taskSubjLabel(t),pts:r.pts,day:r.day});
+    });
+    const _earnKids=[...ROSTER].filter(k2=>(_earned[k2]||[]).length);
+    if(_earnKids.length){
+      h+='<div style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.08);padding-top:8px">';
+      h+='<div style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px">Points by subject</div>';
+      _earnKids.forEach(k2=>{
+        _earned[k2].sort((a,b)=>DAYS.indexOf(a.day)-DAYS.indexOf(b.day));
+        h+='<div style="margin-bottom:6px">';
+        h+='<div style="font-size:11px;font-weight:700;color:'+HIST_KCOL_LIGHT[k2]+';margin-bottom:2px">'+cap(k2)+'</div>';
+        _earned[k2].forEach(e=>{
+          h+='<div style="display:flex;align-items:center;gap:8px;font-size:11px;color:#d1d5db;padding:2px 0">';
+          h+='<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(e.label)+'</span>';
+          h+='<span style="flex-shrink:0;color:#fbbf24;font-weight:700">⭐ '+e.pts+'</span></div>';
+        });
+        h+='</div>';
+      });
+      h+='</div>';
+    }
   } else {
     // Editable view — per kid, per day with +/- buttons
     h+='<div style="margin-top:10px">';
