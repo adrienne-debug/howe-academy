@@ -1346,6 +1346,13 @@ function attachWeekListeners(wk){
   r13.on("value",s=>{ pendingSpins=s.val()||{}; sv(wk+"_pending_spins",pendingSpins); renderAll(); });
   fbWeekRefs.push(r13);
 
+  // Keep per-task spin results in sync across devices — without this listener each
+  // device kept its own stale copy, so the Spin & Points Manager showed "Spun" (no
+  // amount) for spins another device recorded. Writes below are targeted per-task.
+  const r17=db.ref(wk+"/spin_results");
+  r17.on("value",s=>{ sv(wk+"_spin_results",s.val()||{}); if(tab==="schedule") renderAll(); });
+  fbWeekRefs.push(r17);
+
   const r12=db.ref(wk+"/cursors");
   r12.on("value",s=>{ if(s.val()) sv(wk+"_cursors",s.val()); });
   fbWeekRefs.push(r12);
@@ -2280,10 +2287,11 @@ function spinSlots(){
     btn.onclick=closeSlotMachine;
     if(slotPendingTaskId){
       // Track per-task spin result for admin panel
+      var _srRec={pts:outcome.pts,kid:k,day:d,ts:Date.now()};
       var sr=ld(WK+"_spin_results")||{};
-      sr[slotPendingTaskId]={pts:outcome.pts,kid:k,day:d,ts:Date.now()};
+      sr[slotPendingTaskId]=_srRec;
       sv(WK+"_spin_results",sr);
-      if(db) db.ref(WK+"/spin_results").set(sr);
+      if(db) db.ref(WK+"/spin_results/"+slotPendingTaskId).set(_srRec); // targeted — never clobber the table
       claimPendingSpin(slotPendingTaskId); slotPendingTaskId=null;
     }
   },totalTime);
@@ -2412,7 +2420,7 @@ function spinAdminResetSpin(taskId,kid,d){
       if(all[kid]&&all[kid][d]){ all[kid][d]=Math.max(0,all[kid][d]-pts); sv(WK+"_slot_points",all); if(db) db.ref(WK+"/slot_points").set(all); }
     }
     delete sr[taskId];
-    sv(WK+"_spin_results",sr); if(db) db.ref(WK+"/spin_results").set(sr);
+    sv(WK+"_spin_results",sr); if(db) db.ref(WK+"/spin_results/"+taskId).remove(); // targeted
   }
   // Re-add as pending spin
   addPendingSpin(taskId, kid, d);
@@ -2472,10 +2480,11 @@ function spinAdminResetAll(kid,d){
   sv(WK+"_spins_used",used); if(db) db.ref(WK+"/spins_used").set(used);
   // Reset spin results for this kid's tasks
   const sr=ld(WK+"_spin_results")||{};
+  const _srUpd={};
   activeTasks.forEach(t=>{
-    if(t.who===kid && (displacedResult?t.day:effectiveDay(t))===d) delete sr[t.id];
+    if(t.who===kid && (displacedResult?t.day:effectiveDay(t))===d && sr[t.id]!==undefined){ delete sr[t.id]; _srUpd[t.id]=null; }
   });
-  sv(WK+"_spin_results",sr); if(db) db.ref(WK+"/spin_results").set(sr);
+  sv(WK+"_spin_results",sr); if(db && Object.keys(_srUpd).length) db.ref(WK+"/spin_results").update(_srUpd); // targeted per-task removal
   // Reset day bonus
   const db2=ld(WK+"_day_bonus_used")||{};
   delete db2[kid+"_"+d]; sv(WK+"_day_bonus_used",db2); if(db) db.ref(WK+"/day_bonus_used").set(db2);
