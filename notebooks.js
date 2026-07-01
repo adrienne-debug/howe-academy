@@ -1926,7 +1926,7 @@
       p1 += '<div style="display:flex;gap:13px;align-items:flex-start;border:1.5px solid ' + GL + ';background:' + GP + ';border-radius:11px;padding:10px 13px">' + face(m.portrait, 64) +
         '<div style="flex:1;min-width:0"><div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700;color:' + GD + ';line-height:1.1">' + esc(m.name) + '</div>' +
         '<div style="font-family:\'DM Mono\',monospace;font-size:9px;color:' + MUT + ';margin:2px 0 5px">House of ' + esc(m.house || "") + ' · ' + esc(m.reign || "") + '</div>' +
-        '<div style="font-size:11.5px;line-height:1.5;color:' + INK + '">' + esc(m.info || "") + '</div></div></div>';
+        '<div style="font-size:11px;line-height:1.5;color:' + INK + '">' + esc(m.bio || m.info || "") + '</div></div></div>';
     });
     if (!(mon.learning || []).length) p1 += '<div style="font-size:12px;color:' + MUT + '">No monarchs in the learning phase this week.</div>';
     p1 += '</div></div>';
