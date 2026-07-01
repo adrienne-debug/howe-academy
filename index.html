@@ -1406,8 +1406,14 @@ function initFb() {
       db.ref("settings/codeVersion").on("value",s=>{
         const remote=s.val();
         if(remote && remote!==CODE_VERSION){
-          console.log("[HA] Code hash mismatch remote="+remote+" local="+CODE_VERSION+", reloading...");
-          location.reload(true);
+          // Guard against reload loops if a stale device keeps republishing an old hash
+          if(sessionStorage.getItem("ha_cv_reload")===String(remote)) return;
+          sessionStorage.setItem("ha_cv_reload",String(remote));
+          console.log("[HA] Code hash mismatch remote="+remote+" local="+CODE_VERSION+", cache-busting reload...");
+          // location.reload(true) is deprecated/ignored by modern browsers (serves the
+          // CACHED old file), which left devices stale. Force a fresh network fetch by
+          // changing the URL query so constantly-running devices actually pick up deploys.
+          var u=new URL(location.href); u.searchParams.set("_cv",remote); location.replace(u.href);
         }
       });
     }
