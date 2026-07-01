@@ -8665,7 +8665,9 @@ function renderUnitDetail(u){
       const vv=(u.visuals||{})[d.key+"_"+c.name];
       let thumb='<div style="width:46px;height:46px;border-radius:7px;border:1px solid var(--border);background:#faf7f2;display:flex;align-items:center;justify-content:center;font-size:22px">👑</div>';
       if(vv){ if(typeof vv==="string") thumb='<div style="width:46px;height:46px;border-radius:7px;border:1px solid var(--border);background:#faf7f2;display:flex;align-items:center;justify-content:center;font-size:24px">'+vv+'</div>'; else if(vv.imageUrl) thumb='<img src="'+esc(vv.imageUrl)+'" style="width:46px;height:46px;object-fit:cover;border-radius:7px;border:1px solid var(--border)">'; }
-      h+='<div onclick="unitEditCard(\''+u.id+'\',\''+esc(d.key)+'\','+(c.order||0)+')" style="width:72px;text-align:center;cursor:pointer">'+thumb+'<div style="font-size:8.5px;font-weight:600;color:#374151;margin-top:2px;line-height:1.12;max-height:22px;overflow:hidden">'+esc(c.name)+'</div></div>';
+      const _enr=Object.keys(u.enrolled||{}).filter(k=>(u.enrolled||{})[k]);
+      let _dots=''; _enr.forEach(k=>{ const st=unitCardStatus(k,d.key,c.name); _dots+='<span title="'+esc(cap(k))+': '+st.lbl+'" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+st.c+';margin:0 1px"></span>'; });
+      h+='<div onclick="unitEditCard(\''+u.id+'\',\''+esc(d.key)+'\','+(c.order||0)+')" style="width:72px;text-align:center;cursor:pointer">'+thumb+'<div style="font-size:8.5px;font-weight:600;color:#374151;margin-top:2px;line-height:1.12;max-height:22px;overflow:hidden">'+esc(c.name)+'</div>'+(_dots?'<div style="margin-top:2px">'+_dots+'</div>':'')+'</div>';
     });
     h+='</div></div>';
   });
@@ -8709,6 +8711,17 @@ function unitEnroll(unitId,kid){
   const m=document.getElementById("unit-enroll-msg"); if(m) m.textContent=cap(kid)+" enrolled — the deck is in their Drills & Notebook now.";
   const el=document.getElementById("content"); if(el) renderUnits(el);
 }
+// A card's drill status for one kid (progress is per-kid even though content is shared).
+function unitCardStatus(kid,deckKey,name){
+  const items=Array.isArray(masteryData[kid])?masteryData[kid]:[];
+  const it=items.find(i=>i&&i.subject===deckKey&&i.prompt===name);
+  const mTier=(typeof MAST_MASTERY_TIER_DEFAULT!=="undefined")?MAST_MASTERY_TIER_DEFAULT:"monthly";
+  if(!it) return {k:"none",lbl:"not started",c:"#9ca3af",bg:"#f3f4f6"};
+  if(it.status==="parked") return {k:"parked",lbl:"waiting",c:"#9ca3af",bg:"#f3f4f6"};
+  if(it.status==="introduction") return {k:"learning",lbl:"learning",c:"#b45309",bg:"#fffbeb"};
+  if(typeof mastTierAtLeast==="function"&&mastTierAtLeast(it.tier,mTier)) return {k:"mastered",lbl:"mastered",c:"#15803d",bg:"#f0fdf4"};
+  return {k:"active",lbl:"in progress",c:"#2563eb",bg:"#eff6ff"};
+}
 // ── Unit card editor: edit shared photo + bio (applies to every enrolled kid) ──
 function unitEditCard(unitId,deckKey,order){
   const u=unitStudies[unitId]; if(!u) return;
@@ -8728,15 +8741,25 @@ function _unitEditOverlay(){
   const cur=unitEdit.newImg || (existing&&typeof existing==="object"&&existing.imageUrl) || null;
   const face=cur ? '<img src="'+esc(cur)+'" style="width:96px;height:96px;object-fit:cover;border-radius:12px;border:2px solid #b7e4c7">'
     : '<div style="width:96px;height:96px;border-radius:12px;border:2px solid #b7e4c7;background:#f2faf5;display:flex;align-items:center;justify-content:center;font-size:48px">👑</div>';
+  const _enr=Object.keys(u.enrolled||{}).filter(k=>(u.enrolled||{})[k]);
+  let statusHtml="";
+  if(_enr.length){
+    statusHtml='<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:5px">Drill status</div>';
+    _enr.forEach(k=>{ const st=unitCardStatus(k,deck.key,card.name); statusHtml+='<span style="display:inline-block;font-size:11px;font-weight:700;padding:2px 10px;border-radius:8px;background:'+st.bg+';color:'+st.c+';margin:0 6px 4px 0">'+esc(cap(k))+' · '+st.lbl+'</span>'; });
+    statusHtml+='</div>';
+  }
   let ov=document.getElementById("unit-edit-dlg"); if(ov) ov.remove();
   ov=document.createElement("div"); ov.id="unit-edit-dlg"; ov.className="dlg-overlay"; ov.style.display="flex"; ov.style.zIndex="9999";
   ov.innerHTML='<div class="dlg-box" style="max-width:470px;text-align:left;max-height:88vh;overflow:auto">'+
     '<div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:700;color:#1a3a2a">'+esc(card.name)+'</div>'+
     '<div style="font-size:11px;color:var(--muted);margin-bottom:12px">'+esc(card.house?("House of "+card.house+" · "):"")+esc(card.reign||card.year||"")+'</div>'+
+    statusHtml+
     '<div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:12px">'+face+
       '<div style="flex:1"><label style="display:inline-block;padding:8px 14px;border-radius:9px;border:1.5px dashed #2d6a4f;background:#f2faf5;color:#2d6a4f;font-size:12px;font-weight:700;cursor:pointer">📷 '+(cur?"Change photo":"Add photo")+'<input type="file" accept="image/*" onchange="unitEditPhoto(this)" style="display:none"></label>'+
       '<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.4">Shows on the drill card, the Royal Line page &amp; the printed notebook — for every kid using this unit.</div></div></div>'+
-    '<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:4px">Bio</div>'+
+    '<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:4px">🎯 Drill card — the facts he’s quizzed on <span style="font-weight:500;color:var(--muted)">(the flip answer)</span></div>'+
+    '<textarea id="unit-edit-def" style="width:100%;box-sizing:border-box;min-height:64px;padding:9px 11px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif;line-height:1.5;margin-bottom:12px">'+esc(card.def||"")+'</textarea>'+
+    '<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:4px">📖 Bio / story <span style="font-weight:500;color:var(--muted)">(the longer read)</span></div>'+
     '<textarea id="unit-edit-bio" style="width:100%;box-sizing:border-box;min-height:130px;padding:9px 11px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif;line-height:1.5">'+esc(card.bio||card.info||"")+'</textarea>'+
     '<div style="display:flex;gap:8px;margin-top:14px">'+
       '<button onclick="unitEditClose()" style="flex:1;padding:11px;border-radius:10px;border:none;background:#f3f4f6;color:#374151;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancel</button>'+
@@ -8757,7 +8780,14 @@ function unitEditSave(){
   const ci=(deck.cards||[]).findIndex(c=>(c.order||0)===unitEdit.order); const card=deck.cards[ci]; if(!card) return;
   const key=deck.key+"_"+card.name;
   const ta=document.getElementById("unit-edit-bio"); const bio=ta?ta.value:null;
+  const de=document.getElementById("unit-edit-def"); const def=de?de.value:null;
   if(bio!=null){ card.bio=bio; if(db) db.ref("unitStudies/"+unitEdit.unitId+"/decks/"+di+"/cards/"+ci+"/bio").set(bio); }
+  if(def!=null){
+    card.def=def; if(db) db.ref("unitStudies/"+unitEdit.unitId+"/decks/"+di+"/cards/"+ci+"/def").set(def);
+    // The drill's flip answer is each kid's definitions map — push the edit to every enrolled kid
+    const enr=Object.keys(u.enrolled||{}).filter(k=>(u.enrolled||{})[k]);
+    enr.forEach(k=>{ const s=masteryData[k+"_settings"]||(masteryData[k+"_settings"]={}); if(!s.definitions) s.definitions={}; s.definitions[card.name]=def; if(db) db.ref("mastery/"+k+"_settings/definitions").update({[card.name]:def}); });
+  }
   if(unitEdit.newImg){ if(!u.visuals) u.visuals={}; u.visuals[key]={imageUrl:unitEdit.newImg}; if(db) db.ref("unitStudies/"+unitEdit.unitId+"/visuals/"+key).set({imageUrl:unitEdit.newImg}); }
   unitEditClose();
   const el=document.getElementById("content"); if(el) renderUnits(el);
