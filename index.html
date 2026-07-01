@@ -11441,6 +11441,10 @@ function mastIntroDotsFor(cat,s){ s=s||mastDrillSettings(); const o=s.cat_intro_
 // How many items in `cat` may sit in introduction at once (the "Max New / Category"
 // cap). Mirrors cat_caps: a per-category override, else the global max_intro_per_cat.
 function mastIntroMaxFor(cat,s){ s=s||mastDrillSettings(); const o=s.cat_intro_max||{}; return (cat!=null&&o[cat]!=null)?o[cat]:s.max_intro_per_cat; }
+// "parked" = an individual issue-word held out of the drill (added via +), NOT a
+// curriculum-bank word. It stays an item (never in custom_items) and auto-promotes
+// to introduction as intro slots open. Excluded from the drill, scoring, and mastery %.
+function mastIsParked(i){ return !!(i&&i.status==="parked"); }
 const MAST_BANK_MAP={julian:MAST_JULIAN_BANK,lucy:MAST_LUCY_BANK,ellis:MAST_ELLIS_BANK,lincoln:MAST_LINCOLN_BANK};
 const MAST_CAT_EMOJI_MAP={
   julian:{Letters:"\u{1F524}",Numbers:"\u{1F522}",Colors:"\u{1F3A8}",Shapes:"\u{1F537}",Animals:"\u{1F43E}",Counting:"\u{1F995}",Dinosaurs:"\u{1F996}"},
@@ -11518,7 +11522,7 @@ function mastDueItems(kid,pn){
   let items=masteryData[kid];
   if(!items) return [];
   if(!Array.isArray(items)) items=Object.values(items);
-  const due=items.filter(i=>mastIsDue(i,pn)&&!mastIsNeverDrill(i));  // R5: never-drill items never assemble
+  const due=items.filter(i=>mastIsDue(i,pn)&&!mastIsNeverDrill(i)&&!mastIsParked(i));  // R5: never-drill items never assemble; parked issue-words are held out
   due.sort((a,b)=>MAST_TIER_ORDER.indexOf(a.tier||"daily")-MAST_TIER_ORDER.indexOf(b.tier||"daily"));
   const _mk=masteryKid; masteryKid=kid; const settings=mastDrillSettings(); masteryKid=_mk;
   const byCat={};
@@ -11947,7 +11951,7 @@ function mastSprintPool(kid,opts){
   const deck=opts.deck||opts.subject||null;
   const active=Array.isArray(opts.activeSubjects)?opts.activeSubjects:null;
   return items.filter(it=>{
-    if(!it||it.status==="introduction") return false;
+    if(!it||it.status==="introduction"||it.status==="parked") return false;
     if(deck&&it.subject!==deck) return false;
     if(active&&!active.includes(it.subject)) return false;
     const acc=history?mastUntimedAccuracy(history,kid,it.id,opts.accuracyOpts):undefined;
@@ -12028,7 +12032,7 @@ const MAST_MASTERY_TIER_DEFAULT="monthly"; // "mastered" = at/above this tier (t
 function mastDeckMastery(items,masteryTier){
   if(!Array.isArray(items)) items=Object.values(items||{});
   masteryTier=masteryTier||MAST_MASTERY_TIER_DEFAULT;
-  const onLadder=items.filter(i=>i&&i.status!=="introduction"&&!mastIsNeverDrill(i));
+  const onLadder=items.filter(i=>i&&i.status!=="introduction"&&i.status!=="parked"&&!mastIsNeverDrill(i));
   const total=onLadder.length;
   const mastered=onLadder.filter(i=>mastTierAtLeast(i.tier,masteryTier)).length;
   return {total,mastered,pct:total?Math.round(mastered/total*100):0};
@@ -12859,6 +12863,13 @@ function mastSlideShown(id){
       const cat=item.subject;
       const introCount=items.filter(i=>i.subject===cat&&i.status==="introduction"&&i.id!==item.id).length;
       if(introCount<mastIntroMaxFor(cat,jset)){
+        // Promote a parked issue-word (individual + add) first — it's already an item,
+        // just held out of the drill; flip it into introduction to fill the open slot.
+        const _parked=items.find(i=>i.subject===cat&&mastIsParked(i));
+        if(_parked){
+          _parked.status="introduction"; _parked.tally_dots=0; _parked.consecutive_correct=0; _parked.tier="daily";
+          _pulledNew=_parked;
+        } else {
         const curriculum=mastFullBank()[cat]||[];
         const existingPrompts=new Set(items.filter(i=>i.subject===cat).map(i=>i.prompt));
         const next=curriculum.find(name=>!existingPrompts.has(name));
@@ -12872,6 +12883,7 @@ function mastSlideShown(id){
           const _apVis=mastGetVisual(cat,next);
           if(_apVis){ if(typeof _apVis==="string") newItem.emoji=_apVis; else if(_apVis.imageUrl) newItem.imageUrl=_apVis.imageUrl; }
           items.push(newItem); _pulledNew=newItem;
+        }
         }
       }
     }
@@ -12945,27 +12957,21 @@ function mastAddItems(){
   let added=0, skipped=0;
   const newItems=[];
 
-  // ── Park & auto-introduce (Learn First only) ──────────────────────────────
-  // Quick-add used to make EVERY item an introduction at once, ignoring the per-category
-  // intro cap. Now we register each new item in the bank (custom_items) so it has a home and
-  // shows in the Mastery Database, then start only up to the cap; the rest stay "available"
-  // (no item created) and auto_pull promotes them as the current ones graduate.
+  // ── Intro cap for Learn-First + issue-words ────────────────────────────────
+  // Start only up to the per-category intro cap; the rest become PARKED items —
+  // held out of the drill (status "parked"), kept as individual items (NOT curriculum-
+  // bank entries), and auto-promoted to introduction as the started ones graduate.
   const _subjPark = isJ?(mastAddCustomSubject||mastAddCat):(mastAddCustomSubject||mastAddSubject);
   const _learnPark = isJ && mastAddStartMode==="learn";
-  let _introSlots = Infinity, _parked = 0, _bank0 = null;
-  if(_learnPark){
-    if(!masteryData[masteryKid+"_custom_items"]) masteryData[masteryKid+"_custom_items"]=[];
-    _bank0 = mastFullBank();
-    _introSlots = Math.max(0, mastIntroMaxFor(_subjPark, mastDrillSettings()) - items.filter(i=>i.subject===_subjPark && i.status==="introduction").length);
-  }
+  let _introSlots = _learnPark ? Math.max(0, mastIntroMaxFor(_subjPark, mastDrillSettings()) - items.filter(i=>i.subject===_subjPark && i.status==="introduction").length) : Infinity;
+  let _parked = 0;
 
   prompts.forEach(p=>{
     if(existingPrompts.has(p.toLowerCase())){ skipped++; return; }
+    let _status = "active";
     if(_learnPark){
-      const _ci=masteryData[masteryKid+"_custom_items"];
-      if(!(_bank0[_subjPark]&&_bank0[_subjPark].includes(p)) && !_ci.some(c=>c.cat===_subjPark&&c.name===p)) _ci.push({cat:_subjPark,name:p});
-      if(_introSlots>0){ _introSlots--; }                                  // room: start learning
-      else { _parked++; existingPrompts.add(p.toLowerCase()); added++; return; }  // park as "available"
+      if(_introSlots>0){ _introSlots--; _status="introduction"; }
+      else { _status="parked"; _parked++; }
     }
 
     const slug=p.toLowerCase().replace(/[^a-z0-9]/g,"_").substring(0,20);
@@ -12982,7 +12988,7 @@ function mastAddItems(){
       answer:p,
       tier:isJ&&mastAddStartMode==="ladder"?(mastDrillSettings().ladder[0]||"every_other_day"):"daily",
       review_mode:isJ?"flash":typeObj.mode,
-      status:isJ&&mastAddStartMode==="learn"?"introduction":"active",
+      status:_status,
       drop_count:0,
       consecutive_correct:0,
       cycle:1,
@@ -13034,10 +13040,9 @@ function mastAddItems(){
   const dailyCount=items.filter(i=>i.tier==="daily").length;
   items.filter(i=>i.tier==="daily").forEach((it,idx)=>{it.cycle=(idx%1)+1;});
 
-  // Save to Firebase
+  // Save to Firebase (parked items are ordinary items in the kid's list — no bank writes)
   masteryData[masteryKid]=items;
   mastPutCards(masteryKid,items,newItems);
-  if(_learnPark && db) db.ref("mastery/"+masteryKid+"_custom_items").set(masteryData[masteryKid+"_custom_items"]);  // persist the bank (parked + started)
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 
   mastAddMode=false;
@@ -14067,6 +14072,18 @@ function _renderMasteryInner(el){
       const ktl=mastKnowledgeType(it)==="transfer"?"transfer":"concept";
       h+='<span style="font-size:12px;font-weight:600;background:#fff;border:1px solid #e9d5ff;color:#1c1917;border-radius:10px;padding:4px 10px">'+(it.prompt||it.id)+' <span style="font-size:9px;font-weight:700;color:#9333ea;text-transform:uppercase">'+ktl+'</span></span>';
     });
+    h+='</div></div>';
+  }
+
+  // Parked issue-words: held out of the drill, auto-start one at a time as learning
+  // words graduate. Read-only queue so the parent can see what's waiting.
+  const _pk=_allItems.filter(mastIsParked);
+  if(_pk.length){
+    h+='<div style="background:#fffbeb;border:1.5px solid #fcd34d;border-radius:14px;padding:12px 14px;margin-bottom:14px">';
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700;color:#b45309;margin-bottom:3px">\u{23F3} Parked issue-words <span style="font-size:12px;font-weight:600;color:#d97706">('+_pk.length+')</span></div>';
+    h+='<div style="font-size:11px;color:#b45309;opacity:0.85;margin-bottom:9px">Waiting their turn \u{2014} one starts automatically as each learning word graduates. Not in the drill yet.</div>';
+    h+='<div style="display:flex;flex-wrap:wrap;gap:5px">';
+    _pk.forEach(it=>{ h+='<span style="font-size:12px;font-weight:600;background:#fff;border:1px solid #fde68a;color:#1c1917;border-radius:10px;padding:4px 10px">'+(it.prompt||it.id)+'</span>'; });
     h+='</div></div>';
   }
 
