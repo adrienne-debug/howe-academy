@@ -1900,6 +1900,57 @@
     return enShell(t, "Howe Academy · " + t.grade + " · Memory Work", "Memory Work &amp; Civics", "know your country by heart", "🇺🇸 Citizen", body, "gap:11px; justify-content:space-between;");
   }
 
+  // ── UNIT STUDY insert: British Monarchy, 2 pages (front/back), any kid ──
+  // Focused on the kid's active window: learning now (with real info) + learned +
+  // coming up + milestones + a challenge. Self-contained inline styles.
+  function unitMonarchyPages(mon, weekNum) {
+    if (!mon || !((mon.learning && mon.learning.length) || (mon.learned && mon.learned.length) || (mon.next && mon.next.length))) return [];
+    var esc = function (v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
+    var GD = "#1a3a2a", GM = "#2d6a4f", GL = "#b7e4c7", GP = "#f2faf5", GOLD = "#c9a84c", INK = "#1c1c1e", MUT = "#6b7280";
+    function face(p, sz) { sz = sz || 64;
+      if (p && p.img) return '<img src="' + esc(p.img) + '" style="width:' + sz + 'px;height:' + sz + 'px;object-fit:cover;border-radius:8px;border:2px solid ' + GL + '">';
+      var e = (p && p.emoji) || "👑";
+      return '<div style="width:' + sz + 'px;height:' + sz + 'px;border-radius:8px;border:2px solid ' + GL + ';background:' + GP + ';display:flex;align-items:center;justify-content:center;font-size:' + Math.round(sz * 0.5) + 'px">' + e + '</div>';
+    }
+    function hdr(title, sub) {
+      return '<div style="background:' + GD + ';padding:14px 40px;display:flex;justify-content:space-between;align-items:flex-end;flex-shrink:0">' +
+        '<div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.2em;text-transform:uppercase;color:' + GL + ';opacity:0.85;margin-bottom:3px">British Monarchy · Unit Study</div>' +
+        '<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:#fff;line-height:1">' + esc(title) + '</div></div>' +
+        '<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:600;color:' + GOLD + '">' + esc(sub) + '</div></div>' +
+        '<div style="height:5px;flex-shrink:0;background:repeating-linear-gradient(90deg,' + GM + ' 0,' + GM + ' 18px,' + GOLD + ' 18px,' + GOLD + ' 22px,' + GM + ' 22px,' + GM + ' 40px)"></div>';
+    }
+    var p1 = '<div class="page-label">Unit Study — British Monarchy (1/2)</div>\n<div class="page">\n' + hdr("This Week’s Royals", "Week " + weekNum) +
+      '<div style="padding:16px 40px;flex:1;display:flex;flex-direction:column;gap:11px;overflow:hidden">' +
+      '<div style="font-size:11px;color:' + MUT + '">The kings &amp; queens you’re learning right now — read each one’s story.</div>';
+    (mon.learning || []).slice(0, 5).forEach(function (m) {
+      p1 += '<div style="display:flex;gap:13px;align-items:flex-start;border:1.5px solid ' + GL + ';background:' + GP + ';border-radius:11px;padding:10px 13px">' + face(m.portrait, 64) +
+        '<div style="flex:1;min-width:0"><div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700;color:' + GD + ';line-height:1.1">' + esc(m.name) + '</div>' +
+        '<div style="font-family:\'DM Mono\',monospace;font-size:9px;color:' + MUT + ';margin:2px 0 5px">House of ' + esc(m.house || "") + ' · ' + esc(m.reign || "") + '</div>' +
+        '<div style="font-size:11.5px;line-height:1.5;color:' + INK + '">' + esc(m.info || "") + '</div></div></div>';
+    });
+    if (!(mon.learning || []).length) p1 += '<div style="font-size:12px;color:' + MUT + '">No monarchs in the learning phase this week.</div>';
+    p1 += '</div></div>';
+
+    var p2 = '<div class="page-label">Unit Study — British Monarchy (2/2)</div>\n<div class="page">\n' + hdr("Your Royal Journey", "Week " + weekNum) +
+      '<div style="padding:16px 40px;flex:1;display:flex;flex-direction:column;gap:14px;overflow:hidden">';
+    p2 += '<div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:' + GM + ';margin-bottom:7px">👑 Learned so far (' + ((mon.learned || []).length) + ')</div>';
+    if ((mon.learned || []).length) { p2 += '<div style="display:flex;flex-wrap:wrap;gap:9px">';
+      mon.learned.forEach(function (m) { p2 += '<div style="width:74px;text-align:center">' + face(m.portrait, 52) + '<div style="font-size:9px;font-weight:700;color:' + INK + ';margin-top:3px;line-height:1.15">' + esc(m.name) + '</div></div>'; });
+      p2 += '</div>'; } else p2 += '<div style="font-size:11px;color:' + MUT + '">None finished yet — keep going!</div>';
+    p2 += '</div>';
+    if ((mon.next || []).length) { p2 += '<div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:#9a7d2e;margin-bottom:7px">⏭️ Coming up next</div><div style="display:flex;flex-wrap:wrap;gap:9px">';
+      mon.next.forEach(function (m) { p2 += '<div style="width:74px;text-align:center;opacity:0.75">' + face(m.portrait, 52) + '<div style="font-size:9px;font-weight:600;color:' + MUT + ';margin-top:3px;line-height:1.15">' + esc(m.name) + '</div></div>'; });
+      p2 += '</div></div>'; }
+    if ((mon.milestones || []).length) { p2 += '<div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:' + GM + ';margin-bottom:6px">🗓️ Milestones that shaped Britain</div>';
+      mon.milestones.slice(0, 4).forEach(function (e) { p2 += '<div style="display:flex;gap:8px;font-size:10.5px;padding:2px 0;line-height:1.4"><span style="font-weight:800;color:' + GM + ';min-width:60px">' + esc(e.year) + '</span><span><b>' + esc(e.name) + '</b> — ' + esc(e.sig || "") + '</span></div>'; });
+      p2 += '</div>'; }
+    p2 += '<div style="border:1.5px dashed ' + GOLD + ';border-radius:10px;padding:10px 14px;background:#fdf8ee"><div style="font-family:\'Fraunces\',serif;font-size:13px;font-weight:700;color:' + GD + ';margin-bottom:5px">🎯 Royal Challenge</div>' +
+      '<div style="font-size:11px;color:' + INK + ';line-height:1.5">Can you say this week’s royals <b>in order</b>? Then tell someone one fact about each. Write your favorite below:</div>' +
+      '<div style="border-bottom:1.5px solid ' + MUT + ';height:20px;margin-top:8px"></div><div style="border-bottom:1.5px solid ' + MUT + ';height:20px;margin-top:6px"></div></div>';
+    p2 += '</div></div>';
+    return [p1, p2];
+  }
+
   function generateLincoln(ctx) {
     ctx = ctx || {};
     var weekData = ctx.weekData || {};
@@ -1945,6 +1996,7 @@
     var T = LN_EXTRA.enrich.theme_lincoln;
     var parts = [weeklyH, lnBrainBreakPage(0, wn),
       enPageAllAboutMe(T, ctx.personal || null, wn), enPageMoneyLife(T, wn), enPageWilderness(T, wn), enPageMemoryCivics(T, wn)];
+    unitMonarchyPages(ctx.monarchy, wn).forEach(function (p) { parts.push(p); });
     dailyPages.forEach(function (dp, i) {
       parts.push(dp);
       parts.push(i < dailyPages.length - 1 ? lnBrainBreakPage(i + 1, wn) : lnCreativePage(wn));

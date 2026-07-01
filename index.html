@@ -6752,6 +6752,31 @@ function haPaceRows(kid){
     return rows.length?rows:null;
   }catch(e){ return null; }
 }
+// Build the British Monarchy notebook-insert data for an enrolled kid:
+// learning-now (with real info) + learned + coming-up + milestones. Shared content
+// from the unit registry; status/portraits from the kid + shared visuals.
+function haBuildMonarchy(kid){
+  const u=(typeof unitStudies!=="undefined"&&unitStudies)?unitStudies.british_monarchy:null;
+  if(!u||!(u.enrolled&&u.enrolled[kid])) return null;
+  const deck=(u.decks||[]).find(d=>d.key==="British Monarchs"); if(!deck) return null;
+  const msDeck=(u.decks||[]).find(d=>d.key==="Monarchy Milestones");
+  const items=Array.isArray(masteryData[kid])?masteryData[kid]:[];
+  const byName={}; items.forEach(i=>{ if(i&&i.subject==="British Monarchs") byName[i.prompt]=i; });
+  const vis=Object.assign({}, u.visuals||{}, masteryData[kid+"_visuals"]||{}); // shared + kid overrides
+  const mTier=(typeof MAST_MASTERY_TIER_DEFAULT!=="undefined")?MAST_MASTERY_TIER_DEFAULT:"monthly";
+  const portrait=name=>{ const v=vis["British Monarchs_"+name]; if(v){ if(typeof v==="string") return {emoji:v}; if(v.imageUrl) return {img:v.imageUrl}; } return null; };
+  const cards=(deck.cards||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0));
+  const learning=[], learned=[], next=[];
+  cards.forEach(c=>{
+    const it=byName[c.name];
+    const base={name:c.name,house:c.house,reign:c.reign,info:c.info||c.def||"",portrait:portrait(c.name)};
+    if(it&&it.status==="introduction") learning.push(base);
+    else if(it&&it.status!=="parked") learned.push(base);           // on the ladder = learned/working
+    else if(next.length<6) next.push({name:c.name,house:c.house,portrait:portrait(c.name)}); // available/parked
+  });
+  const milestones=(msDeck?(msDeck.cards||[]):[]).slice().sort((a,b)=>(a.order||0)-(b.order||0)).map(c=>({year:c.year,name:c.name,sig:c.sig}));
+  return { title:u.title, learning, learned, next:next.slice(0,6), milestones };
+}
 function haNbContext(kid){
   let dates={}; try{ dates=Object.assign({},DAY_DT); }catch(e){}
   let tasks=[]; try{ tasks=(weekData.tasks||[]).filter(t=>!String(t.id||"").endsWith("_c")); }catch(e){}
@@ -6793,7 +6818,8 @@ function haNbContext(kid){
       if(dollUrl||outfitUrl) dolls={ doll:dollUrl, outfit:outfitUrl };
     }
   } }catch(e){}
-  return { weekData:{dates:dates, tasks:tasks}, weekNum:WK, weekDates:weekDates, masteryItems:(mastery[kid]||[]), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage };
+  let monarchy=null; try{ monarchy=haBuildMonarchy(kid); }catch(e){}
+  return { weekData:{dates:dates, tasks:tasks}, weekNum:WK, weekDates:weekDates, masteryItems:(mastery[kid]||[]), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, monarchy:monarchy };
 }
 function haNbOpen(kid,which){
   const lib=window.HoweNotebooks; if(!lib){ alert("Notebook builder not loaded yet."); return; }
