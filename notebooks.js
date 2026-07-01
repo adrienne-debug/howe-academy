@@ -1998,6 +1998,7 @@
     var wline = function (n) { var s = ""; for (var i = 0; i < n; i++) s += '<div style="border-bottom:1.5px solid #cbd5d1;height:22px"></div>'; return s; };
     var p3 = '<div class="page-label">Unit Study — ' + esc(title) + ' (3/' + tot + ')</div>\n<div class="page">\n' + hdr((act.emoji || "🎨") + " " + esc(act.title), "Week " + weekNum) +
       '<div style="padding:16px 40px;flex:1;display:flex;flex-direction:column;gap:10px;overflow:hidden">';
+    if (act.points) p3 += '<div style="align-self:flex-start;border:1.5px solid ' + GOLD + ';background:#fdf8ee;border-radius:9px;padding:4px 12px;font-size:11px;font-weight:800;color:#9a7d2e">⭐ Worth ' + act.points + ' points — show Mom your finished work, then tap “I finished it!” in the app</div>';
     if (act.desc) p3 += '<div style="font-size:11.5px;line-height:1.5;color:' + INK + '">' + esc(act.desc) + '</div>';
     (act.steps || []).forEach(function (st) {
       p3 += '<div style="display:flex;gap:8px;align-items:flex-start;font-size:11px;line-height:1.45;color:' + INK + '"><span style="width:13px;height:13px;border:2px solid ' + GM + ';border-radius:4px;flex-shrink:0;margin-top:1px"></span><span>' + esc(st) + '</span></div>';

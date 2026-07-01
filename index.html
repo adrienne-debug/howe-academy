@@ -3366,11 +3366,35 @@ function renderClaimQueue(){
     if(kid!=="all"&&kid!=="mom"&&t.who!==kid) return;
     items.push({id,t});
   });
-  if(!items.length) return "";
+  // U7: unit-activity claims ride the same queue — Mom sees the project, then approves and the
+  // activity's points post to the kid's daily total.
+  const actClaims=[];
+  if(typeof unitStudies!=="undefined"&&unitStudies){
+    for(const uid in unitStudies){ const u=unitStudies[uid]; if(!u||!u.activityClaims) continue;
+      for(const k in u.activityClaims){
+        if(kid!=="all"&&kid!=="mom"&&k!==kid) continue;
+        for(const ak in (u.activityClaims[k]||{})){
+          if(((u.activityLog||{})[k]||{})[ak]) continue;
+          const act=_unitActs(u).find(a=>a&&a.key===ak); if(!act) continue;
+          actClaims.push({unitId:uid,u,kid:k,act,ts:(u.activityClaims[k][ak]||{}).ts});
+        }
+      }
+    }
+  }
+  if(!items.length&&!actClaims.length) return "";
   const byKid={};
   items.forEach(o=>{ (byKid[o.t.who]=byKid[o.t.who]||[]).push(o); });
   let h='<div style="margin:10px 12px 0;border-radius:12px;border:1px solid #f59e0b;background:#fffbeb;padding:12px 14px">';
-  h+='<div style="font-size:13px;font-weight:800;color:#b45309;margin-bottom:8px">⏳ '+items.length+' waiting for your check</div>';
+  h+='<div style="font-size:13px;font-weight:800;color:#b45309;margin-bottom:8px">⏳ '+(items.length+actClaims.length)+' waiting for your check</div>';
+  actClaims.forEach(c=>{
+    const when=c.ts?new Date(c.ts).toLocaleString("en-US",{hour:"numeric",minute:"2-digit",month:"short",day:"numeric"}):"";
+    const pts=unitActPoints(c.act);
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0">';
+    h+='<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px"><b style="color:'+(PACE_KCOL[c.kid]||"#111827")+'">'+cap(c.kid)+'</b> · '+(c.u.emoji||"📘")+' '+esc(c.act.title)+(pts?' <b style="color:#b45309">⭐'+pts+'</b>':'')+' <span style="color:var(--muted);font-size:10px">'+when+'</span></span>';
+    h+='<button onclick="unitActivityApprove(\''+c.unitId+'\',\''+c.kid+'\',\''+esc(c.act.key)+'\')" title="I saw the project — post the points" style="flex-shrink:0;padding:4px 12px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Approve</button>';
+    h+='<button onclick="unitActivityReject(\''+c.unitId+'\',\''+c.kid+'\',\''+esc(c.act.key)+'\')" style="flex-shrink:0;padding:4px 10px;border-radius:8px;border:1px solid #ef4444;background:#fff;color:#ef4444;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✗</button>';
+    h+='</div>';
+  });
   Object.keys(byKid).forEach(k=>{
     h+='<div style="margin-bottom:6px">';
     h+='<div style="font-size:11px;font-weight:700;color:'+(PACE_KCOL[k]||"#111827")+';margin-bottom:2px">'+cap(k)+'</div>';
@@ -8560,7 +8584,7 @@ function haBuildUnitInsight(kid,u){
   const nbKey=(u.nbActivity||{})[kid];
   if(nbKey){ const a=_unitActs(u).find(x=>x.key===nbKey);
     if(a){ activity={key:a.key,title:a.title,emoji:a.emoji||"🎨",desc:a.desc||"",kind:a.kind||"sheet",lines:a.lines||0,
-      steps:Array.isArray(a.steps)?a.steps:Object.values(a.steps||{}),entries:[]};
+      points:unitActPoints(a),steps:Array.isArray(a.steps)?a.steps:Object.values(a.steps||{}),entries:[]};
       if(a.kind==="timeline"){ const td=(u.decks||[]).find(d=>d&&d.key===(a.deckKey||cd.key));
         activity.entries=((td&&td.cards)||[]).slice().sort((x,y)=>(x.order||0)-(y.order||0)).map(c=>({year:c.year||c.reign||"",name:c.name})); } } }
   return { unitId:u.id,title:u.title,emoji:u.emoji||"📘",learning,learned,next:next.slice(0,6),extras,extrasTitle,activity };
@@ -8585,6 +8609,25 @@ function _renderUnitCard(kid,u){
   h+='<button onclick="printUnitPage(\''+esc(kid)+'\',\''+esc(u.id)+'\')" style="margin-left:auto;padding:5px 11px;border-radius:8px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🖨 Print</button></div>';
   h+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">'+total+' cards · <b style="color:#b45309">'+nLearn+' learning</b> · <b style="color:#15803d">'+nMast+' mastered</b></div>';
   try{ const _nd=unitPlanNudges(u,kid); if(_nd.length){ h+='<div style="margin:4px 0 8px">'+_unitNudgeChipsFor(kid,_nd,true)+'</div>'; } }catch(e){}  // U6 nudges (this unit only)
+  // U7: the assigned project, what it's worth, and the kid's one-tap claim. Also surfaces a
+  // claimed-but-unassigned activity so the ⏳ waiting state stays visible until Mom approves.
+  try{
+    const _claims=(u.activityClaims||{})[kid]||{};
+    const _log=(u.activityLog||{})[kid]||{};
+    let _bAct=null,_bClaimed=false;
+    const _nbKey=(u.nbActivity||{})[kid];
+    if(_nbKey&&!_log[_nbKey]){ _bAct=_unitActs(u).find(a=>a&&a.key===_nbKey); _bClaimed=!!_claims[_nbKey]; }
+    if(!_bAct){ const _ck=Object.keys(_claims).find(k2=>!_log[k2]); if(_ck){ _bAct=_unitActs(u).find(a=>a&&a.key===_ck); _bClaimed=true; } }
+    if(_bAct){
+      const _pts=unitActPoints(_bAct);
+      const _args='\''+esc(u.id)+'\',\''+esc(kid)+'\',\''+esc(_bAct.key)+'\'';
+      h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;border:1.5px dashed #c9a84c;background:#fdf8ee;border-radius:10px;padding:8px 11px;margin:4px 0 10px">';
+      h+='<span style="flex:1;min-width:150px;font-size:11.5px;font-weight:700;color:#1f2937">🎨 This week’s project: '+(_bAct.emoji||"🎨")+' '+esc(_bAct.title)+(_pts?' <span style="font-weight:800;color:#b45309">· ⭐ worth '+_pts+' pts</span>':'')+'</span>';
+      if(_bClaimed) h+='<button onclick="unitActivityClaim('+_args+')" style="padding:6px 12px;border-radius:9px;border:1.5px solid #fcd34d;background:#fffbeb;color:#b45309;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">⏳ Waiting for Mom</button>';
+      else h+='<button onclick="unitActivityClaim('+_args+')" style="padding:6px 12px;border-radius:9px;border:none;background:#b45309;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🙋 I finished it!</button>';
+      h+='</div>';
+    }
+  }catch(e){}
   const _sprintUnlocked={}; try{ unitSprintRounds(u,kid).forEach(r=>{ if(r.group&&r.deckKey===cd.key&&r.unlocked) _sprintUnlocked[r.group]=true; }); }catch(e){}
   groups.forEach(gv=>{ const list=byG[gv]; const hm=list.filter(c=>isMast(byName[c.name])).length;
     h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#9a3412;margin:14px 0 7px;border-bottom:1px solid var(--border);padding-bottom:3px">'+esc(gv)+' <span style="color:var(--muted);font-weight:600">('+list.length+(hm?' · '+hm+' ✓':'')+')</span>'+(_sprintUnlocked[gv]?' <span style="font-size:9px;font-weight:800;color:#15803d;background:#f0fdf4;border-radius:7px;padding:1px 7px;letter-spacing:0">🏃 sprint ready!</span>':'')+'</div>';
@@ -8741,12 +8784,18 @@ function renderUnitDetail(u){
   h+='<button onclick="closeUnit()" style="border:none;background:none;color:var(--muted);font-size:13px;font-weight:700;cursor:pointer;padding:0 0 10px">← All units</button>';
   h+='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:26px">'+(u.emoji||"📘")+'</span><span style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:700">'+esc(u.title)+'</span></div>';
   h+='<div style="font-size:12px;color:var(--muted);line-height:1.5;margin:6px 0 14px">'+esc(u.desc||"")+'</div>';
-  h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">';
-  h+='<div style="font-size:12px;font-weight:800;color:#1f2937;margin-bottom:8px">Add to a kid’s drills &amp; notebook</div>';
-  h+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
-  roster.forEach(k=>{ const on=!!((u.enrolled||{})[k]);
-    h+='<button onclick="unitEnroll(\''+u.id+'\',\''+k+'\')" '+(on?'disabled':'')+' style="padding:7px 14px;border-radius:10px;border:1.5px solid '+(on?'#86efac':'var(--border)')+';background:'+(on?'#f0fdf4':'#fff')+';color:'+(on?'#15803d':'#1f2937')+';font-size:12px;font-weight:700;cursor:'+(on?'default':'pointer')+';font-family:\'DM Sans\',sans-serif">'+(on?'✓ ':'+ ')+cap(k)+'</button>'; });
-  h+='</div><div id="unit-enroll-msg" style="font-size:11px;color:#15803d;font-weight:700;margin-top:8px"></div></div>';
+  // U7: everything that EDITS (enroll, card editor, flip styles, queue/done, points) is Mom-only —
+  // mom mode or the admin PIN (momHere), same gate as the rest of the app. Kids browse, read
+  // bios, sprint, and CLAIM finished activities.
+  const isMom=momHere();
+  if(isMom){
+    h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">';
+    h+='<div style="font-size:12px;font-weight:800;color:#1f2937;margin-bottom:8px">Add to a kid’s drills &amp; notebook</div>';
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
+    roster.forEach(k=>{ const on=!!((u.enrolled||{})[k]);
+      h+='<button onclick="unitEnroll(\''+u.id+'\',\''+k+'\')" '+(on?'disabled':'')+' style="padding:7px 14px;border-radius:10px;border:1.5px solid '+(on?'#86efac':'var(--border)')+';background:'+(on?'#f0fdf4':'#fff')+';color:'+(on?'#15803d':'#1f2937')+';font-size:12px;font-weight:700;cursor:'+(on?'default':'pointer')+';font-family:\'DM Sans\',sans-serif">'+(on?'✓ ':'+ ')+cap(k)+'</button>'; });
+    h+='</div><div id="unit-enroll-msg" style="font-size:11px;color:#15803d;font-weight:700;margin-top:8px"></div></div>';
+  }
   const enrolledKids=roster.filter(k=>(u.enrolled||{})[k]);
   // U6 — live nudges for this unit (fired plan triggers + never-run unlocked sprints).
   if(enrolledKids.length){
@@ -8782,22 +8831,35 @@ function renderUnitDetail(u){
     h+='<div style="font-size:12px;font-weight:800;color:#1f2937;margin-bottom:2px">🎨 Activities</div>';
     h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin-bottom:6px">Hands-on “apply it” projects. Print one now, or queue it into the next weekly notebook.</div>';
     acts.forEach(a=>{
+      const pts=unitActPoints(a);
       h+='<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-top:8px">';
-      h+='<div style="font-size:12.5px;font-weight:800;color:#1f2937">'+(a.emoji||"🎨")+' '+esc(a.title)+'</div>';
+      h+='<div style="display:flex;align-items:baseline;gap:7px;flex-wrap:wrap"><span style="font-size:12.5px;font-weight:800;color:#1f2937">'+(a.emoji||"🎨")+' '+esc(a.title)+'</span>';
+      h+='<span style="font-size:10.5px;font-weight:800;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:1px 8px">⭐ '+(pts||0)+' pts</span>';
+      if(isMom) h+='<button onclick="unitSetActivityPoints(\''+esc(u.id)+'\',\''+esc(a.key)+'\')" title="Set point value" style="padding:1px 7px;border-radius:8px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✎</button>';
+      h+='</div>';
       if(a.desc) h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.4;margin:2px 0 6px">'+esc(a.desc)+'</div>';
       enrolledKids.forEach(k=>{
         const done=((u.activityLog||{})[k]||{})[a.key];
+        const claim=((u.activityClaims||{})[k]||{})[a.key];
         const queued=(u.nbActivity||{})[k]===a.key;
         h+='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:3px 0">';
         h+='<span style="font-size:10.5px;font-weight:700;color:#374151;min-width:52px">'+cap(k)+'</span>';
-        if(done) h+='<span style="font-size:10px;font-weight:700;color:#15803d;background:#f0fdf4;border-radius:8px;padding:2px 8px">✓ done '+new Date(done.ts).toLocaleDateString("en-US",{month:"short",day:"numeric"})+'</span>';
+        if(done) h+='<span style="font-size:10px;font-weight:700;color:#15803d;background:#f0fdf4;border-radius:8px;padding:2px 8px">✓ done '+new Date(done.ts).toLocaleDateString("en-US",{month:"short",day:"numeric"})+(done.points?' · +'+done.points+' pts':'')+'</span>';
+        else if(claim) h+='<span style="font-size:10px;font-weight:700;color:#b45309;background:#fffbeb;border-radius:8px;padding:2px 8px">⏳ claimed — waiting for Mom</span>';
         else if(queued) h+='<span style="font-size:10px;font-weight:700;color:#b45309;background:#fffbeb;border-radius:8px;padding:2px 8px">📓 in next notebook</span>';
         const btn=(lbl,fn,on)=>'<button onclick="'+fn+'" style="padding:4px 9px;border-radius:8px;border:1.5px solid '+(on?'#2d6a4f':'var(--border)')+';background:'+(on?'#f2faf5':'#fff')+';color:'+(on?'#2d6a4f':'var(--muted)')+';font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
         const args='\''+esc(u.id)+'\',\''+esc(k)+'\',\''+esc(a.key)+'\'';
-        h+='<span style="margin-left:auto;display:flex;gap:5px">';
+        h+='<span style="margin-left:auto;display:flex;gap:5px;flex-wrap:wrap">';
         h+=btn('🖨 Print','unitPrintActivity(\''+esc(u.id)+'\',\''+esc(a.key)+'\',\''+esc(k)+'\')',false);
-        h+=btn(queued?'📓 Unqueue':'📓 Notebook','unitToggleNbActivity('+args+')',queued);
-        h+=btn(done?'↩︎ Not done':'✓ Done','unitActivityDone('+args+')',!!done);
+        if(!done){ // kid-tappable: claim it when the project's finished (tap again cancels)
+          if(claim) h+='<button onclick="unitActivityClaim('+args+')" style="padding:4px 9px;border-radius:8px;border:1.5px solid #fcd34d;background:#fffbeb;color:#b45309;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">⏳ Claimed</button>';
+          else h+='<button onclick="unitActivityClaim('+args+')" style="padding:4px 9px;border-radius:8px;border:none;background:#b45309;color:#fff;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🙋 I finished it!</button>';
+        }
+        if(isMom){
+          h+=btn(queued?'📓 Unqueue':'📓 Notebook','unitToggleNbActivity('+args+')',queued);
+          if(claim&&!done) h+='<button onclick="unitActivityApprove('+args+')" style="padding:4px 9px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Approve'+(pts?' +'+pts:'')+'</button>';
+          h+=btn(done?'↩︎ Not done':'✓ Done','unitActivityDone('+args+')',!!done);
+        }
         h+='</span></div>';
       });
       h+='</div>';
@@ -8833,8 +8895,8 @@ function renderUnitDetail(u){
     h+='<div style="font-size:13px;font-weight:800;color:#1f2937">'+esc(d.key)+' <span style="font-size:11px;color:var(--muted);font-weight:600">· '+((d.cards||[]).length)+' cards · '+(d.mode||"flip")+' · '+(d.introCap||5)+' at a time</span></div>';
     const _ff=d.flipFace||"desc";
     const _ffBtn=(mode,label)=>'<button onclick="unitSetFlipFace(\''+u.id+'\',\''+esc(d.key)+'\',\''+mode+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid '+(_ff===mode?"#2d6a4f":"var(--border)")+';background:'+(_ff===mode?"#f2faf5":"#fff")+';color:'+(_ff===mode?"#2d6a4f":"var(--muted)")+';font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+label+'</button>';
-    h+='<div style="display:flex;gap:6px;align-items:center;margin:7px 0 4px"><span style="font-size:10px;color:var(--muted);font-weight:700">Flip drill:</span>'+_ffBtn("desc","📖 Name → facts")+_ffBtn("name","🖼️ Photo → name")+'</div>';
-    h+='<div style="font-size:10.5px;color:var(--muted);margin:3px 0 9px">Tap a card to add a photo, edit its facts or bio — changes apply to every kid using this unit.</div>';
+    if(isMom) h+='<div style="display:flex;gap:6px;align-items:center;margin:7px 0 4px"><span style="font-size:10px;color:var(--muted);font-weight:700">Flip drill:</span>'+_ffBtn("desc","📖 Name → facts")+_ffBtn("name","🖼️ Photo → name")+'</div>';
+    h+='<div style="font-size:10.5px;color:var(--muted);margin:3px 0 9px">'+(isMom?'Tap a card to add a photo, edit its facts or bio — changes apply to every kid using this unit.':'Tap a card to read its story.')+'</div>';
     h+='<div style="display:flex;flex-wrap:wrap;gap:8px">';
     (d.cards||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0)).forEach(c=>{
       const vv=(u.visuals||{})[d.key+"_"+c.name];
@@ -8842,7 +8904,8 @@ function renderUnitDetail(u){
       if(vv){ if(typeof vv==="string") thumb='<div style="width:46px;height:46px;border-radius:7px;border:1px solid var(--border);background:#faf7f2;display:flex;align-items:center;justify-content:center;font-size:24px">'+vv+'</div>'; else if(vv.imageUrl) thumb='<img src="'+esc(vv.imageUrl)+'" style="width:46px;height:46px;object-fit:cover;border-radius:7px;border:1px solid var(--border)">'; }
       const _enr=Object.keys(u.enrolled||{}).filter(k=>(u.enrolled||{})[k]);
       let _dots=''; _enr.forEach(k=>{ const st=unitCardStatus(k,d.key,c.name); _dots+='<span title="'+esc(cap(k))+': '+st.lbl+'" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+st.c+';margin:0 1px"></span>'; });
-      h+='<div onclick="unitEditCard(\''+u.id+'\',\''+esc(d.key)+'\','+(c.order||0)+')" style="width:72px;text-align:center;cursor:pointer">'+thumb+'<div style="font-size:8.5px;font-weight:600;color:#374151;margin-top:2px;line-height:1.12;max-height:22px;overflow:hidden">'+esc(c.name)+'</div>'+(_dots?'<div style="margin-top:2px">'+_dots+'</div>':'')+'</div>';
+      const _tap=isMom?('unitEditCard(\''+u.id+'\',\''+esc(d.key)+'\','+(c.order||0)+')'):('showUnitCardBio(\''+u.id+'\',\''+esc(d.key)+'\','+(c.order||0)+')');
+      h+='<div onclick="'+_tap+'" style="width:72px;text-align:center;cursor:pointer">'+thumb+'<div style="font-size:8.5px;font-weight:600;color:#374151;margin-top:2px;line-height:1.12;max-height:22px;overflow:hidden">'+esc(c.name)+'</div>'+(_dots?'<div style="margin-top:2px">'+_dots+'</div>':'')+'</div>';
     });
     h+='</div></div>';
   });
@@ -8851,6 +8914,7 @@ function renderUnitDetail(u){
 }
 // Enroll: seed the unit's decks into a kid's mastery bank + start the intro cap; targeted appends (no clobber)
 function unitEnroll(unitId,kid){
+  if(!momHere()) return; // U7: enrolling seeds drill decks — Mom-only
   const u=unitStudies[unitId]; if(!u||(u.enrolled||{})[kid]) return;
   let items=masteryData[kid]; if(!Array.isArray(items)) items=masteryData[kid]=(items?Object.values(items):[]);
   let bank=masteryData[kid+"_custom_items"]; if(!Array.isArray(bank)) bank=masteryData[kid+"_custom_items"]=[];
@@ -8888,6 +8952,7 @@ function unitEnroll(unitId,kid){
 }
 // Per-deck flip style (shared): "desc" (name+pic → description) or "name" (pic → name).
 function unitSetFlipFace(unitId,deckKey,mode){
+  if(!momHere()) return;
   const u=unitStudies[unitId]; if(!u) return;
   const di=(u.decks||[]).findIndex(d=>d.key===deckKey); if(di<0) return;
   u.decks[di].flipFace=mode; if(db) db.ref("unitStudies/"+unitId+"/decks/"+di+"/flipFace").set(mode);
@@ -9001,6 +9066,7 @@ function unitPlanNudges(u,kid){
 }
 function unitAllNudges(kid){ let out=[]; haKidUnits(kid).forEach(u=>{ out=out.concat(unitPlanNudges(u,kid)); }); return out; }
 function unitDismissNudge(unitId,kid,key){
+  if(!momHere()) return; // skipping a planned step is Mom's call
   const u=unitStudies[unitId]; if(!u) return;
   if(!u.planDismiss) u.planDismiss={}; if(!u.planDismiss[kid]) u.planDismiss[kid]={};
   u.planDismiss[kid][key]=true;
@@ -9013,6 +9079,7 @@ function unitNudgeChips(kid,full){ return _unitNudgeChipsFor(kid,unitAllNudges(k
 function _unitNudgeChipsFor(kid,nudges,full){
   const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
   if(!nudges.length) return "";
+  const _mom=momHere(); // U7: Queue/dismiss edit state → Mom-only; ▶ Sprint stays kid-open
   let h='<div style="display:flex;flex-direction:column;gap:5px">';
   nudges.forEach(n=>{
     const uid=esc(n.unitId), k=esc(n.key).replace(/'/g,"\\'");
@@ -9020,15 +9087,15 @@ function _unitNudgeChipsFor(kid,nudges,full){
       h+='<div style="display:flex;align-items:center;gap:7px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:6px 10px;flex-wrap:wrap">';
       h+='<span style="font-size:11px;font-weight:700;color:#15803d;flex:1;min-width:140px;cursor:pointer" onclick="unitGoSprint(\''+esc(kid)+'\',\''+uid+'\',\''+esc(n.round.key).replace(/'/g,"\\'")+'\')">🏃 '+esc(n.round.label)+' is ready to sprint!</span>';
       if(full){ h+='<button onclick="unitGoSprint(\''+esc(kid)+'\',\''+uid+'\',\''+esc(n.round.key).replace(/'/g,"\\'")+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#15803d;color:#fff;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">▶ Sprint</button>';
-        h+='<button onclick="unitDismissNudge(\''+uid+'\',\''+esc(kid)+'\',\''+k+'\')" title="Dismiss" style="padding:4px 7px;border-radius:8px;border:none;background:none;color:#9ca3af;font-size:11px;font-weight:700;cursor:pointer">✕</button>'; }
+        if(_mom) h+='<button onclick="unitDismissNudge(\''+uid+'\',\''+esc(kid)+'\',\''+k+'\')" title="Dismiss" style="padding:4px 7px;border-radius:8px;border:none;background:none;color:#9ca3af;font-size:11px;font-weight:700;cursor:pointer">✕</button>'; }
       h+='</div>';
     } else {
       h+='<div style="display:flex;align-items:center;gap:7px;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:10px;padding:6px 10px;flex-wrap:wrap">';
       h+='<span style="font-size:11px;font-weight:700;color:#92400e;flex:1;min-width:140px;cursor:pointer" onclick="showTab(\'units\');openUnit(\''+uid+'\')">📌 '+(n.act.emoji||"🎨")+' '+esc(n.act.title)+(n.note?' <span style="font-weight:600;color:#b45309">— '+esc(n.note)+'</span>':'')+'</span>';
       if(full){ const args='\''+uid+'\',\''+esc(kid)+'\',\''+esc(n.act.key)+'\'';
-        h+='<button onclick="unitToggleNbActivity('+args+')" style="padding:4px 10px;border-radius:8px;border:none;background:#b45309;color:#fff;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">📓 Queue</button>';
+        if(_mom) h+='<button onclick="unitToggleNbActivity('+args+')" style="padding:4px 10px;border-radius:8px;border:none;background:#b45309;color:#fff;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">📓 Queue</button>';
         h+='<button onclick="unitPrintActivity(\''+uid+'\',\''+esc(n.act.key)+'\',\''+esc(kid)+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid #fcd34d;background:#fff;color:#92400e;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🖨</button>';
-        h+='<button onclick="unitDismissNudge(\''+uid+'\',\''+esc(kid)+'\',\''+k+'\')" title="Dismiss" style="padding:4px 7px;border-radius:8px;border:none;background:none;color:#9ca3af;font-size:11px;font-weight:700;cursor:pointer">✕</button>'; }
+        if(_mom) h+='<button onclick="unitDismissNudge(\''+uid+'\',\''+esc(kid)+'\',\''+k+'\')" title="Dismiss" style="padding:4px 7px;border-radius:8px;border:none;background:none;color:#9ca3af;font-size:11px;font-weight:700;cursor:pointer">✕</button>'; }
       h+='</div>';
     }
   });
@@ -9049,6 +9116,7 @@ function unitScheduleNudges(kidFilter){
 function _unitActs(u){ const a=u&&u.activities; if(!a) return []; return Array.isArray(a)?a.filter(Boolean):Object.values(a).filter(Boolean); }
 // Toggle "include in next notebook" for one kid (one activity at a time).
 function unitToggleNbActivity(unitId,kid,actKey){
+  if(!momHere()) return; // what's in the notebook is Mom's call
   const u=unitStudies[unitId]; if(!u) return;
   if(!u.nbActivity) u.nbActivity={};
   const cur=u.nbActivity[kid];
@@ -9056,16 +9124,92 @@ function unitToggleNbActivity(unitId,kid,actKey){
   else { u.nbActivity[kid]=actKey; if(db) db.ref("unitStudies/"+unitId+"/nbActivity/"+kid).set(actKey); }
   renderAll(); // U6: queue buttons also live on the Schedule/Notebook nudge chips
 }
-// Toggle done. Marking done also clears a matching notebook assignment (it shipped).
+// ── U7: activity points + kid-claim → Mom sign-off. Each activity carries a fixed `points`
+// value (registry, PIN-edited). A kid taps CLAIM when the project is finished →
+// activityClaims/<kid>/<key>={ts}; it shows ⏳ until Mom (mom mode / PIN) actually sees the
+// project and approves — only then does the activity log as done and the points post to the
+// kid's daily slot-points total (same ledger the spins feed). Claim time decides which day
+// gets the points, matching the Mom-Check fairness rule.
+function _unitDayFromTs(ts){
+  const d=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][new Date(ts||Date.now()).getDay()];
+  return d==="sunday"?day:d; // no sunday bucket in slot_points — post to the viewed day
+}
+function unitActPoints(act){ const p=act&&Number(act.points); return (isFinite(p)&&p>0)?Math.round(p):0; }
+// Kid taps "I finished it" — no PIN needed; tapping again cancels the claim.
+function unitActivityClaim(unitId,kid,actKey){
+  const u=unitStudies[unitId]; if(!u) return;
+  if(((u.activityLog||{})[kid]||{})[actKey]) return; // already signed off
+  if(!u.activityClaims) u.activityClaims={}; if(!u.activityClaims[kid]) u.activityClaims[kid]={};
+  if(u.activityClaims[kid][actKey]){
+    if(!confirm("Cancel this claim?")) return;
+    delete u.activityClaims[kid][actKey];
+    if(db) db.ref("unitStudies/"+unitId+"/activityClaims/"+kid+"/"+actKey).remove();
+  } else {
+    u.activityClaims[kid][actKey]={ts:Date.now()};
+    if(db) db.ref("unitStudies/"+unitId+"/activityClaims/"+kid+"/"+actKey).set({ts:Date.now()});
+  }
+  renderAll();
+}
+// Mom approves a claim: log done (remembering the points awarded), post points to the claim
+// day's total, clear the claim + any notebook assignment.
+function unitActivityApprove(unitId,kid,actKey){
+  if(!momHere()) return;
+  const u=unitStudies[unitId]; if(!u) return;
+  const act=_unitActs(u).find(a=>a&&a.key===actKey); if(!act) return;
+  const claim=((u.activityClaims||{})[kid]||{})[actKey];
+  const pts=unitActPoints(act);
+  const entry={ts:Date.now(),points:pts}; if(claim&&claim.ts) entry.claimTs=claim.ts;
+  if(!u.activityLog) u.activityLog={}; if(!u.activityLog[kid]) u.activityLog[kid]={};
+  u.activityLog[kid][actKey]=entry;
+  if(db) db.ref("unitStudies/"+unitId+"/activityLog/"+kid+"/"+actKey).set(entry);
+  if(claim){ delete u.activityClaims[kid][actKey]; if(db) db.ref("unitStudies/"+unitId+"/activityClaims/"+kid+"/"+actKey).remove(); }
+  if((u.nbActivity||{})[kid]===actKey){ delete u.nbActivity[kid]; if(db) db.ref("unitStudies/"+unitId+"/nbActivity/"+kid).remove(); }
+  if(pts) addKidPoints(kid,pts,_unitDayFromTs(claim&&claim.ts));
+  renderAll();
+}
+function unitActivityReject(unitId,kid,actKey){
+  if(!momHere()) return;
+  const u=unitStudies[unitId]; if(!u||!((u.activityClaims||{})[kid]||{})[actKey]) return;
+  delete u.activityClaims[kid][actKey];
+  if(db) db.ref("unitStudies/"+unitId+"/activityClaims/"+kid+"/"+actKey).remove();
+  renderAll();
+}
+// Mom's direct toggle (PIN): done without a claim still awards the points; un-doing takes back
+// exactly what was posted (the logged `points`, to the same-day bucket it went into).
 function unitActivityDone(unitId,kid,actKey){
+  if(!momHere()) return;
   const u=unitStudies[unitId]; if(!u) return;
   if(!u.activityLog) u.activityLog={}; if(!u.activityLog[kid]) u.activityLog[kid]={};
-  if(u.activityLog[kid][actKey]){ delete u.activityLog[kid][actKey]; if(db) db.ref("unitStudies/"+unitId+"/activityLog/"+kid+"/"+actKey).remove(); }
-  else {
-    u.activityLog[kid][actKey]={ts:Date.now()};
-    if(db) db.ref("unitStudies/"+unitId+"/activityLog/"+kid+"/"+actKey).set({ts:Date.now()});
+  const prev=u.activityLog[kid][actKey];
+  if(prev){
+    delete u.activityLog[kid][actKey]; if(db) db.ref("unitStudies/"+unitId+"/activityLog/"+kid+"/"+actKey).remove();
+    const back=Number(prev.points)||0;
+    if(back) addKidPoints(kid,-back,_unitDayFromTs(prev.claimTs||prev.ts));
+  } else {
+    const act=_unitActs(u).find(a=>a&&a.key===actKey);
+    const claim=((u.activityClaims||{})[kid]||{})[actKey];
+    const pts=unitActPoints(act);
+    const entry={ts:Date.now(),points:pts}; if(claim&&claim.ts) entry.claimTs=claim.ts;
+    u.activityLog[kid][actKey]=entry;
+    if(db) db.ref("unitStudies/"+unitId+"/activityLog/"+kid+"/"+actKey).set(entry);
+    if(claim){ delete u.activityClaims[kid][actKey]; if(db) db.ref("unitStudies/"+unitId+"/activityClaims/"+kid+"/"+actKey).remove(); }
     if((u.nbActivity||{})[kid]===actKey){ delete u.nbActivity[kid]; if(db) db.ref("unitStudies/"+unitId+"/nbActivity/"+kid).remove(); }
+    if(pts) addKidPoints(kid,pts,_unitDayFromTs(claim&&claim.ts));
   }
+  renderAll();
+}
+// PIN-gated: set the fixed point value on the shared registry activity.
+function unitSetActivityPoints(unitId,actKey){
+  if(!momHere()) return;
+  const u=unitStudies[unitId]; if(!u) return;
+  const acts=Array.isArray(u.activities)?u.activities:Object.values(u.activities||{});
+  const i=acts.findIndex(a=>a&&a.key===actKey); if(i<0) return;
+  const cur=unitActPoints(acts[i]);
+  const v=prompt("Points for completing “"+(acts[i].title||actKey)+"”:",cur||"");
+  if(v==null) return;
+  const n=Math.max(0,Math.round(Number(v)||0));
+  acts[i].points=n;
+  if(db) db.ref("unitStudies/"+unitId+"/activities/"+i+"/points").set(n);
   renderAll();
 }
 // Cards this kid has finished learning (past introduction) in one deck — the pick-from pool
@@ -9094,6 +9238,8 @@ function _unitActivityHtml(u,act,kid){
   h+='<div style="font-size:13px;font-weight:700;color:'+GOLD+'">'+esc(kidName)+' · Date: ______</div></div>';
   h+='<div style="height:5px;background:repeating-linear-gradient(90deg,'+GM+' 0,'+GM+' 18px,'+GOLD+' 18px,'+GOLD+' 22px,'+GM+' 22px,'+GM+' 40px)"></div>';
   h+='<div style="border:1.5px solid '+GL+';border-top:none;border-radius:0 0 12px 12px;padding:18px 24px">';
+  const _pp=unitActPoints(act);
+  if(_pp) h+='<div style="display:inline-block;border:1.5px solid '+GOLD+';background:#fdf8ee;border-radius:9px;padding:4px 12px;font-size:12px;font-weight:800;color:#9a7d2e;margin-bottom:10px">⭐ Worth '+_pp+' points — show Mom your finished work, then tap “I finished it!” in the app</div>';
   if(act.desc) h+='<div style="font-size:13px;line-height:1.55;margin-bottom:12px">'+esc(act.desc)+'</div>';
   const steps=Array.isArray(act.steps)?act.steps:Object.values(act.steps||{});
   if(steps.length){ h+='<div style="margin-bottom:14px">';
@@ -9137,6 +9283,7 @@ function unitPrintActivity(unitId,actKey,kid){
 
 // ── Unit card editor: edit shared photo + bio (applies to every enrolled kid) ──
 function unitEditCard(unitId,deckKey,order){
+  if(!momHere()){ showUnitCardBio(unitId,deckKey,order); return; } // kids read, Mom edits
   const u=unitStudies[unitId]; if(!u) return;
   const deck=(u.decks||[]).find(d=>d.key===deckKey); if(!deck) return;
   const card=(deck.cards||[]).find(c=>(c.order||0)===order); if(!card) return;
