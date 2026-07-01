@@ -940,6 +940,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
   <button class="nav-tab active" onclick="showTab('schedule')" data-tab="schedule">Schedule</button>
   <button class="nav-tab" onclick="showTab('notebook')" data-tab="notebook">Notebook</button>
   <button class="nav-tab" onclick="showTab('mastery')" data-tab="mastery">Mastery</button>
+  <button class="nav-tab" onclick="showTab('units')" data-tab="units">Units</button>
   <button class="nav-tab" onclick="showTab('activities')" data-tab="activities">Activities</button>
   <button class="nav-tab" onclick="showTab('moms-plan')" data-tab="moms-plan">Mom's Plan</button>
   <button class="nav-tab" onclick="showTab('babysitter')" data-tab="babysitter" id="sitter-tab-btn">Maggie</button>
@@ -1107,6 +1108,8 @@ let mastAIKey="";
 let mastGeneratedCache={}; // {itemId_date: {problem:"...",answer:"..."}}
 let mastGenerating={}; // {itemId: true} while API call in flight
 let mastView="drill"; // "drill", "scores", "admin", etc.
+let unitStudies={};   // shared unit-study library (Firebase unitStudies/*)
+let unitOpenId=null;  // which unit's detail view is open
 let mastAdminLocal=null;
 let mastAdminDirty=false;
 let mastOverrideExtraCats=[];  // transient: categories surfaced in the consolidated per-category overrides UI but not yet given an override (not persisted)
@@ -1553,6 +1556,7 @@ function initFb() {
     db.ref("config/anthropic_key").once("value",s=>{ if(s.val()) mastAIKey=s.val(); });
     db.ref("config/slot_config").on("value",s=>{ slotConfig=s.val()||{}; });
     db.ref("config/spin_gate").on("value",s=>{ spinGate=s.val()||{}; });
+    db.ref("unitStudies").on("value",s=>{ unitStudies=s.val()||{}; if(tab==="units"){const el=document.getElementById("content");if(el)renderUnits(el);} });
     db.ref("att_overrides").on("value",s=>{
       if(s.val()) attOverrides=s.val();
       try{localStorage.setItem("ha_att_overrides",JSON.stringify(attOverrides));}catch(e){}
@@ -1829,6 +1833,7 @@ function _renderAllInner(){
   else if(tab==="pace") renderPace(c);
   else if(tab==="mastery") renderMastery(c);
   else if(tab==="notebook") renderNotebook(c);
+  else if(tab==="units") renderUnits(c);
 }
 
 // ── DAY TABS ──────────────────────────────────────────────────────
@@ -8560,6 +8565,92 @@ function printRoyalLine(kid){
     '<style>:root{--border:#e5e7eb;--muted:#6b7280}body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:16px;color:#111}</style>'+
     '</head><body>'+html+'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print()},250)}</scr'+'ipt></body></html>');
   w.document.close();
+}
+
+// ── UNIT STUDIES tab: shared library any kid can pull into their drills/notebook ──
+function renderUnits(el){
+  const con=el||document.getElementById("content"); if(!con) return;
+  const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  if(unitOpenId && unitStudies[unitOpenId]){ con.innerHTML=renderUnitDetail(unitStudies[unitOpenId]); return; }
+  const units=Object.keys(unitStudies||{}).map(k=>unitStudies[k]).filter(u=>u&&u.id);
+  let h='<div style="max-width:560px;margin:0 auto;padding:20px 18px;font-family:\'DM Sans\',sans-serif">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:var(--text)">🎓 Unit Studies</div>';
+  h+='<div style="font-size:12px;color:var(--muted);line-height:1.5;margin:4px 0 16px">Topic packs any kid can pull into their Drills, Sprints &amp; Notebook. Content is shared across kids — each kid keeps their own progress.</div>';
+  if(!units.length) h+='<div style="padding:28px;text-align:center;color:var(--muted)">No unit studies yet.</div>';
+  units.forEach(u=>{
+    const enrolled=Object.keys(u.enrolled||{}).filter(k=>(u.enrolled||{})[k]);
+    h+='<div onclick="openUnit(\''+u.id+'\')" style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:12px;cursor:pointer">';
+    h+='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:22px">'+(u.emoji||"📘")+'</span><span style="font-size:16px;font-weight:800;color:#1f2937">'+esc(u.title)+'</span></div>';
+    h+='<div style="font-size:12px;color:var(--muted);line-height:1.45;margin:5px 0 8px">'+esc(u.desc||"")+'</div>';
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;font-size:10px;color:var(--muted)">';
+    (u.decks||[]).forEach(d=>{ h+='<span style="background:#f3f4f6;border-radius:8px;padding:2px 8px;font-weight:700">'+esc(d.key)+' · '+((d.cards||[]).length)+'</span>'; });
+    h+='</div>';
+    if(enrolled.length) h+='<div style="font-size:10px;color:#15803d;font-weight:700;margin-top:8px">✓ '+enrolled.map(cap).join(", ")+'</div>';
+    h+='</div>';
+  });
+  h+='</div>';
+  con.innerHTML=h;
+}
+function openUnit(id){ unitOpenId=id; const el=document.getElementById("content"); if(el) renderUnits(el); }
+function closeUnit(){ unitOpenId=null; const el=document.getElementById("content"); if(el) renderUnits(el); }
+function renderUnitDetail(u){
+  const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  const roster=(typeof ROSTER!=="undefined")?ROSTER:["lincoln","ellis","lucy","julian"];
+  let h='<div style="max-width:560px;margin:0 auto;padding:20px 18px;font-family:\'DM Sans\',sans-serif">';
+  h+='<button onclick="closeUnit()" style="border:none;background:none;color:var(--muted);font-size:13px;font-weight:700;cursor:pointer;padding:0 0 10px">← All units</button>';
+  h+='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:26px">'+(u.emoji||"📘")+'</span><span style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:700">'+esc(u.title)+'</span></div>';
+  h+='<div style="font-size:12px;color:var(--muted);line-height:1.5;margin:6px 0 14px">'+esc(u.desc||"")+'</div>';
+  h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">';
+  h+='<div style="font-size:12px;font-weight:800;color:#1f2937;margin-bottom:8px">Add to a kid’s drills &amp; notebook</div>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
+  roster.forEach(k=>{ const on=!!((u.enrolled||{})[k]);
+    h+='<button onclick="unitEnroll(\''+u.id+'\',\''+k+'\')" '+(on?'disabled':'')+' style="padding:7px 14px;border-radius:10px;border:1.5px solid '+(on?'#86efac':'var(--border)')+';background:'+(on?'#f0fdf4':'#fff')+';color:'+(on?'#15803d':'#1f2937')+';font-size:12px;font-weight:700;cursor:'+(on?'default':'pointer')+';font-family:\'DM Sans\',sans-serif">'+(on?'✓ ':'+ ')+cap(k)+'</button>'; });
+  h+='</div><div id="unit-enroll-msg" style="font-size:11px;color:#15803d;font-weight:700;margin-top:8px"></div></div>';
+  (u.decks||[]).forEach(d=>{
+    h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px">';
+    h+='<div style="font-size:13px;font-weight:800;color:#1f2937">'+esc(d.key)+' <span style="font-size:11px;color:var(--muted);font-weight:600">· '+((d.cards||[]).length)+' cards · '+(d.mode||"flip")+' · '+(d.introCap||5)+' at a time</span></div>';
+    const prev=(d.cards||[]).slice(0,8).map(c=>esc(c.name)).join(" · ");
+    h+='<div style="font-size:11px;color:var(--muted);margin-top:5px;line-height:1.5">'+prev+((d.cards||[]).length>8?' …':'')+'</div></div>';
+  });
+  h+='</div>';
+  return h;
+}
+// Enroll: seed the unit's decks into a kid's mastery bank + start the intro cap; targeted appends (no clobber)
+function unitEnroll(unitId,kid){
+  const u=unitStudies[unitId]; if(!u||(u.enrolled||{})[kid]) return;
+  let items=masteryData[kid]; if(!Array.isArray(items)) items=masteryData[kid]=(items?Object.values(items):[]);
+  let bank=masteryData[kid+"_custom_items"]; if(!Array.isArray(bank)) bank=masteryData[kid+"_custom_items"]=[];
+  const settings=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  settings.cat_modes=settings.cat_modes||{}; settings.cat_intro_max=settings.cat_intro_max||{}; settings.definitions=settings.definitions||{};
+  const startItems=items.length, startBank=bank.length;
+  (u.decks||[]).forEach(d=>{
+    settings.cat_modes[d.key]=d.mode||"flip";
+    if(d.introCap) settings.cat_intro_max[d.key]=d.introCap;
+    const haveBank=new Set(bank.filter(c=>c&&c.cat===d.key).map(c=>c.name));
+    const haveItem=new Set(items.filter(i=>i&&i.subject===d.key).map(i=>i.prompt));
+    let started=items.filter(i=>i&&i.subject===d.key&&i.status==="introduction").length;
+    (d.cards||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0)).forEach(c=>{
+      if(c.def) settings.definitions[c.name]=c.def;
+      if(!haveBank.has(c.name)){ const be={cat:d.key,name:c.name}; ["house","reign","order","year","sig"].forEach(f=>{ if(c[f]!=null) be[f]=c[f]; }); bank.push(be); haveBank.add(c.name); }
+      if(!haveItem.has(c.name) && started<(d.introCap||5)){
+        items.push({id:kid.slice(0,3)+"_u_"+String(d.key).replace(/[^a-z0-9]/gi,"").slice(0,6).toLowerCase()+"_"+(c.order||items.length),
+          subject:d.key,type:"card",prompt:c.name,review_mode:"flash",status:"introduction",tier:"daily",cycle:1,tally_dots:0,drop_count:0,consecutive_correct:0});
+        haveItem.add(c.name); started++;
+      }
+    });
+  });
+  if(db){
+    const iu={}; for(let i=startItems;i<items.length;i++) iu[i]=items[i]; if(Object.keys(iu).length) db.ref("mastery/"+kid).update(iu);
+    const bu={}; for(let i=startBank;i<bank.length;i++) bu[i]=bank[i]; if(Object.keys(bu).length) db.ref("mastery/"+kid+"_custom_items").update(bu);
+    db.ref("mastery/"+kid+"_settings/cat_modes").update(settings.cat_modes);
+    db.ref("mastery/"+kid+"_settings/cat_intro_max").update(settings.cat_intro_max);
+    db.ref("mastery/"+kid+"_settings/definitions").update(settings.definitions);
+    db.ref("unitStudies/"+unitId+"/enrolled/"+kid).set(true);
+  }
+  if(!u.enrolled) u.enrolled={}; u.enrolled[kid]=true;
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  const m=document.getElementById("unit-enroll-msg"); if(m) m.textContent=cap(kid)+" enrolled — the deck is in their Drills & Notebook now.";
+  const el=document.getElementById("content"); if(el) renderUnits(el);
 }
 
 function renderNotebook(el){
