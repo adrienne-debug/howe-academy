@@ -14075,24 +14075,6 @@ function _renderMasteryInner(el){
     h+='</div></div>';
   }
 
-  // Parked issue-words: held out of the drill, auto-start one at a time as learning
-  // words graduate. Shown grayed-out (like "available"/not-in-rotation cards in the
-  // Mastery Database) so the parent can see what's waiting without them being drilled.
-  const _pk=_allItems.filter(mastIsParked);
-  if(_pk.length){
-    h+='<div class="mast-curr-cat-hdr" style="margin-bottom:0">';
-    h+='<span class="mast-curr-cat-title" style="color:var(--muted)">\u{23F3} Parked issue-words</span>';
-    h+='<span class="mast-curr-cat-counts">'+_pk.length+' waiting \u{00B7} start as room opens</span></div>';
-    h+='<div class="mast-curr-grid" style="margin-top:6px;margin-bottom:14px">';
-    _pk.forEach(it=>{
-      h+='<div class="mast-curr-card available" title="'+String(it.prompt||"").replace(/"/g,"&quot;")+' — parked, starts as room opens">';
-      const _v=mastItemVis(it);
-      if(_v) h+='<div class="mast-curr-card-vis">'+_v+'</div>';
-      h+='<div class="mast-curr-card-name" style="color:#9ca3af">'+(it.prompt||it.id)+'</div></div>';
-    });
-    h+='</div>';
-  }
-
   h+='<div class="mast-drill">';
   h+='<div class="mast-drill-hdr" style="border-bottom:1.5px solid '+color+'">';
   h+='<div><div class="mast-drill-title" style="color:'+color+'">'+emoji+' Today\'s Drill</div>';
@@ -14272,7 +14254,7 @@ function _renderMasteryInner(el){
 
   // Ladder visualization
   const byTier={}; MAST_TIER_ORDER.forEach(t=>byTier[t]=[]);
-  items.forEach(i=>{const t=i.tier||"daily";if(!byTier[t])byTier[t]=[];byTier[t].push(i);});
+  items.forEach(i=>{if(mastIsParked(i))return;const t=i.tier||"daily";if(!byTier[t])byTier[t]=[];byTier[t].push(i);});
   h+='<div class="mast-ladder">';
   MAST_TIER_ORDER.forEach(t=>{
     const cnt=byTier[t]?.length||0;
@@ -14286,22 +14268,33 @@ function _renderMasteryInner(el){
 
   // ── INVENTORY TABS: Learning | Ladder ──
   const learningItems=items.filter(i=>i.status==="introduction");
-  const ladderItemsAll=items.filter(i=>i.status!=="introduction");
+  const parkedItems=items.filter(mastIsParked);
+  const ladderItemsAll=items.filter(i=>i.status!=="introduction"&&!mastIsParked(i));
   h+='<div style="display:flex;gap:6px;margin:14px 0 10px">';
   h+='<button style="flex:1;padding:10px;border-radius:12px;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;border:1.5px solid '+(mastInventoryTab==="learning"?color:"var(--border)")+';background:'+(mastInventoryTab==="learning"?color+"15":"#fff")+';color:'+(mastInventoryTab==="learning"?color:"var(--muted)")+'" onclick="mastInventoryTab=\'learning\';_mastRe()">\u{2B50} Learning <span style="font-size:10px;opacity:0.7">('+learningItems.length+')</span></button>';
   h+='<button style="flex:1;padding:10px;border-radius:12px;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;border:1.5px solid '+(mastInventoryTab==="ladder"?color:"var(--border)")+';background:'+(mastInventoryTab==="ladder"?color+"15":"#fff")+';color:'+(mastInventoryTab==="ladder"?color:"var(--muted)")+'" onclick="mastInventoryTab=\'ladder\';_mastRe()">\u{1F4CA} Ladder <span style="font-size:10px;opacity:0.7">('+ladderItemsAll.length+')</span></button>';
   h+='</div>';
 
   if(mastInventoryTab==="learning"){
-    if(!learningItems.length){
+    if(!learningItems.length&&!parkedItems.length){
       h+='<div class="mast-none">No items in learning phase</div>';
     } else {
       const byCatL={};
-      learningItems.forEach(i=>{const c=i.subject||"Other";if(!byCatL[c])byCatL[c]=[];byCatL[c].push(i);});
+      // introduction items first, then parked (grayed) — grouped in the same category lineup
+      learningItems.concat(parkedItems).forEach(i=>{const c=i.subject||"Other";if(!byCatL[c])byCatL[c]=[];byCatL[c].push(i);});
       Object.entries(byCatL).forEach(([lcat,citems])=>{
-        h+='<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:#c2410c;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;padding-left:4px">'+(catE3[lcat]||"\u{1F4CC}")+' '+lcat+' <span style="color:var(--muted);font-weight:500">('+citems.length+')</span></div>';
+        const _parkN=citems.filter(mastIsParked).length;
+        h+='<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:#c2410c;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;padding-left:4px">'+(catE3[lcat]||"\u{1F4CC}")+' '+lcat+' <span style="color:var(--muted);font-weight:500">('+(citems.length-_parkN)+(_parkN?' + '+_parkN+' parked':'')+')</span></div>';
         h+='<div class="mast-jgrid">';
         citems.forEach(i=>{
+          if(mastIsParked(i)){
+            // grayed "waiting" card — not drilled; auto-starts as room opens
+            const pv=mastItemVis(i);
+            h+='<div class="mast-jcard" style="opacity:0.55;background:#f8f7f4;border:1.5px dashed #d1d5db;cursor:default" title="Parked — starts as room opens">';
+            h+='<div class="mast-jcard-img">'+pv+'</div><div class="mast-jcard-name" style="color:#9ca3af">'+i.prompt+'</div>';
+            h+='<div style="font-size:6px;color:#9ca3af;margin-top:2px">waiting</div></div>';
+            return;
+          }
           const vis=mastItemVis(i);
           const dotCount=i.tally_dots||0;
           const _js2=mastDrillSettings();
@@ -14344,7 +14337,7 @@ function _renderMasteryInner(el){
   } else {
     // ── LADDER TAB: items by tier ──
     MAST_TIER_ORDER.forEach(t=>{
-      const ladderTi=(byTier[t]||[]).filter(i=>i.status!=="introduction");
+      const ladderTi=(byTier[t]||[]).filter(i=>i.status!=="introduction"&&!mastIsParked(i));
       if(!ladderTi.length) return;
       const coll=masteryCollapsed[masteryKid+"_"+t];
       h+='<div class="mast-tier-sec"><div class="mast-tier-hdr" style="background:'+MAST_TIER_COL[t]+'" onclick="mastToggleTier(\''+t+'\')">';
