@@ -8553,7 +8553,16 @@ function haBuildUnitInsight(kid,u){
   let extras=[],extrasTitle="";
   const ed=(u.decks||[]).find(d=>d&&d!==cd);
   if(ed){ extrasTitle=ed.key; extras=(ed.cards||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0)).map(c=>({name:c.name,year:c.year||"",text:c.sig||c.def||c.bio||""})); }
-  return { unitId:u.id,title:u.title,emoji:u.emoji||"📘",learning,learned,next:next.slice(0,6),extras,extrasTitle };
+  // U5: the activity queued for this kid's next notebook (Units tab → 📓 Notebook) rides along
+  // as a self-contained spec — notebooks.js renders it as a 3rd insert page.
+  let activity=null;
+  const nbKey=(u.nbActivity||{})[kid];
+  if(nbKey){ const a=_unitActs(u).find(x=>x.key===nbKey);
+    if(a){ activity={key:a.key,title:a.title,emoji:a.emoji||"🎨",desc:a.desc||"",kind:a.kind||"sheet",lines:a.lines||0,
+      steps:Array.isArray(a.steps)?a.steps:Object.values(a.steps||{}),entries:[]};
+      if(a.kind==="timeline"){ const td=(u.decks||[]).find(d=>d&&d.key===(a.deckKey||cd.key));
+        activity.entries=((td&&td.cards)||[]).slice().sort((x,y)=>(x.order||0)-(y.order||0)).map(c=>({year:c.year||c.reign||"",name:c.name})); } } }
+  return { unitId:u.id,title:u.title,emoji:u.emoji||"📘",learning,learned,next:next.slice(0,6),extras,extrasTitle,activity };
 }
 // In-app status page(s) for every unit a kid is enrolled in.
 function renderUnitPages(kid){ const units=haKidUnits(kid); let out=""; units.forEach(u=>{ out+=_renderUnitCard(kid,u); }); return out; }
@@ -8574,8 +8583,9 @@ function _renderUnitCard(kid,u){
   h+='<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:2px"><div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700;color:#1f2937">'+(u.emoji||"📘")+' '+esc(u.title)+'</div>';
   h+='<button onclick="printUnitPage(\''+esc(kid)+'\',\''+esc(u.id)+'\')" style="margin-left:auto;padding:5px 11px;border-radius:8px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🖨 Print</button></div>';
   h+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">'+total+' cards · <b style="color:#b45309">'+nLearn+' learning</b> · <b style="color:#15803d">'+nMast+' mastered</b></div>';
+  const _sprintUnlocked={}; try{ unitSprintRounds(u,kid).forEach(r=>{ if(r.group&&r.deckKey===cd.key&&r.unlocked) _sprintUnlocked[r.group]=true; }); }catch(e){}
   groups.forEach(gv=>{ const list=byG[gv]; const hm=list.filter(c=>isMast(byName[c.name])).length;
-    h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#9a3412;margin:14px 0 7px;border-bottom:1px solid var(--border);padding-bottom:3px">'+esc(gv)+' <span style="color:var(--muted);font-weight:600">('+list.length+(hm?' · '+hm+' ✓':'')+')</span></div>';
+    h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#9a3412;margin:14px 0 7px;border-bottom:1px solid var(--border);padding-bottom:3px">'+esc(gv)+' <span style="color:var(--muted);font-weight:600">('+list.length+(hm?' · '+hm+' ✓':'')+')</span>'+(_sprintUnlocked[gv]?' <span style="font-size:9px;font-weight:800;color:#15803d;background:#f0fdf4;border-radius:7px;padding:1px 7px;letter-spacing:0">🏃 sprint ready!</span>':'')+'</div>';
     h+='<div style="display:flex;flex-wrap:wrap;gap:10px">';
     list.forEach(c=>{ h+='<div class="rl-tile" style="text-align:center;cursor:pointer" onclick="showUnitCardBio(\''+esc(u.id)+'\',\''+esc(cd.key)+'\','+(c.order||0)+')" title="Read '+esc(c.name)+'">'+pv(c)+'<div class="rl-name">'+esc(c.name)+'</div><div class="rl-reign">'+esc(c.reign||c.altmode||"")+'</div>'+badge(c)+'</div>'; });
     h+='</div>'; });
@@ -8735,6 +8745,56 @@ function renderUnitDetail(u){
   roster.forEach(k=>{ const on=!!((u.enrolled||{})[k]);
     h+='<button onclick="unitEnroll(\''+u.id+'\',\''+k+'\')" '+(on?'disabled':'')+' style="padding:7px 14px;border-radius:10px;border:1.5px solid '+(on?'#86efac':'var(--border)')+';background:'+(on?'#f0fdf4':'#fff')+';color:'+(on?'#15803d':'#1f2937')+';font-size:12px;font-weight:700;cursor:'+(on?'default':'pointer')+';font-family:\'DM Sans\',sans-serif">'+(on?'✓ ':'+ ')+cap(k)+'</button>'; });
   h+='</div><div id="unit-enroll-msg" style="font-size:11px;color:#15803d;font-weight:700;margin-top:8px"></div></div>';
+  const enrolledKids=roster.filter(k=>(u.enrolled||{})[k]);
+  // U5 — Sprints: rounds derived from the decks (per group + whole deck), unlock per kid as the
+  // cards clear the sprint gate. Tap an unlocked chip → Mastery tab Sprint view, round loaded.
+  if(enrolledKids.length){
+    h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">';
+    h+='<div style="font-size:12px;font-weight:800;color:#1f2937">🏃 Sprints</div>';
+    h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin:3px 0 4px">Speed rounds unlock as a group’s cards clear the sprint gate. Tap one to run it.</div>';
+    enrolledKids.forEach(k=>{
+      const rounds=unitSprintRounds(u,k);
+      h+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#9a3412;margin:10px 0 6px">'+cap(k)+'</div>';
+      h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+      rounds.forEach(r=>{
+        if(r.unlocked){ const best=unitSprintBest(k,r.logLabel);
+          h+='<button onclick="unitGoSprint(\''+esc(k)+'\',\''+esc(u.id)+'\',\''+esc(r.key).replace(/'/g,"\\'")+'\')" style="padding:5px 11px;border-radius:16px;border:1.5px solid #86efac;background:#f0fdf4;color:#15803d;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">🏃 '+esc(r.label)+' ('+r.total+')'+(best?' · 🏆'+best:'')+'</button>'; }
+        else h+='<span style="padding:5px 11px;border-radius:16px;border:1.5px solid var(--border);background:#faf8f5;color:#a8a29e;font-size:11px;font-weight:600;white-space:nowrap">🔒 '+esc(r.label)+' '+r.ready+'/'+r.total+'</span>';
+      });
+      h+='</div>';
+    });
+    h+='</div>';
+  }
+  // U5 — Activities: the "apply" layer, authored on the registry. Print now, queue into the
+  // next weekly notebook, or check off as done (per kid).
+  const acts=_unitActs(u);
+  if(acts.length&&enrolledKids.length){
+    h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">';
+    h+='<div style="font-size:12px;font-weight:800;color:#1f2937;margin-bottom:2px">🎨 Activities</div>';
+    h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin-bottom:6px">Hands-on “apply it” projects. Print one now, or queue it into the next weekly notebook.</div>';
+    acts.forEach(a=>{
+      h+='<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-top:8px">';
+      h+='<div style="font-size:12.5px;font-weight:800;color:#1f2937">'+(a.emoji||"🎨")+' '+esc(a.title)+'</div>';
+      if(a.desc) h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.4;margin:2px 0 6px">'+esc(a.desc)+'</div>';
+      enrolledKids.forEach(k=>{
+        const done=((u.activityLog||{})[k]||{})[a.key];
+        const queued=(u.nbActivity||{})[k]===a.key;
+        h+='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:3px 0">';
+        h+='<span style="font-size:10.5px;font-weight:700;color:#374151;min-width:52px">'+cap(k)+'</span>';
+        if(done) h+='<span style="font-size:10px;font-weight:700;color:#15803d;background:#f0fdf4;border-radius:8px;padding:2px 8px">✓ done '+new Date(done.ts).toLocaleDateString("en-US",{month:"short",day:"numeric"})+'</span>';
+        else if(queued) h+='<span style="font-size:10px;font-weight:700;color:#b45309;background:#fffbeb;border-radius:8px;padding:2px 8px">📓 in next notebook</span>';
+        const btn=(lbl,fn,on)=>'<button onclick="'+fn+'" style="padding:4px 9px;border-radius:8px;border:1.5px solid '+(on?'#2d6a4f':'var(--border)')+';background:'+(on?'#f2faf5':'#fff')+';color:'+(on?'#2d6a4f':'var(--muted)')+';font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
+        const args='\''+esc(u.id)+'\',\''+esc(k)+'\',\''+esc(a.key)+'\'';
+        h+='<span style="margin-left:auto;display:flex;gap:5px">';
+        h+=btn('🖨 Print','unitPrintActivity(\''+esc(u.id)+'\',\''+esc(a.key)+'\',\''+esc(k)+'\')',false);
+        h+=btn(queued?'📓 Unqueue':'📓 Notebook','unitToggleNbActivity('+args+')',queued);
+        h+=btn(done?'↩︎ Not done':'✓ Done','unitActivityDone('+args+')',!!done);
+        h+='</span></div>';
+      });
+      h+='</div>';
+    });
+    h+='</div>';
+  }
   (u.decks||[]).forEach(d=>{
     h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px">';
     h+='<div style="font-size:13px;font-weight:800;color:#1f2937">'+esc(d.key)+' <span style="font-size:11px;color:var(--muted);font-weight:600">· '+((d.cards||[]).length)+' cards · '+(d.mode||"flip")+' · '+(d.introCap||5)+' at a time</span></div>';
@@ -8811,6 +8871,139 @@ function unitCardStatus(kid,deckKey,name){
   if(typeof mastTierAtLeast==="function"&&mastTierAtLeast(it.tier,mTier)) return {k:"mastered",lbl:"mastered",c:"#15803d",bg:"#f0fdf4"};
   return {k:"active",lbl:"in progress",c:"#2563eb",bg:"#eff6ff"};
 }
+// ── U5: unit sprints — DERIVED from the decks (no authoring). Every deck gets a whole-deck
+// round; grouped decks (groupBy) also get one round per group ("name the Tudors in 60s").
+// A card is sprint-READY per the gate's readiness half (tier ≥ gate_tier or ≥90% untimed
+// accuracy). The manual Sprint switch is NOT consulted: it exists to stop items auto-progressing
+// into timed work, but a unit sprint is launched on purpose from the UI. A round UNLOCKS when
+// every card in it is ready.
+function unitSprintRounds(u,kid){
+  const out=[]; if(!u||!u.decks) return out;
+  const s=masteryData[kid+"_settings"]||{}; const gt=s.gate_tier||"weekly";
+  let items=masteryData[kid]; if(!Array.isArray(items)) items=Object.values(items||{});
+  const hist=masteryData.history;
+  const byKey={}; items.forEach(i=>{ if(i) byKey[i.subject+"|"+i.prompt]=i; });
+  const ready=(deckKey,name)=>{ const it=byKey[deckKey+"|"+name];
+    if(!it||it.status==="introduction"||it.status==="parked") return false;
+    if(typeof mastTierAtLeast==="function"&&mastTierAtLeast(it.tier,gt)) return true;
+    const acc=(hist&&typeof mastUntimedAccuracy==="function")?mastUntimedAccuracy(hist,kid,it.id):null;
+    return typeof acc==="number"&&acc>=0.9; };
+  (u.decks||[]).forEach(d=>{
+    const cards=(d.cards||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0)); if(!cards.length) return;
+    const rounds=[];
+    if(d.groupBy){ const gs=[],byG={}; cards.forEach(c=>{ const g=c[d.groupBy]; if(!g) return; if(!byG[g]){byG[g]=[];gs.push(g);} byG[g].push(c); });
+      gs.forEach(g=>rounds.push({label:g,group:g,cards:byG[g]})); }
+    rounds.push({label:"All "+d.key,group:null,cards,whole:true});
+    rounds.forEach(r=>{ const n=r.cards.filter(c=>ready(d.key,c.name)).length;
+      out.push({key:u.id+"|"+d.key+"|"+(r.group==null?"*":r.group),unitId:u.id,deckKey:d.key,group:r.group,label:r.label,
+        logLabel:r.label+" · "+(u.title||u.id),names:r.cards.map(c=>c.name),ready:n,total:r.cards.length,unlocked:n===r.cards.length,whole:!!r.whole}); });
+  });
+  return out;
+}
+// Personal best for one unit-sprint round, from the existing sprint log (entries tagged src:"unit").
+function unitSprintBest(kid,logLabel){
+  let log=(masteryData.sprintLog||{})[kid]; if(!log) return null; if(!Array.isArray(log)) log=Object.values(log);
+  let best=null; log.forEach(e=>{ if(e&&e.src==="unit"&&e.deck===logLabel&&e.best){ if(best==null||e.best>best) best=e.best; } });
+  return best;
+}
+// Deep link: Units tab → Mastery tab Sprint view with this round pre-selected.
+function unitGoSprint(kid,unitId,key){
+  masteryKid=kid; mastView="sprint"; mastLogMode=false; mastScoreItemId=null;
+  sprintSource="unit"; sprintUnitId=unitId; sprintUnitKey=key;
+  showTab("mastery");
+}
+// ── U5: unit activities — the "apply" layer, authored on the registry. Per-kid state lives
+// beside enrolled: activityLog/<kid>/<key>={ts} (done) + nbActivity/<kid>=key (print in the
+// next weekly notebook as an extra insert page).
+function _unitActs(u){ const a=u&&u.activities; if(!a) return []; return Array.isArray(a)?a.filter(Boolean):Object.values(a).filter(Boolean); }
+// Toggle "include in next notebook" for one kid (one activity at a time).
+function unitToggleNbActivity(unitId,kid,actKey){
+  const u=unitStudies[unitId]; if(!u) return;
+  if(!u.nbActivity) u.nbActivity={};
+  const cur=u.nbActivity[kid];
+  if(cur===actKey){ delete u.nbActivity[kid]; if(db) db.ref("unitStudies/"+unitId+"/nbActivity/"+kid).remove(); }
+  else { u.nbActivity[kid]=actKey; if(db) db.ref("unitStudies/"+unitId+"/nbActivity/"+kid).set(actKey); }
+  const el=document.getElementById("content"); if(el) renderUnits(el);
+}
+// Toggle done. Marking done also clears a matching notebook assignment (it shipped).
+function unitActivityDone(unitId,kid,actKey){
+  const u=unitStudies[unitId]; if(!u) return;
+  if(!u.activityLog) u.activityLog={}; if(!u.activityLog[kid]) u.activityLog[kid]={};
+  if(u.activityLog[kid][actKey]){ delete u.activityLog[kid][actKey]; if(db) db.ref("unitStudies/"+unitId+"/activityLog/"+kid+"/"+actKey).remove(); }
+  else {
+    u.activityLog[kid][actKey]={ts:Date.now()};
+    if(db) db.ref("unitStudies/"+unitId+"/activityLog/"+kid+"/"+actKey).set({ts:Date.now()});
+    if((u.nbActivity||{})[kid]===actKey){ delete u.nbActivity[kid]; if(db) db.ref("unitStudies/"+unitId+"/nbActivity/"+kid).remove(); }
+  }
+  const el=document.getElementById("content"); if(el) renderUnits(el);
+}
+// Cards this kid has finished learning (past introduction) in one deck — the pick-from pool
+// for bio/compare activity sheets.
+function _unitLearnedCards(u,kid,deckKey){
+  const deck=(u.decks||[]).find(d=>d&&d.key===deckKey); if(!deck) return [];
+  let items=masteryData[kid]; if(!Array.isArray(items)) items=Object.values(items||{});
+  const byName={}; items.forEach(i=>{ if(i&&i.subject===deckKey) byName[i.prompt]=i; });
+  return (deck.cards||[]).filter(c=>{ const it=byName[c.name]; return it&&it.status&&it.status!=="introduction"&&it.status!=="parked"; })
+    .slice().sort((a,b)=>(a.order||0)-(b.order||0));
+}
+// Printable activity page — generic over the 4 template kinds (sheet/bio/compare/timeline).
+function _unitActivityHtml(u,act,kid){
+  const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  const GD="#1a3a2a",GM="#2d6a4f",GL="#b7e4c7",GOLD="#c9a84c",MUT="#6b7280";
+  const deckKey=act.deckKey||((_unitCharDeck(u)||{}).key)||"";
+  const kidName=(typeof SL_KLBL!=="undefined"&&SL_KLBL[kid])||kid;
+  const lines=n=>{ let s=""; for(let i=0;i<n;i++) s+='<div style="border-bottom:1.5px solid #cbd5d1;height:26px"></div>'; return s; };
+  const face=(name,sz)=>{ const p=_unitPortrait(u,kid,deckKey,name);
+    if(p&&p.img) return '<img src="'+esc(p.img)+'" style="width:'+sz+'px;height:'+sz+'px;object-fit:cover;border-radius:8px;border:2px solid '+GL+'">';
+    return '<div style="width:'+sz+'px;height:'+sz+'px;border-radius:8px;border:2px solid '+GL+';background:#f2faf5;display:flex;align-items:center;justify-content:center;font-size:'+Math.round(sz*0.5)+'px">'+((p&&p.emoji)||u.emoji||"⭐")+'</div>'; };
+  let h='<div style="max-width:720px;margin:0 auto;font-family:\'DM Sans\',-apple-system,sans-serif;color:#1c1c1e">';
+  h+='<div style="background:'+GD+';border-radius:12px 12px 0 0;padding:16px 24px;display:flex;justify-content:space-between;align-items:flex-end">';
+  h+='<div><div style="font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:'+GL+';margin-bottom:3px">'+esc(u.title)+' · Unit Activity</div>';
+  h+='<div style="font-size:24px;font-weight:800;color:#fff">'+(act.emoji||"🎨")+' '+esc(act.title)+'</div></div>';
+  h+='<div style="font-size:13px;font-weight:700;color:'+GOLD+'">'+esc(kidName)+' · Date: ______</div></div>';
+  h+='<div style="height:5px;background:repeating-linear-gradient(90deg,'+GM+' 0,'+GM+' 18px,'+GOLD+' 18px,'+GOLD+' 22px,'+GM+' 22px,'+GM+' 40px)"></div>';
+  h+='<div style="border:1.5px solid '+GL+';border-top:none;border-radius:0 0 12px 12px;padding:18px 24px">';
+  if(act.desc) h+='<div style="font-size:13px;line-height:1.55;margin-bottom:12px">'+esc(act.desc)+'</div>';
+  const steps=Array.isArray(act.steps)?act.steps:Object.values(act.steps||{});
+  if(steps.length){ h+='<div style="margin-bottom:14px">';
+    steps.forEach(st=>{ h+='<div style="display:flex;gap:9px;align-items:flex-start;padding:3px 0;font-size:12.5px;line-height:1.45"><span style="width:15px;height:15px;border:2px solid '+GM+';border-radius:4px;flex-shrink:0;margin-top:1px"></span><span>'+esc(st)+'</span></div>'; });
+    h+='</div>'; }
+  if(act.kind==="timeline"){
+    const deck=(u.decks||[]).find(d=>d&&d.key===deckKey);
+    const cards=((deck&&deck.cards)||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0));
+    cards.forEach(c=>{ h+='<div style="display:flex;gap:10px;align-items:baseline;padding:5px 0;border-bottom:1px solid #eef2f0;font-size:12.5px">'
+      +'<span style="font-weight:800;color:'+GM+';min-width:72px">'+esc(c.year||c.reign||"")+'</span>'
+      +'<span style="font-weight:700;min-width:150px">'+esc(c.name)+'</span>'
+      +'<span style="flex:1;border-bottom:1.5px solid #cbd5d1;height:18px"></span></div>'; });
+  } else if(act.kind==="bio"||act.kind==="compare"){
+    const learned=_unitLearnedCards(u,kid,deckKey);
+    h+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.1em;color:'+GM+';margin:4px 0 8px">'+(act.kind==="compare"?"Pick two you’ve learned":"Pick one you’ve learned")+'</div>';
+    if(learned.length){ h+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">';
+      learned.forEach(c=>{ h+='<div style="width:64px;text-align:center">'+face(c.name,48)+'<div style="font-size:8px;font-weight:700;margin-top:2px;line-height:1.1">'+esc(c.name)+'</div></div>'; });
+      h+='</div>'; }
+    else h+='<div style="font-size:11px;color:'+MUT+';margin-bottom:12px">You haven’t finished learning any yet — do a few drill sessions first!</div>';
+    if(act.kind==="compare"){
+      h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">';
+      [1,2].forEach(()=>{ h+='<div><div style="border-bottom:2px solid '+GM+';height:26px;margin-bottom:8px"></div>'+lines(Math.max(4,Math.round((act.lines||8)/2)))+'</div>'; });
+      h+='</div><div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.1em;color:'+GOLD+';margin-bottom:6px">What do they share?</div>'+lines(3);
+    } else h+='<div style="border-bottom:2px solid '+GM+';height:26px;margin-bottom:8px"></div>'+lines(act.lines||10);
+  } else { // "sheet" — instructions + a big make/draw box
+    h+='<div style="border:2px dashed '+GM+';border-radius:12px;min-height:520px;margin-top:6px"></div>';
+    if(act.lines) h+='<div style="margin-top:12px">'+lines(act.lines)+'</div>';
+  }
+  h+='<div style="text-align:right;font-size:10px;color:#c4b8ae;font-weight:700;margin-top:14px">Howe Academy · '+esc(u.title)+'</div>';
+  h+='</div></div>';
+  return h;
+}
+function unitPrintActivity(unitId,actKey,kid){
+  const u=unitStudies[unitId]; if(!u) return;
+  const act=_unitActs(u).find(a=>a.key===actKey); if(!act) return;
+  const html=_unitActivityHtml(u,act,kid);
+  const w=window.open("","_blank"); if(!w){ alert("Allow pop-ups to print."); return; }
+  w.document.write('<!doctype html><html><head><title>'+String(act.title||"Activity")+'</title><style>body{margin:16px;background:#fff}@media print{body{margin:0}}</style></head><body>'+html+'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print()},250)}</scr'+'ipt></body></html>');
+  w.document.close();
+}
+
 // ── Unit card editor: edit shared photo + bio (applies to every enrolled kid) ──
 function unitEditCard(unitId,deckKey,order){
   const u=unitStudies[unitId]; if(!u) return;
@@ -16616,6 +16809,10 @@ let sprintPrevBest="";
 // existing behavior is unchanged on load. sprintDeck filters the drill-items pool by subject.
 let sprintSource="phonogram";
 let sprintDeck="__all__";
+// U5: "unit" source — sprint a unit-study round (per-group or whole-deck, see unitSprintRounds).
+// Selection is stored as ids and re-resolved each render so live registry/drill updates flow in.
+let sprintUnitId=null;
+let sprintUnitKey=null;
 
 const SPRINT_LOE_B=[
   {pg:"sh",sounds:"/sh/"},{pg:"th",sounds:"/th/·/ð/"},{pg:"ch",sounds:"/ch/·/k/·/sh/"},
@@ -16688,13 +16885,15 @@ function sprintLogResult(){
   const b=parseInt(document.getElementById("sp-score-b")?.value)||0;
   if(!a&&!b){ alert("Enter a Sheet A and/or B score first."); return; }
   const best=Math.max(a,b);
+  const _uRound=sprintSource==="unit"?_sprintUnitRound():null;  // U5: log label carries round + unit
   const deck=sprintSource==="drill"
     ? (sprintDeck==="__all__"?"All decks":sprintDeck)
+    : sprintSource==="unit" ? (_uRound?_uRound.logLabel:"unit")
     : (sprintSelectedPhono?sprintSelectedPhono.pg:(document.getElementById("sp-custom-phono")?.value?.trim()||"phonogram"));
-  const date=sprintSource==="drill"?sprintDate:(document.getElementById("sp-date")?.value||sprintDate);
+  const date=sprintSource!=="phonogram"?sprintDate:(document.getElementById("sp-date")?.value||sprintDate);
   const la=sprintLive&&sprintLive.A, lb=sprintLive&&sprintLive.B;  // % finished from the live timer, if used
   const pctA=(la&&typeof la.pct==='number')?la.pct:null, pctB=(lb&&typeof lb.pct==='number')?lb.pct:null;
-  const isPhon=sprintSource!=="drill";  // grid/difficulty pills only apply to the phonogram source
+  const isPhon=sprintSource==="phonogram";  // grid/difficulty pills only apply to the phonogram source
   const gain=(a&&b)?(b-a):null, gainPct=(a&&b)?Math.round((b-a)/a*100):null;
   const total=(la&&typeof la.total==='number')?la.total:((lb&&typeof lb.total==='number')?lb.total:null);  // words per sheet
   const entry={date,deck,a:a||null,b:b||null,best,pctA,pctB,gain,gainPct,total,snum:sprintNum,
@@ -16949,8 +17148,69 @@ function buildSprintSourceToggle(color){
   };
   let s='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:10px;margin-bottom:14px">';
   s+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:7px">Sprint Source</div>';
-  s+='<div style="display:flex;gap:8px">'+opt("phonogram","\u{1F524} Phonogram")+opt("drill","\u{1F5C2}\u{FE0F} From drill items")+'</div>';
+  s+='<div style="display:flex;gap:8px">'+opt("phonogram","\u{1F524} Phonogram")+opt("drill","\u{1F5C2}\u{FE0F} From drill items")
+    +(haKidUnits(masteryKid).length?opt("unit","\u{1F393} Unit"):"")+'</div>';
   return s+'</div>';
+}
+// ── U5: the "Unit" sprint source — speed rounds derived from a unit study's decks. ──
+// Re-resolve the selected round from ids so registry edits / drill progress flow into the view.
+function _sprintUnitRound(){
+  const u=(unitStudies||{})[sprintUnitId]; if(!u||!(u.enrolled||{})[masteryKid]) return null;
+  return unitSprintRounds(u,masteryKid).find(r=>r.key===sprintUnitKey)||null;
+}
+function sprintSetUnit(id){ sprintUnitId=id; sprintUnitKey=null; _mastRe(); }
+function sprintSetUnitKey(key){ sprintUnitKey=key; _mastRe(); }
+// A/B sheets from the round's card names — offline like the drill source (two independent
+// shuffles inside sprintBuildSheet); 3 columns since names run longer than phonics words.
+function sprintGenerateFromUnit(){
+  const r=_sprintUnitRound(); if(!r||!r.unlocked) return;
+  const words=r.names.slice();
+  const cols=3, rows=Math.max(2,Math.ceil(words.length/cols));
+  const mk=()=>({focusPhono:r.label,focusSounds:"",gridWords:words.slice(),reviewWords:[],nonsenseWords:[],phrases:[],sentences:[]});
+  sprintRenderSheets(mk(),mk(),{sprintNum,date:sprintDate,prevBest:unitSprintBest(masteryKid,r.logLabel),cols,rows,ps:"none",kidName:(SL_KLBL[masteryKid]||"Student"),sheetLabel:r.label+" Sprint"});
+}
+function buildSprintUnitHtml(color){
+  const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  const units=haKidUnits(masteryKid);
+  if(!units.length) return '<div style="background:#faf8f5;border:1.5px dashed #e2ddd6;border-radius:14px;padding:24px 18px;text-align:center;font-size:13px;color:#78716c;line-height:1.6">'+(SL_KLBL[masteryKid]||"This kid")+' isn’t enrolled in a unit study yet — enroll one in the <b>Units</b> tab first.</div>';
+  if(!sprintUnitId||!units.some(u=>u.id===sprintUnitId)) sprintUnitId=units[0].id;
+  const u=units.find(x=>x.id===sprintUnitId);
+  const rounds=unitSprintRounds(u,masteryKid);
+  if(sprintUnitKey&&!rounds.some(r=>r.key===sprintUnitKey)) sprintUnitKey=null;
+  const sel=sprintUnitKey?rounds.find(r=>r.key===sprintUnitKey):null;
+  let h='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700;margin-bottom:4px">\u{1F393} Unit Sprints</div>';
+  h+='<div style="font-size:12px;color:#78716c;line-height:1.5;margin-bottom:12px">A round unlocks when every card in it has cleared the sprint gate (tier or 90% accuracy). Locked rounds show how close they are.</div>';
+  if(units.length>1){
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">';
+    units.forEach(x=>{ const act=x.id===sprintUnitId;
+      h+='<button onclick="sprintSetUnit(\''+esc(x.id)+'\')" style="padding:6px 11px;border-radius:20px;border:1.5px solid '+(act?color:"#e2ddd6")+';background:'+(act?color:"#fff")+';color:'+(act?"#fff":"#78716c")+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(x.emoji||"\u{1F4D8}")+' '+esc(x.title)+'</button>'; });
+    h+='</div>';
+  }
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+  rounds.forEach(r=>{
+    const act=sel&&sel.key===r.key;
+    if(r.unlocked){
+      h+='<button onclick="sprintSetUnitKey(\''+esc(r.key).replace(/'/g,"\\'")+'\')" style="padding:6px 11px;border-radius:20px;border:1.5px solid '+(act?color:"#86efac")+';background:'+(act?color:"#f0fdf4")+';color:'+(act?"#fff":"#15803d")+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">\u{1F3C3} '+esc(r.label)+' ('+r.total+')</button>';
+    } else {
+      h+='<span style="padding:6px 11px;border-radius:20px;border:1.5px solid #e2ddd6;background:#faf8f5;color:#a8a29e;font-size:12px;font-weight:600;white-space:nowrap">\u{1F512} '+esc(r.label)+' '+r.ready+'/'+r.total+'</span>';
+    }
+  });
+  h+='</div></div>';
+  if(sel){
+    const best=unitSprintBest(masteryKid,sel.logLabel);
+    h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">';
+    h+='<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><span style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:'+color+'">'+esc(sel.label)+'</span><span style="font-size:12px;color:#78716c;font-weight:600">'+sel.total+' cards \u{B7} '+esc(sel.deckKey)+'</span>'
+      +(best?'<span style="margin-left:auto;font-size:12px;font-weight:800;color:#d97706">\u{1F3C6} best '+best+'/60s</span>':'')+'</div>';
+    h+='<button onclick="sprintGenerateFromUnit()" style="width:100%;padding:13px;border-radius:12px;border:none;background:'+color+';color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin:12px 0 0">\u{2728} Generate A &amp; B sprint sheets ('+sel.total+' cards)</button>';
+    h+='</div>';
+    h+=sprintScoreRowHtml();
+    h+='<div id="sp-sheets"></div>';
+  } else {
+    const anyUnlocked=rounds.some(r=>r.unlocked);
+    h+='<div style="background:#faf8f5;border:1.5px dashed #e2ddd6;border-radius:14px;padding:24px 18px;text-align:center;font-size:13px;color:#78716c;line-height:1.6">'+(anyUnlocked?'Pick an unlocked round above to sprint it.':'No rounds unlocked yet — keep drilling! Each card unlocks its round once it reaches the gate tier (or 90% accuracy).')+'</div>';
+  }
+  return h;
 }
 function buildSprintFromDrillHtml(color){
   const catE=MAST_CAT_EMOJI_MAP[masteryKid]||{};
@@ -17031,6 +17291,7 @@ function buildSprintHtml(){
   // drill items), so it short-circuits before the phonogram-only isActive gate below.
   h+=buildSprintSourceToggle(color);
   if(sprintSource==="drill") return h+buildSprintFromDrillHtml(color);
+  if(sprintSource==="unit") return h+buildSprintUnitHtml(color);
 
   if(!isActive){
     const msg=SPRINT_KID_MSG[masteryKid]||"Phonics Sprint not configured for this student.";
