@@ -3071,6 +3071,7 @@ function renderSchedule(el){
   if(momModeActive&&(kid==="mom"||kid==="all")) h+=renderDisplacementSummary(day, kid);
   h+=dailyPaceTracker(allDay, day);
   h+=renderClaimQueue();
+  h+=unitScheduleNudges(kid);  // U6: unit-study pacing nudges (renders only when one is live)
 
   // ── SCHEDULE LOCK CHECK ──────────────────────────────────────────
   const unlocked = isScheduleUnlocked(kid, day);
@@ -8583,6 +8584,7 @@ function _renderUnitCard(kid,u){
   h+='<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:2px"><div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700;color:#1f2937">'+(u.emoji||"📘")+' '+esc(u.title)+'</div>';
   h+='<button onclick="printUnitPage(\''+esc(kid)+'\',\''+esc(u.id)+'\')" style="margin-left:auto;padding:5px 11px;border-radius:8px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🖨 Print</button></div>';
   h+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">'+total+' cards · <b style="color:#b45309">'+nLearn+' learning</b> · <b style="color:#15803d">'+nMast+' mastered</b></div>';
+  try{ const _nd=unitPlanNudges(u,kid); if(_nd.length){ h+='<div style="margin:4px 0 8px">'+_unitNudgeChipsFor(kid,_nd,true)+'</div>'; } }catch(e){}  // U6 nudges (this unit only)
   const _sprintUnlocked={}; try{ unitSprintRounds(u,kid).forEach(r=>{ if(r.group&&r.deckKey===cd.key&&r.unlocked) _sprintUnlocked[r.group]=true; }); }catch(e){}
   groups.forEach(gv=>{ const list=byG[gv]; const hm=list.filter(c=>isMast(byName[c.name])).length;
     h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#9a3412;margin:14px 0 7px;border-bottom:1px solid var(--border);padding-bottom:3px">'+esc(gv)+' <span style="color:var(--muted);font-weight:600">('+list.length+(hm?' · '+hm+' ✓':'')+')</span>'+(_sprintUnlocked[gv]?' <span style="font-size:9px;font-weight:800;color:#15803d;background:#f0fdf4;border-radius:7px;padding:1px 7px;letter-spacing:0">🏃 sprint ready!</span>':'')+'</div>';
@@ -8746,6 +8748,13 @@ function renderUnitDetail(u){
     h+='<button onclick="unitEnroll(\''+u.id+'\',\''+k+'\')" '+(on?'disabled':'')+' style="padding:7px 14px;border-radius:10px;border:1.5px solid '+(on?'#86efac':'var(--border)')+';background:'+(on?'#f0fdf4':'#fff')+';color:'+(on?'#15803d':'#1f2937')+';font-size:12px;font-weight:700;cursor:'+(on?'default':'pointer')+';font-family:\'DM Sans\',sans-serif">'+(on?'✓ ':'+ ')+cap(k)+'</button>'; });
   h+='</div><div id="unit-enroll-msg" style="font-size:11px;color:#15803d;font-weight:700;margin-top:8px"></div></div>';
   const enrolledKids=roster.filter(k=>(u.enrolled||{})[k]);
+  // U6 — live nudges for this unit (fired plan triggers + never-run unlocked sprints).
+  if(enrolledKids.length){
+    let nh=""; enrolledKids.forEach(k=>{ const nd=unitPlanNudges(u,k); if(nd.length) nh+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#9a3412;margin:8px 0 4px">'+cap(k)+'</div>'+_unitNudgeChipsFor(k,nd,true); });
+    if(nh){ h+='<div style="background:#fff;border:1.5px solid #fcd34d;border-radius:12px;padding:14px;margin-bottom:14px">';
+      h+='<div style="font-size:12px;font-weight:800;color:#1f2937">📌 Up next</div>';
+      h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin:3px 0 2px">The pacing plan says it’s time for these — queue, print, sprint, or ✕ to skip.</div>'+nh+'</div>'; }
+  }
   // U5 — Sprints: rounds derived from the decks (per group + whole deck), unlock per kid as the
   // cards clear the sprint gate. Tap an unlocked chip → Mastery tab Sprint view, round loaded.
   if(enrolledKids.length){
@@ -8790,6 +8799,30 @@ function renderUnitDetail(u){
         h+=btn(queued?'📓 Unqueue':'📓 Notebook','unitToggleNbActivity('+args+')',queued);
         h+=btn(done?'↩︎ Not done':'✓ Done','unitActivityDone('+args+')',!!done);
         h+='</span></div>';
+      });
+      h+='</div>';
+    });
+    h+='</div>';
+  }
+  // U6 — the pacing plan itself, read-only: trigger → activity, with each kid's status.
+  const plan=Array.isArray(u.plan)?u.plan:Object.values(u.plan||{});
+  if(plan.length&&enrolledKids.length){
+    h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">';
+    h+='<div style="font-size:12px;font-weight:800;color:#1f2937;margin-bottom:2px">🗺️ Pacing plan</div>';
+    h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin-bottom:6px">Each activity is suggested automatically when its trigger is reached in the drill ladder.</div>';
+    plan.forEach(p=>{ if(!p||!p.key) return;
+      const act=_unitActs(u).find(a=>a&&a.key===p.activity); if(!act) return;
+      h+='<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:5px 0;border-bottom:1px solid #f3f1ee;font-size:11px">';
+      h+='<span style="color:var(--muted);min-width:180px;flex:1">'+esc(_unitWhenLabel(p.when))+'</span>';
+      h+='<span style="font-weight:700;color:#1f2937">'+(act.emoji||"🎨")+' '+esc(act.title)+'</span>';
+      enrolledKids.forEach(k=>{
+        const done=((u.activityLog||{})[k]||{})[act.key];
+        const queued=(u.nbActivity||{})[k]===act.key;
+        const dismissed=(((u.planDismiss||{})[k])||{})[_unitSafeKey(p.key)];
+        const fired=_unitPlanFired(u,k,p.when);
+        let st,co; if(done){st="✓ done";co="#15803d";} else if(queued){st="📓 queued";co="#b45309";}
+        else if(dismissed){st="✕ skipped";co="#9ca3af";} else if(fired){st="🔔 now";co="#b45309";} else {st="⏳";co="#9ca3af";}
+        h+='<span style="font-size:9.5px;font-weight:700;color:'+co+'">'+cap(k).slice(0,1)+': '+st+'</span>';
       });
       h+='</div>';
     });
@@ -8912,6 +8945,104 @@ function unitGoSprint(kid,unitId,key){
   sprintSource="unit"; sprintUnitId=unitId; sprintUnitKey=key;
   showTab("mastery");
 }
+// ── U6: pacing plan — registry-authored triggers ("when N cards are learned → suggest this
+// activity"). Evaluation is STATELESS like the sprint unlocks: a nudge shows while its trigger
+// is true and the activity isn't done/queued/dismissed, then disappears on its own. Nothing is
+// auto-inserted — Mom queues with one tap. plan/<i>={key,when:{type,deckKey,group?,count?},
+// activity:<actKey>,note}; types: learned | learned_in_group | group_learned | deck_learned.
+// Per-kid dismissals: planDismiss/<kid>/<safeKey>=true.
+function _unitSafeKey(s){ return String(s).replace(/[.#$\[\]\/]/g,"_"); }
+function _unitLearnedNames(kid,deckKey){
+  let items=masteryData[kid]; if(!Array.isArray(items)) items=Object.values(items||{});
+  const s=new Set(); items.forEach(i=>{ if(i&&i.subject===deckKey&&i.status&&i.status!=="introduction"&&i.status!=="parked") s.add(i.prompt); });
+  return s;
+}
+function _unitPlanFired(u,kid,when){
+  if(!when||!when.deckKey) return false;
+  const learned=_unitLearnedNames(kid,when.deckKey);
+  const deck=(u.decks||[]).find(d=>d&&d.key===when.deckKey);
+  const cards=(deck&&deck.cards)||[];
+  const inGroup=g=>cards.filter(c=>deck.groupBy&&c[deck.groupBy]===g);
+  if(when.type==="learned") return learned.size>=(when.count||1);
+  if(when.type==="deck_learned") return cards.length>0&&cards.every(c=>learned.has(c.name));
+  if(when.type==="group_learned"){ const gc=inGroup(when.group); return gc.length>0&&gc.every(c=>learned.has(c.name)); }
+  if(when.type==="learned_in_group"){ const gc=inGroup(when.group); return gc.filter(c=>learned.has(c.name)).length>=(when.count||1); }
+  return false;
+}
+// Human line for a plan trigger (Units tab plan list).
+function _unitWhenLabel(when){
+  if(!when) return "";
+  if(when.type==="learned") return "after "+(when.count||1)+" "+when.deckKey+" learned";
+  if(when.type==="deck_learned") return "when all "+when.deckKey+" are learned";
+  if(when.type==="group_learned") return "when "+when.group+" is complete";
+  if(when.type==="learned_in_group") return "after "+(when.count||1)+" "+when.group+" learned";
+  return "";
+}
+// All live nudges for one kid in one unit: fired plan entries + unlocked-but-never-run sprints.
+function unitPlanNudges(u,kid){
+  const out=[]; if(!u||!(u.enrolled||{})[kid]) return out;
+  const dis=(u.planDismiss||{})[kid]||{};
+  const doneLog=(u.activityLog||{})[kid]||{};
+  const queued=(u.nbActivity||{})[kid];
+  const plan=Array.isArray(u.plan)?u.plan:Object.values(u.plan||{});
+  plan.forEach(p=>{
+    if(!p||!p.key||dis[_unitSafeKey(p.key)]) return;
+    const act=_unitActs(u).find(a=>a&&a.key===p.activity); if(!act) return;
+    if(doneLog[act.key]||queued===act.key) return;
+    if(_unitPlanFired(u,kid,p.when)) out.push({kind:"activity",key:_unitSafeKey(p.key),unitId:u.id,act,note:p.note||""});
+  });
+  unitSprintRounds(u,kid).forEach(r=>{
+    const k=_unitSafeKey("sprint|"+r.key);
+    if(!r.unlocked||dis[k]) return;
+    if(unitSprintBest(kid,r.logLabel)!=null) return;
+    out.push({kind:"sprint",key:k,unitId:u.id,round:r});
+  });
+  return out;
+}
+function unitAllNudges(kid){ let out=[]; haKidUnits(kid).forEach(u=>{ out=out.concat(unitPlanNudges(u,kid)); }); return out; }
+function unitDismissNudge(unitId,kid,key){
+  const u=unitStudies[unitId]; if(!u) return;
+  if(!u.planDismiss) u.planDismiss={}; if(!u.planDismiss[kid]) u.planDismiss[kid]={};
+  u.planDismiss[kid][key]=true;
+  if(db) db.ref("unitStudies/"+unitId+"/planDismiss/"+kid+"/"+key).set(true);
+  renderAll();
+}
+// Nudge chips for one kid. full=true adds queue/print/dismiss actions (Units + Notebook tabs);
+// compact chips (Schedule) just jump to the unit.
+function unitNudgeChips(kid,full){ return _unitNudgeChipsFor(kid,unitAllNudges(kid),full); }
+function _unitNudgeChipsFor(kid,nudges,full){
+  const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  if(!nudges.length) return "";
+  let h='<div style="display:flex;flex-direction:column;gap:5px">';
+  nudges.forEach(n=>{
+    const uid=esc(n.unitId), k=esc(n.key).replace(/'/g,"\\'");
+    if(n.kind==="sprint"){
+      h+='<div style="display:flex;align-items:center;gap:7px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:6px 10px;flex-wrap:wrap">';
+      h+='<span style="font-size:11px;font-weight:700;color:#15803d;flex:1;min-width:140px;cursor:pointer" onclick="unitGoSprint(\''+esc(kid)+'\',\''+uid+'\',\''+esc(n.round.key).replace(/'/g,"\\'")+'\')">🏃 '+esc(n.round.label)+' is ready to sprint!</span>';
+      if(full){ h+='<button onclick="unitGoSprint(\''+esc(kid)+'\',\''+uid+'\',\''+esc(n.round.key).replace(/'/g,"\\'")+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#15803d;color:#fff;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">▶ Sprint</button>';
+        h+='<button onclick="unitDismissNudge(\''+uid+'\',\''+esc(kid)+'\',\''+k+'\')" title="Dismiss" style="padding:4px 7px;border-radius:8px;border:none;background:none;color:#9ca3af;font-size:11px;font-weight:700;cursor:pointer">✕</button>'; }
+      h+='</div>';
+    } else {
+      h+='<div style="display:flex;align-items:center;gap:7px;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:10px;padding:6px 10px;flex-wrap:wrap">';
+      h+='<span style="font-size:11px;font-weight:700;color:#92400e;flex:1;min-width:140px;cursor:pointer" onclick="showTab(\'units\');openUnit(\''+uid+'\')">📌 '+(n.act.emoji||"🎨")+' '+esc(n.act.title)+(n.note?' <span style="font-weight:600;color:#b45309">— '+esc(n.note)+'</span>':'')+'</span>';
+      if(full){ const args='\''+uid+'\',\''+esc(kid)+'\',\''+esc(n.act.key)+'\'';
+        h+='<button onclick="unitToggleNbActivity('+args+')" style="padding:4px 10px;border-radius:8px;border:none;background:#b45309;color:#fff;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">📓 Queue</button>';
+        h+='<button onclick="unitPrintActivity(\''+uid+'\',\''+esc(n.act.key)+'\',\''+esc(kid)+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid #fcd34d;background:#fff;color:#92400e;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🖨</button>';
+        h+='<button onclick="unitDismissNudge(\''+uid+'\',\''+esc(kid)+'\',\''+k+'\')" title="Dismiss" style="padding:4px 7px;border-radius:8px;border:none;background:none;color:#9ca3af;font-size:11px;font-weight:700;cursor:pointer">✕</button>'; }
+      h+='</div>';
+    }
+  });
+  return h+'</div>';
+}
+// Compact Schedule strip: every kid's live nudges in one card (only renders when there are any).
+function unitScheduleNudges(kidFilter){
+  const roster=(typeof ROSTER!=="undefined")?ROSTER:["lincoln","ellis","lucy","julian"];
+  const kids=(kidFilter&&kidFilter!=="all"&&kidFilter!=="mom")?[kidFilter]:roster;
+  let inner=""; kids.forEach(k=>{ const c=unitNudgeChips(k,false); if(c) inner+='<div style="margin-top:6px"><div style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:3px">'+cap(k)+'</div>'+c+'</div>'; });
+  if(!inner) return "";
+  return '<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:10px 12px;margin:10px 0">'+
+    '<div style="font-size:11px;font-weight:800;color:#1f2937">🎓 Unit Study — up next</div>'+inner+'</div>';
+}
 // ── U5: unit activities — the "apply" layer, authored on the registry. Per-kid state lives
 // beside enrolled: activityLog/<kid>/<key>={ts} (done) + nbActivity/<kid>=key (print in the
 // next weekly notebook as an extra insert page).
@@ -8923,7 +9054,7 @@ function unitToggleNbActivity(unitId,kid,actKey){
   const cur=u.nbActivity[kid];
   if(cur===actKey){ delete u.nbActivity[kid]; if(db) db.ref("unitStudies/"+unitId+"/nbActivity/"+kid).remove(); }
   else { u.nbActivity[kid]=actKey; if(db) db.ref("unitStudies/"+unitId+"/nbActivity/"+kid).set(actKey); }
-  const el=document.getElementById("content"); if(el) renderUnits(el);
+  renderAll(); // U6: queue buttons also live on the Schedule/Notebook nudge chips
 }
 // Toggle done. Marking done also clears a matching notebook assignment (it shipped).
 function unitActivityDone(unitId,kid,actKey){
@@ -8935,7 +9066,7 @@ function unitActivityDone(unitId,kid,actKey){
     if(db) db.ref("unitStudies/"+unitId+"/activityLog/"+kid+"/"+actKey).set({ts:Date.now()});
     if((u.nbActivity||{})[kid]===actKey){ delete u.nbActivity[kid]; if(db) db.ref("unitStudies/"+unitId+"/nbActivity/"+kid).remove(); }
   }
-  const el=document.getElementById("content"); if(el) renderUnits(el);
+  renderAll();
 }
 // Cards this kid has finished learning (past introduction) in one deck — the pick-from pool
 // for bio/compare activity sheets.
