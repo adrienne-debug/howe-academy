@@ -1539,6 +1539,7 @@ function initFb() {
     });
     db.ref("config/anthropic_key").once("value",s=>{ if(s.val()) mastAIKey=s.val(); });
     db.ref("config/slot_config").on("value",s=>{ slotConfig=s.val()||{}; });
+    db.ref("config/spin_gate").on("value",s=>{ spinGate=s.val()||{}; });
     db.ref("att_overrides").on("value",s=>{
       if(s.val()) attOverrides=s.val();
       try{localStorage.setItem("ha_att_overrides",JSON.stringify(attOverrides));}catch(e){}
@@ -2054,20 +2055,22 @@ function showPaceToast(taskId, doneMinOverride){
   const alreadySpun=hasSpun(taskId);
   const dayBonusClaimed=hasDayBonus(t.who, taskDay);
 
+  // Per-kid timing gate: when enabled, only early/within-window completions earn a spin.
+  const gate=spinGateFor(t.who);
+  const inWindow=diff<=gate.window;
   let cls, msg, canSpin=false, spinType=null;
   if(isLastTask && !dayBonusClaimed){
     cls="ahead"; canSpin=true; spinType="day_bonus";
     msg="🎉 "+cap(t.who)+" finished the day! Bonus spin!";
     setTimeout(()=>celebrateDayComplete(t.who),600);
-  } else if(!alreadySpun && diff<=-3){
-    cls="ahead"; canSpin=true; spinType="ahead";
-    msg="⚡ "+absDiff+" min ahead — great pace!";
-  } else if(!alreadySpun && diff<=5){
-    cls="on-track"; canSpin=true; spinType="on_track";
-    msg=isToday?"✅ Right on schedule!":"✅ Task complete!";
+  } else if(!alreadySpun && (!gate.enabled || inWindow)){
+    // Spin earned — gate off (any completion) OR done early / within the window
+    if(diff<=-3){ cls="ahead"; spinType="ahead"; msg="⚡ "+absDiff+" min ahead — great pace!"; }
+    else { cls="on-track"; spinType="on_track"; msg=isToday?"✅ Right on schedule!":"✅ Task complete!"; }
+    canSpin=true;
   } else {
-    cls=diff<=5?"on-track":"behind";
-    msg=diff<=-3?"⚡ "+absDiff+" min ahead — great pace!":diff<=5?"✅ Right on schedule!":"⏰ "+absDiff+" min behind — you can do it!";
+    cls=inWindow?"on-track":"behind";
+    msg=diff<=-3?"⚡ "+absDiff+" min ahead — great pace!":inWindow?"✅ Right on schedule!":"⏰ "+absDiff+" min behind — you can do it!";
   }
   el.className="pace-toast "+cls;
   slotKid=t.who;
@@ -2096,6 +2099,10 @@ const SLOT_DEFAULTS=[
   {pts:25,weight:7,msg:"JACKPOT — 25 points!"}
 ];
 let slotConfig={}; // {kid: [{pts,weight,msg},...]} — per-kid overrides from Firebase
+// Per-kid spin timing gate: when enabled, a task only earns a spin if finished early
+// or within `window` minutes of its scheduled end. Disabled = every completion spins.
+let spinGate={}; // {kid:{enabled:bool, window:5|10|15|20}}
+function spinGateFor(kid){ const g=spinGate[kid]||{}; return {enabled: g.enabled!==false, window: g.window||5}; }
 function getSlotOutcomes(kid){
   if(slotConfig[kid]&&slotConfig[kid].length) return slotConfig[kid];
   if(slotConfig.default&&slotConfig.default.length) return slotConfig.default;
@@ -16022,6 +16029,22 @@ function renderSlotsConfig(el,headerHtml){
     h+='<div style="border:1.5px solid var(--border);border-radius:12px;margin-bottom:12px;overflow:hidden">';
     h+='<div style="background:'+kc+';color:#fff;padding:8px 14px;font-weight:700;font-size:14px;font-family:\'DM Sans\',sans-serif">'+cap(kid)+'</div>';
     h+='<div style="padding:10px 14px">';
+    // Spin timing gate
+    const g=spinGateFor(kid);
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;background:#f9fafb;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;flex-wrap:wrap">';
+    h+='<div style="font-size:12px;color:var(--text);min-width:0"><b>On-time spins only</b><div style="font-size:10px;color:var(--muted)">Spin only if finished early or within the window</div></div>';
+    h+='<button onclick="spinGateToggle(\''+kid+'\')" style="flex-shrink:0;border:none;border-radius:14px;padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;background:'+(g.enabled?'#16a34a':'#e5e7eb')+';color:'+(g.enabled?'#fff':'#6b7280')+'">'+(g.enabled?'ON':'OFF')+'</button>';
+    h+='</div>';
+    if(g.enabled){
+      h+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap">';
+      h+='<span style="font-size:11px;color:var(--muted);font-weight:700">Window:</span>';
+      [5,10,15,20].forEach(w=>{
+        h+='<button onclick="spinGateSetWindow(\''+kid+'\','+w+')" style="padding:5px 12px;border-radius:8px;border:1.5px solid '+(g.window===w?kc:"var(--border)")+';background:'+(g.window===w?kc:"#fff")+';color:'+(g.window===w?"#fff":"var(--muted)")+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+w+' min</button>';
+      });
+      h+='</div>';
+    } else {
+      h+='<div style="font-size:10px;color:var(--muted);margin-bottom:10px">Every finished task earns a spin, regardless of timing.</div>';
+    }
     h+='<div style="display:grid;grid-template-columns:60px 60px 1fr;gap:6px;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px"><span>Points</span><span>Weight</span><span>Message</span></div>';
     rows.forEach((r,i)=>{
       h+='<div style="display:grid;grid-template-columns:60px 60px 1fr;gap:6px;margin-bottom:4px">';
@@ -16075,6 +16098,10 @@ function slotCfgCopy(){
 function slotCfgSave(){
   if(db) db.ref("config/slot_config").set(slotConfig);
 }
+function spinGateEnsure(kid){ if(!spinGate[kid]) spinGate[kid]={enabled:true,window:5}; }
+function spinGateToggle(kid){ spinGateEnsure(kid); spinGate[kid].enabled=!spinGateFor(kid).enabled; spinGateSave(); renderAll(); }
+function spinGateSetWindow(kid,w){ spinGateEnsure(kid); spinGate[kid].window=w; spinGate[kid].enabled=true; spinGateSave(); renderAll(); }
+function spinGateSave(){ if(db) db.ref("config/spin_gate").set(spinGate); }
 
 function renderAdminGenerate(el,headerHtml){
   let h=(headerHtml||'')+'<div class="rules-wrap">';
