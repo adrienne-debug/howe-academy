@@ -8809,15 +8809,17 @@ function renderUnitDetail(u){
   if(enrolledKids.length){
     h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">';
     h+='<div style="font-size:12px;font-weight:800;color:#1f2937">🏃 Sprints</div>';
-    h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin:3px 0 4px">Speed rounds unlock as a group’s cards clear the sprint gate. Tap one to run it.</div>';
+    h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin:3px 0 4px">Speed rounds unlock as a group’s cards clear the sprint gate. Tap one to run it. 🔮 = earliest unlock at the current drill pace — the ladder itself decides.</div>';
     enrolledKids.forEach(k=>{
       const rounds=unitSprintRounds(u,k);
+      const etas=unitSprintEtaDays(u,k);
       h+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#9a3412;margin:10px 0 6px">'+cap(k)+'</div>';
       h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
       rounds.forEach(r=>{
         if(r.unlocked){ const best=unitSprintBest(k,r.logLabel);
           h+='<button onclick="unitGoSprint(\''+esc(k)+'\',\''+esc(u.id)+'\',\''+esc(r.key).replace(/'/g,"\\'")+'\')" style="padding:5px 11px;border-radius:16px;border:1.5px solid #86efac;background:#f0fdf4;color:#15803d;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">🏃 '+esc(r.label)+' ('+r.total+')'+(best?' · 🏆'+best:'')+'</button>'; }
-        else h+='<span style="padding:5px 11px;border-radius:16px;border:1.5px solid var(--border);background:#faf8f5;color:#a8a29e;font-size:11px;font-weight:600;white-space:nowrap">🔒 '+esc(r.label)+' '+r.ready+'/'+r.total+'</span>';
+        else { const eta=_unitEtaLbl(etas[r.key]);
+          h+='<span style="padding:5px 11px;border-radius:16px;border:1.5px solid var(--border);background:#faf8f5;color:#a8a29e;font-size:11px;font-weight:600;white-space:nowrap">🔒 '+esc(r.label)+' '+r.ready+'/'+r.total+(eta?' <span style="color:#b45309;font-weight:700">· 🔮 '+eta+'</span>':'')+'</span>'; }
       });
       h+='</div>';
     });
@@ -8997,6 +8999,73 @@ function unitSprintRounds(u,kid){
         logLabel:r.label+" · "+(u.title||u.id),names:r.cards.map(c=>c.name),ready:n,total:r.cards.length,unlocked:n===r.cards.length,whole:!!r.whole}); });
   });
   return out;
+}
+// ── U8: sprint-unlock ESTIMATES, locked to the ladder. Mirrors the real climb mechanics —
+// intro dots (one per drill day), then the kid's own TIER_LADDER climbed on tier_streaks/
+// ladder_streak consecutive corrects, with each tier's reviews arriving every MAST_TIER_INT
+// calendar days; bank cards first wait for an intro slot (cat_intro_max cohorts). Assumes
+// drills stay on pace with no misses, so it's an EARLIEST-around figure ("~2 wk"), display
+// only — the unlock itself always comes from the actual gate, never the estimate.
+function _unitKidLadderCfg(kid){
+  const s=masteryData[kid+"_settings"]||{};
+  return {ladder:s.ladder||["every_other_day","weekly","bi_weekly","monthly","graduated"],
+    streaks:s.tier_streaks||{},streak:s.ladder_streak??3,gate:s.gate_tier||"weekly",
+    introDots:s.intro_dots??5,catIntroDots:s.cat_intro_dots||{},catIntroMax:s.cat_intro_max||{}};
+}
+// Calendar days for an ON-LADDER item (tier,cc) to reach the gate tier. 0 = already there.
+function _unitLadderDaysToGate(tier,cc,cfg){
+  if(mastTierAtLeast(tier,cfg.gate)) return 0;
+  // normalize onto the ladder exactly like mastSaveResults does (daily → ladder[0])
+  let idx=0; const tpos=MAST_TIER_ORDER.indexOf(tier||"daily");
+  for(let k=0;k<cfg.ladder.length;k++){ if(MAST_TIER_ORDER.indexOf(cfg.ladder[k])<=tpos) idx=k; }
+  let days=0;
+  for(let k=idx;k<cfg.ladder.length;k++){
+    const t=cfg.ladder[k];
+    if(mastTierAtLeast(t,cfg.gate)) break;
+    const need=(cfg.streaks[t]??cfg.streak)-(k===idx?(cc||0):0);
+    days+=Math.max(0,need)*(MAST_TIER_INT[t]||1);
+  }
+  return days;
+}
+// Per-round earliest-unlock estimate in calendar days (max over the round's cards), or null
+// when the round is already unlocked. Bank-only cards queue for intro slots cohort by cohort.
+function unitSprintEtaDays(u,kid){
+  const out={}; if(!u||!u.decks) return out;
+  const cfg=_unitKidLadderCfg(kid);
+  let items=masteryData[kid]; if(!Array.isArray(items)) items=Object.values(items||{});
+  const byKey={}; items.forEach(i=>{ if(i) byKey[i.subject+"|"+i.prompt]=i; });
+  const introToCal=d=>d*7/5; // intro dots land on school days; intervals are calendar days
+  (u.decks||[]).forEach(d=>{
+    const cards=(d.cards||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0)); if(!cards.length) return;
+    const dots=cfg.catIntroDots[d.key]??cfg.introDots;
+    const cap=Math.max(1,cfg.catIntroMax[d.key]||5);
+    const introDays=introToCal(dots);
+    const freshClimb=_unitLadderDaysToGate("daily",0,cfg);
+    let queuePos=0; // not-started cards ahead, in intro order
+    const etaByName={};
+    cards.forEach(c=>{
+      const it=byKey[d.key+"|"+c.name];
+      if(!it||it.status==="parked"){ // waiting in the bank for an intro slot
+        const cohort=Math.floor(queuePos/cap); queuePos++;
+        etaByName[c.name]=(cohort+0.5)*introDays+introDays+freshClimb;
+      } else if(it.status==="introduction"){
+        etaByName[c.name]=introToCal(Math.max(0,dots-(it.tally_dots||0)))+freshClimb;
+      } else {
+        etaByName[c.name]=_unitLadderDaysToGate(it.tier,it.consecutive_correct||0,cfg);
+      }
+    });
+    const rounds=[];
+    if(d.groupBy){ const gs=[],byG={}; cards.forEach(c=>{ const g=c[d.groupBy]; if(!g) return; if(!byG[g]){byG[g]=[];gs.push(g);} byG[g].push(c); });
+      gs.forEach(g=>rounds.push({key:u.id+"|"+d.key+"|"+g,cards:byG[g]})); }
+    rounds.push({key:u.id+"|"+d.key+"|*",cards});
+    rounds.forEach(r=>{ let m=0; r.cards.forEach(c=>{ m=Math.max(m,etaByName[c.name]||0); }); out[r.key]=m>0?Math.ceil(m):null; });
+  });
+  return out;
+}
+function _unitEtaLbl(days){
+  if(days==null||days<=0) return "";
+  if(days<=7) return "~this week";
+  return "~"+Math.ceil(days/7)+" wk";
 }
 // Personal best for one unit-sprint round, from the existing sprint log (entries tagged src:"unit").
 function unitSprintBest(kid,logLabel){
@@ -17454,11 +17523,12 @@ function buildSprintUnitHtml(color){
   if(!sprintUnitId||!units.some(u=>u.id===sprintUnitId)) sprintUnitId=units[0].id;
   const u=units.find(x=>x.id===sprintUnitId);
   const rounds=unitSprintRounds(u,masteryKid);
+  const etas=unitSprintEtaDays(u,masteryKid);
   if(sprintUnitKey&&!rounds.some(r=>r.key===sprintUnitKey)) sprintUnitKey=null;
   const sel=sprintUnitKey?rounds.find(r=>r.key===sprintUnitKey):null;
   let h='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">';
   h+='<div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700;margin-bottom:4px">\u{1F393} Unit Sprints</div>';
-  h+='<div style="font-size:12px;color:#78716c;line-height:1.5;margin-bottom:12px">A round unlocks when every card in it has cleared the sprint gate (tier or 90% accuracy). Locked rounds show how close they are.</div>';
+  h+='<div style="font-size:12px;color:#78716c;line-height:1.5;margin-bottom:12px">A round unlocks when every card in it has cleared the sprint gate (tier or 90% accuracy). Locked rounds show how close they are; 🔮 is the earliest unlock at the current drill pace — the ladder itself decides.</div>';
   if(units.length>1){
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">';
     units.forEach(x=>{ const act=x.id===sprintUnitId;
@@ -17471,7 +17541,8 @@ function buildSprintUnitHtml(color){
     if(r.unlocked){
       h+='<button onclick="sprintSetUnitKey(\''+esc(r.key).replace(/'/g,"\\'")+'\')" style="padding:6px 11px;border-radius:20px;border:1.5px solid '+(act?color:"#86efac")+';background:'+(act?color:"#f0fdf4")+';color:'+(act?"#fff":"#15803d")+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">\u{1F3C3} '+esc(r.label)+' ('+r.total+')</button>';
     } else {
-      h+='<span style="padding:6px 11px;border-radius:20px;border:1.5px solid #e2ddd6;background:#faf8f5;color:#a8a29e;font-size:12px;font-weight:600;white-space:nowrap">\u{1F512} '+esc(r.label)+' '+r.ready+'/'+r.total+'</span>';
+      const eta=_unitEtaLbl(etas[r.key]);
+      h+='<span style="padding:6px 11px;border-radius:20px;border:1.5px solid #e2ddd6;background:#faf8f5;color:#a8a29e;font-size:12px;font-weight:600;white-space:nowrap">\u{1F512} '+esc(r.label)+' '+r.ready+'/'+r.total+(eta?' <span style="color:#b45309;font-weight:700">\u{B7} \u{1F52E} '+eta+'</span>':'')+'</span>';
     }
   });
   h+='</div></div>';
