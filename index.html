@@ -6819,8 +6819,8 @@ function haNbContext(kid){
       if(dollUrl||outfitUrl) dolls={ doll:dollUrl, outfit:outfitUrl };
     }
   } }catch(e){}
-  let monarchy=null; try{ monarchy=haBuildMonarchy(kid); }catch(e){}
-  return { weekData:{dates:dates, tasks:tasks}, weekNum:WK, weekDates:weekDates, masteryItems:(mastery[kid]||[]), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, monarchy:monarchy };
+  let units=[]; try{ units=haKidUnits(kid).map(u=>haBuildUnitInsight(kid,u)).filter(Boolean); }catch(e){}
+  return { weekData:{dates:dates, tasks:tasks}, weekNum:WK, weekDates:weekDates, masteryItems:(mastery[kid]||[]), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units };
 }
 function haNbOpen(kid,which){
   const lib=window.HoweNotebooks; if(!lib){ alert("Notebook builder not loaded yet."); return; }
@@ -8532,6 +8532,85 @@ async function nbActRemoveBook(cat, bookId){
 // One shared dataset, read from the mastery curriculum bank (all 42 monarchs +
 // house/reign) joined with the kid's live drill items (status/tier → progress)
 // and portraits (mastery visuals, by name). Milestones = the concept deck.
+// ── GENERIC UNIT PAGES: any unit → status page, tap-to-read bio, printed insert ──
+function haKidUnits(kid){ const out=[]; if(typeof unitStudies==="undefined"||!unitStudies) return out; for(const id in unitStudies){ const u=unitStudies[id]; if(u&&u.id&&u.enrolled&&u.enrolled[kid]) out.push(u); } return out; }
+function _unitCharDeck(u){ return (u.decks||[]).find(d=>d&&d.groupBy)||(u.decks||[])[0]||null; }
+function _unitPortrait(u,kid,deckKey,name){ const vis=Object.assign({}, u.visuals||{}, masteryData[kid+"_visuals"]||{}); const v=vis[deckKey+"_"+name]; if(v){ if(typeof v==="string") return {emoji:v}; if(v.imageUrl) return {img:v.imageUrl}; } return null; }
+// Insight for the notebook insert (learning/learned/next + extras), generic over units.
+function haBuildUnitInsight(kid,u){
+  if(!u||!u.decks) return null; const cd=_unitCharDeck(u); if(!cd) return null;
+  const gb=cd.groupBy; let items=masteryData[kid]; if(!Array.isArray(items)) items=Object.values(items||{});
+  const byName={}; items.forEach(i=>{ if(i&&i.subject===cd.key) byName[i.prompt]=i; });
+  const mTier=(typeof MAST_MASTERY_TIER_DEFAULT!=="undefined")?MAST_MASTERY_TIER_DEFAULT:"monthly";
+  const isMast=it=>!!(it&&it.status!=="introduction"&&it.status!=="parked"&&typeof mastTierAtLeast==="function"&&mastTierAtLeast(it.tier,mTier));
+  const cards=(cd.cards||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0));
+  const learning=[],learned=[],next=[];
+  cards.forEach(c=>{ const it=byName[c.name];
+    const base={name:c.name,group:(gb?c[gb]:"")||"",sub:c.reign||c.altmode||"",bio:c.bio||c.info||c.def||"",portrait:_unitPortrait(u,kid,cd.key,c.name)};
+    if(it&&it.status==="introduction") learning.push(base);
+    else if(it&&it.status!=="parked"&&it.status) learned.push(base);
+    else if(next.length<6) next.push({name:c.name,portrait:base.portrait}); });
+  let extras=[],extrasTitle="";
+  const ed=(u.decks||[]).find(d=>d&&d!==cd);
+  if(ed){ extrasTitle=ed.key; extras=(ed.cards||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0)).map(c=>({name:c.name,year:c.year||"",text:c.sig||c.def||c.bio||""})); }
+  return { unitId:u.id,title:u.title,emoji:u.emoji||"📘",learning,learned,next:next.slice(0,6),extras,extrasTitle };
+}
+// In-app status page(s) for every unit a kid is enrolled in.
+function renderUnitPages(kid){ const units=haKidUnits(kid); let out=""; units.forEach(u=>{ out+=_renderUnitCard(kid,u); }); return out; }
+function _renderUnitCard(kid,u){
+  const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  const cd=_unitCharDeck(u); if(!cd||!cd.cards) return "";
+  const gb=cd.groupBy; let items=masteryData[kid]; if(!Array.isArray(items)) items=Object.values(items||{});
+  const byName={}; items.forEach(i=>{ if(i&&i.subject===cd.key) byName[i.prompt]=i; });
+  const mTier=(typeof MAST_MASTERY_TIER_DEFAULT!=="undefined")?MAST_MASTERY_TIER_DEFAULT:"monthly";
+  const isMast=it=>!!(it&&it.status!=="introduction"&&it.status!=="parked"&&typeof mastTierAtLeast==="function"&&mastTierAtLeast(it.tier,mTier));
+  const cards=cd.cards.slice().sort((a,b)=>(a.order||0)-(b.order||0));
+  const groups=[],byG={}; cards.forEach(c=>{ const gv=(gb?c[gb]:"")||"All"; if(!byG[gv]){byG[gv]=[];groups.push(gv);} byG[gv].push(c); });
+  const total=cards.length, nMast=cards.filter(c=>isMast(byName[c.name])).length, nLearn=cards.filter(c=>{const it=byName[c.name];return it&&it.status==="introduction";}).length;
+  const pv=c=>{ const p=_unitPortrait(u,kid,cd.key,c.name); if(p){ if(p.img) return '<img class="rl-face" src="'+esc(p.img)+'" style="object-fit:cover" alt="">'; if(p.emoji) return '<div class="rl-face">'+p.emoji+'</div>'; } return '<div class="rl-face rl-face-empty">'+(u.emoji||"⭐")+'</div>'; };
+  const badge=c=>{ const it=byName[c.name]; if(!it||it.status==="parked") return '<span class="rl-b" style="background:#f3f4f6;color:#9ca3af">soon</span>'; if(it.status==="introduction") return '<span class="rl-b" style="background:#fffbeb;color:#b45309">⭐ learning</span>'; if(isMast(it)) return '<span class="rl-b" style="background:#f0fdf4;color:#15803d">✓ mastered</span>'; return '<span class="rl-b" style="background:#eff6ff;color:#2563eb">• in progress</span>'; };
+  let h='<div style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:16px;margin-top:16px">';
+  h+='<style>.rl-face{width:100%;height:66px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:32px;background:#faf7f2;border:1px solid var(--border);overflow:hidden}.rl-face-empty{opacity:.35}.rl-tile{width:82px}.rl-b{display:inline-block;font-size:8.5px;font-weight:700;padding:1px 6px;border-radius:7px;margin-top:3px}.rl-name{font-size:10px;font-weight:700;line-height:1.15;margin-top:3px;color:#1f2937}.rl-reign{font-size:8.5px;color:var(--muted)}</style>';
+  h+='<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:2px"><div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700;color:#1f2937">'+(u.emoji||"📘")+' '+esc(u.title)+'</div>';
+  h+='<button onclick="printUnitPage(\''+esc(kid)+'\',\''+esc(u.id)+'\')" style="margin-left:auto;padding:5px 11px;border-radius:8px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🖨 Print</button></div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">'+total+' cards · <b style="color:#b45309">'+nLearn+' learning</b> · <b style="color:#15803d">'+nMast+' mastered</b></div>';
+  groups.forEach(gv=>{ const list=byG[gv]; const hm=list.filter(c=>isMast(byName[c.name])).length;
+    h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#9a3412;margin:14px 0 7px;border-bottom:1px solid var(--border);padding-bottom:3px">'+esc(gv)+' <span style="color:var(--muted);font-weight:600">('+list.length+(hm?' · '+hm+' ✓':'')+')</span></div>';
+    h+='<div style="display:flex;flex-wrap:wrap;gap:10px">';
+    list.forEach(c=>{ h+='<div class="rl-tile" style="text-align:center;cursor:pointer" onclick="showUnitCardBio(\''+esc(u.id)+'\',\''+esc(cd.key)+'\','+(c.order||0)+')" title="Read '+esc(c.name)+'">'+pv(c)+'<div class="rl-name">'+esc(c.name)+'</div><div class="rl-reign">'+esc(c.reign||c.altmode||"")+'</div>'+badge(c)+'</div>'; });
+    h+='</div>'; });
+  (u.decks||[]).filter(d=>d&&d!==cd).forEach(ed=>{ const ec=(ed.cards||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0)); if(!ec.length) return;
+    h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#6d28d9;margin:18px 0 7px;border-bottom:1px solid var(--border);padding-bottom:3px">'+esc(ed.key)+'</div>';
+    ec.forEach(c=>{ h+='<div style="display:flex;gap:8px;align-items:baseline;padding:4px 0;font-size:11px">'+(c.year?'<span style="flex-shrink:0;font-weight:800;color:#6d28d9;min-width:62px">'+esc(c.year)+'</span>':'')+'<span style="flex:1"><b>'+esc(c.name)+'</b> — <span style="color:var(--muted)">'+esc(c.sig||c.def||"")+'</span></span></div>'; }); });
+  h+='</div>'; return h;
+}
+function showUnitCardBio(unitId,deckKey,order){
+  const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  const u=(typeof unitStudies!=="undefined"&&unitStudies)?unitStudies[unitId]:null; if(!u) return;
+  const deck=(u.decks||[]).find(d=>d.key===deckKey); if(!deck) return;
+  const c=(deck.cards||[]).find(x=>x&&(x.order||0)===order); if(!c) return;
+  const kid=(typeof nbSelectedKid!=="undefined")?nbSelectedKid:"";
+  const p=_unitPortrait(u,kid,deckKey,c.name);
+  let face='<div style="width:88px;height:88px;border-radius:12px;border:2px solid #b7e4c7;background:#f2faf5;display:flex;align-items:center;justify-content:center;font-size:44px;flex-shrink:0">'+(u.emoji||"📘")+'</div>';
+  if(p){ if(p.img) face='<img src="'+esc(p.img)+'" style="width:88px;height:88px;object-fit:cover;border-radius:12px;border:2px solid #b7e4c7;flex-shrink:0">'; else if(p.emoji) face='<div style="width:88px;height:88px;border-radius:12px;border:2px solid #b7e4c7;background:#f2faf5;display:flex;align-items:center;justify-content:center;font-size:48px;flex-shrink:0">'+p.emoji+'</div>'; }
+  const sub=[(c.group||c.house||""),(c.reign||c.altmode||c.year||"")].filter(Boolean).map(esc).join(" · ");
+  let ov=document.getElementById("monbio-dlg"); if(ov) ov.remove();
+  ov=document.createElement("div"); ov.id="monbio-dlg"; ov.className="dlg-overlay"; ov.style.display="flex"; ov.style.zIndex="9999"; ov.onclick=function(e){ if(e.target===ov) ov.remove(); };
+  ov.innerHTML='<div class="dlg-box" style="max-width:440px;text-align:left">'+
+    '<div style="display:flex;gap:13px;align-items:center;margin-bottom:12px">'+face+
+      '<div><div style="font-family:\'Fraunces\',serif;font-size:21px;font-weight:700;color:#1a3a2a;line-height:1.1">'+esc(c.name)+'</div>'+
+      (sub?'<div style="font-size:11.5px;color:var(--muted);font-weight:600;margin-top:2px">'+sub+'</div>':'')+'</div></div>'+
+    '<div style="font-size:14px;line-height:1.6;color:#1c1c1e">'+esc(c.bio||c.info||c.def||"No story yet.")+'</div>'+
+    '<button onclick="document.getElementById(\'monbio-dlg\').remove()" style="margin-top:16px;width:100%;padding:11px;border-radius:10px;border:none;background:#2d6a4f;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Close</button></div>';
+  document.body.appendChild(ov);
+}
+function printUnitPage(kid,unitId){
+  const u=(typeof unitStudies!=="undefined"&&unitStudies)?unitStudies[unitId]:null; if(!u) return;
+  const html=_renderUnitCard(kid,u); if(!html) return;
+  const w=window.open("","_blank"); if(!w){ alert("Allow pop-ups to print."); return; }
+  w.document.write('<!doctype html><html><head><title>'+String(u.title||"Unit")+'</title><style>:root{--border:#e5e7eb;--muted:#6b7280}body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:16px;color:#111}</style></head><body>'+html+'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print()},250)}</scr'+'ipt></body></html>');
+  w.document.close();
+}
 // Tap a monarch (Royal Line page) → read their full bio. Reads the shared unit registry.
 function showMonarchBio(order){
   const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
@@ -8920,7 +8999,7 @@ function renderNotebook(el){
         storyHtml+
         coloringHtml+
       '</div>'+
-      renderRoyalLinePage(sel)+
+      renderUnitPages(sel)+
     '</div>';
 }
 

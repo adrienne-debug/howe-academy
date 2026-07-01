@@ -1951,6 +1951,48 @@
     return [p1, p2];
   }
 
+  // Generic 2-page unit insert (any unit) — built from ctx.units insights.
+  function unitInsertPages(ins, weekNum) {
+    if (!ins || !((ins.learning && ins.learning.length) || (ins.learned && ins.learned.length) || (ins.next && ins.next.length))) return [];
+    var esc = function (v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
+    var GD = "#1a3a2a", GM = "#2d6a4f", GL = "#b7e4c7", GP = "#f2faf5", GOLD = "#c9a84c", INK = "#1c1c1e", MUT = "#6b7280";
+    var emoji = ins.emoji || "📘", title = ins.title || "Unit Study";
+    function face(p, sz) { sz = sz || 64;
+      if (p && p.img) return '<img src="' + esc(p.img) + '" style="width:' + sz + 'px;height:' + sz + 'px;object-fit:cover;border-radius:8px;border:2px solid ' + GL + '">';
+      var e = (p && p.emoji) || emoji;
+      return '<div style="width:' + sz + 'px;height:' + sz + 'px;border-radius:8px;border:2px solid ' + GL + ';background:' + GP + ';display:flex;align-items:center;justify-content:center;font-size:' + Math.round(sz * 0.5) + 'px">' + e + '</div>';
+    }
+    function hdr(t, sub) {
+      return '<div style="background:' + GD + ';padding:14px 40px;display:flex;justify-content:space-between;align-items:flex-end;flex-shrink:0">' +
+        '<div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.2em;text-transform:uppercase;color:' + GL + ';opacity:0.85;margin-bottom:3px">' + esc(title) + ' · Unit Study</div>' +
+        '<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:#fff;line-height:1">' + esc(t) + '</div></div>' +
+        '<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:600;color:' + GOLD + '">' + esc(sub) + '</div></div>' +
+        '<div style="height:5px;flex-shrink:0;background:repeating-linear-gradient(90deg,' + GM + ' 0,' + GM + ' 18px,' + GOLD + ' 18px,' + GOLD + ' 22px,' + GM + ' 22px,' + GM + ' 40px)"></div>';
+    }
+    var p1 = '<div class="page-label">Unit Study — ' + esc(title) + ' (1/2)</div>\n<div class="page">\n' + hdr(emoji + " This Week", "Week " + weekNum) +
+      '<div style="padding:16px 40px;flex:1;display:flex;flex-direction:column;gap:11px;overflow:hidden">' +
+      '<div style="font-size:11px;color:' + MUT + '">What you’re learning right now — read each one’s story.</div>';
+    (ins.learning || []).slice(0, 5).forEach(function (m) {
+      var subline = [(m.group || ""), (m.sub || "")].filter(Boolean).map(esc).join(" · ");
+      p1 += '<div style="display:flex;gap:13px;align-items:flex-start;border:1.5px solid ' + GL + ';background:' + GP + ';border-radius:11px;padding:10px 13px">' + face(m.portrait, 64) +
+        '<div style="flex:1;min-width:0"><div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700;color:' + GD + ';line-height:1.1">' + esc(m.name) + '</div>' +
+        (subline ? '<div style="font-family:\'DM Mono\',monospace;font-size:9px;color:' + MUT + ';margin:2px 0 5px">' + subline + '</div>' : '<div style="height:3px"></div>') +
+        '<div style="font-size:11px;line-height:1.5;color:' + INK + '">' + esc(m.bio || "") + '</div></div></div>';
+    });
+    if (!(ins.learning || []).length) p1 += '<div style="font-size:12px;color:' + MUT + '">Nothing in the learning phase this week.</div>';
+    p1 += '</div></div>';
+    var p2 = '<div class="page-label">Unit Study — ' + esc(title) + ' (2/2)</div>\n<div class="page">\n' + hdr("Your Journey", "Week " + weekNum) +
+      '<div style="padding:16px 40px;flex:1;display:flex;flex-direction:column;gap:14px;overflow:hidden">';
+    p2 += '<div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:' + GM + ';margin-bottom:7px">✅ Learned so far (' + ((ins.learned || []).length) + ')</div>';
+    if ((ins.learned || []).length) { p2 += '<div style="display:flex;flex-wrap:wrap;gap:9px">'; ins.learned.forEach(function (m) { p2 += '<div style="width:74px;text-align:center">' + face(m.portrait, 52) + '<div style="font-size:9px;font-weight:700;color:' + INK + ';margin-top:3px;line-height:1.15">' + esc(m.name) + '</div></div>'; }); p2 += '</div>'; } else p2 += '<div style="font-size:11px;color:' + MUT + '">None finished yet — keep going!</div>';
+    p2 += '</div>';
+    if ((ins.next || []).length) { p2 += '<div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:#9a7d2e;margin-bottom:7px">⏭️ Coming up next</div><div style="display:flex;flex-wrap:wrap;gap:9px">'; ins.next.forEach(function (m) { p2 += '<div style="width:74px;text-align:center;opacity:0.75">' + face(m.portrait, 52) + '<div style="font-size:9px;font-weight:600;color:' + MUT + ';margin-top:3px;line-height:1.15">' + esc(m.name) + '</div></div>'; }); p2 += '</div></div>'; }
+    if ((ins.extras || []).length) { p2 += '<div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:#6d28d9;margin-bottom:6px">' + esc(ins.extrasTitle || "Lore") + '</div>'; ins.extras.slice(0, 5).forEach(function (e) { p2 += '<div style="display:flex;gap:8px;font-size:10.5px;padding:2px 0;line-height:1.4">' + (e.year ? '<span style="font-weight:800;color:#6d28d9;min-width:60px">' + esc(e.year) + '</span>' : '') + '<span><b>' + esc(e.name) + '</b> — ' + esc(e.text || "") + '</span></div>'; }); p2 += '</div>'; }
+    p2 += '<div style="border:1.5px dashed ' + GOLD + ';border-radius:10px;padding:10px 14px;background:#fdf8ee"><div style="font-family:\'Fraunces\',serif;font-size:13px;font-weight:700;color:' + GD + ';margin-bottom:5px">🎯 Challenge</div><div style="font-size:11px;color:' + INK + ';line-height:1.5">Can you name this week’s ' + esc(title) + ' and tell someone one fact about each? Write your favorite below:</div><div style="border-bottom:1.5px solid ' + MUT + ';height:20px;margin-top:8px"></div><div style="border-bottom:1.5px solid ' + MUT + ';height:20px;margin-top:6px"></div></div>';
+    p2 += '</div></div>';
+    return [p1, p2];
+  }
+
   function generateLincoln(ctx) {
     ctx = ctx || {};
     var weekData = ctx.weekData || {};
@@ -1996,7 +2038,7 @@
     var T = LN_EXTRA.enrich.theme_lincoln;
     var parts = [weeklyH, lnBrainBreakPage(0, wn),
       enPageAllAboutMe(T, ctx.personal || null, wn), enPageMoneyLife(T, wn), enPageWilderness(T, wn), enPageMemoryCivics(T, wn)];
-    unitMonarchyPages(ctx.monarchy, wn).forEach(function (p) { parts.push(p); });
+    (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn).forEach(function (p) { parts.push(p); }); });
     dailyPages.forEach(function (dp, i) {
       parts.push(dp);
       parts.push(i < dailyPages.length - 1 ? lnBrainBreakPage(i + 1, wn) : lnCreativePage(wn));
@@ -2609,6 +2651,7 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
     pages.push(enPageMoneyLife(T, wn));
     pages.push(enPageMemoryCivics(T, wn));
     pages.push(enPageNotes(T));
+    (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn).forEach(function (p) { pages.push(p); }); });
 
     var dayAssignments = [];
     orderedDays.forEach(function (day, i) {
@@ -3413,6 +3456,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     parts.push(luPageWeeklyReview(wn, weekDates, days, dates, tasks, prevStats, pace, focus));
     parts.push(luPageMonths(wn, weekDates, curMonth));
     parts.push(luPageAllAboutMe(wn, weekDates, ctx.personal || null)); // personal info from the Notebook tab (or blank)
+    (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn).forEach(function (p) { parts.push(p); }); });
     days.forEach(function (day, i) {
       var dateStr = dates[day] || "";
       var blend = (i < blends.length) ? blends[i] : blends[blends.length - 1];
