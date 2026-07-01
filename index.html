@@ -8659,7 +8659,10 @@ function renderUnitDetail(u){
   (u.decks||[]).forEach(d=>{
     h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px">';
     h+='<div style="font-size:13px;font-weight:800;color:#1f2937">'+esc(d.key)+' <span style="font-size:11px;color:var(--muted);font-weight:600">· '+((d.cards||[]).length)+' cards · '+(d.mode||"flip")+' · '+(d.introCap||5)+' at a time</span></div>';
-    h+='<div style="font-size:10.5px;color:var(--muted);margin:3px 0 9px">Tap a card to add a photo or edit its bio — changes apply to every kid using this unit.</div>';
+    const _ff=d.flipFace||"desc";
+    const _ffBtn=(mode,label)=>'<button onclick="unitSetFlipFace(\''+u.id+'\',\''+esc(d.key)+'\',\''+mode+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid '+(_ff===mode?"#2d6a4f":"var(--border)")+';background:'+(_ff===mode?"#f2faf5":"#fff")+';color:'+(_ff===mode?"#2d6a4f":"var(--muted)")+';font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+label+'</button>';
+    h+='<div style="display:flex;gap:6px;align-items:center;margin:7px 0 4px"><span style="font-size:10px;color:var(--muted);font-weight:700">Flip drill:</span>'+_ffBtn("desc","📖 Name → facts")+_ffBtn("name","🖼️ Photo → name")+'</div>';
+    h+='<div style="font-size:10.5px;color:var(--muted);margin:3px 0 9px">Tap a card to add a photo, edit its facts or bio — changes apply to every kid using this unit.</div>';
     h+='<div style="display:flex;flex-wrap:wrap;gap:8px">';
     (d.cards||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0)).forEach(c=>{
       const vv=(u.visuals||{})[d.key+"_"+c.name];
@@ -8709,6 +8712,13 @@ function unitEnroll(unitId,kid){
   if(!u.enrolled) u.enrolled={}; u.enrolled[kid]=true;
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   const m=document.getElementById("unit-enroll-msg"); if(m) m.textContent=cap(kid)+" enrolled — the deck is in their Drills & Notebook now.";
+  const el=document.getElementById("content"); if(el) renderUnits(el);
+}
+// Per-deck flip style (shared): "desc" (name+pic → description) or "name" (pic → name).
+function unitSetFlipFace(unitId,deckKey,mode){
+  const u=unitStudies[unitId]; if(!u) return;
+  const di=(u.decks||[]).findIndex(d=>d.key===deckKey); if(di<0) return;
+  u.decks[di].flipFace=mode; if(db) db.ref("unitStudies/"+unitId+"/decks/"+di+"/flipFace").set(mode);
   const el=document.getElementById("content"); if(el) renderUnits(el);
 }
 // A card's drill status for one kid (progress is per-kid even though content is shared).
@@ -12675,6 +12685,14 @@ function mastGetVisual(cat,name){
   if(typeof unitStudies!=="undefined"&&unitStudies){ for(const uid in unitStudies){ const uv=(unitStudies[uid]&&unitStudies[uid].visuals)||null; if(uv&&uv[key]) return uv[key]; } }
   return null;
 }
+// Flip "face" mode for a deck: "desc" (name+pic front → description back, default)
+// or "name" (pic front → name back). Shared via the unit registry (deck.flipFace).
+function mastCatFace(subject){
+  const s=masteryData[(masteryKid||"julian")+"_settings"]||{};
+  if(s.cat_face&&s.cat_face[subject]) return s.cat_face[subject];
+  if(typeof unitStudies!=="undefined"&&unitStudies){ for(const uid in unitStudies){ const ds=(unitStudies[uid]&&unitStudies[uid].decks)||[]; for(const d of ds){ if(d&&d.key===subject&&d.flipFace) return d.flipFace; } } }
+  return "desc";
+}
 function mastSetVisual(cat,name,val){
   const kid=masteryKid||"julian";
   if(!masteryData[kid+"_visuals"]) masteryData[kid+"_visuals"]={};
@@ -14483,19 +14501,23 @@ function _renderMasteryInner(el){
     if(isIntro) _tallyH+='<div style="font-size:10px;color:#9a3412;font-weight:600;margin-top:4px">'+tallyCount+'/'+tallyMax+' days shown</div>';
     else _tallyH+='<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:4px">'+(MAST_TIER_LBL[it.tier]||it.tier)+' \u{00B7} '+tallyCount+'/'+(_js.tier_streaks[it.tier]??_js.ladder_streak)+' streak</div>';
 
+    // "Guess the name" mode: photo on the front, name on the back. Only when the card
+    // actually has a picture (else it'd show the name on both sides).
+    const _hasPic=!!(it.imageUrl)||!!(typeof mastGetVisual==="function"&&mastGetVisual(it.subject,it.prompt));
+    const _faceName=(!_ruleStyle)&&(typeof mastCatFace==="function"&&mastCatFace(it.subject)==="name")&&_hasPic;
     if(_catMode==="flip"||_isRule){
       h+='<div class="mast-flip-wrap'+(mastFlipped?" flipped":"")+'" onclick="mastFlip()">';
       h+='<div class="mast-flip-inner">';
       h+='<div class="mast-flip-front">';
       h+='<div class="mast-slide-img">'+bigVis+'</div>';
       if(_ruleQ) h+='<div style="font-size:14px;color:#7c3aed;font-weight:700;margin-bottom:2px">'+_ruleQ+'</div>';
-      else if(!_ruleStyle) h+='<div class="mast-slide-name">'+it.prompt+'</div>';  // rule cards: bigVis already shows the prompt; don't repeat it
-      h+='<div class="mast-flip-hint">\u{1F4A1} tap to see '+(_ruleStyle?'the rule':'definition')+'</div>';
+      else if(!_ruleStyle&&!_faceName) h+='<div class="mast-slide-name">'+it.prompt+'</div>';  // rule/name-mode cards don't repeat the prompt on the front
+      h+='<div class="mast-flip-hint">\u{1F4A1} tap to see '+(_faceName?'who this is':(_ruleStyle?'the rule':'definition'))+'</div>';
       h+=_tallyH;
       h+='</div>';
       h+='<div class="mast-flip-back">';
       { const _bpl=it.prompt.length; const _bfs=_bpl<=6?60:_bpl<=14?42:_bpl<=22?32:24; h+='<div class="mast-slide-img"><span style="font-size:'+_bfs+'px;font-weight:800;color:#7c3aed;word-break:break-word;max-width:100%">'+it.prompt+'</span></div>'; }
-      h+='<div class="mast-flip-def">'+(_backText?(_ruleStyle?_backText:'&ldquo;'+_backText+'&rdquo;'):'<span style="color:#a78bfa;font-size:16px">no '+(_ruleStyle?'rule':'definition')+' yet</span>')+'</div>';
+      if(!_faceName) h+='<div class="mast-flip-def">'+(_backText?(_ruleStyle?_backText:'&ldquo;'+_backText+'&rdquo;'):'<span style="color:#a78bfa;font-size:16px">no '+(_ruleStyle?'rule':'definition')+' yet</span>')+'</div>';
       h+='<div class="mast-flip-hint">\u{1F4A1} tap to flip back</div>';
       h+=_tallyH;
       h+='</div>';
