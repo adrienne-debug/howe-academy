@@ -1961,6 +1961,16 @@ function dailyPaceTracker(dayTasks, dayKey){
   const now=new Date(), nowMin=now.getHours()*60+now.getMinutes();
   const fmtT=m=>{ let h=Math.floor(m/60),mn=m%60,ap="AM"; if(h>=12){ap="PM";if(h>12)h-=12;} if(h===0)h=12; return h+":"+(mn<10?"0":"")+mn+" "+ap; };
 
+  // Project a finish, pausing for the fixed 1:00–2:00 PM lunch break when the
+  // remaining work runs across it. Task times already leave the gap (post-lunch
+  // work starts at 2:00), but the duration-based projection didn't, so it read
+  // ~an hour early. Only affects Proj. — Target is built from real task times.
+  const LUNCH_S=13*60, LUNCH_E=14*60;
+  const projWithLunch=(startMin,workMin)=>{
+    if(startMin>=LUNCH_E || startMin+workMin<=LUNCH_S) return startMin+workMin;
+    return LUNCH_E+Math.max(0, workMin-Math.max(0, LUNCH_S-startMin));
+  };
+
   const isToday = dayKey === _todayDay;
 
   // All done
@@ -2008,7 +2018,7 @@ function dailyPaceTracker(dayTasks, dayKey){
         '<div class="pace-tracker-times"><div class="pace-tracker-col"><div class="pace-tracker-lbl">Target</div><div class="pace-tracker-val">'+fmtT(expectedEnd)+'</div></div></div>'+
         '</div>';
     }
-    const projEnd=nowMin+remainMin;
+    const projEnd=projWithLunch(nowMin,remainMin);
     return '<div class="pace-tracker behind">'+
       '<div class="pace-tracker-icon">⏰</div>'+
       '<div class="pace-tracker-body"><div class="pace-tracker-status">Behind Schedule</div>'+
@@ -2022,7 +2032,7 @@ function dailyPaceTracker(dayTasks, dayKey){
   // Today, in progress: project the finish from the clock — remaining work
   // measured from right now — so the estimate slides as time passes instead of
   // freezing on the average check-off drift. Status follows the same projection.
-  const projEnd=nowMin+remainMin;
+  const projEnd=projWithLunch(nowMin,remainMin);
   const diff=projEnd-expectedEnd;
   const cls=diff<=-5?"ahead":diff<=10?"on-track":"behind";
   const icon=cls==="ahead"?"⚡":cls==="on-track"?"✅":"⏰";
