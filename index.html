@@ -1110,6 +1110,7 @@ let mastGenerating={}; // {itemId: true} while API call in flight
 let mastView="drill"; // "drill", "scores", "admin", etc.
 let unitStudies={};   // shared unit-study library (Firebase unitStudies/*)
 let unitOpenId=null;  // which unit's detail view is open
+let unitEdit=null;    // {unitId,deckKey,order,newImg} — card being edited in the Units tab
 let mastAdminLocal=null;
 let mastAdminDirty=false;
 let mastOverrideExtraCats=[];  // transient: categories surfaced in the consolidated per-category overrides UI but not yet given an override (not persisted)
@@ -8561,7 +8562,8 @@ function renderRoyalLinePage(kid){
   const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
   let items=masteryData[kid]; if(!Array.isArray(items)) items=Object.values(items||{});
   const itemByName={}; items.forEach(i=>{ if(i&&i.subject==="British Monarchs") itemByName[i.prompt]=i; });
-  const vis=masteryData[kid+"_visuals"]||{};
+  const _uvis=((typeof unitStudies!=="undefined"&&unitStudies&&unitStudies.british_monarchy&&unitStudies.british_monarchy.visuals))||{};
+  const vis=Object.assign({}, _uvis, masteryData[kid+"_visuals"]||{}); // shared unit photos + per-kid overrides
   const mTier=(typeof MAST_MASTERY_TIER_DEFAULT!=="undefined")?MAST_MASTERY_TIER_DEFAULT:"monthly";
   const isMastered=it=>!!(it&&it.status!=="introduction"&&it.status!=="parked"&&typeof mastTierAtLeast==="function"&&mastTierAtLeast(it.tier,mTier));
   const mon=bank.slice().sort((a,b)=>(a.order||0)-(b.order||0));
@@ -8657,8 +8659,15 @@ function renderUnitDetail(u){
   (u.decks||[]).forEach(d=>{
     h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px">';
     h+='<div style="font-size:13px;font-weight:800;color:#1f2937">'+esc(d.key)+' <span style="font-size:11px;color:var(--muted);font-weight:600">· '+((d.cards||[]).length)+' cards · '+(d.mode||"flip")+' · '+(d.introCap||5)+' at a time</span></div>';
-    const prev=(d.cards||[]).slice(0,8).map(c=>esc(c.name)).join(" · ");
-    h+='<div style="font-size:11px;color:var(--muted);margin-top:5px;line-height:1.5">'+prev+((d.cards||[]).length>8?' …':'')+'</div></div>';
+    h+='<div style="font-size:10.5px;color:var(--muted);margin:3px 0 9px">Tap a card to add a photo or edit its bio — changes apply to every kid using this unit.</div>';
+    h+='<div style="display:flex;flex-wrap:wrap;gap:8px">';
+    (d.cards||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0)).forEach(c=>{
+      const vv=(u.visuals||{})[d.key+"_"+c.name];
+      let thumb='<div style="width:46px;height:46px;border-radius:7px;border:1px solid var(--border);background:#faf7f2;display:flex;align-items:center;justify-content:center;font-size:22px">👑</div>';
+      if(vv){ if(typeof vv==="string") thumb='<div style="width:46px;height:46px;border-radius:7px;border:1px solid var(--border);background:#faf7f2;display:flex;align-items:center;justify-content:center;font-size:24px">'+vv+'</div>'; else if(vv.imageUrl) thumb='<img src="'+esc(vv.imageUrl)+'" style="width:46px;height:46px;object-fit:cover;border-radius:7px;border:1px solid var(--border)">'; }
+      h+='<div onclick="unitEditCard(\''+u.id+'\',\''+esc(d.key)+'\','+(c.order||0)+')" style="width:72px;text-align:center;cursor:pointer">'+thumb+'<div style="font-size:8.5px;font-weight:600;color:#374151;margin-top:2px;line-height:1.12;max-height:22px;overflow:hidden">'+esc(c.name)+'</div></div>';
+    });
+    h+='</div></div>';
   });
   h+='</div>';
   return h;
@@ -8698,6 +8707,59 @@ function unitEnroll(unitId,kid){
   if(!u.enrolled) u.enrolled={}; u.enrolled[kid]=true;
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   const m=document.getElementById("unit-enroll-msg"); if(m) m.textContent=cap(kid)+" enrolled — the deck is in their Drills & Notebook now.";
+  const el=document.getElementById("content"); if(el) renderUnits(el);
+}
+// ── Unit card editor: edit shared photo + bio (applies to every enrolled kid) ──
+function unitEditCard(unitId,deckKey,order){
+  const u=unitStudies[unitId]; if(!u) return;
+  const deck=(u.decks||[]).find(d=>d.key===deckKey); if(!deck) return;
+  const card=(deck.cards||[]).find(c=>(c.order||0)===order); if(!card) return;
+  unitEdit={unitId,deckKey,order,newImg:null};
+  _unitEditOverlay();
+}
+function _unitEditOverlay(){
+  if(!unitEdit) return;
+  const u=unitStudies[unitEdit.unitId]; if(!u) return;
+  const deck=(u.decks||[]).find(d=>d.key===unitEdit.deckKey); if(!deck) return;
+  const card=(deck.cards||[]).find(c=>(c.order||0)===unitEdit.order); if(!card) return;
+  const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  const key=deck.key+"_"+card.name;
+  const existing=(u.visuals||{})[key];
+  const cur=unitEdit.newImg || (existing&&typeof existing==="object"&&existing.imageUrl) || null;
+  const face=cur ? '<img src="'+esc(cur)+'" style="width:96px;height:96px;object-fit:cover;border-radius:12px;border:2px solid #b7e4c7">'
+    : '<div style="width:96px;height:96px;border-radius:12px;border:2px solid #b7e4c7;background:#f2faf5;display:flex;align-items:center;justify-content:center;font-size:48px">👑</div>';
+  let ov=document.getElementById("unit-edit-dlg"); if(ov) ov.remove();
+  ov=document.createElement("div"); ov.id="unit-edit-dlg"; ov.className="dlg-overlay"; ov.style.display="flex"; ov.style.zIndex="9999";
+  ov.innerHTML='<div class="dlg-box" style="max-width:470px;text-align:left;max-height:88vh;overflow:auto">'+
+    '<div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:700;color:#1a3a2a">'+esc(card.name)+'</div>'+
+    '<div style="font-size:11px;color:var(--muted);margin-bottom:12px">'+esc(card.house?("House of "+card.house+" · "):"")+esc(card.reign||card.year||"")+'</div>'+
+    '<div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:12px">'+face+
+      '<div style="flex:1"><label style="display:inline-block;padding:8px 14px;border-radius:9px;border:1.5px dashed #2d6a4f;background:#f2faf5;color:#2d6a4f;font-size:12px;font-weight:700;cursor:pointer">📷 '+(cur?"Change photo":"Add photo")+'<input type="file" accept="image/*" onchange="unitEditPhoto(this)" style="display:none"></label>'+
+      '<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.4">Shows on the drill card, the Royal Line page &amp; the printed notebook — for every kid using this unit.</div></div></div>'+
+    '<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:4px">Bio</div>'+
+    '<textarea id="unit-edit-bio" style="width:100%;box-sizing:border-box;min-height:130px;padding:9px 11px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif;line-height:1.5">'+esc(card.bio||card.info||"")+'</textarea>'+
+    '<div style="display:flex;gap:8px;margin-top:14px">'+
+      '<button onclick="unitEditClose()" style="flex:1;padding:11px;border-radius:10px;border:none;background:#f3f4f6;color:#374151;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancel</button>'+
+      '<button onclick="unitEditSave()" style="flex:1;padding:11px;border-radius:10px;border:none;background:#2d6a4f;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save</button>'+
+    '</div></div>';
+  document.body.appendChild(ov);
+}
+function unitEditPhoto(input){
+  const f=input.files&&input.files[0]; if(!f) return;
+  if(typeof mastCompressImg!=="function"){ alert("Image tool not ready."); return; }
+  mastCompressImg(f,420,0.82).then(function(dataUrl){ if(unitEdit){ unitEdit.newImg=dataUrl; _unitEditOverlay(); } }).catch(function(e){ alert("Image failed: "+(e&&e.message||e)); });
+}
+function unitEditClose(){ unitEdit=null; const ov=document.getElementById("unit-edit-dlg"); if(ov) ov.remove(); }
+function unitEditSave(){
+  if(!unitEdit) return;
+  const u=unitStudies[unitEdit.unitId]; if(!u) return;
+  const di=(u.decks||[]).findIndex(d=>d.key===unitEdit.deckKey); const deck=u.decks[di];
+  const ci=(deck.cards||[]).findIndex(c=>(c.order||0)===unitEdit.order); const card=deck.cards[ci]; if(!card) return;
+  const key=deck.key+"_"+card.name;
+  const ta=document.getElementById("unit-edit-bio"); const bio=ta?ta.value:null;
+  if(bio!=null){ card.bio=bio; if(db) db.ref("unitStudies/"+unitEdit.unitId+"/decks/"+di+"/cards/"+ci+"/bio").set(bio); }
+  if(unitEdit.newImg){ if(!u.visuals) u.visuals={}; u.visuals[key]={imageUrl:unitEdit.newImg}; if(db) db.ref("unitStudies/"+unitEdit.unitId+"/visuals/"+key).set({imageUrl:unitEdit.newImg}); }
+  unitEditClose();
   const el=document.getElementById("content"); if(el) renderUnits(el);
 }
 
@@ -12576,8 +12638,12 @@ function mastReorderTap(cat,idx){
 }
 function mastGetVisual(cat,name){
   const kid=masteryKid||"julian";
+  const key=cat+"_"+name;
   const v=masteryData[kid+"_visuals"]||{};
-  return v[cat+"_"+name]||null;
+  if(v[key]) return v[key];
+  // Shared unit-study visual (added once in the Units tab → all enrolled kids)
+  if(typeof unitStudies!=="undefined"&&unitStudies){ for(const uid in unitStudies){ const uv=(unitStudies[uid]&&unitStudies[uid].visuals)||null; if(uv&&uv[key]) return uv[key]; } }
+  return null;
 }
 function mastSetVisual(cat,name,val){
   const kid=masteryKid||"julian";
