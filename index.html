@@ -8496,6 +8496,64 @@ async function nbActRemoveBook(cat, bookId){
   // best-effort: delete this book's PNGs from Storage
   try{ const dir=firebase.storage().ref("notebookActivities/"+cat+"/"+bookId); const lst=await dir.listAll(); await Promise.all(lst.items.map(it=>it.delete().catch(()=>{}))); }catch(e){}
 }
+// ── UNIT STUDY: British Monarchy "Royal Line" notebook page ───────────────
+// One shared dataset, read from the mastery curriculum bank (all 42 monarchs +
+// house/reign) joined with the kid's live drill items (status/tier → progress)
+// and portraits (mastery visuals, by name). Milestones = the concept deck.
+function renderRoyalLinePage(kid){
+  const cust=masteryData[kid+"_custom_items"];
+  if(!Array.isArray(cust)) return "";
+  const bank=cust.filter(c=>c&&c.cat==="British Monarchs");
+  if(!bank.length) return "";
+  const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  let items=masteryData[kid]; if(!Array.isArray(items)) items=Object.values(items||{});
+  const itemByName={}; items.forEach(i=>{ if(i&&i.subject==="British Monarchs") itemByName[i.prompt]=i; });
+  const vis=masteryData[kid+"_visuals"]||{};
+  const mTier=(typeof MAST_MASTERY_TIER_DEFAULT!=="undefined")?MAST_MASTERY_TIER_DEFAULT:"monthly";
+  const isMastered=it=>!!(it&&it.status!=="introduction"&&it.status!=="parked"&&typeof mastTierAtLeast==="function"&&mastTierAtLeast(it.tier,mTier));
+  const mon=bank.slice().sort((a,b)=>(a.order||0)-(b.order||0));
+  const houses=[],byHouse={};
+  mon.forEach(m=>{ const hs=m.house||"Other"; if(!byHouse[hs]){byHouse[hs]=[];houses.push(hs);} byHouse[hs].push(m); });
+  const total=mon.length;
+  const nMast=mon.filter(m=>isMastered(itemByName[m.name])).length;
+  const nLearn=mon.filter(m=>{const it=itemByName[m.name];return it&&it.status==="introduction";}).length;
+  const pv=m=>{ const v=vis["British Monarchs_"+m.name];
+    if(v){ if(typeof v==="string") return '<div class="rl-face">'+v+'</div>'; if(v.imageUrl) return '<img class="rl-face" src="'+esc(v.imageUrl)+'" style="object-fit:cover" alt="">'; }
+    return '<div class="rl-face rl-face-empty">\u{1F451}</div>'; };
+  const badge=m=>{ const it=itemByName[m.name];
+    if(!it||it.status==="parked") return '<span class="rl-b" style="background:#f3f4f6;color:#9ca3af">soon</span>';
+    if(it.status==="introduction") return '<span class="rl-b" style="background:#fffbeb;color:#b45309">⭐ learning</span>';
+    if(isMastered(it)) return '<span class="rl-b" style="background:#f0fdf4;color:#15803d">✓ mastered</span>';
+    return '<span class="rl-b" style="background:#eff6ff;color:#2563eb">• in progress</span>'; };
+  let h='<div style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:16px;margin-top:16px">';
+  h+='<style>.rl-face{width:100%;height:66px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:32px;background:#faf7f2;border:1px solid var(--border);overflow:hidden}.rl-face-empty{opacity:.35}.rl-tile{width:82px}.rl-b{display:inline-block;font-size:8.5px;font-weight:700;padding:1px 6px;border-radius:7px;margin-top:3px}.rl-name{font-size:10px;font-weight:700;line-height:1.15;margin-top:3px;color:#1f2937}.rl-reign{font-size:8.5px;color:var(--muted)}</style>';
+  h+='<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:2px"><div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700;color:#1f2937">\u{1F3F0} The Royal Line</div>';
+  h+='<button onclick="printRoyalLine(\''+kid+'\')" style="margin-left:auto;padding:5px 11px;border-radius:8px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F5A8} Print</button></div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">'+total+' monarchs · <b style="color:#b45309">'+nLearn+' learning</b> · <b style="color:#15803d">'+nMast+' mastered</b></div>';
+  houses.forEach(hs=>{
+    const list=byHouse[hs]; const hm=list.filter(m=>isMastered(itemByName[m.name])).length;
+    h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#9a3412;margin:14px 0 7px;border-bottom:1px solid var(--border);padding-bottom:3px">'+esc(hs)+' <span style="color:var(--muted);font-weight:600">('+list.length+(hm?' · '+hm+' ✓':'')+')</span></div>';
+    h+='<div style="display:flex;flex-wrap:wrap;gap:10px">';
+    list.forEach(m=>{ h+='<div class="rl-tile" style="text-align:center">'+pv(m)+'<div class="rl-name">'+esc(m.name)+'</div><div class="rl-reign">'+esc(m.reign||"")+'</div>'+badge(m)+'</div>'; });
+    h+='</div>';
+  });
+  const ms=items.filter(i=>i&&i.subject==="Monarchy Milestones").sort((a,b)=>(a.order||0)-(b.order||0));
+  if(ms.length){
+    h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#6d28d9;margin:18px 0 7px;border-bottom:1px solid var(--border);padding-bottom:3px">\u{1F5D3}\u{FE0F} Milestones</div>';
+    ms.forEach(e=>{ h+='<div style="display:flex;gap:8px;padding:4px 0;font-size:11px"><span style="flex-shrink:0;font-weight:800;color:#6d28d9;min-width:62px">'+esc(e.year||"")+'</span><span><b>'+esc(e.prompt)+'</b> — <span style="color:var(--muted)">'+esc(e.answer||"")+'</span></span></div>'; });
+  }
+  h+='</div>';
+  return h;
+}
+function printRoyalLine(kid){
+  const html=renderRoyalLinePage(kid); if(!html) return;
+  const w=window.open("","_blank"); if(!w){ alert("Allow pop-ups to print the Royal Line."); return; }
+  w.document.write('<!doctype html><html><head><title>The Royal Line — British Monarchs</title>'+
+    '<style>:root{--border:#e5e7eb;--muted:#6b7280}body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:16px;color:#111}</style>'+
+    '</head><body>'+html+'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print()},250)}</scr'+'ipt></body></html>');
+  w.document.close();
+}
+
 function renderNotebook(el){
   const con=el||document.getElementById("content"); if(!con)return;
   haLoadNotebooksLib().catch(()=>{}); // warm the engine so the Generate buttons are ready
@@ -8613,6 +8671,7 @@ function renderNotebook(el){
         storyHtml+
         coloringHtml+
       '</div>'+
+      renderRoyalLinePage(sel)+
     '</div>';
 }
 
