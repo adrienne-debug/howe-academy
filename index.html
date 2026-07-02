@@ -5428,6 +5428,7 @@ function ceRenderSessions(k,col){
 
 // ── CURRICULUM EDITOR — EDIT SHEET ────────────────────────────────
 let ceEditKid=null, ceEditKey=null, ceCloseTimer=null;
+let ceWalkOpen=false, ceWalkSel=new Set(), _ceWalkItems=[], _ceWalkCursor=0, walkbackData=null;
 
 function ceOpenEdit(kid,key){
   if(ceCloseTimer){clearTimeout(ceCloseTimer);ceCloseTimer=null;}
@@ -5503,6 +5504,115 @@ function ceSetTotal(newTotal){
   savePaceSubject(kid,key,next);
   ceRenderEditSheet();
 }
+// ── WALK-BACK: retract false "done"s for one subject, with a snapshot + note ──
+// Un-checks through the same data the auto-count reads (current week + archived weeks),
+// so History, progress, day-% and the generator cursor all correct together. Each apply
+// saves a snapshot to walkbacks/{kid} — what was retracted, when it had been checked,
+// the original history entry, and Mom's note — so a struggle can be revisited later.
+// The retracted lessons return to the not-done pool and get served again.
+function _walkDoneKey(origId,checkedObj,tasksArr,histObj){
+  let id=origId;
+  while(true){
+    const he=(histObj||{})[id];
+    if(checkedObj[id]||(he&&typeof he==="object"&&he.ts&&!he.missed&&!he.flag)) return id;
+    const nid=id+"_c";
+    if(!tasksArr.some(t=>t.id===nid)) return null;
+    id=nid;
+  }
+}
+function ceWalkGather(){
+  const kid=ceEditKid, key=ceEditKey;
+  const _ps=((paceData.subjects&&paceData.subjects[kid])||{})[key];
+  const kwsRaw=paceKeywords(kid,key,_ps);
+  const kws=(typeof kwsRaw==="string"?[kwsRaw]:kwsRaw||[]).map(k=>k.toLowerCase().trim());
+  if(!kws.length) return [];
+  const DORD={monday:0,tuesday:1,wednesday:2,thursday:3,friday:4,saturday:5,sunday:6};
+  const currStart=currFirstWeekNum();
+  const out=[];
+  const wkNum=parseInt((WK.match(/\d+/)||[0])[0])||0;
+  weekData.tasks.filter(t=>t.who===kid&&!t.id.endsWith("_c")).forEach(t=>{
+    if(!kws.some(kw=>(t.title||"").toLowerCase().includes(kw))) return;
+    const doneKey=_walkDoneKey(t.id,checked,weekData.tasks,histState);
+    if(doneKey) out.push({wk:WK,wkNum,dord:DORD[t.day]||0,doneKey,title:t.title||"",detail:(t.detail||"").split("—")[0].trim(),day:t.day,ts:checked[doneKey]||"",hist:histState[doneKey]||null,archive:false});
+  });
+  Object.keys(archive).forEach(ak=>{
+    const aw=archive[ak]||{};
+    if((aw.weekLabel||ak)===WK) return;
+    const awNum=parseInt(((aw.weekLabel||ak).match(/\d+/)||[0])[0])||0;
+    if(awNum>0&&awNum<currStart) return;
+    const awChecked=aw.checked||{}, awTasks=aw.tasks||[], awHist=aw.history||{};
+    awTasks.filter(t=>t&&t.who===kid&&!t.id.endsWith("_c")).forEach(t=>{
+      if(!kws.some(kw=>(t.title||"").toLowerCase().includes(kw))) return;
+      const doneKey=_walkDoneKey(t.id,awChecked,awTasks,awHist);
+      if(doneKey) out.push({wk:ak,wkNum:awNum,dord:DORD[t.day]||0,doneKey,title:t.title||"",detail:(t.detail||"").split("—")[0].trim(),day:t.day,ts:awChecked[doneKey]||"",hist:awHist[doneKey]||null,archive:true});
+    });
+  });
+  out.sort((a,b)=>(b.wkNum-a.wkNum)||(b.dord-a.dord));
+  return out;
+}
+function ceWalkToggle(){
+  ceWalkOpen=!ceWalkOpen; ceWalkSel=new Set();
+  if(ceWalkOpen&&walkbackData===null){
+    walkbackData={};
+    if(db) db.ref("walkbacks").once("value").then(s=>{ walkbackData=s.val()||{}; if(ceWalkOpen) ceRenderEditSheet(); });
+  }
+  ceRenderEditSheet();
+}
+// Checkbox toggles update the summary line in place — no re-render, so the note survives.
+function ceWalkToggleItem(i,el){
+  if(el.checked) ceWalkSel.add(i); else ceWalkSel.delete(i);
+  const n=ceWalkSel.size;
+  const sEl=document.getElementById("ce-walk-summary");
+  if(sEl){
+    if(!n){ sEl.innerHTML='Tap the check-offs that didn’t really happen.'; }
+    else{
+      const newCur=Math.max(0,_ceWalkCursor-n);
+      const nxt=getNextLessonsFromCursor(ceEditKid,ceEditKey,newCur,1);
+      sEl.innerHTML='<b>'+n+'</b> selected — done count '+_ceWalkCursor+' → <b>'+newCur+'</b>'+(nxt.length?' · next lesson becomes <b>'+esc(nxt[0].lesson)+'</b>':'');
+    }
+  }
+}
+function ceWalkApply(){
+  const items=_ceWalkItems.filter((it,i)=>ceWalkSel.has(i));
+  if(!items.length) return;
+  const noteEl=document.getElementById("ce-walk-note");
+  const note=(noteEl&&noteEl.value.trim())||"";
+  if(!confirm("Walk back "+items.length+" check-off"+(items.length>1?"s":"")+"? They return to the not-done pool and a snapshot is saved.")) return;
+  let curTouched=false;
+  items.forEach(it=>{
+    if(!it.archive){
+      manualUnchecks.add(it.doneKey);
+      delete checked[it.doneKey];
+      const hist=ld(WK+"_history")||{}; delete hist[it.doneKey]; delete histState[it.doneKey]; sv(WK+"_history",hist);
+      if(claimed[it.doneKey]!=null){ delete claimed[it.doneKey]; sv(WK+"_claimed",claimed); if(db) db.ref(WK+"/claimed/"+it.doneKey).remove(); }
+      if(db) db.ref(WK+"/history/"+it.doneKey).remove();
+      curTouched=true;
+    }else{
+      const aw=archive[it.wk]; if(!aw) return;
+      if(aw.checked) delete aw.checked[it.doneKey];
+      if(aw.history) delete aw.history[it.doneKey];
+      if(db){ db.ref("archive/"+it.wk+"/checked/"+it.doneKey).remove(); db.ref("archive/"+it.wk+"/history/"+it.doneKey).remove(); }
+    }
+  });
+  if(curTouched){
+    sv(WK+"_checked",checked); lastCheckedWrite=Date.now();
+    if(db) db.ref(WK+"/checked").set(checked);
+  }
+  try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
+  // The snapshot: everything needed to understand (or undo) this walk-back later.
+  const entry={ts:nowTs(),kid:ceEditKid,subjectKey:ceEditKey,note:note,
+    items:items.map(it=>({wk:it.wk,id:it.doneKey,title:it.title,detail:it.detail,day:it.day,checkedTs:it.ts||null,hist:it.hist||null}))};
+  const wid="wb_"+Date.now();
+  if(walkbackData===null) walkbackData={};
+  if(!walkbackData[ceEditKid]) walkbackData[ceEditKid]={};
+  walkbackData[ceEditKid][wid]=entry;
+  if(db) db.ref("walkbacks/"+ceEditKid+"/"+wid).set(entry);
+  ceWalkSel=new Set();
+  if(curTouched) schedCascade();
+  if(typeof gwShowToast==="function") gwShowToast("Walked back "+items.length+" — snapshot saved ✓");
+  renderAll(); ceRenderEditSheet();
+}
+
 // Minutes stepper: update the value + the displayed number in place — no full sheet
 // re-render, so you keep your place while tapping up/down.
 function ceStepMin(delta){
@@ -5750,6 +5860,50 @@ function ceRenderEditSheet(){
   h+='<span><input class="pace-num-input" type="number" min="0" value="'+cursorPos+'" onchange="ceSetCount(\'adjust\',parseInt(this.value)||0)"/> done · next: <b>'+esc(_nextLabel)+'</b></span>';
   h+='</div>';
   h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Where the generator picks up next. Does NOT change your progress numbers.</div>';
+
+  // Walk-back panel — retract false check-offs with a snapshot + note
+  h+='<div class="ce-sheet-lbl">Fix false check-offs</div>';
+  if(!ceWalkOpen){
+    h+='<button style="border:1.5px solid var(--border);border-radius:10px;background:#fff;padding:7px 12px;font-size:12px;cursor:pointer" onclick="ceWalkToggle()">🧹 Walk back check-offs…</button>';
+    h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Un-check work marked done that didn’t really happen. Saves a snapshot with a note; the lessons come back around.</div>';
+  }else{
+    _ceWalkItems=ceWalkGather(); _ceWalkCursor=cursorPos;
+    h+='<div style="border:1.5px solid var(--border);border-radius:10px;padding:8px">';
+    if(!_ceWalkItems.length){
+      h+='<div style="font-size:11px;color:var(--muted)">No check-offs found for this subject.</div>';
+    }else{
+      h+='<div id="ce-walk-summary" style="font-size:11px;margin-bottom:6px">Tap the check-offs that didn’t really happen.</div>';
+      h+='<div style="max-height:180px;overflow-y:auto">';
+      _ceWalkItems.forEach((it,i)=>{
+        h+='<label style="display:flex;align-items:center;gap:7px;padding:4px 2px;font-size:11px;cursor:pointer;border-bottom:1px solid var(--border)">';
+        h+='<input type="checkbox" onchange="ceWalkToggleItem('+i+',this)">';
+        h+='<span style="flex:1;min-width:0">'+esc(it.title)+(it.detail?' — <b>'+esc(it.detail)+'</b>':'')+'</span>';
+        h+='<span style="color:var(--muted);white-space:nowrap">'+esc(cap(it.wk))+' '+esc(cap((it.day||"").slice(0,3)))+(it.ts?' · '+esc(it.ts):'')+'</span>';
+        h+='</label>';
+      });
+      h+='</div>';
+      h+='<input id="ce-walk-note" class="ce-sheet-input" style="width:100%;box-sizing:border-box;margin-top:7px" placeholder="Note — why? (e.g. said done, couldn’t show me — struggling)">';
+      h+='<div style="display:flex;gap:8px;margin-top:7px">';
+      h+='<button style="border:none;border-radius:10px;background:var(--ink,#1e293b);color:#fff;padding:7px 14px;font-size:12px;cursor:pointer" onclick="ceWalkApply()">Walk back selected</button>';
+      h+='<button style="border:1.5px solid var(--border);border-radius:10px;background:#fff;padding:7px 12px;font-size:12px;cursor:pointer" onclick="ceWalkToggle()">Cancel</button>';
+      h+='</div>';
+      if((_ps&&(_ps.adjust||_ps.paceAdjust))){
+        h+='<div style="font-size:10px;color:#b45309;margin-top:6px">⚠ This subject has a manual count correction ('+((_ps.adjust||0))+' cursor / '+((_ps.paceAdjust||0))+' progress). Walking back also lowers the auto count — re-check the two numbers above afterwards.</div>';
+      }
+    }
+    // Prior walk-backs for this kid+subject — the paper trail
+    const wbs=Object.entries((walkbackData&&walkbackData[ceEditKid])||{}).filter(([,e])=>e.subjectKey===ceEditKey).sort((a,b)=>b[0].localeCompare(a[0]));
+    if(wbs.length){
+      h+='<div style="font-size:10px;font-weight:700;margin-top:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)">Previous walk-backs</div>';
+      wbs.forEach(([,e])=>{
+        h+='<div style="font-size:11px;padding:5px 0;border-bottom:1px solid var(--border)">';
+        h+='<div><b>'+esc(e.ts||"")+'</b> · '+(e.items||[]).length+' item'+((e.items||[]).length>1?'s':'')+(e.note?' — <i>'+esc(e.note)+'</i>':'')+'</div>';
+        h+='<div style="color:var(--muted)">'+(e.items||[]).map(it=>esc(it.detail||it.title||it.id)).join(' · ')+'</div>';
+        h+='</div>';
+      });
+    }
+    h+='</div>';
+  }
 
   // Pace tracking config (from the retired Plans & Map tab)
   if(_ps){
