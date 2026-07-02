@@ -5017,12 +5017,12 @@ function renderCurriculumView(el,headerHtml){
     return;
   }
 
-  // Inner tab bar: Subjects | Plans — outside any wrapper so sticky works
+  // Inner tab bar: Subjects | Plans | Builder — outside any wrapper so sticky works
   let h=(headerHtml||'');
   h+='<div style="position:sticky;top:156px;z-index:89;background:var(--bg);display:flex;gap:0;margin:0;padding:0 4px;border-bottom:2px solid var(--border)">';
-  ["subjects","plans"].forEach(tab=>{
+  ["subjects","plans","builder"].forEach(tab=>{
     const on=currInnerTab===tab;
-    const label=tab==="subjects"?"Subjects":"Plans & Map";
+    const label=tab==="subjects"?"Subjects":tab==="plans"?"Plans & Map":"Builder";
     h+='<button style="flex:1;padding:9px 4px;font-size:12px;font-weight:700;border:none;background:none;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:'+(on?"var(--text)":"var(--muted)")+';border-bottom:2px solid '+(on?"var(--header)":"transparent")+';margin-bottom:-2px" onclick="setCurrInnerTab(\''+tab+'\')">'+label+'</button>';
   });
   h+='</div>';
@@ -5031,6 +5031,13 @@ function renderCurriculumView(el,headerHtml){
   if(currInnerTab==="plans"){
     el.innerHTML=h;
     renderCurrPlans(el);
+    return;
+  }
+
+  // Builder tab — pacing modes materialized into the lesson grid
+  if(currInnerTab==="builder"){
+    el.innerHTML=h;
+    renderCurrBuilder(el);
     return;
   }
 
@@ -10221,6 +10228,589 @@ function clearSessionMap(planKey){
   try{localStorage.setItem("ha_sessionMaps",JSON.stringify(sessionMapData));}catch(e){}
   if(db) db.ref("sessionMaps/"+planKey).remove();
   renderAll();
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// CURRICULUM BUILDER (CB1) — pacing modes materialized into the lesson grid.
+// The builder is a third author of the same dataset Excel upload and cell
+// edits write: curriculum/lessons + weekDays + subjects. It only ever touches
+// FUTURE rows (date > today). Shape one-offs (moves/day-offs/make-ups) stay
+// in scheduleOverrides and are never written here.
+// ═════════════════════════════════════════════════════════════════════════
+let cbKid=null, cbSubjKey=null, cbForm=null, cbPreviewRes=null, cbLastBuild=null, cbMsg="";
+
+// CBGEN_START (node-harness extraction boundary — builder materializer, pure)
+function _cbParseDate(s){ const p=String(s).split("-"); return new Date(parseInt(p[0]),parseInt(p[1])-1,parseInt(p[2])); }
+function _cbISO(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function _cbMonday(d){ const m=new Date(d); m.setDate(m.getDate()-((m.getDay()+6)%7)); return _cbISO(m); }
+// Even spread of n picks over a week's eligible days — same convention as the
+// shipped timesPerWeek interpolation (3× → Mon/Wed/Fri, 2× → Mon/Fri, 1× → Mon).
+function _cbSpread(arr,n){
+  if(n>=arr.length) return arr.slice();
+  if(n<=0) return [];
+  if(n===1) return [arr[0]];
+  const out=[]; let last=-1;
+  for(let i=0;i<n;i++){
+    const idx=Math.round(i*(arr.length-1)/(n-1));
+    if(idx!==last){ out.push(arr[idx]); last=idx; }
+  }
+  return out;
+}
+// Lays a subject's units (one unit = one day's cell text) onto future grid rows.
+// Pure — reads only cfg:
+//   sk, minutes, mode: "targetDate"|"timesPerWeek"|"window"|"pages"|"minutes"
+//   tpw, targetDate, windowEnd, allowedDays:["Mon",...] ([] = any school day)
+//   content:[texts]                       — sequenced modes (already sliced at the live cursor)
+//   pages:{totalPages,startPage,pattern:[3,4,5,3],unitLabel:"pp."|"Lesson"|"Day"} — pages mode
+//   minutesText                           — minutes mode cell text
+//   rows: chronological FUTURE rows [{dayNum,date,week,dow,off,usedMin,hadMine}]
+//   dayCapMin (0 = uncapped)
+//   extend:{lastDayNum,lastDate,lastWeekNum,lastWeekLabel,isOff(dateStr)} — grid extension
+// Returns {assignments:[{dayNum,date,week,text,isNew}], clears:[dayNum], stats, warnings}
+function cbMaterialize(cfg){
+  const warnings=[];
+  const rows=cfg.rows||[];
+  const cap=cfg.dayCapMin||0;
+  const myMin=cfg.minutes||20;
+  const allowed=cfg.allowedDays||[];
+  const dayFits=r=>!r.off&&(!allowed.length||allowed.includes(r.dow));
+  const dayOk=r=>dayFits(r)&&(!cap||r.usedMin+myMin<=cap);
+  const capSkipped=rows.filter(r=>dayFits(r)&&!(r.usedMin+myMin<=cap)&&cap).length;
+
+  // 1) Units to place
+  let units;
+  if(cfg.mode==="pages"){
+    const pg=cfg.pages||{};
+    const pat=(pg.pattern&&pg.pattern.length)?pg.pattern:[5];
+    const start=pg.startPage||1, end=start+(pg.totalPages||0)-1;
+    const u=pg.unitLabel||"pp.";
+    units=[];
+    let p=start,i=0;
+    while(p<=end){
+      const n=Math.max(1,pat[i%pat.length]|0), q=Math.min(p+n-1,end);
+      if(u==="pp.") units.push(p===q?("p. "+p):("pp. "+p+"–"+q));
+      else units.push(p===q?(u+" "+p):(u+" "+p+"–"+q));
+      p=q+1; i++;
+    }
+    if(!units.length) return {error:"No pages to place — check total pages."};
+  } else if(cfg.mode==="minutes"){
+    units=null; // unbounded — fills eligible rows through windowEnd or grid end
+  } else {
+    units=(cfg.content||[]).slice();
+    if(!units.length) return {error:"Nothing left to place — this subject has no remaining lessons."};
+  }
+
+  // 2) Times per week (targetDate mode computes it)
+  const weekOrder=[]; const byWeek={};
+  rows.forEach(r=>{ if(!byWeek[r.week]){byWeek[r.week]=[];weekOrder.push(r.week);} byWeek[r.week].push(r); });
+  let tpw=cfg.tpw||0, tpwAuto=null;
+  const maxPerWeek=Math.max(1,allowed.length||5);
+  if(cfg.mode==="targetDate"){
+    if(!cfg.targetDate) return {error:"Pick a target date first."};
+    let wkCount=0;
+    for(const wk of weekOrder){ if(byWeek[wk].some(r=>dayOk(r)&&r.date<=cfg.targetDate)) wkCount++; }
+    // Grid may end before the target — synthesized weeks count too
+    if(cfg.extend&&cfg.extend.lastDate<cfg.targetDate){
+      wkCount+=Math.floor((_cbParseDate(cfg.targetDate)-_cbParseDate(cfg.extend.lastDate))/(7*864e5));
+    }
+    tpwAuto=Math.ceil(units.length/Math.max(1,wkCount));
+    if(tpwAuto>maxPerWeek){
+      warnings.push("Needs "+tpwAuto+"×/week to hit the target but only "+maxPerWeek+" allowed day"+(maxPerWeek!==1?"s":"")+"/week — will run past the target.");
+      tpwAuto=maxPerWeek;
+    }
+    tpw=tpwAuto;
+  }
+  if(!tpw) tpw=maxPerWeek;
+
+  // 3) Place onto existing future rows, week by week
+  const assignments=[]; const assigned={};
+  let stopped=false;
+  for(const wk of weekOrder){
+    if(stopped) break;
+    let elig=byWeek[wk].filter(dayOk);
+    if(cfg.windowEnd) elig=elig.filter(r=>r.date<=cfg.windowEnd);
+    const chosen=_cbSpread(elig,Math.min(tpw,elig.length));
+    for(const r of chosen){
+      if(units&&!units.length){ stopped=true; break; }
+      assignments.push({dayNum:r.dayNum,date:r.date,week:r.week,text:units?units.shift():(cfg.minutesText||(myMin+" min")),isNew:false});
+      assigned[r.dayNum]=1;
+    }
+    if(cfg.windowEnd&&byWeek[wk].some(r=>r.date>=cfg.windowEnd)) stopped=true;
+  }
+
+  // 4) Extension — content left over after the grid ends grows the grid
+  //    (targetDate / timesPerWeek / pages only; window stops by design, minutes never extends)
+  let newWeeks=0;
+  if(units&&units.length&&cfg.extend&&cfg.mode!=="window"){
+    const ex=cfg.extend;
+    let dn=ex.lastDayNum, wkNum=ex.lastWeekNum;
+    const lastMon=_cbMonday(_cbParseDate(ex.lastDate));
+    let d=_cbParseDate(ex.lastDate);
+    let weekBuf=[], bufMon=null, bufLabel=null;
+    const flush=()=>{
+      if(!weekBuf.length) return;
+      const elig=weekBuf.filter(r=>!r.off&&(!allowed.length||allowed.includes(r.dow))&&(!cap||myMin<=cap));
+      const chosen=_cbSpread(elig,Math.min(tpw,elig.length));
+      let used=false;
+      for(const r of chosen){
+        if(!units.length) break;
+        dn++;
+        assignments.push({dayNum:dn,date:r.date,week:bufLabel,text:units.shift(),isNew:true});
+        used=true;
+      }
+      if(used&&bufMon!==lastMon) newWeeks++;
+      weekBuf=[];
+    };
+    const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    let guard=0;
+    while(units.length&&guard++<800){
+      d.setDate(d.getDate()+1);
+      const dow=d.getDay();
+      if(dow===0||dow===6) continue;
+      const mon=_cbMonday(d);
+      if(mon!==bufMon){
+        flush();
+        if(!units.length) break;
+        bufMon=mon;
+        bufLabel=(mon===lastMon)?ex.lastWeekLabel:("Wk "+(++wkNum));
+      }
+      const ds=_cbISO(d);
+      weekBuf.push({date:ds,dow:DOW[dow],off:!!ex.isOff(ds)});
+      if(dow===5) flush();
+    }
+    flush();
+    if(guard>=800&&units.length) warnings.push(units.length+" unit"+(units.length!==1?"s":"")+" couldn't be placed (ran past the extension limit).");
+  } else if(units&&units.length){
+    if(cfg.mode==="window") warnings.push(units.length+" lesson"+(units.length!==1?"s":"")+" fall after the stop date and stay unscheduled — that's what “until a date” means.");
+    else warnings.push(units.length+" unit"+(units.length!==1?"s":"")+" couldn't be placed.");
+  }
+
+  // 5) Re-pace semantics: future cells this subject already had, not reassigned, get cleared
+  const clears=rows.filter(r=>r.hadMine&&!assigned[r.dayNum]).map(r=>r.dayNum);
+
+  if(!assignments.length) return {error:"Nothing could be placed — check days, calendar and cap.",warnings};
+  const last=assignments[assignments.length-1];
+  if(cfg.mode==="targetDate"&&cfg.targetDate&&last.date>cfg.targetDate)
+    warnings.push("Projected finish "+last.date+" is after the "+cfg.targetDate+" target.");
+  if(capSkipped) warnings.push(capSkipped+" day"+(capSkipped!==1?"s":"")+" skipped because the day-minute cap was full.");
+
+  const wkSet={}; assignments.forEach(a=>{wkSet[a.week]=1;});
+  return {assignments,clears,warnings,stats:{
+    placed:assignments.length, tpwUsed:tpw, tpwAuto,
+    firstDate:assignments[0].date, lastDate:last.date,
+    weeksUsed:Object.keys(wkSet).length, newRows:assignments.filter(a=>a.isNew).length,
+    unplaced:units?units.length:0, capSkipped
+  }};
+}
+// CBGEN_END
+
+// ── Impure wrappers: collect rows from live data, apply, undo ────────────────
+
+function cbTodayISO(){ return _cbISO(new Date()); }
+
+// Future rows only (date > today), chronological, with per-day used minutes.
+function cbFutureRows(kid,sk){
+  const lessons=((currData||{}).lessons||{})[kid]||{};
+  const subs=((currData||{}).subjects||{})[kid]||{};
+  const today=cbTodayISO();
+  const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const filled=v=>v&&v!=="—"&&v!=="nan"&&String(v).trim();
+  const rows=[];
+  const dayNums=Object.keys(lessons).map(Number).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
+  for(const dnn of dayNums){
+    const l=lessons[dnn];
+    if(!l||!l.date||l.date<=today) continue;
+    let usedMin=0;
+    for(const k2 of Object.keys(subs)){
+      if(k2===sk||subs[k2].paused) continue;
+      if(filled(l[k2])) usedMin+=subs[k2].minutes||20;
+    }
+    rows.push({dayNum:dnn,date:l.date,week:l.week||"",dow:DOW[gwParseDate(l.date).getDay()],
+      off:!!(smapIsKidOff(kid,l.date)||schedOvKidOff(kid,l.date)),usedMin,hadMine:!!filled(l[sk])});
+  }
+  return rows;
+}
+
+// Extension anchor: the grid's last row + last week number, for growing past the end.
+function cbExtendInfo(kid){
+  const lessons=((currData||{}).lessons||{})[kid]||{};
+  let lastDayNum=0,lastDate="",lastWeekLabel="";
+  for(const dnStr of Object.keys(lessons)){
+    const dnn=parseInt(dnStr); if(isNaN(dnn)) continue;
+    const l=lessons[dnStr]; if(!l||!l.date) continue;
+    if(dnn>lastDayNum){ lastDayNum=dnn; lastDate=l.date; lastWeekLabel=l.week||""; }
+  }
+  if(!lastDate) return null;
+  let lastWeekNum=0;
+  for(const wk of Object.keys(((currData||{}).weekDays||{})[kid]||{})){
+    const m=wk.match(/Wk\s*(\d+)/i); if(m) lastWeekNum=Math.max(lastWeekNum,parseInt(m[1]));
+  }
+  return {lastDayNum,lastDate,lastWeekNum,lastWeekLabel,
+    isOff:ds=>!!(smapIsKidOff(kid,ds)||schedOvKidOff(kid,ds))};
+}
+
+// What's left of a subject's sequence, starting from where the kid ACTUALLY is
+// (the live generator cursor) — a behind-pace kid gets future rows laid from
+// their real position, not the planned one.
+function cbRemainingContent(kid,sk){
+  const seq=buildSubjectLessons(kid,sk)||[];
+  const cur=Math.max(0,computeSubjectCursor(kid,sk)||0);
+  return seq.slice(Math.min(cur,seq.length)).map(x=>x.lesson);
+}
+
+// Day-minute cap: per-kid override (curriculum/dayCap, CB3 UI) else school-hours default.
+function cbDayCap(kid){
+  const cd=(currData&&currData.dayCap)||{};
+  if(cd[kid]) return parseInt(cd[kid])||0;
+  const r=gwRules();
+  return (r.schoolEnd-r.schoolStart)-((r.lunchEnd||0)-(r.lunchStart||0));
+}
+
+function cbPacingLabel(s){
+  const p=s&&s.pacing;
+  if(!p) return "";
+  if(p.mode==="targetDate") return "\u{1F3AF} by "+(p.targetDate||"?");
+  if(p.mode==="timesPerWeek") return "\u{1F4C5} "+(p.tpw||"?")+"×/wk";
+  if(p.mode==="window") return "⏳ until "+(p.windowEnd||"?");
+  if(p.mode==="pages") return "\u{1F4D6} "+((p.pages&&p.pages.totalPages)||"?")+" pages";
+  if(p.mode==="minutes") return "⏱ "+(p.minutesText||"minutes");
+  return "";
+}
+
+function cbDefaultForm(kid,sk){
+  const s=((currData.subjects||{})[kid]||{})[sk]||{};
+  const p=s.pacing||{};
+  return {
+    mode:p.mode||"timesPerWeek",
+    tpw:p.tpw||s.timesPerWeek||3,
+    targetDate:p.targetDate||(s.targetEnd||""),
+    windowEnd:p.windowEnd||"",
+    totalPages:(p.pages&&p.pages.totalPages)||100,
+    startPage:(p.pages&&p.pages.startPage)||1,
+    patternStr:(p.pages&&p.pages.pattern||[]).join(", "),
+    unitLabel:(p.pages&&p.pages.unitLabel)||"pp.",
+    minutesText:p.minutesText||((s.minutes||20)+" min"),
+    allowedDays:(s.allowedDays||[]).slice(),
+    genPrefix:"Lesson", genCount:0
+  };
+}
+
+function cbParsePattern(str){
+  return String(str||"").split(/[\s,]+/).map(x=>parseInt(x)).filter(n=>!isNaN(n)&&n>0);
+}
+
+// Form → materializer cfg (also decides the content source for sequenced modes)
+function cbBuildCfg(){
+  const kid=cbKid, sk=cbSubjKey, f=cbForm;
+  const s=currData.subjects[kid][sk];
+  const cfg={sk,minutes:s.minutes||20,mode:f.mode,allowedDays:f.allowedDays.slice(),
+    rows:cbFutureRows(kid,sk),dayCapMin:cbDayCap(kid),extend:cbExtendInfo(kid)};
+  if(f.mode==="targetDate") cfg.targetDate=f.targetDate;
+  if(f.mode==="window"){ cfg.windowEnd=f.windowEnd; cfg.tpw=f.tpw; }
+  if(f.mode==="timesPerWeek") cfg.tpw=f.tpw;
+  if(f.mode==="pages"){ cfg.tpw=f.tpw; cfg.pages={totalPages:parseInt(f.totalPages)||0,startPage:parseInt(f.startPage)||1,pattern:cbParsePattern(f.patternStr),unitLabel:f.unitLabel}; }
+  if(f.mode==="minutes"){ cfg.tpw=f.tpw; cfg.minutesText=f.minutesText; if(f.windowEnd) cfg.windowEnd=f.windowEnd; }
+  if(f.mode==="targetDate"||f.mode==="timesPerWeek"||f.mode==="window"){
+    let content=cbRemainingContent(kid,sk);
+    if(!content.length&&f.genCount>0){
+      content=[]; for(let i=1;i<=f.genCount;i++) content.push(f.genPrefix+" "+i);
+    }
+    cfg.content=content;
+  }
+  return cfg;
+}
+
+function cbRunPreview(){
+  cbPreviewRes=cbMaterialize(cbBuildCfg());
+  renderAll();
+}
+
+function cbPacingFromForm(){
+  const f=cbForm;
+  const p={mode:f.mode};
+  if(f.mode==="targetDate") p.targetDate=f.targetDate;
+  if(f.mode==="timesPerWeek"||f.mode==="window"||f.mode==="pages"||f.mode==="minutes") p.tpw=f.tpw;
+  if(f.mode==="window") p.windowEnd=f.windowEnd;
+  if(f.mode==="minutes"){ p.minutesText=f.minutesText; if(f.windowEnd) p.windowEnd=f.windowEnd; }
+  if(f.mode==="pages") p.pages={totalPages:parseInt(f.totalPages)||0,startPage:parseInt(f.startPage)||1,pattern:cbParsePattern(f.patternStr),unitLabel:f.unitLabel};
+  return p;
+}
+
+// Apply the previewed build: one multi-path update on curriculum/, with an
+// undo snapshot of every touched path. Local currData is patched in step
+// (curriculum loads via .once, so the mirror doesn't refresh itself).
+function cbApply(){
+  const res=cbPreviewRes;
+  if(!res||res.error||!db||!cbKid||!cbSubjKey) return;
+  const kid=cbKid, sk=cbSubjKey;
+  const lessons=(currData.lessons[kid]=currData.lessons[kid]||{});
+  const wd=(currData.weekDays=currData.weekDays||{});
+  wd[kid]=wd[kid]||{};
+  const up={}; const prev={};
+  const snap=(path,val)=>{ if(!(path in prev)) prev[path]=(val===undefined||val===null)?null:JSON.parse(JSON.stringify(val)); };
+
+  for(const dnn of res.clears){
+    const p="lessons/"+kid+"/"+dnn+"/"+sk;
+    snap(p,(lessons[dnn]||{})[sk]); up[p]=null;
+  }
+  const wdTouched={};
+  for(const a of res.assignments){
+    if(a.isNew){
+      const p="lessons/"+kid+"/"+a.dayNum;
+      snap(p,lessons[a.dayNum]);
+      const row={week:a.week,date:a.date}; row[sk]=a.text;
+      up[p]=row; wdTouched[a.week]=1;
+    } else {
+      const p="lessons/"+kid+"/"+a.dayNum+"/"+sk;
+      snap(p,(lessons[a.dayNum]||{})[sk]); up[p]=a.text;
+    }
+  }
+  for(const wk of Object.keys(wdTouched)){
+    const arr=((wd[kid]||{})[wk]||[]).slice();
+    res.assignments.forEach(a=>{ if(a.isNew&&a.week===wk&&!arr.includes(a.dayNum)) arr.push(a.dayNum); });
+    arr.sort((a,b)=>a-b);
+    const p="weekDays/"+kid+"/"+wk;
+    snap(p,(wd[kid]||{})[wk]); up[p]=arr;
+  }
+  const s=currData.subjects[kid][sk];
+  const pacing=cbPacingFromForm();
+  pacing.builtThrough=res.stats.lastDate||""; pacing.builtAt=new Date().toISOString();
+  snap("subjects/"+kid+"/"+sk+"/pacing",s.pacing); up["subjects/"+kid+"/"+sk+"/pacing"]=pacing;
+  snap("subjects/"+kid+"/"+sk+"/allowedDays",s.allowedDays); up["subjects/"+kid+"/"+sk+"/allowedDays"]=cbForm.allowedDays;
+  if(res.stats.tpwUsed){ snap("subjects/"+kid+"/"+sk+"/timesPerWeek",s.timesPerWeek); up["subjects/"+kid+"/"+sk+"/timesPerWeek"]=res.stats.tpwUsed; }
+  snap("lastEdit",currData.lastEdit); up["lastEdit"]=new Date().toISOString();
+
+  cbPatchLocal(up);
+  // Total = cell count for this subject across the whole (patched) grid
+  const filled=v=>v&&v!=="—"&&v!=="nan"&&String(v).trim();
+  let total=0;
+  for(const dnn of Object.keys(currData.lessons[kid]||{})){ if(filled((currData.lessons[kid][dnn]||{})[sk])) total++; }
+  snap("subjects/"+kid+"/"+sk+"/total",s.total);
+  up["subjects/"+kid+"/"+sk+"/total"]=total;
+  currData.subjects[kid][sk].total=total;
+
+  db.ref("curriculum").update(up).catch(err=>{ cbMsg="⚠ Firebase error: "+err.message; renderAll(); });
+  cbLastBuild={kid,sk,paths:prev,label:(s.display||sk)+" — "+res.stats.placed+" placed"};
+  try{localStorage.setItem("ha_cbUndo",JSON.stringify(cbLastBuild));}catch(e){}
+  cbMsg="✓ Built "+(s.display||sk)+" into the map — "+res.stats.placed+" days, finishing "+res.stats.lastDate+".";
+  cbPreviewRes=null; cbSubjKey=null; cbForm=null;
+  renderAll();
+}
+
+// Walk a multi-path update into the local currData mirror (null = delete).
+function cbPatchLocal(up){
+  for(const [path,val] of Object.entries(up)){
+    const parts=path.split("/");
+    let node=currData;
+    for(let i=0;i<parts.length-1;i++){
+      if(node[parts[i]]===undefined||node[parts[i]]===null) node[parts[i]]={};
+      node=node[parts[i]];
+    }
+    const leaf=parts[parts.length-1];
+    if(val===null) delete node[leaf];
+    else node[leaf]=JSON.parse(JSON.stringify(val));
+  }
+}
+
+function cbUndo(){
+  if(!cbLastBuild||!db) return;
+  const up={};
+  for(const [path,val] of Object.entries(cbLastBuild.paths)) up[path]=val;
+  cbPatchLocal(up);
+  db.ref("curriculum").update(up).catch(err=>{ cbMsg="⚠ Undo error: "+err.message; renderAll(); });
+  cbMsg="↩ Undid: "+cbLastBuild.label;
+  cbLastBuild=null;
+  try{localStorage.removeItem("ha_cbUndo");}catch(e){}
+  renderAll();
+}
+
+// ── Builder UI ───────────────────────────────────────────────────────────────
+
+function cbSetKid(k){ cbKid=k; cbSubjKey=null; cbForm=null; cbPreviewRes=null; renderAll(); }
+function cbOpenSubj(sk){ cbSubjKey=sk; cbForm=cbDefaultForm(cbKid,sk); cbPreviewRes=null; renderAll(); }
+function cbCloseSubj(){ cbSubjKey=null; cbForm=null; cbPreviewRes=null; renderAll(); }
+function cbSetMode(m){ cbForm.mode=m; cbPreviewRes=null; renderAll(); }
+function cbSetField(field,val){ cbForm[field]=val; cbPreviewRes=null; renderAll(); }
+function cbStepTpw(d){ cbForm.tpw=Math.max(1,Math.min(7,(cbForm.tpw||3)+d)); cbPreviewRes=null; renderAll(); }
+function cbToggleDay(d){
+  const i=cbForm.allowedDays.indexOf(d);
+  if(i>=0) cbForm.allowedDays.splice(i,1); else cbForm.allowedDays.push(d);
+  cbPreviewRes=null; renderAll();
+}
+
+function renderCurrBuilder(el){
+  if(!currData||!currData.subjects){
+    el.innerHTML+='<div style="padding:40px 20px;text-align:center;color:var(--muted)">'+
+      '<div style="font-size:36px;margin-bottom:8px">\u{1F3D7}️</div>'+
+      '<div style="font-weight:600;margin-bottom:4px">No curriculum yet</div>'+
+      '<div style="font-size:12px">Upload an Excel file or add subjects first — then pace them here.</div></div>';
+    return;
+  }
+  if(!cbKid) cbKid=currViewKid||ROSTER[0];
+  let h='<div style="padding:0 4px">';
+
+  // Kid chips
+  h+='<div style="padding:10px 0 8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">';
+  [...ROSTER].forEach(kid=>{
+    const on=kid===cbKid;
+    const c=KID_COLOR[kid]||"#333";
+    h+='<button onclick="cbSetKid(\''+kid+'\')" style="padding:5px 14px;border-radius:20px;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?c:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cap(kid)+'</button>';
+  });
+  h+='</div>';
+
+  // Result banner + undo
+  if(cbMsg){
+    h+='<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#15803d;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+esc(cbMsg);
+    if(cbLastBuild) h+='<button onclick="cbUndo()" style="margin-left:auto;padding:4px 12px;border-radius:8px;border:1px solid #bbf7d0;background:#fff;color:#15803d;font-size:11px;font-weight:700;cursor:pointer">↩ Undo</button>';
+    h+='</div>';
+  }
+
+  const subs=currData.subjects[cbKid]||{};
+  const col=KID_COLOR[cbKid]||"#333";
+
+  if(cbSubjKey&&cbForm){
+    h+=cbRenderForm(col);
+  } else {
+    // Subject list
+    const entries=Object.entries(subs).filter(([_,s])=>!s.paused).sort((a,b)=>(a[1].display||a[0]).localeCompare(b[1].display||b[0]));
+    if(!entries.length) h+='<div style="padding:30px;text-align:center;color:var(--muted);font-size:12px">No subjects for '+cap(cbKid)+' yet.</div>';
+    for(const [sk,s] of entries){
+      const emoji=CURR_DEV_EMOJI[s.device]||"\u{1F4C4}";
+      const pl=cbPacingLabel(s);
+      const future=cbFutureRows(cbKid,sk).filter(r=>r.hadMine).length;
+      h+='<div onclick="cbOpenSubj(\''+sk+'\')" style="background:#fff;border:1px solid var(--border);border-left:4px solid '+col+';border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;gap:8px">';
+      h+='<span style="font-size:16px">'+emoji+'</span>';
+      h+='<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">'+esc(s.display||sk)+'</div>';
+      h+='<div style="font-size:11px;color:var(--muted)">'+(s.minutes||20)+' min'+(future?' · '+future+' future day'+(future!==1?'s':'')+' on the map':' · not on the future map')+'</div></div>';
+      if(pl) h+='<span style="font-size:11px;font-weight:700;color:'+col+';background:'+col+'18;padding:3px 10px;border-radius:12px;white-space:nowrap">'+pl+'</span>';
+      h+='<span style="color:var(--muted)">›</span>';
+      h+='</div>';
+    }
+    h+='<div style="font-size:11px;color:var(--muted);text-align:center;padding:8px 0 16px">New subjects are added in the <b>Subjects</b> tab — then pace them here.</div>';
+  }
+
+  h+='</div>';
+  el.innerHTML+=h;
+}
+
+function cbRenderForm(col){
+  const kid=cbKid, sk=cbSubjKey, f=cbForm;
+  const s=currData.subjects[kid][sk];
+  const emoji=CURR_DEV_EMOJI[s.device]||"\u{1F4C4}";
+  const seq=buildSubjectLessons(kid,sk)||[];
+  const cur=Math.max(0,computeSubjectCursor(kid,sk)||0);
+  const remaining=Math.max(0,seq.length-Math.min(cur,seq.length));
+
+  let h='<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">';
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">';
+  h+='<button onclick="cbCloseSubj()" style="padding:4px 10px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer">‹ Back</button>';
+  h+='<div style="font-weight:800;font-size:15px;flex:1">'+emoji+' '+esc(s.display||sk)+'</div>';
+  h+='<span style="font-size:11px;color:var(--muted)">'+(s.minutes||20)+' min/day</span>';
+  h+='</div>';
+
+  // Mode chips
+  h+='<div class="ce-sheet-lbl">How should it be paced?</div><div class="ce-chips">';
+  [["targetDate","\u{1F3AF} Done by a date"],["timesPerWeek","\u{1F4C5} Days per week"],["window","⏳ Until a date"],["pages","\u{1F4D6} Pages"],["minutes","⏱ Just minutes"]].forEach(([m,lbl])=>{
+    h+='<div class="ce-chip'+(f.mode===m?" sel":"")+'" onclick="cbSetMode(\''+m+'\')">'+lbl+'</div>';
+  });
+  h+='</div>';
+
+  // Days
+  h+='<div class="ce-sheet-lbl">Days it can land on <span style="font-weight:400;color:var(--muted)">(none selected = any school day)</span></div><div class="ce-chips">';
+  ["Mon","Tue","Wed","Thu","Fri"].forEach(d=>{
+    h+='<div class="ce-chip'+(f.allowedDays.includes(d)?" sel":"")+'" onclick="cbToggleDay(\''+d+'\')">'+d+'</div>';
+  });
+  h+='</div>';
+
+  const tpwStepper='<div class="ce-stepper"><button onclick="cbStepTpw(-1)">&minus;</button><span>'+f.tpw+'</span><button onclick="cbStepTpw(1)">+</button></div>';
+  const contentLine=(f.mode!=="pages"&&f.mode!=="minutes")?
+    '<div style="font-size:11px;color:var(--muted);margin:6px 0 2px">'+(remaining?remaining+' lesson'+(remaining!==1?'s':'')+' remaining of '+seq.length+' — laid from where '+cap(kid)+' actually is':'No lesson sequence found — generate one below')+'</div>':'';
+
+  if(f.mode==="targetDate"){
+    h+='<div class="ce-sheet-lbl">Finish by</div>';
+    h+='<input type="date" class="ce-sheet-input" value="'+esc(f.targetDate)+'" onchange="cbSetField(\'targetDate\',this.value)">';
+    h+=contentLine;
+    h+='<div style="font-size:11px;color:var(--muted)">The app computes how many days a week it needs.</div>';
+  }
+  if(f.mode==="timesPerWeek"){
+    h+='<div class="ce-sheet-lbl">Times per week</div>'+tpwStepper+contentLine;
+  }
+  if(f.mode==="window"){
+    h+='<div class="ce-sheet-lbl">Stop after</div>';
+    h+='<input type="date" class="ce-sheet-input" value="'+esc(f.windowEnd)+'" onchange="cbSetField(\'windowEnd\',this.value)">';
+    h+='<div class="ce-sheet-lbl">Times per week</div>'+tpwStepper+contentLine;
+  }
+  if(f.mode==="pages"){
+    h+='<div style="display:flex;gap:10px"><div style="flex:1"><div class="ce-sheet-lbl">Total pages</div>';
+    h+='<input type="number" class="ce-sheet-input" value="'+esc(f.totalPages)+'" onchange="cbSetField(\'totalPages\',this.value)"></div>';
+    h+='<div style="flex:1"><div class="ce-sheet-lbl">Start at page</div>';
+    h+='<input type="number" class="ce-sheet-input" value="'+esc(f.startPage)+'" onchange="cbSetField(\'startPage\',this.value)"></div></div>';
+    h+='<div class="ce-sheet-lbl">Pages per day pattern <span style="font-weight:400;color:var(--muted)">(one number, or a cycle like 3, 4, 5, 3)</span></div>';
+    h+='<input class="ce-sheet-input" placeholder="e.g. 3, 4, 5, 3" value="'+esc(f.patternStr)+'" onchange="cbSetField(\'patternStr\',this.value)">';
+    h+='<div class="ce-sheet-lbl">Label</div><div class="ce-chips">';
+    [["pp.","pp. 12–15"],["Lesson","Lesson 12–15"],["Day","Day 12–15"]].forEach(([v,lbl])=>{
+      h+='<div class="ce-chip'+(f.unitLabel===v?" sel":"")+'" onclick="cbSetField(\'unitLabel\',\''+v+'\')">'+lbl+'</div>';
+    });
+    h+='</div>';
+    h+='<div class="ce-sheet-lbl">Times per week</div>'+tpwStepper;
+  }
+  if(f.mode==="minutes"){
+    h+='<div class="ce-sheet-lbl">What the day’s cell says</div>';
+    h+='<input class="ce-sheet-input" value="'+esc(f.minutesText)+'" onchange="cbSetField(\'minutesText\',this.value)">';
+    h+='<div class="ce-sheet-lbl">Times per week</div>'+tpwStepper;
+    h+='<div class="ce-sheet-lbl">Stop after <span style="font-weight:400;color:var(--muted)">(optional — blank fills to the end of the map)</span></div>';
+    h+='<input type="date" class="ce-sheet-input" value="'+esc(f.windowEnd)+'" onchange="cbSetField(\'windowEnd\',this.value)">';
+  }
+
+  // No sequence → offer to generate one
+  if((f.mode==="targetDate"||f.mode==="timesPerWeek"||f.mode==="window")&&!remaining){
+    h+='<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin-top:8px">';
+    h+='<div style="font-size:11px;color:#92400e;margin-bottom:6px">No lessons left in the sequence. Generate new ones:</div>';
+    h+='<div style="display:flex;gap:10px"><div style="flex:1"><div class="ce-sheet-lbl" style="margin-top:0">Prefix</div>';
+    h+='<input class="ce-sheet-input" value="'+esc(f.genPrefix)+'" onchange="cbSetField(\'genPrefix\',this.value)"></div>';
+    h+='<div style="flex:1"><div class="ce-sheet-lbl" style="margin-top:0">How many</div>';
+    h+='<input type="number" class="ce-sheet-input" value="'+esc(f.genCount)+'" onchange="cbSetField(\'genCount\',parseInt(this.value)||0)"></div></div>';
+    h+='</div>';
+  }
+
+  h+='<button onclick="cbRunPreview()" style="width:100%;margin-top:14px;padding:11px;border-radius:10px;border:none;background:'+col+';color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Preview build</button>';
+  h+='</div>';
+
+  // Preview card
+  if(cbPreviewRes){
+    const r=cbPreviewRes;
+    if(r.error){
+      h+='<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:#991b1b">'+esc(r.error)+'</div>';
+    } else {
+      h+='<div style="background:#fff;border:2px solid '+col+';border-radius:12px;padding:14px;margin-bottom:14px">';
+      h+='<div style="font-weight:800;font-size:13px;margin-bottom:8px">Preview — nothing written yet</div>';
+      h+='<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:8px">';
+      const tile=(n,l)=>'<div style="background:var(--bg);border-radius:8px;padding:8px;text-align:center"><div style="font-weight:800;font-size:16px">'+n+'</div><div style="font-size:10px;color:var(--muted)">'+l+'</div></div>';
+      h+=tile(r.stats.placed,"days scheduled");
+      h+=tile(r.stats.tpwUsed+"×"+(r.stats.tpwAuto?" (computed)":""),"per week");
+      h+=tile(r.stats.firstDate,"first day");
+      h+=tile(r.stats.lastDate,"finishes");
+      h+='</div>';
+      if(r.stats.newRows) h+='<div style="font-size:11px;color:var(--muted);margin-bottom:4px">➕ Extends the map by '+r.stats.newRows+' new day'+(r.stats.newRows!==1?'s':'')+' past its current end.</div>';
+      if(r.clears.length) h+='<div style="font-size:11px;color:var(--muted);margin-bottom:4px">♻ '+r.clears.length+' old future placement'+(r.clears.length!==1?'s':'')+' of this subject will be replaced. Past days are untouched.</div>';
+      r.warnings.forEach(w=>{ h+='<div style="font-size:11px;color:#92400e;background:#fffbeb;border-radius:6px;padding:5px 8px;margin-bottom:4px">⚠ '+esc(w)+'</div>'; });
+      // Sample: first 3 weeks + last
+      const byWk={}; const order=[];
+      r.assignments.forEach(a=>{ if(!byWk[a.week]){byWk[a.week]=[];order.push(a.week);} byWk[a.week].push(a); });
+      const DOWS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+      const line=wk=>'<div style="font-size:11px;padding:3px 0;border-bottom:1px dashed var(--border)"><b>'+esc(wk)+'</b> — '+byWk[wk].map(a=>DOWS[gwParseDate(a.date).getDay()]+' '+esc(a.text)).join(' · ')+'</div>';
+      h+='<div style="margin-top:6px">';
+      order.slice(0,3).forEach(wk=>{ h+=line(wk); });
+      if(order.length>4) h+='<div style="font-size:11px;color:var(--muted);padding:3px 0">… '+(order.length-4)+' more week'+(order.length-4!==1?'s':'')+' …</div>';
+      if(order.length>3) h+=line(order[order.length-1]);
+      h+='</div>';
+      h+='<div style="display:flex;gap:8px;margin-top:12px">';
+      h+='<button onclick="cbApply()" style="flex:1;padding:11px;border-radius:10px;border:none;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Build into map</button>';
+      h+='<button onclick="cbPreviewRes=null;renderAll()" style="padding:11px 16px;border-radius:10px;border:1px solid var(--border);background:#fff;font-size:13px;cursor:pointer">Cancel</button>';
+      h+='</div></div>';
+    }
+  }
+  return h;
 }
 
 function smapToggle(planKey,mode){
