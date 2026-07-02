@@ -116,6 +116,24 @@ console.log("pages mode");
   ok("single-page chunk labels", res.assignments[0].text === "Lesson 7", res.assignments[0]);
 }
 
+console.log("pages mode — scanned units (CB6)");
+{
+  const units = [
+    { label: "Lesson 1: Short Vowels", startPage: 3, endPage: 9, estMinutes: 20 },
+    { label: "Lesson 2: Long Vowels", startPage: 10, endPage: 15, estMinutes: 20 },
+    { label: "Review", startPage: 16, endPage: 16, estMinutes: 15 }
+  ];
+  const res = cbMaterialize({ sk: "m", minutes: 20, mode: "pages", tpw: 3, allowedDays: [], pages: { units, pattern: [4], totalPages: 99, startPage: 1 }, rows: mkRows(MON, 2, 1, 1), dayCapMin: 0 });
+  ok("units override the pattern (3 units = 3 days)", res.stats.placed === 3, res.stats);
+  ok("unit text = label + true range", res.assignments[0].text === "Lesson 1: Short Vowels · pp. 3–9", res.assignments[0]);
+  ok("single-page unit reads p. N", res.assignments[2].text === "Review · p. 16", res.assignments[2]);
+  ok("units keep book order", res.assignments[1].text.startsWith("Lesson 2"), res.assignments[1]);
+}
+{
+  const res = cbMaterialize({ sk: "m", minutes: 20, mode: "pages", tpw: 5, allowedDays: [], pages: { units: [{ label: "", startPage: 5, endPage: 8 }] }, rows: mkRows(MON, 1, 1, 1), dayCapMin: 0 });
+  ok("label-less unit is just the range", res.assignments[0].text === "pp. 5–8", res.assignments[0]);
+}
+
 console.log("window mode");
 {
   const res = cbMaterialize({ sk: "m", minutes: 20, mode: "window", windowEnd: "2026-08-07", tpw: 5, allowedDays: [], content: texts(20), rows: mkRows(MON, 4, 1, 1), dayCapMin: 0, extend: { lastDayNum: 20, lastDate: "2026-08-28", lastWeekNum: 4, lastWeekLabel: "Wk 4", isOff: () => false } });
