@@ -1110,6 +1110,7 @@ let mastGenerating={}; // {itemId: true} while API call in flight
 let mastView="drill"; // "drill", "scores", "admin", etc.
 let unitStudies={};   // shared unit-study library (Firebase unitStudies/*)
 let unitOpenId=null;  // which unit's detail view is open
+let unitPinOpen=false; // U7: the Units-tab "🔒 Mom" control is showing its PIN input
 let unitEdit=null;    // {unitId,deckKey,order,newImg} — card being edited in the Units tab
 let mastAdminLocal=null;
 let mastAdminDirty=false;
@@ -8751,6 +8752,32 @@ function printRoyalLine(kid){
   w.document.close();
 }
 
+// ── U7: in-tab Mom unlock — the Units tab hides everything editable behind momHere(), and the
+// only other unlock paths live on the Schedule, so the tab carries its own lock control. Same
+// PIN as the rest of the app (checkAdminPin → adminPinUnlocked → renderAll re-renders unlocked).
+function _unitMomLockHtml(){
+  if(momHere()){
+    unitPinOpen=false;
+    return '<button onclick="unitPinLock()" title="Hide Mom controls" style="flex-shrink:0;padding:6px 12px;border-radius:9px;border:1.5px solid #86efac;background:#f0fdf4;color:#15803d;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔓 Mom · lock</button>';
+  }
+  if(unitPinOpen){
+    return '<span style="display:inline-flex;flex-direction:column;align-items:flex-end;flex-shrink:0">'+
+      '<span style="display:inline-flex;gap:5px;align-items:center">'+
+      '<input id="unit-pin-inp" type="password" inputmode="numeric" maxlength="4" placeholder="PIN" autocomplete="off" oninput="checkAdminPin(this.value,\'unit-pin-err\')" style="width:78px;padding:6px 9px;border:1.5px solid var(--border);border-radius:9px;font-size:14px;font-weight:700;letter-spacing:5px;text-align:center;font-family:\'DM Sans\',sans-serif">'+
+      '<button onclick="unitPinToggle()" style="padding:6px 8px;border-radius:9px;border:none;background:none;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">✕</button></span>'+
+      '<span id="unit-pin-err" style="font-size:9.5px;color:#b5394a;min-height:12px"></span></span>';
+  }
+  return '<button onclick="unitPinToggle()" title="Enter the Mom PIN to edit units, queue activities & approve" style="flex-shrink:0;padding:6px 12px;border-radius:9px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔒 Mom</button>';
+}
+function unitPinToggle(){
+  unitPinOpen=!unitPinOpen;
+  const el=document.getElementById("content"); if(el&&tab==="units") renderUnits(el);
+  if(unitPinOpen) setTimeout(()=>{ const i=document.getElementById("unit-pin-inp"); if(i) i.focus(); },50);
+}
+function unitPinLock(){
+  adminPinUnlocked=false; momModeActive=false; momPinUnlocked=false; unitPinOpen=false;
+  renderAll();
+}
 // ── UNIT STUDIES tab: shared library any kid can pull into their drills/notebook ──
 function renderUnits(el){
   const con=el||document.getElementById("content"); if(!con) return;
@@ -8758,7 +8785,7 @@ function renderUnits(el){
   if(unitOpenId && unitStudies[unitOpenId]){ con.innerHTML=renderUnitDetail(unitStudies[unitOpenId]); return; }
   const units=Object.keys(unitStudies||{}).map(k=>unitStudies[k]).filter(u=>u&&u.id);
   let h='<div style="max-width:560px;margin:0 auto;padding:20px 18px;font-family:\'DM Sans\',sans-serif">';
-  h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:var(--text)">🎓 Unit Studies</div>';
+  h+='<div style="display:flex;align-items:center;gap:10px;justify-content:space-between"><div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:var(--text)">🎓 Unit Studies</div>'+_unitMomLockHtml()+'</div>';
   h+='<div style="font-size:12px;color:var(--muted);line-height:1.5;margin:4px 0 16px">Topic packs any kid can pull into their Drills, Sprints &amp; Notebook. Content is shared across kids — each kid keeps their own progress.</div>';
   if(!units.length) h+='<div style="padding:28px;text-align:center;color:var(--muted)">No unit studies yet.</div>';
   units.forEach(u=>{
@@ -8781,7 +8808,7 @@ function renderUnitDetail(u){
   const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
   const roster=(typeof ROSTER!=="undefined")?ROSTER:["lincoln","ellis","lucy","julian"];
   let h='<div style="max-width:560px;margin:0 auto;padding:20px 18px;font-family:\'DM Sans\',sans-serif">';
-  h+='<button onclick="closeUnit()" style="border:none;background:none;color:var(--muted);font-size:13px;font-weight:700;cursor:pointer;padding:0 0 10px">← All units</button>';
+  h+='<div style="display:flex;align-items:center;gap:10px;justify-content:space-between;padding-bottom:10px"><button onclick="closeUnit()" style="border:none;background:none;color:var(--muted);font-size:13px;font-weight:700;cursor:pointer;padding:0">← All units</button>'+_unitMomLockHtml()+'</div>';
   h+='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:26px">'+(u.emoji||"📘")+'</span><span style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:700">'+esc(u.title)+'</span></div>';
   h+='<div style="font-size:12px;color:var(--muted);line-height:1.5;margin:6px 0 14px">'+esc(u.desc||"")+'</div>';
   // U7: everything that EDITS (enroll, card editor, flip styles, queue/done, points) is Mom-only —
@@ -8853,7 +8880,8 @@ function renderUnitDetail(u){
         const args='\''+esc(u.id)+'\',\''+esc(k)+'\',\''+esc(a.key)+'\'';
         h+='<span style="margin-left:auto;display:flex;gap:5px;flex-wrap:wrap">';
         h+=btn('🖨 Print','unitPrintActivity(\''+esc(u.id)+'\',\''+esc(a.key)+'\',\''+esc(k)+'\')',false);
-        if(!done){ // kid-tappable: claim it when the project's finished (tap again cancels)
+        if(!done&&(queued||claim)){ // claim only exists once Mom has ASSIGNED it to this kid —
+          // kids share a unit at different paces, so unassigned projects offer nothing to claim
           if(claim) h+='<button onclick="unitActivityClaim('+args+')" style="padding:4px 9px;border-radius:8px;border:1.5px solid #fcd34d;background:#fffbeb;color:#b45309;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">⏳ Claimed</button>';
           else h+='<button onclick="unitActivityClaim('+args+')" style="padding:4px 9px;border-radius:8px;border:none;background:#b45309;color:#fff;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🙋 I finished it!</button>';
         }
@@ -9214,6 +9242,7 @@ function unitActivityClaim(unitId,kid,actKey){
     delete u.activityClaims[kid][actKey];
     if(db) db.ref("unitStudies/"+unitId+"/activityClaims/"+kid+"/"+actKey).remove();
   } else {
+    if((u.nbActivity||{})[kid]!==actKey) return; // claimable only once Mom assigned it to THIS kid
     u.activityClaims[kid][actKey]={ts:Date.now()};
     if(db) db.ref("unitStudies/"+unitId+"/activityClaims/"+kid+"/"+actKey).set({ts:Date.now()});
   }
