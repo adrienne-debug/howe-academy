@@ -1108,17 +1108,8 @@ let collCats={}, pendingId=null;
 let archive={};
 let fbWeekRefs=[];
 let paceData={subjects:{}, plans:{}};
-let paceEditKid=null;
-let paceEditPlan=null;
-let smapViewPlan=null; // planKey currently showing map editor
-let smapViewWeek=0;    // week offset from current (0=current, +1=next, etc.)
-let smapAddDate=null;  // date string for "add subject" sheet
-let smapAddKid=null;   // kid for "add subject" sheet
-let smapViewMode="week"; // "week" | "month" | "session"
-let smapMonth=null;    // YYYY-MM for month view (null = current month)
 let currData=null;   // curriculum from Firebase (uploaded via admin)
 let currInnerTab="subjects"; // "subjects" | "plans" — inner tab within Admin Curriculum
-let currPlansKid="all"; // kid filter for Plans & Map tab
 let currPaceCum={};  // precomputed: currPaceCum[kid][subjectKey][weekNum] = cumulative expected (calendar/edit-aware)
 let currPaceCumBase={}; // same shape, but the ORIGINAL Excel plan — untouched by calendar or Lesson Map edits
 let masteryData={};
@@ -1163,7 +1154,6 @@ let calAddMode=null; // null | "holiday" | "vacation" | "override"
 let calEditId=null;  // id of holiday/vacation being edited
 let calOverrideKid=null; // kid selected for override add
 let calPreviewMonth=null; // YYYY-MM for calendar preview (null = current)
-let sessionMapData={}; // {planKey: {map:{date:{kid:{subjectKey:true}}}, generatedAt, stats}}
 let histTab="log"; // "log" | "attendance"
 let attEditUnlocked=false;
 let APP_PIN=localStorage.getItem("ha_app_pin")||"0329";
@@ -1478,10 +1468,6 @@ function initFb() {
       if(currData) buildCurrPaceCum();
       if(tab==="schedule"&&schedShowAdmin&&adminSubTab==="calendar"){const el=document.getElementById("content");if(el)renderAll();}
     });
-    db.ref("sessionMaps").on("value",s=>{
-      sessionMapData=s.val()||{};
-      try{localStorage.setItem("ha_sessionMaps",JSON.stringify(sessionMapData));}catch(e){}
-    });
     db.ref("scheduleOverrides").on("value",s=>{
       scheduleOverrides=s.val()||{};
       try{localStorage.setItem("ha_sched_overrides",JSON.stringify(scheduleOverrides));}catch(e){}
@@ -1559,7 +1545,6 @@ function initFb() {
       const v=s.val()||{}; paceData={subjects:v.subjects||{}, plans:v.plans||{}};
       try{localStorage.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
       if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
-      tryAutoCommit();
     });
     db.ref("curriculum").once("value",s=>{
       if(s.val()){currData=s.val();buildCurrPaceCum();dbg("curriculum loaded: "+Object.keys(currData.subjects||{}).join(","));runDisplacement();if(tab==="schedule")renderAll();setTimeout(autoGenerateWeekIfNeeded,3000);}
@@ -1618,7 +1603,6 @@ function boot() {
   try{ const cal=localStorage.getItem("ha_calendar"); if(cal){const d=JSON.parse(cal);calendarData={holidays:d.holidays||{},vacations:d.vacations||{},kidOverrides:d.kidOverrides||{}};} }catch(e){}
   try{ const so=localStorage.getItem("ha_sched_overrides"); if(so) scheduleOverrides=JSON.parse(so); }catch(e){}
   try{ const ss=localStorage.getItem("ha_shape_sigs"); if(ss) committedShapeSigs=JSON.parse(ss); }catch(e){}
-  try{ const sm=localStorage.getItem("ha_sessionMaps"); if(sm) sessionMapData=JSON.parse(sm); }catch(e){}
   pendingSpins=ld(WK+"_pending_spins")||{};
 }
 
@@ -5037,22 +5021,18 @@ function renderCurriculumView(el,headerHtml){
     return;
   }
 
-  // Inner tab bar: Subjects | Plans | Builder | Grid — outside any wrapper so sticky works
+  // Inner tab bar: Subjects | Builder | Grid — outside any wrapper so sticky works
+  // (Plans & Map retired 2026-07-02 — sessions & steering folded into Subjects,
+  //  session maps superseded by the Builder writing the real grid.)
+  if(currInnerTab==="plans") currInnerTab="subjects";
   let h=(headerHtml||'');
   h+='<div style="position:sticky;top:156px;z-index:89;background:var(--bg);display:flex;gap:0;margin:0;padding:0 4px;border-bottom:2px solid var(--border)">';
-  ["subjects","plans","builder","grid"].forEach(tab=>{
+  ["subjects","builder","grid"].forEach(tab=>{
     const on=currInnerTab===tab;
-    const label=tab==="subjects"?"Subjects":tab==="plans"?"Plans & Map":tab==="builder"?"Builder":"Grid";
+    const label=tab==="subjects"?"Subjects":tab==="builder"?"Builder":"Grid";
     h+='<button style="flex:1;padding:9px 4px;font-size:12px;font-weight:700;border:none;background:none;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:'+(on?"var(--text)":"var(--muted)")+';border-bottom:2px solid '+(on?"var(--header)":"transparent")+';margin-bottom:-2px" onclick="setCurrInnerTab(\''+tab+'\')">'+label+'</button>';
   });
   h+='</div>';
-
-  // Plans tab — render plan management
-  if(currInnerTab==="plans"){
-    el.innerHTML=h;
-    renderCurrPlans(el);
-    return;
-  }
 
   // Builder tab — pacing modes materialized into the lesson grid
   if(currInnerTab==="builder"){
@@ -5114,6 +5094,13 @@ function renderCurriculumView(el,headerHtml){
   h+='<input type="date" value="'+tgtVal+'" onchange="ceSetTargetEnd(\''+k+'\',this.value)" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:13px">';
   if(tgtVal) h+='<button onclick="ceSetTargetEnd(\''+k+'\',\'\')" style="border:none;background:none;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif">clear</button>';
   h+='</div>';
+
+  // Finish Line — projected completion per subject (moved here from the retired Plans & Map tab)
+  try{ h+=renderFinishLine(k); }catch(e){ console.log("[HA] finish line error",e); }
+
+  // School sessions — dates anchor week numbering for the ahead/behind math
+  // (the editable remainder of the retired Plans & Map tab)
+  h+=ceRenderSessions(k,col);
 
   // Mom Check master (per kid) — gates the per-subject "Require Mom check" toggles
   const _mvOn=!!((currData.momVerifyKid||{})[k]);
@@ -5357,265 +5344,6 @@ function renderCurriculumView(el,headerHtml){
   el.innerHTML=h;
 }
 
-function renderCurrPlans(el){
-  syncPaceData();
-  const plans=paceData.plans&&Object.keys(paceData.plans).length>0?paceData.plans:PACE_DEFAULT_PLANS;
-
-  let h='<div style="padding:0 4px;margin-top:10px">';
-
-  // Kid selector for plans view
-  h+='<div style="position:sticky;top:194px;z-index:88;background:var(--bg);padding:10px 0 8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">';
-  [{k:"all",label:"All",col:"#111827"},...PACE_KIDS.map(k=>({k,label:cap(k),col:PACE_KCOL[k]}))].forEach(({k:k2,label,col})=>{
-    const on=currPlansKid===k2;
-    h+='<button onclick="currPlansKid=\''+k2+'\';renderAll()" style="padding:5px 14px;border-radius:20px;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+label+'</button>';
-  });
-  h+='</div>';
-
-  h+='<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:700;margin:0 0 4px">Plans &amp; Session Maps</div>';
-  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:14px">Create plans, generate session maps, and manage scheduling.</div>';
-
-  Object.entries(plans).forEach(([planKey,plan])=>{
-    const planKids=plan.kids||[];
-    // Filter by selected kid
-    if(currPlansKid!=="all"&&!planKids.includes(currPlansKid)) return;
-    const visKids=currPlansKid==="all"?planKids:planKids.filter(k=>k===currPlansKid);
-    const weekNum=planWeekNum(plan.start||"2026-04-20");
-    const totalWeeks=planTotalWeeks(plan.start||"2026-04-20",plan.end||"2026-09-01");
-    const ssTotal=sessionSchoolDays(plan);
-    const ssRemain=sessionSchoolDaysFromToday(plan);
-    const ssDone=Math.max(0,ssTotal.school-ssRemain.school);
-    const planPct=ssTotal.school?Math.min(100,Math.round(ssDone/ssTotal.school*100)):0;
-    const isEditingPlan=paceEditPlan===planKey;
-
-    h+='<div class="pace-plan-section">';
-
-    // Plan banner with edit controls
-    h+='<div class="pace-year-banner" style="align-items:flex-start">'+
-      '<div style="flex:1;min-width:0">'+
-      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">'+
-      '<div class="pace-year-label">'+plan.label+'</div>'+
-      '<button class="pace-plan-edit-btn" onclick="togglePlanEdit(\''+planKey+'\')">'+
-      (isEditingPlan?'Done':'Edit')+'</button>'+
-      (sessionMapData[planKey]?(smapViewPlan===planKey?
-        '<button class="pace-plan-edit-btn" style="background:var(--header);color:#fff" onclick="smapToggle(\''+planKey+'\')">✕</button>':
-        '<button class="pace-plan-edit-btn" onclick="smapToggle(\''+planKey+'\')">Map</button>'):'')+'</div>'+
-      '<div class="pace-year-sub">'+formatPlanDate(plan.start||"")+' &ndash; '+formatPlanDate(plan.end||"")+'</div>'+
-      '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px">'+
-      planKids.map(k=>'<span class="pace-plan-kid-chip">'+cap(k)+'</span>').join('')+
-      '</div>'+
-      '<div class="pace-year-bar"><div class="pace-year-fill" style="width:'+planPct+'%"></div></div>'+
-      (sessionMapData[planKey]?(function(){
-        const ac=plan.autoCommit||false;
-        return '<div style="display:flex;align-items:center;gap:6px;margin-top:6px">'+
-          '<button onclick="updatePlanField(\''+planKey+'\',\'autoCommit\','+(!ac)+');renderAll()" style="width:32px;height:18px;border-radius:9px;border:none;background:'+(ac?'#2563eb':'#d1d5db')+';cursor:pointer;position:relative;transition:background .2s;flex-shrink:0"><span style="position:absolute;top:2px;'+(ac?'right:2px':'left:2px')+';width:14px;height:14px;border-radius:50%;background:#fff;transition:all .2s"></span></button>'+
-          '<span style="font-size:10px;color:'+(ac?'#2563eb':'var(--muted)')+';font-weight:'+(ac?'700':'500')+'">Auto-Commit'+(ac?' On':'')+'</span></div>';
-      })():'')+'</div>'+
-      '<div style="text-align:right;flex-shrink:0">'+
-      '<div class="pace-year-wk">'+ssDone+' days</div>'+
-      '<div class="pace-year-wklbl">of '+ssTotal.school+(ssTotal.off?' ('+ssTotal.off+' off)':'')+'</div>'+
-      '<div class="pace-year-wklbl">Wk '+Math.min(weekNum,totalWeeks)+' &middot; '+planPct+'%</div></div>'+
-      '</div>';
-
-    // Plan edit form
-    if(isEditingPlan){
-      h+='<div class="pace-plan-edit-form">'+
-        '<div class="pace-plan-edit-grid">'+
-        '<div><div class="pace-config-label">Plan Name</div>'+
-        '<input class="pace-config-input" value="'+plan.label.replace(/"/g,'&quot;')+'" '+
-        'oninput="updatePlanField(\''+planKey+'\',\'label\',this.value)"/></div>'+
-        '<div></div>'+
-        '<div><div class="pace-config-label">Start Date</div>'+
-        '<input class="pace-config-input" type="date" value="'+(plan.start||'')+'" '+
-        'oninput="updatePlanField(\''+planKey+'\',\'start\',this.value)"/></div>'+
-        '<div><div class="pace-config-label">End Date</div>'+
-        '<input class="pace-config-input" type="date" value="'+(plan.end||'')+'" '+
-        'oninput="updatePlanField(\''+planKey+'\',\'end\',this.value)"/></div>'+
-        '</div>'+
-        '<div class="pace-config-label" style="margin-bottom:6px">Kids in this plan</div>'+
-        '<div class="pace-plan-kids-row">'+
-        PACE_KIDS.map(k=>{
-          const on=(plan.kids||[]).includes(k);
-          return '<button class="pace-plan-kid-toggle'+(on?' on':'')+'" onclick="togglePlanKid(\''+planKey+'\',\''+k+'\')">'+cap(k)+'</button>';
-        }).join('')+
-        '</div>'+
-        '<div class="pace-config-label" style="margin-bottom:6px">School days</div>'+
-        '<div class="pace-plan-kids-row">'+
-        ["Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>{
-          const on=(plan.schoolDays||["Mon","Tue","Wed","Thu","Fri"]).includes(d);
-          return '<button class="pace-plan-kid-toggle'+(on?' on':'')+'" onclick="togglePlanSchoolDay(\''+planKey+'\',\''+d+'\')">'+d+'</button>';
-        }).join('')+
-        '</div>'+
-        (function(){
-          const ss=sessionSchoolDays(plan);
-          const sr=sessionSchoolDaysFromToday(plan);
-          return '<div style="font-size:11px;color:var(--muted);margin:8px 0 10px">'+
-            ss.school+' school days total'+
-            (ss.off?' &middot; '+ss.off+' off':'')+
-            ' &middot; '+sr.school+' remaining</div>';
-        })()+
-        (function(){
-          const sm=sessionMapData[planKey];
-          let h2='<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">';
-          h2+='<button style="padding:6px 14px;border-radius:8px;border:none;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif" onclick="(function(){var r=generateSessionMap(\''+planKey+'\');if(r.error){alert(r.error)}else{renderAll()}})()">'+
-            (sm?'Regenerate Map':'Generate Map')+'</button>';
-          if(sm) h2+='<button style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif" onclick="if(confirm(\'Clear session map?\'))clearSessionMap(\''+planKey+'\')">Clear</button>';
-          h2+='</div>';
-          if(sm){
-            const st=sm.stats||{};
-            const genDate=sm.generatedAt?new Date(sm.generatedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"";
-            h2+='<div style="padding:10px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;margin-bottom:10px;font-size:11px">';
-            h2+='<div style="font-weight:700;color:#15803d;margin-bottom:4px">Session Map Active</div>';
-            h2+='<div style="color:#166534">'+st.subjectCount+' subjects mapped across '+st.schoolDays+' school days ('+st.weeks+' weeks)</div>';
-            h2+='<div style="color:var(--muted);margin-top:2px">Generated '+genDate+'</div>';
-            h2+='</div>';
-          }
-          return h2;
-        })()+
-        (function(){
-          const sm=sessionMapData[planKey];
-          if(!sm) return '';
-          const ac=plan.autoCommit||false;
-          return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:8px 12px;background:'+(ac?'#eff6ff':'#f9fafb')+';border:1px solid '+(ac?'#93c5fd':'var(--border)')+';border-radius:8px">'+
-            '<button onclick="updatePlanField(\''+planKey+'\',\'autoCommit\','+(!ac)+')" style="width:36px;height:20px;border-radius:10px;border:none;background:'+(ac?'#2563eb':'#d1d5db')+';cursor:pointer;position:relative;transition:background .2s"><span style="position:absolute;top:2px;'+(ac?'right:2px':'left:2px')+';width:16px;height:16px;border-radius:50%;background:#fff;transition:all .2s"></span></button>'+
-            '<div><div style="font-size:12px;font-weight:700;color:'+(ac?'#1e40af':'#333')+'">Auto-Commit</div>'+
-            '<div style="font-size:10px;color:var(--muted)">Automatically commit the weekly schedule from session map on page load</div></div></div>';
-        })()+
-        '<button class="pace-del-btn" onclick="if(confirm(\'Delete this plan?\'))deletePacePlan(\''+planKey+'\')">Delete Plan</button>'+
-        '</div>';
-    }
-
-    // Kid pacing cards with edit controls
-    visKids.forEach(k=>{
-      const kidSubjs=(paceData.subjects&&paceData.subjects[k])||{};
-      const _currSubs=(currData&&currData.subjects&&currData.subjects[k])||{};
-      const keys=Object.keys(kidSubjs).filter(sk=>{
-        if(_currSubs[sk]&&_currSubs[sk].tracking==="daily") return false;
-        if((kidSubjs[sk].total||0)===0) return false;
-        return true;
-      });
-      const isEditing=paceEditKid===k;
-      const col=PACE_KCOL[k];
-      let aheadN=0,onN=0,behindN=0;
-      const cwn=currWeekNum();
-      keys.forEach(sk=>{
-        const s=kidSubjs[sk];
-        const kws=paceKeywords(k,sk,s);
-        const cur=(s.offset||0)+paceAutoCount(k,kws)+(s.paceAdjust||0);
-        const exp=currExpected(k,sk,cwn);
-        const st=paceHasPendingCascade(k,kws)?"behind":paceStatus(cur,s.total||0,s.startWeek||1,weekNum,totalWeeks,exp);
-        if(st==="ahead")aheadN++; else if(st==="behind")behindN++; else if(st!=="not-started")onN++;
-      });
-      const summaryStr=keys.length?(behindN?behindN+' behind':aheadN?aheadN+' ahead':'All on track'):'No subjects yet';
-
-      h+='<div class="pace-kid-card">'+
-        '<div class="pace-kid-hdr">'+
-        '<div><div class="pace-kid-name" style="color:'+col+'">'+cap(k)+'</div>'+
-        '<div class="pace-kid-meta">'+summaryStr+(keys.length?' &middot; '+keys.length+' subjects':'')+'</div></div>'+
-        '<div class="pace-kid-actions">'+
-        '<button class="pace-edit-btn'+(isEditing?' active':'')+'" onclick="togglePaceEdit(\''+k+'\')">'+
-        (isEditing?'Done':'Edit')+'</button></div>'+
-        '</div>';
-
-      if(keys.length||isEditing){
-        h+='<div class="pace-subjects">';
-        if(!keys.length) h+='<div class="pace-empty">No subjects yet — add one below.</div>';
-
-        keys.forEach(sk=>{
-          const s=kidSubjs[sk];
-          const kws=paceKeywords(k,sk,s);
-          const autoC=paceAutoCount(k,kws);
-          const offset=s.offset||0,adjust=s.adjust||0,sw=s.startWeek||1;
-          const cur=offset+autoC+(s.paceAdjust||0),tot=s.total||1;
-          const pct=Math.min(100,Math.round(cur/tot*100));
-          const exp=currExpected(k,sk,cwn);
-          const expB=currExpectedBase(k,sk,cwn);
-          const status=paceHasPendingCascade(k,kws)?"behind":paceStatus(cur,tot,sw,weekNum,totalWeeks,exp);
-          const barCol=status==="ahead"?"#16a34a":status==="behind"?"#ef4444":status==="not-started"?"#d1d5db":"#3b82f6";
-          const expPct=exp!==null?Math.min(100,Math.round(exp/tot*100)):null;
-          const expBPct=(expB!==null&&exp!==null&&expB!==exp)?Math.min(100,Math.round(expB/tot*100)):null;
-          const diff=exp!==null?cur-exp:null;
-          const planDelta=(exp!==null&&expB!==null&&exp!==expB)?' &middot; plan '+((exp-expB)>0?'+':'')+(exp-expB)+' vs Excel':'';
-          const expLabel=(exp!==null?' &middot; '+(diff>0?diff+' ahead of expected':diff<0?Math.abs(diff)+' behind expected':'on pace for Wk '+cwn):'')+planDelta;
-          const _nextLesson=getNextLessonLabel(k,sk);
-
-          h+='<div class="pace-subject-row">'+
-            '<div class="pace-subj-hdr">'+
-            '<span class="pace-subj-name">'+s.label+'</span>'+
-            '<span class="pace-subj-nums">'+cur+' / '+tot+' done</span></div>'+
-            '<div class="pace-bar" style="position:relative"><div class="pace-bar-fill" style="width:'+pct+'%;background:'+barCol+'"></div>'+(expPct!==null?'<div style="position:absolute;left:'+expPct+'%;top:-3px;width:2px;height:calc(100% + 6px);background:#374151;border-radius:1px;pointer-events:none" title="Expected (edited plan): '+exp+'/'+tot+'"></div>':'')+(expBPct!==null?'<div style="position:absolute;left:'+expBPct+'%;top:-3px;width:2px;height:calc(100% + 6px);background:#9ca3af;opacity:0.65;pointer-events:none;border-radius:1px" title="Original Excel plan: '+expB+'/'+tot+'"></div>':'')+'</div>'+
-            '<div class="pace-status-row">'+
-            '<span class="pace-badge '+status+'">'+paceStatusLabel(status)+'</span>'+
-            '<span class="pace-pct">'+pct+'% complete'+expLabel+(sw>1&&weekNum<sw?' &middot; starts wk '+sw:'')+'</span></div>';
-
-          if(_nextLesson){
-            h+='<div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding:4px 8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px">'+
-              '<span style="font-size:10px;font-weight:700;color:#16a34a;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap">Next up</span>'+
-              '<span style="font-size:12px;color:#15803d;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_nextLesson+'</span></div>';
-          } else if(cur>=tot&&tot>0){
-            h+='<div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding:4px 8px;background:#fef9c3;border:1px solid #fde68a;border-radius:6px">'+
-              '<span style="font-size:10px;font-weight:700;color:#a16207;text-transform:uppercase;letter-spacing:0.3px">Complete</span>'+
-              '<span style="font-size:12px;color:#92400e;font-weight:500">All lessons finished!</span></div>';
-          }
-
-          if(isEditing){
-            h+='<div class="pace-config-grid">'+
-              '<div><div class="pace-config-label">Keyword</div>'+
-              '<input class="pace-config-input" value="'+(s.keyword||'').replace(/"/g,'&quot;')+'" placeholder="e.g. AAS Spelling" '+
-              'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'keyword\',this.value)"/></div>'+
-              '<div><div class="pace-config-label">Total</div>'+
-              '<div class="pace-config-input" style="background:#f8f7f4;color:var(--muted)">'+(s.total||'—')+'</div></div>'+
-              '<div><div class="pace-config-label">Start Wk</div>'+
-              '<input class="pace-config-input" type="number" min="1" value="'+sw+'" '+
-              'oninput="updatePaceField(\''+k+'\',\''+sk+'\',\'startWeek\',parseInt(this.value)||1)"/></div>'+
-              '</div>'+
-              '<div class="pace-auto-info">'+
-              '<span>Completed: <span class="pace-auto-num">'+cur+'</span> of '+(s.total||0)+'</span>'+
-              '<span style="font-size:9px;color:var(--muted)">&#9998; edit on the Subjects tab</span>'+
-              '<button class="pace-del-btn" style="margin-left:auto" onclick="deletePaceSubject(\''+k+'\',\''+sk+'\')">Remove</button>'+
-              '</div>';
-          }
-          h+='</div>';
-        });
-
-        if(isEditing){
-          h+='<div class="pace-add-row">'+
-            '<input id="pace-new-label-'+k+'" type="text" placeholder="Subject name" maxlength="30"/>'+
-            '<input id="pace-new-kw-'+k+'" type="text" placeholder="Keyword" maxlength="40"/>'+
-            '<input id="pace-new-total-'+k+'" type="number" placeholder="Total" min="1" max="9999" style="width:60px"/>'+
-            '<input id="pace-new-sw-'+k+'" type="number" placeholder="Wk" min="1" title="Start week" style="width:44px"/>'+
-            '<button class="pace-add-btn" onclick="addPaceSubject(\''+k+'\')">+ Add</button></div>';
-        }
-        h+='</div>';
-      }
-      h+='</div>';
-    });
-
-    if(smapViewPlan===planKey) h+=smapRenderEditor(planKey,plan);
-
-    h+='</div>';
-  });
-
-  // Finish Line — projected completion per subject (folded in from the former Admin → Progress tab)
-  try{ h+=renderFinishLine(currPlansKid); }catch(e){ console.log("[HA] finish line error",e); }
-
-  // Add plan form
-  h+='<div class="pace-add-plan-row">'+
-    '<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.3px">Add New Plan</div>'+
-    '<div class="pace-add-plan-grid">'+
-    '<div><div class="pace-config-label">Name</div><input id="pace-new-plan-label" class="pace-config-input" type="text" placeholder="e.g. Summer Session"/></div>'+
-    '<div><div class="pace-config-label">Start Date</div><input id="pace-new-plan-start" class="pace-config-input" type="date"/></div>'+
-    '<div><div class="pace-config-label">End Date</div><input id="pace-new-plan-end" class="pace-config-input" type="date"/></div>'+
-    '</div>'+
-    '<button class="pace-add-btn" onclick="addPacePlan()">+ Add Plan</button>'+
-    '</div>';
-
-  h+='</div>';
-  // Append plans content below the inner tab bar already in el
-  const wrap=document.createElement('div');
-  wrap.innerHTML=h;
-  el.appendChild(wrap.firstChild);
-}
-
 function ceBuildCard(sk,s,kid){
   const emoji=CURR_DEV_EMOJI[s.device]||"\u{1F4C4}";
   let h='<div class="ce-card'+(s.paused?" paused":"")+'" onclick="ceOpenEdit(\''+kid+'\',\''+sk+'\')">';
@@ -5640,7 +5368,84 @@ function ceBuildCard(sk,s,kid){
   if(s.tracking==="daily") h+='<span class="ce-tag ce-tag-cap">Daily</span>';
   else if(s.carryoverCap!==undefined&&s.carryoverCap!==null) h+='<span class="ce-tag ce-tag-cap">Cap: '+s.carryoverCap+'</span>';
   if(s.paused) h+='<span class="ce-tag ce-tag-pause">Paused</span>';
-  h+='</div></div>';
+  h+='</div>';
+  // Steering line — where they ARE vs where the plan expects them
+  // (folded in from the retired Plans & Map tab)
+  const _cps=((paceData.subjects||{})[kid]||{})[sk];
+  if(_cps&&(_cps.total||0)>0&&s.tracking!=="daily"&&!s.paused){
+    try{
+      const kws=paceKeywords(kid,sk,_cps);
+      const cur=(_cps.offset||0)+paceAutoCount(kid,kws)+(_cps.paceAdjust||0);
+      const tot=_cps.total||1;
+      const exp=currExpected(kid,sk,currWeekNum());
+      const plan=paceKidPlan(kid);
+      const wn=plan?planWeekNum(plan.start||"2026-04-20"):1;
+      const tw=plan?planTotalWeeks(plan.start||"2026-04-20",plan.end||"2026-09-01"):40;
+      const st=paceHasPendingCascade(kid,kws)?"behind":paceStatus(cur,tot,_cps.startWeek||1,wn,tw,exp);
+      const diff=exp!==null?cur-exp:null;
+      const C={ahead:"#16a34a",behind:"#ef4444","on-track":"#3b82f6",done:"#16a34a"};
+      const cc=C[st]||"#9ca3af";
+      const dtxt=diff===null?"":(diff>0?" · "+diff+" ahead of plan":diff<0?" · "+Math.abs(diff)+" behind plan":" · on pace");
+      h+='<div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:10px">';
+      h+='<span style="font-weight:800;padding:1px 8px;border-radius:10px;background:'+cc+'18;color:'+cc+'">'+paceStatusLabel(st)+'</span>';
+      h+='<span style="color:var(--muted)">'+cur+' / '+tot+' done'+dtxt+'</span>';
+      h+='</div>';
+    }catch(e){}
+  }
+  h+='</div>';
+  return h;
+}
+
+// Compact per-kid session editor — the editable remainder of the retired
+// Plans & Map tab. Session dates anchor planWeekNum, which every ahead/behind
+// badge and expected-pace marker keys off.
+let ceSessEdit=null;
+function ceSessToggle(key){ ceSessEdit=ceSessEdit===key?null:key; renderAll(); }
+function ceRenderSessions(k,col){
+  const plans=(paceData.plans&&Object.keys(paceData.plans).length)?paceData.plans:PACE_DEFAULT_PLANS;
+  const mine=Object.entries(plans).filter(([_,p])=>(p.kids||[]).includes(k));
+  let h='<div class="ce-section-hdr" style="color:'+col+'">School Sessions</div>';
+  h+='<div style="font-size:10px;color:var(--muted);margin-bottom:8px">Session dates anchor the week numbering behind every ahead/behind badge and expected-pace marker.</div>';
+  h+='<div style="background:#f9fafb;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:16px">';
+  if(!mine.length) h+='<div style="font-size:11px;color:var(--muted);padding:2px 0 6px">No sessions include '+cap(k)+' yet — add one below and toggle '+cap(k)+' on.</div>';
+  for(const [key,p] of mine){
+    const editing=ceSessEdit===key;
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;flex-wrap:wrap">';
+    h+='<b>'+esc(p.label||key)+'</b>';
+    h+='<span style="color:var(--muted)">'+formatPlanDate(p.start||"")+' – '+formatPlanDate(p.end||"")+' · '+(p.kids||[]).map(cap).join(", ")+'</span>';
+    h+='<button onclick="ceSessToggle(\''+key+'\')" style="margin-left:auto;padding:3px 10px;border-radius:10px;border:1px solid var(--border);background:'+(editing?'var(--header)':'#fff')+';color:'+(editing?'#fff':'var(--muted)')+';font-size:10px;font-weight:700;cursor:pointer">'+(editing?'Done':'Edit')+'</button>';
+    h+='</div>';
+    if(editing){
+      h+='<div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin:4px 0 8px">';
+      h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">';
+      h+='<div style="flex:1;min-width:130px"><div class="ce-sheet-lbl" style="margin-top:0">Name</div><input class="ce-sheet-input" style="width:100%;box-sizing:border-box" value="'+esc(p.label||"")+'" onchange="updatePlanField(\''+key+'\',\'label\',this.value);renderAll()"></div>';
+      h+='<div><div class="ce-sheet-lbl" style="margin-top:0">Start</div><input class="ce-sheet-input" type="date" value="'+esc(p.start||"")+'" onchange="updatePlanField(\''+key+'\',\'start\',this.value);renderAll()"></div>';
+      h+='<div><div class="ce-sheet-lbl" style="margin-top:0">End</div><input class="ce-sheet-input" type="date" value="'+esc(p.end||"")+'" onchange="updatePlanField(\''+key+'\',\'end\',this.value);renderAll()"></div>';
+      h+='</div>';
+      h+='<div class="ce-sheet-lbl" style="margin-top:0">Kids</div><div class="ce-chips">';
+      [...ROSTER].forEach(k2=>{
+        const on=(p.kids||[]).includes(k2);
+        h+='<div class="ce-chip'+(on?" sel":"")+'" onclick="togglePlanKid(\''+key+'\',\''+k2+'\')">'+cap(k2)+'</div>';
+      });
+      h+='</div>';
+      h+='<div class="ce-sheet-lbl">School days</div><div class="ce-chips">';
+      ["Mon","Tue","Wed","Thu","Fri","Sat"].forEach(d=>{
+        const on=(p.schoolDays||["Mon","Tue","Wed","Thu","Fri"]).includes(d);
+        h+='<div class="ce-chip'+(on?" sel":"")+'" onclick="togglePlanSchoolDay(\''+key+'\',\''+d+'\')">'+d+'</div>';
+      });
+      h+='</div>';
+      h+='<button onclick="if(confirm(\'Delete this session?\'))deletePacePlan(\''+key+'\')" style="margin-top:10px;padding:5px 12px;border-radius:8px;border:1px solid #fecaca;background:#fff;color:#b5394a;font-size:10px;font-weight:700;cursor:pointer">Delete session</button>';
+      h+='</div>';
+    }
+  }
+  // New session
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">';
+  h+='<div style="flex:1;min-width:110px"><div class="ce-sheet-lbl" style="margin-top:0">New session</div><input id="pace-new-plan-label" class="ce-sheet-input" style="width:100%;box-sizing:border-box" placeholder="Name"></div>';
+  h+='<input id="pace-new-plan-start" class="ce-sheet-input" type="date">';
+  h+='<input id="pace-new-plan-end" class="ce-sheet-input" type="date">';
+  h+='<button onclick="addPacePlan()" style="padding:8px 14px;border-radius:8px;border:none;background:'+col+';color:#fff;font-size:11px;font-weight:700;cursor:pointer">+ Add</button>';
+  h+='</div>';
+  h+='</div>';
   return h;
 }
 
@@ -5968,6 +5773,14 @@ function ceRenderEditSheet(){
   h+='<span><input class="pace-num-input" type="number" min="0" value="'+cursorPos+'" onchange="ceSetCount(\'adjust\',parseInt(this.value)||0)"/> done · next: <b>'+esc(_nextLabel)+'</b></span>';
   h+='</div>';
   h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Where the generator picks up next. Does NOT change your progress numbers.</div>';
+
+  // Pace tracking config (from the retired Plans & Map tab)
+  if(_ps){
+    h+='<div class="ce-sheet-lbl">Pace keyword <span style="font-weight:400;text-transform:none;letter-spacing:0">— matches task titles for the auto-count</span></div>';
+    h+='<input class="ce-sheet-input" style="width:100%;box-sizing:border-box" value="'+esc(_ps.keyword||"")+'" onchange="updatePaceField(ceEditKid,ceEditKey,\'keyword\',this.value)">';
+    h+='<div class="ce-sheet-lbl">Starts week</div>';
+    h+='<input class="ce-sheet-input" type="number" min="1" style="width:90px" value="'+(_ps.startWeek||1)+'" onchange="updatePaceField(ceEditKid,ceEditKey,\'startWeek\',parseInt(this.value)||1)">';
+  }
 
   h+='<div class="ce-sheet-lbl">Lesson list ('+seq.length+' entries · cursor at '+cursorPos+')</div>';
   if(hasExcelLessons){
@@ -6477,9 +6290,16 @@ function uploadCurriculum(){
     try{
       const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array",cellDates:true});
       const curriculum={uploadedAt:new Date().toISOString(),fileName:f.name,subjects:{},lessons:{},weekDays:{}};
-      // Re-upload replaces the whole curriculum node — carry over settings
-      // that live beside the grid so they survive (targets).
-      if(currData&&currData.targetEnd) curriculum.targetEnd=currData.targetEnd;
+      // Re-upload replaces the whole curriculum node — carry over everything
+      // that lives beside the grid so it survives (targets, workflow, Mom Check,
+      // Builder rules & caps).
+      if(currData){
+        if(currData.targetEnd) curriculum.targetEnd=currData.targetEnd;
+        if(currData.flowOrder) curriculum.flowOrder=currData.flowOrder;
+        if(currData.momVerifyKid) curriculum.momVerifyKid=currData.momVerifyKid;
+        if(currData.altGroups) curriculum.altGroups=currData.altGroups;
+        if(currData.dayCap) curriculum.dayCap=currData.dayCap;
+      }
       const empty=v=>{const s=String(v??"").trim();return !s||s==="nan"||s==="NaN"||s==="None"||s==="—"||s==="undefined";};
       const weekNum=w=>{const m=String(w).match(/Wk\s*(\d+)/i);return m?parseInt(m[1]):0;};
 
@@ -6586,6 +6406,28 @@ function uploadCurriculum(){
         curriculum.subjects[kid]=subjects;
         curriculum.lessons[kid]=lessons;
         curriculum.weekDays[kid]=wdMap;
+      }
+
+      // Preserve what the sheet can't express: kids absent from the file keep
+      // their whole curriculum; subjects absent from the file (in-app: Drills,
+      // Builder-made) survive; matching subjects keep in-app-only settings.
+      if(currData&&currData.subjects){
+        const CARRY=["pacing","paused","momVerify","allowedDays","timesPerWeek","priority","carryoverCap","stickyWith","stickyOrder","lessonSeq","tracking"];
+        for(const kid of Object.keys(currData.subjects)){
+          if(!curriculum.subjects[kid]){
+            curriculum.subjects[kid]=currData.subjects[kid];
+            if((currData.lessons||{})[kid]) curriculum.lessons[kid]=currData.lessons[kid];
+            if((currData.weekDays||{})[kid]) curriculum.weekDays[kid]=currData.weekDays[kid];
+            continue;
+          }
+          for(const sk of Object.keys(currData.subjects[kid])){
+            const oldS=currData.subjects[kid][sk];
+            if(!curriculum.subjects[kid][sk]){ curriculum.subjects[kid][sk]=oldS; continue; }
+            for(const f of CARRY){
+              if(oldS[f]!==undefined&&curriculum.subjects[kid][sk][f]===undefined) curriculum.subjects[kid][sk][f]=oldS[f];
+            }
+          }
+        }
       }
 
       const stats=Object.entries(sheetKids).map(([_,kid])=>{
@@ -10111,11 +9953,7 @@ function deletePacePlan(key){
   if(paceData.plans) delete paceData.plans[key];
   try{localStorage.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
   if(db) db.ref("pace/plans/"+key).remove();
-  paceEditPlan=null; renderAll();
-}
-
-function togglePlanEdit(key){
-  paceEditPlan=paceEditPlan===key?null:key; renderAll();
+  renderAll();
 }
 
 function updatePlanField(key,field,value){
@@ -10154,107 +9992,6 @@ function sessionSchoolDaysFromToday(plan,kidId){
   if(typeof getSchoolDays==="function") return getSchoolDays(start,plan.end,sd,kidId);
   const totalDays=Math.round((new Date(plan.end)-new Date(start))/(24*60*60*1000));
   return {total:totalDays,school:Math.round(totalDays*sd.length/7),off:0};
-}
-
-function generateSessionMap(planKey){
-  const plan=(paceData.plans||{})[planKey];
-  if(!plan||!plan.start||!plan.end) return {error:"Plan not found or missing dates"};
-  const kids=plan.kids||[];
-  if(!kids.length) return {error:"No kids in this plan"};
-  const schoolDayNames=plan.schoolDays||["Mon","Tue","Wed","Thu","Fri"];
-  const WDAY=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-
-  const kidSubs={};
-  let subjectCount=0;
-  for(const kid of kids){
-    kidSubs[kid]={};
-    const subs=(currData&&currData.subjects&&currData.subjects[kid])||{};
-    for(const[sk,s] of Object.entries(subs)){
-      if(s.paused||!s.timesPerWeek) continue;
-      kidSubs[kid][sk]={tpw:s.timesPerWeek,allowed:s.allowedDays||[],display:s.display||sk};
-      subjectCount++;
-    }
-  }
-  if(!subjectCount) return {error:"No subjects have timesPerWeek set. Edit subjects in Curriculum to set pacing."};
-
-  const holidays=calendarData.holidays||{};
-  const vacations=calendarData.vacations||{};
-  const kidOverrides=calendarData.kidOverrides||{};
-
-  function isGlobalOff(dateStr){
-    for(const h of Object.values(holidays)){
-      if(dateStr>=(h.start||h.date)&&dateStr<=(h.end||h.start||h.date)) return true;
-    }
-    for(const v of Object.values(vacations)){
-      if(dateStr>=v.start&&dateStr<=v.end) return true;
-    }
-    return false;
-  }
-  function isKidOff(kid,dateStr){
-    const ov=(kidOverrides[kid]||{})[dateStr];
-    if(ov&&ov.school===false) return true;
-    if(ov&&ov.school===true) return false;
-    return isGlobalOff(dateStr);
-  }
-
-  const map={};
-  let weekBuf=[];
-  let weekCount=0;
-  let schoolDayCount=0;
-  const cur=new Date(plan.start+"T12:00:00");
-  const end=new Date(plan.end+"T12:00:00");
-
-  function flushWeek(){
-    if(!weekBuf.length) return;
-    weekCount++;
-    for(const kid of kids){
-      const subs=kidSubs[kid]||{};
-      for(const[sk,cfg] of Object.entries(subs)){
-        const eligible=weekBuf.filter(wd=>{
-          if(isKidOff(kid,wd.date)) return false;
-          if(cfg.allowed.length&&!cfg.allowed.includes(wd.dayName)) return false;
-          return true;
-        });
-        if(!eligible.length) continue;
-        const count=Math.min(cfg.tpw,eligible.length);
-        const step=eligible.length/count;
-        for(let i=0;i<count;i++){
-          const idx=Math.min(Math.floor(i*step),eligible.length-1);
-          const d=eligible[idx].date;
-          if(!map[d]) map[d]={};
-          if(!map[d][kid]) map[d][kid]={};
-          map[d][kid][sk]=true;
-        }
-      }
-    }
-    weekBuf=[];
-  }
-
-  while(cur<=end){
-    const dateStr=cur.toISOString().slice(0,10);
-    const dayName=WDAY[cur.getDay()];
-    if(schoolDayNames.includes(dayName)&&!isGlobalOff(dateStr)){
-      weekBuf.push({date:dateStr,dayName});
-      schoolDayCount++;
-    }
-    if(cur.getDay()===0||cur.getTime()===end.getTime()) flushWeek();
-    cur.setDate(cur.getDate()+1);
-  }
-  flushWeek();
-
-  const stats={subjectCount,schoolDays:schoolDayCount,weeks:weekCount,kids:kids.length};
-  const result={map,generatedAt:new Date().toISOString(),stats,planLabel:plan.label};
-  sessionMapData[planKey]=result;
-  try{localStorage.setItem("ha_sessionMaps",JSON.stringify(sessionMapData));}catch(e){}
-  if(db) db.ref("sessionMaps/"+planKey).set(result);
-  return result;
-}
-
-function clearSessionMap(planKey){
-  delete sessionMapData[planKey];
-  try{localStorage.setItem("ha_sessionMaps",JSON.stringify(sessionMapData));}catch(e){}
-  if(db) db.ref("sessionMaps/"+planKey).remove();
-  renderAll();
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -11319,42 +11056,6 @@ function renderCurrGrid(el){
     const i=document.getElementById("gv-edit-input");
     if(i){ i.focus(); i.select(); }
   },30);
-}
-
-function smapToggle(planKey,mode){
-  if(smapViewPlan===planKey&&!mode){smapViewPlan=null;}
-  else{smapViewPlan=planKey;smapViewWeek=0;if(mode)smapViewMode=mode;else if(smapViewPlan!==planKey)smapViewMode="week";}
-  smapAddDate=null;smapAddKid=null;smapMonth=null;
-  renderAll();
-}
-
-function smapSetMode(mode){
-  smapViewMode=mode;smapAddDate=null;smapAddKid=null;
-  renderAll();
-}
-
-function smapNav(dir){
-  smapViewWeek+=dir;
-  smapAddDate=null;smapAddKid=null;
-  renderAll();
-}
-
-function smapGetWeekDates(plan,weekOffset){
-  const sd=plan.schoolDays||["Mon","Tue","Wed","Thu","Fri"];
-  const WDAY=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-  const today=new Date();today.setHours(12,0,0,0);
-  const monday=new Date(today);
-  monday.setDate(monday.getDate()-((today.getDay()+6)%7)+(weekOffset*7));
-  const dates=[];
-  for(let i=0;i<7;i++){
-    const d=new Date(monday);d.setDate(d.getDate()+i);
-    const ds=d.toISOString().slice(0,10);
-    const dn=WDAY[d.getDay()];
-    if(!sd.includes(dn)) continue;
-    const isOff=smapIsOff(ds);
-    dates.push({date:ds,dayName:dn,dayLabel:d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}),isOff,isPast:ds<today.toISOString().slice(0,10),isToday:ds===today.toISOString().slice(0,10)});
-  }
-  return dates;
 }
 
 // String range compares only work on zero-padded YYYY-MM-DD; normalize so
@@ -12500,298 +12201,6 @@ function lmComputeSuggestions(k,weekLabel){
   return sugg;
 }
 
-function smapGetSubjects(planKey,dateStr,kid){
-  const sm=sessionMapData[planKey];
-  if(!sm||!sm.map) return [];
-  const overrides=(sm.overrides||{})[dateStr]||{};
-  const kidOv=overrides[kid]||{};
-  const autoSubs=(sm.map[dateStr]||{})[kid]||{};
-  const result=[];
-  for(const sk of Object.keys(autoSubs)){
-    if(kidOv[sk]&&kidOv[sk].removed) result.push({key:sk,type:"removed"});
-    else result.push({key:sk,type:"auto"});
-  }
-  for(const sk of Object.keys(kidOv)){
-    if(kidOv[sk]&&kidOv[sk].added&&!autoSubs[sk]) result.push({key:sk,type:"override"});
-  }
-  return result;
-}
-
-function smapRemoveSubject(planKey,dateStr,kid,sk){
-  const sm=sessionMapData[planKey];
-  if(!sm) return;
-  if(!sm.overrides) sm.overrides={};
-  if(!sm.overrides[dateStr]) sm.overrides[dateStr]={};
-  if(!sm.overrides[dateStr][kid]) sm.overrides[dateStr][kid]={};
-  const kidOv=sm.overrides[dateStr][kid];
-  if(kidOv[sk]&&kidOv[sk].added){delete kidOv[sk];}
-  else{kidOv[sk]={removed:true};}
-  smapSaveOverrides(planKey);
-  renderAll();
-}
-
-function smapRestoreSubject(planKey,dateStr,kid,sk){
-  const sm=sessionMapData[planKey];
-  if(!sm||!sm.overrides) return;
-  const kidOv=((sm.overrides[dateStr]||{})[kid]);
-  if(kidOv) delete kidOv[sk];
-  smapSaveOverrides(planKey);
-  renderAll();
-}
-
-function smapAddSubject(planKey,dateStr,kid,sk){
-  const sm=sessionMapData[planKey];
-  if(!sm) return;
-  if(!sm.overrides) sm.overrides={};
-  if(!sm.overrides[dateStr]) sm.overrides[dateStr]={};
-  if(!sm.overrides[dateStr][kid]) sm.overrides[dateStr][kid]={};
-  sm.overrides[dateStr][kid][sk]={added:true};
-  smapAddDate=null;smapAddKid=null;
-  smapSaveOverrides(planKey);
-  renderAll();
-}
-
-function smapResetWeek(planKey,dates){
-  const sm=sessionMapData[planKey];
-  if(!sm||!sm.overrides) return;
-  for(const d of dates) delete sm.overrides[d.date];
-  smapSaveOverrides(planKey);
-  renderAll();
-}
-
-function smapSaveOverrides(planKey){
-  const sm=sessionMapData[planKey];
-  if(!sm) return;
-  try{localStorage.setItem("ha_sessionMaps",JSON.stringify(sessionMapData));}catch(e){}
-  if(db) db.ref("sessionMaps/"+planKey+"/overrides").set(sm.overrides||{});
-}
-
-function smapOpenAdd(planKey,dateStr,kid){
-  smapAddDate=dateStr;smapAddKid=kid;
-  renderAll();
-}
-
-function smapCloseAdd(){
-  smapAddDate=null;smapAddKid=null;
-  renderAll();
-}
-
-function smapRenderEditor(planKey,plan){
-  const sm=sessionMapData[planKey];
-  if(!sm||!sm.map) return '<div style="padding:12px;font-size:11px;color:var(--muted)">No session map generated yet. Click Generate Map above.</div>';
-
-  let h='<div style="display:flex;gap:4px;margin:10px 0 0">';
-  ["week","month","session"].forEach(m=>{
-    const on=smapViewMode===m;
-    h+='<button style="padding:5px 14px;border-radius:16px;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?'var(--header)':'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif" onclick="smapSetMode(\''+m+'\')">'+m[0].toUpperCase()+m.slice(1)+'</button>';
-  });
-  h+='</div>';
-
-  if(smapViewMode==="month") return h+smapRenderMonth(planKey,plan);
-  if(smapViewMode==="session") return h+smapRenderSession(planKey,plan);
-
-  const kids=plan.kids||[];
-  const dates=smapGetWeekDates(plan,smapViewWeek);
-  const KCOL=KID_COLOR;
-  const today=new Date().toISOString().slice(0,10);
-  const planStart=plan.start||"";
-  const planEnd=plan.end||"";
-  const weekStart=dates.length?dates[0].date:"";
-  const weekEnd=dates.length?dates[dates.length-1].date:"";
-  const inRange=weekEnd>=planStart&&weekStart<=planEnd;
-  const hasOverrides=dates.some(d=>{
-    const ov=(sm.overrides||{})[d.date];
-    return ov&&Object.keys(ov).length;
-  });
-
-  h+='<div class="smap-wrap">';
-  h+='<div class="smap-nav">';
-  h+='<button class="smap-nav-btn" onclick="smapNav(-1)">‹</button>';
-  h+='<div style="text-align:center">';
-  h+='<div class="smap-nav-label">'+(smapViewWeek===0?"This Week":smapViewWeek===1?"Next Week":smapViewWeek===-1?"Last Week":(smapViewWeek>0?smapViewWeek+" weeks ahead":Math.abs(smapViewWeek)+" weeks ago"))+'</div>';
-  if(dates.length) h+='<div class="smap-nav-dates">'+dates[0].dayLabel+' – '+dates[dates.length-1].dayLabel+'</div>';
-  h+='</div>';
-  h+='<button class="smap-nav-btn" onclick="smapNav(1)">›</button>';
-  h+='</div>';
-
-  if(!inRange){
-    h+='<div style="text-align:center;padding:20px;font-size:11px;color:var(--muted)">Outside session range ('+plan.start+' to '+plan.end+')</div>';
-    h+='</div>';
-    return h;
-  }
-
-  const cols=Math.min(dates.length,5);
-  h+='<div class="smap-grid" style="grid-template-columns:repeat('+cols+',1fr)">';
-  for(const d of dates){
-    const cls='smap-day'+(d.isPast?' past':'')+(d.isToday?' today':'');
-    const offReason=smapIsOff(d.date);
-    h+='<div class="'+cls+'">';
-    h+='<div class="smap-day-hdr"><span>'+d.dayName+'</span><span style="font-weight:400;font-size:9px">'+d.date.slice(5)+'</span></div>';
-    if(offReason){
-      h+='<div class="smap-day-off">'+offReason+'</div>';
-    }
-    for(const kid of kids){
-      const kidOff=smapIsKidOff(kid,d.date);
-      if(kidOff&&!offReason){h+='<div class="smap-kid-label" style="background:'+KCOL[kid]+'">'+cap(kid)+'</div><div class="smap-day-off">'+kidOff+'</div>';continue;}
-      if(offReason) continue;
-      const subs=smapGetSubjects(planKey,d.date,kid);
-      if(!subs.length&&!d.isPast) continue;
-      h+='<div class="smap-kid-label" style="background:'+KCOL[kid]+'">'+cap(kid)+'</div>';
-      const subjectData=(currData&&currData.subjects&&currData.subjects[kid])||{};
-      for(const s of subs){
-        const display=(subjectData[s.key]&&subjectData[s.key].display)||s.key;
-        const short=display.length>14?display.slice(0,13)+'…':display;
-        if(s.type==="removed"){
-          h+='<span class="smap-chip removed" title="Removed — tap to restore" onclick="smapRestoreSubject(\''+planKey+'\',\''+d.date+'\',\''+kid+'\',\''+s.key+'\')">'+short+'</span>';
-        } else if(s.type==="override"){
-          h+='<span class="smap-chip override" title="Added — tap to remove" onclick="smapRemoveSubject(\''+planKey+'\',\''+d.date+'\',\''+kid+'\',\''+s.key+'\')">'+short+'</span>';
-        } else {
-          if(d.isPast) h+='<span class="smap-chip auto">'+short+'</span>';
-          else h+='<span class="smap-chip auto" title="Tap to remove" onclick="smapRemoveSubject(\''+planKey+'\',\''+d.date+'\',\''+kid+'\',\''+s.key+'\')">'+short+'</span>';
-        }
-      }
-      if(!d.isPast) h+='<button class="smap-add-btn" onclick="smapOpenAdd(\''+planKey+'\',\''+d.date+'\',\''+kid+'\')">+</button>';
-    }
-    h+='</div>';
-  }
-  h+='</div>';
-
-  if(hasOverrides) h+='<div style="text-align:center;margin-top:8px"><button class="smap-reset-btn" onclick="smapResetWeek(\''+planKey+'\','+JSON.stringify(dates).replace(/"/g,"'")+')">Reset Week</button></div>';
-  h+='</div>';
-
-  // Add subject sheet
-  if(smapAddDate&&smapAddKid){
-    const existing=smapGetSubjects(planKey,smapAddDate,smapAddKid).filter(s=>s.type!=="removed").map(s=>s.key);
-    const allSubs=(currData&&currData.subjects&&currData.subjects[smapAddKid])||{};
-    const available=Object.entries(allSubs).filter(([k,s])=>!s.paused&&!existing.includes(k)).sort((a,b)=>(a[1].display||a[0]).localeCompare(b[1].display||b[0]));
-    h+='<div class="smap-add-sheet">';
-    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="font-weight:700;font-size:13px">Add Subject — '+smapAddDate.slice(5)+'</span><button style="background:none;border:none;font-size:18px;cursor:pointer" onclick="smapCloseAdd()">✕</button></div>';
-    h+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">'+cap(smapAddKid)+' — '+available.length+' available</div>';
-    h+='<div class="smap-add-list">';
-    for(const[sk,s] of available){
-      h+='<div class="smap-add-item" onclick="smapAddSubject(\''+planKey+'\',\''+smapAddDate+'\',\''+smapAddKid+'\',\''+sk+'\')">';
-      h+='<span>'+(s.display||sk)+'</span>';
-      h+='<span style="font-size:10px;color:var(--muted)">'+(s.timesPerWeek?s.timesPerWeek+'×/wk':'')+(s.total?' · '+s.total+' lessons':'')+'</span>';
-      h+='</div>';
-    }
-    if(!available.length) h+='<div style="padding:12px;text-align:center;color:var(--muted);font-size:11px">All subjects already assigned</div>';
-    h+='</div></div>';
-  }
-
-  return h;
-}
-
-function smapRenderMonth(planKey,plan){
-  const sm=sessionMapData[planKey];
-  const kids=plan.kids||[];
-  const KCOL=KID_COLOR;
-  const today=new Date().toISOString().slice(0,10);
-  if(!smapMonth) smapMonth=today.slice(0,7);
-  const[yr,mo]=smapMonth.split("-").map(Number);
-  const monthLabel=new Date(yr,mo-1,1).toLocaleString("default",{month:"long",year:"numeric"});
-  const first=new Date(yr,mo-1,1);
-  const startDow=first.getDay();
-  const daysInMonth=new Date(yr,mo,0).getDate();
-
-  let h='<div class="smap-wrap">';
-  h+='<div class="smap-nav">';
-  const prev=mo===1?(yr-1)+"-12":yr+"-"+String(mo-1).padStart(2,"0");
-  const next=mo===12?(yr+1)+"-01":yr+"-"+String(mo+1).padStart(2,"0");
-  h+='<button class="smap-nav-btn" onclick="smapMonth=\''+prev+'\';renderAll()">‹</button>';
-  h+='<div class="smap-nav-label">'+monthLabel+'</div>';
-  h+='<button class="smap-nav-btn" onclick="smapMonth=\''+next+'\';renderAll()">›</button>';
-  h+='</div>';
-
-  h+='<div class="smap-month-grid">';
-  ["S","M","T","W","T","F","S"].forEach(d=>h+='<div class="smap-month-hdr">'+d+'</div>');
-  for(let i=0;i<startDow;i++) h+='<div class="smap-month-cell empty"></div>';
-  for(let d=1;d<=daysInMonth;d++){
-    const ds=yr+"-"+String(mo).padStart(2,"0")+"-"+String(d).padStart(2,"0");
-    const isPast=ds<today;
-    const isToday=ds===today;
-    const off=smapIsOff(ds);
-    const inRange=ds>=(plan.start||"")&&ds<=(plan.end||"");
-    const cls="smap-month-cell"+(isPast?" past":"")+(isToday?" today":"")+(off?" off":"");
-    h+='<div class="'+cls+'">';
-    h+='<div class="smap-month-num">'+d+'</div>';
-    if(inRange&&!off){
-      h+='<div class="smap-month-dots">';
-      for(const kid of kids){
-        const subs=smapGetSubjects(planKey,ds,kid);
-        const active=subs.filter(s=>s.type!=="removed");
-        if(active.length) h+='<span class="smap-dot" style="background:'+KCOL[kid]+'" title="'+cap(kid)+': '+active.length+' subjects"></span>';
-      }
-      h+='</div>';
-    }
-    if(off) h+='<div class="smap-month-off"></div>';
-    h+='</div>';
-  }
-  h+='</div></div>';
-  return h;
-}
-
-function smapRenderSession(planKey,plan){
-  const sm=sessionMapData[planKey];
-  const kids=plan.kids||[];
-  const KCOL=KID_COLOR;
-  const today=new Date().toISOString().slice(0,10);
-  const start=plan.start||today;
-  const end=plan.end||today;
-  const totalDays=Math.max(1,Math.round((new Date(end)-new Date(start))/86400000));
-
-  let h='<div class="smap-wrap">';
-  h+='<div style="text-align:center;margin-bottom:10px"><span class="smap-nav-label" style="font-size:13px">Session Timeline</span><br><span style="font-size:10px;color:var(--muted)">'+start+' → '+end+' ('+totalDays+' days)</span></div>';
-
-  for(const kid of kids){
-    const allSubs=(currData&&currData.subjects&&currData.subjects[kid])||{};
-    const mapped=Object.entries(allSubs).filter(([k,s])=>s.timesPerWeek&&!s.paused).sort((a,b)=>(a[1].display||a[0]).localeCompare(b[1].display||b[0]));
-    if(!mapped.length) continue;
-
-    h+='<div style="margin-bottom:12px">';
-    h+='<div style="font-weight:700;font-size:12px;color:'+KCOL[kid]+';margin-bottom:6px">'+cap(kid)+'</div>';
-
-    for(const[sk,s] of mapped){
-      const display=s.display||sk;
-      const total=s.total||0;
-      let scheduled=0;
-      const mapDates=Object.keys(sm.map||{}).sort();
-      for(const dt of mapDates){
-        if((sm.map[dt]||{})[kid]&&sm.map[dt][kid][sk]) scheduled++;
-      }
-      const ov=sm.overrides||{};
-      for(const dt of Object.keys(ov)){
-        if(ov[dt][kid]){
-          if((ov[dt][kid].removed||[]).includes(sk)) scheduled--;
-          if((ov[dt][kid].added||[]).includes(sk)) scheduled++;
-        }
-      }
-      const done=s.cursor||0;
-      const pctDone=total?Math.round(done/total*100):0;
-      const pctSched=total?Math.round(scheduled/total*100):0;
-      const todayPct=Math.min(100,Math.round(((new Date(today)-new Date(start))/86400000)/totalDays*100));
-      const status=pctDone>=100?"Done":pctDone>pctSched*0.9?"On Track":pctDone>pctSched*0.5?"Behind":"At Risk";
-      const stColor=status==="Done"?"#16a34a":status==="On Track"?"#2563eb":status==="Behind"?"#f59e0b":"#ef4444";
-
-      h+='<div class="smap-session-row">';
-      h+='<div class="smap-session-label">'+display+'<span style="font-size:9px;color:var(--muted);margin-left:6px">'+done+'/'+total+'</span></div>';
-      h+='<div class="smap-session-bar">';
-      h+='<div class="smap-session-fill scheduled" style="width:'+Math.min(pctSched,100)+'%"></div>';
-      h+='<div class="smap-session-fill done" style="width:'+Math.min(pctDone,100)+'%;background:'+KCOL[kid]+'"></div>';
-      if(todayPct>0&&todayPct<100) h+='<div class="smap-session-now" style="left:'+todayPct+'%" title="Today"></div>';
-      h+='</div>';
-      h+='<div class="smap-session-status" style="color:'+stColor+'">'+status+'</div>';
-      h+='</div>';
-    }
-    h+='</div>';
-  }
-
-  h+='<div style="display:flex;gap:12px;justify-content:center;font-size:9px;color:var(--muted);margin-top:4px">';
-  h+='<span>■ Scheduled</span><span>■ Completed</span><span>| Today</span>';
-  h+='</div>';
-  h+='</div>';
-  return h;
-}
-
 function addPacePlan(){
   const labelEl=document.getElementById("pace-new-plan-label");
   const startEl=document.getElementById("pace-new-plan-start");
@@ -13036,10 +12445,6 @@ function addPaceSubject(kid){
   savePaceSubject(kid,key,{label,keyword,total,offset:0,adjust:0,startWeek});
   labelEl.value="";kwEl.value="";totalEl.value="";if(swEl)swEl.value="1";
   renderAll();
-}
-
-function togglePaceEdit(kid){
-  paceEditKid=paceEditKid===kid?null:kid; renderAll();
 }
 
 // ── FINISH LINE: projected completion per subject from the resolved pattern ──
@@ -19106,29 +18511,6 @@ function closePlanNextWeek(){
   if(ol) ol.remove();
 }
 
-let autoCommitRan=false;
-function tryAutoCommit(){
-  if(autoCommitRan||!db||!currData||!currData.subjects) return;
-  const plans=paceData&&paceData.plans?paceData.plans:{};
-  const hasAuto=Object.entries(plans).some(([k,p])=>p.autoCommit&&sessionMapData[k]&&sessionMapData[k].map);
-  if(!hasAuto) return;
-  autoCommitRan=true;
-  const nw=currWeekNum()+1;
-  db.ref("week"+nw+"/meta").once("value",s=>{
-    if(s.val()) return;
-    db.ref("weekConfig/"+nw).once("value",cs=>{
-      const cfg=cs.val()||{weekNum:String(nw),babysitter:{},withSitter:(rulesData&&rulesData.withSitter)||[],skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:false,redistribute:[],autoAdvance:true};
-      cfg.weekNum=String(nw);
-      const gen=generateWeek(cfg);
-      if(gen.error){console.log("[HA] auto-commit skipped:",gen.error);return;}
-      gwConfig=cfg;gwResult=gen.result;gwDropped=gen.dropped;gwCarryOverCount=gen.carryOverCount||0;gwCalendarSkips=gen.calendarSkips||null;
-      gwCommit();
-      console.log("[HA] auto-committed week "+nw+" from session map");
-      gwShowToast("Week "+nw+" auto-committed from session map");
-    });
-  });
-}
-
 function pnwGenerate(){
   if(!currData||!currData.subjects) return;
   if(parseInt(gwConfig.weekNum)<currWeekNum()){
@@ -19304,12 +18686,6 @@ function renderPlanNextWeek(){
     if(totalDropped) h+=' · <span style="color:#991b1b">'+totalDropped+' dropped</span>';
     if(r.rolledToNextWeek) h+=' · <span style="color:#b45309" title="Over capacity this week — these roll to next week, where the cursor picks them up">'+r.rolledToNextWeek+' moved to next week</span>';
     h+='</div></div>';
-    const smapPlans=Object.entries(paceData.plans||{}).filter(([k,p])=>sessionMapData[k]&&sessionMapData[k].map);
-    if(smapPlans.length){
-      h+='<div style="padding:8px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;margin-bottom:12px;font-size:11px;display:flex;align-items:center;gap:6px">';
-      h+='<span style="font-size:14px">📋</span><span style="color:#1e40af;font-weight:600">Pre-populated from session map</span>';
-      h+='<span style="color:#3b82f6">'+smapPlans.map(([_,p])=>p.label).join(", ")+'</span></div>';
-    }
 
     const KID_COL=KID_COLOR;
     const dayOrder=["monday","tuesday","wednesday","thursday","friday","saturday"];
@@ -20314,32 +19690,6 @@ function resolveWeekSlots(weekNum,ignoreAuto){
       for(const sk of Object.keys(dayData[dateStr][kid])){
         if(!subjectSlots[sk]) subjectSlots[sk]=[];
         subjectSlots[sk].push(dateStr);
-      }
-    }
-
-    // Inject subjects from session maps (generated by session generator + overrides)
-    for(const smKey of Object.keys(sessionMapData||{})){
-      const sm=sessionMapData[smKey];
-      if(!sm||!sm.map) continue;
-      const ov=sm.overrides||{};
-      for(const dateStr of sortedDates){
-        if(smapIsKidOff(kid,dateStr)||_ovOffX(kid,dateStr,ignoreAuto)) continue;
-        const kidMap=(sm.map[dateStr]||{})[kid];
-        const dayOv=(ov[dateStr]||{})[kid]||{};
-        const removed=new Set(dayOv.removed||[]);
-        const added=dayOv.added||[];
-        const autoKeys=kidMap?Object.keys(kidMap).filter(sk=>!removed.has(sk)):[];
-        const allKeys=[...new Set([...autoKeys,...added])];
-        for(const sk of allKeys){
-          if(_ovRmX(kid,dateStr,sk,ignoreAuto)) continue; // Lesson Map removal beats session-map injection
-          if(subjectSlots[sk]) continue;
-          if(!subjects[sk]||subjects[sk].paused) continue;
-          if(!subjectSlots[sk]) subjectSlots[sk]=[];
-          subjectSlots[sk].push(dateStr);
-          if(!dayData[dateStr]) dayData[dateStr]={};
-          if(!dayData[dateStr][kid]) dayData[dateStr][kid]={};
-          dayData[dateStr][kid][sk]="TMP";
-        }
       }
     }
 
