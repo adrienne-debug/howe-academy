@@ -8896,13 +8896,13 @@ function renderUnitDetail(u){
     });
     h+='</div>';
   }
-  // U6 — the pacing plan itself, read-only: trigger → activity, with each kid's status.
+  // U6 — the pacing plan: trigger → activity with each kid's status; Mom (PIN) edits it in place.
   const plan=Array.isArray(u.plan)?u.plan:Object.values(u.plan||{});
-  if(plan.length&&enrolledKids.length){
+  if(plan.length||isMom){
     h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">';
     h+='<div style="font-size:12px;font-weight:800;color:#1f2937;margin-bottom:2px">🗺️ Pacing plan</div>';
     h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin-bottom:6px">Each activity is suggested automatically when its trigger is reached in the drill ladder.</div>';
-    plan.forEach(p=>{ if(!p||!p.key) return;
+    plan.forEach((p,pi)=>{ if(!p||!p.key) return;
       const act=_unitActs(u).find(a=>a&&a.key===p.activity); if(!act) return;
       h+='<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:5px 0;border-bottom:1px solid #f3f1ee;font-size:11px">';
       h+='<span style="color:var(--muted);min-width:180px;flex:1">'+esc(_unitWhenLabel(p.when))+'</span>';
@@ -8916,8 +8916,11 @@ function renderUnitDetail(u){
         else if(dismissed){st="✕ skipped";co="#9ca3af";} else if(fired){st="🔔 now";co="#b45309";} else {st="⏳";co="#9ca3af";}
         h+='<span style="font-size:9.5px;font-weight:700;color:'+co+'">'+cap(k).slice(0,1)+': '+st+'</span>';
       });
+      if(isMom) h+='<button onclick="unitPlanEditOpen(\''+esc(u.id)+'\','+pi+')" title="Edit this step" style="padding:2px 8px;border-radius:8px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✎</button>';
       h+='</div>';
     });
+    if(!plan.length) h+='<div style="font-size:11px;color:var(--muted);padding:6px 0">No steps yet — add the first one.</div>';
+    if(isMom) h+='<button onclick="unitPlanEditOpen(\''+esc(u.id)+'\',-1)" style="margin-top:9px;padding:7px 14px;border-radius:10px;border:1.5px dashed #2d6a4f;background:#f2faf5;color:#2d6a4f;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Add step</button>';
     h+='</div>';
   }
   (u.decks||[]).forEach(d=>{
@@ -9295,6 +9298,125 @@ function unitActivityDone(unitId,kid,actKey){
     if(pts) addKidPoints(kid,pts,_unitDayFromTs(claim&&claim.ts));
   }
   renderAll();
+}
+// ── Pacing-plan EDITOR (Mom/PIN): add, edit, delete plan steps in the Units tab. The plan is a
+// small mom-only authored array, so saves write the whole plan node (the registry listener
+// echoes it to every device). Draft is kept flat and composed into {when:{...}} on save.
+let unitPlanEdit=null; // {unitId, index(-1=new), draft:{key,activity,type,deckKey,group,count,note}}
+function unitPlanEditOpen(unitId,index){
+  if(!momHere()) return;
+  const u=unitStudies[unitId]; if(!u) return;
+  const plan=Array.isArray(u.plan)?u.plan:Object.values(u.plan||{});
+  const acts=_unitActs(u); if(!acts.length){ alert("Add activities to this unit first."); return; }
+  let draft;
+  if(index>=0&&plan[index]){
+    const p=plan[index], w=p.when||{};
+    draft={key:p.key,activity:p.activity,type:w.type||"learned",deckKey:w.deckKey||((_unitCharDeck(u)||{}).key||""),group:w.group||"",count:w.count||1,note:p.note||""};
+  } else {
+    index=-1;
+    draft={key:"p"+Date.now().toString(36),activity:acts[0].key,type:"learned",deckKey:(_unitCharDeck(u)||{}).key||((u.decks||[])[0]||{}).key||"",group:"",count:1,note:""};
+  }
+  unitPlanEdit={unitId,index,draft};
+  _unitPlanOverlay();
+}
+function unitPlanSet(field,value){
+  if(!unitPlanEdit) return;
+  if(field==="count") value=Math.max(1,Math.round(Number(value)||1));
+  unitPlanEdit.draft[field]=value;
+  if(field==="deckKey") unitPlanEdit.draft.group="";  // groups belong to a deck
+  _unitPlanOverlay();
+}
+function unitPlanClose(){ unitPlanEdit=null; const ov=document.getElementById("uplan-dlg"); if(ov) ov.remove(); }
+function _unitPlanDeckGroups(u,deckKey){
+  const d=(u.decks||[]).find(x=>x&&x.key===deckKey); if(!d||!d.groupBy) return [];
+  const seen=new Set(),out=[];
+  (d.cards||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0)).forEach(c=>{ const g=c[d.groupBy]; if(g&&!seen.has(g)){seen.add(g);out.push(g);} });
+  return out;
+}
+function _unitPlanOverlay(){
+  if(!unitPlanEdit) return;
+  const u=unitStudies[unitPlanEdit.unitId]; if(!u){ unitPlanClose(); return; }
+  const d=unitPlanEdit.draft;
+  const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  const acts=_unitActs(u);
+  const groups=_unitPlanDeckGroups(u,d.deckKey);
+  const needsGroup=d.type==="group_learned"||d.type==="learned_in_group";
+  const needsCount=d.type==="learned"||d.type==="learned_in_group";
+  if(needsGroup&&!d.group&&groups.length) d.group=groups[0];
+  const selStyle='width:100%;padding:9px 10px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif;background:#fff';
+  const lbl=t=>'<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin:11px 0 4px">'+t+'</div>';
+  const opt=(v,t,cur)=>'<option value="'+esc(v)+'"'+(v===cur?' selected':'')+'>'+esc(t)+'</option>';
+  let b='<div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700;color:#1a3a2a;margin-bottom:2px">🗺️ '+(unitPlanEdit.index<0?"Add a plan step":"Edit plan step")+'</div>';
+  b+='<div style="font-size:11px;color:var(--muted);line-height:1.45">When the trigger is reached in the drill ladder, the activity is suggested for that kid.</div>';
+  b+=lbl("Suggest this activity");
+  b+='<select onchange="unitPlanSet(\'activity\',this.value)" style="'+selStyle+'">';
+  acts.forEach(a=>{ b+=opt(a.key,(a.emoji||"🎨")+" "+a.title+(unitActPoints(a)?" (⭐"+unitActPoints(a)+")":""),d.activity); });
+  b+='</select>';
+  b+=lbl("Trigger");
+  b+='<select onchange="unitPlanSet(\'type\',this.value)" style="'+selStyle+'">';
+  b+=opt("learned","after N cards learned (deck)",d.type);
+  b+=opt("learned_in_group","after N learned in one group",d.type);
+  b+=opt("group_learned","when a whole group is learned",d.type);
+  b+=opt("deck_learned","when the whole deck is learned",d.type);
+  b+='</select>';
+  b+=lbl("Deck");
+  b+='<select onchange="unitPlanSet(\'deckKey\',this.value)" style="'+selStyle+'">';
+  (u.decks||[]).forEach(dk=>{ if(dk&&dk.key) b+=opt(dk.key,dk.key+" ("+((dk.cards||[]).length)+" cards)",d.deckKey); });
+  b+='</select>';
+  if(needsGroup){
+    b+=lbl("Group");
+    if(groups.length){
+      b+='<select onchange="unitPlanSet(\'group\',this.value)" style="'+selStyle+'">';
+      groups.forEach(g=>{ b+=opt(g,g,d.group); });
+      b+='</select>';
+    } else b+='<div style="font-size:11px;color:#b5394a;font-weight:600">This deck has no groups — pick a grouped deck or a different trigger.</div>';
+  }
+  if(needsCount){
+    b+=lbl("How many learned");
+    b+='<input type="number" min="1" value="'+(d.count||1)+'" onchange="unitPlanSet(\'count\',this.value)" style="'+selStyle+';width:110px">';
+  }
+  b+=lbl("Note on the nudge (optional)");
+  b+='<input type="text" value="'+esc(d.note)+'" placeholder="e.g. first monarch learned — write him up" oninput="unitPlanEdit.draft.note=this.value" style="'+selStyle+'">';
+  const preview=_unitWhenLabel({type:d.type,deckKey:d.deckKey,group:d.group,count:d.count});
+  const actT=acts.find(a=>a.key===d.activity);
+  b+='<div style="margin-top:13px;border:1.5px dashed #c9a84c;background:#fdf8ee;border-radius:9px;padding:7px 11px;font-size:11px;color:#1f2937"><b>'+esc(preview)+'</b> → '+(actT?(actT.emoji||"🎨")+" "+esc(actT.title):"")+'</div>';
+  b+='<div style="display:flex;gap:8px;margin-top:14px">';
+  if(unitPlanEdit.index>=0) b+='<button onclick="unitPlanDelete()" style="padding:11px 14px;border-radius:10px;border:1.5px solid #ef4444;background:#fff;color:#ef4444;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Delete</button>';
+  b+='<button onclick="unitPlanClose()" style="flex:1;padding:11px;border-radius:10px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancel</button>';
+  b+='<button onclick="unitPlanSave()" style="flex:1;padding:11px;border-radius:10px;border:none;background:#2d6a4f;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save</button>';
+  b+='</div>';
+  let ov=document.getElementById("uplan-dlg"); if(ov) ov.remove();
+  ov=document.createElement("div"); ov.id="uplan-dlg"; ov.className="dlg-overlay"; ov.style.display="flex"; ov.style.zIndex="9999";
+  ov.onclick=function(e){ if(e.target===ov) unitPlanClose(); };
+  ov.innerHTML='<div class="dlg-box" style="max-width:420px;text-align:left;max-height:86vh;overflow-y:auto">'+b+'</div>';
+  document.body.appendChild(ov);
+}
+function unitPlanSave(){
+  if(!unitPlanEdit||!momHere()) return;
+  const u=unitStudies[unitPlanEdit.unitId]; if(!u) return;
+  const d=unitPlanEdit.draft;
+  const needsGroup=d.type==="group_learned"||d.type==="learned_in_group";
+  if(!d.activity||!d.deckKey){ alert("Pick an activity and a deck."); return; }
+  if(needsGroup&&!d.group){ alert("Pick a group (or use a deck-wide trigger)."); return; }
+  const when={type:d.type,deckKey:d.deckKey};
+  if(needsGroup) when.group=d.group;
+  if(d.type==="learned"||d.type==="learned_in_group") when.count=Math.max(1,d.count||1);
+  const entry={key:d.key,when,activity:d.activity}; if(d.note) entry.note=d.note;
+  const plan=Array.isArray(u.plan)?u.plan.slice():Object.values(u.plan||{});
+  if(unitPlanEdit.index>=0&&unitPlanEdit.index<plan.length) plan[unitPlanEdit.index]=entry; else plan.push(entry);
+  u.plan=plan;
+  if(db) db.ref("unitStudies/"+unitPlanEdit.unitId+"/plan").set(plan);
+  unitPlanClose(); renderAll();
+}
+function unitPlanDelete(){
+  if(!unitPlanEdit||!momHere()||unitPlanEdit.index<0) return;
+  const u=unitStudies[unitPlanEdit.unitId]; if(!u) return;
+  if(!confirm("Delete this plan step?")) return;
+  const plan=Array.isArray(u.plan)?u.plan.slice():Object.values(u.plan||{});
+  plan.splice(unitPlanEdit.index,1);
+  u.plan=plan;
+  if(db) db.ref("unitStudies/"+unitPlanEdit.unitId+"/plan").set(plan);
+  unitPlanClose(); renderAll();
 }
 // PIN-gated: set the fixed point value on the shared registry activity.
 function unitSetActivityPoints(unitId,actKey){
