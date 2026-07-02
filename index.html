@@ -10292,6 +10292,7 @@ function _cbSpread(arr,n){
 //   minutesText                           — minutes mode cell text
 //   rows: chronological FUTURE rows [{dayNum,date,week,dow,off,usedMin,hadMine}]
 //   dayCapMin (0 = uncapped)
+//   blockedDates:[dateStr] — days claimed by alternation-group partners (never share)
 //   extend:{lastDayNum,lastDate,lastWeekNum,lastWeekLabel,isOff(dateStr)} — grid extension
 // Returns {assignments:[{dayNum,date,week,text,isNew}], clears:[dayNum], stats, warnings}
 function cbMaterialize(cfg){
@@ -10300,7 +10301,8 @@ function cbMaterialize(cfg){
   const cap=cfg.dayCapMin||0;
   const myMin=cfg.minutes||20;
   const allowed=cfg.allowedDays||[];
-  const dayFits=r=>!r.off&&(!allowed.length||allowed.includes(r.dow));
+  const blocked={};(cfg.blockedDates||[]).forEach(d=>{blocked[d]=1;});
+  const dayFits=r=>!r.off&&!blocked[r.date]&&(!allowed.length||allowed.includes(r.dow));
   const dayOk=r=>dayFits(r)&&(!cap||r.usedMin+myMin<=cap);
   const capSkipped=rows.filter(r=>dayFits(r)&&!(r.usedMin+myMin<=cap)&&cap).length;
 
@@ -10376,7 +10378,7 @@ function cbMaterialize(cfg){
     let weekBuf=[], bufMon=null, bufLabel=null;
     const flush=()=>{
       if(!weekBuf.length) return;
-      const elig=weekBuf.filter(r=>!r.off&&(!allowed.length||allowed.includes(r.dow))&&(!cap||myMin<=cap));
+      const elig=weekBuf.filter(r=>!r.off&&!blocked[r.date]&&(!allowed.length||allowed.includes(r.dow))&&(!cap||myMin<=cap));
       const chosen=_cbSpread(elig,Math.min(tpw,elig.length));
       let used=false;
       for(const r of chosen){
@@ -10492,6 +10494,181 @@ function cbDayCap(kid){
   const r=gwRules();
   return (r.schoolEnd-r.schoolStart)-((r.lunchEnd||0)-(r.lunchStart||0));
 }
+function cbDayCapDefault(){
+  const r=gwRules();
+  return (r.schoolEnd-r.schoolStart)-((r.lunchEnd||0)-(r.lunchStart||0));
+}
+
+// ── CB3: cross-subject rules — alternation groups, day cap, day pinning ─────
+
+function cbAltGroups(kid){ return ((currData||{}).altGroups||{})[kid]||{}; }
+// A subject lives in at most one group (the editor enforces it)
+function cbGroupOf(kid,sk){
+  const gs=cbAltGroups(kid);
+  for(const gid of Object.keys(gs)){
+    if(((gs[gid]||{}).members||[]).includes(sk)) return {gid,group:gs[gid]};
+  }
+  return null;
+}
+// Future dates claimed by the subject's alternation partners — the builder
+// treats them like off days, so group members never share a date.
+function cbBlockedDates(kid,sk){
+  const g=cbGroupOf(kid,sk);
+  if(!g) return [];
+  const others=(g.group.members||[]).filter(m=>m!==sk);
+  if(!others.length) return [];
+  const lessons=(currData.lessons||{})[kid]||{};
+  const today=cbTodayISO();
+  const out={};
+  for(const dn of Object.keys(lessons)){
+    const l=lessons[dn]; if(!l||!l.date||l.date<=today) continue;
+    const ov=schedOv(l.date,kid)||{};
+    for(const m of others){
+      if((gvFilled(l[m])&&!(ov.removed||{})[m])||((ov.added||{})[m]!==undefined)){ out[l.date]=1; break; }
+    }
+  }
+  return Object.keys(out);
+}
+
+// Future days already over the cap (same math as the Grid's Min column)
+function cbOverCapDays(kid){
+  const cap=cbDayCap(kid); if(!cap) return 0;
+  const lessons=(currData.lessons||{})[kid]||{};
+  const subs=(currData.subjects||{})[kid]||{};
+  const today=cbTodayISO();
+  let n=0;
+  for(const dn of Object.keys(lessons)){
+    const l=lessons[dn]; if(!l||!l.date||l.date<=today) continue;
+    const ov=schedOv(l.date,kid)||{};
+    let mins=0;
+    for(const sk of Object.keys(subs)){ if(!subs[sk].paused&&gvFilled(l[sk])&&!(ov.removed||{})[sk]) mins+=subs[sk].minutes||20; }
+    if(mins>cap) n++;
+  }
+  return n;
+}
+
+function cbSetCap(kid,val){
+  if(!db) return;
+  if(!currData.dayCap) currData.dayCap={};
+  val=parseInt(val)||0;
+  if(val>0){ currData.dayCap[kid]=val; db.ref("curriculum/dayCap/"+kid).set(val); }
+  else { delete currData.dayCap[kid]; db.ref("curriculum/dayCap/"+kid).remove(); }
+  currData.lastEdit=new Date().toISOString();
+  db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  renderAll();
+}
+function cbCapStep(kid,d){ cbSetCap(kid,cbDayCap(kid)+d); }
+
+let cbRulesOpen=false, cbNewGroup=null;
+function cbRulesToggle(){ cbRulesOpen=!cbRulesOpen; cbNewGroup=null; renderAll(); }
+function cbGroupStart(){ cbNewGroup={name:"",members:[]}; renderAll(); }
+function cbGroupCancel(){ cbNewGroup=null; renderAll(); }
+function cbGroupName(v){ cbNewGroup.name=v; }
+function cbGroupToggleMember(sk){
+  const i=cbNewGroup.members.indexOf(sk);
+  if(i>=0) cbNewGroup.members.splice(i,1); else cbNewGroup.members.push(sk);
+  renderAll();
+}
+function cbGroupSave(){
+  if(!cbNewGroup||cbNewGroup.members.length<2||!db){ return; }
+  const kid=cbKid;
+  const name=String(cbNewGroup.name||"").trim()||"Group";
+  const gid=name.toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"")+"_"+Date.now().toString(36);
+  if(!currData.altGroups) currData.altGroups={};
+  if(!currData.altGroups[kid]) currData.altGroups[kid]={};
+  currData.altGroups[kid][gid]={name,members:cbNewGroup.members.slice()};
+  db.ref("curriculum/altGroups/"+kid+"/"+gid).set(currData.altGroups[kid][gid]);
+  currData.lastEdit=new Date().toISOString();
+  db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  cbNewGroup=null;
+  renderAll();
+}
+function cbGroupDel(gid){
+  const kid=cbKid;
+  if(currData.altGroups&&currData.altGroups[kid]) delete currData.altGroups[kid][gid];
+  if(db){ db.ref("curriculum/altGroups/"+kid+"/"+gid).remove(); db.ref("curriculum/lastEdit").set(new Date().toISOString()); }
+  renderAll();
+}
+// Day pinning — same allowedDays field the subject editor and builder use
+function cbPinDay(sk,d){
+  const kid=cbKid;
+  const s=currData.subjects[kid][sk]; if(!s||!db) return;
+  const arr=(s.allowedDays||[]).slice();
+  const i=arr.indexOf(d);
+  if(i>=0) arr.splice(i,1); else arr.push(d);
+  s.allowedDays=arr;
+  db.ref("curriculum/subjects/"+kid+"/"+sk+"/allowedDays").set(arr);
+  db.ref("curriculum/lastEdit").set(new Date().toISOString());
+  renderAll();
+}
+
+function cbRenderRules(col){
+  const kid=cbKid;
+  const subs=currData.subjects[kid]||{};
+  const entries=Object.entries(subs).filter(([_,s])=>!s.paused).sort((a,b)=>(a[1].display||a[0]).localeCompare(b[1].display||b[0]));
+  const groups=cbAltGroups(kid);
+  const capSet=!!((currData.dayCap||{})[kid]);
+  const cap=cbDayCap(kid);
+  const over=cbOverCapDays(kid);
+  const disp=sk=>esc((subs[sk]||{}).display||sk);
+
+  let h='<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px">';
+
+  // Day cap
+  h+='<div class="ce-sheet-lbl" style="margin-top:0">Daily cap — no day over</div>';
+  h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">';
+  h+='<div class="ce-stepper"><button onclick="cbCapStep(\''+kid+'\',-15)">&minus;</button><span>'+cap+'</span><button onclick="cbCapStep(\''+kid+'\',15)">+</button></div>';
+  h+='<span style="font-size:11px;color:var(--muted)">min/day · '+(capSet?'custom <button onclick="cbSetCap(\''+kid+'\',0)" style="padding:2px 8px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:10px;cursor:pointer;margin-left:4px">Reset to school hours</button>':'default from school hours')+'</span>';
+  h+='</div>';
+  if(over) h+='<div style="font-size:11px;color:#92400e;background:#fffbeb;border-radius:6px;padding:5px 8px;margin-top:6px">⚠ '+over+' future day'+(over!==1?'s':'')+' already exceed'+(over===1?'s':'')+' this cap — rebuild the biggest subjects in the Builder, or check the Grid’s Min column.</div>';
+
+  // Alternation groups
+  h+='<div class="ce-sheet-lbl">Alternation groups — members never share a day</div>';
+  const gids=Object.keys(groups);
+  if(!gids.length&&!cbNewGroup) h+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">None yet. Example: put two math programs in a group and they’ll alternate days instead of stacking.</div>';
+  for(const gid of gids){
+    const g=groups[gid]||{};
+    h+='<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:4px 0">';
+    h+='<span>\u{1F500}</span><b>'+esc(g.name||"Group")+'</b><span style="color:var(--muted)">'+(g.members||[]).map(disp).join(" · ")+'</span>';
+    h+='<button onclick="cbGroupDel(\''+gid+'\')" style="margin-left:auto;padding:2px 8px;border-radius:8px;border:1px solid #fecaca;background:#fff;color:#b5394a;font-size:10px;cursor:pointer">✕ remove</button>';
+    h+='</div>';
+  }
+  if(cbNewGroup){
+    const grouped={}; gids.forEach(gid=>(groups[gid].members||[]).forEach(m=>{grouped[m]=1;}));
+    h+='<div style="background:var(--bg);border-radius:8px;padding:8px;margin-top:6px">';
+    h+='<input class="ce-sheet-input" style="width:100%;box-sizing:border-box;margin-bottom:6px" placeholder="Group name (e.g. Math)" value="'+esc(cbNewGroup.name)+'" onchange="cbGroupName(this.value)">';
+    h+='<div class="ce-chips">';
+    for(const [sk] of entries){
+      if(grouped[sk]) continue;
+      h+='<div class="ce-chip'+(cbNewGroup.members.includes(sk)?" sel":"")+'" onclick="cbGroupToggleMember(\''+sk+'\')">'+disp(sk)+'</div>';
+    }
+    h+='</div>';
+    h+='<div style="display:flex;gap:6px;margin-top:8px">';
+    h+='<button onclick="cbGroupSave()" '+(cbNewGroup.members.length<2?'disabled style="opacity:.4;':'style="')+'flex:1;padding:8px;border-radius:8px;border:none;background:'+col+';color:#fff;font-size:12px;font-weight:700;cursor:pointer">Save group'+(cbNewGroup.members.length<2?' (pick 2+)':'')+'</button>';
+    h+='<button onclick="cbGroupCancel()" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer">Cancel</button>';
+    h+='</div></div>';
+  } else {
+    h+='<button onclick="cbGroupStart()" style="padding:5px 12px;border-radius:14px;border:1px dashed var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">+ New group</button>';
+  }
+
+  // Day pinning — every subject's allowed days on one screen
+  h+='<div class="ce-sheet-lbl">Day pinning — set neighbors side by side (blank = any school day)</div>';
+  h+='<div style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:4px 8px">';
+  for(const [sk,s] of entries){
+    const al=s.allowedDays||[];
+    h+='<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px dashed #eef0f3">';
+    h+='<span style="font-size:11px;font-weight:700;width:140px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+disp(sk)+'</span>';
+    ["Mon","Tue","Wed","Thu","Fri"].forEach(d=>{
+      const on=al.includes(d);
+      h+='<div onclick="cbPinDay(\''+sk+'\',\''+d+'\')" style="padding:3px 8px;border-radius:10px;border:1px solid '+(on?'transparent':'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:10px;font-weight:700;cursor:pointer">'+d+'</div>';
+    });
+    h+='</div>';
+  }
+  h+='</div>';
+  h+='<div style="font-size:10px;color:var(--muted);margin-top:6px">Pinning changes where NEW builds land. Already-built days stay put until you rebuild the subject.</div>';
+  h+='</div>';
+  return h;
+}
 
 function cbPacingLabel(s){
   const p=s&&s.pacing;
@@ -10533,7 +10710,8 @@ function cbBuildCfg(){
   const kid=cbKid, sk=cbSubjKey, f=cbForm;
   const s=currData.subjects[kid][sk];
   const cfg={sk,minutes:s.minutes||20,mode:f.mode,allowedDays:f.allowedDays.slice(),
-    rows:cbFutureRows(kid,sk),dayCapMin:cbDayCap(kid),extend:cbExtendInfo(kid)};
+    rows:cbFutureRows(kid,sk),dayCapMin:cbDayCap(kid),extend:cbExtendInfo(kid),
+    blockedDates:cbBlockedDates(kid,sk)};
   if(f.mode==="targetDate") cfg.targetDate=f.targetDate;
   if(f.mode==="window"){ cfg.windowEnd=f.windowEnd; cfg.tpw=f.tpw; }
   if(f.mode==="timesPerWeek") cfg.tpw=f.tpw;
@@ -10700,6 +10878,9 @@ function renderCurrBuilder(el){
   if(cbSubjKey&&cbForm){
     h+=cbRenderForm(col);
   } else {
+    // Rules & day cap (CB3)
+    h+='<button onclick="cbRulesToggle()" style="width:100%;margin-bottom:10px;padding:9px;border-radius:10px;border:1px solid var(--border);background:'+(cbRulesOpen?'var(--bg)':'#fff')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:var(--text);text-align:left">⚙ Rules &amp; day cap for '+cap(cbKid)+' <span style="float:right;color:var(--muted)">'+(cbRulesOpen?'▴':'▾')+'</span></button>';
+    if(cbRulesOpen) h+=cbRenderRules(col);
     // Subject list
     const entries=Object.entries(subs).filter(([_,s])=>!s.paused).sort((a,b)=>(a[1].display||a[0]).localeCompare(b[1].display||b[0]));
     if(!entries.length) h+='<div style="padding:30px;text-align:center;color:var(--muted);font-size:12px">No subjects for '+cap(cbKid)+' yet.</div>';
@@ -10750,6 +10931,14 @@ function cbRenderForm(col){
     h+='<div class="ce-chip'+(f.allowedDays.includes(d)?" sel":"")+'" onclick="cbToggleDay(\''+d+'\')">'+d+'</div>';
   });
   h+='</div>';
+
+  // Alternation group awareness
+  const grp=cbGroupOf(kid,sk);
+  if(grp){
+    const others=(grp.group.members||[]).filter(m=>m!==sk).map(m=>esc((currData.subjects[kid][m]||{}).display||m));
+    const nBlocked=cbBlockedDates(kid,sk).length;
+    h+='<div style="font-size:11px;color:#3730a3;background:#e0e7ff;border-radius:8px;padding:6px 10px;margin-top:8px">\u{1F500} <b>'+esc(grp.group.name||"Group")+'</b>: never on the same day as '+others.join(", ")+(nBlocked?' — '+nBlocked+' future day'+(nBlocked!==1?'s':'')+' skipped automatically':'')+'.</div>';
+  }
 
   const tpwStepper='<div class="ce-stepper"><button onclick="cbStepTpw(-1)">&minus;</button><span>'+f.tpw+'</span><button onclick="cbStepTpw(1)">+</button></div>';
   const contentLine=(f.mode!=="pages"&&f.mode!=="minutes")?
@@ -10953,7 +11142,10 @@ function renderCurrGrid(el){
   h+='<div class="gv-wrap"><table class="gv"><thead><tr>';
   h+='<th class="gv-fix">Day</th><th class="gv-min">Min</th>';
   for(const sk of cols){
-    h+='<th onclick="gvJumpBuilder(\''+sk+'\')" title="Open in Builder">'+esc((subs[sk]||{}).display||sk)+'</th>';
+    const grp=cbGroupOf(gvKid,sk);
+    const mark=grp?'\u{1F500} ':'';
+    const tip=grp?('Alternates ('+(grp.group.name||"group")+') — never same day as '+(grp.group.members||[]).filter(m=>m!==sk).map(m=>(subs[m]||{}).display||m).join(", ")+'. Tap for Builder.'):'Open in Builder';
+    h+='<th onclick="gvJumpBuilder(\''+sk+'\')" title="'+esc(tip)+'">'+mark+esc((subs[sk]||{}).display||sk)+'</th>';
   }
   h+='</tr></thead><tbody>';
 

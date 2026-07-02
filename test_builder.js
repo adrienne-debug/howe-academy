@@ -175,6 +175,34 @@ console.log("re-pace clears");
   ok("reassigned day is NOT cleared (overwrite, not clear+write)", res.clears.length === 0, res.clears);
 }
 
+console.log("alternation (blockedDates)");
+{
+  // Partner claims Mon/Wed/Fri of week 1 → this subject avoids them
+  const res = cbMaterialize({ sk: "m2", minutes: 20, mode: "timesPerWeek", tpw: 2, allowedDays: [], content: texts(2), rows: mkRows(MON, 1, 1, 1), dayCapMin: 0, blockedDates: ["2026-08-03", "2026-08-05", "2026-08-07"] });
+  ok("blocked days never used", JSON.stringify(dates(res)) === '["2026-08-04","2026-08-06"]', dates(res));
+}
+{
+  // Two-subject alternation: A gets Mon/Wed/Fri, then B (A's days blocked) fills Tue/Thu
+  const rowsA = mkRows(MON, 2, 1, 1);
+  const a = cbMaterialize({ sk: "a", minutes: 20, mode: "timesPerWeek", tpw: 3, allowedDays: [], content: texts(6), rows: rowsA, dayCapMin: 0 });
+  const b = cbMaterialize({ sk: "b", minutes: 20, mode: "timesPerWeek", tpw: 2, allowedDays: [], content: texts(4), rows: mkRows(MON, 2, 1, 1), dayCapMin: 0, blockedDates: dates(a) });
+  const overlap = dates(b).filter(d => dates(a).includes(d));
+  ok("A and B never share a day", overlap.length === 0, overlap);
+  ok("B still places everything", b.stats.placed === 4, b.stats);
+  ok("B lands Tue/Thu", dows(b).every(d => d === "Tue" || d === "Thu"), dows(b));
+}
+{
+  // Blocked dates hold in the extension too
+  const res = cbMaterialize({
+    sk: "m2", minutes: 20, mode: "timesPerWeek", tpw: 5, allowedDays: [], content: texts(7),
+    rows: mkRows(MON, 1, 1, 1), dayCapMin: 0, blockedDates: ["2026-08-10", "2026-08-11"],
+    extend: { lastDayNum: 5, lastDate: "2026-08-07", lastWeekNum: 1, lastWeekLabel: "Wk 1", isOff: () => false }
+  });
+  const news = res.assignments.filter(x => x.isNew).map(x => x.date);
+  ok("extension skips blocked dates", !news.includes("2026-08-10") && !news.includes("2026-08-11"), news);
+  ok("all 7 still placed", res.stats.placed === 7, res.stats);
+}
+
 console.log("errors");
 {
   const res = cbMaterialize({ sk: "m", minutes: 20, mode: "timesPerWeek", tpw: 3, allowedDays: [], content: [], rows: mkRows(MON, 2, 1, 1), dayCapMin: 0 });
