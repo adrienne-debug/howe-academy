@@ -923,6 +923,26 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .ce-btn-delete{background:none;border:1.5px solid #ef4444!important;color:#ef4444;font-size:12px!important;margin-top:12px}
 .ce-btn-pause{background:none;border:1.5px solid var(--border)!important;color:var(--text)}
 .ce-toggle{position:relative;width:44px;height:24px;border-radius:12px;background:#d1d5db;cursor:pointer;transition:background 0.2s;flex-shrink:0}
+/* Curriculum Grid (CB2) — Excel-style view of the lesson map */
+.gv-wrap{overflow:auto;max-height:72vh;border:1px solid var(--border);border-radius:12px;background:#fff;margin-bottom:14px}
+table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'DM Sans',sans-serif}
+.gv th,.gv td{box-sizing:border-box;border-bottom:1px solid #eef0f3;border-right:1px solid #eef0f3;padding:5px 7px;white-space:nowrap;text-align:left;vertical-align:top;background:#fff}
+.gv thead th{position:sticky;top:0;z-index:4;background:var(--bg);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.4px;color:var(--muted);cursor:pointer}
+.gv .gv-fix{position:sticky;left:0;z-index:2;background:#fff;width:108px;min-width:108px;max-width:108px;overflow:hidden;text-overflow:ellipsis}
+.gv thead .gv-fix{z-index:5;background:var(--bg);cursor:default}
+.gv .gv-min{position:sticky;left:108px;z-index:2;background:#fff;text-align:right;color:var(--muted);width:44px;min-width:44px;max-width:44px}
+.gv thead .gv-min{z-index:5;background:var(--bg)}
+.gv-cell{cursor:pointer;min-width:64px;max-width:150px;overflow:hidden;text-overflow:ellipsis}
+.gv-cell:hover{background:#f8fafc}
+.gv-cell.gv-empty{color:#d1d5db}
+.gv tr.gv-past td{opacity:0.5}
+.gv tr.gv-off td{background:#fef2f2}
+.gv tr.gv-hol td{background:#fef3c7}
+.gv tr.gv-today td{background:#eff6ff}
+.gv tr.gv-wkband td{background:var(--bg);font-weight:800;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;position:sticky;left:auto}
+.gv td.gv-overcap{color:#b5394a;font-weight:800}
+.gv .gv-badge{display:inline-block;font-size:8px;font-weight:800;padding:1px 5px;border-radius:8px;margin-left:4px;vertical-align:middle}
+.gv input{width:130px;padding:3px 5px;border:1.5px solid var(--header);border-radius:6px;font-size:11px;font-family:'DM Sans',sans-serif}
 .ce-toggle.on{background:#16a34a}
 .ce-toggle::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform 0.2s}
 .ce-toggle.on::after{transform:translateX(20px)}
@@ -5017,12 +5037,12 @@ function renderCurriculumView(el,headerHtml){
     return;
   }
 
-  // Inner tab bar: Subjects | Plans | Builder — outside any wrapper so sticky works
+  // Inner tab bar: Subjects | Plans | Builder | Grid — outside any wrapper so sticky works
   let h=(headerHtml||'');
   h+='<div style="position:sticky;top:156px;z-index:89;background:var(--bg);display:flex;gap:0;margin:0;padding:0 4px;border-bottom:2px solid var(--border)">';
-  ["subjects","plans","builder"].forEach(tab=>{
+  ["subjects","plans","builder","grid"].forEach(tab=>{
     const on=currInnerTab===tab;
-    const label=tab==="subjects"?"Subjects":tab==="plans"?"Plans & Map":"Builder";
+    const label=tab==="subjects"?"Subjects":tab==="plans"?"Plans & Map":tab==="builder"?"Builder":"Grid";
     h+='<button style="flex:1;padding:9px 4px;font-size:12px;font-weight:700;border:none;background:none;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:'+(on?"var(--text)":"var(--muted)")+';border-bottom:2px solid '+(on?"var(--header)":"transparent")+';margin-bottom:-2px" onclick="setCurrInnerTab(\''+tab+'\')">'+label+'</button>';
   });
   h+='</div>';
@@ -5038,6 +5058,13 @@ function renderCurriculumView(el,headerHtml){
   if(currInnerTab==="builder"){
     el.innerHTML=h;
     renderCurrBuilder(el);
+    return;
+  }
+
+  // Grid tab — Excel-style view of the lesson map, cells editable in place
+  if(currInnerTab==="grid"){
+    el.innerHTML=h;
+    renderCurrGrid(el);
     return;
   }
 
@@ -10813,6 +10840,175 @@ function cbRenderForm(col){
     }
   }
   return h;
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// CURRICULUM GRID (CB2) — the Excel-style view of the lesson map.
+// A VIEW + cell editor of curriculum/lessons: rows = school days, columns =
+// subjects, tap a cell to edit/fill/clear (same write path as the Lesson
+// Map's ✎). Structural moves/day-offs stay in the Lesson Map; the grid just
+// SHOWS those overrides. Past rows are frozen.
+// ═════════════════════════════════════════════════════════════════════════
+let gvKid=null, gvEdit=null, gvShowPast=false, gvScrollTop=0, gvScrollLeft=0;
+
+const gvFilled=v=>!!(v&&v!=="—"&&v!=="nan"&&String(v).trim());
+
+// Subjects that have at least one cell in this kid's grid, by display name
+function gvSubjectCols(kid){
+  const lessons=((currData||{}).lessons||{})[kid]||{};
+  const subs=((currData||{}).subjects||{})[kid]||{};
+  const seen={};
+  for(const dn of Object.keys(lessons)){
+    const l=lessons[dn]; if(!l) continue;
+    for(const k of Object.keys(l)){ if(k!=="week"&&k!=="date"&&gvFilled(l[k])) seen[k]=1; }
+  }
+  return Object.keys(seen).sort((a,b)=>((subs[a]||{}).display||a).localeCompare((subs[b]||{}).display||b));
+}
+
+function gvSetKid(k){ gvKid=k; gvEdit=null; gvScrollTop=0; gvScrollLeft=0; renderAll(); }
+function gvTogglePast(){ gvShowPast=!gvShowPast; gvEdit=null; renderAll(); }
+function gvGrabScroll(){ const w=document.querySelector(".gv-wrap"); if(w){ gvScrollTop=w.scrollTop; gvScrollLeft=w.scrollLeft; } }
+function gvOpenCell(dn,sk){ gvGrabScroll(); gvEdit=dn+"|"+sk; renderAll(); }
+function gvCancelEdit(){ if(gvEdit===null) return; gvGrabScroll(); gvEdit=null; renderAll(); }
+function gvEditKey(e,kid,dn,sk){
+  if(e.key==="Enter"){ e.preventDefault(); gvCommitCell(kid,dn,sk,e.target.value); }
+  else if(e.key==="Escape"){ e.preventDefault(); gvCancelEdit(); }
+}
+
+function gvRecountTotal(kid,sk){
+  const lessons=(currData.lessons||{})[kid]||{};
+  let n=0;
+  for(const dn of Object.keys(lessons)){ if(gvFilled((lessons[dn]||{})[sk])) n++; }
+  if(currData.subjects[kid]&&currData.subjects[kid][sk]){
+    currData.subjects[kid][sk].total=n;
+    db.ref("curriculum/subjects/"+kid+"/"+sk+"/total").set(n);
+  }
+}
+
+// Enter with text = save (edit or fill), Enter with blank = clear the cell.
+function gvCommitCell(kid,dn,sk,val){
+  gvGrabScroll();
+  val=String(val||"").trim();
+  const lessons=(currData.lessons||{})[kid]||{};
+  const row=lessons[dn];
+  if(!row||!db){ gvEdit=null; renderAll(); return; }
+  const had=gvFilled(row[sk]);
+  if(val===String(row[sk]||"").trim()){ gvEdit=null; renderAll(); return; }
+  if(!val&&!had){ gvEdit=null; renderAll(); return; }
+  if(!val){
+    delete row[sk];
+    db.ref("curriculum/lessons/"+kid+"/"+dn+"/"+sk).remove();
+    gvRecountTotal(kid,sk);
+  } else {
+    row[sk]=val;
+    db.ref("curriculum/lessons/"+kid+"/"+dn+"/"+sk).set(val);
+    if(!had) gvRecountTotal(kid,sk);
+  }
+  currData.lastEdit=new Date().toISOString();
+  db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  buildCurrPaceCum();
+  gvEdit=null;
+  renderAll();
+}
+
+function gvJumpBuilder(sk){ currInnerTab="builder"; cbKid=gvKid; cbOpenSubj(sk); }
+
+function renderCurrGrid(el){
+  if(!currData||!currData.subjects){
+    el.innerHTML+='<div style="padding:40px 20px;text-align:center;color:var(--muted)"><div style="font-size:36px;margin-bottom:8px">\u{1F4CA}</div><div style="font-weight:600;margin-bottom:4px">No curriculum yet</div><div style="font-size:12px">Upload an Excel file or build subjects first.</div></div>';
+    return;
+  }
+  if(!gvKid) gvKid=currViewKid||ROSTER[0];
+  let h='<div style="padding:0 4px">';
+
+  // Kid chips
+  h+='<div style="padding:10px 0 8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">';
+  [...ROSTER].forEach(kid=>{
+    const on=kid===gvKid;
+    const c=KID_COLOR[kid]||"#333";
+    h+='<button onclick="gvSetKid(\''+kid+'\')" style="padding:5px 14px;border-radius:20px;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?c:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cap(kid)+'</button>';
+  });
+  h+='</div>';
+
+  const lessons=(currData.lessons||{})[gvKid]||{};
+  const subs=(currData.subjects||{})[gvKid]||{};
+  const cols=gvSubjectCols(gvKid);
+  const dayNums=Object.keys(lessons).map(Number).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
+  if(!dayNums.length||!cols.length){
+    h+='<div style="padding:30px;text-align:center;color:var(--muted);font-size:12px">'+cap(gvKid)+' has no lesson grid yet — build a subject in the Builder or upload Excel.</div></div>';
+    el.innerHTML+=h;
+    return;
+  }
+
+  const today=cbTodayISO();
+  const cap_=cbDayCap(gvKid);
+  const pastCount=dayNums.filter(dn=>{const l=lessons[dn];return l&&l.date&&l.date<today;}).length;
+  const col=KID_COLOR[gvKid]||"#333";
+
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">';
+  if(pastCount) h+='<button onclick="gvTogglePast()" style="padding:4px 12px;border-radius:14px;border:1px solid var(--border);background:'+(gvShowPast?'var(--header)':'#fff')+';color:'+(gvShowPast?'#fff':'var(--muted)')+';font-size:11px;font-weight:700;cursor:pointer">'+(gvShowPast?'Hide':'Show')+' '+pastCount+' past days</button>';
+  h+='<span style="font-size:11px;color:var(--muted)">'+dayNums.length+' days × '+cols.length+' subjects · tap a cell to edit — Enter saves, blank clears · tap a column name for the Builder</span>';
+  h+='</div>';
+
+  h+='<div class="gv-wrap"><table class="gv"><thead><tr>';
+  h+='<th class="gv-fix">Day</th><th class="gv-min">Min</th>';
+  for(const sk of cols){
+    h+='<th onclick="gvJumpBuilder(\''+sk+'\')" title="Open in Builder">'+esc((subs[sk]||{}).display||sk)+'</th>';
+  }
+  h+='</tr></thead><tbody>';
+
+  const DOWS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  let lastWk=null;
+  for(const dn of dayNums){
+    const l=lessons[dn]; if(!l||!l.date) continue;
+    const past=l.date<today;
+    if(past&&!gvShowPast) continue;
+    const d=gwParseDate(l.date);
+    if(l.week!==lastWk){
+      lastWk=l.week;
+      h+='<tr class="gv-wkband"><td colspan="'+(2+cols.length)+'">'+esc(l.week||"")+'</td></tr>';
+    }
+    const offReason=smapIsKidOff(gvKid,l.date);
+    const mapOff=schedOvKidOff(gvKid,l.date);
+    const ov=schedOv(l.date,gvKid)||{};
+    const cls=[past?"gv-past":"",(offReason||mapOff)?"gv-off":"",l.date===today?"gv-today":""].filter(Boolean).join(" ");
+    let mins=0;
+    for(const sk of Object.keys(subs)){ if(!subs[sk].paused&&gvFilled(l[sk])&&!(ov.removed||{})[sk]) mins+=subs[sk].minutes||20; }
+    h+='<tr'+(cls?' class="'+cls+'"':'')+'>';
+    h+='<td class="gv-fix" title="Day '+dn+(offReason?' — '+esc(String(offReason)):'')+'"><b>'+DOWS[d.getDay()]+'</b> '+(d.getMonth()+1)+'/'+d.getDate();
+    if(offReason) h+='<span class="gv-badge" style="background:#fecaca;color:#991b1b">OFF</span>';
+    else if(mapOff) h+='<span class="gv-badge" style="background:#fecaca;color:#991b1b">DAY OFF</span>';
+    h+='</td>';
+    h+='<td class="gv-min'+((cap_&&mins>cap_)?' gv-overcap':'')+'"'+((cap_&&mins>cap_)?' title="Over the '+cap_+' min day cap"':'')+'>'+(mins||"")+'</td>';
+    for(const sk of cols){
+      const v=l[sk];
+      const removed=!!(ov.removed||{})[sk];
+      const addedV=(ov.added||{})[sk];
+      const editing=gvEdit===dn+"|"+sk;
+      if(editing&&!past){
+        h+='<td><input id="gv-edit-input" value="'+esc(gvFilled(v)?v:"")+'" onkeydown="gvEditKey(event,\''+gvKid+'\','+dn+',\''+sk+'\')" onblur="gvCancelEdit()"></td>';
+      } else {
+        let cell="";
+        if(gvFilled(v)) cell=removed?'<s style="color:var(--muted)">'+esc(v)+'</s><span class="gv-badge" style="background:#e0e7ff;color:#3730a3">moved</span>':esc(v);
+        if(addedV!==undefined) cell+=(cell?'<br>':'')+'<span style="color:#15803d">+ '+(typeof addedV==="string"?esc(addedV):"make-up")+'</span><span class="gv-badge" style="background:#bbf7d0;color:#15803d">make-up</span>';
+        if(!cell) cell="·";
+        h+='<td class="gv-cell'+(gvFilled(v)||addedV!==undefined?'':' gv-empty')+'"'+(past?'':' onclick="gvOpenCell('+dn+',\''+sk+'\')"')+'>'+cell+'</td>';
+      }
+    }
+    h+='</tr>';
+  }
+  h+='</tbody></table></div>';
+  h+='<div style="font-size:10px;color:var(--muted);padding:0 2px 16px">Red rows = calendar/day-off · <span style="background:#eff6ff;padding:1px 6px;border-radius:6px">blue row</span> = today · past days are frozen · moves &amp; make-ups are made in the Lesson Map, shown here</div>';
+  h+='</div>';
+  el.innerHTML+=h;
+
+  // Restore scroll + focus the open editor (renderAll rebuilds the DOM)
+  setTimeout(()=>{
+    const w=document.querySelector(".gv-wrap");
+    if(w){ w.scrollTop=gvScrollTop; w.scrollLeft=gvScrollLeft; }
+    const i=document.getElementById("gv-edit-input");
+    if(i){ i.focus(); i.select(); }
+  },30);
 }
 
 function smapToggle(planKey,mode){
