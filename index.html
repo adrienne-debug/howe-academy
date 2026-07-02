@@ -10602,6 +10602,104 @@ function cbPinDay(sk,d){
   renderAll();
 }
 
+// ── CB5: multi-kid — copy a subject across kids + whole-kid year summary ────
+
+// Copy a subject (settings + pacing + full lesson sequence) to another kid.
+// Creates the SUBJECT only — no grid rows. The flow then lands in the target
+// kid's Builder with the subject open, so pacing gets adjusted and built there.
+function cbCopyTo(toKid){
+  const kid=cbKid, sk=cbSubjKey;
+  if(!kid||!sk||!db) return;
+  const src=currData.subjects[kid][sk];
+  if(!src) return;
+  if(((currData.subjects||{})[toKid]||{})[sk]){
+    cbMsg="⚠ "+cap(toKid)+" already has "+(src.display||sk)+" — open it in their Builder instead.";
+    renderAll(); return;
+  }
+  const copy={display:src.display||sk,device:src.device||"paper",mom:src.mom||"none",
+    minutes:src.minutes||20,rules:src.rules||"",days:src.days||"",
+    allowedDays:(src.allowedDays||[]).slice(),timesPerWeek:src.timesPerWeek||0,total:0};
+  if(src.tracking) copy.tracking=src.tracking;
+  if(src.priority) copy.priority=src.priority;
+  if(src.carryoverCap!==undefined) copy.carryoverCap=src.carryoverCap;
+  // Pacing config travels (dates get adjusted per kid); build history doesn't
+  if(src.pacing){ copy.pacing={...src.pacing}; delete copy.pacing.builtThrough; delete copy.pacing.builtAt; }
+  // Content: the full sequence from the source, so the new kid can build from lesson 1
+  const seq=(buildSubjectLessons(kid,sk)||[]).map(x=>x.lesson);
+  if(src.lessonSeq&&src.lessonSeq.length) copy.lessonSeq=src.lessonSeq.slice();
+  else if(seq.length) copy.lessonSeq=seq;
+  if(!currData.subjects[toKid]) currData.subjects[toKid]={};
+  currData.subjects[toKid][sk]=copy;
+  db.ref("curriculum/subjects/"+toKid+"/"+sk).set(copy);
+  currData.lastEdit=new Date().toISOString();
+  db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  cbMsg="✓ Copied "+(copy.display)+" to "+cap(toKid)+" — set their pacing and Build.";
+  cbSetKid(toKid);
+  cbOpenSubj(sk);
+}
+
+let cbSummaryOpen=false;
+function cbSummaryToggle(){ cbSummaryOpen=!cbSummaryOpen; renderAll(); }
+
+// Year at a glance — the grid is the truth: finish = last future cell.
+function cbRenderSummary(col){
+  const kid=cbKid;
+  const subs=currData.subjects[kid]||{};
+  const lessons=(currData.lessons||{})[kid]||{};
+  const today=cbTodayISO();
+  const cap_=cbDayCap(kid);
+  const over=cbOverCapDays(kid);
+  const groups=cbAltGroups(kid);
+  const entries=Object.entries(subs).filter(([_,s])=>!s.paused).sort((a,b)=>(a[1].display||a[0]).localeCompare(b[1].display||b[0]));
+
+  // Per-subject future stats in one grid pass
+  const stat={}; let futureDays=0, lastGridDate="";
+  for(const dn of Object.keys(lessons)){
+    const l=lessons[dn]; if(!l||!l.date||l.date<=today) continue;
+    futureDays++;
+    if(l.date>lastGridDate) lastGridDate=l.date;
+    const ov=schedOv(l.date,kid)||{};
+    for(const [sk] of entries){
+      if((gvFilled(l[sk])&&!(ov.removed||{})[sk])||((ov.added||{})[sk]!==undefined)){
+        if(!stat[sk]) stat[sk]={n:0,last:""};
+        stat[sk].n++;
+        if(l.date>stat[sk].last) stat[sk].last=l.date;
+      }
+    }
+  }
+
+  let h='<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px">';
+  h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">';
+  const tile=(n,l,warn)=>'<div style="background:'+(warn?'#fffbeb':'var(--bg)')+';border-radius:8px;padding:8px;text-align:center"><div style="font-weight:800;font-size:15px;'+(warn?'color:#92400e':'')+'">'+n+'</div><div style="font-size:10px;color:var(--muted)">'+l+'</div></div>';
+  h+=tile(futureDays,"school days left on the map");
+  h+=tile(cap_+" min",over?over+" days over cap":"day cap — no day over",over>0);
+  h+=tile(Object.keys(groups).length||"—","alternation groups");
+  h+='</div>';
+
+  h+='<table style="width:100%;border-collapse:collapse;font-size:11px">';
+  h+='<tr style="color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:0.4px"><td style="padding:3px 4px">Subject</td><td>Pacing</td><td style="text-align:right">×/wk</td><td style="text-align:right">days left</td><td style="text-align:right">finishes</td></tr>';
+  for(const [sk,s] of entries){
+    const st=stat[sk];
+    const p=s.pacing;
+    const target=p&&p.targetDate;
+    const late=!!(target&&st&&st.last>target);
+    const dot=!st?'⚪':late?'\u{1F534}':'\u{1F7E2}';
+    const grp=cbGroupOf(kid,sk);
+    h+='<tr style="border-top:1px solid #eef0f3;cursor:pointer" onclick="cbOpenSubj(\''+sk+'\')">';
+    h+='<td style="padding:5px 4px;font-weight:700">'+dot+' '+esc(s.display||sk)+(grp?' \u{1F500}':'')+'</td>';
+    h+='<td style="color:var(--muted)">'+(cbPacingLabel(s)||"—")+'</td>';
+    h+='<td style="text-align:right">'+(s.timesPerWeek||"—")+'</td>';
+    h+='<td style="text-align:right">'+(st?st.n:"—")+'</td>';
+    h+='<td style="text-align:right;'+(late?'color:#b5394a;font-weight:800':'')+'">'+(st?st.last:"not on map")+(late?' ⚠':'')+'</td>';
+    h+='</tr>';
+    if(late) h+='<tr><td colspan="5" style="font-size:10px;color:#b5394a;padding:0 4px 5px">runs past its '+esc(target)+' target — open it and rebuild</td></tr>';
+  }
+  h+='</table>';
+  h+='<div style="font-size:10px;color:var(--muted);margin-top:8px">Finish dates come straight from the map (last scheduled day). Map ends '+(lastGridDate||"—")+'. Tap a row to open it in the Builder.</div>';
+  h+='</div>';
+  return h;
+}
+
 function cbRenderRules(col){
   const kid=cbKid;
   const subs=currData.subjects[kid]||{};
@@ -10878,6 +10976,9 @@ function renderCurrBuilder(el){
   if(cbSubjKey&&cbForm){
     h+=cbRenderForm(col);
   } else {
+    // Year at a glance (CB5)
+    h+='<button onclick="cbSummaryToggle()" style="width:100%;margin-bottom:10px;padding:9px;border-radius:10px;border:1px solid var(--border);background:'+(cbSummaryOpen?'var(--bg)':'#fff')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:var(--text);text-align:left">\u{1F4CB} '+cap(cbKid)+'’s year at a glance <span style="float:right;color:var(--muted)">'+(cbSummaryOpen?'▴':'▾')+'</span></button>';
+    if(cbSummaryOpen) h+=cbRenderSummary(col);
     // Rules & day cap (CB3)
     h+='<button onclick="cbRulesToggle()" style="width:100%;margin-bottom:10px;padding:9px;border-radius:10px;border:1px solid var(--border);background:'+(cbRulesOpen?'var(--bg)':'#fff')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:var(--text);text-align:left">⚙ Rules &amp; day cap for '+cap(cbKid)+' <span style="float:right;color:var(--muted)">'+(cbRulesOpen?'▴':'▾')+'</span></button>';
     if(cbRulesOpen) h+=cbRenderRules(col);
@@ -10991,7 +11092,24 @@ function cbRenderForm(col){
     h+='</div>';
   }
 
+  // No day grid → builds can't land anywhere
+  if(!cbExtendInfo(kid)){
+    h+='<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;margin-top:8px;font-size:11px;color:#991b1b">'+cap(kid)+' has no day grid yet (no dated school days), so there’s nowhere to build. Upload an Excel plan for '+cap(kid)+' first.</div>';
+  }
+
   h+='<button onclick="cbRunPreview()" style="width:100%;margin-top:14px;padding:11px;border-radius:10px;border:none;background:'+col+';color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Preview build</button>';
+
+  // Copy to another kid (CB5) — settings + pacing + sequence travel; grid rows don't
+  const otherKids=[...ROSTER].filter(k=>k!==kid);
+  if(otherKids.length){
+    h+='<div class="ce-sheet-lbl" style="margin-top:14px">Copy to another kid <span style="font-weight:400;color:var(--muted)">(brings settings, pacing &amp; lesson list — then Build for them)</span></div>';
+    h+='<div class="ce-chips">';
+    otherKids.forEach(k2=>{
+      const has=!!((currData.subjects||{})[k2]||{})[sk];
+      h+='<div class="ce-chip"'+(has?' style="opacity:.45" title="'+cap(k2)+' already has this subject"':' onclick="cbCopyTo(\''+k2+'\')"')+'>'+(KID_COLOR[k2]?'':'')+cap(k2)+(has?' ✓':'')+'</div>';
+    });
+    h+='</div>';
+  }
   h+='</div>';
 
   // Preview card
