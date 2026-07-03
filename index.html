@@ -13404,6 +13404,17 @@ function mastBankStatus(){
   return result;
 }
 
+// Append a day's entry to the shared print log via transaction — the print number
+// drives every kid's due-parity, so a stale tab set()ing the whole array could drop
+// entries and silently shift which cards come due.
+function mastPrintLogAppend(dt,pn){
+  if(!db) return;
+  db.ref("mastery/printLog").transaction(cur=>{
+    const arr=cur==null?[]:(Array.isArray(cur)?cur:Object.values(cur));
+    if(!arr.some(e=>e&&e.date===dt)) arr.push({date:dt,num:pn});
+    return arr;
+  });
+}
 function mastGetPrintNum(){
   const today=new Date().toISOString().slice(0,10);
   let pl=masteryData.printLog||[];
@@ -13511,7 +13522,7 @@ function mastSaveManualScore(){
   if(!Array.isArray(pl)) pl=Object.values(pl);
   const existing=pl.find(e=>e.date===dt);
   const pn=existing?existing.num:(pl.reduce((m,x)=>Math.max(m,x.num||0),0)+1);
-  if(!existing){ pl.push({date:dt,num:pn}); masteryData.printLog=pl; if(db) db.ref("mastery/printLog").set(pl); }
+  if(!existing){ pl.push({date:dt,num:pn}); masteryData.printLog=pl; mastPrintLogAppend(dt,pn); }
 
   const entry={
     date:dt, printNum:pn, total:total, scored:scored,
@@ -13762,7 +13773,7 @@ function mastSaveResults(){
     // Freshly auto-pulled cards don't exist in Firebase yet — write them whole.
     minted.forEach(it=>{ const ix=items.indexOf(it); if(ix>=0) upd[ix]=it; });
     db.ref("mastery/"+masteryKid).update(upd);
-    db.ref("mastery/printLog").set(pl);
+    mastPrintLogAppend(today,pn);
     db.ref("mastery/history/"+masteryKid+"/"+today.replace(/-/g,"")).set(histEntry);
   }
   // Update local
@@ -14165,14 +14176,20 @@ function mastAdminTierStreak(tier,delta){
   mastAdminDirty=true;
   _mastRe();
 }
+// Firebase keys can't contain . # $ [ ] / — prompts with those (rule-card sentences)
+// can't live in the definitions map; their back belongs in item.answer instead.
+function mastDefKeyOk(p){ return !/[.#$\[\]\/]/.test(p); }
 function mastSaveDef(prompt,def){
   const kid=masteryKid;
   const s=masteryData[kid+"_settings"]||{};
   if(!s.definitions) s.definitions={};
+  if(!mastDefKeyOk(prompt)){ alert("This prompt can't be a definition key (it contains . # $ [ ] or /) — edit the card's answer instead."); return; }
   if(def.trim()) s.definitions[prompt]=def.trim();
   else delete s.definitions[prompt];
   masteryData[kid+"_settings"]=s;
-  if(db) db.ref("mastery/"+kid+"_settings/definitions").set(s.definitions||null);
+  // Touch ONLY this key — writing the whole map from local state let a stale tab wipe
+  // every definition added elsewhere (same wipe class as the old mastAdminSave bug).
+  if(db) db.ref("mastery/"+kid+"_settings/definitions").update({[prompt]:def.trim()||null});
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 }
 function mastAdminCatMode(cat,mode){
@@ -14181,7 +14198,7 @@ function mastAdminCatMode(cat,mode){
   if(!s.cat_modes) s.cat_modes={};
   s.cat_modes[cat]=mode;
   masteryData[kid+"_settings"]=s;
-  if(db) db.ref("mastery/"+kid+"_settings/cat_modes").set(s.cat_modes);
+  if(db) db.ref("mastery/"+kid+"_settings/cat_modes").update({[cat]:mode});  // this cat only — never the whole map from local state
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
@@ -14279,8 +14296,10 @@ function mastFullBank(){
   const base={};
   const src=MAST_BANK_MAP[kid]||{};
   Object.entries(src).forEach(([k,v])=>{ base[k]=[...v]; });
-  const custom=masteryData[kid+"_custom_items"]||[];
+  let custom=masteryData[kid+"_custom_items"]||[];
+  if(!Array.isArray(custom)) custom=Object.values(custom);  // Firebase returns sparse arrays as objects
   custom.forEach(ci=>{
+    if(!ci) return;
     if(!base[ci.cat]) base[ci.cat]=[];
     if(!base[ci.cat].includes(ci.name)) base[ci.cat].push(ci.name);
   });
@@ -14345,7 +14364,9 @@ function mastSetVisual(cat,name,val){
   const key=cat+"_"+name;
   if(val) masteryData[kid+"_visuals"][key]=val;
   else delete masteryData[kid+"_visuals"][key];
-  if(db) db.ref("mastery/"+kid+"_visuals").set(masteryData[kid+"_visuals"]||{});
+  // Touch only this key — a whole-map set() from a stale tab wiped every other visual
+  // (Julian's dino photos live here). Keys with . # $ [ ] / can't be written at all.
+  if(db&&mastDefKeyOk(key)) db.ref("mastery/"+kid+"_visuals").update({[key]:val||null});
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 }
 function mastBankAddItem(){
@@ -14356,17 +14377,27 @@ function mastBankAddItem(){
   const full=mastFullBank();
   if(full[cat]&&full[cat].includes(name)){ alert(name+" already exists in "+cat); return; }
   if(!masteryData[kid+"_custom_items"]) masteryData[kid+"_custom_items"]=[];
-  masteryData[kid+"_custom_items"].push({cat:cat,name:name});
-  if(db) db.ref("mastery/"+kid+"_custom_items").set(masteryData[kid+"_custom_items"]);
+  const _bankEntry={cat:cat,name:name};
+  if(mastBankAddDef.trim()) _bankEntry.def=mastBankAddDef.trim();  // def rides the bank entry too, so pulls inherit it even if the definitions map is ever lost
+  masteryData[kid+"_custom_items"].push(_bankEntry);
+  // Append via transaction — a whole-array set() from a stale tab silently dropped
+  // bank entries added on another device (same wipe class as the settings bug).
+  if(db) db.ref("mastery/"+kid+"_custom_items").transaction(cur=>{
+    const arr=cur==null?[]:(Array.isArray(cur)?cur:Object.values(cur));
+    if(!arr.some(e=>e&&e.cat===cat&&e.name===name)) arr.push(_bankEntry);
+    return arr;
+  });
   if(mastBankAddEmoji) mastSetVisual(cat,name,mastBankAddEmoji);
   else if(mastBankAddImg) mastSetVisual(cat,name,{imageUrl:mastBankAddImg});
   // Save flip definition if provided
   if(mastBankAddDef.trim()){
     const s=masteryData[kid+"_settings"]||{};
     if(!s.definitions) s.definitions={};
-    s.definitions[name]=mastBankAddDef.trim();
-    masteryData[kid+"_settings"]=s;
-    if(db) db.ref("mastery/"+kid+"_settings/definitions").set(s.definitions);
+    if(mastDefKeyOk(name)){
+      s.definitions[name]=mastBankAddDef.trim();
+      masteryData[kid+"_settings"]=s;
+      if(db) db.ref("mastery/"+kid+"_settings/definitions").update({[name]:mastBankAddDef.trim()});  // this key only
+    }
   }
   // Update category mode if changed
   const _effMode=mastBankAddMode||mastGetCatMode(kid,cat);
@@ -14444,12 +14475,23 @@ function mastVisEditUpload(file){
     mastVisEditKey=null; _mastRe();
   }).catch(err=>{ alert("Image failed: "+err.message); });
 }
+// Bank deletes re-read the freshest array inside a transaction and drop by cat+name —
+// writing the locally-filtered array with set() let a stale tab resurrect deleted
+// entries or drop ones added elsewhere (the recurring wipe class).
+function mastBankRemove(kid,pred){
+  if(!db) return;
+  db.ref("mastery/"+kid+"_custom_items").transaction(cur=>{
+    if(cur==null) return cur;
+    const arr=Array.isArray(cur)?cur:Object.values(cur);
+    return arr.filter(e=>e&&!pred(e));
+  });
+}
 function mastRemoveCustomItem(cat,name){
   if(!confirm("Remove "+name+" from "+cat+" mastery database?")) return;
   const kid=masteryKid||"julian";
   const ci=masteryData[kid+"_custom_items"]||[];
   masteryData[kid+"_custom_items"]=ci.filter(i=>!(i.cat===cat&&i.name===name));
-  if(db) db.ref("mastery/"+kid+"_custom_items").set(masteryData[kid+"_custom_items"]);
+  mastBankRemove(kid,e=>e.cat===cat&&e.name===name);
   mastSetVisual(cat,name,null);
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
@@ -14476,7 +14518,7 @@ function mastDeleteItem(cat,name){
   const ci=masteryData[kid+"_custom_items"]||[];
   if(ci.some(i=>i.cat===cat&&i.name===name)){
     masteryData[kid+"_custom_items"]=ci.filter(i=>!(i.cat===cat&&i.name===name));
-    if(db) db.ref("mastery/"+kid+"_custom_items").set(masteryData[kid+"_custom_items"]);
+    mastBankRemove(kid,e=>e.cat===cat&&e.name===name);
   }
   mastSetVisual(cat,name,null);
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
@@ -14500,12 +14542,14 @@ function mastDeleteCategory(cat){
   const catCustom=ci.filter(i=>i.cat===cat);
   if(catCustom.length){
     masteryData[kid+"_custom_items"]=ci.filter(i=>i.cat!==cat);
-    if(db) db.ref("mastery/"+kid+"_custom_items").set(masteryData[kid+"_custom_items"]);
+    mastBankRemove(kid,e=>e.cat===cat);
   }
   const vis=masteryData[kid+"_visuals"]||{};
   const prefix=cat+"_";
-  Object.keys(vis).forEach(k=>{ if(k.startsWith(prefix)) delete vis[k]; });
-  if(db) db.ref("mastery/"+kid+"_visuals").set(vis);
+  const _visRm={};
+  Object.keys(vis).forEach(k=>{ if(k.startsWith(prefix)){ delete vis[k]; _visRm[k]=null; } });
+  // Remove only this category's keys — a whole-map set() from stale state wiped other decks' visuals.
+  if(db&&Object.keys(_visRm).length) db.ref("mastery/"+kid+"_visuals").update(_visRm);
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
@@ -14987,12 +15031,12 @@ function mastAddItems(){
       const _aMode=mastAddItemMode||mastGetCatMode(masteryKid,mastAddCat);
       if(_aMode==="flip"){
         const defInput=document.getElementById("mast-add-def");
-        if(defInput&&defInput.value.trim()){
+        if(defInput&&defInput.value.trim()&&mastDefKeyOk(p)){
           const s=masteryData[masteryKid+"_settings"]||{};
           if(!s.definitions) s.definitions={};
           s.definitions[p]=defInput.value.trim();
           masteryData[masteryKid+"_settings"]=s;
-          if(db) db.ref("mastery/"+masteryKid+"_settings/definitions").set(s.definitions);
+          if(db) db.ref("mastery/"+masteryKid+"_settings/definitions").update({[p]:defInput.value.trim()});  // this key only
         }
       }
     }
