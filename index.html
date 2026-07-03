@@ -15644,21 +15644,37 @@ function renderMastAdmin(){
   return h;
 }
 
-// Slideshow height ratchet: cards vary in natural height (big visuals, long definitions,
-// intro vs streak rows), which made the card visibly resize on every advance. Lock the
-// slide to the tallest card seen this kid/day — it can grow, never shrink mid-session.
+// Slideshow height lock: cards vary in natural height (big visuals, long definition
+// backs, intro vs streak rows), which made the card visibly resize on every advance.
+// _renderMasteryInner builds EVERY card's HTML for the session (mastSlideCardsHtml);
+// here they're all measured in an invisible box at the real card width, and the slide
+// is pinned to the tallest — locked BEFORE the first card is shown, so the size never
+// changes while paging. Re-measured only when the kid/day/log-mode/deck changes.
+let mastSlideCardsHtml=[];
 let mastSlideMaxH=0, mastSlideHKey="";
-function mastSteadySlide(el){
+function mastLockSlideHeight(el){
   const sl=el&&el.querySelector?el.querySelector(".mast-slide"):null;
   if(!sl) return;
-  const key=masteryKid+"|"+new Date().toISOString().slice(0,10);
-  if(mastSlideHKey!==key){ mastSlideHKey=key; mastSlideMaxH=0; }
+  const key=masteryKid+"|"+new Date().toISOString().slice(0,10)+"|"+(mastLogMode?"log":"view")+"|"+mastSlideCardsHtml.length;
+  if(mastSlideHKey!==key){
+    const w=sl.getBoundingClientRect().width;
+    if(!w) return;  // hidden/zero-width render — try again next render, don't cache a bogus lock
+    const meas=document.createElement("div");
+    meas.style.cssText="position:absolute;left:-99999px;top:0;width:"+w+"px;visibility:hidden;pointer-events:none";
+    document.body.appendChild(meas);
+    let max=0;
+    mastSlideCardsHtml.forEach(cardHtml=>{
+      meas.innerHTML=cardHtml;
+      const hh=meas.firstElementChild?meas.firstElementChild.getBoundingClientRect().height:0;
+      if(hh>max) max=hh;
+    });
+    document.body.removeChild(meas);
+    mastSlideHKey=key; mastSlideMaxH=Math.ceil(max);
+  }
   if(mastSlideMaxH) sl.style.minHeight=mastSlideMaxH+"px";
-  const h0=sl.getBoundingClientRect().height;
-  if(h0>mastSlideMaxH) mastSlideMaxH=Math.ceil(h0);
 }
 function renderMastery(el){
-  try{ _renderMasteryInner(el); mastSteadySlide(el); }catch(e){ console.error("Mastery render error:",e); el.innerHTML='<div style="padding:40px;text-align:center;color:#dc2626"><b>Mastery tab error</b><br><span style="font-size:11px;color:#666">'+e.message+'</span></div>'; }
+  try{ _renderMasteryInner(el); mastLockSlideHeight(el); }catch(e){ console.error("Mastery render error:",e); el.innerHTML='<div style="padding:40px;text-align:center;color:#dc2626"><b>Mastery tab error</b><br><span style="font-size:11px;color:#666">'+e.message+'</span></div>'; }
 }
 function _renderMasteryInner(el){
   const kids=[...ROSTER];
@@ -16216,15 +16232,18 @@ function _renderMasteryInner(el){
     if(slideItems.length){
     if(mastSlideIdx<0) mastSlideIdx=0;
     if(mastSlideIdx>=slideItems.length) mastSlideIdx=slideItems.length-1;
-    const it=slideItems[mastSlideIdx];
 
+    // One card's full HTML. Factored out so ALL cards can be built and measured invisibly
+    // up front (mastLockSlideHeight) — the slideshow locks to the tallest card BEFORE the
+    // first card is shown, instead of visibly growing as taller cards appear.
+    const buildSlideCard=(it)=>{
+    let c='';
     const sc=mastLogMode?(mastLogScores[it.id]||""):"";
     const slideClass="mast-slide"+(sc==="c"?" scored-c":sc==="m"?" scored-m":sc==="~"?" scored-t":"");
     const isIntro=it.status==="introduction";
 
-    h+='<div style="padding:10px 14px">';
-    h+='<div class="'+slideClass+'">';
-    h+='<div class="mast-slide-cat">'+(catE3[it.subject]||"")+' '+(it.subject||"")+(isIntro?' <span style="font-size:9px;color:#9a3412;font-weight:600">\u{2B50} Learning</span>':'')+'</div>';
+    c+='<div class="'+slideClass+'">';
+    c+='<div class="mast-slide-cat">'+(catE3[it.subject]||"")+' '+(it.subject||"")+(isIntro?' <span style="font-size:9px;color:#9a3412;font-weight:600">\u{2B50} Learning</span>':'')+'</div>';
 
     // Big visual
     let bigVis=it.imageUrl?'<img src="'+it.imageUrl+'" style="height:100%;width:auto;max-width:100%;border-radius:18px;object-fit:contain">':'';
@@ -16268,52 +16287,60 @@ function _renderMasteryInner(el){
     const _hasPic=!!(it.imageUrl)||!!(typeof mastGetVisual==="function"&&mastGetVisual(it.subject,it.prompt));
     const _faceName=(!_ruleStyle)&&(typeof mastCatFace==="function"&&mastCatFace(it.subject)==="name")&&_hasPic;
     if(_catMode==="flip"||_isRule){
-      h+='<div class="mast-flip-wrap'+(mastFlipped?" flipped":"")+'" onclick="mastFlip()">';
-      h+='<div class="mast-flip-inner">';
-      h+='<div class="mast-flip-front">';
-      h+='<div class="mast-slide-img">'+bigVis+'</div>';
-      if(_ruleQ) h+='<div style="font-size:14px;color:#7c3aed;font-weight:700;margin-bottom:2px">'+_ruleQ+'</div>';
-      else if(!_ruleStyle&&!_faceName) h+='<div class="mast-slide-name">'+it.prompt+'</div>';  // rule/name-mode cards don't repeat the prompt on the front
-      h+='<div class="mast-flip-hint">\u{1F4A1} tap to see '+(_faceName?'who this is':(_ruleStyle?'the rule':'definition'))+'</div>';
-      h+=_tallyH;
-      h+='</div>';
-      h+='<div class="mast-flip-back">';
-      { const _bpl=it.prompt.length; const _bfs=_bpl<=6?60:_bpl<=14?42:_bpl<=22?32:24; h+='<div class="mast-slide-img"><span style="font-size:'+_bfs+'px;font-weight:800;color:#7c3aed;word-break:break-word;max-width:100%">'+it.prompt+'</span></div>'; }
-      if(!_faceName) h+='<div class="mast-flip-def">'+(_backText?(_ruleStyle?_backText:'&ldquo;'+_backText+'&rdquo;'):'<span style="color:#a78bfa;font-size:16px">no '+(_ruleStyle?'rule':'definition')+' yet</span>')+'</div>';
-      h+='<div class="mast-flip-hint">\u{1F4A1} tap to flip back</div>';
-      h+=_tallyH;
-      h+='</div>';
-      h+='</div></div>';
+      c+='<div class="mast-flip-wrap'+(mastFlipped?" flipped":"")+'" onclick="mastFlip()">';
+      c+='<div class="mast-flip-inner">';
+      c+='<div class="mast-flip-front">';
+      c+='<div class="mast-slide-img">'+bigVis+'</div>';
+      if(_ruleQ) c+='<div style="font-size:14px;color:#7c3aed;font-weight:700;margin-bottom:2px">'+_ruleQ+'</div>';
+      else if(!_ruleStyle&&!_faceName) c+='<div class="mast-slide-name">'+it.prompt+'</div>';  // rule/name-mode cards don't repeat the prompt on the front
+      c+='<div class="mast-flip-hint">\u{1F4A1} tap to see '+(_faceName?'who this is':(_ruleStyle?'the rule':'definition'))+'</div>';
+      c+=_tallyH;
+      c+='</div>';
+      c+='<div class="mast-flip-back">';
+      { const _bpl=it.prompt.length; const _bfs=_bpl<=6?60:_bpl<=14?42:_bpl<=22?32:24; c+='<div class="mast-slide-img"><span style="font-size:'+_bfs+'px;font-weight:800;color:#7c3aed;word-break:break-word;max-width:100%">'+it.prompt+'</span></div>'; }
+      if(!_faceName) c+='<div class="mast-flip-def">'+(_backText?(_ruleStyle?_backText:'&ldquo;'+_backText+'&rdquo;'):'<span style="color:#a78bfa;font-size:16px">no '+(_ruleStyle?'rule':'definition')+' yet</span>')+'</div>';
+      c+='<div class="mast-flip-hint">\u{1F4A1} tap to flip back</div>';
+      c+=_tallyH;
+      c+='</div>';
+      c+='</div></div>';
     } else {
-      h+='<div class="mast-slide-img">'+bigVis+'</div>';
-      if(cat!=="Counting") h+='<div class="mast-slide-name">'+it.prompt+'</div>';
+      c+='<div class="mast-slide-img">'+bigVis+'</div>';
+      if(cat!=="Counting") c+='<div class="mast-slide-name">'+it.prompt+'</div>';
       if(isIntro&&(_catMode==="quiz"||mastItemIsQuiz(masteryKid,it))){
         const _hint=MAST_INTRO_HINTS[cat]||"practice out loud";
-        h+='<div style="margin-top:8px;padding:8px 16px;background:#eef2ff;border-radius:10px;border:1.5px solid #c7d2fe">';
-        h+='<span style="font-size:13px;color:#4f46e5;font-weight:700">\u{1F3A4} '+_hint+'</span></div>';
+        c+='<div style="margin-top:8px;padding:8px 16px;background:#eef2ff;border-radius:10px;border:1.5px solid #c7d2fe">';
+        c+='<span style="font-size:13px;color:#4f46e5;font-weight:700">\u{1F3A4} '+_hint+'</span></div>';
       }
-      h+=_tallyH;
+      c+=_tallyH;
     }
 
     // Buttons based on mode and phase
     if(mastLogMode){
       const shown=sc==="shown";
       if(isIntro&&!shown){
-        h+='<div style="margin-top:14px;position:relative;z-index:3">';
-        h+='<button class="mast-slide-score-btn" style="width:auto;padding:12px 32px;font-size:16px;background:#fff7ed;border-color:#c2410c;color:#c2410c;border-radius:14px" onclick="mastSlideShown(\''+it.id+'\')">\u{1F441}\u{FE0F} Shown Today</button>';
-        h+='</div>';
+        c+='<div style="margin-top:14px;position:relative;z-index:3">';
+        c+='<button class="mast-slide-score-btn" style="width:auto;padding:12px 32px;font-size:16px;background:#fff7ed;border-color:#c2410c;color:#c2410c;border-radius:14px" onclick="mastSlideShown(\''+it.id+'\')">\u{1F441}\u{FE0F} Shown Today</button>';
+        c+='</div>';
       } else if(isIntro&&shown){
-        h+='<div style="margin-top:14px;font-size:13px;font-weight:700;color:#16a34a">\u{2713} Marked!</div>';
+        c+='<div style="margin-top:14px;font-size:13px;font-weight:700;color:#16a34a">\u{2713} Marked!</div>';
       } else {
-        h+='<div class="mast-slide-score">';
-        h+='<button class="mast-slide-score-btn'+(sc==="c"?" sel-c":"")+'" onclick="mastSlideScore(\''+it.id+'\',\'c\')">\u{2713}</button>';
-        h+='<button class="mast-slide-score-btn'+(sc==="m"?" sel-m":"")+'" onclick="mastSlideScore(\''+it.id+'\',\'m\')">\u{2717}</button>';
-        h+='<button class="mast-slide-score-btn'+(sc==="~"?" sel-t":"")+'" onclick="mastSlideScore(\''+it.id+'\',\'~\')">~</button>';
-        h+='</div>';
+        c+='<div class="mast-slide-score">';
+        c+='<button class="mast-slide-score-btn'+(sc==="c"?" sel-c":"")+'" onclick="mastSlideScore(\''+it.id+'\',\'c\')">\u{2713}</button>';
+        c+='<button class="mast-slide-score-btn'+(sc==="m"?" sel-m":"")+'" onclick="mastSlideScore(\''+it.id+'\',\'m\')">\u{2717}</button>';
+        c+='<button class="mast-slide-score-btn'+(sc==="~"?" sel-t":"")+'" onclick="mastSlideScore(\''+it.id+'\',\'~\')">~</button>';
+        c+='</div>';
       }
     }
 
-    h+='</div>'; // close slide
+    c+='</div>'; // close slide
+    return c;
+    };
+
+    // All cards for this session — the shown one goes in the page, the rest feed the
+    // invisible tallest-card measurement in mastLockSlideHeight.
+    mastSlideCardsHtml=slideItems.map(buildSlideCard);
+    h+='<div style="padding:10px 14px">';
+    h+=mastSlideCardsHtml[mastSlideIdx];
 
     h+='<div class="mast-slide-nav">';
     h+='<button class="mast-slide-arrow" onclick="mastSlidePrev()"'+(mastSlideIdx<=0?' disabled':'')+'>\u{2190}</button>';
