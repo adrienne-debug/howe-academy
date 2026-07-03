@@ -13424,9 +13424,33 @@ function mastGetPrintNum(){
   return pl.reduce((m,x)=>Math.max(m,x.num||0),0)+1;
 }
 
+// ── Ladder slot scheduling ─────────────────────────────────────────────────────
+// A card entering a tier gets a concrete next_due print number: a FULL interval out
+// (a card that just climbed to weekly waits a whole week — the old parity math could
+// surface it the very next drill), placed on the least-loaded slot of that window so
+// reviews spread across the tier's days instead of bunching. After each quiz the card
+// re-books interval days out, keeping its lane. Cards without next_due (legacy) keep
+// the old cycle-parity rule until their next score stamps them.
+function mastStampNextDue(item,items,tier,pn){
+  const iv=MAST_TIER_INT[tier];
+  if(!iv||iv<=1){ delete item.next_due; return; }   // daily / graduated: nothing to book
+  const base=pn+iv;                                  // never earlier than one full interval
+  const counts={};
+  (items||[]).forEach(i=>{
+    if(!i||i===item||i.tier!==tier) return;
+    let ph=null;
+    if(i.next_due!=null) ph=i.next_due%iv;
+    else if(i.status!=="introduction") ph=(i.cycle||1)%iv;  // legacy parity cards hold a lane too
+    if(ph!=null) counts[ph]=(counts[ph]||0)+1;
+  });
+  let best=base;
+  for(let s=base;s<base+iv;s++){ if((counts[s%iv]||0)<(counts[best%iv]||0)) best=s; }
+  item.next_due=best;
+}
 function mastIsDue(item,pn){
   const iv=MAST_TIER_INT[item.tier||"daily"];
   if(iv===null||iv===undefined) return false;
+  if(item.next_due!=null&&iv>1) return pn>=item.next_due;  // scheduled card: due on (or past) its slot, never before
   const cy=item.cycle||1;
   return (pn-1)%iv===(cy-1)%iv;
 }
@@ -13606,6 +13630,7 @@ function mastSaveResults(){
       item.cycle=_giv?(items.filter(i=>i.tier===_gtier&&i.id!==item.id).length%_giv)+1:1;
       item.consecutive_correct=0;
       item.tally_dots=_need;
+      mastStampNextDue(item,items,_gtier,pn);  // book the first review a full interval out, least-loaded slot
       if(_jset.auto_pull){
         const cat=item.subject;
         const introCount=items.filter(i=>i.subject===cat&&i.status==="introduction"&&i.id!==item.id).length;
@@ -13697,11 +13722,15 @@ function mastSaveResults(){
         const countInTier=items.filter(i=>i.tier===newTier&&i.id!==item.id).length;
         item.cycle=(countInTier%interval)+1;
       }
+      mastStampNextDue(item,items,newTier,pn);  // entering a tier: full interval out, spread across slots
     } else if(score==="c"||(score==="~"&&_ds.close_behavior==="count")){
       item.consecutive_correct=(item.consecutive_correct||0)+1;
     } else {
       item.consecutive_correct=0;
     }
+    // Staying in the tier: re-book the next review one interval from today, so the card
+    // keeps its lane and legacy (parity-scheduled) cards pick up a real slot on first score.
+    if(newTier===oldTier){ const _siv=MAST_TIER_INT[item.tier]; if(_siv&&_siv>1) item.next_due=pn+_siv; else delete item.next_due; }
     // R4: dynamic "active review" deck — gated by dynamic_decks (default OFF). A miss flags the item
     // (recording the tier it fell from); a climb back to that tier graduates it. Cap is surfaced.
     if(score==="m"){
@@ -13768,6 +13797,7 @@ function mastSaveResults(){
       upd[ix+"/drop_count"]=it.drop_count||0;
       upd[ix+"/status"]=it.status||"active";
       upd[ix+"/tally_dots"]=it.tally_dots??0;
+      upd[ix+"/next_due"]=it.next_due??null;
       // R4: persist (or clear, via null) the dynamic active-review flags on the same targeted write.
       upd[ix+"/dynamic"]=it.dynamic?true:null;
       upd[ix+"/dynSource"]=it.dynamic?(it.dynSource||null):null;
@@ -14647,6 +14677,7 @@ let mastEditId=null;
 let mastEditDots=0;
 let mastEditConsec=0;
 let mastEditTier="";
+let mastEditNextDue=null;  // hand-adjusted review slot (print number); null = keep/auto
 function mastToggleExpand(id){ mastExpandedId=mastExpandedId===id?null:id; _mastRe(); }
 
 function mastListEditCheck(val){
@@ -14683,6 +14714,22 @@ function mastListEditItem(id,field,value){
   const it=items.find(i=>i.id===id);
   if(!it) return;
   it[field]=value;
+  if(field==="tier") mastStampNextDue(it,items,value,mastGetPrintNum());  // new tier → re-book its review slot
+  masteryData[masteryKid]=items;
+  mastPutCards(masteryKid,items,[it]);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+}
+// Edit-List slot nudger: move a card's booked review print number by ±1, never into the past.
+function mastListEditSlot(id,delta){
+  let items=masteryData[masteryKid];
+  if(!items||!Array.isArray(items)) return;
+  const it=items.find(i=>i.id===id);
+  if(!it) return;
+  const iv=MAST_TIER_INT[it.tier||"daily"];
+  if(!iv||iv<=1) return;
+  const pn=mastGetPrintNum();
+  const cur=(it.next_due!=null)?it.next_due:pn+iv;
+  it.next_due=Math.max(pn+1,cur+delta);
   masteryData[masteryKid]=items;
   mastPutCards(masteryKid,items,[it]);
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
@@ -14724,12 +14771,27 @@ function mastEditOpen(id){
   mastEditDots=it.tally_dots||0;
   mastEditConsec=it.consecutive_correct||0;
   mastEditTier=it.tier||"daily";
+  mastEditNextDue=it.next_due??null;
   _mastRe();
 }
 function mastEditClose(){ mastEditId=null; _mastRe(); }
 function mastEditAdjDots(d){ mastEditDots=Math.max(0,Math.min(5,mastEditDots+d)); _mastRe(); }
 function mastEditAdjConsec(d){ mastEditConsec=Math.max(0,Math.min(3,mastEditConsec+d)); _mastRe(); }
-function mastEditSetTier(t){ mastEditTier=t; _mastRe(); }
+function mastEditSetTier(t){ mastEditTier=t; mastEditNextDue=null; _mastRe(); }  // new tier → slot re-books on save
+// Editable review slot: nudge the booked print number, never into the past.
+function mastEditAdjNext(d){
+  const pn=mastGetPrintNum();
+  const iv=MAST_TIER_INT[mastEditTier]||0;
+  if(!iv||iv<=1) return;
+  let cur=mastEditNextDue;
+  if(cur==null){
+    let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+    const it=items.find(i=>i.id===mastEditId);
+    cur=(it&&it.next_due!=null)?it.next_due:pn+iv;
+  }
+  mastEditNextDue=Math.max(pn+1,cur+d);
+  _mastRe();
+}
 
 function mastEditSave(){
   let items=masteryData[masteryKid]||[];
@@ -14737,6 +14799,7 @@ function mastEditSave(){
   const it=items.find(i=>i.id===mastEditId);
   if(!it) return;
 
+  const _oldTier=it.tier||"daily";
   it.tally_dots=mastEditDots;
   it.consecutive_correct=mastEditConsec;
   it.tier=mastEditTier;
@@ -14754,6 +14817,12 @@ function mastEditSave(){
     it.status="introduction";
     it.tier="daily";
   }
+  // Review slot: a hand-set slot wins; a tier change re-books automatically; intro/daily has none.
+  const _fiv=MAST_TIER_INT[it.tier]||0;
+  if(it.status!=="introduction"&&_fiv>1){
+    if(mastEditNextDue!=null) it.next_due=Math.max(mastGetPrintNum()+1,mastEditNextDue);
+    else if(it.tier!==_oldTier) mastStampNextDue(it,items,it.tier,mastGetPrintNum());
+  } else delete it.next_due;
 
   masteryData[masteryKid]=items;
   mastPutCards(masteryKid,items,[it]);
@@ -15059,6 +15128,10 @@ function mastAddItems(){
   // Assign cycles for new daily items
   const dailyCount=items.filter(i=>i.tier==="daily").length;
   items.filter(i=>i.tier==="daily").forEach((it,idx)=>{it.cycle=(idx%1)+1;});
+
+  // Items that started straight on the ladder get a booked review slot (full interval out, spread)
+  const _pnAdd=mastGetPrintNum();
+  newItems.forEach(it=>{ if(it.status!=="introduction"&&(MAST_TIER_INT[it.tier]||0)>1) mastStampNextDue(it,items,it.tier,_pnAdd); });
 
   // Save to Firebase (parked items are ordinary items in the kid's list — no bank writes)
   masteryData[masteryKid]=items;
@@ -16373,6 +16446,18 @@ function _renderMasteryInner(el){
               h+='<div class="mast-add-pills">';
               JTIERS.forEach(t=>{h+='<button class="mast-add-pill'+(mastEditTier===t?" active":"")+'" onclick="mastEditSetTier(\''+t+'\')" style="font-size:9px;padding:3px 8px">'+(MAST_TIER_LBL[t]||t)+'</button>';});
               h+='</div></div>';
+              // Review slot — visible + editable so the booked print number can be checked
+              if((MAST_TIER_INT[mastEditTier]||0)>1){
+                const _pnJ=mastGetPrintNum();
+                const _ndJ=mastEditNextDue!=null?mastEditNextDue:(i.next_due!=null?i.next_due:null);
+                const _ndJTxt=_ndJ!=null?('#'+_ndJ+' ('+((_ndJ-_pnJ)<=0?'due now':'in '+(_ndJ-_pnJ)+')')+(mastEditNextDue!=null?' \u{270E}':'')):(mastEditTier!==(i.tier||"daily")?'auto-books on save':'auto (books on next score)');
+                h+='<div class="mast-edit-row"><span class="mast-edit-label">Review Slot</span>';
+                h+='<div style="display:flex;align-items:center;gap:6px">';
+                h+='<button class="mast-add-pill" onclick="mastEditAdjNext(-1)" style="font-size:12px;padding:3px 10px">\u{2212}</button>';
+                h+='<span style="font-size:11px;font-weight:700">\u{1F4C5} '+_ndJTxt+'</span>';
+                h+='<button class="mast-add-pill" onclick="mastEditAdjNext(1)" style="font-size:12px;padding:3px 10px">+</button>';
+                h+='</div></div>';
+              }
             }
             h+='<button class="mast-edit-save" onclick="mastEditSave()">\u{2713} Save Changes</button>';
             h+='<button class="mast-edit-del" onclick="mastEditDelete()">\u{1F5D1}\u{FE0F} Remove Item</button>';
@@ -16399,6 +16484,11 @@ function _renderMasteryInner(el){
         else if(i.emoji) h+='<span style="display:inline-block;width:24px;text-align:center;flex-shrink:0">'+i.emoji+'</span>';
         h+='<span class="mast-irow-prompt">'+i.prompt+'</span>';
         if(i.drop_count) h+='<span class="mast-irow-drop">\u{2B07}'+i.drop_count+'</span>';
+        // Booked review slot — visible so the schedule can be checked at a glance.
+        if(i.next_due!=null&&(MAST_TIER_INT[i.tier]||0)>1){
+          const _dd=i.next_due-pn;
+          h+='<span style="font-size:8px;font-weight:700;color:'+(_dd<=0?'#16a34a':'#6b7280')+';background:'+(_dd<=0?'#f0fdf4':'#f3f1ee')+';border-radius:6px;padding:2px 5px;flex-shrink:0" title="review slot: print #'+i.next_due+'">\u{1F4C5} #'+i.next_due+(_dd<=0?' \u{00B7} due':' \u{00B7} in '+_dd)+'</span>';
+        }
         h+='<span style="font-size:8px;color:var(--muted);flex-shrink:0">'+(catE3[i.subject]||"")+' '+(i.subject||"")+'</span>';
         h+='</div>';
         h+=mastExpandHtml(i);
@@ -16440,6 +16530,18 @@ function _renderMasteryInner(el){
           h+='<button onclick="event.stopPropagation();mastListEditItem(\''+it.id+'\',\'tier\',\''+t+'\');_mastRe()" style="padding:4px 10px;border-radius:10px;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;border:1.5px solid '+(sel?ttc:'#d1d5db')+';background:'+(sel?ttc+'20':'#fff')+';color:'+(sel?ttc:'#6b7280')+'">'+(MAST_TIER_LBL[t]||t)+'</button>';
         });
         h+='</div>';
+        // Review slot — which print number this card is booked on (editable, never the past)
+        if((MAST_TIER_INT[it.tier]||0)>1&&it.status!=="introduction"){
+          const _pnE=mastGetPrintNum();
+          const _nd=(it.next_due!=null)?it.next_due:null;
+          const _ndTxt=_nd!=null?('print #'+_nd+' ('+((_nd-_pnE)<=0?'due now':'in '+(_nd-_pnE)+' drill'+((_nd-_pnE)!==1?'s':''))+')'):'auto (legacy rotation \u{2014} books on next score)';
+          h+='<div style="font-size:10px;font-weight:700;color:#4338ca;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Review Slot</div>';
+          h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">';
+          h+='<button onclick="event.stopPropagation();mastListEditSlot(\''+it.id+'\',-1);_mastRe()" style="width:32px;height:32px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;font-size:16px;cursor:pointer;font-weight:700">\u{2212}</button>';
+          h+='<span style="font-size:12px;font-weight:600;color:#1c1917">\u{1F4C5} '+_ndTxt+'</span>';
+          h+='<button onclick="event.stopPropagation();mastListEditSlot(\''+it.id+'\',1);_mastRe()" style="width:32px;height:32px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;font-size:16px;cursor:pointer;font-weight:700">+</button>';
+          h+='</div>';
+        }
         h+='<div style="font-size:10px;font-weight:700;color:#4338ca;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Streak ('+((it.consecutive_correct||0))+'/3)</div>';
         h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">';
         h+='<button onclick="event.stopPropagation();var v=Math.max(0,('+((it.consecutive_correct||0))+')-1);mastListEditItem(\''+it.id+'\',\'consecutive_correct\',v);_mastRe()" style="width:32px;height:32px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;font-size:16px;cursor:pointer;font-weight:700">\u{2212}</button>';
