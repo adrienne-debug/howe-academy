@@ -14113,11 +14113,14 @@ function mastToggleCatFace(cat){
 function mastAdminSave(){
   if(!mastAdminLocal) return;
   const kid=masteryKid||"julian";
-  // Preserve cat_modes if they exist
+  // Write ONLY the admin panel's own fields. A whole-object set() here deleted every
+  // settings key the panel doesn't carry — definitions, cat_modes, cat_face — which is
+  // how flip decks kept losing their card backs ("vanishing definitions"): one Save in
+  // Drill Settings wiped the definitions map for the whole kid. update() leaves keys
+  // it isn't handed untouched, so foreign data survives.
   const existing=masteryData[kid+"_settings"]||{};
-  if(existing.cat_modes) mastAdminLocal.cat_modes=existing.cat_modes;
-  masteryData[kid+"_settings"]={...mastAdminLocal};
-  if(db) db.ref("mastery/"+kid+"_settings").set(mastAdminLocal);
+  masteryData[kid+"_settings"]={...existing,...mastAdminLocal};
+  if(db) db.ref("mastery/"+kid+"_settings").update(mastAdminLocal);
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   mastAdminDirty=false;
   _mastRe();
@@ -14133,9 +14136,13 @@ function mastPullItem(cat,name){
   if(introCount>=_introMax){ alert(cat+" already has "+introCount+" introduction items (max "+_introMax+")"); return; }
   const slug=name.toLowerCase().replace(/[^a-z0-9]/g,"_").substring(0,20);
   const prefix=kid.substring(0,3);
-  const item={id:prefix+"_"+slug,subject:cat,type:cat.toLowerCase(),prompt:name,answer:name,tier:"daily",review_mode:"flash",status:"introduction",drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0};
+  // No answer:name placeholder — a card is minted with a REAL back (bank def, definitions
+  // map, or built-in vocab def) or with no answer at all. answer==prompt used to mask
+  // "this card has nothing to flip to" and defeated every fallback.
+  const item={id:prefix+"_"+slug,subject:cat,type:cat.toLowerCase(),prompt:name,tier:"daily",review_mode:"flash",status:"introduction",drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0};
   const _def=mastCustomDef(kid,cat,name);
   if(_def){ item.answer=_def; item.review_mode="recite"; }  // rule deck: flips to the rule
+  else { const _kdef=mastGetDef(kid,name); if(_kdef) item.answer=_kdef; }  // flip deck: carry the back on the card too, so a lost definitions map can't blank it
   if((cat==="Animals"||cat==="Dinosaurs")&&MAST_ANIMAL_EMOJI[name]) item.emoji=MAST_ANIMAL_EMOJI[name];
   const vis=mastGetVisual(cat,name);
   if(vis){
@@ -14801,9 +14808,11 @@ function mastSlideShown(id){
         if(next){
           const slug=next.toLowerCase().replace(/[^a-z0-9]/g,"_").substring(0,20);
           const _pfx=masteryKid.substring(0,3);
-          const newItem={id:_pfx+"_"+slug,subject:cat,type:cat.toLowerCase(),prompt:next,answer:next,tier:"daily",review_mode:"flash",status:"introduction",drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0};
+          // Mirrors mastPullItem: mint with a real back or none — never answer=prompt.
+          const newItem={id:_pfx+"_"+slug,subject:cat,type:cat.toLowerCase(),prompt:next,tier:"daily",review_mode:"flash",status:"introduction",drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0};
           const _ndef=mastCustomDef(masteryKid,cat,next);
           if(_ndef){ newItem.answer=_ndef; newItem.review_mode="recite"; }  // rule deck: flips to the rule
+          else { const _nkdef=mastGetDef(masteryKid,next); if(_nkdef) newItem.answer=_nkdef; }  // flip deck: carry the back on the card too
           if((cat==="Animals"||cat==="Dinosaurs")&&MAST_ANIMAL_EMOJI[next]) newItem.emoji=MAST_ANIMAL_EMOJI[next];
           const _apVis=mastGetVisual(cat,next);
           if(_apVis){ if(typeof _apVis==="string") newItem.emoji=_apVis; else if(_apVis.imageUrl) newItem.imageUrl=_apVis.imageUrl; }
@@ -16036,7 +16045,10 @@ function _renderMasteryInner(el){
     if(!bigVis&&cat==="Shapes") bigVis='<span style="font-size:280px">'+mastShapeVis(it.prompt,210)+'</span>';
     if(!bigVis&&cat==="Counting") bigVis=mastCountVisBig(it);
     if(!bigVis){ const _pl=it.prompt.length; const _fs=_pl<=3?200:_pl<=8?120:_pl<=14?72:_pl<=22?48:36; const _lf=cat==="Letters"?"font-family:'Fraunces',serif;":""; bigVis='<span style="'+_lf+'font-size:'+_fs+'px;font-weight:800;color:#c2410c;word-break:break-word;max-width:100%">'+it.prompt+'</span>'; }
-    const _vocabDef=mastGetDef(masteryKid,it.prompt);
+    // Definitions-map first; fall back to the card's own answer (when it's a real answer,
+    // not the answer==prompt placeholder the old pull paths minted) so a card whose map
+    // entry was lost still has a back to flip to.
+    const _vocabDef=mastGetDef(masteryKid,it.prompt)||((it.answer&&it.answer!==it.prompt)?it.answer:"");
     const _catMode=mastGetCatMode(masteryKid,cat);
     // Spelling rules (recite cards whose `answer` holds the rule text, e.g. "The Floss
     // Rule" -> "Double f, l, and s ...") flip to reveal the rule even when the category
