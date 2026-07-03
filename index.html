@@ -13460,7 +13460,9 @@ function mastOrderedDue(pn){
   const _lsk="ha_mast_deck_"+masteryKid;
   // A page reload wipes the in-memory deck. Restore the frozen shuffle for this exact quiz so
   // reloads DON'T reshuffle — the quiz only changes when its contents change or a log clears it.
-  if(!mastLogDeck && !mastLogMode){
+  // Also runs when a half-finished log was just resumed (mastRestoreLog), so the resumed
+  // session keeps the exact order it was left in.
+  if(!mastLogDeck){
     try{ const s=JSON.parse(localStorage.getItem(_lsk)||"null"); if(s&&s.key===key&&Array.isArray(s.deck)){ mastLogDeck=s.deck; mastSessionKey=key; } }catch(e){}
   }
   if(!mastLogDeck || (!mastLogMode && mastSessionKey!==key)){
@@ -13538,9 +13540,14 @@ function mastDeleteScore(dateKey){
 }
 function mastShowItemHist(id){ mastScoreItemId=mastScoreItemId===id?null:id; _mastRe(); }
 function mastToggleTier(t){ masteryCollapsed[masteryKid+"_"+t]=!masteryCollapsed[masteryKid+"_"+t]; const c=document.getElementById("content"); if(c) renderMastery(c); }
-function mastStartLog(){ mastLogMode=true; mastLogScores={}; mastSlideIdx=0; mastOrderedDue(mastGetPrintNum()); /* reuse the frozen quiz order (or build it now if going straight to Log) — never reshuffle */ const c=document.getElementById("content"); if(c) renderMastery(c); }
-function mastCancelLog(){ mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastSessionKey=""; const c=document.getElementById("content"); if(c) renderMastery(c); }
-function mastScore(id,val){ mastLogScores[id]=val; const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastStartLog(){ mastLogMode=true; mastLogScores={}; mastSlideIdx=0; mastOrderedDue(mastGetPrintNum()); /* reuse the frozen quiz order (or build it now if going straight to Log) — never reshuffle */ mastPersistLog(); const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastCancelLog(){
+  // All-or-nothing: nothing has been written yet, so Cancel really does throw the
+  // session away — make sure that's what was meant when scores are already down.
+  if(Object.keys(mastLogScores).length&&!confirm("Throw away this session? Nothing has been saved yet.")) return;
+  mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastSessionKey=""; mastClearLogPersist(); const c=document.getElementById("content"); if(c) renderMastery(c);
+}
+function mastScore(id,val){ mastLogScores[id]=val; mastPersistLog(); const c=document.getElementById("content"); if(c) renderMastery(c); }
 
 function mastSaveResults(){
   const pn=mastGetPrintNum();
@@ -13555,6 +13562,70 @@ function mastSaveResults(){
   // Apply results
   let changes=0;
   const touched=[];  // cards whose ladder state changed — for a targeted, non-destructive write
+  const minted=[];   // brand-new auto-pulled cards — need a whole-object write, not field patches
+
+  // Pass 1 — "shown" marks on introduction cards: dot fill, graduation, auto-pull.
+  // This used to happen immediately in mastSlideShown; doing it here makes the log
+  // session all-or-nothing (Cancel discards everything, nothing half-applies) and a
+  // card can't change status mid-drill. Items already dotted by an earlier session
+  // today (a "log another" run) are skipped so a re-log can't double-fill dots.
+  const _jset=mastDrillSettings();
+  const _todayKey=new Date().toISOString().slice(0,10).replace(/-/g,"");
+  const _prevToday=(masteryData.history&&masteryData.history[masteryKid]&&masteryData.history[masteryKid][_todayKey])||null;
+  const _prevShown=new Set(((_prevToday&&_prevToday.items)||[]).filter(x=>x&&x.result==="shown").map(x=>x.id));
+  due.forEach(dueItem=>{
+    if(mastLogScores[dueItem.id]!=="shown") return;
+    const item=items.find(i=>i.id===dueItem.id);
+    if(!item||item.status!=="introduction") return;
+    if(_prevShown.has(item.id)) return;
+    const dots=(item.tally_dots||0)+1;
+    item.tally_dots=dots;
+    const _need=mastIntroDotsFor(item.subject,_jset);
+    if(dots>=_need){
+      item.status="active";
+      const _gtier=_jset.ladder[0]||"every_other_day";
+      item.tier=_gtier;
+      // Spread graduates across the tier's cycles instead of all landing on cycle 1, which
+      // bunched every-other-day items onto the same drills and left alternate drills empty.
+      const _giv=MAST_TIER_INT[_gtier];
+      item.cycle=_giv?(items.filter(i=>i.tier===_gtier&&i.id!==item.id).length%_giv)+1:1;
+      item.consecutive_correct=0;
+      item.tally_dots=_need;
+      if(_jset.auto_pull){
+        const cat=item.subject;
+        const introCount=items.filter(i=>i.subject===cat&&i.status==="introduction"&&i.id!==item.id).length;
+        if(introCount<mastIntroMaxFor(cat,_jset)){
+          // Promote a parked issue-word (individual + add) first — it's already an item,
+          // just held out of the drill; flip it into introduction to fill the open slot.
+          const _parked=items.find(i=>i.subject===cat&&mastIsParked(i));
+          if(_parked){
+            _parked.status="introduction"; _parked.tally_dots=0; _parked.consecutive_correct=0; _parked.tier="daily";
+            touched.push(_parked);
+          } else {
+            const curriculum=mastFullBank()[cat]||[];
+            const existingPrompts=new Set(items.filter(i=>i.subject===cat).map(i=>i.prompt));
+            const next=curriculum.find(name=>!existingPrompts.has(name));
+            if(next){
+              const slug=next.toLowerCase().replace(/[^a-z0-9]/g,"_").substring(0,20);
+              const _pfx=masteryKid.substring(0,3);
+              // Mirrors mastPullItem: mint with a real back or none — never answer=prompt.
+              const newItem={id:_pfx+"_"+slug,subject:cat,type:cat.toLowerCase(),prompt:next,tier:"daily",review_mode:"flash",status:"introduction",drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0};
+              const _ndef=mastCustomDef(masteryKid,cat,next);
+              if(_ndef){ newItem.answer=_ndef; newItem.review_mode="recite"; }  // rule deck: flips to the rule
+              else { const _nkdef=mastGetDef(masteryKid,next); if(_nkdef) newItem.answer=_nkdef; }  // flip deck: carry the back on the card too
+              if((cat==="Animals"||cat==="Dinosaurs")&&MAST_ANIMAL_EMOJI[next]) newItem.emoji=MAST_ANIMAL_EMOJI[next];
+              const _apVis=mastGetVisual(cat,next);
+              if(_apVis){ if(typeof _apVis==="string") newItem.emoji=_apVis; else if(_apVis.imageUrl) newItem.imageUrl=_apVis.imageUrl; }
+              items.push(newItem); minted.push(newItem);
+            }
+          }
+        }
+      }
+    }
+    touched.push(item);
+  });
+
+  // Pass 2 — ladder scoring for quizzed cards.
   due.forEach(dueItem=>{
     const score=mastLogScores[dueItem.id];
     if(!score||score==="shown") return; // "shown" already saved by mastSlideShown
@@ -13647,12 +13718,24 @@ function mastSaveResults(){
     else { drillItems.push({id:d.id,prompt:d.prompt,result:sc,oldTier:d.tier||"daily"}); if(sc==="c")correct++; else if(sc==="m")miss++; else if(sc==="~")close++; }
   });
   const scored=correct+miss+close;
-  const histEntry={
+  let histEntry={
     date:today, printNum:pn, total:due.length, scored:scored,
     correct:correct, miss:miss, close:close, shown:shown,
     pct:scored?Math.round(correct/scored*100):0,
     items:drillItems
   };
+  // A second session today (explicit "log another") MERGES into today's record instead
+  // of silently replacing it — the first session's results used to be lost.
+  if(_prevToday){
+    const pc=(_prevToday.correct||0)+correct, pm=(_prevToday.miss||0)+miss, pt=(_prevToday.close||0)+close;
+    const psc=pc+pm+pt;
+    histEntry={
+      date:today, printNum:pn, total:(_prevToday.total||0)+due.length, scored:psc,
+      correct:pc, miss:pm, close:pt, shown:(_prevToday.shown||0)+shown,
+      pct:psc?Math.round(pc/psc*100):0,
+      items:((_prevToday.items||[]).concat(drillItems))
+    };
+  }
 
   // Save to Firebase — write ONLY the cards that changed, field by field, instead of
   // overwriting the kid's whole list. A whole-list set() is last-writer-wins: a second
@@ -13676,6 +13759,8 @@ function mastSaveResults(){
       upd[ix+"/dynFromTier"]=it.dynamic?(it.dynFromTier||null):null;
       upd[ix+"/dynAddedAt"]=it.dynamic?(it.dynAddedAt||null):null;
     });
+    // Freshly auto-pulled cards don't exist in Firebase yet — write them whole.
+    minted.forEach(it=>{ const ix=items.indexOf(it); if(ix>=0) upd[ix]=it; });
     db.ref("mastery/"+masteryKid).update(upd);
     db.ref("mastery/printLog").set(pl);
     db.ref("mastery/history/"+masteryKid+"/"+today.replace(/-/g,"")).set(histEntry);
@@ -13692,6 +13777,7 @@ function mastSaveResults(){
   mastLogDeck=null;
   mastSessionKey="";  // logging is the trigger for a new quiz — drop the persisted shuffle so the next view reshuffles
   try{localStorage.removeItem("ha_mast_deck_"+masteryKid);}catch(e){}
+  mastClearLogPersist();  // session is saved — nothing to resume
   const c=document.getElementById("content"); if(c) renderMastery(c);
 }
 
@@ -14743,7 +14829,7 @@ function mastSetCat(s){ mastAddCat=s; mastAddItemMode=""; _mastRe(); }
 function mastSetAddItemMode(m){ mastAddItemMode=m; _mastRe(); }
 function mastSlideNext(){ mastSlideIdx++; mastFlipped=false; _mastRe(); }
 function mastSlidePrev(){ mastSlideIdx--; mastFlipped=false; _mastRe(); }
-function mastSlideScore(id,val){ mastLogScores[id]=val; mastSlideIdx++; mastFlipped=false; _mastRe(); }
+function mastSlideScore(id,val){ mastLogScores[id]=val; mastSlideIdx++; mastFlipped=false; mastPersistLog(); _mastRe(); }
 
 // ── Concurrency-safe mastery writes ───────────────────────────────────────────
 // Writing a kid's WHOLE card array with set() is last-writer-wins: a second open
@@ -14766,87 +14852,39 @@ function mastRemoveByIds(kid,ids){                 // delete — re-read freshes
 }
 
 function mastSlideShown(id){
-  // Fill the next tally dot for an introduction item
-  let items=masteryData[masteryKid];
-  if(!items) return;
-  if(!Array.isArray(items)) items=Object.values(items);
-  const item=items.find(i=>i.id===id);
-  if(!item) return;
-
-  const jset=mastDrillSettings();
-  const dots=(item.tally_dots||0)+1;
-  item.tally_dots=dots;
-
-  let _pulledNew=null;
-  const _need=mastIntroDotsFor(item.subject,jset);
-  if(dots>=_need){
-    item.status="active";
-    const _gtier=jset.ladder[0]||"every_other_day";
-    item.tier=_gtier;
-    // Spread graduates across the tier's cycles instead of all landing on cycle 1, which
-    // bunched every-other-day items onto the same drills and left alternate drills empty.
-    const _giv=MAST_TIER_INT[_gtier];
-    item.cycle=_giv?(items.filter(i=>i.tier===_gtier&&i.id!==item.id).length%_giv)+1:1;
-    item.consecutive_correct=0;
-    item.tally_dots=_need;
-
-    // Auto-pull next curriculum item if enabled
-    if(jset.auto_pull){
-      const cat=item.subject;
-      const introCount=items.filter(i=>i.subject===cat&&i.status==="introduction"&&i.id!==item.id).length;
-      if(introCount<mastIntroMaxFor(cat,jset)){
-        // Promote a parked issue-word (individual + add) first — it's already an item,
-        // just held out of the drill; flip it into introduction to fill the open slot.
-        const _parked=items.find(i=>i.subject===cat&&mastIsParked(i));
-        if(_parked){
-          _parked.status="introduction"; _parked.tally_dots=0; _parked.consecutive_correct=0; _parked.tier="daily";
-          _pulledNew=_parked;
-        } else {
-        const curriculum=mastFullBank()[cat]||[];
-        const existingPrompts=new Set(items.filter(i=>i.subject===cat).map(i=>i.prompt));
-        const next=curriculum.find(name=>!existingPrompts.has(name));
-        if(next){
-          const slug=next.toLowerCase().replace(/[^a-z0-9]/g,"_").substring(0,20);
-          const _pfx=masteryKid.substring(0,3);
-          // Mirrors mastPullItem: mint with a real back or none — never answer=prompt.
-          const newItem={id:_pfx+"_"+slug,subject:cat,type:cat.toLowerCase(),prompt:next,tier:"daily",review_mode:"flash",status:"introduction",drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0};
-          const _ndef=mastCustomDef(masteryKid,cat,next);
-          if(_ndef){ newItem.answer=_ndef; newItem.review_mode="recite"; }  // rule deck: flips to the rule
-          else { const _nkdef=mastGetDef(masteryKid,next); if(_nkdef) newItem.answer=_nkdef; }  // flip deck: carry the back on the card too
-          if((cat==="Animals"||cat==="Dinosaurs")&&MAST_ANIMAL_EMOJI[next]) newItem.emoji=MAST_ANIMAL_EMOJI[next];
-          const _apVis=mastGetVisual(cat,next);
-          if(_apVis){ if(typeof _apVis==="string") newItem.emoji=_apVis; else if(_apVis.imageUrl) newItem.imageUrl=_apVis.imageUrl; }
-          items.push(newItem); _pulledNew=newItem;
-        }
-        }
-      }
-    }
-  }
-
-  // Save to Firebase — update only THIS card (and any freshly auto-pulled card), not the
-  // kid's whole list, so a second open tab/device can't revert it with stale data.
-  masteryData[masteryKid]=items;
-  if(db){
-    const ix=items.indexOf(item);
-    const upd={};
-    if(ix>=0){
-      upd[ix+"/tally_dots"]=item.tally_dots??0;
-      upd[ix+"/status"]=item.status||"introduction";
-      upd[ix+"/tier"]=item.tier||"daily";
-      upd[ix+"/cycle"]=item.cycle||1;
-      upd[ix+"/consecutive_correct"]=item.consecutive_correct||0;
-    }
-    if(_pulledNew){ const nix=items.indexOf(_pulledNew); if(nix>=0) upd[nix]=_pulledNew; }
-    db.ref("mastery/"+masteryKid).update(upd);
-  }
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
-
-  // Mark as handled for this session so we don't double-tap
+  // Log-mode mark ONLY. All card mutations (dot fill, graduation, auto-pull) now happen
+  // atomically in mastSaveResults, so the whole log session is all-or-nothing: nothing
+  // is written mid-session, Cancel truly discards, a re-entered log can't double-fill
+  // dots (the old immediate write did), and a card can never graduate out of the
+  // slideshow while the kid is mid-drill.
   mastLogScores[id]="shown";
-  // Advance slideshow — all intro items are in the slideshow
-  if(item.status==="introduction"||!mastItemIsQuiz(masteryKid,item)) mastSlideIdx++;
-  mastFlipped=false;  // next card always opens on its front (prompt) side, never the flipped answer
+  mastSlideIdx++;           // intro cards stay in the slideshow — status can't change mid-session
+  mastFlipped=false;        // next card always opens on its front (prompt) side, never the flipped answer
+  mastPersistLog();
   _mastRe();
+}
+
+// ── Log-session persistence: survive tab switches, kid switches, and reloads ──────────
+// The scores live only in memory until Save, so a half-finished quiz used to evaporate
+// when someone clicked out. Persist {date,scores} per kid and silently resume same-day.
+function mastPersistLog(){
+  try{ localStorage.setItem("ha_mast_log_"+masteryKid,JSON.stringify({date:new Date().toISOString().slice(0,10),scores:mastLogScores})); }catch(e){}
+}
+function mastClearLogPersist(){ try{localStorage.removeItem("ha_mast_log_"+masteryKid);}catch(e){} }
+function mastRestoreLog(){
+  if(mastLogMode) return;
+  try{
+    const s=JSON.parse(localStorage.getItem("ha_mast_log_"+masteryKid)||"null");
+    if(!s) return;
+    if(s.date===new Date().toISOString().slice(0,10)&&s.scores&&Object.keys(s.scores).length){ mastLogMode=true; mastLogScores=s.scores; }
+    else mastClearLogPersist();  // yesterday's abandoned half-log — drop it
+  }catch(e){}
+}
+// "One quiz per day": once today is logged, the Log button steps aside; this explicit
+// button is the only way to run a second session (which MERGES into today's history).
+function mastRelog(){
+  if(!confirm("Already logged today — run another session? Scores will add to today's log.")) return;
+  mastStartLog();
 }
 
 function mastUploadImage(file){
@@ -15986,6 +16024,7 @@ function _renderMasteryInner(el){
   }
 
   // Today's drill
+  mastRestoreLog();  // resume a half-finished log session (tab/kid switch or reload) before anything reads mastLogMode
   const pn=mastGetPrintNum();
   const due=mastSessionDue(pn);
   // Split items: slideshow (learning + ladder flash/flip) vs quiz list (ladder quiz only)
@@ -16061,7 +16100,9 @@ function _renderMasteryInner(el){
     const _ruleQ=cat==="Capitalization"?"Why is this capitalized?":cat==="Punctuation"?"Why is this punctuation used?":cat==="Articles"?"Why this article?":"";
     const _backText=_isRule?it.answer:_vocabDef;
     const _js=mastDrillSettings();
-    const tallyCount=isIntro?(it.tally_dots||0):(it.consecutive_correct||0);
+    // Dot fills are deferred to Save now — show the pending dot as soon as it's marked
+    // so the kid still sees the dot fill when they tap Shown Today.
+    const tallyCount=isIntro?((it.tally_dots||0)+(sc==="shown"?1:0)):(it.consecutive_correct||0);
     const tallyMax=isIntro?mastIntroDotsFor(it.subject,_js):(_js.tier_streaks[it.tier]??_js.ladder_streak);
     let _tallyH='<div class="mast-slide-tally">';
     for(let d=0;d<tallyMax;d++) _tallyH+='<div class="mast-slide-dot'+(d<tallyCount?" filled":"")+'"></div>';
@@ -16149,14 +16190,18 @@ function _renderMasteryInner(el){
           const tc=MAST_TIER_COL[it.tier]||"#666";
           if(mastLogMode){
             const qsc=mastLogScores[it.id]||"";
+            // Tap-to-reveal: the prompt expands to the answer/definition so the parent can
+            // check the kid's answer without leaving the log (same expander as list view).
+            const qDetail=it.answer&&it.answer!==it.prompt||it.definition||it.imageUrl;
             h+='<div class="mast-log-item">';
             h+='<span class="mast-log-num">'+(i+1)+'.</span>';
-            h+='<span class="mast-log-prompt">'+it.prompt+'</span>';
+            h+='<span class="mast-log-prompt'+(qDetail?' mast-ditem-tap':'')+'"'+(qDetail?' onclick="mastToggleExpand(\''+it.id+'\')" title="tap to reveal"':'')+'>'+it.prompt+(qDetail?' <span style="font-size:10px;opacity:0.55">\u{1F441}\u{FE0F}</span>':'')+'</span>';
             h+='<div class="mast-log-btns">';
             h+='<button class="mast-score-btn'+(qsc==="c"?" sel-c":"")+'" onclick="mastScore(\''+it.id+'\',\'c\')">\u{2713}</button>';
             h+='<button class="mast-score-btn'+(qsc==="m"?" sel-m":"")+'" onclick="mastScore(\''+it.id+'\',\'m\')">\u{2717}</button>';
             h+='<button class="mast-score-btn'+(qsc==="~"?" sel-t":"")+'" onclick="mastScore(\''+it.id+'\',\'~\')">~</button>';
             h+='</div></div>';
+            if(qDetail) h+=mastExpandHtml(it);
           } else {
             const hasDetail=it.answer&&it.answer!==it.prompt||it.definition||it.imageUrl;
             h+='<div class="mast-ditem'+(hasDetail?" mast-ditem-tap":"")+'"'+(hasDetail?' onclick="mastToggleExpand(\''+it.id+'\')"':'')+'>';
@@ -16179,6 +16224,14 @@ function _renderMasteryInner(el){
       h+='<button class="mast-save-btn" onclick="mastSaveResults()"'+(allScored?'':' disabled')+'>Save Results</button></div>';
       h+='<div style="padding:8px 14px;text-align:center"><button class="mast-log-btn" onclick="mastCancelLog()">Cancel</button></div>';
     } else {
+      // One quiz per day: once today is logged the Log button steps aside — a second
+      // session is an explicit choice ("Log another"), and its results merge into
+      // today's history instead of replacing it.
+      const _tk=new Date().toISOString().slice(0,10).replace(/-/g,"");
+      const _loggedToday=masteryData.history&&masteryData.history[masteryKid]&&masteryData.history[masteryKid][_tk];
+      if(_loggedToday){
+        h+='<div style="margin:8px 14px 0;padding:9px 12px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;font-size:13px;font-weight:700;color:#16a34a;text-align:center">\u{2713} Logged today \u{00B7} '+(_loggedToday.scored||0)+' scored'+(_loggedToday.scored?' \u{00B7} '+(_loggedToday.pct||0)+'%':'')+'</div>';
+      }
       h+='<div class="mast-print-bar">';
       if(slideItems.length) h+='<button class="mast-print-btn" onclick="mastPrintCards()">\u{1F5A8}\u{FE0F} Print Flashcards</button>';
       if(quizItems.length){
@@ -16186,7 +16239,9 @@ function _renderMasteryInner(el){
         h+='<label class="mast-print-chk"><input type="checkbox" id="mast-chk-parent" checked> Parent</label>';
         h+='<button class="mast-print-btn" onclick="mastPrintDrill()">\u{1F5A8}\u{FE0F} Print Quiz</button>';
       }
-      h+='<button class="mast-log-btn" onclick="mastStartLog()" style="margin-left:6px">\u{1F4DD} Log</button></div>';
+      if(_loggedToday) h+='<button class="mast-log-btn" onclick="mastRelog()" style="margin-left:6px">\u{1F501} Log another</button>';
+      else h+='<button class="mast-log-btn" onclick="mastStartLog()" style="margin-left:6px">\u{1F4DD} Log</button>';
+      h+='</div>';
     }
   }
   h+='</div>';
