@@ -5843,10 +5843,10 @@ function ceRenderEditSheet(){
   h+='<div class="ce-sheet-lbl">Lesson Tracking</div>';
   h+='<div class="ce-chips">';
   const trk=s.tracking||"sequenced";
-  h+='<div class="ce-chip'+(trk==="sequenced"?" sel":"")+'" onclick="ceSaveField(\'tracking\',\'sequenced\');ceRenderEditSheet()">Sequenced</div>';
-  h+='<div class="ce-chip'+(trk==="daily"?" sel":"")+'" onclick="ceSaveField(\'tracking\',\'daily\');ceRenderEditSheet()">Daily (no lesson #)</div>';
+  h+='<div class="ce-chip'+(trk==="sequenced"?" sel":"")+'" onclick="ceSetTracking(\'sequenced\')">Sequenced</div>';
+  h+='<div class="ce-chip'+(trk==="daily"?" sel":"")+'" onclick="ceSetTracking(\'daily\')">Daily (no lesson #)</div>';
   h+='</div>';
-  h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">'+(trk==="daily"?"Shows up each scheduled day without tracking lesson numbers":"Lessons advance in order and track progress with a cursor")+'</div>';
+  h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">'+(trk==="daily"?"Shows up each scheduled day without tracking lesson numbers (like notebooks &amp; drills)":"Lessons advance in order and track progress with a cursor")+'</div>';
 
   // Mom Check (per subject) — requires the kid's master switch (in the kid header) to take effect
   const _mvKid=!!((currData.momVerifyKid||{})[ceEditKid]);
@@ -6132,6 +6132,46 @@ function ceSaveLessonSeq(val){
   const lines=val.split("\n").map(l=>l.trim()).filter(Boolean);
   ceSaveField("lessonSeq",lines);
   ceSaveField("total",lines.length);
+}
+// Switch a subject between Sequenced and Daily. Flipping TO daily on a subject that
+// still carries a lesson sequence (grid cells / lessonSeq / a total) offers to clear
+// that baggage — a daily subject (notebooks, drills, Reflex) has no lessons, just shows
+// up each scheduled day. Only FUTURE grid cells are cleared; past cells stay as history,
+// and check-off records are never touched. Setting explicit Mon–Fri days if none set.
+function ceSetTracking(mode){
+  if(!currData||!ceEditKid||!ceEditKey) return;
+  const kid=ceEditKid, sk=ceEditKey, s=ceGetSubject()||{};
+  if(mode==="daily"){
+    const lessons=(currData.lessons||{})[kid]||{};
+    const today=cbTodayISO();
+    const futureCells=Object.keys(lessons).filter(dn=>{ const r=lessons[dn]; return r&&r[sk]!=null&&String(r[sk]).trim()&&(r.date||"")>today; });
+    const hasSeq=(s.lessonSeq&&s.lessonSeq.length)||futureCells.length||((s.total||0)>0);
+    if(hasSeq){
+      if(!confirm("Make \""+(s.display||sk)+"\" a daily subject (like notebooks & drills)? Its lesson list is cleared and it just shows up each scheduled day. Past cells stay as history; check-offs are untouched.")) return;
+      const updates={};
+      futureCells.forEach(dn=>{ updates["lessons/"+kid+"/"+dn+"/"+sk]=null; if(currData.lessons[kid][dn]) delete currData.lessons[kid][dn][sk]; });
+      updates["subjects/"+kid+"/"+sk+"/tracking"]="daily";
+      updates["subjects/"+kid+"/"+sk+"/total"]=0;
+      updates["subjects/"+kid+"/"+sk+"/lessonSeq"]=null;
+      if(!(s.allowedDays&&s.allowedDays.length)&&!(s.days&&String(s.days).trim())){
+        updates["subjects/"+kid+"/"+sk+"/allowedDays"]=["Mon","Tue","Wed","Thu","Fri"];
+        s.allowedDays=["Mon","Tue","Wed","Thu","Fri"];
+      }
+      s.tracking="daily"; s.total=0; delete s.lessonSeq;
+      currData.lastEdit=new Date().toISOString(); updates["lastEdit"]=currData.lastEdit;
+      if(db) db.ref("curriculum").update(updates);
+      // drop its pace node — daily subjects aren't pace-tracked (also auto-pruned on gen)
+      const ps=((paceData.subjects||{})[kid]||{})[sk];
+      if(ps){ if(paceData.subjects&&paceData.subjects[kid]) delete paceData.subjects[kid][sk];
+        try{localStorage.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
+        if(db) db.ref("pace/subjects/"+kid+"/"+sk).remove(); }
+      try{ if(typeof buildCurrPaceCum==="function") buildCurrPaceCum(); }catch(e){}
+      if(typeof gwShowToast==="function") gwShowToast((s.display||sk)+" is now a daily subject ✓");
+      ceRenderEditSheet(); return;
+    }
+  }
+  ceSaveField("tracking",mode);
+  ceRenderEditSheet();
 }
 // Convert an Excel-era grid subject to an editable lesson list: done labels stay locked
 // (they map the cursor), the edited remaining lines are appended, the old planned cells
