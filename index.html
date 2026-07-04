@@ -5440,6 +5440,7 @@ function ceRenderSessions(k,col){
 // ── CURRICULUM EDITOR — EDIT SHEET ────────────────────────────────
 let ceEditKid=null, ceEditKey=null, ceCloseTimer=null;
 let ceWalkOpen=false, ceWalkSel=new Set(), _ceWalkItems=[], _ceWalkCursor=0, walkbackData=null;
+let ceConvOpen=false; // "Edit as a list" converter for Excel-era grid subjects
 
 function ceOpenEdit(kid,key){
   if(ceCloseTimer){clearTimeout(ceCloseTimer);ceCloseTimer=null;}
@@ -5953,6 +5954,23 @@ function ceRenderEditSheet(){
     });
     h+='</div>';
     h+='<div style="font-size:10px;color:var(--muted)">Rename a lesson here — it applies everywhere and in future generation. &#9888; Re-uploading the master spreadsheet overwrites these.</div>';
+    // "Edit as a list" — the self-serve path when the book has MORE (or fewer) lessons
+    // than the plan knew: convert the grid subject to an editable lesson list, then the
+    // Builder re-lays the year from the cursor. One-way upgrade to in-app editing.
+    if(!ceConvOpen){
+      h+='<button style="border:1.5px solid var(--border);border-radius:10px;background:#fff;padding:7px 12px;font-size:12px;cursor:pointer;margin-top:8px" onclick="ceConvOpen=true;ceRenderEditSheet()">✎ Edit as a list — insert / remove / reorder…</button>';
+      h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">For when the book has lessons the plan doesn\'t (or vice versa). Converts this subject to an editable lesson list, then the Builder re-lays the year.</div>';
+    }else{
+      const _remaining=seq.slice(Math.min(cursorPos,seq.length)).map(l=>l.lesson);
+      h+='<div style="border:1.5px solid var(--border);border-radius:10px;padding:8px;margin-top:8px">';
+      if(cursorPos>0) h+='<div style="font-size:10px;color:var(--muted);margin-bottom:4px">✓ '+cursorPos+' done lesson'+(cursorPos>1?'s':'')+' stay locked (through <b>'+esc((seq[cursorPos-1]||{}).lesson||'')+'</b>) — edit everything from the cursor on:</div>';
+      h+='<textarea id="ce-conv-lines" class="ce-sheet-input" style="width:100%;box-sizing:border-box;min-height:130px;resize:vertical;font-size:11px;line-height:1.5">'+esc(_remaining.join("\n"))+'</textarea>';
+      h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">One lesson per line — add, remove, rename, reorder freely. Saving clears the old planned cells (your done history is untouched) and takes you to the Builder to re-lay the year.</div>';
+      h+='<div style="display:flex;gap:8px;margin-top:7px">';
+      h+='<button style="border:none;border-radius:10px;background:var(--ink,#1e293b);color:#fff;padding:7px 14px;font-size:12px;cursor:pointer" onclick="ceConvApply()">Save &amp; re-lay in Builder</button>';
+      h+='<button style="border:1.5px solid var(--border);border-radius:10px;background:#fff;padding:7px 12px;font-size:12px;cursor:pointer" onclick="ceConvOpen=false;ceRenderEditSheet()">Cancel</button>';
+      h+='</div></div>';
+    }
   } else if(s.lessonSeq&&s.lessonSeq.length){
     h+='<textarea id="ce-edit-lessons" class="ce-sheet-input" style="min-height:100px;resize:vertical;font-size:11px;line-height:1.5" onchange="ceSaveLessonSeq(this.value)">';
     s.lessonSeq.forEach((l,i)=>{
@@ -6091,6 +6109,50 @@ function ceSaveLessonSeq(val){
   const lines=val.split("\n").map(l=>l.trim()).filter(Boolean);
   ceSaveField("lessonSeq",lines);
   ceSaveField("total",lines.length);
+}
+// Convert an Excel-era grid subject to an editable lesson list: done labels stay locked
+// (they map the cursor), the edited remaining lines are appended, the old planned cells
+// are cleared (checked/history untouched — tasks are the record, cells are just the plan),
+// and the Builder opens on this subject to re-lay the year from the cursor.
+function ceConvApply(){
+  const kid=ceEditKid, sk=ceEditKey, s=ceGetSubject();
+  if(!kid||!sk||!s||!currData) return;
+  const ta=document.getElementById("ce-conv-lines"); if(!ta) return;
+  const lines=ta.value.split("\n").map(l=>l.trim()).filter(Boolean);
+  if(!lines.length){ alert("Add at least one remaining lesson."); return; }
+  const seq=buildSubjectLessons(kid,sk);
+  let cursor=0; try{cursor=computeSubjectCursor(kid,sk);}catch(e){}
+  cursor=Math.min(Math.max(cursor,0),seq.length);
+  const doneLabels=seq.slice(0,cursor).map(l=>l.lesson);
+  const fullSeq=doneLabels.concat(lines);
+  if(!confirm("Convert \""+(s.display||sk)+"\" to an editable lesson list ("+fullSeq.length+" lessons, "+cursor+" done)? Old planned cells are cleared — done history is untouched — then the Builder re-lays the year.")) return;
+  // one-level undo stash (cells + prior seq) in localStorage
+  const rows=currData.lessons&&currData.lessons[kid]||{};
+  const cellSnap={};
+  Object.keys(rows).forEach(dn=>{
+    const v=rows[dn];
+    if(v&&v[sk]!=null&&String(v[sk]).trim()) cellSnap[dn]=v[sk];
+  });
+  try{localStorage.setItem("ha_convUndo",JSON.stringify({kid,sk,cells:cellSnap,prevSeq:s.lessonSeq||null,prevTotal:s.total||null,at:Date.now()}));}catch(e){}
+  const updates={};
+  Object.keys(cellSnap).forEach(dn=>{
+    updates["lessons/"+kid+"/"+dn+"/"+sk]=null;
+    delete currData.lessons[kid][dn][sk];
+  });
+  updates["subjects/"+kid+"/"+sk+"/lessonSeq"]=fullSeq;
+  updates["subjects/"+kid+"/"+sk+"/total"]=fullSeq.length;
+  s.lessonSeq=fullSeq; s.total=fullSeq.length;
+  currData.lastEdit=new Date().toISOString();
+  updates["lastEdit"]=currData.lastEdit;
+  if(db) db.ref("curriculum").update(updates);
+  const ps=((paceData.subjects||{})[kid]||{})[sk];
+  if(ps) savePaceSubject(kid,sk,{...ps,total:fullSeq.length});
+  try{ if(typeof buildCurrPaceCum==="function") buildCurrPaceCum(); }catch(e){}
+  ceConvOpen=false;
+  if(typeof gwShowToast==="function") gwShowToast("List saved ("+Object.keys(cellSnap).length+" cells cleared) — re-lay it in the Builder ✓");
+  ceCloseSheet();
+  currInnerTab="builder"; cbKid=kid; cbOpenSubj(sk);
+  renderAll();
 }
 // Rename one Excel-sourced lesson in place. Writes to currData.lessons — the curriculum
 // source the generator reads via buildSubjectLessons — so the new name flows everywhere
