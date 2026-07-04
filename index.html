@@ -13710,6 +13710,25 @@ function mastSaveResults(){
     touched.push(item);
   });
 
+  // Deck chaining (cat_start_after): a dormant deck configured to "start after" another
+  // category begins the moment that category finishes Learning — checked here because
+  // pass 1's graduations are what can complete a trigger. Seeded cards ride the same
+  // atomic write as everything else in this save.
+  const _chains=((masteryData[masteryKid+"_settings"]||{}).cat_start_after)||{};
+  Object.entries(_chains).forEach(([deck,after])=>{
+    if(!after) return;
+    if(items.some(i=>i&&i.subject===deck)) return;        // already running
+    if(!mastCatFinishedLearning(items,after)) return;
+    const bank=mastFullBank()[deck]||[];
+    const introMax=mastIntroMaxFor(deck,_jset);
+    let n=0;
+    for(const name of bank){
+      if(n>=introMax) break;
+      const it=mastMintFromBank(deck,name);
+      items.push(it); minted.push(it); n++;
+    }
+  });
+
   // Pass 2 — ladder scoring for quizzed cards.
   due.forEach(dueItem=>{
     const score=mastLogScores[dueItem.id];
@@ -14307,6 +14326,63 @@ function mastAdminSave(){
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   mastAdminDirty=false;
   _mastRe();
+}
+// ── Deck chaining: "start this deck after that one finishes" ────────────────────────
+// A category has FINISHED LEARNING when every bank card is in rotation and none are
+// still ⭐ introduction — reviews keep cycling forever, but nothing new remains to learn.
+function mastCatFinishedLearning(items,cat){
+  if(items.some(i=>i&&i.subject===cat&&i.status==="introduction")) return false;
+  const bank=mastFullBank()[cat]||[];
+  if(!bank.length) return false;
+  const have=new Set(items.filter(i=>i&&i.subject===cat).map(i=>i.prompt));
+  return bank.every(n=>have.has(n));
+}
+// Mint a card from the bank exactly like auto-pull does (rule decks become recite).
+function mastMintFromBank(cat,name){
+  const kid=masteryKid;
+  const slug=name.toLowerCase().replace(/[^a-z0-9]/g,"_").substring(0,20);
+  const item={id:kid.substring(0,3)+"_"+slug,subject:cat,type:cat.toLowerCase(),prompt:name,tier:"daily",review_mode:"flash",status:"introduction",drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0};
+  const _def=mastCustomDef(kid,cat,name);
+  if(_def){ item.answer=_def; item.review_mode="recite"; }
+  else { const _kdef=mastGetDef(kid,name); if(_kdef) item.answer=_kdef; }
+  if((cat==="Animals"||cat==="Dinosaurs")&&MAST_ANIMAL_EMOJI[name]) item.emoji=MAST_ANIMAL_EMOJI[name];
+  const vis=mastGetVisual(cat,name);
+  if(vis){ if(typeof vis==="string") item.emoji=vis; else if(vis.imageUrl) item.imageUrl=vis.imageUrl; }
+  return item;
+}
+// Start a dormant deck now: pull its first cards into Learning (up to the intro cap);
+// auto-pull keeps it fed from there.
+function mastSeedCat(cat){
+  const kid=masteryKid;
+  let items=masteryData[kid]; if(!Array.isArray(items)) items=masteryData[kid]=(items?Object.values(items):[]);
+  const jset=mastDrillSettings();
+  const introMax=mastIntroMaxFor(cat,jset);
+  const have=new Set(items.filter(i=>i&&i.subject===cat).map(i=>i.prompt));
+  let intro=items.filter(i=>i&&i.subject===cat&&i.status==="introduction").length;
+  const bank=mastFullBank()[cat]||[];
+  const fresh=[];
+  for(const name of bank){
+    if(intro>=introMax) break;
+    if(have.has(name)) continue;
+    const it=mastMintFromBank(cat,name);
+    items.push(it); fresh.push(it); have.add(name); intro++;
+  }
+  if(fresh.length){ masteryData[kid]=items; mastPutCards(kid,items,fresh); try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){} }
+  return fresh.length;
+}
+function mastSetStartAfter(cat,after){
+  const kid=masteryKid;
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.cat_start_after) s.cat_start_after={};
+  if(after) s.cat_start_after[cat]=after; else delete s.cat_start_after[cat];
+  if(db) db.ref("mastery/"+kid+"_settings/cat_start_after").update({[cat]:after||null});  // this deck only
+  _mastRe();
+}
+function mastStartDeckNow(cat){
+  if(!confirm("Start "+cat+" now? Its first cards join the Learning queue.")) return;
+  const n=mastSeedCat(cat);
+  mastSetStartAfter(cat,null);   // a manual start clears any waiting chain
+  alert(n?("▶ "+cat+" started — "+n+" card"+(n>1?"s":"")+" in Learning"):("Nothing left to start in "+cat));
 }
 function mastPullItem(cat,name){
   const kid=masteryKid||"julian";
@@ -15419,6 +15495,40 @@ function renderMastAdmin(){
   else h+='<span style="font-size:11px;color:#d97706">Unsaved changes</span>';
   h+='</div>';
   h+='</div></div>';
+
+  // ── SECTION 1b: WAITING DECKS — deck chaining ──
+  // Bank categories with nothing in rotation yet. Each can start now, or be chained to
+  // start automatically when another category finishes its ⭐ learning (checked at each
+  // saved drill — mastSaveResults seeds the deck in the same atomic write).
+  let _wdItems=masteryData[masteryKid]||[]; if(!Array.isArray(_wdItems)) _wdItems=Object.values(_wdItems);
+  const _wdBank=mastFullBank();
+  const _wdDormant=Object.keys(_wdBank).filter(c=>(_wdBank[c]||[]).length&&!_wdItems.some(i=>i&&i.subject===c));
+  if(_wdDormant.length){
+    const _wdRunning=[...new Set(_wdItems.filter(i=>i&&i.subject).map(i=>i.subject))];
+    const _wdChain=(masteryData[masteryKid+"_settings"]||{}).cat_start_after||{};
+    h+='<div class="mast-admin-section">';
+    h+='<div class="mast-admin-hdr">\u{1F3AC} Waiting Decks</div>';
+    h+='<div class="mast-admin-card">';
+    h+='<div class="mast-admin-desc" style="margin-bottom:8px">Decks in the bank that haven\'t started yet. Start one now, or chain it to begin automatically when another category finishes its \u{2B50} learning.</div>';
+    _wdDormant.forEach(cat=>{
+      const _esc=cat.replace(/'/g,"\\'");
+      const after=_wdChain[cat]||"";
+      const ready=after&&mastCatFinishedLearning(_wdItems,after);
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #f3f1ee;flex-wrap:wrap">';
+      h+='<div style="flex:1;min-width:140px"><span style="font-size:13px;font-weight:700">'+cat+'</span> <span style="font-size:10px;color:var(--muted)">('+(_wdBank[cat]||[]).length+' cards)</span>';
+      if(after) h+='<div style="font-size:10px;color:'+(ready?'#16a34a':'#7c3aed')+';font-weight:600">\u{23F3} starts after '+after+(ready?' \u{2014} done! begins at the next saved drill':'')+'</div>';
+      h+='</div>';
+      h+='<select onchange="mastSetStartAfter(\''+_esc+'\',this.value)" style="font-size:11px;padding:5px 8px;border-radius:8px;border:1.5px solid var(--border);font-family:\'DM Sans\',sans-serif;max-width:180px">';
+      h+='<option value=""'+(after?'':' selected')+'>no chain</option>';
+      [..._wdRunning,..._wdDormant].filter((c,i,a)=>c!==cat&&a.indexOf(c)===i).forEach(c=>{
+        h+='<option value="'+c.replace(/"/g,"&quot;")+'"'+(after===c?' selected':'')+'>after '+c+'</option>';
+      });
+      h+='</select>';
+      h+='<button onclick="mastStartDeckNow(\''+_esc+'\')" style="padding:6px 12px;border-radius:8px;border:1.5px solid #16a34a;background:#f0fdf4;color:#16a34a;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{25B6} Start now</button>';
+      h+='</div>';
+    });
+    h+='</div></div>';
+  }
 
   // ── SECTION 2: CURRICULUM BANK ──
   h+='<div class="mast-admin-section">';
