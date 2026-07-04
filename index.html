@@ -5547,7 +5547,7 @@ function ceWalkGather(){
   weekData.tasks.filter(t=>t.who===kid&&!t.id.endsWith("_c")).forEach(t=>{
     if(!kws.some(kw=>(t.title||"").toLowerCase().includes(kw))) return;
     const doneKey=_walkDoneKey(t.id,checked,weekData.tasks,histState);
-    if(doneKey) out.push({wk:WK,wkNum,dord:DORD[t.day]||0,doneKey,title:t.title||"",detail:(t.detail||"").split("—")[0].trim(),day:t.day,ts:checked[doneKey]||"",hist:histState[doneKey]||null,archive:false});
+    if(doneKey) out.push({wk:WK,wkNum,dord:DORD[t.day]||0,doneKey,baseId:t.id,title:t.title||"",detail:(t.detail||"").split("—")[0].trim(),day:t.day,ts:checked[doneKey]||"",hist:histState[doneKey]||null,archive:false});
   });
   Object.keys(archive).forEach(ak=>{
     const aw=archive[ak]||{};
@@ -5591,7 +5591,9 @@ function ceWalkApply(){
   if(!items.length) return;
   const noteEl=document.getElementById("ce-walk-note");
   const note=(noteEl&&noteEl.value.trim())||"";
-  if(!confirm("Walk back "+items.length+" check-off"+(items.length>1?"s":"")+"? They return to the not-done pool and a snapshot is saved.")) return;
+  const removeEl=document.getElementById("ce-walk-remove");
+  const removeRows=!removeEl||removeEl.checked;
+  if(!confirm("Walk back "+items.length+" check-off"+(items.length>1?"s":"")+"?"+(removeRows?" They also come off this week’s schedule (the cursor re-serves the lessons).":" They return to the not-done pool.")+" A snapshot is saved.")) return;
   let curTouched=false;
   items.forEach(it=>{
     if(!it.archive){
@@ -5600,6 +5602,17 @@ function ceWalkApply(){
       const hist=ld(WK+"_history")||{}; delete hist[it.doneKey]; delete histState[it.doneKey]; sv(WK+"_history",hist);
       if(claimed[it.doneKey]!=null){ delete claimed[it.doneKey]; sv(WK+"_claimed",claimed); if(db) db.ref(WK+"/claimed/"+it.doneKey).remove(); }
       if(db) db.ref(WK+"/history/"+it.doneKey).remove();
+      // Remove the retracted task rows (base + _c twins) so they can't cascade
+      // forward and get re-checked — the round-2 lesson. Full copies go in the
+      // snapshot; the cursor re-serves the lesson content on the next generation.
+      if(removeRows){
+        const base=it.baseId||it.doneKey.replace(/(_c)+$/,"");
+        const chain=[base]; let cid=base+"_c";
+        while(weekData.tasks.some(t=>t.id===cid)){ chain.push(cid); cid+="_c"; }
+        it.removedTasks=weekData.tasks.filter(t=>chain.includes(t.id));
+        weekData.tasks=weekData.tasks.filter(t=>!chain.includes(t.id));
+        if(db) chain.forEach(id=>db.ref(WK+"/tasks/"+id).remove());
+      }
       curTouched=true;
     }else{
       const aw=archive[it.wk]; if(!aw) return;
@@ -5609,13 +5622,14 @@ function ceWalkApply(){
     }
   });
   if(curTouched){
-    sv(WK+"_checked",checked); lastCheckedWrite=Date.now();
+    sv(WK+"_checked",checked); sv(WK+"_tasks",weekData.tasks); lastCheckedWrite=Date.now();
     if(db) db.ref(WK+"/checked").set(checked);
   }
   try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
   // The snapshot: everything needed to understand (or undo) this walk-back later.
   const entry={ts:nowTs(),kid:ceEditKid,subjectKey:ceEditKey,note:note,
-    items:items.map(it=>({wk:it.wk,id:it.doneKey,title:it.title,detail:it.detail,day:it.day,checkedTs:it.ts||null,hist:it.hist||null}))};
+    items:items.map(it=>({wk:it.wk,id:it.doneKey,title:it.title,detail:it.detail,day:it.day,checkedTs:it.ts||null,hist:it.hist||null,
+      removedFromSchedule:!!(it.removedTasks&&it.removedTasks.length),task:(it.removedTasks&&it.removedTasks[0])||null}))};
   const wid="wb_"+Date.now();
   if(walkbackData===null) walkbackData={};
   if(!walkbackData[ceEditKid]) walkbackData[ceEditKid]={};
@@ -5896,6 +5910,7 @@ function ceRenderEditSheet(){
         h+='</label>';
       });
       h+='</div>';
+      h+='<label style="display:flex;align-items:center;gap:7px;margin-top:8px;font-size:11px;cursor:pointer"><input type="checkbox" id="ce-walk-remove" checked> <span><b>Also remove them from this week’s schedule</b> — the lesson comes back via the cursor on the next build/generation. Un-tick if she still needs to do the work <i>today</i> (task stays assigned).</span></label>';
       h+='<input id="ce-walk-note" class="ce-sheet-input" style="width:100%;box-sizing:border-box;margin-top:7px" placeholder="Note — why? (e.g. said done, couldn’t show me — struggling)">';
       h+='<div style="display:flex;gap:8px;margin-top:7px">';
       h+='<button style="border:none;border-radius:10px;background:var(--ink,#1e293b);color:#fff;padding:7px 14px;font-size:12px;cursor:pointer" onclick="ceWalkApply()">Walk back selected</button>';
