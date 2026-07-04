@@ -11370,6 +11370,142 @@ function gvCommitCell(kid,dn,sk,val){
 
 function gvJumpBuilder(sk){ currInnerTab="builder"; cbKid=gvKid; cbOpenSubj(sk); }
 
+// ── ADD MISSING SCHOOL DAYS — the mirror of Align ──
+// Align handles "lessons sit on days the calendar says are OFF". This handles the
+// inverse: the calendar has school days this kid's map skips (e.g. an Excel plan that
+// took a whole week off when the family only took two days). Detection walks the kid's
+// own weekday cadence between today and the map's end; apply inserts the rows, renumbers,
+// compacts every subject forward respecting its weekday cadence, and rebuilds the
+// weekDays index atomically (rows and index must never diverge — learned the hard way).
+function _gvDateStr(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+// A row is "full load" if it carries at least 3 subjects — a real school day, not a
+// single-subject extension tail. Used to define both the family calendar and each kid's
+// own dense body, so migration-in-progress empties and Builder tails don't read as gaps.
+function _gvPausedKeys(kid){ const s=new Set(); const subs=(currData&&currData.subjects||{})[kid]||{}; for(const k in subs){ if(subs[k]&&subs[k].paused) s.add(k); } return s; }
+function _gvRowLoad(r,paused){ if(!r) return 0; let n=0; for(const k in r){ if(k==="date"||k==="week"||(paused&&paused.has(k))) continue; if(typeof r[k]==="string"&&r[k].trim()) n++; } return n; }
+function _gvFullDates(kid){
+  const lessons=(currData&&currData.lessons||{})[kid]||{};
+  const paused=_gvPausedKeys(kid);
+  const out=new Map();
+  for(const dn in lessons){ const r=lessons[dn]; if(!r||!r.date) continue; const load=_gvRowLoad(r,paused); if(load>=3) out.set(r.date,load); }
+  return out;
+}
+// Missing days for a kid, measured against the FAMILY calendar (the signal Adrienne used:
+// "why doesn't Lincoln have the days the other kids do"). A date is missing for this kid
+// when ≥2 OTHER kids have a full-load row on it, the calendar isn't off for this kid, this
+// kid has no full-load row there, and it sits INSIDE this kid's own dense body (before its
+// last full day) — so a Builder tail never counts. Guarded by hasContentToPull so a kid
+// mid-migration (empty Mon–Thu, nothing to compact) doesn't cry wolf.
+function gvMissingDays(kid){
+  const lessons=(currData&&currData.lessons||{})[kid]||{};
+  const mine=_gvFullDates(kid);
+  if(!mine.size) return [];
+  const today=cbTodayISO();
+  const myFullDates=[...mine.keys()].filter(d=>d>today).sort();
+  if(!myFullDates.length) return [];
+  const myLastFull=myFullDates[myFullDates.length-1];
+  const myFirstFull=myFullDates[0];
+  // family school days = dates where ≥2 OTHER kids each have a full-load row
+  const others=(ROSTER||[]).filter(k=>k!==kid);
+  const tally={};
+  others.forEach(k=>{ _gvFullDates(k).forEach((_,d)=>{ tally[d]=(tally[d]||0)+1; }); });
+  // Per-subject cadence (future weekdays used) + last content date — used by the
+  // actionable guard: a missing day only matters if some subject would actually place
+  // content on it (its weekday is in that subject's cadence AND it has content after the
+  // gap). This is what separates a real gap (Lincoln, Mon–Fri subjects with content after)
+  // from a mid-migration empty (Lucy, whose Mon–Thu have no cadence-matching content).
+  const paused=_gvPausedKeys(kid);
+  const subjCad={};
+  for(const dn in lessons){ const r=lessons[dn]; if(!r||!r.date||r.date<=today) continue;
+    for(const k in r){ if(k==="date"||k==="week"||paused.has(k)||typeof r[k]!=="string"||!r[k].trim()) continue;
+      (subjCad[k]=subjCad[k]||{wdays:new Set(),lastDate:""});
+      subjCad[k].wdays.add(gwParseDate(r.date).getDay());
+      if(r.date>subjCad[k].lastDate) subjCad[k].lastDate=r.date;
+    } }
+  function _actionable(d){
+    const dow=gwParseDate(d).getDay();
+    for(const k in subjCad){ if(subjCad[k].wdays.has(dow)&&subjCad[k].lastDate>d) return true; }
+    return false;
+  }
+  const out=[];
+  Object.keys(tally).forEach(d=>{
+    if(tally[d]<1) return;                      // ≥1 sibling has a full day here
+    if(d<=today) return;
+    if(d<myFirstFull||d>myLastFull) return;     // interior to my dense body only
+    if(mine.has(d)) return;                      // I already have a full day here
+    if(smapIsKidOff(kid,d)) return;
+    if(typeof schedOvKidOff==="function"&&schedOvKidOff(kid,d)) return;
+    if(!_actionable(d)) return;                  // nothing would move — don't cry wolf
+    out.push(d);
+  });
+  out.sort();
+  return out;
+}
+function _gvWkLabelFor(kid,ds){
+  const lessons=currData.lessons[kid];
+  const dns=Object.keys(lessons).map(Number).filter(n=>lessons[n]).sort((a,b)=>a-b);
+  let prev=null;
+  for(const dn of dns){
+    const dt=lessons[dn].date;
+    if(dt&&dt<ds&&lessons[dn].week) prev=dn;
+    if(dt&&dt>=ds) break;
+  }
+  if(prev===null) return "Wk 1";
+  const pn=parseInt(((lessons[prev].week||"").match(/\d+/)||[1])[0])||1;
+  const monday=x=>{ const t=gwParseDate(x); t.setDate(t.getDate()-((t.getDay()+6)%7)); t.setHours(12,0,0,0); return t; };
+  const delta=Math.round((monday(ds)-monday(lessons[prev].date))/(7*864e5));
+  return "Wk "+(pn+delta);
+}
+// Shift a subject's future labels up through its valid-cadence slots (weekday-aware).
+function _gvCadCompact(rows,sk,today){
+  const fut=Object.keys(rows).map(Number).filter(dn=>rows[dn]&&(rows[dn].date||"")>today).sort((a,b)=>a-b);
+  const content=fut.filter(dn=>typeof rows[dn][sk]==="string"&&rows[dn][sk].trim());
+  if(!content.length) return 0;
+  const wds=new Set(content.map(dn=>gwParseDate(rows[dn].date).getDay()));
+  const first=content[0];
+  const cset=new Set(content);
+  const positions=fut.filter(dn=>dn>=first&&(wds.has(gwParseDate(rows[dn].date).getDay())||cset.has(dn)));
+  const labels=content.map(dn=>rows[dn][sk]);
+  let ch=0;
+  positions.forEach((dn,i)=>{
+    const nv=i<labels.length?labels[i]:null;
+    const ov=(typeof rows[dn][sk]==="string"&&rows[dn][sk].trim())?rows[dn][sk]:null;
+    if(ov!==nv){ if(nv===null) delete rows[dn][sk]; else rows[dn][sk]=nv; ch++; }
+  });
+  return ch;
+}
+function gvAddMissingDays(){
+  const kid=gvKid;
+  const miss=gvMissingDays(kid);
+  if(!miss.length) return;
+  if(!confirm("Add "+miss.length+" school day"+(miss.length>1?"s":"")+" to "+cap(kid)+"'s map ("+miss.slice(0,6).join(", ")+(miss.length>6?" …":"")+") and pull lessons forward into them? One-level undo is kept.")) return;
+  const lessons=currData.lessons[kid];
+  try{localStorage.setItem("ha_addDaysUndo",JSON.stringify({kid,lessons:lessons,weekDays:(currData.weekDays||{})[kid]||null,at:Date.now()}));}catch(e){}
+  const rowsArr=Object.keys(lessons).map(Number).filter(n=>lessons[n]).sort((a,b)=>a-b).map(dn=>lessons[dn]);
+  miss.forEach(ds=>rowsArr.push({date:ds,week:_gvWkLabelFor(kid,ds)}));
+  rowsArr.sort((a,b)=>((a.date||"")<(b.date||"")?-1:1));
+  const rows={}; rowsArr.forEach((r,i)=>{rows[i]=r;});
+  const sks=new Set();
+  rowsArr.forEach(r=>Object.keys(r).forEach(k=>{ if(k!=="date"&&k!=="week") sks.add(k); }));
+  const today=cbTodayISO();
+  let moved=0;
+  sks.forEach(sk=>{ moved+=_gvCadCompact(rows,sk,today); });
+  const wd={};
+  Object.keys(rows).map(Number).sort((a,b)=>a-b).forEach(dn=>{ const l=rows[dn].week; if(l){(wd[l]=wd[l]||[]).push(dn);} });
+  currData.lessons[kid]=rows;
+  if(!currData.weekDays) currData.weekDays={};
+  currData.weekDays[kid]=wd;
+  currData.lastEdit=new Date().toISOString();
+  if(db){
+    db.ref("curriculum/lessons/"+kid).set(rows);
+    db.ref("curriculum/weekDays/"+kid).set(wd);
+    db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  }
+  try{ if(typeof buildCurrPaceCum==="function") buildCurrPaceCum(); }catch(e){}
+  if(typeof gwShowToast==="function") gwShowToast("Added "+miss.length+" day"+(miss.length>1?"s":"")+" — "+moved+" cells pulled forward ✓");
+  renderAll();
+}
+
 function renderCurrGrid(el){
   if(!currData||!currData.subjects){
     el.innerHTML+='<div style="padding:40px 20px;text-align:center;color:var(--muted)"><div style="font-size:36px;margin-bottom:8px">\u{1F4CA}</div><div style="font-weight:600;margin-bottom:4px">No curriculum yet</div><div style="font-size:12px">Upload an Excel file or build subjects first.</div></div>';
@@ -11417,6 +11553,19 @@ function renderCurrGrid(el){
       h+='<div style="background:#f5f3ff;border-left:4px solid #8b5cf6;border-radius:0 10px 10px 0;padding:10px 12px;margin:0 0 8px">';
       h+='<div style="font-size:12px;color:#4c1d95;margin-bottom:6px"><b>'+_tot+' lesson'+(_tot>1?'s':'')+' sit on holiday/vacation days</b> (all kids). Aligning slides them to the next school days and renumbers weeks to the calendar — break weeks stay visible with nothing scheduled.</div>';
       h+='<button onclick="alignPlanApply()" style="border:1px solid #8b5cf6;background:#fff;color:#6d28d9;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Align weeks with calendar&hellip;</button>';
+      h+='</div>';
+    }
+  }catch(e){}
+
+  // Mirror of Align: the calendar has school days this kid's map SKIPS — offer to add
+  // them and pull lessons forward (cadence-aware, rebuilds weekDays atomically).
+  try{
+    const _miss=gvMissingDays(gvKid);
+    if(_miss.length){
+      const _preview=_miss.slice(0,4).map(d=>{const t=gwParseDate(d);return t.toLocaleDateString("en-US",{month:"short",day:"numeric"});}).join(", ");
+      h+='<div style="background:#fffbeb;border-left:4px solid #d97706;border-radius:0 10px 10px 0;padding:10px 12px;margin:0 0 8px">';
+      h+='<div style="font-size:12px;color:#92400e;margin-bottom:6px"><b>'+cap(gvKid)+'\'s map skips '+_miss.length+' school day'+(_miss.length>1?'s':'')+'</b> the calendar has ('+esc(_preview)+(_miss.length>4?' …':'')+'). Adding them pulls '+cap(gvKid)+'\'s lessons forward into those days — everything finishes earlier.</div>';
+      h+='<button onclick="gvAddMissingDays()" style="border:1px solid #d97706;background:#fff;color:#b45309;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Add missing school days&hellip;</button>';
       h+='</div>';
     }
   }catch(e){}
