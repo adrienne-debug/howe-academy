@@ -5102,6 +5102,8 @@ function renderCurriculumView(el,headerHtml){
   const sKeys=Object.keys(subjects);
   const active=sKeys.filter(sk=>!subjects[sk].paused);
   const paused=sKeys.filter(sk=>subjects[sk].paused);
+  // Finish-line projection per subject, computed ONCE for this kid (cards read the cache).
+  _ceFinishMap={}; try{ computeFinishLines(k).forEach(r=>{ _ceFinishMap[r.sk]=r; }); }catch(e){}
 
   h+='<div class="ce-section-hdr" style="color:'+col+'">Subjects to Schedule ('+active.length+')</div>';
   h+='<div style="font-size:10px;color:var(--muted);margin-bottom:8px">Grouped in the order they run on a normal day (from <b>Rules &rarr; Workflow Orders</b>). <span onclick="setAdminSub(\'rules\')" style="color:var(--header);font-weight:700;cursor:pointer;text-decoration:underline">&#9998; Edit order</span></div>';
@@ -5380,6 +5382,26 @@ function ceBuildCard(sk,s,kid){
       h+='</div>';
     }catch(e){}
   }
+  // Finish-line chip — projected completion date + urgency, straight from the card
+  // (the same data as Admin → Finish Line, so you can triage without opening the card).
+  const _fl=_ceFinishMap[sk];
+  if(_fl&&s.tracking!=="daily"&&!s.paused){
+    const FC={done:"#10b981",ontime:"#10b981",amber:"#f59e0b",red:"#ef4444",stalled:"#9ca3af"};
+    const fc=FC[_fl.status]||"#9ca3af";
+    const fmt=d=>{ if(!d) return "—"; const o=gwParseDate(d); return o.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}); };
+    let txt;
+    if(_fl.status==="done") txt="Finished ✓";
+    else if(_fl.status==="stalled") txt=_fl.remaining+" left · no planned slots";
+    else{
+      const late=_fl.status==="red"?" ⚠":_fl.status==="amber"?" ⚠":"";
+      txt="Finishes "+fmt(_fl.projDate)+late;
+      if(_fl.target) txt+=" · target "+fmt(_fl.target);
+    }
+    h+='<div style="display:flex;align-items:center;gap:6px;margin-top:5px;font-size:10px">';
+    h+='<span style="font-size:11px">\u{1F3C1}</span>';
+    h+='<span style="font-weight:700;color:'+fc+'">'+txt+'</span>';
+    h+='</div>';
+  }
   h+='</div>';
   return h;
 }
@@ -5441,6 +5463,7 @@ function ceRenderSessions(k,col){
 let ceEditKid=null, ceEditKey=null, ceCloseTimer=null;
 let ceWalkOpen=false, ceWalkSel=new Set(), _ceWalkItems=[], _ceWalkCursor=0, walkbackData=null;
 let ceConvOpen=false; // "Edit as a list" converter for Excel-era grid subjects
+let _ceFinishMap={};  // {sk: finish-line row} for the kid being rendered — computed once per render
 
 function ceOpenEdit(kid,key){
   if(ceCloseTimer){clearTimeout(ceCloseTimer);ceCloseTimer=null;}
@@ -13105,9 +13128,16 @@ function computeFinishLines(forKid){
         status="ontime";
       } else {
         overflow=effRemaining-slots.length;
-        // estimate past plan end using the subject's average weekly pace
-        const weeksLeft=Math.max(1,_maxPlanWeek()-currWeekNum()+1);
-        const perWeek=slots.length/weeksLeft;
+        // Estimate past plan end using THIS subject's own weekly pace — measured over the
+        // span its own planned slots cover (first→last), not the family-wide max week. A
+        // long tail on another kid must not stretch this subject's projection (a subject
+        // 1 lesson short was reading years late because it divided by the family max week).
+        let perWeek=0;
+        if(slots.length){
+          const first=gwParseDate(slots[0]), lastP=gwParseDate(slots[slots.length-1]);
+          const spanWeeks=Math.max(1,(lastP-first)/(7*864e5));
+          perWeek=slots.length>1?slots.length/spanWeeks:(s.timesPerWeek||slots.length);
+        }
         if(perWeek<=0){ status="stalled"; }
         else {
           const extraWeeks=Math.ceil(overflow/perWeek);
