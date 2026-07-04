@@ -5406,6 +5406,18 @@ function ceBuildCard(sk,s,kid){
     }
     h+='</div>';
   }
+  // Session goal readout — where he should reach this session vs where he is (soft).
+  if(s.tracking!=="daily"&&!s.paused){
+    const _g=ceSessionGoal(kid,sk);
+    if(_g){
+      const gc=_g.met?"#10b981":"#7c3aed";
+      h+='<div style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:10px">';
+      h+='<span style="font-size:11px">\u{1F3AF}</span>';
+      if(_g.met) h+='<span style="font-weight:700;color:'+gc+'">'+esc(_g.planLabel)+' goal met ✓ <span style="font-weight:400;color:var(--muted)">('+esc(_g.label)+')</span></span>';
+      else h+='<span style="font-weight:700;color:'+gc+'">Reach '+esc(_g.label)+' <span style="font-weight:400;color:var(--muted)">· '+_g.toGo+' to go this session</span></span>';
+      h+='</div>';
+    }
+  }
   h+='</div>';
   return h;
 }
@@ -5448,6 +5460,31 @@ function ceRenderSessions(k,col){
         h+='<div class="ce-chip'+(on?" sel":"")+'" onclick="togglePlanSchoolDay(\''+key+'\',\''+d+'\')">'+d+'</div>';
       });
       h+='</div>';
+      // Goals this session — for the kid whose Subjects tab we're on. Each sequenced
+      // subject gets a "reach ___ by end of session" target picked from its lesson list.
+      const _gsubs=Object.keys(currData&&currData.subjects&&currData.subjects[k]||{})
+        .filter(sk=>{ const s=currData.subjects[k][sk]; return s&&!s.paused&&s.tracking!=="daily"&&buildSubjectLessons(k,sk).length; });
+      h+='<div class="ce-sheet-lbl">Goals this session for '+cap(k)+' <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— where each subject should reach</span></div>';
+      if(!_gsubs.length){
+        h+='<div style="font-size:11px;color:var(--muted)">No sequenced subjects to set goals on.</div>';
+      }else{
+        _gsubs.forEach(sk=>{
+          const s=currData.subjects[k][sk];
+          const seq=buildSubjectLessons(k,sk);
+          let cursor=0; try{ cursor=computeSubjectCursor(k,sk); }catch(e){}
+          const g=((p.goals||{})[k]||{})[sk];
+          h+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px">';
+          h+='<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(s.display||sk)+'</span>';
+          h+='<select onchange="ceSetSessionGoal(\''+key+'\',\''+k+'\',\''+sk+'\',this.value)" style="max-width:52%;padding:4px 6px;border:1.5px solid var(--border);border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:11px">';
+          h+='<option value=""'+(g?"":" selected")+'>No goal this session</option>';
+          seq.forEach((l,i)=>{
+            const here=i===cursor?" ◀ now":"";
+            h+='<option value="'+i+'"'+(g&&g.idx===i?" selected":"")+'>'+esc(l.lesson)+here+'</option>';
+          });
+          h+='</select>';
+          h+='</div>';
+        });
+      }
       h+='<button onclick="if(confirm(\'Delete this session?\'))deletePacePlan(\''+key+'\')" style="margin-top:10px;padding:5px 12px;border-radius:8px;border:1px solid #fecaca;background:#fff;color:#b5394a;font-size:10px;font-weight:700;cursor:pointer">Delete session</button>';
       h+='</div>';
     }
@@ -5461,6 +5498,41 @@ function ceRenderSessions(k,col){
   h+='</div>';
   h+='</div>';
   return h;
+}
+
+// ── SESSION GOALS (soft) ──────────────────────────────────────────
+// A goal is a marked position in a subject's lesson list: "by the end of THIS session,
+// reach lesson X." Stored on the plan: plan.goals[kid][sk] = {idx, label}. Soft only —
+// nothing about scheduling changes; it's a measure-and-display layer. Set in the session
+// editor, shown on the subject card. Carryover is automatic: a new session just gets a new
+// mark further down. idx is the 0-based position in buildSubjectLessons; label is stored
+// alongside so a changed sequence still shows something meaningful.
+function ceSetSessionGoal(planKey,kid,sk,idxStr){
+  const p=(paceData.plans||{})[planKey]; if(!p) return;
+  const goals=p.goals?JSON.parse(JSON.stringify(p.goals)):{};
+  if(!goals[kid]) goals[kid]={};
+  if(idxStr===""||idxStr==null){ delete goals[kid][sk]; if(!Object.keys(goals[kid]).length) delete goals[kid]; }
+  else{
+    const idx=parseInt(idxStr); const seq=buildSubjectLessons(kid,sk);
+    goals[kid][sk]={idx,label:(seq[idx]&&seq[idx].lesson)||("#"+(idx+1))};
+  }
+  savePacePlan(planKey,{...p,goals});
+  renderAll();
+}
+// The active session's goal for a kid+subject (the session that owns this kid). Returns
+// {planKey,planLabel,idx,label,cursor,toGo,met} or null.
+function ceSessionGoal(kid,sk){
+  const plans=(paceData.plans&&Object.keys(paceData.plans).length)?paceData.plans:PACE_DEFAULT_PLANS;
+  for(const pk of Object.keys(plans)){
+    const p=plans[pk];
+    if(!(p.kids||[]).includes(kid)) continue;
+    const g=((p.goals||{})[kid]||{})[sk];
+    if(!g) continue;
+    let cursor=0; try{ cursor=computeSubjectCursor(kid,sk); }catch(e){}
+    const need=(g.idx+1)-cursor;               // lessons from here to & including the target
+    return {planKey:pk,planLabel:p.label||pk,idx:g.idx,label:g.label,cursor,toGo:Math.max(0,need),met:need<=0};
+  }
+  return null;
 }
 
 // ── CURRICULUM EDITOR — EDIT SHEET ────────────────────────────────
