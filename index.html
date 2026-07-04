@@ -5410,11 +5410,13 @@ function ceBuildCard(sk,s,kid){
   if(s.tracking!=="daily"&&!s.paused){
     const _g=ceSessionGoal(kid,sk);
     if(_g){
-      const gc=_g.met?"#10b981":"#7c3aed";
+      const hard=_g.mode==="hard";
+      const gc=_g.met?(hard?"#b5394a":"#10b981"):"#7c3aed";
       h+='<div style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:10px">';
-      h+='<span style="font-size:11px">\u{1F3AF}</span>';
-      if(_g.met) h+='<span style="font-weight:700;color:'+gc+'">'+esc(_g.planLabel)+' goal met ✓ <span style="font-weight:400;color:var(--muted)">('+esc(_g.label)+')</span></span>';
-      else h+='<span style="font-weight:700;color:'+gc+'">Reach '+esc(_g.label)+' <span style="font-weight:400;color:var(--muted)">· '+_g.toGo+' to go this session</span></span>';
+      h+='<span style="font-size:11px">'+(hard?"\u{1F6D1}":"\u{1F3AF}")+'</span>';
+      if(_g.met&&hard) h+='<span style="font-weight:700;color:'+gc+'">Stopped at '+esc(_g.label)+' <span style="font-weight:400;color:var(--muted)">· cutoff for '+esc(_g.planLabel)+'</span></span>';
+      else if(_g.met) h+='<span style="font-weight:700;color:'+gc+'">'+esc(_g.planLabel)+' goal met ✓ <span style="font-weight:400;color:var(--muted)">('+esc(_g.label)+')</span></span>';
+      else h+='<span style="font-weight:700;color:'+gc+'">'+(hard?"Runs to ":"Reach ")+esc(_g.label)+' <span style="font-weight:400;color:var(--muted)">· '+_g.toGo+' to go'+(hard?" then stops":" this session")+'</span></span>';
       h+='</div>';
     }
   }
@@ -5475,13 +5477,17 @@ function ceRenderSessions(k,col){
           const g=((p.goals||{})[k]||{})[sk];
           h+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px">';
           h+='<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(s.display||sk)+'</span>';
-          h+='<select onchange="ceSetSessionGoal(\''+key+'\',\''+k+'\',\''+sk+'\',this.value)" style="max-width:52%;padding:4px 6px;border:1.5px solid var(--border);border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:11px">';
+          h+='<select onchange="ceSetSessionGoal(\''+key+'\',\''+k+'\',\''+sk+'\',this.value)" style="max-width:44%;padding:4px 6px;border:1.5px solid var(--border);border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:11px">';
           h+='<option value=""'+(g?"":" selected")+'>No goal this session</option>';
           seq.forEach((l,i)=>{
             const here=i===cursor?" ◀ now":"";
             h+='<option value="'+i+'"'+(g&&g.idx===i?" selected":"")+'>'+esc(l.lesson)+here+'</option>';
           });
           h+='</select>';
+          if(g){
+            const hard=g.mode==="hard";
+            h+='<button onclick="ceSetSessionGoalMode(\''+key+'\',\''+k+'\',\''+sk+'\',\''+(hard?"soft":"hard")+'\')" title="'+(hard?"Hard cutoff: stops scheduling at the mark":"Soft goal: measures only, keeps scheduling")+'" style="flex-shrink:0;border:1px solid '+(hard?"#ef4444":"var(--border)")+';background:'+(hard?"#fef2f2":"#fff")+';color:'+(hard?"#b5394a":"var(--muted)")+';border-radius:8px;padding:4px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(hard?"🛑 Cutoff":"🎯 Soft")+'</button>';
+          }
           h+='</div>';
         });
       }
@@ -5514,10 +5520,33 @@ function ceSetSessionGoal(planKey,kid,sk,idxStr){
   if(idxStr===""||idxStr==null){ delete goals[kid][sk]; if(!Object.keys(goals[kid]).length) delete goals[kid]; }
   else{
     const idx=parseInt(idxStr); const seq=buildSubjectLessons(kid,sk);
-    goals[kid][sk]={idx,label:(seq[idx]&&seq[idx].lesson)||("#"+(idx+1))};
+    const prevMode=(goals[kid][sk]&&goals[kid][sk].mode)||"soft";
+    goals[kid][sk]={idx,label:(seq[idx]&&seq[idx].lesson)||("#"+(idx+1)),mode:prevMode};
   }
   savePacePlan(planKey,{...p,goals});
   renderAll();
+}
+// Flip a goal between soft (measure only) and hard (stop scheduling at the mark).
+function ceSetSessionGoalMode(planKey,kid,sk,mode){
+  const p=(paceData.plans||{})[planKey]; if(!p||!p.goals||!p.goals[kid]||!p.goals[kid][sk]) return;
+  const goals=JSON.parse(JSON.stringify(p.goals));
+  goals[kid][sk].mode=mode;
+  savePacePlan(planKey,{...p,goals});
+  renderAll();
+}
+// Generation cap: a HARD goal caps schedulable lessons at the target (idx+1 = count up to
+// and including it). Once the cursor reaches it, the subject stops generating until the
+// goal is moved further (or made soft/cleared). Soft goals return Infinity (no cap). This
+// is the ONLY place scheduling is affected — everything else is measure-and-display.
+function _sessionHardCap(kid,sk){
+  const plans=(paceData.plans&&Object.keys(paceData.plans).length)?paceData.plans:PACE_DEFAULT_PLANS;
+  for(const pk of Object.keys(plans)){
+    const p=plans[pk];
+    if(!(p.kids||[]).includes(kid)) continue;
+    const g=((p.goals||{})[kid]||{})[sk];
+    if(g&&g.mode==="hard") return g.idx+1;
+  }
+  return Infinity;
 }
 // The active session's goal for a kid+subject (the session that owns this kid). Returns
 // {planKey,planLabel,idx,label,cursor,toGo,met} or null.
@@ -5530,7 +5559,7 @@ function ceSessionGoal(kid,sk){
     if(!g) continue;
     let cursor=0; try{ cursor=computeSubjectCursor(kid,sk); }catch(e){}
     const need=(g.idx+1)-cursor;               // lessons from here to & including the target
-    return {planKey:pk,planLabel:p.label||pk,idx:g.idx,label:g.label,cursor,toGo:Math.max(0,need),met:need<=0};
+    return {planKey:pk,planLabel:p.label||pk,idx:g.idx,label:g.label,mode:g.mode||"soft",cursor,toGo:Math.max(0,need),met:need<=0};
   }
   return null;
 }
@@ -20997,7 +21026,11 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
       cursors[kid][sk]=cursor;
 
       // Every planned slot fills with the next lesson; a finished subject stops filling.
-      const seq=buildSubjectLessons(kid,sk);
+      // A HARD session goal caps the effective sequence at the target — the subject stops
+      // scheduling once the cursor reaches it (until the goal is moved further / cleared).
+      const seqFull=buildSubjectLessons(kid,sk);
+      const _hardCap=_sessionHardCap(kid,sk);
+      const seq=isFinite(_hardCap)?seqFull.slice(0,_hardCap):seqFull;
 
       // CATCH-UP: if behind the Excel plan, add up to carryoverCap extra slots this
       // week (lightest allowed days with room) so the cursor serves the backlog now
@@ -21017,9 +21050,13 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
       }
 
       const remaining=seq.length-cursor;
-      let slotsToFill=remaining<=0?0:dates.length;
+      // Cap at `remaining` so a hard-cutoff subject never schedules past its target
+      // (getNextLessonsFromCursor reads the FULL sequence, so slotsToFill must not exceed
+      // the capped remaining). For uncapped subjects this matches the old behavior — the
+      // nextLessons guard already limited placement to the real remaining lessons.
+      let slotsToFill=remaining<=0?0:Math.min(dates.length,remaining);
 
-      const nextLessons=getNextLessonsFromCursor(kid,sk,cursor,slotsToFill);
+      const nextLessons=getNextLessonsFromCursor(kid,sk,cursor,slotsToFill).slice(0,Math.max(0,remaining));
       for(let i=0;i<dates.length;i++){
         const dt=dates[i];
         const dup=i>0&&dates[i]===dates[i-1]; // a day getting a second of this subject → array
