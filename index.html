@@ -6126,12 +6126,15 @@ function ceConvApply(){
   const doneLabels=seq.slice(0,cursor).map(l=>l.lesson);
   const fullSeq=doneLabels.concat(lines);
   if(!confirm("Convert \""+(s.display||sk)+"\" to an editable lesson list ("+fullSeq.length+" lessons, "+cursor+" done)? Old planned cells are cleared — done history is untouched — then the Builder re-lays the year.")) return;
-  // one-level undo stash (cells + prior seq) in localStorage
+  // one-level undo stash (cells + prior seq) in localStorage. Only FUTURE cells are
+  // cleared — past cells are the record of completed work and must survive (clearing
+  // them blanks the Lesson Map's history). Done labels already live in fullSeq above.
   const rows=currData.lessons&&currData.lessons[kid]||{};
+  const _today=cbTodayISO();
   const cellSnap={};
   Object.keys(rows).forEach(dn=>{
     const v=rows[dn];
-    if(v&&v[sk]!=null&&String(v[sk]).trim()) cellSnap[dn]=v[sk];
+    if(v&&v[sk]!=null&&String(v[sk]).trim()&&(v.date||"")>_today) cellSnap[dn]=v[sk];
   });
   try{localStorage.setItem("ha_convUndo",JSON.stringify({kid,sk,cells:cellSnap,prevSeq:s.lessonSeq||null,prevTotal:s.total||null,at:Date.now()}));}catch(e){}
   const updates={};
@@ -13158,7 +13161,14 @@ function flExtendSubject(kid,sk){
     const al=s.allowedDays||[];
     wds=al.length?al.map(a=>M[a]).filter(x=>x!=null):[1,2,3,4,5];
   }
-  const mx=_maxPlanWeek();
+  // Append after THIS KID's own last planned week — not the family-wide max. A single
+  // subject's long tail on another kid (e.g. a 1×/week program running years out) must
+  // not fling this kid's make-up slots into the far future.
+  let mx=0;
+  for(const lbl of Object.keys((currData.weekDays||{})[kid]||{})){
+    const m=lbl.match(/Wk\s*(\d+)/i); if(m) mx=Math.max(mx,parseInt(m[1]));
+  }
+  if(!mx) mx=_maxPlanWeek();
   let wk=mx+1, added=0, guard=0, lastDate=null;
   while(need>0&&guard<60){
     const range=gwWeekDateRange(wk);
