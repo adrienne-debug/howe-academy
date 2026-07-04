@@ -8949,7 +8949,7 @@ function renderUnitDetail(u){
     h+='<div style="font-size:13px;font-weight:800;color:#1f2937">'+esc(d.key)+' <span style="font-size:11px;color:var(--muted);font-weight:600">· '+((d.cards||[]).length)+' cards · '+(d.mode||"flip")+' · '+(d.introCap||5)+' at a time</span></div>';
     const _ff=d.flipFace||"desc";
     const _ffBtn=(mode,label)=>'<button onclick="unitSetFlipFace(\''+u.id+'\',\''+esc(d.key)+'\',\''+mode+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid '+(_ff===mode?"#2d6a4f":"var(--border)")+';background:'+(_ff===mode?"#f2faf5":"#fff")+';color:'+(_ff===mode?"#2d6a4f":"var(--muted)")+';font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+label+'</button>';
-    if(isMom) h+='<div style="display:flex;gap:6px;align-items:center;margin:7px 0 4px"><span style="font-size:10px;color:var(--muted);font-weight:700">Flip drill:</span>'+_ffBtn("desc","📖 Name → facts")+_ffBtn("name","🖼️ Photo → name")+'</div>';
+    if(isMom) h+='<div style="display:flex;gap:6px;align-items:center;margin:7px 0 4px;flex-wrap:wrap"><span style="font-size:10px;color:var(--muted);font-weight:700">Flip drill:</span>'+_ffBtn("desc","📖 Name → facts")+_ffBtn("name","🖼️ Photo → name")+'<button onclick="unitBatchAdd(\''+u.id+'\',\''+esc(d.key).replace(/\'/g,"\\'")+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px dashed #2d6a4f;background:#f2faf5;color:#2d6a4f;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F4E6} Batch add</button></div>';
     h+='<div style="font-size:10.5px;color:var(--muted);margin:3px 0 9px">'+(isMom?'Tap a card to add a photo, edit its facts or bio — changes apply to every kid using this unit.':'Tap a card to read its story.')+'</div>';
     h+='<div style="display:flex;flex-wrap:wrap;gap:8px">';
     (d.cards||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0)).forEach(c=>{
@@ -8982,11 +8982,15 @@ function unitEnroll(unitId,kid){
     const haveItem=new Set(items.filter(i=>i&&i.subject===d.key).map(i=>i.prompt));
     let started=items.filter(i=>i&&i.subject===d.key&&i.status==="introduction").length;
     (d.cards||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0)).forEach(c=>{
-      if(c.def) settings.definitions[c.name]=c.def;
-      if(!haveBank.has(c.name)){ const be={cat:d.key,name:c.name}; ["house","reign","order","year","sig"].forEach(f=>{ if(c[f]!=null) be[f]=c[f]; }); bank.push(be); haveBank.add(c.name); }
+      // Rule-sentence cards (fronts with periods etc.) can't be definitions-map KEYS —
+      // their back rides the bank entry (def) and the item (answer/recite) instead.
+      if(c.def&&mastDefKeyOk(c.name)) settings.definitions[c.name]=c.def;
+      if(!haveBank.has(c.name)){ const be={cat:d.key,name:c.name}; ["house","reign","order","year","sig","def"].forEach(f=>{ if(c[f]!=null&&c[f]!=="") be[f]=c[f]; }); bank.push(be); haveBank.add(c.name); }
       if(!haveItem.has(c.name) && started<(d.introCap||5)){
-        items.push({id:kid.slice(0,3)+"_u_"+String(d.key).replace(/[^a-z0-9]/gi,"").slice(0,6).toLowerCase()+"_"+(c.order||items.length),
-          subject:d.key,type:"card",prompt:c.name,review_mode:"flash",status:"introduction",tier:"daily",cycle:1,tally_dots:0,drop_count:0,consecutive_correct:0});
+        const ne={id:kid.slice(0,3)+"_u_"+String(d.key).replace(/[^a-z0-9]/gi,"").slice(0,6).toLowerCase()+"_"+(c.order||items.length),
+          subject:d.key,type:"card",prompt:c.name,review_mode:"flash",status:"introduction",tier:"daily",cycle:1,tally_dots:0,drop_count:0,consecutive_correct:0};
+        if(c.def&&!mastDefKeyOk(c.name)){ ne.answer=c.def; ne.review_mode="recite"; }  // rule card: flips to the rule
+        items.push(ne);
         haveItem.add(c.name); started++;
       }
     });
@@ -9523,6 +9527,72 @@ function unitPrintActivity(unitId,actKey,kid){
 }
 
 // ── Unit card editor: edit shared photo + bio (applies to every enrolled kid) ──
+// ── Batch add: paste many cards into a unit deck at once ("front | back" per line) ────
+// New cards append to the registry deck AND flow immediately to every enrolled kid:
+// a bank entry (the def rides it, so pulls become recite rule cards) plus a
+// definitions-map key when the front is legal. No items are seeded here — each kid's
+// auto-pull draws the new cards into Learning as seats open, so additions pace
+// themselves naturally. All appends are transactions (no stale-array clobbers).
+let unitBatch=null;
+function unitBatchAdd(unitId,deckKey){
+  if(!momHere()) return;
+  const u=unitStudies[unitId]; const deck=u&&(u.decks||[]).find(d=>d&&d.key===deckKey); if(!deck) return;
+  unitBatch={unitId,deckKey};
+  let ov=document.getElementById("unit-batch-dlg"); if(ov) ov.remove();
+  ov=document.createElement("div"); ov.id="unit-batch-dlg"; ov.className="dlg-overlay"; ov.style.display="flex"; ov.style.zIndex="9999";
+  ov.innerHTML='<div class="dlg-box" style="max-width:520px;text-align:left;max-height:88vh;overflow:auto">'+
+    '<div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:700;color:#1a3a2a">\u{1F4E6} Batch add — '+deckKey+'</div>'+
+    '<div style="font-size:11px;color:var(--muted);margin:6px 0 10px;line-height:1.5">One card per line: <b>front | back</b> — the sentence, a pipe, then the rule or definition. New cards go into this unit AND into every enrolled kid’s drill bank; their auto-pull learns them in turn.</div>'+
+    '<textarea id="unit-batch-txt" placeholder="Sara lives in Boston. | Capitalize the names of cities.&#10;We visited France last summer. | Capitalize the names of countries." style="width:100%;box-sizing:border-box;min-height:180px;padding:9px 11px;border:1.5px solid var(--border);border-radius:9px;font-size:12.5px;font-family:\'DM Mono\',monospace;line-height:1.6"></textarea>'+
+    '<div id="unit-batch-msg" style="font-size:11px;font-weight:600;color:#b45309;margin-top:6px"></div>'+
+    '<div style="display:flex;gap:8px;margin-top:12px">'+
+      '<button onclick="unitBatchClose()" style="flex:1;padding:11px;border-radius:10px;border:none;background:#f3f4f6;color:#374151;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancel</button>'+
+      '<button onclick="unitBatchSave()" style="flex:1;padding:11px;border-radius:10px;border:none;background:#2d6a4f;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Add cards</button>'+
+    '</div></div>';
+  document.body.appendChild(ov);
+}
+function unitBatchClose(){ unitBatch=null; const ov=document.getElementById("unit-batch-dlg"); if(ov) ov.remove(); }
+function unitBatchSave(){
+  if(!unitBatch) return;
+  const u=unitStudies[unitBatch.unitId]; if(!u) return;
+  const di=(u.decks||[]).findIndex(d=>d&&d.key===unitBatch.deckKey); if(di<0) return;
+  const deck=u.decks[di];
+  const txt=(document.getElementById("unit-batch-txt")||{}).value||"";
+  const msg=document.getElementById("unit-batch-msg");
+  const fresh=[]; const bad=[]; const seen=new Set((deck.cards||[]).map(c=>c&&c.name));
+  txt.split("\n").forEach(line=>{
+    const t=line.trim(); if(!t) return;
+    const p=t.indexOf("|");
+    if(p<1){ bad.push(t.slice(0,30)); return; }
+    const name=t.slice(0,p).trim(), def=t.slice(p+1).trim();
+    if(!name||!def){ bad.push(t.slice(0,30)); return; }
+    if(seen.has(name)) return;   // duplicate of an existing card — skip silently
+    fresh.push({name:name,def:def}); seen.add(name);
+  });
+  if(bad.length){ if(msg) msg.textContent="⚠️ "+bad.length+" line(s) missing the | separator — “"+bad[0]+"…”"; return; }
+  if(!fresh.length){ if(msg) msg.textContent="Nothing new to add (blank or all duplicates)."; return; }
+  // 1) registry deck — transaction append with order numbers continuing from the freshest max
+  if(db) db.ref("unitStudies/"+unitBatch.unitId+"/decks/"+di+"/cards").transaction(cur=>{
+    const arr=cur==null?[]:(Array.isArray(cur)?cur:Object.values(cur));
+    let mo=0; arr.forEach(c=>{ if(c&&(c.order||0)>mo) mo=c.order||0; });
+    fresh.forEach(c=>{ if(!arr.some(e=>e&&e.name===c.name)) arr.push({name:c.name,def:c.def,order:++mo}); });
+    return arr;
+  });
+  // 2) flow to every enrolled kid
+  const kids=Object.keys(u.enrolled||{}).filter(k=>u.enrolled[k]);
+  kids.forEach(kid=>{
+    if(db) db.ref("mastery/"+kid+"_custom_items").transaction(cur=>{
+      const arr=cur==null?[]:(Array.isArray(cur)?cur:Object.values(cur));
+      fresh.forEach(c=>{ if(!arr.some(e=>e&&e.cat===deck.key&&e.name===c.name)) arr.push({cat:deck.key,name:c.name,def:c.def}); });
+      return arr;
+    });
+    const defsU={};
+    fresh.forEach(c=>{ if(mastDefKeyOk(c.name)) defsU[c.name]=c.def; });
+    if(db&&Object.keys(defsU).length) db.ref("mastery/"+kid+"_settings/definitions").update(defsU);
+  });
+  unitBatchClose();
+  alert("✓ "+fresh.length+" card"+(fresh.length>1?"s":"")+" added to "+deck.key+(kids.length?" — flowing to "+kids.map(cap).join(", ")+" via auto-pull":""));
+}
 function unitEditCard(unitId,deckKey,order){
   if(!momHere()){ showUnitCardBio(unitId,deckKey,order); return; } // kids read, Mom edits
   const u=unitStudies[unitId]; if(!u) return;
