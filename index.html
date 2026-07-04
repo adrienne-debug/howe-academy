@@ -13349,7 +13349,7 @@ function mastDrillSettings(){
   const kid=masteryKid||"julian";
   const s=masteryData[kid+"_settings"]||{};
   const defaultLadder=["every_other_day","weekly","bi_weekly","monthly","graduated"];
-  return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,auto_pull:s.auto_pull!==false,ladder:s.ladder||defaultLadder,cat_caps:s.cat_caps||{},cat_intro_dots:s.cat_intro_dots||{},cat_intro_max:s.cat_intro_max||{},miss_drop:s.miss_drop||"reset",close_behavior:s.close_behavior||"stay",drop_threshold:s.drop_threshold??0,tier_streaks:s.tier_streaks||{},gate_tier:s.gate_tier||"weekly",sprint_default:s.sprint_default===true,cat_sprint:s.cat_sprint||{},dynamic_decks:s.dynamic_decks===true,dynamic_cap:s.dynamic_cap??24};
+  return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,max_learn_per_drill:s.max_learn_per_drill??0,auto_pull:s.auto_pull!==false,ladder:s.ladder||defaultLadder,cat_caps:s.cat_caps||{},cat_intro_dots:s.cat_intro_dots||{},cat_intro_max:s.cat_intro_max||{},miss_drop:s.miss_drop||"reset",close_behavior:s.close_behavior||"stay",drop_threshold:s.drop_threshold??0,tier_streaks:s.tier_streaks||{},gate_tier:s.gate_tier||"weekly",sprint_default:s.sprint_default===true,cat_sprint:s.cat_sprint||{},dynamic_decks:s.dynamic_decks===true,dynamic_cap:s.dynamic_cap??24};
 }
 // How many introduction dots a card in `cat` needs before it enters the ladder.
 // Mirrors cat_caps: a per-category override, else the global intro_dots default.
@@ -13489,10 +13489,37 @@ function mastDueItems(kid,pn){
   });
   const capped=[];
   Object.entries(byCat).forEach(([cat,bucket])=>{
-    const combined=bucket.active.concat(bucket.intro);
     const cap=settings.cat_caps[cat]??settings.max_per_cat;
-    capped.push(...combined.slice(0,cap));
+    // Active ladder reviews are NEVER cut — they sit on booked slots, and skipping one
+    // breaks the spacing cursor. The per-category cap only limits how many ⭐ learning
+    // cards ride along after them.
+    const introRoom=Math.max(0,cap-bucket.active.length);
+    capped.push(...bucket.active,...bucket.intro.slice(0,introRoom));
   });
+  // Daily learning cap (max_learn_per_drill, 0 = off): with many categories the learning
+  // cards alone made 40-card drills. Reviews always all ride; learning cards compete for
+  // the capped seats — closest-to-graduating first within each category (they finish and
+  // free their seat), then round-robin across categories with the starting category
+  // rotating by print number, so every deck gets seats over the week and nothing starves.
+  // Cards that miss today's cut simply appear on a following day.
+  const learnCap=settings.max_learn_per_drill;
+  if(learnCap>0){
+    const intros=capped.filter(i=>i.status==="introduction");
+    if(intros.length>learnCap){
+      const byC={},order=[];
+      intros.forEach(i=>{ const c=i.subject||"Other"; if(!byC[c]){byC[c]=[];order.push(c);} byC[c].push(i); });
+      order.forEach(c=>byC[c].sort((a,b)=>(b.tally_dots||0)-(a.tally_dots||0)));
+      const rot=pn%order.length;
+      const rotated=order.slice(rot).concat(order.slice(0,rot));
+      const pick=new Set();
+      let took=true;
+      while(pick.size<learnCap&&took){
+        took=false;
+        for(const c of rotated){ if(pick.size>=learnCap) break; const nx=byC[c].shift(); if(nx){ pick.add(nx); took=true; } }
+      }
+      return capped.filter(i=>i.status!=="introduction"||pick.has(i));
+    }
+  }
   return capped;
 }
 
@@ -14146,6 +14173,7 @@ function mastAdminAdj(field,delta){
   else if(field==='miss_drop'){ mastAdminLocal.miss_drop=mastAdminLocal.miss_drop==="reset"?"one":"reset"; }
   else if(field==='close_behavior'){ const opts=["stay","count","drop"]; const ci=opts.indexOf(mastAdminLocal.close_behavior||"stay"); mastAdminLocal.close_behavior=opts[(ci+1)%opts.length]; }
   else if(field==='drop_threshold'){ mastAdminLocal.drop_threshold=Math.max(0,(mastAdminLocal.drop_threshold||0)+delta); }
+  else if(field==='max_learn_per_drill'){ mastAdminLocal.max_learn_per_drill=Math.max(0,(mastAdminLocal.max_learn_per_drill||0)+delta); }  // 0 = cap off
   else { mastAdminLocal[field]=Math.max(1,(mastAdminLocal[field]||0)+delta); }
   mastAdminDirty=true;
   _mastRe();
@@ -15178,16 +15206,17 @@ function renderMastAdmin(){
   const rules=[
     {key:"intro_dots",label:"Introduction Dots",desc:"How many times shown before entering the ladder",min:1,max:10},
     {key:"ladder_streak",label:"Ladder Streak",desc:"Default consecutive correct to advance (per-tier overrides below)",min:1,max:10},
-    {key:"max_per_cat",label:"Max Items / Category / Day",desc:"Cap on items per category in the daily drill",min:1,max:20},
-    {key:"max_intro_per_cat",label:"Max New / Category",desc:"Max introduction items allowed per category at once",min:1,max:10}
+    {key:"max_per_cat",label:"Max Items / Category / Day",desc:"Cap on items per category in the daily drill (learning cards only — reviews always ride)",min:1,max:20},
+    {key:"max_intro_per_cat",label:"Max New / Category",desc:"Max introduction items allowed per category at once",min:1,max:10},
+    {key:"max_learn_per_drill",label:"Max Learning Cards / Drill",desc:"Daily cap on \u{2B50} learning cards across ALL categories — booked reviews are never cut; skipped cards come the next day (0 = no cap)",min:0,max:40}
   ];
   rules.forEach(r=>{
-    const val=s[r.key]||1;
+    const val=r.min===0?(s[r.key]||0):(s[r.key]||1);  // 0 is a real value for cap-off fields
     h+='<div class="mast-admin-row">';
     h+='<div><div class="mast-admin-label">'+r.label+'</div><div class="mast-admin-desc">'+r.desc+'</div></div>';
     h+='<div class="mast-admin-stepper">';
     h+='<button onclick="mastAdminAdj(\''+r.key+'\',-1)"'+(val<=r.min?' disabled':'')+'>−</button>';
-    h+='<span class="val">'+val+'</span>';
+    h+='<span class="val">'+(val===0?'off':val)+'</span>';
     h+='<button onclick="mastAdminAdj(\''+r.key+'\',1)"'+(val>=r.max?' disabled':'')+'>+</button>';
     h+='</div></div>';
   });
