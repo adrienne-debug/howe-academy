@@ -2589,14 +2589,15 @@ function _showCelebration(kid, titleText, opts){
   }
   celebSongName="";
 
-  // Pick and play a song — filtered to this kid + occasion (day vs session)
+  // A specific song (opts.song, e.g. this session's chosen track) overrides the random
+  // per-kid/occasion pick; otherwise pick randomly from the kid's occasion songs.
   const kidSongs=getSongsForKid(kid,occasion);
-  if(kidSongs.length){
-    const song=kidSongs[Math.floor(Math.random()*kidSongs.length)];
-    celebSongName=song.name||"Celebration!";
-    songEl.textContent=kidSongs.length>1?("🎲 "+celebSongName+" (surprise!)"):celebSongName;
+  const chosen=(opts.song&&opts.song.url)?opts.song:(kidSongs.length?kidSongs[Math.floor(Math.random()*kidSongs.length)]:null);
+  if(chosen){
+    celebSongName=chosen.name||"Celebration!";
+    songEl.textContent=(!opts.song&&kidSongs.length>1)?("🎲 "+celebSongName+" (surprise!)"):celebSongName;
     try{
-      celebAudio=new Audio(song.url);
+      celebAudio=new Audio(chosen.url);
       celebAudio.volume=0.7;
       celebAudio.play().catch(()=>{});
       celebAudio.onended=()=>{ stopCelebMusic(); };
@@ -5588,6 +5589,22 @@ function ceRenderSessions(k,col){
       h+='<input type="number" min="0" step="5" value="'+_spts+'" onchange="ceSetSessionPoints(\''+key+'\',parseInt(this.value)||0)" style="width:70px;padding:5px 8px;border:1.5px solid var(--border);border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:12px;margin-left:4px">';
       h+='</div>';
 
+      // Completion song — mirror of the Settings song list; pick a specific victory track
+      // for this session, or leave on the kid's random session song.
+      const _psong=p.song||null;
+      h+='<div class="ce-sheet-lbl">Completion song</div>';
+      h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">';
+      h+='<select onchange="ceSetSessionSong(\''+key+'\',this.value)" style="flex:1;min-width:0;padding:5px 8px;border:1.5px solid var(--border);border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:12px">';
+      h+='<option value=""'+(_psong?"":" selected")+'>🎲 Kid’s random session song</option>';
+      celebSongs.forEach((s,si)=>{
+        const sel=_psong&&_psong.url===s.url?" selected":"";
+        h+='<option value="'+si+'"'+sel+'>'+esc(s.name||("Song "+(si+1)))+'</option>';
+      });
+      h+='</select>';
+      if(_psong) h+='<button onclick="celebSessionPreview(\''+key+'\')" style="flex-shrink:0;padding:5px 10px;border-radius:8px;background:var(--header);color:#fff;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">▶</button>';
+      h+='</div>';
+      if(!celebSongs.length) h+='<div style="font-size:10px;color:var(--muted);margin-bottom:4px">No songs uploaded yet — add them in Settings → Celebrations &amp; Songs.</div>';
+
       // Goals this session — for the kid whose Subjects tab we're on. Each sequenced
       // subject gets a "reach ___ by end of session" target picked from its lesson list.
       const _gsubs=Object.keys(currData&&currData.subjects&&currData.subjects[k]||{})
@@ -5703,6 +5720,23 @@ function ceSetSessionPoints(planKey,val){
   savePacePlan(planKey,{...p,points:Math.max(0,val|0)});
   renderAll();
 }
+// Specific victory song for this session (mirrors the Settings song list). Empty = fall
+// back to the kid's random session-occasion song. idxStr indexes celebSongs.
+function ceSetSessionSong(planKey,idxStr){
+  const p=(paceData.plans||{})[planKey]; if(!p) return;
+  const next={...p};
+  if(idxStr===""||idxStr==null){ delete next.song; }
+  else{ const s=celebSongs[parseInt(idxStr)]; if(s) next.song={name:s.name||"Song",url:s.url}; }
+  savePacePlan(planKey,next);
+  renderAll();
+}
+function celebSessionPreview(planKey){
+  const s=(paceData.plans&&paceData.plans[planKey]&&paceData.plans[planKey].song)||null;
+  if(!s||!s.url) return;
+  if(celebAudio){ celebAudio.pause(); celebAudio=null; }
+  celebAudio=new Audio(s.url); celebAudio.volume=0.7; celebAudio.play().catch(()=>{});
+  setTimeout(()=>{ if(celebAudio){ celebAudio.pause(); celebAudio=null; } },8000);
+}
 function sessionCelebrated(kid,pk){ return !!(sessionDone[kid]&&sessionDone[kid][pk]); }
 // Kid-facing session progress banner for the Schedule tab. One card for a single kid, a
 // compact row per kid when the filter is "All". Silent when a kid has no session goals.
@@ -5756,7 +5790,8 @@ function checkSessionComplete(kid){
   if(db) db.ref("session_done/"+kid+"/"+sp.planKey).set(nowTs());
   const pts=(sp.points!=null)?sp.points:100;
   if(pts>0) addKidPoints(kid,pts,day);
-  setTimeout(()=>_showCelebration(kid,cap(kid)+" completed "+sp.planLabel+"!",{big:true,occasion:"session",points:pts}),400);
+  const song=(paceData.plans&&paceData.plans[sp.planKey]&&paceData.plans[sp.planKey].song)||null;
+  setTimeout(()=>_showCelebration(kid,cap(kid)+" completed "+sp.planLabel+"!",{big:true,occasion:"session",points:pts,song}),400);
 }
 // The active session's goal for a kid+subject (the session that owns this kid). Returns
 // {planKey,planLabel,idx,label,cursor,toGo,met} or null.
