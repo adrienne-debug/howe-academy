@@ -7361,7 +7361,7 @@ function haNbContext(kid){
       if(dollUrl||outfitUrl) dolls={ doll:dollUrl, outfit:outfitUrl };
     }
   } }catch(e){}
-  let units=[]; try{ units=haKidUnits(kid).map(u=>haBuildUnitInsight(kid,u)).filter(Boolean); }catch(e){}
+  let units=[]; try{ units=haKidUnits(kid).filter(u=>u&&u.nbInsert!==false).map(u=>haBuildUnitInsight(kid,u)).filter(Boolean); }catch(e){}
   return { weekData:{dates:dates, tasks:tasks}, weekNum:WK, weekDates:weekDates, masteryItems:(mastery[kid]||[]), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units };
 }
 function haNbOpen(kid,which){
@@ -9337,7 +9337,16 @@ function renderUnitDetail(u){
     h+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
     roster.forEach(k=>{ const on=!!((u.enrolled||{})[k]);
       h+='<button onclick="unitEnroll(\''+u.id+'\',\''+k+'\')" '+(on?'disabled':'')+' style="padding:7px 14px;border-radius:10px;border:1.5px solid '+(on?'#86efac':'var(--border)')+';background:'+(on?'#f0fdf4':'#fff')+';color:'+(on?'#15803d':'#1f2937')+';font-size:12px;font-weight:700;cursor:'+(on?'default':'pointer')+';font-family:\'DM Sans\',sans-serif">'+(on?'✓ ':'+ ')+cap(k)+'</button>'; });
-    h+='</div><div id="unit-enroll-msg" style="font-size:11px;color:#15803d;font-weight:700;margin-top:8px"></div></div>';
+    h+='</div><div id="unit-enroll-msg" style="font-size:11px;color:#15803d;font-weight:700;margin-top:8px"></div>';
+    // Notebook-insert switch: whether this unit's pages ride along in enrolled kids' printed
+    // notebooks. Default ON; flip OFF to shelve a unit (e.g. work-in-progress) without unenrolling.
+    { const nbOn=(u.nbInsert!==false);
+      h+='<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:12px;padding-top:11px;border-top:1px solid var(--border)">';
+      h+='<span style="flex:1;min-width:150px;font-size:12px;font-weight:700;color:#1f2937">📓 Include in notebooks'+(nbOn?'':' <span style="font-weight:800;color:#b45309">· off</span>')+'<div style="font-size:10.5px;font-weight:600;color:var(--muted);line-height:1.4;margin-top:2px">Adds this unit’s pages to enrolled kids’ printed notebooks. Turn off to shelve it while it needs work.</div></span>';
+      h+='<button onclick="unitToggleNbInsert(\''+u.id+'\')" style="padding:7px 14px;border-radius:10px;border:1.5px solid '+(nbOn?'#86efac':'var(--border)')+';background:'+(nbOn?'#f0fdf4':'#fff')+';color:'+(nbOn?'#15803d':'#b45309')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+(nbOn?'✓ On':'○ Off')+'</button>';
+      h+='</div>';
+    }
+    h+='</div>';
   }
   const enrolledKids=roster.filter(k=>(u.enrolled||{})[k]);
   // U6 — live nudges for this unit (fired plan triggers + never-run unlocked sprints).
@@ -9735,6 +9744,16 @@ function unitScheduleNudges(kidFilter){
 // next weekly notebook as an extra insert page).
 function _unitActs(u){ const a=u&&u.activities; if(!a) return []; return Array.isArray(a)?a.filter(Boolean):Object.values(a).filter(Boolean); }
 // Toggle "include in next notebook" for one kid (one activity at a time).
+// Notebook-insert on/off for a whole unit. Off shelves its pages from every enrolled kid's
+// printed notebook (see haNbContext filter) without touching enrollment, drills, or sprints.
+function unitToggleNbInsert(unitId){
+  if(!momHere()) return; // what's in the notebook is Mom's call
+  const u=unitStudies[unitId]; if(!u) return;
+  const next=(u.nbInsert===false); // currently off → turn on; else turn off
+  u.nbInsert=next;
+  if(db) db.ref("unitStudies/"+unitId+"/nbInsert").set(next);
+  renderAll();
+}
 function unitToggleNbActivity(unitId,kid,actKey){
   if(!momHere()) return; // what's in the notebook is Mom's call
   const u=unitStudies[unitId]; if(!u) return;
