@@ -2547,21 +2547,26 @@ function celebrateDayComplete(kid){
   const d=day;
   if(hasCelebrated(kid,d)) return;
   markCelebrated(kid,d);
-  _showCelebration(kid, cap(kid)+" finished the day!");
+  _showCelebration(kid, cap(kid)+" finished the day!", {occasion:"day"});
 }
 // Confetti + song overlay, reused by day-complete and session-complete. The caller owns
 // the fire-once gating; this just runs the show with a given title.
-function _showCelebration(kid, titleText){
+function _showCelebration(kid, titleText, opts){
+  opts=opts||{};
+  const big=!!opts.big, occasion=opts.occasion||null;
   const overlay=document.getElementById("celeb-overlay");
   const canvas=document.getElementById("celeb-canvas");
   const titleEl=document.getElementById("celeb-title");
   const songEl=document.getElementById("celeb-song-name");
 
   titleEl.textContent=titleText;
+  // Big (session) celebration: larger title with a gold glow; reset for the daily one.
+  titleEl.style.transform=big?"scale(1.18)":"";
+  titleEl.style.textShadow=big?"0 0 18px rgba(245,158,11,0.7), 0 0 40px rgba(245,158,11,0.4)":"";
   celebSongName="";
 
-  // Pick and play a song — filtered to this kid's assigned songs
-  const kidSongs=getSongsForKid(kid);
+  // Pick and play a song — filtered to this kid + occasion (day vs session)
+  const kidSongs=getSongsForKid(kid,occasion);
   if(kidSongs.length){
     const song=kidSongs[Math.floor(Math.random()*kidSongs.length)];
     celebSongName=song.name||"Celebration!";
@@ -2576,21 +2581,24 @@ function _showCelebration(kid, titleText){
     songEl.textContent="Celebration time!";
   }
 
-  // Confetti
+  // Confetti — the session (big) burst is denser, larger, and gold-tinted for milestone feel.
   canvas.width=window.innerWidth;
   canvas.height=window.innerHeight;
   const ctx=canvas.getContext("2d");
-  const colors=["#ef4444","#f59e0b","#22c55e","#3b82f6","#8b5cf6","#ec4899","#f97316","#06b6d4"];
+  const colors=big
+    ?["#ffd700","#f59e0b","#fbbf24","#ef4444","#22c55e","#3b82f6","#8b5cf6","#ec4899","#f97316","#06b6d4","#ffffff"]
+    :["#ef4444","#f59e0b","#22c55e","#3b82f6","#8b5cf6","#ec4899","#f97316","#06b6d4"];
+  const N=big?460:200;
   const pieces=[];
-  for(let i=0;i<200;i++){
+  for(let i=0;i<N;i++){
     pieces.push({
       x:Math.random()*canvas.width,
-      y:Math.random()*canvas.height*-1.5,
-      w:Math.random()*8+4,
-      h:Math.random()*6+3,
+      y:Math.random()*canvas.height*(big?-2:-1.5),
+      w:(Math.random()*8+4)*(big?1.4:1),
+      h:(Math.random()*6+3)*(big?1.4:1),
       color:colors[Math.floor(Math.random()*colors.length)],
       vx:(Math.random()-0.5)*2.5,
-      vy:Math.random()*2.5+1.2,
+      vy:(Math.random()*2.5+1.2)*(big?1.15:1),
       rot:Math.random()*360,
       rv:(Math.random()-0.5)*6,
       phase:Math.random()*Math.PI*2
@@ -2771,6 +2779,15 @@ function renderSettings(el,ah){
         pinHtml+='<button onclick="celebSongToggleKid('+i+',\''+k+'\')" style="padding:3px 10px;border-radius:16px;border:1.5px solid '+(on?KC2[k]:'var(--border)')+';background:'+(on?KC2[k]:'transparent')+';color:'+(on?'#fff':'var(--muted)')+';font-size:11px;font-weight:'+(on?'700':'500')+';cursor:pointer;font-family:\'DM Sans\',sans-serif;transition:all 0.15s">'+cap(k)+'</button>';
       });
       pinHtml+='</div>';
+      // When it plays — Day-complete and/or Session-complete (no setting = both)
+      const _occ=s.occ||{day:true,session:true};
+      pinHtml+='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px;align-items:center">';
+      pinHtml+='<span style="font-size:10px;color:var(--muted);margin-right:2px">Plays on:</span>';
+      [["day","📅 Day"],["session","🎉 Session"]].forEach(([occ,lbl])=>{
+        const on=!!_occ[occ];
+        pinHtml+='<button onclick="celebSongToggleOcc('+i+',\''+occ+'\')" style="padding:3px 10px;border-radius:16px;border:1.5px solid '+(on?'#8b5cf6':'var(--border)')+';background:'+(on?'#8b5cf6':'transparent')+';color:'+(on?'#fff':'var(--muted)')+';font-size:11px;font-weight:'+(on?'700':'500')+';cursor:pointer;font-family:\'DM Sans\',sans-serif;transition:all 0.15s">'+lbl+'</button>';
+      });
+      pinHtml+='</div>';
       pinHtml+='</div>';
     });
   } else {
@@ -2780,7 +2797,8 @@ function renderSettings(el,ah){
   pinHtml+='<input type="file" id="celeb-file-input" accept="audio/mpeg,audio/mp3,.mp3" onchange="celebSongUpload(this)" style="display:none">';
   pinHtml+='<div style="display:flex;gap:6px;margin-top:8px">';
   pinHtml+='<button onclick="document.getElementById(\'celeb-file-input\').click()" style="padding:5px 12px;border-radius:8px;background:var(--header);color:#fff;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Upload Song</button>';
-  pinHtml+='<button onclick="celebTestConfetti()" style="padding:5px 12px;border-radius:8px;background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🎉 Test</button>';
+  pinHtml+='<button onclick="celebTestConfetti()" style="padding:5px 12px;border-radius:8px;background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🎉 Test Day</button>';
+  pinHtml+='<button onclick="celebTestSession()" style="padding:5px 12px;border-radius:8px;background:linear-gradient(135deg,#f59e0b,#b45309);color:#fff;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🌟 Test Session</button>';
   pinHtml+='</div>';
   pinHtml+='<div id="celeb-cfg-msg" style="font-size:12px;color:#16a34a;min-height:16px;margin-top:6px"></div>';
   pinHtml+='</div></div></div>';
@@ -2900,6 +2918,14 @@ function celebSongToggleKid(songIdx,kid){
   celebSongsSave();
   renderAll();
 }
+function celebSongToggleOcc(songIdx,occ){
+  const s=celebSongs[songIdx]; if(!s) return;
+  if(!s.occ) s.occ={day:true,session:true};
+  s.occ[occ]=!s.occ[occ];
+  if(!s.occ.day&&!s.occ.session) delete s.occ; // both off → back to default (plays on both)
+  celebSongsSave();
+  renderAll();
+}
 function celebSongPreview(songIdx){
   const s=celebSongs[songIdx];
   if(!s||!s.url) return;
@@ -2909,11 +2935,13 @@ function celebSongPreview(songIdx){
   celebAudio.play().catch(()=>{});
   setTimeout(()=>{ if(celebAudio){ celebAudio.pause(); celebAudio=null; } },8000);
 }
-function getSongsForKid(kid){
-  // Return songs assigned to this kid. If a song has no kids property, it's available to all.
+function getSongsForKid(kid,occasion){
+  // Return songs assigned to this kid for a given occasion ("day" | "session"). No kids
+  // property = all kids; no occ property = both occasions (backward compatible).
   return celebSongs.filter(s=>{
-    if(!s.kids) return true; // no kid filter = all kids
-    return !!s.kids[kid];
+    if(s.kids&&!s.kids[kid]) return false;
+    if(occasion&&s.occ&&!s.occ[occasion]) return false; // occ set and this occasion off → skip
+    return true;
   });
 }
 function celebTestConfetti(){
@@ -2923,6 +2951,11 @@ function celebTestConfetti(){
   celebrateDayComplete(kid);
   // Restore if it was already set (so real completion still works)
   if(had){ const u2=ld(WK+"_celeb_used")||{}; u2[key]=true; sv(WK+"_celeb_used",u2); }
+}
+// Preview the bigger session-complete celebration (no points, no fire-once flag touched).
+function celebTestSession(){
+  const kid=[...ROSTER][Math.floor(Math.random()*ROSTER.length)];
+  _showCelebration(kid, cap(kid)+" completed the session! +100 ⭐", {big:true, occasion:"session"});
 }
 
 function saveNewPin(){
@@ -5631,7 +5664,7 @@ function checkSessionComplete(kid){
   sessionDone[kid][sp.planKey]=nowTs();
   if(db) db.ref("session_done/"+kid+"/"+sp.planKey).set(nowTs());
   addKidPoints(kid,100,day);
-  setTimeout(()=>_showCelebration(kid,cap(kid)+" completed "+sp.planLabel+"! +100 ⭐"),400);
+  setTimeout(()=>_showCelebration(kid,cap(kid)+" completed "+sp.planLabel+"! +100 ⭐",{big:true,occasion:"session"}),400);
 }
 // The active session's goal for a kid+subject (the session that owns this kid). Returns
 // {planKey,planLabel,idx,label,cursor,toGo,met} or null.
