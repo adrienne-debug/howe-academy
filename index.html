@@ -1117,6 +1117,7 @@ const _todayDay=["sunday","monday","tuesday","wednesday","thursday","friday","sa
 let tab="schedule", day=["monday","tuesday","wednesday","thursday","friday"].includes(_todayDay)?_todayDay:"monday", kid="all", supDay="all";
 let collCats={}, pendingId=null;
 let archive={};
+let sessionDone={};        // {kid: {planKey: ts}} — sessions whose completion has been celebrated (fire-once, cross-device)
 let fbWeekRefs=[];
 let paceData={subjects:{}, plans:{}};
 let currData=null;   // curriculum from Firebase (uploaded via admin)
@@ -1479,6 +1480,7 @@ function initFb() {
       if(currData) buildCurrPaceCum();
       if(tab==="schedule"&&schedShowAdmin&&adminSubTab==="calendar"){const el=document.getElementById("content");if(el)renderAll();}
     });
+    db.ref("session_done").on("value",s=>{ sessionDone=s.val()||{}; });
     db.ref("scheduleOverrides").on("value",s=>{
       scheduleOverrides=s.val()||{};
       try{localStorage.setItem("ha_sched_overrides",JSON.stringify(scheduleOverrides));}catch(e){}
@@ -2545,13 +2547,17 @@ function celebrateDayComplete(kid){
   const d=day;
   if(hasCelebrated(kid,d)) return;
   markCelebrated(kid,d);
-
+  _showCelebration(kid, cap(kid)+" finished the day!");
+}
+// Confetti + song overlay, reused by day-complete and session-complete. The caller owns
+// the fire-once gating; this just runs the show with a given title.
+function _showCelebration(kid, titleText){
   const overlay=document.getElementById("celeb-overlay");
   const canvas=document.getElementById("celeb-canvas");
   const titleEl=document.getElementById("celeb-title");
   const songEl=document.getElementById("celeb-song-name");
 
-  titleEl.textContent=cap(kid)+" finished the day!";
+  titleEl.textContent=titleText;
   celebSongName="";
 
   // Pick and play a song — filtered to this kid's assigned songs
@@ -3088,6 +3094,7 @@ function renderSchedule(el){
   h+=dailyPaceTracker(allDay, day);
   h+=renderClaimQueue();
   h+=unitScheduleNudges(kid);  // U6: unit-study pacing nudges (renders only when one is live)
+  h+=renderSessionBanner(kid); // session progress (kid-facing) — goals met toward the session
 
   // ── SCHEDULE LOCK CHECK ──────────────────────────────────────────
   const unlocked = isScheduleUnlocked(kid, day);
@@ -3350,6 +3357,8 @@ function finalizeDone(id, doneTs, score){
     const entry={id:id,title:t.title,who:t.who,day:t.day,originalDay:origDay,checkedOnDay:effectiveDay(t),daysLate:daysLate,ts:doneTs,week:WK};
     if(score) entry.score=score;
     hist[id]=entry; histState[id]=entry; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+id).set(entry);
+    // A check-off may have advanced the last cursor to meet all session goals.
+    try{ checkSessionComplete(t.who); }catch(e){}
   }
 }
 // Mom approves a kid's claim. Done-time = the kid's claim time (so a late
@@ -5547,6 +5556,82 @@ function _sessionHardCap(kid,sk){
     if(g&&g.mode==="hard") return g.idx+1;
   }
   return Infinity;
+}
+// Progress through the kid's current session, measured by its goals. Returns
+// {planKey,planLabel,total,met,complete,items} or null when the kid's session has no goals.
+function sessionProgress(kid){
+  const plans=(paceData.plans&&Object.keys(paceData.plans).length)?paceData.plans:PACE_DEFAULT_PLANS;
+  for(const pk of Object.keys(plans)){
+    const p=plans[pk];
+    if(!(p.kids||[]).includes(kid)) continue;
+    const g=(p.goals||{})[kid]||{};
+    const sks=Object.keys(g);
+    if(!sks.length) continue;
+    let met=0; const items=[];
+    sks.forEach(sk=>{
+      let cursor=0; try{ cursor=computeSubjectCursor(kid,sk); }catch(e){}
+      const done=cursor>=(g[sk].idx+1);
+      if(done) met++;
+      const disp=(((currData&&currData.subjects||{})[kid]||{})[sk]||{}).display||sk;
+      items.push({sk,display:disp,label:g[sk].label,mode:g[sk].mode||"soft",met:done});
+    });
+    return {planKey:pk,planLabel:p.label||pk,total:sks.length,met,complete:met===sks.length,items};
+  }
+  return null;
+}
+function sessionCelebrated(kid,pk){ return !!(sessionDone[kid]&&sessionDone[kid][pk]); }
+// Kid-facing session progress banner for the Schedule tab. One card for a single kid, a
+// compact row per kid when the filter is "All". Silent when a kid has no session goals.
+function _sessionBannerCard(kid,compact){
+  const sp=sessionProgress(kid); if(!sp) return "";
+  const col=PACE_KCOL[kid]||"#4a3f7a";
+  const pct=Math.round(100*sp.met/sp.total);
+  const done=sp.complete;
+  const bar='<div style="height:7px;border-radius:6px;background:#e5e7eb;overflow:hidden;margin-top:5px"><div style="height:100%;width:'+pct+'%;background:'+(done?"#10b981":col)+';border-radius:6px;transition:width .3s"></div></div>';
+  if(compact){
+    let h='<div style="display:flex;align-items:center;gap:8px;padding:5px 0">';
+    h+='<span style="font-weight:700;font-size:12px;color:'+col+';min-width:58px">'+cap(kid)+'</span>';
+    h+='<div style="flex:1;min-width:0"><div style="font-size:11px;color:var(--muted)">'+(done?"🎉 "+esc(sp.planLabel)+" complete!":esc(sp.planLabel)+" · "+sp.met+" of "+sp.total+" goals")+'</div>'+bar+'</div>';
+    h+='</div>';
+    return h;
+  }
+  let h='<div style="background:#fff;border:1.5px solid '+(done?"#10b981":"var(--border)")+';border-radius:12px;padding:12px 14px;margin-bottom:12px">';
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">';
+  h+='<div style="font-size:13px;font-weight:800;color:'+(done?"#10b981":col)+'">'+(done?"🎉 "+esc(sp.planLabel)+" complete!":"🎯 "+esc(sp.planLabel))+'</div>';
+  h+='<div style="font-size:12px;font-weight:700;color:var(--muted)">'+(done?"+100 ⭐ earned":sp.met+" / "+sp.total+" goals")+'</div>';
+  h+='</div>';
+  h+=bar;
+  // per-goal chips
+  h+='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px">';
+  sp.items.forEach(it=>{
+    const c=it.met?"#10b981":"#9ca3af";
+    h+='<span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:'+c+'18;color:'+c+'">'+(it.met?"✓ ":(it.mode==="hard"?"🛑 ":"🎯 "))+esc(it.display)+'</span>';
+  });
+  h+='</div></div>';
+  return h;
+}
+function renderSessionBanner(kidFilter){
+  if(kidFilter==="mom") return "";
+  if(kidFilter&&kidFilter!=="all") return _sessionBannerCard(kidFilter,false);
+  // "All": compact strip for each kid that has session goals
+  const rows=[...ROSTER].map(k=>_sessionBannerCard(k,true)).filter(Boolean);
+  if(!rows.length) return "";
+  return '<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:10px 14px;margin-bottom:12px">'+
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:4px">🎯 Session progress</div>'+
+    rows.join("")+'</div>';
+}
+// Fire-once when a kid meets ALL their session goals: award 100 pts + celebrate. Called
+// from finalizeDone (after a check-off may have advanced the last cursor). The Firebase
+// flag makes it fire exactly once across devices and survives reloads.
+function checkSessionComplete(kid){
+  const sp=sessionProgress(kid);
+  if(!sp||!sp.complete) return;
+  if(sessionCelebrated(kid,sp.planKey)) return;
+  if(!sessionDone[kid]) sessionDone[kid]={};
+  sessionDone[kid][sp.planKey]=nowTs();
+  if(db) db.ref("session_done/"+kid+"/"+sp.planKey).set(nowTs());
+  addKidPoints(kid,100,day);
+  setTimeout(()=>_showCelebration(kid,cap(kid)+" completed "+sp.planLabel+"! +100 ⭐"),400);
 }
 // The active session's goal for a kid+subject (the session that owns this kid). Returns
 // {planKey,planLabel,idx,label,cursor,toGo,met} or null.
