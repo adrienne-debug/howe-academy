@@ -5578,6 +5578,16 @@ function ceRenderSessions(k,col){
         h+='<div class="ce-chip'+(on?" sel":"")+'" onclick="togglePlanSchoolDay(\''+key+'\',\''+d+'\')">'+d+'</div>';
       });
       h+='</div>';
+      // Completion reward — points awarded when a kid finishes all this session's goals.
+      const _spts=(p.points!=null)?(p.points|0):100;
+      h+='<div class="ce-sheet-lbl">Completion reward <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— points when the session is finished</span></div>';
+      h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">';
+      h+='<button onclick="ceSetSessionPoints(\''+key+'\','+Math.max(0,_spts-25)+')" style="width:30px;height:30px;border:1px solid var(--border);background:#fff;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer">&minus;</button>';
+      h+='<span style="font-size:15px;font-weight:800;color:#b45309;min-width:70px;text-align:center">'+_spts+' ⭐</span>';
+      h+='<button onclick="ceSetSessionPoints(\''+key+'\','+(_spts+25)+')" style="width:30px;height:30px;border:1px solid var(--border);background:#fff;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer">+</button>';
+      h+='<input type="number" min="0" step="5" value="'+_spts+'" onchange="ceSetSessionPoints(\''+key+'\',parseInt(this.value)||0)" style="width:70px;padding:5px 8px;border:1.5px solid var(--border);border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:12px;margin-left:4px">';
+      h+='</div>';
+
       // Goals this session — for the kid whose Subjects tab we're on. Each sequenced
       // subject gets a "reach ___ by end of session" target picked from its lesson list.
       const _gsubs=Object.keys(currData&&currData.subjects&&currData.subjects[k]||{})
@@ -5682,9 +5692,16 @@ function sessionProgress(kid){
       const disp=(((currData&&currData.subjects||{})[kid]||{})[sk]||{}).display||sk;
       items.push({sk,display:disp,label:g[sk].label,mode:g[sk].mode||"soft",met:done});
     });
-    return {planKey:pk,planLabel:p.label||pk,total:sks.length,met,complete:met===sks.length,items};
+    const points=(p.points!=null)?(p.points|0):100;
+    return {planKey:pk,planLabel:p.label||pk,total:sks.length,met,complete:met===sks.length,items,points};
   }
   return null;
+}
+// Points awarded when a kid completes this session (default 100). Set on the session card.
+function ceSetSessionPoints(planKey,val){
+  const p=(paceData.plans||{})[planKey]; if(!p) return;
+  savePacePlan(planKey,{...p,points:Math.max(0,val|0)});
+  renderAll();
 }
 function sessionCelebrated(kid,pk){ return !!(sessionDone[kid]&&sessionDone[kid][pk]); }
 // Kid-facing session progress banner for the Schedule tab. One card for a single kid, a
@@ -5737,8 +5754,9 @@ function checkSessionComplete(kid){
   if(!sessionDone[kid]) sessionDone[kid]={};
   sessionDone[kid][sp.planKey]=nowTs();
   if(db) db.ref("session_done/"+kid+"/"+sp.planKey).set(nowTs());
-  addKidPoints(kid,100,day);
-  setTimeout(()=>_showCelebration(kid,cap(kid)+" completed "+sp.planLabel+"!",{big:true,occasion:"session",points:100}),400);
+  const pts=(sp.points!=null)?sp.points:100;
+  if(pts>0) addKidPoints(kid,pts,day);
+  setTimeout(()=>_showCelebration(kid,cap(kid)+" completed "+sp.planLabel+"!",{big:true,occasion:"session",points:pts}),400);
 }
 // The active session's goal for a kid+subject (the session that owns this kid). Returns
 // {planKey,planLabel,idx,label,cursor,toGo,met} or null.
