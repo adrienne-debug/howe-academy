@@ -1124,6 +1124,8 @@ let archive={};
 let sessionDone={};        // {kid: {planKey: ts}} — sessions whose completion has been celebrated (fire-once, cross-device)
 let trophies={};           // {kid: {trophyId: {type,key,name,ts,points}}} — permanent trophy case (subjects/sessions finished)
 let pointClaims={};         // {kid: {WK: {day: {status:claimed|cashed, earned, claimedTs, cashedTs, note}}}} — end-of-day points economy
+let walletScope="lifetime"; // trophy-case wallet toggle: "week" | "lifetime"
+function setWalletScope(s){ walletScope=s; renderAll(); }
 let fbWeekRefs=[];
 let paceData={subjects:{}, plans:{}};
 let currData=null;   // curriculum from Firebase (uploaded via admin)
@@ -5847,6 +5849,26 @@ function rejectDayPoints(kid,d){                        // Mom → false claim, 
   const c=getPointClaim(kid,d); if(!c||c.status!=="claimed") return;
   _setPointClaim(kid,d,null);                           // clear → kid can re-claim once truly done
   renderAll();
+}
+// Wallet: total ⭐ banked (approved+cashed to Skylight). scope "week"=current WK, else lifetime.
+function walletCashed(kid,scope){
+  let n=0; const claims=pointClaims[kid]||{};
+  const wks=(scope==="week")?[WK]:Object.keys(claims);
+  wks.forEach(wk=>Object.values(claims[wk]||{}).forEach(c=>{ if(c.status==="cashed") n+=(c.earned||0); }));
+  return n;
+}
+// Subjects within 5 lessons of finishing (not yet trophied) — the "close to a badge" nudge.
+function closeToDone(kid){
+  const subs=((currData&&currData.subjects||{})[kid])||{};
+  const out=[];
+  Object.keys(subs).forEach(sk=>{
+    const s=subs[sk]; if(!s||s.paused||s.tracking==="daily"||hasTrophy(kid,"subject_"+sk)) return;
+    const seq=buildSubjectLessons(kid,sk); if(!seq.length) return;
+    let cur=0; try{ cur=computeSubjectCursor(kid,sk); }catch(e){}
+    const left=seq.length-cur;
+    if(left>0&&left<=5) out.push({name:s.display||sk,left});
+  });
+  return out.sort((a,b)=>a.left-b.left);
 }
 // A check-off may have finished a whole subject (cursor reached the end of its sequence).
 // Fire-once via the permanent trophy: mint a badge + award the subject's completion reward
@@ -14092,6 +14114,48 @@ function renderPace(el){
   h+='<div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:12px;padding:14px;margin-bottom:12px">'+
     '<div style="font-size:10px;font-weight:800;color:#7c3aed;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:10px">'+who+'’s progress'+(_lt.since?' · since '+_lt.since:'')+'</div>'+
     '<div style="display:flex;gap:8px;flex-wrap:wrap">'+tiles.join('')+'</div></div>';
+
+  // ── Trophy Case (per kid): wallet + trophies earned + close-to-a-badge ─────
+  if(kid!=="all"&&kid!=="mom"){
+    const banked=walletCashed(kid,walletScope);
+    const troph=kidTrophies(kid);
+    const close=closeToDone(kid);
+    h+='<div style="background:linear-gradient(135deg,#fffbeb,#fef3c7);border:1.5px solid #f59e0b;border-radius:12px;padding:14px;margin-bottom:12px">';
+    // header + week/lifetime toggle
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">';
+    h+='<div style="font-size:11px;font-weight:800;color:#b45309;text-transform:uppercase;letter-spacing:0.4px">🏆 '+cap(kid)+'’s Trophy Case</div>';
+    h+='<div style="display:flex;background:#fff;border:1px solid #fcd34d;border-radius:16px;overflow:hidden">';
+    [["week","This Week"],["lifetime","Lifetime"]].forEach(([sc,lbl])=>{
+      const on=walletScope===sc;
+      h+='<button onclick="setWalletScope(\''+sc+'\')" style="padding:4px 12px;border:none;background:'+(on?'#f59e0b':'transparent')+';color:'+(on?'#fff':'#b45309')+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
+    });
+    h+='</div></div>';
+    // banked total
+    h+='<div style="text-align:center;padding:6px 0 10px">';
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:38px;font-weight:900;color:#b45309;line-height:1">'+banked.toLocaleString()+' ⭐</div>';
+    h+='<div style="font-size:11px;color:#92400e;font-weight:600">banked '+(walletScope==="week"?"this week":"all-time")+' (cashed to Skylight)</div>';
+    h+='</div>';
+    // trophy shelf
+    if(troph.length){
+      h+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:'+(close.length?'10px':'0')+'">';
+      troph.forEach(t=>{
+        const ic=t.type==="session"?"🎖️":"🏅";
+        h+='<span style="display:inline-flex;align-items:center;gap:4px;background:#fff;border:1.5px solid #fcd34d;border-radius:20px;padding:4px 10px;font-size:11px;font-weight:700;color:#92400e">'+ic+' '+esc(t.name)+' <span style="color:#b45309">+'+(t.points||0)+'</span></span>';
+      });
+      h+='</div>';
+    } else {
+      h+='<div style="text-align:center;font-size:11px;color:#92400e;margin-bottom:'+(close.length?'10px':'0')+'">No trophies yet — finish a subject or session to earn one!</div>';
+    }
+    // close-to-a-badge nudges
+    if(close.length){
+      h+='<div style="border-top:1px dashed #fcd34d;padding-top:8px">';
+      close.slice(0,3).forEach(c=>{
+        h+='<div style="font-size:12px;color:#b45309;font-weight:600;padding:2px 0">🔥 '+c.left+' lesson'+(c.left>1?'s':'')+' from finishing <b>'+esc(c.name)+'</b>!</div>';
+      });
+      h+='</div>';
+    }
+    h+='</div>';
+  }
 
   // ── Per-kid book progress: beginning → end of each book/subject ────────────
   const showKids=(kid==="all"||kid==="mom")?PACE_KIDS:[kid];
