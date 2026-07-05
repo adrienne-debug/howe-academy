@@ -1123,6 +1123,7 @@ let collCats={}, pendingId=null;
 let archive={};
 let sessionDone={};        // {kid: {planKey: ts}} — sessions whose completion has been celebrated (fire-once, cross-device)
 let trophies={};           // {kid: {trophyId: {type,key,name,ts,points}}} — permanent trophy case (subjects/sessions finished)
+let pointClaims={};         // {kid: {WK: {day: {status:claimed|cashed, earned, claimedTs, cashedTs, note}}}} — end-of-day points economy
 let fbWeekRefs=[];
 let paceData={subjects:{}, plans:{}};
 let currData=null;   // curriculum from Firebase (uploaded via admin)
@@ -1487,6 +1488,7 @@ function initFb() {
     });
     db.ref("session_done").on("value",s=>{ sessionDone=s.val()||{}; });
     db.ref("trophies").on("value",s=>{ trophies=s.val()||{}; });
+    db.ref("pointClaims").on("value",s=>{ pointClaims=s.val()||{}; });
     db.ref("scheduleOverrides").on("value",s=>{
       scheduleOverrides=s.val()||{};
       try{localStorage.setItem("ha_sched_overrides",JSON.stringify(scheduleOverrides));}catch(e){}
@@ -3381,24 +3383,43 @@ function renderSchedule(el){
     if(kidDayTasks.length && kidDayDone===kidDayTasks.length){
       const aftDone=getSlot(kid,"afternoon").done;
       const choresDone=getSlot(kid,"chores").done;
+      const dayPts=getKidDayPoints(kid,day);
+      const _song=(!hasCelebrated(kid,day)?'<button onclick="kidReplayCeleb(\''+kid+'\')" style="padding:8px 20px;border-radius:12px;background:linear-gradient(135deg,#8b5cf6,#ec4899);color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-top:8px">🎉 Play My Song!</button>':'');
       if(!aftDone||!choresDone){
+        // Gate not met — show the points AT RISK to motivate finishing chores/afternoon.
         const missing=[];
         if(!aftDone) missing.push("Afternoon");
         if(!choresDone) missing.push("Chores");
         h+='<div style="margin:16px 12px;border-radius:12px;padding:16px;background:#eff6ff;border:1.5px solid #93c5fd;text-align:center">'+
-          '<div style="font-size:28px;margin-bottom:8px">🎉</div>'+
-          '<div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700;color:#1d4ed8;margin-bottom:6px">All Schoolwork Done!</div>'+
-          '<div style="font-size:13px;color:#1e40af">Check off <strong>'+missing.join(' &amp; ')+'</strong> in Skylight above to see your points for today.</div>'+
-          (!hasCelebrated(kid,day)?'<button onclick="kidReplayCeleb(\''+kid+'\')" style="padding:8px 20px;border-radius:12px;background:linear-gradient(135deg,#8b5cf6,#ec4899);color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-top:8px">🎉 Play My Song!</button>':'')+
-          '</div>';
+          '<div style="font-size:28px;margin-bottom:6px">🔒</div>'+
+          '<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:#1d4ed8;margin-bottom:2px">'+dayPts+' ⭐ waiting!</div>'+
+          '<div style="font-size:13px;color:#1e40af;margin-bottom:6px">Finish <strong>'+missing.join(' &amp; ')+'</strong> to unlock and claim your points.</div>'+
+          _song+'</div>';
       } else {
-        const dayPts=getKidDayPoints(kid,day);
-        h+='<div style="margin:16px 12px;border-radius:12px;padding:16px;background:#f0fdf4;border:1.5px solid #86efac;text-align:center">'+
-          '<div style="font-size:28px;margin-bottom:8px">⭐</div>'+
-          '<div style="font-family:\'Fraunces\',serif;font-size:24px;font-weight:700;color:#15803d;margin-bottom:4px">'+dayPts+' Points Today!</div>'+
-          '<div style="font-size:13px;color:#166534;margin-bottom:8px">Great job today, '+cap(kid)+'!</div>'+
-          (!hasCelebrated(kid,day)?'<button onclick="kidReplayCeleb(\''+kid+'\')" style="padding:8px 20px;border-radius:12px;background:linear-gradient(135deg,#8b5cf6,#ec4899);color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-top:4px">🎉 Play My Song!</button>':'')+
-          '</div>';
+        // Gate met — claim lifecycle: claimable → claimed (awaiting Mom) → cashed.
+        const claim=getPointClaim(kid,day);
+        if(!claim){
+          h+='<div style="margin:16px 12px;border-radius:12px;padding:16px;background:#f0fdf4;border:1.5px solid #86efac;text-align:center">'+
+            '<div style="font-size:28px;margin-bottom:6px">⭐</div>'+
+            '<div style="font-family:\'Fraunces\',serif;font-size:24px;font-weight:700;color:#15803d;margin-bottom:4px">'+dayPts+' points ready!</div>'+
+            '<div style="font-size:13px;color:#166534;margin-bottom:8px">Great work today, '+cap(kid)+'! Claim your points to send them to Mom.</div>'+
+            '<button onclick="claimDayPoints(\''+kid+'\',\''+day+'\')" style="padding:9px 24px;border-radius:12px;background:#15803d;color:#fff;border:none;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">💰 Claim '+dayPts+' ⭐</button>'+
+            (_song?'<div>'+_song+'</div>':'')+'</div>';
+        } else if(claim.status==="claimed"){
+          h+='<div style="margin:16px 12px;border-radius:12px;padding:16px;background:#fffbeb;border:1.5px solid #fcd34d;text-align:center">'+
+            '<div style="font-size:28px;margin-bottom:6px">⏳</div>'+
+            '<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:#b45309;margin-bottom:2px">'+claim.earned+' ⭐ claimed</div>'+
+            '<div style="font-size:13px;color:#92400e;margin-bottom:'+(momModeActive?'10px':'0')+'">Waiting for Mom to approve and add to Skylight.</div>'+
+            (momModeActive?('<div style="display:flex;gap:8px;justify-content:center">'+
+              '<button onclick="approveDayPoints(\''+kid+'\',\''+day+'\')" style="padding:8px 18px;border-radius:10px;background:#16a34a;color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Approve → Skylight</button>'+
+              '<button onclick="rejectDayPoints(\''+kid+'\',\''+day+'\')" style="padding:8px 18px;border-radius:10px;background:#fff;color:#b5394a;border:1px solid #fecaca;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✗ Not done</button>'+
+              '</div>'):'')+'</div>';
+        } else {
+          h+='<div style="margin:16px 12px;border-radius:12px;padding:16px;background:#f0fdf4;border:1.5px solid #86efac;text-align:center">'+
+            '<div style="font-size:28px;margin-bottom:6px">💰</div>'+
+            '<div style="font-family:\'Fraunces\',serif;font-size:24px;font-weight:700;color:#15803d;margin-bottom:2px">'+claim.earned+' ⭐ cashed in!</div>'+
+            '<div style="font-size:13px;color:#166534">Added to Skylight. Way to go, '+cap(kid)+'!</div></div>';
+        }
       }
     }
   }
@@ -5797,6 +5818,36 @@ function mintTrophy(kid,trophyId,data){
   if(db) db.ref("trophies/"+kid+"/"+trophyId).set(data);
 }
 function kidTrophies(kid){ return Object.values((trophies&&trophies[kid])||{}).sort((a,b)=>(b.ts||"").localeCompare(a.ts||"")); }
+// ── END-OF-DAY POINTS ECONOMY ─────────────────────────────────────
+// Afternoon + chores gate claiming the day's points. Kid claims → Mom approves (cashed →
+// moved to Skylight) or rejects (recoverable same day). Claim: pointClaims[kid][WK][day].
+function choresGateDone(kid,d){ return !!(getSlot(kid,"afternoon").done && getSlot(kid,"chores").done); }
+function getPointClaim(kid,d){ return ((pointClaims[kid]||{})[WK]||{})[d]||null; }
+function _setPointClaim(kid,d,rec){
+  if(!pointClaims[kid]) pointClaims[kid]={};
+  if(!pointClaims[kid][WK]) pointClaims[kid][WK]={};
+  if(rec===null){ delete pointClaims[kid][WK][d]; if(db) db.ref("pointClaims/"+kid+"/"+WK+"/"+d).remove(); }
+  else { pointClaims[kid][WK][d]=rec; if(db) db.ref("pointClaims/"+kid+"/"+WK+"/"+d).set(rec); }
+}
+function claimDayPoints(kid,d){
+  if(!choresGateDone(kid,d)) return;                   // gate: afternoon + chores first
+  const ex=getPointClaim(kid,d);
+  if(ex&&(ex.status==="claimed"||ex.status==="cashed")) return;
+  _setPointClaim(kid,d,{status:"claimed",earned:getKidDayPoints(kid,d),claimedTs:nowTs()});
+  renderAll();
+}
+function approveDayPoints(kid,d){                       // Mom → cashed (moved to Skylight)
+  if(!momHere()) return;
+  const c=getPointClaim(kid,d); if(!c||c.status!=="claimed") return;
+  _setPointClaim(kid,d,{...c,status:"cashed",cashedTs:nowTs()});
+  renderAll();
+}
+function rejectDayPoints(kid,d){                        // Mom → false claim, recoverable same day
+  if(!momHere()) return;
+  const c=getPointClaim(kid,d); if(!c||c.status!=="claimed") return;
+  _setPointClaim(kid,d,null);                           // clear → kid can re-claim once truly done
+  renderAll();
+}
 // A check-off may have finished a whole subject (cursor reached the end of its sequence).
 // Fire-once via the permanent trophy: mint a badge + award the subject's completion reward
 // + celebrate. Daily/paused subjects and empty sequences don't count.
