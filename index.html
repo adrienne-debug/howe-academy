@@ -874,6 +874,9 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .celeb-overlay{position:fixed;inset:0;z-index:20000;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity 0.4s}
 .celeb-overlay.show{opacity:1;pointer-events:auto}
 .celeb-canvas{position:absolute;inset:0;z-index:1}
+.celeb-points{margin:10px auto 4px;font-family:'Fraunces',serif;font-weight:900;font-size:44px;line-height:1;color:#b45309;background:linear-gradient(135deg,#fef3c7,#fde68a);border:2.5px solid #f59e0b;border-radius:18px;padding:8px 22px;display:inline-block;box-shadow:0 4px 0 #d97706,0 0 26px rgba(245,158,11,0.55);animation:celebPtsPop .5s cubic-bezier(.18,1.5,.5,1) both}
+@keyframes celebPtsPop{0%{transform:scale(0) rotate(-12deg);opacity:0}60%{transform:scale(1.25) rotate(4deg)}100%{transform:scale(1) rotate(0);opacity:1}}
+@keyframes celebPtsPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
 .celeb-card{position:relative;z-index:2;text-align:center;padding:32px 28px;background:rgba(255,255,255,0.95);border-radius:20px;box-shadow:0 8px 40px rgba(0,0,0,0.3);max-width:320px;width:90%;animation:celeb-pop 0.5s cubic-bezier(0.34,1.56,0.64,1)}
 @keyframes celeb-pop{0%{transform:scale(0.3);opacity:0}100%{transform:scale(1);opacity:1}}
 .celeb-emoji{font-size:64px;margin-bottom:8px}
@@ -1035,6 +1038,7 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
   <div class="celeb-card">
     <div class="celeb-emoji">🎉</div>
     <div class="celeb-title" id="celeb-title">All Done!</div>
+    <div class="celeb-points" id="celeb-points" style="display:none"></div>
     <div class="celeb-song"><span class="celeb-song-icon">🎵</span> <span id="celeb-song-name"></span></div>
     <div class="celeb-sub">Tap anywhere to close</div>
   </div>
@@ -2536,6 +2540,7 @@ function spinAdminResetAll(kid,d){
 // ── DAY COMPLETION CELEBRATION ────────────────────────────────────
 let celebAudio=null;
 let celebAnimId=null;
+let _celebPtsTimer=null;
 function hasCelebrated(kid,d){ const u=ld(WK+"_celeb_used")||{}; return !!u[kid+"_"+d]; }
 function markCelebrated(kid,d){
   const u=ld(WK+"_celeb_used")||{}; u[kid+"_"+d]=true; sv(WK+"_celeb_used",u);
@@ -2563,6 +2568,25 @@ function _showCelebration(kid, titleText, opts){
   // Big (session) celebration: larger title with a gold glow; reset for the daily one.
   titleEl.style.transform=big?"scale(1.18)":"";
   titleEl.style.textShadow=big?"0 0 18px rgba(245,158,11,0.7), 0 0 40px rgba(245,158,11,0.4)":"";
+  // Points badge — pops in, counts up to the awarded points, then keeps a gentle pulse.
+  const ptsEl=document.getElementById("celeb-points");
+  if(ptsEl){
+    if(opts.points>0){
+      ptsEl.style.display="inline-block";
+      ptsEl.style.animation="none"; void ptsEl.offsetWidth; ptsEl.style.animation=""; // restart pop
+      const target=opts.points|0; let shown=0;
+      ptsEl.textContent="+0 ⭐";
+      const step=Math.max(1,Math.round(target/28));
+      clearInterval(_celebPtsTimer);
+      _celebPtsTimer=setInterval(()=>{
+        shown=Math.min(target,shown+step);
+        ptsEl.textContent="+"+shown+" ⭐";
+        if(shown>=target){ clearInterval(_celebPtsTimer); ptsEl.style.animation="celebPtsPulse 1.4s ease-in-out infinite"; }
+      },26);
+    } else {
+      ptsEl.style.display="none"; ptsEl.textContent=""; ptsEl.style.animation="";
+    }
+  }
   celebSongName="";
 
   // Pick and play a song — filtered to this kid + occasion (day vs session)
@@ -2639,6 +2663,8 @@ function dismissCelebOverlay(kid){
   if(!overlay.classList.contains("show")) return;
   overlay.classList.remove("show");
   overlay.onclick=null;
+  if(_celebPtsTimer){ clearInterval(_celebPtsTimer); _celebPtsTimer=null; }
+  const _pe=document.getElementById("celeb-points"); if(_pe){ _pe.style.display="none"; _pe.style.animation=""; }
 
   // Let the CSS opacity transition (0.4s) finish before killing confetti
   setTimeout(()=>{
@@ -2955,7 +2981,7 @@ function celebTestConfetti(){
 // Preview the bigger session-complete celebration (no points, no fire-once flag touched).
 function celebTestSession(){
   const kid=[...ROSTER][Math.floor(Math.random()*ROSTER.length)];
-  _showCelebration(kid, cap(kid)+" completed the session! +100 ⭐", {big:true, occasion:"session"});
+  _showCelebration(kid, cap(kid)+" completed the session!", {big:true, occasion:"session", points:100});
 }
 
 function saveNewPin(){
@@ -5664,7 +5690,7 @@ function checkSessionComplete(kid){
   sessionDone[kid][sp.planKey]=nowTs();
   if(db) db.ref("session_done/"+kid+"/"+sp.planKey).set(nowTs());
   addKidPoints(kid,100,day);
-  setTimeout(()=>_showCelebration(kid,cap(kid)+" completed "+sp.planLabel+"! +100 ⭐",{big:true,occasion:"session"}),400);
+  setTimeout(()=>_showCelebration(kid,cap(kid)+" completed "+sp.planLabel+"!",{big:true,occasion:"session",points:100}),400);
 }
 // The active session's goal for a kid+subject (the session that owns this kid). Returns
 // {planKey,planLabel,idx,label,cursor,toGo,met} or null.
