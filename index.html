@@ -1122,6 +1122,7 @@ let tab="schedule", day=["monday","tuesday","wednesday","thursday","friday"].inc
 let collCats={}, pendingId=null;
 let archive={};
 let sessionDone={};        // {kid: {planKey: ts}} — sessions whose completion has been celebrated (fire-once, cross-device)
+let trophies={};           // {kid: {trophyId: {type,key,name,ts,points}}} — permanent trophy case (subjects/sessions finished)
 let fbWeekRefs=[];
 let paceData={subjects:{}, plans:{}};
 let currData=null;   // curriculum from Firebase (uploaded via admin)
@@ -1485,6 +1486,7 @@ function initFb() {
       if(tab==="schedule"&&schedShowAdmin&&adminSubTab==="calendar"){const el=document.getElementById("content");if(el)renderAll();}
     });
     db.ref("session_done").on("value",s=>{ sessionDone=s.val()||{}; });
+    db.ref("trophies").on("value",s=>{ trophies=s.val()||{}; });
     db.ref("scheduleOverrides").on("value",s=>{
       scheduleOverrides=s.val()||{};
       try{localStorage.setItem("ha_sched_overrides",JSON.stringify(scheduleOverrides));}catch(e){}
@@ -3470,7 +3472,8 @@ function finalizeDone(id, doneTs, score){
     const entry={id:id,title:t.title,who:t.who,day:t.day,originalDay:origDay,checkedOnDay:effectiveDay(t),daysLate:daysLate,ts:doneTs,week:WK};
     if(score) entry.score=score;
     hist[id]=entry; histState[id]=entry; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+id).set(entry);
-    // A check-off may have advanced the last cursor to meet all session goals.
+    // A check-off may have finished a subject and/or met all session goals.
+    try{ checkSubjectComplete(t.who, t.subjectKey); }catch(e){}
     try{ checkSessionComplete(t.who); }catch(e){}
   }
 }
@@ -5786,6 +5789,32 @@ function renderSessionBanner(kidFilter){
 // Fire-once when a kid meets ALL their session goals: award 100 pts + celebrate. Called
 // from finalizeDone (after a check-off may have advanced the last cursor). The Firebase
 // flag makes it fire exactly once across devices and survives reloads.
+// ── TROPHIES (permanent) ──────────────────────────────────────────
+function hasTrophy(kid,trophyId){ return !!(trophies[kid]&&trophies[kid][trophyId]); }
+function mintTrophy(kid,trophyId,data){
+  if(!trophies[kid]) trophies[kid]={};
+  trophies[kid][trophyId]=data;
+  if(db) db.ref("trophies/"+kid+"/"+trophyId).set(data);
+}
+function kidTrophies(kid){ return Object.values((trophies&&trophies[kid])||{}).sort((a,b)=>(b.ts||"").localeCompare(a.ts||"")); }
+// A check-off may have finished a whole subject (cursor reached the end of its sequence).
+// Fire-once via the permanent trophy: mint a badge + award the subject's completion reward
+// + celebrate. Daily/paused subjects and empty sequences don't count.
+function checkSubjectComplete(kid,sk){
+  if(!kid||!sk) return;
+  const s=((currData&&currData.subjects||{})[kid]||{})[sk];
+  if(!s||s.paused||s.tracking==="daily") return;
+  const seq=buildSubjectLessons(kid,sk);
+  if(!seq.length) return;
+  let cursor=0; try{ cursor=computeSubjectCursor(kid,sk); }catch(e){}
+  if(cursor<seq.length) return;                    // not finished yet
+  const tid="subject_"+sk;
+  if(hasTrophy(kid,tid)) return;
+  const pts=(s.completionPoints!=null)?(s.completionPoints|0):50;
+  mintTrophy(kid,tid,{type:"subject",key:sk,name:s.display||sk,ts:nowTs(),points:pts});
+  if(pts>0) addKidPoints(kid,pts,day);
+  setTimeout(()=>_showCelebration(kid,cap(kid)+" finished "+(s.display||sk)+"!",{big:true,occasion:"session",points:pts}),400);
+}
 function checkSessionComplete(kid){
   const sp=sessionProgress(kid);
   if(!sp||!sp.complete) return;
@@ -5795,6 +5824,7 @@ function checkSessionComplete(kid){
   if(db) db.ref("session_done/"+kid+"/"+sp.planKey).set(nowTs());
   const pts=(sp.points!=null)?sp.points:100;
   if(pts>0) addKidPoints(kid,pts,day);
+  mintTrophy(kid,"session_"+sp.planKey,{type:"session",key:sp.planKey,name:sp.planLabel,ts:nowTs(),points:pts});
   const song=(paceData.plans&&paceData.plans[sp.planKey]&&paceData.plans[sp.planKey].song)||null;
   setTimeout(()=>_showCelebration(kid,cap(kid)+" completed "+sp.planLabel+"!",{big:true,occasion:"session",points:pts,song}),400);
 }
@@ -6361,6 +6391,15 @@ function ceRenderEditSheet(){
     h+='<div style="font-size:12px;color:var(--muted);font-style:italic">No lessons defined. This subject won\'t appear in generated weeks until lessons are added.</div>';
     h+='<textarea id="ce-edit-lessons" class="ce-sheet-input" style="min-height:80px;resize:vertical;font-size:11px;line-height:1.5" placeholder="pg 1-3&#10;pg 4-6&#10;pg 7-9" onchange="ceSaveLessonSeq(this.value)"></textarea>';
   }
+  // Completion reward — points + a trophy when this subject finishes its whole sequence.
+  const _cp=(s.completionPoints!=null)?(s.completionPoints|0):50;
+  h+='<div class="ce-sheet-lbl">🏆 Completion reward <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— points + a trophy when this subject finishes</span></div>';
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">';
+  h+='<button onclick="ceSaveField(\'completionPoints\',Math.max(0,'+(_cp-25)+'));ceRenderEditSheet()" style="width:30px;height:30px;border:1px solid var(--border);background:#fff;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer">&minus;</button>';
+  h+='<span style="font-size:15px;font-weight:800;color:#b45309;min-width:70px;text-align:center">'+_cp+' ⭐</span>';
+  h+='<button onclick="ceSaveField(\'completionPoints\','+(_cp+25)+');ceRenderEditSheet()" style="width:30px;height:30px;border:1px solid var(--border);background:#fff;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer">+</button>';
+  h+='<input type="number" min="0" step="5" value="'+_cp+'" onchange="ceSaveField(\'completionPoints\',parseInt(this.value)||0);ceRenderEditSheet()" style="width:70px;padding:5px 8px;border:1.5px solid var(--border);border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:12px;margin-left:4px">';
+  h+='</div>';
   } // end sequenced-only block
 
   // Pause toggle
