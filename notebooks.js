@@ -1954,10 +1954,19 @@
   }
 
   // Generic 2-page unit insert (any unit) — built from ctx.units insights.
-  function unitInsertPages(ins, weekNum) {
+  // Per-kid palettes so a unit insert matches the notebook it lands in (host-kid theme).
+  // Roles: GD dark header · GM mid accent · GL light border · GP pale card bg · GOLD accent ·
+  // GOLDD dark-accent text · CREAM warm panel bg · EXTRA lore/secondary accent.
+  var UNIT_INSERT_THEMES = {
+    lincoln: { GD:"#1a3a2a", GM:"#2d6a4f", GL:"#b7e4c7", GP:"#f2faf5", GOLD:"#c9a84c", GOLDD:"#9a7d2e", CREAM:"#fdf8ee", EXTRA:"#6d28d9" },
+    ellis:   { GD:"#142038", GM:"#c41e1e", GL:"#cddbec", GP:"#eef3f9", GOLD:"#f5c200", GOLDD:"#b58a00", CREAM:"#fffbe8", EXTRA:"#c41e1e" },
+    lucy:    { GD:"#2d1b69", GM:"#7c3aed", GL:"#ddd6fe", GP:"#f5f3ff", GOLD:"#be185d", GOLDD:"#9d174d", CREAM:"#fdf2f8", EXTRA:"#be185d" }
+  };
+  function unitInsertPages(ins, weekNum, theme) {
     if (!ins || !((ins.learning && ins.learning.length) || (ins.learned && ins.learned.length) || (ins.next && ins.next.length))) return [];
     var esc = function (v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
-    var GD = "#1a3a2a", GM = "#2d6a4f", GL = "#b7e4c7", GP = "#f2faf5", GOLD = "#c9a84c", INK = "#1c1c1e", MUT = "#6b7280";
+    var _t = theme || UNIT_INSERT_THEMES.lincoln;
+    var GD = _t.GD, GM = _t.GM, GL = _t.GL, GP = _t.GP, GOLD = _t.GOLD, GOLDD = _t.GOLDD, CREAM = _t.CREAM, EXTRA = _t.EXTRA, INK = "#1c1c1e", MUT = "#6b7280";
     var emoji = ins.emoji || "📘", title = ins.title || "Unit Study";
     function face(p, sz) { sz = sz || 64;
       if (p && p.img) return '<img src="' + esc(p.img) + '" style="width:' + sz + 'px;height:' + sz + 'px;object-fit:cover;border-radius:8px;border:2px solid ' + GL + '">';
@@ -1989,9 +1998,9 @@
     p2 += '<div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:' + GM + ';margin-bottom:7px">✅ Learned so far (' + ((ins.learned || []).length) + ')</div>';
     if ((ins.learned || []).length) { p2 += '<div style="display:flex;flex-wrap:wrap;gap:9px">'; ins.learned.forEach(function (m) { p2 += '<div style="width:74px;text-align:center">' + face(m.portrait, 52) + '<div style="font-size:9px;font-weight:700;color:' + INK + ';margin-top:3px;line-height:1.15">' + esc(m.name) + '</div></div>'; }); p2 += '</div>'; } else p2 += '<div style="font-size:11px;color:' + MUT + '">None finished yet — keep going!</div>';
     p2 += '</div>';
-    if ((ins.next || []).length) { p2 += '<div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:#9a7d2e;margin-bottom:7px">⏭️ Coming up next</div><div style="display:flex;flex-wrap:wrap;gap:9px">'; ins.next.forEach(function (m) { p2 += '<div style="width:74px;text-align:center;opacity:0.75">' + face(m.portrait, 52) + '<div style="font-size:9px;font-weight:600;color:' + MUT + ';margin-top:3px;line-height:1.15">' + esc(m.name) + '</div></div>'; }); p2 += '</div></div>'; }
-    if ((ins.extras || []).length) { p2 += '<div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:#6d28d9;margin-bottom:6px">' + esc(ins.extrasTitle || "Lore") + '</div>'; ins.extras.slice(0, 5).forEach(function (e) { p2 += '<div style="display:flex;gap:8px;font-size:10.5px;padding:2px 0;line-height:1.4">' + (e.year ? '<span style="font-weight:800;color:#6d28d9;min-width:60px">' + esc(e.year) + '</span>' : '') + '<span><b>' + esc(e.name) + '</b> — ' + esc(e.text || "") + '</span></div>'; }); p2 += '</div>'; }
-    p2 += '<div style="border:1.5px dashed ' + GOLD + ';border-radius:10px;padding:10px 14px;background:#fdf8ee"><div style="font-family:\'Fraunces\',serif;font-size:13px;font-weight:700;color:' + GD + ';margin-bottom:5px">🎯 Challenge</div><div style="font-size:11px;color:' + INK + ';line-height:1.5">Can you name this week’s ' + esc(title) + ' and tell someone one fact about each? Write your favorite below:</div><div style="border-bottom:1.5px solid ' + MUT + ';height:20px;margin-top:8px"></div><div style="border-bottom:1.5px solid ' + MUT + ';height:20px;margin-top:6px"></div></div>';
+    if ((ins.next || []).length) { p2 += '<div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:'+GOLDD+';margin-bottom:7px">⏭️ Coming up next</div><div style="display:flex;flex-wrap:wrap;gap:9px">'; ins.next.forEach(function (m) { p2 += '<div style="width:74px;text-align:center;opacity:0.75">' + face(m.portrait, 52) + '<div style="font-size:9px;font-weight:600;color:' + MUT + ';margin-top:3px;line-height:1.15">' + esc(m.name) + '</div></div>'; }); p2 += '</div></div>'; }
+    if ((ins.extras || []).length) { p2 += '<div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:'+EXTRA+';margin-bottom:6px">' + esc(ins.extrasTitle || "Lore") + '</div>'; ins.extras.slice(0, 5).forEach(function (e) { p2 += '<div style="display:flex;gap:8px;font-size:10.5px;padding:2px 0;line-height:1.4">' + (e.year ? '<span style="font-weight:800;color:'+EXTRA+';min-width:60px">' + esc(e.year) + '</span>' : '') + '<span><b>' + esc(e.name) + '</b> — ' + esc(e.text || "") + '</span></div>'; }); p2 += '</div>'; }
+    p2 += '<div style="border:1.5px dashed ' + GOLD + ';border-radius:10px;padding:10px 14px;background:'+CREAM+'"><div style="font-family:\'Fraunces\',serif;font-size:13px;font-weight:700;color:' + GD + ';margin-bottom:5px">🎯 Challenge</div><div style="font-size:11px;color:' + INK + ';line-height:1.5">Can you name this week’s ' + esc(title) + ' and tell someone one fact about each? Write your favorite below:</div><div style="border-bottom:1.5px solid ' + MUT + ';height:20px;margin-top:8px"></div><div style="border-bottom:1.5px solid ' + MUT + ';height:20px;margin-top:6px"></div></div>';
     p2 += '</div></div>';
     // U5: page 3 — the activity Mom queued in the Units tab (ins.activity, built by
     // haBuildUnitInsight). Four generic kinds: sheet / bio / compare / timeline.
@@ -2000,7 +2009,7 @@
     var wline = function (n) { var s = ""; for (var i = 0; i < n; i++) s += '<div style="border-bottom:1.5px solid #cbd5d1;height:22px"></div>'; return s; };
     var p3 = '<div class="page-label">Unit Study — ' + esc(title) + ' (3/' + tot + ')</div>\n<div class="page">\n' + hdr((act.emoji || "🎨") + " " + esc(act.title), "Week " + weekNum) +
       '<div style="padding:16px 40px;flex:1;display:flex;flex-direction:column;gap:10px;overflow:hidden">';
-    if (act.points) p3 += '<div style="align-self:flex-start;border:1.5px solid ' + GOLD + ';background:#fdf8ee;border-radius:9px;padding:4px 12px;font-size:11px;font-weight:800;color:#9a7d2e">⭐ Worth ' + act.points + ' points — show Mom your finished work, then tap “I finished it!” in the app</div>';
+    if (act.points) p3 += '<div style="align-self:flex-start;border:1.5px solid ' + GOLD + ';background:'+CREAM+';border-radius:9px;padding:4px 12px;font-size:11px;font-weight:800;color:'+GOLDD+'">⭐ Worth ' + act.points + ' points — show Mom your finished work, then tap “I finished it!” in the app</div>';
     if (act.desc) p3 += '<div style="font-size:11.5px;line-height:1.5;color:' + INK + '">' + esc(act.desc) + '</div>';
     (act.steps || []).forEach(function (st) {
       p3 += '<div style="display:flex;gap:8px;align-items:flex-start;font-size:11px;line-height:1.45;color:' + INK + '"><span style="width:13px;height:13px;border:2px solid ' + GM + ';border-radius:4px;flex-shrink:0;margin-top:1px"></span><span>' + esc(st) + '</span></div>';
@@ -2016,7 +2025,7 @@
       if (act.kind === "compare") {
         p3 += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
         for (var ci = 0; ci < 2; ci++) p3 += '<div><div style="border-bottom:2px solid ' + GM + ';height:22px;margin-bottom:6px"></div>' + wline(Math.max(4, Math.round((act.lines || 8) / 2))) + '</div>';
-        p3 += '</div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:#9a7d2e">What do they share?</div>' + wline(3);
+        p3 += '</div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:'+GOLDD+'">What do they share?</div>' + wline(3);
       } else p3 += '<div style="border-bottom:2px solid ' + GM + ';height:22px;margin-bottom:2px"></div>' + wline(act.lines || 10);
     } else { // "sheet"
       p3 += '<div style="border:2px dashed ' + GM + ';border-radius:12px;flex:1;min-height:300px"></div>';
@@ -2071,7 +2080,7 @@
     var T = LN_EXTRA.enrich.theme_lincoln;
     var parts = [weeklyH, lnBrainBreakPage(0, wn),
       enPageAllAboutMe(T, ctx.personal || null, wn), enPageMoneyLife(T, wn), enPageWilderness(T, wn), enPageMemoryCivics(T, wn)];
-    (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn).forEach(function (p) { parts.push(p); }); });
+    (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn, UNIT_INSERT_THEMES.lincoln).forEach(function (p) { parts.push(p); }); });
     dailyPages.forEach(function (dp, i) {
       parts.push(dp);
       parts.push(i < dailyPages.length - 1 ? lnBrainBreakPage(i + 1, wn) : lnCreativePage(wn));
@@ -2684,7 +2693,7 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
     pages.push(enPageMoneyLife(T, wn));
     pages.push(enPageMemoryCivics(T, wn));
     pages.push(enPageNotes(T));
-    (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn).forEach(function (p) { pages.push(p); }); });
+    (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn, UNIT_INSERT_THEMES.ellis).forEach(function (p) { pages.push(p); }); });
 
     var dayAssignments = [];
     orderedDays.forEach(function (day, i) {
@@ -3489,7 +3498,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     parts.push(luPageWeeklyReview(wn, weekDates, days, dates, tasks, prevStats, pace, focus));
     parts.push(luPageMonths(wn, weekDates, curMonth));
     parts.push(luPageAllAboutMe(wn, weekDates, ctx.personal || null)); // personal info from the Notebook tab (or blank)
-    (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn).forEach(function (p) { parts.push(p); }); });
+    (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn, UNIT_INSERT_THEMES.lucy).forEach(function (p) { parts.push(p); }); });
     days.forEach(function (day, i) {
       var dateStr = dates[day] || "";
       var blend = (i < blends.length) ? blends[i] : blends[blends.length - 1];
