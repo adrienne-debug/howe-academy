@@ -1179,6 +1179,9 @@ let attEditUnlocked=false;
 let APP_PIN=localStorage.getItem("ha_app_pin")||"0329";
 let attOverrides={}; // {wkKey:{day:{kid:true/false}}}
 let coExclusions={}; // {wkKey:{taskId:true}} — carry-overs the user has explicitly unchecked
+let walkbackExcl={}; // {baseTaskId:true} — lessons walked back by Mom; the cross-week carry must NOT
+                     // resurrect them as _c ghosts (walk-back deletes the archive check-off the carry reads).
+                     // Week-agnostic: day-stamped base ids are unique. Synced like coExclusions.
 let coManualSat={}; // {wkKey:{taskId:true}} — displaced carry-overs mom pushed to Saturday (persisted)
 let pendingSpins={}; // {taskId: {kid, day}} — earned but not yet spun
 let manualUnchecks=new Set(); // task IDs explicitly unchecked this session — runCascade must not override
@@ -1596,6 +1599,10 @@ function initFb() {
       if(s.val()) coExclusions=s.val();
       try{localStorage.setItem("ha_co_excl",JSON.stringify(coExclusions));}catch(e){}
     });
+    db.ref("walkback_excl").on("value",s=>{
+      walkbackExcl=s.val()||{};
+      try{localStorage.setItem("ha_wb_excl",JSON.stringify(walkbackExcl));}catch(e){}
+    });
   } catch(e){ console.warn("FB offline:",e); }
 }
 
@@ -1622,6 +1629,7 @@ function boot() {
   try{ const md=localStorage.getItem("ha_mastery"); if(md) masteryData=JSON.parse(md); }catch(e){}
   try{ const ao=localStorage.getItem("ha_att_overrides"); if(ao) attOverrides=JSON.parse(ao); }catch(e){}
   try{ const ce=localStorage.getItem("ha_co_excl"); if(ce) coExclusions=JSON.parse(ce); }catch(e){}
+  try{ const we=localStorage.getItem("ha_wb_excl"); if(we) walkbackExcl=JSON.parse(we); }catch(e){}
   try{ const cms=localStorage.getItem("ha_co_manual_sat"); if(cms) coManualSat=JSON.parse(cms); }catch(e){}
   try{ const cal=localStorage.getItem("ha_calendar"); if(cal){const d=JSON.parse(cal);calendarData={holidays:d.holidays||{},vacations:d.vacations||{},kidOverrides:d.kidOverrides||{}};} }catch(e){}
   try{ const so=localStorage.getItem("ha_sched_overrides"); if(so) scheduleOverrides=JSON.parse(so); }catch(e){}
@@ -4611,6 +4619,31 @@ function toggleArchiveWeek(safeKey){
 }
 
 // ── CARRY-OVER REVIEW ────────────────────────────────────────────
+// Every lesson completed in ANY week (current + all archives), keyed by CONTENT
+// (who|subjectKey|title) rather than task id. Task ids are re-issued on every generation,
+// so a lesson finished under one id must still suppress a stale carry-over of the SAME
+// lesson under a different id — the duplicate-serve ghost bug.
+function completedLessonKeys(){
+  const keys=new Set();
+  const add=(tasks,ck)=>{
+    const arr=Array.isArray(tasks)?tasks:(tasks?Object.values(tasks):[]);
+    ck=ck||{};
+    arr.forEach(t=>{ if(t&&t.id&&(ck[t.id]||ck[t.id+"_c"])) keys.add((t.who||"")+"|"+(t.subjectKey||"")+"|"+(t.title||"")); });
+  };
+  try{ add(weekData&&weekData.tasks, checked); }catch(e){}
+  try{ Object.values(archive||{}).forEach(a=>{ if(a) add(a.tasks, a.checked); }); }catch(e){}
+  return keys;
+}
+// A task must NOT be carried forward if (a) its lesson was deliberately walked back, or
+// (b) the same lesson was already completed under another id somewhere. Never carries MORE
+// than before — only suppresses ghosts.
+function _carryBlocked(t,doneKeys){
+  if(!t) return false;
+  if(walkbackExcl[baseId(t.id||"")]) return true;
+  const ck=(t.who||"")+"|"+(t.subjectKey||"")+"|"+(t.title||"");
+  return !!(doneKeys&&doneKeys.has(ck));
+}
+
 function getCarryOverPool(){
   const curWeek=weekData.week||WK;
   // Sort by numeric week number — archivedAt is a human-readable string, not sortable as-is
@@ -4629,12 +4662,14 @@ function getCarryOverPool(){
   // non-_c base tasks where neither the original nor its _c was checked.
   // included = true by default; only false if user explicitly unchecked it.
   const excl=coExclusions[WK]||{};
+  const _dk=completedLessonKeys();
   const tasks=(prev.tasks||[])
     .filter(t=>!t.id.endsWith("_c")
       &&t.subjectKey!=="reflex"                     // reflex is a daily drill — never carry it over (no make-up value)
       &&!/reflex/i.test(t.title||"")
       &&!awChecked[t.id]&&!awChecked[t.id+"_c"]  // not completed in previous week
-      &&!checked[t.id+"_c"])                       // not completed this week either
+      &&!checked[t.id+"_c"]                        // not completed this week either
+      &&!_carryBlocked(t,_dk))                      // walked back, or same lesson already done under another id
     .map(t=>({...t,id:t.id+"_c",day:"monday",cascade:true,
       included:!excl[t.id+"_c"],
       prevWeek:prev.weekLabel||"prev week"}));
@@ -5017,9 +5052,12 @@ function loadJson(){
         });
         const snapSl=ld(activeWK+"_sl")||slState||{};
         // Re-attach cross-week carry-over tasks:
-        // Pass 1 — grab any _c tasks still alive in weekData.tasks whose base isn't in the new JSON
+        const _dk=completedLessonKeys();  // lessons already done under ANY id (content-matched) — or walked back
+        // Pass 1 — grab any _c tasks still alive in weekData.tasks whose base isn't in the new JSON.
+        // Skip ones whose lesson was already completed (under a re-keyed fresh copy) or walked back —
+        // otherwise the orphaned _c twin rides forward forever as a ghost.
         const newIds=new Set(d.tasks.map(t=>t.id));
-        (weekData.tasks||[]).filter(t=>t.id.endsWith("_c")&&!newIds.has(t.id)&&!newIds.has(baseId(t.id)))
+        (weekData.tasks||[]).filter(t=>t.id.endsWith("_c")&&!newIds.has(t.id)&&!newIds.has(baseId(t.id))&&!_carryBlocked(t,_dk))
           .forEach(t=>{ d.tasks.push(t); newIds.add(t.id); });
         // Pass 2 — reconstruct from the most-recent archive in case carry-overs were already wiped.
         // Same filter as the Carry-overs tab: all base tasks not completed in any form.
@@ -5031,7 +5069,7 @@ function loadJson(){
           })[0];
         if(_archPrev){
           const _awc=_archPrev.checked||{};
-          (_archPrev.tasks||[]).filter(t=>!t.id.endsWith("_c")&&!_awc[t.id]&&!_awc[t.id+"_c"])
+          (_archPrev.tasks||[]).filter(t=>!t.id.endsWith("_c")&&!_awc[t.id]&&!_awc[t.id+"_c"]&&!_carryBlocked(t,_dk))
             .forEach(t=>{
               const _cId=t.id+"_c";
               if(newIds.has(_cId)) return;                        // already present
@@ -5083,8 +5121,10 @@ function loadJson(){
           if(db) db.ref("archive/"+oldWK).set(entry);
         }
         // Carry ALL uncompleted tasks from old week into Monday of new week.
-        // Same filter as Carry-overs tab: base tasks where neither original nor _c was checked.
-        snapTasks.filter(t=>!t.id.endsWith("_c")&&!snapChecked[t.id]&&!snapChecked[t.id+"_c"])
+        // Same filter as Carry-overs tab: base tasks where neither original nor _c was checked,
+        // and the lesson wasn't already done under another id (content) or walked back.
+        const _dkGen=completedLessonKeys();
+        snapTasks.filter(t=>!t.id.endsWith("_c")&&!snapChecked[t.id]&&!snapChecked[t.id+"_c"]&&!_carryBlocked(t,_dkGen))
           .forEach(t=>{
             const cId=t.id+"_c";
             if(!d.tasks.some(x=>x.id===cId))
@@ -6154,6 +6194,14 @@ function ceWalkApply(){
     if(db) db.ref(WK+"/checked").set(checked);
   }
   try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
+  // Mark these lessons walked-back so the cross-week carry never resurrects them as _c ghosts —
+  // walk-back deletes the archive check-off the carry reads, which would otherwise look "un-done".
+  let _wbExclTouched=false;
+  items.forEach(it=>{
+    const base=it.baseId||baseId(it.doneKey||"");
+    if(base&&!walkbackExcl[base]){ walkbackExcl[base]=true; _wbExclTouched=true; if(db) db.ref("walkback_excl/"+base).set(true); }
+  });
+  if(_wbExclTouched){ try{localStorage.setItem("ha_wb_excl",JSON.stringify(walkbackExcl));}catch(e){} }
   // The snapshot: everything needed to understand (or undo) this walk-back later.
   const entry={ts:nowTs(),kid:ceEditKid,subjectKey:ceEditKey,note:note,
     items:items.map(it=>({wk:it.wk,id:it.doneKey,title:it.title,detail:it.detail,day:it.day,checkedTs:it.ts||null,hist:it.hist||null,
