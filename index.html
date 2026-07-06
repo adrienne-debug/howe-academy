@@ -9306,14 +9306,14 @@ function haBuildUnitInsight(kid,u){
   if(ed){ extrasTitle=ed.key; extras=(ed.cards||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0)).map(c=>({name:c.name,year:c.year||"",text:c.sig||c.def||c.bio||""})); }
   // U5: the activity queued for this kid's next notebook (Units tab → 📓 Notebook) rides along
   // as a self-contained spec — notebooks.js renders it as a 3rd insert page.
-  let activity=null;
-  const nbKey=(u.nbActivity||{})[kid];
-  if(nbKey){ const a=_unitActs(u).find(x=>x.key===nbKey);
-    if(a){ activity={key:a.key,title:a.title,emoji:a.emoji||"🎨",desc:a.desc||"",kind:a.kind||"sheet",lines:a.lines||0,
+  const activities=[];
+  _nbActKeys(u,kid).forEach(nbKey=>{ const a=_unitActs(u).find(x=>x.key===nbKey); if(!a) return;
+    const spec={key:a.key,title:a.title,emoji:a.emoji||"🎨",desc:a.desc||"",kind:a.kind||"sheet",lines:a.lines||0,
       points:unitActPoints(a),steps:Array.isArray(a.steps)?a.steps:Object.values(a.steps||{}),entries:[]};
-      if(a.kind==="timeline"){ const td=(u.decks||[]).find(d=>d&&d.key===(a.deckKey||cd.key));
-        activity.entries=((td&&td.cards)||[]).slice().sort((x,y)=>(x.order||0)-(y.order||0)).map(c=>({year:c.year||c.reign||"",name:c.name})); } } }
-  return { unitId:u.id,title:u.title,emoji:u.emoji||"📘",learning,learned,next:next.slice(0,6),extras,extrasTitle,activity };
+    if(a.kind==="timeline"){ const td=(u.decks||[]).find(d=>d&&d.key===(a.deckKey||cd.key));
+      spec.entries=((td&&td.cards)||[]).slice().sort((x,y)=>(x.order||0)-(y.order||0)).map(c=>({year:c.year||c.reign||"",name:c.name})); }
+    activities.push(spec); });
+  return { unitId:u.id,title:u.title,emoji:u.emoji||"📘",learning,learned,next:next.slice(0,6),extras,extrasTitle,activity:activities[0]||null,activities };
 }
 // In-app status page(s) for every unit a kid is enrolled in.
 // Notebook tab shows a status card per enrolled unit — but only for units set to go to the
@@ -9343,19 +9343,20 @@ function _renderUnitCard(kid,u){
   try{
     const _claims=(u.activityClaims||{})[kid]||{};
     const _log=(u.activityLog||{})[kid]||{};
-    let _bAct=null,_bClaimed=false;
-    const _nbKey=(u.nbActivity||{})[kid];
-    if(_nbKey&&!_log[_nbKey]){ _bAct=_unitActs(u).find(a=>a&&a.key===_nbKey); _bClaimed=!!_claims[_nbKey]; }
-    if(!_bAct){ const _ck=Object.keys(_claims).find(k2=>!_log[k2]); if(_ck){ _bAct=_unitActs(u).find(a=>a&&a.key===_ck); _bClaimed=true; } }
-    if(_bAct){
-      const _pts=unitActPoints(_bAct);
+    // Every queued-not-done project is its own claim banner; also surface a claimed-but-unqueued
+    // one so its ⏳ waiting state stays visible until Mom approves.
+    const _pending=[]; const _seen={};
+    _nbActKeys(u,kid).forEach(k2=>{ if(_log[k2]||_seen[k2]) return; const a=_unitActs(u).find(x=>x&&x.key===k2); if(a){ _seen[k2]=1; _pending.push({act:a,claimed:!!_claims[k2]}); } });
+    Object.keys(_claims).forEach(k2=>{ if(_log[k2]||_seen[k2]) return; const a=_unitActs(u).find(x=>x&&x.key===k2); if(a){ _seen[k2]=1; _pending.push({act:a,claimed:true}); } });
+    _pending.forEach(_p=>{
+      const _bAct=_p.act,_bClaimed=_p.claimed,_pts=unitActPoints(_bAct);
       const _args='\''+esc(u.id)+'\',\''+esc(kid)+'\',\''+esc(_bAct.key)+'\'';
       h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;border:1.5px dashed #c9a84c;background:#fdf8ee;border-radius:10px;padding:8px 11px;margin:4px 0 10px">';
       h+='<span style="flex:1;min-width:150px;font-size:11.5px;font-weight:700;color:#1f2937">🎨 This week’s project: '+(_bAct.emoji||"🎨")+' '+esc(_bAct.title)+(_pts?' <span style="font-weight:800;color:#b45309">· ⭐ worth '+_pts+' pts</span>':'')+'</span>';
       if(_bClaimed) h+='<button onclick="unitActivityClaim('+_args+')" style="padding:6px 12px;border-radius:9px;border:1.5px solid #fcd34d;background:#fffbeb;color:#b45309;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">⏳ Waiting for Mom</button>';
       else h+='<button onclick="unitActivityClaim('+_args+')" style="padding:6px 12px;border-radius:9px;border:none;background:#b45309;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🙋 I finished it!</button>';
       h+='</div>';
-    }
+    });
   }catch(e){}
   const _sprintUnlocked={}; try{ unitSprintRounds(u,kid).forEach(r=>{ if(r.group&&r.deckKey===cd.key&&r.unlocked) _sprintUnlocked[r.group]=true; }); }catch(e){}
   groups.forEach(gv=>{ const list=byG[gv]; const hm=list.filter(c=>isMast(byName[c.name])).length;
@@ -9607,7 +9608,7 @@ function renderUnitDetail(u){
       enrolledKids.forEach(k=>{
         const done=((u.activityLog||{})[k]||{})[a.key];
         const claim=((u.activityClaims||{})[k]||{})[a.key];
-        const queued=(u.nbActivity||{})[k]===a.key;
+        const queued=_nbActKeys(u,k).indexOf(a.key)>=0;
         h+='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:3px 0">';
         h+='<span style="font-size:10.5px;font-weight:700;color:#374151;min-width:52px">'+cap(k)+'</span>';
         if(done) h+='<span style="font-size:10px;font-weight:700;color:#15803d;background:#f0fdf4;border-radius:8px;padding:2px 8px">✓ done '+new Date(done.ts).toLocaleDateString("en-US",{month:"short",day:"numeric"})+(done.points?' · +'+done.points+' pts':'')+'</span>';
@@ -9646,7 +9647,7 @@ function renderUnitDetail(u){
       h+='<span style="font-weight:700;color:#1f2937">'+(act.emoji||"🎨")+' '+esc(act.title)+'</span>';
       enrolledKids.forEach(k=>{
         const done=((u.activityLog||{})[k]||{})[act.key];
-        const queued=(u.nbActivity||{})[k]===act.key;
+        const queued=_nbActKeys(u,k).indexOf(act.key)>=0;
         const dismissed=(((u.planDismiss||{})[k])||{})[_unitSafeKey(p.key)];
         const fired=_unitPlanFired(u,k,p.when);
         let st,co; if(done){st="✓ done";co="#15803d";} else if(queued){st="📓 queued";co="#b45309";}
@@ -9889,12 +9890,12 @@ function unitPlanNudges(u,kid){
   const out=[]; if(!u||!(u.enrolled||{})[kid]) return out;
   const dis=(u.planDismiss||{})[kid]||{};
   const doneLog=(u.activityLog||{})[kid]||{};
-  const queued=(u.nbActivity||{})[kid];
+  const queued=_nbActKeys(u,kid);
   const plan=Array.isArray(u.plan)?u.plan:Object.values(u.plan||{});
   plan.forEach(p=>{
     if(!p||!p.key||dis[_unitSafeKey(p.key)]) return;
     const act=_unitActs(u).find(a=>a&&a.key===p.activity); if(!act) return;
-    if(doneLog[act.key]||queued===act.key) return;
+    if(doneLog[act.key]||queued.indexOf(act.key)>=0) return;
     if(_unitPlanFired(u,kid,p.when)) out.push({kind:"activity",key:_unitSafeKey(p.key),unitId:u.id,act,note:p.note||""});
   });
   unitSprintRounds(u,kid).forEach(r=>{
@@ -9966,13 +9967,21 @@ function unitToggleNbInsert(unitId){
   if(db) db.ref("unitStudies/"+unitId+"/nbInsert").set(next);
   renderAll();
 }
+// nbActivity/<kid> holds the activities queued into this kid's next notebook. Now a SET (map
+// {key:true}) so several projects can ride along at once; older data was a single key string —
+// _nbActKeys normalizes both (and a stray array) to a keys array. Each queued activity is its own
+// claimable, points-earning project + its own insert page.
+function _nbActKeys(u,kid){ const v=((u&&u.nbActivity)||{})[kid]; if(!v) return []; if(typeof v==="string") return [v]; if(Array.isArray(v)) return v.filter(Boolean); return Object.keys(v).filter(k=>v[k]); }
+function _nbActWrite(unitId,u,kid,keys){ if(!u.nbActivity) u.nbActivity={};
+  if(keys.length){ const map={}; keys.forEach(k=>map[k]=true); u.nbActivity[kid]=map; if(db) db.ref("unitStudies/"+unitId+"/nbActivity/"+kid).set(map); }
+  else { delete u.nbActivity[kid]; if(db) db.ref("unitStudies/"+unitId+"/nbActivity/"+kid).remove(); } }
+function _nbActRemove(unitId,u,kid,actKey){ const keys=_nbActKeys(u,kid); const i=keys.indexOf(actKey); if(i<0) return; keys.splice(i,1); _nbActWrite(unitId,u,kid,keys); }
 function unitToggleNbActivity(unitId,kid,actKey){
   if(!momHere()) return; // what's in the notebook is Mom's call
   const u=unitStudies[unitId]; if(!u) return;
-  if(!u.nbActivity) u.nbActivity={};
-  const cur=u.nbActivity[kid];
-  if(cur===actKey){ delete u.nbActivity[kid]; if(db) db.ref("unitStudies/"+unitId+"/nbActivity/"+kid).remove(); }
-  else { u.nbActivity[kid]=actKey; if(db) db.ref("unitStudies/"+unitId+"/nbActivity/"+kid).set(actKey); }
+  const keys=_nbActKeys(u,kid); const i=keys.indexOf(actKey);
+  if(i>=0) keys.splice(i,1); else keys.push(actKey); // toggle this one; the rest stay queued
+  _nbActWrite(unitId,u,kid,keys);
   renderAll(); // U6: queue buttons also live on the Schedule/Notebook nudge chips
 }
 // ── U7: activity points + kid-claim → Mom sign-off. Each activity carries a fixed `points`
@@ -9996,7 +10005,7 @@ function unitActivityClaim(unitId,kid,actKey){
     delete u.activityClaims[kid][actKey];
     if(db) db.ref("unitStudies/"+unitId+"/activityClaims/"+kid+"/"+actKey).remove();
   } else {
-    if((u.nbActivity||{})[kid]!==actKey) return; // claimable only once Mom assigned it to THIS kid
+    if(_nbActKeys(u,kid).indexOf(actKey)<0) return; // claimable only once Mom queued it to THIS kid
     u.activityClaims[kid][actKey]={ts:Date.now()};
     if(db) db.ref("unitStudies/"+unitId+"/activityClaims/"+kid+"/"+actKey).set({ts:Date.now()});
   }
@@ -10015,7 +10024,7 @@ function unitActivityApprove(unitId,kid,actKey){
   u.activityLog[kid][actKey]=entry;
   if(db) db.ref("unitStudies/"+unitId+"/activityLog/"+kid+"/"+actKey).set(entry);
   if(claim){ delete u.activityClaims[kid][actKey]; if(db) db.ref("unitStudies/"+unitId+"/activityClaims/"+kid+"/"+actKey).remove(); }
-  if((u.nbActivity||{})[kid]===actKey){ delete u.nbActivity[kid]; if(db) db.ref("unitStudies/"+unitId+"/nbActivity/"+kid).remove(); }
+  _nbActRemove(unitId,u,kid,actKey); // clear just this project from the queue; others stay
   if(pts) addKidPoints(kid,pts,_unitDayFromTs(claim&&claim.ts));
   renderAll();
 }
@@ -10045,7 +10054,7 @@ function unitActivityDone(unitId,kid,actKey){
     u.activityLog[kid][actKey]=entry;
     if(db) db.ref("unitStudies/"+unitId+"/activityLog/"+kid+"/"+actKey).set(entry);
     if(claim){ delete u.activityClaims[kid][actKey]; if(db) db.ref("unitStudies/"+unitId+"/activityClaims/"+kid+"/"+actKey).remove(); }
-    if((u.nbActivity||{})[kid]===actKey){ delete u.nbActivity[kid]; if(db) db.ref("unitStudies/"+unitId+"/nbActivity/"+kid).remove(); }
+    _nbActRemove(unitId,u,kid,actKey); // clear just this project from the queue; others stay
     if(pts) addKidPoints(kid,pts,_unitDayFromTs(claim&&claim.ts));
   }
   renderAll();

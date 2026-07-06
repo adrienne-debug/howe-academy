@@ -1980,7 +1980,8 @@
         '<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:600;color:' + GOLD + '">' + esc(sub) + '</div></div>' +
         '<div style="height:5px;flex-shrink:0;background:repeating-linear-gradient(90deg,' + GM + ' 0,' + GM + ' 18px,' + GOLD + ' 18px,' + GOLD + ' 22px,' + GM + ' 22px,' + GM + ' 40px)"></div>';
     }
-    var tot = ins.activity ? 3 : 2;
+    var acts = (ins.activities && ins.activities.length) ? ins.activities : (ins.activity ? [ins.activity] : []);
+    var tot = 2 + acts.length;
     var p1 = '<div class="page-label">Unit Study — ' + esc(title) + ' (1/' + tot + ')</div>\n<div class="page">\n' + hdr(emoji + " This Week", "Week " + weekNum) +
       '<div style="padding:16px 40px;flex:1;display:flex;flex-direction:column;gap:11px;overflow:hidden">' +
       '<div style="font-size:11px;color:' + MUT + '">What you’re learning right now — read each one’s story.</div>';
@@ -2002,37 +2003,40 @@
     if ((ins.extras || []).length) { p2 += '<div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:'+EXTRA+';margin-bottom:6px">' + esc(ins.extrasTitle || "Lore") + '</div>'; ins.extras.slice(0, 5).forEach(function (e) { p2 += '<div style="display:flex;gap:8px;font-size:10.5px;padding:2px 0;line-height:1.4">' + (e.year ? '<span style="font-weight:800;color:'+EXTRA+';min-width:60px">' + esc(e.year) + '</span>' : '') + '<span><b>' + esc(e.name) + '</b> — ' + esc(e.text || "") + '</span></div>'; }); p2 += '</div>'; }
     p2 += '<div style="border:1.5px dashed ' + GOLD + ';border-radius:10px;padding:10px 14px;background:'+CREAM+'"><div style="font-family:\'Fraunces\',serif;font-size:13px;font-weight:700;color:' + GD + ';margin-bottom:5px">🎯 Challenge</div><div style="font-size:11px;color:' + INK + ';line-height:1.5">Can you name this week’s ' + esc(title) + ' and tell someone one fact about each? Write your favorite below:</div><div style="border-bottom:1.5px solid ' + MUT + ';height:20px;margin-top:8px"></div><div style="border-bottom:1.5px solid ' + MUT + ';height:20px;margin-top:6px"></div></div>';
     p2 += '</div></div>';
-    // U5: page 3 — the activity Mom queued in the Units tab (ins.activity, built by
-    // haBuildUnitInsight). Four generic kinds: sheet / bio / compare / timeline.
-    if (!ins.activity) return [p1, p2];
-    var act = ins.activity;
+    // U5/U7: one insert page per activity Mom queued in the Units tab (ins.activities, built by
+    // haBuildUnitInsight; falls back to the legacy single ins.activity). Four generic kinds:
+    // sheet / bio / compare / timeline.
+    if (!acts.length) return [p1, p2];
     var wline = function (n) { var s = ""; for (var i = 0; i < n; i++) s += '<div style="border-bottom:1.5px solid #cbd5d1;height:22px"></div>'; return s; };
-    var p3 = '<div class="page-label">Unit Study — ' + esc(title) + ' (3/' + tot + ')</div>\n<div class="page">\n' + hdr((act.emoji || "🎨") + " " + esc(act.title), "Week " + weekNum) +
-      '<div style="padding:16px 40px;flex:1;display:flex;flex-direction:column;gap:10px;overflow:hidden">';
-    if (act.points) p3 += '<div style="align-self:flex-start;border:1.5px solid ' + GOLD + ';background:'+CREAM+';border-radius:9px;padding:4px 12px;font-size:11px;font-weight:800;color:'+GOLDD+'">⭐ Worth ' + act.points + ' points — show Mom your finished work, then tap “I finished it!” in the app</div>';
-    if (act.desc) p3 += '<div style="font-size:11.5px;line-height:1.5;color:' + INK + '">' + esc(act.desc) + '</div>';
-    (act.steps || []).forEach(function (st) {
-      p3 += '<div style="display:flex;gap:8px;align-items:flex-start;font-size:11px;line-height:1.45;color:' + INK + '"><span style="width:13px;height:13px;border:2px solid ' + GM + ';border-radius:4px;flex-shrink:0;margin-top:1px"></span><span>' + esc(st) + '</span></div>';
-    });
-    if (act.kind === "timeline") {
-      (act.entries || []).forEach(function (e) {
-        p3 += '<div style="display:flex;gap:9px;align-items:baseline;font-size:10.5px;border-bottom:1px solid #eef2f0;padding:2px 0"><span style="font-weight:800;color:' + GM + ';min-width:64px">' + esc(e.year) + '</span><span style="font-weight:700;min-width:140px">' + esc(e.name) + '</span><span style="flex:1;border-bottom:1.5px solid #cbd5d1;height:14px"></span></div>';
+    var actPages = acts.map(function (act, ai) {
+      var pg = '<div class="page-label">Unit Study — ' + esc(title) + ' (' + (3 + ai) + '/' + tot + ')</div>\n<div class="page">\n' + hdr((act.emoji || "🎨") + " " + esc(act.title), "Week " + weekNum) +
+        '<div style="padding:16px 40px;flex:1;display:flex;flex-direction:column;gap:10px;overflow:hidden">';
+      if (act.points) pg += '<div style="align-self:flex-start;border:1.5px solid ' + GOLD + ';background:'+CREAM+';border-radius:9px;padding:4px 12px;font-size:11px;font-weight:800;color:'+GOLDD+'">⭐ Worth ' + act.points + ' points — show Mom your finished work, then tap “I finished it!” in the app</div>';
+      if (act.desc) pg += '<div style="font-size:11.5px;line-height:1.5;color:' + INK + '">' + esc(act.desc) + '</div>';
+      (act.steps || []).forEach(function (st) {
+        pg += '<div style="display:flex;gap:8px;align-items:flex-start;font-size:11px;line-height:1.45;color:' + INK + '"><span style="width:13px;height:13px;border:2px solid ' + GM + ';border-radius:4px;flex-shrink:0;margin-top:1px"></span><span>' + esc(st) + '</span></div>';
       });
-    } else if (act.kind === "bio" || act.kind === "compare") {
-      var pool = ins.learned || [];
-      p3 += '<div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:' + GM + '">' + (act.kind === "compare" ? "Pick two you’ve learned" : "Pick one you’ve learned") + '</div>';
-      if (pool.length) { p3 += '<div style="display:flex;flex-wrap:wrap;gap:7px">'; pool.slice(0, 12).forEach(function (m) { p3 += '<div style="width:58px;text-align:center">' + face(m.portrait, 42) + '<div style="font-size:8px;font-weight:700;color:' + INK + ';margin-top:2px;line-height:1.1">' + esc(m.name) + '</div></div>'; }); p3 += '</div>'; }
-      if (act.kind === "compare") {
-        p3 += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
-        for (var ci = 0; ci < 2; ci++) p3 += '<div><div style="border-bottom:2px solid ' + GM + ';height:22px;margin-bottom:6px"></div>' + wline(Math.max(4, Math.round((act.lines || 8) / 2))) + '</div>';
-        p3 += '</div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:'+GOLDD+'">What do they share?</div>' + wline(3);
-      } else p3 += '<div style="border-bottom:2px solid ' + GM + ';height:22px;margin-bottom:2px"></div>' + wline(act.lines || 10);
-    } else { // "sheet"
-      p3 += '<div style="border:2px dashed ' + GM + ';border-radius:12px;flex:1;min-height:300px"></div>';
-      if (act.lines) p3 += wline(act.lines);
-    }
-    p3 += '</div></div>';
-    return [p1, p2, p3];
+      if (act.kind === "timeline") {
+        (act.entries || []).forEach(function (e) {
+          pg += '<div style="display:flex;gap:9px;align-items:baseline;font-size:10.5px;border-bottom:1px solid #eef2f0;padding:2px 0"><span style="font-weight:800;color:' + GM + ';min-width:64px">' + esc(e.year) + '</span><span style="font-weight:700;min-width:140px">' + esc(e.name) + '</span><span style="flex:1;border-bottom:1.5px solid #cbd5d1;height:14px"></span></div>';
+        });
+      } else if (act.kind === "bio" || act.kind === "compare") {
+        var pool = ins.learned || [];
+        pg += '<div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:' + GM + '">' + (act.kind === "compare" ? "Pick two you’ve learned" : "Pick one you’ve learned") + '</div>';
+        if (pool.length) { pg += '<div style="display:flex;flex-wrap:wrap;gap:7px">'; pool.slice(0, 12).forEach(function (m) { pg += '<div style="width:58px;text-align:center">' + face(m.portrait, 42) + '<div style="font-size:8px;font-weight:700;color:' + INK + ';margin-top:2px;line-height:1.1">' + esc(m.name) + '</div></div>'; }); pg += '</div>'; }
+        if (act.kind === "compare") {
+          pg += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
+          for (var ci = 0; ci < 2; ci++) pg += '<div><div style="border-bottom:2px solid ' + GM + ';height:22px;margin-bottom:6px"></div>' + wline(Math.max(4, Math.round((act.lines || 8) / 2))) + '</div>';
+          pg += '</div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:'+GOLDD+'">What do they share?</div>' + wline(3);
+        } else pg += '<div style="border-bottom:2px solid ' + GM + ';height:22px;margin-bottom:2px"></div>' + wline(act.lines || 10);
+      } else { // "sheet"
+        pg += '<div style="border:2px dashed ' + GM + ';border-radius:12px;flex:1;min-height:300px"></div>';
+        if (act.lines) pg += wline(act.lines);
+      }
+      pg += '</div></div>';
+      return pg;
+    });
+    return [p1, p2].concat(actPages);
   }
 
   function generateLincoln(ctx) {
