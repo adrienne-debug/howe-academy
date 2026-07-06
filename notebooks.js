@@ -143,6 +143,8 @@
   var JU_PATH_SHAPES = ["straight", "hill", "zigzag", "wave", "loop"];
   var DAY_ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday"];
 
+  var JU_REVIEW_CAP = 2;  // max review slots folded into Julian's week per subject
+
   var JU_COLOR_HEX = {
     red: "#dc2626", blue: "#2563eb", green: "#16a34a", yellow: "#eab308",
     orange: "#ea580c", purple: "#9333ea", pink: "#ec4899", black: "#1f2937",
@@ -435,11 +437,28 @@
   function juCurriculumFromMastery(items) {
     if (!items || !items.length) return JSON.parse(JSON.stringify(JU_DEFAULT_CURRICULUM));
     var buckets = { Letters: [], Numbers: [], Shapes: [], Colors: [], Animals: [] };
+    // Review flags: an item is a "struggled-with" item when it was recently missed in
+    // drills (recentMiss>0, passed in from the app's drill history) OR it has been demoted
+    // on the Leitner ladder (drop_count>0) and hasn't recovered to a slow tier yet. These
+    // items get folded back into the daily rotation for review (see juWeekPicks).
+    var SUBKEY = { Letters: "letters", Numbers: "numbers", Shapes: "shapes", Colors: "colors", Animals: "animals" };
+    var SLOW_TIER = { weekly: 1, bi_weekly: 1, biweekly: 1, monthly: 1 };  // recovered = no longer flag on drop alone
+    var flag = { letters: {}, numbers: {}, shapes: {}, colors: {}, animals: {} };
+    var flagScore = { letters: {}, numbers: {}, shapes: {}, colors: {}, animals: {} };
     for (var i = 0; i < items.length; i++) {
       var it = items[i] || {};
       var sub = cap(String(it.subject || "").trim().toLowerCase());  // Title-case single word
       var prompt = String(it.prompt || "").trim();
-      if (buckets.hasOwnProperty(sub) && prompt) buckets[sub].push(prompt);
+      if (buckets.hasOwnProperty(sub) && prompt) {
+        buckets[sub].push(prompt);
+        var dc = parseInt(it.drop_count, 10) || 0;
+        var rm = parseInt(it.recentMiss, 10) || 0;
+        if (rm > 0 || (dc > 0 && !SLOW_TIER[String(it.tier || "")])) {
+          var k = SUBKEY[sub];
+          flag[k][prompt] = true;
+          flagScore[k][prompt] = rm * 3 + dc * 2;  // weight this-week misses over old demotions
+        }
+      }
     }
     var cur = {};
     cur.letters = buckets.Letters.length ? buckets.Letters : JU_DEFAULT_CURRICULUM.letters.slice();
@@ -451,7 +470,70 @@
     cur.animals = buckets.Animals.length
       ? buckets.Animals.map(function (a) { return [a, JU_ANIMAL_EMOJI[a.toLowerCase()] || "🦕"]; })
       : JU_DEFAULT_CURRICULUM.animals.slice();
+    cur.flag = flag;              // subject -> { prompt: true } for items due for review
+    cur.flagScore = flagScore;    // subject -> { prompt: score } worst-first ordering
     return cur;
+  }
+
+  // Resolve the week's per-day focus for each subject, folding review of struggled-with
+  // items (cur.flag) ahead of new material. Returns subject -> array(dayCount) of
+  // { idx, review } where idx points into cur[subject]. Up to JU_REVIEW_CAP review slots
+  // per subject per week; the rest continue the normal in-order rotation. Days whose
+  // natural pick is itself flagged are marked review too. No flags => identical to the
+  // old pure (week-1)*5+day rotation, so behavior is unchanged when there's nothing to review.
+  function juWeekPicks(weekNum, cur, dayCount, cap) {
+    var lim = (cap == null) ? JU_REVIEW_CAP : cap;
+    var wk = parseInt(weekNum, 10) || 1;
+    var subjects = ["letters", "numbers", "shapes", "colors", "animals"];
+    var out = {};
+    subjects.forEach(function (sub) {
+      var list = cur[sub] || [];
+      var n = list.length;
+      if (!n) { out[sub] = []; return; }
+      var flagSet = (cur.flag && cur.flag[sub]) || {};
+      var scoreMap = (cur.flagScore && cur.flagScore[sub]) || {};
+      var promptOf = function (idx) { var v = list[idx]; return Array.isArray(v) ? v[0] : v; };
+      // natural in-order picks for this week
+      var natural = [], naturalSet = {};
+      for (var i = 0; i < dayCount; i++) { var ni = ((wk - 1) * 5 + i) % n; natural.push(ni); naturalSet[ni] = 1; }
+      // flagged items not already surfacing this week, worst-first, capped
+      var flagged = [];
+      for (var j = 0; j < n; j++) { if (flagSet[promptOf(j)] && !naturalSet[j]) flagged.push(j); }
+      flagged.sort(function (a, b) { return (scoreMap[promptOf(b)] || 0) - (scoreMap[promptOf(a)] || 0); });
+      var inject = flagged.slice(0, lim);
+      // fold: reviews take the front slots, remaining days keep the natural order
+      var picks = inject.slice();
+      for (var m = 0; picks.length < dayCount && m < natural.length; m++) picks.push(natural[m]);
+      out[sub] = picks.slice(0, dayCount).map(function (idx) {
+        return { idx: idx, review: !!flagSet[promptOf(idx)] };
+      });
+    });
+    return out;
+  }
+
+  // Resolve one day's focus (index i) from a juWeekPicks map into concrete values +
+  // per-category review flags, falling back to the plain rotation if a slot is missing.
+  function juDayPick(cur, picks, i) {
+    var wk = 1;  // fallback only reached when picks lack a slot; index math mirrors juWeekPicks
+    function p(sub, listLen) {
+      var arr = picks[sub] || [];
+      var slot = arr[i];
+      var idx = slot ? slot.idx : (((wk - 1) * 5 + i) % Math.max(1, listLen));
+      return { idx: idx, review: slot ? slot.review : false };
+    }
+    var pl = p("letters", cur.letters.length);
+    var pn = p("numbers", cur.numbers.length);
+    var ps = p("shapes", cur.shapes.length);
+    var pc = p("colors", cur.colors.length);
+    var pa = p("animals", cur.animals.length);
+    return {
+      letter: cur.letters[pl.idx], letterReview: pl.review,
+      number: cur.numbers[pn.idx], numberReview: pn.review,
+      shape: cur.shapes[ps.idx], shapeReview: ps.review,
+      colorPair: cur.colors[pc.idx], colorReview: pc.review,
+      animalPair: cur.animals[pa.idx], animalReview: pa.review,
+      anyReview: pl.review || pn.review || ps.review || pc.review || pa.review
+    };
   }
 
   function juPageCover(weekNum, weekDates, cur) {
@@ -573,16 +655,20 @@
       juFooter("Howe Academy · Julian Howe · Pre-K", weekDates) + '\n</div>';
   }
 
-  function juPageDaily(weekNum, day, dateStr, idx, cur) {
-    var gidx = (parseInt(weekNum, 10) - 1) * 5 + idx;
-    var letter = cur.letters[gidx % cur.letters.length];
-    var number = cur.numbers[gidx % cur.numbers.length];
-    var shape = cur.shapes[gidx % cur.shapes.length];
-    var colorPair = cur.colors[gidx % cur.colors.length], cname = colorPair[0], chex = colorPair[1];
-    var animalPair = cur.animals[gidx % cur.animals.length], aname = animalPair[0], aemoji = animalPair[1];
-    var badge = JU_DAY_BADGES[day] || "🦕 Great Job!";
+  function juPageDaily(weekNum, day, dateStr, idx, cur, pick) {
+    pick = pick || juDayPick(cur, {}, idx);  // fallback keeps standalone calls working
+    var letter = pick.letter;
+    var number = pick.number;
+    var shape = pick.shape;
+    var colorPair = pick.colorPair, cname = colorPair[0], chex = colorPair[1];
+    var animalPair = pick.animalPair, aname = animalPair[0], aemoji = animalPair[1];
+    var badge = pick.anyReview ? "🔁 Let's practice again!" : (JU_DAY_BADGES[day] || "🦕 Great Job!");
     var lw = JU_LETTER_WORDS[String(letter).toUpperCase()] || ["", ""], word = lw[0], wemoji = lw[1];
     var n = parseInt(number, 10); if (isNaN(n)) n = 1; n = Math.max(1, Math.min(n, 8));
+    // "🔁 practice again" markers on the cards for items Julian struggled with in drills
+    var letterLab = pick.letterReview ? "Practice Again 🔁" : "Letter of the Day";
+    var numberLab = (pick.numberReview ? "Practice Again 🔁 · " : "Number of the Day · ") + number;
+    var shapeColorLab = (pick.shapeReview || pick.colorReview) ? "Shape &amp; Color 🔁" : "Shape &amp; Color";
 
     var countAni = ('<span class="count-ani">' + aemoji + '</span>').repeat(n);
 
@@ -626,7 +712,7 @@
       '  <div class="grid2" style="flex:1.75;">\n    <div class="col">\n' +
       '      <div class="card card-peach" style="flex:1;display:flex;flex-direction:column;">\n' +
       '        <div style="display:flex;align-items:center;justify-content:space-between;">\n' +
-      '          <div class="slabel" style="margin:0;">Letter of the Day</div>\n' +
+      '          <div class="slabel" style="margin:0;">' + letterLab + '</div>\n' +
       '          <div class="cue">' + L + ' is for ' + word + ' ' + wemoji + '</div>\n        </div>\n' +
       '        <div style="display:flex;align-items:baseline;gap:9px;margin-top:3px;">\n' +
       '          <span class="nt-disp" style="font-size:48px;color:var(--ju-deep);">' + L + '</span>\n' +
@@ -639,7 +725,7 @@
       '        <div class="slabel">Trace My Name</div>\n        ' + juTrace("JULIAN", 52) + '\n      </div>\n    </div>\n\n' +
       '    <div class="col">\n' +
       '      <div class="card card-green" style="flex:1;display:flex;flex-direction:column;">\n' +
-      '        <div class="slabel">Number of the Day · ' + number + '</div>\n' +
+      '        <div class="slabel">' + numberLab + '</div>\n' +
       '        <div class="count-row">' + countAni + '</div>\n' +
       '        <div style="display:flex;align-items:baseline;gap:9px;margin-top:2px;">\n' +
       '          <span class="nt-disp" style="font-size:42px;color:var(--ju-green);">' + number + '</span>\n' +
@@ -649,7 +735,7 @@
       '        <div class="hwt-line" style="flex-shrink:0;"></div>\n      </div>\n' +
       '      <div class="card card-blue" style="flex-shrink:0;">\n' +
       '        <div style="display:flex;align-items:center;justify-content:space-between;">\n' +
-      '          <div class="slabel" style="margin:0;">Shape &amp; Color</div>\n' +
+      '          <div class="slabel" style="margin:0;">' + shapeColorLab + '</div>\n' +
       '          <div style="font-size:10px;font-weight:800;color:var(--ju-dark);">' + shape + ' · color it <span style="color:' + chex + ';">' + cname + '</span></div>\n        </div>\n' +
       '        <div class="shape-row">\n' +
       '          <div class="shape-cell">' + juSvgShape(shape, { dashed: true }) + '<div class="shape-cap">Trace</div></div>\n' +
@@ -698,6 +784,17 @@
     if (teachNotes) {
       extra = '<div class="p-banner" style="background:var(--ju-bpale);border-color:#cde7f7;color:#0c3a52;"><strong>This week:</strong> ' + teachNotes + '</div>';
     }
+    // Review focus — items Julian missed in drills that got folded back into this week for another look.
+    var revBits = [];
+    ["letters", "numbers", "shapes", "colors", "animals"].forEach(function (sub) {
+      var fs = (cur.flag && cur.flag[sub]) || {}, sc = (cur.flagScore && cur.flagScore[sub]) || {};
+      var names = Object.keys(fs).sort(function (a, b) { return (sc[b] || 0) - (sc[a] || 0); });
+      if (names.length) revBits.push(cap(sub) + ": " + names.join(", "));
+    });
+    var reviewNote = revBits.length
+      ? '<div class="p-banner" style="background:#fff4e6;border-color:#f6cfa0;color:#7a3d0c;"><strong>🔁 Review focus this week:</strong> '
+        + revBits.join(" · ") + '. These are the ones he\'s stumbled on in drills, so they resurface in the daily pages (look for the 🔁 badge) for a friendly second look — no pressure.</div>'
+      : "";
     return '<div class="page-label">Parent Guide — Week ' + weekNum + '</div>\n<div class="page">\n' +
       juHeader("Howe Academy · Pre-K", "Julian's Grown-Up Guide", "how to do the notebook with a 4-year-old", "Week " + weekNum, weekDates, "💛 For Mom") +
       '\n<div class="body" style="gap:9px;">\n\n' +
@@ -706,7 +803,8 @@
       '    <em>You</em> read each prompt aloud, point to the dotted letters/numbers, and let him trace, count, and color.\n' +
       '    Keep it playful and short; if he\'s into it, do more — if he\'s done, stop. Every page = his real flashcard\n' +
       '    skills (Letters, Numbers, Shapes, Colors, Animals), so the notebook and his drills reinforce each other.\n  </div>\n' +
-      '  ' + extra + '\n\n' +
+      '  ' + extra + '\n' +
+      '  ' + reviewNote + '\n\n' +
       '  <div>\n    <div class="slabel">This week\'s targets <span class="parent-badge">from Julian\'s drills</span></div>\n' +
       '    <div class="p-targets">\n' +
       '      <div class="p-tcard"><div class="p-tlab">🔤 Letters</div><div class="p-tval">' + letters + '</div></div>\n' +
@@ -749,8 +847,11 @@
     parts.push(juPageCover(weekNum, weekDates, cur));
     parts.push(juPageAbc(weekNum, weekDates, cur));
     parts.push(juPageDaysSeasons(weekNum, weekDates, cur));
+    // review-slots-per-week cap: app setting (ctx.reviewCap) overrides the default, clamped 0–5
+    var reviewCap = (ctx.reviewCap == null) ? JU_REVIEW_CAP : Math.max(0, Math.min(5, parseInt(ctx.reviewCap, 10) || 0));
+    var picks = juWeekPicks(weekNum, cur, days.length, reviewCap);
     for (var i = 0; i < days.length; i++) {
-      parts.push(juPageDaily(weekNum, days[i], dates[days[i]] || "", i, cur));
+      parts.push(juPageDaily(weekNum, days[i], dates[days[i]] || "", i, cur, juDayPick(cur, picks, i)));
     }
     parts.push("</body>\n</html>");
     var student = parts.join("\n");
