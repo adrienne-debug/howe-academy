@@ -1805,7 +1805,7 @@ function renderSchedSubtabs(){
   const isSchedule=!schedShowHistory&&!schedShowPace&&!schedShowAdmin;
   el.innerHTML=
     '<button class="sched-sub'+(isSchedule?" active":"")+'" onclick="schedShowHistory=false;schedShowPace=false;schedShowAdmin=false;renderAll()">Schedule</button>'+
-    '<button class="sched-sub'+(schedShowPace?" active":"")+'" onclick="toggleSchedPace()">Pace</button>'+
+    '<button class="sched-sub'+(schedShowPace?" active":"")+'" onclick="toggleSchedPace()">Wins</button>'+
     '<button class="sched-sub'+(schedShowHistory?" active":"")+'" onclick="toggleSchedHistory()">History</button>'+
     '<button class="sched-sub'+(schedShowAdmin?" active":"")+'" onclick="toggleSchedAdmin()">Admin</button>';
 }
@@ -3138,6 +3138,7 @@ function renderScheduleBreakCard(brk){
     '</div>';
 }
 function renderSchedule(el){
+  try{ forfeitSweep(); }catch(e){}
   if(schedShowPace){ renderPace(el); return; }
   if(schedShowHistory){ renderHistory(el); return; }
   if(schedShowAdmin){
@@ -5856,6 +5857,54 @@ function walletCashed(kid,scope){
   const wks=(scope==="week")?[WK]:Object.keys(claims);
   wks.forEach(wk=>Object.values(claims[wk]||{}).forEach(c=>{ if(c.status==="cashed") n+=(c.earned||0); }));
   return n;
+}
+// Auto-forfeit: a PAST day (this week) that earned points but was never cashed or claimed
+// becomes "forfeited" (lost) — the motivation stake. STRONG guards: only strictly-past days
+// (never today), only earned>0, and only if there's NO existing claim record (so cashed,
+// claimed-awaiting-Mom, and already-forfeited are all left alone). Idempotent → writes once.
+// Mistakes are recoverable via restoreForfeited (PIN review). Current-week only for now.
+// Grandfather: only days on/after the economy's launch can be forfeited. Points earned
+// before the claim feature existed (spins with no claim path) must NEVER be retroactively
+// swept — that would wipe legitimately-earned points on first load.
+const FORFEIT_EPOCH=new Date(2026,6,6);                 // Jul 6 2026 (0-indexed month), launch guard
+function forfeitSweep(){
+  if(!db||!DAY_DT) return;
+  const todayD=new Date(); todayD.setHours(0,0,0,0);
+  const yr=todayD.getFullYear();
+  ["monday","tuesday","wednesday","thursday","friday","saturday"].forEach(d=>{
+    const dstr=DAY_DT[d]; if(!dstr) return;
+    const dd=new Date(dstr+", "+yr); if(isNaN(dd)) return; dd.setHours(0,0,0,0);
+    if(dd<FORFEIT_EPOCH) return;                        // grandfather pre-launch days
+    if(dd>=todayD) return;                              // only strictly-past days
+    (PACE_KIDS||[]).forEach(kid=>{
+      const earned=getKidDayPoints(kid,d);
+      if(earned<=0) return;
+      if(getPointClaim(kid,d)) return;                 // any status already → leave it
+      _setPointClaim(kid,d,{status:"forfeited",earned,forfeitedTs:nowTs()});
+    });
+  });
+}
+// Wallet totals: {cashed, lost} for a scope ("week"=current WK, else lifetime across all WK).
+function walletTotals(kid,scope){
+  let cashed=0,lost=0; const claims=pointClaims[kid]||{};
+  const wks=(scope==="week")?[WK]:Object.keys(claims);
+  wks.forEach(wk=>Object.values(claims[wk]||{}).forEach(c=>{
+    if(c.status==="cashed") cashed+=(c.earned||0);
+    else if(c.status==="forfeited") lost+=(c.earned||0);
+  }));
+  return {cashed,lost};
+}
+function forfeitedDays(kid,scope){
+  const out=[]; const claims=pointClaims[kid]||{};
+  const wks=(scope==="week")?[WK]:Object.keys(claims);
+  wks.forEach(wk=>Object.keys(claims[wk]||{}).forEach(d=>{ const c=claims[wk][d]; if(c&&c.status==="forfeited") out.push({wk,day:d,earned:c.earned||0,ts:c.forfeitedTs}); }));
+  return out.sort((a,b)=>(b.ts||"").localeCompare(a.ts||""));
+}
+// Mom un-forfeits a day (a mistake) → clears the record so the points are claimable again.
+function restoreForfeited(kid,wk,d){
+  if(!momHere()) return;
+  if(pointClaims[kid]&&pointClaims[kid][wk]){ delete pointClaims[kid][wk][d]; if(db) db.ref("pointClaims/"+kid+"/"+wk+"/"+d).remove(); }
+  renderAll();
 }
 // Subjects within 5 lessons of finishing (not yet trophied) — the "close to a badge" nudge.
 function closeToDone(kid){
@@ -14117,9 +14166,11 @@ function renderPace(el){
 
   // ── Trophy Case (per kid): wallet + trophies earned + close-to-a-badge ─────
   if(kid!=="all"&&kid!=="mom"){
-    const banked=walletCashed(kid,walletScope);
+    const _wt=walletTotals(kid,walletScope);
+    const banked=_wt.cashed, lost=_wt.lost;
     const troph=kidTrophies(kid);
     const close=closeToDone(kid);
+    const momView=momModeActive||adminPinUnlocked;
     h+='<div style="background:linear-gradient(135deg,#fffbeb,#fef3c7);border:1.5px solid #f59e0b;border-radius:12px;padding:14px;margin-bottom:12px">';
     // header + week/lifetime toggle
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">';
@@ -14130,10 +14181,11 @@ function renderPace(el){
       h+='<button onclick="setWalletScope(\''+sc+'\')" style="padding:4px 12px;border:none;background:'+(on?'#f59e0b':'transparent')+';color:'+(on?'#fff':'#b45309')+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
     });
     h+='</div></div>';
-    // banked total
+    // banked total + lost split
     h+='<div style="text-align:center;padding:6px 0 10px">';
     h+='<div style="font-family:\'Fraunces\',serif;font-size:38px;font-weight:900;color:#b45309;line-height:1">'+banked.toLocaleString()+' ⭐</div>';
     h+='<div style="font-size:11px;color:#92400e;font-weight:600">banked '+(walletScope==="week"?"this week":"all-time")+' (cashed to Skylight)</div>';
+    if(lost>0) h+='<div style="font-size:12px;color:#b5394a;font-weight:700;margin-top:6px">💔 '+lost.toLocaleString()+' ⭐ lost'+(momView?'':'')+' — finish chores &amp; afternoon to keep them!</div>';
     h+='</div>';
     // trophy shelf
     if(troph.length){
@@ -14153,6 +14205,21 @@ function renderPace(el){
         h+='<div style="font-size:12px;color:#b45309;font-weight:600;padding:2px 0">🔥 '+c.left+' lesson'+(c.left>1?'s':'')+' from finishing <b>'+esc(c.name)+'</b>!</div>';
       });
       h+='</div>';
+    }
+    // Mom-only PIN review of forfeited days — audit + restore if a mistake was made.
+    if(momView){
+      const fdays=forfeitedDays(kid,walletScope);
+      if(fdays.length){
+        h+='<div style="border-top:1px dashed #fcd34d;padding-top:8px;margin-top:8px">';
+        h+='<div style="font-size:10px;font-weight:800;color:#b5394a;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:5px">🔒 Forfeited (Mom review)</div>';
+        fdays.forEach(fd=>{
+          h+='<div style="display:flex;align-items:center;gap:8px;font-size:11px;padding:3px 0">';
+          h+='<span style="flex:1;min-width:0">'+esc(cap(fd.wk.replace("week","Wk ")))+' '+esc(cap(fd.day))+' — <b>'+fd.earned+' ⭐</b> lost'+(fd.ts?' <span style="color:var(--muted)">'+esc(fd.ts)+'</span>':'')+'</span>';
+          h+='<button onclick="restoreForfeited(\''+kid+'\',\''+fd.wk+'\',\''+fd.day+'\')" style="flex-shrink:0;border:1px solid #86efac;background:#fff;color:#15803d;border-radius:8px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">↩ Restore</button>';
+          h+='</div>';
+        });
+        h+='</div>';
+      }
     }
     h+='</div>';
   }
