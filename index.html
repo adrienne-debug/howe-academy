@@ -2197,7 +2197,7 @@ function markSpun(taskId){
   const used=ld(WK+"_spins_used")||{};
   used[taskId]=true;
   sv(WK+"_spins_used",used);
-  if(db) db.ref(WK+"/spins_used").set(used);
+  if(db) db.ref(WK+"/spins_used/"+taskId).set(true);
 }
 function hasDayBonus(kid,d){
   const used=ld(WK+"_day_bonus_used")||{};
@@ -2207,18 +2207,18 @@ function markDayBonus(kid,d){
   const used=ld(WK+"_day_bonus_used")||{};
   used[kid+"_"+d]=true;
   sv(WK+"_day_bonus_used",used);
-  if(db) db.ref(WK+"/day_bonus_used").set(used);
+  if(db) db.ref(WK+"/day_bonus_used/"+kid+"_"+d).set(true);
 }
 
 function addPendingSpin(taskId,kid,d){
   pendingSpins[taskId]={kid:kid,day:d};
   sv(WK+"_pending_spins",pendingSpins);
-  if(db) db.ref(WK+"/pending_spins").set(pendingSpins);
+  if(db) db.ref(WK+"/pending_spins/"+taskId).set({kid:kid,day:d});
 }
 function claimPendingSpin(taskId){
   delete pendingSpins[taskId];
   sv(WK+"_pending_spins",pendingSpins);
-  if(db) db.ref(WK+"/pending_spins").set(pendingSpins);
+  if(db) db.ref(WK+"/pending_spins/"+taskId).remove();
 }
 
 // Points: stored per kid per day
@@ -2238,7 +2238,9 @@ function addKidPoints(k,pts,d){
   if(!all[k]||typeof all[k]==="number") all[k]={};
   all[k][d]=(all[k][d]||0)+pts;
   sv(WK+"_slot_points",all);
-  if(db) db.ref(WK+"/slot_points").set(all);
+  // Atomic per-leaf increment — never set() the whole slot_points object. The whole-object
+  // write clobbered other kids'/days' points when two devices spun at the same time.
+  if(db) db.ref(WK+"/slot_points/"+k+"/"+d).transaction(c=>(c||0)+pts);
 }
 
 let slotSpinDay=null;
@@ -2266,7 +2268,7 @@ function adjPts(kid,d,amt){
   if(!all[kid]||typeof all[kid]==="number") all[kid]={};
   all[kid][d]=Math.max(0,(all[kid][d]||0)+amt);
   sv(WK+"_slot_points",all);
-  if(db) db.ref(WK+"/slot_points").set(all);
+  if(db) db.ref(WK+"/slot_points/"+kid+"/"+d).transaction(c=>Math.max(0,(c||0)+amt));
   renderAll();
 }
 function openSlotMachine(taskId){
@@ -2463,21 +2465,21 @@ function spinAdminRemovePending(taskId){
   // Also clear the spun flag — otherwise the task is stranded as "Spun" with no
   // amount (spins_used set, but no pending spin and no recorded result).
   const used=ld(WK+"_spins_used")||{};
-  if(used[taskId]){ delete used[taskId]; sv(WK+"_spins_used",used); if(db) db.ref(WK+"/spins_used").set(used); }
+  if(used[taskId]){ delete used[taskId]; sv(WK+"_spins_used",used); if(db) db.ref(WK+"/spins_used/"+taskId).remove(); }
   renderAll();
 }
 function spinAdminResetSpin(taskId,kid,d){
   // Remove from spins_used
   const used=ld(WK+"_spins_used")||{};
   delete used[taskId];
-  sv(WK+"_spins_used",used); if(db) db.ref(WK+"/spins_used").set(used);
+  sv(WK+"_spins_used",used); if(db) db.ref(WK+"/spins_used/"+taskId).remove();
   // Remove from spin_results and subtract pts
   const sr=ld(WK+"_spin_results")||{};
   if(sr[taskId]){
     const pts=sr[taskId].pts||0;
     if(pts>0){
       const all=ld(WK+"_slot_points")||{};
-      if(all[kid]&&all[kid][d]){ all[kid][d]=Math.max(0,all[kid][d]-pts); sv(WK+"_slot_points",all); if(db) db.ref(WK+"/slot_points").set(all); }
+      if(all[kid]&&all[kid][d]){ all[kid][d]=Math.max(0,all[kid][d]-pts); sv(WK+"_slot_points",all); if(db) db.ref(WK+"/slot_points/"+kid+"/"+d).transaction(c=>Math.max(0,(c||0)-pts)); }
     }
     delete sr[taskId];
     sv(WK+"_spin_results",sr); if(db) db.ref(WK+"/spin_results/"+taskId).remove(); // targeted
@@ -2499,7 +2501,7 @@ function spinAdminResetDayBonus(kid,d){
   const u=ld(WK+"_day_bonus_used")||{};
   delete u[kid+"_"+d];
   sv(WK+"_day_bonus_used",u);
-  if(db) db.ref(WK+"/day_bonus_used").set(u);
+  if(db) db.ref(WK+"/day_bonus_used/"+kid+"_"+d).remove();
   // Re-add as a bonus spin so it shows at the bottom
   const taskId="daybonus_"+kid+"_"+d+"_"+Date.now();
   addPendingSpin(taskId, kid, d);
@@ -2528,16 +2530,17 @@ function kidReplayCeleb(kid){
 }
 function spinAdminResetAll(kid,d){
   if(!confirm("Reset all spins & points for "+cap(kid)+" on "+cap(d)+"?")) return;
-  // Reset day points
+  // Reset day points — targeted leaf so a reset never clobbers another kid/day.
   const all=ld(WK+"_slot_points")||{};
-  if(all[kid]) { all[kid][d]=0; sv(WK+"_slot_points",all); if(db) db.ref(WK+"/slot_points").set(all); }
+  if(all[kid]) { all[kid][d]=0; sv(WK+"_slot_points",all); if(db) db.ref(WK+"/slot_points/"+kid+"/"+d).set(0); }
   // Reset spins used for this kid's tasks on this day
   const used=ld(WK+"_spins_used")||{};
   const activeTasks=displacedResult?displacedResult.tasks:weekData.tasks;
+  const _suUpd={};
   activeTasks.forEach(t=>{
-    if(t.who===kid && (displacedResult?t.day:effectiveDay(t))===d) delete used[t.id];
+    if(t.who===kid && (displacedResult?t.day:effectiveDay(t))===d && used[t.id]!==undefined){ delete used[t.id]; _suUpd[t.id]=null; }
   });
-  sv(WK+"_spins_used",used); if(db) db.ref(WK+"/spins_used").set(used);
+  sv(WK+"_spins_used",used); if(db && Object.keys(_suUpd).length) db.ref(WK+"/spins_used").update(_suUpd); // targeted per-task removal
   // Reset spin results for this kid's tasks
   const sr=ld(WK+"_spin_results")||{};
   const _srUpd={};
@@ -2547,15 +2550,16 @@ function spinAdminResetAll(kid,d){
   sv(WK+"_spin_results",sr); if(db && Object.keys(_srUpd).length) db.ref(WK+"/spin_results").update(_srUpd); // targeted per-task removal
   // Reset day bonus
   const db2=ld(WK+"_day_bonus_used")||{};
-  delete db2[kid+"_"+d]; sv(WK+"_day_bonus_used",db2); if(db) db.ref(WK+"/day_bonus_used").set(db2);
+  delete db2[kid+"_"+d]; sv(WK+"_day_bonus_used",db2); if(db) db.ref(WK+"/day_bonus_used/"+kid+"_"+d).remove();
   // Reset celebration
   const c=ld(WK+"_celeb_used")||{};
-  delete c[kid+"_"+d]; sv(WK+"_celeb_used",c); if(db) db.ref(WK+"/celeb_used").set(c);
+  delete c[kid+"_"+d]; sv(WK+"_celeb_used",c); if(db) db.ref(WK+"/celeb_used/"+kid+"_"+d).remove();
   // Remove pending spins for this kid+day
+  const _psUpd={};
   for(const tid in pendingSpins){
-    if(pendingSpins[tid].kid===kid && pendingSpins[tid].day===d) delete pendingSpins[tid];
+    if(pendingSpins[tid].kid===kid && pendingSpins[tid].day===d){ _psUpd[tid]=null; delete pendingSpins[tid]; }
   }
-  sv(WK+"_pending_spins",pendingSpins); if(db) db.ref(WK+"/pending_spins").set(pendingSpins);
+  sv(WK+"_pending_spins",pendingSpins); if(db && Object.keys(_psUpd).length) db.ref(WK+"/pending_spins").update(_psUpd);
   renderAll();
 }
 
