@@ -8104,6 +8104,20 @@ function schedCascade(){
   },2000);
 }
 
+// Parse a check-off timestamp — numeric ms or the nowTs() string form "07:23 PM Jul 7".
+// Hand-rolled because Safari's Date() rejects that string (and Chrome parses it into 2001).
+// Year defaults to the current year; callers only compare month/day and read the clock.
+function _parseCheckTs(ts){
+  if(typeof ts==="number"){ const d=new Date(ts); return isNaN(d.getTime())?null:d; }
+  const m=/(\d{1,2}):(\d{2})\s*([AP]M)\s+([A-Za-z]{3,})\s+(\d{1,2})/.exec(String(ts||""));
+  if(!m) return null;
+  const mo={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11}[m[4].slice(0,3)];
+  if(mo==null) return null;
+  let h=parseInt(m[1])%12; if(m[3]==="PM") h+=12;
+  const d=new Date(); d.setMonth(mo,parseInt(m[5])); d.setHours(h,parseInt(m[2]),0,0);
+  return d;
+}
+
 function cascadeIntraWeek(sweepTodayElapsed){
   const dayOrder=["monday","tuesday","wednesday","thursday","friday","saturday"];
   const JS_DAY_MAP={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
@@ -8125,6 +8139,25 @@ function cascadeIntraWeek(sweepTodayElapsed){
   // Self-heal: checked tasks should have t.day matching where they were checked
   weekData.tasks.forEach(t=>{
     if(!checked[t.id]||t.id.endsWith("_c")) return;
+    // Regeneration commit: ground-truth the placement from the check-off TIMESTAMP. Work
+    // done ahead (kid knocks out Thursday's task on Tuesday night) or late moves to the
+    // day and time it was ACTUALLY completed. checkedOnDay can't catch this — it records
+    // the task's schedule day (the tab the kid checked it on), not the calendar day.
+    if(sweepTodayElapsed){
+      const cd=_parseCheckTs(checked[t.id]);
+      if(cd){
+        for(const dn of dayOrder){
+          if(!DAY_DT[dn]) continue;
+          const dd=new Date(DAY_DT[dn]+", "+cd.getFullYear());
+          if(!isNaN(dd.getTime())&&dd.getMonth()===cd.getMonth()&&dd.getDate()===cd.getDate()){
+            if(t.day!==dn) dbg("regen heal(ts): "+t.id+" "+t.day+" → "+dn);
+            t.day=dn;
+            t.time=fromMin(cd.getHours()*60+cd.getMinutes());
+            return; // timestamp is ground truth — skip the checkedOnDay heal
+          }
+        }
+      }
+    }
     const h=histState[t.id];
     if(h&&h.checkedOnDay&&h.checkedOnDay!=="carryover"&&h.checkedOnDay!==t.day){
       dbg("cascade heal: "+t.id+" day "+t.day+" → "+h.checkedOnDay);
