@@ -18138,8 +18138,14 @@ function taskTier(t){
 // live Rules (overlap set, max-per-day, school-day lunch, calendar off-days) for a set
 // of scheduled tasks and returns a list of violations — [] means all clear. Replaces the
 // old hardcoded-subject checklist; runs after every displacement (see runDisplacement).
-function auditSchedule(tasks){
+function auditSchedule(tasks,checkedMap){
   if(!tasks||!tasks.length) return [];
+  // Completed work is history, not an actionable conflict — exclude checked-off tasks so the
+  // audit only flags problems in what's still TO DO. A "two Mom-Required at once" collision
+  // then counts only when BOTH sides are still pending (a done task no longer needs mom).
+  // checkedMap defaults to the live global for app callers; the node harness passes tasks
+  // only, so it falls back to {} and behaves exactly as before.
+  const _ck=checkedMap||(typeof checked!=="undefined"&&checked)||{};
   const r=rulesData||{}, ovc=r.overlap||{}, mp=r.maxPerDay||{}, sd=r.schoolDay||{}, sdOv=sd.overrides||{};
   const nv=fbArr(ovc.never_simultaneous);
   const neverSet=new Set((nv&&nv.length)?nv:["mom_required","computer","ipad"]);
@@ -18152,7 +18158,7 @@ function auditSchedule(tasks){
     return isNaN(dt.getTime())?null:dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");
   };
   const byDay={};
-  tasks.forEach(t=>{ if(!t||!t.day||t.day==="carryover") return; if(String(t.id||"").endsWith("_c")) return; (byDay[t.day]=byDay[t.day]||[]).push(t); });
+  tasks.forEach(t=>{ if(!t||!t.day||t.day==="carryover") return; if(String(t.id||"").endsWith("_c")) return; if(_ck[t.id]) return; (byDay[t.day]=byDay[t.day]||[]).push(t); });
   for(const day in byDay){
     const o=sdOv[day]||{};
     const ls=toMin(o.lunchStart||sd.lunchStart||"1:00 PM"), le=toMin(o.lunchEnd||sd.lunchEnd||"2:00 PM");
