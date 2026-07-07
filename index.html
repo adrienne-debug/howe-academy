@@ -4680,8 +4680,7 @@ function getCarryOverPool(){
   const _dk=completedLessonKeys();
   const tasks=(prev.tasks||[])
     .filter(t=>!t.id.endsWith("_c")
-      &&t.subjectKey!=="reflex"                     // reflex is a daily drill — never carry it over (no make-up value)
-      &&!/reflex/i.test(t.title||"")
+      &&!subjNoCarry(t)                             // day-bound (reflex, notebooks, card noCarry) — a missed day is just missed
       &&!awChecked[t.id]&&!awChecked[t.id+"_c"]  // not completed in previous week
       &&!checked[t.id+"_c"]                        // not completed this week either
       &&!_carryBlocked(t,_dk))                      // walked back, or same lesson already done under another id
@@ -4689,6 +4688,18 @@ function getCarryOverPool(){
       included:!excl[t.id+"_c"],
       prevWeek:prev.weekLabel||"prev week"}));
   return {prev,tasks};
+}
+
+// Day-bound subjects drop when missed — never swept to a later day by the cascade and
+// never carried across weeks as _c (no make-up value). Driven by the subject card's
+// noCarry flag (Subjects editor → "If Missed → Drops that day"); reflex stays hardcoded
+// so tasks that predate the flag keep their old behavior.
+function subjNoCarry(t){
+  if(!t) return false;
+  if(t.subjectKey==="reflex"||/reflex/i.test(t.title||"")) return true;
+  const cs=currData&&currData.subjects&&currData.subjects[t.who];
+  const s=(cs&&t.subjectKey)?cs[t.subjectKey]:null;
+  return !!(s&&s.noCarry);
 }
 
 function setHistTab(t){ histTab=t; const el=document.getElementById("content"); if(el&&(tab==="history"||(tab==="schedule"&&schedShowHistory))) renderHistory(el); }
@@ -5084,7 +5095,7 @@ function loadJson(){
           })[0];
         if(_archPrev){
           const _awc=_archPrev.checked||{};
-          (_archPrev.tasks||[]).filter(t=>!t.id.endsWith("_c")&&!_awc[t.id]&&!_awc[t.id+"_c"]&&!_carryBlocked(t,_dk))
+          (_archPrev.tasks||[]).filter(t=>!t.id.endsWith("_c")&&!_awc[t.id]&&!_awc[t.id+"_c"]&&!_carryBlocked(t,_dk)&&!subjNoCarry(t))
             .forEach(t=>{
               const _cId=t.id+"_c";
               if(newIds.has(_cId)) return;                        // already present
@@ -6400,6 +6411,16 @@ function ceRenderEditSheet(){
       h+='<div style="margin-top:8px;padding:9px 11px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;font-size:11px;color:#3730a3">🔗 <b>'+esc(_subsAll[k].display||k)+'</b> is kept right '+(_ord==="after"?"after":"before")+' this subject (sticky set on its card). Open that subject to change it.</div>';
     });
   }
+
+  // If-missed behavior — carries forward (default) vs day-bound drop (notebooks, daily drills)
+  h+='<div class="ce-sheet-lbl">If Missed</div>';
+  h+='<div class="ce-chips">';
+  h+='<div class="ce-chip'+(!s.noCarry?" sel":"")+'" onclick="ceSaveField(\'noCarry\',null);ceRenderEditSheet()">Carries forward</div>';
+  h+='<div class="ce-chip'+(s.noCarry?" sel":"")+'" onclick="ceSaveField(\'noCarry\',true);ceRenderEditSheet()">Drops that day</div>';
+  h+='</div>';
+  h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">'+(s.noCarry
+    ?'A missed day is simply missed — never moved to a later day or carried into next week (right for daily bookends like notebooks).'
+    :'Missed work chases forward: swept into later days and carried into next week until done.')+'</div>';
 
   // Priority
   h+='<div class="ce-sheet-lbl">Priority</div>';
@@ -8122,6 +8143,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
   weekData.tasks.forEach(t=>{
     if(t.id.endsWith("_c")) return;
     if(checked[t.id]) return;
+    if(subjNoCarry(t)) return; // day-bound (notebooks, reflex, card noCarry): a missed day is just missed
     const idx=dayOrder.indexOf(t.day);
     if(idx<0||idx>todayIdx) return;
     if(idx===todayIdx){
@@ -22237,7 +22259,7 @@ function gwCommit(){
       })[0];
     if(_archPrev){
       const _awc=_archPrev.checked||{};
-      (_archPrev.tasks||[]).filter(t=>!t.id.endsWith("_c")&&!_awc[t.id]&&!_awc[t.id+"_c"])
+      (_archPrev.tasks||[]).filter(t=>!t.id.endsWith("_c")&&!_awc[t.id]&&!_awc[t.id+"_c"]&&!subjNoCarry(t))
         .forEach(t=>{
           const _cId=t.id+"_c";
           if(newIds.has(_cId)) return;
@@ -22289,7 +22311,7 @@ function gwCommit(){
       try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
       if(db) db.ref("archive/"+oldWK).set(entry);
     }
-    snapTasks.filter(t=>!t.id.endsWith("_c")&&!snapChecked[t.id]&&!snapChecked[t.id+"_c"])
+    snapTasks.filter(t=>!t.id.endsWith("_c")&&!snapChecked[t.id]&&!snapChecked[t.id+"_c"]&&!subjNoCarry(t))
       .forEach(t=>{
         const cId=t.id+"_c";
         if(!d.tasks.some(x=>x.id===cId))
