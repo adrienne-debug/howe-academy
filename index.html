@@ -8083,7 +8083,7 @@ function schedCascade(){
   },2000);
 }
 
-function cascadeIntraWeek(){
+function cascadeIntraWeek(sweepTodayElapsed){
   const dayOrder=["monday","tuesday","wednesday","thursday","friday","saturday"];
   const JS_DAY_MAP={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
   const todayMid=new Date(); todayMid.setHours(0,0,0,0);
@@ -8097,6 +8097,9 @@ function cascadeIntraWeek(){
   }
   if(!today) return;
   const todayIdx=dayOrder.indexOf(today);
+  // Current clock in minutes (harness pins via _cascNowMin) — used by the today-elapsed
+  // sweep below and as the now-floor when packing today.
+  const _nowMin=(typeof _cascNowMin==="number")?_cascNowMin:(function(){var n=new Date();return n.getHours()*60+n.getMinutes();})();
 
   // Self-heal: checked tasks should have t.day matching where they were checked
   weekData.tasks.forEach(t=>{
@@ -8120,13 +8123,23 @@ function cascadeIntraWeek(){
     if(t.id.endsWith("_c")) return;
     if(checked[t.id]) return;
     const idx=dayOrder.indexOf(t.day);
-    if(idx<0||idx>=todayIdx) return;
-    let isPast=false;
-    if(DAY_DT[t.day]){
-      const cal=new Date(DAY_DT[t.day]+", "+todayMid.getFullYear()); cal.setHours(0,0,0,0);
-      isPast=cal<todayMid;
-    } else { isPast=(JS_DAY_MAP[t.day]||0)<jsDay; }
-    if(!isPast) return;
+    if(idx<0||idx>todayIdx) return;
+    if(idx===todayIdx){
+      // Today's tasks normally stay put — no intra-day moving goalposts while the kids
+      // are working. On a REGENERATION commit (sweepTodayElapsed) we also sweep today's
+      // tasks whose start time has already passed: an evening regen must not plan work
+      // into elapsed slots. The now-floor below re-places them after "now" on today, or
+      // chains them to later days when today is already over.
+      if(!sweepTodayElapsed) return;
+      if(toMin(t.time)>=_nowMin) return;
+    } else {
+      let isPast=false;
+      if(DAY_DT[t.day]){
+        const cal=new Date(DAY_DT[t.day]+", "+todayMid.getFullYear()); cal.setHours(0,0,0,0);
+        isPast=cal<todayMid;
+      } else { isPast=(JS_DAY_MAP[t.day]||0)<jsDay; }
+      if(!isPast) return;
+    }
     t.cascadedFrom=t.cascadedFrom||t.day;
     if(_isNote(t)) pastNotes.push(t); else pastTasks.push(t);
   });
@@ -8217,10 +8230,9 @@ function cascadeIntraWeek(){
     });
   })();
   const _prefIdx=t=>{ const i=dayOrder.indexOf(_prefDay.get(t)); return i<0?todayIdx:i; };
-  // Now-floor: on TODAY, place swept work no earlier than the current clock time so catch-up
-  // never lands in an already-elapsed slot (after school ends, today is full → work flows to
-  // later open days). Harness can pin the clock via _cascNowMin.
-  const _nowMin=(typeof _cascNowMin==="number")?_cascNowMin:(function(){var n=new Date();return n.getHours()*60+n.getMinutes();})();
+  // Now-floor: on TODAY, place swept work no earlier than the current clock time (_nowMin,
+  // hoisted above) so catch-up never lands in an already-elapsed slot (after school ends,
+  // today is full → work flows to later open days).
   for(let di=todayIdx; di<dayOrder.length&&pool.length; di++){
     const dn=dayOrder[di];
     const sdOv=(sd.overrides||{})[dn]||{};
@@ -8378,6 +8390,10 @@ function cascadeIntraWeek(){
       else if(!slots[i].cascadedFrom && t.cascadedFrom) delete t.cascadedFrom;
     }
   }
+
+  // A swept task that landed back on its own day isn't a carry — drop the badge
+  // (happens when a mid-day regen re-places an elapsed slot later the same day).
+  weekData.tasks.forEach(t=>{ if(t.cascadedFrom&&t.cascadedFrom===t.day) delete t.cascadedFrom; });
 
   sv(WK+"_tasks",weekData.tasks);
   safeWriteTasks("cascade");
@@ -22312,7 +22328,9 @@ function gwCommit(){
   // right here, so past-day unfinished work gets distributed into the remaining days NOW
   // instead of sitting piled in "Carried Over" until the user manually refreshes. Without
   // this, a Tuesday regeneration left Monday's undone lessons stuck at the top.
-  try{ cascadeIntraWeek(); }catch(e){ dbg("gwCommit cascadeIntraWeek error: "+e); }
+  // true = also sweep TODAY's already-elapsed slots (evening regen must not plan work into
+  // times that have passed) — a regen-only behavior; the daily cascade never moves today.
+  try{ cascadeIntraWeek(true); }catch(e){ dbg("gwCommit cascadeIntraWeek error: "+e); }
   runCascade(); runDisplacement();
   renderAll();
   gwShowToast("Week "+gwConfig.weekNum+" applied to schedule!");
