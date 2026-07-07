@@ -19130,6 +19130,46 @@ function rulesUpdateSaturday(field,val){
   saveRules(r);
 }
 
+// ── Workflow time estimates ─────────────────────────────────────────
+// Planning readout for the Workflow Orders editor: how much time each kid has in each
+// tier, derived LIVE from their subject cards (the source of truth — a subject's tier is
+// its mom/device, not the workflow list). Frequency mirrors the generator: timesPerWeek
+// if set, else daily-tracked = 5×, else allowedDays / day-count. Paused subjects excluded;
+// notebooks counted (they're real minutes on the day).
+function wfSubjFreq(v){
+  if(v.timesPerWeek!=null) return +v.timesPerWeek||0;
+  if(v.tracking==="daily") return 5;
+  if(Array.isArray(v.allowedDays)&&v.allowedDays.length) return v.allowedDays.length;
+  const d=(v.days||"").trim();
+  if(d) return d.replace(/,/g," ").split(/\s+/).filter(Boolean).length;
+  return 5;
+}
+function wfTierOf(v){
+  const m=(v.mom||"none").toLowerCase();
+  if(m==="required") return "required";
+  if(m==="maybe"||m==="maybe_mom") return "maybe";
+  if((v.device||"").toLowerCase()==="computer") return "computer";
+  return "independent";
+}
+function wfKidTierTimes(kid){
+  const out={required:{wk:0,n:0},maybe:{wk:0,n:0},computer:{wk:0,n:0},independent:{wk:0,n:0}};
+  const subs=(currData&&currData.subjects&&currData.subjects[kid])||{};
+  for(const sk in subs){ const v=subs[sk]; if(!v||v.paused) continue;
+    const t=wfTierOf(v); out[t].wk+=(+v.minutes||0)*wfSubjFreq(v); out[t].n++; }
+  return out;
+}
+function wfFamilyMomLoad(){
+  let req=0,may=0;
+  ROSTER.forEach(k=>{ const t=wfKidTierTimes(k); req+=t.required.wk; may+=t.maybe.wk; });
+  return {req,may};
+}
+function wfMomWindowMin(){
+  const sd=(rulesData&&rulesData.schoolDay)||{};
+  const day=toMin(sd.defaultEnd||"4:15 PM")-toMin(sd.defaultStart||"10:00 AM");
+  const lunch=Math.max(0,toMin(sd.lunchEnd||"2:00 PM")-toMin(sd.lunchStart||"1:00 PM"));
+  return Math.max(0,day-lunch);
+}
+
 function renderRules(el,headerHtml){
   if(!el){el=document.getElementById("content");if(!el)return;}
   const r=rulesData;
@@ -19272,6 +19312,16 @@ function renderRules(el,headerHtml){
   h+='<div class="rules-card-title"><span>&#128260;</span> Workflow Orders</div>';
   h+='<div class="rules-card-arrow">&#9654;</div></div>';
   h+='<div class="rules-card-body">';
+  (function(){
+    const fl=wfFamilyMomLoad(), win=wfMomWindowMin();
+    const reqDay=Math.round(fl.req/5), mayDay=Math.round(fl.may/5), over=reqDay>win;
+    h+='<div style="background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:12px">';
+    h+='<div style="font-size:12px;font-weight:800;margin-bottom:6px">&#128105; Family Mom-Load <span style="font-weight:600;color:var(--muted)">— est. from subject cards</span></div>';
+    h+='<div style="font-size:11.5px;line-height:1.7">';
+    h+='<div>Mom-Required: <b>'+reqDay+' min/day</b> ('+fl.req+' /wk) '+(over?'<span style="color:#ef4444;font-weight:700">&#9888; over your '+win+'-min mom window</span>':'<span style="color:var(--muted)">of your '+win+'-min window</span>')+'</div>';
+    h+='<div>May-Need-Mom: <b>'+mayDay+' min/day</b> ('+fl.may+' /wk) <span style="color:var(--muted)">— flexible, can overlap another kid&#39;s Mom time</span></div>';
+    h+='</div></div>';
+  })();
   [...ROSTER].forEach(k=>{
     const kc=SL_KCOL[k]||"#666";
     const kw=wf[k]||{};
@@ -19300,6 +19350,22 @@ function renderRules(el,headerHtml){
         });
       }
     });
+    // Time-by-category readout — how much of each tier this kid actually has (from cards),
+    // so reordering the steps above is an informed choice, not a guess.
+    (function(){
+      const tt=wfKidTierTimes(k);
+      h+='<div class="rules-section-lbl" style="margin-top:2px">Time by category <span style="font-weight:400;color:var(--muted)">(est.)</span></div>';
+      h+='<div style="display:flex;flex-wrap:wrap;gap:6px">';
+      ["required","maybe","computer","independent"].forEach(function(t){
+        const d=tt[t], col=TIER_COL[t]||"#666", dim=d.wk===0?"opacity:0.38;":"";
+        h+='<div style="'+dim+'display:flex;flex-direction:column;gap:1px;border:1px solid '+col+'55;background:'+col+'14;border-radius:8px;padding:5px 9px;min-width:72px">';
+        h+='<div style="font-size:10px;font-weight:800;color:'+col+'">'+(TIER_LBL2[t]||t)+'</div>';
+        h+='<div style="font-size:13px;font-weight:800;line-height:1.1">'+Math.round(d.wk/5)+'<span style="font-size:9px;font-weight:600;color:var(--muted)"> m/day</span></div>';
+        h+='<div style="font-size:9.5px;color:var(--muted)">'+d.wk+' m/wk &middot; '+d.n+' subj</div>';
+        h+='</div>';
+      });
+      h+='</div>';
+    })();
     h+='<div style="height:12px"></div>';
   });
   h+='</div></div>';
