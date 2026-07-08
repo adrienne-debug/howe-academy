@@ -15386,7 +15386,7 @@ function mastSaveResults(){
               const slug=next.toLowerCase().replace(/[^a-z0-9]/g,"_").substring(0,20);
               const _pfx=masteryKid.substring(0,3);
               // Mirrors mastPullItem: mint with a real back or none — never answer=prompt.
-              const newItem={id:_pfx+"_"+slug,subject:cat,type:cat.toLowerCase(),prompt:next,tier:"daily",review_mode:"flash",status:"introduction",drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0};
+              const newItem={id:mastUniqueId(items,_pfx+"_"+slug),subject:cat,type:cat.toLowerCase(),prompt:next,tier:"daily",review_mode:"flash",status:"introduction",drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0};
               const _ndef=mastCustomDef(masteryKid,cat,next);
               if(_ndef){ newItem.answer=_ndef; newItem.review_mode="recite"; }  // rule deck: flips to the rule
               else { const _nkdef=mastGetDef(masteryKid,next); if(_nkdef) newItem.answer=_nkdef; }  // flip deck: carry the back on the card too
@@ -15416,7 +15416,7 @@ function mastSaveResults(){
     let n=0;
     for(const name of bank){
       if(n>=introMax) break;
-      const it=mastMintFromBank(deck,name);
+      const it=mastMintFromBank(deck,name,items);
       items.push(it); minted.push(it); n++;
     }
   });
@@ -16037,11 +16037,24 @@ function mastCatFinishedLearning(items,cat){
   const have=new Set(items.filter(i=>i&&i.subject===cat).map(i=>i.prompt));
   return bank.every(n=>have.has(n));
 }
+// Card ids are kid-prefix + prompt slug, so two decks sharing a word ("and" in Sight Words
+// AND Logic of English) would mint the SAME id — and every id lookup (deck assembly, score
+// application) silently resolves to one card while the twin can never earn dots or climb.
+// Suffix a counter on collision so ids stay unique within the kid's list.
+function mastUniqueId(items,base){
+  const ids=new Set((items||[]).filter(i=>i&&i.id).map(i=>i.id));
+  if(!ids.has(base)) return base;
+  let n=2; while(ids.has(base+"_"+n)) n++;
+  return base+"_"+n;
+}
 // Mint a card from the bank exactly like auto-pull does (rule decks become recite).
-function mastMintFromBank(cat,name){
+// Pass the kid's working items array when minting several in a loop, so each mint
+// sees the ids of the ones just minted; falls back to masteryData when omitted.
+function mastMintFromBank(cat,name,items){
   const kid=masteryKid;
+  let _ex=items||masteryData[kid]||[]; if(!Array.isArray(_ex)) _ex=Object.values(_ex);
   const slug=name.toLowerCase().replace(/[^a-z0-9]/g,"_").substring(0,20);
-  const item={id:kid.substring(0,3)+"_"+slug,subject:cat,type:cat.toLowerCase(),prompt:name,tier:"daily",review_mode:"flash",status:"introduction",drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0};
+  const item={id:mastUniqueId(_ex,kid.substring(0,3)+"_"+slug),subject:cat,type:cat.toLowerCase(),prompt:name,tier:"daily",review_mode:"flash",status:"introduction",drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0};
   const _def=mastCustomDef(kid,cat,name);
   if(_def){ item.answer=_def; item.review_mode="recite"; }
   else { const _kdef=mastGetDef(kid,name); if(_kdef) item.answer=_kdef; }
@@ -16064,7 +16077,7 @@ function mastSeedCat(cat){
   for(const name of bank){
     if(intro>=introMax) break;
     if(have.has(name)) continue;
-    const it=mastMintFromBank(cat,name);
+    const it=mastMintFromBank(cat,name,items);
     items.push(it); fresh.push(it); have.add(name); intro++;
   }
   if(fresh.length){ masteryData[kid]=items; mastPutCards(kid,items,fresh); try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){} }
@@ -16098,7 +16111,7 @@ function mastPullItem(cat,name){
   // No answer:name placeholder — a card is minted with a REAL back (bank def, definitions
   // map, or built-in vocab def) or with no answer at all. answer==prompt used to mask
   // "this card has nothing to flip to" and defeated every fallback.
-  const item={id:prefix+"_"+slug,subject:cat,type:cat.toLowerCase(),prompt:name,tier:"daily",review_mode:"flash",status:"introduction",drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0};
+  const item={id:mastUniqueId(items,prefix+"_"+slug),subject:cat,type:cat.toLowerCase(),prompt:name,tier:"daily",review_mode:"flash",status:"introduction",drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0};
   const _def=mastCustomDef(kid,cat,name);
   if(_def){ item.answer=_def; item.review_mode="recite"; }  // rule deck: flips to the rule
   else { const _kdef=mastGetDef(kid,name); if(_kdef) item.answer=_kdef; }  // flip deck: carry the back on the card too, so a lost definitions map can't blank it
@@ -16912,9 +16925,53 @@ function mastRestoreLog(){
   try{
     const s=JSON.parse(localStorage.getItem("ha_mast_log_"+masteryKid)||"null");
     if(!s) return;
-    if(s.date===new Date().toISOString().slice(0,10)&&s.scores&&Object.keys(s.scores).length){ mastLogMode=true; mastLogScores=s.scores; }
-    else mastClearLogPersist();  // yesterday's abandoned half-log — drop it
+    const _today=new Date().toISOString().slice(0,10);
+    const _has=s.scores&&Object.keys(s.scores).length;
+    if(s.date===_today&&_has){ mastLogMode=true; mastLogScores=s.scores; }
+    else if(_has) mastRescueStaleLog(s);  // a prior day's half-log is the ONLY copy of those scores — offer to bank it, never silently drop it (lost Lucy's 7/7 drill to the old delete)
+    else mastClearLogPersist();
   }catch(e){}
+}
+// A half-logged session from a PRIOR day can't resume (that day's due-deck is gone), but its
+// scores are real drill results. Bank them to their own date as a history entry: counts +
+// per-item results only, NO ladder mutations — mastSaveResults' pass 1/2 need the deck as it
+// stood that day. Prompts/tiers are looked up by id in today's data (tier may have moved
+// since; oldTier is best-effort). Merges into any existing entry on that date, mirroring
+// mastSaveResults' "log another" merge.
+function mastRescueStaleLog(s){
+  const _n=Object.keys(s.scores).length;
+  const _kid=masteryKid.charAt(0).toUpperCase()+masteryKid.slice(1);
+  if(!confirm("Found an UNSAVED drill session for "+_kid+" from "+s.date+" ("+_n+" cards marked).\n\nSave it to that date's scores? (Cancel throws it away.)")){ mastClearLogPersist(); return; }
+  let items=masteryData[masteryKid]||[];
+  if(!Array.isArray(items)) items=Object.values(items);
+  const byId={}; items.forEach(i=>{ if(i&&i.id&&!byId[i.id]) byId[i.id]=i; });
+  const drillItems=[]; let correct=0,miss=0,close=0,shown=0;
+  Object.entries(s.scores).forEach(([id,sc])=>{
+    const it=byId[id]||{};
+    if(sc==="shown"){ shown++; drillItems.push({id:id,prompt:it.prompt||id,result:"shown",tier:it.tier||"daily"}); }
+    else{ drillItems.push({id:id,prompt:it.prompt||id,result:sc,oldTier:it.tier||"daily"}); if(sc==="c")correct++; else if(sc==="m")miss++; else if(sc==="~")close++; }
+  });
+  const scored=correct+miss+close;
+  // Print number for that date — reuse its printLog entry if a sheet was printed, else next.
+  let pl=masteryData.printLog||[]; if(!Array.isArray(pl)) pl=Object.values(pl);
+  const _ex=pl.find(e=>e&&e.date===s.date);
+  const pn=_ex?_ex.num:(pl.reduce((m,x)=>Math.max(m,x.num||0),0)+1);
+  if(!_ex){ pl.push({date:s.date,num:pn}); masteryData.printLog=pl; mastPrintLogAppend(s.date,pn); }
+  const key=s.date.replace(/-/g,"");
+  const prev=(masteryData.history&&masteryData.history[masteryKid]&&masteryData.history[masteryKid][key])||null;
+  let entry={date:s.date,printNum:pn,total:drillItems.length,scored:scored,correct:correct,miss:miss,close:close,shown:shown,pct:scored?Math.round(correct/scored*100):0,items:drillItems,rescued:true};
+  if(prev){
+    const pc=(prev.correct||0)+correct,pm=(prev.miss||0)+miss,pt=(prev.close||0)+close;
+    const psc=pc+pm+pt;
+    entry={date:s.date,printNum:prev.printNum||pn,total:(prev.total||0)+drillItems.length,scored:psc,correct:pc,miss:pm,close:pt,shown:(prev.shown||0)+shown,pct:psc?Math.round(pc/psc*100):0,items:((prev.items||[]).concat(drillItems)),rescued:true};
+  }
+  if(!masteryData.history) masteryData.history={};
+  if(!masteryData.history[masteryKid]) masteryData.history[masteryKid]={};
+  masteryData.history[masteryKid][key]=entry;
+  if(db) db.ref("mastery/history/"+masteryKid+"/"+key).set(entry);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  mastClearLogPersist();
+  try{localStorage.removeItem("ha_mast_deck_"+masteryKid);}catch(e){}  // that quiz's frozen shuffle is stale with it
 }
 // "One quiz per day": once today is logged, the Log button steps aside; this explicit
 // button is the only way to run a second session (which MERGES into today's history).
@@ -16984,7 +17041,7 @@ function mastAddItems(){
 
     const slug=p.toLowerCase().replace(/[^a-z0-9]/g,"_").substring(0,20);
     const prefix=masteryKid.substring(0,3);
-    const id=prefix+"_"+slug;
+    const id=mastUniqueId(items.concat(newItems),prefix+"_"+slug);
 
     const typeObj=MAST_ITEM_TYPES.find(t=>t.id===mastAddType)||MAST_ITEM_TYPES[0];
     const subj=isJ?(mastAddCustomSubject||mastAddCat):(mastAddCustomSubject||mastAddSubject);
