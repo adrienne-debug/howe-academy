@@ -4556,14 +4556,128 @@ function histKidStatsRow(tasks, checkedObj){
   return h;
 }
 
+// ── WEEK COMPLETION SNAPSHOT (for History → Trends) ──────────────────
+// Pure + self-contained (no currData) so it works on both the live week and any
+// archived week. "Done" = the UNION of checked + a real history completion, because
+// archived weeks record completion inconsistently (some in checked, some only in
+// history). `confidence` = fraction of tasks that left ANY record — a week whose
+// archive is too sparse to trust reads low and is excluded from trends.
+function _wcVals(t){ return Array.isArray(t)?t:(t?Object.values(t):[]); }
+function buildWeekCompletion(tasks, checked, hist){
+  tasks=_wcVals(tasks); checked=checked||{}; hist=hist||{};
+  const isReflex=t=>t.subjectKey==="reflex"||/reflex/i.test(t.title||"");
+  const isNb=t=>/notebook/i.test(t.title||"");
+  const isLunch=t=>/lunch/i.test(t.title||"");
+  const subjOf=t=>{const s=(t.title||"");const first=s.split(/[—–]/)[0];return (first.replace(/^[\s\W]+/,"").trim())||t.subjectKey||"other";};
+  const doneOf=t=>{const i=String(t.id||"");if(checked[i]||checked[i+"_c"])return true;
+    for(const k of [i,i+"_c"]){const e=hist[k];if(e&&typeof e==="object"&&e.ts&&!e.missed&&!e.flag)return true;}return false;};
+  const dLate=t=>{const e=hist[String(t.id)]||hist[String(t.id)+"_c"]||null;return (e&&typeof e.daysLate==="number")?e.daysLate:null;};
+  const byKid={}; let planned=0, recorded=0;
+  tasks.forEach(t=>{
+    if(String(t.id||"").endsWith("_c")||isLunch(t)) return;
+    const k=t.who; if(!k) return;
+    const r=byKid[k]||(byKid[k]={planned:0,done:0,onday:0,late:0,latesum:0,never:0,dbmiss:0,subs:{}});
+    r.planned++; planned++;
+    const dn=doneOf(t);
+    if(dn||hist[String(t.id)+"_missed"]||hist[String(t.id)]) recorded++;
+    const s=subjOf(t); const ss=r.subs[s]||(r.subs[s]={planned:0,done:0}); ss.planned++;
+    if(dn){ r.done++; ss.done++; const dl=dLate(t); if(dl>0){r.late++;r.latesum+=dl;} else r.onday++; }
+    else { r.never++; if(isReflex(t)||isNb(t)) r.dbmiss++; }
+  });
+  return {byKid, planned, done:Object.values(byKid).reduce((a,r)=>a+r.done,0),
+    confidence: planned?Math.round(recorded/planned*100):0};
+}
+
+// History → Trends: season-long completion, day-bound misses, and subject slippage.
+// Reads each archived week's frozen `completion` snapshot when present, else rebuilds
+// it on the fly. Weeks with sparse/unreliable records (confidence < 70%) are excluded.
+function renderHistoryTrends(){
+  const KC={lincoln:"#2a78d6",ellis:"#1baf7a",lucy:"#eda100",julian:"#9333ea"};
+  const weeks=[];
+  Object.keys(archive||{}).forEach(wk=>{
+    const aw=archive[wk]; if(!aw||!aw.tasks) return;
+    const n=parseInt((wk.match(/\d+/)||[0])[0])||0; if(!n) return;
+    const comp=aw.completion||buildWeekCompletion(aw.tasks,aw.checked,aw.history);
+    weeks.push({n,comp,reliable:comp.confidence>=70});
+  });
+  weeks.sort((a,b)=>a.n-b.n);
+  const rel=weeks.filter(w=>w.reliable);
+  let h='<div style="padding:12px">';
+  if(!rel.length){ h+='<div style="text-align:center;color:var(--muted);padding:34px 12px;line-height:1.6">No completed weeks with reliable records yet.<br>Trends fill in as weeks are archived — each one now freezes a snapshot at close.</div></div>'; return h; }
+  const kids=[...ROSTER].filter(k=>rel.some(w=>w.comp.byKid[k]));
+  const pctOf=(w,k)=>{const r=w.comp.byKid[k];return (r&&r.planned)?Math.round(r.done/r.planned*100):null;};
+
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;margin-bottom:16px">';
+  kids.forEach(k=>{
+    const vals=rel.map(w=>pctOf(w,k)).filter(v=>v!=null);
+    const avg=vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length):0;
+    h+='<div style="background:var(--bg);border-radius:10px;padding:10px 12px"><div style="font-size:11px;color:var(--muted)">'+cap(k)+' · season done</div><div style="font-size:22px;font-weight:800;color:'+(KC[k]||"var(--text)")+'">'+avg+'%</div></div>';
+  });
+  h+='</div>';
+
+  const W=520,H=168,pL=28,pB=20,pT=10,pR=10,xN=rel.length;
+  const xs=i=>pL+(xN<=1?(W-pL-pR)/2:i*(W-pL-pR)/(xN-1));
+  const ys=v=>pT+(100-v)/100*(H-pT-pB);
+  h+='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Weekly completion — % of each week\'s planned work finished</div>';
+  let s='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">';
+  [0,50,100].forEach(g=>{const y=ys(g);s+='<line x1="'+pL+'" y1="'+y+'" x2="'+(W-pR)+'" y2="'+y+'" stroke="var(--border)" stroke-width="1"/><text x="'+(pL-4)+'" y="'+(y+3)+'" text-anchor="end" font-size="9" fill="var(--muted)">'+g+'</text>';});
+  rel.forEach((w,i)=>{ s+='<text x="'+xs(i)+'" y="'+(H-5)+'" text-anchor="middle" font-size="9" fill="var(--muted)">W'+w.n+'</text>'; });
+  kids.forEach(k=>{
+    const pts=[]; rel.forEach((w,i)=>{const v=pctOf(w,k); if(v!=null) pts.push(xs(i).toFixed(1)+','+ys(v).toFixed(1));});
+    if(pts.length>1) s+='<polyline points="'+pts.join(' ')+'" fill="none" stroke="'+(KC[k]||"#888")+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+    rel.forEach((w,i)=>{const v=pctOf(w,k); if(v!=null) s+='<circle cx="'+xs(i).toFixed(1)+'" cy="'+ys(v).toFixed(1)+'" r="2.6" fill="'+(KC[k]||"#888")+'"/>';});
+  });
+  s+='</svg>';
+  h+=s;
+  h+='<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin:6px 0 16px">';
+  kids.forEach(k=>{ h+='<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:2px;background:'+(KC[k]||"#888")+'"></span>'+cap(k)+'</span>'; });
+  h+='</div>';
+
+  h+='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Day-specific misses per week (reflex &amp; notebooks — can\'t be made up)</div>';
+  h+='<div style="display:flex;align-items:flex-end;gap:6px;height:64px;margin-bottom:16px">';
+  rel.forEach(w=>{
+    const m=kids.reduce((a,k)=>a+((w.comp.byKid[k]||{}).dbmiss||0),0);
+    const hb=m===0?3:Math.min(52,8+m*8);
+    h+='<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;font-weight:700;color:'+(m?"#c0392b":"var(--muted)")+'">'+m+'</div><div style="width:100%;height:'+hb+'px;background:'+(m?"#e34948":"var(--border)")+';border-radius:3px 3px 0 0"></div><div style="font-size:9px;color:var(--muted);margin-top:2px">W'+w.n+'</div></div>';
+  });
+  h+='</div>';
+
+  const agg={};
+  rel.forEach(w=>{ kids.forEach(k=>{ const r=w.comp.byKid[k]; if(!r) return; Object.entries(r.subs).forEach(([sj,sv])=>{ const key=k+"|"+sj; const a=agg[key]||(agg[key]={k,sj,planned:0,done:0}); a.planned+=sv.planned; a.done+=sv.done; }); }); });
+  let rows=Object.values(agg).filter(a=>a.planned>=5).map(a=>({...a,slip:Math.round((1-a.done/a.planned)*100)})).filter(a=>a.slip>0);
+  rows.sort((x,y)=>y.slip-x.slip); rows=rows.slice(0,8);
+  if(rows.length){
+    h+='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Subjects that slip most (across '+rel.length+' reliable weeks)</div>';
+    h+='<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:6px">';
+    rows.forEach(a=>{
+      const paused=a.done===0;
+      h+='<tr style="border-top:1px solid var(--border)">'+
+        '<td style="padding:5px 4px;white-space:nowrap"><span style="color:'+(KC[a.k]||"var(--text)")+';font-weight:700">'+cap(a.k)+'</span></td>'+
+        '<td style="padding:5px 6px">'+a.sj+(paused?' <span style="font-size:9px;color:var(--muted)">· none done, paused?</span>':'')+'</td>'+
+        '<td style="padding:5px 4px;text-align:right;color:var(--muted);white-space:nowrap">'+a.done+'/'+a.planned+'</td>'+
+        '<td style="padding:5px 4px;text-align:right;font-weight:800;color:'+(a.slip>=50?"#c0392b":"var(--text)")+'">'+a.slip+'%</td></tr>';
+    });
+    h+='</table>';
+  }
+
+  const excl=weeks.filter(w=>!w.reliable).map(w=>"W"+w.n);
+  h+='<div style="font-size:10px;color:var(--muted);margin-top:12px;line-height:1.6">';
+  if(excl.length) h+='Excluded (incomplete archived records): '+excl.join(", ")+'. ';
+  h+='Each week now freezes a completion snapshot when it closes, so future trends stay exact.</div>';
+  h+='</div>';
+  return h;
+}
+
 function renderHistory(el){
   const histKids=(schedShowHistory&&kid!=="all"&&kid!=="mom")?[kid]:[...ROSTER];
   const _btn=(on)=>'flex:1;padding:8px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?'var(--header)':'transparent')+';color:'+(on?'#fff':'var(--muted)');
   let h='<div style="display:flex;gap:6px;padding:12px 12px 4px">';
   h+='<button onclick="setHistTab(\'log\')" style="'+_btn(histTab==="log")+'">History Log</button>';
+  h+='<button onclick="setHistTab(\'trends\')" style="'+_btn(histTab==="trends")+'">Trends</button>';
   h+='<button onclick="setHistTab(\'attendance\')" style="'+_btn(histTab==="attendance")+'">Attendance</button>';
   h+='</div>';
   if(histTab==="attendance"){ h+=renderAttendanceHtml(); el.innerHTML=h; return; }
+  if(histTab==="trends"){ h+=renderHistoryTrends(); el.innerHTML=h; return; }
 
   const hist=ld(WK+"_history")||{};
   const n=new Date();
@@ -5311,7 +5425,7 @@ function loadJson(){
         const hasAnything=Object.keys(snapHist).length>0||snapTasks.length>0;
         if(hasAnything){
           const snapSlotPts=ld(oldWK+"_slot_points")||{};
-          const entry={weekLabel:oldWK,archivedAt:nowTs(),history:snapHist,tasks:snapTasks,checked:snapChecked,dates:{...DAY_DT},slot_points:snapSlotPts};
+          const entry={weekLabel:oldWK,archivedAt:nowTs(),history:snapHist,tasks:snapTasks,checked:snapChecked,dates:{...DAY_DT},slot_points:snapSlotPts,completion:buildWeekCompletion(snapTasks,snapChecked,snapHist)};
           archive[oldWK]=entry;
           try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
           if(db) db.ref("archive/"+oldWK).set(entry);
@@ -24003,7 +24117,7 @@ function gwCommit(){
     const hasAnything=Object.keys(snapHist).length>0||snapTasks.length>0;
     if(hasAnything){
       const snapSlotPts=ld(oldWK+"_slot_points")||{};
-      const entry={weekLabel:oldWK,archivedAt:nowTs(),history:snapHist,tasks:snapTasks,checked:snapChecked,dates:{...DAY_DT},slot_points:snapSlotPts};
+      const entry={weekLabel:oldWK,archivedAt:nowTs(),history:snapHist,tasks:snapTasks,checked:snapChecked,dates:{...DAY_DT},slot_points:snapSlotPts,completion:buildWeekCompletion(snapTasks,snapChecked,snapHist)};
       archive[oldWK]=entry;
       try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
       if(db) db.ref("archive/"+oldWK).set(entry);
