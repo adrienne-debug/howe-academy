@@ -14754,7 +14754,11 @@ function mastShowMeTap(key,itemId,tappedId){
 // Word ↔ picture/meaning pairs against a count-up clock; per-deck personal best stored in
 // <kid>_settings/match_best (targeted update). Pure display/game — never touches the
 // ladder, scores, or session logs.
-let matchState=null;   // {deck,tiles:[{pid,html,matched,miss}],sel,lock,startTs,endTs,isPB,prevBest}
+let matchState=null;   // {deck,style,pairMode,tiles:[{pid,html,matched,miss,up}],sel,lock,startTs,endTs,isPB,prevBest,sec}
+let matchStyle="match";     // "match" = all face-up (Quizlet) | "memory" = face-down flip (Concentration)
+let matchPairMode="two";    // "two" = word ↔ picture/meaning | "same" = two identical cards (classic memory — works for pure flash decks)
+function mastMatchSetStyle(v){ matchStyle=v; matchState=null; _mastRe(); }
+function mastMatchSetPair(v){ matchPairMode=v; matchState=null; _mastRe(); }
 function _matchPairHtml(it){
   const vis=_smTileVis(it,true);   // noGlyph: pair tile must not be the word itself
   if(vis) return vis;
@@ -14762,38 +14766,81 @@ function _matchPairHtml(it){
   if(def) return '<span style="font-size:11.5px;font-weight:600;line-height:1.35;pointer-events:none;word-break:break-word">'+esc(String(def).slice(0,90))+'</span>';
   return null;
 }
+// Same-pair mode: any tile-able visual counts, glyphs included — two "B" cards to find
+// IS the game for a letters deck.
+function _matchEligible(it){ return matchPairMode==="same"?!!_smTileVis(it):!!_matchPairHtml(it); }
 function mastMatchDecks(){
   let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
   const by={};
   items.forEach(i=>{
     if(!i||(i.status!=="active"&&i.status!=="introduction")) return;
-    if(!_matchPairHtml(i)) return;
+    if(!_matchEligible(i)) return;
     (by[i.subject||"Other"]=by[i.subject||"Other"]||[]).push(i);
   });
   return Object.keys(by).filter(k=>by[k].length>=4).sort();
 }
 function mastMatchStart(deck){
   let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
-  const pool=items.filter(i=>i&&i.subject===deck&&(i.status==="active"||i.status==="introduction")&&_matchPairHtml(i));
+  const pool=items.filter(i=>i&&i.subject===deck&&(i.status==="active"||i.status==="introduction")&&_matchEligible(i));
   for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=pool[i]; pool[i]=pool[j]; pool[j]=t; }
-  const chosen=pool.slice(0,Math.min(6,pool.length));
+  // Dedupe by pair content: rule decks often share one rule text across cards — two
+  // identical-looking tiles where only one "counts" reads as broken to a kid. Also skip
+  // duplicate prompts for safety. Pick until 6 distinct pairs (or the pool runs dry).
+  const chosen=[]; const seenPair={}, seenWord={};
+  for(const it of pool){
+    if(chosen.length>=6) break;
+    const ph=matchPairMode==="same"?_smTileVis(it):_matchPairHtml(it), pw=(it.prompt||"").toLowerCase();
+    if(seenPair[ph]||seenWord[pw]) continue;
+    seenPair[ph]=seenWord[pw]=true;
+    chosen.push(it);
+  }
+  if(chosen.length<4){ alert("Not enough distinct pairs in "+deck+" for a fair game."); return; }
   const tiles=[];
   chosen.forEach(it=>{
-    tiles.push({pid:it.id,matched:false,miss:false,html:'<span style="font-size:'+((it.prompt||"").length<=4?26:15)+'px;font-weight:800;color:#c2410c;pointer-events:none;word-break:break-word">'+esc(it.prompt)+'</span>'});
-    tiles.push({pid:it.id,matched:false,miss:false,html:_matchPairHtml(it)});
+    if(matchPairMode==="same"){
+      // Classic memory: TWO identical cards to find — works for any flash deck.
+      const v=_smTileVis(it);
+      tiles.push({pid:it.id,matched:false,miss:false,up:false,html:v});
+      tiles.push({pid:it.id,matched:false,miss:false,up:false,html:v});
+    } else {
+      tiles.push({pid:it.id,matched:false,miss:false,up:false,html:'<span style="font-size:'+((it.prompt||"").length<=4?26:15)+'px;font-weight:800;color:#c2410c;pointer-events:none;word-break:break-word">'+esc(it.prompt)+'</span>'});
+      tiles.push({pid:it.id,matched:false,miss:false,up:false,html:_matchPairHtml(it)});
+    }
   });
   for(let i=tiles.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=tiles[i]; tiles[i]=tiles[j]; tiles[j]=t; }
-  matchState={deck:deck,tiles:tiles,sel:-1,lock:false,startTs:Date.now(),endTs:null};
+  if(matchStyle==="match") tiles.forEach(t=>{ t.up=true; });   // face-up style: everything visible
+  // ⏱ startTs stays null until the FIRST tap — studying the board is free; the clock
+  // starts when the kid commits.
+  matchState={deck:deck,style:matchStyle,pairMode:matchPairMode,tiles:tiles,sel:-1,lock:false,startTs:null,endTs:null};
   if(window._matchTick) clearInterval(window._matchTick);
   window._matchTick=setInterval(()=>{
     if(!matchState||matchState.endTs||mastView!=="match"){ clearInterval(window._matchTick); window._matchTick=null; return; }
-    const el=document.getElementById("match-clock"); if(el) el.textContent=((Date.now()-matchState.startTs)/1000).toFixed(1)+"s";
+    const el=document.getElementById("match-clock");
+    if(el) el.textContent=matchState.startTs?(((Date.now()-matchState.startTs)/1000).toFixed(1)+"s"):"0.0s";
   },100);
   _mastRe();
 }
 function mastMatchTap(ix){
   const st=matchState; if(!st||st.lock||st.endTs) return;
-  const t=st.tiles[ix]; if(!t||t.matched||ix===st.sel) return;
+  const t=st.tiles[ix]; if(!t||t.matched) return;
+  if(!st.startTs) st.startTs=Date.now();   // clock starts on the first tap
+  if(st.style==="memory"){
+    if(t.up) return;
+    t.up=true;
+    if(st.sel<0){ st.sel=ix; _mastRe(); return; }
+    const a=st.tiles[st.sel];
+    if(a.pid===t.pid){
+      a.matched=t.matched=true; st.sel=-1;
+      if(st.tiles.every(x=>x.matched)){ st.endTs=Date.now(); mastMatchFinish(); }
+      _mastRe();
+    } else {
+      st.lock=true; _mastRe();
+      // Classic concentration: a brief look at both cards, then they flip back down.
+      setTimeout(()=>{ a.up=t.up=false; st.sel=-1; st.lock=false; _mastRe(); },900);
+    }
+    return;
+  }
+  if(ix===st.sel) return;
   if(st.sel<0){ st.sel=ix; _mastRe(); return; }
   const a=st.tiles[st.sel];
   if(a.pid===t.pid){
@@ -14811,11 +14858,13 @@ function mastMatchFinish(){
   const kid=masteryKid;
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   if(!s.match_best) s.match_best={};
-  const prev=s.match_best[st.deck];
-  st.isPB=(prev==null||sec<prev); st.prevBest=prev; st.sec=sec;
+  // Separate bests per game shape — a memory time and a face-up time aren't comparable.
+  const key=st.deck+(st.style==="memory"?" \u{00B7} memory":"")+(st.pairMode==="same"?" \u{00B7} same":"");
+  const prev=s.match_best[key];
+  st.isPB=(prev==null||sec<prev); st.prevBest=prev; st.sec=sec; st.bestKey=key;
   if(st.isPB){
-    s.match_best[st.deck]=sec;
-    if(db) db.ref("mastery/"+kid+"_settings/match_best").update({[st.deck]:sec});  // this deck only
+    s.match_best[key]=sec;
+    if(db) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:sec});  // this key only
     try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
 }
@@ -14869,24 +14918,43 @@ function buildMatchHtml(color){
     h+='<div class="mast-none">No decks ready for Match yet — it needs 4+ cards with a picture or definition.</div></div>';
     return h;
   }
-  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 12px">';
+  // Game shape toggles — style (face-up vs memory flip) and pair content (word↔meaning
+  // vs two identical cards). Changing either resets the board.
+  const _tog=(sel,lbl,fn)=>'<div onclick="'+fn+'" style="cursor:pointer;padding:5px 11px;border-radius:999px;font-size:10.5px;font-weight:700;border:1.5px solid '+(sel?'#7c3aed':'#e2ddd6')+';background:'+(sel?'#7c3aed':'#fff')+';color:'+(sel?'#fff':'#57534e')+'">'+lbl+'</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 6px;align-items:center">';
+  h+='<span style="font-size:9.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Style</span>';
+  h+=_tog(matchStyle==="match","\u{1F0CF} Face-up","mastMatchSetStyle(\'match\')");
+  h+=_tog(matchStyle==="memory","\u{1F9E0} Memory flip","mastMatchSetStyle(\'memory\')");
+  h+='<span style="font-size:9.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-left:8px">Pairs</span>';
+  h+=_tog(matchPairMode==="two","\u{1F517} Word \u{2194} meaning","mastMatchSetPair(\'two\')");
+  h+=_tog(matchPairMode==="same","\u{1F46F} Same pair","mastMatchSetPair(\'same\')");
+  h+='</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 12px">';
   decks.forEach(dk=>{
     const sel=matchState&&matchState.deck===dk;
     h+='<div onclick="mastMatchStart(\''+dk.replace(/'/g,"\\'")+'\')" style="cursor:pointer;padding:6px 12px;border-radius:999px;font-size:11px;font-weight:700;border:1.5px solid '+(sel?color:'#e2ddd6')+';background:'+(sel?color:'#fff')+';color:'+(sel?'#fff':'#57534e')+'">'+esc(dk)+'</div>';
   });
   h+='</div>';
   const st=matchState;
-  if(!st){ h+='<div style="font-size:12.5px;color:var(--muted)">Pick a deck \u{2014} match each word to its picture or meaning as fast as you can! \u{23F1}</div></div>'; return h; }
+  if(!st){ h+='<div style="font-size:12.5px;color:var(--muted)">Pick a deck \u{2014} '+(matchStyle==="memory"?'flip two cards, find the pairs, they disappear!':'match each word to its picture or meaning as fast as you can!')+' \u{23F1} The clock starts on your first tap.</div></div>'; return h; }
   const s=masteryData[masteryKid+"_settings"]||{};
-  const best=(s.match_best||{})[st.deck];
+  const best=(s.match_best||{})[st.deck+(st.style==="memory"?" \u{00B7} memory":"")+(st.pairMode==="same"?" \u{00B7} same":"")];
   h+='<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px">';
-  h+='<span id="match-clock" style="font-family:\'DM Mono\',monospace;font-size:22px;font-weight:800;color:'+color+'">'+(((st.endTs||Date.now())-st.startTs)/1000).toFixed(1)+'s</span>';
-  h+='<span style="font-size:11px;color:var(--muted);font-weight:700">'+(best!=null?'\u{1F3C6} best '+best+'s':'first game on this deck!')+'</span>';
+  h+='<span id="match-clock" style="font-family:\'DM Mono\',monospace;font-size:22px;font-weight:800;color:'+color+'">'+(st.startTs?((((st.endTs||Date.now())-st.startTs)/1000).toFixed(1)+'s'):'0.0s')+'</span>';
+  h+='<span style="font-size:11px;color:var(--muted);font-weight:700">'+(best!=null?'\u{1F3C6} best '+best+'s':(st.startTs?'':'tap a card to start \u{23F1}'))+'</span>';
   h+='</div>';
-  h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">';
+  h+='<div style="display:grid;grid-template-columns:repeat('+(st.tiles.length>=12?4:3)+',1fr);gap:8px">';
   st.tiles.forEach((t,ix)=>{
     const selT=st.sel===ix;
-    h+='<div onclick="mastMatchTap('+ix+')" style="min-height:88px;display:flex;align-items:center;justify-content:center;text-align:center;padding:6px;border-radius:14px;border:2.5px solid '+(t.matched?'#d1fae5':t.miss?'#dc2626':selT?color:'#e2ddd6')+';background:'+(t.matched?'#f0fdf4':'#fff')+';opacity:'+(t.matched?'0.4':'1')+';cursor:'+(t.matched?'default':'pointer')+'">'+t.html+'</div>';
+    if(t.matched&&st.style==="memory"){
+      // Found pairs DISAPPEAR from a memory board (grid slot stays so nothing shifts).
+      h+='<div style="min-height:88px;visibility:hidden"></div>';
+    } else if(!t.up){
+      // Face-down card back
+      h+='<div onclick="mastMatchTap('+ix+')" style="min-height:88px;display:flex;align-items:center;justify-content:center;border-radius:14px;border:2.5px solid #c2410c;background:linear-gradient(135deg,#fff7ed,#fed7aa);cursor:pointer"><span style="font-size:30px;pointer-events:none">\u{2753}</span></div>';
+    } else {
+      h+='<div onclick="mastMatchTap('+ix+')" style="min-height:88px;display:flex;align-items:center;justify-content:center;text-align:center;padding:6px;border-radius:14px;border:2.5px solid '+(t.matched?'#d1fae5':t.miss?'#dc2626':selT?color:'#e2ddd6')+';background:'+(t.matched?'#f0fdf4':'#fff')+';opacity:'+(t.matched?'0.4':'1')+';cursor:'+(t.matched?'default':'pointer')+'">'+t.html+'</div>';
+    }
   });
   h+='</div>';
   if(st.endTs){
