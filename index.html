@@ -3291,6 +3291,7 @@ function renderSchedule(el){
   }
   h+=renderBlockoutBanners(day);
   if(momModeActive&&(kid==="mom"||kid==="all")) h+=renderDisplacementSummary(day, kid);
+  h+=renderSatCutoffBanner(day, kid);
   h+=dailyPaceTracker(allDay, day);
   h+=renderClaimQueue();
   h+=unitScheduleNudges(kid);  // U6: unit-study pacing nudges (renders only when one is live)
@@ -8559,6 +8560,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
     const kidStart={}; if(isSitterDay) sitterKids.forEach(k=>{ kidStart[k]=Math.max(sitterReturn,_floor); });
     const ctx={start:Math.max(dStart,_floor),end:dEnd,lunchStart:lunchS,lunchEnd:lunchE,
       momStart:sitterReturn,kidStart:kidStart,allowOvertime:isLast,overtimeMax:240};
+    if(dn==="saturday") satApplyCutoff(ctx,240);
     // ── Receiving-day RE-PACK: a day that takes swept work is laid out again as ONE
     // day — existing open work and arrivals merged, ordered by the same rules generation
     // uses, so old + new intertwine instead of arrivals stacking at the end ("two school
@@ -8611,7 +8613,10 @@ function cascadeIntraWeek(sweepTodayElapsed){
         const dn=dayOrder[di], ds=_cascDate(dn);
         if(ds&&smapIsKidOff(t.who,ds)) continue;
         const ov=(sd.overrides||{})[dn]||{};
-        t.day=dn; t.time=fromMin(toMin(ov.end||sd.defaultEnd||"4:15 PM")-20); break;
+        // With a Saturday cutoff set, the un-fittable stack AT the cutoff — the packers
+        // never place work there, so "time ≥ cutoff" = the will-carry list (banner reads it).
+        const _cut=(dn==="saturday")?satCutoffMin():null;
+        t.day=dn; t.time=fromMin(_cut!=null?_cut:(toMin(ov.end||sd.defaultEnd||"4:15 PM")-20)); break;
       }
     });
   }
@@ -19817,9 +19822,11 @@ function runDisplacement(){
     var momRet=_momReturn(d), ks={};
     take.forEach(function(t){ var s=_boEnd(d,t.who); if(_sitterKids.indexOf(t.who)>=0&&momRet>s)s=momRet; if(s)ks[t.who]=s; });
     var existing=working.filter(function(t){return t.day===d&&!_isClosingNb(t);});
-    var overflow=packAround(existing,take,{start:_floorStart(d,_dayStart(d)),end:_dayEnd(d),
+    var _fctx={start:_floorStart(d,_dayStart(d)),end:_dayEnd(d),
       lunchStart:_dayLS(d),lunchEnd:_dayLE(d),momStart:momRet,kidStart:ks,
-      allowOvertime:(d==="saturday"),overtimeMax:180});
+      allowOvertime:(d==="saturday"),overtimeMax:180};
+    if(d==="saturday") satApplyCutoff(_fctx,180);
+    var overflow=packAround(existing,take,_fctx);
     var overSet=new Set(overflow), moved={};
     take.forEach(function(t){
       if(overSet.has(t)) return; // didn't fit → leave in carry for the next day
@@ -19855,8 +19862,10 @@ function runDisplacement(){
     if(!newTasks.length) return [];
     var newSet=new Set(newTasks);
     var existing=working.filter(function(t){return t.day===day&&!newSet.has(t);});
-    return packAround(existing,newTasks,{start:_floorStart(day,_dayStart(day)),end:_dayEnd(day),
-      lunchStart:_dayLS(day),lunchEnd:_dayLE(day),allowOvertime:allowOvertime,overtimeMax:180});
+    var _pctx={start:_floorStart(day,_dayStart(day)),end:_dayEnd(day),
+      lunchStart:_dayLS(day),lunchEnd:_dayLE(day),allowOvertime:allowOvertime,overtimeMax:180};
+    if(day==="saturday") satApplyCutoff(_pctx,180);
+    return packAround(existing,newTasks,_pctx);
   }
   // PACKSAT_END
   // (Saturday is filled in chronological turn by the remaining-days cascade above.)
@@ -20117,8 +20126,10 @@ function resortDayTasks(day,startOverride,momOverride){
   // device by stamped t.device (legacy fallback taskDevice), Mom may start later
   // (babysitter window). Overtime keeps everything on the day instead of overlapping.
   const before={}; dayTasks.forEach(t=>{ before[t.id]=t.time; });
-  packAround([],dayTasks,{start:schoolStart,end:schoolEnd,lunchStart:lunchS,lunchEnd:lunchE,
-    momStart:momAvail,allowOvertime:true,overtimeMax:240});
+  const _rctx={start:schoolStart,end:schoolEnd,lunchStart:lunchS,lunchEnd:lunchE,
+    momStart:momAvail,allowOvertime:true,overtimeMax:240};
+  if(day==="saturday") satApplyCutoff(_rctx,240);
+  packAround([],dayTasks,_rctx);
   const changed=dayTasks.some(t=>before[t.id]!==t.time);
   if(!changed) return;
   sv(WK+"_tasks",weekData.tasks);
@@ -20180,6 +20191,30 @@ function renderBlockoutBanners(d){
     h+='<button class="bo-banner-rm" onclick="removeBlockout(\''+bo.id+'\')">Remove</button>';
     h+='</div>';
   });
+  return h;
+}
+
+// Saturday page: the honest "will carry to next week" readout. With a Rules cutoff set,
+// the packers never place work at/past it — so any open Saturday task sitting there is
+// overflow waiting for week close (when it becomes Monday's Carried-Over box). Renders
+// only when a cutoff is set and something is past it.
+function renderSatCutoffBanner(day, kid){
+  if(day!=="saturday"||!weekData||!weekData.tasks) return "";
+  const cut=satCutoffMin();
+  if(cut==null) return "";
+  const kidMatch=t=>(kid==="all"||kid==="mom")?true:t.who===kid;
+  const late=weekData.tasks.filter(t=>t.day==="saturday"&&!String(t.id).endsWith("_c")&&!checked[t.id]&&kidMatch(t)&&toMin(t.time)>=cut);
+  if(!late.length) return "";
+  let h='<div style="margin:0 12px 8px;border-left:4px solid #f59e0b;background:#fffbeb;border-radius:0 10px 10px 0;padding:10px 12px">';
+  h+='<div style="font-size:11px;font-weight:800;color:#b45309;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.4px">&#9203; Past the '+fromMin(cut)+' Saturday cutoff — carries to next week</div>';
+  const byKid={};
+  late.forEach(t=>{ (byKid[t.who]=byKid[t.who]||[]).push(t); });
+  [...ROSTER].forEach(k=>{
+    if(!byKid[k]) return;
+    h+='<div style="display:flex;align-items:center;gap:5px;margin:4px 0 2px"><span class="kid-badge badge-'+k+'" style="font-size:9px;padding:1px 6px">'+cap(k)+'</span><span style="font-size:10px;color:#b45309;font-weight:600">'+byKid[k].length+' won\'t fit</span></div>';
+    byKid[k].forEach(t=>{ h+='<div style="font-size:12px;color:#374151;padding:1px 0 1px 8px">'+t.title+'</div>'; });
+  });
+  h+='</div>';
   return h;
 }
 
@@ -20365,6 +20400,31 @@ function rulesUpdateSaturday(field,val){
   else r.saturday[field]=parseInt(val);
   saveRules(r);
 }
+function rulesUpdateSatCutoff(val){
+  const r=JSON.parse(JSON.stringify(rulesData));
+  if(!r.saturday) r.saturday={};
+  if(val==="") delete r.saturday.cutoff;
+  else r.saturday.cutoff=to12h(val);
+  saveRules(r);
+}
+// Saturday hard stop from Rules → "Saturday cutoff" (minutes from midnight), or null =
+// legacy behavior (catch-up may stack past the day end: 240 min rollover / 180 displaced).
+function satCutoffMin(){
+  const c=rulesData&&rulesData.saturday&&rulesData.saturday.cutoff;
+  if(!c) return null;
+  const m=toMin(c);
+  return m>0?m:null;
+}
+// Clamp a Saturday packer ctx to the cutoff. Callers set allowOvertime first; with no
+// cutoff the engine's legacy overtime cap applies unchanged, with one the hard stop is
+// the cutoff itself (shrinking the day when the cutoff is before the normal end).
+function satApplyCutoff(ctx,legacyMax){
+  const c=satCutoffMin();
+  if(c==null){ if(ctx.allowOvertime) ctx.overtimeMax=legacyMax; return ctx; }
+  if(c<=ctx.end){ ctx.end=Math.max(ctx.start||0,c); ctx.allowOvertime=false; }
+  else if(ctx.allowOvertime){ ctx.overtimeMax=c-ctx.end; }
+  return ctx;
+}
 
 // ── Workflow time estimates ─────────────────────────────────────────
 // Planning readout for the Workflow Orders editor: how much time each kid has in each
@@ -20527,6 +20587,9 @@ function renderRules(el,headerHtml){
   h+='<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px"><div class="rules-row"><div class="rules-label">Use Saturday for overflow</div>'+
      '<button onclick="rulesUpdateSaturdayOverflow('+(!_satOv)+')" style="padding:6px 16px;border-radius:10px;border:1.5px solid '+(_satOv?'#1a6b5a':'var(--border)')+';background:'+(_satOv?'#1a6b5a':'#fff')+';color:'+(_satOv?'#fff':'var(--text)')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(_satOv?'On':'Off')+'</button></div>'+
      '<div style="font-size:11px;color:var(--muted);padding:6px 0 0;line-height:1.5">When a week has more work than fits Mon–Fri, the extra spills onto Saturday before rolling to next week. Turn off if you never do Saturday school — the extra rolls straight to next week.</div></div>';
+  h+='<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px"><div class="rules-row"><div class="rules-label">Saturday cutoff</div>'+
+     '<input type="time" class="rules-time" value="'+ampmTo24(sat.cutoff||"")+'" onchange="rulesUpdateSatCutoff(this.value)"></div>'+
+     '<div style="font-size:11px;color:var(--muted);padding:6px 0 0;line-height:1.5">Hard stop for Saturday catch-up — nothing is scheduled past this time. Whatever can\'t fit by then is listed on the Saturday page as carrying to next week. Blank = old behavior: catch-up may stack up to 4 hours past the school-day end.</div></div>';
   h+='</div></div>';
 
   // 1c. DEVICES — how many shared devices the family has (feeds the packer's lane pools)
