@@ -14687,6 +14687,86 @@ function mastGetDef(kid,prompt){
   if(s.definitions&&s.definitions[prompt]) return s.definitions[prompt];
   return MAST_VOCAB_DEFS[prompt.toLowerCase()]||"";
 }
+
+// ── Definition audio: flip-card voice recordings ─────────────────
+// Mom records herself reading the definition when adding a flip card; the flip back gets
+// a 🔊 Hear It button. Stored like card photos — a data-URL in RTDB, keyed by prompt in
+// <kid>_settings/def_audio (same key rules as definitions: mastDefKeyOk, no periods).
+// Recording prefers audio/mp4 (AAC) so a clip recorded on ANY device plays on the kids'
+// iPads — Safari can't play webm/opus; webm is the fallback when mp4 isn't available.
+let mastRecState=null;   // {recorder,timer} while the mic is live
+let mastRecAudio="";     // finished clip (data URL) waiting to be saved with the new item
+let mastRecErr="";
+function mastGetDefAudio(kid,prompt){
+  const s=masteryData[kid+"_settings"]||{};
+  return (s.def_audio&&s.def_audio[prompt])||"";
+}
+function mastPlayDefAudio(src){
+  const url=(typeof src==="string"&&src.slice(0,5)==="data:")?src:mastGetDefAudio(masteryKid,src);
+  if(!url) return;
+  try{ new Audio(url).play(); }catch(e){}
+}
+function mastRecStart(){
+  if(mastRecState) return;
+  if(!navigator.mediaDevices||!window.MediaRecorder){ mastRecErr="Recording isn't supported in this browser"; _mastRe(); return; }
+  navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
+    const mime=(MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported("audio/mp4"))?"audio/mp4"
+      :((MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported("audio/webm"))?"audio/webm":"");
+    let rec; try{ rec=mime?new MediaRecorder(stream,{mimeType:mime,audioBitsPerSecond:32000}):new MediaRecorder(stream); }
+    catch(e){ rec=new MediaRecorder(stream); }
+    const chunks=[];
+    rec.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+    rec.onstop=()=>{
+      stream.getTracks().forEach(t=>t.stop());
+      const blob=new Blob(chunks,{type:rec.mimeType||mime||"audio/webm"});
+      if(blob.size>400000){ mastRecErr="Too long — keep it under ~20 seconds"; mastRecState=null; _mastRe(); return; }
+      const fr=new FileReader();
+      fr.onload=()=>{ mastRecAudio=fr.result; mastRecErr=""; mastRecState=null; _mastRe(); };
+      fr.readAsDataURL(blob);
+    };
+    rec.start();
+    const timer=setTimeout(()=>{ try{rec.stop();}catch(e){} },20000);  // hard cap 20s
+    mastRecState={recorder:rec,timer:timer};
+    mastRecErr="";
+    _mastRe();
+  }).catch(()=>{ mastRecErr="Mic blocked — allow microphone access for this site"; mastRecState=null; _mastRe(); });
+}
+function mastRecStop(){
+  if(!mastRecState) return;
+  clearTimeout(mastRecState.timer);
+  try{ mastRecState.recorder.stop(); }catch(e){ mastRecState=null; _mastRe(); }
+}
+function mastRecClear(){ mastRecAudio=""; mastRecErr=""; _mastRe(); }
+// Save the pending clip for a prompt (targeted write, same key rules as definitions).
+function mastSaveDefAudio(kid,prompt){
+  if(!mastRecAudio||!mastDefKeyOk(prompt)) return false;
+  const s=masteryData[kid+"_settings"]||{};
+  if(!s.def_audio) s.def_audio={};
+  s.def_audio[prompt]=mastRecAudio;
+  masteryData[kid+"_settings"]=s;
+  if(db) db.ref("mastery/"+kid+"_settings/def_audio").update({[prompt]:mastRecAudio});  // this key only
+  mastRecAudio="";
+  return true;
+}
+// Shared recorder row for the add forms (single-add only — batch can't record per item).
+function mastRecUI(){
+  let r='<div class="mast-add-label" style="margin-top:10px">Voice recording (optional) <span style="font-size:9px;color:var(--muted);font-weight:600">— kid taps \u{1F50A} on the flip back to hear it</span></div>';
+  r+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">';
+  if(mastRecState){
+    r+='<button class="mast-img-btn" onclick="mastRecStop()" style="background:#fee2e2;border-color:#fca5a5;color:#dc2626">\u{23F9} Stop</button>';
+    r+='<span style="font-size:11px;color:#dc2626;font-weight:700">\u{1F534} Recording\u{2026} auto-stops at 20s</span>';
+  } else if(mastRecAudio){
+    r+='<button class="mast-img-btn" onclick="mastPlayDefAudio(mastRecAudio)">\u{25B6}\u{FE0F} Play</button>';
+    r+='<button class="mast-img-btn" onclick="mastRecStart()">\u{1F399} Re-record</button>';
+    r+='<button class="mast-img-btn" onclick="mastRecClear()">\u{2715} Remove</button>';
+  } else {
+    r+='<button class="mast-img-btn" onclick="mastRecStart()">\u{1F399} Record</button>';
+    r+='<span style="font-size:10px;color:var(--muted)">read the definition out loud</span>';
+  }
+  if(mastRecErr) r+='<span style="font-size:10px;color:#dc2626;font-weight:600">'+mastRecErr+'</span>';
+  r+='</div>';
+  return r;
+}
 // Rule decks (Capitalization/Punctuation) carry the rule as a `def` VALUE on the bank entry
 // in <kid>_custom_items — periods are illegal in Firebase KEYS, so a sentence prompt can't use
 // the definitions map. When such an entry is pulled, the item becomes a recite card whose
@@ -15860,6 +15940,8 @@ function mastBankAddItem(){
       if(db) db.ref("mastery/"+kid+"_settings/definitions").update({[name]:mastBankAddDef.trim()});  // this key only
     }
   }
+  // Save the voice recording if one is waiting
+  if(mastRecAudio) mastSaveDefAudio(kid,name);
   // Update category mode if changed
   const _effMode=mastBankAddMode||mastGetCatMode(kid,cat);
   if(mastBankAddMode&&mastBankAddMode!==mastGetCatMode(kid,cat)){
@@ -16602,6 +16684,8 @@ function mastAddItems(){
           masteryData[masteryKid+"_settings"]=s;
           if(db) db.ref("mastery/"+masteryKid+"_settings/definitions").update({[p]:defInput.value.trim()});  // this key only
         }
+        // Save the voice recording if one is waiting
+        if(mastRecAudio) mastSaveDefAudio(masteryKid,p);
       }
     }
   });
@@ -17079,6 +17163,7 @@ function renderMastAdmin(){
     h+='<div class="mast-add-label">Definition (flip card back) <span style="color:#7c3aed">*</span></div>';
     h+='<input class="mast-add-input" value="'+mastBankAddDef.replace(/"/g,"&quot;")+'" placeholder="e.g. a sweet red fruit that grows on trees" oninput="mastBankAddDef=this.value" style="margin-bottom:10px;border-color:#c7d2fe">';
     h+='<div style="font-size:10px;color:#7c3aed;margin-bottom:8px">\u{1F504} Shows on the back when the card is flipped</div>';
+    h+=mastRecUI();
   }
 
   // Visual — emoji or photo
@@ -17695,6 +17780,7 @@ function _renderMasteryInner(el){
         h+='<div class="mast-add-label" style="margin-top:10px">Definition (flip card back) <span style="color:#7c3aed">*</span></div>';
         h+='<input class="mast-add-input" id="mast-add-def" placeholder="e.g. not afraid, ready to face danger" autocomplete="off" style="border-color:#c7d2fe">';
         h+='<div style="font-size:10px;color:#7c3aed;margin-top:4px">\u{1F504} This text will show when the card is tapped/flipped</div>';
+        h+=mastRecUI();
       } else {
         h+='<div class="mast-add-label" style="margin-top:10px">Definition / Answer (optional)</div>';
         h+='<input class="mast-add-input" id="mast-add-def" placeholder="'+(isJ?"e.g. A big cat with a mane":"e.g. The Floss Rule: ff, ll, ss after a short vowel")+'" autocomplete="off">';
@@ -17848,6 +17934,12 @@ function _renderMasteryInner(el){
       c+='<div class="mast-flip-back">';
       { const _bpl=it.prompt.length; const _bfs=_bpl<=6?60:_bpl<=14?42:_bpl<=22?32:24; c+='<div class="mast-slide-img"><span style="font-size:'+_bfs+'px;font-weight:800;color:#7c3aed;word-break:break-word;max-width:100%">'+it.prompt+'</span></div>'; }
       if(!_faceName) c+='<div class="mast-flip-def">'+(_backText?((_ruleStyle||_learnFlip)?_backText:'&ldquo;'+_backText+'&rdquo;'):'<span style="color:#a78bfa;font-size:16px">no '+(_ruleStyle?'rule':'definition')+' yet</span>')+'</div>';
+      // Voice recording of the definition — tap to hear Mom read it (stopPropagation so
+      // the tap plays instead of flipping the card back).
+      if(mastGetDefAudio(masteryKid,it.prompt)){
+        const _apEsc=it.prompt.replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+        c+='<button onclick="event.stopPropagation();mastPlayDefAudio(\''+_apEsc+'\')" style="margin-top:10px;padding:9px 20px;border-radius:999px;border:2px solid #7c3aed;background:#f5f3ff;color:#7c3aed;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F50A} Hear it</button>';
+      }
       c+='<div class="mast-flip-hint">\u{1F4A1} tap to flip back</div>';
       c+=_tallyH;
       c+='</div>';
