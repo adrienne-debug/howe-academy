@@ -15207,6 +15207,7 @@ let mastBankAddImgUploading=false;
 let mastBankAddNewCat="";
 let mastBankAddMode="";
 let mastBankAddDef="";
+let mastBankAddTab="single";   // Add to Mastery: "single" | "batch" (batch = one item per line, optional "| definition")
 let mastBankEmojiTab="Animals";
 let mastBankEmojiOpen=false;
 let mastVisEditKey=null;
@@ -15868,6 +15869,54 @@ function mastBankAddItem(){
   mastBankAddName="";mastBankAddEmoji="";mastBankAddImg="";mastBankAddNewCat="";mastBankAddMode="";mastBankAddDef="";
   _mastRe();
   var _nf=document.getElementById("mast-curr-add-name"); if(_nf) _nf.focus();
+}
+// Batch version of mastBankAddItem — one item per line, optional "Name | definition".
+// Same write paths as single add: ONE bank transaction for all entries (never a whole-
+// array set), definitions in one targeted update. Dupes and period-keyed definitions
+// (Firebase forbids "." in keys) are skipped and reported, never silently dropped.
+function mastBankAddBatch(){
+  const kid=masteryKid||"julian";
+  const cat=mastBankAddNewCat||mastBankAddCat;
+  const raw=(document.getElementById("mast-curr-add-batch")||{}).value||"";
+  const lines=raw.split(/\n/).map(l=>l.trim()).filter(Boolean);
+  if(!lines.length){ alert("Paste at least one line (Name | definition)."); return; }
+  const full=mastFullBank();
+  const existing=new Set(full[cat]||[]);
+  const added=[], dupes=[], defs={}, badDefKeys=[];
+  lines.forEach(line=>{
+    const pi=line.indexOf("|");
+    const name=(pi>=0?line.slice(0,pi):line).trim();
+    const def=pi>=0?line.slice(pi+1).trim():"";
+    if(!name) return;
+    if(existing.has(name)||added.some(e=>e.name===name)){ dupes.push(name); return; }
+    const entry={cat:cat,name:name};
+    if(def) entry.def=def;  // def rides the bank entry too, so pulls inherit it even if the definitions map is ever lost
+    added.push(entry);
+    if(def){ if(mastDefKeyOk(name)) defs[name]=def; else badDefKeys.push(name); }
+  });
+  if(!added.length){ alert("Nothing new to add — "+(dupes.length?dupes.length+" duplicate(s): "+dupes.slice(0,6).join(", "):"no valid lines")); return; }
+  if(!masteryData[kid+"_custom_items"]) masteryData[kid+"_custom_items"]=[];
+  added.forEach(e=>masteryData[kid+"_custom_items"].push(e));
+  if(db) db.ref("mastery/"+kid+"_custom_items").transaction(cur=>{
+    const arr=cur==null?[]:(Array.isArray(cur)?cur:Object.values(cur));
+    added.forEach(e=>{ if(!arr.some(x=>x&&x.cat===e.cat&&x.name===e.name)) arr.push(e); });
+    return arr;
+  });
+  if(Object.keys(defs).length){
+    const s=masteryData[kid+"_settings"]||{};
+    if(!s.definitions) s.definitions={};
+    Object.assign(s.definitions,defs);
+    masteryData[kid+"_settings"]=s;
+    if(db) db.ref("mastery/"+kid+"_settings/definitions").update(defs);  // these keys only
+  }
+  if(mastBankAddMode&&mastBankAddMode!==mastGetCatMode(kid,cat)) mastAdminCatMode(cat,mastBankAddMode);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  let msg="\u{2713} Added "+added.length+" to "+cat;
+  if(dupes.length) msg+=" \u{00B7} skipped "+dupes.length+" duplicate(s)";
+  if(badDefKeys.length) msg+=" \u{00B7} "+badDefKeys.length+" definition(s) skipped (name contains a period — use a recite card instead)";
+  if(typeof gwShowToast==="function") gwShowToast(msg); else alert(msg);
+  mastBankAddNewCat="";mastBankAddMode="";
+  _mastRe();
 }
 function mastCompressImg(file,maxPx,quality){
   return new Promise((resolve,reject)=>{
@@ -16989,6 +17038,11 @@ function renderMastAdmin(){
   h+='<div class="mast-admin-hdr">\u{2795} Add to Mastery</div>';
   h+='<div class="mast-admin-card" style="padding:14px">';
 
+  // Single / Batch tabs — mirrors the drill page's Add Items card
+  h+='<div class="mast-add-tabs">';
+  h+='<button class="mast-add-tab'+(mastBankAddTab==="single"?" active":"")+'" onclick="mastBankAddTab=\'single\';_mastRe()">Single</button>';
+  h+='<button class="mast-add-tab'+(mastBankAddTab==="batch"?" active":"")+'" onclick="mastBankAddTab=\'batch\';_mastRe()">Batch</button></div>';
+
   // Category picker
   h+='<div class="mast-add-label">Category</div>';
   h+='<div class="mast-add-pills" style="margin-bottom:10px">';
@@ -17015,6 +17069,7 @@ function renderMastAdmin(){
     h+='<div style="font-size:10px;color:#d97706;margin-bottom:8px">\u{26A0}\u{FE0F} Will change '+_currCat+' to <strong>'+mastBankAddMode+'</strong> mode.</div>';
   }
 
+  if(mastBankAddTab==="single"){
   // Item name
   h+='<div class="mast-add-label">Item Name</div>';
   h+='<input class="mast-add-input" id="mast-curr-add-name" value="'+mastBankAddName+'" placeholder="e.g. Apple, Firetruck" oninput="mastBankAddName=this.value;var _b=document.getElementById(\'mast-bank-add-btn\');if(_b)_b.disabled=!this.value.trim()" style="margin-bottom:10px">';
@@ -17063,6 +17118,14 @@ function renderMastAdmin(){
   }
 
   h+='<button class="mast-add-submit" id="mast-bank-add-btn" onclick="mastBankAddItem()"'+(mastBankAddName.trim()?'':' disabled')+'>Add to Mastery</button>';
+  } else {
+    // Batch: one item per line, optional "| definition" for flip backs. Visuals aren't
+    // batchable — add them after via each item's 🎨 Set Visual.
+    h+='<div class="mast-add-label">Items (one per line'+(_currMode==="flip"?' — add the flip back with "Name | definition"':'')+')</div>';
+    h+='<textarea class="mast-add-textarea" id="mast-curr-add-batch" placeholder="'+(_currMode==="flip"?'Apple | a sweet red fruit that grows on trees\nBanana | a long yellow fruit':'Apple\nBanana\nFiretruck')+'" style="min-height:110px" autocomplete="off" autocapitalize="off" autocorrect="off"></textarea>';
+    h+='<div style="font-size:10px;color:var(--muted);margin:4px 0 10px">Duplicates are skipped automatically. Emoji/photo visuals: add after with \u{1F3A8} Set Visual on each item.</div>';
+    h+='<button class="mast-add-submit" onclick="mastBankAddBatch()">Add all to Mastery</button>';
+  }
   h+='</div></div>';
 
   // ── VISUAL EDIT MODAL ──
