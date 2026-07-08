@@ -853,6 +853,7 @@
     for (var i = 0; i < days.length; i++) {
       parts.push(juPageDaily(weekNum, days[i], dates[days[i]] || "", i, cur, juDayPick(cur, picks, i)));
     }
+    (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, weekNum, UNIT_INSERT_THEMES.julian).forEach(function (p) { parts.push(p); }); });
     parts.push("</body>\n</html>");
     var student = parts.join("\n");
 
@@ -2061,7 +2062,8 @@
   var UNIT_INSERT_THEMES = {
     lincoln: { GD:"#1a3a2a", GM:"#2d6a4f", GL:"#b7e4c7", GP:"#f2faf5", GOLD:"#c9a84c", GOLDD:"#9a7d2e", CREAM:"#fdf8ee", EXTRA:"#6d28d9" },
     ellis:   { GD:"#142038", GM:"#c41e1e", GL:"#cddbec", GP:"#eef3f9", GOLD:"#f5c200", GOLDD:"#b58a00", CREAM:"#fffbe8", EXTRA:"#c41e1e" },
-    lucy:    { GD:"#2d1b69", GM:"#7c3aed", GL:"#ddd6fe", GP:"#f5f3ff", GOLD:"#be185d", GOLDD:"#9d174d", CREAM:"#fdf2f8", EXTRA:"#be185d" }
+    lucy:    { GD:"#2d1b69", GM:"#7c3aed", GL:"#ddd6fe", GP:"#f5f3ff", GOLD:"#be185d", GOLDD:"#9d174d", CREAM:"#fdf2f8", EXTRA:"#be185d" },
+    julian:  { GD:"#7c2d12", GM:"#ea580c", GL:"#fed7aa", GP:"#fff7ed", GOLD:"#d97706", GOLDD:"#b45309", CREAM:"#fffbeb", EXTRA:"#4d7c0f" }
   };
   function unitInsertPages(ins, weekNum, theme) {
     if (!ins || !((ins.learning && ins.learning.length) || (ins.learned && ins.learned.length) || (ins.next && ins.next.length))) return [];
