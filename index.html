@@ -3504,6 +3504,44 @@ function scoreLabel(sc){
   if(sc.got!=null){ let s=String(sc.got)+(sc.max!=null?"/"+sc.max:""); if(sc.max) s+=" ("+Math.round(sc.got/sc.max*100)+"%)"; return s; }
   return "";
 }
+// ── Done-first bumping ─────────────────────────────────────────────
+// A kid who does a SAME-CATEGORY task out of order (picks the 11:50 Mom-Required item
+// while the 10:50 one is still pending) shouldn't leave a hole: the completed task takes
+// the earliest skipped slot and each skipped task slides one slot later, so "next up" is
+// always the earliest pending time. Same kid + same day + same tier only; notebooks are
+// bookends and never move; content rotates between slots — the slot TIMES stay fixed
+// (no repack, no cross-day motion, nothing outside the tier is touched).
+function taskTierOf(t){
+  const m=(t.mom||"none").toLowerCase();
+  if(m==="required") return "required";
+  if(m==="maybe") return "maybe";
+  if(((t.device||"").toLowerCase())==="computer") return "computer";
+  return "independent";
+}
+function bumpSkippedInTier(done){
+  if(!done||String(done.id||"").endsWith("_c")) return;
+  const isNb=x=>(x.title||"").toLowerCase().includes("notebook");
+  if(isNb(done)) return;
+  const tier=taskTierOf(done);
+  const doneMin=toMin(done.time);
+  const skipped=weekData.tasks.filter(x=>x!==done&&x.who===done.who&&x.day===done.day
+    &&!String(x.id||"").endsWith("_c")&&!checked[x.id]&&!claimed[x.id]&&!isNb(x)
+    &&taskTierOf(x)===tier&&toMin(x.time)<doneMin)
+    .sort((a,b)=>toMin(a.time)-toMin(b.time));
+  if(!skipped.length) return;
+  // Rotate content through the group's slots: done takes the earliest, skipped keep
+  // their relative order and each slides one later (the last takes done's old slot).
+  const order=[done].concat(skipped);
+  const slots=order.map(x=>x.time).sort((a,b)=>toMin(a)-toMin(b));
+  const upd={};
+  order.forEach((x,i)=>{ if(x.time!==slots[i]){ x.time=slots[i]; upd[x.id+"/time"]=slots[i]; } });
+  if(!Object.keys(upd).length) return;
+  sv(WK+"_tasks",weekData.tasks);
+  lastTasksWrite=Date.now();
+  if(db&&!_dryRun()) db.ref(WK+"/tasks").update(upd); // targeted multi-path — never the whole node
+  dbg("bump: "+done.id+" took earliest "+tier+" slot on "+done.day+" ("+Object.keys(upd).length+" moved)");
+}
+
 // Write a real (verified) completion + history entry. score optional.
 function finalizeDone(id, doneTs, score){
   checked[id]=doneTs; sv(WK+"_checked",checked); lastCheckedWrite=Date.now();
@@ -3522,6 +3560,8 @@ function finalizeDone(id, doneTs, score){
     // A check-off may have finished a subject and/or met all session goals.
     try{ checkSubjectComplete(t.who, t.subjectKey); }catch(e){}
     try{ checkSessionComplete(t.who); }catch(e){}
+    // Done out of order within the tier? Bump it into the earliest skipped slot.
+    try{ bumpSkippedInTier(t); }catch(e){ dbg("bump error: "+e); }
   }
 }
 // Mom approves a kid's claim. Done-time = the kid's claim time (so a late
