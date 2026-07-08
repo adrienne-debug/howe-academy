@@ -3823,6 +3823,10 @@ function taskCard(t, fromDay, readOnly, doneId){
   const done=!!checked[srcId];
   const claimedHere=!done&&!!claimed[srcId];
   const future=DAYS.indexOf(t.day)>DAYS.indexOf(day);
+  // Permanently missed: a day-specific task (reflex, notebook, any noCarry) left unchecked
+  // on a past day. Regular work rolls forward (effectiveDay===today), so anything still
+  // anchored to a past day can never be done now — show it grayed + "Incomplete", no box.
+  const missed=!done&&!claimedHere&&!readOnly&&!t.id.endsWith("_c")&&_isPastDay(effectiveDay(t));
   const bcls=t.mom==="required"?"req":t.mom==="maybe"?"maybe":"";
   const klbl=cap(t.who);
   let mb="";
@@ -3856,6 +3860,18 @@ function taskCard(t, fromDay, readOnly, doneId){
   const carryLabel=fromDay?'<div style="font-size:10px;font-weight:700;color:#4338ca;background:#e0e7ff;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">↩ '+fromDay+'</div><br>':'';
   const cascLabel=t.cascadedFrom?'<div style="font-size:10px;font-weight:700;color:#b45309;background:#fef3c7;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">↩ From '+cap(t.cascadedFrom)+'</div><br>':'';
   const catchupLabel=t.catchup?'<div style="font-size:10px;font-weight:700;color:#0f766e;background:#ccfbf1;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px" title="Extra session to catch up on this subject">↻ Catch-up</div><br>':'';
+  const missedLabel=missed?'<div style="font-size:10px;font-weight:700;color:#6b7280;background:#e5e7eb;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px" title="This was day-specific and can\'t be done now">Incomplete</div><br>':'';
+  if(missed){
+    // Grayed, no checkbox — it can't be checked off (day-specific, the day has passed).
+    return '<div class="task-card" style="opacity:0.6;border-left:3px solid #cbd5e1;background:#f9fafb">'+
+      '<div class="card-inner">'+
+      '<div class="task-cb" style="border-color:#d1d5db;color:#9ca3af;background:#f3f4f6;cursor:default">&times;</div>'+
+      '<div class="card-body">'+
+      '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
+      '<div class="task-title" style="color:#6b7280">'+missedLabel+t.title+'</div>'+mb+'</div>'+
+      '<div class="task-detail" style="color:#9ca3af">'+cleanDetail+'</div>'+
+      '</div></div></div>';
+  }
   return '<div class="task-card '+bcls+(done?" done":"")+(future?" future":"")+(t._displaced?" displaced":"")+'"'+(claimedHere?' style="border-left:3px solid #f59e0b;background:#fffbeb"':'')+'>'+
     '<div class="card-inner">'+
     '<div class="task-cb'+(done?" checked":"")+(readOnly?" readonly":"")+'"'+(claimedHere?' style="border-color:#f59e0b;color:#f59e0b;background:#fffbeb"':'')+(readOnly?"":' onclick="tapTask(\''+t.id+'\')"')+'>'+(done?"✓":claimedHere?"⏳":"")+'</div>'+
@@ -12636,6 +12652,29 @@ function gvSelFilledCount(){
   let n=0; gvSel.forEach(k=>{ const [dn,sk]=k.split("|"); if(gvFilled((lessons[dn]||{})[sk])) n++; });
   return n;
 }
+// The single subject all filled-selected cells belong to (else null) — shift-up compacts
+// one subject at a time, since each has its own weekday pattern/pace.
+function gvSelSingleSubject(){
+  const lessons=(currData.lessons||{})[gvKid]||{};
+  const sks=new Set();
+  gvSel.forEach(k=>{ const [dn,sk]=k.split("|"); if(gvFilled((lessons[dn]||{})[sk])) sks.add(sk); });
+  return sks.size===1?[...sks][0]:null;
+}
+// Delete the selected cells, then RE-LAY the rest of that subject up to close the gap —
+// via the Builder's own materializer, so the shift respects the subject's allowed days,
+// times-per-week, day cap and alternation group. Lands on the Builder preview so the
+// compacted plan is reviewed before Apply (the delete has its own grid Undo meanwhile).
+function gvSelShiftUp(){
+  const sk=gvSelSingleSubject();
+  if(!sk){ gwShowToast("Select cells in one subject (column) to shift up."); return; }
+  const kid=gvKid, disp=((currData.subjects[kid]||{})[sk]||{}).display||sk;
+  gvSelClear();                       // delete cells + sync lessonSeq + capture Undo
+  gvSelMode=false; gvSel=new Set(); gvSelAnchor=null;
+  cbKid=kid; adminSubTab="curriculum"; currInnerTab="builder";
+  cbOpenSubj(sk);                     // load the subject's SAVED pacing into the form
+  cbRunPreview();                     // materialize the compacted layout (pattern-aware)
+  gwShowToast("Deleted — here's "+disp+" shifted up to close the gap. Review, then Apply.");
+}
 // Keep a card's lessonSeq in lockstep with its grid cells (card-origin subjects like HWT).
 // After a bulk clear/fill the grid is authoritative, so rebuild lessonSeq from the grid in
 // dayNum order — otherwise the stale card copy could resurrect cleared lessons if the grid
@@ -12991,10 +13030,12 @@ function renderCurrGrid(el){
     const nSel=gvSel.size, nFilled=gvSelFilledCount();
     h+='<div style="position:sticky;top:0;z-index:6;background:'+col+';color:#fff;border-radius:10px;padding:8px 12px;margin:0 0 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
     h+='<span style="font-size:12px;font-weight:800">'+nSel+' selected'+(nFilled!==nSel?' ('+nFilled+' with content)':'')+'</span>';
-    h+='<button onclick="gvSelClear()"'+(nFilled?'':' disabled')+' style="padding:4px 12px;border-radius:10px;border:none;background:'+(nFilled?'#fff':'rgba(255,255,255,.4)')+';color:'+col+';font-size:11px;font-weight:800;cursor:'+(nFilled?'pointer':'default')+';font-family:\'DM Sans\',sans-serif">🗑 Clear '+(nFilled||'')+'</button>';
+    const oneSubj=gvSelSingleSubject();
+    h+='<button onclick="gvSelClear()"'+(nFilled?'':' disabled')+' style="padding:4px 12px;border-radius:10px;border:none;background:'+(nFilled?'#fff':'rgba(255,255,255,.4)')+';color:'+col+';font-size:11px;font-weight:800;cursor:'+(nFilled?'pointer':'default')+';font-family:\'DM Sans\',sans-serif" title="Delete these cells, leave the days blank">🗑 Clear '+(nFilled||'')+'</button>';
+    h+='<button onclick="gvSelShiftUp()"'+(nFilled&&oneSubj?'':' disabled')+' style="padding:4px 12px;border-radius:10px;border:none;background:'+(nFilled&&oneSubj?'#fff':'rgba(255,255,255,.4)')+';color:'+col+';font-size:11px;font-weight:800;cursor:'+(nFilled&&oneSubj?'pointer':'default')+';font-family:\'DM Sans\',sans-serif" title="'+(oneSubj?'Delete these, then pull the rest of the subject up to close the gap — finishes earlier':'Select cells in ONE subject to shift up')+'">⤒ Delete &amp; shift up</button>';
     h+='<button onclick="gvSelFill()"'+(nSel?'':' disabled')+' style="padding:4px 12px;border-radius:10px;border:1px solid #fff;background:transparent;color:#fff;font-size:11px;font-weight:800;cursor:'+(nSel?'pointer':'default')+';font-family:\'DM Sans\',sans-serif;opacity:'+(nSel?1:.5)+'">✎ Fill…</button>';
     if(nSel) h+='<button onclick="gvSelDeselect()" style="padding:4px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.6);background:transparent;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Deselect</button>';
-    h+='<span style="font-size:10px;opacity:.9;flex-basis:100%;line-height:1.4">Tap cells to pick. Tap a <b>column header</b> for the whole subject, a <b>day</b> for the whole row. Tap two cells in one column to grab everything between them.</span>';
+    h+='<span style="font-size:10px;opacity:.9;flex-basis:100%;line-height:1.4">Tap cells to pick. Tap a <b>column header</b> for the whole subject, a <b>day</b> for the whole row. Tap two cells in one column to grab everything between them. <b>Clear</b> leaves the days blank; <b>Shift up</b> pulls the rest of the subject up to close the gap.</span>';
     h+='</div>';
   }
 
@@ -14383,6 +14424,17 @@ function chainDone(origId, checkedObj, tasksArr){
     id=id+"_c";
   }
   return false;
+}
+// Is this weekday name strictly before today (this week)? Mirrors effectiveDay's isPast.
+// "carryover" (rolled past Saturday) is NOT a past day — it's next-week carry, not a
+// day-specific miss. Used to gray out permanently-missed day-bound tasks.
+function _isPastDay(dn){
+  if(!dn||dn==="carryover") return false;
+  const todayMid=new Date(); todayMid.setHours(0,0,0,0);
+  if(DAY_DT[dn]){ const cal=new Date(DAY_DT[dn]+", "+todayMid.getFullYear()); cal.setHours(0,0,0,0); return cal<todayMid; }
+  const jsDay=new Date().getDay();
+  const dIdx={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6}[dn]||0;
+  return dIdx<(jsDay||7);
 }
 function effectiveDay(t){
   if(t.id.endsWith("_c")) return t.day;
