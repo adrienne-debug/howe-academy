@@ -1929,14 +1929,20 @@ function renderDayTabs(){
 function selDay(d){ day=d; renderAll(); }
 function dayPct(d){
   const kidMatch=(t)=>kid==="all"||kid==="mom"?true:t.who===kid;
-  const countable=getActiveTasks().filter(t=>
-    effectiveDay(t)===d && kidMatch(t) &&
-    !t.id.endsWith("_c") &&   // _c carryovers are read-only banner mirrors — counted via their scheduled twin
-    !t._eowOverflow &&        // end-of-week overflow isn't scheduled this week (Mom-only, rolls over)
-    !t.title.toLowerCase().includes("lunch")
-  );
-  const total=countable.length; if(!total) return 0;
+  const _ok=t=>kidMatch(t)&&!t.id.endsWith("_c")&&!t._eowOverflow&&!t.title.toLowerCase().includes("lunch");
+  //   _c carryovers are read-only mirrors (counted via their twin); _eowOverflow is
+  //   next-week overflow, not scheduled this week.
+  const countable=getActiveTasks().filter(t=>effectiveDay(t)===d&&_ok(t));
   const done=countable.filter(t=>!!checked[t.id]).length;
+  let total=countable.length;
+  // Past-day "as it happened": also count work that was scheduled FOR d but carried away
+  // (rolled forward to a later day) — it wasn't completed on d, so it belongs in d's
+  // denominator as incomplete, giving the true day-of completion. A carried task's
+  // original day is cascadedFrom (set on first sweep); effectiveDay!==d means it left.
+  if(_isPastDay(d)){
+    getActiveTasks().forEach(t=>{ if(t.cascadedFrom===d&&effectiveDay(t)!==d&&_ok(t)) total++; });
+  }
+  if(!total) return 0;
   return Math.round(done/total*100);
 }
 
