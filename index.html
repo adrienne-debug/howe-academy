@@ -1245,6 +1245,8 @@ let lastTasksWrite = 0;
 let fbCheckedLoaded = false;
 let fbTasksLoaded = false;
 let fbHistoryLoaded = false;
+let fbCurrLoaded = false;   // curriculum once() answered (even empty) — subjNoCarry flags readable
+let fbArchiveLoaded = false; // archive listener answered — cursor math has the full completion record
 let cascadeDebounce = null;
 let fbTasksHighWater = 0; // max task count ever seen from Firebase — guards against accidental wipes
 // Dry-run mode (?dryrun=1 or localStorage ha_dryrun=1): reads work, writes are no-ops.
@@ -1511,6 +1513,7 @@ function initFb() {
       try{localStorage.setItem("ha_shape_sigs",JSON.stringify(committedShapeSigs));}catch(e){}
     });
     db.ref("archive").on("value",s=>{
+      fbArchiveLoaded=true;
       archive=s.val()||{};
       try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
       if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
@@ -1584,7 +1587,9 @@ function initFb() {
       if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
     });
     db.ref("curriculum").once("value",s=>{
+      fbCurrLoaded=true; // even an empty answer counts — the cascade may now trust subjNoCarry
       if(s.val()){currData=s.val();buildCurrPaceCum();dbg("curriculum loaded: "+Object.keys(currData.subjects||{}).join(","));runDisplacement();if(tab==="schedule")renderAll();setTimeout(autoGenerateWeekIfNeeded,3000);}
+      schedCascade(); // curriculum may be the LAST loader to answer — re-arm the debounced sweep
     });
     db.ref("config/rules").on("value",s=>{
       rulesData=s.val()||null;
@@ -8177,11 +8182,14 @@ function printSchedule(){
 setInterval(()=>{ if(tab==="schedule")renderSkylight(); },60000);
 
 // Debounced cascade scheduler — collapses multiple rapid listener fires into one cascade run.
-// Only runs when BOTH checked and tasks have been loaded from Firebase.
+// Only runs when checked, tasks, history AND curriculum have loaded from Firebase — the
+// sweep consults subjNoCarry (curriculum card flags); running before currData arrives
+// would silently read every "Drops that day" flag as false and sweep day-bound work
+// forward. The curriculum once() re-arms this when it answers last.
 function schedCascade(){
   clearTimeout(cascadeDebounce);
   cascadeDebounce=setTimeout(()=>{
-    if(fbCheckedLoaded&&fbTasksLoaded&&fbHistoryLoaded){
+    if(fbCheckedLoaded&&fbTasksLoaded&&fbHistoryLoaded&&fbCurrLoaded){
       cascadeIntraWeek();
       runCascade();
     }
@@ -8203,6 +8211,9 @@ function _parseCheckTs(ts){
 }
 
 function cascadeIntraWeek(sweepTodayElapsed){
+  // Never sweep before the curriculum answers (direct callers like gwCommit always have
+  // currData) — a sweep that can't see subjNoCarry flags would move day-bound work.
+  if(!fbCurrLoaded&&!currData) return;
   const dayOrder=["monday","tuesday","wednesday","thursday","friday","saturday"];
   const JS_DAY_MAP={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
   const todayMid=new Date(); todayMid.setHours(0,0,0,0);
@@ -8272,7 +8283,15 @@ function cascadeIntraWeek(sweepTodayElapsed){
   weekData.tasks.forEach(t=>{
     if(t.id.endsWith("_c")) return;
     if(checked[t.id]) return;
-    if(subjNoCarry(t)) return; // day-bound (notebooks, reflex, card noCarry): a missed day is just missed
+    if(subjNoCarry(t)){ // day-bound (notebooks, reflex, card noCarry): a missed day is just missed
+      // Snap-back self-heal: a pre-guard sweep (or a flag clicked after one) left this
+      // displaced — put the unchecked copy back on its own day, missed as it should be.
+      if(t.cascadedFrom&&t.cascadedFrom!==t.day){
+        dbg("noCarry snap-back: "+t.id+" "+t.day+" → "+t.cascadedFrom);
+        t.day=t.cascadedFrom; delete t.cascadedFrom; _healMoved=true;
+      }
+      return;
+    }
     const idx=dayOrder.indexOf(t.day);
     if(idx<0||idx>todayIdx) return;
     if(idx===todayIdx){
@@ -8484,6 +8503,10 @@ function cascadeIntraWeek(sweepTodayElapsed){
   const subjectGroups={};
   weekData.tasks.forEach(t=>{
     if(t.id.endsWith("_c")) return;
+    // Notebooks have no lesson sequence — the slot shuffle would swap same-titled
+    // bookends between days and strip a moved one's cascadedFrom (losing the ↩ chip
+    // and the snap-back anchor). Leave them to their dedicated placement passes.
+    if(_isNote(t)) return;
     const subj=taskSubject(t);
     const key=t.who+"|"+subj;
     if(!subjectGroups[key]) subjectGroups[key]=[];
@@ -22753,6 +22776,11 @@ function autoGenerateWeekIfNeeded(){
   if(!db||!currData||!currData.subjects||!currData.weekDays||!currData.lessons) return;
   const wn=weekNumForDate(_todayStr());
   if(!wn||wn<=currWeekNum()) return; // still inside (or behind) the active week
+  // Cursor math needs the REAL completion record — this week's checked/tasks and the
+  // archive. On a cold cache (fresh device, cleared storage) the localStorage seeds are
+  // empty; generating then would undercount cursors and re-schedule finished lessons.
+  // Retry until the listeners have answered.
+  if(!fbCheckedLoaded||!fbTasksLoaded||!fbArchiveLoaded){ setTimeout(autoGenerateWeekIfNeeded,5000); return; }
   _autoGenTried=true;
   db.ref("week"+wn+"/tasks").once("value",s=>{
     if(s.val()&&Object.keys(s.val()).length) return; // another device already built it
@@ -23123,11 +23151,42 @@ function gwCommit(){
       if(snapChecked[t.id]) return;
       const key=(t.title||"")+"|"+(t.who||"")+"|"+(t.day||"");
       if(oldLookup[key]){
+        oldLookup[key].used=true;
         snapChecked[t.id]=oldLookup[key].ts;
         if(snapHist[oldLookup[key].oldId]&&!snapHist[t.id])
           snapHist[t.id]={...snapHist[oldLookup[key].oldId],id:t.id};
       }
     });
+    // Day-agnostic fallback: a regen can land a DONE lesson on a different day (skip-day /
+    // sick-day reshape). An old check with no same-day home re-attaches wherever its
+    // title+who lives in the new week — but only when BOTH sides are unambiguous (exactly
+    // one unmatched old check and one still-unchecked new task for that title+who), so
+    // same-titled dailies like notebooks can never cross-wire. Without this the GC below
+    // silently drops the completion. The copied history entry keeps its original
+    // checkedOnDay, so the ground-truth heal re-pins the task to the day it was done.
+    (function(){
+      const oldByTW={};
+      Object.keys(oldLookup).forEach(k=>{
+        const v=oldLookup[k];
+        if(v.used) return;
+        const tw=k.slice(0,k.lastIndexOf("|"));
+        (oldByTW[tw]=oldByTW[tw]||[]).push(v);
+      });
+      const newByTW={};
+      d.tasks.forEach(t=>{
+        if(snapChecked[t.id]) return;
+        const tw=(t.title||"")+"|"+(t.who||"");
+        (newByTW[tw]=newByTW[tw]||[]).push(t);
+      });
+      Object.keys(oldByTW).forEach(tw=>{
+        const olds=oldByTW[tw], cands=newByTW[tw]||[];
+        if(olds.length!==1||cands.length!==1) return;
+        const t=cands[0];
+        snapChecked[t.id]=olds[0].ts;
+        if(snapHist[olds[0].oldId]&&!snapHist[t.id])
+          snapHist[t.id]={...snapHist[olds[0].oldId],id:t.id};
+      });
+    })();
     const snapSl=ld(activeWK+"_sl")||slState||{};
     // Re-attach carry-overs
     const newIds=new Set(d.tasks.map(t=>t.id));
