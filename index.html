@@ -3169,6 +3169,52 @@ function renderScheduleBreakCard(brk){
       '<span style="font-size:13px;font-weight:700;color:#166534">'+resumeTxt+'</span></div>':'')+
     '</div>';
 }
+// ── One-tap kid off (Mom): per-kid calendar override for the schedule day ────────
+// Same data as Admin → Calendar → Per-Kid Overrides (calendar/kidOverrides), so
+// generation, catch-up dates, the cascade spread and the re-pack all respect it.
+let schedDayOffOpen=false;
+function schedDayOffToggleOpen(){ schedDayOffOpen=!schedDayOffOpen; renderAll(); }
+function _schedDayISO(dn){
+  if(!DAY_DT[dn]) return null;
+  const d=new Date(DAY_DT[dn]+", "+new Date().getFullYear());
+  if(isNaN(d.getTime())) return null;
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+function schedRenderDayOffPicker(dn){
+  const ds=_schedDayISO(dn);
+  if(!ds) return '';
+  let p='<div style="margin:8px 12px 0;background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:10px 12px">';
+  p+='<div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px">😷 Kid off — '+(DAY_LBL[dn]||dn)+'</div>';
+  p+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+  [...ROSTER].forEach(k=>{
+    const ov=((calendarData.kidOverrides||{})[k]||{})[ds];
+    const offByOverride=!!(ov&&ov.school===false);
+    const offWhy=offByOverride?null:smapIsKidOff(k,ds);
+    const c=KID_COLOR[k]||"#333";
+    p+='<button onclick="schedToggleKidOff(\''+k+'\',\''+ds+'\')" style="padding:6px 14px;border-radius:16px;border:1.5px solid '+(offByOverride?'transparent':'var(--border)')+';background:'+(offByOverride?c:'#fff')+';color:'+(offByOverride?'#fff':'var(--text)')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cap(k)+(offByOverride?' · off':(offWhy?' · '+esc(offWhy):''))+'</button>';
+  });
+  p+='</div>';
+  p+='<div style="font-size:10px;color:var(--muted);margin-top:6px">Tap to toggle a sick/off day — the same per-kid override as Admin → Calendar. Generation and catch-up skip an off kid; regenerate afterward to reflow their lessons.</div>';
+  p+='</div>';
+  return p;
+}
+function schedToggleKidOff(k,ds){
+  if(!db||!adminPinUnlocked) return;
+  const ov=((calendarData.kidOverrides||{})[k]||{})[ds];
+  if(ov&&ov.school===false){
+    db.ref("calendar/kidOverrides/"+k+"/"+ds).remove();
+    if(calendarData.kidOverrides&&calendarData.kidOverrides[k]) delete calendarData.kidOverrides[k][ds];
+    gwShowToast(cap(k)+" restored for "+ds);
+  } else {
+    const entry={school:false,note:"Day off"};
+    db.ref("calendar/kidOverrides/"+k+"/"+ds).set(entry);
+    calendarData.kidOverrides=calendarData.kidOverrides||{};
+    (calendarData.kidOverrides[k]=calendarData.kidOverrides[k]||{})[ds]=entry;
+    gwShowToast(cap(k)+" marked off — regenerate to reflow their lessons");
+  }
+  renderAll();
+}
+
 function renderSchedule(el){
   try{ forfeitSweep(); }catch(e){}
   if(schedShowPace){ renderPace(el); return; }
@@ -3229,11 +3275,13 @@ function renderSchedule(el){
 
   let h='<div class="day-banner" style="--day-color:'+col+'">'+
     '<div class="day-banner-inner">'+
-    '<div><div class="day-name">'+(DAY_LBL[day]||day)+'<button class="bo-btn" onclick="openBoDialog(\''+day+'\')">+ Blockout</button></div>'+
+    '<div><div class="day-name">'+(DAY_LBL[day]||day)+'<button class="bo-btn" onclick="openBoDialog(\''+day+'\')">+ Blockout</button>'+
+    (adminPinUnlocked?'<button class="bo-btn" onclick="schedDayOffToggleOpen()">😷 Kid Off</button>':'')+'</div>'+
     '<div class="day-date">'+_dayDate(day)+" · "+(weekData.week||WK).replace("week","Week ")+'</div>'+
     '<div class="day-window">'+win+'</div></div>'+
     '<div class="day-pct-badge">'+pct+'%</div></div>'+
     '<div class="day-prog-bar"><div class="day-prog-fill" style="width:'+pct+'%"></div></div></div>';
+  if(adminPinUnlocked&&schedDayOffOpen) h+=schedRenderDayOffPicker(day);
 
   if(CONSTRAINT[day]){
     h+='<div class="constraint-alert" style="display:flex;align-items:center;gap:8px">'+
@@ -6568,6 +6616,15 @@ function ceRenderEditSheet(){
   const hasExcelLessons=currData&&currData.lessons&&currData.lessons[ceEditKid]&&seq.length&&seq[0].dayNum<90000;
   let cursorPos=0;
   try{ cursorPos=computeSubjectCursor(ceEditKid,ceEditKey); }catch(e){}
+
+  // Card-only subject: it schedules fine from this card's sequence, but the Grid and
+  // Lesson Map only show grid-backed subjects — offer the Builder to materialize it.
+  if(!hasExcelLessons&&s.lessonSeq&&s.lessonSeq.length&&!(s.rules||"").includes("first")&&!(s.rules||"").includes("last")){
+    h+='<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:10px;padding:10px 12px;margin:10px 0">';
+    h+='<div style="font-size:11px;color:#1e40af;line-height:1.5"><b>📊 Not in the Grid/Map yet.</b> This subject lives on its card — it schedules normally, but won\'t appear in the Grid or Lesson Map until it\'s built into the grid (which also puts it under Builder pacing rules).</div>';
+    h+='<button onclick="cbJumpTo(\''+ceEditKid+'\',\''+ceEditKey+'\')" style="margin-top:8px;padding:7px 14px;border-radius:10px;border:none;background:#1d4ed8;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Build into Grid →</button>';
+    h+='</div>';
+  }
 
   // Lesson position — TWO independent counts. "Completed (progress)" feeds the pacing /
   // accomplishment views (computeSubjectDone, uses paceAdjust); "Schedule next-lesson" is
@@ -12022,6 +12079,35 @@ function cbApply(){
     snap(p,(wd[kid]||{})[wk]); up[p]=arr;
   }
   const s=currData.subjects[kid][sk];
+  // ── Card-sequence transition backfill ────────────────────────────────
+  // First build of a subject that lived only on its card (lessonSeq, no grid cells):
+  // the build writes just the REMAINING lessons, but the cursor counts COMPLETED work
+  // (paceAutoCount) — against a remaining-only grid it would skip that many lessons
+  // again (3 done → next scheduled jumps to Lesson 7). Backfill the done lessons into
+  // the most recent past rows so the grid carries the full sequence: cursor lands on
+  // exactly the next undone lesson, total/expected-pace stay truthful, and past rows
+  // are display-frozen anyway. Undo covers these cells like any other build write.
+  (function(){
+    const filled0=v=>v&&v!=="—"&&v!=="nan"&&String(v).trim();
+    for(const dnn of Object.keys(lessons)){ if(filled0((lessons[dnn]||{})[sk])) return; } // already grid-backed
+    const doneN=Math.max(0,computeSubjectCursor(kid,sk)||0);
+    if(!doneN) return;
+    const seqFull=(s.lessonSeq||[]).slice();
+    const done=seqFull.slice(0,Math.min(doneN,seqFull.length));
+    if(!done.length) return;
+    const today0=cbTodayISO();
+    const pastRows=Object.keys(lessons).map(Number).filter(n=>!isNaN(n))
+      .filter(dnn=>{const l=lessons[dnn];return l&&l.date&&l.date<=today0&&!filled0((l||{})[sk]);})
+      .sort((a,b)=>a-b).slice(-done.length);
+    if(pastRows.length<done.length){
+      cbMsg="⚠ Couldn't backfill "+done.length+" completed lessons (only "+pastRows.length+" past days) — the cursor may skip ahead; check the Pace tab's offset for "+(s.display||sk)+".";
+      return;
+    }
+    pastRows.forEach((dnn,i)=>{
+      const p="lessons/"+kid+"/"+dnn+"/"+sk;
+      snap(p,(lessons[dnn]||{})[sk]); up[p]=done[i];
+    });
+  })();
   const pacing=cbPacingFromForm();
   pacing.builtThrough=res.stats.lastDate||""; pacing.builtAt=new Date().toISOString();
   snap("subjects/"+kid+"/"+sk+"/pacing",s.pacing); up["subjects/"+kid+"/"+sk+"/pacing"]=pacing;
@@ -12077,6 +12163,34 @@ function cbUndo(){
 
 function cbSetKid(k){ cbKid=k; cbSubjKey=null; cbForm=null; cbPreviewRes=null; renderAll(); }
 function cbOpenSubj(sk){ cbSubjKey=sk; cbForm=cbDefaultForm(cbKid,sk); cbPreviewRes=null; renderAll(); }
+
+// Any filled grid cell for this subject? Card-sequence subjects (added via Subjects →
+// Add Subject) carry lessonSeq only — they schedule fine but are invisible in the
+// Grid/Map until the Builder materializes them.
+function cbHasGridCells(kid,sk){
+  const lessons=((currData||{}).lessons||{})[kid]||{};
+  const filled=v=>v&&v!=="—"&&v!=="nan"&&String(v).trim();
+  for(const dnn of Object.keys(lessons)){ if(filled((lessons[dnn]||{})[sk])) return true; }
+  return false;
+}
+// Card-only sequenced subjects for a kid (candidates for "build into grid")
+function cbCardOnlySubjects(kid){
+  const subs=((currData||{}).subjects||{})[kid]||{};
+  return Object.keys(subs).filter(sk=>{
+    const s=subs[sk]||{};
+    if(s.paused) return false;
+    if((s.rules||"").includes("first")||(s.rules||"").includes("last")) return false;
+    if((s.tracking||"sequenced")!=="sequenced") return false;
+    if(!(s.lessonSeq&&s.lessonSeq.length)) return false;
+    return !cbHasGridCells(kid,sk);
+  });
+}
+// Jump straight into the Builder for a kid+subject (from the subject sheet or Grid tab)
+function cbJumpTo(kid,sk){
+  if(ceEditKid) ceCloseSheet();
+  adminSubTab="curriculum"; currInnerTab="builder";
+  cbKid=kid; cbOpenSubj(sk);
+}
 function cbCloseSubj(){ cbSubjKey=null; cbForm=null; cbPreviewRes=null; renderAll(); }
 function cbSetMode(m){ cbForm.mode=m; cbPreviewRes=null; renderAll(); }
 function cbSetField(field,val){ cbForm[field]=val; cbPreviewRes=null; renderAll(); }
@@ -12552,11 +12666,24 @@ function renderCurrGrid(el){
   const subs=(currData.subjects||{})[gvKid]||{};
   const cols=gvSubjectCols(gvKid);
   const dayNums=Object.keys(lessons).map(Number).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
+
+  // Card-only subjects: scheduling works off their card sequence, but they have no
+  // grid cells — surface them here so the grid never reads as "subjects missing".
+  const _cardOnly=cbCardOnlySubjects(gvKid);
+  const _cardOnlyHtml=_cardOnly.length
+    ?'<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:10px;padding:8px 12px;margin:0 0 8px">'
+      +'<span style="font-size:11px;color:#1e40af;font-weight:700">📊 On their cards, not in the grid yet: </span>'
+      +_cardOnly.map(sk=>'<button onclick="cbJumpTo(\''+gvKid+'\',\''+sk+'\')" style="margin:2px 4px 2px 0;padding:3px 10px;border-radius:12px;border:1px solid #93c5fd;background:#fff;color:#1d4ed8;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+esc((subs[sk]||{}).display||sk)+' →</button>').join('')
+      +'<span style="font-size:10px;color:#3b82f6;display:block;margin-top:2px">They schedule normally — tap one to build it into the grid so it shows here and follows Builder rules.</span></div>'
+    :'';
+
   if(!dayNums.length||!cols.length){
+    h+=_cardOnlyHtml;
     h+='<div style="padding:30px;text-align:center;color:var(--muted);font-size:12px">'+cap(gvKid)+' has no lesson grid yet — build a subject in the Builder or upload Excel.</div></div>';
     el.innerHTML+=h;
     return;
   }
+  h+=_cardOnlyHtml;
 
   const today=cbTodayISO();
   const cap_=cbDayCap(gvKid);
