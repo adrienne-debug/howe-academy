@@ -15405,6 +15405,13 @@ function mastSprintBestTrend(entries){
 }
 // RETRIEVAL_END
 
+// Sprint PB card: which tested deck/phonogram to graph ("__all__" = the combined view).
+// Sprints test DIFFERENT things (phonogram sh vs th, drill decks, unit rounds) — mixed
+// into one trend, the first sprint on a new phonogram reads as a crash from the old
+// one's best. Filtering makes each tested thing its own series with its own PB.
+let mastSprintDeckFilter="__all__";
+function mastSetSprintDeckFilter(v){ mastSprintDeckFilter=v; _mastRe(); }
+
 function _mastRe(){
   const c=document.getElementById("content"); if(!c) return;
   // A re-render rebuilds ALL of #content, which used to "blip": the page jumped to the
@@ -17193,14 +17200,36 @@ function _renderMasteryInner(el){
 
     // R6: Sprint personal-best trend — self-referenced (vs the kid's own best), no grade norm.
     const _sl=(masteryData.sprintLog&&masteryData.sprintLog[masteryKid])?masteryData.sprintLog[masteryKid]:null;
-    const _st=_sl?mastSprintBestTrend(_sl):null;
+    const _slArr=_sl?(Array.isArray(_sl)?_sl:Object.values(_sl)):null;
+    // What-was-tested filter: decks in most-recent-first order, with entry counts.
+    const _dCount={}, _dOrder=[];
+    (_slArr||[]).slice().sort((a,b)=>(b&&b.ts||0)-(a&&a.ts||0)).forEach(e=>{
+      const d=(e&&e.deck)||"(unlabeled)";
+      if(!(d in _dCount)) _dOrder.push(d);
+      _dCount[d]=(_dCount[d]||0)+1;
+    });
+    if(mastSprintDeckFilter!=="__all__"&&!(mastSprintDeckFilter in _dCount)) mastSprintDeckFilter="__all__";
+    const _slF=(mastSprintDeckFilter==="__all__")?_slArr:(_slArr||[]).filter(e=>((e&&e.deck)||"(unlabeled)")===mastSprintDeckFilter);
+    const _st=_slF&&_slF.length?mastSprintBestTrend(_slF):null;
     if(_st&&_st.count){
       const _maxB=Math.max(1,..._st.series.map(s=>s.best));
       h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">';
       h+='<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px">';
-      h+='<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700">\u{1F3C3} Sprint Personal Best</div>';
+      h+='<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700">\u{1F3C3} Sprint Personal Best'+(mastSprintDeckFilter!=="__all__"?' <span style="font-size:11px;color:#5b3a8c">\u{00B7} '+esc(mastSprintDeckFilter)+'</span>':'')+'</div>';
       h+='<div style="font-family:\'DM Mono\',monospace;font-size:20px;font-weight:800;color:#5b3a8c">'+_st.currentBest+' <span style="font-size:10px;color:#78716c;font-weight:600">words/60s</span></div>';
       h+='</div>';
+      // Tested-thing pills — tap a phonogram/deck for its own graph, PB, and history; All = combined.
+      if(_dOrder.length>1){
+        const _pill=(val,lbl,n)=>{
+          const sel=mastSprintDeckFilter===val;
+          const js=val.replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+          return '<div onclick="mastSetSprintDeckFilter(\''+js+'\')" style="cursor:pointer;padding:3px 10px;border-radius:999px;font-size:10px;font-weight:700;border:1.5px solid '+(sel?'#5b3a8c':'#e2ddd6')+';background:'+(sel?'#5b3a8c':'#fff')+';color:'+(sel?'#fff':'#57534e')+'">'+lbl+' <span style="opacity:.65;font-weight:600">'+n+'</span></div>';
+        };
+        h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">';
+        h+=_pill("__all__","All",(_slArr||[]).length);
+        _dOrder.forEach(d=>{ h+=_pill(d,esc(d),_dCount[d]); });
+        h+='</div>';
+      }
       // Bar/dot color = difficulty level reached (Intro→amber, Building→teal, Fluency→deep green); 🏆 still marks a PB.
       const lvlCol=(d)=>d==='intro'?'#f59e0b':d==='building'?'#14b8a6':d==='fluency'?'#15803d':'#c4b5fd';
       // Progress graph — words/60s per session over time, dots colored by level, dashed line = personal-best high-water mark.
@@ -17217,7 +17246,7 @@ function _renderMasteryInner(el){
           const PY=gy(s.runningBest);
           if(i===0){ pbPath+='M'+X.toFixed(1)+','+PY.toFixed(1)+' '; }
           else { const prevPY=gy(_sd[i-1].runningBest); pbPath+='L'+X.toFixed(1)+','+prevPY.toFixed(1)+' L'+X.toFixed(1)+','+PY.toFixed(1)+' '; }
-          dots+='<circle cx="'+X.toFixed(1)+'" cy="'+Y.toFixed(1)+'" r="4" fill="'+lvlCol(s.diff)+'" stroke="#fff" stroke-width="1.5"/>';
+          dots+='<circle cx="'+X.toFixed(1)+'" cy="'+Y.toFixed(1)+'" r="4" fill="'+lvlCol(s.diff)+'" stroke="#fff" stroke-width="1.5">'+(s.deck?'<title>'+esc(s.deck)+' — '+s.best+' words/60s ('+(s.date||'')+')</title>':'')+'</circle>';
           if(s.isPB) dots+='<circle cx="'+X.toFixed(1)+'" cy="'+Y.toFixed(1)+'" r="6.5" fill="none" stroke="#1c1917" stroke-width="0.9" stroke-dasharray="2 1.5"/>';
           if(i===0||i===_sd.length-1||i%2===0) labels+='<text x="'+X.toFixed(1)+'" y="'+(ght-6)+'" text-anchor="middle" font-size="7" fill="#9ca3af">'+String(s.date||'').slice(5)+'</text>';
         });
