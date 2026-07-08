@@ -14763,7 +14763,9 @@ function _matchPairHtml(it){
   const vis=_smTileVis(it,true);   // noGlyph: pair tile must not be the word itself
   if(vis) return vis;
   const def=mastGetDef(masteryKid,it.prompt)||((it.answer&&it.answer!==it.prompt)?it.answer:"")||it.definition||"";
-  if(def) return '<span style="font-size:11.5px;font-weight:600;line-height:1.35;pointer-events:none;word-break:break-word">'+esc(String(def).slice(0,90))+'</span>';
+  // Rendered RAW like everywhere else in the app — prompts/defs carry markup (<u> for the
+  // rule-deck target word, .mast-hl spans); escaping showed literal "<u>" on the tiles.
+  if(def) return '<span style="font-size:11.5px;font-weight:600;line-height:1.35;pointer-events:none;word-break:break-word">'+String(def).slice(0,120)+'</span>';
   return null;
 }
 // Same-pair mode: any tile-able visual counts, glyphs included — two "B" cards to find
@@ -14803,7 +14805,7 @@ function mastMatchStart(deck){
       tiles.push({pid:it.id,matched:false,miss:false,up:false,html:v});
       tiles.push({pid:it.id,matched:false,miss:false,up:false,html:v});
     } else {
-      tiles.push({pid:it.id,matched:false,miss:false,up:false,html:'<span style="font-size:'+((it.prompt||"").length<=4?26:15)+'px;font-weight:800;color:#c2410c;pointer-events:none;word-break:break-word">'+esc(it.prompt)+'</span>'});
+      tiles.push({pid:it.id,matched:false,miss:false,up:false,html:'<span style="font-size:'+((it.prompt||"").length<=4?26:15)+'px;font-weight:800;color:#c2410c;pointer-events:none;word-break:break-word">'+it.prompt+'</span>'});
       tiles.push({pid:it.id,matched:false,miss:false,up:false,html:_matchPairHtml(it)});
     }
   });
@@ -14811,17 +14813,32 @@ function mastMatchStart(deck){
   if(matchStyle==="match") tiles.forEach(t=>{ t.up=true; });   // face-up style: everything visible
   // ⏱ startTs stays null until the FIRST tap — studying the board is free; the clock
   // starts when the kid commits.
-  matchState={deck:deck,style:matchStyle,pairMode:matchPairMode,tiles:tiles,sel:-1,lock:false,startTs:null,endTs:null};
+  matchState={deck:deck,style:matchStyle,pairMode:matchPairMode,tiles:tiles,sel:-1,lock:false,startTs:null,endTs:null,pausedAt:null,pausedTotal:0};
   if(window._matchTick) clearInterval(window._matchTick);
   window._matchTick=setInterval(()=>{
     if(!matchState||matchState.endTs||mastView!=="match"){ clearInterval(window._matchTick); window._matchTick=null; return; }
     const el=document.getElementById("match-clock");
-    if(el) el.textContent=matchState.startTs?(((Date.now()-matchState.startTs)/1000).toFixed(1)+"s"):"0.0s";
+    if(el) el.textContent=(_matchElapsed(matchState)/1000).toFixed(1)+"s";
   },100);
   _mastRe();
 }
+// Play time excluding pauses. A game can't finish while paused (taps are blocked), so
+// endTs never lands inside a pause window.
+function _matchElapsed(st){
+  if(!st.startTs) return 0;
+  const end=st.endTs||Date.now();
+  return end-st.startTs-st.pausedTotal-(st.pausedAt?(end-st.pausedAt):0);
+}
+// ⏸ Pause: freezes the clock AND hides the board — otherwise a paused kid studies the
+// layout for free. Resume picks the clock up where it left off.
+function mastMatchPause(){
+  const st=matchState; if(!st||!st.startTs||st.endTs) return;
+  if(st.pausedAt){ st.pausedTotal+=Date.now()-st.pausedAt; st.pausedAt=null; }
+  else st.pausedAt=Date.now();
+  _mastRe();
+}
 function mastMatchTap(ix){
-  const st=matchState; if(!st||st.lock||st.endTs) return;
+  const st=matchState; if(!st||st.lock||st.endTs||st.pausedAt) return;
   const t=st.tiles[ix]; if(!t||t.matched) return;
   if(!st.startTs) st.startTs=Date.now();   // clock starts on the first tap
   if(st.style==="memory"){
@@ -14854,7 +14871,7 @@ function mastMatchTap(ix){
 }
 function mastMatchFinish(){
   const st=matchState;
-  const sec=Math.round((st.endTs-st.startTs)/100)/10;
+  const sec=Math.round(_matchElapsed(st)/100)/10;
   const kid=masteryKid;
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   if(!s.match_best) s.match_best={};
@@ -14953,10 +14970,21 @@ function buildMatchHtml(color){
   if(!st){ h+='<div style="font-size:12.5px;color:var(--muted)">Pick a deck \u{2014} '+(matchStyle==="memory"?'flip two cards, find the pairs, they disappear!':'match each word to its picture or meaning as fast as you can!')+' \u{23F1} The clock starts on your first tap.</div></div>'; return h; }
   const s=masteryData[masteryKid+"_settings"]||{};
   const best=(s.match_best||{})[st.deck+(st.style==="memory"?" \u{00B7} memory":"")+(st.pairMode==="same"?" \u{00B7} same":"")];
-  h+='<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px">';
-  h+='<span id="match-clock" style="font-family:\'DM Mono\',monospace;font-size:22px;font-weight:800;color:'+color+'">'+(st.startTs?((((st.endTs||Date.now())-st.startTs)/1000).toFixed(1)+'s'):'0.0s')+'</span>';
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px">';
+  h+='<span style="display:flex;align-items:center;gap:8px">';
+  h+='<span id="match-clock" style="font-family:\'DM Mono\',monospace;font-size:22px;font-weight:800;color:'+color+'">'+(_matchElapsed(st)/1000).toFixed(1)+'s</span>';
+  if(st.startTs&&!st.endTs) h+='<button onclick="mastMatchPause()" title="'+(st.pausedAt?'Resume':'Pause')+'" style="width:34px;height:34px;border-radius:50%;border:1.5px solid '+color+';background:'+(st.pausedAt?color:'#fff')+';color:'+(st.pausedAt?'#fff':color)+';font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center">'+(st.pausedAt?'\u{25B6}':'\u{23F8}')+'</button>';
+  h+='</span>';
   h+='<span style="font-size:11px;color:var(--muted);font-weight:700">'+(best!=null?'\u{1F3C6} best '+best+'s':(st.startTs?'':'tap a card to start \u{23F1}'))+'</span>';
   h+='</div>';
+  if(st.pausedAt&&!st.endTs){
+    // Paused: hide the board — otherwise the layout can be studied on a frozen clock.
+    h+='<div style="min-height:200px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;border-radius:14px;border:2px dashed #e2ddd6;background:#faf9f7">';
+    h+='<div style="font-size:34px">\u{23F8}\u{FE0F}</div>';
+    h+='<div style="font-size:13px;font-weight:800;color:var(--muted)">Paused \u{2014} the cards are hiding</div>';
+    h+='<button onclick="mastMatchPause()" style="padding:9px 24px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{25B6} Resume</button>';
+    h+='</div>';
+  } else {
   h+='<div style="display:grid;grid-template-columns:repeat('+(st.tiles.length>=12?4:3)+',1fr);gap:8px">';
   st.tiles.forEach((t,ix)=>{
     const selT=st.sel===ix;
@@ -14971,6 +14999,7 @@ function buildMatchHtml(color){
     }
   });
   h+='</div>';
+  }
   if(st.endTs){
     h+='<div style="margin-top:14px;text-align:center;padding:14px;border-radius:14px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
     h+='<div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:800">'+(st.isPB?'\u{1F3C6} New best \u{2014} '+st.sec+'s!':'\u{2713} '+st.sec+'s'+(st.prevBest!=null?' \u{00B7} best '+st.prevBest+'s':''))+'</div>';
