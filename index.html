@@ -1183,7 +1183,8 @@ let calAddMode=null; // null | "holiday" | "vacation" | "override"
 let calEditId=null;  // id of holiday/vacation being edited
 let calOverrideKid=null; // kid selected for override add
 let calPreviewMonth=null; // YYYY-MM for calendar preview (null = current)
-let histTab="log"; // "log" | "attendance"
+let histTab="log"; // "log" | "attendance" | "trends"
+let histTrendKid=null; // Trends: focused kid (null = all)
 let attEditUnlocked=false;
 let APP_PIN=localStorage.getItem("ha_app_pin")||"0329";
 let attOverrides={}; // {wkKey:{day:{kid:true/false}}}
@@ -4606,12 +4607,22 @@ function renderHistoryTrends(){
   if(!rel.length){ h+='<div style="text-align:center;color:var(--muted);padding:34px 12px;line-height:1.6">No completed weeks with reliable records yet.<br>Trends fill in as weeks are archived — each one now freezes a snapshot at close.</div></div>'; return h; }
   const kids=[...ROSTER].filter(k=>rel.some(w=>w.comp.byKid[k]));
   const pctOf=(w,k)=>{const r=w.comp.byKid[k];return (r&&r.planned)?Math.round(r.done/r.planned*100):null;};
+  const focus=(histTrendKid&&kids.includes(histTrendKid))?histTrendKid:null;
+  const kseries=k=>rel.map(w=>pctOf(w,k)).filter(v=>v!=null);
 
-  h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;margin-bottom:16px">';
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Tap a kid to focus their line'+(focus?' · <span style="color:'+(KC[focus]||"var(--text)")+';font-weight:700">'+cap(focus)+'</span> — tap again for all':'')+'</div>';
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:16px">';
   kids.forEach(k=>{
-    const vals=rel.map(w=>pctOf(w,k)).filter(v=>v!=null);
-    const avg=vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length):0;
-    h+='<div style="background:var(--bg);border-radius:10px;padding:10px 12px"><div style="font-size:11px;color:var(--muted)">'+cap(k)+' · season done</div><div style="font-size:22px;font-weight:800;color:'+(KC[k]||"var(--text)")+'">'+avg+'%</div></div>';
+    const sv=kseries(k);
+    const avg=sv.length?Math.round(sv.reduce((a,b)=>a+b,0)/sv.length):0;
+    const delta=sv.length>=2?sv[sv.length-1]-sv[sv.length-2]:null;
+    const dCol=delta>0?"#16a34a":delta<0?"#c0392b":"var(--muted)";
+    const dTxt=delta==null?"":(delta>0?"▲":delta<0?"▼":"●")+" "+Math.abs(delta);
+    h+='<div onclick="setTrendKid(\''+k+'\')" style="cursor:pointer;background:var(--bg);border-radius:10px;padding:10px 12px;border:2px solid '+(focus===k?(KC[k]||"var(--text)"):"transparent")+';opacity:'+(focus&&focus!==k?"0.45":"1")+'">'+
+      '<div style="font-size:11px;color:var(--muted)">'+cap(k)+' · season done</div>'+
+      '<div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:22px;font-weight:800;color:'+(KC[k]||"var(--text)")+'">'+avg+'%</span>'+
+      (dTxt?'<span style="font-size:11px;font-weight:700;color:'+dCol+'">'+dTxt+'</span>':'')+'</div>'+
+      '<div style="font-size:9px;color:var(--muted);margin-top:1px">'+(delta!=null?"vs prior week":"&nbsp;")+'</div></div>';
   });
   h+='</div>';
 
@@ -4622,32 +4633,37 @@ function renderHistoryTrends(){
   let s='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">';
   [0,50,100].forEach(g=>{const y=ys(g);s+='<line x1="'+pL+'" y1="'+y+'" x2="'+(W-pR)+'" y2="'+y+'" stroke="var(--border)" stroke-width="1"/><text x="'+(pL-4)+'" y="'+(y+3)+'" text-anchor="end" font-size="9" fill="var(--muted)">'+g+'</text>';});
   rel.forEach((w,i)=>{ s+='<text x="'+xs(i)+'" y="'+(H-5)+'" text-anchor="middle" font-size="9" fill="var(--muted)">W'+w.n+'</text>'; });
-  kids.forEach(k=>{
+  const drawOrder=focus?[...kids.filter(k=>k!==focus),focus]:kids; // focused kid drawn last (on top)
+  drawOrder.forEach(k=>{
+    const dim=focus&&focus!==k;
+    const col=dim?"var(--border)":(KC[k]||"#888");
+    const wdt=dim?1:(focus===k?2.8:2);
     const pts=[]; rel.forEach((w,i)=>{const v=pctOf(w,k); if(v!=null) pts.push(xs(i).toFixed(1)+','+ys(v).toFixed(1));});
-    if(pts.length>1) s+='<polyline points="'+pts.join(' ')+'" fill="none" stroke="'+(KC[k]||"#888")+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
-    rel.forEach((w,i)=>{const v=pctOf(w,k); if(v!=null) s+='<circle cx="'+xs(i).toFixed(1)+'" cy="'+ys(v).toFixed(1)+'" r="2.6" fill="'+(KC[k]||"#888")+'"/>';});
+    if(pts.length>1) s+='<polyline points="'+pts.join(' ')+'" fill="none" stroke="'+col+'" stroke-width="'+wdt+'" stroke-linejoin="round" stroke-linecap="round"/>';
+    if(!dim) rel.forEach((w,i)=>{const v=pctOf(w,k); if(v!=null) s+='<circle cx="'+xs(i).toFixed(1)+'" cy="'+ys(v).toFixed(1)+'" r="'+(focus===k?3.2:2.6)+'" fill="'+col+'"/>';});
   });
   s+='</svg>';
   h+=s;
   h+='<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin:6px 0 16px">';
-  kids.forEach(k=>{ h+='<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:2px;background:'+(KC[k]||"#888")+'"></span>'+cap(k)+'</span>'; });
+  kids.forEach(k=>{ h+='<span onclick="setTrendKid(\''+k+'\')" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;font-weight:'+(focus===k?"700":"400")+';opacity:'+(focus&&focus!==k?"0.5":"1")+'"><span style="width:9px;height:9px;border-radius:2px;background:'+(KC[k]||"#888")+'"></span>'+cap(k)+'</span>'; });
   h+='</div>';
 
-  h+='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Day-specific misses per week (reflex &amp; notebooks — can\'t be made up)</div>';
+  const focusKids=focus?[focus]:kids;
+  h+='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Day-specific misses per week'+(focus?' — '+cap(focus):'')+' (reflex &amp; notebooks — can\'t be made up)</div>';
   h+='<div style="display:flex;align-items:flex-end;gap:6px;height:64px;margin-bottom:16px">';
   rel.forEach(w=>{
-    const m=kids.reduce((a,k)=>a+((w.comp.byKid[k]||{}).dbmiss||0),0);
+    const m=focusKids.reduce((a,k)=>a+((w.comp.byKid[k]||{}).dbmiss||0),0);
     const hb=m===0?3:Math.min(52,8+m*8);
     h+='<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;font-weight:700;color:'+(m?"#c0392b":"var(--muted)")+'">'+m+'</div><div style="width:100%;height:'+hb+'px;background:'+(m?"#e34948":"var(--border)")+';border-radius:3px 3px 0 0"></div><div style="font-size:9px;color:var(--muted);margin-top:2px">W'+w.n+'</div></div>';
   });
   h+='</div>';
 
   const agg={};
-  rel.forEach(w=>{ kids.forEach(k=>{ const r=w.comp.byKid[k]; if(!r) return; Object.entries(r.subs).forEach(([sj,sv])=>{ const key=k+"|"+sj; const a=agg[key]||(agg[key]={k,sj,planned:0,done:0}); a.planned+=sv.planned; a.done+=sv.done; }); }); });
+  rel.forEach(w=>{ focusKids.forEach(k=>{ const r=w.comp.byKid[k]; if(!r) return; Object.entries(r.subs).forEach(([sj,sv])=>{ const key=k+"|"+sj; const a=agg[key]||(agg[key]={k,sj,planned:0,done:0}); a.planned+=sv.planned; a.done+=sv.done; }); }); });
   let rows=Object.values(agg).filter(a=>a.planned>=5).map(a=>({...a,slip:Math.round((1-a.done/a.planned)*100)})).filter(a=>a.slip>0);
   rows.sort((x,y)=>y.slip-x.slip); rows=rows.slice(0,8);
   if(rows.length){
-    h+='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Subjects that slip most (across '+rel.length+' reliable weeks)</div>';
+    h+='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Subjects that slip most'+(focus?' — '+cap(focus):'')+' (across '+rel.length+' reliable weeks)</div>';
     h+='<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:6px">';
     rows.forEach(a=>{
       const paused=a.done===0;
@@ -4987,6 +5003,7 @@ function subjNoCarry(t){
 }
 
 function setHistTab(t){ histTab=t; const el=document.getElementById("content"); if(el&&(tab==="history"||(tab==="schedule"&&schedShowHistory))) renderHistory(el); }
+function setTrendKid(k){ histTrendKid=(histTrendKid===k)?null:k; const el=document.getElementById("content"); if(el&&(tab==="history"||(tab==="schedule"&&schedShowHistory))) renderHistory(el); }
 function toggleAttWk(k){ const el=document.getElementById("attwk_"+k); if(el) el.style.display=el.style.display==="none"?"block":"none"; }
 
 function buildKidAttendance(kid){
