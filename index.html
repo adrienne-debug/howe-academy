@@ -3531,10 +3531,22 @@ function bumpSkippedInTier(done){
   if(!skipped.length) return;
   // Rotate content through the group's slots: done takes the earliest, skipped keep
   // their relative order and each slides one later (the last takes done's old slot).
+  // Duration-aware: tasks aren't equal lengths, so a straight slot swap can overlap
+  // (25-min task dropped into a 10-min slot runs into the next). Chain instead — each
+  // task starts at its slot's original time OR after the previous task ends, whichever
+  // is later. Gaps between slots (lunch, other-tier work) are preserved when they fit,
+  // and the group's total end never exceeds the original last end (same durations, re-
+  // ordered), so nothing downstream of the group moves.
   const order=[done].concat(skipped);
-  const slots=order.map(x=>x.time).sort((a,b)=>toMin(a)-toMin(b));
+  const slotStarts=order.map(x=>toMin(x.time)).sort((a,b)=>a-b);
   const upd={};
-  order.forEach((x,i)=>{ if(x.time!==slots[i]){ x.time=slots[i]; upd[x.id+"/time"]=slots[i]; } });
+  let prevEnd=-1;
+  order.forEach((x,i)=>{
+    const start=Math.max(slotStarts[i], prevEnd);
+    prevEnd=start+(x.dur||20);
+    const nt=fromMin(start);
+    if(x.time!==nt){ x.time=nt; upd[x.id+"/time"]=nt; }
+  });
   if(!Object.keys(upd).length) return;
   sv(WK+"_tasks",weekData.tasks);
   lastTasksWrite=Date.now();
