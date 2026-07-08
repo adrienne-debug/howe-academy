@@ -8338,6 +8338,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
   // Collect unchecked tasks from past days (don't move them yet). Notebooks go to a
   // separate list so they keep their bookend treatment instead of clustering.
   const pastTasks=[], pastNotes=[];
+  const _dbCursor={}; // per-kid chain cursor for regen re-timed day-bound tasks (today only)
   weekData.tasks.forEach(t=>{
     if(t.id.endsWith("_c")) return;
     if(checked[t.id]) return;
@@ -8347,6 +8348,15 @@ function cascadeIntraWeek(sweepTodayElapsed){
       if(t.cascadedFrom&&t.cascadedFrom!==t.day){
         dbg("noCarry snap-back: "+t.id+" "+t.day+" → "+t.cascadedFrom);
         t.day=t.cascadedFrom; delete t.cascadedFrom; _healMoved=true;
+      }
+      // Regen re-time WITHIN today: day-bound means "never a later DAY" — but a mid-day
+      // regenerate must still pull today's own elapsed bookends/drills up to now (a
+      // 10:00 morning notebook at a 1 PM restart is still today's to do). Chained per
+      // kid so two day-bound tasks don't stack on the same minute. Closings sit out —
+      // the closing-last pass below re-times them after each kid's final task.
+      if(sweepTodayElapsed&&t.day===today&&!_isClose(t)&&toMin(t.time)<_nowMin){
+        const _st=Math.max(_nowMin,_dbCursor[t.who]||0);
+        t.time=fromMin(_st); _dbCursor[t.who]=_st+(t.dur||20); _healMoved=true;
       }
       return;
     }
@@ -8372,8 +8382,21 @@ function cascadeIntraWeek(sweepTodayElapsed){
     if(_isNote(t)) pastNotes.push(t); else pastTasks.push(t);
   });
   if(!pastTasks.length&&!pastNotes.length){
-    // Nothing to sweep, but the self-heal above may have relocated checked tasks —
-    // persist those moves or they'd silently revert on the next data load.
+    // Nothing to sweep — but a regen may still have re-timed today's day-bound tasks
+    // above, and the closing-last pass below won't run. Pull today's closings out of
+    // elapsed time here (push-later only; never drags a fine closing earlier).
+    if(sweepTodayElapsed){
+      const _ck={};
+      weekData.tasks.forEach(t=>{ if(t.day===today&&!t.id.endsWith("_c")&&!checked[t.id]) (_ck[t.who]=_ck[t.who]||[]).push(t); });
+      Object.keys(_ck).forEach(function(who){
+        const mine=_ck[who], closes=mine.filter(_isClose), others=mine.filter(t=>!_isClose(t));
+        if(!closes.length) return;
+        let lastEnd=_nowMin; others.forEach(t=>{ const e=toMin(t.time)+(t.dur||20); if(e>lastEnd)lastEnd=e; });
+        closes.sort((a,b)=>toMin(a.time)-toMin(b.time));
+        closes.forEach((c,i)=>{ if(toMin(c.time)<lastEnd){ c.time=fromMin(lastEnd+i*(c.dur||20)); _healMoved=true; } });
+      });
+    }
+    // Persist the self-heal/re-time moves or they'd silently revert on the next data load.
     if(_healMoved){ sv(WK+"_tasks",weekData.tasks); safeWriteTasks("cascade-heal"); renderAll(); }
     return;
   }
@@ -8551,7 +8574,11 @@ function cascadeIntraWeek(sweepTodayElapsed){
     if(repack){
       const frozen=[], mergedOld=[];
       existingAll.forEach(t=>{
-        if(checked[t.id]||(claimed&&claimed[t.id])||_isMorn(t)) frozen.push(t);
+        // Day-bound (subjNoCarry: reflex, card noCarry) freeze too — merging one lets the
+        // packer overflow it to the NEXT day, which the snap-back then fights right back
+        // (seen live: Ellis Reflex thursday→friday→thursday). Closings still sit out for
+        // the closing-last pass.
+        if(checked[t.id]||(claimed&&claimed[t.id])||_isMorn(t)||(subjNoCarry(t)&&!_isClose(t))) frozen.push(t);
         else if(!_isClose(t)) mergedOld.push(t);
       });
       const merged=mergedOld.concat(tryHere);
@@ -8559,8 +8586,10 @@ function cascadeIntraWeek(sweepTodayElapsed){
       overflow=packAround(frozen,merged,ctx);
       // The overflow can now include the day's ORIGINAL open tasks — chain them forward
       // exactly like arrivals (chip shows where they came from; the lesson-order pass
-      // below keeps sequences in day order).
+      // below keeps sequences in day order). Day-bound tasks never chain (belt — frozen
+      // ones can't overflow anyway).
       overflow.forEach(t=>{
+        if(subjNoCarry(t)) return;
         if(!poolSet.has(t)){ pool.push(t); poolSet.add(t); t.cascadedFrom=t.cascadedFrom||dn; _prefDay.set(t,dn); }
       });
     } else {
@@ -8618,8 +8647,16 @@ function cascadeIntraWeek(sweepTodayElapsed){
     weekData.tasks.forEach(t=>{ if(t.day===dn&&!t.id.endsWith("_c")&&!checked[t.id]){ (byKid[t.who]=byKid[t.who]||[]).push(t); } });
     Object.keys(byKid).forEach(function(who){
       const mine=byKid[who], closes=mine.filter(_isClose), others=mine.filter(t=>!_isClose(t));
-      if(!closes.length||!others.length) return;
-      let lastEnd=0; others.forEach(t=>{ const e=toMin(t.time)+(t.dur||20); if(e>lastEnd)lastEnd=e; });
+      if(!closes.length) return;
+      // On a mid-day regen, today's closing can't sit in elapsed time even when the kid
+      // has nothing else left today (Lucy's 10:05 AM closing at a 1 PM regen).
+      const floor=(sweepTodayElapsed&&dn===today)?_nowMin:0;
+      if(!others.length){
+        closes.sort((a,b)=>toMin(a.time)-toMin(b.time));
+        closes.forEach((c,i)=>{ if(floor&&toMin(c.time)<floor) c.time=fromMin(floor+i*(c.dur||20)); });
+        return;
+      }
+      let lastEnd=floor; others.forEach(t=>{ const e=toMin(t.time)+(t.dur||20); if(e>lastEnd)lastEnd=e; });
       closes.sort((a,b)=>toMin(a.time)-toMin(b.time));
       closes.forEach((c,i)=>{ c.time=fromMin(lastEnd+i*(c.dur||20)); });
     });
@@ -14084,6 +14121,10 @@ function effectiveDay(t){
     if(h&&h.checkedOnDay) return h.checkedOnDay;
     return t.day;
   }
+  // Day-bound (If-Missed → drops): never roll forward for display either — the engine
+  // leaves a missed one on its own day, so showing it in today's Carried Over box would
+  // contradict the drop. It stays (and reads as missed) on the day it belonged to.
+  if(subjNoCarry(t)) return t.day;
   const order=["monday","tuesday","wednesday","thursday","friday","saturday"];
   const todayMid=new Date(); todayMid.setHours(0,0,0,0);
   const jsDay=new Date().getDay();
