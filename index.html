@@ -14706,6 +14706,48 @@ function mastPlayDefAudio(src){
   if(!url) return;
   try{ new Audio(url).play(); }catch(e){}
 }
+// TTS fallback: when a flip card has no Mom recording, the browser reads the definition
+// aloud (speechSynthesis is free, offline-capable, and works on iPad behind a tap).
+// Recordings stay the premium voice — this only renders when there's no clip.
+function mastSpeak(text){
+  if(!text||!window.speechSynthesis) return;
+  try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(String(text)); u.rate=0.85; speechSynthesis.speak(u); }catch(e){}
+}
+function mastSpeakItem(prompt){
+  let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  const it=items.find(x=>x&&x.prompt===prompt);
+  const txt=mastGetDef(masteryKid,prompt)||(it&&it.answer&&it.answer!==it.prompt?it.answer:"")||(it&&it.definition)||"";
+  mastSpeak(txt);
+}
+
+// ── "Show me" recognition step (Montessori three-period lesson, period 2) ────────
+// A ⭐ Learning FLASH card that's been shown at least once renders as recognition: the
+// target's visual plus two same-deck distractors — "Tap the stegosaurus!" Correct → 🎉
+// and the normal card; wrong → red ring, the right one pulses green, no penalty, try
+// again. SCORING IS UNTOUCHED — Mom's "Shown Today" button still fills the dot; this is
+// an interactive front, not a grader. Distractors and order are seeded from item+day so
+// they don't reshuffle on every re-render.
+let mastShowMe={};   // {"itemId|printNum": "ok" | tappedWrongId}
+function _smHash(s){ let h=0; for(let i=0;i<s.length;i++){ h=((h<<5)-h)+s.charCodeAt(i); h|=0; } return Math.abs(h); }
+function _smTileVis(it){
+  if(!it) return null;
+  if(it.imageUrl) return '<img src="'+it.imageUrl+'" style="width:84px;height:84px;object-fit:cover;border-radius:12px;pointer-events:none">';
+  const mv=mastGetVisual(it.subject,it.prompt);
+  if(mv&&typeof mv==="string") return '<span style="font-size:54px;line-height:1;pointer-events:none">'+mv+'</span>';
+  if(mv&&mv.imageUrl) return '<img src="'+mv.imageUrl+'" style="width:84px;height:84px;object-fit:cover;border-radius:12px;pointer-events:none">';
+  if(it.emoji) return '<span style="font-size:54px;line-height:1;pointer-events:none">'+it.emoji+'</span>';
+  if(MAST_ANIMAL_EMOJI[it.prompt]) return '<span style="font-size:54px;line-height:1;pointer-events:none">'+MAST_ANIMAL_EMOJI[it.prompt]+'</span>';
+  if(it.subject==="Colors"&&MAST_COLOR_MAP[it.prompt]) return '<div style="width:64px;height:64px;border-radius:50%;background:'+MAST_COLOR_MAP[it.prompt]+';border:2px solid rgba(0,0,0,0.1);pointer-events:none"></div>';
+  if(it.subject==="Shapes") return '<span style="pointer-events:none">'+mastShapeVis(it.prompt,54)+'</span>';
+  // Letters / numbers / short phonograms: the glyph IS the visual — great for b/d/p
+  // discrimination. Longer prompts would need reading, so they're not eligible.
+  if((it.prompt||"").length<=3) return '<span style="font-size:44px;font-weight:800;color:#c2410c;font-family:\'Fraunces\',serif;pointer-events:none">'+it.prompt+'</span>';
+  return null;
+}
+function mastShowMeTap(key,itemId,tappedId){
+  mastShowMe[key]=(tappedId===itemId)?"ok":tappedId;
+  _mastRe();
+}
 function mastRecStart(){
   if(mastRecState) return;
   if(!navigator.mediaDevices||!window.MediaRecorder){ mastRecErr="Recording isn't supported in this browser"; _mastRe(); return; }
@@ -17017,6 +17059,34 @@ function renderMastAdmin(){
     h+='</div></div>';
   }
 
+  // ── SECTION 1c: STUCK CARDS (leech report) ──
+  // Cards that keep getting missed are a CARD problem, not a kid problem (Anki calls
+  // these leeches). Computed from session history — no new writes, no new fields:
+  // lifetime ✗ count per item id; surfaced at ≥4 misses while still low on the ladder.
+  // Suggestions only — Mom decides (photo, recording, reversed pass, split it).
+  (function(){
+    const _hst=(masteryData.history&&masteryData.history[masteryKid])||{};
+    const _sess=Array.isArray(_hst)?_hst:Object.values(_hst);
+    const _miss={};
+    _sess.forEach(se=>{ ((se&&se.items)||[]).forEach(x=>{ if(x&&x.result==="m"&&x.id) _miss[x.id]=(_miss[x.id]||0)+1; }); });
+    let _its=masteryData[masteryKid]||[]; if(!Array.isArray(_its)) _its=Object.values(_its);
+    const _rank={daily:0,every_other_day:1,every_third_day:2,weekly:3,bi_weekly:4,monthly:5,learned:6,graduated:7};
+    const _stuck=_its.filter(i=>i&&_miss[i.id]>=4&&(_rank[i.tier||"daily"]||0)<3&&(i.status==="active"||i.status==="introduction"))
+      .map(i=>({it:i,n:_miss[i.id]})).sort((a,b)=>b.n-a.n).slice(0,12);
+    if(!_stuck.length) return;
+    h+='<div class="mast-admin-section">';
+    h+='<div class="mast-admin-hdr">\u{1FA79} Stuck Cards</div>';
+    h+='<div class="mast-admin-card" style="padding:12px 14px">';
+    h+='<div class="mast-admin-desc" style="margin-bottom:6px">Missed 4+ times and still low on the ladder — usually the <b>card</b> needs help, not the kid. Try: \u{1F4F7} a photo \u{00B7} \u{1F399} a voice recording \u{00B7} \u{1F501} a reversed pass \u{00B7} \u{2702}\u{FE0F} split it into smaller pieces.</div>';
+    _stuck.forEach(s=>{
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid #f3f1ee">';
+      h+='<div style="flex:1;min-width:0"><b style="font-size:12px">'+esc(s.it.prompt)+'</b> <span style="font-size:10px;color:var(--muted)">'+esc(s.it.subject||"")+' \u{00B7} '+(MAST_TIER_LBL[s.it.tier]||s.it.tier||"")+(s.it.status==="introduction"?" \u{00B7} \u{2B50}":"")+'</span></div>';
+      h+='<span style="font-size:11px;font-weight:800;color:#dc2626;white-space:nowrap">\u{2717} '+s.n+'\u{00D7}</span>';
+      h+='</div>';
+    });
+    h+='</div></div>';
+  })();
+
   // ── SECTION 2: CURRICULUM BANK ──
   h+='<div class="mast-admin-section">';
   h+='<div class="mast-admin-hdr">\u{1F4DA} Mastery Database</div>';
@@ -17893,21 +17963,30 @@ function _renderMasteryInner(el){
   if(!due.length) h+='<div class="mast-none">Nothing due today \u{1F389}</div>';
   else {
     // ── SLIDESHOW (learning items + ladder flash/flip) ──
+    // 👀 One more look: in Log mode, cards scored ✗ ride again at the END of the session —
+    // unscored re-exposure (immediate corrective feedback), so a miss always gets a second
+    // showing before the drill ends. The tail grows live as ✗s land (every score tap
+    // re-renders) and shrinks if Mom flips one back to ✓; nothing here writes or double-logs.
+    const _slBase=slideItems.length;
+    const slideList=mastLogMode?slideItems.concat(slideItems.filter(i=>mastLogScores[i.id]==="m")):slideItems;
     if(slideItems.length){
     if(mastSlideIdx<0) mastSlideIdx=0;
-    if(mastSlideIdx>=slideItems.length) mastSlideIdx=slideItems.length-1;
+    if(mastSlideIdx>=slideList.length) mastSlideIdx=slideList.length-1;
 
     // One card's full HTML. Factored out so ALL cards can be built and measured invisibly
     // up front (mastLockSlideHeight) — the slideshow locks to the tallest card BEFORE the
     // first card is shown, instead of visibly growing as taller cards appear.
-    const buildSlideCard=(it)=>{
+    const buildSlideCard=(it,secondLook)=>{
     let c='';
     const sc=mastLogMode?(mastLogScores[it.id]||""):"";
-    const slideClass="mast-slide"+(sc==="c"?" scored-c":sc==="m"?" scored-m":sc==="~"?" scored-t":"");
+    // Second-look cards render neutral (no red scored-m border) — this pass is a fresh
+    // look, not a verdict.
+    const slideClass="mast-slide"+(secondLook?"":(sc==="c"?" scored-c":sc==="m"?" scored-m":sc==="~"?" scored-t":""));
     const isIntro=it.status==="introduction";
 
     c+='<div class="'+slideClass+'">';
     c+='<div class="mast-slide-cat">'+(catE3[it.subject]||"")+' '+(it.subject||"")+(isIntro?' <span style="font-size:9px;color:#9a3412;font-weight:600">\u{2B50} Learning</span>':'')+'</div>';
+    if(secondLook) c+='<div style="display:inline-block;margin-bottom:8px;padding:4px 12px;border-radius:999px;background:#fef3c7;border:1.5px solid #f59e0b;color:#92400e;font-size:11px;font-weight:800;position:relative;z-index:2">\u{1F440} One more look — just look &amp; say it</div>';
 
     // Big visual
     let bigVis=it.imageUrl?'<img src="'+it.imageUrl+'" style="height:100%;width:auto;max-width:100%;border-radius:18px;object-fit:contain">':'';
@@ -17960,12 +18039,17 @@ function _renderMasteryInner(el){
       // back — the second pass of a mastered flip deck. The word's visual moves to the
       // back too (a picture on the front would give the answer away).
       const _faceRev=(!_ruleStyle)&&(!_faceName)&&(!_learnFlip)&&mastCatFace(it.subject)==="reversed"&&!!_vocabDef;
-      // Voice recording of the definition — the 🔊 button rides whichever side SHOWS the
-      // definition (stopPropagation so the tap plays instead of flipping).
+      // Voice of the definition — rides whichever side SHOWS the definition
+      // (stopPropagation so the tap plays instead of flipping). Mom's recording wins;
+      // with no clip, the browser reads it aloud (🗣 TTS fallback).
       let _audBtn='';
-      if(mastGetDefAudio(masteryKid,it.prompt)){
+      {
         const _apEsc=it.prompt.replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
-        _audBtn='<button onclick="event.stopPropagation();mastPlayDefAudio(\''+_apEsc+'\')" style="margin-top:10px;padding:9px 20px;border-radius:999px;border:2px solid #7c3aed;background:#f5f3ff;color:#7c3aed;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F50A} Hear it</button>';
+        if(mastGetDefAudio(masteryKid,it.prompt)){
+          _audBtn='<button onclick="event.stopPropagation();mastPlayDefAudio(\''+_apEsc+'\')" style="margin-top:10px;padding:9px 20px;border-radius:999px;border:2px solid #7c3aed;background:#f5f3ff;color:#7c3aed;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F50A} Hear it</button>';
+        } else if(_backText){
+          _audBtn='<button onclick="event.stopPropagation();mastSpeakItem(\''+_apEsc+'\')" style="margin-top:10px;padding:7px 16px;border-radius:999px;border:1.5px solid #c4b5fd;background:#fff;color:#7c3aed;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F5E3} Read it</button>';
+        }
       }
       c+='<div class="mast-flip-wrap'+(mastFlipped?" flipped":"")+'" onclick="mastFlip()">';
       c+='<div class="mast-flip-inner">';
@@ -17997,8 +18081,46 @@ function _renderMasteryInner(el){
       c+='</div>';
       c+='</div></div>';
     } else {
-      c+='<div class="mast-slide-img">'+bigVis+'</div>';
-      if(cat!=="Counting") c+='<div class="mast-slide-name">'+it.prompt+'</div>';
+      // "Show me" recognition (three-period lesson, period 2): a Learning flash card
+      // that's had its first plain showing becomes tap-the-right-one. First showing
+      // (0 dots) stays period 1 — "this is X". Counting keeps its own count-the-dinos big
+      // visual. Falls through to the normal card when the deck lacks 2 distractor visuals.
+      let _smDone=false;
+      const _smElig=isIntro&&!secondLook&&(it.tally_dots||0)>=1&&cat!=="Counting"&&_catMode==="flash"&&!!_smTileVis(it);
+      if(_smElig){
+        const _smKey=it.id+"|"+pn;
+        const _smState=mastShowMe[_smKey];
+        const _pool=items.filter(x=>x&&x.id!==it.id&&x.subject===it.subject&&x.prompt!==it.prompt&&_smTileVis(x));
+        if(_smState==="ok"){
+          c+='<div class="mast-slide-img">'+bigVis+'</div>';
+          c+='<div class="mast-slide-name">'+it.prompt+' \u{1F389}</div>';
+          c+='<div style="font-size:12px;font-weight:700;color:#16a34a;margin-bottom:4px">You found it! Say it out loud.</div>';
+          _smDone=true;
+        } else if(_pool.length>=2){
+          const _seed=_smHash(it.id+"|"+pn);
+          const _d1=_pool[_seed%_pool.length];
+          let _d2=_pool[(_seed+1+(_seed%7))%_pool.length];
+          if(_d2.id===_d1.id) _d2=_pool[(_seed+2)%_pool.length];
+          let _tiles=[it,_d1,_d2];
+          const _rot=_seed%3; _tiles=_tiles.slice(_rot).concat(_tiles.slice(0,_rot));
+          const _pEsc=it.prompt.replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+          const _kEsc=(it.id+"|"+pn).replace(/'/g,"\\'");
+          c+='<div onclick="event.stopPropagation();mastSpeak(\'Tap the '+_pEsc+'\')" style="font-size:17px;font-weight:800;color:#c2410c;margin:14px 0 2px;cursor:pointer;position:relative;z-index:2">\u{1F449} Tap the <u>'+it.prompt+'</u>! <span style="font-size:12px">\u{1F5E3}</span></div>';
+          c+='<div style="display:flex;gap:10px;justify-content:center;align-items:center;margin:12px 0;flex-wrap:wrap;position:relative;z-index:2">';
+          _tiles.forEach(tt=>{
+            const _wrong=_smState===tt.id&&tt.id!==it.id;
+            const _reveal=!!_smState&&tt.id===it.id;   // after a wrong tap, the right one pulses
+            c+='<div onclick="event.stopPropagation();mastShowMeTap(\''+_kEsc+'\',\''+it.id.replace(/'/g,"\\'")+'\',\''+tt.id.replace(/'/g,"\\'")+'\')" style="width:100px;height:100px;display:flex;align-items:center;justify-content:center;border-radius:16px;border:3px solid '+(_wrong?'#dc2626':_reveal?'#16a34a':'#fed7aa')+';background:#fff;cursor:pointer'+(_reveal?';animation:spinPulse 1.2s ease-in-out infinite':'')+'">'+_smTileVis(tt)+'</div>';
+          });
+          c+='</div>';
+          if(_smState) c+='<div style="font-size:12px;font-weight:700;color:#dc2626;margin-bottom:4px">Almost — find the '+it.prompt+'!</div>';
+          _smDone=true;
+        }
+      }
+      if(!_smDone){
+        c+='<div class="mast-slide-img">'+bigVis+'</div>';
+        if(cat!=="Counting") c+='<div class="mast-slide-name">'+it.prompt+'</div>';
+      }
       if(isIntro&&(_catMode==="quiz"||mastItemIsQuiz(masteryKid,it))){
         const _hint=MAST_INTRO_HINTS[cat]||"practice out loud";
         c+='<div style="margin-top:8px;padding:8px 16px;background:#eef2ff;border-radius:10px;border:1.5px solid #c7d2fe">';
@@ -18007,8 +18129,9 @@ function _renderMasteryInner(el){
       c+=_tallyH;
     }
 
-    // Buttons based on mode and phase
-    if(mastLogMode){
+    // Buttons based on mode and phase (second-look pass shows NO buttons — the card was
+    // already scored; re-scoring here would double-log)
+    if(mastLogMode&&!secondLook){
       const shown=sc==="shown";
       if(isIntro&&!shown){
         c+='<div style="margin-top:14px;position:relative;z-index:3">';
@@ -18030,15 +18153,16 @@ function _renderMasteryInner(el){
     };
 
     // All cards for this session — the shown one goes in the page, the rest feed the
-    // invisible tallest-card measurement in mastLockSlideHeight.
-    mastSlideCardsHtml=slideItems.map(buildSlideCard);
+    // invisible tallest-card measurement in mastLockSlideHeight. Cards past _slBase are
+    // the 👀 second-look tail.
+    mastSlideCardsHtml=slideList.map((it,ix)=>buildSlideCard(it,ix>=_slBase));
     h+='<div style="padding:10px 14px">';
     h+=mastSlideCardsHtml[mastSlideIdx];
 
     h+='<div class="mast-slide-nav">';
     h+='<button class="mast-slide-arrow" onclick="mastSlidePrev()"'+(mastSlideIdx<=0?' disabled':'')+'>\u{2190}</button>';
-    h+='<span class="mast-slide-counter">'+(mastSlideIdx+1)+' / '+slideItems.length+'</span>';
-    h+='<button class="mast-slide-arrow" onclick="mastSlideNext()"'+(mastSlideIdx>=slideItems.length-1?' disabled':'')+'>\u{2192}</button>';
+    h+='<span class="mast-slide-counter">'+(mastSlideIdx<_slBase?(mastSlideIdx+1)+' / '+_slBase:'\u{1F440} '+(mastSlideIdx-_slBase+1)+' / '+(slideList.length-_slBase))+(slideList.length>_slBase&&mastSlideIdx<_slBase?' \u{00B7} +'+(slideList.length-_slBase)+' \u{1F440}':'')+'</span>';
+    h+='<button class="mast-slide-arrow" onclick="mastSlideNext()"'+(mastSlideIdx>=slideList.length-1?' disabled':'')+'>\u{2192}</button>';
     h+='</div>';
 
     h+='</div>';
