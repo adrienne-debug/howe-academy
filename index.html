@@ -1932,6 +1932,7 @@ function dayPct(d){
   const countable=getActiveTasks().filter(t=>
     effectiveDay(t)===d && kidMatch(t) &&
     !t.id.endsWith("_c") &&   // _c carryovers are read-only banner mirrors — counted via their scheduled twin
+    !t._eowOverflow &&        // end-of-week overflow isn't scheduled this week (Mom-only, rolls over)
     !t.title.toLowerCase().includes("lunch")
   );
   const total=countable.length; if(!total) return 0;
@@ -1981,7 +1982,7 @@ function renderWeekStrip(){
   const el=document.getElementById("week-strip");
   if(tab!=="schedule"||schedShowAdmin||schedShowHistory||schedShowPace||scheduleBreakToday()){ el.style.display="none"; return; }
   const kidMatch=t=>kid==="all"||kid==="mom"?true:t.who===kid;
-  const countable=getActiveTasks().filter(t=>kidMatch(t)&&effectiveDay(t)!=="carryover"&&!t.id.endsWith("_c"));
+  const countable=getActiveTasks().filter(t=>kidMatch(t)&&effectiveDay(t)!=="carryover"&&!t.id.endsWith("_c")&&!t._eowOverflow);
   const all=countable.length, done=countable.filter(t=>!!checked[t.id]).length;
   const pct=all?Math.round(done/all*100):0;
   el.style.display="grid";
@@ -1995,7 +1996,7 @@ function renderWeekStrip(){
 // ── DAILY PACE TRACKER ───────────────────────────────────────────
 function dailyPaceTracker(dayTasks, dayKey){
   const DEFAULT_DUR=20;
-  const countable=dayTasks.filter(t=>!t.id.endsWith("_c")&&!t.title.toLowerCase().includes("lunch"));
+  const countable=dayTasks.filter(t=>!t.id.endsWith("_c")&&!t._eowOverflow&&!t.title.toLowerCase().includes("lunch"));
   if(!countable.length) return "";
 
   const doneTasks=countable.filter(t=>!!checked[t.id]);
@@ -3268,8 +3269,12 @@ function renderSchedule(el){
   if(kid==="mom") allDay=allDay.filter(t=>t.mom==="required"||t.mom==="maybe");
   else if(kid!=="all") allDay=allDay.filter(t=>t.who===kid);
 
-  let tasks=allDay.filter(t=>t.day===day&&!t.id.endsWith("_c"));
-  let carriedOver=allDay.filter(t=>t.day!==day||t.id.endsWith("_c"));
+  // Within-week rolled-forward work (unfinished, effectiveDay===today) shows INLINE in the
+  // day's list like normal work — no separate box. Only end-of-week overflow (over the
+  // per-subject cap) is held out (Mom-only box below). The read-only "Carried Over" box is
+  // now just last-week _c mirrors.
+  let tasks=allDay.filter(t=>!t.id.endsWith("_c")&&!t._eowOverflow);
+  let carriedOver=allDay.filter(t=>t.id.endsWith("_c"));
 
   const tmap={};
   tasks.forEach(t=>{ if(!tmap[t.time])tmap[t.time]=[]; tmap[t.time].push(t); });
@@ -3295,6 +3300,7 @@ function renderSchedule(el){
   h+=renderBlockoutBanners(day);
   if(momModeActive&&(kid==="mom"||kid==="all")) h+=renderDisplacementSummary(day, kid);
   if(momModeActive) h+=renderSatCutoffBanner(day, kid);
+  if(momModeActive) h+=renderEowOverflowBox(kid);
   h+=dailyPaceTracker(allDay, day);
   h+=renderClaimQueue();
   h+=unitScheduleNudges(kid);  // U6: unit-study pacing nudges (renders only when one is live)
@@ -8494,6 +8500,10 @@ function cascadeIntraWeek(sweepTodayElapsed){
     if(isNaN(d.getTime())) return null;
     return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
   }
+  // Clear last run's end-of-week overflow flags — recomputed fresh below. A flagged task
+  // Mom didn't check is unchecked + on a past day, so it re-enters pastTasks and flows
+  // through the cap again (fits if the ceiling freed up, else re-flags).
+  weekData.tasks.forEach(t=>{ if(t._eowOverflow) delete t._eowOverflow; });
   let pool=pastTasks.slice();
   // ── Subject-spread: give each (kid|subject)'s lessons a round-robin TARGET day across
   // the kid's remaining eligible weekdays (in lesson order), so the same subject doesn't
@@ -8545,8 +8555,26 @@ function cascadeIntraWeek(sweepTodayElapsed){
     const sitterReturn=isSitterDay?toMin(mag["mom_return_"+dn]||mag.mom_return||"2:00 PM"):0;
     const dStr=_cascDate(dn);
     const offHere=t=>!!(dStr&&smapIsKidOff(t.who,dStr)); // holiday/vacation/kid-off → wait for a later day
-    const tryHere=pool.filter(t=>!offHere(t)&&_prefIdx(t)<=di); // wait for the assigned day; overflow chains forward
+    let tryHere=pool.filter(t=>!offHere(t)&&_prefIdx(t)<=di); // wait for the assigned day; overflow chains forward
     if(!tryHere.length) continue;
+    // ── Per-subject catch-up cap (config-gated) ── a subject can't exceed its per-day
+    // ceiling on this receiving day; the excess waits for a later day (stays in pool via
+    // _capDeferred below). Seeded with the day's existing open work of that subject so
+    // arrivals + what's already there together respect the cap. Uncapped subjects (no
+    // rule) return null and behave exactly as before.
+    const _capDeferred=new Set();
+    {
+      const _cc={};
+      weekData.tasks.forEach(t=>{ if(t.day===dn&&!t.id.endsWith("_c")&&!checked[t.id]&&!subjNoCarry(t)&&pool.indexOf(t)<0){ const k=t.who+"|"+taskSubject(t); _cc[k]=(_cc[k]||0)+1; } });
+      tryHere=tryHere.filter(t=>{
+        const cap=catchupDayCap(taskSubject(t),dn);
+        if(cap==null) return true;
+        const k=t.who+"|"+taskSubject(t);
+        if((_cc[k]||0)>=cap){ _capDeferred.add(t); return false; }
+        _cc[k]=(_cc[k]||0)+1; return true;
+      });
+      if(!tryHere.length) continue; // everything deferred by caps — stays in pool for a later day
+    }
     // Order by kid then workflow weight (mirrors the prior per-kid blocks), then keep
     // sticky pairs (e.g. Drills→AAS) adjacent — cascadeWeight ranks each subject on its
     // own, so without this a carry-over reflow would split the pair.
@@ -8602,9 +8630,10 @@ function cascadeIntraWeek(sweepTodayElapsed){
       overflow=packAround(existingAll,tryHere,ctx);
     }
     const overflowSet=new Set(overflow);
-    // Keep overflow + off-here tasks AND tasks still waiting for a later assigned day —
-    // don't drop a task just because it wasn't tried on this day yet.
-    pool=pool.filter(t=>overflowSet.has(t)||offHere(t)||_prefIdx(t)>di);
+    // Keep overflow + off-here tasks AND tasks still waiting for a later assigned day AND
+    // cap-deferred tasks (over this day's per-subject ceiling) — don't drop a task just
+    // because it wasn't tried/placed on this day yet.
+    pool=pool.filter(t=>overflowSet.has(t)||offHere(t)||_prefIdx(t)>di||_capDeferred.has(t));
   }
 
   // Safety net: anything still unplaced stacks at the end of the LAST remaining day the kid
@@ -8612,6 +8641,13 @@ function cascadeIntraWeek(sweepTodayElapsed){
   // rather than a vacation day). If every remaining day is off it stays put (renders as carry-over).
   if(pool.length){
     pool.forEach(function(t){
+      // Capped subject that couldn't fit under its per-day ceiling on any remaining day →
+      // END-OF-WEEK OVERFLOW: don't force it onto a day. Flag it so it drops out of the
+      // kids' schedule entirely and shows only in the Mom-only "carries to next week" box
+      // (checkable by Mom for a Sunday catch-up; otherwise it rolls to next week, in
+      // sequence via the lesson-order pass + auto-advance). Uncapped subjects keep the
+      // original force-stack so nothing an un-capped kid needs silently vanishes.
+      if(isCatchupCapped(taskSubject(t))){ t._eowOverflow=true; return; }
       for(let di=dayOrder.length-1; di>=todayIdx; di--){
         const dn=dayOrder[di], ds=_cascDate(dn);
         if(ds&&smapIsKidOff(t.who,ds)) continue;
@@ -8717,10 +8753,13 @@ function cascadeIntraWeek(sweepTodayElapsed){
     // Sort by lesson detail (natural order)
     const byLesson=[...uncheckedGrp].sort((a,b)=>natCmp(lessonKey(a),lessonKey(b)));
 
-    // Sort by day+time order (the slots)
+    // Sort by day+time order (the slots). End-of-week overflow slots sort LAST so the
+    // LATEST lessons become the overflow (kept in sequence — the earliest lessons take
+    // the real scheduled slots, the tail rolls to next week).
     const dayIdx=d=>dayOrder.indexOf(d);
     const bySlot=[...uncheckedGrp].sort((a,b)=>{
-      if(a.day!==b.day) return dayIdx(a.day)-dayIdx(b.day);
+      const ao=a._eowOverflow?99:dayIdx(a.day), bo=b._eowOverflow?99:dayIdx(b.day);
+      if(ao!==bo) return ao-bo;
       return toMin(a.time)-toMin(b.time);
     });
 
@@ -8733,11 +8772,14 @@ function cascadeIntraWeek(sweepTodayElapsed){
 
     // Swap: assign lesson content to slots in order
     // Keep each slot's day/time/cascadedFrom, move the lesson content
-    const slots=bySlot.map(t=>({day:t.day,time:t.time,cascadedFrom:t.cascadedFrom}));
+    const slots=bySlot.map(t=>({day:t.day,time:t.time,cascadedFrom:t.cascadedFrom,eow:!!t._eowOverflow}));
     for(let i=0;i<byLesson.length;i++){
       const t=byLesson[i];
       t.day=slots[i].day;
       t.time=slots[i].time;
+      // The overflow marker belongs to the SLOT (the unscheduled tail position), not the
+      // lesson content — move it with the slot so the latest lesson carries over.
+      if(slots[i].eow) t._eowOverflow=true; else if(t._eowOverflow) delete t._eowOverflow;
       // Preserve cascadedFrom only if this task was actually cascaded
       if(slots[i].cascadedFrom && !t.cascadedFrom) t.cascadedFrom=slots[i].cascadedFrom;
       else if(!slots[i].cascadedFrom && t.cascadedFrom) delete t.cascadedFrom;
@@ -20371,6 +20413,31 @@ function renderBlockoutBanners(d){
   return h;
 }
 
+// Mom-only "carries to next week" box — end-of-week overflow beyond a subject's catch-up
+// cap. Kids NEVER see it (gated on momModeActive by the caller). It stays checkable HERE
+// so Mom can tick one off if it gets done off-schedule (e.g. Sunday); otherwise it rolls
+// to next week in sequence. These tasks are held out of every kid-facing surface (timeline
+// + completion counts) via the _eowOverflow flag.
+function renderEowOverflowBox(kid){
+  if(!weekData||!weekData.tasks) return "";
+  const src=getActiveTasks()||[];
+  const kidMatch=t=>(kid==="all"||kid==="mom")?true:t.who===kid;
+  const items=src.filter(t=>t._eowOverflow&&!checked[t.id]&&!String(t.id).endsWith("_c")&&kidMatch(t));
+  if(!items.length) return "";
+  let h='<div style="margin:10px 12px 0;border-left:4px solid #b45309;background:#fff7ed;border-radius:0 10px 10px 0;padding:10px 12px">';
+  h+='<div style="font-size:11px;font-weight:800;color:#b45309;margin-bottom:2px;text-transform:uppercase;letter-spacing:0.4px">&#128230; Carries to Next Week &middot; Mom only</div>';
+  h+='<div style="font-size:10.5px;color:#b45309;margin-bottom:8px">Over the per-subject catch-up limit, so the kids don\'t see these. Kept in sequence — tick one off if it gets done (a Sunday, say); otherwise it rolls into next week.</div>';
+  const byKid={};
+  items.forEach(t=>{ (byKid[t.who]=byKid[t.who]||[]).push(t); });
+  [...ROSTER].forEach(k=>{
+    if(!byKid[k]) return;
+    h+='<div style="display:flex;align-items:center;gap:5px;margin:6px 0 3px"><span class="kid-badge badge-'+k+'" style="font-size:9px;padding:1px 6px">'+cap(k)+'</span><span style="font-size:10px;color:#b45309;font-weight:600">'+byKid[k].length+' over limit</span></div>';
+    byKid[k].sort((a,b)=>toMin(a.time)-toMin(b.time)).forEach(t=>{ h+=taskCard(t,"Over catch-up limit",false,null); });
+  });
+  h+='</div>';
+  return h;
+}
+
 // Saturday page: the honest "will carry to next week" readout. With a Rules cutoff set,
 // the packers never place work at/past it — so any open Saturday task sitting there is
 // overflow waiting for week close (when it becomes Monday's Carried-Over box). Renders
@@ -20602,6 +20669,22 @@ function satApplyCutoff(ctx,legacyMax){
   else if(ctx.allowOvertime){ ctx.overtimeMax=c-ctx.end; }
   return ctx;
 }
+// Per-subject catch-up ceiling (config-gated). Returns the max number of that subject
+// allowed on a receiving day during catch-up, or null = uncapped (legacy: unlimited).
+// Saturday uses saturday_max (falling back to max); weekdays use max. Reads the same
+// maxPerDay rules the audit + blockout engine use, so all three agree. When no rule is
+// set for a subject the result is null, so the whole feature is dormant until Mom sets
+// a number in Rules → Carry-Over & Saturday (or a per-subject cap).
+function catchupDayCap(subj,day){
+  const cfg=(rulesData&&rulesData.maxPerDay&&rulesData.maxPerDay[subj])||null;
+  if(!cfg) return null;
+  if(day==="saturday") return cfg.saturday_max!=null?cfg.saturday_max:(cfg.max!=null?cfg.max:null);
+  return cfg.max!=null?cfg.max:null;
+}
+// Is this subject capped at all (has a max or saturday_max rule)? Drives the safety-net
+// decision: a capped subject that couldn't fit under its ceiling becomes end-of-week
+// overflow (Mom-only box → rolls to next week) instead of being force-stacked on a day.
+function isCatchupCapped(subj){ return catchupDayCap(subj,"saturday")!=null; }
 
 // ── Workflow time estimates ─────────────────────────────────────────
 // Planning readout for the Workflow Orders editor: how much time each kid has in each
@@ -20912,6 +20995,7 @@ function renderRules(el,headerHtml){
   h+='<div class="rules-card-arrow">&#9654;</div></div>';
   h+='<div class="rules-card-body">';
   h+='<div style="font-size:11px;color:var(--muted);padding-bottom:8px">Caps how many times a subject runs in a day (blank = no cap). Sat = Saturday-specific cap.</div>';
+  h+='<div style="font-size:11px;color:#b45309;background:#fff7ed;border-radius:8px;padding:7px 9px;margin-bottom:10px;line-height:1.5">During <b>catch-up</b> these are hard ceilings: a behind subject fills up to the cap each day (Sat uses the Sat cap), and any lesson beyond that — the <b>latest</b> in the sequence — rolls to next week and shows in the Mom-only “Carries to Next Week” box. Blank = no ceiling (old behavior: unlimited catch-up).</div>';
   Object.entries(mp).forEach(([subj,cfg])=>{
     h+='<div class="rules-row" style="flex-wrap:wrap">';
     h+='<div class="rules-label">'+subj+(cfg.kid?' <span style="font-size:10px;color:var(--muted)">('+cfg.kid+')</span>':'')+'</div>';
