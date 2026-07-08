@@ -15906,6 +15906,27 @@ function mastCatFace(subject){
   if(typeof unitStudies!=="undefined"&&unitStudies){ for(const uid in unitStudies){ const ds=(unitStudies[uid]&&unitStudies[uid].decks)||[]; for(const d of ds){ if(d&&d.key===subject&&d.flipFace) return d.flipFace; } } }
   return "desc";
 }
+// Restart a flip deck, optionally REVERSED (definition on the front, word on the back —
+// the second pass once word→definition is mastered). Every active/introduction card in
+// the deck goes back to Learning (same reset as drop-to-intro); parked and never-drill
+// items are left alone. Targeted writes via mastPutCards — never a whole-array set.
+function mastRestartDeck(cat,reversed){
+  const kid=masteryKid||"julian";
+  let items=masteryData[kid]; if(!Array.isArray(items)) items=Object.values(items||{});
+  const deck=items.filter(i=>i&&i.subject===cat&&(i.status==="active"||i.status==="introduction"));
+  if(!deck.length){ alert("No drillable items in "+cat); return; }
+  if(!confirm("Restart "+cat+" ("+deck.length+" cards) "+(reversed?"REVERSED — definition \u{2192} word":"normal — word \u{2192} definition")+"?\n\nAll ladder progress for this deck resets to \u{2B50} Learning.")) return;
+  deck.forEach(it=>{ it.status="introduction"; it.tier="daily"; it.tally_dots=0; it.consecutive_correct=0; it.drop_count=0; it.cycle=1; delete it.next_due; });
+  masteryData[kid]=items;
+  mastPutCards(kid,items,deck);
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.cat_face) s.cat_face={};
+  s.cat_face[cat]=reversed?"reversed":"desc";
+  if(db) db.ref("mastery/"+kid+"_settings/cat_face").update({[cat]:s.cat_face[cat]});
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  if(typeof gwShowToast==="function") gwShowToast("\u{1F501} "+cat+" restarted "+(reversed?"reversed":"normal")+" — "+deck.length+" cards back to Learning");
+  _mastRe();
+}
 function mastSetVisual(cat,name,val){
   const kid=masteryKid||"julian";
   if(!masteryData[kid+"_visuals"]) masteryData[kid+"_visuals"]={};
@@ -16806,6 +16827,12 @@ function renderMastAdmin(){
       h+=coKnob(cat,'Dots',catIntro[cat],_dotDef,'mastAdminCatIntro');
       h+=coKnob(cat,'New',catIntroMax[cat],_newDef,'mastAdminCatIntroMax');
       h+=coSprint(cat);
+      // Flip decks: restart the whole deck in the other direction (definition → word).
+      if(mastGetCatMode(masteryKid,cat)==="flip"){
+        const _revNow=mastCatFace(cat)==="reversed";
+        const _cesc=cat.replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+        h+='<button onclick="mastRestartDeck(\''+_cesc+'\','+(_revNow?'false':'true')+')" title="Reset every card in this deck to Learning and flip the drill direction" style="padding:5px 10px;border-radius:14px;border:1.5px solid #7c3aed;background:'+(_revNow?'#7c3aed':'#f5f3ff')+';color:'+(_revNow?'#fff':'#7c3aed')+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">\u{1F501} '+(_revNow?'Reversed \u{00B7} restart normal':'Restart reversed')+'</button>';
+      }
       h+='</div>';
       h+='</div>';
     });
@@ -17929,25 +17956,43 @@ function _renderMasteryInner(el){
     // answer/definition, now and for future adds.
     const _learnFlip=isIntro&&_catMode==="quiz"&&!!_vocabDef;
     if(_catMode==="flip"||_isRule||_learnFlip){
+      // Reversed deck (Admin → Restart reversed): definition on the FRONT, word on the
+      // back — the second pass of a mastered flip deck. The word's visual moves to the
+      // back too (a picture on the front would give the answer away).
+      const _faceRev=(!_ruleStyle)&&(!_faceName)&&(!_learnFlip)&&mastCatFace(it.subject)==="reversed"&&!!_vocabDef;
+      // Voice recording of the definition — the 🔊 button rides whichever side SHOWS the
+      // definition (stopPropagation so the tap plays instead of flipping).
+      let _audBtn='';
+      if(mastGetDefAudio(masteryKid,it.prompt)){
+        const _apEsc=it.prompt.replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+        _audBtn='<button onclick="event.stopPropagation();mastPlayDefAudio(\''+_apEsc+'\')" style="margin-top:10px;padding:9px 20px;border-radius:999px;border:2px solid #7c3aed;background:#f5f3ff;color:#7c3aed;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F50A} Hear it</button>';
+      }
       c+='<div class="mast-flip-wrap'+(mastFlipped?" flipped":"")+'" onclick="mastFlip()">';
       c+='<div class="mast-flip-inner">';
       c+='<div class="mast-flip-front">';
-      c+='<div class="mast-slide-img">'+bigVis+'</div>';
-      if(_ruleQ) c+='<div style="font-size:14px;color:#7c3aed;font-weight:700;margin-bottom:2px">'+_ruleQ+'</div>';
-      else if(!_ruleStyle&&!_faceName) c+='<div class="mast-slide-name">'+it.prompt+'</div>';  // rule/name-mode cards don't repeat the prompt on the front
-      c+='<div class="mast-flip-hint">\u{1F4A1} tap to see '+(_faceName?'who this is':(_ruleStyle?'the rule':(_learnFlip?'the answer':'definition')))+'</div>';
+      if(_faceRev){
+        c+='<div class="mast-flip-def" style="margin-top:14px">&ldquo;'+_vocabDef+'&rdquo;</div>';
+        c+=_audBtn;
+        c+='<div class="mast-flip-hint">\u{1F4A1} tap to see the word</div>';
+      } else {
+        c+='<div class="mast-slide-img">'+bigVis+'</div>';
+        if(_ruleQ) c+='<div style="font-size:14px;color:#7c3aed;font-weight:700;margin-bottom:2px">'+_ruleQ+'</div>';
+        else if(!_ruleStyle&&!_faceName) c+='<div class="mast-slide-name">'+it.prompt+'</div>';  // rule/name-mode cards don't repeat the prompt on the front
+        c+='<div class="mast-flip-hint">\u{1F4A1} tap to see '+(_faceName?'who this is':(_ruleStyle?'the rule':(_learnFlip?'the answer':'definition')))+'</div>';
+      }
       c+=_tallyH;
       c+='</div>';
       c+='<div class="mast-flip-back">';
-      { const _bpl=it.prompt.length; const _bfs=_bpl<=6?60:_bpl<=14?42:_bpl<=22?32:24; c+='<div class="mast-slide-img"><span style="font-size:'+_bfs+'px;font-weight:800;color:#7c3aed;word-break:break-word;max-width:100%">'+it.prompt+'</span></div>'; }
-      if(!_faceName) c+='<div class="mast-flip-def">'+(_backText?((_ruleStyle||_learnFlip)?_backText:'&ldquo;'+_backText+'&rdquo;'):'<span style="color:#a78bfa;font-size:16px">no '+(_ruleStyle?'rule':'definition')+' yet</span>')+'</div>';
-      // Voice recording of the definition — tap to hear Mom read it (stopPropagation so
-      // the tap plays instead of flipping the card back).
-      if(mastGetDefAudio(masteryKid,it.prompt)){
-        const _apEsc=it.prompt.replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
-        c+='<button onclick="event.stopPropagation();mastPlayDefAudio(\''+_apEsc+'\')" style="margin-top:10px;padding:9px 20px;border-radius:999px;border:2px solid #7c3aed;background:#f5f3ff;color:#7c3aed;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F50A} Hear it</button>';
+      if(_faceRev){
+        c+='<div class="mast-slide-img">'+bigVis+'</div>';
+        c+='<div class="mast-slide-name">'+it.prompt+'</div>';
+        c+='<div class="mast-flip-hint">\u{1F4A1} tap to flip back</div>';
+      } else {
+        { const _bpl=it.prompt.length; const _bfs=_bpl<=6?60:_bpl<=14?42:_bpl<=22?32:24; c+='<div class="mast-slide-img"><span style="font-size:'+_bfs+'px;font-weight:800;color:#7c3aed;word-break:break-word;max-width:100%">'+it.prompt+'</span></div>'; }
+        if(!_faceName) c+='<div class="mast-flip-def">'+(_backText?((_ruleStyle||_learnFlip)?_backText:'&ldquo;'+_backText+'&rdquo;'):'<span style="color:#a78bfa;font-size:16px">no '+(_ruleStyle?'rule':'definition')+' yet</span>')+'</div>';
+        c+=_audBtn;
+        c+='<div class="mast-flip-hint">\u{1F4A1} tap to flip back</div>';
       }
-      c+='<div class="mast-flip-hint">\u{1F4A1} tap to flip back</div>';
       c+=_tallyH;
       c+='</div>';
       c+='</div></div>';
