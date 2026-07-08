@@ -14911,6 +14911,20 @@ function mastTraceOpen(glyph){
   document.body.appendChild(ov);
 }
 
+// "Save to Scores" — logging is EXPLICIT (like the sprint log button), so twenty
+// goof-around rounds don't flood the Scores page; one tap documents the game.
+function mastMatchLogResult(){
+  const st=matchState; if(!st||!st.endTs||st.logged) return;
+  const entry={date:new Date().toISOString().slice(0,10),deck:st.deck,style:st.style,pair:st.pairMode,sec:st.sec,isPB:!!st.isPB,ts:Date.now()};
+  if(!masteryData.matchLog) masteryData.matchLog={};
+  if(!Array.isArray(masteryData.matchLog[masteryKid])) masteryData.matchLog[masteryKid]=Object.values(masteryData.matchLog[masteryKid]||{});
+  masteryData.matchLog[masteryKid].push(entry);
+  if(db) db.ref("mastery/matchLog/"+masteryKid).push(entry);   // append-only push — never a whole-node set
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  st.logged=true;
+  _mastRe();
+}
+
 function buildMatchHtml(color){
   let h='<div style="padding:4px 14px 20px">';
   const decks=mastMatchDecks();
@@ -14960,7 +14974,12 @@ function buildMatchHtml(color){
   if(st.endTs){
     h+='<div style="margin-top:14px;text-align:center;padding:14px;border-radius:14px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
     h+='<div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:800">'+(st.isPB?'\u{1F3C6} New best \u{2014} '+st.sec+'s!':'\u{2713} '+st.sec+'s'+(st.prevBest!=null?' \u{00B7} best '+st.prevBest+'s':''))+'</div>';
-    h+='<button onclick="mastMatchStart(\''+st.deck.replace(/'/g,"\\'")+'\')" style="margin-top:10px;padding:9px 22px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F501} Play again</button>';
+    h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:10px;flex-wrap:wrap">';
+    h+='<button onclick="mastMatchStart(\''+st.deck.replace(/'/g,"\\'")+'\')" style="padding:9px 22px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F501} Play again</button>';
+    h+=st.logged
+      ?'<span style="padding:9px 16px;font-size:12px;font-weight:800;color:#16a34a">\u{2713} Saved to Scores</span>'
+      :'<button onclick="mastMatchLogResult()" style="padding:9px 22px;border-radius:999px;border:1.5px solid #5b3a8c;background:#fff;color:#5b3a8c;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F4C8} Save to Scores</button>';
+    h+='</div>';
     h+='</div>';
   }
   h+='</div>';
@@ -17847,6 +17866,34 @@ function _renderMasteryInner(el){
       h+='<div style="font-size:10px;color:var(--muted);margin-top:6px;text-align:center">Only racing themselves \u{2014} \u{1F3C6} marks a new personal best.</div>';
       h+='</div>';
     }
+
+    // 🎯 Match game results — only games explicitly sent via "Save to Scores" land here,
+    // grouped by game shape (deck · style · pairs) with the best time and history.
+    (function(){
+      let ml=(masteryData.matchLog&&masteryData.matchLog[masteryKid])||null;
+      if(!ml) return;
+      if(!Array.isArray(ml)) ml=Object.values(ml);
+      ml=ml.filter(e=>e&&e.sec!=null);
+      if(!ml.length) return;
+      const shapes={}, order=[];
+      ml.slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).forEach(e=>{
+        const k=e.deck+(e.style==="memory"?" \u{00B7} memory":"")+((e.pair==="same"||e.pairMode==="same")?" \u{00B7} same":"");
+        if(!shapes[k]){ shapes[k]={best:e.sec,n:0,last:e,prevBest:null}; order.push(k); }
+        shapes[k].n++;
+        if(e.sec<shapes[k].best) shapes[k].best=e.sec;
+      });
+      h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">';
+      h+='<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700;margin-bottom:8px">\u{1F3AF} Match Bests</div>';
+      order.forEach(k=>{
+        const s2=shapes[k];
+        h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid #f3f1ee">';
+        h+='<div style="flex:1;min-width:0"><span style="font-size:12px;font-weight:700">'+esc(k)+'</span><div style="font-size:9.5px;color:var(--muted);font-weight:600">'+s2.n+' game'+(s2.n>1?'s':'')+' logged \u{00B7} last '+(s2.last.date||'')+' ('+s2.last.sec+'s'+(s2.last.isPB?' \u{1F3C6}':'')+')</div></div>';
+        h+='<div style="font-family:\'DM Mono\',monospace;font-size:15px;font-weight:800;color:#5b3a8c;white-space:nowrap">\u{1F3C6} '+s2.best+'s</div>';
+        h+='</div>';
+      });
+      h+='<div style="font-size:10px;color:var(--muted);margin-top:6px;text-align:center">Beat the time, not each other \u{2014} logged from \u{1F4C8} Save to Scores on the Match tab.</div>';
+      h+='</div>';
+    })();
 
     if(!entries.length){
       h+='<div class="mast-none">No scores yet. Log a drill to see results here.</div>';
