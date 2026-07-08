@@ -8350,6 +8350,47 @@ function cascadeIntraWeek(sweepTodayElapsed){
     return 500;
   }
 
+  // Order a merged (existing + arrivals) day the way generation lays a fresh one:
+  // per-kid workflow sort (a Lesson-Map per-day order override wins, same as _feedRank
+  // in the generator), sticky pairs kept adjacent, then a round-robin interleave across
+  // kids — step by step, doubled subjects emitted back-to-back — so Mom and devices are
+  // shared fairly instead of one kid's whole day placing first. Mutates arr in place.
+  function _orderDayMerged(arr,dn){
+    const ds=_cascDate(dn);
+    const ovRank={};
+    [...ROSTER].forEach(function(kid){
+      const a=ds?_normOrderArr((schedOv(ds,kid)||{}).order):null;
+      if(a&&a.length){ const r={}; a.forEach(function(sk,i){ r[sk]=i; }); ovRank[kid]=r; }
+    });
+    const w=function(t){
+      const r=ovRank[t.who];
+      if(r&&t.subjectKey&&r[t.subjectKey]!==undefined) return r[t.subjectKey];
+      return cascadeWeight(t,dn);
+    };
+    const byKid={};
+    arr.forEach(function(t){ (byKid[t.who]=byKid[t.who]||[]).push(t); });
+    const kids=[...ROSTER].filter(function(k){ return byKid[k]; });
+    kids.forEach(function(k){
+      byKid[k].sort(function(a,b){ return (w(a)-w(b))||natCmp(lessonKey(a),lessonKey(b)); });
+      applyStickyOrder(byKid[k],
+        function(t){ return t.subjectKey||""; },
+        function(t){ const cs=currData&&currData.subjects&&currData.subjects[t.who]; return cs?cs[t.subjectKey]:null; },
+        function(t){ return t.who; });
+    });
+    const out=[], emitted={}; let maxLen=0;
+    kids.forEach(function(k){ emitted[k]=0; if(byKid[k].length>maxLen) maxLen=byKid[k].length; });
+    for(let i=0;i<maxLen;i++){
+      kids.forEach(function(k){
+        const list=byKid[k];
+        if(i>=list.length||emitted[k]>i) return;
+        const e=list[i]; out.push(e); emitted[k]=i+1;
+        let j=i+1;
+        while(j<list.length&&e.subjectKey&&list[j].subjectKey===e.subjectKey){ out.push(list[j]); emitted[k]=j+1; j++; }
+      });
+    }
+    arr.length=0; Array.prototype.push.apply(arr,out);
+  }
+
   // Distribute past unchecked tasks across today→Saturday via the shared packer.
   // Each day packs around the tasks already there; whatever doesn't fit chains to the
   // next day. Kids pack in parallel, duration-aware (no proportional-slot hack), and
@@ -8429,15 +8470,45 @@ function cascadeIntraWeek(sweepTodayElapsed){
       t=>t.subjectKey||"",
       t=>{ const cs=currData&&currData.subjects&&currData.subjects[t.who]; return cs?cs[t.subjectKey]:null; },
       t=>t.who);
-    // Tasks already on this day (not part of the cascade pool) get packed around.
     const poolSet=new Set(pool);
-    const existing=weekData.tasks.filter(t=>t.day===dn&&!t.id.endsWith("_c")&&!poolSet.has(t));
+    const existingAll=weekData.tasks.filter(t=>t.day===dn&&!t.id.endsWith("_c")&&!poolSet.has(t));
     tryHere.forEach(t=>{ t.day=dn; });
     const isLast=(di===dayOrder.length-1);
     const _floor=(dn===today)?_nowMin:0;
     const kidStart={}; if(isSitterDay) sitterKids.forEach(k=>{ kidStart[k]=Math.max(sitterReturn,_floor); });
-    const overflow=packAround(existing,tryHere,{start:Math.max(dStart,_floor),end:dEnd,lunchStart:lunchS,lunchEnd:lunchE,
-      momStart:sitterReturn,kidStart:kidStart,allowOvertime:isLast,overtimeMax:240});
+    const ctx={start:Math.max(dStart,_floor),end:dEnd,lunchStart:lunchS,lunchEnd:lunchE,
+      momStart:sitterReturn,kidStart:kidStart,allowOvertime:isLast,overtimeMax:240};
+    // ── Receiving-day RE-PACK: a day that takes swept work is laid out again as ONE
+    // day — existing open work and arrivals merged, ordered by the same rules generation
+    // uses, so old + new intertwine instead of arrivals stacking at the end ("two school
+    // days in one"). Day MEMBERSHIP is never decided here (the subject-spread above did
+    // that) and days receiving nothing are untouched — this is deliberately NOT the
+    // reverted even-redistribute. TODAY only re-packs before school starts; mid-day the
+    // kids are working the plan, so arrivals append after "now" (no moving goalposts).
+    // Checked/claimed work never moves (it seeds the cursors); the morning notebook
+    // anchors the day start; closing notebooks sit out — the closing-last pass below
+    // re-times them after each kid's final task.
+    const repack=(dn!==today)||(_nowMin<=dStart);
+    let overflow;
+    if(repack){
+      const frozen=[], mergedOld=[];
+      existingAll.forEach(t=>{
+        if(checked[t.id]||(claimed&&claimed[t.id])||_isMorn(t)) frozen.push(t);
+        else if(!_isClose(t)) mergedOld.push(t);
+      });
+      const merged=mergedOld.concat(tryHere);
+      _orderDayMerged(merged,dn);
+      overflow=packAround(frozen,merged,ctx);
+      // The overflow can now include the day's ORIGINAL open tasks — chain them forward
+      // exactly like arrivals (chip shows where they came from; the lesson-order pass
+      // below keeps sequences in day order).
+      overflow.forEach(t=>{
+        if(!poolSet.has(t)){ pool.push(t); poolSet.add(t); t.cascadedFrom=t.cascadedFrom||dn; _prefDay.set(t,dn); }
+      });
+    } else {
+      // Mid-day today: tasks already on the day stay put, arrivals pack around them.
+      overflow=packAround(existingAll,tryHere,ctx);
+    }
     const overflowSet=new Set(overflow);
     // Keep overflow + off-here tasks AND tasks still waiting for a later assigned day —
     // don't drop a task just because it wasn't tried on this day yet.
