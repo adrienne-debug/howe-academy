@@ -3575,8 +3575,37 @@ function finalizeDone(id, doneTs, score){
     // A check-off may have finished a subject and/or met all session goals.
     try{ checkSubjectComplete(t.who, t.subjectKey); }catch(e){}
     try{ checkSessionComplete(t.who); }catch(e){}
-    // Done out of order within the tier? Bump it into the earliest skipped slot.
-    try{ bumpSkippedInTier(t); }catch(e){ dbg("bump error: "+e); }
+    // Where does the completed task belong NOW?
+    //  - Completed on a DIFFERENT calendar day than scheduled (worked ahead on Thursday's
+    //    task Tuesday night, or caught up late): relocate it to the day+time it was
+    //    actually done — immediately, so the other day's list and % drop it right away.
+    //    Never bump in that case (bump would reshuffle a day the task just left).
+    //  - Same day but out of tier order: bump into the earliest skipped slot.
+    try{
+      const cd=_parseCheckTs(doneTs);
+      let movedDay=null;
+      if(cd){
+        for(const dn of ["monday","tuesday","wednesday","thursday","friday","saturday"]){
+          if(!DAY_DT[dn]) continue;
+          const dd=new Date(DAY_DT[dn]+", "+cd.getFullYear());
+          if(!isNaN(dd.getTime())&&dd.getMonth()===cd.getMonth()&&dd.getDate()===cd.getDate()){ movedDay=dn; break; }
+        }
+      }
+      if(movedDay&&movedDay!==t.day){
+        t.day=movedDay;
+        t.time=fromMin(cd.getHours()*60+cd.getMinutes());
+        if(t.cascadedFrom===t.day) delete t.cascadedFrom;
+        // History must agree (checkedOnDay drives the fallback heal — left stale it
+        // would move the task back to the wrong day on the next cascade).
+        if(hist[id]){ hist[id].checkedOnDay=movedDay; hist[id].day=movedDay; histState[id]=hist[id]; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+id).set(hist[id]); }
+        sv(WK+"_tasks",weekData.tasks);
+        lastTasksWrite=Date.now();
+        if(db&&!_dryRun()){ const _mu={}; _mu[id+"/day"]=movedDay; _mu[id+"/time"]=t.time; db.ref(WK+"/tasks").update(_mu); }
+        dbg("checkoff heal: "+id+" → "+movedDay+" "+t.time);
+      } else {
+        bumpSkippedInTier(t);
+      }
+    }catch(e){ dbg("bump/heal error: "+e); }
   }
 }
 // Mom approves a kid's claim. Done-time = the kid's claim time (so a late
@@ -8191,34 +8220,46 @@ function cascadeIntraWeek(sweepTodayElapsed){
   // sweep below and as the now-floor when packing today.
   const _nowMin=(typeof _cascNowMin==="number")?_cascNowMin:(function(){var n=new Date();return n.getHours()*60+n.getMinutes();})();
 
-  // Self-heal: checked tasks should have t.day matching where they were checked
+  // Self-heal: checked tasks should sit on the day they were ACTUALLY completed. The
+  // check-off TIMESTAMP is ground truth and runs on EVERY cascade — history checkedOnDay
+  // records the schedule tab (a kid checking Thursday's card on Tuesday night recorded
+  // "thursday"), so healing from it moved relocated dones BACK to the wrong day and
+  // reverted both the check-off relocation and manual repairs. When the ts moves a task,
+  // its history checkedOnDay/day are fixed too so the fallback heal agrees forever after;
+  // checkedOnDay remains only a fallback for entries whose ts can't be parsed.
+  let _healMoved=false;
+  const _histFix={};
   weekData.tasks.forEach(t=>{
     if(!checked[t.id]||t.id.endsWith("_c")) return;
-    // Regeneration commit: ground-truth the placement from the check-off TIMESTAMP. Work
-    // done ahead (kid knocks out Thursday's task on Tuesday night) or late moves to the
-    // day and time it was ACTUALLY completed. checkedOnDay can't catch this — it records
-    // the task's schedule day (the tab the kid checked it on), not the calendar day.
-    if(sweepTodayElapsed){
-      const cd=_parseCheckTs(checked[t.id]);
-      if(cd){
-        for(const dn of dayOrder){
-          if(!DAY_DT[dn]) continue;
-          const dd=new Date(DAY_DT[dn]+", "+cd.getFullYear());
-          if(!isNaN(dd.getTime())&&dd.getMonth()===cd.getMonth()&&dd.getDate()===cd.getDate()){
-            if(t.day!==dn) dbg("regen heal(ts): "+t.id+" "+t.day+" → "+dn);
-            t.day=dn;
-            t.time=fromMin(cd.getHours()*60+cd.getMinutes());
-            return; // timestamp is ground truth — skip the checkedOnDay heal
-          }
+    const cd=_parseCheckTs(checked[t.id]);
+    if(cd){
+      for(const dn of dayOrder){
+        if(!DAY_DT[dn]) continue;
+        const dd=new Date(DAY_DT[dn]+", "+cd.getFullYear());
+        if(isNaN(dd.getTime())||dd.getMonth()!==cd.getMonth()||dd.getDate()!==cd.getDate()) continue;
+        if(t.day!==dn){
+          dbg("cascade heal(ts): "+t.id+" "+t.day+" → "+dn);
+          t.day=dn;
+          t.time=fromMin(cd.getHours()*60+cd.getMinutes());
+          if(t.cascadedFrom===t.day) delete t.cascadedFrom;
+          _healMoved=true;
+          const h0=histState[t.id];
+          if(h0&&(h0.checkedOnDay!==dn||h0.day!==dn)){ h0.checkedOnDay=dn; h0.day=dn; _histFix[t.id]=h0; }
         }
+        return; // ts matched a week day — ground truth; skip the checkedOnDay fallback
       }
     }
     const h=histState[t.id];
     if(h&&h.checkedOnDay&&h.checkedOnDay!=="carryover"&&h.checkedOnDay!==t.day){
       dbg("cascade heal: "+t.id+" day "+t.day+" → "+h.checkedOnDay);
       t.day=h.checkedOnDay;
+      _healMoved=true;
     }
   });
+  if(Object.keys(_histFix).length){
+    sv(WK+"_history",histState);
+    if(db&&!_dryRun()) db.ref(WK+"/history").update(_histFix);
+  }
 
   // Notebooks are day-bookends — never swept into the work pool (they'd cluster with
   // regular work or land in the wrong slot). Detected by subjectKey or title.
@@ -8253,7 +8294,12 @@ function cascadeIntraWeek(sweepTodayElapsed){
     t.cascadedFrom=t.cascadedFrom||t.day;
     if(_isNote(t)) pastNotes.push(t); else pastTasks.push(t);
   });
-  if(!pastTasks.length&&!pastNotes.length) return;
+  if(!pastTasks.length&&!pastNotes.length){
+    // Nothing to sweep, but the self-heal above may have relocated checked tasks —
+    // persist those moves or they'd silently revert on the next data load.
+    if(_healMoved){ sv(WK+"_tasks",weekData.tasks); safeWriteTasks("cascade-heal"); renderAll(); }
+    return;
+  }
 
   const r=rulesData||{};
   const sd=r.schoolDay||{};
