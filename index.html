@@ -11524,23 +11524,38 @@ function cbMaterialize(cfg){
 
   // 4) Extension — content left over after the grid ends grows the grid
   //    (targetDate / timesPerWeek / pages only; window stops by design, minutes never extends)
+  //    The extension keeps the grid DENSE: every school day it walks over gets a row
+  //    (chosen days carry a lesson, the rest become empty placeholder rows) so a LATER
+  //    subject's build finds mid-grid rows instead of leaping past the end — the bug
+  //    that shot Lucy's Dimensions from Aug 2026 to Nov 2027. Dates that already have
+  //    a row are never minted again (one row per date), and a big date-leap between
+  //    the last placed lesson and the first extension row gets a loud warning.
   let newWeeks=0;
+  const placeholders=[];
   if(units&&units.length&&cfg.extend&&cfg.mode!=="window"){
     const ex=cfg.extend;
+    const existingDates={}; rows.forEach(r=>{ existingDates[r.date]=1; });
+    const lastPlacedDate=assignments.length?assignments[assignments.length-1].date:"";
     let dn=ex.lastDayNum, wkNum=ex.lastWeekNum;
     const lastMon=_cbMonday(_cbParseDate(ex.lastDate));
     let d=_cbParseDate(ex.lastDate);
-    let weekBuf=[], bufMon=null, bufLabel=null;
+    let weekBuf=[], bufMon=null, bufLabel=null, firstExtDate="";
     const flush=()=>{
       if(!weekBuf.length) return;
-      const elig=weekBuf.filter(r=>!r.off&&!blocked[r.date]&&(!allowed.length||allowed.includes(r.dow))&&(!cap||myMin<=cap));
-      const chosen=_cbSpread(elig,Math.min(tpw,elig.length));
+      const elig=weekBuf.filter(r=>!r.off&&!r.exists&&!blocked[r.date]&&(!allowed.length||allowed.includes(r.dow))&&(!cap||myMin<=cap));
+      const chosen=new Set(_cbSpread(elig,Math.min(tpw,elig.length)));
       let used=false;
-      for(const r of chosen){
-        if(!units.length) break;
-        dn++;
-        assignments.push({dayNum:dn,date:r.date,week:bufLabel,text:units.shift(),isNew:true});
-        used=true;
+      for(const r of weekBuf){
+        if(r.exists) continue; // a row for this date already exists — never mint a duplicate
+        if(chosen.has(r)&&units.length){
+          dn++;
+          assignments.push({dayNum:dn,date:r.date,week:bufLabel,text:units.shift(),isNew:true});
+          if(!firstExtDate) firstExtDate=r.date;
+          used=true;
+        } else if(units.length&&!r.off){ // off days get no row — generated weeks skip them
+          dn++;
+          placeholders.push({dayNum:dn,date:r.date,week:bufLabel});
+        }
       }
       if(used&&bufMon!==lastMon) newWeeks++;
       weekBuf=[];
@@ -11559,11 +11574,15 @@ function cbMaterialize(cfg){
         bufLabel=(mon===lastMon)?ex.lastWeekLabel:("Wk "+(++wkNum));
       }
       const ds=_cbISO(d);
-      weekBuf.push({date:ds,dow:DOW[dow],off:!!ex.isOff(ds)});
+      weekBuf.push({date:ds,dow:DOW[dow],off:!!ex.isOff(ds),exists:!!existingDates[ds]});
       if(dow===5) flush();
     }
     flush();
     if(guard>=800&&units.length) warnings.push(units.length+" unit"+(units.length!==1?"s":"")+" couldn't be placed (ran past the extension limit).");
+    if(firstExtDate&&lastPlacedDate){
+      const gapDays=Math.round((_cbParseDate(firstExtDate)-_cbParseDate(lastPlacedDate))/864e5);
+      if(gapDays>30) warnings.push("⚠ Big jump: lessons run to "+lastPlacedDate+" then leap to "+firstExtDate+" ("+Math.round(gapDays/7)+" weeks later). The grid between has no open days for this subject — its tail may be sparse; consider rebuilding it.");
+    }
   } else if(units&&units.length){
     if(cfg.mode==="window") warnings.push(units.length+" lesson"+(units.length!==1?"s":"")+" fall after the stop date and stay unscheduled — that's what “until a date” means.");
     else warnings.push(units.length+" unit"+(units.length!==1?"s":"")+" couldn't be placed.");
@@ -11579,7 +11598,7 @@ function cbMaterialize(cfg){
   if(capSkipped) warnings.push(capSkipped+" day"+(capSkipped!==1?"s":"")+" skipped because the day-minute cap was full.");
 
   const wkSet={}; assignments.forEach(a=>{wkSet[a.week]=1;});
-  return {assignments,clears,warnings,stats:{
+  return {assignments,clears,placeholders,warnings,stats:{
     placed:assignments.length, tpwUsed:tpw, tpwAuto,
     firstDate:assignments[0].date, lastDate:last.date,
     weeksUsed:Object.keys(wkSet).length, newRows:assignments.filter(a=>a.isNew).length,
@@ -12096,21 +12115,48 @@ function cbApply(){
     const p="lessons/"+kid+"/"+dnn+"/"+sk;
     snap(p,(lessons[dnn]||{})[sk]); up[p]=null;
   }
+  // One row per date — a "new" assignment whose date already has a row (any row,
+  // including junk duplicates from older builds) writes its cell INTO that row
+  // instead of minting a second one. This is the invariant that keeps the grid sane.
+  const dateToDn={};
+  for(const dnStr of Object.keys(lessons)){
+    const l=lessons[dnStr];
+    if(l&&l.date&&dateToDn[l.date]===undefined) dateToDn[l.date]=parseInt(dnStr);
+  }
   const wdTouched={};
+  const newDayNums={}; // week → [dayNums actually created]
   for(const a of res.assignments){
     if(a.isNew){
-      const p="lessons/"+kid+"/"+a.dayNum;
-      snap(p,lessons[a.dayNum]);
-      const row={week:a.week,date:a.date}; row[sk]=a.text;
-      up[p]=row; wdTouched[a.week]=1;
+      const exDn=dateToDn[a.date];
+      if(exDn!==undefined){
+        const p="lessons/"+kid+"/"+exDn+"/"+sk;
+        snap(p,(lessons[exDn]||{})[sk]); up[p]=a.text;
+      } else {
+        const p="lessons/"+kid+"/"+a.dayNum;
+        snap(p,lessons[a.dayNum]);
+        const row={week:a.week,date:a.date}; row[sk]=a.text;
+        up[p]=row; wdTouched[a.week]=1;
+        (newDayNums[a.week]=newDayNums[a.week]||[]).push(a.dayNum);
+        dateToDn[a.date]=a.dayNum;
+      }
     } else {
       const p="lessons/"+kid+"/"+a.dayNum+"/"+sk;
       snap(p,(lessons[a.dayNum]||{})[sk]); up[p]=a.text;
     }
   }
+  // Placeholder rows from the dense extension — empty {week,date} rows that keep the
+  // grid continuous so later builds find mid-grid days (same one-row-per-date rule).
+  (res.placeholders||[]).forEach(a=>{
+    if(dateToDn[a.date]!==undefined) return;
+    const p="lessons/"+kid+"/"+a.dayNum;
+    snap(p,lessons[a.dayNum]);
+    up[p]={week:a.week,date:a.date}; wdTouched[a.week]=1;
+    (newDayNums[a.week]=newDayNums[a.week]||[]).push(a.dayNum);
+    dateToDn[a.date]=a.dayNum;
+  });
   for(const wk of Object.keys(wdTouched)){
     const arr=((wd[kid]||{})[wk]||[]).slice();
-    res.assignments.forEach(a=>{ if(a.isNew&&a.week===wk&&!arr.includes(a.dayNum)) arr.push(a.dayNum); });
+    (newDayNums[wk]||[]).forEach(dnn=>{ if(!arr.includes(dnn)) arr.push(dnn); });
     arr.sort((a,b)=>a-b);
     const p="weekDays/"+kid+"/"+wk;
     snap(p,(wd[kid]||{})[wk]); up[p]=arr;

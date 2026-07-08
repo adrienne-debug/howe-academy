@@ -161,11 +161,19 @@ console.log("extension");
   const news = res.assignments.filter(x => x.isNew);
   ok("everything placed", res.stats.placed === 8, res.stats);
   ok("5 new rows created", news.length === 5, news.length);
-  ok("new dayNums continue densely", JSON.stringify(news.map(x => x.dayNum)) === "[6,7,8,9,10]", news.map(x => x.dayNum));
+  // Dense extension: lessons + empty placeholder rows share one chronological dayNum
+  // sequence (one row per school day, off days skipped, no duplicate dates).
+  const allNew = news.concat(res.placeholders || []).sort((a, b) => a.dayNum - b.dayNum);
+  ok("dayNums start after the grid and stay unique+ascending",
+    allNew[0].dayNum === 6 && allNew.every((x, i) => i === 0 || x.dayNum === allNew[i - 1].dayNum + 1), allNew.map(x => x.dayNum));
+  ok("extension is dense — every walked school day gets a row (lesson or placeholder)",
+    allNew.every((x, i) => i === 0 || x.date > allNew[i - 1].date), allNew.map(x => x.date));
+  ok("no duplicate dates across lessons+placeholders",
+    new Set(allNew.map(x => x.date)).size === allNew.length);
   ok("new week labels continue", news[0].week === "Wk 2" && news[news.length - 1].week === "Wk 3", news.map(x => x.week));
-  ok("off day 8-10 skipped in extension", !news.some(x => x.date === "2026-08-10"), news.map(x => x.date));
-  ok("no weekend dates", news.every(x => { const g = new Date(x.date + "T12:00:00").getDay(); return g >= 1 && g <= 5; }));
-  ok("dates ascend with dayNums", news.every((x, i) => i === 0 || x.date > news[i - 1].date));
+  ok("off day 8-10 gets no row at all", !allNew.some(x => x.date === "2026-08-10"), allNew.map(x => x.date));
+  ok("no weekend dates", allNew.every(x => { const g = new Date(x.date + "T12:00:00").getDay(); return g >= 1 && g <= 5; }));
+  ok("lesson dates ascend with dayNums", news.every((x, i) => i === 0 || x.date > news[i - 1].date));
 }
 {
   // Mid-week grid end: last row Wed 2026-08-05 → Thu/Fri stay in "Wk 1"
