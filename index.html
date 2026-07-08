@@ -14729,7 +14729,7 @@ function mastSpeakItem(prompt){
 // they don't reshuffle on every re-render.
 let mastShowMe={};   // {"itemId|printNum": "ok" | tappedWrongId}
 function _smHash(s){ let h=0; for(let i=0;i<s.length;i++){ h=((h<<5)-h)+s.charCodeAt(i); h|=0; } return Math.abs(h); }
-function _smTileVis(it){
+function _smTileVis(it,noGlyph){
   if(!it) return null;
   if(it.imageUrl) return '<img src="'+it.imageUrl+'" style="width:84px;height:84px;object-fit:cover;border-radius:12px;pointer-events:none">';
   const mv=mastGetVisual(it.subject,it.prompt);
@@ -14741,12 +14741,162 @@ function _smTileVis(it){
   if(it.subject==="Shapes") return '<span style="pointer-events:none">'+mastShapeVis(it.prompt,54)+'</span>';
   // Letters / numbers / short phonograms: the glyph IS the visual — great for b/d/p
   // discrimination. Longer prompts would need reading, so they're not eligible.
-  if((it.prompt||"").length<=3) return '<span style="font-size:44px;font-weight:800;color:#c2410c;font-family:\'Fraunces\',serif;pointer-events:none">'+it.prompt+'</span>';
+  // noGlyph: the Match game's pair tile must NOT be the same glyph as the word tile.
+  if(!noGlyph&&(it.prompt||"").length<=3) return '<span style="font-size:44px;font-weight:800;color:#c2410c;font-family:\'Fraunces\',serif;pointer-events:none">'+it.prompt+'</span>';
   return null;
 }
 function mastShowMeTap(key,itemId,tappedId){
   mastShowMe[key]=(tappedId===itemId)?"ok":tappedId;
   _mastRe();
+}
+
+// ── 🎯 Match game — Quizlet-style pairs, a treat mode ─────────────────────────────
+// Word ↔ picture/meaning pairs against a count-up clock; per-deck personal best stored in
+// <kid>_settings/match_best (targeted update). Pure display/game — never touches the
+// ladder, scores, or session logs.
+let matchState=null;   // {deck,tiles:[{pid,html,matched,miss}],sel,lock,startTs,endTs,isPB,prevBest}
+function _matchPairHtml(it){
+  const vis=_smTileVis(it,true);   // noGlyph: pair tile must not be the word itself
+  if(vis) return vis;
+  const def=mastGetDef(masteryKid,it.prompt)||((it.answer&&it.answer!==it.prompt)?it.answer:"")||it.definition||"";
+  if(def) return '<span style="font-size:11.5px;font-weight:600;line-height:1.35;pointer-events:none;word-break:break-word">'+esc(String(def).slice(0,90))+'</span>';
+  return null;
+}
+function mastMatchDecks(){
+  let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  const by={};
+  items.forEach(i=>{
+    if(!i||(i.status!=="active"&&i.status!=="introduction")) return;
+    if(!_matchPairHtml(i)) return;
+    (by[i.subject||"Other"]=by[i.subject||"Other"]||[]).push(i);
+  });
+  return Object.keys(by).filter(k=>by[k].length>=4).sort();
+}
+function mastMatchStart(deck){
+  let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  const pool=items.filter(i=>i&&i.subject===deck&&(i.status==="active"||i.status==="introduction")&&_matchPairHtml(i));
+  for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=pool[i]; pool[i]=pool[j]; pool[j]=t; }
+  const chosen=pool.slice(0,Math.min(6,pool.length));
+  const tiles=[];
+  chosen.forEach(it=>{
+    tiles.push({pid:it.id,matched:false,miss:false,html:'<span style="font-size:'+((it.prompt||"").length<=4?26:15)+'px;font-weight:800;color:#c2410c;pointer-events:none;word-break:break-word">'+esc(it.prompt)+'</span>'});
+    tiles.push({pid:it.id,matched:false,miss:false,html:_matchPairHtml(it)});
+  });
+  for(let i=tiles.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=tiles[i]; tiles[i]=tiles[j]; tiles[j]=t; }
+  matchState={deck:deck,tiles:tiles,sel:-1,lock:false,startTs:Date.now(),endTs:null};
+  if(window._matchTick) clearInterval(window._matchTick);
+  window._matchTick=setInterval(()=>{
+    if(!matchState||matchState.endTs||mastView!=="match"){ clearInterval(window._matchTick); window._matchTick=null; return; }
+    const el=document.getElementById("match-clock"); if(el) el.textContent=((Date.now()-matchState.startTs)/1000).toFixed(1)+"s";
+  },100);
+  _mastRe();
+}
+function mastMatchTap(ix){
+  const st=matchState; if(!st||st.lock||st.endTs) return;
+  const t=st.tiles[ix]; if(!t||t.matched||ix===st.sel) return;
+  if(st.sel<0){ st.sel=ix; _mastRe(); return; }
+  const a=st.tiles[st.sel];
+  if(a.pid===t.pid){
+    a.matched=t.matched=true; st.sel=-1;
+    if(st.tiles.every(x=>x.matched)){ st.endTs=Date.now(); mastMatchFinish(); }
+    _mastRe();
+  } else {
+    a.miss=t.miss=true; st.lock=true; _mastRe();
+    setTimeout(()=>{ a.miss=t.miss=false; st.sel=-1; st.lock=false; _mastRe(); },650);
+  }
+}
+function mastMatchFinish(){
+  const st=matchState;
+  const sec=Math.round((st.endTs-st.startTs)/100)/10;
+  const kid=masteryKid;
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const prev=s.match_best[st.deck];
+  st.isPB=(prev==null||sec<prev); st.prevBest=prev; st.sec=sec;
+  if(st.isPB){
+    s.match_best[st.deck]=sec;
+    if(db) db.ref("mastery/"+kid+"_settings/match_best").update({[st.deck]:sec});  // this deck only
+    try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+}
+// ── ✍️ Finger tracing (Orton-Gillingham: see it → say it → TRACE it) ──────────────
+// Letters / numbers / short phonograms get a Trace button: a full-screen canvas with the
+// glyph painted huge and faint behind — digital sandpaper letters. Nothing is stored;
+// the motor action is the point.
+function mastTraceOpen(glyph){
+  let ov=document.getElementById("mast-trace"); if(ov) ov.remove();
+  ov=document.createElement("div"); ov.id="mast-trace";
+  ov.style.cssText="position:fixed;inset:0;z-index:10002;background:#fff7ed;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px";
+  const ttl=document.createElement("div");
+  ttl.style.cssText="font-family:'Fraunces',serif;font-size:20px;font-weight:800;color:#c2410c;margin-bottom:8px";
+  ttl.textContent="\u{270D}\u{FE0F} Trace: "+glyph;
+  ov.appendChild(ttl);
+  const W=Math.min(window.innerWidth-28,520), H=Math.min(window.innerHeight-150,560);
+  const cv=document.createElement("canvas");
+  cv.width=W*2; cv.height=H*2;
+  cv.style.cssText="width:"+W+"px;height:"+H+"px;background:#fff;border:2.5px solid #fed7aa;border-radius:20px;touch-action:none";
+  ov.appendChild(cv);
+  const ctx=cv.getContext("2d");
+  const paint=()=>{
+    ctx.clearRect(0,0,cv.width,cv.height);
+    ctx.save();
+    ctx.fillStyle="#f6e3cf";
+    ctx.font="700 "+Math.floor(cv.height*0.72)+"px 'Fraunces',serif";
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText(glyph, cv.width/2, cv.height/2+cv.height*0.03);
+    ctx.restore();
+    ctx.lineWidth=16; ctx.lineCap="round"; ctx.lineJoin="round"; ctx.strokeStyle="#7c3aed";
+  };
+  paint();
+  let drawing=false;
+  const pos=e=>{ const r=cv.getBoundingClientRect(); return [(e.clientX-r.left)*(cv.width/r.width),(e.clientY-r.top)*(cv.height/r.height)]; };
+  cv.onpointerdown=e=>{ e.preventDefault(); drawing=true; const p=pos(e); ctx.beginPath(); ctx.moveTo(p[0],p[1]); try{cv.setPointerCapture(e.pointerId);}catch(err){} };
+  cv.onpointermove=e=>{ if(!drawing) return; e.preventDefault(); const p=pos(e); ctx.lineTo(p[0],p[1]); ctx.stroke(); };
+  cv.onpointerup=cv.onpointercancel=()=>{ drawing=false; };
+  const row=document.createElement("div");
+  row.style.cssText="display:flex;gap:12px;margin-top:12px";
+  const mk=(lbl,fn,primary)=>{ const b=document.createElement("button"); b.textContent=lbl; b.style.cssText="padding:11px 26px;border-radius:999px;font-size:15px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif;border:2px solid #c2410c;"+(primary?"background:#c2410c;color:#fff":"background:#fff;color:#c2410c"); b.onclick=fn; return b; };
+  row.appendChild(mk("\u{1F9FD} Clear",paint,false));
+  row.appendChild(mk("\u{2713} Done",()=>ov.remove(),true));
+  ov.appendChild(row);
+  document.body.appendChild(ov);
+}
+
+function buildMatchHtml(color){
+  let h='<div style="padding:4px 14px 20px">';
+  const decks=mastMatchDecks();
+  if(!decks.length){
+    h+='<div class="mast-none">No decks ready for Match yet — it needs 4+ cards with a picture or definition.</div></div>';
+    return h;
+  }
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 12px">';
+  decks.forEach(dk=>{
+    const sel=matchState&&matchState.deck===dk;
+    h+='<div onclick="mastMatchStart(\''+dk.replace(/'/g,"\\'")+'\')" style="cursor:pointer;padding:6px 12px;border-radius:999px;font-size:11px;font-weight:700;border:1.5px solid '+(sel?color:'#e2ddd6')+';background:'+(sel?color:'#fff')+';color:'+(sel?'#fff':'#57534e')+'">'+esc(dk)+'</div>';
+  });
+  h+='</div>';
+  const st=matchState;
+  if(!st){ h+='<div style="font-size:12.5px;color:var(--muted)">Pick a deck \u{2014} match each word to its picture or meaning as fast as you can! \u{23F1}</div></div>'; return h; }
+  const s=masteryData[masteryKid+"_settings"]||{};
+  const best=(s.match_best||{})[st.deck];
+  h+='<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px">';
+  h+='<span id="match-clock" style="font-family:\'DM Mono\',monospace;font-size:22px;font-weight:800;color:'+color+'">'+(((st.endTs||Date.now())-st.startTs)/1000).toFixed(1)+'s</span>';
+  h+='<span style="font-size:11px;color:var(--muted);font-weight:700">'+(best!=null?'\u{1F3C6} best '+best+'s':'first game on this deck!')+'</span>';
+  h+='</div>';
+  h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">';
+  st.tiles.forEach((t,ix)=>{
+    const selT=st.sel===ix;
+    h+='<div onclick="mastMatchTap('+ix+')" style="min-height:88px;display:flex;align-items:center;justify-content:center;text-align:center;padding:6px;border-radius:14px;border:2.5px solid '+(t.matched?'#d1fae5':t.miss?'#dc2626':selT?color:'#e2ddd6')+';background:'+(t.matched?'#f0fdf4':'#fff')+';opacity:'+(t.matched?'0.4':'1')+';cursor:'+(t.matched?'default':'pointer')+'">'+t.html+'</div>';
+  });
+  h+='</div>';
+  if(st.endTs){
+    h+='<div style="margin-top:14px;text-align:center;padding:14px;border-radius:14px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:800">'+(st.isPB?'\u{1F3C6} New best \u{2014} '+st.sec+'s!':'\u{2713} '+st.sec+'s'+(st.prevBest!=null?' \u{00B7} best '+st.prevBest+'s':''))+'</div>';
+    h+='<button onclick="mastMatchStart(\''+st.deck.replace(/'/g,"\\'")+'\')" style="margin-top:10px;padding:9px 22px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F501} Play again</button>';
+    h+='</div>';
+  }
+  h+='</div>';
+  return h;
 }
 function mastRecStart(){
   if(mastRecState) return;
@@ -17414,6 +17564,7 @@ function _renderMasteryInner(el){
   h+='<div class="mast-view-tabs" style="margin-top:8px;margin-bottom:0">';
   h+='<button class="mast-view-tab'+(mastView==="drill"?" active":"")+'" onclick="mastSetView(\'drill\')">Drills</button>';
   h+='<button class="mast-view-tab'+(mastView==="sprint"?" active":"")+'" onclick="mastSetView(\'sprint\')">Sprint</button>';
+  h+='<button class="mast-view-tab'+(mastView==="match"?" active":"")+'" onclick="mastSetView(\'match\')">\u{1F3AF} Match</button>';
   h+='<button class="mast-view-tab'+(mastView==="scores"?" active":"")+'" onclick="mastSetView(\'scores\')">Scores</button>';
   h+='<button class="mast-view-tab'+(mastView==="heatmap"?" active":"")+'" onclick="mastSetView(\'heatmap\')">Heat Map</button>';
   h+='<button class="mast-view-tab'+(mastView==="admin"?" active":"")+'" onclick="mastSetView(\'admin\')">Admin</button>';
@@ -17446,6 +17597,13 @@ function _renderMasteryInner(el){
   // ── SPRINT VIEW ──
   if(mastView==="sprint"){
     h+=buildSprintHtml();
+    h+='</div>';
+    el.innerHTML=h;
+    return;
+  }
+
+  if(mastView==="match"){
+    h+=buildMatchHtml(color);
     h+='</div>';
     el.innerHTML=h;
     return;
@@ -18120,6 +18278,12 @@ function _renderMasteryInner(el){
       if(!_smDone){
         c+='<div class="mast-slide-img">'+bigVis+'</div>';
         if(cat!=="Counting") c+='<div class="mast-slide-name">'+it.prompt+'</div>';
+      }
+      // OG multisensory: letters / numbers / short phonograms get a Trace button —
+      // see it, say it, TRACE it (digital sandpaper letters).
+      if(_catMode==="flash"&&cat!=="Counting"&&(it.prompt||"").length<=3){
+        const _tpEsc=it.prompt.replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+        c+='<button onclick="event.stopPropagation();mastTraceOpen(\''+_tpEsc+'\')" style="margin:6px 0 2px;padding:7px 18px;border-radius:999px;border:1.5px solid #fdba74;background:#fff7ed;color:#c2410c;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;position:relative;z-index:2">\u{270D}\u{FE0F} Trace it</button>';
       }
       if(isIntro&&(_catMode==="quiz"||mastItemIsQuiz(masteryKid,it))){
         const _hint=MAST_INTRO_HINTS[cat]||"practice out loud";
