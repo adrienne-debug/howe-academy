@@ -954,6 +954,9 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
 .gv-cell{cursor:pointer;min-width:64px;max-width:150px;overflow:hidden;text-overflow:ellipsis}
 .gv-cell:hover{background:#f8fafc}
 .gv-cell.gv-empty{color:#d1d5db}
+.gv.gv-selmode .gv-cell{cursor:cell}
+.gv-cell.gv-picked,.gv.gv-selmode .gv-cell.gv-picked{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2563eb}
+.gv.gv-selmode .gv-fix{cursor:pointer}
 .gv tr.gv-past td{opacity:0.5}
 .gv tr.gv-off td{background:#fef2f2}
 .gv tr.gv-hol td{background:#fef3c7}
@@ -3291,7 +3294,7 @@ function renderSchedule(el){
   }
   h+=renderBlockoutBanners(day);
   if(momModeActive&&(kid==="mom"||kid==="all")) h+=renderDisplacementSummary(day, kid);
-  h+=renderSatCutoffBanner(day, kid);
+  if(momModeActive) h+=renderSatCutoffBanner(day, kid);
   h+=dailyPaceTracker(allDay, day);
   h+=renderClaimQueue();
   h+=unitScheduleNudges(kid);  // U6: unit-study pacing nudges (renders only when one is live)
@@ -12534,8 +12537,129 @@ function cbRenderForm(col){
 // SHOWS those overrides. Past rows are frozen.
 // ═════════════════════════════════════════════════════════════════════════
 let gvKid=null, gvEdit=null, gvShowPast=false, gvScrollTop=0, gvScrollLeft=0;
+// Multi-cell (Excel-style) selection: pick many cells, then Clear or Fill them at once.
+let gvSelMode=false, gvSel=new Set(), gvSelAnchor=null, gvSelUndo=null;
 
 const gvFilled=v=>!!(v&&v!=="—"&&v!=="nan"&&String(v).trim());
+
+// Rendered (selectable) dayNums in display order — future rows, plus past only when shown.
+function gvRenderedDns(kid){
+  const lessons=((currData||{}).lessons||{})[kid]||{};
+  const today=cbTodayISO();
+  return Object.keys(lessons).map(Number).filter(n=>!isNaN(n))
+    .filter(dn=>{ const l=lessons[dn]; return l&&l.date&&(gvShowPast||l.date>=today); })
+    .sort((a,b)=>a-b);
+}
+function gvToggleSelMode(){ gvSelMode=!gvSelMode; gvSel=new Set(); gvSelAnchor=null; gvEdit=null; gvGrabScroll(); renderAll(); }
+function gvSelDeselect(){ gvSel=new Set(); gvSelAnchor=null; gvGrabScroll(); renderAll(); }
+
+// Cell tap in select mode. Same column as the anchor → select the contiguous run of
+// FILLED cells between them (Excel shift-click, ideal for "erase this block"); otherwise
+// toggle the single cell and move the anchor here.
+function gvSelCell(dn,sk){
+  const lessons=(currData.lessons||{})[gvKid]||{};
+  const key=dn+"|"+sk;
+  if(gvSelAnchor){
+    const [adn,ask]=gvSelAnchor.split("|");
+    if(ask===sk&&+adn!==dn){
+      const dns=gvRenderedDns(gvKid);
+      const lo=Math.min(+adn,dn), hi=Math.max(+adn,dn);
+      dns.forEach(x=>{ if(x>=lo&&x<=hi&&gvFilled((lessons[x]||{})[sk])) gvSel.add(x+"|"+sk); });
+      gvSelAnchor=key; gvGrabScroll(); renderAll(); return;
+    }
+  }
+  if(gvSel.has(key)){ gvSel.delete(key); gvSelAnchor=null; }
+  else { gvSel.add(key); gvSelAnchor=key; }
+  gvGrabScroll(); renderAll();
+}
+// Column header tap: toggle every FILLED cell in that subject's column (rendered rows).
+function gvSelCol(sk){
+  const lessons=(currData.lessons||{})[gvKid]||{};
+  const dns=gvRenderedDns(gvKid).filter(dn=>gvFilled((lessons[dn]||{})[sk]));
+  const keys=dns.map(dn=>dn+"|"+sk);
+  const allOn=keys.length&&keys.every(k=>gvSel.has(k));
+  keys.forEach(k=>{ if(allOn) gvSel.delete(k); else gvSel.add(k); });
+  gvSelAnchor=null; gvGrabScroll(); renderAll();
+}
+// Row (Day) tap: toggle every FILLED cell in that day.
+function gvSelRow(dn){
+  const l=(currData.lessons||{})[gvKid][dn]||{};
+  const keys=Object.keys(l).filter(sk=>sk!=="date"&&sk!=="week"&&gvFilled(l[sk])).map(sk=>dn+"|"+sk);
+  const allOn=keys.length&&keys.every(k=>gvSel.has(k));
+  keys.forEach(k=>{ if(allOn) gvSel.delete(k); else gvSel.add(k); });
+  gvSelAnchor=null; gvGrabScroll(); renderAll();
+}
+function gvSelFilledCount(){
+  const lessons=(currData.lessons||{})[gvKid]||{};
+  let n=0; gvSel.forEach(k=>{ const [dn,sk]=k.split("|"); if(gvFilled((lessons[dn]||{})[sk])) n++; });
+  return n;
+}
+// Bulk clear every selected FILLED cell in one atomic write, with one-level undo.
+function gvSelClear(){
+  if(!db) return;
+  const lessons=(currData.lessons||{})[gvKid]||{};
+  const patch={}, undo={}, subs=new Set();
+  gvSel.forEach(k=>{
+    const [dn,sk]=k.split("|");
+    if(!gvFilled((lessons[dn]||{})[sk])) return;
+    const p="lessons/"+gvKid+"/"+dn+"/"+sk;
+    undo[p]=lessons[dn][sk]; patch[p]=null;
+    delete lessons[dn][sk]; subs.add(sk);
+  });
+  const n=Object.keys(patch).length;
+  if(!n){ gvSelDeselect(); return; }
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch);
+  subs.forEach(sk=>gvRecountTotal(gvKid,sk));
+  buildCurrPaceCum();
+  gvSelUndo={kid:gvKid,undo,subs:[...subs]};
+  gvSel=new Set(); gvSelAnchor=null;
+  gwShowToast("Cleared "+n+" cell"+(n!==1?"s":"")+" — tap Undo to restore");
+  gvGrabScroll(); renderAll();
+}
+// Bulk fill: set every selected cell (filled or empty) to one value.
+function gvSelFill(){
+  if(!db) return;
+  const val=prompt("Set all "+gvSel.size+" selected cell"+(gvSel.size!==1?"s":"")+" to:");
+  if(val===null) return;
+  const v=String(val).trim();
+  if(!v){ gvSelClear(); return; } // blank = clear
+  const lessons=(currData.lessons||{})[gvKid]||{};
+  const patch={}, undo={}, subs=new Set();
+  gvSel.forEach(k=>{
+    const [dn,sk]=k.split("|");
+    if(!lessons[dn]) return;
+    const p="lessons/"+gvKid+"/"+dn+"/"+sk;
+    undo[p]=(lessons[dn][sk]!==undefined?lessons[dn][sk]:null);
+    lessons[dn][sk]=v; patch[p]=v; subs.add(sk);
+  });
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch);
+  subs.forEach(sk=>gvRecountTotal(gvKid,sk));
+  buildCurrPaceCum();
+  gvSelUndo={kid:gvKid,undo,subs:[...subs]};
+  const n=gvSel.size; gvSel=new Set(); gvSelAnchor=null;
+  gwShowToast("Filled "+n+" cell"+(n!==1?"s":"")+" — tap Undo to restore");
+  gvGrabScroll(); renderAll();
+}
+function gvSelUndoApply(){
+  if(!gvSelUndo||!db) return;
+  const {kid,undo,subs}=gvSelUndo;
+  const lessons=(currData.lessons||{})[kid]||{};
+  const patch={};
+  Object.keys(undo).forEach(p=>{
+    const val=undo[p]; patch[p]=val;
+    const parts=p.split("/"); const dn=parts[2], sk=parts[3];
+    if(lessons[dn]){ if(val===null) delete lessons[dn][sk]; else lessons[dn][sk]=val; }
+  });
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch);
+  (subs||[]).forEach(sk=>gvRecountTotal(kid,sk));
+  buildCurrPaceCum();
+  gvSelUndo=null;
+  gwShowToast("Restored");
+  gvGrabScroll(); renderAll();
+}
 
 // Subjects that have at least one cell in this kid's grid, by display name
 function gvSubjectCols(kid){
@@ -12549,7 +12673,7 @@ function gvSubjectCols(kid){
   return Object.keys(seen).sort((a,b)=>((subs[a]||{}).display||a).localeCompare((subs[b]||{}).display||b));
 }
 
-function gvSetKid(k){ gvKid=k; gvEdit=null; gvScrollTop=0; gvScrollLeft=0; renderAll(); }
+function gvSetKid(k){ gvKid=k; gvEdit=null; gvSelMode=false; gvSel=new Set(); gvSelAnchor=null; gvSelUndo=null; gvScrollTop=0; gvScrollLeft=0; renderAll(); }
 function gvTogglePast(){ gvShowPast=!gvShowPast; gvEdit=null; renderAll(); }
 function gvGrabScroll(){ const w=document.querySelector(".gv-wrap"); if(w){ gvScrollTop=w.scrollTop; gvScrollLeft=w.scrollLeft; } }
 function gvOpenCell(dn,sk){ gvGrabScroll(); gvEdit=dn+"|"+sk; renderAll(); }
@@ -12787,8 +12911,22 @@ function renderCurrGrid(el){
 
   h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">';
   if(pastCount) h+='<button onclick="gvTogglePast()" style="padding:4px 12px;border-radius:14px;border:1px solid var(--border);background:'+(gvShowPast?'var(--header)':'#fff')+';color:'+(gvShowPast?'#fff':'var(--muted)')+';font-size:11px;font-weight:700;cursor:pointer">'+(gvShowPast?'Hide':'Show')+' '+pastCount+' past days</button>';
-  h+='<span style="font-size:11px;color:var(--muted)">'+dayNums.length+' days × '+cols.length+' subjects · tap a cell to edit — Enter saves, blank clears · tap a column name for the Builder</span>';
+  h+='<button onclick="gvToggleSelMode()" style="padding:4px 12px;border-radius:14px;border:1px solid '+(gvSelMode?'transparent':'var(--border)')+';background:'+(gvSelMode?col:'#fff')+';color:'+(gvSelMode?'#fff':'var(--muted)')+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(gvSelMode?'✕ Done selecting':'☑︎ Select cells')+'</button>';
+  if(gvSelUndo&&!gvSelMode) h+='<button onclick="gvSelUndoApply()" style="padding:4px 12px;border-radius:14px;border:1px solid #d97706;background:#fffbeb;color:#b45309;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">↩ Undo last</button>';
+  if(!gvSelMode) h+='<span style="font-size:11px;color:var(--muted)">'+dayNums.length+' days × '+cols.length+' subjects · tap a cell to edit — Enter saves, blank clears · tap a column name for the Builder</span>';
   h+='</div>';
+
+  // Multi-select action bar — how-to + Clear/Fill on the current selection.
+  if(gvSelMode){
+    const nSel=gvSel.size, nFilled=gvSelFilledCount();
+    h+='<div style="position:sticky;top:0;z-index:6;background:'+col+';color:#fff;border-radius:10px;padding:8px 12px;margin:0 0 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
+    h+='<span style="font-size:12px;font-weight:800">'+nSel+' selected'+(nFilled!==nSel?' ('+nFilled+' with content)':'')+'</span>';
+    h+='<button onclick="gvSelClear()"'+(nFilled?'':' disabled')+' style="padding:4px 12px;border-radius:10px;border:none;background:'+(nFilled?'#fff':'rgba(255,255,255,.4)')+';color:'+col+';font-size:11px;font-weight:800;cursor:'+(nFilled?'pointer':'default')+';font-family:\'DM Sans\',sans-serif">🗑 Clear '+(nFilled||'')+'</button>';
+    h+='<button onclick="gvSelFill()"'+(nSel?'':' disabled')+' style="padding:4px 12px;border-radius:10px;border:1px solid #fff;background:transparent;color:#fff;font-size:11px;font-weight:800;cursor:'+(nSel?'pointer':'default')+';font-family:\'DM Sans\',sans-serif;opacity:'+(nSel?1:.5)+'">✎ Fill…</button>';
+    if(nSel) h+='<button onclick="gvSelDeselect()" style="padding:4px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.6);background:transparent;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Deselect</button>';
+    h+='<span style="font-size:10px;opacity:.9;flex-basis:100%;line-height:1.4">Tap cells to pick. Tap a <b>column header</b> for the whole subject, a <b>day</b> for the whole row. Tap two cells in one column to grab everything between them.</span>';
+    h+='</div>';
+  }
 
   // Same calendar-drift nudge as the Lesson Map: a vacation added AFTER a build
   // leaves lessons stranded on break days — surface it where the cells are.
@@ -12817,13 +12955,14 @@ function renderCurrGrid(el){
     }
   }catch(e){}
 
-  h+='<div class="gv-wrap"><table class="gv"><thead><tr>';
+  h+='<div class="gv-wrap"><table class="gv'+(gvSelMode?' gv-selmode':'')+'"><thead><tr>';
   h+='<th class="gv-fix">Day</th><th class="gv-min">Min</th>';
   for(const sk of cols){
     const grp=cbGroupOf(gvKid,sk);
     const mark=grp?'\u{1F500} ':'';
-    const tip=grp?('Alternates ('+(grp.group.name||"group")+') — never same day as '+(grp.group.members||[]).filter(m=>m!==sk).map(m=>(subs[m]||{}).display||m).join(", ")+'. Tap for Builder.'):'Open in Builder';
-    h+='<th onclick="gvJumpBuilder(\''+sk+'\')" title="'+esc(tip)+'">'+mark+esc((subs[sk]||{}).display||sk)+'</th>';
+    const tip=gvSelMode?'Tap to select the whole '+((subs[sk]||{}).display||sk)+' column':(grp?('Alternates ('+(grp.group.name||"group")+') — never same day as '+(grp.group.members||[]).filter(m=>m!==sk).map(m=>(subs[m]||{}).display||m).join(", ")+'. Tap for Builder.'):'Open in Builder');
+    const hact=gvSelMode?'gvSelCol(\''+sk+'\')':'gvJumpBuilder(\''+sk+'\')';
+    h+='<th onclick="'+hact+'" title="'+esc(tip)+'">'+mark+esc((subs[sk]||{}).display||sk)+'</th>';
   }
   h+='</tr></thead><tbody>';
 
@@ -12845,7 +12984,8 @@ function renderCurrGrid(el){
     let mins=0;
     for(const sk of Object.keys(subs)){ if(!subs[sk].paused&&gvFilled(l[sk])&&!(ov.removed||{})[sk]) mins+=subs[sk].minutes||20; }
     h+='<tr'+(cls?' class="'+cls+'"':'')+'>';
-    h+='<td class="gv-fix" title="Day '+dn+(offReason?' — '+esc(String(offReason)):'')+'"><b>'+DOWS[d.getDay()]+'</b> '+(d.getMonth()+1)+'/'+d.getDate();
+    const rowSelable=gvSelMode&&!past;
+    h+='<td class="gv-fix"'+(rowSelable?' onclick="gvSelRow('+dn+')"':'')+' title="Day '+dn+(rowSelable?' — tap to select the row':(offReason?' — '+esc(String(offReason)):''))+'"><b>'+DOWS[d.getDay()]+'</b> '+(d.getMonth()+1)+'/'+d.getDate();
     if(offReason) h+='<span class="gv-badge" style="background:#fecaca;color:#991b1b">OFF</span>';
     else if(mapOff) h+='<span class="gv-badge" style="background:#fecaca;color:#991b1b">DAY OFF</span>';
     h+='</td>';
@@ -12855,14 +12995,16 @@ function renderCurrGrid(el){
       const removed=!!(ov.removed||{})[sk];
       const addedV=(ov.added||{})[sk];
       const editing=gvEdit===dn+"|"+sk;
-      if(editing&&!past){
+      if(editing&&!past&&!gvSelMode){
         h+='<td><input id="gv-edit-input" value="'+esc(gvFilled(v)?v:"")+'" onkeydown="gvEditKey(event,\''+gvKid+'\','+dn+',\''+sk+'\')" onblur="gvCancelEdit()"></td>';
       } else {
         let cell="";
         if(gvFilled(v)) cell=removed?'<s style="color:var(--muted)">'+esc(v)+'</s><span class="gv-badge" style="background:#e0e7ff;color:#3730a3">moved</span>':esc(v);
         if(addedV!==undefined) cell+=(cell?'<br>':'')+'<span style="color:#15803d">+ '+(typeof addedV==="string"?esc(addedV):"make-up")+'</span><span class="gv-badge" style="background:#bbf7d0;color:#15803d">make-up</span>';
         if(!cell) cell="·";
-        h+='<td class="gv-cell'+(gvFilled(v)||addedV!==undefined?'':' gv-empty')+'"'+(past?'':' onclick="gvOpenCell('+dn+',\''+sk+'\')"')+'>'+cell+'</td>';
+        const picked=gvSelMode&&gvSel.has(dn+"|"+sk);
+        const click=past?'':(gvSelMode?' onclick="gvSelCell('+dn+',\''+sk+'\')"':' onclick="gvOpenCell('+dn+',\''+sk+'\')"');
+        h+='<td class="gv-cell'+(gvFilled(v)||addedV!==undefined?'':' gv-empty')+(picked?' gv-picked':'')+'"'+click+'>'+cell+'</td>';
       }
     }
     h+='</tr>';
