@@ -1228,6 +1228,7 @@ let pnwResult=null;
 let pnwDropped=null;
 let pnwError=null;
 let pnwCarryOverCount=0;
+let pnwCursors=null; // cursor snapshot from the preview generation — rollover report + commit
 let pnwConfigReady=false;
 let pnwExpandedDay=null; // Plan-Week preview: which day's detailed schedule is expanded
 let pnwExpandedKid=null; // Plan-Week preview: optional kid filter for the expanded day (null = all kids)
@@ -20698,6 +20699,7 @@ function renderAdminGenerate(el,headerHtml){
       h+='<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:14px">';
       h+='<div style="font-weight:700;font-size:14px;color:#15803d;margin-bottom:6px">Generated '+gwResult.week.replace("week","Week ")+' — '+tc+' tasks across '+dc+' days</div>';
       if(gwCarryOverCount) h+='<div style="font-size:12px;font-weight:600;color:#7c3aed;margin-bottom:6px">\u{1F501} '+gwCarryOverCount+' carry-over'+(gwCarryOverCount>1?'s':'')+' included from previous week</div>';
+      h+=gwRolloverReportHTML(gwResult.tasks,gwCursors,parseInt((gwResult.week||"").replace(/\D/g,"")||"0"));
       if(gwCalendarSkips&&gwCalendarSkips.length){
         gwCalendarSkips.forEach(s=>{
           const sd=gwParseDate(s.date);
@@ -21453,6 +21455,7 @@ function pnwGenerate(){
   if(gen.error){ pnwError=gen.error; renderPlanNextWeek(); return; }
   pnwError=null;
   pnwResult=gen.result; pnwDropped=gen.dropped; pnwCarryOverCount=gen.carryOverCount||0;
+  pnwCursors=gen.cursors||null;
   gwCalendarSkips=gen.calendarSkips||null;
   pnwStep=1; pnwExpandedDay=null; pnwExpandedKid=null;
   renderPlanNextWeek();
@@ -21461,6 +21464,9 @@ function pnwGenerate(){
 function pnwApply(){
   if(!pnwResult) return;
   gwResult=pnwResult; gwDropped=pnwDropped; gwCarryOverCount=pnwCarryOverCount;
+  // Cursor snapshot from THIS preview's generation — without it gwCommit wrote whatever
+  // stale gwCursors a previous auto-gen left behind (or nothing) to the new week.
+  gwCursors=pnwCursors;
   gwCommit();
   closePlanNextWeek();
 }
@@ -21468,6 +21474,88 @@ function pnwApply(){
 function pnwBack(){
   if(pnwStep>0){ pnwStep--; renderPlanNextWeek(); }
   else closePlanNextWeek();
+}
+
+// ── Week-rollover status card: what falls off the CURRENT week and how the next week
+// absorbs it — per kid, per subject. Shown in the Plan-Next-Week preview (before commit)
+// and on the admin result card. Cursor math mirrors generation: behind = plan-expected
+// minus the live cursor; next week's regular sessions cover its own pace, and catch-up
+// extras (≤ the subject card's Cap) eat the backlog — so "still N behind after" is the
+// honest remainder, with a Builder-rebuild hint when catch-up alone won't clear it.
+function gwRolloverReportHTML(tasks,cursors,targetWeekNum){
+  if(!currData||!currData.subjects||!weekData||!weekData.tasks||!weekData.tasks.length) return "";
+  if(!targetWeekNum||("week"+targetWeekNum)===WK) return ""; // same-week regen: nothing rolls
+  const rows=[], drops={};
+  for(const kid of [...ROSTER]){
+    const subs=currData.subjects[kid]||{};
+    const missedBy={};
+    weekData.tasks.forEach(t=>{
+      if(t.who!==kid||t.id.endsWith("_c")||!t.subjectKey) return;
+      if(chainDone(t.id,checked,weekData.tasks)) return;
+      if(subjNoCarry(t)){
+        const lbl=(subs[t.subjectKey]&&subs[t.subjectKey].display)||t.subjectKey;
+        drops[lbl]=(drops[lbl]||0)+1; return;
+      }
+      (missedBy[t.subjectKey]=missedBy[t.subjectKey]||[]).push(t);
+    });
+    const nextBy={};
+    (tasks||[]).forEach(t=>{
+      if(t.who!==kid||t.id.endsWith("_c")||!t.subjectKey) return;
+      const e=(nextBy[t.subjectKey]=nextBy[t.subjectKey]||{n:0,cu:0});
+      e.n++; if(t.catchup) e.cu++;
+    });
+    const keys=new Set(Object.keys(missedBy)); Object.keys(nextBy).forEach(k=>keys.add(k));
+    for(const sk of keys){
+      const s=subs[sk]||{};
+      if((s.rules||"").includes("first")||(s.rules||"").includes("last")) continue; // daily bookends
+      // Day-bound subjects (noCarry/reflex) never roll — their misses are in the drops line
+      if(s.noCarry||sk==="reflex"||/reflex/i.test(s.display||sk)) continue;
+      const missed=missedBy[sk]||[];
+      const nx=nextBy[sk]||{n:0,cu:0};
+      const cursor=(cursors&&cursors[kid]&&cursors[kid][sk]!==undefined)?cursors[kid][sk]:computeSubjectCursor(kid,sk);
+      const expEnter=currExpectedBase(kid,sk,targetWeekNum-1);
+      const behind=(expEnter==null)?null:Math.max(0,Math.round(expEnter)-cursor);
+      const after=(behind==null)?null:Math.max(0,behind-nx.cu);
+      if(!missed.length&&!nx.cu&&!(behind>0)) continue;
+      const cap=(s.carryoverCap!=null)?s.carryoverCap:2;
+      rows.push({kid:kid,label:s.display||sk,missed:missed,next:nx.n,cu:nx.cu,behind:behind,after:after,cap:cap});
+    }
+  }
+  if(!rows.length&&!Object.keys(drops).length) return "";
+  let h='<div style="background:#fefce8;border:1.5px solid #fde047;border-radius:12px;padding:12px 14px;margin:10px 0;text-align:left">';
+  h+='<div style="font-weight:800;font-size:12px;color:#854d0e;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px">📤 Rolling into Week '+targetWeekNum+'</div>';
+  rows.sort((a,b)=> (a.kid<b.kid?-1:a.kid>b.kid?1:0) || (a.label<b.label?-1:1));
+  let lastKid=null;
+  rows.forEach(r=>{
+    if(r.kid!==lastKid){ h+='<div style="font-weight:800;font-size:12px;color:'+(KID_COLOR[r.kid]||"#374151")+';margin:8px 0 2px">'+cap(r.kid)+'</div>'; lastKid=r.kid; }
+    // Unique lesson labels; a repeating practice subject (labels = the subject name,
+    // e.g. Drills) gets a bare count — "Drills, Drills, Drills" says nothing.
+    const labs=[];
+    r.missed.forEach(t=>{ const m=(t.title||"").match(/—\s*(.+)$/); const l=(m?m[1].trim():(t.title||"")); if(l&&labs.indexOf(l)<0) labs.push(l); });
+    const allSame=labs.length===1&&r.missed.length>1&&labs[0].toLowerCase()===String(r.label||"").toLowerCase();
+    const les=(labs.length&&!allSame)?labs.slice(0,3).join(", ")+(labs.length>3?" +"+(labs.length-3)+" more":""):"";
+    h+='<div style="font-size:12px;color:#374151;padding:2px 0 2px 8px;line-height:1.5">';
+    h+='<b>'+esc(r.label)+'</b> — ';
+    h+=r.missed.length?('missed '+r.missed.length+(les?' <span style="color:var(--muted)">('+esc(les)+')</span>':'')):'behind from earlier';
+    h+=' · next wk '+r.next+' session'+(r.next!==1?'s':'');
+    if(r.cu) h+=' <span style="color:#0f766e;font-weight:700">+'+r.cu+' catch-up</span>';
+    if(r.after!=null){
+      if(r.after>0){
+        const wks=r.cap>0?Math.ceil(r.after/r.cap):null;
+        h+=' · <span style="color:#b45309;font-weight:700">still '+r.after+' behind after</span>';
+        h+=(wks!=null)?' <span style="color:var(--muted)">(~'+wks+' wk'+(wks>1?'s':'')+' more at Cap '+r.cap+')</span>'
+                      :' <span style="color:#991b1b;font-weight:700">(Cap 0 — won\'t self-clear)</span>';
+      } else if(r.behind>0){
+        h+=' · <span style="color:#15803d;font-weight:700">clears the backlog</span>';
+      }
+    }
+    h+='</div>';
+  });
+  const dk=Object.keys(drops);
+  if(dk.length) h+='<div style="font-size:11px;color:var(--muted);margin-top:8px;border-top:1px dashed #fde047;padding-top:6px">Day-bound, drop by design (If-Missed): '+dk.map(k=>drops[k]+"× "+esc(k)).join(" · ")+'</div>';
+  if(rows.some(r=>r.after>0)) h+='<div style="font-size:11px;color:#854d0e;margin-top:6px">💡 Deep backlog on a deadline subject? Subjects → Builder rebuilds the grid forward from the live cursor under its pacing rules.</div>';
+  h+='</div>';
+  return h;
 }
 
 function renderPlanNextWeek(){
@@ -21618,6 +21706,7 @@ function renderPlanNextWeek(){
     if(totalDropped) h+=' · <span style="color:#991b1b">'+totalDropped+' dropped</span>';
     if(r.rolledToNextWeek) h+=' · <span style="color:#b45309" title="Over capacity this week — these roll to next week, where the cursor picks them up">'+r.rolledToNextWeek+' moved to next week</span>';
     h+='</div></div>';
+    h+=gwRolloverReportHTML(r.tasks,pnwCursors,parseInt((r.week||"").replace(/\D/g,"")||"0"));
 
     const KID_COL=KID_COLOR;
     const dayOrder=["monday","tuesday","wednesday","thursday","friday","saturday"];
