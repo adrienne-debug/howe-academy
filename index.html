@@ -12594,6 +12594,26 @@ function gvSelFilledCount(){
   let n=0; gvSel.forEach(k=>{ const [dn,sk]=k.split("|"); if(gvFilled((lessons[dn]||{})[sk])) n++; });
   return n;
 }
+// Keep a card's lessonSeq in lockstep with its grid cells (card-origin subjects like HWT).
+// After a bulk clear/fill the grid is authoritative, so rebuild lessonSeq from the grid in
+// dayNum order — otherwise the stale card copy could resurrect cleared lessons if the grid
+// were ever fully emptied. Folds the writes into `patch`; returns {sk:prevSeq} for undo.
+// Only touches subjects that actually have a lessonSeq (pure-Excel subjects have none).
+function gvSyncSeqInto(patch,subsArr,kid){
+  const lessons=(currData.lessons||{})[kid]||{};
+  const dns=Object.keys(lessons).map(Number).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
+  const seqUndo={};
+  (subsArr||[]).forEach(sk=>{
+    const s=(currData.subjects[kid]||{})[sk];
+    if(!s||!s.lessonSeq) return;               // not a card-origin subject
+    const newSeq=[];
+    for(const dn of dns){ const v=(lessons[dn]||{})[sk]; if(gvFilled(v)) newSeq.push(String(v)); }
+    seqUndo[sk]=s.lessonSeq.slice();
+    s.lessonSeq=newSeq;
+    patch["subjects/"+kid+"/"+sk+"/lessonSeq"]=newSeq;
+  });
+  return seqUndo;
+}
 // Bulk clear every selected FILLED cell in one atomic write, with one-level undo.
 function gvSelClear(){
   if(!db) return;
@@ -12608,11 +12628,12 @@ function gvSelClear(){
   });
   const n=Object.keys(patch).length;
   if(!n){ gvSelDeselect(); return; }
+  const seqUndo=gvSyncSeqInto(patch,[...subs],gvKid);
   patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
   db.ref("curriculum").update(patch);
   subs.forEach(sk=>gvRecountTotal(gvKid,sk));
   buildCurrPaceCum();
-  gvSelUndo={kid:gvKid,undo,subs:[...subs]};
+  gvSelUndo={kid:gvKid,undo,seqUndo,subs:[...subs]};
   gvSel=new Set(); gvSelAnchor=null;
   gwShowToast("Cleared "+n+" cell"+(n!==1?"s":"")+" — tap Undo to restore");
   gvGrabScroll(); renderAll();
@@ -12633,24 +12654,31 @@ function gvSelFill(){
     undo[p]=(lessons[dn][sk]!==undefined?lessons[dn][sk]:null);
     lessons[dn][sk]=v; patch[p]=v; subs.add(sk);
   });
+  const seqUndo=gvSyncSeqInto(patch,[...subs],gvKid);
   patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
   db.ref("curriculum").update(patch);
   subs.forEach(sk=>gvRecountTotal(gvKid,sk));
   buildCurrPaceCum();
-  gvSelUndo={kid:gvKid,undo,subs:[...subs]};
+  gvSelUndo={kid:gvKid,undo,seqUndo,subs:[...subs]};
   const n=gvSel.size; gvSel=new Set(); gvSelAnchor=null;
   gwShowToast("Filled "+n+" cell"+(n!==1?"s":"")+" — tap Undo to restore");
   gvGrabScroll(); renderAll();
 }
 function gvSelUndoApply(){
   if(!gvSelUndo||!db) return;
-  const {kid,undo,subs}=gvSelUndo;
+  const {kid,undo,seqUndo,subs}=gvSelUndo;
   const lessons=(currData.lessons||{})[kid]||{};
   const patch={};
   Object.keys(undo).forEach(p=>{
     const val=undo[p]; patch[p]=val;
     const parts=p.split("/"); const dn=parts[2], sk=parts[3];
     if(lessons[dn]){ if(val===null) delete lessons[dn][sk]; else lessons[dn][sk]=val; }
+  });
+  // Restore the exact prior lessonSeq for any card-origin subjects we synced.
+  Object.keys(seqUndo||{}).forEach(sk=>{
+    const prev=seqUndo[sk];
+    patch["subjects/"+kid+"/"+sk+"/lessonSeq"]=prev;
+    if(currData.subjects[kid]&&currData.subjects[kid][sk]) currData.subjects[kid][sk].lessonSeq=prev;
   });
   patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
   db.ref("curriculum").update(patch);
