@@ -3185,6 +3185,34 @@ function renderScheduleBreakCard(brk){
 // generation, catch-up dates, the cascade spread and the re-pack all respect it.
 let schedDayOffOpen=false;
 function schedDayOffToggleOpen(){ schedDayOffOpen=!schedDayOffOpen; renderAll(); }
+
+// One-tap "regenerate this week from right now" (Mom-only button on the day banner).
+// Re-lays the CURRENT week: completed work stays checked (gwCommit re-matches checks by
+// title+who+day after the re-key), and everything not yet done is planned fresh from this
+// moment forward — so open tasks can move day/time. Loads the week's real shape config
+// (Saturday, skip days, sitter) from weekConfig so a regenerate doesn't silently drop
+// Saturday etc. Reuses the exact runGenerateWeek → gwCommit path the Admin wizard commits
+// with; the only thing skipped is the preview screen (the confirm below is the guardrail).
+function schedRegenerateNow(){
+  if(!momHere()) return;
+  const wn=currWeekNum();
+  if(!currData||!currData.subjects){ if(typeof gwShowToast==="function") gwShowToast("Curriculum still loading — try again in a moment."); return; }
+  if(!confirm("⚠️ Regenerate Week "+wn+" from right now?\n\nThis re-plans the week from this moment in time. Work already checked off stays done — everything not yet finished is laid out fresh from now, so open tasks may move to different days and times.\n\nThis can't be undone. Continue?")) return;
+  const _run=(v)=>{
+    if(v){
+      const rawMag=v.babysitter||v.maggie||{};
+      const normMag={}; for(const[k,val] of Object.entries(rawMag)) normMag[k]=gwNormSitter(val);
+      gwConfig={weekNum:v.weekNum||String(wn),babysitter:normMag,withSitter:v.withSitter||(rulesData&&rulesData.withSitter)||[],skipDays:v.skipDays||[],lateStart:v.lateStart||{},carSchool:v.carSchool||{},theater:!!v.theater,saturday:!!v.saturday,redistribute:v.redistribute||[],autoAdvance:true};
+    } else {
+      gwConfig={weekNum:String(wn),babysitter:{},withSitter:(rulesData&&rulesData.withSitter)||[],skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:false,redistribute:[],autoAdvance:true};
+    }
+    gwResult=null;               // don't let a stale preview commit if generation errors out
+    runGenerateWeek();           // sets gwResult / gwCursors (or toasts + leaves gwResult null)
+    if(gwResult){ gwCommit(); if(typeof gwShowToast==="function") gwShowToast("Week "+wn+" regenerated from now ✓"); }
+  };
+  if(db){ db.ref("weekConfig/"+wn).once("value",s=>_run(s.val())); }
+  else _run(null);
+}
 function _schedDayISO(dn){
   if(!DAY_DT[dn]) return null;
   const d=new Date(DAY_DT[dn]+", "+new Date().getFullYear());
@@ -3291,7 +3319,8 @@ function renderSchedule(el){
   let h='<div class="day-banner" style="--day-color:'+col+'">'+
     '<div class="day-banner-inner">'+
     '<div><div class="day-name">'+(DAY_LBL[day]||day)+'<button class="bo-btn" onclick="openBoDialog(\''+day+'\')">+ Blockout</button>'+
-    (momHere()?'<button class="bo-btn" onclick="schedDayOffToggleOpen()">😷 Kid Off</button>':'')+'</div>'+
+    (momHere()?'<button class="bo-btn" onclick="schedDayOffToggleOpen()">😷 Kid Off</button>':'')+
+    (momHere()?'<button class="bo-btn" onclick="schedRegenerateNow()">🔄 Regenerate</button>':'')+'</div>'+
     '<div class="day-date">'+_dayDate(day)+" · "+(weekData.week||WK).replace("week","Week ")+'</div>'+
     '<div class="day-window">'+win+'</div></div>'+
     '<div class="day-pct-badge">'+pct+'%</div></div>'+
