@@ -1081,6 +1081,25 @@ const FB_CFG = {
 // ── CODE VERSION — auto-computed hash, no manual bumping needed ──
 const CODE_VERSION = (function(){var s=document.documentElement.outerHTML;var h=0;for(var i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0;}return Math.abs(h);})();
 
+// Register the network-first service worker so every load pulls the latest deployed code
+// automatically — no cache-clearing, private windows, or manual reloads ever again. Once
+// installed, the SW fetches the app HTML fresh from the network each load (cached copy is
+// only an offline fallback). Bootstraps once; from then on stale-code is impossible online.
+// Feature-detected + wrapped so it can never break the app if SW isn't available.
+if('serviceWorker' in navigator && location.protocol==='https:'){
+  try{
+    navigator.serviceWorker.register('sw.js').then(function(reg){
+      // When a new SW takes control (a fresh deploy of sw.js itself), reload once so the
+      // page is served by the new worker. Guarded against reload loops.
+      navigator.serviceWorker.addEventListener('controllerchange', function(){
+        if(!sessionStorage.getItem('ha_sw_reloaded')){ sessionStorage.setItem('ha_sw_reloaded','1'); location.reload(); }
+      });
+      // Poll for a new SW version every few minutes so long-running tablets pick up deploys.
+      setInterval(function(){ try{ reg.update(); }catch(e){} }, 5*60*1000);
+    }).catch(function(){});
+  }catch(e){}
+}
+
 // ── CONSTANTS ────────────────────────────────────────────────────
 let WK = localStorage.getItem("ha_active_wk") || "week3";
 const DAYS = ["monday","tuesday","wednesday","thursday","friday","saturday"];
