@@ -6780,15 +6780,18 @@ function ceRenderEditSheet(){
     });
   }
 
-  // If-missed behavior — carries forward (default) vs day-bound drop (notebooks, daily drills)
-  h+='<div class="ce-sheet-lbl">If Missed</div>';
+  // Daily work vs regular grid subject. "Daily work" = done fresh every day, off the grid
+  // (notebooks, reflex, daily drills): the scheduler lays it in AROUND the graded work each
+  // day (never walling it), and a missed day is simply missed. Any new daily subject just
+  // gets flagged here — no code change needed.
+  h+='<div class="ce-sheet-lbl">Daily Work</div>';
   h+='<div class="ce-chips">';
-  h+='<div class="ce-chip'+(!s.noCarry?" sel":"")+'" onclick="ceSaveField(\'noCarry\',null);ceRenderEditSheet()">Carries forward</div>';
-  h+='<div class="ce-chip'+(s.noCarry?" sel":"")+'" onclick="ceSaveField(\'noCarry\',true);ceRenderEditSheet()">Drops that day</div>';
+  h+='<div class="ce-chip'+(!s.noCarry?" sel":"")+'" onclick="ceSaveField(\'noCarry\',null);ceRenderEditSheet()">Regular subject</div>';
+  h+='<div class="ce-chip'+(s.noCarry?" sel":"")+'" onclick="ceSaveField(\'noCarry\',true);ceRenderEditSheet()">Daily work</div>';
   h+='</div>';
   h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">'+(s.noCarry
-    ?'A missed day is simply missed — never moved to a later day or carried into next week (right for daily bookends like notebooks).'
-    :'Missed work chases forward: swept into later days and carried into next week until done.')+'</div>';
+    ?'Done fresh every day, like notebooks &amp; reflex. Laid in around the graded work (never walls the day); a missed day is simply missed — never moved to a later day or carried into next week.'
+    :'A graded, sequential subject on the grid. Missed work chases forward: swept into later days and carried into next week until done.')+'</div>';
 
   // Priority
   h+='<div class="ce-sheet-lbl">Priority</div>';
@@ -8769,6 +8772,9 @@ function cascadeIntraWeek(sweepTodayElapsed){
     });
   })();
   const _prefIdx=t=>{ const i=dayOrder.indexOf(_prefDay.get(t)); return i<0?todayIdx:i; };
+  // Daily work (reflex/Daily-work cards) that overflowed a full day's pack — it never chains
+  // to another day, so the wrap-up pass parks it at end-of-day on its own day instead.
+  const _wrapDaily=new Set();
   // Now-floor: on TODAY, place swept work no earlier than the current clock time (_nowMin,
   // hoisted above) so catch-up never lands in an already-elapsed slot (after school ends,
   // today is full → work flows to later open days).
@@ -8835,11 +8841,14 @@ function cascadeIntraWeek(sweepTodayElapsed){
     if(repack){
       const frozen=[], mergedOld=[];
       existingAll.forEach(t=>{
-        // Day-bound (subjNoCarry: reflex, card noCarry) freeze too — merging one lets the
-        // packer overflow it to the NEXT day, which the snap-back then fights right back
-        // (seen live: Ellis Reflex thursday→friday→thursday). Closings still sit out for
-        // the closing-last pass.
-        if(checked[t.id]||(claimed&&claimed[t.id])||_isMorn(t)||(subjNoCarry(t)&&!_isClose(t))) frozen.push(t);
+        // Only done work + the morning notebook (a true day-start anchor) SEED the day
+        // cursors. DAILY WORK (reflex, "Daily work" cards) is RE-LAID with the graded work —
+        // reflex is a computer task, so the packer places it in its own device lane at its
+        // workflow-ranked time, right alongside the kid's other computer work. It is never
+        // FROZEN at a stale slot, which is what used to wall the whole day (a Reflex stranded
+        // at 2:15 PM seeded the computer cursor and dumped everything past it onto Saturday).
+        // Closings still sit out for the closing-last pass.
+        if(checked[t.id]||(claimed&&claimed[t.id])||_isMorn(t)) frozen.push(t);
         else if(!_isClose(t)) mergedOld.push(t);
       });
       const merged=mergedOld.concat(tryHere);
@@ -8847,14 +8856,16 @@ function cascadeIntraWeek(sweepTodayElapsed){
       overflow=packAround(frozen,merged,ctx);
       // The overflow can now include the day's ORIGINAL open tasks — chain them forward
       // exactly like arrivals (chip shows where they came from; the lesson-order pass
-      // below keeps sequences in day order). Day-bound tasks never chain (belt — frozen
-      // ones can't overflow anyway).
+      // below keeps sequences in day order). Daily work (reflex) is day-bound and NEVER
+      // chains to another day: if a full day couldn't fit it, park it for the end-of-day
+      // wrap-up fallback on its own day instead.
       overflow.forEach(t=>{
-        if(subjNoCarry(t)) return;
+        if(subjNoCarry(t)){ _wrapDaily.add(t); return; }
         if(!poolSet.has(t)){ pool.push(t); poolSet.add(t); t.cascadedFrom=t.cascadedFrom||dn; _prefDay.set(t,dn); }
       });
     } else {
-      // Mid-day today: tasks already on the day stay put, arrivals pack around them.
+      // Mid-day today: tasks already on the day stay put (each at its real time, seeding its
+      // own device lane so arrivals pack around it), and arrivals pack around them.
       overflow=packAround(existingAll,tryHere,ctx);
     }
     const overflowSet=new Set(overflow);
@@ -8920,13 +8931,29 @@ function cascadeIntraWeek(sweepTodayElapsed){
   // after the wrap-up (a stacked closing sits right behind the day's own).
   for(let di=todayIdx; di<dayOrder.length; di++){
     const dn=dayOrder[di]; const byKid={};
+    const _sdOv=(sd.overrides||{})[dn]||{};
+    const _dStart=toMin(_sdOv.start||sd.defaultStart||"10:00 AM");
     weekData.tasks.forEach(t=>{ if(t.day===dn&&!t.id.endsWith("_c")&&!checked[t.id]){ (byKid[t.who]=byKid[t.who]||[]).push(t); } });
     Object.keys(byKid).forEach(function(who){
-      const mine=byKid[who], closes=mine.filter(_isClose), others=mine.filter(t=>!_isClose(t));
-      if(!closes.length) return;
-      // On a mid-day regen, today's closing can't sit in elapsed time even when the kid
+      const mine=byKid[who], closes=mine.filter(_isClose);
+      // On a mid-day regen, today's bookends can't sit in elapsed time even when the kid
       // has nothing else left today (Lucy's 10:05 AM closing at a 1 PM regen).
       const floor=(sweepTodayElapsed&&dn===today)?_nowMin:0;
+      // ── Daily work that OVERFLOWED a full day's pack (couldn't fit in its device lane and
+      // can't chain to another day): park it in the wrap-up zone — right after this kid's last
+      // graded task, before the closing — so it still happens without walling or overlapping.
+      // Reflex that DID fit stays where the packer put it (in its computer lane), untouched.
+      const daily=mine.filter(t=>_wrapDaily.has(t));
+      if(daily.length){
+        const work=mine.filter(t=>!_isClose(t)&&daily.indexOf(t)<0); // morning + graded work
+        let wEnd=Math.max(floor,_dStart);
+        work.forEach(t=>{ const e=toMin(t.time)+(t.dur||20); if(e>wEnd)wEnd=e; });
+        daily.sort((a,b)=>toMin(a.time)-toMin(b.time));
+        daily.forEach((a,i)=>{ a.time=fromMin(wEnd+i*(a.dur||20)); });
+      }
+      if(!closes.length) return;
+      // Closings land after EVERYTHING (graded + the just-placed daily work).
+      const others=mine.filter(t=>!_isClose(t));
       if(!others.length){
         closes.sort((a,b)=>toMin(a.time)-toMin(b.time));
         closes.forEach((c,i)=>{ if(floor&&toMin(c.time)<floor) c.time=fromMin(floor+i*(c.dur||20)); });
@@ -9021,6 +9048,64 @@ function cascadeIntraWeek(sweepTodayElapsed){
   // A swept task that landed back on its own day isn't a carry — drop the badge
   // (happens when a mid-day regen re-places an elapsed slot later the same day).
   weekData.tasks.forEach(t=>{ if(t.cascadedFrom&&t.cascadedFrom===t.day) delete t.cascadedFrom; });
+
+  // ── Gap-backfill (resource-aware): float work that does NOT need exclusive Mom UP into an
+  // earlier idle gap so it isn't stranded at the end of the day behind a Mom-wait. Eligible =
+  // independent work (reflex, TTRS, a solo device task) AND may-need-Mom work (mom="maybe",
+  // which the rules let run alongside other work — ok_simultaneous). It moves a task ONLY into
+  // a slot where (a) the kid is free, (b) its device lane is free ACROSS ALL KIDS, and (c)
+  // lunch isn't crossed — occupancy counts every task on the day incl. checked/notebooks, so
+  // it can't land on one. Only mom="required" (which truly serializes on Mom) is never floated,
+  // so the exclusive-Mom schedule can't shift. Skips any subject with a sibling on the same day
+  // (never reorders a lesson sequence) and never moves a task before "now" on today. Finally
+  // re-tucks each kid's closing notebook so no gap sits before the wrap-up.
+  {
+    const _laneOf=t=>{ const dv=t.device||taskDevice(t); if(dv==="ipad"&&t.who==="lucy") return "ipadLucy"; if(dv==="ipad"||dv==="phone"||dv==="ipad/phone") return "screen"; if(dv==="computer") return "computer"; return null; };
+    const _ovl=(s,e,iv)=>s<iv[1]&&e>iv[0];
+    for(let di=todayIdx; di<dayOrder.length; di++){
+      const dn=dayOrder[di];
+      const sdOv=(sd.overrides||{})[dn]||{};
+      const dStart=toMin(sdOv.start||sd.defaultStart||"10:00 AM");
+      const lunchS=toMin(sdOv.lunchStart||sd.lunchStart||"1:00 PM");
+      const lunchE=toMin(sdOv.lunchEnd||sd.lunchEnd||"2:00 PM");
+      const floor=(dn===today)?Math.max(dStart,_nowMin):dStart;
+      const occ=weekData.tasks.filter(t=>t.day===dn&&!t.id.endsWith("_c")&&!t._eowOverflow);
+      if(!occ.length) continue;
+      const subjCount={};
+      occ.forEach(t=>{ if(_isNote(t)) return; const k=t.who+"|"+taskSubject(t); subjCount[k]=(subjCount[k]||0)+1; });
+      const laneIv=lane=>occ.filter(t=>_laneOf(t)===lane).map(t=>[toMin(t.time),toMin(t.time)+(t.dur||20),t]);
+      const kidIv=who=>occ.filter(t=>t.who===who).map(t=>[toMin(t.time),toMin(t.time)+(t.dur||20),t]);
+      occ.filter(t=>!checked[t.id]&&!_isNote(t)&&t.mom!=="required"&&subjCount[t.who+"|"+taskSubject(t)]===1)
+        .sort((a,b)=>toMin(a.time)-toMin(b.time))
+        .forEach(t=>{
+          const d=t.dur||20, lane=_laneOf(t), cur=toMin(t.time);
+          if(cur<=floor) return;
+          const bounds=new Set([floor]);
+          kidIv(t.who).forEach(iv=>{ if(iv[2]!==t&&iv[1]<=cur&&iv[1]>=floor) bounds.add(iv[1]); });
+          let best=null;
+          [...bounds].filter(s=>s<cur).sort((a,b)=>a-b).forEach(s=>{
+            if(best!=null) return;
+            if(s<lunchE&&s+d>lunchS) return;                 // don't straddle/overlap lunch
+            if(s+d>cur) return;                              // must actually be earlier
+            const e=s+d;
+            if(kidIv(t.who).some(iv=>iv[2]!==t&&_ovl(s,e,iv))) return;      // kid free
+            if(lane&&laneIv(lane).some(iv=>iv[2]!==t&&_ovl(s,e,iv))) return; // device lane free (all kids)
+            best=s;
+          });
+          if(best!=null&&best<cur) t.time=fromMin(best);
+        });
+      // Re-tuck each kid's closing notebook right after their (possibly now-earlier) last task.
+      const byKid={};
+      weekData.tasks.forEach(t=>{ if(t.day===dn&&!t.id.endsWith("_c")&&!checked[t.id]) (byKid[t.who]=byKid[t.who]||[]).push(t); });
+      Object.keys(byKid).forEach(function(who){
+        const mine=byKid[who], closes=mine.filter(_isClose), others=mine.filter(t=>!_isClose(t));
+        if(!closes.length||!others.length) return;
+        let lastEnd=0; others.forEach(t=>{ const e=toMin(t.time)+(t.dur||20); if(e>lastEnd)lastEnd=e; });
+        closes.sort((a,b)=>toMin(a.time)-toMin(b.time));
+        closes.forEach((c,i)=>{ if(toMin(c.time)>lastEnd) c.time=fromMin(lastEnd+i*(c.dur||20)); });
+      });
+    }
+  }
 
   sv(WK+"_tasks",weekData.tasks);
   safeWriteTasks("cascade");
