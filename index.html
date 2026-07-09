@@ -8804,17 +8804,21 @@ function cascadeIntraWeek(sweepTodayElapsed){
       // END-OF-WEEK OVERFLOW: don't force it onto a day. Flag it so it drops out of the
       // kids' schedule entirely and shows only in the Mom-only "carries to next week" box
       // (checkable by Mom for a Sunday catch-up; otherwise it rolls to next week, in
-      // sequence via the lesson-order pass + auto-advance). Uncapped subjects keep the
-      // original force-stack so nothing an un-capped kid needs silently vanishes.
+      // sequence via the lesson-order pass + auto-advance).
       if(isCatchupCapped(taskSubject(t))){ t._eowOverflow=true; return; }
       for(let di=dayOrder.length-1; di>=todayIdx; di--){
         const dn=dayOrder[di], ds=_cascDate(dn);
         if(ds&&smapIsKidOff(t.who,ds)) continue;
         const ov=(sd.overrides||{})[dn]||{};
-        // With a Saturday cutoff set, the un-fittable stack AT the cutoff — the packers
-        // never place work there, so "time ≥ cutoff" = the will-carry list (banner reads it).
         const _cut=(dn==="saturday")?satCutoffMin():null;
-        t.day=dn; t.time=fromMin(_cut!=null?_cut:(toMin(ov.end||sd.defaultEnd||"4:15 PM")-20)); break;
+        // With a Saturday cutoff set, work that only fits past it is END-OF-WEEK overflow:
+        // it does NOT land on the kids' Saturday at all. Flag it so it drops off the
+        // schedule (+ all completion counts) and shows only in the Mom-only "Carries to
+        // Next Week" box, rolling into next week in sequence. Without a cutoff (or when the
+        // last working day is earlier than Saturday) keep the legacy force-stack so nothing
+        // an un-capped kid needs silently vanishes.
+        if(_cut!=null){ t._eowOverflow=true; break; }
+        t.day=dn; t.time=fromMin(toMin(ov.end||sd.defaultEnd||"4:15 PM")-20); break;
       }
     });
   }
@@ -20621,13 +20625,13 @@ function renderEowOverflowBox(kid){
   if(!items.length) return "";
   let h='<div style="margin:10px 12px 0;border-left:4px solid #b45309;background:#fff7ed;border-radius:0 10px 10px 0;padding:10px 12px">';
   h+='<div style="font-size:11px;font-weight:800;color:#b45309;margin-bottom:2px;text-transform:uppercase;letter-spacing:0.4px">&#128230; Carries to Next Week &middot; Mom only</div>';
-  h+='<div style="font-size:10.5px;color:#b45309;margin-bottom:8px">Over the per-subject catch-up limit, so the kids don\'t see these. Kept in sequence — tick one off if it gets done (a Sunday, say); otherwise it rolls into next week.</div>';
+  h+='<div style="font-size:10.5px;color:#b45309;margin-bottom:8px">Didn\'t fit by the end of the week (past the Saturday cutoff, or over a subject\'s catch-up limit) — so the kids don\'t see these. Kept in sequence — tick one off if it gets done (a Sunday, say); otherwise it rolls into next week.</div>';
   const byKid={};
   items.forEach(t=>{ (byKid[t.who]=byKid[t.who]||[]).push(t); });
   [...ROSTER].forEach(k=>{
     if(!byKid[k]) return;
-    h+='<div style="display:flex;align-items:center;gap:5px;margin:6px 0 3px"><span class="kid-badge badge-'+k+'" style="font-size:9px;padding:1px 6px">'+cap(k)+'</span><span style="font-size:10px;color:#b45309;font-weight:600">'+byKid[k].length+' over limit</span></div>';
-    byKid[k].sort((a,b)=>toMin(a.time)-toMin(b.time)).forEach(t=>{ h+=taskCard(t,"Over catch-up limit",false,null); });
+    h+='<div style="display:flex;align-items:center;gap:5px;margin:6px 0 3px"><span class="kid-badge badge-'+k+'" style="font-size:9px;padding:1px 6px">'+cap(k)+'</span><span style="font-size:10px;color:#b45309;font-weight:600">'+byKid[k].length+' carrying over</span></div>';
+    byKid[k].sort((a,b)=>toMin(a.time)-toMin(b.time)).forEach(t=>{ h+=taskCard(t,"Carries to next week",false,null); });
   });
   h+='</div>';
   return h;
@@ -20642,7 +20646,7 @@ function renderSatCutoffBanner(day, kid){
   const cut=satCutoffMin();
   if(cut==null) return "";
   const kidMatch=t=>(kid==="all"||kid==="mom")?true:t.who===kid;
-  const late=weekData.tasks.filter(t=>t.day==="saturday"&&!String(t.id).endsWith("_c")&&!checked[t.id]&&kidMatch(t)&&toMin(t.time)>=cut);
+  const late=weekData.tasks.filter(t=>t.day==="saturday"&&!String(t.id).endsWith("_c")&&!t._eowOverflow&&!checked[t.id]&&kidMatch(t)&&toMin(t.time)>=cut);
   if(!late.length) return "";
   let h='<div style="margin:0 12px 8px;border-left:4px solid #f59e0b;background:#fffbeb;border-radius:0 10px 10px 0;padding:10px 12px">';
   h+='<div style="font-size:11px;font-weight:800;color:#b45309;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.4px">&#9203; Past the '+fromMin(cut)+' Saturday cutoff — carries to next week</div>';
