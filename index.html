@@ -3723,7 +3723,7 @@ function finalizeDone(id, doneTs, score){
           if(!isNaN(dd.getTime())&&dd.getMonth()===cd.getMonth()&&dd.getDate()===cd.getDate()){ movedDay=dn; break; }
         }
       }
-      if(movedDay&&movedDay!==t.day&&!subjNoCarry(t)){
+      if(movedDay&&movedDay!==t.day){
         t.day=movedDay;
         t.time=fromMin(cd.getHours()*60+cd.getMinutes());
         if(t.cascadedFrom===t.day) delete t.cascadedFrom;
@@ -3734,23 +3734,6 @@ function finalizeDone(id, doneTs, score){
         lastTasksWrite=Date.now();
         if(db&&!_dryRun()){ const _mu={}; _mu[id+"/day"]=movedDay; _mu[id+"/time"]=t.time; db.ref(WK+"/tasks").update(_mu); }
         dbg("checkoff heal: "+id+" → "+movedDay+" "+t.time);
-      } else if(movedDay&&movedDay!==t.day&&subjNoCarry(t)){
-        // Credit-day-performed for a DAILY: a daily is one-per-day and day-pinned, so
-        // checking it on another calendar day means "that day's daily got done", not
-        // "move this one." Move the CREDIT to that day's sibling daily (same who+subject)
-        // instead of relocating the object. If that day has no daily (dropped/skip day),
-        // leave the check where it is (credit its own day).
-        const sib=weekData.tasks.find(x=>x.who===t.who&&x.subjectKey===t.subjectKey&&x.day===movedDay&&!x.id.endsWith("_c"));
-        if(sib&&sib.id!==id){
-          delete checked[id]; checked[sib.id]=doneTs;
-          sv(WK+"_checked",checked); lastCheckedWrite=Date.now();
-          if(db) db.ref(WK+"/checked").set(checked);
-          const _sh={...(hist[id]||{}),id:sib.id,who:sib.who,title:sib.title,day:sib.day,originalDay:sib.day,checkedOnDay:movedDay};
-          delete hist[id]; delete histState[id]; hist[sib.id]=_sh; histState[sib.id]=_sh;
-          sv(WK+"_history",hist);
-          if(db){ db.ref(WK+"/history/"+id).remove(); db.ref(WK+"/history/"+sib.id).set(_sh); }
-          dbg("daily credit-day-performed: check "+id+" → "+sib.id+" ("+movedDay+")");
-        }
       } else {
         bumpSkippedInTier(t);
       }
@@ -8549,7 +8532,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
   let _healMoved=false;
   const _histFix={};
   weekData.tasks.forEach(t=>{
-    if(!checked[t.id]||t.id.endsWith("_c")||subjNoCarry(t)) return;
+    if(!checked[t.id]||t.id.endsWith("_c")) return;
     const cd=_parseCheckTs(checked[t.id]);
     if(cd){
       for(const dn of dayOrder){
@@ -23301,15 +23284,7 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
     const rules=s.rules||"";
     if(rules.includes("no-fri")&&isFriday){ dropped.push({kid,day:dayName,key,val:excelVal,reason:"Not scheduled on Fridays (Excel rule)"}); return; }
     if(rules.includes("mon-thu")&&!["monday","tuesday","wednesday","thursday"].includes(dayName)){ dropped.push({kid,day:dayName,key,val:excelVal,reason:"Mon–Thu only (Excel rule)"}); return; }
-    // Daily (noCarry) subjects get a STABLE, day-encoding id — prefix already carries the
-    // day, so (day,kid,subject) → the same id every regenerate. Checks then carry by id and
-    // same-titled dailies (drills, notebooks) can never smear/duplicate across days the way
-    // a volatile counter id did. Non-dailies keep the running counter. The meta[id] guard
-    // handles the impossible-but-safe case of a doubled daily on one day.
-    const _isDaily=!!(s&&s.noCarry)||key==="reflex";
-    let id;
-    if(_isDaily){ id=prefix+kid+"_"+key; if(meta[id]) id=prefix+kid+"_"+key+"_"+(counter++); }
-    else { id=prefix+(counter++); }
+    const id=prefix+(counter++);
     items.push({id,who:kid,device:s.device||"paper",dur:s.minutes||20,mom:s.mom||"none"});
     meta[id]={kid,key,excelVal,s};
   }
@@ -24277,7 +24252,6 @@ function gwCommit(){
       const newByTW={};
       d.tasks.forEach(t=>{
         if(snapChecked[t.id]) return;
-        if(subjNoCarry(t)) return; // dailies are day-pinned: never cross-day rematch
         const tw=(t.title||"")+"|"+(t.who||"");
         (newByTW[tw]=newByTW[tw]||[]).push(t);
       });
