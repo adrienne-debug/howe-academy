@@ -6441,6 +6441,54 @@ function ceToggleField(field){
   const cur=!!currData.subjects[ceEditKid][ceEditKey][field];
   ceSaveField(field,!cur);
 }
+// Renaming a subject's display name carries the two Rules settings that reference it BY NAME,
+// so a rename doesn't silently orphan them:
+//   (a) Max-Per-Day cap — maxPerDay is keyed by display name (the scheduler looks it up that
+//       way). A name can be shared across kids, so we COPY the cap onto the new name (unless
+//       one already lives there — then this subject just joins it) and only DROP the old entry
+//       when no other active subject still uses the old name.
+//   (b) Workflow-order overrides for THIS kid — steps can name a specific subject to pin its
+//       run order. Those entries are matched by substring at runtime, so we rewrite ONLY the
+//       ones that EXACTLY equal the old display (the unambiguous "this subject" case) and leave
+//       intentional partial keywords alone.
+// ceSaveField has already written the new display, so the "still used" scan below naturally
+// excludes this very subject.
+function ceRenameSubject(newVal){
+  if(!currData||!ceEditKid||!ceEditKey) return;
+  const oldDisp=(ceGetSubject()||{}).display||"";
+  ceSaveField("display",newVal);
+  const newDisp=newVal;
+  if(oldDisp&&newDisp&&oldDisp!==newDisp&&rulesData){
+    const r=JSON.parse(JSON.stringify(rulesData));
+    let dirty=false;
+    // (a) Max-Per-Day cap
+    if(r.maxPerDay&&r.maxPerDay[oldDisp]){
+      if(!r.maxPerDay[newDisp]) r.maxPerDay[newDisp]=r.maxPerDay[oldDisp];
+      let stillUsed=false;
+      [...ROSTER].forEach(k=>{ const subs=(currData.subjects&&currData.subjects[k])||{}; for(const sk in subs){ if(!subs[sk].paused&&(subs[sk].display||"")===oldDisp) stillUsed=true; } });
+      if(!stillUsed) delete r.maxPerDay[oldDisp];
+      dirty=true;
+    }
+    // (b) Workflow-order overrides for this kid (normal + babysitter day)
+    const wf=r.workflow&&r.workflow[ceEditKid];
+    if(wf){
+      const oldL=oldDisp.trim().toLowerCase();
+      ["normal","babysitter"].forEach(mode=>{
+        const steps=fbArr(wf[mode]); if(!steps||!steps.length) return;
+        let modeDirty=false;
+        steps.forEach(st=>{
+          const subs=fbArr(st&&st.subjects); if(!subs||!subs.length) return;
+          let stepChanged=false;
+          const nn=subs.map(x=>{ if(String(x).trim().toLowerCase()===oldL){ stepChanged=true; return newDisp; } return x; });
+          if(stepChanged){ st.subjects=nn; modeDirty=true; }
+        });
+        if(modeDirty){ wf[mode]=steps; dirty=true; }
+      });
+    }
+    if(dirty) saveRules(r);
+  }
+  ceRenderEditSheet();
+}
 function ceToggleMomVerifyKid(k){
   if(!currData) return;
   if(!currData.momVerifyKid) currData.momVerifyKid={};
@@ -6684,7 +6732,7 @@ function ceRenderEditSheet(){
 
   // Display name
   h+='<div class="ce-sheet-lbl">Display Name</div>';
-  h+='<input class="ce-sheet-input" value="'+esc(s.display)+'" onchange="ceSaveField(\'display\',this.value);ceRenderEditSheet()">';
+  h+='<input class="ce-sheet-input" value="'+esc(s.display)+'" onchange="ceRenameSubject(this.value)">';
 
   // Device
   h+='<div class="ce-sheet-lbl">Device</div>';
@@ -6800,6 +6848,22 @@ function ceRenderEditSheet(){
     h+='<div class="ce-chip'+((s.priority||"normal")===p?" sel":"")+'" onclick="ceSaveField(\'priority\',\''+p+'\');ceRenderEditSheet()">'+cap(p)+'</div>';
   });
   h+='</div>';
+
+  // Max Per Day — caps how many times this subject runs in one day during catch-up. Stored
+  // in config/rules.maxPerDay keyed by the subject's DISPLAY NAME (exactly what the scheduler
+  // reads via catchupDayCap), so this card edits the very same data the engine uses — the
+  // Rules → Per-Subject Settings mirror reflects it. Reuses rulesUpdateMax (auto-creates the
+  // entry, blank → null).
+  h+='<div class="ce-sheet-lbl">Max Per Day</div>';
+  {
+    const _mpc=(rulesData&&rulesData.maxPerDay&&rulesData.maxPerDay[s.display])||{};
+    const _mpk=esc(s.display).replace(/'/g,"\\'");
+    h+='<div class="ce-sheet-row"><label>Weekday</label>';
+    h+='<input class="ce-sheet-input" type="number" min="0" max="10" placeholder="'+DEFAULT_DAY_CAP+' (default)" value="'+(_mpc.max!=null?_mpc.max:"")+'" onchange="rulesUpdateMax(\''+_mpk+'\',\'max\',this.value)"></div>';
+    h+='<div class="ce-sheet-row"><label>Saturday</label>';
+    h+='<input class="ce-sheet-input" type="number" min="0" max="10" placeholder="same as weekday" value="'+(_mpc.saturday_max!=null?_mpc.saturday_max:"")+'" onchange="rulesUpdateMax(\''+_mpk+'\',\'saturday_max\',this.value)"></div>';
+    h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">How many times '+esc(s.display)+' can run in one day during catch-up. Blank weekday = default ('+DEFAULT_DAY_CAP+'/day); blank Saturday = same as weekday. Lessons beyond the cap roll to the Mom-only &ldquo;Carries to Next Week&rdquo; box.</div>';
+  }
 
   // Tracking mode
   h+='<div class="ce-sheet-lbl">Lesson Tracking</div>';
@@ -21369,48 +21433,9 @@ function renderRules(el,headerHtml){
   }
   h+='</div></div>';
 
-  // 5. MAX PER DAY
-  h+='<div class="rules-card'+o("max")+'">';
-  h+='<div class="rules-card-hdr" onclick="rulesToggleCard(\'max\')">';
-  h+='<div class="rules-card-title"><span>&#128290;</span> Max-Per-Day Limits</div>';
-  h+='<div class="rules-card-arrow">&#9654;</div></div>';
-  h+='<div class="rules-card-body">';
-  h+='<div style="font-size:11px;color:var(--muted);padding-bottom:8px">Caps how many times a subject runs in a day (blank = no cap). Sat = Saturday-specific cap.</div>';
-  h+='<div style="font-size:11px;color:#b45309;background:#fff7ed;border-radius:8px;padding:7px 9px;margin-bottom:10px;line-height:1.5">During <b>catch-up</b> these are hard ceilings: a behind subject fills up to the cap each day (Sat uses the Sat cap), and any lesson beyond that — the <b>latest</b> in the sequence — rolls to next week and shows in the Mom-only “Carries to Next Week” box. Blank = no ceiling (old behavior: unlimited catch-up).</div>';
-  Object.entries(mp).forEach(([subj,cfg])=>{
-    h+='<div class="rules-row" style="flex-wrap:wrap">';
-    h+='<div class="rules-label">'+subj+(cfg.kid?' <span style="font-size:10px;color:var(--muted)">('+cfg.kid+')</span>':'')+'</div>';
-    h+='<div style="display:flex;align-items:center;gap:6px">';
-    h+='<span style="font-size:11px;color:var(--muted)">Max/day</span>';
-    h+='<input type="number" class="rules-num" min="0" max="10" value="'+(cfg.max!=null?cfg.max:"")+'" onchange="rulesUpdateMax(\''+subj+'\',\'max\',this.value)">';
-    h+='<span style="font-size:11px;color:var(--muted);margin-left:4px">Sat</span>';
-    h+='<input type="number" class="rules-num" min="0" max="10" value="'+(cfg.saturday_max!=null?cfg.saturday_max:"")+'" onchange="rulesUpdateMax(\''+subj+'\',\'saturday_max\',this.value)">';
-    h+='<button onclick="rulesRemoveMax(\''+subj+'\')" title="Remove cap" style="margin-left:4px;border:none;background:none;color:#ef4444;cursor:pointer;font-size:16px;font-weight:700;line-height:1;font-family:\'DM Sans\',sans-serif">&times;</button>';
-    h+='</div>';
-    if(cfg.never_babysitter){
-      h+='<div style="display:flex;align-items:center;gap:6px;width:100%;padding-top:4px">';
-      h+='<span style="font-size:11px;color:#ef4444;font-weight:600">Never during babysitter window</span>';
-      if(cfg.unless_mom_home_after) h+='<span style="font-size:10px;color:var(--muted);font-style:italic">(unless Mom home after)</span>';
-      h+='</div>';
-    }
-    if(cfg.sequential_within_peak){
-      h+='<div style="width:100%;font-size:11px;color:var(--muted);font-style:italic;padding-top:2px">Sequential within peak — finish peak before next</div>';
-    }
-    h+='</div>';
-  });
-  (function(){
-    var allSubs={}; [...ROSTER].forEach(function(k){ var s=(currData&&currData.subjects&&currData.subjects[k])||{}; for(var key in s){ if(!s[key].paused) allSubs[s[key].display||key]=1; } });
-    var addable=Object.keys(allSubs).filter(function(d){return !mp[d];}).sort();
-    if(addable.length){
-      h+='<div style="display:flex;align-items:center;gap:6px;padding-top:10px;border-top:1px solid var(--border);margin-top:6px">';
-      h+='<select id="mp-add-sel" class="rules-time" style="flex:1;font-size:12px"><option value="">Add a subject cap…</option>';
-      addable.forEach(function(d){ h+='<option value="'+esc(d)+'">'+esc(d)+'</option>'; });
-      h+='</select>';
-      h+='<button onclick="var v=document.getElementById(\'mp-add-sel\').value; if(v) rulesAddMax(v);" style="padding:5px 14px;border:1px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Add</button>';
-      h+='</div>';
-    }
-  })();
-  h+='</div></div>';
+  // 5. MAX-PER-DAY moved to each subject card (Subjects → tap a subject → Max Per Day).
+  // It reads/writes the same config/rules.maxPerDay data; the Per-Subject Settings card
+  // below mirrors the caps here.
 
   // 6. CARRY-OVER & SATURDAY
   h+='<div class="rules-card'+o("co")+'">';
@@ -21452,7 +21477,7 @@ function renderRules(el,headerHtml){
   h+='<div class="rules-card-title"><span>&#128218;</span> Per-Subject Settings</div>';
   h+='<div class="rules-card-arrow">&#9654;</div></div>';
   h+='<div class="rules-card-body">';
-  h+='<div style="font-size:11px;color:var(--muted);padding-bottom:6px">A read-only view of every subject — duration, device, Mom, and rules. These live on the Subjects page; edit them there.</div>';
+  h+='<div style="font-size:11px;color:var(--muted);padding-bottom:6px">A read-only view of every subject — duration, device, Mom, rules, and max-per-day cap. These live on the Subjects page; edit them there.</div>';
   h+='<button onclick="setAdminSub(\'curriculum\')" style="padding:6px 14px;border:1px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-bottom:10px">&#9998; Edit on Subjects page &rarr;</button>';
   [...ROSTER].forEach(function(k){
     var subs=(currData&&currData.subjects&&currData.subjects[k])||{};
@@ -21468,6 +21493,8 @@ function renderRules(el,headerHtml){
       h+='<span style="flex:1;min-width:0">'+esc(s.display||sk)+'</span>';
       h+='<span style="font-size:11px;color:var(--muted);flex-shrink:0">'+(s.minutes||20)+'m</span>';
       if(flags.length) h+='<span style="font-size:10px;color:var(--muted);flex-shrink:0">'+esc(flags.join(" · "))+'</span>';
+      var _mpc=mp[s.display||sk];
+      if(_mpc && (_mpc.max!=null || _mpc.saturday_max!=null)) h+='<span style="font-size:10px;color:#b45309;font-weight:700;flex-shrink:0">'+(_mpc.max!=null?_mpc.max:DEFAULT_DAY_CAP)+'/day'+(_mpc.saturday_max!=null?' · Sat '+_mpc.saturday_max:'')+'</span>';
       h+='</div>';
     });
     h+='<div style="height:8px"></div>';
