@@ -3329,17 +3329,26 @@ function renderSchedule(el){
   // now just last-week _c mirrors.
   let tasks=allDay.filter(t=>!t.id.endsWith("_c")&&!t._eowOverflow);
   let carriedOver=allDay.filter(t=>t.id.endsWith("_c"));
+  // Per-kid overwhelm guard: the "Carried Over" mirror box is HIDDEN from a kid's own view
+  // (and the shared all-kids view) by DEFAULT — a big carried-over pile can shut a kid down.
+  // Mom still sees it whenever she's viewing (momHere). The day-header button re-shows it for
+  // a kid (writes an explicit false in rulesData.hideCarryoverKids).
+  if(!momHere()){
+    carriedOver=carriedOver.filter(t=>!carryHidden(t.who));
+  }
 
   const tmap={};
   tasks.forEach(t=>{ if(!tmap[t.time])tmap[t.time]=[]; tmap[t.time].push(t); });
   const times=Object.keys(tmap).sort((a,b)=>toMin(a)-toMin(b));
   const win=WIN[day]||WIN.default;
 
+  const _carryHiddenKid=(kid!=="all"&&kid!=="mom")&&carryHidden(kid);
   let h='<div class="day-banner" style="--day-color:'+col+'">'+
     '<div class="day-banner-inner">'+
     '<div><div class="day-name">'+(DAY_LBL[day]||day)+'<button class="bo-btn" onclick="openBoDialog(\''+day+'\')">+ Blockout</button>'+
     (momHere()?'<button class="bo-btn" onclick="schedDayOffToggleOpen()">😷 Kid Off</button>':'')+
-    (momHere()?'<button class="bo-btn" onclick="schedRegenerateNow()">🔄 Regenerate</button>':'')+'</div>'+
+    (momHere()?'<button class="bo-btn" onclick="schedRegenerateNow()">🔄 Regenerate</button>':'')+
+    (momHere()&&kid!=="all"&&kid!=="mom"?'<button class="bo-btn" onclick="toggleHideCarryover(\''+kid+'\')">'+(_carryHiddenKid?'👁 Show':'🙈 Hide')+' Carryover</button>':'')+'</div>'+
     '<div class="day-date">'+_dayDate(day)+" · "+(weekData.week||WK).replace("week","Week ")+'</div>'+
     '<div class="day-window">'+win+'</div></div>'+
     '<div class="day-pct-badge">'+pct+'%</div></div>'+
@@ -3369,7 +3378,7 @@ function renderSchedule(el){
 
   if(carriedOver.length){
     let coHtml='<div style="margin:10px 12px 0;border-left:4px solid #6366f1;background:#eef2ff;border-radius:0 10px 10px 0;padding:10px 12px">'+
-      '<div style="font-size:11px;font-weight:800;color:#4338ca;margin-bottom:2px;text-transform:uppercase;letter-spacing:0.4px">📋 Carried Over</div>'+
+      '<div style="font-size:11px;font-weight:800;color:#4338ca;margin-bottom:2px;text-transform:uppercase;letter-spacing:0.4px">📋 Carried Over'+(momHere()&&_carryHiddenKid?' <span style="font-weight:700;color:#7c3aed;text-transform:none;letter-spacing:0">🙈 Hidden from '+cap(kid)+'</span>':'')+'</div>'+
       '<div style="font-size:10.5px;color:#6366f1;margin-bottom:8px">Already in your schedule this week — check them off there and this list updates.</div>';
     carriedOver.forEach(t=>{
       let fromLabel, readOnly=false, doneId=null;
@@ -3606,6 +3615,22 @@ function notebookBlock(){
 
 // ── MOM CHECK (verify) + SCORES ──────────────────────────────────
 function momHere(){ return momModeActive||adminPinUnlocked; }
+// The "Carried Over" mirror box is HIDDEN from a kid's own view by DEFAULT (a big pile
+// overwhelms). An explicit false in rulesData.hideCarryoverKids re-shows it for that kid.
+function carryHidden(who){
+  const hc=(rulesData&&rulesData.hideCarryoverKids)||{};
+  return hc[who]!==false;
+}
+// Per-kid toggle for the box. Hidden (default) → tap to show; shown → tap to hide again.
+// Only rendered to Mom (momHere). Persisted in config/rules so it syncs across the fleet.
+function toggleHideCarryover(kid){
+  if(!rulesData) return;
+  const r=JSON.parse(JSON.stringify(rulesData));
+  if(!r.hideCarryoverKids) r.hideCarryoverKids={};
+  r.hideCarryoverKids[kid]=carryHidden(kid)?false:true; // hidden→show, shown→hide
+  saveRules(r);
+  renderAll();
+}
 function subjCfg(t){
   if(!t||!currData||!currData.subjects) return null;
   return (currData.subjects[t.who]||{})[t.subjectKey]||null;
