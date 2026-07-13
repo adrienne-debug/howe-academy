@@ -143,6 +143,51 @@
   var JU_PATH_SHAPES = ["straight", "hill", "zigzag", "wave", "loop"];
   var DAY_ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday"];
 
+  // ── Extra pages: Notebook-tab toggles + day assignment ──────────────────
+  // The non-daily "extra" pages each kid's notebook carries. Toggled on/off and
+  // assigned to weekdays from the Notebook tab (notebookSettings/{kid}/extraPages,
+  // passed in as ctx.extraPages). Keys are stable ids shared with index.html via
+  // HoweNotebooks.extraPageCatalog. Missing config = page ON, no day assigned,
+  // so nothing changes until Mom touches a control. Unit-study inserts stay
+  // governed by the Units tab; Creative pages ride the brain-break rotation.
+  var EXTRA_PAGE_CATALOG = {
+    lincoln: [
+      { key: "allAboutMe",   label: "All About Me",        emoji: "🙋" },
+      { key: "moneyLife",    label: "Money & Life Skills", emoji: "💰" },
+      { key: "wilderness",   label: "Wilderness Skills",   emoji: "🏕️" },
+      { key: "memoryCivics", label: "Memory & Civics",     emoji: "🇺🇸" }
+    ],
+    ellis: [
+      { key: "allAboutMe",   label: "All About Me",        emoji: "🙋" },
+      { key: "moneyLife",    label: "Money & Life Skills", emoji: "💰" },
+      { key: "memoryCivics", label: "Memory & Civics",     emoji: "🇺🇸" },
+      { key: "notes",        label: "Notes",               emoji: "📝" }
+    ],
+    lucy: [
+      { key: "months",     label: "Months of the Year", emoji: "📅" },
+      { key: "allAboutMe", label: "All About Me",       emoji: "🙋" }
+    ],
+    julian: [
+      { key: "abc",         label: "ABC Practice",   emoji: "🔤" },
+      { key: "daysSeasons", label: "Days & Seasons", emoji: "🍂" }
+    ]
+  };
+  function xpConf(ctx, key) { var c = ((ctx && ctx.extraPages) || {})[key] || {}; return { on: c.on !== false, days: c.days || {} }; }
+  function xpOn(ctx, key) { return xpConf(ctx, key).on; }
+  // Pages that are ON and assigned to this weekday — feeds the daily-page reminder strip.
+  function xpForDay(ctx, kid, day) {
+    return (EXTRA_PAGE_CATALOG[kid] || []).filter(function (p) {
+      var c = xpConf(ctx, p.key); return c.on && c.days[day];
+    });
+  }
+  // Compact themed "work on these today" strip for a daily page ("" when nothing assigned).
+  function xpStrip(pages, accent, bg, ink) {
+    if (!pages || !pages.length) return "";
+    var items = pages.map(function (p) { return p.emoji + " <b>" + p.label + "</b>"; }).join(" · ");
+    return '<div style="display:flex;align-items:center;gap:7px;border:1.5px dashed ' + accent + ';background:' + bg + ';border-radius:8px;padding:4px 10px;font-size:9.5px;line-height:1.35;color:' + ink + ';">' +
+      '<span style="font-size:12px;">📌</span><span><b>Extra pages today:</b> ' + items + ' — find them in this notebook and do them!</span></div>';
+  }
+
   var JU_REVIEW_CAP = 2;  // max review slots folded into Julian's week per subject
 
   var JU_COLOR_HEX = {
@@ -655,7 +700,7 @@
       juFooter("Howe Academy · Julian Howe · Pre-K", weekDates) + '\n</div>';
   }
 
-  function juPageDaily(weekNum, day, dateStr, idx, cur, pick) {
+  function juPageDaily(weekNum, day, dateStr, idx, cur, pick, extraStrip) {
     pick = pick || juDayPick(cur, {}, idx);  // fallback keeps standalone calls working
     var letter = pick.letter;
     var number = pick.number;
@@ -694,6 +739,7 @@
       '    <div class="bookend-icon">🌅</div>\n' +
       '    <div class="bookend-title">Start Here! · Morning Notebook</div>\n' +
       '    <div class="bookend-badge">Start</div>\n  </div>\n\n' +
+      (extraStrip || "") +
       '  <div class="cal-card">\n    <div class="dow-strip">' + dowChips + '</div>\n' +
       '    <div class="cal-sub">\n' +
       '      <div class="ytt">Yesterday <b>' + yest + '</b> · Today <b>' + tod + '</b> · Tomorrow <b>' + tom + '</b></div>\n' +
@@ -845,13 +891,14 @@
 
     var parts = [juHtmlHead(weekNum)];
     parts.push(juPageCover(weekNum, weekDates, cur));
-    parts.push(juPageAbc(weekNum, weekDates, cur));
-    parts.push(juPageDaysSeasons(weekNum, weekDates, cur));
+    if (xpOn(ctx, "abc")) parts.push(juPageAbc(weekNum, weekDates, cur));
+    if (xpOn(ctx, "daysSeasons")) parts.push(juPageDaysSeasons(weekNum, weekDates, cur));
     // review-slots-per-week cap: app setting (ctx.reviewCap) overrides the default, clamped 0–5
     var reviewCap = (ctx.reviewCap == null) ? JU_REVIEW_CAP : Math.max(0, Math.min(5, parseInt(ctx.reviewCap, 10) || 0));
     var picks = juWeekPicks(weekNum, cur, days.length, reviewCap);
     for (var i = 0; i < days.length; i++) {
-      parts.push(juPageDaily(weekNum, days[i], dates[days[i]] || "", i, cur, juDayPick(cur, picks, i)));
+      parts.push(juPageDaily(weekNum, days[i], dates[days[i]] || "", i, cur, juDayPick(cur, picks, i),
+        xpStrip(xpForDay(ctx, "julian", days[i]), "#d97706", "#fffbeb", "#92400e")));
     }
     (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, weekNum, UNIT_INSERT_THEMES.julian).forEach(function (p) { parts.push(p); }); });
     parts.push("</body>\n</html>");
@@ -1048,7 +1095,7 @@
       '</style>\n</head>\n<body>\n\n' + pagesHtml + '\n\n</body>\n</html>';
   }
 
-  function lnDailyPage(dayName, dateStr, weekNum, config, daySubjects, skillSubjects, word, q1, q2, q3) {
+  function lnDailyPage(dayName, dateStr, weekNum, config, daySubjects, skillSubjects, word, q1, q2, q3, extraStrip) {
     var ss = config.student_short, sf = config.student_full || ss, grade = config.grade, te = config.theme_emoji || "🐍";
     var pills = lnSubjectPills(daySubjects), skill = lnSkillTable(skillSubjects), wordH = lnWordCard(word);
     var q1H = lnQuestionCard(q1), q2H = lnQuestionCard(q2);
@@ -1087,7 +1134,7 @@
       </div>
       <div class="bookend-badge">Step 1</div>
     </div>
-
+${extraStrip || ""}
     <div>
       <div class="slabel">How I'm feeling right now</div>
       <div class="mood-row" style="padding:3px 16px;">
@@ -2153,7 +2200,10 @@
     var cfg = LINCOLN_CONFIG, student = cfg.student;
     var tasks = weekData.tasks || [];
     var datesMap = weekData.dates || {};
-    var schoolDays = Object.keys(datesMap);
+    var schoolDays = Object.keys(datesMap).sort(function (a, b) {
+      var ia = DAY_ORDER.indexOf(a), ib = DAY_ORDER.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
     var skillSubjects = lnSkillSubjects(tasks, student, 6);
     var paceRows = (ctx.pace && ctx.pace.length) ? ctx.pace.map(function (p) { return [p.subject, p.pct, p.status]; }) : lnPaceRows(tasks, student);
     var scores = LINCOLN_DATA.iowa_default;
@@ -2179,14 +2229,18 @@
       var daySubjects = lnDaySubjects(tasks, student, day);
       var word = Object.assign({}, lnPick(LINCOLN_DATA.banks.words, weekNum, i)); word.aas_level = cfg.aas_level;
       var q1 = lnPick(bank1, weekNum, i), q2 = lnPick(bank2, weekNum, i), q3 = lnPick(bank3, weekNum, i);
-      dailyPages.push(lnDailyPage(day, dateStr, weekNum, cfg, daySubjects, skillSubjects, word, q1, q2, q3));
+      dailyPages.push(lnDailyPage(day, dateStr, weekNum, cfg, daySubjects, skillSubjects, word, q1, q2, q3,
+        xpStrip(xpForDay(ctx, "lincoln", day), "#2d6a4f", "#f2faf5", "#1a3a2a")));
       dayAssignments.push({ day: day, date: dateStr, word: word, q1: q1, q2: q2, q3: q3 });
     });
 
     // Full page order: weekly · bb0 · 4 enrichment · (day · bb)×4 · day5 · creative · eow
     var T = LN_EXTRA.enrich.theme_lincoln;
-    var parts = [weeklyH, lnBrainBreakPage(0, wn),
-      enPageAllAboutMe(T, ctx.personal || null, wn), enPageMoneyLife(T, wn), enPageWilderness(T, wn), enPageMemoryCivics(T, wn)];
+    var parts = [weeklyH, lnBrainBreakPage(0, wn)];
+    if (xpOn(ctx, "allAboutMe")) parts.push(enPageAllAboutMe(T, ctx.personal || null, wn));
+    if (xpOn(ctx, "moneyLife")) parts.push(enPageMoneyLife(T, wn));
+    if (xpOn(ctx, "wilderness")) parts.push(enPageWilderness(T, wn));
+    if (xpOn(ctx, "memoryCivics")) parts.push(enPageMemoryCivics(T, wn));
     (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn, UNIT_INSERT_THEMES.lincoln).forEach(function (p) { parts.push(p); }); });
     dailyPages.forEach(function (dp, i) {
       parts.push(dp);
@@ -2433,7 +2487,7 @@ ${ellFooter("Howe Academy · Mission Briefing · Week " + weekNum)}
 </div>`;
   }
 
-  function ellDailyPage(dayName, dateStr, weekNum, dayTasks, passage, lang, mathQ, word) {
+  function ellDailyPage(dayName, dateStr, weekNum, dayTasks, passage, lang, mathQ, word, extraStrip) {
     var dayCap = cap(dayName);
     var skillCheckHtml = ellSkillCheck(dayTasks);
     function choiceRows(choices) { return (choices || []).map(function (ch) { return '<div class="choice-row"><div class="choice-letter plain">' + ch[0] + '</div><span>' + ch[1] + '</span></div>\n'; }).join(""); }
@@ -2452,7 +2506,7 @@ ${ellHeader("Daily Operations · Week " + weekNum, "<span class='hl'>" + dayCap.
       </div>
       <div class="bookend-badge">Start</div>
     </div>
-
+${extraStrip || ""}
     <div class="sec-label sec-navy">🤖 Morning System Check</div>
     <div class="mood-row" style="margin-bottom:2px;">
       <div class="mood-item"><div class="mood-circle">😴</div><div class="mood-label">OFFLINE</div></div>
@@ -2650,15 +2704,13 @@ ${ellFooter("Howe Academy · Creative Launch · Week " + weekNum, "Mission Compl
     var dayCards = (dayAssignments || []).map(function (da) {
       var passage = da.passage, lang = da.lang, mathQ = da.math_q, word = da.word;
       var q1l = passage.q1_ans || "?", q1t = ellGetAnsText(passage.q1_choices || [], q1l);
-      var q2l = passage.q2_ans || "?", q2t = ellGetAnsText(passage.q2_choices || [], q2l);
       var lal = lang.answer || "?", lat = ellGetAnsText(lang.choices || [], lal);
       var mal = mathQ.answer || "?", mat = ellGetAnsText(mathQ.choices || [], mal);
       var wordDef = word.def || "", wordShort = wordDef.slice(0, 55).replace(/\s+$/, "") + (wordDef.length > 55 ? "…" : "");
       return '<div class="card card-plain" style="padding:7px 11px;">' +
         '<div style="margin-bottom:5px;"><span class="key-day">' + cap(da.day) + '</span><span class="key-date">' + da.date + '</span></div>' +
         '<div class="key-row"><div class="key-label">Word</div><div><span class="key-ans">' + word.word + '</span><span class="key-sub"> — ' + wordShort + '</span></div></div>' +
-        '<div class="key-row"><div class="key-label">Iowa R Q1</div><div><span class="key-ans">(' + q1l + ')</span><span class="key-sub"> ' + q1t.slice(0, 55) + ' — ' + (passage.q1_skill || "") + '</span></div></div>' +
-        '<div class="key-row"><div class="key-label">Iowa R Q2</div><div><span class="key-ans">(' + q2l + ')</span><span class="key-sub"> ' + q2t.slice(0, 55) + ' — ' + (passage.q2_skill || "") + '</span></div></div>' +
+        '<div class="key-row"><div class="key-label">Iowa R</div><div><span class="key-ans">(' + q1l + ')</span><span class="key-sub"> ' + q1t.slice(0, 55) + ' — ' + (passage.q1_skill || "") + '</span></div></div>' +
         '<div class="key-row"><div class="key-label">Language</div><div><span class="key-ans">(' + lal + ')</span><span class="key-sub"> ' + lat.slice(0, 60) + '</span></div></div>' +
         '<div class="key-row"><div class="key-label">Math</div><div><span class="key-ans">(' + mal + ')</span><span class="key-sub"> ' + mat.slice(0, 55) + ' — ' + (mathQ.skill || "") + '</span></div></div>' +
         '</div>\n';
@@ -2683,7 +2735,7 @@ ${ellHeader("TEACHING COMPANION · PARENT REFERENCE", "ANSWER", "KEYS", "WEEK", 
 
     ${constraintHtml}
 
-    <div class="sec-label sec-red">📋 Daily Answer Keys — Word · Iowa Reading Q1+Q2 · Language · Math</div>
+    <div class="sec-label sec-red">📋 Daily Answer Keys — Word · Iowa Reading · Language · Math</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
       ${dayCards}
     </div>
@@ -2705,15 +2757,12 @@ ${ellFooter("Howe Academy · Parent Guide · Answer Keys · Week " + weekNum)}
     var fullKeys = (dayAssignments || []).map(function (da) {
       var passage = da.passage, lang = da.lang, mathQ = da.math_q;
       var q1Rows = ellChoiceRows(passage.q1_choices || [], passage.q1_ans || "");
-      var q2Rows = ellChoiceRows(passage.q2_choices || [], passage.q2_ans || "");
       var laRows = ellChoiceRows(lang.choices || [], lang.answer || "");
       var maRows = ellChoiceRows(mathQ.choices || [], mathQ.answer || "");
       return '<div style="border:1.5px solid rgba(14,32,56,0.12);border-radius:4px;padding:5px 8px;font-size:8px;overflow:hidden;">' +
         '<div style="font-family:\'Orbitron\',sans-serif;font-size:8.5px;font-weight:700;color:var(--tf-red);margin-bottom:3px;border-bottom:1px solid rgba(196,30,30,0.2);padding-bottom:3px;">' + cap(da.day).toUpperCase() + '<span style="font-size:6.5px;color:var(--tf-silver);font-weight:400;margin-left:6px;">' + da.date + '</span></div>' +
-        '<div style="font-size:7.5px;font-weight:700;color:var(--tf-dark);margin:2px 0 1px;">📡 ' + ellStripTags(passage.title || "") + ' — Q1</div>' +
+        '<div style="font-size:7.5px;font-weight:700;color:var(--tf-dark);margin:2px 0 1px;">📡 ' + ellStripTags(passage.title || "") + '</div>' +
         '<div style="font-size:7.5px;color:#444;margin-bottom:1px;">' + (passage.q1_text || "") + '</div>' + q1Rows +
-        '<div style="font-size:7.5px;font-weight:700;color:var(--tf-dark);margin:3px 0 1px;">Q2</div>' +
-        '<div style="font-size:7.5px;color:#444;margin-bottom:1px;">' + (passage.q2_text || "") + '</div>' + q2Rows +
         '<div style="font-size:7.5px;font-weight:700;color:#8b0000;margin:3px 0 1px;">✏️ Language</div>' +
         '<div style="font-size:7px;font-style:italic;color:#8b0000;margin-bottom:1px;">' + ellStripTags(lang.bad || "") + '</div>' + laRows +
         '<div style="font-size:6.5px;color:#777;margin:1px 0 2px;">Errors: ' + (lang.errors || "") + '</div>' +
@@ -2783,7 +2832,10 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
     if (typeof weekNum === "string") { var dd = weekNum.replace(/\D/g, ""); weekNum = dd ? parseInt(dd, 10) : weekNum; }
     var wn = parseInt(weekNum, 10) || 1;
     var datesMap = weekData.dates || {};
-    var orderedDays = Object.keys(datesMap);
+    var orderedDays = Object.keys(datesMap).sort(function (a, b) {
+      var ia = DAY_ORDER.indexOf(a), ib = DAY_ORDER.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
     var ellisTasks = (weekData.tasks || []).filter(function (t) { return t.who === "ellis"; });
     var year = new Date().getFullYear();
     var dateVals = orderedDays.map(function (d) { return datesMap[d]; });
@@ -2796,10 +2848,10 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
     var pages = [];
     pages.push(ellWeeklyPage(wn, weekDates, weekData, paceRows, summary, prevWeek));
     pages.push(ellBrainBreakPage(0, wn));
-    pages.push(enPageAllAboutMe(T, ctx.personal || null, wn));
-    pages.push(enPageMoneyLife(T, wn));
-    pages.push(enPageMemoryCivics(T, wn));
-    pages.push(enPageNotes(T));
+    if (xpOn(ctx, "allAboutMe")) pages.push(enPageAllAboutMe(T, ctx.personal || null, wn));
+    if (xpOn(ctx, "moneyLife")) pages.push(enPageMoneyLife(T, wn));
+    if (xpOn(ctx, "memoryCivics")) pages.push(enPageMemoryCivics(T, wn));
+    if (xpOn(ctx, "notes")) pages.push(enPageNotes(T));
     (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn, UNIT_INSERT_THEMES.ellis).forEach(function (p) { pages.push(p); }); });
 
     var dayAssignments = [];
@@ -2810,7 +2862,8 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
       var lang = ellPick(ELLIS_DATA.banks.lang, wn, i);
       var mathQ = ellPick(ELLIS_DATA.banks.math, wn, i);
       var word = ellPick(ELLIS_DATA.banks.words, wn, i);
-      pages.push(ellDailyPage(day, dateStr, wn, dayTasks, passage, lang, mathQ, word));
+      pages.push(ellDailyPage(day, dateStr, wn, dayTasks, passage, lang, mathQ, word,
+        xpStrip(xpForDay(ctx, "ellis", day), "#c41e1e", "#fdf2f2", "#0e2038")));
       dayAssignments.push({ day: day, date: dateStr, day_tasks: dayTasks, passage: passage, lang: lang, math_q: mathQ, word: word });
       pages.push(i < orderedDays.length - 1 ? ellBrainBreakPage(i + 1, wn) : ellCreativePage(wn, weekDates));
     });
@@ -3049,7 +3102,7 @@ ${luFooter("Howe Academy · Lucy Howe · Keep this private 🔒", weekDates)}
 </div>`;
   }
 
-  function luPageDaily(weekNum, day, dateStr, tasks, blend, subProblems, badge, year) {
+  function luPageDaily(weekNum, day, dateStr, tasks, blend, subProblems, badge, year, extraStrip) {
     var dayTasks = luTasksForDay(tasks, day);
     var pills = dayTasks.map(function (t) { return '<span class="pill ' + luPillType(t.title) + '">' + String(t.title || "").split(" — ")[0] + '</span>\n'; }).join("");
     var rows = dayTasks.map(function (t) { return '<tr><td>' + luSubjectName(t.title) + '</td><td><span class="bubble"></span></td><td><span class="bubble"></span></td><td><span class="bubble"></span></td></tr>\n'; }).join("");
@@ -3075,7 +3128,7 @@ ${luStdHeader("Howe Academy · 1st Grade · Daily Notebook", "Lucy's Daily Page"
     <div class="bookend-title">Start Here! · Morning Notebook</div>
     <div class="bookend-badge">Start</div>
   </div>
-
+${extraStrip || ""}
   <div class="lu-cal">
     <div class="lu-dow-strip">${dowChips}</div>
     <div class="lu-cal-row">
@@ -3603,15 +3656,16 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
 
     var parts = [];
     parts.push(luPageWeeklyReview(wn, weekDates, days, dates, tasks, prevStats, pace, focus));
-    parts.push(luPageMonths(wn, weekDates, curMonth));
-    parts.push(luPageAllAboutMe(wn, weekDates, ctx.personal || null)); // personal info from the Notebook tab (or blank)
+    if (xpOn(ctx, "months")) parts.push(luPageMonths(wn, weekDates, curMonth));
+    if (xpOn(ctx, "allAboutMe")) parts.push(luPageAllAboutMe(wn, weekDates, ctx.personal || null)); // personal info from the Notebook tab (or blank)
     (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn, UNIT_INSERT_THEMES.lucy).forEach(function (p) { parts.push(p); }); });
     days.forEach(function (day, i) {
       var dateStr = dates[day] || "";
       var blend = (i < blends.length) ? blends[i] : blends[blends.length - 1];
       var subPrbs = (i < subtraction.length) ? subtraction[i] : [];
       var badge = LUCY_DATA.day_badges[day] || "🦄 Great Work!";
-      parts.push(luPageDaily(wn, day, dateStr, tasks, blend, subPrbs, badge, year));
+      parts.push(luPageDaily(wn, day, dateStr, tasks, blend, subPrbs, badge, year,
+        xpStrip(xpForDay(ctx, "lucy", day), "#f472b6", "#fdf2f8", "#be185d")));
       if (day === "monday") parts.push(luPageBb1(wn, ctx.dotdot || null));
       else if (day === "tuesday") parts.push(luPageBb2Coloring(wn, ctx.coloring || null, category));
       else if (day === "wednesday") parts.push(luPageBb3(wn, ctx.symmetry || null, ctx.pattern || null));
@@ -3646,10 +3700,36 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     julian: { label: "Julian (Pre-K 🦕)", build: generateJulian }
   };
 
+  // ── ½" prong/binding margin (Notebook tab toggle → notebookSettings/bindingMargin) ──
+  // Three-prong folders need a clear strip on the binding edge. Re-padding every theme
+  // would reflow full-bleed headers and clip content on the fixed 8.5×11in pages, so
+  // instead each page's CONTENT is uniformly scaled to 8in wide (16/17 ≈ 6% smaller)
+  // and anchored off the binding edge — nothing re-wraps, so nothing can overflow.
+  // Printing is double-sided, so margins MIRROR: odd sheets (fronts) gap LEFT, even
+  // sheets (backs) gap RIGHT — the prong holes never punch through content either side.
+  var BINDING_CSS = '<style>\n' +
+    '  /* ½in binding margin for 3-prong folders (mirrored for double-sided printing) */\n' +
+    '  .page.pg-front { transform: scale(0.94118); transform-origin: right center; }\n' +
+    '  .page.pg-back  { transform: scale(0.94118); transform-origin: left center; }\n' +
+    '</style>';
+  function applyBindingMargin(html) {
+    if (!html) return html;
+    var n = 0;
+    html = html.replace(/<div class="page"/g, function () {
+      n++;
+      return '<div class="page ' + (n % 2 ? 'pg-front' : 'pg-back') + '"';
+    });
+    return html.replace('</head>', BINDING_CSS + '\n</head>');
+  }
+
   function generate(kid, ctx) {
     var g = GENERATORS[kid];
     if (!g) throw new Error("No notebook generator for '" + kid + "' yet.");
-    return g.build(ctx);
+    var out = g.build(ctx);
+    if (ctx && ctx.bindingMargin && out) {
+      out = Object.assign({}, out, { student: applyBindingMargin(out.student), parent: applyBindingMargin(out.parent) });
+    }
+    return out;
   }
 
   // Open generated HTML in a new tab for viewing/printing; falls back to a
@@ -3757,10 +3837,13 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       lucy:    { name: "Lucy",    grade: "1st Grade", color: "#be185d" },
       julian:  { name: "Julian",  grade: "Pre-K",     color: "#c2410c" }
     };
-    var sections = "", styles = "", links = {}, present = [], wk = "", wd = "";
+    var sections = "", styles = "", links = {}, present = [], wk = "", wd = "", binding = false;
     order.forEach(function (kid) {
       var ctx = ctxByKid[kid]; if (!ctx) return;
-      var html = generate(kid, ctx).parent; if (!html) return;
+      if (ctx.bindingMargin) binding = true;
+      // Per-doc binding is applied AFTER the merge — front/back parity must be counted
+      // across the whole packet (cover + dividers shift which side each page lands on).
+      var html = generate(kid, Object.assign({}, ctx, { bindingMargin: false })).parent; if (!html) return;
       if (!wk) { wk = (String(ctx.weekNum || "").match(/\d+/) || [ctx.weekNum || ""])[0]; wd = ctx.weekDates || ""; }
       present.push(kid);
       (html.match(/<link[^>]+fonts\.(?:googleapis|gstatic)\.com[^>]*>/g) || []).forEach(function (l) { links[l] = 1; });
@@ -3778,7 +3861,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     if (!present.length) throw new Error("No parent guides to combine (no kid data).");
     var cover = '<div class="cover-sec">\n' + cpCoverPage(wk, wd, present.map(function (k) { return META[k]; })) + "\n</div>";
     var title = opts.title || ("Howe Academy — Parent Guide (Week " + wk + ")");
-    return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n<title>' + title + '</title>\n' +
+    var doc = '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n<title>' + title + '</title>\n' +
       '<link rel="preconnect" href="https://fonts.googleapis.com">\n<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n' +
       '<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,500&family=DM+Sans:wght@400;500;600;700&family=Nunito:wght@400;600;700;800&family=Fredoka+One&display=swap" rel="stylesheet">\n' +
       Object.keys(links).join("\n") + "\n" +
@@ -3800,12 +3883,14 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       "  .page { box-sizing:border-box !important; width:8.5in !important; height:11in !important; min-height:11in !important; max-height:11in !important; overflow:hidden !important; }\n" +
       "  @media print { .page { box-sizing:border-box !important; width:8.5in !important; height:11in !important; min-height:11in !important; max-height:11in !important; margin:0 !important; box-shadow:none !important; overflow:hidden !important; } }\n" +
       "</style>\n</head>\n<body>\n" + cover + "\n" + sections + "\n</body>\n</html>";
+    return binding ? applyBindingMargin(doc) : doc;
   }
 
   window.HoweNotebooks = {
     version: "1-julian",
     fontsOk: FONTS_OK,
     GENERATORS: GENERATORS,
+    extraPageCatalog: EXTRA_PAGE_CATALOG,
     generate: generate,
     combinedParent: combinedParent,
     openHtml: openHtml,

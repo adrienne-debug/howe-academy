@@ -8170,7 +8170,7 @@ function haNbContext(kid){
     }
     mItems=mItems.map(it=>Object.assign({},it,{recentMiss:miss[it.id]||0}));
   }catch(e){}
-  return { weekData:{dates:dates, tasks:tasks}, weekNum:WK, weekDates:weekDates, masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units };
+  return { weekData:{dates:dates, tasks:tasks}, weekNum:WK, weekDates:weekDates, masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true };
 }
 function haNbOpen(kid,which){
   const lib=window.HoweNotebooks; if(!lib){ alert("Notebook builder not loaded yet."); return; }
@@ -10099,6 +10099,27 @@ function nbPinToggle(){
 function nbPinLock(){ adminPinUnlocked=false; momModeActive=false; momPinUnlocked=false; nbPinOpen=false; renderAll(); }
 // Review-folding cap (struggled-with drill items folded back into the week), per kid. Default 2, clamped 0–5.
 function nbReviewCap(kid){ const v=notebookSettings&&notebookSettings[kid]&&notebookSettings[kid].reviewCap; const n=parseInt(v,10); return isNaN(n)?2:Math.max(0,Math.min(5,n)); }
+// Extra-pages config (Notebook tab) — per-page {on, days:{monday:true,…}}, synced like reviewCap.
+// Missing config = page ON with no day assigned, so defaults match the old always-print behavior.
+function nbXpCfg(kid,key){ const c=(((notebookSettings||{})[kid]||{}).extraPages||{})[key]||{}; return { on:c.on!==false, days:c.days||{} }; }
+function nbXpSave(kid,key,cfg){
+  if(!notebookSettings[kid]) notebookSettings[kid]={};
+  if(!notebookSettings[kid].extraPages) notebookSettings[kid].extraPages={};
+  notebookSettings[kid].extraPages[key]=cfg;
+  try{ localStorage.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db) db.ref("notebookSettings/"+kid+"/extraPages/"+key).set(cfg); }catch(e){}
+  if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
+}
+function nbXpToggle(kid,key){ const c=nbXpCfg(kid,key); nbXpSave(kid,key,{on:!c.on,days:c.days}); }
+function nbXpDay(kid,key,day){ const c=nbXpCfg(kid,key); const d=Object.assign({},c.days); if(d[day]) delete d[day]; else d[day]=true; nbXpSave(kid,key,{on:c.on,days:d}); }
+// ½" prong/binding margin — one global flag for ALL notebooks + parent docs, synced like reviewCap.
+function nbBindingToggle(){
+  const next=!((notebookSettings||{}).bindingMargin===true);
+  notebookSettings.bindingMargin=next;
+  try{ localStorage.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db) db.ref("notebookSettings/bindingMargin").set(next); }catch(e){}
+  if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
+}
 function nbSetReviewCap(kid,delta){
   const next=Math.max(0,Math.min(5,nbReviewCap(kid)+delta));
   if(!notebookSettings[kid]) notebookSettings[kid]={};
@@ -11377,7 +11398,10 @@ function unitEditSave(){
 
 function renderNotebook(el){
   const con=el||document.getElementById("content"); if(!con)return;
-  haLoadNotebooksLib().catch(()=>{}); // warm the engine so the Generate buttons are ready
+  // Warm the engine so the Generate buttons are ready; if the lib (and its extra-page
+  // catalog) wasn't loaded yet on first paint, re-render once so the Extra Pages card appears.
+  const nbLibWasReady=!!(window.HoweNotebooks&&window.HoweNotebooks.extraPageCatalog);
+  haLoadNotebooksLib().then(()=>{ if(!nbLibWasReady&&tab==="notebook"){ const el2=document.getElementById("content"); if(el2) renderNotebook(el2); } }).catch(()=>{});
   const wkLabel=String(WK).replace("week","Week ");
   const sel=NB_KIDS.find(x=>x.k===nbSelectedKid)?nbSelectedKid:"lincoln";
   const meta=NB_KIDS.find(x=>x.k===sel);
@@ -11492,6 +11516,39 @@ function renderNotebook(el){
       '<div style="font-size:10.5px;color:var(--muted);margin-top:8px">'+(cap===0?'Off — no review folding; letters &amp; numbers run in pure order.':('Up to '+cap+' struggled-with item'+(cap>1?'s':'')+' per subject fold in before new material.'))+'</div>'+
     '</div>';
   }
+  // ½" prong margin — Mom-gated GLOBAL toggle (all kids' notebooks + parent docs).
+  let bindHtml="";
+  if(momHere()){
+    const bOn=(notebookSettings||{}).bindingMargin===true;
+    bindHtml='<div style="display:flex;align-items:center;gap:10px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;padding:10px 14px;margin-bottom:16px">'+
+      '<button onclick="nbBindingToggle()" title="'+(bOn?'On — tap to turn off':'Off — tap to turn on')+'" style="width:34px;height:20px;border-radius:20px;border:none;background:'+(bOn?'#16a34a':'#d1d5db')+';position:relative;cursor:pointer;flex-shrink:0;padding:0"><span style="position:absolute;top:2px;'+(bOn?'right:2px':'left:2px')+';width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25)"></span></button>'+
+      '<div style="flex:1"><div style="font-size:12px;font-weight:800;color:#9a3412">📎 ½&#8221; prong margin <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#fed7aa;color:#7c2d12;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span></div>'+
+      '<div style="font-size:10.5px;color:var(--muted);line-height:1.4">Leaves a ½&#8221; strip on the binding edge for 3-prong folders (page content shrinks ~6%, nothing gets cut off). Mirrored for double-sided printing. Applies to every notebook + parent doc.</div></div>'+
+    '</div>';
+  }
+  // Extra pages — Mom-gated per-page toggle + day chips. Catalog comes from notebooks.js
+  // (HoweNotebooks.extraPageCatalog) so the UI list can never drift from what the generator builds.
+  let xpHtml="";
+  const xpCatalog=(window.HoweNotebooks&&window.HoweNotebooks.extraPageCatalog)||null;
+  if(momHere() && xpCatalog && xpCatalog[sel] && xpCatalog[sel].length){
+    const dayDefs=[["monday","M"],["tuesday","T"],["wednesday","W"],["thursday","Th"],["friday","F"]];
+    const xpRows=xpCatalog[sel].map(p=>{
+      const c=nbXpCfg(sel,p.key);
+      const chips=dayDefs.map(d=>{
+        const on=!!c.days[d[0]];
+        return '<button '+(c.on?'':'disabled ')+'onclick="nbXpDay(\''+sel+'\',\''+p.key+'\',\''+d[0]+'\')" title="'+(on?'Assigned — tap to clear':'Tap to assign this day')+'" style="width:26px;height:26px;border-radius:7px;border:1.5px solid '+(on?'#ea580c':'var(--border)')+';background:'+(on?'#fff7ed':'#fff')+';color:'+(c.on?(on?'#9a3412':'#9ca3af'):'#e5e7eb')+';font-size:10px;font-weight:800;cursor:'+(c.on?'pointer':'default')+';padding:0;font-family:\'DM Sans\',sans-serif">'+d[1]+'</button>';
+      }).join('');
+      return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--border);'+(c.on?'':'opacity:.55')+'">'+
+        '<button onclick="nbXpToggle(\''+sel+'\',\''+p.key+'\')" title="'+(c.on?'In the notebook — tap to remove':'Off — tap to include')+'" style="width:34px;height:20px;border-radius:20px;border:none;background:'+(c.on?'#16a34a':'#d1d5db')+';position:relative;cursor:pointer;flex-shrink:0;padding:0"><span style="position:absolute;top:2px;'+(c.on?'right:2px':'left:2px')+';width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25)"></span></button>'+
+        '<span style="flex:1;font-size:12px;font-weight:700;color:#1f2937">'+p.emoji+' '+p.label+'</span>'+
+        '<span style="display:inline-flex;gap:4px">'+chips+'</span>'+
+      '</div>';
+    }).join('');
+    xpHtml='<div id="nbxp-card" style="margin-top:14px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;padding:12px 14px">'+
+      '<div style="font-size:12px;font-weight:800;color:#9a3412;margin-bottom:2px">📄 Extra pages <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#fed7aa;color:#7c2d12;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span></div>'+
+      '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:4px">Toggle which extra pages print in the notebook. Tap a day to assign the page — that day’s page adds a “\u{1F4CC} Extra pages today” reminder. No day = it just prints, no reminder.</div>'+
+      xpRows+'</div>';
+  }
   con.innerHTML=
     '<div style="max-width:560px;margin:0 auto;padding:20px 18px;font-family:\'DM Sans\',sans-serif">'+
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'+
@@ -11502,6 +11559,7 @@ function renderNotebook(el){
       '<div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:14px">Pick a kid, then generate. Print from the new tab (Cmd/Ctrl+P, “Background graphics” ON).</div>'+
       '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px">'+chips+'</div>'+
       '<button onclick="haNbCombinedParent()" style="width:100%;padding:11px;border-radius:11px;border:1.5px solid #c7d2fe;background:#eef2ff;color:#3730a3;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-bottom:16px">📚 Combined Parent Guide — all 4 kids in one packet</button>'+
+      bindHtml+
       '<div style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:16px">'+
         '<div style="font-size:15px;font-weight:800;color:#1f2937;margin-bottom:10px">'+meta.label+'</div>'+
         '<div style="display:flex;gap:8px">'+
@@ -11509,6 +11567,7 @@ function renderNotebook(el){
           '<button onclick="haNbOpen(\''+sel+'\',\'parent\')" style="flex:1;padding:10px;border-radius:10px;border:1.5px solid var(--border);background:#fff;color:#1f2937;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">👩‍🏫 Parent</button>'+
         '</div>'+
         formHtml+
+        xpHtml+
         reviewHtml+
         storyHtml+
         coloringHtml+
