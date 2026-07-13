@@ -54,6 +54,16 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .kid-btn[data-kid="all"].active{background:#111827}
 /* kid-btn active + .badge-<kid> colors injected from ROSTER_DEF (see FAMILY IDENTITY) */
 .kid-btn[data-kid="mom"].active{background:#b5394a}
+/* Mom's two-column, time-aligned agenda (kid=="mom" view) */
+.mom-agenda{padding:2px 10px 6px}
+.mom-agenda-row{display:grid;grid-template-columns:46px 1fr 1fr;gap:8px;align-items:start;padding:7px 0;border-bottom:1px solid var(--border)}
+.mom-agenda-head{border-bottom:2px solid var(--border);padding:6px 0;margin-top:2px}
+.mom-agenda-head .mom-h{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;text-align:center}
+.mom-h.req{color:#b5394a}
+.mom-h.may{color:#92400e}
+.mom-agenda .time-pill{font-size:11px;font-weight:700;color:var(--muted);padding-top:6px}
+.mom-col{display:flex;flex-direction:column;gap:6px;min-width:0}
+.mom-empty{color:#d1d5db;font-size:14px;text-align:center;padding:8px 0}
 
 /* ── SKYLIGHT ── */
 #skylight-panel{background:#fff;border-bottom:2px solid var(--border);display:none}
@@ -1735,7 +1745,7 @@ function checkMomPin(val){
   if(val === APP_PIN){
     momPinUnlocked = true;
     momModeActive = true;
-    kid = "all";
+    kid = "mom"; // land straight on Mom's agenda (not the all-kids view)
     renderAll();
   } else {
     if(err) err.textContent = "Incorrect PIN";
@@ -1992,7 +2002,14 @@ function renderKidFilter(){
 function selKid(k){
   if(k==="mom"){
     if(momModeActive){
-      momModeActive=false; momPinUnlocked=false; kid="all"; schedShowAdmin=false; renderAll();
+      if(kid==="mom"){
+        // Already on the agenda → tapping Mom again exits Mom mode.
+        momModeActive=false; momPinUnlocked=false; kid="all"; schedShowAdmin=false; renderAll();
+      } else {
+        // In Mom mode but peeking at a kid → tapping Mom returns to the agenda (stays unlocked/red).
+        kid="mom"; schedShowAdmin=false; renderAll();
+        window.scrollTo({top:0,behavior:'smooth'});
+      }
     } else {
       kid="mom"; schedShowAdmin=false; renderAll();
       window.scrollTo({top:0,behavior:'smooth'});
@@ -3273,6 +3290,32 @@ function schedToggleKidOff(k,ds){
   renderAll();
 }
 
+// Mom's two-column, time-aligned agenda for the "Mom" view: left = tasks she must sit for
+// (mom-required), right = tasks a kid does independently but she reviews (may-need-mom),
+// coordinated on a shared time axis so at each moment she sees what needs her vs what to keep
+// an eye on. Cross-kid (all four) — each card keeps its kid badge via taskCard.
+function momAgendaHtml(dayTasks){
+  const req=dayTasks.filter(t=>t.mom==="required");
+  const may=dayTasks.filter(t=>t.mom==="maybe");
+  if(!req.length&&!may.length)
+    return '<div style="padding:28px 16px;text-align:center;color:var(--muted);font-size:13px">No Mom-needed work scheduled this day. 🎉</div>';
+  const byTime={};
+  dayTasks.forEach(t=>{ const m=toMin(t.time); if(m==null)return; if(!byTime[m])byTime[m]={req:[],may:[]}; (t.mom==="required"?byTime[m].req:byTime[m].may).push(t); });
+  const mins=Object.keys(byTime).map(Number).sort((a,b)=>a-b);
+  let h='<div class="mom-agenda">';
+  h+='<div class="mom-agenda-row mom-agenda-head"><div></div><div class="mom-h req">🔴 Mom Needed</div><div class="mom-h may">🟡 May Need Mom</div></div>';
+  let lunchDone=false;
+  mins.forEach(m=>{
+    if(!lunchDone&&m>=13*60){ h+='<div class="mom-agenda-row"><div class="time-pill">1:00</div><div style="grid-column:2/4;background:#fef9c3;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;color:#854d0e">🍎 Lunch · 1–2pm</div></div>'; lunchDone=true; }
+    const c=byTime[m];
+    h+='<div class="mom-agenda-row"><div class="time-pill">'+fromMin(m)+'</div>';
+    h+='<div class="mom-col">'+(c.req.length?c.req.map(tk=>taskCard(tk)).join(''):'<div class="mom-empty">—</div>')+'</div>';
+    h+='<div class="mom-col">'+(c.may.length?c.may.map(tk=>taskCard(tk)).join(''):'<div class="mom-empty">—</div>')+'</div>';
+    h+='</div>';
+  });
+  h+='</div>';
+  return h;
+}
 function renderSchedule(el){
   try{ forfeitSweep(); }catch(e){}
   if(schedShowPace){ renderPace(el); return; }
@@ -3403,6 +3446,11 @@ function renderSchedule(el){
     }
   }
 
+  // Mom view: a two-column, time-aligned agenda (Mom Needed | May Need Mom) instead of the
+  // single-column kid schedule. Mom mode always unlocks, so no Skylight-lock handling here.
+  if(kid==="mom" && unlocked){
+    h+=momAgendaHtml(tasks);
+  } else {
   const innerStart = unlocked
     ? '<div class="time-slots">'
     : '<div class="sched-locked-wrap"><div class="sched-blur"><div class="time-slots">';
@@ -3444,6 +3492,7 @@ function renderSchedule(el){
   } else {
     h+='</div>'; // close .time-slots
   }
+  } // end: Mom two-column agenda vs normal kid schedule
 
   // Mom notices: auto-generated week + structure drift since commit
   if(momModeActive){
