@@ -3796,7 +3796,11 @@ function bumpSkippedInTier(done){
 // Write a real (verified) completion + history entry. score optional.
 function finalizeDone(id, doneTs, score){
   checked[id]=doneTs; sv(WK+"_checked",checked); lastCheckedWrite=Date.now();
-  if(db) db.ref(WK+"/checked").set(checked);
+  // Targeted child write — a whole-map set() here let a device with stale local state
+  // erase other tablets' fresh checks (two kids checking within seconds = one check
+  // vanished from every other screen until history-reconcile restored it). Same
+  // clobber class as the 2026-06-18 drills multi-device fix.
+  if(db) db.ref(WK+"/checked/"+id).set(doneTs);
   if(claimed[id]!=null){ delete claimed[id]; sv(WK+"_claimed",claimed); if(db) db.ref(WK+"/claimed/"+id).remove(); }
   const hist=ld(WK+"_history")||{};
   const t=weekData.tasks.find(x=>x.id===id);
@@ -4119,7 +4123,9 @@ document.getElementById("dlg-uncheck").onclick=()=>{
   delete checked[id]; sv(WK+"_checked",checked);
   lastCheckedWrite=Date.now();
   dbg("write uncheck id="+id+" n="+Object.keys(checked).length);
-  if(db) db.ref(WK+"/checked").set(checked);
+  // Targeted child remove — see finalizeDone: whole-map set() clobbered concurrent
+  // checks from other devices.
+  if(db) db.ref(WK+"/checked/"+id).remove();
   const hist=ld(WK+"_history")||{};
   delete hist[id]; delete histState[id]; sv(WK+"_history",hist);
   if(db) db.ref(WK+"/history/"+id).remove();
@@ -6709,10 +6715,11 @@ function ceWalkApply(){
   const removeRows=!removeEl||removeEl.checked;
   if(!confirm("Walk back "+items.length+" check-off"+(items.length>1?"s":"")+"?"+(removeRows?" They also come off this week’s schedule (the cursor re-serves the lessons).":" They return to the not-done pool.")+" A snapshot is saved.")) return;
   let curTouched=false;
+  const wbChecked={}; // targeted removes — whole-map set() here could erase kids' concurrent check-offs
   items.forEach(it=>{
     if(!it.archive){
       manualUnchecks.add(it.doneKey);
-      delete checked[it.doneKey];
+      delete checked[it.doneKey]; wbChecked[it.doneKey]=null;
       const hist=ld(WK+"_history")||{}; delete hist[it.doneKey]; delete histState[it.doneKey]; sv(WK+"_history",hist);
       if(claimed[it.doneKey]!=null){ delete claimed[it.doneKey]; sv(WK+"_claimed",claimed); if(db) db.ref(WK+"/claimed/"+it.doneKey).remove(); }
       if(db) db.ref(WK+"/history/"+it.doneKey).remove();
@@ -6737,7 +6744,7 @@ function ceWalkApply(){
   });
   if(curTouched){
     sv(WK+"_checked",checked); sv(WK+"_tasks",weekData.tasks); lastCheckedWrite=Date.now();
-    if(db) db.ref(WK+"/checked").set(checked);
+    if(db&&Object.keys(wbChecked).length) db.ref(WK+"/checked").update(wbChecked);
   }
   try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
   // Mark these lessons walked-back so the cross-week carry never resurrects them as _c ghosts —
@@ -9289,16 +9296,24 @@ function runCascade(){
   // GC: remove checked/history entries that don't belong to any current task
   const taskIds=new Set(weekData.tasks.map(x=>x.id));
   if(taskIds.size>0){
+    // Targeted multi-path removes (update with nulls) — the old whole-map set()s here
+    // replayed THIS device's view of checked/history/claimed over everyone else's,
+    // erasing concurrent check-offs from other tablets. Now GC deletes only the
+    // specific orphan ids and can never touch entries it didn't decide to purge.
     let gcCount=0;
-    for(const id in checked){ if(!taskIds.has(id)){ delete checked[id]; gcCount++; } }
-    for(const id in histState){ if(!taskIds.has(id)){ delete histState[id]; gcCount++; } }
-    let claimGc=false;
-    for(const id in claimed){ if(!taskIds.has(id)){ delete claimed[id]; claimGc=true; } }
-    if(claimGc){ sv(WK+"_claimed",claimed); if(db) db.ref(WK+"/claimed").set(claimed); }
+    const gcChecked={}, gcHist={};
+    for(const id in checked){ if(!taskIds.has(id)){ delete checked[id]; gcChecked[id]=null; gcCount++; } }
+    for(const id in histState){ if(!taskIds.has(id)){ delete histState[id]; gcHist[id]=null; gcCount++; } }
+    let claimGc=false; const gcClaim={};
+    for(const id in claimed){ if(!taskIds.has(id)){ delete claimed[id]; gcClaim[id]=null; claimGc=true; } }
+    if(claimGc){ sv(WK+"_claimed",claimed); if(db) db.ref(WK+"/claimed").update(gcClaim); }
     if(gcCount){
       sv(WK+"_checked",checked); sv(WK+"_history",histState);
       lastCheckedWrite=Date.now();
-      if(db){ db.ref(WK+"/checked").set(checked); db.ref(WK+"/history").set(histState); }
+      if(db){
+        if(Object.keys(gcChecked).length) db.ref(WK+"/checked").update(gcChecked);
+        if(Object.keys(gcHist).length) db.ref(WK+"/history").update(gcHist);
+      }
       dbg("gc: purged "+gcCount+" orphan entries");
     }
   }
