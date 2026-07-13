@@ -56,12 +56,13 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .kid-btn[data-kid="mom"].active{background:#b5394a}
 /* Mom's two-column, time-aligned agenda (kid=="mom" view) */
 .mom-agenda{padding:2px 10px 6px}
-.mom-agenda-row{display:grid;grid-template-columns:54px 1fr 1fr;gap:8px;align-items:start;padding:7px 0;border-bottom:1px solid var(--border)}
+.mom-agenda-row{display:grid;grid-template-columns:44px 1fr 1fr;gap:8px;align-items:start;padding:7px 0;border-bottom:1px solid var(--border)}
 .mom-agenda-head{border-bottom:2px solid var(--border);padding:6px 0;margin-top:2px}
 .mom-agenda-head .mom-h{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;text-align:center}
 .mom-h.req{color:#b5394a}
 .mom-h.may{color:#92400e}
-.mom-agenda .time-pill{font-size:10px;font-weight:700;color:var(--muted);padding-top:6px;white-space:nowrap;line-height:1.3}
+.mom-agenda .time-pill{font-size:11px;font-weight:700;color:var(--muted);padding-top:4px;line-height:1.1;white-space:nowrap}
+.mom-agenda .time-pill .ampm{display:block;font-size:8.5px;font-weight:600;color:#9ca3af;margin-top:1px}
 .mom-col{display:flex;flex-direction:column;gap:6px;min-width:0}
 .mom-empty{color:#d1d5db;font-size:14px;text-align:center;padding:8px 0}
 
@@ -3306,9 +3307,10 @@ function momAgendaHtml(dayTasks){
   h+='<div class="mom-agenda-row mom-agenda-head"><div></div><div class="mom-h req">🔴 Mom Needed</div><div class="mom-h may">🟡 May Need Mom</div></div>';
   let lunchDone=false;
   mins.forEach(m=>{
-    if(!lunchDone&&m>=13*60){ h+='<div class="mom-agenda-row"><div class="time-pill">1:00</div><div style="grid-column:2/4;background:#fef9c3;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;color:#854d0e">🍎 Lunch · 1–2pm</div></div>'; lunchDone=true; }
+    if(!lunchDone&&m>=13*60){ h+='<div class="mom-agenda-row"><div class="time-pill">1:00<span class="ampm">PM</span></div><div style="grid-column:2/4;background:#fef9c3;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;color:#854d0e">🍎 Lunch · 1–2pm</div></div>'; lunchDone=true; }
     const c=byTime[m];
-    h+='<div class="mom-agenda-row"><div class="time-pill">'+fromMin(m)+'</div>';
+    const _tp=fromMin(m).split(' ');
+    h+='<div class="mom-agenda-row"><div class="time-pill">'+_tp[0]+'<span class="ampm">'+(_tp[1]||'')+'</span></div>';
     h+='<div class="mom-col">'+(c.req.length?c.req.map(tk=>taskCard(tk)).join(''):'<div class="mom-empty">—</div>')+'</div>';
     h+='<div class="mom-col">'+(c.may.length?c.may.map(tk=>taskCard(tk)).join(''):'<div class="mom-empty">—</div>')+'</div>';
     h+='</div>';
@@ -3428,7 +3430,7 @@ function renderSchedule(el){
         (momHere()&&_carryHiddenKid?'<span style="font-weight:700;color:#7c3aed;text-transform:none;letter-spacing:0">🙈 Hidden from '+cap(kid)+'</span>':'')+
       '</div>';
     if(!coCollapsed){
-      coHtml+='<div style="font-size:10.5px;color:#6366f1;margin:4px 0 8px">Already in your schedule this week — check them off there and this list updates. Tap the title to collapse.</div>';
+      coHtml+='<div style="font-size:10.5px;color:#6366f1;margin:4px 0 8px">Already in your schedule this week — check them off there. Tap the title to minimize; tap a kid to see their list.</div>';
       const coCard=t=>{
         let fromLabel, readOnly=false, doneId=null;
         if(t.id.endsWith("_c")){
@@ -3448,8 +3450,12 @@ function renderSchedule(el){
         [...ROSTER].forEach(k=>{
           const items=carriedOver.filter(t=>t.who===k);
           if(!items.length) return;
-          coHtml+='<div style="display:flex;align-items:center;gap:6px;margin:8px 0 4px"><span class="kid-badge badge-'+k+'" style="font-size:9px;padding:1px 6px">'+cap(k)+'</span><span style="font-size:10px;color:#6366f1;font-weight:700">'+items.length+' carried</span></div>';
-          items.forEach(t=>{ coHtml+=coCard(t); });
+          const kopen=!!coKidOpen[k];
+          coHtml+='<div onclick="toggleCarryKid(\''+k+'\')" style="cursor:pointer;display:flex;align-items:center;gap:6px;margin:8px 0 4px">'+
+            '<span style="font-size:9px;width:9px;color:#6366f1">'+(kopen?'▾':'▸')+'</span>'+
+            '<span class="kid-badge badge-'+k+'" style="font-size:9px;padding:1px 6px">'+cap(k)+'</span>'+
+            '<span style="font-size:10px;color:#6366f1;font-weight:700">'+items.length+' carried</span></div>';
+          if(kopen){ items.forEach(t=>{ coHtml+=coCard(t); }); }
         });
       } else {
         carriedOver.forEach(t=>{ coHtml+=coCard(t); });
@@ -3689,8 +3695,11 @@ function carryHidden(who){
   return hc[who]!==false;
 }
 // Collapse state for the "Carried Over" box (tap its title to minimize to one line).
-let coCollapsed=(function(){try{return localStorage.getItem("ha_co_collapsed")==="1";}catch(e){return false;}})();
+let coCollapsed=(function(){try{const v=localStorage.getItem("ha_co_collapsed");return v===null?true:v==="1";}catch(e){return true;}})();
 function toggleCarryCollapse(){ coCollapsed=!coCollapsed; try{localStorage.setItem("ha_co_collapsed",coCollapsed?"1":"0");}catch(e){} renderAll(); }
+// Per-kid expand state inside the box (default collapsed → tap a kid to open their list).
+let coKidOpen=(function(){try{return JSON.parse(localStorage.getItem("ha_co_kids")||"{}")||{};}catch(e){return {};}})();
+function toggleCarryKid(k){ coKidOpen[k]=!coKidOpen[k]; try{localStorage.setItem("ha_co_kids",JSON.stringify(coKidOpen));}catch(e){} renderAll(); }
 // Per-kid toggle for the box. Hidden (default) → tap to show; shown → tap to hide again.
 // Only rendered to Mom (momHere). Persisted in config/rules so it syncs across the fleet.
 function toggleHideCarryover(kid){
