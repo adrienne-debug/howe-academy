@@ -8706,6 +8706,11 @@ function cascadeIntraWeek(sweepTodayElapsed){
   // checkedOnDay remains only a fallback for entries whose ts can't be parsed.
   let _healMoved=false;
   const _histFix={};
+  // Targeted multi-path task updates for the no-sweep heal write below. Every device
+  // heals on every check-off; whole-node safeWriteTasks here meant N devices × 276
+  // tasks per check-off (the "heal storm") and let a stale device clobber task edits.
+  // Duplicate heals from racing devices now write identical field values — harmless.
+  const _healUpd={};
   weekData.tasks.forEach(t=>{
     // Day-bound dailies (drills/notebooks = subjNoCarry) must NEVER be relocated by their
     // check-off day. Same-titled dailies share a history checkedOnDay, so healing them by it
@@ -8723,7 +8728,8 @@ function cascadeIntraWeek(sweepTodayElapsed){
           dbg("cascade heal(ts): "+t.id+" "+t.day+" → "+dn);
           t.day=dn;
           t.time=_ctTime;
-          if(t.cascadedFrom===t.day) delete t.cascadedFrom;
+          _healUpd[t.id+"/day"]=dn; _healUpd[t.id+"/time"]=_ctTime;
+          if(t.cascadedFrom===t.day){ delete t.cascadedFrom; _healUpd[t.id+"/cascadedFrom"]=null; }
           _healMoved=true;
           const h0=histState[t.id];
           if(h0&&(h0.checkedOnDay!==dn||h0.day!==dn)){ h0.checkedOnDay=dn; h0.day=dn; _histFix[t.id]=h0; }
@@ -8733,6 +8739,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
           // task should show the time it was finished, so restore it from the check-off ts.
           dbg("cascade heal(ts time): "+t.id+" "+t.time+" → "+_ctTime);
           t.time=_ctTime;
+          _healUpd[t.id+"/time"]=_ctTime;
           _healMoved=true;
         }
         return; // ts matched a week day — ground truth; skip the checkedOnDay fallback
@@ -8742,6 +8749,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
     if(h&&h.checkedOnDay&&h.checkedOnDay!=="carryover"&&h.checkedOnDay!==t.day){
       dbg("cascade heal: "+t.id+" day "+t.day+" → "+h.checkedOnDay);
       t.day=h.checkedOnDay;
+      _healUpd[t.id+"/day"]=h.checkedOnDay;
       _healMoved=true;
     }
   });
@@ -8768,6 +8776,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
       if(t.cascadedFrom&&t.cascadedFrom!==t.day){
         dbg("noCarry snap-back: "+t.id+" "+t.day+" → "+t.cascadedFrom);
         t.day=t.cascadedFrom; delete t.cascadedFrom; _healMoved=true;
+        _healUpd[t.id+"/day"]=t.day; _healUpd[t.id+"/cascadedFrom"]=null;
       }
       // Regen re-time WITHIN today: day-bound means "never a later DAY" — but a mid-day
       // regenerate must still pull today's own elapsed bookends/drills up to now (a
@@ -8777,6 +8786,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
       if(sweepTodayElapsed&&t.day===today&&!_isClose(t)&&toMin(t.time)<_nowMin){
         const _st=Math.max(_nowMin,_dbCursor[t.who]||0);
         t.time=fromMin(_st); _dbCursor[t.who]=_st+(t.dur||20); _healMoved=true;
+        _healUpd[t.id+"/time"]=t.time;
       }
       return;
     }
@@ -8813,11 +8823,20 @@ function cascadeIntraWeek(sweepTodayElapsed){
         if(!closes.length) return;
         let lastEnd=_nowMin; others.forEach(t=>{ const e=toMin(t.time)+(t.dur||20); if(e>lastEnd)lastEnd=e; });
         closes.sort((a,b)=>toMin(a.time)-toMin(b.time));
-        closes.forEach((c,i)=>{ if(toMin(c.time)<lastEnd){ c.time=fromMin(lastEnd+i*(c.dur||20)); _healMoved=true; } });
+        closes.forEach((c,i)=>{ if(toMin(c.time)<lastEnd){ c.time=fromMin(lastEnd+i*(c.dur||20)); _healMoved=true; _healUpd[c.id+"/time"]=c.time; } });
       });
     }
     // Persist the self-heal/re-time moves or they'd silently revert on the next data load.
-    if(_healMoved){ sv(WK+"_tasks",weekData.tasks); safeWriteTasks("cascade-heal"); renderAll(); }
+    // Targeted multi-path update — never the whole node (see _healUpd note above).
+    if(_healMoved){
+      sv(WK+"_tasks",weekData.tasks);
+      if(db&&!_dryRun()&&Object.keys(_healUpd).length){
+        lastTasksWrite=Date.now();
+        db.ref(WK+"/tasks").update(_healUpd);
+        dbg("wrote tasks (cascade-heal): "+Object.keys(_healUpd).length+" paths (targeted)");
+      }
+      renderAll();
+    }
     return;
   }
 
