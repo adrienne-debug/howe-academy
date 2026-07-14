@@ -21934,6 +21934,17 @@ let sprintDeck="__all__";
 // Selection is stored as ids and re-resolved each render so live registry/drill updates flow in.
 let sprintUnitId=null;
 let sprintUnitKey=null;
+// LA: "editor" source — Editor-in-Chief rule sprints for the Language Arts unit (fresh
+// AI-written sentences against the unit's rules; the memorized card examples are forbidden).
+// laRuleSel is keyed per deck and holds rule-INDEX sets; it seeds itself from drill status
+// on first view of a deck (see laSelectedIdx).
+let laDeck=null;
+let laRuleSel={};
+let laMode="fix";
+let laDiff="intro";
+let laSize="standard";
+let laReviewDecks=[];
+let laGenerating=false;
 
 const SPRINT_LOE_B=[
   {pg:"sh",sounds:"/sh/"},{pg:"th",sounds:"/th/·/ð/"},{pg:"ch",sounds:"/ch/·/k/·/sh/"},
@@ -21990,7 +22001,8 @@ function sprintUpdateGain(){
   if(!el) return;
   if(a&&b){
     const gain=b-a, pct=a>0?Math.round((gain/a)*100):0;
-    if(gain>0){el.textContent=`🎉 +${gain} words A→B (${pct}% gain) — decoding is clicking!`;el.style.color="#16a34a";}
+    const noun=sprintSource==="editor"?"items":"words", win=sprintSource==="editor"?"the rules are clicking!":"decoding is clicking!";
+    if(gain>0){el.textContent=`🎉 +${gain} ${noun} A→B (${pct}% gain) — ${win}`;el.style.color="#16a34a";}
     else if(gain===0){el.textContent="Consistent score — solid foundation, keep drilling.";el.style.color="#d97706";}
     else{el.textContent="B lower than A — normal early on. Keep going!";el.style.color="#78716c";}
   } else {
@@ -22010,6 +22022,7 @@ function sprintLogResult(){
   const deck=sprintSource==="drill"
     ? (sprintDeck==="__all__"?"All decks":sprintDeck)
     : sprintSource==="unit" ? (_uRound?_uRound.logLabel:"unit")
+    : sprintSource==="editor" ? laLogLabel()
     : (sprintSelectedPhono?sprintSelectedPhono.pg:(document.getElementById("sp-custom-phono")?.value?.trim()||"phonogram"));
   const date=sprintSource!=="phonogram"?sprintDate:(document.getElementById("sp-date")?.value||sprintDate);
   const la=sprintLive&&sprintLive.A, lb=sprintLive&&sprintLive.B;  // % finished from the live timer, if used
@@ -22017,8 +22030,10 @@ function sprintLogResult(){
   const isPhon=sprintSource==="phonogram";  // grid/difficulty pills only apply to the phonogram source
   const gain=(a&&b)?(b-a):null, gainPct=(a&&b)?Math.round((b-a)/a*100):null;
   const total=(la&&typeof la.total==='number')?la.total:((lb&&typeof lb.total==='number')?lb.total:null);  // words per sheet
+  const isEd=sprintSource==="editor";  // editor sprints reuse the diff slot so Scores level-colors them
   const entry={date,deck,a:a||null,b:b||null,best,pctA,pctB,gain,gainPct,total,snum:sprintNum,
-    diff:isPhon?sprintPillState.diff:null,gs:isPhon?sprintPillState.gs:null,nw:isPhon?sprintPillState.nw:null,ps:isPhon?sprintPillState.ps:null,
+    diff:isPhon?sprintPillState.diff:(isEd?laDiff:null),gs:isPhon?sprintPillState.gs:(isEd?laSize:null),nw:isPhon?sprintPillState.nw:null,ps:isPhon?sprintPillState.ps:null,
+    mode:isEd?laMode:null,
     ts:Date.now(),src:sprintSource};
   const kid=masteryKid;
   if(!masteryData.sprintLog) masteryData.sprintLog={};
@@ -22269,8 +22284,9 @@ function buildSprintSourceToggle(color){
   };
   let s='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:10px;margin-bottom:14px">';
   s+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:7px">Sprint Source</div>';
-  s+='<div style="display:flex;gap:8px">'+opt("phonogram","\u{1F524} Phonogram")+opt("drill","\u{1F5C2}\u{FE0F} From drill items")
-    +(haKidUnits(masteryKid).length?opt("unit","\u{1F393} Unit"):"")+'</div>';
+  s+='<div style="display:flex;gap:8px;flex-wrap:wrap">'+opt("phonogram","\u{1F524} Phonogram")+opt("drill","\u{1F5C2}\u{FE0F} From drill items")
+    +(haKidUnits(masteryKid).length?opt("unit","\u{1F393} Unit"):"")
+    +(laUnitFor(masteryKid)?opt("editor","\u{270F}\u{FE0F} Rules"):"")+'</div>';
   return s+'</div>';
 }
 // ── U5: the "Unit" sprint source — speed rounds derived from a unit study's decks. ──
@@ -22335,6 +22351,451 @@ function buildSprintUnitHtml(color){
   }
   return h;
 }
+// ── LA: "editor" source — Editor-in-Chief RULE sprints for the Language Arts unit. ──
+// The unit's drill cards carry a memorized example on the front and the rule on the back, so
+// the generic unit source (sprint the card names) only re-reads memorized sentences. This
+// source writes FRESH sentences against the selected rules through the same AI pipeline as
+// the phonogram sprint — the card examples ride along as a do-NOT-reuse list — with three
+// game modes, difficulty/size/spiral-review settings, an authored offline fallback bank, and
+// the shared 60s tap-along timer + score log.
+const LA_UNIT_ID="language_arts";
+function laUnitFor(kid){ const u=(unitStudies||{})[LA_UNIT_ID]; return (u&&(u.enrolled||{})[kid])?u:null; }
+function _laStrip(html){ return String(html||"").replace(/<[^>]*>/g,"").replace(/\s+/g," ").trim(); }
+const LA_MODES=[
+  {v:"fix",l:"\u{270F}\u{FE0F} Fix It",desc:"Every sentence hides mistakes \u{2014} find each one and say the fix out loud."},
+  {v:"judge",l:"\u{2696}\u{FE0F} Right or Wrong?",desc:"Some sentences are perfect, some are broken \u{2014} call it, and say why."},
+  {v:"spot",l:"\u{1F50D} Spot It",desc:"Every sentence is correct \u{2014} point to the rule at work and name it."}];
+const LA_MODE_LBL={fix:"Fix It",judge:"Right or Wrong",spot:"Spot It"};
+const LA_SIZES={short:6,standard:9,long:12};
+const LA_DECK_EMOJI={"Capitalization":"\u{1F520}","Punctuation":"\u{270D}\u{FE0F}","Articles":"\u{1F170}\u{FE0F}","Nouns & Pronouns":"\u{1F9F8}","Plural Nouns":"\u{1F465}","Verb Tenses":"\u{23F3}","Subject-Verb Agreement":"\u{1F91D}"};
+// Distinct rules of one deck (cards sharing a def = examples of the same rule), with the
+// kid's drill status folded in: "learned" = a card of the rule cleared the sprint gate,
+// "learning" = met in drills (past parked), "new" = not started. Same lookups as unitSprintRounds.
+function laDeckRules(u,kid,deckKey){
+  const d=(u.decks||[]).find(x=>x&&x.key===deckKey); if(!d) return [];
+  const s=masteryData[kid+"_settings"]||{}; const gt=s.gate_tier||"weekly";
+  let items=masteryData[kid]; if(!Array.isArray(items)) items=Object.values(items||{});
+  const byKey={}; items.forEach(i=>{ if(i) byKey[i.subject+"|"+i.prompt]=i; });
+  const hist=masteryData.history;
+  const rules=[],byRule={};
+  (d.cards||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0)).forEach(c=>{
+    if(!c||!c.def) return;
+    let r=byRule[c.def];
+    if(!r){ r={rule:_laStrip(c.def),examples:[],st:"new"}; byRule[c.def]=r; rules.push(r); }
+    r.examples.push(_laStrip(c.name));
+    const it=byKey[d.key+"|"+c.name];
+    if(it&&it.status!=="parked"){
+      let ok=false;
+      if(it.status!=="introduction"){
+        if(typeof mastTierAtLeast==="function"&&mastTierAtLeast(it.tier,gt)) ok=true;
+        else{ const acc=(hist&&typeof mastUntimedAccuracy==="function")?mastUntimedAccuracy(hist,kid,it.id):null; ok=typeof acc==="number"&&acc>=0.9; }
+      }
+      if(ok) r.st="learned"; else if(r.st!=="learned") r.st="learning";
+    }
+  });
+  return rules;
+}
+// Selection is per-deck rule-index sets; first view of a deck pre-selects the rules the kid
+// has met in drills (all of them if nothing's started yet, so day one still works).
+function laSelectedIdx(deckKey,rules){
+  if(!laRuleSel[deckKey]){
+    const sel={};
+    rules.forEach((r,i)=>{ if(r.st!=="new") sel[i]=true; });
+    if(!Object.keys(sel).length) rules.forEach((r,i)=>{ sel[i]=true; });
+    laRuleSel[deckKey]=sel;
+  }
+  return laRuleSel[deckKey];
+}
+function laSetDeck(i){ const u=laUnitFor(masteryKid); if(!u) return; const d=(u.decks||[])[i]; if(d&&d.key){ laDeck=d.key; laReviewDecks=laReviewDecks.filter(k=>k!==d.key); } _mastRe(); }
+function laToggleRule(i){ const sel=laRuleSel[laDeck]||{}; if(sel[i]) delete sel[i]; else sel[i]=true; laRuleSel[laDeck]=sel; _mastRe(); }
+function laRulesQuick(which){
+  const u=laUnitFor(masteryKid); if(!u||!laDeck) return;
+  const rules=laDeckRules(u,masteryKid,laDeck); const sel={};
+  rules.forEach((r,i)=>{ if(which==="all"||(which==="started"&&r.st!=="new")) sel[i]=true; });
+  laRuleSel[laDeck]=sel; _mastRe();
+}
+function laSetOpt(k,v){ if(k==="mode") laMode=v; else if(k==="diff") laDiff=v; else laSize=v; _mastRe(); }
+function laToggleReview(deckKey){
+  const i=laReviewDecks.indexOf(deckKey);
+  if(i>=0) laReviewDecks.splice(i,1); else if(laReviewDecks.length<2&&deckKey!==laDeck) laReviewDecks.push(deckKey);
+  _mastRe();
+}
+function laLogLabel(){ return (laDeck||"Rules")+" \u{B7} "+(LA_MODE_LBL[laMode]||laMode); }
+// Personal best for one deck+mode combo, from the shared sprint log (entries tagged src:"editor").
+function laSprintBest(kid,logLabel){
+  let log=(masteryData.sprintLog||{})[kid]; if(!log) return null; if(!Array.isArray(log)) log=Object.values(log);
+  let best=null; log.forEach(e=>{ if(e&&e.src==="editor"&&e.deck===logLabel&&e.best){ if(best==null||e.best>best) best=e.best; } });
+  return best;
+}
+// Authored offline fallback (also the no-API-key path): 12 fresh examples per deck, each as a
+// wrong/right pair + parent answer line, so ONE bank powers all three modes. None of these
+// reuse the unit's drill-card examples.
+const LA_FB={
+"Capitalization":[
+ {w:"my cousin marcus lives in denver, colorado.",r:"My cousin Marcus lives in Denver, Colorado.",a:"Capitalize My (first word), Marcus (name), Denver, Colorado (place).",t:"First word \u{B7} Names \u{B7} Places"},
+ {w:"we are visiting grandma on thanksgiving.",r:"We are visiting Grandma on Thanksgiving.",a:"Capitalize We (first word), Grandma (used as her name), Thanksgiving (holiday).",t:"Relationship name \u{B7} Holiday"},
+ {w:"her dentist is dr. patel.",r:"Her dentist is Dr. Patel.",a:"Capitalize Her (first word) and Dr. Patel (title + name).",t:"Titles"},
+ {w:"jake said, \u{201C}come to my house after lunch.\u{201D}",r:"Jake said, \u{201C}Come to my house after lunch.\u{201D}",a:"Capitalize Jake (name) and Come (first word of the quotation).",t:"Quotation"},
+ {w:"the class party is on saturday, june 20.",r:"The class party is on Saturday, June 20.",a:"Capitalize The (first word), Saturday (day), June (month).",t:"Days \u{B7} Months"},
+ {w:"we read charlotte\u{2019}s web out loud this week.",r:"We read Charlotte\u{2019}s Web out loud this week.",a:"Capitalize We and Charlotte\u{2019}s Web (book title).",t:"Titles of books"},
+ {w:"my friend carlos speaks spanish and english.",r:"My friend Carlos speaks Spanish and English.",a:"Capitalize My, Carlos (name), Spanish and English (languages).",t:"Languages"},
+ {w:"tomorrow ben and i will ride bikes on elm street.",r:"Tomorrow Ben and I will ride bikes on Elm Street.",a:"Capitalize Tomorrow, Ben (name), I (always), Elm Street (street).",t:"Pronoun I \u{B7} Streets"},
+ {w:"saturn is much bigger than earth.",r:"Saturn is much bigger than Earth.",a:"Capitalize Saturn and Earth (planet names).",t:"Planets"},
+ {w:"aunt rosa joined the red cross last year.",r:"Aunt Rosa joined the Red Cross last year.",a:"Capitalize Aunt Rosa (title with her name) and Red Cross (name of a group).",t:"Groups"},
+ {w:"winters in the northeast are very snowy.",r:"Winters in the Northeast are very snowy.",a:"Capitalize Winters (first word) and Northeast (a region of the country).",t:"Regions"},
+ {w:"please text me your address asap.",r:"Please text me your address ASAP.",a:"Capitalize Please (first word) and ASAP (acronym).",t:"Acronyms"}],
+"Punctuation":[
+ {w:"Will you come to my game on Friday",r:"Will you come to my game on Friday?",a:"Question mark after a question.",t:"Question mark"},
+ {w:"Watch out for that huge wave",r:"Watch out for that huge wave!",a:"Exclamation mark after strong feeling.",t:"Exclamation mark"},
+ {w:"My backpack holds books pencils and a snack.",r:"My backpack holds books, pencils, and a snack.",a:"Commas separate words in a series.",t:"Comma \u{B7} series"},
+ {w:"My brother was born on May 4 2019.",r:"My brother was born on May 4, 2019.",a:"Comma between the day of the month and the year.",t:"Comma \u{B7} dates"},
+ {w:"We moved to Asheville North Carolina last spring.",r:"We moved to Asheville, North Carolina last spring.",a:"Comma between the city and the state.",t:"Comma \u{B7} city, state"},
+ {w:"It rained all day so the game was canceled.",r:"It rained all day, so the game was canceled.",a:"Comma before the conjunction (so) joining two sentences.",t:"Comma \u{B7} conjunction"},
+ {w:"Mom said Please feed the dog before dinner.",r:"Mom said, \u{201C}Please feed the dog before dinner.\u{201D}",a:"Comma after said + quotation marks around the spoken words.",t:"Quotation marks"},
+ {w:"I cant find my left shoe anywhere.",r:"I can\u{2019}t find my left shoe anywhere.",a:"Apostrophe in the contraction can\u{2019}t (can not).",t:"Apostrophe \u{B7} contraction"},
+ {w:"That is Marias soccer ball, not yours.",r:"That is Maria\u{2019}s soccer ball, not yours.",a:"Apostrophe + s shows the ball belongs to Maria.",t:"Apostrophe \u{B7} possessive"},
+ {w:"We need three things flour eggs and milk.",r:"We need three things: flour, eggs, and milk.",a:"Colon introduces the list; commas separate the items.",t:"Colon \u{B7} list"},
+ {w:"The bus leaves at 8 15 every morning.",r:"The bus leaves at 8:15 every morning.",a:"Colon between hours and minutes.",t:"Colon \u{B7} time"},
+ {w:"Mr Lee lives on Oak Ln in Boise.",r:"Mr. Lee lives on Oak Ln. in Boise.",a:"Periods after the abbreviations Mr. and Ln.",t:"Period \u{B7} abbreviations"}],
+"Articles":[
+ {w:"Dad bought an new grill for the deck.",r:"Dad bought a new grill for the deck.",a:"Use a before a consonant sound (new).",t:"a \u{B7} consonant sound"},
+ {w:"I saw a owl in the barn last night.",r:"I saw an owl in the barn last night.",a:"Use an before a vowel sound (owl).",t:"an \u{B7} vowel sound"},
+ {w:"She waited a hour for the bus.",r:"She waited an hour for the bus.",a:"Hour starts with a vowel SOUND (silent h) \u{2192} an.",t:"an \u{B7} silent h"},
+ {w:"He is a honest player who never cheats.",r:"He is an honest player who never cheats.",a:"Honest starts with a vowel sound (silent h) \u{2192} an.",t:"an \u{B7} silent h"},
+ {w:"We saw an unicorn float in the parade.",r:"We saw a unicorn float in the parade.",a:"Unicorn starts with a /y/ consonant sound \u{2192} a.",t:"a \u{B7} /y/ sound"},
+ {w:"That is an one-way street downtown.",r:"That is a one-way street downtown.",a:"One starts with a /w/ consonant sound \u{2192} a.",t:"a \u{B7} /w/ sound"},
+ {w:"A ant crawled up the picnic table.",r:"An ant crawled up the picnic table.",a:"Use an before a vowel sound (ant).",t:"an \u{B7} vowel sound"},
+ {w:"Jupiter is a largest planet in our solar system.",r:"Jupiter is the largest planet in our solar system.",a:"Use the for one particular thing (the largest).",t:"the \u{B7} specific"},
+ {w:"Please close a door \u{2014} it\u{2019}s freezing in here!",r:"Please close the door \u{2014} it\u{2019}s freezing in here!",a:"Use the for a specific door both people know.",t:"the \u{B7} specific"},
+ {w:"Milo ate a apple and a egg for breakfast.",r:"Milo ate an apple and an egg for breakfast.",a:"An before vowel sounds (apple, egg).",t:"an \u{B7} vowel sound"},
+ {w:"She plays a ukulele in an school band.",r:"She plays a ukulele in a school band.",a:"Ukulele = /y/ sound \u{2192} a; school = consonant \u{2192} a.",t:"a \u{B7} tricky sounds"},
+ {w:"It was a easiest quiz of the whole year.",r:"It was the easiest quiz of the whole year.",a:"Use the with a superlative naming one specific thing (the easiest).",t:"the \u{B7} superlative"}],
+"Nouns & Pronouns":[
+ {w:"Me and Tara built a fort in the yard.",r:"Tara and I built a fort in the yard.",a:"Put I last, and use I for the one DOING the action.",t:"I last \u{B7} subject"},
+ {w:"Dad drove Sam and I to practice.",r:"Dad drove Sam and me to practice.",a:"Use me when receiving the action (drove me).",t:"me \u{B7} object"},
+ {w:"The dog it dug under the fence again.",r:"The dog dug under the fence again.",a:"Use the noun OR the pronoun \u{2014} not both together.",t:"Noun or pronoun"},
+ {w:"I looked at the moon and waved at her.",r:"I looked at the moon and waved at it.",a:"Moon \u{2192} it \u{2014} a pronoun must agree with its noun.",t:"Agreement"},
+ {w:"That skateboard is my.",r:"That skateboard is mine.",a:"By itself use mine; my only goes WITH a noun (my skateboard).",t:"Possessive pronoun"},
+ {w:"The girls team won ribbons at the meet.",r:"The girls\u{2019} team won ribbons at the meet.",a:"Girls ends in s \u{2192} add only an apostrophe.",t:"Possessive \u{B7} ends in s"},
+ {w:"Ravis bike has a silver bell.",r:"Ravi\u{2019}s bike has a silver bell.",a:"Add \u{2019}s to show the bike belongs to Ravi.",t:"Possessive noun"},
+ {w:"toni and jake visited the grand canyon.",r:"Toni and Jake visited the Grand Canyon.",a:"Proper nouns (names and places) begin with capital letters.",t:"Proper nouns"},
+ {w:"Myself made breakfast for everyone today.",r:"I made breakfast for everyone today.",a:"Myself can\u{2019}t be the subject \u{2014} use I (myself only comes after I).",t:"myself"},
+ {w:"Ken jumps higher than me.",r:"Ken jumps higher than I (do).",a:"Add the invisible verb: higher than I (do).",t:"than I"},
+ {w:"The cat scratched I on the arm.",r:"The cat scratched me on the arm.",a:"Use me when receiving the action.",t:"me \u{B7} object"},
+ {w:"The childrens\u{2019} coats are still wet.",r:"The children\u{2019}s coats are still wet.",a:"Children is already plural \u{2192} children\u{2019}s.",t:"Irregular possessive"}],
+"Plural Nouns":[
+ {w:"Two foxs live in that den by the creek.",r:"Two foxes live in that den by the creek.",a:"Nouns ending in x add -es \u{2192} foxes.",t:"-es \u{B7} x"},
+ {w:"The babys napped in their cribs.",r:"The babies napped in their cribs.",a:"Consonant + y \u{2192} change y to i, add -es.",t:"y \u{2192} ies"},
+ {w:"Both monkies swung from the rope.",r:"Both monkeys swung from the rope.",a:"Vowel + y \u{2192} just add -s (monkeys).",t:"vowel + y"},
+ {w:"I lost two tooths this school year.",r:"I lost two teeth this school year.",a:"Irregular: tooth \u{2192} teeth.",t:"Irregular"},
+ {w:"Five sheeps grazed on the hillside.",r:"Five sheep grazed on the hillside.",a:"Sheep doesn\u{2019}t change in the plural.",t:"No change"},
+ {w:"We packed three boxs of dishs.",r:"We packed three boxes of dishes.",a:"Add -es after x (boxes) and sh (dishes).",t:"-es \u{B7} x, sh"},
+ {w:"The mans fixed the fence by the road.",r:"The men fixed the fence by the road.",a:"Irregular: man \u{2192} men.",t:"Irregular"},
+ {w:"Wild gooses honked over the pond.",r:"Wild geese honked over the pond.",a:"Irregular: goose \u{2192} geese.",t:"Irregular"},
+ {w:"She picked ripe tomatos from the garden.",r:"She picked ripe tomatoes from the garden.",a:"Some nouns ending in o add -es \u{2192} tomatoes.",t:"-es \u{B7} o"},
+ {w:"The mouses hid under the porch steps.",r:"The mice hid under the porch steps.",a:"Irregular: mouse \u{2192} mice.",t:"Irregular"},
+ {w:"Six deers crossed the road at dusk.",r:"Six deer crossed the road at dusk.",a:"Deer stays the same in the plural.",t:"No change"},
+ {w:"All the citys in our state have parks.",r:"All the cities in our state have parks.",a:"Consonant + y \u{2192} cities.",t:"y \u{2192} ies"}],
+"Verb Tenses":[
+ {w:"Yesterday we walk to the creek to catch minnows.",r:"Yesterday we walked to the creek to catch minnows.",a:"Yesterday = past \u{2192} walked.",t:"Past tense"},
+ {w:"Last night I eated three tacos.",r:"Last night I ate three tacos.",a:"Irregular: eat \u{2192} ate.",t:"Irregular past"},
+ {w:"Tomorrow she bakes a cake for the fair.",r:"Tomorrow she will bake a cake for the fair.",a:"Tomorrow = future \u{2192} will bake.",t:"Future tense"},
+ {w:"He goed to the dentist on Monday.",r:"He went to the dentist on Monday.",a:"Irregular: go \u{2192} went.",t:"Irregular past"},
+ {w:"Right now the puppy sleeped on the rug.",r:"Right now the puppy sleeps on the rug.",a:"Right now = present \u{2192} sleeps.",t:"Present tense"},
+ {w:"She writed a letter to her pen pal.",r:"She wrote a letter to her pen pal.",a:"Irregular: write \u{2192} wrote.",t:"Irregular past"},
+ {w:"We taked pictures at the zoo last week.",r:"We took pictures at the zoo last week.",a:"Irregular: take \u{2192} took.",t:"Irregular past"},
+ {w:"Next summer we visit the beach for a week.",r:"Next summer we will visit the beach for a week.",a:"Next summer = future \u{2192} will visit.",t:"Future tense"},
+ {w:"The caterpillar becomed a butterfly.",r:"The caterpillar became a butterfly.",a:"Irregular: become \u{2192} became.",t:"Irregular past"},
+ {w:"Earlier today it snow all morning.",r:"Earlier today it snowed all morning.",a:"Earlier today = past \u{2192} snowed.",t:"Past tense"},
+ {w:"I will opened my presents after dinner.",r:"I will open my presents after dinner.",a:"After will, use the base verb \u{2192} will open.",t:"Future tense"},
+ {w:"They runned the whole race without stopping.",r:"They ran the whole race without stopping.",a:"Irregular: run \u{2192} ran.",t:"Irregular past"}],
+"Subject-Verb Agreement":[
+ {w:"The twins plays checkers after dinner.",r:"The twins play checkers after dinner.",a:"Plural subject \u{2192} plural verb (twins play).",t:"Plural subject"},
+ {w:"My dog bark at the mail truck every day.",r:"My dog barks at the mail truck every day.",a:"Singular subject \u{2192} singular verb (dog barks).",t:"Singular subject"},
+ {w:"Nina and Cole is on the swim team.",r:"Nina and Cole are on the swim team.",a:"Two subjects joined by and \u{2192} are.",t:"and \u{2192} plural"},
+ {w:"Macaroni and cheese are my favorite lunch.",r:"Macaroni and cheese is my favorite lunch.",a:"A single dish (one unit) \u{2192} is.",t:"Single unit"},
+ {w:"The birds sings at sunrise all spring.",r:"The birds sing at sunrise all spring.",a:"Plural subject \u{2192} sing.",t:"Plural subject"},
+ {w:"He and I was first in line for tickets.",r:"He and I were first in line for tickets.",a:"Two subjects joined by and \u{2192} were.",t:"and \u{2192} plural"},
+ {w:"Peanut butter and honey make a sticky snack.",r:"Peanut butter and honey makes a sticky snack.",a:"One combined snack (single unit) \u{2192} makes.",t:"Single unit"},
+ {w:"The library close at noon on Sundays.",r:"The library closes at noon on Sundays.",a:"Singular subject \u{2192} closes.",t:"Singular subject"},
+ {w:"My cousins visits us every July.",r:"My cousins visit us every July.",a:"Plural subject \u{2192} visit.",t:"Plural subject"},
+ {w:"The stars shines over the campsite.",r:"The stars shine over the campsite.",a:"Plural subject \u{2192} shine.",t:"Plural subject"},
+ {w:"Mom and Dad drives us to church.",r:"Mom and Dad drive us to church.",a:"Two subjects joined by and \u{2192} drive.",t:"and \u{2192} plural"},
+ {w:"Spaghetti and meatballs were my pick at dinner.",r:"Spaghetti and meatballs was my pick at dinner.",a:"One dish (single unit) \u{2192} was.",t:"Single unit"}]
+};
+// Fallback A/B sheets from the authored bank — disjoint halves of a shuffle, mapped per mode,
+// with spiral-review items borrowed from the review decks' banks (marked review:true).
+function laFallbackSheets(total,revCount){
+  const shuffle=a=>{ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; };
+  const mapMode=(it,i)=>{
+    if(laMode==="judge") return i%2===0?{text:it.r,answer:"\u{2713} Correct as written.",rule:it.t,ok:true}:{text:it.w,answer:it.a,rule:it.t,ok:false};
+    if(laMode==="spot") return {text:it.r,answer:it.a,rule:it.t,ok:true};
+    return {text:it.w,answer:it.a,rule:it.t,ok:false};
+  };
+  const bank=shuffle((LA_FB[laDeck]||[]).slice());
+  const half=Math.min(Math.floor(bank.length/2),total);
+  const mk=(slice)=>{
+    const items=slice.map(mapMode);
+    let ri=0;
+    laReviewDecks.forEach(dk=>{
+      const rb=LA_FB[dk]||[];
+      for(let n=0;n<Math.ceil(revCount/Math.max(1,laReviewDecks.length))&&ri<revCount;n++,ri++){
+        const it=rb[Math.floor(Math.random()*rb.length)];
+        if(it) items.push(Object.assign(mapMode(it,ri),{review:true}));
+      }
+    });
+    return items;
+  };
+  return [mk(bank.slice(0,half)),mk(bank.slice(half,half*2))];
+}
+// Generate A/B sheets: same two-parallel-calls pipeline as sprintGenerate, but the prompt is
+// built from the SELECTED RULES + settings, and every drill-card example of those rules is
+// listed as forbidden so the sheets are always fresh material. Falls back to the authored bank.
+async function laSprintGenerate(){
+  if(laGenerating) return;
+  const u=laUnitFor(masteryKid); if(!u||!laDeck) return;
+  const rules=laDeckRules(u,masteryKid,laDeck);
+  const sel=laSelectedIdx(laDeck,rules);
+  const chosen=rules.filter((r,i)=>sel[i]);
+  const statusEl=document.getElementById("sp-status");
+  if(!chosen.length){
+    if(statusEl){statusEl.textContent="Pick at least one rule to sprint.";statusEl.style.display="block";statusEl.style.background="#fee2e2";statusEl.style.color="#991b1b";}
+    return;
+  }
+  const total=LA_SIZES[laSize]||9;
+  const revRules=[];
+  laReviewDecks.forEach(dk=>{ laDeckRules(u,masteryKid,dk).forEach(r=>{ if(r.st!=="new") revRules.push(r); }); });
+  const revCount=revRules.length?Math.min(Math.max(1,Math.floor(total*0.25)),4):0;
+  const focusCount=total-revCount;
+  const errN={intro:"1",building:"2",fluency:"2 or 3"}[laDiff]||"1";
+  const modeSpec={
+    fix:`FIX IT \u{2014} every item is ONE kid-friendly sentence containing exactly ${errN} deliberate mistake(s). Every mistake must break one of the FOCUS RULES \u{2014} no other error types (spelling and everything else stays correct). "answer" lists each mistake and its fix. "ok" is false on every item.`,
+    judge:`RIGHT OR WRONG \u{2014} about half the items are 100% correct ("ok":true, answer starts "Correct \u{2014}" and says why); the rest contain exactly ONE mistake breaking a FOCUS RULE ("ok":false, answer = the fix). Shuffle correct and broken items together.`,
+    spot:`SPOT IT \u{2014} every item is a 100% correct sentence that clearly SHOWS one FOCUS RULE in action; the student points to the word(s) and names the rule. "answer" names the target word(s) and the rule. "ok" is true on every item.`
+  }[laMode];
+  const diffSpec={
+    intro:"short sentences (6\u{2013}9 words) using the most common, clear-cut case of each rule",
+    building:"medium sentences (9\u{2013}12 words); mix several focus rules across the sheet and hide targets mid-sentence, not just at sentence starts",
+    fluency:"longer sentences (10\u{2013}15 words); mix the rules and include sneaky near-misses that LOOK like errors but are correct (seasons stay lowercase, 'my aunt' vs 'Aunt Rosa', directions vs regions) so the student must really think"
+  }[laDiff];
+  const kidName=SL_KLBL[masteryKid]||"Student";
+  const forbidden=[]; chosen.concat(revRules).forEach(r=>r.examples.forEach(e=>{ if(e) forbidden.push(e); }));
+  laGenerating=true;
+  const btn=document.getElementById("la-gen-btn");
+  if(btn){btn.disabled=true;btn.textContent="Writing fresh sentences A & B...";}
+  if(statusEl) statusEl.style.display="none";
+  // ONE call writes BOTH sheets so B can actually avoid A's sentences (two blind parallel
+  // calls kept producing near-duplicates across the A/B pair).
+  const prompt=`You are writing an "Editor in Chief"-style grammar sprint (two sheets, A and B) for ${kidName}, an elementary homeschool student (grade 2\u{2013}4 reading level).
+FOCUS RULES (the student is practicing exactly these):
+${chosen.map((r,i)=>(i+1)+". "+r.rule).join("\n")}
+MODE: ${modeSpec}
+DIFFICULTY: ${diffSpec}
+COUNT: exactly ${focusCount} focus items per sheet.${revCount?`
+Each sheet also gets exactly ${revCount} extra items (marked "review":true) that practice these previously learned REVIEW rules instead:
+${revRules.map(r=>"- "+r.rule).join("\n")}`:""}
+Sheet B must use COMPLETELY DIFFERENT sentences, names, and topics from Sheet A \u{2014} no shared subject matter between the two sheets.
+FRESHNESS \u{2014} CRITICAL: the student memorized these drill examples; do NOT reuse or closely paraphrase ANY of them. New names, new topics:
+${forbidden.map(e=>"- "+e).join("\n")}
+STYLE: fun, concrete kid life (pets, camping, sports, space, cooking, siblings). Different names in every sentence.
+Respond ONLY with valid JSON, no markdown:
+{"a":[{"text":"the sentence exactly as the student sees it","answer":"one short parent-readable line: the fix / verdict / target","rule":"2-5 word rule tag","ok":false,"review":false}],"b":[...same shape...]}`;
+  try{
+    const apiKey=mastAIKey;
+    if(!apiKey) throw new Error("no API key");
+    const headers={"Content-Type":"application/json","anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true","x-api-key":apiKey};
+    const _fixJson=(s)=>{let t=s.trim().replace(/```json|```/g,"").trim();if(!t.endsWith("}"))t=t.substring(0,t.lastIndexOf("}")+1);return t;};
+    const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers,body:JSON.stringify({model:"claude-sonnet-5",max_tokens:12000,messages:[{role:"user",content:prompt}]})});
+    const d=await res.json();
+    if(d.error) throw new Error((d.error.type||"error")+": "+(d.error.message||JSON.stringify(d.error)));
+    // sonnet-5 can lead with a "thinking" block — take the text blocks, not content[0]
+    const txt=(d.content||[]).filter(c=>c&&c.type==="text").map(c=>c.text||"").join("");
+    const parsed=JSON.parse(_fixJson(txt));
+    const pA=parsed.a||[], pB=parsed.b||[];
+    if(!pA.length||!pB.length) throw new Error("empty sheet");
+    laRenderSheets(pA,pB);
+  } catch(e){
+    console.error("LA sprint generate error:",e);
+    const [fA,fB]=laFallbackSheets(total,revCount);
+    laRenderSheets(fA,fB);
+    const errMsg=mastAIKey?"\u{26A0}\u{FE0F} API call failed: "+e.message+" \u{2014} using the built-in practice set":"\u{26A0}\u{FE0F} No API key found in Firebase at config/anthropic_key \u{2014} using the built-in practice set";
+    if(statusEl){statusEl.textContent=errMsg;statusEl.style.display="block";statusEl.style.background="#ede9fe";statusEl.style.color="#5b3a8c";}
+  } finally{
+    laGenerating=false;
+    if(btn){btn.disabled=false;btn.textContent="\u{2728} Generate A & B Sprint Sheets";}
+  }
+}
+function laRenderSheets(itemsA,itemsB){
+  const el=document.getElementById("sp-sheets"); if(!el) return;
+  sprintLiveClearAll();
+  const scoreRow=document.getElementById("sp-score-row");
+  if(scoreRow) scoreRow.style.display="grid";
+  const sa=document.getElementById("sp-score-a"); if(sa) sa.value="";
+  const sb=document.getElementById("sp-score-b"); if(sb) sb.value="";
+  const g=document.getElementById("sp-gain"); if(g){g.textContent="Enter scores above to see session gain";g.style.color="#78716c";}
+  const prevBest=laSprintBest(masteryKid,laLogLabel());
+  el.innerHTML=laBuildSheet(itemsA,"A",prevBest)+laBuildSheet(itemsB,"B",prevBest);
+}
+// One sheet: numbered tappable sentence rows through the SAME live-timer ids/classes the word
+// grid uses (sp-cell-*/sp-live-cell-*/sprintLiveTap), plus a parent answer key that toggles
+// without re-rendering so the timer state survives.
+function laBuildSheet(items,sheet,prevBest){
+  const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;");
+  const isA=sheet==="A";
+  const col=isA?"#5b3a8c":"#1e3a5f";
+  const bgLight=isA?"#faf5ff":"#eff6ff";
+  const bdLight=isA?"#c4b5fd":"#93c5fd";
+  const kid=masteryKid;
+  const emoji=MAST_KID_EMOJI[kid]||"\u{270F}\u{FE0F}";
+  const kidColor=MAST_KID_COL[kid]||col;
+  const kidName=SL_KLBL[kid]||"Student";
+  const modeMeta=LA_MODES.find(m=>m.v===laMode)||LA_MODES[0];
+  const realCount=items.length;
+  const dateObj=new Date(sprintDate+"T12:00:00");
+  const dateStr=dateObj.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+  const target=prevBest?Math.ceil(prevBest*1.1):null;
+  let h=`<div style="background:#fff;border:2px solid ${bdLight};border-radius:14px;overflow:hidden;margin-bottom:18px">`;
+  h+=`<div style="background:${kidColor};color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between">
+    <div>
+      <div style="font-family:'Fraunces',serif;font-size:18px;font-weight:900">${emoji} ${esc(kidName)}</div>
+      <div style="font-size:10px;opacity:0.75;margin-top:1px">${esc(laDeck)} \u{B7} ${esc(LA_MODE_LBL[laMode])} #${String(sprintNum).padStart(3,"0")} \u{B7} ${dateStr}</div>
+    </div>
+    <div style="font-family:'Fraunces',serif;font-size:44px;font-weight:900;opacity:0.2;line-height:1">${sheet}</div>
+  </div>`;
+  h+=`<div style="padding:13px 15px">`;
+  h+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:13px">`;
+  if(isA&&prevBest){
+    h+=`<div style="border:1.5px solid #c4b5fd;border-radius:10px;padding:9px 12px;background:#faf5ff">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#78716c">\u{1F3C6} Best</div>
+      <div style="font-family:'DM Mono',monospace;font-size:18px;font-weight:700;color:#d97706">${prevBest}</div>
+      ${target?`<div style="font-size:9px;color:#5b3a8c;font-weight:700">Target: ${target}+</div>`:""}
+    </div>`;
+  } else {
+    h+=`<div style="border:1.5px solid ${bdLight};border-radius:10px;padding:9px 12px;background:${bgLight}">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#78716c">${isA?"\u{1F3C6} Target":"Sheet A Score"}</div>
+      <div style="height:2px;background:#e2ddd6;border-radius:1px;margin-top:8px"></div>
+      <div style="font-size:9px;color:#78716c;margin-top:3px">items</div>
+    </div>`;
+  }
+  h+=`<div style="border:1.5px solid ${bdLight};border-radius:10px;padding:9px 12px;background:${bgLight}">
+    <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#78716c">\u{270F}\u{FE0F} Sheet ${sheet} Score</div>
+    <div style="height:2px;background:#e2ddd6;border-radius:1px;margin-top:8px"></div>
+    <div style="font-size:9px;color:#78716c;margin-top:3px">items / 60s</div>
+  </div></div>`;
+  h+=`<div style="display:inline-flex;align-items:center;gap:6px;background:${bgLight};border-radius:8px;padding:5px 10px;margin-bottom:11px;max-width:100%">
+    <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:${col};flex-shrink:0">${esc(modeMeta.l)}</span>
+    <span style="font-size:11px;color:${col};opacity:0.8;line-height:1.4">${esc(modeMeta.desc)}</span>
+  </div>`;
+  h+=`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:${bgLight};border:1.5px solid ${bdLight};border-radius:10px;padding:9px 12px;margin-bottom:11px">
+    <button id="sp-timer-btn-${sheet}" data-col="${col}" onclick="sprintLiveToggle('${sheet}',${realCount})" style="padding:8px 14px;border-radius:9px;border:none;background:${col};color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">\u{25B6} Start 60s</button>
+    <div id="sp-timer-disp-${sheet}" style="font-family:'DM Mono',monospace;font-size:24px;font-weight:700;color:${col};min-width:62px;text-align:center">1:00</div>
+    <div style="font-size:11px;color:#78716c;line-height:1.35">Solved <span id="sp-timer-count-${sheet}" style="font-weight:700;color:${col}">0</span>/${realCount}<br>tap each item he nails</div>
+    <button id="la-key-btn-${sheet}" onclick="laToggleKey('${sheet}')" style="margin-left:auto;padding:8px 12px;border-radius:9px;border:1.5px solid ${bdLight};background:#fff;color:${col};font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">\u{1F511} Answer key</button>
+  </div>`;
+  h+=`<div id="sp-timer-res-${sheet}" style="display:none;background:#dcfce7;border:1.5px solid #86efac;border-radius:10px;padding:9px 12px;margin-bottom:11px;font-size:13px;font-weight:700;color:#15803d;text-align:center"></div>`;
+  h+=`<div style="border:1px solid #f0ede8;border-radius:10px;overflow:hidden;margin-bottom:15px">`;
+  items.forEach((it,pos)=>{
+    const isRev=!!it.review;
+    const wc=isRev?"#d97706":"#1c1917";
+    h+=`<div style="display:flex;border-bottom:${pos<items.length-1?"1px solid #f0ede8":"none"}">`;
+    h+=`<div style="width:26px;flex-shrink:0;display:flex;align-items:flex-start;justify-content:center;padding-top:11px;font-family:'DM Mono',monospace;font-size:10px;color:#c4b8ae;border-right:1px solid #f0ede8;background:#faf8f5">${pos+1}</div>`;
+    h+=`<div style="flex:1;min-width:0">`;
+    h+=`<div id="sp-cell-${sheet}-${pos}" class="sp-live-cell-${sheet}" data-wc="${wc}" data-fw="500" onclick="sprintLiveTap('${sheet}',${pos})" style="padding:10px 12px;font-size:15px;line-height:1.55;font-weight:500;color:${wc};cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none">${esc(it.text)}${isRev?' <span style="font-size:9px;font-weight:800;color:#d97706;letter-spacing:0.06em">REVIEW</span>':""}</div>`;
+    h+=`<div class="la-key-${sheet}" style="display:none;margin:0 12px 10px;padding:7px 10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:12px;line-height:1.5;color:#78350f">\u{1F511} ${esc(it.answer||"")}${it.rule?` <span style="display:inline-block;margin-left:4px;padding:1px 7px;border-radius:9px;background:#fde68a;color:#92400e;font-size:10px;font-weight:700">${esc(it.rule)}</span>`:""}</div>`;
+    h+=`</div></div>`;
+  });
+  h+=`</div>`;
+  h+=`</div>`;
+  h+=`<div style="background:#faf8f5;border-top:1px solid #f0ede8;padding:8px 15px;display:flex;align-items:center;justify-content:space-between">
+    <div style="font-size:9px;color:#78716c;font-style:italic">Only racing yourself ${emoji} \u{B7} Sheet ${sheet} of 2</div>
+    <div style="font-family:'Fraunces',serif;font-size:10px;font-weight:700;color:#c4b8ae">Howe Academy</div>
+  </div>`;
+  h+=`</div>`;
+  return h;
+}
+function laToggleKey(sheet){
+  const els=document.querySelectorAll(".la-key-"+sheet); if(!els.length) return;
+  const show=els[0].style.display==="none";
+  els.forEach(e=>{ e.style.display=show?"block":"none"; });
+  const b=document.getElementById("la-key-btn-"+sheet); if(b) b.textContent=show?"\u{1F648} Hide key":"\u{1F511} Answer key";
+}
+// The "editor" source setup view — deck pills, rule chips (drill status baked in), mode/
+// difficulty/size/spiral-review settings, then the shared score tracker + sheets container.
+function buildSprintEditorHtml(color){
+  const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  const u=laUnitFor(masteryKid);
+  if(!u) return '<div style="background:#faf8f5;border:1.5px dashed #e2ddd6;border-radius:14px;padding:24px 18px;text-align:center;font-size:13px;color:#78716c;line-height:1.6">'+(SL_KLBL[masteryKid]||"This kid")+' isn\u{2019}t enrolled in the Language Arts unit \u{2014} enroll it in the <b>Units</b> tab first.</div>';
+  const decks=(u.decks||[]).filter(d=>d&&d.key&&(d.cards||[]).length);
+  if(!decks.length) return '<div style="background:#faf8f5;border:1.5px dashed #e2ddd6;border-radius:14px;padding:24px 18px;text-align:center;font-size:13px;color:#78716c">The Language Arts unit has no rule decks yet.</div>';
+  if(!laDeck||!decks.some(d=>d.key===laDeck)) laDeck=decks[0].key;
+  laReviewDecks=laReviewDecks.filter(k=>k!==laDeck&&decks.some(d=>d.key===k));
+  const rules=laDeckRules(u,masteryKid,laDeck);
+  const sel=laSelectedIdx(laDeck,rules);
+  const nSel=rules.reduce((n,r,i)=>n+(sel[i]?1:0),0);
+  let h='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700;margin-bottom:4px">\u{270F}\u{FE0F} Editor-in-Chief Sprint</div>';
+  h+='<div style="font-size:12px;color:#78716c;line-height:1.5;margin-bottom:12px">Brand-new sentences written against the rules \u{2014} the drill-card examples are off-limits to the generator, so this tests the <b>rule</b>, not the memory.</div>';
+  h+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:6px">Rule Deck</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+  decks.forEach((d,i)=>{
+    const act=d.key===laDeck;
+    h+='<button onclick="laSetDeck('+i+')" style="padding:6px 11px;border-radius:20px;border:1.5px solid '+(act?color:"#e2ddd6")+';background:'+(act?color:"#fff")+';color:'+(act?"#fff":"#78716c")+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+(LA_DECK_EMOJI[d.key]||"\u{270F}\u{FE0F}")+' '+esc(d.key)+'</button>';
+  });
+  h+='</div></div>';
+  // Focus rules
+  h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">';
+  h+='<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:4px"><span style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700">\u{1F3AF} Focus Rules</span><span style="font-size:11px;color:#78716c;font-weight:600">'+nSel+' of '+rules.length+' selected</span>';
+  h+='<span style="margin-left:auto;display:inline-flex;gap:6px"><button onclick="laRulesQuick(\'started\')" style="padding:4px 10px;border-radius:12px;border:1.5px solid #86efac;background:#f0fdf4;color:#15803d;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{2713} Learned only</button><button onclick="laRulesQuick(\'all\')" style="padding:4px 10px;border-radius:12px;border:1.5px solid #e2ddd6;background:#fff;color:#78716c;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">All</button></span></div>';
+  h+='<div style="font-size:11px;color:#78716c;line-height:1.5;margin-bottom:10px">\u{2713} cleared the drill gate \u{B7} \u{2B50} still learning \u{B7} \u{25CB} not started \u{2014} tap to include/exclude.</div>';
+  h+='<div style="display:flex;gap:5px;flex-wrap:wrap">';
+  rules.forEach((r,i)=>{
+    const act=!!sel[i];
+    const mark=r.st==="learned"?"\u{2713}":r.st==="learning"?"\u{2B50}":"\u{25CB}";
+    const fg=act?"#fff":(r.st==="learned"?"#15803d":r.st==="learning"?"#b45309":"#a8a29e");
+    h+='<button onclick="laToggleRule('+i+')" style="padding:6px 10px;border-radius:14px;border:1.5px solid '+(act?color:"#e2ddd6")+';background:'+(act?color:"#fff")+';color:'+fg+';font-size:11px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:left;line-height:1.35;max-width:100%">'+mark+' '+esc(r.rule)+'</button>';
+  });
+  h+='</div></div>';
+  // Mode + options
+  h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700;margin-bottom:12px">\u{1F3AE} Game Mode</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">';
+  LA_MODES.forEach(m=>{
+    const act=laMode===m.v;
+    h+='<button onclick="laSetOpt(\'mode\',\''+m.v+'\')" style="padding:7px 12px;border-radius:20px;border:1.5px solid '+(act?color:"#e2ddd6")+';background:'+(act?color:"#fff")+';color:'+(act?"#fff":"#78716c")+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+m.l+'</button>';
+  });
+  h+='</div>';
+  const mm=LA_MODES.find(m=>m.v===laMode)||LA_MODES[0];
+  h+='<div style="font-size:12px;color:#78716c;line-height:1.5;background:#faf8f5;border-radius:8px;padding:8px 11px">'+esc(mm.desc)+'</div>';
+  h+='</div>';
+  h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700;margin-bottom:13px">\u{1F39B}\u{FE0F} Options</div>';
+  const pillRow=(label,k,opts)=>{
+    let s='<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:6px">'+label+'</div><div style="display:flex;gap:6px;flex-wrap:wrap">';
+    opts.forEach(o=>{
+      const cur=k==="diff"?laDiff:laSize;
+      const act=cur===o.v;
+      s+='<button onclick="laSetOpt(\''+k+'\',\''+o.v+'\')" style="padding:6px 11px;border-radius:20px;border:1.5px solid '+(act?color:"#e2ddd6")+';background:'+(act?color:"#fff")+';color:'+(act?"#fff":"#78716c")+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+o.l+'</button>';
+    });
+    return s+'</div></div>';
+  };
+  h+=pillRow("Difficulty","diff",[{v:"intro",l:"Intro \u{2014} 1 clear miss"},{v:"building",l:"Building \u{2014} 2 misses, longer"},{v:"fluency",l:"Fluency \u{2014} sneaky traps"}]);
+  h+=pillRow("Sheet Size","size",[{v:"short",l:"Short (6)"},{v:"standard",l:"Standard (9)"},{v:"long",l:"Long (12)"}]);
+  h+='<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:6px">\u{1F501} Spiral Review <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional \u{2014} up to 2 other decks, mixes in a few items)</span></div><div style="display:flex;gap:6px;flex-wrap:wrap">';
+  decks.forEach(d=>{
+    if(d.key===laDeck) return;
+    const act=laReviewDecks.includes(d.key);
+    h+='<button onclick="laToggleReview(\''+esc(d.key).replace(/'/g,"\\'")+'\')" style="padding:6px 11px;border-radius:20px;border:1.5px solid '+(act?"#d97706":"#e2ddd6")+';background:'+(act?"#fef3c7":"#fff")+';color:'+(act?"#d97706":"#78716c")+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+(LA_DECK_EMOJI[d.key]||"\u{270F}\u{FE0F}")+' '+esc(d.key)+'</button>';
+  });
+  h+='</div></div></div>';
+  const best=laSprintBest(masteryKid,laLogLabel());
+  if(best) h+='<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><span style="font-size:12px;font-weight:800;color:#d97706">\u{1F3C6} best '+best+' items/60s \u{B7} '+esc(laLogLabel())+'</span></div>';
+  h+='<div id="sp-status" style="display:none;padding:10px 14px;border-radius:10px;font-size:13px;font-weight:600;margin-bottom:12px"></div>';
+  h+='<button id="la-gen-btn" onclick="laSprintGenerate()" style="width:100%;padding:13px;border-radius:12px;border:none;background:'+color+';color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-bottom:16px">\u{2728} Generate A &amp; B Sprint Sheets</button>';
+  h+=sprintScoreRowHtml("items / 60s");
+  h+='<div id="sp-sheets"></div>';
+  return h;
+}
+
 function buildSprintFromDrillHtml(color){
   const catE=MAST_CAT_EMOJI_MAP[masteryKid]||{};
   const settings=mastDrillSettings();
@@ -22415,6 +22876,7 @@ function buildSprintHtml(){
   h+=buildSprintSourceToggle(color);
   if(sprintSource==="drill") return h+buildSprintFromDrillHtml(color);
   if(sprintSource==="unit") return h+buildSprintUnitHtml(color);
+  if(sprintSource==="editor") return h+buildSprintEditorHtml(color);
 
   if(!isActive){
     const msg=SPRINT_KID_MSG[masteryKid]||"Phonics Sprint not configured for this student.";
@@ -22502,19 +22964,20 @@ function buildSprintHtml(){
 
 // R3: the A→B "first pass / second pass" score tracker, shared by both Sprint sources (phonogram
 // and from-drill-items). Verbatim extraction of the original inline block — same IDs, no change.
-function sprintScoreRowHtml(){
+function sprintScoreRowHtml(unitLbl){
+  unitLbl=unitLbl||"words / 60s";  // the editor source passes "items / 60s"
   return `<div id="sp-score-row" style="display:none;background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:13px 15px;margin-bottom:14px">
     <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#78716c;margin-bottom:10px">📊 Session Score Tracker</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
       <div style="border-radius:10px;padding:11px;text-align:center;background:#faf5ff;border:1.5px solid #c4b5fd">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#5b3a8c;margin-bottom:4px">Sheet A — First Pass</div>
         <input type="number" id="sp-score-a" min="0" placeholder="—" oninput="sprintUpdateGain()" autocomplete="off" style="width:80px;font-family:'DM Mono',monospace;font-size:24px;font-weight:700;color:#5b3a8c;border:none;background:transparent;text-align:center;outline:none;padding:0"/>
-        <div style="font-size:10px;color:#78716c;margin-top:2px">words / 60s</div>
+        <div style="font-size:10px;color:#78716c;margin-top:2px">${unitLbl}</div>
       </div>
       <div style="border-radius:10px;padding:11px;text-align:center;background:#eff6ff;border:1.5px solid #93c5fd">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#1e3a5f;margin-bottom:4px">Sheet B — Second Pass</div>
         <input type="number" id="sp-score-b" min="0" placeholder="—" oninput="sprintUpdateGain()" autocomplete="off" style="width:80px;font-family:'DM Mono',monospace;font-size:24px;font-weight:700;color:#1e3a5f;border:none;background:transparent;text-align:center;outline:none;padding:0"/>
-        <div style="font-size:10px;color:#78716c;margin-top:2px">words / 60s</div>
+        <div style="font-size:10px;color:#78716c;margin-top:2px">${unitLbl}</div>
       </div>
     </div>
     <div id="sp-gain" style="text-align:center;padding-top:8px;border-top:1px solid #e2ddd6;font-size:12px;font-weight:700;color:#78716c">Enter scores above to see session gain</div>
