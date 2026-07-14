@@ -4094,6 +4094,10 @@ document.getElementById("dlg-ok").onclick=()=>{
   const id=pendingId;
   const t=weekData.tasks.find(x=>x.id===id);
   const ts=nowTs();
+  // A regen between tap and confirm re-keys task ids: checking the stale id writes an
+  // orphan the GC silently purges (looks "checked", then unchecks itself) and skips the
+  // score prompt. Bail out and let them tap the refreshed card instead.
+  if(!t){ dbg("stale check-off blocked: "+id); closeDlg(); renderAll(); if(typeof gwShowToast==="function") gwShowToast("Schedule just updated — tap it again."); return; }
   if(pendingClaimMode){
     // Kid says done — park it as a claim until Mom approves (doesn't count yet)
     claimed[id]=ts; sv(WK+"_claimed",claimed);
@@ -4106,9 +4110,13 @@ document.getElementById("dlg-ok").onclick=()=>{
   finalizeDone(id, ts, null);
   dbg("write checked id="+id+" n="+Object.keys(checked).length);
   closeDlg(); renderAll();
-  showPaceToast(id);
-  // Mom marking a scored subject done directly → let her record a score
+  try{ showPaceToast(id); }catch(e){ dbg("paceToast error: "+e); }
+  // Mom marking a scored subject done directly → let her record a score.
+  // Trace skips: a reported "second same-subject task never asked for its score"
+  // couldn't be reproduced — this logs WHICH guard failed when it happens live.
+  // (t comes from a find() at tap time; a mid-tap regen re-key makes it undefined.)
   if(momHere()&&t&&scoredType(t)) openScoreDialog(id, ts, "edit");
+  else if(momHere()) dbg("score skip: id="+id+" t="+(t?"found":"MISSING")+" scored="+(t?(scoredType(t)||"no"):"n/a"));
 };
 document.getElementById("dlg-uncheck").onclick=()=>{
   if(!pendingId)return;
@@ -8733,10 +8741,13 @@ function cascadeIntraWeek(sweepTodayElapsed){
           _healMoved=true;
           const h0=histState[t.id];
           if(h0&&(h0.checkedOnDay!==dn||h0.day!==dn)){ h0.checkedOnDay=dn; h0.day=dn; _histFix[t.id]=h0; }
-        } else if(t.time!==_ctTime){
-          // Same day, but the task's time drifted from when it was actually completed —
-          // e.g. a regenerate re-placed this already-checked task at a fresh slot. A done
-          // task should show the time it was finished, so restore it from the check-off ts.
+        } else if(t.time!==_ctTime&&toMin(t.time)>toMin(_ctTime)){
+          // Same day, but the task sits LATER than when it was actually completed —
+          // a regenerate re-placed this already-checked task at a fresh (future) slot.
+          // Restore it to its completion time. ONLY the later-than case: re-timing a
+          // task the kid simply finished LATE made the done task leapfrog DOWN past
+          // the next unchecked task ("the one below flipped up into its spot") — a
+          // late completion keeps its original slot; history holds the real ts.
           dbg("cascade heal(ts time): "+t.id+" "+t.time+" → "+_ctTime);
           t.time=_ctTime;
           _healUpd[t.id+"/time"]=_ctTime;
