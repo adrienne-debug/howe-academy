@@ -3842,6 +3842,7 @@ function finalizeDone(id, doneTs, score){
     hist[id]=entry; histState[id]=entry; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+id).set(entry);
     // A check-off may have finished a subject and/or met all session goals.
     try{ checkSubjectComplete(t.who, t.subjectKey); }catch(e){}
+    try{ checkBookComplete(t.who, t.subjectKey); }catch(e){}
     try{ checkSessionComplete(t.who); }catch(e){}
     // Where does the completed task belong NOW?
     //  - Completed on a DIFFERENT calendar day than scheduled (worked ahead on Thursday's
@@ -6935,6 +6936,63 @@ function checkSubjectComplete(kid,sk){
   if(pts>0) addKidPoints(kid,pts,day);
   setTimeout(()=>_showCelebration(kid,cap(kid)+" finished "+(s.display||sk)+"!",{big:true,occasion:"session",points:pts}),400);
 }
+// ── BOOK MILESTONES (📖) ──────────────────────────────────────────
+// A check-off may have finished a BOOK inside a multi-book subject (Singapore 5A→5B,
+// MR5→MR6, AAS levels). Fire-once via a permanent 📖 trophy per book. Only the boundary
+// THIS check-off crossed celebrates + pays points; the final book never fires here —
+// subjectMilestoneBooks excludes it because the 🏆 subject celebration is the finale.
+// Books finished before this feature existed (or on a stale device) stay quiet until Mom
+// fires them from the trophy shelf (readyBookCelebrations → celebrateBookNow).
+function _bookSlug(k){ return String(k||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'')||'book'; }
+function checkBookComplete(kid,sk){
+  if(!kid||!sk) return;
+  const s=((currData&&currData.subjects||{})[kid]||{})[sk];
+  if(!s) return;
+  const runs=subjectMilestoneBooks(kid,sk);
+  if(!runs.length) return;
+  let cursor=0; try{ cursor=computeSubjectCursor(kid,sk); }catch(e){}
+  runs.forEach(r=>{
+    if(cursor!==r.lastIdx+1) return;               // only the boundary this check-off crossed
+    const tid="book_"+sk+"_"+_bookSlug(r.key);
+    if(hasTrophy(kid,tid)) return;
+    const pts=(s.bookPoints!=null)?(s.bookPoints|0):25;
+    mintTrophy(kid,tid,{type:"book",key:sk,name:(s.display||sk)+" "+r.name,ts:nowTs(),points:pts});
+    if(pts>0) addKidPoints(kid,pts,day);
+    setTimeout(()=>_showCelebration(kid,cap(kid)+" finished "+(s.display||sk)+" "+r.name+"!",{big:true,occasion:"session",points:pts}),400);
+  });
+}
+// Finished books that never got their moment — derived (finished && no trophy), so no
+// backfill writes are needed; Mom's trophy shelf lists these with a 🎉 button.
+function readyBookCelebrations(kid){
+  const subs=((currData&&currData.subjects||{})[kid])||{};
+  const out=[];
+  Object.keys(subs).forEach(sk=>{
+    const runs=subjectMilestoneBooks(kid,sk);
+    if(!runs.length) return;
+    let cursor=0; try{ cursor=computeSubjectCursor(kid,sk); }catch(e){}
+    runs.forEach(r=>{
+      if(cursor<=r.lastIdx) return;
+      if(hasTrophy(kid,"book_"+sk+"_"+_bookSlug(r.key))) return;
+      out.push({sk,subject:subs[sk].display||sk,name:r.name,slug:_bookSlug(r.key)});
+    });
+  });
+  return out;
+}
+// Mom taps 🎉 on a ready book: mint the trophy + pay the points + full celebration.
+function celebrateBookNow(kid,sk,slug){
+  if(!momHere()) return;
+  const s=((currData&&currData.subjects||{})[kid]||{})[sk]; if(!s) return;
+  const r=subjectMilestoneBooks(kid,sk).find(x=>_bookSlug(x.key)===slug); if(!r) return;
+  let cursor=0; try{ cursor=computeSubjectCursor(kid,sk); }catch(e){}
+  if(cursor<=r.lastIdx) return;                    // not actually finished
+  const tid="book_"+sk+"_"+slug;
+  if(hasTrophy(kid,tid)) return;
+  const pts=(s.bookPoints!=null)?(s.bookPoints|0):25;
+  mintTrophy(kid,tid,{type:"book",key:sk,name:(s.display||sk)+" "+r.name,ts:nowTs(),points:pts});
+  if(pts>0) addKidPoints(kid,pts,day);
+  renderAll();
+  setTimeout(()=>_showCelebration(kid,cap(kid)+" finished "+(s.display||sk)+" "+r.name+"!",{big:true,occasion:"session",points:pts}),200);
+}
 function checkSessionComplete(kid){
   const sp=sessionProgress(kid);
   if(!sp||!sp.complete) return;
@@ -7615,6 +7673,29 @@ function ceRenderEditSheet(){
   h+='<button onclick="ceSaveField(\'completionPoints\','+(_cp+25)+');ceRenderEditSheet()" style="width:30px;height:30px;border:1px solid var(--border);background:#fff;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer">+</button>';
   h+='<input type="number" min="0" step="5" value="'+_cp+'" onchange="ceSaveField(\'completionPoints\',parseInt(this.value)||0);ceRenderEditSheet()" style="width:70px;padding:5px 8px;border:1.5px solid var(--border);border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:12px;margin-left:4px">';
   h+='</div>';
+  // 📖 Book milestones — auto-detected books inside this subject (Singapore 5A/5B,
+  // MR5→MR6): finishing one mid-sequence fires its own celebration + a smaller reward.
+  // The final book is excluded (the 🏆 completion reward above covers it). Only shown
+  // when the detector actually finds books, so single-book subjects stay clean.
+  const _mbooks=subjectMilestoneBooks(ceEditKid,ceEditKey);
+  const _bOn=s.bookMilestones!==false;
+  if(_mbooks.length||(!_bOn&&s.bookMilestones===false)){
+    const _bp=(s.bookPoints!=null)?(s.bookPoints|0):25;
+    h+='<div class="ce-sheet-lbl">📖 Book milestones <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— points + a badge when a book inside this subject finishes</span></div>';
+    h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">';
+    h+='<div class="ce-toggle'+(_bOn?" on":"")+'" onclick="ceSaveField(\'bookMilestones\','+(_bOn?'false':'null')+');ceRenderEditSheet()"></div>';
+    if(_mbooks.length) h+='<span style="font-size:12px;color:var(--muted)">Books: <b style="color:#92400e">'+_mbooks.map(b=>esc(b.name)).join(' · ')+'</b> <span style="opacity:.8">(last one → 🏆 above)</span></span>';
+    else h+='<span style="font-size:12px;color:var(--muted)">Off — turn on to auto-detect books in the lesson list</span>';
+    h+='</div>';
+    if(_bOn&&_mbooks.length){
+      h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">';
+      h+='<button onclick="ceSaveField(\'bookPoints\',Math.max(0,'+(_bp-5)+'));ceRenderEditSheet()" style="width:30px;height:30px;border:1px solid var(--border);background:#fff;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer">&minus;</button>';
+      h+='<span style="font-size:15px;font-weight:800;color:#b45309;min-width:70px;text-align:center">'+_bp+' ⭐</span>';
+      h+='<button onclick="ceSaveField(\'bookPoints\','+(_bp+5)+');ceRenderEditSheet()" style="width:30px;height:30px;border:1px solid var(--border);background:#fff;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer">+</button>';
+      h+='<input type="number" min="0" step="5" value="'+_bp+'" onchange="ceSaveField(\'bookPoints\',parseInt(this.value)||0);ceRenderEditSheet()" style="width:70px;padding:5px 8px;border:1.5px solid var(--border);border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:12px;margin-left:4px">';
+      h+='</div>';
+    }
+  }
   } // end sequenced-only block
 
   // Pause toggle
@@ -15977,6 +16058,46 @@ function subjectBooks(kid,sk){
   let cursor=0; try{cursor=computeSubjectDone(kid,sk);}catch(e){}
   return _bookRuns(seq).map(r=>({name:r.name,finished:cursor>r.lastIdx}));
 }
+// Volume-token book runs ("5A Ch.6 L5" → 5A/5B/6A/6B) for lesson-based multi-book
+// subjects — same guard as subjectLessonCurrentBook (2–8 books, ≥3 lessons/book avg).
+// Unkeyed lessons (reviews, bridges) extend the run they follow.
+function _volumeRuns(seq){
+  const keys=(seq||[]).map(e=>_lessonBookKey(e.lesson));
+  const order=[]; keys.forEach(k=>{ if(k&&!order.includes(k)) order.push(k); });
+  const keyed=keys.filter(Boolean).length;
+  if(order.length<2||order.length>8||keyed/order.length<3) return [];
+  const runs=[];
+  keys.forEach((k,i)=>{
+    const last=runs[runs.length-1];
+    if(k&&(!last||last.key!==k)) runs.push({name:k,key:k,firstIdx:i,lastIdx:i});
+    else if(last) last.lastIdx=i;
+  });
+  // Reject interleaved tokens (L1–L5 repeating per map, D1–D5 per unit): real books are
+  // contiguous, so any key owning two separate runs means these aren't books at all.
+  const seen={};
+  for(const r of runs){ if(seen[r.key]) return []; seen[r.key]=1; }
+  return runs;
+}
+// Books eligible for 📖 milestone trophies in a subject: volume runs first (Singapore
+// 5A/5B), else page-run books (MR5→MR6). Same-key runs merge so a re-visited book can't
+// double-trophy. The FINAL book is excluded — its finish IS the subject finish, and the
+// 🏆 subject-completion celebration owns that moment. Off switch: bookMilestones=false.
+function subjectMilestoneBooks(kid,sk){
+  const s=((currData&&currData.subjects||{})[kid]||{})[sk];
+  if(!s||s.paused||s.tracking==="daily"||s.bookMilestones===false) return [];
+  const seq=buildSubjectLessons(kid,sk); if(!seq.length) return [];
+  let runs=_volumeRuns(seq);
+  // Page-run fallback (MR5→MR6): drop stem-noise runs — a milestone book needs a real
+  // name and more than one page-labeled lesson (a lone "- p.12" line is not a book).
+  if(!runs.length) runs=_bookRuns(seq)
+    .filter(r=>/[a-z0-9]/i.test(r.name)&&r.lastIdx>r.firstIdx)
+    .map(r=>({name:r.name,key:r.key,firstIdx:r.firstIdx,lastIdx:r.lastIdx}));
+  const byKey={};
+  runs.forEach(r=>{ const b=byKey[r.key]; if(!b) byKey[r.key]=Object.assign({},r); else { b.firstIdx=Math.min(b.firstIdx,r.firstIdx); b.lastIdx=Math.max(b.lastIdx,r.lastIdx); } });
+  const merged=Object.values(byKey).sort((a,b)=>a.lastIdx-b.lastIdx);
+  merged.pop();
+  return merged;
+}
 // Lifetime "how far you've come" totals — fully derived (no stored counter to
 // drift): lessons from the cursor (offset already folds in pre-app lessons),
 // pages from subjectPagesReached. since = earliest plan start.
@@ -16125,12 +16246,12 @@ function renderPace(el){
     if(troph.length){
       h+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:'+(close.length?'10px':'0')+'">';
       troph.forEach(t=>{
-        const ic=t.type==="session"?"🎖️":"🏅";
+        const ic=t.type==="session"?"🎖️":(t.type==="book"?"📖":"🏅");
         h+='<span style="display:inline-flex;align-items:center;gap:4px;background:#fff;border:1.5px solid #fcd34d;border-radius:20px;padding:4px 10px;font-size:11px;font-weight:700;color:#92400e">'+ic+' '+esc(t.name)+' <span style="color:#b45309">+'+(t.points||0)+'</span></span>';
       });
       h+='</div>';
     } else {
-      h+='<div style="text-align:center;font-size:11px;color:#92400e;margin-bottom:'+(close.length?'10px':'0')+'">No trophies yet — finish a subject or session to earn one!</div>';
+      h+='<div style="text-align:center;font-size:11px;color:#92400e;margin-bottom:'+(close.length?'10px':'0')+'">No trophies yet — finish a book, subject, or session to earn one!</div>';
     }
     // close-to-a-badge nudges
     if(close.length){
@@ -16139,6 +16260,23 @@ function renderPace(el){
         h+='<div style="font-size:12px;color:#b45309;font-weight:600;padding:2px 0">🔥 '+c.left+' lesson'+(c.left>1?'s':'')+' from finishing <b>'+esc(c.name)+'</b>!</div>';
       });
       h+='</div>';
+    }
+    // Mom-only: finished books that never got their celebration (finished before the
+    // feature existed, or the boundary check-off happened on a stale device) — 🎉 fires
+    // the full celebration + points + badge, once.
+    if(momView){
+      const _ready=readyBookCelebrations(kid);
+      if(_ready.length){
+        h+='<div style="border-top:1px dashed #fcd34d;padding-top:8px;margin-top:8px">';
+        h+='<div style="font-size:10px;font-weight:800;color:#b45309;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:5px">🔒 📖 Finished books — not yet celebrated</div>';
+        _ready.forEach(rb=>{
+          h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 0">';
+          h+='<span style="font-size:12px;color:#92400e;font-weight:600">'+esc(rb.subject)+' '+esc(rb.name)+'</span>';
+          h+='<button onclick="celebrateBookNow(\''+kid+'\',\''+rb.sk+'\',\''+rb.slug+'\')" style="padding:4px 12px;border-radius:14px;border:none;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🎉 Celebrate</button>';
+          h+='</div>';
+        });
+        h+='</div>';
+      }
     }
     // Mom-only PIN review of forfeited days — audit + restore if a mistake was made.
     if(momView){
