@@ -3889,6 +3889,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
   window.HoweNotebooks = {
     version: "1-julian",
     fontsOk: FONTS_OK,
+    fontFacesCss: fontFacesCss,   // NoTears @font-face — the app's drill Trace overlay injects it
     GENERATORS: GENERATORS,
     extraPageCatalog: EXTRA_PAGE_CATALOG,
     generate: generate,

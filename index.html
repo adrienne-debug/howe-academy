@@ -16069,20 +16069,43 @@ function mastTraceOpen(glyph){
   cv.style.cssText="width:"+W+"px;height:"+H+"px;background:#fff;border:2.5px solid #fed7aa;border-radius:20px;touch-action:none";
   ov.appendChild(cv);
   const ctx=cv.getContext("2d");
+  let hasDrawn=false;
   const paint=()=>{
     ctx.clearRect(0,0,cv.width,cv.height);
     ctx.save();
     ctx.fillStyle="#f6e3cf";
-    ctx.font="700 "+Math.floor(cv.height*0.72)+"px 'Fraunces',serif";
+    // Ghost in the notebooks' NoTears (Handwriting Without Tears-style) letterforms once
+    // that embedded font is loaded — kids trace the shapes they're taught to write.
+    const fam=window._ntTraceReady?"'NoTears'":"'Fraunces',serif";
+    let fs=Math.floor(cv.height*0.72);
+    ctx.font="700 "+fs+"px "+fam;
     ctx.textAlign="center"; ctx.textBaseline="middle";
+    // Fit the WHOLE word: height-only sizing let 2-3 letter glyphs spill past the box edges.
+    const maxW=cv.width*0.92, tw=ctx.measureText(glyph).width;
+    if(tw>maxW){ fs=Math.floor(fs*maxW/tw); ctx.font="700 "+fs+"px "+fam; }
     ctx.fillText(glyph, cv.width/2, cv.height/2+cv.height*0.03);
     ctx.restore();
     ctx.lineWidth=16; ctx.lineCap="round"; ctx.lineJoin="round"; ctx.strokeStyle="#7c3aed";
   };
   paint();
+  // Load the NoTears font from notebooks.js (lazy, once) and repaint the ghost with it —
+  // but never wipe strokes the kid has already made; the swap only lands on a clean board.
+  if(!window._ntTraceReady){
+    haLoadNotebooksLib().then(lib=>{
+      if(!lib||!lib.fontsOk||!lib.fontFacesCss) return;
+      if(!document.getElementById("ha-nt-font")){
+        const st=document.createElement("style"); st.id="ha-nt-font"; st.textContent=lib.fontFacesCss();
+        document.head.appendChild(st);
+      }
+      return document.fonts.load("700 100px NoTears").then(()=>{
+        window._ntTraceReady=true;
+        if(document.getElementById("mast-trace")&&!hasDrawn) paint();
+      });
+    }).catch(()=>{});
+  }
   let drawing=false;
   const pos=e=>{ const r=cv.getBoundingClientRect(); return [(e.clientX-r.left)*(cv.width/r.width),(e.clientY-r.top)*(cv.height/r.height)]; };
-  cv.onpointerdown=e=>{ e.preventDefault(); drawing=true; const p=pos(e); ctx.beginPath(); ctx.moveTo(p[0],p[1]); try{cv.setPointerCapture(e.pointerId);}catch(err){} };
+  cv.onpointerdown=e=>{ e.preventDefault(); drawing=true; hasDrawn=true; const p=pos(e); ctx.beginPath(); ctx.moveTo(p[0],p[1]); try{cv.setPointerCapture(e.pointerId);}catch(err){} };
   cv.onpointermove=e=>{ if(!drawing) return; e.preventDefault(); const p=pos(e); ctx.lineTo(p[0],p[1]); ctx.stroke(); };
   cv.onpointerup=cv.onpointercancel=()=>{ drawing=false; };
   const row=document.createElement("div");
