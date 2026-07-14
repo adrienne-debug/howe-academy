@@ -980,6 +980,12 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
 .ce-toggle::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform 0.2s}
 .ce-toggle.on::after{transform:translateX(20px)}
 .ce-section-hdr{font-weight:700;font-size:14px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+/* ── Brain Break — reset overlay on a kid's schedule (see bbBlock) ── */
+@keyframes bbGlow{0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,0)}50%{box-shadow:0 0 0 5px rgba(245,158,11,.55)}}
+.bb-glow{animation:bbGlow 1.6s ease-in-out 4;border-radius:12px}
+.bb-feel-btn{display:flex;flex-direction:column;align-items:center;gap:4px;padding:14px 6px;border:1.5px solid var(--border);border-radius:14px;background:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:11.5px;font-weight:700;color:var(--text)}
+.bb-feel-btn:active,.bb-opt-btn:active{transform:scale(.97)}
+.bb-opt-btn{display:flex;align-items:center;gap:10px;width:100%;padding:11px 12px;border:1.5px solid var(--border);border-radius:12px;background:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13.5px;font-weight:600;text-align:left;color:var(--text)}
 </style>
 </head>
 <body>
@@ -1217,6 +1223,13 @@ let histTab="log"; // "log" | "attendance" | "trends"
 let histTrendKid=null; // Trends: focused kid (null = all)
 let attEditUnlocked=false;
 let APP_PIN=localStorage.getItem("ha_app_pin")||"0329";
+// ── BRAIN BREAK state — per-kid reset (feelings check → menu → timer). Synced at
+//    brainBreaks/{kid} (active break + log) and brainBreakSettings/{kid}. A break is a pure
+//    overlay on that kid's view; schedule data (tasks/checked) is NEVER touched by it.
+let brainBreaks={}; try{ const _bb=localStorage.getItem("ha_brainbreaks"); if(_bb) brainBreaks=JSON.parse(_bb); }catch(e){}
+let bbSettings={}; try{ const _bs=localStorage.getItem("ha_bb_settings"); if(_bs) bbSettings=JSON.parse(_bs); }catch(e){}
+let bbMomDraft=null;  // transient, device-local Mom flow: {kid, halt:{}, menu:{key:1}} — synced only when handed to the kid
+let bbTimerInt=null;  // countdown interval while a break timer is on screen
 let attOverrides={}; // {wkKey:{day:{kid:true/false}}}
 let coExclusions={}; // {wkKey:{taskId:true}} — carry-overs the user has explicitly unchecked
 let walkbackExcl={}; // {baseTaskId:true} — lessons walked back by Mom; the cross-week carry must NOT
@@ -1568,6 +1581,16 @@ function initFb() {
       notebookSettings=s.val()||{};
       try{localStorage.setItem("ha_nb_settings",JSON.stringify(notebookSettings));}catch(e){}
       if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);}
+    });
+    db.ref("brainBreaks").on("value",s=>{
+      brainBreaks=s.val()||{};
+      try{localStorage.setItem("ha_brainbreaks",JSON.stringify(brainBreaks));}catch(e){}
+      if(tab==="schedule"&&!schedShowAdmin&&!schedShowHistory&&!schedShowPace){const el=document.getElementById("content");if(el)renderSchedule(el);}
+      else if((tab==="history"||schedShowHistory)&&histTab==="trends"){const el=document.getElementById("content");if(el)renderHistory(el);}
+    });
+    db.ref("brainBreakSettings").on("value",s=>{
+      bbSettings=s.val()||{};
+      try{localStorage.setItem("ha_bb_settings",JSON.stringify(bbSettings));}catch(e){}
     });
     db.ref("notebookActivities").on("value",s=>{
       const v=s.val()||{};
@@ -3414,6 +3437,7 @@ function renderSchedule(el){
   h+=renderClaimQueue();
   h+=unitScheduleNudges(kid);  // U6: unit-study pacing nudges (renders only when one is live)
   h+=renderSessionBanner(kid); // session progress (kid-facing) — goals met toward the session
+  h+=bbBlock(kid); // 🧠 Brain break — button, or the active break card (pauses this kid's view only)
 
   // ── SCHEDULE LOCK CHECK ──────────────────────────────────────────
   const unlocked = isScheduleUnlocked(kid, day);
@@ -3475,9 +3499,13 @@ function renderSchedule(el){
   if(kid==="mom" && unlocked){
     h+=momAgendaHtml(tasks);
   } else {
+  // While this kid's brain break is active, their task list stays visible but paused —
+  // dimmed and untappable. Purely visual: no task/checked data is touched by a break.
+  const _bbPaused=(kid!=="all"&&kid!=="mom")&&!!bbActive(kid);
+  const _tsOpen='<div class="time-slots"'+(_bbPaused?' style="opacity:.35;pointer-events:none;filter:grayscale(.4)"':'')+'>';
   const innerStart = unlocked
-    ? '<div class="time-slots">'
-    : '<div class="sched-locked-wrap"><div class="sched-blur"><div class="time-slots">';
+    ? _tsOpen
+    : '<div class="sched-locked-wrap"><div class="sched-blur">'+_tsOpen;
 
   h += innerStart;
   let lunchDone=false;
@@ -4056,6 +4084,306 @@ function taskCard(t, fromDay, readOnly, doneId){
     '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+t.title+'</div>'+mb+'</div>'+
     '<div class="task-detail">'+cleanDetail+'</div>'+dr+spinBtn+
     '</div></div></div>';
+}
+
+// ── BRAIN BREAK ───────────────────────────────────────────────────
+// A reset for a kid who shows up not-ready-to-learn: feelings check ("How do you feel?") →
+// a menu of body-based reset options filtered to that feeling → a visible 5/10-minute timer
+// → back to the exact task they left (glow-highlighted). Two doors in from the same button:
+//   · Kid-started — capped per day (default 1) so the button can't become the skip-math
+//     lever (escape-reinforcement guard). "Never mind" on the first screen refunds the cap.
+//   · Mom-started (Mom mode unlocked) — UNcapped: an adult-offered break before the
+//     boil-over is the evidence-based move. Mom gets her reminder card + HALT body check,
+//     curates which options the kid may pick from, then hands the tablet over.
+// The break lives at brainBreaks/{kid}/active, so it stays on THAT kid's view across kid
+// switches, reloads, and devices — siblings' views are untouched. Every break is recorded
+// to brainBreaks/{kid}/log (feeling, choice, HALT answers, duration, who started it, and
+// the task/subject the kid was facing) for Trends insight later. Schedule data is NEVER
+// written — the "pause" is purely visual on the kid's own view.
+const BB_OPTS={
+  run:{e:"\u{1F3C3}",l:"Run to the fence and back ×3"},
+  jacks:{e:"⭐",l:"20 jumping jacks"},
+  stairs:{e:"\u{1FA9C}",l:"Up & down the stairs ×5"},
+  march:{e:"\u{1F3B5}",l:"March to one whole song"},
+  wallpush:{e:"\u{1F9F1}",l:"Wall push-offs ×10"},
+  carry:{e:"\u{1F9FA}",l:"Carry something heavy (laundry, book stack)"},
+  wheelbarrow:{e:"\u{1F6DE}",l:"Wheelbarrow walk"},
+  balance:{e:"\u{1F938}",l:"Balance board"},
+  coldwater:{e:"\u{1F4A6}",l:"Splash cold water on your face"},
+  breaths:{e:"\u{1F409}",l:"10 slow dragon breaths"},
+  calmcorner:{e:"\u{1F6CB}️",l:"Calm corner"},
+  blanket:{e:"\u{1F9F8}",l:"Weighted blanket"},
+  window:{e:"\u{1FA9F}",l:"Watch out the window"},
+  mom2min:{e:"\u{1F917}",l:"2 minutes with Mom"},
+  snack:{e:"\u{1F34E}",l:"Snack + big glass of water"},
+  water:{e:"\u{1F4A7}",l:"Big glass of water"},
+  nbpage:{e:"\u{1F9E0}",l:"Today's Brain Break page in your notebook"}
+};
+// Feelings → the options that actually work for that state (Zones-of-Regulation-style):
+// wound-up states get body/discharge options; low-energy states get fuel/calm/puzzle;
+// sad routes to connection first. The notebook puzzle page is deliberately NOT offered
+// on the mad path — a fun page can't become the angry kid's escape hatch.
+const BB_FEELS=[
+  {k:"mad",e:"\u{1F624}",l:"Mad or frustrated",opts:["run","wallpush","balance","coldwater","carry"]},
+  {k:"wiggly",e:"\u{1F41C}",l:"Wiggly — can't sit still",opts:["jacks","wheelbarrow","balance","march","stairs"]},
+  {k:"tired",e:"\u{1F971}",l:"Tired or foggy",opts:["snack","nbpage","window","calmcorner","march"]},
+  {k:"sad",e:"\u{1F61F}",l:"Sad or worried",opts:["mom2min","blanket","breaths","calmcorner"]},
+  {k:"hungry",e:"\u{1F34E}",l:"Hungry or thirsty",opts:["snack","water"]}
+];
+const BB_NB_KIDS={lincoln:1,ellis:1,lucy:1}; // kids whose notebooks have a daily 🧠 puzzle page
+const BB_HALT=[["hungry","\u{1F34E}","Hungry?"],["angry","\u{1F624}","Something happened?"],["lonely","\u{1F917}","Needs me?"],["tired","\u{1F971}","Tired?"]];
+// HALT answer → options Mom's curated menu is seeded with (she can still check/uncheck any)
+const BB_HALT_SEED={hungry:["snack","water"],angry:["run","wallpush","balance","coldwater","carry"],lonely:["mom2min","blanket","breaths","calmcorner"],tired:["snack","window","calmcorner","nbpage","march"]};
+const BB_DEFAULT_SEED=["jacks","run","balance","snack","calmcorner","breaths"];
+
+function bbSet(k){ const s=bbSettings[k]||{}; return {mode:s.mode||"kid",cap:(typeof s.cap==="number"&&s.cap>0)?s.cap:1}; }
+function bbTodayKey(){ const n=new Date(); return n.getFullYear()+"-"+String(n.getMonth()+1).padStart(2,"0")+"-"+String(n.getDate()).padStart(2,"0"); }
+function bbActive(k){ return (brainBreaks[k]||{}).active||null; }
+function bbUsedToday(k){ const log=(brainBreaks[k]||{}).log||{}; const tk=bbTodayKey(); return Object.values(log).filter(e=>e&&e.by==="kid"&&e.dateKey===tk).length; }
+// First unchecked task on TODAY's list for the kid — "the task they left" (same-task-on-return)
+function bbNextTask(k){
+  const at=(displacedResult?displacedResult.tasks:weekData.tasks)||[];
+  const todays=at.filter(t=>effectiveDay(t)===_todayDay&&t.who===k&&!t.id.endsWith("_c")&&!t._eowOverflow&&!checked[t.id]&&!String(t.title).toLowerCase().includes("lunch"));
+  todays.sort((a,b)=>toMin(a.time)-toMin(b.time));
+  return todays[0]||null;
+}
+function bbWriteActive(k,obj){ if(db) db.ref("brainBreaks/"+k+"/active").set(obj); brainBreaks[k]=brainBreaks[k]||{}; brainBreaks[k].active=obj; renderAll(); }
+function bbPatchActive(k,upd){ if(db) db.ref("brainBreaks/"+k+"/active").update(upd); const a=bbActive(k); if(a) Object.assign(a,upd); renderAll(); }
+function bbClearActive(k){ if(db) db.ref("brainBreaks/"+k+"/active").remove(); if(brainBreaks[k]) delete brainBreaks[k].active; renderAll(); }
+function bbLogStart(k,entry){
+  const key=db?db.ref("brainBreaks/"+k+"/log").push().key:("local_"+Date.now());
+  if(db) db.ref("brainBreaks/"+k+"/log/"+key).set(entry);
+  brainBreaks[k]=brainBreaks[k]||{}; brainBreaks[k].log=brainBreaks[k].log||{}; brainBreaks[k].log[key]=entry;
+  return key;
+}
+function bbLogPatch(k,key,upd){ if(!key) return; if(db) db.ref("brainBreaks/"+k+"/log/"+key).update(upd); const lg=(brainBreaks[k]||{}).log; if(lg&&lg[key]) Object.assign(lg[key],upd); }
+function bbLogRemove(k,key){ if(!key) return; if(db) db.ref("brainBreaks/"+k+"/log/"+key).remove(); const lg=(brainBreaks[k]||{}).log; if(lg&&lg[key]) delete lg[key]; }
+function bbBaseEntry(k,by){
+  const t=bbNextTask(k);
+  return {ts:Date.now(),dateKey:bbTodayKey(),wk:activeWk(),day:_todayDay,by:by,
+    taskId:t?t.id:null,taskTitle:t?t.title:null,subject:t?(taskSubject(t)||null):null};
+}
+
+// ── flows ──
+function bbKidStart(k){
+  const st=bbSet(k);
+  if(st.mode!=="kid"||bbUsedToday(k)>=st.cap||bbActive(k)) return;
+  const entry=bbBaseEntry(k,"kid");
+  const logKey=bbLogStart(k,entry);
+  bbWriteActive(k,{phase:"feel",by:"kid",startedTs:Date.now(),logKey:logKey,taskId:entry.taskId,taskTitle:entry.taskTitle});
+}
+function bbNeverMind(k){ // feel-screen bail: refund the cap — nothing was committed yet
+  const a=bbActive(k)||{};
+  bbLogRemove(k,a.logKey);
+  bbClearActive(k);
+}
+function bbFeel(k,fk){
+  const f=BB_FEELS.find(x=>x.k===fk); if(!f) return;
+  const menu=f.opts.filter(o=>o!=="nbpage"||BB_NB_KIDS[k]);
+  bbLogPatch(k,(bbActive(k)||{}).logKey,{feeling:fk});
+  bbPatchActive(k,{phase:"menu",feeling:fk,menu:menu.join(",")});
+}
+function bbBackToFeel(k){ bbPatchActive(k,{phase:"feel"}); }
+function bbChoose(k,opt){
+  bbLogPatch(k,(bbActive(k)||{}).logKey,{choice:opt});
+  bbPatchActive(k,{phase:"mins",choice:opt});
+}
+function bbGo(k,mins){
+  bbLogPatch(k,(bbActive(k)||{}).logKey,{minutes:mins});
+  bbPatchActive(k,{phase:"timer",minutes:mins,startedAt:Date.now()});
+}
+function bbFinish(k){ // done-screen "Back to my work" — clear the break, glow the task they left
+  const a=bbActive(k)||{};
+  bbLogPatch(k,a.logKey,{endedTs:Date.now(),completed:true});
+  const tid=a.taskId;
+  bbClearActive(k);
+  setTimeout(()=>{
+    if(!tid) return;
+    const cb=document.querySelector('[onclick="tapTask(\''+tid+'\')"]');
+    const card=cb?cb.closest(".task-card"):null;
+    if(card){ card.classList.add("bb-glow"); card.scrollIntoView({behavior:"smooth",block:"center"}); setTimeout(()=>card.classList.remove("bb-glow"),8000); }
+  },150);
+}
+function bbMomEnd(k){ // Mom's ✕ on an in-flight break
+  const a=bbActive(k)||{};
+  bbLogPatch(k,a.logKey,{endedTs:Date.now(),canceled:true});
+  bbClearActive(k);
+}
+
+// ── Mom flow (device-local draft until handed over) ──
+function bbMomOpen(k){ if(!momHere()) return; bbMomDraft={kid:k,halt:{},menu:null}; renderAll(); }
+function bbMomCancel(){ bbMomDraft=null; renderAll(); }
+function bbMomHalt(h){
+  if(!bbMomDraft) return;
+  bbMomDraft.halt[h]=!bbMomDraft.halt[h];
+  bbMomSeed(); renderAll();
+}
+function bbMomSeed(){ // re-seed the curated menu from the HALT answers (Mom edits from there)
+  const d=bbMomDraft; if(!d) return;
+  const sel={};
+  Object.keys(d.halt).forEach(h=>{ if(d.halt[h]) (BB_HALT_SEED[h]||[]).forEach(o=>sel[o]=1); });
+  if(!Object.keys(sel).length) BB_DEFAULT_SEED.forEach(o=>sel[o]=1);
+  if(!BB_NB_KIDS[d.kid]) delete sel.nbpage;
+  d.menu=sel;
+}
+function bbMomToggleOpt(o){
+  if(!bbMomDraft) return;
+  if(!bbMomDraft.menu) bbMomSeed();
+  bbMomDraft.menu[o]=bbMomDraft.menu[o]?0:1;
+  renderAll();
+}
+function bbMomHand(){ // hand the tablet to the kid: the curated menu becomes their break
+  const d=bbMomDraft; if(!d) return;
+  if(!d.menu) bbMomSeed();
+  const menu=Object.keys(d.menu).filter(o=>d.menu[o]);
+  if(!menu.length) return;
+  const entry=bbBaseEntry(d.kid,"mom"); entry.halt=d.halt;
+  const logKey=bbLogStart(d.kid,entry);
+  bbMomDraft=null;
+  bbWriteActive(d.kid,{phase:"menu",by:"mom",startedTs:Date.now(),logKey:logKey,menu:menu.join(","),taskId:entry.taskId,taskTitle:entry.taskTitle});
+}
+function bbSetMode(k,mode,capN){
+  const v={mode:mode,cap:capN||1};
+  if(db) db.ref("brainBreakSettings/"+k).set(v);
+  bbSettings[k]=v; renderAll();
+}
+
+// ── timer plumbing ──
+function bbFmt(ms){ const s=Math.max(0,Math.ceil(ms/1000)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
+function bbChime(){
+  try{
+    const ctx=new (window.AudioContext||window.webkitAudioContext)();
+    [880,1100,1320].forEach((f,i)=>{
+      const o=ctx.createOscillator(),g=ctx.createGain();
+      o.connect(g); g.connect(ctx.destination); o.frequency.value=f;
+      const t0=ctx.currentTime+i*0.35;
+      g.gain.setValueAtTime(0.001,t0);
+      g.gain.exponentialRampToValueAtTime(0.2,t0+0.05);
+      g.gain.exponentialRampToValueAtTime(0.001,t0+0.32);
+      o.start(t0); o.stop(t0+0.35);
+    });
+  }catch(e){}
+}
+function bbTickStart(){
+  if(bbTimerInt) return;
+  bbTimerInt=setInterval(()=>{
+    const el=document.getElementById("bb-count");
+    if(!el){ clearInterval(bbTimerInt); bbTimerInt=null; return; }
+    const k=el.dataset.kid, a=bbActive(k);
+    if(!a||a.phase!=="timer"){ clearInterval(bbTimerInt); bbTimerInt=null; return; }
+    const rem=a.startedAt+a.minutes*60000-Date.now();
+    if(rem<=0){ clearInterval(bbTimerInt); bbTimerInt=null; bbChime(); bbPatchActive(k,{phase:"done"}); return; }
+    el.textContent=bbFmt(rem);
+    const bar=document.getElementById("bb-prog"); if(bar) bar.style.width=Math.max(0,Math.min(100,100*(1-rem/(a.minutes*60000))))+"%";
+  },500);
+}
+
+// ── rendering ──
+// The bar (no active break) or the break card (active / Mom draft) for a kid's schedule view.
+function bbBlock(k){
+  if(k==="all"||k==="mom") return "";
+  if(bbMomDraft&&bbMomDraft.kid===k) return bbMomCardHtml(k);
+  const a=bbActive(k);
+  if(a) return bbCardHtml(k,a);
+  const st=bbSet(k), col=KID_COLOR[k]||"#666";
+  const capped=bbUsedToday(k)>=st.cap;
+  let click=null,label,sub;
+  if(momHere()){ label="\u{1F9E0} Brain break for "+cap(k); sub="Mom-started · reminder card + body check first"; click="bbMomOpen('"+k+"')"; }
+  else if(st.mode==="off") return "";
+  else if(st.mode==="momOnly"){ label="\u{1F9E0} Brain break"; sub="Ask Mom to start one with you"; }
+  else if(capped){ label="\u{1F9E0} Brain break"; sub="Used for today — your work is waiting for you \u{1F4AA}"; }
+  else { label="\u{1F9E0} Brain break!"; sub="Not ready to learn? Take a reset."; click="bbKidStart('"+k+"')"; }
+  return '<div style="margin:10px 12px 0">'+
+    '<button '+(click?'onclick="'+click+'"':'disabled')+' style="display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;border-radius:14px;border:1.5px solid '+(click?col:"var(--border)")+';background:'+(click?"#fff":"#f4f4f5")+';cursor:'+(click?"pointer":"default")+';font-family:\'DM Sans\',sans-serif;text-align:left'+(click?"":";opacity:.75")+'">'+
+    '<span style="font-size:20px">\u{1F9E0}</span><span style="flex:1;min-width:0">'+
+    '<span style="display:block;font-size:13.5px;font-weight:800;color:'+(click?col:"#6b7280")+'">'+label.replace(/^\u{1F9E0} /u,"")+'</span>'+
+    '<span style="display:block;font-size:11px;color:var(--muted)">'+sub+'</span></span></button></div>';
+}
+function _bbShell(k,title,sub,inner,footer){
+  const col=KID_COLOR[k]||"#666";
+  return '<div style="margin:10px 12px;border-radius:16px;overflow:hidden;box-shadow:0 4px 18px rgba(0,0,0,.12);background:#fff;border:1px solid var(--border)">'+
+    '<div style="background:'+col+';color:#fff;padding:11px 16px;display:flex;align-items:center;gap:10px">'+
+    '<span style="font-size:20px">\u{1F9E0}</span><div style="flex:1;min-width:0">'+
+    '<div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:800">'+title+'</div>'+
+    (sub?'<div style="font-size:11px;opacity:.85">'+sub+'</div>':"")+'</div>'+footer+'</div>'+
+    '<div style="padding:14px 16px">'+inner+'</div></div>';
+}
+function bbCardHtml(k,a){
+  const momX=momHere()?'<button onclick="bbMomEnd(\''+k+'\')" title="End this break" style="background:rgba(255,255,255,.18);border:none;color:#fff;font-size:15px;font-weight:700;cursor:pointer;border-radius:8px;padding:2px 9px">×</button>':"";
+  if(a.phase==="feel"){
+    let inner='<div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:800;margin-bottom:10px;text-align:center">How do you feel?</div>'+
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:9px">'+
+      BB_FEELS.map(f=>'<button class="bb-feel-btn" onclick="bbFeel(\''+k+'\',\''+f.k+'\')"><span style="font-size:30px">'+f.e+'</span>'+f.l+'</button>').join("")+'</div>'+
+      '<div style="text-align:center;margin-top:12px"><button onclick="bbNeverMind(\''+k+'\')" style="background:none;border:none;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-decoration:underline">↩ Never mind — back to my work</button></div>';
+    return _bbShell(k,"Brain break · "+cap(k),"Your schedule is paused — it’ll wait for you.",inner,momX);
+  }
+  if(a.phase==="menu"){
+    const opts=String(a.menu||"").split(",").filter(o=>BB_OPTS[o]);
+    let inner='<div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:800;margin-bottom:10px;text-align:center">Pick ONE:</div>'+
+      '<div style="display:flex;flex-direction:column;gap:8px">'+
+      opts.map(o=>'<button class="bb-opt-btn" onclick="bbChoose(\''+k+'\',\''+o+'\')"><span style="font-size:22px">'+BB_OPTS[o].e+'</span>'+BB_OPTS[o].l+'</button>').join("")+'</div>'+
+      (a.by==="kid"?'<div style="text-align:center;margin-top:10px"><button onclick="bbBackToFeel(\''+k+'\')" style="background:none;border:none;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-decoration:underline">← different feeling</button></div>':"");
+    return _bbShell(k,"Brain break · "+cap(k),a.by==="mom"?"Mom picked these for you — you choose one.":"",inner,momX);
+  }
+  if(a.phase==="mins"){
+    const o=BB_OPTS[a.choice]||{e:"\u{1F9E0}",l:""};
+    let inner='<div style="text-align:center;font-size:15px;font-weight:700;margin-bottom:12px">'+o.e+" "+o.l+'</div>'+
+      '<div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:800;margin-bottom:10px;text-align:center">How long do you need?</div>'+
+      '<div style="display:flex;gap:10px;justify-content:center">'+
+      [5,10].map(m=>'<button onclick="bbGo(\''+k+'\','+m+')" style="flex:1;max-width:150px;padding:16px 10px;border-radius:14px;border:2px solid '+(KID_COLOR[k]||"#666")+';background:#fff;color:'+(KID_COLOR[k]||"#666")+';font-family:\'Fraunces\',serif;font-size:22px;font-weight:800;cursor:pointer">'+m+'<span style="display:block;font-family:\'DM Sans\',sans-serif;font-size:11px;font-weight:600">minutes</span></button>').join("")+'</div>';
+    return _bbShell(k,"Brain break · "+cap(k),"",inner,momX);
+  }
+  if(a.phase==="timer"){
+    const rem=a.startedAt+a.minutes*60000-Date.now();
+    if(rem<=0){ // expired while nobody was watching — flip lazily (no chime, the moment passed)
+      setTimeout(()=>{ const cur=bbActive(k); if(cur&&cur.phase==="timer") bbPatchActive(k,{phase:"done"}); },50);
+    } else { setTimeout(bbTickStart,50); }
+    const o=BB_OPTS[a.choice]||{e:"\u{1F9E0}",l:""};
+    const pct=Math.max(0,Math.min(100,100*(1-rem/(a.minutes*60000))));
+    let inner='<div style="text-align:center;font-size:15px;font-weight:700;margin-bottom:6px">'+o.e+" "+o.l+'</div>'+
+      '<div id="bb-count" data-kid="'+k+'" style="font-family:\'Fraunces\',serif;font-size:56px;font-weight:800;text-align:center;color:'+(KID_COLOR[k]||"#333")+'">'+bbFmt(rem)+'</div>'+
+      '<div style="height:8px;border-radius:4px;background:#eee;overflow:hidden;margin:8px 0 10px"><div id="bb-prog" style="height:100%;width:'+pct+'%;background:'+(KID_COLOR[k]||"#666")+';transition:width .5s linear"></div></div>'+
+      '<div style="text-align:center;font-size:12px;color:var(--muted)">Go do it — the timer will ding when it’s time to come back.</div>';
+    return _bbShell(k,"Brain break · "+cap(k),"Your schedule is paused — it’ll wait for you.",inner,momX);
+  }
+  // done
+  const nxt=a.taskTitle?esc(a.taskTitle):null;
+  let inner='<div style="text-align:center;font-size:44px;margin-bottom:6px">\u{1F4AA}</div>'+
+    '<div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:800;text-align:center;margin-bottom:4px">You came back — that’s the whole skill!</div>'+
+    (nxt?'<div style="text-align:center;font-size:12.5px;color:var(--muted);margin-bottom:12px">Right where you left off: <b>'+nxt+'</b></div>':'<div style="margin-bottom:12px"></div>')+
+    '<div style="text-align:center"><button onclick="bbFinish(\''+k+'\')" style="padding:12px 26px;border-radius:14px;border:none;background:'+(KID_COLOR[k]||"#666")+';color:#fff;font-family:\'DM Sans\',sans-serif;font-size:15px;font-weight:800;cursor:pointer">Back to my work →</button></div>';
+  return _bbShell(k,"Brain break · "+cap(k),"",inner,momX);
+}
+function bbMomCardHtml(k){
+  const d=bbMomDraft; if(!d.menu) bbMomSeed();
+  const st=bbSet(k);
+  const modeBtn=(label,mode,capN)=>{
+    const on=st.mode===mode&&(mode!=="kid"||st.cap===capN);
+    return '<button onclick="bbSetMode(\''+k+'\',\''+mode+'\','+(capN||1)+')" style="padding:4px 10px;border-radius:9px;border:1.5px solid '+(on?"#b5394a":"var(--border)")+';background:'+(on?"#b5394a":"#fff")+';color:'+(on?"#fff":"#6b7280")+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+label+'</button>';
+  };
+  let inner=
+    '<div style="border-left:4px solid #b5394a;background:#fef2f2;border-radius:0 10px 10px 0;padding:9px 12px;margin-bottom:12px">'+
+      '<div style="font-size:10.5px;font-weight:800;color:#b5394a;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">You first — 10 seconds</div>'+
+      '<div style="font-size:12px;line-height:1.55;color:#7f1d1d">One slow breath before you speak — your calm is the intervention. Script: <i>“You’re not ready to learn yet — that’s okay. Pick a reset and come back ready.”</i> No lecture, no audience — turn to the next kid.</div>'+
+      '<div style="font-size:11px;color:#991b1b;margin-top:5px;font-weight:600">The work waits · same task on return · boring break · praise the return</div></div>'+
+    '<div style="font-size:11px;font-weight:800;color:#78716c;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Quick body check</div>'+
+    '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px">'+
+      BB_HALT.map(h=>'<button onclick="bbMomHalt(\''+h[0]+'\')" style="padding:7px 12px;border-radius:11px;border:1.5px solid '+(d.halt[h[0]]?"#b5394a":"var(--border)")+';background:'+(d.halt[h[0]]?"#fef2f2":"#fff")+';color:'+(d.halt[h[0]]?"#b5394a":"var(--text)")+';font-size:12.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+h[1]+" "+h[2]+'</button>').join("")+'</div>'+
+    '<div style="font-size:11px;font-weight:800;color:#78716c;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">'+cap(k)+' may choose from</div>'+
+    '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">'+
+      Object.keys(BB_OPTS).filter(o=>o!=="nbpage"||BB_NB_KIDS[k]).map(o=>{
+        const on=!!d.menu[o];
+        return '<button onclick="bbMomToggleOpt(\''+o+'\')" style="display:flex;align-items:center;gap:9px;width:100%;padding:8px 11px;border-radius:11px;border:1.5px solid '+(on?(KID_COLOR[k]||"#666"):"var(--border)")+';background:'+(on?"#fff":"#fafaf9")+';cursor:pointer;font-family:\'DM Sans\',sans-serif;font-size:12.5px;font-weight:600;text-align:left;color:'+(on?"var(--text)":"#a8a29e")+'">'+
+          '<span style="width:17px;height:17px;border-radius:5px;border:2px solid '+(on?(KID_COLOR[k]||"#666"):"#d6d3d1")+';background:'+(on?(KID_COLOR[k]||"#666"):"#fff")+';color:#fff;font-size:11px;line-height:14px;text-align:center;flex-shrink:0">'+(on?"✓":"")+'</span>'+
+          '<span style="font-size:17px">'+BB_OPTS[o].e+'</span>'+BB_OPTS[o].l+'</button>';
+      }).join("")+'</div>'+
+    '<div style="display:flex;gap:9px;margin-bottom:12px">'+
+      '<button onclick="bbMomHand()" style="flex:1;padding:12px;border-radius:13px;border:none;background:'+(KID_COLOR[k]||"#666")+';color:#fff;font-family:\'DM Sans\',sans-serif;font-size:14px;font-weight:800;cursor:pointer">Hand to '+cap(k)+' →</button>'+
+      '<button onclick="bbMomCancel()" style="padding:12px 16px;border-radius:13px;border:1.5px solid var(--border);background:#fff;color:#6b7280;font-family:\'DM Sans\',sans-serif;font-size:13px;font-weight:700;cursor:pointer">Cancel</button></div>'+
+    '<div style="border-top:1px dashed var(--border);padding-top:9px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">'+
+      '<span style="font-size:11px;font-weight:700;color:#78716c">'+cap(k)+' can start their own:</span>'+
+      modeBtn("1/day","kid",1)+modeBtn("2/day","kid",2)+modeBtn("Ask Mom first","momOnly")+modeBtn("Off","off")+'</div>';
+  return _bbShell(k,"Brain break for "+cap(k),"Mom-started · doesn’t count against their daily break",inner,"");
 }
 
 // ── TASK TAP ──────────────────────────────────────────────────────
@@ -4783,7 +5111,11 @@ function renderHistoryTrends(){
   weeks.sort((a,b)=>a.n-b.n);
   const rel=weeks.filter(w=>w.reliable);
   let h='<div style="padding:12px">';
-  if(!rel.length){ h+='<div style="text-align:center;color:var(--muted);padding:34px 12px;line-height:1.6">No completed weeks with reliable records yet.<br>Trends fill in as weeks are archived — each one now freezes a snapshot at close.</div></div>'; return h; }
+  if(!rel.length){
+    h+='<div style="text-align:center;color:var(--muted);padding:34px 12px;line-height:1.6">No completed weeks with reliable records yet.<br>Trends fill in as weeks are archived — each one now freezes a snapshot at close.</div>';
+    h+=bbTrendsHtml((kid!=="all"&&kid!=="mom"&&ROSTER.includes(kid))?[kid]:[...ROSTER],KC);
+    h+='</div>'; return h;
+  }
   const kids=[...ROSTER].filter(k=>rel.some(w=>w.comp.byKid[k]));
   const pctOf=(w,k)=>{const r=w.comp.byKid[k];return (r&&r.planned)?Math.round(r.done/r.planned*100):null;};
   const topKid=(kid!=="all"&&kid!=="mom"&&kids.includes(kid))?kid:null; // the name selected at the top
@@ -4857,10 +5189,124 @@ function renderHistoryTrends(){
     h+='</table>';
   }
 
+  h+=bbTrendsHtml(focus?[focus]:[...ROSTER],KC);
+
   const excl=weeks.filter(w=>!w.reliable).map(w=>"W"+w.n);
   h+='<div style="font-size:10px;color:var(--muted);margin-top:12px;line-height:1.6">';
   if(excl.length) h+='Excluded (incomplete archived records): '+excl.join(", ")+'. ';
   h+='Each week now freezes a completion snapshot when it closes, so future trends stay exact.</div>';
+  h+='</div>';
+  return h;
+}
+
+// ── BRAIN BREAK TRENDS — the insight end of the 🧠 log (brainBreaks/{kid}/log). ──
+// Centerpiece is a Touchette-style scatter (the standard functional-assessment tool:
+// days across, time-of-day down, one mark per incident) — clusters reveal WHEN breaks
+// happen ("always 9:30", "always Tuesday"). A scatter shows when, not why, so the copy
+// suggests patterns rather than declaring causes, and everything stays quiet until
+// there are enough dots to mean something (the literature wants 1–2 weeks minimum).
+const BB_FEEL_COL={mad:"#e34948",wiggly:"#eda100",tired:"#8a8f98",sad:"#7c3aed",hungry:"#16a34a"};
+function bbTrendsHtml(focusKids,KC){
+  let h='<div style="border-top:1px solid var(--border);margin-top:16px;padding-top:14px">';
+  h+='<div style="font-size:13px;font-weight:800;margin-bottom:8px">\u{1F9E0} Brain breaks'+(focusKids.length===1?' — '+cap(focusKids[0]):'')+'</div>';
+  const entries=[];
+  focusKids.forEach(k=>{ Object.values((brainBreaks[k]||{}).log||{}).forEach(e=>{ if(e&&e.ts) entries.push(Object.assign({},e,{kid:k})); }); });
+  if(!entries.length){
+    h+='<div style="font-size:12px;color:var(--muted);padding:4px 0 8px">No breaks logged yet'+(focusKids.length===1?' for '+cap(focusKids[0]):'')+'. When the \u{1F9E0} button gets used, the patterns land here — who, when, what feeling, and what subject they were facing.</div></div>';
+    return h;
+  }
+  entries.sort((a,b)=>a.ts-b.ts);
+  const feelMeta={}; BB_FEELS.forEach(f=>feelMeta[f.k]=f);
+
+  // ── stat chips ──
+  const finished=entries.filter(e=>e.completed).length, byKidStart=entries.filter(e=>e.by==="kid").length;
+  const wkNow=parseInt(((activeWk()||"").match(/\d+/)||[0])[0])||0;
+  const thisWk=entries.filter(e=>e.wk===activeWk()).length;
+  const chip=(big,small)=>'<div style="background:var(--bg);border-radius:10px;padding:8px 12px"><div style="font-size:18px;font-weight:800">'+big+'</div><div style="font-size:10px;color:var(--muted)">'+small+'</div></div>';
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:8px;margin-bottom:14px">'+
+    chip(entries.length,"breaks logged")+
+    chip(thisWk,"this week (W"+wkNow+")")+
+    chip(byKidStart+" / "+(entries.length-byKidStart),"kid-caught / Mom-started")+
+    chip(Math.round(finished/entries.length*100)+"%","came back &amp; finished")+
+    '</div>';
+
+  // ── Touchette-style scatter: last 14 days (Sundays skipped) × school-day clock ──
+  const days=[]; const dNow=new Date(); dNow.setHours(0,0,0,0);
+  for(let i=13;i>=0;i--){ const d=new Date(dNow); d.setDate(d.getDate()-i); if(d.getDay()===0) continue; days.push(d); }
+  const dKey=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  const dayIdx={}; days.forEach((d,i)=>dayIdx[dKey(d)]=i);
+  const recent=entries.filter(e=>e.dateKey in dayIdx);
+  const byFeeling=focusKids.length===1; // one kid: color = feeling; all kids: color = kid
+  const W=520,H=200,pL=38,pB=24,pT=8,pR=8,y0=9*60,y1=17*60;
+  const xs=i=>pL+(days.length<=1?(W-pL-pR)/2:i*(W-pL-pR)/(days.length-1));
+  const ys=m=>pT+(Math.min(y1,Math.max(y0,m))-y0)/(y1-y0)*(H-pT-pB);
+  h+='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">When breaks happen — last 14 days × time of day'+(byFeeling?' (color = feeling'+', ring = Mom-started)':' (color = kid, ring = Mom-started)')+'</div>';
+  let s='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">';
+  [10,12,14,16].forEach(hr=>{ const y=ys(hr*60); s+='<line x1="'+pL+'" y1="'+y+'" x2="'+(W-pR)+'" y2="'+y+'" stroke="var(--border)" stroke-width="1"/><text x="'+(pL-4)+'" y="'+(y+3)+'" text-anchor="end" font-size="9" fill="var(--muted)">'+(hr===12?"noon":(hr>12?hr-12+"p":hr+"a"))+'</text>'; });
+  days.forEach((d,i)=>{ const lbl=["S","M","T","W","T","F","S"][d.getDay()]; const today=dKey(d)===bbTodayKey();
+    s+='<text x="'+xs(i)+'" y="'+(H-12)+'" text-anchor="middle" font-size="9" font-weight="'+(today?"800":"400")+'" fill="'+(today?"var(--text)":"var(--muted)")+'">'+lbl+'</text>'+
+       '<text x="'+xs(i)+'" y="'+(H-3)+'" text-anchor="middle" font-size="7.5" fill="var(--muted)">'+(d.getMonth()+1)+"/"+d.getDate()+'</text>'; });
+  const seen={};
+  recent.forEach(e=>{
+    const i=dayIdx[e.dateKey]; const dt=new Date(e.ts); const mins=dt.getHours()*60+dt.getMinutes();
+    const bump=(seen[e.dateKey+"_"+Math.round(mins/30)]=(seen[e.dateKey+"_"+Math.round(mins/30)]||0)+1)-1; // nudge overlaps apart
+    const col=byFeeling?(BB_FEEL_COL[e.feeling]||"#888"):(KC[e.kid]||"#888");
+    s+='<circle cx="'+(xs(i)+bump*7).toFixed(1)+'" cy="'+ys(mins).toFixed(1)+'" r="4.5" fill="'+col+'"'+(e.by==="mom"?' stroke="#b5394a" stroke-width="2"':'')+(e.canceled?' opacity="0.4"':'')+'/>';
+  });
+  s+='</svg>';
+  h+=s;
+  // legend
+  h+='<div style="display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin:6px 0 14px">';
+  if(byFeeling){ BB_FEELS.forEach(f=>{ h+='<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:50%;background:'+BB_FEEL_COL[f.k]+'"></span>'+f.e+' '+f.l.split(" ")[0]+'</span>'; }); }
+  else{ focusKids.forEach(k=>{ h+='<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:50%;background:'+(KC[k]||"#888")+'"></span>'+cap(k)+'</span>'; }); }
+  h+='<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:50%;background:#fff;border:2px solid #b5394a"></span>Mom-started</span></div>';
+  if(!recent.length) h+='<div style="font-size:11px;color:var(--muted);margin:-8px 0 14px">No breaks in the last 14 days — dots land here as they happen.</div>';
+
+  // ── breaks per week ──
+  const perWk={};
+  entries.forEach(e=>{ const n=parseInt(((e.wk||"").match(/\d+/)||[0])[0])||0; if(n) perWk[n]=(perWk[n]||0)+1; });
+  const wks=Object.keys(perWk).map(Number).sort((a,b)=>a-b).slice(-10);
+  if(wks.length>1){
+    h+='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Breaks per week</div>';
+    h+='<div style="display:flex;align-items:flex-end;gap:6px;height:58px;margin-bottom:14px">';
+    wks.forEach(n=>{ const m=perWk[n]; const hb=m===0?3:Math.min(46,8+m*6);
+      h+='<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;font-weight:700;color:var(--text)">'+m+'</div><div style="width:100%;height:'+hb+'px;background:#7c9cd6;border-radius:3px 3px 0 0"></div><div style="font-size:9px;color:var(--muted);margin-top:2px">W'+n+'</div></div>'; });
+    h+='</div>';
+  }
+
+  // ── what they were facing (the placement-problem detector) ──
+  const bySub={};
+  entries.forEach(e=>{ if(!e.subject) return; const key=e.kid+"|"+e.subject; const a=bySub[key]||(bySub[key]={k:e.kid,sj:e.subject,n:0,feels:{}}); a.n++; if(e.feeling) a.feels[e.feeling]=(a.feels[e.feeling]||0)+1; });
+  let subRows=Object.values(bySub).sort((x,y)=>y.n-x.n).slice(0,8);
+  if(subRows.length){
+    const maxN=subRows[0].n;
+    h+='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">What they were facing when they hit the button</div>';
+    h+='<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px">';
+    subRows.forEach(a=>{
+      const topFeel=Object.entries(a.feels).sort((x,y)=>y[1]-x[1])[0];
+      h+='<tr style="border-top:1px solid var(--border)">'+
+        '<td style="padding:5px 4px;white-space:nowrap"><span style="color:'+(KC[a.k]||"var(--text)")+';font-weight:700">'+cap(a.k)+'</span></td>'+
+        '<td style="padding:5px 6px">'+esc(a.sj)+'</td>'+
+        '<td style="padding:5px 4px;width:34%"><div style="height:8px;border-radius:4px;background:var(--bg);overflow:hidden"><div style="height:100%;width:'+Math.round(a.n/maxN*100)+'%;background:'+(KC[a.k]||"#888")+';border-radius:4px"></div></div></td>'+
+        '<td style="padding:5px 4px;text-align:right;font-weight:800">'+a.n+(topFeel?' <span style="font-weight:400">'+(feelMeta[topFeel[0]]||{}).e+'</span>':'')+'</td></tr>';
+    });
+    h+='</table>';
+  }
+
+  // ── feeling mix ──
+  const byFeel={}; entries.forEach(e=>{ if(e.feeling) byFeel[e.feeling]=(byFeel[e.feeling]||0)+1; });
+  const feelRows=Object.entries(byFeel).sort((x,y)=>y[1]-x[1]);
+  if(feelRows.length){
+    h+='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">How they said they felt</div>';
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">';
+    feelRows.forEach(([fk,n])=>{ const f=feelMeta[fk]||{e:"\u{1F9E0}",l:fk};
+      h+='<span style="display:inline-flex;align-items:center;gap:6px;border:1.5px solid '+(BB_FEEL_COL[fk]||"var(--border)")+';border-radius:11px;padding:5px 11px;font-size:12px;font-weight:700">'+f.e+' '+f.l+' <span style="color:'+(BB_FEEL_COL[fk]||"var(--muted)")+'">×'+n+'</span></span>'; });
+    h+='</div>';
+  }
+
+  h+='<div style="font-size:10px;color:var(--muted);line-height:1.6">'+
+    (entries.length<8?'Only '+entries.length+' break'+(entries.length===1?"":"s")+' logged so far — patterns need a week or two of dots before they mean much. ':'')+
+    'A cluster says <i>when</i>, not <i>why</i> — same spot every day usually points at the task or the time (hunger, fatigue), but pair it with what you know about the day before changing anything.</div>';
   h+='</div>';
   return h;
 }
