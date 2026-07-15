@@ -16462,9 +16462,20 @@ function mastPlayDefAudio(src){
 // TTS fallback: when a flip card has no Mom recording, the browser reads the definition
 // aloud (speechSynthesis is free, offline-capable, and works on iPad behind a tap).
 // Recordings stay the premium voice — this only renders when there's no clip.
+// iPad Safari needs babying: speak() in the same tick as cancel() gets swallowed, an
+// unreferenced utterance gets GC'd mid-speech, and after a tab switch / screen lock the
+// synth wakes up stuck "paused" and queues everything silently until resume() is called.
+let mastUtter=null;   // module-level ref so Safari can't GC the utterance while it plays
 function mastSpeak(text){
   if(!text||!window.speechSynthesis) return;
-  try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(String(text)); u.rate=0.85; speechSynthesis.speak(u); }catch(e){}
+  try{
+    const synth=speechSynthesis, busy=synth.speaking||synth.pending;
+    if(busy) synth.cancel();
+    synth.resume();
+    mastUtter=new SpeechSynthesisUtterance(String(text)); mastUtter.rate=0.85;
+    if(busy) setTimeout(()=>{ try{ synth.resume(); synth.speak(mastUtter); }catch(e){} },80);
+    else synth.speak(mastUtter);
+  }catch(e){}
 }
 function mastSpeakItem(prompt){
   let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
