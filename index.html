@@ -23248,7 +23248,11 @@ const SPRINT_KID_MSG={
 // dormant drill dash stays behind the EXISTING Admin sprint switches — this card only
 // points at them. Plan: ~/Desktop/PLAN_retrieval_curriculum.md.
 const RETR_DEFAULTS={gate_pct:80,gate_streak:2,min_stage_sessions:0,stuck_after:8,
-  review_count:3,sprint_seconds:60};
+  review_count:3,sprint_seconds:60,
+  // P2 re-checks: passed stages resurface on widening drill-day intervals. recheck_fail
+  // "review" = a bombed re-check keeps the stage passed but demotes it (due now + first
+  // seat in the review mix); "focus" = the cursor comes back to it (P1's strict rule).
+  recheck_ladder:[7,14,28],recheck_pass_pct:null,recheck_fail:"review"};
 function retrSettings(kid,track){
   const rp=(masteryData&&masteryData.retrievalPlan)||{};
   return Object.assign({},RETR_DEFAULTS,rp._defaults||{},
@@ -23304,29 +23308,80 @@ function retrStageMatch(track,st,e){
   }
   return false;
 }
-// The gate, per stage: the most recent gate_streak sessions ALL at/above gate_pct
-// (an untimed session breaks the run — no % means no proof). Cursor = first unpassed
-// stage; review mix = the review_count most recently passed; stuck = focus stage has
-// stuck_after sessions and still hasn't passed.
+// P2 drill-day clock: re-check intervals count PRINTED DRILL DAYS via printLog (the
+// same vacation-proof trick as the drill ladder's next_due) — over a break nothing
+// comes due. A session on a non-drill date borrows the nearest earlier drill day.
+// No printLog at all → calendar days (same units, epoch-day numbers).
+function retrPrintLog(){
+  let pl=masteryData.printLog||[]; if(!Array.isArray(pl)) pl=Object.values(pl);
+  return pl.filter(Boolean).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+}
+function retrPnForDate(dateStr){
+  const pl=retrPrintLog();
+  if(!pl.length) return Math.floor((Date.parse(dateStr)||0)/86400000);
+  let num=null;
+  for(const e of pl){ if(e.date<=dateStr) num=e.num; else break; }
+  return num==null?pl[0].num:num;
+}
+function retrTodayPn(){ return retrPnForDate(new Date().toISOString().slice(0,10)); }
+// The gate, per stage. Passing: gate_streak straight sessions at/above gate_pct (an
+// untimed session — no % — breaks the run; no proof). Under recheck_fail "review" a
+// stage keeps its pass once EVER earned; under "focus" only the trailing window counts.
+// Passed stages carry re-check state: the rung climbs on each passing re-check
+// (7→14→28 by default), the clock restarts at the last healthy session, a failed
+// last re-check = demoted (due now, first seat in the review mix). Cursor = first
+// unpassed stage; stuck = focus stage has stuck_after sessions and still hasn't passed.
 function retrEvalTrack(kid,track){
   const s=retrSettings(kid,track);
   const entries=retrEntries(kid);
+  const ladder=(Array.isArray(s.recheck_ladder)&&s.recheck_ladder.length)?s.recheck_ladder:[7,14,28];
+  const rpass=(s.recheck_pass_pct!=null)?s.recheck_pass_pct:s.gate_pct;
+  const todayPn=retrTodayPn();
   const stages=(track.stages||[]).map(st=>{
-    const pcts=entries.filter(e=>retrStageMatch(track,st,e)).map(retrPct);
-    let passed=false;
+    const sess=entries.filter(e=>retrStageMatch(track,st,e)).map(e=>({pct:retrPct(e),date:e.date}));
+    const pcts=sess.map(x=>x.pct);
+    // cumulative scan: where did the gate FIRST complete?
+    let run=0,passIdx=-1;
+    for(let i=0;i<sess.length;i++){
+      run=(pcts[i]!=null&&pcts[i]>=s.gate_pct)?run+1:0;
+      if(passIdx<0&&run>=s.gate_streak&&(i+1)>=s.min_stage_sessions) passIdx=i;
+    }
+    const everPassed=passIdx>=0;
+    let recentPassed=false;
     if(pcts.length>=Math.max(s.gate_streak,s.min_stage_sessions)){
-      passed=true;
+      recentPassed=true;
       for(let i=0;i<s.gate_streak;i++){
         const p=pcts[pcts.length-1-i];
-        if(p==null||p<s.gate_pct){passed=false;break;}
+        if(p==null||p<s.gate_pct){recentPassed=false;break;}
       }
     }
+    const passed=(s.recheck_fail==="focus")?recentPassed:everPassed;
     let best=null; pcts.forEach(p=>{ if(p!=null&&(best==null||p>best)) best=p; });
-    return {key:st.key,label:st.label||st.key,deck:st.deck,n:pcts.length,pcts,passed,best};
+    let rc=null;
+    if(everPassed){
+      let r=0,lastHealthy=sess[passIdx],lastFailed=false;
+      for(let i=passIdx+1;i<sess.length;i++){
+        const p=pcts[i];
+        if(p!=null&&p>=rpass){ r=Math.min(r+1,ladder.length-1); lastHealthy=sess[i]; lastFailed=false; }
+        else { r=0; lastFailed=true; }
+      }
+      const iv=ladder[Math.min(r,ladder.length-1)];
+      const basePn=retrPnForDate(lastHealthy.date);
+      const duePn=(basePn!=null&&todayPn!=null)?basePn+iv:null;
+      rc={r,iv,lastFailed,duePn,
+        dueNow:lastFailed||(duePn!=null&&todayPn>=duePn),
+        inDays:(duePn!=null&&todayPn!=null)?duePn-todayPn:null};
+    }
+    return {key:st.key,label:st.label||st.key,deck:st.deck,n:sess.length,pcts,passed,best,
+      rc,demoted:!!(rc&&rc.lastFailed&&passed)};
   });
   let focus=stages.length;
   for(let i=0;i<stages.length;i++){ if(!stages[i].passed){focus=i;break;} }
-  const review=stages.slice(0,focus).slice(-s.review_count).map(x=>x.key).reverse();
+  // review mix: demoted stages take the first seats (they need eyes), then most recent
+  const done=stages.slice(0,focus).filter(x=>x.passed);
+  const demoted=done.filter(x=>x.demoted).map(x=>x.key);
+  const rest=done.filter(x=>!x.demoted).map(x=>x.key).slice(-Math.max(0,s.review_count-demoted.length)).reverse();
+  const review=demoted.concat(rest).slice(0,s.review_count);
   const f=stages[focus]||null;
   return {stages,focus,review,stuck:!!(f&&f.n>=s.stuck_after),done:focus>=stages.length,s};
 }
@@ -23346,6 +23401,53 @@ function retrApplyPlan(kid,trackKey){
   }
   _mastRe();
 }
+// A re-check is a clean read on ONE stage — no review mix riding along.
+function retrApplyRecheck(kid,trackKey,stageKey){
+  const track=retrTracks(kid).find(t=>t.key===trackKey); if(!track||track.locked) return;
+  if(track.src==="phonogram"){
+    sprintSelectedPhono=SPRINT_LOE_B.find(p=>p.pg===stageKey)||null;
+    sprintReviewPhonos=[];
+    sprintSource="phonogram";
+  } else if(track.src==="drill"){
+    const st=(track.stages||[]).find(x=>x.key===stageKey);
+    sprintDeck=(st&&st.deck)||"__all__";
+    sprintSource="drill";
+  }
+  _mastRe();
+}
+// P2 slot filler — what a sprint slot should be spent on today, in priority order:
+// due re-checks (most overdue first) → each active track's focus stage → never-run
+// unlocked unit rounds → a PB-chase treat. P3's weekly template will decide which
+// DAYS get a slot; until then the queue just names the best use of one.
+function retrTodayQueue(kid){
+  const out=[];
+  retrTracks(kid).forEach(track=>{
+    if(track.locked) return;
+    if(track.src==="unit"){
+      try{
+        const u=(unitStudies||{})[track.unitId]; if(!u) return;
+        const rounds=unitSprintRounds(u,kid).filter(r=>r.unlocked);
+        const never=rounds.filter(r=>unitSprintBest(kid,r.logLabel)==null);
+        if(never.length) out.push({pri:3,kind:"unit",track,label:track.icon+" "+never[0].label+" round — never run",go:"units"});
+        else if(rounds.length) out.push({pri:4,kind:"treat",track,label:track.icon+" beat a "+track.label.replace(/ rounds$/,"")+" PB",go:"units"});
+      }catch(e){}
+      return;
+    }
+    if(track.src==="editor") return; // editor cadence belongs to P3's weekly template
+    const ev=retrEvalTrack(kid,track);
+    ev.stages.forEach(st=>{
+      if(st.passed&&st.rc&&st.rc.dueNow) out.push({pri:1,kind:"recheck",track,stage:st,
+        label:"\u{1F501} Re-check "+st.label+(st.rc.lastFailed?" — failed last check":""),
+        over:(st.rc.inDays!=null&&!st.rc.lastFailed)?-st.rc.inDays:1e6});
+    });
+    if(!ev.done){
+      const f=ev.stages[ev.focus];
+      if(f) out.push({pri:2,kind:"focus",track,stage:f,label:track.icon+" Focus sprint: "+f.label});
+    }
+  });
+  out.sort((a,b)=>a.pri-b.pri||((b.over||0)-(a.over||0)));
+  return out;
+}
 let retrPlanOpen=true;
 function retrTogglePlan(){ retrPlanOpen=!retrPlanOpen; _mastRe(); }
 function retrPlanCardHtml(color){
@@ -23359,7 +23461,23 @@ function retrPlanCardHtml(color){
   h+='<span style="font-size:10px;color:var(--muted)">gate '+S.gate_pct+'% ×'+S.gate_streak+'</span>';
   h+='<span style="font-size:12px;color:var(--muted)">'+(retrPlanOpen?"▾":"▸")+'</span></div>';
   if(!retrPlanOpen) return h+'</div>';
-  h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin:3px 0 8px">Computed from the sprint log — pass a stage at '+S.gate_pct+'% on '+S.gate_streak+' sessions and the plan moves on; passed stages ride along as review.</div>';
+  h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin:3px 0 8px">Computed from the sprint log — pass a stage at '+S.gate_pct+'% on '+S.gate_streak+' sessions and the plan moves on; passed stages ride along as review, then resurface as spaced re-checks.</div>';
+  // P2: today's queue — the best use of a sprint slot, top item launchable.
+  const q=retrTodayQueue(kid);
+  if(q.length){
+    h+='<div style="background:#faf8f5;border:1px solid #eee7de;border-radius:10px;padding:8px 10px;margin-bottom:8px">';
+    h+='<div style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:0.07em;color:#78716c;margin-bottom:5px">\u{1F4C5} Today’s queue</div>';
+    q.slice(0,4).forEach((it,i)=>{
+      h+='<div style="display:flex;align-items:center;gap:7px;padding:2px 0">';
+      h+='<span style="font-size:10px;font-weight:800;color:#a8a29e;width:12px">'+(i+1)+'</span>';
+      h+='<span style="font-size:11.5px;font-weight:'+(i===0?'800':'600')+';color:'+(it.pri===1?'#b45309':'#1f2937')+';flex:1">'+esc(it.label)+'</span>';
+      if(it.go==="units") h+='<span style="font-size:10px;color:var(--muted)">Units tab →</span>';
+      else if(it.kind==="recheck") h+='<button onclick="retrApplyRecheck(\''+kid+'\',\''+it.track.key+'\',\''+esc(it.stage.key).replace(/'/g,"\\'")+'\')" style="padding:3px 10px;border-radius:8px;border:none;background:#b45309;color:#fff;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">▶ Run</button>';
+      else if(it.kind==="focus") h+='<button onclick="retrApplyPlan(\''+kid+'\',\''+it.track.key+'\')" style="padding:3px 10px;border-radius:8px;border:1.5px solid '+color+';background:#fff;color:'+color+';font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">▶ Set up</button>';
+      h+='</div>';
+    });
+    h+='</div>';
+  }
   tracks.forEach(track=>{
     h+='<div style="border-top:1px solid #f0ece6;padding:9px 0 7px">';
     h+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">';
@@ -23407,12 +23525,27 @@ function retrPlanCardHtml(color){
     h+='<div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:6px">';
     ev.stages.forEach((st,i)=>{
       let bg="#fff",bd="#e2ddd6",fg="#a8a29e",title=st.label+" — not started";
-      if(st.passed){ bg="#f0fdf4"; bd="#86efac"; fg="#15803d"; title=st.label+" — passed (best "+st.best+"%)"; }
+      if(st.demoted){ bg="#fef3c7"; bd="#f59e0b"; fg="#b45309"; title=st.label+" — failed last re-check, due now"; }
+      else if(st.passed){ bg="#f0fdf4"; bd="#86efac"; fg="#15803d";
+        title=st.label+" — passed (best "+st.best+"%)"+(st.rc?(st.rc.dueNow?" · re-check DUE":(st.rc.inDays!=null?" · re-check in "+st.rc.inDays+" drill day"+(st.rc.inDays===1?"":"s"):"")):""); }
       else if(i===ev.focus){ bg=color; bd=color; fg="#fff"; title=st.label+" — FOCUS"; }
       else if(st.n>0){ bd="#fcd34d"; fg="#b45309"; title=st.label+" — "+st.n+" early session"+(st.n>1?"s":"")+" (ahead of the gate)"; }
       h+='<span title="'+esc(title)+'" style="font-size:10px;font-weight:800;font-family:\'DM Mono\',monospace;padding:2px 6px;border-radius:8px;border:1.5px solid '+bd+';background:'+bg+';color:'+fg+'">'+esc(st.label)+'</span>';
     });
     h+='</div>';
+    // P2: spaced re-check strip — every passed stage with its clock; due chips launch.
+    const rcs=ev.stages.filter(st=>st.passed&&st.rc);
+    if(rcs.length){
+      h+='<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-bottom:5px">';
+      h+='<span style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:#78716c">\u{1F501} re-checks:</span>';
+      rcs.forEach(st=>{
+        const due=st.rc.dueNow;
+        const txt=st.label+(st.rc.lastFailed?" — failed, due now":(due?" — due ("+st.rc.iv+"d check)":" — in "+st.rc.inDays+"d"));
+        if(due) h+='<button onclick="retrApplyRecheck(\''+kid+'\',\''+track.key+'\',\''+esc(st.key).replace(/'/g,"\\'")+'\')" style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;border:1.5px solid #f59e0b;background:#fef3c7;color:#b45309;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+esc(txt)+' ▶</button>';
+        else h+='<span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:8px;background:#f5f0ea;color:#78716c">'+esc(txt)+'</span>';
+      });
+      h+='</div>';
+    }
     if(ev.done){
       h+='<div style="font-size:11px;font-weight:700;color:#15803d">\u{1F3C6} Track complete — every stage passed!</div></div>';
       return;
