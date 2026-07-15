@@ -17427,6 +17427,15 @@ function buildMatchHtml(color){
     h+='<div onclick="mastMatchStart(\''+dk.replace(/'/g,"\\'")+'\')" style="cursor:pointer;padding:6px 12px;border-radius:999px;font-size:11px;font-weight:700;border:1.5px solid '+(sel?color:'#e2ddd6')+';background:'+(sel?color:'#fff')+';color:'+(sel?'#fff':'#57534e')+'">'+esc(dk)+'</div>';
   });
   h+='</div>';
+  // P3: heat-map suggestion — the deck whose recent drill accuracy needs the most love.
+  try{
+    const _ms=(typeof retrMatchSuggest==="function")?retrMatchSuggest(masteryKid):null;
+    if(_ms&&(!matchState||matchState.endTs)){
+      h+='<div style="display:flex;align-items:center;gap:8px;background:#faf8f5;border:1px solid #eee7de;border-radius:10px;padding:7px 10px;margin-bottom:10px">';
+      h+='<span style="font-size:11px;font-weight:700;color:#57534e;flex:1">\u{1F3AF} Suggested: <b>'+esc(_ms.deck)+'</b>'+(_ms.acc!=null?' — '+_ms.acc+'% in drills lately':' — least data')+'</span>';
+      h+='<button onclick="mastMatchStart(\''+_ms.deck.replace(/'/g,"\\'")+'\')" style="padding:4px 12px;border-radius:8px;border:none;background:'+color+';color:#fff;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">▶ Play it</button></div>';
+    }
+  }catch(e){}
   const st=matchState;
   if(!st){ h+='<div style="font-size:12.5px;color:var(--muted)">Pick a deck \u{2014} '+(matchStyle==="memory"?'flip two cards, find the pairs, they disappear!':'match each word to its picture or meaning as fast as you can!')+' \u{23F1} The clock starts on your first tap.</div></div>'; return h; }
   const s=masteryData[masteryKid+"_settings"]||{};
@@ -20245,6 +20254,7 @@ function _renderMasteryInner(el){
     }
     if(!mastAdminLocal) mastAdminInit();
     h+=renderMastAdmin();
+    h+=retrAdminHtml();   // P3: Retrieval Plan knobs + weekly rhythm, same PIN gate
     h+='</div>';
     el.innerHTML=h;
     return;
@@ -23252,7 +23262,10 @@ const RETR_DEFAULTS={gate_pct:80,gate_streak:2,min_stage_sessions:0,stuck_after:
   // P2 re-checks: passed stages resurface on widening drill-day intervals. recheck_fail
   // "review" = a bombed re-check keeps the stage passed but demotes it (due now + first
   // seat in the review mix); "focus" = the cursor comes back to it (P1's strict rule).
-  recheck_ladder:[7,14,28],recheck_pass_pct:null,recheck_fail:"review"};
+  recheck_ladder:[7,14,28],recheck_pass_pct:null,recheck_fail:"review",
+  // P3: Match rotation ("heatmap" = suggest the deck with the worst recent drill
+  // accuracy; "manual" = no suggestion) over a rolling calendar window.
+  heatmap_window:14,match_rotation:"heatmap"};
 function retrSettings(kid,track){
   const rp=(masteryData&&masteryData.retrievalPlan)||{};
   return Object.assign({},RETR_DEFAULTS,rp._defaults||{},
@@ -23446,7 +23459,186 @@ function retrTodayQueue(kid){
     }
   });
   out.sort((a,b)=>a.pri-b.pri||((b.over||0)-(a.over||0)));
+  // P3 day-awareness: on a template match day the Match suggestion takes the top seat.
+  if(retrTodayKind(kid)==="match"){
+    const ms=retrMatchSuggest(kid);
+    if(ms) out.unshift({pri:0,kind:"match",go:"match",
+      label:"\u{1F3AF} Match day: "+ms.deck+(ms.acc!=null?" — "+ms.acc+"% lately, needs love":"")});
+  }
   return out;
+}
+// ── P3: weekly rhythm — per-kid day template (data, Mom-editable in Admin) ─────────
+// Seed grid from the plan doc; overrides live at mastery/retrievalPlan/{kid}/week.
+const RETR_DAYS=["mon","tue","wed","thu","fri"];
+const RETR_DAY_KINDS=["sprint","match","recheck","off"];
+const RETR_KIND_ICON={sprint:"\u{1F3C3}",match:"\u{1F3AF}",recheck:"\u{1F4C5}",off:"\u{1F6CB}"};
+const RETR_WEEK_DEFAULT={
+  lucy:   {mon:"sprint",tue:"match", wed:"sprint",thu:"match", fri:"recheck"},
+  julian: {mon:"match", tue:"sprint",wed:"match", thu:"sprint",fri:"recheck"},
+  ellis:  {mon:"off",   tue:"sprint",wed:"match", thu:"sprint",fri:"recheck"},
+  lincoln:{mon:"sprint",tue:"off",   wed:"sprint",thu:"match", fri:"recheck"}};
+function retrWeek(kid){
+  const rp=(masteryData.retrievalPlan||{})[kid]||{};
+  return Object.assign({},RETR_WEEK_DEFAULT[kid]||{},rp.week||{});
+}
+function retrTodayKind(kid){
+  const d=new Date().getDay();                    // 0 Sun … 6 Sat
+  if(d===0||d===6) return "off";
+  return retrWeek(kid)[RETR_DAYS[d-1]]||"off";
+}
+// P3 Match heat-map: per-deck accuracy over the last heatmap_window calendar days of
+// drill history; suggest the WORST deck among those Match can actually play (≥4 pairs).
+// Needs a minimum sample (4 scored) so one bad morning doesn't own the suggestion.
+function retrMatchSuggest(kid){
+  const s=retrSettings(kid,null);
+  if(s.match_rotation!=="heatmap") return null;
+  try{
+    const _mk=masteryKid; masteryKid=kid;
+    const eligible=mastMatchDecks(); masteryKid=_mk;
+    if(!eligible.length) return null;
+    let items=masteryData[kid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+    const subjById={}; items.forEach(i=>{ if(i&&i.id) subjById[i.id]=i.subject||"Other"; });
+    const hist=(masteryData.history&&masteryData.history[kid])||{};
+    const cutoff=new Date(Date.now()-s.heatmap_window*86400000).toISOString().slice(0,10);
+    const tally={};
+    Object.values(hist).forEach(en=>{
+      if(!en||!en.date||en.date<cutoff) return;
+      let its=en.items||[]; if(!Array.isArray(its)) its=Object.values(its);
+      its.forEach(it=>{
+        if(!it||it.result==="shown") return;
+        const dk=subjById[it.id]; if(!dk) return;
+        (tally[dk]=tally[dk]||{c:0,n:0}).n++;
+        if(it.result==="c") tally[dk].c++;
+      });
+    });
+    let pick=null;
+    eligible.forEach(dk=>{
+      const t=tally[dk];
+      const acc=(t&&t.n>=4)?Math.round(t.c/t.n*100):null;
+      if(!pick||(acc!=null&&(pick.acc==null||acc<pick.acc))) { if(!pick||acc!=null||pick.acc==null) pick={deck:dk,acc,n:t?t.n:0}; }
+    });
+    return pick;
+  }catch(e){ return null; }
+}
+// P3 unlock probes for locked tracks — live progress + a "looks ready" nudge. The
+// actual flip stays Mom's tap on the existing Admin switches; nothing auto-activates.
+function retrUnlockState(kid,track){
+  try{
+    let items=masteryData[kid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+    if(track.key==="sight"&&kid==="lucy"){
+      const ready=items.filter(i=>i&&i.subject==="Sight Words"&&i.status==="active"&&mastTierAtLeast(i.tier,"weekly")).length;
+      return {ready:ready>=(track.unlockNeed||6),progress:ready+"/"+(track.unlockNeed||6)+" sight words at Weekly+"};
+    }
+    if(track.key==="phono"&&kid==="julian"){
+      const loe=items.filter(i=>i&&/logic of english|loe/i.test(i.subject||""));
+      const loeReady=loe.filter(i=>i.status==="active"&&mastTierAtLeast(i.tier,"weekly")).length;
+      const let9=items.filter(i=>i&&i.subject==="Letters"&&i.status==="active"&&mastTierAtLeast(i.tier,"weekly")).length;
+      return {ready:loe.length>0&&loeReady>=3,
+        progress:"Letters "+let9+" at Weekly+"+(loe.length?" · LOE "+loeReady+"/3":" · no LOE deck yet")};
+    }
+  }catch(e){}
+  return {ready:false,progress:null};
+}
+// ── P3: Retrieval Plan Admin editor (inside the Mom-PIN'd Admin view) ───────────────
+// Same discipline as mastAdminSave: a targeted per-kid update() at
+// mastery/retrievalPlan/{kid}, local mirror for instant render, blank input = inherit.
+let retrAdminLocal=null;
+function retrAdminInit(){
+  const rp=(masteryData.retrievalPlan||{})[masteryKid]||{};
+  retrAdminLocal={settings:Object.assign({},rp.settings||{}),week:Object.assign({},retrWeek(masteryKid))};
+}
+function retrAdminNum(key,val){
+  if(!retrAdminLocal) retrAdminInit();
+  const v=String(val).trim();
+  if(v==="") delete retrAdminLocal.settings[key];
+  else { const n=parseFloat(v); if(!isNaN(n)) retrAdminLocal.settings[key]=n; }
+}
+function retrAdminLadder(val){
+  if(!retrAdminLocal) retrAdminInit();
+  const arr=String(val).split(/[,\s]+/).map(x=>parseInt(x,10)).filter(x=>x>0);
+  if(arr.length) retrAdminLocal.settings.recheck_ladder=arr;
+  else delete retrAdminLocal.settings.recheck_ladder;
+}
+function retrAdminToggle(key,a,b){
+  if(!retrAdminLocal) retrAdminInit();
+  const cur=retrAdminLocal.settings[key];
+  if(cur===undefined) retrAdminLocal.settings[key]=a;         // inherit -> a
+  else if(cur===a) retrAdminLocal.settings[key]=b;            // a -> b
+  else delete retrAdminLocal.settings[key];                    // b -> inherit
+  _mastRe();
+}
+function retrAdminCycleDay(day){
+  if(!retrAdminLocal) retrAdminInit();
+  const cur=retrAdminLocal.week[day]||"off";
+  retrAdminLocal.week[day]=RETR_DAY_KINDS[(RETR_DAY_KINDS.indexOf(cur)+1)%RETR_DAY_KINDS.length];
+  _mastRe();
+}
+function retrAdminSave(){
+  if(!retrAdminLocal) return;
+  const kid=masteryKid;
+  const payload={settings:retrAdminLocal.settings,week:retrAdminLocal.week};
+  if(!masteryData.retrievalPlan) masteryData.retrievalPlan={};
+  masteryData.retrievalPlan[kid]=payload;
+  if(db) db.ref("mastery/retrievalPlan/"+kid).update(payload);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  retrAdminLocal=null;
+  _mastRe();
+}
+function retrAdminReset(){
+  if(!confirm("Reset "+SL_KLBL[masteryKid]+"'s retrieval plan to the built-in defaults?")) return;
+  const kid=masteryKid;
+  if(masteryData.retrievalPlan) delete masteryData.retrievalPlan[kid];
+  if(db) db.ref("mastery/retrievalPlan/"+kid).remove();
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  retrAdminLocal=null;
+  _mastRe();
+}
+function retrAdminHtml(){
+  if(!retrAdminLocal) retrAdminInit();
+  const kid=masteryKid, S=retrSettings(kid,null), loc=retrAdminLocal.settings;
+  const num=(key,label,step)=>{
+    const set=loc[key]!==undefined;
+    return '<div class="mast-edit-row"><span class="mast-edit-label">'+label+(set?' <span style="font-size:8px;font-weight:800;color:#b45309">SET</span>':'')+'</span>'
+      +'<input type="number" '+(step?'step="'+step+'" ':'')+'value="'+(set?loc[key]:"")+'" placeholder="'+S[key]+'" onchange="retrAdminNum(\''+key+'\',this.value)" '
+      +'style="width:76px;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif;text-align:center"></div>';
+  };
+  let h='<div class="mast-edit-card" style="margin-top:14px">';
+  h+='<div class="mast-edit-hdr"><span class="mast-edit-title">\u{1F3C3} Retrieval Plan — '+SL_KLBL[kid]+'</span></div>';
+  h+='<div class="mast-edit-body">';
+  h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin-bottom:8px">Blank = inherit the default (shown as the placeholder). Only the fields marked SET are stored for this kid.</div>';
+  h+=num("gate_pct","Gate %");
+  h+=num("gate_streak","Passes to advance");
+  h+=num("review_count","Review mix size");
+  h+=num("stuck_after","Stuck after (sessions)");
+  h+=num("sprint_seconds","Sprint seconds");
+  h+=num("heatmap_window","Match window (days)");
+  const lad=loc.recheck_ladder!==undefined;
+  h+='<div class="mast-edit-row"><span class="mast-edit-label">Re-check ladder'+(lad?' <span style="font-size:8px;font-weight:800;color:#b45309">SET</span>':'')+'</span>'
+    +'<input type="text" value="'+(lad?loc.recheck_ladder.join(", "):"")+'" placeholder="'+S.recheck_ladder.join(", ")+'" onchange="retrAdminLadder(this.value)" '
+    +'style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:\'DM Mono\',monospace;text-align:center"></div>';
+  const rf=loc.recheck_fail, rfShow=rf!==undefined?rf:S.recheck_fail;
+  h+='<div class="mast-edit-row"><span class="mast-edit-label">Failed re-check'+(rf!==undefined?' <span style="font-size:8px;font-weight:800;color:#b45309">SET</span>':'')+'</span>'
+    +'<button onclick="retrAdminToggle(\'recheck_fail\',\'focus\',\'review\')" style="padding:6px 12px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'
+    +(rfShow==="focus"?"back to focus":"back to review")+'</button></div>';
+  const mr=loc.match_rotation, mrShow=mr!==undefined?mr:S.match_rotation;
+  h+='<div class="mast-edit-row"><span class="mast-edit-label">Match suggestion'+(mr!==undefined?' <span style="font-size:8px;font-weight:800;color:#b45309">SET</span>':'')+'</span>'
+    +'<button onclick="retrAdminToggle(\'match_rotation\',\'manual\',\'heatmap\')" style="padding:6px 12px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'
+    +(mrShow==="heatmap"?"heat-map (worst deck)":"manual (off)")+'</button></div>';
+  h+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin:12px 0 6px">Weekly rhythm — tap a day to cycle</div>';
+  h+='<div style="display:flex;gap:5px">';
+  RETR_DAYS.forEach(d=>{
+    const k=retrAdminLocal.week[d]||"off";
+    h+='<button onclick="retrAdminCycleDay(\''+d+'\')" style="flex:1;padding:8px 2px;border-radius:10px;border:1.5px solid var(--border);background:#fff;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:center">'
+      +'<div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#78716c">'+d+'</div>'
+      +'<div style="font-size:15px">'+RETR_KIND_ICON[k]+'</div>'
+      +'<div style="font-size:8.5px;font-weight:700;color:#57534e">'+k+'</div></button>';
+  });
+  h+='</div>';
+  h+='<div style="display:flex;gap:8px;margin-top:12px">';
+  h+='<button class="mast-edit-save" style="flex:1" onclick="retrAdminSave()">Save Retrieval Plan</button>';
+  h+='<button onclick="retrAdminReset()" style="padding:8px 14px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:700;cursor:pointer;color:#b5394a;font-family:\'DM Sans\',sans-serif">Reset</button>';
+  h+='</div></div></div>';
+  return h;
 }
 let retrPlanOpen=true;
 function retrTogglePlan(){ retrPlanOpen=!retrPlanOpen; _mastRe(); }
@@ -23456,8 +23648,10 @@ function retrPlanCardHtml(color){
   if(!tracks.length) return "";
   const S=retrSettings(kid,null);
   let h='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:13px 14px;margin-bottom:14px">';
+  const todayKind=retrTodayKind(kid);
   h+='<div onclick="retrTogglePlan()" style="display:flex;align-items:center;gap:7px;cursor:pointer">';
   h+='<span style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700;flex:1">\u{1F3C3} Sprint Plan</span>';
+  h+='<span style="font-size:10px;font-weight:800;color:#57534e;background:#f5f0ea;border-radius:8px;padding:2px 8px">today: '+RETR_KIND_ICON[todayKind]+' '+todayKind+'</span>';
   h+='<span style="font-size:10px;color:var(--muted)">gate '+S.gate_pct+'% ×'+S.gate_streak+'</span>';
   h+='<span style="font-size:12px;color:var(--muted)">'+(retrPlanOpen?"▾":"▸")+'</span></div>';
   if(!retrPlanOpen) return h+'</div>';
@@ -23472,6 +23666,7 @@ function retrPlanCardHtml(color){
       h+='<span style="font-size:10px;font-weight:800;color:#a8a29e;width:12px">'+(i+1)+'</span>';
       h+='<span style="font-size:11.5px;font-weight:'+(i===0?'800':'600')+';color:'+(it.pri===1?'#b45309':'#1f2937')+';flex:1">'+esc(it.label)+'</span>';
       if(it.go==="units") h+='<span style="font-size:10px;color:var(--muted)">Units tab →</span>';
+      else if(it.go==="match") h+='<button onclick="mastSetView(\'match\')" style="padding:3px 10px;border-radius:8px;border:1.5px solid '+color+';background:#fff;color:'+color+';font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">▶ Play</button>';
       else if(it.kind==="recheck") h+='<button onclick="retrApplyRecheck(\''+kid+'\',\''+it.track.key+'\',\''+esc(it.stage.key).replace(/'/g,"\\'")+'\')" style="padding:3px 10px;border-radius:8px;border:none;background:#b45309;color:#fff;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">▶ Run</button>';
       else if(it.kind==="focus") h+='<button onclick="retrApplyPlan(\''+kid+'\',\''+it.track.key+'\')" style="padding:3px 10px;border-radius:8px;border:1.5px solid '+color+';background:#fff;color:'+color+';font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">▶ Set up</button>';
       h+='</div>';
@@ -23484,18 +23679,14 @@ function retrPlanCardHtml(color){
     h+='<span style="font-size:12px;font-weight:800;color:#1f2937">'+track.icon+' '+esc(track.label)+'</span>';
     if(track.settings&&track.settings.sprint_seconds) h+='<span style="font-size:9px;font-weight:700;color:#78716c;background:#f5f0ea;border-radius:7px;padding:1px 6px">'+track.settings.sprint_seconds+'s rounds</span>';
     h+='<span style="flex:1"></span>';
-    // LOCKED track: unlock story (+ live progress where cheap), nothing else.
+    // LOCKED track: unlock story + live probe; a satisfied probe turns into a nudge —
+    // the flip itself stays Mom's tap on the existing Admin switches.
     if(track.locked){
-      let prog="";
-      if(track.unlockNeed&&track.deck){
-        try{
-          let its=masteryData[kid]||[]; if(!Array.isArray(its)) its=Object.values(its);
-          const ready=its.filter(i=>i&&i.subject===track.deck&&i.status==="active"&&mastTierAtLeast(i.tier,"weekly")).length;
-          prog=" · "+ready+"/"+track.unlockNeed+" ready";
-        }catch(e){}
-      }
-      h+='<span style="font-size:10px;font-weight:700;color:#78716c">\u{1F512} locked</span></div>';
-      h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.4">Unlocks when: '+esc(track.unlockText||"")+prog+'</div></div>';
+      const us=retrUnlockState(kid,track);
+      h+='<span style="font-size:10px;font-weight:700;color:'+(us.ready?"#15803d":"#78716c")+'">'+(us.ready?"\u{1F513} looks ready":"\u{1F512} locked")+'</span></div>';
+      h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.4">Unlocks when: '+esc(track.unlockText||"")+(us.progress?' · '+esc(us.progress):'')+'</div>';
+      if(us.ready) h+='<div style="font-size:10.5px;font-weight:700;color:#15803d;margin-top:3px">✅ Probe satisfied — Mom’s call: flip it on in Admin → Sprint switch</div>';
+      h+='</div>';
       return;
     }
     // UNIT track: lean on the existing round machinery, read-only.
