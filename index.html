@@ -4155,6 +4155,20 @@ function scoreSave(){
   }
 }
 
+// A drill/retrieval schedule task deep-links to that kid's Mastery page. Existing "Drills"
+// tasks (subjectKey drills/drills_l) → the Drills view; the retrieval slots → the view that
+// matches their kind. Returns the Mastery view name, or null for a normal task.
+function taskDeepLinkView(t){
+  const sk=(t&&t.subjectKey)||"";
+  if(sk==="drills"||sk==="drills_l"||/^drills(_|$)/.test(sk)) return "drill";
+  if(sk==="retrieval"){
+    if(t.retrieval==="match") return "match";
+    if(t.retrieval==="sprint"||t.retrieval==="recheck") return "sprint";
+    return "drill";
+  }
+  return null;
+}
+function taskDeepLinkLabel(view){ return view==="match"?"match":view==="sprint"?"sprint":"drills"; }
 function taskCard(t, fromDay, readOnly, doneId){
   // doneId: mirror another task's checked-state (used by the read-only "Carried Over"
   // box, which links each item to the lesson already sitting in the schedule).
@@ -4193,6 +4207,10 @@ function taskCard(t, fromDay, readOnly, doneId){
     }
   }
   const spinBtn=hasPending?'<div style="margin-top:4px"><button onclick="event.stopPropagation();openSlotMachine(\''+t.id+'\')" style="padding:4px 12px;border-radius:10px;background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;animation:spinPulse 2s ease-in-out infinite">🎰 Spin!</button></div>':"";
+  // Deep link: a drill/retrieval task jumps straight to that kid's Mastery page. stopPropagation
+  // so tapping the link never toggles the checkbox; retrSchedGo sets the kid + view + tab.
+  const _dlv=(!readOnly&&typeof retrSchedGo==="function")?taskDeepLinkView(t):null;
+  const linkRow=_dlv?'<div style="margin-top:5px"><span onclick="event.stopPropagation();retrSchedGo(\''+t.who+'\',\''+_dlv+'\')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#5b3a8c;cursor:pointer;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4C2} Open '+cap(t.who)+'’s '+taskDeepLinkLabel(_dlv)+' →</span></div>':"";
   // Strip the "Cascaded from X" note from detail for display
   const cleanDetail=t.detail.replace(/\s*\(Cascaded from \w+\)/,"");
   const disLabel=(t._displaced&&t._originalDay&&t._originalDay!==t.day)?'<div style="font-size:10px;font-weight:700;color:#7c3aed;background:#ede9fe;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">&#8618; Moved from '+cap(t._originalDay)+'</div><br>':'';
@@ -4217,7 +4235,7 @@ function taskCard(t, fromDay, readOnly, doneId){
     '<div class="card-body">'+
     '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
     '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+t.title+'</div>'+mb+'</div>'+
-    '<div class="task-detail">'+cleanDetail+'</div>'+dr+spinBtn+
+    '<div class="task-detail">'+cleanDetail+'</div>'+dr+spinBtn+linkRow+
     '</div></div></div>';
 }
 
@@ -23702,7 +23720,11 @@ function retrAdminHtml(){
 // the sprint chip, a logged Match game checks Match. Tap a chip → Mastery tab, right
 // kid, right view. Today-only (derived state means nothing for other days).
 function retrSchedGo(kid,view){
-  masteryKid=kid; mastView=view; mastLogMode=false;
+  // Mirror mastSetKid's per-kid state resets so a jump from the schedule can't carry a
+  // previous kid's log/slide/add-category state, then land on the requested view.
+  masteryKid=kid; mastView=view||"drill";
+  mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastSessionKey=""; mastSlideIdx=0; mastScoreItemId=null; mastAdminLocal=null;
+  try{ const cats=Object.keys((typeof MAST_BANK_MAP!=="undefined"&&MAST_BANK_MAP[kid])||{}); mastAddCat=cats[0]||""; }catch(e){}
   showTab('mastery');
 }
 function retrSchedStripHtml(kid,day){
