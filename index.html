@@ -23259,7 +23259,7 @@ const SPRINT_KID_MSG={
 // dormant drill dash stays behind the EXISTING Admin sprint switches — this card only
 // points at them. Plan: ~/Desktop/PLAN_retrieval_curriculum.md.
 const RETR_DEFAULTS={gate_pct:80,gate_streak:2,min_stage_sessions:0,stuck_after:8,
-  review_count:3,sprint_seconds:60,
+  review_count:3,sprint_seconds:60,gate_metric:"completion",
   // P2 re-checks: passed stages resurface on widening drill-day intervals. recheck_fail
   // "review" = a bombed re-check keeps the stage passed but demotes it (due now + first
   // seat in the review mix); "focus" = the cursor comes back to it (P1's strict rule).
@@ -23307,10 +23307,14 @@ function retrEntries(kid){
   if(!Array.isArray(log)) log=Object.values(log);
   return log.filter(Boolean).slice().sort((a,b)=>(a.ts||0)-(b.ts||0));
 }
-// Session % for the gate = best completion of the two sheets. null = untimed session
-// (no % captured) — it shows in the card but can't pass or fail a gate.
-function retrPct(e){
-  const a=(typeof e.pctA==="number")?e.pctA:null,b=(typeof e.pctB==="number")?e.pctB:null;
+// Session score for the gate = best of the two sheets. metric "completion" (default)
+// reads pctA/pctB (% of the sheet finished in the time). metric "accuracy" reads
+// accA/accB (correct ÷ attempted, stored at log time when a misses count is entered).
+// null = the session carries no number for this metric — it shows in the card but can't
+// pass or fail a gate (e.g. an untimed session, or an accuracy gate on a pre-errors log).
+function retrPct(e,metric){
+  const keyA=(metric==="accuracy")?"accA":"pctA", keyB=(metric==="accuracy")?"accB":"pctB";
+  const a=(typeof e[keyA]==="number")?e[keyA]:null, b=(typeof e[keyB]==="number")?e[keyB]:null;
   if(a==null&&b==null) return null;
   return Math.max(a==null?-1:a,b==null?-1:b);
 }
@@ -23352,7 +23356,7 @@ function retrEvalTrack(kid,track){
   const rpass=(s.recheck_pass_pct!=null)?s.recheck_pass_pct:s.gate_pct;
   const todayPn=retrTodayPn();
   const stages=(track.stages||[]).map(st=>{
-    const sess=entries.filter(e=>retrStageMatch(track,st,e)).map(e=>({pct:retrPct(e),date:e.date}));
+    const sess=entries.filter(e=>retrStageMatch(track,st,e)).map(e=>({pct:retrPct(e,s.gate_metric),date:e.date}));
     const pcts=sess.map(x=>x.pct);
     // cumulative scan: where did the gate FIRST complete?
     let run=0,passIdx=-1;
@@ -23617,6 +23621,10 @@ function retrAdminHtml(){
   h+='<div class="mast-edit-row"><span class="mast-edit-label">Re-check ladder'+(lad?' <span style="font-size:8px;font-weight:800;color:#b45309">SET</span>':'')+'</span>'
     +'<input type="text" value="'+(lad?loc.recheck_ladder.join(", "):"")+'" placeholder="'+S.recheck_ladder.join(", ")+'" onchange="retrAdminLadder(this.value)" '
     +'style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:\'DM Mono\',monospace;text-align:center"></div>';
+  const gm=loc.gate_metric, gmShow=gm!==undefined?gm:S.gate_metric;
+  h+='<div class="mast-edit-row"><span class="mast-edit-label">Gate measures'+(gm!==undefined?' <span style="font-size:8px;font-weight:800;color:#b45309">SET</span>':'')+'</span>'
+    +'<button onclick="retrAdminToggle(\'gate_metric\',\'accuracy\',\'completion\')" style="padding:6px 12px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'
+    +(gmShow==="accuracy"?"accuracy (% correct)":"completion (% of sheet)")+'</button></div>';
   const rf=loc.recheck_fail, rfShow=rf!==undefined?rf:S.recheck_fail;
   h+='<div class="mast-edit-row"><span class="mast-edit-label">Failed re-check'+(rf!==undefined?' <span style="font-size:8px;font-weight:800;color:#b45309">SET</span>':'')+'</span>'
     +'<button onclick="retrAdminToggle(\'recheck_fail\',\'focus\',\'review\')" style="padding:6px 12px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'
@@ -23888,10 +23896,20 @@ function sprintLogResult(){
   const gain=(a&&b)?(b-a):null, gainPct=(a&&b)?Math.round((b-a)/a*100):null;
   const total=(la&&typeof la.total==='number')?la.total:((lb&&typeof lb.total==='number')?lb.total:null);  // words per sheet
   const isEd=sprintSource==="editor";  // editor sprints reuse the diff slot so Scores level-colors them
+  // Accuracy gate: an optional misses count per sheet turns the read-count into a % correct
+  // (correct ÷ attempted). Only present when the kid's gate_metric is "accuracy" (the form
+  // renders the fields then). Blank misses on an attempted sheet counts as 0 misses (100%).
+  const eaEl=document.getElementById("sp-err-a"), ebEl=document.getElementById("sp-err-b");
+  const errA=eaEl&&eaEl.value!==""?Math.max(0,parseInt(eaEl.value)||0):null;
+  const errB=ebEl&&ebEl.value!==""?Math.max(0,parseInt(ebEl.value)||0):null;
+  const accOf=(cnt,err)=>{ if(!cnt||!eaEl) return null; const e=err==null?0:Math.min(err,cnt); return Math.round((cnt-e)/cnt*100); };
+  const accA=accOf(a,errA), accB=accOf(b,errB);
   const entry={date,deck,a:a||null,b:b||null,best,pctA,pctB,gain,gainPct,total,snum:sprintNum,
     diff:isPhon?sprintPillState.diff:(isEd?laDiff:null),gs:isPhon?sprintPillState.gs:(isEd?laSize:null),nw:isPhon?sprintPillState.nw:null,ps:isPhon?sprintPillState.ps:null,
     mode:isEd?laMode:null,
     ts:Date.now(),src:sprintSource};
+  if(errA!=null){ entry.errA=errA; entry.accA=accA; }
+  if(errB!=null){ entry.errB=errB; entry.accB=accB; }
   const kid=masteryKid;
   if(!masteryData.sprintLog) masteryData.sprintLog={};
   if(!Array.isArray(masteryData.sprintLog[kid])) masteryData.sprintLog[kid]=Object.values(masteryData.sprintLog[kid]||{});
@@ -24824,18 +24842,24 @@ function buildSprintHtml(){
 // and from-drill-items). Verbatim extraction of the original inline block — same IDs, no change.
 function sprintScoreRowHtml(unitLbl){
   unitLbl=unitLbl||"words / 60s";  // the editor source passes "items / 60s"
+  // Accuracy gate: when the kid's gate_metric is "accuracy", add an optional misses input
+  // per sheet so the log can store % correct. Hidden by default (completion gate) to keep
+  // the form uncluttered. Resolved per kid; safe fallback if retrieval isn't loaded.
+  let showErr=false;
+  try{ showErr=(typeof retrSettings==="function")&&retrSettings(masteryKid,null).gate_metric==="accuracy"; }catch(e){}
+  const errCell=(sheet,col)=>showErr?`<input type="number" id="sp-err-${sheet}" min="0" placeholder="0" oninput="sprintUpdateGain()" autocomplete="off" title="misses on Sheet ${sheet.toUpperCase()}" style="width:44px;font-family:'DM Mono',monospace;font-size:13px;font-weight:700;color:#b91c1c;border:1.5px solid #fecaca;border-radius:7px;background:#fff;text-align:center;outline:none;padding:3px 0;margin-top:5px"/><div style="font-size:9px;color:#b91c1c;margin-top:1px">misses</div>`:"";
   return `<div id="sp-score-row" style="display:none;background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:13px 15px;margin-bottom:14px">
-    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#78716c;margin-bottom:10px">📊 Session Score Tracker</div>
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#78716c;margin-bottom:10px">📊 Session Score Tracker${showErr?' · <span style="color:#b91c1c">accuracy gate</span>':''}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
       <div style="border-radius:10px;padding:11px;text-align:center;background:#faf5ff;border:1.5px solid #c4b5fd">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#5b3a8c;margin-bottom:4px">Sheet A — First Pass</div>
         <input type="number" id="sp-score-a" min="0" placeholder="—" oninput="sprintUpdateGain()" autocomplete="off" style="width:80px;font-family:'DM Mono',monospace;font-size:24px;font-weight:700;color:#5b3a8c;border:none;background:transparent;text-align:center;outline:none;padding:0"/>
-        <div style="font-size:10px;color:#78716c;margin-top:2px">${unitLbl}</div>
+        <div style="font-size:10px;color:#78716c;margin-top:2px">${unitLbl}</div>${errCell("a")}
       </div>
       <div style="border-radius:10px;padding:11px;text-align:center;background:#eff6ff;border:1.5px solid #93c5fd">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#1e3a5f;margin-bottom:4px">Sheet B — Second Pass</div>
         <input type="number" id="sp-score-b" min="0" placeholder="—" oninput="sprintUpdateGain()" autocomplete="off" style="width:80px;font-family:'DM Mono',monospace;font-size:24px;font-weight:700;color:#1e3a5f;border:none;background:transparent;text-align:center;outline:none;padding:0"/>
-        <div style="font-size:10px;color:#78716c;margin-top:2px">${unitLbl}</div>
+        <div style="font-size:10px;color:#78716c;margin-top:2px">${unitLbl}</div>${errCell("b")}
       </div>
     </div>
     <div id="sp-gain" style="text-align:center;padding-top:8px;border-top:1px solid #e2ddd6;font-size:12px;font-weight:700;color:#78716c">Enter scores above to see session gain</div>
