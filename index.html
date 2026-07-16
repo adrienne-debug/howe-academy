@@ -23471,8 +23471,8 @@ function retrTodayQueue(kid){
 // ── P3: weekly rhythm — per-kid day template (data, Mom-editable in Admin) ─────────
 // Seed grid from the plan doc; overrides live at mastery/retrievalPlan/{kid}/week.
 const RETR_DAYS=["mon","tue","wed","thu","fri"];
-const RETR_DAY_KINDS=["sprint","match","recheck","off"];
-const RETR_KIND_ICON={sprint:"\u{1F3C3}",match:"\u{1F3AF}",recheck:"\u{1F4C5}",off:"\u{1F6CB}"};
+const RETR_DAY_KINDS=["sprint","match","recheck","drill","off"];
+const RETR_KIND_ICON={sprint:"\u{1F3C3}",match:"\u{1F3AF}",recheck:"\u{1F4C5}",drill:"\u{1F0CF}",off:"\u{1F6CB}"};
 const RETR_WEEK_DEFAULT={
   lucy:   {mon:"sprint",tue:"match", wed:"sprint",thu:"match", fri:"recheck"},
   julian: {mon:"match", tue:"sprint",wed:"match", thu:"sprint",fri:"recheck"},
@@ -23655,6 +23655,9 @@ function retrSchedStripHtml(kid,day){
   try{
     if(typeof masteryData==="undefined"||!masteryData||!retrTracks(kid).length) return "";
     if(day!==_todayDay) return "";
+    // If the week was generated WITH retrieval slots, the real task owns the day — the
+    // derived strip would just double it, so stand down.
+    try{ if((weekData.tasks||[]).some(t=>t&&t.who===kid&&t.subjectKey==="retrieval"&&effectiveDay(t)===day)) return ""; }catch(e){}
     const today=new Date().toISOString().slice(0,10);
     const drillDone=!!(masteryData.history&&masteryData.history[kid]&&masteryData.history[kid][today.replace(/-/g,"")]);
     const sprintToday=retrEntries(kid).some(e=>e&&e.date===today);
@@ -26736,6 +26739,14 @@ function generateWeek(config){
     });
   });
 
+  // ── P5: retrieval slots — real, points-earning schedule tasks per the weekly rhythm.
+  // One Mom-required task per kid per non-"off" template day, placed after the kid's last
+  // task that day so it reads as an end-of-block slot. subjectKey "retrieval" has no
+  // curriculum config, so it's a normal spin task (scoredType→null) — checking it off
+  // runs the same pace→🎰→slot_points→claim path as every subject. Skipped for a kid on
+  // a day they have no other tasks (they're off), so no orphan slots appear.
+  try{ gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear); }catch(e){ dbg&&dbg("retr inject skip: "+e); }
+
   const output={
     week:weekLabel,
     dates:dates,
@@ -26747,6 +26758,41 @@ function generateWeek(config){
   if(sitterObj) output.babysitter=sitterObj;
 
   return {result:output,dropped:allDropped,carryOverCount:coTasks.length,cursors:weekCursors,calendarSkips};
+}
+// P5 retrieval-slot emission — self-contained so it's testable in isolation and a throw
+// can't take down generation (the caller wraps it in try/catch). Titles are generic (the
+// Mastery tab shows the current focus stage); the id is day-encoded + kid + kind so it's
+// stable across regenerations, exactly like every other task.
+const RETR_SLOT_TITLE={drill:"\u{1F0CF} Daily Drill",sprint:"\u{1F3C3} Sprint",match:"\u{1F3AF} Match & Play",recheck:"\u{1F4C5} Sprint Re-checks"};
+const RETR_SLOT_DETAIL={drill:"Run today's Mastery drill",sprint:"Run today's focus sprint in Mastery",match:"Play a Match round in Mastery",recheck:"Run the sprint re-checks due today"};
+function gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear){
+  if(typeof retrTracks!=="function") return;
+  for(const dk of sortedDates){
+    const d=gwParseDate(dk);
+    const dn=WDAY_MAP[d.getDay()];
+    if(!dn||skipSet.has(dn)||!dates[dn]) continue;
+    const idPrefix=d.getFullYear()+"d"+dayOfYear(d)+"_";
+    for(const kid of [...ROSTER]){
+      if(!retrTracks(kid).length) continue;
+      const kind=(retrWeek(kid)||{})[dn.slice(0,3)]||"off";   // template keys are mon/tue/… (abbreviated)
+      if(kind==="off"||!RETR_SLOT_TITLE[kind]) continue;
+      // Place after the kid's last task that day; a kid with no tasks is off → skip.
+      const mine=allTasks.filter(t=>t.who===kid&&t.day===dn);
+      if(!mine.length) continue;
+      let lastEnd=0;
+      mine.forEach(t=>{ const e=toMin(t.time)+(t.dur||20); if(e>lastEnd) lastEnd=e; });
+      allTasks.push({
+        id:idPrefix+"retr_"+kind+"_"+kid,
+        who:kid,day:dn,time:fromMin(lastEnd),dur:15,
+        title:RETR_SLOT_TITLE[kind],detail:RETR_SLOT_DETAIL[kind],
+        mom:"required",cascade:true,device:"paper",subjectKey:"retrieval",retrieval:kind
+      });
+    }
+  }
+  allTasks.sort((a,b)=>{
+    const dord={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
+    return ((dord[a.day]||9)-(dord[b.day]||9))||(toMin(a.time)-toMin(b.time));
+  });
 }
 
 function runGenerateWeek(){
