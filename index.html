@@ -23236,6 +23236,10 @@ let sprintPrevBest="";
 // existing behavior is unchanged on load. sprintDeck filters the drill-items pool by subject.
 let sprintSource="phonogram";
 let sprintDeck="__all__";
+// A multi-deck SCOPE (e.g. Lincoln's AAS + SpellingYouSee together). When set, the drill
+// pool filters by these subjects via mastSprintPool's activeSubjects, and sprintDeck holds
+// the display label. null = single-deck / __all__ behavior.
+let sprintDeckScope=null;
 // U5: "unit" source — sprint a unit-study round (per-group or whole-deck, see unitSprintRounds).
 // Selection is stored as ids and re-resolved each render so live registry/drill updates flow in.
 let sprintUnitId=null;
@@ -23352,8 +23356,8 @@ function retrTracks(kid){
     {key:"editor",icon:"✏️",label:"Editor Rules",src:"editor",stages:retrEditorStages("ellis")},
     {key:"tf",icon:"\u{1F916}",label:"Transformers rounds",src:"unit",unitId:"transformers"}];
   if(kid==="lincoln") return [
-    {key:"aas",icon:"\u{1F4DD}",label:"AAS Pool Sprint",src:"drill",deck:"__all__",
-      stages:[{key:"AAS pool",label:"AAS pool",deck:"__all__",aliases:["All decks","AAS Words"]}]},
+    {key:"aas",icon:"\u{1F4DD}",label:"AAS + Spelling Sprint",src:"drill",deck:"AAS + SpellingYouSee",scope:["AAS Words","SpellingYouSee"],
+      stages:[{key:"AAS+SYS",label:"AAS + Spelling",deck:"AAS + SpellingYouSee",scope:["AAS Words","SpellingYouSee"],aliases:["AAS + SpellingYouSee","AAS pool","All decks","AAS Words"]}]},
     {key:"editor",icon:"✏️",label:"Editor Rules",src:"editor",stages:retrEditorStages("lincoln")},
     {key:"monarchy",icon:"\u{1F451}",label:"Monarchy rounds",src:"unit",unitId:"british_monarchy"}];
   return [];
@@ -23471,7 +23475,9 @@ function retrApplyPlan(kid,trackKey){
     sprintReviewPhonos=ev.review.map(pg=>SPRINT_LOE_B.find(p=>p.pg===pg)).filter(Boolean).slice(0,3);
     sprintSource="phonogram";
   } else if(track.src==="drill"){
-    sprintDeck=f.deck||"__all__";
+    const sc=f.scope||track.scope;
+    if(Array.isArray(sc)&&sc.length){ sprintDeckScope=sc.slice(); sprintDeck=f.deck||track.deck||"Combined"; }
+    else { sprintDeck=f.deck||"__all__"; sprintDeckScope=null; }
     sprintSource="drill";
   } else if(track.src==="editor"){
     laDeck=f.deck; laDiff=f.diff||"intro";   // climb: the plan sets deck + difficulty
@@ -23488,7 +23494,9 @@ function retrApplyRecheck(kid,trackKey,stageKey){
     sprintSource="phonogram";
   } else if(track.src==="drill"){
     const st=(track.stages||[]).find(x=>x.key===stageKey);
-    sprintDeck=(st&&st.deck)||"__all__";
+    const sc=(st&&st.scope)||track.scope;
+    if(Array.isArray(sc)&&sc.length){ sprintDeckScope=sc.slice(); sprintDeck=(st&&st.deck)||track.deck||"Combined"; }
+    else { sprintDeck=(st&&st.deck)||"__all__"; sprintDeckScope=null; }
     sprintSource="drill";
   } else if(track.src==="editor"){
     const st=(track.stages||[]).find(x=>x.key===stageKey);
@@ -24205,7 +24213,21 @@ function sprintBuildSheet(parsed,sheet,{sprintNum,date,prevBest,cols,rows,ps,kid
 // set via mastSprintPool and builds offline A/B sprint sheets from it. No Firebase writes (the score
 // tracker is the same in-memory UI the phonogram sprint uses).
 function sprintSetSource(src){ sprintSource=src; _mastRe(); }
-function sprintSetDeck(val){ sprintDeck=val; _mastRe(); }
+function sprintSetDeck(val){ sprintDeck=val; sprintDeckScope=null; _mastRe(); }   // single deck clears any scope
+function sprintSetDeckScope(scopeStr,label){ sprintDeckScope=String(scopeStr).split("|").filter(Boolean); sprintDeck=label; _mastRe(); }
+function sprintActiveScope(){ return (sprintDeckScope&&sprintDeckScope.length)?sprintDeckScope:null; }
+// One place builds the drill pool for every consumer, honoring an active multi-deck scope.
+function sprintDrillPool(kid,items,settings,history){
+  const sc=sprintActiveScope();
+  const o={items,settings,history};
+  if(sc) o.activeSubjects=sc;
+  else if(sprintDeck!=="__all__") o.deck=sprintDeck;
+  return mastSprintPool(kid,o);
+}
+// Combined-deck scopes this kid's retrieval tracks define (drill tracks with a scope array).
+function sprintDrillScopes(kid){
+  try{ return (retrTracks(kid)||[]).filter(t=>!t.locked&&t.src==="drill"&&Array.isArray(t.scope)&&t.scope.length).map(t=>({label:t.deck,scope:t.scope.slice()})); }catch(e){ return []; }
+}
 // R3: build A/B sprint sheets straight from the gate-cleared pool — offline (no API): A and B are
 // the same set, shuffled independently inside sprintBuildSheet, so the kid reads it twice and the
 // A→B gain measures fluency. Reuses the phonogram sheet/score pipeline.
@@ -24213,14 +24235,14 @@ function sprintGenerateFromPool(){
   const settings=mastDrillSettings();
   let items=masteryData[masteryKid]||[];
   if(!Array.isArray(items)) items=Object.values(items);
-  const deckFilter=sprintDeck==="__all__"?null:sprintDeck;
-  const pool=mastSprintPool(masteryKid,{items,settings,history:masteryData.history,deck:deckFilter});
+  const pool=sprintDrillPool(masteryKid,items,settings,masteryData.history);
   if(!pool.length) return;
   const words=pool.map(it=>String(it.prompt||it.answer||it.id));
   const cols=4;
   const rows=Math.max(3,Math.min(10,Math.ceil(words.length/cols)));
-  const mk=()=>({focusPhono:deckFilter||"All decks",focusSounds:"",gridWords:words.slice(),reviewWords:[],nonsenseWords:[],phrases:[],sentences:[]});
-  sprintRenderSheets(mk(),mk(),{sprintNum,date:sprintDate,prevBest:null,cols,rows,ps:"none",kidName:(SL_KLBL[masteryKid]||"Student"),sheetLabel:(deckFilter||"All decks")+" Sprint"});
+  const label=sprintDeck==="__all__"?"All decks":sprintDeck;
+  const mk=()=>({focusPhono:label,focusSounds:"",gridWords:words.slice(),reviewWords:[],nonsenseWords:[],phrases:[],sentences:[]});
+  sprintRenderSheets(mk(),mk(),{sprintNum,date:sprintDate,prevBest:null,cols,rows,ps:"none",kidName:(SL_KLBL[masteryKid]||"Student"),sheetLabel:label+" Sprint"});
 }
 function buildSprintSourceToggle(color){
   const opt=(v,l)=>{
@@ -24747,11 +24769,13 @@ function buildSprintFromDrillHtml(color){
   let items=masteryData[masteryKid]||[];
   if(!Array.isArray(items)) items=Object.values(items);
   const history=masteryData.history;
-  const deckFilter=sprintDeck==="__all__"?null:sprintDeck;
+  const scope=sprintActiveScope();
+  const deckFilter=(!scope&&sprintDeck!=="__all__")?sprintDeck:null;
+  const inScope=(subj)=> scope?scope.includes(subj):(!deckFilter||subj===deckFilter);
   const decks=[...new Set(items.map(i=>i.subject).filter(Boolean))].sort();
-  const pool=mastSprintPool(masteryKid,{items,settings,history,deck:deckFilter});
-  // Diagnostics for the before/after: classify the rest of the (deck-scoped, non-intro) items.
-  const scoped=items.filter(i=>i&&i.status!=="introduction"&&(!deckFilter||i.subject===deckFilter));
+  const pool=sprintDrillPool(masteryKid,items,settings,history);
+  // Diagnostics for the before/after: classify the rest of the (scope, non-intro) items.
+  const scoped=items.filter(i=>i&&i.status!=="introduction"&&inScope(i.subject));
   let nReady=0,nSwitchOff=0,nNotReady=0,nNever=0;
   scoped.forEach(it=>{
     const kt=mastKnowledgeType(it);
@@ -24769,8 +24793,13 @@ function buildSprintFromDrillHtml(color){
   h+='<div style="font-size:12px;color:#78716c;line-height:1.5;margin-bottom:12px">Gate-cleared, switch-ON items (tier \u{2265} <b>'+gateLbl+'</b> or \u{2265}90% untimed accuracy). Set the gate &amp; switches in <b>Admin \u{2192} Sprint Gate</b>.</div>';
   h+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:6px">Deck</div>';
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
-  const deckPill=(v,l)=>{ const act=sprintDeck===v; return '<button onclick="sprintSetDeck(\''+v.replace(/'/g,"\\\\'")+'\')" style="padding:6px 11px;border-radius:20px;border:1.5px solid '+(act?color:"#e2ddd6")+';background:'+(act?color:"#fff")+';color:'+(act?"#fff":"#78716c")+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+l+'</button>'; };
+  const deckPill=(v,l)=>{ const act=!scope&&sprintDeck===v; return '<button onclick="sprintSetDeck(\''+v.replace(/'/g,"\\\\'")+'\')" style="padding:6px 11px;border-radius:20px;border:1.5px solid '+(act?color:"#e2ddd6")+';background:'+(act?color:"#fff")+';color:'+(act?"#fff":"#78716c")+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+l+'</button>'; };
   h+=deckPill("__all__","All decks");
+  // Combined-deck scope pills (e.g. Lincoln's AAS + SpellingYouSee) — a real subject set, not a deck.
+  sprintDrillScopes(masteryKid).forEach(sc=>{
+    const act=!!scope&&scope.join("|")===sc.scope.join("|");
+    h+='<button onclick="sprintSetDeckScope(\''+sc.scope.join("|").replace(/'/g,"\\\\'")+'\',\''+sc.label.replace(/'/g,"\\\\'")+'\')" style="padding:6px 11px;border-radius:20px;border:1.5px solid '+(act?color:"#c4b5fd")+';background:'+(act?color:"#f5f3ff")+';color:'+(act?"#fff":"#6d28d9")+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">🔗 '+esc(sc.label)+'</button>';
+  });
   decks.forEach(d=>{ h+=deckPill(d,((catE[d]||"")+" "+d).trim()); });
   h+='</div></div>';
   // Summary + breakdown
@@ -24782,7 +24811,7 @@ function buildSprintFromDrillHtml(color){
   h+=chip(nSwitchOff,'switch off','#fee2e2','#b91c1c');
   h+=chip(nNotReady,'not ready yet','#fef9c3','#a16207');
   h+=chip(nNever,'never-drill','#ede9fe','#6d28d9');
-  if(!nReady&&!nSwitchOff&&!nNotReady&&!nNever) h+='<span style="font-size:11px;color:#a8a29e">No drillable items'+(deckFilter?" in this deck":"")+' yet.</span>';
+  if(!nReady&&!nSwitchOff&&!nNotReady&&!nNever) h+='<span style="font-size:11px;color:#a8a29e">No drillable items'+(scope?" in this set":(deckFilter?" in this deck":""))+' yet.</span>';
   h+='</div></div>';
   // The set, or a guided empty state
   if(pool.length){
