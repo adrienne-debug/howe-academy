@@ -23272,6 +23272,44 @@ function retrSettings(kid,track){
   return Object.assign({},RETR_DEFAULTS,rp._defaults||{},
     (rp[kid]&&rp[kid].settings)||{},(track&&track.settings)||{});
 }
+// P5.3 editor difficulty climb: stages = the kid's Language-Arts unit decks, each
+// climbing intro→standard→spicy, deck by deck. An editor log's deck carries a " · Mode"
+// suffix (laLogLabel) and its own diff field, so a stage matches on the base deck + diff.
+const RETR_EDITOR_DIFFS=["intro","standard","spicy"];
+const RETR_DIFF_SHORT={intro:"i",standard:"s",spicy:"x"};
+function retrDeckShort(name){
+  const s=String(name||"").trim();
+  if(/\s/.test(s)) return s.split(/\s+/).filter(w=>w&&w!=="&").map(w=>w[0].toUpperCase()).join("");
+  return s.slice(0,3);
+}
+function retrEditorBaseDeck(deck){ return String(deck||"").split(" · ")[0].trim(); }
+function retrEditorStages(kid){
+  let u=null; try{ u=(typeof laUnitFor==="function")?laUnitFor(kid):null; }catch(e){}
+  if(!u||!Array.isArray(u.decks)) return [];
+  const out=[];
+  u.decks.forEach(d=>{
+    const deck=d&&d.key; if(!deck) return;
+    RETR_EDITOR_DIFFS.forEach(diff=>out.push({key:deck+"|"+diff,label:retrDeckShort(deck)+" "+RETR_DIFF_SHORT[diff],deck:deck,diff:diff,full:deck+" · "+diff}));
+  });
+  return out;
+}
+// P5.3 Ellis math-fact families: honest (no fabricated curriculum) — stages are the kid's
+// OWN decks whose subject reads as a fact deck (/fact/i), "Math Facts" first then the rest,
+// so per-family decks (×2 Facts, ×5 Facts…) Mom adds in Mastery slot in automatically. An
+// override list at retrievalPlan/{kid}/mathfacts_order pins the order.
+function retrMathfactStages(kid){
+  let items=masteryData[kid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  const decks=[...new Set(items.filter(i=>i&&/fact/i.test(i.subject||"")).map(i=>i.subject))];
+  const ov=((masteryData.retrievalPlan||{})[kid]||{}).mathfacts_order;
+  const order=Array.isArray(ov)?ov:["Math Facts"];
+  decks.sort((a,b)=>{
+    const ia=order.indexOf(a),ib=order.indexOf(b);
+    if(ia>=0&&ib>=0) return ia-ib;
+    if(ia>=0) return -1; if(ib>=0) return 1;
+    return a.localeCompare(b);
+  });
+  return decks.map(dk=>({key:dk,label:dk,deck:dk}));
+}
 // Track definitions per kid. src decides how log entries match a stage and which
 // Sprint source runs it. locked tracks carry their unlock story (and a live progress
 // probe where one is cheap).
@@ -23291,14 +23329,14 @@ function retrTracks(kid){
       locked:true,unlockText:"letter SOUNDS solid + first LOE deck at Weekly tier"}];
   if(kid==="ellis") return [
     {key:"mathfacts",icon:"➕",label:"Math-Fact Dash",src:"drill",deck:"Math Facts",
-      stages:[{key:"Math Facts",label:"Math Facts",deck:"Math Facts"}],
-      note:"fact-family stages land once the family order is picked"},
-    {key:"editor",icon:"✏️",label:"Editor Rules",src:"editor"},
+      stages:retrMathfactStages("ellis"),
+      note:"Add per-family decks (×2, ×5…) in Mastery to stage them in order"},
+    {key:"editor",icon:"✏️",label:"Editor Rules",src:"editor",stages:retrEditorStages("ellis")},
     {key:"tf",icon:"\u{1F916}",label:"Transformers rounds",src:"unit",unitId:"transformers"}];
   if(kid==="lincoln") return [
     {key:"aas",icon:"\u{1F4DD}",label:"AAS Pool Sprint",src:"drill",deck:"__all__",
       stages:[{key:"AAS pool",label:"AAS pool",deck:"__all__",aliases:["All decks","AAS Words"]}]},
-    {key:"editor",icon:"✏️",label:"Editor Rules",src:"editor"},
+    {key:"editor",icon:"✏️",label:"Editor Rules",src:"editor",stages:retrEditorStages("lincoln")},
     {key:"monarchy",icon:"\u{1F451}",label:"Monarchy rounds",src:"unit",unitId:"british_monarchy"}];
   return [];
 }
@@ -23324,6 +23362,7 @@ function retrStageMatch(track,st,e){
     const names=st.aliases||[st.deck||st.key];
     return e.src==="drill"&&names.includes(e.deck);
   }
+  if(track.src==="editor") return e.src==="editor"&&retrEditorBaseDeck(e.deck)===st.deck&&(e.diff||"intro")===st.diff;
   return false;
 }
 // P2 drill-day clock: re-check intervals count PRINTED DRILL DAYS via printLog (the
@@ -23390,7 +23429,7 @@ function retrEvalTrack(kid,track){
         dueNow:lastFailed||(duePn!=null&&todayPn>=duePn),
         inDays:(duePn!=null&&todayPn!=null)?duePn-todayPn:null};
     }
-    return {key:st.key,label:st.label||st.key,deck:st.deck,n:sess.length,pcts,passed,best,
+    return {key:st.key,label:st.label||st.key,deck:st.deck,diff:st.diff,full:st.full,n:sess.length,pcts,passed,best,
       rc,demoted:!!(rc&&rc.lastFailed&&passed)};
   });
   let focus=stages.length;
@@ -23416,6 +23455,9 @@ function retrApplyPlan(kid,trackKey){
   } else if(track.src==="drill"){
     sprintDeck=f.deck||"__all__";
     sprintSource="drill";
+  } else if(track.src==="editor"){
+    laDeck=f.deck; laDiff=f.diff||"intro";   // climb: the plan sets deck + difficulty
+    sprintSource="editor";
   }
   _mastRe();
 }
@@ -23430,6 +23472,10 @@ function retrApplyRecheck(kid,trackKey,stageKey){
     const st=(track.stages||[]).find(x=>x.key===stageKey);
     sprintDeck=(st&&st.deck)||"__all__";
     sprintSource="drill";
+  } else if(track.src==="editor"){
+    const st=(track.stages||[]).find(x=>x.key===stageKey);
+    if(st){ laDeck=st.deck; laDiff=st.diff||"intro"; }
+    sprintSource="editor";
   }
   _mastRe();
 }
@@ -23759,23 +23805,25 @@ function retrPlanCardHtml(color){
       h+='</div><div style="font-size:10.5px;color:var(--muted)">'+msg+'</div></div>';
       return;
     }
-    // EDITOR track: session count only in P1 (difficulty climb lands with real data).
-    if(track.src==="editor"){
+    // EDITOR track with no stages (LA unit not loaded / kid not enrolled): session-count
+    // fallback. With stages it falls through to the staged renderer, climbing difficulty.
+    if(track.src==="editor"&&!(track.stages&&track.stages.length)){
       const n=retrEntries(kid).filter(e=>e.src==="editor").length;
       h+='</div><div style="font-size:10.5px;color:var(--muted)">'+(n?n+" session"+(n>1?"s":"")+" logged":"no sessions yet")+' — run from the ✏️ Editor source</div></div>';
       return;
     }
-    // STAGE track (phonogram / drill dash): dots, focus line, session chips, actions.
+    // STAGE track (phonogram / drill dash / editor climb): dots, focus line, chips, actions.
     const ev=retrEvalTrack(kid,track);
     h+='</div>';
     h+='<div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:6px">';
     ev.stages.forEach((st,i)=>{
-      let bg="#fff",bd="#e2ddd6",fg="#a8a29e",title=st.label+" — not started";
-      if(st.demoted){ bg="#fef3c7"; bd="#f59e0b"; fg="#b45309"; title=st.label+" — failed last re-check, due now"; }
+      const nm=st.full||st.label;
+      let bg="#fff",bd="#e2ddd6",fg="#a8a29e",title=nm+" — not started";
+      if(st.demoted){ bg="#fef3c7"; bd="#f59e0b"; fg="#b45309"; title=nm+" — failed last re-check, due now"; }
       else if(st.passed){ bg="#f0fdf4"; bd="#86efac"; fg="#15803d";
-        title=st.label+" — passed (best "+st.best+"%)"+(st.rc?(st.rc.dueNow?" · re-check DUE":(st.rc.inDays!=null?" · re-check in "+st.rc.inDays+" drill day"+(st.rc.inDays===1?"":"s"):"")):""); }
-      else if(i===ev.focus){ bg=color; bd=color; fg="#fff"; title=st.label+" — FOCUS"; }
-      else if(st.n>0){ bd="#fcd34d"; fg="#b45309"; title=st.label+" — "+st.n+" early session"+(st.n>1?"s":"")+" (ahead of the gate)"; }
+        title=nm+" — passed (best "+st.best+"%)"+(st.rc?(st.rc.dueNow?" · re-check DUE":(st.rc.inDays!=null?" · re-check in "+st.rc.inDays+" drill day"+(st.rc.inDays===1?"":"s"):"")):""); }
+      else if(i===ev.focus){ bg=color; bd=color; fg="#fff"; title=nm+" — FOCUS"; }
+      else if(st.n>0){ bd="#fcd34d"; fg="#b45309"; title=nm+" — "+st.n+" early session"+(st.n>1?"s":"")+" (ahead of the gate)"; }
       h+='<span title="'+esc(title)+'" style="font-size:10px;font-weight:800;font-family:\'DM Mono\',monospace;padding:2px 6px;border-radius:8px;border:1.5px solid '+bd+';background:'+bg+';color:'+fg+'">'+esc(st.label)+'</span>';
     });
     h+='</div>';
@@ -23798,7 +23846,7 @@ function retrPlanCardHtml(color){
     }
     const f=ev.stages[ev.focus];
     const ts=retrSettings(kid,track);
-    h+='<div style="font-size:11.5px;color:#1f2937;line-height:1.5"><b>Focus: '+esc(f.label)+'</b>'
+    h+='<div style="font-size:11.5px;color:#1f2937;line-height:1.5"><b>Focus: '+esc(f.full||f.label)+'</b>'
       +(f.best!=null?' · best '+f.best+'%':'')+' · needs '+ts.gate_pct+'% ×'+ts.gate_streak
       +(ev.stuck?' <span style="font-size:9px;font-weight:800;color:#b45309;background:#fef3c7;border-radius:7px;padding:1px 6px">\u{1F7E0} stuck — '+f.n+' tries; consider an easier sheet</span>':'')+'</div>';
     if(f.n){
