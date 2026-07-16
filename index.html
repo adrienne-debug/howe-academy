@@ -4210,7 +4210,10 @@ function taskCard(t, fromDay, readOnly, doneId){
   // Deep link: a drill/retrieval task jumps straight to that kid's Mastery page. stopPropagation
   // so tapping the link never toggles the checkbox; retrSchedGo sets the kid + view + tab.
   const _dlv=(!readOnly&&typeof retrSchedGo==="function")?taskDeepLinkView(t):null;
-  const linkRow=_dlv?'<div style="margin-top:5px"><span onclick="event.stopPropagation();retrSchedGo(\''+t.who+'\',\''+_dlv+'\')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#5b3a8c;cursor:pointer;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4C2} Open '+cap(t.who)+'’s '+taskDeepLinkLabel(_dlv)+' →</span></div>':"";
+  // Sprint/re-check tasks open the kid's focus sprint loaded (retrOpenSprint); drills/match
+  // just switch to the view.
+  const _go=(_dlv==="sprint")?("retrOpenSprint('"+t.who+"')"):("retrSchedGo('"+t.who+"','"+_dlv+"')");
+  const linkRow=_dlv?'<div style="margin-top:5px"><span onclick="event.stopPropagation();'+_go+'" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#5b3a8c;cursor:pointer;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4C2} Open '+cap(t.who)+'’s '+taskDeepLinkLabel(_dlv)+' →</span></div>':"";
   // Strip the "Cascaded from X" note from detail for display
   const cleanDetail=t.detail.replace(/\s*\(Cascaded from \w+\)/,"");
   const disLabel=(t._displaced&&t._originalDay&&t._originalDay!==t.day)?'<div style="font-size:10px;font-weight:700;color:#7c3aed;background:#ede9fe;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">&#8618; Moved from '+cap(t._originalDay)+'</div><br>':'';
@@ -23733,6 +23736,22 @@ function retrSchedGo(kid,view){
   masteryKid=kid; mastView=view||"drill";
   mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastSessionKey=""; mastSlideIdx=0; mastScoreItemId=null; mastAdminLocal=null;
   try{ const cats=Object.keys((typeof MAST_BANK_MAP!=="undefined"&&MAST_BANK_MAP[kid])||{}); mastAddCat=cats[0]||""; }catch(e){}
+  showTab('mastery');
+}
+// Sprint slot deep link: land on the Sprint view with THIS kid's actual work loaded — the
+// top of today's queue (a due re-check, else the focus stage), falling back to the primary
+// track's focus. So one tap from the schedule opens the exact sheet, not a blank picker.
+function retrOpenSprint(kid){
+  masteryKid=kid; mastView="sprint";
+  mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastSessionKey=""; mastSlideIdx=0; mastScoreItemId=null; mastAdminLocal=null;
+  try{
+    let applied=false;
+    const q=(typeof retrTodayQueue==="function")?retrTodayQueue(kid):[];
+    const top=(q||[]).find(it=>it.kind==="recheck"||it.kind==="focus");
+    if(top&&top.kind==="recheck"&&top.stage){ retrApplyRecheck(kid,top.track.key,top.stage.key); applied=true; }
+    else if(top&&top.kind==="focus"){ retrApplyPlan(kid,top.track.key); applied=true; }
+    if(!applied){ const tr=(retrTracks(kid)||[]).find(t=>!t.locked&&(t.src==="phonogram"||t.src==="drill"||t.src==="editor")); if(tr) retrApplyPlan(kid,tr.key); }
+  }catch(e){}
   showTab('mastery');
 }
 function retrSchedStripHtml(kid,day){
