@@ -17613,38 +17613,49 @@ function mastTraceOpen(glyph){
   ov.appendChild(cv);
   const ctx=cv.getContext("2d");
   let hasDrawn=false;
+  // Ghost letterform state. "wait" = NoTears (the notebooks' Handwriting-Without-Tears-style
+  // font) is still loading, so paint NO ghost yet — showing the Fraunces shape and swapping
+  // it a beat later put the wrong letterform under the kid's finger and the swap was the
+  // thing they noticed. "nt" = the real taught shape. "serif" = the font genuinely can't
+  // load, where a Fraunces ghost still beats an empty board.
+  let ghost=window._ntTraceReady?"nt":"wait";
   const paint=()=>{
     ctx.clearRect(0,0,cv.width,cv.height);
-    ctx.save();
-    ctx.fillStyle="#f6e3cf";
-    // Ghost in the notebooks' NoTears (Handwriting Without Tears-style) letterforms once
-    // that embedded font is loaded — kids trace the shapes they're taught to write.
-    const fam=window._ntTraceReady?"'NoTears'":"'Fraunces',serif";
-    let fs=Math.floor(cv.height*0.72);
-    ctx.font="700 "+fs+"px "+fam;
-    ctx.textAlign="center"; ctx.textBaseline="middle";
-    // Fit the WHOLE word: height-only sizing let 2-3 letter glyphs spill past the box edges.
-    const maxW=cv.width*0.92, tw=ctx.measureText(glyph).width;
-    if(tw>maxW){ fs=Math.floor(fs*maxW/tw); ctx.font="700 "+fs+"px "+fam; }
-    ctx.fillText(glyph, cv.width/2, cv.height/2+cv.height*0.03);
-    ctx.restore();
+    if(ghost!=="wait"){
+      ctx.save();
+      ctx.fillStyle="#f6e3cf";
+      const fam=ghost==="nt"?"'NoTears'":"'Fraunces',serif";
+      let fs=Math.floor(cv.height*0.72);
+      ctx.font="700 "+fs+"px "+fam;
+      ctx.textAlign="center"; ctx.textBaseline="middle";
+      // Fit the WHOLE word: height-only sizing let 2-3 letter glyphs spill past the box edges.
+      const maxW=cv.width*0.92, tw=ctx.measureText(glyph).width;
+      if(tw>maxW){ fs=Math.floor(fs*maxW/tw); ctx.font="700 "+fs+"px "+fam; }
+      ctx.fillText(glyph, cv.width/2, cv.height/2+cv.height*0.03);
+      ctx.restore();
+    }
     ctx.lineWidth=16; ctx.lineCap="round"; ctx.lineJoin="round"; ctx.strokeStyle="#7c3aed";
   };
   paint();
-  // Load the NoTears font from notebooks.js (lazy, once) and repaint the ghost with it —
-  // but never wipe strokes the kid has already made; the swap only lands on a clean board.
-  if(!window._ntTraceReady){
+  // Load the NoTears font from notebooks.js (lazy, once per session — every later Trace opens
+  // straight into the right shape) and paint the ghost the first time it's real. Never wipes
+  // strokes the kid has already made.
+  if(ghost==="wait"){
+    ttl.textContent="\u{270D}\u{FE0F} Getting the letters ready\u{2026}";
+    const settle=ok=>{
+      ghost=ok?"nt":"serif";
+      if(ok) window._ntTraceReady=true;
+      ttl.textContent="\u{270D}\u{FE0F} Trace: "+glyph;
+      if(document.getElementById("mast-trace")&&!hasDrawn) paint();
+    };
     haLoadNotebooksLib().then(lib=>{
-      if(!lib||!lib.fontsOk||!lib.fontFacesCss) return;
+      if(!lib||!lib.fontsOk||!lib.fontFacesCss){ settle(false); return; }
       if(!document.getElementById("ha-nt-font")){
         const st=document.createElement("style"); st.id="ha-nt-font"; st.textContent=lib.fontFacesCss();
         document.head.appendChild(st);
       }
-      return document.fonts.load("700 100px NoTears").then(()=>{
-        window._ntTraceReady=true;
-        if(document.getElementById("mast-trace")&&!hasDrawn) paint();
-      });
-    }).catch(()=>{});
+      return document.fonts.load("700 100px NoTears").then(()=>settle(true),()=>settle(false));
+    }).catch(()=>settle(false));
   }
   let drawing=false;
   const pos=e=>{ const r=cv.getBoundingClientRect(); return [(e.clientX-r.left)*(cv.width/r.width),(e.clientY-r.top)*(cv.height/r.height)]; };
