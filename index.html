@@ -17392,6 +17392,10 @@ function mastGetDef(kid,prompt){
 let mastRecState=null;   // {recorder,timer} while the mic is live
 let mastRecAudio="";     // finished clip (data URL) waiting to be saved with the new item
 let mastRecErr="";
+// Which card an in-flight take belongs to. null = the add forms, where the clip waits for
+// the item's own save. An id = the PIN'd Edit List, which has no Save button, so the clip
+// lands on stop — and scoping it means a take can't leak onto the next card opened.
+let mastRecTarget=null;
 function mastGetDefAudio(kid,prompt){
   const s=masteryData[kid+"_settings"]||{};
   return (s.def_audio&&s.def_audio[prompt])||"";
@@ -17767,8 +17771,9 @@ function buildMatchHtml(color){
   h+='</div>';
   return h;
 }
-function mastRecStart(){
+function mastRecStart(target){
   if(mastRecState) return;
+  mastRecTarget=target||null;
   if(!navigator.mediaDevices||!window.MediaRecorder){ mastRecErr="Recording isn't supported in this browser"; _mastRe(); return; }
   navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
     const mime=(MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported("audio/mp4"))?"audio/mp4"
@@ -17788,7 +17793,9 @@ function mastRecStart(){
         // webm fallback = this browser can't record mp4 — the clip won't play on iPads
         // (Safari can't play webm/opus). Save still allowed, but say so loudly.
         mastRecErr=_type.indexOf("webm")>=0?"\u{26A0}\u{FE0F} This browser records a format iPads can't play — record on an iPad/Safari for the kids to hear it":"";
-        mastRecState=null; _mastRe();
+        mastRecState=null;
+        if(mastRecTarget) mastListSaveRec(mastRecTarget);
+        _mastRe();
       };
       fr.readAsDataURL(blob);
     };
@@ -17805,6 +17812,24 @@ function mastRecStop(){
   try{ mastRecState.recorder.stop(); }catch(e){ mastRecState=null; _mastRe(); }
 }
 function mastRecClear(){ mastRecAudio=""; mastRecErr=""; _mastRe(); }
+// Drop a card's clip (targeted null — the flip back falls back to 🗣 TTS again).
+function mastRemoveDefAudio(kid,prompt){
+  const s=masteryData[kid+"_settings"]||{};
+  if(s.def_audio) delete s.def_audio[prompt];
+  masteryData[kid+"_settings"]=s;
+  if(db) db.ref("mastery/"+kid+"_settings/def_audio").update({[prompt]:null});  // this key only
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  _mastRe();
+}
+// Edit List take: land it on the open card straight away (no Save button on that editor).
+function mastListSaveRec(id){
+  let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  const it=items.find(x=>x&&x.id===id);
+  if(!it){ mastRecAudio=""; return; }
+  if(!mastDefKeyOk(it.prompt)){ mastRecErr="This card's front can't key a recording (. # $ [ ] /)"; mastRecAudio=""; return; }
+  mastSaveDefAudio(masteryKid,it.prompt);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+}
 // Save the pending clip for a prompt (targeted write, same key rules as definitions).
 function mastSaveDefAudio(kid,prompt){
   if(!mastRecAudio||!mastDefKeyOk(prompt)) return false;
@@ -17815,6 +17840,30 @@ function mastSaveDefAudio(kid,prompt){
   if(db) db.ref("mastery/"+kid+"_settings/def_audio").update({[prompt]:mastRecAudio});  // this key only
   mastRecAudio="";
   return true;
+}
+// Voice row for a card that already exists (PIN'd Edit List → Card Data). Flip decks only —
+// the clip rides the 🔊 button on the flip back, so a quiz card has nowhere to play it.
+function mastListRecUI(it){
+  const esc=String(it.prompt).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  const mine=mastRecTarget===it.id;
+  let r='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap"><span style="font-size:11px;font-weight:600;min-width:62px;color:#374151">Voice</span>';
+  if(!mastDefKeyOk(it.prompt)){
+    return r+'<span style="font-size:10px;color:var(--muted)">front contains . # $ [ ] / \u{2014} can\'t key a clip</span></div>';
+  }
+  const B='padding:5px 10px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  if(mastRecState&&mine){
+    r+='<button onclick="event.stopPropagation();mastRecStop()" style="'+B+';border-color:#fca5a5;background:#fee2e2;color:#dc2626">\u{23F9} Stop</button>';
+    r+='<span style="font-size:10px;color:#dc2626;font-weight:700">\u{1F534} Recording\u{2026} auto-stops at 20s</span>';
+  } else if(mastGetDefAudio(masteryKid,it.prompt)){
+    r+='<button onclick="event.stopPropagation();mastPlayDefAudio(\''+esc+'\')" style="'+B+'">\u{25B6}\u{FE0F} Play</button>';
+    r+='<button onclick="event.stopPropagation();mastRecStart(\''+it.id+'\')" style="'+B+'">\u{1F399} Re-record</button>';
+    r+='<button onclick="event.stopPropagation();mastRemoveDefAudio(masteryKid,\''+esc+'\')" style="'+B+'">\u{2715} Remove</button>';
+  } else {
+    r+='<button onclick="event.stopPropagation();mastRecStart(\''+it.id+'\')" style="'+B+'">\u{1F399} Record</button>';
+    r+='<span style="font-size:10px;color:var(--muted)">read the back out loud \u{2014} kid taps \u{1F50A} to hear it</span>';
+  }
+  if(mastRecErr&&mine) r+='<span style="font-size:10px;color:#dc2626;font-weight:600">'+mastRecErr+'</span>';
+  return r+'</div>';
 }
 // Shared recorder row for the add forms (single-add only — batch can't record per item).
 function mastRecUI(){
@@ -21573,6 +21622,7 @@ function _renderMasteryInner(el){
           h+='<input value="'+_cdEsc(it.prompt)+'" onclick="event.stopPropagation()" onchange="event.stopPropagation();mastListEditText(\''+it.id+'\',\'prompt\',this.value)" style="flex:1;font-size:12px;padding:6px 8px;border-radius:8px;border:1.5px solid #d1d5db;font-family:\'DM Sans\',sans-serif"></div>';
           h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="font-size:11px;font-weight:600;min-width:62px;color:#374151">Back</span>';
           h+='<input value="'+_cdEsc(it.answer&&it.answer!==it.prompt?it.answer:"")+'" placeholder="answer / rule (blank = uses the definitions list)" onclick="event.stopPropagation()" onchange="event.stopPropagation();mastListEditText(\''+it.id+'\',\'answer\',this.value)" style="flex:1;font-size:12px;padding:6px 8px;border-radius:8px;border:1.5px solid #d1d5db;font-family:\'DM Sans\',sans-serif"></div>';
+          if(mastGetCatMode(masteryKid,it.subject)==="flip") h+=mastListRecUI(it);
         }
         h+='<div style="font-size:10px;font-weight:700;color:#4338ca;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Streak ('+((it.consecutive_correct||0))+'/3)</div>';
         h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">';
