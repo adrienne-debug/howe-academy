@@ -1197,6 +1197,16 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
       <button class="dlg-ok" id="dlg-ok">Mark Done</button>
       <button class="dlg-uncheck" id="dlg-uncheck" style="display:none;flex:1;padding:12px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;font-family:'DM Sans',sans-serif;border:none;background:#f3f4f6;color:#374151">&#x21A9; Unmark</button>
     </div>
+    <div class="dlg-actions" style="margin-top:8px">
+      <button id="dlg-push" style="display:none;flex:1;padding:11px;border-radius:10px;font-weight:700;font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif;border:1px solid #fdba74;background:#fff7ed;color:#9a3412"></button>
+      <button id="dlg-dismiss" style="display:none;flex:1;padding:11px;border-radius:10px;font-weight:700;font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif;border:1px solid #d1d5db;background:#f9fafb;color:#4b5563">&#128683; Dismiss today</button>
+    </div>
+    <div id="dlg-dismiss-choice" style="display:none;margin-top:8px;padding:10px;border-radius:10px;background:#f9fafb;border:1px solid #e5e7eb">
+      <div style="font-size:12px;font-weight:700;color:#4b5563;margin-bottom:8px">The day can finish either way — what happens to this lesson?</div>
+      <button id="dlg-skip-now" style="width:100%;padding:10px;border-radius:9px;font-weight:700;font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif;border:1px solid #d1d5db;background:#fff;color:#374151;margin-bottom:6px"></button>
+      <button id="dlg-skip-good" style="width:100%;padding:10px;border-radius:9px;font-weight:700;font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif;border:1px solid #d1d5db;background:#fff;color:#374151"></button>
+      <div id="dlg-skip-good-why" style="display:none;font-size:11px;font-weight:600;color:#9ca3af;margin-top:6px;line-height:1.4"></div>
+    </div>
   </div>
 </div>
 
@@ -1275,6 +1285,19 @@ let momPinUnlocked=false;
 let momModeActive=false;
 let checked={}, slState={}, supplies={}, histState={};
 let claimed={};            // {taskId: ts} — kid says done, awaiting Mom's verify (doesn't count until approved)
+// Mom taking a subject off its day so the day can finish. {taskId:{mode, toDay, fromDays[], ts}}:
+//   mode "push" — move it to toDay (the next school day). Rides on effectiveDay.
+//   mode "skip" — dismissed, comes back: it stays pinned to its own day reading "Dismissed",
+//                 and next week's generator serves the lesson again all by itself (the cursor
+//                 is a COUNT of check-offs, so un-done work is a wall — nothing to undo).
+//   mode "drop" — dismissed for good: same, PLUS one bump of the subject's generator cursor
+//                 (pace `adjust`, the Curriculum Builder's own control) so next week moves
+//                 past the lesson, and the carry-over pool is blocked. Only offered when the
+//                 lesson is genuinely the next one up — see momDismiss.
+// Always an OVERRIDE LAYER, never a rewrite of t.day: the cascade rewrites t.day on its own
+// schedule, so baking a move into the task would lose it. fromDays remembers every day that
+// handed the work off, so dayPct can keep counting it as that day's unfinished work.
+let momMoves={};
 let pendingClaimMode=false; // dlg-ok writes a claim instead of a real check-off
 const _todayDay=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][new Date().getDay()];
 let tab="schedule", day=["monday","tuesday","wednesday","thursday","friday"].includes(_todayDay)?_todayDay:"monday", kid="all", supDay="all";
@@ -1481,6 +1504,15 @@ function attachWeekListeners(wk){
   });
   fbWeekRefs.push(r16);
 
+  const r18=db.ref(wk+"/momMoves");
+  r18.on("value",s=>{
+    if(isUploading) return;
+    momMoves=s.val()||{};
+    sv(wk+"_momMoves",momMoves);
+    schedCascade(); renderAll();
+  });
+  fbWeekRefs.push(r18);
+
   const r2=db.ref(wk+"/sl");
   r2.on("value",s=>{
     if(isUploading) return;
@@ -1655,6 +1687,7 @@ function initFb() {
         const t=ld(WK+"_tasks"); if(t) weekData.tasks=t;
         const meta=ld(WK+"_meta"); if(meta) applyWeekMeta(meta);
         checked=ld(WK+"_checked")||{}; slState=ld(WK+"_sl")||{}; claimed=ld(WK+"_claimed")||{};
+        momMoves=ld(WK+"_momMoves")||{};
         attachWeekListeners(WK);
         renderAll();
       }
@@ -1816,6 +1849,7 @@ function boot() {
   const meta=ld(WK+"_meta"); if(meta) applyWeekMeta(meta);
   checked=ld(WK+"_checked")||{};
   claimed=ld(WK+"_claimed")||{};
+  momMoves=ld(WK+"_momMoves")||{};
   slState=ld(WK+"_sl")||{};
   supplies=ld(WK+"_supplies")||{};
   const savedSupDef=ld(WK+"_supplies_def"); if(savedSupDef&&Array.isArray(savedSupDef)) SUP=savedSupDef;
@@ -2105,6 +2139,19 @@ function renderDayTabs(){
   });
 }
 function selDay(d){ day=d; renderAll(); }
+// True when Mom pushed t off day d (directly or in an earlier hop of the same push chain).
+function _pushedFrom(t,d){
+  const p=momMoves[t.id];
+  return !!(p&&p.mode==="push"&&(p.fromDays||[]).indexOf(d)>=0);
+}
+// Dismissed work stays sitting on its own day, so unlike a push it can't leave the day's task
+// list on its own — the finish gates have to skip it explicitly, the way they skip lunch.
+// dayPct deliberately does NOT skip it: still on its day, still unchecked, so it lands in that
+// day's denominator and the percentage stays honest with no extra code.
+function _dismissed(t){
+  const p=t&&momMoves[t.id];
+  return !!(p&&(p.mode==="skip"||p.mode==="drop"));
+}
 function dayPct(d){
   const kidMatch=(t)=>kid==="all"||kid==="mom"?true:t.who===kid;
   const _ok=t=>kidMatch(t)&&!t.id.endsWith("_c")&&!t._eowOverflow&&!t.title.toLowerCase().includes("lunch");
@@ -2118,8 +2165,15 @@ function dayPct(d){
   // denominator as incomplete, giving the true day-of completion. A carried task's
   // original day is cascadedFrom (set on first sweep); effectiveDay!==d means it left.
   if(_isPastDay(d)){
-    getActiveTasks().forEach(t=>{ if(t.cascadedFrom===d&&effectiveDay(t)!==d&&_ok(t)) total++; });
+    getActiveTasks().forEach(t=>{ if(t.cascadedFrom===d&&effectiveDay(t)!==d&&_ok(t)&&!_pushedFrom(t,d)) total++; });
   }
+  // Mom-pushed work, same idea but for EVERY day, not just past ones: the push takes the
+  // subject off d's list (that's what lets the day finish), but d didn't do it — so it stays
+  // in d's denominator, never in `done`. The badge and history read what actually happened.
+  // Counted even once it's finished later: Thursday getting it done doesn't retro-fix
+  // Wednesday. The clause above skips these so a task that both cascaded and got pushed off
+  // the same day isn't counted twice.
+  getActiveTasks().forEach(t=>{ if(_pushedFrom(t,d)&&effectiveDay(t)!==d&&_ok(t)) total++; });
   if(!total) return 0;
   return Math.round(done/total*100);
 }
@@ -2315,9 +2369,13 @@ function showPaceToast(taskId, doneMinOverride){
   const el=document.getElementById("pace-toast"); if(!el) return;
 
   // Check if this was the kid's last task for the day (use displaced day/tasks if active)
-  const taskDay=dt?dt.day:effectiveDay(t);
+  // Mom-pushed work overrides the displacement engine's day: a blockout re-lay doesn't know
+  // about the push, so its x.day would drag a pushed subject back onto today and keep the day
+  // from ever reading as finished. Everything else keeps the displaced day exactly as before.
+  const _dayOf=x=>(momMoves[x.id]?effectiveDay(x):(displacedResult?x.day:effectiveDay(x)));
+  const taskDay=momMoves[taskId]?effectiveDay(t):(dt?dt.day:effectiveDay(t));
   const kidDaySource=displacedResult?displacedResult.tasks:weekData.tasks;
-  const kidDayTasks=kidDaySource.filter(x=>x.who===t.who && (displacedResult?x.day:effectiveDay(x))===taskDay && !x.title.toLowerCase().includes("lunch"));
+  const kidDayTasks=kidDaySource.filter(x=>x.who===t.who && _dayOf(x)===taskDay && !x.title.toLowerCase().includes("lunch") && !_dismissed(x));
   const kidDayDone=kidDayTasks.filter(x=>!!checked[x.id]).length;
   const isLastTask=kidDayDone===kidDayTasks.length;
 
@@ -3774,7 +3832,7 @@ function renderSchedule(el){
 
   // End-of-day section for individual kids
   if(!["all","mom"].includes(kid) && unlocked){
-    const kidDayTasks=allDay.filter(t=>t.who===kid&&!t.title.toLowerCase().includes("lunch"));
+    const kidDayTasks=allDay.filter(t=>t.who===kid&&!t.title.toLowerCase().includes("lunch")&&!_dismissed(t));
     const kidDayDone=kidDayTasks.filter(t=>!!checked[t.id]).length;
     if(kidDayTasks.length && kidDayDone===kidDayTasks.length){
       const aftDone=getSlot(kid,"afternoon").done;
@@ -4180,6 +4238,7 @@ function taskCard(t, fromDay, readOnly, doneId){
   // on a past day. Regular work rolls forward (effectiveDay===today), so anything still
   // anchored to a past day can never be done now — show it grayed + "Incomplete", no box.
   const missed=!done&&!claimedHere&&!readOnly&&!t.id.endsWith("_c")&&_isPastDay(effectiveDay(t));
+  const _dis=!done&&!readOnly&&_dismissed(t);
   const bcls=t.mom==="required"?"req":t.mom==="maybe"?"maybe":"";
   const klbl=cap(t.who);
   let mb="";
@@ -4220,7 +4279,26 @@ function taskCard(t, fromDay, readOnly, doneId){
   const carryLabel=fromDay?'<div style="font-size:10px;font-weight:700;color:#4338ca;background:#e0e7ff;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">↩ '+fromDay+'</div><br>':'';
   const cascLabel=t.cascadedFrom?'<div style="font-size:10px;font-weight:700;color:#b45309;background:#fef3c7;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">↩ From '+cap(t.cascadedFrom)+'</div><br>':'';
   const catchupLabel=t.catchup?'<div style="font-size:10px;font-weight:700;color:#0f766e;background:#ccfbf1;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px" title="Extra session to catch up on this subject">↻ Catch-up</div><br>':'';
+  const _pf=momMoves[srcId];
+  const pushLabel=(_pf&&_pf.mode==="push")?'<div style="font-size:10px;font-weight:700;color:#9a3412;background:#ffedd5;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px" title="Mom moved this forward — it still counts as unfinished on '+cap(_pf.fromDays[0])+'">&#10145;&#65039; Pushed from '+cap(_pf.fromDays[0])+'</div><br>':'';
   const missedLabel=missed?'<div style="font-size:10px;font-weight:700;color:#6b7280;background:#e5e7eb;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px" title="This was day-specific and can\'t be done now">Incomplete</div><br>':'';
+  // Mom dismissed this one. Grayed and uncheckable like a missed task, but it says so plainly —
+  // a silently-vanished subject is how you lose track of what didn't get taught. Mom (and only
+  // Mom) can still tap it to undo. Takes precedence over `missed`: why it's not happening is
+  // more useful than the fact that its day has passed.
+  if(_dis){
+    const _forGood=_pf.mode==="drop";
+    const _dlbl=_forGood?"Skipped for good":"Dismissed";
+    const _dttl=_forGood?"Mom skipped this lesson for good — the next lesson moves up":"Mom dismissed this for the day — it comes back next week";
+    return '<div class="task-card" style="opacity:0.6;border-left:3px solid #cbd5e1;background:#f9fafb">'+
+      '<div class="card-inner">'+
+      '<div class="task-cb" style="border-color:#d1d5db;color:#9ca3af;background:#f3f4f6;cursor:'+(momHere()?"pointer":"default")+'"'+(momHere()?' onclick="tapTask(\''+t.id+'\')"':'')+'>&#128683;</div>'+
+      '<div class="card-body">'+
+      '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
+      '<div class="task-title" style="color:#6b7280"><div style="font-size:10px;font-weight:700;color:#4b5563;background:#e5e7eb;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px" title="'+_dttl+'">&#128683; '+_dlbl+'</div><br>'+t.title+'</div>'+mb+'</div>'+
+      '<div class="task-detail" style="color:#9ca3af">'+cleanDetail+'</div>'+
+      '</div></div></div>';
+  }
   if(missed){
     // Grayed, no checkbox — it can't be checked off (day-specific, the day has passed).
     return '<div class="task-card" style="opacity:0.6;border-left:3px solid #cbd5e1;background:#f9fafb">'+
@@ -4237,7 +4315,7 @@ function taskCard(t, fromDay, readOnly, doneId){
     '<div class="task-cb'+(done?" checked":"")+(readOnly?" readonly":"")+'"'+(claimedHere?' style="border-color:#f59e0b;color:#f59e0b;background:#fffbeb"':'')+(readOnly?"":' onclick="tapTask(\''+t.id+'\')"')+'>'+(done?"✓":claimedHere?"⏳":"")+'</div>'+
     '<div class="card-body">'+
     '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
-    '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+t.title+'</div>'+mb+'</div>'+
+    '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+pushLabel+t.title+'</div>'+mb+'</div>'+
     '<div class="task-detail">'+cleanDetail+'</div>'+dr+spinBtn+linkRow+
     '</div></div></div>';
 }
@@ -4551,6 +4629,12 @@ function tapTask(id){
   pendingId=id; pendingClaimMode=false;
   const btn=document.getElementById("dlg-ok");
   const unBtn=document.getElementById("dlg-uncheck");
+  const pushBtn=document.getElementById("dlg-push");
+  const disBtn=document.getElementById("dlg-dismiss");
+  const disChoice=document.getElementById("dlg-dismiss-choice");
+  // Mom-only, and only on work that's still outstanding — moving something already done or
+  // waiting on Mom's approval means nothing, so the early returns below leave these hidden.
+  pushBtn.style.display="none"; disBtn.style.display="none"; disChoice.style.display="none";
   document.getElementById("dlg-title").textContent=t.title;
   if(isDone){
     document.getElementById("dlg-detail").textContent="Completed: "+checked[id];
@@ -4571,6 +4655,49 @@ function tapTask(id){
   btn.style.display="block"; unBtn.style.display="none";
   btn.textContent=verify?"✓ I'm done — send to Mom":(future?"Mark Done (Future Day)":"✓ Mark Done");
   btn.style.background=verify?"#f59e0b":(future?"#f59e0b":"#16a34a");
+  if(momHere()&&!t.id.endsWith("_c")){
+    const p=momMoves[id];
+    if(p){
+      // Already moved — the only thing left to offer is putting it back.
+      pushBtn.style.display="block";
+      pushBtn.textContent=(p.mode==="push")?("↩ Un-push (back to "+cap(p.fromDays[0])+")")
+        :(p.mode==="drop")?"↩ Un-dismiss (and put the lesson back)":"↩ Un-dismiss";
+      pushBtn.onclick=()=>undoMomMove(id);
+    } else {
+      const to=_nextSchoolDay(t.who,effectiveDay(t));
+      // No school day left this week — hide it rather than show a button that can't fire.
+      if(to){
+        pushBtn.style.display="block";
+        pushBtn.textContent="➡️ Push to "+cap(to);
+        pushBtn.onclick=()=>pushTaskForward(id);
+      }
+      disBtn.style.display="block";
+      disBtn.onclick=()=>{ disChoice.style.display=disChoice.style.display==="none"?"block":"none"; };
+      const nowBtn=document.getElementById("dlg-skip-now");
+      const goodBtn=document.getElementById("dlg-skip-good");
+      const why=document.getElementById("dlg-skip-good-why");
+      nowBtn.textContent="Skip for now — it comes back next week";
+      nowBtn.onclick=()=>momDismiss(id,"now");
+      // "For good" moves the generator's cursor, which is only meaningful — and only correct —
+      // when this lesson is the one it would serve next. Say why when it isn't, rather than
+      // silently hiding it or quietly skipping somebody else's lesson.
+      const nextUp=_isNextUpLesson(t);
+      const hasPace=!!(((paceData.subjects||{})[t.who]||{})[t.subjectKey]);
+      goodBtn.textContent="Skip for good — move past this lesson";
+      if(nextUp&&hasPace){
+        goodBtn.disabled=false; goodBtn.style.opacity="1"; goodBtn.style.cursor="pointer";
+        goodBtn.onclick=()=>momDismiss(id,"good");
+        why.style.display="none";
+      } else {
+        goodBtn.disabled=true; goodBtn.style.opacity="0.45"; goodBtn.style.cursor="not-allowed";
+        goodBtn.onclick=null;
+        why.style.display="block";
+        why.textContent=!hasPace
+          ? "Only “skip for now” here — this subject has no pace record, so there's no lesson order to move past."
+          : "Only “skip for now” here — this isn't the next lesson up, so skipping for good would move past a different one. Use the subject's Completed count in the Curriculum Builder instead.";
+      }
+    }
+  }
   document.getElementById("dlg").style.display="flex";
 }
 document.getElementById("dlg-ok").onclick=()=>{
@@ -5738,6 +5865,10 @@ function completedLessonKeys(){
 function _carryBlocked(t,doneKeys){
   if(!t) return false;
   if(walkbackExcl[baseId(t.id||"")]) return true;
+  // Dismissed for good: the generator's cursor has already been moved past this lesson, so a
+  // carry-over mirror would drag back the one lesson Mom said to stop teaching. "Skip for now"
+  // is deliberately NOT blocked — it's meant to come back.
+  { const _m=momMoves[t.id]||momMoves[baseId(t.id||"")]; if(_m&&_m.mode==="drop") return true; }
   const ck=(t.who||"")+"|"+(t.subjectKey||"")+"|"+(t.title||"");
   return !!(doneKeys&&doneKeys.has(ck));
 }
@@ -10035,6 +10166,11 @@ function cascadeIntraWeek(sweepTodayElapsed){
   weekData.tasks.forEach(t=>{
     if(t.id.endsWith("_c")) return;
     if(checked[t.id]) return;
+    // Mom took this off its day: the sweep must not pull it back onto today and reserve a slot
+    // for work that isn't being shown. Dismissed work is pinned for good; a push owns its day
+    // until the landing day arrives, after which normal rules resume.
+    if(_dismissed(t)) return;
+    if(momMoves[t.id]&&momMoves[t.id].mode==="push"&&dayOrder.indexOf(momMoves[t.id].toDay)>todayIdx) return;
     if(subjNoCarry(t)){ // day-bound (notebooks, reflex, card noCarry): a missed day is just missed
       // Snap-back self-heal: a pre-guard sweep (or a flag clicked after one) left this
       // displaced — put the unchecked copy back on its own day, missed as it should be.
@@ -14994,6 +15130,109 @@ function smapIsKidOff(kid,dateStr){
   return smapIsOff(dateStr);
 }
 
+// ── MOM'S PUSH-FORWARD: move one subject to the next school day ──────────────
+// Behind the Mom gate, a subject can be pushed off today onto the next day the kid actually
+// has school. It is NOT a check-off: the kid earns nothing for it and the day's completion %
+// still counts it as unfinished (see dayPct). What it does is take the subject out of today's
+// task list, so the day's finish gates stop waiting on it and the celebration + points claim
+// can fire once everything else is genuinely checked off.
+function _pushDateStr(dn){
+  const lbl=(typeof DAY_DT==="object"&&DAY_DT&&DAY_DT[dn])||"";
+  if(!lbl) return null;
+  const d=new Date(lbl+", "+new Date().getFullYear());
+  return isNaN(d.getTime())?null:d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+// Next day this kid has school after fromDay: skips their days off, holidays and vacations.
+// null = nothing left this week; the caller declines the push and lets the existing
+// carry-over pool pick it up next week rather than inventing a Sunday.
+function _nextSchoolDay(kid,fromDay){
+  const order=["monday","tuesday","wednesday","thursday","friday","saturday"];
+  const start=order.indexOf(fromDay);
+  if(start<0) return null;
+  for(let i=start+1;i<order.length;i++){
+    const dn=order[i], ds=_pushDateStr(dn);
+    if(ds&&(schedOvKidOff(kid,ds)||smapIsKidOff(kid,ds))) continue;
+    if(!ds&&dn==="saturday") continue; // no date for Saturday = not a school day this week
+    return dn;
+  }
+  return null;
+}
+function _saveMomMove(id,rec){
+  momMoves[id]=rec; sv(WK+"_momMoves",momMoves);
+  // Targeted per-id write — a whole-map set() here would clobber a move made on another
+  // device, the same way it clobbered check-offs.
+  if(db) db.ref(WK+"/momMoves/"+id).set(rec);
+}
+function pushTaskForward(id){
+  if(!momHere()) return;
+  const t=weekData.tasks.find(x=>x.id===id); if(!t) return;
+  const from=effectiveDay(t);
+  const to=_nextSchoolDay(t.who,from);
+  if(!to){ if(typeof gwShowToast==="function") gwShowToast("No school day left this week — it'll carry over."); return; }
+  // fromDays accumulates: pushed Wed→Thu then Thu→Fri means NEITHER day finished it, so both
+  // keep counting it as unfinished work.
+  const prev=momMoves[id];
+  const fromDays=(prev&&prev.fromDays)?prev.fromDays.slice():[];
+  if(fromDays.indexOf(from)<0) fromDays.push(from);
+  _saveMomMove(id,{mode:"push",toDay:to,fromDays:fromDays,ts:nowTs()});
+  dbg("push id="+id+" "+from+" → "+to);
+  closeDlg(); schedCascade(); renderAll();
+  if(typeof gwShowToast==="function") gwShowToast("Moved to "+cap(to)+" ✓");
+}
+
+// Is this task's lesson the one the generator would serve next for its subject? The cursor is a
+// COUNT of check-offs, so `adjust` can only mean "start one further along" — it always skips
+// whatever currently sits at the cursor, NOT this specific lesson. Bumping it while an earlier
+// lesson is still un-done would skip the wrong one (and re-serve the dismissed one), so
+// "skip for good" is only offered when the two line up.
+function _isNextUpLesson(t){
+  const sk=t&&t.subjectKey; if(!sk) return false;
+  const ref=taskLessonRef(t); if(!ref) return false;
+  try{
+    const nxt=getNextLessonsFromCursor(t.who,sk,computeSubjectCursor(t.who,sk),1);
+    return !!(nxt.length&&String(nxt[0].lesson).trim()===ref);
+  }catch(e){ dbg("nextUp check failed: "+e); return false; }
+}
+// scope "now"  → dismissed, comes back: nothing to undo. An un-done lesson is a wall to the
+//                count-based cursor, so next week's generator re-serves it by itself.
+// scope "good" → also nudge the subject's generator cursor one lesson forward, using the very
+//                same pace `adjust` the Curriculum Builder's Completed-of-Total control writes.
+function momDismiss(id,scope){
+  if(!momHere()) return;
+  const t=weekData.tasks.find(x=>x.id===id); if(!t) return;
+  const from=effectiveDay(t);
+  const prev=momMoves[id];
+  const fromDays=(prev&&prev.fromDays)?prev.fromDays.slice():[];
+  if(fromDays.indexOf(from)<0) fromDays.push(from);
+  const rec={mode:(scope==="good"?"drop":"skip"),fromDays:fromDays,ts:nowTs()};
+  if(scope==="good"){
+    if(!_isNextUpLesson(t)){ if(typeof gwShowToast==="function") gwShowToast("Can't skip for good — it isn't the next lesson up."); return; }
+    const sk=t.subjectKey;
+    const ps=((paceData.subjects||{})[t.who]||{})[sk];
+    if(!ps){ if(typeof gwShowToast==="function") gwShowToast("Can't skip for good — no pace record for this subject."); return; }
+    savePaceSubject(t.who,sk,{...ps,adjust:((ps.adjust|0)+1)});
+    // Remember we moved the cursor so un-dismissing can put it back exactly.
+    rec.adjusted={subjectKey:sk,by:1};
+    dbg("drop id="+id+" cursor adjust "+(ps.adjust|0)+" → "+((ps.adjust|0)+1));
+  }
+  _saveMomMove(id,rec);
+  closeDlg(); schedCascade(); renderAll();
+  if(typeof gwShowToast==="function") gwShowToast(scope==="good"?"Skipped for good — next lesson moves up ✓":"Dismissed for today ✓");
+}
+function undoMomMove(id){
+  if(!momHere()) return;
+  const rec=momMoves[id];
+  // Put the generator's cursor back before dropping the record, or the bump is stranded.
+  if(rec&&rec.adjusted){
+    const ps=((paceData.subjects||{})[(weekData.tasks.find(x=>x.id===id)||{}).who]||{})[rec.adjusted.subjectKey];
+    if(ps) savePaceSubject((weekData.tasks.find(x=>x.id===id)||{}).who,rec.adjusted.subjectKey,{...ps,adjust:((ps.adjust|0)-(rec.adjusted.by|0))});
+  }
+  delete momMoves[id]; sv(WK+"_momMoves",momMoves);
+  if(db) db.ref(WK+"/momMoves/"+id).remove();
+  dbg("undo mom move id="+id);
+  closeDlg(); schedCascade(); renderAll();
+}
+
 // ── SCHEDULE OVERRIDES: manual Lesson Map edits (per date, per kid) ──────────
 function schedOv(dateStr,kid){ return ((scheduleOverrides||{})[dateStr]||{})[kid]||null; }
 function schedOvKidOff(kid,dateStr){ const o=schedOv(dateStr,kid); return !!(o&&o.dayOff); }
@@ -16274,15 +16513,25 @@ function effectiveDay(t){
     if(h&&h.checkedOnDay) return h.checkedOnDay;
     return t.day;
   }
+  const _mv=momMoves[t.id];
+  // Dismissed: it never moves again. Pinned to the day Mom dismissed it from, where it reads
+  // "Dismissed" — rolling it forward would put it back in tomorrow's work, which is the exact
+  // opposite of dismissing it.
+  if(_mv&&(_mv.mode==="skip"||_mv.mode==="drop")) return _mv.fromDays[0];
+  // Pushed: the landing day IS its day from here on, and every rule below applies from there —
+  // so a pushed task behaves exactly like one always scheduled for the landing day (it rolls
+  // forward again if that day passes unfinished). The push deliberately outranks the day-bound
+  // drop below: that's the whole point of the button.
+  const base=(_mv&&_mv.mode==="push"&&_mv.toDay)||t.day;
   // Day-bound (If-Missed → drops): never roll forward for display either — the engine
   // leaves a missed one on its own day, so showing it in today's Carried Over box would
   // contradict the drop. It stays (and reads as missed) on the day it belonged to.
-  if(subjNoCarry(t)) return t.day;
+  if(subjNoCarry(t)) return base;
   const order=["monday","tuesday","wednesday","thursday","friday","saturday"];
   const todayMid=new Date(); todayMid.setHours(0,0,0,0);
   const jsDay=new Date().getDay();
-  let idx=order.indexOf(t.day);
-  if(idx<0) return t.day;
+  let idx=order.indexOf(base);
+  if(idx<0) return base;
   while(idx<order.length){
     const d=order[idx];
     let isPast=false;
