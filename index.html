@@ -19604,7 +19604,7 @@ function mastCountN(it){ return MAST_COUNT_WORDS[((it&&it.prompt)||"").toLowerCa
 // Counting cards show N dinosaurs to count out loud (never the numeral). Sized in container
 // units (cqw) so the grid always fits the card on any screen — at most 2 rows — with a px
 // fallback for older browsers.
-function mastCountVis(n,box){
+function mastCountVis(n,box,tap){
   box=box||240;
   const cols=n<=3?n:Math.ceil(n/2);
   const gap=6;
@@ -19613,11 +19613,58 @@ function mastCountVis(n,box){
   // (cut-off dinos on the counting-4 card). Explicit grid columns can never wrap; the
   // /1.2 sizes each dino with glyph-advance headroom so it stays inside its cell.
   const px=Math.min(160,Math.floor((box-(cols-1)*gap)/cols/1.2));
+  const bd=Math.max(22,Math.round(px*0.34)), bf=Math.max(11,Math.round(px*0.19));
   let cells='';
-  for(let i=0;i<n;i++) cells+='<span style="font-size:'+px+'px;line-height:1.05">\u{1F995}</span>';
-  return '<div style="display:grid;grid-template-columns:repeat('+cols+',minmax(0,1fr));gap:'+gap+'px;justify-items:center;align-items:center;width:'+box+'px;max-width:88vw;margin:0 auto">'+cells+'</div>';
+  for(let i=0;i<n;i++){
+    if(!tap){ cells+='<span style="font-size:'+px+'px;line-height:1.05">\u{1F995}</span>'; continue; }
+    cells+='<span onclick="event.stopPropagation();mastCountTap(this)" style="position:relative;font-size:'+px+'px;line-height:1.05;cursor:pointer;transition:opacity 0.15s,transform 0.15s;-webkit-tap-highlight-color:transparent">\u{1F995}'
+      +'<span data-badge style="display:none;position:absolute;top:0;right:0;width:'+bd+'px;height:'+bd+'px;border-radius:50%;background:#16a34a;color:#fff;font-family:\'DM Sans\',sans-serif;font-size:'+bf+'px;font-weight:800;align-items:center;justify-content:center;line-height:1;box-shadow:0 1px 4px rgba(0,0,0,0.25)"></span>'
+      +'</span>';
+  }
+  const grid='<div style="display:grid;grid-template-columns:repeat('+cols+',minmax(0,1fr));gap:'+gap+'px;justify-items:center;align-items:center;width:'+box+'px;max-width:88vw;margin:0 auto">'+cells+'</div>';
+  if(!tap) return grid;
+  // z-index:2 + stopPropagation on every target, same as the Show-me tiles — the slide
+  // swallows stray taps otherwise.
+  return '<div data-count-wrap data-n="'+n+'" style="display:flex;flex-direction:column;align-items:center;gap:8px;position:relative;z-index:2">'+grid
+    +'<div style="display:flex;align-items:center;gap:10px;min-height:44px">'
+    +'<span data-tally style="font-family:\'Fraunces\',serif;font-size:40px;font-weight:800;color:#c2410c;min-width:40px;line-height:1"></span>'
+    +'<button data-reset onclick="event.stopPropagation();mastCountReset(this)" style="display:none;padding:5px 12px;border-radius:999px;border:1.5px solid #fdba74;background:#fff7ed;color:#c2410c;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{21BA} Start over</button>'
+    +'</div></div>';
 }
-function mastCountVisBig(it){ return mastCountVis(mastCountN(it),240); }
+// Counting cards are the one place where the TAP is the lesson: one-to-one correspondence
+// means touching each object exactly once. Each dino is its own target — pushing one numbers
+// it in the order touched and bumps the running total. A dino already counted ignores repeat
+// taps, because double-counting is precisely the habit this trains out; ↺ starts over.
+// SILENT on purpose: an app that announces the number does the counting for him. Pure DOM and
+// nothing stored (no _mastRe, no ladder/score contact) — like the tracing canvas, the motor
+// act is the whole point, and advancing the slide rebuilds the card so it resets itself.
+function mastCountTap(el){
+  const wrap=el.closest&&el.closest("[data-count-wrap]");
+  if(!wrap||el.getAttribute("data-counted")==="1") return;
+  const n=parseInt(wrap.getAttribute("data-n"),10)||0;
+  const k=wrap.querySelectorAll('[data-counted="1"]').length+1;
+  el.setAttribute("data-counted","1");
+  el.style.opacity="0.45"; el.style.transform="scale(0.92)";
+  const b=el.querySelector("[data-badge]");
+  if(b){ b.textContent=String(k); b.style.display="flex"; }
+  mastCountSync(wrap,k,n);
+}
+function mastCountReset(btn){
+  const wrap=btn.closest&&btn.closest("[data-count-wrap]"); if(!wrap) return;
+  wrap.querySelectorAll("[data-counted]").forEach(d=>{
+    d.removeAttribute("data-counted"); d.style.opacity=""; d.style.transform="";
+    const b=d.querySelector("[data-badge]"); if(b){ b.style.display="none"; b.textContent=""; }
+  });
+  mastCountSync(wrap,0,parseInt(wrap.getAttribute("data-n"),10)||0);
+}
+function mastCountSync(wrap,k,n){
+  const out=wrap.querySelector("[data-tally]"), rs=wrap.querySelector("[data-reset]");
+  if(rs) rs.style.display=k?"block":"none";
+  if(!out) return;
+  out.textContent=k?String(k):"";
+  out.style.color=(n&&k===n)?"#16a34a":"#c2410c";
+}
+function mastCountVisBig(it){ return mastCountVis(mastCountN(it),240,true); }
 function mastItemVis(it){
   if(it.imageUrl) return '<img src="'+it.imageUrl+'" class="mast-jcard-photo">';
   if(it.emoji) return it.emoji;
