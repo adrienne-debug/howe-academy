@@ -5629,6 +5629,23 @@ function digestTriage(cands,opts){
 // W2 hallucination guard: the model may only reference candidate ids it was handed.
 function digestFilterModelIds(ids,cands){ const ok=new Set((cands||[]).map(c=>c.id)); return (ids||[]).filter(id=>ok.has(id)); }
 
+// Firebase RTDB forbids . # $ / [ ] in keys. Data-derived map keys (old subject
+// names like "Ind. Reading", "Eggspress Map/Lesson") must be sanitized before a
+// frozen report is written, or set() throws and takes the render down with it.
+function dgSafeKeys(x){
+  if(Array.isArray(x)) return x.map(dgSafeKeys);
+  if(x&&typeof x==="object"){
+    const o={};
+    Object.keys(x).forEach(k=>{
+      let sk=String(k).replace(/\//g,"-").replace(/[.#$\[\]]/g,"").trim()||"_";
+      while(Object.prototype.hasOwnProperty.call(o,sk)) sk+="_";
+      o[sk]=dgSafeKeys(x[k]);
+    });
+    return o;
+  }
+  return x;
+}
+
 // The report spine. data.completion is this week's buildWeekCompletion output
 // (caller computes it — kept out of here so the block stays self-contained for
 // node). data.finishLines is an optional pre-computed pass-through: rows from
@@ -5889,10 +5906,20 @@ function digestFreezeIfNeeded(wkKey){
   let rep=digestBuildWeekReport(digestGatherData(wkKey));
   const top=digestTriage(rep.candidates,{seen:digestData.seen||{},mute:digestData.mute||{},todayKey:digestTodayKey()});
   rep.noticedIds=top.map(c=>c.id);
+  // Don't freeze in the app-open sync window — the archive arrives before the
+  // slower nodes (mastery, brain breaks), and a report frozen then would be
+  // permanently missing those sections. View-only now; freezes on a later view.
+  const synced=masteryData&&Object.keys(masteryData).length>0;
+  if(!synced) return rep;
   rep.frozenAt=Date.now();
-  rep=JSON.parse(JSON.stringify(rep));             // strip undefineds for Firebase
-  if(db){ db.ref("digest/report/"+wkKey).set(rep);
-    top.forEach(c=>db.ref("digest/seen/"+c.id).set(digestTodayKey())); }
+  // Strip undefineds, then sanitize map keys ("Ind. Reading", "Map/Lesson") —
+  // Firebase rejects . # $ / [ ] in keys, and a throwing set() must never be
+  // able to take the render down with it.
+  rep=dgSafeKeys(JSON.parse(JSON.stringify(rep)));
+  try{
+    if(db){ db.ref("digest/report/"+wkKey).set(rep);
+      top.forEach(c=>db.ref("digest/seen/"+c.id).set(digestTodayKey())); }
+  }catch(e){ console.warn("digest freeze write failed (view still works):",e&&e.message); }
   digestData.report=digestData.report||{}; digestData.report[wkKey]=rep;
   digestData.seen=digestData.seen||{}; top.forEach(c=>digestData.seen[c.id]=digestTodayKey());
   return rep;
@@ -5945,14 +5972,17 @@ function renderHistoryReport(){
   aks.forEach(x=>{ h+='<button onclick="digestSetWk(\''+x.w+'\')" style="'+chip(wk===x.w)+'">Wk '+x.n+'</button>'; });
   h+='</div>';
 
-  if(!rep){ h+='<div style="text-align:center;color:var(--muted);padding:30px">No data for this week.</div></div>'; return h; }
+  if(!rep){
+    const syncing=!Object.keys(archive||{}).length;
+    h+='<div style="text-align:center;color:var(--muted);padding:30px">'+(syncing?'Still syncing… tap the week again in a moment.':'No data for this week.')+'</div></div>'; return h;
+  }
 
   // header card
   const rangeLbl=rep.range&&rep.range.from?(rep.range.from.slice(4,6)+"/"+rep.range.from.slice(6,8)+" – "+rep.range.to.slice(4,6)+"/"+rep.range.to.slice(6,8)):"";
   h+='<div style="background:var(--header);color:#fff;border-radius:12px;padding:14px 16px;margin-bottom:8px">';
   h+='<div style="display:flex;justify-content:space-between;align-items:center">';
   h+='<div><div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700">📋 Week '+rep.weekNum+' Report</div>';
-  h+='<div style="font-size:11px;opacity:0.65;margin-top:1px">'+rangeLbl+(isCur?' · live preview — freezes when the week closes':' · frozen record')+'</div></div>';
+  h+='<div style="font-size:11px;opacity:0.65;margin-top:1px">'+rangeLbl+(isCur?' · live preview — freezes when the week closes':(rep.frozenAt?' · frozen record':' · syncing — freezes on next view'))+'</div></div>';
   h+='<div style="display:flex;gap:6px">';
   h+='<button onclick="printRecordReport(\''+wk+'\')" title="Print homeschool record" style="padding:5px 11px;border-radius:8px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🖨 Record</button>';
   if(!isCur) h+='<button onclick="digestRefreeze(\''+wk+'\')" style="padding:5px 11px;border-radius:8px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">↻</button>';
@@ -7887,11 +7917,27 @@ function _troStarTro(w,h,grad,stroke){
     '<path d="M23 56 h24 l3 8 h-30z" fill="url(#'+grad+')" stroke="'+stroke+'" stroke-width="1.5"/>'+
     '<rect x="17" y="64" width="36" height="7" rx="2" fill="#7c4a12"/></svg>';
 }
+// 🎗 rosette ribbon — pleated disc + twin notched tails; the drills-curriculum award.
+// Ribbons were deliberately reserved for this tie-in when the shelf shipped.
+function _troRibbon(w,h,grad,stroke){
+  let petals='';
+  for(let i=0;i<8;i++){ const a=i*Math.PI/4, x=35+15.5*Math.cos(a), y=26+15.5*Math.sin(a);
+    petals+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="7.5" fill="url(#'+grad+')" stroke="'+stroke+'" stroke-width="1"/>'; }
+  return '<svg width="'+w+'" height="'+h+'" viewBox="0 0 70 76">'+
+    '<path d="M27 40 L20 68 L28.5 61.5 L32 70z" fill="url(#'+grad+')" stroke="'+stroke+'" stroke-width="1.5" stroke-linejoin="round"/>'+
+    '<path d="M43 40 L50 68 L41.5 61.5 L38 70z" fill="url(#'+grad+')" stroke="'+stroke+'" stroke-width="1.5" stroke-linejoin="round"/>'+
+    petals+
+    '<circle cx="35" cy="26" r="12.5" fill="url(#'+grad+')" stroke="'+stroke+'" stroke-width="1.5"/>'+
+    '<circle cx="35" cy="26" r="9" fill="#fffbeb" opacity="0.95"/>'+
+    '<path d="M35 19.5 l2.1 4.3 4.7.7 -3.4 3.3 .8 4.7 -4.2-2.2 -4.2 2.2 .8-4.7 -3.4-3.3 4.7-.7z" fill="url(#'+grad+')"/>'+
+    '</svg>';
+}
 function _troSVG(type,seed){
   let hsh=0; const s=String(seed||""); for(let i=0;i<s.length;i++) hsh=(hsh*31+s.charCodeAt(i))%997;
   const shape=[_troCup,_troGoblet,_troStarTro][hsh%3];
   if(type==="session") return shape(80,87,"troGc","#a16207");     // big gold
   if(type==="subject") return shape(60,65,"troSc","#475569");     // silver
+  if(type==="drills") return _troRibbon(58,63,"troPc","#5b21b6");  // drills curriculum → purple rosette
   return shape(48,52,"troBc","#5c3310");                          // book milestone → small bronze
 }
 function _troShelfHTML(troph,kid){
@@ -7902,6 +7948,7 @@ function _troShelfHTML(troph,kid){
     '<linearGradient id="troGc" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fef9c3"/><stop offset="0.45" stop-color="#facc15"/><stop offset="1" stop-color="#ca8a04"/></linearGradient>'+
     '<linearGradient id="troSc" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f8fafc"/><stop offset="0.45" stop-color="#94a3b8"/><stop offset="1" stop-color="#475569"/></linearGradient>'+
     '<linearGradient id="troBc" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#d69965"/><stop offset="0.45" stop-color="#a05a2c"/><stop offset="1" stop-color="#6b3a12"/></linearGradient>'+
+    '<linearGradient id="troPc" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ede9fe"/><stop offset="0.45" stop-color="#a78bfa"/><stop offset="1" stop-color="#6d28d9"/></linearGradient>'+
     '<clipPath id="troClipCup"><path d="M17 8 h36 v14 c0 12-8 20-18 20 s-18-8-18-20z"/></clipPath>'+
     '</defs></svg>';
   h+='<span class="tro-spark" style="top:8px;left:12%">✦</span>'+
@@ -8562,6 +8609,54 @@ function celebrateBookNow(kid,sk,slug){
   if(pts>0) addKidPoints(kid,pts,day);
   renderAll();
   setTimeout(()=>_showCelebration(kid,cap(kid)+" finished "+(s.display||sk)+" "+r.name+"!",{big:true,occasion:"session",points:pts}),200);
+}
+// ── 🎗 DRILLS CURRICULUM RIBBONS ──────────────────────────────────
+// A Mastery category (curriculum) counts COMPLETE when every card on its bank list is
+// graduated — nothing in rotation AND nothing still waiting to be introduced (the whole
+// list behind the Admin tab). Fires once per category via a permanent ribbon trophy on
+// the Wins-tab shelf + points. Only categories that CROSS the boundary during a drills
+// save auto-fire; anything already complete waits in Mom's 🎉 ready list (same rule as
+// pre-feature finished books), so shipping this never sets off a celebration storm.
+const DRILLS_RIBBON_PTS=50;
+function drillsCompletedCats(kid){
+  const out=[];
+  let items=masteryData[kid]||[];
+  if(!Array.isArray(items)) items=Object.values(items);
+  Object.entries(mastFullBank(kid)).forEach(([cat,all])=>{
+    if(!all.length) return;
+    for(const name of all){
+      const it=items.find(i=>i.prompt===name&&i.subject===cat);
+      if(!it||it.tier!=="graduated") return;   // untouched bank card or still climbing
+    }
+    out.push(cat);
+  });
+  return out;
+}
+function checkDrillsGraduation(kid,preDone){
+  const pre=new Set(preDone||[]);
+  drillsCompletedCats(kid).forEach(cat=>{
+    if(pre.has(cat)) return;                   // was already complete before this save
+    const tid="drills_"+_bookSlug(cat);
+    if(hasTrophy(kid,tid)) return;
+    mintTrophy(kid,tid,{type:"drills",key:cat,name:cat+" Drills",ts:nowTs(),points:DRILLS_RIBBON_PTS});
+    addKidPoints(kid,DRILLS_RIBBON_PTS,day);
+    setTimeout(()=>_showCelebration(kid,cap(kid)+" mastered the whole "+cat+" drills curriculum!",{big:true,occasion:"session",points:DRILLS_RIBBON_PTS}),400);
+  });
+}
+// Complete curricula with no ribbon yet — Mom's 🎉 ready list on the trophy shelf.
+function readyDrillsCelebrations(kid){
+  return drillsCompletedCats(kid).filter(cat=>!hasTrophy(kid,"drills_"+_bookSlug(cat)))
+    .map(cat=>({cat:cat,slug:_bookSlug(cat)}));
+}
+function celebrateDrillsNow(kid,slug){
+  if(!momHere()) return;
+  const cat=drillsCompletedCats(kid).find(c=>_bookSlug(c)===slug); if(!cat) return;
+  const tid="drills_"+slug;
+  if(hasTrophy(kid,tid)) return;
+  mintTrophy(kid,tid,{type:"drills",key:cat,name:cat+" Drills",ts:nowTs(),points:DRILLS_RIBBON_PTS});
+  addKidPoints(kid,DRILLS_RIBBON_PTS,day);
+  renderAll();
+  setTimeout(()=>_showCelebration(kid,cap(kid)+" mastered the whole "+cat+" drills curriculum!",{big:true,occasion:"session",points:DRILLS_RIBBON_PTS}),200);
 }
 function checkSessionComplete(kid){
   const sp=sessionProgress(kid);
@@ -18317,6 +18412,19 @@ function renderPace(el){
         });
         h+='</div>';
       }
+      // 🎗 Drills curricula fully graduated but never celebrated — same one-tap flow.
+      const _readyD=readyDrillsCelebrations(kid);
+      if(_readyD.length){
+        h+='<div style="border-top:1px dashed #fcd34d;padding-top:8px;margin-top:8px">';
+        h+='<div style="font-size:10px;font-weight:800;color:#6d28d9;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:5px">🔒 🎗 Drills curricula mastered — not yet celebrated</div>';
+        _readyD.forEach(rd=>{
+          h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 0">';
+          h+='<span style="font-size:12px;color:#5b21b6;font-weight:600">'+esc(rd.cat)+' — every card graduated</span>';
+          h+='<button onclick="celebrateDrillsNow(\''+kid+'\',\''+rd.slug+'\')" style="padding:4px 12px;border-radius:14px;border:none;background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🎉 Celebrate</button>';
+          h+='</div>';
+        });
+        h+='</div>';
+      }
     }
     h+='</div>';
   }
@@ -18978,12 +19086,12 @@ function mastCustomDef(kid,cat,name){
 }
 let mastFlipped=false;
 function mastFlip(){ mastFlipped=!mastFlipped; _mastRe(); }
-function mastBankStatus(){
-  const kid=masteryKid||"julian";
+function mastBankStatus(kidArg){
+  const kid=kidArg||masteryKid||"julian";
   let items=masteryData[kid]||[];
   if(!Array.isArray(items)) items=Object.values(items);
   const result={};
-  Object.entries(mastFullBank()).forEach(([cat,all])=>{
+  Object.entries(mastFullBank(kid)).forEach(([cat,all])=>{
     const inRotation=[],graduated=[],available=[];
     all.forEach(name=>{
       const item=items.find(i=>i.prompt===name&&i.subject===cat);
@@ -19220,6 +19328,10 @@ function mastSaveResults(){
   let items=masteryData[masteryKid];
   if(!items) return;
   if(!Array.isArray(items)) items=Object.values(items);
+
+  // 🎗 Snapshot which drills curricula were ALREADY fully graduated, so only categories
+  // that cross the finish line in THIS save auto-celebrate (checkDrillsGraduation below).
+  let _preDrillsDone=[]; try{ _preDrillsDone=drillsCompletedCats(masteryKid); }catch(e){}
 
   // Apply results
   let changes=0;
@@ -19460,6 +19572,7 @@ function mastSaveResults(){
   if(!masteryData.history[masteryKid]) masteryData.history[masteryKid]={};
   masteryData.history[masteryKid][today.replace(/-/g,"")]=histEntry;
   try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{ checkDrillsGraduation(masteryKid,_preDrillsDone); }catch(e){}
 
   mastLogMode=false;
   mastLogScores={};
@@ -20065,8 +20178,8 @@ const MAST_EMOJI_PAL={
 };
 let mastReorderCat=null;
 let mastReorderSel=null;
-function mastFullBank(){
-  const kid=masteryKid||"julian";
+function mastFullBank(kidArg){
+  const kid=kidArg||masteryKid||"julian";
   const base={};
   const src=MAST_BANK_MAP[kid]||{};
   Object.entries(src).forEach(([k,v])=>{ base[k]=[...v]; });

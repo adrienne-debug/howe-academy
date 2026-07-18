@@ -19,7 +19,7 @@ if (a < 0 || b < 0) { console.error("DIGEST markers not found"); process.exit(1)
 const block = src.slice(a, b);
 const D = new Function(block + `; return {digestDetect,digestTriage,digestFilterModelIds,digestBuildWeekReport,
   dgDetectBrainBreakCluster,dgDetectSprintSlide,dgDetectSubjectSlippage,dgDetectCarryStacking,dgDetectGateStall,
-  dgIn,dgRange,dgKeyMinusDays,digestRecordHtml};`)();
+  dgIn,dgRange,dgKeyMinusDays,digestRecordHtml,dgSafeKeys};`)();
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {
@@ -315,6 +315,25 @@ const it = (id, result) => ({ id, prompt: id, result });
   const doc2 = D.digestRecordHtml(d2, {});
   ok("record: repeated daily items collapse to a day count", doc2.includes("Drills (3 days)") && !doc2.includes("Drills; Drills"), null);
   ok("record: en-dash page ranges become hyphens, not deleted", doc2.includes("Pg 86-87"), (doc2.match(/Pg[^<]*/) || [])[0]);
+})();
+
+// ── dgSafeKeys — Firebase-illegal map keys sanitized before a freeze write ───
+(() => {
+  const dirty = { "Ind. Reading": { planned: 5 }, "Eggspress Map/Lesson": { planned: 4 },
+    "a#b$c[d]": 1, nested: { "S. 5A/5B": [{ "x.y": 2 }] }, clean: "left alone" };
+  const s = D.dgSafeKeys(dirty);
+  ok("safeKeys: dots removed", "Ind Reading" in s && !("Ind. Reading" in s), Object.keys(s));
+  ok("safeKeys: slash becomes hyphen", "Eggspress Map-Lesson" in s);
+  ok("safeKeys: # $ [ ] stripped", "abcd" in s);
+  ok("safeKeys: recurses through objects and arrays", "S 5A-5B" in s.nested && s.nested["S 5A-5B"][0]["xy"] === 2, s.nested);
+  ok("safeKeys: values and clean keys untouched", s.clean === "left alone" && s["Ind Reading"].planned === 5);
+  const wk9 = D.dgSafeKeys(D.digestBuildWeekReport((() => { const d = base();
+    d.completion = comp("lincoln", "Ind. Reading", 5, 4); return d; })()));
+  const flat = JSON.stringify(wk9);
+  ok("safeKeys: full report payload carries no illegal key chars",
+    !/"[^"]*[.#$/\[\]][^"]*"\s*:/.test(flat.replace(/"(evidence|prompt|subject|title|deck|id|kind|wkKey)":"[^"]*"/g, '"":""')), null);
+  const coll = D.dgSafeKeys({ "a.b": 1, "ab": 2 });
+  ok("safeKeys: collisions keep both entries", coll["ab"] !== undefined && coll["ab_"] !== undefined, coll);
 })();
 
 // ── empty-world safety ───────────────────────────────────────────────────────
