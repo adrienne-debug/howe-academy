@@ -1379,6 +1379,7 @@ let calEditId=null;  // id of holiday/vacation being edited
 let calOverrideKid=null; // kid selected for override add
 let calPreviewMonth=null; // YYYY-MM for calendar preview (null = current)
 let histTab="log"; // "log" | "attendance" | "trends"
+let histLogView="time"; // "time" | "subject" — how the History Log groups completed work
 let histTrendKid=null; // Trends: focused kid (null = all)
 let attEditUnlocked=false;
 let APP_PIN=localStorage.getItem("ha_app_pin")||"0329";
@@ -5650,6 +5651,41 @@ function bbTrendsHtml(focusKids,KC){
   return h;
 }
 
+// Subject label for grouping the History Log — the title's leading segment (before an
+// em/en dash), falling back to the subjectKey. Same rule the Trends completion math uses.
+function histSubjOf(title,subjectKey){
+  const s=String(title||"");
+  const first=s.split(/[—–]/)[0];
+  return (first.replace(/^[\s\W]+/,"").trim())||subjectKey||"Other";
+}
+function setHistLogView(v){ histLogView=v; const el=document.getElementById("content"); if(el&&(tab==="history"||(tab==="schedule"&&schedShowHistory))) renderHistory(el); }
+// Collapse/expand one subject group in place (no full re-render, so scroll is kept).
+function histToggleGroup(gid){
+  const b=document.getElementById(gid); if(!b) return;
+  const open=b.style.display==="none";
+  b.style.display=open?"block":"none";
+  const c=document.getElementById(gid+"_c"); if(c) c.textContent=open?"▴":"▾";
+}
+// Render an ordered list of log rows either straight (time order, unchanged) or grouped
+// into collapsible subject sections. Each row: {subj, isDone, html}. groupPrefix keys the
+// collapse ids uniquely per week+kid so groups don't collide across sections.
+function histRenderRows(rows,groupPrefix){
+  if(histLogView!=="subject") return rows.map(r=>r.html).join("");
+  const order=[], g={};
+  rows.forEach(r=>{ if(!g[r.subj]){ g[r.subj]={done:0,miss:0,html:""}; order.push(r.subj); } g[r.subj].html+=r.html; if(r.isDone) g[r.subj].done++; else g[r.subj].miss++; });
+  let out="";
+  order.forEach(subj=>{
+    const gid=(groupPrefix+"_"+subj).replace(/[^a-z0-9]/gi,"_");
+    const cntTxt=g[subj].done+' &#10003;'+(g[subj].miss?' &middot; '+g[subj].miss+' &#9888;':'');
+    out+='<div onclick="histToggleGroup(\''+gid+'\')" style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;padding:9px 12px;margin:4px 0;background:#fff;border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:700">';
+    out+='<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(subj)+'</span>';
+    out+='<span style="flex-shrink:0;font-size:11px;font-weight:700;color:var(--muted)">'+cntTxt+' <span id="'+gid+'_c">&#9662;</span></span>';
+    out+='</div>';
+    out+='<div id="'+gid+'" style="display:none">'+g[subj].html+'</div>';
+  });
+  return out;
+}
+
 function renderHistory(el){
   const histKids=(kid!=="all"&&kid!=="mom")?[kid]:[...ROSTER];
   const _btn=(on)=>'flex:1;padding:8px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?'var(--header)':'transparent')+';color:'+(on?'#fff':'var(--muted)');
@@ -5658,6 +5694,13 @@ function renderHistory(el){
   h+='<button onclick="setHistTab(\'trends\')" style="'+_btn(histTab==="trends")+'">Trends</button>';
   h+='<button onclick="setHistTab(\'attendance\')" style="'+_btn(histTab==="attendance")+'">Attendance</button>';
   h+='</div>';
+  if(histTab==="log"){
+    const _lb=(on)=>'flex:1;padding:6px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?'var(--header)':'transparent')+';color:'+(on?'#fff':'var(--muted)');
+    h+='<div style="display:flex;gap:6px;padding:2px 12px 4px">';
+    h+='<button onclick="setHistLogView(\'time\')" style="'+_lb(histLogView==="time")+'">By Time</button>';
+    h+='<button onclick="setHistLogView(\'subject\')" style="'+_lb(histLogView==="subject")+'">By Subject</button>';
+    h+='</div>';
+  }
   if(histTab==="attendance"){ h+=renderAttendanceHtml(); el.innerHTML=h; return; }
   if(histTab==="trends"){ h+=renderHistoryTrends(); el.innerHTML=h; return; }
 
@@ -5766,6 +5809,7 @@ function renderHistory(el){
 
     if(!doneEntries.length&&!cascadedAway.length&&!flagMissed.length&&!missed.length)return;
     h+='<div class="hist-kid-hdr">'+cap(k2)+'</div>';
+    const rows=[]; // {subj,isDone,html} — rendered in time order or grouped by subject
 
     doneEntries.forEach(e=>{
       const isCarried=e.id&&e.id.endsWith("_c");
@@ -5785,30 +5829,36 @@ function renderHistory(el){
       const scChip=e.score?' <span style="font-size:10px;font-weight:700;color:#3730a3;background:#e0e7ff;padding:1px 7px;border-radius:8px">📊 '+scoreLabel(e.score)+'</span>':'';
       const _et=weekData.tasks.find(x=>x.id===e.id);
       const scBtn=(momHere()&&_et&&scoredType(_et))?' <button onclick="openScoreDialog(\''+e.id+'\',\''+(e.ts||"")+'\',\'edit\')" style="border:none;background:none;color:var(--header);font-size:10px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif">'+(e.score?'edit':'＋ score')+'</button>':'';
-      h+='<div class="hist-item"><div class="hist-title">'+e.title+scChip+'</div>'+
+      rows.push({subj:histSubjOf(e.title,_et&&_et.subjectKey),isDone:true,html:
+        '<div class="hist-item"><div class="hist-title">'+e.title+scChip+'</div>'+
         '<div class="hist-meta">&#10003; '+e.ts+' &middot; '+(DAY_LBL[e.day]||e.day||'')+' '+(DAY_DT[e.day]||'')+
         carriedBadge+scBtn+
-        '</div></div>';
+        '</div></div>'});
     });
 
     cascadedAway.forEach(t=>{
-      h+='<div class="hist-item" style="border-left:3px solid #f59e0b;background:#fffbeb">'+
+      rows.push({subj:histSubjOf(t.title,t.subjectKey),isDone:false,html:
+        '<div class="hist-item" style="border-left:3px solid #f59e0b;background:#fffbeb">'+
         '<div class="hist-title">'+t.title+'</div>'+
-        '<div class="hist-meta">&#9888; Missed '+(DAY_LBL[t.day]||t.day)+' &mdash; carried to next day</div></div>';
+        '<div class="hist-meta">&#9888; Missed '+(DAY_LBL[t.day]||t.day)+' &mdash; carried to next day</div></div>'});
     });
 
     flagMissed.forEach(f=>{
       const alreadyShown=cascadedAway.some(t=>t.title===f.title);
       if(alreadyShown)return;
-      h+='<div class="hist-item" style="border-left:3px solid #f59e0b;background:#fffbeb">'+
+      rows.push({subj:histSubjOf(f.title,f.subjectKey),isDone:false,html:
+        '<div class="hist-item" style="border-left:3px solid #f59e0b;background:#fffbeb">'+
         '<div class="hist-title">'+f.title+'</div>'+
-        '<div class="hist-meta">&#9888; Missed '+(DAY_LBL[f.day]||f.day||'')+' &mdash; carried to next day</div></div>';
+        '<div class="hist-meta">&#9888; Missed '+(DAY_LBL[f.day]||f.day||'')+' &mdash; carried to next day</div></div>'});
     });
 
     missed.forEach(t=>{
-      h+='<div class="hist-item missed"><div class="hist-title">'+t.title+'</div>'+
-        '<div class="hist-meta">&#9888; Missed &mdash; '+(DAY_LBL[t.day]||t.day)+'</div></div>';
+      rows.push({subj:histSubjOf(t.title,t.subjectKey),isDone:false,html:
+        '<div class="hist-item missed"><div class="hist-title">'+t.title+'</div>'+
+        '<div class="hist-meta">&#9888; Missed &mdash; '+(DAY_LBL[t.day]||t.day)+'</div></div>'});
     });
+
+    h+=histRenderRows(rows,"cur_"+k2);
   });
 
   if(h==='<div class="hist-section">') h+='<div style="padding:24px;text-align:center;color:var(--muted)"><div style="font-size:40px">&#128203;</div><div style="margin-top:8px;font-weight:600">No completed tasks yet</div><div style="font-size:13px;margin-top:4px">Tasks you check off will appear here across all devices.</div></div>';
@@ -5871,20 +5921,22 @@ function renderHistory(el){
         const kidDone=kidTasks.filter(t=>awChecked[t.id]||awChecked[t.id+"_c"]);
         const kidMissed=kidTasks.filter(t=>!awChecked[t.id]&&!awChecked[t.id+"_c"]);
         h+='<div style="font-weight:700;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;margin:8px 0 4px">'+cap(k2)+'</div>';
+        const rows=[]; // {subj,isDone,html} — time order or grouped by subject
         kidDone.forEach(t=>{
           const ts=awChecked[t.id]||awChecked[t.id+"_c"]||"";
           const wasCascade=!awChecked[t.id]&&awChecked[t.id+"_c"];
           const badge=wasCascade?' <span style="font-size:10px;background:#e0e7ff;color:#4338ca;padding:1px 5px;border-radius:6px;font-weight:700">Carried over from '+(DAY_LBL[t.day]||t.day)+'</span>':'';
-          h+='<div class="hist-item"><div class="hist-title">'+t.title+badge+'</div><div class="hist-meta">&#10003; '+ts+' &middot; '+(DAY_LBL[t.day]||t.day)+'</div></div>';
+          rows.push({subj:histSubjOf(t.title,t.subjectKey),isDone:true,html:'<div class="hist-item"><div class="hist-title">'+t.title+badge+'</div><div class="hist-meta">&#10003; '+ts+' &middot; '+(DAY_LBL[t.day]||t.day)+'</div></div>'});
         });
         kidMissed.forEach(t=>{
           const carried=awChecked[t.id+"_c"];
           if(carried){
-            h+='<div class="hist-item" style="border-left:3px solid #f59e0b;background:#fffbeb"><div class="hist-title">'+t.title+'</div><div class="hist-meta">&#9888; Missed '+(DAY_LBL[t.day]||t.day)+' &mdash; carried over</div></div>';
+            rows.push({subj:histSubjOf(t.title,t.subjectKey),isDone:false,html:'<div class="hist-item" style="border-left:3px solid #f59e0b;background:#fffbeb"><div class="hist-title">'+t.title+'</div><div class="hist-meta">&#9888; Missed '+(DAY_LBL[t.day]||t.day)+' &mdash; carried over</div></div>'});
           } else {
-            h+='<div class="hist-item missed"><div class="hist-title">'+t.title+'</div><div class="hist-meta">&#9888; Missed &mdash; '+(DAY_LBL[t.day]||t.day)+'</div></div>';
+            rows.push({subj:histSubjOf(t.title,t.subjectKey),isDone:false,html:'<div class="hist-item missed"><div class="hist-title">'+t.title+'</div><div class="hist-meta">&#9888; Missed &mdash; '+(DAY_LBL[t.day]||t.day)+'</div></div>'});
           }
         });
+        h+=histRenderRows(rows,"arch_"+safeKey+"_"+k2);
       });
       h+='</div></div></div>';
     });
