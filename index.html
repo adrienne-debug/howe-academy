@@ -15250,6 +15250,14 @@ function renderCurrGrid(el){
   h+='</tr></thead><tbody>';
 
   const DOWS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  // Card-only sequenced subjects (a lesson-list not yet built into the grid) run on their own
+  // cadence with no grid cell — fold their scheduled minutes in per date. Empty today, so the
+  // (expensive) future-slot walk is skipped entirely unless such a subject actually exists.
+  const _cardMinByDate={};
+  if(_cardOnly.length){
+    const _fut=(computeFutureSlots()||{})[gvKid]||{};
+    _cardOnly.forEach(function(sk){ const s=subs[sk]; if(!s||s.paused) return; const m=s.minutes||20; (_fut[sk]||[]).forEach(function(ds){ _cardMinByDate[ds]=(_cardMinByDate[ds]||0)+m; }); });
+  }
   let lastWk=null;
   for(const dn of dayNums){
     const l=lessons[dn]; if(!l||!l.date) continue;
@@ -15264,15 +15272,31 @@ function renderCurrGrid(el){
     const mapOff=schedOvKidOff(gvKid,l.date);
     const ov=schedOv(l.date,gvKid)||{};
     const cls=[past?"gv-past":"",(offReason||mapOff)?"gv-off":"",l.date===today?"gv-today":""].filter(Boolean).join(" ");
-    let mins=0;
-    for(const sk of Object.keys(subs)){ if(!subs[sk].paused&&gvFilled(l[sk])&&!(ov.removed||{})[sk]) mins+=subs[sk].minutes||20; }
+    let gridMins=0;
+    for(const sk of Object.keys(subs)){ if(!subs[sk].paused&&gvFilled(l[sk])&&!(ov.removed||{})[sk]) gridMins+=subs[sk].minutes||20; }
+    // Daily subjects (morning/closing notebook, drills, reflex) run every school day but have
+    // no grid cell — add their minutes so the Min column shows the REAL per-day load. Respect
+    // allowedDays and skip on off days (they don't run then).
+    let dailyMins=0;
+    if(!offReason&&!mapOff){ const _abbr=DOWS[d.getDay()];
+      for(const sk of Object.keys(subs)){ const s=subs[sk]; if(!s||s.paused||gvFilled(l[sk])) continue;
+        const _isDaily=s.tracking==="daily"||(s.rules||"").includes("first")||(s.rules||"").includes("last"); if(!_isDaily) continue;
+        const _ad=s.allowedDays||[]; if(_ad.length&&_abbr&&_ad.indexOf(_abbr)<0) continue;
+        dailyMins+=s.minutes||20; } }
+    // Retrieval slots (🎯 Daily Drill / 🏃 Sprint / 🎯 Match) — generation adds one ~15-min
+    // Mom-required slot per template day; it's not a grid subject, so add it to the load too.
+    let retrievalMins=0;
+    if(!offReason&&!mapOff&&typeof retrTracks==="function"&&retrTracks(gvKid).length){ const _rk=((typeof retrWeek==="function"?retrWeek(gvKid):{})||{})[DOWS[d.getDay()].toLowerCase()]||"off"; if(_rk!=="off"&&typeof RETR_SLOT_TITLE!=="undefined"&&RETR_SLOT_TITLE[_rk]) retrievalMins=15; }
+    const cardMins=(!offReason&&!mapOff)?(_cardMinByDate[l.date]||0):0;
+    const mins=gridMins+dailyMins+retrievalMins+cardMins;
     h+='<tr'+(cls?' class="'+cls+'"':'')+'>';
     const rowSelable=gvSelMode&&!past;
     h+='<td class="gv-fix"'+(rowSelable?' onclick="gvSelRow('+dn+')"':'')+' title="Day '+dn+(rowSelable?' — tap to select the row':(offReason?' — '+esc(String(offReason)):''))+'"><b>'+DOWS[d.getDay()]+'</b> '+(d.getMonth()+1)+'/'+d.getDate();
     if(offReason) h+='<span class="gv-badge" style="background:#fecaca;color:#991b1b">OFF</span>';
     else if(mapOff) h+='<span class="gv-badge" style="background:#fecaca;color:#991b1b">DAY OFF</span>';
+    coopsOnDate(l.date).forEach(function(c){ if((c.kids||[]).indexOf(gvKid)>=0&&c.mode==="timed") h+='<span class="gv-badge" title="'+esc(c.name+" "+(c.start||"")+"–"+(c.end||""))+'" style="background:'+(c.color||"#7c3aed")+'22;color:'+(c.color||"#7c3aed")+'">\u{1F3EB} '+esc(c.name)+'</span>'; });
     h+='</td>';
-    h+='<td class="gv-min'+((cap_&&mins>cap_)?' gv-overcap':'')+'"'+((cap_&&mins>cap_)?' title="Over the '+cap_+' min day cap"':'')+'>'+(mins||"")+'</td>';
+    h+='<td class="gv-min'+((cap_&&mins>cap_)?' gv-overcap':'')+'" title="'+gridMins+' grid + '+dailyMins+' daily'+(retrievalMins?' + '+retrievalMins+' drill':'')+(cardMins?' + '+cardMins+' card':'')+' min'+((cap_&&mins>cap_)?' · over the '+cap_+' cap':'')+'">'+(mins||"")+'</td>';
     for(const sk of cols){
       const v=l[sk];
       const removed=!!(ov.removed||{})[sk];
@@ -16091,6 +16115,7 @@ function lmCalGrid(weeks,scope,data,ym){
       if(off){
         h+='<div style="font-size:10px;color:'+tcol+';font-style:italic">'+esc(String(reasons.find(function(r){return !!r;})||"Off"))+'</div>';
       } else {
+        coopsOnDate(ds).forEach(function(c){ if(c.mode!=="timed") return; if(!scope.some(function(k){return (c.kids||[]).indexOf(k)>=0;})) return; h+='<div title="'+esc(c.name+" "+(c.start||"")+"–"+(c.end||""))+'" style="display:flex;align-items:center;gap:5px;font-size:10px;line-height:1.3;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700;color:'+(c.color||"#7c3aed")+'"><span style="width:7px;height:7px;border-radius:2px;background:'+(c.color||"#7c3aed")+';flex:none"></span>\u{1F3EB} '+esc(c.name)+'</div>'; });
         const chips=lmCalDayChips(ds,scope,data.cellMap);
         chips.slice(0,4).forEach(function(c){
           h+='<div style="display:flex;align-items:center;gap:5px;font-size:11px;line-height:1.3;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="width:7px;height:7px;border-radius:50%;background:'+(KC[c.kid]||"#888")+';flex:none"></span>'+esc(c.text)+'</div>';
@@ -16130,6 +16155,7 @@ function lmRenderCalendar(){
   h+='<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:#f0fdf4;border:0.5px solid #bbf7d0"></span>School</span>';
   h+='<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:#fef2f2;border:0.5px solid #fecaca"></span>Vacation</span>';
   h+='<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:#fef3c7;border:0.5px solid #fde68a"></span>Holiday</span>';
+  h+='<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#7c3aed"></span>\u{1F3EB} Co-op (timed) · full-day shows as off</span>';
   h+='</div>';
   h+='<div style="display:grid;grid-template-columns:38px repeat(5,1fr) 38px;gap:6px;margin-bottom:6px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px"><div></div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div></div></div>';
   h+=weeks.length?('<div style="display:grid;grid-template-columns:38px repeat(5,1fr) 38px;gap:6px">'+lmCalGrid(weeks,scope,data,ym)+'</div>'):('<div style="padding:24px;text-align:center;color:var(--muted);font-size:12px">No school weeks in '+esc(monthLbl)+'.</div>');
