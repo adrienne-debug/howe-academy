@@ -4676,7 +4676,7 @@ function tapTask(id){
       const nowBtn=document.getElementById("dlg-skip-now");
       const goodBtn=document.getElementById("dlg-skip-good");
       const why=document.getElementById("dlg-skip-good-why");
-      nowBtn.textContent="Skip for now — it comes back next week";
+      nowBtn.textContent="Skip for now — this subject picks up here next week";
       nowBtn.onclick=()=>momDismiss(id,"now");
       // "For good" moves the generator's cursor, which is only meaningful — and only correct —
       // when this lesson is the one it would serve next. Say why when it isn't, rather than
@@ -15415,6 +15415,12 @@ function smapIsKidOff(kid,dateStr){
 // can fire once everything else is genuinely checked off.
 function _pushDateStr(dn){
   const lbl=(typeof DAY_DT==="object"&&DAY_DT&&DAY_DT[dn])||"";
+  // Saturday is often absent from the week's meta.dates even when it has school — derive its
+  // date from Friday + 1 so it can be recognized as a school day and pushed to.
+  if(!lbl&&dn==="saturday"){
+    const fri=(typeof DAY_DT==="object"&&DAY_DT&&DAY_DT["friday"])||"";
+    if(fri){ const fd=new Date(fri+", "+new Date().getFullYear()); if(!isNaN(fd.getTime())){ fd.setDate(fd.getDate()+1); return fd.getFullYear()+"-"+String(fd.getMonth()+1).padStart(2,"0")+"-"+String(fd.getDate()).padStart(2,"0"); } }
+  }
   if(!lbl) return null;
   const d=new Date(lbl+", "+new Date().getFullYear());
   return isNaN(d.getTime())?null:d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
@@ -15426,10 +15432,14 @@ function _nextSchoolDay(kid,fromDay){
   const order=["monday","tuesday","wednesday","thursday","friday","saturday"];
   const start=order.indexOf(fromDay);
   if(start<0) return null;
+  // Saturday counts as a school day when the week actually runs it (it carries tasks), even
+  // though it's usually absent from meta.dates. Mirrors schedLastWorkingDay's "date OR work".
+  const satSchool=((weekData&&weekData.tasks)||[]).some(function(t){return t.day==="saturday"&&!String(t.id).endsWith("_c");});
   for(let i=start+1;i<order.length;i++){
     const dn=order[i], ds=_pushDateStr(dn);
-    if(ds&&(schedOvKidOff(kid,ds)||smapIsKidOff(kid,ds))) continue;
-    if(!ds&&dn==="saturday") continue; // no date for Saturday = not a school day this week
+    if(dn==="saturday"&&!satSchool) continue; // week doesn't run Saturday → not a school day
+    if(!ds) continue;                          // no resolvable date this week → not a school day
+    if(schedOvKidOff(kid,ds)||smapIsKidOff(kid,ds)) continue;
     return dn;
   }
   return null;
@@ -15493,8 +15503,23 @@ function momDismiss(id,scope){
     dbg("drop id="+id+" cursor adjust "+(ps.adjust|0)+" → "+((ps.adjust|0)+1));
   }
   _saveMomMove(id,rec);
+  if(scope==="now"){
+    // "Skip for now" = end this subject for the week: also carry the rest of its undone lessons
+    // this week to next week, so nothing after it gets checked out of order and the count-cursor
+    // holds here — next week resumes right at this lesson, in order. Daily subjects (notebooks/
+    // drills/reflex) have no sequence, so only the tapped one moves.
+    const _s=(((currData.subjects||{})[t.who]||{})[t.subjectKey])||{};
+    const _daily=_s.tracking==="daily"||(_s.rules||"").includes("first")||(_s.rules||"").includes("last");
+    if(t.subjectKey&&!_daily){
+      (weekData.tasks||[]).forEach(function(x){
+        if(x.id===id||x.who!==t.who||x.subjectKey!==t.subjectKey) return;
+        if(String(x.id).endsWith("_c")||checked[x.id]||momMoves[x.id]) return;
+        _saveMomMove(x.id,{mode:"skip",fromDays:[effectiveDay(x)],ts:nowTs()});
+      });
+    }
+  }
   closeDlg(); schedCascade(); renderAll();
-  if(typeof gwShowToast==="function") gwShowToast(scope==="good"?"Skipped for good — next lesson moves up ✓":"Dismissed for today ✓");
+  if(typeof gwShowToast==="function") gwShowToast(scope==="good"?"Skipped for good — next lesson moves up ✓":"Skipped to next week — this subject picks up here ✓");
 }
 function undoMomMove(id){
   if(!momHere()) return;
