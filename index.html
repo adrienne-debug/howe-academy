@@ -1378,7 +1378,10 @@ let calAddMode=null; // null | "holiday" | "vacation" | "override"
 let calEditId=null;  // id of holiday/vacation being edited
 let calOverrideKid=null; // kid selected for override add
 let calPreviewMonth=null; // YYYY-MM for calendar preview (null = current)
-let histTab="log"; // "log" | "attendance" | "trends"
+let histTab="log"; // "log" | "attendance" | "trends" | "report"
+let digestData={};      // digest/* mirror — frozen weekly reports + seen/mute (📋 Report)
+let digestWkSel=null;   // 📋 Report week selector (null = current week)
+let digestKidOpen={};   // 📋 Report per-kid card expand state
 let histLogView="time"; // "time" | "subject" — how the History Log groups completed work
 let histTrendKid=null; // Trends: focused kid (null = all)
 let attEditUnlocked=false;
@@ -1722,6 +1725,7 @@ function initFb() {
     db.ref("pointClaims").on("value",s=>{ pointClaims=s.val()||{}; });
     db.ref("bank").on("value",s=>{ bank=s.val()||{}; });
     db.ref("readingLog").on("value",s=>{ readingLog=s.val()||{}; });
+    db.ref("digest").on("value",s=>{ digestData=s.val()||{}; });
     db.ref("scheduleOverrides").on("value",s=>{
       scheduleOverrides=s.val()||{};
       try{localStorage.setItem("ha_sched_overrides",JSON.stringify(scheduleOverrides));}catch(e){}
@@ -5436,6 +5440,466 @@ function buildWeekCompletion(tasks, checked, hist){
     confidence: planned?Math.round(recorded/planned*100):0};
 }
 
+// ── DIGEST (W0) — weekly report data + noticing detectors ────────────────────
+// DIGEST_START
+// Pure functions only: no globals, no db, no DOM, no Date.now(). Callers hand in
+// plain data and get plain data back; test_report.js extracts this block by the
+// DIGEST_START/DIGEST_END markers and runs it under node. The digest feature's
+// only write surface is digest/* (report/seen/mute) — these functions write
+// nothing at all. Plans: ~/Desktop/PLAN_weekly_report.md + PLAN_noticing.md.
+//
+// Dates: the app's nowTs() clock strings have no year, so nothing here parses
+// them. All date math runs on YYYYMMDD keys (mastery history), ISO dates
+// (sprintLog/brain-break dateKey), epoch ts, or week membership (entry.wk).
+function dgVals(x){ return Array.isArray(x)?x:(x?Object.values(x):[]); }
+function dgSubjOf(t){ const s=(t&&t.title)||""; const first=s.split(/[—–]/)[0]; return (first.replace(/^[\s\W]+/,"").trim())||(t&&t.subjectKey)||"other"; }
+function dgSlug(s){ return String(s||"").toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40); }
+function dgKey(d){ return String(d||"").replace(/-/g,""); }
+function dgIsoOfEpoch(ms){ const d=new Date(ms); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function dgWeekNum(wk){ return parseInt((String(wk||"").match(/\d+/)||[0])[0])||0; }
+function dgRange(weekDates){ const ks=Object.values(weekDates||{}).map(dgKey).filter(Boolean).sort(); return {from:ks[0]||"",to:ks[ks.length-1]||""}; }
+function dgIn(dateish,r){ if(dateish==null||!r||!r.from) return false; const k=dgKey(typeof dateish==="number"?dgIsoOfEpoch(dateish):dateish); return !!k&&k>=r.from&&k<=r.to; }
+function dgKeyMinusDays(key,days){ if(!key) return ""; const d=new Date(+key.slice(0,4),+key.slice(4,6)-1,+key.slice(6,8)); d.setDate(d.getDate()-days); return String(d.getFullYear())+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0"); }
+
+// Detector contract (PLAN_noticing): each returns candidates, never prose beyond
+// the rules-only `evidence` fallback. ids are STABLE — they drive seen/mute.
+//   {id, kid, kind, severity 1..3, facts, evidence, link}
+// Detectors fire on threshold crossings visible in this week's data, not states.
+
+// ≥3 brain breaks in the same subject in one week, with the feelings breakdown.
+function dgDetectBrainBreakCluster(data){
+  const out=[], r=dgRange(data.weekDates), wkN=dgWeekNum(data.wkKey);
+  (data.kids||[]).forEach(k=>{
+    const inWk=dgVals(((data.brainBreaks||{})[k]||{}).log).filter(e=>e&&(e.wk===data.wkKey||dgIn(e.dateKey,r)));
+    const bySub={};
+    inWk.forEach(e=>{ if(e.subject) (bySub[e.subject]=bySub[e.subject]||[]).push(e); });
+    Object.keys(bySub).forEach(s=>{
+      const es=bySub[s]; if(es.length<3) return;
+      const days=[...new Set(es.map(e=>e.dateKey).filter(Boolean))];
+      const fc={}; es.forEach(e=>{ if(e.feeling) fc[e.feeling]=(fc[e.feeling]||0)+1; });
+      const top=Object.keys(fc).sort((a,b)=>fc[b]-fc[a])[0]||null;
+      out.push({id:"bb_cluster:"+k+":"+dgSlug(s)+":wk"+wkN, kid:k, kind:"brain_break_cluster",
+        severity: es.length>=4?3:2,
+        facts:{subject:s,count:es.length,days:days.length,feelings:fc,topFeeling:top},
+        evidence: es.length+" brain breaks during "+s+(days.length>1?" across "+days.length+" days":"")+(top?", "+fc[top]+" tagged "+top:""),
+        link:{tab:"history",sub:"trends",kid:k}});
+    });
+  });
+  return out;
+}
+
+// Sprint accuracy trending down on a deck that previously cleared 80%.
+function dgSprintAcc(e){ const a=[]; if(typeof e.accA==="number") a.push(e.accA); if(typeof e.accB==="number") a.push(e.accB); return a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length):null; }
+function dgDetectSprintSlide(data){
+  const out=[], r=dgRange(data.weekDates), wkN=dgWeekNum(data.wkKey);
+  (data.kids||[]).forEach(k=>{
+    const sk=e=>typeof e.ts==="number"?e.ts:(+dgKey(e.date||"")||0);
+    const log=dgVals((data.sprintLog||{})[k]).slice().sort((a,b)=>sk(a)-sk(b));
+    const byDeck={};
+    log.forEach(e=>{ if(!e||!e.deck) return; const acc=dgSprintAcc(e); if(acc==null) return;
+      (byDeck[e.deck]=byDeck[e.deck]||[]).push({acc:acc,date:e.date||(typeof e.ts==="number"?dgIsoOfEpoch(e.ts):"")}); });
+    Object.keys(byDeck).forEach(dk=>{
+      const ss=byDeck[dk]; if(ss.length<3) return;
+      const t3=ss.slice(-3);
+      if(!dgIn(t3[2].date,r)) return;
+      const dropping=t3[0].acc>=t3[1].acc&&t3[1].acc>=t3[2].acc&&(t3[0].acc-t3[2].acc)>=10;
+      const cleared=ss.some(x=>x.acc>=80);
+      if(!dropping||!cleared) return;
+      out.push({id:"sprint_slide:"+k+":"+dgSlug(dk)+":wk"+wkN, kid:k, kind:"sprint_accuracy_slide",
+        severity:t3[2].acc<60?3:2,
+        facts:{deck:dk,accs:t3.map(x=>x.acc),dates:t3.map(x=>x.date)},
+        evidence:dk+" sprint accuracy sliding: "+t3.map(x=>x.acc+"%").join(" → ")+" over the last 3 sprints",
+        link:{tab:"mastery",kid:k}});
+    });
+  });
+  return out;
+}
+
+// A subject's completion % falling across recent weeks of reliable archive
+// (3 weeks strictly down with a ≥20pt total drop, or 2 weeks down landing <60%).
+// A half-finished week always "slides" vs full archived weeks, so the report
+// week's own completion only counts once the week is over (weekClosed!==false).
+function dgDetectSubjectSlippage(data){
+  const out=[], wkN=dgWeekNum(data.wkKey), weeks=[];
+  Object.keys(data.archive||{}).forEach(wk=>{
+    const n=dgWeekNum(wk), c=(data.archive[wk]||{}).completion;
+    if(!n||n>=wkN||!c||c.confidence<70) return;
+    weeks.push({n:n,comp:c});
+  });
+  if(data.completion&&data.weekClosed!==false) weeks.push({n:wkN,comp:data.completion});
+  weeks.sort((a,b)=>a.n-b.n);
+  if(weeks.length<2) return out;
+  (data.kids||[]).forEach(k=>{
+    const subs={};
+    weeks.forEach(w=>{ const rk=(w.comp.byKid||{})[k]; if(!rk) return;
+      Object.keys(rk.subs||{}).forEach(s=>{ const x=rk.subs[s]; if(!x||x.planned<3) return;
+        (subs[s]=subs[s]||[]).push({n:w.n,pct:Math.round(x.done/x.planned*100)}); }); });
+    Object.keys(subs).forEach(s=>{
+      const tail=subs[s].slice(-3); if(tail.length<2) return;
+      if(tail[tail.length-1].n!==weeks[weeks.length-1].n) return; // trend must reach the present
+      const cur=tail[tail.length-1].pct;
+      const dec2=tail[tail.length-2].pct>cur;
+      const dec3=tail.length>=3&&tail[0].pct>tail[1].pct&&tail[1].pct>tail[2].pct;
+      const drop=tail[0].pct-cur;
+      if(!(dec3&&drop>=20)&&!(dec2&&cur<60)) return;
+      out.push({id:"subj_slip:"+k+":"+dgSlug(s)+":wk"+wkN, kid:k, kind:"subject_slippage",
+        severity:cur<50?3:2,
+        facts:{subject:s,weeks:tail},
+        evidence:s+" completion sliding: "+tail.map(t=>t.pct+"%").join(" → ")+" over "+tail.length+" weeks",
+        link:{tab:"history",sub:"trends",kid:k}});
+    });
+  });
+  return out;
+}
+
+// The same subject carried over (as _c carry-in tasks) 2+ weeks running.
+function dgDetectCarryStacking(data){
+  const out=[], wkN=dgWeekNum(data.wkKey);
+  const carrySubs=tasks=>{ const m={}; dgVals(tasks).forEach(t=>{
+    if(!t||!t.who||!String(t.id||"").endsWith("_c")) return;
+    (m[t.who]=m[t.who]||new Set()).add(dgSubjOf(t)); }); return m; };
+  const byWeek={}; byWeek[wkN]=carrySubs(data.tasks);
+  Object.keys(data.archive||{}).forEach(wk=>{ const n=dgWeekNum(wk);
+    if(n&&(data.archive[wk]||{}).tasks) byWeek[n]=carrySubs(data.archive[wk].tasks); });
+  (data.kids||[]).forEach(k=>{
+    const cur=byWeek[wkN]&&byWeek[wkN][k]; if(!cur) return;
+    cur.forEach(s=>{
+      let streak=1; for(let n=wkN-1;byWeek[n]&&byWeek[n][k]&&byWeek[n][k].has(s);n--) streak++;
+      if(streak<2) return;
+      out.push({id:"carry_stack:"+k+":"+dgSlug(s)+":wk"+wkN, kid:k, kind:"carry_stacking",
+        severity:streak>=3?3:2,
+        facts:{subject:s,weeks:streak},
+        evidence:s+" has carried over "+streak+" weeks running",
+        link:{tab:"schedule",kid:k}});
+    });
+  });
+  return out;
+}
+
+// Wheel-spinning: a mastery card checked 3+ times in the last 21 days that never
+// strings two passes together and just missed again.
+function dgDetectGateStall(data){
+  const out=[], r=dgRange(data.weekDates), wkN=dgWeekNum(data.wkKey);
+  if(!r.to) return out;
+  const from=dgKeyMinusDays(r.to,21);
+  (data.kids||[]).forEach(k=>{
+    const hist=(data.masteryHistory||{})[k]||{}, seen={};
+    Object.keys(hist).sort().forEach(d=>{ const sess=hist[d]; if(!sess) return;
+      const kk=dgKey(sess.date||d); if(kk<from||kk>r.to) return;
+      (sess.items||[]).forEach(it=>{ if(!it||(it.result!=="c"&&it.result!=="m")) return;
+        const id=it.id||it.prompt; if(!id) return;
+        (seen[id]=seen[id]||[]).push({date:kk,result:it.result,prompt:it.prompt}); }); });
+    Object.keys(seen).forEach(id=>{
+      const tries=seen[id]; if(tries.length<3) return;
+      let twoRow=false; for(let i=1;i<tries.length;i++) if(tries[i].result==="c"&&tries[i-1].result==="c") twoRow=true;
+      if(twoRow||tries[tries.length-1].result!=="m") return;
+      const misses=tries.filter(t=>t.result==="m").length;
+      out.push({id:"gate_stall:"+k+":"+dgSlug(id)+":wk"+wkN, kid:k, kind:"gate_stall",
+        severity:tries.length>=5?3:2,
+        facts:{prompt:tries[0].prompt||String(id),tries:tries.length,misses:misses,dates:[...new Set(tries.map(t=>t.date))]},
+        evidence:"“"+(tries[0].prompt||id)+"” missed "+misses+" of "+tries.length+" recent checks without back-to-back passes",
+        link:{tab:"mastery",kid:k}});
+    });
+  });
+  return out;
+}
+
+function digestDetect(data){
+  return [].concat(dgDetectBrainBreakCluster(data), dgDetectSprintSlide(data),
+    dgDetectSubjectSlippage(data), dgDetectCarryStacking(data), dgDetectGateStall(data));
+}
+
+// Rank + suppress for the card. seen = digest/seen ({id:"YYYYMMDD" last surfaced}),
+// mute = digest/mute ({id:true}); todayKey supplied by the caller (pure, no clock).
+function digestTriage(cands,opts){
+  opts=opts||{};
+  const seen=opts.seen||{}, mute=opts.mute||{}, max=opts.max||3;
+  const days=opts.suppressDays==null?14:opts.suppressDays;
+  const keep=(cands||[]).filter(c=>{
+    if(!c||mute[c.id]) return false;
+    const s=seen[c.id];
+    if(s&&opts.todayKey&&dgKey(s)>dgKeyMinusDays(opts.todayKey,days)) return false;
+    return true;
+  });
+  const prio={brain_break_cluster:0,gate_stall:1,sprint_accuracy_slide:2,subject_slippage:3,carry_stacking:4};
+  keep.sort((a,b)=>(b.severity-a.severity)||((prio[a.kind]!=null?prio[a.kind]:9)-(prio[b.kind]!=null?prio[b.kind]:9))||String(a.id).localeCompare(String(b.id)));
+  return keep.slice(0,max);
+}
+
+// W2 hallucination guard: the model may only reference candidate ids it was handed.
+function digestFilterModelIds(ids,cands){ const ok=new Set((cands||[]).map(c=>c.id)); return (ids||[]).filter(id=>ok.has(id)); }
+
+// The report spine. data.completion is this week's buildWeekCompletion output
+// (caller computes it — kept out of here so the block stays self-contained for
+// node). data.finishLines is an optional pre-computed pass-through: rows from
+// computeFinishLines(), echoed per kid untouched.
+function digestBuildWeekReport(data){
+  const wkN=dgWeekNum(data.wkKey), r=dgRange(data.weekDates);
+  const comp=data.completion||{byKid:{},planned:0,done:0,confidence:0};
+  let prev=null;
+  Object.keys(data.archive||{}).forEach(wk=>{ const n=dgWeekNum(wk), c=(data.archive[wk]||{}).completion;
+    if(!n||n>=wkN||!c||c.confidence<70) return; if(!prev||n>prev.n) prev={n:n,comp:c}; });
+  const taskById={}; dgVals(data.tasks).forEach(t=>{ if(t&&t.id) taskById[t.id]=t; });
+  const moves=data.momMoves||{};
+  const candidates=digestDetect(data);
+  const kids={};
+  (data.kids||[]).forEach(k=>{
+    const me=comp.byKid[k]||{planned:0,done:0,subs:{}};
+    const pct=me.planned?Math.round(me.done/me.planned*100):null;
+    const pv=prev&&prev.comp.byKid[k];
+    const prevPct=pv&&pv.planned?Math.round(pv.done/pv.planned*100):null;
+    const dayDone={};
+    Object.keys(data.history||{}).forEach(id=>{ const e=(data.history||{})[id];
+      if(!e||typeof e!=="object"||!e.ts||e.missed||e.who!==k) return;
+      const d=e.checkedOnDay||e.day; if(d) dayDone[d]=(dayDone[d]||0)+1; });
+    const carries=dgVals(data.tasks).filter(t=>t&&t.who===k&&String(t.id||"").endsWith("_c"))
+      .map(t=>({id:t.id,title:t.title,subject:dgSubjOf(t)}));
+    const pushes=Object.keys(moves).filter(id=>{ const t=taskById[id]||taskById[String(id).replace(/_c$/,"")];
+      return t&&t.who===k; }).map(id=>({id:id,mode:moves[id].mode,toDay:moves[id].toDay}));
+    const bb=dgVals(((data.brainBreaks||{})[k]||{}).log).filter(e=>e&&(e.wk===data.wkKey||dgIn(e.dateKey,r)));
+    const feelings={}; bb.forEach(e=>{ if(e.feeling) feelings[e.feeling]=(feelings[e.feeling]||0)+1; });
+    const mh=(data.masteryHistory||{})[k]||{};
+    const sessions=Object.keys(mh).filter(d=>{ const s=mh[d]; return s&&typeof s.pct==="number"&&dgIn(s.date||d,r); });
+    const avgPct=sessions.length?Math.round(sessions.reduce((a,d)=>a+mh[d].pct,0)/sessions.length):null;
+    const sk=e=>typeof e.ts==="number"?e.ts:(+dgKey(e.date||"")||0);
+    const allSp=dgVals((data.sprintLog||{})[k]).slice().sort((a,b)=>sk(a)-sk(b));
+    const bestSoFar={}, pbs=[]; let sprints=0;
+    allSp.forEach(e=>{ if(!e||!e.deck) return;
+      const iso=e.date||(typeof e.ts==="number"?dgIsoOfEpoch(e.ts):""), inWk=dgIn(iso,r);
+      if(inWk) sprints++;
+      if(typeof e.best!=="number") return;
+      const prevB=bestSoFar[e.deck];
+      if(prevB!=null&&e.best>prevB&&inWk) pbs.push({deck:e.deck,best:e.best,date:iso});
+      if(prevB==null||e.best>prevB) bestSoFar[e.deck]=e.best; });
+    const rl=(data.readingLog||{})[k]||{};
+    const rEntries=dgVals(rl.entries).filter(e=>e&&typeof e.ts==="number"&&dgIn(e.ts,r));
+    const pages=rEntries.reduce((a,e)=>a+((typeof e.fromPage==="number"&&typeof e.toPage==="number"&&e.toPage>=e.fromPage)?(e.toPage-e.fromPage+1):0),0);
+    kids[k]={
+      headline:{planned:me.planned,done:me.done,pct:pct,prevPct:prevPct,delta:(pct!=null&&prevPct!=null)?pct-prevPct:null},
+      consistency:dayDone,
+      carries:carries, pushes:pushes,
+      wellbeing:{count:bb.length,feelings:feelings},
+      mastery:{sessions:sessions.length,avgPct:avgPct,sprints:sprints,pbs:pbs},
+      reading:{sessions:rEntries.length,pages:pages},
+      subjects:me.subs||{},
+      paceMovers:dgVals(data.finishLines).filter(f=>f&&f.kid===k)
+    };
+  });
+  return {wkKey:data.wkKey,weekNum:wkN,range:r,confidence:comp.confidence,kids:kids,candidates:candidates};
+}
+// DIGEST_END
+
+// ── DIGEST UI (W1) — the Mom-only 📋 Report sub-tab under History. This is the
+// ONLY impure digest code. Write surface: digest/report/{wk} (frozen on first
+// Mom view after a week closes — the close path itself is untouched on purpose),
+// digest/seen/{id}, digest/mute/{id}. Nothing else: the noticing layer has no
+// code path to schedule/curriculum/config/tasks/checked/history writes.
+function digestIsoDates(datesMap){
+  // DAY_DT-style values are year-less ("Sep 14"). Attach a year the way the app
+  // does everywhere, plus a wrap guard: a date landing >45 days in the future
+  // belongs to last year (Dec archives viewed in Jan). ISO input passes through.
+  const out={}, now=new Date(), yr=now.getFullYear();
+  Object.keys(datesMap||{}).forEach(d=>{
+    const v=datesMap[d]; if(!v) return;
+    if(/^\d{4}-\d{2}-\d{2}/.test(v)){ out[d]=v.slice(0,10); return; }
+    let dt=new Date(v+", "+yr); if(isNaN(dt)) return;
+    if(dt.getTime()-now.getTime()>45*86400000) dt=new Date(v+", "+(yr-1));
+    out[d]=dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");
+  });
+  return out;
+}
+// Archive weeks older than the completion-snapshot feature lack .completion —
+// rebuild those on the fly, same rule Trends uses. In-memory view only, never written.
+let _dgArchCache=null, _dgArchCacheKeys="";
+function digestArchiveView(){
+  const keys=Object.keys(archive||{}).sort().join(",");
+  if(_dgArchCache&&keys===_dgArchCacheKeys) return _dgArchCache;
+  const out={};
+  Object.keys(archive||{}).forEach(wk=>{ const aw=archive[wk]; if(!aw) return;
+    out[wk]=(aw.completion||!aw.tasks)?aw:Object.assign({},aw,{completion:buildWeekCompletion(aw.tasks,aw.checked,aw.history)});
+  });
+  _dgArchCacheKeys=keys; _dgArchCache=out; return out;
+}
+function digestGatherData(wkKey){
+  const isCur=wkKey===WK;
+  const arch=digestArchiveView();
+  const src=isCur?{tasks:(weekData&&weekData.tasks)||[],checked:checked||{},history:ld(WK+"_history")||{},dates:DAY_DT}
+                 :(arch[wkKey]||{});
+  const tasks=src.tasks||[], chk=src.checked||{}, hist=src.history||{};
+  return { wkKey:wkKey, weekDates:digestIsoDates(src.dates||{}),
+    tasks:tasks, checked:chk, history:hist,
+    momMoves:isCur?(momMoves||{}):{},              // momMoves aren't archived
+    weekClosed:isCur?digestWeekOver():true,
+    completion:src.completion||buildWeekCompletion(tasks,chk,hist),
+    archive:arch,
+    masteryHistory:(masteryData||{}).history||{},
+    sprintLog:(masteryData||{}).sprintLog||{},
+    brainBreaks:brainBreaks||{},
+    readingLog:readingLog||{},
+    finishLines:isCur?computeFinishLines():[],     // projections only mean anything live
+    kids:[...ROSTER] };
+}
+function digestTodayKey(){ return bbTodayKey().replace(/-/g,""); }
+// Is the live week effectively over? (every scheduled date behind us)
+function digestWeekOver(){
+  const iso=digestIsoDates(DAY_DT||{}), ds=Object.values(iso);
+  if(!ds.length) return false;
+  return ds.every(d=>d<bbTodayKey());
+}
+// Archived week: return the frozen report, freezing it now if this is the first
+// Mom view since close. Current week: always computed live by the renderer.
+function digestFreezeIfNeeded(wkKey){
+  if(wkKey===WK) return null;
+  const have=((digestData||{}).report||{})[wkKey];
+  if(have) return have;
+  if(!archive[wkKey]) return null;
+  let rep=digestBuildWeekReport(digestGatherData(wkKey));
+  const top=digestTriage(rep.candidates,{seen:digestData.seen||{},mute:digestData.mute||{},todayKey:digestTodayKey()});
+  rep.noticedIds=top.map(c=>c.id);
+  rep.frozenAt=Date.now();
+  rep=JSON.parse(JSON.stringify(rep));             // strip undefineds for Firebase
+  if(db){ db.ref("digest/report/"+wkKey).set(rep);
+    top.forEach(c=>db.ref("digest/seen/"+c.id).set(digestTodayKey())); }
+  digestData.report=digestData.report||{}; digestData.report[wkKey]=rep;
+  digestData.seen=digestData.seen||{}; top.forEach(c=>digestData.seen[c.id]=digestTodayKey());
+  return rep;
+}
+function digestMute(id){ if(!momHere()) return;
+  digestData.mute=digestData.mute||{}; digestData.mute[id]=true;
+  if(db) db.ref("digest/mute/"+id).set(true);
+  setHistTab('report'); }
+function digestUnmute(id){ if(!momHere()) return;
+  if(digestData.mute) delete digestData.mute[id];
+  if(db) db.ref("digest/mute/"+id).remove();
+  setHistTab('report'); }
+function digestRefreeze(wk){ if(!momHere()||wk===WK) return;
+  if(digestData.report) delete digestData.report[wk];
+  digestFreezeIfNeeded(wk); setHistTab('report'); }
+function digestSetWk(w){ digestWkSel=(w==="current")?null:w; setHistTab('report'); }
+function digestToggleKid(k){ digestKidOpen[k]=!digestKidOpen[k];
+  const el=document.getElementById("dg-kid-"+k), car=document.getElementById("dg-car-"+k);
+  if(el){ el.style.display=digestKidOpen[k]?"block":"none"; if(car) car.textContent=digestKidOpen[k]?"▴":"▾"; }
+  else setHistTab('report'); }
+
+function renderHistoryReport(){
+  if(!momHere()) return '<div style="text-align:center;color:var(--muted);padding:40px 20px">📋 The weekly report is a Mom-only view.<br>Unlock Mom mode to read it.</div>';
+  const KC={lincoln:"#2a78d6",ellis:"#1baf7a",lucy:"#eda100",julian:"#9333ea"};
+  const kName=k=>k.charAt(0).toUpperCase()+k.slice(1);
+  const wk=digestWkSel||WK, isCur=wk===WK;
+  const rep=isCur?digestBuildWeekReport(digestGatherData(WK)):digestFreezeIfNeeded(wk);
+  let h='<div style="padding:8px 12px 20px">';
+
+  // week chips: current + archived weeks newest-first
+  const aks=Object.keys(archive||{}).map(w=>({w:w,n:dgWeekNum(w)})).filter(x=>x.n).sort((a,b)=>b.n-a.n).slice(0,10);
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 10px">';
+  const chip=(on)=>'padding:5px 11px;border-radius:14px;font-size:11px;font-weight:700;cursor:pointer;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?'var(--header)':'transparent')+';color:'+(on?'#fff':'var(--muted)');
+  h+='<button onclick="digestSetWk(\'current\')" style="'+chip(isCur)+'">This week</button>';
+  aks.forEach(x=>{ h+='<button onclick="digestSetWk(\''+x.w+'\')" style="'+chip(wk===x.w)+'">Wk '+x.n+'</button>'; });
+  h+='</div>';
+
+  if(!rep){ h+='<div style="text-align:center;color:var(--muted);padding:30px">No data for this week.</div></div>'; return h; }
+
+  // header card
+  const rangeLbl=rep.range&&rep.range.from?(rep.range.from.slice(4,6)+"/"+rep.range.from.slice(6,8)+" – "+rep.range.to.slice(4,6)+"/"+rep.range.to.slice(6,8)):"";
+  h+='<div style="background:var(--header);color:#fff;border-radius:12px;padding:14px 16px;margin-bottom:8px">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center">';
+  h+='<div><div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700">📋 Week '+rep.weekNum+' Report</div>';
+  h+='<div style="font-size:11px;opacity:0.65;margin-top:1px">'+rangeLbl+(isCur?' · live preview — freezes when the week closes':' · frozen record')+'</div></div>';
+  h+='<div style="display:flex;gap:6px">';
+  h+='<button onclick="printWeekReport(\''+(isCur?'':wk)+'\'||undefined)" style="padding:5px 11px;border-radius:8px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🖨</button>';
+  if(!isCur) h+='<button onclick="digestRefreeze(\''+wk+'\')" style="padding:5px 11px;border-radius:8px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">↻</button>';
+  h+='</div></div>';
+  if(rep.confidence<70&&!isCur) h+='<div style="font-size:10px;opacity:0.7;margin-top:6px">⚠️ Sparse records this week ('+rep.confidence+'% recorded) — read numbers loosely.</div>';
+  h+='</div>';
+
+  // headline row — each kid vs their own last reliable week, never each other
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;margin-bottom:8px">';
+  (rep.kids?Object.keys(rep.kids):[]).forEach(k=>{
+    const kd=rep.kids[k], hl=kd.headline||{};
+    const delta=hl.delta==null?'':(hl.delta>=0?' <span style="color:#16a34a;font-size:11px">▲'+hl.delta+'</span>':' <span style="color:#b45309;font-size:11px">▼'+Math.abs(hl.delta)+'</span>');
+    h+='<div style="background:var(--card);border:1.5px solid var(--border);border-left:4px solid '+(KC[k]||'#888')+';border-radius:10px;padding:9px 11px">';
+    h+='<div style="font-size:12px;font-weight:700">'+kName(k)+'</div>';
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:700">'+(hl.pct==null?'—':hl.pct+'%')+delta+'</div>';
+    h+='<div style="font-size:10px;color:var(--muted)">'+(hl.done||0)+' of '+(hl.planned||0)+' done</div></div>';
+  });
+  h+='</div>';
+
+  // 👀 Noticed — top 3, muted out, each with 👎
+  const mute=digestData.mute||{};
+  let noticed;
+  if(isCur) noticed=digestTriage(rep.candidates,{seen:digestData.seen||{},mute:mute,todayKey:digestTodayKey()});
+  else noticed=(rep.noticedIds||[]).map(id=>(rep.candidates||[]).find(c=>c.id===id)).filter(c=>c&&!mute[c.id]);
+  const rest=(rep.candidates||[]).filter(c=>!noticed.some(n=>n.id===c.id)&&!mute[c.id]);
+  const mutedList=(rep.candidates||[]).filter(c=>mute[c.id]);
+  h+='<div style="background:var(--card);border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:14px;font-weight:700;margin-bottom:6px">👀 Noticed</div>';
+  if(!noticed.length) h+='<div style="font-size:12px;color:var(--muted)">Nothing unusual this week 🎉</div>';
+  noticed.forEach(c=>{
+    const sev=c.severity>=3?'#dc2626':'#d97706';
+    h+='<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-top:1px solid var(--border)">';
+    h+='<span style="width:8px;height:8px;border-radius:50%;background:'+sev+';margin-top:5px;flex-shrink:0"></span>';
+    h+='<div style="flex:1;font-size:12.5px;line-height:1.45"><b style="color:'+(KC[c.kid]||'#888')+'">'+kName(c.kid)+'</b> — '+c.evidence+'</div>';
+    h+='<button onclick="digestMute(\''+c.id+'\')" title="Not useful — never show this again" style="background:none;border:none;cursor:pointer;font-size:13px;opacity:0.55">👎</button>';
+    h+='</div>';
+  });
+  if(rest.length||mutedList.length){
+    h+='<details style="margin-top:6px"><summary style="font-size:11px;color:var(--muted);cursor:pointer">'+rest.length+' more flag'+(rest.length===1?'':'s')+(mutedList.length?' · '+mutedList.length+' muted':'')+'</summary>';
+    rest.forEach(c=>{ h+='<div style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;font-size:11.5px;color:var(--muted)"><span style="flex:1"><b>'+kName(c.kid)+'</b> — '+c.evidence+'</span><button onclick="digestMute(\''+c.id+'\')" style="background:none;border:none;cursor:pointer;font-size:12px;opacity:0.5">👎</button></div>'; });
+    mutedList.forEach(c=>{ h+='<div style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;font-size:11.5px;color:var(--muted);opacity:0.5;text-decoration:line-through"><span style="flex:1">'+kName(c.kid)+' — '+c.evidence+'</span><button onclick="digestUnmute(\''+c.id+'\')" style="background:none;border:none;cursor:pointer;font-size:11px;text-decoration:none">undo</button></div>'; });
+    h+='</details>';
+  }
+  h+='</div>';
+
+  // per-kid collapsible cards
+  const DL={monday:"M",tuesday:"T",wednesday:"W",thursday:"Th",friday:"F",saturday:"Sa"};
+  Object.keys(rep.kids||{}).forEach(k=>{
+    const kd=rep.kids[k], open=!!digestKidOpen[k];
+    h+='<div style="background:var(--card);border:1.5px solid var(--border);border-radius:12px;margin-bottom:8px;overflow:hidden">';
+    h+='<div onclick="digestToggleKid(\''+k+'\')" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;cursor:pointer;border-left:4px solid '+(KC[k]||'#888')+'">';
+    h+='<div style="font-weight:700;font-size:13px">'+kName(k)+'</div><div id="dg-car-'+k+'" style="color:var(--muted)">'+(open?'▴':'▾')+'</div></div>';
+    h+='<div id="dg-kid-'+k+'" style="display:'+(open?'block':'none')+';padding:0 14px 12px">';
+    // wins
+    const wins=[];
+    (kd.mastery&&kd.mastery.pbs||[]).forEach(p=>wins.push('🏆 New personal best — '+p.deck+' ('+p.best+' words/60s)'));
+    if(kd.reading&&kd.reading.pages>0) wins.push('📖 '+kd.reading.pages+' pages read across '+kd.reading.sessions+' session'+(kd.reading.sessions===1?'':'s'));
+    if(kd.mastery&&kd.mastery.sessions>0) wins.push('🎯 '+kd.mastery.sessions+' review session'+(kd.mastery.sessions===1?'':'s')+(kd.mastery.avgPct!=null?' · '+kd.mastery.avgPct+'% avg':''));
+    if(wins.length){ h+='<div style="font-size:12px;line-height:1.8;padding:6px 0;border-top:1px solid var(--border)">'+wins.join('<br>')+'</div>'; }
+    // consistency dots
+    h+='<div style="display:flex;gap:8px;align-items:center;padding:7px 0;border-top:1px solid var(--border)">';
+    DAYS.forEach(d=>{ const n=(kd.consistency||{})[d]||0;
+      h+='<div style="text-align:center"><div style="width:20px;height:20px;border-radius:50%;line-height:20px;font-size:9px;font-weight:700;background:'+(n?(KC[k]||'#888'):'var(--border)')+';color:'+(n?'#fff':'var(--muted)')+'">'+(n||'')+'</div><div style="font-size:8px;color:var(--muted);margin-top:2px">'+DL[d]+'</div></div>'; });
+    h+='<div style="font-size:10px;color:var(--muted);margin-left:4px">tasks finished per day</div></div>';
+    // wellbeing (only when non-zero)
+    if(kd.wellbeing&&kd.wellbeing.count>0){
+      const f=Object.keys(kd.wellbeing.feelings||{}).map(x=>x+' ×'+kd.wellbeing.feelings[x]).join(' · ');
+      h+='<div style="font-size:12px;padding:7px 0;border-top:1px solid var(--border)">🧠 '+kd.wellbeing.count+' brain break'+(kd.wellbeing.count===1?'':'s')+(f?' — '+f:'')+'</div>';
+    }
+    // carries + pushes
+    if((kd.carries||[]).length||(kd.pushes||[]).length){
+      h+='<div style="font-size:12px;padding:7px 0;border-top:1px solid var(--border)">↪️ ';
+      if(kd.carries.length) h+=kd.carries.length+' carried in ('+[...new Set(kd.carries.map(c=>c.subject))].join(', ')+')';
+      if(kd.carries.length&&kd.pushes.length) h+=' · ';
+      if(kd.pushes.length) h+=kd.pushes.length+' pushed by Mom';
+      h+='</div>';
+    }
+    // pace flags (live week only — projections aren't frozen)
+    const movers=(kd.paceMovers||[]).filter(f=>f.status!=="ontime"&&f.status!=="done");
+    if(movers.length){
+      h+='<div style="font-size:12px;padding:7px 0;border-top:1px solid var(--border)">🏁 Needs a look: ';
+      h+=movers.map(f=>'<span style="color:'+(f.status==="red"||f.status==="stalled"?'#dc2626':'#d97706')+';font-weight:600">'+(f.display||f.sk)+(f.projDate?' → '+f.projDate:'')+'</span>').join(' · ');
+      h+='</div>';
+    }
+    // subjects line
+    const subs=kd.subjects||{}; const sk2=Object.keys(subs).filter(s=>subs[s].planned>0);
+    if(sk2.length){
+      h+='<div style="font-size:11px;color:var(--muted);padding:7px 0;border-top:1px solid var(--border)">'+sk2.map(s=>s+' '+subs[s].done+'/'+subs[s].planned).join(' · ')+'</div>';
+    }
+    h+='</div></div>';
+  });
+  h+='</div>';
+  return h;
+}
+
 // History → Trends: season-long completion, day-bound misses, and subject slippage.
 // Reads each archived week's frozen `completion` snapshot when present, else rebuilds
 // it on the fly. Weeks with sparse/unreliable records (confidence < 70%) are excluded.
@@ -5693,6 +6157,7 @@ function renderHistory(el){
   h+='<button onclick="setHistTab(\'log\')" style="'+_btn(histTab==="log")+'">History Log</button>';
   h+='<button onclick="setHistTab(\'trends\')" style="'+_btn(histTab==="trends")+'">Trends</button>';
   h+='<button onclick="setHistTab(\'attendance\')" style="'+_btn(histTab==="attendance")+'">Attendance</button>';
+  if(momHere()) h+='<button onclick="setHistTab(\'report\')" style="'+_btn(histTab==="report")+'">📋 Report</button>';
   h+='</div>';
   if(histTab==="log"){
     const _lb=(on)=>'flex:1;padding:6px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?'var(--header)':'transparent')+';color:'+(on?'#fff':'var(--muted)');
@@ -5703,6 +6168,7 @@ function renderHistory(el){
   }
   if(histTab==="attendance"){ h+=renderAttendanceHtml(); el.innerHTML=h; return; }
   if(histTab==="trends"){ h+=renderHistoryTrends(); el.innerHTML=h; return; }
+  if(histTab==="report"){ h+=renderHistoryReport(); el.innerHTML=h; return; }
 
   const hist=ld(WK+"_history")||{};
   const n=new Date();
