@@ -379,6 +379,7 @@
 "  .learn-ico  { font-size:25px; line-height:1; flex-shrink:0; }\n" +
 "  .learn-lab  { font-size:9px; font-weight:800; letter-spacing:0.1em; text-transform:uppercase; color:var(--ju-deep); }\n" +
 "  .learn-val  { font-family:'Fredoka One',cursive; font-size:19px; color:var(--ju-dark); line-height:1.05; margin-top:1px; }\n" +
+"  .learn-val-nt { font-family:'NoTears','Nunito',sans-serif; font-weight:700; }\n" +
 "  .cover-draw { margin:4px 38px 16px; flex:1; min-height:0; border:3px dashed var(--ju-light); border-radius:16px;\n" +
 "                background:#fffdf9; position:relative; }\n" +
 "  .cover-draw-cap { position:absolute; top:10px; left:0; right:0; text-align:center; font-family:'Fredoka One',cursive;\n" +
@@ -601,7 +602,7 @@
       '    <div class="cover-dinos">🦕 🦖 🥚 🦕 🦴</div>\n  </div>\n' +
       '  <div class="cover-learn">\n    <div class="slabel">This week I am learning…</div>\n' +
       '    <div class="learn-grid">\n' +
-      '      <div class="learn-card card-peach"><div class="learn-ico">🔤</div><div><div class="learn-lab">Letters</div><div class="learn-val">' + letters + '</div></div></div>\n' +
+      '      <div class="learn-card card-peach"><div class="learn-ico">🔤</div><div><div class="learn-lab">Letters</div><div class="learn-val learn-val-nt">' + letters + '</div></div></div>\n' +
       '      <div class="learn-card card-green"><div class="learn-ico">🔢</div><div><div class="learn-lab">Numbers</div><div class="learn-val">' + numbers + '</div></div></div>\n' +
       '      <div class="learn-card card-blue"><div class="learn-ico">⭐</div><div><div class="learn-lab">Shapes</div><div class="learn-val" style="display:flex;gap:5px;align-items:center;">' + shapes + '</div></div></div>\n' +
       '      <div class="learn-card card-gold"><div class="learn-ico">🎨</div><div><div class="learn-lab">Colors</div><div class="learn-val" style="display:flex;align-items:center;">' + colorSwatches + '</div></div></div>\n' +
