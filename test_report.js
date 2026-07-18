@@ -19,7 +19,7 @@ if (a < 0 || b < 0) { console.error("DIGEST markers not found"); process.exit(1)
 const block = src.slice(a, b);
 const D = new Function(block + `; return {digestDetect,digestTriage,digestFilterModelIds,digestBuildWeekReport,
   dgDetectBrainBreakCluster,dgDetectSprintSlide,dgDetectSubjectSlippage,dgDetectCarryStacking,dgDetectGateStall,
-  dgIn,dgRange,dgKeyMinusDays};`)();
+  dgIn,dgRange,dgKeyMinusDays,digestRecordHtml};`)();
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {
@@ -264,6 +264,57 @@ const it = (id, result) => ({ id, prompt: id, result });
   ok("report: candidates included", Array.isArray(r.candidates));
   const r2 = D.digestBuildWeekReport(d);
   ok("report: deterministic (same input, same ids)", JSON.stringify(r2.candidates.map(c => c.id)) === JSON.stringify(r.candidates.map(c => c.id)));
+})();
+
+// ── W1.5 record document ─────────────────────────────────────────────────────
+(() => {
+  const d = base();
+  d.kids = ["lincoln"];
+  d.tasks = {
+    m1: { id: "m1", who: "lincoln", title: "Math — Lesson 40", day: "monday" },
+    r1: { id: "r1", who: "lincoln", title: "Ind. Reading — Ch 3", day: "tuesday" },
+    x1: { id: "x1", who: "lincoln", title: "Wordsmith — Session 9", day: "wednesday" },   // never done
+    l1: { id: "l1", who: "lincoln", title: "Lunch", day: "monday" },
+    c1: { id: "old7_c", who: "lincoln", title: "Math — Lesson 39", day: "monday" } };
+  d.checked = { m1: "x", r1: "x", old7_c: "x" };
+  d.history = { m1: { id: "m1", who: "lincoln", ts: "t", score: { pct: 95 } } };
+  d.readingLog = { lincoln: {
+    books: { b1: { title: "Charlotte's Web", totalPages: 100, status: "done" } },
+    entries: { e1: { bookId: "b1", ts: epoch("2026-09-15"), fromPage: 80, toPage: 100 } } } };
+  d.masteryHistory = { lincoln: { "20260915": sess("2026-09-15", []), "20260917": sess("2026-09-17", []) } };
+  d.sprintLog = { lincoln: [sp("CVC words", "2026-09-16", 90, 31)] };
+  const units = { brit: { name: "British Monarchy", enrolled: { lincoln: true },
+    activities: [{ key: "crown", name: "Crown Jewels model" }, { key: "castle", name: "Castle diorama" }],
+    activityLog: { lincoln: { crown: { ts: epoch("2026-09-17"), points: 20 },
+                              castle: { ts: epoch("2026-08-01"), points: 20 } } } } };
+  const doc = D.digestRecordHtml(d, { units, attOverrides: { thursday: { lincoln: true } }, generatedOn: "September 19, 2026" });
+
+  ok("record: header with school, week, span", doc.includes("HOWE ACADEMY") && doc.includes("Week 13") && doc.includes("Sep 14, 2026") && doc.includes("6 scheduled days"), null);
+  ok("record: completed work in subject table with score", doc.includes("<td>Math</td>") && doc.includes("Lesson 40") && doc.includes("95%"));
+  ok("record: carried-in completion counts as work", doc.includes("Lesson 39"));
+  ok("record: missed work is simply absent", !doc.includes("Session 9") && !doc.toLowerCase().includes("missed") && !doc.toLowerCase().includes("behind"));
+  ok("record: lunch excluded", !doc.includes("Lunch"));
+  // mon+tue worked, wed scheduled-but-unfinished, thu present by override = 3 of 4
+  ok("record: attendance counts worked days + override day", doc.includes("3 of 4 scheduled days"), (doc.match(/Attendance:<\/b>[^<]*/) || [])[0]);
+  ok("record: reading with pages and completion", doc.includes("Charlotte&#039;s Web") || doc.includes("Charlotte's Web"), null);
+  ok("record: reading marks book completed", /completed/.test(doc) && doc.includes("pp. 80&ndash;100"));
+  ok("record: review sessions with dates", doc.includes("2 spaced-review sessions") && doc.includes("Sep 15, Sep 17"));
+  ok("record: fluency sprint with deck", doc.includes("1 timed fluency sprint") && doc.includes("CVC words"));
+  ok("record: in-week unit activity listed, out-of-week absent", doc.includes("Crown Jewels model (British Monarchy)") && !doc.includes("Castle diorama"));
+  ok("record: notes line + signature footer", doc.includes("Notes:") && doc.includes("Prepared by:") && doc.includes("generated September 19, 2026"));
+  ok("record: no emoji or app chrome", !/[\u{1F000}-\u{1FAFF}☀-➿]/u.test(doc));
+
+  // repeated daily items collapse; dash ranges survive the ASCII cleaner
+  const d2 = base(); d2.kids = ["lucy"];
+  d2.tasks = {
+    a: { id: "a", who: "lucy", title: "Drills", day: "monday" },
+    b: { id: "b", who: "lucy", title: "Drills", day: "tuesday" },
+    c: { id: "c", who: "lucy", title: "Drills", day: "thursday" },
+    p: { id: "p", who: "lucy", title: "Math Reasoning — Pg 86–87", day: "monday" } };
+  d2.checked = { a: "x", b: "x", c: "x", p: "x" };
+  const doc2 = D.digestRecordHtml(d2, {});
+  ok("record: repeated daily items collapse to a day count", doc2.includes("Drills (3 days)") && !doc2.includes("Drills; Drills"), null);
+  ok("record: en-dash page ranges become hyphens, not deleted", doc2.includes("Pg 86-87"), (doc2.match(/Pg[^<]*/) || [])[0]);
 })();
 
 // ── empty-world safety ───────────────────────────────────────────────────────

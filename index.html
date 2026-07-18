@@ -5687,6 +5687,139 @@ function digestBuildWeekReport(data){
   });
   return {wkKey:data.wkKey,weekNum:wkN,range:r,confidence:comp.confidence,kids:kids,candidates:candidates};
 }
+// The official homeschool-records document (W1.5) — a print-ready weekly record.
+// Pure: builds the full HTML string from data (digestGatherData shape) + opts:
+//   {attOverrides:{day:{kid:bool}}, units:{uid:{...}}, kidNames:{k:label},
+//    familyName, generatedOn:"Month D, YYYY", scoreLabel:fn}
+// Factual only: what was completed, read, practiced, attended. Missed work is
+// simply absent; no points, feelings, pace judgments, or app chrome.
+function digestRecordHtml(data,opts){
+  opts=opts||{};
+  const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  // Normalize dashes BEFORE stripping non-ASCII so page ranges ("pp.172–175") survive.
+  const clean=s=>String(s||"").replace(/[—–]/g,"-").replace(/[^\x20-\x7E]/g,"").replace(/\s+/g," ").trim();
+  const scoreTxt=opts.scoreLabel||(sc=>typeof sc==="object"?(sc.label||(sc.pct!=null?sc.pct+"%":"")):String(sc));
+  const DAYSL=["monday","tuesday","wednesday","thursday","friday","saturday"];
+  const r=dgRange(data.weekDates), wkN=dgWeekNum(data.wkKey);
+  const MO=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const fmt=iso=>{ if(!iso) return ""; const d=new Date(iso+"T12:00:00"); return isNaN(d)?"":(MO[d.getMonth()]+" "+d.getDate()); };
+  const fmtY=iso=>{ if(!iso) return ""; const d=new Date(iso+"T12:00:00"); return isNaN(d)?"":(MO[d.getMonth()]+" "+d.getDate()+", "+d.getFullYear()); };
+  const tasks=dgVals(data.tasks), chk=data.checked||{}, hist=data.history||{};
+  const doneOf=t=>{ const i=String(t.id||""); if(chk[i]||chk[i+"_c"]) return true;
+    for(const kk of [i,i+"_c"]){ const e=hist[kk]; if(e&&typeof e==="object"&&e.ts&&!e.missed&&!e.flag) return true; } return false; };
+  const schedDays=DAYSL.filter(d=>data.weekDates[d]);
+  const family=esc(opts.familyName||"Howe Academy");
+
+  let h='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+family+' &mdash; Weekly Record &mdash; Week '+wkN+'</title><style>'
+    +'@page{size:letter;margin:0.75in}'
+    +'body{font-family:Georgia,"Times New Roman",serif;color:#111;background:#fff;font-size:11pt;line-height:1.45;margin:0;padding:24px}'
+    +'@media print{body{padding:0}}'
+    +'h1{font-size:16pt;margin:0;letter-spacing:0.04em}'
+    +'h2{font-size:13pt;margin:0 0 8pt;border-bottom:1.5px solid #111;padding-bottom:3pt}'
+    +'h3{font-size:9.5pt;margin:11pt 0 3pt;text-transform:uppercase;letter-spacing:0.08em;color:#333}'
+    +'table{width:100%;border-collapse:collapse;margin:2pt 0 4pt}'
+    +'th,td{border:1px solid #999;padding:3.5pt 6pt;font-size:10pt;text-align:left;vertical-align:top}'
+    +'th{background:#eee}tr{page-break-inside:avoid}'
+    +'.hdr{border-bottom:3px double #111;padding-bottom:8pt;margin-bottom:14pt}'
+    +'.sub{font-size:10pt;color:#333;margin-top:2pt}'
+    +'.student{page-break-before:always;padding-top:2pt}.student.first{page-break-before:auto}'
+    +'.line{font-size:10.5pt;margin:2pt 0}'
+    +'.notes{margin-top:12pt;font-size:10.5pt}'
+    +'.sig{margin-top:26pt;padding-top:8pt;border-top:1px solid #999;font-size:10pt;display:flex;justify-content:space-between}'
+    +'.foot{margin-top:6pt;font-size:8.5pt;color:#666}'
+    +'</style></head><body>';
+  h+='<div class="hdr"><h1>'+family.toUpperCase()+'</h1>'
+    +'<div class="sub">Weekly Education Record</div>'
+    +'<div class="sub">Week '+wkN+' &middot; '+fmtY(data.weekDates[schedDays[0]])+' &ndash; '+fmtY(data.weekDates[schedDays[schedDays.length-1]])
+    +' &middot; '+schedDays.length+' scheduled day'+(schedDays.length===1?'':'s')+' of instruction</div></div>';
+
+  (data.kids||[]).forEach((k,ki)=>{
+    const kt=tasks.filter(t=>t&&t.who===k&&!/lunch/i.test(t.title||""));
+    const name=esc((opts.kidNames||{})[k]||k.charAt(0).toUpperCase()+k.slice(1));
+    h+='<div class="student'+(ki===0?' first':'')+'"><h2>'+name+'</h2>';
+
+    // Attendance — same rule as the Attendance tab: worked that day, unless overridden.
+    const att=[]; let attN=0;
+    schedDays.forEach(d=>{
+      const dt=kt.filter(t=>t.day===d&&!String(t.id||"").endsWith("_c"));
+      const ov=((opts.attOverrides||{})[d]||{})[k];
+      if(!dt.length&&ov===undefined) return;
+      const on=ov!==undefined?!!ov:dt.some(doneOf);
+      if(on) attN++;
+      att.push(fmt(data.weekDates[d])+(on?" &#10003;":" &mdash;"));
+    });
+    h+='<div class="line"><b>Attendance:</b> '+(att.length?attN+' of '+att.length+' scheduled days &middot; '+att.join(" &nbsp; "):'&mdash;')+'</div>';
+
+    // Subjects & work completed — done tasks only, grouped by subject, with scores.
+    const bySub={};
+    kt.filter(doneOf).forEach(t=>{
+      const s=clean(dgSubjOf(t))||"Other";
+      const title=String(t.title||""); const m=title.split(/[—–]/);
+      const detail=clean(m.length>1?m.slice(1).join("–"):title)||clean(title);
+      const e=hist[String(t.id)]||hist[String(t.id)+"_c"];
+      const sc=e&&e.score?clean(scoreTxt(e.score)):"";
+      (bySub[s]=bySub[s]||{items:[],scores:[]}).items.push(detail);
+      if(sc) bySub[s].scores.push(sc);
+    });
+    const subKeys=Object.keys(bySub).sort();
+    h+='<h3>Subjects &amp; Work Completed</h3>';
+    if(!subKeys.length) h+='<div class="line">No completed work recorded this week.</div>';
+    else{
+      h+='<table><tr><th style="width:24%">Subject</th><th>Work completed</th><th style="width:14%">Score(s)</th></tr>';
+      subKeys.forEach(s=>{
+        // Collapse repeated daily items ("Morning Notebook" ×4 → one entry with a day count).
+        const tally={}, order=[];
+        bySub[s].items.forEach(it=>{ if(tally[it]==null){tally[it]=0;order.push(it);} tally[it]++; });
+        const work=order.map(it=>esc(it)+(tally[it]>1?' ('+tally[it]+' days)':'')).join("; ");
+        h+='<tr><td>'+esc(s)+'</td><td>'+work+'</td><td>'+(bySub[s].scores.length?esc(bySub[s].scores.join(", ")):'&mdash;')+'</td></tr>';
+      });
+      h+='</table>';
+    }
+
+    // Reading — in-week page log per book + completion when the log reaches the end.
+    const rl=(data.readingLog||{})[k]||{};
+    const rEntries=dgVals(rl.entries).filter(e=>e&&typeof e.ts==="number"&&dgIn(e.ts,r));
+    if(rEntries.length){
+      const byBook={};
+      rEntries.forEach(e=>{ (byBook[e.bookId||"?"]=byBook[e.bookId||"?"]||[]).push(e); });
+      h+='<h3>Reading</h3>';
+      Object.keys(byBook).forEach(bid=>{
+        const bk=(rl.books||{})[bid]||{}; const es=byBook[bid].slice().sort((a,b)=>a.ts-b.ts);
+        const spans=es.filter(e=>typeof e.fromPage==="number"&&typeof e.toPage==="number").map(e=>"pp. "+e.fromPage+"&ndash;"+e.toPage);
+        const maxTo=Math.max.apply(null,es.map(e=>typeof e.toPage==="number"?e.toPage:0));
+        const fin=bk.status==="done"&&bk.totalPages&&maxTo>=bk.totalPages;
+        h+='<div class="line">&ldquo;'+esc(clean(bk.title)||"Untitled")+'&rdquo; &mdash; '+(spans.join(", ")||es.length+" session"+(es.length===1?"":"s"))+(fin?' &middot; completed':'')+'</div>';
+      });
+    }
+
+    // Review & practice — session dates prove regular instruction; internals stay out.
+    const mh=(data.masteryHistory||{})[k]||{};
+    const sessDates=Object.keys(mh).filter(d=>mh[d]&&dgIn(mh[d].date||d,r)).map(d=>fmt((mh[d].date||"").slice(0,10))).filter(Boolean);
+    const sp=dgVals((data.sprintLog||{})[k]).filter(e=>e&&dgIn(e.date||(typeof e.ts==="number"?dgIsoOfEpoch(e.ts):""),r));
+    if(sessDates.length||sp.length){
+      h+='<h3>Review &amp; Practice</h3>';
+      if(sessDates.length) h+='<div class="line">'+sessDates.length+' spaced-review session'+(sessDates.length===1?'':'s')+' ('+sessDates.join(", ")+')</div>';
+      if(sp.length){ const decks=[...new Set(sp.map(e=>clean(e.deck)).filter(Boolean))];
+        h+='<div class="line">'+sp.length+' timed fluency sprint'+(sp.length===1?'':'s')+(decks.length?' &mdash; '+esc(decks.join(", ")):'')+'</div>'; }
+    }
+
+    // Unit studies — activities completed this week.
+    const ua=[];
+    Object.keys(opts.units||{}).forEach(uid=>{ const u=opts.units[uid]; if(!u||!(u.enrolled||{})[k]) return;
+      dgVals(u.activities).forEach(a=>{ if(!a) return; const done=((u.activityLog||{})[k]||{})[a.key];
+        if(done&&typeof done.ts==="number"&&dgIn(done.ts,r)) ua.push(clean(a.name||a.key)+' ('+clean(u.name||u.title||uid)+')'); });
+    });
+    if(ua.length){ h+='<h3>Unit Study</h3>'; ua.forEach(x=>{ h+='<div class="line">'+esc(x)+'</div>'; }); }
+
+    h+='<div class="notes">Notes: _________________________________________________________________</div>';
+    h+='</div>';
+  });
+
+  h+='<div class="sig"><span>Prepared by: ____________________________</span><span>Date: ______________</span></div>';
+  h+='<div class="foot">Records maintained by '+family+(opts.generatedOn?' &middot; generated '+esc(opts.generatedOn):'')+'</div>';
+  h+='</body></html>';
+  return h;
+}
 // DIGEST_END
 
 // ── DIGEST UI (W1) — the Mom-only 📋 Report sub-tab under History. This is the
@@ -5764,6 +5897,21 @@ function digestFreezeIfNeeded(wkKey){
   digestData.seen=digestData.seen||{}; top.forEach(c=>digestData.seen[c.id]=digestTodayKey());
   return rep;
 }
+// W1.5 — open the official weekly record for printing. Same window.open pattern
+// as printWeekReport, which stays untouched until this document proves itself.
+function printRecordReport(wkKey){
+  wkKey=wkKey||WK;
+  const data=digestGatherData(wkKey);
+  const now=new Date();
+  const html=digestRecordHtml(data,{
+    attOverrides:(attOverrides||{})[wkKey]||{},
+    units:unitStudies||{},
+    familyName:"Howe Academy",
+    generatedOn:now.toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}),
+    scoreLabel:scoreLabel
+  });
+  const w=window.open("","_blank"); w.document.write(html); w.document.close(); w.onload=()=>w.print();
+}
 function digestMute(id){ if(!momHere()) return;
   digestData.mute=digestData.mute||{}; digestData.mute[id]=true;
   if(db) db.ref("digest/mute/"+id).set(true);
@@ -5806,7 +5954,7 @@ function renderHistoryReport(){
   h+='<div><div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700">📋 Week '+rep.weekNum+' Report</div>';
   h+='<div style="font-size:11px;opacity:0.65;margin-top:1px">'+rangeLbl+(isCur?' · live preview — freezes when the week closes':' · frozen record')+'</div></div>';
   h+='<div style="display:flex;gap:6px">';
-  h+='<button onclick="printWeekReport(\''+(isCur?'':wk)+'\'||undefined)" style="padding:5px 11px;border-radius:8px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🖨</button>';
+  h+='<button onclick="printRecordReport(\''+wk+'\')" title="Print homeschool record" style="padding:5px 11px;border-radius:8px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🖨 Record</button>';
   if(!isCur) h+='<button onclick="digestRefreeze(\''+wk+'\')" style="padding:5px 11px;border-radius:8px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">↻</button>';
   h+='</div></div>';
   if(rep.confidence<70&&!isCur) h+='<div style="font-size:10px;opacity:0.7;margin-top:6px">⚠️ Sparse records this week ('+rep.confidence+'% recorded) — read numbers loosely.</div>';
