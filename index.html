@@ -9783,6 +9783,9 @@ function renderCalendarView(el, headerHtml){
   else h+='<button class="gcal-add-btn" onclick="calStartAdd(\'vacation\')">+ Add Vacation</button>';
   h+='</div>';
 
+  // ── Co-ops / Custom days ──
+  h+=renderCoopSection();
+
   // ── Per-kid overrides ──
   h+='<div class="gcal-section">';
   h+='<div class="gcal-hdr"><span>Per-Kid Overrides</span></div>';
@@ -9822,6 +9825,168 @@ function renderCalendarView(el, headerHtml){
 
   h+='</div>';
   el.innerHTML=h;
+}
+
+// ── CO-OPS / CUSTOM DAYS ─────────────────────────────────────────────────────
+// Named calendar categories for co-op days: a kid is out for PART of the day (timed —
+// school work packs in after they're home) or the WHOLE day (like a holiday, for those
+// kids only). Stored at calendar/coops/{id}={name,color,kids,mode,start,end,dates:[]}.
+// Wiring: full-day → smapIsKidOff (generation + pace skip that kid that date); timed →
+// gwBuildDayTasks pushes those kids' start to the co-op end via the packer's kidStart.
+// Dates are specific ISO days (typed for now; 📸 photo-scan is the next pass).
+let coopEditId=null, coopForm=null;
+const COOP_COLORS=["#7c3aed","#0ea5e9","#f59e0b","#10b981","#ef4444","#ec4899"];
+function coopsMap(){ return calendarData.coops||{}; }
+function _coopHasDate(c,ds){ return !!c && (c.dates||[]).indexOf(ds)>=0; }
+function coopFullDayFor(kid,ds){
+  const m=coopsMap();
+  for(const id in m){ const c=m[id]; if(c&&c.mode==="fullDay"&&(c.kids||[]).indexOf(kid)>=0&&_coopHasDate(c,ds)) return c.name||"Co-op"; }
+  return null;
+}
+function coopTimedEndMin(kid,ds){
+  const m=coopsMap(); let mx=0;
+  for(const id in m){ const c=m[id]; if(c&&c.mode==="timed"&&(c.kids||[]).indexOf(kid)>=0&&_coopHasDate(c,ds)){ const e=toMin(c.end||"12:00 PM"); if(e>mx) mx=e; } }
+  return mx;
+}
+function coopsOnDate(ds){ const out=[]; const m=coopsMap(); for(const id in m){ if(_coopHasDate(m[id],ds)) out.push(m[id]); } return out; }
+function _coop24(t12){ const mn=toMin(t12); if(isNaN(mn)) return ""; const hh=Math.floor(mn/60), mm=mn%60; return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0"); }
+let coopScanStatus="";
+function coopStartAdd(){ coopEditId="__new__"; coopForm={name:"",color:COOP_COLORS[0],kids:[...ROSTER],mode:"timed",start:"09:00",end:"12:00",dates:[]}; coopScanStatus=""; renderAll(); }
+function coopStartEdit(id){ const c=coopsMap()[id]; if(!c) return; coopEditId=id; coopForm={name:c.name||"",color:c.color||COOP_COLORS[0],kids:(c.kids||[]).slice(),mode:c.mode||"timed",start:c.start?_coop24(c.start):"09:00",end:c.end?_coop24(c.end):"12:00",dates:(c.dates||[]).slice().sort()}; coopScanStatus=""; renderAll(); }
+function coopCancel(){ coopEditId=null; coopForm=null; coopScanStatus=""; renderAll(); }
+// 📸 Scan a photo of the co-op's printed schedule → Claude extracts the meeting dates (and
+// times, if shown) → merge into the form's date list. Reuses the exact book-scan pipeline
+// (_cbShrinkImage + direct browser call to claude-sonnet-5, key from config/anthropic_key).
+async function coopScanSchedule(input){
+  const files=[...(input.files||[])];
+  input.value="";
+  if(!files.length||!coopForm) return;
+  const key=mastAIKey||haGetKey();
+  if(!key){ coopScanStatus="⚠ No AI key set — add one in Admin → Settings."; renderAll(); return; }
+  coopScanStatus="Reading "+files.length+" photo"+(files.length!==1?"s":"")+"…"; renderAll();
+  try{
+    const imgs=await Promise.all(files.slice(0,8).map(_cbShrinkImage));
+    coopScanStatus="Asking Claude to read the dates…"; renderAll();
+    const content=imgs.map(b64=>({type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}}));
+    content.push({type:"text",text:
+      "This photo shows a co-op or class schedule — a list of meeting dates, maybe with class times. "+
+      "Today is "+_todayStr()+". Extract EVERY meeting date and return ONLY strict JSON, no commentary:\n"+
+      '{"dates":["2026-09-02","2026-09-09"],"start":"9:00 AM","end":"12:00 PM"}\n'+
+      "Rules: dates as ISO YYYY-MM-DD; if a year isn't printed, infer it so each date is the nearest upcoming occurrence on or after today (a fall schedule belongs to this school year); "+
+      "start/end = the class start and end time if the schedule shows them, otherwise omit those two keys; skip header rows and any 'no class'/holiday rows."});
+    const resp=await fetch("https://api.anthropic.com/v1/messages",{ method:"POST",
+      headers:{ "content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true" },
+      body:JSON.stringify({ model:"claude-sonnet-5", max_tokens:2000, messages:[{role:"user",content}] }) });
+    if(!resp.ok){ const t=await resp.text(); throw new Error("Claude API "+resp.status+" — "+t.slice(0,120)); }
+    const data=await resp.json();
+    let txt=(data.content||[]).filter(b=>b&&b.type==="text").map(b=>b.text||"").join("");
+    window._coopScanRaw=txt;
+    const a=txt.indexOf("{"), b=txt.lastIndexOf("}");
+    if(a<0||b<=a) throw new Error("Couldn't read any dates — try a clearer photo.");
+    const parsed=JSON.parse(txt.slice(a,b+1));
+    const got=(parsed.dates||[]).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d));
+    if(!got.length) throw new Error("No dates found — try a clearer photo of the schedule.");
+    let added=0;
+    got.forEach(d=>{ if(coopForm.dates.indexOf(d)<0){ coopForm.dates.push(d); added++; } });
+    coopForm.dates.sort();
+    if(coopForm.mode==="timed"){
+      if(parsed.start){ const v=_coop24(parsed.start); if(v) coopForm.start=v; }
+      if(parsed.end){ const v=_coop24(parsed.end); if(v) coopForm.end=v; }
+    }
+    const dupes=got.length-added;
+    coopScanStatus="✓ Added "+added+" date"+(added!==1?"s":"")+(dupes>0?" ("+dupes+" already there)":"")+" — review below, then Save.";
+  }catch(e){
+    coopScanStatus="❌ "+(e.message||"scan failed");
+    console.error("[HA] coop scan",e);
+  }
+  renderAll();
+}
+function coopSet(f,v){ if(coopForm) coopForm[f]=v; }                 // no re-render — for live text/time inputs
+function coopPickColor(c){ if(coopForm){ coopForm.color=c; renderAll(); } }
+function coopToggleKid(k){ if(!coopForm) return; const i=coopForm.kids.indexOf(k); if(i>=0) coopForm.kids.splice(i,1); else coopForm.kids.push(k); renderAll(); }
+function coopSetMode(m){ if(coopForm){ coopForm.mode=m; renderAll(); } }
+function coopAddDateInput(){ const el=document.getElementById("coop-date-inp"); if(!el||!el.value||!coopForm) return; if(coopForm.dates.indexOf(el.value)<0){ coopForm.dates.push(el.value); coopForm.dates.sort(); } el.value=""; renderAll(); }
+function coopRemoveDate(ds){ if(!coopForm) return; const i=coopForm.dates.indexOf(ds); if(i>=0){ coopForm.dates.splice(i,1); renderAll(); } }
+function coopSave(){
+  if(!db||!coopForm) return;
+  if(!coopForm.name.trim()){ alert("Give the co-op a name."); return; }
+  if(!coopForm.kids.length){ alert("Pick at least one kid."); return; }
+  const wasNew=(coopEditId==="__new__");
+  const id=wasNew?("coop_"+Date.now()):coopEditId;
+  const prevCreated=(coopsMap()[coopEditId]||{}).created;
+  const obj={name:coopForm.name.trim(),color:coopForm.color,kids:coopForm.kids.slice(),mode:coopForm.mode,dates:(coopForm.dates||[]).slice().sort(),created:wasNew?Date.now():(prevCreated||Date.now())};
+  if(coopForm.mode==="timed"){ obj.start=to12h(coopForm.start); obj.end=to12h(coopForm.end); }
+  db.ref("calendar/coops/"+id).set(obj);
+  calendarData.coops=calendarData.coops||{}; calendarData.coops[id]=obj;   // optimistic local
+  coopEditId=null; coopForm=null;
+  if(typeof gwShowToast==="function") gwShowToast("Saved "+obj.name+" — regenerate a week to reflow around it");
+  renderAll();
+}
+function coopDelete(id){
+  if(!db) return;
+  const c=coopsMap()[id];
+  if(!confirm("Delete "+((c&&c.name)||"this co-op")+"?")) return;
+  db.ref("calendar/coops/"+id).remove();
+  if(calendarData.coops) delete calendarData.coops[id];
+  renderAll();
+}
+function renderCoopSection(){
+  const list=Object.entries(coopsMap()).sort((a,b)=>(a[1].name||"").localeCompare(b[1].name||""));
+  let h='<div class="gcal-section">';
+  h+='<div class="gcal-hdr"><span>\u{1F3EB} Co-ops / Custom Days</span><span style="font-size:11px;font-weight:400;color:var(--muted)">'+list.length+' set</span></div>';
+  h+='<p style="font-size:11px;color:var(--muted);margin-bottom:10px">Named days a kid is out part of the day (school work packs in after they’re home) or all day. Regenerate a week to reflow around new dates.</p>';
+  if(list.length){
+    h+='<div class="gcal-card">';
+    list.forEach(([id,c])=>{
+      const when=c.mode==="fullDay"?"Full day off":((c.start||"?")+"–"+(c.end||"?"));
+      const kidsTxt=(c.kids||[]).map(k=>cap(k)).join(", ")||"no kids";
+      const nDates=(c.dates||[]).length;
+      h+='<div class="gcal-row">'+
+        '<div><div class="gcal-row-name"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:'+(c.color||"#7c3aed")+';margin-right:6px;vertical-align:middle"></span>'+esc(c.name||"Unnamed")+'</div>'+
+        '<div class="gcal-row-dates">'+when+' \xB7 '+esc(kidsTxt)+' \xB7 '+nDates+' date'+(nDates!==1?"s":"")+'</div></div>'+
+        '<div class="gcal-row-actions">'+
+        '<button onclick="coopStartEdit(\''+id+'\')" title="Edit">&#9998;</button>'+
+        '<button onclick="coopDelete(\''+id+'\')" title="Delete">&#128465;</button>'+
+        '</div></div>';
+    });
+    h+='</div>';
+  } else {
+    h+='<div class="gcal-empty">No co-ops set yet</div>';
+  }
+  if(coopEditId) h+=renderCoopForm();
+  else h+='<button class="gcal-add-btn" onclick="coopStartAdd()">+ Add Co-op / Custom Day</button>';
+  h+='</div>';
+  return h;
+}
+function renderCoopForm(){
+  const f=coopForm; if(!f) return '';
+  let h='<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:8px">';
+  h+='<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">Name</div>';
+  h+='<input type="text" value="'+esc(f.name)+'" oninput="coopSet(\'name\',this.value)" placeholder="Tuesday Co-op" style="width:100%;padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif;margin-bottom:10px">';
+  h+='<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">Color</div><div style="display:flex;gap:6px;margin-bottom:10px">';
+  COOP_COLORS.forEach(c=>{ h+='<button onclick="coopPickColor(\''+c+'\')" style="width:26px;height:26px;border-radius:7px;background:'+c+';border:'+(f.color===c?"3px solid #111":"1px solid rgba(0,0,0,0.12)")+';cursor:pointer"></button>'; });
+  h+='</div>';
+  h+='<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">Which kids</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">';
+  [...ROSTER].forEach(k=>{ const on=f.kids.indexOf(k)>=0; const col=KID_COLOR[k]||"#333"; h+='<button onclick="coopToggleKid(\''+k+'\')" style="padding:5px 12px;border-radius:16px;border:1.5px solid '+(on?"transparent":"var(--border)")+';background:'+(on?col:"#fff")+';color:'+(on?"#fff":"var(--muted)")+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cap(k)+'</button>'; });
+  h+='</div>';
+  h+='<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">Type</div><div style="display:flex;gap:6px;margin-bottom:10px">';
+  [["timed","Timed — black out hours"],["fullDay","Full day off"]].forEach(pair=>{ const m=pair[0],lbl=pair[1]; h+='<button onclick="coopSetMode(\''+m+'\')" style="padding:6px 12px;border-radius:8px;border:1.5px solid '+(f.mode===m?"#7c3aed":"var(--border)")+';background:'+(f.mode===m?"#f5f3ff":"#fff")+';color:'+(f.mode===m?"#6d28d9":"var(--text)")+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; });
+  h+='</div>';
+  if(f.mode==="timed"){
+    h+='<div style="display:flex;gap:10px;margin-bottom:4px">';
+    h+='<div style="flex:1"><div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">Out from</div><input type="time" value="'+esc(f.start)+'" onchange="coopSet(\'start\',this.value)" style="width:100%;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:13px"></div>';
+    h+='<div style="flex:1"><div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">Back by</div><input type="time" value="'+esc(f.end)+'" onchange="coopSet(\'end\',this.value)" style="width:100%;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:13px"></div>';
+    h+='</div><div style="font-size:10px;color:var(--muted);margin:2px 0 10px">School work is scheduled after “Back by” on these dates.</div>';
+  }
+  h+='<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">Dates</div>';
+  h+='<label style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:9px;border:none;background:#7c3aed;color:#fff;font-size:12px;font-weight:800;cursor:pointer;margin-bottom:8px">\u{1F4F8} Scan schedule photo<input type="file" accept="image/*" multiple style="display:none" onchange="coopScanSchedule(this)"></label>';
+  if(coopScanStatus) h+='<div style="font-size:11px;margin:0 0 8px;color:'+((coopScanStatus[0]==="❌"||coopScanStatus[0]==="⚠")?"#b5394a":"#6d28d9")+'">'+esc(coopScanStatus)+'</div>';
+  if(f.dates.length){ h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'; f.dates.forEach(ds=>{ h+='<span style="display:inline-flex;align-items:center;gap:5px;background:var(--bg,#f4f4f5);border-radius:14px;padding:3px 9px;font-size:11px">'+calFmtDate(ds)+' <button onclick="coopRemoveDate(\''+ds+'\')" style="border:none;background:none;color:#b5394a;font-size:14px;cursor:pointer;line-height:1;padding:0">&times;</button></span>'; }); h+='</div>'; }
+  else h+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">No dates yet — add the co-op meeting dates below (\u{1F4F8} photo scan coming next).</div>';
+  h+='<div style="display:flex;gap:6px;margin-bottom:12px"><input id="coop-date-inp" type="date" style="flex:1;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:13px"><button onclick="coopAddDateInput()" style="padding:6px 14px;border-radius:8px;border:none;background:#7c3aed;color:#fff;font-size:12px;font-weight:700;cursor:pointer">Add date</button></div>';
+  h+='<div style="display:flex;gap:8px"><button onclick="coopSave()" style="flex:1;padding:9px;border-radius:9px;border:none;background:#16a34a;color:#fff;font-size:13px;font-weight:700;cursor:pointer">Save</button><button onclick="coopCancel()" style="padding:9px 16px;border-radius:9px;border:1px solid var(--border);background:#fff;font-size:13px;cursor:pointer">Cancel</button></div>';
+  h+='</div>';
+  return h;
 }
 
 function calNavMonth(dir){
@@ -15167,6 +15332,7 @@ function smapIsKidOff(kid,dateStr){
   const o=ov[dateStr];
   if(o&&o.school===false) return o.note||"Off";
   if(o&&o.school===true) return null;
+  const _coopOff=coopFullDayFor(kid,dateStr); if(_coopOff) return _coopOff;   // full-day co-op = off for this kid
   return smapIsOff(dateStr);
 }
 
@@ -26503,6 +26669,9 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   KIDS.forEach(function(kid){ var list=collectKid(kid); list.sort(function(a,b){return _feedRank(kid,a)-_feedRank(kid,b);}); applyStickyOrder(list,function(e){return e.key;},function(e){return getMeta(kid,e.key);}); perKid[kid]=list; });
   const kidStart={};
   if(isSitter) KIDS.forEach(function(kid){ if(withSitter.includes(kid)) kidStart[kid]=sitterEnd; });
+  // Timed co-op: those kids don't start school until they're home (co-op end) on this date,
+  // so the packer places their work afterward. Full-day co-ops are handled upstream as off-days.
+  if(dayConfig.dateStr) KIDS.forEach(function(kid){ var _ce=coopTimedEndMin(kid,dayConfig.dateStr); if(_ce>0) kidStart[kid]=Math.max(kidStart[kid]||0,_ce); });
   var _maxLen=0; KIDS.forEach(function(k){ if(perKid[k].length>_maxLen) _maxLen=perKid[k].length; });
   // Round-robin across kids by step so Mom/devices are shared fairly. Exception: a
   // doubled subject (two of the same key, adjacent after the stable sort) is emitted as
