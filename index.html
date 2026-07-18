@@ -8785,15 +8785,39 @@ function ceEditLesson(dayNum,val){
   db.ref("curriculum/lastEdit").set(currData.lastEdit);
 }
 
+// Remove a subject's CURRENT footprint — grid cells (Grid/Calendar/Lesson Map all read
+// these), Lesson-Map overrides (added/removed slots), and pace tracking. Deliberately does
+// NOT touch archive/history/checked — past completion is kept. One batched lessons write.
+// Returns the number of grid cells cleared. Shared by delete + the orphan cleanup.
+function _gvPurgeSubject(kid,sk){
+  const lessons=(currData.lessons||{})[kid]||{};
+  const lp={}; let n=0;
+  for(const dn of Object.keys(lessons)){ if(lessons[dn]&&lessons[dn][sk]!==undefined){ delete lessons[dn][sk]; lp[dn+"/"+sk]=null; n++; } }
+  if(db&&n) db.ref("curriculum/lessons/"+kid).update(lp);
+  for(const dt of Object.keys(scheduleOverrides||{})){
+    const o=(scheduleOverrides[dt]||{})[kid]; if(!o) continue; let t=false;
+    if(o.added&&o.added[sk]!==undefined){ delete o.added[sk]; if(!Object.keys(o.added).length) delete o.added; t=true; }
+    if(o.removed&&o.removed[sk]!==undefined){ delete o.removed[sk]; if(!Object.keys(o.removed).length) delete o.removed; t=true; }
+    if(t&&db) db.ref("scheduleOverrides/"+dt+"/"+kid).set(o);
+  }
+  try{ if(paceData&&paceData.subjects&&paceData.subjects[kid]) delete paceData.subjects[kid][sk];
+    try{localStorage.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
+    if(db) db.ref("pace/subjects/"+kid+"/"+sk).remove(); }catch(e){}
+  return n;
+}
 function ceDeleteSubject(){
   const s=ceGetSubject();
   if(!s) return;
-  if(!confirm("Delete \""+s.display+"\" from "+cap(ceEditKid)+"'s curriculum? This cannot be undone.")) return;
-  delete currData.subjects[ceEditKid][ceEditKey];
-  if(db) db.ref("curriculum/subjects/"+ceEditKid+"/"+ceEditKey).remove();
+  const kid=ceEditKid, sk=ceEditKey;
+  if(!confirm("Delete \""+s.display+"\" from "+cap(kid)+"'s curriculum? It's removed from the Grid, Calendar and Lesson Map — past history is kept. This cannot be undone.")) return;
+  delete currData.subjects[kid][sk];
+  if(db) db.ref("curriculum/subjects/"+kid+"/"+sk).remove();
+  const n=_gvPurgeSubject(kid,sk);
   currData.lastEdit=new Date().toISOString();
   if(db) db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  try{ if(typeof buildCurrPaceCum==="function") buildCurrPaceCum(); }catch(e){}
   ceCloseSheet();
+  if(typeof gwShowToast==="function") gwShowToast("Deleted "+(s.display||sk)+(n?" — "+n+" grid cell"+(n!==1?"s":"")+" cleared":""));
   renderAll();
 }
 
@@ -14954,6 +14978,19 @@ function gvSubjectCols(kid){
   return Object.keys(seen).sort((a,b)=>((subs[a]||{}).display||a).localeCompare((subs[b]||{}).display||b));
 }
 
+// Clear every orphaned subject (card deleted, grid cells left behind) for the current kid.
+function gvPurgeOrphans(){
+  if(!momModeActive&&!adminPinUnlocked) return;
+  const kid=gvKid, subs=(currData.subjects||{})[kid]||{};
+  const cols=gvSubjectCols(kid).filter(function(sk){return !subs[sk];});
+  if(!cols.length) return;
+  if(!confirm("Remove "+cols.length+" deleted subject"+(cols.length>1?"s":"")+" ("+cols.join(", ")+") from "+cap(kid)+"'s Grid, Calendar & Lesson Map? Past history is kept. This can't be undone.")) return;
+  let n=0; cols.forEach(function(sk){ n+=_gvPurgeSubject(kid,sk); });
+  currData.lastEdit=new Date().toISOString(); if(db) db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  try{ if(typeof buildCurrPaceCum==="function") buildCurrPaceCum(); }catch(e){}
+  if(typeof gwShowToast==="function") gwShowToast("Removed "+cols.length+" subject"+(cols.length>1?"s":"")+" from the grid ("+n+" cells)");
+  renderAll();
+}
 function gvSetKid(k){ gvKid=k; gvEdit=null; gvSelMode=false; gvSel=new Set(); gvSelAnchor=null; gvSelUndo=null; gvScrollTop=0; gvScrollLeft=0; renderAll(); }
 function gvTogglePast(){ gvShowPast=!gvShowPast; gvEdit=null; renderAll(); }
 function gvGrabScroll(){ const w=document.querySelector(".gv-wrap"); if(w){ gvScrollTop=w.scrollTop; gvScrollLeft=w.scrollLeft; } }
@@ -15184,6 +15221,16 @@ function renderCurrGrid(el){
     return;
   }
   h+=_cardOnlyHtml;
+
+  // Deleted-but-orphaned subjects: card removed, but grid cells linger (pre-fix deletions,
+  // e.g. lof/kumon). One-tap cleanup — clears Grid/Calendar/Lesson-Map, keeps history.
+  const _orphans=cols.filter(function(sk){return !subs[sk];});
+  if(_orphans.length&&(momModeActive||adminPinUnlocked)){
+    h+='<div style="background:#fff7ed;border-left:4px solid #d97706;border-radius:0 10px 10px 0;padding:10px 12px;margin:0 0 8px">';
+    h+='<div style="font-size:12px;color:#92400e;margin-bottom:6px"><b>'+_orphans.length+' deleted subject'+(_orphans.length>1?'s':'')+' still ha'+(_orphans.length>1?'ve':'s')+' grid cells:</b> '+_orphans.map(esc).join(", ")+'. Remove from the Grid, Calendar &amp; Lesson Map (past history is kept).</div>';
+    h+='<button onclick="gvPurgeOrphans()" style="border:1px solid #d97706;background:#fff;color:#b45309;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Remove '+_orphans.length+' from grid</button>';
+    h+='</div>';
+  }
 
   const today=cbTodayISO();
   const cap_=cbDayCap(gvKid);
