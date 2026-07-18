@@ -20342,6 +20342,38 @@ function mastAddItems(){
   const c=document.getElementById("content"); if(c) renderMastery(c);
 }
 
+// One-time "even out review dates" — re-spread a kid's booked review cards so quiz counts stay
+// steady day to day (fixes bunched troughs/floods that predate the 2026-07-16 spread fix). Each
+// card lands on the least-loaded upcoming slot WITHIN its own tier interval (intervals preserved);
+// quiz and flip cards balance on separate load maps so each day gets a steady share of BOTH.
+// Tightest interval first (least flexibility). Targeted next_due-only write, concurrency-safe.
+function mastRebalanceKid(kid){
+  const pn=mastGetPrintNum();
+  let items=masteryData[kid]; if(items&&!Array.isArray(items)) items=Object.values(items);
+  if(!items||!items.length) return {changed:0,cards:0};
+  const idxOf=new Map(); items.forEach((it,i)=>{ if(it) idxOf.set(it,i); });
+  const sched=items.filter(it=> it && it.tier && (MAST_TIER_INT[it.tier]||0)>1 && it.status!=="introduction" && !mastIsParked(it) && !(typeof mastIsNeverDrill==="function"&&mastIsNeverDrill(it)));
+  sched.sort((a,b)=>(MAST_TIER_INT[a.tier])-(MAST_TIER_INT[b.tier]));
+  const quizLoad={}, flipLoad={}, changes={}; let changed=0;
+  sched.forEach(it=>{
+    const iv=MAST_TIER_INT[it.tier];
+    const load=mastItemIsQuiz(kid,it)?quizLoad:flipLoad;
+    let best=pn, bl=Infinity;   // include today's pending drill so it isn't left empty
+    for(let s=pn;s<=pn+iv-1;s++){ const l=load[s]||0; if(l<bl){ bl=l; best=s; } }
+    load[best]=(load[best]||0)+1;
+    if(it.next_due!==best){ it.next_due=best; changes[idxOf.get(it)+"/next_due"]=best; changed++; }
+  });
+  if(db && changed) db.ref("mastery/"+kid).update(changes);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  return {changed:changed,cards:sched.length};
+}
+function mastRebalanceNow(){
+  const kid=masteryKid;
+  if(!confirm("Even out "+cap(kid)+"’s review dates?\n\nRe-spreads all booked review cards across the coming days so quiz counts stay steady — no empty days, no huge piles. Cards keep their normal intervals; this only changes WHEN each next appears.")) return;
+  const r=mastRebalanceKid(kid);
+  if(typeof gwShowToast==="function") gwShowToast("Evened out "+r.changed+" review card"+(r.changed!==1?"s":"")+" for "+cap(kid)+" ✓");
+  const c=document.getElementById("content"); if(c) renderMastery(c);
+}
 function renderMastAdmin(){
   const s=mastAdminLocal||mastDrillSettings();
   const catE=MAST_CAT_EMOJI_MAP[masteryKid]||{};
@@ -20378,6 +20410,12 @@ function renderMastAdmin(){
     h+='<button onclick="mastAdminToggleShowMe()" style="padding:6px 16px;border-radius:14px;border:1.5px solid '+(_smOn?'#16a34a':'#e2ddd6')+';background:'+(_smOn?'#16a34a':'#fff')+';color:'+(_smOn?'#fff':'#78716c')+';font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+(_smOn?'On':'Off')+'</button>';
     h+='</div>';
   })();
+
+  // Even out review dates — one-time re-spread so quiz counts stay steady (no troughs/floods)
+  h+='<div class="mast-admin-row" style="align-items:center">';
+  h+='<div><div class="mast-admin-label">\u{2696}\u{FE0F} Even out review dates</div><div class="mast-admin-desc">Re-spreads '+cap(masteryKid)+'’s booked review cards evenly across the coming days, so quiz counts stay steady — no empty days or huge piles. One-time; cards keep their normal intervals.</div></div>';
+  h+='<button onclick="mastRebalanceNow()" style="padding:6px 14px;border-radius:12px;border:1.5px solid #7c3aed;background:#f5f3ff;color:#6d28d9;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">Even out</button>';
+  h+='</div>';
 
   // Per-category overrides — one consolidated control for all three knobs (daily cap,
   // intro dots, max-new). Each category row carries its three overrides inline and reuses
