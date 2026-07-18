@@ -1024,6 +1024,14 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .celeb-np-song{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .celeb-np-kid{font-size:10px;opacity:0.7}
 .celeb-np-stop{padding:6px 14px;border-radius:8px;border:1.5px solid rgba(255,255,255,0.4);background:none;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif}
+.bb-np{position:fixed;bottom:0;left:0;right:0;z-index:10000;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:12px;opacity:0;pointer-events:none;transition:opacity 0.3s;box-shadow:0 -2px 14px rgba(0,0,0,0.28)}
+.bb-np.show{opacity:1;pointer-events:auto}
+.bb-np-pulse{width:14px;height:14px;border-radius:50%;background:#fff;flex:none;animation:celeb-pulse 0.7s infinite}
+.bb-np-info{flex:1;min-width:0}
+.bb-np-kid{font-size:15px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:bb-name-pulse 0.85s infinite}
+.bb-np-sub{font-size:10.5px;opacity:0.9}
+.bb-np-stop{padding:9px 18px;border-radius:9px;border:1.5px solid rgba(255,255,255,0.65);background:rgba(255,255,255,0.18);color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif;flex:none}
+@keyframes bb-name-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(1.04)}}
 /* ── CURRICULUM EDITOR ───────────────────────── */
 .ce-cards{display:flex;flex-direction:column;gap:8px;margin-bottom:18px}
 .ce-card{background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;cursor:pointer;transition:border-color 0.15s;-webkit-tap-highlight-color:transparent}
@@ -1187,6 +1195,11 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
   <div class="celeb-np-pulse"></div>
   <div class="celeb-np-info"><div class="celeb-np-song" id="celeb-np-song"></div><div class="celeb-np-kid" id="celeb-np-kid"></div></div>
   <button class="celeb-np-stop" onclick="stopCelebMusic()">Stop ■</button>
+</div>
+<div class="bb-np" id="bb-np">
+  <div class="bb-np-pulse"></div>
+  <div class="bb-np-info"><div class="bb-np-kid" id="bb-np-kid"></div><div class="bb-np-sub">Brain break's over — time to come back!</div></div>
+  <button class="bb-np-stop" onclick="bbAlarmStop()">Got it ■</button>
 </div>
 <div class="dlg-overlay" id="dlg" style="display:none">
   <div class="dlg-box">
@@ -4383,7 +4396,7 @@ function bbNextTask(k){
 }
 function bbWriteActive(k,obj){ if(db) db.ref("brainBreaks/"+k+"/active").set(obj); brainBreaks[k]=brainBreaks[k]||{}; brainBreaks[k].active=obj; renderAll(); }
 function bbPatchActive(k,upd){ if(db) db.ref("brainBreaks/"+k+"/active").update(upd); const a=bbActive(k); if(a) Object.assign(a,upd); renderAll(); }
-function bbClearActive(k){ if(db) db.ref("brainBreaks/"+k+"/active").remove(); if(brainBreaks[k]) delete brainBreaks[k].active; renderAll(); }
+function bbClearActive(k){ bbAlarmStop(); if(db) db.ref("brainBreaks/"+k+"/active").remove(); if(brainBreaks[k]) delete brainBreaks[k].active; renderAll(); }
 function bbLogStart(k,entry){
   const key=db?db.ref("brainBreaks/"+k+"/log").push().key:("local_"+Date.now());
   if(db) db.ref("brainBreaks/"+k+"/log/"+key).set(entry);
@@ -4498,6 +4511,48 @@ function bbChime(){
     });
   }catch(e){}
 }
+// Brain-break alarm: a persistent, attention-getting sound + a dismissible bottom bar (like the
+// celebration "now playing"), so the whole family hears the timer end and any kid can tap it off
+// and keep using the app. Louder/repeating vs the old one-shot bbChime; the kid's name pulses.
+let bbAlarmInt=null, bbAlarmT0=0, bbAlarmKid=null, bbAlarmCtx=null;
+function bbAlarmTone(){
+  try{
+    // Reuse ONE audio context across the repeated beeps (browsers cap how many you can open),
+    // and resume it if the browser suspended it — so every repeat actually sounds.
+    if(!bbAlarmCtx||bbAlarmCtx.state==="closed") bbAlarmCtx=new (window.AudioContext||window.webkitAudioContext)();
+    const ctx=bbAlarmCtx;
+    if(ctx.state==="suspended") ctx.resume().catch(function(){});
+    [[988,0],[740,0.22],[988,0.44],[740,0.66]].forEach(function(p){
+      const o=ctx.createOscillator(), g=ctx.createGain();
+      o.type="square"; o.connect(g); g.connect(ctx.destination); o.frequency.value=p[0];
+      const t0=ctx.currentTime+p[1];
+      g.gain.setValueAtTime(0.0001,t0);
+      g.gain.exponentialRampToValueAtTime(0.32,t0+0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001,t0+0.2);
+      o.start(t0); o.stop(t0+0.22);
+    });
+  }catch(e){}
+}
+function bbAlarmStart(k){
+  bbAlarmKid=k;
+  const nm=document.getElementById("bb-np-kid"), bar=document.getElementById("bb-np");
+  if(nm) nm.textContent="\u{1F9E0} "+cap(k)+"’s brain break is over!";
+  if(bar) bar.classList.add("show");
+  if(bbAlarmInt){ clearInterval(bbAlarmInt); bbAlarmInt=null; }
+  bbAlarmTone();
+  bbAlarmT0=Date.now();
+  // Repeat until dismissed, but auto-silence after ~60s so it can never blare forever.
+  bbAlarmInt=setInterval(function(){
+    if(Date.now()-bbAlarmT0>60000){ clearInterval(bbAlarmInt); bbAlarmInt=null; return; }
+    bbAlarmTone();
+  },2200);
+}
+function bbAlarmStop(){
+  if(bbAlarmInt){ clearInterval(bbAlarmInt); bbAlarmInt=null; }
+  bbAlarmKid=null;
+  if(bbAlarmCtx){ try{bbAlarmCtx.close();}catch(e){} bbAlarmCtx=null; }
+  const bar=document.getElementById("bb-np"); if(bar) bar.classList.remove("show");
+}
 function bbTickStart(){
   if(bbTimerInt) return;
   bbTimerInt=setInterval(()=>{
@@ -4506,7 +4561,7 @@ function bbTickStart(){
     const k=el.dataset.kid, a=bbActive(k);
     if(!a||a.phase!=="timer"){ clearInterval(bbTimerInt); bbTimerInt=null; return; }
     const rem=a.startedAt+a.minutes*60000-Date.now();
-    if(rem<=0){ clearInterval(bbTimerInt); bbTimerInt=null; bbChime(); bbPatchActive(k,{phase:"done"}); return; }
+    if(rem<=0){ clearInterval(bbTimerInt); bbTimerInt=null; bbAlarmStart(k); bbPatchActive(k,{phase:"done"}); return; }
     el.textContent=bbFmt(rem);
     const bar=document.getElementById("bb-prog"); if(bar) bar.style.width=Math.max(0,Math.min(100,100*(1-rem/(a.minutes*60000))))+"%";
   },500);
