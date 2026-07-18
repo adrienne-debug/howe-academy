@@ -6595,6 +6595,16 @@ function renderCurriculumView(el,headerHtml){
   // Finish-line projection per subject, computed ONCE for this kid (cards read the cache).
   _ceFinishMap={}; try{ computeFinishLines(k).forEach(r=>{ _ceFinishMap[r.sk]=r; }); }catch(e){}
 
+  // One-time cleanup for make-up days the old "Extend" button left behind. Shows only
+  // while any remain for this kid; clearing them removes it. (Extend itself is gone.)
+  const _exN=flExtendMakeupCount(k);
+  if(_exN){
+    h+='<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:14px;display:flex;align-items:center;gap:10px">';
+    h+='<div style="font-size:12px;color:#92400e;flex:1;min-width:0">🏁 <b>Extend</b> added <b>'+_exN+'</b> make-up day'+(_exN>1?'s':'')+' for '+cap(k)+' out past the plan. Remove them?</div>';
+    h+='<button onclick="flUndoExtend(\''+k+'\')" style="flex-shrink:0;border:1px solid #f59e0b;background:#fff;color:#b45309;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Clear make-ups</button>';
+    h+='</div>';
+  }
+
   h+='<div class="ce-section-hdr" style="color:'+col+'">Subjects to Schedule ('+active.length+')</div>';
   h+='<div style="font-size:10px;color:var(--muted);margin-bottom:8px">Grouped in the order they run on a normal day (from <b>Rules &rarr; Workflow Orders</b>). <span onclick="setAdminSub(\'rules\')" style="color:var(--header);font-weight:700;cursor:pointer;text-decoration:underline">&#9998; Edit order</span></div>';
   // Group cards by workflow TIER, in run order, so the layout itself shows the order —
@@ -6890,10 +6900,9 @@ function ceBuildCard(sk,s,kid){
     h+='<div style="display:flex;align-items:center;gap:6px;margin-top:5px;font-size:10px">';
     h+='<span style="font-size:11px">\u{1F3C1}</span>';
     h+='<span style="font-weight:700;color:'+fc+'">'+txt+'</span>';
-    // Extend lives on the card now (list retired) — only for behind subjects, mom-gated.
-    if((_fl.status==="red"||_fl.status==="amber"||_fl.status==="stalled")&&(momModeActive||adminPinUnlocked)){
-      h+='<button onclick="event.stopPropagation();flExtendSubject(\''+kid+'\',\''+sk+'\')" style="margin-left:auto;flex-shrink:0;border:1px solid '+fc+';background:#fff;color:'+fc+';border-radius:8px;padding:2px 8px;font-size:9px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Extend</button>';
-    }
+    // Extend removed 2026-07-18 — it fabricated far-future "make-up" days instead of
+    // re-pacing, which was noise. The chip stays as a read-only projection; to fix a
+    // late subject, re-pace it in the Builder (Rebuild all) or move lessons in the Map.
     h+='</div>';
   }
   // Session goal readout — where he should reach this session vs where he is (soft).
@@ -9047,13 +9056,23 @@ function ceRenderAddSheet(){
   h+='</div>';
 
   h+='</div></div>';
-  w.innerHTML=h;
+  // Re-render in place when the sheet is already open: render it already-"open" (so the
+  // entrance slide/fade doesn't replay) and restore scroll — otherwise each option click
+  // blips the whole sheet. Only the first open plays the animation.
+  const _wasOpen=!!w.querySelector(".ce-sheet.open");
+  const _prevBox=w.querySelector(".ce-sheet-box");
+  const _prevScroll=_prevBox?_prevBox.scrollTop:0;
+  w.innerHTML=_wasOpen?h.replace('class="ce-sheet"','class="ce-sheet open"'):h;
   w.style.display="block";
   document.body.style.overflow="hidden";
-  requestAnimationFrame(()=>{
-    const sheet=w.querySelector(".ce-sheet");
-    if(sheet) sheet.classList.add("open");
-  });
+  if(_wasOpen){
+    const _nb=w.querySelector(".ce-sheet-box"); if(_nb) _nb.scrollTop=_prevScroll;
+  } else {
+    requestAnimationFrame(()=>{
+      const sheet=w.querySelector(".ce-sheet");
+      if(sheet) sheet.classList.add("open");
+    });
+  }
 }
 
 function ceAddToggleDay(d){
@@ -14011,7 +14030,7 @@ function cbSetCap(kid,val){
 }
 function cbCapStep(kid,d){ cbSetCap(kid,cbDayCap(kid)+d); }
 
-let cbRulesOpen=false, cbNewGroup=null;
+let cbRulesOpen=false, cbNewGroup=null, cbDayPinScroll=0;
 function cbRulesToggle(){ cbRulesOpen=!cbRulesOpen; cbNewGroup=null; renderAll(); }
 function cbGroupStart(){ cbNewGroup={name:"",members:[]}; renderAll(); }
 function cbGroupCancel(){ cbNewGroup=null; renderAll(); }
@@ -14045,6 +14064,7 @@ function cbGroupDel(gid){
 function cbPinDay(sk,d){
   const kid=cbKid;
   const s=currData.subjects[kid][sk]; if(!s||!db) return;
+  const _dp=document.getElementById("cb-daypin-scroll"); if(_dp) cbDayPinScroll=_dp.scrollTop;
   const arr=(s.allowedDays||[]).slice();
   const i=arr.indexOf(d);
   if(i>=0) arr.splice(i,1); else arr.push(d);
@@ -14203,7 +14223,7 @@ function cbRenderRules(col){
 
   // Day pinning — every subject's allowed days on one screen
   h+='<div class="ce-sheet-lbl">Day pinning — set neighbors side by side (blank = any school day)</div>';
-  h+='<div style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:4px 8px">';
+  h+='<div id="cb-daypin-scroll" style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:4px 8px">';
   for(const [sk,s] of entries){
     const al=s.allowedDays||[];
     h+='<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px dashed #eef0f3">';
@@ -14661,6 +14681,9 @@ function renderCurrBuilder(el){
 
   h+='</div>';
   el.innerHTML+=h;
+  // Restore the day-pinning list's own scroll — renderAll only preserves window scroll,
+  // so without this each day tap rebuilds the inner list back at the top.
+  const _dp=document.getElementById("cb-daypin-scroll"); if(_dp) _dp.scrollTop=cbDayPinScroll;
 }
 
 function cbRenderForm(col){
@@ -17187,6 +17210,41 @@ function renderFinishLine(forKid){
   });
   h+='</div>';
   return h;
+}
+
+// Count of make-up slots Extend created for a kid — added[sk]===true. Moved-in
+// make-ups carry a lesson STRING, so they're not counted (or removed) here.
+function flExtendMakeupCount(kid){
+  let n=0;
+  for(const f of Object.keys(scheduleOverrides||{})){
+    const o=(scheduleOverrides[f]||{})[kid];
+    if(o&&o.added){ for(const sk of Object.keys(o.added)) if(o.added[sk]===true) n++; }
+  }
+  return n;
+}
+// Finish Line "Undo Extend": strip every Extend-created make-up slot (added[sk]===true)
+// for this kid. Leaves moved-in make-ups (string values) untouched. Mom-gated; the app
+// clears the data on tap — one whole-object save, then pace + grid rebuild.
+function flUndoExtend(kid){
+  if(!momModeActive&&!adminPinUnlocked) return;
+  const n=flExtendMakeupCount(kid);
+  if(!n){ if(typeof gwShowToast==="function") gwShowToast("No Extend make-up slots to remove for "+cap(kid)+"."); return; }
+  if(!confirm("Remove all "+n+" make-up slot"+(n>1?"s":"")+" that Extend added for "+cap(kid)+"? Lessons moved in by hand are kept.")) return;
+  let removed=0;
+  for(const f of Object.keys(scheduleOverrides||{})){
+    const o=(scheduleOverrides[f]||{})[kid];
+    if(!o||!o.added) continue;
+    for(const sk of Object.keys(o.added)){ if(o.added[sk]===true){ delete o.added[sk]; removed++; } }
+    if(!Object.keys(o.added).length) delete o.added;
+    if(!Object.keys(o).length) delete scheduleOverrides[f][kid];
+    if(scheduleOverrides[f]&&!Object.keys(scheduleOverrides[f]).length) delete scheduleOverrides[f];
+  }
+  if(removed){
+    saveScheduleOverrides();
+    if(typeof buildCurrPaceCum==="function") buildCurrPaceCum();
+    if(typeof gwShowToast==="function") gwShowToast("Removed "+removed+" make-up slot"+(removed>1?"s":"")+" Extend had added for "+cap(kid)+".");
+  }
+  renderAll();
 }
 
 // Per-kid pace rollup. Now unused — was the steering read for the former Admin → Progress tab.
