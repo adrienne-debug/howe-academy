@@ -14263,6 +14263,41 @@ function cbPatchLocal(up){
   }
 }
 
+// Rebuild every Builder-paced subject for the CURRENT kid in one pass — re-lays each
+// from where the kid actually is, using its own saved pacing and the latest calendar
+// (so a newly added day off / holiday reshapes them all). Mom/PIN-gated. Completed work
+// is untouched — each build only rewrites FUTURE placement. Scope = subjects that already
+// have a Builder pacing (s.pacing.mode); pure Excel-grid subjects are left alone. One
+// combined Undo covers the whole batch: we merge every subject's before-snapshot into a
+// single cbLastBuild so the existing ↩ Undo button reverts the entire rebuild at once.
+function cbRebuildAll(){
+  if(!momModeActive&&!adminPinUnlocked) return;
+  if(!db||!currData||!currData.subjects||!cbKid) return;
+  const kid=cbKid, subs=currData.subjects[kid]||{};
+  const isPaced=sk=>{ const s=subs[sk]; if(!s||s.paused||s.tracking==="daily") return false; const r=s.rules||""; if(r.includes("first")||r.includes("last")) return false; return !!(s.pacing&&s.pacing.mode); };
+  const list=Object.keys(subs).filter(isPaced);
+  if(!list.length){ if(typeof gwShowToast==="function") gwShowToast("No Builder-paced subjects for "+cap(kid)+" yet — open a subject and build it first."); return; }
+  if(!confirm("Re-lay all "+list.length+" of "+cap(kid)+"’s Builder-paced subjects from where they are now—using each one’s current pacing and the latest calendar?\n\nCompleted work is kept, and you can Undo.")) return;
+  const savedSubj=cbSubjKey, savedForm=cbForm, savedPrev=cbPreviewRes;
+  const bulkPaths={}; let built=0; const skipped=[];
+  for(const sk of list){
+    cbSubjKey=sk; cbForm=cbDefaultForm(kid,sk); cbPreviewRes=null;
+    try{ cbPreviewRes=cbMaterialize(cbBuildCfg()); }
+    catch(e){ cbPreviewRes={error:(e&&e.message)||"build error"}; }
+    if(!cbPreviewRes||cbPreviewRes.error){ skipped.push(subs[sk].display||sk); continue; }
+    try{ cbApply(); }catch(e){ skipped.push((subs[sk].display||sk)+" (write)"); continue; }
+    if(cbLastBuild&&cbLastBuild.paths){ for(const p in cbLastBuild.paths){ if(!(p in bulkPaths)) bulkPaths[p]=cbLastBuild.paths[p]; } built++; }
+  }
+  cbSubjKey=savedSubj; cbForm=savedForm; cbPreviewRes=savedPrev;
+  if(built){
+    cbLastBuild={kid,sk:"*",paths:bulkPaths,label:"Rebuilt "+built+" of "+cap(kid)+"’s subjects"};
+    try{localStorage.setItem("ha_cbUndo",JSON.stringify(cbLastBuild));}catch(e){}
+  }
+  cbMsg="↻ Rebuilt "+built+" subject"+(built!==1?"s":"")+" for "+cap(kid)+(skipped.length?" · "+skipped.length+" skipped":"");
+  if(typeof gwShowToast==="function") gwShowToast(cbMsg);
+  renderAll();
+}
+
 function cbUndo(){
   if(!cbLastBuild||!db) return;
   const up={};
@@ -14356,6 +14391,11 @@ function renderCurrBuilder(el){
     // Rules & day cap (CB3)
     h+='<button onclick="cbRulesToggle()" style="width:100%;margin-bottom:10px;padding:9px;border-radius:10px;border:1px solid var(--border);background:'+(cbRulesOpen?'var(--bg)':'#fff')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:var(--text);text-align:left">⚙ Rules &amp; day cap for '+cap(cbKid)+' <span style="float:right;color:var(--muted)">'+(cbRulesOpen?'▴':'▾')+'</span></button>';
     if(cbRulesOpen) h+=cbRenderRules(col);
+    // Rebuild all (Mom/PIN-gated) — one-tap re-lay of every Builder-paced subject for this kid
+    if(momModeActive||adminPinUnlocked){
+      const _pacedN=Object.keys(subs).filter(sk=>{const s=subs[sk];if(!s||s.paused||s.tracking==="daily")return false;const r=s.rules||"";if(r.includes("first")||r.includes("last"))return false;return !!(s.pacing&&s.pacing.mode);}).length;
+      if(_pacedN) h+='<button onclick="cbRebuildAll()" style="width:100%;margin-bottom:10px;padding:9px;border-radius:10px;border:1px solid #bbf7d0;background:#f0fdf4;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:#15803d;text-align:left">↻ Rebuild all '+cap(cbKid)+'’s subjects <span style="float:right;color:#16a34a;font-weight:400">'+_pacedN+' paced · from where they are</span></button>';
+    }
     // Subject list
     const entries=Object.entries(subs).filter(([_,s])=>!s.paused).sort((a,b)=>(a[1].display||a[0]).localeCompare(b[1].display||b[0]));
     if(!entries.length) h+='<div style="padding:30px;text-align:center;color:var(--muted);font-size:12px">No subjects for '+cap(cbKid)+' yet.</div>';
