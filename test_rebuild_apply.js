@@ -36,7 +36,7 @@ function slice(name) {
 const FNS = [
   // CBGEN pure layer
   "_cbSpread", "_cbParseDate", "_cbISO", "_cbMonday", "cbMaterialize", "cbSplitCells", "cbDeriveContent",
-  "baseId", "carryRebaselined",
+  "baseId", "carryRebaselined", "carrySubjectGone", "_gvPurgeSubject", "ceDeleteSubject",
   // impure layer under test
   "cbTodayISO", "cbFutureRows", "cbExtendInfo", "cbBacklogInfo", "cbRemainingContent",
   "cbDayCap", "cbDayCapDefault", "cbAltGroups", "cbGroupOf", "cbBlockedDates",
@@ -54,6 +54,7 @@ function mkEnv(autoCounts) {
   const mkRef = (root, p) => ({
     set: v => { writes.push({ root, path: p, val: v }); return Promise.resolve(); },
     update: o => { Object.entries(o).forEach(([k, v]) => writes.push({ root, path: p + "/" + k, val: v })); return Promise.resolve(); },
+    remove: () => { writes.push({ root, path: p, val: "__removed__" }); return Promise.resolve(); },
   });
   const env = {
     // data
@@ -282,6 +283,51 @@ withFrozenNow(Frozen => {
   ok("unstamped id carries (conservative)", res.unstamped === false);
   const rbw = env._writes.filter(w => w.root === "curriculum" && w.path === "rebaseline/ellis/read_detect");
   ok("rebaseline persisted to db", rbw.length === 1 && rbw[0].val.y === 2026, rbw);
+});
+
+console.log("deleted subject — week cleanup + carry guard");
+withFrozenNow(Frozen => {
+  const env = mkEnv({});
+  env.Date = Frozen;
+  // Inject a throwaway subject + its week tasks: one checked, one open, one carried mirror
+  env.currData.subjects.lincoln.testsubj = { display: "Test Subj", device: "paper", minutes: 20 };
+  env.WK = "week14";
+  env.weekData = { tasks: [
+    { id: "2026d200_90", who: "lincoln", subjectKey: "testsubj", day: "monday", title: "T L1" },
+    { id: "2026d200_91", who: "lincoln", subjectKey: "testsubj", day: "tuesday", title: "T L2" },
+    { id: "2026d197_5_c", who: "lincoln", subjectKey: "testsubj", day: "monday", title: "T L0", cascade: true },
+    { id: "2026d200_92", who: "lincoln", subjectKey: "aas", day: "tuesday", title: "AAS x" },
+  ] };
+  env.checked = { "2026d200_90": "10:00 AM Jul 20" };
+  env.scheduleOverrides = {};
+  env.sv = () => {};
+  env._dryRun = () => false;
+  env.confirm = () => true;
+  env.ceCloseSheet = () => {};
+  env.ceGetSubject = () => ({ display: "Test Subj" });
+  env.ceEditKid = "lincoln"; env.ceEditKey = "testsubj";
+  const res = run(env, `()=>{
+    ceDeleteSubject();
+    return {
+      gone: carrySubjectGone({id:"2026d197_5_c",who:"lincoln",subjectKey:"testsubj"}),
+      kept: carrySubjectGone({id:"2026d200_92",who:"lincoln",subjectKey:"aas"}),
+      retr: carrySubjectGone({id:"2026d200_retr_match_julian",who:"julian",subjectKey:"retrieval"}),
+      noMap: carrySubjectGone({id:"2026d200_1",who:"nobody",subjectKey:"x"}),
+    };
+  }`);
+  const ids = env.weekData.tasks.map(t => t.id);
+  ok("open task + carried mirror removed from week", ids.indexOf("2026d200_91") < 0 && ids.indexOf("2026d197_5_c") < 0, ids);
+  ok("checked task kept (history/points intact)", ids.indexOf("2026d200_90") >= 0, ids);
+  ok("other subjects untouched", ids.indexOf("2026d200_92") >= 0, ids);
+  const wkw = env._writes.filter(w => w.root.indexOf("week14/tasks") === 0 || (w.root === "week14/tasks"));
+  const nulled = env._writes.filter(w => String(w.root).indexOf("week14/tasks") >= 0 && w.val === null).map(w => w.path);
+  ok("targeted per-id removes written (no whole-map set)", nulled.length === 2, env._writes.filter(w => String(w.root).indexOf("week14") >= 0));
+  ok("subject card removed from db", env._writes.some(w => String(w.root).indexOf("curriculum/subjects/lincoln/testsubj") >= 0 && w.val === "__removed__"));
+  ok("skiplog + rebaseline purged", env._writes.some(w => String(w.root).indexOf("skiplog/lincoln/testsubj") >= 0) && env._writes.some(w => String(w.root).indexOf("rebaseline/lincoln/testsubj") >= 0));
+  ok("carry guard: deleted subject blocked", res.gone === true);
+  ok("carry guard: live subject carries", res.kept === false);
+  ok("carry guard: retrieval slots exempt", res.retr === false);
+  ok("carry guard: unloaded kid map = no-op", res.noMap === false);
 });
 
 console.log("");
