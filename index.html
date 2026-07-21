@@ -14468,6 +14468,10 @@ function sessionSchoolDaysFromToday(plan,kidId){
 // in scheduleOverrides and are never written here.
 // ═════════════════════════════════════════════════════════════════════════
 let cbKid=null, cbSubjKey=null, cbForm=null, cbPreviewRes=null, cbLastBuild=null, cbMsg="";
+// Keep/Dismiss gate state: cbGate = the open decision sheet; cbDecisions holds
+// confirmed choices per kid|sk until cbApply consumes them; cbBacklogStash pins
+// the backlog snapshot the content was derived from so apply clears those same cells.
+let cbGate=null, cbDecisions={}, cbBacklogStash={};
 
 // CBGEN_START (node-harness extraction boundary — builder materializer, pure)
 function _cbParseDate(s){ const p=String(s).split("-"); return new Date(parseInt(p[0]),parseInt(p[1])-1,parseInt(p[2])); }
@@ -14663,6 +14667,47 @@ function cbMaterialize(cfg){
     unplaced:units?units.length:0, capSkipped
   }};
 }
+// ── Rebuild hygiene (pure): backlog split + remaining-content derivation ─────
+// A subject's filled cells, in day order, split against the COMPLETED count:
+// the first doneN cells are the completed prefix (never touched); later cells
+// dated before today are the BACKLOG — unfinished work a rebuild must MOVE
+// forward (or dismiss), never copy; a cell dated today stays put (the kid may
+// be mid-task); the rest are future cells the build re-lays anyway.
+function cbSplitCells(cells,doneN,todayISO){
+  const stale=[],todayCells=[],future=[];
+  cells.forEach((c,i)=>{
+    if(i<doneN) return;
+    if(c.date&&c.date<todayISO) stale.push(c);
+    else if(c.date===todayISO) todayCells.push(c);
+    else future.push(c);
+  });
+  return {stale,todayCells,future};
+}
+// The lessons a rebuild should lay — each remaining lesson exactly ONCE.
+//   split       — from cbSplitCells
+//   lessonSeq   — the subject's master sequence (card subjects), or null (grid-only)
+//   doneN       — completed count
+//   dismissedIdx— stale indexes the Keep/Dismiss sheet passed over (dropped)
+// Card subjects re-derive from the master sequence, which self-heals grids that
+// earlier copy-forward builds duplicated or lost lessons from. Grid-only
+// subjects keep [backlog once] + future cells that are NOT copies of a backlog
+// title (such copies are exactly what the old buggy rebuild left behind).
+// A lesson already sitting on TODAY's cell stays there, so it's dropped once
+// from the content rather than laid a second time.
+function cbDeriveContent(split,lessonSeq,doneN,dismissedIdx){
+  const dis=new Set(dismissedIdx||[]);
+  const dropOnce=(arr,text)=>{ const i=arr.indexOf(text); if(i>=0) arr.splice(i,1); };
+  if(lessonSeq&&lessonSeq.length){
+    const rest=lessonSeq.slice(Math.min(doneN,lessonSeq.length));
+    split.todayCells.forEach(c=>dropOnce(rest,c.text));
+    split.stale.forEach((c,i)=>{ if(dis.has(i)) dropOnce(rest,c.text); });
+    return rest;
+  }
+  const backlogSet=new Set(split.stale.map(c=>c.text));
+  const kept=split.stale.filter((c,i)=>!dis.has(i)).map(c=>c.text);
+  split.todayCells.forEach(c=>dropOnce(kept,c.text));
+  return kept.concat(split.future.filter(c=>!backlogSet.has(c.text)).map(c=>c.text));
+}
 // CBGEN_END
 
 // ── Impure wrappers: collect rows from live data, apply, undo ────────────────
@@ -14710,13 +14755,44 @@ function cbExtendInfo(kid){
     isOff:ds=>!!(smapIsKidOff(kid,ds)||schedOvKidOff(kid,ds))};
 }
 
+// Snapshot of a subject's cells vs the kid's real position, for rebuild hygiene.
+// doneN counts COMPLETIONS only (offset + auto-count, no adjust) — pace `adjust`
+// (task-level "skip for good" credit) instead pre-dismisses that many backlog
+// lessons, and cbApply folds it to zero once their cells are gone, so the same
+// skip can never be applied twice.
+function cbBacklogInfo(kid,sk){
+  const s=((currData.subjects||{})[kid]||{})[sk]||{};
+  const paceSubj=(((paceData||{}).subjects||{})[kid]||{})[sk];
+  const kws=paceKeywords(kid,sk,paceSubj);
+  const doneN=Math.max(0,((paceSubj&&paceSubj.offset)||0)+paceAutoCount(kid,kws));
+  const adjust=Math.max(0,(paceSubj&&paceSubj.adjust)||0);
+  const lessons=((currData||{}).lessons||{})[kid]||{};
+  const filled=v=>v&&v!=="—"&&v!=="nan"&&String(v).trim();
+  const cells=[];
+  Object.keys(lessons).map(Number).filter(n=>!isNaN(n)).sort((x,y)=>x-y).forEach(dn=>{
+    const l=lessons[dn];
+    if(l&&filled(l[sk])) cells.push({dayNum:dn,date:l.date||"",text:String(l[sk])});
+  });
+  const split=cbSplitCells(cells,doneN,cbTodayISO());
+  const bset=new Set(split.stale.map(c=>c.text));
+  const dupFuture=split.future.filter(c=>bset.has(c.text)).length;
+  const preDismiss=Math.min(adjust,split.stale.length);
+  return {doneN,adjust,split,dupFuture,preDismiss,hasSeq:!!(s.lessonSeq&&s.lessonSeq.length)};
+}
+
 // What's left of a subject's sequence, starting from where the kid ACTUALLY is
 // (the live generator cursor) — a behind-pace kid gets future rows laid from
-// their real position, not the planned one.
+// their real position, not the planned one. Backlog lessons appear exactly once
+// (moved, not copied); lessons dismissed via the Keep/Dismiss sheet are dropped.
 function cbRemainingContent(kid,sk){
-  const seq=buildSubjectLessons(kid,sk)||[];
-  const cur=Math.max(0,computeSubjectCursor(kid,sk)||0);
-  return seq.slice(Math.min(cur,seq.length)).map(x=>x.lesson);
+  const s=((currData.subjects||{})[kid]||{})[sk]||{};
+  const info=cbBacklogInfo(kid,sk);
+  cbBacklogStash[kid+"|"+sk]=info; // cbApply clears exactly these stale cells
+  const dec=cbDecisions[kid+"|"+sk]||{};
+  const dis=[];
+  for(let i=0;i<info.preDismiss;i++) dis.push(i);
+  (dec.dismissed||[]).forEach(i=>{ if(dis.indexOf(i)<0) dis.push(i); });
+  return cbDeriveContent(info.split,info.hasSeq?s.lessonSeq:null,info.doneN,dis);
 }
 
 // Day-minute cap: per-kid override (curriculum/dayCap, CB3 UI) else school-hours default.
@@ -15220,6 +15296,44 @@ function cbApply(){
     const p="weekDays/"+kid+"/"+wk;
     snap(p,(wd[kid]||{})[wk]); up[p]=arr;
   }
+  // ── Rebuild hygiene: MOVE the backlog, don't copy it ───────────────────────
+  // The stale unfinished past cells this build's content was derived from are
+  // cleared — their lessons now live in the new lay (Keep) or were passed over
+  // (Dismiss → logged to curriculum/skiplog so the Grid can still show them).
+  // Any task-level skip credit (pace adjust) covered by pre-dismissals is
+  // folded to zero here: its cells are gone, so keeping the adjust would make
+  // the cursor skip that many REAL lessons on the next build.
+  const _blKey=kid+"|"+sk;
+  const _bl=cbBacklogStash[_blKey]||cbBacklogInfo(kid,sk);
+  const _dec=cbDecisions[_blKey]||{};
+  const _paceRestores=[];
+  const _disSet=new Set();
+  {
+    const disSet=_disSet;
+    for(let i=0;i<_bl.preDismiss;i++) disSet.add(i);
+    (_dec.dismissed||[]).forEach(i=>disSet.add(i));
+    const skAdd=[];
+    _bl.split.stale.forEach((c,i)=>{
+      const p="lessons/"+kid+"/"+c.dayNum+"/"+sk;
+      snap(p,(lessons[c.dayNum]||{})[sk]); up[p]=null;
+      if(disSet.has(i)) skAdd.push({lesson:c.text,date:c.date,dayNum:c.dayNum,ts:new Date().toISOString()});
+    });
+    if(skAdd.length){
+      const cur=(((currData.skiplog||{})[kid]||{})[sk]||[]).slice();
+      const p="skiplog/"+kid+"/"+sk;
+      snap(p,((currData.skiplog||{})[kid]||{})[sk]); up[p]=cur.concat(skAdd);
+    }
+    if(_bl.preDismiss>0){
+      const ps=(((paceData||{}).subjects||{})[kid]||{})[sk];
+      if(ps&&(ps.adjust||0)>0){
+        const newAdj=Math.max(0,(ps.adjust||0)-_bl.preDismiss);
+        _paceRestores.push({path:"subjects/"+kid+"/"+sk+"/adjust",prev:ps.adjust||0});
+        ps.adjust=newAdj;
+        db.ref("pace/subjects/"+kid+"/"+sk+"/adjust").set(newAdj)
+          .catch(err=>{ cbMsg="⚠ Pace update error: "+err.message; renderAll(); });
+      }
+    }
+  }
   const s=currData.subjects[kid][sk];
   // ── Card-sequence transition backfill ────────────────────────────────
   // First build of a subject that lived only on its card (lessonSeq, no grid cells):
@@ -15267,9 +15381,12 @@ function cbApply(){
   currData.subjects[kid][sk].total=total;
 
   db.ref("curriculum").update(up).catch(err=>{ cbMsg="⚠ Firebase error: "+err.message; renderAll(); });
-  cbLastBuild={kid,sk,paths:prev,label:(s.display||sk)+" — "+res.stats.placed+" placed"};
+  cbLastBuild={kid,sk,paths:prev,pace:_paceRestores,label:(s.display||sk)+" — "+res.stats.placed+" placed"};
   try{localStorage.setItem("ha_cbUndo",JSON.stringify(cbLastBuild));}catch(e){}
-  cbMsg="✓ Built "+(s.display||sk)+" into the map — "+res.stats.placed+" days, finishing "+res.stats.lastDate+".";
+  delete cbBacklogStash[_blKey]; delete cbDecisions[_blKey];
+  const _nMoved=_bl.split.stale.length, _nDis=_disSet.size;
+  cbMsg="✓ Built "+(s.display||sk)+" into the map — "+res.stats.placed+" days, finishing "+res.stats.lastDate+"."
+    +(_nMoved?" ↪ "+(_nMoved-_nDis)+" leftover"+((_nMoved-_nDis)!==1?"s":"")+" moved forward"+(_nDis?", "+_nDis+" dismissed":"")+".":"");
   cbPreviewRes=null; cbSubjKey=null; cbForm=null;
   renderAll();
 }
@@ -15296,6 +15413,90 @@ function cbPatchLocal(up){
 // have a Builder pacing (s.pacing.mode); pure Excel-grid subjects are left alone. One
 // combined Undo covers the whole batch: we merge every subject's before-snapshot into a
 // single cbLastBuild so the existing ↩ Undo button reverts the entire rebuild at once.
+// ── Keep/Dismiss gate ────────────────────────────────────────────────────────
+// A build that would touch leftover (backlog) lessons stops and asks first:
+// Keep = the lesson moves forward into the new lay (once — its old cell is
+// cleared, never copied); Dismiss = passed over for good (cell cleared, logged
+// to skiplog, never resurfaces as carryover or catch-up). Rows covered by an
+// earlier task-level "skip for good" arrive pre-dismissed and locked.
+function _cbGateItem(kid,sk,info){
+  const s=currData.subjects[kid][sk]||{};
+  return {sk,disp:s.display||sk,info,
+    rows:info.split.stale.map((c,i)=>({text:c.text,date:c.date,dismiss:i<info.preDismiss,locked:i<info.preDismiss}))};
+}
+function cbBuildGate(){
+  const res=cbPreviewRes;
+  if(!res||res.error||!cbKid||!cbSubjKey) return;
+  const info=cbBacklogInfo(cbKid,cbSubjKey);
+  if(!info.split.stale.length&&!info.dupFuture){ cbApply(); return; }
+  cbGate={kid:cbKid,mode:"one",items:[_cbGateItem(cbKid,cbSubjKey,info)]};
+  renderAll();
+}
+function cbGateToggle(ii,ri){
+  const r=((cbGate||{}).items||[])[ii]&&cbGate.items[ii].rows[ri];
+  if(r&&!r.locked){ r.dismiss=!r.dismiss; renderAll(); }
+}
+function cbGateAll(ii,dis){
+  const it=((cbGate||{}).items||[])[ii];
+  if(it){ it.rows.forEach(r=>{ if(!r.locked) r.dismiss=dis; }); renderAll(); }
+}
+function cbGateCancel(){ cbGate=null; renderAll(); }
+function cbGateConfirm(){
+  const g=cbGate; cbGate=null;
+  if(!g) return;
+  for(const it of g.items){
+    cbDecisions[g.kid+"|"+it.sk]={dismissed:it.rows.map((r,i)=>r.dismiss?i:-1).filter(i=>i>=0)};
+  }
+  if(g.mode==="one"){
+    cbSubjKey=g.items[0].sk;
+    cbPreviewRes=cbMaterialize(cbBuildCfg()); // re-derive content with the decisions
+    if(cbPreviewRes&&!cbPreviewRes.error) cbApply();
+    else { cbMsg="⚠ "+((cbPreviewRes&&cbPreviewRes.error)||"Build failed"); delete cbDecisions[g.kid+"|"+g.items[0].sk]; renderAll(); }
+  } else {
+    _cbRebuildAllRun(g.kid,g.allList||[]);
+    for(const it of g.items) delete cbDecisions[g.kid+"|"+it.sk]; // any not consumed (skipped subjects)
+    renderAll();
+  }
+}
+function cbRenderGate(){
+  const g=cbGate;
+  const fdate=ds=>{ const d=gwParseDate(ds); return isNaN(d)?esc(ds):((d.getMonth()+1)+"/"+d.getDate()); };
+  let h='<div class="bo-dlg" onclick="if(event.target===this)cbGateCancel()"><div class="bo-dlg-box" style="max-height:82vh;display:flex;flex-direction:column">';
+  h+='<div style="font-weight:800;font-size:15px;margin-bottom:4px">↪ Leftover lessons — keep or dismiss?</div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.45"><b>Keep</b> moves the lesson ahead into the new plan (moved, never copied). <b>Dismiss</b> passes it over for good — it won’t come back as carryover or catch-up, and the Grid remembers it was skipped.</div>';
+  h+='<div style="overflow-y:auto;flex:1;min-height:0">';
+  g.items.forEach((it,ii)=>{
+    h+='<div style="border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-bottom:8px">';
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">';
+    h+='<span style="font-weight:800;font-size:12px">'+esc(it.disp)+'</span>';
+    if(it.info.dupFuture) h+='<span style="font-size:10px;color:#0f766e;background:#ccfbf1;padding:1px 8px;border-radius:8px;font-weight:700" title="Copies an earlier rebuild left in the map — removed automatically">♻ removes '+it.info.dupFuture+' duplicate cop'+(it.info.dupFuture!==1?'ies':'y')+'</span>';
+    if(it.info.hasSeq) h+='<span style="font-size:10px;color:#3730a3;background:#e0e7ff;padding:1px 8px;border-radius:8px;font-weight:700" title="Re-laid from its master lesson list — restores any lessons the map lost">📜 from master list</span>';
+    if(it.rows.length>1) h+='<span style="margin-left:auto;display:flex;gap:4px"><button onclick="cbGateAll('+ii+',false)" style="padding:2px 8px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:10px;font-weight:700;cursor:pointer">Keep all</button><button onclick="cbGateAll('+ii+',true)" style="padding:2px 8px;border-radius:8px;border:1px solid #fecaca;background:#fff;color:#b5394a;font-size:10px;font-weight:700;cursor:pointer">Dismiss all</button></span>';
+    h+='</div>';
+    if(!it.rows.length) h+='<div style="font-size:11px;color:var(--muted)">No leftover lessons — just cleaning up duplicates.</div>';
+    it.rows.forEach((r,ri)=>{
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px dashed #eef0f3;font-size:12px">';
+      h+='<span style="color:var(--muted);font-size:10px;width:34px;flex-shrink:0">'+fdate(r.date)+'</span>';
+      h+='<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'+(r.dismiss?';text-decoration:line-through;color:var(--muted)':'')+'">'+esc(r.text)+'</span>';
+      if(r.locked) h+='<span style="font-size:9px;color:#92400e;background:#fef3c7;padding:1px 6px;border-radius:6px;font-weight:700;flex-shrink:0" title="Dismissed earlier with the skip button — stays skipped">skipped earlier</span>';
+      else h+='<button onclick="cbGateToggle('+ii+','+ri+')" style="flex-shrink:0;padding:3px 10px;border-radius:10px;border:1px solid '+(r.dismiss?'#fecaca':'#bbf7d0')+';background:'+(r.dismiss?'#fef2f2':'#f0fdf4')+';color:'+(r.dismiss?'#b5394a':'#15803d')+';font-size:10px;font-weight:800;cursor:pointer;min-width:74px">'+(r.dismiss?'✕ Dismiss':'↪ Keep')+'</button>';
+      h+='</div>';
+    });
+    h+='</div>';
+  });
+  h+='</div>';
+  const nDis=g.items.reduce((n,it)=>n+it.rows.filter(r=>r.dismiss).length,0);
+  const nKeep=g.items.reduce((n,it)=>n+it.rows.filter(r=>!r.dismiss).length,0);
+  h+='<div style="display:flex;gap:8px;margin-top:10px;flex-shrink:0">';
+  h+='<button onclick="cbGateConfirm()" style="flex:1;padding:11px;border-radius:10px;border:none;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Build — keep '+nKeep+(nDis?', dismiss '+nDis:'')+'</button>';
+  h+='<button onclick="cbGateCancel()" style="padding:11px 16px;border-radius:10px;border:1px solid var(--border);background:#fff;font-size:13px;cursor:pointer">Cancel</button>';
+  h+='</div></div></div>';
+  return h;
+}
+
+// Rebuild every Builder-paced subject for the CURRENT kid — now gated: subjects
+// with leftover lessons go through the Keep/Dismiss sheet first, then the whole
+// batch runs with one combined Undo.
 function cbRebuildAll(){
   if(!momModeActive&&!adminPinUnlocked) return;
   if(!db||!currData||!currData.subjects||!cbKid) return;
@@ -15303,20 +15504,38 @@ function cbRebuildAll(){
   const isPaced=sk=>{ const s=subs[sk]; if(!s||s.paused||s.tracking==="daily") return false; const r=s.rules||""; if(r.includes("first")||r.includes("last")) return false; return !!(s.pacing&&s.pacing.mode); };
   const list=Object.keys(subs).filter(isPaced);
   if(!list.length){ if(typeof gwShowToast==="function") gwShowToast("No Builder-paced subjects for "+cap(kid)+" yet — open a subject and build it first."); return; }
+  const items=[];
+  for(const sk of list){
+    try{ const info=cbBacklogInfo(kid,sk); if(info.split.stale.length||info.dupFuture) items.push(_cbGateItem(kid,sk,info)); }catch(e){}
+  }
+  if(items.length){
+    cbGate={kid,mode:"all",items,allList:list};
+    renderAll();
+    return;
+  }
   if(!confirm("Re-lay all "+list.length+" of "+cap(kid)+"’s Builder-paced subjects from where they are now—using each one’s current pacing and the latest calendar?\n\nCompleted work is kept, and you can Undo.")) return;
+  _cbRebuildAllRun(kid,list);
+  renderAll();
+}
+function _cbRebuildAllRun(kid,list){
+  const subs=currData.subjects[kid]||{};
   const savedSubj=cbSubjKey, savedForm=cbForm, savedPrev=cbPreviewRes;
-  const bulkPaths={}; let built=0; const skipped=[];
+  const bulkPaths={}; const bulkPace=[]; let built=0; const skipped=[];
   for(const sk of list){
     cbSubjKey=sk; cbForm=cbDefaultForm(kid,sk); cbPreviewRes=null;
     try{ cbPreviewRes=cbMaterialize(cbBuildCfg()); }
     catch(e){ cbPreviewRes={error:(e&&e.message)||"build error"}; }
     if(!cbPreviewRes||cbPreviewRes.error){ skipped.push(subs[sk].display||sk); continue; }
     try{ cbApply(); }catch(e){ skipped.push((subs[sk].display||sk)+" (write)"); continue; }
-    if(cbLastBuild&&cbLastBuild.paths){ for(const p in cbLastBuild.paths){ if(!(p in bulkPaths)) bulkPaths[p]=cbLastBuild.paths[p]; } built++; }
+    if(cbLastBuild&&cbLastBuild.paths){
+      for(const p in cbLastBuild.paths){ if(!(p in bulkPaths)) bulkPaths[p]=cbLastBuild.paths[p]; }
+      (cbLastBuild.pace||[]).forEach(r=>bulkPace.push(r));
+      built++;
+    }
   }
   cbSubjKey=savedSubj; cbForm=savedForm; cbPreviewRes=savedPrev;
   if(built){
-    cbLastBuild={kid,sk:"*",paths:bulkPaths,label:"Rebuilt "+built+" of "+cap(kid)+"’s subjects"};
+    cbLastBuild={kid,sk:"*",paths:bulkPaths,pace:bulkPace,label:"Rebuilt "+built+" of "+cap(kid)+"’s subjects"};
     try{localStorage.setItem("ha_cbUndo",JSON.stringify(cbLastBuild));}catch(e){}
   }
   cbMsg="↻ Rebuilt "+built+" subject"+(built!==1?"s":"")+" for "+cap(kid)+(skipped.length?" · "+skipped.length+" skipped":"");
@@ -15330,6 +15549,14 @@ function cbUndo(){
   for(const [path,val] of Object.entries(cbLastBuild.paths)) up[path]=val;
   cbPatchLocal(up);
   db.ref("curriculum").update(up).catch(err=>{ cbMsg="⚠ Undo error: "+err.message; renderAll(); });
+  // Restore any pace `adjust` the build folded into the map (skip credit comes back
+  // with its cells, so the undo leaves cursor math exactly where it started).
+  (cbLastBuild.pace||[]).forEach(r=>{
+    const parts=r.path.split("/"); // subjects/<kid>/<sk>/adjust
+    const ps=(((paceData||{}).subjects||{})[parts[1]]||{})[parts[2]];
+    if(ps) ps.adjust=r.prev;
+    db.ref("pace/"+r.path).set(r.prev).catch(err=>{ cbMsg="⚠ Undo (pace) error: "+err.message; renderAll(); });
+  });
   cbMsg="↩ Undid: "+cbLastBuild.label;
   cbLastBuild=null;
   try{localStorage.removeItem("ha_cbUndo");}catch(e){}
@@ -15441,6 +15668,7 @@ function renderCurrBuilder(el){
   }
 
   h+='</div>';
+  if(cbGate) h+=cbRenderGate();
   el.innerHTML+=h;
   // Restore the day-pinning list's own scroll — renderAll only preserves window scroll,
   // so without this each day tap rebuilds the inner list back at the top.
@@ -15615,7 +15843,7 @@ function cbRenderForm(col){
       if(order.length>3) h+=line(order[order.length-1]);
       h+='</div>';
       h+='<div style="display:flex;gap:8px;margin-top:12px">';
-      h+='<button onclick="cbApply()" style="flex:1;padding:11px;border-radius:10px;border:none;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Build into map</button>';
+      h+='<button onclick="cbBuildGate()" style="flex:1;padding:11px;border-radius:10px;border:none;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Build into map</button>';
       h+='<button onclick="cbPreviewRes=null;renderAll()" style="padding:11px 16px;border-radius:10px;border:1px solid var(--border);background:#fff;font-size:13px;cursor:pointer">Cancel</button>';
       h+='</div></div>';
     }
@@ -16076,6 +16304,13 @@ function renderCurrGrid(el){
   const cap_=cbDayCap(gvKid);
   const pastCount=dayNums.filter(dn=>{const l=lessons[dn];return l&&l.date&&l.date<today;}).length;
   const col=KID_COLOR[gvKid]||"#333";
+  // Lessons dismissed by a rebuild's Keep/Dismiss sheet — their cells are empty
+  // now, but the grid still shows what was passed over, struck through.
+  const _skipAt={};
+  {
+    const slk=((currData.skiplog||{})[gvKid])||{};
+    for(const sk of Object.keys(slk)) (slk[sk]||[]).forEach(e=>{ if(e&&e.dayNum!=null) _skipAt[e.dayNum+"|"+sk]=e.lesson||""; });
+  }
 
   h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">';
   if(pastCount) h+='<button onclick="gvTogglePast()" style="padding:4px 12px;border-radius:14px;border:1px solid var(--border);background:'+(gvShowPast?'var(--header)':'#fff')+';color:'+(gvShowPast?'#fff':'var(--muted)')+';font-size:11px;font-weight:700;cursor:pointer">'+(gvShowPast?'Hide':'Show')+' '+pastCount+' past days</button>';
@@ -16195,6 +16430,7 @@ function renderCurrGrid(el){
         let cell="";
         if(gvFilled(v)) cell=removed?'<s style="color:var(--muted)">'+esc(v)+'</s><span class="gv-badge" style="background:#e0e7ff;color:#3730a3">moved</span>':esc(v);
         if(addedV!==undefined) cell+=(cell?'<br>':'')+'<span style="color:#15803d">+ '+(typeof addedV==="string"?esc(addedV):"make-up")+'</span><span class="gv-badge" style="background:#bbf7d0;color:#15803d">make-up</span>';
+        if(!cell&&_skipAt[dn+"|"+sk]!==undefined) cell='<s style="color:var(--muted);opacity:.7">'+esc(_skipAt[dn+"|"+sk])+'</s><span class="gv-badge" style="background:#fef3c7;color:#92400e" title="Passed over by a rebuild — won\'t come back as carryover or catch-up">skipped</span>';
         if(!cell) cell="·";
         const picked=gvSelMode&&gvSel.has(dn+"|"+sk);
         const click=past?'':(gvSelMode?' onclick="gvSelCell('+dn+',\''+sk+'\')"':' onclick="gvOpenCell('+dn+',\''+sk+'\')"');
