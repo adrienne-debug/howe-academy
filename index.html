@@ -11400,16 +11400,15 @@ function cascadeIntraWeek(sweepTodayElapsed){
     if(idx<0||idx>todayIdx) return;
     if(idx===todayIdx){
       // Today's tasks normally stay put — no intra-day moving goalposts while the kids
-      // are working. On a REGENERATION commit (sweepTodayElapsed) the WHOLE remaining
-      // day re-packs from "now" in workflow order. Sweeping only the elapsed slots
-      // (the old rule) froze un-started work at its old times, so displaced
-      // Mom-required work could only append AFTER a kid's frozen independent block —
-      // Mom idled 10:25→12:05 while her work sat behind Lucy's frozen iPad apps
-      // (2026-07-21). A regen is an explicit "re-plan from right now": Mom-priority
-      // ordering wins over slot inertia. Claimed work (done, awaiting approval) and
-      // checked work stay frozen; the now-floor keeps everything after "now".
+      // are working. On a REGENERATION commit (sweepTodayElapsed) only ELAPSED slots
+      // sweep forward. The sweep is the janitor, not the author: the generator now
+      // floors today at the current minute (Mom-first workflow packing), so after a
+      // regen nothing is elapsed and the fresh lay survives untouched. (2026-07-21:
+      // letting the sweep re-pack the WHOLE day let its cruder catch-up packer
+      // overwrite the generator's correct layout — Mom idle till noon, every time.)
       if(!sweepTodayElapsed) return;
-      if(claimed&&claimed[t.id]) return;
+      if(claimed&&claimed[t.id]) return; // done, awaiting Mom approval — frozen
+      if(toMin(t.time)>=_nowMin) return;
     } else {
       let isPast=false;
       if(DAY_DT[t.day]){
@@ -11661,7 +11660,19 @@ function cascadeIntraWeek(sweepTodayElapsed){
     let overflow;
     if(repack){
       const frozen=[], mergedOld=[];
+      // A DONE (checked/claimed) task sitting at a FUTURE slot is a regen re-keying
+      // artifact — the work already happened, the slot is fiction, and it must never
+      // seed the packer's cursors (2026-07-21: Lucy's claimed Drills re-keyed to a
+      // fresh 12:10 slot seeded her kid-cursor AND Mom's cursor to 12:20 — Mom idle
+      // all morning on every regen, deterministically). Skipped tasks stay in place
+      // for display; the ts-heal above re-pins checked ones to their true time.
+      const _doneFict=t=>{
+        const _d=checked[t.id]||(claimed&&claimed[t.id]);
+        return !!(_d&&!_isMorn(t)&&(di>todayIdx||toMin(t.time)>_nowMin));
+      };
       existingAll.forEach(t=>{
+        if(_doneFict(t)) return; // display-only: no seeding, no re-lay
+
         // Only done work + the morning notebook (a true day-start anchor) SEED the day
         // cursors. DAILY WORK (reflex, "Daily work" cards) is RE-LAID with the graded work —
         // reflex is a computer task, so the packer places it in its own device lane at its
@@ -11687,7 +11698,11 @@ function cascadeIntraWeek(sweepTodayElapsed){
     } else {
       // Mid-day today: tasks already on the day stay put (each at its real time, seeding its
       // own device lane so arrivals pack around it), and arrivals pack around them.
-      overflow=packAround(existingAll,tryHere,ctx);
+      // Same fiction guard: a done task at a future slot must not wall the day.
+      overflow=packAround(existingAll.filter(t=>{
+        const _d=checked[t.id]||(claimed&&claimed[t.id]);
+        return !(_d&&toMin(t.time)>_nowMin);
+      }),tryHere,ctx);
     }
     const overflowSet=new Set(overflow);
     // Keep overflow + off-here tasks AND tasks still waiting for a later assigned day AND
@@ -28882,9 +28897,20 @@ function generateWeek(config){
 
     const isCar=!!(config.carSchool||{})[dn];
 
+    // A mid-day regenerate lays TODAY from the current minute: the GENERATOR owns the
+    // "no elapsed slots" rule (its packer orders by workflow — Mom-required first),
+    // so the post-commit sweep never needs to re-author the day with its cruder
+    // catch-up packer (which idled Mom till noon — 2026-07-21). Future days: floor 0.
+    let _floorMin=0;
+    {
+      const _nowD=new Date();
+      if(d.getFullYear()===_nowD.getFullYear()&&d.getMonth()===_nowD.getMonth()&&d.getDate()===_nowD.getDate())
+        _floorMin=_nowD.getHours()*60+_nowD.getMinutes();
+    }
+
     const dayConfig={
-      schoolStart:schoolStartMin,
-      momAvailable:momAvailable,
+      schoolStart:Math.max(schoolStartMin,_floorMin),
+      momAvailable:Math.max(momAvailable,_floorMin),
       isCarSchool:isCar,
       isSitter:isSitter,
       sitterStart:isSitter?sitterStartMin:0,

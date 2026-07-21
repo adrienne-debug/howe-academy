@@ -60,7 +60,7 @@ function runCascade(cfg) {
   const writes = [];
   const env = {
     DAY_DT: cfg.dates, WK: "week14", ROSTER: ["lincoln", "ellis", "lucy", "julian"],
-    weekData: { tasks: cfg.tasks }, checked: cfg.checked || {}, claimed: {},
+    weekData: { tasks: cfg.tasks }, checked: cfg.checked || {}, claimed: cfg.claimed || {},
     histState: {}, momMoves: {}, currData: { subjects: { lincoln: {}, ellis: {}, lucy: {}, julian: {} } },
     rulesData: cfg.rules || {}, fbCurrLoaded: true,
     _cascNowMin: cfg.nowMin || 9 * 60, DEFAULT_DAY_CAP: 2,
@@ -225,27 +225,38 @@ console.log("carry box — parked work re-validated every sweep");
   ok("truly unfittable work re-parks", f._eowOverflow === true, f);
 }
 
-console.log("regen re-packs the WHOLE remaining day — Mom work first");
+console.log("regen sweep is a janitor: elapsed-only, day inertia respected");
 {
-  // 10:20 AM regenerate. Lucy's Mom-required lesson sat at an elapsed slot (10:05);
-  // her independent iPad apps hold not-yet-started slots (10:25, 11:00). The old rule
-  // froze the iPad block and appended Mom's work after it (Mom idle till noon); a
-  // regen must re-pack the whole remaining day in workflow order instead.
-  const WF = { workflow: { lucy: { normal: [
-    { label: "Mom Required", subjects: ["Dimensions Math 1A"], tier: "required" },
-    { label: "Independent", subjects: ["Reading Eggs"], tier: "independent" },
-  ] } } };
+  // The generator (not the sweep) owns "lay today from now" on a regen — it floors
+  // today's schoolStart at the current minute and packs Mom-first. The post-commit
+  // sweep only rescues ELAPSED slots and must NOT re-author un-started work.
   const tasks = [
     mkTask("dim", "tuesday", "10:05 AM", { who: "lucy", mom: "required", title: "📄 Dimensions Math 1A — Lesson 9", subjectKey: "dimensions_math_1a" }),
     mkTask("egg1", "tuesday", "10:25 AM", { who: "lucy", mom: "none", device: "ipad", title: "📱 Reading Eggs — Map 20 L1", subjectKey: "read_eggs" }),
     mkTask("egg2", "tuesday", "11:00 AM", { who: "lucy", mom: "none", device: "ipad", title: "📱 Reading Eggs — Map 20 L2", subjectKey: "read_eggs" }),
   ];
-  const r = runCascade({ dates: WEEK3, today: "2026-07-21", tasks, rules: WF, nowMin: 10 * 60 + 20, sweepToday: true });
+  const r = runCascade({ dates: WEEK3, today: "2026-07-21", tasks, nowMin: 10 * 60 + 20, sweepToday: true });
   const dim = r.tasks.find(t => t.id === "dim");
-  const todayEggs = r.tasks.filter(t => t.id.indexOf("egg") === 0 && t.day === "tuesday");
-  ok("nothing unchecked left in TODAY's elapsed time", r.tasks.filter(t => t.day === "tuesday").every(t => mins(t.time) >= 10 * 60 + 20), r.tasks.map(t => t.day + " " + t.time));
-  ok("Mom-required re-packed to the first free minute", dim.day === "tuesday" && mins(dim.time) <= 10 * 60 + 30, dim.day + " " + dim.time);
-  ok("independent work follows Mom work, not leads", todayEggs.length > 0 && todayEggs.every(e => mins(e.time) > mins(dim.time)), todayEggs.map(e => e.time));
+  const eggs = r.tasks.filter(t => t.id.indexOf("egg") === 0);
+  ok("elapsed task re-placed after now", dim.day !== "tuesday" || mins(dim.time) >= 10 * 60 + 20, dim.day + " " + dim.time);
+  ok("un-started tasks keep their slots", eggs.every(e => e.day === "tuesday") && mins(eggs[0].time) === 10 * 60 + 25 && mins(eggs[1].time) === 11 * 60, eggs.map(e => e.day + " " + e.time));
+}
+
+console.log("done work at a future slot never walls the day");
+{
+  // A checked/claimed task re-keyed by a regen to a FUTURE slot is fiction — it
+  // must not seed the packer's cursors (the bug that idled Mom until noon: a
+  // claimed Drills frozen at 12:10 walled Lucy's AND Mom's cursors to 12:20).
+  const tasks = [
+    mkTask("ghost", "tuesday", "12:10 PM", { who: "lucy", mom: "required", title: "📄 Drills — Drills", subjectKey: "drills" }),
+    mkTask("m1", "monday", "10:00 AM", { who: "lucy", mom: "required", title: "📄 Dimensions Math 1A — Lesson 9", subjectKey: "dimensions_math_1a" }),
+    mkTask("t1", "tuesday", "10:00 AM", { who: "lucy", mom: "none", device: "ipad", title: "📱 Reading Eggs — Map 20 L1", subjectKey: "read_eggs" }),
+  ];
+  const r = runCascade({ dates: WEEK3, today: "2026-07-21", tasks, nowMin: 9 * 60, claimed: { ghost: "10:34 AM Jul 21" } });
+  const arrival = r.tasks.find(t => t.id === "m1");
+  ok("Monday's Mom lesson lands in a MORNING slot (no noon wall)", mins(arrival.time) < 12 * 60, arrival.day + " " + arrival.time);
+  const ghost = r.tasks.find(t => t.id === "ghost");
+  ok("claimed ghost left in place for display", ghost.day === "tuesday" && mins(ghost.time) === 12 * 60 + 10, ghost.day + " " + ghost.time);
 }
 
 console.log("scheduler lock — foreign lock makes the sweep a no-op");
