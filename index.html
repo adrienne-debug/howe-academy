@@ -11344,6 +11344,9 @@ function cascadeIntraWeek(sweepTodayElapsed){
         t.day=t.cascadedFrom; delete t.cascadedFrom; _healMoved=true;
         _healUpd[t.id+"/day"]=t.day; _healUpd[t.id+"/cascadedFrom"]=null;
       }
+      // A day-bound task can never "carry to next week" — clear (and persist clearing)
+      // any parked flag an older sweep left on it (week14: Sprints in the Mom box).
+      if(t._eowOverflow){ delete t._eowOverflow; _healUpd[t.id+"/_eowOverflow"]=null; _healMoved=true; }
       // Regen re-time WITHIN today: day-bound means "never a later DAY" — but a mid-day
       // regenerate must still pull today's own elapsed bookends/drills up to now (a
       // 10:00 morning notebook at a 1 PM restart is still today's to do). Chained per
@@ -11354,6 +11357,17 @@ function cascadeIntraWeek(sweepTodayElapsed){
         t.time=fromMin(_st); _dbCursor[t.who]=_st+(t.dur||20); _healMoved=true;
         _healUpd[t.id+"/time"]=t.time;
       }
+      return;
+    }
+    // Work parked in the "Carries to Next Week" box is RE-VALIDATED on every sweep:
+    // when room opens up (work checked off, caps freed, or the flag is simply stale —
+    // e.g. left by a late-night sweep that no longer reflects the week) it flows back
+    // onto real school days; still unfittable → the safety net re-flags it below.
+    // Without this, a quiet morning (nothing else to sweep) early-returned before the
+    // flag reset and fossilized the box at the previous sweep's verdict.
+    if(t._eowOverflow){
+      t.cascadedFrom=t.cascadedFrom||t.day;
+      if(_isNote(t)) pastNotes.push(t); else pastTasks.push(t);
       return;
     }
     // Stranded on a day with NO date this week (vacation-shortened) — the day doesn't
@@ -11555,6 +11569,10 @@ function cascadeIntraWeek(sweepTodayElapsed){
   // Now-floor: on TODAY, place swept work no earlier than the current clock time (_nowMin,
   // hoisted above) so catch-up never lands in an already-elapsed slot (after school ends,
   // today is full → work flows to later open days).
+  // Last remaining day that actually exists this week (date-less days don't count) —
+  // that's where the overtime valve opens so a shortened week can still absorb its load.
+  let _lastValidDi=todayIdx;
+  for(let di=todayIdx; di<dayOrder.length; di++){ if(!(_wkHasDates&&!_cascDate(dayOrder[di]))) _lastValidDi=di; }
   for(let di=todayIdx; di<dayOrder.length&&pool.length; di++){
     const dn=dayOrder[di];
     if(_wkHasDates&&!_cascDate(dn)) continue; // day isn't part of this week — never a receiving day
@@ -11598,7 +11616,11 @@ function cascadeIntraWeek(sweepTodayElapsed){
     const poolSet=new Set(pool);
     const existingAll=weekData.tasks.filter(t=>t.day===dn&&!t.id.endsWith("_c")&&!poolSet.has(t));
     tryHere.forEach(t=>{ t.day=dn; });
-    const isLast=(di===dayOrder.length-1);
+    // Overtime opens on the last REAL school day of the week — not literal Saturday.
+    // In a vacation-shortened week the date-less tail days are skipped entirely, so
+    // without this no day ever counted as "last", the relief valve never opened, and
+    // fittable work overflowed into the Mom box while the last day ended at 4:15 sharp.
+    const isLast=(di===_lastValidDi);
     const _floor=(dn===today)?_nowMin:0;
     const kidStart={}; if(isSitterDay) sitterKids.forEach(k=>{ kidStart[k]=Math.max(sitterReturn,_floor); });
     const ctx={start:Math.max(dStart,_floor),end:dEnd,lunchStart:lunchS,lunchEnd:lunchE,

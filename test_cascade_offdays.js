@@ -81,6 +81,7 @@ function runCascade(cfg) {
 }
 
 const daysOf = tasks => { const m = {}; tasks.forEach(t => { m[t.day] = (m[t.day] || 0) + 1; }); return m; };
+const mins = x => { const m = /(\d+):(\d+)\s*(AM|PM)/.exec(x || ""); if (!m) return 0; return (parseInt(m[1]) % 12 + (m[3] === "PM" ? 12 : 0)) * 60 + parseInt(m[2]); };
 const WEEK3 = { monday: "July 20", tuesday: "July 21", wednesday: "July 22" }; // beach-trip week
 const WEEK5 = { monday: "July 20", tuesday: "July 21", wednesday: "July 22", thursday: "July 23", friday: "July 24" };
 
@@ -184,6 +185,44 @@ console.log("retrieval slots — day-bound, never swept or stacked");
   const m1 = r.tasks.find(t => t.id === "m1");
   ok("real lessons still sweep normally", m1.day !== "monday", m1.day);
   ok("no retrieval slot in the carry box", !r.tasks.some(t => t.subjectKey === "retrieval" && t._eowOverflow));
+}
+
+console.log("shortened week — overtime opens on the last REAL day");
+{
+  // Heavy backlog, 3-day week: without the last-valid-day fix no day counts as
+  // "last", overtime never opens, and fittable work gets parked for next week.
+  const tasks = [];
+  for (let i = 0; i < 16; i++) tasks.push(mkTask("m" + i, "monday", "10:00 AM"));
+  for (let i = 0; i < 8; i++) tasks.push(mkTask("t" + i, "tuesday", "10:00 AM"));
+  for (let i = 0; i < 8; i++) tasks.push(mkTask("w" + i, "wednesday", "10:00 AM"));
+  const r = runCascade({ dates: WEEK3, today: "2026-07-21", tasks });
+  const late = r.tasks.filter(t => t.day === "wednesday" && mins(t.time) + (t.dur || 20) > mins("4:15 PM"));
+  ok("wednesday runs overtime (past 4:15)", late.length > 0, late.length);
+  ok("still nothing on vacation days", !r.tasks.some(t => ["thursday", "friday", "saturday"].includes(t.day)));
+}
+
+console.log("carry box — parked work re-validated every sweep");
+{
+  // A stale _eowOverflow flag (fossil of an earlier sweep) on a lesson that fits
+  // today: the sweep re-pools it, places it, and clears the flag.
+  const tasks = [
+    mkTask("fossil", "wednesday", "2:20 PM", { _eowOverflow: true }),
+    mkTask("t1", "tuesday", "10:00 AM"),
+  ];
+  const r = runCascade({ dates: WEEK3, today: "2026-07-21", tasks });
+  const f = r.tasks.find(t => t.id === "fossil");
+  ok("stale flag cleared and lesson re-placed", !f._eowOverflow && ["tuesday", "wednesday"].includes(f.day), f);
+}
+{
+  // Genuinely unfittable work stays parked: longer than any remaining day even
+  // with the overtime valve open.
+  const tasks = [
+    mkTask("fossil", "wednesday", "2:20 PM", { _eowOverflow: true, dur: 600 }),
+    mkTask("t1", "tuesday", "10:00 AM"),
+  ];
+  const r = runCascade({ dates: WEEK3, today: "2026-07-21", tasks });
+  const f = r.tasks.find(t => t.id === "fossil");
+  ok("truly unfittable work re-parks", f._eowOverflow === true, f);
 }
 
 console.log("scheduler lock — foreign lock makes the sweep a no-op");
