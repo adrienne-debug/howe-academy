@@ -1697,16 +1697,19 @@ function initFb() {
       }catch(e){ console.warn("dryrun patch failed",e); }
     }
 
-    // Scheduler-lock mirror + banner: while another device regenerates/sweeps, this one
-    // reads live but writes nothing schedule-shaped; when the lock clears it re-renders
-    // (listeners already delivered the winner's layout) and re-arms one sweep of its own.
+    // Scheduler-lock mirror + banner. The banner shows ONLY for long operations
+    // (a real Regenerate / Sunday auto-gen) — routine cascade sweeps also claim the
+    // lock but for sub-second holds, and flashing the banner for those made the top
+    // of every device blink orange all day. No re-arm on release either: if the
+    // winner's sweep wrote anything, our data listeners fire and re-trigger our own
+    // debounced sweep naturally; if it wrote nothing, ours would be a no-op too —
+    // and the old blanket re-arm made devices ping-pong lock claims forever.
     db.ref("regen_lock").on("value",s=>{
-      const was=lockHeldByOther();
       schedLock=s.val()||null;
-      const is=lockHeldByOther();
+      const showBanner=lockHeldByOther()&&(schedLock.kind==="regen"||schedLock.kind==="autogen");
       try{
         let b=document.getElementById("sched-lock-banner");
-        if(is){
+        if(showBanner){
           if(!b){
             b=document.createElement("div"); b.id="sched-lock-banner";
             b.style.cssText="position:fixed;top:0;left:0;right:0;z-index:9999;background:#f59e0b;color:#fff;font:700 12px 'DM Sans',sans-serif;text-align:center;padding:6px 10px;box-shadow:0 2px 8px rgba(0,0,0,.25)";
@@ -1716,7 +1719,6 @@ function initFb() {
           b.style.display="block";
         } else if(b){ b.style.display="none"; }
       }catch(e){}
-      if(was&&!is){ renderAll(); schedCascade(); }
     });
 
     db.ref(".info/connected").on("value",s=>{
