@@ -63,7 +63,7 @@ function runCascade(cfg) {
     weekData: { tasks: cfg.tasks }, checked: cfg.checked || {}, claimed: {},
     histState: {}, momMoves: {}, currData: { subjects: { lincoln: {}, ellis: {}, lucy: {}, julian: {} } },
     rulesData: cfg.rules || {}, fbCurrLoaded: true,
-    _cascNowMin: 9 * 60, DEFAULT_DAY_CAP: 2,
+    _cascNowMin: cfg.nowMin || 9 * 60, DEFAULT_DAY_CAP: 2,
     smapIsKidOff: cfg.kidOff || (() => null),
     schedOv: () => null, schedOvKidOff: () => null,
     satCutoffMin: () => null, satApplyCutoff: () => {},
@@ -223,6 +223,29 @@ console.log("carry box — parked work re-validated every sweep");
   const r = runCascade({ dates: WEEK3, today: "2026-07-21", tasks });
   const f = r.tasks.find(t => t.id === "fossil");
   ok("truly unfittable work re-parks", f._eowOverflow === true, f);
+}
+
+console.log("regen re-packs the WHOLE remaining day — Mom work first");
+{
+  // 10:20 AM regenerate. Lucy's Mom-required lesson sat at an elapsed slot (10:05);
+  // her independent iPad apps hold not-yet-started slots (10:25, 11:00). The old rule
+  // froze the iPad block and appended Mom's work after it (Mom idle till noon); a
+  // regen must re-pack the whole remaining day in workflow order instead.
+  const WF = { workflow: { lucy: { normal: [
+    { label: "Mom Required", subjects: ["Dimensions Math 1A"], tier: "required" },
+    { label: "Independent", subjects: ["Reading Eggs"], tier: "independent" },
+  ] } } };
+  const tasks = [
+    mkTask("dim", "tuesday", "10:05 AM", { who: "lucy", mom: "required", title: "📄 Dimensions Math 1A — Lesson 9", subjectKey: "dimensions_math_1a" }),
+    mkTask("egg1", "tuesday", "10:25 AM", { who: "lucy", mom: "none", device: "ipad", title: "📱 Reading Eggs — Map 20 L1", subjectKey: "read_eggs" }),
+    mkTask("egg2", "tuesday", "11:00 AM", { who: "lucy", mom: "none", device: "ipad", title: "📱 Reading Eggs — Map 20 L2", subjectKey: "read_eggs" }),
+  ];
+  const r = runCascade({ dates: WEEK3, today: "2026-07-21", tasks, rules: WF, nowMin: 10 * 60 + 20, sweepToday: true });
+  const dim = r.tasks.find(t => t.id === "dim");
+  const todayEggs = r.tasks.filter(t => t.id.indexOf("egg") === 0 && t.day === "tuesday");
+  ok("nothing unchecked left in TODAY's elapsed time", r.tasks.filter(t => t.day === "tuesday").every(t => mins(t.time) >= 10 * 60 + 20), r.tasks.map(t => t.day + " " + t.time));
+  ok("Mom-required re-packed to the first free minute", dim.day === "tuesday" && mins(dim.time) <= 10 * 60 + 30, dim.day + " " + dim.time);
+  ok("independent work follows Mom work, not leads", todayEggs.length > 0 && todayEggs.every(e => mins(e.time) > mins(dim.time)), todayEggs.map(e => e.time));
 }
 
 console.log("scheduler lock — foreign lock makes the sweep a no-op");
