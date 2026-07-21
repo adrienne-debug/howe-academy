@@ -36,6 +36,7 @@ function slice(name) {
 const FNS = [
   // CBGEN pure layer
   "_cbSpread", "_cbParseDate", "_cbISO", "_cbMonday", "cbMaterialize", "cbSplitCells", "cbDeriveContent",
+  "baseId", "carryRebaselined",
   // impure layer under test
   "cbTodayISO", "cbFutureRows", "cbExtendInfo", "cbBacklogInfo", "cbRemainingContent",
   "cbDayCap", "cbDayCapDefault", "cbAltGroups", "cbGroupOf", "cbBlockedDates",
@@ -247,6 +248,40 @@ withFrozenNow(Frozen => {
     { adj: env.paceData.subjects.ellis.read_detect.adjust });
   const lastPaceWrite = env._writes.filter(w => w.root === "pace").pop();
   ok("undo wrote adjust back", lastPaceWrite && lastPaceWrite.val === 1, lastPaceWrite);
+});
+
+console.log("rebaseline — a rebuild absorbs older carryover");
+withFrozenNow(Frozen => {
+  const env = mkEnv({});
+  env.Date = Frozen;
+  const pre = cellsOf(env, "ellis", "read_detect").filter(c => c.date && c.date < "2026-07-13").length;
+  env.paceAutoCount = () => pre;
+  // Expected stamp uses the app's own day-of-year formula on the frozen clock
+  const now = new RealDate("2026-07-20T12:00:00");
+  const doy = Math.floor((now - new RealDate(2026, 0, 0)) / 86400000);
+  const res = run(env, `()=>{
+    cbKid="ellis"; cbSubjKey="read_detect"; cbForm=cbDefaultForm("ellis","read_detect");
+    cbPreviewRes=cbMaterialize(cbBuildCfg());
+    cbApply();
+    const rb=currData.rebaseline.ellis.read_detect;
+    const mk=(id,who,sk)=>({id:id,who:who||"ellis",subjectKey:sk||"read_detect"});
+    return { rb:rb,
+      older:carryRebaselined(mk("2026d197_5")),
+      olderC:carryRebaselined(mk("2026d197_5_c")),
+      sameDay:carryRebaselined(mk("2026d"+rb.d+"_1")),
+      newer:carryRebaselined(mk("2026d300_1")),
+      otherSubj:carryRebaselined(mk("2026d197_5","ellis","word_roots")),
+      unstamped:carryRebaselined(mk("weird_id_5")) };
+  }`);
+  ok("stamp written with app's day-of-year math", res.rb && res.rb.y === 2026 && res.rb.d === doy, res.rb);
+  ok("older task bypassed", res.older === true);
+  ok("older _c mirror bypassed", res.olderC === true);
+  ok("same-day task still carries", res.sameDay === false);
+  ok("newer task still carries", res.newer === false);
+  ok("other subject unaffected", res.otherSubj === false);
+  ok("unstamped id carries (conservative)", res.unstamped === false);
+  const rbw = env._writes.filter(w => w.root === "curriculum" && w.path === "rebaseline/ellis/read_detect");
+  ok("rebaseline persisted to db", rbw.length === 1 && rbw[0].val.y === 2026, rbw);
 });
 
 console.log("");

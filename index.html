@@ -6625,6 +6625,22 @@ function _carryBlocked(t,doneKeys){
   return !!(doneKeys&&doneKeys.has(ck));
 }
 
+// A Builder rebuild REBASELINES a subject: the plan was re-laid from where the kid
+// actually is, absorbing every older unfinished lesson (kept ones live in the new
+// map, dismissed ones in the skiplog). A task scheduled BEFORE that rebuild must not
+// ride forward as a carry-over — its content is already accounted for, and carrying
+// it would double-serve the exact backlog the rebuild just evened out. Task ids are
+// day-stamped ("2026d200_…"), so stamps are compared, not wall clocks; a task from
+// the rebuild day itself still carries normally (only OLDER work was absorbed).
+function carryRebaselined(t){
+  if(!t||!t.subjectKey||!t.who) return false;
+  const rb=(((currData||{}).rebaseline||{})[t.who]||{})[t.subjectKey];
+  if(!rb||rb.y==null||rb.d==null) return false;
+  const m=/^(\d{4})d(\d{1,3})_/.exec(baseId(t.id||""));
+  if(!m) return false;
+  return (parseInt(m[1])*1000+parseInt(m[2]))<(rb.y*1000+rb.d);
+}
+
 function getCarryOverPool(){
   const curWeek=weekData.week||WK;
   // Sort by numeric week number — archivedAt is a human-readable string, not sortable as-is
@@ -6649,7 +6665,8 @@ function getCarryOverPool(){
       &&!subjNoCarry(t)                             // day-bound (reflex, notebooks, card noCarry) — a missed day is just missed
       &&!awChecked[t.id]&&!awChecked[t.id+"_c"]  // not completed in previous week
       &&!checked[t.id+"_c"]                        // not completed this week either
-      &&!_carryBlocked(t,_dk))                      // walked back, or same lesson already done under another id
+      &&!_carryBlocked(t,_dk)                       // walked back, or same lesson already done under another id
+      &&!carryRebaselined(t))                       // rebuild absorbed it — plan re-laid from where the kid is
     .map(t=>({...t,id:t.id+"_c",day:"monday",cascade:true,
       included:!excl[t.id+"_c"],
       prevWeek:prev.weekLabel||"prev week"}));
@@ -7054,7 +7071,7 @@ function loadJson(){
         // Skip ones whose lesson was already completed (under a re-keyed fresh copy) or walked back —
         // otherwise the orphaned _c twin rides forward forever as a ghost.
         const newIds=new Set(d.tasks.map(t=>t.id));
-        (weekData.tasks||[]).filter(t=>t.id.endsWith("_c")&&!newIds.has(t.id)&&!newIds.has(baseId(t.id))&&!_carryBlocked(t,_dk))
+        (weekData.tasks||[]).filter(t=>t.id.endsWith("_c")&&!newIds.has(t.id)&&!newIds.has(baseId(t.id))&&!_carryBlocked(t,_dk)&&!carryRebaselined(t))
           .forEach(t=>{ d.tasks.push(t); newIds.add(t.id); });
         // Pass 2 — reconstruct from the most-recent archive in case carry-overs were already wiped.
         // Same filter as the Carry-overs tab: all base tasks not completed in any form.
@@ -7066,7 +7083,7 @@ function loadJson(){
           })[0];
         if(_archPrev){
           const _awc=_archPrev.checked||{};
-          (_archPrev.tasks||[]).filter(t=>!t.id.endsWith("_c")&&!_awc[t.id]&&!_awc[t.id+"_c"]&&!_carryBlocked(t,_dk)&&!subjNoCarry(t))
+          (_archPrev.tasks||[]).filter(t=>!t.id.endsWith("_c")&&!_awc[t.id]&&!_awc[t.id+"_c"]&&!_carryBlocked(t,_dk)&&!subjNoCarry(t)&&!carryRebaselined(t))
             .forEach(t=>{
               const _cId=t.id+"_c";
               if(newIds.has(_cId)) return;                        // already present
@@ -7121,7 +7138,7 @@ function loadJson(){
         // Same filter as Carry-overs tab: base tasks where neither original nor _c was checked,
         // and the lesson wasn't already done under another id (content) or walked back.
         const _dkGen=completedLessonKeys();
-        snapTasks.filter(t=>!t.id.endsWith("_c")&&!snapChecked[t.id]&&!snapChecked[t.id+"_c"]&&!_carryBlocked(t,_dkGen))
+        snapTasks.filter(t=>!t.id.endsWith("_c")&&!snapChecked[t.id]&&!snapChecked[t.id+"_c"]&&!_carryBlocked(t,_dkGen)&&!carryRebaselined(t))
           .forEach(t=>{
             const cId=t.id+"_c";
             if(!d.tasks.some(x=>x.id===cId))
@@ -15343,6 +15360,16 @@ function cbApply(){
       const cur=(((currData.skiplog||{})[kid]||{})[sk]||[]).slice();
       const p="skiplog/"+kid+"/"+sk;
       snap(p,((currData.skiplog||{})[kid]||{})[sk]); up[p]=cur.concat(skAdd);
+    }
+    // REBASELINE: this build re-laid the subject from where the kid actually is —
+    // older unfinished tasks are absorbed (kept → in the new map, dismissed →
+    // skiplog) and must stop riding forward as carry-overs. Stamped with the same
+    // day-of-year math task ids use, so carryRebaselined() compares stamp-to-stamp.
+    {
+      const _rbNow=new Date(); const _rbJan1=new Date(_rbNow.getFullYear(),0,0);
+      const p="rebaseline/"+kid+"/"+sk;
+      snap(p,((currData.rebaseline||{})[kid]||{})[sk]);
+      up[p]={y:_rbNow.getFullYear(),d:Math.floor((_rbNow-_rbJan1)/86400000),ts:_rbNow.toISOString()};
     }
     if(_bl.preDismiss>0){
       const ps=(((paceData||{}).subjects||{})[kid]||{})[sk];
@@ -28930,9 +28957,9 @@ function gwCommit(){
       });
     })();
     const snapSl=ld(activeWK+"_sl")||slState||{};
-    // Re-attach carry-overs
+    // Re-attach carry-overs (rebaselined subjects sit out — the rebuild absorbed them)
     const newIds=new Set(d.tasks.map(t=>t.id));
-    (weekData.tasks||[]).filter(t=>t.id.endsWith("_c")&&!newIds.has(t.id)&&!newIds.has(baseId(t.id)))
+    (weekData.tasks||[]).filter(t=>t.id.endsWith("_c")&&!newIds.has(t.id)&&!newIds.has(baseId(t.id))&&!carryRebaselined(t))
       .forEach(t=>{ d.tasks.push(t); newIds.add(t.id); });
     const _archPrev=Object.values(archive||{}).filter(a=>a&&a.tasks&&a.weekLabel!==d.week)
       .sort((a,b)=>{
@@ -28942,7 +28969,7 @@ function gwCommit(){
       })[0];
     if(_archPrev){
       const _awc=_archPrev.checked||{};
-      (_archPrev.tasks||[]).filter(t=>!t.id.endsWith("_c")&&!_awc[t.id]&&!_awc[t.id+"_c"]&&!subjNoCarry(t))
+      (_archPrev.tasks||[]).filter(t=>!t.id.endsWith("_c")&&!_awc[t.id]&&!_awc[t.id+"_c"]&&!subjNoCarry(t)&&!carryRebaselined(t))
         .forEach(t=>{
           const _cId=t.id+"_c";
           if(newIds.has(_cId)) return;
@@ -28994,7 +29021,7 @@ function gwCommit(){
       try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
       if(db) db.ref("archive/"+oldWK).set(entry);
     }
-    snapTasks.filter(t=>!t.id.endsWith("_c")&&!snapChecked[t.id]&&!snapChecked[t.id+"_c"]&&!subjNoCarry(t))
+    snapTasks.filter(t=>!t.id.endsWith("_c")&&!snapChecked[t.id]&&!snapChecked[t.id+"_c"]&&!subjNoCarry(t)&&!carryRebaselined(t))
       .forEach(t=>{
         const cId=t.id+"_c";
         if(!d.tasks.some(x=>x.id===cId))
