@@ -63,7 +63,8 @@ const PL_SHELL=`<div id="play-root">
 <button id="pl-mb-bins" class="kid-btn active" style="background:#111827;flex:1" onclick="plSetMode('bins')">🧺 Bins</button>
 <button id="pl-mb-act" class="kid-btn" style="flex:1" onclick="plSetMode('act')">🎯 Activities</button>
 <button id="pl-mb-do" class="kid-btn" style="flex:1" onclick="plSetMode('do')">💡 Ideas</button>
-<button id="pl-mb-mom" class="kid-btn" style="flex:0 0 auto" onclick="plSetMode('mom')">👩</button></div>
+<button id="pl-mb-mom" class="kid-btn" style="flex:0 0 auto" onclick="plSetMode('mom')">👩</button>
+<span id="pl-outcount" style="align-self:center;font-size:11px;color:var(--muted);white-space:nowrap;padding:0 4px"></span></div>
 <div id="pl-kidbar"></div>
 <div id="pl-locbar"></div>
 <div id="pl-intents" style="display:none"></div>
@@ -246,7 +247,7 @@ function plRender(){
       (c.photo?'<img src="'+c.photo+'" loading="lazy">':'<div class="noimg">'+(PL_EMOJI[c.cat]||"📦")+'</div>')+
       '<div class="nm">'+c.name+'</div><div class="meta"><span class="idchip">'+c.id+'</span><span>'+c.loc+'</span></div></div>';
   }).join("");
-  document.getElementById("plHist").innerHTML=plHist.length?plHist.map(h=>'<div class="hrow">'+h+'</div>').join(""):'<div class="hrow">Nothing yet — tap a bin to check it out.</div>';
+  document.getElementById("pl-histlist").innerHTML=plHist.length?plHist.map(h=>'<div class="hrow">'+h+'</div>').join(""):'<div class="hrow">Nothing yet — tap a bin to check it out.</div>';
 }
 function plOpenSheet(id){
   const c=PL_CATALOG.find(x=>x.id==id); const o=plState[id];
@@ -289,7 +290,6 @@ function plRet(id){const o=plState[id];if(o)plHist.unshift((PL_KN[o.kid]||"?")+"
   if(plFB){if(o&&o.lk)db.ref("play/plLog/"+id+"/"+o.lk).update({back:Date.now()});db.ref("play/checkouts/"+id).remove();}
   else{const L=plLog[id];if(L&&L.length&&!L[0].back)L[0].back=Date.now();delete plState[id];}
   plSave();plRender();}
-document.getElementById("pl-sheet").addEventListener("click",e=>{if(e.target.id=="pl-sheet")plCloseSheet();});
 
 window.renderPlay=function(c){
   plInit();
