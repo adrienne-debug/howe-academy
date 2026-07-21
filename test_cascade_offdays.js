@@ -161,6 +161,31 @@ console.log("calendar-off day inside the map still skipped");
   ok("off thursday skipped, friday still used", !d.thursday && (d.friday || 0) > 0, d);
 }
 
+console.log("retrieval slots — day-bound, never swept or stacked");
+{
+  // Monday's missed Sprint was cascade-stranded onto Wednesday (colliding with
+  // Wednesday's own slot). Day-bound snap-back must send it home as missed, and
+  // a plain missed slot must not sweep forward at all.
+  const tasks = [
+    mkTask("2026d200_retr_sprint_lincoln", "wednesday", "2:55 PM",
+      { subjectKey: "retrieval", title: "🏃 Sprint", cascadedFrom: "monday", cascade: true }),
+    mkTask("2026d202_retr_sprint_lincoln", "wednesday", "3:35 PM",
+      { subjectKey: "retrieval", title: "🏃 Sprint" }),
+    mkTask("m1", "monday", "10:00 AM"),
+    mkTask("t1", "tuesday", "10:00 AM"),
+  ];
+  const r = runCascade({ dates: WEEK5, today: "2026-07-21", tasks });
+  const strayed = r.tasks.find(t => t.id === "2026d200_retr_sprint_lincoln");
+  const own = r.tasks.find(t => t.id === "2026d202_retr_sprint_lincoln");
+  ok("stranded slot snapped back to its own day (missed)", strayed.day === "monday" && !strayed.cascadedFrom, strayed.day);
+  ok("wednesday keeps exactly its own slot", own.day === "wednesday");
+  const wedSprints = r.tasks.filter(t => t.day === "wednesday" && t.subjectKey === "retrieval");
+  ok("no double sprint on one day", wedSprints.length === 1, wedSprints.length);
+  const m1 = r.tasks.find(t => t.id === "m1");
+  ok("real lessons still sweep normally", m1.day !== "monday", m1.day);
+  ok("no retrieval slot in the carry box", !r.tasks.some(t => t.subjectKey === "retrieval" && t._eowOverflow));
+}
+
 console.log("scheduler lock — foreign lock makes the sweep a no-op");
 {
   const tasks = [];
