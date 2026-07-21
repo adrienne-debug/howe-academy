@@ -11102,6 +11102,11 @@ function cascadeIntraWeek(sweepTodayElapsed){
   const JS_DAY_MAP={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
   const todayMid=new Date(); todayMid.setHours(0,0,0,0);
   const jsDay=new Date().getDay()||7;
+  // A vacation-shortened week omits its off days from meta.dates entirely — a weekday
+  // with no date does NOT exist this week and must never receive swept work (the bug
+  // that parked overflow on beach-trip Thu/Fri). Only enforceable when the week's date
+  // map has loaded; Saturday still derives its date from Friday+1 inside _cascDate.
+  const _wkHasDates=Object.keys(DAY_DT||{}).length>0;
   let today=null;
   for(const d of dayOrder){
     if(DAY_DT[d]){
@@ -11214,6 +11219,15 @@ function cascadeIntraWeek(sweepTodayElapsed){
         t.time=fromMin(_st); _dbCursor[t.who]=_st+(t.dur||20); _healMoved=true;
         _healUpd[t.id+"/time"]=t.time;
       }
+      return;
+    }
+    // Stranded on a day with NO date this week (vacation-shortened) — the day doesn't
+    // exist, so it must not sit there as "future" work; sweep it like past work so it
+    // self-heals onto real school days. (Saturday derives Friday+1, so real Saturday
+    // school is never treated as stranded.)
+    if(_wkHasDates&&dayOrder.indexOf(t.day)>=0&&!_cascDate(t.day)){
+      t.cascadedFrom=t.cascadedFrom||t.day;
+      if(_isNote(t)) pastNotes.push(t); else pastTasks.push(t);
       return;
     }
     const idx=dayOrder.indexOf(t.day);
@@ -11383,7 +11397,11 @@ function cascadeIntraWeek(sweepTodayElapsed){
     const ordered=pool.slice().sort((a,b)=> (a.who<b.who?-1:a.who>b.who?1:0) || (cascadeWeight(a,today)-cascadeWeight(b,today)) || natCmp(lessonKey(a),lessonKey(b)));
     ordered.forEach(function(t){
       const who=t.who, subj=taskSubject(t);
-      const days=wdays.filter(function(dn){ const ds=_cascDate(dn); return !(ds&&smapIsKidOff(who,ds)); });
+      const days=wdays.filter(function(dn){
+        const ds=_cascDate(dn);
+        if(!ds) return !_wkHasDates; // date-less day = not part of this week
+        return !smapIsKidOff(who,ds);
+      });
       const useDays=days.length?days:[today];
       let best=useDays[0], bestSc=Infinity, bestTc=Infinity;
       useDays.forEach(function(dn){
@@ -11404,6 +11422,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
   // today is full → work flows to later open days).
   for(let di=todayIdx; di<dayOrder.length&&pool.length; di++){
     const dn=dayOrder[di];
+    if(_wkHasDates&&!_cascDate(dn)) continue; // day isn't part of this week — never a receiving day
     const sdOv=(sd.overrides||{})[dn]||{};
     const dStart=toMin(sdOv.start||sd.defaultStart||"10:00 AM");
     const dEnd=toMin(sdOv.end||sd.defaultEnd||"4:15 PM");
@@ -11512,6 +11531,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
       if(isCatchupCapped(taskSubject(t))){ t._eowOverflow=true; return; }
       for(let di=dayOrder.length-1; di>=todayIdx; di--){
         const dn=dayOrder[di], ds=_cascDate(dn);
+        if(_wkHasDates&&!ds) continue; // day isn't part of this week
         if(ds&&smapIsKidOff(t.who,ds)) continue;
         const ov=(sd.overrides||{})[dn]||{};
         const _cut=(dn==="saturday")?satCutoffMin():null;
@@ -11535,6 +11555,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
     for(let di=todayIdx; di<dayOrder.length; di++){
       const dn=dayOrder[di];
       const ds=_cascDate(dn);
+      if(_wkHasDates&&!ds) continue; // day isn't part of this week
       if(ds&&smapIsKidOff(nb.who,ds)) continue;
       nb.day=dn;
       const mine=weekData.tasks.filter(t=>t!==nb&&t.who===nb.who&&t.day===dn&&!t.id.endsWith("_c"));
