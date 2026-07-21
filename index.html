@@ -11290,8 +11290,25 @@ function cascadeIntraWeek(sweepTodayElapsed){
     // Day-bound dailies (drills/notebooks = subjNoCarry) must NEVER be relocated by their
     // check-off day. Same-titled dailies share a history checkedOnDay, so healing them by it
     // piles every day's drill onto whichever day one was checked (seen: Julian drills tue×3).
-    // They belong on their generated day, period — skip them here like _c carry-overs.
-    if(!checked[t.id]||t.id.endsWith("_c")||subjNoCarry(t)) return;
+    // They belong on their generated day, period. But their TIME still heals when the
+    // completion date IS their own day: a mid-day regen re-keys done dailies to fresh
+    // afternoon slots (the generator floors today at "now"), and without this a notebook
+    // finished at 10:02 displayed at 2:00 PM (2026-07-21).
+    if(!checked[t.id]||t.id.endsWith("_c")) return;
+    if(subjNoCarry(t)){
+      const cd0=_parseCheckTs(checked[t.id]);
+      if(cd0&&DAY_DT[t.day]){
+        const dd0=new Date(DAY_DT[t.day]+", "+cd0.getFullYear());
+        if(!isNaN(dd0.getTime())&&dd0.getMonth()===cd0.getMonth()&&dd0.getDate()===cd0.getDate()){
+          const _ct0=fromMin(cd0.getHours()*60+cd0.getMinutes());
+          if(t.time!==_ct0&&toMin(t.time)>toMin(_ct0)){
+            dbg("cascade heal(daily time): "+t.id+" "+t.time+" → "+_ct0);
+            t.time=_ct0; _healUpd[t.id+"/time"]=_ct0; _healMoved=true;
+          }
+        }
+      }
+      return;
+    }
     const cd=_parseCheckTs(checked[t.id]);
     if(cd){
       for(const dn of dayOrder){

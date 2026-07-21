@@ -259,6 +259,24 @@ console.log("done work at a future slot never walls the day");
   ok("claimed ghost left in place for display", ghost.day === "tuesday" && mins(ghost.time) === 12 * 60 + 10, ghost.day + " " + ghost.time);
 }
 
+console.log("day-bound dailies: time heals to completion, day never moves");
+{
+  // A regen re-keyed today's done notebook to 2:00 PM; it was finished at 10:02.
+  // Same-day completion → time restores. A daily whose completion ts is a DIFFERENT
+  // day keeps both its day AND time (the anti-pile-up rule stands).
+  const tasks = [
+    mkTask("nb", "tuesday", "2:00 PM", { who: "julian", subjectKey: "morning_nb", mom: "required", title: "📖 Morning Notebook — Morning Notebook" }),
+    mkTask("dr", "wednesday", "10:30 AM", { who: "julian", subjectKey: "reflex", mom: "none", device: "computer", title: "💻 Reflex Math — Reflex Math" }),
+    mkTask("t1", "tuesday", "10:00 AM"),
+  ];
+  const r = runCascade({ dates: WEEK3, today: "2026-07-21", tasks, nowMin: 12 * 60 + 50,
+    checked: { nb: "10:02 AM Jul 21", dr: "11:00 AM Jul 21" } });
+  const nb = r.tasks.find(t => t.id === "nb");
+  ok("done notebook healed to its completion time", nb.day === "tuesday" && mins(nb.time) === 10 * 60 + 2, nb.day + " " + nb.time);
+  const dr = r.tasks.find(t => t.id === "dr");
+  ok("cross-day daily untouched (day AND time)", dr.day === "wednesday" && mins(dr.time) === 10 * 60 + 30, dr.day + " " + dr.time);
+}
+
 console.log("scheduler lock — foreign lock makes the sweep a no-op");
 {
   const tasks = [];
