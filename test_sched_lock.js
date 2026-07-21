@@ -42,9 +42,10 @@ function mkDb(initial) {
       return {
         transaction: (up, done) => {
           const next = up(state.val);
-          if (next === undefined) { done && done(null, false); return; }
+          const snap = { val: () => state.val };
+          if (next === undefined) { done && done(null, false, snap); return; }
           state.val = next;
-          done && done(null, true);
+          done && done(null, true, snap);
         }
       };
     }
@@ -53,13 +54,18 @@ function mkDb(initial) {
 
 function mkEnv(dbi, opts) {
   opts = opts || {};
-  return {
+  const env = {
     db: dbi, _dryRun: () => !!opts.dry,
     HA_DEV_ID: opts.dev || "dev_me",
     SCHED_LOCK_TTL: 90000,
     schedLock: opts.mirror === undefined ? null : opts.mirror,
     Date, Math, Object, JSON,
+    _timerCalls: { n: 0 },
   };
+  // Immediate fake timer so claim retries run synchronously; opts.onTimer can
+  // mutate db state to simulate the holder releasing mid-retry.
+  env.setTimeout = f => { env._timerCalls.n++; if (opts.onTimer) opts.onTimer(env._timerCalls.n); f(); };
+  return env;
 }
 function call(env, expr) {
   const keys = Object.keys(env);
@@ -110,6 +116,38 @@ console.log("claim + release");
   const got2 = call(mkEnv(dbi, { dry: true }), `()=>{ let r=null; haClaimSchedLock("x",x=>{r=x;}); return typeof r; }`);
   ok("no db → noop release", got1 === "function");
   ok("dry-run → noop release, no lock written", got2 === "function" && dbi.state.val === null);
+}
+
+console.log("regen claim retries through cascade holds");
+{
+  // A background sweep holds the lock when Mom taps Regenerate: the claim must
+  // wait it out, not silently abort (the "button does nothing" bug).
+  const dbi = mkDb({ dev: "dev_other", ts: Date.now(), kind: "cascade" });
+  const env = mkEnv(dbi, { onTimer: n => { if (n === 3) dbi.state.val = null; } });
+  const got = call(env, `()=>{ let r="unset"; haClaimSchedLock("regen",x=>{r=x;}); return {ok:!!r&&r!=="unset", tries:_timerCalls.n}; }`);
+  ok("regen waits out a cascade hold and wins", got.ok === true && got.tries === 3, got);
+  ok("lock now ours", dbi.state.val && dbi.state.val.dev === "dev_me" && dbi.state.val.kind === "regen", dbi.state.val);
+}
+{
+  // A competing REGEN on another device: abort immediately, no retry spin.
+  const dbi = mkDb({ dev: "dev_other", ts: Date.now(), kind: "regen" });
+  const env = mkEnv(dbi);
+  const got = call(env, `()=>{ let r="unset"; haClaimSchedLock("regen",x=>{r=x;}); return {r:r, tries:_timerCalls.n}; }`);
+  ok("competing regen aborts immediately", got.r === null && got.tries === 0, got);
+}
+{
+  // Holder never releases: retries exhaust and the claim reports failure.
+  const dbi = mkDb({ dev: "dev_other", ts: Date.now(), kind: "cascade" });
+  const env = mkEnv(dbi);
+  const got = call(env, `()=>{ let r="unset"; haClaimSchedLock("regen",x=>{r=x;}); return {r:r, tries:_timerCalls.n}; }`);
+  ok("stuck cascade hold exhausts retries", got.r === null && got.tries === 16, got);
+}
+{
+  // Plain cascade claims stay single-shot (cheap skip, no retry churn).
+  const dbi = mkDb({ dev: "dev_other", ts: Date.now(), kind: "cascade" });
+  const env = mkEnv(dbi);
+  const got = call(env, `()=>{ let r="unset"; haClaimSchedLock("cascade",x=>{r=x;}); return {r:r, tries:_timerCalls.n}; }`);
+  ok("cascade claim does not retry", got.r === null && got.tries === 0, got);
 }
 
 console.log("lockHeldByOther");

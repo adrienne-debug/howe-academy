@@ -1481,13 +1481,26 @@ function schedLockFresh(l){ return !!(l&&l.ts&&(Date.now()-l.ts)<SCHED_LOCK_TTL)
 function lockHeldByOther(){ return !!(schedLock&&schedLockFresh(schedLock)&&schedLock.dev!==HA_DEV_ID); }
 // Claim → cb(release) on success, cb(null) when another device holds it.
 // No db / dry-run: nothing to serialize (writes are no-ops anyway) → cb(noop).
-function haClaimSchedLock(kind,cb){
+function haClaimSchedLock(kind,cb,_attempt){
   if(!db||_dryRun()){ cb(function(){}); return; }
   db.ref("regen_lock").transaction(function(cur){
     if(cur&&schedLockFresh(cur)&&cur.dev!==HA_DEV_ID) return; // held elsewhere — abort
     return {dev:HA_DEV_ID,ts:Date.now(),kind:kind||"cascade"};
-  },function(err,committed){
-    if(err||!committed){ cb(null); return; }
+  },function(err,committed,snap){
+    if(err||!committed){
+      // Mom's explicit Regenerate must not lose to a background sweep's sub-second
+      // hold (that made the button silently do nothing): wait and retry for up to
+      // ~8s while the holder is only a cascade (or the claim just hiccuped). Only a
+      // genuine competing regen/autogen aborts immediately.
+      var holder=null; try{ holder=snap&&snap.val(); }catch(e){}
+      var att=_attempt||0;
+      if((kind==="regen"||kind==="autogen")&&att<16&&(!holder||holder.kind==="cascade")){
+        setTimeout(function(){ haClaimSchedLock(kind,cb,att+1); },500);
+        return;
+      }
+      if(typeof dbg==="function") dbg("sched-lock claim failed ("+kind+", try "+(att+1)+"): held by "+(holder?(holder.dev+"/"+holder.kind):"unknown"));
+      cb(null); return;
+    }
     cb(function release(){
       db.ref("regen_lock").transaction(function(cur){
         if(cur&&cur.dev===HA_DEV_ID) return null; // only ever clear our own claim
