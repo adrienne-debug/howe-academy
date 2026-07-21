@@ -68,6 +68,7 @@ function runCascade(cfg) {
     schedOv: () => null, schedOvKidOff: () => null,
     satCutoffMin: () => null, satApplyCutoff: () => {},
     sv: () => {}, dbg: () => {}, renderAll: () => {}, safeWriteTasks: () => {},
+    lockHeldByOther: cfg.lockHeld ? (() => true) : (() => false),
     _dryRun: () => true,
     db: { ref: p => ({ update: o => { writes.push({ p, o }); return Promise.resolve(); }, set: () => Promise.resolve() }) },
     Date: frozenDate(cfg.today),
@@ -158,6 +159,16 @@ console.log("calendar-off day inside the map still skipped");
     kidOff: (kid, ds) => ds === "2026-07-23" ? "Holiday" : null });
   const d = daysOf(r.tasks);
   ok("off thursday skipped, friday still used", !d.thursday && (d.friday || 0) > 0, d);
+}
+
+console.log("scheduler lock — foreign lock makes the sweep a no-op");
+{
+  const tasks = [];
+  for (let i = 0; i < 14; i++) tasks.push(mkTask("m" + i, "monday", "10:00 AM"));
+  const before = JSON.stringify(tasks);
+  const r = runCascade({ dates: WEEK3, today: "2026-07-21", tasks, lockHeld: true });
+  ok("nothing moved while another device schedules", JSON.stringify(r.tasks) === before);
+  ok("nothing written while another device schedules", r.writes.length === 0, r.writes.length);
 }
 
 console.log("");

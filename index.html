@@ -1463,9 +1463,43 @@ let fbTasksHighWater = 0; // max task count ever seen from Firebase — guards a
 // Dry-run mode (?dryrun=1 or localStorage ha_dryrun=1): reads work, writes are no-ops.
 // Lets us smoke-test the modified app against live data WITHOUT mutating Firebase.
 function _dryRun(){ try{ return /[?&]dryrun=1/.test(location.search)||localStorage.getItem("ha_dryrun")==="1"; }catch(e){ return false; } }
+
+// ── SCHEDULER WRITE LOCK ─────────────────────────────────────────────────────
+// Only ONE device plays scheduler at a time. A device claims /regen_lock (atomic
+// transaction) before a regenerate/commit or a writing cascade sweep; every other
+// device keeps reading live but suspends its own schedule WRITES and shows a small
+// banner until the lock clears — then re-renders from the listener-fresh data and
+// re-arms one sweep of its own (normally a no-op). This is what prevents two
+// devices' post-regen sweeps from interleaving writes (the 2026-07-20 23:35 mess:
+// same-minute task collisions from racing packers). The lock self-expires after
+// 90s so a device dying mid-regen can't freeze the fleet. Kid check-offs and other
+// targeted per-id writes are NOT gated — only the schedule-laying machinery.
+let HA_DEV_ID=(function(){ try{ let v=localStorage.getItem("ha_dev_id"); if(!v){ v="dev_"+Math.random().toString(36).slice(2,10); localStorage.setItem("ha_dev_id",v); } return v; }catch(e){ return "dev_"+Math.random().toString(36).slice(2,10); } })();
+const SCHED_LOCK_TTL=90000;
+let schedLock=null; // live mirror of /regen_lock (listener in initFb)
+function schedLockFresh(l){ return !!(l&&l.ts&&(Date.now()-l.ts)<SCHED_LOCK_TTL); } // NTP-synced family devices; big clock skew would weaken this
+function lockHeldByOther(){ return !!(schedLock&&schedLockFresh(schedLock)&&schedLock.dev!==HA_DEV_ID); }
+// Claim → cb(release) on success, cb(null) when another device holds it.
+// No db / dry-run: nothing to serialize (writes are no-ops anyway) → cb(noop).
+function haClaimSchedLock(kind,cb){
+  if(!db||_dryRun()){ cb(function(){}); return; }
+  db.ref("regen_lock").transaction(function(cur){
+    if(cur&&schedLockFresh(cur)&&cur.dev!==HA_DEV_ID) return; // held elsewhere — abort
+    return {dev:HA_DEV_ID,ts:Date.now(),kind:kind||"cascade"};
+  },function(err,committed){
+    if(err||!committed){ cb(null); return; }
+    cb(function release(){
+      db.ref("regen_lock").transaction(function(cur){
+        if(cur&&cur.dev===HA_DEV_ID) return null; // only ever clear our own claim
+        return; // someone else's (or already gone) — leave it
+      });
+    });
+  });
+}
 function safeWriteTasks(reason){
   // Guard: never write tasks to Firebase if we'd be dropping below 50% of what we've seen
   if(!db||_dryRun()) return;
+  if(lockHeldByOther()){ dbg("skip task write ("+reason+"): another device holds the scheduler lock"); return; }
   const count = weekData.tasks.length;
   if(fbTasksHighWater > 20 && count < fbTasksHighWater * 0.5){
     dbg("BLOCKED task write ("+reason+"): only "+count+" tasks vs high-water "+fbTasksHighWater);
@@ -1662,6 +1696,28 @@ function initFb() {
         console.warn("⚠️ HA DRY-RUN active — Firebase writes are disabled (reads live).");
       }catch(e){ console.warn("dryrun patch failed",e); }
     }
+
+    // Scheduler-lock mirror + banner: while another device regenerates/sweeps, this one
+    // reads live but writes nothing schedule-shaped; when the lock clears it re-renders
+    // (listeners already delivered the winner's layout) and re-arms one sweep of its own.
+    db.ref("regen_lock").on("value",s=>{
+      const was=lockHeldByOther();
+      schedLock=s.val()||null;
+      const is=lockHeldByOther();
+      try{
+        let b=document.getElementById("sched-lock-banner");
+        if(is){
+          if(!b){
+            b=document.createElement("div"); b.id="sched-lock-banner";
+            b.style.cssText="position:fixed;top:0;left:0;right:0;z-index:9999;background:#f59e0b;color:#fff;font:700 12px 'DM Sans',sans-serif;text-align:center;padding:6px 10px;box-shadow:0 2px 8px rgba(0,0,0,.25)";
+            document.body.appendChild(b);
+          }
+          b.textContent="🔄 Schedule updating on another device — hang tight…";
+          b.style.display="block";
+        } else if(b){ b.style.display="none"; }
+      }catch(e){}
+      if(was&&!is){ renderAll(); schedCascade(); }
+    });
 
     db.ref(".info/connected").on("value",s=>{
       const on=s.val()===true;
@@ -3471,8 +3527,14 @@ function schedRegenerateNow(){
     runGenerateWeek();           // sets gwResult / gwCursors (or toasts + leaves gwResult null)
     if(gwResult){ gwCommit(); if(typeof gwShowToast==="function") gwShowToast("Week "+wn+" regenerated from now ✓"); }
   };
-  if(db){ db.ref("weekConfig/"+wn).once("value",s=>_run(s.val())); }
-  else _run(null);
+  // This device takes the scheduler lock for the whole regenerate; everyone else
+  // pauses their schedule writes + shows the banner until we release.
+  haClaimSchedLock("regen",function(release){
+    if(!release){ if(typeof gwShowToast==="function") gwShowToast("Another device is updating the schedule — try again in a moment."); return; }
+    const _done=v=>{ try{ _run(v); } finally { release(); } };
+    if(db){ db.ref("weekConfig/"+wn).once("value",s=>_done(s.val())); }
+    else _done(null);
+  });
 }
 function _schedDayISO(dn){
   if(!DAY_DT[dn]) return null;
@@ -11130,8 +11192,16 @@ function schedCascade(){
   clearTimeout(cascadeDebounce);
   cascadeDebounce=setTimeout(()=>{
     if(fbCheckedLoaded&&fbTasksLoaded&&fbHistoryLoaded&&fbCurrLoaded){
-      cascadeIntraWeek();
-      runCascade();
+      // One scheduler at a time: claim the shared lock before a writing sweep.
+      // Claim fails → another device is mid-sweep/regen; its results arrive via
+      // listeners, which re-fire this debounce — by then the lock is free and our
+      // own pass is normally a no-op.
+      if(lockHeldByOther()) return; // lock-release handler re-arms us
+      haClaimSchedLock("cascade",function(release){
+        if(!release) return;
+        try{ cascadeIntraWeek(); runCascade(); }
+        finally{ release(); }
+      });
     }
   },2000);
 }
@@ -11154,6 +11224,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
   // Never sweep before the curriculum answers (direct callers like gwCommit always have
   // currData) — a sweep that can't see subjNoCarry flags would move day-bound work.
   if(!fbCurrLoaded&&!currData) return;
+  if(lockHeldByOther()) return; // another device is scheduling — read-only until it's done
   const dayOrder=["monday","tuesday","wednesday","thursday","friday","saturday"];
   const JS_DAY_MAP={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
   const todayMid=new Date(); todayMid.setHours(0,0,0,0);
@@ -11815,6 +11886,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
 
 function runCascade(){
   if(!fbHistoryLoaded||!fbCheckedLoaded||!fbTasksLoaded) return;
+  if(lockHeldByOther()) return; // another device is scheduling — read-only until it's done
   // GC: remove checked/history entries that don't belong to any current task
   const taskIds=new Set(weekData.tasks.map(x=>x.id));
   if(taskIds.size>0){
@@ -27060,12 +27132,17 @@ function pnwGenerate(){
 
 function pnwApply(){
   if(!pnwResult) return;
-  gwResult=pnwResult; gwDropped=pnwDropped; gwCarryOverCount=pnwCarryOverCount;
-  // Cursor snapshot from THIS preview's generation — without it gwCommit wrote whatever
-  // stale gwCursors a previous auto-gen left behind (or nothing) to the new week.
-  gwCursors=pnwCursors;
-  gwCommit();
-  closePlanNextWeek();
+  haClaimSchedLock("regen",function(release){
+    if(!release){ if(typeof gwShowToast==="function") gwShowToast("Another device is updating the schedule — try again in a moment."); return; }
+    try{
+      gwResult=pnwResult; gwDropped=pnwDropped; gwCarryOverCount=pnwCarryOverCount;
+      // Cursor snapshot from THIS preview's generation — without it gwCommit wrote whatever
+      // stale gwCursors a previous auto-gen left behind (or nothing) to the new week.
+      gwCursors=pnwCursors;
+      gwCommit();
+      closePlanNextWeek();
+    } finally { release(); }
+  });
 }
 
 function pnwBack(){
@@ -28549,16 +28626,23 @@ function autoGenerateWeekIfNeeded(){
   _autoGenTried=true;
   db.ref("week"+wn+"/tasks").once("value",s=>{
     if(s.val()&&Object.keys(s.val()).length) return; // another device already built it
-    const cfg={weekNum:String(wn),babysitter:{},withSitter:[],skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:gwSatPlanned(wn),redistribute:[],autoAdvance:true};
-    const gen=generateWeek(cfg);
-    if(gen.error){ dbg("auto-gen wk"+wn+" skipped: "+gen.error); return; }
-    gwConfig=cfg;
-    gwResult=gen.result; gwDropped=gen.dropped; gwCarryOverCount=gen.carryOverCount||0;
-    gwCursors=gen.cursors||null; gwCalendarSkips=gen.calendarSkips||null;
-    gwCommit();
-    try{localStorage.setItem("ha_autogen_notice",JSON.stringify({week:wn,ts:Date.now()}));}catch(e){}
-    dbg("auto-generated week "+wn);
-    renderAll();
+    // Lock too — two devices can pass the tasks-empty check simultaneously on a fresh
+    // Sunday; the loser skips and picks the winner's build up off the listeners.
+    haClaimSchedLock("autogen",function(release){
+      if(!release){ dbg("auto-gen wk"+wn+" skipped: another device holds the scheduler lock"); return; }
+      try{
+        const cfg={weekNum:String(wn),babysitter:{},withSitter:[],skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:gwSatPlanned(wn),redistribute:[],autoAdvance:true};
+        const gen=generateWeek(cfg);
+        if(gen.error){ dbg("auto-gen wk"+wn+" skipped: "+gen.error); return; }
+        gwConfig=cfg;
+        gwResult=gen.result; gwDropped=gen.dropped; gwCarryOverCount=gen.carryOverCount||0;
+        gwCursors=gen.cursors||null; gwCalendarSkips=gen.calendarSkips||null;
+        gwCommit();
+        try{localStorage.setItem("ha_autogen_notice",JSON.stringify({week:wn,ts:Date.now()}));}catch(e){}
+        dbg("auto-generated week "+wn);
+        renderAll();
+      } finally { release(); }
+    });
   });
 }
 
