@@ -93,7 +93,7 @@ function plBumpStreak(k){if(plIsGuest(k))return;const st=Object.assign({lvl:0,st
   else if(st.lvl<2&&st.streak>=PL_TH[1]){st.lvl=2;up=true;}
   plWriteStatus(k,st);
   if(up)setTimeout(()=>plLevelUpSheet(k,st.lvl),300);}
-function plStrike(k){const st=Object.assign({lvl:0,streak:0},plSt(k));
+function plStrike(k){if(!plMomAuthed())return;const st=Object.assign({lvl:0,streak:0},plSt(k));
   if(!confirm("⚠ Strike "+PL_KN[k]+"? Drops one level and resets their streak."))return;
   st.lvl=Math.max(0,st.lvl-1);st.streak=0;plWriteStatus(k,st);
   plHist.unshift("⚠ "+PL_KN[k]+" got a strike — now "+PL_LVLN[st.lvl]);plSave();plRender();}
@@ -241,7 +241,18 @@ function plFinishPlay(i){const p=(typeof i==="string")?plPlays.find(q=>q._k===i)
   if(p.bin&&p.bin.includes("+")){p.bin.split("+").forEach(b=>{if(plState[b]&&plState[b].kid==p.kid)plRet(b);});plSave();plRender();}
   else if(p.bin&&plState[p.bin]&&plState[p.bin].kid==p.kid)plRet(p.bin);else{plSave();plRender();}}
 const PL_INTENTS=[["build","🏗️","BUILD"],["create","🎨","CREATE"],["pretend","🦖","PRETEND"],["wheels","🏁","CARS + RACING"],["math","🔢","MATH FUN"],["science","🧪","SCIENCE"],["puzzle","🧩","FIGURE IT OUT"],["chill","🌀","CHILL"]];
-function plSetMode(m){plMode=m;plIntentSel=null;const mb=document.getElementById("pl-mb-bins"),mm=document.getElementById("pl-mb-mom"),ma=document.getElementById("pl-mb-act");ma.className="kid-btn"+(m=="act"?" active":"");ma.style.background=m=="act"?"#111827":"";mb.className="kid-btn"+(m=="bins"?" active":"");mb.style.background=m=="bins"?"#111827":"";mm.className="kid-btn"+(m=="mom"?" active":"");mm.style.background=m=="mom"?"#b5394a":"";plRender();}
+function plMomAuthed(){
+  if(typeof momPinUnlocked!=="undefined"&&momPinUnlocked)return true;
+  return window._plMomOk===true;}
+function plSetMode(m){
+  if(m=="mom"&&!plMomAuthed()){
+    const v=prompt("Mom PIN:");
+    if(v===null)return;
+    if(typeof APP_PIN!=="undefined"&&v===APP_PIN){window._plMomOk=true;}
+    else if(typeof APP_PIN==="undefined"&&v==="0000"){window._plMomOk=true;}
+    else{alert("Nope! 🙈");return;}
+  }
+  plMode=m;plIntentSel=null;const mb=document.getElementById("pl-mb-bins"),mm=document.getElementById("pl-mb-mom"),ma=document.getElementById("pl-mb-act");ma.className="kid-btn"+(m=="act"?" active":"");ma.style.background=m=="act"?"#111827":"";mb.className="kid-btn"+(m=="bins"?" active":"");mb.style.background=m=="bins"?"#111827":"";mm.className="kid-btn"+(m=="mom"?" active":"");mm.style.background=m=="mom"?"#b5394a":"";plRender();}
 function plDur(ms){const m=Math.round(ms/60000);if(m<60)return m+"m";const h=Math.floor(m/60);return h+"h "+(m%60)+"m";}
 function plBinStats(id){const L=plLogArr(id);let total=0,n=L.length,last=null;L.forEach(sn=>{total+=((sn.back||Date.now())-sn.out);});if(L.length)last=L[0];return {n:n,total:total,last:last};}
 function plPickIntent(i){plIntentSel=(plIntentSel==i?null:i);plRender();}
