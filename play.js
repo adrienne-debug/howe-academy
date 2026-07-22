@@ -82,12 +82,12 @@ PL_COMBOS.forEach(x=>PL_ACTS.push(x));
 const PL_TH=[5,12]; const PL_LVLN=["🌱 Rookie","⭐ Keeper","👑 Elite"]; const PL_LVLE=["🌱","⭐","👑"];
 let plStatus={};
 function plSt(k){return plStatus[k]||{lvl:0,streak:0};}
-function plMaxOut(k){return k=="guest"?3:plSt(k).lvl+1;}
+function plMaxOut(k){return plIsGuest(k)?3:plSt(k).lvl+1;}
 function plOutCount(k){return Object.values(plState).filter(o=>o.kid==k).length;}
 function plWriteStatus(k,st){plStatus[k]=st;
   if(plFB)db.ref("play/status/"+k).set(st);
   else{try{localStorage.setItem("lib_status",JSON.stringify(plStatus));}catch(e){}}}
-function plBumpStreak(k){if(k=="guest")return;const st=Object.assign({lvl:0,streak:0},plSt(k));st.streak++;
+function plBumpStreak(k){if(plIsGuest(k))return;const st=Object.assign({lvl:0,streak:0},plSt(k));st.streak++;
   let up=false;
   if(st.lvl<1&&st.streak>=PL_TH[0]){st.lvl=1;up=true;}
   else if(st.lvl<2&&st.streak>=PL_TH[1]){st.lvl=2;up=true;}
@@ -108,6 +108,32 @@ window.plStrike=plStrike;
 const PL_ACAT=[{"id": "magna", "label": "Magna-Tiles", "color": "#378ADD"}, {"id": "duplo", "label": "Duplo", "color": "#E24B4A"}, {"id": "sensory", "label": "Sensory Box", "color": "#1D9E75"}, {"id": "art", "label": "Art Projects", "color": "#D4537E"}, {"id": "stickers", "label": "Circle Stickers", "color": "#EF9F27"}, {"id": "wooden", "label": "Wooden Blocks", "color": "#854F0B"}, {"id": "books", "label": "Picture Books", "color": "#7F77DD"}, {"id": "pretend", "label": "Pretend Play", "color": "#0F6E56"}, {"id": "puzzles", "label": "Puzzles & Sorting", "color": "#993C1D"}, {"id": "movement", "label": "Movement", "color": "#185FA5"}, {"id": "kitchen", "label": "Kitchen Play", "color": "#639922"}, {"id": "nature", "label": "Nature & Science", "color": "#533AB7"}, {"id": "quiet", "label": "Quiet & Independent", "color": "#5F5E5A"}, {"id": "stem", "label": "STEM & Building", "color": "#0E7C86"}, {"id": "science", "label": "Science Experiments", "color": "#15803D"}, {"id": "outdoor", "label": "Outdoor Adventure", "color": "#4D7C0F"}, {"id": "cooking", "label": "Cooking & Baking", "color": "#C2410C"}, {"id": "crafts", "label": "Crafts & Making", "color": "#BE185D"}, {"id": "games", "label": "Games & Logic", "color": "#6D28D9"}, {"id": "writing", "label": "Writing & Stories", "color": "#2563EB"}, {"id": "coding", "label": "Coding & Tech", "color": "#475569"}];
 const PL_KIDS=(typeof ROSTER_DEF!=="undefined")?ROSTER_DEF.filter(k=>k.schoolAge!==undefined?true:true).filter(k=>k.id!=="mom").map(k=>({id:k.id,name:k.name,color:k.color})):[{id:"lincoln",name:"Lincoln",color:"#2a78d6"},{id:"ellis",name:"Ellis",color:"#1baf7a"},{id:"lucy",name:"Lucy",color:"#eda100"},{id:"julian",name:"Julian",color:"#9333ea"}];
 const PL_GUEST={id:"guest",name:"Friends",color:"#64748b"};
+window.plGuests={};
+const PL_GPAL=["#64748b","#0e7490","#7c3aed","#be185d","#a16207","#166534"];
+function plIsGuest(k){return k=="guest"||/^g_/.test(k);}
+function plActiveGuests(){const now=Date.now();return Object.entries(plGuests).filter(([id,g])=>g&&g.at&&(now-g.at)<86400000).map(([id,g])=>({id:id,name:g.name,at:g.at}));}
+function plGuestName(k){return (plGuests[k]||{}).name||null;}
+function plName(k,rec){return PL_KN[k]||plGuestName(k)||(rec&&rec.gname)||"Friend";}
+function plColor(k){if(PL_KC[k])return PL_KC[k];let h=0;for(const ch of String(k))h=(h*31+ch.charCodeAt(0))>>>0;return PL_GPAL[h%PL_GPAL.length];}
+function plSaveGuests(){if(plFB)return;try{localStorage.setItem("lib_guests",JSON.stringify(plGuests));}catch(e){}}
+function plGuestPick(kind,ref){window._plPend={kind:kind,ref:ref};
+  const gs=plActiveGuests();
+  let h='<h2>🧑‍🤝‍🧑 Which friend?</h2><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Friends disappear after 24 hours — add them fresh each visit.</div><div class="facegrid">'+
+    gs.map(g=>'<button class="face" style="background:'+plColor(g.id)+'" onclick="plGuestGo(\''+g.id+'\')">'+g.name+'</button>').join("")+
+    '<button class="face" style="background:#111827" onclick="plAddGuest()">➕ New friend</button></div>'+
+    '<button class="cancel" onclick="plCloseSheet()">back</button>';
+  document.getElementById("pl-shbody").innerHTML=h;document.getElementById("pl-sheet").classList.add("open");}
+function plAddGuest(){const name=(prompt("Friend\'s name?")||"").trim();if(!name)return;
+  const id="g_"+Date.now().toString(36);
+  plGuests[id]={name:name.slice(0,14),at:Date.now()};
+  if(plFB)db.ref("play/guests/"+id).set(plGuests[id]);else plSaveGuests();
+  plGuestGo(id);}
+function plGuestGo(gid){const p=window._plPend||{};window._plPend=null;
+  if(p.kind=="co")plCo(p.ref,gid);
+  else if(p.kind=="play")plPlayPick(p.ref,gid);
+  else plCloseSheet();}
+window.plGuestPick=plGuestPick;window.plActiveGuests=plActiveGuests;window.plAddGuest=plAddGuest;window.plGuestGo=plGuestGo;
+
 const PL_KC=Object.fromEntries(PL_KIDS.concat([PL_GUEST]).map(k=>[k.id,k.color]));
 const PL_KN=Object.fromEntries(PL_KIDS.concat([PL_GUEST]).map(k=>[k.id,k.name]));
 const PL_EMOJI={"magna-tiles":"🧲","littles-build":"🧱","build":"🔧","math":"🔢","science":"🧪","figures":"🦁","fine-motor":"✂️","curriculum":"📚","vehicles":"🏁","sensory":"🐣","maker":"🖨","coding":"🤖","activity":"💡","play":"🧸"};
@@ -116,10 +142,11 @@ function plLogArr(id){const L=plLog[id];if(!L)return[];if(Array.isArray(L))retur
 function plInit(){if(plInited)return;plInited=true;
   if(typeof db!=="undefined"&&db&&db.ref){plFB=true;
     db.ref("play").on("value",function(s){var v=s.val()||{};
-      plState=v.checkouts||{};plLog=v.plLog||v.log||{};plStatus=v.status||{};
+      plState=v.checkouts||{};plLog=v.plLog||v.log||{};plStatus=v.status||{};plGuests=v.guests||{};
+      const _now=Date.now();Object.entries(plGuests).forEach(([id,g])=>{if(g&&g.at&&(_now-g.at)>86400000&&!Object.values(plState).some(o=>o.kid==id)){db.ref("play/guests/"+id).remove();}});
       plPlays=v.plPlays||v.plays?Object.entries(v.plPlays||v.plays||{}).map(function(e){return Object.assign({_k:e[0]},e[1]);}).sort(function(a,b){return b.at-a.at;}):[];
       if(typeof tab!=="undefined"&&tab==="play")plRender();});
-  } else { try{plState=JSON.parse(localStorage.getItem("lib_checkouts")||"{}");plLog=JSON.parse(localStorage.getItem("lib_log")||"{}");plPlays=JSON.parse(localStorage.getItem("lib_plays")||"[]");plHist=JSON.parse(localStorage.getItem("lib_hist")||"[]");plStatus=JSON.parse(localStorage.getItem("lib_status")||"{}");}catch(e){}}
+  } else { try{plState=JSON.parse(localStorage.getItem("lib_checkouts")||"{}");plLog=JSON.parse(localStorage.getItem("lib_log")||"{}");plPlays=JSON.parse(localStorage.getItem("lib_plays")||"[]");plHist=JSON.parse(localStorage.getItem("lib_hist")||"[]");plStatus=JSON.parse(localStorage.getItem("lib_status")||"{}");try{plGuests=JSON.parse(localStorage.getItem("lib_guests")||"{}");}catch(e){}}catch(e){}}
 }
 let plHist=[];
 let plLog={};
@@ -188,7 +215,7 @@ function plComboGo(aid,kid){const x=PL_ACTS.find(a=>a.id==aid);
   x.bins.forEach(b=>{if(!plState[b])plCoSilent(b,kid,"🧩 "+x.t);});
   if(plFB)db.ref("play/plPlays").push({kid:kid,act:aid,t:"🧩 "+x.t,bin:x.bins.join("+"),at:Date.now(),done:false});
   else plPlays.unshift({kid:kid,act:aid,t:"🧩 "+x.t,bin:x.bins.join("+"),at:Date.now(),done:false});
-  plHist.unshift(PL_KN[kid]+" started COMBO \""+x.t+"\"");plSave();plCloseSheet();plSetMode("bins");}
+  plHist.unshift(plName(kid)+" started COMBO \""+x.t+"\"");plSave();plCloseSheet();plSetMode("bins");}
 window.plComboPick=plComboPick;window.plComboGo=plComboGo;
 function plPlayPick(aid,kid){const x=PL_ACTS.find(a=>a.id==aid);
   if(x&&x.combo){plComboPick(x,kid);return;}
@@ -197,7 +224,7 @@ function plPlayPick(aid,kid){const x=PL_ACTS.find(a=>a.id==aid);
   if(c){const o=plState[c.id];
     h+='<div style="font-size:14px;font-weight:800;margin-top:6px">🧺 Grab this bin:</div>';
     h+='<div style="display:flex;gap:12px;align-items:center;margin:8px 0">'+(c.photo?'<img src="'+c.photo+'" style="width:110px;height:110px;object-fit:cover;border-radius:12px">':'')+'<div><b style="font-size:15px">'+c.name+'</b><div style="font-size:12px;color:var(--muted);margin-top:2px">'+c.id+'</div><div style="font-size:13px;margin-top:6px">📍 '+(PL_FDESC[c.loc]||c.loc)+'</div></div></div>';
-    if(o){h+='<div style="font-size:13px;background:#fff9f5;border:1.5px solid #e07b2a;border-radius:10px;padding:8px 10px;margin-bottom:8px">⚠️ '+PL_KN[o.kid]+' has this bin out right now — go find them and share, or pick another activity.</div><button class="retbtn" onclick="plConfirmPlay(\''+aid+'\',\''+kid+'\',null)">▶️ Play anyway (no bin)</button>';}
+    if(o){h+='<div style="font-size:13px;background:#fff9f5;border:1.5px solid #e07b2a;border-radius:10px;padding:8px 10px;margin-bottom:8px">⚠️ '+plName(o.kid,o)+' has this bin out right now — go find them and share, or pick another activity.</div><button class="retbtn" onclick="plConfirmPlay(\''+aid+'\',\''+kid+'\',null)">▶️ Play anyway (no bin)</button>';}
     else h+='<button class="retbtn" style="background:'+PL_KC[kid]+'" onclick="plConfirmPlay(\''+aid+'\',\''+kid+'\',\''+c.id+'\')">✅ Got it — check it out to '+PL_KN[kid]+'</button>';
   } else {
     h+='<div style="font-size:13px;margin:8px 0">🎈 No bin needed for this one — just go play!</div><button class="retbtn" style="background:'+PL_KC[kid]+'" onclick="plConfirmPlay(\''+aid+'\',\''+kid+'\',null)">▶️ Start playing</button>';
@@ -206,9 +233,9 @@ function plPlayPick(aid,kid){const x=PL_ACTS.find(a=>a.id==aid);
   document.getElementById("pl-shbody").innerHTML=h;document.getElementById("pl-sheet").classList.add("open");}
 function plConfirmPlay(aid,kid,binId){const x=PL_ACTS.find(a=>a.id==aid);
   if(binId)plCoSilent(binId,kid,x?x.t:null);
-  if(plFB)db.ref("play/plPlays").push({kid:kid,act:aid,t:x?x.t:aid,bin:binId||null,at:Date.now(),done:false});
+  if(plFB)db.ref("play/plPlays").push({kid:kid,act:aid,t:x?x.t:aid,bin:binId||null,at:Date.now(),done:false,gname:plGuestName(kid)||null});
   else plPlays.unshift({kid:kid,act:aid,t:x?x.t:aid,bin:binId,at:Date.now(),done:false});
-  plHist.unshift(PL_KN[kid]+" started \""+(x?x.t:aid)+"\" — "+plFmt(Date.now()));plSave();plCloseSheet();plSetMode("bins");}
+  plHist.unshift(plName(kid)+" started \""+(x?x.t:aid)+"\" — "+plFmt(Date.now()));plSave();plCloseSheet();plSetMode("bins");}
 function plFinishPlay(i){const p=(typeof i==="string")?plPlays.find(q=>q._k===i):plPlays[i];if(!p)return;
   if(plFB&&p._k)db.ref("play/plPlays/"+p._k).update({done:true});else p.done=true;
   if(p.bin&&p.bin.includes("+")){p.bin.split("+").forEach(b=>{if(plState[b]&&plState[b].kid==p.kid)plRet(b);});plSave();plRender();}
@@ -229,9 +256,9 @@ function plRender(){
   document.getElementById("pl-outcount").textContent=out.length? out.length+" out":"all home ✓";
   let os='<h3>🧺 Out right now</h3>';
   const act=plPlays.map((p,i)=>[p,i]).filter(([p])=>!p.done);
-  if(act.length){os+='<div style="font-size:12px;font-weight:800;margin:2px 0 6px">▶️ Now playing</div>'+act.map(([p,i])=>'<div class="out-row"><div><b style="font-size:12.5px">'+p.t+'</b><div style="font-size:10.5px;color:var(--muted)">'+(p.bin?p.bin+' · ':'')+plFmt(p.at)+'</div></div><span class="who" style="background:'+(PL_KC[p.kid]||"#888")+'">'+(PL_KN[p.kid]||p.kid)+'</span><button onclick="plFinishPlay(Done ✓</button></div>').join("")+'<div style="height:6px"></div>';}
+  if(act.length){os+='<div style="font-size:12px;font-weight:800;margin:2px 0 6px">▶️ Now playing</div>'+act.map(([p,i])=>'<div class="out-row"><div><b style="font-size:12.5px">'+p.t+'</b><div style="font-size:10.5px;color:var(--muted)">'+(p.bin?p.bin+' · ':'')+plFmt(p.at)+'</div></div><span class="who" style="background:'+plColor(p.kid)+'">'+plName(p.kid,p)+'</span><button onclick="plFinishPlay(Done ✓</button></div>').join("")+'<div style="height:6px"></div>';}
   if(!out.length) os+='<div class="empty-note">Everything is on its shelf. 🎉</div>';
-  else os+=out.map(([id,o])=>{const c=PL_CATALOG.find(x=>x.id==id)||{name:id};return '<div class="out-row">'+(c.photo?'<img src="'+c.photo+'">':'')+'<div><b style="font-size:12.5px">'+c.name+'</b><div style="font-size:10.5px;color:var(--muted)">'+id+' · since '+plFmt(o.at)+'</div></div><span class="who" style="background:'+(PL_KC[o.kid]||"#888")+'">'+(PL_KN[o.kid]||o.kid)+'</span><button onclick="plRet(\''+id+'\');event.stopPropagation()">Return</button></div>';}).join("");
+  else os+=out.map(([id,o])=>{const c=PL_CATALOG.find(x=>x.id==id)||{name:id};return '<div class="out-row">'+(c.photo?'<img src="'+c.photo+'">':'')+'<div><b style="font-size:12.5px">'+c.name+'</b><div style="font-size:10.5px;color:var(--muted)">'+id+' · since '+plFmt(o.at)+'</div></div><span class="who" style="background:'+(plColor(o.kid)||"#888")+'">'+(plName(o.kid,o))+'</span><button onclick="plRet(\''+id+'\');event.stopPropagation()">Return</button></div>';}).join("");
   document.getElementById("pl-outshelf").innerHTML=os;
   const doMode = plMode=="do"; const momMode = plMode=="mom"; const actMode = plMode=="act";
   document.getElementById("pl-locbar").style.display=(doMode||momMode||actMode)?"none":"flex";
@@ -286,7 +313,7 @@ function plRender(){
       PL_CATALOG.slice().sort((a,b)=>plBinStats(b.id).n-plBinStats(a.id).n).map(c=>{const st=plBinStats(c.id);const o=plState[c.id];
         return '<div class="out-row" style="cursor:pointer" onclick="plOpenSheet(\''+c.id+'\')">'+(c.photo?'<img src="'+c.photo+'">':'<div style="width:36px;height:36px;border-radius:8px;background:var(--bg);display:flex;align-items:center;justify-content:center">📦</div>')+
         '<div><b style="font-size:12.5px">'+c.name+'</b><div style="font-size:10.5px;color:var(--muted)">'+c.id+' · '+st.n+'× · '+plDur(st.total)+' total</div></div>'+
-        (o?'<span class="who" style="background:'+PL_KC[o.kid]+'">OUT · '+PL_KN[o.kid]+'</span>':(st.last?'<span class="who" style="background:'+(PL_KC[st.last.kid]||"#888")+';opacity:.75">'+PL_KN[st.last.kid]+'</span>':'<span class="who" style="background:#d1d5db;color:#555">never</span>'))+'</div>';
+        (o?'<span class="who" style="background:'+plColor(o.kid)+'">OUT · '+plName(o.kid,o)+'</span>':(st.last?'<span class="who" style="background:'+(plColor(st.last.kid))+';opacity:.75">'+plName(st.last.kid,st.last)+'</span>':'<span class="who" style="background:#d1d5db;color:#555">never</span>'))+'</div>';
       }).join("")+'</div>';
     document.getElementById("pl-intents").style.display="none";
     document.getElementById("pl-grid").innerHTML="";
@@ -304,7 +331,7 @@ function plRender(){
   }).map(c=>{
     const o=plState[c.id];
     return '<div class="bin'+(o?" isout":"")+'" onclick="plOpenSheet(\''+c.id+'\')">'+
-      (o?'<div class="outband" style="background:'+PL_KC[o.kid]+'">'+PL_KN[o.kid]+' has it</div>':'')+
+      (o?'<div class="outband" style="background:'+plColor(o.kid)+'">'+plName(o.kid,o)+' has it</div>':'')+
       (c.photo?'<img src="'+c.photo+'" loading="lazy">':'<div class="noimg">'+(PL_EMOJI[c.cat]||"📦")+'</div>')+
       '<div class="nm">'+c.name+'</div><div class="meta"><span class="idchip">'+c.id+'</span><span>'+c.loc+'</span></div></div>';
   }).join("");
@@ -316,11 +343,11 @@ function plOpenSheet(id){
   if(c.photo)h+='<img class="big" src="'+c.photo.replace(/\.jpg$/,"_full.jpg")+'" onerror="this.onerror=null;this.src=\''+c.photo+'\'">';
   if(c.ideas&&c.ideas.length){h+='<div style="font-size:13px;font-weight:800;margin-top:2px">💡 Things to try</div><div class="idlegend">● easy · ●● bigger · ●●● challenge</div><div class="ideas">'+c.ideas.map(i=>'<div class="idea"><span class="plDots">'+"●".repeat(i[1])+'</span><span>'+i[0]+'</span></div>').join("")+'</div>';}
   if(o){
-    h+='<div class="outby">Checked out by <span class="badge" style="background:'+PL_KC[o.kid]+'">'+PL_KN[o.kid]+'</span> since '+plFmt(o.at)+'</div>';
+    h+='<div class="outby">Checked out by <span class="badge" style="background:'+plColor(o.kid)+'">'+plName(o.kid,o)+'</span> since '+plFmt(o.at)+'</div>';
     h+='<button class="retbtn" onclick="plRet(\''+id+'\');plCloseSheet()">✅ Put it back (return)</button>';
   } else {
     h+='<div style="font-size:13px;font-weight:700;margin-top:4px">Who is taking it?</div><div class="facegrid">'+
-      PL_KIDS.concat([PL_GUEST]).map(k=>'<button class="face" style="background:'+k.color+'" onclick="plCo(\''+id+'\',\''+k.id+'\')">'+k.name+'</button>').join("")+'</div>';
+      PL_KIDS.concat([PL_GUEST]).map(k=>'<button class="face" style="background:'+k.color+'" onclick="'+(k.id=="guest"?("plGuestPick(\'co\',\'"+id+"\')"):("plCo(\'"+id+"\',\'"+k.id+"\')"))+'">'+(k.id=="guest"?"🧑‍🤝‍🧑 ":"")+k.name+'</button>').join("")+'</div>';
   }
     const rel=(function(){const out=[];const kw=(c.actKey||"").toLowerCase();
     PL_ACTS.forEach(x=>{const t=(x.t+" "+x.d).toLowerCase();
@@ -332,7 +359,7 @@ function plOpenSheet(id){
     rel.slice(0,30).map(x=>'<div style="padding:7px 10px;background:var(--bg);border-radius:10px;margin-bottom:6px;border-left:4px solid '+((cc[x.cat]||{}).color||"#888")+'"><div style="font-size:13px;font-weight:700">'+x.t+'</div><div style="font-size:12px;color:var(--muted)">'+x.d+'</div></div>').join("")+'</div></details>';}
   const L=plLogArr(id);
   if(L.length){h+='<div style="font-size:13px;font-weight:800;margin-top:12px">📜 History</div>'+(plState[id]?'':(L[0]?'<div style="font-size:12px;margin:2px 0 6px">Last out: <span class="badge" style="background:'+(PL_KC[L[0].kid]||"#888")+'">'+PL_KN[L[0].kid]+'</span> — if it needs cleanup, you know who.</div>':''))+
-    '<div style="max-height:180px;overflow-y:auto">'+L.slice(0,15).map(sn=>'<div style="display:flex;gap:8px;align-items:center;font-size:12px;padding:5px 8px;background:var(--bg);border-radius:8px;margin-bottom:4px"><span class="badge" style="background:'+(PL_KC[sn.kid]||"#888")+';font-size:11px">'+(PL_KN[sn.kid]||sn.kid)+'</span><span>'+plFmt(sn.out)+'</span><span style="margin-left:auto;font-weight:700">'+(sn.back?plDur(sn.back-sn.out):"still out")+'</span></div>').join("")+'</div>';}
+    '<div style="max-height:180px;overflow-y:auto">'+L.slice(0,15).map(sn=>'<div style="display:flex;gap:8px;align-items:center;font-size:12px;padding:5px 8px;background:var(--bg);border-radius:8px;margin-bottom:4px"><span class="badge" style="background:'+(plColor(sn.kid))+';font-size:11px">'+plName(sn.kid,sn)+'</span><span>'+plFmt(sn.out)+'</span><span style="margin-left:auto;font-weight:700">'+(sn.back?plDur(sn.back-sn.out):"still out")+'</span></div>').join("")+'</div>';}
   h+='<button class="cancel" onclick="plCloseSheet()">never mind</button>';
   document.getElementById("pl-shbody").innerHTML=h;
   document.getElementById("pl-sheet").classList.add("open");
@@ -340,8 +367,8 @@ function plOpenSheet(id){
 function plCloseSheet(){document.getElementById("pl-sheet").classList.remove("open");}
 function plCoSilent(id,kid,actT){const at=Date.now();
   if(plFB){const lk=db.ref("play/plLog/"+id).push({kid:kid,out:at,back:0,act:actT||null}).key;
-    db.ref("play/checkouts/"+id).set({kid:kid,at:at,lk:lk||null});}
-  else{plState[id]={kid:kid,at:at};(plLog[id]=plLog[id]||[]).unshift({kid:kid,out:at,back:null,act:actT||null});}}
+    db.ref("play/checkouts/"+id).set({kid:kid,at:at,lk:lk||null,gname:plGuestName(kid)||null});}
+  else{plState[id]={kid:kid,at:at,gname:plGuestName(kid)||null};(plLog[id]=plLog[id]||[]).unshift({kid:kid,out:at,back:null,act:actT||null});}}
 function plCapSheet(kid){const st=plSt(kid);
   document.getElementById("pl-shbody").innerHTML='<div style="text-align:center;padding:12px 4px">'+
    '<div style="font-size:48px">'+PL_LVLE[st.lvl]+'</div><h2 style="margin:6px 0">Hands full!</h2>'+
@@ -354,10 +381,10 @@ function plCo(id,kid,actT){
   if(plOutCount(kid)>=plMaxOut(kid)){plCapSheet(kid);return;}
   const at=Date.now();
   if(plFB){const lk=db.ref("play/plLog/"+id).push({kid:kid,out:at,back:0,act:actT||null}).key;
-    db.ref("play/checkouts/"+id).set({kid:kid,at:at,lk:lk||null});}
-  else{plState[id]={kid:kid,at:at};(plLog[id]=plLog[id]||[]).unshift({kid:kid,out:at,back:null,act:actT||null});}
-  plHist.unshift(PL_KN[kid]+" took "+id+" — "+plFmt(at));plSave();plCloseSheet();plRender();}
-function plRet(id){const o=plState[id];if(o)plHist.unshift((PL_KN[o.kid]||"?")+" returned "+id+" — "+plFmt(Date.now()));if(o&&o.kid)plBumpStreak(o.kid);
+    db.ref("play/checkouts/"+id).set({kid:kid,at:at,lk:lk||null,gname:plGuestName(kid)||null});}
+  else{plState[id]={kid:kid,at:at,gname:plGuestName(kid)||null};(plLog[id]=plLog[id]||[]).unshift({kid:kid,out:at,back:null,act:actT||null});}
+  plHist.unshift(plName(kid)+" took "+id+" — "+plFmt(at));plSave();plCloseSheet();plRender();}
+function plRet(id){const o=plState[id];if(o)plHist.unshift(plName(o.kid,o)+" returned "+id+" — "+plFmt(Date.now()));if(o&&o.kid)plBumpStreak(o.kid);
   if(plFB){if(o&&o.lk)db.ref("play/plLog/"+id+"/"+o.lk).update({back:Date.now()});db.ref("play/checkouts/"+id).remove();}
   else{const L=plLog[id];if(L&&L.length&&!L[0].back)L[0].back=Date.now();delete plState[id];}
   plSave();plRender();}
