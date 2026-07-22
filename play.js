@@ -82,12 +82,12 @@ PL_COMBOS.forEach(x=>PL_ACTS.push(x));
 const PL_TH=[5,12]; const PL_LVLN=["🌱 Rookie","⭐ Keeper","👑 Elite"]; const PL_LVLE=["🌱","⭐","👑"];
 let plStatus={};
 function plSt(k){return plStatus[k]||{lvl:0,streak:0};}
-function plMaxOut(k){return plSt(k).lvl+1;}
+function plMaxOut(k){return k=="guest"?3:plSt(k).lvl+1;}
 function plOutCount(k){return Object.values(plState).filter(o=>o.kid==k).length;}
 function plWriteStatus(k,st){plStatus[k]=st;
   if(plFB)db.ref("play/status/"+k).set(st);
   else{try{localStorage.setItem("lib_status",JSON.stringify(plStatus));}catch(e){}}}
-function plBumpStreak(k){const st=Object.assign({lvl:0,streak:0},plSt(k));st.streak++;
+function plBumpStreak(k){if(k=="guest")return;const st=Object.assign({lvl:0,streak:0},plSt(k));st.streak++;
   let up=false;
   if(st.lvl<1&&st.streak>=PL_TH[0]){st.lvl=1;up=true;}
   else if(st.lvl<2&&st.streak>=PL_TH[1]){st.lvl=2;up=true;}
@@ -107,8 +107,9 @@ function plLevelUpSheet(k,lvl){
 window.plStrike=plStrike;
 const PL_ACAT=[{"id": "magna", "label": "Magna-Tiles", "color": "#378ADD"}, {"id": "duplo", "label": "Duplo", "color": "#E24B4A"}, {"id": "sensory", "label": "Sensory Box", "color": "#1D9E75"}, {"id": "art", "label": "Art Projects", "color": "#D4537E"}, {"id": "stickers", "label": "Circle Stickers", "color": "#EF9F27"}, {"id": "wooden", "label": "Wooden Blocks", "color": "#854F0B"}, {"id": "books", "label": "Picture Books", "color": "#7F77DD"}, {"id": "pretend", "label": "Pretend Play", "color": "#0F6E56"}, {"id": "puzzles", "label": "Puzzles & Sorting", "color": "#993C1D"}, {"id": "movement", "label": "Movement", "color": "#185FA5"}, {"id": "kitchen", "label": "Kitchen Play", "color": "#639922"}, {"id": "nature", "label": "Nature & Science", "color": "#533AB7"}, {"id": "quiet", "label": "Quiet & Independent", "color": "#5F5E5A"}, {"id": "stem", "label": "STEM & Building", "color": "#0E7C86"}, {"id": "science", "label": "Science Experiments", "color": "#15803D"}, {"id": "outdoor", "label": "Outdoor Adventure", "color": "#4D7C0F"}, {"id": "cooking", "label": "Cooking & Baking", "color": "#C2410C"}, {"id": "crafts", "label": "Crafts & Making", "color": "#BE185D"}, {"id": "games", "label": "Games & Logic", "color": "#6D28D9"}, {"id": "writing", "label": "Writing & Stories", "color": "#2563EB"}, {"id": "coding", "label": "Coding & Tech", "color": "#475569"}];
 const PL_KIDS=(typeof ROSTER_DEF!=="undefined")?ROSTER_DEF.filter(k=>k.schoolAge!==undefined?true:true).filter(k=>k.id!=="mom").map(k=>({id:k.id,name:k.name,color:k.color})):[{id:"lincoln",name:"Lincoln",color:"#2a78d6"},{id:"ellis",name:"Ellis",color:"#1baf7a"},{id:"lucy",name:"Lucy",color:"#eda100"},{id:"julian",name:"Julian",color:"#9333ea"}];
-const PL_KC=Object.fromEntries(PL_KIDS.map(k=>[k.id,k.color]));
-const PL_KN=Object.fromEntries(PL_KIDS.map(k=>[k.id,k.name]));
+const PL_GUEST={id:"guest",name:"Friends",color:"#64748b"};
+const PL_KC=Object.fromEntries(PL_KIDS.concat([PL_GUEST]).map(k=>[k.id,k.color]));
+const PL_KN=Object.fromEntries(PL_KIDS.concat([PL_GUEST]).map(k=>[k.id,k.name]));
 const PL_EMOJI={"magna-tiles":"🧲","littles-build":"🧱","build":"🔧","math":"🔢","science":"🧪","figures":"🦁","fine-motor":"✂️","curriculum":"📚","vehicles":"🏁","sensory":"🐣","maker":"🖨","coding":"🤖","activity":"💡","play":"🧸"};
 let plState={},plFB=false,plInited=false;
 function plLogArr(id){const L=plLog[id];if(!L)return[];if(Array.isArray(L))return L;return Object.entries(L).map(([k,s])=>Object.assign({_k:k},s)).sort((a,b)=>b.out-a.out);}
@@ -166,7 +167,7 @@ function plWizGo(){const pool=PL_ACTS.filter(x=>x.lvl==plWizLvl&&plMoodOk(x,plWi
 function plActSheet(aid){const x=PL_ACTS.find(a=>a.id==aid);if(!x)return;const cc=Object.fromEntries(PL_ACAT.map(k=>[k.id,k]));
   let h='<h2>'+x.t+'</h2><div class="shloc"><span class="badge" style="background:'+((cc[x.cat]||{}).color||"#888")+'">'+((cc[x.cat]||{}).label||x.cat)+'</span> · ages '+x.age+'</div>';
   h+='<div style="font-size:14px;margin:8px 0 12px">'+x.d+'</div>';
-  h+='<div style="font-size:13px;font-weight:800">Who wants to play?</div><div class="facegrid">'+PL_KIDS.map(k=>'<button class="face" style="background:'+k.color+'" onclick="plPlayPick(\''+aid+'\',\''+k.id+'\')">'+k.name+'</button>').join("")+'</div>';
+  h+='<div style="font-size:13px;font-weight:800">Who wants to play?</div><div class="facegrid">'+PL_KIDS.concat([PL_GUEST]).map(k=>'<button class="face" style="background:'+k.color+'" onclick="plPlayPick(\''+aid+'\',\''+k.id+'\')">'+k.name+'</button>').join("")+'</div>';
   h+='<button class="cancel" onclick="plCloseSheet()">never mind</button>';
   document.getElementById("pl-shbody").innerHTML=h;document.getElementById("pl-sheet").classList.add("open");}
 function plComboPick(x,kid){const need=x.combo-1;
@@ -319,7 +320,7 @@ function plOpenSheet(id){
     h+='<button class="retbtn" onclick="plRet(\''+id+'\');plCloseSheet()">✅ Put it back (return)</button>';
   } else {
     h+='<div style="font-size:13px;font-weight:700;margin-top:4px">Who is taking it?</div><div class="facegrid">'+
-      PL_KIDS.map(k=>'<button class="face" style="background:'+k.color+'" onclick="plCo(\''+id+'\',\''+k.id+'\')">'+k.name+'</button>').join("")+'</div>';
+      PL_KIDS.concat([PL_GUEST]).map(k=>'<button class="face" style="background:'+k.color+'" onclick="plCo(\''+id+'\',\''+k.id+'\')">'+k.name+'</button>').join("")+'</div>';
   }
     const rel=(function(){const out=[];const kw=(c.actKey||"").toLowerCase();
     PL_ACTS.forEach(x=>{const t=(x.t+" "+x.d).toLowerCase();
