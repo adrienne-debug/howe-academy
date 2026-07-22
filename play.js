@@ -37,7 +37,7 @@ const PL_CSS=`#play-root #pl-kidbar{background:#fff;border-bottom:1px solid var(
 #play-root .sh{background:#fff;width:100%;border-radius:18px 18px 0 0;padding:18px 16px 26px;max-height:80vh;overflow-y:auto}
 #play-root .sh h2{font-family:'Fraunces',serif;margin:0 0 2px;font-size:20px}
 #play-root .sh .shloc{font-size:12px;color:var(--muted);margin-bottom:12px}
-#play-root .sh img.big{width:100%;max-height:220px;object-fit:cover;border-radius:12px;margin-bottom:12px}
+#play-root .sh img.big{width:100%;max-height:52vh;object-fit:contain;background:var(--bg);border-radius:12px;margin-bottom:12px}
 #play-root .facegrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:6px}
 #play-root .face{border:none;border-radius:14px;padding:16px 8px;font-size:16px;font-weight:800;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif}
 #play-root .sh .retbtn{width:100%;border:none;border-radius:14px;padding:15px;font-size:16px;font-weight:800;color:#fff;background:#111827;cursor:pointer;margin-top:6px;font-family:'DM Sans',sans-serif}
@@ -251,7 +251,7 @@ function plRender(){
 function plOpenSheet(id){
   const c=PL_CATALOG.find(x=>x.id==id); const o=plState[id];
   let h='<h2>'+c.name+'</h2><div class="shloc">'+c.id+' · lives in '+c.loc+'</div>';
-  if(c.photo)h+='<img class="big" src="'+c.photo+'">';
+  if(c.photo)h+='<img class="big" src="'+c.photo.replace(/\.jpg$/,"_full.jpg")+'" onerror="this.onerror=null;this.src=\''+c.photo+'\'">';
   if(c.ideas&&c.ideas.length){h+='<div style="font-size:13px;font-weight:800;margin-top:2px">💡 Things to try</div><div class="idlegend">● easy · ●● bigger · ●●● challenge</div><div class="ideas">'+c.ideas.map(i=>'<div class="idea"><span class="plDots">'+"●".repeat(i[1])+'</span><span>'+i[0]+'</span></div>').join("")+'</div>';}
   if(o){
     h+='<div class="outby">Checked out by <span class="badge" style="background:'+PL_KC[o.kid]+'">'+PL_KN[o.kid]+'</span> since '+plFmt(o.at)+'</div>';
