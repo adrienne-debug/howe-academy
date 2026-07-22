@@ -62,7 +62,6 @@ const PL_SHELL=`<div id="play-root">
 <div id="pl-modebar" style="background:#fff;border-bottom:1px solid var(--border);padding:10px 12px;display:flex;gap:8px">
 <button id="pl-mb-bins" class="kid-btn active" style="background:#111827;flex:1" onclick="plSetMode('bins')">🧺 Bins</button>
 <button id="pl-mb-act" class="kid-btn" style="flex:1" onclick="plSetMode('act')">🎯 Activities</button>
-<button id="pl-mb-do" class="kid-btn" style="flex:1" onclick="plSetMode('do')">💡 Ideas</button>
 <button id="pl-mb-mom" class="kid-btn" style="flex:0 0 auto" onclick="plSetMode('mom')">👩</button>
 <span id="pl-outcount" style="align-self:center;font-size:11px;color:var(--muted);white-space:nowrap;padding:0 4px"></span></div>
 <div id="pl-kidbar"></div>
@@ -162,7 +161,7 @@ function plFinishPlay(i){const p=(typeof i==="string")?plPlays.find(q=>q._k===i)
   if(plFB&&p._k)db.ref("play/plPlays/"+p._k).update({done:true});else p.done=true;
   if(p.bin&&plState[p.bin]&&plState[p.bin].kid==p.kid)plRet(p.bin);else{plSave();plRender();}}
 const PL_INTENTS=[["build","🏗️","BUILD"],["create","🎨","CREATE"],["pretend","🦖","PRETEND"],["wheels","🏁","CARS + RACING"],["math","🔢","MATH FUN"],["science","🧪","SCIENCE"],["puzzle","🧩","FIGURE IT OUT"],["chill","🌀","CHILL"]];
-function plSetMode(m){plMode=m;plIntentSel=null;const mb=document.getElementById("pl-mb-bins"),md=document.getElementById("pl-mb-do"),mm=document.getElementById("pl-mb-mom"),ma=document.getElementById("pl-mb-act");ma.className="kid-btn"+(m=="act"?" active":"");ma.style.background=m=="act"?"#111827":"";mb.className="kid-btn"+(m=="bins"?" active":"");mb.style.background=m=="bins"?"#111827":"";md.className="kid-btn"+(m=="do"?" active":"");md.style.background=m=="do"?"#111827":"";mm.className="kid-btn"+(m=="mom"?" active":"");mm.style.background=m=="mom"?"#b5394a":"";plRender();}
+function plSetMode(m){plMode=m;plIntentSel=null;const mb=document.getElementById("pl-mb-bins"),mm=document.getElementById("pl-mb-mom"),ma=document.getElementById("pl-mb-act");ma.className="kid-btn"+(m=="act"?" active":"");ma.style.background=m=="act"?"#111827":"";mb.className="kid-btn"+(m=="bins"?" active":"");mb.style.background=m=="bins"?"#111827":"";mm.className="kid-btn"+(m=="mom"?" active":"");mm.style.background=m=="mom"?"#b5394a":"";plRender();}
 function plDur(ms){const m=Math.round(ms/60000);if(m<60)return m+"m";const h=Math.floor(m/60);return h+"h "+(m%60)+"m";}
 function plBinStats(id){const L=plLogArr(id);let total=0,n=L.length,last=null;L.forEach(sn=>{total+=((sn.back||Date.now())-sn.out);});if(L.length)last=L[0];return {n:n,total:total,last:last};}
 function plPickIntent(i){plIntentSel=(plIntentSel==i?null:i);plRender();}
