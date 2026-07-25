@@ -103,6 +103,16 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .ev-chip b{font-weight:800}
 .ev-chip i{font-style:normal;opacity:.75;font-weight:600}
 .peek-ev{display:flex;gap:5px;flex-wrap:wrap;margin-left:6px}
+.ev-up{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 10px}
+.ev-up-lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.ev-up-chip{background:#fff;border:1px dashed #f9a8d4;color:#9d174d;border-radius:999px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap}
+.ev-up-chip b{font-weight:800}
+.gcal-month-day{cursor:pointer;position:relative}
+.gcal-month-day.outside{cursor:default}
+.gmd-num{display:block;line-height:1.1}
+.gmd-evs{display:block;font-size:9px;line-height:1.1;margin-top:1px;white-space:nowrap;overflow:hidden}
+.gmd-more{font-size:8px;font-weight:800;color:#9d174d;margin-left:1px}
+.gcal-month-day.has-ev{box-shadow:inset 0 -2px 0 #f9a8d4}
 .earlier-tab{background:#f9fafb!important;color:#9ca3af!important;font-weight:800}
 .earlier-tab.on{background:#f3f4f6!important;color:#6b7280!important}
 .peek-wrap{padding:2px 2px 14px}
@@ -1743,7 +1753,8 @@ let nbActivities={}; try{ const _na=localStorage.getItem("ha_nb_activities"); if
 let notebookStories={}; try{ const _ns=localStorage.getItem("ha_nb_stories"); if(_ns) notebookStories=JSON.parse(_ns); }catch(e){}
 let _nbColoringPdfPromise=null; // lazy pdf.js loader (used to rasterize pages on upload)
 let scheduleOverrides={}; // {dateStr:{kid:{dayOff:true, removed:{sk:true}, added:{sk:true}}}} — manual Lesson Map edits
-let calAddMode=null; // null | "holiday" | "vacation" | "override"
+let calAddMode=null; // null | "holiday" | "vacation" | "override" | "event"
+let calPrefillDate="";  // date a tapped month-day hands to the new-event form
 let calEditId=null;  // id of holiday/vacation being edited
 let calOverrideKid=null; // kid selected for override add
 let calPreviewMonth=null; // YYYY-MM for calendar preview (null = current)
@@ -2494,7 +2505,7 @@ function renderSkylight(){
     // INDIVIDUAL VIEW
     gridEl.style.display="none"; indEl.style.display="block";
     const col=SL_KCOL[kid]||"#666";
-    let h2='<div class="sl-ind-title" style="color:'+col+'">'+SL_KLBL[kid]+"'s Day</div>"+calEventBanner(day,kid)+techBanner(kid);
+    let h2='<div class="sl-ind-title" style="color:'+col+'">'+SL_KLBL[kid]+"'s Day</div>"+calEventBanner(day,kid)+calUpcomingHTML(kid)+techBanner(kid);
     activeSlots().forEach(slot=>{
       if(slot==="morning"){ h2+=mrIndividualHTML(kid); return; }
       h2+=rtSlotHTML(slot,kid);
@@ -4222,7 +4233,8 @@ function renderMomBoard(el){
   function slotCounts(slot,kid){ var steps=rtStepsFor(slot,kid); var due=[]; for(var i=0;i<steps.length;i++){ if(cadDueOn(steps[i].cad||"daily",day)) due.push(i); } var dn=0; due.forEach(function(i){ if(rtDoneOn(slot,kid,day,i)) dn++; }); return {due:due.length,done:dn}; }
   function findDue(slot,kid,re){ var steps=rtStepsFor(slot,kid); for(var i=0;i<steps.length;i++){ if(cadDueOn(steps[i].cad||"daily",day)&&re.test(steps[i].label)) return steps[i].label; } return null; }
   var h='<div style="padding:2px 2px 12px"><div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:700">🗂 Today — Mom Board</div>';
-  { const _eb=calEventBanner(day,"all"); if(_eb) h+=_eb; }
+  { const _eb=calEventBanner(day,"all"); if(_eb) h+=_eb;
+    const _up=calUpcomingHTML("all"); if(_up) h+=_up; }
   h+='<div style="font-size:12px;color:var(--muted);margin-top:2px">Everyone at a glance for <b>'+cap(day)+'</b>. Who showers, each kid\'s afternoon &amp; evening pickup rooms, chores due, and progress. Use the day tabs to look ahead.</div></div>';
   SL_KIDS.forEach(function(kid){
     var col=SL_KCOL[kid]||"#666";
@@ -4289,6 +4301,35 @@ function peekLoad(){
 // ── T4: family events — one-off things pinned to a real date ────────────────
 // `who` is "family" or a kid id. Everyone sees family events; a kid-specific one shows only for
 // that kid (and for Mom, who sees everything).
+// The next few events from tomorrow onward — events used to appear only ON the day they happened,
+// so nobody ever saw one coming. `days` = how far ahead to look.
+function calUpcoming(whoFilter,days,limit){
+  const from=_todayStr();
+  const to=(function(){ const d=gwParseDate(from); d.setDate(d.getDate()+(days||14));
+    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); })();
+  const all=calEvents();
+  return Object.keys(all).map(id=>Object.assign({id:id},all[id]))
+    .filter(e=>e&&e.date&&e.date>from&&e.date<=to)          // strictly ahead — today has its own banner
+    .filter(e=>{ if(!whoFilter||whoFilter==="all"||whoFilter==="mom") return true;
+                 return !e.who||e.who==="family"||e.who===whoFilter; })
+    .sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.time||"").localeCompare(String(b.time||"")))
+    .slice(0,limit||3);
+}
+function _evWhen(iso){
+  const d=gwParseDate(iso); if(!d||isNaN(d.getTime())) return iso;
+  const t=gwParseDate(_todayStr());
+  const diff=Math.round((d-t)/86400000);
+  if(diff===1) return "tomorrow";
+  if(diff>1&&diff<7) return d.toLocaleDateString("en-US",{weekday:"long"});
+  return d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+}
+function calUpcomingHTML(whoFilter){
+  const evs=calUpcoming(whoFilter,14,3);
+  if(!evs.length) return "";
+  return '<div class="ev-up"><span class="ev-up-lbl">Coming up</span>'+
+    evs.map(e=>'<span class="ev-up-chip">'+esc(e.emoji||"🎉")+' '+esc(e.title||"Event")+
+      ' <b>'+esc(_evWhen(e.date))+'</b></span>').join("")+'</div>';
+}
 function calEvents(){ return (calendarData&&calendarData.events)||{}; }
 function calEventsOn(ymd,whoFilter){
   if(!ymd) return [];
@@ -12115,6 +12156,9 @@ function renderCalendarView(el, headerHtml){
     '<div class="gcal-stat"><div class="gcal-stat-val">'+holidayCount+'</div><div class="gcal-stat-lbl">Holidays</div></div>'+
     '<div class="gcal-stat"><div class="gcal-stat-val">'+vacationCount+'</div><div class="gcal-stat-lbl">Vacations</div></div>'+
   '</div>';
+  // The month at a glance — school/holiday/vacation colouring plus family events. Tap a day to add
+  // one. (This grid existed as an unused function; nothing ever rendered it.)
+  h+=calRenderMonthPreview();
 
   // ── Month calendar (lessons placed on academic days) ──
   h+=lmRenderCalendar();
@@ -12431,6 +12475,10 @@ function calRenderMonthPreview(){
     for(let d=new Date(s);d<=e;d.setDate(d.getDate()+1)) vacDates.add(d.toISOString().slice(0,10));
   });
   let h='<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:20px">';
+  // Named, because the Lesson Map's printable per-kid calendar sits right below this one and two
+  // bare "July 2026" headers in a row look like the same thing twice.
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700;margin-bottom:2px">🗓 Month at a glance</div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">School days, breaks and family events. Tap any day to add an event.</div>';
   h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">';
   h+='<button class="smap-nav-btn" onclick="calNavMonth(-1)">&#8249;</button>';
   h+='<div class="gcal-month-label" style="margin:0">'+monthName+'</div>';
@@ -12452,7 +12500,15 @@ function calRenderMonthPreview(){
     else if(isVac) cls+=" off";
     else if(isWeekend) cls+=" outside";
     else cls+=" school";
-    h+='<div class="'+cls+'">'+d+'</div>';
+    // family events on this day — the reason to have a month at all
+    const _dayEvs=calEventsOn(iso,"all");
+    if(_dayEvs.length) cls+=" has-ev";
+    h+='<div class="'+cls+'" onclick="calDayClick(\''+iso+'\')" title="'+
+       (_dayEvs.length?esc(_dayEvs.map(e=>(e.title||"Event")+(e.time?" "+e.time:"")).join(" · ")):"Add an event")+'">'+
+       '<span class="gmd-num">'+d+'</span>'+
+       (_dayEvs.length?'<span class="gmd-evs">'+_dayEvs.slice(0,3).map(e=>esc(e.emoji||"🎉")).join("")+
+         (_dayEvs.length>3?'<span class="gmd-more">+'+(_dayEvs.length-3)+'</span>':'')+'</span>':'')+
+       '</div>';
   }
   h+='</div></div>';
   return h;
@@ -12490,7 +12546,7 @@ function calRenderOverrideForm(kid){
 
 function calStartAdd(type){ calAddMode=type; calEditId=null; renderAll(); }
 function calStartAddOverride(kid){ calAddMode="override"; calOverrideKid=kid; renderAll(); }
-function calCancelAdd(){ calAddMode=null; calEditId=null; calOverrideKid=null; renderAll(); }
+function calCancelAdd(){ calAddMode=null; calEditId=null; calOverrideKid=null; calPrefillDate=""; renderAll(); }
 
 function calEditHoliday(id){ calAddMode="holiday"; calEditId=id; renderAll(); }
 function calEditVacation(id){ calAddMode="vacation"; calEditId=id; renderAll(); }
@@ -12521,7 +12577,7 @@ function calRenderEventForm(){
     '<div class="gcal-form-title">'+(isEdit?"Edit":"Add")+' Family Event</div>'+
     '<div class="gcal-form-row"><label>What</label><input type="text" id="cal-ev-title" placeholder="e.g. Emma’s birthday party" value="'+esc((ex&&ex.title)||"")+'">'+
       '<label>Icon</label><input type="text" id="cal-ev-emoji" style="width:52px;text-align:center" value="'+esc((ex&&ex.emoji)||"🎉")+'"></div>'+
-    '<div class="gcal-form-row"><label>Date</label><input type="date" id="cal-ev-date" value="'+esc((ex&&ex.date)||"")+'">'+
+    '<div class="gcal-form-row"><label>Date</label><input type="date" id="cal-ev-date" value="'+esc((ex&&ex.date)||calPrefillDate||"")+'">'+
       '<label>Time</label><input type="text" id="cal-ev-time" placeholder="2:00 PM" value="'+esc((ex&&ex.time)||"")+'"></div>'+
     '<div class="gcal-form-row"><label>Who</label><select id="cal-ev-who">'+
       '<option value="family"'+(who==="family"?" selected":"")+'>Whole family</option>'+
@@ -12531,6 +12587,13 @@ function calRenderEventForm(){
     '<button class="gcal-save" onclick="calSaveEvent()">'+(isEdit?"Update":"Add")+'</button>'+
     '<button class="gcal-cancel" onclick="calCancelAdd()">Cancel</button>'+
     '</div></div>';
+}
+// Tap a day in the month → start a new event on that date (or edit the one that's there).
+function calDayClick(iso){
+  const evs=calEventsOn(iso,"all");
+  if(evs.length===1){ calEditEvent(evs[0].id); return; }
+  calAddMode="event"; calEditId=null; calPrefillDate=iso; renderAll();
+  setTimeout(function(){ const el=document.getElementById("cal-ev-title"); if(el) el.focus(); },60);
 }
 function calEditEvent(id){ calAddMode="event"; calEditId=id; renderAll(); }
 function calSaveEvent(){
@@ -12542,7 +12605,7 @@ function calSaveEvent(){
   if(!calendarData.events) calendarData.events={};
   calendarData.events[id]=entry;
   if(db) db.ref("calendar/events/"+id).set(entry);
-  calAddMode=null; calEditId=null; renderAll();
+  calAddMode=null; calEditId=null; calPrefillDate=""; renderAll();
   if(typeof gwShowToast==="function") gwShowToast("Saved "+title);
 }
 function calDeleteEvent(id){
