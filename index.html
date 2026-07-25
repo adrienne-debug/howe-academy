@@ -97,6 +97,29 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .mr-pts{font-size:11px;font-weight:800;color:#b45309;background:#fef3c7;border-radius:999px;padding:2px 8px;flex-shrink:0}
 .cadtag{font-size:10px;font-weight:700;color:var(--muted);background:var(--bg);border:1px solid var(--border);border-radius:999px;padding:1px 7px;white-space:nowrap}
 .bcard{background:var(--card,#fff);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.peek-tab{background:#f5f3ff!important;color:#7c5295!important;font-weight:800}
+.ev-banner{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}
+.ev-chip{background:linear-gradient(135deg,#fdf2f8,#fce7f3);border:1.5px solid #f9a8d4;color:#9d174d;border-radius:999px;padding:5px 12px;font-size:12px;font-weight:700;white-space:nowrap}
+.ev-chip b{font-weight:800}
+.ev-chip i{font-style:normal;opacity:.75;font-weight:600}
+.peek-ev{display:flex;gap:5px;flex-wrap:wrap;margin-left:6px}
+.earlier-tab{background:#f9fafb!important;color:#9ca3af!important;font-weight:800}
+.earlier-tab.on{background:#f3f4f6!important;color:#6b7280!important}
+.peek-wrap{padding:2px 2px 14px}
+.peek-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.peek-title{font-family:'Fraunces',serif;font-size:20px;font-weight:700;color:#5b3a8c}
+.peek-sub{font-size:12px;color:var(--muted);margin-top:2px;max-width:640px}
+.peek-back{border:1.5px solid #ddd6fe;background:#f5f3ff;color:#5b3a8c;border-radius:999px;padding:6px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap}
+.peek-empty{background:#faf5ff;border:1px dashed #ddd6fe;border-radius:12px;padding:22px;text-align:center;font-size:14px;font-weight:700;color:#5b3a8c}
+.peek-day{background:var(--card,#fff);border:1px solid var(--border);border-radius:12px;margin-bottom:10px;overflow:hidden}
+.peek-day-hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 12px;background:var(--bg);font-size:14px}
+.peek-day-hd span{font-size:11px;color:var(--muted);font-weight:600}
+.peek-count{margin-left:auto}
+.peek-row{display:flex;align-items:center;gap:9px;padding:6px 12px;border-top:1px solid var(--border);font-size:13px}
+.peek-row.chore{background:#fffbf5}
+.peek-who{font-size:11px;font-weight:800;min-width:58px}
+.peek-task{flex:1;min-width:0}
+.peek-time{font-size:11px;color:var(--muted);font-weight:700;white-space:nowrap}
 .brow1{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:9px}
 .bname{font-family:'Fraunces',serif;font-size:17px;font-weight:700}
 .bstats{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
@@ -1770,6 +1793,9 @@ let schedShowAdmin=false;
 let adminSubTab="settings";
 let schedShowHistory=false;
 let schedShowBoard=false;
+let schedShowPeek=false;   // read-only look at the week that is built but hasn't started
+let showEarlierDays=false; // T3: reveal the days already gone by (collapsed by default)
+let peekData=null;         // {wn, tasks:[], dates:{}} loaded on demand
 let schedShowPace=false;
 let gwConfig={weekNum:"",babysitter:{},withSitter:[],skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:false,redistribute:[],autoAdvance:true};
 let gwConfigOpen={basic:true,babysitter:false,skip:false,late:false,car:false,redist:false};
@@ -2134,6 +2160,7 @@ function initFb() {
       if(!calendarData.holidays) calendarData.holidays={};
       if(!calendarData.vacations) calendarData.vacations={};
       if(!calendarData.kidOverrides) calendarData.kidOverrides={};
+      if(!calendarData.events) calendarData.events={};   // T4 family events
       try{localStorage.setItem("ha_calendar",JSON.stringify(calendarData));}catch(e){}
       if(currData) buildCurrPaceCum();
       if(tab==="schedule"&&schedShowAdmin&&adminSubTab==="calendar"){const el=document.getElementById("content");if(el)renderAll();}
@@ -2422,7 +2449,7 @@ function renderSkylight(){
 
   // NOTE: no scheduleBreakToday() here on purpose — school stops for a holiday/vacation, life
   // does not. Teeth still get brushed, dogs still get fed, so the routines stay on break days.
-  if(kid==="mom"||momModeActive||tab!=="schedule"||schedShowAdmin||schedShowHistory||schedShowPace||schedShowBoard){ panel.style.display="none"; return; }
+  if(kid==="mom"||momModeActive||tab!=="schedule"||schedShowAdmin||schedShowHistory||schedShowPace||schedShowBoard||schedShowPeek){ panel.style.display="none"; return; }
   // Mom marked this break "everything off" — no lists at all, just enjoy it.
   if(!activeSlots().length){ panel.style.display="none"; return; }
   panel.style.display="block";
@@ -2467,7 +2494,7 @@ function renderSkylight(){
     // INDIVIDUAL VIEW
     gridEl.style.display="none"; indEl.style.display="block";
     const col=SL_KCOL[kid]||"#666";
-    let h2='<div class="sl-ind-title" style="color:'+col+'">'+SL_KLBL[kid]+"'s Day</div>"+techBanner(kid);
+    let h2='<div class="sl-ind-title" style="color:'+col+'">'+SL_KLBL[kid]+"'s Day</div>"+calEventBanner(day,kid)+techBanner(kid);
     activeSlots().forEach(slot=>{
       if(slot==="morning"){ h2+=mrIndividualHTML(kid); return; }
       h2+=rtSlotHTML(slot,kid);
@@ -2481,7 +2508,7 @@ function showTab(t){
   tab=t;
   mastAddMode=false; mastLogMode=false; mastLogScores={};
   document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===t||(t==="supplies"&&b.dataset.tab==="schedule")));
-  if(t!=="schedule"){ schedShowAdmin=false; schedShowHistory=false; schedShowPace=false; schedShowBoard=false; }
+  if(t!=="schedule"){ schedShowAdmin=false; schedShowHistory=false; schedShowPace=false; schedShowBoard=false; schedShowPeek=false; }
   document.getElementById("sched-subtabs").style.display=t==="schedule"?"flex":"none";
   document.getElementById("day-tabs").style.display=["schedule","supplies"].includes(t)?"flex":"none";
   document.getElementById("kid-filter").style.display=["schedule","history","pace"].includes(t)?"flex":"none";
@@ -2493,9 +2520,9 @@ function renderSchedSubtabs(){
   const el=document.getElementById("sched-subtabs");
   if(tab!=="schedule"){el.style.display="none";return;}
   el.style.display="flex";
-  const isSchedule=!schedShowHistory&&!schedShowPace&&!schedShowAdmin&&!schedShowBoard;
+  const isSchedule=!schedShowHistory&&!schedShowPace&&!schedShowAdmin&&!schedShowBoard&&!schedShowPeek;
   el.innerHTML=
-    '<button class="sched-sub'+(isSchedule?" active":"")+'" onclick="schedShowHistory=false;schedShowPace=false;schedShowAdmin=false;schedShowBoard=false;renderAll()">Schedule</button>'+
+    '<button class="sched-sub'+(isSchedule?" active":"")+'" onclick="schedShowHistory=false;schedShowPace=false;schedShowAdmin=false;schedShowBoard=false;schedShowPeek=false;renderAll()">Schedule</button>'+
     '<button class="sched-sub'+(schedShowPace?" active":"")+'" onclick="toggleSchedPace()">Wins</button>'+
     '<button class="sched-sub'+(schedShowHistory?" active":"")+'" onclick="toggleSchedHistory()">History</button>'+(momHere()?'<button class="sched-sub'+(schedShowBoard?" active":"")+'" onclick="toggleSchedBoard()">🗂 Board</button>':'')+
     '<button class="sched-sub'+(schedShowAdmin?" active":"")+'" onclick="toggleSchedAdmin()">Admin</button>';
@@ -2507,7 +2534,7 @@ function renderSchedSubtabs(){
 // restores them — but only restores SCROLL when the view didn't change, so genuine
 // view switches (tab/day/kid/sub-tab) still reset to the top as expected.
 function _viewSig(){
-  try{ return [tab,schedShowAdmin,schedShowHistory,schedShowPace,schedShowBoard,
+  try{ return [tab,schedShowAdmin,schedShowHistory,schedShowPace,schedShowBoard,schedShowPeek,
     (typeof adminSubTab!=="undefined"?adminSubTab:""),
     (typeof histTab!=="undefined"?histTab:""),
     (typeof mastView!=="undefined"?mastView:""),
@@ -2579,20 +2606,41 @@ function renderDayTabs(){
     '<span style="font-size:9px;font-weight:700;letter-spacing:.3px">Supplies</span></button>';
   // During a holiday/vacation the Schedule shows a single "no school" card, so
   // hide the day picker — but keep the Supplies button on the row.
-  if(scheduleBreakToday()){ const _dt=document.getElementById("day-tabs"); if(_dt) _dt.innerHTML=suppBtn; return; }
+  // ▸ the arrow over to a week that's built but hasn't started yet (T1 parks it, this peeks at it)
+  const _pw=peekWeekAvailable();
+  const peekBtn=_pw?('<button class="day-tab peek-tab" style="--day-color:#7c5295;flex-shrink:0" onclick="toggleSchedPeek()" title="Look ahead at next week">›<span style="font-size:9px;font-weight:700;display:block">Next wk</span></button>'):'';
+  if(scheduleBreakToday()){ const _dt=document.getElementById("day-tabs"); if(_dt) _dt.innerHTML=peekBtn+suppBtn; return; }
   const at=getActiveTasks();
-  const ds=at.length
+  let ds=at.length
     ?[...new Set(at.map(t=>t.day))].sort((a,b)=>DAYS.indexOf(a)-DAYS.indexOf(b))
     :DAYS.slice(0,5);
   // Weekend/Sunday: school has no tasks that day, but the routines do — make sure the day being
   // viewed always has a tab so it can be seen and navigated back to.
   if(day&&ds.indexOf(day)<0){ ds.push(day); ds.sort((a,b)=>DAYS_ALL.indexOf(a)-DAYS_ALL.indexOf(b)); }
-  document.getElementById("day-tabs").innerHTML=ds.map(d=>{
+  // ── T3: the strip starts at today and reads forward. Days already gone by fold into one chip
+  // rather than disappearing, so a late check-off or a look back is still one tap away.
+  let earlierBtn='';
+  const _todayInThisWeek=(typeof weekNumForDate==="function")&&weekNumForDate(_todayStr())===currWeekNum();
+  if(_todayInThisWeek&&!showEarlierDays){
+    const ti=DAYS_ALL.indexOf(_todayDay);
+    const gone=ds.filter(d=>DAYS_ALL.indexOf(d)>=0&&DAYS_ALL.indexOf(d)<ti&&d!==day);
+    if(gone.length){
+      ds=ds.filter(d=>gone.indexOf(d)<0);
+      earlierBtn='<button class="day-tab earlier-tab" style="--day-color:#9ca3af;flex-shrink:0" '+
+        'onclick="toggleEarlierDays()" title="Show the days already gone by">‹'+
+        '<span style="font-size:9px;font-weight:700;display:block">'+gone.length+' earlier</span></button>';
+    }
+  } else if(_todayInThisWeek&&showEarlierDays){
+    earlierBtn='<button class="day-tab earlier-tab on" style="--day-color:#9ca3af;flex-shrink:0" '+
+      'onclick="toggleEarlierDays()" title="Hide past days again">×'+
+      '<span style="font-size:9px;font-weight:700;display:block">hide past</span></button>';
+  }
+  document.getElementById("day-tabs").innerHTML=earlierBtn+ds.map(d=>{
     const pct=dayPct(d); const col=DAY_COL[d]||"#666";
     const todayTag=d===_todayDay?'<span style="display:block;font-family:\'Fraunces\',serif;font-size:9px;font-weight:700;color:#a5b4fc;letter-spacing:1.5px;margin-bottom:-1px">TODAY</span>':"";
     return '<button class="day-tab'+(d===day?" active":"")+'" style="--day-color:'+col+'" onclick="selDay(\''+d+'\')">'+
       todayTag+(DAY_LBL[d]||d)+'<span class="day-pct" style="color:'+(d===day?col:"#9ca3af")+'">'+pct+'%</span></button>';
-  }).join("")+suppBtn;
+  }).join("")+peekBtn+suppBtn;
   // Sync kid-filter sticky top to actual height of day-tabs
   requestAnimationFrame(()=>{
     const dt=document.getElementById("day-tabs");
@@ -2695,7 +2743,9 @@ function selKid(k){
 // ── WEEK STRIP ────────────────────────────────────────────────────
 function renderWeekStrip(){
   const el=document.getElementById("week-strip");
-  if(tab!=="schedule"||schedShowAdmin||schedShowHistory||schedShowPace||schedShowBoard){ el.style.display="none"; return; }
+  // ...and not while peeking at next week — those totals are THIS week's and read as if the
+  // week you are previewing were already part-done.
+  if(tab!=="schedule"||schedShowAdmin||schedShowHistory||schedShowPace||schedShowBoard||schedShowPeek){ el.style.display="none"; return; }
   const kidMatch=t=>kid==="all"||kid==="mom"?true:t.who===kid;
   const countable=getActiveTasks().filter(t=>kidMatch(t)&&effectiveDay(t)!=="carryover"&&!t.id.endsWith("_c")&&!t._eowOverflow);
   const all=countable.length, done=countable.filter(t=>!!checked[t.id]).length;
@@ -3976,7 +4026,7 @@ function saveNewPin(){
 function toggleSchedAdmin(){ schedShowAdmin=!schedShowAdmin; schedShowHistory=false; schedShowPace=false; schedShowBoard=false; renderAll(); }
 function toggleSchedHistory(){ schedShowHistory=!schedShowHistory; schedShowAdmin=false; schedShowPace=false; schedShowBoard=false; renderAll(); }
 function toggleSchedPace(){ schedShowPace=!schedShowPace; schedShowAdmin=false; schedShowHistory=false; schedShowBoard=false; renderAll(); }
-function toggleSchedBoard(){ schedShowBoard=!schedShowBoard; schedShowAdmin=false; schedShowHistory=false; schedShowPace=false; renderAll(); }
+function toggleSchedBoard(){ schedShowBoard=!schedShowBoard; schedShowAdmin=false; schedShowHistory=false; schedShowPace=false; schedShowPeek=false; renderAll(); }
 function goToStars(){ if(tab!=="schedule") showTab("schedule"); schedShowPace=true; schedShowAdmin=false; schedShowHistory=false; schedShowBoard=false; renderAll(); }
 function setAdminSub(s){ adminSubTab=s; renderAll(); }
 // ── VACATION / HOLIDAY BANNER ────────────────────────────────────────
@@ -4172,6 +4222,7 @@ function renderMomBoard(el){
   function slotCounts(slot,kid){ var steps=rtStepsFor(slot,kid); var due=[]; for(var i=0;i<steps.length;i++){ if(cadDueOn(steps[i].cad||"daily",day)) due.push(i); } var dn=0; due.forEach(function(i){ if(rtDoneOn(slot,kid,day,i)) dn++; }); return {due:due.length,done:dn}; }
   function findDue(slot,kid,re){ var steps=rtStepsFor(slot,kid); for(var i=0;i<steps.length;i++){ if(cadDueOn(steps[i].cad||"daily",day)&&re.test(steps[i].label)) return steps[i].label; } return null; }
   var h='<div style="padding:2px 2px 12px"><div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:700">🗂 Today — Mom Board</div>';
+  { const _eb=calEventBanner(day,"all"); if(_eb) h+=_eb; }
   h+='<div style="font-size:12px;color:var(--muted);margin-top:2px">Everyone at a glance for <b>'+cap(day)+'</b>. Who showers, each kid\'s afternoon &amp; evening pickup rooms, chores due, and progress. Use the day tabs to look ahead.</div></div>';
   SL_KIDS.forEach(function(kid){
     var col=SL_KCOL[kid]||"#666";
@@ -4202,9 +4253,125 @@ function renderMomBoard(el){
   });
   el.innerHTML=h;
 }
+// ── T2: read-only peek at the week that's built but hasn't started ──────────
+// Shows each day with its school work AND the chores that will be due, so a week generated early
+// (to print notebooks) can be checked over without becoming "now". Writes nothing, ever.
+function peekWeekAvailable(){
+  const wn=currWeekNum()+1;
+  const r=(typeof gwWeekDateRange==="function")?gwWeekDateRange(wn):null;
+  if(!r||!r.start||r.start<=_todayStr()) return null;   // only a week that hasn't started
+  const ls=ld("week"+wn+"_tasks");
+  if(ls&&ls.length) return wn;
+  if(peekData&&peekData.wn===wn&&(peekData.tasks||[]).length) return wn;
+  return wn;                                             // may still be unbuilt — the view says so
+}
+function toggleEarlierDays(){ showEarlierDays=!showEarlierDays; renderAll(); }
+function toggleSchedPeek(){
+  schedShowPeek=!schedShowPeek;
+  schedShowAdmin=false; schedShowHistory=false; schedShowPace=false; schedShowBoard=false;
+  if(schedShowPeek) peekLoad();
+  renderAll();
+}
+function peekLoad(){
+  const wn=currWeekNum()+1;
+  if(peekData&&peekData.wn===wn) return;
+  const ls=ld("week"+wn+"_tasks"), lm=ld("week"+wn+"_meta");
+  if(ls&&ls.length){ peekData={wn,tasks:ls,dates:(lm&&lm.dates)||{}}; return; }
+  if(!db) { peekData={wn,tasks:[],dates:{}}; return; }
+  db.ref("week"+wn+"/tasks").once("value",function(s){
+    const o=s.val()||{}, tasks=Object.keys(o).map(k=>o[k]).filter(Boolean);
+    db.ref("week"+wn+"/meta").once("value",function(ms){
+      peekData={wn,tasks,dates:((ms.val()||{}).dates)||{}};
+      if(schedShowPeek) renderAll();
+    });
+  });
+}
+// ── T4: family events — one-off things pinned to a real date ────────────────
+// `who` is "family" or a kid id. Everyone sees family events; a kid-specific one shows only for
+// that kid (and for Mom, who sees everything).
+function calEvents(){ return (calendarData&&calendarData.events)||{}; }
+function calEventsOn(ymd,whoFilter){
+  if(!ymd) return [];
+  const all=calEvents();
+  return Object.keys(all).map(id=>Object.assign({id:id},all[id]))
+    .filter(e=>e&&e.date===ymd)
+    .filter(e=>{
+      if(!whoFilter||whoFilter==="all"||whoFilter==="mom") return true;
+      return !e.who||e.who==="family"||e.who===whoFilter;
+    })
+    .sort((a,b)=>String(a.time||"").localeCompare(String(b.time||"")));
+}
+function _evChip(e){
+  return '<span class="ev-chip">'+esc(e.emoji||"🎉")+' '+esc(e.title||"Event")+
+    (e.time?' <b>'+esc(e.time)+'</b>':'')+
+    (e.who&&e.who!=="family"?' <i>'+esc(cap(e.who))+'</i>':'')+'</span>';
+}
+// The real ISO date for a weekday of a given plan week. NOT DAY_DT — that only covers days that
+// happen to have tasks, and its values are display strings ("July 20"), so it can't be matched
+// against an event date. Weeks start Monday, matching DAYS_ALL's order.
+function calDateForWeekDay(dayName,wn){
+  const i=DAYS_ALL.indexOf(dayName); if(i<0) return null;
+  const r=(typeof gwWeekDateRange==="function")?gwWeekDateRange(wn||currWeekNum()):null;
+  if(!r||!r.start) return null;
+  const d=gwParseDate(r.start); if(!d||isNaN(d.getTime())) return null;
+  d.setDate(d.getDate()+i);
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+// Banner above a kid's routine for the day being viewed.
+function calEventBanner(dayName,whoFilter){
+  const ymd=calDateForWeekDay(dayName,currWeekNum());
+  const evs=calEventsOn(ymd,whoFilter);
+  if(!evs.length) return "";
+  return '<div class="ev-banner">'+evs.map(_evChip).join("")+'</div>';
+}
+function renderWeekPeek(el){
+  if(!el){el=document.getElementById("content");if(!el)return;}
+  const wn=currWeekNum()+1, r=(typeof gwWeekDateRange==="function")?gwWeekDateRange(wn):null;
+  let h='<div class="peek-wrap">';
+  h+='<div class="peek-head"><div><div class="peek-title">👀 Next week — a look ahead</div>'+
+     '<div class="peek-sub">Week '+wn+(r?' · '+esc(r.start)+' → '+esc(r.end):'')+
+     ' — built but not started. Nothing here can be checked off; it becomes “now” on its own when the week arrives.</div></div>'+
+     '<button class="peek-back" onclick="toggleSchedPeek()">‹ Back to this week</button></div>';
+  if(!peekData||peekData.wn!==wn){ h+='<div class="peek-empty">Loading…</div></div>'; el.innerHTML=h; return; }
+  const tasks=(peekData.tasks||[]).filter(t=>t&&!String(t.id).endsWith("_c"));
+  if(!tasks.length){
+    h+='<div class="peek-empty">Week '+wn+' hasn’t been built yet.<div style="font-size:12px;font-weight:500;margin-top:6px;color:var(--muted)">Generate it from the Builder and it will wait here until the week starts.</div></div></div>';
+    el.innerHTML=h; return;
+  }
+  const kids=(kid==="all"||kid==="mom")?ROSTER.slice():[kid];
+  DAYS_ALL.forEach(function(dn){
+    const dayTasks=tasks.filter(t=>t.day===dn&&kids.indexOf(t.who)>=0);
+    // chores/routines are cadence-driven, so next week's are known already
+    const chores=[];
+    kids.forEach(function(k){
+      (rtStepsFor("chores",k)||[]).forEach(function(st){
+        if(cadDueOn(st.cad||"daily",dn)) chores.push({k,label:(st.emoji?st.emoji+" ":"")+st.label,pts:st.pts||0});
+      });
+    });
+    const dt=(peekData.dates||{})[dn]||"";
+    const evs=calEventsOn(calDateForWeekDay(dn,peekData.wn),kid);
+    if(!dayTasks.length&&!chores.length&&!evs.length) return;
+    h+='<div class="peek-day"><div class="peek-day-hd" style="border-left:4px solid '+(DAY_COL[dn]||"#666")+'">'+
+       '<b>'+(DAY_LBL[dn]||dn)+'</b>'+(dt?' <span>'+esc(dt)+'</span>':'')+
+       (evs.length?'<span class="peek-ev">'+evs.map(_evChip).join("")+'</span>':'')+
+       '<span class="peek-count">'+dayTasks.length+' lesson'+(dayTasks.length===1?'':'s')+
+       (chores.length?' · '+chores.length+' chore'+(chores.length===1?'':'s'):'')+'</span></div>';
+    dayTasks.slice(0,40).forEach(function(t){
+      h+='<div class="peek-row"><span class="peek-who" style="color:'+(SL_KCOL[t.who]||"#666")+'">'+esc(cap(t.who))+'</span>'+
+         '<span class="peek-task">'+esc(t.title||"")+'</span>'+(t.time?'<span class="peek-time">'+esc(t.time)+'</span>':'')+'</div>';
+    });
+    chores.forEach(function(c){
+      h+='<div class="peek-row chore"><span class="peek-who" style="color:'+(SL_KCOL[c.k]||"#666")+'">'+esc(cap(c.k))+'</span>'+
+         '<span class="peek-task">'+esc(c.label)+'</span>'+(c.pts?'<span class="peek-time">'+c.pts+' ⭐</span>':'')+'</div>';
+    });
+    h+='</div>';
+  });
+  el.innerHTML=h+'</div>';
+}
 function renderSchedule(el){
   try{ forfeitSweep(); }catch(e){}
   if(schedShowPace){ renderPace(el); return; }
+  if(schedShowPeek){ renderWeekPeek(el); return; }
   if(schedShowBoard){ renderMomBoard(el); return; }
   if(schedShowHistory){ renderHistory(el); return; }
   if(schedShowAdmin){
@@ -12000,6 +12167,29 @@ function renderCalendarView(el, headerHtml){
   else h+='<button class="gcal-add-btn" onclick="calStartAdd(\'vacation\')">+ Add Vacation</button>';
   h+='</div>';
 
+  // ── Family events (birthday parties, appointments, outings) ──
+  h+='<div class="gcal-section">';
+  const _evs=Object.entries(calEvents()).sort((a,b)=>(a[1].date||"").localeCompare(b[1].date||""));
+  h+='<div class="gcal-hdr"><span>Family Events</span><span style="font-size:11px;font-weight:400;color:var(--muted)">'+_evs.length+' set</span></div>';
+  if(_evs.length){
+    h+='<div class="gcal-card">';
+    _evs.forEach(function(pair){
+      const id=pair[0], ev=pair[1], past=ev.date&&ev.date<calToday();
+      h+='<div class="gcal-row" style="'+(past?"opacity:0.5":"")+'">'+
+        '<div><div class="gcal-row-name">'+esc(ev.emoji||"🎉")+' '+esc(ev.title||"Untitled")+
+          (ev.who&&ev.who!=="family"?' <span style="font-size:11px;color:var(--muted)">('+esc(cap(ev.who))+')</span>':'')+'</div>'+
+        '<div class="gcal-row-dates">'+esc(ev.date||"")+(ev.time?' · '+esc(ev.time):'')+'</div></div>'+
+        '<div class="gcal-row-actions">'+
+        '<button onclick="calEditEvent(\''+id+'\')" title="Edit">&#9998;</button>'+
+        '<button onclick="calDeleteEvent(\''+id+'\')" title="Delete">&#128465;</button>'+
+        '</div></div>';
+    });
+    h+='</div>';
+  } else { h+='<div class="gcal-empty">No family events yet</div>'; }
+  if(calAddMode==="event") h+=calRenderEventForm();
+  else h+='<button class="gcal-add-btn" onclick="calStartAdd(\'event\')">+ Add Family Event</button>';
+  h+='</div>';
+
   // ── Co-ops / Custom days ──
   h+=renderCoopSection();
 
@@ -12324,6 +12514,45 @@ function calSave(type){
   renderAll();
 }
 
+function calRenderEventForm(){
+  const isEdit=!!calEditId, ex=isEdit?(calEvents()[calEditId]||null):null;
+  const who=(ex&&ex.who)||"family";
+  return '<div class="gcal-form">'+
+    '<div class="gcal-form-title">'+(isEdit?"Edit":"Add")+' Family Event</div>'+
+    '<div class="gcal-form-row"><label>What</label><input type="text" id="cal-ev-title" placeholder="e.g. Emma’s birthday party" value="'+esc((ex&&ex.title)||"")+'">'+
+      '<label>Icon</label><input type="text" id="cal-ev-emoji" style="width:52px;text-align:center" value="'+esc((ex&&ex.emoji)||"🎉")+'"></div>'+
+    '<div class="gcal-form-row"><label>Date</label><input type="date" id="cal-ev-date" value="'+esc((ex&&ex.date)||"")+'">'+
+      '<label>Time</label><input type="text" id="cal-ev-time" placeholder="2:00 PM" value="'+esc((ex&&ex.time)||"")+'"></div>'+
+    '<div class="gcal-form-row"><label>Who</label><select id="cal-ev-who">'+
+      '<option value="family"'+(who==="family"?" selected":"")+'>Whole family</option>'+
+      ROSTER.map(function(k){ return '<option value="'+k+'"'+(who===k?" selected":"")+'>'+esc(cap(k))+'</option>'; }).join("")+
+    '</select></div>'+
+    '<div class="gcal-form-btns">'+
+    '<button class="gcal-save" onclick="calSaveEvent()">'+(isEdit?"Update":"Add")+'</button>'+
+    '<button class="gcal-cancel" onclick="calCancelAdd()">Cancel</button>'+
+    '</div></div>';
+}
+function calEditEvent(id){ calAddMode="event"; calEditId=id; renderAll(); }
+function calSaveEvent(){
+  const g=function(i){ return ((document.getElementById(i)||{}).value||"").trim(); };
+  const title=g("cal-ev-title"), date=g("cal-ev-date");
+  if(!title||!date){ alert("Give the event a name and a date."); return; }
+  const entry={title:title,date:date,time:g("cal-ev-time"),who:g("cal-ev-who")||"family",emoji:g("cal-ev-emoji")||"🎉"};
+  const id=calEditId||("ev_"+date.replace(/-/g,"")+"_"+Math.random().toString(36).slice(2,7));
+  if(!calendarData.events) calendarData.events={};
+  calendarData.events[id]=entry;
+  if(db) db.ref("calendar/events/"+id).set(entry);
+  calAddMode=null; calEditId=null; renderAll();
+  if(typeof gwShowToast==="function") gwShowToast("Saved "+title);
+}
+function calDeleteEvent(id){
+  const ev=calEvents()[id];
+  if(!confirm('Remove "'+((ev&&ev.title)||"this event")+'"?')) return;
+  if(calendarData.events) delete calendarData.events[id];
+  if(db) db.ref("calendar/events/"+id).remove();
+  renderAll();
+}
+function calRenderEventForm_END(){}
 function calDeleteHoliday(id){
   if(!confirm("Remove this holiday?")) return;
   db.ref("calendar/holidays/"+id).remove();
@@ -30001,7 +30230,20 @@ function autoGenerateWeekIfNeeded(){
   if(!fbCheckedLoaded||!fbTasksLoaded||!fbArchiveLoaded){ setTimeout(autoGenerateWeekIfNeeded,5000); return; }
   _autoGenTried=true;
   db.ref("week"+wn+"/tasks").once("value",s=>{
-    if(s.val()&&Object.keys(s.val()).length) return; // another device already built it
+    const _existing=s.val();
+    if(_existing&&Object.keys(_existing).length){
+      // The week already exists — either another device just built it, or Adrienne generated it
+      // ahead of time and it was parked. Today now falls inside it, so ADOPT it rather than
+      // regenerate. (This early-return used to be a dead end: a pre-built week never became
+      // active, which would leave everyone stuck on the previous week.)
+      db.ref("week"+wn+"/meta").once("value",function(ms){
+        haClaimSchedLock("rollover",function(release){
+          if(!release){ dbg("rollover wk"+wn+" skipped: another device holds the lock"); return; }
+          try{ wkHandoverTo(wn,_existing,ms.val()||{}); renderAll(); } finally{ release(); }
+        });
+      });
+      return;
+    }
     // Lock too — two devices can pass the tasks-empty check simultaneously on a fresh
     // Sunday; the loser skips and picks the winner's build up off the listeners.
     haClaimSchedLock("autogen",function(release){
@@ -30393,6 +30635,48 @@ function runGenerateWeek(){
   renderAll();
 }
 
+// ── T1: the app's clock ──────────────────────────────────────────────────────
+// A generated week only becomes THE week when its dates actually arrive. Until then it's "parked":
+// built and visible to peek at, but the family stays on today.
+let _wkHandingOver=false;   // true while we hand over to an already-built week (not a fresh build)
+function _wkNumOf(w){ const m=String(w||"").match(/(\d+)/); return m?parseInt(m[1],10):0; }
+function _wkIsFutureWeek(d){
+  const wn=_wkNumOf(d&&d.week); if(!wn) return false;
+  const r=(typeof gwWeekDateRange==="function")?gwWeekDateRange(wn):null;
+  if(!r||!r.start) return false;
+  return r.start>_todayStr();          // the week begins strictly after today → park it
+}
+// Persist a future week WITHOUT disturbing the present one.
+function _wkParkFuture(d){
+  const k=d.week;
+  sv(k+"_tasks",d.tasks);
+  sv(k+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
+  if(d.babysitter) sv(k+"_babysitter",d.babysitter);
+  if(gwCursors) sv(k+"_cursors",gwCursors);
+  if(db){
+    const obj={}; (d.tasks||[]).forEach(t=>obj[t.id]=t);
+    db.ref(k+"/tasks").set(obj);
+    db.ref(k+"/meta").set({week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
+    if(d.babysitter) db.ref(k+"/babysitter").set(d.babysitter);
+    if(gwCursors) db.ref(k+"/cursors").set(gwCursors);
+  }
+  // Deliberately NOT done here: archiving the current week, writing ha_active_wk, clearing any
+  // checked/sl/history, or touching WK/weekData. Those belong to the handover, when the week starts.
+  dbg("parked future "+k+" — active week stays "+WK);
+}
+// Today has entered a week that was already built → become that week, using gwCommit's proven
+// handover path (archive → carry unfinished work forward → switch → clean slate).
+function wkHandoverTo(wn,tasksObj,meta){
+  const tasks=Object.keys(tasksObj||{}).map(id=>tasksObj[id]).filter(Boolean);
+  if(!tasks.length) return;
+  meta=meta||{};
+  _wkHandingOver=true;
+  gwResult={week:"week"+wn,tasks:tasks,dates:meta.dates||{},constraints:meta.constraints||{},
+            windows:meta.windows||{},babysitter:meta.babysitter||null};
+  gwDropped=null; gwCursors=null;      // nothing was generated now — keep the week's stored cursors
+  try{ gwCommit(); dbg("handed over to week"+wn+" (was already built)"); }
+  finally{ _wkHandingOver=false; }
+}
 function gwCommit(){
   if(!gwResult) return;
   // Build a fake file-load event to reuse loadJson's write logic
@@ -30403,7 +30687,9 @@ function gwCommit(){
   // then snapshot the resolved structure for later change detection.
   try{
     const wn=parseInt((d.week||"").replace(/\D/g,""));
-    if(wn){
+    // On a handover nothing was generated, so gwConfig is stale — re-syncing would wipe the shape
+    // overrides recorded when the week was actually built.
+    if(wn&&!_wkHandingOver){
       gwSyncConfigOverrides(wn,gwConfig||{},gwDropped||[]);
       const sig=weekShapeSig(wn);
       committedShapeSigs[d.week]=sig;
@@ -30417,7 +30703,12 @@ function gwCommit(){
   const activeWK=localStorage.getItem("ha_active_wk")||WK;
   const isSameWeek=(d.week===activeWK);
 
-  if(isSameWeek){
+  // A week that hasn't started yet gets parked, not adopted — this is what stops generating ahead
+  // from dragging the whole family into next week.
+  let _parked=false;
+  if(!isSameWeek&&!_wkHandingOver&&_wkIsFutureWeek(d)){
+    _wkParkFuture(d); _parked=true;
+  } else if(isSameWeek){
     const lsChecked=ld(activeWK+"_checked")||{};
     const memChecked=checked||{};
     const snapChecked={...lsChecked,...memChecked};
@@ -30580,8 +30871,11 @@ function gwCommit(){
   // this, a Tuesday regeneration left Monday's undone lessons stuck at the top.
   // true = also sweep TODAY's already-elapsed slots (evening regen must not plan work into
   // times that have passed) — a regen-only behavior; the daily cascade never moves today.
-  try{ cascadeIntraWeek(true); }catch(e){ dbg("gwCommit cascadeIntraWeek error: "+e); }
-  runCascade(); runDisplacement();
+  // Parking only wrote a future week — the current week is untouched, so don't sweep/reshuffle it.
+  if(!_parked){
+    try{ cascadeIntraWeek(true); }catch(e){ dbg("gwCommit cascadeIntraWeek error: "+e); }
+    runCascade(); runDisplacement();
+  }
   renderAll();
   gwShowToast("Week "+gwConfig.weekNum+" applied to schedule!");
 }
