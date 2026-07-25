@@ -96,6 +96,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .mr-step.done{background:#f0fdf4;border-color:#86efac}
 .mr-pts{font-size:11px;font-weight:800;color:#b45309;background:#fef3c7;border-radius:999px;padding:2px 8px;flex-shrink:0}
 .cadtag{font-size:10px;font-weight:700;color:var(--muted);background:var(--bg);border:1px solid var(--border);border-radius:999px;padding:1px 7px;white-space:nowrap}
+.rt-late{font-size:10px;font-weight:800;color:#b91c1c;background:#fef2f2;border:1px solid #fca5a5;border-radius:999px;padding:1px 7px;margin-left:5px;white-space:nowrap}
+.mr-step.is-late{background:#fffafa;box-shadow:inset 3px 0 0 #ef4444}
 .bcard{background:var(--card,#fff);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px}
 .peek-tab{background:#f5f3ff!important;color:#7c5295!important;font-weight:800}
 .ev-banner{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}
@@ -1633,6 +1635,33 @@ function cadLabel(cad){
   if(cad.indexOf("wk:")===0){ var N=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]; var ds=cad.slice(3).split(",").filter(function(x){return x!==""}); return ds.length?("Weekly \u00b7 "+ds.map(function(d){return N[+d]}).join(" ")):"Weekly"; }
   return "Daily";
 }
+// ── Late chores ─────────────────────────────────────────────────────────────
+// How many days overdue a weekday-pinned step is, or 0. "Done since" counts: if Tuesday's chore was
+// finally done on Wednesday, it stops being late — which is exactly what checking it off does,
+// so no special handling is needed when they catch up.
+function rtLateDays(slot,kid,i){
+  const steps=rtStepsFor(slot,kid), st=steps[i]; if(!st) return 0;
+  const cad=st.cad||"daily";
+  if(cad==="daily") return 0;                       // a fresh one each day — "late" means nothing
+  const m=/^wk:(.+)$/.exec(cad); if(!m) return 0;
+  const days=m[1].split(",").map(Number).filter(n=>!isNaN(n));
+  const ti=DAYS_ALL.indexOf(day); if(ti<0) return 0;
+  let due=-1; days.forEach(function(d){ if(d<ti&&d>due) due=d; });   // most recent past due day
+  if(due<0) return 0;
+  for(let j=due;j<=ti;j++){ if(rtDoneOn(slot,kid,DAYS_ALL[j],i)) return 0; }  // done that day or since
+  return ti-due;
+}
+// Record the miss once, filed under the day it was actually missed. The key is deterministic so
+// several devices noticing the same miss write the same entry instead of piling up duplicates.
+function _rtLogMiss(kid,slot,i,dueDay,label,pts){
+  const wk=activeWk(), key="miss_"+slot+"_"+i;
+  routineLog[kid]=routineLog[kid]||{}; routineLog[kid][wk]=routineLog[kid][wk]||{};
+  routineLog[kid][wk][dueDay]=routineLog[kid][wk][dueDay]||{};
+  if(routineLog[kid][wk][dueDay][key]) return;      // already recorded
+  const rec={label:(label||"Chore")+" — not done",slot:slot,act:"miss",ts:nowTs(),at:Date.now(),pts:pts||0,missed:true};
+  routineLog[kid][wk][dueDay][key]=rec;
+  if(db){ try{ db.ref("routineLog/"+kid+"/"+wk+"/"+dueDay+"/"+key).set(rec); }catch(e){} }
+}
 function rtSlotHTML(slot,kid){
   const steps=rtStepsFor(slot,kid), label=SL_SLBL[slot];
   if(!steps.length){
@@ -1643,7 +1672,8 @@ function rtSlotHTML(slot,kid){
       (s.done&&s.ts?'<div class="sl-slot-ts">Checked '+s.ts+'</div>':'')+'</div></div>';
   }
   const avail=rtAvailable(slot,kid,day);
-  const dueIdx=steps.map((st,i)=>i).filter(i=>cadDueOn(steps[i].cad||"daily",day));
+  // Due today OR carried over from a day it was missed — a skipped chore must not just vanish.
+  const dueIdx=steps.map((st,i)=>i).filter(i=>cadDueOn(steps[i].cad||"daily",day)||rtLateDays(slot,kid,i)>0);
   const total=dueIdx.length;
   const doneCount=dueIdx.filter(i=>rtDoneOn(slot,kid,day,i)).length, allDone=total>0&&doneCount===total;
   if(!avail){
@@ -1666,11 +1696,18 @@ function rtSlotHTML(slot,kid){
   if(isOpen){
     h+='<div class="mr-steps">';
     dueIdx.forEach(i=>{ const st=steps[i], sd=rtDoneOn(slot,kid,day,i), pts=st.pts||0, cad=st.cad||"daily";
+      const _lateN=rtLateDays(slot,kid,i);
+      if(_lateN>0&&!sd){
+        const _m=/^wk:(.+)$/.exec(cad), _ds=_m?_m[1].split(",").map(Number):[];
+        const _ti=DAYS_ALL.indexOf(day); let _due=-1; _ds.forEach(function(d){ if(d<_ti&&d>_due) _due=d; });
+        if(_due>=0) _rtLogMiss(kid,slot,i,DAYS_ALL[_due],st.label,pts);
+      }
+      const _lateTag=(_lateN>0&&!sd)?('<span class="rt-late">'+_lateN+' day'+(_lateN>1?'s':'')+' late</span>'):'';
       const cadTag=cad!=="daily"?' <span class="cadtag">'+cadLabel(cad)+'</span>':'';
       const timeTag=st.time?' <span class="cadtag" style="color:#7c3aed;border-color:#ddd6fe">\u23f0 '+st.time+'</span>':'';
-      h+='<div class="mr-step'+(sd?" done":"")+'" onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')">'+
+      h+='<div class="mr-step'+(sd?" done":"")+(_lateTag?" is-late":"")+'" onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')">'+
          '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
-         '<div class="sl-slot-name" style="flex:1">'+(st.emoji?st.emoji+" ":"")+st.label+cadTag+timeTag+'</div>'+
+         '<div class="sl-slot-name" style="flex:1">'+(st.emoji?st.emoji+" ":"")+st.label+_lateTag+cadTag+timeTag+'</div>'+
          (pts>0?'<span class="mr-pts">+'+pts+' ⭐</span>':'')+'</div>'; });
     h+='</div>';
   }
