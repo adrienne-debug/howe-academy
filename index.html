@@ -184,6 +184,13 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .store-mine{background:#fffbeb;border:1px dashed #fcd34d;border-radius:10px;padding:6px 10px;margin-bottom:9px}
 .sm-row{font-size:12px;color:#92400e;font-weight:600;padding:2px 0}
 .sm-row span{color:#a16207;font-weight:500}
+.pr-open{border:1.5px dashed #fdba74;background:#fff;color:#9a3412;border-radius:999px;padding:6px 16px;font-size:12px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif}
+.pr-form{display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:#fff;border:1.5px solid #fdba74;border-radius:10px;padding:8px 10px;margin-bottom:9px}
+.pr-lbl{font-size:11px;font-weight:800;color:#9a3412}
+.pr-form .a{width:64px;border:1.5px solid #fed7aa;border-radius:8px;padding:6px 8px;font-size:12px;font-weight:700;text-align:center;font-family:'DM Sans',sans-serif}
+.pr-form .n{flex:1;min-width:140px;border:1.5px solid #fed7aa;border-radius:8px;padding:6px 8px;font-size:12px;font-family:'DM Sans',sans-serif}
+.pr-send{border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif;background:#16a34a;color:#fff}
+.pr-cancel{border:none;background:none;color:#a16207;font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif}
 .store-closed{background:#fff;border:1.5px dashed #fdba74;border-radius:10px;padding:9px 12px;margin-bottom:9px;font-size:13px;font-weight:700;color:#9a3412;text-align:center}
 .store-set{background:#fff;border:1px solid #fed7aa;border-radius:10px;padding:9px 11px;margin-top:10px}
 .ss-hd{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:#9a3412;margin-bottom:7px}
@@ -1573,6 +1580,8 @@ const GRAB_DEFAULT=[
 let grabs=[];        // config/grabs (falls back to GRAB_DEFAULT)
 let grabClaims={};   // grabClaims/{week_day_idx} = {by:kid, done:bool, ts}
 let storeEditOpen=false;   // Mom's stocking editor (collapsed by default)
+let pointRequests={};      // pointRequests/{kid}/{id} = {amount,reason,ts,status}
+let prFormOpen=false;      // the kid's "ask Mom" form
 function gbList(){ return (Array.isArray(grabs)&&grabs.length)?grabs:GRAB_DEFAULT.slice(); }
 let techGrace={};                   // techGrace/{kid}/{wk}/{day} = true (waived for that day)
 function rtIsMulti(slot){ return RT_ABBR[slot]!==undefined; }
@@ -2313,6 +2322,7 @@ function initFb() {
     db.ref("config/rewards").on("value",s=>{ rewardCatalog=s.val()||[]; if(typeof renderAll==="function") renderAll(); });
     db.ref("config/storeCfg").on("value",s=>{ storeCfg=Object.assign({threshold:100,open:true,mode:"always",hour:16,closedFor:{}}, s.val()||{}); if(typeof renderAll==="function") renderAll(); });
     db.ref("config/grabs").on("value",s=>{ grabs=s.val()||[]; if(typeof renderAll==="function") renderAll(); });
+    db.ref("pointRequests").on("value",s=>{ pointRequests=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
     db.ref("grabClaims").on("value",s=>{ grabClaims=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
     db.ref("techGrace").on("value",s=>{ techGrace=s.val()||{}; });
     db.ref("unitStudies").on("value",s=>{ unitStudies=s.val()||{}; if(tab==="units"){const el=document.getElementById("content");if(el)renderUnits(el);} else if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);} });
@@ -9525,11 +9535,99 @@ function _storeEditorHTML(){
   h+='</div>';
   return h;
 }
+// ── 🙋 Ask Mom for stars ────────────────────────────────────────────────────
+// For the jobs that aren't on any list: "can I mulch the beds for 50?" — agreed out loud in the
+// yard, approved later from wherever Mom happens to be. The amount and the reason ride along, so a
+// week later there's still a record of what was actually agreed.
+function prList(kid){
+  const all=(pointRequests||{})[kid]||{};
+  return Object.keys(all).map(id=>Object.assign({id:id},all[id])).filter(Boolean)
+    .sort((a,b)=>String(b.iso||"").localeCompare(String(a.iso||"")));
+}
+function prPending(kid){ return prList(kid).filter(r=>r.status==="pending"); }
+function prAllPendingCount(){ let n=0; ROSTER.forEach(k=>{ n+=prPending(k).length; }); return n; }
+function prOpenForm(){ prFormOpen=true; renderAll(); setTimeout(function(){ const i=document.getElementById("pr-amt"); if(i) i.focus(); },50); }
+function prCancel(){ prFormOpen=false; renderAll(); }
+function prSubmit(kid){
+  const amt=Math.abs(parseInt((document.getElementById("pr-amt")||{}).value,10)||0);
+  const why=(((document.getElementById("pr-why")||{}).value)||"").trim();
+  if(!amt){ if(typeof gwShowToast==="function") gwShowToast("How many stars did you agree on?"); return; }
+  if(!why){ if(typeof gwShowToast==="function") gwShowToast("Say what you did"); return; }
+  const rec={amount:amt,reason:why,ts:nowTs(),iso:new Date().toISOString(),status:"pending"};
+  let key="pr_"+Date.now();
+  if(db){ const r=db.ref("pointRequests/"+kid).push(); key=r.key; r.set(rec); }
+  if(!pointRequests[kid]) pointRequests[kid]={};
+  pointRequests[kid][key]=rec;
+  if(typeof rlogAppend==="function") rlogAppend(kid,"request",why+" ("+amt+" ⭐ asked)","ask",amt);
+  prFormOpen=false; renderAll();
+  if(typeof gwShowToast==="function") gwShowToast("Sent to Mom 🙋");
+}
+function _prSet(kid,id,patch){
+  if(pointRequests[kid]&&pointRequests[kid][id]) Object.assign(pointRequests[kid][id],patch);
+  if(db) db.ref("pointRequests/"+kid+"/"+id).update(patch);
+}
+function prApprove(kid,id){
+  if(!momHere()) return;
+  const r=((pointRequests[kid]||{})[id]); if(!r||r.status!=="pending") return;
+  // Pay it the same way the Give button does, so it shows in the statement with what they did.
+  const rec={amount:Math.abs(r.amount||0),note:"🙋 "+(r.reason||"Extra job"),ts:nowTs(),iso:new Date().toISOString()};
+  let key="adj_"+Date.now();
+  if(db){ const ref=db.ref("bank/"+kid+"/adjustments").push(); key=ref.key; ref.set(rec); }
+  if(!bank[kid]) bank[kid]={}; if(!bank[kid].adjustments) bank[kid].adjustments={};
+  bank[kid].adjustments[key]=rec;
+  _prSet(kid,id,{status:"approved",decidedTs:nowTs()});
+  if(typeof rlogAppend==="function") rlogAppend(kid,"request","Mom approved: "+(r.reason||"")+" (+"+rec.amount+" ⭐)","ok",rec.amount);
+  renderAll();
+  if(typeof gwShowToast==="function") gwShowToast("+"+rec.amount+" ⭐ to "+cap(kid));
+}
+function prDecline(kid,id){
+  if(!momHere()) return;
+  const r=((pointRequests[kid]||{})[id]); if(!r||r.status!=="pending") return;
+  _prSet(kid,id,{status:"declined",decidedTs:nowTs()});
+  if(typeof rlogAppend==="function") rlogAppend(kid,"request","Mom declined: "+(r.reason||""),"no",r.amount||0);
+  renderAll();
+  if(typeof gwShowToast==="function") gwShowToast("Declined");
+}
+function _prSectionHTML(kid,momView){
+  let h="";
+  if(momView){
+    const pend=prPending(kid);
+    if(pend.length){
+      h+='<div class="store-q ask"><div class="sq-hd">🙋 '+esc(cap(kid))+' is asking for stars</div>';
+      pend.forEach(function(r){
+        h+='<div class="sq-row"><span class="sq-lab">'+esc(r.reason||"Extra job")+' <b>'+(r.amount||0)+' ⭐</b>'+
+           (r.ts?' <span style="font-size:10px;color:var(--muted)">'+esc(r.ts)+'</span>':'')+'</span>'+
+           '<span class="sq-btns"><button class="sq-ok" onclick="prApprove(\''+kid+'\',\''+esc(r.id)+'\')">✓ Approve</button>'+
+           '<button class="sq-no" onclick="prDecline(\''+kid+'\',\''+esc(r.id)+'\')">✗ No</button></span></div>';
+      });
+      h+='</div>';
+    }
+    return h;
+  }
+  // kid side — what they've asked for, and the ask button
+  const mineP=prPending(kid);
+  if(mineP.length){
+    h+='<div class="store-mine">';
+    mineP.forEach(function(r){ h+='<div class="sm-row">⏳ '+esc(r.reason||"Extra job")+' <span>'+(r.amount||0)+' ⭐ — waiting for Mom</span></div>'; });
+    h+='</div>';
+  }
+  if(prFormOpen){
+    h+='<div class="pr-form"><span class="pr-lbl">🙋 Ask Mom for stars</span>'+
+       '<input id="pr-amt" class="a" type="number" inputmode="numeric" placeholder="50">'+
+       '<input id="pr-why" class="n" placeholder="what did you do? (e.g. mulched the flower beds)">'+
+       '<button class="pr-send" onclick="prSubmit(\''+kid+'\')">Send</button>'+
+       '<button class="pr-cancel" onclick="prCancel()">cancel</button></div>';
+  } else {
+    h+='<div style="text-align:center;margin-bottom:9px"><button class="pr-open" onclick="prOpenForm()">🙋 Ask Mom for stars</button></div>';
+  }
+  return h;
+}
 function _storeCardHTML(kid,momView){
   const cat=rwCatalog(), bal=bankBalance(kid), thr=storeCfg.threshold||0;
   const isOpen=(typeof storeOpenFor==="function")?storeOpenFor(kid):true;
   let h='<div class="store-card">';
   h+='<div class="store-head"><div class="store-title">🏪 '+esc(cap(kid))+'’s Star Store</div><div class="store-bal">⭐ '+bal.toLocaleString()+'</div></div>';
+  h+=_prSectionHTML(kid,momView);
   const mine=_rwWds(kid);
   const pend=mine.filter(w=>w.status==="pending"), owed=mine.filter(w=>w.status==="owed");
   if(momView){
