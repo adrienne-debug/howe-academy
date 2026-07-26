@@ -1027,6 +1027,28 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .gcal-row-actions button:hover{color:var(--text)}
 .gcal-add-btn{display:flex;align-items:center;gap:4px;padding:8px 14px;border:1.5px dashed var(--border);border-radius:10px;background:none;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;width:100%;justify-content:center;font-family:'DM Sans',sans-serif;margin-top:8px}
 .gcal-add-btn:hover{border-color:var(--header);color:var(--text)}
+.cp-hd{font-family:'Fraunces',serif;font-size:20px;font-weight:700;margin-bottom:2px}
+.cp-sub{font-size:12px;color:var(--muted);margin-bottom:12px;max-width:680px;line-height:1.5}
+.cp-picks{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.cp-chip{border:1.5px solid var(--border);background:#fff;color:var(--muted);border-radius:999px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif}
+.cp-chip.on{color:#fff;background:var(--header);border-color:transparent}
+.cp-chip.sm{padding:5px 11px;font-size:11px}
+.cp-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.cp-tbl{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden;min-width:520px}
+.cp-tbl th{font-size:11px;font-weight:800;color:var(--muted);padding:8px 4px;background:var(--bg);border-bottom:1px solid var(--border);text-align:center}
+.cp-tbl th.cp-name{text-align:left;padding-left:12px;min-width:190px}
+.cp-tbl td{padding:5px 4px;text-align:center;border-bottom:1px solid var(--border)}
+.cp-tbl td.cp-name{text-align:left;padding-left:12px;font-size:13px}
+.cp-tbl tr:last-child td{border-bottom:none}
+.cp-pts{font-size:12px;font-weight:800;color:#b45309}
+.cp-cell{width:30px;height:30px;border-radius:8px;border:1.5px solid var(--border);background:#fff;color:transparent;font-size:14px;cursor:pointer;font-family:'DM Sans',sans-serif;line-height:1}
+.cp-cell.on{background:#1e3a5f;border-color:#1e3a5f;color:#fff}
+.cp-cell.daily{background:#c7d2fe;border-color:#a5b4fc;color:#3730a3}
+.cp-daily{border:1.5px solid var(--border);background:#fff;color:var(--muted);border-radius:8px;padding:4px 9px;font-size:11px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif}
+.cp-daily.on{background:#4f46e5;border-color:#4f46e5;color:#fff}
+.cp-warn{font-size:10px;font-weight:800;color:#b91c1c;background:#fef2f2;border:1px solid #fca5a5;border-radius:999px;padding:1px 6px;margin-left:5px}
+.cp-empty{background:var(--bg);border:1px dashed var(--border);border-radius:12px;padding:22px;text-align:center;color:var(--muted);font-size:13px}
+.cp-foot{font-size:11px;color:var(--muted);margin-top:10px;font-style:italic}
 .gcal-form{background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px}
 .gcal-form-title{font-size:13px;font-weight:700;margin-bottom:12px}
 .gcal-form-row{display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap}
@@ -4476,7 +4498,7 @@ function renderSchedule(el){
       return;
     }
     let ah='<div style="position:sticky;top:118px;z-index:90;background:var(--bg);display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:0">';
-    ["settings","curriculum","calendar"].forEach(s=>{
+    ["settings","curriculum","calendar","chores"].forEach(s=>{
       const active=adminSubTab===s||(s==="settings"&&adminSubTab==="rules");
       const label=s.charAt(0).toUpperCase()+s.slice(1);
       ah+='<button style="flex:1;padding:10px 4px;font-size:12px;font-weight:700;border:none;background:none;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:'+(active?"var(--text)":"var(--muted)")+';border-bottom:2px solid '+(active?"var(--header)":"transparent")+';margin-bottom:-2px" onclick="setAdminSub(\''+s+'\')">'+label+'</button>';
@@ -4486,6 +4508,7 @@ function renderSchedule(el){
     else if(adminSubTab==="generate"){ renderAdminGenerate(el,ah); }
     else if(adminSubTab==="curriculum"){ renderCurriculumView(el,ah); }
     else if(adminSubTab==="calendar"){ renderCalendarView(el,ah); }
+    else if(adminSubTab==="chores"){ renderChorePlan(el,ah); }
     return;
   }
   // On a holiday/vacation, replace the (often stale last-week) tasks with a
@@ -12277,6 +12300,71 @@ function getSchoolDays(startDate, endDate, schoolDaysOfWeek, kidId){
   return {total, school, off};
 }
 
+// ── C1: Mom's chore plan — pin a kid's chores to weekdays in one grid ───────
+// The per-item cadence picker is fine for a tweak; planning a week across four kids needs a table.
+// Tapping a cell toggles that weekday on the chore; "Daily" makes it every day again.
+let cpKid="lincoln";
+let cpSlot="chores";     // which routine list is being planned (chores/afternoon/evening)
+function cpSetKid(k){ cpKid=k; renderAll(); }
+function cpSetSlot(s){ cpSlot=s; renderAll(); }
+function _cpDays(cad){
+  if(!cad||cad==="daily") return null;                 // null = daily
+  const m=/^wk:(.+)$/.exec(cad); if(!m) return null;
+  return m[1].split(",").map(Number).filter(n=>!isNaN(n));
+}
+function cpToggle(i,dow){
+  if(!momHere()) return;
+  rtCfgEnsure(cpSlot,cpKid);
+  const st=routineCfg2[cpSlot][cpKid][i]; if(!st) return;
+  let d=_cpDays(st.cad);
+  if(d===null) d=[];                                   // was daily → start an explicit list
+  const at=d.indexOf(dow);
+  if(at>=0) d.splice(at,1); else d.push(dow);
+  d.sort((a,b)=>a-b);
+  st.cad = d.length ? ("wk:"+d.join(",")) : "asneeded"; // no days left = not scheduled
+  rtCfgSave(); renderAll();
+}
+function cpSetDaily(i){
+  if(!momHere()) return;
+  rtCfgEnsure(cpSlot,cpKid);
+  const st=routineCfg2[cpSlot][cpKid][i]; if(!st) return;
+  st.cad="daily"; rtCfgSave(); renderAll();
+}
+function renderChorePlan(el,headerHtml){
+  if(!el){el=document.getElementById("content");if(!el)return;}
+  const DOW=["M","T","W","T","F","S","S"], FULL=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const steps=rtStepsFor(cpSlot,cpKid)||[];
+  let h=(headerHtml||'')+'<div style="padding:12px 12px 80px">';
+  h+='<div class="cp-hd">🧹 Chore Plan</div>';
+  h+='<div class="cp-sub">Tap a square to put a chore on that day. <b>Daily</b> puts it back on every day. '+
+     'A chore that misses its day keeps showing with a red “late” badge until it’s done — daily chores can’t be late.</div>';
+  // kid + list pickers
+  h+='<div class="cp-picks">';
+  ROSTER.forEach(function(k){ h+='<button class="cp-chip'+(cpKid===k?" on":"")+'" style="'+(cpKid===k?'background:'+(SL_KCOL[k]||"#333")+';border-color:transparent;color:#fff':'')+'" onclick="cpSetKid(\''+k+'\')">'+esc(cap(k))+'</button>'; });
+  h+='</div><div class="cp-picks">';
+  [["chores","🧹 Chores"],["afternoon","☀️ Afternoon"],["evening","🌙 Evening"]].forEach(function(s){
+    h+='<button class="cp-chip sm'+(cpSlot===s[0]?" on":"")+'" onclick="cpSetSlot(\''+s[0]+'\')">'+s[1]+'</button>';
+  });
+  h+='</div>';
+  if(!steps.length){ h+='<div class="cp-empty">No items in this list for '+esc(cap(cpKid))+'.</div></div>'; el.innerHTML=h; return; }
+  h+='<div class="cp-scroll"><table class="cp-tbl"><thead><tr><th class="cp-name">Chore</th>';
+  FULL.forEach(function(d,i){ h+='<th title="'+d+'">'+DOW[i]+'</th>'; });
+  h+='<th>Daily</th><th class="cp-pts">⭐</th></tr></thead><tbody>';
+  steps.forEach(function(st,i){
+    const cad=st.cad||"daily", days=_cpDays(cad), isDaily=(days===null&&cad!=="asneeded");
+    h+='<tr><td class="cp-name">'+(st.emoji?esc(st.emoji)+' ':'')+esc(st.label||'')+
+       (cad==="asneeded"?' <span class="cp-warn">not scheduled</span>':'')+'</td>';
+    for(let d=0;d<7;d++){
+      const on=isDaily||(days&&days.indexOf(d)>=0);
+      h+='<td><button class="cp-cell'+(on?(isDaily?" daily":" on"):"")+'" onclick="cpToggle('+i+','+d+')" title="'+FULL[d]+'">'+(on?"●":"")+'</button></td>';
+    }
+    h+='<td><button class="cp-daily'+(isDaily?" on":"")+'" onclick="cpSetDaily('+i+')">'+(isDaily?"✓":"set")+'</button></td>';
+    h+='<td class="cp-pts">'+(st.pts||0)+'</td></tr>';
+  });
+  h+='</tbody></table></div>';
+  h+='<div class="cp-foot">Zones and a bonus for the day’s focus zone are the next piece — they’ll live on this page.</div>';
+  el.innerHTML=h+'</div>';
+}
 function renderCalendarView(el, headerHtml){
   let h=headerHtml||'';
   h+='<div style="padding:12px 12px 80px">';
