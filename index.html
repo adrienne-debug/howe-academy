@@ -1049,6 +1049,30 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .cp-warn{font-size:10px;font-weight:800;color:#b91c1c;background:#fef2f2;border:1px solid #fca5a5;border-radius:999px;padding:1px 6px;margin-left:5px}
 .cp-empty{background:var(--bg);border:1px dashed var(--border);border-radius:12px;padding:22px;text-align:center;color:var(--muted);font-size:13px}
 .cp-foot{font-size:11px;color:var(--muted);margin-top:10px;font-style:italic}
+.zp-box{background:#f5f3ff;border:1.5px solid #ddd6fe;border-radius:12px;padding:11px 12px;margin-bottom:12px}
+.zp-hd{font-size:12px;font-weight:800;color:#5b3a8c;margin-bottom:8px}
+.zp-hd span{font-size:10px;font-weight:600;color:#7c5295;margin-left:5px}
+.zp-days{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px}
+.zp-day{flex:1;min-width:82px}
+.zp-day.today .zp-dn{color:#5b3a8c;font-weight:900}
+.zp-dn{font-size:10px;font-weight:800;color:var(--muted);text-align:center;margin-bottom:3px}
+.zp-day select{width:100%;border:1.5px solid #ddd6fe;border-radius:8px;padding:5px 4px;font-size:11px;font-family:'DM Sans',sans-serif;background:#fff}
+.zp-bonus{display:flex;align-items:center;gap:6px;flex-wrap:wrap;border-top:1px dashed #ddd6fe;padding-top:9px}
+.zp-lbl{font-size:11px;font-weight:800;color:#5b3a8c}
+.zp-b{border:1.5px solid #ddd6fe;background:#fff;color:#5b3a8c;border-radius:8px;padding:4px 11px;font-size:11px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif}
+.zp-b.on{background:#7c5295;border-color:#7c5295;color:#fff}
+.zp-amt{width:54px;border:1.5px solid #ddd6fe;border-radius:8px;padding:4px 6px;font-size:11px;font-weight:700;text-align:center;font-family:'DM Sans',sans-serif}
+.zp-now{font-size:11px;font-weight:700;color:#5b3a8c;margin-left:auto}
+.cp-zone select{border:1.5px solid var(--border);border-radius:8px;padding:4px 5px;font-size:11px;font-family:'DM Sans',sans-serif;background:#fff;max-width:130px}
+.cp-boost{font-size:10px;font-weight:800;color:#5b3a8c;background:#ede9fe;border-radius:999px;padding:1px 5px;margin-left:3px}
+.zed{background:#fff;border:1px solid var(--border);border-radius:12px;padding:11px 12px;margin-top:12px}
+.zed-row{display:flex;gap:6px;align-items:center;margin-bottom:5px}
+.zed-e{width:40px;text-align:center;border:1.5px solid var(--border);border-radius:7px;padding:5px;font-size:13px;font-family:'DM Sans',sans-serif}
+.zed-n{flex:1;border:1.5px solid var(--border);border-radius:7px;padding:5px 8px;font-size:12px;font-family:'DM Sans',sans-serif}
+.zed-x{border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:7px;width:26px;height:28px;font-size:12px;font-weight:800;cursor:pointer}
+.cp-addz{border:1.5px dashed #ddd6fe;background:#f5f3ff;color:#5b3a8c;border-radius:8px;padding:5px 12px;font-size:11px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif;margin-top:4px}
+.grab-card.zoned{border-color:#c4b5fd;background:#faf5ff}
+.gc-boost{display:block;font-size:9px;font-weight:800;color:#5b3a8c}
 .gcal-form{background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px}
 .gcal-form-title{font-size:13px;font-weight:700;margin-bottom:12px}
 .gcal-form-row{display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap}
@@ -1620,8 +1644,14 @@ function toggleRtOpen(slot,kid){ const k=slot+"_"+kid; rtOpen[k]=(rtOpen[k]!==fa
 function toggleRtStep(slot,kid,i){
   if(!rtAvailable(slot,kid,day)) return;
   const wk=activeWk(), sk=wk+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i, cur=slState[sk], now=!(cur&&cur.done);
-  slState[sk]={done:now,ts:now?nowTs():""};
-  { const _st=rtStepsFor(slot,kid)[i], _p=_st?(_st.pts||0):0;
+  { const _st0=rtStepsFor(slot,kid)[i], _b0=_st0?(_st0.pts||0):0;
+    // Pay base + any focus-zone bonus, and RECORD the total on the check-off. Unchecking reverses
+    // that stored number rather than recomputing — the zone or bonus may have changed since, and
+    // recomputing would reverse a different amount than was paid.
+    const _paid = now ? (_b0 + zoneBonusFor(_st0&&_st0.zone,_b0)) : ((cur&&cur.pts!=null)?cur.pts:_b0);
+    slState[sk]={done:now,ts:now?nowTs():"",pts:now?_paid:null};
+    var _p=_paid;
+    const _st=_st0;
     rlogAppend(kid,slot,_st?_st.label:("Step "+(i+1)),now?"on":"off",_p);
     // ⭐ Routine stars ride the SAME pipeline as school points: slot_points/{kid}/{day} → the
     // afternoon+chores claim gate → Mom approve → cashed into the Star Bank in Wins. Unchecking
@@ -2381,6 +2411,9 @@ function initFb() {
     db.ref("config/rewards").on("value",s=>{ rewardCatalog=s.val()||[]; if(typeof renderAll==="function") renderAll(); });
     db.ref("config/storeCfg").on("value",s=>{ storeCfg=Object.assign({threshold:100,open:true,mode:"always",hour:16,closedFor:{}}, s.val()||{}); if(typeof renderAll==="function") renderAll(); });
     db.ref("config/grabs").on("value",s=>{ grabs=s.val()||[]; if(typeof renderAll==="function") renderAll(); });
+    db.ref("config/zones").on("value",s=>{ zones=s.val()||[]; if(typeof renderAll==="function") renderAll(); });
+    db.ref("config/zonePlan").on("value",s=>{ zonePlan=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
+    db.ref("config/zoneBonus").on("value",s=>{ zoneBonus=Object.assign({enabled:true,mode:"flat",amount:5}, s.val()||{}); if(typeof renderAll==="function") renderAll(); });
     db.ref("pointRequests").on("value",s=>{ pointRequests=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
     db.ref("grabClaims").on("value",s=>{ grabClaims=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
     db.ref("techGrace").on("value",s=>{ techGrace=s.val()||{}; });
@@ -9544,8 +9577,13 @@ function _gbWrite(i,rec){ var k=_gbKey(i);
   if(rec===null){ delete grabClaims[k]; if(db) db.ref("grabClaims/"+k).remove(); }
   else { grabClaims[k]=rec; if(db) db.ref("grabClaims/"+k).set(rec); } }
 function _gbEarn(i,kid){ var g=gbList()[i]; if(!g) return;
-  if(g.pts>0 && typeof addKidPoints==="function") addKidPoints(kid, g.pts, day);
-  if(typeof rlogAppend==="function") rlogAppend(kid,"grab",(g.emoji?g.emoji+" ":"")+(g.label||"grab"),"on",g.pts||0); }
+  // Grabs get the focus-zone bonus too — they ARE the deep-clean list, so this is the lever that
+  // points everyone at whatever room needs it today. (Grabs retire for the week rather than
+  // unchecking, so there's no reversal to keep in step.)
+  var _bonus=zoneBonusFor(g.zone,g.pts||0), _paid=(g.pts||0)+_bonus;
+  if(_paid>0 && typeof addKidPoints==="function") addKidPoints(kid, _paid, day);
+  if(typeof rlogAppend==="function") rlogAppend(kid,"grab",(g.emoji?g.emoji+" ":"")+(g.label||"grab")+(_bonus?" (zone bonus +"+_bonus+")":""),"on",_paid); }
+function gbPayout(i){ var g=gbList()[i]||{}; return (g.pts||0)+zoneBonusFor(g.zone,g.pts||0); }
 function gbInstant(kid,i){ var s=gbGet(i); if(s&&s.done) return; _gbWrite(i,{by:kid,done:true,ts:nowTs()}); _gbEarn(i,kid); renderAll(); if(typeof gwShowToast==="function") gwShowToast("Nice! +"+((gbList()[i]||{}).pts||0)+" ⭐"); }
 function gbClaim(kid,i){ var s=gbGet(i); if(s&&s.by&&s.by!==kid) return;
   if(gbHasActive(kid)){ if(typeof gwShowToast==="function") gwShowToast("One at a time — finish your grabbed chore first!"); return; }
@@ -9713,7 +9751,8 @@ function _storeCardHTML(kid,momView){
     h+='<div class="grab-sec"><div class="grab-hd">🙌 Up for Grabs <span>extra stars · stays till it\u2019s done, resets each week</span></div><div class="grab-grid">';
     gbDue.forEach(({g,i})=>{
       var s=grabClaims[_gbKey(i)]||{}, mine=s.by===kid, taken=s.by&&!mine;
-      h+='<div class="grab-card'+(taken?" taken":"")+'"><div class="gc-top"><span class="gc-emoji">'+esc(g.emoji||"🎁")+'</span><span class="gc-pts">+'+(g.pts||0)+' ⭐</span></div><div class="gc-name">'+esc(g.label||"")+'</div>';
+      var _gp=gbPayout(i), _gb=_gp-(g.pts||0);
+      h+='<div class="grab-card'+(taken?" taken":"")+(_gb?" zoned":"")+'"><div class="gc-top"><span class="gc-emoji">'+esc(g.emoji||"🎁")+'</span><span class="gc-pts">+'+_gp+' ⭐'+(_gb?'<span class="gc-boost">zone +'+_gb+'</span>':'')+'</span></div><div class="gc-name">'+esc(g.label||"")+'</div>';
       if(mine){
         h+='<button class="gc-done" onclick="gbMarkDone(\''+kid+'\','+i+')">✓ Mark done (+'+(g.pts||0)+')</button><button class="gc-let" onclick="gbLetGo(\''+kid+'\','+i+')">let go</button>';
       } else if(taken){
@@ -12303,6 +12342,22 @@ function getSchoolDays(startDate, endDate, schoolDaysOfWeek, kidId){
 // ── C1: Mom's chore plan — pin a kid's chores to weekdays in one grid ───────
 // The per-item cadence picker is fine for a tweak; planning a week across four kids needs a table.
 // Tapping a cell toggles that weekday on the chore; "Daily" makes it every day again.
+const ZONE_DEFAULT=[{id:"kitchen",name:"Kitchen",emoji:"🍽"},{id:"bath",name:"Bathrooms",emoji:"🚽"},
+  {id:"living",name:"Living areas",emoji:"🛋"},{id:"bedrooms",name:"Bedrooms",emoji:"🛏"},
+  {id:"school",name:"School room",emoji:"📚"},{id:"outside",name:"Outside",emoji:"🌳"}];
+let zones=[];              // config/zones
+let zonePlan={};           // config/zonePlan  {monday:"kitchen",...}
+let zoneBonus={enabled:true,mode:"flat",amount:5};   // config/zoneBonus
+function zoneList(){ return (Array.isArray(zones)&&zones.length)?zones:ZONE_DEFAULT.slice(); }
+function zoneById(id){ return zoneList().filter(function(z){return z.id===id;})[0]||null; }
+function zoneToday(dn){ return (zonePlan||{})[dn||day]||""; }
+// Extra stars for a chore in today's focus zone. Returns 0 when it doesn't apply.
+function zoneBonusFor(zoneId,basePts,dn){
+  if(!zoneId||!zoneBonus||zoneBonus.enabled===false) return 0;
+  if(zoneToday(dn)!==zoneId) return 0;
+  const b=(zoneBonus.mode==="double") ? (basePts||0) : (parseInt(zoneBonus.amount,10)||0);
+  return b>0?b:0;
+}
 let cpKid="lincoln";
 let cpSlot="chores";     // which routine list is being planned (chores/afternoon/evening)
 function cpSetKid(k){ cpKid=k; renderAll(); }
@@ -12330,26 +12385,62 @@ function cpSetDaily(i){
   const st=routineCfg2[cpSlot][cpKid][i]; if(!st) return;
   st.cad="daily"; rtCfgSave(); renderAll();
 }
+function _zoneSave(){ if(db) db.ref("config/zones").set(zoneList()); }
+function cpSetZone(i,zid){
+  if(!momHere()) return;
+  if(cpSlot==="grabs"){
+    _gbEnsure(); if(!grabs[i]) return; grabs[i].zone=zid||""; _gbSave(); renderAll(); return;
+  }
+  rtCfgEnsure(cpSlot,cpKid);
+  const st=routineCfg2[cpSlot][cpKid][i]; if(!st) return;
+  st.zone=zid||""; rtCfgSave(); renderAll();
+}
+function zpSet(dn,zid){ if(!momHere())return; zonePlan=Object.assign({},zonePlan); if(zid) zonePlan[dn]=zid; else delete zonePlan[dn];
+  if(db) db.ref("config/zonePlan").set(zonePlan); renderAll(); }
+function zbSet(patch){ if(!momHere())return; zoneBonus=Object.assign({enabled:true,mode:"flat",amount:5},zoneBonus,patch);
+  if(db) db.ref("config/zoneBonus").set(zoneBonus); renderAll(); }
+function zoneAdd(){ if(!momHere())return; const z=zoneList().slice(); z.push({id:"z"+Date.now().toString(36),name:"New zone",emoji:"🏠"}); zones=z; _zoneSave(); renderAll(); }
+function zoneSet(i,f,v){ if(!momHere())return; const z=zoneList().slice(); if(!z[i])return; z[i][f]=v; zones=z; _zoneSave(); renderAll(); }
+function zoneDel(i){ if(!momHere())return; const z=zoneList().slice(); if(!z[i])return;
+  if(!confirm('Remove the "'+(z[i].name||"zone")+'" zone? Chores in it just lose their zone.')) return;
+  z.splice(i,1); zones=z; _zoneSave(); renderAll(); }
 function renderChorePlan(el,headerHtml){
   if(!el){el=document.getElementById("content");if(!el)return;}
   const DOW=["M","T","W","T","F","S","S"], FULL=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-  const steps=rtStepsFor(cpSlot,cpKid)||[];
+  const isGrabs=(cpSlot==="grabs");
+  const steps=isGrabs?(gbList()||[]):(rtStepsFor(cpSlot,cpKid)||[]);
   let h=(headerHtml||'')+'<div style="padding:12px 12px 80px">';
   h+='<div class="cp-hd">🧹 Chore Plan</div>';
   h+='<div class="cp-sub">Tap a square to put a chore on that day. <b>Daily</b> puts it back on every day. '+
      'A chore that misses its day keeps showing with a red “late” badge until it’s done — daily chores can’t be late.</div>';
   // kid + list pickers
-  h+='<div class="cp-picks">';
+  h+='<div class="cp-picks"'+(isGrabs?' style="display:none"':'')+'>';
   ROSTER.forEach(function(k){ h+='<button class="cp-chip'+(cpKid===k?" on":"")+'" style="'+(cpKid===k?'background:'+(SL_KCOL[k]||"#333")+';border-color:transparent;color:#fff':'')+'" onclick="cpSetKid(\''+k+'\')">'+esc(cap(k))+'</button>'; });
   h+='</div><div class="cp-picks">';
-  [["chores","🧹 Chores"],["afternoon","☀️ Afternoon"],["evening","🌙 Evening"]].forEach(function(s){
+  [["chores","🧹 Chores"],["afternoon","☀️ Afternoon"],["evening","🌙 Evening"],["grabs","🙌 Up for Grabs"]].forEach(function(s){
     h+='<button class="cp-chip sm'+(cpSlot===s[0]?" on":"")+'" onclick="cpSetSlot(\''+s[0]+'\')">'+s[1]+'</button>';
   });
   h+='</div>';
-  if(!steps.length){ h+='<div class="cp-empty">No items in this list for '+esc(cap(cpKid))+'.</div></div>'; el.innerHTML=h; return; }
+  // ── focus zone per weekday + the bonus rule ──
+  const FULLD=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
+  h+='<div class="zp-box"><div class="zp-hd">🎯 Focus zone by day <span>chores in the day\u2019s zone pay extra</span></div><div class="zp-days">';
+  FULLD.forEach(function(dn,di){
+    h+='<div class="zp-day'+(dn===day?" today":"")+'"><div class="zp-dn">'+["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][di]+'</div>'+
+       '<select onchange="zpSet(\''+dn+'\',this.value)">'+
+       '<option value=""'+(!zoneToday(dn)?" selected":"")+'>—</option>'+
+       zoneList().map(function(z){ return '<option value="'+esc(z.id)+'"'+(zoneToday(dn)===z.id?" selected":"")+'>'+esc(z.emoji||"")+' '+esc(z.name)+'</option>'; }).join("")+
+       '</select></div>';
+  });
+  h+='</div><div class="zp-bonus"><span class="zp-lbl">Bonus</span>'+
+     '<button class="zp-b'+(zoneBonus.enabled===false?"":" on")+'" onclick="zbSet({enabled:'+(zoneBonus.enabled===false?"true":"false")+'})">'+(zoneBonus.enabled===false?"Off":"On")+'</button>'+
+     '<button class="zp-b'+(zoneBonus.mode!=="double"?" on":"")+'" onclick="zbSet({mode:\'flat\'})">+ flat</button>'+
+     '<input class="zp-amt" type="number" min="0" value="'+(zoneBonus.amount!=null?zoneBonus.amount:5)+'" onchange="zbSet({amount:this.value})">'+
+     '<button class="zp-b'+(zoneBonus.mode==="double"?" on":"")+'" onclick="zbSet({mode:\'double\'})">×2 double</button>'+
+     '<span class="zp-now">'+(zoneToday()?("Today: "+esc((zoneById(zoneToday())||{}).emoji||"")+" "+esc((zoneById(zoneToday())||{}).name||"")):"No zone set for today")+'</span></div></div>';
+  if(!steps.length){ h+='<div class="cp-empty">Nothing in this list'+(isGrabs?"":" for "+esc(cap(cpKid)))+'.</div></div>'; el.innerHTML=h; return; }
   h+='<div class="cp-scroll"><table class="cp-tbl"><thead><tr><th class="cp-name">Chore</th>';
   FULL.forEach(function(d,i){ h+='<th title="'+d+'">'+DOW[i]+'</th>'; });
-  h+='<th>Daily</th><th class="cp-pts">⭐</th></tr></thead><tbody>';
+  h+='<th>Daily</th><th class="cp-zone">Zone</th><th class="cp-pts">⭐</th></tr></thead><tbody>';
   steps.forEach(function(st,i){
     const cad=st.cad||"daily", days=_cpDays(cad), isDaily=(days===null&&cad!=="asneeded");
     h+='<tr><td class="cp-name">'+(st.emoji?esc(st.emoji)+' ':'')+esc(st.label||'')+
@@ -12359,10 +12450,22 @@ function renderChorePlan(el,headerHtml){
       h+='<td><button class="cp-cell'+(on?(isDaily?" daily":" on"):"")+'" onclick="cpToggle('+i+','+d+')" title="'+FULL[d]+'">'+(on?"●":"")+'</button></td>';
     }
     h+='<td><button class="cp-daily'+(isDaily?" on":"")+'" onclick="cpSetDaily('+i+')">'+(isDaily?"✓":"set")+'</button></td>';
-    h+='<td class="cp-pts">'+(st.pts||0)+'</td></tr>';
+    h+='<td class="cp-zone"><select onchange="cpSetZone('+i+',this.value)">'+
+       '<option value=""'+(!st.zone?" selected":"")+'>—</option>'+
+       zoneList().map(function(z){ return '<option value="'+esc(z.id)+'"'+(st.zone===z.id?" selected":"")+'>'+esc(z.emoji||"")+' '+esc(z.name)+'</option>'; }).join("")+
+       '</select></td>';
+    const _bn=zoneBonusFor(st.zone,st.pts||0);
+    h+='<td class="cp-pts">'+(st.pts||0)+(_bn?'<span class="cp-boost">+'+_bn+'</span>':'')+'</td></tr>';
   });
   h+='</tbody></table></div>';
-  h+='<div class="cp-foot">Zones and a bonus for the day’s focus zone are the next piece — they’ll live on this page.</div>';
+  h+='<div class="zed"><div class="zp-hd">🏠 Zones</div>';
+  zoneList().forEach(function(z,i){
+    h+='<div class="zed-row"><input class="zed-e" value="'+esc(z.emoji||"")+'" onchange="zoneSet('+i+',&#39;emoji&#39;,this.value)">'+
+       '<input class="zed-n" value="'+esc(z.name||"")+'" onchange="zoneSet('+i+',&#39;name&#39;,this.value)">'+
+       '<button class="zed-x" onclick="zoneDel('+i+')">✕</button></div>';
+  });
+  h+='<button class="cp-addz" onclick="zoneAdd()">+ Add zone</button></div>';
+
   el.innerHTML=h+'</div>';
 }
 function renderCalendarView(el, headerHtml){
