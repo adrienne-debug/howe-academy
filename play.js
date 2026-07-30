@@ -142,11 +142,11 @@ function plLogArr(id){const L=plLog[id];if(!L)return[];if(Array.isArray(L))retur
 function plInit(){if(plInited)return;plInited=true;
   if(typeof db!=="undefined"&&db&&db.ref){plFB=true;
     db.ref("play").on("value",function(s){var v=s.val()||{};
-      plState=v.checkouts||{};plLog=v.plLog||v.log||{};plStatus=v.status||{};plGuests=v.guests||{};
+      plState=v.checkouts||{};plLog=v.plLog||v.log||{};plStatus=v.status||{};plGuests=v.guests||{};plBinMeta=v.binMeta||{};
       const _now=Date.now();Object.entries(plGuests).forEach(([id,g])=>{if(g&&g.at&&(_now-g.at)>86400000&&!Object.values(plState).some(o=>o.kid==id)){db.ref("play/guests/"+id).remove();}});
       plPlays=v.plPlays||v.plays?Object.entries(v.plPlays||v.plays||{}).map(function(e){return Object.assign({_k:e[0]},e[1]);}).sort(function(a,b){return b.at-a.at;}):[];
       if(typeof tab!=="undefined"&&tab==="play")plRender();});
-  } else { try{plState=JSON.parse(localStorage.getItem("lib_checkouts")||"{}");plLog=JSON.parse(localStorage.getItem("lib_log")||"{}");plPlays=JSON.parse(localStorage.getItem("lib_plays")||"[]");plHist=JSON.parse(localStorage.getItem("lib_hist")||"[]");plStatus=JSON.parse(localStorage.getItem("lib_status")||"{}");try{plGuests=JSON.parse(localStorage.getItem("lib_guests")||"{}");}catch(e){}}catch(e){}}
+  } else { try{plState=JSON.parse(localStorage.getItem("lib_checkouts")||"{}");plLog=JSON.parse(localStorage.getItem("lib_log")||"{}");plPlays=JSON.parse(localStorage.getItem("lib_plays")||"[]");plHist=JSON.parse(localStorage.getItem("lib_hist")||"[]");plStatus=JSON.parse(localStorage.getItem("lib_status")||"{}");try{plGuests=JSON.parse(localStorage.getItem("lib_guests")||"{}");}catch(e){}try{plBinMeta=JSON.parse(localStorage.getItem("lib_binmeta")||"{}");}catch(e){}}catch(e){}}
 }
 let plHist=[];
 let plLog={};
@@ -165,7 +165,7 @@ function plMoodOk(x,mood){if(!mood)return true;const bin=x.bin?PL_CATALOG.find(c
   return (PL_MOODC[mood]||[]).includes(x.cat);}
 function plDots(n){return "●".repeat(n);}
 function plSetKid(k){plSelKid=(plSelKid==k?null:k);if(plSelKid)localStorage.setItem("lib_kid",plSelKid);else localStorage.removeItem("lib_kid");plRender();}
-window.plKidF="all";window.plLocF="ALL";window.plMode="bins";window.plIntentSel=null;
+window.plKidF="all";window.plLocF="ALL";window.plMode="bins";window.plIntentSel=null;window.plMomTab="stats";
 function plSave(){if(plFB)return;try{localStorage.setItem("lib_checkouts",JSON.stringify(plState));localStorage.setItem("lib_hist",JSON.stringify(plHist.slice(0,30)));localStorage.setItem("lib_log",JSON.stringify(plLog));localStorage.setItem("lib_plays",JSON.stringify(plPlays));}catch(e){}}
 function plFmt(ts){const d=new Date(ts);return d.toLocaleDateString(undefined,{month:"short",day:"numeric"})+" "+d.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});}
 const PL_FDESC={F1:"the low frame under the FAR window — next to the science corner",F2:"the MIDDLE low frame, under the little wall bins",F3:"the low frame under the window CLOSEST to the kitchen door",T1:"the TALL tower in the middle of the wall",T2:"the TALL tower right beside the fish tank",W1:"the small wall bins above F2 — row 1",W2:"the small wall bins above F2 — row 2",W3:"the small wall bins above F2 — row 3",CUBE:"the big cube boxes",STATION:"out on its own station",SHELF:"the corner shelf",K14:"the TALL skinny Kallax right beside F1",MK:"the little 2×2 Kallax under the big bookshelf — the one the 3D printer sits on","BG-L":"the LEFT project-kit shelves on the right wall","BG-R":"the RIGHT project-kit shelves on the right wall","SHOW-L":"the display shelf under the LEFT project shelves — finished creations","SHOW-R":"the display shelf under the RIGHT project shelves — finished creations"};
@@ -175,6 +175,98 @@ function plLocDesc(loc){if(PL_FDESC[loc])return PL_FDESC[loc];
   const m=String(loc||"").match(/^([A-Z0-9]+(?:-[LR])?)-?(\d*)$/);
   if(m&&PL_FDESC[m[1]])return PL_FDESC[m[1]]+(m[2]?" — slot "+m[2]:"");
   return loc;}
+// ── Phase B: bin curation ──────────────────────────────────────────────
+// Baked-in defaults from HoweInventory/play_binmeta.json (Adrienne's curated pass).
+// Firebase play/binMeta/* overrides these per-leaf as she edits, so nothing here is
+// authoritative once she's touched a row — and no DB seeding was ever required.
+const PL_BINMETA_DEF={"ADV-1":{"kids":["lincoln","ellis"],"rot":false,"cull":"keep"},"BLQ-1":{"kids":["lucy","julian"],"rot":true,"cull":"watch"},"BOT-1":{"kids":["ellis","lucy","julian"],"rot":true,"cull":"keep"},"BRIO-1":{"kids":["ellis","lucy","julian"],"rot":true,"cull":"keep"},"BRIO-2":{"kids":["ellis","lucy","julian"],"rot":true,"cull":"keep"},"CLX-1":{"kids":["lincoln","ellis","lucy"],"rot":true,"cull":"keep"},"CNT-1":{"kids":["lucy","julian"],"rot":true,"cull":"keep"},"CUB-1":{"kids":["ellis","lucy","julian"],"rot":true,"cull":"keep"},"CUB-2":{"kids":["ellis","lucy","julian"],"rot":true,"cull":"keep"},"DINO-1":{"kids":["lucy","julian"],"rot":true,"cull":"keep"},"DOH-1":{"kids":["lucy","julian"],"rot":true,"cull":"keep"},"DOM-1":{"kids":["lincoln","ellis","lucy","julian"],"rot":true,"cull":"keep"},"DUP-1":{"kids":["lucy","julian"],"rot":true,"cull":"keep"},"FID-1":{"kids":["lincoln","ellis","lucy","julian"],"rot":true,"cull":"keep"},"FIG-1":{"kids":["lucy","julian"],"rot":true,"cull":"keep"},"FIG-2":{"kids":["lucy","julian"],"rot":true,"cull":"keep"},"FM-BEAD":{"kids":["lucy","julian"],"rot":true,"cull":"toss"},"FM-BRD":{"kids":["ellis","lucy"],"rot":true,"cull":"keep"},"FM-GEO":{"kids":["lucy","julian"],"rot":true,"cull":"keep"},"FM-HABA":{"kids":["ellis","lucy"],"rot":true,"cull":"keep"},"FM-PEG":{"kids":["lucy","julian"],"rot":true,"cull":"keep"},"FRC-1":{"kids":["lincoln","ellis","lucy"],"rot":true,"cull":"keep"},"HIST-1":{"kids":["lincoln","ellis","lucy"],"rot":false,"cull":"keep"},"HW-1":{"kids":["ellis","lucy","julian"],"rot":true,"cull":"keep"},"KIDK-1":{"kids":["lucy","julian"],"rot":true,"cull":"keep"},"LB-1":{"kids":["ellis","lucy","julian"],"rot":true,"cull":"keep"},"LEGO-1":{"kids":["lincoln","ellis","lucy"],"rot":true,"cull":"keep"},"LEGO-2":{"kids":["lincoln","ellis","lucy","julian"],"rot":true,"cull":"watch"},"LIGHT-1":{"kids":["lucy","julian"],"rot":true,"cull":"keep"},"MAG-1":{"kids":["ellis","lucy","julian"],"rot":true,"cull":"keep"},"MAG-3":{"kids":["ellis","lucy","julian"],"rot":true,"cull":"keep"},"MAG-4":{"kids":["ellis","lucy","julian"],"rot":true,"cull":"keep"},"MAG-6":{"kids":["ellis","lucy","julian"],"rot":true,"cull":"keep"},"MAG-7":{"kids":["ellis","lucy"],"rot":true,"cull":"keep"},"MRB-1":{"kids":["lincoln","ellis","lucy"],"rot":true,"cull":"keep"},"MRB-2":{"kids":["lincoln","ellis","lucy"],"rot":true,"cull":"watch"},"MTH-1":{"kids":["ellis","lucy"],"rot":true,"cull":"keep"},"PAT-2":{"kids":["lucy","julian"],"rot":true,"cull":"keep"},"PP-1":{"kids":["lucy","julian"],"rot":true,"cull":"keep"},"PPM-1":{"kids":["lincoln","ellis","lucy"],"rot":true,"cull":"keep"},"PRNT-1":{"kids":["lincoln","ellis","lucy","julian"],"rot":true,"cull":"keep"},"RBW-1":{"kids":["julian"],"rot":true,"cull":"keep"},"SCI-1":{"kids":["lincoln","ellis","lucy"],"rot":true,"cull":"watch"},"SEN-1":{"kids":["lucy","julian"],"rot":true,"cull":"keep"},"SMF-1":{"kids":["ellis","lucy","julian"],"rot":true,"cull":"keep"},"TEGU-1":{"kids":["lincoln","ellis","lucy","julian"],"rot":true,"cull":"keep"},"TOOL-1":{"kids":["lucy","julian"],"rot":true,"cull":"keep"},"TRK-1":{"kids":["lucy","julian"],"rot":true,"cull":"keep"},"TRUCK-1":{"kids":["julian"],"rot":true,"cull":"keep"},"WLP-1":{"kids":["lucy","julian"],"rot":true,"cull":"keep"},"WLP-2":{"kids":["lucy","julian"],"rot":true,"cull":"keep"},"WOOD-1":{"kids":["lucy","julian"],"rot":true,"cull":"keep"}};
+// Bins the catalog split out AFTER the inventory pass (Duplo/Magna/BRIO sub-bins, the
+// re-sorted dough bins). They inherit their parent's curation until she sets them.
+const PL_META_PARENT={"MAG-1A":"MAG-1","MAG-1B":"MAG-1","MAG-1C":"MAG-1","DUP-B":"DUP-1","DUP-BP":"DUP-1","DUP-F":"DUP-1","DUP-H":"DUP-1","DUP-P":"DUP-1","DUP-V":"DUP-1","BRIO-3":"BRIO-1","LEGO-3":"LEGO-1","DOH-PRESS":"DOH-1","DOH-CAN":"DOH-1","DOH-CUT":"DOH-1","DOH-SHAPE":"DOH-1","DOH-SET1":"DOH-1","DOH-SET2":"DOH-1","SEN-TOOL1":"SEN-1","SEN-TOOL2":"SEN-1"};
+let plBinMeta={};   // live overrides from play/binMeta
+// Merged view. _src tells the Room UI whether a row is her call, inherited, or unset.
+function plMeta(id){
+  const ov=plBinMeta[id]||{};
+  const par=PL_META_PARENT[id];
+  const base=PL_BINMETA_DEF[id]||(par?PL_BINMETA_DEF[par]:null);
+  const src=Object.keys(ov).length?'set':(PL_BINMETA_DEF[id]?'default':(base?'inherited':'none'));
+  const kids=ov.kids?Object.keys(ov.kids).filter(k=>ov.kids[k]):((base&&base.kids)||[]);
+  return {kids:kids,
+          rot:(ov.rot!==undefined?!!ov.rot:(base?base.rot:true)),
+          cull:(ov.cull||(base?base.cull:'watch')),
+          rating:(ov.rating!==undefined?ov.rating:null),
+          loc:(ov.loc||null), _src:src, _parent:par||null};
+}
+// PER-LEAF writes only — never a whole-object set. Same clobber-safety rule the
+// check-off sync fix established: two devices editing different fields must not
+// overwrite each other. dryrun neuters these automatically via the patched db.ref.
+function plMetaSet(id,field,val){
+  if(!plBinMeta[id])plBinMeta[id]={};
+  if(val===null||val===false)delete plBinMeta[id][field];else plBinMeta[id][field]=val;
+  if(plFB)db.ref('play/binMeta/'+id+'/'+field).set(val===false?null:val);
+  else{try{localStorage.setItem('lib_binmeta',JSON.stringify(plBinMeta));}catch(e){}}
+}
+function plMetaKid(id,kid){
+  const cur=plMeta(id).kids; const on=cur.indexOf(kid)>=0;
+  if(!plBinMeta[id])plBinMeta[id]={};
+  if(!plBinMeta[id].kids){plBinMeta[id].kids={};cur.forEach(k=>plBinMeta[id].kids[k]=true);}
+  if(on)delete plBinMeta[id].kids[kid];else plBinMeta[id].kids[kid]=true;
+  if(plFB)db.ref('play/binMeta/'+id+'/kids/'+kid).set(on?null:true);
+  else{try{localStorage.setItem('lib_binmeta',JSON.stringify(plBinMeta));}catch(e){}}
+  plRender();
+}
+// ── The Room — Mom's per-bin curation (Phase B) ────────────────────────
+// Every edit is one leaf write; nothing here re-sends the whole object.
+const PL_SRCBADGE={set:["\u2713 yours","#166534"],"default":["inventory","#6b7280"],
+                   inherited:["inherited","#b45309"],none:["unset","#b5394a"]};
+function plChip(label,on,onColor,click){
+  return '<button onclick="'+click+'" style="border:1.5px solid '+(on?"transparent":"var(--border)")+
+    ';background:'+(on?onColor:"#fff")+';color:'+(on?"#fff":"var(--muted)")+
+    ';border-radius:14px;padding:4px 10px;font-size:11px;font-weight:800;cursor:pointer;'+
+    'font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+label+'</button>';
+}
+function plMetaLoc(id){
+  const c=PL_CATALOG.find(x=>x.id==id);const mt=plMeta(id);
+  const v=prompt("Where does "+c.name+" live?\n\nUnit or slot — F1, W2, MK-3, BG-L1, SHOW-R, K14-2\nBlank = back to the catalog default ("+c.loc+").",mt.loc||c.loc);
+  if(v===null)return;
+  plMetaSet(id,"loc",v.trim()?v.trim().toUpperCase():null);plRender();
+}
+function plRoomHtml(){
+  const rows=PL_CATALOG.slice().sort(function(a,b){
+      const A=(plMeta(a.id).loc||a.loc),B=(plMeta(b.id).loc||b.loc);
+      return A<B?-1:A>B?1:(a.id<b.id?-1:1);}).map(function(c){
+    const mt=plMeta(c.id), bd=PL_SRCBADGE[mt._src];
+    return '<div style="padding:10px 12px;border-top:1px solid var(--border)">'+
+      '<div style="display:flex;gap:10px;align-items:center">'+
+      (c.photo?'<img src="'+c.photo+'" loading="lazy" style="width:42px;height:42px;object-fit:cover;border-radius:9px">'
+             :'<div style="width:42px;height:42px;border-radius:9px;background:var(--bg);display:flex;align-items:center;justify-content:center">'+(PL_EMOJI[c.cat]||"\u{1F4E6}")+'</div>')+
+      '<div style="flex:1;min-width:0"><b style="font-size:13px">'+c.name+'</b>'+
+      '<div style="font-size:10.5px;color:var(--muted)">'+c.id+' \u00b7 '+(mt.loc||c.loc)+(mt.loc?" (moved)":"")+
+      (mt._src=="inherited"?' \u00b7 from '+mt._parent:"")+'</div></div>'+
+      '<span style="font-size:9.5px;font-weight:800;color:#fff;background:'+bd[1]+';padding:2px 7px;border-radius:9px;white-space:nowrap">'+bd[0]+'</span>'+
+      '</div>'+
+      '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px;align-items:center">'+
+      PL_KIDS.map(function(k){return plChip(k.name,mt.kids.indexOf(k.id)>=0,k.color,"plMetaKid('"+c.id+"','"+k.id+"')");}).join("")+
+      '<span style="flex:1;min-width:8px"></span>'+
+      plChip(mt.rot?"in rotation":"parked",mt.rot,"#111827","plMetaSet('"+c.id+"','rot',"+(!mt.rot)+");plRender()")+
+      ["keep","watch","toss"].map(function(f){
+        return plChip(f,mt.cull==f,{keep:"#166534",watch:"#b45309",toss:"#b5394a"}[f],
+                      "plMetaSet('"+c.id+"','cull','"+f+"');plRender()");}).join("")+
+      plChip("\u{1F4CD}",false,"#fff","plMetaLoc('"+c.id+"')")+
+      '</div></div>';
+  }).join("");
+  const n=PL_CATALOG.length;
+  const unset=PL_CATALOG.filter(function(c){return plMeta(c.id)._src!="set";}).length;
+  const noKid=PL_CATALOG.filter(function(c){return !plMeta(c.id).kids.length;}).length;
+  return '<div style="margin:10px 12px 24px;background:var(--card);border:1.5px solid var(--border);border-radius:12px;overflow:hidden">'+
+    '<div style="padding:12px 14px 10px"><h3 style="margin:0 0 3px;font-size:13px">\u{1F9FA} The Room \u2014 who each bin is for</h3>'+
+    '<div style="font-size:11px;color:var(--muted);line-height:1.45">'+n+' bins \u00b7 <b>'+unset+
+    '</b> still on inventory defaults \u00b7 <b>'+noKid+'</b> with nobody assigned.<br>'+
+    'Tap a name to add or remove that kid. \u{1F4CD} moves a bin. Saves as you tap.</div></div>'+
+    rows+'</div>';
+}
+
+
 function plBinForAct(x){if(x.bin){return PL_CATALOG.find(c=>c.id==x.bin)||null;}const kw=null;let best=null;
   for(const c of PL_CATALOG){const key=(c.actKey||"").toLowerCase();if(key&&(x.t+" "+x.d).toLowerCase().includes(key)){if(!plState[c.id])return c;best=best||c;}}
   const same=PL_CATALOG.filter(c=>c.actCat&&c.actCat===x.cat);
@@ -335,11 +427,17 @@ function plRender(){
         '<div><b style="font-size:12.5px">'+c.name+'</b><div style="font-size:10.5px;color:var(--muted)">'+c.id+' · '+st.n+'× · '+plDur(st.total)+' total</div></div>'+
         (o?'<span class="who" style="background:'+plColor(o.kid)+'">OUT · '+plName(o.kid,o)+'</span>':(st.last?'<span class="who" style="background:'+(plColor(st.last.kid))+';opacity:.75">'+plName(st.last.kid,st.last)+'</span>':'<span class="who" style="background:#d1d5db;color:#555">never</span>'))+'</div>';
       }).join("")+'</div>';
+    if(plMomTab=="room")m=plRoomHtml();
+    const _tabs='<div style="display:flex;gap:6px;padding:12px 12px 0">'+
+      [["stats","\u{1F4CA} Stats"],["room","\u{1F9FA} The Room"]].map(function(t){
+        return '<button class="loc-btn'+(plMomTab==t[0]?" active":"")+'" onclick="plMomTab=\''+t[0]+'\';plRender()">'+t[1]+'</button>';}).join("")+'</div>';
     document.getElementById("pl-intents").style.display="none";
     document.getElementById("pl-grid").innerHTML="";
-    document.getElementById("pl-outshelf").style.display="block";
-    document.getElementById("pl-outshelf").insertAdjacentHTML("afterend",'<div id="pl-momview">'+m+'</div>');
-    const old=document.querySelectorAll("#momview");if(old.length>1)old[0].remove();
+    document.getElementById("pl-outshelf").style.display=(plMomTab=="room")?"none":"block";
+    // Was querySelectorAll("#momview") — wrong id, so every mom re-render stacked another
+    // copy of the whole view. The Room re-renders on every tap, so this had to be exact.
+    const stale=document.getElementById("pl-momview");if(stale)stale.remove();
+    document.getElementById("pl-outshelf").insertAdjacentHTML("afterend",'<div id="pl-momview">'+_tabs+m+'</div>');
     return;
   }
   const mv=document.getElementById("pl-momview");if(mv)mv.remove();
