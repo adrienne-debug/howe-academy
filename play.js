@@ -766,7 +766,7 @@ function plRender(){
   document.getElementById("pl-outcount").textContent=nOut? nOut+" out":"all home ✓";
   let os='<h3>🧺 Out right now</h3>';
   const act=plPlays.map((p,i)=>[p,i]).filter(([p])=>!p.done);
-  if(act.length){os+='<div style="font-size:12px;font-weight:800;margin:2px 0 6px">▶️ Now playing</div>'+act.map(([p,i])=>'<div class="out-row"><div><b style="font-size:12.5px">'+p.t+'</b><div style="font-size:10.5px;color:var(--muted)">'+(p.bin?p.bin+' · ':'')+plFmt(p.at)+'</div></div><span class="who" style="background:'+plColor(p.kid)+'">'+plName(p.kid,p)+'</span><button onclick="plFinishPlay(Done ✓</button></div>').join("")+'<div style="height:6px"></div>';}
+  if(act.length){os+='<div style="font-size:12px;font-weight:800;margin:2px 0 6px">▶️ Now playing</div>'+act.map(([p,i])=>'<div class="out-row"><div><b style="font-size:12.5px">'+p.t+'</b><div style="font-size:10.5px;color:var(--muted)">'+(p.bin?p.bin+' · ':'')+plFmt(p.at)+'</div></div><span class="who" style="background:'+plColor(p.kid)+'">'+plName(p.kid,p)+'</span><button onclick="plFinishPlay('+(p._k?"'"+p._k+"'":i)+')">Done ✓</button></div>').join("")+'<div style="height:6px"></div>';}
   if(stOut.length)os+=stOut.map(f=>{const st=plStations[f];const d=plDeckGet(st.identity);const cl=st.claim;
     return '<div class="out-row"><div><b style="font-size:12.5px">'+d.em+' '+d.name+' station</b><div style="font-size:10.5px;color:var(--muted)">'+f+' · '+plStBinIds(f).length+' bins · since '+plFmt(cl.since)+'</div></div><span class="who" style="background:'+(plColor(cl.by)||"#888")+'">'+(PL_KN[cl.by]||cl.by)+'</span></div>';}).join("");
   if(!nOut) os+='<div class="empty-note">Everything is on its shelf. 🎉</div>';
@@ -931,6 +931,9 @@ function plCo(id,kid,actT){
 function plRet(id){const o=plState[id];if(o)plHist.unshift(plName(o.kid,o)+" returned "+id+" — "+plFmt(Date.now()));if(o&&o.kid)plBumpStreak(o.kid);
   if(plFB){if(o&&o.lk)db.ref("play/plLog/"+id+"/"+o.lk).update({back:Date.now()});db.ref("play/checkouts/"+id).remove();}
   else{const L=plLog[id];if(L&&L.length&&!L[0].back)L[0].back=Date.now();delete plState[id];}
+  // Returning the bin also finishes its open play row — kids return via the bin card,
+  // so the Now-playing row must not outlive the checkout (7/18 gap, first bit 2026-08-01).
+  plPlays.forEach(p=>{if(!p.done&&o&&p.kid===o.kid&&p.bin===id){p.done=true;if(plFB&&p._k)db.ref("play/plPlays/"+p._k).update({done:true});}});
   plSave();plRender();}
 
 window.renderPlay=function(c){
