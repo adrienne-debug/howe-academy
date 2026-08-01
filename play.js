@@ -732,14 +732,32 @@ const PL_INTENTS=[["build","🏗️","BUILD"],["create","🎨","CREATE"],["prete
 function plMomAuthed(){
   if(typeof momPinUnlocked!=="undefined"&&momPinUnlocked)return true;
   return window._plMomOk===true;}
+// Same entry FORMAT as the app's Admin Code box (mom-pin-bar markup) — not a browser
+// prompt(), which also doesn't fire in kiosk browsers. Value is the same APP_PIN.
+function plMomPinSheet(){
+  document.getElementById("pl-shbody").innerHTML='<div style="text-align:center;padding:12px 4px">'+
+    '<div style="font-size:40px">👩</div>'+
+    '<div style="font-size:13px;font-weight:700;color:#b5394a;margin:8px 0 6px">Enter Admin Code</div>'+
+    '<input id="pl-mom-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="off" '+
+    'style="width:100px;text-align:center;font-size:20px;letter-spacing:6px;padding:8px 10px;border:2px solid var(--border);border-radius:8px;font-family:monospace" '+
+    'oninput="plMomPinTry(this.value)"/>'+
+    '<div id="pl-mom-pin-err" style="font-size:11px;color:#b5394a;margin-top:4px;min-height:14px"></div>'+
+    '<button class="cancel" onclick="plCloseSheet()">Cancel</button></div>';
+  document.getElementById("pl-sheet").classList.add("open");
+  setTimeout(function(){var i=document.getElementById("pl-mom-pin");if(i)i.focus();},50);
+}
+function plMomPinTry(val){
+  if(val.length<4)return;
+  var pin=(typeof APP_PIN!=="undefined")?APP_PIN:"0000";
+  if(val===pin){window._plMomOk=true;plCloseSheet();plSetMode("mom");}
+  else{var i=document.getElementById("pl-mom-pin"),e=document.getElementById("pl-mom-pin-err");
+    if(e)e.textContent="Incorrect PIN";
+    if(i){i.value="";i.style.borderColor="#b5394a";}
+    setTimeout(function(){if(e)e.textContent="";if(i)i.style.borderColor="var(--border)";},1500);}
+}
+window.plMomPinTry=plMomPinTry;
 function plSetMode(m){
-  if(m=="mom"&&!plMomAuthed()){
-    const v=prompt("Mom PIN:");
-    if(v===null)return;
-    if(typeof APP_PIN!=="undefined"&&v===APP_PIN){window._plMomOk=true;}
-    else if(typeof APP_PIN==="undefined"&&v==="0000"){window._plMomOk=true;}
-    else{alert("Nope! 🙈");return;}
-  }
+  if(m=="mom"&&!plMomAuthed()){plMomPinSheet();return;}
   plMode=m;plIntentSel=null;const mh=document.getElementById("pl-mb-home"),mb=document.getElementById("pl-mb-bins"),mm=document.getElementById("pl-mb-mom"),ma=document.getElementById("pl-mb-act");mh.className="kid-btn"+(m=="home"?" active":"");mh.style.background=m=="home"?"#111827":"";ma.className="kid-btn"+(m=="act"?" active":"");ma.style.background=m=="act"?"#111827":"";mb.className="kid-btn"+(m=="bins"?" active":"");mb.style.background=m=="bins"?"#111827":"";mm.className="kid-btn"+(m=="mom"?" active":"");mm.style.background=m=="mom"?"#b5394a":"";plRender();}
 function plDur(ms){const m=Math.round(ms/60000);if(m<60)return m+"m";const h=Math.floor(m/60);return h+"h "+(m%60)+"m";}
 function plBinStats(id){const L=plLogArr(id);let total=0,n=L.length,last=null;L.forEach(sn=>{total+=((sn.back||Date.now())-sn.out);});if(L.length)last=L[0];return {n:n,total:total,last:last};}
