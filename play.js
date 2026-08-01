@@ -819,7 +819,10 @@ function plRender(){
   document.getElementById("pl-intents").style.gridTemplateColumns="repeat(2,1fr)";document.getElementById("pl-intents").style.padding="14px 12px";
   if(momMode){
     const kidTot={};PL_KIDS.forEach(k=>kidTot[k.id]={n:0,ms:0});
-    Object.values(plLog).forEach(L=>L.forEach(sn=>{if(kidTot[sn.kid]){kidTot[sn.kid].n++;kidTot[sn.kid].ms+=((sn.back||Date.now())-sn.out);}}));
+    // plLogArr, not raw: Firebase stores each bin's log as a push-key OBJECT, not an
+    // array. Raw .forEach crashed the whole Mom view the moment the first live checkout
+    // landed (empty log had masked it since the 7/18 ship).
+    Object.keys(plLog).forEach(id=>plLogArr(id).forEach(sn=>{if(kidTot[sn.kid]){kidTot[sn.kid].n++;kidTot[sn.kid].ms+=((sn.back||Date.now())-sn.out);}}));
     let m='<div style="margin:12px;padding:12px 14px;background:var(--card);border:1.5px solid var(--border);border-radius:12px"><h3 style="margin:0 0 8px;font-size:13px">📊 Who plPlays how much</h3><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">'+
       PL_KIDS.map(k=>'<div style="text-align:center;padding:8px 4px;background:var(--bg);border-radius:10px;border-top:3px solid '+k.color+'"><div style="font-size:12px;font-weight:800">'+k.name+'</div><div style="font-size:16px;font-weight:800">'+kidTot[k.id].n+'</div><div style="font-size:10px;color:var(--muted)">check-outs</div><div style="font-size:11px;font-weight:700;margin-top:2px">'+plDur(kidTot[k.id].ms)+'</div><div style="font-size:10px;margin-top:3px">streak '+plSt(k.id).streak+'</div><button style="margin-top:4px;border:none;border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;background:#b5394a;color:#fff;cursor:pointer" onclick="plStrike(\''+k.id+'\')">⚠ strike</button></div>').join("")+'</div></div>';
     m+='<div style="margin:0 12px 24px;padding:12px 14px;background:var(--card);border:1.5px solid var(--border);border-radius:12px"><h3 style="margin:0 0 4px;font-size:13px">🧺 Every bin — tap for history</h3><div style="font-size:11px;color:var(--muted);margin-bottom:8px">Sorted by most used. Colored chip = who touched it LAST (your cleanup suspect).</div>'+
