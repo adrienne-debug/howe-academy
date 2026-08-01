@@ -59,16 +59,29 @@ const PL_CSS=`#play-root #pl-kidbar{background:#fff;border-bottom:1px solid var(
 #play-root .stbtn{border:none;border-radius:9px;padding:6px 11px;font-size:12px;font-weight:800;background:#111827;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif}
 #play-root #pl-histcard{margin:0 12px 24px;padding:12px 14px;background:var(--card);border:1.5px solid var(--border);border-radius:12px}
 #play-root #pl-histcard h3{margin:0 0 6px;font-size:13px}
-#play-root .hrow{font-size:11.5px;color:var(--muted);padding:2px 0}`;
+#play-root .hrow{font-size:11.5px;color:var(--muted);padding:2px 0}
+#play-root #pl-home{padding:12px 12px 4px}
+#play-root .home-card{background:var(--card);border:1.5px solid var(--border);border-radius:16px;padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;gap:14px}
+#play-root .home-card .hem{font-size:44px;line-height:1}
+#play-root .home-card .hname{font-size:17px;font-weight:800}
+#play-root .home-card .hsub{font-size:12px;color:var(--muted);margin-top:2px}
+#play-root .home-card .hside{margin-left:auto;text-align:right;display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+#play-root .home-claim{border:none;border-radius:12px;padding:11px 18px;font-size:14.5px;font-weight:800;color:#fff;background:#111827;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap}
+#play-root .home-tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:2px}
+#play-root .home-tile{border:2px solid var(--border);border-radius:16px;padding:18px 8px;background:var(--card);cursor:pointer;text-align:center;font-family:'DM Sans',sans-serif}
+#play-root .home-tile .em{font-size:36px;line-height:1}
+#play-root .home-tile .wd{font-size:14px;font-weight:800;margin-top:6px}`;
 
 const PL_SHELL=`<div id="play-root">
 <div id="pl-modebar" style="background:#fff;border-bottom:1px solid var(--border);padding:10px 12px;display:flex;gap:8px">
-<button id="pl-mb-bins" class="kid-btn active" style="background:#111827;flex:1" onclick="plSetMode('bins')">🧺 Bins</button>
+<button id="pl-mb-home" class="kid-btn active" style="background:#111827;flex:1" onclick="plSetMode('home')">🎪 Stations</button>
+<button id="pl-mb-bins" class="kid-btn" style="flex:1" onclick="plSetMode('bins')">🧺 Bins</button>
 <button id="pl-mb-act" class="kid-btn" style="flex:1" onclick="plSetMode('act')">🎯 Activities</button>
 <button id="pl-mb-mom" class="kid-btn" style="flex:0 0 auto" onclick="plSetMode('mom')">👩</button>
 <span id="pl-outcount" style="align-self:center;font-size:11px;color:var(--muted);white-space:nowrap;padding:0 4px"></span></div>
 <div id="pl-kidbar"></div>
 <div id="pl-locbar"></div>
+<div id="pl-home"></div>
 <div id="pl-intents" style="display:none"></div>
 <button id="pl-shuffle" onclick="plShuffle()">🎲 Surprise me!</button>
 <div id="pl-stations-strip"></div>
@@ -87,7 +100,7 @@ const PL_TH=[5,12]; const PL_LVLN=["🌱 Rookie","⭐ Keeper","👑 Elite"]; con
 let plStatus={};
 function plSt(k){return plStatus[k]||{lvl:0,streak:0};}
 function plMaxOut(k){return plIsGuest(k)?3:plSt(k).lvl+1;}
-function plOutCount(k){return Object.values(plState).filter(o=>o.kid==k).length;}
+function plOutCount(k){return Object.entries(plState).filter(([id,o])=>o.kid==k&&!plStagedAt(id)).length;}   // station bins stay AT the station — they don't fill the kid's hands
 function plWriteStatus(k,st){plStatus[k]=st;
   if(plFB)db.ref("play/status/"+k).set(st);
   else{try{localStorage.setItem("lib_status",JSON.stringify(plStatus));}catch(e){}}}
@@ -172,7 +185,7 @@ function plMoodOk(x,mood){if(!mood)return true;const bin=x.bin?PL_CATALOG.find(c
   return (PL_MOODC[mood]||[]).includes(x.cat);}
 function plDots(n){return "●".repeat(n);}
 function plSetKid(k){plSelKid=(plSelKid==k?null:k);if(plSelKid)localStorage.setItem("lib_kid",plSelKid);else localStorage.removeItem("lib_kid");plRender();}
-window.plKidF="all";window.plLocF="ALL";window.plMode="bins";window.plIntentSel=null;window.plMomTab="stats";
+window.plKidF="all";window.plLocF="ALL";window.plMode="home";window.plIntentSel=null;window.plMomTab="stats";
 function plSave(){if(plFB)return;try{localStorage.setItem("lib_checkouts",JSON.stringify(plState));localStorage.setItem("lib_hist",JSON.stringify(plHist.slice(0,30)));localStorage.setItem("lib_log",JSON.stringify(plLog));localStorage.setItem("lib_plays",JSON.stringify(plPlays));}catch(e){}}
 function plFmt(ts){const d=new Date(ts);return d.toLocaleDateString(undefined,{month:"short",day:"numeric"})+" "+d.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});}
 const PL_FDESC={F1:"the low frame under the FAR window — next to the science corner",F2:"the MIDDLE low frame, under the little wall bins",F3:"the low frame under the window CLOSEST to the kitchen door",T1:"the TALL tower in the middle of the wall",T2:"the TALL tower right beside the fish tank",W1:"the small wall bins above F2 — TOP row (ask Mom to get it down)",W2:"the small wall bins above F2 — MIDDLE row (ask Mom to get it down)",W3:"the small wall bins above F2 — BOTTOM row, the one you can reach","F1-TOP":"ON TOP of the far-window low frame","F2-TOP":"ON TOP of the middle low frame","F3-TOP":"ON TOP of the low frame by the kitchen door","T1-TOP":"the very top of the middle tower — ask a grown-up","T2-TOP":"the very top of the fish-tank tower — ask a grown-up",K14:"the TALL skinny Kallax right beside F1",MK:"the little 2×2 Kallax under the big bookshelf — the one the 3D printer sits on","MK-TOP":"on top of the little Kallax — the 3D printer station",KX:"the BIG black bookshelf — the curriculum one","KX-TOP":"on top of the big black bookshelf","BG-L":"the LEFT project-kit shelves on the right wall","BG-R":"the RIGHT project-kit shelves on the right wall","SHOW-L":"the display shelf under the LEFT project shelves — finished creations","SHOW-R":"the display shelf under the RIGHT project shelves — finished creations",COAT:"the shelves above the coats and shoes",CAB:"the wall cabinets — where the art lives","CAB-TOP":"on TOP of the cabinets, by the washer-dryer closet — the history boxes",CORNER:"the corner shelf and the grey corner bins",TOTE:"the big black-and-yellow totes by the Kallax — BIG BUILDS",CUBE:"the big cube boxes",OUTBOX:"the OUTBOX — things on their way out of the room","CART-LIN":"Lincoln's cart","CART-ELL":"Ellis's cart","CART-LUC":"Lucy's cart","CART-JUL":"Julian's cart","ST-TABLE":"the big work table","ST-FLISAT":"the sensory table","ST-EASEL":"the easel","ST-PRINT":"the 3D printer station","ST-SCI":"the science station","RM-PLAY":"the playroom","RM-LIVING":"the living room","RM-GARAGE":"the garage",RETIRED:"not in use any more",CONFIRM:"still to be found",STATION:"out on its own station",SHELF:"the corner shelf"};
@@ -301,7 +314,8 @@ function plStagedAt(binId){
 function plFlip(frame,identId){
   const cur=plStations[frame]||{};
   if(cur.identity===identId){return plClearStation(frame);}   // tap again = clear
-  const rec={identity:identId,setup:0,since:Date.now()};
+  if(cur.claim)plStReturnBins(frame,cur.claim.by);   // a flip ends any claim — bins go home first
+  const rec={identity:identId,setup:0,since:Date.now(),claim:null,queue:null};
   plStations[frame]=rec;
   if(plFB)db.ref("play/stations/"+frame).update(rec);
   else{try{localStorage.setItem("lib_stations",JSON.stringify(plStations));}catch(e){}}
@@ -312,6 +326,8 @@ function plSetSetup(frame,idx){
   else{try{localStorage.setItem("lib_stations",JSON.stringify(plStations));}catch(e){}}
   plRender();}
 function plClearStation(frame){
+  const cur=plStations[frame];
+  if(cur&&cur.claim)plStReturnBins(frame,cur.claim.by);
   delete plStations[frame];
   if(plFB)db.ref("play/stations/"+frame).remove();
   else{try{localStorage.setItem("lib_stations",JSON.stringify(plStations));}catch(e){}}
@@ -381,14 +397,39 @@ function plStSave(frame){
   else{try{localStorage.setItem("lib_stations",JSON.stringify(plStations));}catch(e){}}
   plRender();}
 function plStExpired(st){return !!(st&&st.claim&&st.claim.turnEndsAt&&Date.now()>st.claim.turnEndsAt);}
+// Claiming a station checks its staged bins out to the claimer (her rule 2026-08-01: the
+// whole station moves as one — every bin shows "X has it", cleanup stays attributable).
+// Silent per-bin checkouts: ONE history line for the station, not ten, and ONE streak
+// credit on hand-back, not ten (no reward inflation). A bin some OTHER kid checked out
+// before the flip stays truthfully theirs — only free bins and the previous holder's
+// transfer.
+function plRetSilent(id){const o=plState[id];if(!o)return;
+  if(plFB){if(o.lk)db.ref("play/plLog/"+id+"/"+o.lk).update({back:Date.now()});db.ref("play/checkouts/"+id).remove();}
+  else{const L=plLog[id];if(L&&L.length&&!L[0].back)L[0].back=Date.now();delete plState[id];}}
+function plStBinIds(frame){const st=plStations[frame];const d=st&&st.identity?plDeckGet(st.identity):null;
+  return d?d.bins.filter(id=>PL_CATALOG.some(c=>c.id===id)):[];}
+function plStHandBins(frame,kid,prevKid){
+  const d=plDeckGet((plStations[frame]||{}).identity);if(!d)return;
+  plStBinIds(frame).forEach(id=>{const o=plState[id];
+    if(o&&o.kid===kid)return;
+    if(o&&o.kid!==prevKid)return;
+    if(o)plRetSilent(id);
+    plCoSilent(id,kid,d.em+" "+d.name);});
+  plHist.unshift(plName(kid)+" took the "+d.em+" "+d.name+" station ("+frame+") — "+plFmt(Date.now()));}
+function plStReturnBins(frame,kid){
+  const d=plDeckGet((plStations[frame]||{}).identity);
+  plStBinIds(frame).forEach(id=>{const o=plState[id];if(o&&(!kid||o.kid===kid))plRetSilent(id);});
+  if(d&&kid)plHist.unshift(plName(kid)+" gave back the "+d.em+" "+d.name+" station ("+frame+") — "+plFmt(Date.now()));}
 function plStClaim(frame){
   const kid=plSelKid;
   if(!kid){alert("Tap your name up top first!");return;}
   if(!plDayDone(kid)){alert("Finish your school work first — then the stations unlock! \u{1F4AA}");return;}
   const st=plStations[frame];if(!st||!st.identity)return;
   if(st.claim&&st.claim.by&&st.claim.by!==kid&&!plStExpired(st))return;
+  const prev=st.claim?st.claim.by:null;
   st.claim={by:kid,since:Date.now(),turnEndsAt:(st.queue&&st.queue.length)?Date.now()+PL_TURN_MS:null};
   st.queue=(st.queue||[]).filter(k=>k!==kid);
+  plStHandBins(frame,kid,prev);
   plStSave(frame);}
 function plStNext(frame){
   const kid=plSelKid;
@@ -406,18 +447,24 @@ function plStTakeover(frame){
   if(!kid||!st||!st.claim)return;
   if(!plStExpired(st))return;
   if((st.queue||[])[0]!==kid){alert("It goes to whoever lined up first!");return;}
+  const prev=st.claim.by;
   st.queue.shift();
   st.claim={by:kid,since:Date.now(),turnEndsAt:(st.queue.length)?Date.now()+PL_TURN_MS:null};
+  plStHandBins(frame,kid,prev);
   plStSave(frame);}
 function plStRelease(frame){
   const st=plStations[frame];if(!st||!st.claim)return;
+  const leaving=st.claim.by;
   const q=st.queue||[];
   if(q.length){const nk=q.shift();
-    st.claim={by:nk,since:Date.now(),turnEndsAt:(q.length)?Date.now()+PL_TURN_MS:null};}
-  else st.claim=null;
+    st.claim={by:nk,since:Date.now(),turnEndsAt:(q.length)?Date.now()+PL_TURN_MS:null};
+    plStHandBins(frame,nk,leaving);}
+  else{st.claim=null;plStReturnBins(frame,leaving);}
+  if(leaving)plBumpStreak(leaving);   // ONE clean hand-back = ONE streak credit, not one per bin
   plStSave(frame);}
-function plStClear(frame){   // Mom referee — clears claim AND queue
+function plStClear(frame){   // Mom referee — clears claim AND queue; no streak credit
   const st=plStations[frame];if(!st)return;
+  if(st.claim)plStReturnBins(frame,st.claim.by);
   st.claim=null;st.queue=[];
   plStSave(frame);}
 function plStStripHtml(){
@@ -443,6 +490,41 @@ function plStStripHtml(){
       '<span style="flex:1"></span>'+who+btn+'</div>';
   }).join("");
   return '<div id="pl-stcard"><h3 style="margin:0 0 6px;font-size:13px">\u{1F3AA} Stations — done with school? claim one!</h3>'+rows+'</div>';
+}
+
+// ── Home (front door): stations first, bins demoted to a browse tile ───
+// Her 2026-08-01 feedback: the everything-at-once bin wall was overwhelming as the
+// landing view. Home = who-are-you row + one card per live station + two big tiles.
+// Same claim state machine as the strip; the WHO row here sets plSelKid (identity),
+// unlike the bins view's SHOW row which is only a display filter.
+function plHomeHtml(){
+  const live=PL_FRAMES.filter(f=>plStations[f]&&plStations[f].identity);
+  let h='';
+  if(!plSelKid)h+='<div style="font-size:12.5px;color:var(--muted);margin:0 2px 10px">Tap your name up top — then claim a station, or go find a bin.</div>';
+  if(live.length)h+='<div style="font-size:13px;font-weight:800;margin:0 2px 8px">🎪 Stations — done with school? claim one!</div>';
+  else h+='<div class="home-card"><div class="hem">🎪</div><div><div class="hname">No stations set up yet</div><div class="hsub">Mom stages them in the 👩 view.</div></div></div>';
+  h+=live.map(function(f){
+    const st=plStations[f];const d=plDeckGet(st.identity);if(!d)return"";
+    const cl=st.claim;const q=st.queue||[];const exp=plStExpired(st);
+    let side='';
+    if(!cl){side='<span style="color:#166534;font-weight:800;font-size:13px">free!</span><button class="home-claim" onclick="plStClaim(\''+f+'\')">I’ll take it</button>';}
+    else{
+      side='<span class="badge" style="background:'+(plColor(cl.by)||"#888")+'">'+(PL_KN[cl.by]||cl.by)+'</span>';
+      if(cl.turnEndsAt)side+=exp?'<b style="color:#b5394a;font-size:12px">⏰ time’s up!</b>':'<span style="font-size:11px;color:var(--muted)">⏱ '+Math.max(1,Math.ceil((cl.turnEndsAt-Date.now())/60000))+'m left</span>';
+      if(q.length)side+='<span style="font-size:11px;color:var(--muted)">line: '+q.map(function(k){return PL_KN[k]||k;}).join(' → ')+'</span>';
+      if(plSelKid&&cl.by===plSelKid)side+='<button class="home-claim" onclick="plStRelease(\''+f+'\')">done — give it up</button>';
+      else if(exp&&q[0]===plSelKid)side+='<button class="home-claim" style="background:#b5394a" onclick="plStTakeover(\''+f+'\')">my turn!</button>';
+      else if(plSelKid&&q.indexOf(plSelKid)<0)side+='<button class="home-claim" style="background:#4b5563" onclick="plStNext(\''+f+'\')">I’m next</button>';
+      else if(plSelKid)side+='<span style="font-size:11px;color:var(--muted)">#'+(q.indexOf(plSelKid)+1)+' in line</span>';
+    }
+    return '<div class="home-card"><div class="hem">'+d.em+'</div><div><div class="hname">'+d.name+'</div>'+
+      '<div class="hsub">'+f+' · '+d.setups[st.setup||0]+' · '+plStBinIds(f).length+' bins come with it</div></div>'+
+      '<div class="hside">'+side+'</div></div>';
+  }).join('');
+  h+='<div class="home-tiles">'+
+    '<button class="home-tile" onclick="plSetMode(\'bins\')"><div class="em">🧺</div><div class="wd">All the bins</div></button>'+
+    '<button class="home-tile" onclick="plSetMode(\'do\')"><div class="em">💡</div><div class="wd">I want to…</div></button></div>';
+  return h;
 }
 
 // ── Mom: 🏷 label print picker ─────────────────────────────────────────
@@ -564,11 +646,12 @@ function plRoomHtml(){
 }
 
 
+function plBinFree(id){return !plState[id]&&!plStagedAt(id);}   // staged bins live at their station — never wizard-sourced
 function plBinForAct(x){if(x.bin){return PL_CATALOG.find(c=>c.id==x.bin)||null;}const kw=null;let best=null;
-  for(const c of PL_CATALOG){const key=(c.actKey||"").toLowerCase();if(key&&(x.t+" "+x.d).toLowerCase().includes(key)){if(!plState[c.id])return c;best=best||c;}}
+  for(const c of PL_CATALOG){const key=(c.actKey||"").toLowerCase();if(key&&(x.t+" "+x.d).toLowerCase().includes(key)){if(plBinFree(c.id))return c;best=best||c;}}
   const same=PL_CATALOG.filter(c=>c.actCat&&c.actCat===x.cat);
-  for(const c of same){if(!c.actKey&&!plState[c.id])return c;}
-  for(const c of same){if(!plState[c.id])return c;}
+  for(const c of same){if(!c.actKey&&plBinFree(c.id))return c;}
+  for(const c of same){if(plBinFree(c.id))return c;}
   return best||same[0]||null;}
 window.plWizKid=null;window.plWizMood=null;window.plWizLvl=null;window.plWizLast=null;
 function plWiz(step){let h="";
@@ -637,14 +720,14 @@ function plPlayPick(aid,kid){const x=PL_ACTS.find(a=>a.id==aid);
   h+='<button class="cancel" onclick="plCloseSheet()">back</button>';
   document.getElementById("pl-shbody").innerHTML=h;document.getElementById("pl-sheet").classList.add("open");}
 function plConfirmPlay(aid,kid,binId){const x=PL_ACTS.find(a=>a.id==aid);
-  if(binId)plCoSilent(binId,kid,x?x.t:null);
+  if(binId&&!plStagedAt(binId))plCoSilent(binId,kid,x?x.t:null);   // a staged bin is already the station holder's — don't double-checkout (or steal it)
   if(plFB)db.ref("play/plPlays").push({kid:kid,act:aid,t:x?x.t:aid,bin:binId||null,at:Date.now(),done:false,gname:plGuestName(kid)||null});
   else plPlays.unshift({kid:kid,act:aid,t:x?x.t:aid,bin:binId,at:Date.now(),done:false});
   plHist.unshift(plName(kid)+" started \""+(x?x.t:aid)+"\" — "+plFmt(Date.now()));plSave();plCloseSheet();plSetMode("bins");}
 function plFinishPlay(i){const p=(typeof i==="string")?plPlays.find(q=>q._k===i):plPlays[i];if(!p)return;
   if(plFB&&p._k)db.ref("play/plPlays/"+p._k).update({done:true});else p.done=true;
-  if(p.bin&&p.bin.includes("+")){p.bin.split("+").forEach(b=>{if(plState[b]&&plState[b].kid==p.kid)plRet(b);});plSave();plRender();}
-  else if(p.bin&&plState[p.bin]&&plState[p.bin].kid==p.kid)plRet(p.bin);else{plSave();plRender();}}
+  if(p.bin&&p.bin.includes("+")){p.bin.split("+").forEach(b=>{if(plState[b]&&plState[b].kid==p.kid&&!plStagedAt(b))plRet(b);});plSave();plRender();}
+  else if(p.bin&&plState[p.bin]&&plState[p.bin].kid==p.kid&&!plStagedAt(p.bin))plRet(p.bin);else{plSave();plRender();}}
 const PL_INTENTS=[["build","🏗️","BUILD"],["create","🎨","CREATE"],["pretend","🦖","PRETEND"],["wheels","🏁","CARS + RACING"],["math","🔢","MATH FUN"],["science","🧪","SCIENCE"],["puzzle","🧩","FIGURE IT OUT"],["chill","🌀","CHILL"],["move","🏃","GET MOVING"],["read","📖","READ + WRITE"]];
 function plMomAuthed(){
   if(typeof momPinUnlocked!=="undefined"&&momPinUnlocked)return true;
@@ -657,27 +740,38 @@ function plSetMode(m){
     else if(typeof APP_PIN==="undefined"&&v==="0000"){window._plMomOk=true;}
     else{alert("Nope! 🙈");return;}
   }
-  plMode=m;plIntentSel=null;const mb=document.getElementById("pl-mb-bins"),mm=document.getElementById("pl-mb-mom"),ma=document.getElementById("pl-mb-act");ma.className="kid-btn"+(m=="act"?" active":"");ma.style.background=m=="act"?"#111827":"";mb.className="kid-btn"+(m=="bins"?" active":"");mb.style.background=m=="bins"?"#111827":"";mm.className="kid-btn"+(m=="mom"?" active":"");mm.style.background=m=="mom"?"#b5394a":"";plRender();}
+  plMode=m;plIntentSel=null;const mh=document.getElementById("pl-mb-home"),mb=document.getElementById("pl-mb-bins"),mm=document.getElementById("pl-mb-mom"),ma=document.getElementById("pl-mb-act");mh.className="kid-btn"+(m=="home"?" active":"");mh.style.background=m=="home"?"#111827":"";ma.className="kid-btn"+(m=="act"?" active":"");ma.style.background=m=="act"?"#111827":"";mb.className="kid-btn"+(m=="bins"?" active":"");mb.style.background=m=="bins"?"#111827":"";mm.className="kid-btn"+(m=="mom"?" active":"");mm.style.background=m=="mom"?"#b5394a":"";plRender();}
 function plDur(ms){const m=Math.round(ms/60000);if(m<60)return m+"m";const h=Math.floor(m/60);return h+"h "+(m%60)+"m";}
 function plBinStats(id){const L=plLogArr(id);let total=0,n=L.length,last=null;L.forEach(sn=>{total+=((sn.back||Date.now())-sn.out);});if(L.length)last=L[0];return {n:n,total:total,last:last};}
 function plPickIntent(i){plIntentSel=(plIntentSel==i?null:i);plRender();}
 function plShuffle(){const pool=PL_CATALOG.filter(c=>(!plIntentSel||plIntents(c).includes(plIntentSel))&&!plState[c.id]);if(!pool.length)return;plOpenSheet(pool[Math.floor(Math.random()*pool.length)].id);}
 function plRender(){
-  document.getElementById("pl-kidbar").innerHTML='<span style="font-size:11px;color:var(--muted);font-weight:700;margin-right:2px">SHOW:</span>'+
+  // Home's WHO row is IDENTITY (plSelKid — claims act as this kid); the bins view's
+  // SHOW row is only a display filter (plKidF). Same element, different semantics.
+  if(plMode=="home")document.getElementById("pl-kidbar").innerHTML='<span style="font-size:11px;color:var(--muted);font-weight:700;margin-right:2px">WHO?</span>'+
+    PL_KIDS.map(k=>'<button class="kid-btn'+(plSelKid==k.id?" active":"")+'" style="'+(plSelKid==k.id?"background:"+k.color:"")+'" onclick="plSetKid(\''+k.id+'\')">'+k.name+'</button>').join("");
+  else document.getElementById("pl-kidbar").innerHTML='<span style="font-size:11px;color:var(--muted);font-weight:700;margin-right:2px">SHOW:</span>'+
     '<button class="kid-btn'+(plKidF=="all"?" active":"")+'" style="'+(plKidF=="all"?"background:#111827":"")+'" onclick="plKidF=\'all\';plRender()">Everything</button>'+
     PL_KIDS.map(k=>'<button class="kid-btn'+(plKidF==k.id?" active":"")+'" style="'+(plKidF==k.id?"background:"+k.color:"")+'" onclick="plKidF=\''+k.id+'\';plRender()">'+k.name+'</button>').join("");
   const locs=["ALL","F1","F2","F3","T1","T2","W1","W2","W3","K14","MK","BG","SHOW","CUBE","STATION","SHELF"];
   document.getElementById("pl-locbar").innerHTML=locs.map(l=>'<button class="loc-btn'+(plLocF==l?" active":"")+'" onclick="plLocF=\''+l+'\';plRender()">'+l+'</button>').join("");
-  const out=Object.entries(plState);
-  document.getElementById("pl-outcount").textContent=out.length? out.length+" out":"all home ✓";
+  // Station-held bins collapse into one station row (no per-bin Return — the set goes
+  // home together via the station's give-it-up, never one bin at a time).
+  const out=Object.entries(plState).filter(([id])=>!plStagedAt(id));
+  const stOut=PL_FRAMES.filter(f=>{const st=plStations[f];return st&&st.identity&&st.claim;});
+  const nOut=out.length+stOut.length;
+  document.getElementById("pl-outcount").textContent=nOut? nOut+" out":"all home ✓";
   let os='<h3>🧺 Out right now</h3>';
   const act=plPlays.map((p,i)=>[p,i]).filter(([p])=>!p.done);
   if(act.length){os+='<div style="font-size:12px;font-weight:800;margin:2px 0 6px">▶️ Now playing</div>'+act.map(([p,i])=>'<div class="out-row"><div><b style="font-size:12.5px">'+p.t+'</b><div style="font-size:10.5px;color:var(--muted)">'+(p.bin?p.bin+' · ':'')+plFmt(p.at)+'</div></div><span class="who" style="background:'+plColor(p.kid)+'">'+plName(p.kid,p)+'</span><button onclick="plFinishPlay(Done ✓</button></div>').join("")+'<div style="height:6px"></div>';}
-  if(!out.length) os+='<div class="empty-note">Everything is on its shelf. 🎉</div>';
+  if(stOut.length)os+=stOut.map(f=>{const st=plStations[f];const d=plDeckGet(st.identity);const cl=st.claim;
+    return '<div class="out-row"><div><b style="font-size:12.5px">'+d.em+' '+d.name+' station</b><div style="font-size:10.5px;color:var(--muted)">'+f+' · '+plStBinIds(f).length+' bins · since '+plFmt(cl.since)+'</div></div><span class="who" style="background:'+(plColor(cl.by)||"#888")+'">'+(PL_KN[cl.by]||cl.by)+'</span></div>';}).join("");
+  if(!nOut) os+='<div class="empty-note">Everything is on its shelf. 🎉</div>';
   else os+=out.map(([id,o])=>{const c=PL_CATALOG.find(x=>x.id==id)||{name:id};return '<div class="out-row">'+(plPhoto(c)?'<img src="'+plPhoto(c)+'">':'')+'<div><b style="font-size:12.5px">'+plBinName(c)+'</b><div style="font-size:10.5px;color:var(--muted)">'+id+' · since '+plFmt(o.at)+'</div></div><span class="who" style="background:'+(plColor(o.kid)||"#888")+'">'+(plName(o.kid,o))+'</span><button onclick="plRet(\''+id+'\');event.stopPropagation()">Return</button></div>';}).join("");
   document.getElementById("pl-outshelf").innerHTML=os;
-  const doMode = plMode=="do"; const momMode = plMode=="mom"; const actMode = plMode=="act";
-  document.getElementById("pl-locbar").style.display=(doMode||momMode||actMode)?"none":"flex";
+  const doMode = plMode=="do"; const momMode = plMode=="mom"; const actMode = plMode=="act"; const homeMode = plMode=="home";
+  document.getElementById("pl-home").innerHTML=homeMode?plHomeHtml():"";
+  document.getElementById("pl-locbar").style.display=(doMode||momMode||actMode||homeMode)?"none":"flex";
   document.getElementById("pl-kidbar").style.display=(doMode||momMode||actMode)?"none":"flex";
   document.getElementById("pl-outshelf").style.display=(doMode||actMode)?"none":"block";document.getElementById("pl-histcard").style.display=momMode?"none":"block";
   document.getElementById("pl-intents").style.display=doMode?"pl-grid":"none";
@@ -749,7 +843,7 @@ function plRender(){
   }
   const mv=document.getElementById("pl-momview");if(mv)mv.remove();
   document.getElementById("pl-stations-strip").innerHTML=(plMode=="bins")?plStStripHtml():"";
-  document.getElementById("pl-grid").innerHTML=PL_CATALOG.filter(c=>{
+  document.getElementById("pl-grid").innerHTML=homeMode?"":PL_CATALOG.filter(c=>{
     if(doMode){ if(!plIntentSel) return false; return plIntents(c).includes(plIntentSel); }
     if(!doMode&&plLocF!="ALL"&&c.loc!=plLocF&&String(c.loc).indexOf(plLocF+"-")!==0)return false;
     if(!doMode&&plKidF!="all"){const o=plState[c.id];if(!o||o.kid!=plKidF)return false;}
@@ -771,18 +865,24 @@ function plOpenSheet(id){
   let h='<h2>'+plBinName(c)+'</h2><div class="shloc">'+c.id+' · lives in '+c.loc+'</div>';
   if(plPhoto(c))h+='<img class="big" src="'+plPhoto(c).replace(/\.jpg$/,"_full.jpg")+'" onerror="this.onerror=null;this.src=\''+plPhoto(c)+'\'">';
   if(c.ideas&&c.ideas.length){h+='<div style="font-size:13px;font-weight:800;margin-top:2px">💡 Things to try</div><div class="idlegend">● easy · ●● bigger · ●●● challenge</div><div class="ideas">'+c.ideas.map(i=>'<div class="idea"><span class="plDots">'+"●".repeat(i[1])+'</span><span>'+i[0]+'</span></div>').join("")+'</div>';}
-  if(o){
+  const sg=plStagedAt(id);
+  // Staged wins over the plain checked-out view: a station bin has no individual Return —
+  // it goes home when the STATION is given up (plStRelease), never one bin at a time.
+  if(sg&&o&&sg.st.claim&&sg.st.claim.by===o.kid){
+    h+='<div style="margin-top:6px;padding:10px 12px;background:#eef4ff;border-radius:10px;font-size:13.5px;font-weight:700">'+
+      sg.deck.em+' Part of the '+sg.deck.name+' station on '+sg.frame+' — <span class="badge" style="background:'+plColor(o.kid)+'">'+plName(o.kid,o)+'</span> has the whole station. '+
+      'The bins go back together when the station is given up.</div>';
+  } else if(o){
     h+='<div class="outby">Checked out by <span class="badge" style="background:'+plColor(o.kid)+'">'+plName(o.kid,o)+'</span> since '+plFmt(o.at)+'</div>';
     h+='<button class="retbtn" onclick="plRet(\''+id+'\');plCloseSheet()">✅ Put it back (return)</button>';
-  } else if(PL_BIGBUILDS.indexOf(id)>=0&&!plStagedAt(id)){
+  } else if(PL_BIGBUILDS.indexOf(id)>=0&&!sg){
     h+='<div style="margin-top:6px;padding:10px 12px;background:#fdf3e7;border-radius:10px;font-size:13.5px;font-weight:700">'+
       '\u{1F3D7} Big-Builds tote \u2014 this one only comes out for a FAMILY session, or when Mom '+
       'stages it at a station. Ask Mom!</div>';
-  } else if(plStagedAt(id)){
-    const sg=plStagedAt(id);
+  } else if(sg){
     h+='<div style="margin-top:6px;padding:10px 12px;background:#eef4ff;border-radius:10px;font-size:13.5px;font-weight:700">'+
       sg.deck.em+' This bin is staged at the '+sg.deck.name+' station on '+sg.frame+
-      ' — play with it THERE! (no checkout while it\'s staged)</div>';
+      ' — play with it THERE! Claim the station and the whole set checks out to you.</div>';
   } else {
     h+='<div style="font-size:13px;font-weight:700;margin-top:4px">Who is taking it?</div><div class="facegrid">'+
       PL_KIDS.concat([PL_GUEST]).map(k=>'<button class="face" style="background:'+k.color+'" onclick="'+(k.id=="guest"?("plGuestPick(\'co\',\'"+id+"\')"):("plCo(\'"+id+"\',\'"+k.id+"\')"))+'">'+(k.id=="guest"?"🧑‍🤝‍🧑 ":"")+k.name+'</button>').join("")+'</div>';
