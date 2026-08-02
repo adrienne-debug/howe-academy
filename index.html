@@ -1074,6 +1074,11 @@ body.kiosk #app-header,body.kiosk #nav-tabs,body.kiosk #sched-subtabs,body.kiosk
 .zed-n{flex:1;border:1.5px solid var(--border);border-radius:7px;padding:5px 8px;font-size:12px;font-family:'DM Sans',sans-serif}
 .zed-x{border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:7px;width:26px;height:28px;font-size:12px;font-weight:800;cursor:pointer}
 .cp-addz{border:1.5px dashed #ddd6fe;background:#f5f3ff;color:#5b3a8c;border-radius:8px;padding:5px 12px;font-size:11px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif;margin-top:4px}
+.cpn-e{width:34px;text-align:center;border:1.5px solid var(--border);border-radius:7px;padding:4px;font-size:13px;font-family:'DM Sans',sans-serif}
+.cpn-l{width:150px;border:1.5px solid var(--border);border-radius:7px;padding:4px 7px;font-size:12px;font-family:'DM Sans',sans-serif}
+.cpp-in{width:48px;text-align:center;border:1.5px solid var(--border);border-radius:7px;padding:4px;font-size:12px;font-weight:700;font-family:'DM Sans',sans-serif}
+.cp-delb{border:none;background:none;color:#d1d5db;font-size:14px;cursor:pointer;padding:4px 6px;font-family:'DM Sans',sans-serif}
+.cp-delb:hover{color:#b5394a}
 .grab-card.zoned{border-color:#c4b5fd;background:#faf5ff}
 .gc-boost{display:block;font-size:9px;font-weight:800;color:#5b3a8c}
 .gcal-form{background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px}
@@ -12509,6 +12514,28 @@ function zoneSet(i,f,v){ if(!momHere())return; const z=zoneList().slice(); if(!z
 function zoneDel(i){ if(!momHere())return; const z=zoneList().slice(); if(!z[i])return;
   if(!confirm('Remove the "'+(z[i].name||"zone")+'" zone? Chores in it just lose their zone.')) return;
   z.splice(i,1); zones=z; _zoneSave(); renderAll(); }
+function cpSetField(i,f,v){
+  if(!momHere()) return;
+  if(cpSlot==="grabs"){ gbSet(i,f,v); return; }
+  rtCfgSet(cpSlot,cpKid,i,f,v);            // saves without re-render so typing keeps focus
+}
+function cpAddChore(){
+  if(!momHere()) return;
+  if(cpSlot==="grabs"){ gbAdd(); return; }
+  rtCfgEnsure(cpSlot,cpKid);
+  // lands "not scheduled" so it stays off the kids' lists until a day (or Daily) is picked
+  routineCfg2[cpSlot][cpKid].push({label:"New chore",emoji:"",pts:0,cad:"asneeded"});
+  rtCfgSave(); renderAll();
+}
+function cpDelChore(i){
+  if(!momHere()) return;
+  if(cpSlot==="grabs"){ const g=gbList()[i]; if(!g) return;
+    if(!confirm('Delete "'+(g.label||"this grab chore")+'" for everyone?')) return; gbDel(i); return; }
+  rtCfgEnsure(cpSlot,cpKid);
+  const st=routineCfg2[cpSlot][cpKid][i]; if(!st) return;
+  if(!confirm('Delete "'+(st.label||"this chore")+'" from '+cap(cpKid)+'’s list?')) return;
+  routineCfg2[cpSlot][cpKid].splice(i,1); rtCfgSave(); renderAll();
+}
 function renderChorePlan(el,headerHtml){
   if(!el){el=document.getElementById("content");if(!el)return;}
   const DOW=["M","T","W","T","F","S","S"], FULL=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
@@ -12551,13 +12578,13 @@ function renderChorePlan(el,headerHtml){
        '<button class="zed-x" onclick="zoneDel('+i+')">✕</button></div>';
   });
   h+='<button class="cp-addz" onclick="zoneAdd()">+ Add zone</button></div>';
-  if(!steps.length){ h+='<div class="cp-empty">Nothing in this list'+(isGrabs?"":" for "+esc(cap(cpKid)))+'.</div></div>'; el.innerHTML=h; return; }
+  if(!steps.length){ h+='<div class="cp-empty">Nothing in this list'+(isGrabs?"":" for "+esc(cap(cpKid)))+'.</div><button class="cp-addz" onclick="cpAddChore()">+ Add chore</button></div>'; el.innerHTML=h; return; }
   h+='<div class="cp-scroll"><table class="cp-tbl"><thead><tr><th class="cp-name">Chore</th>';
   FULL.forEach(function(d,i){ h+='<th title="'+d+'">'+DOW[i]+'</th>'; });
-  h+='<th>Daily</th><th class="cp-zone">Zone</th><th class="cp-pts">⭐</th></tr></thead><tbody>';
+  h+='<th>Daily</th><th class="cp-zone">Zone</th><th class="cp-pts">⭐</th><th></th></tr></thead><tbody>';
   steps.forEach(function(st,i){
     const cad=st.cad||"daily", days=_cpDays(cad), isDaily=(days===null&&cad!=="asneeded");
-    h+='<tr><td class="cp-name">'+(st.emoji?esc(st.emoji)+' ':'')+esc(st.label||'')+
+    h+='<tr><td class="cp-name"><input class="cpn-e" value="'+esc(st.emoji||"")+'" onchange="cpSetField('+i+',\'emoji\',this.value)"><input class="cpn-l" value="'+esc(st.label||"")+'" onchange="cpSetField('+i+',\'label\',this.value)">'+
        (cad==="asneeded"?' <span class="cp-warn">not scheduled</span>':'')+'</td>';
     for(let d=0;d<7;d++){
       const on=isDaily||(days&&days.indexOf(d)>=0);
@@ -12569,9 +12596,11 @@ function renderChorePlan(el,headerHtml){
        zoneList().map(function(z){ return '<option value="'+esc(z.id)+'"'+(st.zone===z.id?" selected":"")+'>'+esc(z.emoji||"")+' '+esc(z.name)+'</option>'; }).join("")+
        '</select></td>';
     const _bn=zoneBonusFor(st.zone,st.pts||0);
-    h+='<td class="cp-pts">'+(st.pts||0)+(_bn?'<span class="cp-boost">+'+_bn+'</span>':'')+'</td></tr>';
+    h+='<td class="cp-pts"><input class="cpp-in" type="number" min="0" value="'+(st.pts||0)+'" onchange="cpSetField('+i+',\'pts\',this.value)">'+(_bn?'<span class="cp-boost">+'+_bn+'</span>':'')+'</td>';
+    h+='<td><button class="cp-delb" onclick="cpDelChore('+i+')" title="Delete this chore">✕</button></td></tr>';
   });
   h+='</tbody></table></div>';
+  h+='<button class="cp-addz" onclick="cpAddChore()">+ Add chore</button>';
 
 
   el.innerHTML=h+'</div>';
