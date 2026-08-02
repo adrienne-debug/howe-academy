@@ -2386,6 +2386,11 @@ function initFb() {
       try{localStorage.setItem('wellness_cycle',JSON.stringify(wellnessCycle));}catch(e){}
       if(tab==="moms-plan"&&mpSubView==="weigh"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
     });
+    db.ref("wellness/periods").on("value",s=>{
+      const v=s.val(); if(v) wellnessPeriods=Object.values(v);
+      try{localStorage.setItem('wellness_periods',JSON.stringify(wellnessPeriods));}catch(e){}
+      if(tab==="moms-plan"&&mpSubView==="weigh"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+    });
     db.ref("pace").on("value",s=>{
       const v=s.val()||{}; paceData={subjects:v.subjects||{}, plans:v.plans||{}};
       try{localStorage.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
@@ -5960,7 +5965,8 @@ let mpChoreState = {};
 // Mom's Plan sub-views + wellness state (added 2026-07-24)
 let mpSubView = 'plan';                               // 'plan' | 'prep' | 'weigh'
 let wellnessWeighins = [];                            // [{iso, lb, note, ts}]
-let wellnessCycle = { anchor:'2026-07-24', len:28 };  // period anchor + cycle length (Mom-editable)
+let wellnessCycle = { anchor:'2026-07-25', len:28 };  // fallback anchor; overridden by logged periods
+let wellnessPeriods = [];                             // [{iso, ts}] logged period-start dates
 
 function mpInit() {
   try {
@@ -5979,6 +5985,7 @@ function mpInit() {
   try { const s=localStorage.getItem('mp_chore_state'); mpChoreState=s?JSON.parse(s):{}; } catch(e){}
   try { const w=localStorage.getItem('wellness_weighins'); if(w) wellnessWeighins=JSON.parse(w); } catch(e){}
   try { const c=localStorage.getItem('wellness_cycle'); if(c) wellnessCycle=Object.assign(wellnessCycle,JSON.parse(c)); } catch(e){}
+  try { const p=localStorage.getItem('wellness_periods'); if(p) wellnessPeriods=JSON.parse(p); } catch(e){}
   const todayDay = MP_DATA.days.find(d=>d.isToday);
   mpActiveDay = todayDay ? todayDay.id : MP_DATA.days[0].id;
 }
@@ -6480,11 +6487,24 @@ const MW_PHASES = [
 ];
 function mwPhaseFor(day){ return MW_PHASES.find(p=>day>=p.from&&day<=p.to) || MW_PHASES[3]; }
 function mwDayDiff(a,b){ return Math.round((Date.parse(a)-Date.parse(b))/86400000); }
+function mwEffectiveCycle(){
+  const ps=[...wellnessPeriods].filter(p=>p&&p.iso).map(p=>p.iso).sort();
+  let anchor=wellnessCycle.anchor, len=wellnessCycle.len||28, avg=null;
+  if(ps.length>=1) anchor=ps[ps.length-1];
+  if(ps.length>=2){
+    const gaps=[]; for(let i=1;i<ps.length;i++) gaps.push(mwDayDiff(ps[i],ps[i-1]));
+    const recent=gaps.slice(-6); avg=Math.round(recent.reduce((a,b)=>a+b,0)/recent.length);
+    if(avg>=20&&avg<=40) len=avg;
+  }
+  const next=new Date(Date.parse(anchor)+len*86400000).toISOString().slice(0,10);
+  return {anchor, len, next, avg, count:ps.length};
+}
 function mwCycleInfo(iso){
-  const len = wellnessCycle.len||28;
-  const idx = mwDayDiff(iso, wellnessCycle.anchor);
-  const m = ((idx % len)+len)%len;
-  const day = m+1;
+  const eff=mwEffectiveCycle();
+  const len=eff.len||28;
+  const idx=mwDayDiff(iso, eff.anchor);
+  const m=((idx % len)+len)%len;
+  const day=m+1;
   return Object.assign({day}, mwPhaseFor(day));
 }
 function mwFmtShort(iso){ const d=new Date(iso+'T00:00'); return (d.getMonth()+1)+'/'+d.getDate(); }
@@ -6579,6 +6599,34 @@ function renderMPWeigh(el){
     <div id="wi-daybadge" style="margin-top:9px;text-align:center;font-size:11px;color:#6b6560"></div>
   </div></div>`;
 
+  // 🩸 Period Log — logged starts drive the cycle anchor + learned length
+  const eff = mwEffectiveCycle();
+  const pStarts = [...wellnessPeriods].filter(p=>p&&p.iso).sort((a,b)=>a.iso<b.iso?-1:1);
+  const todayI = mwTodayIso();
+  const nowCi = mwCycleInfo(todayI);
+  let nextLine='';
+  if(eff.next){
+    const dn = mwDayDiff(eff.next, todayI);
+    const when = dn>1?`in ${dn} days`:(dn===1?'tomorrow':(dn===0?'today':`${-dn} day${dn===-1?'':'s'} ago`));
+    nextLine = `<div style="font-size:12.5px;color:#5a544e;margin-top:6px">🔮 Next period expected <b>~${new Date(eff.next+'T00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}</b> (${when})</div>`;
+  }
+  const avgLine = pStarts.length>=2
+    ? `<div style="font-size:11px;color:#6b6560;margin-top:4px">Learned cycle length: <b>${eff.len} days</b> — average of your last ${Math.min(pStarts.length-1,6)} cycle(s).</div>`
+    : `<div style="font-size:11px;color:#6b6560;margin-top:4px">Using a <b>${eff.len}-day</b> cycle until you've logged two periods, then it learns your real length.</div>`;
+  const pRows = pStarts.slice().reverse().map(p=>{
+    const idxAsc = pStarts.findIndex(x=>x.iso===p.iso);
+    const nextStart = pStarts[idxAsc+1];
+    const gap = nextStart ? mwDayDiff(nextStart.iso, p.iso) : null;
+    return `<div class="wrow"><div class="wdate">${mwFmtShort(p.iso)}</div><div style="flex:1;font-size:12px;color:#5a544e">${new Date(p.iso+'T00:00').toLocaleDateString('en-US',{weekday:'short',year:'numeric'})}${gap?` · <span style="color:#6b6560">${gap}-day cycle</span>`:` · <span style="color:#b03a5b;font-weight:700">current</span>`}</div><button onclick="mwRemovePeriod('${p.iso}')" style="border:none;background:transparent;color:#c0392b;font-size:14px;cursor:pointer;padding:2px 6px" title="Remove this entry">✕</button></div>`;
+  }).join('');
+  const periodCard=`<div class="card"><div class="head" style="background:#c2547e"><span>🩸</span> Period Log</div><div class="body">
+    <span class="badge" style="background:${nowCi.color};color:${nowCi.txt}">${nowCi.emoji} Today · cycle day ${nowCi.day} · ${nowCi.label}</span>
+    ${nextLine}${avgLine}
+    <div class="field" style="margin-top:10px"><label>Period started on</label><input type="date" id="period-date" value="${todayI}"></div>
+    <button class="act" style="background:#c2547e" onclick="mwLogPeriod()">🩸 Log period start</button>
+    ${pStarts.length?`<div style="margin-top:10px">${pRows}</div>`:`<div class="note rose" style="margin-top:10px">Log the day each period starts. The app uses your most recent start as the cycle anchor and learns your true cycle length from the gaps — so all the phase math and comparisons stay accurate over time.</div>`}
+  </div></div>`;
+
   const cycleCard=`<details><summary>⚙️ Cycle Settings <span class="caret">▶</span></summary><div class="inner">
     <div class="field"><label>Last period started</label><input type="date" id="cy-anchor" value="${wellnessCycle.anchor}"></div>
     <div class="field"><label>Cycle length (days)</label><input type="number" id="cy-len" min="20" max="40" value="${wellnessCycle.len}"></div>
@@ -6591,7 +6639,7 @@ function renderMPWeigh(el){
     ${mwBanner('Weekly weigh-in · read against your cycle')}
     ${mpSubnav('weigh')}
     <div style="padding:12px 12px 0;display:flex;flex-direction:column;gap:11px">
-      ${currentCard}${comparisonCard}${trendCard}${logCard}${historyCard}${cycleCard}
+      ${currentCard}${periodCard}${comparisonCard}${trendCard}${logCard}${historyCard}${cycleCard}
     </div></div>`;
   mwUpdateDayBadge();
 }
@@ -6628,6 +6676,31 @@ function mwSaveCycle(){
   if(typeof db!=='undefined'&&db) db.ref('wellness/cycle').set(wellnessCycle);
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
   mwToast('✅ Cycle updated');
+}
+
+function mwLogPeriod(){
+  const iso=(document.getElementById('period-date')||{}).value;
+  if(!iso){ alert('Pick the date your period started.'); return; }
+  if(!wellnessPeriods.find(p=>p&&p.iso===iso)) wellnessPeriods.push({iso, ts:Date.now()});
+  try{localStorage.setItem('wellness_periods',JSON.stringify(wellnessPeriods));}catch(e){}
+  const key=iso.replace(/[.#$\/\[\]]/g,'-');
+  if(typeof db!=='undefined'&&db) db.ref('wellness/periods/'+key).set({iso, ts:Date.now()});
+  const eff=mwEffectiveCycle(); wellnessCycle.anchor=eff.anchor; wellnessCycle.len=eff.len;
+  try{localStorage.setItem('wellness_cycle',JSON.stringify(wellnessCycle));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('wellness/cycle').set(wellnessCycle);
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+  mwToast('🩸 Period logged');
+}
+function mwRemovePeriod(iso){
+  wellnessPeriods=wellnessPeriods.filter(p=>!(p&&p.iso===iso));
+  try{localStorage.setItem('wellness_periods',JSON.stringify(wellnessPeriods));}catch(e){}
+  const key=iso.replace(/[.#$\/\[\]]/g,'-');
+  if(typeof db!=='undefined'&&db) db.ref('wellness/periods/'+key).remove();
+  const eff=mwEffectiveCycle(); wellnessCycle.anchor=eff.anchor; wellnessCycle.len=eff.len;
+  try{localStorage.setItem('wellness_cycle',JSON.stringify(wellnessCycle));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('wellness/cycle').set(wellnessCycle);
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+  mwToast('Removed');
 }
 
 function mwToast(msg){
