@@ -29170,7 +29170,8 @@ function pnwBack(){
 function gwRolloverReportHTML(tasks,cursors,targetWeekNum){
   if(!currData||!currData.subjects||!weekData||!weekData.tasks||!weekData.tasks.length) return "";
   if(!targetWeekNum||("week"+targetWeekNum)===WK) return ""; // same-week regen: nothing rolls
-  const rows=[], drops={};
+  const rows=[], drops={}, absorbed={};
+  const _rrDk=completedLessonKeys();
   for(const kid of [...ROSTER]){
     const subs=currData.subjects[kid]||{};
     const missedBy={};
@@ -29180,6 +29181,16 @@ function gwRolloverReportHTML(tasks,cursors,targetWeekNum){
       if(subjNoCarry(t)){
         const lbl=(subs[t.subjectKey]&&subs[t.subjectKey].display)||t.subjectKey;
         drops[lbl]=(drops[lbl]||0)+1; return;
+      }
+      // Walked back / done under another id / dismissed for good: the commit's carry
+      // filter suppresses these, so they must not read as "rolling" here either.
+      if(_carryBlocked(t,_rrDk)) return;
+      // A Builder rebuild (or subject deletion) already absorbed this lesson — the
+      // commit filters block its carry, so listing it as "missed/rolling" here
+      // claimed a pile-up that won't happen. Count it on its own line instead.
+      if(carryRebaselined(t)||carrySubjectGone(t)){
+        const lbl=(subs[t.subjectKey]&&subs[t.subjectKey].display)||t.subjectKey;
+        absorbed[lbl]=(absorbed[lbl]||0)+1; return;
       }
       (missedBy[t.subjectKey]=missedBy[t.subjectKey]||[]).push(t);
     });
@@ -29206,9 +29217,10 @@ function gwRolloverReportHTML(tasks,cursors,targetWeekNum){
       rows.push({kid:kid,label:s.display||sk,missed:missed,next:nx.n,cu:nx.cu,behind:behind,after:after,cap:cap});
     }
   }
-  if(!rows.length&&!Object.keys(drops).length) return "";
+  if(!rows.length&&!Object.keys(drops).length&&!Object.keys(absorbed).length) return "";
   let h='<div style="background:#fefce8;border:1.5px solid #fde047;border-radius:12px;padding:12px 14px;margin:10px 0;text-align:left">';
   h+='<div style="font-weight:800;font-size:12px;color:#854d0e;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px">📤 Rolling into Week '+targetWeekNum+'</div>';
+  if(!rows.length&&!Object.keys(drops).length) h+='<div style="font-size:12px;color:#374151">Nothing rolls over.</div>';
   rows.sort((a,b)=> (a.kid<b.kid?-1:a.kid>b.kid?1:0) || (a.label<b.label?-1:1));
   let lastKid=null;
   rows.forEach(r=>{
@@ -29238,6 +29250,8 @@ function gwRolloverReportHTML(tasks,cursors,targetWeekNum){
   });
   const dk=Object.keys(drops);
   if(dk.length) h+='<div style="font-size:11px;color:var(--muted);margin-top:8px;border-top:1px dashed #fde047;padding-top:6px">Day-bound, drop by design (If-Missed): '+dk.map(k=>drops[k]+"× "+esc(k)).join(" · ")+'</div>';
+  const abk=Object.keys(absorbed);
+  if(abk.length) h+='<div style="font-size:11px;color:var(--muted);margin-top:8px;border-top:1px dashed #fde047;padding-top:6px">↻ Absorbed by Builder rebuild — already re-laid ahead, won\'t carry: '+abk.map(k=>absorbed[k]+"× "+esc(k)).join(" · ")+'</div>';
   if(rows.some(r=>r.after>0)) h+='<div style="font-size:11px;color:#854d0e;margin-top:6px">💡 Deep backlog on a deadline subject? Subjects → Builder rebuilds the grid forward from the live cursor under its pacing rules.</div>';
   h+='</div>';
   return h;
