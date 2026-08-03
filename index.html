@@ -916,12 +916,12 @@ body.kiosk #app-header,body.kiosk #nav-tabs,body.kiosk #sched-subtabs,body.kiosk
 .mast-flip-front,.mast-flip-back{grid-area:1/1;width:100%;-webkit-backface-visibility:hidden;backface-visibility:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:transform 0.5s,visibility 0s linear 0.25s}
 .mast-flip-back{transform:rotateY(-180deg);padding:24px 18px;box-sizing:border-box}
 .mast-flip-wrap.flipped .mast-flip-front{transform:rotateY(180deg)}
-.mast-flip-wrap.flipped .mast-flip-back{transform:rotateY(0deg)}
+.mast-flip-wrap.flipped .mast-flip-back{transform:none}
 /* Belt and suspenders on top of backface-visibility: the face that isn't showing goes
    fully invisible halfway through the 0.5s rotation, so the front's "tap to see the
    rule" hint can never bleed through over the back's "tap to flip back" (or vice versa). */
-.mast-flip-wrap.flipped .mast-flip-front{visibility:hidden}
-.mast-flip-wrap:not(.flipped) .mast-flip-back{visibility:hidden}
+.mast-flip-wrap.flipped .mast-flip-front{visibility:hidden;pointer-events:none}
+.mast-flip-wrap:not(.flipped) .mast-flip-back{visibility:hidden;pointer-events:none}
 .mast-flip-def{font-family:'Fraunces',serif;font-size:26px;font-weight:600;color:#7c3aed;text-align:center;line-height:1.4;max-width:420px}
 .mast-flip-hint{font-size:10px;color:#a78bfa;font-weight:600;margin-top:8px;letter-spacing:0.05em;text-transform:uppercase;animation:mast-flip-pulse 2s ease-in-out infinite}
 @keyframes mast-flip-pulse{0%,100%{opacity:0.6}50%{opacity:1}}
@@ -1495,6 +1495,60 @@ function activeSlots(){
   if(p==="chores") return SL_SLOTS.filter(s=>s==="morning"||s==="evening");
   return SL_SLOTS.slice();
 }
+// A routine belongs to the day it is actually DONE on, but every check-off keys off the day
+// tab you happen to be LOOKING at — so tapping steps while another day is up files them under
+// that day, silently. (2026-08-03: Lincoln did all 8 morning steps against Wednesday, the view
+// snapped back to Monday, and his morning list read as wiped — he redid the whole thing.)
+// Kids can only check TODAY; Mom keeps the taps so she can still back-fill a missed day.
+function routineEditable(d){ return (d||day)===_todayDay || momHere(); }
+// ── Run windows: a routine step that only applies for a stretch of days ──
+// "Take the antibiotic, twice a day, for ten days." A step may carry from/to (ISO dates,
+// either optional). Outside the window it doesn't render, doesn't count toward the slot's
+// x/y, and doesn't hold the morning gate shut. No window = always runs, which is every
+// step that existed before this.
+// The calendar date a weekday TAB falls on. DAY_DT holds "August 3" with no year, so the
+// year comes from the clock (the same pattern cascadeIntraWeek uses). Today's tab resolves
+// from the clock directly so it's right even before the week's meta has loaded.
+function routineDateISO(dn){
+  const _iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  try{
+    if(dn===_todayDay) return _iso(new Date());
+    const s=(typeof DAY_DT==="object"&&DAY_DT)?DAY_DT[dn]:null;
+    if(!s) return null;
+    const d=new Date(s+", "+new Date().getFullYear());
+    return isNaN(d.getTime())?null:_iso(d);
+  }catch(e){ return null; }
+}
+// Unknown date (no week meta yet) deliberately returns TRUE — a medicine step must never
+// silently disappear just because the date map hasn't arrived.
+function stepWindowOk(st,dn){
+  if(!st||(!st.from&&!st.to)) return true;
+  const iso=routineDateISO(dn||day);
+  if(!iso) return true;
+  if(st.from&&iso<st.from) return false;
+  if(st.to&&iso>st.to) return false;
+  return true;
+}
+// Short human label for the window, for the kid's chip and Mom's editor.
+function stepWindowLabel(st){
+  if(!st||(!st.from&&!st.to)) return "";
+  const md=s=>{ const p=String(s).split("-"); return p.length===3?((+p[1])+"/"+(+p[2])):s; };
+  const today=routineDateISO(_todayDay);
+  if(today&&st.to&&today>st.to) return "\u2713 ended "+md(st.to);
+  if(today&&st.from&&today<st.from) return "starts "+md(st.from);
+  if(st.from&&st.to) return "thru "+md(st.to);
+  return st.to?("thru "+md(st.to)):("from "+md(st.from));
+}
+// Morning steps that actually apply on day d, BY INDEX. Index matters: check-offs are keyed
+// _mstep<i>, so the array must never be filtered — only masked at render/tally time.
+function morningDueIdx(kid,d){
+  const steps=morningStepsFor(kid);
+  return steps.map((_,i)=>i).filter(i=>stepWindowOk(steps[i],d||day));
+}
+function routineLockNote(){
+  return '<div class="sl-slot-sub" style="color:#7c3aed;padding:2px 0 6px">'+
+    '\u{1F440} Viewing '+(DAY_LBL[day]||cap(day))+' — tap Today to check yours.</div>';
+}
 const SL_SLBL  = {morning:"Morning",afternoon:"Afternoon",chores:"Chores",evening:"Evening"};
 const SL_STIM  = {morning:"10:00 AM – 1:00 PM",afternoon:"After school work",chores:"After school",evening:"Bedtime routine"};
 
@@ -1517,10 +1571,13 @@ function mStepDoneOn(kid,d,i){ const s=slState[activeWk()+"_"+d+"_"+kid+"_mstep"
 function morningComplete(kid,d){
   const steps=morningStepsFor(kid);
   if(!steps.length){ const s=slState[activeWk()+"_"+d+"_"+kid+"_morning"]; return !!(s&&s.done); }
-  return steps.every((_,i)=>mStepDoneOn(kid,d,i));
+  const idx=morningDueIdx(kid,d);
+  if(!idx.length) return true;   // nothing applies today — don't hold the gate shut
+  return idx.every(i=>mStepDoneOn(kid,d,i));
 }
 function toggleMrOpen(kid){ mrOpen[kid]=(mrOpen[kid]!==false)?false:true; renderSkylight(); }
 function toggleMorningStep(kid,i){
+  if(!routineEditable()) return;   // viewing another day: kid taps are read-only
   const wk=activeWk();
   const sk=wk+"_"+day+"_"+kid+"_mstep"+i, cur=slState[sk], now=!(cur&&cur.done);
   slState[sk]={done:now,ts:now?nowTs():""};
@@ -1538,25 +1595,32 @@ function mrIndividualHTML(kid){
   const steps=morningStepsFor(kid);
   if(!steps.length){
     const s=getSlot(kid,"morning");
-    return '<div class="sl-check-row'+(s.done?" done":"")+'" onclick="toggleSlot(\''+kid+'\',\'morning\')">'+
+    return '<div class="sl-check-row'+(s.done?" done":"")+'"'+(routineEditable()?' onclick="toggleSlot(\''+kid+'\',\'morning\')"':' style="opacity:.6"')+'>'+
       '<div class="sl-checkbox'+(s.done?" done":"")+'">'+(s.done?"✓":"")+'</div>'+
       '<div><div class="sl-slot-name">Morning</div><div class="sl-slot-sub">'+SL_STIM.morning+'</div>'+
       (s.done&&s.ts?'<div class="sl-slot-ts">Checked '+s.ts+'</div>':'')+'</div></div>';
   }
-  const doneCount=steps.filter((_,i)=>mStepDoneOn(kid,day,i)).length;
-  const allDone=doneCount===steps.length;
+  const _dueIdx=morningDueIdx(kid,day);
+  const doneCount=_dueIdx.filter(i=>mStepDoneOn(kid,day,i)).length;
+  const allDone=_dueIdx.length>0&&doneCount===_dueIdx.length;
   const isOpen=mrOpen[kid]!==false;
   let h='<div class="sl-check-row'+(allDone?" done":"")+'" onclick="toggleMrOpen(\''+kid+'\')" style="cursor:pointer">'+
     '<div class="sl-checkbox'+(allDone?" done":"")+'">'+(allDone?"✓":"")+'</div>'+
-    '<div style="flex:1"><div class="sl-slot-name">Morning <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+steps.length+'</span></div>'+
+    '<div style="flex:1"><div class="sl-slot-name">Morning <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+_dueIdx.length+'</span></div>'+
     '<div class="sl-slot-sub">'+(allDone?'✓ Schedule unlocked':'Finish all to unlock your schedule')+'</div></div>'+
     '<div style="font-size:14px;color:var(--muted)">'+(isOpen?"▾":"▸")+'</div></div>';
   if(isOpen){
-    h+='<div class="mr-steps">';
-    steps.forEach((st,i)=>{ const sd=mStepDoneOn(kid,day,i);
-      h+='<div class="mr-step'+(sd?" done":"")+'" onclick="toggleMorningStep(\''+kid+'\','+i+')">'+
+    const _ed=routineEditable();
+    if(!_ed) h+=routineLockNote();
+    h+='<div class="mr-steps"'+(_ed?'':' style="opacity:.6"')+'>';
+    _dueIdx.forEach(i=>{ const st=steps[i], sd=mStepDoneOn(kid,day,i);
+      const _wl=stepWindowLabel(st);
+      h+='<div class="mr-step'+(sd?" done":"")+'"'+(_ed?' onclick="toggleMorningStep(\''+kid+'\','+i+')"':'')+'>'+
          '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
-         '<div class="sl-slot-name">'+(st.emoji?st.emoji+" ":"")+st.label+'</div></div>'; });
+         '<div class="sl-slot-name">'+(st.emoji?st.emoji+" ":"")+st.label+
+           (_wl?' <span class="cadtag" style="color:#0e7490;border-color:#a5f3fc">\u{1F4C5} '+_wl+'</span>':'')+
+           (st.time?' <span class="cadtag" style="color:#7c3aed;border-color:#ddd6fe">\u23f0 '+st.time+'</span>':'')+
+         '</div></div>'; });
     h+='</div>';
   }
   return h;
@@ -1651,6 +1715,8 @@ function rtAvailable(slot,kid,d){ if(slot==="afternoon") return rtSchoolworkDone
 function toggleRtOpen(slot,kid){ const k=slot+"_"+kid; rtOpen[k]=(rtOpen[k]!==false)?false:true; renderSkylight(); }
 function toggleRtStep(slot,kid,i){
   if(!rtAvailable(slot,kid,day)) return;
+  if(!routineEditable()) return;   // viewing another day: kid taps are read-only
+                                   // (stars ride this path too — a stray tap paid the wrong day)
   const wk=activeWk(), sk=wk+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i, cur=slState[sk], now=!(cur&&cur.done);
   { const _st0=rtStepsFor(slot,kid)[i], _b0=_st0?(_st0.pts||0):0;
     // Pay base + any focus-zone bonus, and RECORD the total on the check-off. Unchecking reverses
@@ -1733,7 +1799,8 @@ function rtSlotHTML(slot,kid){
   }
   const avail=rtAvailable(slot,kid,day);
   // Due today OR carried over from a day it was missed — a skipped chore must not just vanish.
-  const dueIdx=steps.map((st,i)=>i).filter(i=>cadDueOn(steps[i].cad||"daily",day)||rtLateDays(slot,kid,i)>0);
+  // stepWindowOk is an AND, not an OR: a course that has ended must not come back as "late".
+  const dueIdx=steps.map((st,i)=>i).filter(i=>stepWindowOk(steps[i],day)&&(cadDueOn(steps[i].cad||"daily",day)||rtLateDays(slot,kid,i)>0));
   const total=dueIdx.length;
   const doneCount=dueIdx.filter(i=>rtDoneOn(slot,kid,day,i)).length, allDone=total>0&&doneCount===total;
   if(!avail){
@@ -1754,7 +1821,9 @@ function rtSlotHTML(slot,kid){
     '<div class="sl-slot-sub">'+sub+'</div></div>'+
     '<div style="font-size:14px;color:var(--muted)">'+(isOpen?"▾":"▸")+'</div></div>';
   if(isOpen){
-    h+='<div class="mr-steps">';
+    const _ed=routineEditable();
+    if(!_ed) h+=routineLockNote();
+    h+='<div class="mr-steps"'+(_ed?'':' style="opacity:.6"')+'>';
     dueIdx.forEach(i=>{ const st=steps[i], sd=rtDoneOn(slot,kid,day,i), pts=st.pts||0, cad=st.cad||"daily";
       const _lateN=rtLateDays(slot,kid,i);
       if(_lateN>0&&!sd){
@@ -1764,10 +1833,11 @@ function rtSlotHTML(slot,kid){
       }
       const _lateTag=(_lateN>0&&!sd)?('<span class="rt-late">'+_lateN+' day'+(_lateN>1?'s':'')+' late</span>'):'';
       const cadTag=cad!=="daily"?' <span class="cadtag">'+cadLabel(cad)+'</span>':'';
+      const _wl=stepWindowLabel(st), winTag=_wl?' <span class="cadtag" style="color:#0e7490;border-color:#a5f3fc">\u{1F4C5} '+_wl+'</span>':'';
       const timeTag=st.time?' <span class="cadtag" style="color:#7c3aed;border-color:#ddd6fe">\u23f0 '+st.time+'</span>':'';
-      h+='<div class="mr-step'+(sd?" done":"")+(_lateTag?" is-late":"")+'" onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')">'+
+      h+='<div class="mr-step'+(sd?" done":"")+(_lateTag?" is-late":"")+'"'+(_ed?' onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')"':'')+'>'+
          '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
-         '<div class="sl-slot-name" style="flex:1">'+(st.emoji?st.emoji+" ":"")+st.label+_lateTag+cadTag+timeTag+'</div>'+
+         '<div class="sl-slot-name" style="flex:1">'+(st.emoji?st.emoji+" ":"")+st.label+_lateTag+cadTag+winTag+timeTag+'</div>'+
          (pts>0?'<span class="mr-pts">+'+pts+' ⭐</span>':'')+'</div>'; });
     h+='</div>';
   }
@@ -1796,10 +1866,39 @@ let claimed={};            // {taskId: ts} — kid says done, awaiting Mom's ver
 // handed the work off, so dayPct can keep counting it as that day's unfinished work.
 let momMoves={};
 let pendingClaimMode=false; // dlg-ok writes a claim instead of a real check-off
-const _todayDay=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][new Date().getDay()];
+// ── What day is it RIGHT NOW ──────────────────────────────────────────────────
+// The kiosk tablets (Fully Kiosk on the Fires) stay open for DAYS, so the page routinely
+// outlives the day it booted on. _todayDay used to be a const frozen at load, so after
+// midnight every "is this today?" test still named YESTERDAY: routine check-offs went to
+// the wrong day, the morning gate never re-armed, brain breaks logged under the old day,
+// the TODAY tab tag sat on the wrong tab, and the lose-tech deadline judged the wrong day.
+// todayDay() re-derives from the clock on every call; _todayDay stays as a live getter so
+// all its existing readers get the current day with no call-site change.
+const DOW_NAMES=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
+function todayDay(){ return DOW_NAMES[new Date().getDay()]; }
+Object.defineProperty(window,"_todayDay",{get:todayDay,configurable:true});
 // Open on the actual day — including Saturday and Sunday. The old Mon–Fri clamp meant a kid
 // opening the app on the weekend saw MONDAY's routines instead of today's.
-let tab="schedule", day=_todayDay, kid="all", supDay="all";
+let tab="schedule", day=todayDay(), kid="all", supDay="all";
+// `day` is the day the kid is LOOKING at, so it can't re-derive — but when the date rolls
+// under a long-open tablet it has to follow, or the kid wakes up still pointed at yesterday
+// (and, since routineEditable() locks off-today, locked out of their own morning list).
+// Only follow when the view was actually tracking today; a day Mom deliberately opened stays.
+let _dayRollSeen=todayDay();
+function dayRollCheck(){
+  const now=todayDay();
+  if(now===_dayRollSeen) return false;
+  const wasOnToday=(day===_dayRollSeen);
+  _dayRollSeen=now;
+  if(wasOnToday) day=now;
+  if(typeof renderAll==="function") renderAll();
+  return true;
+}
+// A playroom kiosk is never hidden and never blurred, so the interval is the one that
+// actually catches midnight there; visibility/focus catch a tablet waking from sleep.
+setInterval(dayRollCheck,60000);
+document.addEventListener("visibilitychange",function(){ if(!document.hidden) dayRollCheck(); });
+window.addEventListener("focus",dayRollCheck);
 let collCats={}, pendingId=null;
 let archive={};
 let sessionDone={};        // {kid: {planKey: ts}} — sessions whose completion has been celebrated (fire-once, cross-device)
@@ -2561,6 +2660,7 @@ function slKey(who,slot){ return activeWk()+"_"+day+"_"+who+"_"+slot; }
 function getSlot(who,slot){ return slState[slKey(who,slot)]||{done:false,ts:""}; }
 
 function toggleSlot(who,slot){
+  if(!routineEditable()) return;   // viewing another day: kid taps are read-only
   const k=slKey(who,slot), cur=getSlot(who,slot);
   const ts=cur.done?"":nowTs();
   slState[k]={done:!cur.done,ts};
@@ -3860,6 +3960,16 @@ function renderSettings(el,ah){
       pinHtml+=(i<steps.length-1?'<button onclick="mrCfgMove(\''+kid+'\','+i+',1)" title="Move down" style="padding:4px 7px;border-radius:6px;border:1.5px solid var(--border);background:#fff;font-size:12px;cursor:pointer">&#8595;</button>':'<span style="display:inline-block;width:29px"></span>');
       pinHtml+='<button onclick="mrCfgRemove(\''+kid+'\','+i+')" title="Delete step" style="padding:4px 8px;border-radius:6px;border:none;background:#ef4444;color:#fff;font-size:12px;font-weight:700;cursor:pointer">&#10005;</button>';
       pinHtml+='</div></div>';
+      // Run window — blank/blank means "always", which is every ordinary step.
+      { const _wl=stepWindowLabel(st), _on=!!(st.from||st.to);
+        pinHtml+='<div style="display:flex;gap:5px;align-items:center;margin:-1px 0 8px 58px;flex-wrap:wrap">';
+        pinHtml+='<span style="font-size:10.5px;font-weight:700;color:'+(_on?"#0e7490":"var(--muted)")+'">\u{1F4C5} Runs</span>';
+        pinHtml+='<input type="date" value="'+(st.from||"")+'" onchange="mrCfgSet(\''+kid+'\','+i+',\'from\',this.value)" style="padding:3px 6px;border:1.5px solid '+(_on?"#a5f3fc":"var(--border)")+';border-radius:7px;font-size:11px;font-family:\'DM Sans\',sans-serif">';
+        pinHtml+='<span style="font-size:10.5px;color:var(--muted)">to</span>';
+        pinHtml+='<input type="date" value="'+(st.to||"")+'" onchange="mrCfgSet(\''+kid+'\','+i+',\'to\',this.value)" style="padding:3px 6px;border:1.5px solid '+(_on?"#a5f3fc":"var(--border)")+';border-radius:7px;font-size:11px;font-family:\'DM Sans\',sans-serif">';
+        pinHtml+=_on?('<span style="font-size:10.5px;font-weight:700;color:#0e7490">'+_wl+'</span><button onclick="mrCfgClearWindow(\''+kid+'\','+i+')" title="Always run" style="padding:2px 7px;border-radius:6px;border:1.5px solid var(--border);background:#fff;font-size:10.5px;cursor:pointer;font-family:\'DM Sans\',sans-serif">clear</button>')
+                    :'<span style="font-size:10.5px;color:var(--muted)">always</span>';
+        pinHtml+='</div>'; }
     });
     pinHtml+='<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">';
     pinHtml+='<button onclick="mrCfgAdd(\''+kid+'\')" style="padding:4px 10px;border-radius:8px;background:var(--header);color:#fff;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Step</button>';
@@ -3906,9 +4016,18 @@ function renderSettings(el,ah){
         pinHtml+='<button onclick="rtCfgRemove(\''+slot+'\',\''+kid+'\','+i+')" title="Delete step" style="padding:4px 7px;border-radius:6px;border:none;background:#ef4444;color:#fff;font-size:12px;font-weight:700;cursor:pointer">&#10005;</button>';
         pinHtml+='</div></div>';
         var _cad=st.cad||"daily", _ck=slot+"_"+kid+"_"+i, _co=(rtCadOpen===_ck), _cm=cadMode(_cad);
-        pinHtml+='<div style="margin:-1px 0 7px 0"><button onclick="rtCadToggle(\''+_ck+'\')" style="background:var(--bg);border:1.5px solid '+((_cad!=="daily"||st.time)?"var(--header)":"var(--border)")+';color:var(--muted);border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">&#128257; '+cadLabel(_cad)+(st.time?(" \\u00b7 &#9200; "+st.time):"")+' '+(_co?"&#9662;":"&#9656;")+'</button></div>';
+        pinHtml+='<div style="margin:-1px 0 7px 0"><button onclick="rtCadToggle(\''+_ck+'\')" style="background:var(--bg);border:1.5px solid '+((_cad!=="daily"||st.time||st.from||st.to)?"var(--header)":"var(--border)")+';color:var(--muted);border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">&#128257; '+cadLabel(_cad)+(st.time?(" \\u00b7 &#9200; "+st.time):"")+((st.from||st.to)?(" \\u00b7 &#128197; "+stepWindowLabel(st)):"")+' '+(_co?"&#9662;":"&#9656;")+'</button></div>';
         if(_co){
           pinHtml+='<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:9px;margin:0 0 9px">';
+          { const _wl=stepWindowLabel(st), _on=!!(st.from||st.to);
+            pinHtml+='<div style="display:flex;gap:5px;align-items:center;margin-bottom:8px;flex-wrap:wrap">';
+            pinHtml+='<span style="font-size:10.5px;font-weight:700;color:'+(_on?"#0e7490":"var(--muted)")+'">\u{1F4C5} Runs</span>';
+            pinHtml+='<input type="date" value="'+(st.from||"")+'" onchange="rtCadWindow(\''+slot+'\',\''+kid+'\','+i+',\'from\',this.value)" style="padding:3px 6px;border:1.5px solid '+(_on?"#a5f3fc":"var(--border)")+';border-radius:7px;font-size:11px;font-family:\'DM Sans\',sans-serif">';
+            pinHtml+='<span style="font-size:10.5px;color:var(--muted)">to</span>';
+            pinHtml+='<input type="date" value="'+(st.to||"")+'" onchange="rtCadWindow(\''+slot+'\',\''+kid+'\','+i+',\'to\',this.value)" style="padding:3px 6px;border:1.5px solid '+(_on?"#a5f3fc":"var(--border)")+';border-radius:7px;font-size:11px;font-family:\'DM Sans\',sans-serif">';
+            pinHtml+=_on?('<span style="font-size:10.5px;font-weight:700;color:#0e7490">'+_wl+'</span><button onclick="rtCadClearWindow(\''+slot+'\',\''+kid+'\','+i+')" title="Always run" style="padding:2px 7px;border-radius:6px;border:1.5px solid var(--border);background:#fff;font-size:10.5px;cursor:pointer;font-family:\'DM Sans\',sans-serif">clear</button>')
+                        :'<span style="font-size:10.5px;color:var(--muted)">always</span>';
+            pinHtml+='</div>'; }
           pinHtml+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:7px">';
           [["daily","Daily","daily"],["everyN","Every N days","2d"],["weekly","Weekly","wk:"],["biweekly","Every 2 weeks","2w"],["asneeded","As needed","asneeded"]].forEach(function(_m){
             pinHtml+='<button onclick="rtCadSet(\''+slot+'\',\''+kid+'\','+i+',\''+_m[2]+'\')" style="border:1.5px solid '+(_cm===_m[0]?"transparent":"var(--border)")+';background:'+(_cm===_m[0]?"var(--header)":"#fff")+';color:'+(_cm===_m[0]?"#fff":"#1f2937")+';border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+_m[1]+'</button>';
@@ -4626,7 +4745,11 @@ function renderSchedule(el){
   if(momModeActive&&day===schedLastWorkingDay()) h+=renderEowOverflowBox(kid);
   h+=dailyPaceTracker(allDay, day);
   h+=renderClaimQueue();
-  h+=unitScheduleNudges(kid);  // U6: unit-study pacing nudges (renders only when one is live)
+  // Mom-only: the "up next" unit strip is planning information, not something a kid acts on
+  // from their day list — on a kid page it was just clutter above their actual work. Gated on
+  // momModeActive (not momHere) to match the banners around it, so a still-unlocked admin PIN
+  // can't leak it back onto a kid's page.
+  if(momModeActive) h+=unitScheduleNudges(kid);  // U6: unit-study pacing nudges (renders only when one is live)
   h+=renderSessionBanner(kid); // session progress (kid-facing) — goals met toward the session
   h+=bbBlock(kid); // 🧠 Brain break — button, or the active break card (pauses this kid's view only)
   if(kid!=="all"&&kid!=="mom") h+=retrSchedStripHtml(kid,day); // P4: retrieval strip (derived, no writes)
@@ -20946,7 +21069,11 @@ const MAST_TIER_LBL={daily:"Daily",every_other_day:"Every Other Day",every_third
 const MAST_TIER_COL={daily:"#dc2626",every_other_day:"#ea580c",every_third_day:"#d97706",weekly:"#ca8a04",bi_weekly:"#65a30d",monthly:"#0d9488",learned:"#2563eb",graduated:"#7c3aed"};
 const MAST_TIER_INT={daily:1,every_other_day:2,every_third_day:3,weekly:7,bi_weekly:14,monthly:28,learned:60,graduated:null};
 const MAST_ANIMAL_EMOJI={Lion:"\u{1F981}",Giraffe:"\u{1F992}","T-Rex":"\u{1F996}",Brachiosaurus:"\u{1F995}",Dog:"\u{1F436}",Cat:"\u{1F431}",Elephant:"\u{1F418}",Bear:"\u{1F43B}",Penguin:"\u{1F427}",Rabbit:"\u{1F430}",Fox:"\u{1F98A}",Owl:"\u{1F989}",Horse:"\u{1F434}",Turtle:"\u{1F422}",Whale:"\u{1F433}",Tiger:"\u{1F42F}",Zebra:"\u{1F993}",Shark:"\u{1F988}",Deer:"\u{1F98C}"};
-const MAST_COLOR_MAP={Red:"#ef4444",Blue:"#3b82f6",Green:"#22c55e",Yellow:"#eab308",Orange:"#f97316",Purple:"#7c3aed",Pink:"#ec4899",Brown:"#92400e",Black:"#1f2937",White:"#e5e7eb",Gray:"#9ca3af"};
+const MAST_COLOR_MAP={Red:"#ef4444",Blue:"#3b82f6",Green:"#22c55e",Yellow:"#eab308",Orange:"#f97316",Purple:"#7c3aed",Pink:"#ec4899",Brown:"#92400e",Black:"#1f2937",White:"#ffffff",Gray:"#9ca3af"};
+// White was #e5e7eb — a light GRAY — behind the same hairline border every other swatch gets,
+// so it read as a gray disc. Julian's deck has Gray as a live card too, which made the two
+// cards nearly identical. White is now true white with a real outline; everything else is unchanged.
+function mastColorBorder(name){ return name==="White"?"#9ca3af":"rgba(0,0,0,0.1)"; }
 const MAST_KID_COL={lincoln:"#1e3a5f",ellis:"#2d5a3d",lucy:"#5b3a8c",julian:"#c45e1a"};
 const MAST_KID_EMOJI={lincoln:"\u{1F40D}",ellis:"\u{1F916}",lucy:"\u{1F984}",julian:"\u{1F995}"};
 const MAST_JULIAN_BANK={
@@ -20961,7 +21088,6 @@ const MAST_JULIAN_BANK={
 const MAST_LINCOLN_BANK={
   "Math Facts":["⅓ as decimal","⅔ as decimal","¼ as decimal","¾ as decimal","⅕ as decimal","⅛ as decimal","⅜ as decimal","⅝ as decimal","⅞ as decimal","25% of 80","10% of 250","50% of 136","15% of 60","33% of 90","75% of 200","20% of 45","5% of 300","8% of 150","2³","3³","5²","10³","2⁵","4³","−3 + 7","−5 − 4","−8 + 3","6 × (−2)","−12 ÷ 3","−4 × −5","3 + 4 × 2","(3 + 4) × 2","8 − 2 × 3 + 1","12 ÷ 4 + 3²","5 × (6 − 2) ÷ 4"],
   "Vocabulary":["advocate","ambiguous","concise","contemplate","contradict","convey","denounce","depict","diminish","elaborate","elude","endure","exploit","feasible","formidable","fundamental","generate","grueling","hypothetical","impartial","inevitable","interpret","justify","legitimate","meticulous","negotiate","objective","obsolete","persevere","plausible","predominant","profound","relevant","reluctant","resilient","scrutinize","subsequent","tentative","utilize","versatile"],
-  "Spelling":["accommodate","acknowledge","acquaintance","adolescent","apparent","bureaucracy","catastrophe","conscientious","correspondence","definitely","exaggerate","fascinate","guarantee","harassment","immediately","independent","interference","irrelevant","maintenance","mischievous","occurrence","perseverance","phenomenon","possession","privilege","questionnaire","recommend","rhythm","simultaneous","sophisticated","surveillance","technique","thorough","tyranny","unanimous","vacuum","vengeance","weather","weird","yield"],
   "Grammar":["independent clause","dependent clause","relative clause","participial phrase","gerund","infinitive","active voice","passive voice","parallel structure","semicolon","colon","appositive","antecedent","subjective case","objective case","possessive case","dangling modifier","misplaced modifier","run-on sentence","sentence fragment","comma splice","correlative conjunctions","subordinating conjunctions","coordinating conjunctions"],
   "Greek & Latin Roots":["chron","morph","bene","mal","omni","poly","mono","anthro","phil","phob","path","log/logy","arch","neo","pseudo","syn/sym","anti","hyper","hypo","circum","inter","intra","trans","pre","post","retro","sub","super","uni","bi"],
   "World Geography":["United Kingdom","France","Germany","Spain","Italy","Japan","China","India","Brazil","Australia","Egypt","South Africa","Mexico","Canada","Russia","South Korea","Argentina","Nigeria","Saudi Arabia","Turkey","Greece","Norway","Thailand","Kenya","Colombia","Peru","Indonesia","Pakistan","Vietnam","New Zealand"],
@@ -20991,7 +21117,7 @@ function mastDrillSettings(){
   const kid=masteryKid||"julian";
   const s=masteryData[kid+"_settings"]||{};
   const defaultLadder=["every_other_day","weekly","bi_weekly","monthly","graduated"];
-  return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,max_learn_per_drill:s.max_learn_per_drill??0,auto_pull:s.auto_pull!==false,ladder:s.ladder||defaultLadder,cat_caps:s.cat_caps||{},cat_intro_dots:s.cat_intro_dots||{},cat_intro_max:s.cat_intro_max||{},miss_drop:s.miss_drop||"reset",close_behavior:s.close_behavior||"stay",drop_threshold:s.drop_threshold??0,tier_streaks:s.tier_streaks||{},gate_tier:s.gate_tier||"weekly",sprint_default:s.sprint_default===true,cat_sprint:s.cat_sprint||{},dynamic_decks:s.dynamic_decks===true,dynamic_cap:s.dynamic_cap??24,show_me:s.show_me!==false};
+  return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,max_learn_per_drill:s.max_learn_per_drill??0,auto_pull:s.auto_pull!==false,ladder:s.ladder||defaultLadder,cat_caps:s.cat_caps||{},cat_intro_dots:s.cat_intro_dots||{},cat_intro_max:s.cat_intro_max||{},miss_drop:s.miss_drop||"reset",close_behavior:s.close_behavior||"stay",drop_threshold:s.drop_threshold??0,tier_streaks:s.tier_streaks||{},gate_tier:s.gate_tier||"weekly",sprint_default:s.sprint_default===true,cat_sprint:s.cat_sprint||{},dynamic_decks:s.dynamic_decks===true,dynamic_cap:s.dynamic_cap??24,show_me:s.show_me!==false,match_speak:s.match_speak===true};
 }
 // How many introduction dots a card in `cat` needs before it enters the ladder.
 // Mirrors cat_caps: a per-category override, else the global intro_dots default.
@@ -21008,7 +21134,7 @@ const MAST_CAT_EMOJI_MAP={
   julian:{Letters:"\u{1F524}",Numbers:"\u{1F522}",Colors:"\u{1F3A8}",Shapes:"\u{1F537}",Animals:"\u{1F43E}",Counting:"\u{1F995}",Dinosaurs:"\u{1F996}"},
   lucy:{"Sight Words":"\u{1F440}","Math Facts":"\u{2795}","Spelling":"\u{1F4DD}","Science":"\u{1F52C}","Vocabulary":"\u{1F4DA}"},
   ellis:{"Math Facts":"\u{2795}","State Capitals":"\u{1F5FD}","Science":"\u{1F52C}","Vocabulary":"\u{1F4DA}","Spelling":"\u{1F4DD}","Grammar":"\u{1F4D6}","Greek & Latin Roots":"\u{1F3DB}","Measurements":"\u{1F4CF}"},
-  lincoln:{"Math Facts":"\u{2795}","Vocabulary":"\u{1F4DA}","Spelling":"\u{1F4DD}","Grammar":"\u{1F4D6}","Greek & Latin Roots":"\u{1F3DB}","World Geography":"\u{1F30D}","Science":"\u{1F52C}","U.S. History":"\u{1F3DB}"}
+  lincoln:{"Math Facts":"\u{2795}","Vocabulary":"\u{1F4DA}","Grammar":"\u{1F4D6}","Greek & Latin Roots":"\u{1F3DB}","World Geography":"\u{1F30D}","Science":"\u{1F52C}","U.S. History":"\u{1F3DB}"}
 };
 const MAST_VOCAB_DEFS={brave:"not afraid, ready to face danger",calm:"quiet and peaceful, not upset",curious:"wanting to learn or know more",eager:"excited and wanting to do something",fierce:"very strong or intense",gentle:"soft and kind, not rough",honest:"always telling the truth",kind:"friendly and caring toward others",loyal:"always faithful and true to someone",proud:"feeling good about something you did",shy:"nervous or quiet around other people",wise:"knowing a lot and making good choices",above:"higher than something else",below:"lower than something else",between:"in the middle of two things",beside:"right next to something",through:"going in one side and out the other",toward:"moving closer to something",against:"touching or pushing on something",beyond:"farther away, past something",ancient:"very, very old",brief:"lasting only a short time",enormous:"really, really big",fragile:"easy to break, delicate",hollow:"empty on the inside",narrow:"not very wide, thin",rapid:"very fast",smooth:"not bumpy, even and flat",steep:"going up or down sharply",vast:"very, very large or wide",sun:"the big, bright star that gives us light and heat",moon:"the round object we see in the night sky",star:"a tiny light in the sky that shines at night",cloud:"a white or gray puff in the sky made of water drops",rain:"drops of water that fall from clouds",snow:"soft, white ice crystals that fall from the sky",wind:"moving air you can feel but can't see",hot:"very warm, high temperature",cold:"very cool, low temperature",warm:"a little bit hot, comfortable heat",plant:"a living thing that grows in soil and needs sunlight",seed:"a tiny part of a plant that can grow into a new plant",root:"the part of a plant that grows underground and drinks water",leaf:"the flat, green part of a plant that catches sunlight",flower:"the colorful part of a plant that makes seeds",tree:"a very tall plant with a trunk and branches",water:"the clear liquid we drink and that fills oceans and lakes",air:"the invisible gas all around us that we breathe",soil:"the dirt on the ground where plants grow",rock:"a hard, solid piece of the earth",animal:"a living thing that can move and eat food",insect:"a tiny animal with six legs, like an ant or butterfly",bird:"an animal with feathers and wings that can usually fly",fish:"an animal that lives in water and breathes through gills",mammal:"an animal that has fur and feeds milk to its babies",reptile:"a scaly animal like a lizard, snake, or turtle",spring:"the season after winter when flowers start to bloom",summer:"the hottest season when days are long and sunny",fall:"the season when leaves change color and drop from trees",winter:"the coldest season when it can snow",day:"the time when the sun is up and it is light outside",night:"the time when the sun goes down and it is dark",light:"brightness that lets us see things",dark:"when there is no light and you can't see well",push:"to press something away from you",pull:"to bring something closer to you",magnet:"a special rock or metal that sticks to iron and steel",float:"to stay on top of water without sinking",sink:"to go down to the bottom of water",melt:"when something solid turns into a liquid, like ice to water",freeze:"when a liquid turns into a solid, like water to ice",solid:"something firm you can hold, like a rock or a block",liquid:"something wet that flows, like water or juice",gas:"something invisible that floats in the air, like steam",
 alabama:"Montgomery",alaska:"Juneau",arizona:"Phoenix",arkansas:"Little Rock",california:"Sacramento",colorado:"Denver",connecticut:"Hartford",delaware:"Dover",florida:"Tallahassee",georgia:"Atlanta",hawaii:"Honolulu",idaho:"Boise",illinois:"Springfield",indiana:"Indianapolis",iowa:"Des Moines",kansas:"Topeka",kentucky:"Frankfort",louisiana:"Baton Rouge",maine:"Augusta",maryland:"Annapolis",massachusetts:"Boston",michigan:"Lansing",minnesota:"St. Paul",mississippi:"Jackson",missouri:"Jefferson City",montana:"Helena",nebraska:"Lincoln",nevada:"Carson City","new hampshire":"Concord","new jersey":"Trenton","new mexico":"Santa Fe","new york":"Albany","north carolina":"Raleigh","north dakota":"Bismarck",ohio:"Columbus",oklahoma:"Oklahoma City",oregon:"Salem",pennsylvania:"Harrisburg","rhode island":"Providence","south carolina":"Columbia","south dakota":"Pierre",tennessee:"Nashville",texas:"Austin",utah:"Salt Lake City",vermont:"Montpelier",virginia:"Richmond",washington:"Olympia","west virginia":"Charleston",wisconsin:"Madison",wyoming:"Cheyenne",
@@ -21024,12 +21150,40 @@ chron:"time",morph:"form or shape",bene:"good",mal:"bad",omni:"all",poly:"many",
 "united kingdom":"London",france:"Paris",germany:"Berlin",spain:"Madrid",italy:"Rome",japan:"Tokyo",china:"Beijing",india:"New Delhi",brazil:"Brasília",australia:"Canberra",egypt:"Cairo","south africa":"Pretoria (executive), Cape Town (legislative)",mexico:"Mexico City",canada:"Ottawa",russia:"Moscow","south korea":"Seoul",argentina:"Buenos Aires",nigeria:"Abuja","saudi arabia":"Riyadh",turkey:"Ankara",greece:"Athens",norway:"Oslo",thailand:"Bangkok",kenya:"Nairobi",colombia:"Bogotá",peru:"Lima",indonesia:"Jakarta",pakistan:"Islamabad",vietnam:"Hanoi","new zealand":"Wellington",
 "cell membrane":"the thin outer layer that controls what enters and leaves the cell",nucleus:"the control center of a cell that holds DNA",mitochondria:"the powerhouse of the cell — converts food into energy",cytoplasm:"the jelly-like substance filling the cell between the membrane and nucleus",chloroplast:"the part of a plant cell that captures sunlight for photosynthesis","cell wall":"the rigid outer layer of plant cells that provides structure and support",tissue:"a group of similar cells working together to perform a function",organ:"a structure made of tissues that performs a specific job in the body","organ system":"a group of organs working together — like the digestive or circulatory system","cellular respiration":"the process cells use to break down food and release energy","plate tectonics":"the theory that Earth's surface is made of moving plates","continental drift":"the idea that continents slowly move across Earth's surface over time","convergent boundary":"where two tectonic plates push toward each other","divergent boundary":"where two tectonic plates pull apart from each other","transform boundary":"where two tectonic plates slide past each other","kinetic energy":"the energy an object has because it is moving","potential energy":"stored energy an object has because of its position or condition","thermal energy":"heat energy from the movement of particles in matter",conduction:"heat transfer through direct contact between materials",convection:"heat transfer through the movement of liquids or gases",radiation:"heat transfer through electromagnetic waves, like sunlight",atom:"the smallest unit of an element that keeps its properties",element:"a pure substance made of only one type of atom",compound:"a substance made of two or more elements chemically bonded",mixture:"two or more substances combined but not chemically bonded","chemical change":"a change that creates a new substance — burning, rusting, cooking","physical change":"a change in form or appearance without creating a new substance",density:"how much mass is packed into a given volume","mass vs weight":"mass is the amount of matter (stays the same); weight is the pull of gravity (changes by location)",
 jamestown:"1607 — first permanent English settlement in North America","plymouth colony":"1620 — Pilgrims established a colony in Massachusetts seeking religious freedom","boston tea party":"1773 — colonists dumped British tea into the harbor to protest taxation without representation","declaration of independence":"1776 — declared the 13 colonies free from British rule, written primarily by Thomas Jefferson","constitutional convention":"1787 — delegates met in Philadelphia to write the U.S. Constitution","bill of rights":"1791 — the first 10 amendments to the Constitution protecting individual freedoms","louisiana purchase":"1803 — the U.S. bought a vast territory from France, doubling the nation's size","war of 1812":"1812–1815 — conflict between the U.S. and Britain over trade restrictions and impressment of sailors","trail of tears":"1830s — the forced relocation of Native American nations from southeastern states to Oklahoma","gold rush":"1849 — discovery of gold in California drew hundreds of thousands of settlers west","civil war":"1861–1865 — war between the Union (North) and Confederacy (South) over slavery and states' rights","emancipation proclamation":"1863 — Lincoln's order declaring enslaved people in Confederate states to be free",reconstruction:"1865–1877 — the period after the Civil War focused on rebuilding the South and integrating freed people","13th amendment":"1865 — abolished slavery throughout the United States","14th amendment":"1868 — granted citizenship and equal protection under the law to all persons born in the U.S.","15th amendment":"1870 — prohibited denying the right to vote based on race","industrial revolution":"late 1800s — a period of rapid growth in factories, railroads, and manufacturing","ellis island":"1892–1954 — the gateway for over 12 million immigrants entering the U.S.","spanish-american war":"1898 — a brief war that resulted in the U.S. gaining territories including Puerto Rico and the Philippines","19th amendment":"1920 — granted women the right to vote"};
+// Answers for the Math Facts banks. These are drilled as QUIZ cards, and a learning card
+// only flips to its answer when one exists (_learnFlip below) — with no answer anywhere the
+// card simply never flipped, which is what Lincoln hit: the bank words carry no answer, the
+// vocab map has no math in it, and the AI generator that was meant to fill them
+// (mastGetGenerated) is never called from any render path. Static and exact beats generated
+// here: these are fixed facts, they must be right, and they have to work offline on a tablet.
+// Repeating decimals are TRUNCATED, not rounded — 2/3 shows 0.666…, and the ellipsis means
+// the digits continue. Negatives use U+2212 MINUS to match the prompts.
+const MAST_MATH_ANS={
+  "⅓ as decimal":"0.333…","⅔ as decimal":"0.666…","¼ as decimal":"0.25","¾ as decimal":"0.75","⅕ as decimal":"0.2","⅛ as decimal":"0.125",
+  "⅜ as decimal":"0.375","⅝ as decimal":"0.625","⅞ as decimal":"0.875","25% of 80":"20","10% of 250":"25","50% of 136":"68","15% of 60":"9",
+  "33% of 90":"29.7","75% of 200":"150","20% of 45":"9","5% of 300":"15","8% of 150":"12","2³":"8","3³":"27","5²":"25","10³":"1000","2⁵":"32","4³":"64",
+  "−3 + 7":"4","−5 − 4":"−9","−8 + 3":"−5","6 × (−2)":"−12","−12 ÷ 3":"−4","−4 × −5":"20","3 + 4 × 2":"11","(3 + 4) × 2":"14","8 − 2 × 3 + 1":"3",
+  "12 ÷ 4 + 3²":"12","5 × (6 − 2) ÷ 4":"5",
+
+  "6×7":"42","7×8":"56","8×9":"72","9×6":"54","6×8":"48","7×9":"63","8×6":"48","9×7":"63","6×9":"54","7×7":"49","8×8":"64","9×9":"81","12×6":"72",
+  "12×7":"84","12×8":"96","12×9":"108","12×11":"132","12×12":"144","11×6":"66","11×7":"77","11×8":"88","11×9":"99","11×11":"121","48÷6":"8","56÷7":"8",
+  "72÷8":"9","54÷9":"6","63÷7":"9","81÷9":"9","64÷8":"8","42÷6":"7","49÷7":"7","36÷6":"6","108÷9":"12","132÷12":"11","144÷12":"12","96÷8":"12",
+  "84÷7":"12","72÷6":"12",
+
+  "1+1":"2","1+2":"3","1+3":"4","1+4":"5","2+1":"3","2+2":"4","2+3":"5","2+4":"6","3+1":"4","3+2":"5","3+3":"6","3+4":"7","4+1":"5","4+2":"6","4+3":"7",
+  "4+4":"8","5+1":"6","5+2":"7","5+3":"8","5+4":"9","5+5":"10","6+1":"7","6+2":"8","6+3":"9","6+4":"10","7+1":"8","7+2":"9","7+3":"10","8+1":"9",
+  "8+2":"10","9+1":"10","10-1":"9","10-2":"8","10-3":"7","10-4":"6","10-5":"5","9-1":"8","9-2":"7","9-3":"6","8-1":"7","8-2":"6","7-1":"6","7-2":"5",
+  "6-1":"5","5-1":"4","5-2":"3","4-1":"3","3-1":"2","2-1":"1"
+};
 const MAST_DEFAULT_CAT_MODES={julian:{Letters:"flash",Numbers:"flash",Colors:"flash",Shapes:"flash",Animals:"flash",Counting:"flash",Dinosaurs:"flash"},lucy:{"Sight Words":"flash","Math Facts":"quiz","Spelling":"quiz","Science":"flip","Vocabulary":"flip"},ellis:{"Math Facts":"quiz","State Capitals":"flip","Science":"flip","Vocabulary":"flip","Spelling":"quiz","Grammar":"flip","Greek & Latin Roots":"flip","Measurements":"flip"},lincoln:{"Math Facts":"quiz","Vocabulary":"flip","AAS Words":"quiz","SpellingYouSee":"quiz","Grammar":"flip","Greek & Latin Roots":"flip","World Geography":"flip","Science":"flip","U.S. History":"flip"}};
 function mastGetCatMode(kid,cat){ const s=masteryData[kid+"_settings"]||{}; if(s.cat_modes&&s.cat_modes[cat]) return s.cat_modes[cat]; return (MAST_DEFAULT_CAT_MODES[kid]||{})[cat]||"flash"; }
 const MAST_INTRO_HINTS={Letters:"say each letter out loud",Numbers:"count out loud",Counting:"count the dinosaurs out loud",Dinosaurs:"say the dinosaur name",Colors:"say the color name",Shapes:"say the shape name",Animals:"say the animal name","Sight Words":"read the word out loud","Math Facts":"say the answer out loud",Spelling:"spell it out loud, letter by letter",Science:"say what you see",Vocabulary:"say the word out loud","State Capitals":"say the capital city",Grammar:"read the definition out loud","Greek & Latin Roots":"say the meaning out loud",Measurements:"say the conversion out loud","World Geography":"say the capital city","U.S. History":"say when and what happened"};
 function mastGetDef(kid,prompt){
   const s=masteryData[kid+"_settings"]||{};
   if(s.definitions&&s.definitions[prompt]) return s.definitions[prompt];
+  // Math facts are matched on the RAW prompt — the keys carry ×, ÷, − and superscripts,
+  // so lowercasing them (as the vocab map needs) would be meaningless here.
+  if(MAST_MATH_ANS[prompt]) return MAST_MATH_ANS[prompt];
   return MAST_VOCAB_DEFS[prompt.toLowerCase()]||"";
 }
 
@@ -21097,8 +21251,8 @@ function _smTileVis(it,noGlyph){
   if(mv&&mv.imageUrl) return '<img src="'+mv.imageUrl+'" style="width:84px;height:84px;object-fit:cover;border-radius:12px;pointer-events:none">';
   if(it.emoji) return '<span class="memoji" style="font-size:54px;line-height:1;pointer-events:none">'+it.emoji+'</span>';
   if(MAST_ANIMAL_EMOJI[it.prompt]) return '<span class="memoji" style="font-size:54px;line-height:1;pointer-events:none">'+MAST_ANIMAL_EMOJI[it.prompt]+'</span>';
-  if(it.subject==="Colors"&&MAST_COLOR_MAP[it.prompt]) return '<div style="width:64px;height:64px;border-radius:50%;background:'+MAST_COLOR_MAP[it.prompt]+';border:2px solid rgba(0,0,0,0.1);pointer-events:none"></div>';
-  if(it.subject==="Shapes") return '<span class="memoji" style="pointer-events:none">'+mastShapeVis(it.prompt,54)+'</span>';
+  if(it.subject==="Colors"&&MAST_COLOR_MAP[it.prompt]) return '<div style="width:64px;height:64px;border-radius:50%;background:'+MAST_COLOR_MAP[it.prompt]+';border:2px solid '+mastColorBorder(it.prompt)+';pointer-events:none"></div>';
+  if(it.subject==="Shapes") return '<span class="memoji" style="font-size:54px;line-height:1;pointer-events:none">'+mastShapeVis(it.prompt,54)+'</span>';
   // Letters / numbers / short phonograms: the glyph IS the visual — great for b/d/p
   // discrimination. Longer prompts would need reading, so they're not eligible.
   // noGlyph: the Match game's pair tile must NOT be the same glyph as the word tile.
@@ -21118,6 +21272,16 @@ let matchState=null;   // {deck,style,pairMode,tiles:[{pid,html,matched,miss,up}
 let matchStyle="match";     // "match" = all face-up (Quizlet) | "memory" = face-down flip (Concentration)
 let matchPairMode="two";    // "two" = word ↔ picture/meaning | "same" = two identical cards (classic memory — works for pure flash decks)
 function mastMatchSetStyle(v){ matchStyle=v; matchState=null; _mastRe(); }
+// Per-kid, persisted. Does NOT reset the board — it's a voice preference, not a game shape,
+// so flipping it mid-game shouldn't cost the kid their progress.
+function mastMatchToggleSpeak(){
+  const k=masteryKid;
+  const s=masteryData[k+"_settings"]||(masteryData[k+"_settings"]={});
+  s.match_speak=!(s.match_speak===true);
+  if(db) db.ref("mastery/"+k+"_settings/match_speak").set(s.match_speak);
+  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  _mastRe();
+}
 function mastMatchSetPair(v){ matchPairMode=v; matchState=null; _mastRe(); }
 function _matchPairHtml(it){
   const vis=_smTileVis(it,true);   // noGlyph: pair tile must not be the word itself
@@ -21197,9 +21361,19 @@ function mastMatchPause(){
   else st.pausedAt=Date.now();
   _mastRe();
 }
+// Say the tapped tile's word out loud ("cow"). The tile only carries rendered HTML, so the
+// word comes from the item behind it via pid. Speaks the PROMPT, never the definition — this
+// names the thing, it doesn't explain it.
+function _matchSpeakTile(t){
+  if(!t||!mastDrillSettings().match_speak) return;
+  let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  const it=items.find(x=>x&&x.id===t.pid);
+  if(it&&it.prompt) mastSpeak(String(it.prompt));
+}
 function mastMatchTap(ix){
   const st=matchState; if(!st||st.lock||st.endTs||st.pausedAt) return;
   const t=st.tiles[ix]; if(!t||t.matched) return;
+  _matchSpeakTile(t);
   if(!st.startTs) st.startTs=Date.now();   // clock starts on the first tap
   if(st.style==="memory"){
     if(t.up) return;
@@ -21356,6 +21530,8 @@ function buildMatchHtml(color){
   h+='<span style="font-size:9.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-left:8px">Pairs</span>';
   h+=_tog(matchPairMode==="two","\u{1F517} Word \u{2194} meaning","mastMatchSetPair(\'two\')");
   h+=_tog(matchPairMode==="same","\u{1F46F} Same pair","mastMatchSetPair(\'same\')");
+  h+='<span style="font-size:9.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-left:8px">Voice</span>';
+  h+=_tog(mastDrillSettings().match_speak,"\u{1F5E3} Say the word","mastMatchToggleSpeak()");
   h+='</div>';
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 12px">';
   decks.forEach(dk=>{
@@ -23240,8 +23416,15 @@ function mastEditDelete(){
 // those are drawn with CSS; px sets the drawn height (emoji inherit font-size
 // from their container like every other card visual).
 function mastShapeVis(name,px){
-  const em={Circle:"\u{1F534}",Square:"\u{1F7E7}",Triangle:"\u{1F53A}",Star:"\u{2B50}",Heart:"❤️",Diamond:"\u{1F537}"}[name];
+  const em={Circle:"\u{1F534}",Square:"\u{1F7E7}",Star:"\u{2B50}",Heart:"❤️",Diamond:"\u{1F537}"}[name];
   if(em) return em;
+  // Triangle is NOT in that map on purpose: \u{1F53A} is a small-by-design glyph and next to
+  // the circle/square emoji it renders about half their size. Drawn to fill the same box.
+  if(name==="Triangle"){
+    const s=px, i=Math.max(1,px*0.05), w=Math.max(1,px*0.045).toFixed(2);
+    return '<svg width="'+s+'" height="'+s+'" viewBox="0 0 '+s+' '+s+'" style="vertical-align:middle;display:inline-block">'+
+      '<polygon points="'+(s/2)+','+i+' '+(s-i)+','+(s-i)+' '+i+','+(s-i)+'" fill="#ef4444" stroke="#b91c1c" stroke-width="'+w+'" stroke-linejoin="round"/></svg>';
+  }
   if(name==="Rectangle") return '<span style="display:inline-block;width:'+Math.round(px*1.6)+'px;max-width:80%;height:'+px+'px;background:#a855f7;vertical-align:middle"></span>';
   if(name==="Oval") return '<span style="display:inline-block;width:'+Math.round(px*1.5)+'px;max-width:80%;height:'+px+'px;background:#22c55e;border-radius:50%;vertical-align:middle"></span>';
   // Native regular polygons as transparent SVG — pentagon/hexagon point-top, octagon flat-top (stop-sign)
@@ -23328,7 +23511,7 @@ function mastItemVis(it){
   if(mv&&mv.imageUrl) return '<img src="'+mv.imageUrl+'" class="mast-jcard-photo">';
   if(MAST_ANIMAL_EMOJI[it.prompt]) return MAST_ANIMAL_EMOJI[it.prompt];
   const cat=it.subject||"";
-  if(cat==="Colors"&&MAST_COLOR_MAP[it.prompt]) return '<div style="width:36px;height:36px;border-radius:50%;background:'+MAST_COLOR_MAP[it.prompt]+';border:1.5px solid rgba(0,0,0,0.1);margin:0 auto"></div>';
+  if(cat==="Colors"&&MAST_COLOR_MAP[it.prompt]) return '<div style="width:36px;height:36px;border-radius:50%;background:'+MAST_COLOR_MAP[it.prompt]+';border:1.5px solid '+mastColorBorder(it.prompt)+';margin:0 auto"></div>';
   if(cat==="Shapes") return mastShapeVis(it.prompt,26);
   if(cat==="Counting"){ const n=mastCountN(it); return '<span style="font-size:14px">'+"\u{1F995}".repeat(Math.min(n,6))+(n>6?"…":"")+'</span>'; }
   const _vl=it.prompt.length; const _vfs=_vl<=3?22:_vl<=6?16:_vl<=10?12:10;
@@ -24067,7 +24250,7 @@ function renderMastAdmin(){
       if(avVis&&typeof avVis==="string") vis='<span style="font-size:18px;opacity:0.4">'+avVis+'</span>';
       else if(avVis&&avVis.imageUrl) vis='<img src="'+avVis.imageUrl+'" style="width:22px;height:22px;border-radius:4px;object-fit:cover;opacity:0.5">';
       else if((cat==="Animals"||cat==="Dinosaurs")&&MAST_ANIMAL_EMOJI[name]) vis='<span style="font-size:18px;opacity:0.4">'+MAST_ANIMAL_EMOJI[name]+'</span>';
-      else if(cat==="Colors"&&MAST_COLOR_MAP[name]) vis='<div style="width:22px;height:22px;border-radius:50%;background:'+MAST_COLOR_MAP[name]+';opacity:0.35;margin:0 auto;border:1px solid rgba(0,0,0,0.1)"></div>';
+      else if(cat==="Colors"&&MAST_COLOR_MAP[name]) vis='<div style="width:22px;height:22px;border-radius:50%;background:'+MAST_COLOR_MAP[name]+';opacity:0.35;margin:0 auto;border:1px solid '+mastColorBorder(name)+'"></div>';
       else if(cat==="Shapes") vis='<span style="font-size:18px;opacity:0.35">'+mastShapeVis(name,12)+'</span>';
       else if(cat==="Letters"||cat==="Numbers") vis='<span style="'+(cat==="Letters"?"font-family:'Fraunces',serif;":"")+'font-size:16px;font-weight:800;color:#d1d5db">'+name+'</span>';
       const isCustom=customNames.has(cat+"_"+name);
@@ -24926,7 +25109,7 @@ function _renderMasteryInner(el){
     if(!bigVis){ const _mv=mastGetVisual(it.subject,it.prompt); if(_mv&&typeof _mv==="string") bigVis='<span class="mast-bigmoji">'+_mv+'</span>'; else if(_mv&&_mv.imageUrl) bigVis='<img src="'+_mv.imageUrl+'" style="height:100%;width:auto;max-width:100%;border-radius:18px;object-fit:contain">'; }
     if(!bigVis&&MAST_ANIMAL_EMOJI[it.prompt]) bigVis='<span class="mast-bigmoji">'+MAST_ANIMAL_EMOJI[it.prompt]+'</span>';
     const cat=it.subject||"";
-    if(!bigVis&&cat==="Colors"&&MAST_COLOR_MAP[it.prompt]) bigVis='<div style="width:240px;height:240px;border-radius:50%;background:'+MAST_COLOR_MAP[it.prompt]+';border:3px solid rgba(0,0,0,0.1)"></div>';
+    if(!bigVis&&cat==="Colors"&&MAST_COLOR_MAP[it.prompt]) bigVis='<div style="width:240px;height:240px;border-radius:50%;background:'+MAST_COLOR_MAP[it.prompt]+';border:3px solid '+mastColorBorder(it.prompt)+'"></div>';
     if(!bigVis&&cat==="Shapes") bigVis='<span class="mast-bigmoji">'+mastShapeVis(it.prompt,210)+'</span>';
     if(!bigVis&&cat==="Counting") bigVis=mastCountVisBig(it);
     if(!bigVis){ const _pl=it.prompt.length; const _fs=_pl<=3?200:_pl<=8?120:_pl<=14?72:_pl<=22?48:36; const _lf=cat==="Letters"?"font-family:'Fraunces',serif;":""; bigVis='<span style="'+_lf+'font-size:'+_fs+'px;font-weight:800;color:#c2410c;word-break:break-word;max-width:100%">'+it.prompt+'</span>'; }
@@ -24978,9 +25161,9 @@ function _renderMasteryInner(el){
       {
         const _apEsc=it.prompt.replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
         if(mastGetDefAudio(masteryKid,it.prompt)){
-          _audBtn='<button onclick="event.stopPropagation();mastPlayDefAudio(\''+_apEsc+'\')" style="margin-top:10px;padding:9px 20px;border-radius:999px;border:2px solid #7c3aed;background:#f5f3ff;color:#7c3aed;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F50A} Hear it</button>';
+          _audBtn='<button onclick="event.stopPropagation();mastPlayDefAudio(\''+_apEsc+'\')" style="margin-top:10px;padding:9px 20px;border-radius:999px;border:2px solid #7c3aed;background:#f5f3ff;color:#7c3aed;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;position:relative;z-index:3">\u{1F50A} Hear it</button>';
         } else if(_backText){
-          _audBtn='<button onclick="event.stopPropagation();mastSpeakItem(\''+_apEsc+'\')" style="margin-top:10px;padding:7px 16px;border-radius:999px;border:1.5px solid #c4b5fd;background:#fff;color:#7c3aed;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F5E3} Read it</button>';
+          _audBtn='<button onclick="event.stopPropagation();mastSpeakItem(\''+_apEsc+'\')" style="margin-top:10px;padding:7px 16px;border-radius:999px;border:1.5px solid #c4b5fd;background:#fff;color:#7c3aed;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;position:relative;z-index:3">\u{1F5E3} Read it</button>';
         }
       }
       c+='<div class="mast-flip-wrap'+(mastFlipped?" flipped":"")+'" onclick="mastFlip()">';
@@ -25489,7 +25672,7 @@ function mastPrintCards(){
   const introItems=allItems.filter(i=>i.status==="introduction");
   const ladderItems=allItems.filter(i=>i.status!=="introduction");
 
-  const COLOR_MAP={Red:"#ef4444",Blue:"#3b82f6",Green:"#22c55e",Yellow:"#eab308",Orange:"#f97316",Purple:"#a855f7",Pink:"#ec4899",Brown:"#92400e",Black:"#1f2937",White:"#e5e7eb"};
+  const COLOR_MAP={Red:"#ef4444",Blue:"#3b82f6",Green:"#22c55e",Yellow:"#eab308",Orange:"#f97316",Purple:"#a855f7",Pink:"#ec4899",Brown:"#92400e",Black:"#1f2937",White:"#ffffff",Gray:"#9ca3af"};
   const SHAPE_MAP={Circle:'\u{25CF}',Square:'\u{25A0}',Triangle:'\u{25B2}'};
   const CAT_EMOJI=MAST_CAT_EMOJI_MAP[masteryKid]||{Letters:"\u{1F524}",Numbers:"\u{1F522}",Colors:"\u{1F3A8}",Shapes:"\u{1F537}",Animals:"\u{1F43E}"};
   const TIER_LBL={daily:"Daily",every_other_day:"Every Other Day",weekly:"Weekly",bi_weekly:"Bi-Weekly",monthly:"Monthly"};
@@ -25500,7 +25683,7 @@ function mastPrintCards(){
     if(it.emoji) return '<span style="font-size:'+sz+'px">'+it.emoji+'</span>';
     if(MAST_ANIMAL_EMOJI[it.prompt]) return '<span style="font-size:'+sz+'px">'+MAST_ANIMAL_EMOJI[it.prompt]+'</span>';
     const cat=it.subject||"";
-    if(cat==="Colors"&&COLOR_MAP[it.prompt]){const s=Math.round(sz*0.85);return '<div style="width:'+s+'px;height:'+s+'px;border-radius:50%;background:'+COLOR_MAP[it.prompt]+';border:1.5px solid rgba(0,0,0,0.1);display:inline-block"></div>';}
+    if(cat==="Colors"&&COLOR_MAP[it.prompt]){const s=Math.round(sz*0.85);return '<div style="width:'+s+'px;height:'+s+'px;border-radius:50%;background:'+COLOR_MAP[it.prompt]+';border:1.5px solid '+mastColorBorder(it.prompt)+';display:inline-block"></div>';}
     if(cat==="Shapes"&&SHAPE_MAP[it.prompt]) return '<span style="font-size:'+sz+'px;color:'+kc+'">'+SHAPE_MAP[it.prompt]+'</span>';
     if(cat==="Counting"){ const cn=mastCountN(it); let cd=''; for(let i=0;i<cn;i++) cd+='<span style="font-size:'+Math.round(sz*0.5)+'px;line-height:1">\u{1F995}</span>'; return '<span style="display:inline-flex;flex-wrap:wrap;gap:2px;justify-content:center;max-width:'+(sz*3)+'px">'+cd+'</span>'; }
     return '<span style="font-size:'+sz+'px;font-weight:800;color:'+kc+'">'+it.prompt+'</span>';
@@ -27233,7 +27416,7 @@ function mrCfgMove(kid,i,dir){ mrCfgEnsure(kid); const a=morningRoutineCfg[kid],
 function mrCfgReset(kid){ delete morningRoutineCfg[kid]; mrCfgSave(); renderAll(); }
 function mrCfgCopy(){ mrCfgEnsure("lincoln"); ["ellis","lucy","julian"].forEach(k=>{ morningRoutineCfg[k]=JSON.parse(JSON.stringify(morningRoutineCfg["lincoln"])); }); mrCfgSave(); renderAll(); }
 // ── Afternoon/Chores/Evening routine editor (config/routines) ──
-function rtCfgEnsure(slot,kid){ if(!routineCfg2[slot]) routineCfg2[slot]={}; if(!Array.isArray(routineCfg2[slot][kid])||!routineCfg2[slot][kid].length){ routineCfg2[slot][kid]=(rtStepsFor(slot,kid)||[]).map(s=>({label:s.label||"",emoji:s.emoji||"",pts:s.pts||0,cad:s.cad||"daily",time:s.time||""})); } }
+function rtCfgEnsure(slot,kid){ if(!routineCfg2[slot]) routineCfg2[slot]={}; if(!Array.isArray(routineCfg2[slot][kid])||!routineCfg2[slot][kid].length){ routineCfg2[slot][kid]=(rtStepsFor(slot,kid)||[]).map(s=>({label:s.label||"",emoji:s.emoji||"",pts:s.pts||0,cad:s.cad||"daily",time:s.time||"",from:s.from||"",to:s.to||""})); } }
 function rtCfgSave(){ if(db) db.ref("config/routines").set(routineCfg2); }
 function rtCfgSet(slot,kid,i,field,val){ rtCfgEnsure(slot,kid); if(!routineCfg2[slot][kid][i]) return; routineCfg2[slot][kid][i][field]=(field==="pts"?(parseInt(val,10)||0):val); rtCfgSave(); }
 function rtCfgAdd(slot,kid){ rtCfgEnsure(slot,kid); routineCfg2[slot][kid].push({label:"New step",emoji:"",pts:0}); rtCfgSave(); renderAll(); }
@@ -27248,6 +27431,11 @@ function rtCadToggle(key){ rtCadOpen=(rtCadOpen===key)?null:key; renderAll(); }
 function rtCadSet(slot,kid,i,cad){ rtCfgEnsure(slot,kid); if(!routineCfg2[slot][kid][i])return; routineCfg2[slot][kid][i].cad=cad; rtCfgSave(); renderAll(); }
 function rtCadWeekday(slot,kid,i,dow){ rtCfgEnsure(slot,kid); var it=routineCfg2[slot][kid][i]; if(!it)return; var cad=it.cad||"wk:"; if(cad.indexOf("wk:")!==0)cad="wk:"; var ds=cad.slice(3).split(",").filter(function(x){return x!==""}); var s=String(dow); if(ds.indexOf(s)>=0)ds=ds.filter(function(x){return x!==s}); else ds.push(s); ds.sort(function(a,b){return a-b}); it.cad="wk:"+ds.join(","); rtCfgSave(); renderAll(); }
 function rtCadTime(slot,kid,i,v){ rtCfgEnsure(slot,kid); if(!routineCfg2[slot][kid][i])return; routineCfg2[slot][kid][i].time=v; rtCfgSave(); }
+// Run window setters. Kept separate from rtCfgSet so clearing both fields is one action —
+// a finished course should be one tap to retire, not two blanked date pickers.
+function rtCadWindow(slot,kid,i,field,v){ rtCfgEnsure(slot,kid); const it=routineCfg2[slot][kid][i]; if(!it)return; it[field]=v||""; rtCfgSave(); renderAll(); }
+function rtCadClearWindow(slot,kid,i){ rtCfgEnsure(slot,kid); const it=routineCfg2[slot][kid][i]; if(!it)return; it.from=""; it.to=""; rtCfgSave(); renderAll(); }
+function mrCfgClearWindow(kid,i){ mrCfgEnsure(kid); const it=morningRoutineCfg[kid][i]; if(!it)return; it.from=""; it.to=""; mrCfgSave(); renderAll(); }
 // ── Accountability: audit log of check-offs + false-check-off penalty ──
 function rlogAppend(kid,slot,label,act,pts){
   const wk=activeWk(), rec={label:label||"",slot:slot,act:act,ts:nowTs(),at:Date.now(),pts:pts||0};
