@@ -13419,6 +13419,18 @@ function cascadeIntraWeek(sweepTodayElapsed){
               const _mt0=fromMin(cd0.getHours()*60+cd0.getMinutes());
               if(c.time!==_mt0&&toMin(c.time)>toMin(_mt0)){ c.time=_mt0; _healUpd[c.id+"/time"]=_mt0; }
               _healMoved=true;
+            } else if(!cands.length){
+              // No open home — but if the ts-day twin is checked with the IDENTICAL
+              // timestamp, this IS a completed migration that a stale device's
+              // reconcile restored (2026-08-04 live). The record is already safe on
+              // the right day; finish the job by clearing the wrong-day copy.
+              const dup=weekData.tasks.find(c=>c!==t&&c.who===t.who&&(c.title||"")===(t.title||"")&&c.day===dn0&&!c.id.endsWith("_c")&&checked[c.id]===checked[t.id]);
+              if(dup){
+                dbg("cascade heal(daily check dup purge): "+t.id+" (record kept on "+dup.id+" "+dn0+")");
+                delete checked[t.id]; _ckFix[t.id]=null;
+                if(histState[t.id]){ delete histState[t.id]; _histFix[t.id]=null; }
+                _healMoved=true;
+              }
             }
           }
           break; // ts matched a week day — done looking either way
@@ -14188,11 +14200,27 @@ function runCascade(){
   const toRestore={};
   const histUpdates={};
   const currentIds=taskIds;
+  // A DAILY's completion may only ever restore onto ITS OWN day's card — the check
+  // migration moves a cross-wired daily check to the day it was really done, and a
+  // device with a stale history mirror must not "rescue" the old wrong-day check
+  // right back (seen live 2026-08-04 10:19: 7 migrated, then "reconciled 7 from
+  // history" re-polluted the source cards two seconds later). Graded work is exempt:
+  // its day legitimately moves and the ts-heal owns that.
+  const _tsDayOk=(ts,t)=>{
+    if(!subjNoCarry(t)) return true;
+    const c=_parseCheckTs(ts);
+    if(!c) return true;
+    for(const dn in DAY_DT){
+      const dd=new Date(DAY_DT[dn]+", "+c.getFullYear());
+      if(!isNaN(dd.getTime())&&dd.getMonth()===c.getMonth()&&dd.getDate()===c.getDate()) return dn===t.day;
+    }
+    return true;
+  };
   weekData.tasks.forEach(t=>{
     if(checked[t.id]) return;
     if(manualUnchecks.has(t.id)) return;
     const h=histState[t.id];
-    if(h&&h.ts&&!h.missed&&!h.flag&&(!h.week||h.week===WK)){ toRestore[t.id]=h.ts; return; }
+    if(h&&h.ts&&!h.missed&&!h.flag&&(!h.week||h.week===WK)&&_tsDayOk(h.ts,t)){ toRestore[t.id]=h.ts; return; }
     if(t.title&&t.who){
       const cutoff=Date.now()-7*24*60*60*1000;
       for(const k in histState){
@@ -14201,6 +14229,7 @@ function runCascade(){
         if(!v||!v.ts||v.missed||v.flag) continue;
         if(v.title!==t.title||v.who!==t.who||v.day!==t.day) continue;
         if(v.week&&v.week!==WK) continue;
+        if(!_tsDayOk(v.ts,t)) continue; // daily done another day — never restore here
         const tsMs=(typeof v.ts==="number")?v.ts:new Date(v.ts).getTime();
         if(tsMs<cutoff) continue;
         toRestore[t.id]=v.ts;
