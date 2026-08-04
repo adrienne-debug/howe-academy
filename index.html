@@ -9202,7 +9202,7 @@ function ceBuildCard(sk,s,kid){
   if(_cps&&(_cps.total||0)>0&&s.tracking!=="daily"&&!s.paused){
     try{
       const kws=paceKeywords(kid,sk,_cps);
-      const cur=(_cps.offset||0)+paceAutoCount(kid,kws)+(_cps.paceAdjust||0);
+      const cur=(_cps.offset||0)+paceAutoCount(kid,kws,null,sk)+(_cps.paceAdjust||0);
       const tot=_cps.total||1;
       const exp=currExpected(kid,sk,currWeekNum());
       const plan=paceKidPlan(kid);
@@ -10762,7 +10762,7 @@ function ceSetCount(field,targetTotal){
   const sub=ceGetSubject()||{};
   const ps=cur||{label:sub.display||key,keyword:sub.display||key,
     total:(buildSubjectLessons(kid,key)||[]).length||0,offset:0,adjust:0,paceAdjust:0,startWeek:1};
-  const base=((ps.offset)||0)+paceAutoCount(kid,paceKeywords(kid,key,ps));
+  const base=((ps.offset)||0)+paceAutoCount(kid,paceKeywords(kid,key,ps),null,key);
   savePaceSubject(kid,key,{...ps,[field]:((targetTotal|0)-base)});
   ceRenderEditSheet();
 }
@@ -10778,7 +10778,7 @@ function ceSetTotal(newTotal){
   const ps=cur||{label:sub.display||key,keyword:sub.display||key,total:0,offset:0,adjust:0,paceAdjust:0,startWeek:1};
   const t=Math.max(1,newTotal|0);
   const next={...ps,total:t};
-  const base=((ps.offset)||0)+paceAutoCount(kid,paceKeywords(kid,key,ps));
+  const base=((ps.offset)||0)+paceAutoCount(kid,paceKeywords(kid,key,ps),null,key);
   if(base+((ps.paceAdjust)||0)>t) next.paceAdjust=t-base;
   savePaceSubject(kid,key,next);
   ceRenderEditSheet();
@@ -11203,7 +11203,7 @@ function ceRenderEditSheet(){
   // the generator cursor (computeSubjectCursor, uses adjust). Editing one never moves the
   // other; both seed from the same live Auto count, so they default equal.
   const _ps=((paceData.subjects&&paceData.subjects[ceEditKid])||{})[ceEditKey];
-  const _auto=paceAutoCount(ceEditKid,paceKeywords(ceEditKid,ceEditKey,_ps));
+  const _auto=paceAutoCount(ceEditKid,paceKeywords(ceEditKid,ceEditKey,_ps),null,ceEditKey);
   const _offset=(_ps&&_ps.offset)||0;
   const _done=_offset+_auto+((_ps&&_ps.paceAdjust)||0);
   const _total=((_ps&&_ps.total)||s.total||seq.length||0);
@@ -17093,7 +17093,7 @@ function cbBacklogInfo(kid,sk){
   const s=((currData.subjects||{})[kid]||{})[sk]||{};
   const paceSubj=(((paceData||{}).subjects||{})[kid]||{})[sk];
   const kws=paceKeywords(kid,sk,paceSubj);
-  const doneN=Math.max(0,((paceSubj&&paceSubj.offset)||0)+paceAutoCount(kid,kws));
+  const doneN=Math.max(0,((paceSubj&&paceSubj.offset)||0)+paceAutoCount(kid,kws,null,sk));
   const adjust=Math.max(0,(paceSubj&&paceSubj.adjust)||0);
   const lessons=((currData||{}).lessons||{})[kid]||{};
   const filled=v=>v&&v!=="—"&&v!=="nan"&&String(v).trim();
@@ -19145,6 +19145,20 @@ function lmRemoveSubj(kid,dateStr,sk){
   setSchedOverride(dateStr,kid,o=>{ if(!o.removed)o.removed={}; o.removed[sk]=true; });
   renderAll();
 }
+// Drop one lesson-map slot. A make-up (added) slot is deleted outright — it only ever
+// existed in the override layer. A grid slot is marked removed, which is reversible via
+// the Undo button the cell then shows.
+function lmDropSlot(kid,dateStr,sk,wasAdded){
+  if(!momModeActive&&!adminPinUnlocked) return;
+  if(wasAdded){
+    setSchedOverride(dateStr,kid,function(o){ if(o.added) delete o.added[sk]; });
+  } else {
+    lmRemoveSubj(kid,dateStr,sk);
+    return;   // lmRemoveSubj already saves + re-renders
+  }
+  lmMovePick=null; lmEditSlot=null;
+  renderAll();
+}
 function lmRestoreSubj(kid,dateStr,sk){
   setSchedOverride(dateStr,kid,o=>{ if(o.removed) delete o.removed[sk]; });
   renderAll();
@@ -19956,7 +19970,10 @@ function lmRenderSubjectGrid(k,subjects,weekLabels,weekDays,lessons,col){
           c+='<button '+(canNext?'onclick="lmMoveDay(\''+k+'\',\''+sk+'\',\''+ds+'\',\''+dates[i+1]+'\','+fa+')"':'disabled')+' title="'+(canNext?"Move to "+WD3[i+1]:"")+'" style="flex:1;border:1px solid var(--border);background:#fff;border-radius:6px;padding:2px 0;font-size:11px;cursor:'+(canNext?"pointer":"default")+';color:'+(canNext?"var(--text)":"#e5e7eb")+'">&#9654;</button>';
           c+='</div>';
           const mvOpen=lmMovePick&&lmMovePick.date===ds&&lmMovePick.sk===sk&&(!!lmMovePick.added===!!fa);
-          c+='<button onclick="lmOpenMove(\''+ds+'\','+fa+',\''+sk+'\')" style="width:100%;margin-top:4px;border:1px solid '+(mvOpen?col:'var(--border)')+';background:'+(mvOpen?col:'#fff')+';color:'+(mvOpen?'#fff':'var(--muted)')+';border-radius:6px;padding:2px 0;font-size:9px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(mvOpen?'close':'Move&hellip;')+'</button>';
+          c+='<div style="display:flex;gap:4px;margin-top:4px">';
+          c+='<button onclick="lmOpenMove(\''+ds+'\','+fa+',\''+sk+'\')" style="flex:1;border:1px solid '+(mvOpen?col:'var(--border)')+';background:'+(mvOpen?col:'#fff')+';color:'+(mvOpen?'#fff':'var(--muted)')+';border-radius:6px;padding:2px 0;font-size:9px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(mvOpen?'close':'Move&hellip;')+'</button>';
+          c+='<button onclick="lmDropSlot(\''+k+'\',\''+ds+'\',\''+sk+'\','+fa+')" title="Delete this lesson from the map" style="flex:none;border:1px solid var(--border);background:#fff;color:#dc2626;border-radius:6px;padding:2px 7px;font-size:11px;font-weight:700;cursor:pointer;line-height:1">&times;</button>';
+          c+='</div>';
           return c;
         };
         const editBtns=function(saveCall){ return '<div style="display:flex;gap:6px;margin-top:4px"><button onclick="'+saveCall+'" style="border:none;background:'+col+';color:#fff;border-radius:6px;padding:3px 9px;font-size:10px;font-weight:700;cursor:pointer">Save</button><button onclick="lmEditSlotCancel()" style="background:none;border:none;color:var(--muted);font-size:10px;cursor:pointer;text-decoration:underline">cancel</button></div>'; };
@@ -19983,6 +20000,11 @@ function lmRenderSubjectGrid(k,subjects,weekLabels,weekDays,lessons,col){
           }
           h+='</div>';
         }
+      } else if(isRm){
+        // Dropped, not empty — show what was there with a way back, so a mis-tap is
+        // obvious and one tap undoes it.
+        h+='<div style="font-size:11px;line-height:1.3;word-break:break-word;opacity:0.5;text-decoration:line-through;color:var(--muted)">'+esc(l[sk])+'</div>';
+        h+='<button onclick="lmRestoreSubj(\''+k+'\',\''+ds+'\',\''+sk+'\')" style="width:100%;margin-top:4px;border:1px solid var(--border);background:#fff;color:#3b82f6;border-radius:6px;padding:2px 0;font-size:9px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">&#8629; Undo</button>';
       } else {
         h+='<div style="color:#e5e7eb;font-size:16px;text-align:center;margin-top:18px">&middot;</div>';
       }
@@ -20085,6 +20107,21 @@ function addPacePlan(){
 
 // ── PACE AUTO-ADVANCE: lesson cursor from curriculum ──
 // Build ordered sequence of lessons for a kid+subject from curriculum data
+// The lesson sequence a subject's cursor walks.
+//
+// This used to read the raw grid and ignore scheduleOverrides entirely, which meant the app
+// carried TWO disagreeing truths: the grid the cursor counted against, and the grid-plus-
+// overrides that actually got scheduled. Every Move, every deleted cell and every make-up
+// slot was invisible to the cursor — so deleting a duplicate stopped a kid being GIVEN it
+// but never fixed the count, and a lesson you inserted could not be reached by any cursor
+// value at all. (2026-08-03: Lincoln's MR5 had four duplicate cells and three missing page
+// ranges that no cursor could reach.) The sequence is now the schedule: removed cells drop
+// out, make-up cells fold in, in date order.
+//
+// A make-up slot only counts when it carries lesson TEXT. A bare `added[sk]=true` is a
+// placeholder with nothing to teach — it can never render a lesson, so it is not one. That
+// also keeps the retired Finish-Line "Extend" artifacts (55 bare far-future slots left on
+// Lincoln) out of every sequence without needing to touch live data.
 function buildSubjectLessons(kid,subjectKey){
   // Check Excel-based lessons first
   if(currData&&currData.lessons&&currData.lessons[kid]){
@@ -20094,9 +20131,18 @@ function buildSubjectLessons(kid,subjectKey){
     for(const dn of dayNums){
       const entry=lessons[dn];
       if(!entry) continue;
+      const ds=entry.date||"";
+      const ov=(ds&&typeof schedOv==="function")?schedOv(ds,kid):null;
       const val=entry[subjectKey];
-      if(val&&val!=="—"&&val!=="nan"&&val.trim()){
-        seq.push({dayNum:dn,lesson:val,date:entry.date||""});
+      const rm=!!(ov&&ov.removed&&ov.removed[subjectKey]);
+      if(!rm&&val&&val!=="—"&&val!=="nan"&&val.trim()){
+        seq.push({dayNum:dn,lesson:val,date:ds});
+      }
+      // Make-up slot on this date — a moved-in lesson, or a second sitting of the same
+      // subject the same day. Text-only, per the note above.
+      const add=ov&&ov.added?ov.added[subjectKey]:undefined;
+      if(typeof add==="string"&&add.trim()){
+        seq.push({dayNum:dn,lesson:add.trim(),date:ds,madeUp:true});
       }
     }
     if(seq.length) return seq;
@@ -20115,7 +20161,7 @@ function getNextLessons(kid,subjectKey,count){
   if(!seq.length) return [];
   const paceSubj=((paceData.subjects||{})[kid]||{})[subjectKey];
   const kws=paceKeywords(kid,subjectKey,paceSubj);
-  const autoC=paceAutoCount(kid,kws);
+  const autoC=paceAutoCount(kid,kws,null,subjectKey);
   const offset=(paceSubj&&paceSubj.offset)||0;
   const adjust=(paceSubj&&paceSubj.adjust)||0;
   const cursor=offset+autoC+adjust;
@@ -20132,7 +20178,7 @@ function getNextLessons(kid,subjectKey,count){
 function computeSubjectCursor(kid,subjectKey,excludeWeek){
   const paceSubj=((paceData.subjects||{})[kid]||{})[subjectKey];
   const kws=paceKeywords(kid,subjectKey,paceSubj);
-  const autoC=paceAutoCount(kid,kws,excludeWeek);
+  const autoC=paceAutoCount(kid,kws,excludeWeek,subjectKey);
   const offset=(paceSubj&&paceSubj.offset)||0;
   const adjust=(paceSubj&&paceSubj.adjust)||0;
   return offset+autoC+adjust;
@@ -20144,7 +20190,7 @@ function computeSubjectCursor(kid,subjectKey,excludeWeek){
 function computeSubjectDone(kid,subjectKey,excludeWeek){
   const paceSubj=((paceData.subjects||{})[kid]||{})[subjectKey];
   const kws=paceKeywords(kid,subjectKey,paceSubj);
-  const autoC=paceAutoCount(kid,kws,excludeWeek);
+  const autoC=paceAutoCount(kid,kws,excludeWeek,subjectKey);
   const offset=(paceSubj&&paceSubj.offset)||0;
   const paceAdjust=(paceSubj&&paceSubj.paceAdjust)||0;
   return offset+autoC+paceAdjust;
@@ -20282,15 +20328,45 @@ function currFirstWeekNum(){
   }
   return min===9999?1:min;
 }
-function paceAutoCount(kid,keywords,excludeWeek){
+// Does this subject march through a LESSON SEQUENCE (Ch.6 L5, then L6, then L7...) rather
+// than repeat the same work daily? Only those may be de-duplicated below.
+// Both conditions matter: `sequential` alone still catches Math Sprints, which is sequential
+// but has no sequence length (total 0) and legitimately repeats its title every day.
+function paceIsLessonSeq(kid,subjectKey){
+  if(!subjectKey) return false;
+  const s=currData&&currData.subjects&&currData.subjects[kid]&&currData.subjects[kid][subjectKey];
+  if(!s) return false;
+  return /sequential/i.test(s.rules||"") && (+s.total>0);
+}
+function paceAutoCount(kid,keywords,excludeWeek,subjectKey){
   if(!keywords||!keywords.length) return 0;
   const kws=(typeof keywords==="string"?[keywords]:keywords).map(k=>k.toLowerCase().trim());
   const currStart=currFirstWeekNum();
   let count=0;
+  // A lesson-sequenced subject advances ONE position per LESSON, so the SAME lesson finished
+  // in two different weeks must count once. It used to count every completed task instance,
+  // so a re-issued lesson inflated the cursor and made the generator skip forward over work
+  // nobody had done (2026-08-03: Lincoln's MR5 counted pp.196-199 four times, and pp.212-223
+  // were never going to be scheduled at all).
+  //
+  // De-dupe is on the TASK TITLE, deliberately NOT matched against the lesson grid: the grid
+  // and the titles do not share text for every subject (Lucy's NZK grid says "Q41-42" where
+  // her task says "Quest 41"), so grid-matching silently zeroed whole subjects.
+  //
+  // Daily subjects keep counting instances: Morning Notebook is 21 completions of one title
+  // and every one is a real day's work.
+  const _dedupe=paceIsLessonSeq(kid,subjectKey);
+  const _seen=_dedupe?new Set():null;
+  const _bump=t=>{
+    if(!_dedupe){ count+=1; return; }
+    const k=(t.title||"").trim().toLowerCase();
+    if(k){ if(_seen.has(k)) return; _seen.add(k); }
+    count+=1;
+  };
   if(!excludeWeek||excludeWeek!==WK){
     weekData.tasks.filter(t=>t.who===kid&&!t.id.endsWith("_c")).forEach(t=>{
       if(chainDone(t.id,checked,weekData.tasks)&&kws.some(kw=>(t.title||"").toLowerCase().includes(kw)))
-        count+=1;
+        _bump(t);
     });
   }
   Object.values(archive).forEach(aw=>{
@@ -20301,7 +20377,7 @@ function paceAutoCount(kid,keywords,excludeWeek){
     const awTasks=aw.tasks||[];
     awTasks.filter(t=>t.who===kid&&!t.id.endsWith("_c")).forEach(t=>{
       if(chainDone(t.id,awChecked,awTasks)&&kws.some(kw=>(t.title||"").toLowerCase().includes(kw)))
-        count+=1;
+        _bump(t);
     });
   });
   return count;
@@ -20604,7 +20680,7 @@ function paceKidStatus(k){
   let aheadN=0,onN=0,behindN=0; const behindSubs=[];
   keys.forEach(sk=>{
     const s=kidSubjs[sk]; const kws=paceKeywords(k,sk,s);
-    const cur=(s.offset||0)+paceAutoCount(k,kws)+(s.paceAdjust||0);
+    const cur=(s.offset||0)+paceAutoCount(k,kws,null,sk)+(s.paceAdjust||0);
     const exp=currExpected(k,sk,cwn);
     const st=paceHasPendingCascade(k,kws)?"behind":paceStatus(cur,s.total||0,s.startWeek||1,weekNum,totalWeeks,exp);
     if(st==="ahead")aheadN++; else if(st==="behind"){behindN++; behindSubs.push(s.label||sk);} else if(st!=="not-started")onN++;
