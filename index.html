@@ -21530,6 +21530,13 @@ function mastPlayDefAudio(src){
 // iPad Safari needs babying: speak() in the same tick as cancel() gets swallowed, an
 // unreferenced utterance gets GC'd mid-speech, and after a tab switch / screen lock the
 // synth wakes up stuck "paused" and queues everything silently until resume() is called.
+// ── Pre-generated speech files (engine-less browsers: the LG StanbyME) ───────────
+// scripts/gen_tts.sh bakes every deck prompt/definition to tts/<hash>.m4a with the
+// Mac's Samantha voice; the generator extracts _ttsFileUrl from THIS file, so the
+// hash can never drift between builder and player. Plain <audio> playback — works
+// wherever sound works, no speech engine required.
+function _ttsFileUrl(text){ let h=5381; const s=String(text); for(let i=0;i<s.length;i++){ h=(Math.imul(h,33)^s.charCodeAt(i))>>>0; } return "tts/"+h.toString(16)+".m4a"; }
+function _ttsFilePlay(text){ try{ const a=new Audio(_ttsFileUrl(text)); a.play().catch(function(){}); }catch(e){} }
 let mastUtter=null;   // module-level ref so Safari can't GC the utterance while it plays
 function mastSpeak(text){
   if(!text||!window.speechSynthesis) return;
@@ -21543,7 +21550,15 @@ function mastSpeak(text){
   // every Chromium engine gets the old proven path.
   const _safari=/safari/i.test(navigator.userAgent)&&!/chrome|chromium|crios|android|web0s|webos/i.test(navigator.userAgent);
   if(!_safari){
+    if(window._ttsDead){ _ttsFilePlay(text); return; }
     try{ speechSynthesis.cancel(); mastUtter=new SpeechSynthesisUtterance(String(text)); mastUtter.rate=0.85; speechSynthesis.speak(mastUtter); }catch(e){}
+    // Engine-dead detection: if nothing is speaking shortly after speak() AND the voice
+    // list is still empty, this browser has NO speech engine (the LG StanbyME reports
+    // voices=0 forever — LG's own devs confirm webOS TV has none). Flip the session to
+    // the pre-generated Samantha files — including THIS word, a beat late but heard.
+    // A working engine can't false-trip: either it's speaking at +700ms or its voice
+    // list has populated by then.
+    setTimeout(function(){ try{ if(!speechSynthesis.speaking&&!speechSynthesis.getVoices().length){ if(!window._ttsDead){ window._ttsDead=true; dbg("tts: no engine — pre-gen audio fallback ON"); } _ttsFilePlay(text); } }catch(e){} },700);
     return;
   }
   try{
@@ -21767,6 +21782,21 @@ function mastTraceOpen(glyph){
   cv.width=W*2; cv.height=H*2;
   cv.style.cssText="width:"+W+"px;height:"+H+"px;background:#fff;border:2.5px solid #fed7aa;border-radius:20px;touch-action:none";
   ov.appendChild(cv);
+  // HWT-style stroke script under the board — the same formation words the notebook
+  // prints ("big line down · little curve to the middle"), read aloud by whoever's
+  // helping. Single letters only; filled once notebooks.js (which owns the map) loads.
+  const tip=document.createElement("div");
+  tip.style.cssText="max-width:"+W+"px;margin-top:8px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;color:#9a3412;text-align:center;line-height:1.35;min-height:18px";
+  ov.appendChild(tip);
+  const setTip=()=>{
+    try{
+      const g=String(glyph||"").trim();
+      const m=(window.HoweNotebooks&&window.HoweNotebooks.letterStrokes)||null;
+      const s=(m&&g.length===1)?m[g.toUpperCase()]:null;
+      tip.textContent=s?("\u{1F58D} "+g.toUpperCase()+" \u{2014} start at the top: "+s):"";
+    }catch(e){}
+  };
+  setTip();
   const ctx=cv.getContext("2d");
   let hasDrawn=false;
   // Ghost letterform state. "wait" = NoTears (the notebooks' Handwriting-Without-Tears-style
@@ -21802,6 +21832,7 @@ function mastTraceOpen(glyph){
       ghost=ok?"nt":"serif";
       if(ok) window._ntTraceReady=true;
       ttl.textContent="\u{270D}\u{FE0F} Trace: "+glyph;
+      setTip();  // notebooks.js just arrived — the stroke-script map lives there
       if(document.getElementById("mast-trace")&&!hasDrawn) paint();
     };
     haLoadNotebooksLib().then(lib=>{

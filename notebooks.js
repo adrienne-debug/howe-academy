@@ -444,30 +444,30 @@
   // vocabulary the parent guide already teaches: big line / little line / big curve /
   // little curve / magic C, capitals start at the top). Read aloud while he traces.
   var JU_LETTER_STROKES = {
-    A: "big line down · big line down · little line across the middle",
-    B: "big line down · little curve to the middle · little curve to the bottom",
+    A: "big line slides down · big line slides down · little line across the middle",
+    B: "big line down · jump to the top · little curve to the middle · little curve to the bottom",
     C: "magic C — one big curve",
-    D: "big line down · big curve around to the bottom",
-    E: "big line down · little lines across: top, middle, bottom",
-    F: "big line down · little lines across: top, middle",
+    D: "big line down · jump to the top · big curve around to the bottom",
+    E: "big line down · jump to the top · little lines across: top, middle, bottom",
+    F: "big line down · jump to the top · little lines across: top, middle",
     G: "magic C · little line up · stop",
     H: "big line down · big line down · little line across the middle",
     I: "big line down · little lines across: top, bottom",
-    J: "big line down · curve at the bottom · little line on top",
-    K: "big line down · little line slides in · little line kicks out",
+    J: "big line down · turn · little line across the top",
+    K: "big line down · jump to the top · little line slides in · little line kicks out",
     L: "big line down · little line across the bottom",
-    M: "big line down · slide down, slide up · big line down",
-    N: "big line down · big line slides down · big line up",
+    M: "big line down · jump to the top · big line slides down · big line slides up · big line down",
+    N: "big line down · jump to the top · big line slides down · big line up",
     O: "magic C · keep on going — close it up",
-    P: "big line down · little curve to the middle",
+    P: "big line down · jump to the top · little curve to the middle",
     Q: "magic C · close it up · little line for the tail",
-    R: "big line down · little curve to the middle · little line kicks out",
+    R: "big line down · jump to the top · little curve to the middle · little line kicks out",
     S: "little curve at the top · little curve at the bottom",
     T: "big line down · little line across the top",
     U: "big line down · turn the corner · travel back up",
     V: "big line slides down · big line slides up",
     W: "slide down, slide up, slide down, slide up",
-    X: "big line slides down · big line crosses it",
+    X: "big line slides down · jump · big line slides down the other way",
     Y: "little line slides in · little line slides in · big line down",
     Z: "little line across · big line slides down · little line across"
   };
@@ -3935,6 +3935,8 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     combinedParent: combinedParent,
     openHtml: openHtml,
     weekDatesRange: weekDatesRange,
+    letterStrokes: JU_LETTER_STROKES,   // HWT-style capital formation scripts — the drill Trace overlay shows them
+
     // exposed for testing
     _internal: { juCurriculumFromMastery: juCurriculumFromMastery, generateJulian: generateJulian }
   };
