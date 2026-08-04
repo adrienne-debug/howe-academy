@@ -68,6 +68,11 @@ function mkEnv(autoCounts) {
     // stubs
     paceAutoCount: (kid, kws) => { const k = (kws && kws[0]) || ""; return (autoCounts[kid + "|" + k] !== undefined) ? autoCounts[kid + "|" + k] : (autoCounts[kid] || 0); },
     currKeyword: (kid, sk) => sk,               // keyword == subjectKey, autoCounts keyed on it
+    // These fixtures carry no check-off history, so cbBacklogInfo cannot compute a real
+    // done-set. null is the honest answer and the value the code falls back on: the
+    // positional cutoff these expectations were written against. Real check-off behaviour
+    // is covered by test_rebuild_donecells.js against live data.
+    cbDoneCellSet: () => null,
     PACE_ALT_KEYWORDS: {},
     gwRules: () => ({ schoolStart: 600, schoolEnd: 975, lunchStart: 780, lunchEnd: 840 }),
     smapIsKidOff: () => null, schedOvKidOff: () => null, schedOv: () => null,

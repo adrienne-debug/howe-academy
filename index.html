@@ -17002,10 +17002,16 @@ function cbMaterialize(cfg){
 // dated before today are the BACKLOG — unfinished work a rebuild must MOVE
 // forward (or dismiss), never copy; a cell dated today stays put (the kid may
 // be mid-task); the rest are future cells the build re-lays anyway.
-function cbSplitCells(cells,doneN,todayISO){
+// doneSet (optional) — indexes of cells that are genuinely CHECKED OFF. When absent, "done"
+// falls back to the positional cutoff i<doneN, which is what this did for everyone before.
+// That cutoff was the rebuild bug: a cell above the line that WAS finished got filed as
+// stale and copied forward (duplicate), and a cell below the line that was NOT finished got
+// treated as done and skipped. Lincoln's MR5 collected four duplicate cells and lost
+// pp.212-223 exactly this way, and every rebuild fed the next one a worse number.
+function cbSplitCells(cells,doneN,todayISO,doneSet){
   const stale=[],todayCells=[],future=[];
   cells.forEach((c,i)=>{
-    if(i<doneN) return;
+    if(doneSet?doneSet.has(i):(i<doneN)) return;
     if(c.date&&c.date<todayISO) stale.push(c);
     else if(c.date===todayISO) todayCells.push(c);
     else future.push(c);
@@ -17102,7 +17108,7 @@ function cbBacklogInfo(kid,sk){
     const l=lessons[dn];
     if(l&&filled(l[sk])) cells.push({dayNum:dn,date:l.date||"",text:String(l[sk])});
   });
-  const split=cbSplitCells(cells,doneN,cbTodayISO());
+  const split=cbSplitCells(cells,doneN,cbTodayISO(),cbDoneCellSet(kid,sk,cells));
   const bset=new Set(split.stale.map(c=>c.text));
   const dupFuture=split.future.filter(c=>bset.has(c.text)).length;
   const preDismiss=Math.min(adjust,split.stale.length);
@@ -20337,6 +20343,62 @@ function paceIsLessonSeq(kid,subjectKey){
   const s=currData&&currData.subjects&&currData.subjects[kid]&&currData.subjects[kid][subjectKey];
   if(!s) return false;
   return /sequential/i.test(s.rules||"") && (+s.total>0);
+}
+// Every COMPLETED task title for this kid+subject, current week + archive. Shared by the
+// pace cursor and by the rebuild's done/stale split so the two can never disagree.
+function paceDoneTitles(kid,keywords,excludeWeek){
+  const out=[];
+  if(!keywords||!keywords.length) return out;
+  const kws=(typeof keywords==="string"?[keywords]:keywords).map(k=>k.toLowerCase().trim());
+  const currStart=currFirstWeekNum();
+  if(!excludeWeek||excludeWeek!==WK){
+    weekData.tasks.filter(t=>t.who===kid&&!t.id.endsWith("_c")).forEach(t=>{
+      if(chainDone(t.id,checked,weekData.tasks)&&kws.some(kw=>(t.title||"").toLowerCase().includes(kw)))
+        out.push((t.title||"").toLowerCase());
+    });
+  }
+  Object.values(archive).forEach(aw=>{
+    if(excludeWeek&&aw.weekLabel===excludeWeek) return;
+    const awNum=parseInt(((aw.weekLabel||"").match(/\d+/)||[0])[0])||0;
+    if(awNum>0&&awNum<currStart) return;
+    const awChecked=aw.checked||{};
+    const awTasks=aw.tasks||[];
+    awTasks.filter(t=>t.who===kid&&!t.id.endsWith("_c")).forEach(t=>{
+      if(chainDone(t.id,awChecked,awTasks)&&kws.some(kw=>(t.title||"").toLowerCase().includes(kw)))
+        out.push((t.title||"").toLowerCase());
+    });
+  });
+  return out;
+}
+// Which GRID CELLS are actually finished — by check-off, not by counting.
+// Returns a Set of cell indexes, or NULL when this subject's grid text does not correspond
+// to its task titles and the question can't be answered. That fallback is not theoretical:
+// Lucy's NZK grid says "Q41–42" where her task says "Quest 41", and a naive matcher marks
+// every one of her finished lessons unfinished. When we can't tell, callers keep the old
+// positional behaviour rather than act on a wrong answer.
+function cbDoneCellSet(kid,sk,cells){
+  if(!cells||!cells.length) return null;
+  const paceSubj=(((paceData||{}).subjects||{})[kid]||{})[sk];
+  const kws=paceKeywords(kid,sk,paceSubj);
+  // No keywords = no way to recognise this subject's completed work. "Can't tell" is NOT the
+  // same as "nothing done": an empty set here would file every finished lesson as stale and
+  // copy the whole subject forward.
+  if(!kws||!kws.length) return null;
+  const titles=paceDoneTitles(kid,kws,null);
+  // A pace OFFSET means "this many were finished before we started tracking" — there is no
+  // check-off to find for them, and calling them unfinished would copy them all forward.
+  const off=Math.max(0,(paceSubj&&paceSubj.offset)||0);
+  const done=new Set();
+  for(let i=0;i<off&&i<cells.length;i++) done.add(i);
+  if(!titles.length) return done;            // nothing checked off yet — a real, usable answer
+  let matched=0;
+  cells.forEach((c,i)=>{
+    const txt=String((c&&c.text)||"").trim().toLowerCase();
+    if(txt&&titles.some(t=>t.includes(txt))){ done.add(i); matched++; }
+  });
+  // Completions exist but NONE line up with the grid — the two don't share text for this
+  // subject (Lucy's NZK grid says "Q41–42" where her task says "Quest 41"). Can't tell.
+  return matched?done:null;
 }
 function paceAutoCount(kid,keywords,excludeWeek,subjectKey){
   if(!keywords||!keywords.length) return 0;
