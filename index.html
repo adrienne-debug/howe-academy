@@ -17029,19 +17029,31 @@ function cbSplitCells(cells,doneN,todayISO,doneSet){
 // title (such copies are exactly what the old buggy rebuild left behind).
 // A lesson already sitting on TODAY's cell stays there, so it's dropped once
 // from the content rather than laid a second time.
-function cbDeriveContent(split,lessonSeq,doneN,dismissedIdx){
+// skipTexts (optional) — lessons already DISMISSED in an earlier build, from
+// curriculum/skiplog. Dismissing wrote that log and nothing ever read it back, so the
+// dismissal only survived as a pace `adjust`, which cbApply then folds to zero on the
+// grounds that "its cells are gone". True for a grid-only subject; FALSE once the subject
+// has a lessonSeq, because content is derived from the master list and the lesson is still
+// sitting in it. So a dismissed lesson walked straight back in on the next rebuild — and,
+// being earlier in the sequence than today's cell, landed AFTER it and read as out of order.
+// (2026-08-04: Lincoln's pp.204-207 and pp.208-211, work he'd done on paper, dismissed once
+// and re-laid onto Aug 4-5 behind pp.212-215.) Reading the log makes a dismissal permanent
+// for both kinds of subject, and by lesson text rather than by a count.
+function cbDeriveContent(split,lessonSeq,doneN,dismissedIdx,skipTexts){
   const dis=new Set(dismissedIdx||[]);
+  const skip=skipTexts||null;
+  const _skipped=t=>!!(skip&&skip.has(String(t||"").trim().toLowerCase()));
   const dropOnce=(arr,text)=>{ const i=arr.indexOf(text); if(i>=0) arr.splice(i,1); };
   if(lessonSeq&&lessonSeq.length){
-    const rest=lessonSeq.slice(Math.min(doneN,lessonSeq.length));
+    const rest=lessonSeq.slice(Math.min(doneN,lessonSeq.length)).filter(t=>!_skipped(t));
     split.todayCells.forEach(c=>dropOnce(rest,c.text));
     split.stale.forEach((c,i)=>{ if(dis.has(i)) dropOnce(rest,c.text); });
     return rest;
   }
   const backlogSet=new Set(split.stale.map(c=>c.text));
-  const kept=split.stale.filter((c,i)=>!dis.has(i)).map(c=>c.text);
+  const kept=split.stale.filter((c,i)=>!dis.has(i)&&!_skipped(c.text)).map(c=>c.text);
   split.todayCells.forEach(c=>dropOnce(kept,c.text));
-  return kept.concat(split.future.filter(c=>!backlogSet.has(c.text)).map(c=>c.text));
+  return kept.concat(split.future.filter(c=>!backlogSet.has(c.text)&&!_skipped(c.text)).map(c=>c.text));
 }
 // CBGEN_END
 
@@ -17127,7 +17139,13 @@ function cbRemainingContent(kid,sk){
   const dis=[];
   for(let i=0;i<info.preDismiss;i++) dis.push(i);
   (dec.dismissed||[]).forEach(i=>{ if(dis.indexOf(i)<0) dis.push(i); });
-  return cbDeriveContent(info.split,info.hasSeq?s.lessonSeq:null,info.doneN,dis);
+  // Lessons dismissed in an earlier build stay dismissed.
+  let _skip=null;
+  try{
+    const _log=(((currData||{}).skiplog||{})[kid]||{})[sk];
+    if(_log&&_log.length) _skip=new Set(_log.map(e=>String((e&&e.lesson)||"").trim().toLowerCase()).filter(Boolean));
+  }catch(e){}
+  return cbDeriveContent(info.split,info.hasSeq?s.lessonSeq:null,info.doneN,dis,_skip);
 }
 
 // Day-minute cap: per-kid override (curriculum/dayCap, CB3 UI) else school-hours default.
