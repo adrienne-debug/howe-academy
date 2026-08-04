@@ -21536,7 +21536,20 @@ function mastPlayDefAudio(src){
 // hash can never drift between builder and player. Plain <audio> playback — works
 // wherever sound works, no speech engine required.
 function _ttsFileUrl(text){ let h=5381; const s=String(text); for(let i=0;i<s.length;i++){ h=(Math.imul(h,33)^s.charCodeAt(i))>>>0; } return "tts/"+h.toString(16)+".m4a"; }
-function _ttsFilePlay(text){ try{ const a=new Audio(_ttsFileUrl(text)); a.play().catch(function(){}); }catch(e){} }
+// One reused element (TV autoplay policies treat a gesture-primed element more kindly)
+// + loud failure breadcrumbs — a silent .catch() cost us a device-trip to learn nothing.
+function _ttsFilePlay(text){
+  try{
+    const a=window._ttsAudio||(window._ttsAudio=new Audio());
+    a.onerror=function(){ try{ dbg("tts file media error code="+(a.error&&a.error.code)+" src="+a.src.slice(-16)); }catch(e){} };
+    a.src=_ttsFileUrl(text);
+    const p=a.play();
+    if(p&&p.catch) p.catch(function(e){ try{ dbg("tts file play blocked: "+(e&&e.name)+" "+(e&&e.message||"").slice(0,60)); }catch(e2){} });
+  }catch(e){ try{ dbg("tts file play threw: "+e); }catch(e2){} }
+}
+// A device that proved engine-less STAYS in file mode across sessions — so every tap
+// plays synchronously inside the gesture (autoplay-safe) from the first word on.
+try{ if(localStorage.getItem("ha_tts_dead")==="1") window._ttsDead=true; }catch(e){}
 let mastUtter=null;   // module-level ref so Safari can't GC the utterance while it plays
 function mastSpeak(text){
   if(!text||!window.speechSynthesis) return;
@@ -21558,7 +21571,7 @@ function mastSpeak(text){
     // the pre-generated Samantha files — including THIS word, a beat late but heard.
     // A working engine can't false-trip: either it's speaking at +700ms or its voice
     // list has populated by then.
-    setTimeout(function(){ try{ if(!speechSynthesis.speaking&&!speechSynthesis.getVoices().length){ if(!window._ttsDead){ window._ttsDead=true; dbg("tts: no engine — pre-gen audio fallback ON"); } _ttsFilePlay(text); } }catch(e){} },700);
+    setTimeout(function(){ try{ if(!speechSynthesis.speaking&&!speechSynthesis.getVoices().length){ if(!window._ttsDead){ window._ttsDead=true; try{localStorage.setItem("ha_tts_dead","1");}catch(e2){} dbg("tts: no engine — pre-gen audio fallback ON (persisted)"); } _ttsFilePlay(text); } }catch(e){} },700);
     return;
   }
   try{
