@@ -13549,6 +13549,65 @@ function cascadeIntraWeek(sweepTodayElapsed){
         closes.forEach((c,i)=>{ if(toMin(c.time)<lastEnd){ c.time=fromMin(lastEnd+i*(c.dur||20)); _healMoved=true; _healUpd[c.id+"/time"]=c.time; } });
       });
     }
+    // ── Scar re-pack (quiet sweeps): a late-day regenerate re-serves lessons that are
+    // already checked onto FUTURE days; commit re-attaches their check-offs, and the
+    // ts-heal above pins them back to the day they were really done — ripping holes in
+    // the donor day and stranding its bookends past school-end (week16 live: Tuesday
+    // bare 10:55→2:00 PM, closing at 4:50 PM). The receiving-day re-pack only runs when
+    // something sweeps, so a QUIET sweep must re-lay scarred future days itself.
+    // Deterministic + write-on-change, so repeated sweeps converge instead of churning.
+    // Today is never touched (no moving goalposts); checked/claimed work never moves;
+    // day MEMBERSHIP never changes here (what can't fit keeps its old slot for the real
+    // sweep/carry machinery). Same day-window ctx as the receiving-day re-pack above —
+    // blockout/co-op displacement stays cascadeIntraWeek's job, which runs after this.
+    {
+      const _rsd=(rulesData||{}).schoolDay||{};
+      const _rmag=weekData.babysitter||{};
+      const _rsitKids=_rmag.withSitter||(rulesData&&rulesData.withSitter)||[];
+      for(let di=todayIdx; di<dayOrder.length; di++){
+        const dn=dayOrder[di];
+        if(dn==="saturday") continue; // the overtime valve stacks past end ON PURPOSE
+        if(_wkHasDates&&!_cascDate(dn)) continue; // day isn't part of this week
+        const ov=(_rsd.overrides||{})[dn]||{};
+        // TODAY joins only BEFORE school starts (a pre-school regen scars today the same
+        // way) — mid-day the kids are working the plan, so no moving goalposts. Same rule
+        // the receiving-day re-pack uses.
+        if(di===todayIdx&&_nowMin>toMin(ov.start||_rsd.defaultStart||"10:00 AM")) continue;
+        const dEndR=toMin(ov.end||_rsd.defaultEnd||"4:15 PM");
+        // Mom-moved (push/dismiss) tasks sit out entirely — their display day is owned
+        // by the move, so neither re-time them nor let them seed the day's cursors.
+        const mine=weekData.tasks.filter(t=>t.day===dn&&!t.id.endsWith("_c")&&!t._eowOverflow&&!momMoves[t.id]);
+        const openAll=mine.filter(t=>!checked[t.id]&&!(claimed&&claimed[t.id]));
+        const open=openAll.filter(t=>!_isClose(t));
+        if(!open.length) continue;
+        // Scar signature: OPEN work stranded past school-end (a healthy generator lay
+        // never leaves it there — only the heal ripping done copies out of a mega-day
+        // does). Days without it keep their workflow-ordered layout untouched.
+        if(!openAll.some(t=>toMin(t.time)+(t.dur||20)>dEndR)) continue;
+        const isSit=_rmag.days&&_rmag.days.includes(dn);
+        const sitRet=isSit?toMin(_rmag["mom_return_"+dn]||_rmag.mom_return||"2:00 PM"):0;
+        const kidStart={}; if(isSit) _rsitKids.forEach(k=>{ kidStart[k]=sitRet; });
+        const ctx={start:toMin(ov.start||_rsd.defaultStart||"10:00 AM"),
+          end:dEndR,
+          lunchStart:toMin(ov.lunchStart||_rsd.lunchStart||"1:00 PM"),
+          lunchEnd:toMin(ov.lunchEnd||_rsd.lunchEnd||"2:00 PM"),
+          momStart:sitRet,kidStart:kidStart};
+        const before={}; openAll.forEach(t=>{ before[t.id]=t.time; });
+        // Keep the day's own (generation-ordered) sequence — this pass only compacts it.
+        open.sort((a,b)=>toMin(a.time)-toMin(b.time));
+        const over=packAround([],open,ctx);
+        over.forEach(t=>{ t.time=before[t.id]; }); // didn't fit → keep old slot, no membership call
+        // Closings land right after each kid's last OPEN task (checked leftovers on a
+        // future day are display fiction — never let them prop a closing up late).
+        openAll.filter(_isClose).forEach(c=>{
+          let lastEnd=ctx.start;
+          open.forEach(t=>{ if(t.who===c.who){ const e=toMin(t.time)+(t.dur||20); if(e>lastEnd)lastEnd=e; } });
+          c.time=fromMin(lastEnd);
+        });
+        openAll.forEach(t=>{ if(before[t.id]!==t.time){ dbg("scar re-pack: "+t.id+" "+dn+" "+before[t.id]+" → "+t.time); _healUpd[t.id+"/time"]=t.time; _healMoved=true; } });
+      }
+    }
+
     // Persist the self-heal/re-time moves or they'd silently revert on the next data load.
     // Targeted multi-path update — never the whole node (see _healUpd note above).
     if(_healMoved){
