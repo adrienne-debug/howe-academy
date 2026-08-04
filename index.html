@@ -31781,7 +31781,18 @@ function gwCommit(){
     const snapSl=ld(activeWK+"_sl")||slState||{};
     // Re-attach carry-overs (rebaselined subjects sit out — the rebuild absorbed them)
     const newIds=new Set(d.tasks.map(t=>t.id));
-    (weekData.tasks||[]).filter(t=>t.id.endsWith("_c")&&!newIds.has(t.id)&&!newIds.has(baseId(t.id))&&!carryRebaselined(t)&&!carrySubjectGone(t))
+    // ── Ghost filter: an UNCHECKED carry-over whose lesson already lives in the new
+    // set — served fresh under a NEW id (the baseId guard below never fires on those),
+    // or completed under any id — must not re-attach. That's how Monday grew duplicate
+    // Frisby cards (wk16 live, 2026-08-03). Checked/claimed _c always keep their card:
+    // they are completion records. Content rules mirror getCarryOverPool's.
+    const _dkC=completedLessonKeys();
+    const _newKey=new Set(); d.tasks.forEach(t=>{ if(t.subjectKey) _newKey.add((t.who||"")+"|"+t.subjectKey+"|"+(t.title||"")); });
+    const _ghostC=t=>{
+      if(snapChecked[t.id]||(typeof claimed!=="undefined"&&claimed&&claimed[t.id])) return false;
+      return _newKey.has((t.who||"")+"|"+(t.subjectKey||"")+"|"+(t.title||""))||_carryBlocked(t,_dkC);
+    };
+    (weekData.tasks||[]).filter(t=>t.id.endsWith("_c")&&!newIds.has(t.id)&&!newIds.has(baseId(t.id))&&!carryRebaselined(t)&&!carrySubjectGone(t)&&!_ghostC(t))
       .forEach(t=>{ d.tasks.push(t); newIds.add(t.id); });
     const _archPrev=Object.values(archive||{}).filter(a=>a&&a.tasks&&a.weekLabel!==d.week)
       .sort((a,b)=>{
@@ -31797,6 +31808,7 @@ function gwCommit(){
           if(newIds.has(_cId)) return;
           if((snapChecked||{})[_cId]) return;
           if((coExclusions[d.week]||{})[_cId]) return;
+          if(_ghostC(t)) return; // lesson already served fresh or done under another id
           d.tasks.push({...t,id:_cId,day:"monday",cascade:true,
             detail:(t.detail||t.title||"")+" (Carried from "+(_archPrev.weekLabel||"prev week")+")"});
           newIds.add(_cId);
