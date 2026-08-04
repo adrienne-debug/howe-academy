@@ -103,7 +103,7 @@ function plMaxOut(k){return plIsGuest(k)?3:plSt(k).lvl+1;}
 function plOutCount(k){return Object.entries(plState).filter(([id,o])=>o.kid==k&&!plStagedAt(id)).length;}   // station bins stay AT the station — they don't fill the kid's hands
 function plWriteStatus(k,st){plStatus[k]=st;
   if(plFB)db.ref("play/status/"+k).set(st);
-  else{try{localStorage.setItem("lib_status",JSON.stringify(plStatus));}catch(e){}}}
+  else{try{HA_LS.setItem("lib_status",JSON.stringify(plStatus));}catch(e){}}}
 function plBumpStreak(k){if(plIsGuest(k))return;const st=Object.assign({lvl:0,streak:0},plSt(k));st.streak++;
   let up=false;
   if(st.lvl<1&&st.streak>=PL_TH[0]){st.lvl=1;up=true;}
@@ -132,7 +132,7 @@ function plActiveGuests(){const now=Date.now();return Object.entries(plGuests).f
 function plGuestName(k){return (plGuests[k]||{}).name||null;}
 function plName(k,rec){return PL_KN[k]||plGuestName(k)||(rec&&rec.gname)||"Friend";}
 function plColor(k){if(PL_KC[k])return PL_KC[k];let h=0;for(const ch of String(k))h=(h*31+ch.charCodeAt(0))>>>0;return PL_GPAL[h%PL_GPAL.length];}
-function plSaveGuests(){if(plFB)return;try{localStorage.setItem("lib_guests",JSON.stringify(plGuests));}catch(e){}}
+function plSaveGuests(){if(plFB)return;try{HA_LS.setItem("lib_guests",JSON.stringify(plGuests));}catch(e){}}
 function plGuestPick(kind,ref){window._plPend={kind:kind,ref:ref};
   const gs=plActiveGuests();
   let h='<h2>🧑‍🤝‍🧑 Which friend?</h2><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Friends disappear after 24 hours — add them fresh each visit.</div><div class="facegrid">'+
@@ -166,13 +166,13 @@ function plInit(){if(plInited)return;plInited=true;
       const _now=Date.now();Object.entries(plGuests).forEach(([id,g])=>{if(g&&g.at&&(_now-g.at)>86400000&&!Object.values(plState).some(o=>o.kid==id)){db.ref("play/guests/"+id).remove();}});
       plPlays=v.plPlays||v.plays?Object.entries(v.plPlays||v.plays||{}).map(function(e){return Object.assign({_k:e[0]},e[1]);}).sort(function(a,b){return b.at-a.at;}):[];
       if(typeof tab!=="undefined"&&tab==="play")plRender();});
-  } else { try{plState=JSON.parse(localStorage.getItem("lib_checkouts")||"{}");plLog=JSON.parse(localStorage.getItem("lib_log")||"{}");plPlays=JSON.parse(localStorage.getItem("lib_plays")||"[]");plHist=JSON.parse(localStorage.getItem("lib_hist")||"[]");plStatus=JSON.parse(localStorage.getItem("lib_status")||"{}");try{plGuests=JSON.parse(localStorage.getItem("lib_guests")||"{}");}catch(e){}try{plBinMeta=JSON.parse(localStorage.getItem("lib_binmeta")||"{}");}catch(e){}try{plStations=JSON.parse(localStorage.getItem("lib_stations")||"{}");}catch(e){}try{plPhotos=JSON.parse(localStorage.getItem("lib_photos")||"{}");}catch(e){}}catch(e){}}
+  } else { try{plState=JSON.parse(HA_LS.getItem("lib_checkouts")||"{}");plLog=JSON.parse(HA_LS.getItem("lib_log")||"{}");plPlays=JSON.parse(HA_LS.getItem("lib_plays")||"[]");plHist=JSON.parse(HA_LS.getItem("lib_hist")||"[]");plStatus=JSON.parse(HA_LS.getItem("lib_status")||"{}");try{plGuests=JSON.parse(HA_LS.getItem("lib_guests")||"{}");}catch(e){}try{plBinMeta=JSON.parse(HA_LS.getItem("lib_binmeta")||"{}");}catch(e){}try{plStations=JSON.parse(HA_LS.getItem("lib_stations")||"{}");}catch(e){}try{plPhotos=JSON.parse(HA_LS.getItem("lib_photos")||"{}");}catch(e){}}catch(e){}}
 }
 let plHist=[];
 let plLog={};
 let plPlays=[];
 window.plActSearch="";window.plActCatSel=null;window.plActAgeSel=null;window.plActLvlSel=null;
-window.plSelKid=localStorage.getItem("lib_kid")||null;
+window.plSelKid=HA_LS.getItem("lib_kid")||null;
 const PL_KLVL={julian:[1,1],lucy:[1,2],ellis:[2,3],lincoln:[2,3]};
 const PL_MOODC={build:["magna","duplo","wooden","stem","crafts"],create:["art","crafts","stickers","sensory","writing","cooking"],pretend:["pretend","books","kitchen"],wheels:["games","stem","duplo"],math:["stem","games","puzzles"],science:["science","coding","nature","outdoor"],puzzle:["puzzles","coding","games"],chill:["quiet","sensory","books"],move:["movement","outdoor"],read:["books","writing"]};
 const PL_MOODKW={wheels:/car|wheel|race|track|train|truck/i,math:/count|number|math|graph|measure|pattern|fraction|base ten|cubes/i};
@@ -184,9 +184,9 @@ function plMoodOk(x,mood){if(!mood)return true;const bin=x.bin?PL_CATALOG.find(c
   if(PL_MOODKW[mood]&&PL_MOODKW[mood].test(x.t+" "+x.d))return true;
   return (PL_MOODC[mood]||[]).includes(x.cat);}
 function plDots(n){return "●".repeat(n);}
-function plSetKid(k){plSelKid=(plSelKid==k?null:k);if(plSelKid)localStorage.setItem("lib_kid",plSelKid);else localStorage.removeItem("lib_kid");plRender();}
+function plSetKid(k){plSelKid=(plSelKid==k?null:k);if(plSelKid)HA_LS.setItem("lib_kid",plSelKid);else HA_LS.removeItem("lib_kid");plRender();}
 window.plKidF="all";window.plLocF="F1";window.plMode="home";window.plIntentSel=null;window.plMomTab="stats";
-function plSave(){if(plFB)return;try{localStorage.setItem("lib_checkouts",JSON.stringify(plState));localStorage.setItem("lib_hist",JSON.stringify(plHist.slice(0,30)));localStorage.setItem("lib_log",JSON.stringify(plLog));localStorage.setItem("lib_plays",JSON.stringify(plPlays));}catch(e){}}
+function plSave(){if(plFB)return;try{HA_LS.setItem("lib_checkouts",JSON.stringify(plState));HA_LS.setItem("lib_hist",JSON.stringify(plHist.slice(0,30)));HA_LS.setItem("lib_log",JSON.stringify(plLog));HA_LS.setItem("lib_plays",JSON.stringify(plPlays));}catch(e){}}
 function plFmt(ts){const d=new Date(ts);return d.toLocaleDateString(undefined,{month:"short",day:"numeric"})+" "+d.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});}
 const PL_FDESC={F1:"the low frame under the FAR window — next to the science corner",F2:"the MIDDLE low frame, under the little wall bins",F3:"the low frame under the window CLOSEST to the kitchen door",T1:"the TALL tower in the middle of the wall",T2:"the TALL tower right beside the fish tank",W1:"the small wall bins above F2 — TOP row (ask Mom to get it down)",W2:"the small wall bins above F2 — MIDDLE row (ask Mom to get it down)",W3:"the small wall bins above F2 — BOTTOM row, the one you can reach","F1-TOP":"ON TOP of the far-window low frame","F2-TOP":"ON TOP of the middle low frame","F3-TOP":"ON TOP of the low frame by the kitchen door","T1-TOP":"the very top of the middle tower — ask a grown-up","T2-TOP":"the very top of the fish-tank tower — ask a grown-up",K14:"the TALL skinny Kallax right beside F1",MK:"the little 2×2 Kallax under the big bookshelf — the one the 3D printer sits on","MK-TOP":"on top of the little Kallax — the 3D printer station",KX:"the BIG black bookshelf — the curriculum one","KX-TOP":"on top of the big black bookshelf","BG-L":"the LEFT project-kit shelves on the right wall","BG-R":"the RIGHT project-kit shelves on the right wall","SHOW-L":"the display shelf under the LEFT project shelves — finished creations","SHOW-R":"the display shelf under the RIGHT project shelves — finished creations",COAT:"the shelves above the coats and shoes",CAB:"the wall cabinets — where the art lives","CAB-TOP":"on TOP of the cabinets, by the washer-dryer closet — the history boxes",CORNER:"the corner shelf and the grey corner bins",TOTE:"the big black-and-yellow totes by the Kallax — BIG BUILDS",CUBE:"the big cube boxes",OUTBOX:"the OUTBOX — things on their way out of the room","CART-LIN":"Lincoln's cart","CART-ELL":"Ellis's cart","CART-LUC":"Lucy's cart","CART-JUL":"Julian's cart","ST-TABLE":"the big work table","ST-FLISAT":"the sensory table","ST-EASEL":"the easel","ST-PRINT":"the 3D printer station","ST-SCI":"the science station","RM-PLAY":"the playroom","RM-LIVING":"the living room","RM-GARAGE":"the garage",RETIRED:"not in use any more",CONFIRM:"still to be found",STATION:"out on its own station",SHELF:"the corner shelf"};
 // Locations can be a whole unit ("W2") or a numbered slot inside one ("MK-3", "BG-L1").
@@ -231,7 +231,7 @@ function plMetaSet(id,field,val){
   if(!plBinMeta[id])plBinMeta[id]={};
   if(val===null||val===false)delete plBinMeta[id][field];else plBinMeta[id][field]=val;
   if(plFB)db.ref('play/binMeta/'+id+'/'+field).set(val===false?null:val);
-  else{try{localStorage.setItem('lib_binmeta',JSON.stringify(plBinMeta));}catch(e){}}
+  else{try{HA_LS.setItem('lib_binmeta',JSON.stringify(plBinMeta));}catch(e){}}
 }
 function plMetaKid(id,kid){
   const cur=plMeta(id).kids; const on=cur.indexOf(kid)>=0;
@@ -239,7 +239,7 @@ function plMetaKid(id,kid){
   if(!plBinMeta[id].kids){plBinMeta[id].kids={};cur.forEach(k=>plBinMeta[id].kids[k]=true);}
   if(on)delete plBinMeta[id].kids[kid];else plBinMeta[id].kids[kid]=true;
   if(plFB)db.ref('play/binMeta/'+id+'/kids/'+kid).set(on?null:true);
-  else{try{localStorage.setItem('lib_binmeta',JSON.stringify(plBinMeta));}catch(e){}}
+  else{try{HA_LS.setItem('lib_binmeta',JSON.stringify(plBinMeta));}catch(e){}}
   plRender();
 }
 // ── Phase B.2: in-app photo + name editing ─────────────────────────────
@@ -265,7 +265,7 @@ function plPhotoPick(id){window._plPhotoTarget=id;
         const url=cv.toDataURL("image/jpeg",0.72);
         const t=window._plPhotoTarget;plPhotos[t]=url;
         if(plFB)db.ref("playPhotos/"+t).set(url);
-        else{try{localStorage.setItem("lib_photos",JSON.stringify(plPhotos));}catch(e){}}
+        else{try{HA_LS.setItem("lib_photos",JSON.stringify(plPhotos));}catch(e){}}
         plRender();};
       img.src=URL.createObjectURL(file);};
     document.body.appendChild(f);}
@@ -318,19 +318,19 @@ function plFlip(frame,identId){
   const rec={identity:identId,setup:0,since:Date.now(),claim:null,queue:null};
   plStations[frame]=rec;
   if(plFB)db.ref("play/stations/"+frame).update(rec);
-  else{try{localStorage.setItem("lib_stations",JSON.stringify(plStations));}catch(e){}}
+  else{try{HA_LS.setItem("lib_stations",JSON.stringify(plStations));}catch(e){}}
   plRender();}
 function plSetSetup(frame,idx){
   const st=plStations[frame];if(!st)return;st.setup=idx;
   if(plFB)db.ref("play/stations/"+frame+"/setup").set(idx);
-  else{try{localStorage.setItem("lib_stations",JSON.stringify(plStations));}catch(e){}}
+  else{try{HA_LS.setItem("lib_stations",JSON.stringify(plStations));}catch(e){}}
   plRender();}
 function plClearStation(frame){
   const cur=plStations[frame];
   if(cur&&cur.claim)plStReturnBins(frame,cur.claim.by);
   delete plStations[frame];
   if(plFB)db.ref("play/stations/"+frame).remove();
-  else{try{localStorage.setItem("lib_stations",JSON.stringify(plStations));}catch(e){}}
+  else{try{HA_LS.setItem("lib_stations",JSON.stringify(plStations));}catch(e){}}
   plRender();}
 function plStationsHtml(){
   const now=Date.now();
@@ -394,7 +394,7 @@ function plStSave(frame){
   if(plFB){const st=plStations[frame]||{};
     db.ref("play/stations/"+frame+"/claim").set(st.claim||null);
     db.ref("play/stations/"+frame+"/queue").set(st.queue||null);}
-  else{try{localStorage.setItem("lib_stations",JSON.stringify(plStations));}catch(e){}}
+  else{try{HA_LS.setItem("lib_stations",JSON.stringify(plStations));}catch(e){}}
   plRender();}
 function plStExpired(st){return !!(st&&st.claim&&st.claim.turnEndsAt&&Date.now()>st.claim.turnEndsAt);}
 // Claiming a station checks its staged bins out to the claimer (her rule 2026-08-01: the
@@ -531,8 +531,8 @@ function plHomeHtml(){
 // Wording comes from the baked PL_LABELS/PL_SHELFTAGS (labels.html is the wording
 // source); the WORD and PHOTO honor in-app renames + photo swaps live. Picks are
 // device-local (localStorage) — it's a print aid, not shared state.
-let plLabSel={};try{plLabSel=JSON.parse(localStorage.getItem("pl_labsel")||"{}");}catch(e){}
-function plLabSave(){try{localStorage.setItem("pl_labsel",JSON.stringify(plLabSel));}catch(e){}}
+let plLabSel={};try{plLabSel=JSON.parse(HA_LS.getItem("pl_labsel")||"{}");}catch(e){}
+function plLabSave(){try{HA_LS.setItem("pl_labsel",JSON.stringify(plLabSel));}catch(e){}}
 function plLabToggle(k){if(plLabSel[k])delete plLabSel[k];else plLabSel[k]=1;plLabSave();plRender();}
 function plLabUnitOf(c){const m=((plMeta(c.id).loc||c.loc)||"").match(/^(F\d|T\d|W\d|MK|K14|KX|BG|K21)/);return m?m[1]:"OTHER";}
 function plLabBins(){return PL_CATALOG.filter(c=>PL_LABELS[c.id]);}

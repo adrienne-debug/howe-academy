@@ -1432,6 +1432,22 @@ const FB_CFG = (window.HA_FAMILY && window.HA_FAMILY.firebase) || {
   appId:"1:581111328425:web:d3e5f580036fb8898983b8"
 };
 
+// ── PER-FAMILY STORAGE NAMESPACE ────────────────────────────────
+// Same-origin hosting (GitHub Pages serves every repo from one origin) shares
+// localStorage between family deployments, so all app storage goes through this
+// wrapper, which prefixes keys with the family id ("burris:ha_active_wk").
+// EXCEPTION: the Howe family — and any boot with no config file — keeps the
+// historical bare keys, so existing devices lose no caches, PINs, or flags.
+window.HA_LS=(function(){
+  var S=window.localStorage;
+  var p=(window.HA_FAMILY&&window.HA_FAMILY.familyId&&window.HA_FAMILY.familyId!=="howe")?window.HA_FAMILY.familyId+":":"";
+  return {
+    getItem:function(k){ return S.getItem(p+k); },
+    setItem:function(k,v){ return S.setItem(p+k,v); },
+    removeItem:function(k){ return S.removeItem(p+k); }
+  };
+})();
+
 // ── CODE VERSION — auto-computed hash, no manual bumping needed ──
 const CODE_VERSION = (function(){var s=document.documentElement.outerHTML;var h=0;for(var i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0;}return Math.abs(h);})();
 
@@ -1455,7 +1471,7 @@ if('serviceWorker' in navigator && location.protocol==='https:'){
 }
 
 // ── CONSTANTS ────────────────────────────────────────────────────
-let WK = localStorage.getItem("ha_active_wk") || "week3";
+let WK = HA_LS.getItem("ha_active_wk") || "week3";
 const DAYS = ["monday","tuesday","wednesday","thursday","friday","saturday"];
 // School runs Mon–Sat (DAYS). The LIFE layer — routines & chores — runs all seven days, so
 // Sunday exists here even though school never lands on it.
@@ -1477,7 +1493,7 @@ const FAMILY_DEFAULT = (window.HA_FAMILY && Array.isArray(window.HA_FAMILY.roste
 ];
 // Loaded synchronously from the localStorage cache (kept in sync with Firebase settings/family); defaults to FAMILY_DEFAULT
 const ROSTER_DEF = (function(){
-  try{ var v=JSON.parse(localStorage.getItem("ha_family")||"null");
+  try{ var v=JSON.parse(HA_LS.getItem("ha_family")||"null");
        if(Array.isArray(v)&&v.length&&v.every(function(k){return k&&k.id&&k.name&&k.color;})) return v; }catch(e){}
   return FAMILY_DEFAULT;
 })();
@@ -1988,19 +2004,19 @@ let mastManualS=0;
 let calendarData={holidays:{}, vacations:{}, kidOverrides:{}}; // global calendar for session scheduling
 // Per-kid private "All About Me" info for the notebooks (name/address/phones). Synced like the
 // rest of the app's data; flows into each kid's safety page at generate time. NOT in any shared file.
-let notebookPersonal={}; try{ const _np=localStorage.getItem("ha_nb_personal"); if(_np) notebookPersonal=JSON.parse(_np); }catch(e){}
+let notebookPersonal={}; try{ const _np=HA_LS.getItem("ha_nb_personal"); if(_np) notebookPersonal=JSON.parse(_np); }catch(e){}
 // Per-kid notebook knobs (Mom-tunable), synced. Shape: { julian:{ reviewCap:2 }, ... }
-let notebookSettings={}; try{ const _ns=localStorage.getItem("ha_nb_settings"); if(_ns) notebookSettings=JSON.parse(_ns); }catch(e){}
+let notebookSettings={}; try{ const _ns=HA_LS.getItem("ha_nb_settings"); if(_ns) notebookSettings=JSON.parse(_ns); }catch(e){}
 let nbPinOpen=false; // Notebook-tab "🔒 Mom" control is showing its PIN input
 let nbSelectedKid="lincoln"; // currently-selected kid in the Notebook tab
 // Lucy's activity-page LIBRARY, SYNCED across the family's devices. PNG pages live in Firebase
 // Storage (per-family, private — like the celebration songs); RTDB node "notebookActivities"
 // records the metadata so every device knows what's there. Shape per category:
 // {mode:"auto"|"manual", curBook, curPage, books:[{id, name, pages, imgs:{1:url,2:url,...}}]}
-let nbActivities={}; try{ const _na=localStorage.getItem("ha_nb_activities"); if(_na) nbActivities=JSON.parse(_na); }catch(e){}
+let nbActivities={}; try{ const _na=HA_LS.getItem("ha_nb_activities"); if(_na) nbActivities=JSON.parse(_na); }catch(e){}
 // Per-kid, per-week reading STORIES (passage + comprehension Qs), synced. Generated offline (key
 // stays off the public app) or later by a server proxy; the app just reads {kid:{weekN:{...}}}.
-let notebookStories={}; try{ const _ns=localStorage.getItem("ha_nb_stories"); if(_ns) notebookStories=JSON.parse(_ns); }catch(e){}
+let notebookStories={}; try{ const _ns=HA_LS.getItem("ha_nb_stories"); if(_ns) notebookStories=JSON.parse(_ns); }catch(e){}
 let _nbColoringPdfPromise=null; // lazy pdf.js loader (used to rasterize pages on upload)
 let scheduleOverrides={}; // {dateStr:{kid:{dayOff:true, removed:{sk:true}, added:{sk:true}}}} — manual Lesson Map edits
 let calAddMode=null; // null | "holiday" | "vacation" | "override" | "event"
@@ -2015,12 +2031,12 @@ let digestKidOpen={};   // 📋 Report per-kid card expand state
 let histLogView="time"; // "time" | "subject" — how the History Log groups completed work
 let histTrendKid=null; // Trends: focused kid (null = all)
 let attEditUnlocked=false;
-let APP_PIN=localStorage.getItem("ha_app_pin")||"0329";
+let APP_PIN=HA_LS.getItem("ha_app_pin")||"0329";
 // ── BRAIN BREAK state — per-kid reset (feelings check → menu → timer). Synced at
 //    brainBreaks/{kid} (active break + log) and brainBreakSettings/{kid}. A break is a pure
 //    overlay on that kid's view; schedule data (tasks/checked) is NEVER touched by it.
-let brainBreaks={}; try{ const _bb=localStorage.getItem("ha_brainbreaks"); if(_bb) brainBreaks=JSON.parse(_bb); }catch(e){}
-let bbSettings={}; try{ const _bs=localStorage.getItem("ha_bb_settings"); if(_bs) bbSettings=JSON.parse(_bs); }catch(e){}
+let brainBreaks={}; try{ const _bb=HA_LS.getItem("ha_brainbreaks"); if(_bb) brainBreaks=JSON.parse(_bb); }catch(e){}
+let bbSettings={}; try{ const _bs=HA_LS.getItem("ha_bb_settings"); if(_bs) bbSettings=JSON.parse(_bs); }catch(e){}
 let bbMomDraft=null;  // transient, device-local Mom flow: {kid, halt:{}, menu:{key:1}} — synced only when handed to the kid
 let bbTimerInt=null;  // countdown interval while a break timer is on screen
 let attOverrides={}; // {wkKey:{day:{kid:true/false}}}
@@ -2096,11 +2112,11 @@ let cascadeDebounce = null;
 let fbTasksHighWater = 0; // max task count ever seen from Firebase — guards against accidental wipes
 // Dry-run mode (?dryrun=1 or localStorage ha_dryrun=1): reads work, writes are no-ops.
 // Lets us smoke-test the modified app against live data WITHOUT mutating Firebase.
-function _dryRun(){ try{ return /[?&]dryrun=1/.test(location.search)||localStorage.getItem("ha_dryrun")==="1"; }catch(e){ return false; } }
+function _dryRun(){ try{ return /[?&]dryrun=1/.test(location.search)||HA_LS.getItem("ha_dryrun")==="1"; }catch(e){ return false; } }
 // Kiosk mode (?kiosk=play or localStorage ha_kiosk="play"): playroom checkout console.
 // Locks the app to the Play tab and hides all nav chrome; Firebase sync, dryrun, the
 // codeVersion auto-reload, and the PIN-gated Mom view inside Play all work as normal.
-function _kiosk(){ try{ return /[?&]kiosk=play/.test(location.search)||localStorage.getItem("ha_kiosk")==="play"; }catch(e){ return false; } }
+function _kiosk(){ try{ return /[?&]kiosk=play/.test(location.search)||HA_LS.getItem("ha_kiosk")==="play"; }catch(e){ return false; } }
 
 // ── SCHEDULER WRITE LOCK ─────────────────────────────────────────────────────
 // Only ONE device plays scheduler at a time. A device claims /regen_lock (atomic
@@ -2112,7 +2128,7 @@ function _kiosk(){ try{ return /[?&]kiosk=play/.test(location.search)||localStor
 // same-minute task collisions from racing packers). The lock self-expires after
 // 90s so a device dying mid-regen can't freeze the fleet. Kid check-offs and other
 // targeted per-id writes are NOT gated — only the schedule-laying machinery.
-let HA_DEV_ID=(function(){ try{ let v=localStorage.getItem("ha_dev_id"); if(!v){ v="dev_"+Math.random().toString(36).slice(2,10); localStorage.setItem("ha_dev_id",v); } return v; }catch(e){ return "dev_"+Math.random().toString(36).slice(2,10); } })();
+let HA_DEV_ID=(function(){ try{ let v=HA_LS.getItem("ha_dev_id"); if(!v){ v="dev_"+Math.random().toString(36).slice(2,10); HA_LS.setItem("ha_dev_id",v); } return v; }catch(e){ return "dev_"+Math.random().toString(36).slice(2,10); } })();
 const SCHED_LOCK_TTL=90000;
 let schedLock=null; // live mirror of /regen_lock (listener in initFb)
 function schedLockFresh(l){ return !!(l&&l.ts&&(Date.now()-l.ts)<SCHED_LOCK_TTL); } // NTP-synced family devices; big clock skew would weaken this
@@ -2313,7 +2329,7 @@ function attachWeekListeners(wk){
     const v=s.val();
     if(v){
       coManualSat[wk]=v;
-      try{localStorage.setItem("ha_co_manual_sat",JSON.stringify(coManualSat));}catch(e){}
+      try{HA_LS.setItem("ha_co_manual_sat",JSON.stringify(coManualSat));}catch(e){}
     } else if(coManualSat[wk]&&Object.keys(coManualSat[wk]).length){
       // Firebase empty but this device has local choices — sync them up (listener refires)
       r15.set(coManualSat[wk]);
@@ -2410,7 +2426,7 @@ function initFb() {
       const fbWk=s.val();
       if(fbWk && fbWk!==WK){
         dbg("ha_active_wk changed FB="+fbWk+" local="+WK);
-        WK=fbWk; localStorage.setItem("ha_active_wk",WK); weekData.week=WK;
+        WK=fbWk; HA_LS.setItem("ha_active_wk",WK); weekData.week=WK;
         const t=ld(WK+"_tasks"); if(t) weekData.tasks=t;
         const meta=ld(WK+"_meta"); if(meta) applyWeekMeta(meta);
         checked=ld(WK+"_checked")||{}; slState=ld(WK+"_sl")||{}; claimed=ld(WK+"_claimed")||{};
@@ -2426,7 +2442,7 @@ function initFb() {
       if(!calendarData.vacations) calendarData.vacations={};
       if(!calendarData.kidOverrides) calendarData.kidOverrides={};
       if(!calendarData.events) calendarData.events={};   // T4 family events
-      try{localStorage.setItem("ha_calendar",JSON.stringify(calendarData));}catch(e){}
+      try{HA_LS.setItem("ha_calendar",JSON.stringify(calendarData));}catch(e){}
       if(currData) buildCurrPaceCum();
       if(tab==="schedule"&&schedShowAdmin&&adminSubTab==="calendar"){const el=document.getElementById("content");if(el)renderAll();}
     });
@@ -2438,45 +2454,45 @@ function initFb() {
     db.ref("digest").on("value",s=>{ digestData=s.val()||{}; });
     db.ref("scheduleOverrides").on("value",s=>{
       scheduleOverrides=s.val()||{};
-      try{localStorage.setItem("ha_sched_overrides",JSON.stringify(scheduleOverrides));}catch(e){}
+      try{HA_LS.setItem("ha_sched_overrides",JSON.stringify(scheduleOverrides));}catch(e){}
       if(currData) buildCurrPaceCum();
       if(tab==="schedule"||tab==="pace"){const el=document.getElementById("content");if(el)renderAll();}
     });
     db.ref("shape_sigs").on("value",s=>{
       committedShapeSigs=s.val()||{};
-      try{localStorage.setItem("ha_shape_sigs",JSON.stringify(committedShapeSigs));}catch(e){}
+      try{HA_LS.setItem("ha_shape_sigs",JSON.stringify(committedShapeSigs));}catch(e){}
     });
     db.ref("archive").on("value",s=>{
       fbArchiveLoaded=true;
       archive=s.val()||{};
-      try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
+      try{HA_LS.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
       if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
       if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
     });
     db.ref("notebookStories").on("value",s=>{
       notebookStories=s.val()||{};
-      try{localStorage.setItem("ha_nb_stories",JSON.stringify(notebookStories));}catch(e){}
+      try{HA_LS.setItem("ha_nb_stories",JSON.stringify(notebookStories));}catch(e){}
       if(tab==="notebook"){const el=document.getElementById("content");if(el&&!document.activeElement?.id?.startsWith("nbs-"))renderNotebook(el);}
     });
     db.ref("notebookPersonal").on("value",s=>{
       notebookPersonal=s.val()||{};
-      try{localStorage.setItem("ha_nb_personal",JSON.stringify(notebookPersonal));}catch(e){}
+      try{HA_LS.setItem("ha_nb_personal",JSON.stringify(notebookPersonal));}catch(e){}
       if(tab==="notebook"){const el=document.getElementById("content");if(el&&!document.activeElement?.id?.startsWith("nbp-"))renderNotebook(el);}
     });
     db.ref("notebookSettings").on("value",s=>{
       notebookSettings=s.val()||{};
-      try{localStorage.setItem("ha_nb_settings",JSON.stringify(notebookSettings));}catch(e){}
+      try{HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings));}catch(e){}
       if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);}
     });
     db.ref("brainBreaks").on("value",s=>{
       brainBreaks=s.val()||{};
-      try{localStorage.setItem("ha_brainbreaks",JSON.stringify(brainBreaks));}catch(e){}
+      try{HA_LS.setItem("ha_brainbreaks",JSON.stringify(brainBreaks));}catch(e){}
       if(tab==="schedule"&&!schedShowAdmin&&!schedShowHistory&&!schedShowPace){const el=document.getElementById("content");if(el)renderSchedule(el);}
       else if((tab==="history"||schedShowHistory)&&histTab==="trends"){const el=document.getElementById("content");if(el)renderHistory(el);}
     });
     db.ref("brainBreakSettings").on("value",s=>{
       bbSettings=s.val()||{};
-      try{localStorage.setItem("ha_bb_settings",JSON.stringify(bbSettings));}catch(e){}
+      try{HA_LS.setItem("ha_bb_settings",JSON.stringify(bbSettings));}catch(e){}
     });
     db.ref("notebookActivities").on("value",s=>{
       const v=s.val()||{};
@@ -2486,21 +2502,21 @@ function initFb() {
           c.books.forEach(b=>{ if(b&&b.urls&&!b.imgs){ const arr=Array.isArray(b.urls)?b.urls:Object.values(b.urls); b.imgs={}; arr.forEach((u,i)=>{ if(u) b.imgs[i+1]=u; }); if(!b.pages) b.pages=arr.length; delete b.urls; } }); }
       });
       nbActivities=v;
-      try{localStorage.setItem("ha_nb_activities",JSON.stringify(nbActivities));}catch(e){}
+      try{HA_LS.setItem("ha_nb_activities",JSON.stringify(nbActivities));}catch(e){}
       if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);}
     });
     db.ref("settings/sitterName").on("value",s=>{
       if(s.val()){ SITTER_NAME=s.val(); sv("ha_sitter_name",SITTER_NAME); }
     });
     db.ref("settings/pin").on("value",s=>{
-      if(s.val()){ APP_PIN=s.val(); localStorage.setItem("ha_app_pin",s.val()); }
+      if(s.val()){ APP_PIN=s.val(); HA_LS.setItem("ha_app_pin",s.val()); }
     });
     db.ref("settings/family").on("value",s=>{
       var v=s.val();
       if(v&&!Array.isArray(v)&&typeof v==="object") v=Object.values(v);
       if(Array.isArray(v)&&v.length){
         var str=JSON.stringify(v);
-        if(str!==localStorage.getItem("ha_family")){ localStorage.setItem("ha_family",str); location.reload(); }
+        if(str!==HA_LS.getItem("ha_family")){ HA_LS.setItem("ha_family",str); location.reload(); }
       }
     });
     db.ref("settings/celebration_songs").on("value",s=>{
@@ -2518,7 +2534,7 @@ function initFb() {
       MP_DATA.skylightTip=data.skylightTip||MP_DATA.skylightTip;
       MP_DATA.days=data.days||MP_DATA.days;
       MP_DATA.allMeals=data.allMeals||MP_DATA.allMeals;
-      try{localStorage.setItem('mp_weekly_data',JSON.stringify(data));}catch(e){}
+      try{HA_LS.setItem('mp_weekly_data',JSON.stringify(data));}catch(e){}
       if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
     });
     db.ref("mp_chore_state").on("value",s=>{
@@ -2527,22 +2543,22 @@ function initFb() {
     });
     db.ref("wellness/weighins").on("value",s=>{
       const v=s.val(); if(v) wellnessWeighins=Object.values(v);
-      try{localStorage.setItem('wellness_weighins',JSON.stringify(wellnessWeighins));}catch(e){}
+      try{HA_LS.setItem('wellness_weighins',JSON.stringify(wellnessWeighins));}catch(e){}
       if(tab==="moms-plan"&&mpSubView==="weigh"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
     });
     db.ref("wellness/cycle").on("value",s=>{
       if(s.val()) wellnessCycle=Object.assign(wellnessCycle,s.val());
-      try{localStorage.setItem('wellness_cycle',JSON.stringify(wellnessCycle));}catch(e){}
+      try{HA_LS.setItem('wellness_cycle',JSON.stringify(wellnessCycle));}catch(e){}
       if(tab==="moms-plan"&&mpSubView==="weigh"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
     });
     db.ref("wellness/periods").on("value",s=>{
       const v=s.val(); if(v) wellnessPeriods=Object.values(v);
-      try{localStorage.setItem('wellness_periods',JSON.stringify(wellnessPeriods));}catch(e){}
+      try{HA_LS.setItem('wellness_periods',JSON.stringify(wellnessPeriods));}catch(e){}
       if(tab==="moms-plan"&&mpSubView==="weigh"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
     });
     db.ref("pace").on("value",s=>{
       const v=s.val()||{}; paceData={subjects:v.subjects||{}, plans:v.plans||{}};
-      try{localStorage.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
+      try{HA_LS.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
       if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
     });
     db.ref("curriculum").once("value",s=>{
@@ -2558,7 +2574,7 @@ function initFb() {
     db.ref("mastery").on("value",s=>{
       const v=s.val()||{};
       masteryData={...v};
-      try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+      try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
       if(tab==="mastery"){const el=document.getElementById("content");if(el)renderMastery(el);}
     });
     db.ref("config/anthropic_key").once("value",s=>{ if(s.val()) mastAIKey=s.val(); });
@@ -2581,23 +2597,23 @@ function initFb() {
     db.ref("unitStudies").on("value",s=>{ unitStudies=s.val()||{}; if(tab==="units"){const el=document.getElementById("content");if(el)renderUnits(el);} else if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);} });
     db.ref("att_overrides").on("value",s=>{
       if(s.val()) attOverrides=s.val();
-      try{localStorage.setItem("ha_att_overrides",JSON.stringify(attOverrides));}catch(e){}
+      try{HA_LS.setItem("ha_att_overrides",JSON.stringify(attOverrides));}catch(e){}
       if(tab==="history"&&histTab==="attendance"){const el=document.getElementById("content");if(el)renderHistory(el);}
     });
     db.ref("co_excl").on("value",s=>{
       if(s.val()) coExclusions=s.val();
-      try{localStorage.setItem("ha_co_excl",JSON.stringify(coExclusions));}catch(e){}
+      try{HA_LS.setItem("ha_co_excl",JSON.stringify(coExclusions));}catch(e){}
     });
     db.ref("walkback_excl").on("value",s=>{
       walkbackExcl=s.val()||{};
-      try{localStorage.setItem("ha_wb_excl",JSON.stringify(walkbackExcl));}catch(e){}
+      try{HA_LS.setItem("ha_wb_excl",JSON.stringify(walkbackExcl));}catch(e){}
     });
   } catch(e){ console.warn("FB offline:",e); }
 }
 
 // ── STORAGE ───────────────────────────────────────────────────────
-const sv=(k,v)=>{ try{localStorage.setItem(k,JSON.stringify(v));}catch(e){} };
-const ld=k=>{ try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;} };
+const sv=(k,v)=>{ try{HA_LS.setItem(k,JSON.stringify(v));}catch(e){} };
+const ld=k=>{ try{return JSON.parse(HA_LS.getItem(k));}catch(e){return null;} };
 
 function boot() {
   const sn=ld("ha_sitter_name"); if(sn) SITTER_NAME=sn;
@@ -2611,19 +2627,19 @@ function boot() {
   slState=ld(WK+"_sl")||{};
   supplies=ld(WK+"_supplies")||{};
   const savedSupDef=ld(WK+"_supplies_def"); if(savedSupDef&&Array.isArray(savedSupDef)) SUP=savedSupDef;
-  try{ const a=localStorage.getItem("ha_archive"); if(a) archive=JSON.parse(a); }catch(e){}
-  try{ const af=localStorage.getItem('act_favs'); if(af) actFavs=JSON.parse(af); }catch(e){}
-  try{ const mp=localStorage.getItem("mp_weekly_data"); if(mp){const d=JSON.parse(mp);MP_DATA.weekLabel=d.weekLabel||MP_DATA.weekLabel;MP_DATA.winOfTheDay=d.winOfTheDay||MP_DATA.winOfTheDay;MP_DATA.skylightTip=d.skylightTip||MP_DATA.skylightTip;MP_DATA.days=d.days||MP_DATA.days;MP_DATA.allMeals=d.allMeals||MP_DATA.allMeals;} }catch(e){}
-  try{ const mc=localStorage.getItem("mp_chore_state"); if(mc) mpChoreState=JSON.parse(mc); }catch(e){}
-  try{ const pc=localStorage.getItem("ha_pace"); if(pc) paceData=JSON.parse(pc); }catch(e){}
-  try{ const md=localStorage.getItem("ha_mastery"); if(md) masteryData=JSON.parse(md); }catch(e){}
-  try{ const ao=localStorage.getItem("ha_att_overrides"); if(ao) attOverrides=JSON.parse(ao); }catch(e){}
-  try{ const ce=localStorage.getItem("ha_co_excl"); if(ce) coExclusions=JSON.parse(ce); }catch(e){}
-  try{ const we=localStorage.getItem("ha_wb_excl"); if(we) walkbackExcl=JSON.parse(we); }catch(e){}
-  try{ const cms=localStorage.getItem("ha_co_manual_sat"); if(cms) coManualSat=JSON.parse(cms); }catch(e){}
-  try{ const cal=localStorage.getItem("ha_calendar"); if(cal){const d=JSON.parse(cal);calendarData={holidays:d.holidays||{},vacations:d.vacations||{},kidOverrides:d.kidOverrides||{}};} }catch(e){}
-  try{ const so=localStorage.getItem("ha_sched_overrides"); if(so) scheduleOverrides=JSON.parse(so); }catch(e){}
-  try{ const ss=localStorage.getItem("ha_shape_sigs"); if(ss) committedShapeSigs=JSON.parse(ss); }catch(e){}
+  try{ const a=HA_LS.getItem("ha_archive"); if(a) archive=JSON.parse(a); }catch(e){}
+  try{ const af=HA_LS.getItem('act_favs'); if(af) actFavs=JSON.parse(af); }catch(e){}
+  try{ const mp=HA_LS.getItem("mp_weekly_data"); if(mp){const d=JSON.parse(mp);MP_DATA.weekLabel=d.weekLabel||MP_DATA.weekLabel;MP_DATA.winOfTheDay=d.winOfTheDay||MP_DATA.winOfTheDay;MP_DATA.skylightTip=d.skylightTip||MP_DATA.skylightTip;MP_DATA.days=d.days||MP_DATA.days;MP_DATA.allMeals=d.allMeals||MP_DATA.allMeals;} }catch(e){}
+  try{ const mc=HA_LS.getItem("mp_chore_state"); if(mc) mpChoreState=JSON.parse(mc); }catch(e){}
+  try{ const pc=HA_LS.getItem("ha_pace"); if(pc) paceData=JSON.parse(pc); }catch(e){}
+  try{ const md=HA_LS.getItem("ha_mastery"); if(md) masteryData=JSON.parse(md); }catch(e){}
+  try{ const ao=HA_LS.getItem("ha_att_overrides"); if(ao) attOverrides=JSON.parse(ao); }catch(e){}
+  try{ const ce=HA_LS.getItem("ha_co_excl"); if(ce) coExclusions=JSON.parse(ce); }catch(e){}
+  try{ const we=HA_LS.getItem("ha_wb_excl"); if(we) walkbackExcl=JSON.parse(we); }catch(e){}
+  try{ const cms=HA_LS.getItem("ha_co_manual_sat"); if(cms) coManualSat=JSON.parse(cms); }catch(e){}
+  try{ const cal=HA_LS.getItem("ha_calendar"); if(cal){const d=JSON.parse(cal);calendarData={holidays:d.holidays||{},vacations:d.vacations||{},kidOverrides:d.kidOverrides||{}};} }catch(e){}
+  try{ const so=HA_LS.getItem("ha_sched_overrides"); if(so) scheduleOverrides=JSON.parse(so); }catch(e){}
+  try{ const ss=HA_LS.getItem("ha_shape_sigs"); if(ss) committedShapeSigs=JSON.parse(ss); }catch(e){}
   pendingSpins=ld(WK+"_pending_spins")||{};
 }
 
@@ -4173,7 +4189,7 @@ function famSave(){
   }
   if(!out.length){ alert("You need at least one kid."); return; }
   var msg=document.getElementById("fam-save-msg"); if(msg){ msg.textContent="Saving…"; msg.style.color="var(--muted)"; }
-  localStorage.setItem("ha_family",JSON.stringify(out));
+  HA_LS.setItem("ha_family",JSON.stringify(out));
   var done=function(){ location.reload(); };
   if(typeof db!=="undefined"&&db){ db.ref("settings/family").set(out).then(done).catch(done); } else { done(); }
 }
@@ -4311,7 +4327,7 @@ function saveNewPin(){
   const val=inp.value.trim();
   if(!/^\d{4}$/.test(val)){ msg.style.color="#b5394a"; msg.textContent="PIN must be exactly 4 digits."; return; }
   APP_PIN=val;
-  localStorage.setItem("ha_app_pin",val);
+  HA_LS.setItem("ha_app_pin",val);
   if(db) db.ref("settings/pin").set(val);
   msg.style.color="#16a34a"; msg.textContent="PIN updated!";
   inp.value="";
@@ -4908,7 +4924,7 @@ function renderSchedule(el){
 
   // Mom notices: auto-generated week + structure drift since commit
   if(momModeActive){
-    let agn=null; try{agn=JSON.parse(localStorage.getItem("ha_autogen_notice")||"null");}catch(e){}
+    let agn=null; try{agn=JSON.parse(HA_LS.getItem("ha_autogen_notice")||"null");}catch(e){}
     if(agn&&("week"+agn.week)===WK){
       h+='<div style="margin:12px;border-left:4px solid #1a6b5a;background:#f0fdf4;border-radius:0 10px 10px 0;padding:10px 12px;display:flex;align-items:center;gap:10px">';
       h+='<div style="flex:1;min-width:0"><div style="font-size:11px;font-weight:800;color:#1a6b5a;text-transform:uppercase;letter-spacing:0.4px">&#10024; Week '+agn.week+' generated automatically</div>';
@@ -5087,15 +5103,15 @@ function carryHidden(who){
   return hc[who]!==false;
 }
 // Collapse state for the "Carried Over" box (tap its title to minimize to one line).
-let coCollapsed=(function(){try{const v=localStorage.getItem("ha_co_collapsed");return v===null?true:v==="1";}catch(e){return true;}})();
-function toggleCarryCollapse(){ coCollapsed=!coCollapsed; try{localStorage.setItem("ha_co_collapsed",coCollapsed?"1":"0");}catch(e){} renderAll(); }
+let coCollapsed=(function(){try{const v=HA_LS.getItem("ha_co_collapsed");return v===null?true:v==="1";}catch(e){return true;}})();
+function toggleCarryCollapse(){ coCollapsed=!coCollapsed; try{HA_LS.setItem("ha_co_collapsed",coCollapsed?"1":"0");}catch(e){} renderAll(); }
 // Same collapse treatment for the Mom-only "Carries to Next Week" box (end-of-week
 // overflow) — starts collapsed to one line with the count, tap to expand, remembered.
-let eowCollapsed=(function(){try{const v=localStorage.getItem("ha_eow_collapsed");return v===null?true:v==="1";}catch(e){return true;}})();
-function toggleEowCollapse(){ eowCollapsed=!eowCollapsed; try{localStorage.setItem("ha_eow_collapsed",eowCollapsed?"1":"0");}catch(e){} renderAll(); }
+let eowCollapsed=(function(){try{const v=HA_LS.getItem("ha_eow_collapsed");return v===null?true:v==="1";}catch(e){return true;}})();
+function toggleEowCollapse(){ eowCollapsed=!eowCollapsed; try{HA_LS.setItem("ha_eow_collapsed",eowCollapsed?"1":"0");}catch(e){} renderAll(); }
 // Per-kid expand state inside the box (default collapsed → tap a kid to open their list).
-let coKidOpen=(function(){try{return JSON.parse(localStorage.getItem("ha_co_kids")||"{}")||{};}catch(e){return {};}})();
-function toggleCarryKid(k){ coKidOpen[k]=!coKidOpen[k]; try{localStorage.setItem("ha_co_kids",JSON.stringify(coKidOpen));}catch(e){} renderAll(); }
+let coKidOpen=(function(){try{return JSON.parse(HA_LS.getItem("ha_co_kids")||"{}")||{};}catch(e){return {};}})();
+function toggleCarryKid(k){ coKidOpen[k]=!coKidOpen[k]; try{HA_LS.setItem("ha_co_kids",JSON.stringify(coKidOpen));}catch(e){} renderAll(); }
 // Per-kid toggle for the box. Hidden (default) → tap to show; shown → tap to hide again.
 // Only rendered to Mom (momHere). Persisted in config/rules so it syncs across the fleet.
 function toggleHideCarryover(kid){
@@ -6143,7 +6159,7 @@ let wellnessPeriods = [];                             // [{iso, ts}] logged peri
 
 function mpInit() {
   try {
-    const saved = localStorage.getItem('mp_weekly_data');
+    const saved = HA_LS.getItem('mp_weekly_data');
     if (saved) {
       const data = JSON.parse(saved);
       if (data.days) {
@@ -6155,10 +6171,10 @@ function mpInit() {
       }
     }
   } catch(e) {}
-  try { const s=localStorage.getItem('mp_chore_state'); mpChoreState=s?JSON.parse(s):{}; } catch(e){}
-  try { const w=localStorage.getItem('wellness_weighins'); if(w) wellnessWeighins=JSON.parse(w); } catch(e){}
-  try { const c=localStorage.getItem('wellness_cycle'); if(c) wellnessCycle=Object.assign(wellnessCycle,JSON.parse(c)); } catch(e){}
-  try { const p=localStorage.getItem('wellness_periods'); if(p) wellnessPeriods=JSON.parse(p); } catch(e){}
+  try { const s=HA_LS.getItem('mp_chore_state'); mpChoreState=s?JSON.parse(s):{}; } catch(e){}
+  try { const w=HA_LS.getItem('wellness_weighins'); if(w) wellnessWeighins=JSON.parse(w); } catch(e){}
+  try { const c=HA_LS.getItem('wellness_cycle'); if(c) wellnessCycle=Object.assign(wellnessCycle,JSON.parse(c)); } catch(e){}
+  try { const p=HA_LS.getItem('wellness_periods'); if(p) wellnessPeriods=JSON.parse(p); } catch(e){}
   const todayDay = MP_DATA.days.find(d=>d.isToday);
   mpActiveDay = todayDay ? todayDay.id : MP_DATA.days[0].id;
 }
@@ -6388,7 +6404,7 @@ function mpSelectDay(id) {
 function mpToggleChore(dayId, index) {
   if (!mpChoreState[dayId]) mpChoreState[dayId] = {};
   mpChoreState[dayId][index] = !mpChoreState[dayId][index];
-  try { localStorage.setItem('mp_chore_state', JSON.stringify(mpChoreState)); } catch(e) {}
+  try { HA_LS.setItem('mp_chore_state', JSON.stringify(mpChoreState)); } catch(e) {}
   if(db) db.ref("mp_chore_state").set(mpChoreState);
   const el = document.getElementById('content');
   renderMomsPlan(el);
@@ -6423,8 +6439,8 @@ function mpHandleUpload(event) {
       MP_DATA.days = data.days;
       MP_DATA.allMeals = data.allMeals || MP_DATA.allMeals;
       mpChoreState = {};
-      try { localStorage.setItem('mp_weekly_data', JSON.stringify(data)); } catch(err) {}
-      try { localStorage.removeItem('mp_chore_state'); } catch(err) {}
+      try { HA_LS.setItem('mp_weekly_data', JSON.stringify(data)); } catch(err) {}
+      try { HA_LS.removeItem('mp_chore_state'); } catch(err) {}
       // Sync Mom's Plan to Firebase so all devices stay current
       if(db){ db.ref("mp_data").set(data); db.ref("mp_chore_state").set({}); }
       const todayDay = MP_DATA.days.find(d => d.isToday);
@@ -6857,7 +6873,7 @@ function mwSaveWeighin(){
   const rec={iso, lb, note, ts:Date.now()};
   const i=wellnessWeighins.findIndex(w=>w&&w.iso===iso);
   if(i>=0) wellnessWeighins[i]=rec; else wellnessWeighins.push(rec);
-  try{localStorage.setItem('wellness_weighins',JSON.stringify(wellnessWeighins));}catch(e){}
+  try{HA_LS.setItem('wellness_weighins',JSON.stringify(wellnessWeighins));}catch(e){}
   const key=iso.replace(/[.#$\/\[\]]/g,'-');
   if(typeof db!=='undefined'&&db) db.ref('wellness/weighins/'+key).set(rec);
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
@@ -6869,7 +6885,7 @@ function mwSaveCycle(){
   const l=parseInt((document.getElementById('cy-len')||{}).value);
   if(a) wellnessCycle.anchor=a;
   if(l) wellnessCycle.len=l;
-  try{localStorage.setItem('wellness_cycle',JSON.stringify(wellnessCycle));}catch(e){}
+  try{HA_LS.setItem('wellness_cycle',JSON.stringify(wellnessCycle));}catch(e){}
   if(typeof db!=='undefined'&&db) db.ref('wellness/cycle').set(wellnessCycle);
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
   mwToast('✅ Cycle updated');
@@ -6879,22 +6895,22 @@ function mwLogPeriod(){
   const iso=(document.getElementById('period-date')||{}).value;
   if(!iso){ alert('Pick the date your period started.'); return; }
   if(!wellnessPeriods.find(p=>p&&p.iso===iso)) wellnessPeriods.push({iso, ts:Date.now()});
-  try{localStorage.setItem('wellness_periods',JSON.stringify(wellnessPeriods));}catch(e){}
+  try{HA_LS.setItem('wellness_periods',JSON.stringify(wellnessPeriods));}catch(e){}
   const key=iso.replace(/[.#$\/\[\]]/g,'-');
   if(typeof db!=='undefined'&&db) db.ref('wellness/periods/'+key).set({iso, ts:Date.now()});
   const eff=mwEffectiveCycle(); wellnessCycle.anchor=eff.anchor; wellnessCycle.len=eff.len;
-  try{localStorage.setItem('wellness_cycle',JSON.stringify(wellnessCycle));}catch(e){}
+  try{HA_LS.setItem('wellness_cycle',JSON.stringify(wellnessCycle));}catch(e){}
   if(typeof db!=='undefined'&&db) db.ref('wellness/cycle').set(wellnessCycle);
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
   mwToast('🩸 Period logged');
 }
 function mwRemovePeriod(iso){
   wellnessPeriods=wellnessPeriods.filter(p=>!(p&&p.iso===iso));
-  try{localStorage.setItem('wellness_periods',JSON.stringify(wellnessPeriods));}catch(e){}
+  try{HA_LS.setItem('wellness_periods',JSON.stringify(wellnessPeriods));}catch(e){}
   const key=iso.replace(/[.#$\/\[\]]/g,'-');
   if(typeof db!=='undefined'&&db) db.ref('wellness/periods/'+key).remove();
   const eff=mwEffectiveCycle(); wellnessCycle.anchor=eff.anchor; wellnessCycle.len=eff.len;
-  try{localStorage.setItem('wellness_cycle',JSON.stringify(wellnessCycle));}catch(e){}
+  try{HA_LS.setItem('wellness_cycle',JSON.stringify(wellnessCycle));}catch(e){}
   if(typeof db!=='undefined'&&db) db.ref('wellness/cycle').set(wellnessCycle);
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
   mwToast('Removed');
@@ -8617,7 +8633,7 @@ function addManualAttWeek(label){
   if(archive[wkKey]){ alert("That week already exists in the archive."); return; }
   const entry={weekLabel:wkKey,archivedAt:nowTs(),history:{},tasks:[],checked:{},dates:{}};
   archive[wkKey]=entry;
-  try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
+  try{HA_LS.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
   if(db) db.ref("archive/"+wkKey).set(entry);
   _preserveUI(function(){ const el=document.getElementById("content"); if(el) renderHistory(el); });
 }
@@ -8648,7 +8664,7 @@ function setAttOverride(wkKey,day,kid,val){
   if(!attOverrides[wkKey]) attOverrides[wkKey]={};
   if(!attOverrides[wkKey][day]) attOverrides[wkKey][day]={};
   attOverrides[wkKey][day][kid]=val;
-  try{localStorage.setItem("ha_att_overrides",JSON.stringify(attOverrides));}catch(e){}
+  try{HA_LS.setItem("ha_att_overrides",JSON.stringify(attOverrides));}catch(e){}
   if(db) db.ref("att_overrides/"+wkKey+"/"+day+"/"+kid).set(val);
   _preserveUI(function(){ const el=document.getElementById("content"); if(el) renderHistory(el); });
 }
@@ -8656,7 +8672,7 @@ function setAttDate(wkKey,day,val){
   if(!archive[wkKey]) return;
   if(!archive[wkKey].dates) archive[wkKey].dates={};
   archive[wkKey].dates[day]=val.trim();
-  try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
+  try{HA_LS.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
   if(db) db.ref("archive/"+wkKey+"/dates/"+day).set(val.trim());
   _preserveUI(function(){ const el=document.getElementById("content"); if(el) renderHistory(el); });
 }
@@ -8712,7 +8728,7 @@ function loadJson(){
         return;
       }
       isUploading=true;
-      const activeWK=localStorage.getItem("ha_active_wk")||WK;
+      const activeWK=HA_LS.getItem("ha_active_wk")||WK;
       const isSameWeek=!!(d.week===activeWK);
       if(isSameWeek){
         const lsChecked=ld(activeWK+"_checked")||{};
@@ -8800,7 +8816,7 @@ function loadJson(){
           const snapSlotPts=ld(oldWK+"_slot_points")||{};
           const entry={weekLabel:oldWK,archivedAt:nowTs(),history:snapHist,tasks:snapTasks,checked:snapChecked,dates:{...DAY_DT},slot_points:snapSlotPts,completion:buildWeekCompletion(snapTasks,snapChecked,snapHist)};
           archive[oldWK]=entry;
-          try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
+          try{HA_LS.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
           if(db) db.ref("archive/"+oldWK).set(entry);
         }
         // Carry ALL uncompleted tasks from old week into Monday of new week.
@@ -8814,7 +8830,7 @@ function loadJson(){
               d.tasks.push({...t,id:cId,day:"monday",cascade:true,
                 detail:(t.detail||t.title||"")+" (Carried from "+oldWK+")"});
           });
-        WK=d.week; localStorage.setItem("ha_active_wk",WK);
+        WK=d.week; HA_LS.setItem("ha_active_wk",WK);
         if(db) db.ref("ha_active_wk").set(WK);
         weekData=d; checked={}; slState={};
         if(d.supplies&&Array.isArray(d.supplies)){SUP=d.supplies;sv(WK+"_supplies_def",d.supplies);}
@@ -10936,7 +10952,7 @@ function ceWalkApply(){
     sv(WK+"_checked",checked); sv(WK+"_tasks",weekData.tasks); lastCheckedWrite=Date.now();
     if(db&&Object.keys(wbChecked).length) db.ref(WK+"/checked").update(wbChecked);
   }
-  try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
+  try{HA_LS.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
   // Mark these lessons walked-back so the cross-week carry never resurrects them as _c ghosts —
   // walk-back deletes the archive check-off the carry reads, which would otherwise look "un-done".
   let _wbExclTouched=false;
@@ -10944,7 +10960,7 @@ function ceWalkApply(){
     const base=it.baseId||baseId(it.doneKey||"");
     if(base&&!walkbackExcl[base]){ walkbackExcl[base]=true; _wbExclTouched=true; if(db) db.ref("walkback_excl/"+base).set(true); }
   });
-  if(_wbExclTouched){ try{localStorage.setItem("ha_wb_excl",JSON.stringify(walkbackExcl));}catch(e){} }
+  if(_wbExclTouched){ try{HA_LS.setItem("ha_wb_excl",JSON.stringify(walkbackExcl));}catch(e){} }
   // The snapshot: everything needed to understand (or undo) this walk-back later.
   const entry={ts:nowTs(),kid:ceEditKid,subjectKey:ceEditKey,note:note,
     items:items.map(it=>({wk:it.wk,id:it.doneKey,title:it.title,detail:it.detail,day:it.day,checkedTs:it.ts||null,hist:it.hist||null,
@@ -11550,7 +11566,7 @@ function ceSetTracking(mode){
       // drop its pace node — daily subjects aren't pace-tracked (also auto-pruned on gen)
       const ps=((paceData.subjects||{})[kid]||{})[sk];
       if(ps){ if(paceData.subjects&&paceData.subjects[kid]) delete paceData.subjects[kid][sk];
-        try{localStorage.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
+        try{HA_LS.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
         if(db) db.ref("pace/subjects/"+kid+"/"+sk).remove(); }
       try{ if(typeof buildCurrPaceCum==="function") buildCurrPaceCum(); }catch(e){}
       if(typeof gwShowToast==="function") gwShowToast((s.display||sk)+" is now a daily subject ✓");
@@ -11586,7 +11602,7 @@ function ceConvApply(){
     const v=rows[dn];
     if(v&&v[sk]!=null&&String(v[sk]).trim()&&(v.date||"")>_today) cellSnap[dn]=v[sk];
   });
-  try{localStorage.setItem("ha_convUndo",JSON.stringify({kid,sk,cells:cellSnap,prevSeq:s.lessonSeq||null,prevTotal:s.total||null,at:Date.now()}));}catch(e){}
+  try{HA_LS.setItem("ha_convUndo",JSON.stringify({kid,sk,cells:cellSnap,prevSeq:s.lessonSeq||null,prevTotal:s.total||null,at:Date.now()}));}catch(e){}
   const updates={};
   Object.keys(cellSnap).forEach(dn=>{
     updates["lessons/"+kid+"/"+dn+"/"+sk]=null;
@@ -11640,7 +11656,7 @@ function _gvPurgeSubject(kid,sk){
     if(t&&db) db.ref("scheduleOverrides/"+dt+"/"+kid).set(o);
   }
   try{ if(paceData&&paceData.subjects&&paceData.subjects[kid]) delete paceData.subjects[kid][sk];
-    try{localStorage.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
+    try{HA_LS.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
     if(db) db.ref("pace/subjects/"+kid+"/"+sk).remove(); }catch(e){}
   return n;
 }
@@ -12494,11 +12510,11 @@ function haNbCombinedParent(){
 // ── In-app reading-story generation (Lincoln) ───────────────────────────────────
 // Your Anthropic key is stored ONLY in this device's localStorage — never in the public
 // source, never in Firebase. The browser calls Claude directly; only the STORY is synced.
-function haGetKey(){ try{ return localStorage.getItem("ha_anthropic_key")||""; }catch(e){ return ""; } }
+function haGetKey(){ try{ return HA_LS.getItem("ha_anthropic_key")||""; }catch(e){ return ""; } }
 function haSaveKey(){ const el=document.getElementById("nbs-key"); if(!el) return; const k=el.value.trim();
-  try{ if(k) localStorage.setItem("ha_anthropic_key",k); else localStorage.removeItem("ha_anthropic_key"); }catch(e){}
+  try{ if(k) HA_LS.setItem("ha_anthropic_key",k); else HA_LS.removeItem("ha_anthropic_key"); }catch(e){}
   if(tab==="notebook"){ const el2=document.getElementById("content"); if(el2) renderNotebook(el2); } }
-function haClearKey(){ try{ localStorage.removeItem("ha_anthropic_key"); }catch(e){}
+function haClearKey(){ try{ HA_LS.removeItem("ha_anthropic_key"); }catch(e){}
   if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); } }
 const HA_PASSAGE_TOPICS=["how ball pythons sense their environment","how snakes shed their skin","pit viper heat sensing","how constrictors hunt","venomous snake defense behaviors","sea snake adaptations","how snakes navigate without limbs","rattlesnake rattle biology","king cobra intelligence","garter snake hibernation"];
 function haPassagePrompt(lexile, topic, usedTopics){
@@ -14983,7 +14999,7 @@ function actCatLabel(id){ for(var i=0;i<ACT_CATS.length;i++) if(ACT_CATS[i].id==
 function toggleActFav(id){
   actFavs[id]=!actFavs[id];
   if(!actFavs[id]) delete actFavs[id];
-  try{localStorage.setItem('act_favs',JSON.stringify(actFavs));}catch(e){}
+  try{HA_LS.setItem('act_favs',JSON.stringify(actFavs));}catch(e){}
   if(db) db.ref("act_favs").set(actFavs);
   if(tab==='activities'){ renderActFilters(); renderActCards(); }
 }
@@ -15063,7 +15079,7 @@ function nbXpSave(kid,key,cfg){
   if(!notebookSettings[kid]) notebookSettings[kid]={};
   if(!notebookSettings[kid].extraPages) notebookSettings[kid].extraPages={};
   notebookSettings[kid].extraPages[key]=cfg;
-  try{ localStorage.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
   try{ if(typeof db!=="undefined"&&db) db.ref("notebookSettings/"+kid+"/extraPages/"+key).set(cfg); }catch(e){}
   if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
 }
@@ -15073,7 +15089,7 @@ function nbXpDay(kid,key,day){ const c=nbXpCfg(kid,key); const d=Object.assign({
 function nbBindingToggle(){
   const next=!((notebookSettings||{}).bindingMargin===true);
   notebookSettings.bindingMargin=next;
-  try{ localStorage.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
   try{ if(typeof db!=="undefined"&&db) db.ref("notebookSettings/bindingMargin").set(next); }catch(e){}
   if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
 }
@@ -15081,14 +15097,14 @@ function nbSetReviewCap(kid,delta){
   const next=Math.max(0,Math.min(5,nbReviewCap(kid)+delta));
   if(!notebookSettings[kid]) notebookSettings[kid]={};
   notebookSettings[kid].reviewCap=next;
-  try{ localStorage.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
   try{ if(typeof db!=="undefined"&&db) db.ref("notebookSettings/"+kid+"/reviewCap").set(next); }catch(e){}
   const el=document.getElementById("content"); if(el&&tab==="notebook") renderNotebook(el);
 }
 function nbSavePersonal(kid){
   const gv=id=>{ const e=document.getElementById(id); return e?e.value.trim():""; };
   notebookPersonal[kid]={ name:gv("nbp-name-"+kid), address:gv("nbp-addr-"+kid), mom_phone:gv("nbp-mom-"+kid), dad_phone:gv("nbp-dad-"+kid) };
-  try{ localStorage.setItem("ha_nb_personal",JSON.stringify(notebookPersonal)); }catch(e){}
+  try{ HA_LS.setItem("ha_nb_personal",JSON.stringify(notebookPersonal)); }catch(e){}
   try{ if(typeof db!=="undefined"&&db) db.ref("notebookPersonal").set(notebookPersonal); }catch(e){}
   const msg=document.getElementById("nbp-msg-"+kid);
   if(msg){ msg.textContent="Saved ✓ — shows on the next notebook you generate."; setTimeout(()=>{ const m=document.getElementById("nbp-msg-"+kid); if(m)m.textContent=""; },3500); }
@@ -15675,7 +15691,7 @@ function unitEnroll(unitId,kid){
     db.ref("unitStudies/"+unitId+"/enrolled/"+kid).set(true);
   }
   if(!u.enrolled) u.enrolled={}; u.enrolled[kid]=true;
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   const m=document.getElementById("unit-enroll-msg"); if(m) m.textContent=cap(kid)+" enrolled — the deck is in their Drills & Notebook now.";
   const el=document.getElementById("content"); if(el) renderUnits(el);
 }
@@ -16829,13 +16845,13 @@ function savePaceSubject(kid,key,data){
   if(!paceData.subjects) paceData.subjects={};
   if(!paceData.subjects[kid]) paceData.subjects[kid]={};
   paceData.subjects[kid][key]=data;
-  try{localStorage.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
+  try{HA_LS.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
   if(db) db.ref("pace/subjects/"+kid+"/"+key).set(data);
 }
 
 function deletePaceSubject(kid,key){
   if(paceData.subjects&&paceData.subjects[kid]) delete paceData.subjects[kid][key];
-  try{localStorage.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
+  try{HA_LS.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
   if(db) db.ref("pace/subjects/"+kid+"/"+key).remove();
   renderAll();
 }
@@ -16867,7 +16883,7 @@ function syncPaceData(){
       }
     });
   });
-  if(_prunedDaily){ try{localStorage.setItem("ha_pace",JSON.stringify(paceData));}catch(e){} }
+  if(_prunedDaily){ try{HA_LS.setItem("ha_pace",JSON.stringify(paceData));}catch(e){} }
 
   [...SCHOOL_KIDS].forEach(k=>{
     const existing=(paceData.subjects&&paceData.subjects[k])||{};
@@ -16908,13 +16924,13 @@ function syncPaceData(){
 function savePacePlan(key,data){
   if(!paceData.plans) paceData.plans={};
   paceData.plans[key]=data;
-  try{localStorage.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
+  try{HA_LS.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
   if(db) db.ref("pace/plans/"+key).set(data);
 }
 
 function deletePacePlan(key){
   if(paceData.plans) delete paceData.plans[key];
-  try{localStorage.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
+  try{HA_LS.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
   if(db) db.ref("pace/plans/"+key).remove();
   renderAll();
 }
@@ -17913,7 +17929,7 @@ function cbApply(){
 
   db.ref("curriculum").update(up).catch(err=>{ cbMsg="⚠ Firebase error: "+err.message; renderAll(); });
   cbLastBuild={kid,sk,paths:prev,pace:_paceRestores,label:(s.display||sk)+" — "+res.stats.placed+" placed"};
-  try{localStorage.setItem("ha_cbUndo",JSON.stringify(cbLastBuild));}catch(e){}
+  try{HA_LS.setItem("ha_cbUndo",JSON.stringify(cbLastBuild));}catch(e){}
   delete cbBacklogStash[_blKey]; delete cbDecisions[_blKey];
   const _nMoved=_bl.split.stale.length, _nDis=_disSet.size;
   cbMsg="✓ Built "+(s.display||sk)+" into the map — "+res.stats.placed+" days, finishing "+res.stats.lastDate+"."
@@ -18071,7 +18087,7 @@ function _cbRebuildAllRun(kid,list){
   cbSubjKey=savedSubj; cbForm=savedForm; cbPreviewRes=savedPrev;
   if(built){
     cbLastBuild={kid,sk:"*",paths:bulkPaths,pace:bulkPace,label:"Rebuilt "+built+" of "+cap(kid)+"’s subjects"};
-    try{localStorage.setItem("ha_cbUndo",JSON.stringify(cbLastBuild));}catch(e){}
+    try{HA_LS.setItem("ha_cbUndo",JSON.stringify(cbLastBuild));}catch(e){}
   }
   cbMsg="↻ Rebuilt "+built+" subject"+(built!==1?"s":"")+" for "+cap(kid)+(skipped.length?" · "+skipped.length+" skipped":"");
   if(typeof gwShowToast==="function") gwShowToast(cbMsg);
@@ -18094,7 +18110,7 @@ function cbUndo(){
   });
   cbMsg="↩ Undid: "+cbLastBuild.label;
   cbLastBuild=null;
-  try{localStorage.removeItem("ha_cbUndo");}catch(e){}
+  try{HA_LS.removeItem("ha_cbUndo");}catch(e){}
   renderAll();
 }
 
@@ -18759,7 +18775,7 @@ function gvAddMissingDays(){
   if(!miss.length) return;
   if(!confirm("Add "+miss.length+" school day"+(miss.length>1?"s":"")+" to "+cap(kid)+"'s map ("+miss.slice(0,6).join(", ")+(miss.length>6?" …":"")+") and pull lessons forward into them? One-level undo is kept.")) return;
   const lessons=currData.lessons[kid];
-  try{localStorage.setItem("ha_addDaysUndo",JSON.stringify({kid,lessons:lessons,weekDays:(currData.weekDays||{})[kid]||null,at:Date.now()}));}catch(e){}
+  try{HA_LS.setItem("ha_addDaysUndo",JSON.stringify({kid,lessons:lessons,weekDays:(currData.weekDays||{})[kid]||null,at:Date.now()}));}catch(e){}
   const rowsArr=Object.keys(lessons).map(Number).filter(n=>lessons[n]).sort((a,b)=>a-b).map(dn=>lessons[dn]);
   miss.forEach(ds=>rowsArr.push({date:ds,week:_gvWkLabelFor(kid,ds)}));
   rowsArr.sort((a,b)=>((a.date||"")<(b.date||"")?-1:1));
@@ -19163,7 +19179,7 @@ function _ovRmX(kid,dateStr,sk,ignoreAuto){
   return !(ignoreAuto&&o._gwRm&&o._gwRm[sk]);
 }
 function saveScheduleOverrides(){
-  try{localStorage.setItem("ha_sched_overrides",JSON.stringify(scheduleOverrides));}catch(e){}
+  try{HA_LS.setItem("ha_sched_overrides",JSON.stringify(scheduleOverrides));}catch(e){}
   if(db) db.ref("scheduleOverrides").set(scheduleOverrides);
 }
 // Mutate one date+kid override entry, pruning empties so Firebase stays clean
@@ -19324,8 +19340,8 @@ function weekShapeChanged(){
   return _sigChanged(weekShapeSig(currWeekNum()),stored);
 }
 // SHAPESIG_END
-function agDismiss(){ try{localStorage.removeItem("ha_autogen_notice");}catch(e){} renderAll(); }
-function agReview(){ try{localStorage.removeItem("ha_autogen_notice");}catch(e){} openPlanNextWeek(currWeekNum()); }
+function agDismiss(){ try{HA_LS.removeItem("ha_autogen_notice");}catch(e){} renderAll(); }
+function agReview(){ try{HA_LS.removeItem("ha_autogen_notice");}catch(e){} openPlanNextWeek(currWeekNum()); }
 
 // ── LESSON MAP EDITOR actions ──
 let lmAddOpen=null; // "kid|dateStr" when the add-subject picker is open
@@ -21558,7 +21574,7 @@ function _ttsFilePlay(text){
 }
 // A device that proved engine-less STAYS in file mode across sessions — so every tap
 // plays synchronously inside the gesture (autoplay-safe) from the first word on.
-try{ if(localStorage.getItem("ha_tts_dead")==="1") window._ttsDead=true; }catch(e){}
+try{ if(HA_LS.getItem("ha_tts_dead")==="1") window._ttsDead=true; }catch(e){}
 let mastUtter=null;   // module-level ref so Safari can't GC the utterance while it plays
 function mastSpeak(text){
   if(!text||!window.speechSynthesis) return;
@@ -21580,7 +21596,7 @@ function mastSpeak(text){
     // the pre-generated Samantha files — including THIS word, a beat late but heard.
     // A working engine can't false-trip: either it's speaking at +700ms or its voice
     // list has populated by then.
-    setTimeout(function(){ try{ if(!speechSynthesis.speaking&&!speechSynthesis.getVoices().length){ if(!window._ttsDead){ window._ttsDead=true; try{localStorage.setItem("ha_tts_dead","1");}catch(e2){} dbg("tts: no engine — pre-gen audio fallback ON (persisted)"); } _ttsFilePlay(text); } }catch(e){} },700);
+    setTimeout(function(){ try{ if(!speechSynthesis.speaking&&!speechSynthesis.getVoices().length){ if(!window._ttsDead){ window._ttsDead=true; try{HA_LS.setItem("ha_tts_dead","1");}catch(e2){} dbg("tts: no engine — pre-gen audio fallback ON (persisted)"); } _ttsFilePlay(text); } }catch(e){} },700);
     return;
   }
   try{
@@ -21644,7 +21660,7 @@ function mastMatchToggleSpeak(){
   const s=masteryData[k+"_settings"]||(masteryData[k+"_settings"]={});
   s.match_speak=!(s.match_speak===true);
   if(db) db.ref("mastery/"+k+"_settings/match_speak").set(s.match_speak);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
 function mastMatchSetPair(v){ matchPairMode=v; matchState=null; _mastRe(); }
@@ -21784,7 +21800,7 @@ function mastMatchFinish(){
   if(st.isPB){
     s.match_best[key]=sec;
     if(db) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:sec});  // this key only
-    try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
 }
 // ── ✍️ Finger tracing (Orton-Gillingham: see it → say it → TRACE it) ──────────────
@@ -21889,7 +21905,7 @@ function mastMatchLogResult(){
   if(!Array.isArray(masteryData.matchLog[masteryKid])) masteryData.matchLog[masteryKid]=Object.values(masteryData.matchLog[masteryKid]||{});
   masteryData.matchLog[masteryKid].push(entry);
   if(db) db.ref("mastery/matchLog/"+masteryKid).push(entry);   // append-only push — never a whole-node set
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   st.logged=true;
   _mastRe();
 }
@@ -22025,7 +22041,7 @@ function mastRemoveDefAudio(kid,prompt){
   if(s.def_audio) delete s.def_audio[prompt];
   masteryData[kid+"_settings"]=s;
   if(db) db.ref("mastery/"+kid+"_settings/def_audio").update({[prompt]:null});  // this key only
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
 // Edit List take: land it on the open card straight away (no Save button on that editor).
@@ -22035,7 +22051,7 @@ function mastListSaveRec(id){
   if(!it){ mastRecAudio=""; return; }
   if(!mastDefKeyOk(it.prompt)){ mastRecErr="This card's front can't key a recording (. # $ [ ] /)"; mastRecAudio=""; return; }
   mastSaveDefAudio(masteryKid,it.prompt);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 }
 // Save the pending clip for a prompt (targeted write, same key rules as definitions).
 function mastSaveDefAudio(kid,prompt){
@@ -22247,12 +22263,12 @@ function mastOrderedDue(pn){
   // Also runs when a half-finished log was just resumed (mastRestoreLog), so the resumed
   // session keeps the exact order it was left in.
   if(!mastLogDeck){
-    try{ const s=JSON.parse(localStorage.getItem(_lsk)||"null"); if(s&&s.key===key&&Array.isArray(s.deck)){ mastLogDeck=s.deck; mastSessionKey=key; } }catch(e){}
+    try{ const s=JSON.parse(HA_LS.getItem(_lsk)||"null"); if(s&&s.key===key&&Array.isArray(s.deck)){ mastLogDeck=s.deck; mastSessionKey=key; } }catch(e){}
   }
   if(!mastLogDeck || (!mastLogMode && mastSessionKey!==key)){
     mastLogDeck=mastShuffleDeck(due).map(i=>i.id);
     mastSessionKey=key;
-    try{ localStorage.setItem(_lsk,JSON.stringify({key:key,deck:mastLogDeck})); }catch(e){}
+    try{ HA_LS.setItem(_lsk,JSON.stringify({key:key,deck:mastLogDeck})); }catch(e){}
   }
   let all=masteryData[masteryKid]; if(!Array.isArray(all)) all=Object.values(all||{});
   const byId={}; all.forEach(i=>{ if(i&&i.id) byId[i.id]=i; });
@@ -22312,7 +22328,7 @@ function mastSaveManualScore(){
   if(!masteryData.history[masteryKid]) masteryData.history[masteryKid]={};
   masteryData.history[masteryKid][key]=entry;
   if(db) db.ref("mastery/history/"+masteryKid+"/"+key).set(entry);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 
   mastManualScore=false;
   _mastRe();
@@ -22322,7 +22338,7 @@ function mastDeleteScore(dateKey){
   if(masteryData.history&&masteryData.history[masteryKid]){
     delete masteryData.history[masteryKid][dateKey];
     if(db) db.ref("mastery/history/"+masteryKid+"/"+dateKey).remove();
-    try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
     _mastRe();
   }
 }
@@ -22595,7 +22611,7 @@ function mastSaveResults(){
   if(!masteryData.history) masteryData.history={};
   if(!masteryData.history[masteryKid]) masteryData.history[masteryKid]={};
   masteryData.history[masteryKid][today.replace(/-/g,"")]=histEntry;
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   try{ checkDrillsGraduation(masteryKid,_preDrillsDone); }catch(e){}
 
   mastLogMode=false;
@@ -22603,7 +22619,7 @@ function mastSaveResults(){
   mastLogStartTs=null;
   mastLogDeck=null;
   mastSessionKey="";  // logging is the trigger for a new quiz — drop the persisted shuffle so the next view reshuffles
-  try{localStorage.removeItem("ha_mast_deck_"+masteryKid);}catch(e){}
+  try{HA_LS.removeItem("ha_mast_deck_"+masteryKid);}catch(e){}
   mastClearLogPersist();  // session is saved — nothing to resume
   // Land on Scores so the kid sees today's result and the trend right after finishing.
   mastView="scores"; mastScoreItemId=null;
@@ -23022,7 +23038,7 @@ function mastSaveDef(prompt,def){
   // Touch ONLY this key — writing the whole map from local state let a stale tab wipe
   // every definition added elsewhere (same wipe class as the old mastAdminSave bug).
   if(db) db.ref("mastery/"+kid+"_settings/definitions").update({[prompt]:def.trim()||null});
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 }
 function mastAdminCatMode(cat,mode){
   const kid=masteryKid;
@@ -23031,7 +23047,7 @@ function mastAdminCatMode(cat,mode){
   s.cat_modes[cat]=mode;
   masteryData[kid+"_settings"]=s;
   if(db) db.ref("mastery/"+kid+"_settings/cat_modes").update({[cat]:mode});  // this cat only — never the whole map from local state
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
 // Per-kid flip face override (this kid drills "Photo → name" vs "Name → facts",
@@ -23042,7 +23058,7 @@ function mastToggleCatFace(cat){
   if(!s.cat_face) s.cat_face={};
   s.cat_face[cat]=(mastCatFace(cat)==="name")?"desc":"name";
   if(db) db.ref("mastery/"+kid+"_settings/cat_face").update({[cat]:s.cat_face[cat]});
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
 function mastAdminSave(){
@@ -23056,7 +23072,7 @@ function mastAdminSave(){
   const existing=masteryData[kid+"_settings"]||{};
   masteryData[kid+"_settings"]={...existing,...mastAdminLocal};
   if(db) db.ref("mastery/"+kid+"_settings").update(mastAdminLocal);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   mastAdminDirty=false;
   _mastRe();
 }
@@ -23113,7 +23129,7 @@ function mastSeedCat(cat){
     const it=mastMintFromBank(cat,name,items);
     items.push(it); fresh.push(it); have.add(name); intro++;
   }
-  if(fresh.length){ masteryData[kid]=items; mastPutCards(kid,items,fresh); try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){} }
+  if(fresh.length){ masteryData[kid]=items; mastPutCards(kid,items,fresh); try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){} }
   return fresh.length;
 }
 function mastSetStartAfter(cat,after){
@@ -23157,7 +23173,7 @@ function mastPullItem(cat,name){
   items.push(item);
   masteryData[kid]=items;
   mastPutCards(kid,items,[item]);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
 // Per-kid "Show Me" toggle — writes the one key directly (targeted set), independent of
@@ -23167,7 +23183,7 @@ function mastAdminToggleShowMe(){
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   s.show_me=(s.show_me===false);   // false → true; true/undefined (default on) → false
   if(db) db.ref("mastery/"+kid+"_settings/show_me").set(s.show_me);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
 function mastAdminToggleTier(tier){
@@ -23230,7 +23246,7 @@ function mastSaveBankOrder(cat,orderedNames){
   if(!masteryData[kid+"_bank_order"]) masteryData[kid+"_bank_order"]={};
   masteryData[kid+"_bank_order"][cat]=orderedNames;
   if(db) db.ref("mastery/"+kid+"_bank_order/"+cat).set(orderedNames);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 }
 function mastReorderToggle(cat){
   if(mastReorderCat===cat){ mastReorderCat=null; mastReorderSel=null; }
@@ -23287,7 +23303,7 @@ function mastRestartDeck(cat,reversed){
   if(!s.cat_face) s.cat_face={};
   s.cat_face[cat]=reversed?"reversed":"desc";
   if(db) db.ref("mastery/"+kid+"_settings/cat_face").update({[cat]:s.cat_face[cat]});
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   if(typeof gwShowToast==="function") gwShowToast("\u{1F501} "+cat+" restarted "+(reversed?"reversed":"normal")+" — "+deck.length+" cards back to Learning");
   _mastRe();
 }
@@ -23300,7 +23316,7 @@ function mastSetVisual(cat,name,val){
   // Touch only this key — a whole-map set() from a stale tab wiped every other visual
   // (Julian's dino photos live here). Keys with . # $ [ ] / can't be written at all.
   if(db&&mastDefKeyOk(key)) db.ref("mastery/"+kid+"_visuals").update({[key]:val||null});
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 }
 function mastBankAddItem(){
   const kid=masteryKid||"julian";
@@ -23339,7 +23355,7 @@ function mastBankAddItem(){
   if(mastBankAddMode&&mastBankAddMode!==mastGetCatMode(kid,cat)){
     mastAdminCatMode(cat,mastBankAddMode);
   }
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   mastBankAddName="";mastBankAddEmoji="";mastBankAddImg="";mastBankAddNewCat="";mastBankAddMode="";mastBankAddDef="";
   _mastRe();
   var _nf=document.getElementById("mast-curr-add-name"); if(_nf) _nf.focus();
@@ -23384,7 +23400,7 @@ function mastBankAddBatch(){
     if(db) db.ref("mastery/"+kid+"_settings/definitions").update(defs);  // these keys only
   }
   if(mastBankAddMode&&mastBankAddMode!==mastGetCatMode(kid,cat)) mastAdminCatMode(cat,mastBankAddMode);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   let msg="\u{2713} Added "+added.length+" to "+cat;
   if(dupes.length) msg+=" \u{00B7} skipped "+dupes.length+" duplicate(s)";
   if(badDefKeys.length) msg+=" \u{00B7} "+badDefKeys.length+" definition(s) skipped (name contains a period — use a recite card instead)";
@@ -23441,7 +23457,7 @@ function mastVisEditSet(emoji){
     else { delete it.emoji; }
     masteryData[kid]=items;
     mastPutCards(kid,items,[it]);
-    try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
   mastVisEditKey=null; _mastRe();
 }
@@ -23454,7 +23470,7 @@ function mastVisEditUpload(file){
     let items=masteryData[kid]||[];
     if(!Array.isArray(items)) items=Object.values(items);
     const it=items.find(i=>i.prompt===mastVisEditKey.name&&i.subject===mastVisEditKey.cat);
-    if(it){ it.imageUrl=dataUrl; delete it.emoji; masteryData[kid]=items; mastPutCards(kid,items,[it]); try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){} }
+    if(it){ it.imageUrl=dataUrl; delete it.emoji; masteryData[kid]=items; mastPutCards(kid,items,[it]); try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){} }
     mastVisEditKey=null; _mastRe();
   }).catch(err=>{ alert("Image failed: "+err.message); });
 }
@@ -23476,7 +23492,7 @@ function mastRemoveCustomItem(cat,name){
   masteryData[kid+"_custom_items"]=ci.filter(i=>!(i.cat===cat&&i.name===name));
   mastBankRemove(kid,e=>e.cat===cat&&e.name===name);
   mastSetVisual(cat,name,null);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
 function mastUnpullItem(cat,name){
@@ -23487,7 +23503,7 @@ function mastUnpullItem(cat,name){
   if(!item||item.status!=="introduction"||(item.tally_dots||0)>0) return;
   masteryData[kid]=items.filter(i=>i!==item);
   mastRemoveByIds(kid,[item.id]);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
 function mastDeleteItem(cat,name){
@@ -23504,7 +23520,7 @@ function mastDeleteItem(cat,name){
     mastBankRemove(kid,e=>e.cat===cat&&e.name===name);
   }
   mastSetVisual(cat,name,null);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
 function mastDeleteCategory(cat){
@@ -23533,7 +23549,7 @@ function mastDeleteCategory(cat){
   Object.keys(vis).forEach(k=>{ if(k.startsWith(prefix)){ delete vis[k]; _visRm[k]=null; } });
   // Remove only this category's keys — a whole-map set() from stale state wiped other decks' visuals.
   if(db&&Object.keys(_visRm).length) db.ref("mastery/"+kid+"_visuals").update(_visRm);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
 function mastGetGenerated(item){
@@ -23645,7 +23661,7 @@ function mastListMove(id,dir){
   const tmp=items[idx]; items[idx]=items[newIdx]; items[newIdx]=tmp;
   masteryData[masteryKid]=items;
   mastPutCards(masteryKid,items,[items[idx],items[newIdx]]);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
 function mastListDelete(id){
@@ -23654,7 +23670,7 @@ function mastListDelete(id){
   if(!items||!Array.isArray(items)) return;
   masteryData[masteryKid]=items.filter(i=>i.id!==id);
   mastRemoveByIds(masteryKid,[id]);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
 function mastListEditItem(id,field,value){
@@ -23666,7 +23682,7 @@ function mastListEditItem(id,field,value){
   if(field==="tier") mastStampNextDue(it,items,value,mastGetPrintNum());  // new tier → re-book its review slot
   masteryData[masteryKid]=items;
   mastPutCards(masteryKid,items,[it]);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 }
 // Edit-List text fields: fix a card's front/back in place. Front can't be blank; a
 // blanked back removes the answer field (the card falls back to the definitions list).
@@ -23678,7 +23694,7 @@ function mastListEditText(id,field,value){
   if(v) it[field]=v; else delete it[field];
   masteryData[masteryKid]=items;
   mastPutCards(masteryKid,items,[it]);   // whole-card targeted write — deletions persist too
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 }
 // Edit-List slot nudger: move a card's booked review print number by ±1, never into the past.
 function mastListEditSlot(id,delta){
@@ -23693,7 +23709,7 @@ function mastListEditSlot(id,delta){
   it.next_due=Math.max(pn+1,cur+delta);
   masteryData[masteryKid]=items;
   mastPutCards(masteryKid,items,[it]);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 }
 // R7: per-item knowledge_type override. "" = Auto (delete the field -> derive from type via the R1
 // map). Tagging concept/transfer makes the item never-drill (R5): it leaves the quiz and appears in
@@ -23706,7 +23722,7 @@ function mastListSetKnowledgeType(id,kt){
   if(kt) it.knowledge_type=kt; else delete it.knowledge_type;
   masteryData[masteryKid]=items;
   mastPutCards(masteryKid,items,[it]);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
 // R7: per-item Sprint switch override (most-specific tier of item.sprintEnabled ?? cat_sprint ??
@@ -23719,7 +23735,7 @@ function mastListSetSprint(id,val){
   if(val===null||val===undefined) delete it.sprintEnabled; else it.sprintEnabled=val;
   masteryData[masteryKid]=items;
   mastPutCards(masteryKid,items,[it]);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
 
@@ -23787,7 +23803,7 @@ function mastEditSave(){
 
   masteryData[masteryKid]=items;
   mastPutCards(masteryKid,items,[it]);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   mastEditId=null;
   _mastRe();
 }
@@ -23799,7 +23815,7 @@ function mastEditDelete(){
   items=items.filter(i=>i.id!==mastEditId);
   masteryData[masteryKid]=items;
   mastRemoveByIds(masteryKid,[mastEditId]);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   mastEditId=null;
   _mastRe();
 }
@@ -24004,13 +24020,13 @@ function mastSlideShown(id){
 // The scores live only in memory until Save, so a half-finished quiz used to evaporate
 // when someone clicked out. Persist {date,scores} per kid and silently resume same-day.
 function mastPersistLog(){
-  try{ localStorage.setItem("ha_mast_log_"+masteryKid,JSON.stringify({date:new Date().toISOString().slice(0,10),scores:mastLogScores,startTs:mastLogStartTs})); }catch(e){}
+  try{ HA_LS.setItem("ha_mast_log_"+masteryKid,JSON.stringify({date:new Date().toISOString().slice(0,10),scores:mastLogScores,startTs:mastLogStartTs})); }catch(e){}
 }
-function mastClearLogPersist(){ try{localStorage.removeItem("ha_mast_log_"+masteryKid);}catch(e){} }
+function mastClearLogPersist(){ try{HA_LS.removeItem("ha_mast_log_"+masteryKid);}catch(e){} }
 function mastRestoreLog(){
   if(mastLogMode) return;
   try{
-    const s=JSON.parse(localStorage.getItem("ha_mast_log_"+masteryKid)||"null");
+    const s=JSON.parse(HA_LS.getItem("ha_mast_log_"+masteryKid)||"null");
     if(!s) return;
     const _today=new Date().toISOString().slice(0,10);
     const _has=s.scores&&Object.keys(s.scores).length;
@@ -24056,9 +24072,9 @@ function mastRescueStaleLog(s){
   if(!masteryData.history[masteryKid]) masteryData.history[masteryKid]={};
   masteryData.history[masteryKid][key]=entry;
   if(db) db.ref("mastery/history/"+masteryKid+"/"+key).set(entry);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   mastClearLogPersist();
-  try{localStorage.removeItem("ha_mast_deck_"+masteryKid);}catch(e){}  // that quiz's frozen shuffle is stale with it
+  try{HA_LS.removeItem("ha_mast_deck_"+masteryKid);}catch(e){}  // that quiz's frozen shuffle is stale with it
 }
 // "One quiz per day": once today is logged, the Log button steps aside; this explicit
 // button is the only way to run a second session (which MERGES into today's history).
@@ -24201,7 +24217,7 @@ function mastAddItems(){
   // Save to Firebase (parked items are ordinary items in the kid's list — no bank writes)
   masteryData[masteryKid]=items;
   mastPutCards(masteryKid,items,newItems);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 
   mastAddMode=false;
   mastAddItemMode="";
@@ -24234,7 +24250,7 @@ function mastRebalanceKid(kid){
     if(it.next_due!==best){ it.next_due=best; changes[idxOf.get(it)+"/next_due"]=best; changed++; }
   });
   if(db && changed) db.ref("mastery/"+kid).update(changes);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   return {changed:changed,cards:sched.length};
 }
 function mastRebalanceNow(){
@@ -26968,14 +26984,14 @@ function coAddToSaturday(taskId){
   // Persist the choice — runDisplacement re-applies it on every recompute (incl. reloads & other devices)
   if(!coManualSat[WK]) coManualSat[WK]={};
   coManualSat[WK][taskId]=true;
-  try{localStorage.setItem("ha_co_manual_sat",JSON.stringify(coManualSat));}catch(e){}
+  try{HA_LS.setItem("ha_co_manual_sat",JSON.stringify(coManualSat));}catch(e){}
   if(db) db.ref(WK+"/co_manual_sat").set(coManualSat[WK]);
   runDisplacement();
   renderAll();
 }
 function coRemoveFromSaturday(taskId){
   if(coManualSat[WK]) delete coManualSat[WK][taskId];
-  try{localStorage.setItem("ha_co_manual_sat",JSON.stringify(coManualSat));}catch(e){}
+  try{HA_LS.setItem("ha_co_manual_sat",JSON.stringify(coManualSat));}catch(e){}
   if(db) db.ref(WK+"/co_manual_sat").set(coManualSat[WK]||{});
   runDisplacement();
   renderAll();
@@ -26983,12 +26999,12 @@ function coRemoveFromSaturday(taskId){
 function coSkipTask(taskId){
   if(!coExclusions[WK]) coExclusions[WK]={};
   coExclusions[WK][taskId]=true;
-  try{localStorage.setItem("ha_co_excl",JSON.stringify(coExclusions));}catch(e){}
+  try{HA_LS.setItem("ha_co_excl",JSON.stringify(coExclusions));}catch(e){}
   renderAll();
 }
 function coUnskipTask(taskId){
   if(coExclusions[WK]) delete coExclusions[WK][taskId];
-  try{localStorage.setItem("ha_co_excl",JSON.stringify(coExclusions));}catch(e){}
+  try{HA_LS.setItem("ha_co_excl",JSON.stringify(coExclusions));}catch(e){}
   renderAll();
 }
 
@@ -28379,7 +28395,7 @@ function retrAdminSave(){
   if(!masteryData.retrievalPlan) masteryData.retrievalPlan={};
   masteryData.retrievalPlan[kid]=payload;
   if(db) db.ref("mastery/retrievalPlan/"+kid).update(payload);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   retrAdminLocal=null;
   _mastRe();
 }
@@ -28388,7 +28404,7 @@ function retrAdminReset(){
   const kid=masteryKid;
   if(masteryData.retrievalPlan) delete masteryData.retrievalPlan[kid];
   if(db) db.ref("mastery/retrievalPlan/"+kid).remove();
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   retrAdminLocal=null;
   _mastRe();
 }
@@ -28741,7 +28757,7 @@ function sprintLogResult(){
   if(!Array.isArray(masteryData.sprintLog[kid])) masteryData.sprintLog[kid]=Object.values(masteryData.sprintLog[kid]||{});
   masteryData.sprintLog[kid].push(entry);
   if(db) db.ref("mastery/sprintLog/"+kid).push(entry);
-  try{localStorage.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   const t=mastSprintBestTrend(masteryData.sprintLog[kid]);
   const el=document.getElementById("sp-gain");
   if(el){ el.textContent=t.lastIsPB?("\u{1F3C6} New personal best — "+best+" words/60s!"):("Logged \u{2713}  Personal best: "+t.currentBest+" words/60s"); el.style.color="#16a34a"; }
@@ -31423,7 +31439,7 @@ function autoGenerateWeekIfNeeded(){
         gwResult=gen.result; gwDropped=gen.dropped; gwCarryOverCount=gen.carryOverCount||0;
         gwCursors=gen.cursors||null; gwCalendarSkips=gen.calendarSkips||null;
         gwCommit();
-        try{localStorage.setItem("ha_autogen_notice",JSON.stringify({week:wn,ts:Date.now()}));}catch(e){}
+        try{HA_LS.setItem("ha_autogen_notice",JSON.stringify({week:wn,ts:Date.now()}));}catch(e){}
         dbg("auto-generated week "+wn);
         renderAll();
       } finally { release(); }
@@ -31467,7 +31483,7 @@ function generateWeek(config){
   let dayData, weekCursors=null, weekCatchup=null;
   if(config.autoAdvance){
     // Two-tier cursor: detect regeneration vs new week
-    const activeWK=localStorage.getItem("ha_active_wk")||WK;
+    const activeWK=HA_LS.getItem("ha_active_wk")||WK;
     const isRegen=(weekLabel===activeWK);
     // Regeneration: recompute cursor excluding this week's own checked tasks
     // so the cursor reflects only progress from prior weeks (not self-counting).
@@ -31864,14 +31880,14 @@ function gwCommit(){
       gwSyncConfigOverrides(wn,gwConfig||{},gwDropped||[]);
       const sig=weekShapeSig(wn);
       committedShapeSigs[d.week]=sig;
-      try{localStorage.setItem("ha_shape_sigs",JSON.stringify(committedShapeSigs));}catch(e2){}
+      try{HA_LS.setItem("ha_shape_sigs",JSON.stringify(committedShapeSigs));}catch(e2){}
       if(db) db.ref("shape_sigs/"+d.week).set(sig);
     }
   }catch(e){ console.log("[HA] override sync error",e); }
 
   // Same logic as loadJson
   isUploading=true;
-  const activeWK=localStorage.getItem("ha_active_wk")||WK;
+  const activeWK=HA_LS.getItem("ha_active_wk")||WK;
   const isSameWeek=(d.week===activeWK);
 
   // A week that hasn't started yet gets parked, not adopted — this is what stops generating ahead
@@ -32037,7 +32053,7 @@ function gwCommit(){
       const snapSlotPts=ld(oldWK+"_slot_points")||{};
       const entry={weekLabel:oldWK,archivedAt:nowTs(),history:snapHist,tasks:snapTasks,checked:snapChecked,dates:{...DAY_DT},slot_points:snapSlotPts,completion:buildWeekCompletion(snapTasks,snapChecked,snapHist)};
       archive[oldWK]=entry;
-      try{localStorage.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
+      try{HA_LS.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
       if(db) db.ref("archive/"+oldWK).set(entry);
     }
     snapTasks.filter(t=>!t.id.endsWith("_c")&&!snapChecked[t.id]&&!snapChecked[t.id+"_c"]&&!subjNoCarry(t)&&!carryRebaselined(t)&&!carrySubjectGone(t))
@@ -32047,7 +32063,7 @@ function gwCommit(){
           d.tasks.push({...t,id:cId,day:"monday",cascade:true,
             detail:(t.detail||t.title||"")+" (Carried from "+oldWK+")"});
       });
-    WK=d.week; localStorage.setItem("ha_active_wk",WK);
+    WK=d.week; HA_LS.setItem("ha_active_wk",WK);
     if(db) db.ref("ha_active_wk").set(WK);
     weekData=d; checked={}; slState={};
     sv(WK+"_tasks",d.tasks); sv(WK+"_babysitter",d.babysitter||null);
