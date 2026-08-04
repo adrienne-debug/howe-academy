@@ -31089,6 +31089,35 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
         :computeSubjectCursor(kid,sk,excludeWeek);
       cursors[kid][sk]=cursor;
 
+      // ── Mid-week regen: advance past work ALREADY DONE this week ──
+      // The replay used to re-serve completed lessons (the cursor excludes this week
+      // by design); commit re-attached their checks and the ts-heal pulled them back
+      // to their completion day — so every re-served done copy EVAPORATED off its
+      // slot AFTER the balancer had evened minutes that included it. The first
+      // remaining day came out ~1h light on every regen (wk16 live, 2026-08-04).
+      // Count distinct completed lesson refs this week (a _c carry + fresh copy of
+      // the same lesson = ONE; claimed counts — the kid did the work), serve from
+      // past them, and drop that many slot dates from the FRONT so cadence holds:
+      // an ahead subject rests instead of accelerating, and the minute-balancer
+      // sees each day's true load. Completed cards survive via gwCommit's
+      // keep-pass now, not by re-serving.
+      let doneWk=0; const _seenWk={};
+      const _rlx=((subjects[sk]||{}).rules||"");
+      if(excludeWeek&&excludeWeek===("week"+weekNum)&&typeof weekData==="object"&&weekData&&Array.isArray(weekData.tasks)
+         &&!_rlx.includes("first")&&!_rlx.includes("last")){
+        weekData.tasks.forEach(t=>{
+          if(t.who!==kid||t.subjectKey!==sk) return;
+          if(!(checked[t.id]||(typeof claimed!=="undefined"&&claimed&&claimed[t.id]))) return;
+          _seenWk[taskLessonRef(t)||("#"+t.id)]=true;
+        });
+        doneWk=Object.keys(_seenWk).length;
+        // Drop the consumed slots from the serving list AND from dayData — the fill
+        // loop below only visits `dates`, so a slot left behind would keep its raw
+        // grid-cell text and gwBuildDayTasks would lay it as a phantom task.
+        if(doneWk>0) dates.splice(0,Math.min(doneWk,dates.length)).forEach(dt=>{ if(dayData[dt]&&dayData[dt][kid]) delete dayData[dt][kid][sk]; });
+      }
+      const cursorEff=cursor+doneWk;
+
       // Every planned slot fills with the next lesson; a finished subject stops filling.
       // A HARD session goal caps the effective sequence at the target — the subject stops
       // scheduling once the cursor reaches it (until the goal is moved further / cleared).
@@ -31101,10 +31130,10 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
       // instead of sliding the finish date out forever. Capped, fit-checked, never
       // doubles a day; overflow stays behind and catches up later — never dropped.
       const _cs=subjects[sk]||{}, _crl=_cs.rules||"";
-      if(seq.length>cursor&&!_crl.includes("first")&&!_crl.includes("last")){
+      if(seq.length>cursorEff&&!_crl.includes("first")&&!_crl.includes("last")){
         const expEnter=currExpectedBase(kid,sk,weekNum-1);
         const cap=(_cs.carryoverCap!=null)?_cs.carryoverCap:2;
-        const want=Math.min(Math.max(0,(expEnter==null?0:expEnter-cursor)),cap,(seq.length-cursor)-dates.length);
+        const want=Math.min(Math.max(0,(expEnter==null?0:expEnter-cursorEff)),cap,(seq.length-cursorEff)-dates.length);
         if(want>0){
           const added=gwCatchupExtraDates(kid,sk,_cs,dates,want,dayData);
           added.forEach(d=>{ dates.push(d); });
@@ -31113,14 +31142,18 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
         }
       }
 
-      const remaining=seq.length-cursor;
-      // Cap at `remaining` so a hard-cutoff subject never schedules past its target
-      // (getNextLessonsFromCursor reads the FULL sequence, so slotsToFill must not exceed
-      // the capped remaining). For uncapped subjects this matches the old behavior — the
-      // nextLessons guard already limited placement to the real remaining lessons.
+      // Serve from the BASE cursor but skip lessons completed this week BY CONTENT —
+      // kids check out of order (wk16 live: 6d done, 6c not), and a count-based skip
+      // would re-serve the done one and drop the missed one. `seq` is already
+      // hard-cap sliced, so this also respects session goals.
+      const effLessons=seq.slice(Math.max(0,cursor)).filter(l=>!_seenWk[String(l.lesson).trim()]);
+      const remaining=effLessons.length;
+      // Cap at `remaining` so a hard-cutoff subject never schedules past its target.
+      // For uncapped subjects this matches the old behavior — the nextLessons guard
+      // already limited placement to the real remaining lessons.
       let slotsToFill=remaining<=0?0:Math.min(dates.length,remaining);
 
-      const nextLessons=getNextLessonsFromCursor(kid,sk,cursor,slotsToFill).slice(0,Math.max(0,remaining));
+      const nextLessons=effLessons.slice(0,slotsToFill);
       for(let i=0;i<dates.length;i++){
         const dt=dates[i];
         const dup=i>0&&dates[i]===dates[i-1]; // a day getting a second of this subject → array
@@ -31369,7 +31402,11 @@ function generateWeek(config){
   // Schedule tasks for each day
   const allTasks=[];
   const allDropped=[];
+  // Start above every numeric id suffix already in the active week: tasks KEPT across
+  // a regen (gwCommit keep-pass) hold their original date-prefix+counter ids, and a
+  // same-day re-run would otherwise mint the very same ids for different lessons.
   let taskCounter=1;
+  try{ ((typeof weekData==="object"&&weekData&&weekData.tasks)||[]).forEach(t=>{ const m=String(t.id||"").match(/_(\d+)(?:_c)*$/); if(m) taskCounter=Math.max(taskCounter,parseInt(m[1])+1); }); }catch(e){}
 
   function dayOfYear(dt){ const jan1=new Date(dt.getFullYear(),0,0); return Math.floor((dt-jan1)/86400000); }
 
@@ -31709,9 +31746,27 @@ function gwCommit(){
         const olds=oldByTW[tw], cands=newByTW[tw]||[];
         if(olds.length!==1||cands.length!==1) return;
         const t=cands[0];
+        olds[0].used=true; // its check found a new home — the keep-pass below must skip it
         snapChecked[t.id]=olds[0].ts;
         if(snapHist[olds[0].oldId]&&!snapHist[t.id])
           snapHist[t.id]={...snapHist[olds[0].oldId],id:t.id};
+      });
+    })();
+    // ── Keep-pass: a completed lesson the regen no longer serves keeps its ORIGINAL
+    // card. The generator now advances past this week's done work instead of
+    // re-serving it (gwReadWeekAutoAdvance doneWk), so without this the GC below
+    // would purge those checks — exactly how a late-night regen erased Monday's 29
+    // check-offs (incl. the day's notebooks/drills) from History on 2026-08-03.
+    // Skips: checks re-homed by the matching above (dailies re-key by title-match),
+    // _c twins (their own re-attach pass runs below). Claimed (awaiting Mom) kept too.
+    (function(){
+      const _kIds=new Set(d.tasks.map(t=>t.id));
+      const _moved=new Set();
+      Object.values(oldLookup).forEach(v=>{ if(v.used) _moved.add(v.oldId); });
+      (weekData.tasks||[]).forEach(t=>{
+        if(t.id.endsWith("_c")||_kIds.has(t.id)||_moved.has(t.id)) return;
+        if(!(snapChecked[t.id]||(typeof claimed!=="undefined"&&claimed&&claimed[t.id]))) return;
+        d.tasks.push(t); _kIds.add(t.id);
       });
     })();
     const snapSl=ld(activeWK+"_sl")||slState||{};
