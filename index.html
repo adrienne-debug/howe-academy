@@ -13378,6 +13378,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
   // checkedOnDay remains only a fallback for entries whose ts can't be parsed.
   let _healMoved=false;
   const _histFix={};
+  const _ckFix={}; // checked-map migrations (daily check → its real day's card), targeted paths
   // Targeted multi-path task updates for the no-sweep heal write below. Every device
   // heals on every check-off; whole-node safeWriteTasks here meant N devices × 276
   // tasks per check-off (the "heal storm") and let a stale device clobber task edits.
@@ -13394,6 +13395,36 @@ function cascadeIntraWeek(sweepTodayElapsed){
     if(!checked[t.id]||t.id.endsWith("_c")) return;
     if(subjNoCarry(t)){
       const cd0=_parseCheckTs(checked[t.id]);
+      // ── Check-off migration: a daily checked on a DIFFERENT day than its card
+      // (the 2026-08-03 cross-wired title-matches) keeps the RECORD but on the right
+      // card — if the ts day holds the same kid's same-titled card sitting unchecked,
+      // the check + history move there. They DID the work; it freezes to the day they
+      // did it instead of being discarded or crediting a future day. Card days never
+      // move (dailies are day-bound); ONLY the check migrates, and only on an
+      // unambiguous 1:1 (a second check of the same title stays put — Mom's call).
+      if(cd0){
+        for(const dn0 of dayOrder){
+          if(!DAY_DT[dn0]) continue;
+          const dd1=new Date(DAY_DT[dn0]+", "+cd0.getFullYear());
+          if(isNaN(dd1.getTime())||dd1.getMonth()!==cd0.getMonth()||dd1.getDate()!==cd0.getDate()) continue;
+          if(dn0!==t.day){
+            const cands=weekData.tasks.filter(c=>c!==t&&c.who===t.who&&(c.title||"")===(t.title||"")&&c.day===dn0&&!c.id.endsWith("_c")&&!checked[c.id]&&!(claimed&&claimed[c.id]));
+            if(cands.length===1){
+              const c=cands[0], _ts0=checked[t.id];
+              dbg("cascade heal(daily check→its day): "+t.id+" "+t.day+" → "+c.id+" "+dn0);
+              checked[c.id]=_ts0; delete checked[t.id];
+              _ckFix[c.id]=_ts0; _ckFix[t.id]=null;
+              const h1=histState[t.id];
+              if(h1){ histState[c.id]={...h1,id:c.id,day:dn0,checkedOnDay:dn0}; delete histState[t.id]; _histFix[c.id]=histState[c.id]; _histFix[t.id]=null; }
+              const _mt0=fromMin(cd0.getHours()*60+cd0.getMinutes());
+              if(c.time!==_mt0&&toMin(c.time)>toMin(_mt0)){ c.time=_mt0; _healUpd[c.id+"/time"]=_mt0; }
+              _healMoved=true;
+            }
+          }
+          break; // ts matched a week day — done looking either way
+        }
+        if(!checked[t.id]) return; // check migrated away — nothing more to heal here
+      }
       if(cd0&&DAY_DT[t.day]){
         const dd0=new Date(DAY_DT[t.day]+", "+cd0.getFullYear());
         if(!isNaN(dd0.getTime())&&dd0.getMonth()===cd0.getMonth()&&dd0.getDate()===cd0.getDate()){
@@ -13448,6 +13479,10 @@ function cascadeIntraWeek(sweepTodayElapsed){
   if(Object.keys(_histFix).length){
     sv(WK+"_history",histState);
     if(db&&!_dryRun()) db.ref(WK+"/history").update(_histFix);
+  }
+  if(Object.keys(_ckFix).length){
+    sv(WK+"_checked",checked);
+    if(db&&!_dryRun()) db.ref(WK+"/checked").update(_ckFix); // targeted — null deletes the old id
   }
 
   // Notebooks are day-bookends — never swept into the work pool (they'd cluster with
