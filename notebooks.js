@@ -440,6 +440,37 @@
       '<div class="accent-bar"></div>';
   }
 
+  // HWT-style capital formation scripts (own wording in the Handwriting Without Tears
+  // vocabulary the parent guide already teaches: big line / little line / big curve /
+  // little curve / magic C, capitals start at the top). Read aloud while he traces.
+  var JU_LETTER_STROKES = {
+    A: "big line down · big line down · little line across the middle",
+    B: "big line down · little curve to the middle · little curve to the bottom",
+    C: "magic C — one big curve",
+    D: "big line down · big curve around to the bottom",
+    E: "big line down · little lines across: top, middle, bottom",
+    F: "big line down · little lines across: top, middle",
+    G: "magic C · little line up · stop",
+    H: "big line down · big line down · little line across the middle",
+    I: "big line down · little lines across: top, bottom",
+    J: "big line down · curve at the bottom · little line on top",
+    K: "big line down · little line slides in · little line kicks out",
+    L: "big line down · little line across the bottom",
+    M: "big line down · slide down, slide up · big line down",
+    N: "big line down · big line slides down · big line up",
+    O: "magic C · keep on going — close it up",
+    P: "big line down · little curve to the middle",
+    Q: "magic C · close it up · little line for the tail",
+    R: "big line down · little curve to the middle · little line kicks out",
+    S: "little curve at the top · little curve at the bottom",
+    T: "big line down · little line across the top",
+    U: "big line down · turn the corner · travel back up",
+    V: "big line slides down · big line slides up",
+    W: "slide down, slide up, slide down, slide up",
+    X: "big line slides down · big line crosses it",
+    Y: "little line slides in · little line slides in · big line down",
+    Z: "little line across · big line slides down · little line across"
+  };
   function juTrace(text, size, color, letterSp) {
     size = size || 52; color = color || "var(--nt-trace)"; letterSp = letterSp || "0";
     if (FONTS_OK) {
@@ -766,7 +797,8 @@
       '          <span class="nt-disp" style="font-size:34px;color:var(--ju-mid);">' + Ll + '</span>\n' +
       '          <div style="font-size:10px;font-weight:700;color:var(--muted);">Trace the dotted letters ➜</div>\n        </div>\n' +
       '        ' + juTrace(L.repeat(4), 58) + '\n' +
-      '        <div style="font-size:9.5px;font-weight:800;color:var(--ju-mid);margin-top:7px;">Now you try! ✏️</div>\n' +
+      '        <div style="font-size:8.5px;font-weight:700;color:var(--ju-deep);margin-top:3px;line-height:1.35;">🖍 ' + L + ' — start at the top: ' + (JU_LETTER_STROKES[L] || "trace slowly") + '</div>\n' +
+      '        <div style="font-size:9.5px;font-weight:800;color:var(--ju-mid);margin-top:4px;">Now you try! ✏️</div>\n' +
       '        <div class="hwt-line" style="flex-shrink:0;"></div>\n      </div>\n' +
       '      <div class="card card-gold" style="flex-shrink:0;">\n' +
       '        <div class="slabel">Trace My Name</div>\n        ' + juTrace("JULIAN", 52) + '\n      </div>\n    </div>\n\n' +
@@ -775,9 +807,15 @@
       '        <div class="slabel">' + numberLab + '</div>\n' +
       '        <div class="count-row">' + countAni + '</div>\n' +
       '        <div style="display:flex;align-items:baseline;gap:9px;margin-top:2px;">\n' +
-      '          <span class="nt-disp" style="font-size:42px;color:var(--ju-green);">' + number + '</span>\n' +
+      '          <span class="nt-disp" style="font-size:42px;color:var(--ju-green);' + (String(number).length > 1 ? 'letter-spacing:-0.05em;' : '') + '">' + number + '</span>\n' +
       '          <span class="lab" style="font-size:11px;font-weight:800;color:var(--ink);">How many? Count, then trace ➜</span>\n        </div>\n' +
-      '        ' + juTrace(String(number).repeat(3), 58) + '\n' +
+      // Multi-digit numbers: repeat(3) ran the digits together ("111111" — Adrienne:
+      // "the eleven graphic has the ones very far apart, doesn't work"). Group the
+      // copies with a space and tighten the digit spacing so each "11" reads as one
+      // number; smaller size keeps three copies on the line.
+      '        ' + (String(number).length > 1
+        ? juTrace(Array(3).fill(String(number)).join(" "), 46, null, "-0.05em")
+        : juTrace(String(number).repeat(3), 58)) + '\n' +
       '        <div style="font-size:9.5px;font-weight:800;color:var(--ju-green);margin-top:7px;">Now you try! ✏️</div>\n' +
       '        <div class="hwt-line" style="flex-shrink:0;"></div>\n      </div>\n' +
       '      <div class="card card-blue" style="flex-shrink:0;">\n' +
