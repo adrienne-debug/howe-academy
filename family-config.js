@@ -10,6 +10,8 @@
 window.HA_FAMILY = {
   familyId: "howe",
   familyName: "Howe Academy",
+  sitterName: "Maggie",       // label of the sitter tab; omit for families with no sitter (tab hidden)
+  windowText: "School 10:00 AM–4:15 PM · Theater 4:30 Mon–Thu", // first-boot schedule-window banner (DB config overrides once saved)
   firebase: {
     apiKey:"AIzaSyC-wxpjLGu9vr1DgMHY0Dd1AFYVdU4-D4g",
     authDomain:"howeacademy.firebaseapp.com",
