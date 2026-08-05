@@ -3347,7 +3347,7 @@ function addKidPoints(k,pts,d){
 function bankDirect(kid,pts,note){
   if(!kid||!pts) return null;
   const id="bd"+Date.now().toString(36)+Math.floor(Math.random()*1e6).toString(36);
-  const rec={amount:pts,note:note||"",ts:nowTs(),iso:new Date().toISOString(),src:"earn"};
+  const rec={amount:pts,note:note||"",ts:nowTs(),iso:new Date().toISOString(),src:"earn",wk:activeWk(),day:day};
   bank[kid]=bank[kid]||{}; bank[kid].adjustments=bank[kid].adjustments||{};
   bank[kid].adjustments[id]=rec;
   if(db) db.ref("bank/"+kid+"/adjustments/"+id).set(rec);
@@ -3358,6 +3358,16 @@ function bankDirectRemove(kid,id){
   if(bank[kid]&&bank[kid].adjustments&&bank[kid].adjustments[id]) delete bank[kid].adjustments[id];
   if(db) db.ref("bank/"+kid+"/adjustments/"+id).remove();
 }
+// Combined "how did this kid do" numbers: spin-pool winnings PLUS the wages that
+// banked directly (src:"earn" entries stamped with wk/day). Used by the Board, the
+// kid strip and History so every surface agrees; the spin modal, at-risk banner and
+// Claim tile stay pool-only because there "winnings" is exactly what they mean.
+// (Entries written before the wk/day stamp existed fall out of day/week views but
+// are always in the bank balance itself.)
+function bankEarnedDay(kid,d){ const adjs=(bank[kid]&&bank[kid].adjustments)||{}; let n=0; Object.keys(adjs).forEach(id=>{ const a=adjs[id]; if(a&&a.src==="earn"&&a.wk===WK&&a.day===d) n+=(a.amount||0); }); return n; }
+function bankEarnedWeek(kid){ const adjs=(bank[kid]&&bank[kid].adjustments)||{}; let n=0; Object.keys(adjs).forEach(id=>{ const a=adjs[id]; if(a&&a.src==="earn"&&a.wk===WK) n+=(a.amount||0); }); return n; }
+function earnedDayTotal(kid,d){ return getKidDayPoints(kid,d)+bankEarnedDay(kid,d); }
+function earnedWeekTotal(kid){ return getKidPoints(kid)+bankEarnedWeek(kid); }
 
 let slotSpinDay=null;
 let slotPendingTaskId=null;
@@ -3494,8 +3504,8 @@ function renderSpinAdmin(d){
   h+='</div>';
 
   showKids.forEach(k=>{
-    const weekPts=getKidPoints(k);
-    const dayPts=getKidDayPoints(k,d);
+    const weekPts=earnedWeekTotal(k);
+    const dayPts=earnedDayTotal(k,d);
     const dayBonus=!!dayBonusUsed[k+"_"+d];
     const celebrated=hasCelebrated(k,d);
     const kidTasks=activeTasks.filter(t=>t.who===k&&(displacedResult?t.day:effectiveDay(t))===d&&!t.title.toLowerCase().includes("lunch"));
@@ -4584,7 +4594,7 @@ function renderMomBoard(el){
     var shower=!!(findDue("afternoon",kid,/shower/i)||findDue("evening",kid,/shower/i));
     var pA=findDue("afternoon",kid,/pickup|pick up/i), pE=findDue("evening",kid,/pickup|pick up/i);
     var chores=[]; var cs=rtStepsFor("chores",kid); for(var ci=0;ci<cs.length;ci++){ if(cadDueOn(cs[ci].cad||"daily",day)) chores.push((cs[ci].emoji?cs[ci].emoji+" ":"")+cs[ci].label); }
-    var pts=getKidDayPoints(kid,day);
+    var pts=earnedDayTotal(kid,day);
     var lost=(typeof techLost==="function")&&techLost(kid,day);
     h+='<div class="bcard" style="border-left:4px solid '+col+'">';
     h+='<div class="brow1"><div class="bname" style="color:'+col+'">'+cap(kid)+'</div><div class="bstats">';
@@ -8110,10 +8120,10 @@ function renderHistory(el){
     h+='<div style="margin-top:10px">';
     [...ROSTER].forEach(k2=>{
       h+='<div style="background:rgba(255,255,255,0.08);border-radius:8px;padding:10px;margin-bottom:6px">';
-      h+='<div style="font-size:12px;font-weight:700;color:'+HIST_KCOL_LIGHT[k2]+';margin-bottom:6px">'+cap(k2)+' — Week total: ⭐'+getKidPoints(k2)+'</div>';
+      h+='<div style="font-size:12px;font-weight:700;color:'+HIST_KCOL_LIGHT[k2]+';margin-bottom:6px">'+cap(k2)+' — Week total: ⭐'+earnedWeekTotal(k2)+'</div>';
       h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px">';
       DAYS.slice(0,6).forEach(d=>{
-        const dp=getKidDayPoints(k2,d);
+        const dp=earnedDayTotal(k2,d);
         h+='<div style="background:rgba(255,255,255,0.06);border-radius:6px;padding:6px;text-align:center">';
         h+='<div style="font-size:9px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.3px">'+cap(d).slice(0,3)+'</div>';
         h+='<div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700;color:#fbbf24;margin:2px 0">'+dp+'</div>';
