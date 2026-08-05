@@ -1782,14 +1782,20 @@ function toggleRtStep(slot,kid,i){
     // that stored number rather than recomputing — the zone or bonus may have changed since, and
     // recomputing would reverse a different amount than was paid.
     const _paid = now ? (_b0 + zoneBonusFor(_st0&&_st0.zone,_b0)) : ((cur&&cur.pts!=null)?cur.pts:_b0);
-    slState[sk]={done:now,ts:now?nowTs():"",pts:now?_paid:null};
     var _p=_paid;
     const _st=_st0;
+    // ⭐ WAGES, not winnings: routine stars bank the moment the step is checked — straight
+    // into the Star Bank ledger, no claim/approve, never forfeitable. Only school-work
+    // SPINS ride the day pool now. Unchecking removes the exact ledger entry the check
+    // wrote (bid stored on the check-off), so a mis-tap still costs nothing.
+    let _bid=null;
+    if(_p>0){
+      if(now){ _bid=bankDirect(kid,_p,(_st&&_st.emoji?_st.emoji+" ":"")+(_st?_st.label:("Step "+(i+1)))); }
+      else if(cur&&cur.bid){ bankDirectRemove(kid,cur.bid); }
+      else { bankDirect(kid,-_p,"↩ unchecked: "+(_st?_st.label:("Step "+(i+1)))); }
+    }
+    slState[sk]={done:now,ts:now?nowTs():"",pts:now?_paid:null,bid:now?(_bid||null):null};
     rlogAppend(kid,slot,_st?_st.label:("Step "+(i+1)),now?"on":"off",_p);
-    // ⭐ Routine stars ride the SAME pipeline as school points: slot_points/{kid}/{day} → the
-    // afternoon+chores claim gate → Mom approve → cashed into the Star Bank in Wins. Unchecking
-    // reverses the award, so a mis-tap costs nothing. (Mom's −100 flag rides this same path.)
-    if(_p>0) addKidPoints(kid, now?_p:(-_p), day);
   }
   const allDone=rtComplete(slot,kid,day);
   slState[wk+"_"+day+"_"+kid+"_"+slot]={done:allDone,ts:allDone?nowTs():""};
@@ -3321,6 +3327,27 @@ function addKidPoints(k,pts,d){
   // Atomic per-leaf increment — never set() the whole slot_points object. The whole-object
   // write clobbered other kids'/days' points when two devices spun at the same time.
   if(db) db.ref(WK+"/slot_points/"+k+"/"+d).transaction(c=>(c||0)+pts);
+}
+// ── 💰 WAGES vs WINNINGS (Adrienne's rule, 2026-08-04) ──────────────────────
+// Earned points — routine/chore stars, grabs, trophies, ribbons, unit activities —
+// are WAGES: they bank straight into the Star Bank ledger the moment they're earned.
+// No claim, no approve, and they can never be forfeited. The day pool (slot_points →
+// claim → Mom approve → forfeit) is ONLY the school-work slot-machine WINNINGS.
+// Entries land in bank/{kid}/adjustments (bankLedger already sums those), each with
+// its own id so a same-day uncheck can remove exactly what was paid.
+function bankDirect(kid,pts,note){
+  if(!kid||!pts) return null;
+  const id="bd"+Date.now().toString(36)+Math.floor(Math.random()*1e6).toString(36);
+  const rec={amount:pts,note:note||"",ts:nowTs(),iso:new Date().toISOString(),src:"earn"};
+  bank[kid]=bank[kid]||{}; bank[kid].adjustments=bank[kid].adjustments||{};
+  bank[kid].adjustments[id]=rec;
+  if(db) db.ref("bank/"+kid+"/adjustments/"+id).set(rec);
+  return id;
+}
+function bankDirectRemove(kid,id){
+  if(!kid||!id) return;
+  if(bank[kid]&&bank[kid].adjustments&&bank[kid].adjustments[id]) delete bank[kid].adjustments[id];
+  if(db) db.ref("bank/"+kid+"/adjustments/"+id).remove();
 }
 
 let slotSpinDay=null;
@@ -9880,7 +9907,7 @@ function _gbEarn(i,kid){ var g=gbList()[i]; if(!g) return;
   // points everyone at whatever room needs it today. (Grabs retire for the week rather than
   // unchecking, so there's no reversal to keep in step.)
   var _bonus=zoneBonusFor(g.zone,g.pts||0), _paid=(g.pts||0)+_bonus;
-  if(_paid>0 && typeof addKidPoints==="function") addKidPoints(kid, _paid, day);
+  if(_paid>0 && typeof bankDirect==="function") bankDirect(kid, _paid, (g.emoji?g.emoji+" ":"")+(g.label||"grab")+(_bonus?" (zone bonus +"+_bonus+")":""));
   if(typeof rlogAppend==="function") rlogAppend(kid,"grab",(g.emoji?g.emoji+" ":"")+(g.label||"grab")+(_bonus?" (zone bonus +"+_bonus+")":""),"on",_paid); }
 function gbPayout(i){ var g=gbList()[i]||{}; return (g.pts||0)+zoneBonusFor(g.zone,g.pts||0); }
 function gbInstant(kid,i){ var s=gbGet(i); if(s&&s.done) return; _gbWrite(i,{by:kid,done:true,ts:nowTs()}); _gbEarn(i,kid); renderAll(); if(typeof gwShowToast==="function") gwShowToast("Nice! +"+((gbList()[i]||{}).pts||0)+" ⭐"); }
@@ -10496,7 +10523,7 @@ function rlApproveFinish(kid,id){
   const d=(b.finishClaim&&b.finishClaim.day)||day;
   if(!hasTrophy(kid,tid)){
     mintTrophy(kid,tid,{type:"read",size:b.size||"little",key:id,name:b.title,ts:nowTs(),points:pts});
-    if(pts>0) addKidPoints(kid,pts,d);
+    if(pts>0) bankDirect(kid,pts,'📚 Finished "'+(b.title||"book")+'"');
   }
   _rlSetBook(kid,id,{status:"done",doneTs:nowTs(),doneDay:d,donePts:pts,finishClaim:null});
   renderAll();
@@ -10516,7 +10543,7 @@ function rlUnfinish(kid,id){          // Mom fixes a mistaken finish: trophy off
   if(hasTrophy(kid,tid)){
     delete trophies[kid][tid];
     if(db) db.ref("trophies/"+kid+"/"+tid).remove();
-    if((b.donePts|0)>0) addKidPoints(kid,-(b.donePts|0),b.doneDay||day);
+    if((b.donePts|0)>0) bankDirect(kid,-(b.donePts|0),'↩ un-finished "'+(b.title||"book")+'"');
   }
   const cur=rlCurrent(kid);
   _rlSetBook(kid,id,{status:(cur&&cur.id!==id)?"upnext":"reading",doneTs:null,doneDay:null,donePts:null});
@@ -10584,7 +10611,7 @@ function checkSubjectComplete(kid,sk){
   if(hasTrophy(kid,tid)) return;
   const pts=(s.completionPoints!=null)?(s.completionPoints|0):50;
   mintTrophy(kid,tid,{type:"subject",key:sk,name:s.display||sk,ts:nowTs(),points:pts});
-  if(pts>0) addKidPoints(kid,pts,day);
+  if(pts>0) bankDirect(kid,pts,"🏆 "+(s.display||sk)+" complete");
   setTimeout(()=>_showCelebration(kid,cap(kid)+" finished "+(s.display||sk)+"!",{big:true,occasion:"session",points:pts}),400);
 }
 // ── BOOK MILESTONES (📖) ──────────────────────────────────────────
@@ -10608,7 +10635,7 @@ function checkBookComplete(kid,sk){
     if(hasTrophy(kid,tid)) return;
     const pts=(s.bookPoints!=null)?(s.bookPoints|0):25;
     mintTrophy(kid,tid,{type:"book",key:sk,name:(s.display||sk)+" "+r.name,ts:nowTs(),points:pts});
-    if(pts>0) addKidPoints(kid,pts,day);
+    if(pts>0) bankDirect(kid,pts,"📖 "+(s.display||sk)+" "+r.name);
     setTimeout(()=>_showCelebration(kid,cap(kid)+" finished "+(s.display||sk)+" "+r.name+"!",{big:true,occasion:"session",points:pts}),400);
   });
 }
@@ -10640,7 +10667,7 @@ function celebrateBookNow(kid,sk,slug){
   if(hasTrophy(kid,tid)) return;
   const pts=(s.bookPoints!=null)?(s.bookPoints|0):25;
   mintTrophy(kid,tid,{type:"book",key:sk,name:(s.display||sk)+" "+r.name,ts:nowTs(),points:pts});
-  if(pts>0) addKidPoints(kid,pts,day);
+  if(pts>0) bankDirect(kid,pts,"📖 "+(s.display||sk)+" "+r.name);
   renderAll();
   setTimeout(()=>_showCelebration(kid,cap(kid)+" finished "+(s.display||sk)+" "+r.name+"!",{big:true,occasion:"session",points:pts}),200);
 }
@@ -10673,7 +10700,7 @@ function checkDrillsGraduation(kid,preDone){
     const tid="drills_"+_bookSlug(cat);
     if(hasTrophy(kid,tid)) return;
     mintTrophy(kid,tid,{type:"drills",key:cat,name:cat+" Drills",ts:nowTs(),points:DRILLS_RIBBON_PTS});
-    addKidPoints(kid,DRILLS_RIBBON_PTS,day);
+    bankDirect(kid,DRILLS_RIBBON_PTS,"🎗 "+cat+" drills ribbon");
     setTimeout(()=>_showCelebration(kid,cap(kid)+" mastered the whole "+cat+" drills curriculum!",{big:true,occasion:"session",points:DRILLS_RIBBON_PTS}),400);
   });
 }
@@ -10688,7 +10715,7 @@ function celebrateDrillsNow(kid,slug){
   const tid="drills_"+slug;
   if(hasTrophy(kid,tid)) return;
   mintTrophy(kid,tid,{type:"drills",key:cat,name:cat+" Drills",ts:nowTs(),points:DRILLS_RIBBON_PTS});
-  addKidPoints(kid,DRILLS_RIBBON_PTS,day);
+  bankDirect(kid,DRILLS_RIBBON_PTS,"🎗 "+cat+" drills ribbon");
   renderAll();
   setTimeout(()=>_showCelebration(kid,cap(kid)+" mastered the whole "+cat+" drills curriculum!",{big:true,occasion:"session",points:DRILLS_RIBBON_PTS}),200);
 }
@@ -10700,7 +10727,7 @@ function checkSessionComplete(kid){
   sessionDone[kid][sp.planKey]=nowTs();
   if(db) db.ref("session_done/"+kid+"/"+sp.planKey).set(nowTs());
   const pts=(sp.points!=null)?sp.points:100;
-  if(pts>0) addKidPoints(kid,pts,day);
+  if(pts>0) bankDirect(kid,pts,"🎯 "+sp.planLabel+" complete");
   mintTrophy(kid,"session_"+sp.planKey,{type:"session",key:sp.planKey,name:sp.planLabel,ts:nowTs(),points:pts});
   const song=(paceData.plans&&paceData.plans[sp.planKey]&&paceData.plans[sp.planKey].song)||null;
   setTimeout(()=>_showCelebration(kid,cap(kid)+" completed "+sp.planLabel+"!",{big:true,occasion:"session",points:pts,song}),400);
@@ -16000,7 +16027,7 @@ function unitActivityApprove(unitId,kid,actKey){
   if(db) db.ref("unitStudies/"+unitId+"/activityLog/"+kid+"/"+actKey).set(entry);
   if(claim){ delete u.activityClaims[kid][actKey]; if(db) db.ref("unitStudies/"+unitId+"/activityClaims/"+kid+"/"+actKey).remove(); }
   _nbActRemove(unitId,u,kid,actKey); // clear just this project from the queue; others stay
-  if(pts) addKidPoints(kid,pts,_unitDayFromTs(claim&&claim.ts));
+  if(pts) bankDirect(kid,pts,"🧪 Unit activity");
   renderAll();
 }
 function unitActivityReject(unitId,kid,actKey){
@@ -16020,7 +16047,7 @@ function unitActivityDone(unitId,kid,actKey){
   if(prev){
     delete u.activityLog[kid][actKey]; if(db) db.ref("unitStudies/"+unitId+"/activityLog/"+kid+"/"+actKey).remove();
     const back=Number(prev.points)||0;
-    if(back) addKidPoints(kid,-back,_unitDayFromTs(prev.claimTs||prev.ts));
+    if(back) bankDirect(kid,-back,"↩ unit activity undone");
   } else {
     const act=_unitActs(u).find(a=>a&&a.key===actKey);
     const claim=((u.activityClaims||{})[kid]||{})[actKey];
@@ -16030,7 +16057,7 @@ function unitActivityDone(unitId,kid,actKey){
     if(db) db.ref("unitStudies/"+unitId+"/activityLog/"+kid+"/"+actKey).set(entry);
     if(claim){ delete u.activityClaims[kid][actKey]; if(db) db.ref("unitStudies/"+unitId+"/activityClaims/"+kid+"/"+actKey).remove(); }
     _nbActRemove(unitId,u,kid,actKey); // clear just this project from the queue; others stay
-    if(pts) addKidPoints(kid,pts,_unitDayFromTs(claim&&claim.ts));
+    if(pts) bankDirect(kid,pts,"🧪 Unit activity");
   }
   renderAll();
 }
@@ -27868,7 +27895,7 @@ function rlogFlag(kid,wk,d,key){
   const rec=routineLog[kid]&&routineLog[kid][wk]&&routineLog[kid][wk][d]&&routineLog[kid][wk][d][key];
   if(!rec||rec.flagged) return;
   if(!confirm("Dock 100 points from "+cap(kid)+" for a false check-off?\n\n\""+(rec.label||"")+"\"")) return;
-  addKidPoints(kid,-100,d);
+  bankDirect(kid,-100,"🚩 false check-off dock");
   const patch={flagged:true,penalty:-100,flagTs:nowTs()};
   Object.assign(rec,patch);
   if(db) db.ref("routineLog/"+kid+"/"+wk+"/"+d+"/"+key).update(patch);
