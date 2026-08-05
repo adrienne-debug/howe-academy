@@ -1965,6 +1965,9 @@ let archive={};
 let sessionDone={};        // {kid: {planKey: ts}} — sessions whose completion has been celebrated (fire-once, cross-device)
 let trophies={};           // {kid: {trophyId: {type,key,name,ts,points}}} — permanent trophy case (subjects/sessions finished)
 let pointClaims={};         // {kid: {WK: {day: {status:claimed|cashed, earned, claimedTs, cashedTs, note}}}} — end-of-day points economy
+let pointClaimsLoaded=false; // guards forfeitSweep: a fresh boot renders before the pointClaims
+                             // listener delivers, and a sweep against the empty map re-forfeits
+                             // days over REAL claimed/cashed records (2026-08-04: ate Mom's claims)
 let walletScope="lifetime"; // Star Bank statement toggle: "week" | "lifetime" (balance is always lifetime)
 function setWalletScope(s){ walletScope=s; renderAll(); }
 let bank={};               // {kid: {withdrawals: {id: {amount, note, ts, iso}}}} — Star Bank spends (Mom-recorded)
@@ -2448,7 +2451,7 @@ function initFb() {
     });
     db.ref("session_done").on("value",s=>{ sessionDone=s.val()||{}; });
     db.ref("trophies").on("value",s=>{ trophies=s.val()||{}; });
-    db.ref("pointClaims").on("value",s=>{ pointClaims=s.val()||{}; });
+    db.ref("pointClaims").on("value",s=>{ pointClaims=s.val()||{}; pointClaimsLoaded=true; });
     db.ref("bank").on("value",s=>{ bank=s.val()||{}; });
     db.ref("readingLog").on("value",s=>{ readingLog=s.val()||{}; });
     db.ref("digest").on("value",s=>{ digestData=s.val()||{}; });
@@ -9731,7 +9734,9 @@ function walletCashed(kid,scope){
 // swept — that would wipe legitimately-earned points on first load.
 const FORFEIT_EPOCH=new Date(2026,6,6);                 // Jul 6 2026 (0-indexed month), launch guard
 function forfeitSweep(){
-  if(!db||!DAY_DT) return;
+  // pointClaimsLoaded: NEVER sweep before the claims listener has delivered — a boot-time
+  // sweep against the empty map rewrites forfeits over real claimed/cashed records.
+  if(!db||!DAY_DT||!pointClaimsLoaded) return;
   const todayD=new Date(); todayD.setHours(0,0,0,0);
   const yr=todayD.getFullYear();
   ["monday","tuesday","wednesday","thursday","friday","saturday"].forEach(d=>{
