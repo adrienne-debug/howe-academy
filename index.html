@@ -4612,7 +4612,41 @@ function renderMomBoard(el){
     h+='<div class="bitem" style="flex:1 1 100%"><span class="blab">🧹 Chores</span> '+(chores.length?chores.join(" · "):'<span style="color:var(--muted)">none due</span>')+'</div>';
     h+='</div></div>';
   });
+  // ── ⭐ Claims & cash-ins — the day's economy at a glance, two compact columns:
+  // LEFT = claims waiting on Mom (approve right from the board), RIGHT = everything
+  // cashed/banked/spent today (approved claims, restores, store withdrawals).
+  h+=_boardClaimsHTML();
   el.innerHTML=h;
+}
+function _boardClaimsHTML(){
+  const todayTok=nowTs().replace(/^\d+:\d+ [AP]M /,"");   // "Aug 4" — nowTs date suffix
+  const pending=[], cashed=[];
+  SL_KIDS.forEach(k=>{
+    const wks=pointClaims[k]||{};
+    Object.keys(wks).forEach(wk=>Object.keys(wks[wk]||{}).forEach(d=>{
+      const c=wks[wk][d]; if(!c) return;
+      if(c.status==="claimed") pending.push({k,wk,d,pts:c.earned||0,ts:c.claimedTs||""});
+      else if(c.status==="cashed"&&String(c.cashedTs||"").endsWith(todayTok))
+        cashed.push({k,label:(c.restored?"↩ restored ":"")+cap(d)+" winnings",pts:c.earned||0,ts:c.cashedTs||""});
+    }));
+    const wds=(bank[k]&&bank[k].withdrawals)||{};
+    Object.keys(wds).forEach(id=>{ const w=wds[id]; if(!w||w.status==="declined") return;
+      if(String(w.ts||"").endsWith(todayTok)) cashed.push({k,label:"🛍 "+(w.note||"store"),pts:-(w.amount||0),ts:w.ts||""}); });
+  });
+  let h='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-top:12px">';
+  h+='<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:12px;padding:10px">';
+  h+='<div style="font-weight:800;font-size:12px;color:#92400e;margin-bottom:6px">⏳ Claims waiting ('+pending.length+')</div>';
+  h+=pending.length?pending.map(c=>'<div style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:5px">'+
+      '<span style="flex:1;min-width:0"><b style="color:'+(KID_COLOR[c.k]||"#333")+'">'+cap(c.k)+'</b> — '+cap(c.d)+' <b>'+c.pts+' ⭐</b>'+(c.ts?' <span style="color:var(--muted)">'+esc(c.ts)+'</span>':'')+'</span>'+
+      '<button onclick="approveDayPoints(\''+c.k+'\',\''+c.d+'\')" style="padding:3px 10px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-size:11px;font-weight:700;cursor:pointer">✓ Approve</button></div>').join('')
+    :'<div style="font-size:12px;color:var(--muted)">nothing waiting</div>';
+  h+='</div>';
+  h+='<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:12px;padding:10px">';
+  h+='<div style="font-weight:800;font-size:12px;color:#166534;margin-bottom:6px">💰 Cashed today ('+cashed.length+')</div>';
+  h+=cashed.length?cashed.map(c=>'<div style="font-size:12px;margin-bottom:5px"><b style="color:'+(KID_COLOR[c.k]||"#333")+'">'+cap(c.k)+'</b> — '+esc(c.label)+' <b>'+(c.pts<0?'−'+(-c.pts):'+'+c.pts)+' ⭐</b>'+(c.ts?' <span style="color:var(--muted)">'+esc(c.ts)+'</span>':'')+'</div>').join('')
+    :'<div style="font-size:12px;color:var(--muted)">nothing yet today</div>';
+  h+='</div></div>';
+  return h;
 }
 // ── T2: read-only peek at the week that's built but hasn't started ──────────
 // Shows each day with its school work AND the chores that will be due, so a week generated early
