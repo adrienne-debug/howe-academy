@@ -227,13 +227,13 @@ function plMeta(id){
 // PER-LEAF writes only — never a whole-object set. Same clobber-safety rule the
 // check-off sync fix established: two devices editing different fields must not
 // overwrite each other. dryrun neuters these automatically via the patched db.ref.
-function plMetaSet(id,field,val){
+function plMetaSet(id,field,val){if(!plMomAuthed())return;
   if(!plBinMeta[id])plBinMeta[id]={};
   if(val===null||val===false)delete plBinMeta[id][field];else plBinMeta[id][field]=val;
   if(plFB)db.ref('play/binMeta/'+id+'/'+field).set(val===false?null:val);
   else{try{HA_LS.setItem('lib_binmeta',JSON.stringify(plBinMeta));}catch(e){}}
 }
-function plMetaKid(id,kid){
+function plMetaKid(id,kid){if(!plMomAuthed())return;
   const cur=plMeta(id).kids; const on=cur.indexOf(kid)>=0;
   if(!plBinMeta[id])plBinMeta[id]={};
   if(!plBinMeta[id].kids){plBinMeta[id].kids={};cur.forEach(k=>plBinMeta[id].kids[k]=true);}
@@ -250,10 +250,10 @@ function plMetaKid(id,kid){
 let plPhotos={};
 function plPhoto(c){return plPhotos[c.id]||c.photo;}
 function plBinName(c){const m=plBinMeta[c.id];return (m&&m.name)||c.name;}
-function plRoomRename(id){const c=PL_CATALOG.find(x=>x.id==id);if(!c)return;
+function plRoomRename(id){if(!plMomAuthed())return;const c=PL_CATALOG.find(x=>x.id==id);if(!c)return;
   const v=prompt("Name for "+id+":",plBinName(c));if(v===null)return;
   plMetaSet(id,"name",v.trim()||null);plRender();}
-function plPhotoPick(id){window._plPhotoTarget=id;
+function plPhotoPick(id){if(!plMomAuthed())return;window._plPhotoTarget=id;
   let f=document.getElementById("pl-photo-in");
   if(!f){f=document.createElement("input");f.type="file";f.accept="image/*";f.id="pl-photo-in";f.style.display="none";
     f.onchange=function(){const file=f.files[0];f.value="";if(!file)return;
@@ -281,7 +281,7 @@ function plChip(label,on,onColor,click){
     ';border-radius:14px;padding:4px 10px;font-size:11px;font-weight:800;cursor:pointer;'+
     'font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+label+'</button>';
 }
-function plMetaLoc(id){
+function plMetaLoc(id){if(!plMomAuthed())return;
   const c=PL_CATALOG.find(x=>x.id==id);const mt=plMeta(id);
   const v=prompt("Where does "+plBinName(c)+" live?\n\nUnit or slot — F1, W2, MK-3, BG-L1, SHOW-R, K14-2\nBlank = back to the catalog default ("+c.loc+").",mt.loc||c.loc);
   if(v===null)return;
@@ -311,7 +311,7 @@ function plStagedAt(binId){
   for(const f of PL_FRAMES){const st=plStations[f];if(!st||!st.identity)continue;
     const d=plDeckGet(st.identity);if(d&&d.bins.indexOf(binId)>=0)return {frame:f,deck:d,st:st};}
   return null;}
-function plFlip(frame,identId){
+function plFlip(frame,identId){if(!plMomAuthed())return;
   const cur=plStations[frame]||{};
   if(cur.identity===identId){return plClearStation(frame);}   // tap again = clear
   if(cur.claim)plStReturnBins(frame,cur.claim.by);   // a flip ends any claim — bins go home first
@@ -320,12 +320,12 @@ function plFlip(frame,identId){
   if(plFB)db.ref("play/stations/"+frame).update(rec);
   else{try{HA_LS.setItem("lib_stations",JSON.stringify(plStations));}catch(e){}}
   plRender();}
-function plSetSetup(frame,idx){
+function plSetSetup(frame,idx){if(!plMomAuthed())return;
   const st=plStations[frame];if(!st)return;st.setup=idx;
   if(plFB)db.ref("play/stations/"+frame+"/setup").set(idx);
   else{try{HA_LS.setItem("lib_stations",JSON.stringify(plStations));}catch(e){}}
   plRender();}
-function plClearStation(frame){
+function plClearStation(frame){if(!plMomAuthed())return;
   const cur=plStations[frame];
   if(cur&&cur.claim)plStReturnBins(frame,cur.claim.by);
   delete plStations[frame];
@@ -462,7 +462,7 @@ function plStRelease(frame){
   else{st.claim=null;plStReturnBins(frame,leaving);}
   if(leaving)plBumpStreak(leaving);   // ONE clean hand-back = ONE streak credit, not one per bin
   plStSave(frame);}
-function plStClear(frame){   // Mom referee — clears claim AND queue; no streak credit
+function plStClear(frame){if(!plMomAuthed())return;   // Mom referee — clears claim AND queue; no streak credit
   const st=plStations[frame];if(!st)return;
   if(st.claim)plStReturnBins(frame,st.claim.by);
   st.claim=null;st.queue=[];
