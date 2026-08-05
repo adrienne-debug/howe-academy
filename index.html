@@ -1524,6 +1524,9 @@ function activeSlots(){
 // snapped back to Monday, and his morning list read as wiped — he redid the whole thing.)
 // Kids can only check TODAY; Mom keeps the taps so she can still back-fill a missed day.
 function routineEditable(d){ return (d||day)===_todayDay || momHere(); }
+// Blocked routine taps SPEAK UP instead of dying silently — a kid can't tell "not
+// allowed yet" from "broken", and silence hid a whole day of ignored taps once.
+function _rtBlockedToast(){ if(typeof gwShowToast==="function") gwShowToast("That's "+cap(day)+"'s list — you can only check off today \u270B"); }
 // ── Run windows: a routine step that only applies for a stretch of days ──
 // "Take the antibiotic, twice a day, for ten days." A step may carry from/to (ISO dates,
 // either optional). Outside the window it doesn't render, doesn't count toward the slot's
@@ -1600,7 +1603,7 @@ function morningComplete(kid,d){
 }
 function toggleMrOpen(kid){ mrOpen[kid]=(mrOpen[kid]!==false)?false:true; renderSkylight(); }
 function toggleMorningStep(kid,i){
-  if(!routineEditable()) return;   // viewing another day: kid taps are read-only
+  if(!routineEditable()){ _rtBlockedToast(); return; }
   const wk=activeWk();
   const sk=wk+"_"+day+"_"+kid+"_mstep"+i, cur=slState[sk], now=!(cur&&cur.done);
   slState[sk]={done:now,ts:now?nowTs():""};
@@ -1773,9 +1776,14 @@ function rtSchoolworkDone(kid,d){ const ts=getActiveTasks().filter(t=>t.who===ki
 function rtAvailable(slot,kid,d){ if(slot==="afternoon") return rtSchoolworkDone(kid,d); if(slot==="evening") return (d!==_todayDay)||(new Date().getHours()>=rtEveningHour()); return true; }
 function toggleRtOpen(slot,kid){ const k=slot+"_"+kid; rtOpen[k]=(rtOpen[k]!==false)?false:true; renderSkylight(); }
 function toggleRtStep(slot,kid,i){
-  if(!rtAvailable(slot,kid,day)) return;
-  if(!routineEditable()) return;   // viewing another day: kid taps are read-only
-                                   // (stars ride this path too — a stray tap paid the wrong day)
+  if(!rtAvailable(slot,kid,day)){
+    if(typeof gwShowToast==="function"){
+      if(slot==="afternoon") gwShowToast("Afternoon unlocks when school work is done \uD83D\uDCDA");
+      else if(slot==="evening") gwShowToast("Evening opens at "+rtFmtHour(rtEveningHour())+" \uD83C\uDF19");
+    }
+    return;
+  }
+  if(!routineEditable()){ _rtBlockedToast(); return; }  // stars ride this path too — a stray tap paid the wrong day
   const wk=activeWk(), sk=wk+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i, cur=slState[sk], now=!(cur&&cur.done);
   { const _st0=rtStepsFor(slot,kid)[i], _b0=_st0?(_st0.pts||0):0;
     // Pay base + any focus-zone bonus, and RECORD the total on the check-off. Unchecking reverses
@@ -2731,7 +2739,7 @@ function slKey(who,slot){ return activeWk()+"_"+day+"_"+who+"_"+slot; }
 function getSlot(who,slot){ return slState[slKey(who,slot)]||{done:false,ts:""}; }
 
 function toggleSlot(who,slot){
-  if(!routineEditable()) return;   // viewing another day: kid taps are read-only
+  if(!routineEditable()){ _rtBlockedToast(); return; }
   const k=slKey(who,slot), cur=getSlot(who,slot);
   const ts=cur.done?"":nowTs();
   slState[k]={done:!cur.done,ts};
