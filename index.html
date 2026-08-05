@@ -12866,13 +12866,19 @@ function cpSetKid(k){ cpKid=k; renderAll(); }
 function cpSetSlot(s){ cpSlot=s; renderAll(); }
 function _cpDays(cad){
   if(!cad||cad==="daily") return null;                 // null = daily
+  if(cad==="sat") return [5];                          // legacy shorthands = one weekday
+  if(cad==="sun") return [6];
   const m=/^wk:(.+)$/.exec(cad); if(!m) return null;
   return m[1].split(",").map(Number).filter(n=>!isNaN(n));
 }
+// "every N days" / "every 2 weeks" can't live in weekday cells — the grid shows
+// them as their own thing and cell taps open the picker instead of rewriting.
+function _cpExotic(cad){ const m=cadMode(cad||"daily"); return m==="everyN"||m==="biweekly"; }
 function cpToggle(i,dow){
   if(!momHere()) return;
   rtCfgEnsure(cpSlot,cpKid);
   const st=routineCfg2[cpSlot][cpKid][i]; if(!st) return;
+  if(_cpExotic(st.cad)){ rtCadOpen=cpSlot+"_"+cpKid+"_"+i; renderAll(); return; }
   let d=_cpDays(st.cad);
   if(d===null) d=[];                                   // was daily → start an explicit list
   const at=d.indexOf(dow);
@@ -12961,6 +12967,34 @@ function _cpRotationsHTML(){
   if(!cards.length) return '';
   return '<div style="margin:10px 0 4px">'+cards.join('')+'</div>';
 }
+// Full cadence picker for a grid row — same fields and same rtCad* writers as the
+// Settings routines editor, so the two views can never disagree about the data.
+function _cpCadPanelHTML(slot,kid,i,st){
+  const cad=st.cad||"daily", cm=cadMode(cad);
+  let p='<div style="border:1px solid var(--border);border-radius:10px;padding:9px;background:#fff">';
+  { const wl=stepWindowLabel(st), on=!!(st.from||st.to);
+    p+='<div style="display:flex;gap:5px;align-items:center;margin-bottom:8px;flex-wrap:wrap">';
+    p+='<span style="font-size:10.5px;font-weight:700;color:'+(on?"#0e7490":"var(--muted)")+'">📅 Runs</span>';
+    p+='<input type="date" value="'+(st.from||"")+'" onchange="rtCadWindow(\''+slot+'\',\''+kid+'\','+i+',\'from\',this.value)" style="padding:3px 6px;border:1.5px solid '+(on?"#a5f3fc":"var(--border)")+';border-radius:7px;font-size:11px;font-family:\'DM Sans\',sans-serif">';
+    p+='<span style="font-size:10.5px;color:var(--muted)">to</span>';
+    p+='<input type="date" value="'+(st.to||"")+'" onchange="rtCadWindow(\''+slot+'\',\''+kid+'\','+i+',\'to\',this.value)" style="padding:3px 6px;border:1.5px solid '+(on?"#a5f3fc":"var(--border)")+';border-radius:7px;font-size:11px;font-family:\'DM Sans\',sans-serif">';
+    p+=on?('<span style="font-size:10.5px;font-weight:700;color:#0e7490">'+wl+'</span><button onclick="rtCadClearWindow(\''+slot+'\',\''+kid+'\','+i+')" title="Always run" style="padding:2px 7px;border-radius:6px;border:1.5px solid var(--border);background:#fff;font-size:10.5px;cursor:pointer;font-family:\'DM Sans\',sans-serif">clear</button>')
+        :'<span style="font-size:10.5px;color:var(--muted)">always</span>';
+    p+='</div>'; }
+  p+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:7px">';
+  [["daily","Daily","daily"],["everyN","Every N days","2d"],["weekly","Weekly","wk:"],["biweekly","Every 2 weeks","2w"],["asneeded","As needed","asneeded"]].forEach(function(m){
+    p+='<button onclick="rtCadSet(\''+slot+'\',\''+kid+'\','+i+',\''+m[2]+'\')" style="border:1.5px solid '+(cm===m[0]?"transparent":"var(--border)")+';background:'+(cm===m[0]?"var(--header)":"#fff")+';color:'+(cm===m[0]?"#fff":"#1f2937")+';border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+m[1]+'</button>';
+  });
+  p+='</div>';
+  if(cm==="everyN"){ p+='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Every <input type="number" min="1" max="30" value="'+(parseInt(cad)||2)+'" onchange="rtCadSet(\''+slot+'\',\''+kid+'\','+i+',this.value+\'d\')" style="width:54px;padding:5px;border:1.5px solid var(--border);border-radius:7px;text-align:center"> days</div>'; }
+  if(cm==="weekly"){ const sel=cad.indexOf("wk:")===0?cad.slice(3).split(",").filter(function(x){return x!==""}):(cad==="sat"?["5"]:cad==="sun"?["6"]:[]);
+    p+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px">';
+    ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].forEach(function(dn,di){ p+='<button onclick="rtCadWeekday(\''+slot+'\',\''+kid+'\','+i+','+di+')" style="border:1.5px solid '+(sel.indexOf(String(di))>=0?"transparent":"var(--border)")+';background:'+(sel.indexOf(String(di))>=0?"var(--header)":"#fff")+';color:'+(sel.indexOf(String(di))>=0?"#fff":"#1f2937")+';border-radius:7px;padding:4px 7px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+dn+'</button>'; });
+    p+='</div>'; }
+  p+='<div style="font-size:12px;color:var(--muted)">⏰ <input type="text" placeholder="e.g. 6 AM" value="'+esc(st.time||"")+'" onchange="rtCadTime(\''+slot+'\',\''+kid+'\','+i+',this.value)" style="width:90px;padding:5px 8px;border:1.5px solid var(--border);border-radius:7px"> time of day (optional)</div>';
+  p+='</div>';
+  return p;
+}
 function renderChorePlan(el,headerHtml){
   if(!el){el=document.getElementById("content");if(!el)return;}
   const DOW=["M","T","W","T","F","S","S"], FULL=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
@@ -12970,7 +13004,8 @@ function renderChorePlan(el,headerHtml){
   h+='<div class="cp-hd">🧹 Chore Plan</div>';
   h+='<div class="cp-sub">Tap a square to put a chore on that day. <b>Daily</b> puts it back on every day. '+
      'A chore that misses its day keeps showing with a red “late” badge until it’s done — daily chores can’t be late. '+
-     '🔄 marks a rotating chore — it swaps rooms/jobs between kids each day; tap it to add or remove a chore from the rotation.</div>';
+     '🔄 marks a rotating chore — it swaps rooms/jobs between kids each day; tap it to add or remove a chore from the rotation. '+
+     '🔁 opens the full schedule for a chore — every-N-days and every-2-weeks patterns, a time of day, and 📅 start/stop dates.</div>';
   // kid + list pickers
   h+='<div class="cp-picks"'+(isGrabs?' style="display:none"':'')+'>';
   ROSTER.forEach(function(k){ h+='<button class="cp-chip'+(cpKid===k?" on":"")+'" style="'+(cpKid===k?'background:'+(SL_KCOL[k]||"#333")+';border-color:transparent;color:#fff':'')+'" onclick="cpSetKid(\''+k+'\')">'+esc(cap(k))+'</button>'; });
@@ -13010,15 +13045,21 @@ function renderChorePlan(el,headerHtml){
   FULL.forEach(function(d,i){ h+='<th title="'+d+'">'+DOW[i]+'</th>'; });
   h+='<th>Daily</th><th class="cp-zone">Zone</th><th class="cp-pts">⭐</th><th></th></tr></thead><tbody>';
   steps.forEach(function(st,i){
-    const cad=st.cad||"daily", days=_cpDays(cad), isDaily=(days===null&&cad!=="asneeded");
+    const cad=st.cad||"daily", days=_cpDays(cad), exotic=(!isGrabs&&_cpExotic(cad)), isDaily=(!exotic&&days===null&&cad!=="asneeded");
+    const _ck=cpSlot+"_"+cpKid+"_"+i, _co=(!isGrabs&&rtCadOpen===_ck);
     h+='<tr><td class="cp-name"><input class="cpn-e" value="'+esc(st.emoji||"")+'" onchange="cpSetField('+i+',\'emoji\',this.value)"><input class="cpn-l" value="'+esc(st.label||"")+'" onchange="cpSetField('+i+',\'label\',this.value)">'+
        (cad==="asneeded"?' <span class="cp-warn">not scheduled</span>':'')+
-       (!isGrabs?('<div><button onclick="rtRotToggle(\''+cpSlot+'\',\''+cpKid+'\','+i+')" title="Swap this chore between kids day by day" style="margin-top:3px;border:1.5px solid '+(st.rot?"#fb923c":"var(--border)")+';background:'+(st.rot?"#fff7ed":"#fff")+';color:'+(st.rot?"#c2410c":"var(--muted)")+';border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔄 '+(st.rot?esc(rtRotChipLabel(cpSlot,st.rot)):"Rotate")+'</button></div>'):'')+'</td>';
-    for(let d=0;d<7;d++){
-      const on=isDaily||(days&&days.indexOf(d)>=0);
-      h+='<td><button class="cp-cell'+(on?(isDaily?" daily":" on"):"")+'" onclick="cpToggle('+i+','+d+')" title="'+FULL[d]+'">'+(on?"●":"")+'</button></td>';
+       (!isGrabs?('<div><button onclick="rtRotToggle(\''+cpSlot+'\',\''+cpKid+'\','+i+')" title="Swap this chore between kids day by day" style="margin-top:3px;border:1.5px solid '+(st.rot?"#fb923c":"var(--border)")+';background:'+(st.rot?"#fff7ed":"#fff")+';color:'+(st.rot?"#c2410c":"var(--muted)")+';border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔄 '+(st.rot?esc(rtRotChipLabel(cpSlot,st.rot)):"Rotate")+'</button>'+
+       '<button onclick="rtCadToggle(\''+_ck+'\')" title="Cadence, time of day, and run window" style="margin-top:3px;margin-left:4px;border:1.5px solid '+((cad!=="daily"||st.time||st.from||st.to)?"var(--header)":"var(--border)")+';background:#fff;color:var(--muted);border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔁 '+esc(cadLabel(cad))+(st.time?(" · ⏰ "+esc(st.time)):"")+((st.from||st.to)?(" · 📅 "+esc(stepWindowLabel(st))):"")+' '+(_co?"▾":"▸")+'</button></div>'):'')+'</td>';
+    if(exotic){
+      h+='<td colspan="8" style="text-align:center"><button onclick="rtCadToggle(\''+_ck+'\')" style="border:1.5px dashed var(--header);background:var(--bg);color:var(--text);border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔁 '+esc(cadLabel(cad))+' — tap to change</button></td>';
+    } else {
+      for(let d=0;d<7;d++){
+        const on=isDaily||(days&&days.indexOf(d)>=0);
+        h+='<td><button class="cp-cell'+(on?(isDaily?" daily":" on"):"")+'" onclick="cpToggle('+i+','+d+')" title="'+FULL[d]+'">'+(on?"●":"")+'</button></td>';
+      }
+      h+='<td><button class="cp-daily'+(isDaily?" on":"")+'" onclick="cpSetDaily('+i+')">'+(isDaily?"✓":"set")+'</button></td>';
     }
-    h+='<td><button class="cp-daily'+(isDaily?" on":"")+'" onclick="cpSetDaily('+i+')">'+(isDaily?"✓":"set")+'</button></td>';
     h+='<td class="cp-zone"><select onchange="cpSetZone('+i+',this.value)">'+
        '<option value=""'+(!st.zone?" selected":"")+'>—</option>'+
        zoneList().map(function(z){ return '<option value="'+esc(z.id)+'"'+(st.zone===z.id?" selected":"")+'>'+esc(z.emoji||"")+' '+esc(z.name)+'</option>'; }).join("")+
@@ -13026,6 +13067,7 @@ function renderChorePlan(el,headerHtml){
     const _bn=zoneBonusFor(st.zone,st.pts||0);
     h+='<td class="cp-pts"><input class="cpp-in" type="number" min="0" value="'+(st.pts||0)+'" onchange="cpSetField('+i+',\'pts\',this.value)">'+(_bn?'<span class="cp-boost">+'+_bn+'</span>':'')+'</td>';
     h+='<td><button class="cp-delb" onclick="cpDelChore('+i+')" title="Delete this chore">✕</button></td></tr>';
+    if(_co){ h+='<tr><td colspan="12" style="background:var(--bg);padding:7px 9px">'+_cpCadPanelHTML(cpSlot,cpKid,i,st)+'</td></tr>'; }
   });
   h+='</tbody></table></div>';
   h+='<button class="cp-addz" onclick="cpAddChore()">+ Add chore</button>';
@@ -28111,7 +28153,7 @@ function rtSetEveningHour(v){ routineTimes=Object.assign({},routineTimes,{evenin
 function cadMode(cad){ if(!cad||cad==="daily")return "daily"; if(cad==="asneeded")return "asneeded"; if(cad==="2w")return "biweekly"; if(cad==="sat"||cad==="sun"||cad.indexOf("wk:")===0)return "weekly"; if(/^\d+d$/.test(cad))return "everyN"; return "daily"; }
 function rtCadToggle(key){ rtCadOpen=(rtCadOpen===key)?null:key; renderAll(); }
 function rtCadSet(slot,kid,i,cad){ rtCfgEnsure(slot,kid); if(!routineCfg2[slot][kid][i])return; routineCfg2[slot][kid][i].cad=cad; rtCfgSave(); renderAll(); }
-function rtCadWeekday(slot,kid,i,dow){ rtCfgEnsure(slot,kid); var it=routineCfg2[slot][kid][i]; if(!it)return; var cad=it.cad||"wk:"; if(cad.indexOf("wk:")!==0)cad="wk:"; var ds=cad.slice(3).split(",").filter(function(x){return x!==""}); var s=String(dow); if(ds.indexOf(s)>=0)ds=ds.filter(function(x){return x!==s}); else ds.push(s); ds.sort(function(a,b){return a-b}); it.cad="wk:"+ds.join(","); rtCfgSave(); renderAll(); }
+function rtCadWeekday(slot,kid,i,dow){ rtCfgEnsure(slot,kid); var it=routineCfg2[slot][kid][i]; if(!it)return; var cad=it.cad||"wk:"; if(cad==="sat")cad="wk:5"; else if(cad==="sun")cad="wk:6"; else if(cad.indexOf("wk:")!==0)cad="wk:"; var ds=cad.slice(3).split(",").filter(function(x){return x!==""}); var s=String(dow); if(ds.indexOf(s)>=0)ds=ds.filter(function(x){return x!==s}); else ds.push(s); ds.sort(function(a,b){return a-b}); it.cad="wk:"+ds.join(","); rtCfgSave(); renderAll(); }
 function rtCadTime(slot,kid,i,v){ rtCfgEnsure(slot,kid); if(!routineCfg2[slot][kid][i])return; routineCfg2[slot][kid][i].time=v; rtCfgSave(); }
 // Run window setters. Kept separate from rtCfgSet so clearing both fields is one action —
 // a finished course should be one tap to retire, not two blanked date pickers.
