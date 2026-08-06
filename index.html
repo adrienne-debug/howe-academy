@@ -20928,9 +20928,14 @@ function paceDoneTitles(kid,keywords,excludeWeek){
     if(awNum>0&&awNum<currStart) return;
     const awChecked=aw.checked||{};
     const awTasks=aw.tasks||[];
-    awTasks.filter(t=>t.who===kid&&!t.id.endsWith("_c")).forEach(t=>{
-      if(chainDone(t.id,awChecked,awTasks)&&kws.some(kw=>(t.title||"").toLowerCase().includes(kw)))
-        out.push((t.title||"").toLowerCase());
+    const awHist=aw.history||{};
+    awTasks.forEach(t=>{
+      if(!t||!t.id||t.id.endsWith("_c")) return;
+      if(!chainDone(t.id,awChecked,awTasks)) return;
+      const r=_archTrueRec(t,awChecked,awHist,awTasks); // same truth the cursor counts
+      if(r.who!==kid) return;
+      if(!kws.some(kw=>String(r.title||"").toLowerCase().includes(kw))) return;
+      out.push(String(r.title||"").toLowerCase());
     });
   });
   return out;
@@ -20964,6 +20969,35 @@ function cbDoneCellSet(kid,sk,cells){
   // Completions exist but NONE line up with the grid — the two don't share text for this
   // subject (Lucy's NZK grid says "Q41–42" where her task says "Quest 41"). Can't tell.
   return matched?done:null;
+}
+// Which id in a task's carry-over chain actually holds the check (null if none does).
+function _archCheckedId(t,awChecked,awTasks){
+  let id=t&&t.id;
+  for(let i=0;i<4&&id;i++){
+    if(awChecked&&awChecked[id]) return id;
+    const nx=id+"_c";
+    if(!(awTasks&&awTasks.some(x=>x.id===nx))) return null;
+    id=nx;
+  }
+  return null;
+}
+// A completed ARCHIVED task's true identity comes from its HISTORY RECORD, not its card.
+// Archived weeks predate the integrity heal and can never be re-tapped, so they still
+// carry the id-collision damage: in wk12 and wk14, 55 checks sit on cards whose lesson
+// nobody did (that lesson reads "done" forever and is never scheduled again — Ellis's
+// Singapore 3B Ch.12 L7/L8, Lincoln's EIC B2 pg 25/26), while the lesson actually
+// finished that minute is credited to no card at all. History records who tapped what,
+// so the cursor counts THAT: phantom completions stop hiding unfinished work, and real
+// completions stranded on the wrong card still count instead of being re-served.
+// Read-time only — archived checks/history are never rewritten (a month of completion
+// records, points and Trends stay exactly as they were lived).
+// Deliberately NOT applied to the active week: the heal keeps that one honest already,
+// and a card Mom re-checks by hand outranks a stale record left on it (Spelling 6d).
+function _archTrueRec(t,awChecked,awHist,awTasks){
+  const id=_archCheckedId(t,awChecked,awTasks);
+  const h=id&&awHist?awHist[id]:null;
+  if(h&&h.who&&h.title&&h.ts&&!h.missed&&!h.flag) return {who:h.who,title:h.title};
+  return {who:t.who,title:t.title||""};
 }
 function paceAutoCount(kid,keywords,excludeWeek,subjectKey,_collect){
   // _collect (optional): called once per COUNTED task (post-dedupe) — lets the
@@ -21005,9 +21039,16 @@ function paceAutoCount(kid,keywords,excludeWeek,subjectKey,_collect){
     if(awNum>0&&awNum<currStart) return;
     const awChecked=aw.checked||{};
     const awTasks=aw.tasks||[];
-    awTasks.filter(t=>t.who===kid&&!t.id.endsWith("_c")).forEach(t=>{
-      if(chainDone(t.id,awChecked,awTasks)&&kws.some(kw=>(t.title||"").toLowerCase().includes(kw)))
-        _bump(t);
+    const awHist=aw.history||{};
+    awTasks.forEach(t=>{
+      if(!t||!t.id||t.id.endsWith("_c")) return;
+      if(!chainDone(t.id,awChecked,awTasks)) return;
+      // Count what was really finished (see _archTrueRec) — kid included: a check that
+      // landed on another kid's card belongs to whoever actually did the work.
+      const r=_archTrueRec(t,awChecked,awHist,awTasks);
+      if(r.who!==kid) return;
+      if(!kws.some(kw=>String(r.title||"").toLowerCase().includes(kw))) return;
+      _bump({title:r.title});
     });
   });
   return count;
@@ -31672,31 +31713,39 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
       // strict gate (no manual offset/adjust, no title collisions, every completion
       // found in the sequence) drops any subject whose task titles don't mirror its
       // grid cells (Lucy's NZK "Quest 41" vs cell "Q41-42") back to the old behavior.
-      let _doneParts=null;
-      if(!savedCursors&&paceIsLessonSeq(kid,sk)){
+      // The gate is CONTENT, not the "sequential" flag: a subject is servable by content
+      // exactly when its completions can be matched to its grid cells. Requiring the flag
+      // left Lincoln's Editor in Chief on count-as-position, which skipped B2 pg 25
+      // outright (its wk14 check was stolen, so count and position had drifted apart).
+      // Each completion consumes ONE OCCURRENCE of that lesson, in order — which is why
+      // this is a tally, not a set. Sequences legitimately repeat a cell (Lincoln's Ind
+      // Reading has "Free choice" 64 times among 160 named books; Reading Detective has
+      // 7 "Posttest / Review"), and set-filtering would delete every occurrence at once
+      // the first time one was finished. A tally serves the 2nd "Free choice" after the
+      // 1st is done, and for a pure daily (every cell identical) it reduces exactly to
+      // the old count-as-position behavior. An over-count (the same lesson finished
+      // twice) now wastes only its own slot instead of skipping a different lesson.
+      let _doneCounts=null;
+      if(!savedCursors){
         const _ps=((paceData.subjects||{})[kid]||{})[sk];
         if(!((_ps&&_ps.offset)||0)&&!((_ps&&_ps.adjust)||0)){
-          const _parts=new Set(); let _pn=0;
+          const _cnt=new Map(); let _ok=true;
+          const _sp=new Set(seqFull.map(l=>String(l.lesson).trim()));
+          const _part=ti=>{ const s=String(ti||""); const i=s.indexOf(" — "); return (i>=0?s.slice(i+3):s).trim(); };
           paceAutoCount(kid,paceKeywords(kid,sk,_ps),excludeWeek,sk,t=>{
-            _pn+=1; const ti=String(t.title||""); const i=ti.indexOf(" — ");
-            _parts.add((i>=0?ti.slice(i+3):ti).trim());
+            const p=_part(t.title);
+            if(!_sp.has(p)) _ok=false;            // titles don't mirror the grid — can't reason
+            _cnt.set(p,(_cnt.get(p)||0)+1);
           });
-          let _ok=_parts.size===_pn;
-          if(_ok){ const _sp=new Set(seqFull.map(l=>String(l.lesson).trim())); for(const p of _parts){ if(!_sp.has(p)){ _ok=false; break; } } }
-          if(_ok&&typeof weekData==="object"&&weekData&&Array.isArray(weekData.tasks)){
-            // An OPEN card in the live week outranks archived title evidence: the
-            // integrity heal un-checks stolen-check cards, but the ARCHIVED copy of a
-            // stolen check (wk12/14) still reads "done" by title — without this, a
-            // regen would drop the very lessons the heal just re-opened (Ellis EIC
-            // Pg 76–78, 2026-08-05). The schedule owes every open card its lesson.
-            weekData.tasks.forEach(t=>{
-              if(t.who!==kid||t.subjectKey!==sk) return;
-              if(checked[t.id]||(typeof claimed!=="undefined"&&claimed&&claimed[t.id])) return;
-              const ti=String(t.title||""); const i=ti.indexOf(" — ");
-              _parts.delete((i>=0?ti.slice(i+3):ti).trim());
-            });
-          }
-          if(_ok) _doneParts=_parts;
+          // NB: open cards in the live week are deliberately NOT discounted here. The
+          // tally counts COMPLETIONS; an open card is an occurrence already scheduled,
+          // and carry-over (plus gwCommit's ghost filter) is what moves it forward.
+          // Discounting it double-books a subject whose grid repeats a cell — Lucy's
+          // Mathseeds "Lesson 68" sits at two dates, one finished Jul 17 and one open
+          // this Friday, and the discount served BOTH again next week, 20 minutes apart.
+          // The false-archive-evidence case this once guarded against is fixed at the
+          // source now, by counting archived work from its history record (_archTrueRec).
+          if(_ok) _doneCounts=_cnt;
         }
       }
 
@@ -31721,9 +31770,20 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
       // kids check out of order (wk16 live: 6d done, 6c not), and a count-based skip
       // would re-serve the done one and drop the missed one. `seq` is already
       // hard-cap sliced, so this also respects session goals.
-      const effLessons=_doneParts
-        ?seq.filter(l=>{const p=String(l.lesson).trim(); return !_doneParts.has(p)&&!_seenWk[p];})
-        :seq.slice(Math.max(0,cursor)).filter(l=>!_seenWk[String(l.lesson).trim()]);
+      let effLessons;
+      if(_doneCounts){
+        const _left=new Map(_doneCounts);
+        effLessons=[];
+        for(const l of seq){
+          const p=String(l.lesson).trim();
+          const c=_left.get(p)||0;
+          if(c>0){ _left.set(p,c-1); continue; }   // this occurrence is the one finished
+          if(_seenWk[p]) continue;
+          effLessons.push(l);
+        }
+      } else {
+        effLessons=seq.slice(Math.max(0,cursor)).filter(l=>!_seenWk[String(l.lesson).trim()]);
+      }
       const remaining=effLessons.length;
       // Cap at `remaining` so a hard-cutoff subject never schedules past its target.
       // For uncapped subjects this matches the old behavior — the nextLessons guard
