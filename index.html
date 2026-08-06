@@ -13645,6 +13645,15 @@ function printSchedule(){
 // ── ALERTS + CASCADE ──────────────────────────────────────────────
 setInterval(()=>{ if(tab==="schedule")renderSkylight(); },60000);
 
+// A history record and a task describe the same lesson when kid matches and the titles
+// agree — exactly, or normalized (emoji/punctuation-blind), or on the lesson text after
+// the "display — lesson" dash (a subject display rename mustn't read as a different
+// lesson: "Eggspress Map/Lesson" vs "Map-Lesson" carry the same cell).
+const _normTitle=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]+/g,"");
+const _lessonPart=s=>{const p=String(s||"").split("—");return _normTitle(p.length>1?p.slice(1).join("—"):p[0]);};
+const _sameLesson=(a,b)=>a===b||_normTitle(a)===_normTitle(b)||_lessonPart(a)===_lessonPart(b);
+const _histOwnsCard=(h,t)=>!h||!h.who||!h.title||(h.who===t.who&&_sameLesson(h.title,t.title));
+
 // Debounced cascade scheduler — collapses multiple rapid listener fires into one cascade run.
 // Only runs when checked, tasks, history AND curriculum have loaded from Firebase — the
 // sweep consults subjNoCarry (curriculum card flags); running before currData arrives
@@ -13724,6 +13733,68 @@ function cascadeIntraWeek(sweepTodayElapsed){
   // tasks per check-off (the "heal storm") and let a stale device clobber task edits.
   // Duplicate heals from racing devices now write identical field values — harmless.
   const _healUpd={};
+  // ── Stolen-check integrity heal: a regen on pre-collision-proof code (2026-08-03
+  // 22:35) reused task-id suffixes, leaving check-offs keyed to ids now owned by
+  // DIFFERENT tasks — often another kid's. The card shows done though its lesson never
+  // was, and the regen content filter then skips that lesson forever (Lucy's LOE 44
+  // carrying Lincoln's Frisby D8 check). History is ground truth — it records who/title
+  // as tapped — so a checked card whose OWN history record disagrees on kid or lesson
+  // is carrying someone else's completion. Re-home it: if the real lesson already
+  // holds this completion the copy is a reconciler duplicate (purge — the card goes
+  // honestly unchecked and the lesson gets re-served); if the real lesson's card sits
+  // unchecked, the record moves there. A record with no safe home is NEVER deleted —
+  // it may be the only proof the real work happened (Mom adjudicates; we only log).
+  // Untangling one card frees the next (D12's check sat on D13 while D12's card held
+  // Lucy's math), so iterate to a fixpoint; every pass is targeted-write idempotent.
+  for(let _sp=0;_sp<6;_sp++){
+    let _spMoved=false;
+    weekData.tasks.forEach(t=>{
+      if(!checked[t.id]) return;
+      const h=histState[t.id];
+      if(!h||!h.who||!h.title) return;           // no evidence — leave alone
+      if(h.week&&h.week!==WK) return;
+      if(_histOwnsCard(h,t)) return;             // legit (incl. renames/mojibake)
+      if(claimed&&claimed[t.id]){                // points flow attached — Mom's call
+        dbg("stolen check FLAGGED (claimed, left): "+t.id+" card='"+(t.title||"")+"' record='"+h.title+"'/"+h.who);
+        return;
+      }
+      const owners=weekData.tasks.filter(r=>r!==t&&r.who===h.who&&_sameLesson(r.title,h.title));
+      const dupe=owners.find(r=>checked[r.id]===checked[t.id]||(histState[r.id]&&histState[r.id].ts===h.ts&&histState[r.id].who===h.who&&_sameLesson(histState[r.id].title,h.title)));
+      if(dupe){
+        dbg("cascade heal(stolen check purge): "+t.id+" '"+(t.title||"")+"' — record already on "+dupe.id);
+        delete checked[t.id]; _ckFix[t.id]=null;
+        delete histState[t.id]; _histFix[t.id]=null;
+        _healMoved=true; _spMoved=true;
+        return;
+      }
+      let home=owners.filter(r=>!checked[r.id]&&!(claimed&&claimed[r.id])&&!r.id.endsWith("_c"));
+      if(home.length>1){
+        // Same-titled candidates on several days (dailies): only the day the work was
+        // actually done may receive the record.
+        const _hc=_parseCheckTs(h.ts||checked[t.id]);
+        if(_hc){
+          const _byDay=home.filter(r=>{
+            if(!DAY_DT[r.day]) return false;
+            const _dd=new Date(DAY_DT[r.day]+", "+_hc.getFullYear());
+            return !isNaN(_dd.getTime())&&_dd.getMonth()===_hc.getMonth()&&_dd.getDate()===_hc.getDate();
+          });
+          if(_byDay.length) home=_byDay;
+        }
+      }
+      if(home.length===1){
+        const r=home[0], _ts=checked[t.id];
+        dbg("cascade heal(stolen check re-home): "+t.id+" → "+r.id+" '"+h.title+"'");
+        checked[r.id]=_ts; delete checked[t.id];
+        _ckFix[r.id]=_ts; _ckFix[t.id]=null;
+        histState[r.id]={...h,id:r.id}; delete histState[t.id];
+        _histFix[r.id]=histState[r.id]; _histFix[t.id]=null;
+        _healMoved=true; _spMoved=true;
+        return;
+      }
+      dbg("stolen check FLAGGED (no safe home, left): "+t.id+" card='"+(t.title||"")+"' record='"+h.title+"'/"+h.who);
+    });
+    if(!_spMoved) break;
+  }
   weekData.tasks.forEach(t=>{
     // Day-bound dailies (drills/notebooks = subjNoCarry) must NEVER be relocated by their
     // check-off day. Same-titled dailies share a history checkedOnDay, so healing them by it
@@ -14560,7 +14631,11 @@ function runCascade(){
     if(checked[t.id]) return;
     if(manualUnchecks.has(t.id)) return;
     const h=histState[t.id];
-    if(h&&h.ts&&!h.missed&&!h.flag&&(!h.week||h.week===WK)&&_tsDayOk(h.ts,t)){ toRestore[t.id]=h.ts; return; }
+    // _histOwnsCard: never "rescue" a check onto a card the record doesn't describe —
+    // after an id collision a record for one kid's lesson can sit under an id now owned
+    // by a different task, and restoring it here re-creates the stolen check the
+    // integrity heal just removed (the graded twin of the 2026-08-04 daily loop).
+    if(h&&h.ts&&!h.missed&&!h.flag&&(!h.week||h.week===WK)&&_histOwnsCard(h,t)&&_tsDayOk(h.ts,t)){ toRestore[t.id]=h.ts; return; }
     if(t.title&&t.who){
       const cutoff=Date.now()-7*24*60*60*1000;
       for(const k in histState){
