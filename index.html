@@ -17577,13 +17577,30 @@ function cbSplitCells(cells,doneN,todayISO,doneSet){
 // (2026-08-04: Lincoln's pp.204-207 and pp.208-211, work he'd done on paper, dismissed once
 // and re-laid onto Aug 4-5 behind pp.212-215.) Reading the log makes a dismissal permanent
 // for both kinds of subject, and by lesson text rather than by a count.
-function cbDeriveContent(split,lessonSeq,doneN,dismissedIdx,skipTexts){
+function cbDeriveContent(split,lessonSeq,doneN,dismissedIdx,skipTexts,doneTally){
   const dis=new Set(dismissedIdx||[]);
   const skip=skipTexts||null;
   const _skipped=t=>!!(skip&&skip.has(String(t||"").trim().toLowerCase()));
   const dropOnce=(arr,text)=>{ const i=arr.indexOf(text); if(i>=0) arr.splice(i,1); };
   if(lessonSeq&&lessonSeq.length){
-    const rest=lessonSeq.slice(Math.min(doneN,lessonSeq.length)).filter(t=>!_skipped(t));
+    // doneTally (text→completions) says WHICH lessons are finished; cutting the sequence
+    // at a COUNT instead only works while the finished ones are its first N, and an edited
+    // sequence breaks that immediately. Lincoln's Editor in Chief read ...23, 25, 24, 25,
+    // 26... after Mom repaired it, so position 10 landed on pg 24 — work he had already
+    // done — and the rebuild laid it again while treating the undone pg 25 as finished.
+    // Skipping ONE occurrence per completion is the same rule the generator serves by.
+    // Null tally (offset/adjust set, or titles that don't mirror the sequence) keeps the
+    // old count behavior rather than guessing.
+    const rest=(doneTally
+        ?(()=>{ const left=new Map(doneTally), out=[];
+            for(const t of lessonSeq){
+              const k=String(t||"").trim().toLowerCase(), c=left.get(k)||0;
+              if(c>0){ left.set(k,c-1); continue; }
+              out.push(t);
+            }
+            return out; })()
+        :lessonSeq.slice(Math.min(doneN,lessonSeq.length))
+      ).filter(t=>!_skipped(t));
     split.todayCells.forEach(c=>dropOnce(rest,c.text));
     split.stale.forEach((c,i)=>{ if(dis.has(i)) dropOnce(rest,c.text); });
     return rest;
@@ -17683,7 +17700,27 @@ function cbRemainingContent(kid,sk){
     const _log=(((currData||{}).skiplog||{})[kid]||{})[sk];
     if(_log&&_log.length) _skip=new Set(_log.map(e=>String((e&&e.lesson)||"").trim().toLowerCase()).filter(Boolean));
   }catch(e){}
-  return cbDeriveContent(info.split,info.hasSeq?s.lessonSeq:null,info.doneN,dis,_skip);
+  // Which lessons are actually finished, as a tally the derive can spend one-per-occurrence.
+  // Gated exactly like the generator's: a manual offset or adjust means completions exist
+  // that have no check-off to find (pre-tracking work), and a lesson whose title doesn't
+  // appear in the sequence means the two don't share text at all (Lucy's NZK grid says
+  // "Q41–42" where her task says "Quest 41"). Either way we can't identify what's done by
+  // content, so hand back null and let the count path run — never a guess.
+  let _tally=null;
+  if(info.hasSeq&&!info.adjust&&!Math.max(0,((((paceData||{}).subjects||{})[kid]||{})[sk]||{}).offset||0)){
+    const _paceSubj=(((paceData||{}).subjects||{})[kid]||{})[sk];
+    const _seqSet=new Set((s.lessonSeq||[]).map(t=>String(t||"").trim().toLowerCase()));
+    const _titles=paceDoneTitles(kid,paceKeywords(kid,sk,_paceSubj),null);
+    const _m=new Map(); let _ok=true;
+    for(const t of _titles){
+      const _s=String(t||""), _i=_s.indexOf(" — ");
+      const _p=(_i>=0?_s.slice(_i+3):_s).trim().toLowerCase();
+      if(!_seqSet.has(_p)){ _ok=false; break; }
+      _m.set(_p,(_m.get(_p)||0)+1);
+    }
+    if(_ok) _tally=_m;
+  }
+  return cbDeriveContent(info.split,info.hasSeq?s.lessonSeq:null,info.doneN,dis,_skip,_tally);
 }
 
 // Day-minute cap: per-kid override (curriculum/dayCap, CB3 UI) else school-hours default.
