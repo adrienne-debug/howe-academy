@@ -45,6 +45,8 @@ const FNS = [
   "_cbGateItem", "cbBuildGate", "cbGateToggle", "cbGateAll", "cbGateCancel", "cbGateConfirm",
   "cbRebuildAll", "_cbRebuildAllRun",
   "buildSubjectLessons", "computeSubjectCursor", "paceKeywords"
+  // NB: paceDoneTitles is deliberately NOT sliced in — it reads the live week and archive.
+  // This harness stubs it (see mkEnv) so the positional fallback stays under test.
 ].map(slice).join("\n");
 
 // ── environment stubs ────────────────────────────────────────────────────────
@@ -73,6 +75,10 @@ function mkEnv(autoCounts) {
     // positional cutoff these expectations were written against. Real check-off behaviour
     // is covered by test_rebuild_donecells.js against live data.
     cbDoneCellSet: () => null,
+    // Same reasoning for the content tally: with no check-off history there are no
+    // finished-lesson titles to find, so cbRemainingContent falls back to the positional
+    // cutoff these expectations were written against (2026-08-06).
+    paceDoneTitles: () => [],
     PACE_ALT_KEYWORDS: {},
     gwRules: () => ({ schoolStart: 600, schoolEnd: 975, lunchStart: 780, lunchEnd: 840 }),
     smapIsKidOff: () => null, schedOvKidOff: () => null, schedOv: () => null,

@@ -62,6 +62,7 @@ eval(cbk("PACE_ALT_KEYWORDS"));
 // One eval at module scope — eval() inside a forEach callback scopes the declarations to
 // that callback and they never become visible here.
 eval(["currFirstWeekNum", "currKeyword", "paceKeywords", "paceIsLessonSeq", "paceDoneTitles",
+      "_archCheckedId", "_archTrueRec",
       "cbDoneCellSet", "paceAutoCount", "cbSplitCells", "cbDeriveContent", "cbBacklogInfo",
       "cbRemainingContent"].map(fn).join("\n"));
 
@@ -77,10 +78,14 @@ const content = cbRemainingContent("lincoln", "mr_pages");
 ok("neither dismissed lesson comes back",
    !content.includes("MR5 pp.204–207") && !content.includes("MR5 pp.208–211"),
    content.slice(0, 4));
-ok("the rebuild starts on pp.212–215", content[0] === "MR5 pp.212–215", content[0]);
+// 2026-08-06: the rebuild derives what is left by CONTENT now, and archived work counts
+// from its history record — so pp.176-179 leads. Lincoln never did those pages: their
+// wk12 check was really Lucy's LOE 43 riding his card. It is the one genuine hole left in
+// front of pp.212–215, and everything after it still runs in sequence order.
+ok("the rebuild opens on the real hole, pp.176–179", content[0] === "MR5 pp.176–179", content[0]);
 ok("and runs in sequence order from there",
    content.slice(0, 4).join("|") ===
-   ["MR5 pp.212–215", "MR5 pp.216–219", "MR5 pp.220–223", "MR5 pp.224–227"].join("|"),
+   ["MR5 pp.176–179", "MR5 pp.212–215", "MR5 pp.216–219", "MR5 pp.220–223"].join("|"),
    content.slice(0, 4));
 ok("no duplicates anywhere in what it lays",
    new Set(content).size === content.length,

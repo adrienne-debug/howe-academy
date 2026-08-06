@@ -43,7 +43,9 @@ globalThis.checked = {};
 globalThis.currFirstWeekNum = () => 0;
 globalThis.chainDone = (id, ch) => !!ch[id];
 eval(cb("PACE_ALT_KEYWORDS"));
-eval(fn("currKeyword")); eval(fn("paceKeywords")); eval(fn("paceDoneTitles"));
+eval(fn("currKeyword")); eval(fn("paceKeywords"));
+eval(fn("_archCheckedId")); eval(fn("_archTrueRec"));   // archived work counts from its history record (2026-08-06)
+eval(fn("paceDoneTitles"));
 eval(fn("cbDoneCellSet")); eval(fn("cbSplitCells"));
 
 function cellsFor(kid, sk) {
@@ -62,7 +64,14 @@ const doneSet = cbDoneCellSet("lincoln", "mr_pages", cells);
 
 console.log("Lincoln MR5 — rebuild split, real grid + real check-offs\n");
 ok("grid has 142 cells", cells.length === 142, cells.length);
-ok("21 cells are genuinely checked off", doneSet && doneSet.size === 21, doneSet && doneSet.size);
+// 2026-08-06: 21 → 20. Archived work counts from its history record now (_archTrueRec),
+// and pp.176-179's wk12 check was really Lucy's LOE 43 on Lincoln's card — he never did
+// those pages, so that cell is correctly no longer "done" and gets re-served.
+ok("20 cells are genuinely checked off", doneSet && doneSet.size === 20, doneSet && doneSet.size);
+ok("the one that left the done set is pp.176-179", (() => {
+  const i = cells.findIndex(c => c.text.includes("176"));
+  return i >= 0 && !doneSet.has(i);
+})(), true);
 
 // The four duplicate cells, by date
 const DUPES = ["2026-07-20", "2026-07-27", "2026-08-03", "2026-08-04"];

@@ -39,6 +39,8 @@ globalThis.chainDone = (id, ch) => !!ch[id];
 eval(fn("schedOv"));
 eval(fn("buildSubjectLessons"));
 eval(fn("paceIsLessonSeq"));
+eval(fn("_archCheckedId"));
+eval(fn("_archTrueRec"));   // archived work counts from its history record (2026-08-06)
 eval(fn("paceAutoCount"));
 
 const MR_KWS = ["MR5/MR6 Pages", "MR5 Math", "MR6 Math"];
@@ -55,9 +57,24 @@ const legacy  = paceAutoCount("lincoln", MR_KWS, null, null);   // no subjectKey
 console.log("\n  archive-only count, de-duped : " + deduped);
 console.log("  archive-only count, old way  : " + legacy);
 ok("de-dupe removes the phantom lessons", deduped < legacy, { deduped, legacy });
-ok("counts 27 distinct lessons, not 30 instances", deduped === 27, deduped);
-ok("old way counted 30 task instances", legacy === 30, legacy);
-ok("inflation is exactly the 3 duplicate completions", legacy - deduped === 3, legacy - deduped);
+// 2026-08-06: archived work is counted from its HISTORY RECORD now, not the card the
+// check landed on (_archTrueRec), so this fixture re-attributes. pp.176-179 leaves the
+// count — its wk12 check was really Lucy's LOE 43 sitting on Lincoln's card, so he never
+// did those pages and they are re-served — while one genuine pp.196-199 completion that
+// the id collision smeared across 4 wk14 cards is now seen 4 times and de-duped back to
+// one. Hence 26 distinct / 32 instances where this read 27 / 30. The de-dupe is the thing
+// under test, and it still collapses every repeat.
+ok("counts 26 distinct lessons, not 32 instances", deduped === 26, deduped);
+ok("old way counted 32 task instances", legacy === 32, legacy);
+ok("inflation is exactly the 6 duplicate completions", legacy - deduped === 6, legacy - deduped);
+ok("the phantom pp.176-179 is no longer counted as finished", (() => {
+  let seen = false;
+  paceAutoCount("lincoln", MR_KWS, null, "mr_pages", t => {
+    const ti = String(t.title || ""), i = ti.indexOf(" — ");
+    if ((i >= 0 ? ti.slice(i + 3) : ti).trim() === "MR5 pp.176–179") seen = true;
+  });
+  return !seen;
+})(), true);
 
 // ── with this week's duplicate pp.196-199 included ──
 globalThis.weekData = { tasks: [
@@ -79,8 +96,8 @@ ok("old way would have counted it again", withWeekOld === legacy + 1, { withWeek
 console.log("\n  cursor = offset(0) + auto + adjust(0)");
 console.log("  before this fix : " + withWeekOld + "  (sequence positions ahead of reality)");
 console.log("  after  this fix : " + withWeek + "  (= lessons actually finished)");
-ok("cursor = distinct lessons finished", withWeek === 27, withWeek);
-ok("was 4 ahead before (3 archived dupes + this week)", withWeekOld - withWeek === 4, withWeekOld - withWeek);
+ok("cursor = distinct lessons finished", withWeek === 26, withWeek);
+ok("was 7 ahead before (6 archived dupes + this week)", withWeekOld - withWeek === 7, withWeekOld - withWeek);
 
 console.log("\nDaily subjects must be untouched");
 const NB_KWS = ["Morning Notebook"];
