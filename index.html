@@ -20688,7 +20688,7 @@ function buildSubjectLessons(kid,subjectKey){
   // Check Excel-based lessons first
   if(currData&&currData.lessons&&currData.lessons[kid]){
     const lessons=currData.lessons[kid];
-    const seq=[];
+    const raw=[];
     const dayNums=Object.keys(lessons).map(Number).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
     for(const dn of dayNums){
       const entry=lessons[dn];
@@ -20697,16 +20697,25 @@ function buildSubjectLessons(kid,subjectKey){
       const ov=(ds&&typeof schedOv==="function")?schedOv(ds,kid):null;
       const val=entry[subjectKey];
       const rm=!!(ov&&ov.removed&&ov.removed[subjectKey]);
-      if(!rm&&val&&val!=="—"&&val!=="nan"&&val.trim()){
-        seq.push({dayNum:dn,lesson:val,date:ds});
+      if(val&&val!=="—"&&val!=="nan"&&val.trim()){
+        raw.push({dayNum:dn,lesson:val,date:ds,rm});
       }
       // Make-up slot on this date — a moved-in lesson, or a second sitting of the same
       // subject the same day. Text-only, per the note above.
       const add=ov&&ov.added?ov.added[subjectKey]:undefined;
       if(typeof add==="string"&&add.trim()){
-        seq.push({dayNum:dn,lesson:add.trim(),date:ds,madeUp:true});
+        raw.push({dayNum:dn,lesson:add.trim(),date:ds,madeUp:true});
       }
     }
+    // A removed slot removes the DAY, not the LESSON. Content that still lives on
+    // another cell (a moved lesson — remove+add — or a rebuild that re-laid it, or a
+    // repeating daily) drops out here as before. But content that exists NOWHERE else
+    // stays in the sequence, slotless, so it slides to the next open slot instead of
+    // silently vanishing: Mom removing the Aug 4/5 MR5 slots (a day-load edit) deleted
+    // pp.204–211 from the whole plan — the schedule "dropped" them (2026-08-05).
+    // Deliberate content skips go through Dismiss-for-good (cursor bump), never here.
+    const kept=new Set(raw.filter(e=>!e.rm).map(e=>e.lesson.trim()));
+    const seq=raw.filter(e=>!e.rm||!kept.has(e.lesson.trim())).map(e=>{ const {rm,...o}=e; return rm?{...o,slotRemoved:true}:o; });
     if(seq.length) return seq;
   }
   // Fall back to in-app lesson sequence (for subjects added via editor)
@@ -20956,7 +20965,9 @@ function cbDoneCellSet(kid,sk,cells){
   // subject (Lucy's NZK grid says "Q41–42" where her task says "Quest 41"). Can't tell.
   return matched?done:null;
 }
-function paceAutoCount(kid,keywords,excludeWeek,subjectKey){
+function paceAutoCount(kid,keywords,excludeWeek,subjectKey,_collect){
+  // _collect (optional): called once per COUNTED task (post-dedupe) — lets the
+  // generator see WHICH lessons the count is made of, not just how many.
   if(!keywords||!keywords.length) return 0;
   const kws=(typeof keywords==="string"?[keywords]:keywords).map(k=>k.toLowerCase().trim());
   const currStart=currFirstWeekNum();
@@ -20976,10 +20987,11 @@ function paceAutoCount(kid,keywords,excludeWeek,subjectKey){
   const _dedupe=paceIsLessonSeq(kid,subjectKey);
   const _seen=_dedupe?new Set():null;
   const _bump=t=>{
-    if(!_dedupe){ count+=1; return; }
+    if(!_dedupe){ count+=1; if(_collect)_collect(t); return; }
     const k=(t.title||"").trim().toLowerCase();
     if(k){ if(_seen.has(k)) return; _seen.add(k); }
     count+=1;
+    if(_collect)_collect(t);
   };
   if(!excludeWeek||excludeWeek!==WK){
     weekData.tasks.filter(t=>t.who===kid&&!t.id.endsWith("_c")).forEach(t=>{
@@ -31650,6 +31662,44 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
       const _hardCap=_sessionHardCap(kid,sk);
       const seq=isFinite(_hardCap)?seqFull.slice(0,_hardCap):seqFull;
 
+      // ── Content-aware serving for lesson-sequenced subjects ──
+      // cursor-as-count assumes completions are CONTIGUOUS from seq[0]. The stolen-check
+      // era broke that: Lincoln finished pp.212–223 while 204–211 were never served, so
+      // count(20) as a POSITION pointed past the holes forever — and for Eggspress it
+      // pointed AT a done lesson and re-served it (wk17 preview, 2026-08-05). When every
+      // completion the count is built from maps 1:1 onto a sequence entry, serve the
+      // earliest lessons NOT actually completed instead of slicing at the count. The
+      // strict gate (no manual offset/adjust, no title collisions, every completion
+      // found in the sequence) drops any subject whose task titles don't mirror its
+      // grid cells (Lucy's NZK "Quest 41" vs cell "Q41-42") back to the old behavior.
+      let _doneParts=null;
+      if(!savedCursors&&paceIsLessonSeq(kid,sk)){
+        const _ps=((paceData.subjects||{})[kid]||{})[sk];
+        if(!((_ps&&_ps.offset)||0)&&!((_ps&&_ps.adjust)||0)){
+          const _parts=new Set(); let _pn=0;
+          paceAutoCount(kid,paceKeywords(kid,sk,_ps),excludeWeek,sk,t=>{
+            _pn+=1; const ti=String(t.title||""); const i=ti.indexOf(" — ");
+            _parts.add((i>=0?ti.slice(i+3):ti).trim());
+          });
+          let _ok=_parts.size===_pn;
+          if(_ok){ const _sp=new Set(seqFull.map(l=>String(l.lesson).trim())); for(const p of _parts){ if(!_sp.has(p)){ _ok=false; break; } } }
+          if(_ok&&typeof weekData==="object"&&weekData&&Array.isArray(weekData.tasks)){
+            // An OPEN card in the live week outranks archived title evidence: the
+            // integrity heal un-checks stolen-check cards, but the ARCHIVED copy of a
+            // stolen check (wk12/14) still reads "done" by title — without this, a
+            // regen would drop the very lessons the heal just re-opened (Ellis EIC
+            // Pg 76–78, 2026-08-05). The schedule owes every open card its lesson.
+            weekData.tasks.forEach(t=>{
+              if(t.who!==kid||t.subjectKey!==sk) return;
+              if(checked[t.id]||(typeof claimed!=="undefined"&&claimed&&claimed[t.id])) return;
+              const ti=String(t.title||""); const i=ti.indexOf(" — ");
+              _parts.delete((i>=0?ti.slice(i+3):ti).trim());
+            });
+          }
+          if(_ok) _doneParts=_parts;
+        }
+      }
+
       // CATCH-UP: if behind the Excel plan, add up to carryoverCap extra slots this
       // week (lightest allowed days with room) so the cursor serves the backlog now
       // instead of sliding the finish date out forever. Capped, fit-checked, never
@@ -31671,7 +31721,9 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
       // kids check out of order (wk16 live: 6d done, 6c not), and a count-based skip
       // would re-serve the done one and drop the missed one. `seq` is already
       // hard-cap sliced, so this also respects session goals.
-      const effLessons=seq.slice(Math.max(0,cursor)).filter(l=>!_seenWk[String(l.lesson).trim()]);
+      const effLessons=_doneParts
+        ?seq.filter(l=>{const p=String(l.lesson).trim(); return !_doneParts.has(p)&&!_seenWk[p];})
+        :seq.slice(Math.max(0,cursor)).filter(l=>!_seenWk[String(l.lesson).trim()]);
       const remaining=effLessons.length;
       // Cap at `remaining` so a hard-cutoff subject never schedules past its target.
       // For uncapped subjects this matches the old behavior — the nextLessons guard
