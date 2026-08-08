@@ -1075,6 +1075,9 @@ body.kiosk #app-header,body.kiosk #nav-tabs,body.kiosk #sched-subtabs,body.kiosk
 .zed-x{border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:7px;width:26px;height:28px;font-size:12px;font-weight:800;cursor:pointer}
 .cp-addz{border:1.5px dashed #ddd6fe;background:#f5f3ff;color:#5b3a8c;border-radius:8px;padding:5px 12px;font-size:11px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif;margin-top:4px}
 .cpn-e{width:34px;text-align:center;border:1.5px solid var(--border);border-radius:7px;padding:4px;font-size:13px;font-family:'DM Sans',sans-serif}
+.cpn-pick{border:1.5px solid var(--border);background:#fff;color:var(--muted);border-radius:7px;padding:4px 5px;margin-left:2px;font-size:11px;line-height:1;cursor:pointer;vertical-align:middle;font-family:'DM Sans',sans-serif}
+.cpn-pick:hover{background:#fff7ed;border-color:#fed7aa}
+.cpn-pick.open{background:#fff7ed;border-color:#c45e1a;color:#c45e1a}
 .cpn-l{width:150px;border:1.5px solid var(--border);border-radius:7px;padding:4px 7px;font-size:12px;font-family:'DM Sans',sans-serif}
 .cpp-in{width:48px;text-align:center;border:1.5px solid var(--border);border-radius:7px;padding:4px;font-size:12px;font-weight:700;font-family:'DM Sans',sans-serif}
 .cp-delb{border:none;background:none;color:#d1d5db;font-size:14px;cursor:pointer;padding:4px 6px;font-family:'DM Sans',sans-serif}
@@ -12831,6 +12834,21 @@ function zoneBonusFor(zoneId,basePts,dn){
 }
 let cpKid="lincoln";
 let cpSlot="chores";     // which routine list is being planned (chores/afternoon/evening)
+// Chore icons to pick from, so setting one doesn't mean reaching for a phone's emoji
+// keyboard. ARRAYS, not one string per tab like MAST_EMOJI_PAL: that one is split with
+// [...str], which cuts a multi-code-point emoji (anything carrying U+FE0F, e.g. ❤️ or ✏️)
+// into two useless half-glyphs. Listing them keeps every icon whole.
+const CHORE_EMOJI_PAL={
+  "Cleaning":["🧹","🧼","🧽","🧴","🪣","🧺","🚿","🛁","🧯","🗑️","♻️","🧻","🪠","🧤","✨","🫧"],
+  "Kitchen":["🍽️","🍴","🥣","🍳","🧊","🥤","🧃","🍞","🥫","🛒","🧑‍🍳","🫙","☕","🥡"],
+  "Laundry & room":["👕","👖","🧦","🧣","🪝","🛏️","🚪","🪟","🧸","📦","🗄️","🪞","👚","🧳"],
+  "Pets & outdoor":["🐕","🐈","🐟","🦴","🌱","🪴","🌳","🍂","🌻","💧","🚮","🏡","🚲","⛄"],
+  "Self-care":["🪥","🚿","🧻","💊","🧢","👟","🎒","📚","🛌","🧘","💤","🍎"],
+  "Helping":["🤝","💪","🙌","👏","🫶","👨‍👩‍👧","📮","💌","🔑","🧾","📋","✅"],
+  "Fun":["⭐","🏆","🎯","🎁","🎈","🔔","⏰","⏳","🎵","🎨","🌈","🔥","💎","🥇"]
+};
+let cpEmojiOpen=null;    // "slot_kid_i" of the open icon picker (one at a time, like rtCadOpen)
+let cpEmojiTab="Cleaning";
 function cpSetKid(k){ cpKid=k; renderAll(); }
 function cpSetSlot(s){ cpSlot=s; renderAll(); }
 function _cpDays(cad){
@@ -12885,6 +12903,37 @@ function cpSetField(i,f,v){
   if(!momHere()) return;
   if(cpSlot==="grabs"){ gbSet(i,f,v); return; }
   rtCfgSet(cpSlot,cpKid,i,f,v);            // saves without re-render so typing keeps focus
+}
+// ── Chore icon picker ────────────────────────────────────────────────────────
+// Tap the icon box on a chore row to open a bank of chore-appropriate emoji. The box
+// itself stays a real text input, so typing or pasting an icon works exactly as before —
+// this is a second way in, not a replacement.
+function cpEmojiToggle(i){
+  if(!momHere()) return;
+  const key=cpSlot+"_"+cpKid+"_"+i;
+  cpEmojiOpen=(cpEmojiOpen===key)?null:key;
+  renderAll();
+}
+function cpEmojiTabSet(t){ cpEmojiTab=t; renderAll(); }
+function cpEmojiPick(i,e){
+  if(!momHere()) return;
+  cpSetField(i,"emoji",e);   // saves without re-render
+  cpEmojiOpen=null;
+  renderAll();               // ...so repaint here to show the new icon in the box
+}
+function _cpEmojiPanelHTML(i,st){
+  const cur=String((st&&st.emoji)||"");
+  let h='<div class="mast-emoji-tabs">';
+  Object.keys(CHORE_EMOJI_PAL).forEach(function(tab){
+    h+='<button class="mast-emoji-tab'+(cpEmojiTab===tab?" active":"")+'" onclick="cpEmojiTabSet(\''+tab.replace(/'/g,"\\'")+'\')">'+esc(tab)+'</button>';
+  });
+  h+='</div><div class="mast-emoji-grid">';
+  (CHORE_EMOJI_PAL[cpEmojiTab]||[]).forEach(function(e){
+    h+='<button class="mast-emoji-btn'+(cur===e?" sel":"")+'" title="'+esc(e)+'" onclick="cpEmojiPick('+i+',\''+e+'\')">'+e+'</button>';
+  });
+  h+='</div><div style="font-size:10.5px;color:var(--muted)">Tap an icon to use it — or type one straight into the box. '+
+     '<button onclick="cpEmojiPick('+i+',\'\')" style="border:1.5px solid var(--border);background:#fff;color:var(--muted);border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-left:4px">✕ No icon</button></div>';
+  return h;
 }
 function cpAddChore(){
   if(!momHere()) return;
@@ -13033,7 +13082,10 @@ function renderChorePlan(el,headerHtml){
   steps.forEach(function(st,i){
     const cad=st.cad||"daily", days=_cpDays(cad), exotic=(!isGrabs&&_cpExotic(cad)), isDaily=(!exotic&&days===null&&cad!=="asneeded");
     const _ck=cpSlot+"_"+cpKid+"_"+i, _co=(!isGrabs&&rtCadOpen===_ck);
-    h+='<tr><td class="cp-name"><input class="cpn-e" value="'+esc(st.emoji||"")+'" onchange="cpSetField('+i+',\'emoji\',this.value)"><input class="cpn-l" value="'+esc(st.label||"")+'" onchange="cpSetField('+i+',\'label\',this.value)">'+
+    const _ek=cpSlot+"_"+cpKid+"_"+i, _eo=(cpEmojiOpen===_ek);
+    h+='<tr><td class="cp-name"><input class="cpn-e" value="'+esc(st.emoji||"")+'" onchange="cpSetField('+i+',\'emoji\',this.value)">'+
+       '<button class="cpn-pick'+(_eo?" open":"")+'" onclick="cpEmojiToggle('+i+')" title="Pick an icon">'+(st.emoji?"▾":"😀")+'</button>'+
+       '<input class="cpn-l" value="'+esc(st.label||"")+'" onchange="cpSetField('+i+',\'label\',this.value)">'+
        (cad==="asneeded"?' <span class="cp-warn">not scheduled</span>':'')+
        (!isGrabs?('<div><button onclick="rtRotToggle(\''+cpSlot+'\',\''+cpKid+'\','+i+')" title="Swap this chore between kids day by day" style="margin-top:3px;border:1.5px solid '+(st.rot?"#fb923c":"var(--border)")+';background:'+(st.rot?"#fff7ed":"#fff")+';color:'+(st.rot?"#c2410c":"var(--muted)")+';border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔄 '+(st.rot?esc(rtRotChipLabel(cpSlot,st.rot)):"Rotate")+'</button>'+
        '<button onclick="rtCadToggle(\''+_ck+'\')" title="Cadence, time of day, and run window" style="margin-top:3px;margin-left:4px;border:1.5px solid '+((cad!=="daily"||st.time||st.from||st.to)?"var(--header)":"var(--border)")+';background:#fff;color:var(--muted);border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔁 '+esc(cadLabel(cad))+(st.time?(" · ⏰ "+esc(st.time)):"")+((st.from||st.to)?(" · 📅 "+esc(stepWindowLabel(st))):"")+' '+(_co?"▾":"▸")+'</button></div>'):'')+'</td>';
@@ -13056,6 +13108,7 @@ function renderChorePlan(el,headerHtml){
        (!isGrabs?((i>0?'<button onclick="cpMove('+i+',-1)" title="Move up" style="padding:3px 6px;border-radius:6px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:11px;cursor:pointer">↑</button>':'<span style="display:inline-block;width:25px"></span>')+
        (i<steps.length-1?'<button onclick="cpMove('+i+',1)" title="Move down" style="padding:3px 6px;border-radius:6px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:11px;cursor:pointer;margin-left:2px">↓</button>':'<span style="display:inline-block;width:25px;margin-left:2px"></span>')+' '):'')+
        '<button class="cp-delb" onclick="cpDelChore('+i+')" title="Delete this chore">✕</button></td></tr>';
+    if(_eo){ h+='<tr><td colspan="12" style="background:var(--bg);padding:7px 9px">'+_cpEmojiPanelHTML(i,st)+'</td></tr>'; }
     if(_co){ h+='<tr><td colspan="12" style="background:var(--bg);padding:7px 9px">'+_cpCadPanelHTML(cpSlot,cpKid,i,st)+'</td></tr>'; }
   });
   h+='</tbody></table></div>';
