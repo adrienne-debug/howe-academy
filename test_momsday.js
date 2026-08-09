@@ -120,7 +120,7 @@ global.renderAll = () => { renderAllCalls++; };
 global.schedShowBoard = false; global.schedShowAdmin = true; global.schedShowHistory = false;
 global.schedShowPace = false; global.schedShowPeek = false;
 
-const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlotCounts,renderMomsDay,renderMomsPlan,mpInit,mdOpenBoard,mdBack,mwBPCat,mwBPChip,mwSaveBP,mwBPSlotNow,momdayAddTodo,momdayToggleTodo,momdayDelTodo,mwToggleSym,mwAllSyms,mwAddSymType,mwDelSymType,billDueInfo,billState,billMarkPaid,billAdd,billDel,laundryAdd,laundryAdvance,laundryDel,laundryData,renderKitchen,kitIsoPlus,kitWhenMin,kitWhenLabel,kitPlanFor,kitPrepSteps,kitDuePrep,kitMarkPrep,kitAssign,kitPickDay,kitPlanText,kitOpenRecipe,kitCloseRecipe,kitEditMeal,kitAddPrepRow,kitDelPrepRow,kitSaveMeal,kitCancelEdit,kitDelMeal,kitMeals,kitPlan,kitPrepDone,kitStapleCycle,kitStapleAdd,kitStapleDel,kitStapleToggleManage,kitUsualAdd,kitUsualDel,kitSetOrderDay,kitOrderList,kitOrderText,kitCopyOrder,kitStaples,kitUsuals,kitSettings,kitPantry,panStatus,panAdd,panAddManual,panDel,panImportToggle,panImportApply,panClearGone,panToggleRegular,panIsRegular,panToggleManage};`)();
+const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlotCounts,renderMomsDay,renderMomsPlan,mpInit,mdOpenBoard,mdBack,mwBPCat,mwBPChip,mwSaveBP,mwBPSlotNow,momdayAddTodo,momdayToggleTodo,momdayDelTodo,mwToggleSym,mwAllSyms,mwAddSymType,mwDelSymType,billDueInfo,billState,billMarkPaid,billAdd,billDel,laundryAdd,laundryAdvance,laundryDel,laundryData,renderKitchen,kitIsoPlus,kitWhenMin,kitWhenLabel,kitPlanFor,kitPrepSteps,kitDuePrep,kitMarkPrep,kitAssign,kitPickDay,kitPlanText,kitOpenRecipe,kitCloseRecipe,kitEditMeal,kitAddPrepRow,kitDelPrepRow,kitSaveMeal,kitCancelEdit,kitDelMeal,kitMeals,kitPlan,kitPrepDone,kitStapleCycle,kitStapleAdd,kitStapleDel,kitStapleToggleManage,kitUsualAdd,kitUsualDel,kitSetOrderDay,kitOrderList,kitOrderText,kitCopyOrder,kitStaples,kitUsuals,kitSettings,kitPantry,panStatus,panAdd,panAddManual,panDel,panImportToggle,panImportApply,panClearGone,panToggleRegular,panIsRegular,panToggleManage,kitSweepDue,kitUsualQty,kitSlug,kitBuyLog,kitRate,kitRateChips};`)();
 
 // ── mdTodayName: weekday from the DATE ───────────────────────────────────────
 (() => {
@@ -806,6 +806,123 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   ok("use-soon lists aging produce", h.includes("Use soon:") && h.includes("peppers"), null);
   ok("fresh produce + aging fridge stay out of it", !h.includes("Spinach") && !h.includes("Leftover soup"), null);
   delete M.kitPantry.p_soup;
+})();
+
+// ── 🥫 KITCHEN · 📸 cabinet-sweep reminder ───────────────────────────────────
+(() => {
+  TODAY = "2026-08-10";
+  ok("never swept + pantry exists → due", M.kitSweepDue("2026-08-10") === true, null);
+  M.kitSettings.lastSweep = "2026-08-01";
+  ok("9 days since sweep → not due", M.kitSweepDue("2026-08-10") === false, null);
+  M.kitSettings.lastSweep = "2026-07-13";
+  ok("exactly 28 days → due", M.kitSweepDue("2026-08-10") === true, null);
+  const stash = Object.assign({}, M.kitPantry);
+  Object.keys(M.kitPantry).forEach(k => delete M.kitPantry[k]);
+  delete M.kitSettings.lastSweep;
+  ok("empty pantry + never swept → not due (no nag before adoption)", M.kitSweepDue("2026-08-10") === false, null);
+  Object.assign(M.kitPantry, stash);
+  M.kitSettings.lastSweep = "2026-07-01";
+  M.renderKitchen(elStub);
+  ok("order card carries the sweep nudge when due", elStub.innerHTML.includes("Cabinet sweep is due"), null);
+  M.panImportToggle();
+  M.renderKitchen(elStub);
+  ok("import panel offers the sweep checkbox", elStub.innerHTML.includes('id="pan-sweep"'), null);
+  domVals["pan-import"] = { value: "black beans | pantry" };
+  domVals["pan-sweep"] = { checked: true };
+  dbWrites.length = 0;
+  M.panImportApply();
+  ok("sweep-checked import stamps lastSweep today", M.kitSettings.lastSweep === "2026-08-10" && dbWrites.some(w => w[0] === "kitchen/settings/lastSweep" && w[1] === "2026-08-10"), dbWrites);
+  M.renderKitchen(elStub);
+  ok("nudge clears after the sweep", !elStub.innerHTML.includes("Cabinet sweep is due"), null);
+  M.kitSettings.lastSweep = "2026-07-01";
+  domVals["pan-import"] = { value: "salsa | pantry" };
+  domVals["pan-sweep"] = { checked: false };
+  dbWrites.length = 0;
+  M.panImportApply();
+  ok("plain import leaves lastSweep alone", M.kitSettings.lastSweep === "2026-07-01" && !dbWrites.some(w => w[0] === "kitchen/settings/lastSweep"), null);
+  ["pan-import", "pan-sweep"].forEach(k => delete domVals[k]);
+})();
+
+// ── 🛒 KITCHEN · usual quantities + purchase log ─────────────────────────────
+(() => {
+  TODAY = "2026-08-10";
+  const nextMs = () => { const t = Date.now(); while (Date.now() === t); };
+  domVals["kit-usual-new"] = { value: "Almond milk" }; domVals["kit-usual-cat"] = { value: "breakfast" }; domVals["kit-usual-qty"] = { value: "3" };
+  dbWrites.length = 0;
+  M.kitUsualAdd();
+  const aw = dbWrites.find(w => /^kitchen\/usuals\//.test(w[0]));
+  ok("usual stores qty 3", aw && aw[1].qty === 3, aw);
+  const milkUid = aw[0].split("/").pop();
+  nextMs();
+  domVals["kit-usual-new"] = { value: "Bananas" }; domVals["kit-usual-cat"] = { value: "snack" }; domVals["kit-usual-qty"] = { value: "1" };
+  dbWrites.length = 0;
+  M.kitUsualAdd();
+  const bw = dbWrites.find(w => /^kitchen\/usuals\//.test(w[0]));
+  ok("qty 1 stays implicit (no qty key)", bw && !("qty" in bw[1]), bw);
+  ["kit-usual-new", "kit-usual-cat", "kit-usual-qty"].forEach(k => delete domVals[k]);
+  ok("copy text carries ×3", M.kitOrderText().includes("Almond milk ×3"), M.kitOrderText());
+  M.renderKitchen(elStub);
+  ok("usual row + order card show ×3", elStub.innerHTML.includes("×3") && elStub.innerHTML.includes("kitUsualQty('" + milkUid + "')"), null);
+  PROMPT = "5";
+  M.kitUsualQty(milkUid);
+  ok("qty edit to 5 writes", M.kitUsuals[milkUid].qty === 5, null);
+  PROMPT = "";
+  dbRemoves.length = 0;
+  M.kitUsualQty(milkUid);
+  ok("blank qty clears to implicit ×1", !("qty" in M.kitUsuals[milkUid]) && dbRemoves.some(p => p.endsWith("/qty")), null);
+  domVals["pan-import"] = { value: "almond milk | fridge | 3\napples | produce | 2\nsalsa | pantry\ncorn chips | pantry | abc" };
+  domVals["pan-sweep"] = { checked: false };
+  dbWrites.length = 0;
+  M.panImportApply();
+  ok("receipt logs qty per slug", M.kitBuyLog["2026-08-10"].almondmilk === 3 && M.kitBuyLog["2026-08-10"].apples === 2, M.kitBuyLog["2026-08-10"]);
+  // salsa is 2, not 1: the sweep group's plain import already logged it once
+  // today — same-day receipts sum, which is exactly the intended behavior
+  ok("missing/bad qty defaults to 1", M.kitBuyLog["2026-08-10"].salsa === 2 && M.kitBuyLog["2026-08-10"].cornchips === 1, M.kitBuyLog["2026-08-10"]);
+  ok("buyLog db path written", dbWrites.some(w => w[0] === "kitchen/buyLog/2026-08-10/almondmilk" && w[1] === 3), dbWrites);
+  domVals["pan-import"] = { value: "almond milk | fridge | 2" };
+  M.panImportApply();
+  ok("same-day re-import sums", M.kitBuyLog["2026-08-10"].almondmilk === 5, null);
+  domVals["pan-import"] = { value: "frozen peas | freezer | 4" };
+  domVals["pan-sweep"] = { checked: true };
+  M.panImportApply();
+  ok("sweep import never logs purchases", !M.kitBuyLog["2026-08-10"].frozenpeas, M.kitBuyLog["2026-08-10"]);
+  ["pan-import", "pan-sweep"].forEach(k => delete domVals[k]);
+})();
+
+// ── 😋 KITCHEN · kid votes on meals + snacks ─────────────────────────────────
+(() => {
+  TODAY = "2026-08-10";
+  dbWrites.length = 0;
+  M.kitRate("meal", "mtaco", "lincoln");
+  ok("first tap = 😍 love", M.kitMeals.mtaco.ratings.lincoln === "love" && dbWrites.some(w => w[0] === "kitchen/meals/mtaco/ratings/lincoln" && w[1] === "love"), dbWrites);
+  M.kitRate("meal", "mtaco", "lincoln");
+  ok("second tap = 🙂 like", M.kitMeals.mtaco.ratings.lincoln === "like", null);
+  M.kitRate("meal", "mtaco", "lincoln");
+  ok("third tap = 🚫 won't eat", M.kitMeals.mtaco.ratings.lincoln === "no", null);
+  dbRemoves.length = 0;
+  M.kitRate("meal", "mtaco", "lincoln");
+  ok("fourth tap clears the vote", !M.kitMeals.mtaco.ratings.lincoln && dbRemoves.some(p => p === "kitchen/meals/mtaco/ratings/lincoln"), null);
+  M.kitRate("meal", "mtaco", "ellis");
+  const chips = M.kitRateChips("meal", "mtaco");
+  ok("chips render all four kids", chips.includes("Ju") && chips.includes("Li") && chips.includes("El") && chips.includes("Lu"), null);
+  ok("rated kid shows 😍, unrated shows –", chips.includes("😍") && chips.includes("–"), null);
+  const snackId = Object.keys(M.kitUsuals).find(k => M.kitUsuals[k].name === "Bananas");
+  M.kitRate("usual", snackId, "lucy");
+  ok("usual rating lands on the usual", M.kitUsuals[snackId].ratings.lucy === "love", null);
+  M.kitOpenRecipe("mtaco");
+  M.renderKitchen(elStub);
+  ok("recipe view has Kid votes section", elStub.innerHTML.includes("Kid votes") && elStub.innerHTML.includes("kitRate('meal','mtaco'"), null);
+  M.kitCloseRecipe();
+  M.renderKitchen(elStub);
+  let h = elStub.innerHTML;
+  ok("library rows carry tappable votes", h.includes("kitRate('meal','mchili'"), null);
+  ok("snack usual row carries votes", h.includes("kitRate('usual','" + snackId + "'"), null);
+  const otherId = Object.keys(M.kitUsuals).find(k => M.kitUsuals[k].cat === "other");
+  ok("household 'other' rows skip votes", !h.includes("kitRate('usual','" + otherId + "'"), null);
+  M.kitPlan["2026-08-10"] = { mid: "mtaco" };
+  M.renderMomsDay(elStub);
+  ok("dinner card shows tonight's votes", elStub.innerHTML.includes("kitRate('meal','mtaco'"), null);
+  delete M.kitPlan["2026-08-10"];
 })();
 
 console.log(pass + " passed, " + fail + " failed");

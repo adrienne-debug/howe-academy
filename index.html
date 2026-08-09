@@ -2656,6 +2656,12 @@ function initFb() {
       try{HA_LS.setItem('ha_kit_pantry',JSON.stringify(kitPantry));}catch(e){}
       if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
     });
+    db.ref("kitchen/buyLog").on("value",s=>{
+      const v=s.val()||{};
+      Object.keys(kitBuyLog).forEach(k=>{ delete kitBuyLog[k]; });
+      Object.keys(v).forEach(k=>{ kitBuyLog[k]=v[k]; });
+      try{HA_LS.setItem('ha_kit_buylog',JSON.stringify(kitBuyLog));}catch(e){}
+    });
     db.ref("pace").on("value",s=>{
       const v=s.val()||{}; paceData={subjects:v.subjects||{}, plans:v.plans||{}};
       try{HA_LS.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
@@ -6277,6 +6283,7 @@ let kitStapleManage = false;                           // staples card: ✎ mana
 let kitPantry = {};                                    // kitchen/pantry/{id} → {name, zone, addedIso, ts}
 let panManage = false;                                 // pantry card: ✎ manage mode
 let panImportOpen = false;                             // pantry card: 📥 paste-import panel open
+let kitBuyLog = {};                                    // kitchen/buyLog/{iso}/{slug} → qty bought that day
 let wellnessPeriods = [];                             // [{iso, ts}] logged period-start dates
 let mpInited = false;
 
@@ -6297,6 +6304,7 @@ function mpInit(){
   try{ const ku=HA_LS.getItem('ha_kit_usuals'); if(ku) Object.assign(kitUsuals,JSON.parse(ku)); }catch(e){}
   try{ const kg=HA_LS.getItem('ha_kit_settings'); if(kg) Object.assign(kitSettings,JSON.parse(kg)); }catch(e){}
   try{ const kn=HA_LS.getItem('ha_kit_pantry'); if(kn) Object.assign(kitPantry,JSON.parse(kn)); }catch(e){}
+  try{ const kb=HA_LS.getItem('ha_kit_buylog'); if(kb) Object.assign(kitBuyLog,JSON.parse(kb)); }catch(e){}
 }
 
 function renderMomsPlan(el){
@@ -6802,6 +6810,7 @@ function renderMomsDay(el){
     const dSteps=kitPrepSteps(iso);
     h+='<div onclick="kitOpenRecipe(\''+dpl.mid+'\')" style="cursor:pointer;padding:12px 14px">'
       +'<div style="font-size:15px;font-weight:800">'+(dMeal.emoji?esc(dMeal.emoji)+' ':'')+esc(dMeal.name)+' <span style="font-size:11px;font-weight:700;color:#E07B39">📖 recipe →</span></div>'
+      +'<div onclick="event.stopPropagation()" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px">'+kitRateChips('meal',dpl.mid)+'</div>'
       +(din?'<div style="font-size:12px;color:#6b6560;margin-top:3px">📝 '+esc(din)+'</div>':'')
       +(dSteps.length?'<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:7px">'+dSteps.map(s=>'<span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:9px;background:'+(s.done?'#f0fdf4':'#fff7ed')+';color:'+(s.done?'#166534':'#c2410c')+'">'+(s.done?'✓ ':'⏲ ')+kitWhenLabel(s.when)+' '+esc(s.label)+'</span>').join('')+'</div>':'')
       +'</div>';
@@ -6919,18 +6928,28 @@ function renderMomsDay(el){
 
 // ── 🍽 KITCHEN · Phase 2 — meals library, week grid, prep timers ──────
 // Data (all under kitchen/*):
-//   kitchen/meals/{id}   = {name, emoji?, ing, steps, prep:[{when,label}], ts}
+//   kitchen/meals/{id}   = {name, emoji?, ing, steps, prep:[{when,label}],
+//                          ratings?:{kid: love|like|no}, ts}
 //                          ing/steps are plain text, one item per line.
 //                          prep "when" is "nb" (night before) or "HH:MM" 24h.
+//                          ratings = per-kid votes (😍/🙂/🚫), also on usuals.
 //   kitchen/plan/{iso}   = {mid: mealId} | {txt: "typed dinner"}
 //   kitchen/prepDone/{iso}/{mid_idx} = ts — keyed by the MEAL's day, so a
 //                          night-before step done tonight lives under tomorrow.
 //   kitchen/staples/{id} = {name, state: have|low|out, ts} — a CURATED list
 //                          (her call, no full inventory); tap cycles the state.
-//   kitchen/usuals/{id}  = {name, cat: breakfast|lunch|snack|other, ts} —
-//                          standing items that ride EVERY order.
-//   kitchen/settings     = {orderDay: "monday"…} — the weekday the 🛒 Build-
-//                          your-order card surfaces on Mom's Day.
+//   kitchen/usuals/{id}  = {name, cat: breakfast|lunch|snack|other, qty?, ts}
+//                          — standing items that ride EVERY order; qty is the
+//                          "usually ×3 a week" count she sets (×1 is implicit).
+//   kitchen/buyLog/{iso}/{slug} = qty — the quiet purchase record. A receipt
+//                          import (sweep box UNchecked) logs each line's count
+//                          here; sweeps are inventory, not buying, and skip it.
+//                          Feeds the learned ×N/week display LATER (and Claude
+//                          reads it in-session for trend questions now).
+//   kitchen/settings     = {orderDay: "monday"…, lastSweep: iso} — orderDay
+//                          is the weekday the 🛒 Build-your-order card surfaces
+//                          on Mom's Day; lastSweep is stamped by a sweep-checked
+//                          📥 import and drives the monthly sweep reminder.
 //   kitchen/pantry/{id}  = {name, zone: produce|fridge|freezer|pantry,
 //                          addedIso, ts} — a dated SNAPSHOT, not an inventory.
 //                          Items fade by zone shelf-life (fresh → aging →
@@ -7132,8 +7151,10 @@ function kitUsualAdd(){
   const name=(((document.getElementById('kit-usual-new')||{}).value)||"").trim();
   if(!name) return;
   const cat=((document.getElementById('kit-usual-cat')||{}).value)||"other";
+  const qv=parseInt(String(((document.getElementById('kit-usual-qty')||{}).value)||"").trim());
   const id="u"+Date.now().toString(36);
   kitUsuals[id]={name:name,cat:KIT_CATS.some(c=>c[0]===cat)?cat:"other",ts:Date.now()};
+  if(qv>=2) kitUsuals[id].qty=qv;
   try{HA_LS.setItem('ha_kit_usuals',JSON.stringify(kitUsuals));}catch(e){}
   if(typeof db!=='undefined'&&db) db.ref('kitchen/usuals/'+id).set(kitUsuals[id]);
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
@@ -7147,6 +7168,19 @@ function kitUsualDel(id){
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
 
+// ×N on a usual — "usually 3 almond milks" — tapped on the row's pill.
+function kitUsualQty(id){
+  const u=kitUsuals[id]; if(!u) return;
+  const v=prompt('How many "'+u.name+'" each order? (blank or 1 = just one)',u.qty>1?u.qty:"");
+  if(v===null) return;
+  const q=parseInt(String(v).trim());
+  if(q>=2){ u.qty=q; if(typeof db!=='undefined'&&db) db.ref('kitchen/usuals/'+id+'/qty').set(q); }
+  else { delete u.qty; if(typeof db!=='undefined'&&db) db.ref('kitchen/usuals/'+id+'/qty').remove(); }
+  try{HA_LS.setItem('ha_kit_usuals',JSON.stringify(kitUsuals));}catch(e){}
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function kitSlug(name){ return String(name||"").toLowerCase().replace(/[^a-z0-9]+/g,"").slice(0,32); }
+
 // ── 🛒 order day ───────────────────────────────────────────────────
 function kitSetOrderDay(v){
   if(v) kitSettings.orderDay=v; else delete kitSettings.orderDay;
@@ -7156,6 +7190,18 @@ function kitSetOrderDay(v){
     else db.ref('kitchen/settings/orderDay').remove();
   }
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+// 📸 Monthly-ish cabinet/freezer sweep reminder. Weekly receipts renew the
+// incoming side; the sweep catches drift. Due when lastSweep is ≥28 days old —
+// or was never done at all (but only once the pantry actually has items, so
+// the nudge can't fire before she's started using it). Surfaces ONLY on the
+// 🛒 order card: sweep-then-order is the right sequence anyway.
+const KIT_SWEEP_DAYS=28;
+function kitSweepDue(todayIso){
+  if(!todayIso) todayIso=_todayStr();
+  const last=kitSettings.lastSweep;
+  if(!last) return Object.keys(kitPantry).length>0;
+  return Math.round((gwParseDate(todayIso)-gwParseDate(last))/86400000)>=KIT_SWEEP_DAYS;
 }
 // What goes on the order right now: ❌ out staples first, then 🟡 low, then
 // every standing usual grouped by category. Pure — render and copy share it.
@@ -7176,7 +7222,7 @@ function kitOrderText(){
   const out=o.need.filter(s=>s.state==="out"), low=o.need.filter(s=>s.state==="low");
   if(out.length) lines.push("OUT: "+out.map(s=>s.name).join(", "));
   if(low.length) lines.push("LOW: "+low.map(s=>s.name).join(", "));
-  KIT_CATS.forEach(c=>{ const rows=o.usuals[c[0]]; if(rows) lines.push(c[1].replace(/^\S+\s/,"")+": "+rows.map(u=>u.name).join(", ")); });
+  KIT_CATS.forEach(c=>{ const rows=o.usuals[c[0]]; if(rows) lines.push(c[1].replace(/^\S+\s/,"")+": "+rows.map(u=>u.name+(u.qty>1?" ×"+u.qty:"")).join(", ")); });
   return lines.join("\n");
 }
 function kitCopyOrder(){
@@ -7212,9 +7258,10 @@ function kitOrderCardHTML(compact){
   KIT_CATS.forEach(c=>{
     const rows=o.usuals[c[0]]; if(!rows) return;
     h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:6px 0 3px">'+c[1]+'</div>'
-      +'<div style="font-size:13px;font-weight:600;line-height:1.6">'+rows.map(u=>esc(u.name)).join(' · ')+'</div>';
+      +'<div style="font-size:13px;font-weight:600;line-height:1.6">'+rows.map(u=>esc(u.name)+(u.qty>1?' <b style="color:#166534">×'+u.qty+'</b>':'')).join(' · ')+'</div>';
   });
   if(!o.count) h+='<div style="font-size:12px;color:var(--muted)">Nothing on the list. Tap staples 🟡 low / ❌ out as you notice them, and put the every-week items in usuals — they\'ll gather here.</div>';
+  if(kitSweepDue()) h+='<div style="margin-top:8px;padding:8px 10px;background:#fffbeb;border-left:3px solid #f59e0b;border-radius:8px;font-size:12px;font-weight:600">📸 Cabinet sweep is due — snap the shelves and 📥 import before you build the order.</div>';
   h+='</div></div>';
   return h;
 }
@@ -7268,16 +7315,35 @@ function panImportToggle(){ panImportOpen=!panImportOpen; const el=document.getE
 // Paste-import: one item per line, "name | zone" (zone optional → pantry).
 function panImportApply(){
   const raw=((document.getElementById('pan-import')||{}).value)||"";
-  let n=0;
+  const sweep=!!((document.getElementById('pan-sweep')||{}).checked);
+  let n=0; const bought={};
   raw.split("\n").forEach(line=>{
     line=line.trim(); if(!line) return;
     const parts=line.split("|");
     const name=(parts[0]||"").trim();
     const zone=(parts[1]||"").trim().toLowerCase();
+    let qty=parseInt((parts[2]||"").trim());
+    if(!qty||qty<1) qty=1;
     if(!name) return;
-    if(panAdd(name,zone)) n++;
+    if(panAdd(name,zone)){ n++; const sl=kitSlug(name); if(sl) bought[sl]=(bought[sl]||0)+qty; }
   });
+  // A receipt import IS the purchase record; a sweep is inventory, not buying.
+  if(n&&!sweep){
+    const bIso=_todayStr();
+    const dayMap=Object.assign({},kitBuyLog[bIso]);
+    Object.keys(bought).forEach(sl=>{
+      dayMap[sl]=(dayMap[sl]||0)+bought[sl];
+      if(typeof db!=='undefined'&&db) db.ref('kitchen/buyLog/'+bIso+'/'+sl).set(dayMap[sl]);
+    });
+    kitBuyLog[bIso]=dayMap;
+    try{HA_LS.setItem('ha_kit_buylog',JSON.stringify(kitBuyLog));}catch(e){}
+  }
   if(n){
+    if(sweep){
+      kitSettings.lastSweep=_todayStr();
+      try{HA_LS.setItem('ha_kit_settings',JSON.stringify(kitSettings));}catch(e){}
+      if(typeof db!=='undefined'&&db) db.ref('kitchen/settings/lastSweep').set(kitSettings.lastSweep);
+    }
     panImportOpen=false;
     if(typeof mwToast==='function') mwToast('📥 '+n+' item'+(n===1?'':'s')+' into the pantry');
   }
@@ -7323,6 +7389,38 @@ function panChip(id){
     +'<span onclick="panToggleRegular(\''+id+'\')" title="regular = on the staples check-list" style="cursor:pointer;font-size:13px">'+(panIsRegular(it.name)?'⭐':'☆')+'</span>'
     +(panManage?'<span onclick="panDel(\''+id+'\')" style="cursor:pointer;color:#9ca3af;font-weight:800;padding:0 2px">✕</span>':'')
     +'</span>';
+}
+
+// ── 😋 kid votes — 😍 love / 🙂 like / 🚫 won't eat, per kid ──────────
+// One tap cycles unset → love → like → no → unset. Lives on meals AND on
+// food-category usuals (household "other" items don't get judged by kids).
+const KIT_RATES=["love","like","no"];
+const KIT_RATE_META={love:["😍","#f0fdf4","#16a34a"],like:["🙂","#eff6ff","#2563eb"],no:["🚫","#fef2f2","#b91c1c"]};
+function kitRate(kind,id,kid){
+  const rec=(kind==="meal")?kitMeals[id]:kitUsuals[id];
+  if(!rec) return;
+  const cur=(rec.ratings||{})[kid];
+  const i=KIT_RATES.indexOf(cur);
+  const next=(i<0)?KIT_RATES[0]:(i===KIT_RATES.length-1?null:KIT_RATES[i+1]);
+  const ratings=Object.assign({},rec.ratings);
+  if(next) ratings[kid]=next; else delete ratings[kid];
+  rec.ratings=ratings;
+  const node=(kind==="meal")?"meals":"usuals";
+  try{HA_LS.setItem((kind==="meal")?'ha_kit_meals':'ha_kit_usuals',JSON.stringify((kind==="meal")?kitMeals:kitUsuals));}catch(e){}
+  if(typeof db!=='undefined'&&db){
+    if(next) db.ref('kitchen/'+node+'/'+id+'/ratings/'+kid).set(next);
+    else db.ref('kitchen/'+node+'/'+id+'/ratings/'+kid).remove();
+  }
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function kitRateChips(kind,id){
+  const rec=(kind==="meal")?kitMeals[id]:kitUsuals[id];
+  const ratings=(rec&&rec.ratings)||{};
+  return SL_KIDS.map(k=>{
+    const r=ratings[k]; const m=r&&KIT_RATE_META[r];
+    const col=SL_KCOL[k]||"#666";
+    return '<span onclick="kitRate(\''+kind+'\',\''+id+'\',\''+k+'\')" title="'+cap(k)+' — tap to cycle 😍 love / 🙂 like / 🚫 won\'t eat" style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:800;padding:2px 7px;border-radius:10px;border:1.5px solid '+(m?m[2]:'#e5e7eb')+';background:'+(m?m[1]:'#f8f7f4')+';color:'+col+'">'+cap(k).slice(0,2)+' '+(m?m[0]:'–')+'</span>';
+  }).join('');
 }
 
 function kitEditorHTML(){
@@ -7374,6 +7472,9 @@ function kitRecipeHTML(mid){
     +'<div style="display:flex;align-items:center;gap:8px;padding:12px 14px;background:#E07B39;color:#fff"><span style="font-size:22px">'+(m.emoji?esc(m.emoji):'🍽')+'</span><span style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700">'+esc(m.name||"")+'</span></div>'
     +'<div style="padding:12px 14px">'
     +(days.length?'<div style="font-size:11px;font-weight:800;color:#c2410c;margin-bottom:8px">🗓 Planned: '+esc(days.join(", "))+'</div>':'')
+    +'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:2px 0 5px">😋 Kid votes</div>'
+    +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">'+kitRateChips('meal',mid)+'</div>'
+    +'<div style="font-size:10px;color:var(--muted);margin-bottom:8px">tap a kid to cycle 😍 love · 🙂 like · 🚫 won\'t eat</div>'
     +'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:2px 0 5px">🧾 Ingredients</div>';
   if(ing.length) ing.forEach(x=>{ h+='<div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:13px"><span style="color:#E07B39">•</span><span>'+esc(x)+'</span></div>'; });
   else h+='<div style="font-size:12px;color:var(--muted)">None written down yet — ✎ Edit to add them.</div>';
@@ -7444,8 +7545,9 @@ function renderKitchen(el){
   sortedMids.forEach(mid=>{
     const m=kitMeals[mid];
     const nPrep=Array.isArray(m.prep)?m.prep.length:0;
-    h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#f8f7f4;border:1.5px solid #e8e4de;border-radius:9px;margin-bottom:6px">'
+    h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:#f8f7f4;border:1.5px solid #e8e4de;border-radius:9px;margin-bottom:6px">'
       +'<span onclick="kitOpenRecipe(\''+mid+'\')" style="cursor:pointer;flex:1;font-size:13px;font-weight:700">'+(m.emoji?esc(m.emoji)+' ':'')+esc(m.name)+'</span>'
+      +kitRateChips('meal',mid)
       +(nPrep?'<span style="font-size:10px;font-weight:800;color:#c2410c">⏲ '+nPrep+'</span>':'')
       +'<button onclick="kitOpenRecipe(\''+mid+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid #E07B39;background:#fff;color:#c2410c;font-size:11px;font-weight:700;cursor:pointer">📖</button>'
       +'<button onclick="kitEditMeal(\''+mid+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid #6B4C93;background:#fff;color:#6B4C93;font-size:11px;font-weight:700;cursor:pointer">✎</button>'
@@ -7484,14 +7586,17 @@ function renderKitchen(el){
     anyU=true;
     h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:4px 0 4px">'+c[1]+'</div>';
     rows.forEach(u=>{
-      h+='<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;background:#f8f7f4;border:1.5px solid #e8e4de;border-radius:9px;margin-bottom:5px">'
+      h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:5px 10px;background:#f8f7f4;border:1.5px solid #e8e4de;border-radius:9px;margin-bottom:5px">'
         +'<span style="flex:1;font-size:13px;font-weight:600">'+esc(u.name)+'</span>'
+        +(c[0]!=="other"?kitRateChips('usual',u.id):'')
+        +'<button onclick="kitUsualQty(\''+u.id+'\')" style="border:1.5px solid '+(u.qty>1?'#3A7D44':'#e5e7eb')+';background:'+(u.qty>1?'#f0fdf4':'#fff')+';color:'+(u.qty>1?'#166534':'#9ca3af')+';border-radius:8px;padding:2px 8px;font-size:11px;font-weight:800;cursor:pointer">×'+(u.qty>1?u.qty:1)+'</button>'
         +'<button onclick="kitUsualDel(\''+u.id+'\')" style="border:none;background:none;color:#9ca3af;font-size:14px;cursor:pointer;padding:2px 4px">✕</button></div>';
     });
   });
   if(!anyU) h+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">The every-single-order items — breakfast, lunch and snack usuals. They ride every 🛒 order list automatically.</div>';
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:'+(anyU?'8':'0')+'px">'
     +'<input type="text" id="kit-usual-new" placeholder="Add a usual (oatmeal…)" onkeydown="if(event.key===\'Enter\')kitUsualAdd()" style="flex:2;min-width:130px;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
+    +'<input type="number" id="kit-usual-qty" placeholder="×" min="1" max="99" title="how many each order" style="width:52px;padding:9px 8px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
     +'<select id="kit-usual-cat" style="padding:9px 8px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
     +KIT_CATS.map(c=>'<option value="'+c[0]+'">'+c[1]+'</option>').join('')+'</select>'
     +'<button onclick="kitUsualAdd()" style="padding:9px 16px;border-radius:9px;border:none;background:#3A7D44;color:#fff;font-size:13px;font-weight:700;cursor:pointer">＋ Add</button></div>';
@@ -7508,7 +7613,8 @@ function renderKitchen(el){
   h+='<div style="padding:10px 14px 12px">';
   if(panImportOpen){
     h+='<textarea id="pan-import" rows="6" placeholder="spinach | produce&#10;chicken thighs | freezer&#10;rice" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif"></textarea>'
-      +'<div style="font-size:11px;color:var(--muted);margin:6px 0 8px">One item per line — <b>name | zone</b> (produce, fridge, freezer, pantry; no zone = pantry). Snap the receipt or cabinets, hand the pics to Claude, paste what it gives back. Re-importing something refreshes its date.</div>'
+      +'<div style="font-size:11px;color:var(--muted);margin:6px 0 8px">One item per line — <b>name | zone | how many</b> (zones: produce, fridge, freezer, pantry; zone and count optional). Snap the receipt or cabinets, hand the pics to Claude, paste what it gives back. Re-importing refreshes dates; receipt counts quietly build your buying trends.</div>'
+      +'<label style="display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:#4a4540;margin:0 0 8px;cursor:pointer"><input type="checkbox" id="pan-sweep" style="width:16px;height:16px"> 📸 This was a cabinet/freezer sweep (resets the reminder; sweeps don\'t count as purchases)</label>'
       +'<button onclick="panImportApply()" style="width:100%;padding:11px;border-radius:10px;border:none;background:#8a5a2c;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">📥 Import to pantry</button>';
   } else {
     PAN_ZONES.forEach(z=>{
