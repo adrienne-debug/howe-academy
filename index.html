@@ -6284,6 +6284,7 @@ let kitPantry = {};                                    // kitchen/pantry/{id} �
 let panManage = false;                                 // pantry card: ✎ manage mode
 let panImportOpen = false;                             // pantry card: 📥 paste-import panel open
 let kitBuyLog = {};                                    // kitchen/buyLog/{iso}/{slug} → qty bought that day
+let kitWkImportOpen = false;                           // week-grid card: 📥 paste-import panel open
 let wellnessPeriods = [];                             // [{iso, ts}] logged period-start dates
 let mpInited = false;
 
@@ -6829,6 +6830,15 @@ function renderMomsDay(el){
       h+='<div style="padding:0 14px 12px;font-size:12px;color:#6b6560">🌙 Tonight for tomorrow'+(tpl&&tpl.meal?' ('+esc(tpl.meal.name)+')':'')+': '+nbs.map(s=>esc(s.label)).join(' · ')+'</div>';
     }
   }catch(e){}
+  // 🌅/☀️/🍎 — the rest of today's food, when the week plan carries slots
+  try{
+    const dayBits=[];
+    [["b","🌅"],["l","☀️"],["s","🍎"]].forEach(sp=>{
+      const sv=kitPlanSlot(iso,sp[0]);
+      if(sv) dayBits.push(sp[1]+' '+esc(sv.meal?sv.meal.name:(sv.txt||"")));
+    });
+    if(dayBits.length) h+='<div style="padding:0 14px 12px;font-size:12px;color:#6b6560;line-height:1.6">'+dayBits.join(' · ')+'</div>';
+  }catch(e){}
   h+='</div>';
 
   // ── 🥬 Use soon — produce drifting toward gone (pantry snapshot) ──
@@ -7023,11 +7033,16 @@ function kitMarkPrep(iso,key){
 
 // ── week-grid plan writes ──────────────────────────────────────────
 function kitAssign(iso,val){ // val = {mid} | {txt} | null (clear the day)
-  if(val) kitPlan[iso]=val; else delete kitPlan[iso];
+  // Dinner changes keep the day's b/l/s slots; clearing drops the whole day.
+  if(val){
+    const cur=Object.assign({},kitPlan[iso]);
+    delete cur.mid; delete cur.txt;
+    kitPlan[iso]=Object.assign(cur,val);
+  } else delete kitPlan[iso];
   kitPickIso=null;
   try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
   if(typeof db!=='undefined'&&db){
-    if(val) db.ref('kitchen/plan/'+iso).set(val);
+    if(val) db.ref('kitchen/plan/'+iso).set(kitPlan[iso]);
     else db.ref('kitchen/plan/'+iso).remove();
   }
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
@@ -7391,6 +7406,121 @@ function panChip(id){
     +'</span>';
 }
 
+// ── 📥 week import — one paste plans the week, recipes and all ──────
+// Same contract as the pantry importer: Claude transcribes in a session, SHE
+// pastes and taps import on her device — the app does the writing, never a
+// session. Grammar (line-based, forgiving, keywords case-insensitive):
+//   meal: Name | 🍖          starts a meal block (emoji optional)
+//   ingredients:             following lines are ingredients…
+//   instructions:            …then instruction lines
+//   prep: nb | label         night-before timer   prep: 14:30 | label  timed
+//   plan:                    then day lines:  tue: Meal Name (or free text)
+//   Day lines take an optional slot word for the rest of the day's food:
+//     tue breakfast: oatmeal bar     tue lunch: turkey roll-ups
+//     tue snack: apples + PB         tue: Shank in Tomato   (bare = dinner)
+//   Slots live at kitchen/plan/{iso}.b/.l/.s = {mid|txt}; dinner stays the
+//   top-level mid/txt so every existing reader keeps working unchanged.
+// Meals merge by case-insensitive name — id, ratings, and emoji survive a
+// re-import; plan days resolve to the next occurrence of that weekday.
+function kitParseWeek(raw){
+  const out={meals:[],plan:[]};
+  let cur=null, mode=null, inPlan=false;
+  String(raw||"").split("\n").forEach(line=>{
+    line=line.trim(); if(!line) return;
+    const low=line.toLowerCase();
+    if(low.indexOf("meal:")===0){
+      const parts=line.slice(5).split("|");
+      cur={name:(parts[0]||"").trim(),emoji:(parts[1]||"").trim(),ing:[],steps:[],prep:[]};
+      if(cur.name) out.meals.push(cur); else cur=null;
+      mode=null; inPlan=false; return;
+    }
+    if(low==="plan:"){ inPlan=true; cur=null; mode=null; return; }
+    if(low==="ingredients:"){ mode="ing"; return; }
+    if(low==="instructions:"){ mode="steps"; return; }
+    if(low.indexOf("prep:")===0){
+      if(!cur) return;
+      const parts=line.slice(5).split("|");
+      const when=(parts[0]||"").trim().toLowerCase();
+      const label=(parts[1]||"").trim();
+      if(!label) return;
+      if(when==="nb"||kitWhenMin(when)!=null) cur.prep.push({when:when,label:label});
+      return;
+    }
+    if(inPlan){
+      const ci=line.indexOf(":");
+      if(ci<1) return;
+      const left=line.slice(0,ci).trim().toLowerCase().split(/\s+/);
+      const day=left[0];
+      const sw=left[1]||"";
+      const slot=(sw==="b"||sw==="breakfast")?"b"
+        :(sw==="l"||sw==="lunch")?"l"
+        :(sw==="s"||sw==="snack"||sw==="snacks")?"s"
+        :(sw===""||sw==="d"||sw==="dinner"||sw==="supper")?"d":null;
+      if(!slot) return;
+      const val=line.slice(ci+1).trim();
+      if(val) out.plan.push({day:day,slot:slot,value:val});
+      return;
+    }
+    if(cur&&mode==="ing") cur.ing.push(line);
+    else if(cur&&mode==="steps") cur.steps.push(line);
+  });
+  return out;
+}
+// Next occurrence of a weekday (3-letter match), today included.
+function kitWkIso(day){
+  day=String(day||"").toLowerCase().slice(0,3);
+  const today=_todayStr();
+  for(let i=0;i<7;i++){
+    const iso=kitIsoPlus(today,i);
+    if(DAYS_ALL[(gwParseDate(iso).getDay()+6)%7].slice(0,3)===day) return iso;
+  }
+  return null;
+}
+// One slot of a day's plan: 'b' | 'l' | 's' → {mid, meal} | {txt} | null.
+function kitPlanSlot(iso,slot){
+  const p=kitPlan[iso]; if(!p||!p[slot]) return null;
+  const v=p[slot];
+  if(v.mid) return {mid:v.mid,meal:kitMeals[v.mid]||null};
+  if(v.txt) return {txt:v.txt};
+  return null;
+}
+function kitWkImportToggle(){ kitWkImportOpen=!kitWkImportOpen; const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
+function kitImportWeekApply(){
+  const raw=((document.getElementById('kit-week-import')||{}).value)||"";
+  const parsed=kitParseWeek(raw);
+  let nm=0,np=0;
+  parsed.meals.forEach(pm=>{
+    const key=pm.name.toLowerCase();
+    let id=Object.keys(kitMeals).find(k=>String((kitMeals[k]||{}).name||"").toLowerCase()===key);
+    const prev=id?kitMeals[id]:null;
+    if(!id) id="m"+Date.now().toString(36)+"_"+Object.keys(kitMeals).length;
+    const m={name:prev?prev.name:pm.name,ing:pm.ing.join("\n"),steps:pm.steps.join("\n"),
+      prep:pm.prep,ts:(prev&&prev.ts)||Date.now()};
+    if(pm.emoji) m.emoji=pm.emoji; else if(prev&&prev.emoji) m.emoji=prev.emoji;
+    if(prev&&prev.ratings) m.ratings=prev.ratings;
+    kitMeals[id]=m; nm++;
+    if(typeof db!=='undefined'&&db) db.ref('kitchen/meals/'+id).set(m);
+  });
+  parsed.plan.forEach(pl=>{
+    const iso=kitWkIso(pl.day); if(!iso) return;
+    const key=pl.value.toLowerCase();
+    const mid=Object.keys(kitMeals).find(k=>String((kitMeals[k]||{}).name||"").toLowerCase()===key);
+    const v=mid?{mid:mid}:{txt:pl.value};
+    const cur=Object.assign({},kitPlan[iso]);
+    if(pl.slot==="d"){ delete cur.mid; delete cur.txt; Object.assign(cur,v); }
+    else cur[pl.slot]=v;
+    kitPlan[iso]=cur; np++;
+    if(typeof db!=='undefined'&&db) db.ref('kitchen/plan/'+iso).set(cur);
+  });
+  if(nm||np){
+    kitWkImportOpen=false;
+    try{HA_LS.setItem('ha_kit_meals',JSON.stringify(kitMeals));}catch(e){}
+    try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
+    if(typeof mwToast==='function') mwToast('📥 '+nm+' meal'+(nm===1?'':'s')+' · '+np+' day'+(np===1?'':'s')+' planned');
+  }
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+
 // ── 😋 kid votes — 😍 love / 🙂 like / 🚫 won't eat, per kid ──────────
 // One tap cycles unset → love → like → no → unset. Lives on meals AND on
 // food-category usuals (household "other" items don't get judged by kids).
@@ -7503,8 +7633,14 @@ function renderKitchen(el){
 
   // ── 🗓 The week — tonight + the next six days, tap a day to plan it ──
   h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
-  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#E07B39;color:#fff;font-weight:800;font-size:13px"><span>🗓</span> This week\'s dinners</div>';
+  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#E07B39;color:#fff;font-weight:800;font-size:13px"><span>🗓</span> This week\'s dinners'
+    +'<button onclick="kitWkImportToggle()" style="margin-left:auto;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">'+(kitWkImportOpen?'✕ Close':'📥 Import week')+'</button></div>';
   h+='<div style="padding:8px 14px 12px">';
+  if(kitWkImportOpen){
+    h+='<textarea id="kit-week-import" rows="8" placeholder="meal: Taco night | 🌮&#10;ingredients:&#10;1 lb ground beef&#10;instructions:&#10;Brown the beef…&#10;prep: nb | thaw the beef&#10;plan:&#10;tue: Taco night&#10;wed: Leftovers" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12px;font-family:\'DM Sans\',sans-serif"></textarea>'
+      +'<div style="font-size:11px;color:var(--muted);margin:6px 0 8px">One paste plans the week — meals (with recipes and prep timers) and the day lines: <b>tue: Meal Name</b> for dinner, <b>tue breakfast:</b> / <b>tue lunch:</b> / <b>tue snack:</b> for the rest of the day. Hand Claude your week in a session, paste what you get back. Re-importing a meal updates its recipe and keeps its 😋 votes.</div>'
+      +'<button onclick="kitImportWeekApply()" style="width:100%;padding:11px;border-radius:10px;border:none;background:#E07B39;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-bottom:8px">📥 Import the week</button>';
+  }
   const sortedMids=Object.keys(kitMeals).sort((a,b)=>String((kitMeals[a]||{}).name||"").localeCompare(String((kitMeals[b]||{}).name||"")));
   for(let i=0;i<7;i++){
     const iso=kitIsoPlus(today,i);
@@ -7522,6 +7658,12 @@ function renderKitchen(el){
       +'<span style="flex:1;font-size:13px">'+what+'</span>'
       +(nPrep?'<span style="font-size:10px;font-weight:800;color:#c2410c">⏲ '+nPrep+'</span>':'')
       +'<span style="color:#9ca3af;font-size:12px">'+(kitPickIso===iso?'▴':'▾')+'</span></div>';
+    const slotBits=[];
+    [["b","🌅"],["l","☀️"],["s","🍎"]].forEach(sp=>{
+      const sv=kitPlanSlot(iso,sp[0]);
+      if(sv) slotBits.push(sp[1]+' '+esc(sv.meal?sv.meal.name:(sv.txt||"")));
+    });
+    if(slotBits.length) h+='<div style="margin:-3px 0 7px;padding:0 10px;font-size:11px;color:#6b6560;line-height:1.5">'+slotBits.join(' · ')+'</div>';
     if(kitPickIso===iso){
       h+='<div style="padding:9px 10px;background:#fff;border:1.5px dashed #E07B39;border-radius:9px;margin:-2px 0 8px;display:flex;flex-wrap:wrap;gap:6px">';
       sortedMids.forEach(mid=>{

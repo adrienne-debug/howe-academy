@@ -120,7 +120,7 @@ global.renderAll = () => { renderAllCalls++; };
 global.schedShowBoard = false; global.schedShowAdmin = true; global.schedShowHistory = false;
 global.schedShowPace = false; global.schedShowPeek = false;
 
-const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlotCounts,renderMomsDay,renderMomsPlan,mpInit,mdOpenBoard,mdBack,mwBPCat,mwBPChip,mwSaveBP,mwBPSlotNow,momdayAddTodo,momdayToggleTodo,momdayDelTodo,mwToggleSym,mwAllSyms,mwAddSymType,mwDelSymType,billDueInfo,billState,billMarkPaid,billAdd,billDel,laundryAdd,laundryAdvance,laundryDel,laundryData,renderKitchen,kitIsoPlus,kitWhenMin,kitWhenLabel,kitPlanFor,kitPrepSteps,kitDuePrep,kitMarkPrep,kitAssign,kitPickDay,kitPlanText,kitOpenRecipe,kitCloseRecipe,kitEditMeal,kitAddPrepRow,kitDelPrepRow,kitSaveMeal,kitCancelEdit,kitDelMeal,kitMeals,kitPlan,kitPrepDone,kitStapleCycle,kitStapleAdd,kitStapleDel,kitStapleToggleManage,kitUsualAdd,kitUsualDel,kitSetOrderDay,kitOrderList,kitOrderText,kitCopyOrder,kitStaples,kitUsuals,kitSettings,kitPantry,panStatus,panAdd,panAddManual,panDel,panImportToggle,panImportApply,panClearGone,panToggleRegular,panIsRegular,panToggleManage,kitSweepDue,kitUsualQty,kitSlug,kitBuyLog,kitRate,kitRateChips};`)();
+const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlotCounts,renderMomsDay,renderMomsPlan,mpInit,mdOpenBoard,mdBack,mwBPCat,mwBPChip,mwSaveBP,mwBPSlotNow,momdayAddTodo,momdayToggleTodo,momdayDelTodo,mwToggleSym,mwAllSyms,mwAddSymType,mwDelSymType,billDueInfo,billState,billMarkPaid,billAdd,billDel,laundryAdd,laundryAdvance,laundryDel,laundryData,renderKitchen,kitIsoPlus,kitWhenMin,kitWhenLabel,kitPlanFor,kitPrepSteps,kitDuePrep,kitMarkPrep,kitAssign,kitPickDay,kitPlanText,kitOpenRecipe,kitCloseRecipe,kitEditMeal,kitAddPrepRow,kitDelPrepRow,kitSaveMeal,kitCancelEdit,kitDelMeal,kitMeals,kitPlan,kitPrepDone,kitStapleCycle,kitStapleAdd,kitStapleDel,kitStapleToggleManage,kitUsualAdd,kitUsualDel,kitSetOrderDay,kitOrderList,kitOrderText,kitCopyOrder,kitStaples,kitUsuals,kitSettings,kitPantry,panStatus,panAdd,panAddManual,panDel,panImportToggle,panImportApply,panClearGone,panToggleRegular,panIsRegular,panToggleManage,kitSweepDue,kitUsualQty,kitSlug,kitBuyLog,kitRate,kitRateChips,kitParseWeek,kitWkIso,kitWkImportToggle,kitImportWeekApply,kitPlanSlot};`)();
 
 // ── mdTodayName: weekday from the DATE ───────────────────────────────────────
 (() => {
@@ -923,6 +923,115 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   M.renderMomsDay(elStub);
   ok("dinner card shows tonight's votes", elStub.innerHTML.includes("kitRate('meal','mtaco'"), null);
   delete M.kitPlan["2026-08-10"];
+})();
+
+// ── 📥 KITCHEN · week paste-import ───────────────────────────────────────────
+(() => {
+  TODAY = "2026-08-10"; // Monday
+  const SAMPLE = [
+    "ignored preamble line",
+    "MEAL: Braised Shank | 🍖",
+    "Ingredients:",
+    "2 pkgs beef shank",
+    "2 cans tomatoes",
+    "Instructions:",
+    "Brown the shanks.",
+    "Braise 3 hours.",
+    "prep: nb | thaw the shanks",
+    "prep: 14:30 | into the oven",
+    "prep: 99:99 | broken time is skipped",
+    "prep: 12:00 |",
+    "meal: No Recipe Night",
+    "PLAN:",
+    "tue: Braised Shank",
+    "wed: Kielbasa + dirty rice",
+    "  ",
+    "nonsense line without colon",
+    "fri: no recipe night",
+  ].join("\n");
+  const p = M.kitParseWeek(SAMPLE);
+  ok("parser: two meals, preamble ignored", p.meals.length === 2 && p.meals[0].name === "Braised Shank" && p.meals[0].emoji === "🍖" && p.meals[1].name === "No Recipe Night", p.meals);
+  ok("parser: ingredients + instructions captured", p.meals[0].ing.length === 2 && p.meals[0].steps[1] === "Braise 3 hours.", p.meals[0]);
+  ok("parser: both prep kinds kept, broken/blank skipped", p.meals[0].prep.length === 2 && p.meals[0].prep[0].when === "nb" && p.meals[0].prep[1].when === "14:30", p.meals[0].prep);
+  ok("parser: plan day lines, junk skipped", p.plan.length === 3 && p.plan[0].day === "tue" && p.plan[2].value === "no recipe night", p.plan);
+  ok("kitWkIso: tue → tomorrow", M.kitWkIso("tue") === "2026-08-11", M.kitWkIso("tue"));
+  ok("kitWkIso: monday → today", M.kitWkIso("monday") === "2026-08-10", null);
+  ok("kitWkIso: sunday → end of week", M.kitWkIso("sunday") === "2026-08-16", null);
+  ok("kitWkIso: junk → null", M.kitWkIso("blursday") === null, null);
+  // apply: fresh meal + mid resolution + txt fallback
+  domVals["kit-week-import"] = { value: SAMPLE };
+  dbWrites.length = 0; toasts.length = 0;
+  M.kitImportWeekApply();
+  const shankW = dbWrites.find(w => /^kitchen\/meals\//.test(w[0]) && w[1].name === "Braised Shank");
+  ok("apply: meal written with recipe + prep", shankW && shankW[1].ing.includes("beef shank") && shankW[1].prep.length === 2, shankW);
+  const shankId = shankW ? shankW[0].split("/").pop() : "";
+  ok("apply: tue resolves to the imported meal's mid", dbWrites.some(w => w[0] === "kitchen/plan/2026-08-11" && w[1].mid === shankId), dbWrites);
+  ok("apply: unknown name falls back to txt", (M.kitPlan["2026-08-12"] || {}).txt === "Kielbasa + dirty rice", M.kitPlan["2026-08-12"]);
+  ok("apply: name match is case-insensitive", (M.kitPlan["2026-08-14"] || {}).mid && M.kitMeals[M.kitPlan["2026-08-14"].mid].name === "No Recipe Night", M.kitPlan["2026-08-14"]);
+  ok("apply: toast counts meals + days", toasts.length === 1 && /2 meals/.test(toasts[0]) && /3 days/.test(toasts[0]), toasts);
+  // merge: re-import same meal name keeps id, ratings, emoji
+  M.kitRate("meal", shankId, "lucy"); // 😍
+  domVals["kit-week-import"] = { value: "meal: braised shank\ningredients:\nnew ingredient list\ninstructions:\nnew steps" };
+  dbWrites.length = 0;
+  M.kitImportWeekApply();
+  const upd = dbWrites.find(w => w[0] === "kitchen/meals/" + shankId);
+  ok("re-import merges by name: same id, recipe replaced", upd && upd[1].ing === "new ingredient list", upd);
+  ok("re-import keeps name-case, emoji, and 😋 votes", upd && upd[1].name === "Braised Shank" && upd[1].emoji === "🍖" && upd[1].ratings.lucy === "love", upd);
+  delete domVals["kit-week-import"];
+  // UI toggle
+  M.kitWkImportToggle();
+  M.renderKitchen(elStub);
+  ok("📥 Import week panel renders", elStub.innerHTML.includes('id="kit-week-import"') && elStub.innerHTML.includes("kitImportWeekApply()"), null);
+  M.kitWkImportToggle();
+  M.renderKitchen(elStub);
+  ok("panel toggles closed", !elStub.innerHTML.includes('id="kit-week-import"'), null);
+  // cleanup the plan days this group wrote
+  ["2026-08-11", "2026-08-12", "2026-08-14"].forEach(iso => { delete M.kitPlan[iso]; });
+})();
+
+// ── 📥 KITCHEN · week import day-slots (breakfast/lunch/snack) ───────────────
+(() => {
+  TODAY = "2026-08-10"; // Monday
+  const SAMPLE = [
+    "plan:",
+    "tue: Taco night",
+    "tue breakfast: oatmeal bar",
+    "tue lunch: turkey roll-ups + apples",
+    "tue snack: apples + PB",
+    "tue brunch: not a real slot",
+    "wed b: smoothies",
+    "wed supper: Chili",
+  ].join("\n");
+  const p = M.kitParseWeek(SAMPLE);
+  ok("slot parser: bare day = dinner", p.plan[0].slot === "d" && p.plan[0].value === "Taco night", p.plan[0]);
+  ok("slot parser: breakfast/lunch/snack words", p.plan[1].slot === "b" && p.plan[2].slot === "l" && p.plan[3].slot === "s", p.plan.slice(1, 4));
+  ok("slot parser: unknown slot word skipped", !p.plan.some(x => x.value === "not a real slot"), null);
+  ok("slot parser: short + supper forms", p.plan[4].slot === "b" && p.plan[5].slot === "d" && p.plan[5].day === "wed", p.plan.slice(4));
+  domVals["kit-week-import"] = { value: SAMPLE };
+  dbWrites.length = 0;
+  M.kitImportWeekApply();
+  const tue = M.kitPlan["2026-08-11"];
+  ok("apply: dinner + slots merge on one day", tue && tue.mid === "mtaco" && tue.b.txt === "oatmeal bar" && tue.l.txt === "turkey roll-ups + apples" && tue.s.txt === "apples + PB", tue);
+  ok("apply: db carries the whole day object", dbWrites.some(w => w[0] === "kitchen/plan/2026-08-11" && w[1].b && w[1].mid === "mtaco"), null);
+  ok("apply: meal-name slot resolves to mid", (M.kitPlan["2026-08-12"] || {}).mid && M.kitMeals[M.kitPlan["2026-08-12"].mid].name === "Chili", M.kitPlan["2026-08-12"]);
+  ok("kitPlanSlot: txt + meal resolution", M.kitPlanSlot("2026-08-11", "b").txt === "oatmeal bar" && M.kitPlanSlot("2026-08-11", "x" in {} ? "x" : "l").txt.includes("turkey"), null);
+  ok("kitPlanSlot: empty slot → null", M.kitPlanSlot("2026-08-11", "x") === null && M.kitPlanSlot("2026-08-13", "b") === null, null);
+  // dinner change via the picker keeps the slots
+  M.kitAssign("2026-08-11", { mid: "mchili" });
+  ok("kitAssign keeps b/l/s on dinner swap", M.kitPlan["2026-08-11"].mid === "mchili" && M.kitPlan["2026-08-11"].b.txt === "oatmeal bar", M.kitPlan["2026-08-11"]);
+  M.kitAssign("2026-08-11", { txt: "Leftovers" });
+  ok("txt dinner drops mid but keeps slots", !M.kitPlan["2026-08-11"].mid && M.kitPlan["2026-08-11"].txt === "Leftovers" && M.kitPlan["2026-08-11"].s.txt === "apples + PB", null);
+  // renders
+  M.renderKitchen(elStub);
+  ok("grid row shows the slot line", elStub.innerHTML.includes("🌅 oatmeal bar") && elStub.innerHTML.includes("🍎 apples + PB"), null);
+  // dinner card slot line — plan TODAY with slots
+  M.kitPlan["2026-08-10"] = { txt: "Pizza out", b: { txt: "granola + berries" }, l: { txt: "ramen bowls" } };
+  M.renderMomsDay(elStub);
+  ok("dinner card lists today's other meals", elStub.innerHTML.includes("🌅 granola + berries") && elStub.innerHTML.includes("☀️ ramen bowls"), null);
+  M.kitAssign("2026-08-11", null);
+  ok("clear drops the whole day incl. slots", !M.kitPlan["2026-08-11"], null);
+  delete M.kitPlan["2026-08-10"]; delete M.kitPlan["2026-08-12"];
+  delete domVals["kit-week-import"];
 })();
 
 console.log(pass + " passed, " + fail + " failed");
