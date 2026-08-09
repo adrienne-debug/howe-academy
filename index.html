@@ -6830,14 +6830,23 @@ function renderMomsDay(el){
       h+='<div style="padding:0 14px 12px;font-size:12px;color:#6b6560">🌙 Tonight for tomorrow'+(tpl&&tpl.meal?' ('+esc(tpl.meal.name)+')':'')+': '+nbs.map(s=>esc(s.label)).join(' · ')+'</div>';
     }
   }catch(e){}
-  // 🌅/☀️/🍎 — the rest of today's food, when the week plan carries slots
+  // 🌅/☀️/🍎 — the whole day's food as real rows, right on the card. They
+  // appear whenever today has any plan; empty slots invite a tap (prompt
+  // editor), meal-linked slots open their recipe.
   try{
-    const dayBits=[];
-    [["b","🌅"],["l","☀️"],["s","🍎"]].forEach(sp=>{
-      const sv=kitPlanSlot(iso,sp[0]);
-      if(sv) dayBits.push(sp[1]+' '+esc(sv.meal?sv.meal.name:(sv.txt||"")));
-    });
-    if(dayBits.length) h+='<div style="padding:0 14px 12px;font-size:12px;color:#6b6560;line-height:1.6">'+dayBits.join(' · ')+'</div>';
+    const anySlot=kitPlanSlot(iso,'b')||kitPlanSlot(iso,'l')||kitPlanSlot(iso,'s');
+    if(dpl||anySlot){
+      h+='<div style="padding:0 14px 12px">';
+      KIT_SLOTS.forEach(sp=>{
+        const sv=kitPlanSlot(iso,sp[0]);
+        const val=sv?(sv.meal?sv.meal.name:(sv.txt||"")):"";
+        h+='<div onclick="'+(sv&&sv.meal?'kitOpenRecipe(\''+sv.mid+'\')':'kitSlotText(\''+iso+'\',\''+sp[0]+'\')')+'" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 10px;background:#f8f7f4;border:1.5px solid #e8e4de;border-radius:8px;margin-bottom:5px">'
+          +'<span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;flex:0 0 88px">'+sp[1]+' '+sp[2]+'</span>'
+          +'<span style="flex:1;font-size:13px;font-weight:600">'+(val?esc(val):'<span style="color:var(--muted);font-weight:500">tap to add</span>')+'</span>'
+          +(sv&&!sv.meal?'<span style="color:#9ca3af;font-size:11px">✎</span>':'')+'</div>';
+      });
+      h+='</div>';
+    }
   }catch(e){}
   h+='</div>';
 
@@ -7418,6 +7427,10 @@ function panChip(id){
 //   Day lines take an optional slot word for the rest of the day's food:
 //     tue breakfast: oatmeal bar     tue lunch: turkey roll-ups
 //     tue snack: apples + PB         tue: Shank in Tomato   (bare = dinner)
+//   A bare day name means its NEXT occurrence counting today — importing a
+//   week on Sunday makes "sun:" mean TONIGHT (learned 2026-08-09). For the
+//   week after, write "next sun:" (strictly after today) or an exact date
+//   line: "2026-08-16: granola + fruit".
 //   Slots live at kitchen/plan/{iso}.b/.l/.s = {mid|txt}; dinner stays the
 //   top-level mid/txt so every existing reader keeps working unchanged.
 // Meals merge by case-insensitive name — id, ratings, and emoji survive a
@@ -7450,7 +7463,9 @@ function kitParseWeek(raw){
       const ci=line.indexOf(":");
       if(ci<1) return;
       const left=line.slice(0,ci).trim().toLowerCase().split(/\s+/);
-      const day=left[0];
+      let nextWk=false;
+      if(left[0]==="next"){ nextWk=true; left.shift(); }
+      const day=left[0]||"";
       const sw=left[1]||"";
       const slot=(sw==="b"||sw==="breakfast")?"b"
         :(sw==="l"||sw==="lunch")?"l"
@@ -7458,7 +7473,7 @@ function kitParseWeek(raw){
         :(sw===""||sw==="d"||sw==="dinner"||sw==="supper")?"d":null;
       if(!slot) return;
       const val=line.slice(ci+1).trim();
-      if(val) out.plan.push({day:day,slot:slot,value:val});
+      if(val) out.plan.push({day:day,slot:slot,value:val,next:nextWk});
       return;
     }
     if(cur&&mode==="ing") cur.ing.push(line);
@@ -7466,15 +7481,39 @@ function kitParseWeek(raw){
   });
   return out;
 }
-// Next occurrence of a weekday (3-letter match), today included.
-function kitWkIso(day){
-  day=String(day||"").toLowerCase().slice(0,3);
+// Next occurrence of a weekday (3-letter match). Today counts unless strict —
+// "next sun" on a Sunday means +7, not tonight. Exact ISO dates pass through.
+function kitWkIso(day,strict){
+  day=String(day||"").toLowerCase();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(day)) return day;
+  day=day.slice(0,3);
   const today=_todayStr();
-  for(let i=0;i<7;i++){
+  const start=strict?1:0;
+  for(let i=start;i<start+7;i++){
     const iso=kitIsoPlus(today,i);
     if(DAYS_ALL[(gwParseDate(iso).getDay()+6)%7].slice(0,3)===day) return iso;
   }
   return null;
+}
+const KIT_SLOTS=[["b","🌅","Breakfast"],["l","☀️","Lunch"],["s","🍎","Snack"]];
+// Prompt-edit a day's b/l/s slot — so the whole day is manageable in-app,
+// not only via 📥 import. Blank clears the slot; an empty day is removed.
+function kitSlotText(iso,slot){
+  const meta=KIT_SLOTS.find(s=>s[0]===slot); if(!meta) return;
+  const sv=kitPlanSlot(iso,slot);
+  const v=prompt(meta[1]+" "+meta[2]+":",(sv&&sv.txt)||"");
+  if(v===null) return;
+  const cur=Object.assign({},kitPlan[iso]);
+  if(v.trim()) cur[slot]={txt:v.trim()}; else delete cur[slot];
+  if(Object.keys(cur).length){
+    kitPlan[iso]=cur;
+    if(typeof db!=='undefined'&&db) db.ref('kitchen/plan/'+iso).set(cur);
+  } else {
+    delete kitPlan[iso];
+    if(typeof db!=='undefined'&&db) db.ref('kitchen/plan/'+iso).remove();
+  }
+  try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
 // One slot of a day's plan: 'b' | 'l' | 's' → {mid, meal} | {txt} | null.
 function kitPlanSlot(iso,slot){
@@ -7502,7 +7541,7 @@ function kitImportWeekApply(){
     if(typeof db!=='undefined'&&db) db.ref('kitchen/meals/'+id).set(m);
   });
   parsed.plan.forEach(pl=>{
-    const iso=kitWkIso(pl.day); if(!iso) return;
+    const iso=kitWkIso(pl.day,pl.next); if(!iso) return;
     const key=pl.value.toLowerCase();
     const mid=Object.keys(kitMeals).find(k=>String((kitMeals[k]||{}).name||"").toLowerCase()===key);
     const v=mid?{mid:mid}:{txt:pl.value};
@@ -7638,7 +7677,7 @@ function renderKitchen(el){
   h+='<div style="padding:8px 14px 12px">';
   if(kitWkImportOpen){
     h+='<textarea id="kit-week-import" rows="8" placeholder="meal: Taco night | 🌮&#10;ingredients:&#10;1 lb ground beef&#10;instructions:&#10;Brown the beef…&#10;prep: nb | thaw the beef&#10;plan:&#10;tue: Taco night&#10;wed: Leftovers" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12px;font-family:\'DM Sans\',sans-serif"></textarea>'
-      +'<div style="font-size:11px;color:var(--muted);margin:6px 0 8px">One paste plans the week — meals (with recipes and prep timers) and the day lines: <b>tue: Meal Name</b> for dinner, <b>tue breakfast:</b> / <b>tue lunch:</b> / <b>tue snack:</b> for the rest of the day. Hand Claude your week in a session, paste what you get back. Re-importing a meal updates its recipe and keeps its 😋 votes.</div>'
+      +'<div style="font-size:11px;color:var(--muted);margin:6px 0 8px">One paste plans the week — meals (with recipes and prep timers) and the day lines: <b>tue: Meal Name</b> for dinner, <b>tue breakfast:</b> / <b>tue lunch:</b> / <b>tue snack:</b> for the rest of the day; <b>next sun:</b> or an exact date when today IS that weekday. Hand Claude your week in a session, paste what you get back. Re-importing a meal updates its recipe and keeps its 😋 votes.</div>'
       +'<button onclick="kitImportWeekApply()" style="width:100%;padding:11px;border-radius:10px;border:none;background:#E07B39;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-bottom:8px">📥 Import the week</button>';
   }
   const sortedMids=Object.keys(kitMeals).sort((a,b)=>String((kitMeals[a]||{}).name||"").localeCompare(String((kitMeals[b]||{}).name||"")));
