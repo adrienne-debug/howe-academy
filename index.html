@@ -6806,7 +6806,11 @@ function renderMomsDay(el){
   const dMeal=(dpl&&dpl.meal)?dpl.meal:null;
   h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
     +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#E07B39;color:#fff;font-weight:800;font-size:13px"><span>🍽️</span> Tonight\'s dinner'
-    +'<button onclick="mpGoto(\'meals\')" style="margin-left:auto;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">🗓 Plan week →</button></div>';
+    +'<span style="margin-left:auto;display:flex;gap:6px;align-items:center">'
+    +((kitPlan[iso]||{}).eaten
+      ?'<span style="font-size:11px;font-weight:800;background:rgba(255,255,255,0.25);border-radius:8px;padding:3px 10px">✓ Eaten</span>'
+      :(dpl?'<button onclick="kitMarkEaten(\''+iso+'\')" style="border:none;background:rgba(255,255,255,0.25);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">✓ We ate it</button>':''))
+    +'<button onclick="mpGoto(\'meals\')" style="border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">🗓 Plan week →</button></span></div>';
   if(dMeal){
     const dSteps=kitPrepSteps(iso);
     h+='<div onclick="kitOpenRecipe(\''+dpl.mid+'\')" style="cursor:pointer;padding:12px 14px">'
@@ -6948,7 +6952,11 @@ function renderMomsDay(el){
 // ── 🍽 KITCHEN · Phase 2 — meals library, week grid, prep timers ──────
 // Data (all under kitchen/*):
 //   kitchen/meals/{id}   = {name, emoji?, ing, steps, prep:[{when,label}],
-//                          ratings?:{kid: love|like|no}, ts}
+//                          ratings?:{kid: love|like|no}, uses?:[{name,qty}],
+//                          ts} — uses is the deduction manifest: EXACT pantry
+//                          names + rough amounts, authored at import time so
+//                          ✓ eaten never has to fuzzy-match free-text recipe
+//                          lines. plan/{iso}.eaten = ts marks a cooked day.
 //                          ing/steps are plain text, one item per line.
 //                          prep "when" is "nb" (night before) or "HH:MM" 24h.
 //                          ratings = per-kid votes (😍/🙂/🚫), also on usuals.
@@ -6970,7 +6978,11 @@ function renderMomsDay(el){
 //                          on Mom's Day; lastSweep is stamped by a sweep-checked
 //                          📥 import and drives the monthly sweep reminder.
 //   kitchen/pantry/{id}  = {name, zone: produce|fridge|freezer|pantry,
-//                          addedIso, ts} — a dated SNAPSHOT, not an inventory.
+//                          addedIso, qty?, ts} — a dated SNAPSHOT, not an
+//                          inventory. qty is a ROUGH count: sweep imports SET
+//                          it (an inventory moment), receipt imports ADD to it
+//                          (purchases), and the ONLY thing that subtracts is
+//                          her ✓ We-ate-it tap walking a meal's uses list.
 //                          Items fade by zone shelf-life (fresh → aging →
 //                          gone) and gone items hide; nothing ever logs
 //                          consumption, so neglect shrinks the list instead
@@ -7306,7 +7318,7 @@ function panStatus(it,todayIso){
 }
 // Add-or-refresh by name (case-insensitive): re-importing something you
 // already have re-stamps its date — the weekly receipt renews the snapshot.
-function panAdd(name,zone){
+function panAdd(name,zone,qty,mode){
   name=String(name||"").trim(); if(!name) return null;
   if(!PAN_ZONES.some(p=>p[0]===zone)) zone="pantry";
   const key=name.toLowerCase();
@@ -7315,7 +7327,13 @@ function panAdd(name,zone){
   // a merge refreshes date/zone but keeps the first spelling she gave it —
   // receipts recapitalize things; the chip (and its ⭐ staple link) shouldn't
   const prev=kitPantry[id];
-  kitPantry[id]={name:(prev&&prev.name)||name,zone:zone,addedIso:_todayStr(),ts:Date.now()};
+  const rec={name:(prev&&prev.name)||name,zone:zone,addedIso:_todayStr(),ts:Date.now()};
+  // rough counts: a sweep is truth (SET, or keep if uncounted); a receipt is
+  // a purchase (ADD); anything else carries the old count forward untouched
+  if(mode==="sweep"){ if(qty>0) rec.qty=qty; else if(prev&&typeof prev.qty==="number") rec.qty=prev.qty; }
+  else if(mode==="receipt"){ rec.qty=((prev&&typeof prev.qty==="number")?prev.qty:0)+(qty>0?qty:1); }
+  else if(prev&&typeof prev.qty==="number") rec.qty=prev.qty;
+  kitPantry[id]=rec;
   try{HA_LS.setItem('ha_kit_pantry',JSON.stringify(kitPantry));}catch(e){}
   if(typeof db!=='undefined'&&db) db.ref('kitchen/pantry/'+id).set(kitPantry[id]);
   return id;
@@ -7346,10 +7364,12 @@ function panImportApply(){
     const parts=line.split("|");
     const name=(parts[0]||"").trim();
     const zone=(parts[1]||"").trim().toLowerCase();
-    let qty=parseInt((parts[2]||"").trim());
-    if(!qty||qty<1) qty=1;
+    // 0 = "no count on this line" — panAdd's sweep mode keeps the old count
+    // for uncounted lines; the buy log still records a default of 1 per line.
+    let qtyRaw=parseInt((parts[2]||"").trim());
+    if(isNaN(qtyRaw)||qtyRaw<1) qtyRaw=0;
     if(!name) return;
-    if(panAdd(name,zone)){ n++; const sl=kitSlug(name); if(sl) bought[sl]=(bought[sl]||0)+qty; }
+    if(panAdd(name,zone,qtyRaw,sweep?"sweep":"receipt")){ n++; const sl=kitSlug(name); if(sl) bought[sl]=(bought[sl]||0)+(qtyRaw||1); }
   });
   // A receipt import IS the purchase record; a sweep is inventory, not buying.
   if(n&&!sweep){
@@ -7408,11 +7428,25 @@ function panToggleRegular(id){
 function panChip(id){
   const it=kitPantry[id]; const st=panStatus(it);
   const c=st==="aging"?["#fefce8","#a16207","#fde68a"]:["#f0fdf4","#166534","#bbf7d0"];
-  return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:4px 10px;border-radius:12px;border:1.5px solid '+c[2]+';background:'+c[0]+';color:'+c[1]+'">'
-    +(st==="aging"?'🕐 ':'')+esc(it.name)
-    +'<span onclick="panToggleRegular(\''+id+'\')" title="regular = on the staples check-list" style="cursor:pointer;font-size:13px">'+(panIsRegular(it.name)?'⭐':'☆')+'</span>'
-    +(panManage?'<span onclick="panDel(\''+id+'\')" style="cursor:pointer;color:#9ca3af;font-weight:800;padding:0 2px">✕</span>':'')
+  return '<span'+(panManage?' onclick="panQtyEdit(\''+id+'\')"':'')+' style="'+(panManage?'cursor:pointer;':'')+'display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:4px 10px;border-radius:12px;border:1.5px solid '+c[2]+';background:'+c[0]+';color:'+c[1]+'">'
+    +(st==="aging"?'🕐 ':'')+esc(it.name)+(typeof it.qty==="number"?' <b>×'+it.qty+'</b>':'')
+    +'<span onclick="event.stopPropagation();panToggleRegular(\''+id+'\')" title="regular = on the staples check-list" style="cursor:pointer;font-size:13px">'+(panIsRegular(it.name)?'⭐':'☆')+'</span>'
+    +(panManage?'<span onclick="event.stopPropagation();panDel(\''+id+'\')" style="cursor:pointer;color:#9ca3af;font-weight:800;padding:0 2px">✕</span>':'')
     +'</span>';
+}
+// Rough-count corrector — ✎ manage mode, tap the chip body.
+function panQtyEdit(id){
+  const it=kitPantry[id]; if(!it) return;
+  const v=prompt('Rough count of "'+it.name+'"? (blank = stop counting it)',typeof it.qty==="number"?it.qty:"");
+  if(v===null) return;
+  const q=parseInt(String(v).trim());
+  if(String(v).trim()===""||isNaN(q)||q<0) delete it.qty; else it.qty=q;
+  try{HA_LS.setItem('ha_kit_pantry',JSON.stringify(kitPantry));}catch(e){}
+  if(typeof db!=='undefined'&&db){
+    if(typeof it.qty==="number") db.ref('kitchen/pantry/'+id+'/qty').set(it.qty);
+    else db.ref('kitchen/pantry/'+id+'/qty').remove();
+  }
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
 
 // ── 📥 week import — one paste plans the week, recipes and all ──────
@@ -7443,7 +7477,7 @@ function kitParseWeek(raw){
     const low=line.toLowerCase();
     if(low.indexOf("meal:")===0){
       const parts=line.slice(5).split("|");
-      cur={name:(parts[0]||"").trim(),emoji:(parts[1]||"").trim(),ing:[],steps:[],prep:[]};
+      cur={name:(parts[0]||"").trim(),emoji:(parts[1]||"").trim(),ing:[],steps:[],prep:[],uses:[]};
       if(cur.name) out.meals.push(cur); else cur=null;
       mode=null; inPlan=false; return;
     }
@@ -7457,6 +7491,14 @@ function kitParseWeek(raw){
       const label=(parts[1]||"").trim();
       if(!label) return;
       if(when==="nb"||kitWhenMin(when)!=null) cur.prep.push({when:when,label:label});
+      return;
+    }
+    if(low.indexOf("uses:")===0){
+      if(!cur) return;
+      const parts=line.slice(5).split("|");
+      const uname=(parts[0]||"").trim();
+      let uq=parseInt((parts[1]||"").trim()); if(!uq||uq<1) uq=1;
+      if(uname) cur.uses.push({name:uname,qty:uq});
       return;
     }
     if(inPlan){
@@ -7496,6 +7538,40 @@ function kitWkIso(day,strict){
   return null;
 }
 const KIT_SLOTS=[["b","🌅","Breakfast"],["l","☀️","Lunch"],["s","🍎","Snack"]];
+// ✓ We ate it — the ONLY thing that subtracts from the pantry. A plan day
+// passing deducts nothing (plans change); her confirm walks the meal's uses
+// manifest, ticks rough counts down, and an item hitting zero flips its ⭐
+// staple to ❌ out so the order list hears about it without another thought.
+function kitMarkEaten(iso){
+  const plan=kitPlan[iso]; if(!plan||plan.eaten) return;
+  if(!confirm("Mark this dinner eaten? Rough pantry counts tick down.")) return;
+  const meal=plan.mid?kitMeals[plan.mid]:null;
+  if(meal&&Array.isArray(meal.uses)){
+    meal.uses.forEach(u=>{
+      const key=String(u.name||"").toLowerCase();
+      const pid=Object.keys(kitPantry).find(k=>String((kitPantry[k]||{}).name||"").toLowerCase()===key);
+      if(!pid) return;
+      const it=kitPantry[pid];
+      if(typeof it.qty!=="number") return;
+      it.qty=Math.max(0,it.qty-(u.qty||1));
+      if(typeof db!=='undefined'&&db) db.ref('kitchen/pantry/'+pid+'/qty').set(it.qty);
+      if(it.qty===0){
+        const sid=Object.keys(kitStaples).find(k=>String((kitStaples[k]||{}).name||"").toLowerCase()===key);
+        if(sid&&kitStaples[sid].state!=="out"){
+          kitStaples[sid].state="out"; kitStaples[sid].ts=Date.now();
+          if(typeof db!=='undefined'&&db) db.ref('kitchen/staples/'+sid).set(kitStaples[sid]);
+        }
+      }
+    });
+    try{HA_LS.setItem('ha_kit_pantry',JSON.stringify(kitPantry));}catch(e){}
+    try{HA_LS.setItem('ha_kit_staples',JSON.stringify(kitStaples));}catch(e){}
+  }
+  plan.eaten=Date.now();
+  try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('kitchen/plan/'+iso+'/eaten').set(plan.eaten);
+  if(typeof mwToast==='function') mwToast('🍽 Eaten — pantry ticked down');
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
 // Prompt-edit a day's b/l/s slot — so the whole day is manageable in-app,
 // not only via 📥 import. Blank clears the slot; an empty day is removed.
 function kitSlotText(iso,slot){
@@ -7535,6 +7611,8 @@ function kitImportWeekApply(){
     if(!id) id="m"+Date.now().toString(36)+"_"+Object.keys(kitMeals).length;
     const m={name:prev?prev.name:pm.name,ing:pm.ing.join("\n"),steps:pm.steps.join("\n"),
       prep:pm.prep,ts:(prev&&prev.ts)||Date.now()};
+    if(pm.uses&&pm.uses.length) m.uses=pm.uses;
+    else if(prev&&prev.uses) m.uses=prev.uses;
     if(pm.emoji) m.emoji=pm.emoji; else if(prev&&prev.emoji) m.emoji=prev.emoji;
     if(prev&&prev.ratings) m.ratings=prev.ratings;
     kitMeals[id]=m; nm++;
@@ -7641,6 +7719,7 @@ function kitRecipeHTML(mid){
     +'<div style="display:flex;align-items:center;gap:8px;padding:12px 14px;background:#E07B39;color:#fff"><span style="font-size:22px">'+(m.emoji?esc(m.emoji):'🍽')+'</span><span style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700">'+esc(m.name||"")+'</span></div>'
     +'<div style="padding:12px 14px">'
     +(days.length?'<div style="font-size:11px;font-weight:800;color:#c2410c;margin-bottom:8px">🗓 Planned: '+esc(days.join(", "))+'</div>':'')
+    +(Array.isArray(m.uses)&&m.uses.length?'<div style="font-size:11px;color:var(--muted);margin-bottom:8px">🧮 On ✓ eaten: '+m.uses.map(u=>esc(u.name)+' ×'+u.qty).join(' · ')+'</div>':'')
     +'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:2px 0 5px">😋 Kid votes</div>'
     +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">'+kitRateChips('meal',mid)+'</div>'
     +'<div style="font-size:10px;color:var(--muted);margin-bottom:8px">tap a kid to cycle 😍 love · 🙂 like · 🚫 won\'t eat</div>'

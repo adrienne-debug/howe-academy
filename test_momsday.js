@@ -120,7 +120,7 @@ global.renderAll = () => { renderAllCalls++; };
 global.schedShowBoard = false; global.schedShowAdmin = true; global.schedShowHistory = false;
 global.schedShowPace = false; global.schedShowPeek = false;
 
-const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlotCounts,renderMomsDay,renderMomsPlan,mpInit,mdOpenBoard,mdBack,mwBPCat,mwBPChip,mwSaveBP,mwBPSlotNow,momdayAddTodo,momdayToggleTodo,momdayDelTodo,mwToggleSym,mwAllSyms,mwAddSymType,mwDelSymType,billDueInfo,billState,billMarkPaid,billAdd,billDel,laundryAdd,laundryAdvance,laundryDel,laundryData,renderKitchen,kitIsoPlus,kitWhenMin,kitWhenLabel,kitPlanFor,kitPrepSteps,kitDuePrep,kitMarkPrep,kitAssign,kitPickDay,kitPlanText,kitOpenRecipe,kitCloseRecipe,kitEditMeal,kitAddPrepRow,kitDelPrepRow,kitSaveMeal,kitCancelEdit,kitDelMeal,kitMeals,kitPlan,kitPrepDone,kitStapleCycle,kitStapleAdd,kitStapleDel,kitStapleToggleManage,kitUsualAdd,kitUsualDel,kitSetOrderDay,kitOrderList,kitOrderText,kitCopyOrder,kitStaples,kitUsuals,kitSettings,kitPantry,panStatus,panAdd,panAddManual,panDel,panImportToggle,panImportApply,panClearGone,panToggleRegular,panIsRegular,panToggleManage,kitSweepDue,kitUsualQty,kitSlug,kitBuyLog,kitRate,kitRateChips,kitParseWeek,kitWkIso,kitWkImportToggle,kitImportWeekApply,kitPlanSlot,kitSlotText};`)();
+const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlotCounts,renderMomsDay,renderMomsPlan,mpInit,mdOpenBoard,mdBack,mwBPCat,mwBPChip,mwSaveBP,mwBPSlotNow,momdayAddTodo,momdayToggleTodo,momdayDelTodo,mwToggleSym,mwAllSyms,mwAddSymType,mwDelSymType,billDueInfo,billState,billMarkPaid,billAdd,billDel,laundryAdd,laundryAdvance,laundryDel,laundryData,renderKitchen,kitIsoPlus,kitWhenMin,kitWhenLabel,kitPlanFor,kitPrepSteps,kitDuePrep,kitMarkPrep,kitAssign,kitPickDay,kitPlanText,kitOpenRecipe,kitCloseRecipe,kitEditMeal,kitAddPrepRow,kitDelPrepRow,kitSaveMeal,kitCancelEdit,kitDelMeal,kitMeals,kitPlan,kitPrepDone,kitStapleCycle,kitStapleAdd,kitStapleDel,kitStapleToggleManage,kitUsualAdd,kitUsualDel,kitSetOrderDay,kitOrderList,kitOrderText,kitCopyOrder,kitStaples,kitUsuals,kitSettings,kitPantry,panStatus,panAdd,panAddManual,panDel,panImportToggle,panImportApply,panClearGone,panToggleRegular,panIsRegular,panToggleManage,kitSweepDue,kitUsualQty,kitSlug,kitBuyLog,kitRate,kitRateChips,kitParseWeek,kitWkIso,kitWkImportToggle,kitImportWeekApply,kitPlanSlot,kitSlotText,panQtyEdit,kitMarkEaten};`)();
 
 // ── mdTodayName: weekday from the DATE ───────────────────────────────────────
 (() => {
@@ -1066,6 +1066,78 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   ok("apply: db write went to 2026-08-16", dbWrites.some(w => w[0] === "kitchen/plan/2026-08-16"), dbWrites);
   delete M.kitPlan["2026-08-16"];
   delete domVals["kit-week-import"];
+})();
+
+// ── 🧮 KITCHEN · rough counts: sweep sets, receipt adds, thumb corrects ──────
+(() => {
+  TODAY = "2026-08-10";
+  domVals["pan-import"] = { value: "oat milk | fridge | 2" };
+  domVals["pan-sweep"] = { checked: false };
+  M.panImportApply();
+  const omId = Object.keys(M.kitPantry).find(k => M.kitPantry[k].name === "oat milk");
+  ok("receipt starts the count", M.kitPantry[omId].qty === 2, M.kitPantry[omId]);
+  domVals["pan-import"] = { value: "oat milk | fridge | 3" };
+  M.panImportApply();
+  ok("second receipt ADDS", M.kitPantry[omId].qty === 5, M.kitPantry[omId].qty);
+  domVals["pan-import"] = { value: "oat milk | fridge | 4" };
+  domVals["pan-sweep"] = { checked: true };
+  M.panImportApply();
+  ok("sweep SETS the truth", M.kitPantry[omId].qty === 4, M.kitPantry[omId].qty);
+  domVals["pan-import"] = { value: "oat milk | fridge" };
+  M.panImportApply();
+  ok("uncounted sweep keeps the old count", M.kitPantry[omId].qty === 4, M.kitPantry[omId].qty);
+  ["pan-import", "pan-sweep"].forEach(k => delete domVals[k]);
+  M.renderKitchen(elStub);
+  ok("chip shows the rough count", elStub.innerHTML.includes("×4"), null);
+  PROMPT = "7";
+  M.panQtyEdit(omId);
+  ok("manage-tap corrects the count", M.kitPantry[omId].qty === 7, null);
+  PROMPT = "";
+  dbRemoves.length = 0;
+  M.panQtyEdit(omId);
+  ok("blank stops counting (qty removed)", !("qty" in M.kitPantry[omId]) && dbRemoves.some(p => p.endsWith("/qty")), null);
+})();
+
+// ── 🍽 KITCHEN · uses manifest + ✓ We ate it ─────────────────────────────────
+(() => {
+  TODAY = "2026-08-10";
+  domVals["kit-week-import"] = { value: "meal: Taco night\ningredients:\nbeef etc\ninstructions:\ncook it\nuses: canned tomatoes | 2\nuses: tortilla chips\nuses: ghost item | 5\nplan:\nmon: Taco night" };
+  M.kitImportWeekApply();
+  delete domVals["kit-week-import"];
+  ok("import attaches the uses manifest", M.kitMeals.mtaco.uses.length === 3 && M.kitMeals.mtaco.uses[0].qty === 2 && M.kitMeals.mtaco.uses[1].qty === 1, M.kitMeals.mtaco.uses);
+  ok("merge kept id + votes through a uses re-import", M.kitMeals.mtaco.ratings && M.kitMeals.mtaco.ratings.ellis === "love", M.kitMeals.mtaco.ratings);
+  M.kitOpenRecipe("mtaco");
+  M.renderKitchen(elStub);
+  ok("recipe view shows the manifest", elStub.innerHTML.includes("On ✓ eaten") && elStub.innerHTML.includes("canned tomatoes ×2"), null);
+  M.kitCloseRecipe();
+  // stage pantry + staple for the deduction
+  M.kitPantry.p_ct = { name: "Canned Tomatoes", zone: "pantry", addedIso: "2026-08-10", qty: 3, ts: 1 };
+  M.kitPantry.p_tc = { name: "tortilla chips", zone: "pantry", addedIso: "2026-08-10", ts: 1 }; // no qty — untouched
+  M.kitStaples.s_ct = { name: "canned tomatoes", state: "have", ts: 1 };
+  M.renderMomsDay(elStub);
+  ok("card offers ✓ We ate it", elStub.innerHTML.includes("kitMarkEaten('2026-08-10')"), null);
+  CONFIRM = false;
+  M.kitMarkEaten("2026-08-10");
+  ok("declined confirm deducts nothing", !M.kitPlan["2026-08-10"].eaten && M.kitPantry.p_ct.qty === 3, null);
+  CONFIRM = true; dbWrites.length = 0;
+  M.kitMarkEaten("2026-08-10");
+  ok("eaten stamps the day", M.kitPlan["2026-08-10"].eaten && dbWrites.some(w => w[0] === "kitchen/plan/2026-08-10/eaten"), null);
+  ok("uses deduct case-insensitively", M.kitPantry.p_ct.qty === 1, M.kitPantry.p_ct.qty);
+  ok("uncounted + ghost items untouched", !("qty" in M.kitPantry.p_tc), null);
+  M.renderMomsDay(elStub);
+  ok("card flips to ✓ Eaten badge", elStub.innerHTML.includes("✓ Eaten") && !elStub.innerHTML.includes("kitMarkEaten('2026-08-10')"), null);
+  M.kitMarkEaten("2026-08-10");
+  ok("second tap never double-deducts", M.kitPantry.p_ct.qty === 1, null);
+  // zero flips the ⭐ staple to ❌ out
+  M.kitPlan["2026-08-12"] = { mid: "mtaco" };
+  M.kitMarkEaten("2026-08-12");
+  ok("hitting zero floors and flips the staple out", M.kitPantry.p_ct.qty === 0 && M.kitStaples.s_ct.state === "out", { qty: M.kitPantry.p_ct.qty, st: M.kitStaples.s_ct.state });
+  // txt dinner: stamp only
+  M.kitPlan["2026-08-13"] = { txt: "Pizza out" };
+  M.kitMarkEaten("2026-08-13");
+  ok("typed dinner stamps without deduction", M.kitPlan["2026-08-13"].eaten && M.kitPantry.p_ct.qty === 0, null);
+  ["2026-08-10", "2026-08-12", "2026-08-13"].forEach(iso => delete M.kitPlan[iso]);
+  delete M.kitPantry.p_ct; delete M.kitPantry.p_tc; delete M.kitStaples.s_ct;
 })();
 
 console.log(pass + " passed, " + fail + " failed");
