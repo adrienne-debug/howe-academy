@@ -180,12 +180,24 @@
       var c = xpConf(ctx, p.key); return c.on && c.days[day];
     });
   }
+  // Unit-study inserts assigned to this weekday. Same idea as xpForDay: the pages always print
+  // (that's governed by the unit's nbInsert flag) — assigning a day only tells the kid WHEN to do
+  // them, via the daily reminder strip. Unassigned units simply print with no reminder.
+  function unitsForDay(ctx, day) {
+    return (ctx.units || []).filter(function (u) { return u && u.days && u.days[day]; })
+      .map(function (u) { return { emoji: u.emoji || "📘", label: u.title || "Unit Study", unit: true }; });
+  }
+  // Everything assigned to this weekday — extra pages and unit inserts in one strip.
+  function pagesForDay(ctx, kid, day) { return xpForDay(ctx, kid, day).concat(unitsForDay(ctx, day)); }
   // Compact themed "work on these today" strip for a daily page ("" when nothing assigned).
   function xpStrip(pages, accent, bg, ink) {
     if (!pages || !pages.length) return "";
     var items = pages.map(function (p) { return p.emoji + " <b>" + p.label + "</b>"; }).join(" · ");
+    // "Extra pages" is the right word for the catalog pages; once a unit insert is in the list the
+    // strip is covering more than those, so it takes the broader heading.
+    var head = pages.some(function (p) { return p.unit; }) ? "Pages to do today:" : "Extra pages today:";
     return '<div style="display:flex;align-items:center;gap:7px;border:1.5px dashed ' + accent + ';background:' + bg + ';border-radius:8px;padding:4px 10px;font-size:9.5px;line-height:1.35;color:' + ink + ';">' +
-      '<span style="font-size:12px;">📌</span><span><b>Extra pages today:</b> ' + items + ' — find them in this notebook and do them!</span></div>';
+      '<span style="font-size:12px;">📌</span><span><b>' + head + '</b> ' + items + ' — find them in this notebook and do them!</span></div>';
   }
 
   var JU_REVIEW_CAP = 2;  // max review slots folded into Julian's week per subject
@@ -981,7 +993,7 @@
     var picks = juWeekPicks(weekNum, cur, days.length, reviewCap, ctx.juPicks);
     for (var i = 0; i < days.length; i++) {
       parts.push(juPageDaily(weekNum, days[i], dates[days[i]] || "", i, cur, juDayPick(cur, picks, i),
-        xpStrip(xpForDay(ctx, "julian", days[i]), "#d97706", "#fffbeb", "#92400e")));
+        xpStrip(pagesForDay(ctx, "julian", days[i]), "#d97706", "#fffbeb", "#92400e")));
     }
     (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, weekNum, UNIT_INSERT_THEMES.julian).forEach(function (p) { parts.push(p); }); });
     parts.push("</body>\n</html>");
@@ -2313,7 +2325,7 @@ ${extraStrip || ""}
       var word = Object.assign({}, lnPick(LINCOLN_DATA.banks.words, weekNum, i)); word.aas_level = cfg.aas_level;
       var q1 = lnPick(bank1, weekNum, i), q2 = lnPick(bank2, weekNum, i), q3 = lnPick(bank3, weekNum, i);
       dailyPages.push(lnDailyPage(day, dateStr, weekNum, cfg, daySubjects, skillSubjects, word, q1, q2, q3,
-        xpStrip(xpForDay(ctx, "lincoln", day), "#2d6a4f", "#f2faf5", "#1a3a2a")));
+        xpStrip(pagesForDay(ctx, "lincoln", day), "#2d6a4f", "#f2faf5", "#1a3a2a")));
       dayAssignments.push({ day: day, date: dateStr, word: word, q1: q1, q2: q2, q3: q3 });
     });
 
@@ -2946,7 +2958,7 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
       var mathQ = ellPick(ELLIS_DATA.banks.math, wn, i);
       var word = ellPick(ELLIS_DATA.banks.words, wn, i);
       pages.push(ellDailyPage(day, dateStr, wn, dayTasks, passage, lang, mathQ, word,
-        xpStrip(xpForDay(ctx, "ellis", day), "#c41e1e", "#fdf2f2", "#0e2038")));
+        xpStrip(pagesForDay(ctx, "ellis", day), "#c41e1e", "#fdf2f2", "#0e2038")));
       dayAssignments.push({ day: day, date: dateStr, day_tasks: dayTasks, passage: passage, lang: lang, math_q: mathQ, word: word });
       pages.push(i < orderedDays.length - 1 ? ellBrainBreakPage(i + 1, wn) : ellCreativePage(wn, weekDates));
     });
@@ -3748,7 +3760,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       var subPrbs = (i < subtraction.length) ? subtraction[i] : [];
       var badge = LUCY_DATA.day_badges[day] || "🦄 Great Work!";
       parts.push(luPageDaily(wn, day, dateStr, tasks, blend, subPrbs, badge, year,
-        xpStrip(xpForDay(ctx, "lucy", day), "#f472b6", "#fdf2f8", "#be185d")));
+        xpStrip(pagesForDay(ctx, "lucy", day), "#f472b6", "#fdf2f8", "#be185d")));
       if (day === "monday") parts.push(luPageBb1(wn, ctx.dotdot || null));
       else if (day === "tuesday") parts.push(luPageBb2Coloring(wn, ctx.coloring || null, category));
       else if (day === "wednesday") parts.push(luPageBb3(wn, ctx.symmetry || null, ctx.pattern || null));

@@ -15531,6 +15531,24 @@ function nbXpSave(kid,key,cfg){
   try{ if(typeof db!=="undefined"&&db) db.ref("notebookSettings/"+kid+"/extraPages/"+key).set(cfg); }catch(e){}
   if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
 }
+// ── Unit-insert day assignment ─────────────────────────────────────────────────
+// notebookSettings[kid].unitDays[unitId] = {monday:true,…}. Mirrors extraPages.days: the unit's
+// pages print regardless (that's the unit's own nbInsert flag) — a day only adds the "📌 Pages to
+// do today" reminder to that day's page, so the kid knows when to work on them.
+function nbUnitDays(kid,unitId){ return ((((notebookSettings||{})[kid]||{}).unitDays||{})[unitId])||{}; }
+function nbUnitDayToggle(kid,unitId,day){
+  if(!momHere()) return;
+  const cur=nbUnitDays(kid,unitId), next=Object.assign({},cur);
+  if(next[day]) delete next[day]; else next[day]=true;
+  if(!notebookSettings[kid]) notebookSettings[kid]={};
+  if(!notebookSettings[kid].unitDays) notebookSettings[kid].unitDays={};
+  const all=notebookSettings[kid].unitDays;
+  if(Object.keys(next).length) all[unitId]=next; else delete all[unitId];
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  // Firebase drops empty maps — write null so clearing the last day removes the node.
+  try{ if(typeof db!=="undefined"&&db) db.ref("notebookSettings/"+kid+"/unitDays/"+unitId).set(all[unitId]||null); }catch(e){}
+  if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
+}
 // ── Julian's week planner overrides ────────────────────────────────────────────
 // Mom's hand-picked slots, stored PER WEEK: notebookSettings.julian.juPicks["week17"]
 // = { letters:{0:"M"}, numbers:{...} } — day index → item prompt. Only the slots she touches
@@ -15754,7 +15772,7 @@ function haBuildUnitInsight(kid,u){
     if(a.kind==="timeline"){ const td=(u.decks||[]).find(d=>d&&d.key===(a.deckKey||cd.key));
       spec.entries=((td&&td.cards)||[]).slice().sort((x,y)=>(x.order||0)-(y.order||0)).map(c=>({year:c.year||c.reign||"",name:c.name})); }
     activities.push(spec); });
-  return { unitId:u.id,title:u.title,emoji:u.emoji||"📘",learning,learned,next:next.slice(0,6),extras,extrasTitle,activity:activities[0]||null,activities };
+  return { unitId:u.id,title:u.title,emoji:u.emoji||"📘",days:nbUnitDays(kid,u.id),learning,learned,next:next.slice(0,6),extras,extrasTitle,activity:activities[0]||null,activities };
 }
 // In-app status page(s) for every unit a kid is enrolled in.
 // Notebook tab shows a status card per enrolled unit — but only for units set to go to the
@@ -15778,6 +15796,20 @@ function _renderUnitCard(kid,u){
   h+='<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:2px"><div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700;color:#1f2937">'+(u.emoji||"📘")+' '+esc(u.title)+'</div>';
   h+='<button onclick="printUnitPage(\''+esc(kid)+'\',\''+esc(u.id)+'\')" style="margin-left:auto;padding:5px 11px;border-radius:8px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🖨 Print</button></div>';
   h+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">'+total+' cards · <b style="color:#b45309">'+nLearn+' learning</b> · <b style="color:#15803d">'+nMast+' mastered</b></div>';
+  // Which weekday these insert pages are meant to be done on — same control as Extra Pages.
+  if(momHere() && u.nbInsert!==false){
+    const ud=nbUnitDays(kid,u.id);
+    const dayDefs=[["monday","M"],["tuesday","T"],["wednesday","W"],["thursday","Th"],["friday","F"]];
+    const chips=dayDefs.map(d=>{
+      const on=!!ud[d[0]];
+      return '<button onclick="nbUnitDayToggle(\''+esc(kid)+'\',\''+esc(u.id)+'\',\''+d[0]+'\')" title="'+(on?'Assigned — tap to clear':'Tap to assign this day')+'" style="width:26px;height:26px;border-radius:7px;border:1.5px solid '+(on?'#ea580c':'var(--border)')+';background:'+(on?'#fff7ed':'#fff')+';color:'+(on?'#9a3412':'#9ca3af')+';font-size:10px;font-weight:800;cursor:pointer;padding:0;font-family:\'DM Sans\',sans-serif">'+d[1]+'</button>';
+    }).join('');
+    const nOn=Object.keys(ud).length;
+    h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:10px;padding:8px 11px;margin-bottom:8px">'+
+      '<span style="flex:1;min-width:150px;font-size:11px;font-weight:700;color:#9a3412">📌 Do these pages on <span style="font-weight:600;color:var(--muted)">'+(nOn?'— that day gets a reminder':'— no day set, they just print')+'</span></span>'+
+      '<span style="display:inline-flex;gap:4px">'+chips+'</span>'+
+    '</div>';
+  }
   try{ const _nd=unitPlanNudges(u,kid); if(_nd.length){ h+='<div style="margin:4px 0 8px">'+_unitNudgeChipsFor(kid,_nd,true)+'</div>'; } }catch(e){}  // U6 nudges (this unit only)
   // U7: the assigned project, what it's worth, and the kid's one-tap claim. Also surfaces a
   // claimed-but-unassigned activity so the ⏳ waiting state stays visible until Mom approves.
