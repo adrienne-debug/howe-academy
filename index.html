@@ -12535,17 +12535,53 @@ function haLoadNotebooksLib(){
   });
   return _haNbLibPromise;
 }
+// ── Notebook target week ───────────────────────────────────────────────────────
+// Notebooks normally build the ACTIVE week. But a week generated ahead of time is PARKED
+// (see _wkParkFuture) and doesn't become active until its Monday — while the packets have to
+// be printed the day before. This override lets the Notebook tab build a parked future week
+// straight from its stored tasks/meta. READ-ONLY: nothing here writes to the week, touches
+// WK/weekData, or triggers the handover — that still happens on its own Monday.
+let nbWeekOverride=null;   // {wk:"week17", dates:{...}, tasks:[...]} or null = the active week
+let nbNextWeek=undefined;  // undefined = not probed yet, false = none parked, else {wk,dates,tasks}
+let nbProbedFor=null;      // the WK the probe ran against — a handover invalidates the result
+function nbTargetWk(){ return (nbWeekOverride&&nbWeekOverride.wk)||WK; }
+function nbTargetWkNum(){ return parseInt(String(nbTargetWk()).replace(/\D/g,""),10)||1; }
+// Is there a built-but-not-yet-active week sitting after the active one? One read, cached.
+function nbProbeNextWeek(){
+  if(!db) return;
+  if(nbProbedFor===WK&&nbNextWeek!==undefined) return;
+  if(nbProbedFor!==WK){ nbWeekOverride=null; }        // the week rolled over — drop a stale target
+  nbProbedFor=WK;
+  nbNextWeek=false;                                   // don't re-enter while the read is in flight
+  const nk="week"+((parseInt(String(WK).replace(/\D/g,""),10)||1)+1);
+  db.ref(nk).once("value",s=>{
+    const v=s.val()||{};
+    const tasks=Object.keys(v.tasks||{}).map(id=>v.tasks[id]).filter(Boolean);
+    if(!tasks.length) return;
+    nbNextWeek={wk:nk, dates:((v.meta||{}).dates)||{}, tasks:tasks};
+    if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
+  },()=>{});
+}
+function nbSetTargetWk(wk){
+  nbWeekOverride=(nbNextWeek&&wk===nbNextWeek.wk)?nbNextWeek:null;
+  renderNotebook();
+}
 // Previous-week completion summary for a kid, from the archived snapshot (tasks + checked
 // stored together → no stale-id mismatch). Powers the notebooks' "last week" stats.
-function haPrevWeekSummary(kid){
+function haPrevWeekSummary(kid,forWkNum){
   try{
-    const curN=parseInt(String(WK).replace(/\D/g,""),10)||0;
+    const curN=forWkNum||parseInt(String(WK).replace(/\D/g,""),10)||0;
     if(curN<=1) return null;
-    const aw=(typeof archive!=="undefined"&&archive)?archive["week"+(curN-1)]:null;
-    if(!aw||!Array.isArray(aw.tasks)||!aw.tasks.length) return null;
-    const chk=aw.checked||{};
+    const prevKey="week"+(curN-1);
+    // Normally "last week" is in the archive. When a notebook is built ahead for a parked week,
+    // last week is the one still RUNNING — it archives at handover, so read it live instead.
+    let srcTasks=null, chk=null;
+    const aw=(typeof archive!=="undefined"&&archive)?archive[prevKey]:null;
+    if(aw&&Array.isArray(aw.tasks)&&aw.tasks.length){ srcTasks=aw.tasks; chk=aw.checked||{}; }
+    else if(prevKey===WK){ srcTasks=(weekData.tasks||[]); chk=checked||{}; }
+    if(!srcTasks||!srcTasks.length) return null;
     const isDone=t=>!!(chk[t.id]||chk[t.id+"_c"]);
-    const kt=aw.tasks.filter(t=>t.who===kid&&!String(t.id||"").endsWith("_c"));
+    const kt=srcTasks.filter(t=>t.who===kid&&!String(t.id||"").endsWith("_c"));
     if(!kt.length) return null;
     const done=kt.filter(isDone).length, total=kt.length, pct=total?Math.round(done/total*100):0;
     const byDay={}; kt.forEach(t=>{ const d=t.day||"?"; (byDay[d]=byDay[d]||{n:0,d:0}); byDay[d].n++; if(isDone(t))byDay[d].d++; });
@@ -12560,11 +12596,11 @@ function haPrevWeekSummary(kid){
 }
 // Live pace bars: real per-subject progress % + ahead/on/behind vs the calendar-aware
 // expected pace. Returns null on any trouble → generators fall back to their defaults.
-function haPaceRows(kid){
+function haPaceRows(kid,forWkNum){
   try{
     if(typeof subjectProgress!=="function") return null;
     if(typeof buildCurrPaceCum==="function"){ try{ buildCurrPaceCum(); }catch(e){} }
-    const curN=parseInt(String(WK).replace(/\D/g,""),10)||1;
+    const curN=forWkNum||parseInt(String(WK).replace(/\D/g,""),10)||1;
     const subs=((typeof currData!=="undefined"&&currData.subjects)||{})[kid] || ((typeof paceData!=="undefined"&&paceData.subjects)||{})[kid] || {};
     const cum=((typeof currPaceCum!=="undefined"&&currPaceCum)||{})[kid]||{};
     const rows=[];
@@ -12610,8 +12646,11 @@ function haBuildMonarchy(kid){
   return { title:u.title, learning, learned, next:next.slice(0,6), milestones };
 }
 function haNbContext(kid){
-  let dates={}; try{ dates=Object.assign({},DAY_DT); }catch(e){}
-  let tasks=[]; try{ tasks=(weekData.tasks||[]).filter(t=>!String(t.id||"").endsWith("_c")); }catch(e){}
+  // Everything week-shaped here reads the TARGET week, not necessarily the active one, so a
+  // parked next week can be printed the weekend before it starts (see nbWeekOverride).
+  const tgtWk=nbTargetWk(), tgtN=nbTargetWkNum(), ov=nbWeekOverride;
+  let dates={}; try{ dates=Object.assign({},ov?(ov.dates||{}):DAY_DT); }catch(e){}
+  let tasks=[]; try{ tasks=((ov?ov.tasks:weekData.tasks)||[]).filter(t=>!String(t.id||"").endsWith("_c")); }catch(e){}
   const year=new Date().getFullYear();
   const weekDates=(window.HoweNotebooks&&window.HoweNotebooks.weekDatesRange)?window.HoweNotebooks.weekDatesRange(dates,year):"";
   let mastery={}; try{ if(typeof masteryFromApp==="function") mastery=masteryFromApp(); }catch(e){}
@@ -12628,21 +12667,21 @@ function haNbContext(kid){
   // Real "last week" stats (from the archive) + live pace bars — shaped for each kid.
   let prevSummary=null, prevStats=null, pace=null;
   try{
-    const sm=haPrevWeekSummary(kid);
+    const sm=haPrevWeekSummary(kid,tgtN);
     if(sm){
       prevSummary={ days_done:sm.days_done, tasks_done:sm.tasks_done, tasks_total:sm.tasks_total, pct:sm.pct, carried_over:sm.carried_over, subjects_done:sm.subjects_done, subjects_behind:sm.subjects_behind };
-      const pw=(parseInt(String(WK).replace(/\D/g,""),10)||1)-1;
+      const pw=tgtN-1;
       prevStats={ week:pw, days:sm.days_done, apps:sm.tasks_done, completion:sm.pct+"%", carried:sm.carried_over, highlights:sm.subjects_done.slice(0,6), ahead:[] };
     }
   }catch(e){}
-  try{ pace=haPaceRows(kid); }catch(e){}
-  let passage=null; try{ if(notebookStories[kid]) passage=notebookStories[kid][WK]||null; }catch(e){} // this week's stored reading story
+  try{ pace=haPaceRows(kid,tgtN); }catch(e){}
+  let passage=null; try{ if(notebookStories[kid]) passage=notebookStories[kid][tgtWk]||null; }catch(e){} // this week's stored reading story
   let coloring=null,dotdot=null,symmetry=null,maze=null,pattern=null,dolls=null;
   try{ if(kid==="lucy"){ coloring=nbActCurUrl("coloring"); dotdot=nbActCurUrl("dotdot"); symmetry=nbActCurUrl("symmetry"); maze=nbActCurUrl("maze"); pattern=nbActCurUrl("pattern");
     // Paper dolls: doll figure (page 1, every week) + a rotating outfit (pages 2..N). Books alternate weekly.
     const dc=nbActivities["dolls"];
     if(dc && dc.books && dc.books.length){
-      const n=dc.books.length, wn=parseInt(String(WK).replace(/\D/g,""),10)||1;
+      const n=dc.books.length, wn=tgtN;
       const bi=((wn-1)%n+n)%n, bk=dc.books[bi], im=bk.imgs||{}, pages=bk.pages||1;
       const dollUrl=im[1]||(Object.keys(im).length?im[Object.keys(im)[0]]:null);
       let outfitUrl=null;
@@ -12666,14 +12705,16 @@ function haNbContext(kid){
     }
     mItems=mItems.map(it=>Object.assign({},it,{recentMiss:miss[it.id]||0}));
   }catch(e){}
-  return { weekData:{dates:dates, tasks:tasks}, weekNum:WK, weekDates:weekDates, masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true };
+  // Julian only: Mom's hand-picked slots for THIS week (see nbJuPicks). Absent = pure engine.
+  let juPicks=null; try{ if(kid==="julian") juPicks=nbJuPicks(tgtWk); }catch(e){}
+  return { weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true };
 }
 function haNbOpen(kid,which){
   const lib=window.HoweNotebooks; if(!lib){ alert("Notebook builder not loaded yet."); return; }
   try{
     const out=lib.generate(kid, haNbContext(kid));
     const html=(which==="parent")?(out.parent||out.student):out.student;
-    const fname=kid+"_"+WK+"_"+(which==="parent"?"parent":"notebook")+".html";
+    const fname=kid+"_"+nbTargetWk()+"_"+(which==="parent"?"parent":"notebook")+".html";
     lib.openHtml(html, fname);
   }catch(e){ alert("Notebook generation failed: "+e.message); console.error(e); }
 }
@@ -12683,7 +12724,7 @@ function haNbCombinedParent(){
   try{
     const ctxByKid={}; ["lincoln","ellis","lucy","julian"].forEach(k=>{ try{ ctxByKid[k]=haNbContext(k); }catch(e){} });
     const html=lib.combinedParent(ctxByKid);
-    lib.openHtml(html, "parent_guide_all_kids_"+WK+".html");
+    lib.openHtml(html, "parent_guide_all_kids_"+nbTargetWk()+".html");
   }catch(e){ alert("Combined parent guide failed: "+e.message); console.error(e); }
 }
 
@@ -12720,7 +12761,7 @@ async function haGenerateStory(kid){
   if(!key){ msg("Add your API key first."); return; }
   try{
     msg("✨ Generating with Claude… (10–20 sec)");
-    const wn=parseInt(String(WK).replace(/\D/g,""),10)||1;
+    const wn=nbTargetWkNum();   // build the story for the week the tab is targeting
     const lexile=750+10*(wn-1);
     const used=[]; if(notebookStories[kid]) Object.values(notebookStories[kid]).forEach(p=>{ if(p&&p.topic) used.push(p.topic); });
     let topic=HA_PASSAGE_TOPICS[(wn-1)%HA_PASSAGE_TOPICS.length];
@@ -12759,7 +12800,7 @@ async function haOpenNotebookPicker(){
   try{ lib=await haLoadNotebooksLib(); }
   catch(e){ alert("Couldn't load the notebook builder ("+e.message+").\nMake sure notebooks.js is deployed next to index.html."); return; }
   const old=document.getElementById("haNbOverlay"); if(old) old.remove();
-  const wkLabel=String(WK).replace("week","Week ");
+  const wkLabel=String(nbTargetWk()).replace("week","Week ");
   const html=`<div id="haNbOverlay" onclick="if(event.target===this)this.remove()" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px;font-family:'DM Sans',sans-serif">
     <div style="background:#fff;border-radius:18px;max-width:460px;width:100%;padding:20px 22px;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
       <div style="font-size:16px;font-weight:800;color:#9a3412">📓 Generate Notebooks — ${wkLabel}</div>
@@ -15490,6 +15531,45 @@ function nbXpSave(kid,key,cfg){
   try{ if(typeof db!=="undefined"&&db) db.ref("notebookSettings/"+kid+"/extraPages/"+key).set(cfg); }catch(e){}
   if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
 }
+// ── Julian's week planner overrides ────────────────────────────────────────────
+// Mom's hand-picked slots, stored PER WEEK: notebookSettings.julian.juPicks["week17"]
+// = { letters:{0:"M"}, numbers:{...} } — day index → item prompt. Only the slots she touches
+// are stored; everything else stays on the engine's pick. Per-week by design, so a week she
+// steers doesn't lock the weeks after it, and the rotation (a pure function of week number)
+// keeps advancing untouched.
+const NB_JU_SUBS=[{k:"letters",lbl:"Letters",ico:"🔤"},{k:"numbers",lbl:"Numbers",ico:"🔢"},
+                  {k:"shapes",lbl:"Shapes",ico:"⭐"},{k:"colors",lbl:"Colors",ico:"🎨"},
+                  {k:"animals",lbl:"Animals",ico:"🦕"}];
+function nbJuPicks(wk){ return ((((notebookSettings||{}).julian||{}).juPicks||{})[wk||nbTargetWk()])||null; }
+function nbJuSet(sub,dayIdx,prompt){
+  if(!momHere()) return;
+  const wk=nbTargetWk();
+  if(!notebookSettings.julian) notebookSettings.julian={};
+  if(!notebookSettings.julian.juPicks) notebookSettings.julian.juPicks={};
+  const all=notebookSettings.julian.juPicks;
+  const wkMap=Object.assign({},all[wk]||{});
+  const subMap=Object.assign({},wkMap[sub]||{});
+  if(prompt==null) delete subMap[dayIdx]; else subMap[dayIdx]=prompt;   // null = back to the engine
+  if(Object.keys(subMap).length) wkMap[sub]=subMap; else delete wkMap[sub];
+  if(Object.keys(wkMap).length) all[wk]=wkMap; else delete all[wk];
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  // Firebase drops empty maps, so write the whole week node — a cleared week becomes null there too.
+  try{ if(typeof db!=="undefined"&&db) db.ref("notebookSettings/julian/juPicks/"+wk).set(all[wk]||null); }catch(e){}
+  nbJuOpen=null;
+  if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
+}
+function nbJuResetWeek(){
+  if(!momHere()) return;
+  const wk=nbTargetWk();
+  if(!(notebookSettings.julian&&notebookSettings.julian.juPicks&&notebookSettings.julian.juPicks[wk])) return;
+  delete notebookSettings.julian.juPicks[wk];
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db) db.ref("notebookSettings/julian/juPicks/"+wk).set(null); }catch(e){}
+  nbJuOpen=null;
+  if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
+}
+let nbJuOpen=null;   // "letters:2" — which slot's item chooser is expanded
+function nbJuToggleOpen(key){ nbJuOpen=(nbJuOpen===key)?null:key; if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); } }
 function nbXpToggle(kid,key){ if(!momHere()) return; const c=nbXpCfg(kid,key); nbXpSave(kid,key,{on:!c.on,days:c.days}); }
 function nbXpDay(kid,key,day){ if(!momHere()) return; const c=nbXpCfg(kid,key); const d=Object.assign({},c.days); if(d[day]) delete d[day]; else d[day]=true; nbXpSave(kid,key,{on:c.on,days:d}); }
 // ½" prong/binding margin — one global flag for ALL notebooks + parent docs, synced like reviewCap.
@@ -15543,7 +15623,7 @@ function nbLoadPdfJs(){
 // round-robin week target → {bookId, page, name} (books ALTERNATE week to week)
 function nbActWeekTarget(cat){
   const c=nbActivities[cat]; if(!c||!c.books||!c.books.length) return null;
-  const n=c.books.length, wn=parseInt(String(WK).replace(/\D/g,""),10)||1;
+  const n=c.books.length, wn=nbTargetWkNum();   // follows the Notebook tab's target week
   const bi=((wn-1)%n+n)%n, cycle=Math.floor((wn-1)/n), bk=c.books[bi], pages=bk.pages||1;
   return { bookId:bk.id, page:((cycle%pages)+pages)%pages+1, name:bk.name };
 }
@@ -16782,7 +16862,8 @@ function renderNotebook(el){
   // catalog) wasn't loaded yet on first paint, re-render once so the Extra Pages card appears.
   const nbLibWasReady=!!(window.HoweNotebooks&&window.HoweNotebooks.extraPageCatalog);
   haLoadNotebooksLib().then(()=>{ if(!nbLibWasReady&&tab==="notebook"){ const el2=document.getElementById("content"); if(el2) renderNotebook(el2); } }).catch(()=>{});
-  const wkLabel=String(WK).replace("week","Week ");
+  nbProbeNextWeek();   // is next week already built and parked? (re-renders if so)
+  const wkLabel=String(nbTargetWk()).replace("week","Week ");
   const sel=NB_KIDS.find(x=>x.k===nbSelectedKid)?nbSelectedKid:"lincoln";
   const meta=NB_KIDS.find(x=>x.k===sel);
   const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
@@ -16816,7 +16897,7 @@ function renderNotebook(el){
   let storyHtml="";
   if(sel==="lincoln"){
     const key=haGetKey();
-    const wn=parseInt(String(WK).replace(/\D/g,""),10)||1;
+    const wn=nbTargetWkNum();
     const hasStory=!!(notebookStories.lincoln && notebookStories.lincoln["week"+wn] && notebookStories.lincoln["week"+wn].html);
     const keyRow=key
       ? '<div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)">🔑 API key saved on this device ✓ <button onclick="haClearKey()" style="border:none;background:none;color:#b91c1c;cursor:pointer;font-weight:700;font-size:11px">Remove</button></div>'
@@ -16843,7 +16924,7 @@ function renderNotebook(el){
         let thumbUrl, controlRow;
         if(meta2.doll){
           // Paper dolls: doll figure (page 1) every week + a rotating outfit; no manual stepper.
-          const n=books.length, wn=parseInt(String(WK).replace(/\D/g,""),10)||1, bi=((wn-1)%n+n)%n, bk=books[bi], im=bk.imgs||{}, pages=bk.pages||1;
+          const n=books.length, wn=nbTargetWkNum(), bi=((wn-1)%n+n)%n, bk=books[bi], im=bk.imgs||{}, pages=bk.pages||1;
           thumbUrl=im[1]||(Object.keys(im).length?im[Object.keys(im)[0]]:null);
           const outfit = pages>1 ? ('outfit '+(1+((Math.floor((wn-1)/n))%(pages-1)))+' of '+(pages-1)) : 'no outfits in this set yet';
           controlRow='<div style="font-size:10.5px;color:var(--muted);line-height:1.4">✂️ This week: <b>'+bk.name+'</b> doll + '+outfit+' — each on its own sheet with a <b>blank back</b> to cut.</div>';
@@ -16896,6 +16977,63 @@ function renderNotebook(el){
       '<div style="font-size:10.5px;color:var(--muted);margin-top:8px">'+(cap===0?'Off — no review folding; letters &amp; numbers run in pure order.':('Up to '+cap+' struggled-with item'+(cap>1?'s':'')+' per subject fold in before new material.'))+'</div>'+
     '</div>';
   }
+  // Julian-only, Mom-gated: this week's plan — what the engine picked for each day, which items
+  // are flagged as struggled-with, and a tap to override any single slot.
+  let juPlanHtml="";
+  if(sel==="julian" && momHere() && window.HoweNotebooks && window.HoweNotebooks.juPlanPreview){
+    try{
+      const ctx=haNbContext("julian");
+      const plan=window.HoweNotebooks.juPlanPreview(ctx);
+      const dts=nbWeekOverride?(nbWeekOverride.dates||{}):DAY_DT;
+      const dayNames=DAYS.filter(d=>dts[d]).map(d=>DAY_LBL[d].slice(0,3));
+      const ovWk=nbJuPicks()||{};
+      const nOv=Object.keys(ovWk).reduce((a,s)=>a+Object.keys(ovWk[s]||{}).length,0);
+      const chip=(txt,sw)=>(sw?'<span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:'+sw+';vertical-align:-1px;margin-right:4px"></span>':'')+txt;
+      const rows=NB_JU_SUBS.map(s=>{
+        const d=plan.subjects[s.k]; if(!d) return "";
+        const flagged=d.items.filter(i=>i.flagged);
+        const slotBtns=(d.slots||[]).map((sl,i)=>{
+          const key=s.k+":"+i, open=(nbJuOpen===key);
+          const bg=sl.picked?'#eef2ff':(sl.review?'#fff7ed':'#fff');
+          const bc=open?'#7c3aed':(sl.picked?'#a5b4fc':(sl.review?'#fed7aa':'var(--border)'));
+          return '<button onclick="nbJuToggleOpen(\''+key+'\')" title="'+(dayNames[i]||('Day '+(i+1)))+'" style="flex:1;min-width:0;padding:5px 2px;border-radius:8px;border:1.5px solid '+bc+';background:'+bg+';cursor:pointer;font-family:\'DM Sans\',sans-serif;line-height:1.25">'+
+            '<div style="font-size:8.5px;font-weight:700;color:var(--muted);letter-spacing:.03em">'+(dayNames[i]||("D"+(i+1)))+'</div>'+
+            '<div style="font-size:12px;font-weight:800;color:#1f2937;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+chip(sl.prompt,sl.swatch)+'</div>'+
+            '<div style="font-size:8.5px;font-weight:700;color:'+(sl.picked?'#4338ca':(sl.review?'#b45309':'transparent'))+'">'+(sl.picked?'📌 picked':(sl.review?'🔁 review':'·'))+'</div>'+
+          '</button>';
+        }).join("");
+        // the expanded chooser for whichever slot is open in this subject
+        let chooser="";
+        if(nbJuOpen&&nbJuOpen.indexOf(s.k+":")===0){
+          const di=parseInt(nbJuOpen.split(":")[1],10);
+          const opts=d.items.map(it=>{
+            const on=(ovWk[s.k]||{})[di]===it.prompt;
+            return '<button onclick="nbJuSet(\''+s.k+'\','+di+',\''+String(it.prompt).replace(/'/g,"\\'")+'\')" style="padding:5px 9px;border-radius:8px;border:1.5px solid '+(on?'#7c3aed':(it.flagged?'#fed7aa':'var(--border)'))+';background:'+(on?'#f5f3ff':(it.flagged?'#fff7ed':'#fff'))+';color:#1f2937;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+chip(it.prompt,it.swatch)+(it.flagged?' <span style="font-size:9px">🔁</span>':'')+'</button>';
+          }).join("");
+          chooser='<div style="margin-top:7px;padding:9px;border-radius:9px;background:#faf5ff;border:1.5px solid #e9d5ff">'+
+            '<div style="font-size:10.5px;font-weight:700;color:#6d28d9;margin-bottom:6px">'+(dayNames[di]||("Day "+(di+1)))+' — pick '+s.lbl.toLowerCase()+' <span style="font-weight:600;color:var(--muted)">(🔁 = struggled with)</span></div>'+
+            '<div style="display:flex;flex-wrap:wrap;gap:5px">'+opts+'</div>'+
+            '<button onclick="nbJuSet(\''+s.k+'\','+di+',null)" style="margin-top:7px;padding:4px 10px;border-radius:7px;border:1.5px solid var(--border);background:#fff;color:#6b7280;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">↺ Back to auto</button>'+
+          '</div>';
+        }
+        return '<div style="padding:9px 0;border-top:1px solid var(--border)">'+
+          '<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:5px">'+
+            '<span style="font-size:11.5px;font-weight:800;color:#1f2937">'+s.ico+' '+s.lbl+'</span>'+
+            '<span style="font-size:10px;color:var(--muted)">'+d.items.length+' total'+(flagged.length?' · <span style="color:#b45309;font-weight:700">'+flagged.length+' struggled with</span>':'')+'</span>'+
+          '</div>'+
+          '<div style="display:flex;gap:4px">'+slotBtns+'</div>'+chooser+
+        '</div>';
+      }).join("");
+      juPlanHtml='<div style="margin-top:14px;background:#fff;border:1.5px solid #e9d5ff;border-radius:12px;padding:12px 14px">'+
+        '<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:2px">'+
+          '<span style="font-size:12px;font-weight:800;color:#6d28d9">🦕 This week\u2019s plan <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#e9d5ff;color:#5b21b6;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span></span>'+
+          (nOv?'<button onclick="nbJuResetWeek()" style="margin-left:auto;padding:3px 9px;border-radius:7px;border:1.5px solid var(--border);background:#fff;color:#6b7280;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">↺ All auto</button>':'')+
+        '</div>'+
+        '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:2px">What the engine picked for each day. <b>🔁</b> = folded back in because he struggled with it in drills. Tap any day to swap it — <b>📌</b> marks your pick. '+
+          (nOv?'<b>'+nOv+' slot'+(nOv>1?'s':'')+' overridden this week.</b> ':'')+'The rotation still advances on its own, so next week picks up right where it would have.</div>'+
+        rows+'</div>';
+    }catch(e){ juPlanHtml='<div style="margin-top:14px;font-size:11px;color:var(--muted)">Week plan unavailable ('+String(e.message||e)+').</div>'; }
+  }
   // ½" prong margin — Mom-gated GLOBAL toggle (all kids' notebooks + parent docs).
   let bindHtml="";
   if(momHere()){
@@ -16929,6 +17067,23 @@ function renderNotebook(el){
       '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:4px">Toggle which extra pages print in the notebook. Tap a day to assign the page — that day’s page adds a “\u{1F4CC} Extra pages today” reminder. No day = it just prints, no reminder.</div>'+
       xpRows+'</div>';
   }
+  // Week switcher — only when a next week is already built and parked (generated ahead on the
+  // weekend). Lets the packets be printed before that week goes live on its Monday.
+  let wkPickHtml="";
+  if(nbNextWeek&&nbNextWeek.wk){
+    const ahead=!!nbWeekOverride;
+    const dts=Object.values(nbNextWeek.dates||{});
+    const rng=dts.length?(dts[0]+" – "+dts[dts.length-1]):"next week";
+    const pill=(on,lab,sub,wk)=>'<button onclick="nbSetTargetWk(\''+wk+'\')" style="flex:1;padding:8px 10px;border-radius:10px;border:1.5px solid '+(on?'#ea580c':'var(--border)')+';background:'+(on?'#fff7ed':'#fff')+';color:'+(on?'#9a3412':'#6b7280')+';font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;line-height:1.3">'+lab+'<div style="font-size:10px;font-weight:600;opacity:.75;margin-top:1px">'+sub+'</div></button>';
+    wkPickHtml='<div style="margin-bottom:12px">'+
+      '<div style="font-size:11px;font-weight:800;color:#9a3412;margin-bottom:5px">🗓 Building for</div>'+
+      '<div style="display:flex;gap:7px">'+
+        pill(!ahead,String(WK).replace("week","Week "),"running now",WK)+
+        pill(ahead,String(nbNextWeek.wk).replace("week","Week "),rng,nbNextWeek.wk)+
+      '</div>'+
+      (ahead?'<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin-top:6px">Printing ahead — the app itself stays on '+String(WK).replace("week","Week ")+' until Monday.</div>':'')+
+    '</div>';
+  }
   con.innerHTML=
     '<div style="max-width:560px;margin:0 auto;padding:20px 18px;font-family:\'DM Sans\',sans-serif">'+
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'+
@@ -16937,6 +17092,7 @@ function renderNotebook(el){
         '<span style="margin-left:auto">'+_nbMomLockHtml()+'</span>'+
       '</div>'+
       '<div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:14px">Pick a kid, then generate. Print from the new tab (Cmd/Ctrl+P, “Background graphics” ON).</div>'+
+      wkPickHtml+
       '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px">'+chips+'</div>'+
       '<button onclick="haNbCombinedParent()" style="width:100%;padding:11px;border-radius:11px;border:1.5px solid #c7d2fe;background:#eef2ff;color:#3730a3;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-bottom:16px">📚 Combined Parent Guide — all 4 kids in one packet</button>'+
       bindHtml+
@@ -16949,6 +17105,7 @@ function renderNotebook(el){
         formHtml+
         xpHtml+
         reviewHtml+
+        juPlanHtml+
         storyHtml+
         coloringHtml+
       '</div>'+

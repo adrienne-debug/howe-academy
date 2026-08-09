@@ -558,10 +558,16 @@
   // per subject per week; the rest continue the normal in-order rotation. Days whose
   // natural pick is itself flagged are marked review too. No flags => identical to the
   // old pure (week-1)*5+day rotation, so behavior is unchanged when there's nothing to review.
-  function juWeekPicks(weekNum, cur, dayCount, cap) {
+  // `overrides` (optional) is Mom's hand-picked slots for THIS week, shaped
+  // { letters: {0:"M", 3:"S"}, numbers: {...} } — day index → the item's prompt. An override
+  // replaces only that one slot; every other slot keeps whatever the engine chose. Because the
+  // rotation is derived from the week number and never from a stored pointer, overriding a week
+  // cannot shift the sequence: the next week resumes exactly where it always would have.
+  function juWeekPicks(weekNum, cur, dayCount, cap, overrides) {
     var lim = (cap == null) ? JU_REVIEW_CAP : cap;
     var wk = parseInt(weekNum, 10) || 1;
     var subjects = ["letters", "numbers", "shapes", "colors", "animals"];
+    var ovAll = overrides || {};
     var out = {};
     subjects.forEach(function (sub) {
       var list = cur[sub] || [];
@@ -581,9 +587,47 @@
       // fold: reviews take the front slots, remaining days keep the natural order
       var picks = inject.slice();
       for (var m = 0; picks.length < dayCount && m < natural.length; m++) picks.push(natural[m]);
-      out[sub] = picks.slice(0, dayCount).map(function (idx) {
-        return { idx: idx, review: !!flagSet[promptOf(idx)] };
+      picks = picks.slice(0, dayCount);
+      // Mom's picks win over the engine's, slot by slot
+      var ov = ovAll[sub] || {};
+      for (var d = 0; d < picks.length; d++) {
+        var want = ov[d]; if (want == null || want === "") continue;
+        for (var q = 0; q < n; q++) { if (promptOf(q) === want) { picks[d] = q; break; } }
+      }
+      out[sub] = picks.map(function (idx, d) {
+        return { idx: idx, review: !!flagSet[promptOf(idx)], picked: (ov[d] != null && ov[d] !== "") };
       });
+    });
+    return out;
+  }
+
+  // What the engine chose for a week, for the app's Julian planner UI: every item in each
+  // category, which ones are flagged as struggled-with, and the resulting day-by-day slots.
+  // Pure read — generating a notebook from the same ctx produces exactly these picks.
+  function juPlanPreview(ctx) {
+    ctx = ctx || {};
+    var cur = ctx.curriculum || juCurriculumFromMastery(ctx.masteryItems);
+    var wk = parseInt(String(ctx.weekNum || "").replace(/\D/g, ""), 10) || 1;
+    var dayCount = Object.keys((ctx.weekData && ctx.weekData.dates) || {}).length || 5;
+    var cap = (ctx.reviewCap == null) ? JU_REVIEW_CAP : Math.max(0, Math.min(5, parseInt(ctx.reviewCap, 10) || 0));
+    var picks = juWeekPicks(wk, cur, dayCount, cap, ctx.juPicks);
+    var subjects = ["letters", "numbers", "shapes", "colors", "animals"];
+    var out = { weekNum: wk, dayCount: dayCount, subjects: {} };
+    subjects.forEach(function (sub) {
+      var list = cur[sub] || [];
+      var flagSet = (cur.flag && cur.flag[sub]) || {};
+      var scoreMap = (cur.flagScore && cur.flagScore[sub]) || {};
+      var promptOf = function (v) { return Array.isArray(v) ? v[0] : v; };
+      out.subjects[sub] = {
+        items: list.map(function (v) {
+          var p = promptOf(v);
+          return { prompt: p, swatch: (Array.isArray(v) ? v[1] : null), flagged: !!flagSet[p], score: scoreMap[p] || 0 };
+        }),
+        slots: (picks[sub] || []).map(function (s) {
+          var v = list[s.idx];
+          return { prompt: promptOf(v), swatch: (Array.isArray(v) ? v[1] : null), review: !!s.review, picked: !!s.picked };
+        })
+      };
     });
     return out;
   }
@@ -934,7 +978,7 @@
     if (xpOn(ctx, "daysSeasons")) parts.push(juPageDaysSeasons(weekNum, weekDates, cur));
     // review-slots-per-week cap: app setting (ctx.reviewCap) overrides the default, clamped 0–5
     var reviewCap = (ctx.reviewCap == null) ? JU_REVIEW_CAP : Math.max(0, Math.min(5, parseInt(ctx.reviewCap, 10) || 0));
-    var picks = juWeekPicks(weekNum, cur, days.length, reviewCap);
+    var picks = juWeekPicks(weekNum, cur, days.length, reviewCap, ctx.juPicks);
     for (var i = 0; i < days.length; i++) {
       parts.push(juPageDaily(weekNum, days[i], dates[days[i]] || "", i, cur, juDayPick(cur, picks, i),
         xpStrip(xpForDay(ctx, "julian", days[i]), "#d97706", "#fffbeb", "#92400e")));
@@ -3936,6 +3980,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     openHtml: openHtml,
     weekDatesRange: weekDatesRange,
     letterStrokes: JU_LETTER_STROKES,   // HWT-style capital formation scripts — the drill Trace overlay shows them
+    juPlanPreview: juPlanPreview,       // Julian's week planner: engine picks + struggled-with flags
 
     // exposed for testing
     _internal: { juCurriculumFromMastery: juCurriculumFromMastery, generateJulian: generateJulian }
