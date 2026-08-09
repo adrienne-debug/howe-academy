@@ -237,7 +237,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 #content{padding-bottom:80px}
 
 /* ── KIOSK MODE (?kiosk=play) — playroom checkout console: Play tab only, no chrome ── */
-body.kiosk #app-header,body.kiosk #nav-tabs,body.kiosk #sched-subtabs,body.kiosk #day-tabs,body.kiosk #kid-filter,body.kiosk #mom-pin-bar,body.kiosk #week-strip,body.kiosk #skylight-panel,body.kiosk #admin-btn,body.kiosk #scroll-top,body.kiosk #hq-back{display:none!important}
+body.kiosk #app-header,body.kiosk #nav-tabs,body.kiosk #sched-subtabs,body.kiosk #day-tabs,body.kiosk #kid-filter,body.kiosk #mom-pin-bar,body.kiosk #week-strip,body.kiosk #skylight-panel,body.kiosk #admin-btn,body.kiosk #scroll-top,body.kiosk #hq-back,body.kiosk #md-back{display:none!important}
 .day-banner{padding:16px;border-bottom:1px solid var(--border)}
 .day-banner-inner{display:flex;justify-content:space-between;align-items:flex-start}
 .day-name{font-family:'Fraunces',serif;font-size:26px;font-weight:700;color:var(--day-color)}
@@ -1323,7 +1323,7 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
   <button class="nav-tab" onclick="showTab('mastery')" data-tab="mastery">Mastery</button>
   <button class="nav-tab" onclick="showTab('units')" data-tab="units">Units</button>
   <button class="nav-tab" onclick="showTab('play')" data-tab="play">Play</button>
-  <button class="nav-tab" onclick="showTab('moms-plan')" data-tab="moms-plan">Mom's Plan</button>
+  <button class="nav-tab" onclick="showTab('moms-plan')" data-tab="moms-plan">Mom's Day</button>
   <button class="nav-tab" onclick="showTab('babysitter')" data-tab="babysitter" id="sitter-tab-btn">Maggie</button>
 </div>
 
@@ -1344,6 +1344,7 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
 
 <button id="admin-btn" onclick="toggleAdmin()">⚙️</button>
 <button id="hq-back" onclick="momHQBack()" style="display:none;position:fixed;bottom:16px;left:16px;background:var(--header);color:#fff;border:none;border-radius:22px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;z-index:199;box-shadow:0 4px 12px rgba(0,0,0,0.25);font-family:'DM Sans',sans-serif">← 🏡 HQ</button>
+<button id="md-back" onclick="mdBack()" style="display:none;position:fixed;bottom:16px;left:16px;background:var(--header);color:#fff;border:none;border-radius:22px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;z-index:199;box-shadow:0 4px 12px rgba(0,0,0,0.25);font-family:'DM Sans',sans-serif">← 🏡 Mom's Day</button>
 <button id="scroll-top" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
 
 <div id="admin-panel">
@@ -2559,19 +2560,9 @@ function initFb() {
       if(s.val()) actFavs=s.val();
       if(tab==="activities") renderActCards();
     });
-    db.ref("mp_data").on("value",s=>{
-      if(!s.val()) return;
-      const data=s.val();
-      MP_DATA.weekLabel=data.weekLabel||MP_DATA.weekLabel;
-      MP_DATA.winOfTheDay=data.winOfTheDay||MP_DATA.winOfTheDay;
-      MP_DATA.skylightTip=data.skylightTip||MP_DATA.skylightTip;
-      MP_DATA.days=data.days||MP_DATA.days;
-      MP_DATA.allMeals=data.allMeals||MP_DATA.allMeals;
-      try{HA_LS.setItem('mp_weekly_data',JSON.stringify(data));}catch(e){}
-      if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
-    });
-    db.ref("mp_chore_state").on("value",s=>{
-      if(s.val()) mpChoreState=s.val();
+    db.ref("momday").on("value",s=>{
+      momdayData=s.val()||{};
+      try{HA_LS.setItem('momday_data',JSON.stringify(momdayData));}catch(e){}
       if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
     });
     db.ref("wellness/weighins").on("value",s=>{
@@ -2588,6 +2579,82 @@ function initFb() {
       const v=s.val(); if(v) wellnessPeriods=Object.values(v);
       try{HA_LS.setItem('wellness_periods',JSON.stringify(wellnessPeriods));}catch(e){}
       if(tab==="moms-plan"&&mpSubView==="weigh"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+    });
+    db.ref("wellness/bp").on("value",s=>{
+      if(s.val()) wellnessBP=s.val();
+      try{HA_LS.setItem('wellness_bp',JSON.stringify(wellnessBP));}catch(e){}
+      if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+    });
+    db.ref("wellness/symptoms").on("value",s=>{
+      if(s.val()) wellnessSymptoms=s.val();
+      try{HA_LS.setItem('wellness_symptoms',JSON.stringify(wellnessSymptoms));}catch(e){}
+      if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+    });
+    db.ref("wellness/symptomBank").on("value",s=>{
+      if(s.val()) wellnessSymBank=s.val();
+      try{HA_LS.setItem('wellness_symbank',JSON.stringify(wellnessSymBank));}catch(e){}
+      if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+    });
+    db.ref("bills").on("value",s=>{
+      billsData=s.val()||{};
+      try{HA_LS.setItem('ha_bills',JSON.stringify(billsData));}catch(e){}
+      if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+    });
+    db.ref("laundry").on("value",s=>{
+      const v=s.val()||{};
+      Object.keys(laundryData).forEach(k=>{ delete laundryData[k]; });
+      Object.keys(v).forEach(k=>{ laundryData[k]=v[k]; });
+      try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
+      if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+    });
+    db.ref("kitchen/meals").on("value",s=>{
+      const v=s.val()||{};
+      Object.keys(kitMeals).forEach(k=>{ delete kitMeals[k]; });
+      Object.keys(v).forEach(k=>{ kitMeals[k]=v[k]; });
+      try{HA_LS.setItem('ha_kit_meals',JSON.stringify(kitMeals));}catch(e){}
+      if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+    });
+    db.ref("kitchen/plan").on("value",s=>{
+      const v=s.val()||{};
+      Object.keys(kitPlan).forEach(k=>{ delete kitPlan[k]; });
+      Object.keys(v).forEach(k=>{ kitPlan[k]=v[k]; });
+      try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
+      if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+    });
+    db.ref("kitchen/prepDone").on("value",s=>{
+      const v=s.val()||{};
+      Object.keys(kitPrepDone).forEach(k=>{ delete kitPrepDone[k]; });
+      Object.keys(v).forEach(k=>{ kitPrepDone[k]=v[k]; });
+      try{HA_LS.setItem('ha_kit_prepdone',JSON.stringify(kitPrepDone));}catch(e){}
+      if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+    });
+    db.ref("kitchen/staples").on("value",s=>{
+      const v=s.val()||{};
+      Object.keys(kitStaples).forEach(k=>{ delete kitStaples[k]; });
+      Object.keys(v).forEach(k=>{ kitStaples[k]=v[k]; });
+      try{HA_LS.setItem('ha_kit_staples',JSON.stringify(kitStaples));}catch(e){}
+      if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+    });
+    db.ref("kitchen/usuals").on("value",s=>{
+      const v=s.val()||{};
+      Object.keys(kitUsuals).forEach(k=>{ delete kitUsuals[k]; });
+      Object.keys(v).forEach(k=>{ kitUsuals[k]=v[k]; });
+      try{HA_LS.setItem('ha_kit_usuals',JSON.stringify(kitUsuals));}catch(e){}
+      if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+    });
+    db.ref("kitchen/settings").on("value",s=>{
+      const v=s.val()||{};
+      Object.keys(kitSettings).forEach(k=>{ delete kitSettings[k]; });
+      Object.keys(v).forEach(k=>{ kitSettings[k]=v[k]; });
+      try{HA_LS.setItem('ha_kit_settings',JSON.stringify(kitSettings));}catch(e){}
+      if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+    });
+    db.ref("kitchen/pantry").on("value",s=>{
+      const v=s.val()||{};
+      Object.keys(kitPantry).forEach(k=>{ delete kitPantry[k]; });
+      Object.keys(v).forEach(k=>{ kitPantry[k]=v[k]; });
+      try{HA_LS.setItem('ha_kit_pantry',JSON.stringify(kitPantry));}catch(e){}
+      if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
     });
     db.ref("pace").on("value",s=>{
       const v=s.val()||{}; paceData={subjects:v.subjects||{}, plans:v.plans||{}};
@@ -2662,8 +2729,7 @@ function boot() {
   const savedSupDef=ld(WK+"_supplies_def"); if(savedSupDef&&Array.isArray(savedSupDef)) SUP=savedSupDef;
   try{ const a=HA_LS.getItem("ha_archive"); if(a) archive=JSON.parse(a); }catch(e){}
   try{ const af=HA_LS.getItem('act_favs'); if(af) actFavs=JSON.parse(af); }catch(e){}
-  try{ const mp=HA_LS.getItem("mp_weekly_data"); if(mp){const d=JSON.parse(mp);MP_DATA.weekLabel=d.weekLabel||MP_DATA.weekLabel;MP_DATA.winOfTheDay=d.winOfTheDay||MP_DATA.winOfTheDay;MP_DATA.skylightTip=d.skylightTip||MP_DATA.skylightTip;MP_DATA.days=d.days||MP_DATA.days;MP_DATA.allMeals=d.allMeals||MP_DATA.allMeals;} }catch(e){}
-  try{ const mc=HA_LS.getItem("mp_chore_state"); if(mc) mpChoreState=JSON.parse(mc); }catch(e){}
+  try{ const md=HA_LS.getItem("momday_data"); if(md) momdayData=JSON.parse(md); }catch(e){}
   try{ const pc=HA_LS.getItem("ha_pace"); if(pc) paceData=JSON.parse(pc); }catch(e){}
   try{ const md=HA_LS.getItem("ha_mastery"); if(md) masteryData=JSON.parse(md); }catch(e){}
   try{ const ao=HA_LS.getItem("ha_att_overrides"); if(ao) attOverrides=JSON.parse(ao); }catch(e){}
@@ -2899,6 +2965,12 @@ function _renderAllInner(){
   if(hqb){ const onHub=(tab==="schedule"&&schedShowAdmin&&adminSubTab==="hq");
     if(onHub) momHQJumped=false; // arriving home by any route ends the excursion
     hqb.style.display=(momHQJumped&&momHere()&&!_kiosk()&&!onHub)?"block":"none"; }
+  const mdb=document.getElementById("md-back");
+  if(mdb){ if(tab==="moms-plan") mdJumped=false; // back home by any route ends the excursion
+    const _mdShow=(mdJumped&&!_kiosk()&&tab!=="moms-plan");
+    mdb.style.display=_mdShow?"block":"none";
+    // stack above the HQ pill on the rare day both are showing
+    mdb.style.bottom=(_mdShow&&hqb&&hqb.style.display==="block")?"64px":"16px"; }
   const c=document.getElementById("content");
   if(tab==="schedule") renderSchedule(c);
   else if(tab==="moms-plan") renderMomsPlan(c);
@@ -4996,8 +5068,8 @@ function renderSchedule(el){
   // ── SCHEDULE LOCK CHECK ──────────────────────────────────────────
   const unlocked = isScheduleUnlocked(kid, day);
   const lockMsg = (kid==="all")
-    ? "All four kids need to check off their Morning slot in Skylight above."
-    : cap(kid)+"'s Morning slot needs to be checked off in Skylight above.";
+    ? "All four kids need to check off their Morning routine above."
+    : cap(kid)+"'s Morning routine needs to be checked off above.";
 
   if(carriedOver.length){
     // Header is a tap target: collapse to a single line (📋 Carried Over · N) or expand.
@@ -5235,16 +5307,16 @@ function renderSchedule(el){
           h+='<div style="margin:16px 12px;border-radius:12px;padding:16px;background:#fffbeb;border:1.5px solid #fcd34d;text-align:center">'+
             '<div style="font-size:28px;margin-bottom:6px">⏳</div>'+
             '<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:#b45309;margin-bottom:2px">'+claim.earned+' ⭐ claimed</div>'+
-            '<div style="font-size:13px;color:#92400e;margin-bottom:'+(momModeActive?'10px':'0')+'">Waiting for Mom to approve and add to Skylight.</div>'+
+            '<div style="font-size:13px;color:#92400e;margin-bottom:'+(momModeActive?'10px':'0')+'">Waiting for Mom to approve.</div>'+
             (momModeActive?('<div style="display:flex;gap:8px;justify-content:center">'+
-              '<button onclick="approveDayPoints(\''+kid+'\',\''+day+'\')" style="padding:8px 18px;border-radius:10px;background:#16a34a;color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Approve → Skylight</button>'+
+              '<button onclick="approveDayPoints(\''+kid+'\',\''+day+'\')" style="padding:8px 18px;border-radius:10px;background:#16a34a;color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Approve → ⭐ Bank</button>'+
               '<button onclick="rejectDayPoints(\''+kid+'\',\''+day+'\')" style="padding:8px 18px;border-radius:10px;background:#fff;color:#b5394a;border:1px solid #fecaca;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✗ Not done</button>'+
               '</div>'):'')+'</div>';
         } else {
           h+='<div style="margin:16px 12px;border-radius:12px;padding:16px;background:#f0fdf4;border:1.5px solid #86efac;text-align:center">'+
             '<div style="font-size:28px;margin-bottom:6px">💰</div>'+
             '<div style="font-family:\'Fraunces\',serif;font-size:24px;font-weight:700;color:#15803d;margin-bottom:2px">'+claim.earned+' ⭐ cashed in!</div>'+
-            '<div style="font-size:13px;color:#166534">Added to Skylight. Way to go, '+cap(kid)+'!</div></div>';
+            '<div style="font-size:13px;color:#166534">Banked! Way to go, '+cap(kid)+'!</div></div>';
         }
       }
     } else if(momModeActive){
@@ -6166,481 +6238,1301 @@ document.getElementById("dlg-uncheck").onclick=()=>{
 function closeDlg(){ document.getElementById("dlg").style.display="none"; pendingId=null; }
 
 // ── MOM'S PLAN ────────────────────────────────────────────────────
-// Full weekly planner: power windows, schedule, meals, checklists
-
-const MP_DATA = {
-  weekLabel: "Week 1 · Crisis Mode",
-  winOfTheDay: "You started the pantry audit — that single step changes everything!",
-  skylightTip: "Open Sidekick → Plan Meals → tell it what's in your fridge. 15 minutes now = zero dinner stress all week.",
-  days: [
-    {
-      id:"sat",label:"Sat",date:"Day 1",isToday:false,
-      powerWindows:{morning:"Pantry audit + laundry #1",golden:"Laundry mountain attack",evening:"Skylight chore setup"},
-      schedule:[
-        {time:"7am",task:"Start laundry — sheets first",note:"Set phone alarm to move in 40 min",tag:"laundry"},
-        {time:"9am",task:"THE PANTRY AUDIT — pull everything out",note:"4 piles: Use now / Use soon / Toss / Donate",tag:"org"},
-        {time:"12pm",task:"Lunch + move laundry to dryer",note:"Start load #2",tag:"laundry"},
-        {time:"12:30",task:"Rest 30 min — seriously",note:"No cleaning. Sit.",tag:"self"},
-        {time:"1pm",task:"Skylight: open Sidekick → Plan Meals",note:"Use your green pile ingredients",tag:"meal"},
-        {time:"3pm",task:"Sort ALL clean laundry by person",note:"Kids fold their own piles",tag:"laundry"},
-        {time:"4pm",task:"Season switch — try items on kids",note:"Donate what doesn't fit TODAY",tag:"org"},
-        {time:"Evening",task:"Set up Skylight chore chart for kids",note:"Add stars & rewards feature",tag:"kids"},
-      ],
-      meal:{name:"Easy Saturday Dinner — Family Favorite",type:"Whatever they love 🎉",isTonight:true},
-      chores:[
-        {text:"Pantry sorted into 4 piles",who:"Mom",done:false},
-        {text:"Laundry mountain sorted by person",who:"Mom",done:false},
-        {text:"Each kid folds + puts away their pile",who:"Kids",done:false},
-        {text:"Donate bag out of the house",who:"Mom",done:false},
-        {text:"Meal plan set up on Skylight",who:"Mom",done:false},
-      ]
-    },
-    {
-      id:"sun",label:"Sun",date:"Day 2",isToday:false,
-      powerWindows:{morning:"Groceries + meal prep",golden:"Kitchen deep clean",evening:"Family review on Skylight"},
-      schedule:[
-        {time:"7am",task:"Laundry load #1 started",note:"Before anything else",tag:"laundry"},
-        {time:"8am",task:"Family breakfast — review Skylight",note:"Everyone sees the meal plan",tag:"kids"},
-        {time:"9am",task:"Grocery pickup or Instacart order",note:"Only what the meal plan needs",tag:"meal"},
-        {time:"10am",task:"Meal prep: chop, marinate, cook grains",note:"30 min saves 45 min every night",tag:"meal"},
-        {time:"1pm",task:"One room deep clean — kitchen today",note:"Zone 1: dishes, pots, utensils",tag:"clean"},
-        {time:"3pm",task:"Rest / kid free time",note:"Protect this hour",tag:"self"},
-        {time:"7pm",task:"10-min family reset blitz",note:"Everyone does their chore list",tag:"kids"},
-      ],
-      meal:{name:"Simple Sunday Roast Chicken",type:"From meal plan 🍗",isTonight:true},
-      chores:[
-        {text:"Groceries ordered or picked up",who:"Mom",done:false},
-        {text:"30-min meal prep done",who:"Mom",done:false},
-        {text:"Kitchen Zone 1 cleared",who:"Mom",done:false},
-        {text:"Skylight updated for the week",who:"Mom",done:false},
-        {text:"Kids chore lists reviewed on Skylight",who:"Kids",done:false},
-      ]
-    },
-    {
-      id:"mon",label:"Mon",date:"Day 3",isToday:true,
-      powerWindows:{morning:"Laundry + 10-min family tidy",golden:"Fold + put away laundry",evening:"Crockpot dinner ready"},
-      schedule:[
-        {time:"6:30am",task:"START LAUNDRY — one load, every morning",note:"Habit first. Coffee second.",tag:"laundry"},
-        {time:"7am",task:"Kids up — breakfast already set out",note:"Cereal/fruit — they handle it",tag:"kids"},
-        {time:"7:30am",task:"10-min family tidy",note:"Everyone helps — kitchen + floor",tag:"clean"},
-        {time:"10am",task:"HOMESCHOOL BEGINS",note:"Do NOT clean during this time",tag:"kids"},
-        {time:"12pm",task:"Move laundry to dryer at lunch",note:"Start load #2 if needed",tag:"laundry"},
-        {time:"3pm",task:"GOLDEN HOUR: fold + put away laundry",note:"Timer on. No distractions.",tag:"laundry"},
-        {time:"4pm",task:"Kids get theater bags ready",note:"Check Skylight for reminders",tag:"kids"},
-        {time:"7:30pm",task:"10-min family reset",note:"Kids earn stars. You don't clean alone.",tag:"kids"},
-      ],
-      meal:{name:"Crockpot Chicken Tacos",type:"Crockpot 🐌 · set it before school",isTonight:true},
-      chores:[
-        {text:"Laundry started before 10am",who:"Mom",done:false},
-        {text:"Fold + put away all weekend laundry",who:"Mom",done:false},
-        {text:"Crockpot set up by 9am",who:"Mom",done:false},
-        {text:"Kids complete Skylight chore list",who:"Kids",done:false},
-        {text:"Kitchen counters clear before bed",who:"All",done:false},
-      ]
-    },
-    {
-      id:"tue",label:"Tue",date:"Day 4",isToday:false,
-      powerWindows:{morning:"Laundry + family tidy",golden:"Vacuum all main areas",evening:"Theater + 10-min reset"},
-      schedule:[
-        {time:"6:30am",task:"Start laundry load",note:"Automatic now. Keep going.",tag:"laundry"},
-        {time:"7:30am",task:"10-min family tidy",note:"Living room floor + kitchen",tag:"clean"},
-        {time:"10am",task:"Homeschool 10am–3pm",note:"Move laundry at lunch",tag:"kids"},
-        {time:"3:30pm",task:"GOLDEN HOUR: vacuum all main areas",note:"Couch cushions, under furniture",tag:"clean"},
-        {time:"4:15pm",task:"Out the door for theater",note:"Dinner prepped to reheat",tag:"kids"},
-        {time:"7:30pm",task:"10-min family reset",note:"Baskets emptied, chores done",tag:"kids"},
-      ],
-      meal:{name:"30-Min Pasta Bake",type:"Quick weeknight 🍝",isTonight:true},
-      chores:[
-        {text:"Laundry started + moved",who:"Mom",done:false},
-        {text:"Vacuum living room, hallway, dining",who:"Mom",done:false},
-        {text:"Kids empty catch-all baskets",who:"Kids",done:false},
-        {text:"Dinner reheated in 15 min",who:"Mom",done:false},
-      ]
-    },
-    {
-      id:"wed",label:"Wed",date:"Day 5",isToday:false,
-      powerWindows:{morning:"Laundry + tidy",golden:"Bathrooms (kids help!)",evening:"Reset + tomorrow's crockpot"},
-      schedule:[
-        {time:"6:30am",task:"Start laundry",note:"Towels or kids clothes",tag:"laundry"},
-        {time:"7:30am",task:"10-min family tidy",note:"Everyone clears their spots",tag:"clean"},
-        {time:"10am",task:"Homeschool",note:"Move laundry at lunch",tag:"kids"},
-        {time:"3:30pm",task:"GOLDEN HOUR: bathrooms",note:"Toilets, sinks, mirrors — assign kids",tag:"clean"},
-        {time:"4pm",task:"Set crockpot for tomorrow",note:"60 sec of prep = done by 3pm Thurs",tag:"meal"},
-        {time:"7:30pm",task:"10-min family reset",note:"Kids earn their stars",tag:"kids"},
-      ],
-      meal:{name:"Leftover Night + Salad",type:"Fridge clean-out 🥗",isTonight:true},
-      chores:[
-        {text:"Laundry started + moved",who:"Mom",done:false},
-        {text:"Kids scrub their own bathroom sink",who:"Kids",done:false},
-        {text:"Mom does toilets + mirrors",who:"Mom",done:false},
-        {text:"Tomorrow's crockpot prepped",who:"Mom",done:false},
-      ]
-    },
-    {
-      id:"thu",label:"Thu",date:"Day 6",isToday:false,
-      powerWindows:{morning:"Laundry + tidy",golden:"Mop + floors",evening:"Hotspot audit"},
-      schedule:[
-        {time:"6:30am",task:"Start laundry",note:"Bedding this week",tag:"laundry"},
-        {time:"7:30am",task:"10-min family tidy",note:"Shoes, bags, floors",tag:"clean"},
-        {time:"10am",task:"Homeschool",note:"Move laundry at lunch",tag:"kids"},
-        {time:"3:30pm",task:"GOLDEN HOUR: sweep then mop",note:"Kitchen + main floors",tag:"clean"},
-        {time:"4pm",task:"Hotspot audit — walk through house",note:"Write top 3 clutter problem spots",tag:"org"},
-        {time:"7:30pm",task:"10-min family reset",note:"Everyone does Skylight chores",tag:"kids"},
-      ],
-      meal:{name:"Crockpot Beef & Veggie Soup",type:"Set this morning 🥣",isTonight:true},
-      chores:[
-        {text:"Laundry started + moved",who:"Mom",done:false},
-        {text:"Sweep all floors before mopping",who:"Mom",done:false},
-        {text:"Mop kitchen and main areas",who:"Mom",done:false},
-        {text:"Write down top 3 hotspot areas",who:"Mom",done:false},
-      ]
-    },
-    {
-      id:"fri",label:"Fri",date:"Day 7",isToday:false,
-      powerWindows:{morning:"Laundry + tidy",golden:"Catch-all basket setup",evening:"Celebrate Week 1!"},
-      schedule:[
-        {time:"6:30am",task:"Start laundry",note:"Last weekday load",tag:"laundry"},
-        {time:"7:30am",task:"10-min family tidy",note:"Prep for the weekend",tag:"clean"},
-        {time:"10am",task:"Homeschool",note:"Move laundry at lunch",tag:"kids"},
-        {time:"3:30pm",task:"GOLDEN HOUR: catch-all basket system",note:"1 bin per person, labeled, visible",tag:"org"},
-        {time:"4pm",task:"Bedroom tidy + reset for weekend",note:"Each kid tidies their own room",tag:"kids"},
-        {time:"7:30pm",task:"Family celebration — you did Week 1!",note:"Pizza, movie, game — your choice",tag:"self"},
-      ],
-      meal:{name:"Family Choice Friday 🎉",type:"Celebration dinner",isTonight:true},
-      chores:[
-        {text:"Laundry started + moved",who:"Mom",done:false},
-        {text:"Catch-all baskets set up for each person",who:"Mom",done:false},
-        {text:"Each kid tidies their own room",who:"Kids",done:false},
-        {text:"School area reset for Monday",who:"All",done:false},
-        {text:"Week 1 celebration — enjoy it!",who:"All",done:false},
-      ]
-    },
-  ],
-  allMeals:[
-    {day:"Sat",name:"Family Favorite Dinner",type:"Your choice"},
-    {day:"Sun",name:"Simple Roast Chicken",type:"From plan"},
-    {day:"Mon",name:"Crockpot Chicken Tacos",type:"Crockpot 🐌"},
-    {day:"Tue",name:"30-Min Pasta Bake",type:"Quick ⚡"},
-    {day:"Wed",name:"Leftover Night + Salad",type:"Fridge 🥗"},
-    {day:"Thu",name:"Crockpot Beef & Veggie Soup",type:"Crockpot 🐌"},
-    {day:"Fri",name:"Family Choice Friday",type:"Celebrate 🎉"},
-  ]
-};
-
-let mpActiveDay = null;
-let mpChoreState = {};
-// Mom's Plan sub-views + wellness state (added 2026-07-24)
+// ── 🏡 MOM'S DAY — the live command center ──────────────────────────
+// Replaced the static Skylight-era weekly planner (2026-08-09). One screen
+// answering "what needs me right now?": school blocks that need Mom, claims
+// waiting on approval, each kid's day + curriculum pace at a glance, today's
+// calendar, and Mom's own type-ins (win of the day, tonight's dinner) stored
+// at momday/{iso}. Phase 2 (2026-08-09) added the Kitchen meal system — the
+// 🍽 Meals subview: a meals library with full recipes, the week's dinner grid,
+// and prep timers ("night before: thaw", "11:30 start the Instant Pot") that
+// surface as 🔴 NOW cards. Phase 3 (same day) added the rest of the Kitchen:
+// curated staples that tap-cycle ✅ have → 🟡 low → ❌ out, standing usuals
+// (breakfast/lunch/snacks), and an order-day card that gathers low/out staples
+// + every usual into a copyable list on the chosen weekday. The 🥫 pantry
+// snapshot (same day) is the in-between she chose vs. a full inventory:
+// receipt/cabinet photos → Claude transcribes → she paste-imports; items fade
+// by zone shelf-life and hide when probably gone — consumption is never logged.
 let mpSubView = 'plan';                               // 'plan' | 'prep' | 'weigh'
+let momdayData = {};                                  // momday/{iso} → {win, dinner}
 let wellnessWeighins = [];                            // [{iso, lb, note, ts}]
 let wellnessCycle = { anchor:'2026-07-25', len:28 };  // fallback anchor; overridden by logged periods
+let wellnessBP = {};                                 // wellness/bp/{iso}/{am|pm} → {sys, dia, pulse?, ts}
+let wellnessSymptoms = {};                           // wellness/symptoms/{iso}/{sym} → ts
+let wellnessSymBank = {};                            // wellness/symptomBank/{slug} → label (Mom-added)
+let billsData = {};                                  // bills/{id} → {name, amt?, dueDay, freq, dueMonth?, lead?, paidThrough?}
+let laundryData = {};                                // laundry/{id} → {label, stage: washer|dryer|fold, ts}
+let kitMeals = {};                                     // kitchen/meals/{id} → {name, emoji?, ing, steps, prep:[{when,label}], ts}
+let kitPlan = {};                                      // kitchen/plan/{iso} → {mid} (library meal) | {txt} (typed dinner)
+let kitPrepDone = {};                                  // kitchen/prepDone/{iso}/{mid_idx} → ts
+let kitView = null;                                    // meal id open in the recipe view
+let kitEditId = null;                                  // meal id in the editor ("new" = fresh)
+let kitEditPrep = [];                                  // working prep-step list while the editor is open
+let kitEditDraft = null;                               // typed-but-unsaved editor fields, survives re-renders
+let kitPickIso = null;                                 // week-grid day with its meal picker open
+let kitStaples = {};                                   // kitchen/staples/{id} → {name, state: have|low|out, ts}
+let kitUsuals = {};                                    // kitchen/usuals/{id} → {name, cat: breakfast|lunch|snack|other, ts}
+let kitSettings = {};                                  // kitchen/settings → {orderDay?: "monday"…}
+let kitStapleManage = false;                           // staples card: ✎ manage mode (shows ✕ per chip)
+let kitPantry = {};                                    // kitchen/pantry/{id} → {name, zone, addedIso, ts}
+let panManage = false;                                 // pantry card: ✎ manage mode
+let panImportOpen = false;                             // pantry card: 📥 paste-import panel open
 let wellnessPeriods = [];                             // [{iso, ts}] logged period-start dates
+let mpInited = false;
 
-function mpInit() {
-  try {
-    const saved = HA_LS.getItem('mp_weekly_data');
-    if (saved) {
-      const data = JSON.parse(saved);
-      if (data.days) {
-        MP_DATA.weekLabel = data.weekLabel || MP_DATA.weekLabel;
-        MP_DATA.winOfTheDay = data.winOfTheDay || MP_DATA.winOfTheDay;
-        MP_DATA.skylightTip = data.skylightTip || MP_DATA.skylightTip;
-        MP_DATA.days = data.days;
-        MP_DATA.allMeals = data.allMeals || MP_DATA.allMeals;
-      }
-    }
-  } catch(e) {}
-  try { const s=HA_LS.getItem('mp_chore_state'); mpChoreState=s?JSON.parse(s):{}; } catch(e){}
-  try { const w=HA_LS.getItem('wellness_weighins'); if(w) wellnessWeighins=JSON.parse(w); } catch(e){}
-  try { const c=HA_LS.getItem('wellness_cycle'); if(c) wellnessCycle=Object.assign(wellnessCycle,JSON.parse(c)); } catch(e){}
-  try { const p=HA_LS.getItem('wellness_periods'); if(p) wellnessPeriods=JSON.parse(p); } catch(e){}
-  const todayDay = MP_DATA.days.find(d=>d.isToday);
-  mpActiveDay = todayDay ? todayDay.id : MP_DATA.days[0].id;
+function mpInit(){
+  if(mpInited) return; mpInited=true;
+  try{ const w=HA_LS.getItem('wellness_weighins'); if(w) wellnessWeighins=JSON.parse(w); }catch(e){}
+  try{ const c=HA_LS.getItem('wellness_cycle'); if(c) wellnessCycle=Object.assign(wellnessCycle,JSON.parse(c)); }catch(e){}
+  try{ const p=HA_LS.getItem('wellness_periods'); if(p) wellnessPeriods=JSON.parse(p); }catch(e){}
+  try{ const b=HA_LS.getItem('wellness_bp'); if(b) wellnessBP=JSON.parse(b); }catch(e){}
+  try{ const y=HA_LS.getItem('wellness_symptoms'); if(y) wellnessSymptoms=JSON.parse(y); }catch(e){}
+  try{ const sb=HA_LS.getItem('wellness_symbank'); if(sb) wellnessSymBank=JSON.parse(sb); }catch(e){}
+  try{ const bl=HA_LS.getItem('ha_bills'); if(bl) billsData=JSON.parse(bl); }catch(e){}
+  try{ const ln=HA_LS.getItem('ha_laundry'); if(ln){ const v=JSON.parse(ln); Object.keys(v).forEach(k=>{ laundryData[k]=v[k]; }); } }catch(e){}
+  try{ const km=HA_LS.getItem('ha_kit_meals'); if(km) Object.assign(kitMeals,JSON.parse(km)); }catch(e){}
+  try{ const kp=HA_LS.getItem('ha_kit_plan'); if(kp) Object.assign(kitPlan,JSON.parse(kp)); }catch(e){}
+  try{ const kd=HA_LS.getItem('ha_kit_prepdone'); if(kd) Object.assign(kitPrepDone,JSON.parse(kd)); }catch(e){}
+  try{ const ks=HA_LS.getItem('ha_kit_staples'); if(ks) Object.assign(kitStaples,JSON.parse(ks)); }catch(e){}
+  try{ const ku=HA_LS.getItem('ha_kit_usuals'); if(ku) Object.assign(kitUsuals,JSON.parse(ku)); }catch(e){}
+  try{ const kg=HA_LS.getItem('ha_kit_settings'); if(kg) Object.assign(kitSettings,JSON.parse(kg)); }catch(e){}
+  try{ const kn=HA_LS.getItem('ha_kit_pantry'); if(kn) Object.assign(kitPantry,JSON.parse(kn)); }catch(e){}
 }
 
-function renderMomsPlan(el) {
-  if (!mpActiveDay) mpInit();
-  if (mpSubView === 'prep')  { return renderMPPrep(el); }
-  if (mpSubView === 'weigh') { return renderMPWeigh(el); }
-  const d = MP_DATA.days.find(x=>x.id===mpActiveDay) || MP_DATA.days[0];
-  const cs = mpChoreState[d.id] || {};
-  const doneCount = d.chores.filter((_,i)=>cs[i]).length;
-  const pct = d.chores.length ? Math.round(doneCount/d.chores.length*100) : 0;
+function renderMomsPlan(el){
+  mpInit();
+  if(mpSubView==='prep'){ return renderMPPrep(el); }
+  if(mpSubView==='weigh'){ return renderMPWeigh(el); }
+  if(mpSubView==='meals'){ return renderKitchen(el); }
+  renderMomsDay(el);
+}
 
-  const tagColors = {
-    laundry:'background:#E8F0F8;color:#2C5F8A',
-    meal:'background:#FDF0E8;color:#E07B39',
-    clean:'background:#DEF2F1;color:#2B7A78',
-    kids:'background:#F0EBF8;color:#6B4C93',
-    org:'background:#EAF4EC;color:#3A7D44',
-    self:'background:#FFFBEA;color:#9A7D0A',
-  };
+let mdJumped=false; // a jump from Mom's Day → show the floating "← 🏡 Mom's Day" return pill
+function mdOpenBoard(){
+  mdJumped=true;
+  if(tab!=="schedule") showTab("schedule");
+  schedShowBoard=true; schedShowAdmin=false; schedShowHistory=false; schedShowPace=false; schedShowPeek=false;
+  renderAll();
+}
+function mdBack(){ mdJumped=false; showTab("moms-plan"); }
 
-  const dayStrip = MP_DATA.days.map(x=>`
-    <button onclick="mpSelectDay('${x.id}')" style="
-      flex:0 0 auto;padding:9px 13px;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:700;
-      color:${x.id===mpActiveDay?'#fff':'#9ca3af'};background:${x.id===mpActiveDay?'#2B7A78':'transparent'};
-      border:none;border-radius:8px;cursor:pointer;white-space:nowrap;transition:all 0.2s;
-      ${x.isToday?'position:relative;':''}
-    ">${x.label}<br><span style="font-size:9px;font-weight:600;opacity:0.75">${x.date}</span>${x.isToday?'<span style="position:absolute;top:4px;right:4px;width:6px;height:6px;border-radius:50%;background:#E07B39;display:block"></span>':''}</button>
-  `).join('');
+// Today's weekday name from the DATE — never from the viewed day tab.
+function mdTodayName(){ return DAYS_ALL[(gwParseDate(_todayStr()).getDay()+6)%7]; }
+function momdayGet(f){ return ((momdayData[_todayStr()]||{})[f])||""; }
+function momdayEdit(f){
+  const lbl=(f==="win")?"🏆 Win of the day":"🍽️ Tonight's dinner";
+  const v=prompt(lbl,momdayGet(f));
+  if(v===null) return;
+  const iso=_todayStr();
+  const cur=Object.assign({},momdayData[iso]); cur[f]=v; momdayData[iso]=cur;
+  try{ HA_LS.setItem('momday_data',JSON.stringify(momdayData)); }catch(e){}
+  if(db) db.ref("momday/"+iso+"/"+f).set(v);
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
 
-  const scheduleRows = (d.schedule||[]).map(r=>`
-    <div style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid #F0F4F8">
-      <div style="flex:0 0 68px;font-family:'DM Sans',sans-serif;font-size:10px;font-weight:700;color:#2B7A78;text-transform:uppercase;padding-top:2px">${r.time}</div>
-      <div style="flex:1">
-        <div style="font-size:13px;font-weight:600;color:#1a1a1a;line-height:1.4">${r.task}</div>
-        ${r.note?`<div style="font-size:11px;color:#6b6560;font-style:italic;margin-top:2px">${r.note}</div>`:''}
-      </div>
-      ${r.tag?`<span style="font-size:9px;font-weight:800;text-transform:uppercase;padding:2px 7px;border-radius:10px;${tagColors[r.tag]||'background:#f3f4f6;color:#555'};flex-shrink:0;margin-top:3px">${r.tag}</span>`:''}
-    </div>
-  `).join('');
+// One kid's routine-slot counts for TODAY (same math as the Board's, but
+// pinned to the real date rather than the global `day` the Board uses).
+function mdSlotCounts(slot,kid,today){
+  const steps=rtStepsFor(slot,kid,false,today); let due=0,done=0;
+  for(let i=0;i<steps.length;i++){
+    if(!cadDueOn(steps[i].cad||"daily",today)) continue;
+    due++; if(rtDoneOn(slot,kid,today,i)) done++;
+  }
+  return {due,done};
+}
 
-  const choreItems = d.chores.map((c,i)=>`
-    <div onclick="mpToggleChore('${d.id}',${i})" style="
-      display:flex;align-items:center;gap:10px;padding:9px 11px;
-      background:${cs[i]?'#f0fdf4':'#f8f7f4'};border-radius:9px;cursor:pointer;
-      border:1.5px solid ${cs[i]?'#86efac':'#e8e4de'};margin-bottom:6px;transition:all 0.18s
-    ">
-      <div style="width:20px;height:20px;border-radius:50%;border:2px solid ${cs[i]?'#16a34a':'#2B7A78'};
-        display:flex;align-items:center;justify-content:center;flex-shrink:0;
-        background:${cs[i]?'#16a34a':'#fff'};color:${cs[i]?'#fff':'transparent'};font-size:11px;font-weight:700">${cs[i]?'✓':''}</div>
-      <div style="flex:1;font-size:13px;font-weight:600;color:${cs[i]?'#6b6560':'#1a1a1a'};${cs[i]?'text-decoration:line-through':''}">${c.text}</div>
-      <div style="font-size:10px;color:#6b6560;font-weight:600">${c.who}</div>
-    </div>
-  `).join('');
+// ── 🌡 Symptoms — tap-chips, one map per day, tagged by cycle day when shown ──
+const MW_SYMS=[["headache","🤕 Headache"],["cramps","🌀 Cramps"],["fatigue","🥱 Fatigue"],["bloating","🎈 Bloating"],["moody","🌩 Moody"],["anxious","😰 Anxious"],["sleep","🌙 Poor sleep"],["cravings","🍫 Cravings"],["nausea","🤢 Nausea"],["backpain","🦴 Back pain"],["bodypain","💪 Body pain"]];
+// Built-ins + Mom's own added types, one list. Custom slugs are [a-z0-9] so
+// they're always Firebase-key-safe; history keeps rendering by slug even if a
+// type is later removed from the bank (label falls back to the slug).
+function mwAllSyms(){
+  const out=MW_SYMS.slice();
+  Object.keys(wellnessSymBank).sort().forEach(k=>out.push([k,wellnessSymBank[k]]));
+  return out;
+}
+function mwAddSymType(){
+  const name=(prompt("New symptom to track (e.g. Hip ache):","")||"").trim();
+  if(!name) return;
+  const slug=name.toLowerCase().replace(/[^a-z0-9]+/g,"").slice(0,24);
+  if(!slug){ alert("Give it a name with some letters in it."); return; }
+  if(mwAllSyms().some(s=>s[0]===slug)){ alert("Already tracking that one."); return; }
+  wellnessSymBank[slug]=name;
+  try{HA_LS.setItem('wellness_symbank',JSON.stringify(wellnessSymBank));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('wellness/symptomBank/'+slug).set(name);
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function mwDelSymType(slug){
+  if(!wellnessSymBank[slug]) return;
+  if(!confirm('Stop tracking "'+wellnessSymBank[slug]+'"? Days already logged keep it.')) return;
+  delete wellnessSymBank[slug];
+  try{HA_LS.setItem('wellness_symbank',JSON.stringify(wellnessSymBank));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('wellness/symptomBank/'+slug).remove();
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function mwToggleSym(sym){
+  const iso=_todayStr();
+  const dayMap=Object.assign({},wellnessSymptoms[iso]);
+  if(dayMap[sym]) delete dayMap[sym]; else dayMap[sym]=Date.now();
+  wellnessSymptoms[iso]=dayMap;
+  try{HA_LS.setItem('wellness_symptoms',JSON.stringify(wellnessSymptoms));}catch(e){}
+  if(typeof db!=='undefined'&&db){
+    if(dayMap[sym]) db.ref('wellness/symptoms/'+iso+'/'+sym).set(dayMap[sym]);
+    else db.ref('wellness/symptoms/'+iso+'/'+sym).remove();
+  }
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
 
-  const mealOverview = MP_DATA.allMeals.map(m=>`
-    <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:#FDF0E8;border-radius:8px;border-left:3px solid #E07B39">
-      <div style="font-family:'DM Sans',sans-serif;font-size:10px;font-weight:800;color:#E07B39;text-transform:uppercase;flex:0 0 34px">${m.day}</div>
-      <div style="flex:1;font-size:12px;font-weight:700;color:#1a1a1a">${m.name}</div>
-      <div style="font-size:10px;color:#6b6560;font-weight:600">${m.type}</div>
-    </div>
-  `).join('');
+function momdayAddTodo(){
+  const inp=document.getElementById('md-todo-new'); const txt=((inp&&inp.value)||"").trim();
+  if(!txt) return;
+  const iso=_todayStr();
+  const cur=Object.assign({},momdayData[iso]); const todos=Object.assign({},cur.todos);
+  const id="t"+Date.now().toString(36);
+  todos[id]={text:txt,done:false,ts:Date.now()};
+  cur.todos=todos; momdayData[iso]=cur;
+  try{HA_LS.setItem('momday_data',JSON.stringify(momdayData));}catch(e){}
+  if(db) db.ref("momday/"+iso+"/todos/"+id).set(todos[id]);
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function momdayToggleTodo(id){
+  const iso=_todayStr(); const t=(((momdayData[iso]||{}).todos)||{})[id]; if(!t) return;
+  t.done=!t.done;
+  try{HA_LS.setItem('momday_data',JSON.stringify(momdayData));}catch(e){}
+  if(db) db.ref("momday/"+iso+"/todos/"+id+"/done").set(t.done);
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function momdayDelTodo(id){
+  const iso=_todayStr(); const todos=((momdayData[iso]||{}).todos)||{}; if(!todos[id]) return;
+  delete todos[id];
+  try{HA_LS.setItem('momday_data',JSON.stringify(momdayData));}catch(e){}
+  if(db) db.ref("momday/"+iso+"/todos/"+id).remove();
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+
+// ── 🧺 Laundry — loads move washer → dryer → fold → put away (gone) ────
+const LAUNDRY_STAGES=["washer","dryer","fold"];
+const LAUNDRY_STAGE_META={washer:["🫧","In the washer"],dryer:["🌀","In the dryer"],fold:["🧺","Fold pile"]};
+const LAUNDRY_STALE_MIN=90; // washer-sitting threshold before the NOW nudge (mildew guard)
+function laundryAdd(){
+  const inp=document.getElementById('laundry-label'); const label=((inp&&inp.value)||"").trim();
+  if(!label) return;
+  const id="l"+Date.now().toString(36);
+  laundryData[id]={label,stage:"washer",ts:Date.now()};
+  try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('laundry/'+id).set(laundryData[id]);
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function laundryAdvance(id){
+  const l=laundryData[id]; if(!l) return;
+  const i=LAUNDRY_STAGES.indexOf(l.stage);
+  if(i<0||i===LAUNDRY_STAGES.length-1){
+    delete laundryData[id]; // put away — load complete
+    if(typeof db!=='undefined'&&db) db.ref('laundry/'+id).remove();
+    if(typeof mwToast==='function') mwToast('🧺 '+(l.label||'Load')+' put away!');
+  } else {
+    l.stage=LAUNDRY_STAGES[i+1]; l.ts=Date.now();
+    if(typeof db!=='undefined'&&db) db.ref('laundry/'+id).set(l);
+  }
+  try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function laundryDel(id){
+  const l=laundryData[id]; if(!l) return;
+  if(!confirm('Remove "'+(l.label||'this load')+'"?')) return;
+  delete laundryData[id];
+  try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('laundry/'+id).remove();
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function laundryAdvanceLabel(stage){
+  return stage==="washer"?"→ Dryer":stage==="dryer"?"→ Fold":"✓ Put away";
+}
+function laundrySince(ts){
+  try{ return new Date(ts).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}); }catch(e){ return ""; }
+}
+
+// ── 💳 Bills — recurring due dates that surface as they approach ──────
+// "✓ Paid" stamps paidThrough with the current cycle key, which rolls the bill
+// forward to its next due date. Monthly cycle key "YYYY-MM", yearly "YYYY".
+// dueDay clamps to short months (the 31st works in February).
+function billDueInfo(b,todayIso){
+  const p=todayIso.split("-").map(Number); const ty=p[0], tm=p[1];
+  const pad=n=>String(n).padStart(2,"0");
+  const clampDay=(yy,mm)=>Math.min(b.dueDay||1,new Date(yy,mm,0).getDate());
+  if(b.freq==="yearly"){
+    let cy=ty; const mm=b.dueMonth||1;
+    if(b.paidThrough===String(cy)) cy++;
+    return {due:cy+"-"+pad(mm)+"-"+pad(clampDay(cy,mm)),cycleKey:String(cy)};
+  }
+  let cy=ty, cm=tm;
+  if(b.paidThrough===cy+"-"+pad(cm)){ cm++; if(cm>12){cm=1;cy++;} }
+  return {due:cy+"-"+pad(cm)+"-"+pad(clampDay(cy,cm)),cycleKey:cy+"-"+pad(cm)};
+}
+function billState(b,todayIso){
+  const info=billDueInfo(b,todayIso);
+  const days=Math.round((gwParseDate(info.due)-gwParseDate(todayIso))/86400000);
+  const lead=(b.lead!=null)?b.lead:5;
+  const state=days<0?"overdue":(days===0?"due":(days<=lead?"soon":"later"));
+  return {due:info.due,cycleKey:info.cycleKey,days,state};
+}
+function billMarkPaid(id){
+  const b=billsData[id]; if(!b) return;
+  b.paidThrough=billDueInfo(b,_todayStr()).cycleKey;
+  try{HA_LS.setItem('ha_bills',JSON.stringify(billsData));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('bills/'+id+'/paidThrough').set(b.paidThrough);
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+  mwToast('💳 '+(b.name||'Bill')+' marked paid');
+}
+function billAdd(){
+  const name=((document.getElementById('bill-name')||{}).value||"").trim();
+  const amt=((document.getElementById('bill-amt')||{}).value||"").trim();
+  const dueDay=parseInt((document.getElementById('bill-day')||{}).value);
+  const freq=((document.getElementById('bill-freq')||{}).value)==="yearly"?"yearly":"monthly";
+  if(!name||!dueDay||dueDay<1||dueDay>31){ alert('A bill needs a name and a due day (1–31).'); return; }
+  const b={name,dueDay,freq,ts:Date.now()};
+  if(amt) b.amt=amt;
+  if(freq==="yearly") b.dueMonth=parseInt(_todayStr().split("-")[1]);
+  const id="b"+Date.now().toString(36);
+  billsData[id]=b;
+  try{HA_LS.setItem('ha_bills',JSON.stringify(billsData));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('bills/'+id).set(b);
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function billDel(id){
+  const b=billsData[id]; if(!b) return;
+  if(!confirm('Remove "'+(b.name||'this bill')+'" from reminders?')) return;
+  delete billsData[id];
+  try{HA_LS.setItem('ha_bills',JSON.stringify(billsData));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('bills/'+id).remove();
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function billDueLabel(st){
+  const d=gwParseDate(st.due);
+  const nice=d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
+  if(st.state==="overdue") return nice+" — "+(-st.days)+"d overdue";
+  if(st.state==="due") return "due TODAY";
+  return "due "+nice+(st.days<=14?" (in "+st.days+"d)":"");
+}
+
+// ── 🫀 Blood pressure — 2025 AHA/ACC home-monitoring protocol ──────
+// Morning + evening slots; judge by the AVERAGE, never one reading. Categories
+// per the 2025 guideline. Crisis (>180/120) alerts to re-check + call the doctor.
+function mwBPCat(sys,dia){
+  if(sys>180||dia>120) return {label:"Crisis — recheck now",color:"#7f1d1d",bg:"#fee2e2"};
+  if(sys>=140||dia>=90) return {label:"Stage 2 high",color:"#b91c1c",bg:"#fee2e2"};
+  if(sys>=130||dia>=80) return {label:"Stage 1 high",color:"#c2410c",bg:"#ffedd5"};
+  if(sys>=120) return {label:"Elevated",color:"#a16207",bg:"#fef9c3"};
+  return {label:"Normal",color:"#166534",bg:"#dcfce7"};
+}
+function mwBPSlotNow(){ return (new Date()).getHours()<12?"am":"pm"; }
+function mwBPChip(sl,iso){
+  const r=((wellnessBP[iso]||{})[sl]);
+  if(!r) return '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:9px;background:#f3f4f6;color:#9ca3af">'+sl.toUpperCase()+' —</span>';
+  const c=mwBPCat(r.sys,r.dia);
+  return '<span title="'+c.label+'" style="font-size:11px;font-weight:800;padding:2px 8px;border-radius:9px;background:'+c.bg+';color:'+c.color+'">'+sl.toUpperCase()+' '+r.sys+'/'+r.dia+'</span>';
+}
+function mwSaveBP(){
+  const sys=parseInt((document.getElementById('bp-sys')||{}).value);
+  const dia=parseInt((document.getElementById('bp-dia')||{}).value);
+  const pulse=parseInt((document.getElementById('bp-pulse')||{}).value);
+  if(!sys||!dia){ alert('Add both numbers — top (systolic) and bottom (diastolic).'); return; }
+  if(sys<60||sys>260||dia<30||dia>160){ alert('That reading looks off — double-check the numbers.'); return; }
+  const iso=mwTodayIso(), slot=mwBPSlotNow();
+  const rec={sys,dia,ts:Date.now()}; if(pulse) rec.pulse=pulse;
+  if(!wellnessBP[iso]) wellnessBP[iso]={};
+  wellnessBP[iso][slot]=rec;
+  try{HA_LS.setItem('wellness_bp',JSON.stringify(wellnessBP));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('wellness/bp/'+iso+'/'+slot).set(rec);
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+  if(sys>180||dia>120) alert('🫀 That reading is in the crisis range (over 180/120). Sit quietly for 5 minutes and take it again — if it is still that high, call your doctor right away (or 911 with chest pain, trouble breathing, or vision/speech changes).');
+  else mwToast('🫀 '+slot.toUpperCase()+' reading saved');
+}
+
+function renderMomsDay(el){
+  if(!el){el=document.getElementById("content");if(!el)return;}
+  const today=mdTodayName();
+  const iso=_todayStr();
+  const dt=gwParseDate(iso);
+  const dateLine=dt.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
+  let brk=null; try{ brk=scheduleBreakToday(); }catch(e){}
+  const isSchoolDay=DAYS.indexOf(today)>=0&&!brk;
+  const wn=(typeof currWeekNum==="function")?currWeekNum():null;
+
+  // School blocks that need Mom, still unchecked today. Combined blocks
+  // (same groupId) collapse to one row listing every kid in the group.
+  const momBlocks=[];
+  try{
+    const byKey={};
+    getActiveTasks().forEach(t=>{
+      if(!t||t.mom!=="required") return;
+      if(effectiveDay(t)!==today) return;
+      if(String(t.id).endsWith("_c")||t._eowOverflow) return;
+      if(/lunch/i.test(t.title||"")) return;
+      if(checked[t.id]) return;
+      const key=t.groupId||t.id;
+      if(byKey[key]){ if(byKey[key].kids.indexOf(t.who)<0){ byKey[key].kids.push(t.who); byKey[key].tasks.push(t); } return; }
+      byKey[key]={title:t.title||"",kids:[t.who],tasks:[t]};
+      momBlocks.push(byKey[key]);
+    });
+  }catch(e){}
+  const morningWaiting=isSchoolDay?SL_KIDS.filter(k=>{ try{ return !morningComplete(k,today); }catch(e){ return false; } }):[];
+
+  let h='<div style="font-family:\'DM Sans\',sans-serif;padding-bottom:20px">';
+  h+='<div style="background:linear-gradient(135deg,#2B7A78,#3AAFA9);color:#fff;padding:18px 14px 14px;position:relative;overflow:hidden">'
+    +'<div style="position:absolute;top:-25px;right:-25px;width:100px;height:100px;border-radius:50%;background:rgba(255,255,255,0.08)"></div>'
+    +'<div style="position:relative;z-index:1">'
+    +'<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;margin-bottom:2px">🏡 Mom\'s Day</div>'
+    +'<div style="font-size:12px;opacity:0.85;font-weight:600">'+esc(dateLine)+(wn?' · Week '+wn:'')+(brk?' · '+esc(brk.name||'Break')+' — no school':'')+'</div>'
+    +'</div></div>';
+  h+=mpSubnav('plan');
+  h+='<div style="padding:12px 12px 0;display:flex;flex-direction:column;gap:11px">';
+
+  // today's calendar banner (family events / co-ops happening today)
+  try{ const eb=calEventBanner(today,"all"); if(eb) h+=eb; }catch(e){}
 
   // 🌙 Luteal/period support — surfaces ONLY during the hard-week phases
-  let lutealCard='';
-  try {
-    const _ci = mwCycleInfo(mwTodayIso());
-    if(_ci.key==='luteal' || _ci.key==='menstrual'){
-      const _lut = _ci.key==='luteal';
-      lutealCard = `<div style="background:linear-gradient(135deg,${_lut?'#efe7f7':'#fbe3ec'},#fff);border:1.5px solid ${_lut?'#6B4C93':'#c2547e'};border-radius:12px;padding:12px 14px">
-        <div style="display:flex;align-items:center;gap:9px;margin-bottom:7px">
-          <span style="font-size:22px">${_lut?'🌙':'🩸'}</span>
-          <div><strong style="font-size:13px;font-weight:800;color:${_lut?'#6B4C93':'#b03a5b'}">${_lut?'Luteal Week — go gentle':'Period Week — be kind to yourself'}</strong>
-          <div style="font-size:10px;color:#6b6560;font-weight:700;text-transform:uppercase;letter-spacing:.3px">Cycle day ${_ci.day} · your calmer-body checklist</div></div>
-        </div>
-        <div style="font-size:12px;line-height:1.6;color:#4a4540">
-          🍽️ <b>Protein every meal</b> · go easy on the sugary juices/bowls · don't skip meals<br>
-          💊 <b>Magnesium</b> (evening) · calcium + D · B6 · keep the fish up<br>
-          🚶 Walk or lift — skip all-out HIIT · protect sleep, cooler room<br>
-          🚫 Less alcohol / caffeine / salt · easy on the adrenal cocktail (your "watch for rage" week)<br>
-          💗 Lighter schedule · save the hard talks for a calmer day · the week passes
-        </div>
-      </div>`;
+  try{
+    const _ci=mwCycleInfo(mwTodayIso());
+    if(_ci.key==='luteal'||_ci.key==='menstrual'){
+      const _lut=_ci.key==='luteal';
+      h+='<div style="background:linear-gradient(135deg,'+(_lut?'#efe7f7':'#fbe3ec')+',#fff);border:1.5px solid '+(_lut?'#6B4C93':'#c2547e')+';border-radius:12px;padding:12px 14px">'
+        +'<div style="display:flex;align-items:center;gap:9px;margin-bottom:7px">'
+        +'<span style="font-size:22px">'+(_lut?'🌙':'🩸')+'</span>'
+        +'<div><strong style="font-size:13px;font-weight:800;color:'+(_lut?'#6B4C93':'#b03a5b')+'">'+(_lut?'Luteal Week — go gentle':'Period Week — be kind to yourself')+'</strong>'
+        +'<div style="font-size:10px;color:#6b6560;font-weight:700;text-transform:uppercase;letter-spacing:.3px">Cycle day '+_ci.day+' · your calmer-body checklist</div></div>'
+        +'</div>'
+        +'<div style="font-size:12px;line-height:1.6;color:#4a4540">'
+        +'🍽️ <b>Protein every meal</b> · go easy on the sugary juices/bowls · don\'t skip meals<br>'
+        +'💊 <b>Magnesium</b> (evening) · calcium + D · B6 · keep the fish up<br>'
+        +'🚶 Walk or lift — skip all-out HIIT · protect sleep, cooler room<br>'
+        +'🚫 Less alcohol / caffeine / salt · easy on the adrenal cocktail (your "watch for rage" week)<br>'
+        +'💗 Lighter schedule · save the hard talks for a calmer day · the week passes'
+        +'</div></div>';
     }
-  } catch(e){}
+  }catch(e){}
 
-  el.innerHTML = `
-    <div style="font-family:'DM Sans',sans-serif;padding-bottom:20px">
-
-      <!-- BANNER -->
-      <div style="background:linear-gradient(135deg,#2B7A78,#3AAFA9);color:#fff;padding:18px 14px 14px;position:relative;overflow:hidden">
-        <div style="position:absolute;top:-25px;right:-25px;width:100px;height:100px;border-radius:50%;background:rgba(255,255,255,0.08)"></div>
-        <div style="position:relative;z-index:1">
-          <div style="font-family:'Fraunces',serif;font-size:22px;font-weight:700;margin-bottom:2px">🌿 Mom's Plan</div>
-          <div style="font-size:12px;opacity:0.85;font-weight:600">Your daily roadmap — meals, cleaning, laundry & wins</div>
-          <div style="display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.3);border-radius:20px;padding:3px 11px;font-size:11px;font-weight:700;margin-top:8px">📅 ${MP_DATA.weekLabel}</div>
-        </div>
-      </div>
-
-      ${mpSubnav('plan')}
-      <!-- DAY STRIP -->
-      <div style="display:flex;gap:4px;background:#fff;border-bottom:2px solid #DEF2F1;padding:8px 10px;overflow-x:auto;scrollbar-width:none">
-        ${dayStrip}
-      </div>
-
-      <div style="padding:12px 12px 0;display:flex;flex-direction:column;gap:11px">
-
-        ${lutealCard}
-        <!-- PROGRESS -->
-        <div style="background:#fff;border-radius:12px;box-shadow:0 2px 12px rgba(43,122,120,0.1);padding:12px 14px">
-          <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:#6b6560;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px">
-            <span>Today's Progress</span><span style="color:#2B7A78">${doneCount}/${d.chores.length} tasks · ${pct}%</span>
-          </div>
-          <div style="height:8px;background:#DEF2F1;border-radius:10px;overflow:hidden">
-            <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#2B7A78,#3AAFA9);border-radius:10px;transition:width 0.5s"></div>
-          </div>
-        </div>
-
-        <!-- WIN OF THE WEEK -->
-        <div style="background:linear-gradient(135deg,#F0EBF8,#fff);border:1.5px solid #6B4C93;border-radius:12px;padding:12px 14px;display:flex;gap:10px;align-items:center">
-          <div style="font-size:26px;flex-shrink:0">🏆</div>
-          <div>
-            <strong style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#6B4C93;display:block;margin-bottom:3px">Win of the Week</strong>
-            <p style="font-size:13px;font-weight:600;color:#1a1a1a;line-height:1.4">${MP_DATA.winOfTheDay}</p>
-          </div>
-        </div>
-
-        <!-- POWER WINDOWS -->
-        <div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">
-          <div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#2B7A78;color:#fff;font-weight:800;font-size:13px">
-            <span>⚡</span> Power Windows — ${d.label} ${d.date}
-          </div>
-          <div style="padding:12px 14px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-            <div style="background:#FFFBEA;border-left:3px solid #F0C040;border-radius:8px;padding:10px 8px;text-align:center">
-              <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#6b6560;margin-bottom:3px">☀️ Morning</div>
-              <div style="font-size:11px;font-weight:700;color:#1a1a1a;line-height:1.3">${d.powerWindows.morning}</div>
-            </div>
-            <div style="background:#FDF0E8;border-left:3px solid #E07B39;border-radius:8px;padding:10px 8px;text-align:center">
-              <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#6b6560;margin-bottom:3px">✨ 3–4:30pm</div>
-              <div style="font-size:11px;font-weight:700;color:#1a1a1a;line-height:1.3">${d.powerWindows.golden}</div>
-            </div>
-            <div style="background:#DEF2F1;border-left:3px solid #2B7A78;border-radius:8px;padding:10px 8px;text-align:center">
-              <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#6b6560;margin-bottom:3px">🌙 Evening</div>
-              <div style="font-size:11px;font-weight:700;color:#1a1a1a;line-height:1.3">${d.powerWindows.evening}</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- TODAY'S SCHEDULE -->
-        <div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">
-          <div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#E07B39;color:#fff;font-weight:800;font-size:13px">
-            <span>📋</span> Today's Schedule
-          </div>
-          <div style="padding:4px 14px 8px">${scheduleRows}</div>
-        </div>
-
-        <!-- TONIGHT'S DINNER -->
-        ${d.meal?`
-        <div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">
-          <div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#E07B39;color:#fff;font-weight:800;font-size:13px">
-            <span>🍽️</span> Tonight's Dinner
-          </div>
-          <div style="padding:12px 14px">
-            <div style="display:flex;align-items:center;gap:10px;padding:9px 11px;background:linear-gradient(90deg,#FDF0E8,#fff);border-radius:9px;border-left:3px solid #2B7A78;box-shadow:0 2px 8px rgba(43,122,120,0.1)">
-              <div style="font-family:'DM Sans',sans-serif;font-size:10px;font-weight:800;color:#2B7A78;text-transform:uppercase;flex:0 0 34px">${d.id.toUpperCase().slice(0,3)}</div>
-              <div style="flex:1">
-                <div style="font-size:13px;font-weight:700;color:#1a1a1a">${d.meal.name}</div>
-                <div style="font-size:11px;color:#6b6560;font-weight:600">${d.meal.type}</div>
-              </div>
-              <span style="font-size:9px;font-weight:800;text-transform:uppercase;padding:2px 7px;border-radius:8px;background:#DEF2F1;color:#2B7A78">Tonight</span>
-            </div>
-          </div>
-        </div>` : ''}
-
-        <!-- WEEK MEALS -->
-        <div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">
-          <div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#3A7D44;color:#fff;font-weight:800;font-size:13px">
-            <span>📅</span> This Week's Meals
-          </div>
-          <div style="padding:12px 14px;display:flex;flex-direction:column;gap:6px">${mealOverview}</div>
-        </div>
-
-        <!-- CHECKLIST -->
-        ${d.chores.length?`
-        <div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">
-          <div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#6B4C93;color:#fff;font-weight:800;font-size:13px">
-            <span>✅</span> Today's Checklist
-          </div>
-          <div style="padding:12px 14px">${choreItems}</div>
-        </div>` : ''}
-
-        <!-- SKYLIGHT TIP -->
-        <div style="background:linear-gradient(135deg,#E8F0F8,#EAF4EC);border:1.5px solid #2C5F8A;border-radius:12px;padding:12px 14px;display:flex;gap:10px;align-items:flex-start">
-          <div style="font-size:22px;flex-shrink:0">📲</div>
-          <div>
-            <strong style="font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;color:#2C5F8A;display:block;margin-bottom:3px">Skylight Tip</strong>
-            <p style="font-size:12px;color:#6b6560;font-weight:500;line-height:1.5">${MP_DATA.skylightTip}</p>
-          </div>
-        </div>
-
-        <!-- UPDATE PLAN / JSON UPLOAD -->
-        <div>
-          <div style="font-family:'DM Sans',sans-serif;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.8px;color:#6b6560;padding:0 2px;margin-bottom:6px">Update This Week's Plan</div>
-          <div onclick="document.getElementById('mp-file-input').click()" style="
-            border:2px dashed #2B7A78;border-radius:14px;padding:20px;text-align:center;
-            background:#DEF2F1;cursor:pointer;transition:all 0.2s
-          " onmouseover="this.style.background='#C8EAE9'" onmouseout="this.style.background='#DEF2F1'">
-            <input type="file" id="mp-file-input" accept=".json" onchange="mpHandleUpload(event)" style="display:none">
-            <div style="font-size:28px;margin-bottom:6px">📤</div>
-            <div style="font-family:'DM Sans',sans-serif;font-size:12px;font-weight:700;color:#2B7A78">Upload Weekly JSON</div>
-            <div style="font-size:11px;color:#6b6560;margin-top:3px">Tap to choose a .json file · replaces this week's plan</div>
-          </div>
-        </div>
-
-      </div>
-    </div>
-  `;
-}
-
-function mpSelectDay(id) {
-  mpActiveDay = id;
-  const el = document.getElementById('content');
-  renderMomsPlan(el);
-}
-
-function mpToggleChore(dayId, index) {
-  if (!mpChoreState[dayId]) mpChoreState[dayId] = {};
-  mpChoreState[dayId][index] = !mpChoreState[dayId][index];
-  try { HA_LS.setItem('mp_chore_state', JSON.stringify(mpChoreState)); } catch(e) {}
-  if(db) db.ref("mp_chore_state").set(mpChoreState);
-  const el = document.getElementById('content');
-  renderMomsPlan(el);
-  const day = MP_DATA.days.find(d=>d.id===dayId);
-  const total = day.chores.length;
-  const done = Object.values(mpChoreState[dayId]).filter(Boolean).length;
-  if (done === total && total > 0) {
-    const msg = document.createElement('div');
-    msg.textContent = '🎉 All tasks done — you crushed it!';
-    Object.assign(msg.style, {
-      position:'fixed',bottom:'80px',left:'50%',transform:'translateX(-50%)',
-      background:'#2B7A78',color:'#fff',padding:'8px 18px',borderRadius:'20px',
-      fontFamily:"'DM Sans',sans-serif",fontSize:'12px',fontWeight:'700',
-      zIndex:'9999',whiteSpace:'nowrap',opacity:'1',transition:'opacity 0.5s'
+  // ── 🔴 NOW — needs you ──────────────────────────────────────────
+  h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
+  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#b5394a;color:#fff;font-weight:800;font-size:13px"><span>🔴</span> Now — needs you</div>';
+  h+='<div style="padding:10px 14px 12px">';
+  let nowN=0;
+  // ⏲ Prep timers due (Kitchen Phase 2) — "start the Instant Pot" beats
+  // everything else on this screen for timing, so these render first.
+  // Night-before steps for TOMORROW's meal join once KIT_NB_HOUR turns.
+  try{
+    kitDuePrep().forEach(s=>{
+      nowN++;
+      const nb=s.when==="nb";
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fff7ed;border-left:3px solid #ea580c;border-radius:8px;margin-bottom:6px">'
+        +'<span style="flex:1;font-size:13px">'+(nb?'🌙':'⏲')+' <b>'+esc(s.label)+'</b> <span style="color:#6b6560">· '+esc(s.mealName)+(nb?' (tomorrow)':' · '+kitWhenLabel(s.when))+'</span></span>'
+        +'<button onclick="kitMarkPrep(\''+s.iso+'\',\''+s.mid+'_'+s.idx+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#ea580c;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Done</button></div>';
     });
-    document.body.appendChild(msg);
-    setTimeout(()=>{ msg.style.opacity='0'; setTimeout(()=>msg.remove(),500); }, 2500);
+  }catch(e){}
+  if(momBlocks.length){
+    nowN+=momBlocks.length;
+    h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:4px 0 6px">📖 School with Mom</div>';
+    momBlocks.forEach(b=>{
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fdf2f4;border-left:3px solid #b5394a;border-radius:8px;margin-bottom:6px">'
+        +'<span style="flex:1;font-size:13px;font-weight:700">'+esc(b.title)+'</span>'
+        +b.tasks.map(t2=>'<button onclick="tapTask(\''+t2.id+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid #16a34a;background:#fff;color:#15803d;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">✓ '+cap(t2.who)+'</button>').join('')+'</div>';
+    });
+  }
+  if(morningWaiting.length){
+    nowN++;
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fffbeb;border-left:3px solid #f59e0b;border-radius:8px;margin-bottom:6px">'
+      +'<span style="font-size:13px">🌅 Morning routine not done: <b>'+morningWaiting.map(cap).join(", ")+'</b></span></div>';
+  }
+  // Kid work sent to Mom for checking (claimed, not yet approved) — rendered
+  // with the real taskCard (kid/day pinned like the agenda) so the Approve /
+  // Not-yet buttons work right here. Any lingering claim shows, not just today's.
+  let waitHtml="";
+  try{
+    const waiting=getActiveTasks().filter(t=>t&&claimed[t.id]&&!checked[t.id]&&!String(t.id).endsWith("_c"));
+    if(waiting.length){
+      const _pk2=kid,_pd2=day;
+      try{ kid="mom"; day=today; waitHtml=waiting.map(t=>taskCard(t)).join(''); } finally { kid=_pk2; day=_pd2; }
+    }
+  }catch(e){}
+  if(waitHtml){
+    nowN++;
+    h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:10px 0 6px">⏳ Waiting for your check</div>';
+    h+=waitHtml;
+  }
+  // Load sitting in the washer too long — the nudge that saves a re-wash.
+  try{
+    Object.keys(laundryData).forEach(id=>{
+      const l=laundryData[id];
+      if(!l||l.stage!=="washer") return;
+      const mins=Math.round((Date.now()-(l.ts||0))/60000);
+      if(mins<LAUNDRY_STALE_MIN) return;
+      nowN++;
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#eff6ff;border-left:3px solid #2563eb;border-radius:8px;margin-bottom:6px">'
+        +'<span style="flex:1;font-size:13px">🫧 <b>'+esc(l.label)+'</b> has been in the washer since '+laundrySince(l.ts)+' — move it before it sours</span>'
+        +'<button onclick="laundryAdvance(\''+id+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">→ Dryer</button></div>';
+    });
+  }catch(e){}
+  // Bills that can't wait — overdue or due today — with one-tap ✓ Paid.
+  try{
+    const hot=Object.keys(billsData).map(id=>({id,b:billsData[id],st:billState(billsData[id],iso)}))
+      .filter(x=>x.st.state==="overdue"||x.st.state==="due")
+      .sort((a,b2)=>a.st.due<b2.st.due?-1:1);
+    if(hot.length){
+      nowN+=hot.length;
+      h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:10px 0 6px">💳 Bills</div>';
+      hot.forEach(x=>{
+        h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fef2f2;border-left:3px solid #b91c1c;border-radius:8px;margin-bottom:6px">'
+          +'<span style="flex:1;font-size:13px;font-weight:700">'+esc(x.b.name)+(x.b.amt?' <span style="color:#6b6560">· '+esc(x.b.amt)+'</span>':'')+'</span>'
+          +'<span style="font-size:11px;font-weight:800;color:#b91c1c;white-space:nowrap">'+billDueLabel(x.st)+'</span>'
+          +'<button onclick="billMarkPaid(\''+x.id+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Paid</button></div>';
+      });
+    }
+  }catch(e){}
+  if(!nowN) h+='<div style="font-size:12px;color:var(--muted);padding:4px 0 8px">No school blocks or routines waiting on you right now. 🎉</div>';
+  h+=_boardClaimsHTML();
+  h+='</div></div>';
+
+  // ── 🛒 Order day — the chosen weekday gathers low/out staples plus
+  // every standing usual into one copyable list (Kitchen Phase 3).
+  try{ if(kitSettings.orderDay===today) h+=kitOrderCardHTML(true); }catch(e){}
+
+  // ── 📋 TODAY — kids at a glance ─────────────────────────────────
+  h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
+  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#2B7A78;color:#fff;font-weight:800;font-size:13px"><span>🧒</span> Kids today'
+    +'<button onclick="mdOpenBoard()" style="margin-left:auto;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">🗂 Full board</button></div>';
+  h+='<div style="padding:4px 14px 8px">';
+  SL_KIDS.forEach(kid=>{
+    const col=SL_KCOL[kid]||"#666";
+    let mT=0,mD=0,mDone=false,tc={total:0,done:0},af={due:0,done:0},ch={due:0,done:0},ev={due:0,done:0},pts=0;
+    try{
+      const mSteps=morningStepsFor(kid); mT=mSteps.length;
+      for(let i=0;i<mT;i++){ if(mStepDoneOn(kid,today,i)) mD++; }
+      mDone=morningComplete(kid,today);
+      tc=_boardTaskCounts(kid,today);
+      af=mdSlotCounts("afternoon",kid,today); ch=mdSlotCounts("chores",kid,today); ev=mdSlotCounts("evening",kid,today);
+      pts=earnedDayTotal(kid,today);
+    }catch(e){}
+    let chip='';
+    try{
+      const ps=paceKidStatus(kid);
+      if(ps.subjects){
+        if(ps.behindN>0) chip='<span style="font-size:10px;font-weight:800;padding:1px 8px;border-radius:10px;background:#ef444418;color:#ef4444">'+ps.behindN+' behind'+(ps.behindSubs.length?': '+esc(ps.behindSubs.slice(0,2).join(", ")):'')+'</span>';
+        else if(ps.aheadN>0) chip='<span style="font-size:10px;font-weight:800;padding:1px 8px;border-radius:10px;background:#16a34a18;color:#16a34a">On track · '+ps.aheadN+' ahead</span>';
+        else chip='<span style="font-size:10px;font-weight:800;padding:1px 8px;border-radius:10px;background:#3b82f618;color:#3b82f6">On track</span>';
+      }
+    }catch(e){}
+    const seg=(lab,d2,t2,ok)=>'<span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:9px;background:'+(ok?'#f0fdf4':'#f3f4f6')+';color:'+(ok?'#166534':'#4b5563')+'">'+lab+' '+d2+'/'+t2+'</span>';
+    h+='<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid #f3f4f6">'
+      +'<b style="color:'+col+';font-size:14px;flex:0 0 60px">'+cap(kid)+'</b>'+chip
+      +'<span style="flex:1"></span>'
+      +seg("🌅",mD,mT,mDone)
+      +(isSchoolDay?seg("📅",tc.done,tc.total,tc.total&&tc.done===tc.total):'')
+      +seg("☀️",af.done,af.due,af.due&&af.done===af.due)
+      +seg("🧹",ch.done,ch.due,ch.due&&ch.done===ch.due)
+      +seg("🌙",ev.done,ev.due,ev.due&&ev.done===ev.due)
+      +'<span style="font-size:11px;font-weight:800;color:#b45309">⭐ '+pts+'</span>'
+      +'</div>';
+  });
+  h+='</div></div>';
+
+  // ── 📖 Mom's school schedule — the SAME two-column agenda as Schedule ▸
+  // Mom, pinned to today. taskCard/tapTask are shared, so a check-off here is
+  // a check-off there (and on every device) — one `checked` map, two mirrors.
+  // kid/day are pinned only for the synchronous agenda build, then restored,
+  // so the Schedule tab's own view state is untouched.
+  if(isSchoolDay){
+    try{
+      const agTasks=getActiveTasks().filter(t=>t&&(t.mom==="required"||t.mom==="maybe")
+        &&effectiveDay(t)===today&&!String(t.id).endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title||""));
+      const _pk=kid,_pd=day; let agHtml="";
+      try{ kid="mom"; day=today; agHtml=momAgendaHtml(agTasks); } finally { kid=_pk; day=_pd; }
+      h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#6B4C93;color:#fff;font-weight:800;font-size:13px"><span>📖</span> Mom\'s school schedule</div>';
+      h+='<div style="padding:6px 8px 10px">'+agHtml+'</div></div>';
+    }catch(e){}
+  }
+
+  // ── ⚖️ Quick weigh-in — same input ids + save path as the Weigh-In
+  // subview (mwSaveWeighin reads #wi-date/#wi-lb; #wi-note absent → '').
+  try{
+    const wToday=wellnessWeighins.find(w=>w&&w.iso===iso);
+    const wLast=wellnessWeighins.filter(Boolean).slice().sort((a,b)=>String(b.iso).localeCompare(String(a.iso)))[0];
+    h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
+      +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#2C5F8A;color:#fff;font-weight:800;font-size:13px"><span>⚖️</span> Weigh-in'
+      +'<button onclick="mpGoto(\'weigh\')" style="margin-left:auto;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">Full view →</button></div>'
+      +'<div style="padding:12px 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+      +'<input type="hidden" id="wi-date" value="'+iso+'">'
+      +'<input type="number" step="0.1" inputmode="decimal" id="wi-lb" placeholder="lb" value="'+(wToday?wToday.lb:'')+'" style="width:90px;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:14px;font-weight:700;font-family:\'DM Sans\',sans-serif">'
+      +'<button onclick="mwSaveWeighin()" style="padding:8px 16px;border-radius:9px;border:none;background:#2C5F8A;color:#fff;font-size:13px;font-weight:700;cursor:pointer">'+(wToday?'Update':'Save')+'</button>'
+      +(wToday?'<span style="font-size:12px;color:#166534;font-weight:700">✓ '+wToday.lb+' lb logged today</span>'
+              :(wLast?'<span style="font-size:12px;color:var(--muted)">last: <b>'+wLast.lb+' lb</b> · '+esc(String(wLast.iso).slice(5))+'</span>':''))
+      +'</div>'
+      +'<div style="padding:0 14px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+      +'<span style="font-size:13px;font-weight:800;color:#2C5F8A">🫀 BP</span>'
+      +'<input type="number" inputmode="numeric" id="bp-sys" placeholder="120" style="width:64px;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:14px;font-weight:700;font-family:\'DM Sans\',sans-serif">'
+      +'<span style="font-weight:800;color:var(--muted)">/</span>'
+      +'<input type="number" inputmode="numeric" id="bp-dia" placeholder="80" style="width:64px;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:14px;font-weight:700;font-family:\'DM Sans\',sans-serif">'
+      +'<button onclick="mwSaveBP()" style="padding:8px 14px;border-radius:9px;border:none;background:#2C5F8A;color:#fff;font-size:13px;font-weight:700;cursor:pointer">Save '+mwBPSlotNow().toUpperCase()+'</button>'
+      +mwBPChip("am",iso)+mwBPChip("pm",iso)
+      +'</div>'
+      +'<div style="padding:0 14px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+      +'<span style="font-size:13px;font-weight:800;color:#c2547e">🌡 Today</span>'
+      +mwAllSyms().map(s=>{ const on=!!((wellnessSymptoms[iso]||{})[s[0]]);
+        return '<span onclick="mwToggleSym(\''+s[0]+'\')" style="cursor:pointer;font-size:11px;font-weight:700;padding:3px 9px;border-radius:12px;border:1.5px solid '+(on?'#c2547e':'#e5e7eb')+';background:'+(on?'#fbe3ec':'#fff')+';color:'+(on?'#b03a5b':'#6b7280')+'">'+s[1]+'</span>'; }).join('')
+      +'<span onclick="mwAddSymType()" style="cursor:pointer;font-size:11px;font-weight:800;padding:3px 9px;border-radius:12px;border:1.5px dashed #c2547e;background:#fff;color:#c2547e">＋ Add</span>'
+      +'</div></div>';
+  }catch(e){}
+
+  // ── 🏆 Win of the day + 🍽️ Tonight's dinner — Mom type-ins ──────
+  const win=momdayGet("win"), din=momdayGet("dinner");
+  h+='<div onclick="momdayEdit(\'win\')" style="cursor:pointer;background:linear-gradient(135deg,#F0EBF8,#fff);border:1.5px solid #6B4C93;border-radius:12px;padding:12px 14px;display:flex;gap:10px;align-items:center">'
+    +'<div style="font-size:26px;flex-shrink:0">🏆</div><div style="flex:1">'
+    +'<strong style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#6B4C93;display:block;margin-bottom:3px">Win of the day</strong>'
+    +'<p style="font-size:13px;font-weight:600;color:#1a1a1a;line-height:1.4">'+(win?esc(win):'<span style="color:var(--muted)">Tap to write today\'s win — even a tiny one counts.</span>')+'</p>'
+    +'</div><span style="color:var(--muted)">✎</span></div>';
+  // The meal planned in the Kitchen week grid wins; a typed plan for the day
+  // comes next; the momday free-text note is the fallback (and shows as a note
+  // under a planned meal). Tapping a planned meal opens its recipe.
+  const dpl=kitPlanFor(iso);
+  const dMeal=(dpl&&dpl.meal)?dpl.meal:null;
+  h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
+    +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#E07B39;color:#fff;font-weight:800;font-size:13px"><span>🍽️</span> Tonight\'s dinner'
+    +'<button onclick="mpGoto(\'meals\')" style="margin-left:auto;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">🗓 Plan week →</button></div>';
+  if(dMeal){
+    const dSteps=kitPrepSteps(iso);
+    h+='<div onclick="kitOpenRecipe(\''+dpl.mid+'\')" style="cursor:pointer;padding:12px 14px">'
+      +'<div style="font-size:15px;font-weight:800">'+(dMeal.emoji?esc(dMeal.emoji)+' ':'')+esc(dMeal.name)+' <span style="font-size:11px;font-weight:700;color:#E07B39">📖 recipe →</span></div>'
+      +(din?'<div style="font-size:12px;color:#6b6560;margin-top:3px">📝 '+esc(din)+'</div>':'')
+      +(dSteps.length?'<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:7px">'+dSteps.map(s=>'<span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:9px;background:'+(s.done?'#f0fdf4':'#fff7ed')+';color:'+(s.done?'#166534':'#c2410c')+'">'+(s.done?'✓ ':'⏲ ')+kitWhenLabel(s.when)+' '+esc(s.label)+'</span>').join('')+'</div>':'')
+      +'</div>';
+  } else if(dpl&&dpl.txt){
+    h+='<div onclick="kitPlanText(\''+iso+'\')" style="cursor:pointer;padding:12px 14px;font-size:13px;font-weight:700">'+esc(dpl.txt)+' <span style="color:var(--muted);font-weight:600">✎</span></div>';
+  } else {
+    h+='<div onclick="momdayEdit(\'dinner\')" style="cursor:pointer;padding:12px 14px;font-size:13px;font-weight:700">'+(din?esc(din):'<span style="color:var(--muted);font-weight:600">Tap to jot tonight\'s plan.</span>')+'</div>';
+  }
+  // Tomorrow's night-before steps get a gentle all-evening heads-up here;
+  // the hard 🔴 NOW nudge starts at KIT_NB_HOUR.
+  try{
+    const nbTom=kitIsoPlus(iso,1);
+    const nbs=kitPrepSteps(nbTom).filter(s=>s.when==="nb"&&!s.done);
+    if(nbs.length){
+      const tpl=kitPlanFor(nbTom);
+      h+='<div style="padding:0 14px 12px;font-size:12px;color:#6b6560">🌙 Tonight for tomorrow'+(tpl&&tpl.meal?' ('+esc(tpl.meal.name)+')':'')+': '+nbs.map(s=>esc(s.label)).join(' · ')+'</div>';
+    }
+  }catch(e){}
+  h+='</div>';
+
+  // ── 🥬 Use soon — produce drifting toward gone (pantry snapshot) ──
+  try{
+    const soon=Object.keys(kitPantry).map(id=>kitPantry[id])
+      .filter(it=>it&&it.zone==="produce"&&panStatus(it,iso)==="aging")
+      .map(it=>it.name).sort();
+    if(soon.length){
+      h+='<div style="background:linear-gradient(135deg,#f0fdf4,#fff);border:1.5px solid #16a34a;border-radius:12px;padding:10px 14px;font-size:13px"><b style="color:#166534">🥬 Use soon:</b> '+soon.map(esc).join(' · ')+'</div>';
+    }
+  }catch(e){}
+
+  // ── 📝 Mom's list — her own day checklist at momday/{iso}/todos ──
+  try{
+    const todos=((momdayData[iso]||{}).todos)||{};
+    const tids=Object.keys(todos).sort((a,b)=>(todos[a].ts||0)-(todos[b].ts||0));
+    const doneN=tids.filter(id=>todos[id].done).length;
+    h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
+      +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#3A7D44;color:#fff;font-weight:800;font-size:13px"><span>📝</span> Mom\'s list'
+      +(tids.length?'<span style="margin-left:auto;font-size:11px;font-weight:700;opacity:.85">'+doneN+'/'+tids.length+'</span>':'')+'</div>'
+      +'<div style="padding:10px 14px 12px">';
+    tids.forEach(id=>{
+      const t=todos[id];
+      h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:'+(t.done?'#f0fdf4':'#f8f7f4')+';border:1.5px solid '+(t.done?'#86efac':'#e8e4de')+';border-radius:9px;margin-bottom:6px">'
+        +'<div onclick="momdayToggleTodo(\''+id+'\')" style="cursor:pointer;width:20px;height:20px;border-radius:50%;border:2px solid '+(t.done?'#16a34a':'#2B7A78')+';background:'+(t.done?'#16a34a':'#fff')+';color:'+(t.done?'#fff':'transparent')+';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;font-weight:700">'+(t.done?'✓':'')+'</div>'
+        +'<div onclick="momdayToggleTodo(\''+id+'\')" style="cursor:pointer;flex:1;font-size:13px;font-weight:600;color:'+(t.done?'#6b6560':'#1a1a1a')+';'+(t.done?'text-decoration:line-through':'')+'">'+esc(t.text)+'</div>'
+        +'<button onclick="momdayDelTodo(\''+id+'\')" style="border:none;background:none;color:#9ca3af;font-size:14px;cursor:pointer;padding:2px 4px">✕</button></div>';
+    });
+    h+='<div style="display:flex;gap:8px;margin-top:'+(tids.length?'8':'0')+'px">'
+      +'<input type="text" id="md-todo-new" placeholder="Add something for today…" onkeydown="if(event.key===\'Enter\')momdayAddTodo()" style="flex:1;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
+      +'<button onclick="momdayAddTodo()" style="padding:9px 16px;border-radius:9px;border:none;background:#3A7D44;color:#fff;font-size:13px;font-weight:700;cursor:pointer">＋ Add</button></div>';
+    h+='</div></div>';
+  }catch(e){}
+
+  // ── 💳 Bills — every reminder with its next due date; add/paid/remove ──
+  try{
+    const ids=Object.keys(billsData).sort((a,b2)=>{
+      const sa=billState(billsData[a],iso), sb=billState(billsData[b2],iso);
+      return sa.due<sb.due?-1:1;
+    });
+    h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
+      +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#2C5F8A;color:#fff;font-weight:800;font-size:13px"><span>💳</span> Bills</div>'
+      +'<div style="padding:10px 14px 12px">';
+    const BC={overdue:["#b91c1c","#fef2f2"],due:["#b45309","#fffbeb"],soon:["#a16207","#fefce8"],later:["#6b7280","#f8fafc"]};
+    ids.forEach(id=>{
+      const b=billsData[id], st=billState(b,iso), c=BC[st.state]||BC.later;
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:'+c[1]+';border-left:3px solid '+c[0]+';border-radius:8px;margin-bottom:6px">'
+        +'<span style="flex:1;font-size:13px;font-weight:700">'+esc(b.name)+(b.amt?' <span style="color:#6b6560;font-weight:600">· '+esc(b.amt)+'</span>':'')
+        +(b.freq==="yearly"?' <span style="font-size:9px;font-weight:800;color:#6b7280;text-transform:uppercase">yearly</span>':'')+'</span>'
+        +'<span style="font-size:11px;font-weight:800;color:'+c[0]+';white-space:nowrap">'+billDueLabel(st)+'</span>'
+        +'<button onclick="billMarkPaid(\''+id+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid #16a34a;background:#fff;color:#15803d;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Paid</button>'
+        +'<button onclick="billDel(\''+id+'\')" style="border:none;background:none;color:#9ca3af;font-size:14px;cursor:pointer;padding:2px 4px">✕</button></div>';
+    });
+    if(!ids.length) h+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">No bills yet — add the usuals below and they\'ll pop into 🔴 NOW when due.</div>';
+    h+='<div style="display:flex;gap:6px;margin-top:'+(ids.length?'8':'0')+'px;flex-wrap:wrap">'
+      +'<input type="text" id="bill-name" placeholder="Bill (Electric…)" style="flex:2;min-width:110px;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
+      +'<input type="text" id="bill-amt" placeholder="$" style="flex:1;min-width:60px;padding:9px 10px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
+      +'<input type="number" id="bill-day" placeholder="Day" min="1" max="31" style="width:64px;padding:9px 10px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
+      +'<select id="bill-freq" style="padding:9px 8px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif"><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select>'
+      +'<button onclick="billAdd()" style="padding:9px 16px;border-radius:9px;border:none;background:#2C5F8A;color:#fff;font-size:13px;font-weight:700;cursor:pointer">＋ Add</button></div>';
+    h+='</div></div>';
+  }catch(e){}
+
+  // ── 🧺 Laundry — active loads and where each one is ──────────────
+  try{
+    const lids=Object.keys(laundryData).sort((a,b2)=>(laundryData[a].ts||0)-(laundryData[b2].ts||0));
+    h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
+      +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#2563eb;color:#fff;font-weight:800;font-size:13px"><span>🧺</span> Laundry</div>'
+      +'<div style="padding:10px 14px 12px">';
+    lids.forEach(id=>{
+      const l=laundryData[id]; const meta=LAUNDRY_STAGE_META[l.stage]||["🧺",l.stage];
+      const trail=LAUNDRY_STAGES.map(s=>{
+        const on=LAUNDRY_STAGES.indexOf(s)<=LAUNDRY_STAGES.indexOf(l.stage);
+        return '<span style="font-size:10px;font-weight:800;padding:1px 7px;border-radius:8px;background:'+(s===l.stage?'#dbeafe':(on?'#f0fdf4':'#f3f4f6'))+';color:'+(s===l.stage?'#1d4ed8':(on?'#166534':'#9ca3af'))+'">'+(LAUNDRY_STAGE_META[s][0])+' '+s+'</span>';
+      }).join('');
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#f8fafc;border-left:3px solid #2563eb;border-radius:8px;margin-bottom:6px;flex-wrap:wrap">'
+        +'<span style="font-size:13px;font-weight:700">'+esc(l.label)+'</span>'+trail
+        +'<span style="font-size:10px;color:var(--muted)">'+meta[1]+' since '+laundrySince(l.ts)+'</span>'
+        +'<span style="flex:1"></span>'
+        +'<button onclick="laundryAdvance(\''+id+'\')" style="padding:4px 12px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+laundryAdvanceLabel(l.stage)+'</button>'
+        +'<button onclick="laundryDel(\''+id+'\')" style="border:none;background:none;color:#9ca3af;font-size:14px;cursor:pointer;padding:2px 4px">✕</button></div>';
+    });
+    if(!lids.length) h+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Nothing running. Start a load below — it\'ll nudge you in 🔴 NOW if it sits in the washer.</div>';
+    h+='<div style="display:flex;gap:8px;margin-top:'+(lids.length?'8':'0')+'px">'
+      +'<input type="text" id="laundry-label" placeholder="Start a load (Towels…)" onkeydown="if(event.key===\'Enter\')laundryAdd()" style="flex:1;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
+      +'<button onclick="laundryAdd()" style="padding:9px 16px;border-radius:9px;border:none;background:#2563eb;color:#fff;font-size:13px;font-weight:700;cursor:pointer">🫧 Start</button></div>';
+    h+='</div></div>';
+  }catch(e){}
+
+  // ── 🟡 NEXT — what's coming up ──────────────────────────────────
+  try{ const up=calUpcomingHTML("all"); if(up) h+=up; }catch(e){}
+
+  h+='</div></div>';
+  el.innerHTML=h;
+}
+
+
+// ── 🍽 KITCHEN · Phase 2 — meals library, week grid, prep timers ──────
+// Data (all under kitchen/*):
+//   kitchen/meals/{id}   = {name, emoji?, ing, steps, prep:[{when,label}], ts}
+//                          ing/steps are plain text, one item per line.
+//                          prep "when" is "nb" (night before) or "HH:MM" 24h.
+//   kitchen/plan/{iso}   = {mid: mealId} | {txt: "typed dinner"}
+//   kitchen/prepDone/{iso}/{mid_idx} = ts — keyed by the MEAL's day, so a
+//                          night-before step done tonight lives under tomorrow.
+//   kitchen/staples/{id} = {name, state: have|low|out, ts} — a CURATED list
+//                          (her call, no full inventory); tap cycles the state.
+//   kitchen/usuals/{id}  = {name, cat: breakfast|lunch|snack|other, ts} —
+//                          standing items that ride EVERY order.
+//   kitchen/settings     = {orderDay: "monday"…} — the weekday the 🛒 Build-
+//                          your-order card surfaces on Mom's Day.
+//   kitchen/pantry/{id}  = {name, zone: produce|fridge|freezer|pantry,
+//                          addedIso, ts} — a dated SNAPSHOT, not an inventory.
+//                          Items fade by zone shelf-life (fresh → aging →
+//                          gone) and gone items hide; nothing ever logs
+//                          consumption, so neglect shrinks the list instead
+//                          of letting it lie. Claude reads this node to
+//                          suggest meals/snacks from what's really here.
+// A due prep step becomes a 🔴 NOW card on Mom's Day; night-before steps for
+// tomorrow's meal join NOW from KIT_NB_HOUR on.
+const KIT_NB_HOUR=16; // 4 PM — when tomorrow's night-before steps start nudging
+
+function kitIsoPlus(iso,n){
+  const d=gwParseDate(iso); d.setDate(d.getDate()+n);
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+function kitNowMin(){ const d=new Date(); return d.getHours()*60+d.getMinutes(); }
+function kitPlanFor(iso){
+  const p=kitPlan[iso]; if(!p) return null;
+  if(p.mid) return {mid:p.mid,meal:kitMeals[p.mid]||null};
+  if(p.txt) return {txt:p.txt};
+  return null;
+}
+function kitWhenMin(w){
+  if(w==="nb") return null;
+  const m=/^(\d{1,2}):(\d{2})$/.exec(w||"");
+  if(!m) return null;
+  const h=+m[1], mm=+m[2];
+  return (h<24&&mm<60)?h*60+mm:null;
+}
+function kitWhenLabel(w){
+  if(w==="nb") return "night before";
+  const min=kitWhenMin(w); if(min==null) return w||"";
+  let h=Math.floor(min/60); const mm=min%60, ap=h>=12?"PM":"AM"; h=h%12||12;
+  return h+":"+String(mm).padStart(2,"0")+" "+ap;
+}
+// Every prep step for the meal planned on `iso`, with its done flag.
+function kitPrepSteps(iso){
+  const pl=kitPlanFor(iso);
+  if(!pl||!pl.meal||!Array.isArray(pl.meal.prep)) return [];
+  const done=kitPrepDone[iso]||{};
+  return pl.meal.prep.map((s,i)=>({iso:iso,mid:pl.mid,idx:i,when:s.when,label:s.label||"",
+    mealName:pl.meal.name||"",done:!!done[pl.mid+"_"+i]}));
+}
+// Steps due RIGHT NOW: today's timed steps whose time has arrived, plus
+// tomorrow's night-before steps once the afternoon turns (KIT_NB_HOUR).
+// nowMin is injectable for tests; real callers omit it.
+function kitDuePrep(nowMin){
+  if(nowMin==null) nowMin=kitNowMin();
+  const out=[], today=_todayStr();
+  kitPrepSteps(today).forEach(s=>{
+    if(s.done||s.when==="nb") return;
+    const m=kitWhenMin(s.when);
+    if(m!=null&&m<=nowMin) out.push(s);
+  });
+  if(Math.floor(nowMin/60)>=KIT_NB_HOUR){
+    kitPrepSteps(kitIsoPlus(today,1)).forEach(s=>{ if(!s.done&&s.when==="nb") out.push(s); });
+  }
+  return out;
+}
+function kitMarkPrep(iso,key){
+  const dayMap=Object.assign({},kitPrepDone[iso]);
+  if(dayMap[key]) delete dayMap[key]; else dayMap[key]=Date.now();
+  kitPrepDone[iso]=dayMap;
+  try{HA_LS.setItem('ha_kit_prepdone',JSON.stringify(kitPrepDone));}catch(e){}
+  if(typeof db!=='undefined'&&db){
+    if(dayMap[key]) db.ref('kitchen/prepDone/'+iso+'/'+key).set(dayMap[key]);
+    else db.ref('kitchen/prepDone/'+iso+'/'+key).remove();
+  }
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+
+// ── week-grid plan writes ──────────────────────────────────────────
+function kitAssign(iso,val){ // val = {mid} | {txt} | null (clear the day)
+  if(val) kitPlan[iso]=val; else delete kitPlan[iso];
+  kitPickIso=null;
+  try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
+  if(typeof db!=='undefined'&&db){
+    if(val) db.ref('kitchen/plan/'+iso).set(val);
+    else db.ref('kitchen/plan/'+iso).remove();
+  }
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function kitPickDay(iso){
+  kitPickIso=(kitPickIso===iso)?null:iso;
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function kitPlanText(iso){
+  const cur=kitPlanFor(iso);
+  const v=prompt("Dinner plan:",(cur&&cur.txt)||"");
+  if(v===null) return;
+  kitAssign(iso,v.trim()?{txt:v.trim()}:null);
+}
+
+// ── recipe view / editor plumbing ──────────────────────────────────
+function kitOpenRecipe(mid){ kitView=mid; kitEditId=null; mpGoto('meals'); }
+function kitCloseRecipe(){ kitView=null; const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
+function kitEditMeal(id){
+  kitEditId=id||"new"; kitView=null;
+  const m=(id&&kitMeals[id])||{};
+  kitEditPrep=(m.prep||[]).map(s=>({when:s.when,label:s.label}));
+  kitEditDraft={name:m.name||"",emoji:m.emoji||"",ing:m.ing||"",steps:m.steps||""};
+  mpGoto('meals');
+}
+// Keep typed-but-unsaved fields across the re-renders the prep builder causes.
+function _kitStash(){
+  const g=id=>((document.getElementById(id)||{}).value||"");
+  kitEditDraft={name:g('kit-name'),emoji:g('kit-emoji'),ing:g('kit-ing'),steps:g('kit-steps')};
+}
+function kitAddPrepRow(){
+  const mode=((document.getElementById('kit-prep-mode')||{}).value)||"t";
+  const time=((document.getElementById('kit-prep-time')||{}).value)||"";
+  const label=(((document.getElementById('kit-prep-label')||{}).value)||"").trim();
+  if(!label){ alert("Give the step a few words (\u201Cstart the Instant Pot\u201D)."); return; }
+  const when=(mode==="nb")?"nb":time;
+  if(when!=="nb"&&kitWhenMin(when)==null){ alert("Pick a time for the step (or switch it to night-before)."); return; }
+  _kitStash();
+  kitEditPrep.push({when:when,label:label});
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function kitDelPrepRow(i){
+  _kitStash();
+  kitEditPrep.splice(i,1);
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function kitSaveMeal(){
+  _kitStash();
+  const d=kitEditDraft||{};
+  if(!(d.name||"").trim()){ alert("The meal needs a name."); return; }
+  const id=(kitEditId&&kitEditId!=="new")?kitEditId:"m"+Date.now().toString(36);
+  const m={name:d.name.trim(),ing:d.ing||"",steps:d.steps||"",
+    prep:kitEditPrep.map(s=>({when:s.when,label:s.label})),
+    ts:(kitMeals[id]&&kitMeals[id].ts)||Date.now()};
+  if((d.emoji||"").trim()) m.emoji=d.emoji.trim();
+  kitMeals[id]=m;
+  kitEditId=null; kitEditDraft=null; kitEditPrep=[]; kitView=id;
+  try{HA_LS.setItem('ha_kit_meals',JSON.stringify(kitMeals));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('kitchen/meals/'+id).set(m);
+  if(typeof mwToast==='function') mwToast('🍽 '+m.name+' saved');
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function kitCancelEdit(){
+  kitEditId=null; kitEditDraft=null; kitEditPrep=[];
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function kitDelMeal(id){
+  const m=kitMeals[id]; if(!m) return;
+  if(!confirm('Remove "'+(m.name||'this meal')+'" and its recipe?')) return;
+  delete kitMeals[id];
+  // clear any week-grid day still pointing at it
+  Object.keys(kitPlan).forEach(iso=>{
+    if(kitPlan[iso]&&kitPlan[iso].mid===id){
+      delete kitPlan[iso];
+      if(typeof db!=='undefined'&&db) db.ref('kitchen/plan/'+iso).remove();
+    }
+  });
+  if(kitView===id) kitView=null;
+  try{HA_LS.setItem('ha_kit_meals',JSON.stringify(kitMeals));}catch(e){}
+  try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('kitchen/meals/'+id).remove();
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+
+// ── 🧺 staples · tap-cycle states + curated add/remove ─────────────
+const KIT_STATES=["have","low","out"];
+const KIT_STATE_META={have:["✅","#f0fdf4","#166534","#bbf7d0"],low:["🟡","#fefce8","#a16207","#fde68a"],out:["❌","#fef2f2","#b91c1c","#fecaca"]};
+const KIT_CATS=[["breakfast","🥞 Breakfast"],["lunch","🥪 Lunch"],["snack","🍎 Snacks"],["other","🧻 Other"]];
+function kitStapleCycle(id){
+  const s=kitStaples[id]; if(!s) return;
+  const i=KIT_STATES.indexOf(s.state);
+  s.state=KIT_STATES[(i+1)%KIT_STATES.length]; s.ts=Date.now();
+  try{HA_LS.setItem('ha_kit_staples',JSON.stringify(kitStaples));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('kitchen/staples/'+id).set(s);
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function kitStapleAdd(){
+  const inp=document.getElementById('kit-staple-new'); const name=((inp&&inp.value)||"").trim();
+  if(!name) return;
+  const id="s"+Date.now().toString(36);
+  kitStaples[id]={name:name,state:"have",ts:Date.now()};
+  try{HA_LS.setItem('ha_kit_staples',JSON.stringify(kitStaples));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('kitchen/staples/'+id).set(kitStaples[id]);
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function kitStapleDel(id){
+  const s=kitStaples[id]; if(!s) return;
+  if(!confirm('Remove "'+(s.name||'this staple')+'" from the staples list?')) return;
+  delete kitStaples[id];
+  try{HA_LS.setItem('ha_kit_staples',JSON.stringify(kitStaples));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('kitchen/staples/'+id).remove();
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function kitStapleToggleManage(){
+  kitStapleManage=!kitStapleManage;
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+
+// ── 🔁 standing usuals — always on the order ───────────────────────
+function kitUsualAdd(){
+  const name=(((document.getElementById('kit-usual-new')||{}).value)||"").trim();
+  if(!name) return;
+  const cat=((document.getElementById('kit-usual-cat')||{}).value)||"other";
+  const id="u"+Date.now().toString(36);
+  kitUsuals[id]={name:name,cat:KIT_CATS.some(c=>c[0]===cat)?cat:"other",ts:Date.now()};
+  try{HA_LS.setItem('ha_kit_usuals',JSON.stringify(kitUsuals));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('kitchen/usuals/'+id).set(kitUsuals[id]);
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function kitUsualDel(id){
+  const u=kitUsuals[id]; if(!u) return;
+  if(!confirm('Take "'+(u.name||'this item')+'" off the standing order?')) return;
+  delete kitUsuals[id];
+  try{HA_LS.setItem('ha_kit_usuals',JSON.stringify(kitUsuals));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('kitchen/usuals/'+id).remove();
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+
+// ── 🛒 order day ───────────────────────────────────────────────────
+function kitSetOrderDay(v){
+  if(v) kitSettings.orderDay=v; else delete kitSettings.orderDay;
+  try{HA_LS.setItem('ha_kit_settings',JSON.stringify(kitSettings));}catch(e){}
+  if(typeof db!=='undefined'&&db){
+    if(v) db.ref('kitchen/settings/orderDay').set(v);
+    else db.ref('kitchen/settings/orderDay').remove();
+  }
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+// What goes on the order right now: ❌ out staples first, then 🟡 low, then
+// every standing usual grouped by category. Pure — render and copy share it.
+function kitOrderList(){
+  const byName=(a,b)=>String(a.name||"").localeCompare(String(b.name||""));
+  const staple=st=>Object.keys(kitStaples).map(id=>Object.assign({id:id},kitStaples[id])).filter(s=>s.state===st).sort(byName);
+  const need=staple("out").concat(staple("low"));
+  const usuals={};
+  KIT_CATS.forEach(c=>{
+    const rows=Object.keys(kitUsuals).map(id=>Object.assign({id:id},kitUsuals[id])).filter(u=>(u.cat||"other")===c[0]).sort(byName);
+    if(rows.length) usuals[c[0]]=rows;
+  });
+  return {need:need,usuals:usuals,count:need.length+Object.keys(usuals).reduce((n,k)=>n+usuals[k].length,0)};
+}
+function kitOrderText(){
+  const o=kitOrderList();
+  const lines=["🛒 Order — "+_todayStr()];
+  const out=o.need.filter(s=>s.state==="out"), low=o.need.filter(s=>s.state==="low");
+  if(out.length) lines.push("OUT: "+out.map(s=>s.name).join(", "));
+  if(low.length) lines.push("LOW: "+low.map(s=>s.name).join(", "));
+  KIT_CATS.forEach(c=>{ const rows=o.usuals[c[0]]; if(rows) lines.push(c[1].replace(/^\S+\s/,"")+": "+rows.map(u=>u.name).join(", ")); });
+  return lines.join("\n");
+}
+function kitCopyOrder(){
+  const txt=kitOrderText();
+  if(typeof navigator!=="undefined"&&navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(
+      ()=>{ if(typeof mwToast==='function') mwToast('🛒 Order list copied'); },
+      ()=>{ prompt("Copy your order list:",txt); });
+  } else {
+    prompt("Copy your order list:",txt);
   }
 }
+function kitStapleChip(id,manage){
+  const s=kitStaples[id]; const m=KIT_STATE_META[s.state]||KIT_STATE_META.have;
+  return '<span onclick="kitStapleCycle(\''+id+'\')" style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:4px 10px;border-radius:12px;border:1.5px solid '+m[3]+';background:'+m[1]+';color:'+m[2]+'">'+m[0]+' '+esc(s.name)
+    +(manage?'<span onclick="event.stopPropagation();kitStapleDel(\''+id+'\')" style="color:#9ca3af;font-weight:800;padding:0 2px">✕</span>':'')+'</span>';
+}
+// The order-day card — shared by Mom's Day (on the chosen weekday) and the
+// Meals subview (always, as a preview while she builds the lists).
+function kitOrderCardHTML(compact){
+  const o=kitOrderList();
+  const out=o.need.filter(s=>s.state==="out"), low=o.need.filter(s=>s.state==="low");
+  let h='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
+    +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#3A7D44;color:#fff;font-weight:800;font-size:13px"><span>🛒</span> Build your order'
+    +(o.count?'<span style="font-size:11px;font-weight:700;opacity:.85">· '+o.count+' item'+(o.count===1?'':'s')+'</span>':'')
+    +'<button onclick="kitCopyOrder()" style="margin-left:auto;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">📋 Copy list</button>'
+    +(compact?'<button onclick="mpGoto(\'meals\')" style="border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">🍽 Manage →</button>':'')
+    +'</div><div style="padding:10px 14px 12px">';
+  if(out.length) h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#b91c1c;margin:2px 0 5px">❌ Out</div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px">'+out.map(s=>kitStapleChip(s.id,false)).join('')+'</div>';
+  if(low.length) h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#a16207;margin:6px 0 5px">🟡 Low</div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px">'+low.map(s=>kitStapleChip(s.id,false)).join('')+'</div>';
+  KIT_CATS.forEach(c=>{
+    const rows=o.usuals[c[0]]; if(!rows) return;
+    h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:6px 0 3px">'+c[1]+'</div>'
+      +'<div style="font-size:13px;font-weight:600;line-height:1.6">'+rows.map(u=>esc(u.name)).join(' · ')+'</div>';
+  });
+  if(!o.count) h+='<div style="font-size:12px;color:var(--muted)">Nothing on the list. Tap staples 🟡 low / ❌ out as you notice them, and put the every-week items in usuals — they\'ll gather here.</div>';
+  h+='</div></div>';
+  return h;
+}
 
-function mpHandleUpload(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    try {
-      const data = JSON.parse(e.target.result);
-      if (!data.days || !Array.isArray(data.days)) throw new Error('Invalid schema — missing days array');
-      MP_DATA.weekLabel = data.weekLabel || MP_DATA.weekLabel;
-      MP_DATA.winOfTheDay = data.winOfTheDay || MP_DATA.winOfTheDay;
-      MP_DATA.skylightTip = data.skylightTip || MP_DATA.skylightTip;
-      MP_DATA.days = data.days;
-      MP_DATA.allMeals = data.allMeals || MP_DATA.allMeals;
-      mpChoreState = {};
-      try { HA_LS.setItem('mp_weekly_data', JSON.stringify(data)); } catch(err) {}
-      try { HA_LS.removeItem('mp_chore_state'); } catch(err) {}
-      // Sync Mom's Plan to Firebase so all devices stay current
-      if(db){ db.ref("mp_data").set(data); db.ref("mp_chore_state").set({}); }
-      const todayDay = MP_DATA.days.find(d => d.isToday);
-      mpActiveDay = todayDay ? todayDay.id : MP_DATA.days[0].id;
-      const el = document.getElementById('content');
-      renderMomsPlan(el);
-      const msg = document.createElement('div');
-      msg.textContent = '✅ New week plan loaded!';
-      Object.assign(msg.style, {
-        position:'fixed',bottom:'80px',left:'50%',transform:'translateX(-50%)',
-        background:'#2B7A78',color:'#fff',padding:'8px 18px',borderRadius:'20px',
-        fontFamily:"'DM Sans',sans-serif",fontSize:'12px',fontWeight:'700',
-        zIndex:'9999',whiteSpace:'nowrap',opacity:'1',transition:'opacity 0.5s'
+// ── 🥫 pantry snapshot — loose, dated, fades honestly ──────────────
+// Zones carry a rough shelf-life in days. An item is fresh for the first 60%
+// of it, "aging" for the rest, and "probably gone" after — gone items hide
+// from every view (no auto-delete sweep; 🧹 Clear removes them on HER tap).
+const PAN_ZONES=[["produce","🥬 Produce",6],["fridge","🧊 Fridge",14],["freezer","❄️ Freezer",90],["pantry","🥫 Pantry",180]];
+function panZoneMeta(z){ return PAN_ZONES.find(p=>p[0]===z)||PAN_ZONES[3]; }
+function panStatus(it,todayIso){
+  if(!todayIso) todayIso=_todayStr();
+  const life=panZoneMeta(it.zone)[2];
+  const age=Math.round((gwParseDate(todayIso)-gwParseDate(it.addedIso||todayIso))/86400000);
+  if(age>life) return "gone";
+  if(age>=life*0.6) return "aging";
+  return "fresh";
+}
+// Add-or-refresh by name (case-insensitive): re-importing something you
+// already have re-stamps its date — the weekly receipt renews the snapshot.
+function panAdd(name,zone){
+  name=String(name||"").trim(); if(!name) return null;
+  if(!PAN_ZONES.some(p=>p[0]===zone)) zone="pantry";
+  const key=name.toLowerCase();
+  let id=Object.keys(kitPantry).find(k=>String((kitPantry[k]||{}).name||"").toLowerCase()===key);
+  if(!id) id="p"+Date.now().toString(36)+"_"+Object.keys(kitPantry).length;
+  // a merge refreshes date/zone but keeps the first spelling she gave it —
+  // receipts recapitalize things; the chip (and its ⭐ staple link) shouldn't
+  const prev=kitPantry[id];
+  kitPantry[id]={name:(prev&&prev.name)||name,zone:zone,addedIso:_todayStr(),ts:Date.now()};
+  try{HA_LS.setItem('ha_kit_pantry',JSON.stringify(kitPantry));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('kitchen/pantry/'+id).set(kitPantry[id]);
+  return id;
+}
+function panAddManual(){
+  const name=((document.getElementById('pan-new')||{}).value)||"";
+  const zone=((document.getElementById('pan-zone')||{}).value)||"pantry";
+  if(!name.trim()) return;
+  panAdd(name,zone);
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function panDel(id){
+  if(!kitPantry[id]) return;
+  delete kitPantry[id];
+  try{HA_LS.setItem('ha_kit_pantry',JSON.stringify(kitPantry));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('kitchen/pantry/'+id).remove();
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function panToggleManage(){ panManage=!panManage; const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
+function panImportToggle(){ panImportOpen=!panImportOpen; const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
+// Paste-import: one item per line, "name | zone" (zone optional → pantry).
+function panImportApply(){
+  const raw=((document.getElementById('pan-import')||{}).value)||"";
+  let n=0;
+  raw.split("\n").forEach(line=>{
+    line=line.trim(); if(!line) return;
+    const parts=line.split("|");
+    const name=(parts[0]||"").trim();
+    const zone=(parts[1]||"").trim().toLowerCase();
+    if(!name) return;
+    if(panAdd(name,zone)) n++;
+  });
+  if(n){
+    panImportOpen=false;
+    if(typeof mwToast==='function') mwToast('📥 '+n+' item'+(n===1?'':'s')+' into the pantry');
+  }
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function panClearGone(){
+  const ids=Object.keys(kitPantry).filter(id=>panStatus(kitPantry[id])==="gone");
+  ids.forEach(id=>{
+    delete kitPantry[id];
+    if(typeof db!=='undefined'&&db) db.ref('kitchen/pantry/'+id).remove();
+  });
+  try{HA_LS.setItem('ha_kit_pantry',JSON.stringify(kitPantry));}catch(e){}
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+// ⭐ "regular" = this pantry item also lives on the 🧺 staples check-list
+// (the things she eyeballs when ordering). Linked loosely, by name.
+function panIsRegular(name){
+  const key=String(name||"").toLowerCase();
+  return Object.keys(kitStaples).some(k=>String((kitStaples[k]||{}).name||"").toLowerCase()===key);
+}
+function panToggleRegular(id){
+  const it=kitPantry[id]; if(!it) return;
+  const key=String(it.name||"").toLowerCase();
+  const sid=Object.keys(kitStaples).find(k=>String((kitStaples[k]||{}).name||"").toLowerCase()===key);
+  if(sid){
+    delete kitStaples[sid];
+    if(typeof db!=='undefined'&&db) db.ref('kitchen/staples/'+sid).remove();
+    if(typeof mwToast==='function') mwToast('☆ '+it.name+' off the regulars');
+  } else {
+    const nid="s"+Date.now().toString(36);
+    kitStaples[nid]={name:it.name,state:"have",ts:Date.now()};
+    if(typeof db!=='undefined'&&db) db.ref('kitchen/staples/'+nid).set(kitStaples[nid]);
+    if(typeof mwToast==='function') mwToast('⭐ '+it.name+' is a regular now — it\'s on the order-day check');
+  }
+  try{HA_LS.setItem('ha_kit_staples',JSON.stringify(kitStaples));}catch(e){}
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function panChip(id){
+  const it=kitPantry[id]; const st=panStatus(it);
+  const c=st==="aging"?["#fefce8","#a16207","#fde68a"]:["#f0fdf4","#166534","#bbf7d0"];
+  return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:4px 10px;border-radius:12px;border:1.5px solid '+c[2]+';background:'+c[0]+';color:'+c[1]+'">'
+    +(st==="aging"?'🕐 ':'')+esc(it.name)
+    +'<span onclick="panToggleRegular(\''+id+'\')" title="regular = on the staples check-list" style="cursor:pointer;font-size:13px">'+(panIsRegular(it.name)?'⭐':'☆')+'</span>'
+    +(panManage?'<span onclick="panDel(\''+id+'\')" style="cursor:pointer;color:#9ca3af;font-weight:800;padding:0 2px">✕</span>':'')
+    +'</span>';
+}
+
+function kitEditorHTML(){
+  const d=kitEditDraft||{};
+  const isNew=(kitEditId==="new");
+  let h='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
+    +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#6B4C93;color:#fff;font-weight:800;font-size:13px"><span>'+(isNew?'＋':'✎')+'</span> '+(isNew?'New meal':'Edit meal')
+    +'<button onclick="kitCancelEdit()" style="margin-left:auto;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">✕ Cancel</button></div>'
+    +'<div style="padding:12px 14px">'
+    +'<div style="display:flex;gap:8px;margin-bottom:9px">'
+    +'<input type="text" id="kit-name" value="'+esc(d.name||"")+'" placeholder="Meal (Taco night…)" style="flex:1;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:14px;font-weight:700;font-family:\'DM Sans\',sans-serif">'
+    +'<input type="text" id="kit-emoji" value="'+esc(d.emoji||"")+'" placeholder="🌮" maxlength="4" style="width:56px;text-align:center;padding:9px 6px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:16px">'
+    +'</div>'
+    +'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:6px 0 4px">🧾 Ingredients — one per line</div>'
+    +'<textarea id="kit-ing" rows="5" placeholder="1 lb ground beef&#10;taco shells&#10;shredded cheese" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'+esc(d.ing||"")+'</textarea>'
+    +'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:9px 0 4px">📖 Instructions — one step per line</div>'
+    +'<textarea id="kit-steps" rows="5" placeholder="Brown the beef…" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'+esc(d.steps||"")+'</textarea>'
+    +'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:9px 0 4px">⏲ Prep timers — each becomes a 🔴 NOW card on its day</div>';
+  kitEditPrep.forEach((s,i)=>{
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:9px;margin-bottom:5px">'
+      +'<span style="font-size:11px;font-weight:800;color:#c2410c;white-space:nowrap">'+(s.when==="nb"?'🌙 night before':'⏲ '+kitWhenLabel(s.when))+'</span>'
+      +'<span style="flex:1;font-size:13px;font-weight:600">'+esc(s.label)+'</span>'
+      +'<button onclick="kitDelPrepRow('+i+')" style="border:none;background:none;color:#9ca3af;font-size:14px;cursor:pointer;padding:2px 4px">✕</button></div>';
+  });
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'
+    +'<select id="kit-prep-mode" onchange="var t=document.getElementById(\'kit-prep-time\');if(t)t.style.display=(this.value===\'nb\'?\'none\':\'\')" style="padding:9px 8px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif"><option value="t">At a time</option><option value="nb">Night before</option></select>'
+    +'<input type="time" id="kit-prep-time" style="padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
+    +'<input type="text" id="kit-prep-label" placeholder="Start the Instant Pot…" onkeydown="if(event.key===\'Enter\')kitAddPrepRow()" style="flex:1;min-width:140px;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
+    +'<button onclick="kitAddPrepRow()" style="padding:9px 14px;border-radius:9px;border:1.5px solid #E07B39;background:#fff;color:#c2410c;font-size:13px;font-weight:700;cursor:pointer">＋ Step</button></div>'
+    +'<button onclick="kitSaveMeal()" style="margin-top:12px;width:100%;padding:12px;border-radius:10px;border:none;background:#2B7A78;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">💾 Save meal</button>'
+    +'</div></div>';
+  return h;
+}
+
+function kitRecipeHTML(mid){
+  const m=kitMeals[mid]||{};
+  const ing=String(m.ing||"").split("\n").map(s=>s.trim()).filter(Boolean);
+  const steps=String(m.steps||"").split("\n").map(s=>s.trim()).filter(Boolean);
+  const prep=Array.isArray(m.prep)?m.prep:[];
+  const today=_todayStr(); const days=[];
+  for(let i=0;i<7;i++){
+    const iso=kitIsoPlus(today,i); const p=kitPlan[iso];
+    if(p&&p.mid===mid) days.push(i===0?'tonight':(i===1?'tomorrow':gwParseDate(iso).toLocaleDateString("en-US",{weekday:"long"})));
+  }
+  let h='<div style="display:flex;gap:8px">'
+    +'<button onclick="kitCloseRecipe()" style="padding:8px 14px;border-radius:9px;border:1.5px solid #cbd5e1;background:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">← Meals</button>'
+    +'<button onclick="kitEditMeal(\''+mid+'\')" style="padding:8px 14px;border-radius:9px;border:1.5px solid #6B4C93;background:#fff;color:#6B4C93;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✎ Edit</button></div>';
+  h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
+    +'<div style="display:flex;align-items:center;gap:8px;padding:12px 14px;background:#E07B39;color:#fff"><span style="font-size:22px">'+(m.emoji?esc(m.emoji):'🍽')+'</span><span style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700">'+esc(m.name||"")+'</span></div>'
+    +'<div style="padding:12px 14px">'
+    +(days.length?'<div style="font-size:11px;font-weight:800;color:#c2410c;margin-bottom:8px">🗓 Planned: '+esc(days.join(", "))+'</div>':'')
+    +'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:2px 0 5px">🧾 Ingredients</div>';
+  if(ing.length) ing.forEach(x=>{ h+='<div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:13px"><span style="color:#E07B39">•</span><span>'+esc(x)+'</span></div>'; });
+  else h+='<div style="font-size:12px;color:var(--muted)">None written down yet — ✎ Edit to add them.</div>';
+  h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:12px 0 5px">📖 Instructions</div>';
+  if(steps.length) steps.forEach((x,i)=>{ h+='<div style="display:flex;gap:9px;align-items:flex-start;padding:5px 0;font-size:13px;line-height:1.5"><span style="flex:0 0 20px;height:20px;border-radius:50%;background:#FDF0E8;color:#c2410c;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center">'+(i+1)+'</span><span>'+esc(x)+'</span></div>'; });
+  else h+='<div style="font-size:12px;color:var(--muted)">No steps yet.</div>';
+  if(prep.length){
+    h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:12px 0 5px">⏲ Prep timers</div>';
+    prep.forEach(s=>{ h+='<div style="display:flex;gap:8px;align-items:center;padding:5px 8px;background:#fff7ed;border-radius:8px;margin-bottom:4px;font-size:12.5px"><span style="font-weight:800;color:#c2410c;white-space:nowrap">'+(s.when==="nb"?'🌙 night before':'⏲ '+kitWhenLabel(s.when))+'</span><span>'+esc(s.label||"")+'</span></div>'; });
+    h+='<div style="font-size:11px;color:var(--muted);margin-top:2px">These pop into 🔴 NOW on Mom\'s Day when the meal is planned.</div>';
+  }
+  h+='</div></div>';
+  return h;
+}
+
+function renderKitchen(el){
+  if(!el){el=document.getElementById("content");if(!el)return;}
+  const today=_todayStr();
+  let h='<div style="font-family:\'DM Sans\',sans-serif;padding-bottom:20px">';
+  h+=mwBanner('🍽 Meals — the week\'s dinners + the recipes to cook them');
+  h+=mpSubnav('meals');
+  h+='<div style="padding:12px 12px 0;display:flex;flex-direction:column;gap:11px">';
+
+  if(kitEditId){ h+=kitEditorHTML(); h+='</div></div>'; el.innerHTML=h; return; }
+  if(kitView&&kitMeals[kitView]){ h+=kitRecipeHTML(kitView); h+='</div></div>'; el.innerHTML=h; return; }
+
+  // ── 🗓 The week — tonight + the next six days, tap a day to plan it ──
+  h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
+  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#E07B39;color:#fff;font-weight:800;font-size:13px"><span>🗓</span> This week\'s dinners</div>';
+  h+='<div style="padding:8px 14px 12px">';
+  const sortedMids=Object.keys(kitMeals).sort((a,b)=>String((kitMeals[a]||{}).name||"").localeCompare(String((kitMeals[b]||{}).name||"")));
+  for(let i=0;i<7;i++){
+    const iso=kitIsoPlus(today,i);
+    const d=gwParseDate(iso);
+    const dayLbl=(i===0?'Tonight':(i===1?'Tomorrow':d.toLocaleDateString("en-US",{weekday:"short"})))+' · '+(d.getMonth()+1)+'/'+d.getDate();
+    const pl=kitPlanFor(iso);
+    let what;
+    if(pl&&pl.meal) what='<b>'+(pl.meal.emoji?esc(pl.meal.emoji)+' ':'')+esc(pl.meal.name)+'</b>';
+    else if(pl&&pl.mid) what='<span style="color:#b91c1c;font-weight:700">(meal removed — tap to re-pick)</span>';
+    else if(pl&&pl.txt) what='<b>'+esc(pl.txt)+'</b> <span style="font-size:10px;color:var(--muted)">(typed)</span>';
+    else what='<span style="color:var(--muted)">tap to plan</span>';
+    const nPrep=(pl&&pl.meal&&Array.isArray(pl.meal.prep))?pl.meal.prep.length:0;
+    h+='<div onclick="kitPickDay(\''+iso+'\')" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 10px;background:'+(i===0?'#fff7ed':'#f8f7f4')+';border:1.5px solid '+(kitPickIso===iso?'#E07B39':(i===0?'#fed7aa':'#e8e4de'))+';border-radius:9px;margin-bottom:6px">'
+      +'<span style="flex:0 0 92px;font-size:11px;font-weight:800;color:'+(i===0?'#c2410c':'#6b6560')+'">'+dayLbl+'</span>'
+      +'<span style="flex:1;font-size:13px">'+what+'</span>'
+      +(nPrep?'<span style="font-size:10px;font-weight:800;color:#c2410c">⏲ '+nPrep+'</span>':'')
+      +'<span style="color:#9ca3af;font-size:12px">'+(kitPickIso===iso?'▴':'▾')+'</span></div>';
+    if(kitPickIso===iso){
+      h+='<div style="padding:9px 10px;background:#fff;border:1.5px dashed #E07B39;border-radius:9px;margin:-2px 0 8px;display:flex;flex-wrap:wrap;gap:6px">';
+      sortedMids.forEach(mid=>{
+        const m=kitMeals[mid];
+        const on=!!(pl&&pl.mid===mid);
+        h+='<span onclick="kitAssign(\''+iso+'\',{mid:\''+mid+'\'})" style="cursor:pointer;font-size:12px;font-weight:700;padding:4px 11px;border-radius:12px;border:1.5px solid '+(on?'#E07B39':'#e5e7eb')+';background:'+(on?'#fff7ed':'#fff')+';color:'+(on?'#c2410c':'#4b5563')+'">'+(m.emoji?esc(m.emoji)+' ':'')+esc(m.name)+'</span>';
       });
-      document.body.appendChild(msg);
-      setTimeout(()=>{ msg.style.opacity='0'; setTimeout(()=>msg.remove(),500); }, 2500);
-    } catch(err) {
-      alert('❌ Invalid JSON — ' + err.message);
+      if(!sortedMids.length) h+='<span style="font-size:12px;color:var(--muted)">No meals in the library yet — add one below.</span>';
+      h+='<span onclick="kitPlanText(\''+iso+'\')" style="cursor:pointer;font-size:12px;font-weight:800;padding:4px 11px;border-radius:12px;border:1.5px dashed #9ca3af;color:#6b7280;background:#fff">✎ Type it…</span>';
+      if(pl) h+='<span onclick="kitAssign(\''+iso+'\',null)" style="cursor:pointer;font-size:12px;font-weight:800;padding:4px 11px;border-radius:12px;border:1.5px solid #fca5a5;color:#b91c1c;background:#fff">✕ Clear</span>';
+      h+='</div>';
     }
-  };
-  reader.readAsText(file);
-  event.target.value = '';
+  }
+  h+='</div></div>';
+
+  // ── 📚 Meal library ─────────────────────────────────────────────
+  h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
+  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#6B4C93;color:#fff;font-weight:800;font-size:13px"><span>📚</span> Meal library'
+    +'<button onclick="kitEditMeal()" style="margin-left:auto;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">＋ New meal</button></div>';
+  h+='<div style="padding:10px 14px 12px">';
+  sortedMids.forEach(mid=>{
+    const m=kitMeals[mid];
+    const nPrep=Array.isArray(m.prep)?m.prep.length:0;
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#f8f7f4;border:1.5px solid #e8e4de;border-radius:9px;margin-bottom:6px">'
+      +'<span onclick="kitOpenRecipe(\''+mid+'\')" style="cursor:pointer;flex:1;font-size:13px;font-weight:700">'+(m.emoji?esc(m.emoji)+' ':'')+esc(m.name)+'</span>'
+      +(nPrep?'<span style="font-size:10px;font-weight:800;color:#c2410c">⏲ '+nPrep+'</span>':'')
+      +'<button onclick="kitOpenRecipe(\''+mid+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid #E07B39;background:#fff;color:#c2410c;font-size:11px;font-weight:700;cursor:pointer">📖</button>'
+      +'<button onclick="kitEditMeal(\''+mid+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid #6B4C93;background:#fff;color:#6B4C93;font-size:11px;font-weight:700;cursor:pointer">✎</button>'
+      +'<button onclick="kitDelMeal(\''+mid+'\')" style="border:none;background:none;color:#9ca3af;font-size:14px;cursor:pointer;padding:2px 4px">✕</button></div>';
+  });
+  if(!sortedMids.length) h+='<div style="font-size:12px;color:var(--muted)">Your recipe box is empty. ＋ New meal adds one — name, ingredients, instructions, and the prep timers that will nudge you in 🔴 NOW.</div>';
+  h+='</div></div>';
+
+  // ── 🧺 Staples — curated, tap to cycle ✅→🟡→❌ ──────────────────
+  const stIds=Object.keys(kitStaples).sort((a,b)=>String((kitStaples[a]||{}).name||"").localeCompare(String((kitStaples[b]||{}).name||"")));
+  h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
+  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#2B7A78;color:#fff;font-weight:800;font-size:13px;flex-wrap:wrap"><span>🧺</span> Staples'
+    +'<span style="margin-left:auto;display:flex;align-items:center;gap:6px"><span style="font-size:10px;font-weight:700;opacity:.85">🛒 order day</span>'
+    +'<select onchange="kitSetOrderDay(this.value)" style="border:none;border-radius:8px;padding:3px 6px;font-size:11px;font-weight:700;font-family:\'DM Sans\',sans-serif">'
+    +'<option value="">off</option>'
+    +DAYS_ALL.map(d=>'<option value="'+d+'"'+(kitSettings.orderDay===d?' selected':'')+'>'+cap(d)+'</option>').join('')
+    +'</select>'
+    +'<button onclick="kitStapleToggleManage()" style="border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">'+(kitStapleManage?'Done':'✎')+'</button></span></div>';
+  h+='<div style="padding:10px 14px 12px">';
+  if(stIds.length) h+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">'+stIds.map(id=>kitStapleChip(id,kitStapleManage)).join('')+'</div>';
+  else h+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Add the things you never want to run out of — milk, eggs, GF bread. Tap one as you notice it: ✅ have → 🟡 low → ❌ out.</div>';
+  h+='<div style="display:flex;gap:8px">'
+    +'<input type="text" id="kit-staple-new" placeholder="Add a staple (milk…)" onkeydown="if(event.key===\'Enter\')kitStapleAdd()" style="flex:1;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
+    +'<button onclick="kitStapleAdd()" style="padding:9px 16px;border-radius:9px;border:none;background:#2B7A78;color:#fff;font-size:13px;font-weight:700;cursor:pointer">＋ Add</button></div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-top:7px">🟡 low and ❌ out land on the 🛒 order list'+(kitSettings.orderDay?' — it pops onto Mom\'s Day every '+cap(kitSettings.orderDay)+'.':' — pick an order day above to surface it on Mom\'s Day.')+'</div>';
+  h+='</div></div>';
+
+  // ── 🔁 Standing usuals — always on the order ────────────────────
+  h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
+  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#3A7D44;color:#fff;font-weight:800;font-size:13px"><span>🔁</span> Standing usuals</div>';
+  h+='<div style="padding:10px 14px 12px">';
+  let anyU=false;
+  KIT_CATS.forEach(c=>{
+    const rows=Object.keys(kitUsuals).map(id=>Object.assign({id:id},kitUsuals[id])).filter(u=>(u.cat||"other")===c[0]).sort((a,b)=>String(a.name||"").localeCompare(String(b.name||"")));
+    if(!rows.length) return;
+    anyU=true;
+    h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:4px 0 4px">'+c[1]+'</div>';
+    rows.forEach(u=>{
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;background:#f8f7f4;border:1.5px solid #e8e4de;border-radius:9px;margin-bottom:5px">'
+        +'<span style="flex:1;font-size:13px;font-weight:600">'+esc(u.name)+'</span>'
+        +'<button onclick="kitUsualDel(\''+u.id+'\')" style="border:none;background:none;color:#9ca3af;font-size:14px;cursor:pointer;padding:2px 4px">✕</button></div>';
+    });
+  });
+  if(!anyU) h+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">The every-single-order items — breakfast, lunch and snack usuals. They ride every 🛒 order list automatically.</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:'+(anyU?'8':'0')+'px">'
+    +'<input type="text" id="kit-usual-new" placeholder="Add a usual (oatmeal…)" onkeydown="if(event.key===\'Enter\')kitUsualAdd()" style="flex:2;min-width:130px;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
+    +'<select id="kit-usual-cat" style="padding:9px 8px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
+    +KIT_CATS.map(c=>'<option value="'+c[0]+'">'+c[1]+'</option>').join('')+'</select>'
+    +'<button onclick="kitUsualAdd()" style="padding:9px 16px;border-radius:9px;border:none;background:#3A7D44;color:#fff;font-size:13px;font-weight:700;cursor:pointer">＋ Add</button></div>';
+  h+='</div></div>';
+
+  // ── 🥫 Pantry snapshot — what's probably in the house right now ──
+  const panIds=Object.keys(kitPantry).filter(id=>panStatus(kitPantry[id])!=="gone");
+  const panGoneN=Object.keys(kitPantry).length-panIds.length;
+  h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
+  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#8a5a2c;color:#fff;font-weight:800;font-size:13px"><span>🥫</span> Pantry snapshot'
+    +'<span style="margin-left:auto;display:flex;gap:6px">'
+    +'<button onclick="panImportToggle()" style="border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">'+(panImportOpen?'✕ Close':'📥 Import')+'</button>'
+    +'<button onclick="panToggleManage()" style="border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">'+(panManage?'Done':'✎')+'</button></span></div>';
+  h+='<div style="padding:10px 14px 12px">';
+  if(panImportOpen){
+    h+='<textarea id="pan-import" rows="6" placeholder="spinach | produce&#10;chicken thighs | freezer&#10;rice" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif"></textarea>'
+      +'<div style="font-size:11px;color:var(--muted);margin:6px 0 8px">One item per line — <b>name | zone</b> (produce, fridge, freezer, pantry; no zone = pantry). Snap the receipt or cabinets, hand the pics to Claude, paste what it gives back. Re-importing something refreshes its date.</div>'
+      +'<button onclick="panImportApply()" style="width:100%;padding:11px;border-radius:10px;border:none;background:#8a5a2c;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">📥 Import to pantry</button>';
+  } else {
+    PAN_ZONES.forEach(z=>{
+      const ids=panIds.filter(id=>kitPantry[id].zone===z[0]).sort((a,b)=>String(kitPantry[a].name||"").localeCompare(String(kitPantry[b].name||"")));
+      if(!ids.length) return;
+      h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:4px 0 5px">'+z[1]+'</div>'
+        +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px">'+ids.map(id=>panChip(id)).join('')+'</div>';
+    });
+    if(!panIds.length) h+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">A loose picture of what\'s in the house — so meal ideas can start from what you actually have. Tap 📥 Import after a grocery run, or add things below.</div>';
+    if(panGoneN) h+='<button onclick="panClearGone()" style="margin-bottom:8px;padding:6px 12px;border-radius:9px;border:1.5px solid #e5e7eb;background:#fff;color:#6b7280;font-size:11px;font-weight:700;cursor:pointer">🧹 Clear '+panGoneN+' probably-gone item'+(panGoneN===1?'':'s')+'</button>';
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap">'
+      +'<input type="text" id="pan-new" placeholder="Add an item (spinach…)" onkeydown="if(event.key===\'Enter\')panAddManual()" style="flex:2;min-width:130px;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
+      +'<select id="pan-zone" style="padding:9px 8px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
+      +PAN_ZONES.map(z=>'<option value="'+z[0]+'">'+z[1]+'</option>').join('')+'</select>'
+      +'<button onclick="panAddManual()" style="padding:9px 16px;border-radius:9px;border:none;background:#8a5a2c;color:#fff;font-size:13px;font-weight:700;cursor:pointer">＋ Add</button></div>'
+      +'<div style="font-size:11px;color:var(--muted);margin-top:7px">Loose by design: produce fades in ~6 days, fridge ~2 weeks, freezer ~3 months, pantry ~6 months — probably-gone items hide themselves. ⭐ makes an item a regular on the 🧺 staples check-list.</div>';
+  }
+  h+='</div></div>';
+
+  // ── 🛒 order preview — always visible here while she builds the lists ──
+  h+=kitOrderCardHTML(false);
+
+  h+='</div></div>';
+  el.innerHTML=h;
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -6697,14 +7589,14 @@ const MW_CSS = `
 
 function mpSubnav(active){
   const btn=(v,lbl)=>`<button onclick="mpGoto('${v}')" style="flex:1;padding:9px 6px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;border:none;border-radius:9px;cursor:pointer;color:${active===v?'#fff':'#9ca3af'};background:${active===v?'#2B7A78':'transparent'};transition:all .2s;white-space:nowrap">${lbl}</button>`;
-  return `<div style="display:flex;gap:4px;background:#fff;border-bottom:2px solid #DEF2F1;padding:8px 10px">${btn('plan','🗓️ Plan')}${btn('prep','🧃 Prep')}${btn('weigh','⚖️ Weigh-In')}</div>`;
+  return `<div style="display:flex;gap:4px;background:#fff;border-bottom:2px solid #DEF2F1;padding:8px 10px">${btn('plan','🏡 Today')}${btn('meals','🍽 Meals')}${btn('prep','🧃 Prep')}${btn('weigh','⚖️ Weigh-In')}</div>`;
 }
 function mpGoto(v){ mpSubView=v; const el=document.getElementById('content'); if(el) renderMomsPlan(el); try{window.scrollTo(0,0);}catch(e){} }
 function mwBanner(sub){
   return `<div style="background:linear-gradient(135deg,#2B7A78,#3AAFA9);color:#fff;padding:18px 14px 14px;position:relative;overflow:hidden">
     <div style="position:absolute;top:-25px;right:-25px;width:100px;height:100px;border-radius:50%;background:rgba(255,255,255,0.08)"></div>
     <div style="position:relative;z-index:1">
-      <div style="font-family:'Fraunces',serif;font-size:22px;font-weight:700;margin-bottom:2px">🌿 Mom's Plan</div>
+      <div style="font-family:'Fraunces',serif;font-size:22px;font-weight:700;margin-bottom:2px">🏡 Mom's Day</div>
       <div style="font-size:12px;opacity:0.85;font-weight:600">${sub}</div>
     </div></div>`;
 }
@@ -6990,6 +7882,49 @@ function renderMPWeigh(el){
     <div id="wi-daybadge" style="margin-top:9px;text-align:center;font-size:11px;color:#6b6560"></div>
   </div></div>`;
 
+  // 🫀 Blood pressure — quick entry, 7-day average (the guideline's yardstick),
+  // 14-day history, and the researched cadence. Same ids as the Mom's Day quick
+  // row (#bp-sys/#bp-dia/#bp-pulse) — only one view is in the DOM at a time.
+  const bpCard=(function(){
+    const bpToday=mwTodayIso();
+    const days=Object.keys(wellnessBP).sort().reverse().slice(0,14);
+    const cell=(d,sl)=>{ const r=(wellnessBP[d]||{})[sl]; if(!r) return '<span style="color:#9ca3af">—</span>';
+      const c=mwBPCat(r.sys,r.dia);
+      return '<b style="color:'+c.color+'">'+r.sys+'/'+r.dia+'</b>'+(r.pulse?' <span style="color:#6b6560;font-size:10px">♥'+r.pulse+'</span>':''); };
+    const rows=days.map(d=>'<div class="wrow"><div class="wdate">'+mwFmtShort(d)+'</div><div style="flex:1">☀️ '+cell(d,"am")+'</div><div style="flex:1">🌙 '+cell(d,"pm")+'</div></div>').join('');
+    const recent=[]; Object.keys(wellnessBP).sort().slice(-7).forEach(d=>{ ["am","pm"].forEach(sl=>{ const r=(wellnessBP[d]||{})[sl]; if(r) recent.push(r); }); });
+    let avg='';
+    if(recent.length>=3){
+      const s=Math.round(recent.reduce((n,r)=>n+r.sys,0)/recent.length), di=Math.round(recent.reduce((n,r)=>n+r.dia,0)/recent.length);
+      const c=mwBPCat(s,di);
+      avg='<div class="note" style="background:'+c.bg+';border-left:3px solid '+c.color+';margin-top:10px">7-day average: <b style="color:'+c.color+'">'+s+'/'+di+' — '+c.label+'</b> · '+recent.length+' readings. The guideline judges the average, never one number.</div>';
+    }
+    return `<div class="card"><div class="head h-blue"><span>🫀</span> Blood Pressure</div><div class="body">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">${mwBPChip('am',bpToday)}${mwBPChip('pm',bpToday)}</div>
+      <div class="field"><label>Top / bottom (mmHg) · optional pulse — saves to the ${mwBPSlotNow().toUpperCase()} slot</label>
+        <div style="display:flex;gap:6px;align-items:center"><input type="number" inputmode="numeric" id="bp-sys" placeholder="120" style="width:84px"><b>/</b><input type="number" inputmode="numeric" id="bp-dia" placeholder="80" style="width:84px"><input type="number" inputmode="numeric" id="bp-pulse" placeholder="♥ pulse" style="width:96px"></div></div>
+      <button class="act" onclick="mwSaveBP()">Save reading</button>
+      ${avg}
+      ${rows?'<div style="margin-top:10px">'+rows+'</div>':''}
+      <div class="note" style="margin-top:10px">🫀 <b>How often?</b> The 2025 AHA/ACC home protocol: <b>morning + evening</b> (before meds/coffee in the AM), <b>2 readings a minute apart</b> each time, and go by the <b>average</b>. Before a doctor visit or after a medication change, do a full <b>7-day run</b> (3 days minimum). For everyday tracking, AM + PM a few days a week keeps the average honest. Sit quietly 5 min first, back supported, feet flat, cuff on a bare arm at heart level — no caffeine, exercise, or smoking in the 30 min before. <i>General guidance, not medical advice — confirm your rhythm with your clinician, especially if you're on BP medication.</i></div>
+    </div></div>`;
+  })();
+
+  // 🌡 Symptoms — logged days tagged with cycle day; the raw material for the
+  // symptoms-vs-phase trends view once a few weeks of data build up.
+  const symCard=(function(){
+    const lbl={}; mwAllSyms().forEach(s=>{ lbl[s[0]]=s[1]; });
+    const days=Object.keys(wellnessSymptoms).filter(d=>Object.keys(wellnessSymptoms[d]||{}).length).sort().reverse().slice(0,14);
+    const rows=days.map(d=>{ const c=mwCycleInfo(d);
+      const chips=Object.keys(wellnessSymptoms[d]).map(k=>'<span class="mini" style="background:#fbe3ec;color:#b03a5b">'+(lbl[k]||k)+'</span>').join(' ');
+      return '<div class="wrow"><div class="wdate">'+mwFmtShort(d)+'</div><span class="mini" style="background:'+c.color+';color:'+c.txt+'">'+c.emoji+' d'+c.day+'</span><div style="flex:1">'+chips+'</div></div>'; }).join('');
+    return `<div class="card"><div class="head h-purple"><span>🌡</span> Symptoms</div><div class="body">
+      ${rows||'<div style="font-size:12px;color:#6b6560">Nothing logged yet — tap symptom chips on Mom\'s Day as they happen.</div>'}
+      ${Object.keys(wellnessSymBank).length?'<div style="margin-top:10px;font-size:11px;color:#6b6560"><b>Your added symptoms:</b> '+Object.keys(wellnessSymBank).sort().map(k=>'<span class="mini" style="background:#fbe3ec;color:#b03a5b">'+wellnessSymBank[k]+' <span onclick="mwDelSymType(\''+k+'\')" style="cursor:pointer;font-weight:800">✕</span></span>').join(' ')+'</div>':''}
+      <div class="note" style="margin-top:10px">Every logged day carries its cycle day, so once a few weeks build up, trends can show which symptoms cluster in which phase.</div>
+    </div></div>`;
+  })();
+
   // 🩸 Period Log — logged starts drive the cycle anchor + learned length
   const eff = mwEffectiveCycle();
   const pStarts = [...wellnessPeriods].filter(p=>p&&p.iso).sort((a,b)=>a.iso<b.iso?-1:1);
@@ -7030,7 +7965,7 @@ function renderMPWeigh(el){
     ${mwBanner('Weekly weigh-in · read against your cycle')}
     ${mpSubnav('weigh')}
     <div style="padding:12px 12px 0;display:flex;flex-direction:column;gap:11px">
-      ${currentCard}${periodCard}${comparisonCard}${trendCard}${logCard}${historyCard}${cycleCard}
+      ${currentCard}${periodCard}${comparisonCard}${trendCard}${logCard}${bpCard}${symCard}${historyCard}${cycleCard}
     </div></div>`;
   mwUpdateDayBadge();
 }
@@ -9864,7 +10799,7 @@ function _troShelfHTML(troph,kid){
 }
 // ── END-OF-DAY POINTS ECONOMY ─────────────────────────────────────
 // Afternoon + chores gate claiming the day's points. Kid claims → Mom approves (cashed →
-// moved to Skylight) or rejects (recoverable same day). Claim: pointClaims[kid][WK][day].
+// banked) or rejects (recoverable same day). Claim: pointClaims[kid][WK][day].
 function choresGateDone(kid,d){ return !!(getSlot(kid,"afternoon").done && getSlot(kid,"chores").done); }
 function getPointClaim(kid,d){ return ((pointClaims[kid]||{})[WK]||{})[d]||null; }
 function _setPointClaim(kid,d,rec){
@@ -9880,7 +10815,7 @@ function claimDayPoints(kid,d){
   _setPointClaim(kid,d,{status:"claimed",earned:getKidDayPoints(kid,d),claimedTs:nowTs()});
   renderAll();
 }
-function approveDayPoints(kid,d){                       // Mom → cashed (moved to Skylight)
+function approveDayPoints(kid,d){                       // Mom → cashed (banked)
   if(!momHere()) return;
   const c=getPointClaim(kid,d); if(!c||c.status!=="claimed") return;
   _setPointClaim(kid,d,{...c,status:"cashed",cashedTs:nowTs()});
@@ -9892,7 +10827,7 @@ function rejectDayPoints(kid,d){                        // Mom → false claim, 
   _setPointClaim(kid,d,null);                           // clear → kid can re-claim once truly done
   renderAll();
 }
-// Wallet: total ⭐ banked (approved+cashed to Skylight). scope "week"=current WK, else lifetime.
+// Wallet: total ⭐ banked (approved+cashed). scope "week"=current WK, else lifetime.
 function walletCashed(kid,scope){
   let n=0; const claims=pointClaims[kid]||{};
   const wks=(scope==="week")?[WK]:Object.keys(claims);
@@ -9943,7 +10878,7 @@ function forfeitedDays(kid,scope){
   wks.forEach(wk=>Object.keys(claims[wk]||{}).forEach(d=>{ const c=claims[wk][d]; if(c&&c.status==="forfeited") out.push({wk,day:d,earned:c.earned||0,ts:c.forfeitedTs}); }));
   return out.sort((a,b)=>(b.ts||"").localeCompare(a.ts||""));
 }
-// Mom restores a forfeited day → the points go STRAIGHT to banked (cashed to Skylight).
+// Mom restores a forfeited day → the points go STRAIGHT to banked (cashed).
 // Mom's tap is the approval. Deleting the record instead was a trap: forfeitSweep runs on
 // every render and re-forfeits any past day with earned>0 and no record — so the old
 // "make it claimable again" restore was undone in the same instant it happened (and past
