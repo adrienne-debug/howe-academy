@@ -2607,6 +2607,13 @@ function initFb() {
       try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
       if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
     });
+    db.ref("momChores").on("value",s=>{
+      const v=s.val()||{};
+      Object.keys(momChoresData).forEach(k=>{ delete momChoresData[k]; });
+      Object.keys(v).forEach(k=>{ momChoresData[k]=v[k]; });
+      try{HA_LS.setItem('ha_momchores',JSON.stringify(momChoresData));}catch(e){}
+      if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+    });
     db.ref("kitchen/meals").on("value",s=>{
       const v=s.val()||{};
       Object.keys(kitMeals).forEach(k=>{ delete kitMeals[k]; });
@@ -6259,8 +6266,12 @@ function closeDlg(){ document.getElementById("dlg").style.display="none"; pendin
 // snapshot (same day) is the in-between she chose vs. a full inventory:
 // receipt/cabinet photos → Claude transcribes → she paste-imports; items fade
 // by zone shelf-life and hide when probably gone — consumption is never logged.
+// Phase 4 (2026-08-09) added 🧹 Mom's own chores: momChores/{id} on the same
+// cadence grammar as the kids' (cadDueOn), done = per-day stamps at
+// momday/{iso}/chores/{id}. Her list, not the kids' economy — no stars.
+// Ships with her 8 chosen starter chores (MC_DEFAULT; first edit seeds them).
 let mpSubView = 'plan';                               // 'plan' | 'prep' | 'weigh'
-let momdayData = {};                                  // momday/{iso} → {win, dinner}
+let momdayData = {};                                  // momday/{iso} → {win, dinner, todos, chores done-stamps}
 let wellnessWeighins = [];                            // [{iso, lb, note, ts}]
 let wellnessCycle = { anchor:'2026-07-25', len:28 };  // fallback anchor; overridden by logged periods
 let wellnessBP = {};                                 // wellness/bp/{iso}/{am|pm} → {sys, dia, pulse?, ts}
@@ -6268,6 +6279,7 @@ let wellnessSymptoms = {};                           // wellness/symptoms/{iso}/
 let wellnessSymBank = {};                            // wellness/symptomBank/{slug} → label (Mom-added)
 let billsData = {};                                  // bills/{id} → {name, amt?, dueDay, freq, dueMonth?, lead?, paidThrough?}
 let laundryData = {};                                // laundry/{id} → {label, stage: washer|dryer|fold, ts}
+let momChoresData = {};                              // momChores/{id} → {label, cad, ts} — Mom's own recurring chores (Phase 4)
 let kitMeals = {};                                     // kitchen/meals/{id} → {name, emoji?, ing, steps, prep:[{when,label}], ts}
 let kitPlan = {};                                      // kitchen/plan/{iso} → {mid} (library meal) | {txt} (typed dinner)
 let kitPrepDone = {};                                  // kitchen/prepDone/{iso}/{mid_idx} → ts
@@ -6298,6 +6310,7 @@ function mpInit(){
   try{ const sb=HA_LS.getItem('wellness_symbank'); if(sb) wellnessSymBank=JSON.parse(sb); }catch(e){}
   try{ const bl=HA_LS.getItem('ha_bills'); if(bl) billsData=JSON.parse(bl); }catch(e){}
   try{ const ln=HA_LS.getItem('ha_laundry'); if(ln){ const v=JSON.parse(ln); Object.keys(v).forEach(k=>{ laundryData[k]=v[k]; }); } }catch(e){}
+  try{ const mc=HA_LS.getItem('ha_momchores'); if(mc){ const v=JSON.parse(mc); Object.keys(v).forEach(k=>{ momChoresData[k]=v[k]; }); } }catch(e){}
   try{ const km=HA_LS.getItem('ha_kit_meals'); if(km) Object.assign(kitMeals,JSON.parse(km)); }catch(e){}
   try{ const kp=HA_LS.getItem('ha_kit_plan'); if(kp) Object.assign(kitPlan,JSON.parse(kp)); }catch(e){}
   try{ const kd=HA_LS.getItem('ha_kit_prepdone'); if(kd) Object.assign(kitPrepDone,JSON.parse(kd)); }catch(e){}
@@ -6417,6 +6430,167 @@ function momdayDelTodo(id){
   try{HA_LS.setItem('momday_data',JSON.stringify(momdayData));}catch(e){}
   if(db) db.ref("momday/"+iso+"/todos/"+id).remove();
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+
+// ── 🧹 MOM'S CHORES (Phase 4) — her own recurring list in the day view ──────
+// Defs live at momChores/{id} = {label, cad, ts}; cad is the SAME grammar the
+// kids' chores speak (cadDueOn): "daily" | "wk:0,2" (Mon=0..Sun=6) | "2w".
+// Done is a per-DAY stamp at momday/{iso}/chores/{id} = ts — the card only
+// ever shows today's due list, and past days' stamps stay put as history.
+// No stars, no claims — this is her list, not the kids' economy. (The
+// focus-zone bonus tie-in is a later phase.)
+let mcManage=false;   // ✎ manage mode: cadence letters + delete, shows ALL chores
+const MC_DAYL=["M","T","W","T","F","S","S"];
+// Her starting list (2026-08-09, chosen with Adrienne): the gaps the kids'
+// lists and Andrew's lanes (laundry, dishes, bins, washer) leave uncovered.
+// Fixed ids so per-day done-stamps work BEFORE the list is ever edited —
+// exactly how the kids ride RT_DEFAULT. The first in-app EDIT copies the
+// whole set to momChores/* (mcEnsure, the rtCfgEnsure pattern) and stamps
+// _seeded, so deleting every chore stays deleted instead of resurrecting.
+const MC_DEFAULT={
+  mc_kclose:{label:"🌙 Kitchen close-down (counters + stove)",cad:"daily",ts:1},
+  mc_sheets:{label:"🛏 Wash the sheets",cad:"wk:0",ts:2},
+  mc_tubs:{label:"🛁 Scrub tubs & showers",cad:"wk:1",ts:3},
+  mc_bsinks:{label:"🚿 Bathroom sinks & counters",cad:"wk:1",ts:4},
+  mc_mop:{label:"🧽 Mop kitchen + bathrooms",cad:"wk:4",ts:5},
+  mc_fridge:{label:"🥬 Fridge clean-out (order day)",cad:"wk:6",ts:6},
+  mc_master:{label:"🛏 Master bedroom reset",cad:"wk:6",ts:7},
+  mc_touch:{label:"💡 Wipe handles & switches",cad:"2w",ts:8}
+};
+// The list everything renders from: stored chores once any exist (or once
+// _seeded says "she emptied it on purpose"), the code defaults before that.
+function mcAll(){
+  const stored={}; let n=0;
+  Object.keys(momChoresData).forEach(function(k){ if(k.charAt(0)!=="_"){ stored[k]=momChoresData[k]; n++; } });
+  return (n||momChoresData._seeded)?stored:MC_DEFAULT;
+}
+// First edit copies the defaults to momChores/* so add/delete/cadence all
+// operate on real stored rows. Check-offs do NOT seed — stamps live under
+// momday/{iso}/chores and work fine against code defaults, same as slState
+// works against RT_DEFAULT.
+function mcEnsure(){
+  if(momChoresData._seeded) return;
+  let n=0; Object.keys(momChoresData).forEach(function(k){ if(k.charAt(0)!=="_") n++; });
+  if(n) return;
+  Object.keys(MC_DEFAULT).forEach(function(id){
+    momChoresData[id]=Object.assign({},MC_DEFAULT[id]);
+    if(typeof db!=='undefined'&&db) db.ref('momChores/'+id).set(momChoresData[id]);
+  });
+  momChoresData._seeded=true;
+  if(typeof db!=='undefined'&&db) db.ref('momChores/_seeded').set(true);
+  try{HA_LS.setItem('ha_momchores',JSON.stringify(momChoresData));}catch(e){}
+}
+function mcAdd(){
+  const inp=document.getElementById('mc-new'); const label=((inp&&inp.value)||"").trim();
+  if(!label) return;
+  mcEnsure();
+  const sel=document.getElementById('mc-cad'); const cad=(sel&&sel.value)||"daily";
+  const id="mc"+Date.now().toString(36);
+  momChoresData[id]={label:label,cad:cad,ts:Date.now()};
+  try{HA_LS.setItem('ha_momchores',JSON.stringify(momChoresData));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('momChores/'+id).set(momChoresData[id]);
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function mcDel(id){
+  mcEnsure();
+  const c=momChoresData[id]; if(!c) return;
+  if(!confirm('Remove "'+c.label+'" from your chore list?')) return;
+  delete momChoresData[id];
+  try{HA_LS.setItem('ha_momchores',JSON.stringify(momChoresData));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('momChores/'+id).remove();
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function mcDoneOn(iso,id){ return !!((((momdayData[iso]||{}).chores)||{})[id]); }
+function mcToggle(id){
+  if(!mcAll()[id]) return;
+  const iso=_todayStr();
+  const cur=Object.assign({},momdayData[iso]); const ch=Object.assign({},cur.chores);
+  const on=!ch[id];
+  if(on) ch[id]=Date.now(); else delete ch[id];
+  cur.chores=ch; momdayData[iso]=cur;
+  try{HA_LS.setItem('momday_data',JSON.stringify(momdayData));}catch(e){}
+  if(typeof db!=='undefined'&&db){
+    if(on) db.ref('momday/'+iso+'/chores/'+id).set(ch[id]);
+    else db.ref('momday/'+iso+'/chores/'+id).remove();
+  }
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function mcSetCad(id,cad){
+  mcEnsure();
+  const c=momChoresData[id]; if(!c) return;
+  c.cad=cad;
+  try{HA_LS.setItem('ha_momchores',JSON.stringify(momChoresData));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('momChores/'+id+'/cad').set(cad);
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+// Weekday letters build sorted "wk:" lists; clearing every letter falls back
+// to daily (an empty wk: would mean "never" — asneeded exists for the kids,
+// but a mom-chore you never want is one you delete).
+function mcCadToggleDay(id,idx){
+  const c=mcAll()[id]; if(!c) return;
+  let days=[]; const cad=c.cad||"daily";
+  if(cad.indexOf("wk:")===0) days=cad.slice(3).split(",").filter(function(x){return x!=="";}).map(Number);
+  const p=days.indexOf(idx);
+  if(p>=0) days.splice(p,1); else days.push(idx);
+  days.sort(function(a,b){return a-b;});
+  mcSetCad(id,days.length?("wk:"+days.join(",")):"daily");
+}
+function mcDueToday(today){
+  const list=mcAll();
+  return Object.keys(list)
+    .filter(function(id){ const c=list[id]; return c&&cadDueOn(c.cad||"daily",today); })
+    .sort(function(a,b){ return (list[a].ts||0)-(list[b].ts||0); });
+}
+function mcToggleManage(){ mcManage=!mcManage; const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
+function momChoresCardHTML(iso,today){
+  const list=mcAll();
+  const all=Object.keys(list).sort(function(a,b){ return (list[a].ts||0)-(list[b].ts||0); });
+  const due=mcDueToday(today);
+  const doneN=due.filter(function(id){ return mcDoneOn(iso,id); }).length;
+  let h='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
+    +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#A0622D;color:#fff;font-weight:800;font-size:13px"><span>🧹</span> Mom\'s chores'
+    +(due.length?'<span style="font-size:11px;font-weight:700;opacity:.85">'+doneN+'/'+due.length+'</span>':'')
+    +'<button onclick="mcToggleManage()" style="margin-left:auto;border:none;background:rgba(255,255,255,'+(mcManage?'0.45':'0.2')+');color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">'+(mcManage?'✓ Done editing':'✎ Edit')+'</button></div>'
+    +'<div style="padding:10px 14px 12px">';
+  if(mcManage){
+    // manage mode: EVERY chore with its cadence controls + delete
+    all.forEach(function(id){
+      const c=list[id]; const cad=c.cad||"daily";
+      let days=[]; if(cad.indexOf("wk:")===0) days=cad.slice(3).split(",").filter(function(x){return x!=="";}).map(Number);
+      h+='<div style="padding:8px 10px;background:#f8f7f4;border:1.5px solid #e8e4de;border-radius:9px;margin-bottom:6px">'
+        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+        +'<span style="flex:1;font-size:13px;font-weight:700">'+esc(c.label)+'</span>'
+        +'<button onclick="mcDel(\''+id+'\')" style="border:none;background:none;color:#9ca3af;font-size:14px;cursor:pointer;padding:2px 4px">✕</button></div>'
+        +'<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">'
+        +'<span onclick="mcSetCad(\''+id+'\',\'daily\')" style="cursor:pointer;font-size:10px;font-weight:800;padding:3px 9px;border-radius:9px;border:1.5px solid '+(cad==="daily"?'#A0622D':'#e5e7eb')+';background:'+(cad==="daily"?'#A0622D':'#fff')+';color:'+(cad==="daily"?'#fff':'#6b7280')+'">Daily</span>'
+        +MC_DAYL.map(function(L,i){ const on=days.indexOf(i)>=0;
+          return '<span onclick="mcCadToggleDay(\''+id+'\','+i+')" style="cursor:pointer;font-size:10px;font-weight:800;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;border:1.5px solid '+(on?'#A0622D':'#e5e7eb')+';background:'+(on?'#A0622D':'#fff')+';color:'+(on?'#fff':'#9ca3af')+'">'+L+'</span>'; }).join('')
+        +'<span onclick="mcSetCad(\''+id+'\',\'2w\')" style="cursor:pointer;font-size:10px;font-weight:800;padding:3px 9px;border-radius:9px;border:1.5px solid '+(cad==="2w"?'#A0622D':'#e5e7eb')+';background:'+(cad==="2w"?'#A0622D':'#fff')+';color:'+(cad==="2w"?'#fff':'#6b7280')+'">2 wks</span>'
+        +'</div></div>';
+    });
+    if(!all.length) h+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Nothing here yet — add your first chore below.</div>';
+  } else {
+    due.forEach(function(id){
+      const c=list[id]; const done=mcDoneOn(iso,id); const cad=c.cad||"daily";
+      h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:'+(done?'#f0fdf4':'#f8f7f4')+';border:1.5px solid '+(done?'#86efac':'#e8e4de')+';border-radius:9px;margin-bottom:6px">'
+        +'<div onclick="mcToggle(\''+id+'\')" style="cursor:pointer;width:20px;height:20px;border-radius:50%;border:2px solid '+(done?'#16a34a':'#A0622D')+';background:'+(done?'#16a34a':'#fff')+';color:'+(done?'#fff':'transparent')+';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;font-weight:700">'+(done?'✓':'')+'</div>'
+        +'<div onclick="mcToggle(\''+id+'\')" style="cursor:pointer;flex:1;font-size:13px;font-weight:600;color:'+(done?'#6b6560':'#1a1a1a')+';'+(done?'text-decoration:line-through':'')+'">'+esc(c.label)+'</div>'
+        +(cad!=="daily"?'<span style="font-size:10px;font-weight:700;color:#9ca3af;white-space:nowrap">'+cadLabel(cad)+'</span>':'')
+        +'</div>';
+    });
+    if(!due.length) h+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">'+(all.length?'Nothing of yours due today. 🎉':'Your own chore rhythm lives here — add the weekly beats below (bathrooms Tue, floors Fri…).')+'</div>';
+    const rest=all.length-due.length;
+    if(rest>0) h+='<div style="font-size:11px;color:var(--muted);margin-bottom:4px">＋ '+rest+' more on other days · ✎ Edit to see the week</div>';
+  }
+  h+='<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'
+    +'<input type="text" id="mc-new" placeholder="Add a chore (Wipe counters…)" onkeydown="if(event.key===\'Enter\')mcAdd()" style="flex:2;min-width:130px;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
+    +'<select id="mc-cad" style="padding:9px 8px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
+    +'<option value="daily">Every day</option>'
+    +DAYS_ALL.map(function(d,i){ return '<option value="wk:'+i+'">Weekly · '+cap(d).slice(0,3)+'</option>'; }).join('')
+    +'<option value="2w">Every 2 weeks</option></select>'
+    +'<button onclick="mcAdd()" style="padding:9px 16px;border-radius:9px;border:none;background:#A0622D;color:#fff;font-size:13px;font-weight:700;cursor:pointer">＋ Add</button></div>';
+  h+='</div></div>';
+  return h;
 }
 
 // ── 🧺 Laundry — loads move washer → dryer → fold → put away (gone) ────
@@ -6885,6 +7059,9 @@ function renderMomsDay(el){
       +'<button onclick="momdayAddTodo()" style="padding:9px 16px;border-radius:9px;border:none;background:#3A7D44;color:#fff;font-size:13px;font-weight:700;cursor:pointer">＋ Add</button></div>';
     h+='</div></div>';
   }catch(e){}
+
+  // ── 🧹 Mom's chores — today's slice of her recurring rhythm ─────
+  try{ h+=momChoresCardHTML(iso,today); }catch(e){}
 
   // ── 💳 Bills — every reminder with its next due date; add/paid/remove ──
   try{

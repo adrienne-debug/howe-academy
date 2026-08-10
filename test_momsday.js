@@ -15,6 +15,10 @@
  * dinner-card precedence (planned meal > typed plan > momday note), and the
  * 🍽 Meals subview (grid, picker, recipe view, editor with draft-stash).
  *
+ * Phase 4 coverage: 🧹 Mom's chores — momChores/{id} CRUD on the shared
+ * cadence grammar, per-day done stamps at momday/{iso}/chores/{id}, and the
+ * day-view card (due-today list, manage mode, other-days footnote).
+ *
  *   run:  node test_momsday.js
  */
 const fs = require("fs");
@@ -98,6 +102,7 @@ const alerts = [];
 global.alert = m => alerts.push(m);
 const toasts = [];
 global.mwToast = m => toasts.push(m);
+global.cadLabel = c => (!c || c === "daily") ? "Daily" : (c === "2w" ? "Every 2 weeks" : c);
 
 global.claimed = {};
 let cardSeen = null;
@@ -120,7 +125,7 @@ global.renderAll = () => { renderAllCalls++; };
 global.schedShowBoard = false; global.schedShowAdmin = true; global.schedShowHistory = false;
 global.schedShowPace = false; global.schedShowPeek = false;
 
-const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlotCounts,renderMomsDay,renderMomsPlan,mpInit,mdOpenBoard,mdBack,mwBPCat,mwBPChip,mwSaveBP,mwBPSlotNow,momdayAddTodo,momdayToggleTodo,momdayDelTodo,mwToggleSym,mwAllSyms,mwAddSymType,mwDelSymType,billDueInfo,billState,billMarkPaid,billAdd,billDel,laundryAdd,laundryAdvance,laundryDel,laundryData,renderKitchen,kitIsoPlus,kitWhenMin,kitWhenLabel,kitPlanFor,kitPrepSteps,kitDuePrep,kitMarkPrep,kitAssign,kitPickDay,kitPlanText,kitOpenRecipe,kitCloseRecipe,kitEditMeal,kitAddPrepRow,kitDelPrepRow,kitSaveMeal,kitCancelEdit,kitDelMeal,kitMeals,kitPlan,kitPrepDone,kitStapleCycle,kitStapleAdd,kitStapleDel,kitStapleToggleManage,kitUsualAdd,kitUsualDel,kitSetOrderDay,kitOrderList,kitOrderText,kitCopyOrder,kitStaples,kitUsuals,kitSettings,kitPantry,panStatus,panAdd,panAddManual,panDel,panImportToggle,panImportApply,panClearGone,panToggleRegular,panIsRegular,panToggleManage,kitSweepDue,kitUsualQty,kitSlug,kitBuyLog,kitRate,kitRateChips,kitParseWeek,kitWkIso,kitWkImportToggle,kitImportWeekApply,kitPlanSlot,kitSlotText,panQtyEdit,kitMarkEaten};`)();
+const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlotCounts,renderMomsDay,renderMomsPlan,mpInit,mdOpenBoard,mdBack,mwBPCat,mwBPChip,mwSaveBP,mwBPSlotNow,momdayAddTodo,momdayToggleTodo,momdayDelTodo,mwToggleSym,mwAllSyms,mwAddSymType,mwDelSymType,billDueInfo,billState,billMarkPaid,billAdd,billDel,laundryAdd,laundryAdvance,laundryDel,laundryData,renderKitchen,kitIsoPlus,kitWhenMin,kitWhenLabel,kitPlanFor,kitPrepSteps,kitDuePrep,kitMarkPrep,kitAssign,kitPickDay,kitPlanText,kitOpenRecipe,kitCloseRecipe,kitEditMeal,kitAddPrepRow,kitDelPrepRow,kitSaveMeal,kitCancelEdit,kitDelMeal,kitMeals,kitPlan,kitPrepDone,kitStapleCycle,kitStapleAdd,kitStapleDel,kitStapleToggleManage,kitUsualAdd,kitUsualDel,kitSetOrderDay,kitOrderList,kitOrderText,kitCopyOrder,kitStaples,kitUsuals,kitSettings,kitPantry,panStatus,panAdd,panAddManual,panDel,panImportToggle,panImportApply,panClearGone,panToggleRegular,panIsRegular,panToggleManage,kitSweepDue,kitUsualQty,kitSlug,kitBuyLog,kitRate,kitRateChips,kitParseWeek,kitWkIso,kitWkImportToggle,kitImportWeekApply,kitPlanSlot,kitSlotText,panQtyEdit,kitMarkEaten,momChoresData,mcAll,mcAdd,mcDel,mcToggle,mcDoneOn,mcSetCad,mcCadToggleDay,mcDueToday,mcToggleManage,momChoresCardHTML};`)();
 
 // ── mdTodayName: weekday from the DATE ───────────────────────────────────────
 (() => {
@@ -1138,6 +1143,99 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   ok("typed dinner stamps without deduction", M.kitPlan["2026-08-13"].eaten && M.kitPantry.p_ct.qty === 0, null);
   ["2026-08-10", "2026-08-12", "2026-08-13"].forEach(iso => delete M.kitPlan[iso]);
   delete M.kitPantry.p_ct; delete M.kitPantry.p_tc; delete M.kitStaples.s_ct;
+})();
+
+
+// ── 🧹 Phase 4: Mom's chores — MC_DEFAULT seed + momChores/{id} + day stamps ─
+(() => {
+  // Real-grammar cadence for this group — the suite-wide stub says always-due.
+  const oldCad = global.cadDueOn;
+  global.cadDueOn = (cad, dn) => {
+    if (!cad || cad === "daily") return true;
+    if (cad === "asneeded") return false;
+    const idx = DAYS_ALL.indexOf(dn);
+    if (cad.indexOf("wk:") === 0) return cad.slice(3).split(",").filter(x => x !== "").map(Number).indexOf(idx) >= 0;
+    return false; // 2w treated as not-today here (deterministic)
+  };
+  // scope html asserts to THIS card (counts like 1/1 also live on Mom's list)
+  const mcCard = h => { const i = h.indexOf("Mom's chores"); const j = h.indexOf("<span>💳</span>", i); return i < 0 ? "" : h.slice(i, j < 0 ? undefined : j); };
+  TODAY = "2026-08-10"; BREAK = null; // a Monday
+  dbWrites.length = 0; dbRemoves.length = 0;
+
+  // fresh install: her 8 starter chores show without a single db write
+  ok("defaults: 8 starter chores", Object.keys(M.mcAll()).length === 8, Object.keys(M.mcAll()));
+  ok("defaults live in code, not the db", Object.keys(M.momChoresData).length === 0 && dbWrites.length === 0, null);
+  ok("monday due = kitchen close + sheets", JSON.stringify(M.mcDueToday("monday")) === JSON.stringify(["mc_kclose","mc_sheets"]), M.mcDueToday("monday"));
+  ok("tuesday due = close + tubs + sinks", JSON.stringify(M.mcDueToday("tuesday")) === JSON.stringify(["mc_kclose","mc_tubs","mc_bsinks"]), M.mcDueToday("tuesday"));
+  ok("sunday due includes fridge + master", M.mcDueToday("sunday").indexOf("mc_fridge") >= 0 && M.mcDueToday("sunday").indexOf("mc_master") >= 0, null);
+
+  M.renderMomsDay(elStub);
+  let c = mcCard(elStub.innerHTML);
+  ok("card renders default chores", c.includes("Wash the sheets") && c.includes("Kitchen close-down"), null);
+  ok("not-due default hidden (mop is Friday)", !c.includes("Mop kitchen"), null);
+  ok("footnote counts the hidden defaults", c.includes("6 more on other days"), null);
+  ok("header count 0/2", c.includes(">0/2<"), null);
+
+  // checking a default stamps the DAY without seeding the defs
+  M.mcToggle("mc_kclose");
+  ok("default check-off stamps momday only", M.mcDoneOn("2026-08-10","mc_kclose") && dbWrites.every(w => w[0].indexOf("momChores/") !== 0), null);
+  ok("stamp is TODAY-only", !M.mcDoneOn("2026-08-11","mc_kclose"), null);
+  ok("defs still unseeded after a check", Object.keys(M.momChoresData).length === 0, null);
+  M.renderMomsDay(elStub);
+  c = mcCard(elStub.innerHTML);
+  ok("done default struck through + 1/2", c.includes("line-through") && c.includes(">1/2<"), null);
+  M.mcToggle("mc_kclose");
+  ok("re-toggle unstamps (db remove)", !M.mcDoneOn("2026-08-10","mc_kclose") && dbRemoves.some(p => p === "momday/2026-08-10/chores/mc_kclose"), null);
+
+  // the FIRST EDIT copies the whole set to momChores/* (rtCfgEnsure pattern)
+  dbWrites.length = 0;
+  M.mcSetCad("mc_mop","wk:5");
+  ok("first edit seeds all 8 + _seeded", Object.keys(M.mcAll()).length === 8 && M.momChoresData._seeded === true, null);
+  ok("seed wrote every def + the sentinel", dbWrites.some(w => w[0] === "momChores/mc_sheets") && dbWrites.some(w => w[0] === "momChores/_seeded"), null);
+  ok("the edit itself landed", M.momChoresData.mc_mop.cad === "wk:5", M.momChoresData.mc_mop);
+  M.mcSetCad("mc_mop","wk:4");
+
+  // her own adds join the seeded list
+  domVals["mc-new"] = { value: "  Water plants  " };
+  domVals["mc-cad"] = { value: "wk:2" };
+  M.mcAdd();
+  const id9 = Object.keys(M.mcAll()).find(k => k.indexOf("mc_") !== 0);
+  ok("mcAdd joins without nuking defaults", !!id9 && Object.keys(M.mcAll()).length === 9 && M.momChoresData[id9].label === "Water plants", null);
+  domVals["mc-new"] = { value: "   " };
+  M.mcAdd();
+  ok("blank add is a no-op", Object.keys(M.mcAll()).length === 9, null);
+
+  // cadence letters: sorted wk: lists, clearing all falls back to daily
+  M.mcCadToggleDay(id9, 0);
+  ok("letter adds sorted → wk:0,2", M.momChoresData[id9].cad === "wk:0,2", M.momChoresData[id9].cad);
+  ok("cad edit writes momChores/{id}/cad", dbWrites.some(w => w[0] === "momChores/" + id9 + "/cad" && w[1] === "wk:0,2"), null);
+  M.mcCadToggleDay(id9, 0); M.mcCadToggleDay(id9, 2);
+  ok("clearing every letter → daily", M.momChoresData[id9].cad === "daily", M.momChoresData[id9].cad);
+
+  // manage mode shows everything; delete needs the confirm
+  M.mcToggleManage();
+  M.renderMomsDay(elStub);
+  c = mcCard(elStub.innerHTML);
+  ok("manage mode lists all 9", c.includes("Water plants") && c.includes("Mop kitchen"), null);
+  ok("manage mode has letter chips + delete", c.includes("mcCadToggleDay('mc_mop'") && c.includes("mcDel('" + id9 + "')"), null);
+  M.mcToggleManage();
+  CONFIRM = false;
+  M.mcDel(id9);
+  ok("declined confirm keeps the chore", !!M.momChoresData[id9], null);
+  CONFIRM = true;
+  M.mcDel(id9);
+  ok("mcDel removes + db remove", !M.momChoresData[id9] && dbRemoves.some(p => p === "momChores/" + id9), null);
+
+  // deleting EVERYTHING stays deleted — _seeded blocks the resurrect
+  Object.keys(M.mcAll()).forEach(id => M.mcDel(id));
+  ok("delete-all: no default resurrect", Object.keys(M.mcAll()).length === 0, Object.keys(M.mcAll()));
+  M.renderMomsDay(elStub);
+  ok("empty card invites the first add", mcCard(elStub.innerHTML).includes("chore rhythm lives here"), null);
+
+  // wipe module state so no later group inherits it
+  Object.keys(M.momChoresData).forEach(k => { delete M.momChoresData[k]; });
+  global.cadDueOn = oldCad;
+  delete domVals["mc-new"]; delete domVals["mc-cad"];
 })();
 
 console.log(pass + " passed, " + fail + " failed");
