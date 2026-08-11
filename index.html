@@ -19114,7 +19114,13 @@ function cbMaterialize(cfg){
       });
     } else {
       const pat=(pg.pattern&&pg.pattern.length)?pg.pattern:[5];
-      const start=pg.startPage||1, end=start+(pg.totalPages||0)-1;
+      // "Total pages" is the book's LAST page, not a count added past the start —
+      // the form says "Total pages / Start at page", so 349 total starting at 270
+      // means pp. 270–349, not 270–618 (2026-08-11: Ellis Math Reasoning got 109
+      // days laid to Apr 2027, 269 pages past the end of the book). With a start
+      // page of 1 the two readings are identical, which is why this never bit.
+      const start=pg.startPage||1, end=pg.totalPages||0;
+      if(end<start) return {error:"Total pages ("+end+") is the last page of the book — it must be at least the start page ("+start+")."};
       const u=pg.unitLabel||"pp.";
       units=[];
       let p=start,i=0;
@@ -19256,22 +19262,36 @@ function cbMaterialize(cfg){
 }
 // ── Rebuild hygiene (pure): backlog split + remaining-content derivation ─────
 // A subject's filled cells, in day order, split against the COMPLETED count:
-// the first doneN cells are the completed prefix (never touched); later cells
-// dated before today are the BACKLOG — unfinished work a rebuild must MOVE
-// forward (or dismiss), never copy; a cell dated today stays put (the kid may
-// be mid-task); the rest are future cells the build re-lays anyway.
+// the first doneN cells are the completed prefix (never touched); cells dated
+// today or earlier are the BACKLOG — unfinished work a rebuild must MOVE
+// forward (or dismiss), never copy; the rest are future cells the build
+// re-lays anyway. An UNCHECKED today-cell counts as backlog: it used to be
+// pinned in place ("the kid may be mid-task"), but the pin meant a rebuild
+// could never replace today's content — fix the card, relay, and today still
+// showed the old wrong lesson, while dropOnce quietly deleted its text from
+// the new lay (2026-08-11: Ellis Math Reasoning kept a phantom "Pg 247–250"
+// through every relay). ONE exception: a today-cell whose text duplicates an
+// earlier backlog cell stays pinned — that IS the backlog lesson being served
+// today (same rule as the future-duplicate filter), and filing it as backlog
+// would move BOTH copies forward and re-lay the duplicate the repair exists
+// to kill (ellis/read_detect Ex. 33–34). A today-cell really being worked on
+// is safe either way: the kid's task card lives in the week, not the grid,
+// and once checked the completion matches the lesson wherever the relay put it.
 // doneSet (optional) — indexes of cells that are genuinely CHECKED OFF. When absent, "done"
 // falls back to the positional cutoff i<doneN, which is what this did for everyone before.
 // That cutoff was the rebuild bug: a cell above the line that WAS finished got filed as
 // stale and copied forward (duplicate), and a cell below the line that was NOT finished got
 // treated as done and skipped. Lincoln's MR5 collected four duplicate cells and lost
 // pp.212-223 exactly this way, and every rebuild fed the next one a worse number.
+// todayCells now holds ONLY the pinned duplicate-of-backlog case; cbDeriveContent's
+// today handling (drop one occurrence from the lay) applies to exactly those.
 function cbSplitCells(cells,doneN,todayISO,doneSet){
   const stale=[],todayCells=[],future=[];
+  const staleTexts=new Set();
   cells.forEach((c,i)=>{
     if(doneSet?doneSet.has(i):(i<doneN)) return;
-    if(c.date&&c.date<todayISO) stale.push(c);
-    else if(c.date===todayISO) todayCells.push(c);
+    if(c.date&&c.date<todayISO){ stale.push(c); staleTexts.add(c.text); }
+    else if(c.date===todayISO){ if(staleTexts.has(c.text)) todayCells.push(c); else stale.push(c); }
     else future.push(c);
   });
   return {stale,todayCells,future};
@@ -19297,7 +19317,7 @@ function cbSplitCells(cells,doneN,todayISO,doneSet){
 // (2026-08-04: Lincoln's pp.204-207 and pp.208-211, work he'd done on paper, dismissed once
 // and re-laid onto Aug 4-5 behind pp.212-215.) Reading the log makes a dismissal permanent
 // for both kinds of subject, and by lesson text rather than by a count.
-function cbDeriveContent(split,lessonSeq,doneN,dismissedIdx,skipTexts,doneTally){
+function cbDeriveContent(split,lessonSeq,doneN,dismissedIdx,skipTexts,doneTally,filterTally){
   const dis=new Set(dismissedIdx||[]);
   const skip=skipTexts||null;
   const _skipped=t=>!!(skip&&skip.has(String(t||"").trim().toLowerCase()));
@@ -19319,7 +19339,24 @@ function cbDeriveContent(split,lessonSeq,doneN,dismissedIdx,skipTexts,doneTally)
               out.push(t);
             }
             return out; })()
-        :lessonSeq.slice(Math.min(doneN,lessonSeq.length))
+        :(()=>{ // Count path. The count can land SHORT of the kid's true position when some
+            // completions aren't identifiable by title (healed archive titles, renamed
+            // eras), and a short cutoff re-lays the last lessons the kid finished — as
+            // duplicates, since cbDoneCellSet rightly protects the originals (2026-08-09:
+            // lincoln singapore_l landed 2 short and re-laid done 5B Ch.3 L2+L3). Every
+            // title that DID map is still proof its lesson is finished, so spend those as
+            // a drop-filter — one occurrence per completion, sequences repeat cells on
+            // purpose. Removing provably-done work is always safe; positioning stays the
+            // count's job.
+            const sliced=lessonSeq.slice(Math.min(doneN,lessonSeq.length));
+            if(!filterTally) return sliced;
+            const left=new Map(filterTally), out=[];
+            for(const t of sliced){
+              const k=String(t||"").trim().toLowerCase(), c=left.get(k)||0;
+              if(c>0){ left.set(k,c-1); continue; }
+              out.push(t);
+            }
+            return out; })()
       ).filter(t=>!_skipped(t));
     split.todayCells.forEach(c=>dropOnce(rest,c.text));
     split.stale.forEach((c,i)=>{ if(dis.has(i)) dropOnce(rest,c.text); });
@@ -19426,7 +19463,7 @@ function cbRemainingContent(kid,sk){
   // appear in the sequence means the two don't share text at all (Lucy's NZK grid says
   // "Q41–42" where her task says "Quest 41"). Either way we can't identify what's done by
   // content, so hand back null and let the count path run — never a guess.
-  let _tally=null;
+  let _tally=null,_filter=null;
   if(info.hasSeq&&!info.adjust&&!Math.max(0,((((paceData||{}).subjects||{})[kid]||{})[sk]||{}).offset||0)){
     const _paceSubj=(((paceData||{}).subjects||{})[kid]||{})[sk];
     const _seqSet=new Set((s.lessonSeq||[]).map(t=>String(t||"").trim().toLowerCase()));
@@ -19435,15 +19472,21 @@ function cbRemainingContent(kid,sk){
     for(const t of _titles){
       const _s=String(t||""), _i=_s.indexOf(" — ");
       const _p=(_i>=0?_s.slice(_i+3):_s).trim().toLowerCase();
-      if(!_seqSet.has(_p)){ _ok=false; break; }
+      if(!_seqSet.has(_p)){ _ok=false; continue; }
       _m.set(_p,(_m.get(_p)||0)+1);
     }
     // Finding NO finished lessons while the count insists there are some means the
     // completions can't be identified here, not that the kid has done nothing — trusting
     // an empty tally would re-lay the subject from lesson one. Count path handles it.
+    // A PARTIAL tally can't position the cursor either (the unmapped titles are still
+    // completions, just unidentifiable ones) — but each mapped title IS proof its lesson
+    // is finished, so the count path gets it as a drop-filter and can never re-lay done
+    // work (2026-08-09: lincoln singapore_l, two healed wk14 titles off-sequence → gate
+    // fell to bare count, landed 2 short, re-laid done 5B Ch.3 L2+L3 as duplicates).
     if(_ok&&(_titles.length||!info.doneN)) _tally=_m;
+    else if(_m.size) _filter=_m;
   }
-  return cbDeriveContent(info.split,info.hasSeq?s.lessonSeq:null,info.doneN,dis,_skip,_tally);
+  return cbDeriveContent(info.split,info.hasSeq?s.lessonSeq:null,info.doneN,dis,_skip,_tally,_filter);
 }
 
 // Day-minute cap: per-kid override (curriculum/dayCap, CB3 UI) else school-hours default.

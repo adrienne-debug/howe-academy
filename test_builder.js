@@ -105,15 +105,25 @@ console.log("targetDate mode");
 }
 
 console.log("pages mode");
+// 2026-08-11: "Total pages" is the book's LAST page now, not a count added past the
+// start (the form says "Total pages / Start at page" — 349 total starting at 270 must
+// mean pp. 270–349, not 270–618; Ellis's Math Reasoning got laid 269 pages past the
+// end of the book). Fixtures updated: totalPages 26 = last page 26 (was count 15 from
+// page 12 — same lay, stated the new way), and the old count-style Lesson fixture
+// (total 3 < start 7) is now the guard-error case.
 {
-  const res = cbMaterialize({ sk: "m", minutes: 20, mode: "pages", tpw: 4, allowedDays: [], pages: { totalPages: 15, startPage: 12, pattern: [3, 4, 5, 3], unitLabel: "pp." }, rows: mkRows(MON, 3, 1, 1), dayCapMin: 0 });
+  const res = cbMaterialize({ sk: "m", minutes: 20, mode: "pages", tpw: 4, allowedDays: [], pages: { totalPages: 26, startPage: 12, pattern: [3, 4, 5, 3], unitLabel: "pp." }, rows: mkRows(MON, 3, 1, 1), dayCapMin: 0 });
   ok("pattern cycles 3,4,5,3", res.assignments[0].text === "pp. 12–14" && res.assignments[1].text === "pp. 15–18" && res.assignments[2].text === "pp. 19–23", res.assignments.map(x => x.text));
   ok("ends exactly on the last page", res.assignments[3].text === "pp. 24–26", res.assignments[3]);
-  ok("4 chunks for 15 pages", res.stats.placed === 4);
+  ok("4 chunks for pages 12–26", res.stats.placed === 4);
+}
+{
+  const res = cbMaterialize({ sk: "m", minutes: 20, mode: "pages", tpw: 5, allowedDays: [], pages: { totalPages: 9, startPage: 7, pattern: [1], unitLabel: "Lesson" }, rows: mkRows(MON, 1, 1, 1), dayCapMin: 0 });
+  ok("single-page chunk labels", res.assignments[0].text === "Lesson 7", res.assignments[0]);
 }
 {
   const res = cbMaterialize({ sk: "m", minutes: 20, mode: "pages", tpw: 5, allowedDays: [], pages: { totalPages: 3, startPage: 7, pattern: [1], unitLabel: "Lesson" }, rows: mkRows(MON, 1, 1, 1), dayCapMin: 0 });
-  ok("single-page chunk labels", res.assignments[0].text === "Lesson 7", res.assignments[0]);
+  ok("total before the start page is a clear error", !!(res.error && res.error.includes("3") && res.error.includes("7")), res.error);
 }
 
 console.log("pages mode — scanned units (CB6)");

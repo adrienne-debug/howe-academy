@@ -168,7 +168,9 @@ withFrozenNow(Frozen => {
   ok("backlog-cycle dups gone", dupTitles(after).filter(t => t.indexOf("Ex.") === 0).length === 0, dupTitles(after));
   const stale = after.filter(c => c.date < TODAY && c.date >= "2026-07-13");
   ok("stale unfinished cells cleared", stale.length === 0, stale);
-  // today's cell (Ex. 33–34 sat on 2026-07-20) stays put; the rest lay ahead once
+  // today's cell (Ex. 33–34 on 2026-07-20) DUPLICATES a backlog lesson — the one case
+  // a today-cell still stays pinned (2026-08-11): it is the backlog lesson being
+  // served today. A unique-text today-cell joins the backlog instead.
   const fromToday = after.filter(c => c.date >= TODAY).map(c => c.v);
   ok("backlog trio present exactly once from today on", ["Ex. 33–34", "Ex. 35–36", "Ex. 37–38"].every(t => fromToday.filter(x => x === t).length === 1), fromToday.slice(0, 6));
   ok("today's cell untouched", after.some(c => c.date === TODAY && c.v === "Ex. 33–34"));

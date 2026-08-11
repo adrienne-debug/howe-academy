@@ -42,8 +42,11 @@ console.log("cbSplitCells");
     C(6, "2026-07-21", "L6"), C(7, "2026-07-22", "L7")
   ];
   const s = cbSplitCells(cells, 2, TODAY);
-  ok("completed prefix excluded", J(s.stale.map(c => c.text)) === '["L3","L4"]', s.stale);
-  ok("today isolated", J(s.todayCells.map(c => c.text)) === '["L5"]');
+  // 2026-08-11: an unchecked today-cell is backlog now, not pinned — the pin meant a
+  // rebuild could never replace today's content after a card fix (Ellis Math Reasoning
+  // kept a phantom "Pg 247–250" through every relay).
+  ok("completed prefix excluded", J(s.stale.map(c => c.text)) === '["L3","L4","L5"]', s.stale);
+  ok("today joins the backlog, todayCells empty", s.todayCells.length === 0);
   ok("future split", J(s.future.map(c => c.text)) === '["L6","L7"]');
 }
 {
@@ -107,13 +110,17 @@ console.log("grid-only derive — dismissals");
 
 console.log("grid-only derive — today's cell");
 {
-  // Today's cell already carries a backlog lesson (a pollution copy landed on today):
-  // the kept backlog drops one occurrence so it isn't laid a second time.
+  // Today's cell duplicates a backlog lesson (a pollution copy landed on today):
+  // that is the ONE case a today-cell still stays pinned (2026-08-11) — it IS the
+  // backlog lesson being served today, and the kept backlog drops one occurrence
+  // so it isn't laid a second time. A today-cell with UNIQUE text joins the
+  // backlog instead (see the split + master-list tests).
   const split = cbSplitCells([
     C(1, "2026-07-15", "Map 19 L3"), C(2, "2026-07-17", "Map 19 L4"),
     C(3, "2026-07-20", "Map 19 L3"),
     C(4, "2026-07-22", "Map 19 L4"), C(5, "2026-07-27", "Map 19 L5")
   ], 0, TODAY);
+  ok("duplicate-of-backlog today-cell stays pinned", J(split.todayCells.map(c => c.text)) === '["Map 19 L3"]', split.todayCells);
   const out = cbDeriveContent(split, null, 0, []);
   ok("today's lesson not re-laid", J(out) === '["Map 19 L4","Map 19 L5"]', out);
 }
@@ -134,11 +141,13 @@ console.log("master-list derive — self-heal (the singapore pattern)");
   ok("master-list dismiss drops the lesson", J(out2) === '["Ch.2 L1","Ch.2 L2","Ch.2 L3","Ch.2 Review","Ch.3 L1"]', out2);
 }
 {
-  // Master list + today's cell: today's lesson dropped once from the remaining
+  // Master list + today's cell: 2026-08-11 — today's unchecked lesson is backlog, so it
+  // stays IN the remaining lay (its cell gets cleared by the rebuild and B is re-laid)
+  // instead of being pinned on today and dropped from the relay.
   const seq = ["A", "B", "C", "D"];
   const split = cbSplitCells([C(1, "2026-07-13", "A"), C(2, "2026-07-20", "B")], 1, TODAY);
   const out = cbDeriveContent(split, seq, 1, []);
-  ok("today's cell drops one master occurrence", J(out) === '["C","D"]', out);
+  ok("today's unchecked lesson stays in the relay", J(out) === '["B","C","D"]', out);
 }
 {
   // doneN at/past the end of the master list
