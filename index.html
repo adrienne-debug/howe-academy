@@ -20085,6 +20085,14 @@ function cbApply(){
   currData.subjects[kid][sk].total=total;
 
   db.ref("curriculum").update(up).catch(err=>{ cbMsg="⚠ Firebase error: "+err.message; renderAll(); });
+  // A 🗑 delete triggered this build: fold its snapshots into this Undo so one ↩
+  // reverts delete + relay together. Overwrite, don't fill-if-missing — the build's
+  // own snap of a shared path saw the POST-delete value, and Undo must restore the
+  // original.
+  if(typeof _gvDelUndo!=="undefined"&&_gvDelUndo&&_gvDelUndo.kid===kid&&_gvDelUndo.sk===sk){
+    for(const [p,v] of Object.entries(_gvDelUndo.paths)) prev[p]=v;
+    _gvDelUndo=null;
+  }
   cbLastBuild={kid,sk,paths:prev,pace:_paceRestores,label:(s.display||sk)+" — "+res.stats.placed+" placed"};
   try{HA_LS.setItem("ha_cbUndo",JSON.stringify(cbLastBuild));}catch(e){}
   delete cbBacklogStash[_blKey]; delete cbDecisions[_blKey];
@@ -20148,7 +20156,16 @@ function cbGateAll(ii,dis){
   const it=((cbGate||{}).items||[])[ii];
   if(it){ it.rows.forEach(r=>{ if(!r.locked) r.dismiss=dis; }); renderAll(); }
 }
-function cbGateCancel(){ cbGate=null; renderAll(); }
+function cbGateCancel(){
+  cbGate=null;
+  // A 🗑 delete already happened before this sheet — keep it (it was confirmed),
+  // give it its own Undo, and tell mom the re-lay was skipped.
+  if(typeof _gvDelUndo!=="undefined"&&_gvDelUndo){
+    cbMsg="🗑 Deleted — re-lay skipped (you cancelled the sheet). ↻ Rebuild the subject when ready.";
+    _gvFinishDeleteNoBuild();
+  }
+  renderAll();
+}
 function cbGateConfirm(){
   const g=cbGate; cbGate=null;
   if(!g) return;
@@ -20567,6 +20584,7 @@ function cbRenderForm(col){
 // SHOWS those overrides. Past rows are frozen.
 // ═════════════════════════════════════════════════════════════════════════
 let gvKid=null, gvEdit=null, gvShowPast=false, gvScrollTop=0, gvScrollLeft=0;
+let _gvDelUndo=null; // pending 🗑 delete snapshot — folded into the relay's Undo
 // Multi-cell (Excel-style) selection: pick many cells, then Clear or Fill them at once.
 let gvSelMode=false, gvSel=new Set(), gvSelAnchor=null, gvSelUndo=null;
 
@@ -20814,6 +20832,107 @@ function gvCommitCell(kid,dn,sk,val){
 }
 
 function gvJumpBuilder(sk){ currInnerTab="builder"; cbKid=gvKid; cbOpenSubj(sk); }
+
+// ── 🗑 Delete-and-relay (Grid cell) ─────────────────────────────────────────
+// One tap deletes a lesson and re-lays the subject from where the kid is — the
+// same gated rebuild as ↻ (Keep/Dismiss sheet only when leftovers exist), one
+// combined Undo. What "delete" means depends on the cell:
+//   copy    — same text sits on another day (a duplicate a bad rebuild left):
+//             only THIS cell dies; the lesson stays in the plan.
+//   remove  — the only copy, unchecked: it comes off the subject card's lesson
+//             list and the map — the lesson leaves the whole plan.
+//   blocked — the only copy of a FINISHED lesson: deleting it would strand its
+//             completion with nothing to match, so the count would overshoot
+//             and SKIP a real lesson (the mirror of the duplicate bug). Also
+//             blocked: past cells of a subject whose titles can't be matched
+//             to its cells at all (done-ness unverifiable — same overshoot risk).
+function _gvDelClassify(kid,sk,cells,idx,todayISO){
+  const c=cells[idx]; const text=String(((c||{}).text)||"").trim();
+  if(!text) return null;
+  const twins=cells.filter(x=>String(x.text).trim()===text).length;
+  if(twins>1) return {kind:"copy",text};
+  const ds=cbDoneCellSet(kid,sk,cells);
+  if(ds&&ds.has(idx)) return {kind:"blocked",text,why:"finished"};
+  if(!ds&&c.date&&c.date<todayISO) return {kind:"blocked",text,why:"unverifiable"};
+  return {kind:"remove",text};
+}
+function gvDeleteLesson(kid,dn,sk){
+  if(!momModeActive&&!adminPinUnlocked) return;
+  if(!db||!currData) return;
+  _gvDelUndo=null;
+  const lessons=(currData.lessons||{})[kid]||{};
+  const row=lessons[dn]; const val=row&&row[sk];
+  if(!gvFilled(val)){ gvEdit=null; renderAll(); return; }
+  const cells=[];
+  Object.keys(lessons).map(Number).filter(n=>!isNaN(n)).sort((a,b)=>a-b).forEach(d2=>{
+    const l=lessons[d2]; const v2=l&&l[sk];
+    if(gvFilled(v2)) cells.push({dayNum:d2,date:(l.date||""),text:String(v2)});
+  });
+  const idx=cells.findIndex(c=>c.dayNum===parseInt(dn));
+  const cls=_gvDelClassify(kid,sk,cells,idx,cbTodayISO());
+  if(!cls) return;
+  const s=((currData.subjects||{})[kid]||{})[sk]||{};
+  const disp=s.display||sk;
+  if(cls.kind==="blocked"){
+    if(typeof gwShowToast==="function") gwShowToast(cls.why==="finished"
+      ?("“"+cls.text+"” is finished — its record stays. To reword it, use the subject card's lesson editor.")
+      :("Can't verify that old lesson's status for "+disp+" — remove it from the subject card instead."));
+    gvEdit=null; renderAll(); return;
+  }
+  const msg=cls.kind==="copy"
+    ?("Delete this EXTRA COPY of “"+cls.text+"”?\n\nThe lesson itself stays in the plan — another day carries it. "+disp+" is then re-laid from where "+cap(kid)+" is. You can Undo.")
+    :("Delete “"+cls.text+"” from "+disp+" entirely?\n\nIt comes off the subject card and the map, and "+disp+" is re-laid from where "+cap(kid)+" is. You can Undo.");
+  if(!confirm(msg)) return;
+  // Write the delete, snapshotting originals — the relay folds these into its Undo.
+  const paths={};
+  paths["lessons/"+kid+"/"+dn+"/"+sk]=JSON.parse(JSON.stringify(val));
+  const up={}; up["lessons/"+kid+"/"+dn+"/"+sk]=null;
+  if(cls.kind==="remove"&&s.lessonSeq&&s.lessonSeq.length){
+    const i=s.lessonSeq.findIndex(t=>String(t||"").trim()===cls.text);
+    if(i>=0){
+      paths["subjects/"+kid+"/"+sk+"/lessonSeq"]=s.lessonSeq.slice();
+      const seq=s.lessonSeq.slice(); seq.splice(i,1);
+      up["subjects/"+kid+"/"+sk+"/lessonSeq"]=seq;
+    }
+  }
+  cbPatchLocal(up);
+  db.ref("curriculum").update(up).catch(err=>{ cbMsg="⚠ Delete error: "+err.message; renderAll(); });
+  gvRecountTotal(kid,sk);
+  currData.lastEdit=new Date().toISOString();
+  db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  // A live-week OPEN card for this exact lesson shouldn't linger — mom-skip it.
+  try{
+    ((typeof weekData==="object"&&weekData&&weekData.tasks)||[]).forEach(t=>{
+      if(!t||t.who!==kid||t.subjectKey!==sk) return;
+      if(String(t.id).endsWith("_c")||checked[t.id]||momMoves[t.id]) return;
+      const ti=String(t.title||""); const i2=ti.indexOf(" — ");
+      if(i2<0||ti.slice(i2+3).trim()!==cls.text) return;
+      _saveMomMove(t.id,{mode:"skip",fromDays:[effectiveDay(t)],ts:nowTs()});
+    });
+  }catch(e){}
+  gvEdit=null;
+  _gvDelUndo={kid,sk,paths,label:"deleted “"+cls.text+"” from "+disp};
+  try{ buildCurrPaceCum(); }catch(e){}
+  // Re-lay the subject in the same tap — the ↻ path: preview → gate → apply.
+  if(s.pacing&&s.pacing.mode){
+    cbKid=kid; cbSubjKey=sk; cbForm=cbDefaultForm(kid,sk); cbPreviewRes=null;
+    try{ cbPreviewRes=cbMaterialize(cbBuildCfg()); }
+    catch(e){ cbPreviewRes={error:(e&&e.message)||"build error"}; }
+    if(cbPreviewRes&&!cbPreviewRes.error){ cbBuildGate(); return; }
+    cbMsg="🗑 Deleted “"+cls.text+"” — but the re-lay failed: "+((cbPreviewRes&&cbPreviewRes.error)||"build error")+". ↻ Rebuild the subject when ready.";
+    _gvFinishDeleteNoBuild(); renderAll(); return;
+  }
+  cbMsg="🗑 Deleted “"+cls.text+"” from "+disp+". (Not Builder-paced — no re-lay needed.)";
+  _gvFinishDeleteNoBuild(); renderAll();
+}
+// No relay happened (unpaced subject, cancelled sheet, failed build): the delete
+// still gets its own Undo slot so ↩ works.
+function _gvFinishDeleteNoBuild(){
+  if(!_gvDelUndo) return;
+  cbLastBuild={kid:_gvDelUndo.kid,sk:_gvDelUndo.sk,paths:_gvDelUndo.paths,pace:[],label:_gvDelUndo.label};
+  try{HA_LS.setItem("ha_cbUndo",JSON.stringify(cbLastBuild));}catch(e){}
+  _gvDelUndo=null;
+}
 
 // ── ADD MISSING SCHOOL DAYS — the mirror of Align ──
 // Align handles "lessons sit on days the calendar says are OFF". This handles the
@@ -21132,8 +21251,16 @@ function renderCurrGrid(el){
       const removed=!!(ov.removed||{})[sk];
       const addedV=(ov.added||{})[sk];
       const editing=gvEdit===dn+"|"+sk;
-      if(editing&&!past&&!gvSelMode){
-        h+='<td><input id="gv-edit-input" value="'+esc(gvFilled(v)?v:"")+'" onkeydown="gvEditKey(event,\''+gvKid+'\','+dn+',\''+sk+'\')" onblur="gvCancelEdit()"></td>';
+      if(editing&&!gvSelMode&&(!past||gvFilled(v))){
+        if(past){
+          // Past rows stay display-frozen (no text edits) — but a filled past cell can
+          // be DELETED: 🗑 removes the lesson (and, if it's the only copy, takes it off
+          // the subject card too), then re-lays the subject in the same tap.
+          h+='<td style="white-space:nowrap">'+esc(v)+' <button onclick="gvDeleteLesson(\''+gvKid+'\','+dn+',\''+sk+'\')" title="Delete this lesson and re-lay the subject" style="border:none;background:none;cursor:pointer;font-size:13px;padding:0 2px">🗑</button><button onclick="gvCancelEdit()" style="border:none;background:none;cursor:pointer;color:var(--muted);font-weight:700;font-size:13px;padding:0 2px">&times;</button></td>';
+        } else {
+          // onmousedown preventDefault keeps the input's blur (→ cancel) from eating the tap.
+          h+='<td style="white-space:nowrap"><input id="gv-edit-input" value="'+esc(gvFilled(v)?v:"")+'" onkeydown="gvEditKey(event,\''+gvKid+'\','+dn+',\''+sk+'\')" onblur="gvCancelEdit()">'+(gvFilled(v)?'<button onmousedown="event.preventDefault()" onclick="gvDeleteLesson(\''+gvKid+'\','+dn+',\''+sk+'\')" title="Delete this lesson and re-lay the subject" style="border:none;background:none;cursor:pointer;font-size:13px;padding:0 2px">🗑</button>':'')+'</td>';
+        }
       } else {
         let cell="";
         if(gvFilled(v)) cell=removed?'<s style="color:var(--muted)">'+esc(v)+'</s><span class="gv-badge" style="background:#e0e7ff;color:#3730a3">moved</span>':esc(v);
@@ -21141,14 +21268,15 @@ function renderCurrGrid(el){
         if(!cell&&_skipAt[dn+"|"+sk]!==undefined) cell='<s style="color:var(--muted);opacity:.7">'+esc(_skipAt[dn+"|"+sk])+'</s><span class="gv-badge" style="background:#fef3c7;color:#92400e" title="Passed over by a rebuild — won\'t come back as carryover or catch-up">skipped</span>';
         if(!cell) cell="·";
         const picked=gvSelMode&&gvSel.has(dn+"|"+sk);
-        const click=past?'':(gvSelMode?' onclick="gvSelCell('+dn+',\''+sk+'\')"':' onclick="gvOpenCell('+dn+',\''+sk+'\')"');
+        // Past cells open too when FILLED — delete-only view (see the editing branch).
+        const click=gvSelMode?(past?'':' onclick="gvSelCell('+dn+',\''+sk+'\')"'):((past&&!gvFilled(v))?'':' onclick="gvOpenCell('+dn+',\''+sk+'\')"');
         h+='<td class="gv-cell'+(gvFilled(v)||addedV!==undefined?'':' gv-empty')+(picked?' gv-picked':'')+'"'+click+'>'+cell+'</td>';
       }
     }
     h+='</tr>';
   }
   h+='</tbody></table></div>';
-  h+='<div style="font-size:10px;color:var(--muted);padding:0 2px 16px">Red rows = calendar/day-off · <span style="background:#eff6ff;padding:1px 6px;border-radius:6px">blue row</span> = today · past days are frozen · moves &amp; make-ups are made in the Lesson Map, shown here</div>';
+  h+='<div style="font-size:10px;color:var(--muted);padding:0 2px 16px">Red rows = calendar/day-off · <span style="background:#eff6ff;padding:1px 6px;border-radius:6px">blue row</span> = today · past days are frozen (tap a filled one to 🗑 delete-and-re-lay) · moves &amp; make-ups are made in the Lesson Map, shown here</div>';
   h+='</div>';
   el.innerHTML+=h;
 
