@@ -11977,6 +11977,16 @@ function _rlCardHTML(kid,momView){
   if(cur&&!cur.finishClaim) h+='<button class="rl-log-btn" onclick="rlLogExtra(\''+kid+'\')">📖 + Log extra reading</button>';
   if(momView){
     h+='<div class="rl-mom"><div class="rl-mom-hd">🔒 Mom — bookshelf</div>';
+    // 🔄 Little-reader rotation (read-aloud kids): check-off opens ONE Mom dialog —
+    // 4 proposed re-reads (most recently read) + a typed new book, instead of the
+    // single-book page prompt. Load the shelf in the order the kid read the books;
+    // the last four loaded are the first proposal.
+    {
+      const _rotOn=(readingLog[kid]||{}).mode==="rotation";
+      h+='<div style="display:flex;align-items:center;gap:8px;margin:2px 0 8px;font-size:11.5px">'+
+        '<span style="flex:1">🔄 Little-reader rotation <span class="rl-hint">(4 re-reads + a new one, logged by you)</span></span>'+
+        '<button style="border-color:'+(_rotOn?'#86efac':'var(--border)')+';color:'+(_rotOn?'#15803d':'var(--muted)')+';background:'+(_rotOn?'#f0fdf4':'#fff')+'" onclick="rlToggleRotation(\''+kid+'\')">'+(_rotOn?'✓ On':'Off')+'</button></div>';
+    }
     // finish claims first — the "make it official" moment: ✓ mints the sized trophy,
     // pays size points to the claim day, and fires the confetti.
     books.filter(b=>b.finishClaim&&b.status!=="done").forEach(b=>{
@@ -12041,7 +12051,10 @@ function rlOnCheckoff(t){
   // Prompt right away on this device when the kid logs their own page, or when Mom is
   // here anyway. Mom-logged without Mom present → the chip waits for her.
   if(by==="kid"||momHere()){
-    if(rlCurrent(kid)) rlOpenPrompt(kid,{pendingKey:key,source:"sched",day:d});
+    // 🔄 Little-reader rotation (Lucy): the session is 4 re-reads + maybe a new book,
+    // logged by Mom in one dialog — not the single-book page prompt.
+    if((readingLog[kid]||{}).mode==="rotation") rlOpenRotation(kid,{pendingKey:key,day:d});
+    else if(rlCurrent(kid)) rlOpenPrompt(kid,{pendingKey:key,source:"sched",day:d});
     // No book marked "reading now" — this used to bail silently and the log filled
     // with unanswered chips (Lincoln ×12, Ellis ×4 by 2026-08-11). Ask for the book
     // instead: the kid types just the NAME (+pages if known); it starts as the
@@ -12049,6 +12062,120 @@ function rlOnCheckoff(t){
     // (rlCycleSize), so a kid can't pick their own point value.
     else rlOpenNoBook(kid,{pendingKey:key,day:d});
   }
+}
+// ── 🔄 Little-reader rotation (read-aloud kids: 4 re-reads + maybe one new) ──
+// The shelf is a rotating pool: every book stays re-readable forever. The dialog
+// proposes the 4 MOST-RECENTLY-read books (yesterday's set minus its oldest, plus
+// yesterday's new one — exactly how early readers cycle a fresh book in as the
+// stalest drops off). Seeding: books never logged rank by when they were ADDED, so
+// Mom loads the shelf in the order the kid read them and the last-loaded four are
+// the first proposal. Mom can swap any pick; the new book is typed here, SIZED HERE
+// (Mom is the one confirming — kid never picks a point value), paid + trophied
+// immediately like any finished book: her confirm IS the approval.
+let _rlRotCtx=null, _rlRotSel=null, _rlRotSize="mini";
+function _rlRotRank(kid){
+  return rlBooks(kid).map(b=>({...b,_ts:b.lastReadTs||b.addedTs||0})).sort((a,b)=>b._ts-a._ts);
+}
+function rlOpenRotation(kid,opts){
+  opts=opts||{};
+  const ranked=_rlRotRank(kid);
+  _rlRotCtx={kid,pendingKey:opts.pendingKey||null,day:opts.day||day};
+  _rlRotSel=new Set(ranked.slice(0,4).map(b=>b.id));
+  _rlRotSize="mini";
+  _rlRotPaint();
+}
+function _rlRotPaint(){
+  const ctx=_rlRotCtx; if(!ctx) return;
+  const kid=ctx.kid;
+  const ranked=_rlRotRank(kid);
+  let ov=document.getElementById("rl-rot-dlg"); const hadTitle=(document.getElementById("rl-rot-title")||{}).value||"";
+  if(ov) ov.remove();
+  ov=document.createElement("div"); ov.id="rl-rot-dlg"; ov.className="dlg-overlay"; ov.style.display="flex"; ov.style.zIndex="9999";
+  let inner='<div style="font-size:34px;margin-bottom:2px">📚</div>';
+  inner+='<div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:700;color:#1e3a5f">'+cap(kid)+'’s reading — which books today?</div>';
+  inner+='<div style="font-size:12px;color:var(--muted);margin:6px 0 10px">The usual four are picked — tap any book to change. Add the new one below, or just save.</div>';
+  inner+='<div style="display:flex;flex-direction:column;gap:4px;max-height:38vh;overflow-y:auto;text-align:left">';
+  ranked.forEach(b=>{
+    const on=_rlRotSel.has(b.id);
+    const S=RL_SIZES[b.size]||RL_SIZES.little;
+    inner+='<div onclick="rlRotToggle(\''+esc(b.id)+'\')" style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:10px;border:1.5px solid '+(on?'#93c5fd':'var(--border)')+';background:'+(on?'#eff6ff':'#fff')+';cursor:pointer">'+
+      '<span style="font-size:15px">'+(on?'✅':S.ic)+'</span><span style="flex:1;font-size:13px;font-weight:'+(on?'800':'600')+'">'+esc(b.title)+'</span>'+
+      (b.lastReadTs?'':'<span style="font-size:9px;color:var(--muted)">not logged yet</span>')+'</div>';
+  });
+  inner+='</div>';
+  inner+='<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border)">';
+  inner+='<div style="font-size:12px;font-weight:800;color:#1e3a5f;margin-bottom:6px">✨ New book today? <span style="font-weight:400;color:var(--muted)">(leave blank if none)</span></div>';
+  inner+='<input id="rl-rot-title" placeholder="new book’s name" value="'+esc(hadTitle)+'" style="width:100%;max-width:280px;padding:9px;border:1.5px solid #93c5fd;border-radius:10px;font-size:14px;font-weight:700;text-align:center;font-family:\'DM Sans\',sans-serif">';
+  inner+='<div style="display:flex;gap:6px;justify-content:center;margin-top:8px">';
+  RL_ORDER.forEach(sz=>{ const S=RL_SIZES[sz];
+    inner+='<div class="rl-rot-sz" data-sz="'+sz+'" onclick="rlRotPickSize(\''+sz+'\')" style="padding:5px 10px;border-radius:12px;border:1.5px solid '+(_rlRotSize===sz?'#93c5fd':'var(--border)')+';background:'+(_rlRotSize===sz?'#eff6ff':'#fff')+';font-size:11px;font-weight:700;cursor:pointer">'+S.ic+' '+S.nm+'</div>';
+  });
+  inner+='</div></div>';
+  inner+='<div style="display:flex;gap:8px;margin-top:14px">'+
+    '<button onclick="rlRotSave()" style="flex:1;padding:11px;border-radius:10px;border:none;background:#1d4ed8;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Log today’s reading</button>'+
+    '</div>'+
+    '<button onclick="rlRotClose()" style="width:100%;margin-top:8px;padding:8px;border:none;background:none;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">skip for now</button>';
+  ov.innerHTML='<div class="dlg-box" style="max-width:420px;text-align:center">'+inner+'</div>';
+  document.body.appendChild(ov);
+}
+function rlRotToggle(id){ if(!_rlRotSel) return; if(_rlRotSel.has(id)) _rlRotSel.delete(id); else _rlRotSel.add(id); _rlRotPaint(); }
+// Size pick updates classes in place (NO repaint — a repaint would drop focus mid-typing;
+// the title survives repaints via the hadTitle carry, but focus does not).
+function rlRotPickSize(sz){ _rlRotSize=sz; document.querySelectorAll(".rl-rot-sz").forEach(el=>{ const on=el.getAttribute("data-sz")===sz; el.style.borderColor=on?"#93c5fd":"var(--border)"; el.style.background=on?"#eff6ff":"#fff"; }); }
+function rlRotClose(){ _rlRotCtx=null; _rlRotSel=null; const ov=document.getElementById("rl-rot-dlg"); if(ov) ov.remove(); }
+function rlRotSave(){
+  const ctx=_rlRotCtx; if(!ctx) return;
+  const kid=ctx.kid, d=ctx.day;
+  const t=((document.getElementById("rl-rot-title")||{}).value||"").trim();
+  const picked=[..._rlRotSel||[]].filter(id=>((readingLog[kid]||{}).books||{})[id]);
+  if(!picked.length&&!t){ if(typeof gwShowToast==="function") gwShowToast("Pick at least one book (or add the new one)"); return; }
+  if(!readingLog[kid]) readingLog[kid]={};
+  if(!readingLog[kid].entries) readingLog[kid].entries={};
+  const base=Date.now();
+  // Re-reads: one entry each + a lastRead stamp. Stamps are base+index so the order
+  // within the session is strict — the new book (stamped last) ranks newest, and the
+  // stalest of today's set is the one that drops off tomorrow's proposal.
+  picked.forEach((id,i)=>{
+    const eid="e_"+(base+i).toString(36)+Math.floor(Math.random()*1000);
+    const e={bookId:id,ts:nowTs(),day:d,source:"rotation",by:"mom"};
+    readingLog[kid].entries[eid]=e;
+    if(db) db.ref("readingLog/"+kid+"/entries/"+eid).set(e);
+    _rlSetBook(kid,id,{lastReadTs:base+i});
+  });
+  // The new book: created done — read cover to cover on Mom's lap — sized by Mom's
+  // chip, paid + trophied NOW (her confirm is the approval, same payout as
+  // rlApproveFinish), and stamped newest so it joins tomorrow's four.
+  if(t){
+    const id=_bookSlug(t)+"_"+base.toString(36);
+    const pts=rlSizePts(_rlRotSize);
+    const rec={title:t,size:_rlRotSize,totalPages:null,status:"done",addedBy:"mom",addedTs:nowTs(),
+      doneTs:nowTs(),doneDay:d,donePts:pts,lastReadTs:base+picked.length};
+    if(!readingLog[kid].books) readingLog[kid].books={};
+    readingLog[kid].books[id]=rec;
+    if(db) db.ref("readingLog/"+kid+"/books/"+id).set(rec);
+    const eid="e_"+(base+picked.length).toString(36)+Math.floor(Math.random()*1000);
+    const e={bookId:id,ts:nowTs(),day:d,source:"rotation",by:"mom",firstRead:true};
+    readingLog[kid].entries[eid]=e;
+    if(db) db.ref("readingLog/"+kid+"/entries/"+eid).set(e);
+    const tid="read_"+id;
+    if(typeof mintTrophy==="function"&&typeof hasTrophy==="function"&&!hasTrophy(kid,tid)){
+      mintTrophy(kid,tid,{type:"read",size:_rlRotSize,key:id,name:t,ts:nowTs(),points:pts});
+      if(pts>0&&typeof bankDirect==="function") bankDirect(kid,pts,'📚 New book: "'+t+'"');
+      setTimeout(()=>{ try{_showCelebration(kid,cap(kid)+" read a brand-new book!",{points:pts});}catch(e){} },300);
+    }
+  }
+  if(ctx.pendingKey&&readingLog[kid].pending){ delete readingLog[kid].pending[ctx.pendingKey]; if(db) db.ref("readingLog/"+kid+"/pending/"+ctx.pendingKey).remove(); }
+  rlRotClose();
+  if(typeof gwShowToast==="function") gwShowToast("📚 "+(picked.length+(t?1:0))+" books logged — great reading!");
+  renderAll();
+}
+function rlToggleRotation(kid){
+  if(!momHere()) return;
+  const on=(readingLog[kid]||{}).mode==="rotation";
+  if(!readingLog[kid]) readingLog[kid]={};
+  if(on){ delete readingLog[kid].mode; if(db) db.ref("readingLog/"+kid+"/mode").remove(); }
+  else { readingLog[kid].mode="rotation"; if(db) db.ref("readingLog/"+kid+"/mode").set("rotation"); }
+  renderAll();
 }
 let _rlNbCtx=null; // {kid,pendingKey,day} while the ask-for-a-book dialog is up
 function rlOpenNoBook(kid,opts){
@@ -12153,10 +12280,12 @@ function rlDlgFinish(){
   gwShowToast("🎉 "+cap(kid)+" finished "+b.title+"! Waiting for Mom to make it official");
 }
 function rlResolvePending(kid){                      // chip tap → prompt for the oldest pending log
-  if(!rlCurrent(kid)){ gwShowToast("Add a book to the shelf first"); return; }
   const p=(readingLog[kid]||{}).pending||{};
   const keys=Object.keys(p).sort((a,b)=>((p[a]||{}).ts||"").localeCompare((p[b]||{}).ts||""));
   if(!keys.length) return;
+  // Rotation kids resolve a pending day with the rotation dialog, not the page prompt.
+  if((readingLog[kid]||{}).mode==="rotation"){ rlOpenRotation(kid,{pendingKey:keys[0],day:(p[keys[0]]||{}).day||day}); return; }
+  if(!rlCurrent(kid)){ gwShowToast("Add a book to the shelf first"); return; }
   rlOpenPrompt(kid,{pendingKey:keys[0],source:"sched",day:(p[keys[0]]||{}).day||day});
 }
 function rlLogExtra(kid){ rlOpenPrompt(kid,{source:"extra",day:day}); }
