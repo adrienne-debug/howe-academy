@@ -1290,6 +1290,8 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
 .gv.gv-selmode .gv-cell{cursor:cell}
 .gv-cell.gv-picked,.gv.gv-selmode .gv-cell.gv-picked{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2563eb}
 .gv.gv-selmode .gv-fix{cursor:pointer}
+.gv tr.gv-movetgt td{background:#eef2ff!important;cursor:copy}
+.gv td.gv-movesrc{box-shadow:inset 0 0 0 2px #6366f1}
 .gv tr.gv-past td{opacity:0.5}
 .gv tr.gv-off td{background:#fef2f2}
 .gv tr.gv-hol td{background:#fef3c7}
@@ -19568,7 +19570,11 @@ function cbFutureRows(kid,sk){
       if(filled(l[k2])) usedMin+=subs[k2].minutes||20;
     }
     rows.push({dayNum:dnn,date:l.date,week:l.week||"",dow:DOW[gwParseDate(l.date).getDay()],
-      off:!!(smapIsKidOff(kid,l.date)||schedOvKidOff(kid,l.date)),usedMin,hadMine:!!filled(l[sk])});
+      // A day the whole kid is off — OR a day Mom ✕'d for THIS subject — takes no
+      // placement. Without the per-subject check, a rebuild laid content right back
+      // onto a ✕'d day and the strike read as "nothing moved" (2026-08-11, twice).
+      off:!!(smapIsKidOff(kid,l.date)||schedOvKidOff(kid,l.date)||((schedOv(l.date,kid)||{}).removed||{})[sk]),
+      usedMin,hadMine:!!filled(l[sk])});
   }
   return rows;
 }
@@ -20966,6 +20972,8 @@ function gvSetKid(k){ gvKid=k; gvEdit=null; gvSelMode=false; gvSel=new Set(); gv
 function gvTogglePast(){ gvShowPast=!gvShowPast; gvEdit=null; renderAll(); }
 function gvGrabScroll(){ const w=document.querySelector(".gv-wrap"); if(w){ gvScrollTop=w.scrollTop; gvScrollLeft=w.scrollLeft; } }
 function gvOpenCell(dn,sk){
+  // ➡ Move mode armed from THIS grid: the tap picks the destination day instead.
+  if(typeof lmMovePick!=="undefined"&&lmMovePick&&lmMovePick.kid===gvKid){ gvPickMoveTarget(dn); return; }
   gvGrabScroll();
   // A filled, not-yet-past cell opens the ACTION MENU — the Lesson Map's structural
   // tools (move a day, take off a day) merged into the Grid, next to edit/delete.
@@ -21007,9 +21015,26 @@ function gvMenuMove(kid,dn,sk,dir){
   lmMoveDay(kid,sk,l.date,to,false);   // the Lesson Map's own move — undo banner included
 }
 function gvMenuOff(kid,dn,sk){
+  if(!momModeActive&&!adminPinUnlocked) return;
   const l=((currData.lessons||{})[kid]||{})[dn]; if(!l||!l.date) return;
   gvGrabScroll(); gvMenu=null;
   lmDropSlot(kid,l.date,sk,false);     // reversible — the cell shows "moved", ↩ restores
+  // ✕ finishes like 🗑 now: the column re-lays in the same tap so the lessons
+  // below visibly slide up (cbFutureRows marks ✕'d days off for this subject,
+  // so the re-lay can never put content back on the day just removed).
+  const s=((currData.subjects||{})[kid]||{})[sk]||{};
+  if(s.pacing&&s.pacing.mode) _gvRelaySubject(kid,sk,"✕ Took "+(s.display||sk)+" off that day");
+}
+// Shared tail for structural cell actions (🗑 delete, ✕ off day): re-lay the
+// subject via the ↻ path — preview → Keep/Dismiss gate only if leftovers → apply,
+// one Undo. Returns true when the relay is underway; false = message already shown.
+function _gvRelaySubject(kid,sk,doneMsg){
+  cbKid=kid; cbSubjKey=sk; cbForm=cbDefaultForm(kid,sk); cbPreviewRes=null;
+  try{ cbPreviewRes=cbMaterialize(cbBuildCfg()); }
+  catch(e){ cbPreviewRes={error:(e&&e.message)||"build error"}; }
+  if(cbPreviewRes&&!cbPreviewRes.error){ cbBuildGate(); return true; }
+  cbMsg=doneMsg+" — but the re-lay failed: "+((cbPreviewRes&&cbPreviewRes.error)||"build error")+". ↻ Rebuild the subject when ready.";
+  renderAll(); return false;
 }
 function gvMenuRestore(kid,dn,sk){
   if(!momModeActive&&!adminPinUnlocked) return;
@@ -21017,15 +21042,27 @@ function gvMenuRestore(kid,dn,sk){
   gvGrabScroll(); gvMenu=null;
   lmRestoreSubj(kid,l.date,sk);
 }
-// 📅 Cross-week move: opens the Lesson Map's own week→day picker under the menu
-// (lmMovePick/lmMoveWeek state, lmMoveSlot completes the move — shared everything).
-function gvMenuPick(kid,dn,sk){
+// ➡ Move mode: arm the source, then the NEXT cell tap picks the destination day
+// right in the grid (blue rows = eligible). Same lmMovePick state + lmMoveSlot
+// completion as the Lesson Map's picker — the `kid` field marks a grid-armed move
+// so a picker left open on the Map page never hijacks grid taps.
+function gvMenuStartMove(kid,dn,sk){
   if(!momModeActive&&!adminPinUnlocked) return;
   const l=((currData.lessons||{})[kid]||{})[dn]; if(!l||!l.date) return;
-  gvGrabScroll();
-  if(typeof lmMovePick!=="undefined"&&lmMovePick&&lmMovePick.date===l.date&&lmMovePick.sk===sk){ lmMovePick=null; lmMoveWeek=null; }
-  else { lmMovePick={date:l.date,sk:sk,added:false}; lmMoveWeek=null; }
+  gvGrabScroll(); gvMenu=null;
+  lmMovePick={date:l.date,sk:sk,added:false,kid:kid}; lmMoveWeek=null;
   renderAll();
+}
+function gvCancelMove(){ gvGrabScroll(); lmMovePick=null; lmMoveWeek=null; renderAll(); }
+function gvPickMoveTarget(dn){
+  const mp=(typeof lmMovePick!=="undefined")?lmMovePick:null; if(!mp) return;
+  const l=((currData.lessons||{})[gvKid]||{})[dn]; const ds=l&&l.date;
+  if(!ds) return;
+  if(ds===mp.date){ gvCancelMove(); return; }            // tapping the source cancels
+  if(ds<=cbTodayISO()){ if(typeof gwShowToast==="function") gwShowToast("Pick a day after today."); return; }
+  if(typeof _lmKidOff==="function"&&_lmKidOff(gvKid,ds)){ if(typeof gwShowToast==="function") gwShowToast("That day is off for "+cap(gvKid)+"."); return; }
+  gvGrabScroll();
+  lmMoveSlot(gvKid,mp.sk,ds);   // completes the move — undo banner included
 }
 function gvMenuOffAdded(kid,dn,sk){
   const l=((currData.lessons||{})[kid]||{})[dn]; if(!l||!l.date) return;
@@ -21164,12 +21201,8 @@ function gvDeleteLesson(kid,dn,sk){
   try{ buildCurrPaceCum(); }catch(e){}
   // Re-lay the subject in the same tap — the ↻ path: preview → gate → apply.
   if(s.pacing&&s.pacing.mode){
-    cbKid=kid; cbSubjKey=sk; cbForm=cbDefaultForm(kid,sk); cbPreviewRes=null;
-    try{ cbPreviewRes=cbMaterialize(cbBuildCfg()); }
-    catch(e){ cbPreviewRes={error:(e&&e.message)||"build error"}; }
-    if(cbPreviewRes&&!cbPreviewRes.error){ cbBuildGate(); return; }
-    cbMsg="🗑 Deleted “"+cls.text+"” — but the re-lay failed: "+((cbPreviewRes&&cbPreviewRes.error)||"build error")+". ↻ Rebuild the subject when ready.";
-    _gvFinishDeleteNoBuild(); renderAll(); return;
+    if(_gvRelaySubject(kid,sk,"🗑 Deleted “"+cls.text+"”")) return;
+    _gvFinishDeleteNoBuild(); return;   // relay failed — helper showed the message; delete keeps its own Undo
   }
   cbMsg="🗑 Deleted “"+cls.text+"” from "+disp+". (Not Builder-paced — no re-lay needed.)";
   _gvFinishDeleteNoBuild(); renderAll();
@@ -21436,6 +21469,13 @@ function renderCurrGrid(el){
     }
   }catch(e){}
 
+  // ➡ Move mode banner: a source is armed — blue rows are eligible destinations.
+  const _mvArmed=(typeof lmMovePick!=="undefined"&&lmMovePick&&lmMovePick.kid===gvKid);
+  if(_mvArmed){
+    const _ms=(((currData.subjects||{})[gvKid]||{})[lmMovePick.sk]||{});
+    const _md=gwParseDate(lmMovePick.date);
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:#eef2ff;border:1.5px solid #6366f1;border-radius:8px;padding:7px 10px;margin:0 0 8px;font-size:12px;color:#3730a3"><span>➡ Moving <b>'+esc(_ms.display||lmMovePick.sk)+'</b> from '+["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][_md.getDay()]+' '+(_md.getMonth()+1)+'/'+_md.getDate()+' — <b>tap any cell on the day it should land</b> (blue rows)</span><button onclick="gvCancelMove()" style="border:1px solid #6366f1;background:#fff;color:#4338ca;border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0">✕ cancel</button></div>';
+  }
   // Same Undo banner the Lesson Map shows after a ◀▶ move — the Grid can move now too.
   if(typeof lmLastMove!=="undefined"&&lmLastMove){
     const _lm=lmLastMove; const _od=gwParseDate(_lm.toDate);
@@ -21476,7 +21516,8 @@ function renderCurrGrid(el){
     const offReason=smapIsKidOff(gvKid,l.date);
     const mapOff=schedOvKidOff(gvKid,l.date);
     const ov=schedOv(l.date,gvKid)||{};
-    const cls=[past?"gv-past":"",(offReason||mapOff)?"gv-off":"",l.date===today?"gv-today":""].filter(Boolean).join(" ");
+    const cls=[past?"gv-past":"",(offReason||mapOff)?"gv-off":"",l.date===today?"gv-today":"",
+      (_mvArmed&&!past&&l.date>today&&!(offReason||mapOff)&&l.date!==lmMovePick.date)?"gv-movetgt":""].filter(Boolean).join(" ");
     let gridMins=0;
     for(const sk of Object.keys(subs)){ if(!subs[sk].paused&&gvFilled(l[sk])&&!(ov.removed||{})[sk]) gridMins+=subs[sk].minutes||20; }
     // Daily subjects (morning/closing notebook, drills, reflex) run every school day but have
@@ -21518,22 +21559,16 @@ function renderCurrGrid(el){
         } else {
           m+=_mb("✎","gvMenuEdit("+dn+",'"+sk+"')","Edit the text");
           if(gvFilled(v)){
-            if(_gvAdjSchoolDate(gvKid,l.date,-1)) m+=_mb("◀","gvMenuMove("+_arg+",-1)","Move to the previous school day");
-            if(_gvAdjSchoolDate(gvKid,l.date,1)) m+=_mb("▶","gvMenuMove("+_arg+",1)","Move to the next school day");
-            m+=_mb("📅","gvMenuPick("+_arg+")","Move to another week or day…");
-            m+=_mb("✕ off day","gvMenuOff("+_arg+")","Take it off this day — the lesson slides to the next open slot (reversible)","#b45309");
+            // One Move gesture replaces the old ◀▶ arrows and week-chip picker:
+            // arm the move, then tap the destination day right in the grid.
+            m+=_mb("➡ move","gvMenuStartMove("+_arg+")","Move it — then tap the day in the grid it should land on");
+            m+=_mb("✕ off day","gvMenuOff("+_arg+")","Take it off this day — the column re-lays around it (reversible)","#b45309");
             m+=_mb("🗑","gvDeleteLesson("+_arg+")","Delete this lesson and re-lay the subject","#b5394a");
           }
         }
         if(addedV!==undefined) m+=_mb("✕ make-up","gvMenuOffAdded("+_arg+")","Remove this make-up sitting","#b45309");
         m+=_mb("×","gvCancelEdit()","Close");
         m+='</div>';
-        // Cross-week Move picker — the Lesson Map's own picker, rendered in place.
-        if(typeof lmMovePick!=="undefined"&&lmMovePick&&lmMovePick.date===l.date&&lmMovePick.sk===sk){
-          const _wd=(currData.weekDays||{})[gvKid]||{};
-          const _wl=Object.keys(_wd).sort((a,b)=>{const na=parseInt(a.match(/\d+/)||[0]);const nb=parseInt(b.match(/\d+/)||[0]);return na-nb;});
-          m+=lmRenderMovePicker(gvKid,sk,KID_COLOR[gvKid]||"#333",_wl,_wd,(currData.lessons||{})[gvKid]||{});
-        }
         h+='<td style="white-space:nowrap;min-width:130px">'+m+'</td>';
       } else if(editing&&!gvSelMode&&(!past||gvFilled(v))){
         if(past){
@@ -21556,13 +21591,13 @@ function renderCurrGrid(el){
         const picked=gvSelMode&&gvSel.has(dn+"|"+sk);
         // Past cells open too when FILLED — delete-only view (see the editing branch).
         const click=gvSelMode?(past?'':' onclick="gvSelCell('+dn+',\''+sk+'\')"'):((past&&!gvFilled(v))?'':' onclick="gvOpenCell('+dn+',\''+sk+'\')"');
-        h+='<td class="gv-cell'+(gvFilled(v)||addedV!==undefined?'':' gv-empty')+(picked?' gv-picked':'')+'"'+click+'>'+cell+'</td>';
+        h+='<td class="gv-cell'+(gvFilled(v)||addedV!==undefined?'':' gv-empty')+(picked?' gv-picked':'')+((_mvArmed&&lmMovePick.date===l.date&&lmMovePick.sk===sk)?' gv-movesrc':'')+'"'+click+'>'+cell+'</td>';
       }
     }
     h+='</tr>';
   }
   h+='</tbody></table></div>';
-  h+='<div style="font-size:10px;color:var(--muted);padding:0 2px 16px">Red rows = calendar/day-off · <span style="background:#eff6ff;padding:1px 6px;border-radius:6px">blue row</span> = today · past days are frozen (tap a filled one to 🗑 delete-and-re-lay) · tap any other filled cell for its menu: ✎ edit · ◀▶ move a day · ✕ off this day · 🗑 delete-and-re-lay</div>';
+  h+='<div style="font-size:10px;color:var(--muted);padding:0 2px 16px">Red rows = calendar/day-off · <span style="background:#eff6ff;padding:1px 6px;border-radius:6px">blue row</span> = today · past days are frozen (tap a filled one to 🗑 delete-and-re-lay) · tap any other filled cell for its menu: ✎ edit · ➡ move (then tap the landing day) · ✕ off this day (re-lays) · 🗑 delete-and-re-lay</div>';
   h+='</div>';
   el.innerHTML+=h;
 
