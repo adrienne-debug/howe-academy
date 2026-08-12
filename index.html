@@ -20760,7 +20760,7 @@ function cbRenderForm(col){
 // Map's ✎). Structural moves/day-offs stay in the Lesson Map; the grid just
 // SHOWS those overrides. Past rows are frozen.
 // ═════════════════════════════════════════════════════════════════════════
-let gvKid=null, gvEdit=null, gvShowPast=false, gvScrollTop=0, gvScrollLeft=0;
+let gvKid=null, gvEdit=null, gvMenu=null, gvShowPast=false, gvScrollTop=0, gvScrollLeft=0;
 let _gvDelUndo=null; // pending 🗑 delete snapshot — folded into the relay's Undo
 // Multi-cell (Excel-style) selection: pick many cells, then Clear or Fill them at once.
 let gvSelMode=false, gvSel=new Set(), gvSelAnchor=null, gvSelUndo=null;
@@ -20965,8 +20965,56 @@ function gvPurgeOrphans(){
 function gvSetKid(k){ gvKid=k; gvEdit=null; gvSelMode=false; gvSel=new Set(); gvSelAnchor=null; gvSelUndo=null; gvScrollTop=0; gvScrollLeft=0; renderAll(); }
 function gvTogglePast(){ gvShowPast=!gvShowPast; gvEdit=null; renderAll(); }
 function gvGrabScroll(){ const w=document.querySelector(".gv-wrap"); if(w){ gvScrollTop=w.scrollTop; gvScrollLeft=w.scrollLeft; } }
-function gvOpenCell(dn,sk){ gvGrabScroll(); gvEdit=dn+"|"+sk; renderAll(); }
-function gvCancelEdit(){ if(gvEdit===null) return; gvGrabScroll(); gvEdit=null; renderAll(); }
+function gvOpenCell(dn,sk){
+  gvGrabScroll();
+  // A filled, not-yet-past cell opens the ACTION MENU — the Lesson Map's structural
+  // tools (move a day, take off a day) merged into the Grid, next to edit/delete.
+  // Empty cells go straight to typing; past filled cells keep their delete-only view.
+  const l=((currData.lessons||{})[gvKid]||{})[dn]||{};
+  const past=!!(l.date&&l.date<cbTodayISO());
+  const ovR=!!(((schedOv(l.date,gvKid)||{}).removed||{})[sk]);
+  if(!past&&(gvFilled(l[sk])||ovR)){ gvMenu=dn+"|"+sk; gvEdit=null; }
+  else { gvEdit=dn+"|"+sk; gvMenu=null; }
+  renderAll();
+}
+function gvCancelEdit(){ if(gvEdit===null&&gvMenu===null) return; gvGrabScroll(); gvEdit=null; gvMenu=null; renderAll(); }
+function gvMenuEdit(dn,sk){ gvGrabScroll(); gvMenu=null; gvEdit=dn+"|"+sk; renderAll(); }
+// Adjacent open school day for this kid (skips calendar/override off days; never
+// today or earlier — moved work can only land on days that haven't happened).
+function _gvAdjSchoolDate(kid,fromDate,dir){
+  if(!fromDate) return null;
+  const L=(currData.lessons||{})[kid]||{};
+  const dates=[...new Set(Object.keys(L).map(dn=>(L[dn]||{}).date).filter(Boolean))].sort();
+  let i=dates.indexOf(fromDate);
+  if(i<0) return null;
+  const today=cbTodayISO();
+  for(i+=dir;i>=0&&i<dates.length;i+=dir){
+    const ds=dates[i];
+    if(ds<=today) return null;
+    if(typeof _lmKidOff==="function"&&_lmKidOff(kid,ds)) continue;
+    return ds;
+  }
+  return null;
+}
+function gvMenuMove(kid,dn,sk,dir){
+  if(!momModeActive&&!adminPinUnlocked) return;
+  const l=((currData.lessons||{})[kid]||{})[dn]; if(!l||!l.date) return;
+  const to=_gvAdjSchoolDate(kid,l.date,dir);
+  if(!to){ if(typeof gwShowToast==="function") gwShowToast("No open school day that way."); return; }
+  gvGrabScroll(); gvMenu=null;
+  lmMoveDay(kid,sk,l.date,to,false);   // the Lesson Map's own move — undo banner included
+}
+function gvMenuOff(kid,dn,sk){
+  const l=((currData.lessons||{})[kid]||{})[dn]; if(!l||!l.date) return;
+  gvGrabScroll(); gvMenu=null;
+  lmDropSlot(kid,l.date,sk,false);     // reversible — the cell shows "moved", ↩ restores
+}
+function gvMenuRestore(kid,dn,sk){
+  if(!momModeActive&&!adminPinUnlocked) return;
+  const l=((currData.lessons||{})[kid]||{})[dn]; if(!l||!l.date) return;
+  gvGrabScroll(); gvMenu=null;
+  lmRestoreSubj(kid,l.date,sk);
+}
 function gvEditKey(e,kid,dn,sk){
   if(e.key==="Enter"){ e.preventDefault(); gvCommitCell(kid,dn,sk,e.target.value); }
   else if(e.key==="Escape"){ e.preventDefault(); gvCancelEdit(); }
@@ -21364,6 +21412,13 @@ function renderCurrGrid(el){
     }
   }catch(e){}
 
+  // Same Undo banner the Lesson Map shows after a ◀▶ move — the Grid can move now too.
+  if(typeof lmLastMove!=="undefined"&&lmLastMove){
+    const _lm=lmLastMove; const _od=gwParseDate(_lm.toDate);
+    const _tdisp=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][_od.getDay()]+" "+_od.toLocaleDateString("en-US",{month:"short",day:"numeric"});
+    const _sd=((((currData.subjects||{})[gvKid]||{})[_lm.sk]||{}).display)||_lm.sk;
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:6px 10px;margin:0 0 8px;font-size:11px;color:#3730a3"><span>Moved <b>'+esc(_sd)+'</b> to '+esc(_tdisp)+' (make-up)</span><button onclick="lmUndoMove()" style="border:1px solid #6366f1;background:#fff;color:#4338ca;border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">&#8617; Undo</button></div>';
+  }
   h+='<div class="gv-wrap"><table class="gv'+(gvSelMode?' gv-selmode':'')+'"><thead><tr>';
   h+='<th class="gv-fix">Day</th><th class="gv-min">Min</th>';
   for(const sk of cols){
@@ -21428,7 +21483,25 @@ function renderCurrGrid(el){
       const removed=!!(ov.removed||{})[sk];
       const addedV=(ov.added||{})[sk];
       const editing=gvEdit===dn+"|"+sk;
-      if(editing&&!gvSelMode&&(!past||gvFilled(v))){
+      if(gvMenu===dn+"|"+sk&&!gvSelMode&&!past){
+        // ── Cell action menu: the Lesson Map's tools, in place ──
+        const _mb=(lbl,fn,tt,col2)=>'<button onclick="'+fn+'" title="'+esc(tt)+'" style="border:1px solid var(--border);background:#fff;border-radius:8px;padding:3px 7px;font-size:12px;cursor:pointer;line-height:1.3'+(col2?';color:'+col2:'')+'">'+lbl+'</button>';
+        let m='<div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap">';
+        m+='<span style="font-size:11px;font-weight:700;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"'+(removed?' class="gv-mvd"':'')+'>'+(removed?'<s>':'')+esc(gvFilled(v)?v:"")+(removed?'</s>':'')+'</span>';
+        const _arg="'"+gvKid+"',"+dn+",'"+sk+"'";
+        if(removed){
+          m+=_mb("↩ put back","gvMenuRestore("+_arg+")","Un-move: it runs on this day again","#15803d");
+        } else {
+          m+=_mb("✎","gvMenuEdit("+dn+",'"+sk+"')","Edit the text");
+          if(_gvAdjSchoolDate(gvKid,l.date,-1)) m+=_mb("◀","gvMenuMove("+_arg+",-1)","Move to the previous school day");
+          if(_gvAdjSchoolDate(gvKid,l.date,1)) m+=_mb("▶","gvMenuMove("+_arg+",1)","Move to the next school day");
+          m+=_mb("✕ off day","gvMenuOff("+_arg+")","Take it off this day — the lesson slides to the next open slot (reversible)","#b45309");
+          m+=_mb("🗑","gvDeleteLesson("+_arg+")","Delete this lesson and re-lay the subject","#b5394a");
+        }
+        m+=_mb("×","gvCancelEdit()","Close");
+        m+='</div>';
+        h+='<td style="white-space:nowrap">'+m+'</td>';
+      } else if(editing&&!gvSelMode&&(!past||gvFilled(v))){
         if(past){
           // Past rows stay display-frozen (no text edits) — but a filled past cell can
           // be DELETED: 🗑 removes the lesson (and, if it's the only copy, takes it off
@@ -21453,7 +21526,7 @@ function renderCurrGrid(el){
     h+='</tr>';
   }
   h+='</tbody></table></div>';
-  h+='<div style="font-size:10px;color:var(--muted);padding:0 2px 16px">Red rows = calendar/day-off · <span style="background:#eff6ff;padding:1px 6px;border-radius:6px">blue row</span> = today · past days are frozen (tap a filled one to 🗑 delete-and-re-lay) · moves &amp; make-ups are made in the Lesson Map, shown here</div>';
+  h+='<div style="font-size:10px;color:var(--muted);padding:0 2px 16px">Red rows = calendar/day-off · <span style="background:#eff6ff;padding:1px 6px;border-radius:6px">blue row</span> = today · past days are frozen (tap a filled one to 🗑 delete-and-re-lay) · tap any other filled cell for its menu: ✎ edit · ◀▶ move a day · ✕ off this day · 🗑 delete-and-re-lay</div>';
   h+='</div>';
   el.innerHTML+=h;
 
