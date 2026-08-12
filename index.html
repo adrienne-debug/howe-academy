@@ -20972,8 +20972,10 @@ function gvOpenCell(dn,sk){
   // Empty cells go straight to typing; past filled cells keep their delete-only view.
   const l=((currData.lessons||{})[gvKid]||{})[dn]||{};
   const past=!!(l.date&&l.date<cbTodayISO());
-  const ovR=!!(((schedOv(l.date,gvKid)||{}).removed||{})[sk]);
-  if(!past&&(gvFilled(l[sk])||ovR)){ gvMenu=dn+"|"+sk; gvEdit=null; }
+  const _ov=schedOv(l.date,gvKid)||{};
+  const ovR=!!((_ov.removed||{})[sk]);
+  const ovA=(_ov.added||{})[sk]!==undefined;   // make-up-only cells get the menu too
+  if(!past&&(gvFilled(l[sk])||ovR||ovA)){ gvMenu=dn+"|"+sk; gvEdit=null; }
   else { gvEdit=dn+"|"+sk; gvMenu=null; }
   renderAll();
 }
@@ -21014,6 +21016,28 @@ function gvMenuRestore(kid,dn,sk){
   const l=((currData.lessons||{})[kid]||{})[dn]; if(!l||!l.date) return;
   gvGrabScroll(); gvMenu=null;
   lmRestoreSubj(kid,l.date,sk);
+}
+// 📅 Cross-week move: opens the Lesson Map's own week→day picker under the menu
+// (lmMovePick/lmMoveWeek state, lmMoveSlot completes the move — shared everything).
+function gvMenuPick(kid,dn,sk){
+  if(!momModeActive&&!adminPinUnlocked) return;
+  const l=((currData.lessons||{})[kid]||{})[dn]; if(!l||!l.date) return;
+  gvGrabScroll();
+  if(typeof lmMovePick!=="undefined"&&lmMovePick&&lmMovePick.date===l.date&&lmMovePick.sk===sk){ lmMovePick=null; lmMoveWeek=null; }
+  else { lmMovePick={date:l.date,sk:sk,added:false}; lmMoveWeek=null; }
+  renderAll();
+}
+function gvMenuOffAdded(kid,dn,sk){
+  const l=((currData.lessons||{})[kid]||{})[dn]; if(!l||!l.date) return;
+  gvGrabScroll(); gvMenu=null;
+  lmDropSlot(kid,l.date,sk,true);   // a make-up lives only in the override layer — deleted outright
+}
+// ➕ Make-up: a second sitting (or moved-in lesson) of this subject on an empty day.
+function gvMenuAddMakeup(kid,dn,sk){
+  if(!momModeActive&&!adminPinUnlocked) return;
+  const l=((currData.lessons||{})[kid]||{})[dn]; if(!l||!l.date) return;
+  gvGrabScroll(); gvEdit=null; gvMenu=null;
+  lmAddSubj(kid,l.date,sk);         // the cell shows the green "+ make-up" chip
 }
 function gvEditKey(e,kid,dn,sk){
   if(e.key==="Enter"){ e.preventDefault(); gvCommitCell(kid,dn,sk,e.target.value); }
@@ -21493,14 +21517,24 @@ function renderCurrGrid(el){
           m+=_mb("↩ put back","gvMenuRestore("+_arg+")","Un-move: it runs on this day again","#15803d");
         } else {
           m+=_mb("✎","gvMenuEdit("+dn+",'"+sk+"')","Edit the text");
-          if(_gvAdjSchoolDate(gvKid,l.date,-1)) m+=_mb("◀","gvMenuMove("+_arg+",-1)","Move to the previous school day");
-          if(_gvAdjSchoolDate(gvKid,l.date,1)) m+=_mb("▶","gvMenuMove("+_arg+",1)","Move to the next school day");
-          m+=_mb("✕ off day","gvMenuOff("+_arg+")","Take it off this day — the lesson slides to the next open slot (reversible)","#b45309");
-          m+=_mb("🗑","gvDeleteLesson("+_arg+")","Delete this lesson and re-lay the subject","#b5394a");
+          if(gvFilled(v)){
+            if(_gvAdjSchoolDate(gvKid,l.date,-1)) m+=_mb("◀","gvMenuMove("+_arg+",-1)","Move to the previous school day");
+            if(_gvAdjSchoolDate(gvKid,l.date,1)) m+=_mb("▶","gvMenuMove("+_arg+",1)","Move to the next school day");
+            m+=_mb("📅","gvMenuPick("+_arg+")","Move to another week or day…");
+            m+=_mb("✕ off day","gvMenuOff("+_arg+")","Take it off this day — the lesson slides to the next open slot (reversible)","#b45309");
+            m+=_mb("🗑","gvDeleteLesson("+_arg+")","Delete this lesson and re-lay the subject","#b5394a");
+          }
         }
+        if(addedV!==undefined) m+=_mb("✕ make-up","gvMenuOffAdded("+_arg+")","Remove this make-up sitting","#b45309");
         m+=_mb("×","gvCancelEdit()","Close");
         m+='</div>';
-        h+='<td style="white-space:nowrap">'+m+'</td>';
+        // Cross-week Move picker — the Lesson Map's own picker, rendered in place.
+        if(typeof lmMovePick!=="undefined"&&lmMovePick&&lmMovePick.date===l.date&&lmMovePick.sk===sk){
+          const _wd=(currData.weekDays||{})[gvKid]||{};
+          const _wl=Object.keys(_wd).sort((a,b)=>{const na=parseInt(a.match(/\d+/)||[0]);const nb=parseInt(b.match(/\d+/)||[0]);return na-nb;});
+          m+=lmRenderMovePicker(gvKid,sk,KID_COLOR[gvKid]||"#333",_wl,_wd,(currData.lessons||{})[gvKid]||{});
+        }
+        h+='<td style="white-space:nowrap;min-width:130px">'+m+'</td>';
       } else if(editing&&!gvSelMode&&(!past||gvFilled(v))){
         if(past){
           // Past rows stay display-frozen (no text edits) — but a filled past cell can
@@ -21509,7 +21543,9 @@ function renderCurrGrid(el){
           h+='<td style="white-space:nowrap">'+esc(v)+' <button onclick="gvDeleteLesson(\''+gvKid+'\','+dn+',\''+sk+'\')" title="Delete this lesson and re-lay the subject" style="border:none;background:none;cursor:pointer;font-size:13px;padding:0 2px">🗑</button><button onclick="gvCancelEdit()" style="border:none;background:none;cursor:pointer;color:var(--muted);font-weight:700;font-size:13px;padding:0 2px">&times;</button></td>';
         } else {
           // onmousedown preventDefault keeps the input's blur (→ cancel) from eating the tap.
-          h+='<td style="white-space:nowrap"><input id="gv-edit-input" value="'+esc(gvFilled(v)?v:"")+'" onkeydown="gvEditKey(event,\''+gvKid+'\','+dn+',\''+sk+'\')" onblur="gvCancelEdit()">'+(gvFilled(v)?'<button onmousedown="event.preventDefault()" onclick="gvDeleteLesson(\''+gvKid+'\','+dn+',\''+sk+'\')" title="Delete this lesson and re-lay the subject" style="border:none;background:none;cursor:pointer;font-size:13px;padding:0 2px">🗑</button>':'')+'</td>';
+          h+='<td style="white-space:nowrap"><input id="gv-edit-input" value="'+esc(gvFilled(v)?v:"")+'" onkeydown="gvEditKey(event,\''+gvKid+'\','+dn+',\''+sk+'\')" onblur="gvCancelEdit()">'+(gvFilled(v)
+            ?'<button onmousedown="event.preventDefault()" onclick="gvDeleteLesson(\''+gvKid+'\','+dn+',\''+sk+'\')" title="Delete this lesson and re-lay the subject" style="border:none;background:none;cursor:pointer;font-size:13px;padding:0 2px">🗑</button>'
+            :'<button onmousedown="event.preventDefault()" onclick="gvMenuAddMakeup(\''+gvKid+'\','+dn+',\''+sk+'\')" title="Add a make-up sitting of this subject on this day (or type content instead)" style="border:none;background:none;cursor:pointer;font-size:12px;padding:0 2px;font-weight:700;color:#15803d">➕</button>')+'</td>';
         }
       } else {
         let cell="";
