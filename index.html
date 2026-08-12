@@ -2967,7 +2967,16 @@ function _preserveUI(fn){
   if(sameView) window.scrollTo(sx,sy);
   _uiLastSig=sig;
 }
-function renderAll(){ _preserveUI(_renderAllInner); }
+function renderAll(){
+  _preserveUI(_renderAllInner);
+  // An OPEN subject-card sheet re-renders with every renderAll — the 🧱 pacing
+  // form inside it repaints via renderAll (all cb* handlers end there), and the
+  // sheet already preserves its own scroll + open state across re-renders.
+  try{
+    const _sw=document.getElementById("ce-sheet-wrap");
+    if(_sw&&_sw.style.display!=="none"&&ceEditKid&&ceEditKey&&ceGetSubject()) ceRenderEditSheet();
+  }catch(e){}
+}
 function _renderAllInner(){
   const stb=document.getElementById("sitter-tab-btn"); if(stb){ if(SITTER_NAME){stb.textContent=SITTER_NAME;stb.style.display="";} else {stb.style.display="none";} }
   renderSchedSubtabs(); renderDayTabs(); renderKidFilter(); renderSkylight(); renderWeekStrip();
@@ -12974,7 +12983,18 @@ function ceRenderEditSheet(){
     });
     h+='</div>';
   } else {
-    h+='<div style="font-size:11px;color:var(--muted);background:var(--bg);border-radius:8px;padding:7px 10px;margin-top:10px">📅 Days per week &amp; allowed days live in <b>🧱 Pacing &amp; build</b> on the card — changing them there re-lays the plan so the map always matches.</div>';
+    // 🧱 Pacing & build — INSIDE the sheet, so a card opened from anywhere (the
+    // Grid's column headers included) carries the full Builder with it. Same
+    // shared cbForm→preview→gate→apply pipeline as the card-face and tab.
+    const _bOpen=ceBuildOpen===ceEditKid+"|"+ceEditKey;
+    h+='<button onclick="ceOpenBuild(\''+ceEditKid+'\',\''+ceEditKey+'\')" style="width:100%;margin-top:12px;padding:9px;border-radius:10px;border:1.5px solid '+(_bOpen?col:'var(--border)')+';background:'+(_bOpen?col+'14':'#fff')+';font-size:12.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:left;color:'+(_bOpen?col:'var(--text)')+'">🧱 Pacing &amp; build <span style="font-weight:400;color:var(--muted)">— days per week, allowed days, re-lay the plan</span><span style="float:right">'+(_bOpen?'▴':'▾')+'</span></button>';
+    if(_bOpen){
+      if(cbSubjKey!==ceEditKey||cbKid!==ceEditKid||!cbForm){ cbKid=ceEditKid; cbSubjKey=ceEditKey; cbForm=cbDefaultForm(ceEditKid,ceEditKey); }
+      if(cbLastBuild&&cbLastBuild.kid===ceEditKid&&cbLastBuild.sk===ceEditKey&&cbMsg){
+        h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:6px 10px;margin-top:8px;font-size:11.5px;color:#15803d"><span>'+esc(cbMsg)+'</span><button onclick="cbUndo()" style="border:1px solid #86efac;background:#fff;color:#15803d;border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0">&#8617; Undo</button></div>';
+      }
+      h+='<div style="margin-top:8px">'+cbRenderForm(col,true)+'</div>';
+    }
   }
 
   // Scheduling rules chips
@@ -20410,7 +20430,9 @@ function cbGateConfirm(){
 function cbRenderGate(){
   const g=cbGate;
   const fdate=ds=>{ const d=gwParseDate(ds); return isNaN(d)?esc(ds):((d.getMonth()+1)+"/"+d.getDate()); };
-  let h='<div class="bo-dlg" onclick="if(event.target===this)cbGateCancel()"><div class="bo-dlg-box" style="max-height:82vh;display:flex;flex-direction:column">';
+  // z-index 320: the gate must stack ABOVE the subject-card sheet (z-310) — a
+  // build can now start from inside that sheet, and its Keep/Dismiss must win.
+  let h='<div class="bo-dlg" style="z-index:320" onclick="if(event.target===this)cbGateCancel()"><div class="bo-dlg-box" style="max-height:82vh;display:flex;flex-direction:column">';
   h+='<div style="font-weight:800;font-size:15px;margin-bottom:4px">↪ Leftover lessons — keep or dismiss?</div>';
   h+='<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.45"><b>Keep</b> moves the lesson ahead into the new plan (moved, never copied). <b>Dismiss</b> passes it over for good — it won’t come back as carryover or catch-up, and the Grid remembers it was skipped.</div>';
   h+='<div style="overflow-y:auto;flex:1;min-height:0">';
@@ -21416,13 +21438,15 @@ function renderCurrGrid(el){
   if(!gvKid) gvKid=currViewKid||ROSTER[0];
   let h='<div style="padding:0 4px">';
 
-  // Kid chips
+  // Kid chips — plus Add Subject: the Grid is the one-stop hub now, so new
+  // subjects start here too (same global sheet the Subjects page uses).
   h+='<div style="padding:10px 0 8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">';
   [...ROSTER].forEach(kid=>{
     const on=kid===gvKid;
     const c=KID_COLOR[kid]||"#333";
     h+='<button onclick="gvSetKid(\''+kid+'\')" style="padding:5px 14px;border-radius:20px;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?c:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cap(kid)+'</button>';
   });
+  h+='<button onclick="ceOpenAdd(\''+gvKid+'\')" style="margin-left:auto;padding:5px 14px;border-radius:20px;border:1.5px dashed var(--border);background:#fff;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Add Subject</button>';
   h+='</div>';
 
   const lessons=(currData.lessons||{})[gvKid]||{};
@@ -21537,8 +21561,10 @@ function renderCurrGrid(el){
   for(const sk of cols){
     const grp=cbGroupOf(gvKid,sk);
     const mark=grp?'\u{1F500} ':'';
-    const tip=gvSelMode?'Tap to select the whole '+((subs[sk]||{}).display||sk)+' column':(grp?('Alternates ('+(grp.group.name||"group")+') — never same day as '+(grp.group.members||[]).filter(m=>m!==sk).map(m=>(subs[m]||{}).display||m).join(", ")+'. Tap for Builder.'):'Open in Builder');
-    const hact=gvSelMode?'gvSelCol(\''+sk+'\')':'gvJumpBuilder(\''+sk+'\')';
+    // Header tap opens the SUBJECT CARD right here (the global ✎ sheet — with 🧱
+    // pacing inside), not a jump to another tab. The Grid is the one-stop hub.
+    const tip=gvSelMode?'Tap to select the whole '+((subs[sk]||{}).display||sk)+' column':(grp?('Alternates ('+(grp.group.name||"group")+') — never same day as '+(grp.group.members||[]).filter(m=>m!==sk).map(m=>(subs[m]||{}).display||m).join(", ")+'. Tap to open the subject card.'):'Open the subject card');
+    const hact=gvSelMode?'gvSelCol(\''+sk+'\')':'ceOpenEdit(\''+gvKid+'\',\''+sk+'\')';
     h+='<th onclick="'+hact+'" title="'+esc(tip)+'">'+mark+esc((subs[sk]||{}).display||sk)+'</th>';
   }
   h+='</tr></thead><tbody>';
@@ -21646,8 +21672,11 @@ function renderCurrGrid(el){
     h+='</tr>';
   }
   h+='</tbody></table></div>';
-  h+='<div style="font-size:10px;color:var(--muted);padding:0 2px 16px">Red rows = calendar/day-off · <span style="background:#eff6ff;padding:1px 6px;border-radius:6px">blue row</span> = today · past days are frozen (tap a filled one to 🗑 delete-and-re-lay) · tap any other filled cell for its menu: ✎ edit · ➡ move (then tap the landing day) · ✕ off this day (re-lays) · 🗑 delete-and-re-lay</div>';
+  h+='<div style="font-size:10px;color:var(--muted);padding:0 2px 16px">Red rows = calendar/day-off · <span style="background:#eff6ff;padding:1px 6px;border-radius:6px">blue row</span> = today · past days are frozen (tap a filled one to 🗑 delete-and-re-lay) · tap any other filled cell for its menu: ✎ edit · ➡ move (then tap the landing day) · ✕ off this day (re-lays) · 🗑 delete-and-re-lay · tap a column title for its subject card</div>';
   h+='</div>';
+  // A build can start from a subject card opened HERE (column-header tap) — the
+  // Keep/Dismiss sheet must render on this tab too.
+  if(typeof cbGate!=="undefined"&&cbGate) h+=cbRenderGate();
   el.innerHTML+=h;
 
   // Restore scroll + focus the open editor (renderAll rebuilds the DOM)
