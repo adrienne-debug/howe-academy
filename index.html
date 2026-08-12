@@ -10677,7 +10677,7 @@ function renderCurriculumView(el,headerHtml){
     g.subs.sort((a,b)=>(a.rank-b.rank)||(subjects[a.sk].display||a.sk).localeCompare(subjects[b.sk].display||b.sk));
     h+='<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin:14px 0 6px;padding-left:4px">'+(gi+1)+' &middot; '+esc(label)+'</div>';
     h+='<div class="ce-cards">';
-    g.subs.forEach(o=>{ h+=ceBuildCard(o.sk,subjects[o.sk],k); });
+    g.subs.forEach(o=>{ h+=ceBuildCard(o.sk,subjects[o.sk],k); h+=_ceMaybeBuilder(k,o.sk); });
     h+='</div>';
   });
   h+='<div class="ce-cards"><div class="ce-add" onclick="ceOpenAdd(\''+k+'\')">+ Add Subject</div></div>';
@@ -10685,7 +10685,7 @@ function renderCurriculumView(el,headerHtml){
   if(paused.length){
     h+='<div class="ce-section-hdr" style="color:var(--muted);margin-top:10px">Paused ('+paused.length+')</div>';
     h+='<div class="ce-cards">';
-    paused.forEach(sk=>{ h+=ceBuildCard(sk,subjects[sk],k); });
+    paused.forEach(sk=>{ h+=ceBuildCard(sk,subjects[sk],k); h+=_ceMaybeBuilder(k,sk); });
     h+='</div>';
   }
 
@@ -10887,9 +10887,38 @@ function renderCurriculumView(el,headerHtml){
   }
 
   h+='</div>';
+  // A build started from a card's 🧱 form can raise the Keep/Dismiss sheet — it
+  // must render on THIS page too, not just the Builder tab.
+  if(typeof cbGate!=="undefined"&&cbGate) h+=cbRenderGate();
   el.innerHTML=h;
 }
 
+// ── 🧱 The Builder, embedded on the subject card ────────────────────────────
+// Tapping 🧱 expands the card into the SAME per-subject pacing form the Builder
+// tab renders (cbRenderForm drives the shared cbForm → preview → gate → apply
+// pipeline), so a build from a card is byte-identical to one from the tab.
+function ceOpenBuild(kid,sk){
+  const key=kid+"|"+sk;
+  if(ceBuildOpen===key){ ceBuildOpen=null; cbSubjKey=null; cbForm=null; cbPreviewRes=null; }
+  else { ceBuildOpen=key; cbKid=kid; cbSubjKey=sk; cbForm=cbDefaultForm(kid,sk); cbPreviewRes=null; }
+  renderAll();
+}
+function _ceMaybeBuilder(kid,sk){
+  if(ceBuildOpen!==kid+"|"+sk) return '';
+  const s=((currData.subjects||{})[kid]||{})[sk];
+  if(!s) return '';
+  // cbApply clears cbForm/cbSubjKey when a build lands — re-arm fresh so the
+  // reopened form shows the just-saved pacing (and the result line below).
+  if(cbSubjKey!==sk||cbKid!==kid||!cbForm){ cbKid=kid; cbSubjKey=sk; cbForm=cbDefaultForm(kid,sk); }
+  const col=KID_COLOR[kid]||"#1e3a5f";
+  let h='<div style="grid-column:1/-1">';
+  if(cbLastBuild&&cbLastBuild.kid===kid&&cbLastBuild.sk===sk&&cbMsg){
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:6px 10px;margin-bottom:8px;font-size:11.5px;color:#15803d"><span>'+esc(cbMsg)+'</span><button onclick="cbUndo()" style="border:1px solid #86efac;background:#fff;color:#15803d;border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0">&#8617; Undo</button></div>';
+  }
+  h+=cbRenderForm(col,true);
+  h+='</div>';
+  return h;
+}
 function ceBuildCard(sk,s,kid){
   const emoji=CURR_DEV_EMOJI[s.device]||"\u{1F4C4}";
   let h='<div class="ce-card'+(s.paused?" paused":"")+'" onclick="ceOpenEdit(\''+kid+'\',\''+sk+'\')">';
@@ -10897,12 +10926,16 @@ function ceBuildCard(sk,s,kid){
   h+='<div class="ce-card-name">'+emoji+' '+s.display+'</div>';
   h+='<div style="display:flex;align-items:center;gap:10px">';
   h+='<div class="ce-card-meta">'+(s.tracking==="daily"?"Every day":((s.total||0)+' lessons'))+(s.timesPerWeek?' · '+s.timesPerWeek+'×/wk':'')+'</div>';
+  if(s.tracking!=="daily") h+='<button class="ce-card-pause" onclick="event.stopPropagation();ceOpenBuild(\''+kid+'\',\''+sk+'\')" title="Pacing &amp; build — the Builder, right here">🧱</button>';
   h+='<button class="ce-card-pause" onclick="event.stopPropagation();ceQuickPause(\''+kid+'\',\''+sk+'\')" title="'+(s.paused?'Resume':'Pause')+'">'+(s.paused?'▶':'⏸')+'</button>';
   h+='</div></div>';
   h+='<div class="ce-card-tags">';
   h+='<span class="ce-tag ce-tag-dev">'+(CURR_DEV_LABEL[s.device]||cap(s.device||"paper"))+'</span>';
   if(s.minutes) h+='<span class="ce-tag ce-tag-min">'+s.minutes+' min</span>';
-  if(s.days) h+='<span class="ce-tag ce-tag-days">'+s.days+'</span>';
+  // Show the LIVE day set (allowedDays — what generation and the Builder use);
+  // the legacy Excel-era `days` string only as a fallback for never-built subjects.
+  const _tagDays=(s.allowedDays&&s.allowedDays.length)?s.allowedDays.join(" "):(s.days||"");
+  if(_tagDays) h+='<span class="ce-tag ce-tag-days">'+esc(_tagDays)+'</span>';
   if(s.mom==="required") h+='<span class="ce-tag ce-tag-mom-req">Mom Required</span>';
   else if(s.mom==="maybe") h+='<span class="ce-tag ce-tag-mom-may">May Need Mom</span>';
   if(s.rules){
@@ -12555,6 +12588,7 @@ function ceSessionGoal(kid,sk){
 
 // ── CURRICULUM EDITOR — EDIT SHEET ────────────────────────────────
 let ceEditKid=null, ceEditKey=null, ceCloseTimer=null;
+let ceBuildOpen=null;  // "kid|sk" — which subject card has its 🧱 pacing form expanded
 let ceWalkOpen=false, ceWalkSel=new Set(), _ceWalkItems=[], _ceWalkCursor=0, walkbackData=null;
 let ceConvOpen=false; // "Edit as a list" converter for Excel-era grid subjects
 let _ceFinishMap={};  // {sk: finish-line row} for the kid being rendered — computed once per render
@@ -12914,27 +12948,34 @@ function ceRenderEditSheet(){
   h+='<button onclick="ceStepMin(5)">+</button>';
   h+='</div>';
 
-  // Times per week stepper
-  h+='<div class="ce-sheet-lbl">Times Per Week</div>';
-  const tpw=s.timesPerWeek||0;
-  h+='<div class="ce-stepper">';
-  h+='<button onclick="ceSaveField(\'timesPerWeek\',Math.max(1,'+(tpw-1)+'));ceRenderEditSheet()">&minus;</button>';
-  h+='<span>'+( tpw||"—")+'</span>';
-  h+='<button onclick="ceSaveField(\'timesPerWeek\',Math.min(7,'+((tpw||0)+1)+'));ceRenderEditSheet()">+</button>';
-  h+='</div>';
-  h+=cePacingMath(s);
+  // Times per week + Days — DAILY subjects only (2026-08-11 card audit). For
+  // sequenced subjects these were duplicates of the 🧱 pacing form's own tpw +
+  // allowed-day chips, and the standalone stepper was a footgun: it wrote
+  // timesPerWeek WITHOUT re-laying, so the card silently disagreed with the
+  // grid until the next build. The 🧱 form owns both now and always re-lays.
+  if(s.tracking==="daily"){
+    h+='<div class="ce-sheet-lbl">Times Per Week</div>';
+    const tpw=s.timesPerWeek||0;
+    h+='<div class="ce-stepper">';
+    h+='<button onclick="ceSaveField(\'timesPerWeek\',Math.max(1,'+(tpw-1)+'));ceRenderEditSheet()">&minus;</button>';
+    h+='<span>'+( tpw||"—")+'</span>';
+    h+='<button onclick="ceSaveField(\'timesPerWeek\',Math.min(7,'+((tpw||0)+1)+'));ceRenderEditSheet()">+</button>';
+    h+='</div>';
+    h+=cePacingMath(s);
 
-  // Days chips
-  h+='<div class="ce-sheet-lbl">Days</div>';
-  const allowed=s.allowedDays||[];
-  const daysFromExcel=(s.days||"").split(/[\s,]+/).map(x=>x.trim()).filter(Boolean);
-  const effectiveDays=allowed.length?allowed:daysFromExcel;
-  h+='<div class="ce-chips">';
-  ["Mon","Tue","Wed","Thu","Fri","Sat"].forEach(d=>{
-    const sel=effectiveDays.includes(d);
-    h+='<div class="ce-chip'+(sel?" sel":"")+'" onclick="ceToggleDay(\''+d+'\')">'+d+'</div>';
-  });
-  h+='</div>';
+    h+='<div class="ce-sheet-lbl">Days</div>';
+    const allowed=s.allowedDays||[];
+    const daysFromExcel=(s.days||"").split(/[\s,]+/).map(x=>x.trim()).filter(Boolean);
+    const effectiveDays=allowed.length?allowed:daysFromExcel;
+    h+='<div class="ce-chips">';
+    ["Mon","Tue","Wed","Thu","Fri","Sat"].forEach(d=>{
+      const sel=effectiveDays.includes(d);
+      h+='<div class="ce-chip'+(sel?" sel":"")+'" onclick="ceToggleDay(\''+d+'\')">'+d+'</div>';
+    });
+    h+='</div>';
+  } else {
+    h+='<div style="font-size:11px;color:var(--muted);background:var(--bg);border-radius:8px;padding:7px 10px;margin-top:10px">📅 Days per week &amp; allowed days live in <b>🧱 Pacing &amp; build</b> on the card — changing them there re-lays the plan so the map always matches.</div>';
+  }
 
   // Scheduling rules chips
   h+='<div class="ce-sheet-lbl">Scheduling Rules</div>';
@@ -13091,7 +13132,7 @@ function ceRenderEditSheet(){
   // Lesson Map only show grid-backed subjects — offer the Builder to materialize it.
   if(!hasExcelLessons&&s.lessonSeq&&s.lessonSeq.length&&!(s.rules||"").includes("first")&&!(s.rules||"").includes("last")){
     h+='<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:10px;padding:10px 12px;margin:10px 0">';
-    h+='<div style="font-size:11px;color:#1e40af;line-height:1.5"><b>📊 Not in the Grid/Map yet.</b> This subject lives on its card — it schedules normally, but won\'t appear in the Grid or Lesson Map until it\'s built into the grid (which also puts it under Builder pacing rules).</div>';
+    h+='<div style="font-size:11px;color:#1e40af;line-height:1.5"><b>📊 Not in the Grid/Map yet.</b> This subject lives on its card — it schedules normally, but won\'t appear in the Grid or Lesson Map until it\'s built. Tap <b>🧱</b> on the card to pace &amp; build it right there.</div>';
     h+='<button onclick="cbJumpTo(\''+ceEditKid+'\',\''+ceEditKey+'\')" style="margin-top:8px;padding:7px 14px;border-radius:10px;border:none;background:#1d4ed8;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Build into Grid →</button>';
     h+='</div>';
   }
@@ -20583,7 +20624,7 @@ function renderCurrBuilder(el){
   const _dp=document.getElementById("cb-daypin-scroll"); if(_dp) _dp.scrollTop=cbDayPinScroll;
 }
 
-function cbRenderForm(col){
+function cbRenderForm(col,embedded){
   const kid=cbKid, sk=cbSubjKey, f=cbForm;
   const s=currData.subjects[kid][sk];
   const emoji=CURR_DEV_EMOJI[s.device]||"\u{1F4C4}";
@@ -20591,12 +20632,20 @@ function cbRenderForm(col){
   const cur=Math.max(0,computeSubjectCursor(kid,sk)||0);
   const remaining=Math.max(0,seq.length-Math.min(cur,seq.length));
 
-  let h='<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">';
-  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">';
-  h+='<button onclick="cbCloseSubj()" style="padding:4px 10px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer">‹ Back</button>';
-  h+='<div style="font-weight:800;font-size:15px;flex:1">'+emoji+' '+esc(s.display||sk)+'</div>';
-  h+='<span style="font-size:11px;color:var(--muted)">'+(s.minutes||20)+' min/day</span>';
-  h+='</div>';
+  let h='<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px'+(embedded?';border-left:4px solid '+col:'')+'">';
+  if(embedded){
+    // On a subject card the card itself is the header — just a close affordance.
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">';
+    h+='<div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;flex:1">🧱 Pacing &amp; build</div>';
+    h+='<button onclick="ceOpenBuild(\''+kid+'\',\''+sk+'\')" style="border:none;background:none;color:var(--muted);font-weight:700;font-size:14px;cursor:pointer;padding:0 4px">&times;</button>';
+    h+='</div>';
+  } else {
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">';
+    h+='<button onclick="cbCloseSubj()" style="padding:4px 10px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer">‹ Back</button>';
+    h+='<div style="font-weight:800;font-size:15px;flex:1">'+emoji+' '+esc(s.display||sk)+'</div>';
+    h+='<span style="font-size:11px;color:var(--muted)">'+(s.minutes||20)+' min/day</span>';
+    h+='</div>';
+  }
 
   // Mode chips
   h+='<div class="ce-sheet-lbl">How should it be paced?</div><div class="ce-chips">';
