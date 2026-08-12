@@ -11924,7 +11924,8 @@ function rlPromote(kid,id){       // Up Next → reading now (old current steps 
 function rlCycleSize(kid,id){
   if(!momHere()) return;
   const b=((readingLog[kid]||{}).books||{})[id]; if(!b) return;
-  _rlSetBook(kid,id,{size:RL_ORDER[(RL_ORDER.indexOf(b.size)+1)%RL_ORDER.length]});
+  // Mom tapping a size also settles a kid-added book's "pick a size" nudge.
+  _rlSetBook(kid,id,{size:RL_ORDER[(RL_ORDER.indexOf(b.size)+1)%RL_ORDER.length],sizePending:null});
   renderAll();
 }
 function rlEditPages(id){ if(!momHere()) return; rlPagesEdit=(rlPagesEdit===id)?null:id; renderAll(); setTimeout(()=>{const i=document.getElementById("rl-pg-in"); if(i) i.focus();},50); }
@@ -11988,7 +11989,7 @@ function _rlCardHTML(kid,momView){
     const rows=books.filter(b=>b.status!=="done").sort((a,b)=>(a.status==="reading"?0:1)-(b.status==="reading"?0:1));
     rows.forEach(b=>{
       const S=RL_SIZES[b.size]||RL_SIZES.little;
-      h+='<div class="rl-row"><span class="sz">'+S.ic+'</span><span class="tt">'+esc(b.title)+' <span class="rl-hint">· '+(b.status==="reading"?"reading now":"up next")+(b.totalPages?' · '+b.totalPages+' pg':'')+(b.finishClaim?' · <b style="color:#b45309">⏳ finished!</b>':'')+'</span></span>';
+      h+='<div class="rl-row"><span class="sz">'+S.ic+'</span><span class="tt">'+esc(b.title)+' <span class="rl-hint">· '+(b.status==="reading"?"reading now":"up next")+(b.totalPages?' · '+b.totalPages+' pg':'')+(b.finishClaim?' · <b style="color:#b45309">⏳ finished!</b>':'')+(b.sizePending?' · <b style="color:#b45309" title="The kid started this book from a check-off — tap the size button to set its real size">☝ pick a size</b>':'')+'</span></span>';
       if(b.status!=="reading") h+='<button onclick="rlPromote(\''+kid+'\',\''+esc(b.id)+'\')">▲ read now</button>';
       h+='<button onclick="rlCycleSize(\''+kid+'\',\''+esc(b.id)+'\')">'+S.ic+' size</button>';
       h+='<button onclick="rlEditPages(\''+esc(b.id)+'\')">pages</button>';
@@ -12039,7 +12040,54 @@ function rlOnCheckoff(t){
   if(db) db.ref("readingLog/"+kid+"/pending/"+key).set(rec);
   // Prompt right away on this device when the kid logs their own page, or when Mom is
   // here anyway. Mom-logged without Mom present → the chip waits for her.
-  if(rlCurrent(kid)&&(by==="kid"||momHere())) rlOpenPrompt(kid,{pendingKey:key,source:"sched",day:d});
+  if(by==="kid"||momHere()){
+    if(rlCurrent(kid)) rlOpenPrompt(kid,{pendingKey:key,source:"sched",day:d});
+    // No book marked "reading now" — this used to bail silently and the log filled
+    // with unanswered chips (Lincoln ×12, Ellis ×4 by 2026-08-11). Ask for the book
+    // instead: the kid types just the NAME (+pages if known); it starts as the
+    // smallest size with a "Mom: pick a size" nudge — sizing stays Mom's call
+    // (rlCycleSize), so a kid can't pick their own point value.
+    else rlOpenNoBook(kid,{pendingKey:key,day:d});
+  }
+}
+let _rlNbCtx=null; // {kid,pendingKey,day} while the ask-for-a-book dialog is up
+function rlOpenNoBook(kid,opts){
+  opts=opts||{};
+  _rlNbCtx={kid,pendingKey:opts.pendingKey||null,day:opts.day||day};
+  let ov=document.getElementById("rl-nobook-dlg"); if(ov) ov.remove();
+  ov=document.createElement("div"); ov.id="rl-nobook-dlg"; ov.className="dlg-overlay"; ov.style.display="flex"; ov.style.zIndex="9999";
+  let inner='<div style="font-size:34px;margin-bottom:2px">📚</div>';
+  inner+='<div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:700;color:#1e3a5f">What book are you reading?</div>';
+  inner+='<div style="font-size:12.5px;color:var(--muted);margin:8px 0 10px">Your shelf has no book going right now — type the name and we’ll start it.</div>';
+  inner+='<input id="rl-nb-title" placeholder="book name" style="width:100%;max-width:280px;padding:10px;border:1.5px solid #93c5fd;border-radius:10px;font-size:15px;font-weight:700;text-align:center;font-family:\'DM Sans\',sans-serif">';
+  inner+='<div style="margin-top:8px"><input id="rl-nb-pages" type="number" inputmode="numeric" min="1" placeholder="how many pages? (skip if unsure)" style="width:100%;max-width:280px;padding:9px;border:1.5px solid var(--border);border-radius:10px;font-size:13px;text-align:center;font-family:\'DM Sans\',sans-serif"></div>';
+  inner+='<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">'+
+    '<button onclick="rlNoBookSave()" style="flex:1;min-width:130px;padding:11px;border-radius:10px;border:none;background:#1d4ed8;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Start this book</button>'+
+    '</div>'+
+    '<button onclick="rlNoBookClose()" style="width:100%;margin-top:8px;padding:8px;border:none;background:none;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">skip for now</button>';
+  ov.innerHTML='<div class="dlg-box" style="max-width:400px;text-align:center">'+inner+'</div>';
+  document.body.appendChild(ov);
+  setTimeout(()=>{const i=document.getElementById("rl-nb-title"); if(i) i.focus();},60);
+}
+function rlNoBookClose(){ _rlNbCtx=null; const ov=document.getElementById("rl-nobook-dlg"); if(ov) ov.remove(); }
+function rlNoBookSave(){
+  const ctx=_rlNbCtx; if(!ctx) return;
+  const kid=ctx.kid;
+  const t=((document.getElementById("rl-nb-title")||{}).value||"").trim();
+  const pgs=parseInt((document.getElementById("rl-nb-pages")||{}).value,10)||0;
+  if(!t){ if(typeof gwShowToast==="function") gwShowToast("Type the book’s name first"); return; }
+  const id=_bookSlug(t)+"_"+Date.now().toString(36);
+  const rec={title:t,size:"little",sizePending:true,addedBy:"kid",totalPages:pgs>0?pgs:null,
+    status:rlCurrent(kid)?"upnext":"reading",addedTs:nowTs()};
+  if(!readingLog[kid]) readingLog[kid]={};
+  if(!readingLog[kid].books) readingLog[kid].books={};
+  readingLog[kid].books[id]=rec;
+  if(db) db.ref("readingLog/"+kid+"/books/"+id).set(rec);
+  rlNoBookClose();
+  if(typeof gwShowToast==="function") gwShowToast("📚 "+t+" started!");
+  // Roll straight into the page question for the same check-off.
+  if(rec.status==="reading") rlOpenPrompt(kid,{pendingKey:ctx.pendingKey,source:"sched",day:ctx.day});
+  renderAll();
 }
 function rlOpenPrompt(kid,opts){
   const cur=rlCurrent(kid); if(!cur) return;
