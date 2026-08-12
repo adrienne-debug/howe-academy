@@ -13859,6 +13859,15 @@ function ceAddSave(){
   currData.lastEdit=new Date().toISOString();
   db.ref("curriculum/lastEdit").set(currData.lastEdit);
   ceCloseSheet();
+  // A new SEQUENCED subject flows straight into pacing: its card sheet reopens
+  // with 🧱 already expanded — set the mode, Preview, Build, done. (Dailies
+  // schedule on their own; nothing to pace.)
+  if(subj.tracking!=="daily"){
+    ceBuildOpen=kid+"|"+key;
+    cbKid=kid; cbSubjKey=key; cbForm=cbDefaultForm(kid,key); cbPreviewRes=null;
+    ceOpenEdit(kid,key);
+    if(typeof gwShowToast==="function") gwShowToast("📚 "+(subj.display||key)+" added — now pace and build it below.");
+  }
   renderAll();
 }
 
@@ -20838,7 +20847,13 @@ function cbRenderForm(col,embedded){
 // SHOWS those overrides. Past rows are frozen.
 // ═════════════════════════════════════════════════════════════════════════
 let gvKid=null, gvEdit=null, gvMenu=null, gvShowPast=false, gvScrollTop=0, gvScrollLeft=0;
+let gvKidCfgOpen=false; // 🏁 Target / Mom Check / Sessions panel on the Grid
 let _gvDelUndo=null; // pending 🗑 delete snapshot — folded into the relay's Undo
+// Kid-level tools on the Grid delegate to the Builder-tab functions with the
+// Grid's kid armed — one implementation, two doors.
+function gvRebuildAll(){ cbKid=gvKid; cbRebuildAll(); }
+function gvRulesToggle(){ cbKid=gvKid; cbRulesToggle(); }
+function gvKidCfgToggle(){ gvKidCfgOpen=!gvKidCfgOpen; renderAll(); }
 // Multi-cell (Excel-style) selection: pick many cells, then Clear or Fill them at once.
 let gvSelMode=false, gvSel=new Set(), gvSelAnchor=null, gvSelUndo=null;
 
@@ -21449,6 +21464,34 @@ function renderCurrGrid(el){
   h+='<button onclick="ceOpenAdd(\''+gvKid+'\')" style="margin-left:auto;padding:5px 14px;border-radius:20px;border:1.5px dashed var(--border);background:#fff;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Add Subject</button>';
   h+='</div>';
 
+  // ── Kid-level tools, ported from the Subjects page + Builder tab (their last
+  // unique features — both pages are now retirement candidates): ↻ Rebuild-all,
+  // ⚙ rules & day cap, and 🏁 target / Mom Check / school sessions.
+  const _gcol=KID_COLOR[gvKid]||"#333";
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px">';
+  if(momModeActive||adminPinUnlocked){
+    const _gsubs=(currData.subjects||{})[gvKid]||{};
+    const _pacedN=Object.keys(_gsubs).filter(sk=>{const s=_gsubs[sk];return s&&!s.paused&&s.tracking!=="daily"&&!!(s.pacing&&s.pacing.mode);}).length;
+    if(_pacedN) h+='<button onclick="gvRebuildAll()" style="padding:5px 12px;border-radius:10px;border:1px solid #bbf7d0;background:#f0fdf4;color:#15803d;font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">↻ Rebuild all ('+_pacedN+')</button>';
+  }
+  h+='<button onclick="gvRulesToggle()" style="padding:5px 12px;border-radius:10px;border:1px solid var(--border);background:'+(cbRulesOpen?'var(--bg)':'#fff')+';font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">⚙ Rules &amp; day cap '+(cbRulesOpen?'▴':'▾')+'</button>';
+  h+='<button onclick="gvKidCfgToggle()" style="padding:5px 12px;border-radius:10px;border:1px solid var(--border);background:'+(gvKidCfgOpen?'var(--bg)':'#fff')+';font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🏁 Target · Mom Check · Sessions '+(gvKidCfgOpen?'▴':'▾')+'</button>';
+  h+='</div>';
+  if(cbMsg){
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:6px 10px;margin:0 0 8px;font-size:11.5px;color:#15803d"><span>'+esc(cbMsg)+'</span><span style="display:flex;gap:6px;flex-shrink:0">'+(cbLastBuild?'<button onclick="cbUndo()" style="border:1px solid #86efac;background:#fff;color:#15803d;border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">&#8617; Undo</button>':'')+'<button onclick="cbMsg=\'\';renderAll()" style="border:none;background:none;color:var(--muted);font-weight:700;cursor:pointer">&times;</button></span></div>';
+  }
+  if(cbRulesOpen){ cbKid=gvKid; h+=cbRenderRules(_gcol); }
+  if(gvKidCfgOpen){
+    const _tgt=((currData.targetEnd||{})[gvKid])||"";
+    h+='<div style="background:#f9fafb;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:0 0 8px">';
+    h+='<div style="font-size:11px;font-weight:800;color:'+_gcol+';text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px">🏁 Finish Line Target</div>';
+    h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><input type="date" value="'+_tgt+'" onchange="ceSetTargetEnd(\''+gvKid+'\',this.value)" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:13px">'+(_tgt?'<button onclick="ceSetTargetEnd(\''+gvKid+'\',\'\')" style="border:none;background:none;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif">clear</button>':'')+'</div>';
+    const _mvOn=!!((currData.momVerifyKid||{})[gvKid]);
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px"><div style="font-size:12px"><b>Mom Check</b> — require my approval for '+cap(gvKid)+'’s checked-off work</div><button onclick="ceToggleMomVerifyKid(\''+gvKid+'\')" style="flex-shrink:0;border:none;border-radius:14px;padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;background:'+(_mvOn?'#16a34a':'#e5e7eb')+';color:'+(_mvOn?'#fff':'#6b7280')+'">'+(_mvOn?'ON':'OFF')+'</button></div>';
+    try{ h+=ceRenderSessions(gvKid,_gcol); }catch(e){}
+    h+='</div>';
+  }
+
   const lessons=(currData.lessons||{})[gvKid]||{};
   const subs=(currData.subjects||{})[gvKid]||{};
   const cols=gvSubjectCols(gvKid);
@@ -21460,8 +21503,8 @@ function renderCurrGrid(el){
   const _cardOnlyHtml=_cardOnly.length
     ?'<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:10px;padding:8px 12px;margin:0 0 8px">'
       +'<span style="font-size:11px;color:#1e40af;font-weight:700">📊 On their cards, not in the grid yet: </span>'
-      +_cardOnly.map(sk=>'<button onclick="cbJumpTo(\''+gvKid+'\',\''+sk+'\')" style="margin:2px 4px 2px 0;padding:3px 10px;border-radius:12px;border:1px solid #93c5fd;background:#fff;color:#1d4ed8;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+esc((subs[sk]||{}).display||sk)+' →</button>').join('')
-      +'<span style="font-size:10px;color:#3b82f6;display:block;margin-top:2px">They schedule normally — tap one to build it into the grid so it shows here and follows Builder rules.</span></div>'
+      +_cardOnly.map(sk=>'<button onclick="ceOpenEdit(\''+gvKid+'\',\''+sk+'\')" style="margin:2px 4px 2px 0;padding:3px 10px;border-radius:12px;border:1px solid #93c5fd;background:#fff;color:#1d4ed8;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+esc((subs[sk]||{}).display||sk)+' →</button>').join('')
+      +'<span style="font-size:10px;color:#3b82f6;display:block;margin-top:2px">They schedule normally — tap one for its card, then 🧱 builds it into the grid so it shows here.</span></div>'
     :'';
 
   if(!dayNums.length||!cols.length){
