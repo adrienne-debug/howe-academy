@@ -13258,7 +13258,8 @@ function ceRenderEditSheet(){
     // Builder re-lays the year from the cursor. One-way upgrade to in-app editing.
     if(!ceConvOpen){
       h+='<button style="border:1.5px solid var(--border);border-radius:10px;background:#fff;padding:7px 12px;font-size:12px;cursor:pointer;margin-top:8px" onclick="ceConvOpen=true;ceRenderEditSheet()">✎ Edit as a list — insert / remove / reorder…</button>';
-      h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">For when the book has lessons the plan doesn\'t (or vice versa). Converts this subject to an editable lesson list, then the Builder re-lays the year.</div>';
+      h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">For when the book has lessons the plan doesn\'t (or vice versa). Converts this subject to an editable lesson list, then the Builder re-lays the year. <b>Note:</b> saving empties the planned days until you tap 🧱 Build.</div>';
+      h+=_ceMarkDoneUI(ceEditKid,ceEditKey,s,seq,cursorPos,col);
     }else{
       const _remaining=seq.slice(Math.min(cursorPos,seq.length)).map(l=>l.lesson);
       h+='<div style="border:1.5px solid var(--border);border-radius:10px;padding:8px;margin-top:8px">';
@@ -13359,7 +13360,34 @@ function ceRenderEditSheet(){
 function _ceMarkDoneUI(kid,sk,s,seq,cursorPos,col){
   const md=s.manualDone||{};
   const marked=Object.keys(md).filter(k=>md[k]);
-  const upcoming=(s.lessonSeq||[]).slice(Math.min(cursorPos,(s.lessonSeq||[]).length),Math.min(cursorPos+8,(s.lessonSeq||[]).length));
+  // The master list is the card's lessonSeq when it has one, else the built (grid)
+  // sequence — so this panel works for grid-backed subjects too. Keying off
+  // s.lessonSeq alone hid it from most subjects (2026-08-12: she couldn't find it on
+  // Ellis's Math Reasoning), and keying off the built sequence alone shows a stale
+  // list right after "Edit as a list" clears the cells.
+  const _seqTexts=(s.lessonSeq&&s.lessonSeq.length)?s.lessonSeq:((seq||[]).map(x=>(x&&x.lesson!==undefined)?x.lesson:x));
+  // Which are still unfinished — decided by CONTENT, not by the cursor position. The
+  // count drifts whenever a completion's title isn't in the sequence (Ellis had a
+  // "Pg 225–227" check-off with no matching lesson, pushing his cursor one past the
+  // truth and hiding the very lesson she wanted to mark).
+  const upcoming=[];
+  {
+    let left=new Map();
+    try{
+      const _ps=(((paceData||{}).subjects||{})[kid]||{})[sk];
+      (paceDoneTitles(kid,paceKeywords(kid,sk,_ps),null,sk)||[]).forEach(t=>{
+        const i=String(t).indexOf(" — ");
+        const p=(i>=0?String(t).slice(i+3):String(t)).trim().toLowerCase();
+        left.set(p,(left.get(p)||0)+1);
+      });
+    }catch(e){}
+    for(const l of _seqTexts){
+      const k=String(l).trim().toLowerCase(), c=left.get(k)||0;
+      if(c>0){ left.set(k,c-1); continue; }     // one occurrence per completion
+      upcoming.push(l);
+      if(upcoming.length>=8) break;
+    }
+  }
   let h='<div style="border:1.5px solid var(--border);border-radius:10px;padding:9px 10px;margin-top:8px">';
   h+='<div style="font-size:11px;font-weight:800;color:'+col+';margin-bottom:2px">✓ Mark a lesson done</div>';
   h+='<div style="font-size:10px;color:var(--muted);margin-bottom:7px">For work done on paper or ahead of the plan. Tap a lesson to mark it — or <b>&#8595; through here</b> to mark it and everything above. The subject re-lays from the next unfinished one, so later lessons move up into the freed days.</div>';
@@ -13391,17 +13419,35 @@ function _ceMarkDoneUI(kid,sk,s,seq,cursorPos,col){
 function ceMarkLessonDone(kid,sk,lesson,through){
   if(!momHere()) return;
   const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s) return;
-  const seqAll=(s.lessonSeq||[]);
+  // Master list — SAME preference the panel uses (card list first, else the built
+  // grid sequence). They must agree or "through here" can't find the tapped lesson.
+  let seqAll=(s.lessonSeq&&s.lessonSeq.length)?s.lessonSeq.slice():[];
+  if(!seqAll.length){ try{ seqAll=(buildSubjectLessons(kid,sk)||[]).map(x=>(x&&x.lesson!==undefined)?x.lesson:x); }catch(e){} }
   const norm=t=>String(t||"").trim().toLowerCase();
   const target=norm(lesson);
   let list=[lesson];
   if(through){
+    // "through here" claims the UNFINISHED lessons up to and including the tapped one —
+    // decided by content (same rule as the panel's list), so a drifting cursor can't
+    // make it grab work that's already recorded, or miss work that isn't.
     const i=seqAll.findIndex(x=>norm(x)===target);
-    // "through here" only claims lessons that are NOT already finished — a real
-    // check-off stays the source of truth for anything it already covers.
     if(i>=0){
-      let doneN=0; try{ doneN=Math.max(0,computeSubjectCursor(kid,sk)||0); }catch(e){}
-      list=seqAll.slice(Math.min(doneN,i),i+1);
+      let left=new Map();
+      try{
+        const _ps=(((paceData||{}).subjects||{})[kid]||{})[sk];
+        (paceDoneTitles(kid,paceKeywords(kid,sk,_ps),null,sk)||[]).forEach(t=>{
+          const j=String(t).indexOf(" — ");
+          const p=(j>=0?String(t).slice(j+3):String(t)).trim().toLowerCase();
+          left.set(p,(left.get(p)||0)+1);
+        });
+      }catch(e){}
+      list=[];
+      for(let x=0;x<=i;x++){
+        const k=norm(seqAll[x]), c=left.get(k)||0;
+        if(c>0){ left.set(k,c-1); continue; }
+        list.push(seqAll[x]);
+      }
+      if(!list.length) list=[lesson];
     }
   }
   // Optional "day it was done": records the date AND moves the lesson's cell onto
