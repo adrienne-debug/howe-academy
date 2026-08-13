@@ -13409,7 +13409,8 @@ function _ceMarkDoneUI(kid,sk,s,seq,cursorPos,col){
   if(marked.length){
     h+='<div style="font-size:10px;color:var(--muted);margin-top:7px">Hand-marked done ('+marked.length+') — tap ✕ to undo:</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px">';
     marked.forEach(k=>{
-      h+='<span style="display:inline-flex;align-items:center;gap:4px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:2px 8px;font-size:10px;color:#15803d">'+esc(k)+
+      const _lbl=_mdText(k,md[k]);   // show the real lesson name, not the sanitized key
+      h+='<span style="display:inline-flex;align-items:center;gap:4px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:2px 8px;font-size:10px;color:#15803d">'+esc(_lbl)+
         '<button onclick="ceUnmarkLessonDone(\''+kid+'\',\''+sk+'\',\''+esc(String(k).replace(/'/g,"\\'"))+'\')" style="border:none;background:none;color:#15803d;font-weight:800;cursor:pointer;padding:0">&times;</button></span>';
     });
     h+='</div>';
@@ -13465,7 +13466,7 @@ function ceMarkLessonDone(kid,sk,lesson,through){
   const prevPaths={};                                   // one Undo covers mark + cell moves + re-lay
   prevPaths["subjects/"+kid+"/"+sk+"/manualDone"]=s.manualDone?JSON.parse(JSON.stringify(s.manualDone)):null;
   const md=Object.assign({},s.manualDone||{});
-  list.forEach(l=>{ md[norm(l)]=dayISO?{day:dayISO,ts:new Date().toISOString()}:true; });
+  list.forEach(l=>{ md[_mdKey(l)]={lesson:String(l).trim(),day:dayISO||cbTodayISO(),ts:new Date().toISOString()}; });
   s.manualDone=md;
   const up={}; up["subjects/"+kid+"/"+sk+"/manualDone"]=md;
   if(dayISO){
@@ -21454,7 +21455,7 @@ function gvMenuDone(kid,dn,sk){
   const prevPaths={};
   prevPaths["subjects/"+kid+"/"+sk+"/manualDone"]=s.manualDone?JSON.parse(JSON.stringify(s.manualDone)):null;
   const md=Object.assign({},s.manualDone||{});
-  md[txt.toLowerCase()]={day:cbTodayISO(),ts:new Date().toISOString()};
+  md[_mdKey(txt)]={lesson:txt,day:cbTodayISO(),ts:new Date().toISOString()};
   s.manualDone=md;
   const up={}; up["subjects/"+kid+"/"+sk+"/manualDone"]=md;
   // Clear its cell now — the re-lay would overwrite the day anyway, but an unpaced
@@ -23635,13 +23636,20 @@ function paceIsLessonSeq(kid,subjectKey){
 // fields would switch the whole subject back to count-as-position, the exact bug
 // class killed on 2026-08-11. As text it flows everywhere consistently — the grid's
 // ✓ done badges, the rebuild's tally, and the generator's content-aware serving.
+// ⚠️ Firebase FORBIDS . # $ [ ] / in keys, and lesson names are full of them
+// ("pp. 270–273", "MR5 pp.204–207"). Storing the raw text as the key made every
+// write THROW — synchronously, so .catch() never saw it: the cell vanished from the
+// screen, nothing reached the database, and it came back on the next load. That cost
+// a whole night (2026-08-12). Keys are sanitized; the real text rides in the value.
+function _mdKey(t){ return String(t||"").trim().toLowerCase().replace(/[.#$\[\]\/]/g,"_"); }
+function _mdText(k,v){ return (v&&typeof v==="object"&&v.lesson)?String(v.lesson):String(k); }
 function _paceManualTitles(kid,subjectKey){
   if(!subjectKey) return [];
   const s=(((currData||{}).subjects||{})[kid]||{})[subjectKey];
   const md=s&&s.manualDone;
   if(!md) return [];
   const disp=(s.display||subjectKey);
-  return Object.keys(md).filter(k=>md[k]).map(k=>("\u{1F4C4} "+disp+" — "+k).toLowerCase());
+  return Object.keys(md).filter(k=>md[k]).map(k=>("\u{1F4C4} "+disp+" — "+_mdText(k,md[k])).toLowerCase());
 }
 function paceDoneTitles(kid,keywords,excludeWeek,subjectKey){
   const out=_paceManualTitles(kid,subjectKey);
