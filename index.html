@@ -19555,6 +19555,21 @@ function cbMaterialize(cfg){
         p=q+1; i++;
       }
     }
+    // Drop units already finished (cfg.pages.done, a text→count tally from the
+    // caller). Without this, pages mode re-laid page 270 on every single rebuild no
+    // matter how many times it had been completed — the one mode that never learned
+    // what was done. One occurrence spent per completion, so a page range that
+    // legitimately repeats still gets its later sittings.
+    if(pg.done&&units.length){
+      const left=new Map(pg.done), kept=[];
+      for(const t of units){
+        const k=String(t).trim().toLowerCase(), c=left.get(k)||0;
+        if(c>0){ left.set(k,c-1); continue; }
+        kept.push(t);
+      }
+      units=kept;
+      if(!units.length) return {error:"Every page in this range is already finished — nothing left to place."};
+    }
     if(!units.length) return {error:"No pages to place — check total pages."};
   } else if(cfg.mode==="minutes"){
     units=null; // unbounded — fills eligible rows through windowEnd or grid end
@@ -20245,7 +20260,26 @@ function cbBuildCfg(){
   if(f.mode==="targetDate") cfg.targetDate=f.targetDate;
   if(f.mode==="window"){ cfg.windowEnd=f.windowEnd; cfg.tpw=f.tpw; }
   if(f.mode==="timesPerWeek") cfg.tpw=f.tpw;
-  if(f.mode==="pages"){ cfg.tpw=f.tpw; cfg.pages={totalPages:parseInt(f.totalPages)||0,startPage:parseInt(f.startPage)||1,pattern:cbParsePattern(f.patternStr),unitLabel:f.unitLabel}; if(f.units&&f.units.length) cfg.pages.units=f.units; }
+  if(f.mode==="pages"){
+    cfg.tpw=f.tpw;
+    cfg.pages={totalPages:parseInt(f.totalPages)||0,startPage:parseInt(f.startPage)||1,pattern:cbParsePattern(f.patternStr),unitLabel:f.unitLabel};
+    if(f.units&&f.units.length) cfg.pages.units=f.units;
+    // Pages mode re-derives its whole lesson list from startPage every build, so it
+    // had NO idea what was finished — a rebuild always re-laid page 270 even after
+    // it was checked off or hand-marked done (2026-08-12: she predicted this exactly).
+    // Hand the materializer a tally of completed unit texts so it can skip them; the
+    // same one-per-completion rule the other modes use.
+    try{
+      const _ps=(((paceData||{}).subjects||{})[kid]||{})[sk];
+      const _done=new Map();
+      (paceDoneTitles(kid,paceKeywords(kid,sk,_ps),null,sk)||[]).forEach(t=>{
+        const i=String(t).indexOf(" — ");
+        const p=(i>=0?String(t).slice(i+3):String(t)).trim().toLowerCase();
+        if(p) _done.set(p,(_done.get(p)||0)+1);
+      });
+      if(_done.size) cfg.pages.done=_done;
+    }catch(e){}
+  }
   if(f.mode==="minutes"){ cfg.tpw=f.tpw; cfg.minutesText=f.minutesText; if(f.windowEnd) cfg.windowEnd=f.windowEnd; }
   if(f.mode==="targetDate"||f.mode==="timesPerWeek"||f.mode==="window"){
     let content=cbRemainingContent(kid,sk);
