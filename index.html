@@ -1290,6 +1290,7 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
 .gv.gv-selmode .gv-cell{cursor:cell}
 .gv-cell.gv-picked,.gv.gv-selmode .gv-cell.gv-picked{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2563eb}
 .gv.gv-selmode .gv-fix{cursor:pointer}
+.gv .gv-done{color:var(--muted)}
 .gv tr.gv-movetgt td{background:#eef2ff!important;cursor:copy}
 .gv td.gv-movesrc{box-shadow:inset 0 0 0 2px #6366f1}
 .gv tr.gv-past td{opacity:0.5}
@@ -21624,6 +21625,23 @@ function renderCurrGrid(el){
     const slk=((currData.skiplog||{})[gvKid])||{};
     for(const sk of Object.keys(slk)) (slk[sk]||[]).forEach(e=>{ if(e&&e.dayNum!=null) _skipAt[e.dayNum+"|"+sk]=e.lesson||""; });
   }
+  // Which cells hold FINISHED work. Without this the grid looked identical whether
+  // a lesson was done or pending, so a completed lesson sitting on today read as a
+  // stuck task — she fought one for an evening (2026-08-12: Ellis finished Ch.12 L8
+  // a day early, its Wednesday cell wouldn't "go away" because rebuilds and 🗑 both
+  // protect completed work). Computed ONCE per subject here (cbDoneCellSet walks the
+  // archive — far too heavy to call per cell), keyed dayNum|sk like _skipAt.
+  const _doneAt={};
+  try{
+    for(const sk of cols){
+      const cells=[];
+      for(const dn of dayNums){ const l=lessons[dn]; const v=l&&l[sk];
+        if(gvFilled(v)) cells.push({dayNum:dn,date:l.date||"",text:String(v)}); }
+      if(!cells.length) continue;
+      const ds=cbDoneCellSet(gvKid,sk,cells);
+      if(ds) cells.forEach((c,i)=>{ if(ds.has(i)) _doneAt[c.dayNum+"|"+sk]=1; });
+    }
+  }catch(e){}
 
   h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">';
   if(pastCount) h+='<button onclick="gvTogglePast()" style="padding:4px 12px;border-radius:14px;border:1px solid var(--border);background:'+(gvShowPast?'var(--header)':'#fff')+';color:'+(gvShowPast?'#fff':'var(--muted)')+';font-size:11px;font-weight:700;cursor:pointer">'+(gvShowPast?'Hide':'Show')+' '+pastCount+' past days</button>';
@@ -21790,7 +21808,9 @@ function renderCurrGrid(el){
         }
       } else {
         let cell="";
-        if(gvFilled(v)) cell=removed?'<s style="color:var(--muted)">'+esc(v)+'</s><span class="gv-badge" style="background:#e0e7ff;color:#3730a3">moved</span>':esc(v);
+        const _isDone=!!_doneAt[dn+"|"+sk];
+        if(gvFilled(v)) cell=removed?'<s style="color:var(--muted)">'+esc(v)+'</s><span class="gv-badge" style="background:#e0e7ff;color:#3730a3">moved</span>'
+          :(_isDone?'<span class="gv-done" title="Finished — this stays as history. Rebuilds never move it and 🗑 won’t remove it.">'+esc(v)+' <span class="gv-badge" style="background:#dcfce7;color:#15803d">&#10003; done</span></span>':esc(v));
         if(addedV!==undefined) cell+=(cell?'<br>':'')+'<span style="color:#15803d">+ '+(typeof addedV==="string"?esc(addedV):"make-up")+'</span><span class="gv-badge" style="background:#bbf7d0;color:#15803d">make-up</span>';
         if(!cell&&_skipAt[dn+"|"+sk]!==undefined) cell='<s style="color:var(--muted);opacity:.7">'+esc(_skipAt[dn+"|"+sk])+'</s><span class="gv-badge" style="background:#fef3c7;color:#92400e" title="Passed over by a rebuild — won\'t come back as carryover or catch-up">skipped</span>';
         if(!cell) cell="·";
