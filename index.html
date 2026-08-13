@@ -13278,6 +13278,7 @@ function ceRenderEditSheet(){
     });
     h+='</textarea>';
     h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">One lesson per line. Cursor is at line '+(cursorPos+1)+'. Lines above the cursor are completed.</div>';
+    h+=_ceMarkDoneUI(ceEditKid,ceEditKey,s,seq,cursorPos,col);
   } else {
     h+='<div style="font-size:12px;color:var(--muted);font-style:italic">No lessons defined. This subject won\'t appear in generated weeks until lessons are added.</div>';
     h+='<textarea id="ce-edit-lessons" class="ce-sheet-input" style="min-height:80px;resize:vertical;font-size:11px;line-height:1.5" placeholder="pg 1-3&#10;pg 4-6&#10;pg 7-9" onchange="ceSaveLessonSeq(this.value)"></textarea>';
@@ -13350,6 +13351,84 @@ function ceRenderEditSheet(){
   }
 }
 
+// ── ✓ Mark a lesson done from the subject card ──────────────────────────────
+// For work finished off-app (on paper, ahead over a weekend, or a completion whose
+// task card never existed). Writes TEXT into subjects/<kid>/<sk>/manualDone — read
+// back by _paceManualTitles as ordinary completion evidence — then re-lays the
+// subject so the plan picks up from the next unfinished lesson.
+function _ceMarkDoneUI(kid,sk,s,seq,cursorPos,col){
+  const md=s.manualDone||{};
+  const marked=Object.keys(md).filter(k=>md[k]);
+  const upcoming=(s.lessonSeq||[]).slice(Math.min(cursorPos,(s.lessonSeq||[]).length),Math.min(cursorPos+8,(s.lessonSeq||[]).length));
+  let h='<div style="border:1.5px solid var(--border);border-radius:10px;padding:9px 10px;margin-top:8px">';
+  h+='<div style="font-size:11px;font-weight:800;color:'+col+';margin-bottom:2px">✓ Mark a lesson done</div>';
+  h+='<div style="font-size:10px;color:var(--muted);margin-bottom:7px">For work done on paper or ahead of the plan. Tap a lesson to mark it — or <b>&#8595; through here</b> to mark it and everything above. The subject re-lays from the next unfinished one.</div>';
+  if(!upcoming.length) h+='<div style="font-size:11px;color:var(--muted)">Nothing left unfinished. 🎉</div>';
+  upcoming.forEach(l=>{
+    const esc2=esc(String(l).replace(/'/g,"\\'"));
+    h+='<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px dashed #eef0f3">';
+    h+='<span style="flex:1;min-width:0;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(l)+'</span>';
+    h+='<button onclick="ceMarkLessonDone(\''+kid+'\',\''+sk+'\',\''+esc2+'\',false)" title="Mark just this one done" style="flex-shrink:0;border:1px solid #bbf7d0;background:#f0fdf4;color:#15803d;border-radius:8px;padding:2px 9px;font-size:10px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓</button>';
+    h+='<button onclick="ceMarkLessonDone(\''+kid+'\',\''+sk+'\',\''+esc2+'\',true)" title="Mark this and every lesson above it done" style="flex-shrink:0;border:1px solid var(--border);background:#fff;color:var(--muted);border-radius:8px;padding:2px 9px;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">&#8595; through here</button>';
+    h+='</div>';
+  });
+  if(marked.length){
+    h+='<div style="font-size:10px;color:var(--muted);margin-top:7px">Hand-marked done ('+marked.length+') — tap ✕ to undo:</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px">';
+    marked.forEach(k=>{
+      h+='<span style="display:inline-flex;align-items:center;gap:4px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:2px 8px;font-size:10px;color:#15803d">'+esc(k)+
+        '<button onclick="ceUnmarkLessonDone(\''+kid+'\',\''+sk+'\',\''+esc(String(k).replace(/'/g,"\\'"))+'\')" style="border:none;background:none;color:#15803d;font-weight:800;cursor:pointer;padding:0">&times;</button></span>';
+    });
+    h+='</div>';
+  }
+  return h+'</div>';
+}
+function ceMarkLessonDone(kid,sk,lesson,through){
+  if(!momHere()) return;
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s) return;
+  const seqAll=(s.lessonSeq||[]);
+  const norm=t=>String(t||"").trim().toLowerCase();
+  const target=norm(lesson);
+  let list=[lesson];
+  if(through){
+    const i=seqAll.findIndex(x=>norm(x)===target);
+    // "through here" only claims lessons that are NOT already finished — a real
+    // check-off stays the source of truth for anything it already covers.
+    if(i>=0){
+      let doneN=0; try{ doneN=Math.max(0,computeSubjectCursor(kid,sk)||0); }catch(e){}
+      list=seqAll.slice(Math.min(doneN,i),i+1);
+    }
+  }
+  if(!confirm(list.length>1
+      ?("Mark "+list.length+" lessons done, through “"+lesson+"”?\n\nThey stop being scheduled and "+(s.display||sk)+" re-lays from the next unfinished lesson. You can undo any of them on this card.")
+      :("Mark “"+lesson+"” done?\n\n"+(s.display||sk)+" re-lays from the next unfinished lesson. You can undo it on this card."))) return;
+  const md=Object.assign({},s.manualDone||{});
+  list.forEach(l=>{ md[norm(l)]=true; });
+  s.manualDone=md;
+  if(db) db.ref("curriculum/subjects/"+kid+"/"+sk+"/manualDone").set(md);
+  currData.lastEdit=new Date().toISOString();
+  if(db) db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  try{ buildCurrPaceCum(); }catch(e){}
+  _ceRelayAfterMark(kid,sk,"✓ Marked "+list.length+" lesson"+(list.length!==1?"s":"")+" done");
+}
+function ceUnmarkLessonDone(kid,sk,key){
+  if(!momHere()) return;
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||!s.manualDone) return;
+  const md=Object.assign({},s.manualDone); delete md[key];
+  s.manualDone=md;
+  if(db) db.ref("curriculum/subjects/"+kid+"/"+sk+"/manualDone").set(Object.keys(md).length?md:null);
+  try{ buildCurrPaceCum(); }catch(e){}
+  _ceRelayAfterMark(kid,sk,"↩ Un-marked “"+key+"”");
+}
+// Re-lay the subject after a mark/un-mark — the ↻ path, so the plan always matches
+// what the card now says is finished. Unpaced subjects just report.
+function _ceRelayAfterMark(kid,sk,msg){
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]||{};
+  if(s.pacing&&s.pacing.mode&&typeof _gvRelaySubject==="function"){
+    if(_gvRelaySubject(kid,sk,msg)) return;
+  }
+  cbMsg=msg+" — "+(s.display||sk)+" isn’t Builder-paced, so nothing to re-lay.";
+  renderAll();
+}
 function ceSetTargetEnd(kid,val){
   if(!currData.targetEnd) currData.targetEnd={};
   if(val){ currData.targetEnd[kid]=val; db.ref("curriculum/targetEnd/"+kid).set(val); }
@@ -19731,7 +19810,7 @@ function cbRemainingContent(kid,sk){
   if(info.hasSeq&&!info.adjust&&!Math.max(0,((((paceData||{}).subjects||{})[kid]||{})[sk]||{}).offset||0)){
     const _paceSubj=(((paceData||{}).subjects||{})[kid]||{})[sk];
     const _seqSet=new Set((s.lessonSeq||[]).map(t=>String(t||"").trim().toLowerCase()));
-    const _titles=paceDoneTitles(kid,paceKeywords(kid,sk,_paceSubj),null);
+    const _titles=paceDoneTitles(kid,paceKeywords(kid,sk,_paceSubj),null,sk);
     const _m=new Map(); let _ok=true;
     for(const t of _titles){
       const _s=String(t||""), _i=_s.indexOf(" — ");
@@ -23392,8 +23471,23 @@ function paceIsLessonSeq(kid,subjectKey){
 }
 // Every COMPLETED task title for this kid+subject, current week + archive. Shared by the
 // pace cursor and by the rebuild's done/stale split so the two can never disagree.
-function paceDoneTitles(kid,keywords,excludeWeek){
-  const out=[];
+// Lessons Mom marked done BY HAND on the subject card (work finished on paper, or a
+// completion whose card never existed). Stored as TEXT on the subject —
+// subjects/<kid>/<sk>/manualDone{normalized lesson: {ts}} — and folded in here as
+// synthetic completion titles. Deliberately NOT a number: the pace offset/adjust
+// fields would switch the whole subject back to count-as-position, the exact bug
+// class killed on 2026-08-11. As text it flows everywhere consistently — the grid's
+// ✓ done badges, the rebuild's tally, and the generator's content-aware serving.
+function _paceManualTitles(kid,subjectKey){
+  if(!subjectKey) return [];
+  const s=(((currData||{}).subjects||{})[kid]||{})[subjectKey];
+  const md=s&&s.manualDone;
+  if(!md) return [];
+  const disp=(s.display||subjectKey);
+  return Object.keys(md).filter(k=>md[k]).map(k=>("\u{1F4C4} "+disp+" — "+k).toLowerCase());
+}
+function paceDoneTitles(kid,keywords,excludeWeek,subjectKey){
+  const out=_paceManualTitles(kid,subjectKey);
   if(!keywords||!keywords.length) return out;
   const kws=(typeof keywords==="string"?[keywords]:keywords).map(k=>k.toLowerCase().trim());
   const currStart=currFirstWeekNum();
@@ -23435,7 +23529,7 @@ function cbDoneCellSet(kid,sk,cells){
   // same as "nothing done": an empty set here would file every finished lesson as stale and
   // copy the whole subject forward.
   if(!kws||!kws.length) return null;
-  const titles=paceDoneTitles(kid,kws,null);
+  const titles=paceDoneTitles(kid,kws,null,sk);
   // A pace OFFSET means "this many were finished before we started tracking" — there is no
   // check-off to find for them, and calling them unfinished would copy them all forward.
   const off=Math.max(0,(paceSubj&&paceSubj.offset)||0);
@@ -23501,6 +23595,8 @@ function paceAutoCount(kid,keywords,excludeWeek,subjectKey,_collect){
   // and every one is a real day's work.
   const _dedupe=paceIsLessonSeq(kid,subjectKey);
   const _seen=_dedupe?new Set():null;
+  // Hand-marked lessons count exactly like real completions (see _paceManualTitles).
+  const _manual=_paceManualTitles(kid,subjectKey);
   const _bump=t=>{
     if(!_dedupe){ count+=1; if(_collect)_collect(t); return; }
     const k=(t.title||"").trim().toLowerCase();
@@ -23508,6 +23604,7 @@ function paceAutoCount(kid,keywords,excludeWeek,subjectKey,_collect){
     count+=1;
     if(_collect)_collect(t);
   };
+  _manual.forEach(t=>_bump({title:t}));   // hand-marked first: a real check-off of the same lesson then de-dupes against it
   if(!excludeWeek||excludeWeek!==WK){
     weekData.tasks.filter(t=>t.who===kid&&!t.id.endsWith("_c")).forEach(t=>{
       if(chainDone(t.id,checked,weekData.tasks)&&kws.some(kw=>(t.title||"").toLowerCase().includes(kw)))
