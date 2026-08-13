@@ -21436,6 +21436,42 @@ function gvPickMoveTarget(dn){
   if(typeof gwShowToast==="function") gwShowToast("➡ "+(s.display||sk)+" parked until "+ds+" — the generator serves it there on its own.");
   _gvFinishDeleteNoBuild(); renderAll();
 }
+// ✓ done — check a lesson off RIGHT ON ITS GRID CELL. It leaves the plan and the
+// column re-lays, so the day it was sitting on fills with the next lesson. This is
+// the thing the grid was missing: completion could only be recorded from a task card
+// (which may not exist for a future lesson) or the subject card's panel, so a finished
+// lesson kept coming back on every rebuild (2026-08-12, Ellis's pp. 270–273).
+// Recorded the same way a check-off is — by TEXT in manualDone, dated today — so the
+// grid, the rebuild tally and the generator all agree without touching pace counts.
+function gvMenuDone(kid,dn,sk){
+  if(!momModeActive&&!adminPinUnlocked) return;
+  const l=((currData.lessons||{})[kid]||{})[dn]; if(!l) return;
+  const txt=String(l[sk]||"").trim();
+  if(!txt||!gvFilled(txt)) return;
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]||{};
+  if(!confirm("Mark “"+txt+"” done?\n\nIt comes out of the plan and the lessons after it move up to fill its day. You can undo this.")) return;
+  gvGrabScroll(); gvMenu=null;
+  const prevPaths={};
+  prevPaths["subjects/"+kid+"/"+sk+"/manualDone"]=s.manualDone?JSON.parse(JSON.stringify(s.manualDone)):null;
+  const md=Object.assign({},s.manualDone||{});
+  md[txt.toLowerCase()]={day:cbTodayISO(),ts:new Date().toISOString()};
+  s.manualDone=md;
+  const up={}; up["subjects/"+kid+"/"+sk+"/manualDone"]=md;
+  // Clear its cell now — the re-lay would overwrite the day anyway, but an unpaced
+  // subject has no re-lay, and a cleared cell is the honest picture either way.
+  prevPaths["lessons/"+kid+"/"+dn+"/"+sk]=l[sk];
+  up["lessons/"+kid+"/"+dn+"/"+sk]=null;
+  delete l[sk];
+  if(db) db.ref("curriculum").update(up).catch(err=>{ cbMsg="⚠ "+err.message; renderAll(); });
+  currData.lastEdit=new Date().toISOString();
+  if(db) db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  try{ buildCurrPaceCum(); }catch(e){}
+  _gvDelUndo={kid,sk,paths:prevPaths,label:"marked “"+txt+"” done"};
+  const msg="✓ Marked “"+txt+"” done";
+  if(s.pacing&&s.pacing.mode){ if(_gvRelaySubject(kid,sk,msg)) return; _gvFinishDeleteNoBuild(); return; }
+  cbMsg=msg+" — "+(s.display||sk)+" isn’t Builder-paced, so the rest don’t shift on their own.";
+  _gvFinishDeleteNoBuild(); renderAll();
+}
 function gvMenuOffAdded(kid,dn,sk){
   const l=((currData.lessons||{})[kid]||{})[dn]; if(!l||!l.date) return;
   gvGrabScroll(); gvMenu=null;
@@ -21972,6 +22008,7 @@ function renderCurrGrid(el){
       const editing=gvEdit===dn+"|"+sk;
       if(gvMenu===dn+"|"+sk&&!gvSelMode&&!past){
         // ── Cell action menu: the Lesson Map's tools, in place ──
+        const _isDone=!!_doneAt[dn+"|"+sk];
         const _mb=(lbl,fn,tt,col2)=>'<button onclick="'+fn+'" title="'+esc(tt)+'" style="border:1px solid var(--border);background:#fff;border-radius:8px;padding:3px 7px;font-size:12px;cursor:pointer;line-height:1.3'+(col2?';color:'+col2:'')+'">'+lbl+'</button>';
         let m='<div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap">';
         m+='<span style="font-size:11px;font-weight:700;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"'+(removed?' class="gv-mvd"':'')+'>'+(removed?'<s>':'')+esc(gvFilled(v)?v:"")+(removed?'</s>':'')+'</span>';
@@ -21980,6 +22017,7 @@ function renderCurrGrid(el){
           m+=_mb("↩ put back","gvMenuRestore("+_arg+")","Un-move: it runs on this day again","#15803d");
         } else {
           m+=_mb("✎","gvMenuEdit("+dn+",'"+sk+"')","Edit the text");
+          if(gvFilled(v)&&!_isDone) m+=_mb("✓ done","gvMenuDone("+_arg+")","They finished this — take it out of the plan and move the rest up","#15803d");
           if(gvFilled(v)){
             // One Move gesture replaces the old ◀▶ arrows and week-chip picker:
             // arm the move, then tap the destination day right in the grid.
