@@ -13362,7 +13362,13 @@ function _ceMarkDoneUI(kid,sk,s,seq,cursorPos,col){
   const upcoming=(s.lessonSeq||[]).slice(Math.min(cursorPos,(s.lessonSeq||[]).length),Math.min(cursorPos+8,(s.lessonSeq||[]).length));
   let h='<div style="border:1.5px solid var(--border);border-radius:10px;padding:9px 10px;margin-top:8px">';
   h+='<div style="font-size:11px;font-weight:800;color:'+col+';margin-bottom:2px">✓ Mark a lesson done</div>';
-  h+='<div style="font-size:10px;color:var(--muted);margin-bottom:7px">For work done on paper or ahead of the plan. Tap a lesson to mark it — or <b>&#8595; through here</b> to mark it and everything above. The subject re-lays from the next unfinished one.</div>';
+  h+='<div style="font-size:10px;color:var(--muted);margin-bottom:7px">For work done on paper or ahead of the plan. Tap a lesson to mark it — or <b>&#8595; through here</b> to mark it and everything above. The subject re-lays from the next unfinished one, so later lessons move up into the freed days.</div>';
+  // Optional day-it-was-done: records the date and moves the lesson's cell there.
+  h+='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:7px">';
+  h+='<span style="font-size:10px;color:var(--muted)">Day it was done <i>(optional)</i>:</span>';
+  h+='<input type="date" id="ce-md-day" style="padding:3px 6px;border:1.5px solid var(--border);border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:11px">';
+  h+='<button onclick="var e=document.getElementById(\'ce-md-day\');if(e)e.value=\'\'" style="border:none;background:none;color:var(--muted);font-size:10px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif">clear</button>';
+  h+='</div>';
   if(!upcoming.length) h+='<div style="font-size:11px;color:var(--muted)">Nothing left unfinished. 🎉</div>';
   upcoming.forEach(l=>{
     const esc2=esc(String(l).replace(/'/g,"\\'"));
@@ -13398,17 +13404,50 @@ function ceMarkLessonDone(kid,sk,lesson,through){
       list=seqAll.slice(Math.min(doneN,i),i+1);
     }
   }
-  if(!confirm(list.length>1
-      ?("Mark "+list.length+" lessons done, through “"+lesson+"”?\n\nThey stop being scheduled and "+(s.display||sk)+" re-lays from the next unfinished lesson. You can undo any of them on this card.")
-      :("Mark “"+lesson+"” done?\n\n"+(s.display||sk)+" re-lays from the next unfinished lesson. You can undo it on this card."))) return;
+  // Optional "day it was done": records the date AND moves the lesson's cell onto
+  // that day, so the map shows the work where it actually happened instead of on
+  // the day it had been planned for (2026-08-12: Ellis did Friday's pp. 270–273 on
+  // Tuesday). A day already carrying this subject is left alone — the mark still
+  // lands, we just don't stack two lessons on one day behind her back.
+  const _dayEl=document.getElementById("ce-md-day");
+  const dayISO=(_dayEl&&_dayEl.value)?_dayEl.value:"";
+  if(!confirm((list.length>1
+      ?("Mark "+list.length+" lessons done, through “"+lesson+"”?\n\nThey stop being scheduled and "+(s.display||sk)+" re-lays from the next unfinished lesson.")
+      :("Mark “"+lesson+"” done?\n\n"+(s.display||sk)+" re-lays from the next unfinished lesson."))
+      +(dayISO?("\n\nRecorded as done on "+dayISO+" — the lesson moves onto that day in the map."):"")
+      +"\n\nYou can undo it on this card.")) return;
+  const prevPaths={};                                   // one Undo covers mark + cell moves + re-lay
+  prevPaths["subjects/"+kid+"/"+sk+"/manualDone"]=s.manualDone?JSON.parse(JSON.stringify(s.manualDone)):null;
   const md=Object.assign({},s.manualDone||{});
-  list.forEach(l=>{ md[norm(l)]=true; });
+  list.forEach(l=>{ md[norm(l)]=dayISO?{day:dayISO,ts:new Date().toISOString()}:true; });
   s.manualDone=md;
-  if(db) db.ref("curriculum/subjects/"+kid+"/"+sk+"/manualDone").set(md);
+  const up={}; up["subjects/"+kid+"/"+sk+"/manualDone"]=md;
+  if(dayISO){
+    const L=(currData.lessons||{})[kid]||{};
+    const dnByDate={}; for(const dn of Object.keys(L)){ const r=L[dn]; if(r&&r.date&&dnByDate[r.date]===undefined) dnByDate[r.date]=dn; }
+    const tgt=dnByDate[dayISO];
+    if(tgt===undefined){ if(typeof gwShowToast==="function") gwShowToast("No school day on "+dayISO+" for "+cap(kid)+" — marked done, cell left where it was."); }
+    else{
+      const occupied=gvFilled((L[tgt]||{})[sk]);
+      const one=list[list.length-1];                    // the lesson she tapped
+      if(occupied){ if(typeof gwShowToast==="function") gwShowToast(dayISO+" already has "+(s.display||sk)+" — marked done, cell left where it was."); }
+      else{
+        for(const dn of Object.keys(L)){ const r=L[dn];
+          if(r&&norm(r[sk])===norm(one)&&String(dn)!==String(tgt)){
+            prevPaths["lessons/"+kid+"/"+dn+"/"+sk]=r[sk]; up["lessons/"+kid+"/"+dn+"/"+sk]=null; delete r[sk];
+          } }
+        prevPaths["lessons/"+kid+"/"+tgt+"/"+sk]=(L[tgt]||{})[sk]||null;
+        up["lessons/"+kid+"/"+tgt+"/"+sk]=one;
+        (L[tgt]=L[tgt]||{})[sk]=one;
+      }
+    }
+  }
+  if(db) db.ref("curriculum").update(up).catch(err=>{ cbMsg="⚠ "+err.message; renderAll(); });
   currData.lastEdit=new Date().toISOString();
   if(db) db.ref("curriculum/lastEdit").set(currData.lastEdit);
   try{ buildCurrPaceCum(); }catch(e){}
-  _ceRelayAfterMark(kid,sk,"✓ Marked "+list.length+" lesson"+(list.length!==1?"s":"")+" done");
+  _gvDelUndo={kid,sk,paths:prevPaths,label:"marked "+list.length+" lesson"+(list.length!==1?"s":"")+" done"};
+  _ceRelayAfterMark(kid,sk,"✓ Marked "+list.length+" lesson"+(list.length!==1?"s":"")+" done"+(dayISO?(" on "+dayISO):""));
 }
 function ceUnmarkLessonDone(kid,sk,key){
   if(!momHere()) return;
