@@ -19362,10 +19362,14 @@ function cbMaterialize(cfg){
     if(pg.units&&pg.units.length){
       // Real unit boundaries (scanned from the book or hand-entered):
       // one unit = one day, labeled with its true page range.
+      // A labelled unit puts its LABEL in the cell — nothing else. Appending the page
+      // range made scanned cells unreadably long ("Chapter 9: Fractions of a Set ·
+      // pp. 120–125") next to hand-written neighbours like "5B Ch.3 L4" (2026-08-11).
+      // Unlabelled units still fall back to the page range so a cell is never blank.
       units=pg.units.map(u=>{
         const a=u.startPage|0, b=(u.endPage|0)||a;
         const range=a===b?("p. "+a):("pp. "+a+"–"+b);
-        return u.label?(u.label+" · "+range):range;
+        return u.label?String(u.label).trim():range;
       });
     } else {
       const pat=(pg.pattern&&pg.pattern.length)?pg.pattern:[5];
@@ -20139,14 +20143,38 @@ async function cbScanBook(input){
   try{
     const imgs=await Promise.all(files.slice(0,8).map(_cbShrinkImage));
     cbScanStatus="Asking Claude to map the book…"; renderAll();
+    // Show the AI how THIS subject already names its lessons, so scanned units come
+    // back in the family's house style ("5B Ch.3 L4") instead of the book's prose
+    // ("Chapter 9: Fractions of a Set") — 2026-08-11: a Singapore scan produced
+    // labels so long the cells were unreadable.
+    let _styleHint="";
+    try{
+      const _s=((currData.subjects||{})[cbKid]||{})[cbSubjKey]||{};
+      let _ex=(_s.lessonSeq||[]).filter(Boolean).map(String);
+      if(!_ex.length){
+        const _L=((currData.lessons||{})[cbKid])||{};
+        _ex=Object.keys(_L).map(Number).filter(n=>!isNaN(n)).sort((a,b)=>a-b)
+          .map(dn=>(_L[dn]||{})[cbSubjKey]).filter(v=>v&&v!=="—"&&v!=="nan"&&String(v).trim()).map(String);
+      }
+      if(_ex.length){
+        const _samp=[..._ex.slice(0,4),..._ex.slice(-4)].filter((v,i,a)=>a.indexOf(v)===i).slice(0,8);
+        const _maxLen=Math.max(12,...(_samp.map(x=>x.length)));
+        _styleHint="\nNAMING — this is the most important rule. This subject's existing lessons are named EXACTLY like this:\n"+
+          _samp.map(x=>"  "+x).join("\n")+
+          "\nName every unit in that SAME style: same abbreviations, spacing, and punctuation, continuing the same numbering where it fits. "+
+          "Keep each label at most "+Math.min(24,_maxLen+4)+" characters. Do NOT copy the book's long prose chapter titles, and do NOT include page numbers in the label.";
+      } else {
+        _styleHint="\nNAMING: keep labels SHORT (under 20 characters) — e.g. \"Ch.9 L5\", \"Unit 3 L2\". No prose titles, no page numbers in the label.";
+      }
+    }catch(e){}
     const content=imgs.map(b64=>({type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}}));
     content.push({type:"text",text:
       "These photos show a school workbook or curriculum book (table of contents and/or lesson pages). "+
       "Extract the teaching units IN BOOK ORDER and return ONLY strict JSON, no commentary:\n"+
-      '{"units":[{"label":"Lesson 1: Short Vowels","startPage":3,"endPage":9,"estMinutes":20}]}\n'+
+      '{"units":[{"label":"Ch.1 L1","startPage":3,"endPage":9,"estMinutes":20}]}\n'+
       "Rules: page ranges ascend and never overlap; derive endPage from the next unit's start minus 1 when reading a table of contents "+
       "(last unit: the book's final page if visible, else its own start page); estMinutes = one sitting for a child (15–30 typical); "+
-      "labels under 40 characters; skip front matter (title pages, prefaces)."});
+      "skip front matter (title pages, prefaces)."+_styleHint});
     const resp=await fetch("https://api.anthropic.com/v1/messages",{ method:"POST",
       headers:{ "content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true" },
       body:JSON.stringify({ model:"claude-sonnet-5", max_tokens:4000, messages:[{role:"user",content}] }) });
@@ -20419,11 +20447,26 @@ function cbGateAll(ii,dis){
 }
 function cbGateCancel(){
   cbGate=null;
-  // A 🗑 delete already happened before this sheet — keep it (it was confirmed),
-  // give it its own Undo, and tell mom the re-lay was skipped.
   if(typeof _gvDelUndo!=="undefined"&&_gvDelUndo){
-    cbMsg="🗑 Deleted — re-lay skipped (you cancelled the sheet). ↻ Rebuild the subject when ready.";
-    _gvFinishDeleteNoBuild();
+    const _isPark=_gvDelUndo.ovs&&_gvDelUndo.ovs.length&&!Object.keys(_gvDelUndo.paths||{}).length;
+    if(_isPark){
+      // ➡ A cancelled park rolls back ENTIRELY — its ✕ marks were only staged for
+      // the re-lay this sheet was gating, so cancel must mean "nothing happened"
+      // (2026-08-11: cancelling kept the mark and she had to Undo by hand).
+      const _uk=_gvDelUndo.kid;
+      _gvDelUndo.ovs.forEach(o=>{
+        if(o.prev){ scheduleOverrides[o.date]=scheduleOverrides[o.date]||{}; scheduleOverrides[o.date][_uk]=o.prev; }
+        else if(scheduleOverrides[o.date]){ delete scheduleOverrides[o.date][_uk]; if(!Object.keys(scheduleOverrides[o.date]).length) delete scheduleOverrides[o.date]; }
+      });
+      saveScheduleOverrides();
+      _gvDelUndo=null;
+      cbMsg="➡ Park cancelled — nothing changed.";
+    } else {
+      // A 🗑 delete already happened before this sheet — keep it (it was confirmed
+      // in its own dialog), give it its own Undo, and note the re-lay was skipped.
+      cbMsg="🗑 Deleted — re-lay skipped (you cancelled the sheet). ↻ Rebuild the subject when ready.";
+      _gvFinishDeleteNoBuild();
+    }
   }
   renderAll();
 }

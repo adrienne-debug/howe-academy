@@ -135,8 +135,12 @@ console.log("pages mode — scanned units (CB6)");
   ];
   const res = cbMaterialize({ sk: "m", minutes: 20, mode: "pages", tpw: 3, allowedDays: [], pages: { units, pattern: [4], totalPages: 99, startPage: 1 }, rows: mkRows(MON, 2, 1, 1), dayCapMin: 0 });
   ok("units override the pattern (3 units = 3 days)", res.stats.placed === 3, res.stats);
-  ok("unit text = label + true range", res.assignments[0].text === "Lesson 1: Short Vowels · pp. 3–9", res.assignments[0]);
-  ok("single-page unit reads p. N", res.assignments[2].text === "Review · p. 16", res.assignments[2]);
+  // 2026-08-11: a labelled unit's cell is the LABEL ALONE. Gluing " · pp. 3–9" on
+  // made scanned cells unreadable beside hand-written neighbours ("5B Ch.3 L4"),
+  // and the scan prompt now asks for house-style labels, so the range is metadata
+  // (kept on the unit for editing) rather than cell text.
+  ok("unit text = the label alone", res.assignments[0].text === "Lesson 1: Short Vowels", res.assignments[0]);
+  ok("single-page unit is still just its label", res.assignments[2].text === "Review", res.assignments[2]);
   ok("units keep book order", res.assignments[1].text.startsWith("Lesson 2"), res.assignments[1]);
 }
 {
