@@ -11914,7 +11914,7 @@ const RL_ORDER=["mini","little","medium","big"];
 // value and still reads as readsToMe, so a kid already set up keeps their setting.
 const RL_MODES={
   solo:{ic:"\u{1F4D6}",nm:"On their own",hint:"They read their own book and log the page they stopped at."},
-  readsToMe:{ic:"\u{1F504}",nm:"Reads to me",hint:"They read you 4 familiar books plus a new one \u2014 you confirm the session."},
+  readsToMe:{ic:"\u{1F504}",nm:"Fluency Builder",hint:"They re-read 4 familiar books aloud to you plus one new one \u2014 the repetition is what builds speed and expression."},
   readAloud:{ic:"\u{1F3A7}",nm:"I read to them",hint:"You read the book to them and log the session."}};
 const RL_MODE_ORDER=["solo","readsToMe","readAloud"];
 function rlMode(kid){ const m=(readingLog[kid]||{}).mode;
@@ -11961,6 +11961,15 @@ function rlCurrentPage(kid,bookId){   // last logged stop-page for this book (en
   Object.values(es).forEach(e=>{ if(e&&e.bookId===bookId&&(e.toPage|0)>pg) pg=e.toPage|0; });
   return pg;
 }
+function _rlWith(b){ const w=(b||{}).with; if(!w) return [];
+  return Array.isArray(w)?w.slice():Object.keys(w).filter(k=>w[k]); }
+// Patch the book AND every other listener's copy of it. For identity fields only —
+// never status/points, which are each kid's own.
+function _rlSetShared(kid,id,patch){
+  const b=((readingLog[kid]||{}).books||{})[id];
+  _rlSetBook(kid,id,patch);
+  _rlWith(b).forEach(k=>{ if(k!==kid) _rlSetBook(k,id,patch); });
+}
 function _rlSetBook(kid,id,patch){
   const b=((readingLog[kid]||{}).books||{})[id]; if(!b) return;
   Object.assign(b,patch);
@@ -12006,14 +12015,14 @@ function rlCycleSize(kid,id){
   if(!momHere()) return;
   const b=((readingLog[kid]||{}).books||{})[id]; if(!b) return;
   // Mom tapping a size also settles a kid-added book's "pick a size" nudge.
-  _rlSetBook(kid,id,{size:RL_ORDER[(RL_ORDER.indexOf(b.size)+1)%RL_ORDER.length],sizePending:null});
+  _rlSetShared(kid,id,{size:RL_ORDER[(RL_ORDER.indexOf(b.size)+1)%RL_ORDER.length],sizePending:null});
   renderAll();
 }
 function rlEditPages(id){ if(!momHere()) return; rlPagesEdit=(rlPagesEdit===id)?null:id; renderAll(); setTimeout(()=>{const i=document.getElementById("rl-pg-in"); if(i) i.focus();},50); }
 function rlSavePages(kid,id){
   if(!momHere()) return;
   const v=parseInt((document.getElementById("rl-pg-in")||{}).value,10)||0;
-  _rlSetBook(kid,id,{totalPages:v>0?v:null});
+  _rlSetShared(kid,id,{totalPages:v>0?v:null});
   rlPagesEdit=null; renderAll();
 }
 function rlRemoveBook(kid,id){
@@ -12054,7 +12063,7 @@ function _rlCardHTML(kid,momView){
   const _pend=Object.values((readingLog[kid]||{}).pending||{});
   if(_pend.length&&(momView||_pend.some(p=>p&&p.by==="kid"))){
     // The chip says what's actually missing, which depends on how this kid reads.
-    const _pl={solo:"📖 Needs a page number",readsToMe:"🔄 Reading to log",readAloud:"🎧 Read-aloud to log"}[rlMode(kid)];
+    const _pl={solo:"📖 Needs a page number",readsToMe:"🔄 Fluency Builder to log",readAloud:"🎧 Read-aloud to log"}[rlMode(kid)];
     h+='<button class="rl-log-btn" style="border-color:#f59e0b;color:#b45309;background:#fffbeb" onclick="rlResolvePending(\''+kid+'\')">'+_pl+(_pend.length>1?' ('+_pend.length+')':'')+' — tap to log</button>';
   }
   if(rlMode(kid)==="readAloud"&&momView) h+='<button class="rl-log-btn" onclick="rlOpenAloud(\''+kid+'\')">🎧 + Log a read-aloud</button>';
@@ -12111,7 +12120,8 @@ function _rlCardHTML(kid,momView){
     const rows=books.filter(b=>b.status!=="done").sort((a,b)=>(a.status==="reading"?0:1)-(b.status==="reading"?0:1));
     rows.forEach(b=>{
       const S=RL_SIZES[b.size]||RL_SIZES.little;
-      h+='<div class="rl-row"><span class="sz">'+S.ic+'</span><span class="tt">'+esc(b.title)+' <span class="rl-hint">· '+(b.status==="reading"?"reading now":"up next")+(b.totalPages?' · '+b.totalPages+' pg':'')+(b.finishClaim?' · <b style="color:#b45309">⏳ finished!</b>':'')+(b.sizePending?' · <b style="color:#b45309" title="The kid started this book from a check-off — tap the size button to set its real size">☝ pick a size</b>':'')+'</span></span>';
+      const _oth=_rlWith(b).filter(k=>k!==kid);
+      h+='<div class="rl-row"><span class="sz">'+S.ic+'</span><span class="tt">'+esc(b.title)+' <span class="rl-hint">· '+(b.status==="reading"?"reading now":"up next")+(_oth.length?' · 🎧 with '+_oth.map(cap).join(", "):"")+(b.totalPages?' · '+b.totalPages+' pg':'')+(b.finishClaim?' · <b style="color:#b45309">⏳ finished!</b>':'')+(b.sizePending?' · <b style="color:#b45309" title="The kid started this book from a check-off — tap the size button to set its real size">☝ pick a size</b>':'')+'</span></span>';
       if(b.status!=="reading") h+='<button onclick="rlPromote(\''+kid+'\',\''+esc(b.id)+'\')">▲ read now</button>';
       h+='<button onclick="rlCycleSize(\''+kid+'\',\''+esc(b.id)+'\')">'+S.ic+' size</button>';
       h+='<button onclick="rlEditPages(\''+esc(b.id)+'\')">pages</button>';
@@ -12178,7 +12188,7 @@ function rlOnCheckoff(t){
     else rlOpenNoBook(kid,{pendingKey:key,day:d});
   }
 }
-// ── 🔄 Early-reader rotation (kid reads to Mom: 4 re-reads + maybe one new) ──
+// ── 🔄 Fluency Builder (kid reads to Mom: 4 re-reads + maybe one new) ───────
 // The shelf is a rotating pool: every book stays re-readable forever. The dialog
 // proposes the 4 MOST-RECENTLY-read books (yesterday's set minus its oldest, plus
 // yesterday's new one — exactly how early readers cycle a fresh book in as the
@@ -12207,8 +12217,8 @@ function _rlRotPaint(){
   if(ov) ov.remove();
   ov=document.createElement("div"); ov.id="rl-rot-dlg"; ov.className="dlg-overlay"; ov.style.display="flex"; ov.style.zIndex="9999";
   let inner='<div style="font-size:34px;margin-bottom:2px">📚</div>';
-  inner+='<div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:700;color:#1e3a5f">'+cap(kid)+'’s reading — which books today?</div>';
-  inner+='<div style="font-size:12px;color:var(--muted);margin:6px 0 10px">The usual four are picked — tap any book to change. Add the new one below, or just save.</div>';
+  inner+='<div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:700;color:#1e3a5f">🔄 Fluency Builder — '+cap(kid)+'</div>';
+  inner+='<div style="font-size:12px;color:var(--muted);margin:6px 0 10px">Which books did they read to you today? The usual four are picked — tap any to swap it out. Add the new one below, or just save.</div>';
   inner+='<div style="display:flex;flex-direction:column;gap:4px;max-height:38vh;overflow-y:auto;text-align:left">';
   ranked.forEach(b=>{
     const on=_rlRotSel.has(b.id);
@@ -12290,13 +12300,16 @@ function rlRotSave(){
 // optionally logs where they stopped, and says whether they finished it. Finishing
 // pays the read-aloud rate: a share of the size's points, set per kid on the shelf
 // panel, because listening is real reading but not the same lift as doing it yourself.
-let _rlAlCtx=null, _rlAlSel=null, _rlAlSize="little";
+let _rlAlCtx=null, _rlAlSel=null, _rlAlSize="little", _rlAlWho=null;
 function rlOpenAloud(kid,opts){
   opts=opts||{};
   _rlAlCtx={kid,pendingKey:opts.pendingKey||null,day:opts.day||day};
   const cur=rlCurrent(kid);
   _rlAlSel=cur?cur.id:null;
   _rlAlSize=rlDefaultSize(kid);
+  // Whoever was in on this book last time is pre-picked; the kid whose check-off
+  // opened the dialog is always in it.
+  _rlAlWho=new Set([kid].concat(cur?_rlWith(cur):[]));
   _rlAlPaint();
 }
 function _rlAlPaint(){
@@ -12312,7 +12325,8 @@ function _rlAlPaint(){
   ov=document.createElement("div"); ov.id="rl-al-dlg"; ov.className="dlg-overlay"; ov.style.display="flex"; ov.style.zIndex="9999";
   const selB=_rlAlSel?shelf.find(b=>b.id===_rlAlSel):null;
   const szNow=hadTitle?_rlAlSize:((selB&&selB.size)||_rlAlSize);
-  const ptsNow=rlAloudPts(szNow,kid);
+  const _who=[...(_rlAlWho||new Set([kid]))];
+  const ptsNow=_who.reduce((n,k)=>n+rlAloudPts(szNow,k),0);
   let inner='<div style="font-size:34px;margin-bottom:2px">🎧</div>';
   inner+='<div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:700;color:#1e3a5f">Read-aloud with '+cap(kid)+'</div>';
   inner+='<div style="font-size:12px;color:var(--muted);margin:6px 0 10px">Tap the book you read together — or type a new one below, which wins if both are filled in.</div>';
@@ -12337,16 +12351,35 @@ function _rlAlPaint(){
     inner+='<div class="rl-al-sz" data-sz="'+sz+'" onclick="rlAlPickSize(\''+sz+'\')" style="padding:5px 10px;border-radius:12px;border:1.5px solid '+(_rlAlSize===sz?'#93c5fd':'var(--border)')+';background:'+(_rlAlSize===sz?'#eff6ff':'#fff')+';font-size:11px;font-weight:700;cursor:pointer">'+S.ic+' '+S.nm+'</div>';
   });
   inner+='</div></div>';
+  if(SL_KIDS.length>1){
+    inner+='<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border)">';
+    inner+='<div style="font-size:12px;font-weight:800;color:#1e3a5f;margin-bottom:6px">🎧 Who listened?</div>';
+    inner+='<div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap">';
+    SL_KIDS.forEach(k=>{ const on=_rlAlWho&&_rlAlWho.has(k), me=(k===ctx.kid);
+      inner+='<span onclick="rlAlWho(\''+k+'\')" style="'+(me?'':'cursor:pointer;')+'padding:4px 11px;border-radius:12px;border:1.5px solid '+(on?'#93c5fd':'var(--border)')+';background:'+(on?'#eff6ff':'#fff')+';font-size:11.5px;font-weight:'+(on?'800':'600')+';opacity:'+(me?'0.75':'1')+'">'+(on?'✅ ':'')+cap(k)+'</span>';
+    });
+    inner+='</div><div class="rl-hint" style="margin-top:5px">Each one gets the book on their shelf, their own trophy, and their own rate.</div></div>';
+  }
   inner+='<div style="margin-top:10px"><input id="rl-al-page" type="number" inputmode="numeric" min="1" placeholder="stopped at page (skip if none)" value="'+esc(hadPage)+'" style="width:100%;max-width:280px;padding:9px;border:1.5px solid var(--border);border-radius:10px;font-size:13px;text-align:center;font-family:\'DM Sans\',sans-serif"></div>';
   inner+='<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">'+
     '<button onclick="rlAloudSave(false)" style="flex:1;min-width:120px;padding:11px;border-radius:10px;border:none;background:#1d4ed8;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Log it</button>'+
-    '<button onclick="rlAloudSave(true)" style="flex:1;min-width:120px;padding:11px;border-radius:10px;border:none;background:#16a34a;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🏁 Finished it +'+ptsNow+' ⭐</button>'+
+    '<button onclick="rlAloudSave(true)" style="flex:1;min-width:120px;padding:11px;border-radius:10px;border:none;background:#16a34a;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🏁 Finished it +'+ptsNow+' ⭐'+(_who.length>1?' <span style="font-weight:600;font-size:10px">('+_who.length+' kids)</span>':'')+'</button>'+
     '</div>'+
     '<button onclick="rlAloudClose()" style="width:100%;margin-top:8px;padding:8px;border:none;background:none;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">skip for now</button>';
   ov.innerHTML='<div class="dlg-box" style="max-width:420px;text-align:center">'+inner+'</div>';
   document.body.appendChild(ov);
 }
-function rlAlPick(id){ _rlAlSel=(_rlAlSel===id)?null:id; _rlAlPaint(); }
+function rlAlPick(id){
+  const ctx=_rlAlCtx; if(!ctx) return;
+  _rlAlSel=(_rlAlSel===id)?null:id;
+  const b=_rlAlSel?((readingLog[ctx.kid]||{}).books||{})[_rlAlSel]:null;
+  _rlAlWho=new Set([ctx.kid].concat(b?_rlWith(b):[]));
+  _rlAlPaint();
+}
+function rlAlWho(k){ const ctx=_rlAlCtx; if(!ctx||!_rlAlWho) return;
+  if(k===ctx.kid) return;                      // the kid this session is for stays in
+  if(_rlAlWho.has(k)) _rlAlWho.delete(k); else _rlAlWho.add(k);
+  _rlAlPaint(); }
 // In-place like the rotation dialog — a repaint would drop focus mid-typing.
 function rlAlPickSize(sz){ _rlAlSize=sz; document.querySelectorAll(".rl-al-sz").forEach(el=>{ const on=el.getAttribute("data-sz")===sz; el.style.borderColor=on?"#93c5fd":"var(--border)"; el.style.background=on?"#eff6ff":"#fff"; }); }
 function rlAloudClose(){ _rlAlCtx=null; _rlAlSel=null; const ov=document.getElementById("rl-al-dlg"); if(ov) ov.remove(); }
@@ -12355,44 +12388,60 @@ function rlAloudSave(finish){
   const kid=ctx.kid, d=ctx.day;
   const t=((document.getElementById("rl-al-title")||{}).value||"").trim();
   const pg=parseInt((document.getElementById("rl-al-page")||{}).value,10)||0;
+  // Everyone who listened. The kid whose check-off opened this is always in.
+  const who=[...(_rlAlWho||new Set([kid]))].filter(k=>SL_KIDS.indexOf(k)>=0);
+  if(who.indexOf(kid)<0) who.push(kid);
   const base=Date.now();
-  if(!readingLog[kid]) readingLog[kid]={};
-  if(!readingLog[kid].books) readingLog[kid].books={};
-  let id=_rlAlSel, isNew=false;
   // A typed title wins over the tapped row — she reached past the shelf on purpose.
-  if(t){
-    isNew=true; id=_bookSlug(t)+"_"+base.toString(36);
-    const cur=rlCurrent(kid); if(cur) _rlSetBook(kid,cur.id,{status:"upnext"});
-    const rec={title:t,size:_rlAlSize,totalPages:null,status:"reading",addedBy:"mom",addedTs:nowTs(),aloud:true};
-    readingLog[kid].books[id]=rec;
-    if(db) db.ref("readingLog/"+kid+"/books/"+id).set(rec);
-  }
-  const b=id?readingLog[kid].books[id]:null;
-  if(!b){ if(typeof gwShowToast==="function") gwShowToast("Tap the book you read, or type the new one"); return; }
-  if(!readingLog[kid].entries) readingLog[kid].entries={};
-  const eid="e_"+base.toString(36)+Math.floor(Math.random()*1000);
-  const e={bookId:id,ts:nowTs(),day:d,source:"aloud",by:"mom"};
-  if(pg>0) e.toPage=pg;
-  if(isNew) e.firstRead=true;
-  readingLog[kid].entries[eid]=e;
-  if(db) db.ref("readingLog/"+kid+"/entries/"+eid).set(e);
-  _rlSetBook(kid,id,{lastReadTs:base,aloud:true});
-  const title=b.title||"book";
-  if(finish){
-    // Her confirm IS the approval — same shape as rlApproveFinish, at the aloud rate.
-    // donePts is stored so ↩ un-finish reverses exactly what was paid.
-    const pts=rlAloudPts(b.size,kid);
-    const tid="read_"+id;
-    if(typeof mintTrophy==="function"&&typeof hasTrophy==="function"&&!hasTrophy(kid,tid)){
-      mintTrophy(kid,tid,{type:"read",size:b.size||"little",key:id,name:title,ts:nowTs(),points:pts,aloud:true});
-      if(pts>0&&typeof bankDirect==="function") bankDirect(kid,pts,'🎧 Read together: "'+title+'"');
+  const isNew=!!t;
+  const id=isNew?(_bookSlug(t)+"_"+base.toString(36)):_rlAlSel;
+  if(!id){ if(typeof gwShowToast==="function") gwShowToast("Tap the book you read, or type the new one"); return; }
+  // One book identity, copied to each listener's shelf under the same id — status,
+  // points and trophies stay theirs alone.
+  const src=isNew?{title:t,size:_rlAlSize,totalPages:null}
+                 :(()=>{ const b=((readingLog[kid]||{}).books||{})[id]; return b?{title:b.title,size:b.size,totalPages:b.totalPages||null}:null; })();
+  if(!src){ if(typeof gwShowToast==="function") gwShowToast("Tap the book you read, or type the new one"); return; }
+  const withMap={}; who.forEach(k=>withMap[k]=true);
+  const title=src.title||"book";
+  let paid=0;
+  who.forEach((k,i)=>{
+    if(!readingLog[k]) readingLog[k]={};
+    if(!readingLog[k].books) readingLog[k].books={};
+    let b=readingLog[k].books[id];
+    if(!b){
+      const cur=rlCurrent(k); if(cur) _rlSetBook(k,cur.id,{status:"upnext"});
+      b={title:src.title,size:src.size,totalPages:src.totalPages,status:"reading",addedBy:"mom",addedTs:nowTs(),aloud:true};
+      readingLog[k].books[id]=b;
+      if(db) db.ref("readingLog/"+k+"/books/"+id).set(b);
     }
-    _rlSetBook(kid,id,{status:"done",doneTs:nowTs(),doneDay:d,donePts:pts,finishClaim:null});
-    setTimeout(()=>{ try{_showCelebration(kid,cap(kid)+" finished "+title+"!",{big:true,occasion:"session",points:pts});}catch(e){} },300);
-  }
-  if(ctx.pendingKey&&readingLog[kid].pending){ delete readingLog[kid].pending[ctx.pendingKey]; if(db) db.ref("readingLog/"+kid+"/pending/"+ctx.pendingKey).remove(); }
+    const first=!b.lastReadTs;
+    if(who.length>1||_rlWith(b).length) _rlSetBook(k,id,{with:withMap});
+    if(!readingLog[k].entries) readingLog[k].entries={};
+    const eid="e_"+(base+i).toString(36)+Math.floor(Math.random()*1000);
+    const e={bookId:id,ts:nowTs(),day:d,source:"aloud",by:"mom"};
+    if(pg>0) e.toPage=pg;
+    if(first) e.firstRead=true;
+    readingLog[k].entries[eid]=e;
+    if(db) db.ref("readingLog/"+k+"/entries/"+eid).set(e);
+    _rlSetBook(k,id,{lastReadTs:base+i,aloud:true});
+    if(finish){
+      // Her confirm IS the approval — same shape as rlApproveFinish, at each kid's own
+      // aloud rate. donePts is stored per kid so ↩ un-finish reverses what THEY were paid.
+      const pts=rlAloudPts(b.size,k);
+      const tid="read_"+id;
+      if(typeof mintTrophy==="function"&&typeof hasTrophy==="function"&&!hasTrophy(k,tid)){
+        mintTrophy(k,tid,{type:"read",size:b.size||"little",key:id,name:title,ts:nowTs(),points:pts,aloud:true});
+        if(pts>0&&typeof bankDirect==="function") bankDirect(k,pts,'🎧 Read together: "'+title+'"');
+      }
+      _rlSetBook(k,id,{status:"done",doneTs:nowTs(),doneDay:d,donePts:pts,finishClaim:null});
+      paid+=pts;
+    }
+  });
+  if(ctx.pendingKey&&(readingLog[kid]||{}).pending){ delete readingLog[kid].pending[ctx.pendingKey]; if(db) db.ref("readingLog/"+kid+"/pending/"+ctx.pendingKey).remove(); }
+  const names=who.map(cap).join(who.length>2?", ":" & ");
   rlAloudClose();
-  if(typeof gwShowToast==="function") gwShowToast(finish?("🏁 "+title+" — finished together!"):("🎧 Read-aloud logged"+(pg>0?" · page "+pg:"")));
+  if(finish) setTimeout(()=>{ try{_showCelebration(kid,names+" finished "+title+"!",{big:true,occasion:"session",points:paid});}catch(e){} },300);
+  if(typeof gwShowToast==="function") gwShowToast(finish?("🏁 "+title+" — finished with "+names+"!"):("🎧 Read-aloud logged for "+names+(pg>0?" · page "+pg:"")));
   renderAll();
 }
 let _rlNbCtx=null; // {kid,pendingKey,day} while the ask-for-a-book dialog is up
