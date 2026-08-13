@@ -6758,23 +6758,9 @@ function renderMomsDay(el){
   const isSchoolDay=DAYS.indexOf(today)>=0&&!brk;
   const wn=(typeof currWeekNum==="function")?currWeekNum():null;
 
-  // School blocks that need Mom, still unchecked today. Combined blocks
-  // (same groupId) collapse to one row listing every kid in the group.
-  const momBlocks=[];
-  try{
-    const byKey={};
-    getActiveTasks().forEach(t=>{
-      if(!t||t.mom!=="required") return;
-      if(effectiveDay(t)!==today) return;
-      if(String(t.id).endsWith("_c")||t._eowOverflow) return;
-      if(/lunch/i.test(t.title||"")) return;
-      if(checked[t.id]) return;
-      const key=t.groupId||t.id;
-      if(byKey[key]){ if(byKey[key].kids.indexOf(t.who)<0){ byKey[key].kids.push(t.who); byKey[key].tasks.push(t); } return; }
-      byKey[key]={title:t.title||"",kids:[t.who],tasks:[t]};
-      momBlocks.push(byKey[key]);
-    });
-  }catch(e){}
+  // NOTE: school blocks that need Mom are deliberately NOT repeated up in the
+  // "Now — needs you" card — 📖 Mom's school schedule below is the one place
+  // they live, with the same taskCards and check-offs.
   const morningWaiting=isSchoolDay?SL_KIDS.filter(k=>{ try{ return !morningComplete(k,today); }catch(e){ return false; } }):[];
 
   let h='<div style="font-family:\'DM Sans\',sans-serif;padding-bottom:20px">';
@@ -6828,15 +6814,6 @@ function renderMomsDay(el){
         +'<button onclick="kitMarkPrep(\''+s.iso+'\',\''+s.mid+'_'+s.idx+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#ea580c;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Done</button></div>';
     });
   }catch(e){}
-  if(momBlocks.length){
-    nowN+=momBlocks.length;
-    h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:4px 0 6px">📖 School with Mom</div>';
-    momBlocks.forEach(b=>{
-      h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fdf2f4;border-left:3px solid #b5394a;border-radius:8px;margin-bottom:6px">'
-        +'<span style="flex:1;font-size:13px;font-weight:700">'+esc(b.title)+'</span>'
-        +b.tasks.map(t2=>'<button onclick="tapTask(\''+t2.id+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid #16a34a;background:#fff;color:#15803d;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">✓ '+cap(t2.who)+'</button>').join('')+'</div>';
-    });
-  }
   if(morningWaiting.length){
     nowN++;
     h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fffbeb;border-left:3px solid #f59e0b;border-radius:8px;margin-bottom:6px">'
@@ -6887,7 +6864,7 @@ function renderMomsDay(el){
       });
     }
   }catch(e){}
-  if(!nowN) h+='<div style="font-size:12px;color:var(--muted);padding:4px 0 8px">No school blocks or routines waiting on you right now. 🎉</div>';
+  if(!nowN) h+='<div style="font-size:12px;color:var(--muted);padding:4px 0 8px">Nothing waiting on you right now — school is on the schedule below. 🎉</div>';
   h+=_boardClaimsHTML();
   h+='</div></div>';
 
@@ -11947,7 +11924,18 @@ function _rlSetBook(kid,id,patch){
   Object.assign(b,patch);
   if(db) db.ref("readingLog/"+kid+"/books/"+id).update(patch);
 }
-function rlOpenAdd(){ if(!momHere()) return; rlAddOpen=true; renderAll(); setTimeout(()=>{const i=document.getElementById("rl-add-title"); if(i) i.focus();},50); }
+// Rotation kids (Lucy) read little board/picture books, so their shelf defaults to
+// 🌱 Mini (5 ⭐); everyone else still defaults to 🐣 Little. Mom can always tap another size.
+function rlDefaultSize(kid){ const k=readingLog[kid]||{};
+  if(k.defaultSize&&RL_SIZES[k.defaultSize]) return k.defaultSize;
+  return (k.mode==="rotation")?"mini":"little"; }
+function rlSetDefaultSize(kid,sz){ if(!momHere()||!RL_SIZES[sz]) return;
+  if(!readingLog[kid]) readingLog[kid]={};
+  readingLog[kid].defaultSize=sz;
+  if(db) db.ref("readingLog/"+kid+"/defaultSize").set(sz);
+  rlAddSize=sz; renderAll();
+  if(typeof gwShowToast==="function") gwShowToast(RL_SIZES[sz].ic+" New books start as "+RL_SIZES[sz].nm); }
+function rlOpenAdd(kid){ if(!momHere()) return; rlAddOpen=true; rlAddSize=rlDefaultSize(kid); renderAll(); setTimeout(()=>{const i=document.getElementById("rl-add-title"); if(i) i.focus();},50); }
 function rlCancelAdd(){ rlAddOpen=false; rlAddSize="little"; renderAll(); }
 // Size pick updates classes in place (NO renderAll — a rebuild would wipe the typed title).
 function rlPickSize(sz){ rlAddSize=sz; document.querySelectorAll(".rl-size").forEach(el=>el.classList.toggle("on",el.getAttribute("data-sz")===sz)); }
@@ -12037,6 +12025,14 @@ function _rlCardHTML(kid,momView){
       h+='<div style="display:flex;align-items:center;gap:8px;margin:2px 0 8px;font-size:11.5px">'+
         '<span style="flex:1">🔄 Little-reader rotation <span class="rl-hint">(4 re-reads + a new one, logged by you)</span></span>'+
         '<button style="border-color:'+(_rotOn?'#86efac':'var(--border)')+';color:'+(_rotOn?'#15803d':'var(--muted)')+';background:'+(_rotOn?'#f0fdf4':'#fff')+'" onclick="rlToggleRotation(\''+kid+'\')">'+(_rotOn?'✓ On':'Off')+'</button></div>';
+      // Which size a brand-new book starts at for THIS kid — Lucy's board books are
+      // Mini, Lincoln's chapter books are Big. Mom can still change any book after.
+      const _defSz=rlDefaultSize(kid);
+      h+='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 8px;font-size:11.5px">'+
+        '<span>📐 New books start as</span>'+
+        RL_ORDER.map(sz=>{ const S=RL_SIZES[sz]; const on=_defSz===sz;
+          return '<span onclick="rlSetDefaultSize(\''+kid+'\',\''+sz+'\')" style="cursor:pointer;padding:3px 9px;border-radius:12px;border:1.5px solid '+(on?'#93c5fd':'var(--border)')+';background:'+(on?'#eff6ff':'#fff')+';font-weight:'+(on?'800':'600')+'">'+S.ic+' '+S.nm+'</span>';
+        }).join('')+'</div>';
     }
     // finish claims first — the "make it official" moment: ✓ mints the sized trophy,
     // pays size points to the claim day, and fires the confetti.
@@ -12076,7 +12072,7 @@ function _rlCardHTML(kid,momView){
       h+='<button class="rl-cancel" onclick="rlCancelAdd()">cancel</button></div>';
       h+='<div class="rl-hint" style="margin-top:4px">no pages = a “just done” book — finishing is a tap, no page tracking</div></div>';
     } else {
-      h+='<div style="text-align:center;margin-top:8px"><button class="rl-save" onclick="rlOpenAdd()">+ Add a book</button></div>';
+      h+='<div style="text-align:center;margin-top:8px"><button class="rl-save" onclick="rlOpenAdd(\''+kid+'\')">+ Add a book</button></div>';
     }
     h+='</div>';
   }
@@ -12132,7 +12128,7 @@ function rlOpenRotation(kid,opts){
   const ranked=_rlRotRank(kid);
   _rlRotCtx={kid,pendingKey:opts.pendingKey||null,day:opts.day||day};
   _rlRotSel=new Set(ranked.slice(0,4).map(b=>b.id));
-  _rlRotSize="mini";
+  _rlRotSize=rlDefaultSize(kid);   // same per-kid default as the shelf form
   _rlRotPaint();
 }
 function _rlRotPaint(){
@@ -12255,7 +12251,7 @@ function rlNoBookSave(){
   const pgs=parseInt((document.getElementById("rl-nb-pages")||{}).value,10)||0;
   if(!t){ if(typeof gwShowToast==="function") gwShowToast("Type the book’s name first"); return; }
   const id=_bookSlug(t)+"_"+Date.now().toString(36);
-  const rec={title:t,size:"little",sizePending:true,addedBy:"kid",totalPages:pgs>0?pgs:null,
+  const rec={title:t,size:rlDefaultSize(kid),sizePending:true,addedBy:"kid",totalPages:pgs>0?pgs:null,
     status:rlCurrent(kid)?"upnext":"reading",addedTs:nowTs()};
   if(!readingLog[kid]) readingLog[kid]={};
   if(!readingLog[kid].books) readingLog[kid].books={};
