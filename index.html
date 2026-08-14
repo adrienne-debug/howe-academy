@@ -10372,6 +10372,12 @@ function getCarryOverPool(){
 // never carried across weeks as _c (no make-up value). Driven by the subject card's
 // noCarry flag (Subjects editor → "If Missed → Drops that day"); reflex stays hardcoded
 // so tasks that predate the flag keep their old behavior.
+// tracking==="daily" counts too. Generation already treats daily work as day-bound
+// (gwCarryFromDrops' _dayBound), but this only checked noCarry — so a subject marked
+// Daily WITHOUT the flag was day-bound at generation and then swept forward anyway by
+// the cascade. That doubled it up on later days: 2026-08-14 Ellis' Independent Reading
+// (tracking daily, no noCarry) had Mon/Tue/Wed cascade onto Thu/Fri/Sat — two on Friday,
+// two on Saturday. Both definitions must agree or a Daily subject needs BOTH switches set.
 function subjNoCarry(t){
   if(!t) return false;
   if(t.subjectKey==="reflex"||/reflex/i.test(t.title||"")) return true;
@@ -10383,7 +10389,7 @@ function subjNoCarry(t){
   if(t.subjectKey==="retrieval"||/_retr_/.test(t.id||"")) return true;
   const cs=currData&&currData.subjects&&currData.subjects[t.who];
   const s=(cs&&t.subjectKey)?cs[t.subjectKey]:null;
-  return !!(s&&s.noCarry);
+  return !!(s&&(s.noCarry||s.tracking==="daily"));
 }
 
 function setHistTab(t){ histTab=t; const el=document.getElementById("content"); if(el&&(tab==="history"||(tab==="schedule"&&schedShowHistory))) renderHistory(el); }
@@ -34065,8 +34071,11 @@ function gwRolloverReportHTML(tasks,cursors,targetWeekNum){
     for(const sk of keys){
       const s=subs[sk]||{};
       if((s.rules||"").includes("first")||(s.rules||"").includes("last")) continue; // daily bookends
-      // Day-bound subjects (noCarry/reflex) never roll — their misses are in the drops line
-      if(s.noCarry||sk==="reflex"||/reflex/i.test(s.display||sk)) continue;
+      // Day-bound subjects (noCarry/reflex/daily) never roll — their misses are in the
+      // drops line. tracking==="daily" is here for the same reason as in subjNoCarry: a
+      // subject marked Daily without the noCarry flag was being projected as rolling
+      // forward when the cascade will never actually roll it.
+      if(s.noCarry||s.tracking==="daily"||sk==="reflex"||/reflex/i.test(s.display||sk)) continue;
       const missed=missedBy[sk]||[];
       const nx=nextBy[sk]||{n:0,cu:0};
       const cursor=(cursors&&cursors[kid]&&cursors[kid][sk]!==undefined)?cursors[kid][sk]:computeSubjectCursor(kid,sk);
