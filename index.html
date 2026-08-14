@@ -6644,6 +6644,54 @@ function mcCadToggleDay(id,idx){
   days.sort(function(a,b){return a-b;});
   mcSetCad(id,days.length?("wk:"+days.join(",")):"daily");
 }
+// A mom chore can belong to a time of day, or to none — "some could stay on a chores
+// list if timing isn't time specific". Slotted ones live in the ☀️/🌤/🌙 checklist,
+// unslotted ones stay on the ongoing list. Every chore is in exactly one place.
+let mpSlot=null;   // null = follow the clock; a value = she tapped back to a slot
+const MC_SLOTS={morning:{ic:"☀️",nm:"Morning"},afternoon:{ic:"🌤",nm:"Afternoon"},night:{ic:"🌙",nm:"Night"}};
+const MC_SLOT_ORDER=["morning","afternoon","night"];
+function mcSlotOf(c){ const v=(c||{}).slot; return MC_SLOTS[v]?v:""; }
+function mcSetSlot(id,slot){
+  if(!momHere()) return;
+  const c=mcAll()[id]; if(!c) return;
+  const next=(mcSlotOf(c)===slot)?"":slot;          // tapping the current slot clears it
+  c.slot=next;
+  if(db) db.ref("momChores/"+id+"/slot").set(next||null);
+  const el=document.getElementById("content"); if(el) renderMomsPlan(el);
+}
+// Which part of the day it is now. Morning until noon, afternoon until 5, then night.
+function mpSlotAuto(){ const hr=new Date().getHours(); return hr<12?"morning":(hr<17?"afternoon":"night"); }
+function mpSlotNow(){ return MC_SLOTS[mpSlot]?mpSlot:mpSlotAuto(); }
+function mpSetSlot(v){ mpSlot=(mpSlotNow()===v)?null:v; const el=document.getElementById("content"); if(el) renderMomsPlan(el); }
+// Starters, taken from the Prep tab's 🌅 Daily Basics (hydration before coffee, coffee
+// + creatine + egg, the adrenal cocktail's mid-AM and ~2pm timing) and the luteal card's
+// evening magnesium. Offered as a tap, never written for her.
+const MC_SEEDS={
+  morning:["💧 Big water + electrolyte (before coffee)","☕ Coffee + 5 g creatine + 1 egg","🧂 Adrenal cocktail #1 (mid-morning)","💊 Vitamins"],
+  afternoon:["🧂 Adrenal cocktail #2 (~2pm)","💧 Water check — halfway to 60 oz","🍽 Protein with lunch"],
+  night:["💊 Magnesium","🌙 Kitchen close-down","💧 Last water + tomorrow's bottle","🛏 Lights out — cooler room"]
+};
+function mcSeedSlot(slot){
+  if(!momHere()||!MC_SEEDS[slot]) return;
+  const have=Object.values(mcAll()).map(c=>String((c||{}).label||"").toLowerCase());
+  const add=MC_SEEDS[slot].filter(l=>have.indexOf(l.toLowerCase())<0);
+  if(!add.length){ if(typeof gwShowToast==="function") gwShowToast("Those are already on your list"); return; }
+  if(!confirm("Add "+add.length+" starter "+MC_SLOTS[slot].nm.toLowerCase()+" item"+(add.length>1?"s":"")+"? You can rename or remove any of them after."))return;
+  mcEnsure();
+  const base=Date.now();
+  add.forEach((label,i)=>{
+    const id="mc"+(base+i).toString(36);
+    momChoresData[id]={label:label,cad:"daily",slot:slot,ts:base+i};
+    if(typeof db!=='undefined'&&db) db.ref('momChores/'+id).set(momChoresData[id]);
+  });
+  try{HA_LS.setItem('ha_momchores',JSON.stringify(momChoresData));}catch(e){}
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+  if(typeof gwShowToast==="function") gwShowToast("Added "+add.length+" to "+MC_SLOTS[slot].nm);
+}
+function mcDueIn(slot,today){
+  const list=mcAll();
+  return mcDueToday(today).filter(id=>mcSlotOf(list[id])===slot);
+}
 function mcDueToday(today){
   const list=mcAll();
   return Object.keys(list)
@@ -6651,6 +6699,80 @@ function mcDueToday(today){
     .sort(function(a,b){ return (list[a].ts||0)-(list[b].ts||0); });
 }
 function mcToggleManage(){ mcManage=!mcManage; const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
+// ── 🏡 Mom's day — three stacked lists side by side ────────────────────────
+// Her design: the active time of day rises to the top with its own checklist, the
+// non-time-specific chores sit beside it, and today's to-dos + the shopping list
+// stack in the third column. Each time-of-day toggle carries done/total so she can
+// jump back to Morning at 4pm and see what's still open.
+function _mcRow(id,c,iso){
+  const done=mcDoneOn(iso,id), cad=c.cad||"daily";
+  return '<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;background:'+(done?'#f0fdf4':'#f8f7f4')+';border:1.5px solid '+(done?'#86efac':'#e8e4de')+';border-radius:9px;margin-bottom:5px">'
+    +'<div onclick="mcToggle(\''+id+'\')" style="cursor:pointer;width:19px;height:19px;border-radius:50%;border:2px solid '+(done?'#16a34a':'#A0622D')+';background:'+(done?'#16a34a':'#fff')+';color:'+(done?'#fff':'transparent')+';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;font-weight:700">'+(done?'✓':'')+'</div>'
+    +'<div onclick="mcToggle(\''+id+'\')" style="cursor:pointer;flex:1;min-width:0;font-size:12.5px;font-weight:600;color:'+(done?'#6b6560':'#1a1a1a')+';'+(done?'text-decoration:line-through':'')+'">'+esc(c.label)+'</div>'
+    +(cad!=="daily"?'<span style="font-size:9.5px;font-weight:700;color:#9ca3af;white-space:nowrap">'+cadLabel(cad)+'</span>':'')
+    +'</div>';
+}
+function momDayStripHTML(iso,today){
+  const list=mcAll();
+  const slotNow=mpSlotNow();
+  const colHd=(ic,nm,extra)=>'<div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:#6b6560;margin:0 0 7px">'+ic+' '+nm+(extra||'')+'</div>';
+  let h='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
+  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#6B4C93;color:#fff;font-weight:800;font-size:13px"><span>🏡</span> My day'
+    +'<button onclick="mcToggleManage()" style="margin-left:auto;border:none;background:rgba(255,255,255,'+(mcManage?'0.45':'0.2')+');color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">'+(mcManage?'✓ Done editing':'✎ Edit')+'</button></div>';
+  h+='<div style="padding:10px 12px 12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:12px;align-items:start">';
+
+  // ── column 1: the time of day, with the current one already chosen
+  h+='<div>';
+  h+='<div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap">';
+  MC_SLOT_ORDER.forEach(sl=>{
+    const S=MC_SLOTS[sl], ids=mcDueIn(sl,today), dn=ids.filter(id=>mcDoneOn(iso,id)).length, on=slotNow===sl;
+    const all=ids.length&&dn===ids.length;
+    h+='<span onclick="mpSetSlot(\''+sl+'\')" style="cursor:pointer;flex:1;text-align:center;padding:5px 6px;border-radius:10px;border:1.5px solid '+(on?'#2B7A78':'var(--border)')+';background:'+(on?'#e6f4f3':'#fff')+';font-size:11px;font-weight:'+(on?'800':'600')+';color:'+(on?'#2B7A78':'#6b7280')+'">'+S.ic+' '+S.nm
+      +'<div style="font-size:10px;font-weight:800;color:'+(all?'#16a34a':(on?'#2B7A78':'#9ca3af'))+'">'+dn+'/'+ids.length+'</div></span>';
+  });
+  h+='</div>';
+  const cur=mcDueIn(slotNow,today);
+  h+=cur.length?cur.map(id=>_mcRow(id,list[id],iso)).join('')
+    :'<div style="font-size:12px;color:var(--muted);padding:2px 0 6px">Nothing set for '+MC_SLOTS[slotNow].nm.toLowerCase()+' yet — ✎ Edit to slot a chore you already have, or:</div>'
+      +'<button onclick="mcSeedSlot(\''+slotNow+'\')" style="width:100%;padding:8px 10px;border-radius:9px;border:1.5px dashed #6B4C93;background:#f5f3ff;color:#6B4C93;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✨ Start with the '+MC_SLOTS[slotNow].nm.toLowerCase()+' basics</button>';
+  h+='</div>';
+
+  // ── column 2: everything with no particular time
+  const loose=mcDueToday(today).filter(id=>!mcSlotOf(list[id]));
+  const looseDone=loose.filter(id=>mcDoneOn(iso,id)).length;
+  h+='<div>'+colHd('🧹','Ongoing',loose.length?'<span style="margin-left:auto;color:#A0622D">'+looseDone+'/'+loose.length+'</span>':'');
+  h+=loose.length?loose.map(id=>_mcRow(id,list[id],iso)).join('')
+    :'<div style="font-size:12px;color:var(--muted);padding:2px 0 6px">Nothing of yours due today. 🎉</div>';
+  h+='<div style="display:flex;gap:5px;margin-top:6px">'
+    +'<input type="text" id="mc-new" placeholder="Add a chore…" onkeydown="if(event.key===\'Enter\')mcAdd()" style="flex:1;min-width:0;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12.5px;font-family:\'DM Sans\',sans-serif">'
+    +'<button onclick="mcAdd()" style="padding:8px 12px;border-radius:9px;border:none;background:#A0622D;color:#fff;font-size:12.5px;font-weight:700;cursor:pointer">＋</button></div>';
+  h+='</div>';
+
+  // ── column 3: today's to-dos, then the shopping list
+  const todos=((momdayData[iso]||{}).todos)||{};
+  const tids=Object.keys(todos).sort((a,b)=>(todos[a].ts||0)-(todos[b].ts||0));
+  const tDone=tids.filter(id=>todos[id].done).length;
+  h+='<div>'+colHd('📝','To-do',tids.length?'<span style="margin-left:auto;color:#3A7D44">'+tDone+'/'+tids.length+'</span>':'');
+  tids.forEach(id=>{
+    const t=todos[id];
+    h+='<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;background:'+(t.done?'#f0fdf4':'#f8f7f4')+';border:1.5px solid '+(t.done?'#86efac':'#e8e4de')+';border-radius:9px;margin-bottom:5px">'
+      +'<div onclick="momdayToggleTodo(\''+id+'\')" style="cursor:pointer;width:19px;height:19px;border-radius:50%;border:2px solid '+(t.done?'#16a34a':'#2B7A78')+';background:'+(t.done?'#16a34a':'#fff')+';color:'+(t.done?'#fff':'transparent')+';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;font-weight:700">'+(t.done?'✓':'')+'</div>'
+      +'<div onclick="momdayToggleTodo(\''+id+'\')" style="cursor:pointer;flex:1;min-width:0;font-size:12.5px;font-weight:600;color:'+(t.done?'#6b6560':'#1a1a1a')+';'+(t.done?'text-decoration:line-through':'')+'">'+esc(t.text)+'</div>'
+      +'<button onclick="momdayDelTodo(\''+id+'\')" style="border:none;background:none;color:#9ca3af;font-size:13px;cursor:pointer;padding:1px 3px">✕</button></div>';
+  });
+  h+='<div style="display:flex;gap:5px;margin-top:'+(tids.length?'6':'0')+'px">'
+    +'<input type="text" id="md-todo-new" placeholder="Add for today…" onkeydown="if(event.key===\'Enter\')momdayAddTodo()" style="flex:1;min-width:0;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12.5px;font-family:\'DM Sans\',sans-serif">'
+    +'<button onclick="momdayAddTodo()" style="padding:8px 12px;border-radius:9px;border:none;background:#3A7D44;color:#fff;font-size:12.5px;font-weight:700;cursor:pointer">＋</button></div>';
+  // shopping sits under the to-dos, in the same column
+  h+='<div style="margin-top:10px;padding-top:9px;border-top:1px dashed var(--border)">'+colHd('🛒','Shopping','')
+    +'<button onclick="mpGoto(\'meals\')" style="width:100%;padding:8px 10px;border-radius:9px;border:1.5px solid #cbd5e1;background:#fff;color:#2B7A78;font-size:12.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:left">🛒 Open the shopping list →</button>'
+    +(kitSettings.orderDay===today?'<div style="font-size:10.5px;color:#b45309;font-weight:700;margin-top:4px">📦 Today is order day</div>':'')
+    +'</div>';
+  h+='</div>';
+
+  h+='</div></div>';
+  return h;
+}
 function momChoresCardHTML(iso,today){
   const list=mcAll();
   const all=Object.keys(list).sort(function(a,b){ return (list[a].ts||0)-(list[b].ts||0); });
@@ -6675,6 +6797,12 @@ function momChoresCardHTML(iso,today){
         +MC_DAYL.map(function(L,i){ const on=days.indexOf(i)>=0;
           return '<span onclick="mcCadToggleDay(\''+id+'\','+i+')" style="cursor:pointer;font-size:10px;font-weight:800;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;border:1.5px solid '+(on?'#A0622D':'#e5e7eb')+';background:'+(on?'#A0622D':'#fff')+';color:'+(on?'#fff':'#9ca3af')+'">'+L+'</span>'; }).join('')
         +'<span onclick="mcSetCad(\''+id+'\',\'2w\')" style="cursor:pointer;font-size:10px;font-weight:800;padding:3px 9px;border-radius:9px;border:1.5px solid '+(cad==="2w"?'#A0622D':'#e5e7eb')+';background:'+(cad==="2w"?'#A0622D':'#fff')+';color:'+(cad==="2w"?'#fff':'#6b7280')+'">2 wks</span>'
+        +'</div>'
+        +'<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-top:5px">'
+        +'<span style="font-size:9.5px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.3px">time of day</span>'
+        +MC_SLOT_ORDER.map(function(sl){ const S=MC_SLOTS[sl], on=mcSlotOf(c)===sl;
+          return '<span onclick="mcSetSlot(\''+id+'\',\''+sl+'\')" style="cursor:pointer;font-size:10px;font-weight:800;padding:3px 9px;border-radius:9px;border:1.5px solid '+(on?'#2B7A78':'#e5e7eb')+';background:'+(on?'#2B7A78':'#fff')+';color:'+(on?'#fff':'#6b7280')+'">'+S.ic+' '+S.nm+'</span>'; }).join('')
+        +(mcSlotOf(c)?'':'<span style="font-size:9.5px;color:#9ca3af">— none: stays on the ongoing list</span>')
         +'</div></div>';
     });
     if(!all.length) h+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Nothing here yet — add your first chore below.</div>';
@@ -7283,30 +7411,13 @@ function renderMomsDay(el){
     }
   }catch(e){}
 
-  // ── 📝 Mom's list — her own day checklist at momday/{iso}/todos ──
-  try{
-    const todos=((momdayData[iso]||{}).todos)||{};
-    const tids=Object.keys(todos).sort((a,b)=>(todos[a].ts||0)-(todos[b].ts||0));
-    const doneN=tids.filter(id=>todos[id].done).length;
-    h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
-      +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#3A7D44;color:#fff;font-weight:800;font-size:13px"><span>📝</span> Mom\'s list'
-      +(tids.length?'<span style="margin-left:auto;font-size:11px;font-weight:700;opacity:.85">'+doneN+'/'+tids.length+'</span>':'')+'</div>'
-      +'<div style="padding:10px 14px 12px">';
-    tids.forEach(id=>{
-      const t=todos[id];
-      h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:'+(t.done?'#f0fdf4':'#f8f7f4')+';border:1.5px solid '+(t.done?'#86efac':'#e8e4de')+';border-radius:9px;margin-bottom:6px">'
-        +'<div onclick="momdayToggleTodo(\''+id+'\')" style="cursor:pointer;width:20px;height:20px;border-radius:50%;border:2px solid '+(t.done?'#16a34a':'#2B7A78')+';background:'+(t.done?'#16a34a':'#fff')+';color:'+(t.done?'#fff':'transparent')+';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;font-weight:700">'+(t.done?'✓':'')+'</div>'
-        +'<div onclick="momdayToggleTodo(\''+id+'\')" style="cursor:pointer;flex:1;font-size:13px;font-weight:600;color:'+(t.done?'#6b6560':'#1a1a1a')+';'+(t.done?'text-decoration:line-through':'')+'">'+esc(t.text)+'</div>'
-        +'<button onclick="momdayDelTodo(\''+id+'\')" style="border:none;background:none;color:#9ca3af;font-size:14px;cursor:pointer;padding:2px 4px">✕</button></div>';
-    });
-    h+='<div style="display:flex;gap:8px;margin-top:'+(tids.length?'8':'0')+'px">'
-      +'<input type="text" id="md-todo-new" placeholder="Add something for today…" onkeydown="if(event.key===\'Enter\')momdayAddTodo()" style="flex:1;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
-      +'<button onclick="momdayAddTodo()" style="padding:9px 16px;border-radius:9px;border:none;background:#3A7D44;color:#fff;font-size:13px;font-weight:700;cursor:pointer">＋ Add</button></div>';
-    h+='</div></div>';
-  }catch(e){}
+  // ── 🏡 My day — time-of-day checklist · ongoing chores · to-do + shopping ──
+  try{ h+=momDayStripHTML(iso,today); }catch(e){}
+  // The full chores card becomes the EDITOR (cadence + time of day); it only appears
+  // while editing, because the strip above now carries the day-to-day list.
+  if(mcManage){ try{ h+=momChoresCardHTML(iso,today); }catch(e){} }
 
-  // ── 🧹 Mom's chores — today's slice of her recurring rhythm ─────
-  try{ h+=momChoresCardHTML(iso,today); }catch(e){}
+  // (🧹 chores + 📝 list now live in the 🏡 My day strip above)
 
   // ── 💳 Bills — every reminder with its next due date; add/paid/remove ──
   try{
@@ -8408,6 +8519,7 @@ function renderMPPrep(el){
     <div class="card">
       <div class="head h-orange"><span>🌅</span> Daily Basics — every day</div>
       <div class="body">
+        <div class="note teal" style="margin-bottom:10px">✅ These are check-off-able on <b>🏡 My day</b> (Today tab) — the ☀️/🌤/🌙 lists. This card is the why behind them.</div>
         <div class="rowi"><span class="box"></span><div>☕ <b>Morning:</b> 1 cup coffee + <b>5 g creatine</b> + <b>1 egg</b> <span class="amt">(blended in)</span></div></div>
         <div class="rowi" style="background:#FFFBEA;border-radius:6px;padding:8px 8px"><span class="box"></span><div>💧 <b>⭐ Hydration FIRST THING:</b> big water + electrolyte before coffee · a glass with every juice · aim <b>~60 oz</b>.<br>🧂 <b>Adrenal Cocktail:</b> reintroduce carefully — <b>1/day week 1, watch for rage</b> → if calm, build to <b>2/day</b> (mid-AM + ~2pm). Don't double with the Walmart packets.</div></div>
         <div class="rowi"><span class="box"></span><div>💊 <b>Magnesium — as needed:</b> only if backed up 2–3 days. Green juice + chia + pepitas + almonds already give plenty; water + fiber are what keep you regular.</div></div>
