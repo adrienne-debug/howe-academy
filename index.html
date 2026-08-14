@@ -21341,6 +21341,14 @@ function cbHasGridCells(kid,sk){
   return false;
 }
 // Card-only sequenced subjects for a kid (candidates for "build into grid")
+function cbOtherSubjects(kid,cols,cardOnly){
+  const subs=((currData||{}).subjects||{})[kid]||{};
+  const skip={};
+  (cols||[]).forEach(k=>skip[k]=1);
+  (cardOnly||[]).forEach(k=>skip[k]=1);
+  return Object.keys(subs).filter(sk=>subs[sk]&&!skip[sk])
+    .sort((a,b)=>String((subs[a]||{}).display||a).localeCompare(String((subs[b]||{}).display||b)));
+}
 function cbCardOnlySubjects(kid){
   const subs=((currData||{}).subjects||{})[kid]||{};
   return Object.keys(subs).filter(sk=>{
@@ -22347,6 +22355,18 @@ function renderCurrGrid(el){
   // Card-only subjects: scheduling works off their card sequence, but they have no
   // grid cells — surface them here so the grid never reads as "subjects missing".
   const _cardOnly=cbCardOnlySubjects(gvKid);
+  // Daily-tracked and no-lesson-list subjects: nothing to pace, so they never had a
+  // grid column or a card-sequence chip. Since the Subjects page retired into the Grid,
+  // that left notebooks, drills and read-aloud with no route to their card at all.
+  const _other=cbOtherSubjects(gvKid,cols,_cardOnly);
+  const _otherHtml=_other.length
+    ?'<div style="background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:10px;padding:8px 12px;margin:0 0 8px">'
+      +'<span style="font-size:11px;color:#5b21b6;font-weight:700">🗂 No lessons to pace — tap to open the card: </span>'
+      +_other.map(sk=>{ const _s=subs[sk]||{}, _pz=!!_s.paused;
+        return '<button onclick="ceOpenEdit(\''+gvKid+'\',\''+sk+'\')" style="margin:2px 4px 2px 0;padding:3px 10px;border-radius:12px;border:1px solid #c4b5fd;background:#fff;color:'+(_pz?'#9ca3af':'#6d28d9')+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(_pz?'⏸ ':'')+esc(_s.display||sk)+' →</button>';
+      }).join('')
+      +'<span style="font-size:10px;color:#7c3aed;display:block;margin-top:2px">Notebooks, drills, reading and anything daily — they still schedule, they just have no lessons to lay out.</span></div>'
+    :'';
   const _cardOnlyHtml=_cardOnly.length
     ?'<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:10px;padding:8px 12px;margin:0 0 8px">'
       +'<span style="font-size:11px;color:#1e40af;font-weight:700">📊 On their cards, not in the grid yet: </span>'
@@ -22355,12 +22375,12 @@ function renderCurrGrid(el){
     :'';
 
   if(!dayNums.length||!cols.length){
-    h+=_cardOnlyHtml;
+    h+=_cardOnlyHtml; h+=_otherHtml;
     h+='<div style="padding:30px;text-align:center;color:var(--muted);font-size:12px">'+cap(gvKid)+' has no lesson grid yet — build a subject in the Builder or upload Excel.</div></div>';
     el.innerHTML+=h;
     return;
   }
-  h+=_cardOnlyHtml;
+  h+=_cardOnlyHtml; h+=_otherHtml;
 
   // Deleted-but-orphaned subjects: card removed, but grid cells linger (pre-fix deletions,
   // e.g. lof/kumon). One-tap cleanup — clears Grid/Calendar/Lesson-Map, keeps history.
