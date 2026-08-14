@@ -21840,6 +21840,21 @@ function gvSubjectCols(kid){
     .sort((a,b)=>((subs[a]||{}).display||a).localeCompare((subs[b]||{}).display||b));
 }
 
+// Clear pace records left behind by deleted subjects. Nothing reads them any more —
+// paceLiveKeys skips them — so this is tidying, not a fix; the numbers are already right.
+function gvPurgePaceGhosts(){
+  if(!momModeActive&&!adminPinUnlocked) return;
+  const kid=gvKid, keys=pacePhantomKeys(kid);
+  if(!keys.length) return;
+  const ps=(paceData.subjects||{})[kid]||{};
+  const names=keys.map(sk=>(ps[sk]||{}).label||sk);
+  if(!confirm("Remove "+keys.length+" leftover pace record"+(keys.length>1?"s":"")+" for deleted subject"+(keys.length>1?"s":"")+" ("+names.join(", ")+") from "+cap(kid)+"'s plan? Their finished work stays in history.")) return;
+  keys.forEach(sk=>{ if(paceData.subjects&&paceData.subjects[kid]) delete paceData.subjects[kid][sk];
+    if(db) db.ref("pace/subjects/"+kid+"/"+sk).remove(); });
+  try{HA_LS.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
+  renderAll();
+  if(typeof gwShowToast==="function") gwShowToast("Removed "+keys.length+" leftover pace record"+(keys.length>1?"s":""));
+}
 // Clear every orphaned subject (card deleted, grid cells left behind) for the current kid.
 function gvPurgeOrphans(){
   if(!momModeActive&&!adminPinUnlocked) return;
@@ -22389,6 +22404,19 @@ function renderCurrGrid(el){
     return;
   }
   h+=_cardOnlyHtml; h+=_otherHtml;
+
+  // Pace records for subjects that no longer exist. Harmless — nothing counts them —
+  // but they are 204 lessons of a plan that isn't real, so offer the tidy-up.
+  try{
+    const _pg=pacePhantomKeys(gvKid);
+    if(_pg.length&&(momModeActive||adminPinUnlocked)){
+      const _pps=(paceData.subjects||{})[gvKid]||{};
+      h+='<div style="background:#f8fafc;border-left:4px solid #64748b;border-radius:0 10px 10px 0;padding:9px 12px;margin:0 0 8px">';
+      h+='<div style="font-size:12px;color:#334155;margin-bottom:6px"><b>'+_pg.length+' deleted subject'+(_pg.length>1?'s':'')+' still ha'+(_pg.length>1?'ve':'s')+' pace records:</b> '+_pg.map(sk=>esc((_pps[sk]||{}).label||sk)).join(", ")+'. They no longer count toward anything — this just clears the leftovers. Finished work stays in history.</div>';
+      h+='<button onclick="gvPurgePaceGhosts()" style="border:1px solid #64748b;background:#fff;color:#334155;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Clear pace leftovers</button>';
+      h+='</div>';
+    }
+  }catch(e){}
 
   // Deleted-but-orphaned subjects: card removed, but grid cells linger (pre-fix deletions,
   // e.g. lof/kumon). One-tap cleanup — clears Grid/Calendar/Lesson-Map, keeps history.
@@ -24634,10 +24662,32 @@ function paceKidPlan(k){
   for(const pk of Object.keys(plans)){ if((plans[pk].kids||[]).includes(k)) return plans[pk]; }
   return null;
 }
+// Which of a kid's pace records still describe a real subject. A deleted subject
+// leaves its pace record behind (Lincoln carried kumon/lof/ttrs_l — 204 lessons of
+// nothing), and since nothing ever advances them they read as permanently behind:
+// the chip on Mom's Plan counted three phantom subjects. Daily-tracked subjects are
+// excluded too — they have no lesson total to pace.
+// If the kid's curriculum hasn't loaded yet, show everything rather than blank the
+// page; a slow first paint must not look like a wiped plan.
+function pacePhantomKeys(kid){
+  const ps=(paceData.subjects&&paceData.subjects[kid])||{};
+  const cs=(currData&&currData.subjects&&currData.subjects[kid])||null;
+  if(!cs||!Object.keys(cs).length) return [];
+  return Object.keys(ps).filter(sk=>!cs[sk]);
+}
+function paceLiveKeys(kid){
+  const ps=(paceData.subjects&&paceData.subjects[kid])||{};
+  const cs=(currData&&currData.subjects&&currData.subjects[kid])||null;
+  const loaded=!!(cs&&Object.keys(cs).length);
+  return Object.keys(ps).filter(sk=>{
+    if(!loaded) return true;
+    const s=cs[sk];
+    return !!s&&s.tracking!=="daily";
+  });
+}
 function paceKidStatus(k){
   const kidSubjs=(paceData.subjects&&paceData.subjects[k])||{};
-  const _cs=(currData&&currData.subjects&&currData.subjects[k])||{};
-  const keys=Object.keys(kidSubjs).filter(sk=>!(_cs[sk]&&_cs[sk].tracking==="daily")&&(kidSubjs[sk].total||0)>0);
+  const keys=paceLiveKeys(k).filter(sk=>(kidSubjs[sk].total||0)>0);
   const plan=paceKidPlan(k);
   const weekNum=plan?planWeekNum(plan.start||"2026-04-20"):1;
   const totalWeeks=plan?planTotalWeeks(plan.start||"2026-04-20",plan.end||"2026-09-01"):40;
@@ -24937,10 +24987,8 @@ function paceWins(kidFilter){
   const done=[],books=[];
   for(const k of kids){
     const kidSubjs=(paceData.subjects&&paceData.subjects[k])||{};
-    const _cs=(currData&&currData.subjects&&currData.subjects[k])||{};
-    for(const sk of Object.keys(kidSubjs)){
+    for(const sk of paceLiveKeys(k)){
       const sub=kidSubjs[sk];
-      if(_cs[sk]&&_cs[sk].tracking==="daily") continue;
       const tot=sub.total||0; if(tot<=0) continue;
       let cur=0; try{cur=computeSubjectDone(k,sk);}catch(e){}
       const bks=subjectBooks(k,sk);
@@ -25058,8 +25106,7 @@ function renderPace(el){
   // ── Per-kid book progress: beginning → end of each book/subject ────────────
   const showKids=(kid==="all"||kid==="mom")?PACE_KIDS:[kid];
   showKids.forEach(k=>{
-    const kidSubjs=(paceData.subjects&&paceData.subjects[k])||{};
-    const bars=Object.keys(kidSubjs).map(sk=>subjectProgress(k,sk)).filter(Boolean);
+    const bars=paceLiveKeys(k).map(sk=>subjectProgress(k,sk)).filter(Boolean);
     if(!bars.length) return;
     bars.sort((a,b)=>(a.done-b.done)||(b.pct-a.pct)); // in-progress first, nearest-done first
     const col=PACE_KCOL[k];
