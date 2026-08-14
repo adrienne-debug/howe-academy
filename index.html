@@ -2916,6 +2916,7 @@ function showTab(t){
   mastAddMode=false; mastLogMode=false; mastLogScores={};
   document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===t||(t==="supplies"&&b.dataset.tab==="schedule")));
   if(t!=="schedule"){ schedShowAdmin=false; schedShowHistory=false; schedShowPace=false; schedShowBoard=false; schedShowPeek=false; }
+  if(t!=="moms-plan") mpDay=null;   // 🧒 Kids always reopens on TODAY — a stale peek-ahead day is the bug class that bit routine check-offs
   document.getElementById("sched-subtabs").style.display=t==="schedule"?"flex":"none";
   document.getElementById("day-tabs").style.display=["schedule","supplies"].includes(t)?"flex":"none";
   document.getElementById("kid-filter").style.display=["schedule","history","pace"].includes(t)?"flex":"none";
@@ -2931,7 +2932,9 @@ function renderSchedSubtabs(){
   el.innerHTML=
     '<button class="sched-sub'+(isSchedule?" active":"")+'" onclick="schedShowHistory=false;schedShowPace=false;schedShowAdmin=false;schedShowBoard=false;schedShowPeek=false;renderAll()">Schedule</button>'+
     '<button class="sched-sub'+(schedShowPace?" active":"")+'" onclick="toggleSchedPace()">Wins</button>'+
-    '<button class="sched-sub'+(schedShowHistory?" active":"")+'" onclick="toggleSchedHistory()">History</button>'+(momHere()?'<button class="sched-sub'+(schedShowBoard?" active":"")+'" onclick="toggleSchedBoard()">🗂 Board</button>':'')+
+    '<button class="sched-sub'+(schedShowHistory?" active":"")+'" onclick="toggleSchedHistory()">History</button>'/* 🗂 Board retired 2026-08-13 — 🧒 Kids on Mom's Plan carries all of it now.
+       To bring the tab back, restore this button:
+       +(momHere()?'<button class="sched-sub'+(schedShowBoard?" active":"")+'" onclick="toggleSchedBoard()">🗂 Board</button>':'') */+
     '<button class="sched-sub'+(schedShowAdmin?" active":"")+'" onclick="toggleSchedAdmin()">Admin</button>';
 }
 // ── In-place re-render guard ──────────────────────────────────────
@@ -4806,7 +4809,10 @@ function _boardClaimsHTML(){
 // ── 🔍 Board stat pop: tap a kid's 6/6 pill to see exactly WHICH items are
 // checked (with times) — read-only quick look, tap anywhere to close.
 function boardStatPopClose(){ const ov=document.getElementById("board-stat-pop"); if(ov) ov.remove(); }
-function boardStatPop(kid,slot){
+function boardStatPop(kid,slot,d){
+  // Mom's Plan can be looking at a different day than the Schedule tab is. Pin the
+  // global for one synchronous rebuild rather than threading `d` through ten reads.
+  if(d&&d!==day){ const _pd=day; day=d; try{ return boardStatPop(kid,slot); } finally { day=_pd; } }
   boardStatPopClose();
   const rows=[]; let title="";
   if(slot==="morning"){ title="🌅 Morning";
@@ -6346,6 +6352,15 @@ function renderMomsPlan(el){
 }
 
 let mdJumped=false; // a jump from Mom's Day → show the floating "← 🏡 Mom's Day" return pill
+// Which day the 🧒 Kids section is showing. null = today, and it RESETS to null on
+// every open — a stale "Thursday" left selected is the bug class that bit the routine
+// check-offs, so the section shouts when it isn't showing today.
+let mpDay=null;
+function mpDayNow(){ return mpDay||mdTodayName(); }
+function mpSetDay(d){
+  mpDay=(d===mdTodayName())?null:d;
+  const el=document.getElementById("content"); if(el) renderMomsPlan(el);
+}
 function mdOpenBoard(){
   mdJumped=true;
   if(tab!=="schedule") showTab("schedule");
@@ -6964,19 +6979,41 @@ function renderMomsDay(el){
 
   // ── 📋 TODAY — kids at a glance ─────────────────────────────────
   h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
-  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#2B7A78;color:#fff;font-weight:800;font-size:13px"><span>🧒</span> Kids today'
-    +'<button onclick="mdOpenBoard()" style="margin-left:auto;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">🗂 Full board</button></div>';
+  // The 🗂 Board used to hold the fuller version of this — showers, pickup rooms,
+  // chores by name, tappable pills. It all lives here now; the Board is off the nav.
+  const _kd=mpDayNow(), _kToday=(_kd===today);
+  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:'+(_kToday?'#2B7A78':'#6B4C93')+';color:#fff;font-weight:800;font-size:13px"><span>🧒</span> Kids '+(_kToday?'today':esc(cap(_kd)))
+    +(_kToday?'':'<button onclick="mpSetDay(\''+today+'\')" style="margin-left:auto;border:none;background:rgba(255,255,255,0.25);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">↩ back to today</button>')+'</div>';
+  // Day chips — peek at another day without leaving the page. Today is always marked.
+  h+='<div style="display:flex;gap:4px;flex-wrap:wrap;padding:8px 14px 2px">';
+  DAYS_ALL.forEach(d2=>{
+    const on=d2===_kd, isT=d2===today;
+    h+='<span onclick="mpSetDay(\''+d2+'\')" style="cursor:pointer;font-size:11px;font-weight:'+(on?'800':'600')+';padding:3px 9px;border-radius:12px;border:1.5px solid '+(on?'#2B7A78':'var(--border)')+';background:'+(on?'#e6f4f3':'#fff')+';color:'+(on?'#2B7A78':'#6b7280')+'">'+cap(d2).slice(0,3)+(isT?' •':'')+'</span>';
+  });
+  h+='</div>';
   h+='<div style="padding:4px 14px 8px">';
   SL_KIDS.forEach(kid=>{
     const col=SL_KCOL[kid]||"#666";
     let mT=0,mD=0,mDone=false,tc={total:0,done:0},af={due:0,done:0},ch={due:0,done:0},ev={due:0,done:0},pts=0;
+    let shower=false,pA=null,pE=null,chores=[],lost=false;
     try{
       const mSteps=morningStepsFor(kid); mT=mSteps.length;
-      for(let i=0;i<mT;i++){ if(mStepDoneOn(kid,today,i)) mD++; }
-      mDone=morningComplete(kid,today);
-      tc=_boardTaskCounts(kid,today);
-      af=mdSlotCounts("afternoon",kid,today); ch=mdSlotCounts("chores",kid,today); ev=mdSlotCounts("evening",kid,today);
-      pts=earnedDayTotal(kid,today);
+      for(let i=0;i<mT;i++){ if(mStepDoneOn(kid,_kd,i)) mD++; }
+      mDone=morningComplete(kid,_kd);
+      tc=_boardTaskCounts(kid,_kd);
+      af=mdSlotCounts("afternoon",kid,_kd); ch=mdSlotCounts("chores",kid,_kd); ev=mdSlotCounts("evening",kid,_kd);
+      pts=earnedDayTotal(kid,_kd);
+      lost=(typeof techLost==="function")&&techLost(kid,_kd);
+      // findDue/rtStepsFor read the global `day`; pin it for this read so the answers
+      // match the Board's exactly, then hand it straight back.
+      const _pd=day;
+      try{
+        day=_kd;
+        shower=!!(findDue("afternoon",kid,/shower/i)||findDue("evening",kid,/shower/i));
+        pA=findDue("afternoon",kid,/pickup|pick up/i); pE=findDue("evening",kid,/pickup|pick up/i);
+        const cs=rtStepsFor("chores",kid);
+        for(let ci=0;ci<cs.length;ci++){ if(cadDueOn(cs[ci].cad||"daily",_kd)) chores.push((cs[ci].emoji?cs[ci].emoji+" ":"")+cs[ci].label); }
+      } finally { day=_pd; }
     }catch(e){}
     let chip='';
     try{
@@ -6987,17 +7024,28 @@ function renderMomsDay(el){
         else chip='<span style="font-size:10px;font-weight:800;padding:1px 8px;border-radius:10px;background:#3b82f618;color:#3b82f6">On track</span>';
       }
     }catch(e){}
-    const seg=(lab,d2,t2,ok)=>'<span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:9px;background:'+(ok?'#f0fdf4':'#f3f4f6')+';color:'+(ok?'#166534':'#4b5563')+'">'+lab+' '+d2+'/'+t2+'</span>';
-    h+='<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid #f3f4f6">'
+    // Every pill opens the detail behind its number, the way the Board's did.
+    const seg=(lab,d2,t2,ok,slot)=>'<span onclick="boardStatPop(\''+kid+'\',\''+slot+'\',\''+_kd+'\')" style="cursor:pointer;font-size:11px;font-weight:700;padding:1px 7px;border-radius:9px;background:'+(ok?'#f0fdf4':'#f3f4f6')+';color:'+(ok?'#166534':'#4b5563')+'">'+lab+' '+d2+'/'+t2+'</span>';
+    h+='<div style="padding:8px 0;border-bottom:1px solid #f3f4f6">';
+    h+='<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px">'
       +'<b style="color:'+col+';font-size:14px;flex:0 0 60px">'+cap(kid)+'</b>'+chip
+      +(lost?'<span style="font-size:10px;font-weight:800;padding:1px 8px;border-radius:10px;background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5">🚫 No tech</span>':'')
       +'<span style="flex:1"></span>'
-      +seg("🌅",mD,mT,mDone)
-      +(isSchoolDay?seg("📅",tc.done,tc.total,tc.total&&tc.done===tc.total):'')
-      +seg("☀️",af.done,af.due,af.due&&af.done===af.due)
-      +seg("🧹",ch.done,ch.due,ch.due&&ch.done===ch.due)
-      +seg("🌙",ev.done,ev.due,ev.due&&ev.done===ev.due)
-      +'<span style="font-size:11px;font-weight:800;color:#b45309">⭐ '+pts+'</span>'
+      +seg("🌅",mD,mT,mDone,"morning")
+      +(isSchoolDay?seg("📅",tc.done,tc.total,tc.total&&tc.done===tc.total,"tasks"):'')
+      +seg("☀️",af.done,af.due,af.due&&af.done===af.due,"afternoon")
+      +seg("🧹",ch.done,ch.due,ch.due&&ch.done===ch.due,"chores")
+      +seg("🌙",ev.done,ev.due,ev.due&&ev.done===ev.due,"evening")
+      +'<span onclick="boardStatPop(\''+kid+'\',\'stars\',\''+_kd+'\')" style="cursor:pointer;font-size:11px;font-weight:800;color:#b45309">⭐ '+pts+'</span>'
       +'</div>';
+    // Shower, pickup rooms and the chores actually due — the Board's second row.
+    h+='<div style="display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:5px;font-size:11px;color:#6b6560">'
+      +'<span>🚿 '+(shower?'<b style="color:#0e7490">yes</b>':'no')+'</span>'
+      +'<span>🧺 aft <b>'+esc(pA?pA.replace(/pickup/i,"").trim():"—")+'</b></span>'
+      +'<span>🧺 eve <b>'+esc(pE?pE.replace(/pickup/i,"").trim():"—")+'</b></span>'
+      +'</div>';
+    if(chores.length) h+='<div style="margin-top:3px;font-size:11px;color:#6b6560">🧹 '+esc(chores.join(" · "))+'</div>';
+    h+='</div>';
   });
   h+='</div></div>';
 
