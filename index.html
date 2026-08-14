@@ -6748,6 +6748,93 @@ function mwSaveBP(){
   else mwToast('🫀 '+slot.toUpperCase()+' reading saved');
 }
 
+// ── ⏳ Every "waiting for your yes", gathered onto Mom's Plan ──────────────
+// Book finishes, star-store requests, extra-job asks and unit-activity claims each
+// lived on their own card — and the per-kid ones only render when that kid is the
+// one selected, so a finished book could sit unseen for days. This is a SECOND
+// DOORWAY to the same buttons: every approve/decline call below is the original
+// function, so nothing about points, trophies or claim-day fairness moves.
+function _momApprovalsHTML(){
+  let n=0,h="";
+  const hd=t=>'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:10px 0 6px">'+t+'</div>';
+  const row=(edge,bg,body,btns)=>'<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:'+bg+';border-left:3px solid '+edge+';border-radius:8px;margin-bottom:6px">'+
+    '<span style="flex:1;min-width:0;font-size:13px">'+body+'</span>'+btns+'</div>';
+  const ok=(fn,lab)=>'<button onclick="'+fn+'" style="padding:4px 10px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+lab+'</button>';
+  const no=(fn,lab)=>'<button onclick="'+fn+'" style="padding:4px 9px;border-radius:8px;border:1px solid #ef4444;background:#fff;color:#ef4444;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+lab+'</button>';
+  const who=k=>'<b style="color:'+((typeof SL_KCOL!=="undefined"&&SL_KCOL[k])||"#111827")+'">'+cap(k)+'</b>';
+
+  // 📚 a book they say they finished — the trophy is the payout, so it needs her yes
+  try{
+    let rows="";
+    SL_KIDS.forEach(k=>{
+      rlBooks(k).filter(b=>b&&b.finishClaim&&b.status!=="done").forEach(b=>{
+        n++;
+        rows+=row("#7c3aed","#faf5ff",
+          who(k)+' finished <b>'+esc(b.title)+'</b>'+(b.finishClaim.ts?' <span style="color:#6b6560;font-size:11px">'+esc(b.finishClaim.ts)+'</span>':''),
+          ok("rlApproveFinish('"+k+"','"+esc(b.id)+"')","✓ Trophy +"+rlSizePts(b.size,k)+" ⭐")+no("rlRejectFinish('"+k+"','"+esc(b.id)+"')","✗"));
+      });
+    });
+    if(rows) h+=hd("📚 Finished a book")+rows;
+  }catch(e){}
+
+  // 🙋 asking for stars for something they did off-schedule
+  try{
+    let rows="";
+    SL_KIDS.forEach(k=>{
+      prPending(k).forEach(r=>{
+        n++;
+        rows+=row("#b45309","#fffbeb",
+          who(k)+' asks for <b>'+(r.amount||0)+' ⭐</b> — '+esc(r.reason||"Extra job"),
+          ok("prApprove('"+k+"','"+esc(r.id)+"')","✓ Approve")+no("prDecline('"+k+"','"+esc(r.id)+"')","✗"));
+      });
+    });
+    if(rows) h+=hd("🙋 Asking for stars")+rows;
+  }catch(e){}
+
+  // 🛍 store: spending their own stars needs a yes, and what she owes needs handing over
+  try{
+    let rows="";
+    SL_KIDS.forEach(k=>{
+      _rwWds(k).filter(w=>w&&w.status==="pending").forEach(w=>{
+        n++;
+        rows+=row("#0e7490","#ecfeff",
+          who(k)+' wants <b>'+esc(w.note)+'</b> · '+(w.amount||0)+' ⭐',
+          ok("storeApprove('"+k+"','"+esc(w.id)+"')","✓ Yes")+no("storeDecline('"+k+"','"+esc(w.id)+"')","✗ refund"));
+      });
+      _rwWds(k).filter(w=>w&&w.status==="owed").forEach(w=>{
+        n++;
+        rows+=row("#0e7490","#f0fdfa",
+          '🎁 owed to '+who(k)+': <b>'+esc(w.note)+'</b>',
+          ok("storeGiven('"+k+"','"+esc(w.id)+"')","✓ Gave it"));
+      });
+    });
+    if(rows) h+=hd("🛍 Star Store")+rows;
+  }catch(e){}
+
+  // 🧪 unit-study activity — she looks at the project, then the points post
+  try{
+    let rows="";
+    if(typeof unitStudies!=="undefined"&&unitStudies){
+      for(const uid in unitStudies){
+        const u=unitStudies[uid]; if(!u||!u.activityClaims) continue;
+        for(const k in u.activityClaims){
+          for(const ak in (u.activityClaims[k]||{})){
+            if(((u.activityLog||{})[k]||{})[ak]) continue;
+            const act=_unitActs(u).find(a=>a&&a.key===ak); if(!act) continue;
+            const pts=unitActPoints(act);
+            n++;
+            rows+=row("#2d6a4f","#f2faf5",
+              who(k)+' · '+(u.emoji||"📘")+' <b>'+esc(act.title)+'</b>'+(pts?' <span style="color:#b45309;font-weight:800">⭐'+pts+'</span>':''),
+              ok("unitActivityApprove('"+uid+"','"+k+"','"+esc(act.key)+"')","✓ Approve")+no("unitActivityReject('"+uid+"','"+k+"','"+esc(act.key)+"')","✗"));
+          }
+        }
+      }
+    }
+    if(rows) h+=hd("🧪 Unit activity")+rows;
+  }catch(e){}
+
+  return {n:n,html:h};
+}
 function renderMomsDay(el){
   if(!el){el=document.getElementById("content");if(!el)return;}
   const today=mdTodayName();
@@ -6835,6 +6922,9 @@ function renderMomsDay(el){
     h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:10px 0 6px">⏳ Waiting for your check</div>';
     h+=waitHtml;
   }
+  // Book finishes, star-store asks, extra-job requests and unit-activity claims —
+  // the same buttons that live on their own cards, gathered where she already looks.
+  try{ const _ap=_momApprovalsHTML(); nowN+=_ap.n; h+=_ap.html; }catch(e){}
   // Load sitting in the washer too long — the nudge that saves a re-wash.
   try{
     Object.keys(laundryData).forEach(id=>{
