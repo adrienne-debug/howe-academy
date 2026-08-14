@@ -11907,6 +11907,7 @@ function storeGiven(kid,id){ if(!momHere())return; _rwSet(kid,id,{status:"given"
 // A grab with weekday(s) set OPENS on the earliest one and then stays in the pool for the rest of
 // the week until it's done — it never silently vanishes because the day passed.
 function gbDueOn(i){
+  if(!gbCooldownOver(i)) return false;        // finished recently — waiting for its next turn
   var cad=(gbList()[i]||{}).cad||"daily";
   if(cad==="daily") return true;
   var m=/^wk:(.+)$/.exec(cad); if(!m) return true;
@@ -11918,11 +11919,50 @@ function gbDueOn(i){
 // WEEK-scoped (not per-day): finishing a grab retires it for the whole week, so the same table
 // can't be wiped down five times. A new week = a new key = the pool reseeds on its own.
 function _gbKey(i){ return activeWk()+"_"+i; }
+// ── When a finished grab comes back ─────────────────────────────────────────
+// Her rule: the wait runs from the CHECK-OFF, by the item's own cadence — daily
+// returns tomorrow, a weekly with a set day returns on its next such day, a plain
+// weekly seven days on, biweekly fourteen. `last_<i>` holds a real millisecond
+// stamp; the display `ts` on the claim is a formatted string and can't do date math.
+// ⚠️ The app indexes weekdays monday=0, JS indexes them sunday=0 — hence (getDay()+6)%7.
+const _GB_DAY=86400000;
+function _gbLastDone(i){ const r=grabClaims["last_"+i]; return (r&&typeof r.doneMs==="number")?r.doneMs:0; }
+function gbCooldownOver(i,nowMs){
+  const last=_gbLastDone(i); if(!last) return true;
+  const now=(typeof nowMs==="number")?nowMs:Date.now();
+  const cad=(gbList()[i]||{}).cad||"daily";
+  const d=new Date(last);
+  if(cad==="daily") return now>=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1).getTime();
+  if(cad==="2w") return now>=last+14*_GB_DAY;
+  const m=/^wk:(.+)$/.exec(cad);
+  if(m){
+    const days=m[1].split(",").map(Number).filter(n=>!isNaN(n));
+    if(days.length){
+      for(let step=1;step<=7;step++){
+        const t=new Date(d.getFullYear(),d.getMonth(),d.getDate()+step);
+        if(days.indexOf((t.getDay()+6)%7)>=0) return now>=t.getTime();
+      }
+    }
+  }
+  return now>=last+7*_GB_DAY;                 // plain weekly, and anything unrecognised
+}
+// The claim record for THIS cycle. Once the cooldown passes, last cycle's record stops
+// counting — the grab is simply open again, for whoever gets to it.
+function gbCur(i){
+  const r=grabClaims[_gbKey(i)]||null;
+  if(r&&r.done&&gbCooldownOver(i)) return null;
+  return r;
+}
 function gbGet(i){ return grabClaims[_gbKey(i)]||null; }
 function gbHasActive(kid){ return gbList().some((g,i)=>{ var s=grabClaims[_gbKey(i)]; return s&&s.by===kid&&!s.done; }); }
 function _gbWrite(i,rec){ var k=_gbKey(i);
   if(rec===null){ delete grabClaims[k]; if(db) db.ref("grabClaims/"+k).remove(); }
   else { grabClaims[k]=rec; if(db) db.ref("grabClaims/"+k).set(rec); } }
+function _gbStampDone(i,kid){
+  const rec={doneMs:Date.now(),by:kid};
+  grabClaims["last_"+i]=rec;
+  if(db) db.ref("grabClaims/last_"+i).set(rec);
+}
 function _gbEarn(i,kid){ var g=gbList()[i]; if(!g) return;
   // Grabs get the focus-zone bonus too — they ARE the deep-clean list, so this is the lever that
   // points everyone at whatever room needs it today. (Grabs retire for the week rather than
@@ -11931,12 +11971,12 @@ function _gbEarn(i,kid){ var g=gbList()[i]; if(!g) return;
   if(_paid>0 && typeof bankDirect==="function") bankDirect(kid, _paid, (g.emoji?g.emoji+" ":"")+(g.label||"grab")+(_bonus?" (zone bonus +"+_bonus+")":""));
   if(typeof rlogAppend==="function") rlogAppend(kid,"grab",(g.emoji?g.emoji+" ":"")+(g.label||"grab")+(_bonus?" (zone bonus +"+_bonus+")":""),"on",_paid); }
 function gbPayout(i){ var g=gbList()[i]||{}; return (g.pts||0)+zoneBonusFor(g.zone,g.pts||0); }
-function gbInstant(kid,i){ var s=gbGet(i); if(s&&s.done) return; _gbWrite(i,{by:kid,done:true,ts:nowTs()}); _gbEarn(i,kid); renderAll(); if(typeof gwShowToast==="function") gwShowToast("Nice! +"+((gbList()[i]||{}).pts||0)+" ⭐"); }
-function gbClaim(kid,i){ var s=gbGet(i); if(s&&s.by&&s.by!==kid) return;
+function gbInstant(kid,i){ var s=gbCur(i); if(s&&s.done) return; _gbWrite(i,{by:kid,done:true,ts:nowTs()}); _gbStampDone(i,kid); _gbEarn(i,kid); renderAll(); if(typeof gwShowToast==="function") gwShowToast("Nice! +"+((gbList()[i]||{}).pts||0)+" ⭐"); }
+function gbClaim(kid,i){ var s=gbCur(i); if(s&&s.by&&s.by!==kid) return;
   if(gbHasActive(kid)){ if(typeof gwShowToast==="function") gwShowToast("One at a time — finish your grabbed chore first!"); return; }
   _gbWrite(i,{by:kid,done:false,ts:nowTs()}); renderAll(); }
-function gbMarkDone(kid,i){ var s=gbGet(i); if(!s||s.by!==kid||s.done) return; _gbWrite(i,{by:kid,done:true,ts:nowTs()}); _gbEarn(i,kid); renderAll(); if(typeof gwShowToast==="function") gwShowToast("Done! +"+((gbList()[i]||{}).pts||0)+" ⭐"); }
-function gbLetGo(kid,i){ var s=gbGet(i); if(!s||s.by!==kid||s.done) return; _gbWrite(i,null); renderAll(); }
+function gbMarkDone(kid,i){ var s=gbCur(i); if(!s||s.by!==kid||s.done) return; _gbWrite(i,{by:kid,done:true,ts:nowTs()}); _gbStampDone(i,kid); _gbEarn(i,kid); renderAll(); if(typeof gwShowToast==="function") gwShowToast("Done! +"+((gbList()[i]||{}).pts||0)+" ⭐"); }
+function gbLetGo(kid,i){ var s=gbCur(i); if(!s||s.by!==kid||s.done) return; _gbWrite(i,null); renderAll(); }
 // ── Mom's stocking editor — materialize defaults into the config on first edit, then persist ──
 function _rwEnsure(){ if(!(Array.isArray(rewardCatalog)&&rewardCatalog.length)) rewardCatalog=RW_DEFAULT.map(x=>Object.assign({},x)); }
 function _rwSave(){ if(db) db.ref("config/rewards").set(rewardCatalog); }
@@ -12074,8 +12114,8 @@ function _prSectionHTML(kid,momView){
 function gbPool(kid,momView){
   return gbList().map((g,i)=>({g,i})).filter(x=>{
     if(!gbDueOn(x.i)) return false;
-    const st=grabClaims[_gbKey(x.i)]||{};
-    if(st.done) return false;                      // finished: gone for the week
+    const st=gbCur(x.i)||{};
+    if(st.done) return false;                      // finished, still inside its cooldown
     if(st.by&&st.by!==kid&&!momView) return false; // pulled by a sibling: off your pool
     return true;
   });
@@ -12086,7 +12126,7 @@ function _grabsHTML(kid,momView){
   if(!gbDue.length) return h+'<div style="font-size:12px;color:var(--muted);padding:8px 2px">Nothing up for grabs right now — check back when the next one comes round.</div></div>';
   h+='<div class="grab-grid">';
   gbDue.forEach(({g,i})=>{
-    var st=grabClaims[_gbKey(i)]||{}, mine=st.by===kid, taken=st.by&&!mine;
+    var st=gbCur(i)||{}, mine=st.by===kid, taken=st.by&&!mine;
     var _gp=gbPayout(i), _gb=_gp-(g.pts||0);
     h+='<div class="grab-card'+(taken?" taken":"")+(_gb?" zoned":"")+'"><div class="gc-top"><span class="gc-emoji">'+esc(g.emoji||"🎁")+'</span><span class="gc-pts">+'+_gp+' ⭐'+(_gb?'<span class="gc-boost">zone +'+_gb+'</span>':'')+'</span></div><div class="gc-name">'+esc(g.label||"")+'</div>';
     if(mine){
@@ -25375,7 +25415,7 @@ function renderPace(el){
     const _mv=momModeActive;
     // The two doors sit in a column beside the bank — what they can spend, right next
     // to what they have. Narrow screens wrap them above it.
-    let _gn=0; try{ _gn=gbPool(kid,_mv).filter(x=>{ const st=grabClaims[_gbKey(x.i)]||{}; return !st.by; }).length; }catch(e){}
+    let _gn=0; try{ _gn=gbPool(kid,_mv).filter(x=>!(gbCur(x.i)||{}).by).length; }catch(e){}
     const _btn=(view,lab,st)=>'<button onclick="popOpen(\''+kid+'\',\''+view+'\')" style="'+st+';padding:11px 10px;border-radius:11px;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:center">'+lab+'</button>';
     h+='<div style="display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;margin-bottom:12px">'
       +'<div style="flex:0 1 148px;min-width:132px;display:flex;flex-direction:column;gap:8px">'
