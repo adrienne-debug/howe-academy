@@ -1866,17 +1866,60 @@ function cadLabel(cad){
 // How many days overdue a weekday-pinned step is, or 0. "Done since" counts: if Tuesday's chore was
 // finally done on Wednesday, it stops being late — which is exactly what checking it off does,
 // so no special handling is needed when they catch up.
+// Last week's routine check-offs. slState only ever holds the ACTIVE week, and the week
+// archive stores tasks/checked/history but NOT sl — so without this a chore due late in
+// the week had nowhere to look once Monday arrived. Cached per week key; the local copy
+// answers immediately and the DB read refreshes it.
+let prevSlState=null, _prevSlWk=null;
+function _prevWkKey(){ const m=/^week(\d+)$/.exec(activeWk()||""); const n=m?parseInt(m[1],10):0; return n>1?("week"+(n-1)):null; }
+function _loadPrevSl(){
+  const pw=_prevWkKey(); if(!pw||_prevSlWk===pw) return;
+  _prevSlWk=pw;
+  prevSlState=ld(pw+"_sl")||null;
+  if(db){ try{ db.ref(pw+"/sl").once("value",function(s){ const v=s.val(); if(v){ prevSlState=v; sv(pw+"_sl",v); renderAll(); } }); }catch(e){} }
+}
+function rtDoneOnWk(wk,slot,kid,d,i){
+  const map=(wk===activeWk())?slState:prevSlState;
+  if(!map) return false;
+  const s=map[wk+"_"+d+"_"+kid+"_"+RT_ABBR[slot]+"step"+i];
+  return !!(s&&s.done);
+}
+// How many days overdue this step is. The lookback used to run on the weekday INDEX only
+// (0=Mon..6=Sun) and required a due day strictly before today, so it could never cross a
+// Monday: a Saturday chore (wk:5) missed on Saturday showed on Sunday and then silently
+// vanished — never late, never logged as missed, invisible until the next Saturday. A
+// Sunday chore (wk:6) could never be late at all. 2026-08-14: Lincoln's "Empty & change
+// bunny bedding" (wk:5) disappeared off his list undone, with no miss recorded.
+// Now it wraps into the previous week using that week's own check-off state. If that
+// state can't be read we return 0 rather than guess — claiming a chore is late when it
+// may have been done is worse than staying quiet.
 function rtLateDays(slot,kid,i){
   const steps=rtStepsFor(slot,kid), st=steps[i]; if(!st) return 0;
   const cad=st.cad||"daily";
   if(cad==="daily") return 0;                       // a fresh one each day — "late" means nothing
   const m=/^wk:(.+)$/.exec(cad); if(!m) return 0;
   const days=m[1].split(",").map(Number).filter(n=>!isNaN(n));
+  if(!days.length) return 0;
   const ti=DAYS_ALL.indexOf(day); if(ti<0) return 0;
-  let due=-1; days.forEach(function(d){ if(d<ti&&d>due) due=d; });   // most recent past due day
-  if(due<0) return 0;
-  for(let j=due;j<=ti;j++){ if(rtDoneOn(slot,kid,DAYS_ALL[j],i)) return 0; }  // done that day or since
-  return ti-due;
+  const wk=activeWk();
+  // Most recent due day earlier in THIS week.
+  let due=-1; days.forEach(function(d){ if(d<ti&&d>due) due=d; });
+  if(due>=0){
+    for(let j=due;j<=ti;j++){ if(rtDoneOnWk(wk,slot,kid,DAYS_ALL[j],i)) return 0; }
+    return ti-due;
+  }
+  // Due TODAY and not yet due earlier this week — that is due, not overdue. Without this
+  // the wrap below fired for e.g. a Monday chore viewed on Monday and called it 7 days late.
+  if(days.indexOf(ti)>=0) return 0;
+  // None yet this week — the last time it came due was in the week before.
+  _loadPrevSl();
+  const pw=_prevWkKey();
+  if(!pw||!prevSlState) return 0;                   // can't verify it was missed → say nothing
+  let pdue=-1; days.forEach(function(d){ if(d>pdue) pdue=d; });
+  if(pdue<0) return 0;
+  for(let j=pdue;j<=6;j++){ if(rtDoneOnWk(pw,slot,kid,DAYS_ALL[j],i)) return 0; }
+  for(let j=0;j<=ti;j++){ if(rtDoneOnWk(wk,slot,kid,DAYS_ALL[j],i)) return 0; }
+  return (ti+7)-pdue;
 }
 // Record the miss once, filed under the day it was actually missed. The key is deterministic so
 // several devices noticing the same miss write the same entry instead of piling up duplicates.
@@ -2750,6 +2793,7 @@ function boot() {
   claimed=ld(WK+"_claimed")||{};
   momMoves=ld(WK+"_momMoves")||{};
   slState=ld(WK+"_sl")||{};
+  _loadPrevSl();          // last week's routine state, for cross-week chore lateness
   supplies=ld(WK+"_supplies")||{};
   const savedSupDef=ld(WK+"_supplies_def"); if(savedSupDef&&Array.isArray(savedSupDef)) SUP=savedSupDef;
   try{ const a=HA_LS.getItem("ha_archive"); if(a) archive=JSON.parse(a); }catch(e){}
