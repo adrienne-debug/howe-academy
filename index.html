@@ -13445,6 +13445,14 @@ let ceEditKid=null, ceEditKey=null, ceCloseTimer=null;
 let ceBuildOpen=null;  // "kid|sk" — which subject card has its 🧱 pacing form expanded
 let ceWalkOpen=false, ceWalkSel=new Set(), _ceWalkItems=[], _ceWalkCursor=0, walkbackData=null;
 let ceConvOpen=false; // "Edit as a list" converter for Excel-era grid subjects
+// The cursor the converter textarea was FILLED from. ceConvApply must rebuild the
+// list with this exact value, not a fresh computeSubjectCursor: the box is filled
+// with seq.slice(cursorPos) and applied as seq.slice(0,cursor)+lines, so if the two
+// disagree by even one the lessons between them belong to neither slice and are
+// silently dropped — no gate, no warning. 2026-08-14: Lincoln's MR5 list was filled
+// at cursor 20 and applied at 19, and MR5 pp.176-179 (index 20) vanished from the
+// plan; the re-lay then read pp.228-231 as done and served pp.232-235 next.
+let ceConvCursor=null;
 let _ceFinishMap={};  // {sk: finish-line row} for the kid being rendered — computed once per render
 
 function ceOpenEdit(kid,key){
@@ -14103,7 +14111,8 @@ function ceRenderEditSheet(){
       h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">For when the book has lessons the plan doesn\'t (or vice versa). Converts this subject to an editable lesson list, then the Builder re-lays the year. <b>Note:</b> saving empties the planned days until you tap 🧱 Build.</div>';
       h+=_ceMarkDoneUI(ceEditKid,ceEditKey,s,seq,cursorPos,col);
     }else{
-      const _remaining=seq.slice(Math.min(cursorPos,seq.length)).map(l=>l.lesson);
+      ceConvCursor=Math.min(cursorPos,seq.length);   // remember what we sliced at
+      const _remaining=seq.slice(ceConvCursor).map(l=>l.lesson);
       h+='<div style="border:1.5px solid var(--border);border-radius:10px;padding:8px;margin-top:8px">';
       if(cursorPos>0) h+='<div style="font-size:10px;color:var(--muted);margin-bottom:4px">✓ '+cursorPos+' done lesson'+(cursorPos>1?'s':'')+' stay locked (through <b>'+esc((seq[cursorPos-1]||{}).lesson||'')+'</b>) — edit everything from the cursor on:</div>';
       h+='<textarea id="ce-conv-lines" class="ce-sheet-input" style="width:100%;box-sizing:border-box;min-height:130px;resize:vertical;font-size:11px;line-height:1.5">'+esc(_remaining.join("\n"))+'</textarea>';
@@ -14499,7 +14508,10 @@ function ceConvApply(){
   const lines=ta.value.split("\n").map(l=>l.trim()).filter(Boolean);
   if(!lines.length){ alert("Add at least one remaining lesson."); return; }
   const seq=buildSubjectLessons(kid,sk);
-  let cursor=0; try{cursor=computeSubjectCursor(kid,sk);}catch(e){}
+  // Same cursor the textarea was built from — recomputing here is what dropped
+  // lessons that fell between the two slices. Fall back only if it is missing.
+  let cursor=ceConvCursor;
+  if(cursor==null){ cursor=0; try{cursor=computeSubjectCursor(kid,sk);}catch(e){} }
   cursor=Math.min(Math.max(cursor,0),seq.length);
   const doneLabels=seq.slice(0,cursor).map(l=>l.lesson);
   const fullSeq=doneLabels.concat(lines);
