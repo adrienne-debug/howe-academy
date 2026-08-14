@@ -11986,8 +11986,105 @@ function rlSetDefaultSize(kid,sz){ if(!momHere()||!RL_SIZES[sz]) return;
   if(db) db.ref("readingLog/"+kid+"/defaultSize").set(sz);
   rlAddSize=sz; renderAll();
   if(typeof gwShowToast==="function") gwShowToast(RL_SIZES[sz].ic+" New books start as "+RL_SIZES[sz].nm); }
-function rlOpenAdd(kid){ if(!momHere()) return; rlAddOpen=true; rlAddSize=rlDefaultSize(kid); renderAll(); setTimeout(()=>{const i=document.getElementById("rl-add-title"); if(i) i.focus();},50); }
-function rlCancelAdd(){ rlAddOpen=false; rlAddSize="little"; renderAll(); }
+// ── 📸 Scan a book cover (reading log) ────────────────────────────────────
+// Shares the Curriculum Builder's scan path: shrink the photos, hand them to
+// Claude with the family's stored key, insist on strict JSON. A stack of board
+// books in one shot comes back as several titles — batch-added from the shelf
+// form, offered as one-tap chips inside the dialogs (which each take one new book).
+let rlScanStatus="", rlScanHits=null;
+function rlScanRepaint(target){
+  if(target==="rot"&&_rlRotCtx) _rlRotPaint();
+  else if(target==="aloud"&&_rlAlCtx) _rlAlPaint();
+  else renderAll();
+}
+function _rlScanFill(id,v){ const el=document.getElementById(id); if(el) el.value=v; }
+async function rlScanBook(input,kid,target){
+  const files=[...(input.files||[])];
+  input.value="";
+  if(!files.length) return;
+  const key=((typeof mastAIKey!=="undefined"&&mastAIKey)||haGetKey());
+  if(!key){ rlScanStatus="⚠ No AI key set — add one in Admin → Settings."; rlScanRepaint(target); return; }
+  rlScanHits=null;
+  rlScanStatus="Reading "+files.length+" photo"+(files.length!==1?"s":"")+"…"; rlScanRepaint(target);
+  try{
+    const imgs=await Promise.all(files.slice(0,8).map(_cbShrinkImage));
+    rlScanStatus="Asking Claude for the title…"; rlScanRepaint(target);
+    const content=imgs.map(b64=>({type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}}));
+    content.push({type:"text",text:
+      "These photos show children's book covers — there may be one book, several in a shot, or a stack. "+
+      "Return ONLY strict JSON, no commentary:\n"+
+      '{"books":[{"title":"Corduroy","pages":32}]}\n'+
+      "Rules: one entry per distinct book; use the title exactly as printed on the cover; drop the author, the series name, and any "+
+      "\"Level 2\"-style reader badge unless it is genuinely part of the title; pages = the page count ONLY if you can actually see it, otherwise null; "+
+      "skip any book whose title you cannot read confidently rather than guessing."});
+    const resp=await fetch("https://api.anthropic.com/v1/messages",{ method:"POST",
+      headers:{ "content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true" },
+      body:JSON.stringify({ model:"claude-sonnet-5", max_tokens:1500, messages:[{role:"user",content}] }) });
+    if(!resp.ok){ const t=await resp.text(); throw new Error("Claude API "+resp.status+" — "+t.slice(0,140)); }
+    const data=await resp.json();
+    const txt=(data.content||[]).filter(b=>b&&b.type==="text").map(b=>b.text||"").join("");
+    window._rlScanRaw=txt;                    // kept for debugging a bad scan
+    const a=txt.indexOf("{"), b=txt.lastIndexOf("}");
+    if(a<0||b<=a) throw new Error("No title came back — try a straighter, brighter shot.");
+    const hits=(JSON.parse(txt.slice(a,b+1)).books||[])
+      .map(x=>({title:String(x.title||"").trim().slice(0,80),pages:parseInt(x.pages)||null,pick:true}))
+      .filter(x=>x.title);
+    if(!hits.length) throw new Error("Couldn't read a title — try a straighter, brighter shot.");
+    if(target==="rot"||target==="aloud"){
+      // One new book per dialog: first title goes in the box, the rest wait as chips.
+      _rlScanFill(target==="rot"?"rl-rot-title":"rl-al-title",hits[0].title);
+      rlScanHits=hits.length>1?hits.slice(1):null;
+      rlScanStatus="✓ "+esc(hits[0].title)+(hits.length>1?" — "+(hits.length-1)+" more found, tap to swap":"");
+    } else if(hits.length===1){
+      _rlScanFill("rl-add-title",hits[0].title);
+      if(hits[0].pages) _rlScanFill("rl-add-pages",hits[0].pages);
+      rlScanStatus="✓ "+esc(hits[0].title)+" — check the size, then add it.";
+    } else {
+      rlScanHits=hits;
+      rlScanStatus="✓ Found "+hits.length+" books — untick any you don't want.";
+    }
+  }catch(e){
+    rlScanStatus="❌ "+(e.message||"scan failed");
+    console.error("[HA] cover scan",e);
+  }
+  rlScanRepaint(target);
+}
+function rlScanToggle(i){ if(rlScanHits&&rlScanHits[i]){ rlScanHits[i].pick=!rlScanHits[i].pick; renderAll(); } }
+function rlScanChip(i,target){ const h=rlScanHits&&rlScanHits[i]; if(!h) return;
+  _rlScanFill(target==="rot"?"rl-rot-title":"rl-al-title",h.title);
+  rlScanStatus="✓ "+esc(h.title); rlScanRepaint(target); }
+// Everything ticked lands on the shelf at this kid's default size — the first one
+// becomes the book on the go if nothing else is, the rest queue up next.
+function rlScanAddAll(kid){
+  if(!momHere()||!rlScanHits) return;
+  const picks=rlScanHits.filter(x=>x.pick);
+  if(!picks.length){ rlScanStatus="Nothing ticked."; renderAll(); return; }
+  if(!readingLog[kid]) readingLog[kid]={};
+  if(!readingLog[kid].books) readingLog[kid].books={};
+  const base=Date.now();
+  picks.forEach((x,i)=>{
+    const id=_bookSlug(x.title)+"_"+(base+i).toString(36);
+    const rec={title:x.title,size:rlDefaultSize(kid),totalPages:x.pages||null,
+      status:rlCurrent(kid)?"upnext":"reading",addedBy:"mom",addedTs:nowTs()};
+    readingLog[kid].books[id]=rec;
+    if(db) db.ref("readingLog/"+kid+"/books/"+id).set(rec);
+  });
+  rlScanHits=null;
+  rlScanStatus="✓ "+picks.length+" book"+(picks.length!==1?"s":"")+" on "+cap(kid)+"’s shelf";
+  rlAddOpen=false; renderAll();
+  if(typeof gwShowToast==="function") gwShowToast("📚 "+picks.length+" added");
+}
+function rlScanBtn(kid,target){
+  return '<label style="display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:9px;border:none;background:#7c3aed;color:#fff;font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">📸 Scan cover'+
+    '<input type="file" accept="image/*" multiple capture="environment" style="display:none" onchange="rlScanBook(this,\''+kid+'\',\''+target+'\')"></label>';
+}
+function rlScanNoteHTML(){
+  if(!rlScanStatus) return "";
+  const bad=rlScanStatus.charAt(0)==="❌"||rlScanStatus.charAt(0)==="⚠";
+  return '<div style="font-size:11px;margin-top:5px;color:'+(bad?"#b5394a":"#6d28d9")+'">'+rlScanStatus+'</div>';
+}
+function rlOpenAdd(kid){ if(!momHere()) return; rlAddOpen=true; rlScanStatus=""; rlScanHits=null; rlAddSize=rlDefaultSize(kid); renderAll(); setTimeout(()=>{const i=document.getElementById("rl-add-title"); if(i) i.focus();},50); }
+function rlCancelAdd(){ rlAddOpen=false; rlAddSize="little"; rlScanStatus=""; rlScanHits=null; renderAll(); }
 // Size pick updates classes in place (NO renderAll — a rebuild would wipe the typed title).
 function rlPickSize(sz){ rlAddSize=sz; document.querySelectorAll(".rl-size").forEach(el=>el.classList.toggle("on",el.getAttribute("data-sz")===sz)); }
 function rlAddBook(kid){
@@ -12145,6 +12242,16 @@ function _rlCardHTML(kid,momView){
       h+='</div><div class="rl-addrow"><input id="rl-add-pages" type="number" inputmode="numeric" placeholder="pages (opt.)">';
       h+='<button class="rl-save" onclick="rlAddBook(\''+kid+'\')">+ Add to '+cap(kid)+'’s shelf</button>';
       h+='<button class="rl-cancel" onclick="rlCancelAdd()">cancel</button></div>';
+      h+='<div style="margin-top:6px">'+rlScanBtn(kid,"shelf")+' <span class="rl-hint">one cover, or a whole stack in one shot</span>'+rlScanNoteHTML()+'</div>';
+      if(rlScanHits&&rlScanHits.length){
+        h+='<div style="margin-top:6px;border:1px solid #e9d5ff;background:#faf5ff;border-radius:9px;padding:7px 9px">';
+        rlScanHits.forEach((x,i)=>{
+          h+='<div onclick="rlScanToggle('+i+')" style="display:flex;align-items:center;gap:7px;padding:3px 0;cursor:pointer;font-size:12px">'+
+            '<span>'+(x.pick?"✅":"⬜")+'</span><span style="flex:1;font-weight:'+(x.pick?"700":"400")+'">'+esc(x.title)+'</span>'+
+            (x.pages?'<span class="rl-hint">'+x.pages+' pg</span>':'')+'</div>';
+        });
+        h+='<button class="rl-save" style="margin-top:5px" onclick="rlScanAddAll(\''+kid+'\')">+ Add these to '+cap(kid)+'’s shelf</button></div>';
+      }
       h+='<div class="rl-hint" style="margin-top:4px">no pages = a “just done” book — finishing is a tap, no page tracking</div></div>';
     } else {
       h+='<div style="text-align:center;margin-top:8px"><button class="rl-save" onclick="rlOpenAdd(\''+kid+'\')">+ Add a book</button></div>';
@@ -12207,6 +12314,7 @@ function rlOpenRotation(kid,opts){
   _rlRotCtx={kid,pendingKey:opts.pendingKey||null,day:opts.day||day};
   _rlRotSel=new Set(ranked.slice(0,4).map(b=>b.id));
   _rlRotSize=rlDefaultSize(kid);   // same per-kid default as the shelf form
+  rlScanStatus=""; rlScanHits=null;
   _rlRotPaint();
 }
 function _rlRotPaint(){
@@ -12235,7 +12343,13 @@ function _rlRotPaint(){
   RL_ORDER.forEach(sz=>{ const S=RL_SIZES[sz];
     inner+='<div class="rl-rot-sz" data-sz="'+sz+'" onclick="rlRotPickSize(\''+sz+'\')" style="padding:5px 10px;border-radius:12px;border:1.5px solid '+(_rlRotSize===sz?'#93c5fd':'var(--border)')+';background:'+(_rlRotSize===sz?'#eff6ff':'#fff')+';font-size:11px;font-weight:700;cursor:pointer">'+S.ic+' '+S.nm+'</div>';
   });
-  inner+='</div></div>';
+  inner+='</div>';
+  inner+='<div style="margin-top:8px">'+rlScanBtn(kid,"rot")+rlScanNoteHTML()+'</div>';
+  if(rlScanHits&&rlScanHits.length){
+    inner+='<div style="display:flex;gap:5px;justify-content:center;flex-wrap:wrap;margin-top:6px">'+
+      rlScanHits.map((x,i)=>'<span onclick="rlScanChip('+i+',\'rot\')" style="cursor:pointer;padding:3px 9px;border-radius:12px;border:1.5px dashed #c084fc;background:#faf5ff;color:#7c3aed;font-size:11px;font-weight:700">'+esc(x.title)+'</span>').join('')+'</div>';
+  }
+  inner+='</div>';
   inner+='<div style="display:flex;gap:8px;margin-top:14px">'+
     '<button onclick="rlRotSave()" style="flex:1;padding:11px;border-radius:10px;border:none;background:#1d4ed8;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Log today’s reading</button>'+
     '</div>'+
@@ -12310,6 +12424,7 @@ function rlOpenAloud(kid,opts){
   // Whoever was in on this book last time is pre-picked; the kid whose check-off
   // opened the dialog is always in it.
   _rlAlWho=new Set([kid].concat(cur?_rlWith(cur):[]));
+  rlScanStatus=""; rlScanHits=null;
   _rlAlPaint();
 }
 function _rlAlPaint(){
@@ -12350,7 +12465,13 @@ function _rlAlPaint(){
   RL_ORDER.forEach(sz=>{ const S=RL_SIZES[sz];
     inner+='<div class="rl-al-sz" data-sz="'+sz+'" onclick="rlAlPickSize(\''+sz+'\')" style="padding:5px 10px;border-radius:12px;border:1.5px solid '+(_rlAlSize===sz?'#93c5fd':'var(--border)')+';background:'+(_rlAlSize===sz?'#eff6ff':'#fff')+';font-size:11px;font-weight:700;cursor:pointer">'+S.ic+' '+S.nm+'</div>';
   });
-  inner+='</div></div>';
+  inner+='</div>';
+  inner+='<div style="margin-top:8px">'+rlScanBtn(kid,"aloud")+rlScanNoteHTML()+'</div>';
+  if(rlScanHits&&rlScanHits.length){
+    inner+='<div style="display:flex;gap:5px;justify-content:center;flex-wrap:wrap;margin-top:6px">'+
+      rlScanHits.map((x,i)=>'<span onclick="rlScanChip('+i+',\'aloud\')" style="cursor:pointer;padding:3px 9px;border-radius:12px;border:1.5px dashed #c084fc;background:#faf5ff;color:#7c3aed;font-size:11px;font-weight:700">'+esc(x.title)+'</span>').join('')+'</div>';
+  }
+  inner+='</div>';
   if(SL_KIDS.length>1){
     inner+='<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border)">';
     inner+='<div style="font-size:12px;font-weight:800;color:#1e3a5f;margin-bottom:6px">🎧 Who listened?</div>';
