@@ -2989,6 +2989,9 @@ function renderAll(){
     const _sw=document.getElementById("ce-sheet-wrap");
     if(_sw&&_sw.style.display!=="none"&&ceEditKid&&ceEditKey&&ceGetSubject()) ceRenderEditSheet();
   }catch(e){}
+  // Same for an open 🏪/🙌 pop-up: buying, grabbing and approving all end in renderAll,
+  // so the overlay has to rebuild or it shows the balance from before the tap.
+  try{ if(popView&&popKid&&document.getElementById("kid-pop")) _popPaint(); }catch(e){}
 }
 function _renderAllInner(){
   const stb=document.getElementById("sitter-tab-btn"); if(stb){ if(SITTER_NAME){stb.textContent=SITTER_NAME;stb.style.display="";} else {stb.style.display="none";} }
@@ -12064,6 +12067,63 @@ function _prSectionHTML(kid,momView){
   }
   return h;
 }
+// 🙌 Up for Grabs — extra stars, separate from the shop because this is how they EARN,
+// not spend. Her rule: once a kid pulls one it comes OFF everyone else's pool until it
+// comes round again (the key is week-scoped, so that's next week). Mom still sees taken
+// ones so she can release a grab a kid never got to.
+function gbPool(kid,momView){
+  return gbList().map((g,i)=>({g,i})).filter(x=>{
+    if(!gbDueOn(x.i)) return false;
+    const st=grabClaims[_gbKey(x.i)]||{};
+    if(st.done) return false;                      // finished: gone for the week
+    if(st.by&&st.by!==kid&&!momView) return false; // pulled by a sibling: off your pool
+    return true;
+  });
+}
+function _grabsHTML(kid,momView){
+  const gbDue=gbPool(kid,momView);
+  let h='<div class="grab-sec"><div class="grab-hd">🙌 Up for Grabs <span>extra stars · yours once you grab it · resets each week</span></div>';
+  if(!gbDue.length) return h+'<div style="font-size:12px;color:var(--muted);padding:8px 2px">Nothing up for grabs right now — check back when the next one comes round.</div></div>';
+  h+='<div class="grab-grid">';
+  gbDue.forEach(({g,i})=>{
+    var st=grabClaims[_gbKey(i)]||{}, mine=st.by===kid, taken=st.by&&!mine;
+    var _gp=gbPayout(i), _gb=_gp-(g.pts||0);
+    h+='<div class="grab-card'+(taken?" taken":"")+(_gb?" zoned":"")+'"><div class="gc-top"><span class="gc-emoji">'+esc(g.emoji||"🎁")+'</span><span class="gc-pts">+'+_gp+' ⭐'+(_gb?'<span class="gc-boost">zone +'+_gb+'</span>':'')+'</span></div><div class="gc-name">'+esc(g.label||"")+'</div>';
+    if(mine){
+      h+='<button class="gc-done" onclick="gbMarkDone(\''+kid+'\','+i+')">✓ Mark done (+'+(g.pts||0)+')</button><button class="gc-let" onclick="gbLetGo(\''+kid+'\','+i+')">let go</button>';
+    } else if(taken){
+      h+='<div class="gc-taken">🔒 '+esc(cap(st.by))+' grabbed it</div>';
+      if(momView) h+='<button class="gc-let" onclick="gbLetGo(\''+st.by+'\','+i+')">release</button>';
+    } else {
+      h+='<button class="gc-done" onclick="gbInstant(\''+kid+'\','+i+')">✓ I did it now (+'+(g.pts||0)+')</button><button class="gc-grab" onclick="gbClaim(\''+kid+'\','+i+')">🔖 Grab for later</button>';
+      if(momView) h+='<div class="gc-assign">assign: '+ROSTER.map(k=>'<button onclick="gbClaim(\''+k+'\','+i+')" title="'+esc(cap(k))+'">'+esc(cap(k).charAt(0))+'</button>').join("")+'</div>';
+    }
+    h+='</div>';
+  });
+  return h+'</div></div>';
+}
+// ── 🏪 / 🙌 pop-ups ─────────────────────────────────────────────────────────
+// Buying is occasional and the shop is long, so it opens over the page instead of
+// living on it. Every control inside is the real one, and each handler ends in
+// renderAll — which repaints an open pop-up (see the hook in renderAll), so nothing
+// goes stale behind the overlay.
+let popView=null, popKid=null;
+function popOpen(kid,view){ popKid=kid; popView=view; _popPaint(); }
+function popClose(){ popView=null; popKid=null; const o=document.getElementById("kid-pop"); if(o) o.remove(); }
+function _popPaint(){
+  if(!popView||!popKid) return;
+  const momView=momModeActive;
+  let o=document.getElementById("kid-pop"); if(o) o.remove();
+  o=document.createElement("div"); o.id="kid-pop"; o.className="dlg-overlay"; o.style.display="flex"; o.style.zIndex="9999";
+  let body="";
+  try{ body=(popView==="grabs")?_grabsHTML(popKid,momView):_storeCardHTML(popKid,momView); }catch(e){ body='<div style="padding:20px">Could not open that just now.</div>'; }
+  o.innerHTML='<div class="dlg-box" style="max-width:620px;width:94%;max-height:86vh;overflow-y:auto;text-align:left">'+
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
+    '<div style="flex:1;font-family:\'Fraunces\',serif;font-size:18px;font-weight:700;color:#1e3a5f">'+(popView==="grabs"?"🙌 Up for Grabs":"🏪 "+cap(popKid)+"’s Star Store")+'</div>'+
+    '<button onclick="popClose()" style="border:none;background:#eef2f7;border-radius:9px;padding:5px 12px;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✕</button></div>'+
+    body+'</div>';
+  document.body.appendChild(o);
+}
 function _storeCardHTML(kid,momView){
   const cat=rwCatalog(), bal=bankBalance(kid), thr=storeCfg.threshold||0;
   const isOpen=(typeof storeOpenFor==="function")?storeOpenFor(kid):true;
@@ -12089,26 +12149,6 @@ function _storeCardHTML(kid,momView){
       h+='<div class="sm-row">'+(w.status==="pending"?"⏳":"🎁")+' '+esc(w.note)+' <span>'+(w.status==="pending"?"waiting for Mom":"Mom owes you")+'</span></div>';
     });
     h+='</div>';
-  }
-  const gbDue=gbList().map((g,i)=>({g,i})).filter(x=>gbDueOn(x.i)&&!((grabClaims[_gbKey(x.i)]||{}).done));
-  if(gbDue.length){
-    h+='<div class="grab-sec"><div class="grab-hd">🙌 Up for Grabs <span>extra stars · stays till it\u2019s done, resets each week</span></div><div class="grab-grid">';
-    gbDue.forEach(({g,i})=>{
-      var s=grabClaims[_gbKey(i)]||{}, mine=s.by===kid, taken=s.by&&!mine;
-      var _gp=gbPayout(i), _gb=_gp-(g.pts||0);
-      h+='<div class="grab-card'+(taken?" taken":"")+(_gb?" zoned":"")+'"><div class="gc-top"><span class="gc-emoji">'+esc(g.emoji||"🎁")+'</span><span class="gc-pts">+'+_gp+' ⭐'+(_gb?'<span class="gc-boost">zone +'+_gb+'</span>':'')+'</span></div><div class="gc-name">'+esc(g.label||"")+'</div>';
-      if(mine){
-        h+='<button class="gc-done" onclick="gbMarkDone(\''+kid+'\','+i+')">✓ Mark done (+'+(g.pts||0)+')</button><button class="gc-let" onclick="gbLetGo(\''+kid+'\','+i+')">let go</button>';
-      } else if(taken){
-        h+='<div class="gc-taken">🔒 '+esc(cap(s.by))+' grabbed it</div>';
-        if(momView) h+='<button class="gc-let" onclick="gbLetGo(\''+s.by+'\','+i+')">release</button>';
-      } else {
-        h+='<button class="gc-done" onclick="gbInstant(\''+kid+'\','+i+')">✓ I did it now (+'+(g.pts||0)+')</button><button class="gc-grab" onclick="gbClaim(\''+kid+'\','+i+')">🔖 Grab for later</button>';
-        if(momView) h+='<div class="gc-assign">assign: '+ROSTER.map(k=>'<button onclick="gbClaim(\''+k+'\','+i+')" title="'+esc(cap(k))+'">'+esc(cap(k).charAt(0))+'</button>').join("")+'</div>';
-      }
-      h+='</div>';
-    });
-    h+='</div></div>';
   }
   if(!isOpen) h+='<div class="store-closed">'+esc(storeClosedReason(kid))+'</div>';
   h+='<div class="store-shelf">';
@@ -25280,11 +25320,9 @@ function renderPace(el){
     const troph=kidTrophies(kid);
     const close=closeToDone(kid);
     const momView=momModeActive;   // Mom mode only — adminPinUnlocked never auto-clears, so it must not leak Mom tools onto kid pages
-    // 🏪 store first (this is what they came for), then the bank statement below it
-    h+=_storeCardHTML(kid,momView);
-    // 🏦 bank: balance + statement (store buys land here on their own) + Mom tools
-    h+=_bankCardHTML(kid,momView);
-    // 🏆 trophy case is purely trophies now — money matters live in the bank above
+    // Her order: what they've WON first, then what they've banked, then the shop —
+    // which now opens over the page, because buying is occasional and the shelf is long.
+    // 🏆 trophy case is purely trophies — money matters live in the bank below
     h+='<div style="background:linear-gradient(135deg,#fffbeb,#fef3c7);border:1.5px solid #f59e0b;border-radius:12px;padding:14px;margin-bottom:12px">';
     h+='<div style="font-size:11px;font-weight:800;color:#b45309;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px">🏆 '+cap(kid)+'’s Trophy Case</div>';
     // trophy shelf — SVG trophies (cup/gold book/medal) + finished reading books as real spines
@@ -25330,6 +25368,22 @@ function renderPace(el){
       }
     }
     h+='</div>';
+  }
+
+  // 🏦 bank, then the two pop-up doors
+  if(kid!=="all"&&kid!=="mom"){
+    const _mv=momModeActive;
+    // The two doors sit in a column beside the bank — what they can spend, right next
+    // to what they have. Narrow screens wrap them above it.
+    let _gn=0; try{ _gn=gbPool(kid,_mv).filter(x=>{ const st=grabClaims[_gbKey(x.i)]||{}; return !st.by; }).length; }catch(e){}
+    const _btn=(view,lab,st)=>'<button onclick="popOpen(\''+kid+'\',\''+view+'\')" style="'+st+';padding:11px 10px;border-radius:11px;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:center">'+lab+'</button>';
+    h+='<div style="display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;margin-bottom:12px">'
+      +'<div style="flex:0 1 148px;min-width:132px;display:flex;flex-direction:column;gap:8px">'
+        +_btn("grabs",'🙌 Up for Grabs'+(_gn?'<div style="font-size:11px;font-weight:700;opacity:.85">'+_gn+' open</div>':''),'flex:1;border:1.5px solid #f59e0b;background:#fffbeb;color:#b45309')
+        +_btn("store",'🏪 Star Store','flex:1;border:none;background:#2B7A78;color:#fff')
+      +'</div>'
+      +'<div style="flex:1 1 250px;min-width:0">'+_bankCardHTML(kid,_mv)+'</div>'
+      +'</div>';
   }
 
   // 📚 Reading Log card — below the trophy case (single-kid view only). Hidden from
