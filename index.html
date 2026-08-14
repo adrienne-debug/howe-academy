@@ -6361,6 +6361,15 @@ function mpSetDay(d){
   mpDay=(d===mdTodayName())?null:d;
   const el=document.getElementById("content"); if(el) renderMomsPlan(el);
 }
+// ⭐ Star Bank strip on Mom's Plan — every kid's balance and a give/dock in two taps,
+// riding bankGiveDock so the ledger, the statement note and the over-dock guard are the
+// same ones the full bank card uses.
+function mpBankAdj(kid,sign){
+  const amt=Math.abs(parseInt((document.getElementById("mpbank-"+kid)||{}).value,10)||0);
+  const note=((document.getElementById("mpbank-note")||{}).value||"").trim();
+  if(!amt){ if(typeof gwShowToast==="function") gwShowToast("Put a star amount in the box first"); return; }
+  bankGiveDock(kid,sign,amt,note);
+}
 function mdOpenBoard(){
   mdJumped=true;
   if(tab!=="schedule") showTab("schedule");
@@ -7048,6 +7057,30 @@ function renderMomsDay(el){
     h+='</div>';
   });
   h+='</div></div>';
+
+  // ── ⭐ Star Bank — balances plus a two-tap give/dock, because this is the lever
+  // that actually runs the house. Same write path as the full bank card.
+  try{
+    h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#b45309;color:#fff;font-weight:800;font-size:13px"><span>⭐</span> Star Bank</div>';
+    h+='<div style="padding:6px 14px 10px">';
+    SL_KIDS.forEach(k=>{
+      const bal=(typeof bankBalance==="function")?bankBalance(k):0;
+      h+='<div style="display:flex;align-items:center;gap:6px;padding:7px 0;border-bottom:1px solid #f3f4f6;flex-wrap:wrap">'
+        +'<b style="color:'+(SL_KCOL[k]||"#666")+';font-size:14px;flex:0 0 62px">'+cap(k)+'</b>'
+        +'<span style="font-size:15px;font-weight:800;color:#b45309;flex:1">⭐ '+bal.toLocaleString()+'</span>'
+        +'<button onclick="mpBankAdj(\''+k+'\',-1)" style="padding:5px 12px;border-radius:9px;border:1.5px solid #fca5a5;background:#fff;color:#b91c1c;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">−</button>'
+        +'<input id="mpbank-'+k+'" type="number" inputmode="numeric" min="1" value="5" style="width:58px;padding:5px;border:1.5px solid var(--border);border-radius:9px;text-align:center;font-size:13px;font-weight:800;font-family:\'DM Sans\',sans-serif">'
+        +'<button onclick="mpBankAdj(\''+k+'\',1)" style="padding:5px 12px;border-radius:9px;border:none;background:#16a34a;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">+</button>'
+        +'</div>';
+    });
+    h+='<div style="display:flex;align-items:center;gap:6px;padding:8px 0 2px">'
+      +'<span style="font-size:11px;color:var(--muted);font-weight:700">why</span>'
+      +'<input id="mpbank-note" placeholder="optional — shows in their statement" style="flex:1;min-width:0;padding:6px 9px;border:1.5px solid var(--border);border-radius:9px;font-size:12px;font-family:\'DM Sans\',sans-serif">'
+      +'</div>';
+    h+='<div class="rl-hint" style="padding-bottom:4px">A dock bigger than what they have is refused, so a balance can\'t go negative.</div>';
+    h+='</div></div>';
+  }catch(e){}
 
   // ── 📖 Mom's school schedule — the SAME two-column agenda as Schedule ▸
   // Mom, pinned to today. taskCard/tapTask are shared, so a check-off here is
@@ -11957,10 +11990,12 @@ function bankDeleteWithdrawal(kid,id){
   if(db) db.ref("bank/"+kid+"/withdrawals/"+id).remove();
   renderAll(); gwShowToast("Withdrawal removed");
 }
-function bankGiveDock(kid,sign){
+function bankGiveDock(kid,sign,amtIn,noteIn){
   if(!momHere()) return;
-  const amt=Math.abs(parseInt((document.getElementById("bank-adj-amt")||{}).value,10)||0);
-  const note=((document.getElementById("bank-adj-note")||{}).value||"").trim();
+  // amtIn/noteIn let another screen drive the SAME write — the Star Bank strip on
+  // Mom's Plan has its own inputs. Called with neither, this behaves exactly as before.
+  const amt=Math.abs(amtIn!=null?(parseInt(amtIn,10)||0):(parseInt((document.getElementById("bank-adj-amt")||{}).value,10)||0));
+  const note=String(noteIn!=null?noteIn:((document.getElementById("bank-adj-note")||{}).value||"")).trim();
   if(!amt){ if(typeof gwShowToast==="function") gwShowToast("Enter a star amount"); return; }
   if(sign<0){ const bal=bankBalance(kid); if(amt>bal){ if(typeof gwShowToast==="function") gwShowToast("Only "+bal+" ⭐ in "+cap(kid)+"'s bank"); return; } }
   const rec={amount:sign*amt,note:note||(sign>0?"Mom gave stars":"Mom docked stars"),ts:nowTs(),iso:new Date().toISOString()};
@@ -12301,7 +12336,9 @@ function _rlCardHTML(kid,momView){
     const _pl={solo:"📖 Needs a page number",readsToMe:"🔄 Fluency Builder to log",readAloud:"🎧 Read-aloud to log"}[rlMode(kid)];
     h+='<button class="rl-log-btn" style="border-color:#f59e0b;color:#b45309;background:#fffbeb" onclick="rlResolvePending(\''+kid+'\')">'+_pl+(_pend.length>1?' ('+_pend.length+')':'')+' — tap to log</button>';
   }
-  if(rlMode(kid)==="readAloud"&&momView) h+='<button class="rl-log-btn" onclick="rlOpenAloud(\''+kid+'\')">🎧 + Log a read-aloud</button>';
+  const _lm=rlMode(kid);
+  if(momView&&_lm==="readAloud") h+='<button class="rl-log-btn" onclick="rlOpenAloud(\''+kid+'\')">🎧 + Log a read-aloud</button>';
+  else if(momView&&_lm==="readsToMe") h+='<button class="rl-log-btn" onclick="rlOpenRotation(\''+kid+'\',{})">🔄 + Log today’s reading</button>';
   else if(cur&&!cur.finishClaim) h+='<button class="rl-log-btn" onclick="rlLogExtra(\''+kid+'\')">📖 + Log extra reading</button>';
   if(momView){
     h+='<div class="rl-mom"><div class="rl-mom-hd">🔒 Mom — bookshelf</div>';
@@ -12816,7 +12853,12 @@ function rlResolvePending(kid){                      // chip tap → prompt for 
   if(!rlCurrent(kid)){ gwShowToast("Add a book to the shelf first"); return; }
   rlOpenPrompt(kid,{pendingKey:keys[0],source:"sched",day:(p[keys[0]]||{}).day||day});
 }
-function rlLogExtra(kid){ if(rlMode(kid)==="readAloud"){ rlOpenAloud(kid,{day:day}); return; } rlOpenPrompt(kid,{source:"extra",day:day}); }
+function rlLogExtra(kid){
+  const m=rlMode(kid);
+  if(m==="readAloud"){ rlOpenAloud(kid,{day:day}); return; }
+  if(m==="readsToMe"){ rlOpenRotation(kid,{day:day}); return; }
+  rlOpenPrompt(kid,{source:"extra",day:day});
+}
 // Tap a finished book on the trophy shelf → its story card (the data lives here, not on
 // the spine). Falls back to the trophy record if the book was removed from the shelf.
 function rlBookPopup(kid,id){
