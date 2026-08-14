@@ -4735,10 +4735,22 @@ function allAgendaHtml(dayTasks){
     (bag[t.who]=bag[t.who]||[]).push(t);
   });
   const mins=Object.keys(byTime).map(Number).sort((a,b)=>a-b);
-  const cell=(bag,k)=>'<div class="all-col">'+((bag[k]&&bag[k].length)?bag[k].map(tk=>taskCard(tk)).join(''):'<div class="all-empty">·</div>')+'</div>';
+  // The morning gate is PER COLUMN. One kid still in pyjamas shouldn't hide the other
+  // three's day — their own column blurs (and can't be tapped) until their routine is
+  // checked off, and the rest of the family reads normally.
+  const locked={};
+  kids.forEach(k=>{ try{ locked[k]=!isScheduleUnlocked(k,day); }catch(e){ locked[k]=false; } });
+  const cell=(bag,k)=>{
+    const inner=(bag[k]&&bag[k].length)?bag[k].map(tk=>taskCard(tk)).join(''):'<div class="all-empty">·</div>';
+    return '<div class="all-col">'+(locked[k]?'<div class="sched-blur">'+inner+'</div>':inner)+'</div>';
+  };
   let h='<div class="all-agenda"><div class="all-agenda-in" style="--allk:'+kids.length+'">';
   h+='<div class="all-agenda-row all-agenda-head"><div></div>'+
-    kids.map(k=>'<div class="all-h" style="color:'+(SL_KCOL[k]||"#666")+'">'+cap(k)+'</div>').join('')+'</div>';
+    kids.map(k=>{
+      const L=locked[k];
+      return '<div class="all-h" style="color:'+(SL_KCOL[k]||"#666")+(L?';cursor:pointer':'')+'"'+(L?' onclick="scrollToSkylight()"':'')+'>'+cap(k)+
+        (L?'<div style="font-size:9px;font-weight:700;color:#b5394a;text-transform:none;letter-spacing:0">🔒 morning first</div>':'')+'</div>';
+    }).join('')+'</div>';
   let lunchDone=false;
   mins.forEach(m=>{
     if(!lunchDone&&m>=13*60){
@@ -5205,7 +5217,8 @@ function renderSchedule(el){
   // single-column kid schedule. Mom mode always unlocks, so no Skylight-lock handling here.
   if(kid==="mom" && unlocked){
     h+=momAgendaHtml(tasks);
-  } else if(kid==="all" && unlocked){
+  } else if(kid==="all"){
+    // No whole-view gate here: allAgendaHtml locks each kid's column on its own.
     h+=allAgendaHtml(tasks);
   } else {
   // While this kid's brain break is active, their task list stays visible but paused —
