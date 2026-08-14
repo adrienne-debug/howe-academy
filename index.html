@@ -12394,6 +12394,7 @@ function _rlCardHTML(kid,momView){
       const S=RL_SIZES[b.size]||RL_SIZES.little;
       const _oth=_rlWith(b).filter(k=>k!==kid);
       h+='<div class="rl-row"><span class="sz">'+S.ic+'</span><span class="tt">'+esc(b.title)+' <span class="rl-hint">· '+(b.status==="reading"?"reading now":"up next")+(_oth.length?' · 🎧 with '+_oth.map(cap).join(", "):"")+(b.totalPages?' · '+b.totalPages+' pg':'')+(b.finishClaim?' · <b style="color:#b45309">⏳ finished!</b>':'')+(b.sizePending?' · <b style="color:#b45309" title="The kid started this book from a check-off — tap the size button to set its real size">☝ pick a size</b>':'')+'</span></span>';
+      if(!b.finishClaim) h+='<button onclick="rlMomFinish(\''+kid+'\',\''+esc(b.id)+'\')" title="They finished it — trophy on the shelf and the stars paid" style="border-color:#86efac;color:#15803d;background:#f0fdf4">✓ done'+(rlFinishPts(kid,b)>0?' +'+rlFinishPts(kid,b)+' ⭐':'')+'</button>';
       if(b.status!=="reading") h+='<button onclick="rlPromote(\''+kid+'\',\''+esc(b.id)+'\')">▲ read now</button>';
       h+='<button onclick="rlCycleSize(\''+kid+'\',\''+esc(b.id)+'\')">'+S.ic+' size</button>';
       h+='<button onclick="rlEditPages(\''+esc(b.id)+'\')">pages</button>';
@@ -12888,6 +12889,32 @@ function rlBookPopClose(){ const ov=document.getElementById("rl-book-pop"); if(o
 // post to the day the kid CLAIMED the finish (finishClaim.day — unit-activity fairness
 // rule: a late approval never costs them), then ride the normal day claim → Star Bank.
 // donePts/doneDay are stored on the book so un-finish can reverse exactly what was paid.
+// What finishing THIS book pays: a book Mom read aloud pays the read-aloud share,
+// anything the kid read themselves pays the size in full.
+function rlFinishPts(kid,b){ b=b||{}; return b.aloud?rlAloudPts(b.size,kid):rlSizePts(b.size,kid); }
+// Mom finishing a book straight from the shelf. Both existing finish paths need
+// something to have happened first — a kid's finishClaim, or the read-aloud dialog's
+// own confirm — so a book PRELOADED onto the shelf could never reach done, never mint
+// a spine and never pay, however many times it was read. That is the normal case for a
+// 🔄 Fluency Builder kid: her shelf is stocked up front and the rotation only pays for
+// a brand-new title typed into the dialog. Same payout, same fire-once trophy guard and
+// the same donePts record as rlApproveFinish, so ↩ un-finish reverses it exactly.
+// No confirm: the button says what it pays, and un-finish is one tap on the done row.
+function rlMomFinish(kid,id){
+  if(!momHere()) return;
+  const b=((readingLog[kid]||{}).books||{})[id]; if(!b||b.status==="done") return;
+  const pts=rlFinishPts(kid,b);
+  const tid="read_"+id;
+  if(typeof mintTrophy==="function"&&typeof hasTrophy==="function"&&!hasTrophy(kid,tid)){
+    const rec={type:"read",size:b.size||"little",key:id,name:b.title,ts:nowTs(),points:pts};
+    if(b.aloud) rec.aloud=true;
+    mintTrophy(kid,tid,rec);
+    if(pts>0&&typeof bankDirect==="function") bankDirect(kid,pts,'📚 Finished "'+(b.title||"book")+'"');
+  }
+  _rlSetBook(kid,id,{status:"done",doneTs:nowTs(),doneDay:day,donePts:pts,finishClaim:null});
+  renderAll();
+  if(typeof gwShowToast==="function") gwShowToast('🏆 '+(b.title||"Book")+(pts>0?' — +'+pts+' ⭐':' finished'));
+}
 function rlApproveFinish(kid,id){
   if(!momHere()) return;
   const b=((readingLog[kid]||{}).books||{})[id]; if(!b||!b.finishClaim) return;
