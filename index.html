@@ -25166,11 +25166,95 @@ function subjectLessonCounter(seq,cursor){
 // One subject's progress for the Pace bars: CURRENT book — pages for workbooks,
 // volume for lesson-based multi-book subjects — both reset per book; plain
 // lessons otherwise.
+// Progress read straight off the Grid: how many of this subject's planned cells are
+// finished, out of how many exist. The older reading derived a page position by PARSING
+// lesson text ("pp. 270–273", "5B Ch.3 L4"), which slides the moment pages are added at
+// the front of a book, a book renumbers, or page numbers restart — so the bar could
+// disagree with the Grid, and the Grid was the one telling the truth.
+// `cbDoneCellSet` is the exact set the Grid dims with ✓ done badges, so the bar now IS
+// the Grid. It returns null when it cannot tell (no keywords, or nothing matches), and
+// that stays null here — a confident wrong number is worse than the old reading.
+// ⚠️ It walks the whole archive, so this is memoised per render (see renderPace).
+let _spGrid={};
+function spGridReset(){ _spGrid={}; }
+function subjectGridProgress(kid,sk){
+  const key=kid+"|"+sk;
+  if(Object.prototype.hasOwnProperty.call(_spGrid,key)) return _spGrid[key];
+  let out=null;
+  try{
+    const lessons=((currData||{}).lessons||{})[kid]||{};
+    const dayNums=Object.keys(lessons).map(Number).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
+    const cells=[];
+    for(const dn of dayNums){ const l=lessons[dn], v=l&&l[sk]; if(gvFilled(v)) cells.push({dayNum:dn,date:(l&&l.date)||"",text:String(v)}); }
+    if(cells.length){
+      const ds=cbDoneCellSet(kid,sk,cells);
+      if(ds){
+        const seq=cells.map(c=>({lesson:c.text}));
+        // Where they actually are: the first cell that isn't finished.
+        let at=cells.length;
+        for(let i=0;i<cells.length;i++){ if(!ds.has(i)){ at=i; break; } }
+        // ── Which book that falls in ──────────────────────────────────────────
+        // A subject spanning MR5→MR6, or 5A→5B→6A, should read as progress through
+        // the book they're IN — "book 2 of 3, 12 of 45" — not as a fraction of every
+        // page they'll touch this year, which is both discouraging and less useful.
+        // Two shapes, the same two the old bar knew: page-numbered books (a new book
+        // starts when the page number drops) and lesson-keyed ones ("5B Ch.3 L4").
+        // ⚠️ NOT _bookRuns here: it starts a new run whenever a page number DROPS,
+        // which happens inside one workbook (Pg 108–109 then Pg 12) and shredded
+        // single-book subjects into dozens of "books" — Reading Detective read 0/1.
+        // A book is a distinct NAME: "MR5"/"MR6" from the page label, or "5A"/"5B"
+        // from a lesson label. Both need 2–8 of them, each with real length.
+        const _byKey=fn=>{
+          const keys=seq.map(e=>{ try{ return fn(e.lesson)||null; }catch(e2){ return null; } });
+          const order=[]; keys.forEach(k=>{ if(k&&order.indexOf(k)<0) order.push(k); });
+          if(order.length<2||order.length>8) return [];
+          const gs=[];
+          order.forEach(k=>{
+            let f=-1,l=-1,n=0;
+            keys.forEach((kk,i)=>{ if(kk===k){ if(f<0) f=i; l=i; n++; } });
+            if(f>=0) gs.push({name:k,firstIdx:f,lastIdx:l,n});
+          });
+          // every book must hold a few cells, or it's a stray label, not a volume
+          if(gs.some(g=>g.n<3)) return [];
+          gs.sort((a,b)=>a.firstIdx-b.firstIdx);
+          // Real volumes run in BLOCKS — you finish 5A before 5B starts. Labels that
+          // interleave (Reading Eggspress "Map 19 L5" then "Map 36 L1") are lesson
+          // numbers inside the book, not the book, so they must not split it.
+          for(let i=1;i<gs.length;i++){ if(gs[i].firstIdx<=gs[i-1].lastIdx) return []; }
+          return gs;
+        };
+        let groups=_byKey(_lessonBookKey);
+        if(!groups.length) groups=_byKey(_bookKey);
+        let cur=ds.size,total=cells.length,book=null,bookNum=0,bookCount=0;
+        if(groups.length>1){
+          let gi=groups.length-1;                       // all finished → the last book
+          for(let i=0;i<groups.length;i++){ if(at>=groups[i].firstIdx&&at<=groups[i].lastIdx){ gi=i; break; } }
+          const g=groups[gi];
+          let dn=0,tn=0;
+          for(let i=g.firstIdx;i<=g.lastIdx;i++){ tn++; if(ds.has(i)) dn++; }
+          cur=dn; total=tn; book=g.name; bookNum=gi+1; bookCount=groups.length;
+        }
+        out={cur,total,now:(at<cells.length?cells[at].text:""),book,bookNum,bookCount,
+             allDone:ds.size,allTotal:cells.length};
+      }
+    }
+  }catch(e){}
+  _spGrid[key]=out;
+  return out;
+}
 function subjectProgress(kid,sk){
   const s=((paceData.subjects||{})[kid]||{})[sk];
   const _cs=((currData&&currData.subjects)||{})[kid]||{};
   if(!s||(_cs[sk]&&_cs[sk].tracking==="daily")) return null;
   const totL=s.total||0; if(totL<=0) return null;
+  // Grid truth first — same cells, same done-set the Grid shows.
+  const _g=subjectGridProgress(kid,sk);
+  if(_g&&_g.total){
+    return {label:s.label||sk,unit:'lesson',cur:_g.cur,total:_g.total,
+      pct:Math.min(100,Math.round(_g.cur/_g.total*100)),
+      done:_g.allDone>=_g.allTotal,          // ✓ only when the WHOLE subject is finished
+      book:_g.book,bookNum:_g.bookNum,bookCount:_g.bookCount,now:_g.now};
+  }
   let cur=0; try{cur=computeSubjectDone(kid,sk);}catch(e){}
   const seq=buildSubjectLessons(kid,sk);
   const cb=subjectCurrentBook(seq,cur);
@@ -25328,6 +25412,7 @@ function paceEncouragement(lt,stk,win){
 // tracker (that's on the Schedule); this is "how far you've come": book progress
 // beginning→end, pages, weeks accomplished, wins. Steering lives in Admin → Curriculum.
 function renderPace(el){
+  spGridReset();   // fresh grid/done reads for this paint; cbDoneCellSet walks the archive
   if(!el){el=document.getElementById("content");if(!el)return;}
   syncPaceData();
   let h='<div id="pace-content">';
@@ -25433,7 +25518,7 @@ function renderPace(el){
   // ── Per-kid book progress: beginning → end of each book/subject ────────────
   const showKids=(kid==="all"||kid==="mom")?PACE_KIDS:[kid];
   showKids.forEach(k=>{
-    const bars=paceLiveKeys(k).map(sk=>subjectProgress(k,sk)).filter(Boolean);
+    const bars=paceLiveKeys(k).map(sk=>subjectProgress(k,sk)).filter(Boolean);   // grid reads memoised by spGridReset above
     if(!bars.length) return;
     bars.sort((a,b)=>(a.done-b.done)||(b.pct-a.pct)); // in-progress first, nearest-done first
     const col=PACE_KCOL[k];
@@ -25446,7 +25531,8 @@ function renderPace(el){
         return;
       }
       const _bk=b.book?esc(b.book)+(b.bookCount>1?' <span style="opacity:0.6">(book '+b.bookNum+' of '+b.bookCount+')</span>':'')+' · ':'';
-      const lbl=b.unit==='page'?(_bk+'page '+b.cur.toLocaleString()+' of '+b.total.toLocaleString()):(_bk+b.cur+' of '+b.total+' lessons');
+      const lbl=b.unit==='page'?(_bk+'page '+b.cur.toLocaleString()+' of '+b.total.toLocaleString())
+        :(_bk+(b.now?esc(b.now)+' · ':'')+b.cur+' of '+b.total+' lessons');
       h+='<div style="margin-bottom:9px">'+
         '<div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin-bottom:3px">'+
         '<span style="font-weight:600">'+esc(b.label)+(b.done?' <span style="color:#16a34a">✓</span>':'')+'</span>'+
