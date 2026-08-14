@@ -15791,6 +15791,37 @@ function cpDelChore(i){
   routineCfg2[cpSlot][cpKid].splice(i,1); rtCfgSave(); renderAll();
 }
 function cpMove(i,dir){ if(!momHere()||cpSlot==="grabs") return; rtCfgMove(cpSlot,cpKid,i,dir); }
+// Move a step to a different routine list (Afternoon → Morning, Chores → Evening…).
+// MOVE-FORWARD ONLY, deliberately: check-offs are keyed by slot+index
+// (wk_day_kid_<abbr>step<i>), so carrying the record across would mean rewriting sl and
+// routineLog for past weeks. The step arrives with a clean record and whatever it earned
+// in its old list stays filed there — the chore genuinely WAS an afternoon job last week.
+// Morning is a different shape (config/morningRoutine: label+emoji only, no ⭐, no
+// cadence), so a step moved there loses its stars and schedule; the confirm says so.
+const CP_MOVE_DESTS=["morning","afternoon","chores","evening"];
+function cpMoveToSlot(i,dest){
+  if(!momHere()||cpSlot==="grabs") return;
+  if(!dest||dest===cpSlot||CP_MOVE_DESTS.indexOf(dest)<0) return;
+  rtCfgEnsure(cpSlot,cpKid);
+  const st=routineCfg2[cpSlot][cpKid][i]; if(!st) return;
+  const fromLbl=SL_SLBL[cpSlot]||cpSlot, destLbl=SL_SLBL[dest]||dest;
+  const drops=(dest==="morning")&&(((st.pts||0)>0)||(st.cad&&st.cad!=="daily"));
+  if(!confirm('Move "'+(st.label||"this step")+'" to '+cap(cpKid)+"\u2019s "+destLbl+" list?"
+    +(drops?"\n\nMorning steps carry no \u2b50 and no schedule \u2014 its stars and days are dropped.":"")
+    +"\n\nIts past check-offs and stars stay filed under "+fromLbl+"; it starts fresh in "+destLbl+".")) return;
+  const copy=JSON.parse(JSON.stringify(st));
+  routineCfg2[cpSlot][cpKid].splice(i,1);
+  if(dest==="morning"){
+    mrCfgEnsure(cpKid);
+    morningRoutineCfg[cpKid].push({label:copy.label||"",emoji:copy.emoji||""});
+    mrCfgSave();
+  }else{
+    rtCfgEnsure(dest,cpKid);
+    routineCfg2[dest][cpKid].push(copy);
+  }
+  rtCfgSave(); renderAll();
+  if(typeof gwShowToast==="function") gwShowToast("Moved to "+destLbl+" \u2713");
+}
 function cpReset(){
   if(!momHere()||cpSlot==="grabs") return;
   if(!confirm("Reset "+cap(cpKid)+"’s "+cpSlot+" list back to the default steps? Custom chores, days, and stars on this list are replaced.")) return;
@@ -15945,6 +15976,7 @@ function renderChorePlan(el,headerHtml){
     h+='<td style="white-space:nowrap">'+
        (!isGrabs?((i>0?'<button onclick="cpMove('+i+',-1)" title="Move up" style="padding:3px 6px;border-radius:6px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:11px;cursor:pointer">↑</button>':'<span style="display:inline-block;width:25px"></span>')+
        (i<steps.length-1?'<button onclick="cpMove('+i+',1)" title="Move down" style="padding:3px 6px;border-radius:6px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:11px;cursor:pointer;margin-left:2px">↓</button>':'<span style="display:inline-block;width:25px;margin-left:2px"></span>')+' '):'')+
+       (!isGrabs?'<select onchange="cpMoveToSlot('+i+',this.value);this.selectedIndex=0" title="Move to another list" style="padding:3px 4px;border-radius:6px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:11px;cursor:pointer;margin-right:2px;font-family:\'DM Sans\',sans-serif"><option value="">\u27a1</option>'+CP_MOVE_DESTS.filter(function(s){return s!==cpSlot;}).map(function(s){return '<option value="'+s+'">'+esc(SL_SLBL[s]||s)+'</option>';}).join("")+'</select>':'')+
        '<button class="cp-delb" onclick="cpDelChore('+i+')" title="Delete this chore">✕</button></td></tr>';
     if(_eo){ h+='<tr><td colspan="12" style="background:var(--bg);padding:7px 9px">'+_cpEmojiPanelHTML(i,st)+'</td></tr>'; }
     if(_co){ h+='<tr><td colspan="12" style="background:var(--bg);padding:7px 9px">'+_cpCadPanelHTML(cpSlot,cpKid,i,st)+'</td></tr>'; }
