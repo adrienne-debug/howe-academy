@@ -12238,7 +12238,7 @@ function rlScanAddAll(kid){
   picks.forEach((x,i)=>{
     const id=_bookSlug(x.title)+"_"+(base+i).toString(36);
     const rec={title:x.title,size:rlDefaultSize(kid),totalPages:x.pages||null,
-      status:rlCurrent(kid)?"upnext":"reading",addedBy:"mom",addedTs:nowTs()};
+      status:rlCurrent(kid)?"upnext":"reading",addedBy:"mom",addedTs:nowTs(),addedMs:Date.now()};
     readingLog[kid].books[id]=rec;
     if(db) db.ref("readingLog/"+kid+"/books/"+id).set(rec);
   });
@@ -12266,7 +12266,7 @@ function rlAddBook(kid){
   const pgs=parseInt((document.getElementById("rl-add-pages")||{}).value,10)||0;
   if(!t){ gwShowToast("Give the book a title"); return; }
   const id=_bookSlug(t)+"_"+Date.now().toString(36);
-  const rec={title:t,size:rlAddSize,totalPages:pgs>0?pgs:null,status:rlCurrent(kid)?"upnext":"reading",addedTs:nowTs()};
+  const rec={title:t,size:rlAddSize,totalPages:pgs>0?pgs:null,status:rlCurrent(kid)?"upnext":"reading",addedTs:nowTs(),addedMs:Date.now()};
   if(!readingLog[kid]) readingLog[kid]={};
   if(!readingLog[kid].books) readingLog[kid].books={};
   readingLog[kid].books[id]=rec;
@@ -12481,8 +12481,21 @@ function rlOnCheckoff(t){
 // (Mom is the one confirming — kid never picks a point value), paid + trophied
 // immediately like any finished book: her confirm IS the approval.
 let _rlRotCtx=null, _rlRotSel=null, _rlRotSize="mini";
+// When a book was added, in milliseconds. `addedTs` is a DISPLAY string ("08:51 PM
+// Aug 13") — subtracting two of them is NaN, which made the sort below a no-op and left
+// the proposal in Firebase key order, i.e. alphabetical by title. Every book id ends in
+// a base-36 millisecond stamp, so real load order is recoverable for books written
+// before `addedMs` existed; new books carry the number outright.
+function _rlAddedMs(b){
+  if(b&&typeof b.addedMs==="number") return b.addedMs;
+  const tail=String((b&&b.id)||"").split("_").pop();
+  const ms=parseInt(tail,36);
+  return (isFinite(ms)&&ms>1e12)?ms:0;
+}
+// Most recently read first; never-read books fall back to when they were loaded, so
+// stocking the shelf in reading order makes the last four loaded the first proposal.
 function _rlRotRank(kid){
-  return rlBooks(kid).map(b=>({...b,_ts:b.lastReadTs||b.addedTs||0})).sort((a,b)=>b._ts-a._ts);
+  return rlBooks(kid).map(b=>({...b,_ts:b.lastReadTs||_rlAddedMs(b)})).sort((a,b)=>b._ts-a._ts);
 }
 function rlOpenRotation(kid,opts){
   opts=opts||{};
@@ -12563,7 +12576,7 @@ function rlRotSave(){
   if(t){
     const id=_bookSlug(t)+"_"+base.toString(36);
     const pts=rlSizePts(_rlRotSize,kid);
-    const rec={title:t,size:_rlRotSize,totalPages:null,status:"done",addedBy:"mom",addedTs:nowTs(),
+    const rec={title:t,size:_rlRotSize,totalPages:null,status:"done",addedBy:"mom",addedTs:nowTs(),addedMs:base,
       doneTs:nowTs(),doneDay:d,donePts:pts,lastReadTs:base+picked.length};
     if(!readingLog[kid].books) readingLog[kid].books={};
     readingLog[kid].books[id]=rec;
@@ -12707,7 +12720,7 @@ function rlAloudSave(finish){
     let b=readingLog[k].books[id];
     if(!b){
       const cur=rlCurrent(k); if(cur) _rlSetBook(k,cur.id,{status:"upnext"});
-      b={title:src.title,size:src.size,totalPages:src.totalPages,status:"reading",addedBy:"mom",addedTs:nowTs(),aloud:true};
+      b={title:src.title,size:src.size,totalPages:src.totalPages,status:"reading",addedBy:"mom",addedTs:nowTs(),addedMs:Date.now(),aloud:true};
       readingLog[k].books[id]=b;
       if(db) db.ref("readingLog/"+k+"/books/"+id).set(b);
     }
@@ -12769,7 +12782,7 @@ function rlNoBookSave(){
   if(!t){ if(typeof gwShowToast==="function") gwShowToast("Type the book’s name first"); return; }
   const id=_bookSlug(t)+"_"+Date.now().toString(36);
   const rec={title:t,size:rlDefaultSize(kid),sizePending:true,addedBy:"kid",totalPages:pgs>0?pgs:null,
-    status:rlCurrent(kid)?"upnext":"reading",addedTs:nowTs()};
+    status:rlCurrent(kid)?"upnext":"reading",addedTs:nowTs(),addedMs:Date.now()};
   if(!readingLog[kid]) readingLog[kid]={};
   if(!readingLog[kid].books) readingLog[kid].books={};
   readingLog[kid].books[id]=rec;
