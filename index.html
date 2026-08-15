@@ -2682,6 +2682,11 @@ function initFb() {
       try{HA_LS.setItem('wellness_periods',JSON.stringify(wellnessPeriods));}catch(e){}
       if(tab==="moms-plan"&&mpSubView==="weigh"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
     });
+    db.ref("wellness/bpDad").on("value",s=>{
+      wellnessBPDad=s.val()||{};
+      try{HA_LS.setItem('wellness_bp_dad',JSON.stringify(wellnessBPDad));}catch(e){}
+      if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+    });
     db.ref("wellness/bp").on("value",s=>{
       if(s.val()) wellnessBP=s.val();
       try{HA_LS.setItem('wellness_bp',JSON.stringify(wellnessBP));}catch(e){}
@@ -6666,6 +6671,11 @@ let momdayData = {};                                  // momday/{iso} → {win, 
 let wellnessWeighins = [];                            // [{iso, lb, note, ts}]
 let wellnessCycle = { anchor:'2026-07-25', len:28 };  // fallback anchor; overridden by logged periods
 let wellnessBP = {};                                 // wellness/bp/{iso}/{am|pm} → {sys, dia, pulse?, ts}
+// 🫀 Andrew's readings — a SEPARATE node from hers. Bills and laundry are shared because
+// they're household facts; blood pressure is personal, and mixing two people's numbers
+// would poison the 7-day average and the trend, which is the entire reason to track it.
+// Same shape as wellness/bp, so mwBPCat / mwBPSlotNow / mwFmtShort all work unchanged.
+let wellnessBPDad = {};                              // wellness/bpDad/{iso}/{am|pm}
 let wellnessSymptoms = {};                           // wellness/symptoms/{iso}/{sym} → ts
 let wellnessSymBank = {};                            // wellness/symptomBank/{slug} → label (Mom-added)
 // 👨 Dad's own list: dadChores/{id} = {label, cad, slot, ts}, done stamps at
@@ -6703,6 +6713,7 @@ function mpInit(){
   try{ const c=HA_LS.getItem('wellness_cycle'); if(c) wellnessCycle=Object.assign(wellnessCycle,JSON.parse(c)); }catch(e){}
   try{ const p=HA_LS.getItem('wellness_periods'); if(p) wellnessPeriods=JSON.parse(p); }catch(e){}
   try{ const b=HA_LS.getItem('wellness_bp'); if(b) wellnessBP=JSON.parse(b); }catch(e){}
+  try{ const bd=HA_LS.getItem('wellness_bp_dad'); if(bd) wellnessBPDad=JSON.parse(bd); }catch(e){}
   try{ const y=HA_LS.getItem('wellness_symptoms'); if(y) wellnessSymptoms=JSON.parse(y); }catch(e){}
   try{ const sb=HA_LS.getItem('wellness_symbank'); if(sb) wellnessSymBank=JSON.parse(sb); }catch(e){}
   try{ const bl=HA_LS.getItem('ha_bills'); if(bl) billsData=JSON.parse(bl); }catch(e){}
@@ -6723,6 +6734,76 @@ function mpInit(){
 // data as Mom's Day — mark a bill paid here and it's paid there. The only thing he
 // can't do is move the kids' economy: Star Bank is view-only unless Mom is unlocked.
 function ddSlotGroups(){ return MC_SLOT_ORDER.concat([""]); }
+// 🫀 His save. Mirrors mwSaveBP's validation and crisis warning exactly — the numbers that
+// matter medically shouldn't behave differently just because it's a different page — but
+// writes to wellness/bpDad and repaints his page.
+function ddSaveBP(){
+  const sys=parseInt((document.getElementById('dbp-sys')||{}).value);
+  const dia=parseInt((document.getElementById('dbp-dia')||{}).value);
+  const pulse=parseInt((document.getElementById('dbp-pulse')||{}).value);
+  if(!sys||!dia){ alert('Add both numbers — top (systolic) and bottom (diastolic).'); return; }
+  if(sys<60||sys>260||dia<30||dia>160){ alert('That reading looks off — double-check the numbers.'); return; }
+  const iso=mwTodayIso(), slot=mwBPSlotNow();
+  const rec={sys:sys,dia:dia,ts:Date.now()}; if(pulse) rec.pulse=pulse;
+  if(!wellnessBPDad[iso]) wellnessBPDad[iso]={};
+  wellnessBPDad[iso][slot]=rec;
+  try{HA_LS.setItem('wellness_bp_dad',JSON.stringify(wellnessBPDad));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('wellness/bpDad/'+iso+'/'+slot).set(rec);
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+  if(sys>180||dia>120) alert('\u{1FAC0} That reading is in the crisis range (over 180/120). Sit quietly for 5 minutes and take it again — if it is still that high, call the doctor.');
+  else if(typeof mwToast==="function") mwToast('\u{1FAC0} '+slot.toUpperCase()+' reading saved');
+}
+// Reuses the pure helpers from her card — mwBPCat (the clinical bands), mwBPSlotNow and
+// mwFmtShort — so the two never disagree about what counts as Stage 2.
+function mdCardBPDad(){
+  const today=mwTodayIso(), store=wellnessBPDad;
+  const chip=function(sl){
+    const r=(store[today]||{})[sl];
+    if(!r) return '<span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:9px;background:#f3f4f6;color:#9ca3af">'+sl.toUpperCase()+' —</span>';
+    const c=mwBPCat(r.sys,r.dia);
+    return '<span title="'+c.label+'" style="font-size:11px;font-weight:800;padding:3px 9px;border-radius:9px;background:'+c.bg+';color:'+c.color+'">'+
+      sl.toUpperCase()+' '+r.sys+'/'+r.dia+(r.pulse?' ♥'+r.pulse:'')+'</span>';
+  };
+  let h='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
+    +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#1d4ed8;color:#fff;font-weight:800;font-size:13px"><span>\u{1FAC0}</span> Blood Pressure'
+    +'<span style="flex:1"></span><span style="font-size:10.5px;font-weight:700;opacity:.85">saves to '+mwBPSlotNow().toUpperCase()+'</span></div>'
+    +'<div style="padding:10px 14px 12px">'
+    +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">'+chip('am')+chip('pm')+'</div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
+    +'<input id="dbp-sys" type="number" inputmode="numeric" placeholder="Top" style="flex:1;min-width:70px;padding:9px 10px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:15px;text-align:center;font-family:\'DM Sans\',sans-serif">'
+    +'<input id="dbp-dia" type="number" inputmode="numeric" placeholder="Bottom" style="flex:1;min-width:70px;padding:9px 10px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:15px;text-align:center;font-family:\'DM Sans\',sans-serif">'
+    +'<input id="dbp-pulse" type="number" inputmode="numeric" placeholder="♥ pulse" onkeydown="if(event.key===\'Enter\')ddSaveBP()" style="flex:1;min-width:70px;padding:9px 10px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:15px;text-align:center;font-family:\'DM Sans\',sans-serif">'
+    +'<button onclick="ddSaveBP()" style="padding:9px 18px;border-radius:9px;border:none;background:#1d4ed8;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save</button></div>';
+  // 7-day average — the yardstick the guidelines actually use, not any single reading.
+  const recent=[];
+  Object.keys(store).sort().slice(-7).forEach(function(d){ ["am","pm"].forEach(function(sl){ const r=(store[d]||{})[sl]; if(r) recent.push(r); }); });
+  if(recent.length>=3){
+    const s=Math.round(recent.reduce(function(n,r){return n+r.sys;},0)/recent.length);
+    const di=Math.round(recent.reduce(function(n,r){return n+r.dia;},0)/recent.length);
+    const c=mwBPCat(s,di);
+    h+='<div style="margin-top:10px;padding:8px 11px;border-radius:9px;background:'+c.bg+';border-left:3px solid '+c.color+';font-size:12.5px;font-weight:700">'
+      +'7-day average: <b style="color:'+c.color+'">'+s+'/'+di+'</b> <span style="color:'+c.color+'">· '+c.label+'</span></div>';
+  } else if(recent.length){
+    h+='<div style="margin-top:10px;font-size:11.5px;color:var(--muted)">'+recent.length+' reading'+(recent.length>1?'s':'')+' so far — the 7-day average appears at 3.</div>';
+  }
+  // 14-day history
+  const days=Object.keys(store).sort().reverse().slice(0,14);
+  if(days.length){
+    const cell=function(d,sl){ const r=(store[d]||{})[sl]; if(!r) return '<span style="color:#9ca3af">—</span>';
+      const c=mwBPCat(r.sys,r.dia);
+      return '<b style="color:'+c.color+'">'+r.sys+'/'+r.dia+'</b>'+(r.pulse?' <span style="color:#6b6560;font-size:10px">♥'+r.pulse+'</span>':''); };
+    h+='<div style="margin-top:12px;font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.04em">LAST '+days.length+' DAY'+(days.length>1?'S':'')+'</div>';
+    h+=days.map(function(d){
+      return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f3f4f6;font-size:12.5px">'
+        +'<div style="flex:0 0 62px;color:var(--muted);font-weight:700">'+mwFmtShort(d)+'</div>'
+        +'<div style="flex:1">☀️ '+cell(d,"am")+'</div>'
+        +'<div style="flex:1">\u{1F319} '+cell(d,"pm")+'</div></div>';
+    }).join("");
+  }
+  h+='</div></div>';
+  return h;
+}
+
 function renderDadsDay(el){
   const iso=_todayStr(), dn=mdTodayName(), today=mdTodayName();
   const all=dcAll();
@@ -6793,6 +6874,7 @@ function renderDadsDay(el){
     h+='<div style="background:#fff;border-radius:12px;padding:8px 14px;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:#15803d">🔓 Star controls unlocked'
       +'<span style="flex:1"></span><button onclick="dadLock()" style="border:1.5px solid var(--border);background:none;border-radius:9px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Lock</button></div>';
   }
+  try{ h+=mdCardBPDad(); }catch(e){}
   try{ h+=mdCardStarBank(_dadAward); }catch(e){}
   try{ h+=mdCardKidsToday(today,true); }catch(e){}
   try{ h+=mdCardDinner(iso); }catch(e){}
