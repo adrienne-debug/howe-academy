@@ -247,6 +247,14 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 
 /* ── KIOSK MODE (?kiosk=play) — playroom checkout console: Play tab only, no chrome ── */
 body.kiosk #app-header,body.kiosk #nav-tabs,body.kiosk #sched-subtabs,body.kiosk #day-tabs,body.kiosk #kid-filter,body.kiosk #mom-pin-bar,body.kiosk #week-strip,body.kiosk #skylight-panel,body.kiosk #admin-btn,body.kiosk #scroll-top,body.kiosk #hq-back,body.kiosk #md-back{display:none!important}
+/* ── 🚿 BATHROOM KIOSK (?kiosk=routines) — the routine lists and nothing else ── */
+/* #skylight-panel is NOT forced visible here on purpose: renderSkylight() hides it inline
+   on an "everything off" break day, and an !important would show an empty shell instead. */
+body.kioskr #app-header,body.kioskr #nav-tabs,body.kioskr #sched-subtabs,body.kioskr #day-tabs,body.kioskr #kid-filter,body.kioskr #mom-pin-bar,body.kioskr #week-strip,body.kioskr #admin-btn,body.kioskr #scroll-top,body.kioskr #hq-back,body.kioskr #md-back,body.kioskr #content{display:none!important}
+#kiosk-kids{display:none}
+body.kioskr #kiosk-kids{display:flex;gap:8px;padding:10px 12px;background:#fff;border-bottom:1px solid var(--border);overflow-x:auto;position:sticky;top:0;z-index:97}
+body.kioskr #kiosk-kids::-webkit-scrollbar{display:none}
+.kk-btn{flex:0 0 auto;padding:12px 20px;border-radius:14px;border:2px solid var(--border);background:#fff;font-size:17px;font-weight:800;font-family:'DM Sans',sans-serif;cursor:pointer;min-height:52px}
 .day-banner{padding:16px;border-bottom:1px solid var(--border)}
 .day-banner-inner{display:flex;justify-content:space-between;align-items:flex-start}
 .day-name{font-family:'Fraunces',serif;font-size:26px;font-weight:700;color:var(--day-color)}
@@ -1344,6 +1352,8 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
 <div id="kid-filter"></div>
 <div id="mom-pin-bar" style="display:none;background:#fff;border-bottom:1px solid var(--border);padding:10px 16px;text-align:center"></div>
 
+<div id="kiosk-kids"></div>
+
 <!-- SKYLIGHT — top of schedule content -->
 <div id="skylight-panel">
   <div id="sl-alert"></div>
@@ -2206,6 +2216,12 @@ function _dryRun(){ try{ return /[?&]dryrun=1/.test(location.search)||HA_LS.getI
 // Locks the app to the Play tab and hides all nav chrome; Firebase sync, dryrun, the
 // codeVersion auto-reload, and the PIN-gated Mom view inside Play all work as normal.
 function _kiosk(){ try{ return /[?&]kiosk=play/.test(location.search)||HA_LS.getItem("ha_kiosk")==="play"; }catch(e){ return false; } }
+// 🚿 Bathroom kiosk (?kiosk=routines): upstairs console showing ONLY the four routine
+// lists (Morning / Afternoon / Chores / Evening) with a kids-only picker. Deliberately
+// NOT the #kid-filter bar — that one carries a Mom chip wired to the ADMIN PIN prompt,
+// which must never sit on an unattended tablet the kids use. Same app, same Firebase:
+// a check-off here is the real check-off and still unlocks that kid's school day.
+function _kioskR(){ try{ return /[?&]kiosk=routines/.test(location.search)||HA_LS.getItem("ha_kiosk")==="routines"; }catch(e){ return false; } }
 
 // ── SCHEDULER WRITE LOCK ─────────────────────────────────────────────────────
 // Only ONE device plays scheduler at a time. A device claims /regen_lock (atomic
@@ -2965,6 +2981,7 @@ function renderSkylight(){
 // ── TAB ROUTING ───────────────────────────────────────────────────
 function showTab(t){
   if(_kiosk()&&t!=="play") return;   // kiosk console is locked to Play
+  if(_kioskR()&&t!=="schedule") return;  // 🚿 bathroom console is locked to the routine lists
   tab=t;
   mastAddMode=false; mastLogMode=false; mastLogScores={};
   document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===t||(t==="supplies"&&b.dataset.tab==="schedule")));
@@ -3039,7 +3056,7 @@ function renderAll(){
 }
 function _renderAllInner(){
   const stb=document.getElementById("sitter-tab-btn"); if(stb){ if(SITTER_NAME){stb.textContent=SITTER_NAME;stb.style.display="";} else {stb.style.display="none";} }
-  renderSchedSubtabs(); renderDayTabs(); renderKidFilter(); renderSkylight(); renderWeekStrip();
+  renderSchedSubtabs(); renderDayTabs(); renderKidFilter(); renderSkylight(); renderWeekStrip(); renderKioskKids();
   if(tab==="schedule") document.getElementById("day-tabs").style.display=(schedShowHistory||schedShowPace||schedShowAdmin)?"none":"flex";
   const showKidFilter=(tab==="schedule"&&!schedShowAdmin&&!schedShowBoard)||(tab==="history")||(tab==="pace");
   const kf=document.getElementById("kid-filter");
@@ -3223,6 +3240,40 @@ function selKid(k){
   }
   if(!momModeActive) momPinUnlocked=false;
   kid=k; schedShowAdmin=false; renderAll();
+}
+
+// ── 🚿 BATHROOM KIOSK PICKER ──────────────────────────────────────
+// Kids only, big tap targets. Auto-returns to the Everyone overview after KK_IDLE_MS of
+// no taps: a kid who wanders off with their own list open would otherwise hand the next
+// kid at the sink their check-offs — the stolen-checks pattern, in a room with four users.
+const KK_IDLE_MS=120000;
+let _kkLastTouch=Date.now();
+function kkTouch(){ _kkLastTouch=Date.now(); }
+function kkSel(k){ kkTouch(); kid=k; renderAll(); window.scrollTo({top:0}); }
+function renderKioskKids(){
+  if(!_kioskR()) return;
+  const el=document.getElementById("kiosk-kids"); if(!el) return;
+  // Mom marked this break "everything off" — renderSkylight() hides the lists, so say so
+  // rather than leaving a blank tablet on the bathroom wall.
+  if(!activeSlots().length){
+    el.innerHTML='<div style="padding:6px 4px;font-size:16px;font-weight:800;color:var(--muted)">Day off \u2014 no lists today \uD83C\uDF89</div>';
+    return;
+  }
+  el.innerHTML=["all",...ROSTER].map(function(k){
+    const on=(k===kid), col=(k==="all")?"var(--header)":(SL_KCOL[k]||"#666");
+    return '<button class="kk-btn'+(on?" active":"")+'" onclick="kkSel(\''+k+'\')" style="'+
+      (on?"background:"+col+";border-color:"+col+";color:#fff":"color:"+col)+'">'+
+      (k==="all"?"Everyone":(SL_KLBL[k]||cap(k)))+'</button>';
+  }).join("");
+}
+// Armed from INIT, only in kiosk-routines mode.
+function kkArm(){
+  document.addEventListener("touchstart",kkTouch,true);
+  document.addEventListener("click",kkTouch,true);
+  setInterval(function(){
+    if(!_kioskR()||kid==="all") return;
+    if(Date.now()-_kkLastTouch>=KK_IDLE_MS){ kid="all"; renderAll(); }
+  },15000);
 }
 
 // ── WEEK STRIP ────────────────────────────────────────────────────
@@ -32801,6 +32852,7 @@ window.addEventListener("scroll",()=>{
 // ── INIT ──────────────────────────────────────────────────────────
 boot();
 if(_kiosk()){ tab="play"; document.body.classList.add("kiosk"); }
+if(_kioskR()){ tab="schedule"; kid="all"; document.body.classList.add("kioskr"); kkArm(); }
 initFb(); renderAll();
 
 // ══════════════════════════════════════════════════════════════════
