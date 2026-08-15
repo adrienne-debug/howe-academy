@@ -261,10 +261,16 @@ function plMeta(id){
 // PER-LEAF writes only — never a whole-object set. Same clobber-safety rule the
 // check-off sync fix established: two devices editing different fields must not
 // overwrite each other. dryrun neuters these automatically via the patched db.ref.
+// ⚠️ `false` used to mean "clear this field" here, which silently broke the ONE boolean
+// this stores: tapping "in rotation" to park a bin deleted the override instead of saving
+// it, and plMeta's fallback (rot defaults to TRUE) put it straight back in rotation. A
+// falsy VALUE is not the same as an ABSENT one — same trap as settings/dadPin.
+// null is now the only "clear" signal; every other caller passes a string or null, so
+// nothing else changes.
 function plMetaSet(id,field,val){if(!plMomAuthed())return;
   if(!plBinMeta[id])plBinMeta[id]={};
-  if(val===null||val===false)delete plBinMeta[id][field];else plBinMeta[id][field]=val;
-  if(plFB)db.ref('play/binMeta/'+id+'/'+field).set(val===false?null:val);
+  if(val===null)delete plBinMeta[id][field];else plBinMeta[id][field]=val;
+  if(plFB)db.ref('play/binMeta/'+id+'/'+field).set(val);
   else{try{HA_LS.setItem('lib_binmeta',JSON.stringify(plBinMeta));}catch(e){}}
 }
 function plMetaKid(id,kid){if(!plMomAuthed())return;
