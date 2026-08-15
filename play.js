@@ -284,9 +284,39 @@ function plMetaKid(id,kid){if(!plMomAuthed())return;
 let plPhotos={};
 function plPhoto(c){return plPhotos[c.id]||c.photo;}
 function plBinName(c){const m=plBinMeta[c.id];return (m&&m.name)||c.name;}
+// ── A KIOSK-SAFE STAND-IN FOR prompt() ────────────────────────────
+// Kiosk browsers (WallPanel / Fully Kiosk on the Fires) suppress prompt() entirely —
+// verified 2026-08-15, alert() fires there but prompt() does not — so both Mom tools below
+// did nothing at all on the one device they're most likely to be used from. Same #pl-sheet
+// the Mom PIN and add-friend sheets already use.
+// Cancel simply closes without calling back, matching prompt()'s null return; a BLANK save
+// still calls back with "", because both callers treat blank as "reset to the default".
+function plAskSheet(o){
+  window._plAsk=o.onSave;
+  document.getElementById("pl-shbody").innerHTML='<div style="padding:12px 4px">'+
+    '<h2 style="margin:0 0 6px;font-size:17px">'+plEsc(o.title)+'</h2>'+
+    (o.hint?'<div style="font-size:12px;color:var(--muted);margin-bottom:10px;white-space:pre-line">'+plEsc(o.hint)+'</div>':'')+
+    '<input id="pl-ask-in" type="text" value="'+plEsc(o.value||"")+'" placeholder="'+plEsc(o.placeholder||"")+'" '+
+      'onkeydown="if(event.key===\'Enter\')plAskSave()" '+
+      'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:16px;font-family:\'DM Sans\',sans-serif">'+
+    '<div style="display:flex;gap:8px;margin-top:12px">'+
+      '<button onclick="plAskSave()" style="flex:1;padding:11px;border-radius:10px;border:none;background:#111827;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save</button>'+
+      '<button onclick="plCloseSheet()" style="flex:0 0 auto;padding:11px 18px;border-radius:10px;border:1.5px solid var(--border);background:none;font-size:14px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancel</button>'+
+    '</div></div>';
+  document.getElementById("pl-sheet").classList.add("open");
+  setTimeout(function(){ var i=document.getElementById("pl-ask-in"); if(i){ i.focus(); i.select(); } },50);
+}
+function plAskSave(){
+  var i=document.getElementById("pl-ask-in"); if(!i) return;
+  var v=i.value, fn=window._plAsk;
+  window._plAsk=null;
+  plCloseSheet();
+  if(typeof fn==="function") fn(v);
+}
 function plRoomRename(id){if(!plMomAuthed())return;const c=PL_CATALOG.find(x=>x.id==id);if(!c)return;
-  const v=prompt("Name for "+id+":",plBinName(c));if(v===null)return;
-  plMetaSet(id,"name",v.trim()||null);plRender();}
+  plAskSheet({title:"Name for "+id, value:plBinName(c), placeholder:c.name,
+    hint:"Blank = back to the catalog name ("+c.name+").",
+    onSave:function(v){ plMetaSet(id,"name",String(v).trim()||null); plRender(); }});}
 function plPhotoPick(id){if(!plMomAuthed())return;window._plPhotoTarget=id;
   let f=document.getElementById("pl-photo-in");
   if(!f){f=document.createElement("input");f.type="file";f.accept="image/*";f.id="pl-photo-in";f.style.display="none";
@@ -317,9 +347,10 @@ function plChip(label,on,onColor,click){
 }
 function plMetaLoc(id){if(!plMomAuthed())return;
   const c=PL_CATALOG.find(x=>x.id==id);const mt=plMeta(id);
-  const v=prompt("Where does "+plBinName(c)+" live?\n\nUnit or slot — F1, W2, MK-3, BG-L1, SHOW-R, K14-2\nBlank = back to the catalog default ("+c.loc+").",mt.loc||c.loc);
-  if(v===null)return;
-  plMetaSet(id,"loc",v.trim()?v.trim().toUpperCase():null);plRender();
+  plAskSheet({title:"Where does "+plBinName(c)+" live?",
+    hint:"Unit or slot — F1, W2, MK-3, BG-L1, SHOW-R, K14-2\nBlank = back to the catalog default ("+c.loc+").",
+    value:mt.loc||c.loc, placeholder:c.loc,
+    onSave:function(v){ v=String(v).trim(); plMetaSet(id,"loc",v?v.toUpperCase():null); plRender(); }});
 }
 
 // ── Phase D (Mom half): station planning — the deck, flips, staged-bin lock ────
@@ -1058,5 +1089,5 @@ window.renderPlay=function(c){
     document.getElementById("pl-sheet").addEventListener("click",e=>{if(e.target.id=="pl-sheet")plCloseSheet();});}
   plRender();
 };
-window.plToggleUnlock=plToggleUnlock;window.plSetMode=plSetMode;window.plSetKid=plSetKid;window.plPickIntent=plPickIntent;window.plShuffle=plShuffle;window.plOpenSheet=plOpenSheet;window.plCloseSheet=plCloseSheet;window.plCo=plCo;window.plRet=plRet;window.plPlayPick=plPlayPick;window.plConfirmPlay=plConfirmPlay;window.plFinishPlay=plFinishPlay;window.plActSheet=plActSheet;window.plWiz=plWiz;window.plWizGo=plWizGo;window.plRender=plRender;window.PL_ACTS=PL_ACTS;window.PL_CATALOG=PL_CATALOG;
+window.plAskSave=plAskSave;window.plToggleUnlock=plToggleUnlock;window.plSetMode=plSetMode;window.plSetKid=plSetKid;window.plPickIntent=plPickIntent;window.plShuffle=plShuffle;window.plOpenSheet=plOpenSheet;window.plCloseSheet=plCloseSheet;window.plCo=plCo;window.plRet=plRet;window.plPlayPick=plPlayPick;window.plConfirmPlay=plConfirmPlay;window.plFinishPlay=plFinishPlay;window.plActSheet=plActSheet;window.plWiz=plWiz;window.plWizGo=plWizGo;window.plRender=plRender;window.PL_ACTS=PL_ACTS;window.PL_CATALOG=PL_CATALOG;
 })();
