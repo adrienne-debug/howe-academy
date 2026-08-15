@@ -253,6 +253,8 @@ body.kiosk #app-header,body.kiosk #nav-tabs,body.kiosk #sched-subtabs,body.kiosk
 body.kioskr #app-header,body.kioskr #nav-tabs,body.kioskr #sched-subtabs,body.kioskr #day-tabs,body.kioskr #kid-filter,body.kioskr #mom-pin-bar,body.kioskr #week-strip,body.kioskr #admin-btn,body.kioskr #scroll-top,body.kioskr #hq-back,body.kioskr #md-back,body.kioskr #content{display:none!important}
 #kiosk-kids{display:none}
 #kiosk-mom{display:none;background:var(--bg)}
+/* ── 👨 DAD KIOSK (?kiosk=dad) — his page and nothing else ── */
+body.kioskd #app-header,body.kioskd #nav-tabs,body.kioskd #sched-subtabs,body.kioskd #day-tabs,body.kioskd #kid-filter,body.kioskd #mom-pin-bar,body.kioskd #week-strip,body.kioskd #skylight-panel,body.kioskd #admin-btn,body.kioskd #scroll-top,body.kioskd #hq-back,body.kioskd #md-back,body.kioskd #kiosk-kids,body.kioskd #kiosk-mom{display:none!important}
 /* 🔢 Build fingerprint. pointer-events:none so it can never eat a tap on a wall tablet. */
 #build-fp{display:none;position:fixed;right:6px;bottom:5px;font-size:9px;letter-spacing:.1em;font-family:ui-monospace,Menlo,monospace;color:var(--muted);opacity:.5;z-index:200;pointer-events:none}
 .bfp{font-size:9px;letter-spacing:.1em;font-family:ui-monospace,Menlo,monospace;opacity:.6;margin-left:3px}
@@ -2137,6 +2139,17 @@ let histLogView="time"; // "time" | "subject" — how the History Log groups com
 let histTrendKid=null; // Trends: focused kid (null = all)
 let attEditUnlocked=false;
 let APP_PIN=HA_LS.getItem("ha_app_pin")||"0329";
+// 🔑 A SECOND, narrower code. APP_PIN is all-or-nothing — it opens ~150 momHere() gates
+// including schedule regeneration, curriculum and rules, which is far too much to hand
+// over just so Dad can hand out stars. DAD_PIN unlocks EXACTLY ONE thing: the give/dock
+// controls on his own Star Bank card. Empty by default — Mom sets it in 🔒 PIN Settings,
+// and until she does, nothing is unlockable. Session-only: it resets on reload, so a
+// tablet left open doesn't stay unlocked.
+// Default 0726 (her pick, 2026-08-15) so it works out of the box; settings/dadPin
+// overrides it and she can change or blank it in 🔒 PIN Settings at any time.
+let DAD_PIN=HA_LS.getItem("ha_dad_pin")||"0726";
+let dadUnlocked=false;
+function dadAwardOk(){ return dadUnlocked===true; }
 // ── BRAIN BREAK state — per-kid reset (feelings check → menu → timer). Synced at
 //    brainBreaks/{kid} (active break + log) and brainBreakSettings/{kid}. A break is a pure
 //    overlay on that kid's view; schedule data (tasks/checked) is NEVER touched by it.
@@ -2228,6 +2241,10 @@ function _kiosk(){ try{ return /[?&]kiosk=play/.test(location.search)||HA_LS.get
 // which must never sit on an unattended tablet the kids use. Same app, same Firebase:
 // a check-off here is the real check-off and still unlocks that kid's school day.
 function _kioskR(){ try{ return /[?&]kiosk=routines/.test(location.search)||HA_LS.getItem("ha_kiosk")==="routines"; }catch(e){ return false; } }
+// 👨 Dad kiosk (?kiosk=dad): a link for his phone that opens ONLY Dad's Day — no nav, no
+// tabs, no way to wander into the schedule or admin. Same app and same live data; the
+// param just decides what this device is allowed to show.
+function _kioskD(){ try{ return /[?&]kiosk=dad/.test(location.search)||HA_LS.getItem("ha_kiosk")==="dad"; }catch(e){ return false; } }
 
 // ── SCHEDULER WRITE LOCK ─────────────────────────────────────────────────────
 // Only ONE device plays scheduler at a time. A device claims /regen_lock (atomic
@@ -2622,6 +2639,12 @@ function initFb() {
     db.ref("settings/pin").on("value",s=>{
       if(s.val()){ APP_PIN=s.val(); HA_LS.setItem("ha_app_pin",s.val()); }
     });
+    db.ref("settings/dadPin").on("value",s=>{
+      const v=s.val();
+      if(v===null||v===undefined) return;   // never set → keep the code default
+      DAD_PIN=v;                             // "" here means she turned it OFF on purpose
+      try{HA_LS.setItem("ha_dad_pin",DAD_PIN);}catch(e){}
+    });
     db.ref("settings/family").on("value",s=>{
       var v=s.val();
       if(v&&!Array.isArray(v)&&typeof v==="object") v=Object.values(v);
@@ -3002,6 +3025,7 @@ function renderSkylight(){
 function showTab(t){
   if(_kiosk()&&t!=="play") return;   // kiosk console is locked to Play
   if(_kioskR()&&t!=="schedule") return;  // 🚿 bathroom console is locked to the routine lists
+  if(_kioskD()&&t!=="moms-plan") return; // 👨 Dad's link is locked to his page
   tab=t;
   mastAddMode=false; mastLogMode=false; mastLogScores={};
   document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===t||(t==="supplies"&&b.dataset.tab==="schedule")));
@@ -3360,7 +3384,7 @@ function paintBuildFp(){
     const t=buildFp();
     const h=document.getElementById("bfp-hdr"); if(h) h.textContent="\u00b7 "+t;
     const k=document.getElementById("build-fp");
-    if(k){ k.textContent=t; k.style.display=(_kiosk()||_kioskR())?"block":"none"; }
+    if(k){ k.textContent=t; k.style.display=(_kiosk()||_kioskR()||_kioskD())?"block":"none"; }
   }catch(e){}
 }
 // Armed from INIT, only in kiosk-routines mode.
@@ -4258,6 +4282,9 @@ function renderSettings(el,ah){
   pinHtml+='<div class="rules-card-body">';
   pinHtml+='<div class="rules-row"><div class="rules-label">Current PIN</div><div style="font-size:18px;font-weight:700;letter-spacing:6px;font-family:monospace">'+APP_PIN+'</div></div>';
   pinHtml+='<div class="rules-row"><div class="rules-label">New PIN</div><input id="new-pin-input" type="text" inputmode="numeric" maxlength="4" placeholder="4 digits" class="rules-time" style="width:100px;text-align:center;font-size:16px;letter-spacing:6px;font-family:monospace"/></div>';
+  // 🔑 Dad code — unlocks ONLY the star give/dock on Dad's Day. Blank = off.
+  pinHtml+='<div class="rules-row"><div class="rules-label">Dad code <span style="font-weight:600;color:var(--muted);font-size:11px">— lets Dad give stars, nothing else</span></div><input id="dad-pin-set" type="text" inputmode="numeric" maxlength="4" placeholder="'+(DAD_PIN?DAD_PIN:"off")+'" class="rules-time" style="width:100px;text-align:center;font-size:16px;letter-spacing:6px;font-family:monospace"/></div>';
+  pinHtml+='<div class="rules-row"><div class="rules-label"></div><button onclick="saveDadPin()" style="padding:7px 14px;border-radius:9px;border:none;background:#2C5F8A;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save Dad code</button><span id="dad-pin-save-msg" style="font-size:11px;margin-left:8px"></span></div>';
   pinHtml+='<div style="padding:8px 0"><button onclick="saveNewPin()" style="padding:6px 16px;border-radius:8px;border:none;background:#111827;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save PIN</button>'+
     '<span id="pin-save-msg" style="font-size:12px;margin-left:10px"></span></div>';
   pinHtml+='</div></div></div>';
@@ -4648,6 +4675,29 @@ function celebTestSession(){
   _showCelebration(kid, cap(kid)+" completed the session!", {big:true, occasion:"session", points:100});
 }
 
+function dadPinTry(){
+  const i=document.getElementById("dad-pin-input"), e=document.getElementById("dad-pin-err");
+  if(!i) return;
+  if(!DAD_PIN){ if(e) e.textContent="Mom hasn't set a Dad code yet."; return; }
+  if(String(i.value).trim()===String(DAD_PIN)){
+    dadUnlocked=true;
+    const el=document.getElementById("content"); if(el) renderMomsPlan(el);
+    return;
+  }
+  i.value=""; if(e){ e.textContent="Not right — try again."; setTimeout(function(){ if(e) e.textContent=""; },1600); }
+}
+function dadLock(){ dadUnlocked=false; const el=document.getElementById("content"); if(el) renderMomsPlan(el); }
+function saveDadPin(){
+  const inp=document.getElementById("dad-pin-set"), msg=document.getElementById("dad-pin-save-msg");
+  if(!inp||!msg) return;
+  const val=inp.value.trim();
+  if(val&&!/^\d{4}$/.test(val)){ msg.style.color="#b5394a"; msg.textContent="Must be 4 digits (or blank to turn off)."; return; }
+  DAD_PIN=val;
+  try{HA_LS.setItem("ha_dad_pin",val);}catch(e){}
+  if(db) db.ref("settings/dadPin").set(val||"");   // "" = off, not "unset"
+  msg.style.color="#16a34a"; msg.textContent=val?"Dad code set.":"Dad code turned off.";
+  inp.value="";
+}
 function saveNewPin(){
   const inp=document.getElementById("new-pin-input");
   const msg=document.getElementById("pin-save-msg");
@@ -6622,7 +6672,8 @@ function renderDadsDay(el){
   let h='<div style="padding:14px 14px 4px;display:flex;align-items:center;gap:10px">'+
     '<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:#2C5F8A">👨 Dad\'s Day</div>'+
     '<span style="flex:1"></span>'+
-    '<button onclick="mpSubView=null;renderMomsPlan(document.getElementById(\'content\'))" style="border:1.5px solid var(--border);background:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">← Mom\'s Day</button></div>';
+    // On his own ?kiosk=dad link there is nowhere to go back TO — hide it there only.
+    (_kioskD()?'':'<button onclick="mpSubView=null;renderMomsPlan(document.getElementById(\'content\'))" style="border:1.5px solid var(--border);background:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">← Mom\'s Day</button>')+'</div>';
 
   // ── his checklist — the one card he owns outright ──
   h+='<div style="margin:10px 12px;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
@@ -6666,7 +6717,22 @@ function renderDadsDay(el){
 
   // ── the shared cards — same functions Mom's Day calls, same data ──
   h+='<div style="display:flex;flex-direction:column;gap:12px;padding:0 12px 28px">';
-  try{ h+=mdCardStarBank(momHere()); }catch(e){}
+  // The ONLY place dadAwardOk() is consulted. Every other momHere() gate in the app is
+  // untouched — the Dad code buys exactly this card's buttons and nothing more.
+  const _dadAward=momHere()||dadAwardOk();
+  if(!_dadAward){
+    h+= DAD_PIN
+      ? '<div style="background:#fff;border-radius:12px;padding:10px 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+        +'<span style="font-size:12px;font-weight:700;color:var(--muted)">🔒 Star controls</span>'
+        +'<input id="dad-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="••••" onkeydown="if(event.key===\'Enter\')dadPinTry()" style="width:84px;text-align:center;font-size:15px;letter-spacing:5px;padding:6px 8px;border:1.5px solid var(--border);border-radius:9px;font-family:monospace">'
+        +'<button onclick="dadPinTry()" style="padding:7px 14px;border-radius:9px;border:none;background:#2C5F8A;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Unlock</button>'
+        +'<span id="dad-pin-err" style="font-size:11px;color:#b5394a"></span></div>'
+      : '<div style="background:#fff;border-radius:12px;padding:10px 14px;font-size:12px;color:var(--muted)">🔒 Star controls are off. Mom can set a <b>Dad code</b> in Settings ▸ 🔒 PIN Settings.</div>';
+  } else if(dadAwardOk()&&!momHere()){
+    h+='<div style="background:#fff;border-radius:12px;padding:8px 14px;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:#15803d">🔓 Star controls unlocked'
+      +'<span style="flex:1"></span><button onclick="dadLock()" style="border:1.5px solid var(--border);background:none;border-radius:9px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Lock</button></div>';
+  }
+  try{ h+=mdCardStarBank(_dadAward); }catch(e){}
   try{ h+=mdCardKidsToday(today,true); }catch(e){}
   try{ h+=mdCardDinner(iso); }catch(e){}
   try{ h+=mdCardBills(iso); }catch(e){}
@@ -33154,6 +33220,7 @@ window.addEventListener("scroll",()=>{
 boot();
 if(_kiosk()){ tab="play"; document.body.classList.add("kiosk"); }
 if(_kioskR()){ tab="schedule"; kid="all"; document.body.classList.add("kioskr"); kkArm(); }
+if(_kioskD()){ tab="moms-plan"; mpSubView="dad"; document.body.classList.add("kioskd"); }
 paintBuildFp();
 initFb(); renderAll();
 
