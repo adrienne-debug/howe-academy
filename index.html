@@ -22152,6 +22152,52 @@ function gvSelShiftUp(){
 // dayNum order — otherwise the stale card copy could resurrect cleared lessons if the grid
 // were ever fully emptied. Folds the writes into `patch`; returns {sk:prevSeq} for undo.
 // Only touches subjects that actually have a lessonSeq (pure-Excel subjects have none).
+// Subjects whose lessons exist ONLY as grid cells — no lessonSeq. Nothing can validate
+// them (there is no reference to compare against, so a dropped lesson is undetectable),
+// and a Rebuild takes cbDeriveContent's grid-only branch, where Keep copies the backlog
+// forward rather than deriving from a master list. 2026-08-14: 14 such subjects across
+// the three kids, 818 cells. Lincoln's eggspress lost L175/L176 this way and it went
+// unnoticed for weeks precisely because there was nothing to check the grid against.
+function gvNoSeqSubjects(kid){
+  const subs=((currData||{}).subjects||{})[kid]||{};
+  const lessons=((currData||{}).lessons||{})[kid]||{};
+  const out=[];
+  Object.keys(subs).forEach(function(sk){
+    const s=subs[sk];
+    if(!s||s.paused||s.tracking==="daily") return;
+    if(s.lessonSeq&&s.lessonSeq.length) return;
+    let n=0; Object.keys(lessons).forEach(function(dn){ if(gvFilled((lessons[dn]||{})[sk])) n++; });
+    if(n) out.push({sk:sk,disp:s.display||sk,n:n});
+  });
+  return out.sort(function(a,b){ return b.n-a.n; });
+}
+// Capture the master list from the grid, exactly as it stands. The grid is not touched —
+// this only writes down what is already there, so from then on the two can be compared
+// and gvSyncSeqInto keeps them in step on every edit.
+function gvCaptureSeqs(){
+  if(!momModeActive&&!adminPinUnlocked) return;
+  const list=gvNoSeqSubjects(gvKid); if(!list.length||!db) return;
+  const total=list.reduce(function(a,b){ return a+b.n; },0);
+  if(!confirm("Give "+list.length+" subject"+(list.length>1?"s":"")+" a master lesson list, copied from the grid exactly as it stands ("+total+" lessons)?\n\n"
+    +list.map(function(x){ return "\u2022 "+x.disp+" \u2014 "+x.n+" lessons"; }).join("\n")
+    +"\n\nNothing on the grid changes. It means a Rebuild works from the list instead of copying leftovers forward, and a lesson going missing becomes something the app can notice.")) return;
+  const lessons=((currData||{}).lessons||{})[gvKid]||{};
+  const dns=Object.keys(lessons).map(Number).filter(function(n){ return !isNaN(n); }).sort(function(a,b){ return a-b; });
+  const patch={};
+  list.forEach(function(it){
+    const seq=[];
+    dns.forEach(function(dn){ const v=(lessons[dn]||{})[it.sk]; if(gvFilled(v)) seq.push(String(v)); });
+    const s=currData.subjects[gvKid][it.sk];
+    s.lessonSeq=seq; s.total=seq.length;
+    patch["subjects/"+gvKid+"/"+it.sk+"/lessonSeq"]=seq;
+    patch["subjects/"+gvKid+"/"+it.sk+"/total"]=seq.length;
+  });
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch);
+  try{ buildCurrPaceCum(); }catch(e){}
+  if(typeof gwShowToast==="function") gwShowToast("\u2713 Master list captured for "+list.length+" subject"+(list.length>1?"s":""));
+  renderAll();
+}
 function gvSyncSeqInto(patch,subsArr,kid){
   const lessons=(currData.lessons||{})[kid]||{};
   const dns=Object.keys(lessons).map(Number).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
@@ -22868,6 +22914,18 @@ function renderCurrGrid(el){
     h+='<button onclick="gvPurgeOrphans()" style="border:1px solid #d97706;background:#fff;color:#b45309;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Remove '+_orphans.length+' from grid</button>';
     h+='</div>';
   }
+
+  // Subjects with no master list — offer to capture one from the grid.
+  try{
+    const _noseq=gvNoSeqSubjects(gvKid);
+    if(_noseq.length&&(momModeActive||adminPinUnlocked)){
+      const _n=_noseq.reduce(function(a,b){ return a+b.n; },0);
+      h+='<div style="background:#eef2ff;border-left:4px solid #4f46e5;border-radius:0 10px 10px 0;padding:10px 12px;margin:0 0 8px">';
+      h+='<div style="font-size:12px;color:#3730a3;margin-bottom:6px"><b>'+_noseq.length+' subject'+(_noseq.length>1?'s have':' has')+' no master lesson list:</b> '+_noseq.map(function(x){ return esc(x.disp); }).join(", ")+'. Their '+_n+' lessons live only as grid cells, so nothing can tell when one goes missing, and a Rebuild copies leftovers forward instead of working from a list.</div>';
+      h+='<button onclick="gvCaptureSeqs()" style="border:1px solid #4f46e5;background:#fff;color:#3730a3;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Capture from the grid</button>';
+      h+='</div>';
+    }
+  }catch(e){}
 
   const today=cbTodayISO();
   const cap_=cbDayCap(gvKid);
