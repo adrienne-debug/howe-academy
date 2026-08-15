@@ -22649,17 +22649,90 @@ function gvAuditGoto(kid,dn,sk){
   },60);
 }
 
+// ── ⚖ Master list vs grid ───────────────────────────────────────────────────
+// The check that has never existed. A subject's lessons live in TWO records and
+// nothing compares them: `lessonSeq` on the card, and the grid cells. Different
+// code trusts different ones — buildSubjectLessons (Builder form, "Edit as a
+// list") reads the GRID; cbDeriveContent (rebuild content) reads the LIST. So a
+// rebuild can insert lessons that were never on the grid, or delete grid work the
+// list never knew about, and until now there was no way to see either coming.
+// 2026-08-15: 8 of Adrienne's subjects had drifted, one by 39 lessons.
+//
+// Dismissed lessons are excluded — a lesson in the skiplog is absent from the
+// grid on purpose, not by accident.
+function gvReconcile(kid){
+  const subs=((currData||{}).subjects||{})[kid]||{};
+  const lessons=((currData||{}).lessons||{})[kid]||{};
+  const slog=(((currData||{}).skiplog||{})[kid])||{};
+  const dns=Object.keys(lessons).map(Number).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
+  const out=[];
+  for(const sk of Object.keys(subs)){
+    const s=subs[sk];
+    if(!s||s.paused||s.tracking==="daily") continue;
+    const seq=s.lessonSeq||[];
+    if(!seq.length) continue;                       // "Capture from the grid" handles these
+    const grid=[];
+    for(const dn of dns){ const v=(lessons[dn]||{})[sk]; if(gvFilled(v)) grid.push(String(v)); }
+    if(!grid.length) continue;                      // card-only: its own banner
+    const dismissed={};
+    ((slog[sk])||[]).forEach(e=>{ if(e&&e.lesson) dismissed[_gaNorm(e.lesson)]=1; });
+    // Compare as multisets — a sequence may repeat a lesson on purpose, so two
+    // copies in the list and one on the grid is a real difference.
+    const tally=m=>{ const t={}; m.forEach(x=>{ const k=_gaNorm(x); t[k]=(t[k]||0)+1; }); return t; };
+    const tl=tally(seq), tg=tally(grid);
+    const onlyInList=[], onlyInGrid=[];
+    seq.forEach(x=>{ const k=_gaNorm(x);
+      if((tl[k]||0)>(tg[k]||0)&&!dismissed[k]){ tl[k]--; onlyInList.push(x); } });
+    grid.forEach(x=>{ const k=_gaNorm(x);
+      if((tg[k]||0)>(tally(seq)[k]||0)){ tg[k]--; onlyInGrid.push(x); } });
+    if(!onlyInList.length&&!onlyInGrid.length) continue;
+    out.push({sk:sk,disp:s.display||sk,nList:seq.length,nGrid:grid.length,
+      onlyInList:onlyInList,onlyInGrid:onlyInGrid,
+      // Lossless only when the list holds nothing the grid lacks: adopting the
+      // grid then merely ADDS the missing entries. Otherwise adopting would throw
+      // away planned lessons, and that is her call, not a button's.
+      lossless:onlyInList.length===0});
+  }
+  return out.sort((a,b)=>(b.onlyInList.length+b.onlyInGrid.length)-(a.onlyInList.length+a.onlyInGrid.length));
+}
+
+// Make the master list say exactly what the grid says. Offered ONLY when the list
+// holds nothing extra, so nothing planned can be discarded. The grid is what the
+// kids actually work from, so it wins where it is a superset.
+function gvReconcileAdopt(kid,sk){
+  if(!db||(!momModeActive&&!adminPinUnlocked)) return;
+  const r=gvReconcile(kid).filter(x=>x.sk===sk)[0];
+  if(!r) return;
+  if(!r.lossless){
+    alert(r.disp+" can't be matched automatically.\n\n"+r.onlyInList.length+" lesson"+(r.onlyInList.length!==1?"s are":" is")+" on the list but not the grid, so matching would throw "+(r.onlyInList.length!==1?"them":"it")+" away. Decide what should happen to "+(r.onlyInList.length!==1?"those":"that")+" first.");
+    return;
+  }
+  if(!confirm("Make "+r.disp+"'s master list match the grid exactly?\n\nThe list gains "+r.onlyInGrid.length+" lesson"+(r.onlyInGrid.length!==1?"s":"")+" the grid already has. Nothing on the grid changes, no lesson moves, and no date changes — this only stops a future rebuild from deleting work the list didn't know about.")) return;
+  const patch={};
+  const seqUndo=gvSyncSeqInto(patch,[sk],kid);      // rebuilds lessonSeq from the grid
+  const s=(currData.subjects[kid]||{})[sk];
+  if(s&&s.lessonSeq){ patch["subjects/"+kid+"/"+sk+"/total"]=s.lessonSeq.length; s.total=s.lessonSeq.length; }
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch);
+  try{ buildCurrPaceCum(); }catch(e){}
+  gvSelUndo={kid:kid,undo:{},seqUndo:seqUndo,subs:[sk]};
+  gwShowToast("✓ "+r.disp+"'s list now matches the grid — tap Undo to restore");
+  gvGrabScroll(); renderAll();
+}
+
 function gvAuditToggle(){ gvAuditOpen=!gvAuditOpen; gvGrabScroll(); renderAll(); }
 
 function gvAuditRender(kid,col){
   let a; try{ a=gvAuditFindings(kid); }catch(e){ return ""; }
+  let _rec=[]; try{ _rec=gvReconcile(kid); }catch(e){}
   const nNow=a.now.length, nPast=a.past.length;
-  if(!nNow&&!nPast) return "";
+  if(!nNow&&!nPast&&!_rec.length) return "";
   const BTN='border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif';
   let h='<div style="background:#fffbeb;border-left:4px solid #d97706;border-radius:0 10px 10px 0;padding:10px 12px;margin:0 0 8px">';
   h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">';
-  h+='<div style="font-size:12px;color:#92400e">'+(nNow
-      ?'<b>🔍 '+nNow+' thing'+(nNow>1?'s':'')+' to check</b> in '+cap(kid)+'’s upcoming plan — skipped numbers, lessons booked twice, or out of order.'
+  const _tot=nNow+_rec.length;
+  h+='<div style="font-size:12px;color:#92400e">'+(_tot
+      ?'<b>🔍 '+_tot+' thing'+(_tot>1?'s':'')+' to check</b> in '+cap(kid)+'’s plan — skipped numbers, lessons booked twice, out of order'+(_rec.length?', or a card list that disagrees with the grid':'')+'.'
       :'<b>🔍 '+cap(kid)+'’s upcoming plan looks clean.</b>')
     +(nPast?' <span style="color:#a16207">'+nPast+' older one'+(nPast>1?'s':'')+' left as the record.</span>':'')+'</div>';
   h+='<button onclick="gvAuditToggle()" style="flex-shrink:0;border:1px solid #d97706;background:#fff;color:#b45309;'+BTN+'">'+(gvAuditOpen?'Hide':'Show')+'</button>';
@@ -22697,6 +22770,26 @@ function gvAuditRender(kid,col){
   if(nNow){
     h+='<div style="font-size:10px;font-weight:800;letter-spacing:0.4px;text-transform:uppercase;color:#b45309">Today forward — safe to change</div>';
     a.now.forEach(f=>{ h+=rowOf(f,true); });
+  }
+  // ⚖ The two records for a subject, side by side. Same strip, own section —
+  // this is the drift that causes the rest, so it reads before the history.
+  if(_rec.length){
+    h+='<div style="font-size:10px;font-weight:800;letter-spacing:0.4px;text-transform:uppercase;color:#b45309;margin-top:12px">Card list vs grid — out of step</div>';
+    h+='<div style="font-size:10.5px;color:#a16207;line-height:1.45;padding:4px 0">A rebuild builds from the card’s list, but the kids work from the grid. Where they disagree, the next rebuild adds or drops work without asking.</div>';
+    _rec.forEach(r=>{
+      h+='<div style="padding:7px 0;border-top:1px solid #fde68a">';
+      h+='<div style="font-size:11.5px;color:#78350f;line-height:1.45;margin-bottom:5px"><b>'+esc(r.disp)+'</b> — list '+r.nList+', grid '+r.nGrid+'</div>';
+      if(r.onlyInGrid.length)
+        h+='<div style="font-size:11px;color:#78350f;line-height:1.45;margin-bottom:4px">⤓ A rebuild would <b>delete</b> '+r.onlyInGrid.length+' scheduled lesson'+(r.onlyInGrid.length!==1?'s':'')+': '+esc(r.onlyInGrid.slice(0,4).join(', '))+(r.onlyInGrid.length>4?' …':'')+'</div>';
+      if(r.onlyInList.length)
+        h+='<div style="font-size:11px;color:#78350f;line-height:1.45;margin-bottom:4px">⤒ A rebuild would <b>insert</b> '+r.onlyInList.length+' lesson'+(r.onlyInList.length!==1?'s':'')+' not on the grid: '+esc(r.onlyInList.slice(0,4).join(', '))+(r.onlyInList.length>4?' …':'')+'</div>';
+      h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+      if(r.lossless)
+        h+='<button onclick="gvReconcileAdopt(\''+kid+'\',\''+r.sk+'\')" style="border:1px solid #d97706;background:#fff;color:#b45309;'+BTN+'">Match the list to the grid</button>';
+      else
+        h+='<span style="font-size:10.5px;color:#a16207;line-height:1.4">Needs a decision — matching would throw away '+r.onlyInList.length+' planned lesson'+(r.onlyInList.length!==1?'s':'')+'. Open the subject and settle '+(r.onlyInList.length!==1?'them':'it')+' first.</span>';
+      h+='</div></div>';
+    });
   }
   if(nPast){
     h+='<div style="font-size:10px;font-weight:800;letter-spacing:0.4px;text-transform:uppercase;color:#a16207;margin-top:12px">Already happened — shown, not changed</div>';

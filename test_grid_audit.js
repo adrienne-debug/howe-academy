@@ -32,7 +32,8 @@ const prelude = `
   var currData={subjects:{},lessons:{}};
 `;
 const api = new Function(prelude + block +
-  "; return {find:gvAuditFindings, render:gvAuditRender, toggle:gvAuditToggle, set:function(d){currData=d;}};")();
+  "; return {find:gvAuditFindings, render:gvAuditRender, toggle:gvAuditToggle, rec:gvReconcile," +
+  " set:function(d){currData=d;}, setSkip:function(s){currData.skiplog=s;}};")();
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {
@@ -186,6 +187,75 @@ console.log("the gap hand-off is disconnected");
   api.toggle();
   ok("no gap fix button is rendered anywhere", h.indexOf("gvAuditFixGap") < 0);
   ok("the gap row still offers “Show me”", h.indexOf("gvAuditGoto") > 0);
+}
+
+console.log("card list vs grid");
+{
+  // Grid is a superset: adopting it only ADDS, so it's offered as one tap.
+  api.set(grid(["L1", "L2", "L3", "L4"], { subj: { lessonSeq: ["L1", "L2", "L3"] } }));
+  const r = api.rec("kid");
+  ok("spots a list missing grid work", r.length === 1 && r[0].onlyInGrid.length === 1, r);
+  ok("and calls it lossless", r[0] && r[0].lossless === true);
+}
+{
+  // List holds work the grid doesn't: matching would discard it, so no button.
+  api.set(grid(["L1", "L2"], { subj: { lessonSeq: ["L1", "L2", "L3", "L4"] } }));
+  const r = api.rec("kid");
+  ok("spots lessons a rebuild would insert", r[0] && r[0].onlyInList.length === 2, r);
+  ok("and refuses to call it lossless", r[0] && r[0].lossless === false);
+}
+{
+  api.set(grid(["L1", "L2", "L3"], { subj: { lessonSeq: ["L1", "L2", "L3"] } }));
+  ok("agreement reports nothing", api.rec("kid").length === 0);
+}
+{
+  // A dismissed lesson is absent from the grid ON PURPOSE — not drift.
+  api.set(grid(["L1", "L2"], { subj: { lessonSeq: ["L1", "L2", "L3"] } }));
+  api.setSkip({ kid: { k: [{ lesson: "L3" }] } });
+  ok("excludes dismissed lessons", api.rec("kid").length === 0, api.rec("kid"));
+  api.setSkip({});
+}
+{
+  // Sequences repeat on purpose; compare as multisets, not sets.
+  api.set(grid(["Free choice", "Free choice", "Free choice"],
+    { subj: { lessonSeq: ["Free choice", "Free choice"] } }));
+  const r = api.rec("kid");
+  ok("counts repeats rather than de-duping", r[0] && r[0].onlyInGrid.length === 1, r);
+}
+{
+  api.set(grid(["L1", "L2", "L3"], { subj: { lessonSeq: ["L1", "L2"], tracking: "daily" } }));
+  ok("skips daily-tracked subjects", api.rec("kid").length === 0);
+  api.set(grid(["L1", "L2", "L3"], { subj: { lessonSeq: ["L1", "L2"], paused: true } }));
+  ok("skips paused subjects", api.rec("kid").length === 0);
+  api.set(grid(["L1", "L2", "L3"], { subj: {} }));
+  ok("skips subjects with no list at all", api.rec("kid").length === 0);
+}
+{
+  // Renamed content reads as drift in BOTH directions — the Dimensions Math case.
+  // It must never be offered as a one-tap.
+  api.set(grid(["Ch1: adding", "Ch2: taking away"], { subj: { lessonSeq: ["Lesson 1", "Lesson 2"] } }));
+  const r = api.rec("kid");
+  ok("renamed lessons show as both insert and delete",
+    r[0] && r[0].onlyInList.length === 2 && r[0].onlyInGrid.length === 2, r);
+  ok("and are never offered as one tap", r[0] && r[0].lossless === false);
+}
+{
+  api.set(grid(["L1", "L2", "L3", "L4"], { subj: { lessonSeq: ["L1", "L2", "L3"] } }));
+  api.toggle();
+  const h = api.render("kid", "#333");
+  api.toggle();
+  ok("the strip shows the list-vs-grid section", h.indexOf("Card list vs grid") > 0);
+  ok("lossless rows offer the match button", h.indexOf("gvReconcileAdopt") > 0);
+  const d = (h.match(/<div\b/g) || []).length - (h.match(/<\/div>/g) || []).length;
+  ok("divs still balance with the new section", d === 0, d);
+}
+{
+  api.set(grid(["L1", "L2"], { subj: { lessonSeq: ["L1", "L2", "L3", "L4"] } }));
+  api.toggle();
+  const h = api.render("kid", "#333");
+  api.toggle();
+  ok("rows needing a decision get NO button", h.indexOf("gvReconcileAdopt") < 0);
+  ok("and say why", h.indexOf("Needs a decision") > 0);
 }
 
 console.log("markup");
