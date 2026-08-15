@@ -14166,6 +14166,9 @@ function ceRenderEditSheet(){
     // than the plan knew: convert the grid subject to an editable lesson list, then the
     // Builder re-lays the year from the cursor. One-way upgrade to in-app editing.
     if(!ceConvOpen){
+      // Restore point from this card's own last Save, right next to the button
+      // that made it.
+      try{ h+=ceConvUndoBanner(ceEditKid,ceEditKey); }catch(e){}
       h+='<button style="border:1.5px solid var(--border);border-radius:10px;background:#fff;padding:7px 12px;font-size:12px;cursor:pointer;margin-top:8px" onclick="ceConvOpen=true;ceRenderEditSheet()">✎ Edit as a list — insert / remove / reorder…</button>';
       h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">For when the book has lessons the plan doesn\'t (or vice versa). Converts this subject to an editable lesson list, then the Builder re-lays the year. <b>Note:</b> saving empties the planned days until you tap 🧱 Build.</div>';
       h+=_ceMarkDoneUI(ceEditKid,ceEditKey,s,seq,cursorPos,col);
@@ -14606,6 +14609,105 @@ function ceConvApply(){
   currInnerTab="builder"; cbKid=kid; cbOpenSubj(sk);
   renderAll();
 }
+// ── ↩ Undo "Edit as a list" ─────────────────────────────────────────────────
+// ceConvApply has always stashed the cells it cleared, plus the lesson list it
+// replaced, into ha_convUndo. Nothing ever read it — a full safety net was built
+// and never connected to a button. 2026-08-15: Lincoln's AAS lost 91 future cells
+// and the only way back was re-pasting 94 lessons by hand, while a byte-perfect
+// snapshot of exactly those cells sat unused in localStorage the whole time.
+// Restores BOTH halves together: cells and list were changed by one Save, so
+// putting back only one leaves them disagreeing — the drift that caused the mess.
+const CONV_UNDO_TTL=1000*60*60*72;   // 3 days — long enough to notice, short enough not to fire on stale state
+function ceConvUndoGet(){
+  try{
+    const raw=HA_LS.getItem("ha_convUndo"); if(!raw) return null;
+    const u=JSON.parse(raw);
+    if(!u||!u.kid||!u.sk||!u.cells) return null;
+    if(!((currData&&currData.subjects&&currData.subjects[u.kid]||{})[u.sk])) return null;  // subject since deleted
+    if(u.at&&(Date.now()-u.at)>CONV_UNDO_TTL) return null;
+    if(!Object.keys(u.cells).length) return null;
+    return u;
+  }catch(e){ return null; }
+}
+function ceConvUndoDismiss(){
+  if(!confirm("Dismiss this restore point? The cleared cells can't be put back afterwards.")) return;
+  try{ HA_LS.removeItem("ha_convUndo"); }catch(e){}
+  renderAll();
+}
+// Cells that have since been filled with something ELSE — restoring overwrites
+// those, so they get counted and named before anything is written.
+function _ceConvUndoConflicts(u){
+  const rows=((currData||{}).lessons||{})[u.kid]||{};
+  const out=[];
+  Object.keys(u.cells).forEach(dn=>{
+    const cur=(rows[dn]||{})[u.sk];
+    if(cur!=null&&String(cur).trim()&&String(cur)!==String(u.cells[dn])) out.push({dn:dn,now:String(cur),was:String(u.cells[dn])});
+  });
+  return out;
+}
+function ceConvUndoApply(){
+  const u=ceConvUndoGet(); if(!u||!db) return;
+  if(!momModeActive&&!adminPinUnlocked) return;
+  const kid=u.kid, sk=u.sk;
+  const s=((currData.subjects||{})[kid]||{})[sk]; if(!s) return;
+  const disp=s.display||sk;
+  const rows=(currData.lessons||{})[kid]||{};
+  const n=Object.keys(u.cells).length;
+  const conflicts=_ceConvUndoConflicts(u);
+  let msg="Put back "+n+" cleared "+disp+" cell"+(n!==1?"s":"")+" and the lesson list as it was before that Save?";
+  if(conflicts.length){
+    msg+="\n\n⚠ "+conflicts.length+" of those day"+(conflicts.length!==1?"s":"")+" now hold different work, which this overwrites:\n"
+      +conflicts.slice(0,5).map(c=>"  • "+c.now+"  →  "+c.was).join("\n")
+      +(conflicts.length>5?"\n  …and "+(conflicts.length-5)+" more":"");
+  }
+  if(!confirm(msg)) return;
+  const updates={};
+  Object.keys(u.cells).forEach(dn=>{
+    if(!rows[dn]) return;                       // day no longer in the map
+    rows[dn][sk]=u.cells[dn];
+    updates["lessons/"+kid+"/"+dn+"/"+sk]=u.cells[dn];
+  });
+  // The list half. prevSeq null means the subject had no master list before the
+  // Save — restore that absence rather than leaving the one the Save invented.
+  updates["subjects/"+kid+"/"+sk+"/lessonSeq"]=u.prevSeq||null;
+  updates["subjects/"+kid+"/"+sk+"/total"]=(u.prevTotal!=null?u.prevTotal:(u.prevSeq?u.prevSeq.length:0));
+  if(u.prevSeq) s.lessonSeq=u.prevSeq; else delete s.lessonSeq;
+  s.total=updates["subjects/"+kid+"/"+sk+"/total"];
+  currData.lastEdit=new Date().toISOString();
+  updates["lastEdit"]=currData.lastEdit;
+  db.ref("curriculum").update(updates);
+  const ps=((paceData.subjects||{})[kid]||{})[sk];
+  if(ps) savePaceSubject(kid,sk,{...ps,total:s.total});
+  try{ if(typeof buildCurrPaceCum==="function") buildCurrPaceCum(); }catch(e){}
+  try{ HA_LS.removeItem("ha_convUndo"); }catch(e){}
+  if(typeof gwShowToast==="function") gwShowToast("↩ Restored "+n+" cell"+(n!==1?"s":"")+" and "+disp+"'s previous list");
+  renderAll();
+}
+// The banner. `scope` is "grid" (any subject for the kid on screen) or a subject
+// key (the card that owns the snapshot) — it shows in both places, because the
+// column emptying is what you notice and the card is where it happened.
+function ceConvUndoBanner(kid,scope){
+  const u=ceConvUndoGet(); if(!u) return "";
+  if(u.kid!==kid) return "";
+  if(scope&&scope!=="grid"&&scope!==u.sk) return "";
+  const s=((currData.subjects||{})[u.kid]||{})[u.sk]||{};
+  const n=Object.keys(u.cells).length;
+  const mins=u.at?Math.round((Date.now()-u.at)/60000):null;
+  const when=mins==null?"":(mins<1?"just now":mins<60?(mins+" min ago"):(Math.round(mins/60)+"h ago"));
+  const built=((s.pacing||{}).builtAt)||"";
+  const rebuilt=!!(built&&u.at&&new Date(built).getTime()>u.at);
+  const BTN="border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif";
+  let h='<div style="background:#eff6ff;border-left:4px solid #2563eb;border-radius:0 10px 10px 0;padding:10px 12px;margin:0 0 8px">';
+  h+='<div style="font-size:12px;color:#1e3a8a;margin-bottom:6px"><b>↩ '+esc(s.display||u.sk)+' — '+n+' cell'+(n!==1?'s':'')+' were cleared'+(when?' '+esc(when):'')+'.</b> '
+    +'Saving “Edit as a list” empties the planned days. This puts those cells back, and the lesson list with them.</div>';
+  if(rebuilt) h+='<div style="font-size:11px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:5px 8px;margin-bottom:6px">⚠ This subject was rebuilt after that Save — restoring replaces what the rebuild laid down.</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+  h+='<button onclick="ceConvUndoApply()" style="border:1px solid #2563eb;background:#fff;color:#1d4ed8;'+BTN+'">↩ Put them back</button>';
+  h+='<button onclick="ceConvUndoDismiss()" style="border:1px solid var(--border);background:#fff;color:var(--muted);'+BTN+'">Dismiss</button>';
+  h+='</div></div>';
+  return h;
+}
+
 // Rename one Excel-sourced lesson in place. Writes to currData.lessons — the curriculum
 // source the generator reads via buildSubjectLessons — so the new name flows everywhere
 // (pace, next-lesson) and into future generation (the curriculum-changed banner nudges a
@@ -23245,6 +23347,10 @@ function renderCurrGrid(el){
       h+='</div>';
     }
   }catch(e){}
+
+  // ↩ Restore point from an "Edit as a list" Save — the column that just emptied
+  // is where you notice, so the offer belongs here as well as on the card.
+  if(momModeActive||adminPinUnlocked){ try{ h+=ceConvUndoBanner(gvKid,"grid"); }catch(e){} }
 
   // 🔍 Sequence audit — skipped numbers, lessons booked twice, out-of-order work.
   // Sits with the other checks; only mom sees it, and only she can act on it.
