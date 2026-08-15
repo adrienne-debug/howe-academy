@@ -2672,6 +2672,20 @@ function initFb() {
       try{HA_LS.setItem('wellness_symbank',JSON.stringify(wellnessSymBank));}catch(e){}
       if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
     });
+    db.ref("dadChores").on("value",s=>{
+      const v=s.val()||{};
+      Object.keys(dadChoresData).forEach(k=>{ delete dadChoresData[k]; });
+      Object.keys(v).forEach(k=>{ dadChoresData[k]=v[k]; });
+      try{HA_LS.setItem('ha_dadchores',JSON.stringify(dadChoresData));}catch(e){}
+      if(_kioskR()) renderKioskPerson();
+      else if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+    });
+    db.ref("dadday").on("value",s=>{
+      daddayData=s.val()||{};
+      try{HA_LS.setItem('ha_dadday',JSON.stringify(daddayData));}catch(e){}
+      if(_kioskR()) renderKioskPerson();
+      else if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+    });
     db.ref("bills").on("value",s=>{
       billsData=s.val()||{};
       try{HA_LS.setItem('ha_bills',JSON.stringify(billsData));}catch(e){}
@@ -3062,7 +3076,7 @@ function renderAll(){
 }
 function _renderAllInner(){
   const stb=document.getElementById("sitter-tab-btn"); if(stb){ if(SITTER_NAME){stb.textContent=SITTER_NAME;stb.style.display="";} else {stb.style.display="none";} }
-  renderSchedSubtabs(); renderDayTabs(); renderKidFilter(); renderSkylight(); renderWeekStrip(); renderKioskKids(); renderKioskMom();
+  renderSchedSubtabs(); renderDayTabs(); renderKidFilter(); renderSkylight(); renderWeekStrip(); renderKioskKids(); renderKioskPerson();
   if(tab==="schedule") document.getElementById("day-tabs").style.display=(schedShowHistory||schedShowPace||schedShowAdmin)?"none":"flex";
   const showKidFilter=(tab==="schedule"&&!schedShowAdmin&&!schedShowBoard)||(tab==="history")||(tab==="pace");
   const kf=document.getElementById("kid-filter");
@@ -3257,12 +3271,18 @@ let _kkLastTouch=Date.now();
 function kkTouch(){ _kkLastTouch=Date.now(); }
 // Mom is a LANE, not a kid: selecting her must not set `kid="mom"`, which would trip
 // renderKidFilter's admin-PIN bar and make renderSkylight hide the panel. Separate flag.
-let kkMom=false;
+let kkWho=null;   // null = kids' grid; "mom" | "dad" = that person's chore lane
 function kkSel(k){
   kkTouch();
-  if(k==="mom"){ kkMom=true; }
-  else { kkMom=false; kid=k; }
+  if(k==="mom"||k==="dad"){ kkWho=k; }
+  else { kkWho=null; kid=k; }
   renderAll(); window.scrollTo({top:0});
+}
+// One lane, two people. Their chore systems are separate nodes but identical in shape.
+function kkLane(who){
+  return (who==="dad")
+    ? {all:dcAll, doneOn:dcDoneOn, toggle:dcToggle, title:"\uD83D\uDC68 Dad's chores", color:"#2C5F8A"}
+    : {all:mcAll, doneOn:mcDoneOn, toggle:mcToggle, title:"\uD83E\uDDF9 My chores",     color:"#b5394a"};
 }
 function renderKioskKids(){
   if(!_kioskR()) return;
@@ -3274,31 +3294,34 @@ function renderKioskKids(){
     return;
   }
   el.innerHTML=["all",...ROSTER].map(function(k){
-    const on=(!kkMom&&k===kid), col=(k==="all")?"var(--header)":(SL_KCOL[k]||"#666");
+    const on=(!kkWho&&k===kid), col=(k==="all")?"var(--header)":(SL_KCOL[k]||"#666");
     return '<button class="kk-btn'+(on?" active":"")+'" onclick="kkSel(\''+k+'\')" style="'+
       (on?"background:"+col+";border-color:"+col+";color:#fff":"color:"+col)+'">'+
       (k==="all"?"Everyone":(SL_KLBL[k]||cap(k)))+'</button>';
   }).join("")+
-  '<button class="kk-btn'+(kkMom?" active":"")+'" onclick="kkSel(\'mom\')" style="'+
-    (kkMom?"background:#b5394a;border-color:#b5394a;color:#fff":"color:#b5394a")+'">Mom</button>';
+  '<button class="kk-btn'+(kkWho==="mom"?" active":"")+'" onclick="kkSel(\'mom\')" style="'+
+    (kkWho==="mom"?"background:#b5394a;border-color:#b5394a;color:#fff":"color:#b5394a")+'">Mom</button>'+
+  '<button class="kk-btn'+(kkWho==="dad"?" active":"")+'" onclick="kkSel(\'dad\')" style="'+
+    (kkWho==="dad"?"background:#2C5F8A;border-color:#2C5F8A;color:#fff":"color:#2C5F8A")+'">Dad</button>';
 }
 // 🧹 Mom's lane — her own chores (momChores defs + momday/{iso}/chores stamps), grouped
 // by slot exactly like the Mom's Day card, filtered to what's actually due today.
 // VIEW + CHECK ONLY on purpose: no add, no delete, no cadence editing. This is a bathroom
 // wall tablet, so nothing here should be able to reshape her list by accident.
-function renderKioskMom(){
+function renderKioskPerson(){
   const el=document.getElementById("kiosk-mom"); if(!el) return;
-  if(!_kioskR()||!kkMom){ el.style.display="none"; return; }
+  if(!_kioskR()||!kkWho){ el.style.display="none"; return; }
+  const lane=kkLane(kkWho);
   // renderSkylight() ran earlier in this same pass and may have shown the kids' grid;
   // this runs after it, so it gets the last word.
   const panel=document.getElementById("skylight-panel"); if(panel) panel.style.display="none";
   el.style.display="block";
-  const iso=_todayStr(), dn=mdTodayName(), all=mcAll();
+  const iso=_todayStr(), dn=mdTodayName(), all=lane.all();
   const due=Object.keys(all)
     .filter(function(id){ return cadDueOn((all[id]||{}).cad,dn); })
     .sort(function(a,b){ return ((all[a]||{}).ts||0)-((all[b]||{}).ts||0); });
-  const doneN=due.filter(function(id){ return mcDoneOn(iso,id); }).length;
-  let h='<div style="padding:14px 14px 4px"><div style="font-size:18px;font-weight:800;color:#b5394a">\uD83E\uDDF9 My chores</div>'+
+  const doneN=due.filter(function(id){ return lane.doneOn(iso,id); }).length;
+  let h='<div style="padding:14px 14px 4px"><div style="font-size:18px;font-weight:800;color:'+lane.color+'">'+lane.title+'</div>'+
     '<div style="font-size:12px;color:var(--muted);margin-top:2px">'+doneN+' of '+due.length+' done today</div></div>';
   if(!due.length){
     h+='<div style="padding:16px;font-size:15px;font-weight:700;color:var(--muted)">Nothing on your list today \uD83C\uDF89</div>';
@@ -3311,8 +3334,8 @@ function renderKioskMom(){
     h+='<div style="padding:12px 14px 2px;font-size:12px;font-weight:800;color:var(--muted);letter-spacing:.04em">'+
       (meta?(meta.ic+" "+meta.nm.toUpperCase()):"ONGOING")+'</div><div style="padding:0 14px">';
     ids.forEach(function(id){
-      const dn2=mcDoneOn(iso,id);
-      h+='<div onclick="kkMomToggle(\''+id+'\')" style="display:flex;align-items:center;gap:11px;padding:13px 14px;margin:6px 0;border:1.5px solid '+
+      const dn2=lane.doneOn(iso,id);
+      h+='<div onclick="kkPersonToggle(\''+id+'\')" style="display:flex;align-items:center;gap:11px;padding:13px 14px;margin:6px 0;border:1.5px solid '+
         (dn2?"#86efac":"var(--border)")+';border-radius:12px;background:'+(dn2?"#f0fdf4":"var(--card)")+';cursor:pointer">'+
         '<div style="width:25px;height:25px;flex:0 0 auto;border-radius:7px;border:2px solid '+(dn2?"#15803d":"var(--border)")+
         ';background:'+(dn2?"#15803d":"transparent")+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">'+
@@ -3324,7 +3347,7 @@ function renderKioskMom(){
   h+='<div style="height:24px"></div>';
   el.innerHTML=h;
 }
-function kkMomToggle(id){ kkTouch(); mcToggle(id); }
+function kkPersonToggle(id){ kkTouch(); kkLane(kkWho).toggle(id); }
 // 🔢 BUILD FINGERPRINT — 4 characters of the code THIS DEVICE actually loaded.
 // Same 4 chars on the tablet and on her phone = same build. Different = one is stale.
 // Deliberately per-device and ON SCREEN: settings/codeVersion is a single shared value that
@@ -3345,8 +3368,8 @@ function kkArm(){
   document.addEventListener("touchstart",kkTouch,true);
   document.addEventListener("click",kkTouch,true);
   setInterval(function(){
-    if(!_kioskR()||(kid==="all"&&!kkMom)) return;
-    if(Date.now()-_kkLastTouch>=KK_IDLE_MS){ kid="all"; kkMom=false; renderAll(); }
+    if(!_kioskR()||(kid==="all"&&!kkWho)) return;
+    if(Date.now()-_kkLastTouch>=KK_IDLE_MS){ kid="all"; kkWho=null; renderAll(); }
   },15000);
 }
 
@@ -4673,6 +4696,7 @@ function momHQGo(t){
     case "units": showTab("units"); return;
     case "notebook": showTab("notebook"); return;
     case "play": showTab("play"); return;
+    case "dadsday": mpSubView="dad"; showTab("moms-plan"); return;
   }
 }
 function _hqRow(target,emoji,label,desc){
@@ -4706,6 +4730,7 @@ function renderMomHQ(el,ah){
   ]);
   h+=_hqGroup("🧹","Home & Chores",[
     _hqRow("chorePlan","🧹","Chore Plan","Weekday grid, zones, rotations, focus-zone bonus"),
+    _hqRow("dadsday","👨","Dad's Day","His own checklist plus bills, laundry, dinner and the kids"),
     _hqRow("grabs","🙌","Up for Grabs","Stock the grab list kids can claim"),
     _hqRow("settings","☀️","Routine editors","Morning steps, afternoon/chores/evening, cadence & 📅 windows — in Settings"),
     _hqRow("play","🧸","Playroom","The Room bins, stations, labels (Mom mode inside)")
@@ -6532,6 +6557,12 @@ let wellnessCycle = { anchor:'2026-07-25', len:28 };  // fallback anchor; overri
 let wellnessBP = {};                                 // wellness/bp/{iso}/{am|pm} → {sys, dia, pulse?, ts}
 let wellnessSymptoms = {};                           // wellness/symptoms/{iso}/{sym} → ts
 let wellnessSymBank = {};                            // wellness/symptomBank/{slug} → label (Mom-added)
+// 👨 Dad's own list: dadChores/{id} = {label, cad, slot, ts}, done stamps at
+// dadday/{iso}/chores/{id}. A SEPARATE node rather than a `who` field on momChores —
+// her list is live and edited daily, and reshaping it is risk with no payoff. Same
+// cadence grammar, so cadDueOn/mcSlotOf/MC_SLOTS all work on his rows unchanged.
+let dadChoresData = {};
+let daddayData = {};
 let billsData = {};                                  // bills/{id} → {name, amt?, dueDay, freq, dueMonth?, lead?, paidThrough?}
 let laundryData = {};                                // laundry/{id} → {label, stage: washer|dryer|fold, ts}
 let momChoresData = {};                              // momChores/{id} → {label, cad, ts} — Mom's own recurring chores (Phase 4)
@@ -6576,11 +6607,80 @@ function mpInit(){
   try{ const kb=HA_LS.getItem('ha_kit_buylog'); if(kb) Object.assign(kitBuyLog,JSON.parse(kb)); }catch(e){}
 }
 
+// ── 👨 DAD'S DAY ──────────────────────────────────────────────────
+// His own checklist, which HE edits, plus the shared cards rendered from the SAME
+// data as Mom's Day — mark a bill paid here and it's paid there. The only thing he
+// can't do is move the kids' economy: Star Bank is view-only unless Mom is unlocked.
+function ddSlotGroups(){ return MC_SLOT_ORDER.concat([""]); }
+function renderDadsDay(el){
+  const iso=_todayStr(), dn=mdTodayName(), today=mdTodayName();
+  const all=dcAll();
+  const ids=Object.keys(all).sort(function(a,b){ return ((all[a]||{}).ts||0)-((all[b]||{}).ts||0); });
+  const due=ids.filter(function(id){ return cadDueOn((all[id]||{}).cad,dn); });
+  const doneN=due.filter(function(id){ return dcDoneOn(iso,id); }).length;
+
+  let h='<div style="padding:14px 14px 4px;display:flex;align-items:center;gap:10px">'+
+    '<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:#2C5F8A">👨 Dad\'s Day</div>'+
+    '<span style="flex:1"></span>'+
+    '<button onclick="mpSubView=null;renderMomsPlan(document.getElementById(\'content\'))" style="border:1.5px solid var(--border);background:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">← Mom\'s Day</button></div>';
+
+  // ── his checklist — the one card he owns outright ──
+  h+='<div style="margin:10px 12px;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
+    +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#2C5F8A;color:#fff;font-weight:800;font-size:13px"><span>✅</span> My checklist'
+    +'<span style="flex:1"></span><span style="font-size:11px;font-weight:700;opacity:.85">'+doneN+' of '+due.length+' today</span></div>'
+    +'<div style="padding:8px 14px 12px">';
+  if(!ids.length){
+    h+='<div style="font-size:12.5px;color:var(--muted);padding:6px 0 10px">Nothing here yet — add the things you actually do. They\'ll show on the bathroom kiosk too.</div>';
+  }
+  ddSlotGroups().forEach(function(sl){
+    const gids=ids.filter(function(id){ return mcSlotOf(all[id])===sl; });
+    if(!gids.length) return;
+    const meta=MC_SLOTS[sl];
+    h+='<div style="font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.04em;margin:8px 0 4px">'+(meta?(meta.ic+' '+meta.nm.toUpperCase()):'ONGOING')+'</div>';
+    gids.forEach(function(id){
+      const c=all[id]||{}, isDue=cadDueOn(c.cad,dn), dOn=dcDoneOn(iso,id);
+      h+='<div style="display:flex;align-items:center;gap:9px;padding:9px 10px;margin-bottom:5px;border:1.5px solid '+(dOn?'#86efac':'var(--border)')+';border-radius:10px;background:'+(dOn?'#f0fdf4':'var(--card)')+(isDue?'':';opacity:.5')+'">'
+        +(isDue?'<div onclick="dcToggle(\''+id+'\')" style="width:23px;height:23px;flex:0 0 auto;border-radius:7px;cursor:pointer;border:2px solid '+(dOn?'#15803d':'var(--border)')+';background:'+(dOn?'#15803d':'transparent')+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800">'+(dOn?'✓':'')+'</div>'
+              :'<div style="width:23px;flex:0 0 auto;text-align:center;font-size:12px;color:var(--muted)">—</div>')
+        +'<div style="flex:1;min-width:0;font-size:14px;font-weight:700;'+(dOn?'text-decoration:line-through;opacity:.55':'')+'">'+esc(c.label||'')+'</div>'
+        +'<select onchange="dcSetSlot(\''+id+'\',this.value)" style="border:1.5px solid var(--border);border-radius:8px;padding:3px 5px;font-size:11px;font-family:\'DM Sans\',sans-serif">'
+        + ['','morning','afternoon','night'].map(function(sv){
+            const lb=sv?MC_SLOTS[sv].nm:'Ongoing';
+            return '<option value="'+sv+'"'+(mcSlotOf(c)===sv?' selected':'')+'>'+lb+'</option>';
+          }).join('')
+        +'</select>'
+        +'<select onchange="dcSetCad(\''+id+'\',this.value)" style="border:1.5px solid var(--border);border-radius:8px;padding:3px 5px;font-size:11px;font-family:\'DM Sans\',sans-serif">'
+        + [['daily','Daily'],['wk:0','Mon'],['wk:1','Tue'],['wk:2','Wed'],['wk:3','Thu'],['wk:4','Fri'],['wk:5','Sat'],['wk:6','Sun'],['2w','2 wks']].map(function(cv){
+            return '<option value="'+cv[0]+'"'+((c.cad||'daily')===cv[0]?' selected':'')+'>'+cv[1]+'</option>';
+          }).join('')
+        +'</select>'
+        +'<button onclick="dcDel(\''+id+'\')" style="border:none;background:none;color:#9ca3af;font-size:15px;cursor:pointer;padding:2px 4px">✕</button></div>';
+    });
+  });
+  h+='<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">'
+    +'<input type="text" id="dc-new" placeholder="Add something…" onkeydown="if(event.key===\'Enter\')dcAdd()" style="flex:2;min-width:130px;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
+    +'<select id="dc-slot" style="padding:9px 8px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif"><option value="">Ongoing</option><option value="morning">Morning</option><option value="afternoon">Afternoon</option><option value="night">Night</option></select>'
+    +'<select id="dc-cad" style="padding:9px 8px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif"><option value="daily">Daily</option><option value="wk:0">Mon</option><option value="wk:1">Tue</option><option value="wk:2">Wed</option><option value="wk:3">Thu</option><option value="wk:4">Fri</option><option value="wk:5">Sat</option><option value="wk:6">Sun</option><option value="2w">2 wks</option></select>'
+    +'<button onclick="dcAdd()" style="padding:9px 16px;border-radius:9px;border:none;background:#2C5F8A;color:#fff;font-size:13px;font-weight:700;cursor:pointer">＋ Add</button></div>';
+  h+='</div></div>';
+
+  // ── the shared cards — same functions Mom's Day calls, same data ──
+  h+='<div style="display:flex;flex-direction:column;gap:12px;padding:0 12px 28px">';
+  try{ h+=mdCardStarBank(momHere()); }catch(e){}
+  try{ h+=mdCardKidsToday(today,true); }catch(e){}
+  try{ h+=mdCardDinner(iso); }catch(e){}
+  try{ h+=mdCardBills(iso); }catch(e){}
+  try{ h+=mdCardLaundry(); }catch(e){}
+  h+='</div>';
+  el.innerHTML=h;
+}
+
 function renderMomsPlan(el){
   mpInit();
   if(mpSubView==='prep'){ return renderMPPrep(el); }
   if(mpSubView==='weigh'){ return renderMPWeigh(el); }
   if(mpSubView==='meals'){ return renderKitchen(el); }
+  if(mpSubView==='dad'){ return renderDadsDay(el); }
   renderMomsDay(el);
 }
 
@@ -6713,6 +6813,69 @@ function momdayDelTodo(id){
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
 
+// ── 👨 DAD'S CHORES ────────────────────────────────────────────────
+// Mirrors the mc* family against dadChores/dadday. Duplicated rather than
+// parameterising mcToggle & co: hers is live, daily-used code and a shared-shape
+// refactor would put her list at risk to save a few lines.
+// No seeded defaults — HE fills this in. Guessing a man's chore list is how you get
+// a list nobody uses.
+function dcAll(){
+  const out={}; Object.keys(dadChoresData).forEach(function(k){ if(k.charAt(0)!=="_") out[k]=dadChoresData[k]; });
+  return out;
+}
+function dcDoneOn(iso,id){ return !!((((daddayData[iso]||{}).chores)||{})[id]); }
+function dcToggle(id){
+  if(!dcAll()[id]) return;
+  const iso=_todayStr();
+  const cur=Object.assign({},daddayData[iso]); const ch=Object.assign({},cur.chores);
+  const on=!ch[id];
+  if(on) ch[id]=Date.now(); else delete ch[id];
+  cur.chores=ch; daddayData[iso]=cur;
+  try{HA_LS.setItem('ha_dadday',JSON.stringify(daddayData));}catch(e){}
+  if(typeof db!=='undefined'&&db){
+    if(on) db.ref('dadday/'+iso+'/chores/'+id).set(ch[id]);
+    else db.ref('dadday/'+iso+'/chores/'+id).remove();
+  }
+  dcRepaint();
+}
+function dcRepaint(){
+  if(typeof _kioskR==="function"&&_kioskR()){ renderKioskPerson(); return; }
+  const el=document.getElementById('content'); if(el&&tab==="moms-plan") renderMomsPlan(el);
+}
+function dcAdd(){
+  const inp=document.getElementById('dc-new'); if(!inp) return;
+  const label=String(inp.value||"").trim(); if(!label) return;
+  const sel=document.getElementById('dc-cad'); const cad=(sel&&sel.value)||"daily";
+  const slot=(document.getElementById('dc-slot')||{}).value||"";
+  const id="dc"+Date.now().toString(36);
+  dadChoresData[id]={label:label,cad:cad,slot:slot,ts:Date.now()};
+  try{HA_LS.setItem('ha_dadchores',JSON.stringify(dadChoresData));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('dadChores/'+id).set(dadChoresData[id]);
+  inp.value=""; dcRepaint();
+}
+function dcDel(id){
+  const c=dadChoresData[id]; if(!c) return;
+  if(!confirm('Remove "'+c.label+'" from the list?')) return;
+  delete dadChoresData[id];
+  try{HA_LS.setItem('ha_dadchores',JSON.stringify(dadChoresData));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('dadChores/'+id).remove();
+  dcRepaint();
+}
+function dcSetCad(id,cad){
+  const c=dadChoresData[id]; if(!c) return;
+  c.cad=cad;
+  try{HA_LS.setItem('ha_dadchores',JSON.stringify(dadChoresData));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('dadChores/'+id+'/cad').set(cad);
+  dcRepaint();
+}
+function dcSetSlot(id,slot){
+  const c=dadChoresData[id]; if(!c) return;
+  c.slot=slot;
+  try{HA_LS.setItem('ha_dadchores',JSON.stringify(dadChoresData));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('dadChores/'+id+'/slot').set(slot);
+  dcRepaint();
+}
+
 // ── 🧹 MOM'S CHORES (Phase 4) — her own recurring list in the day view ──────
 // Defs live at momChores/{id} = {label, cad, ts}; cad is the SAME grammar the
 // kids' chores speak (cadDueOn): "daily" | "wk:0,2" (Mon=0..Sun=6) | "2w".
@@ -6804,7 +6967,7 @@ function mcToggle(id){
   }
   // On the bathroom kiosk #content is hidden, and renderMomsPlan is the whole heavy
   // Mom's Day build — repaint just the lane instead.
-  if(typeof _kioskR==="function"&&_kioskR()){ renderKioskMom(); return; }
+  if(typeof _kioskR==="function"&&_kioskR()){ renderKioskPerson(); return; }
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
 function mcSetCad(id,cad){
@@ -7316,7 +7479,9 @@ function mdCardLaundry(){
 // ── ⭐ Star Bank card ─────────────────────────
 // Extracted from renderMomsDay (2026-08-15) so Dad's Day renders the SAME card against
 // the SAME data. One truth — not a second copy that can drift.
-function mdCardStarBank(){
+// canAward=false renders balances only. Dad sees where every kid stands; moving the
+// kids' economy stays Mom's, same as every other points control.
+function mdCardStarBank(canAward){
   let h='';
   // Ahead of TODAY: the balances are the lever she reaches for first.
   // that actually runs the house. Same write path as the full bank card.
@@ -7329,16 +7494,20 @@ function mdCardStarBank(){
       h+='<div style="display:flex;align-items:center;gap:6px;padding:7px 0;border-bottom:1px solid #f3f4f6;flex-wrap:wrap">'
         +'<b style="color:'+(SL_KCOL[k]||"#666")+';font-size:14px;flex:0 0 62px">'+cap(k)+'</b>'
         +'<span style="font-size:15px;font-weight:800;color:#b45309;flex:1">⭐ '+bal.toLocaleString()+'</span>'
-        +'<button onclick="mpBankAdj(\''+k+'\',-1)" style="padding:5px 12px;border-radius:9px;border:1.5px solid #fca5a5;background:#fff;color:#b91c1c;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">−</button>'
+        +(canAward?('<button onclick="mpBankAdj(\''+k+'\',-1)" style="padding:5px 12px;border-radius:9px;border:1.5px solid #fca5a5;background:#fff;color:#b91c1c;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">−</button>'
         +'<input id="mpbank-'+k+'" type="number" inputmode="numeric" min="1" value="5" style="width:58px;padding:5px;border:1.5px solid var(--border);border-radius:9px;text-align:center;font-size:13px;font-weight:800;font-family:\'DM Sans\',sans-serif">'
-        +'<button onclick="mpBankAdj(\''+k+'\',1)" style="padding:5px 12px;border-radius:9px;border:none;background:#16a34a;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">+</button>'
+        +'<button onclick="mpBankAdj(\''+k+'\',1)" style="padding:5px 12px;border-radius:9px;border:none;background:#16a34a;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">+</button>'):'')
         +'</div>';
     });
-    h+='<div style="display:flex;align-items:center;gap:6px;padding:8px 0 2px">'
-      +'<span style="font-size:11px;color:var(--muted);font-weight:700">why</span>'
-      +'<input id="mpbank-note" placeholder="optional — shows in their statement" style="flex:1;min-width:0;padding:6px 9px;border:1.5px solid var(--border);border-radius:9px;font-size:12px;font-family:\'DM Sans\',sans-serif">'
-      +'</div>';
-    h+='<div class="rl-hint" style="padding-bottom:4px">A dock bigger than what they have is refused, so a balance can\'t go negative.</div>';
+    if(canAward){
+      h+='<div style="display:flex;align-items:center;gap:6px;padding:8px 0 2px">'
+        +'<span style="font-size:11px;color:var(--muted);font-weight:700">why</span>'
+        +'<input id="mpbank-note" placeholder="optional — shows in their statement" style="flex:1;min-width:0;padding:6px 9px;border:1.5px solid var(--border);border-radius:9px;font-size:12px;font-family:\'DM Sans\',sans-serif">'
+        +'</div>';
+      h+='<div class="rl-hint" style="padding-bottom:4px">A dock bigger than what they have is refused, so a balance can\'t go negative.</div>';
+    } else {
+      h+='<div class="rl-hint" style="padding-bottom:4px">Giving and docking stars is Mom\'s — unlock 👩 Mom mode to adjust.</div>';
+    }
     h+='</div></div>';
   }catch(e){}
 
@@ -7639,7 +7808,7 @@ function renderMomsDay(el){
   try{ if(kitSettings.orderDay===today) h+=kitOrderCardHTML(true); }catch(e){}
 
   // These five are shared cards now — Dad's Day renders the same ones. See mdCard*.
-  h+=mdCardStarBank();
+  h+=mdCardStarBank(true);
   h+=mdCardKidsToday(today,isSchoolDay);
 
   // ── 📖 Mom's school schedule — the SAME two-column agenda as Schedule ▸
