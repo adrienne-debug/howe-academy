@@ -445,10 +445,25 @@ function plDayDone(kid){
   }catch(e){return true;}
 }
 const PL_TURN_MS=20*60*1000;
-function plStSave(frame){
-  if(plFB){const st=plStations[frame]||{};
-    db.ref("play/stations/"+frame+"/claim").set(st.claim||null);
-    db.ref("play/stations/"+frame+"/queue").set(st.queue||null);}
+// ⚠️ THE STUCK-STATION BUG (found 2026-08-15: Lucy's DUPLO F3 kept its claim after a
+// clean hand-back, and no button could return it).
+// db.ref("play") is a WHOLE-SUBTREE listener: any write anywhere under play/* — a bin
+// return, a streak bump — REPLACES the plStations object wholesale with server state.
+// So `st.claim=null` set BEFORE those writes lands on an object that is then thrown away,
+// and re-reading plStations[frame] here wrote the stale claim straight back. Bins went
+// home, the claim resurrected, the station was stuck forever.
+// Callers now pass what they INTEND to persist; the global is only a fallback for callers
+// that perform no writes of their own.
+function plStSave(frame,claim,queue){
+  const st=plStations[frame]||{};
+  const c=(claim===undefined)?(st.claim||null):(claim||null);
+  const qv=(queue===undefined)?(st.queue||null):((queue&&queue.length)?queue:null);
+  // Keep the local mirror in step with what we're about to write, so a re-render between
+  // now and the server round-trip doesn't paint the stale claim either.
+  if(plStations[frame]){plStations[frame].claim=c;plStations[frame].queue=qv;}
+  if(plFB){
+    db.ref("play/stations/"+frame+"/claim").set(c);
+    db.ref("play/stations/"+frame+"/queue").set(qv);}
   else{try{HA_LS.setItem("lib_stations",JSON.stringify(plStations));}catch(e){}}
   plRender();}
 function plStExpired(st){return !!(st&&st.claim&&st.claim.turnEndsAt&&Date.now()>st.claim.turnEndsAt);}
@@ -482,46 +497,58 @@ function plStClaim(frame){
   const st=plStations[frame];if(!st||!st.identity)return;
   if(st.claim&&st.claim.by&&st.claim.by!==kid&&!plStExpired(st))return;
   const prev=st.claim?st.claim.by:null;
-  st.claim={by:kid,since:Date.now(),turnEndsAt:(st.queue&&st.queue.length)?Date.now()+PL_TURN_MS:null};
-  st.queue=(st.queue||[]).filter(k=>k!==kid);
+  // Decided BEFORE plStHandBins, whose bin writes re-hydrate plStations. See plStSave.
+  const nClaim={by:kid,since:Date.now(),turnEndsAt:(st.queue&&st.queue.length)?Date.now()+PL_TURN_MS:null};
+  const nQueue=(st.queue||[]).filter(k=>k!==kid);
+  st.claim=nClaim;st.queue=nQueue;
   plStHandBins(frame,kid,prev);
-  plStSave(frame);}
+  plStSave(frame,nClaim,nQueue);}
 function plStNext(frame){
   const kid=plSelKid;
   if(!kid){alert("Tap your name up top first!");return;}
   if(!plDayDone(kid)){alert("Finish your school work first — then you can line up!");return;}
   const st=plStations[frame];if(!st||!st.claim)return;
   if(st.claim.by===kid)return;
-  st.queue=(st.queue||[]);
-  if(st.queue.indexOf(kid)<0)st.queue.push(kid);
-  if(!st.claim.turnEndsAt){st.claim.turnEndsAt=Date.now()+PL_TURN_MS;
-    if(plFB)db.ref("play/stations/"+frame+"/claim/turnEndsAt").set(st.claim.turnEndsAt);}
-  plStSave(frame);}
+  const nQueue=(st.queue||[]).slice();
+  if(nQueue.indexOf(kid)<0)nQueue.push(kid);
+  // The old separate turnEndsAt write was itself a re-hydration trigger that then clobbered
+  // the queue we were mid-way through saving. plStSave writes the whole claim now.
+  const nClaim=Object.assign({},st.claim);
+  if(!nClaim.turnEndsAt)nClaim.turnEndsAt=Date.now()+PL_TURN_MS;
+  st.queue=nQueue;st.claim=nClaim;
+  plStSave(frame,nClaim,nQueue);}
 function plStTakeover(frame){
   const kid=plSelKid;const st=plStations[frame];
   if(!kid||!st||!st.claim)return;
   if(!plStExpired(st))return;
   if((st.queue||[])[0]!==kid){alert("It goes to whoever lined up first!");return;}
   const prev=st.claim.by;
-  st.queue.shift();
-  st.claim={by:kid,since:Date.now(),turnEndsAt:(st.queue.length)?Date.now()+PL_TURN_MS:null};
+  const nQueue=(st.queue||[]).slice();nQueue.shift();
+  const nClaim={by:kid,since:Date.now(),turnEndsAt:(nQueue.length)?Date.now()+PL_TURN_MS:null};
+  st.queue=nQueue;st.claim=nClaim;
   plStHandBins(frame,kid,prev);
-  plStSave(frame);}
+  plStSave(frame,nClaim,nQueue);}
 function plStRelease(frame){
   const st=plStations[frame];if(!st||!st.claim)return;
   const leaving=st.claim.by;
-  const q=st.queue||[];
+  const q=(st.queue||[]).slice();
+  let nClaim=null,nQueue=[];
   if(q.length){const nk=q.shift();
-    st.claim={by:nk,since:Date.now(),turnEndsAt:(q.length)?Date.now()+PL_TURN_MS:null};
+    nClaim={by:nk,since:Date.now(),turnEndsAt:(q.length)?Date.now()+PL_TURN_MS:null};
+    nQueue=q;
+    st.claim=nClaim;st.queue=nQueue;
     plStHandBins(frame,nk,leaving);}
-  else{st.claim=null;plStReturnBins(frame,leaving);}
+  else{nClaim=null;nQueue=[];st.claim=null;st.queue=[];plStReturnBins(frame,leaving);}
+  // plBumpStreak WRITES (play/status/*) and so re-hydrates plStations — this is the exact
+  // write that resurrected the claim and made "done — give it up" congratulate the kid and
+  // then keep the station. Harmless now that the values are passed explicitly.
   if(leaving)plBumpStreak(leaving);   // ONE clean hand-back = ONE streak credit, not one per bin
-  plStSave(frame);}
+  plStSave(frame,nClaim,nQueue);}
 function plStClear(frame){if(!plMomAuthed())return;   // Mom referee — clears claim AND queue; no streak credit
   const st=plStations[frame];if(!st)return;
   if(st.claim)plStReturnBins(frame,st.claim.by);
   st.claim=null;st.queue=[];
-  plStSave(frame);}
+  plStSave(frame,null,[]);}
 function plStStripHtml(){
   const live=PL_FRAMES.filter(f=>plStations[f]&&plStations[f].identity);
   if(!live.length)return "";
@@ -913,7 +940,7 @@ function plRender(){
     if(plMomTab=="stations")m=plStationsHtml();
     if(plMomTab=="labels")m=plLabelsHtml();
     const _tabs='<div style="display:flex;gap:6px;padding:12px 12px 0">'+
-      [["stats","\u{1F4CA} Stats"],["room","\u{1F9FA} The Room"],["stations","\u{1F3AA} Stations"],["labels","\u{1F3F7} Labels"]].map(function(t){
+      [["stats","\u{1F4CA} Stats"],["room","\u{1F9FA} Room setup"],["stations","\u{1F3AA} Station setup"],["labels","\u{1F3F7} Labels"]].map(function(t){
         return '<button class="loc-btn'+(plMomTab==t[0]?" active":"")+'" onclick="plMomTab=\''+t[0]+'\';plRender()">'+t[1]+'</button>';}).join("")+'</div>';
     document.getElementById("pl-intents").style.display="none";
     document.getElementById("pl-grid").innerHTML="";
@@ -934,8 +961,18 @@ function plRender(){
     return true;
   }).map(c=>{
     const o=plState[c.id];
-    return '<div class="bin'+(o?" isout":"")+'" onclick="plOpenSheet(\''+c.id+'\')">'+
-      (o?'<div class="outband" style="background:'+plColor(o.kid)+'">'+plName(o.kid,o)+' has it</div>':'')+
+    // A bin that belongs to a station has THREE states, and they used to look like one:
+    // claimed (someone is playing with the whole station), staged-but-free, and not
+    // station-owned at all. Staged bins can't be checked out individually — her rule, the
+    // station owns its bins — so the card has to say which case it is.
+    const stg=plStagedAt(c.id);
+    const scl=stg&&stg.st?stg.st.claim:null;
+    let band='';
+    if(scl) band='<div class="outband" style="background:'+(plColor(scl.by)||"#888")+'">'+stg.deck.em+' '+stg.deck.name+' · '+plName(scl.by)+' has it</div>';
+    else if(o) band='<div class="outband" style="background:'+plColor(o.kid)+'">'+plName(o.kid,o)+' has it</div>';
+    else if(stg) band='<div class="outband" style="background:#6b7280">'+stg.deck.em+' '+stg.deck.name+' station · '+stg.frame+'</div>';
+    return '<div class="bin'+((o||scl)?" isout":"")+'" onclick="plOpenSheet(\''+c.id+'\')">'+
+      band+
       (plPhoto(c)?'<img src="'+plPhoto(c)+'" loading="lazy">':'<div class="noimg">'+(PL_EMOJI[c.cat]||"📦")+'</div>')+
       '<div class="nm">'+plBinName(c)+'</div><div class="meta"><span class="idchip">'+c.id+'</span><span>'+c.loc+'</span></div></div>';
   }).join("")
