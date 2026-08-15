@@ -252,6 +252,7 @@ body.kiosk #app-header,body.kiosk #nav-tabs,body.kiosk #sched-subtabs,body.kiosk
    on an "everything off" break day, and an !important would show an empty shell instead. */
 body.kioskr #app-header,body.kioskr #nav-tabs,body.kioskr #sched-subtabs,body.kioskr #day-tabs,body.kioskr #kid-filter,body.kioskr #mom-pin-bar,body.kioskr #week-strip,body.kioskr #admin-btn,body.kioskr #scroll-top,body.kioskr #hq-back,body.kioskr #md-back,body.kioskr #content{display:none!important}
 #kiosk-kids{display:none}
+#kiosk-mom{display:none;background:var(--bg)}
 body.kioskr #kiosk-kids{display:flex;gap:8px;padding:10px 12px;background:#fff;border-bottom:1px solid var(--border);overflow-x:auto;position:sticky;top:0;z-index:97}
 body.kioskr #kiosk-kids::-webkit-scrollbar{display:none}
 .kk-btn{flex:0 0 auto;padding:12px 20px;border-radius:14px;border:2px solid var(--border);background:#fff;font-size:17px;font-weight:800;font-family:'DM Sans',sans-serif;cursor:pointer;min-height:52px}
@@ -1353,6 +1354,7 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
 <div id="mom-pin-bar" style="display:none;background:#fff;border-bottom:1px solid var(--border);padding:10px 16px;text-align:center"></div>
 
 <div id="kiosk-kids"></div>
+<div id="kiosk-mom"></div>
 
 <!-- SKYLIGHT — top of schedule content -->
 <div id="skylight-panel">
@@ -3056,7 +3058,7 @@ function renderAll(){
 }
 function _renderAllInner(){
   const stb=document.getElementById("sitter-tab-btn"); if(stb){ if(SITTER_NAME){stb.textContent=SITTER_NAME;stb.style.display="";} else {stb.style.display="none";} }
-  renderSchedSubtabs(); renderDayTabs(); renderKidFilter(); renderSkylight(); renderWeekStrip(); renderKioskKids();
+  renderSchedSubtabs(); renderDayTabs(); renderKidFilter(); renderSkylight(); renderWeekStrip(); renderKioskKids(); renderKioskMom();
   if(tab==="schedule") document.getElementById("day-tabs").style.display=(schedShowHistory||schedShowPace||schedShowAdmin)?"none":"flex";
   const showKidFilter=(tab==="schedule"&&!schedShowAdmin&&!schedShowBoard)||(tab==="history")||(tab==="pace");
   const kf=document.getElementById("kid-filter");
@@ -3249,7 +3251,15 @@ function selKid(k){
 const KK_IDLE_MS=120000;
 let _kkLastTouch=Date.now();
 function kkTouch(){ _kkLastTouch=Date.now(); }
-function kkSel(k){ kkTouch(); kid=k; renderAll(); window.scrollTo({top:0}); }
+// Mom is a LANE, not a kid: selecting her must not set `kid="mom"`, which would trip
+// renderKidFilter's admin-PIN bar and make renderSkylight hide the panel. Separate flag.
+let kkMom=false;
+function kkSel(k){
+  kkTouch();
+  if(k==="mom"){ kkMom=true; }
+  else { kkMom=false; kid=k; }
+  renderAll(); window.scrollTo({top:0});
+}
 function renderKioskKids(){
   if(!_kioskR()) return;
   const el=document.getElementById("kiosk-kids"); if(!el) return;
@@ -3260,19 +3270,64 @@ function renderKioskKids(){
     return;
   }
   el.innerHTML=["all",...ROSTER].map(function(k){
-    const on=(k===kid), col=(k==="all")?"var(--header)":(SL_KCOL[k]||"#666");
+    const on=(!kkMom&&k===kid), col=(k==="all")?"var(--header)":(SL_KCOL[k]||"#666");
     return '<button class="kk-btn'+(on?" active":"")+'" onclick="kkSel(\''+k+'\')" style="'+
       (on?"background:"+col+";border-color:"+col+";color:#fff":"color:"+col)+'">'+
       (k==="all"?"Everyone":(SL_KLBL[k]||cap(k)))+'</button>';
-  }).join("");
+  }).join("")+
+  '<button class="kk-btn'+(kkMom?" active":"")+'" onclick="kkSel(\'mom\')" style="'+
+    (kkMom?"background:#b5394a;border-color:#b5394a;color:#fff":"color:#b5394a")+'">Mom</button>';
 }
+// 🧹 Mom's lane — her own chores (momChores defs + momday/{iso}/chores stamps), grouped
+// by slot exactly like the Mom's Day card, filtered to what's actually due today.
+// VIEW + CHECK ONLY on purpose: no add, no delete, no cadence editing. This is a bathroom
+// wall tablet, so nothing here should be able to reshape her list by accident.
+function renderKioskMom(){
+  const el=document.getElementById("kiosk-mom"); if(!el) return;
+  if(!_kioskR()||!kkMom){ el.style.display="none"; return; }
+  // renderSkylight() ran earlier in this same pass and may have shown the kids' grid;
+  // this runs after it, so it gets the last word.
+  const panel=document.getElementById("skylight-panel"); if(panel) panel.style.display="none";
+  el.style.display="block";
+  const iso=_todayStr(), dn=mdTodayName(), all=mcAll();
+  const due=Object.keys(all)
+    .filter(function(id){ return cadDueOn((all[id]||{}).cad,dn); })
+    .sort(function(a,b){ return ((all[a]||{}).ts||0)-((all[b]||{}).ts||0); });
+  const doneN=due.filter(function(id){ return mcDoneOn(iso,id); }).length;
+  let h='<div style="padding:14px 14px 4px"><div style="font-size:18px;font-weight:800;color:#b5394a">\uD83E\uDDF9 My chores</div>'+
+    '<div style="font-size:12px;color:var(--muted);margin-top:2px">'+doneN+' of '+due.length+' done today</div></div>';
+  if(!due.length){
+    h+='<div style="padding:16px;font-size:15px;font-weight:700;color:var(--muted)">Nothing on your list today \uD83C\uDF89</div>';
+    el.innerHTML=h; return;
+  }
+  MC_SLOT_ORDER.concat([""]).forEach(function(sl){
+    const ids=due.filter(function(id){ return mcSlotOf(all[id])===sl; });
+    if(!ids.length) return;
+    const meta=MC_SLOTS[sl];
+    h+='<div style="padding:12px 14px 2px;font-size:12px;font-weight:800;color:var(--muted);letter-spacing:.04em">'+
+      (meta?(meta.ic+" "+meta.nm.toUpperCase()):"ONGOING")+'</div><div style="padding:0 14px">';
+    ids.forEach(function(id){
+      const dn2=mcDoneOn(iso,id);
+      h+='<div onclick="kkMomToggle(\''+id+'\')" style="display:flex;align-items:center;gap:11px;padding:13px 14px;margin:6px 0;border:1.5px solid '+
+        (dn2?"#86efac":"var(--border)")+';border-radius:12px;background:'+(dn2?"#f0fdf4":"var(--card)")+';cursor:pointer">'+
+        '<div style="width:25px;height:25px;flex:0 0 auto;border-radius:7px;border:2px solid '+(dn2?"#15803d":"var(--border)")+
+        ';background:'+(dn2?"#15803d":"transparent")+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">'+
+        (dn2?"\u2713":"")+'</div>'+
+        '<div style="font-size:15px;font-weight:700;'+(dn2?"text-decoration:line-through;opacity:.5":"")+'">'+esc((all[id]||{}).label||"")+'</div></div>';
+    });
+    h+='</div>';
+  });
+  h+='<div style="height:24px"></div>';
+  el.innerHTML=h;
+}
+function kkMomToggle(id){ kkTouch(); mcToggle(id); }
 // Armed from INIT, only in kiosk-routines mode.
 function kkArm(){
   document.addEventListener("touchstart",kkTouch,true);
   document.addEventListener("click",kkTouch,true);
   setInterval(function(){
-    if(!_kioskR()||kid==="all") return;
-    if(Date.now()-_kkLastTouch>=KK_IDLE_MS){ kid="all"; renderAll(); }
+    if(!_kioskR()||(kid==="all"&&!kkMom)) return;
+    if(Date.now()-_kkLastTouch>=KK_IDLE_MS){ kid="all"; kkMom=false; renderAll(); }
   },15000);
 }
 
@@ -6728,6 +6783,9 @@ function mcToggle(id){
     if(on) db.ref('momday/'+iso+'/chores/'+id).set(ch[id]);
     else db.ref('momday/'+iso+'/chores/'+id).remove();
   }
+  // On the bathroom kiosk #content is hidden, and renderMomsPlan is the whole heavy
+  // Mom's Day build — repaint just the lane instead.
+  if(typeof _kioskR==="function"&&_kioskR()){ renderKioskMom(); return; }
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
 function mcSetCad(id,cad){
