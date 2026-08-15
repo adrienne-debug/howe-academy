@@ -22426,25 +22426,36 @@ function gvMenuDone(kid,dn,sk){
   const txt=String(l[sk]||"").trim();
   if(!txt||!gvFilled(txt)) return;
   const s=(((currData||{}).subjects||{})[kid]||{})[sk]||{};
-  if(!confirm("Mark “"+txt+"” done?\n\nIt comes out of the plan and the lessons after it move up to fill its day. You can undo this.")) return;
-  gvGrabScroll(); gvMenu=null;
+  // A PAST cell is the RECORD of what happened, not a plan. Two things differ there:
+  // the completion is dated to the cell's own day (cbTodayISO would file Aug 4's work
+  // under today), and the cell is KEPT — clearing it, as the future path does, would
+  // delete the evidence. Nothing re-lays either; there is no future behind today.
+  const past=!!(l.date&&l.date<cbTodayISO());
+  if(!confirm(past
+      ?("Mark “"+txt+"” done on "+l.date+"?\n\nIt stays on that day as the record of what was done. You can undo this.")
+      :("Mark “"+txt+"” done?\n\nIt comes out of the plan and the lessons after it move up to fill its day. You can undo this."))) return;
+  gvGrabScroll(); gvMenu=null; gvEdit=null;
   const prevPaths={};
   prevPaths["subjects/"+kid+"/"+sk+"/manualDone"]=s.manualDone?JSON.parse(JSON.stringify(s.manualDone)):null;
   const md=Object.assign({},s.manualDone||{});
-  md[_mdKey(txt)]={lesson:txt,day:cbTodayISO(),ts:new Date().toISOString()};
+  md[_mdKey(txt)]={lesson:txt,day:(past?l.date:cbTodayISO()),ts:new Date().toISOString()};
   s.manualDone=md;
   const up={}; up["subjects/"+kid+"/"+sk+"/manualDone"]=md;
-  // Clear its cell now — the re-lay would overwrite the day anyway, but an unpaced
-  // subject has no re-lay, and a cleared cell is the honest picture either way.
-  prevPaths["lessons/"+kid+"/"+dn+"/"+sk]=l[sk];
-  up["lessons/"+kid+"/"+dn+"/"+sk]=null;
-  delete l[sk];
+  if(!past){
+    // Clear its cell now — the re-lay would overwrite the day anyway, but an unpaced
+    // subject has no re-lay, and a cleared cell is the honest picture either way.
+    prevPaths["lessons/"+kid+"/"+dn+"/"+sk]=l[sk];
+    up["lessons/"+kid+"/"+dn+"/"+sk]=null;
+    delete l[sk];
+  }
   if(db) db.ref("curriculum").update(up).catch(err=>{ cbMsg="⚠ "+err.message; renderAll(); });
   currData.lastEdit=new Date().toISOString();
   if(db) db.ref("curriculum/lastEdit").set(currData.lastEdit);
   try{ buildCurrPaceCum(); }catch(e){}
   _gvDelUndo={kid,sk,paths:prevPaths,label:"marked “"+txt+"” done"};
-  const msg="✓ Marked “"+txt+"” done";
+  const msg="✓ Marked “"+txt+"” done"+(past?" on "+l.date:"");
+  // Past work never re-lays: nothing behind today can shift, and the cell stays put.
+  if(past){ cbMsg=msg; renderAll(); return; }
   if(s.pacing&&s.pacing.mode){ if(_gvRelaySubject(kid,sk,msg)) return; _gvFinishDeleteNoBuild(); return; }
   cbMsg=msg+" — "+(s.display||sk)+" isn’t Builder-paced, so the rest don’t shift on their own.";
   _gvFinishDeleteNoBuild(); renderAll();
@@ -23051,7 +23062,11 @@ function renderCurrGrid(el){
           // re-lay the plan, and there is no plan left to re-lay in the past.
           // onmousedown preventDefault keeps the input's blur (→ cancel) from eating the tap.
           // onmousedown preventDefault keeps the input's blur (→ cancel) from eating the tap.
-          h+='<td style="white-space:nowrap"><input id="gv-edit-input" value="'+esc(gvFilled(v)?v:"")+'" onkeydown="gvEditKey(event,\''+gvKid+'\','+dn+',\''+sk+'\')" onblur="gvCancelEdit()">'+(gvFilled(v)
+          // ✓ on a past filled cell records it as done on ITS day and leaves it in place.
+          const _pastDone=(past&&gvFilled(v))
+            ?'<button onmousedown="event.preventDefault()" onclick="gvMenuDone(\''+gvKid+'\','+dn+',\''+sk+'\')" title="They did this on this day — record it as done" style="border:none;background:none;cursor:pointer;font-size:13px;padding:0 2px;color:#15803d;font-weight:700">✓</button>'
+            :'';
+          h+='<td style="white-space:nowrap"><input id="gv-edit-input" value="'+esc(gvFilled(v)?v:"")+'" onkeydown="gvEditKey(event,\''+gvKid+'\','+dn+',\''+sk+'\')" onblur="gvCancelEdit()">'+_pastDone+(gvFilled(v)
             ?'<button onmousedown="event.preventDefault()" onclick="gvDeleteLesson(\''+gvKid+'\','+dn+',\''+sk+'\')" title="Delete this lesson and re-lay the subject" style="border:none;background:none;cursor:pointer;font-size:13px;padding:0 2px">🗑</button>'
             :'<button onmousedown="event.preventDefault()" onclick="gvMenuAddMakeup(\''+gvKid+'\','+dn+',\''+sk+'\')" title="Add a make-up sitting of this subject on this day (or type content instead)" style="border:none;background:none;cursor:pointer;font-size:12px;padding:0 2px;font-weight:700;color:#15803d">➕</button>')+'</td>';
         }
@@ -23072,7 +23087,7 @@ function renderCurrGrid(el){
     h+='</tr>';
   }
   h+='</tbody></table></div>';
-  h+='<div style="font-size:10px;color:var(--muted);padding:0 2px 16px">Red rows = calendar/day-off · <span style="background:#eff6ff;padding:1px 6px;border-radius:6px">blue row</span> = today · past days are editable (tap one to fix a label or fill a gap) · tap any other filled cell for its menu: ✎ edit · ➡ move (then tap the landing day) · ✕ off this day (re-lays) · 🗑 delete-and-re-lay · tap a column title for its subject card</div>';
+  h+='<div style="font-size:10px;color:var(--muted);padding:0 2px 16px">Red rows = calendar/day-off · <span style="background:#eff6ff;padding:1px 6px;border-radius:6px">blue row</span> = today · past days are editable (tap one to fix a label, fill a gap, or ✓ mark it done) · tap any other filled cell for its menu: ✎ edit · ➡ move (then tap the landing day) · ✕ off this day (re-lays) · 🗑 delete-and-re-lay · tap a column title for its subject card</div>';
   h+='</div>';
   // A build can start from a subject card opened HERE (column-header tap) — the
   // Keep/Dismiss sheet must render on this tab too.
