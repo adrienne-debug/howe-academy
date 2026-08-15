@@ -22288,6 +22288,295 @@ function gvSelUndoApply(){
   gvGrabScroll(); renderAll();
 }
 
+// ── 🔍 Grid audit ───────────────────────────────────────────────────────────
+// Reads a subject's cells in date order and says where the sequence breaks:
+// numbers skipped, scheduled twice, or landing out of order. It is the check
+// that could not exist before — nothing compared a column against itself, so a
+// lesson going missing was invisible until someone hit the gap in a real book.
+// 2026-08-15: run cold against live data it re-found, unprompted, all three
+// lessons the four-hour MR5 repair session found by hand.
+//
+// It never fixes anything on its own, and it never touches a PAST cell. A past
+// cell is the record of what actually happened; "correcting" it would rewrite
+// history and could re-serve work a kid finished weeks ago.
+// GVAUDIT_START
+let gvAuditOpen=false;
+const _gaDash=s=>String(s).replace(/[–—−]/g,"-");
+const _gaNorm=s=>_gaDash(s).replace(/\s+/g," ").trim().toLowerCase();
+// Two readings of a trailing "a-b": a page RANGE (pp.24-27) or a HIERARCHY
+// ("L2-7" = unit 2, lesson 7). Which one is right is decided per column below.
+function _gaParse(s,mode){
+  const t=_gaDash(s), m=t.match(/(\d+)\s*-\s*(\d+)\s*$/);
+  if(m) return mode==="range"?{maj:0,lo:+m[1],hi:+m[2]}:{maj:+m[1],lo:+m[2],hi:+m[2]};
+  const all=(t.match(/\d+/g)||[]).map(Number);
+  if(!all.length) return null;
+  if(mode==="hier"&&all.length>1) return {maj:all[all.length-2],lo:all[all.length-1],hi:all[all.length-1]};
+  return {maj:0,lo:all[all.length-1],hi:all[all.length-1]};
+}
+// Everything before the trailing number, so "5A Ch.8 L5" and "5B Ch.3 L2" are
+// compared inside their own book and never against each other.
+function _gaPrefix(s){
+  const t=_gaDash(s), m=t.match(/^(.*?)(\d+\s*-\s*\d+|\d+)\s*$/);
+  return m?_gaNorm(m[1]).replace(/[.\s]+$/,""):_gaNorm(t);
+}
+// Walk one prefix-group under one reading. The column's own most common step is
+// what "correct" means — a subject doing every 4th page is not broken.
+function _gaScan(cells,mode){
+  const pts=[];
+  for(const c of cells){ const p=_gaParse(c.txt,mode); if(p) pts.push(Object.assign({},c,p)); }
+  const steps=[], pairs=Math.max(0,pts.length-1);
+  for(let i=1;i<pts.length;i++){ if(pts[i].maj!==pts[i-1].maj) continue; steps.push(pts[i].lo-pts[i-1].hi); }
+  const cov=pairs?steps.length/pairs:0;
+  if(!steps.length) return {pts:pts,bad:[],stride:1,cov:cov};
+  const tally={}; steps.forEach(v=>tally[v]=(tally[v]||0)+1);
+  const stride=+Object.keys(tally).sort((a,b)=>tally[b]-tally[a]||a-b)[0];
+  const bad=[];
+  for(let i=1;i<pts.length;i++){
+    if(pts[i].maj!==pts[i-1].maj) continue;          // new unit/book — the count resets
+    const step=pts[i].lo-pts[i-1].hi;
+    if(step===stride) continue;
+    bad.push({i:i,step:step,prev:pts[i-1],cur:pts[i],kind:step<=0?"back":"gap"});
+  }
+  return {pts:pts,bad:bad,stride:stride,cov:cov};
+}
+function gvAuditFindings(kid){
+  const out={now:[],past:[]};
+  const lessons=((currData||{}).lessons||{})[kid]||{};
+  const subs=((currData||{}).subjects||{})[kid]||{};
+  const today=cbTodayISO();
+  const dns=Object.keys(lessons).map(Number).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
+  const cols={};
+  for(const dn of dns){
+    const row=lessons[dn]||{};
+    for(const sk of Object.keys(row)){
+      if(sk==="date"||sk==="week"||!gvFilled(row[sk])) continue;
+      (cols[sk]=cols[sk]||[]).push({dn:dn,date:row.date||"",txt:String(row[sk])});
+    }
+  }
+  for(const sk of Object.keys(cols)){
+    const s=subs[sk];
+    if(!s||s.paused||s.tracking==="daily") continue;   // daily work has no lesson numbers
+    const cells=cols[sk], disp=s.display||sk, found=[];
+
+    // Scheduled twice. Numbered cells only — "Review", "Free choice" and
+    // "Build Story" repeat by design and are not mistakes.
+    const seen={};
+    cells.forEach(c=>{ if(!/\d/.test(c.txt)) return; const k=_gaNorm(c.txt); (seen[k]=seen[k]||[]).push(c); });
+    Object.keys(seen).forEach(k=>{
+      const g=seen[k]; if(g.length<2) return;
+      const last=g[g.length-1];
+      found.push({type:"dup",sk:sk,disp:disp,txt:g[0].txt,dn:last.dn,date:last.date,
+        dates:g.map(c=>c.date),n:g.length});
+    });
+
+    // Mixed dashes inside one column: "pp.224-227" never matches the check-off
+    // "pp.224–227", so finished work silently reappears as unfinished.
+    const marks={};
+    cells.forEach(c=>{ (String(c.txt).match(/[-–—]/g)||[]).forEach(d=>marks[d]=(marks[d]||0)+1); });
+    const kinds=Object.keys(marks);
+    if(kinds.length>1){
+      const win=kinds.sort((a,b)=>marks[b]-marks[a])[0];
+      const fwd=cells.filter(c=>c.date>=today&&new RegExp("[-–—]").test(c.txt)&&c.txt.indexOf(win)<0);
+      found.push({type:"dash",sk:sk,disp:disp,win:win,kinds:kinds.join(" and "),
+        fwd:fwd.length,date:fwd.length?fwd[0].date:""});
+    }
+
+    // Sequence breaks, per prefix group, under whichever reading actually fits.
+    const groups={};
+    cells.forEach(c=>{ const p=_gaPrefix(c.txt); (groups[p]=groups[p]||[]).push(c); });
+    for(const p of Object.keys(groups)){
+      const g=groups[p]; if(g.length<3) continue;      // too short to infer a step
+      const a=_gaScan(g,"range"), b=_gaScan(g,"hier");
+      // A reading only wins if it still compares most consecutive pairs. Without
+      // this, "hier" wins every column by calling each cell a new unit and
+      // checking nothing — which hides the real gaps instead of finding them.
+      const ok=r=>r.cov>=0.6;
+      const best=(ok(b)&&(!ok(a)||b.bad.length<a.bad.length))?b:a;
+      const bad=best.bad;
+      for(let j=0;j<bad.length;j++){
+        const v=bad[j], nx=bad[j+1];
+        // A gap immediately followed by a step backwards is ONE lesson sitting in
+        // the wrong place, not two separate faults.
+        if(v.kind==="gap"&&nx&&nx.kind==="back"&&nx.i<=v.i+2){
+          found.push({type:"order",sk:sk,disp:disp,txt:nx.cur.txt,after:v.prev.txt,
+            dn:nx.cur.dn,date:nx.cur.date});
+          j++; continue;
+        }
+        if(v.kind==="back"){
+          found.push({type:"back",sk:sk,disp:disp,a:v.prev.txt,b:v.cur.txt,
+            dn:v.cur.dn,date:v.cur.date});
+          continue;
+        }
+        const lo=v.prev.hi+best.stride, hi=v.cur.lo-best.stride;
+        found.push({type:"gap",sk:sk,disp:disp,after:v.prev.txt,before:v.cur.txt,
+          dn:v.cur.dn,date:v.cur.date,missing:(lo===hi?String(lo):lo+"–"+hi),
+          count:Math.max(1,Math.round((v.step-best.stride)/best.stride))});
+      }
+    }
+    // Split on today. A dash finding is only actionable while upcoming cells carry
+    // the wrong one — past text stays exactly as it was written.
+    found.forEach(f=>{
+      const live=(f.type==="dash")?(f.fwd>0):(f.date>=today);
+      out[live?"now":"past"].push(f);
+    });
+  }
+  const rank={dup:0,order:1,back:2,gap:3,dash:4};
+  const bydate=(a,b)=>(a.date||"").localeCompare(b.date||"")||rank[a.type]-rank[b.type];
+  out.now.sort(bydate); out.past.sort(bydate);
+  return out;
+}
+
+// ✓ Fix — normalise the dash on UPCOMING cells only. Pure text: no cell moves,
+// no date changes, nothing reschedules. Past text is left exactly as written.
+function gvAuditFixDash(kid,sk){
+  if(!db||(!momModeActive&&!adminPinUnlocked)) return;
+  const lessons=(currData.lessons||{})[kid]||{}, today=cbTodayISO();
+  const f=gvAuditFindings(kid).now.filter(x=>x.type==="dash"&&x.sk===sk)[0];
+  if(!f) return;
+  const dns=Object.keys(lessons).map(Number).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
+  const patch={}, undo={};
+  for(const dn of dns){
+    const row=lessons[dn]; if(!row||!row.date||row.date<today) continue;
+    const v=row[sk]; if(!gvFilled(v)) continue;
+    const nv=String(v).replace(/[-–—]/g,f.win);
+    if(nv===String(v)) continue;
+    const p="lessons/"+kid+"/"+dn+"/"+sk;
+    undo[p]=v; patch[p]=nv; row[sk]=nv;
+  }
+  const n=Object.keys(patch).length;
+  if(!n){ gwShowToast("Nothing to change."); return; }
+  if(!confirm("Make the dash consistent on "+n+" upcoming "+((currData.subjects[kid]||{})[sk]||{}).display+" cell"+(n!==1?"s":"")+"?\n\nOnly the dash character changes, so check-offs stop silently failing to match. No lesson moves and no date changes. Past cells are left alone.")) return;
+  const seqUndo=gvSyncSeqInto(patch,[sk],kid);
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch);
+  gvRecountTotal(kid,sk); buildCurrPaceCum();
+  gvSelUndo={kid:kid,undo:undo,seqUndo:seqUndo,subs:[sk]};
+  gwShowToast("Fixed the dash on "+n+" cell"+(n!==1?"s":"")+" — tap Undo to restore");
+  gvGrabScroll(); renderAll();
+}
+
+// ✓ Fix — delete the LATER copy of a lesson scheduled twice. The day is left
+// blank rather than pulled up: closing the gap is a re-lay, and that is the
+// ⤒ Delete & shift up button's job, with its own preview.
+function gvAuditFixDup(kid,sk,dn,txt){
+  if(!db||(!momModeActive&&!adminPinUnlocked)) return;
+  const lessons=(currData.lessons||{})[kid]||{}, row=lessons[dn];
+  if(!row||!gvFilled(row[sk])) return;
+  if(row.date&&row.date<cbTodayISO()){ gwShowToast("That copy is in the past — left as the record."); return; }
+  if(!confirm("Delete the second \""+txt+"\" on "+(row.date||"")+"?\n\nThe earlier one stays. This leaves that day blank for "+(((currData.subjects[kid]||{})[sk]||{}).display||sk)+" — to close the gap instead, use ☑︎ Select cells → ⤒ Delete & shift up.")) return;
+  const p="lessons/"+kid+"/"+dn+"/"+sk;
+  const patch={}, undo={};
+  undo[p]=row[sk]; patch[p]=null; delete row[sk];
+  const seqUndo=gvSyncSeqInto(patch,[sk],kid);
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch);
+  gvRecountTotal(kid,sk); buildCurrPaceCum();
+  gvSelUndo={kid:kid,undo:undo,seqUndo:seqUndo,subs:[sk]};
+  gwShowToast("Deleted the duplicate — tap Undo to restore");
+  gvGrabScroll(); renderAll();
+}
+
+// ✓ Fix — put missing lessons back into the master list, then hand off to the
+// Builder preview. Same route ⤒ Delete & shift up takes: the sequence changes
+// here, the LAYOUT is re-materialised by the Builder and applied only when she
+// taps Apply. Nothing is written to the grid by this function.
+function gvAuditFixGap(kid,sk,dn,after,missing){
+  if(!db||(!momModeActive&&!adminPinUnlocked)) return;
+  const s=(currData.subjects[kid]||{})[sk]; if(!s) return;
+  const disp=s.display||sk;
+  if(!s.lessonSeq||!s.lessonSeq.length){
+    alert(disp+" has no master lesson list yet, so there is nothing to insert into.\n\nUse \"Capture from the grid\" at the top of the Grid first — it writes down the lessons exactly as they stand. Then this can add the missing ones.");
+    return;
+  }
+  const label=prompt("What should go between \""+after+"\"?\n\nSuggested from the numbering — edit if the book reads differently:",
+    String(after).replace(/(\d+\s*[-–—]\s*\d+|\d+)\s*$/,missing));
+  if(label===null) return;
+  const v=String(label).trim(); if(!v) return;
+  const seq=s.lessonSeq.slice();
+  let at=seq.findIndex(x=>_gaNorm(x)===_gaNorm(after));
+  if(at<0){ alert("Couldn't find \""+after+"\" in "+disp+"'s master list — the list and the grid disagree here. Open the subject and check it by hand."); return; }
+  seq.splice(at+1,0,v);
+  if(!confirm("Insert \""+v+"\" after \""+after+"\" in "+disp+"'s lesson list?\n\nThe Builder then re-lays the plan from there so nothing is lost, and shows you a preview. Nothing changes on the grid until you tap Apply.")) return;
+  s.lessonSeq=seq; s.total=seq.length;
+  const patch={};
+  patch["subjects/"+kid+"/"+sk+"/lessonSeq"]=seq;
+  patch["subjects/"+kid+"/"+sk+"/total"]=seq.length;
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch);
+  cbKid=kid; adminSubTab="curriculum"; currInnerTab="builder";
+  cbOpenSubj(sk); cbRunPreview();
+  gwShowToast("Added to "+disp+" — review the re-laid plan, then Apply.");
+}
+
+// Jump to the cell a finding is about and open it for editing.
+function gvAuditGoto(kid,dn,sk){
+  if(kid!==gvKid) gvSetKid(kid);
+  const lessons=(currData.lessons||{})[kid]||{}, row=lessons[dn];
+  if(row&&row.date&&row.date<cbTodayISO()) gvShowPast=true;
+  gvGrabScroll(); gvMenu=null; gvEdit=dn+"|"+sk; renderAll();
+  setTimeout(function(){
+    const c=document.getElementById("gv-c-"+dn+"-"+sk);
+    if(c&&c.scrollIntoView) c.scrollIntoView({block:"center",behavior:"smooth"});
+  },60);
+}
+
+function gvAuditToggle(){ gvAuditOpen=!gvAuditOpen; gvGrabScroll(); renderAll(); }
+
+function gvAuditRender(kid,col){
+  let a; try{ a=gvAuditFindings(kid); }catch(e){ return ""; }
+  const nNow=a.now.length, nPast=a.past.length;
+  if(!nNow&&!nPast) return "";
+  const BTN='border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  let h='<div style="background:#fffbeb;border-left:4px solid #d97706;border-radius:0 10px 10px 0;padding:10px 12px;margin:0 0 8px">';
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">';
+  h+='<div style="font-size:12px;color:#92400e">'+(nNow
+      ?'<b>🔍 '+nNow+' thing'+(nNow>1?'s':'')+' to check</b> in '+cap(kid)+'’s upcoming plan — skipped numbers, lessons booked twice, or out of order.'
+      :'<b>🔍 '+cap(kid)+'’s upcoming plan looks clean.</b>')
+    +(nPast?' <span style="color:#a16207">'+nPast+' older one'+(nPast>1?'s':'')+' left as the record.</span>':'')+'</div>';
+  h+='<button onclick="gvAuditToggle()" style="flex-shrink:0;border:1px solid #d97706;background:#fff;color:#b45309;'+BTN+'">'+(gvAuditOpen?'Hide':'Show')+'</button>';
+  h+='</div>';
+  if(!gvAuditOpen) return h+'</div>';
+
+  const rowOf=function(f,live){
+    const jump='<button onclick="gvAuditGoto(\''+kid+'\','+f.dn+',\''+f.sk+'\')" style="border:1px solid var(--border);background:#fff;color:var(--muted);'+BTN+'">Show me</button>';
+    let txt='', fix='';
+    if(f.type==="dup"){
+      txt='<b>'+esc(f.disp)+'</b> — “'+esc(f.txt)+'” is booked '+f.n+' times ('+f.dates.map(esc).join(', ')+')';
+      if(live) fix='<button onclick="gvAuditFixDup(\''+kid+'\',\''+f.sk+'\','+f.dn+','+JSON.stringify(f.txt).replace(/"/g,'&quot;')+')" style="border:1px solid #d97706;background:#fff;color:#b45309;'+BTN+'">Delete the 2nd</button>';
+    } else if(f.type==="dash"){
+      txt=live
+        ?'<b>'+esc(f.disp)+'</b> — mixed dashes ('+esc(f.kinds)+') on '+f.fwd+' upcoming cell'+(f.fwd!==1?'s':'')+'. Check-offs won’t match.'
+        :'<b>'+esc(f.disp)+'</b> — mixed dashes ('+esc(f.kinds)+'), but only on cells already behind us. Nothing upcoming to change.';
+      // No fix button when every odd cell is in the past — the text stays as written.
+      if(live) fix='<button onclick="gvAuditFixDash(\''+kid+'\',\''+f.sk+'\')" style="border:1px solid #d97706;background:#fff;color:#b45309;'+BTN+'">Make consistent</button>';
+      return '<div style="padding:7px 0;border-top:1px solid #fde68a"><div style="font-size:11.5px;color:#78350f;line-height:1.45;margin-bottom:5px">'+txt+'</div>'+(fix?'<div style="display:flex;gap:6px;flex-wrap:wrap">'+fix+'</div>':'')+'</div>';
+    } else if(f.type==="gap"){
+      txt='<b>'+esc(f.disp)+'</b> — '+esc(f.missing)+' never got scheduled, between “'+esc(f.after)+'” and “'+esc(f.before)+'” ('+esc(f.date)+')';
+      if(live) fix='<button onclick="gvAuditFixGap(\''+kid+'\',\''+f.sk+'\','+f.dn+','+JSON.stringify(f.after).replace(/"/g,'&quot;')+','+JSON.stringify(f.missing).replace(/"/g,'&quot;')+')" style="border:1px solid #d97706;background:#fff;color:#b45309;'+BTN+'">Add it back…</button>';
+    } else if(f.type==="order"){
+      txt='<b>'+esc(f.disp)+'</b> — “'+esc(f.txt)+'” sits after “'+esc(f.after)+'” ('+esc(f.date)+')';
+    } else {
+      txt='<b>'+esc(f.disp)+'</b> — goes backwards: “'+esc(f.a)+'” then “'+esc(f.b)+'” ('+esc(f.date)+')';
+    }
+    return '<div style="padding:7px 0;border-top:1px solid #fde68a"><div style="font-size:11.5px;color:#78350f;line-height:1.45;margin-bottom:5px">'+txt+'</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+fix+jump+'</div></div>';
+  };
+
+  h+='<div style="margin-top:8px">';
+  if(nNow){
+    h+='<div style="font-size:10px;font-weight:800;letter-spacing:0.4px;text-transform:uppercase;color:#b45309">Today forward — safe to change</div>';
+    a.now.forEach(f=>{ h+=rowOf(f,true); });
+  }
+  if(nPast){
+    h+='<div style="font-size:10px;font-weight:800;letter-spacing:0.4px;text-transform:uppercase;color:#a16207;margin-top:12px">Already happened — shown, not changed</div>';
+    h+='<div style="font-size:10.5px;color:#a16207;line-height:1.45;padding:4px 0">These are the record of what was actually done. Changing them now would rewrite history and could hand back work that’s already finished. Use “Show me” if one needs a look.</div>';
+    a.past.forEach(f=>{ h+=rowOf(f,false); });
+  }
+  h+='</div>';
+  h+='<div style="font-size:10.5px;color:#a16207;margin-top:10px;line-height:1.45">Not every gap is a mistake — pages skipped on purpose show up here too. Nothing changes unless you tap.</div>';
+  return h+'</div>';
+}
+// GVAUDIT_END
+
 // Subjects that have at least one cell in this kid's grid, by display name
 function gvSubjectCols(kid){
   const lessons=((currData||{}).lessons||{})[kid]||{};
@@ -22927,6 +23216,10 @@ function renderCurrGrid(el){
     }
   }catch(e){}
 
+  // 🔍 Sequence audit — skipped numbers, lessons booked twice, out-of-order work.
+  // Sits with the other checks; only mom sees it, and only she can act on it.
+  if(momModeActive||adminPinUnlocked){ try{ h+=gvAuditRender(gvKid,_gcol); }catch(e){} }
+
   const today=cbTodayISO();
   const cap_=cbDayCap(gvKid);
   const pastCount=dayNums.filter(dn=>{const l=lessons[dn];return l&&l.date&&l.date<today;}).length;
@@ -23139,7 +23432,7 @@ function renderCurrGrid(el){
         const picked=gvSelMode&&gvSel.has(dn+"|"+sk);
         // Past cells open too when FILLED — delete-only view (see the editing branch).
         const click=gvSelMode?(past?'':' onclick="gvSelCell('+dn+',\''+sk+'\')"'):' onclick="gvOpenCell('+dn+',\''+sk+'\')"';
-        h+='<td class="gv-cell'+(gvFilled(v)||addedV!==undefined?'':' gv-empty')+(picked?' gv-picked':'')+((_mvArmed&&lmMovePick.date===l.date&&lmMovePick.sk===sk)?' gv-movesrc':'')+'"'+click+'>'+cell+'</td>';
+        h+='<td id="gv-c-'+dn+'-'+sk+'" class="gv-cell'+(gvFilled(v)||addedV!==undefined?'':' gv-empty')+(picked?' gv-picked':'')+((_mvArmed&&lmMovePick.date===l.date&&lmMovePick.sk===sk)?' gv-movesrc':'')+'"'+click+'>'+cell+'</td>';
       }
     }
     h+='</tr>';
