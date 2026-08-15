@@ -22393,6 +22393,14 @@ function gvAuditFindings(kid){
       const ok=r=>r.cov>=0.6;
       const best=(ok(b)&&(!ok(a)||b.bad.length<a.bad.length))?b:a;
       const bad=best.bad;
+      // Every number this column actually covers, ANYWHERE in it — not just at
+      // the point of comparison. A lesson done early sits earlier in the column
+      // than its neighbours, so a pairwise walk reads it as absent when it is
+      // merely out of order. 2026-08-15: AAS "L2-17" was reported missing while
+      // Lincoln had done it on 08-03; the offered fix inserted a second copy and
+      // the re-lay rightly refused to schedule work already finished.
+      const covered={};
+      best.pts.forEach(pt=>{ for(let n=pt.lo;n<=pt.hi;n++) covered[pt.maj+":"+n]=1; });
       for(let j=0;j<bad.length;j++){
         const v=bad[j], nx=bad[j+1];
         // A gap immediately followed by a step backwards is ONE lesson sitting in
@@ -22408,9 +22416,19 @@ function gvAuditFindings(kid){
           continue;
         }
         const lo=v.prev.hi+best.stride, hi=v.cur.lo-best.stride;
+        // Report only what the column genuinely never covers. If the whole span
+        // turns up elsewhere the lessons are out of order, not missing — and the
+        // out-of-order step is already its own finding.
+        const absent=[];
+        for(let n=lo;n<=hi;n++) if(!covered[v.cur.maj+":"+n]) absent.push(n);
+        if(!absent.length) continue;
         found.push({type:"gap",sk:sk,disp:disp,after:v.prev.txt,before:v.cur.txt,
-          dn:v.cur.dn,date:v.cur.date,missing:(lo===hi?String(lo):lo+"–"+hi),
-          count:Math.max(1,Math.round((v.step-best.stride)/best.stride))});
+          dn:v.cur.dn,date:v.cur.date,
+          missing:(absent.length===1?String(absent[0])
+                  :(absent[absent.length-1]-absent[0]===absent.length-1
+                    ?absent[0]+"–"+absent[absent.length-1]
+                    :absent.join(", "))),
+          count:absent.length});
       }
     }
     // Split on today. A dash finding is only actionable while upcoming cells carry
@@ -22481,6 +22499,15 @@ function gvAuditFixDup(kid,sk,dn,txt){
 // here, the LAYOUT is re-materialised by the Builder and applied only when she
 // taps Apply. Nothing is written to the grid by this function.
 function gvAuditFixGap(kid,sk,dn,after,missing){
+  // DISCONNECTED 2026-08-15. Nothing renders a button for this any more; the guard
+  // is here so a stale handler or an old cached page cannot reach the hand-off.
+  // What happened: this wrote the lesson into lessonSeq and then routed to the
+  // Builder to re-lay. Lincoln's AAS came out the far side with all 91 future cells
+  // cleared and `builtAt` untouched — a destructive write with no Apply behind it.
+  // Re-connect only once that path is traced and covered by a test.
+  alert("Adding a missing lesson from here is switched off.\n\nIt handed off to the Builder to re-lay the subject, and on 2026-08-15 that cleared a whole column without an Apply. Use “Show me” to go to the spot and add the lesson to the cell yourself.");
+  return;
+  // ↓ kept, unreachable, so re-connecting is deleting the two lines above.
   if(!db||(!momModeActive&&!adminPinUnlocked)) return;
   const s=(currData.subjects[kid]||{})[sk]; if(!s) return;
   const disp=s.display||sk;
@@ -22552,7 +22579,10 @@ function gvAuditRender(kid,col){
       return '<div style="padding:7px 0;border-top:1px solid #fde68a"><div style="font-size:11.5px;color:#78350f;line-height:1.45;margin-bottom:5px">'+txt+'</div>'+(fix?'<div style="display:flex;gap:6px;flex-wrap:wrap">'+fix+'</div>':'')+'</div>';
     } else if(f.type==="gap"){
       txt='<b>'+esc(f.disp)+'</b> — '+esc(f.missing)+' never got scheduled, between “'+esc(f.after)+'” and “'+esc(f.before)+'” ('+esc(f.date)+')';
-      if(live) fix='<button onclick="gvAuditFixGap(\''+kid+'\',\''+f.sk+'\','+f.dn+','+JSON.stringify(f.after).replace(/"/g,'&quot;')+','+JSON.stringify(f.missing).replace(/"/g,'&quot;')+')" style="border:1px solid #d97706;background:#fff;color:#b45309;'+BTN+'">Add it back…</button>';
+      // NO fix button. "Add it back…" handed off to the Builder, and on 2026-08-15
+      // that hand-off ended with 91 of Lincoln's AAS cells cleared without an Apply
+      // ever running. Until that write path is understood the audit only reports a
+      // gap and takes you to it — filling it is a manual edit, made deliberately.
     } else if(f.type==="order"){
       txt='<b>'+esc(f.disp)+'</b> — “'+esc(f.txt)+'” sits after “'+esc(f.after)+'” ('+esc(f.date)+')';
     } else {

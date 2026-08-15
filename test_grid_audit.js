@@ -76,6 +76,26 @@ console.log("gaps");
   ok("catches a gap against that stride", f.length === 1 && f[0].missing === "9–12", f[0] && f[0].missing);
 }
 
+console.log("a lesson done early is not a missing lesson");
+{
+  // The AAS case, 2026-08-15: L2-17 was done early, so the column reads
+  // 17, 15, 16, 18. A pairwise walk sees 16→18 and calls 17 missing; the fix
+  // then inserted a second copy and the re-lay refused it as already done.
+  api.set(grid(["L2-13", "L2-14", "L2-17", "L2-15", "L2-16", "L2-18", "L2-19"]));
+  const f = all(api.find("kid"));
+  ok("does not report a gap for a number present elsewhere",
+    f.filter(x => x.type === "gap").length === 0, f.map(x => x.type + ":" + (x.missing || "")));
+  ok("still reports the out-of-order lesson", f.some(x => x.type === "order" || x.type === "back"),
+    f.map(x => x.type));
+}
+{
+  // Partially covered: 4 exists later, 5 truly never appears.
+  api.set(grid(["pg 1", "pg 2", "pg 4", "pg 3", "pg 6", "pg 7", "pg 8"]));
+  const f = all(api.find("kid")).filter(x => x.type === "gap");
+  ok("reports only the numbers genuinely absent", f.length === 1 && f[0].missing === "5",
+    f.map(x => x.missing));
+}
+
 console.log("duplicates");
 {
   api.set(grid(["L1", "L2", "L3", "L3", "L4", "L5"]));
@@ -151,6 +171,21 @@ console.log("scope");
   ok("paused subjects are never audited", all(api.find("kid")).length === 0);
   api.set(grid(["L1", "L2", "L3", "L4"]));
   ok("a clean column renders no strip at all", api.render("kid", "#333") === "");
+}
+
+console.log("the gap hand-off is disconnected");
+{
+  // 2026-08-15: "Add it back…" routed into the Builder and a whole column came
+  // back cleared with no Apply behind it. No gap may offer a fix button until
+  // that write path is traced.
+  api.set(grid(["pg 1", "pg 2", "pg 5", "pg 6", "pg 7"], { offset: 0 }));
+  const r = api.find("kid");
+  ok("the gap is still reported", r.now.some(f => f.type === "gap"));
+  api.toggle();
+  const h = api.render("kid", "#333");
+  api.toggle();
+  ok("no gap fix button is rendered anywhere", h.indexOf("gvAuditFixGap") < 0);
+  ok("the gap row still offers “Show me”", h.indexOf("gvAuditGoto") > 0);
 }
 
 console.log("markup");
