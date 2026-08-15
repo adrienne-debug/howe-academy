@@ -128,45 +128,79 @@ const PL_GUEST={id:"guest",name:"Friends",color:"#64748b"};
 window.plGuests={};
 const PL_GPAL=["#64748b","#0e7490","#7c3aed","#be185d","#a16207","#166534"];
 function plIsGuest(k){return k=="guest"||/^g_/.test(k);}
-function plActiveGuests(){const now=Date.now();return Object.entries(plGuests).filter(([id,g])=>g&&g.at&&(now-g.at)<86400000).map(([id,g])=>({id:id,name:g.name,at:g.at}));}
+// How long a friend sticks around. Her call 2026-08-15: 12 hours, so a morning playdate
+// is gone by bedtime and nobody inherits yesterday's friend. Their NAME still survives in
+// Mom's history forever — every checkout/play snapshots `gname` at the time (see plCo /
+// plPlayPick), and plName() falls back to it, so expiring the roster entry loses nothing.
+const PL_GUEST_MS=12*60*60*1000;
+// Guest-typed text goes straight into innerHTML in the WHO row and the friend sheet — one
+// kid typing "<" would blank the room, so escape it at the single point of use.
+function plEsc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+function plActiveGuests(){const now=Date.now();return Object.entries(plGuests).filter(([id,g])=>g&&g.at&&(now-g.at)<PL_GUEST_MS).map(([id,g])=>({id:id,name:g.name,at:g.at}));}
 function plGuestName(k){return (plGuests[k]||{}).name||null;}
 function plName(k,rec){return PL_KN[k]||plGuestName(k)||(rec&&rec.gname)||"Friend";}
 function plColor(k){if(PL_KC[k])return PL_KC[k];let h=0;for(const ch of String(k))h=(h*31+ch.charCodeAt(0))>>>0;return PL_GPAL[h%PL_GPAL.length];}
 function plSaveGuests(){if(plFB)return;try{HA_LS.setItem("lib_guests",JSON.stringify(plGuests));}catch(e){}}
 function plGuestPick(kind,ref){window._plPend={kind:kind,ref:ref};
   const gs=plActiveGuests();
-  let h='<h2>🧑‍🤝‍🧑 Which friend?</h2><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Friends disappear after 24 hours — add them fresh each visit.</div><div class="facegrid">'+
+  let h='<h2>🧑‍🤝‍🧑 Which friend?</h2><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Friends disappear after 12 hours — add them fresh each visit.</div><div class="facegrid">'+
     gs.map(g=>'<button class="face" style="background:'+plColor(g.id)+'" onclick="plGuestGo(\''+g.id+'\')">'+g.name+'</button>').join("")+
     '<button class="face" style="background:#111827" onclick="plAddGuest()">➕ New friend</button></div>'+
     '<button class="cancel" onclick="plCloseSheet()">back</button>';
   document.getElementById("pl-shbody").innerHTML=h;document.getElementById("pl-sheet").classList.add("open");}
-function plAddGuest(){const name=(prompt("Friend\'s name?")||"").trim();if(!name)return;
-  const id="g_"+Date.now().toString(36);
+// ⚠️ This used to be a browser prompt("Friend's name?"). prompt() DOES NOT FIRE in kiosk
+// browsers (same reason the Mom PIN got plMomPinSheet instead of a prompt) — so on the
+// playroom Fire tablet, the only device this feature is for, adding a friend silently did
+// nothing. It's an in-app sheet now, matching the PIN sheet's pattern.
+function plAddGuest(){plAddGuestSheet();}
+function plAddGuestSheet(){
+  document.getElementById("pl-shbody").innerHTML='<div style="text-align:center;padding:12px 4px">'+
+    '<div style="font-size:40px">\u{1F9D1}‍\u{1F91D}‍\u{1F9D1}</div>'+
+    '<div style="font-size:14px;font-weight:800;margin:8px 0 6px">What\'s your name?</div>'+
+    '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">You\'ll show up next to the kids for 12 hours.</div>'+
+    '<input id="pl-guest-name" type="text" maxlength="14" placeholder="Name" autocomplete="off" '+
+    'style="width:200px;text-align:center;font-size:18px;padding:10px 12px;border:2px solid var(--border);border-radius:10px;font-family:inherit" '+
+    'onkeydown="if(event.key===\'Enter\')plAddGuestSave()"/>'+
+    '<div id="pl-guest-err" style="font-size:11px;color:#b5394a;margin-top:4px;min-height:14px"></div>'+
+    '<div><button class="kid-btn" style="background:#111827;color:#fff;margin-top:8px;padding:10px 24px;font-weight:800" onclick="plAddGuestSave()">Add me</button></div>'+
+    '<button class="cancel" onclick="plCloseSheet()">Cancel</button></div>';
+  document.getElementById("pl-sheet").classList.add("open");
+  setTimeout(function(){var i=document.getElementById("pl-guest-name");if(i)i.focus();},50);
+}
+function plAddGuestSave(){
+  var i=document.getElementById("pl-guest-name");if(!i)return;
+  var name=(i.value||"").trim();
+  if(!name){var e=document.getElementById("pl-guest-err");if(e)e.textContent="Type a name first";return;}
+  var id="g_"+Date.now().toString(36);
   plGuests[id]={name:name.slice(0,14),at:Date.now()};
   if(plFB)db.ref("play/guests/"+id).set(plGuests[id]);else plSaveGuests();
-  plGuestGo(id);}
+  // Added mid-checkout → hand back to the pending action. Added from the WHO row → just
+  // become the selected player, so the next tap checks out as them.
+  if(window._plPend){plGuestGo(id);}
+  else{plCloseSheet();plSetKid(id);}
+}
 function plGuestGo(gid){const p=window._plPend||{};window._plPend=null;
   if(p.kind=="co")plCo(p.ref,gid);
   else if(p.kind=="play")plPlayPick(p.ref,gid);
   else plCloseSheet();}
-window.plGuestPick=plGuestPick;window.plActiveGuests=plActiveGuests;window.plAddGuest=plAddGuest;window.plGuestGo=plGuestGo;
+window.plAddGuestSheet=plAddGuestSheet;window.plAddGuestSave=plAddGuestSave;window.plGuestPick=plGuestPick;window.plActiveGuests=plActiveGuests;window.plAddGuest=plAddGuest;window.plGuestGo=plGuestGo;
 
 const PL_KC=Object.fromEntries(PL_KIDS.concat([PL_GUEST]).map(k=>[k.id,k.color]));
 const PL_KN=Object.fromEntries(PL_KIDS.concat([PL_GUEST]).map(k=>[k.id,k.name]));
 const PL_EMOJI={"magna-tiles":"🧲","littles-build":"🧱","build":"🔧","math":"🔢","science":"🧪","figures":"🦁","fine-motor":"✂️","curriculum":"📚","vehicles":"🏁","sensory":"🐣","dough":"🥨","maker":"🖨","coding":"🤖","activity":"💡","play":"🧸"};
-let plState={},plFB=false,plInited=false;
+let plState={},plFB=false,plInited=false,plUnlock={};
 function plLogArr(id){const L=plLog[id];if(!L)return[];if(Array.isArray(L))return L;return Object.entries(L).map(([k,s])=>Object.assign({_k:k},s)).sort((a,b)=>b.out-a.out);}
 function plInit(){if(plInited)return;plInited=true;
   if(typeof db!=="undefined"&&db&&db.ref){plFB=true;
     db.ref("play").on("value",function(s){var v=s.val()||{};
-      plState=v.checkouts||{};plLog=v.plLog||v.log||{};plStatus=v.status||{};plGuests=v.guests||{};plBinMeta=v.binMeta||{};plStations=v.stations||{};
+      plState=v.checkouts||{};plLog=v.plLog||v.log||{};plStatus=v.status||{};plGuests=v.guests||{};plBinMeta=v.binMeta||{};plStations=v.stations||{};plUnlock=v.unlock||{};
       if(!window._plPhotosSub){window._plPhotosSub=true;
         db.ref("playPhotos").on("value",function(ps){plPhotos=ps.val()||{};
           if(typeof tab!=="undefined"&&tab==="play")plRender();});}
-      const _now=Date.now();Object.entries(plGuests).forEach(([id,g])=>{if(g&&g.at&&(_now-g.at)>86400000&&!Object.values(plState).some(o=>o.kid==id)){db.ref("play/guests/"+id).remove();}});
+      const _now=Date.now();Object.entries(plGuests).forEach(([id,g])=>{if(g&&g.at&&(_now-g.at)>PL_GUEST_MS&&!Object.values(plState).some(o=>o.kid==id)){db.ref("play/guests/"+id).remove();}});
       plPlays=v.plPlays||v.plays?Object.entries(v.plPlays||v.plays||{}).map(function(e){return Object.assign({_k:e[0]},e[1]);}).sort(function(a,b){return b.at-a.at;}):[];
       if(typeof tab!=="undefined"&&tab==="play")plRender();});
-  } else { try{plState=JSON.parse(HA_LS.getItem("lib_checkouts")||"{}");plLog=JSON.parse(HA_LS.getItem("lib_log")||"{}");plPlays=JSON.parse(HA_LS.getItem("lib_plays")||"[]");plHist=JSON.parse(HA_LS.getItem("lib_hist")||"[]");plStatus=JSON.parse(HA_LS.getItem("lib_status")||"{}");try{plGuests=JSON.parse(HA_LS.getItem("lib_guests")||"{}");}catch(e){}try{plBinMeta=JSON.parse(HA_LS.getItem("lib_binmeta")||"{}");}catch(e){}try{plStations=JSON.parse(HA_LS.getItem("lib_stations")||"{}");}catch(e){}try{plPhotos=JSON.parse(HA_LS.getItem("lib_photos")||"{}");}catch(e){}}catch(e){}}
+  } else { try{plState=JSON.parse(HA_LS.getItem("lib_checkouts")||"{}");plLog=JSON.parse(HA_LS.getItem("lib_log")||"{}");plPlays=JSON.parse(HA_LS.getItem("lib_plays")||"[]");plHist=JSON.parse(HA_LS.getItem("lib_hist")||"[]");plStatus=JSON.parse(HA_LS.getItem("lib_status")||"{}");try{plGuests=JSON.parse(HA_LS.getItem("lib_guests")||"{}");}catch(e){}try{plBinMeta=JSON.parse(HA_LS.getItem("lib_binmeta")||"{}");}catch(e){}try{plStations=JSON.parse(HA_LS.getItem("lib_stations")||"{}");}catch(e){}try{plUnlock=JSON.parse(HA_LS.getItem("lib_unlock")||"{}");}catch(e){}try{plPhotos=JSON.parse(HA_LS.getItem("lib_photos")||"{}");}catch(e){}}catch(e){}}
 }
 let plHist=[];
 let plLog={};
@@ -377,8 +411,29 @@ function plStationsHtml(){
 // timer starts; you only lose the station if someone wants it. No auto-writes on expiry —
 // the next kid's "take over" tap performs the rotation, so devices never write during render.
 function plDayName(){return ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][new Date().getDay()];}
+// 🔓 MOM'S ESCAPE HATCH (2026-08-15) — a kid can be gate-locked on school work that
+// REQUIRES Mom (Lucy was blocked on 3 Mom-Required papers she couldn't clear alone), with
+// no way to open the stations. This unlocks ONE kid for ONE day.
+// Stamped with today's local date, so it EXPIRES BY ITSELF at midnight — there is no
+// sweep to forget and no way to leave the gate permanently open. Local date parts on
+// purpose, never toISOString(): that's UTC and would flip the day for evening taps.
+function plTodayISO(){const d=new Date(),p=function(n){return (n<10?"0":"")+n;};return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());}
+function plUnlocked(kid){return !!plUnlock&&plUnlock[kid]===plTodayISO();}
+function plToggleUnlock(kid){
+  if(!plMomAuthed())return;
+  if(plUnlocked(kid)){
+    delete plUnlock[kid];
+    if(plFB)db.ref("play/unlock/"+kid).remove();
+  } else {
+    plUnlock[kid]=plTodayISO();
+    if(plFB)db.ref("play/unlock/"+kid).set(plUnlock[kid]);
+  }
+  if(!plFB){try{HA_LS.setItem("lib_unlock",JSON.stringify(plUnlock));}catch(e){}}
+  plRender();
+}
 function plDayDone(kid){
   if(plIsGuest(kid))return true;
+  if(plUnlocked(kid))return true;   // 🔓 Mom opened the stations for this kid today
   try{
     if(typeof weekData==="undefined"||typeof chainDone!=="function")return true;
     const arr=Array.isArray(weekData.tasks)?weekData.tasks:Object.values(weekData.tasks||{});
@@ -767,7 +822,11 @@ function plRender(){
   // Home's WHO row is IDENTITY (plSelKid — claims act as this kid); the bins view's
   // SHOW row is only a display filter (plKidF). Same element, different semantics.
   if(plMode=="home")document.getElementById("pl-kidbar").innerHTML='<span style="font-size:11px;color:var(--muted);font-weight:700;margin-right:2px">WHO?</span>'+
-    PL_KIDS.map(k=>'<button class="kid-btn'+(plSelKid==k.id?" active":"")+'" style="'+(plSelKid==k.id?"background:"+k.color:"")+'" onclick="plSetKid(\''+k.id+'\')">'+k.name+'</button>').join("");
+    PL_KIDS.map(k=>'<button class="kid-btn'+(plSelKid==k.id?" active":"")+'" style="'+(plSelKid==k.id?"background:"+k.color:"")+'" onclick="plSetKid(\''+k.id+'\')">'+k.name+'</button>').join("")+
+    // Friends sit right beside the kids and act as a full player (plIsGuest already opens
+    // the school gate for them, so a friend is never blocked by someone else's homework).
+    plActiveGuests().map(g=>'<button class="kid-btn'+(plSelKid==g.id?" active":"")+'" style="'+(plSelKid==g.id?"background:"+plColor(g.id):"")+'" onclick="plSetKid(\''+g.id+'\')">\u{1F9D1}‍\u{1F91D}‍\u{1F9D1} '+plEsc(g.name)+'</button>').join("")+
+    '<button class="kid-btn" style="flex:0 0 auto;border:2px dashed var(--border);font-weight:800" onclick="plAddGuestSheet()">➕ Friend</button>';
   else document.getElementById("pl-kidbar").innerHTML='<span style="font-size:11px;color:var(--muted);font-weight:700;margin-right:2px">SHOW:</span>'+
     '<button class="kid-btn'+(plKidF=="all"?" active":"")+'" style="'+(plKidF=="all"?"background:#111827":"")+'" onclick="plKidF=\'all\';plRender()">Everything</button>'+
     PL_KIDS.map(k=>'<button class="kid-btn'+(plKidF==k.id?" active":"")+'" style="'+(plKidF==k.id?"background:"+k.color:"")+'" onclick="plKidF=\''+k.id+'\';plRender()">'+k.name+'</button>').join("");
@@ -842,7 +901,8 @@ function plRender(){
     // landed (empty log had masked it since the 7/18 ship).
     Object.keys(plLog).forEach(id=>plLogArr(id).forEach(sn=>{if(kidTot[sn.kid]){kidTot[sn.kid].n++;kidTot[sn.kid].ms+=((sn.back||Date.now())-sn.out);}}));
     let m='<div style="margin:12px;padding:12px 14px;background:var(--card);border:1.5px solid var(--border);border-radius:12px"><h3 style="margin:0 0 8px;font-size:13px">📊 Who plPlays how much</h3><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">'+
-      PL_KIDS.map(k=>'<div style="text-align:center;padding:8px 4px;background:var(--bg);border-radius:10px;border-top:3px solid '+k.color+'"><div style="font-size:12px;font-weight:800">'+k.name+'</div><div style="font-size:16px;font-weight:800">'+kidTot[k.id].n+'</div><div style="font-size:10px;color:var(--muted)">check-outs</div><div style="font-size:11px;font-weight:700;margin-top:2px">'+plDur(kidTot[k.id].ms)+'</div><div style="font-size:10px;margin-top:3px">streak '+plSt(k.id).streak+'</div><button style="margin-top:4px;border:none;border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;background:#b5394a;color:#fff;cursor:pointer" onclick="plStrike(\''+k.id+'\')">⚠ strike</button></div>').join("")+'</div></div>';
+      PL_KIDS.map(k=>'<div style="text-align:center;padding:8px 4px;background:var(--bg);border-radius:10px;border-top:3px solid '+k.color+'"><div style="font-size:12px;font-weight:800">'+k.name+'</div><div style="font-size:16px;font-weight:800">'+kidTot[k.id].n+'</div><div style="font-size:10px;color:var(--muted)">check-outs</div><div style="font-size:11px;font-weight:700;margin-top:2px">'+plDur(kidTot[k.id].ms)+'</div><div style="font-size:10px;margin-top:3px">streak '+plSt(k.id).streak+'</div><button style="margin-top:4px;border:none;border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;background:#b5394a;color:#fff;cursor:pointer" onclick="plStrike(\''+k.id+'\')">⚠ strike</button>'+
+        '<button style="margin-top:4px;margin-left:4px;border:none;border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;color:#fff;cursor:pointer;background:'+(plUnlocked(k.id)?"#15803d":"#6b7280")+'" onclick="plToggleUnlock(\''+k.id+'\')">'+(plUnlocked(k.id)?"\u{1F513} open today":"\u{1F512} unlock")+'</button></div>').join("")+'</div></div>';
     m+='<div style="margin:0 12px 24px;padding:12px 14px;background:var(--card);border:1.5px solid var(--border);border-radius:12px"><h3 style="margin:0 0 4px;font-size:13px">🧺 Every bin — tap for history</h3><div style="font-size:11px;color:var(--muted);margin-bottom:8px">Sorted by most used. Colored chip = who touched it LAST (your cleanup suspect).</div>'+
       PL_CATALOG.slice().sort((a,b)=>plBinStats(b.id).n-plBinStats(a.id).n).map(c=>{const st=plBinStats(c.id);const o=plState[c.id];
         return '<div class="out-row" style="cursor:pointer" onclick="plOpenSheet(\''+c.id+'\')">'+(plPhoto(c)?'<img src="'+plPhoto(c)+'">':'<div style="width:36px;height:36px;border-radius:8px;background:var(--bg);display:flex;align-items:center;justify-content:center">📦</div>')+
@@ -961,5 +1021,5 @@ window.renderPlay=function(c){
     document.getElementById("pl-sheet").addEventListener("click",e=>{if(e.target.id=="pl-sheet")plCloseSheet();});}
   plRender();
 };
-window.plSetMode=plSetMode;window.plSetKid=plSetKid;window.plPickIntent=plPickIntent;window.plShuffle=plShuffle;window.plOpenSheet=plOpenSheet;window.plCloseSheet=plCloseSheet;window.plCo=plCo;window.plRet=plRet;window.plPlayPick=plPlayPick;window.plConfirmPlay=plConfirmPlay;window.plFinishPlay=plFinishPlay;window.plActSheet=plActSheet;window.plWiz=plWiz;window.plWizGo=plWizGo;window.plRender=plRender;window.PL_ACTS=PL_ACTS;window.PL_CATALOG=PL_CATALOG;
+window.plToggleUnlock=plToggleUnlock;window.plSetMode=plSetMode;window.plSetKid=plSetKid;window.plPickIntent=plPickIntent;window.plShuffle=plShuffle;window.plOpenSheet=plOpenSheet;window.plCloseSheet=plCloseSheet;window.plCo=plCo;window.plRet=plRet;window.plPlayPick=plPlayPick;window.plConfirmPlay=plConfirmPlay;window.plFinishPlay=plFinishPlay;window.plActSheet=plActSheet;window.plWiz=plWiz;window.plWizGo=plWizGo;window.plRender=plRender;window.PL_ACTS=PL_ACTS;window.PL_CATALOG=PL_CATALOG;
 })();
