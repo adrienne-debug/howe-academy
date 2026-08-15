@@ -150,7 +150,7 @@ function plGuestPick(kind,ref){window._plPend={kind:kind,ref:ref};
   document.getElementById("pl-shbody").innerHTML=h;document.getElementById("pl-sheet").classList.add("open");}
 // ⚠️ This used to be a browser prompt("Friend's name?"). prompt() DOES NOT FIRE in kiosk
 // browsers (same reason the Mom PIN got plMomPinSheet instead of a prompt) — so on the
-// playroom Fire tablet, the only device this feature is for, adding a friend silently did
+// school-room Fire tablet, the only device this feature is for, adding a friend silently did
 // nothing. It's an in-app sheet now, matching the PIN sheet's pattern.
 function plAddGuest(){plAddGuestSheet();}
 function plAddGuestSheet(){
@@ -977,7 +977,7 @@ function plRender(){
       '<div class="nm">'+plBinName(c)+'</div><div class="meta"><span class="idchip">'+c.id+'</span><span>'+c.loc+'</span></div></div>';
   }).join("")
   // Some moods (move · read) have activities but no bins in THIS room yet — living room and
-  // playroom aren't captured. Never hand a kid a blank screen; point them at the wizard.
+  // real playroom aren't captured. Never hand a kid a blank screen; point them at the wizard.
   ||(doMode&&plIntentSel?'<div class="empty-note" style="padding:18px 4px;grid-column:1/-1">Nothing for <b>'+plIntentSel+'</b> on these shelves yet — try <b>Find Something</b> for ideas. 💡</div>':"");
   document.getElementById("pl-histlist").innerHTML=plHist.length?plHist.map(h=>'<div class="hrow">'+h+'</div>').join(""):'<div class="hrow">Nothing yet — tap a bin to check it out.</div>';
 }
