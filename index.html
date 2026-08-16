@@ -24031,11 +24031,22 @@ function gvReconcile(kid){
   for(const sk of Object.keys(subs)){
     const s=subs[sk];
     if(!s||s.paused||s.tracking==="daily") continue;
-    const seq=s.lessonSeq||[];
+    let seq=s.lessonSeq||[];
     if(!seq.length) continue;                       // "Capture from the grid" handles these
     const grid=[];
-    for(const dn of dns){ const v=(lessons[dn]||{})[sk]; if(gvFilled(v)) grid.push(String(v)); }
-    if(!grid.length) continue;                      // card-only: its own banner
+    // Plan-backed (Stage 2): the list is the truth and the PAST is the record, so only what
+    // is still PLANNED can drift — compare list-minus-done against future cells. Old past
+    // cells that read differently, or done lessons with no cell, are history, not drift.
+    const _pb=(typeof planBacked==="function")&&planBacked(kid,sk);
+    if(_pb){
+      const _di=lidDoneIdx(kid,sk)||new Set(); seq=seq.filter((t,i)=>!_di.has(i));
+      const _today=(typeof cbTodayISO==="function")?cbTodayISO():"";
+      for(const dn of dns){ const l=lessons[dn]||{}; const v=l[sk]; if(gvFilled(v)&&(l.date||"")>=_today) grid.push(String(v)); }
+      if(!seq.length&&!grid.length) continue;
+    } else {
+      for(const dn of dns){ const v=(lessons[dn]||{})[sk]; if(gvFilled(v)) grid.push(String(v)); }
+      if(!grid.length) continue;                    // card-only: its own banner
+    }
     const dismissed={};
     ((slog[sk])||[]).forEach(e=>{ if(e&&e.lesson) dismissed[_gaNorm(e.lesson)]=1; });
     // Compare as multisets — a sequence may repeat a lesson on purpose, so two
