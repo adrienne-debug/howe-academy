@@ -15691,7 +15691,22 @@ function lidNaturalCompare(a,b){
     if(x[1]<y[1]) return -1; if(x[1]>y[1]) return 1; }
   return 0;
 }
-function lidNaturalSort(lines){ return (lines||[]).map((t,i)=>({t,i})).sort((p,q)=>lidNaturalCompare(p.t,q.t)||(p.i-q.i)).map(x=>x.t); }
+// Sort WITHIN SHAPE GROUPS only. A line's shape = its text with digit runs (and a single
+// letter riding a number, like the d in 6d) replaced by #: "6d"/"7a" → "##", "pg47-48" →
+// "pg#-#", "Map32 L156" → "map# l#", "Map32 Assess." → "map# assess.". Lines of one shape
+// are sorted among themselves and refill exactly the slots that shape occupied; lines of
+// any other shape (Reviews, Assessments, a different vocabulary) never move. So a Review
+// after Lesson 45 stays after Lesson 45, and pg-lines and Ex.-lines never interleave.
+function _lidShape(t){ return String(t==null?"":t).replace(/[–—−]/g,"-").trim().toLowerCase().replace(/\d+[a-z]?(?![a-z])/g,"#").replace(/#\s*-\s*#/g,"#").replace(/\s+/g," "); }   // a page RANGE (#-#) is the same shape as a single page (#)
+function lidNaturalSort(lines){
+  lines=(lines||[]).slice(); const groups={};
+  lines.forEach((t,i)=>{ const k=_lidShape(t); (groups[k]=groups[k]||[]).push(i); });
+  const out=lines.slice();
+  Object.keys(groups).forEach(k=>{ const idxs=groups[k]; if(idxs.length<2) return;
+    const sorted=idxs.map(i=>({t:lines[i],i})).sort((p,q)=>lidNaturalCompare(p.t,q.t)||(p.i-q.i)).map(x=>x.t);
+    idxs.forEach((slot,j)=>{ out[slot]=sorted[j]; }); });
+  return out;
+}
 function ceConvSortLines(){
   const ta=document.getElementById("ce-conv-lines"); if(!ta) return;
   const lines=ta.value.split("\n").map(l=>l.trim()).filter(Boolean);

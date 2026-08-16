@@ -356,6 +356,10 @@ console.log("↕ Sort in book order (natural sort)");
   ok("chapters: 5B Ch.3 L2 < 5B Ch.3 Review? no — text < number at same run; Ch.3 < Ch.10", (() => { const r = e.lidNaturalSort(["5B Ch.10 L1", "5B Ch.3 L2", "5B Ch.3 L1"]); return eq(r, ["5B Ch.3 L1", "5B Ch.3 L2", "5B Ch.10 L1"]); })());
   ok("dash-insensitive and stable for equal keys", eq(e.lidNaturalSort(["MR5 pp.228–231", "MR5 pp.224-227", "MR5 pp.228-231"]), ["MR5 pp.224-227", "MR5 pp.228–231", "MR5 pp.228-231"]));
   ok("already sorted → unchanged", eq(e.lidNaturalSort(["L1", "L2", "L10"]), ["L1", "L2", "L10"]));
+  ok("shape groups: Assessment stays after L160; L-lessons sort among themselves", eq(e.lidNaturalSort(["Map32 L157", "Map32 L156", "Map32 L158", "Map32 Assess.", "Map33 L161"]), ["Map32 L156", "Map32 L157", "Map32 L158", "Map32 Assess.", "Map33 L161"]));
+  ok("Review after Lesson 45 stays put while lessons reorder", eq(e.lidNaturalSort(["B Lesson 45", "B Review 1", "B Lesson 47", "B Lesson 46"]), ["B Lesson 45", "B Review 1", "B Lesson 46", "B Lesson 47"]));
+  ok("mixed vocab: pg-lines and Ex.-lines never interleave", eq(e.lidNaturalSort(["pg22-25", "pg14-17", "Ex. 31–32", "Ex. 29–30"]), ["pg14-17", "pg22-25", "Ex. 29–30", "Ex. 31–32"]));
+  ok("chapters + Review: 5B Ch.2 Review stays between Ch.2 and Ch.3", eq(e.lidNaturalSort(["5B Ch.2 L2", "5B Ch.2 L1", "5B Ch.2 Review", "5B Ch.3 L1"]), ["5B Ch.2 L1", "5B Ch.2 L2", "5B Ch.2 Review", "5B Ch.3 L1"]));
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");
