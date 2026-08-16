@@ -374,5 +374,15 @@ console.log("walk-back removes done records (lidDoneRemoveByCard)");
   ok("nothing done for that text → null, no write", e.lidDoneRemoveByCard("lincoln", "aas", ["q"], "📄 AAS — L2-16", {}) === null);
 }
 
+console.log("✂ Trim descriptions");
+{
+  const e = mk({});
+  ok("Ch3-1: Addition as Putting Together → Ch3-1", e.lidTrimDescription("Ch3-1: Addition as Putting Together") === "Ch3-1");
+  ok("with page suffix: Ch3-1: … · pp. 34–36 → Ch3-1", e.lidTrimDescription("Ch3-1: Addition as Putting Together · pp. 34–36") === "Ch3-1");
+  ok("Ch6-1: Add by Making 10 - Part 1 → Ch6-1", e.lidTrimDescription("Ch6-1: Add by Making 10 - Part 1") === "Ch6-1");
+  ok("Lesson 5 – Counting On → Lesson 5", e.lidTrimDescription("Lesson 5 – Counting On") === "Lesson 5");
+  ok("no description shapes untouched", e.lidTrimDescription("Review 2") === "Review 2" && e.lidTrimDescription("Story Problems") === "Story Problems" && e.lidTrimDescription("6d") === "6d" && e.lidTrimDescription("pg47-48") === "pg47-48" && e.lidTrimDescription("MR5 pp.204–207") === "MR5 pp.204–207");
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
