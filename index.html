@@ -24487,6 +24487,28 @@ function gvDeleteLesson(kid,dn,sk){
   const s=((currData.subjects||{})[kid]||{})[sk]||{};
   const disp=s.display||sk;
   if(cls.kind==="blocked"){
+    // Stamped subject: a "finished" cell may only READ finished because the LIST carries the
+    // same lesson twice and this cell claimed the done id (2026-08-16, MR5 pp.228–231). Offer
+    // to drop the duplicate LIST line — one door, no cell surgery — then re-lay.
+    if(cls.why==="finished"&&typeof lidStamped==="function"&&lidStamped(kid,sk)){
+      const seqL=s.lessonSeq||[]; const idsL=lidsFor(kid,sk)||[]; const dset=lidDoneSet(kid,sk)||new Set();
+      const norm=(typeof _lidNorm==="function")?_lidNorm:(x=>String(x||"").trim().toLowerCase());
+      const occ=[]; seqL.forEach((t,i)=>{ if(norm(t)===norm(cls.text)) occ.push(i); });
+      const undoneOcc=occ.filter(i=>!dset.has(idsL[i]));
+      if(occ.length>1&&undoneOcc.length){
+        const i=undoneOcc[undoneOcc.length-1];
+        if(!confirm("“"+cls.text+"” is on "+disp+"'s list "+occ.length+" times, and one of them is finished — that's why this cell reads ✓.\n\nRemove the extra (unfinished) copy from the list? "+disp+" then re-lays; the finished one keeps its record. You can Undo.")) { gvEdit=null; renderAll(); return; }
+        gvGrabScroll(); gvEdit=null;
+        const paths={}; paths["subjects/"+kid+"/"+sk+"/lessonSeq"]=seqL.slice(); paths["subjects/"+kid+"/"+sk+"/lessonIds"]=idsL.slice(); paths["subjects/"+kid+"/"+sk+"/nextLid"]=s.nextLid||null; paths["subjects/"+kid+"/"+sk+"/total"]=(s.total!=null?s.total:null);
+        const seq2=seqL.slice(); seq2.splice(i,1);
+        const up={}; setLessonSeq(kid,sk,seq2,{patch:up,hint:{index:i,op:"delete"}});
+        up["lastEdit"]=new Date().toISOString(); currData.lastEdit=up["lastEdit"];
+        db.ref("curriculum").update(up).catch(err=>{ cbMsg="⚠ "+err.message; renderAll(); });
+        _gvDelUndo={kid,sk,paths,label:"removed duplicate “"+cls.text+"” from the list"};
+        if(_gvRelaySubject(kid,sk,"🗑 Removed the duplicate “"+cls.text+"” from "+disp+"'s list")) return;
+        _gvFinishDeleteNoBuild(); renderAll(); return;
+      }
+    }
     if(typeof gwShowToast==="function") gwShowToast(cls.why==="finished"
       ?("“"+cls.text+"” is finished — its record stays. To reword it, use the subject card's lesson editor.")
       :("Can't verify that old lesson's status for "+disp+" — remove it from the subject card instead."));
@@ -25069,7 +25091,7 @@ function renderCurrGrid(el){
         let cell="";
         const _isDone=!!_doneAt[dn+"|"+sk];
         if(gvFilled(v)) cell=removed?'<s style="color:var(--muted)">'+esc(v)+'</s><span class="gv-badge" style="background:#e0e7ff;color:#3730a3">moved</span>'
-          :(_isDone?'<span class="gv-done" title="Finished — this stays as history. Rebuilds never move it and 🗑 won’t remove it.">'+esc(v)+' <span class="gv-badge" style="background:#dcfce7;color:#15803d">&#10003; done</span></span>':esc(v));
+          :(_isDone?'<span class="gv-done" title="'+((typeof lidStamped==="function"&&lidStamped(gvKid,sk)&&((((currData.subjects||{})[gvKid]||{})[sk]||{}).lessonSeq||[]).filter(t=>_lidNorm(t)===_lidNorm(v)).length>1)?"Finished — but this lesson is on the list more than once, and this cell is showing the finished copy. 🗑 here removes the extra copy from the list.":"Finished — this stays as history. Rebuilds never move it and 🗑 won’t remove it.")+'">'+esc(v)+' <span class="gv-badge" style="background:#dcfce7;color:#15803d">&#10003; done</span></span>':esc(v));
         if(addedV!==undefined) cell+=(cell?'<br>':'')+'<span style="color:#15803d">+ '+(typeof addedV==="string"?esc(addedV):"make-up")+'</span><span class="gv-badge" style="background:#bbf7d0;color:#15803d">make-up</span>';
         if(!cell&&_skipAt[dn+"|"+sk]!==undefined) cell='<s style="color:var(--muted);opacity:.7">'+esc(_skipAt[dn+"|"+sk])+'</s><span class="gv-badge" style="background:#fef3c7;color:#92400e" title="Passed over by a rebuild — won\'t come back as carryover or catch-up">skipped</span>';
         if(!cell) cell="·";
