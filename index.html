@@ -14872,8 +14872,9 @@ function ceRenderEditSheet(){
       }
       h+='<textarea id="ce-conv-lines" class="ce-sheet-input" style="width:100%;box-sizing:border-box;min-height:130px;resize:vertical;font-size:11px;line-height:1.5">'+esc(_remaining.join("\n"))+'</textarea>';
       h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">One lesson per line — add, remove, rename, reorder freely. Saving re-lays the grid right away (your done history is untouched). ↩ Undo on the grid reverts list and re-lay together.</div>';
-      h+='<div style="display:flex;gap:8px;margin-top:7px">';
+      h+='<div style="display:flex;gap:8px;margin-top:7px;flex-wrap:wrap">';
       h+='<button style="border:none;border-radius:10px;background:var(--ink,#1e293b);color:#fff;padding:7px 14px;font-size:12px;cursor:pointer" onclick="ceConvApply()">Save list</button>';
+      h+='<button style="border:1.5px solid var(--border);border-radius:10px;background:#fff;padding:7px 12px;font-size:12px;cursor:pointer" onclick="ceConvSortLines()" title="Reorder the lines by their numbers (6d before 6e, pg47 before pg49). Nothing is saved until you tap Save list.">↕ Sort in book order</button>';
       h+='<button style="border:1.5px solid var(--border);border-radius:10px;background:#fff;padding:7px 12px;font-size:12px;cursor:pointer" onclick="ceConvOpen=false;ceRenderEditSheet()">Cancel</button>';
       h+='</div></div>';
     }
@@ -15359,7 +15360,9 @@ function gvAssignLidsUndo(){
 // it (taskId matches), so a stale twin/_c can never erase another card's record.
 // Read by nothing until the reader flip (Stage 1.5) — additive and inert till then.
 function lidDoneWrite(t,doneTs,taskId){
-  if(!db||!t||!t.lid||!t.who||!t.subjectKey) return false;
+  if(!db||!t||!t.who||!t.subjectKey) return false;
+  const lid=(typeof lidForTask==="function")?lidForTask(t):t.lid; if(!lid) return false;
+  t=Object.assign({},t,{lid});
   const p="curriculum/done/"+t.who+"/"+t.subjectKey+"/"+t.lid;
   const day=(typeof cbTodayISO==="function")?cbTodayISO():new Date().toISOString().slice(0,10);
   const rec={ts:doneTs,day:day,taskId:taskId||t.id,src:"check"};
@@ -15370,7 +15373,14 @@ function lidDoneWrite(t,doneTs,taskId){
   return true;
 }
 function lidDoneRemove(t,taskId){
-  if(!db||!t||!t.lid||!t.who||!t.subjectKey) return false;
+  if(!db||!t||!t.who||!t.subjectKey) return false;
+  let lid=t.lid;
+  if(!lid){ // un-stamped card: the record that names THIS card is the one to remove
+    const node=((((currData||{}).done||{})[t.who]||{})[t.subjectKey])||{};
+    lid=Object.keys(node).find(k=>node[k]&&node[k].taskId===taskId)||null;
+  }
+  if(!lid) return false;
+  t=Object.assign({},t,{lid});
   const rec=(((((currData||{}).done||{})[t.who]||{})[t.subjectKey])||{})[t.lid];
   if(!rec||(rec.taskId&&taskId&&rec.taskId!==taskId)) return false;   // not ours (or unknown) — leave it
   delete currData.done[t.who][t.subjectKey][t.lid];
@@ -15608,11 +15618,25 @@ function gvMakePlanUndo(){
 // never become the record's mistake (the kids had been checking whatever card appeared).
 // Per-subject `allowOutOfOrder` turns the guard off. Returns the blocking lesson text or
 // null. Blocking beats un-checking after the fact: nothing wrong is ever recorded.
+// A card's lesson id: the stamped `lid`, else resolved by TEXT against the list (first
+// occurrence not yet done) — cards generated before Stage 1.2 carry no id, and the
+// rule must hold for them too (2026-08-16: Spelling You See 6e checked before 6d).
+function lidForTask(t){
+  if(!t||!t.who||!t.subjectKey) return null;
+  if(t.lid) return t.lid;
+  const kid=t.who, sk=t.subjectKey; if(!lidStamped(kid,sk)) return null;
+  const s=currData.subjects[kid][sk]; const ids=lidsFor(kid,sk); const seq=s.lessonSeq||[];
+  const ref=(typeof taskLessonRef==="function")?taskLessonRef(t):""; const k=_lidNorm(ref); if(!k) return null;
+  const done=lidDoneSet(kid,sk); let firstAny=null;
+  for(let i=0;i<seq.length;i++){ if(_lidNorm(seq[i])!==k) continue; if(firstAny===null) firstAny=ids[i]; if(!done.has(ids[i])) return ids[i]; }
+  return firstAny;   // all occurrences done → the first (a re-check of finished work)
+}
 function lidOrderBlock(t){
-  if(!t||!t.lid||!t.who||!t.subjectKey) return null;
+  if(!t||!t.who||!t.subjectKey) return null;
   const kid=t.who, sk=t.subjectKey; const s=(((currData||{}).subjects||{})[kid]||{})[sk];
   if(!s||s.allowOutOfOrder||!lidStamped(kid,sk)) return null;
-  const ids=lidsFor(kid,sk); const at=ids.indexOf(t.lid); if(at<0) return null;
+  const lid=lidForTask(t); if(!lid) return null;
+  const ids=lidsFor(kid,sk); const at=ids.indexOf(lid); if(at<0) return null;
   const done=lidDoneSet(kid,sk);
   for(let i=0;i<at;i++){ if(!done.has(ids[i])) return String((s.lessonSeq||[])[i]||""); }
   return null;
@@ -15653,6 +15677,28 @@ function ceMakeContiguous(kid,sk){
   db.ref("curriculum").update(up).catch(err=>{ cbMsg="⚠ "+err.message; renderAll(); });
   _gvDelUndo={kid,sk,paths:prev,label:"un-finished "+list.length+" out-of-order lesson"+(list.length!==1?"s":"")};
   _ceRelayAfterMark(kid,sk,"↩ "+list.length+" lesson"+(list.length!==1?"s":"")+" owed again, in order");
+}
+// ── ↕ Sort in book order — her "button that fixes all the numbers" ────────────
+// Natural sort: split each line into digit / non-digit runs and compare run by run
+// (numbers numerically, text case-insensitively): 6d < 6e, pg47-48 < pg49-50,
+// 5B Ch.3 L2 < 5B Ch.10 L1. Stable, so equal keys keep their order. Pure; it only
+// reorders the editor's lines — she reviews, then Save list (ids follow their text).
+function _lidNatKey(t){ return String(t==null?"":t).replace(/[–—−]/g,"-").trim().toLowerCase().split(/(\d+)/).map(x=>/^\d+$/.test(x)?["n",parseInt(x,10)]:["s",x.trim()]); }
+function lidNaturalCompare(a,b){
+  const A=_lidNatKey(a), B=_lidNatKey(b); const n=Math.max(A.length,B.length);
+  for(let i=0;i<n;i++){ const x=A[i], y=B[i]; if(!x) return -1; if(!y) return 1;
+    if(x[0]!==y[0]) return x[0]==="s"?-1:1;
+    if(x[1]<y[1]) return -1; if(x[1]>y[1]) return 1; }
+  return 0;
+}
+function lidNaturalSort(lines){ return (lines||[]).map((t,i)=>({t,i})).sort((p,q)=>lidNaturalCompare(p.t,q.t)||(p.i-q.i)).map(x=>x.t); }
+function ceConvSortLines(){
+  const ta=document.getElementById("ce-conv-lines"); if(!ta) return;
+  const lines=ta.value.split("\n").map(l=>l.trim()).filter(Boolean);
+  const sorted=lidNaturalSort(lines);
+  let moved=0; sorted.forEach((t,i)=>{ if(t!==lines[i]) moved++; });
+  ta.value=sorted.join("\n");
+  if(typeof gwShowToast==="function") gwShowToast(moved?("↕ "+moved+" line"+(moved!==1?"s":"")+" moved — look it over, then Save list"):"Already in order ✓");
 }
 // LID_END
 

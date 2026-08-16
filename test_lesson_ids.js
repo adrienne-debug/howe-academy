@@ -334,5 +334,29 @@ console.log("sequential-order guard + un-finish tools");
   ok("after un-finishing d, only c is out of order", eq(e.lidOutOfOrder("lincoln", "mr").map(x => x.text), ["c"]));
 }
 
+console.log("un-stamped cards resolve by text (this week's cards predate ids)");
+{
+  const e = mk({ lincoln: { sys: S(["6c", "6d", "6e", "7a"], ["L0001", "L0002", "L0003", "L0004"], 5) } });
+  e.currData.subjects.lincoln.sys.doneImportedAt = "x"; e.currData.done = { lincoln: { sys: { L0001: { src: "check" } } } };
+  e.taskLessonRef = t => { const m = (t && t.title || "").match(/[—–]\s*(.+)$/); return m ? m[1].trim() : ""; };
+  const T = txt => ({ id: "c_" + txt, who: "lincoln", subjectKey: "sys", title: "📄 Spelling You See — " + txt });
+  ok("lidForTask resolves 6e by text → L0003", e.lidForTask(T("6e")) === "L0003");
+  ok("guard blocks 6e while 6d open (no lid on the card)", e.lidOrderBlock(T("6e")) === "6d" && e.lidOrderBlock(T("6d")) === null);
+  const sets = []; e.db = { ref: p => ({ set: v => { sets.push([p, v]); }, remove: () => { sets.push([p, "rm"]); }, update: () => ({ catch: () => {} }) }) }; e.cbTodayISO = () => "2026-08-16";
+  ok("lidDoneWrite on an un-stamped card writes done/<resolved lid>", e.lidDoneWrite(T("6d"), "ts", "c_6d") === true && sets[0][0] === "curriculum/done/lincoln/sys/L0002" && sets[0][1].taskId === "c_6d");
+  ok("lidDoneRemove finds the record by taskId when the card has no lid", e.lidDoneRemove(T("6d"), "c_6d") === true && sets[1][0] === "curriculum/done/lincoln/sys/L0002" && !e.currData.done.lincoln.sys.L0002);
+  ok("text not on the list → null (no guess)", e.lidForTask(T("9z")) === null && e.lidOrderBlock(T("9z")) === null);
+}
+
+console.log("↕ Sort in book order (natural sort)");
+{
+  const e = mk({});
+  ok("6d before 6e; 6e before 7a", eq(e.lidNaturalSort(["6a", "6b", "6c", "6e", "6d", "7a", "7b"]), ["6a", "6b", "6c", "6d", "6e", "7a", "7b"]));
+  ok("pages: pg47-48 < pg49-50 < pg51 < pg52 < pg53-54 (numeric, not text)", eq(e.lidNaturalSort(["pg51", "pg49-50", "pg53-54", "pg47-48", "pg52", "pg114-120", "pg98-99"]), ["pg47-48", "pg49-50", "pg51", "pg52", "pg53-54", "pg98-99", "pg114-120"]));
+  ok("chapters: 5B Ch.3 L2 < 5B Ch.3 Review? no — text < number at same run; Ch.3 < Ch.10", (() => { const r = e.lidNaturalSort(["5B Ch.10 L1", "5B Ch.3 L2", "5B Ch.3 L1"]); return eq(r, ["5B Ch.3 L1", "5B Ch.3 L2", "5B Ch.10 L1"]); })());
+  ok("dash-insensitive and stable for equal keys", eq(e.lidNaturalSort(["MR5 pp.228–231", "MR5 pp.224-227", "MR5 pp.228-231"]), ["MR5 pp.224-227", "MR5 pp.228–231", "MR5 pp.228-231"]));
+  ok("already sorted → unchanged", eq(e.lidNaturalSort(["L1", "L2", "L10"]), ["L1", "L2", "L10"]));
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
