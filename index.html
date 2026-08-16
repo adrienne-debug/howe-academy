@@ -14876,7 +14876,13 @@ function ceRenderEditSheet(){
         h+='<div style="border:1.5px solid var(--border);border-radius:10px;padding:8px;margin-top:8px">';
         if(cursorPos>0) h+='<div style="font-size:10px;color:var(--muted);margin-bottom:4px">✓ '+cursorPos+' done lesson'+(cursorPos>1?'s':'')+' stay locked (through <b>'+esc((seq[cursorPos-1]||{}).lesson||'')+'</b>) — edit everything from the cursor on:</div>';
       }
-      h+='<textarea id="ce-conv-lines" class="ce-sheet-input" style="width:100%;box-sizing:border-box;min-height:130px;resize:vertical;font-size:11px;line-height:1.5">'+esc(_remaining.join("\n"))+'</textarea>';
+      // The sheet re-renders on ANY app update (a kid's check-off, a listener). Never
+      // rebuild an editor she is typing in from the saved list — keep what's in the box.
+      // (2026-08-16: Ellis Word Roots — she sorted, a re-render reset the box, Save
+      // wrote the old order.)
+      const _keepEl=document.getElementById("ce-conv-lines");
+      const _keepVal=(_keepEl&&_keepEl.value!=null)?_keepEl.value:null;
+      h+='<textarea id="ce-conv-lines" class="ce-sheet-input" style="width:100%;box-sizing:border-box;min-height:130px;resize:vertical;font-size:11px;line-height:1.5">'+esc(_keepVal!=null?_keepVal:_remaining.join("\n"))+'</textarea>';
       h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">One lesson per line — add, remove, rename, reorder freely. Saving re-lays the grid right away (your done history is untouched). ↩ Undo on the grid reverts list and re-lay together.</div>';
       h+='<div style="display:flex;gap:8px;margin-top:7px;flex-wrap:wrap">';
       h+='<button style="border:none;border-radius:10px;background:var(--ink,#1e293b);color:#fff;padding:7px 14px;font-size:12px;cursor:pointer" onclick="ceConvApply()">Save list</button>';
@@ -14885,17 +14891,16 @@ function ceRenderEditSheet(){
       h+='</div></div>';
     }
   } else if(s.lessonSeq&&s.lessonSeq.length){
-    h+='<textarea id="ce-edit-lessons" class="ce-sheet-input" style="min-height:100px;resize:vertical;font-size:11px;line-height:1.5" onchange="ceSaveLessonSeq(this.value)">';
-    s.lessonSeq.forEach((l,i)=>{
-      const done=i<cursorPos;
-      h+=(i>0?"\n":"")+l;
-    });
-    h+='</textarea>';
+    { const _k=document.getElementById("ce-edit-lessons"); const _kv=(_k&&_k.value!=null)?_k.value:null;   // survive re-renders mid-edit
+      h+='<textarea id="ce-edit-lessons" class="ce-sheet-input" style="min-height:100px;resize:vertical;font-size:11px;line-height:1.5" onchange="ceSaveLessonSeq(this.value)">';
+      if(_kv!=null) h+=esc(_kv); else s.lessonSeq.forEach((l,i)=>{ h+=(i>0?"\n":"")+esc(l); });
+      h+='</textarea>'; }
     h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">One lesson per line. Cursor is at line '+(cursorPos+1)+'. Lines above the cursor are completed.</div>';
     h+=_ceMarkDoneUI(ceEditKid,ceEditKey,s,seq,cursorPos,col);
   } else {
     h+='<div style="font-size:12px;color:var(--muted);font-style:italic">No lessons defined. This subject won\'t appear in generated weeks until lessons are added.</div>';
-    h+='<textarea id="ce-edit-lessons" class="ce-sheet-input" style="min-height:80px;resize:vertical;font-size:11px;line-height:1.5" placeholder="pg 1-3&#10;pg 4-6&#10;pg 7-9" onchange="ceSaveLessonSeq(this.value)"></textarea>';
+    { const _k=document.getElementById("ce-edit-lessons"); const _kv=(_k&&_k.value)?_k.value:"";
+      h+='<textarea id="ce-edit-lessons" class="ce-sheet-input" style="min-height:80px;resize:vertical;font-size:11px;line-height:1.5" placeholder="pg 1-3&#10;pg 4-6&#10;pg 7-9" onchange="ceSaveLessonSeq(this.value)">'+esc(_kv)+'</textarea>'; }
   }
   // Completion reward — points + a trophy when this subject finishes its whole sequence.
   const _cp=(s.completionPoints!=null)?(s.completionPoints|0):50;
@@ -16177,7 +16182,7 @@ function ceRenderAddSheet(){
   } else {
     h+='<div class="ce-sheet-lbl">Lessons (one per line)</div>';
     h+='<textarea id="ce-add-lessons" class="ce-sheet-input" style="min-height:100px;resize:vertical;font-size:12px;line-height:1.6" placeholder="pg 1-3&#10;pg 4-6&#10;pg 7-9&#10;Chapter 2 Review&#10;..."'
-      +' onchange="ceAddForm.manualLessons=this.value">'+esc(f.manualLessons)+'</textarea>';
+      +' onchange="ceAddForm.manualLessons=this.value">'+esc((function(){ const _k=document.getElementById("ce-add-lessons"); return (_k&&_k.value)?_k.value:(f.manualLessons||""); })())+'</textarea>';
     h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Each line becomes one lesson. The generator assigns them in order.</div>';
   }
 
@@ -23822,7 +23827,11 @@ function gvAuditFindings(kid){
   for(const sk of Object.keys(cols)){
     const s=subs[sk];
     if(!s||s.paused||s.tracking==="daily") continue;   // daily work has no lesson numbers
-    const cells=cols[sk], disp=s.display||sk, found=[];
+    // Plan-backed (Stage 2): the past is the record — check only today-forward cells, and
+    // never compare a future cell against a past one (a lesson done early is not a gap).
+    const _pbA=(typeof planBacked==="function")&&planBacked(kid,sk);
+    const cells=_pbA?cols[sk].filter(c=>(c.date||"")>=today):cols[sk], disp=s.display||sk, found=[];
+    if(!cells.length) continue;
 
     // Scheduled twice. Numbered cells only — "Review", "Free choice" and
     // "Build Story" repeat by design and are not mistakes.
