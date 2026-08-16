@@ -3540,6 +3540,89 @@ function dailyPaceTracker(dayTasks, dayKey){
     '</div></div>';
 }
 
+// ── DAY TIME READOUT ─────────────────────────────────────────────
+// Two numbers the pace tracker never showed:
+//  (1) EXPECTED MINUTES DONE — every task carries dur (its subject card's `minutes`), so
+//      summing dur over the CHECKED tasks says how much of the planned load actually got
+//      done. A carried-over task counts on the day it was checked off, not the day it was
+//      originally scheduled — the kid did that work today.
+//  (2) SCHOOL-DAY SPAN — morning-checklist-complete → last schoolwork check-off. Start is
+//      the routine slot record slState[<wk>_<day>_<kid>_morning].ts (written when every due
+//      morning step is done); end is the latest checked[] stamp dated to this day. Chores
+//      and evening routines are deliberately NOT counted — they'd stretch the school day.
+// Derived read-only: this function writes nothing, to Firebase or to local state.
+function _tsDateKey(ts){
+  const m=String(ts||"").match(/([A-Za-z]{3,9})\s+(\d{1,2})\s*$/);
+  if(!m) return "";
+  const d=new Date(m[1]+" "+m[2]+", "+new Date().getFullYear());
+  return isNaN(d.getTime())?"":((d.getMonth()+1)+"-"+d.getDate());
+}
+function _spanFmt(mins){
+  if(mins==null||mins<0) return "";
+  const h=Math.floor(mins/60), m=mins%60;
+  return h?(h+"h "+(m<10?"0":"")+m+"m"):(m+"m");
+}
+function dayTimeReadout(dayTasks, dayKey, kidSel){
+  const DEFAULT_DUR=20;
+  const countable=(dayTasks||[]).filter(t=>t&&!String(t.id).endsWith("_c")&&!t._eowOverflow
+    &&!String(t.title||"").toLowerCase().includes("lunch"));
+  if(!countable.length) return "";
+  const kids=[...new Set(countable.map(t=>t.who))].filter(Boolean);
+  if(!kids.length) return "";
+  // Which calendar date is this day? Used to keep a stamp from another day out of the span.
+  const wantKey=_tsDateKey((typeof DAY_DT!=="undefined"&&DAY_DT[dayKey])||"");
+
+  function rowFor(k){
+    const mine=countable.filter(t=>t.who===k);
+    if(!mine.length) return "";
+    const planMin=mine.reduce((s,t)=>s+(t.dur||DEFAULT_DUR),0);
+    const doneT=mine.filter(t=>!!checked[t.id]);
+    const doneMin=doneT.reduce((s,t)=>s+(t.dur||DEFAULT_DUR),0);
+    const pct=planMin?Math.round(doneMin/planMin*100):0;
+
+    // Check-off stamps that belong to THIS day (a stamp from another date is skipped;
+    // an unparseable/legacy stamp is kept rather than silently dropped).
+    const stamps=doneT.map(t=>checked[t.id])
+      .filter(ts=>{ const dk=_tsDateKey(ts); return !wantKey||!dk||dk===wantKey; })
+      .map(ts=>tsToMin(ts)).filter(v=>v!=null);
+    const endMin=stamps.length?Math.max.apply(null,stamps):null;
+
+    const mrec=slState[activeWk()+"_"+dayKey+"_"+k+"_morning"];
+    let startMin=(mrec&&mrec.done)?tsToMin(mrec.ts):null;
+    let startLbl="Morning done";
+    // No completed morning checklist (or it landed after work had already started) — fall
+    // back to the first check-off and SAY so, rather than reporting a span that isn't real.
+    if((startMin==null||(endMin!=null&&startMin>endMin))&&stamps.length){
+      startMin=Math.min.apply(null,stamps); startLbl="First task";
+    }
+
+    let spanHtml;
+    if(startMin==null||endMin==null||endMin<startMin){
+      spanHtml='<span style="color:var(--muted)">—</span>';
+    }else{
+      spanHtml='<b>'+fromMin(startMin)+'</b> → <b>'+fromMin(endMin)+'</b>'+
+        ' <span style="color:#1a6b5a;font-weight:700">'+_spanFmt(endMin-startMin)+'</span>'+
+        '<span style="color:var(--muted);font-size:10px"> · from '+startLbl+'</span>';
+    }
+    const multi=(kids.length>1);
+    return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;'+
+      (multi?'padding:4px 0;border-top:1px solid rgba(0,0,0,.06)':'')+'">'+
+      (multi?'<span class="kid-badge badge-'+k+'" style="font-size:9px;padding:1px 6px">'+cap(k)+'</span>':'')+
+      '<span style="font-size:12px"><b>'+doneMin+'</b> of '+planMin+' min done'+
+      '<span style="color:var(--muted)"> · '+pct+'%</span></span>'+
+      '<span style="font-size:12px;margin-left:auto">'+spanHtml+'</span>'+
+      '</div>';
+  }
+
+  let body="";
+  (typeof ROSTER!=="undefined"?ROSTER.filter(k=>kids.includes(k)):kids).forEach(k=>{ body+=rowFor(k); });
+  if(!body) return "";
+  return '<div style="margin:10px 12px 0;border-left:4px solid #1a6b5a;background:#f0fdf4;'+
+    'border-radius:0 10px 10px 0;padding:8px 12px">'+
+    '<div style="font-size:11px;font-weight:800;color:#1a6b5a;text-transform:uppercase;'+
+    'letter-spacing:0.4px;margin-bottom:4px">⏱ Time on School</div>'+body+'</div>';
+}
+
 let paceToastTimer=null;
 let slotKid=null;
 function showPaceToast(taskId, doneMinOverride){
@@ -5461,6 +5544,7 @@ function renderSchedule(el){
   if(momModeActive) h+=renderSatCutoffBanner(day, kid);
   if(momModeActive&&day===schedLastWorkingDay()) h+=renderEowOverflowBox(kid);
   h+=dailyPaceTracker(allDay, day);
+  h+=dayTimeReadout(allDay, day, kid);   // ⏱ minutes done + real school-day span
   h+=renderClaimQueue();
   // Mom-only: the "up next" unit strip is planning information, not something a kid acts on
   // from their day list — on a kid page it was just clutter above their actual work. Gated on
