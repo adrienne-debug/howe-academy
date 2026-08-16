@@ -14825,7 +14825,7 @@ function ceRenderEditSheet(){
       // that made it.
       try{ h+=ceConvUndoBanner(ceEditKid,ceEditKey); }catch(e){}
       h+='<button style="border:1.5px solid var(--border);border-radius:10px;background:#fff;padding:7px 12px;font-size:12px;cursor:pointer;margin-top:8px" onclick="ceConvOpen=true;ceRenderEditSheet()">✎ Edit as a list — insert / remove / reorder…</button>';
-      h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">For when the book has lessons the plan doesn\'t (or vice versa). Converts this subject to an editable lesson list, then the Builder re-lays the year. <b>Note:</b> saving empties the planned days until you tap 🧱 Build.</div>';
+      h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">For when the book has lessons the plan doesn\'t (or vice versa). Edit the list; saving re-lays the grid from the next unfinished lesson right away.</div>';
       h+=_ceMarkDoneUI(ceEditKid,ceEditKey,s,seq,cursorPos,col);
     }else{
       ceConvCursor=Math.min(cursorPos,seq.length);   // remember what we sliced at
@@ -14833,9 +14833,9 @@ function ceRenderEditSheet(){
       h+='<div style="border:1.5px solid var(--border);border-radius:10px;padding:8px;margin-top:8px">';
       if(cursorPos>0) h+='<div style="font-size:10px;color:var(--muted);margin-bottom:4px">✓ '+cursorPos+' done lesson'+(cursorPos>1?'s':'')+' stay locked (through <b>'+esc((seq[cursorPos-1]||{}).lesson||'')+'</b>) — edit everything from the cursor on:</div>';
       h+='<textarea id="ce-conv-lines" class="ce-sheet-input" style="width:100%;box-sizing:border-box;min-height:130px;resize:vertical;font-size:11px;line-height:1.5">'+esc(_remaining.join("\n"))+'</textarea>';
-      h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">One lesson per line — add, remove, rename, reorder freely. Saving clears the old planned cells (your done history is untouched) and takes you to the Builder to re-lay the year.</div>';
+      h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">One lesson per line — add, remove, rename, reorder freely. Saving re-lays the grid right away (your done history is untouched). ↩ Undo on the grid reverts list and re-lay together.</div>';
       h+='<div style="display:flex;gap:8px;margin-top:7px">';
-      h+='<button style="border:none;border-radius:10px;background:var(--ink,#1e293b);color:#fff;padding:7px 14px;font-size:12px;cursor:pointer" onclick="ceConvApply()">Save &amp; re-lay in Builder</button>';
+      h+='<button style="border:none;border-radius:10px;background:var(--ink,#1e293b);color:#fff;padding:7px 14px;font-size:12px;cursor:pointer" onclick="ceConvApply()">Save list</button>';
       h+='<button style="border:1.5px solid var(--border);border-radius:10px;background:#fff;padding:7px 12px;font-size:12px;cursor:pointer" onclick="ceConvOpen=false;ceRenderEditSheet()">Cancel</button>';
       h+='</div></div>';
     }
@@ -15556,23 +15556,19 @@ function ceConvApply(){
   cursor=Math.min(Math.max(cursor,0),seq.length);
   const doneLabels=seq.slice(0,cursor).map(l=>l.lesson);
   const fullSeq=doneLabels.concat(lines);
-  if(!confirm("Convert \""+(s.display||sk)+"\" to an editable lesson list ("+fullSeq.length+" lessons, "+cursor+" done)? Old planned cells are cleared — done history is untouched — then the Builder re-lays the year.")) return;
-  // one-level undo stash (cells + prior seq) in localStorage. Only FUTURE cells are
-  // cleared — past cells are the record of completed work and must survive (clearing
-  // them blanks the Lesson Map's history). Done labels already live in fullSeq above.
-  const rows=currData.lessons&&currData.lessons[kid]||{};
-  const _today=cbTodayISO();
-  const cellSnap={};
-  Object.keys(rows).forEach(dn=>{
-    const v=rows[dn];
-    if(v&&v[sk]!=null&&String(v[sk]).trim()&&(v.date||"")>_today) cellSnap[dn]=v[sk];
-  });
-  try{HA_LS.setItem("ha_convUndo",JSON.stringify({kid,sk,cells:cellSnap,prevSeq:s.lessonSeq||null,prevIds:lidsFor(kid,sk)||null,prevNext:s.nextLid||null,prevTotal:s.total||null,at:Date.now()}));}catch(e){}
+  if(!confirm("Save "+(s.display||sk)+"'s lesson list ("+fullSeq.length+" lessons, "+cursor+" done)?\n\nThe grid re-lays from the next unfinished lesson right away — nothing is emptied, done history is untouched. You can Undo.")) return;
+  // ONE DOOR (2026-08-16, her rule "simple and truth"): saving the list no longer
+  // clears the planned cells and parks the subject until a Build. It writes the list
+  // and immediately re-lays through the same relay every grid action uses, so list
+  // and grid can never be left disagreeing. Undo rides the relay's own ↩ (the prior
+  // list is folded into it), and cancelling the leftover gate rolls the list back.
+  const prevPaths={};
+  const base="subjects/"+kid+"/"+sk+"/";
+  prevPaths[base+"lessonSeq"]=s.lessonSeq?s.lessonSeq.slice():null;
+  prevPaths[base+"lessonIds"]=lidsFor(kid,sk)?lidsFor(kid,sk).slice():null;
+  prevPaths[base+"nextLid"]=s.nextLid||null;
+  prevPaths[base+"total"]=(s.total!=null?s.total:null);
   const updates={};
-  Object.keys(cellSnap).forEach(dn=>{
-    updates["lessons/"+kid+"/"+dn+"/"+sk]=null;
-    delete currData.lessons[kid][dn][sk];
-  });
   setLessonSeq(kid,sk,fullSeq,{patch:updates});          // lessonSeq + lessonIds (aligned) + total
   currData.lastEdit=new Date().toISOString();
   updates["lastEdit"]=currData.lastEdit;
@@ -15581,9 +15577,11 @@ function ceConvApply(){
   if(ps) savePaceSubject(kid,sk,{...ps,total:fullSeq.length});
   try{ if(typeof buildCurrPaceCum==="function") buildCurrPaceCum(); }catch(e){}
   ceConvOpen=false;
-  if(typeof gwShowToast==="function") gwShowToast("List saved ("+Object.keys(cellSnap).length+" cells cleared) — re-lay it in the Builder ✓");
   ceCloseSheet();
-  currInnerTab="builder"; cbKid=kid; cbOpenSubj(sk);
+  _gvDelUndo={kid,sk,paths:prevPaths,label:"list saved for "+(s.display||sk),rollbackOnCancel:true};
+  if(typeof _gvRelaySubject==="function"&&_gvRelaySubject(kid,sk,"✎ List saved — "+(s.display||sk)+" re-laid")) return;
+  // Re-lay couldn't run (build error): keep the list, own Undo, say so.
+  if(typeof _gvFinishDeleteNoBuild==="function") _gvFinishDeleteNoBuild();
   renderAll();
 }
 // ── ↩ Undo "Edit as a list" ─────────────────────────────────────────────────
@@ -21840,6 +21838,97 @@ function cbDeriveContent(split,lessonSeq,doneN,dismissedIdx,skipTexts,doneTally,
 }
 // CBGEN_END
 
+// PROJ_START ── the projection: one placement engine, pure ───────────────────
+// Stage 3.1 of the Grid/Scheduler restructure. `schedule = f(plan, done, today, rules)`.
+// No globals, no clock reads, ISO strings only — every device computes the same answer.
+// The Grid owns WHAT and in what ORDER (lessons, pacing); this decides WHICH DAY.
+//
+// Adrienne's backlog rule (2026-08-16), verbatim in code:
+//   • an owed lesson is simply the next lesson;
+//   • each pattern day carries its normal load (one lesson); while the subject is
+//     behind, a day may take extras up to `cap` (maxPerDay); cap 1 → everything
+//     slides in order and the end date moves; nothing is ever dropped or reordered;
+//   • "owed" is measured from the plan's ANCHOR date (creation / last ↻ Re-lay):
+//     pattern days since the anchor, minus lessons finished since the anchor.
+//
+// input = {
+//   plans: [{ pid, kid, sk, priority, minutes,
+//             lessons:[{lid,text}],           // UNDONE lessons, in book order (caller filtered by done)
+//             allowedDays:["Mon",...] ([]=any school day), tpw (0/undefined = every allowed day),
+//             targetDate (ISO, optional: tpw auto = ceil(remaining/weeksLeft)),
+//             cap (maxPerDay, default 1), anchor (ISO|null), doneSince (# done with day ≥ anchor),
+//             offDates:{iso:true} }],         // per-subject ✕'d days
+//   calendar: { kid: [{date:"YYYY-MM-DD", dow:"Mon", off:bool}] },   // school days, ANCHOR→horizon, ascending
+//   dayCapMin: { kid: minutes } (0/undefined = uncapped),
+//   blocked: { kid: { sk: {iso:true} } },   // alternation partners' days
+//   todayISO }
+// output = { byDate:{iso:{kid:[{pid,sk,lid,text,backlog}]}}, plans:{pid:{owed,placed,unplaced,firstDate,lastDate,tpwUsed}}, warnings:[] }
+function _pjWeekKey(iso){          // Monday of the ISO week, as "YYYY-MM-DD" — pure string math
+  const y=+iso.slice(0,4), m=+iso.slice(5,7), d=+iso.slice(8,10);
+  const t=Date.UTC(y,m-1,d); const dow=(new Date(t).getUTCDay()+6)%7;   // Mon=0
+  const mon=new Date(t-dow*86400000);
+  return mon.toISOString().slice(0,10);
+}
+function _pjWeeksBetween(aISO,bISO){ return Math.max(1,Math.ceil((Date.UTC(+bISO.slice(0,4),+bISO.slice(5,7)-1,+bISO.slice(8,10))-Date.UTC(+aISO.slice(0,4),+aISO.slice(5,7)-1,+aISO.slice(8,10)))/(7*86400000))); }
+// The subject's PATTERN rows (the days it normally runs), from `rows`, honouring allowed
+// days, off days, blocked days and the per-week times-per-week spread (_cbSpread).
+function _pjPatternRows(plan,rows,tpw){
+  const allowed=(plan.allowedDays||[]).map(String);
+  const elig=rows.filter(r=>r&&!r.off&&!(plan.offDates||{})[r.date]&&!(plan._blocked||{})[r.date]&&(!allowed.length||allowed.includes(r.dow)));
+  if(!tpw||tpw<=0) return elig;
+  const byWk={}; const order=[];
+  elig.forEach(r=>{ const k=_pjWeekKey(r.date); if(!byWk[k]){ byWk[k]=[]; order.push(k); } byWk[k].push(r); });
+  const out=[]; order.forEach(k=>{ _cbSpread(byWk[k],Math.min(tpw,byWk[k].length)).forEach(r=>out.push(r)); });
+  return out;
+}
+function projectPlans(input){
+  input=input||{};
+  const today=String(input.todayISO||""); const byDate={}; const stats={}; const warnings=[];
+  const usedMin={};                                          // kid → {iso: minutes} — accumulates across plans in priority order
+  const plans=(input.plans||[]).slice().sort((a,b)=>((b.priority||0)-(a.priority||0))||String(a.pid).localeCompare(String(b.pid)));
+  plans.forEach(plan=>{
+    const kid=plan.kid; const rows=((input.calendar||{})[kid]||[]).slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+    plan._blocked=(((input.blocked||{})[kid]||{})[plan.sk])||{};
+    const lessons=(plan.lessons||[]).slice(); const cap=Math.max(1,parseInt(plan.cap,10)||1);
+    // tpw: explicit, or auto from a target date, else every allowed day
+    let tpw=parseInt(plan.tpw,10)||0;
+    const future=rows.filter(r=>r.date>=today);
+    if(!tpw&&plan.targetDate&&lessons.length){
+      const allowedN=(plan.allowedDays&&plan.allowedDays.length)||5;
+      tpw=Math.min(allowedN,Math.max(1,Math.ceil(lessons.length/_pjWeeksBetween(today,plan.targetDate))));
+    }
+    // owed: pattern days from anchor up to (not incl.) today, minus what was finished since
+    let owed=0;
+    if(plan.anchor&&plan.anchor<today){
+      const past=_pjPatternRows(plan,rows.filter(r=>r.date>=plan.anchor&&r.date<today),tpw).length;
+      owed=Math.max(0,Math.min(lessons.length,past-Math.max(0,parseInt(plan.doneSince,10)||0)));
+    }
+    // Each pattern day: its normal ONE lesson, plus extras up to the cap while behind.
+    // Only the EXTRAS pay down `owed` (the normal slot was going to happen anyway) —
+    // behind by 2 with cap 2 means one extra today and one extra next pattern day.
+    // The first `owed` lessons placed are the backlog itself (flagged for the Grid).
+    let owedLeft=owed, k=0, placed=0, first="", last=""; const capMin=(input.dayCapMin||{})[kid]||0; const min=plan.minutes||20;
+    const pattern=_pjPatternRows(plan,future,tpw);
+    for(const r of pattern){
+      if(!lessons.length) break;
+      const used=(usedMin[kid]=usedMin[kid]||{})[r.date]||0;
+      if(capMin&&used+min>capMin) continue;                 // day is full — this subject skips it (no slot)
+      const extras=Math.min(owedLeft,cap-1); owedLeft-=extras;
+      const n=1+extras;
+      for(let i=0;i<n&&lessons.length;i++){
+        const l=lessons.shift(); const isBacklog=(k++)<owed;
+        ((byDate[r.date]=byDate[r.date]||{})[kid]=byDate[r.date][kid]||[]).push({pid:plan.pid,sk:plan.sk,lid:l.lid,text:l.text,backlog:isBacklog});
+        usedMin[kid][r.date]=(usedMin[kid][r.date]||0)+min; placed++; if(!first) first=r.date; last=r.date;
+      }
+    }
+    if(lessons.length) warnings.push(plan.pid+": "+lessons.length+" lesson"+(lessons.length!==1?"s":"")+" past the calendar horizon");
+    stats[plan.pid]={owed,placed,unplaced:lessons.length,firstDate:first,lastDate:last,tpwUsed:tpw||((plan.allowedDays&&plan.allowedDays.length)||0)};
+    delete plan._blocked;
+  });
+  return {byDate,plans:stats,warnings};
+}
+// PROJ_END
+
 // ── Impure wrappers: collect rows from live data, apply, undo ────────────────
 
 function cbTodayISO(){ return _cbISO(new Date()); }
@@ -22694,6 +22783,18 @@ function cbGateCancel(){
       saveScheduleOverrides();
       _gvDelUndo=null;
       cbMsg="➡ Park cancelled — nothing changed.";
+    } else if(_gvDelUndo.rollbackOnCancel){
+      // ✎ A list save whose re-lay was cancelled rolls the LIST back too — the two
+      // must never be left disagreeing (that is the whole point of the one door).
+      const _p=Object.assign({},_gvDelUndo.paths); const _k=_gvDelUndo.kid,_s=_gvDelUndo.sk;
+      const _sub=((currData.subjects||{})[_k]||{})[_s];
+      if(_sub){ const _base="subjects/"+_k+"/"+_s+"/";
+        setLessonSeq(_k,_s,_p[_base+"lessonSeq"]||null,{patch:{},restoreIds:_p[_base+"lessonIds"]||null,restoreNext:_p[_base+"nextLid"]||null});
+        if(_p[_base+"total"]!=null) _sub.total=_p[_base+"total"]; }
+      _p["lastEdit"]=new Date().toISOString(); currData.lastEdit=_p["lastEdit"];
+      if(db) db.ref("curriculum").update(_p);
+      _gvDelUndo=null;
+      cbMsg="✎ List save cancelled — nothing changed.";
     } else {
       // A 🗑 delete already happened before this sheet — keep it (it was confirmed
       // in its own dialog), give it its own Undo, and note the re-lay was skipped.
