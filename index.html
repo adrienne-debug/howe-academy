@@ -2795,6 +2795,13 @@ function initFb() {
       try{HA_LS.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
       if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
     });
+    // Lesson-identity done records (Stage 1.3) live under curriculum/done but must stay
+    // LIVE — the curriculum node itself is loaded once per device and kiosks sit open for
+    // days. Kept in currData.done so every reader sees the same object.
+    db.ref("curriculum/done").on("value",s=>{
+      if(!currData) currData={};
+      currData.done=s.val()||{};
+    });
     db.ref("curriculum").once("value",s=>{
       fbCurrLoaded=true; // even an empty answer counts — the cascade may now trust subjNoCarry
       if(s.val()){currData=s.val();buildCurrPaceCum();dbg("curriculum loaded: "+Object.keys(currData.subjects||{}).join(","));runDisplacement();if(tab==="schedule")renderAll();setTimeout(autoGenerateWeekIfNeeded,3000);}
@@ -5966,7 +5973,9 @@ function finalizeDone(id, doneTs, score){
     if(origDateStr){const yr=new Date().getFullYear();const od=new Date(origDateStr+", "+yr);const td=new Date();od.setHours(0,0,0,0);td.setHours(0,0,0,0);daysLate=Math.round((td-od)/864e5);}
     const entry={id:id,title:t.title,who:t.who,day:t.day,originalDay:origDay,checkedOnDay:effectiveDay(t),daysLate:daysLate,ts:doneTs,week:WK};
     if(score) entry.score=score;
+    if(t.lid){ entry.lid=t.lid; entry.pid=t.who+"__"+t.subjectKey; }   // frozen record is lid-resolvable without title parsing
     hist[id]=entry; histState[id]=entry; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+id).set(entry);
+    try{ lidDoneWrite(t,doneTs,id); }catch(e){ dbg("lid done write skip: "+e); }
     // A check-off may have finished a subject and/or met all session goals.
     try{ checkSubjectComplete(t.who, t.subjectKey); }catch(e){}
     try{ checkBookComplete(t.who, t.subjectKey); }catch(e){}
@@ -6726,6 +6735,7 @@ document.getElementById("dlg-uncheck").onclick=()=>{
   const hist=ld(WK+"_history")||{};
   delete hist[id]; delete histState[id]; sv(WK+"_history",hist);
   if(db) db.ref(WK+"/history/"+id).remove();
+  try{ lidDoneRemove(weekData.tasks.find(x=>x.id===id),id); }catch(e){ dbg("lid done remove skip: "+e); }
   closeDlg(); schedCascade(); renderAll();
 };
 function closeDlg(){ document.getElementById("dlg").style.display="none"; pendingId=null; }
@@ -15283,6 +15293,32 @@ function gvAssignLidsUndo(){
   if(typeof gwShowToast==="function") gwShowToast("↩ Lesson ids removed again");
   renderAll();
 }
+// ── done-by-lesson-id (Stage 1.3) ────────────────────────────────────────────
+// curriculum/done/<kid>/<sk>/<lid> = {ts, day, taskId, src} — ONE record per finished
+// lesson, written beside (not instead of) the card's own checked/history entries.
+// Only cards that carry a lid write it; unchecking removes it only if THIS card wrote
+// it (taskId matches), so a stale twin/_c can never erase another card's record.
+// Read by nothing until the reader flip (Stage 1.5) — additive and inert till then.
+function lidDoneWrite(t,doneTs,taskId){
+  if(!db||!t||!t.lid||!t.who||!t.subjectKey) return false;
+  const p="curriculum/done/"+t.who+"/"+t.subjectKey+"/"+t.lid;
+  const day=(typeof cbTodayISO==="function")?cbTodayISO():new Date().toISOString().slice(0,10);
+  const rec={ts:doneTs,day:day,taskId:taskId||t.id,src:"check"};
+  currData=currData||{}; currData.done=currData.done||{};
+  ((currData.done[t.who]=currData.done[t.who]||{})[t.subjectKey]=currData.done[t.who][t.subjectKey]||{})[t.lid]=rec;
+  if(typeof _dryRun==="function"&&_dryRun()) return true;
+  db.ref(p).set(rec);
+  return true;
+}
+function lidDoneRemove(t,taskId){
+  if(!db||!t||!t.lid||!t.who||!t.subjectKey) return false;
+  const rec=(((((currData||{}).done||{})[t.who]||{})[t.subjectKey])||{})[t.lid];
+  if(!rec||(rec.taskId&&taskId&&rec.taskId!==taskId)) return false;   // not ours (or unknown) — leave it
+  delete currData.done[t.who][t.subjectKey][t.lid];
+  if(typeof _dryRun==="function"&&_dryRun()) return true;
+  db.ref("curriculum/done/"+t.who+"/"+t.subjectKey+"/"+t.lid).remove();
+  return true;
+}
 // LID_END
 
 function ceSaveLessonSeq(val){
@@ -16042,6 +16078,10 @@ function uploadCurriculum(){
           }
         }
       }
+
+      // Top-level nodes the sheet can't express ride forward too — a whole-node set()
+      // would otherwise wipe them (done = lesson-identity completions, Stage 1.3).
+      if(currData){ ["done","skiplog","rebaseline","dayCap","altGroups","groups","plans"].forEach(k=>{ if(currData[k]!==undefined&&curriculum[k]===undefined) curriculum[k]=currData[k]; }); }
 
       const stats=Object.entries(sheetKids).map(([_,kid])=>{
         const ns=Object.keys(curriculum.subjects[kid]||{}).length;

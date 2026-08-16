@@ -205,5 +205,21 @@ console.log("_lidServedFor + gwStampLids — ids onto served rows and cards (Sta
   ok("no served → 0, no throw", e.gwStampLids(tasks, null) === 0);
 }
 
+console.log("lidDoneWrite / lidDoneRemove — done-by-lesson-id (Stage 1.3)");
+{
+  const e = mk({ lincoln: { mr: S(["a", "b"], ["L0001", "L0002"], 3) } });
+  const sets = []; const removes = [];
+  e.db = { ref: p => ({ set: v => { sets.push([p, v]); }, remove: () => { removes.push(p); }, update: () => ({ catch: () => {} }) }) };
+  e.cbTodayISO = () => "2026-08-16";
+  const t = { id: "2026d228_12", who: "lincoln", subjectKey: "mr", lid: "L0002", title: "📄 MR — b" };
+  ok("card with lid → writes curriculum/done/<kid>/<sk>/<lid> {ts,day,taskId,src:check}", e.lidDoneWrite(t, "10:14 AM Aug 16", t.id) === true && sets.length === 1 && sets[0][0] === "curriculum/done/lincoln/mr/L0002" && eq(sets[0][1], { ts: "10:14 AM Aug 16", day: "2026-08-16", taskId: "2026d228_12", src: "check" }));
+  ok("in-memory currData.done mirrors it", e.currData.done.lincoln.mr.L0002.taskId === "2026d228_12");
+  ok("card without lid → nothing", e.lidDoneWrite({ id: "x", who: "lincoln", subjectKey: "mr", title: "📄 MR — a" }, "ts", "x") === false && sets.length === 1);
+  ok("uncheck by a DIFFERENT card (twin/_c) leaves the record", e.lidDoneRemove({ id: "2026d228_12_c", who: "lincoln", subjectKey: "mr", lid: "L0002" }, "2026d228_12_c") === false && removes.length === 0 && !!e.currData.done.lincoln.mr.L0002);
+  ok("uncheck by the same card removes it", e.lidDoneRemove(t, t.id) === true && removes[0] === "curriculum/done/lincoln/mr/L0002" && !e.currData.done.lincoln.mr.L0002);
+  ok("uncheck when no record exists → false, no write", e.lidDoneRemove(t, t.id) === false && removes.length === 1);
+  ok("null task → false, no throw", e.lidDoneRemove(null, "x") === false && e.lidDoneWrite(null, "ts", "x") === false);
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
