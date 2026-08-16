@@ -32,13 +32,16 @@ function extractFn(name) {
     if (esc) { esc = false; continue; }
     if (c === "\\") { esc = true; continue; }
     if (inStr) { if (c === inStr) inStr = null; continue; }
+    // comments: apostrophes inside them are not string delimiters
+    if (c === "/" && src[j + 1] === "/") { j = src.indexOf("\n", j); if (j < 0) break; continue; }
+    if (c === "/" && src[j + 1] === "*") { j = src.indexOf("*/", j) + 1; continue; }
     if (c === '"' || c === "'" || c === "`") { inStr = c; continue; }
     if (c === "{") depth++;
     else if (c === "}") { depth--; if (!depth) return src.slice(start, j + 1); }
   }
   throw new Error("unbalanced: " + name);
 }
-const writers = ["ceSaveLessonSeq", "gvSyncSeqInto", "gvSelUndoApply"].map(extractFn).join("\n");
+const writers = ["ceSaveLessonSeq", "gvSyncSeqInto", "gvSelUndoApply", "cbDoneCellSet", "cbDeriveContent"].map(extractFn).join("\n");
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {
@@ -251,6 +254,33 @@ console.log("lidImportPlan / gvImportDone — import completions (Stage 1.4)");
   ok("undo nulls the same paths + stamp; pending again; mirror emptied", e.written && e.written["done/lincoln/mr/L0001"] === null && e.written["subjects/lincoln/mr/doneImportedAt"] === null && e.lidImportPending().length === 1 && Object.keys(e.currData.done.lincoln.mr).length === 0);
   const e2 = mk({ lincoln: { mr: S(["a"], ["L0001"], 2) } }); e2.paceKeywords = () => ["MR"]; e2.paceData = { subjects: {} }; e2.chainDone = () => false; e2.weekData = { tasks: [] }; e2.archive = {}; e2.checked = {}; e2.cap = x => x; e2.confirmAnswer = false; e2.gvImportDone();
   ok("cancel writes nothing", e2.written === null);
+}
+
+console.log("readers flip on the stamp (Stage 1.5)");
+{
+  const e = mk({ lincoln: { mr: S(["a", "b", "b", "c", "d"], ["L0001", "L0002", "L0003", "L0004", "L0005"], 6), un: S(["x", "y"], ["L0001", "L0002"], 3) } });
+  e.paceData = { subjects: {} }; e.paceKeywords = () => ["MR"]; e.paceDoneTitles = () => ["📄 mr — a", "📄 mr — c"]; e.cbTodayISO = () => "2026-08-16";
+  e.currData.done = { lincoln: { mr: { L0001: { src: "check" }, L0003: { src: "check" } } } };
+  ok("unstamped → lidStamped false, sets null", !e.lidStamped("lincoln", "mr") && e.lidDoneSet("lincoln", "mr") === null && e.lidDoneIdx("lincoln", "mr") === null);
+  // cbDoneCellSet unstamped = title path (a, c done)
+  const cells = [{ text: "a" }, { text: "b" }, { text: "b" }, { text: "c" }, { text: "zz" }];
+  ok("cbDoneCellSet unstamped: title match → {0,3}", eq([...e.cbDoneCellSet("lincoln", "mr", cells)].sort(), [0, 3]));
+  e.currData.subjects.lincoln.mr.doneImportedAt = "2026-08-16T00:00:00Z";
+  ok("stamped → done set/idx from records", e.lidStamped("lincoln", "mr") && eq([...e.lidDoneSet("lincoln", "mr")].sort(), ["L0001", "L0003"]) && eq([...e.lidDoneIdx("lincoln", "mr")].sort(), [0, 2]));
+  ok("cbDoneCellSet stamped: by id → a(L0001) + SECOND b(L0003) done, first b not; zz (no id) falls back to title", eq([...e.cbDoneCellSet("lincoln", "mr", cells)].sort(), [0, 2]));
+  ok("cbDoneCellSet stamped with no records → empty Set (authoritative, not null)", (() => { e.currData.done.lincoln.mr = {}; const r = e.cbDoneCellSet("lincoln", "mr", cells); e.currData.done.lincoln.mr = { L0001: { src: "check" }, L0003: { src: "check" } }; return r && typeof r.size === "number" && r.size === 0; })());
+  // cbDeriveContent doneIdx wins over tally/count
+  const split = { stale: [], todayCells: [], future: [] };
+  ok("cbDeriveContent doneIdx → exact remaining [b(1st),c,d]", eq(e.cbDeriveContent(split, ["a", "b", "b", "c", "d"], 4, [], null, new Map([["a", 1]]), null, new Set([0, 2])), ["b", "c", "d"]));
+  ok("cbDeriveContent without doneIdx unchanged (tally path)", eq(e.cbDeriveContent(split, ["a", "b", "b", "c", "d"], 1, [], null, new Map([["a", 1]]), null), ["b", "b", "c", "d"]));
+  // hand-mark by text → first unfinished occurrence
+  const patch = {}, prev = {};
+  const w = e.lidMarkDone("lincoln", "mr", ["b", "d"], null, patch, prev);
+  ok("lidMarkDone marks first unfinished b (L0002) and d (L0005), src manual, prev nulls for undo", eq(w, ["L0002", "L0005"]) && patch["done/lincoln/mr/L0002"].src === "manual" && patch["done/lincoln/mr/L0005"].day === "2026-08-16" && prev["done/lincoln/mr/L0002"] === null);
+  ok("mirror updated", !!e.currData.done.lincoln.mr.L0002 && !!e.currData.done.lincoln.mr.L0005);
+  const p2 = {}; const u = e.lidUnmarkText("lincoln", "mr", "b", p2);
+  ok("lidUnmarkText removes only MANUAL b (L0002), never the check-off L0003", eq(u, ["L0002"]) && p2["done/lincoln/mr/L0002"] === null && !("done/lincoln/mr/L0003" in p2) && !e.currData.done.lincoln.mr.L0002 && !!e.currData.done.lincoln.mr.L0003);
+  ok("unstamped subject: mark/unmark are no-ops", eq(e.lidMarkDone("lincoln", "un", ["x"], null, {}, {}), []) && eq(e.lidUnmarkText("lincoln", "un", "x", {}), []));
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");

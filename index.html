@@ -14939,7 +14939,10 @@ function _ceMarkDoneUI(kid,sk,s,seq,cursorPos,col){
   // "Pg 225–227" check-off with no matching lesson, pushing his cursor one past the
   // truth and hiding the very lesson she wanted to mark).
   const upcoming=[];
-  {
+  const _dIdx=(typeof lidDoneIdx==="function")?lidDoneIdx(kid,sk):null;
+  if(_dIdx&&s.lessonSeq&&s.lessonSeq.length){
+    s.lessonSeq.forEach((l,i)=>{ if(!_dIdx.has(i)&&upcoming.length<8) upcoming.push(l); });   // Stage 1.5: by lesson id
+  } else {
     let left=new Map();
     try{
       const _ps=(((paceData||{}).subjects||{})[kid]||{})[sk];
@@ -15037,6 +15040,7 @@ function ceMarkLessonDone(kid,sk,lesson,through){
   list.forEach(l=>{ md[_mdKey(l)]={lesson:String(l).trim(),day:dayISO||cbTodayISO(),ts:new Date().toISOString()}; });
   s.manualDone=md;
   const up={}; up["subjects/"+kid+"/"+sk+"/manualDone"]=md;
+  try{ lidMarkDone(kid,sk,list,dayISO||null,up,prevPaths); }catch(e){}   // Stage 1.5: done-by-id rides the same update
   if(dayISO){
     const L=(currData.lessons||{})[kid]||{};
     const dnByDate={}; for(const dn of Object.keys(L)){ const r=L[dn]; if(r&&r.date&&dnByDate[r.date]===undefined) dnByDate[r.date]=dn; }
@@ -15067,9 +15071,11 @@ function ceMarkLessonDone(kid,sk,lesson,through){
 function ceUnmarkLessonDone(kid,sk,key){
   if(!momHere()) return;
   const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||!s.manualDone) return;
+  const _txt=_mdText(key,s.manualDone[key]);
   const md=Object.assign({},s.manualDone); delete md[key];
   s.manualDone=md;
   if(db) db.ref("curriculum/subjects/"+kid+"/"+sk+"/manualDone").set(Object.keys(md).length?md:null);
+  try{ const _up={}; lidUnmarkText(kid,sk,_txt,_up); if(db&&Object.keys(_up).length) db.ref("curriculum").update(_up); }catch(e){}   // Stage 1.5
   try{ buildCurrPaceCum(); }catch(e){}
   _ceRelayAfterMark(kid,sk,"↩ Un-marked “"+key+"”");
 }
@@ -15434,6 +15440,54 @@ function gvImportDoneUndo(){
   _lidImportUndo=null;
   if(typeof gwShowToast==="function") gwShowToast("↩ Import removed again");
   renderAll();
+}
+// ── Readers (Stage 1.5) ──────────────────────────────────────────────────────
+// A subject whose completions were imported (doneImportedAt) is "stamped": from then
+// on `done` by lesson id IS the truth for what's finished, and the title-matching
+// paths below only serve unstamped subjects (byte-identical to before). Never flip on
+// "done has keys" — a partially-filled record would snap cursors back.
+function lidStamped(kid,sk){
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk];
+  return !!(s&&s.doneImportedAt&&lidsFor(kid,sk));
+}
+function lidDoneSet(kid,sk){
+  if(!lidStamped(kid,sk)) return null;
+  return new Set(Object.keys(((((currData||{}).done||{})[kid]||{})[sk])||{}));
+}
+// Indexes into lessonSeq that are finished (null unless stamped).
+function lidDoneIdx(kid,sk){
+  const d=lidDoneSet(kid,sk); if(!d) return null;
+  const ids=lidsFor(kid,sk); const out=new Set();
+  ids.forEach((id,i)=>{ if(d.has(id)) out.add(i); });
+  return out;
+}
+// Hand-mark by TEXT (mark-done panel / grid ✓): the first unfinished list occurrence of
+// each text gets a manual done record. Folds paths into `patch` (done/… relative to
+// curriculum) and returns the lids written. No-op unless stamped.
+function lidMarkDone(kid,sk,texts,dayISO,patch,prevPaths){
+  if(!lidStamped(kid,sk)) return [];
+  const s=currData.subjects[kid][sk]; const ids=lidsFor(kid,sk); const seq=s.lessonSeq||[];
+  const done=lidDoneSet(kid,sk); const out=[];
+  currData.done=currData.done||{}; const node=((currData.done[kid]=currData.done[kid]||{})[sk]=currData.done[kid][sk]||{});
+  (texts||[]).forEach(t=>{
+    const k=_lidNorm(t);
+    for(let i=0;i<seq.length;i++){
+      if(_lidNorm(seq[i])!==k||done.has(ids[i])) continue;
+      const rec={ts:new Date().toISOString(),day:dayISO||((typeof cbTodayISO==="function")?cbTodayISO():""),src:"manual",via:"mark"};
+      if(prevPaths) prevPaths["done/"+kid+"/"+sk+"/"+ids[i]]=null;
+      patch["done/"+kid+"/"+sk+"/"+ids[i]]=rec; node[ids[i]]=rec; done.add(ids[i]); out.push(ids[i]);
+      break;
+    }
+  });
+  return out;
+}
+// Un-hand-mark by TEXT: removes MANUAL done records for that text (never a check-off's).
+function lidUnmarkText(kid,sk,text,patch){
+  if(!lidStamped(kid,sk)) return [];
+  const s=currData.subjects[kid][sk]; const ids=lidsFor(kid,sk); const seq=s.lessonSeq||[];
+  const node=((((currData||{}).done||{})[kid]||{})[sk])||{}; const k=_lidNorm(text); const out=[];
+  ids.forEach((id,i)=>{ const r=node[id]; if(r&&r.src==="manual"&&_lidNorm(seq[i])===k){ patch["done/"+kid+"/"+sk+"/"+id]=null; delete node[id]; out.push(id); } });
+  return out;
 }
 // LID_END
 
@@ -21730,7 +21784,7 @@ function cbSplitCells(cells,doneN,todayISO,doneSet){
 // (2026-08-04: Lincoln's pp.204-207 and pp.208-211, work he'd done on paper, dismissed once
 // and re-laid onto Aug 4-5 behind pp.212-215.) Reading the log makes a dismissal permanent
 // for both kinds of subject, and by lesson text rather than by a count.
-function cbDeriveContent(split,lessonSeq,doneN,dismissedIdx,skipTexts,doneTally,filterTally){
+function cbDeriveContent(split,lessonSeq,doneN,dismissedIdx,skipTexts,doneTally,filterTally,doneIdx){
   const dis=new Set(dismissedIdx||[]);
   const skip=skipTexts||null;
   const _skipped=t=>!!(skip&&skip.has(String(t||"").trim().toLowerCase()));
@@ -21744,7 +21798,11 @@ function cbDeriveContent(split,lessonSeq,doneN,dismissedIdx,skipTexts,doneTally,
     // Skipping ONE occurrence per completion is the same rule the generator serves by.
     // Null tally (offset/adjust set, or titles that don't mirror the sequence) keeps the
     // old count behavior rather than guessing.
-    const rest=(doneTally
+    // doneIdx (Stage 1.5): the finished list INDEXES, from done-by-lesson-id. Exact —
+    // no text tally, no count — so it wins when present.
+    const rest=(doneIdx
+        ?lessonSeq.filter((t,i)=>!doneIdx.has(i))
+        :doneTally
         ?(()=>{ const left=new Map(doneTally), out=[];
             for(const t of lessonSeq){
               const k=String(t||"").trim().toLowerCase(), c=left.get(k)||0;
@@ -21903,7 +21961,8 @@ function cbRemainingContent(kid,sk){
     if(_ok&&(_titles.length||!info.doneN)) _tally=_m;
     else if(_m.size) _filter=_m;
   }
-  return cbDeriveContent(info.split,info.hasSeq?s.lessonSeq:null,info.doneN,dis,_skip,_tally,_filter);
+  const _doneIdx=(info.hasSeq&&typeof lidDoneIdx==="function")?lidDoneIdx(kid,sk):null;
+  return cbDeriveContent(info.split,info.hasSeq?s.lessonSeq:null,info.doneN,dis,_skip,_tally,_filter,_doneIdx);
 }
 
 // Day-minute cap: per-kid override (curriculum/dayCap, CB3 UI) else school-hours default.
@@ -23924,6 +23983,7 @@ function gvMenuDone(kid,dn,sk){
   md[_mdKey(txt)]={lesson:txt,day:(past?l.date:cbTodayISO()),ts:new Date().toISOString()};
   s.manualDone=md;
   const up={}; up["subjects/"+kid+"/"+sk+"/manualDone"]=md;
+  try{ lidMarkDone(kid,sk,[txt],(past?l.date:null),up,prevPaths); }catch(e){}   // Stage 1.5: done-by-id rides the same update
   if(!past){
     // Clear its cell now — the re-lay would overwrite the day anyway, but an unpaced
     // subject has no re-lay, and a cleared cell is the honest picture either way.
@@ -26258,12 +26318,18 @@ function cbDoneCellSet(kid,sk,cells){
   const off=Math.max(0,(paceSubj&&paceSubj.offset)||0);
   const done=new Set();
   for(let i=0;i<off&&i<cells.length;i++) done.add(i);
-  if(!titles.length) return done;            // nothing checked off yet — a real, usable answer
+  // Stamped subject (Stage 1.5): each cell's lesson id answers directly; a cell whose
+  // text isn't on the master list (no id) falls back to the title match below.
+  const _lids=(typeof lidStamped==="function"&&lidStamped(kid,sk))?_lidServedFor(kid,sk,cells.map(c=>({lesson:(c&&c.text)||""}))):null;
+  const _dset=_lids?lidDoneSet(kid,sk):null;
+  if(!titles.length&&!_lids) return done;    // nothing checked off yet — a real, usable answer
   let matched=0;
   cells.forEach((c,i)=>{
+    if(_lids&&_lids[i]){ if(_dset.has(_lids[i])){ done.add(i); matched++; } return; }
     const txt=String((c&&c.text)||"").trim().toLowerCase();
     if(txt&&titles.some(t=>t.includes(txt))){ done.add(i); matched++; }
   });
+  if(_lids) return done;                     // the id answer is authoritative, even when empty
   // Completions exist but NONE line up with the grid — the two don't share text for this
   // subject (Lucy's NZK grid says "Q41–42" where her task says "Quest 41"). Can't tell.
   return matched?done:null;
@@ -37219,7 +37285,20 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
       // would re-serve the done one and drop the missed one. `seq` is already
       // hard-cap sliced, so this also respects session goals.
       let effLessons;
-      if(_doneCounts){
+      const _doneLids=(typeof lidDoneSet==="function")?lidDoneSet(kid,sk):null;   // Stage 1.5: stamped subject
+      if(_doneLids){
+        // Done-by-lesson-id is exact. A row with no id (text not on the master list)
+        // falls back to the text tally when there is one; else it is served.
+        const _left=_doneCounts?new Map(_doneCounts):null;
+        effLessons=[];
+        for(const l of seq){
+          const p=String(l.lesson).trim();
+          if(l.lid){ if(_doneLids.has(l.lid)) continue; }
+          else if(_left){ const c=_left.get(p)||0; if(c>0){ _left.set(p,c-1); continue; } }
+          if(_seenWk[p]) continue;
+          effLessons.push(l);
+        }
+      } else if(_doneCounts){
         const _left=new Map(_doneCounts);
         effLessons=[];
         for(const l of seq){
