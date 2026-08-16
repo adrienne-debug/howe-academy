@@ -316,5 +316,23 @@ console.log("plan-backed subjects (Stage 2)");
   ok("undo nulls planId + planAnchor", e.written && e.written["subjects/lincoln/mr/planId"] === null && e.written["subjects/lincoln/mr/planAnchor"] === null && !e.currData.subjects.lincoln.mr.planId);
 }
 
+console.log("sequential-order guard + un-finish tools");
+{
+  const e = mk({ lincoln: { mr: S(["a", "b", "c", "d"], ["L0001", "L0002", "L0003", "L0004"], 5) } });
+  e.currData.subjects.lincoln.mr.doneImportedAt = "x"; e.currData.done = { lincoln: { mr: { L0001: { src: "check" }, L0003: { src: "check" }, L0004: { src: "manual" } } } };
+  const T = lid => ({ id: "t" + lid, who: "lincoln", subjectKey: "mr", lid, title: "📄 MR — x" });
+  ok("guard: card for c (L0003) blocked by open b", e.lidOrderBlock(T("L0003")) === "b");
+  ok("guard: card for b (next open) allowed", e.lidOrderBlock(T("L0002")) === null);
+  ok("guard: no lid / other subject → null", e.lidOrderBlock({ id: "z", who: "lincoln", subjectKey: "mr" }) === null);
+  e.currData.subjects.lincoln.mr.allowOutOfOrder = true;
+  ok("setting allowOutOfOrder → guard off", e.lidOrderBlock(T("L0003")) === null);
+  delete e.currData.subjects.lincoln.mr.allowOutOfOrder;
+  ok("lidOutOfOrder: c and d (done after open b), in list order", eq(e.lidOutOfOrder("lincoln", "mr").map(x => x.text), ["c", "d"]));
+  const patch = {}, prev = {};
+  ok("lidUnfinish removes the record (any src) and snapshots it", e.lidUnfinish("lincoln", "mr", "L0004", patch, prev) === true && patch["done/lincoln/mr/L0004"] === null && prev["done/lincoln/mr/L0004"].src === "manual" && !e.currData.done.lincoln.mr.L0004);
+  ok("lidUnfinish on a non-record → false", e.lidUnfinish("lincoln", "mr", "L0004", {}, {}) === false);
+  ok("after un-finishing d, only c is out of order", eq(e.lidOutOfOrder("lincoln", "mr").map(x => x.text), ["c"]));
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

@@ -5957,6 +5957,9 @@ function bumpSkippedInTier(done){
 
 // Write a real (verified) completion + history entry. score optional.
 function finalizeDone(id, doneTs, score){
+  // Sequential-order guard (stamped subjects, unless allowOutOfOrder): refuse rather than record.
+  try{ const _tg=weekData.tasks.find(x=>x.id===id); const _why=(typeof lidOrderBlock==="function")?lidOrderBlock(_tg):null;
+    if(_why){ if(typeof gwShowToast==="function") gwShowToast("⛔ Not yet — “"+_why+"” isn’t done. Lessons check off in order."); dbg("order guard blocked "+id+" ("+_why+")"); return false; } }catch(e){}
   checked[id]=doneTs; sv(WK+"_checked",checked); lastCheckedWrite=Date.now();
   // Targeted child write — a whole-map set() here let a device with stale local state
   // erase other tablets' fresh checks (two kids checking within seconds = one check
@@ -14655,6 +14658,9 @@ function ceRenderEditSheet(){
   h+='<div class="ce-chip'+(trk==="daily"?" sel":"")+'" onclick="ceSetTracking(\'daily\')">Daily (no lesson #)</div>';
   h+='</div>';
   h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">'+(trk==="daily"?"Shows up each scheduled day without tracking lesson numbers (like notebooks &amp; drills)":"Lessons advance in order and track progress with a cursor")+'</div>';
+  if(trk!=="daily"&&typeof lidStamped==="function"&&lidStamped(ceEditKid,ceEditKey)){
+    h+='<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin-top:6px;cursor:pointer"><input type="checkbox" '+(s.allowOutOfOrder?"checked":"")+' onchange="ceSaveField(\'allowOutOfOrder\',this.checked);ceRenderEditSheet()"> Allow out-of-order check-offs <span style="font-size:10px">(off = a card can’t be checked while an earlier lesson is still open)</span></label>';
+  }
 
   // Mom Check (per subject) — requires the kid's master switch (in the kid header) to take effect
   const _mvKid=!!((currData.momVerifyKid||{})[ceEditKid]);
@@ -15009,6 +15015,21 @@ function _ceMarkDoneUI(kid,sk,s,seq,cursorPos,col){
     h+='<button onclick="ceMarkLessonDone(\''+kid+'\',\''+sk+'\',\''+esc2+'\',true)" title="Mark this and every lesson above it done" style="flex-shrink:0;border:1px solid var(--border);background:#fff;color:var(--muted);border-radius:8px;padding:2px 9px;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">&#8595; through here</button>';
     h+='</div>';
   });
+  // Out-of-order finished lessons (stamped subjects): the sequential rule's repair tools.
+  try{
+    const _ooo=(typeof lidOutOfOrder==="function")?lidOutOfOrder(kid,sk):[];
+    if(_ooo.length){
+      h+='<div style="border-top:1px dashed #eef0f3;margin-top:8px;padding-top:6px">';
+      h+='<div style="font-size:10px;color:#b45309;font-weight:700">⚠ '+_ooo.length+' finished out of order</div>';
+      h+='<div style="font-size:10px;color:var(--muted);margin:2px 0 5px">Checked after an earlier lesson that is still open. If they really were done, leave them. If a wrong card got checked, mark them not done — they go back into the plan as owed and re-lay; the card keeps its history.</div>';
+      h+='<div style="display:flex;flex-wrap:wrap;gap:4px">';
+      _ooo.slice(0,10).forEach(x=>{ h+='<span style="display:inline-flex;align-items:center;gap:4px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:2px 8px;font-size:10px;color:#92400e">'+esc(x.text)+'<button onclick="ceUnfinishLesson(\''+kid+'\',\''+sk+'\',\''+x.lid+'\')" title="Mark not done" style="border:none;background:none;color:#b45309;font-weight:800;cursor:pointer;padding:0">↩</button></span>'; });
+      if(_ooo.length>10) h+='<span style="font-size:10px;color:var(--muted)">…+'+(_ooo.length-10)+'</span>';
+      h+='</div>';
+      h+='<button onclick="ceMakeContiguous(\''+kid+'\',\''+sk+'\')" style="margin-top:6px;border:1px solid #d97706;background:#fff;color:#b45309;border-radius:8px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">↩ Make done contiguous ('+_ooo.length+')</button>';
+      h+='</div>';
+    }
+  }catch(e){}
   if(marked.length){
     h+='<div style="font-size:10px;color:var(--muted);margin-top:7px">Hand-marked done ('+marked.length+') — tap ✕ to undo:</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px">';
     marked.forEach(k=>{
@@ -15580,6 +15601,58 @@ function gvMakePlanUndo(){
   _planMakeUndo=null;
   if(typeof gwShowToast==="function") gwShowToast("↩ Plan flag removed (cells stay as laid — ↩ Undo on the grid reverts the re-lay)");
   renderAll();
+}
+// ── Sequential order is a hard rule (her rule, 2026-08-16) ────────────────────
+// "Nothing can be checked off out of order." A card for a stamped subject is REFUSED at
+// the tap while an earlier lesson in the list is still open — the schedule's mistake can
+// never become the record's mistake (the kids had been checking whatever card appeared).
+// Per-subject `allowOutOfOrder` turns the guard off. Returns the blocking lesson text or
+// null. Blocking beats un-checking after the fact: nothing wrong is ever recorded.
+function lidOrderBlock(t){
+  if(!t||!t.lid||!t.who||!t.subjectKey) return null;
+  const kid=t.who, sk=t.subjectKey; const s=(((currData||{}).subjects||{})[kid]||{})[sk];
+  if(!s||s.allowOutOfOrder||!lidStamped(kid,sk)) return null;
+  const ids=lidsFor(kid,sk); const at=ids.indexOf(t.lid); if(at<0) return null;
+  const done=lidDoneSet(kid,sk);
+  for(let i=0;i<at;i++){ if(!done.has(ids[i])) return String((s.lessonSeq||[])[i]||""); }
+  return null;
+}
+// Mom's repair tools for records that are already out of order.
+// lidUnfinish: remove ONE done record (any src) — the lesson becomes owed again. The
+// card it came from keeps its check/points/history (that is the kid's day, not the plan).
+function lidUnfinish(kid,sk,lid,patch,prevPaths){
+  const node=((((currData||{}).done||{})[kid]||{})[sk])||{}; const rec=node[lid]; if(!rec) return false;
+  if(prevPaths) prevPaths["done/"+kid+"/"+sk+"/"+lid]=JSON.parse(JSON.stringify(rec));
+  patch["done/"+kid+"/"+sk+"/"+lid]=null; delete node[lid]; return true;
+}
+// Which done lessons sit AFTER the first open one (the out-of-order set), in list order.
+function lidOutOfOrder(kid,sk){
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||!lidStamped(kid,sk)) return [];
+  const ids=lidsFor(kid,sk); const done=lidDoneSet(kid,sk); const out=[]; let gap=false;
+  ids.forEach((id,i)=>{ if(!done.has(id)){ gap=true; return; } if(gap) out.push({lid:id,text:String((s.lessonSeq||[])[i]||""),idx:i}); });
+  return out;
+}
+function ceUnfinishLesson(kid,sk,lid){
+  if(!momHere()||!db) return;
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s) return;
+  const i=(lidsFor(kid,sk)||[]).indexOf(lid); const txt=i>=0?String(s.lessonSeq[i]||""):lid;
+  if(!confirm("Mark “"+txt+"” NOT done?\n\nIt goes back into the plan as owed and "+(s.display||sk)+" re-lays. The card it was checked on keeps its history. You can Undo.")) return;
+  const up={}, prev={}; if(!lidUnfinish(kid,sk,lid,up,prev)) return;
+  up["lastEdit"]=new Date().toISOString(); currData.lastEdit=up["lastEdit"];
+  db.ref("curriculum").update(up).catch(err=>{ cbMsg="⚠ "+err.message; renderAll(); });
+  _gvDelUndo={kid,sk,paths:prev,label:"un-finished “"+txt+"”"};
+  _ceRelayAfterMark(kid,sk,"↩ “"+txt+"” is owed again");
+}
+function ceMakeContiguous(kid,sk){
+  if(!momHere()||!db) return;
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s) return;
+  const list=lidOutOfOrder(kid,sk); if(!list.length) return;
+  if(!confirm("Make "+(s.display||sk)+"'s finished lessons contiguous?\n\nThese "+list.length+" were checked AFTER an earlier lesson that is still open, and go back into the plan as owed:\n"+list.slice(0,12).map(x=>"  • "+x.text).join("\n")+(list.length>12?"\n  …and "+(list.length-12)+" more":"")+"\n\nTheir cards keep their history. You can Undo.")) return;
+  const up={}, prev={}; list.forEach(x=>lidUnfinish(kid,sk,x.lid,up,prev));
+  up["lastEdit"]=new Date().toISOString(); currData.lastEdit=up["lastEdit"];
+  db.ref("curriculum").update(up).catch(err=>{ cbMsg="⚠ "+err.message; renderAll(); });
+  _gvDelUndo={kid,sk,paths:prev,label:"un-finished "+list.length+" out-of-order lesson"+(list.length!==1?"s":"")};
+  _ceRelayAfterMark(kid,sk,"↩ "+list.length+" lesson"+(list.length!==1?"s":"")+" owed again, in order");
 }
 // LID_END
 
