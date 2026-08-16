@@ -14669,6 +14669,18 @@ function ceRenderEditSheet(){
   h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">'+(trk==="daily"?"Shows up each scheduled day without tracking lesson numbers (like notebooks &amp; drills)":"Lessons advance in order and track progress with a cursor")+'</div>';
   if(trk!=="daily"&&typeof lidStamped==="function"&&lidStamped(ceEditKid,ceEditKey)){
     h+='<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin-top:6px;cursor:pointer"><input type="checkbox" '+(s.allowOutOfOrder?"checked":"")+' onchange="ceSaveField(\'allowOutOfOrder\',this.checked);ceRenderEditSheet()"> Allow out-of-order check-offs <span style="font-size:10px">(off = a card can’t be checked while an earlier lesson is still open)</span></label>';
+    if(typeof planBacked==="function"&&planBacked(ceEditKid,ceEditKey)&&s.pacing&&(s.pacing.mode==="timesPerWeek"||s.pacing.mode==="targetDate")){
+      const _cap=Math.max(1,parseInt(s.cap,10)||1);
+      h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:6px">';
+      h+='<span><b style="color:var(--text)">Cap</b> — most sittings of this subject in one day:</span>';
+      h+='<span style="display:inline-flex;align-items:center;gap:4px"><button onclick="ceSetCap('+(_cap-1)+')" style="border:1px solid var(--border);background:#fff;border-radius:6px;width:22px;height:22px;cursor:pointer">−</button><b style="min-width:14px;text-align:center;color:var(--text)">'+_cap+'</b><button onclick="ceSetCap('+(_cap+1)+')" style="border:1px solid var(--border);background:#fff;border-radius:6px;width:22px;height:22px;cursor:pointer">+</button></span>';
+      h+='<span style="font-size:10px">(1 = when behind, everything slides and the end date moves · 2 = a second sitting on pattern days until caught up)</span>';
+      h+='</div>';
+      h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:6px">';
+      h+='<button onclick="ceRelayRemaining()" style="border:1px solid var(--border);background:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">↻ Re-lay remaining</button>';
+      h+='<span style="font-size:10px">Spread every unfinished lesson evenly onto the pattern from today (owed count resets — the new end date is the honest one).'+(s.planAnchor?(' Since '+esc(s.planAnchor)+'.'):'')+'</span>';
+      h+='</div>';
+    }
   }
 
   // Mom Check (per subject) — requires the kid's master switch (in the kid header) to take effect
@@ -15989,6 +16001,24 @@ function ceConvUndoBanner(kid,scope){
 // overwrites these in-app edits. No re-render (keeps focus/scroll while editing rows).
 // Rename one lesson of a stamped subject by LIST index (id kept), and rewrite any grid
 // cell that carries the old text so list and cells stay one truth.
+// Cap (her backlog rule) and ↻ Re-lay remaining (anchor reset), both re-lay the subject.
+function ceSetCap(v){
+  if(!currData||!ceEditKid||!ceEditKey||!db) return;
+  const s=ceGetSubject(); if(!s) return; v=Math.max(1,Math.min(4,parseInt(v,10)||1));
+  if(v===(parseInt(s.cap,10)||1)) return;
+  ceSaveField("cap",v);
+  if(typeof _gvRelaySubject==="function"&&s.pacing&&s.pacing.mode){ _gvRelaySubject(ceEditKid,ceEditKey,"Cap "+v+" — "+(s.display||ceEditKey)+" re-laid"); }
+  ceRenderEditSheet();
+}
+function ceRelayRemaining(){
+  if(!momHere()||!currData||!ceEditKid||!ceEditKey||!db) return;
+  const s=ceGetSubject(); if(!s) return;
+  if(!confirm("Re-lay everything unfinished in "+(s.display||ceEditKey)+" evenly onto its pattern from today?\n\nThe owed count resets to zero (the anchor moves to today) and the end date becomes the honest one. Nothing is dropped. You can Undo the lay on the grid.")) return;
+  const prev=s.planAnchor||null; ceSaveField("planAnchor",cbTodayISO());
+  _gvDelUndo={kid:ceEditKid,sk:ceEditKey,paths:{["subjects/"+ceEditKid+"/"+ceEditKey+"/planAnchor"]:prev},label:"re-laid remaining"};
+  if(typeof _gvRelaySubject==="function"&&s.pacing&&s.pacing.mode){ if(_gvRelaySubject(ceEditKid,ceEditKey,"↻ "+(s.display||ceEditKey)+" re-laid from today")) { ceRenderEditSheet(); return; } }
+  _gvFinishDeleteNoBuild(); ceRenderEditSheet(); renderAll();
+}
 function ceEditListLesson(i,val){
   if(!currData||!ceEditKid||!ceEditKey||!db) return;
   const kid=ceEditKid, sk=ceEditKey, s=ceGetSubject(); if(!s||!Array.isArray(s.lessonSeq)) return;
@@ -22324,6 +22354,24 @@ function planMaterialize(kid,sk,form){
   const stats={placed:st.placed||assignments.length,tpwUsed:st.tpwUsed||plan.tpw||0,tpwAuto:f.mode==="targetDate"?st.tpwUsed:0,firstDate:st.firstDate||assignments[0].date,lastDate:st.lastDate||assignments[assignments.length-1].date,weeksUsed:0,newRows:assignments.filter(a=>a.isNew).length+placeholders.length,unplaced:st.unplaced||0,capSkipped:0,owed:st.owed||0,extras:extras.length,cap};
   return {assignments,clears,placeholders,extras,stats,warnings,plan:true};
 }
+// Owed only (for chips): pattern days since the anchor minus lessons finished since —
+// same numbers planMaterialize reports, without laying anything.
+function planOwed(kid,sk){
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||!s.planAnchor) return 0;
+  if(!(typeof planBacked==="function"&&planBacked(kid,sk))) return 0;
+  const today=cbTodayISO(); const anchor=s.planAnchor; if(anchor>=today) return 0;
+  const f=cbDefaultForm(kid,sk); if(!(f.mode==="timesPerWeek"||f.mode==="targetDate")) return 0;
+  const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]; const L=((currData||{}).lessons||{})[kid]||{}; const rows=[];
+  Object.keys(L).forEach(dn=>{ const l=L[dn]; if(!l||!l.date||l.date<anchor||l.date>=today) return;
+    rows.push({date:l.date,dow:DOW[_cbParseDate(l.date).getDay()],off:!!(smapIsKidOff(kid,l.date)||schedOvKidOff(kid,l.date)||((schedOv(l.date,kid)||{}).removed||{})[sk])}); });
+  rows.sort((a,b)=>a.date<b.date?-1:1);
+  const plan={allowedDays:(f.allowedDays||[]).slice(),offDates:{},_blocked:{}};
+  const tpw=f.mode==="timesPerWeek"?(parseInt(f.tpw,10)||0):0;
+  const past=_pjPatternRows(plan,rows,tpw).length;
+  const doneNode=((((currData||{}).done||{})[kid]||{})[sk])||{}; let doneSince=0; Object.values(doneNode).forEach(r=>{ if(r&&r.day&&String(r.day)>=anchor) doneSince++; });
+  const remaining=(s.lessonSeq||[]).length-(lidDoneIdx(kid,sk)||new Set()).size;
+  return Math.max(0,Math.min(remaining,past-doneSince));
+}
 // PLANMAT_END
 
 // ── Impure wrappers: collect rows from live data, apply, undo ────────────────
@@ -25159,7 +25207,14 @@ function renderCurrGrid(el){
     // pacing inside), not a jump to another tab. The Grid is the one-stop hub.
     const tip=gvSelMode?'Tap to select the whole '+((subs[sk]||{}).display||sk)+' column':(grp?('Alternates ('+(grp.group.name||"group")+') — never same day as '+(grp.group.members||[]).filter(m=>m!==sk).map(m=>(subs[m]||{}).display||m).join(", ")+'. Tap to open the subject card.'):'Open the subject card');
     const hact=gvSelMode?'gvSelCol(\''+sk+'\')':'ceOpenEdit(\''+gvKid+'\',\''+sk+'\')';
-    h+='<th onclick="'+hact+'" title="'+esc(tip)+'">'+mark+esc((subs[sk]||{}).display||sk)+'</th>';
+    // Owed chip (her backlog rule): pattern days since the anchor minus lessons finished
+    // since — computed by the same engine that lays the column. Shown only when > 0.
+    let owedChip='';
+    try{ if(typeof planBacked==="function"&&planBacked(gvKid,sk)&&(subs[sk]||{}).pacing&&(subs[sk].pacing.mode==="timesPerWeek"||subs[sk].pacing.mode==="targetDate")){
+      const _ow=planOwed(gvKid,sk); const _cap=Math.max(1,parseInt(subs[sk].cap,10)||1);
+      if(_ow>0) owedChip='<span title="'+_ow+' owed — behind the pattern since '+esc(subs[sk].planAnchor||"")+'. Cap '+_cap+'/day'+(_cap>1?': second sittings absorb it':': everything slides — raise the cap in the card to catch up faster')+'." style="display:inline-block;margin-left:4px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:8px;padding:0 5px;font-size:9px;font-weight:800">owed '+_ow+'</span>';
+    } }catch(e){}
+    h+='<th onclick="'+hact+'" title="'+esc(tip)+'">'+mark+esc((subs[sk]||{}).display||sk)+owedChip+'</th>';
   }
   h+='</tr></thead><tbody>';
 
