@@ -15319,6 +15319,122 @@ function lidDoneRemove(t,taskId){
   db.ref("curriculum/done/"+t.who+"/"+t.subjectKey+"/"+t.lid).remove();
   return true;
 }
+// ── Import completions (Stage 1.4) ───────────────────────────────────────────
+// One-time, Mom's tap. Walks the evidence the app already trusts — this week's checks,
+// the archive by its HISTORY record (_archTrueRec, same truth the cursor counts), the
+// hand-marked manualDone, and a pace `offset` (started mid-book) — and turns each into
+// a done/<lid> record by matching lesson TEXT to the master list in order (the same
+// tally rule the generator's content-serving uses). Anything it can't place is listed,
+// never guessed. Stamps subjects/<kid>/<sk>/doneImportedAt so readers can trust `done`
+// for that subject from then on (Stage 1.5); until stamped, readers keep title-matching.
+// Pure planner + one writer, both undoable.
+// "week12" + "tuesday" → ISO date of that weekday (via the plan calendar); "" if unknown.
+function _lidWeekdayISO(weekLabel,day){
+  try{
+    const wn=parseInt(String(weekLabel||"").replace(/\D/g,""),10); if(!wn) return "";
+    const r=(typeof gwWeekDateRange==="function")?gwWeekDateRange(wn):null; if(!r||!r.start) return "";
+    const ix=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"].indexOf(String(day||"").toLowerCase()); if(ix<0) return "";
+    const d=new Date(r.start+"T12:00:00"); d.setDate(d.getDate()+ix);
+    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  }catch(e){ return ""; }
+}
+function lidImportPlan(kid,sk){
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]; const ids=lidsFor(kid,sk);
+  if(!s||!ids) return null;
+  const seq=s.lessonSeq||[]; const norm=_lidNorm;
+  const part=ti=>{ const x=String(ti||""); const i=x.indexOf(" — "); return (i>=0?x.slice(i+3):x).trim(); };
+  const kws=(typeof paceKeywords==="function")?paceKeywords(kid,sk,(((paceData||{}).subjects||{})[kid]||{})[sk]):[];
+  const kwl=(typeof kws==="string"?[kws]:(kws||[])).map(k=>String(k).toLowerCase().trim()).filter(Boolean);
+  const hit=title=>kwl.length&&kwl.some(k=>String(title||"").toLowerCase().includes(k));
+  const ev=[]; const seenEv=new Set();
+  const push=e=>{ const key=norm(e.text)+"|"+String(e.ts||"")+"|"+String(e.src); if(seenEv.has(key)) return; seenEv.add(key); ev.push(e); };
+  // 1. hand marks
+  Object.keys(s.manualDone||{}).forEach(k=>{ const v=s.manualDone[k]; if(!v) return; const rec=(v&&typeof v==="object")?v:{}; push({text:_mdText(k,v),ts:rec.ts||"",day:rec.day||"",src:"manual"}); });
+  // 2. live week
+  try{
+    (weekData&&weekData.tasks||[]).forEach(t=>{
+      if(!t||t.who!==kid||String(t.id||"").endsWith("_c")) return;
+      // Evidence rule = EXACTLY today's cursor (paceDoneTitles): the title must carry the
+      // subject's keyword. subjectKey alone is NOT enough — a subject renamed to a new
+      // book keeps its key (Lucy HWT: "My Printing Book" p.4→ became "Letters and Numbers
+      // for Me" p.4→), and crediting old-book pages to new-book pages would be wrong.
+      if(!hit(t.title)||!chainDone(t.id,checked,weekData.tasks)) return;
+      const h=(typeof histState!=="undefined"&&histState||{})[t.id]||{};
+      push({text:part(t.title),ts:checked[t.id]||h.ts||"",day:_lidWeekdayISO(WK,h.checkedOnDay||t.day),taskId:t.id,src:"check",week:WK});
+    });
+  }catch(e){}
+  // 3. archive (history record is the truth)
+  try{
+    const currStart=(typeof currFirstWeekNum==="function")?currFirstWeekNum():0;
+    Object.values(archive||{}).forEach(aw=>{
+      const awNum=parseInt(((aw.weekLabel||"").match(/\d+/)||[0])[0])||0; if(awNum>0&&awNum<currStart) return;
+      const awChecked=aw.checked||{}, awTasks=aw.tasks||[], awHist=aw.history||{};
+      awTasks.forEach(t=>{
+        if(!t||!t.id||String(t.id).endsWith("_c")||!chainDone(t.id,awChecked,awTasks)) return;
+        const r=_archTrueRec(t,awChecked,awHist,awTasks); if(r.who!==kid) return;
+        if(!hit(r.title)) return;                              // same keyword rule as the live week
+        const cid=_archCheckedId(t,awChecked,awTasks); const h=cid&&awHist[cid]||{};
+        push({text:part(r.title),ts:(cid&&awChecked[cid])||h.ts||"",day:_lidWeekdayISO(aw.weekLabel,h.checkedOnDay||t.day),taskId:cid||t.id,src:"check",week:aw.weekLabel||""});
+      });
+    });
+  }catch(e){}
+  // 4. tally onto the list, in order
+  const pool={}; ev.forEach((e,i)=>{ const k=norm(e.text); (pool[k]=pool[k]||[]).push(i); });
+  const used=new Set(); const writes={}; let matched=0;
+  const offset=Math.max(0,parseInt((((((paceData||{}).subjects||{})[kid]||{})[sk]||{}).offset),10)||0);
+  const existing=((((currData||{}).done||{})[kid]||{})[sk])||{};
+  seq.forEach((txt,i)=>{
+    const lid=ids[i]; if(!lid) return;
+    if(existing[lid]) return;                                   // already recorded live — never overwrite
+    if(i<offset){ writes[lid]={ts:"",day:"",src:"import",via:"offset"}; return; }
+    const q=pool[norm(txt)]; if(q&&q.length){ const ei=q.shift(); used.add(ei); const e=ev[ei];
+      writes[lid]={ts:e.ts||"",day:e.day||"",taskId:e.taskId||null,src:e.src,via:"import"}; if(e.week) writes[lid].week=e.week; matched++; }
+  });
+  const unmatched=ev.filter((e,i)=>!used.has(i)).map(e=>e.text);
+  const adjust=parseInt((((((paceData||{}).subjects||{})[kid]||{})[sk]||{}).adjust),10)||0;
+  return {kid,sk,disp:s.display||sk,nList:seq.length,nEvidence:ev.length,matched,offset,adjust,writes,unmatched,alreadyDone:Object.keys(existing).length,doneAfter:Object.keys(existing).length+Object.keys(writes).length};
+}
+// Subjects with ids that have not been imported yet.
+function lidImportPending(){
+  const out=[]; const subs=(currData||{}).subjects||{};
+  Object.keys(subs).forEach(kid=>Object.keys(subs[kid]||{}).forEach(sk=>{ const s=subs[kid][sk]; if(s&&lidsFor(kid,sk)&&!s.doneImportedAt) out.push({kid,sk}); }));
+  return out;
+}
+let _lidImportUndo=null;
+function gvImportDone(){
+  if(!(momModeActive||adminPinUnlocked)||!db) return;
+  const plans=lidImportPending().map(x=>lidImportPlan(x.kid,x.sk)).filter(Boolean);
+  if(!plans.length) return;
+  const lines=plans.map(p=>"• "+cap(p.kid)+" · "+p.disp+": "+p.matched+" matched of "+p.nEvidence+(p.offset?(" +"+p.offset+" start-offset"):"")+" → "+p.doneAfter+"/"+p.nList+" done"+(p.unmatched.length?("  ⚠ "+p.unmatched.length+" unmatched"):"")+(p.adjust?("  ⚠ hand-adjust "+p.adjust+" ignored"):""));
+  const unm=plans.flatMap(p=>p.unmatched.slice(0,3).map(t=>p.disp+": "+t)).slice(0,10);
+  const msg="Import completions for "+plans.length+" subject"+(plans.length!==1?"s":"")+"?\n\nEach finished lesson gets a permanent done record by its id, from the check-offs and hand-marks the app already trusts. Nothing visible changes yet.\n\n"+lines.join("\n")+(unm.length?("\n\nCouldn’t place (kept as-is, listed only):\n"+unm.map(x=>"  · "+x).join("\n")):"")+"\n\nYou can Undo.";
+  if(!confirm(msg)) return;
+  const patch={}; const undo={}; let n=0;
+  currData.done=currData.done||{};
+  plans.forEach(p=>{
+    Object.keys(p.writes).forEach(lid=>{ const path="done/"+p.kid+"/"+p.sk+"/"+lid; patch[path]=p.writes[lid]; undo[path]=null; n++;
+      ((currData.done[p.kid]=currData.done[p.kid]||{})[p.sk]=currData.done[p.kid][p.sk]||{})[lid]=p.writes[lid]; });
+    const sp="subjects/"+p.kid+"/"+p.sk+"/doneImportedAt"; patch[sp]=new Date().toISOString(); undo[sp]=null;
+    currData.subjects[p.kid][p.sk].doneImportedAt=patch[sp];
+  });
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch).catch(err=>{ if(typeof gwShowToast==="function") gwShowToast("⚠ "+err.message); });
+  _lidImportUndo={paths:undo,n:n,subjects:plans.length};
+  if(typeof gwShowToast==="function") gwShowToast("✓ Imported "+n+" completions across "+plans.length+" subject"+(plans.length!==1?"s":""));
+  renderAll();
+}
+function gvImportDoneUndo(){
+  if(!_lidImportUndo||!db) return;
+  const patch=Object.assign({},_lidImportUndo.paths);
+  Object.keys(patch).forEach(p=>{ const a=p.split("/");
+    if(a[0]==="done"){ const d=((currData.done||{})[a[1]]||{})[a[2]]; if(d) delete d[a[3]]; }
+    else if(a[0]==="subjects"){ const s=((currData.subjects||{})[a[1]]||{})[a[2]]; if(s) delete s[a[3]]; } });
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch);
+  _lidImportUndo=null;
+  if(typeof gwShowToast==="function") gwShowToast("↩ Import removed again");
+  renderAll();
+}
 // LID_END
 
 function ceSaveLessonSeq(val){
@@ -24240,6 +24356,14 @@ function renderCurrGrid(el){
         h+='<div style="font-size:12px;color:#3730a3;margin-bottom:6px"><b>🆔 '+_un.length+' subject'+(_un.length>1?'s':'')+' ('+_tot+' lessons) don’t have lesson ids yet.</b> Ids let a check-off name the exact lesson instead of matching its title — the fix for lessons being counted done by position. Nothing visible changes.</div>';
         h+='<button onclick="gvAssignLids()" style="border:1px solid #6366f1;background:#fff;color:#3730a3;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Assign lesson ids</button>';
         h+='</div>';
+      } else if(typeof lidImportPending==="function"&&lidImportPending().length){
+        const _pn=lidImportPending().length;
+        h+='<div style="background:#eef2ff;border-left:4px solid #6366f1;border-radius:0 10px 10px 0;padding:9px 12px;margin:0 0 8px">';
+        h+='<div style="font-size:12px;color:#3730a3;margin-bottom:6px"><b>📥 '+_pn+' subject'+(_pn>1?'s':'')+' ha'+(_pn>1?'ve':'s')+' lesson ids but no imported completions yet.</b> One tap turns the check-offs and hand-marks the app already trusts into a permanent done record per lesson. Shows what it will write first; nothing visible changes.</div>';
+        h+='<button onclick="gvImportDone()" style="border:1px solid #6366f1;background:#fff;color:#3730a3;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Import completions</button>';
+        h+='</div>';
+      } else if(typeof _lidImportUndo!=="undefined"&&_lidImportUndo){
+        h+='<div style="background:#eef2ff;border-left:4px solid #6366f1;border-radius:0 10px 10px 0;padding:7px 12px;margin:0 0 8px;font-size:12px;color:#3730a3">✓ Imported '+_lidImportUndo.n+' completions across '+_lidImportUndo.subjects+' subject'+(_lidImportUndo.subjects>1?'s':'')+'. <button onclick="gvImportDoneUndo()" style="border:1px solid #6366f1;background:#fff;color:#3730a3;border-radius:8px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">↩ Undo</button></div>';
       } else if(typeof _lidAssignUndo!=="undefined"&&_lidAssignUndo){
         h+='<div style="background:#eef2ff;border-left:4px solid #6366f1;border-radius:0 10px 10px 0;padding:7px 12px;margin:0 0 8px;font-size:12px;color:#3730a3">✓ Lesson ids assigned for '+_lidAssignUndo.n+' subject'+(_lidAssignUndo.n>1?'s':'')+'. <button onclick="gvAssignLidsUndo()" style="border:1px solid #6366f1;background:#fff;color:#3730a3;border-radius:8px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">↩ Undo</button></div>';
       }

@@ -221,5 +221,37 @@ console.log("lidDoneWrite / lidDoneRemove — done-by-lesson-id (Stage 1.3)");
   ok("null task → false, no throw", e.lidDoneRemove(null, "x") === false && e.lidDoneWrite(null, "ts", "x") === false);
 }
 
+console.log("lidImportPlan / gvImportDone — import completions (Stage 1.4)");
+{
+  const e = mk({ lincoln: { mr: S(["a", "b", "b", "c", "d"], ["L0001", "L0002", "L0003", "L0004", "L0005"], 6), noid: S(["x"]) } });
+  e.currData.subjects.lincoln.mr.display = "MR"; e.currData.subjects.lincoln.mr.manualDone = { d: { lesson: "d", day: "2026-08-10", ts: "t-manual" } };
+  e.paceData = { subjects: { lincoln: { mr: { offset: 0, adjust: 0 } } } };
+  e.paceKeywords = () => ["MR"]; e.chainDone = (id, ck) => !!ck[id]; e._archTrueRec = (t) => ({ who: t.who, title: t.title }); e._archCheckedId = (t, ck) => ck[t.id] ? t.id : null;
+  e._mdText = (k, v) => (v && typeof v === "object" && v.lesson) ? String(v.lesson) : String(k); e.currFirstWeekNum = () => 1; e.gwWeekDateRange = wn => ({ start: "2026-08-10", end: "2026-08-16" }); e.cap = x => x;
+  e.WK = "week17"; e.checked = { c1: "9:00 AM Aug 12", c2: "9:30 AM Aug 12", c9: "x" }; e.histState = { c1: { checkedOnDay: "wednesday" } };
+  e.weekData = { tasks: [{ id: "c1", who: "lincoln", subjectKey: "mr", title: "📄 MR — b", day: "wednesday" }, { id: "c2", who: "lincoln", subjectKey: "mr", title: "📄 MR — b", day: "wednesday" }, { id: "c9", who: "lincoln", subjectKey: "other", title: "📄 Other — b", day: "monday" }, { id: "c3", who: "lincoln", subjectKey: "mr", title: "📄 MR — c", day: "friday" }] };
+  e.archive = { week16: { weekLabel: "week16", checked: { a1: "10:00 AM Aug 3", a2: "x" }, history: { a1: { checkedOnDay: "monday" } }, tasks: [{ id: "a1", who: "lincoln", subjectKey: "mr", title: "📄 MR — a", day: "monday" }, { id: "a2", who: "lincoln", subjectKey: "mr", title: "📄 MR — zz", day: "tuesday" }] } };
+  const p = e.lidImportPlan("lincoln", "mr");
+  ok("evidence: manual d, live b b, archive a zz (keyword rule excludes 'Other — b')", p.nEvidence === 5);
+  ok("tally in list order: a→L0001, b→L0002, b→L0003, d→L0005; c unchecked; zz unmatched", eq(Object.keys(p.writes).sort(), ["L0001", "L0002", "L0003", "L0005"]) && eq(p.unmatched, ["zz"]) && p.matched === 4);
+  ok("record shapes: check via import w/ ISO day + taskId + week; manual keeps its day", p.writes.L0001.src === "check" && p.writes.L0001.via === "import" && p.writes.L0001.day === "2026-08-10" && p.writes.L0001.taskId === "a1" && p.writes.L0001.week === "week16" && p.writes.L0002.day === "2026-08-12" && p.writes.L0005.src === "manual" && p.writes.L0005.day === "2026-08-10");
+  ok("counts: doneAfter 4 of 5", p.doneAfter === 4 && p.nList === 5);
+  // offset → import marks; existing live done never overwritten
+  e.paceData.subjects.lincoln.mr.offset = 1; e.currData.done = { lincoln: { mr: { L0002: { ts: "live", src: "check" } } } };
+  const p2 = e.lidImportPlan("lincoln", "mr");
+  ok("offset 1 → L0001 marked src:import/offset; live L0002 untouched (not in writes)", p2.writes.L0001.src === "import" && p2.writes.L0001.via === "offset" && !("L0002" in p2.writes) && p2.alreadyDone === 1);
+  ok("subject without ids → null", e.lidImportPlan("lincoln", "noid") === null);
+  // the writer + stamp + undo
+  e.paceData.subjects.lincoln.mr.offset = 0; e.currData.done = {};
+  ok("pending lists id'd, unstamped subjects", eq(e.lidImportPending(), [{ kid: "lincoln", sk: "mr" }]));
+  e.gvImportDone(); const w = e.written;
+  ok("one curriculum.update: done/<kid>/<sk>/<lid> ×4 + doneImportedAt + lastEdit", w && Object.keys(w).filter(k => k.startsWith("done/lincoln/mr/")).length === 4 && !!w["subjects/lincoln/mr/doneImportedAt"] && !!w["lastEdit"]);
+  ok("stamped → nothing pending; local mirror populated", e.lidImportPending().length === 0 && Object.keys(e.currData.done.lincoln.mr).length === 4);
+  e.written = null; e.gvImportDoneUndo();
+  ok("undo nulls the same paths + stamp; pending again; mirror emptied", e.written && e.written["done/lincoln/mr/L0001"] === null && e.written["subjects/lincoln/mr/doneImportedAt"] === null && e.lidImportPending().length === 1 && Object.keys(e.currData.done.lincoln.mr).length === 0);
+  const e2 = mk({ lincoln: { mr: S(["a"], ["L0001"], 2) } }); e2.paceKeywords = () => ["MR"]; e2.paceData = { subjects: {} }; e2.chainDone = () => false; e2.weekData = { tasks: [] }; e2.archive = {}; e2.checked = {}; e2.cap = x => x; e2.confirmAnswer = false; e2.gvImportDone();
+  ok("cancel writes nothing", e2.written === null);
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
