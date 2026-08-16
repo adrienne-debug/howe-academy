@@ -14737,7 +14737,8 @@ function ceRenderEditSheet(){
   const _offset=(_ps&&_ps.offset)||0;
   const _done=_offset+_auto+((_ps&&_ps.paceAdjust)||0);
   const _total=((_ps&&_ps.total)||s.total||seq.length||0);
-  const _nextLabel=(seq[cursorPos]&&seq[cursorPos].lesson)||'—';
+  let _nextLabel=(seq[cursorPos]&&seq[cursorPos].lesson)||'—';
+  try{ if(typeof lidStamped==="function"&&lidStamped(ceEditKid,ceEditKey)){ const _di=lidDoneIdx(ceEditKid,ceEditKey); const _fi=(s.lessonSeq||[]).findIndex((t,i)=>!_di.has(i)); if(_fi>=0) _nextLabel=s.lessonSeq[_fi]; } }catch(e){}   // by id, not position
   h+='<div class="ce-sheet-lbl">Completed (progress)</div>';
   h+='<div class="pace-auto-info">';
   h+='<span><input class="pace-num-input" type="number" min="0" value="'+_done+'" onchange="ceSetCount(\'paceAdjust\',parseInt(this.value)||0)"/> of <input class="pace-num-input" type="number" min="1" value="'+_total+'" onchange="ceSetTotal(parseInt(this.value)||1)"/></span>';
@@ -14803,8 +14804,30 @@ function ceRenderEditSheet(){
     h+='<input class="ce-sheet-input" type="number" min="1" style="width:90px" value="'+(_ps.startWeek||1)+'" onchange="updatePaceField(ceEditKid,ceEditKey,\'startWeek\',parseInt(this.value)||1)">';
   }
 
-  h+='<div class="ce-sheet-lbl">Lesson list ('+seq.length+' entries · cursor at '+cursorPos+')</div>';
-  if(hasExcelLessons){
+  // Stamped subject (Stage 1.5+): the LIST is the truth and done-ness is by lesson id —
+  // never by position. Before this, a reorder in "Edit as a list" painted the wrong lines
+  // ✓ (2026-08-16, Wordsmith: pg47-48 moved up read as done, pg52 read as next).
+  const _stamped=(typeof lidStamped==="function")&&lidStamped(ceEditKid,ceEditKey);
+  const _dIdx=_stamped?lidDoneIdx(ceEditKid,ceEditKey):null;
+  const _listSeq=_stamped?(s.lessonSeq||[]).map((t,i)=>({lesson:t,idx:i})):null;
+  const _firstUndone=_listSeq?_listSeq.findIndex(x=>!_dIdx.has(x.idx)):-1;
+  if(_stamped) h+='<div class="ce-sheet-lbl">Lesson list ('+_listSeq.length+' lessons · '+_dIdx.size+' done)</div>';
+  else h+='<div class="ce-sheet-lbl">Lesson list ('+seq.length+' entries · cursor at '+cursorPos+')</div>';
+  if(_stamped||hasExcelLessons){
+   if(_stamped){
+    h+='<div style="max-height:170px;overflow-y:auto;border:1.5px solid var(--border);border-radius:10px;padding:6px 8px;margin-bottom:4px">';
+    _listSeq.forEach((l,i)=>{
+      const done=_dIdx.has(i);
+      const current=i===_firstUndone;
+      const mark=current?"&#9654;":done?"&#10003;":"";
+      h+='<div style="display:flex;align-items:center;gap:6px;padding:1px 0">'+
+        '<span style="width:12px;flex:none;text-align:center;font-size:11px;color:'+(current?"var(--header)":"var(--muted)")+'">'+mark+'</span>'+
+        '<input type="text" value="'+esc(l.lesson)+'" onchange="ceEditListLesson('+i+',this.value)" style="flex:1;min-width:0;padding:3px 7px;font-size:11px;border:1px solid var(--border);border-radius:6px;font-family:\'DM Sans\',sans-serif;background:#fff;color:var(--text)'+(done?";opacity:0.55":"")+(current?";font-weight:700;border-color:var(--header)":"")+'">'+
+        '</div>';
+    });
+    h+='</div>';
+    h+='<div style="font-size:10px;color:var(--muted)">✓ = finished (by lesson id — order in the list doesn’t change that). Rename any line here; it applies to the grid cell that carries it too.</div>';
+   } else {
     h+='<div style="max-height:170px;overflow-y:auto;border:1.5px solid var(--border);border-radius:10px;padding:6px 8px;margin-bottom:4px">';
     seq.forEach((l,i)=>{
       const done=i<cursorPos;
@@ -14817,6 +14840,7 @@ function ceRenderEditSheet(){
     });
     h+='</div>';
     h+='<div style="font-size:10px;color:var(--muted)">Rename a lesson here — it applies everywhere and in future generation. &#9888; Re-uploading the master spreadsheet overwrites these.</div>';
+   }
     // "Edit as a list" — the self-serve path when the book has MORE (or fewer) lessons
     // than the plan knew: convert the grid subject to an editable lesson list, then the
     // Builder re-lays the year from the cursor. One-way upgrade to in-app editing.
@@ -14828,10 +14852,18 @@ function ceRenderEditSheet(){
       h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">For when the book has lessons the plan doesn\'t (or vice versa). Edit the list; saving re-lays the grid from the next unfinished lesson right away.</div>';
       h+=_ceMarkDoneUI(ceEditKid,ceEditKey,s,seq,cursorPos,col);
     }else{
-      ceConvCursor=Math.min(cursorPos,seq.length);   // remember what we sliced at
-      const _remaining=seq.slice(ceConvCursor).map(l=>l.lesson);
-      h+='<div style="border:1.5px solid var(--border);border-radius:10px;padding:8px;margin-top:8px">';
-      if(cursorPos>0) h+='<div style="font-size:10px;color:var(--muted);margin-bottom:4px">✓ '+cursorPos+' done lesson'+(cursorPos>1?'s':'')+' stay locked (through <b>'+esc((seq[cursorPos-1]||{}).lesson||'')+'</b>) — edit everything from the cursor on:</div>';
+      let _remaining;
+      if(_stamped){
+        // The WHOLE list, in its own order — done-ness is by id, so nothing is "locked".
+        ceConvCursor=0; _remaining=(s.lessonSeq||[]).slice();
+        h+='<div style="border:1.5px solid var(--border);border-radius:10px;padding:8px;margin-top:8px">';
+        h+='<div style="font-size:10px;color:var(--muted);margin-bottom:4px">The whole list — '+_dIdx.size+' finished lesson'+(_dIdx.size!==1?'s':'')+' keep their ✓ by id wherever they sit. Fix numbers, order, add or remove lines freely.</div>';
+      } else {
+        ceConvCursor=Math.min(cursorPos,seq.length);   // remember what we sliced at
+        _remaining=seq.slice(ceConvCursor).map(l=>l.lesson);
+        h+='<div style="border:1.5px solid var(--border);border-radius:10px;padding:8px;margin-top:8px">';
+        if(cursorPos>0) h+='<div style="font-size:10px;color:var(--muted);margin-bottom:4px">✓ '+cursorPos+' done lesson'+(cursorPos>1?'s':'')+' stay locked (through <b>'+esc((seq[cursorPos-1]||{}).lesson||'')+'</b>) — edit everything from the cursor on:</div>';
+      }
       h+='<textarea id="ce-conv-lines" class="ce-sheet-input" style="width:100%;box-sizing:border-box;min-height:130px;resize:vertical;font-size:11px;line-height:1.5">'+esc(_remaining.join("\n"))+'</textarea>';
       h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">One lesson per line — add, remove, rename, reorder freely. Saving re-lays the grid right away (your done history is untouched). ↩ Undo on the grid reverts list and re-lay together.</div>';
       h+='<div style="display:flex;gap:8px;margin-top:7px">';
@@ -15609,13 +15641,16 @@ function ceConvApply(){
   const lines=ta.value.split("\n").map(l=>l.trim()).filter(Boolean);
   if(!lines.length){ alert("Add at least one remaining lesson."); return; }
   const seq=buildSubjectLessons(kid,sk);
-  // Same cursor the textarea was built from — recomputing here is what dropped
-  // lessons that fell between the two slices. Fall back only if it is missing.
-  let cursor=ceConvCursor;
+  const _stampedSave=(typeof lidStamped==="function")&&lidStamped(kid,sk);
+  // Stamped: the textarea held the WHOLE list, so the lines ARE the list (done-ness by id
+  // survives any reorder). Legacy: done labels + typed remainder, sliced at the same
+  // cursor the textarea was built from — recomputing here is what once dropped a lesson.
+  let cursor=_stampedSave?0:ceConvCursor;
   if(cursor==null){ cursor=0; try{cursor=computeSubjectCursor(kid,sk);}catch(e){} }
   cursor=Math.min(Math.max(cursor,0),seq.length);
-  const doneLabels=seq.slice(0,cursor).map(l=>l.lesson);
+  const doneLabels=_stampedSave?[]:seq.slice(0,cursor).map(l=>l.lesson);
   const fullSeq=doneLabels.concat(lines);
+  if(_stampedSave){ const _dn=(lidDoneIdx(kid,sk)||new Set()).size; cursor=_dn; }   // for the confirm text only
   if(!confirm("Save "+(s.display||sk)+"'s lesson list ("+fullSeq.length+" lessons, "+cursor+" done)?\n\nThe grid re-lays from the next unfinished lesson right away — nothing is emptied, done history is untouched. You can Undo.")) return;
   // ONE DOOR (2026-08-16, her rule "simple and truth"): saving the list no longer
   // clears the planned cells and parks the subject until a Build. It writes the list
@@ -15746,6 +15781,24 @@ function ceConvUndoBanner(kid,scope){
 // (pace, next-lesson) and into future generation (the curriculum-changed banner nudges a
 // regenerate to apply it to the current week). NB: re-uploading the master spreadsheet
 // overwrites these in-app edits. No re-render (keeps focus/scroll while editing rows).
+// Rename one lesson of a stamped subject by LIST index (id kept), and rewrite any grid
+// cell that carries the old text so list and cells stay one truth.
+function ceEditListLesson(i,val){
+  if(!currData||!ceEditKid||!ceEditKey||!db) return;
+  const kid=ceEditKid, sk=ceEditKey, s=ceGetSubject(); if(!s||!Array.isArray(s.lessonSeq)) return;
+  const nv=String(val||"").trim(); const old=String(s.lessonSeq[i]||"");
+  if(!nv||nv===old) { ceRenderEditSheet(); return; }
+  const seq=s.lessonSeq.slice(); seq[i]=nv;
+  const patch={};
+  setLessonSeq(kid,sk,seq,{patch,hint:{index:i,op:"rename"}});
+  const rows=(currData.lessons||{})[kid]||{}; let n=0;
+  Object.keys(rows).forEach(dn=>{ const r=rows[dn]; if(r&&String(r[sk]||"").trim()===old.trim()){ r[sk]=nv; patch["lessons/"+kid+"/"+dn+"/"+sk]=nv; n++; } });
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch);
+  try{ buildCurrPaceCum(); }catch(e){}
+  if(typeof gwShowToast==="function") gwShowToast("Renamed → "+nv+(n?(" ("+n+" cell"+(n!==1?"s":"")+" updated)"):""));
+  ceRenderEditSheet();
+}
 function ceEditLesson(dayNum,val){
   if(!currData||!ceEditKid||!ceEditKey||!db) return;
   const kid=ceEditKid, key=ceEditKey, v=(val||"").trim();
