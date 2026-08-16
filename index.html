@@ -22230,7 +22230,8 @@ function projectPlans(input){
     const pattern=_pjPatternRows(plan,future,tpw);
     for(const r of pattern){
       if(!lessons.length) break;
-      const used=(usedMin[kid]=usedMin[kid]||{})[r.date]||0;
+      const um=(usedMin[kid]=usedMin[kid]||{}); if(um[r.date]===undefined&&r.usedMin) um[r.date]=r.usedMin;   // minutes other subjects already hold that day
+      const used=um[r.date]||0;
       if(capMin&&used+min>capMin) continue;                 // day is full — this subject skips it (no slot)
       const extras=Math.min(owedLeft,cap-1); owedLeft-=extras;
       const n=1+extras;
@@ -22247,6 +22248,83 @@ function projectPlans(input){
   return {byDate,plans:stats,warnings};
 }
 // PROJ_END
+
+// PLANMAT_START ── planMaterialize: projectPlans as the layout engine for a plan-backed subject
+// Returns the same shape cbMaterialize returns ({assignments,clears,placeholders,stats,
+// warnings}) plus `extras` — second sittings on a day (her cap rule) — so cbApply and every
+// caller stay unchanged. Sequenced modes only (timesPerWeek / targetDate); pages, minutes and
+// window still go through cbMaterialize. Reads: cbFutureRows / cbExtendInfo / cbBlockedDates /
+// cbDayCap (existing calendar+rules readers), the list minus done-by-id, cap, anchor.
+// With cap 1 and nothing owed it must lay EXACTLY what cbMaterialize lays (verified against
+// all 24 live subjects before it shipped) — caps and owed are the only new behaviour.
+function planMaterialize(kid,sk,form){
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s) return null;
+  const f=form||cbDefaultForm(kid,sk);
+  if(!(f.mode==="timesPerWeek"||f.mode==="targetDate")) return null;
+  if(!(typeof planBacked==="function"&&planBacked(kid,sk))) return null;
+  const rows=cbFutureRows(kid,sk); const ex=cbExtendInfo(kid);
+  const blockedArr=cbBlockedDates(kid,sk); const blocked={}; blockedArr.forEach(d=>{ blocked[d]=1; });
+  const capMin=cbDayCap(kid); const today=cbTodayISO(); const min=s.minutes||20;
+  // Content: what cbRemainingContent says is left (list minus done, today-cell rule), mapped
+  // to ids by text tally in list order so extras and cards can carry a lid.
+  const content=cbRemainingContent(kid,sk)||[];
+  if(!content.length) return {error:"Nothing left to lay — every lesson is finished.",warnings:[]};
+  const ids=lidsFor(kid,sk)||[]; const seq=s.lessonSeq||[]; const di=lidDoneIdx(kid,sk)||new Set();
+  const pool={}; seq.forEach((t,i)=>{ if(di.has(i)) return; const k=_lidNorm(t); (pool[k]=pool[k]||[]).push(ids[i]); });
+  const lessons=content.map(t=>{ const q=pool[_lidNorm(t)]; return {lid:(q&&q.length)?q.shift():null,text:String(t)}; });
+  // Calendar: existing future rows + a dense extension past the grid end (weekdays; off days
+  // via the calendar; existing dates never minted twice) — dayNums are minted later, in date
+  // order, only for rows the lay actually touches (same as cbMaterialize's extension).
+  const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const cal=rows.map(r=>({date:r.date,dow:r.dow,off:!!r.off,usedMin:r.usedMin||0,dayNum:r.dayNum,week:r.week,hadMine:!!r.hadMine,exists:true}));
+  const existing={}; rows.forEach(r=>{ existing[r.date]=1; });
+  const extRows=[];
+  if(ex&&ex.lastDate){
+    let d=_cbParseDate(ex.lastDate); let guard=0;
+    while(guard++<800){
+      d.setDate(d.getDate()+1); const dow=d.getDay(); if(dow===0||dow===6) continue;
+      const ds=_cbISO(d); if(existing[ds]) continue;
+      extRows.push({date:ds,dow:DOW[dow],off:!!ex.isOff(ds),usedMin:0,exists:false});
+    }
+  }
+  const allRows=cal.concat(extRows).filter(r=>r.date>=today);
+  // Owed: pattern days since the anchor, minus done since the anchor (records carry ISO days).
+  const anchor=s.planAnchor||null; const doneNode=((((currData||{}).done||{})[kid]||{})[sk])||{};
+  let doneSince=0; if(anchor) Object.values(doneNode).forEach(r=>{ if(r&&r.day&&String(r.day)>=anchor) doneSince++; });
+  const pastRows=[]; if(anchor&&anchor<today){ const L=((currData||{}).lessons||{})[kid]||{};
+    Object.keys(L).forEach(dn=>{ const l=L[dn]; if(!l||!l.date||l.date<anchor||l.date>=today) return;
+      pastRows.push({date:l.date,dow:DOW[_cbParseDate(l.date).getDay()],off:!!(smapIsKidOff(kid,l.date)||schedOvKidOff(kid,l.date)||((schedOv(l.date,kid)||{}).removed||{})[sk])}); }); }
+  const cap=Math.max(1,parseInt(s.cap,10)||1);
+  const plan={pid:planIdFor(kid,sk),kid,sk,priority:s.priority||0,minutes:min,lessons,allowedDays:(f.allowedDays||[]).slice(),cap,anchor,doneSince,offDates:{}};
+  if(f.mode==="timesPerWeek") plan.tpw=parseInt(f.tpw,10)||0; else plan.targetDate=f.targetDate||"";
+  const out=projectPlans({plans:[plan],calendar:{[kid]:pastRows.concat(allRows)},dayCapMin:{[kid]:capMin||0},blocked:{[kid]:{[sk]:blocked}},todayISO:today});
+  const st=out.plans[plan.pid]||{}; const warnings=(out.warnings||[]).slice();
+  // Convert byDate → cbMaterialize's shape. First lesson on a day = the cell; the rest = extras.
+  const byDate=out.byDate||{}; const dates=Object.keys(byDate).filter(d=>byDate[d][kid]&&byDate[d][kid].length).sort();
+  const rowByDate={}; allRows.forEach(r=>{ rowByDate[r.date]=r; });
+  const assignments=[], extras=[], placeholders=[]; const assigned={};
+  const lastAssigned=dates.length?dates[dates.length-1]:"";
+  // mint dayNums for extension rows in date order up to the last assigned date
+  let dn=ex?ex.lastDayNum:0, wkNum=ex?ex.lastWeekNum:0; const lastMon=ex&&ex.lastDate?_cbMonday(_cbParseDate(ex.lastDate)):null; let curMon=null, curLabel=null;
+  extRows.forEach(r=>{
+    if(!lastAssigned||r.date>lastAssigned) return;
+    const mon=_cbMonday(_cbParseDate(r.date)); if(mon!==curMon){ curMon=mon; curLabel=(mon===lastMon)?ex.lastWeekLabel:("Wk "+(++wkNum)); }
+    if(r.off) return;
+    r.dayNum=++dn; r.week=curLabel; r.minted=true;
+  });
+  dates.forEach(d=>{
+    const items=byDate[d][kid]; const r=rowByDate[d]; if(!r) return;
+    assignments.push({dayNum:r.dayNum,date:d,week:r.week||"",text:items[0].text,lid:items[0].lid,isNew:!r.exists,backlog:!!items[0].backlog});
+    assigned[d]=1;
+    items.slice(1).forEach(it=>extras.push({date:d,text:it.text,lid:it.lid,backlog:!!it.backlog}));
+  });
+  extRows.forEach(r=>{ if(r.minted&&!assigned[r.date]) placeholders.push({dayNum:r.dayNum,date:r.date,week:r.week}); });
+  const clears=rows.filter(r=>r.hadMine&&!assigned[r.date]).map(r=>r.dayNum);
+  if(!assignments.length) return {error:"Nothing could be placed — check days, calendar and cap.",warnings};
+  const stats={placed:st.placed||assignments.length,tpwUsed:st.tpwUsed||plan.tpw||0,tpwAuto:f.mode==="targetDate"?st.tpwUsed:0,firstDate:st.firstDate||assignments[0].date,lastDate:st.lastDate||assignments[assignments.length-1].date,weeksUsed:0,newRows:assignments.filter(a=>a.isNew).length+placeholders.length,unplaced:st.unplaced||0,capSkipped:0,owed:st.owed||0,extras:extras.length,cap};
+  return {assignments,clears,placeholders,extras,stats,warnings,plan:true};
+}
+// PLANMAT_END
 
 // ── Impure wrappers: collect rows from live data, apply, undo ────────────────
 
@@ -22734,8 +22812,14 @@ function cbBuildCfg(){
   return cfg;
 }
 
+// The layout engine for the current cbKid/cbSubjKey: plan-backed sequenced subjects go
+// through planMaterialize (projectPlans — caps, owed); everything else through cbMaterialize.
+function _cbEngine(){
+  try{ if(typeof planMaterialize==="function"){ const r=planMaterialize(cbKid,cbSubjKey,cbForm); if(r) return r; } }catch(e){ dbg&&dbg("planMaterialize fell back: "+e.message); }
+  return cbMaterialize(cbBuildCfg());
+}
 function cbRunPreview(){
-  cbPreviewRes=cbMaterialize(cbBuildCfg());
+  cbPreviewRes=_cbEngine();
   renderAll();
 }
 
@@ -22912,6 +22996,22 @@ function cbApply(){
     (newDayNums[a.week]=newDayNums[a.week]||[]).push(a.dayNum);
     dateToDn[a.date]=a.dayNum;
   });
+  // Extras (her cap rule): a second sitting on a day is a make-up slot on that date —
+  // added[sk]=text, the same string make-up the Lesson Map already understands. Machine-
+  // written ones are remembered in subjects/…/pjExtras so the next re-lay clears exactly
+  // those and never a hand-made make-up. Inert until a subject's cap is above 1.
+  {
+    const _sx=((currData.subjects||{})[kid]||{})[sk]||{};
+    const _prevX=_sx.pjExtras||{}; const _newX={}; (res.extras||[]).forEach(x=>{ if(x&&x.date&&x.text) _newX[x.date]=x.text; });
+    const _touch=new Set(Object.keys(_prevX).concat(Object.keys(_newX)));
+    if(_touch.size){
+      const _ovs=[]; const cpv=o=>o?JSON.parse(JSON.stringify(o)):null;
+      _touch.forEach(d=>{ _ovs.push({date:d,prev:cpv(((scheduleOverrides||{})[d]||{})[kid])});
+        setSchedOverride(d,kid,o=>{ if(_prevX[d]&&o.added&&o.added[sk]===_prevX[d]&&!_newX[d]) delete o.added[sk]; if(_newX[d]){ if(!o.added)o.added={}; o.added[sk]=_newX[d]; } }); });
+      snap("subjects/"+kid+"/"+sk+"/pjExtras",_sx.pjExtras); up["subjects/"+kid+"/"+sk+"/pjExtras"]=Object.keys(_newX).length?_newX:null; _sx.pjExtras=Object.keys(_newX).length?_newX:undefined;
+      if(typeof _gvDelUndo==="undefined"||!_gvDelUndo) _gvDelUndo={kid,sk,paths:{},ovs:_ovs,label:"extras"}; else { _gvDelUndo.ovs=(_gvDelUndo.ovs||[]).concat(_ovs); }
+    }
+  }
   for(const wk of Object.keys(wdTouched)){
     const arr=((wd[kid]||{})[wk]||[]).slice();
     (newDayNums[wk]||[]).forEach(dnn=>{ if(!arr.includes(dnn)) arr.push(dnn); });
@@ -23136,7 +23236,7 @@ function cbGateConfirm(){
   }
   if(g.mode==="one"){
     cbSubjKey=g.items[0].sk;
-    cbPreviewRes=cbMaterialize(cbBuildCfg()); // re-derive content with the decisions
+    cbPreviewRes=_cbEngine(); // re-derive content with the decisions
     if(cbPreviewRes&&!cbPreviewRes.error) cbApply();
     else { cbMsg="⚠ "+((cbPreviewRes&&cbPreviewRes.error)||"Build failed"); delete cbDecisions[g.kid+"|"+g.items[0].sk]; renderAll(); }
   } else {
@@ -23212,7 +23312,7 @@ function _cbRebuildAllRun(kid,list){
   const bulkPaths={}; const bulkPace=[]; let built=0; const skipped=[];
   for(const sk of list){
     cbSubjKey=sk; cbForm=cbDefaultForm(kid,sk); cbPreviewRes=null;
-    try{ cbPreviewRes=cbMaterialize(cbBuildCfg()); }
+    try{ cbPreviewRes=_cbEngine(); }
     catch(e){ cbPreviewRes={error:(e&&e.message)||"build error"}; }
     if(!cbPreviewRes||cbPreviewRes.error){ skipped.push(subs[sk].display||sk); continue; }
     try{ cbApply(); }catch(e){ skipped.push((subs[sk].display||sk)+" (write)"); continue; }
@@ -24346,7 +24446,7 @@ function gvMenuOff(kid,dn,sk){
 // one Undo. Returns true when the relay is underway; false = message already shown.
 function _gvRelaySubject(kid,sk,doneMsg){
   cbKid=kid; cbSubjKey=sk; cbForm=cbDefaultForm(kid,sk); cbPreviewRes=null;
-  try{ cbPreviewRes=cbMaterialize(cbBuildCfg()); }
+  try{ cbPreviewRes=_cbEngine(); }
   catch(e){ cbPreviewRes={error:(e&&e.message)||"build error"}; }
   if(cbPreviewRes&&!cbPreviewRes.error){ cbBuildGate(); return true; }
   cbMsg=doneMsg+" — but the re-lay failed: "+((cbPreviewRes&&cbPreviewRes.error)||"build error")+". ↻ Rebuild the subject when ready.";

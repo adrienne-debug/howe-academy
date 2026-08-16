@@ -41,7 +41,7 @@ const FNS = [
   "cbTodayISO", "cbFutureRows", "cbExtendInfo", "cbBacklogInfo", "cbRemainingContent",
   "cbDayCap", "cbDayCapDefault", "cbAltGroups", "cbGroupOf", "cbBlockedDates",
   "cbDefaultForm", "cbParsePattern", "cbBuildCfg", "cbPacingFromForm",
-  "cbApply", "cbPatchLocal", "cbUndo",
+  "cbApply", "cbPatchLocal", "cbUndo", "_cbEngine",
   "_cbGateItem", "cbBuildGate", "cbGateToggle", "cbGateAll", "cbGateCancel", "cbGateConfirm",
   "cbRebuildAll", "_cbRebuildAllRun",
   "buildSubjectLessons", "computeSubjectCursor", "paceKeywords"
