@@ -17,6 +17,10 @@ const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 const la = src.indexOf("// LID_START"), lb = src.indexOf("// LID_END");
 if (la < 0 || lb < 0) { console.error("LID block markers not found"); process.exit(1); }
 const block = src.slice(la, lb);
+const sa = src.indexOf("// LID_SERVE_START"), sb = src.indexOf("// LID_SERVE_END");
+const ta = src.indexOf("// LID_STAMP_START"), tb = src.indexOf("// LID_STAMP_END");
+if (sa < 0 || sb < 0 || ta < 0 || tb < 0) { console.error("LID_SERVE/LID_STAMP markers not found"); process.exit(1); }
+const serveBlock = src.slice(sa, sb) + "\n" + src.slice(ta, tb);
 
 // Writers rewired onto setLessonSeq — extracted verbatim so the test runs the real code.
 function extractFn(name) {
@@ -58,7 +62,7 @@ function mk(subjects) {
   env.db = { ref: () => ({ update: u => { env.written = u; return { catch: () => {} }; } }) };
   env.window = env;
   vm.createContext(env);
-  new vm.Script(block + "\n" + writers).runInContext(env);
+  new vm.Script(block + "\n" + serveBlock + "\n" + writers).runInContext(env);
   return env;
 }
 const S = (seq, ids, next) => { const s = { display: "MR", lessonSeq: seq.slice() }; if (ids) { s.lessonIds = ids.slice(); s.nextLid = next; } return s; };
@@ -174,6 +178,31 @@ console.log("rewired writers");
   g.gvSelUndo = { kid: "lincoln", undo: {}, seqUndo: { mr: ["a", "b"] }, subs: ["mr"] }; g.written = null;
   g.gvSelUndoApply();
   ok("gvSelUndoApply accepts the pre-ids array shape", g.written && eq(g.written["subjects/lincoln/mr/lessonSeq"], ["a", "b"]));
+}
+
+console.log("_lidServedFor + gwStampLids — ids onto served rows and cards (Stage 1.2)");
+{
+  const e = mk({ lincoln: { mr: S(["a", "b", "b", "c"], ["L0001", "L0002", "L0003", "L0004"], 5), noid: S(["x"]) } });
+  e.taskLessonRef = t => { const m = (t && t.title || "").match(/[—–]\s*(.+)$/); return m ? m[1].trim() : ""; };
+  e.toMin = t => { const m = /(\d+):(\d+)\s*(AM|PM)?/i.exec(t || ""); if (!m) return 0; let h = +m[1]; if (/pm/i.test(m[3]) && h < 12) h += 12; if (/am/i.test(m[3]) && h === 12) h = 0; return h * 60 + (+m[2]); };
+  // grid rows: b appears twice → two different ids in date order; z is not on the list → null
+  const rows = [{ dayNum: 1, lesson: "b", date: "2026-08-10" }, { dayNum: 2, lesson: "z", date: "2026-08-11" }, { dayNum: 3, lesson: "b", date: "2026-08-12" }, { dayNum: 4, lesson: "C", date: "2026-08-13" }];
+  const lids = e._lidServedFor("lincoln", "mr", rows);
+  ok("grid rows: repeats take successive list ids, unknown text → null, case/dash-insensitive", eq(lids, ["L0002", null, "L0003", "L0004"]));
+  ok("list-fallback rows (dayNum ≥ 90000) map by index", eq(e._lidServedFor("lincoln", "mr", [{ dayNum: 90002, lesson: "b" }, { dayNum: 90000, lesson: "a" }]), ["L0003", "L0001"]));
+  ok("subject without ids → null (nothing stamped)", e._lidServedFor("lincoln", "noid", rows) === null);
+  ok("empty rows → null", e._lidServedFor("lincoln", "mr", []) === null);
+  // stamping cards
+  const served = { lincoln: { mr: [{ text: "b", lid: "L0002" }, { text: "b", lid: "L0003" }, { text: "c", lid: "L0004" }, { text: "q", lid: null }] } };
+  const T = (id, day, time, sk, txt, who) => ({ id, who: who || "lincoln", subjectKey: sk, day, time, title: "📄 MR — " + txt });
+  const tasks = [T("d2_5", "tuesday", "10:00 AM", "mr", "b"), T("d1_1", "monday", "9:00 AM", "mr", "b"), T("d3_9", "wednesday", "9:00 AM", "mr", "c"), T("d3_9_c", "monday", "9:00 AM", "mr", "b"), T("d1_2", "monday", "9:30 AM", "drills", "b"), T("d4_1", "thursday", "9:00 AM", "mr", "b"), T("d4_2", "thursday", "9:30 AM", "mr", "q")];
+  const n = e.gwStampLids(tasks, served);
+  const by = {}; tasks.forEach(t => { by[t.id] = t.lid || null; });
+  ok("stamps in day order: Mon b→L0002, Tue b→L0003, Wed c→L0004", by["d1_1"] === "L0002" && by["d2_5"] === "L0003" && by["d3_9"] === "L0004");
+  ok("third 'b' has no served entry left → unstamped; null-lid served entry stamps nothing", by["d4_1"] === null && by["d4_2"] === null);
+  ok("_c carries and other subjects untouched", by["d3_9_c"] === null && by["d1_2"] === null);
+  ok("returns the stamped count (3)", n === 3);
+  ok("no served → 0, no throw", e.gwStampLids(tasks, null) === 0);
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");

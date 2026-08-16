@@ -36909,6 +36909,26 @@ function gwCatchupExtraDates(kid,sk,s,existingDates,want,dayData){
   return picks.slice(0,want);
 }
 
+// LID_SERVE_START ── which lesson id each served row carries ─────────────────
+// Stage 1.2 of the lesson-identity work. buildSubjectLessons rows come from the GRID
+// (dated cells) while ids live on the master LIST; the two are kept as multisets, not
+// index-aligned, so a row's id is found by TEXT TALLY in list order: the k-th grid row
+// saying "Free choice" gets the k-th list id for "Free choice". A row whose text is not
+// on the list gets null (no guess). Rows from the list-fallback branch (dayNum ≥ 90000)
+// map by index exactly. Returns rows.length lids or null when the subject has no ids.
+function _lidServedFor(kid,sk,rows){
+  const ids=(typeof lidsFor==="function")?lidsFor(kid,sk):null;
+  if(!ids||!rows||!rows.length) return null;
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]||{}; const seq=s.lessonSeq||[];
+  const norm=t=>String(t==null?"":t).replace(/[–—−]/g,"-").replace(/\s+/g," ").trim().toLowerCase();
+  const pool={}; seq.forEach((t,i)=>{ const k=norm(t); (pool[k]=pool[k]||[]).push(ids[i]); });
+  return rows.map(r=>{
+    if(r&&r.dayNum>=90000&&r.dayNum-90000<ids.length) return ids[r.dayNum-90000];
+    const q=pool[norm(r&&r.lesson)]; return (q&&q.length)?q.shift():null;
+  });
+}
+// LID_SERVE_END
+
 function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
   const resolved=resolveWeekSlots(weekNum,ignoreAuto);
   if(!resolved) return null;
@@ -36916,6 +36936,7 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
 
   const cursors={};
   const catchup={};  // {kid:{sk:nExtraSessions}} — how many catch-up slots were added this week
+  const served={};   // {kid:{sk:[{text,lid}]}} in serve order — Stage 1.2 side channel; lid null when unknown
 
   for(const kid of [...ROSTER]){
     cursors[kid]={};
@@ -36962,6 +36983,7 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
       // A HARD session goal caps the effective sequence at the target — the subject stops
       // scheduling once the cursor reaches it (until the goal is moved further / cleared).
       const seqFull=buildSubjectLessons(kid,sk);
+      { const _lids=(typeof _lidServedFor==="function")?_lidServedFor(kid,sk,seqFull):null; if(_lids) seqFull.forEach((r,i)=>{ r.lid=_lids[i]||null; }); }
       const _hardCap=_sessionHardCap(kid,sk);
       const seq=isFinite(_hardCap)?seqFull.slice(0,_hardCap):seqFull;
 
@@ -37053,6 +37075,7 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
       let slotsToFill=remaining<=0?0:Math.min(dates.length,remaining);
 
       const nextLessons=effLessons.slice(0,slotsToFill);
+      (served[kid]=served[kid]||{})[sk]=nextLessons.map(l=>({text:String(l.lesson).trim(),lid:l.lid||null}));
       for(let i=0;i<dates.length;i++){
         const dt=dates[i];
         const dup=i>0&&dates[i]===dates[i-1]; // a day getting a second of this subject → array
@@ -37069,7 +37092,7 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
       }
     }
   }
-  return {dayData,cursors,catchup};
+  return {dayData,cursors,catchup,served};
 }
 
 // Which plan week does a date fall in? (Mon–Sun ranges; null past the grid)
@@ -37178,7 +37201,7 @@ function generateWeek(config){
   if(!weekNum) return {error:"Week number required"};
   const weekLabel="week"+weekNum;
 
-  let dayData, weekCursors=null, weekCatchup=null;
+  let dayData, weekCursors=null, weekCatchup=null, weekServed=null;
   if(config.autoAdvance){
     // Two-tier cursor: detect regeneration vs new week
     const activeWK=HA_LS.getItem("ha_active_wk")||WK;
@@ -37195,6 +37218,7 @@ function generateWeek(config){
     dayData=result.dayData;
     weekCursors=result.cursors;
     weekCatchup=result.catchup;
+    weekServed=result.served||null;
   } else {
     dayData=gwReadWeek(weekNum,true);
   }
@@ -37444,6 +37468,11 @@ function generateWeek(config){
   // curriculum config, so it's a normal spin task (scoredType→null) — checking it off
   // runs the same pace→🎰→slot_points→claim path as every subject. Skipped for a kid on
   // a day they have no other tasks (they're off), so no orphan slots appear.
+  // Stage 1.2 — stamp each card with its lesson id. Cards are matched to the served list
+  // by TEXT, in day order, one served entry per card (gwAutoBalance keeps a subject's
+  // order, so this is exact; a text with no served entry left simply gets no lid).
+  try{ gwStampLids(allTasks,weekServed); }catch(e){ dbg&&dbg("lid stamp skip: "+e); }
+
   try{ gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear); }catch(e){ dbg&&dbg("retr inject skip: "+e); }
 
   const output={
@@ -37464,6 +37493,34 @@ function generateWeek(config){
 // stable across regenerations, exactly like every other task.
 const RETR_SLOT_TITLE={drill:"\u{1F0CF} Daily Drill",sprint:"\u{1F3C3} Sprint",match:"\u{1F3AF} Match & Play",recheck:"\u{1F4C5} Sprint Re-checks"};
 const RETR_SLOT_DETAIL={drill:"Run today's Mastery drill",sprint:"Run today's focus sprint in Mastery",match:"Play a Match round in Mastery",recheck:"Run the sprint re-checks due today"};
+// LID_STAMP_START — Stage 1.2: attach lesson ids to generated cards.
+// served = {kid:{sk:[{text,lid}]}} from gwReadWeekAutoAdvance, in serve order. For each
+// (kid,sk) walk that kid's cards in day order (Mon→Sat, then time) and give each card
+// the first still-unclaimed served entry whose text equals the card's lesson text
+// (taskLessonRef). Pure text-tally: no positional guessing, so an extra or missing card
+// just goes unstamped. Cards without a subjectKey/lesson text, and _c carries, are
+// skipped. Sets t.lid only; nothing else on the card changes.
+function gwStampLids(allTasks,served){
+  if(!served||!allTasks||!allTasks.length) return 0;
+  const norm=t=>String(t==null?"":t).replace(/[–—−]/g,"-").replace(/\s+/g," ").trim().toLowerCase();
+  const DAYS=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
+  const dayIx=d=>{ const i=DAYS.indexOf(String(d||"").toLowerCase()); return i<0?99:i; };
+  const toMinSafe=t=>{ try{ return (typeof toMin==="function")?toMin(t):0; }catch(e){ return 0; } };
+  const queues={}; let n=0;
+  Object.keys(served).forEach(kid=>Object.keys(served[kid]||{}).forEach(sk=>{
+    const q={}; (served[kid][sk]||[]).forEach(e=>{ if(e&&e.lid){ const k=norm(e.text); (q[k]=q[k]||[]).push(e.lid); } });
+    queues[kid+"|"+sk]=q;
+  }));
+  allTasks.slice().sort((a,b)=>(dayIx(a.day)-dayIx(b.day))||(toMinSafe(a.time)-toMinSafe(b.time))).forEach(t=>{
+    if(!t||!t.who||!t.subjectKey||String(t.id||"").endsWith("_c")) return;
+    const q=queues[t.who+"|"+t.subjectKey]; if(!q) return;
+    const ref=(typeof taskLessonRef==="function")?taskLessonRef(t):"";
+    const arr=q[norm(ref)]; if(arr&&arr.length){ t.lid=arr.shift(); n++; }
+  });
+  return n;
+}
+// LID_STAMP_END
+
 function gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear){
   if(typeof retrTracks!=="function") return;
   for(const dk of sortedDates){
