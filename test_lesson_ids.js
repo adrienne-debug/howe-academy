@@ -362,5 +362,17 @@ console.log("↕ Sort in book order (natural sort)");
   ok("chapters + Review: 5B Ch.2 Review stays between Ch.2 and Ch.3", eq(e.lidNaturalSort(["5B Ch.2 L2", "5B Ch.2 L1", "5B Ch.2 Review", "5B Ch.3 L1"]), ["5B Ch.2 L1", "5B Ch.2 L2", "5B Ch.2 Review", "5B Ch.3 L1"]));
 }
 
+console.log("walk-back removes done records (lidDoneRemoveByCard)");
+{
+  const e = mk({ lincoln: { aas: S(["L2-15", "L2-16", "L2-17"], ["L0001", "L0002", "L0003"], 4) } });
+  e.currData.subjects.lincoln.aas.doneImportedAt = "x"; e.currData.done = { lincoln: { aas: { L0001: { src: "check", taskId: "c15" }, L0003: { src: "check", taskId: "c17" } } } };
+  e.taskLessonRef = t => { const m = (t && t.title || "").match(/[—–]\s*(.+)$/); return m ? m[1].trim() : ""; };
+  let patch = {};
+  ok("by taskId → removes L0003", e.lidDoneRemoveByCard("lincoln", "aas", ["c17"], "📄 AAS — L2-17", patch) === "L0003" && patch["done/lincoln/aas/L0003"] === null && !e.currData.done.lincoln.aas.L0003);
+  patch = {};
+  ok("no taskId match → resolves by text to a DONE occurrence (L2-15 → L0001)", e.lidDoneRemoveByCard("lincoln", "aas", ["zz"], "📄 AAS — L2-15", patch) === "L0001" && patch["done/lincoln/aas/L0001"] === null);
+  ok("nothing done for that text → null, no write", e.lidDoneRemoveByCard("lincoln", "aas", ["q"], "📄 AAS — L2-16", {}) === null);
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
