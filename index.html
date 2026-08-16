@@ -15749,6 +15749,33 @@ function lidDoneRemoveByCard(kid,sk,taskIds,title,patch){
   if(!lid) return null;
   patch["done/"+kid+"/"+sk+"/"+lid]=null; delete node[lid]; return lid;
 }
+// ── ONE-TIME RESTORE (2026-08-16 22:03 incident) ─────────────────────────────
+// A cross-card carry-over bug (fixed 9d0fd6c) saved Word Roots' lines onto Ellis's
+// Singapore 3B. This is the last good list, read from the database at 21:57 that
+// day, with its ids — the 26 done records still name those ids, so restoring the
+// list reconnects them exactly. Mom's tap, shown only while the live list differs.
+// Delete this block once used.
+const _LID_RESTORE={"ellis|singapore_e":{"lessonSeq": ["3B Ch.10 L6", "3B Ch.10 L7", "3B Ch.10 L8", "3B Ch.10 L9 ✓", "3B Ch.11 L1", "3B Ch.11 L2", "3B Ch.11 L3", "3B Ch.11 L4", "3B Ch.11 L5", "3B Ch.11 L6", "3B Ch.11 L7", "3B Ch.11 L8", "3B Ch.12 L1", "3B Ch.12 L2", "3B Ch.12 L3", "3B Ch.12 L4", "3B Ch.12 L5", "3B Ch.12 L6", "3B Ch.13 L2", "3B Ch.13 L1", "3B Ch.13 L3", "3B Ch.13 L4", "3B Ch.11 Rev3 ✓", "3B Ch.12 L7", "3B Ch.12 L8 ✓", "3B Ch.13 L5", "3B Ch.13 L6", "3B Ch.13 L7", "3B Ch.13 L8", "3B Ch.13 L9 ✓", "3B Ch.14 L1", "3B Ch.14 L2", "3B Ch.14 L3", "3B Ch.14 L4", "3B Ch.14 L5", "3B Ch.14 L6", "3B Ch.14 L7", "3B Ch.15 L1", "3B Ch.15 L2", "3B Ch.15 L3", "3B Ch.15 L4", "3B Ch.15 L5", "3B Ch.15 L6", "Review 4", "Review 5"], "lessonIds": ["L0001", "L0002", "L0003", "L0004", "L0005", "L0006", "L0007", "L0008", "L0009", "L0010", "L0011", "L0012", "L0013", "L0014", "L0015", "L0016", "L0017", "L0018", "L0019", "L0020", "L0021", "L0022", "L0023", "L0024", "L0025", "L0026", "L0027", "L0028", "L0029", "L0030", "L0031", "L0032", "L0033", "L0034", "L0035", "L0036", "L0037", "L0038", "L0039", "L0040", "L0041", "L0042", "L0043", "L0044", "L0045"], "nextLid": 46, "total": 45}};
+function lidRestoreAvailable(kid,sk){
+  const r=_LID_RESTORE[kid+"|"+sk]; const s=(((currData||{}).subjects||{})[kid]||{})[sk];
+  if(!r||!s) return false;
+  return JSON.stringify(s.lessonSeq||[])!==JSON.stringify(r.lessonSeq);
+}
+function lidRestoreSnapshot(kid,sk){
+  if(!(momModeActive||adminPinUnlocked)||!db) return;
+  const r=_LID_RESTORE[kid+"|"+sk]; const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!r||!s) return;
+  const done=lidDoneSet(kid,sk)||new Set(); const reconnect=r.lessonIds.filter(l=>done.has(l)).length;
+  if(!confirm("Restore "+(s.display||sk)+"'s list from before the 22:03 mix-up?\n\n"+r.lessonSeq.length+" lessons come back with their original ids; "+reconnect+" finished lessons reconnect. The grid re-lays from the next unfinished one. You can Undo.")) return;
+  const prev={}; const base="subjects/"+kid+"/"+sk+"/";
+  prev[base+"lessonSeq"]=(s.lessonSeq||[]).slice(); prev[base+"lessonIds"]=(s.lessonIds||[]).slice(); prev[base+"nextLid"]=s.nextLid||null; prev[base+"total"]=(s.total!=null?s.total:null);
+  const up={}; setLessonSeq(kid,sk,r.lessonSeq,{patch:up,restoreIds:r.lessonIds,restoreNext:r.nextLid});
+  up[base+"total"]=r.total; s.total=r.total;
+  up["lastEdit"]=new Date().toISOString(); currData.lastEdit=up["lastEdit"];
+  db.ref("curriculum").update(up).catch(err=>{ cbMsg="⚠ "+err.message; renderAll(); });
+  _gvDelUndo={kid,sk,paths:prev,label:"restored "+(s.display||sk)+"'s list"};
+  if(typeof _gvRelaySubject==="function"&&s.pacing&&s.pacing.mode){ if(_gvRelaySubject(kid,sk,"↩ Restored "+(s.display||sk)+"'s list")) return; }
+  _gvFinishDeleteNoBuild(); renderAll();
+}
 // LID_END
 
 function ceSaveLessonSeq(val){
@@ -24852,6 +24879,8 @@ function renderCurrGrid(el){
       } else if(typeof _lidImportUndo!=="undefined"&&_lidImportUndo){
         h+='<div style="background:#eef2ff;border-left:4px solid #6366f1;border-radius:0 10px 10px 0;padding:7px 12px;margin:0 0 8px;font-size:12px;color:#3730a3">✓ Imported '+_lidImportUndo.n+' completions across '+_lidImportUndo.subjects+' subject'+(_lidImportUndo.subjects>1?'s':'')+'. <button onclick="gvImportDoneUndo()" style="border:1px solid #6366f1;background:#fff;color:#3730a3;border-radius:8px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">↩ Undo</button></div>';
       }
+      try{ if(typeof lidRestoreAvailable==="function"){ Object.keys(_LID_RESTORE).forEach(key=>{ const [k,sk]=key.split("|"); if(k!==gvKid||!lidRestoreAvailable(k,sk)) return; const _d=((((currData||{}).subjects||{})[k]||{})[sk]||{}).display||sk;
+        h+='<div style="background:#fef2f2;border-left:4px solid #dc2626;border-radius:0 10px 10px 0;padding:9px 12px;margin:0 0 8px"><div style="font-size:12px;color:#991b1b;margin-bottom:6px"><b>⛑ '+esc(_d)+' — the list was overwritten at 22:03 by a bug (fixed).</b> One tap puts the last good list back with its ids; finished lessons reconnect; the grid re-lays.</div><button onclick="lidRestoreSnapshot(\''+k+'\',\''+sk+'\')" style="border:1px solid #dc2626;background:#fff;color:#991b1b;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Restore the list</button></div>'; }); } }catch(e){}
       // The order rule, grid-wide: any subject with lessons finished AFTER an earlier one
       // that is still open. Decisions are hers, in the card (↩ per lesson / make contiguous).
       try{
