@@ -15615,11 +15615,29 @@ function gvMakePlan(kid,sk){
   if(typeof gwShowToast==="function") gwShowToast("🧭 "+(s.display||sk)+" is plan-backed");
   renderAll();
 }
+// All of a kid's pending subjects at once — one confirm listing each next-up, one Undo.
+function gvMakePlanAll(kid){
+  if(!(momModeActive||adminPinUnlocked)||!db) return;
+  const list=planPending().filter(x=>x.kid===kid); if(!list.length) return;
+  const lines=list.map(x=>{ const s=currData.subjects[kid][x.sk]; let head=[]; try{ s.planId="__preview__"; head=(cbRemainingContent(kid,x.sk)||[]).slice(0,2); }catch(e){} finally{ delete s.planId; }
+    const skip=((((currData||{}).skiplog||{})[kid]||{})[x.sk])||[]; const ps=(((paceData||{}).subjects||{})[kid]||{})[x.sk]||{};
+    return "• "+x.disp+": next "+(head.join(" → ")||"—")+(skip.length?("  (skiplog "+skip.length+" now counts)"):"")+(ps.adjust?("  (adjust "+ps.adjust+" ignored)"):""); });
+  if(!confirm("Make all "+list.length+" of "+cap(kid)+"'s subjects plan-backed?\n\nEach list becomes its one truth; each re-lays from “list minus done” now — no dismiss sheet, no hidden lists.\n\n"+lines.join("\n")+"\n\nIf a “next” looks wrong, Cancel and fix that list first. You can Undo all of them.")) return;
+  const patch={}; const undo=[]; const today=cbTodayISO();
+  list.forEach(x=>{ const base="subjects/"+kid+"/"+x.sk+"/"; patch[base+"planId"]=planIdFor(kid,x.sk); patch[base+"planAnchor"]=today; const s=currData.subjects[kid][x.sk]; s.planId=patch[base+"planId"]; s.planAnchor=today; undo.push(x.sk); });
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch).catch(err=>{ if(typeof gwShowToast==="function") gwShowToast("⚠ "+err.message); });
+  _planMakeUndo={kid,sk:undo,disp:list.length+" subjects",all:true};
+  // Re-lay each (plan-backed → no gate). cbApply's Undo covers only the last; the flag Undo covers all.
+  list.forEach(x=>{ const s=currData.subjects[kid][x.sk]; if(s.pacing&&s.pacing.mode&&typeof _gvRelaySubject==="function"){ try{ _gvRelaySubject(kid,x.sk,"🧭 "+x.disp+" plan-backed"); }catch(e){} } });
+  cbMsg="🧭 "+list.length+" subject"+(list.length!==1?"s":"")+" plan-backed and re-laid.";
+  renderAll();
+}
 function gvMakePlanUndo(){
   if(!_planMakeUndo||!db) return;
-  const {kid,sk}=_planMakeUndo; const s=(((currData||{}).subjects||{})[kid]||{})[sk];
-  const patch={}; const base="subjects/"+kid+"/"+sk+"/"; patch[base+"planId"]=null; patch[base+"planAnchor"]=null; patch["lastEdit"]=new Date().toISOString();
-  if(s){ delete s.planId; delete s.planAnchor; } currData.lastEdit=patch["lastEdit"];
+  const {kid}=_planMakeUndo; const sks=Array.isArray(_planMakeUndo.sk)?_planMakeUndo.sk:[_planMakeUndo.sk];
+  const patch={}; sks.forEach(sk=>{ const s=(((currData||{}).subjects||{})[kid]||{})[sk]; const base="subjects/"+kid+"/"+sk+"/"; patch[base+"planId"]=null; patch[base+"planAnchor"]=null; if(s){ delete s.planId; delete s.planAnchor; } });
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
   db.ref("curriculum").update(patch);
   _planMakeUndo=null;
   if(typeof gwShowToast==="function") gwShowToast("↩ Plan flag removed (cells stay as laid — ↩ Undo on the grid reverts the re-lay)");
@@ -24909,6 +24927,7 @@ function renderCurrGrid(el){
         h+='<div style="font-size:12px;color:#155e75;margin-bottom:6px"><b>🧭 One truth — make a subject plan-backed.</b> Its list becomes the only record: the grid re-lays from “list minus done”, with no dismiss sheet and no hidden lists (skiplog, hand-adjust). One subject at a time, each with a confirm and Undo. Start with the one you trust least.</div>';
         if(typeof _planMakeUndo!=="undefined"&&_planMakeUndo) h+='<div style="font-size:11px;color:#155e75;margin-bottom:6px">✓ '+esc(_planMakeUndo.disp)+' is plan-backed. <button onclick="gvMakePlanUndo()" style="border:1px solid #0891b2;background:#fff;color:#155e75;border-radius:8px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">↩ Undo</button></div>';
         h+='<div style="display:flex;flex-wrap:wrap;gap:6px">';
+        if(_pp.length>1) h+='<button onclick="gvMakePlanAll(\''+gvKid+'\')" style="border:none;background:#0891b2;color:#fff;border-radius:8px;padding:3px 12px;font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🧭 Make all '+_pp.length+' plan-backed</button>';
         _pp.forEach(x=>{ h+='<button onclick="gvMakePlan(\''+x.kid+'\',\''+x.sk+'\')" style="border:1px solid #0891b2;background:#fff;color:#155e75;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🧭 '+esc(x.disp)+'</button>'; });
         h+='</div></div>';
       } else if(typeof _planMakeUndo!=="undefined"&&_planMakeUndo){
