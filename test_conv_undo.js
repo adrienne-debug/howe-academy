@@ -17,7 +17,10 @@ const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 const a = src.indexOf("// ── ↩ Undo \"Edit as a list\" ");
 const b = src.indexOf("// Rename one Excel-sourced lesson in place");
 if (a < 0 || b < 0) { console.error("conv-undo block markers not found"); process.exit(1); }
-const block = src.slice(a, b);
+// The undo now restores lesson ids through setLessonSeq (LID block, Stage 1).
+const la = src.indexOf("// LID_START"), lb = src.indexOf("// LID_END");
+if (la < 0 || lb < 0) { console.error("LID block markers not found"); process.exit(1); }
+const block = src.slice(la, lb) + "\n" + src.slice(a, b);
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {

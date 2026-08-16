@@ -15159,10 +15159,139 @@ function ceQuickPause(kid,key){
   renderAll();
 }
 
+// LID_START ── Lesson identity ───────────────────────────────────────────────
+// Every lesson in a subject's master list gets a STABLE id ("L0007") held in a
+// parallel array `lessonIds` (same length as `lessonSeq`). Readers keep reading
+// lessonSeq as string[] — nothing downstream changes shape. Only WRITERS change:
+// every write to lessonSeq goes through setLessonSeq so the two arrays can never
+// fall out of step. Repeated lessons ("Free choice" ×64) are 64 distinct ids.
+//
+// Ids are NEVER minted on read. The `curriculum` node loads once per device and
+// kiosk tablets sit open for days — a device inventing ids in memory would stamp
+// cards with a set no other device has. Ids appear only when (a) Mom taps
+// "Assign lesson ids", (b) a brand-new subject is born (nobody else can hold a
+// competing set), or (c) a subject that already has ids is edited.
+//
+// Alignment when a subject with ids is edited:
+//   hint {index,op:"rename"|"insert"|"delete"} → positional (the caller knows).
+//   same length → match by text in order; the leftover pairs are renames (fixing
+//     "pg 27"→"pg 28" or a dash keeps the lesson's id; a reorder follows the text).
+//   different length → match by text only; mint for the rest. Never guess a rename
+//     across a delete+insert — a wrong guess would make a NEW lesson look done.
+//   A dropped id is never reused.
+const _lidNorm=s=>String(s==null?"":s).replace(/[–—−]/g,"-").replace(/\s+/g," ").trim().toLowerCase();
+function _lidMake(n){ return "L"+String(n).padStart(4,"0"); }
+function _lidNextFrom(ids){
+  let mx=0; (ids||[]).forEach(id=>{ const m=/^L(\d+)$/.exec(String(id||"")); if(m) mx=Math.max(mx,parseInt(m[1],10)); });
+  return mx+1;
+}
+// Pure. Returns {ids,nextLid}. oldIds null → no ids yet: mint only when `mint` is true.
+function _lidAlign(oldSeq,oldIds,newSeq,nextLid,hint,mint){
+  const seqN=(newSeq||[]).map(x=>String(x==null?"":x));
+  let next=Math.max(1,parseInt(nextLid,10)||_lidNextFrom(oldIds));
+  const fresh=()=>_lidMake(next++);
+  if(!Array.isArray(oldIds)||!oldSeq||oldIds.length!==oldSeq.length){
+    if(!mint) return {ids:null,nextLid:next};
+    return {ids:seqN.map(fresh),nextLid:next};
+  }
+  const oldN=oldSeq.map(x=>String(x==null?"":x));
+  if(hint&&typeof hint.index==="number"){
+    const ids=oldIds.slice();
+    if(hint.op==="insert"&&seqN.length===oldN.length+1){ ids.splice(hint.index,0,fresh()); return {ids,nextLid:next}; }
+    if(hint.op==="delete"&&seqN.length===oldN.length-1){ ids.splice(hint.index,1); return {ids,nextLid:next}; }
+    if(hint.op==="rename"&&seqN.length===oldN.length){ return {ids,nextLid:next}; }
+    // hint didn't fit the shape of the change — fall through to matching
+  }
+  // Text-tally: each old occurrence can be claimed once, in order.
+  const pool={}; oldN.forEach((t,i)=>{ const k=_lidNorm(t); (pool[k]=pool[k]||[]).push(i); });
+  const ids=new Array(seqN.length).fill(null); const usedOld=new Array(oldN.length).fill(false);
+  seqN.forEach((t,i)=>{ const k=_lidNorm(t); const q=pool[k]; if(q&&q.length){ const oi=q.shift(); ids[i]=oldIds[oi]; usedOld[oi]=true; } });
+  if(seqN.length===oldN.length){
+    const leftOld=[]; usedOld.forEach((u,i)=>{ if(!u) leftOld.push(i); });
+    let li=0; ids.forEach((id,i)=>{ if(id===null&&li<leftOld.length){ ids[i]=oldIds[leftOld[li++]]; } });
+  }
+  for(let i=0;i<ids.length;i++) if(ids[i]===null) ids[i]=fresh();
+  return {ids,nextLid:next};
+}
+// The subject's ids, or null when it has none / they are out of step (treat as none).
+function lidsFor(kid,sk){
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk];
+  if(!s||!Array.isArray(s.lessonIds)||!Array.isArray(s.lessonSeq)||s.lessonIds.length!==s.lessonSeq.length) return null;
+  return s.lessonIds;
+}
+// THE one writer. Updates the in-memory subject and folds
+// subjects/<kid>/<sk>/{lessonSeq,lessonIds,total,nextLid} into opts.patch (caller
+// sends the multi-path update). newSeq null → clears the list AND the ids.
+// opts: {patch, hint, mint, restoreIds, restoreNext}. Returns {lessonSeq,lessonIds,total,nextLid}.
+function setLessonSeq(kid,sk,newSeq,opts){
+  opts=opts||{}; const patch=opts.patch||{};
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s) return null;
+  const base="subjects/"+kid+"/"+sk+"/";
+  if(newSeq==null){
+    delete s.lessonSeq; delete s.lessonIds; s.total=0;
+    patch[base+"lessonSeq"]=null; patch[base+"lessonIds"]=null; patch[base+"total"]=0;
+    return {lessonSeq:null,lessonIds:null,total:0,nextLid:s.nextLid||1};
+  }
+  const seq=(newSeq||[]).map(x=>String(x==null?"":x));
+  let ids=null, next=s.nextLid;
+  if(Array.isArray(opts.restoreIds)&&opts.restoreIds.length===seq.length){ ids=opts.restoreIds.slice(); next=opts.restoreNext||Math.max(parseInt(next,10)||1,_lidNextFrom(ids)); }
+  else{ const r=_lidAlign(s.lessonSeq,s.lessonIds,seq,s.nextLid,opts.hint,!!opts.mint); ids=r.ids; next=r.nextLid; }
+  s.lessonSeq=seq; s.total=seq.length;
+  patch[base+"lessonSeq"]=seq; patch[base+"total"]=seq.length;
+  if(ids){ s.lessonIds=ids; s.nextLid=next; patch[base+"lessonIds"]=ids; patch[base+"nextLid"]=next; }
+  else if(s.lessonIds){ delete s.lessonIds; patch[base+"lessonIds"]=null; }   // was out of step → drop, don't guess
+  return {lessonSeq:seq,lessonIds:ids,total:seq.length,nextLid:next};
+}
+// Which subjects (all kids) have a master list but no ids yet.
+function lidUnassigned(){
+  const out=[]; const subs=(currData||{}).subjects||{};
+  Object.keys(subs).forEach(kid=>Object.keys(subs[kid]||{}).forEach(sk=>{
+    const s=subs[kid][sk]; if(!s||!Array.isArray(s.lessonSeq)||!s.lessonSeq.length) return;
+    if(!lidsFor(kid,sk)) out.push({kid,sk,disp:s.display||sk,n:s.lessonSeq.length});
+  }));
+  return out;
+}
+// Mom's one-time tap. Mints ids for every listed subject in ONE multi-path update.
+// Adds nothing else and changes no lesson text — pure bookkeeping, and undoable.
+let _lidAssignUndo=null;
+function gvAssignLids(){
+  if(!(momModeActive||adminPinUnlocked)||!db) return;
+  const list=lidUnassigned(); if(!list.length) return;
+  const total=list.reduce((a,x)=>a+x.n,0);
+  if(!confirm("Give every lesson a permanent id? "+list.length+" subject"+(list.length!==1?"s":"")+", "+total+" lessons.\n\nNothing you can see changes — no text, no dates, no order. From now on check-offs can name the exact lesson instead of matching its title, which is what stops lessons being counted done by position. You can Undo.")) return;
+  const patch={}; const undo={};
+  list.forEach(x=>{
+    const base="subjects/"+x.kid+"/"+x.sk+"/";
+    undo[base+"lessonIds"]=null; undo[base+"nextLid"]=null;
+    const s=currData.subjects[x.kid][x.sk];
+    setLessonSeq(x.kid,x.sk,s.lessonSeq,{patch,mint:true});
+    delete patch[base+"lessonSeq"]; delete patch[base+"total"];      // untouched — don't even write them
+  });
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch).catch(err=>{ if(typeof gwShowToast==="function") gwShowToast("⚠ "+err.message); });
+  _lidAssignUndo={paths:undo,n:list.length};
+  if(typeof gwShowToast==="function") gwShowToast("✓ Ids assigned for "+list.length+" subject"+(list.length!==1?"s":""));
+  renderAll();
+}
+function gvAssignLidsUndo(){
+  if(!_lidAssignUndo||!db) return;
+  const patch=Object.assign({},_lidAssignUndo.paths);
+  Object.keys(patch).forEach(p=>{ const parts=p.split("/"); const s=((currData.subjects||{})[parts[1]]||{})[parts[2]]; if(s){ delete s[parts[3]]; } });
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch);
+  _lidAssignUndo=null;
+  if(typeof gwShowToast==="function") gwShowToast("↩ Lesson ids removed again");
+  renderAll();
+}
+// LID_END
+
 function ceSaveLessonSeq(val){
+  if(!currData||!ceEditKid||!ceEditKey||!db) return;
   const lines=val.split("\n").map(l=>l.trim()).filter(Boolean);
-  ceSaveField("lessonSeq",lines);
-  ceSaveField("total",lines.length);
+  const patch={};
+  setLessonSeq(ceEditKid,ceEditKey,lines,{patch});
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch);
 }
 // Switch a subject between Sequenced and Daily. Flipping TO daily on a subject that
 // still carries a lesson sequence (grid cells / lessonSeq / a total) offers to clear
@@ -15182,13 +15311,12 @@ function ceSetTracking(mode){
       const updates={};
       futureCells.forEach(dn=>{ updates["lessons/"+kid+"/"+dn+"/"+sk]=null; if(currData.lessons[kid][dn]) delete currData.lessons[kid][dn][sk]; });
       updates["subjects/"+kid+"/"+sk+"/tracking"]="daily";
-      updates["subjects/"+kid+"/"+sk+"/total"]=0;
-      updates["subjects/"+kid+"/"+sk+"/lessonSeq"]=null;
+      setLessonSeq(kid,sk,null,{patch:updates});          // lessonSeq + lessonIds + total
       if(!(s.allowedDays&&s.allowedDays.length)&&!(s.days&&String(s.days).trim())){
         updates["subjects/"+kid+"/"+sk+"/allowedDays"]=["Mon","Tue","Wed","Thu","Fri"];
         s.allowedDays=["Mon","Tue","Wed","Thu","Fri"];
       }
-      s.tracking="daily"; s.total=0; delete s.lessonSeq;
+      s.tracking="daily";                                  // setLessonSeq already cleared seq/ids/total locally
       currData.lastEdit=new Date().toISOString(); updates["lastEdit"]=currData.lastEdit;
       if(db) db.ref("curriculum").update(updates);
       // drop its pace node — daily subjects aren't pace-tracked (also auto-pruned on gen)
@@ -15233,15 +15361,13 @@ function ceConvApply(){
     const v=rows[dn];
     if(v&&v[sk]!=null&&String(v[sk]).trim()&&(v.date||"")>_today) cellSnap[dn]=v[sk];
   });
-  try{HA_LS.setItem("ha_convUndo",JSON.stringify({kid,sk,cells:cellSnap,prevSeq:s.lessonSeq||null,prevTotal:s.total||null,at:Date.now()}));}catch(e){}
+  try{HA_LS.setItem("ha_convUndo",JSON.stringify({kid,sk,cells:cellSnap,prevSeq:s.lessonSeq||null,prevIds:lidsFor(kid,sk)||null,prevNext:s.nextLid||null,prevTotal:s.total||null,at:Date.now()}));}catch(e){}
   const updates={};
   Object.keys(cellSnap).forEach(dn=>{
     updates["lessons/"+kid+"/"+dn+"/"+sk]=null;
     delete currData.lessons[kid][dn][sk];
   });
-  updates["subjects/"+kid+"/"+sk+"/lessonSeq"]=fullSeq;
-  updates["subjects/"+kid+"/"+sk+"/total"]=fullSeq.length;
-  s.lessonSeq=fullSeq; s.total=fullSeq.length;
+  setLessonSeq(kid,sk,fullSeq,{patch:updates});          // lessonSeq + lessonIds (aligned) + total
   currData.lastEdit=new Date().toISOString();
   updates["lastEdit"]=currData.lastEdit;
   if(db) db.ref("curriculum").update(updates);
@@ -15314,10 +15440,8 @@ function ceConvUndoApply(){
   });
   // The list half. prevSeq null means the subject had no master list before the
   // Save — restore that absence rather than leaving the one the Save invented.
-  updates["subjects/"+kid+"/"+sk+"/lessonSeq"]=u.prevSeq||null;
-  updates["subjects/"+kid+"/"+sk+"/total"]=(u.prevTotal!=null?u.prevTotal:(u.prevSeq?u.prevSeq.length:0));
-  if(u.prevSeq) s.lessonSeq=u.prevSeq; else delete s.lessonSeq;
-  s.total=updates["subjects/"+kid+"/"+sk+"/total"];
+  setLessonSeq(kid,sk,u.prevSeq||null,{patch:updates,restoreIds:u.prevIds||null,restoreNext:u.prevNext||null});
+  if(u.prevSeq&&u.prevTotal!=null){ updates["subjects/"+kid+"/"+sk+"/total"]=u.prevTotal; s.total=u.prevTotal; }
   currData.lastEdit=new Date().toISOString();
   updates["lastEdit"]=currData.lastEdit;
   db.ref("curriculum").update(updates);
@@ -15684,6 +15808,7 @@ function ceAddSave(){
     }
     if(!lessonSeq.length){ alert("Add at least one lesson."); return; }
     subj={display:name,device:f.device,mom:f.mom,minutes:f.minutes,days:f.days,allowedDays:dayArr,rules:f.rules,total:lessonSeq.length,priority:f.priority,carryoverCap:f.carryoverCap,lessonSeq:lessonSeq,timesPerWeek:f.timesPerWeek||5};
+    { const _r=_lidAlign(null,null,lessonSeq,1,null,true); subj.lessonIds=_r.ids; subj.nextLid=_r.nextLid; }   // born with ids — no other device can hold a competing set
   }
   if(f.stickyWith){ subj.stickyWith=f.stickyWith; subj.stickyOrder=f.stickyOrder||"after"; }
   currData.subjects[kid][key]=subj;
@@ -15900,7 +16025,7 @@ function uploadCurriculum(){
       // their whole curriculum; subjects absent from the file (in-app: Drills,
       // Builder-made) survive; matching subjects keep in-app-only settings.
       if(currData&&currData.subjects){
-        const CARRY=["pacing","paused","momVerify","allowedDays","timesPerWeek","priority","carryoverCap","stickyWith","stickyOrder","lessonSeq","tracking"];
+        const CARRY=["pacing","paused","momVerify","allowedDays","timesPerWeek","priority","carryoverCap","stickyWith","stickyOrder","lessonSeq","lessonIds","nextLid","tracking"];
         for(const kid of Object.keys(currData.subjects)){
           if(!curriculum.subjects[kid]){
             curriculum.subjects[kid]=currData.subjects[kid];
@@ -21767,6 +21892,7 @@ function cbCopyTo(toKid){
   const seq=(buildSubjectLessons(kid,sk)||[]).map(x=>x.lesson);
   if(src.lessonSeq&&src.lessonSeq.length) copy.lessonSeq=src.lessonSeq.slice();
   else if(seq.length) copy.lessonSeq=seq;
+  if(copy.lessonSeq){ const _r=_lidAlign(null,null,copy.lessonSeq,1,null,true); copy.lessonIds=_r.ids; copy.nextLid=_r.nextLid; }   // fresh ids for the new kid's copy
   if(!currData.subjects[toKid]) currData.subjects[toKid]={};
   currData.subjects[toKid][sk]=copy;
   db.ref("curriculum/subjects/"+toKid+"/"+sk).set(copy);
@@ -22934,10 +23060,7 @@ function gvCaptureSeqs(){
   list.forEach(function(it){
     const seq=[];
     dns.forEach(function(dn){ const v=(lessons[dn]||{})[it.sk]; if(gvFilled(v)) seq.push(String(v)); });
-    const s=currData.subjects[gvKid][it.sk];
-    s.lessonSeq=seq; s.total=seq.length;
-    patch["subjects/"+gvKid+"/"+it.sk+"/lessonSeq"]=seq;
-    patch["subjects/"+gvKid+"/"+it.sk+"/total"]=seq.length;
+    setLessonSeq(gvKid,it.sk,seq,{patch});
   });
   patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
   db.ref("curriculum").update(patch);
@@ -22954,9 +23077,9 @@ function gvSyncSeqInto(patch,subsArr,kid){
     if(!s||!s.lessonSeq) return;               // not a card-origin subject
     const newSeq=[];
     for(const dn of dns){ const v=(lessons[dn]||{})[sk]; if(gvFilled(v)) newSeq.push(String(v)); }
-    seqUndo[sk]=s.lessonSeq.slice();
-    s.lessonSeq=newSeq;
-    patch["subjects/"+kid+"/"+sk+"/lessonSeq"]=newSeq;
+    seqUndo[sk]={seq:s.lessonSeq.slice(),ids:lidsFor(kid,sk),next:s.nextLid||null};
+    setLessonSeq(kid,sk,newSeq,{patch});
+    delete patch["subjects/"+kid+"/"+sk+"/total"];   // callers recount total themselves (gvRecountTotal)
   });
   return seqUndo;
 }
@@ -23023,8 +23146,9 @@ function gvSelUndoApply(){
   // Restore the exact prior lessonSeq for any card-origin subjects we synced.
   Object.keys(seqUndo||{}).forEach(sk=>{
     const prev=seqUndo[sk];
-    patch["subjects/"+kid+"/"+sk+"/lessonSeq"]=prev;
-    if(currData.subjects[kid]&&currData.subjects[kid][sk]) currData.subjects[kid][sk].lessonSeq=prev;
+    if(Array.isArray(prev)){ setLessonSeq(kid,sk,prev,{patch}); }                       // pre-ids shape
+    else setLessonSeq(kid,sk,prev.seq,{patch,restoreIds:prev.ids||null,restoreNext:prev.next||null});
+    delete patch["subjects/"+kid+"/"+sk+"/total"];
   });
   patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
   db.ref("curriculum").update(patch);
@@ -23271,10 +23395,8 @@ function gvAuditFixGap(kid,sk,dn,after,missing){
   if(at<0){ alert("Couldn't find \""+after+"\" in "+disp+"'s master list — the list and the grid disagree here. Open the subject and check it by hand."); return; }
   seq.splice(at+1,0,v);
   if(!confirm("Insert \""+v+"\" after \""+after+"\" in "+disp+"'s lesson list?\n\nThe Builder then re-lays the plan from there so nothing is lost, and shows you a preview. Nothing changes on the grid until you tap Apply.")) return;
-  s.lessonSeq=seq; s.total=seq.length;
   const patch={};
-  patch["subjects/"+kid+"/"+sk+"/lessonSeq"]=seq;
-  patch["subjects/"+kid+"/"+sk+"/total"]=seq.length;
+  setLessonSeq(kid,sk,seq,{patch,hint:{index:at+1,op:"insert"}});
   patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
   db.ref("curriculum").update(patch);
   cbKid=kid; adminSubTab="curriculum"; currInnerTab="builder";
@@ -23786,8 +23908,11 @@ function gvDeleteLesson(kid,dn,sk){
     const i=s.lessonSeq.findIndex(t=>String(t||"").trim()===cls.text);
     if(i>=0){
       paths["subjects/"+kid+"/"+sk+"/lessonSeq"]=s.lessonSeq.slice();
+      const _ids=lidsFor(kid,sk);
+      if(_ids){ paths["subjects/"+kid+"/"+sk+"/lessonIds"]=_ids.slice(); paths["subjects/"+kid+"/"+sk+"/nextLid"]=s.nextLid||null; }
       const seq=s.lessonSeq.slice(); seq.splice(i,1);
-      up["subjects/"+kid+"/"+sk+"/lessonSeq"]=seq;
+      setLessonSeq(kid,sk,seq,{patch:up,hint:{index:i,op:"delete"}});
+      delete up["subjects/"+kid+"/"+sk+"/total"];   // gvRecountTotal below owns total (cell count)
     }
   }
   cbPatchLocal(up);
@@ -24061,6 +24186,23 @@ function renderCurrGrid(el){
       h+='<div style="font-size:12px;color:#334155;margin-bottom:6px"><b>'+_pg.length+' deleted subject'+(_pg.length>1?'s':'')+' still ha'+(_pg.length>1?'ve':'s')+' pace records:</b> '+_pg.map(sk=>esc((_pps[sk]||{}).label||sk)).join(", ")+'. They no longer count toward anything — this just clears the leftovers. Finished work stays in history.</div>';
       h+='<button onclick="gvPurgePaceGhosts()" style="border:1px solid #64748b;background:#fff;color:#334155;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Clear pace leftovers</button>';
       h+='</div>';
+    }
+  }catch(e){}
+
+  // Lesson identity (Stage 1): subjects whose master list has no ids yet. One tap, all
+  // kids, pure bookkeeping — see LID_START. Shown until every list carries ids.
+  try{
+    if(momModeActive||adminPinUnlocked){
+      const _un=(typeof lidUnassigned==="function")?lidUnassigned():[];
+      if(_un.length){
+        const _tot=_un.reduce((a,x)=>a+x.n,0);
+        h+='<div style="background:#eef2ff;border-left:4px solid #6366f1;border-radius:0 10px 10px 0;padding:9px 12px;margin:0 0 8px">';
+        h+='<div style="font-size:12px;color:#3730a3;margin-bottom:6px"><b>🆔 '+_un.length+' subject'+(_un.length>1?'s':'')+' ('+_tot+' lessons) don’t have lesson ids yet.</b> Ids let a check-off name the exact lesson instead of matching its title — the fix for lessons being counted done by position. Nothing visible changes.</div>';
+        h+='<button onclick="gvAssignLids()" style="border:1px solid #6366f1;background:#fff;color:#3730a3;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Assign lesson ids</button>';
+        h+='</div>';
+      } else if(typeof _lidAssignUndo!=="undefined"&&_lidAssignUndo){
+        h+='<div style="background:#eef2ff;border-left:4px solid #6366f1;border-radius:0 10px 10px 0;padding:7px 12px;margin:0 0 8px;font-size:12px;color:#3730a3">✓ Lesson ids assigned for '+_lidAssignUndo.n+' subject'+(_lidAssignUndo.n>1?'s':'')+'. <button onclick="gvAssignLidsUndo()" style="border:1px solid #6366f1;background:#fff;color:#3730a3;border-radius:8px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">↩ Undo</button></div>';
+      }
     }
   }catch(e){}
 
