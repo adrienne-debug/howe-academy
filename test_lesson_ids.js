@@ -41,7 +41,7 @@ function extractFn(name) {
   }
   throw new Error("unbalanced: " + name);
 }
-const writers = ["ceSaveLessonSeq", "gvSyncSeqInto", "gvSelUndoApply", "cbDoneCellSet", "cbDeriveContent"].map(extractFn).join("\n");
+const writers = ["ceSaveLessonSeq", "gvSyncSeqInto", "gvSelUndoApply", "cbDoneCellSet", "cbDeriveContent", "cbRemainingContent", "cbBacklogInfo", "cbSplitCells", "cbBuildGate"].map(extractFn).join("\n");
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {
@@ -281,6 +281,39 @@ console.log("readers flip on the stamp (Stage 1.5)");
   const p2 = {}; const u = e.lidUnmarkText("lincoln", "mr", "b", p2);
   ok("lidUnmarkText removes only MANUAL b (L0002), never the check-off L0003", eq(u, ["L0002"]) && p2["done/lincoln/mr/L0002"] === null && !("done/lincoln/mr/L0003" in p2) && !e.currData.done.lincoln.mr.L0002 && !!e.currData.done.lincoln.mr.L0003);
   ok("unstamped subject: mark/unmark are no-ops", eq(e.lidMarkDone("lincoln", "un", ["x"], null, {}, {}), []) && eq(e.lidUnmarkText("lincoln", "un", "x", {}), []));
+}
+
+console.log("plan-backed subjects (Stage 2)");
+{
+  const e = mk({ lincoln: { mr: S(["a", "b", "c", "d"], ["L0001", "L0002", "L0003", "L0004"], 5) } });
+  e.currData.subjects.lincoln.mr.display = "MR"; e.currData.subjects.lincoln.mr.doneImportedAt = "x"; e.currData.subjects.lincoln.mr.pacing = { mode: "timesPerWeek", tpw: 3 };
+  e.currData.done = { lincoln: { mr: { L0001: { src: "check" } } } };
+  e.currData.skiplog = { lincoln: { mr: [{ lesson: "c" }] } };
+  e.currData.lessons = { lincoln: { 1: { date: "2026-08-10", mr: "b" }, 2: { date: "2026-08-18", mr: "c" }, 3: { date: "2026-08-19", mr: "d" } } };
+  e.paceData = { subjects: { lincoln: { mr: { adjust: 1 } } } }; e.paceKeywords = () => ["MR"]; e.paceAutoCount = () => 1; e.paceDoneTitles = () => ["📄 mr — a"];
+  e.cbTodayISO = () => "2026-08-16"; e.cbBacklogStash = {}; e.cbDecisions = { "lincoln|mr": { dismissed: [0] } }; e.cap = x => x;
+  ok("planBacked false without planId; planPending lists the stamped subject", !e.planBacked("lincoln", "mr") && eq(e.planPending(), [{ kid: "lincoln", sk: "mr", disp: "MR" }]));
+  // legacy: adjust pre-dismisses stale b (index 0), skiplog drops c
+  const legacy = e.cbRemainingContent("lincoln", "mr");
+  ok("legacy path: pre-dismiss (adjust) drops stale b, skiplog drops c → [d]", eq(legacy, ["d"]));
+  e.currData.subjects.lincoln.mr.planId = "lincoln__mr";
+  ok("planBacked true with planId + stamp", e.planBacked("lincoln", "mr") && e.planPending().length === 0);
+  const pb = e.cbRemainingContent("lincoln", "mr");
+  ok("plan-backed: list minus done only — b, c, d all served (no adjust, no skiplog, no dismissals)", eq(pb, ["b", "c", "d"]));
+  // cbBuildGate skips the sheet for plan-backed
+  let applied = 0; e.cbApply = () => { applied++; }; e.cbGate = null; e.cbKid = "lincoln"; e.cbSubjKey = "mr"; e.cbPreviewRes = { assignments: [] };
+  e.cbBuildGate();
+  ok("cbBuildGate: plan-backed with stale leftovers → applies directly, no sheet", applied === 1 && e.cbGate === null);
+  delete e.currData.subjects.lincoln.mr.planId; e._cbGateItem = () => ({}); e.renderAll = () => {};
+  e.cbBuildGate();
+  ok("cbBuildGate: legacy with stale leftovers → sheet", applied === 1 && !!e.cbGate);
+  // gvMakePlan / undo
+  e._gvRelaySubject = () => true; e.confirmAnswer = true; e.written = null; e.momModeActive = true;
+  e.gvMakePlan("lincoln", "mr");
+  ok("gvMakePlan writes planId + planAnchor + lastEdit and relays", e.written && e.written["subjects/lincoln/mr/planId"] === "lincoln__mr" && e.written["subjects/lincoln/mr/planAnchor"] === "2026-08-16" && !!e.written["lastEdit"] && e.currData.subjects.lincoln.mr.planId === "lincoln__mr");
+  ok("preview probe leaves no flag on cancel", (() => { const e2 = mk({ lincoln: { mr: S(["a"], ["L0001"], 2) } }); e2.currData.subjects.lincoln.mr.doneImportedAt = "x"; e2.currData.done = {}; e2.paceData = { subjects: {} }; e2.paceKeywords = () => ["MR"]; e2.paceAutoCount = () => 0; e2.paceDoneTitles = () => []; e2.cbTodayISO = () => "2026-08-16"; e2.cbBacklogStash = {}; e2.cbDecisions = {}; e2.cap = x => x; e2.confirmAnswer = false; e2.gvMakePlan("lincoln", "mr"); return !e2.currData.subjects.lincoln.mr.planId && e2.written === null; })());
+  e.written = null; e.gvMakePlanUndo();
+  ok("undo nulls planId + planAnchor", e.written && e.written["subjects/lincoln/mr/planId"] === null && e.written["subjects/lincoln/mr/planAnchor"] === null && !e.currData.subjects.lincoln.mr.planId);
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");

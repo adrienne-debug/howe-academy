@@ -15489,6 +15489,66 @@ function lidUnmarkText(kid,sk,text,patch){
   ids.forEach((id,i)=>{ const r=node[id]; if(r&&r.src==="manual"&&_lidNorm(seq[i])===k){ patch["done/"+kid+"/"+sk+"/"+id]=null; delete node[id]; out.push(id); } });
   return out;
 }
+// ── Plan-backed subjects (Stage 2) ────────────────────────────────────────────
+// `s.planId` marks a subject whose ONE truth is its list (+ done-by-id). For it, the
+// re-lay is a pure function of "list minus done": no skiplog, no Keep/Dismiss gate,
+// no pace `adjust`, no rebaseline/skiplog writes — the hidden lists are simply not
+// consulted or fed. Its future cells are a cache written by that re-lay, never an
+// independent record. Gate is per SUBJECT in data (never per device).
+function planIdFor(kid,sk){ return kid+"__"+sk; }
+function planBacked(kid,sk){
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk];
+  return !!(s&&s.planId&&lidStamped(kid,sk));
+}
+// Stamped subjects not yet plan-backed — the 🧭 banner's list.
+function planPending(){
+  const out=[]; const subs=(currData||{}).subjects||{};
+  Object.keys(subs).forEach(kid=>Object.keys(subs[kid]||{}).forEach(sk=>{ const s=subs[kid][sk]; if(s&&lidStamped(kid,sk)&&!s.planId) out.push({kid,sk,disp:s.display||sk}); }));
+  return out;
+}
+let _planMakeUndo=null;
+// Her tap, ONE subject at a time: mark it plan-backed and re-lay it from list minus done.
+// The confirm names what stops being consulted (skiplog entries, pace adjust) and how
+// many owed lessons sit behind today. Undo = drop the flag (the re-lay itself is
+// content-identical to what a rebuild would do; its cells ride the relay's own ↩).
+function gvMakePlan(kid,sk){
+  if(!(momModeActive||adminPinUnlocked)||!db) return;
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||!lidStamped(kid,sk)||s.planId) return;
+  const skip=((((currData||{}).skiplog||{})[kid]||{})[sk])||[];
+  const ps=(((paceData||{}).subjects||{})[kid]||{})[sk]||{};
+  let owed=0; try{ owed=cbBacklogInfo(kid,sk).split.stale.length; }catch(e){}
+  const undone=(s.lessonSeq||[]).length-(lidDoneIdx(kid,sk)||new Set()).size;
+  const notes=[];
+  if(skip.length) notes.push("dismissed before (skiplog), now counted like any listed lesson: "+skip.map(e=>String((e&&e.lesson)||"")).filter(Boolean).slice(0,6).join(", ")+(skip.length>6?"…":""));
+  if(ps.adjust) notes.push("pace hand-adjust "+ps.adjust+" stops being consulted");
+  if(owed) notes.push(owed+" owed lesson"+(owed!==1?"s":"")+" behind today move to the front (never dropped)");
+  // What will land at the front — computed AS IF plan-backed, so junk on the list shows
+  // here, before she agrees, instead of on Monday's grid.
+  let head=[];
+  try{ s.planId="__preview__"; head=(cbRemainingContent(kid,sk)||[]).slice(0,5); }catch(e){} finally{ delete s.planId; }
+  const msg="Make "+(s.display||sk)+" plan-backed?\n\nFrom now on its list is the one truth: the grid is re-laid from “list minus done” — no dismiss sheet, no hidden lists. "+undone+" unfinished lesson"+(undone!==1?"s":"")+" re-lay from the next one now."
+    +(head.length?("\n\nNext up will be: "+head.join(" → ")+(undone>head.length?" → …":"")+"\n(If that looks wrong, Cancel and fix the list first — ✎ Edit as a list → Save list.)"):"")
+    +(notes.length?("\n\n"+notes.map(n=>"• "+n).join("\n")):"")+"\n\nYou can Undo.";
+  if(!confirm(msg)) return;
+  const patch={}; const base="subjects/"+kid+"/"+sk+"/";
+  patch[base+"planId"]=planIdFor(kid,sk); patch[base+"planAnchor"]=cbTodayISO(); patch["lastEdit"]=new Date().toISOString();
+  s.planId=patch[base+"planId"]; s.planAnchor=patch[base+"planAnchor"]; currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch).catch(err=>{ if(typeof gwShowToast==="function") gwShowToast("⚠ "+err.message); });
+  _planMakeUndo={kid,sk,disp:s.display||sk};
+  if(typeof _gvRelaySubject==="function"&&s.pacing&&s.pacing.mode){ if(_gvRelaySubject(kid,sk,"🧭 "+(s.display||sk)+" is plan-backed")) return; }
+  if(typeof gwShowToast==="function") gwShowToast("🧭 "+(s.display||sk)+" is plan-backed");
+  renderAll();
+}
+function gvMakePlanUndo(){
+  if(!_planMakeUndo||!db) return;
+  const {kid,sk}=_planMakeUndo; const s=(((currData||{}).subjects||{})[kid]||{})[sk];
+  const patch={}; const base="subjects/"+kid+"/"+sk+"/"; patch[base+"planId"]=null; patch[base+"planAnchor"]=null; patch["lastEdit"]=new Date().toISOString();
+  if(s){ delete s.planId; delete s.planAnchor; } currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch);
+  _planMakeUndo=null;
+  if(typeof gwShowToast==="function") gwShowToast("↩ Plan flag removed (cells stay as laid — ↩ Undo on the grid reverts the re-lay)");
+  renderAll();
+}
 // LID_END
 
 function ceSaveLessonSeq(val){
@@ -22011,13 +22071,14 @@ function cbRemainingContent(kid,sk){
   const s=((currData.subjects||{})[kid]||{})[sk]||{};
   const info=cbBacklogInfo(kid,sk);
   cbBacklogStash[kid+"|"+sk]=info; // cbApply clears exactly these stale cells
-  const dec=cbDecisions[kid+"|"+sk]||{};
+  const _pb=(typeof planBacked==="function")&&planBacked(kid,sk);   // Stage 2: one truth — nothing hidden is consulted
+  const dec=_pb?{}:(cbDecisions[kid+"|"+sk]||{});
   const dis=[];
-  for(let i=0;i<info.preDismiss;i++) dis.push(i);
+  if(!_pb) for(let i=0;i<info.preDismiss;i++) dis.push(i);
   (dec.dismissed||[]).forEach(i=>{ if(dis.indexOf(i)<0) dis.push(i); });
-  // Lessons dismissed in an earlier build stay dismissed.
+  // Lessons dismissed in an earlier build stay dismissed (legacy subjects only).
   let _skip=null;
-  try{
+  if(!_pb) try{
     const _log=(((currData||{}).skiplog||{})[kid]||{})[sk];
     if(_log&&_log.length) _skip=new Set(_log.map(e=>String((e&&e.lesson)||"").trim().toLowerCase()).filter(Boolean));
   }catch(e){}
@@ -22608,7 +22669,8 @@ function cbApply(){
   // the cursor skip that many REAL lessons on the next build.
   const _blKey=kid+"|"+sk;
   const _bl=cbBacklogStash[_blKey]||cbBacklogInfo(kid,sk);
-  const _dec=cbDecisions[_blKey]||{};
+  const _pbApply=(typeof planBacked==="function")&&planBacked(kid,sk);   // Stage 2: feed no hidden list
+  const _dec=_pbApply?{}:(cbDecisions[_blKey]||{});
   const _paceRestores=[];
   const _disSet=new Set();
   {
@@ -22621,7 +22683,7 @@ function cbApply(){
       snap(p,(lessons[c.dayNum]||{})[sk]); up[p]=null;
       if(disSet.has(i)) skAdd.push({lesson:c.text,date:c.date,dayNum:c.dayNum,ts:new Date().toISOString()});
     });
-    if(skAdd.length){
+    if(skAdd.length&&!_pbApply){
       const cur=(((currData.skiplog||{})[kid]||{})[sk]||[]).slice();
       const p="skiplog/"+kid+"/"+sk;
       snap(p,((currData.skiplog||{})[kid]||{})[sk]); up[p]=cur.concat(skAdd);
@@ -22636,7 +22698,7 @@ function cbApply(){
       snap(p,((currData.rebaseline||{})[kid]||{})[sk]);
       up[p]={y:_rbNow.getFullYear(),d:Math.floor((_rbNow-_rbJan1)/86400000),ts:_rbNow.toISOString()};
     }
-    if(_bl.preDismiss>0){
+    if(_bl.preDismiss>0&&!_pbApply){
       const ps=(((paceData||{}).subjects||{})[kid]||{})[sk];
       if(ps&&(ps.adjust||0)>0){
         const newAdj=Math.max(0,(ps.adjust||0)-_bl.preDismiss);
@@ -22756,6 +22818,9 @@ function cbBuildGate(){
   if(!res||res.error||!cbKid||!cbSubjKey) return;
   const info=cbBacklogInfo(cbKid,cbSubjKey);
   if(!info.split.stale.length&&!info.dupFuture){ cbApply(); return; }
+  // Plan-backed (Stage 2): owed lessons are simply the next lessons — nothing to keep or
+  // dismiss, so no sheet. Apply straight away.
+  if(typeof planBacked==="function"&&planBacked(cbKid,cbSubjKey)){ cbApply(); return; }
   cbGate={kid:cbKid,mode:"one",items:[_cbGateItem(cbKid,cbSubjKey,info)]};
   renderAll();
 }
@@ -24525,6 +24590,16 @@ function renderCurrGrid(el){
         h+='</div>';
       } else if(typeof _lidImportUndo!=="undefined"&&_lidImportUndo){
         h+='<div style="background:#eef2ff;border-left:4px solid #6366f1;border-radius:0 10px 10px 0;padding:7px 12px;margin:0 0 8px;font-size:12px;color:#3730a3">✓ Imported '+_lidImportUndo.n+' completions across '+_lidImportUndo.subjects+' subject'+(_lidImportUndo.subjects>1?'s':'')+'. <button onclick="gvImportDoneUndo()" style="border:1px solid #6366f1;background:#fff;color:#3730a3;border-radius:8px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">↩ Undo</button></div>';
+      } else if(typeof planPending==="function"&&planPending().filter(x=>x.kid===gvKid).length){
+        const _pp=planPending().filter(x=>x.kid===gvKid);
+        h+='<div style="background:#ecfeff;border-left:4px solid #0891b2;border-radius:0 10px 10px 0;padding:9px 12px;margin:0 0 8px">';
+        h+='<div style="font-size:12px;color:#155e75;margin-bottom:6px"><b>🧭 One truth — make a subject plan-backed.</b> Its list becomes the only record: the grid re-lays from “list minus done”, with no dismiss sheet and no hidden lists (skiplog, hand-adjust). One subject at a time, each with a confirm and Undo. Start with the one you trust least.</div>';
+        if(typeof _planMakeUndo!=="undefined"&&_planMakeUndo) h+='<div style="font-size:11px;color:#155e75;margin-bottom:6px">✓ '+esc(_planMakeUndo.disp)+' is plan-backed. <button onclick="gvMakePlanUndo()" style="border:1px solid #0891b2;background:#fff;color:#155e75;border-radius:8px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">↩ Undo</button></div>';
+        h+='<div style="display:flex;flex-wrap:wrap;gap:6px">';
+        _pp.forEach(x=>{ h+='<button onclick="gvMakePlan(\''+x.kid+'\',\''+x.sk+'\')" style="border:1px solid #0891b2;background:#fff;color:#155e75;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🧭 '+esc(x.disp)+'</button>'; });
+        h+='</div></div>';
+      } else if(typeof _planMakeUndo!=="undefined"&&_planMakeUndo){
+        h+='<div style="background:#ecfeff;border-left:4px solid #0891b2;border-radius:0 10px 10px 0;padding:7px 12px;margin:0 0 8px;font-size:12px;color:#155e75">🧭 '+esc(_planMakeUndo.disp)+' is plan-backed. <button onclick="gvMakePlanUndo()" style="border:1px solid #0891b2;background:#fff;color:#155e75;border-radius:8px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">↩ Undo</button></div>';
       } else if(typeof _lidAssignUndo!=="undefined"&&_lidAssignUndo){
         h+='<div style="background:#eef2ff;border-left:4px solid #6366f1;border-radius:0 10px 10px 0;padding:7px 12px;margin:0 0 8px;font-size:12px;color:#3730a3">✓ Lesson ids assigned for '+_lidAssignUndo.n+' subject'+(_lidAssignUndo.n>1?'s':'')+'. <button onclick="gvAssignLidsUndo()" style="border:1px solid #6366f1;background:#fff;color:#3730a3;border-radius:8px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">↩ Undo</button></div>';
       }
