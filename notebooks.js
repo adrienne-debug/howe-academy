@@ -3817,6 +3817,26 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     return html.replace('</head>', BINDING_CSS + '\n</head>');
   }
 
+  // Safari print fit (2026-08-16). Every notebook is laid out as fixed 8.5in × 11in pages with
+  // `@page { size: letter; margin: 0 }`. Chrome honours that; Safari IGNORES @page size/margin
+  // and prints inside the printer's default margins, so an 8.5×11 page never fits — it shrinks
+  // unevenly or spills onto a second sheet ("won't print properly unless in Chrome"). On Safari
+  // only, each page is zoomed down just enough to sit inside those margins on ONE sheet, colours
+  // kept, and the page-break rules restated. Other browsers see no change.
+  var SAFARI_PRINT_FIT =
+    '<style id="ha-safari-print">@media print{' +
+    'html.ha-safari,html.ha-safari body{margin:0!important;padding:0!important;background:#fff!important;width:auto!important;height:auto!important;display:block!important}' +
+    'html.ha-safari .page{zoom:0.92;-webkit-print-color-adjust:exact;print-color-adjust:exact;box-shadow:none!important;border-radius:0!important;margin:0 auto!important;' +
+    'break-after:page;page-break-after:always;break-inside:avoid;page-break-inside:avoid;overflow:hidden!important}' +
+    'html.ha-safari .page:last-of-type{break-after:auto;page-break-after:auto}' +
+    '}</style>' +
+    '<script>(function(){try{var ua=navigator.userAgent||"";var isSafari=/Safari\//.test(ua)&&!/Chrome\/|Chromium\/|CriOS\/|Edg\/|OPR\/|Android/.test(ua);' +
+    'if(isSafari)document.documentElement.classList.add("ha-safari");}catch(e){}})();</script>';
+  function applySafariPrintFit(html) {
+    if (!html || typeof html !== "string" || html.indexOf('id="ha-safari-print"') >= 0) return html;
+    var i = html.indexOf("</head>");
+    return i >= 0 ? html.slice(0, i) + SAFARI_PRINT_FIT + html.slice(i) : html;
+  }
   function generate(kid, ctx) {
     var g = GENERATORS[kid];
     if (!g) throw new Error("No notebook generator for '" + kid + "' yet.");
@@ -3824,6 +3844,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     if (ctx && ctx.bindingMargin && out) {
       out = Object.assign({}, out, { student: applyBindingMargin(out.student), parent: applyBindingMargin(out.parent) });
     }
+    if (out) out = Object.assign({}, out, { student: applySafariPrintFit(out.student), parent: applySafariPrintFit(out.parent) });
     return out;
   }
 
@@ -3837,9 +3858,19 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       var a = document.createElement("a");
       a.href = url; a.download = filename || "notebook.html";
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+      return false;
     }
-    setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
-    return !!w;
+    // Keep the blob URL alive for as long as the notebook window is open. Chrome's print
+    // preview re-loads the page URL in its own process; revoking after 60s (the old
+    // behaviour) made any notebook left open longer than a minute fail with
+    // "Print preview failed" (2026-08-16: Julian's + Ellis's, opened first and looked
+    // over before printing). Revoke only once that window has gone away.
+    var revoked = false;
+    var revoke = function () { if (revoked) return; revoked = true; try { URL.revokeObjectURL(url); } catch (e) {} };
+    var poll = setInterval(function () { if (w.closed) { clearInterval(poll); revoke(); } }, 5000);
+    try { w.addEventListener("pagehide", function () { setTimeout(function () { if (w.closed) revoke(); }, 1000); }); } catch (e) {}
+    return true;
   }
 
   // ── Combined parent guide: merge every kid's parent companion into ONE printable doc.
@@ -3942,6 +3973,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       if (!wk) { wk = (String(ctx.weekNum || "").match(/\d+/) || [ctx.weekNum || ""])[0]; wd = ctx.weekDates || ""; }
       present.push(kid);
       (html.match(/<link[^>]+fonts\.(?:googleapis|gstatic)\.com[^>]*>/g) || []).forEach(function (l) { links[l] = 1; });
+      html = html.replace(/<style id="ha-safari-print">[\s\S]*?<\/style>\s*<script>[\s\S]*?<\/script>/, "");
       var css = (html.match(/<style[^>]*>[\s\S]*?<\/style>/gi) || []).map(function (blk) {
         return blk.replace(/<\/?style[^>]*>/gi, "");
       }).join("\n");
@@ -3978,7 +4010,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       "  .page { box-sizing:border-box !important; width:8.5in !important; height:11in !important; min-height:11in !important; max-height:11in !important; overflow:hidden !important; }\n" +
       "  @media print { .page { box-sizing:border-box !important; width:8.5in !important; height:11in !important; min-height:11in !important; max-height:11in !important; margin:0 !important; box-shadow:none !important; overflow:hidden !important; } }\n" +
       "</style>\n</head>\n<body>\n" + cover + "\n" + sections + "\n</body>\n</html>";
-    return binding ? applyBindingMargin(doc) : doc;
+    return applySafariPrintFit(binding ? applyBindingMargin(doc) : doc);
   }
 
   window.HoweNotebooks = {
