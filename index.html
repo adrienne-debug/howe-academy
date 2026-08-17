@@ -11053,6 +11053,17 @@ function carrySubjectGone(t){
   return !ks[t.subjectKey];
 }
 
+// Stage 4: a PLAN-BACKED subject's unfinished lesson is never carried as a _c twin. The
+// projection already owns its backlog — an undone lesson stays "owed" and is served fresh
+// (list minus done, in order) on the next slot, and the Grid shows it as an owed chip. A
+// _c twin next to that fresh card was a duplicate (gwCommit's ghost filter caught most,
+// title-matched; this closes it at the source). Checked/claimed _c twins are completion
+// records and are never touched by this — callers apply it only to UNDONE base tasks.
+function carryPlanBacked(t){
+  if(!t||!t.who||!t.subjectKey) return false;
+  try{ return (typeof planBacked==="function")&&planBacked(t.who,t.subjectKey); }catch(e){ return false; }
+}
+
 function getCarryOverPool(){
   const curWeek=weekData.week||WK;
   // Sort by numeric week number — archivedAt is a human-readable string, not sortable as-is
@@ -11078,7 +11089,8 @@ function getCarryOverPool(){
       &&!awChecked[t.id]&&!awChecked[t.id+"_c"]  // not completed in previous week
       &&!checked[t.id+"_c"]                        // not completed this week either
       &&!_carryBlocked(t,_dk)                       // walked back, or same lesson already done under another id
-      &&!carryRebaselined(t)&&!carrySubjectGone(t))                       // rebuild absorbed it — plan re-laid from where the kid is
+      &&!carryRebaselined(t)&&!carrySubjectGone(t)                        // rebuild absorbed it — plan re-laid from where the kid is
+      &&!carryPlanBacked(t))                        // plan-backed: owed lesson is served fresh by the projection
     .map(t=>({...t,id:t.id+"_c",day:"monday",cascade:true,
       included:!excl[t.id+"_c"],
       prevWeek:prev.weekLabel||"prev week"}));
@@ -11507,7 +11519,7 @@ function loadJson(){
           })[0];
         if(_archPrev){
           const _awc=_archPrev.checked||{};
-          (_archPrev.tasks||[]).filter(t=>!t.id.endsWith("_c")&&!_awc[t.id]&&!_awc[t.id+"_c"]&&!_carryBlocked(t,_dk)&&!subjNoCarry(t)&&!carryRebaselined(t)&&!carrySubjectGone(t))
+          (_archPrev.tasks||[]).filter(t=>!t.id.endsWith("_c")&&!_awc[t.id]&&!_awc[t.id+"_c"]&&!_carryBlocked(t,_dk)&&!subjNoCarry(t)&&!carryRebaselined(t)&&!carrySubjectGone(t)&&!carryPlanBacked(t))
             .forEach(t=>{
               const _cId=t.id+"_c";
               if(newIds.has(_cId)) return;                        // already present
@@ -11562,7 +11574,7 @@ function loadJson(){
         // Same filter as Carry-overs tab: base tasks where neither original nor _c was checked,
         // and the lesson wasn't already done under another id (content) or walked back.
         const _dkGen=completedLessonKeys();
-        snapTasks.filter(t=>!t.id.endsWith("_c")&&!snapChecked[t.id]&&!snapChecked[t.id+"_c"]&&!_carryBlocked(t,_dkGen)&&!carryRebaselined(t)&&!carrySubjectGone(t))
+        snapTasks.filter(t=>!t.id.endsWith("_c")&&!snapChecked[t.id]&&!snapChecked[t.id+"_c"]&&!_carryBlocked(t,_dkGen)&&!carryRebaselined(t)&&!carrySubjectGone(t)&&!carryPlanBacked(t))
           .forEach(t=>{
             const cId=t.id+"_c";
             if(!d.tasks.some(x=>x.id===cId))
@@ -38736,6 +38748,7 @@ function gwCommit(){
     const _newKey=new Set(); d.tasks.forEach(t=>{ if(t.subjectKey) _newKey.add((t.who||"")+"|"+t.subjectKey+"|"+(t.title||"")); });
     const _ghostC=t=>{
       if(snapChecked[t.id]||(typeof claimed!=="undefined"&&claimed&&claimed[t.id])) return false;
+      if(carryPlanBacked(t)) return true; // Stage 4: projection owns plan-backed backlog — no _c twin
       return _newKey.has((t.who||"")+"|"+(t.subjectKey||"")+"|"+(t.title||""))||_carryBlocked(t,_dkC);
     };
     (weekData.tasks||[]).filter(t=>t.id.endsWith("_c")&&!newIds.has(t.id)&&!newIds.has(baseId(t.id))&&!carryRebaselined(t)&&!carrySubjectGone(t)&&!_ghostC(t))
@@ -38748,7 +38761,7 @@ function gwCommit(){
       })[0];
     if(_archPrev){
       const _awc=_archPrev.checked||{};
-      (_archPrev.tasks||[]).filter(t=>!t.id.endsWith("_c")&&!_awc[t.id]&&!_awc[t.id+"_c"]&&!subjNoCarry(t)&&!carryRebaselined(t)&&!carrySubjectGone(t))
+      (_archPrev.tasks||[]).filter(t=>!t.id.endsWith("_c")&&!_awc[t.id]&&!_awc[t.id+"_c"]&&!subjNoCarry(t)&&!carryRebaselined(t)&&!carrySubjectGone(t)&&!carryPlanBacked(t))
         .forEach(t=>{
           const _cId=t.id+"_c";
           if(newIds.has(_cId)) return;
@@ -38801,7 +38814,7 @@ function gwCommit(){
       try{HA_LS.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
       if(db) db.ref("archive/"+oldWK).set(entry);
     }
-    snapTasks.filter(t=>!t.id.endsWith("_c")&&!snapChecked[t.id]&&!snapChecked[t.id+"_c"]&&!subjNoCarry(t)&&!carryRebaselined(t)&&!carrySubjectGone(t))
+    snapTasks.filter(t=>!t.id.endsWith("_c")&&!snapChecked[t.id]&&!snapChecked[t.id+"_c"]&&!subjNoCarry(t)&&!carryRebaselined(t)&&!carrySubjectGone(t)&&!carryPlanBacked(t))
       .forEach(t=>{
         const cId=t.id+"_c";
         if(!d.tasks.some(x=>x.id===cId))
