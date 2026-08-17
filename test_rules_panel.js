@@ -32,7 +32,7 @@ function mkEnv() {
     } } },
     rulesData: { maxPerDay: { "Wordsmith": { max: 2, saturday_max: 1 } } },
     DEFAULT_DAY_CAP: 2, KID_COLOR: { lincoln: "#123456" }, CURR_DEV_EMOJI: {}, CURR_DEV_LABEL: {},
-    cbKid: "lincoln", cbRulesOpen: true, cbDayPinScroll: 0, cbGroupEdit: null,
+    cbKid: "lincoln", cbRulesOpen: true, cbFamilyRulesOpen: false, cbDayPinScroll: 0, cbGroupEdit: null,
     planBacked: (k, sk) => !!(env.currData.subjects[k][sk] || {}).planId,
     lidsFor: () => ["L0001"],
     cbDayCap: () => 5, cbAltGroups: () => [], cbOverCapDays: () => [], cbGroupOf: () => null,

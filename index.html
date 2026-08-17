@@ -22657,8 +22657,9 @@ function cbSetCap(kid,val){
 }
 function cbCapStep(kid,d){ cbSetCap(kid,cbDayCap(kid)+d); }
 
-let cbRulesOpen=false, cbNewGroup=null, cbDayPinScroll=0;
+let cbRulesOpen=false, cbNewGroup=null, cbDayPinScroll=0, cbFamilyRulesOpen=false;
 function cbRulesToggle(){ cbRulesOpen=!cbRulesOpen; cbNewGroup=null; renderAll(); }
+function cbFamilyRulesToggle(){ cbFamilyRulesOpen=!cbFamilyRulesOpen; renderAll(); }
 function cbGroupStart(){ cbNewGroup={name:"",members:[]}; renderAll(); }
 function cbGroupCancel(){ cbNewGroup=null; renderAll(); }
 function cbGroupName(v){ cbNewGroup.name=v; }
@@ -22902,6 +22903,12 @@ function cbRenderRules(col){
   }
   h+='</tbody></table></div>';
   h+='<div style="font-size:10px;color:var(--muted);margin-top:6px">Days · ×/wk · cap · min · priority change WHERE work lands — plan-backed subjects re-lay right away (grid ↩ Undo). Mom · device · first/last · sticky · carry · rules shape the DAY’s order and are read at generation. Subject cards keep name, emoji, tracking, mom-check, reading log, scored and pacing.</div>';
+  // ── Family-wide day rules (moved here from Settings ▸ Rules, 2026-08-17): the day's shape —
+  //    school hours, sitter, devices, workflow order, overlap, balancing, carry-over & Saturday.
+  h+='<div style="margin-top:14px;border-top:1px dashed var(--border);padding-top:10px">';
+  h+='<button onclick="cbFamilyRulesToggle()" style="width:100%;text-align:left;padding:8px 10px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(cbFamilyRulesOpen?'▾':'▸')+' 🏠 Family-wide day rules <span style="font-weight:600;color:var(--muted)">— school hours · sitter · devices · workflow order · overlap · balancing · carry-over &amp; Saturday</span></button>';
+  if(cbFamilyRulesOpen){ h+='<div class="rules-wrap" style="margin-top:8px">'+((typeof rulesFamilyCardsHTML==="function")?rulesFamilyCardsHTML():'')+'</div>'; }
+  h+='</div>';
   h+='</div>';
   return h;
 }
@@ -34229,17 +34236,12 @@ function wfMomWindowMin(){
   return Math.max(0,day-lunch);
 }
 
-function renderRules(el,headerHtml){
-  if(!el){el=document.getElementById("content");if(!el)return;}
-  const r=rulesData;
-  if(!r){
-    el.innerHTML=(headerHtml||'')+'<div class="rules-wrap"><div class="rules-hdr">Scheduling Rules</div>'+
-      '<div style="text-align:center;padding:40px 0;color:var(--muted)">'+
-      '<div style="font-size:40px;margin-bottom:8px">&#9881;</div>'+
-      '<div style="font-weight:600">Loading rules from Firebase...</div>'+
-      '<div style="font-size:12px;margin-top:4px">If nothing appears, rules may not be seeded yet.</div></div></div>';
-    return;
-  }
+// Family-wide day rules (school day times, sitter, balancing, devices, workflow orders, device/overlap
+// rules, carry-over & Saturday, calendar pointer, audit checklist). Rendered under the Grid's ⚙ Rules
+// panel since 2026-08-17 — the ONE door for anything that decides where school work lands. Same
+// setters (rulesUpdate*), same config/rules data. Returns "" until rules are loaded.
+function rulesFamilyCardsHTML(){
+  const r=rulesData; if(!r) return '<div style="font-size:12px;color:var(--muted);padding:8px 0">Loading rules…</div>';
   const sd=r.schoolDay||{};
   const wf=r.workflow||{};
   const dv=r.devices||{};
@@ -34248,10 +34250,7 @@ function renderRules(el,headerHtml){
   const sat=r.saturday||{};
   const o=id=>rulesOpen[id]?" open":"";
 
-  let h=(headerHtml||'')+'<div class="rules-wrap">';
-  h+='<div class="rules-hdr">Scheduling Rules</div>';
-  h+='<div class="rules-sub">These rules drive the displacement engine. Changes auto-save to all devices.</div>';
-
+  let h='';
   // 0. BABYSITTER NAME
   h+='<div class="rules-card'+o("sitter")+'">';
   h+='<div class="rules-card-hdr" onclick="rulesToggleCard(\'sitter\')">';
@@ -34525,37 +34524,6 @@ function renderRules(el,headerHtml){
   }
   h+='</div></div>';
 
-  // 6.5 PER-SUBJECT SETTINGS — read-only mirror of the Subjects page
-  h+='<div class="rules-card'+o("mirror")+'">';
-  h+='<div class="rules-card-hdr" onclick="rulesToggleCard(\'mirror\')">';
-  h+='<div class="rules-card-title"><span>&#128218;</span> Per-Subject Settings</div>';
-  h+='<div class="rules-card-arrow">&#9654;</div></div>';
-  h+='<div class="rules-card-body">';
-  h+='<div style="font-size:11px;color:var(--muted);padding-bottom:6px">A read-only view of every subject — duration, device, Mom, rules, and max-per-day cap. These live on the Subjects page; edit them there.</div>';
-  h+='<button onclick="setAdminSub(\'curriculum\')" style="padding:6px 14px;border:1px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-bottom:10px">&#9998; Edit on Subjects page &rarr;</button>';
-  [...ROSTER].forEach(function(k){
-    var subs=(currData&&currData.subjects&&currData.subjects[k])||{};
-    var keys=Object.keys(subs).filter(function(sk){return !subs[sk].paused;}).sort(function(a,b){return (subs[a].display||a).localeCompare(subs[b].display||b);});
-    if(!keys.length) return;
-    h+='<div class="rules-kid-chip" style="background:'+(SL_KCOL[k]||"#666")+'">'+cap(k)+'</div>';
-    keys.forEach(function(sk){
-      var s=subs[sk], rl=s.rules||"", flags=[];
-      if(s.mom==="required") flags.push("Mom"); else if(s.mom==="maybe") flags.push("Mom?");
-      ["sequential","sticky","first","last"].forEach(function(f){ if(rl.includes(f)) flags.push(f); });
-      if(Array.isArray(s.allowedDays)&&s.allowedDays.length&&s.allowedDays.length<5) flags.push(s.allowedDays.join("/"));   // 6c: days = pins
-      h+='<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px solid #f9fafb">';
-      h+='<span>'+(GW_DEVICE_EMOJI[s.device]||GW_DEVICE_EMOJI.paper)+'</span>';
-      h+='<span style="flex:1;min-width:0">'+esc(s.display||sk)+'</span>';
-      h+='<span style="font-size:11px;color:var(--muted);flex-shrink:0">'+(s.minutes||20)+'m</span>';
-      if(flags.length) h+='<span style="font-size:10px;color:var(--muted);flex-shrink:0">'+esc(flags.join(" · "))+'</span>';
-      var _capX=(s.cap!=null&&parseInt(s.cap,10)>=1)?parseInt(s.cap,10):null;   // 6c-2: one cap
-      if(_capX!=null) h+='<span style="font-size:10px;color:#b45309;font-weight:700;flex-shrink:0">cap '+_capX+'/day</span>';
-      h+='</div>';
-    });
-    h+='<div style="height:8px"></div>';
-  });
-  h+='</div></div>';
-
   // 6.7 CALENDAR — read-only mirror of the Calendar admin (off-days block every engine)
   h+='<div class="rules-card'+o("cal")+'">';
   h+='<div class="rules-card-hdr" onclick="rulesToggleCard(\'cal\')">';
@@ -34595,7 +34563,7 @@ function renderRules(el,headerHtml){
   ["No kid double-booked; nothing in the lunch block",
    "One Mom-Required / one computer / one shared iPad at a time (from Overlap Rules)",
    "Lucy’s iPad runs independently of the boys’",
-   "Per-subject Max-Per-Day not exceeded (incl. Saturday max)",
+   "Per-subject Cap (sittings per day) not exceeded",
    "Nothing on a calendar off-day (holiday / vacation / kid-off)",
    "Nothing silently dropped — every task is placed or on the carry-over list"
   ].forEach(function(c){
@@ -34603,7 +34571,16 @@ function renderRules(el,headerHtml){
   });
   h+='</div></div>';
 
-  h+='</div>';
+  return h;
+}
+function rulesGoGrid(){ try{ currInnerTab="grid"; cbRulesOpen=true; cbFamilyRulesOpen=true; }catch(e){} setAdminSub("curriculum"); }
+function renderRules(el,headerHtml){
+  if(!el){el=document.getElementById("content");if(!el)return;}
+  // Scheduling rules moved under the Grid's ⚙ Rules (2026-08-17); this page keeps a pointer.
+  let h=(headerHtml||'')+'<div class="rules-wrap"><div class="rules-hdr">Scheduling Rules</div>';
+  h+='<div class="rules-card" style="padding:12px 14px"><div style="font-size:13px;font-weight:700;margin-bottom:4px">All scheduling rules live under the Grid now</div>';
+  h+='<div style="font-size:12px;color:var(--muted);margin-bottom:10px">School day times · babysitter · balancing · devices · workflow orders · overlap rules · carry-over &amp; Saturday · the per-subject table — one panel above the Grid (⚙ Rules).</div>';
+  h+='<button class="btn-p" onclick="rulesGoGrid()">Open the Grid → ⚙ Rules</button></div></div>';
   el.innerHTML=h;
 }
 
