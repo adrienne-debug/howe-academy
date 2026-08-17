@@ -22613,6 +22613,22 @@ function cbPinDay(sk,d){
   s.allowedDays=arr;
   db.ref("curriculum/subjects/"+kid+"/"+sk+"/allowedDays").set(arr);
   db.ref("curriculum/lastEdit").set(new Date().toISOString());
+  // Plan-backed: placement rules re-lay at once (one truth — the grid follows the rule).
+  if(typeof planBacked==="function"&&planBacked(kid,sk)&&s.pacing&&s.pacing.mode&&typeof _gvRelaySubject==="function"){ const _sv=cbSubjKey; cbSubjKey=sk; if(_gvRelaySubject(kid,sk,"Days changed — "+(s.display||sk)+" re-laid")) { cbSubjKey=_sv; return; } cbSubjKey=_sv; }
+  renderAll();
+}
+// ⚙ Rules panel setter — writes the SAME subject field the card uses (one record), then
+// re-lays plan-backed subjects when the field changes placement.
+function rlSet(kid,sk,field,val,relay){
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||!db) return;
+  const _dp=document.getElementById("cb-daypin-scroll"); if(_dp) cbDayPinScroll=_dp.scrollTop;
+  if(field==="tpw"){ const v=Math.max(1,Math.min(7,parseInt(val,10)||1)); s.pacing=Object.assign({},s.pacing||{mode:"timesPerWeek"},{tpw:v}); s.timesPerWeek=v;
+    db.ref("curriculum/subjects/"+kid+"/"+sk).update({"pacing/tpw":v,timesPerWeek:v}); }
+  else if(field==="rulesTok"){ const tok=String(val); const set=new Set(String(s.rules||"").split(/[,\s]+/).filter(Boolean)); if(set.has(tok)) set.delete(tok); else { if(tok==="first") set.delete("last"); if(tok==="last") set.delete("first"); set.add(tok); }
+    s.rules=[...set].join(","); db.ref("curriculum/subjects/"+kid+"/"+sk+"/rules").set(s.rules); }
+  else { if(val===null||val===undefined) delete s[field]; else s[field]=val; db.ref("curriculum/subjects/"+kid+"/"+sk+"/"+field).set(val===undefined?null:val); }
+  currData.lastEdit=new Date().toISOString(); db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  if(relay&&typeof planBacked==="function"&&planBacked(kid,sk)&&s.pacing&&s.pacing.mode&&typeof _gvRelaySubject==="function"){ const _k=cbKid,_s=cbSubjKey; cbKid=kid; cbSubjKey=sk; const ok=_gvRelaySubject(kid,sk,(s.display||sk)+" re-laid"); cbKid=_k; cbSubjKey=_s; if(ok) return; }
   renderAll();
 }
 
@@ -22764,21 +22780,37 @@ function cbRenderRules(col){
     h+='<button onclick="cbGroupStart()" style="padding:5px 12px;border-radius:14px;border:1px dashed var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">+ New group</button>';
   }
 
-  // Day pinning — every subject's allowed days on one screen
-  h+='<div class="ce-sheet-lbl">Day pinning — set neighbors side by side (blank = any school day)</div>';
-  h+='<div id="cb-daypin-scroll" style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:4px 8px">';
+  // Per-subject placement rules — ONE place (her rule: every setting has a home and a
+  // consumer). Each cell writes the same subject field the card used to; plan-backed
+  // subjects re-lay at once when a placement rule changes.
+  h+='<div class="ce-sheet-lbl">Per-subject placement rules — the scheduler reads these; the grid follows</div>';
+  const _cyc=(sk,field,opts,cur,relay)=>{ const i=Math.max(0,opts.indexOf(cur)); const nx=opts[(i+1)%opts.length]; return 'onclick="rlSet(\''+kid+'\',\''+sk+'\',\''+field+'\',\''+nx+'\','+(relay?'true':'false')+')"'; };
+  const _pill='display:inline-block;padding:2px 7px;border-radius:9px;border:1px solid var(--border);background:#fff;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap';
+  h+='<div id="cb-daypin-scroll" style="max-height:340px;overflow:auto;border:1px solid var(--border);border-radius:8px">';
+  h+='<table style="border-collapse:collapse;font-size:10.5px;min-width:100%"><thead><tr style="background:var(--bg)">'+["Subject","Days","×/wk","Cap","Min","Mom","Device","Priority","First/last","Sticky","No-carry"].map(x=>'<th style="text-align:left;padding:5px 6px;white-space:nowrap;font-size:10px;color:var(--muted)">'+x+'</th>').join("")+'</tr></thead><tbody>';
   for(const [sk,s] of entries){
-    const al=s.allowedDays||[];
-    h+='<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px dashed #eef0f3">';
-    h+='<span style="font-size:11px;font-weight:700;width:140px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+disp(sk)+'</span>';
-    ["Mon","Tue","Wed","Thu","Fri"].forEach(d=>{
-      const on=al.includes(d);
-      h+='<div onclick="cbPinDay(\''+sk+'\',\''+d+'\')" style="padding:3px 8px;border-radius:10px;border:1px solid '+(on?'transparent':'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:10px;font-weight:700;cursor:pointer">'+d+'</div>';
-    });
-    h+='</div>';
+    const al=s.allowedDays||[]; const pb=(typeof planBacked==="function")&&planBacked(kid,sk); const seqd=s.tracking!=="daily";
+    const tpw=(s.pacing&&s.pacing.tpw)||s.timesPerWeek||0; const _capN=Math.max(1,parseInt(s.cap,10)||1);
+    const rules=String(s.rules||""); const fl=rules.includes("first")?"first":rules.includes("last")?"last":"—";
+    const dev=(s.device==="ipad"||s.device==="phone")?"ipad/phone":(s.device||"paper");
+    h+='<tr style="border-top:1px dashed #eef0f3">';
+    h+='<td style="padding:4px 6px;font-weight:700;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis" title="'+disp(sk)+'">'+(pb?'🧭 ':'')+disp(sk)+'</td>';
+    h+='<td style="padding:3px 6px;white-space:nowrap">'+["Mon","Tue","Wed","Thu","Fri"].map(d=>{ const on=al.includes(d); return '<span onclick="cbPinDay(\''+sk+'\',\''+d+'\')" style="display:inline-block;padding:2px 6px;border-radius:9px;border:1px solid '+(on?'transparent':'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:9.5px;font-weight:700;cursor:pointer;margin-right:2px">'+d[0]+'</span>'; }).join("")+'</td>';
+    h+='<td style="padding:3px 6px;white-space:nowrap"><span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'tpw\','+(tpw-1)+',true)" style="'+_pill+'">−</span> <b>'+(tpw||"all")+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'tpw\','+(tpw+1)+',true)" style="'+_pill+'">+</span></td>';
+    h+='<td style="padding:3px 6px;white-space:nowrap">'+(seqd?('<span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'cap\','+Math.max(1,_capN-1)+',true)" style="'+_pill+'">−</span> <b>'+_capN+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'cap\','+Math.min(4,_capN+1)+',true)" style="'+_pill+'">+</span>'):'<span style="color:var(--muted)">—</span>')+'</td>';
+    h+='<td style="padding:3px 6px;white-space:nowrap"><span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'minutes\','+Math.max(5,(s.minutes||20)-5)+',true)" style="'+_pill+'">−</span> <b>'+(s.minutes||20)+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'minutes\','+Math.min(90,(s.minutes||20)+5)+',true)" style="'+_pill+'">+</span></td>';
+    h+='<td style="padding:3px 6px"><span '+_cyc(sk,"mom",["none","maybe","required"],s.mom||"none",false)+' style="'+_pill+'">'+({none:"None",maybe:"Maybe",required:"Required"}[s.mom||"none"])+'</span></td>';
+    h+='<td style="padding:3px 6px"><span '+_cyc(sk,"device",["paper","computer","ipad/phone","book"],dev,false)+' style="'+_pill+'">'+(CURR_DEV_EMOJI[dev]||"")+' '+(CURR_DEV_LABEL[dev]||dev)+'</span></td>';
+    h+='<td style="padding:3px 6px"><span '+_cyc(sk,"priority",["low","normal","high"],s.priority||"normal",true)+' style="'+_pill+'">'+(function(x){ x=String(x); return x.charAt(0).toUpperCase()+x.slice(1); })(s.priority||"normal")+'</span></td>';
+    h+='<td style="padding:3px 6px;white-space:nowrap"><span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'rulesTok\',\'first\',false)" style="'+_pill+(fl==="first"?';background:'+col+';color:#fff;border-color:transparent':'')+'">First</span> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'rulesTok\',\'last\',false)" style="'+_pill+(fl==="last"?';background:'+col+';color:#fff;border-color:transparent':'')+'">Last</span></td>';
+    { let sel='<select onchange="rlSet(\''+kid+'\',\''+sk+'\',\'stickyWith\',this.value||null,false)" style="font-size:10px;max-width:120px">'+'<option value="">—</option>'; for(const [k2,s2] of entries){ if(k2===sk) continue; sel+='<option value="'+k2+'"'+(s.stickyWith===k2?' selected':'')+'>'+disp(k2)+'</option>'; } sel+='</select>';
+      const ord=s.stickyOrder||"after"; if(s.stickyWith) sel+=' <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'stickyOrder\',\''+(ord==="after"?"before":"after")+'\',false)" style="'+_pill+'">'+ord+'</span>';
+      h+='<td style="padding:3px 6px;white-space:nowrap">'+sel+'</td>'; }
+    h+='<td style="padding:3px 6px"><span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'noCarry\','+(s.noCarry?'false':'true')+',false)" style="'+_pill+(s.noCarry?';background:'+col+';color:#fff;border-color:transparent':'')+'">'+(s.noCarry?"day-bound":"carries")+'</span></td>';
+    h+='</tr>';
   }
-  h+='</div>';
-  h+='<div style="font-size:10px;color:var(--muted);margin-top:6px">Pinning changes where NEW builds land. Already-built days stay put until you rebuild the subject.</div>';
+  h+='</tbody></table></div>';
+  h+='<div style="font-size:10px;color:var(--muted);margin-top:6px">Days · ×/wk · cap · min · priority change WHERE work lands — plan-backed subjects re-lay right away (grid ↩ Undo). Mom · device · first/last · sticky · carry shape the DAY’s order and are read at generation. Subject cards keep name, emoji, tracking, mom-check, reading log, scored and pacing.</div>';
   h+='</div>';
   return h;
 }
@@ -37922,7 +37954,10 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
       // instead of sliding the finish date out forever. Capped, fit-checked, never
       // doubles a day; overflow stays behind and catches up later — never dropped.
       const _cs=subjects[sk]||{}, _crl=_cs.rules||"";
-      if(seq.length>cursorEff&&!_crl.includes("first")&&!_crl.includes("last")){
+      // Plan-backed (Stage 3): owed lessons are already placed by the projection (cells +
+      // cap extras) — the generator adds no catch-up slots of its own. One owner for backlog.
+      const _pbCatch=(typeof planBacked==="function")&&planBacked(kid,sk);
+      if(!_pbCatch&&seq.length>cursorEff&&!_crl.includes("first")&&!_crl.includes("last")){
         const expEnter=currExpectedBase(kid,sk,weekNum-1);
         const cap=(_cs.carryoverCap!=null)?_cs.carryoverCap:2;
         const want=Math.min(Math.max(0,(expEnter==null?0:expEnter-cursorEff)),cap,(seq.length-cursorEff)-dates.length);
