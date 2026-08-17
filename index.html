@@ -11614,7 +11614,7 @@ const CURR_DEV_EMOJI={paper:"\u{1F4C4}",computer:"\u{1F4BB}","ipad/phone":"\u{1F
 const CURR_DEV_LABEL={paper:"Paper",computer:"Computer","ipad/phone":"iPad/Phone",ipad:"iPad/Phone",phone:"iPad/Phone",book:"Book"};
 const CURR_MOM_BADGE={required:"Mom Required",maybe:"May Need Mom",none:""};
 const RULE_DESC={sequential:"Lessons advance in order (1→2→3)",sticky:"Always scheduled next to another subject",
-"no-fri":"Won't be scheduled on Fridays","mon-thu":"Only scheduled Monday–Thursday",
+
 max1:"Maximum one per day (no doubling up)",first:"First subject of the day (only one allowed)",
 last:"Last subject of the day (only one allowed)",priority:"Gets scheduled before lower-priority subjects"};
 
@@ -11963,9 +11963,7 @@ function renderCurriculumView(el,headerHtml){
                 const al=s.allowedDays||[];
                 const rl=s.rules||"";
                 let warn="";
-                if(al.length&&dayAbbr&&!al.includes(dayAbbr)) warn=" ⚠";
-                else if(rl.includes("no-fri")&&dayAbbr==="Fri") warn=" ⚠";
-                else if(rl.includes("mon-thu")&&["Fri","Sat","Sun"].includes(dayAbbr)) warn=" ⚠";
+                if(al.length&&dayAbbr&&!al.includes(dayAbbr)) warn=" ⚠";   // 6c: pins are the one "which days"
                 h+='<button onclick="lmAddSubj(\''+k+'\',\''+dateStr+'\',\''+sk+'\')" style="border:1px solid var(--border);background:#fff;border-radius:8px;padding:3px 8px;font-size:11px;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ '+esc(s.display)+warn+'</button>';
               });
               h+='</div>';
@@ -15591,6 +15589,47 @@ function gvClearSkiplog(kid){
   cbMsg="🧹 Cleared "+total+" dismissed-lesson leftover"+(total!==1?"s":"")+".";
   renderAll();
 }
+// ── Stage 6c-1: no-fri / mon-thu tokens → Days pins (her decision 2026-08-16) ─────
+// "Which days" has ONE door: the Days pins. A leftover token is folded into pins (no-fri →
+// drop Fri; mon-thu → keep Mon–Thu; no pins yet → Mon–Thu) and removed from `rules`.
+function dayTokenLeftovers(kid){
+  const out=[]; const subs=(((currData||{}).subjects||{})[kid])||{};
+  Object.keys(subs).forEach(sk=>{ const s=subs[sk]||{}; const toks=String(s.rules||"").split(/[,\s]+/).filter(Boolean);
+    const has=toks.filter(t=>t==="no-fri"||t==="mon-thu"); if(!has.length) return;
+    const cur=Array.isArray(s.allowedDays)&&s.allowedDays.length?s.allowedDays.slice():["Mon","Tue","Wed","Thu","Fri"];
+    let pins=cur.slice(); if(has.includes("no-fri")) pins=pins.filter(d=>d!=="Fri"); if(has.includes("mon-thu")) pins=pins.filter(d=>["Mon","Tue","Wed","Thu"].includes(d));
+    const rules=toks.filter(t=>t!=="no-fri"&&t!=="mon-thu").join(",");
+    out.push({kid,sk,disp:s.display||sk,tokens:has,pinsBefore:Array.isArray(s.allowedDays)?s.allowedDays.slice():null,pins,rules,changed:JSON.stringify(pins)!==JSON.stringify(s.allowedDays||[])}); });
+  return out;
+}
+let _dayTokUndo=null;
+function gvMigrateDayTokens(kid){
+  if(!(momModeActive||adminPinUnlocked)||!db) return;
+  const list=dayTokenLeftovers(kid); if(!list.length) return;
+  const lines=list.map(x=>"• "+x.disp+": "+x.tokens.join("+")+" → days "+x.pins.join("/")+(x.changed?"":" (already pinned so)"));
+  if(!confirm("Fold "+list.length+" old day rule"+(list.length!==1?"s":"")+" into Days pins for "+cap(kid)+"?\n\nDays pins are the one place that says which days a subject runs; the old no-fri / mon-thu words meant the same thing.\n\n"+lines.join("\n")+"\n\nNothing moves unless a subject's days actually change. You can Undo.")) return;
+  const patch={}; const prev={};
+  list.forEach(x=>{ const base="subjects/"+kid+"/"+x.sk+"/"; const s=currData.subjects[kid][x.sk];
+    prev[base+"rules"]=s.rules===undefined?null:s.rules; prev[base+"allowedDays"]=s.allowedDays===undefined?null:JSON.parse(JSON.stringify(s.allowedDays));
+    patch[base+"rules"]=x.rules||null; patch[base+"allowedDays"]=x.pins; s.rules=x.rules; s.allowedDays=x.pins.slice(); });
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch).catch(err=>{ if(typeof gwShowToast==="function") gwShowToast("⚠ "+err.message); });
+  _dayTokUndo={kid,prev,n:list.length};
+  // a subject whose days actually changed re-lays (plan-backed only; legacy relays on her next build)
+  list.forEach(x=>{ if(x.changed&&typeof planBacked==="function"&&planBacked(kid,x.sk)&&typeof _gvRelaySubject==="function"){ const s=currData.subjects[kid][x.sk]; if(s.pacing&&s.pacing.mode){ try{ _gvRelaySubject(kid,x.sk,"📅 "+x.disp+" days → "+x.pins.join("/")); }catch(e){} } } });
+  cbMsg="📅 Folded "+list.length+" day rule"+(list.length!==1?"s":"")+" into Days pins.";
+  renderAll();
+}
+function gvMigrateDayTokensUndo(){
+  if(!_dayTokUndo||!db) return;
+  const {kid,prev}=_dayTokUndo; const patch={};
+  Object.keys(prev).forEach(p=>{ patch[p]=prev[p]; const parts=p.split("/"); const sk=parts[2], f=parts[3]; const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(s){ if(prev[p]===null) delete s[f]; else s[f]=JSON.parse(JSON.stringify(prev[p])); } });
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch);
+  _dayTokUndo=null;
+  if(typeof gwShowToast==="function") gwShowToast("↩ Day rules restored");
+  renderAll();
+}
 function gvClearSkiplogUndo(){
   if(!_skiplogClearUndo||!db) return;
   const {kid,prev}=_skiplogClearUndo; const patch={};
@@ -16128,7 +16167,7 @@ function ceRenderAddSheet(){
   h+='<div class="ce-sheet-lbl">Scheduling Rules</div>';
   const rParts=(f.rules||"").split(",").map(x=>x.trim()).filter(Boolean);
   h+='<div class="ce-chips">';
-  ["sequential","sticky","no-fri","mon-thu","max1","first","last"].forEach(r=>{
+  ["sequential","sticky","max1","first","last"].forEach(r=>{   // 6c: no-fri/mon-thu retired — use Days pins
     const sel=rParts.includes(r);
     h+='<div class="ce-chip'+(sel?" sel":"")+'" onclick="ceAddToggleRule(\''+r+'\')">'+r+'</div>';
   });
@@ -22753,8 +22792,8 @@ function cbRenderRules(col){
     // came off the card). Same data, same consumers: no-fri/mon-thu = generator day filter,
     // max1 = never stacks (packer), sequential = order flag; Max/day = config/rules.maxPerDay
     // by display name (catch-up stacking cap, catchupDayCap).
-    { const _tk=[["sequential","seq"],["no-fri","no-fri"],["mon-thu","mon-thu"],["max1","max1"]];
-      h+='<td style="padding:3px 6px;white-space:nowrap">'+_tk.map(([t,lbl])=>{ const on=rules.split(/[,\s]+/).includes(t); return '<span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'rulesTok\',\''+t+'\','+((t==="no-fri"||t==="mon-thu")?'true':'false')+')" style="'+_pill+(on?';background:'+col+';color:#fff;border-color:transparent':'')+'">'+lbl+'</span>'; }).join(" ")+'</td>';
+    { const _tk=[["sequential","seq"],["max1","max1"]];   // 6c: no-fri/mon-thu retired (Days pins are the one door)
+      h+='<td style="padding:3px 6px;white-space:nowrap">'+_tk.map(([t,lbl])=>{ const on=rules.split(/[,\s]+/).includes(t); return '<span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'rulesTok\',\''+t+'\',false)" style="'+_pill+(on?';background:'+col+';color:#fff;border-color:transparent':'')+'">'+lbl+'</span>'; }).join(" ")+'</td>';
       const _mpc=(typeof rulesData!=="undefined"&&rulesData&&rulesData.maxPerDay&&rulesData.maxPerDay[s.display])||{}; const _mpk=esc(String(s.display||sk)).replace(/'/g,"\\'");
       h+='<td style="padding:3px 6px;white-space:nowrap" title="Max sittings per day during catch-up (blank = default '+(typeof DEFAULT_DAY_CAP!=="undefined"?DEFAULT_DAY_CAP:2)+'); Sat blank = same as weekday">'
         +'<input type="number" min="0" max="10" value="'+(_mpc.max!=null?_mpc.max:"")+'" placeholder="wk" onchange="rulesUpdateMax(\''+_mpk+'\',\'max\',this.value)" style="width:34px;font-size:10px;padding:1px 3px"> '
@@ -25061,6 +25100,18 @@ function renderCurrGrid(el){
           h+='<div style="background:#f5f3ff;border-left:4px solid #7c3aed;border-radius:0 10px 10px 0;padding:7px 12px;margin:0 0 8px;font-size:12px;color:#5b21b6">🧹 Cleared '+_skiplogClearUndo.n+' leftover'+(_skiplogClearUndo.n>1?'s':'')+' on '+_skiplogClearUndo.subjects+' subject'+(_skiplogClearUndo.subjects>1?'s':'')+'. <button onclick="gvClearSkiplogUndo()" style="border:1px solid #7c3aed;background:#fff;color:#5b21b6;border-radius:8px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">↩ Undo</button></div>';
         }
       }catch(e){}
+      // Stage 6c-1: leftover no-fri / mon-thu words → Days pins, one tap, Undo.
+      try{
+        const _dt=(typeof dayTokenLeftovers==="function")?dayTokenLeftovers(gvKid):[];
+        if(_dt.length){
+          h+='<div style="background:#f0f9ff;border-left:4px solid #0284c7;border-radius:0 10px 10px 0;padding:9px 12px;margin:0 0 8px">';
+          h+='<div style="font-size:12px;color:#075985;margin-bottom:6px"><b>📅 '+_dt.length+' subject'+(_dt.length>1?'s':'')+' still carr'+(_dt.length>1?'y':'ies')+' an old day rule ('+_dt.map(x=>esc(x.disp)+': '+x.tokens.join('+')).join(', ')+').</b> Days pins are the one place that says which days a subject runs — this folds the old words into the pins. Shows the result first.</div>';
+          h+='<button onclick="gvMigrateDayTokens(\''+gvKid+'\')" style="border:1px solid #0284c7;background:#fff;color:#075985;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">📅 Fold into Days</button>';
+          h+='</div>';
+        } else if(typeof _dayTokUndo!=="undefined"&&_dayTokUndo&&_dayTokUndo.kid===gvKid){
+          h+='<div style="background:#f0f9ff;border-left:4px solid #0284c7;border-radius:0 10px 10px 0;padding:7px 12px;margin:0 0 8px;font-size:12px;color:#075985">📅 Folded '+_dayTokUndo.n+' day rule'+(_dayTokUndo.n>1?'s':'')+' into Days pins. <button onclick="gvMigrateDayTokensUndo()" style="border:1px solid #0284c7;background:#fff;color:#075985;border-radius:8px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">↩ Undo</button></div>';
+        }
+      }catch(e){}
       if(false){
       } else if(typeof planPending==="function"&&planPending().filter(x=>x.kid===gvKid).length){
         const _pp=planPending().filter(x=>x.kid===gvKid);
@@ -26660,9 +26711,7 @@ function lmComputeSuggestions(k,weekLabel){
         if(need<=0) break;
         if(dy.off) continue;
         const abbr=WD[gwParseDate(dy.date).getDay()];
-        if(al.length&&abbr&&!al.includes(abbr)) continue;
-        if(rl.includes("no-fri")&&abbr==="Fri") continue;
-        if(rl.includes("mon-thu")&&["Fri","Sat","Sun"].includes(abbr)) continue;
+        if(al.length&&abbr&&!al.includes(abbr)) continue;   // 6c: pins are the one "which days"
         if(!allowSecond&&dy.present[sk]) continue;
         if(allowSecond&&(!dy.present[sk]||(dy.ov.added||{})[sk])) continue;
         let mins=0;
@@ -34263,7 +34312,8 @@ function renderRules(el,headerHtml){
     keys.forEach(function(sk){
       var s=subs[sk], rl=s.rules||"", flags=[];
       if(s.mom==="required") flags.push("Mom"); else if(s.mom==="maybe") flags.push("Mom?");
-      ["sequential","sticky","first","last","no-fri","mon-thu","max1"].forEach(function(f){ if(rl.includes(f)) flags.push(f); });
+      ["sequential","sticky","first","last","max1"].forEach(function(f){ if(rl.includes(f)) flags.push(f); });
+      if(Array.isArray(s.allowedDays)&&s.allowedDays.length&&s.allowedDays.length<5) flags.push(s.allowedDays.join("/"));   // 6c: days = pins
       h+='<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px solid #f9fafb">';
       h+='<span>'+(GW_DEVICE_EMOJI[s.device]||GW_DEVICE_EMOJI.paper)+'</span>';
       h+='<span style="flex:1;min-width:0">'+esc(s.display||sk)+'</span>';
@@ -37179,8 +37229,7 @@ function gwSubjectDetail(kid,key){
   const rules=s.rules||"";
   if(rules.includes("sequential")) parts.push("Sequential.");
   if(rules.includes("max1")) parts.push("Max 1 per day.");
-  if(rules.includes("mon-thu")) parts.push("Mon–Thu only.");
-  if(rules.includes("no-fri")) parts.push("Not on Fridays.");
+  if(Array.isArray(s.allowedDays)&&s.allowedDays.length&&s.allowedDays.length<5) parts.push(s.allowedDays.join("/")+" only.");   // 6c: days = pins
   return parts.join(" ");
 }
 
@@ -37366,9 +37415,8 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   function pushItem(kid,key,excelVal){
     const s=getMeta(kid,key); if(!s) return;
     if(isCarSchool&&s.device!=="ipad"&&!GW_CAR_SAFE_KEYS.has(key)){ dropped.push({kid,day:dayName,key,val:excelVal,reason:"car school day — paper/computer tasks skipped"}); return; }
-    const rules=s.rules||"";
-    if(rules.includes("no-fri")&&isFriday){ dropped.push({kid,day:dayName,key,val:excelVal,reason:"Not scheduled on Fridays (Excel rule)"}); return; }
-    if(rules.includes("mon-thu")&&!["monday","tuesday","wednesday","thursday"].includes(dayName)){ dropped.push({kid,day:dayName,key,val:excelVal,reason:"Mon–Thu only (Excel rule)"}); return; }
+    // 6c: no-fri / mon-thu tokens retired — Days pins decide placement upstream (Builder /
+    // projection / balancer); what the grid laid is read as-is here, never dropped.
     const id=prefix+(counter++);
     items.push({id,who:kid,device:s.device||"paper",dur:s.minutes||20,mom:s.mom||"none"});
     meta[id]={kid,key,excelVal,s};
@@ -37543,9 +37591,7 @@ function gwAutoBalance(dayData,lateStart,skipDays){
             const rules=subjectRules[key]||"";
             if(rules.includes("sticky")) continue;
             if(stickyTargets.has(key)) continue;
-            if(rules.includes("no-fri")&&dayName==="friday") continue;
-            if(rules.includes("mon-thu")&&!["monday","tuesday","wednesday","thursday"].includes(dayName)) continue;
-            const allowed=subjects[key]&&subjects[key].allowedDays||[];
+            const allowed=subjects[key]&&subjects[key].allowedDays||[];   // 6c: pins are the one "which days"
             const dayAbbr={monday:"Mon",tuesday:"Tue",wednesday:"Wed",thursday:"Thu",friday:"Fri",saturday:"Sat"}[dayName];
             if(allowed.length&&dayAbbr&&!allowed.includes(dayAbbr)) continue;
             const dstTasks=(dayData[dk]||{})[kid]||{};
@@ -37813,9 +37859,7 @@ function gwCatchupExtraDates(kid,sk,s,existingDates,want,dayData){
     if(!kidDay) continue;                          // kid off / nothing scheduled that day
     const abbr=WD[gwParseDate(date).getDay()];
     if(abbr==="Sat"||abbr==="Sun") continue;
-    if(al.length&&abbr&&!al.includes(abbr)) continue;
-    if(rl.includes("no-fri")&&abbr==="Fri") continue;
-    if(rl.includes("mon-thu")&&["Fri","Sat","Sun"].includes(abbr)) continue;
+    if(al.length&&abbr&&!al.includes(abbr)) continue;   // 6c: pins are the one "which days"
     let load=0;
     for(const psk of Object.keys(kidDay)) load+=(subs[psk]&&subs[psk].minutes)||20;
     days.push({date,load,have:cnt[date]||0});

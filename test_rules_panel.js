@@ -1,7 +1,7 @@
 /*
  * Node tests for Stage 6a: the ⚙ Rules panel is the ONE door for every placement rule.
  * Renders the real cbRenderRules and asserts each legacy card control has a home:
- * rule tokens (sequential / no-fri / mon-thu / max1) and per-subject Max/day (wk + Sat).
+ * rule tokens (sequential / max1 — no-fri / mon-thu retired in 6c-1) and per-subject Max/day (wk + Sat).
  *
  *   run:  node test_rules_panel.js
  */
@@ -55,13 +55,13 @@ console.log("cbRenderRules — Rules + Max/day columns");
   if (h) {
     ok("renders", typeof h === "string" && h.length > 200);
     ok("header has Rules and Max/day columns", h.indexOf(">Rules<") >= 0 && h.indexOf(">Max/day<") >= 0);
-    ok("token chips wired to rlSet rulesTok for all four tokens", ["sequential", "no-fri", "mon-thu", "max1"].every(t => h.indexOf("rlSet('lincoln','ws','rulesTok','" + t + "'") >= 0));
-    ok("no-fri / mon-thu re-lay (placement), sequential / max1 do not", h.indexOf("rlSet('lincoln','ws','rulesTok','no-fri',true)") >= 0 && h.indexOf("rlSet('lincoln','ws','rulesTok','mon-thu',true)") >= 0 && h.indexOf("rlSet('lincoln','ws','rulesTok','max1',false)") >= 0 && h.indexOf("rlSet('lincoln','ws','rulesTok','sequential',false)") >= 0);
+    ok("token chips wired to rlSet rulesTok for sequential + max1", ["sequential", "max1"].every(t => h.indexOf("rlSet('lincoln','ws','rulesTok','" + t + "'") >= 0));
+    ok("no-fri / mon-thu chips are GONE (6c-1: Days pins are the one door)", h.indexOf("rulesTok','no-fri'") < 0 && h.indexOf("rulesTok','mon-thu'") < 0);
     // selected state: ws has sequential + no-fri on
     const iW = h.indexOf('title="Wordsmith"'), iR = h.indexOf('title="Reflex"');
     const wsRow = iW > iR ? h.slice(iW) : h.slice(iW, iR);
     const onChips = (wsRow.match(/rulesTok','(sequential|no-fri|mon-thu|max1)',(?:true|false)\)" style="[^"]*background:#123456/g) || []).map(m => m.match(/rulesTok','([a-z0-9-]+)'/)[1]);
-    ok("selected tokens highlighted (sequential, no-fri on; mon-thu, max1 off)", onChips.sort().join(",") === "no-fri,sequential", onChips);
+    ok("selected tokens highlighted (sequential on; max1 off)", onChips.sort().join(",") === "sequential", onChips);
     ok("Max/day inputs wired to rulesUpdateMax by DISPLAY name, prefilled 2 / 1", wsRow.indexOf("rulesUpdateMax('Wordsmith','max',this.value)") >= 0 && wsRow.indexOf("rulesUpdateMax('Wordsmith','saturday_max',this.value)") >= 0 && /value="2" placeholder="wk"/.test(wsRow) && /value="1" placeholder="Sat"/.test(wsRow));
     const rfRow = iR > iW ? h.slice(iR) : h.slice(iR, iW);
     ok("subject with no Max/day entry renders blank inputs", /value="" placeholder="wk"/.test(rfRow) && /value="" placeholder="Sat"/.test(rfRow));
