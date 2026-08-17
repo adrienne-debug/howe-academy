@@ -15019,7 +15019,12 @@ function ceRenderEditSheet(){
 // subject so the plan picks up from the next unfinished lesson.
 function _ceMarkDoneUI(kid,sk,s,seq,cursorPos,col){
   const md=s.manualDone||{};
-  const marked=Object.keys(md).filter(k=>md[k]);
+  // Hand-marked chips: {key,label}. Stamped subjects list their done/manual records by
+  // lesson id (Stage 4: the one record), then any legacy manualDone text that has no id
+  // twin; legacy subjects list manualDone as before.
+  const marked=[]; const _mSeen=new Set();
+  try{ (_lidManualMarks(kid,sk)||[]).forEach(m=>{ marked.push({key:"lid:"+m.lid,label:m.text}); _mSeen.add(_lidNorm(m.text)); }); }catch(e){}
+  Object.keys(md).filter(k=>md[k]).forEach(k=>{ const t=_mdText(k,md[k]); if(_mSeen.has(_lidNorm(t))) return; marked.push({key:k,label:t}); });
   // The master list is the card's lessonSeq when it has one, else the built (grid)
   // sequence — so this panel works for grid-backed subjects too. Keying off
   // s.lessonSeq alone hid it from most subjects (2026-08-12: she couldn't find it on
@@ -15086,8 +15091,8 @@ function _ceMarkDoneUI(kid,sk,s,seq,cursorPos,col){
   }catch(e){}
   if(marked.length){
     h+='<div style="font-size:10px;color:var(--muted);margin-top:7px">Hand-marked done ('+marked.length+') — tap ✕ to undo:</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px">';
-    marked.forEach(k=>{
-      const _lbl=_mdText(k,md[k]);   // show the real lesson name, not the sanitized key
+    marked.forEach(m=>{
+      const k=m.key, _lbl=m.label;   // show the real lesson name, not the sanitized key
       h+='<span style="display:inline-flex;align-items:center;gap:4px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:2px 8px;font-size:10px;color:#15803d">'+esc(_lbl)+
         '<button onclick="ceUnmarkLessonDone(\''+kid+'\',\''+sk+'\',\''+esc(String(k).replace(/'/g,"\\'"))+'\')" style="border:none;background:none;color:#15803d;font-weight:800;cursor:pointer;padding:0">&times;</button></span>';
     });
@@ -15142,11 +15147,17 @@ function ceMarkLessonDone(kid,sk,lesson,through){
       +(dayISO?("\n\nRecorded as done on "+dayISO+" — the lesson moves onto that day in the map."):"")
       +"\n\nYou can undo it on this card.")) return;
   const prevPaths={};                                   // one Undo covers mark + cell moves + re-lay
-  prevPaths["subjects/"+kid+"/"+sk+"/manualDone"]=s.manualDone?JSON.parse(JSON.stringify(s.manualDone)):null;
-  const md=Object.assign({},s.manualDone||{});
-  list.forEach(l=>{ md[_mdKey(l)]={lesson:String(l).trim(),day:dayISO||cbTodayISO(),ts:new Date().toISOString()}; });
-  s.manualDone=md;
-  const up={}; up["subjects/"+kid+"/"+sk+"/manualDone"]=md;
+  const up={};
+  // Stage 4: a plan-backed subject's hand-mark is ONLY the done record (src "manual");
+  // legacy subjects keep writing manualDone text (their readers are title-based).
+  const _pbMark=(typeof planBacked==="function")&&planBacked(kid,sk);
+  if(!_pbMark){
+    prevPaths["subjects/"+kid+"/"+sk+"/manualDone"]=s.manualDone?JSON.parse(JSON.stringify(s.manualDone)):null;
+    const md=Object.assign({},s.manualDone||{});
+    list.forEach(l=>{ md[_mdKey(l)]={lesson:String(l).trim(),day:dayISO||cbTodayISO(),ts:new Date().toISOString()}; });
+    s.manualDone=md;
+    up["subjects/"+kid+"/"+sk+"/manualDone"]=md;
+  }
   try{ lidMarkDone(kid,sk,list,dayISO||null,up,prevPaths); }catch(e){}   // Stage 1.5: done-by-id rides the same update
   if(dayISO){
     const L=(currData.lessons||{})[kid]||{};
@@ -15177,7 +15188,18 @@ function ceMarkLessonDone(kid,sk,lesson,through){
 }
 function ceUnmarkLessonDone(kid,sk,key){
   if(!momHere()) return;
-  const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||!s.manualDone) return;
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s) return;
+  if(String(key||"").indexOf("lid:")===0){                    // Stage 4: hand-mark recorded by lesson id
+    const _up={}; let _okU=false;
+    try{ _okU=lidUnmarkLid(kid,sk,key.slice(4),_up); }catch(e){}
+    if(!_okU) return;
+    if(db&&Object.keys(_up).length) db.ref("curriculum").update(_up);
+    try{ buildCurrPaceCum(); }catch(e){}
+    const _i=(lidsFor(kid,sk)||[]).indexOf(key.slice(4)); const _t=_i>=0?String((s.lessonSeq||[])[_i]||""):key.slice(4);
+    _ceRelayAfterMark(kid,sk,"↩ Un-marked “"+_t+"”");
+    return;
+  }
+  if(!s.manualDone) return;
   const _txt=_mdText(key,s.manualDone[key]);
   const md=Object.assign({},s.manualDone); delete md[key];
   s.manualDone=md;
@@ -15596,6 +15618,30 @@ function lidMarkDone(kid,sk,texts,dayISO,patch,prevPaths){
     }
   });
   return out;
+}
+// Hand-marks recorded by id: [{lid,text,day,ts}] for done records with src "manual", in
+// list order (null unless stamped). Stage 4: this is the ONE record of a hand-mark for
+// plan-backed subjects; manualDone is legacy-only.
+function _lidManualMarks(kid,sk){
+  if(!lidStamped(kid,sk)) return null;
+  const s=currData.subjects[kid][sk]; const ids=lidsFor(kid,sk); const seq=s.lessonSeq||[];
+  const node=((((currData||{}).done||{})[kid]||{})[sk])||{}; const out=[];
+  ids.forEach((id,i)=>{ const r=node[id]; if(r&&r.src==="manual") out.push({lid:id,text:String(seq[i]==null?"":seq[i]),day:r.day||"",ts:r.ts||""}); });
+  return out;
+}
+// Un-hand-mark by LID: removes that manual done record (never a check-off's). Also drops
+// a legacy manualDone twin of the same text so the two records can't disagree.
+function lidUnmarkLid(kid,sk,lid,patch){
+  if(!lidStamped(kid,sk)) return false;
+  const s=currData.subjects[kid][sk]; const ids=lidsFor(kid,sk); const seq=s.lessonSeq||[];
+  const node=((((currData||{}).done||{})[kid]||{})[sk])||{}; const r=node[lid];
+  if(!r||r.src!=="manual") return false;
+  patch["done/"+kid+"/"+sk+"/"+lid]=null; delete node[lid];
+  const i=ids.indexOf(lid); const txt=i>=0?String(seq[i]==null?"":seq[i]):"";
+  if(txt&&s.manualDone){ const md=Object.assign({},s.manualDone); let ch=false;
+    Object.keys(md).forEach(k=>{ if(_lidNorm(_mdText(k,md[k]))===_lidNorm(txt)){ delete md[k]; ch=true; } });
+    if(ch){ s.manualDone=Object.keys(md).length?md:null; patch["subjects/"+kid+"/"+sk+"/manualDone"]=s.manualDone; } }
+  return true;
 }
 // Un-hand-mark by TEXT: removes MANUAL done records for that text (never a check-off's).
 function lidUnmarkText(kid,sk,text,patch){
@@ -24634,11 +24680,16 @@ function gvMenuDone(kid,dn,sk){
       :("Mark “"+txt+"” done?\n\nIt comes out of the plan and the lessons after it move up to fill its day. You can undo this."))) return;
   gvGrabScroll(); gvMenu=null; gvEdit=null;
   const prevPaths={};
-  prevPaths["subjects/"+kid+"/"+sk+"/manualDone"]=s.manualDone?JSON.parse(JSON.stringify(s.manualDone)):null;
-  const md=Object.assign({},s.manualDone||{});
-  md[_mdKey(txt)]={lesson:txt,day:(past?l.date:cbTodayISO()),ts:new Date().toISOString()};
-  s.manualDone=md;
-  const up={}; up["subjects/"+kid+"/"+sk+"/manualDone"]=md;
+  const up={};
+  // Stage 4: plan-backed → done record only (src "manual"); legacy → manualDone text too.
+  const _pbMark=(typeof planBacked==="function")&&planBacked(kid,sk);
+  if(!_pbMark){
+    prevPaths["subjects/"+kid+"/"+sk+"/manualDone"]=s.manualDone?JSON.parse(JSON.stringify(s.manualDone)):null;
+    const md=Object.assign({},s.manualDone||{});
+    md[_mdKey(txt)]={lesson:txt,day:(past?l.date:cbTodayISO()),ts:new Date().toISOString()};
+    s.manualDone=md;
+    up["subjects/"+kid+"/"+sk+"/manualDone"]=md;
+  }
   try{ lidMarkDone(kid,sk,[txt],(past?l.date:null),up,prevPaths); }catch(e){}   // Stage 1.5: done-by-id rides the same update
   if(!past){
     // Clear its cell now — the re-lay would overwrite the day anyway, but an unpaced
@@ -26974,10 +27025,17 @@ function _mdText(k,v){ return (v&&typeof v==="object"&&v.lesson)?String(v.lesson
 function _paceManualTitles(kid,subjectKey){
   if(!subjectKey) return [];
   const s=(((currData||{}).subjects||{})[kid]||{})[subjectKey];
-  const md=s&&s.manualDone;
-  if(!md) return [];
+  if(!s) return [];
+  const md=s.manualDone||{};
   const disp=(s.display||subjectKey);
-  return Object.keys(md).filter(k=>md[k]).map(k=>("\u{1F4C4} "+disp+" — "+_mdText(k,md[k])).toLowerCase());
+  const out=[]; const seen=new Set();
+  const push=txt=>{ const k=String(txt||"").trim().toLowerCase(); if(!k||seen.has(k)) return; seen.add(k); out.push(("\u{1F4C4} "+disp+" — "+String(txt).trim()).toLowerCase()); };
+  Object.keys(md).filter(k=>md[k]).forEach(k=>push(_mdText(k,md[k])));
+  // Stage 4: plan-backed marks live ONLY in curriculum/done (src "manual"); fold them in
+  // as the same synthetic titles so pace, the tally and the panel agree. De-duped by
+  // text against a legacy manualDone twin of the same lesson (dual-write era).
+  try{ (_lidManualMarks(kid,subjectKey)||[]).forEach(m=>push(m.text)); }catch(e){}
+  return out;
 }
 function paceDoneTitles(kid,keywords,excludeWeek,subjectKey){
   const out=_paceManualTitles(kid,subjectKey);
