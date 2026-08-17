@@ -15729,6 +15729,43 @@ function gvMakePlanUndo(){
   if(typeof gwShowToast==="function") gwShowToast("↩ Plan flag removed (cells stay as laid — ↩ Undo on the grid reverts the re-lay)");
   renderAll();
 }
+// ── Stage 4.3: skiplog leftovers on plan-backed subjects ─────────────────────
+// A plan-backed subject never reads or writes the skiplog (a lesson is done or owed —
+// nothing is "passed over"). Entries written before it was plan-backed are inert history
+// that only clutters the grid. One previewed tap clears them per kid; Undo restores.
+function skiplogLeftovers(kid){
+  const out=[]; const slk=(((currData||{}).skiplog||{})[kid])||{};
+  Object.keys(slk).forEach(sk=>{ const arr=Array.isArray(slk[sk])?slk[sk]:Object.values(slk[sk]||{}); if(!arr.length) return;
+    if(!((typeof planBacked==="function")&&planBacked(kid,sk))) return;
+    const s=(((currData||{}).subjects||{})[kid]||{})[sk]||{};
+    out.push({kid,sk,disp:s.display||sk,n:arr.length,texts:arr.map(e=>String((e&&e.lesson)||"")).filter(Boolean)}); });
+  return out;
+}
+let _skiplogClearUndo=null;
+function gvClearSkiplog(kid){
+  if(!(momModeActive||adminPinUnlocked)||!db) return;
+  const list=skiplogLeftovers(kid); if(!list.length) return;
+  const total=list.reduce((a,x)=>a+x.n,0);
+  const lines=list.map(x=>"• "+x.disp+": "+x.n+" — "+x.texts.slice(0,4).join(", ")+(x.texts.length>4?" …":""));
+  if(!confirm("Clear "+total+" dismissed-lesson leftover"+(total!==1?"s":"")+" on "+list.length+" plan-backed subject"+(list.length!==1?"s":"")+" for "+cap(kid)+"?\n\nThese entries are from before the subject was plan-backed. Nothing reads them any more — every listed lesson is either done or owed and laid ahead. Clearing only tidies the record.\n\n"+lines.join("\n")+"\n\nYou can Undo.")) return;
+  const patch={}; const prev={};
+  list.forEach(x=>{ const p="skiplog/"+kid+"/"+x.sk; prev[p]=JSON.parse(JSON.stringify(currData.skiplog[kid][x.sk])); patch[p]=null; delete currData.skiplog[kid][x.sk]; });
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch).catch(err=>{ if(typeof gwShowToast==="function") gwShowToast("⚠ "+err.message); });
+  _skiplogClearUndo={kid,prev,n:total,subjects:list.length};
+  cbMsg="🧹 Cleared "+total+" dismissed-lesson leftover"+(total!==1?"s":"")+".";
+  renderAll();
+}
+function gvClearSkiplogUndo(){
+  if(!_skiplogClearUndo||!db) return;
+  const {kid,prev}=_skiplogClearUndo; const patch={};
+  Object.keys(prev).forEach(p=>{ patch[p]=prev[p]; const sk=p.split("/")[2]; currData.skiplog=currData.skiplog||{}; (currData.skiplog[kid]=currData.skiplog[kid]||{})[sk]=prev[p]; });
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch);
+  _skiplogClearUndo=null;
+  if(typeof gwShowToast==="function") gwShowToast("↩ Skiplog entries restored");
+  renderAll();
+}
 // ── Sequential order is a hard rule (her rule, 2026-08-16) ────────────────────
 // "Nothing can be checked off out of order." A card for a stamped subject is REFUSED at
 // the tap while an earlier lesson in the list is still open — the schedule's mistake can
@@ -24347,7 +24384,7 @@ function gvReconcile(kid){
       if(!grid.length) continue;                    // card-only: its own banner
     }
     const dismissed={};
-    ((slog[sk])||[]).forEach(e=>{ if(e&&e.lesson) dismissed[_gaNorm(e.lesson)]=1; });
+    if(!_pb) ((slog[sk])||[]).forEach(e=>{ if(e&&e.lesson) dismissed[_gaNorm(e.lesson)]=1; });   // Stage 4: no skiplog for plan-backed
     // Compare as multisets — a sequence may repeat a lesson on purpose, so two
     // copies in the list and one on the grid is a real difference.
     const tally=m=>{ const t={}; m.forEach(x=>{ const k=_gaNorm(x); t[k]=(t[k]||0)+1; }); return t; };
@@ -25166,6 +25203,19 @@ function renderCurrGrid(el){
           h+='</div></div>';
         }
       }catch(e){}
+      // Stage 4.3: inert skiplog entries on plan-backed subjects — one tidy-up tap, with Undo.
+      try{
+        const _sl=(typeof skiplogLeftovers==="function")?skiplogLeftovers(gvKid):[];
+        if(_sl.length){
+          const _tot=_sl.reduce((a,x)=>a+x.n,0);
+          h+='<div style="background:#f5f3ff;border-left:4px solid #7c3aed;border-radius:0 10px 10px 0;padding:9px 12px;margin:0 0 8px">';
+          h+='<div style="font-size:12px;color:#5b21b6;margin-bottom:6px"><b>🧹 '+_tot+' dismissed-lesson leftover'+(_tot>1?'s':'')+' on '+_sl.length+' plan-backed subject'+(_sl.length>1?'s':'')+'.</b> Written by the old Keep/Dismiss sheet before these subjects were plan-backed; nothing reads them now (a lesson is done or owed — never passed over). Clearing only tidies the record. Shows what it will clear first.</div>';
+          h+='<button onclick="gvClearSkiplog(\''+gvKid+'\')" style="border:1px solid #7c3aed;background:#fff;color:#5b21b6;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🧹 Clear leftovers</button>';
+          h+='</div>';
+        } else if(typeof _skiplogClearUndo!=="undefined"&&_skiplogClearUndo&&_skiplogClearUndo.kid===gvKid){
+          h+='<div style="background:#f5f3ff;border-left:4px solid #7c3aed;border-radius:0 10px 10px 0;padding:7px 12px;margin:0 0 8px;font-size:12px;color:#5b21b6">🧹 Cleared '+_skiplogClearUndo.n+' leftover'+(_skiplogClearUndo.n>1?'s':'')+' on '+_skiplogClearUndo.subjects+' subject'+(_skiplogClearUndo.subjects>1?'s':'')+'. <button onclick="gvClearSkiplogUndo()" style="border:1px solid #7c3aed;background:#fff;color:#5b21b6;border-radius:8px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">↩ Undo</button></div>';
+        }
+      }catch(e){}
       if(false){
       } else if(typeof planPending==="function"&&planPending().filter(x=>x.kid===gvKid).length){
         const _pp=planPending().filter(x=>x.kid===gvKid);
@@ -25223,7 +25273,9 @@ function renderCurrGrid(el){
   const _skipAt={};
   {
     const slk=((currData.skiplog||{})[gvKid])||{};
-    for(const sk of Object.keys(slk)) (slk[sk]||[]).forEach(e=>{ if(e&&e.dayNum!=null) _skipAt[e.dayNum+"|"+sk]=e.lesson||""; });
+    // Stage 4: plan-backed subjects have no "passed over" — a lesson is done or owed, and
+    // owed ones are laid ahead — so their old skiplog entries are not shown as dismissed.
+    for(const sk of Object.keys(slk)){ if((typeof planBacked==="function")&&planBacked(gvKid,sk)) continue; (slk[sk]||[]).forEach(e=>{ if(e&&e.dayNum!=null) _skipAt[e.dayNum+"|"+sk]=e.lesson||""; }); }
   }
   // Which cells hold FINISHED work. Without this the grid looked identical whether
   // a lesson was done or pending, so a completed lesson sitting on today read as a
