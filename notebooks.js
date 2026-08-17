@@ -3885,12 +3885,41 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       });
     }).then(function () {
       var d = frame.contentDocument;
-      var fontsReady = (d.fonts && d.fonts.ready) ? d.fonts.ready.catch(function () {}) : Promise.resolve();
+      // Fonts: the notebooks use web fonts (Google: Fredoka One / Orbitron / Fraunces / Nunito /
+      // DM Sans) and the embedded NoTears tracing font (@font-face data URI). Capturing before
+      // they are loaded rasterises fallback text (2026-08-16: Julian's tracing/heading text
+      // came out wrong). Wait for the font stylesheets, then explicitly load every family the
+      // document declares (each weight seen), then fonts.ready, then a short settle.
+      var links = Array.prototype.slice.call(d.querySelectorAll('link[rel="stylesheet"]'));
+      var linksReady = Promise.all(links.map(function (l) { return (l.sheet) ? null : new Promise(function (r) { l.addEventListener("load", r); l.addEventListener("error", r); setTimeout(r, 4000); }); }));
       var imgs = Array.prototype.slice.call(d.images || []);
       var imgsReady = Promise.all(imgs.map(function (im) { return im.complete ? null : new Promise(function (r) { im.onload = r; im.onerror = r; }); }));
-      return Promise.all([fontsReady, imgsReady]).then(function () { return new Promise(function (r) { setTimeout(r, 300); }); });
+      return Promise.all([linksReady, imgsReady]).then(function () {
+        var fams = {};
+        var addFam = function (name, w) { name = String(name || "").replace(/^['"]|['"]$/g, "").trim(); if (!name || /^(inherit|initial|sans-serif|serif|monospace|system-ui)$/i.test(name)) return; (fams[name] = fams[name] || {})[w || "400"] = 1; };
+        // @font-face rules in same-origin sheets (NoTears) + families named in Google <link>s
+        Array.prototype.slice.call(d.styleSheets || []).forEach(function (sh) { var rules = null; try { rules = sh.cssRules; } catch (e) {} if (!rules) return; Array.prototype.slice.call(rules).forEach(function (r) { if (r.type === 5 /* FONT_FACE */) addFam(r.style.getPropertyValue("font-family"), r.style.getPropertyValue("font-weight") || "400"); }); });
+        links.forEach(function (l) { var m = String(l.href || "").match(/family=([^&]+)/g) || []; m.forEach(function (x) { var spec = decodeURIComponent(x.slice(7)); var name = spec.split(":")[0].replace(/\+/g, " "); var ws = (spec.split(":")[1] || "").match(/\d{3}/g) || ["400"]; ws.forEach(function (w) { addFam(name, w); }); addFam(name, "700"); }); });
+        var loads = [];
+        Object.keys(fams).forEach(function (n) { Object.keys(fams[n]).forEach(function (w) { if (d.fonts && d.fonts.load) loads.push(d.fonts.load(w + " 16px '" + n + "'", "AaBbGg123").catch(function () {})); }); });
+        var ready = (d.fonts && d.fonts.ready) ? d.fonts.ready.catch(function () {}) : Promise.resolve();
+        return Promise.all(loads.concat([ready])).then(function () { return new Promise(function (r) { setTimeout(r, 400); }); });
+      });
     }).then(function () {
-      var d = frame.contentDocument;
+      // html2canvas must run INSIDE the notebook document: it draws onto a canvas created in
+      // the window it was loaded in, and only the notebook document knows the notebook's fonts
+      // (NoTears tracing font, Fredoka/Orbitron…). Loaded from the app window it rasterised
+      // fallback glyphs — literal '#' where NoTears draws tracing guides (2026-08-16).
+      var w = frame.contentWindow, d = frame.contentDocument;
+      if (w.html2canvas) return;
+      return new Promise(function (res, rej) {
+        var sc = d.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+        sc.onload = function () { res(); }; sc.onerror = function () { rej(new Error("could not load html2canvas in the notebook frame")); };
+        d.head.appendChild(sc);
+      });
+    }).then(function () {
+      var w = frame.contentWindow, d = frame.contentDocument;
+      var h2c = w.html2canvas || window.html2canvas;
       var pages = Array.prototype.slice.call(d.querySelectorAll(".page"));
       if (!pages.length) throw new Error("no pages found");
       var jsPDF = window.jspdf.jsPDF;
@@ -3899,7 +3928,9 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       function next() {
         if (i >= pages.length) return;
         var pg = pages[i];
-        return window.html2canvas(pg, { scale: scale, useCORS: true, allowTaint: false, backgroundColor: "#ffffff", logging: false, windowWidth: 900, windowHeight: 1200 })
+        return h2c(pg, { scale: scale, useCORS: true, allowTaint: false, backgroundColor: "#ffffff", logging: false, windowWidth: 900, windowHeight: 1200,
+            // the clone document must have its fonts ready too (same origin → font cache, but async)
+            onclone: function (cd) { return (cd && cd.fonts && cd.fonts.ready) ? cd.fonts.ready.then(function () { return new Promise(function (r) { setTimeout(r, 120); }); }).catch(function () {}) : null; } })
           .then(function (canvas) {
             var data = canvas.toDataURL("image/jpeg", 0.92);
             if (i > 0) pdf.addPage("letter", "portrait");
