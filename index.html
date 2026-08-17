@@ -14307,6 +14307,15 @@ function ceSetTotal(newTotal){
   savePaceSubject(kid,key,next);
   ceRenderEditSheet();
 }
+// Stage 4: zero the legacy hand-counts on a plan-backed subject (nothing reads them there).
+function cePaceClearHand(kid,sk){
+  if(!momHere()) return;
+  const ps=((paceData.subjects&&paceData.subjects[kid])||{})[sk]; if(!ps) return;
+  if(!confirm("Clear the old hand-count corrections on this subject?\n\noffset "+(ps.offset||0)+" · cursor adjust "+(ps.adjust||0)+" · progress adjust "+(ps.paceAdjust||0)+"\n\nThis subject is plan-backed: its count is the done record by lesson id, so these numbers are not consulted anywhere. Clearing only tidies the record.")) return;
+  savePaceSubject(kid,sk,{...ps,offset:0,adjust:0,paceAdjust:0});
+  if(typeof gwShowToast==="function") gwShowToast("Hand-counts cleared");
+  ceRenderEditSheet();
+}
 // ── WALK-BACK: retract false "done"s for one subject, with a snapshot + note ──
 // Un-checks through the same data the auto-count reads (current week + archived weeks),
 // so History, progress, day-% and the generator cursor all correct together. Each apply
@@ -14790,6 +14799,18 @@ function ceRenderEditSheet(){
   const _total=((_ps&&_ps.total)||s.total||seq.length||0);
   let _nextLabel=(seq[cursorPos]&&seq[cursorPos].lesson)||'—';
   try{ if(typeof lidStamped==="function"&&lidStamped(ceEditKid,ceEditKey)){ const _di=lidDoneIdx(ceEditKid,ceEditKey); const _fi=(s.lessonSeq||[]).findIndex((t,i)=>!_di.has(i)); if(_fi>=0) _nextLabel=s.lessonSeq[_fi]; } }catch(e){}   // by id, not position
+  const _pbCard=(typeof planBacked==="function")&&planBacked(ceEditKid,ceEditKey);
+  if(_pbCard){
+    // Stage 4: plan-backed → the done record IS the count. No hand-count inputs; the
+    // schedule picks up at the first unfinished lesson by id (see the list panel).
+    let _dn=0, _dImp=0; try{ const _ds=lidDoneSet(ceEditKid,ceEditKey); _dn=_ds?_ds.size:0; const _nd=(((currData||{}).done||{})[ceEditKid]||{})[ceEditKey]||{}; Object.keys(_nd).forEach(k=>{ if(_nd[k]&&_nd[k].src==="import") _dImp++; }); }catch(e){}
+    h+='<div class="ce-sheet-lbl">Progress</div>';
+    h+='<div class="pace-auto-info"><span><b>'+_dn+'</b> of '+(s.lessonSeq?s.lessonSeq.length:_total)+' done · next: <b>'+esc(_nextLabel)+'</b></span>'+(_dImp?'<span style="color:var(--muted)">· '+_dImp+' by import (started mid-book)</span>':'')+'</div>';
+    h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Counted by lesson id from the done record — check-offs, hand-marks and imports. Mark work done in the list panel below; nothing here to type.</div>';
+    if(_ps&&((_ps.offset||0)||(_ps.adjust||0)||(_ps.paceAdjust||0))){
+      h+='<div style="font-size:10px;color:#b45309;margin-top:5px">⚠ Old hand-count corrections on this subject (offset '+(_ps.offset||0)+' · cursor '+(_ps.adjust||0)+' · progress '+(_ps.paceAdjust||0)+') are no longer consulted. <button onclick="cePaceClearHand(\''+ceEditKid+'\',\''+ceEditKey+'\')" style="border:1px solid #d97706;background:#fff;color:#b45309;border-radius:8px;padding:1px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Clear them</button></div>';
+    }
+  } else {
   h+='<div class="ce-sheet-lbl">Completed (progress)</div>';
   h+='<div class="pace-auto-info">';
   h+='<span><input class="pace-num-input" type="number" min="0" value="'+_done+'" onchange="ceSetCount(\'paceAdjust\',parseInt(this.value)||0)"/> of <input class="pace-num-input" type="number" min="1" value="'+_total+'" onchange="ceSetTotal(parseInt(this.value)||1)"/></span>';
@@ -14801,6 +14822,7 @@ function ceRenderEditSheet(){
   h+='<span><input class="pace-num-input" type="number" min="0" value="'+cursorPos+'" onchange="ceSetCount(\'adjust\',parseInt(this.value)||0)"/> done · next: <b>'+esc(_nextLabel)+'</b></span>';
   h+='</div>';
   h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Where the generator picks up next. Does NOT change your progress numbers.</div>';
+  }
 
   // Walk-back panel — retract false check-offs with a snapshot + note
   h+='<div class="ce-sheet-lbl">Fix false check-offs</div>';
@@ -25624,6 +25646,9 @@ function momDismiss(id,scope){
   const rec={mode:(scope==="good"?"drop":"skip"),fromDays:fromDays,ts:nowTs()};
   if(scope==="good"){
     if(!_isNextUpLesson(t)){ if(typeof gwShowToast==="function") gwShowToast("Can't skip for good — it isn't the next lesson up."); return; }
+    // Stage 4: a plan-backed lesson is done or owed — never passed over. Skipping it for
+    // good would bump a hand-count the projection doesn't read, so nothing would move.
+    if(typeof planBacked==="function"&&planBacked(t.who,t.subjectKey)){ if(typeof gwShowToast==="function") gwShowToast("This subject is plan-backed — a lesson is done or still owed. Mark it done on its card, or Mom-check it."); return; }
     const sk=t.subjectKey;
     const ps=((paceData.subjects||{})[t.who]||{})[sk];
     if(!ps){ if(typeof gwShowToast==="function") gwShowToast("Can't skip for good — no pace record for this subject."); return; }
@@ -26908,6 +26933,9 @@ function computeSubjectCursor(kid,subjectKey,excludeWeek){
 // work so the dashboard reads true WITHOUT moving where the generator picks up. Defaults
 // equal to the cursor (paceAdjust 0 → same as Auto+offset).
 function computeSubjectDone(kid,subjectKey,excludeWeek){
+  // Stage 4: a stamped subject's progress is its done record, by lesson id — check-offs,
+  // hand-marks and imports alike. No hand-count (offset/paceAdjust) can move it.
+  try{ if(typeof lidDoneSet==="function"){ const _d=lidDoneSet(kid,subjectKey); if(_d) return _d.size; } }catch(e){}
   const paceSubj=((paceData.subjects||{})[kid]||{})[subjectKey];
   const kws=paceKeywords(kid,subjectKey,paceSubj);
   const autoC=paceAutoCount(kid,kws,excludeWeek,subjectKey);
