@@ -3181,7 +3181,7 @@ function renderDayTabs(){
   // ── T3: the strip starts at today and reads forward. Days already gone by fold into one chip
   // rather than disappearing, so a late check-off or a look back is still one tap away.
   let earlierBtn='';
-  const _todayInThisWeek=(typeof weekNumForDate==="function")&&weekNumForDate(_todayStr())===currWeekNum();
+  const _todayInThisWeek=(typeof weekNumForDate==="function")&&weekNumForDate(_todayStr())===currWeekNum()&&_todayDay!=="sunday";   // Sunday = prep day: the week is all ahead, fold nothing
   if(_todayInThisWeek&&!showEarlierDays){
     const ti=DAYS_ALL.indexOf(_todayDay);
     const gone=ds.filter(d=>DAYS_ALL.indexOf(d)>=0&&DAYS_ALL.indexOf(d)<ti&&d!==day);
@@ -5317,7 +5317,7 @@ function boardStatPop(kid,slot,d){
 function peekWeekAvailable(){
   const wn=currWeekNum()+1;
   const r=(typeof gwWeekDateRange==="function")?gwWeekDateRange(wn):null;
-  if(!r||!r.start||r.start<=_todayStr()) return null;   // only a week that hasn't started
+  if(!r||!r.start||r.start<=_schoolWeekDateFor(_todayStr())) return null;   // only a week that hasn't started (Sunday = coming week)
   const ls=ld("week"+wn+"_tasks");
   if(ls&&ls.length) return wn;
   if(peekData&&peekData.wn===wn&&(peekData.tasks||[]).length) return wn;
@@ -38124,14 +38124,26 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
 }
 
 // Which plan week does a date fall in? (Mon–Sun ranges; null past the grid)
+// WKB_START — the school week is SUNDAY → SATURDAY (her call, 2026-08-16). Plan weeks are
+// still laid Monday–Saturday (gwWeekDateRange keeps its Mon-anchored span for all the day
+// math), but Sunday BELONGS TO THE COMING WEEK: it is prep day — the new schedule appears,
+// notebooks print from it, and Monday nothing changes. So every "which week is today"
+// question maps a Sunday to the following Monday first.
+function _schoolWeekDateFor(dateStr){
+  try{ const d=gwParseDate(dateStr); if(d&&!isNaN(d.getTime())&&d.getDay()===0){ d.setDate(d.getDate()+1);
+    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); } }catch(e){}
+  return dateStr;
+}
 function weekNumForDate(dateStr){
+  const eff=_schoolWeekDateFor(dateStr);
   const mx=_maxPlanWeek();
   for(let w=1;w<=mx;w++){
     const r=gwWeekDateRange(w);
-    if(r&&dateStr>=r.start&&dateStr<=r.end) return w;
+    if(r&&eff>=r.start&&eff<=r.end) return w;
   }
   return null;
 }
+// WKB_END
 // Does the Excel grid plan Saturday lessons for week wn?
 function gwSatPlanned(wn){
   const r=gwWeekDateRange(wn);
@@ -38642,7 +38654,7 @@ function _wkIsFutureWeek(d){
   const wn=_wkNumOf(d&&d.week); if(!wn) return false;
   const r=(typeof gwWeekDateRange==="function")?gwWeekDateRange(wn):null;
   if(!r||!r.start) return false;
-  return r.start>_todayStr();          // the week begins strictly after today → park it
+  return r.start>_schoolWeekDateFor(_todayStr());   // begins after today (Sunday counts as the coming week) → park it
 }
 // Persist a future week WITHOUT disturbing the present one.
 function _wkParkFuture(d){
