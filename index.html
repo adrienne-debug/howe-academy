@@ -4503,7 +4503,7 @@ function renderSettings(el,ah){
 
   // Morning Routines
   pinHtml+='<div class="rules-wrap" style="margin-top:20px">';
-  pinHtml+='<div class="rules-hdr">\u{1F305} Morning Routines</div>';
+  pinHtml+='<div class="rules-hdr" id="mroutine_anchor">\u{1F305} Morning Routines</div>';
   pinHtml+='<div class="rules-sub">The steps each kid checks off in the morning. Finishing all of them unlocks that kid\'s schedule. These are routine — no points.</div>';
   kids.forEach(kid=>{
     const steps=morningStepsFor(kid);
@@ -17175,6 +17175,12 @@ let cpEmojiOpen=null;    // "slot_kid_i" of the open icon picker (one at a time,
 let cpEmojiTab="Cleaning";
 function cpSetKid(k){ cpKid=k; renderAll(); }
 function cpSetSlot(s){ cpSlot=s; renderAll(); }
+// Jump from Chores to the Morning Routines editor (Settings): open every kid's morning card and scroll to it.
+function cpGoMornings(){
+  try{ [...ROSTER].forEach(k=>{ rulesOpen["mroutine_"+k]=true; }); }catch(e){}
+  setAdminSub("settings");
+  setTimeout(function(){ const el=document.getElementById("mroutine_anchor")||[...document.querySelectorAll(".rules-hdr")].find(x=>/Morning Routines/.test(x.textContent||"")); if(el&&el.scrollIntoView) el.scrollIntoView({behavior:"smooth",block:"start"}); },60);
+}
 function _cpDays(cad){
   if(!cad||cad==="daily") return null;                 // null = daily
   if(cad==="sat") return [5];                          // legacy shorthands = one weekday
@@ -17403,6 +17409,8 @@ function renderChorePlan(el,headerHtml){
   [["chores","🧹 Chores"],["afternoon","☀️ Afternoon"],["evening","🌙 Evening"],["grabs","🙌 Up for Grabs"]].forEach(function(s){
     h+='<button class="cp-chip sm'+(cpSlot===s[0]?" on":"")+'" onclick="cpSetSlot(\''+s[0]+'\')">'+s[1]+'</button>';
   });
+  // Mornings are pure routine (no ⭐) and live in Settings → this pill just jumps there (2026-08-17: "chores tab doesn't have mornings").
+  h+='<button class="cp-chip sm" title="Morning routines are edited in Settings — this takes you there" onclick="cpGoMornings()" style="border-style:dashed">🌅 Morning ↗</button>';
   h+='</div>';
   h+=_cpRotationsHTML();
   // ── focus zone per weekday + the bonus rule ──
@@ -38764,17 +38772,53 @@ function gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear
       if(!retrTracks(kid).length) continue;
       const kind=(retrWeek(kid)||{})[dn.slice(0,3)]||"off";   // template keys are mon/tue/… (abbreviated)
       if(kind==="off"||!RETR_SLOT_TITLE[kind]) continue;
-      // Place after the kid's last task that day; a kid with no tasks is off → skip.
+      // A kid with no tasks that day is off → skip.
       const mine=allTasks.filter(t=>t.who===kid&&t.day===dn);
       if(!mine.length) continue;
-      let lastEnd=0;
-      mine.forEach(t=>{ const e=toMin(t.time)+(t.dur||20); if(e>lastEnd) lastEnd=e; });
-      allTasks.push({
+      const slot={
         id:idPrefix+"retr_"+kind+"_"+kid,
-        who:kid,day:dn,time:fromMin(lastEnd),dur:15,
+        who:kid,day:dn,time:null,dur:15,
         title:RETR_SLOT_TITLE[kind],detail:RETR_SLOT_DETAIL[kind],
         mom:"required",cascade:true,device:"paper",subjectKey:"retrieval",retrieval:kind
-      });
+      };
+      // 2026-08-17: the slot takes the FIRST free window at/after the kid's own last card that
+      // is not lunch and not on any kid's Mom-required card (Mom lane — a slot is Mom-required),
+      // then the kid's Closing Notebook is re-timed to stay last. The old "after the kid's last
+      // card" ignored all three (wk17/18 audit: 15 "closing not last", 2 lunch overlaps, 16 Mom
+      // clashes — all retrieval slots) and is now only the never-drop fallback.
+      let placed=false;
+      try{
+        if(typeof gwRules==="function"){
+          const isClosing=t=>(t.title||"").indexOf("Closing Notebook")>=0||t.subjectKey==="closing_nb";
+          const R=gwRules(); const dur=slot.dur||15;
+          const dayAll=allTasks.filter(t=>t.day===dn&&!String(t.id||"").endsWith("_c"));
+          const ov=(a1,a2,b1,b2)=>a1<b2&&b1<a2;
+          const kidCards=dayAll.filter(t=>t.who===kid&&!isClosing(t));
+          const momCards=dayAll.filter(t=>t.mom==="required"&&!(t.who===kid&&isClosing(t)));
+          let lastEnd=0; kidCards.forEach(t=>{ const e=toMin(t.time)+(t.dur||20); if(e>lastEnd) lastEnd=e; });
+          // First free window at/after the kid's own last card: not lunch, not on any of this
+          // kid's cards, not on ANY kid's Mom-required card (Mom lane). Walk in 5-min steps up
+          // to school end + 4h overtime so a slot always finds a home.
+          const limit=R.schoolEnd+240;
+          for(let t0=Math.max(lastEnd,R.schoolStart);t0+dur<=limit;t0+=5){
+            const t1=t0+dur;
+            if(R.lunchStart!=null&&ov(t0,t1,R.lunchStart,R.lunchEnd)) continue;
+            if(kidCards.some(x=>ov(t0,t1,toMin(x.time),toMin(x.time)+(x.dur||20)))) continue;
+            if(momCards.some(x=>ov(t0,t1,toMin(x.time),toMin(x.time)+(x.dur||20)))) continue;
+            slot.time=fromMin(t0); placed=true; break;
+          }
+          if(placed){
+            const slotEnd=toMin(slot.time)+dur;   // keep the kid's Closing Notebook the last thing of the day
+            mine.filter(isClosing).forEach(c=>{ if(toMin(c.time)<slotEnd) c.time=fromMin(slotEnd); });
+          }
+        }
+      }catch(e){ placed=false; }
+      if(!placed){
+        // Fallback (never drop a slot): after the kid's last card, as before.
+        let lastEnd=0; mine.forEach(t=>{ const e=toMin(t.time)+(t.dur||20); if(e>lastEnd) lastEnd=e; });
+        slot.time=fromMin(lastEnd);
+      }
+      allTasks.push(slot);
     }
   }
   allTasks.sort((a,b)=>{
