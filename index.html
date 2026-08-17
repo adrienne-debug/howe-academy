@@ -23242,6 +23242,8 @@ function cbApply(){
   // table, or same-session generation computes catch-up against the PRE-rebuild map
   // (every rebuilt subject looked a week behind until an app reload or commit).
   try{ if(typeof buildCurrPaceCum==="function") buildCurrPaceCum(); }catch(e){}
+  // Stage 3.4: the cells changed → this week's cards for the subject follow (plan-backed only).
+  try{ if(typeof reprojectSubjectWeek==="function") reprojectSubjectWeek(kid,sk,"relay"); }catch(e){}
   cbPreviewRes=null; cbSubjKey=null; cbForm=null;
   renderAll();
 }
@@ -23463,8 +23465,11 @@ function cbUndo(){
     saveScheduleOverrides();
   }
   cbMsg="↩ Undid: "+cbLastBuild.label;
+  const _uk2=cbLastBuild.kid,_us2=cbLastBuild.sk;
   cbLastBuild=null;
   try{HA_LS.removeItem("ha_cbUndo");}catch(e){}
+  // Stage 3.4: cells restored → cards re-sync to them (same pure re-projection).
+  try{ if(typeof reprojectSubjectWeek==="function"&&_uk2&&_us2) reprojectSubjectWeek(_uk2,_us2,"undo"); }catch(e){}
   renderAll();
 }
 
@@ -24551,6 +24556,99 @@ function gvMenuOff(kid,dn,sk){
 // Shared tail for structural cell actions (🗑 delete, ✕ off day): re-lay the
 // subject via the ↻ path — preview → Keep/Dismiss gate only if leftovers → apply,
 // one Undo. Returns true when the relay is underway; false = message already shown.
+// REPROJ_START — Stage 3.4: her grid edit moves THIS WEEK's cards (plan-backed subjects).
+// After a relay rewrites a plan-backed subject's cells, the active week's cards for that ONE
+// subject are re-projected here — on the writing device only, under the scheduler lock —
+// so the kids' schedule follows her edit right away instead of waiting for a regenerate.
+// Desired cards = the same generator the Sunday build uses (generateWeek, in memory, no
+// writes), filtered to (kid,sk). Ids are <kid>_<pid>_<lid>, so the diff is exact:
+//   add   — lesson newly laid this week (timed by packAround into that day's existing cards)
+//   move  — same id, new day (re-timed the same way; a check can't strand)
+//   remove— lesson no longer laid this week (only if unchecked, unclaimed, not started)
+//   title — renamed lesson
+// Untouched: past days; today's checked/claimed/already-started cards; every other subject,
+// kid and daily; checked/history (never named). ONE targeted db.ref(WK+"/tasks").update —
+// never gwCommit, never a whole-map set. Pure function of current data → idempotent, and
+// re-running it after the relay's Undo re-syncs the cards to the restored cells.
+// Returns {added,moved,removed,retitled} or null (not applicable / lock held elsewhere).
+const _RP_DAYS=["monday","tuesday","wednesday","thursday","friday","saturday"];
+function _reprojectPlan(kid,sk,liveTasks,desired,opts){
+  // Pure diff — no globals except what opts carries. liveTasks/desired = arrays of task
+  // objects; opts = {todayDay, nowMin, checked, claimed, dayCtx(day)→ctx for packAround,
+  // packAround, toMin}. Mutates copies only; returns {upd, summary, tasksAfter}.
+  const isPlanCard=t=>t&&t.who===kid&&t.subjectKey===sk&&!String(t.id||"").endsWith("_c")&&/_L\d+$/.test(String(t.id||""));
+  const dayIx=d=>_RP_DAYS.indexOf(String(d||"").toLowerCase());
+  const tIx=dayIx(opts.todayDay);
+  const started=t=>{ const di=dayIx(t.day); if(di<0) return false; if(tIx>=0&&di<tIx) return true; if(di===tIx&&opts.nowMin!=null&&opts.toMin(t.time)<=opts.nowMin) return true; return false; };
+  const locked=t=>!!(opts.checked&&opts.checked[t.id])||!!(opts.claimed&&opts.claimed[t.id])||started(t);
+  const live=(liveTasks||[]).filter(isPlanCard); const want=(desired||[]).filter(isPlanCard);
+  const wantBy={}; want.forEach(t=>{ wantBy[t.id]=t; });
+  const liveBy={}; live.forEach(t=>{ liveBy[t.id]=t; });
+  const upd={}; const summary={added:[],moved:[],removed:[],retitled:[]};
+  const after=(liveTasks||[]).slice();
+  const freed={};   // day → [time] slots this subject just vacated (removed / moved away) — the next lesson takes the finished one's slot
+  // removals + moves + retitles
+  live.forEach(t=>{
+    const w=wantBy[t.id];
+    if(!w){ if(locked(t)) return; upd[t.id]=null; summary.removed.push(t.id); (freed[t.day]=freed[t.day]||[]).push(t.time); const i=after.indexOf(t); if(i>=0) after.splice(i,1); return; }
+    if(w.title&&w.title!==t.title&&!opts.checked[t.id]){ upd[t.id+"/title"]=w.title; if(w.detail!==undefined) upd[t.id+"/detail"]=w.detail||null; t.title=w.title; if(w.detail!==undefined) t.detail=w.detail; summary.retitled.push(t.id); }
+    if(w.day&&w.day!==t.day){ if(locked(t)) return; if(dayIx(w.day)>=0&&tIx>=0&&dayIx(w.day)<tIx) return; // never move into the past
+      (freed[t.day]=freed[t.day]||[]).push(t.time); t.day=w.day; t.time=null; summary.moved.push(t.id); }
+  });
+  // additions (only onto today-forward days)
+  want.forEach(w=>{ if(liveBy[w.id]) return; if(dayIx(w.day)>=0&&tIx>=0&&dayIx(w.day)<tIx) return;
+    const nt=Object.assign({},w); nt.time=null; after.push(nt); summary.added.push(nt.id); });
+  // time: pack every un-timed card (added / moved) into its day around the fixed ones
+  const untimed=after.filter(t=>isPlanCard(t)&&t.time==null);
+  const byDay={}; untimed.forEach(t=>{ (byDay[t.day]=byDay[t.day]||[]).push(t); });
+  Object.keys(byDay).forEach(day=>{
+    const fixed=after.filter(t=>t.day===day&&t.time!=null&&!String(t.id).endsWith("_c"));
+    const ctx=opts.dayCtx(day); let over=[];
+    // 1) inherit slots this subject just freed on the same day (in time order), if still ahead of now
+    const fr=(freed[day]||[]).filter(x=>x!=null).sort((a,b)=>opts.toMin(a)-opts.toMin(b));
+    const list=byDay[day].slice().sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+    list.forEach(t=>{ if(t.time!=null||!fr.length) return; const slot=fr.shift(); if(day===opts.todayDay&&opts.nowMin!=null&&opts.toMin(slot)<=opts.nowMin) return; t.time=slot; });
+    // 2) pack the rest around everything now fixed
+    const rest=byDay[day].filter(t=>t.time==null);
+    const fixed2=after.filter(t=>t.day===day&&t.time!=null&&!String(t.id).endsWith("_c"));
+    try{ over=rest.length?(opts.packAround(fixed2,rest,ctx)||[]):[]; }catch(e){ over=rest.slice(); }
+    over.forEach(t=>{ if(t.time==null){ // no room today → last card of the day (honest, never dropped)
+      const last=fixed.reduce((m,x)=>Math.max(m,opts.toMin(x.time)+(x.dur||20)),ctx.start||0); t.time=opts.fromMin(last); } });
+    byDay[day].forEach(t=>{ if(t.time==null) t.time=opts.fromMin(ctx.start||600); });
+  });
+  summary.added.forEach(id=>{ const t=after.find(x=>x.id===id); upd[id]=t; });
+  summary.moved.forEach(id=>{ const t=after.find(x=>x.id===id); upd[id+"/day"]=t.day; upd[id+"/time"]=t.time; });
+  return {upd,summary,tasksAfter:after};
+}
+function reprojectSubjectWeek(kid,sk,why){
+  if(typeof planBacked!=="function"||!planBacked(kid,sk)) return null;
+  if(!weekData||!Array.isArray(weekData.tasks)||!WK) return null;
+  if(typeof fbTasksLoaded!=="undefined"&&!fbTasksLoaded) return null;
+  const wn=currWeekNum(); if(!wn) return null;
+  // Only the ACTIVE plan week has cards to keep in step; a parked or past week is left alone.
+  try{ const r=gwWeekDateRange(wn); const eff=_schoolWeekDateFor(_todayStr()); if(!r||eff<r.start||eff>r.end) return null; }catch(e){ return null; }
+  let out=null;
+  haClaimSchedLock("reproject",function(release){
+    if(!release){ if(typeof gwShowToast==="function") gwShowToast("Another device is updating the schedule — this week's cards catch up on the next regenerate."); return; }
+    try{
+      const cfg={weekNum:String(wn),babysitter:{},withSitter:[],skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:gwSatPlanned(wn),redistribute:[],autoAdvance:true};
+      const gen=generateWeek(cfg); if(!gen||gen.error||!gen.result) return;
+      const nowD=new Date(); const todayDay=_RP_DAYS[(nowD.getDay()+6)%7]||null;
+      const gwR=gwRules();
+      const dayCtx=day=>({start:(day===todayDay)?Math.max(gwR.schoolStart,nowD.getHours()*60+nowD.getMinutes()):gwR.schoolStart,end:gwR.schoolEnd,lunchStart:gwR.lunchStart,lunchEnd:gwR.lunchEnd,allowOvertime:true,overtimeMax:240});
+      const r=_reprojectPlan(kid,sk,weekData.tasks,gen.result.tasks,{todayDay,nowMin:nowD.getHours()*60+nowD.getMinutes(),checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},dayCtx,packAround,toMin,fromMin});
+      const n=r.summary.added.length+r.summary.moved.length+r.summary.removed.length+r.summary.retitled.length;
+      out=r.summary;
+      if(!n) return;
+      weekData.tasks=r.tasksAfter; sv(WK+"_tasks",weekData.tasks);
+      if(db&&!_dryRun()) db.ref(WK+"/tasks").update(r.upd);
+      dbg&&dbg("reproject "+kid+"/"+sk+" ("+(why||"")+"): +"+r.summary.added.length+" ↔"+r.summary.moved.length+" −"+r.summary.removed.length+" ✎"+r.summary.retitled.length);
+    }catch(e){ dbg&&dbg("reproject skip: "+e); }
+    finally{ release(); }
+  });
+  return out;
+}
+// REPROJ_END
 function _gvRelaySubject(kid,sk,doneMsg){
   cbKid=kid; cbSubjKey=sk; cbForm=cbDefaultForm(kid,sk); cbPreviewRes=null;
   try{ cbPreviewRes=_cbEngine(); }
