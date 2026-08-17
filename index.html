@@ -38602,6 +38602,7 @@ function gwCommit(){
     // Build lookup of old checks by title+who+day for matching after regeneration.
     // Only carry checks from this week (within 7 days) to prevent stale cross-week bleed.
     const oldLookup={};
+    const oldByLid={};   // Stage 3c: who|subjectKey|lid → same record; identity beats title
     const weekCutoff=Date.now()-7*24*60*60*1000;
     (weekData.tasks||[]).forEach(t=>{
       const key=(t.title||"")+"|"+(t.who||"")+"|"+(t.day||"");
@@ -38609,12 +38610,27 @@ function gwCommit(){
       const ts=snapChecked[t.id];
       const tsMs=(typeof ts==="number")?ts:new Date(ts).getTime();
       if(tsMs<weekCutoff) return;
-      oldLookup[key]={ts:ts,oldId:t.id};
+      const rec={ts:ts,oldId:t.id};
+      oldLookup[key]=rec;
+      const lid=t.lid||((typeof lidForTask==="function")?lidForTask(t):null);
+      if(lid&&!String(t.id||"").endsWith("_c")) oldByLid[(t.who||"")+"|"+(t.subjectKey||"")+"|"+lid]=rec;
+    });
+    // Pass 0 (Stage 3c): re-attach by LESSON ID first — a done lesson keeps its check no
+    // matter which day the regen lands it on, and a same-titled card for a different
+    // lesson can never take it. Falls through to the title passes for cards without ids.
+    d.tasks.forEach(t=>{
+      if(snapChecked[t.id]||String(t.id||"").endsWith("_c")) return;
+      const lid=t.lid||((typeof lidForTask==="function")?lidForTask(t):null); if(!lid) return;
+      const rec=oldByLid[(t.who||"")+"|"+(t.subjectKey||"")+"|"+lid];
+      if(rec&&!rec.used){
+        rec.used=true; snapChecked[t.id]=rec.ts;
+        if(snapHist[rec.oldId]&&!snapHist[t.id]) snapHist[t.id]={...snapHist[rec.oldId],id:t.id};
+      }
     });
     d.tasks.forEach(t=>{
       if(snapChecked[t.id]) return;
       const key=(t.title||"")+"|"+(t.who||"")+"|"+(t.day||"");
-      if(oldLookup[key]){
+      if(oldLookup[key]&&!oldLookup[key].used){
         oldLookup[key].used=true;
         snapChecked[t.id]=oldLookup[key].ts;
         if(snapHist[oldLookup[key].oldId]&&!snapHist[t.id])
