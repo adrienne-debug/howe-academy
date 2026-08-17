@@ -492,23 +492,59 @@
     return '<div class="trace-line"><div class="ghost-row"><span class="ghost-name">' + text + '</span></div></div>';
   }
 
+  // Shape drawings for Julian's notebook (trace + colour-in). Every name in his Mastery
+  // "Shapes" list must resolve to a real drawing here. Rules (2026-08-17, after "Pentagon"
+  // printed as a circle): regular polygons are generated from a side count (any "-gon");
+  // common preschool shapes are drawn explicitly; an UNKNOWN name never silently becomes a
+  // circle — it prints a dashed placeholder box carrying the name and is reported through
+  // JU_UNKNOWN_SHAPES so the app can warn Mom before anything is printed.
+  var JU_POLY_SIDES = { triangle: 3, pentagon: 5, hexagon: 6, heptagon: 7, septagon: 7, octagon: 8, nonagon: 9, decagon: 10, dodecagon: 12 };
+  var JU_UNKNOWN_SHAPES = {};
+  function juRegularPolygon(n, r, cx, cy, rot) {
+    var pts = []; for (var i = 0; i < n; i++) { var a = (rot + 360 * i / n) * Math.PI / 180; pts.push((cx + r * Math.cos(a)).toFixed(1) + "," + (cy + r * Math.sin(a)).toFixed(1)); }
+    return pts.join(" ");
+  }
   function juSvgShape(shape, opts) {
     opts = opts || {};
     var fill = opts.fill || "none", stroke = opts.stroke || "#9a6a44";
     var dashed = opts.dashed !== false, size = opts.size || 70;
     var dash = dashed ? ' stroke-dasharray="6 5"' : "";
-    var sw = 3, s = String(shape).toLowerCase(), body;
-    if (s === "circle") body = '<circle cx="40" cy="40" r="33" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + sw + '"' + dash + '/>';
-    else if (s === "square") body = '<rect x="9" y="9" width="62" height="62" rx="7" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + sw + '"' + dash + '/>';
-    else if (s === "rectangle") body = '<rect x="5" y="19" width="70" height="42" rx="6" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + sw + '"' + dash + '/>';
-    else if (s === "triangle") body = '<polygon points="40,8 72,70 8,70" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + sw + '" stroke-linejoin="round"' + dash + '/>';
-    else if (s === "star") body = '<polygon points="40,6 48,29 72,30 53,44 60,68 40,54 20,68 27,44 8,30 32,29" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + sw + '" stroke-linejoin="round"' + dash + '/>';
-    else if (s === "oval" || s === "ellipse") body = '<ellipse cx="40" cy="40" rx="34" ry="24" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + sw + '"' + dash + '/>';
-    else if (s === "diamond" || s === "rhombus") body = '<polygon points="40,7 73,40 40,73 7,40" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + sw + '" stroke-linejoin="round"' + dash + '/>';
-    else if (s === "heart") body = '<path d="M40 70 C8 48 12 22 30 22 C38 22 40 30 40 30 C40 30 42 22 50 22 C68 22 72 48 40 70 Z" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + sw + '" stroke-linejoin="round"' + dash + '/>';
-    else body = '<circle cx="40" cy="40" r="33" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + sw + '"' + dash + '/>';
+    var sw = 3, s = String(shape || "").trim().toLowerCase().replace(/[\s_-]+/g, " "), body;
+    var A = ' fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + sw + '" stroke-linejoin="round" stroke-linecap="round"' + dash + '/>';
+    var polyRot = { triangle: -90, pentagon: -90, hexagon: 0, heptagon: -90, septagon: -90, octagon: 22.5, nonagon: -90, decagon: 0, dodecagon: 0 };
+    if (s === "circle" || s === "round") body = '<circle cx="40" cy="40" r="33"' + A;
+    else if (s === "square") body = '<rect x="9" y="9" width="62" height="62" rx="7"' + A;
+    else if (s === "rectangle" || s === "oblong") body = '<rect x="5" y="19" width="70" height="42" rx="6"' + A;
+    else if (JU_POLY_SIDES[s]) body = '<polygon points="' + juRegularPolygon(JU_POLY_SIDES[s], 33, 40, 40, polyRot[s] != null ? polyRot[s] : -90) + '"' + A;
+    else if (/^\d+ ?gon$/.test(s) && parseInt(s, 10) >= 3) body = '<polygon points="' + juRegularPolygon(parseInt(s, 10), 33, 40, 40, -90) + '"' + A;
+    else if (s === "star") body = '<polygon points="40,6 48,29 72,30 53,44 60,68 40,54 20,68 27,44 8,30 32,29"' + A;
+    else if (s === "oval" || s === "ellipse") body = '<ellipse cx="40" cy="40" rx="34" ry="24"' + A;
+    else if (s === "diamond" || s === "rhombus") body = '<polygon points="40,7 73,40 40,73 7,40"' + A;
+    else if (s === "heart") body = '<path d="M40 70 C8 48 12 22 30 22 C38 22 40 30 40 30 C40 30 42 22 50 22 C68 22 72 48 40 70 Z"' + A;
+    else if (s === "trapezoid" || s === "trapezium") body = '<polygon points="20,16 60,16 74,64 6,64"' + A;
+    else if (s === "parallelogram") body = '<polygon points="22,18 74,18 58,62 6,62"' + A;
+    else if (s === "kite") body = '<polygon points="40,6 66,32 40,74 14,32"' + A;
+    else if (s === "semicircle" || s === "half circle") body = '<path d="M7 52 A33 33 0 0 1 73 52 Z"' + A;
+    else if (s === "crescent" || s === "moon") body = '<path d="M52 8 A33 33 0 1 0 52 72 A26 26 0 1 1 52 8 Z"' + A;
+    else if (s === "cross" || s === "plus") body = '<polygon points="30,8 50,8 50,30 72,30 72,50 50,50 50,72 30,72 30,50 8,50 8,30 30,30"' + A;
+    else if (s === "arrow") body = '<polygon points="8,30 46,30 46,14 74,40 46,66 46,50 8,50"' + A;
+    else if (s === "cube") body = '<polygon points="12,26 46,26 46,60 12,60"' + A + '<polygon points="46,26 66,12 66,46 46,60"' + A + '<polygon points="12,26 32,12 66,12 46,26"' + A;
+    else if (s === "cylinder") body = '<ellipse cx="40" cy="18" rx="26" ry="9"' + A + '<path d="M14 18 V62 A26 9 0 0 0 66 62 V18"' + A;
+    else if (s === "cone") body = '<path d="M40 8 L14 62 A26 8 0 0 0 66 62 Z"' + A;
+    else if (s === "sphere" || s === "ball") body = '<circle cx="40" cy="40" r="33"' + A + '<ellipse cx="40" cy="40" rx="33" ry="11"' + A.replace('stroke-width="' + sw + '"', 'stroke-width="1.5"');
+    else if (s === "pyramid") body = '<polygon points="40,8 72,66 8,66"' + A + '<line x1="40" y1="8" x2="40" y2="66"' + A.replace('stroke-width="' + sw + '"', 'stroke-width="1.5"');
+    else {
+      // Unknown: visible placeholder + report. Never a silent circle.
+      JU_UNKNOWN_SHAPES[String(shape || "?")] = true;
+      var lbl = String(shape || "?"); if (lbl.length > 9) lbl = lbl.slice(0, 8) + "…";
+      body = '<rect x="6" y="6" width="68" height="68" rx="10" fill="none" stroke="#c2410c" stroke-width="2.5" stroke-dasharray="4 4"/>' +
+        '<text x="40" y="36" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="700" fill="#c2410c">NO DRAWING</text>' +
+        '<text x="40" y="52" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#c2410c">' + lbl.replace(/[<>&"]/g, "") + '</text>';
+    }
     return '<svg viewBox="0 0 80 80" width="' + size + '" height="' + size + '" xmlns="http://www.w3.org/2000/svg">' + body + '</svg>';
   }
+  function juUnknownShapes() { return Object.keys(JU_UNKNOWN_SHAPES); }
+  function juResetUnknownShapes() { JU_UNKNOWN_SHAPES = {}; }
 
   function juSvgPath(kind) {
     var paths = {
@@ -3840,11 +3876,13 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
   function generate(kid, ctx) {
     var g = GENERATORS[kid];
     if (!g) throw new Error("No notebook generator for '" + kid + "' yet.");
+    if (kid === "julian") juResetUnknownShapes();   // count only THIS build's unknown shapes
     var out = g.build(ctx);
     if (ctx && ctx.bindingMargin && out) {
       out = Object.assign({}, out, { student: applyBindingMargin(out.student), parent: applyBindingMargin(out.parent) });
     }
     if (out) out = Object.assign({}, out, { student: applySafariPrintFit(out.student), parent: applySafariPrintFit(out.parent) });
+    if (out && kid === "julian") { var unk = juUnknownShapes(); if (unk.length) out.warnings = (out.warnings || []).concat(["No drawing for shape" + (unk.length > 1 ? "s" : "") + ": " + unk.join(", ") + " — it prints as a dashed “NO DRAWING” box. Add the drawing in notebooks.js (juSvgShape) or rename the shape."]); juResetUnknownShapes(); }
     return out;
   }
 
@@ -4123,6 +4161,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     combinedParent: combinedParent,
     openHtml: openHtml,
     toPdf: toPdf,
+    juSvgShape: juSvgShape,
     weekDatesRange: weekDatesRange,
     letterStrokes: JU_LETTER_STROKES,   // HWT-style capital formation scripts — the drill Trace overlay shows them
     juPlanPreview: juPlanPreview,       // Julian's week planner: engine picks + struggled-with flags
