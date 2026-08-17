@@ -2584,6 +2584,7 @@ function initFb() {
     db.ref("digest").on("value",s=>{ digestData=s.val()||{}; });
     db.ref("scheduleOverrides").on("value",s=>{
       scheduleOverrides=s.val()||{};
+      _soBase=_soSnap(scheduleOverrides);   // Stage 4: what this device last SAW — saves diff against it
       try{HA_LS.setItem("ha_sched_overrides",JSON.stringify(scheduleOverrides));}catch(e){}
       if(currData) buildCurrPaceCum();
       if(tab==="schedule"||tab==="pace"){const el=document.getElementById("content");if(el)renderAll();}
@@ -25706,10 +25707,38 @@ function _ovRmX(kid,dateStr,sk,ignoreAuto){
   if(!o||!o.removed||!o.removed[sk]) return false;
   return !(ignoreAuto&&o._gwRm&&o._gwRm[sk]);
 }
+// SO_START — Stage 4: targeted override writes.
+// scheduleOverrides used to be saved as ONE whole-tree set — every ✕/➕/park/day-off from
+// any device rewrote the entire node, so a device holding a stale copy silently erased
+// what another device had marked. Now a save writes only the <date>/<kid> entries that
+// changed since this device last saw the node (the listener refreshes that baseline), as
+// one multi-path update; removed entries go to null. A device can only ever touch what
+// it changed itself. Before the listener has ever answered the baseline is empty, so a
+// save can add or overwrite entries but never delete one it has not seen.
+let _soBase=null;
+function _soSnap(o){ try{ return JSON.parse(JSON.stringify(o||{})); }catch(e){ return {}; } }
+function _soDiff(base,cur){
+  base=base||{}; cur=cur||{};
+  const up={}; const keys=new Set();
+  Object.keys(base).forEach(d=>Object.keys(base[d]||{}).forEach(k=>keys.add(d+"/"+k)));
+  Object.keys(cur).forEach(d=>Object.keys(cur[d]||{}).forEach(k=>keys.add(d+"/"+k)));
+  keys.forEach(p=>{
+    const i=p.indexOf("/"); const d=p.slice(0,i), k=p.slice(i+1);
+    const a=(base[d]||{})[k], b=(cur[d]||{})[k];
+    const empty=v=>v==null||(typeof v==="object"&&!Object.keys(v).length);
+    const ja=JSON.stringify(empty(a)?null:a), jb=JSON.stringify(empty(b)?null:b);
+    if(ja!==jb) up[p]=empty(b)?null:b;
+  });
+  return up;
+}
 function saveScheduleOverrides(){
   try{HA_LS.setItem("ha_sched_overrides",JSON.stringify(scheduleOverrides));}catch(e){}
-  if(db) db.ref("scheduleOverrides").set(scheduleOverrides);
+  if(!db) return;
+  const up=_soDiff(_soBase,scheduleOverrides);
+  _soBase=_soSnap(scheduleOverrides);
+  if(Object.keys(up).length) db.ref("scheduleOverrides").update(up);
 }
+// SO_END
 // Mutate one date+kid override entry, pruning empties so Firebase stays clean
 function setSchedOverride(dateStr,kid,mut){
   if(!scheduleOverrides[dateStr]) scheduleOverrides[dateStr]={};
