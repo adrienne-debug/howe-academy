@@ -91,9 +91,11 @@ console.log("_reprojectPlan — pure diff by id");
   // freed slot already in the past today → not inherited
   const r5 = e._reprojectPlan("lincoln", "ws", [T("lincoln_lincoln__ws_L0014", "wednesday", "1:00 PM", "WS — a"), T("lincoln_lincoln__ws_L0016", "friday", "11:50 AM", "WS — b")], [T("lincoln_lincoln__ws_L0016", "wednesday", "9:00 AM", "WS — b")], OPTS({ nowMin: 14 * 60, dayCtx: () => ({ start: 14 * 60, end: 975, lunchStart: 780, lunchEnd: 840 }) }));   // real dayCtx floors today at now
   ok("a freed slot already past now is not inherited (card packs after now instead)", r5.upd["lincoln_lincoln__ws_L0016/day"] === undefined || toMin(r5.upd["lincoln_lincoln__ws_L0016/time"]) >= 14 * 60, r5.upd);
-  // legacy date-id cards of the same subject are never touched (not plan cards)
-  const r3 = e._reprojectPlan("lincoln", "ws", [T("2026d230_5", "thursday", "10:00 AM", "WS — old")], [], OPTS());
-  ok("date-id card of the subject untouched", eq(r3.upd, {}));
+  // date-id card of a PLAN-BACKED subject = phantom: removed when unlocked, kept when checked/started
+  const r3 = e._reprojectPlan("lincoln", "ws", [T("2026d230_5", "thursday", "10:00 AM", "WS — old"), T("2026d230_6", "friday", "10:00 AM", "WS — old2")], [T("lincoln_lincoln__ws_L0009", "thursday", "9:00 AM", "WS — new")], OPTS({ checked: { "2026d230_6": 1 } }));
+  ok("unchecked phantom removed, checked phantom kept, new card inherits the phantom's slot", r3.upd["2026d230_5"] === null && !("2026d230_6" in r3.upd) && r3.upd["lincoln_lincoln__ws_L0009"] && r3.upd["lincoln_lincoln__ws_L0009"].time === "10:00 AM", r3.upd);
+  const r3b = e._reprojectPlan("lincoln", "ws", [T("2026d230_7", "wednesday", "10:00 AM", "WS — started")], [], OPTS());
+  ok("started phantom (today, time passed) kept", eq(r3b.upd, {}));
 }
 
 console.log("reprojectSubjectWeek — gating + write");

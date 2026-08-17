@@ -24577,6 +24577,10 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
   // objects; opts = {todayDay, nowMin, checked, claimed, dayCtx(day)→ctx for packAround,
   // packAround, toMin}. Mutates copies only; returns {upd, summary, tasksAfter}.
   const isPlanCard=t=>t&&t.who===kid&&t.subjectKey===sk&&!String(t.id||"").endsWith("_c")&&/_L\d+$/.test(String(t.id||""));
+  // A date-id card of a plan-backed subject is a phantom (the generator no longer mints them for
+  // plan-backed subjects: wk18 live had two — a duplicate 7a and a done Ch3-1 in old wording).
+  // Unlocked, it goes and its slot is inherited; checked/claimed/started ones stay as records.
+  const isPhantom=t=>t&&t.who===kid&&t.subjectKey===sk&&!String(t.id||"").endsWith("_c")&&!/_L\d+$/.test(String(t.id||""));
   const dayIx=d=>_RP_DAYS.indexOf(String(d||"").toLowerCase());
   const tIx=dayIx(opts.todayDay);
   const started=t=>{ const di=dayIx(t.day); if(di<0) return false; if(tIx>=0&&di<tIx) return true; if(di===tIx&&opts.nowMin!=null&&opts.toMin(t.time)<=opts.nowMin) return true; return false; };
@@ -24587,6 +24591,8 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
   const upd={}; const summary={added:[],moved:[],removed:[],retitled:[]};
   const after=(liveTasks||[]).slice();
   const freed={};   // day → [time] slots this subject just vacated (removed / moved away) — the next lesson takes the finished one's slot
+  // phantoms (date-id cards of this plan-backed subject): remove when unlocked
+  (liveTasks||[]).filter(isPhantom).forEach(t=>{ if(locked(t)) return; upd[t.id]=null; summary.removed.push(t.id); (freed[t.day]=freed[t.day]||[]).push(t.time); const i=after.indexOf(t); if(i>=0) after.splice(i,1); });
   // removals + moves + retitles
   live.forEach(t=>{
     const w=wantBy[t.id];
@@ -38169,7 +38175,23 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
       // hard-cap sliced, so this also respects session goals.
       let effLessons;
       const _doneLids=(typeof lidDoneSet==="function")?lidDoneSet(kid,sk):null;   // Stage 1.5: stamped subject
-      if(_doneLids){
+      const _pbServe=!!_doneLids&&(typeof planBacked==="function")&&planBacked(kid,sk);
+      if(_pbServe){
+        // PLAN-BACKED (Stage 3, closed 2026-08-16): content is THE LIST minus done, by id —
+        // never the grid rows. Cells only decide the dates. Grid rows can hold the same lesson
+        // twice (a frozen unfinished past cell + its re-laid future cell) or an old wording of a
+        // done lesson (untrimmed text); tallying lids onto rows by text served those as extra
+        // "unfinished" lessons (wk18 live: Spelling You See 7a twice / 7d dropped, Dims 1A
+        // served done Ch3-1 and dropped Ch3-5). _seenWk (checked/claimed this week) still skips.
+        const _ls=(currData.subjects[kid][sk]||{}).lessonSeq||[]; const _li=(typeof lidsFor==="function")?(lidsFor(kid,sk)||[]):[];
+        const _hard=isFinite(_hardCap)?_hardCap:Infinity;
+        effLessons=[];
+        for(let i=0;i<_ls.length&&i<_hard;i++){
+          const lid=_li[i]; if(lid&&_doneLids.has(lid)) continue;
+          const p=String(_ls[i]).trim(); if(_seenWk[p]) continue;
+          effLessons.push({lesson:_ls[i],lid:lid||null,dayNum:null,date:""});
+        }
+      } else if(_doneLids){
         // Done-by-lesson-id is exact. A row with no id (text not on the master list)
         // falls back to the text tally when there is one; else it is served.
         const _left=_doneCounts?new Map(_doneCounts):null;
