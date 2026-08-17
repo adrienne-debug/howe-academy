@@ -38416,6 +38416,8 @@ function generateWeek(config){
   // by TEXT, in day order, one served entry per card (gwAutoBalance keeps a subject's
   // order, so this is exact; a text with no served entry left simply gets no lid).
   try{ gwStampLids(allTasks,weekServed); }catch(e){ dbg&&dbg("lid stamp skip: "+e); }
+  // Stage 3c — plan-backed cards get their deterministic id (<kid>_<pid>_<lid>).
+  try{ gwPlanIds(allTasks); }catch(e){ dbg&&dbg("plan id skip: "+e); }
 
   try{ gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear); }catch(e){ dbg&&dbg("retr inject skip: "+e); }
 
@@ -38464,6 +38466,32 @@ function gwStampLids(allTasks,served){
   return n;
 }
 // LID_STAMP_END
+// LID_ID_START — Stage 3c: deterministic ids for plan-backed cards.
+// A plan-backed subject's card is its lesson: id = <kid>_<planId>_<lid> — no date, no
+// counter — so re-generating the week (any day, any reshape) mints the SAME id for the
+// same lesson and a check-off can never be stranded or stolen (gwCommit's pass 0 matches
+// old date-ids by lid once; after that ids are equal and nothing needs matching). The
+// last segment is the lid ("L0007"), never numeric and never "_c", so the taskCounter
+// regex and the carry twin (id+"_c") stay correct. A lid is served once per week; if two
+// cards ever carry the same lid the second keeps its date id (no collision, ever).
+// Cards without a lid, non-plan-backed subjects and _c carries are untouched.
+function gwPlanIds(allTasks){
+  if(!allTasks||!allTasks.length) return 0;
+  if(typeof planBacked!=="function"||typeof planIdFor!=="function") return 0;
+  const seen=new Set(); allTasks.forEach(t=>{ if(t&&t.id) seen.add(t.id); });
+  let n=0;
+  allTasks.forEach(t=>{
+    if(!t||!t.lid||!t.who||!t.subjectKey||String(t.id||"").endsWith("_c")) return;
+    let pb=false; try{ pb=!!planBacked(t.who,t.subjectKey); }catch(e){ pb=false; }
+    if(!pb) return;
+    const id=t.who+"_"+planIdFor(t.who,t.subjectKey)+"_"+t.lid;
+    if(id===t.id) return;
+    if(seen.has(id)) return;          // second serve of the same lid keeps its date id
+    seen.delete(t.id); seen.add(id); t.id=id; n++;
+  });
+  return n;
+}
+// LID_ID_END
 
 function gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear){
   if(typeof retrTracks!=="function") return;
@@ -38599,6 +38627,7 @@ function gwCommit(){
     const memChecked=checked||{};
     const snapChecked={...lsChecked,...memChecked};
     const snapHist=ld(activeWK+"_history")||{};
+    // GWC_MATCH_START — re-attach this week's checks to the regenerated cards (test_regen_idempotent.js)
     // Build lookup of old checks by title+who+day for matching after regeneration.
     // Only carry checks from this week (within 7 days) to prevent stale cross-week bleed.
     const oldLookup={};
@@ -38694,6 +38723,7 @@ function gwCommit(){
         d.tasks.push(t); _kIds.add(t.id);
       });
     })();
+    // GWC_MATCH_END
     const snapSl=ld(activeWK+"_sl")||slState||{};
     // Re-attach carry-overs (rebaselined subjects sit out — the rebuild absorbed them)
     const newIds=new Set(d.tasks.map(t=>t.id));
