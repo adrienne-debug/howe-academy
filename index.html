@@ -11615,7 +11615,7 @@ const CURR_DEV_LABEL={paper:"Paper",computer:"Computer","ipad/phone":"iPad/Phone
 const CURR_MOM_BADGE={required:"Mom Required",maybe:"May Need Mom",none:""};
 const RULE_DESC={sequential:"Lessons advance in order (1→2→3)",sticky:"Always scheduled next to another subject",
 
-max1:"Maximum one per day (no doubling up)",first:"First subject of the day (only one allowed)",
+first:"First subject of the day (only one allowed)",
 last:"Last subject of the day (only one allowed)",priority:"Gets scheduled before lower-priority subjects"};
 
 function setCurrViewKid(k){ currViewKid=k; currViewWeek=null; renderAll(); }
@@ -14218,12 +14218,9 @@ function ceToggleField(field){
   const cur=!!currData.subjects[ceEditKid][ceEditKey][field];
   ceSaveField(field,!cur);
 }
-// Renaming a subject's display name carries the two Rules settings that reference it BY NAME,
-// so a rename doesn't silently orphan them:
-//   (a) Max-Per-Day cap — maxPerDay is keyed by display name (the scheduler looks it up that
-//       way). A name can be shared across kids, so we COPY the cap onto the new name (unless
-//       one already lives there — then this subject just joins it) and only DROP the old entry
-//       when no other active subject still uses the old name.
+// Renaming a subject's display name carries the Rules setting that references it BY NAME,
+// so a rename doesn't silently orphan it (6c-2: the per-day cap now lives ON the subject as
+// `cap`, so only workflow-order overrides remain name-keyed):
 //   (b) Workflow-order overrides for THIS kid — steps can name a specific subject to pin its
 //       run order. Those entries are matched by substring at runtime, so we rewrite ONLY the
 //       ones that EXACTLY equal the old display (the unambiguous "this subject" case) and leave
@@ -14238,14 +14235,6 @@ function ceRenameSubject(newVal){
   if(oldDisp&&newDisp&&oldDisp!==newDisp&&rulesData){
     const r=JSON.parse(JSON.stringify(rulesData));
     let dirty=false;
-    // (a) Max-Per-Day cap
-    if(r.maxPerDay&&r.maxPerDay[oldDisp]){
-      if(!r.maxPerDay[newDisp]) r.maxPerDay[newDisp]=r.maxPerDay[oldDisp];
-      let stillUsed=false;
-      [...ROSTER].forEach(k=>{ const subs=(currData.subjects&&currData.subjects[k])||{}; for(const sk in subs){ if(!subs[sk].paused&&(subs[sk].display||"")===oldDisp) stillUsed=true; } });
-      if(!stillUsed) delete r.maxPerDay[oldDisp];
-      dirty=true;
-    }
     // (b) Workflow-order overrides for this kid (normal + babysitter day)
     const wf=r.workflow&&r.workflow[ceEditKid];
     if(wf){
@@ -15630,6 +15619,57 @@ function gvMigrateDayTokensUndo(){
   if(typeof gwShowToast==="function") gwShowToast("↩ Day rules restored");
   renderAll();
 }
+// ── Stage 6c-2: max1 words + config/rules.maxPerDay → `cap` on the subject (her decision) ──
+// ONE per-day number. max1 → cap 1; a Max/day weekday value → cap N (Saturday value dropped:
+// Sat = same as weekday); both → 1. Entries naming no live subject are deleted. Global (the
+// old node is one tree), so the tap covers every kid; Undo restores words, caps and the node.
+function capLeftovers(){
+  const out=[]; const subs=(currData||{}).subjects||{}; const mp=(typeof rulesData!=="undefined"&&rulesData&&rulesData.maxPerDay)||{};
+  const used=new Set();
+  Object.keys(subs).forEach(kid=>Object.keys(subs[kid]||{}).forEach(sk=>{ const s=subs[kid][sk]||{};
+    const toks=String(s.rules||"").split(/[,\s]+/).filter(Boolean); const hasMax1=toks.includes("max1");
+    const disp=String(s.display||sk); const ent=mp[disp]||mp[sk]||null; if(ent) used.add(mp[disp]?disp:sk);
+    const cur=parseInt(s.cap,10)>=1?parseInt(s.cap,10):null;
+    let cap=cur; const why=[];
+    if(ent&&ent.max!=null&&parseInt(ent.max,10)>=1){ cap=parseInt(ent.max,10); why.push("max/day "+ent.max+(ent.saturday_max!=null&&ent.saturday_max!==ent.max?" (Sat "+ent.saturday_max+" dropped)":"")); }
+    if(hasMax1){ cap=1; why.push("max1"); }
+    if(!why.length) return;
+    out.push({kid,sk,disp,cap,capBefore:cur,rules:toks.filter(t=>t!=="max1").join(","),hadMax1:hasMax1,why}); }));
+  const orphans=Object.keys(mp).filter(k=>!used.has(k));
+  return {items:out,orphans,node:Object.keys(mp).length?mp:null};
+}
+let _capMigUndo=null;
+function gvMigrateCaps(){
+  if(!(momModeActive||adminPinUnlocked)||!db) return;
+  const L=capLeftovers(); if(!L.items.length&&!L.node) return;
+  const lines=L.items.map(x=>"• "+cap(x.kid)+" · "+x.disp+": cap "+x.cap+"  ("+x.why.join(" + ")+(x.capBefore!=null&&x.capBefore!==x.cap?"; was "+x.capBefore:"")+")");
+  if(L.orphans.length) lines.push("• delete "+L.orphans.length+" old entr"+(L.orphans.length>1?"ies":"y")+" naming no subject: "+L.orphans.join(", "));
+  if(!confirm("Fold the old per-day caps into ONE cap per subject?\n\nCap = how many sittings of a subject may land on one day. The old max1 word and the Max/day list said the same thing in two other places.\n\n"+lines.join("\n")+"\n\nNothing moves today unless a subject's number actually changes. You can Undo.")) return;
+  const patch={}; const prev={};
+  L.items.forEach(x=>{ const base="subjects/"+x.kid+"/"+x.sk+"/"; const s=currData.subjects[x.kid][x.sk];
+    prev[base+"cap"]=s.cap===undefined?null:s.cap; patch[base+"cap"]=x.cap; s.cap=x.cap;
+    if(x.hadMax1){ prev[base+"rules"]=s.rules===undefined?null:s.rules; patch[base+"rules"]=x.rules||null; s.rules=x.rules; } });
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch).catch(err=>{ if(typeof gwShowToast==="function") gwShowToast("⚠ "+err.message); });
+  const nodePrev=L.node?JSON.parse(JSON.stringify(L.node)):null;
+  if(L.node){ db.ref("config/rules/maxPerDay").set(null); if(rulesData) delete rulesData.maxPerDay; }
+  _capMigUndo={prev,nodePrev,n:L.items.length,orphans:L.orphans.length};
+  // plan-backed subjects whose cap actually changed re-lay (cap drives the projection's extras)
+  L.items.forEach(x=>{ const before=x.capBefore!=null?x.capBefore:1; if(before!==x.cap&&typeof planBacked==="function"&&planBacked(x.kid,x.sk)&&typeof _gvRelaySubject==="function"){ const s=currData.subjects[x.kid][x.sk]; if(s.pacing&&s.pacing.mode){ try{ _gvRelaySubject(x.kid,x.sk,"🧢 "+x.disp+" cap "+x.cap); }catch(e){} } } });
+  cbMsg="🧢 Folded caps onto "+L.items.length+" subject"+(L.items.length!==1?"s":"")+".";
+  renderAll();
+}
+function gvMigrateCapsUndo(){
+  if(!_capMigUndo||!db) return;
+  const {prev,nodePrev}=_capMigUndo; const patch={};
+  Object.keys(prev).forEach(p=>{ patch[p]=prev[p]; const parts=p.split("/"); const kid=parts[1],sk=parts[2],f=parts[3]; const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(s){ if(prev[p]===null) delete s[f]; else s[f]=prev[p]; } });
+  patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
+  db.ref("curriculum").update(patch);
+  if(nodePrev){ db.ref("config/rules/maxPerDay").set(nodePrev); if(rulesData) rulesData.maxPerDay=JSON.parse(JSON.stringify(nodePrev)); }
+  _capMigUndo=null;
+  if(typeof gwShowToast==="function") gwShowToast("↩ Old caps restored");
+  renderAll();
+}
 function gvClearSkiplogUndo(){
   if(!_skiplogClearUndo||!db) return;
   const {kid,prev}=_skiplogClearUndo; const patch={};
@@ -16167,7 +16207,7 @@ function ceRenderAddSheet(){
   h+='<div class="ce-sheet-lbl">Scheduling Rules</div>';
   const rParts=(f.rules||"").split(",").map(x=>x.trim()).filter(Boolean);
   h+='<div class="ce-chips">';
-  ["sequential","sticky","max1","first","last"].forEach(r=>{   // 6c: no-fri/mon-thu retired — use Days pins
+  ["sequential","sticky","first","last"].forEach(r=>{   // 6c: no-fri/mon-thu → Days pins; max1 → Cap
     const sel=rParts.includes(r);
     h+='<div class="ce-chip'+(sel?" sel":"")+'" onclick="ceAddToggleRule(\''+r+'\')">'+r+'</div>';
   });
@@ -16664,7 +16704,7 @@ function downloadCurrTemplate(){
     ["Device","paper / computer / ipad / phone"],
     ["Mom","none / required / optional"],
     ["Minutes","Estimated minutes per lesson (number)"],
-    ["Rules","sequential / max1 / sticky / first / last (comma-separated)"],
+    ["Rules","sequential / sticky / first / last (comma-separated)"],
     ["Days","Allowed days: Mon Tue Wed Thu Fri Sat (space-separated, blank = any)"],
     ["x/week","How many times per week this subject is scheduled (number)"],
     [""],
@@ -18596,7 +18636,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
       const _cc={};
       weekData.tasks.forEach(t=>{ if(t.day===dn&&!t.id.endsWith("_c")&&!checked[t.id]&&!subjNoCarry(t)&&pool.indexOf(t)<0){ const k=t.who+"|"+taskSubject(t); _cc[k]=(_cc[k]||0)+1; } });
       tryHere=tryHere.filter(t=>{
-        const cap=catchupDayCap(taskSubject(t),dn);
+        const cap=catchupDayCap(t.who,taskSubject(t));
         if(cap==null) return true;
         const k=t.who+"|"+taskSubject(t);
         if((_cc[k]||0)>=cap){ _capDeferred.add(t); return false; }
@@ -18700,7 +18740,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
       // kids' schedule entirely and shows only in the Mom-only "carries to next week" box
       // (checkable by Mom for a Sunday catch-up; otherwise it rolls to next week, in
       // sequence via the lesson-order pass + auto-advance).
-      if(isCatchupCapped(taskSubject(t))){ t._eowOverflow=true; return; }
+      if(isCatchupCapped(t.who,taskSubject(t))){ t._eowOverflow=true; return; }
       for(let di=dayOrder.length-1; di>=todayIdx; di--){
         const dn=dayOrder[di], ds=_cascDate(dn);
         if(_wkHasDates&&!ds) continue; // day isn't part of this week
@@ -22768,17 +22808,17 @@ function cbRenderRules(col){
   const _cyc=(sk,field,opts,cur,relay)=>{ const i=Math.max(0,opts.indexOf(cur)); const nx=opts[(i+1)%opts.length]; return 'onclick="rlSet(\''+kid+'\',\''+sk+'\',\''+field+'\',\''+nx+'\','+(relay?'true':'false')+')"'; };
   const _pill='display:inline-block;padding:2px 7px;border-radius:9px;border:1px solid var(--border);background:#fff;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap';
   h+='<div id="cb-daypin-scroll" style="max-height:340px;overflow:auto;border:1px solid var(--border);border-radius:8px">';
-  h+='<table style="border-collapse:collapse;font-size:10.5px;min-width:100%"><thead><tr style="background:var(--bg)">'+["Subject","Days","×/wk","Cap","Min","Mom","Device","Priority","First/last","Sticky","No-carry","Rules","Max/day"].map(x=>'<th style="text-align:left;padding:5px 6px;white-space:nowrap;font-size:10px;color:var(--muted)">'+x+'</th>').join("")+'</tr></thead><tbody>';
+  h+='<table style="border-collapse:collapse;font-size:10.5px;min-width:100%"><thead><tr style="background:var(--bg)">'+["Subject","Days","×/wk","Cap","Min","Mom","Device","Priority","First/last","Sticky","No-carry","Rules"].map(x=>'<th style="text-align:left;padding:5px 6px;white-space:nowrap;font-size:10px;color:var(--muted)">'+x+'</th>').join("")+'</tr></thead><tbody>';
   for(const [sk,s] of entries){
     const al=s.allowedDays||[]; const pb=(typeof planBacked==="function")&&planBacked(kid,sk); const seqd=s.tracking!=="daily";
-    const tpw=(s.pacing&&s.pacing.tpw)||s.timesPerWeek||0; const _capN=Math.max(1,parseInt(s.cap,10)||1);
+    const tpw=(s.pacing&&s.pacing.tpw)||s.timesPerWeek||0; const _capN=(typeof capFor==="function")?capFor(kid,sk,DEFAULT_DAY_CAP):Math.max(1,parseInt(s.cap,10)||1);   // 6c-2: effective cap
     const rules=String(s.rules||""); const fl=rules.includes("first")?"first":rules.includes("last")?"last":"—";
     const dev=(s.device==="ipad"||s.device==="phone")?"ipad/phone":(s.device||"paper");
     h+='<tr style="border-top:1px dashed #eef0f3">';
     h+='<td style="padding:4px 6px;font-weight:700;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis" title="'+disp(sk)+'">'+(pb?'🧭 ':'')+disp(sk)+'</td>';
     h+='<td style="padding:3px 6px;white-space:nowrap">'+["Mon","Tue","Wed","Thu","Fri"].map(d=>{ const on=al.includes(d); return '<span onclick="cbPinDay(\''+sk+'\',\''+d+'\')" style="display:inline-block;padding:2px 6px;border-radius:9px;border:1px solid '+(on?'transparent':'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:9.5px;font-weight:700;cursor:pointer;margin-right:2px">'+d[0]+'</span>'; }).join("")+'</td>';
     h+='<td style="padding:3px 6px;white-space:nowrap"><span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'tpw\','+(tpw-1)+',true)" style="'+_pill+'">−</span> <b>'+(tpw||"all")+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'tpw\','+(tpw+1)+',true)" style="'+_pill+'">+</span></td>';
-    h+='<td style="padding:3px 6px;white-space:nowrap">'+(seqd?('<span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'cap\','+Math.max(1,_capN-1)+',true)" style="'+_pill+'">−</span> <b>'+_capN+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'cap\','+Math.min(4,_capN+1)+',true)" style="'+_pill+'">+</span>'):'<span style="color:var(--muted)">—</span>')+'</td>';
+    h+='<td style="padding:3px 6px;white-space:nowrap">'+((true)?('<span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'cap\','+Math.max(1,_capN-1)+',true)" style="'+_pill+'">−</span> <b>'+_capN+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'cap\','+Math.min(4,_capN+1)+',true)" style="'+_pill+'">+</span>'):'<span style="color:var(--muted)">—</span>')+'</td>';
     h+='<td style="padding:3px 6px;white-space:nowrap"><span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'minutes\','+Math.max(5,(s.minutes||20)-5)+',true)" style="'+_pill+'">−</span> <b>'+(s.minutes||20)+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'minutes\','+Math.min(90,(s.minutes||20)+5)+',true)" style="'+_pill+'">+</span></td>';
     h+='<td style="padding:3px 6px"><span '+_cyc(sk,"mom",["none","maybe","required"],s.mom||"none",false)+' style="'+_pill+'">'+({none:"None",maybe:"Maybe",required:"Required"}[s.mom||"none"])+'</span></td>';
     h+='<td style="padding:3px 6px"><span '+_cyc(sk,"device",["paper","computer","ipad/phone","book"],dev,false)+' style="'+_pill+'">'+(CURR_DEV_EMOJI[dev]||"")+' '+(CURR_DEV_LABEL[dev]||dev)+'</span></td>';
@@ -22790,18 +22830,14 @@ function cbRenderRules(col){
     h+='<td style="padding:3px 6px"><span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'noCarry\','+(s.noCarry?'false':'true')+',false)" style="'+_pill+(s.noCarry?';background:'+col+';color:#fff;border-color:transparent':'')+'">'+(s.noCarry?"day-bound":"carries")+'</span></td>';
     // Stage 6a: the remaining rule tokens + per-subject Max/day get their door HERE (they
     // came off the card). Same data, same consumers: no-fri/mon-thu = generator day filter,
-    // max1 = never stacks (packer), sequential = order flag; Max/day = config/rules.maxPerDay
-    // by display name (catch-up stacking cap, catchupDayCap).
-    { const _tk=[["sequential","seq"],["max1","max1"]];   // 6c: no-fri/mon-thu retired (Days pins are the one door)
+    // sequential = order flag (6c: no-fri/mon-thu → Days pins; max1 + Max/day → Cap).
+    { const _tk=[["sequential","seq"]];   // 6c: no-fri/mon-thu → Days pins; max1 → Cap 1 (one cap)
       h+='<td style="padding:3px 6px;white-space:nowrap">'+_tk.map(([t,lbl])=>{ const on=rules.split(/[,\s]+/).includes(t); return '<span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'rulesTok\',\''+t+'\',false)" style="'+_pill+(on?';background:'+col+';color:#fff;border-color:transparent':'')+'">'+lbl+'</span>'; }).join(" ")+'</td>';
-      const _mpc=(typeof rulesData!=="undefined"&&rulesData&&rulesData.maxPerDay&&rulesData.maxPerDay[s.display])||{}; const _mpk=esc(String(s.display||sk)).replace(/'/g,"\\'");
-      h+='<td style="padding:3px 6px;white-space:nowrap" title="Max sittings per day during catch-up (blank = default '+(typeof DEFAULT_DAY_CAP!=="undefined"?DEFAULT_DAY_CAP:2)+'); Sat blank = same as weekday">'
-        +'<input type="number" min="0" max="10" value="'+(_mpc.max!=null?_mpc.max:"")+'" placeholder="wk" onchange="rulesUpdateMax(\''+_mpk+'\',\'max\',this.value)" style="width:34px;font-size:10px;padding:1px 3px"> '
-        +'<input type="number" min="0" max="10" value="'+(_mpc.saturday_max!=null?_mpc.saturday_max:"")+'" placeholder="Sat" onchange="rulesUpdateMax(\''+_mpk+'\',\'saturday_max\',this.value)" style="width:34px;font-size:10px;padding:1px 3px"></td>'; }
+    }
     h+='</tr>';
   }
   h+='</tbody></table></div>';
-  h+='<div style="font-size:10px;color:var(--muted);margin-top:6px">Days · ×/wk · cap · min · priority change WHERE work lands — plan-backed subjects re-lay right away (grid ↩ Undo). Mom · device · first/last · sticky · carry · rules · max/day shape the DAY’s order and are read at generation. Subject cards keep name, emoji, tracking, mom-check, reading log, scored and pacing.</div>';
+  h+='<div style="font-size:10px;color:var(--muted);margin-top:6px">Days · ×/wk · cap · min · priority change WHERE work lands — plan-backed subjects re-lay right away (grid ↩ Undo). Mom · device · first/last · sticky · carry · rules shape the DAY’s order and are read at generation. Subject cards keep name, emoji, tracking, mom-check, reading log, scored and pacing.</div>';
   h+='</div>';
   return h;
 }
@@ -25100,6 +25136,18 @@ function renderCurrGrid(el){
           h+='<div style="background:#f5f3ff;border-left:4px solid #7c3aed;border-radius:0 10px 10px 0;padding:7px 12px;margin:0 0 8px;font-size:12px;color:#5b21b6">🧹 Cleared '+_skiplogClearUndo.n+' leftover'+(_skiplogClearUndo.n>1?'s':'')+' on '+_skiplogClearUndo.subjects+' subject'+(_skiplogClearUndo.subjects>1?'s':'')+'. <button onclick="gvClearSkiplogUndo()" style="border:1px solid #7c3aed;background:#fff;color:#5b21b6;border-radius:8px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">↩ Undo</button></div>';
         }
       }catch(e){}
+      // Stage 6c-2: old max1 words + Max/day list → one Cap per subject, one tap (all kids), Undo.
+      try{
+        const _cl=(typeof capLeftovers==="function")?capLeftovers():{items:[],orphans:[],node:null};
+        if(_cl.items.length||_cl.node){
+          h+='<div style="background:#fdf4ff;border-left:4px solid #a21caf;border-radius:0 10px 10px 0;padding:9px 12px;margin:0 0 8px">';
+          h+='<div style="font-size:12px;color:#86198f;margin-bottom:6px"><b>🧢 '+_cl.items.length+' subject'+(_cl.items.length!==1?'s':'')+' still carr'+(_cl.items.length!==1?'y':'ies')+' an old per-day cap (max1 word or Max/day list)'+(_cl.orphans.length?' + '+_cl.orphans.length+' old entr'+(_cl.orphans.length>1?'ies':'y')+' naming no subject':'')+'.</b> Cap in ⚙ Rules is the one number for “sittings per day” — this folds the old ones into it, for every kid. Shows the result first.</div>';
+          h+='<button onclick="gvMigrateCaps()" style="border:1px solid #a21caf;background:#fff;color:#86198f;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🧢 Fold into Cap</button>';
+          h+='</div>';
+        } else if(typeof _capMigUndo!=="undefined"&&_capMigUndo){
+          h+='<div style="background:#fdf4ff;border-left:4px solid #a21caf;border-radius:0 10px 10px 0;padding:7px 12px;margin:0 0 8px;font-size:12px;color:#86198f">🧢 Folded caps onto '+_capMigUndo.n+' subject'+(_capMigUndo.n!==1?'s':'')+'. <button onclick="gvMigrateCapsUndo()" style="border:1px solid #a21caf;background:#fff;color:#86198f;border-radius:8px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">↩ Undo</button></div>';
+        }
+      }catch(e){}
       // Stage 6c-1: leftover no-fri / mon-thu words → Days pins, one tap, Undo.
       try{
         const _dt=(typeof dayTokenLeftovers==="function")?dayTokenLeftovers(gvKid):[];
@@ -25732,7 +25780,6 @@ function _placementSig(kids,slots,subjects,rd){
     workflow:rd.workflow||null,                       // category order per kid
     overlap:rd.overlap||null,                         // never/ok simultaneous
     deviceQueue:(rd.devices&&rd.devices.queue)||null, // device priority tie-break
-    maxPerDay:rd.maxPerDay||null,                     // includes saturday_max per subject
     saturday:rd.saturday||null,                       // reflex_max / lucy_max / computer_sequence
     nothingDropsOff:rd.nothingDropsOff||null
   };
@@ -26723,7 +26770,7 @@ function lmComputeSuggestions(k,weekLabel){
       }
     };
     tryDays(false);
-    if(need>0&&isSeq&&!rl.includes("max1")) tryDays(true); // sequential subjects may double up — but max1 (once-a-day, e.g. Reflex) never does
+    if(need>0&&isSeq&&capFor(k,sk,DEFAULT_DAY_CAP)!==1) tryDays(true); // sequential subjects may double up — but cap 1 (once-a-day, e.g. Reflex) never does
   }
   return sugg;
 }
@@ -27268,7 +27315,7 @@ function computeFinishLines(forKid){
       // forever. max1 (once-a-day, e.g. Reflex) can't double, so it gets no credit.
       let catchupCredit=0;
       const _flr=s.rules||"";
-      if(!_flr.includes("first")&&!_flr.includes("last")&&!_flr.includes("max1")){
+      if(!_flr.includes("first")&&!_flr.includes("last")&&capFor(kid,sk,DEFAULT_DAY_CAP)!==1){   // 6c-2: cap 1 can't double
         const _cap=(s.carryoverCap!=null)?s.carryoverCap:2;
         if(_cap>0){ const _exp=currExpectedBase(kid,sk,currWeekNum()-1); catchupCredit=Math.min(Math.max(0,(_exp==null?0:_exp-cursor)),remaining); }
       }
@@ -32866,7 +32913,7 @@ function auditSchedule(tasks,checkedMap){
   // checkedMap defaults to the live global for app callers; the node harness passes tasks
   // only, so it falls back to {} and behaves exactly as before.
   const _ck=checkedMap||(typeof checked!=="undefined"&&checked)||{};
-  const r=rulesData||{}, ovc=r.overlap||{}, mp=r.maxPerDay||{}, sd=r.schoolDay||{}, sdOv=sd.overrides||{};
+  const r=rulesData||{}, ovc=r.overlap||{}, sd=r.schoolDay||{}, sdOv=sd.overrides||{};
   const nv=fbArr(ovc.never_simultaneous);
   const neverSet=new Set((nv&&nv.length)?nv:["mom_required","computer","ipad"]);
   const v=[];
@@ -32905,9 +32952,9 @@ function auditSchedule(tasks,checkedMap){
     if(neverSet.has("ipad")&&_maxConc(_scr)>_caps.screen) v.push(lbl+": more than "+_caps.screen+" screen (iPad/phone) task(s) at once");
     const cnt={};
     ts.forEach(x=>{ const k=taskSubject(x.t)+"|"+x.t.who; cnt[k]=(cnt[k]||0)+1; });
-    for(const k in cnt){ const subj=k.split("|")[0], cfg=mp[subj]; if(!cfg) continue;
-      const cap2=(day==="saturday"&&cfg.saturday_max!=null)?cfg.saturday_max:cfg.max;
-      if(cap2!=null&&cnt[k]>cap2) v.push(lbl+": "+subj+" over max-per-day ("+cnt[k]+" > "+cap2+")");
+    for(const k in cnt){ const subj=k.split("|")[0], who=k.split("|")[1];
+      const cap2=(typeof capForDisplay==="function")?capForDisplay(who,subj,null):null;   // 6c-2: one cap (s.cap)
+      if(cap2!=null&&cnt[k]>cap2) v.push(lbl+": "+subj+" over cap ("+cnt[k]+" > "+cap2+")");
     }
   }
   return [...new Set(v)];
@@ -32922,14 +32969,13 @@ function runDisplacement(){
   const r=rulesData;
   const sd=r.schoolDay||{};
   const sdOv=sd.overrides||{};
-  const mp=r.maxPerDay||{};
   const wf=r.workflow||{};
   const dayOrder=["monday","tuesday","wednesday","thursday","friday","saturday"];
   const tasks=JSON.parse(JSON.stringify(weekData.tasks));
   const carryOver=[];
 
   // ── Helpers ──
-  function maxFor(subj){return(mp[subj]&&mp[subj].max!=null)?mp[subj].max:999;}
+  function maxFor(who,subj){ return (typeof capForDisplay==="function")?capForDisplay(who,subj,999):999; }   // 6c-2: one cap (s.cap); uncapped = 999
   function _dayStart(d){var ov=sdOv[d];return toMin((ov&&ov.start)||sd.defaultStart||"10:00 AM");}
   function _dayEnd(d){var ov=sdOv[d];return toMin((ov&&ov.end)||sd.defaultEnd||"4:15 PM");}
   function _dayLS(d){var ov=sdOv[d];return toMin((ov&&ov.lunchStart)||sd.lunchStart||"1:00 PM");}
@@ -33167,7 +33213,7 @@ function runDisplacement(){
       var toPlace=[];
       kids[who].forEach(function(t){
         if(!(checked&&checked[t.id])){
-          var subj=taskSubject(t), mx=maxFor(subj);
+          var subj=taskSubject(t), mx=maxFor(who,subj);
           if(mx<999){
             var ct=0;
             working.forEach(function(w){if(w.day===d&&taskSubject(w)===subj&&w.who===who)ct++;});
@@ -33230,7 +33276,7 @@ function runDisplacement(){
     if(_ds&&smapIsKidOff(t.who,_ds)) return false; // calendar holiday/vacation/kid-off
     var bab=null;bos.forEach(function(bo){if(bo.day===d&&bo.type==="babysitter")bab=bo;});
     if(bab&&(bab.kids||[]).indexOf(t.who)>=0){ if(t.mom==="required")return false; if(_sitterKids.indexOf(t.who)>=0)return false; }
-    var subj=taskSubject(t),mx=maxFor(subj),relax=(d==="saturday")&&_isSeqSubject(t);
+    var subj=taskSubject(t),mx=maxFor(t.who,subj),relax=(d==="saturday")&&_isSeqSubject(t);
     if(mx<999&&!relax){
       var ct=(pend[t.who+"|"+subj]||0);
       working.forEach(function(w){if(w.day===d&&taskSubject(w)===subj&&w.who===t.who)ct++;});
@@ -33876,26 +33922,6 @@ function rulesSwapWf(kid,mode,i,dir){
   saveRules(r);
 }
 
-function rulesUpdateMax(subj,field,val){
-  const r=JSON.parse(JSON.stringify(rulesData));
-  if(!r.maxPerDay) r.maxPerDay={};
-  if(!r.maxPerDay[subj]) r.maxPerDay[subj]={};
-  if(field==="max"||field==="saturday_max") r.maxPerDay[subj][field]=(val===""?null:parseInt(val));
-  else r.maxPerDay[subj][field]=!r.maxPerDay[subj][field];
-  saveRules(r);
-}
-function rulesRemoveMax(subj){
-  const r=JSON.parse(JSON.stringify(rulesData));
-  if(r.maxPerDay) delete r.maxPerDay[subj];
-  saveRules(r);
-}
-function rulesAddMax(subj){
-  if(!subj) return;
-  const r=JSON.parse(JSON.stringify(rulesData));
-  if(!r.maxPerDay) r.maxPerDay={};
-  if(!r.maxPerDay[subj]) r.maxPerDay[subj]={max:1};
-  saveRules(r);
-}
 
 function rulesUpdateDeviceQueue(device,val){
   const r=JSON.parse(JSON.stringify(rulesData));
@@ -33939,23 +33965,39 @@ function satApplyCutoff(ctx,legacyMax){
 }
 // Per-subject catch-up ceiling (config-gated). Returns the max number of that subject
 // allowed on a receiving day during catch-up, or null = uncapped (legacy: unlimited).
-// Saturday uses saturday_max (falling back to max); weekdays use max. Reads the same
-// maxPerDay rules the audit + blockout engine use, so all three agree. GLOBAL DEFAULT:
+// GLOBAL DEFAULT:
 // a subject with no explicit rule caps at DEFAULT_MAX per day ("everything 2 except the
 // ones set to 1") — so new/unconfigured subjects are covered automatically and over-cap
 // work flows to the Mom-only carry-over box instead of stacking. Set a per-subject max in
 // Rules → Carry-Over & Saturday to override (e.g. 1 for Reflex, or a high number to uncap).
 const DEFAULT_DAY_CAP=2;
-function catchupDayCap(subj,day){
-  const cfg=(rulesData&&rulesData.maxPerDay&&rulesData.maxPerDay[subj])||null;
-  if(!cfg) return DEFAULT_DAY_CAP;
-  if(day==="saturday") return cfg.saturday_max!=null?cfg.saturday_max:(cfg.max!=null?cfg.max:DEFAULT_DAY_CAP);
-  return cfg.max!=null?cfg.max:DEFAULT_DAY_CAP;
+// CAP_START — Stage 6c-2 (her decision 2026-08-16): ONE per-day cap, `s.cap` (⚙ Rules "Cap").
+// It replaced config/rules.maxPerDay (weekday/Sat, keyed by display name) and the `max1`
+// token: "how many sittings of this subject may land on one day". Effective value:
+//   explicit s.cap ≥1 → that; else plan-backed → 1 (the projection's meaning: one normal +
+//   no extras); else the caller's default (legacy engines kept their own: catch-up 2,
+//   displacement uncapped). A lingering `max1` word (pre-migration data) reads as 1 —
+//   the ONE transitional token read; the 🧢 fold-caps tap removes the words.
+function capFor(kid,sk,dflt){
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s) return dflt;
+  const c=parseInt(s.cap,10); if(c>=1) return c;
+  if(/(^|[,\s])max1([,\s]|$)/.test(String(s.rules||""))) return 1;
+  let pb=false; try{ pb=(typeof planBacked==="function")&&planBacked(kid,sk); }catch(e){}
+  return pb?1:dflt;
 }
-// Is this subject capped at all (has a max or saturday_max rule)? Drives the safety-net
-// decision: a capped subject that couldn't fit under its ceiling becomes end-of-week
-// overflow (Mom-only box → rolls to next week) instead of being force-stacked on a day.
-function isCatchupCapped(subj){ return catchupDayCap(subj,"saturday")!=null; }
+// Same, by subject KEY or DISPLAY name (task cards carry taskSubject(t) = display).
+function capForDisplay(kid,name,dflt){
+  const subs=(((currData||{}).subjects||{})[kid])||{}; const n=String(name||"").trim().toLowerCase();
+  if(subs[name]) return capFor(kid,name,dflt);
+  for(const sk of Object.keys(subs)){ if(String((subs[sk]||{}).display||"").trim().toLowerCase()===n) return capFor(kid,sk,dflt); }
+  return dflt;
+}
+function catchupDayCap(kid,subj){ return capForDisplay(kid,subj,DEFAULT_DAY_CAP); }
+// A subject is always capped now (explicit cap, plan-backed 1, or the default): a task that
+// couldn't fit under its ceiling becomes end-of-week overflow (Mom-only box → rolls to next
+// week) instead of being force-stacked on a day.
+function isCatchupCapped(kid,subj){ return catchupDayCap(kid,subj)!=null; }
+// CAP_END
 
 // ── Workflow time estimates ─────────────────────────────────────────
 // Planning readout for the Workflow Orders editor: how much time each kid has in each
@@ -34012,7 +34054,6 @@ function renderRules(el,headerHtml){
   const wf=r.workflow||{};
   const dv=r.devices||{};
   const ov=r.overlap||{};
-  const mp=r.maxPerDay||{};
   const nd=r.nothingDropsOff||{};
   const sat=r.saturday||{};
   const o=id=>rulesOpen[id]?" open":"";
@@ -34259,9 +34300,7 @@ function renderRules(el,headerHtml){
   }
   h+='</div></div>';
 
-  // 5. MAX-PER-DAY moved to each subject card (Subjects → tap a subject → Max Per Day).
-  // It reads/writes the same config/rules.maxPerDay data; the Per-Subject Settings card
-  // below mirrors the caps here.
+  // 5. MAX-PER-DAY retired (6c-2): the per-day cap is `cap` on the subject — ⚙ Rules above the Grid.
 
   // 6. CARRY-OVER & SATURDAY
   h+='<div class="rules-card'+o("co")+'">';
@@ -34312,15 +34351,15 @@ function renderRules(el,headerHtml){
     keys.forEach(function(sk){
       var s=subs[sk], rl=s.rules||"", flags=[];
       if(s.mom==="required") flags.push("Mom"); else if(s.mom==="maybe") flags.push("Mom?");
-      ["sequential","sticky","first","last","max1"].forEach(function(f){ if(rl.includes(f)) flags.push(f); });
+      ["sequential","sticky","first","last"].forEach(function(f){ if(rl.includes(f)) flags.push(f); });
       if(Array.isArray(s.allowedDays)&&s.allowedDays.length&&s.allowedDays.length<5) flags.push(s.allowedDays.join("/"));   // 6c: days = pins
       h+='<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px solid #f9fafb">';
       h+='<span>'+(GW_DEVICE_EMOJI[s.device]||GW_DEVICE_EMOJI.paper)+'</span>';
       h+='<span style="flex:1;min-width:0">'+esc(s.display||sk)+'</span>';
       h+='<span style="font-size:11px;color:var(--muted);flex-shrink:0">'+(s.minutes||20)+'m</span>';
       if(flags.length) h+='<span style="font-size:10px;color:var(--muted);flex-shrink:0">'+esc(flags.join(" · "))+'</span>';
-      var _mpc=mp[s.display||sk];
-      if(_mpc && (_mpc.max!=null || _mpc.saturday_max!=null)) h+='<span style="font-size:10px;color:#b45309;font-weight:700;flex-shrink:0">'+(_mpc.max!=null?_mpc.max:DEFAULT_DAY_CAP)+'/day'+(_mpc.saturday_max!=null?' · Sat '+_mpc.saturday_max:'')+'</span>';
+      var _capX=(s.cap!=null&&parseInt(s.cap,10)>=1)?parseInt(s.cap,10):null;   // 6c-2: one cap
+      if(_capX!=null) h+='<span style="font-size:10px;color:#b45309;font-weight:700;flex-shrink:0">cap '+_capX+'/day</span>';
       h+='</div>';
     });
     h+='<div style="height:8px"></div>';
@@ -37228,7 +37267,7 @@ function gwSubjectDetail(kid,key){
   else if(s.mom==="maybe") parts.push("May need Mom.");
   const rules=s.rules||"";
   if(rules.includes("sequential")) parts.push("Sequential.");
-  if(rules.includes("max1")) parts.push("Max 1 per day.");
+  if(capFor(kid,key,DEFAULT_DAY_CAP)===1) parts.push("Max 1 per day.");
   if(Array.isArray(s.allowedDays)&&s.allowedDays.length&&s.allowedDays.length<5) parts.push(s.allowedDays.join("/")+" only.");   // 6c: days = pins
   return parts.join(" ");
 }
@@ -37596,7 +37635,7 @@ function gwAutoBalance(dayData,lateStart,skipDays){
             if(allowed.length&&dayAbbr&&!allowed.includes(dayAbbr)) continue;
             const dstTasks=(dayData[dk]||{})[kid]||{};
             if(dstTasks[key]!==undefined){            // this move would stack the subject on dk
-              if(rules.includes("max1")) continue;     // max1 (reflex, dictation) never stacks
+              if(capFor(kid,key,DEFAULT_DAY_CAP)===1) continue;     // 6c-2: cap 1 (reflex, dictation) never stacks
               if(!allowStack) continue;                // pass 1: keep subjects spread across days
               if(dayTotals[ld2]-dayTotals[dk]<=STACK_GAP_MIN) continue; // pass 2: only to close a big gap
             }
@@ -37840,7 +37879,7 @@ function gwCatchupExtraDates(kid,sk,s,existingDates,want,dayData){
   if(want<=0) return [];
   const WD={0:"Sun",1:"Mon",2:"Tue",3:"Wed",4:"Thu",5:"Fri",6:"Sat"};
   const al=s.allowedDays||[], rl=s.rules||"";
-  const max1=rl.includes("max1");                 // once-per-day subjects (e.g. Reflex) never double
+  const max1=capFor(kid,sk,DEFAULT_DAY_CAP)===1;   // 6c-2: cap 1 = once-per-day subjects (e.g. Reflex) never double
   const gwR=gwRules();
   const dayCap=(gwR.schoolEnd-gwR.schoolStart)-((gwR.lunchEnd||0)-(gwR.lunchStart||0));
   const subs=currData.subjects[kid]||{};

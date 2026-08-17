@@ -31,7 +31,7 @@ function slice(name) {
 }
 const FNS = [
   "toMin", "fromMin", "_parseCheckTs", "_dismissed", "_normOrderArr",
-  "taskDevice", "taskSubject", "taskTier", "catchupDayCap", "isCatchupCapped",
+  "taskDevice", "taskSubject", "taskTier", "capFor", "capForDisplay", "catchupDayCap", "isCatchupCapped",
   "subjNoCarry", "applyStickyOrder", "packDay", "packAround",
   "cascadeIntraWeek"
 ].map(slice).join("\n");

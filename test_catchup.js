@@ -8,7 +8,7 @@
  *
  *   run:  node test_catchup.js
  *
- * Covers: free-day fill, lightest-day spread, the doubling tier, max1 (never
+ * Covers: free-day fill, lightest-day spread, the doubling tier, cap 1 (never
  * doubles), the day-cap fit check, the daily-subject buffer, and want<=0.
  */
 const fs = require("fs");
@@ -38,10 +38,13 @@ const currData = { subjects: { ellis: {} } };
 // A 2026-06-22 (Mon) .. 2026-06-26 (Fri) week.
 const MON = "2026-06-22", TUE = "2026-06-23", WED = "2026-06-24", THU = "2026-06-25", FRI = "2026-06-26";
 
+// 6c-2: gwCatchupExtraDates reads the ONE per-day cap via capFor (real fn) — max1 → cap 1.
+const DEFAULT_DAY_CAP = 2;
+const planBacked = () => false;
 const gwCatchupExtraDates = new Function(
-  "gwRules", "currData", "gwParseDate",
-  extractFn("gwCatchupExtraDates") + "; return gwCatchupExtraDates;"
-)(gwRules, currData, gwParseDate);
+  "gwRules", "currData", "gwParseDate", "DEFAULT_DAY_CAP", "planBacked",
+  extractFn("capFor") + "\n" + extractFn("gwCatchupExtraDates") + "; return gwCatchupExtraDates;"
+)(gwRules, currData, gwParseDate, DEFAULT_DAY_CAP, planBacked);
 
 // ── tiny harness ─────────────────────────────────────────────────────────────
 let pass = 0, fail = 0;
@@ -95,7 +98,7 @@ function setSubjects(map) { currData.subjects.ellis = map; }
 
 // 4) max1 subject with no free day gets nothing (never doubles).
 (() => {
-  setSubjects({ reflex: { minutes: 15, rules: "max1" }, a: { minutes: 30 } });
+  setSubjects({ reflex: { minutes: 15, cap: 1 }, a: { minutes: 30 } });
   const dd = mkDayData({ [MON]: ["reflex"], [TUE]: ["reflex"], [WED]: ["reflex"], [THU]: ["reflex"], [FRI]: ["reflex"] });
   const picks = gwCatchupExtraDates("ellis", "reflex", currData.subjects.ellis.reflex, [MON, TUE, WED, THU, FRI], 2, dd);
   ok("max1 never doubles (no free day -> [])", picks.length === 0, JSON.stringify(picks));
@@ -104,7 +107,7 @@ function setSubjects(map) { currData.subjects.ellis = map; }
 // 5) Day-cap fit check: when every fitting day is exhausted, overflow rolls forward.
 //    Use a max1 subject so there's no doubling fallback to mask the fit check.
 (() => {
-  setSubjects({ reflex: { minutes: 25, rules: "max1" }, huge: { minutes: 330 } });
+  setSubjects({ reflex: { minutes: 25, cap: 1 }, huge: { minutes: 330 } });
   // Free days Tue & Thu are both full (330) -> nothing fits; max1 can't double.
   const dd = mkDayData({ [MON]: ["reflex"], [TUE]: ["huge"], [WED]: ["reflex"], [THU]: ["huge"], [FRI]: ["reflex"] });
   const picks = gwCatchupExtraDates("ellis", "reflex", currData.subjects.ellis.reflex, [MON, WED, FRI], 2, dd);
@@ -115,11 +118,11 @@ function setSubjects(map) { currData.subjects.ellis = map; }
 //    first/last subject present and kept WITHOUT it. max1 again, so no doubling interferes.
 (() => {
   // dayCap 345; a 'first' notebook of 70 => effCap 275. Tue load 260 -> 260+25=285.
-  setSubjects({ reflex: { minutes: 25, rules: "max1" }, morning: { minutes: 70, rules: "first" }, l260: { minutes: 260 } });
+  setSubjects({ reflex: { minutes: 25, cap: 1 }, morning: { minutes: 70, rules: "first" }, l260: { minutes: 260 } });
   const ddBuf = mkDayData({ [MON]: ["reflex"], [TUE]: ["l260"], [WED]: ["reflex"], [FRI]: ["reflex"] });
   const withBuf = gwCatchupExtraDates("ellis", "reflex", currData.subjects.ellis.reflex, [MON, WED, FRI], 1, ddBuf);
 
-  setSubjects({ reflex: { minutes: 25, rules: "max1" }, l260: { minutes: 260 } }); // no daily subject
+  setSubjects({ reflex: { minutes: 25, cap: 1 }, l260: { minutes: 260 } }); // no daily subject
   const ddNo = mkDayData({ [MON]: ["reflex"], [TUE]: ["l260"], [WED]: ["reflex"], [FRI]: ["reflex"] });
   const noBuf = gwCatchupExtraDates("ellis", "reflex", currData.subjects.ellis.reflex, [MON, WED, FRI], 1, ddNo);
 
