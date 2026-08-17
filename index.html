@@ -4365,6 +4365,145 @@ function checkAdminPin(val,errId){
     setTimeout(()=>{if(err)err.textContent="";if(inp)inp.style.borderColor="var(--border)";},1500);
   }
 }
+// ── Chore-shaped settings blocks (rendered in Admin ▸ Chores; moved out of Settings 2026-08-17) ──
+function chSettingsMorningRuleHTML(){
+  const o=id=>rulesOpen[id]?" open":"";
+  const kids=[...ROSTER];
+  let h='';
+  // Morning-by-10 tech rule
+  h+='<div class="rules-wrap" style="margin-top:20px">';
+  h+='<div class="rules-hdr">⏰ Morning-by-10 Rule</div>';
+  h+='<div class="rules-sub">If a kid\'s Morning isn\'t finished by the deadline, they show a 🚫 No-tech flag for the day. You still pull the actual devices — this flags &amp; records it. The flag only appears when this rule is ON.</div>';
+  h+='<div style="display:flex;align-items:center;gap:10px;padding:11px 12px;background:#f9fafb;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;flex-wrap:wrap">';
+  h+='<div style="font-size:12px;flex:1;min-width:120px"><b>Rule is '+(routineRules.loseTechEnabled?'ON':'OFF')+'</b><div style="font-size:10px;color:var(--muted)">No-tech flag shows only when ON</div></div>';
+  h+='<button onclick="techRuleToggle()" style="border:none;border-radius:14px;padding:6px 18px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;background:'+(routineRules.loseTechEnabled?'#16a34a':'#e5e7eb')+';color:'+(routineRules.loseTechEnabled?'#fff':'#6b7280')+'">'+(routineRules.loseTechEnabled?'ON':'OFF')+'</button>';
+  h+='<select onchange="techRuleSetHour(this.value)" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif">';
+  [8,9,10,11,12].forEach(function(hh){ h+='<option value="'+hh+'"'+(hh===loseTechHour()?' selected':'')+'>by '+rtFmtHour(hh)+'</option>'; });
+  h+='</select></div>';
+  if(routineRules.loseTechEnabled){
+    h+='<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:8px 0 2px">';
+    [["applyWeekends","Weekends"],["applyBreaks","Holidays &amp; vacations"]].forEach(function(o){
+      var on=routineRules[o[0]]!==false;
+      h+='<label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer">'+
+        '<input type="checkbox"'+(on?" checked":"")+' onchange="techRuleScope(\''+o[0]+'\',this.checked)"> Applies on '+o[1]+'</label>';
+    });
+    h+='</div>';
+    [...ROSTER].forEach(function(kid){
+      if(kid==="julian") return;
+      var lost=techLost(kid,day), graced=techGraced(kid,day), mdone=morningComplete(kid,day);
+      var status=mdone?'✓ Morning done':(lost?'🚫 No tech today':(graced?'🙏 Grace granted':'⏳ Not yet due'));
+      var scol=mdone?'#16a34a':(lost?'#b91c1c':'#6b7280');
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;margin-bottom:6px">';
+      h+='<div style="flex:1;font-size:13px"><b>'+cap(kid)+'</b> &nbsp;<span style="color:'+scol+';font-weight:700;font-size:12px">'+status+'</span></div>';
+      if(lost) h+='<button onclick="techGrantGrace(\''+kid+'\')" style="padding:5px 12px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🙏 Grant grace</button>';
+      h+='</div>';
+    });
+  }
+  h+='</div>';
+
+  return h;
+}
+function chSettingsClickoffLogHTML(){
+  const o=id=>rulesOpen[id]?" open":"";
+  const kids=[...ROSTER];
+  let h='';
+  // Click-off Log (accountability)
+  h+='<div class="rules-wrap" style="margin-top:20px">';
+  h+='<div class="rules-hdr">🕵️ Click-off Log</div>';
+  h+='<div class="rules-sub">Every routine check-off this week, newest first. If a kid checked off something they did NOT actually do, tap ⚠️ −100 to dock 100 points.</div>';
+  var _rlwk=activeWk();
+  [...ROSTER].forEach(function(kid){
+    var kc=SL_KCOL[kid]||"#f59e0b";
+    var cardId="rlog_"+kid;
+    var wkLog=(routineLog[kid]&&routineLog[kid][_rlwk])||{};
+    var entries=[];
+    Object.keys(wkLog).forEach(function(dy){ var dd=wkLog[dy]||{}; Object.keys(dd).forEach(function(k){ entries.push(Object.assign({_day:dy,_key:k},dd[k])); }); });
+    entries.sort(function(a,b){ return (b.at||0)-(a.at||0); });
+    var flagCount=entries.filter(function(e){return e.flagged;}).length;
+    h+='<div class="rules-card'+o(cardId)+'">';
+    h+='<div class="rules-card-hdr" onclick="rulesToggleCard(\''+cardId+'\')">';
+    h+='<div class="rules-card-title"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+kc+';margin-right:6px"></span> '+cap(kid)+' <span style="color:var(--muted);font-weight:600;font-size:12px">('+entries.length+' check-offs'+(flagCount?(', '+flagCount+' flagged'):'')+')</span></div>';
+    h+='<div class="rules-card-arrow">&#9654;</div></div>';
+    h+='<div class="rules-card-body">';
+    if(!entries.length){ h+='<div style="font-size:12px;color:var(--muted);padding:6px 0">No check-offs recorded yet this week.</div>'; }
+    entries.slice(0,60).forEach(function(e){
+      var on=e.act==="on";
+      var icon=on?"✓":"↩";
+      var slbl=(typeof SL_SLBL!=="undefined"&&SL_SLBL[e.slot])||e.slot||"";
+      var dlbl=(typeof DAY_LBL!=="undefined"&&DAY_LBL[e._day])||e._day||"";
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)'+(e.flagged?';opacity:.6':'')+'">';
+      h+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">−100</span>':'')+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+'</div></div>';
+      if(on&&!e.flagged) h+='<button onclick="rlogFlag(\''+kid+'\',\''+_rlwk+'\',\''+e._day+'\',\''+e._key+'\')" title="Didn\'t actually do it — dock 100 points" style="flex-shrink:0;padding:4px 9px;border-radius:8px;border:1.5px solid #fca5a5;background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:800;cursor:pointer">⚠️ −100</button>';
+      h+='</div>';
+    });
+    if(entries.length>60) h+='<div style="font-size:11px;color:var(--muted);padding:6px 0">Showing the 60 most recent of '+entries.length+'.</div>';
+    h+='</div></div>';
+  });
+  h+='</div>';
+
+  return h;
+}
+function chSettingsMorningRoutinesHTML(){
+  const o=id=>rulesOpen[id]?" open":"";
+  const kids=[...ROSTER];
+  let h='';
+  // Morning Routines
+  h+='<div class="rules-wrap" style="margin-top:20px">';
+  h+='<div class="rules-hdr" id="mroutine_anchor">\u{1F305} Morning Routines</div>';
+  h+='<div class="rules-sub">The steps each kid checks off in the morning. Finishing all of them unlocks that kid\'s schedule. These are routine — no points.</div>';
+  kids.forEach(kid=>{
+    const steps=morningStepsFor(kid);
+    const kc=SL_KCOL[kid]||"#f59e0b";
+    const cardId="mroutine_"+kid;
+    h+='<div class="rules-card'+o(cardId)+'">';
+    h+='<div class="rules-card-hdr" onclick="rulesToggleCard(\''+cardId+'\')">';
+    h+='<div class="rules-card-title"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+kc+';margin-right:6px"></span> '+cap(kid)+' <span style="color:var(--muted);font-weight:600;font-size:12px">('+steps.length+' steps)</span></div>';
+    h+='<div class="rules-card-arrow">&#9654;</div></div>';
+    h+='<div class="rules-card-body">';
+    h+='<div style="display:grid;grid-template-columns:52px 1fr auto;gap:6px;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px"><span>Emoji</span><span>Step</span><span></span></div>';
+    steps.forEach((st,i)=>{
+      const emo=(st.emoji||"").replace(/"/g,"&quot;");
+      const lab=(st.label||"").replace(/"/g,"&quot;");
+      h+='<div style="display:grid;grid-template-columns:52px 1fr auto;gap:6px;margin-bottom:4px;align-items:center">';
+      h+='<input type="text" value="'+emo+'" onchange="mrCfgSet(\''+kid+'\','+i+',\'emoji\',this.value)" maxlength="2" style="padding:6px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;text-align:center">';
+      h+='<input type="text" value="'+lab+'" onchange="mrCfgSet(\''+kid+'\','+i+',\'label\',this.value)" style="padding:6px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif">';
+      h+='<div style="display:flex;gap:2px">';
+      h+=(i>0?'<button onclick="mrCfgMove(\''+kid+'\','+i+',-1)" title="Move up" style="padding:4px 7px;border-radius:6px;border:1.5px solid var(--border);background:#fff;font-size:12px;cursor:pointer">&#8593;</button>':'<span style="display:inline-block;width:29px"></span>');
+      h+=(i<steps.length-1?'<button onclick="mrCfgMove(\''+kid+'\','+i+',1)" title="Move down" style="padding:4px 7px;border-radius:6px;border:1.5px solid var(--border);background:#fff;font-size:12px;cursor:pointer">&#8595;</button>':'<span style="display:inline-block;width:29px"></span>');
+      h+='<button onclick="mrCfgRemove(\''+kid+'\','+i+')" title="Delete step" style="padding:4px 8px;border-radius:6px;border:none;background:#ef4444;color:#fff;font-size:12px;font-weight:700;cursor:pointer">&#10005;</button>';
+      h+='</div></div>';
+      // Run window — blank/blank means "always", which is every ordinary step.
+      { const _wl=stepWindowLabel(st), _on=!!(st.from||st.to);
+        h+='<div style="display:flex;gap:5px;align-items:center;margin:-1px 0 8px 58px;flex-wrap:wrap">';
+        h+='<span style="font-size:10.5px;font-weight:700;color:'+(_on?"#0e7490":"var(--muted)")+'">\u{1F4C5} Runs</span>';
+        h+='<input type="date" value="'+(st.from||"")+'" onchange="mrCfgSet(\''+kid+'\','+i+',\'from\',this.value)" style="padding:3px 6px;border:1.5px solid '+(_on?"#a5f3fc":"var(--border)")+';border-radius:7px;font-size:11px;font-family:\'DM Sans\',sans-serif">';
+        h+='<span style="font-size:10.5px;color:var(--muted)">to</span>';
+        h+='<input type="date" value="'+(st.to||"")+'" onchange="mrCfgSet(\''+kid+'\','+i+',\'to\',this.value)" style="padding:3px 6px;border:1.5px solid '+(_on?"#a5f3fc":"var(--border)")+';border-radius:7px;font-size:11px;font-family:\'DM Sans\',sans-serif">';
+        h+=_on?('<span style="font-size:10.5px;font-weight:700;color:#0e7490">'+_wl+'</span><button onclick="mrCfgClearWindow(\''+kid+'\','+i+')" title="Always run" style="padding:2px 7px;border-radius:6px;border:1.5px solid var(--border);background:#fff;font-size:10.5px;cursor:pointer;font-family:\'DM Sans\',sans-serif">clear</button>')
+                    :'<span style="font-size:10.5px;color:var(--muted)">always</span>';
+        h+='</div>'; }
+    });
+    h+='<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">';
+    h+='<button onclick="mrCfgAdd(\''+kid+'\')" style="padding:4px 10px;border-radius:8px;background:var(--header);color:#fff;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Step</button>';
+    if(morningRoutineCfg[kid]) h+='<button onclick="mrCfgReset(\''+kid+'\')" style="padding:4px 10px;border-radius:8px;background:none;border:1.5px solid var(--border);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Reset to default</button>';
+    if(kid==="lincoln") h+='<button onclick="mrCfgCopy()" style="padding:4px 10px;border-radius:8px;background:linear-gradient(135deg,#2563eb,#1e40af);color:#fff;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Copy → All Others</button>';
+    h+='</div>';
+    h+='</div></div>';
+  });
+  h+='</div>';
+
+  return h;
+}
+function chSettingsEveningHourHTML(){
+  let h='';
+  h+='<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f9fafb;border:1px solid var(--border);border-radius:10px;margin-bottom:12px;flex-wrap:wrap">';
+  h+='<div style="font-size:12px"><b>Evening starts at</b><div style="font-size:10px;color:var(--muted)">When the Evening list unlocks each day</div></div>';
+  h+='<select onchange="rtSetEveningHour(this.value)" style="margin-left:auto;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif">';
+  [16,17,18,19,20,21].forEach(function(hh){ h+='<option value="'+hh+'"'+(hh===rtEveningHour()?' selected':'')+'>'+rtFmtHour(hh)+'</option>'; });
+  h+='</select></div>';
+  return h;
+}
+
 function renderSettings(el,ah){
   if(!el){el=document.getElementById("content");if(!el)return;}
   const o=id=>rulesOpen[id]?" open":"";
@@ -4386,71 +4525,6 @@ function renderSettings(el,ah){
   pinHtml+='<div style="padding:8px 0"><button onclick="saveNewPin()" style="padding:6px 16px;border-radius:8px;border:none;background:#111827;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save PIN</button>'+
     '<span id="pin-save-msg" style="font-size:12px;margin-left:10px"></span></div>';
   pinHtml+='</div></div></div>';
-
-  // Morning-by-10 tech rule
-  pinHtml+='<div class="rules-wrap" style="margin-top:20px">';
-  pinHtml+='<div class="rules-hdr">⏰ Morning-by-10 Rule</div>';
-  pinHtml+='<div class="rules-sub">If a kid\'s Morning isn\'t finished by the deadline, they show a 🚫 No-tech flag for the day. You still pull the actual devices — this flags &amp; records it. The flag only appears when this rule is ON.</div>';
-  pinHtml+='<div style="display:flex;align-items:center;gap:10px;padding:11px 12px;background:#f9fafb;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;flex-wrap:wrap">';
-  pinHtml+='<div style="font-size:12px;flex:1;min-width:120px"><b>Rule is '+(routineRules.loseTechEnabled?'ON':'OFF')+'</b><div style="font-size:10px;color:var(--muted)">No-tech flag shows only when ON</div></div>';
-  pinHtml+='<button onclick="techRuleToggle()" style="border:none;border-radius:14px;padding:6px 18px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;background:'+(routineRules.loseTechEnabled?'#16a34a':'#e5e7eb')+';color:'+(routineRules.loseTechEnabled?'#fff':'#6b7280')+'">'+(routineRules.loseTechEnabled?'ON':'OFF')+'</button>';
-  pinHtml+='<select onchange="techRuleSetHour(this.value)" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif">';
-  [8,9,10,11,12].forEach(function(hh){ pinHtml+='<option value="'+hh+'"'+(hh===loseTechHour()?' selected':'')+'>by '+rtFmtHour(hh)+'</option>'; });
-  pinHtml+='</select></div>';
-  if(routineRules.loseTechEnabled){
-    pinHtml+='<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:8px 0 2px">';
-    [["applyWeekends","Weekends"],["applyBreaks","Holidays &amp; vacations"]].forEach(function(o){
-      var on=routineRules[o[0]]!==false;
-      pinHtml+='<label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer">'+
-        '<input type="checkbox"'+(on?" checked":"")+' onchange="techRuleScope(\''+o[0]+'\',this.checked)"> Applies on '+o[1]+'</label>';
-    });
-    pinHtml+='</div>';
-    [...ROSTER].forEach(function(kid){
-      if(kid==="julian") return;
-      var lost=techLost(kid,day), graced=techGraced(kid,day), mdone=morningComplete(kid,day);
-      var status=mdone?'✓ Morning done':(lost?'🚫 No tech today':(graced?'🙏 Grace granted':'⏳ Not yet due'));
-      var scol=mdone?'#16a34a':(lost?'#b91c1c':'#6b7280');
-      pinHtml+='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;margin-bottom:6px">';
-      pinHtml+='<div style="flex:1;font-size:13px"><b>'+cap(kid)+'</b> &nbsp;<span style="color:'+scol+';font-weight:700;font-size:12px">'+status+'</span></div>';
-      if(lost) pinHtml+='<button onclick="techGrantGrace(\''+kid+'\')" style="padding:5px 12px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🙏 Grant grace</button>';
-      pinHtml+='</div>';
-    });
-  }
-  pinHtml+='</div>';
-
-  // Click-off Log (accountability)
-  pinHtml+='<div class="rules-wrap" style="margin-top:20px">';
-  pinHtml+='<div class="rules-hdr">🕵️ Click-off Log</div>';
-  pinHtml+='<div class="rules-sub">Every routine check-off this week, newest first. If a kid checked off something they did NOT actually do, tap ⚠️ −100 to dock 100 points.</div>';
-  var _rlwk=activeWk();
-  [...ROSTER].forEach(function(kid){
-    var kc=SL_KCOL[kid]||"#f59e0b";
-    var cardId="rlog_"+kid;
-    var wkLog=(routineLog[kid]&&routineLog[kid][_rlwk])||{};
-    var entries=[];
-    Object.keys(wkLog).forEach(function(dy){ var dd=wkLog[dy]||{}; Object.keys(dd).forEach(function(k){ entries.push(Object.assign({_day:dy,_key:k},dd[k])); }); });
-    entries.sort(function(a,b){ return (b.at||0)-(a.at||0); });
-    var flagCount=entries.filter(function(e){return e.flagged;}).length;
-    pinHtml+='<div class="rules-card'+o(cardId)+'">';
-    pinHtml+='<div class="rules-card-hdr" onclick="rulesToggleCard(\''+cardId+'\')">';
-    pinHtml+='<div class="rules-card-title"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+kc+';margin-right:6px"></span> '+cap(kid)+' <span style="color:var(--muted);font-weight:600;font-size:12px">('+entries.length+' check-offs'+(flagCount?(', '+flagCount+' flagged'):'')+')</span></div>';
-    pinHtml+='<div class="rules-card-arrow">&#9654;</div></div>';
-    pinHtml+='<div class="rules-card-body">';
-    if(!entries.length){ pinHtml+='<div style="font-size:12px;color:var(--muted);padding:6px 0">No check-offs recorded yet this week.</div>'; }
-    entries.slice(0,60).forEach(function(e){
-      var on=e.act==="on";
-      var icon=on?"✓":"↩";
-      var slbl=(typeof SL_SLBL!=="undefined"&&SL_SLBL[e.slot])||e.slot||"";
-      var dlbl=(typeof DAY_LBL!=="undefined"&&DAY_LBL[e._day])||e._day||"";
-      pinHtml+='<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)'+(e.flagged?';opacity:.6':'')+'">';
-      pinHtml+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">−100</span>':'')+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+'</div></div>';
-      if(on&&!e.flagged) pinHtml+='<button onclick="rlogFlag(\''+kid+'\',\''+_rlwk+'\',\''+e._day+'\',\''+e._key+'\')" title="Didn\'t actually do it — dock 100 points" style="flex-shrink:0;padding:4px 9px;border-radius:8px;border:1.5px solid #fca5a5;background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:800;cursor:pointer">⚠️ −100</button>';
-      pinHtml+='</div>';
-    });
-    if(entries.length>60) pinHtml+='<div style="font-size:11px;color:var(--muted);padding:6px 0">Showing the 60 most recent of '+entries.length+'.</div>';
-    pinHtml+='</div></div>';
-  });
-  pinHtml+='</div>';
 
   // Adjust Slots card
   const kids=[...ROSTER];
@@ -4501,66 +4575,14 @@ function renderSettings(el,ah){
   });
   pinHtml+='</div>';
 
-  // Morning Routines
+  // Routines & chores (Morning Routines, Evening start hour, Morning-by-10 rule, Click-off Log)
+  // moved to Admin ▸ Chores on 2026-08-17 — one home for everything chore-shaped.
   pinHtml+='<div class="rules-wrap" style="margin-top:20px">';
-  pinHtml+='<div class="rules-hdr" id="mroutine_anchor">\u{1F305} Morning Routines</div>';
-  pinHtml+='<div class="rules-sub">The steps each kid checks off in the morning. Finishing all of them unlocks that kid\'s schedule. These are routine — no points.</div>';
-  kids.forEach(kid=>{
-    const steps=morningStepsFor(kid);
-    const kc=SL_KCOL[kid]||"#f59e0b";
-    const cardId="mroutine_"+kid;
-    pinHtml+='<div class="rules-card'+o(cardId)+'">';
-    pinHtml+='<div class="rules-card-hdr" onclick="rulesToggleCard(\''+cardId+'\')">';
-    pinHtml+='<div class="rules-card-title"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+kc+';margin-right:6px"></span> '+cap(kid)+' <span style="color:var(--muted);font-weight:600;font-size:12px">('+steps.length+' steps)</span></div>';
-    pinHtml+='<div class="rules-card-arrow">&#9654;</div></div>';
-    pinHtml+='<div class="rules-card-body">';
-    pinHtml+='<div style="display:grid;grid-template-columns:52px 1fr auto;gap:6px;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px"><span>Emoji</span><span>Step</span><span></span></div>';
-    steps.forEach((st,i)=>{
-      const emo=(st.emoji||"").replace(/"/g,"&quot;");
-      const lab=(st.label||"").replace(/"/g,"&quot;");
-      pinHtml+='<div style="display:grid;grid-template-columns:52px 1fr auto;gap:6px;margin-bottom:4px;align-items:center">';
-      pinHtml+='<input type="text" value="'+emo+'" onchange="mrCfgSet(\''+kid+'\','+i+',\'emoji\',this.value)" maxlength="2" style="padding:6px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;text-align:center">';
-      pinHtml+='<input type="text" value="'+lab+'" onchange="mrCfgSet(\''+kid+'\','+i+',\'label\',this.value)" style="padding:6px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif">';
-      pinHtml+='<div style="display:flex;gap:2px">';
-      pinHtml+=(i>0?'<button onclick="mrCfgMove(\''+kid+'\','+i+',-1)" title="Move up" style="padding:4px 7px;border-radius:6px;border:1.5px solid var(--border);background:#fff;font-size:12px;cursor:pointer">&#8593;</button>':'<span style="display:inline-block;width:29px"></span>');
-      pinHtml+=(i<steps.length-1?'<button onclick="mrCfgMove(\''+kid+'\','+i+',1)" title="Move down" style="padding:4px 7px;border-radius:6px;border:1.5px solid var(--border);background:#fff;font-size:12px;cursor:pointer">&#8595;</button>':'<span style="display:inline-block;width:29px"></span>');
-      pinHtml+='<button onclick="mrCfgRemove(\''+kid+'\','+i+')" title="Delete step" style="padding:4px 8px;border-radius:6px;border:none;background:#ef4444;color:#fff;font-size:12px;font-weight:700;cursor:pointer">&#10005;</button>';
-      pinHtml+='</div></div>';
-      // Run window — blank/blank means "always", which is every ordinary step.
-      { const _wl=stepWindowLabel(st), _on=!!(st.from||st.to);
-        pinHtml+='<div style="display:flex;gap:5px;align-items:center;margin:-1px 0 8px 58px;flex-wrap:wrap">';
-        pinHtml+='<span style="font-size:10.5px;font-weight:700;color:'+(_on?"#0e7490":"var(--muted)")+'">\u{1F4C5} Runs</span>';
-        pinHtml+='<input type="date" value="'+(st.from||"")+'" onchange="mrCfgSet(\''+kid+'\','+i+',\'from\',this.value)" style="padding:3px 6px;border:1.5px solid '+(_on?"#a5f3fc":"var(--border)")+';border-radius:7px;font-size:11px;font-family:\'DM Sans\',sans-serif">';
-        pinHtml+='<span style="font-size:10.5px;color:var(--muted)">to</span>';
-        pinHtml+='<input type="date" value="'+(st.to||"")+'" onchange="mrCfgSet(\''+kid+'\','+i+',\'to\',this.value)" style="padding:3px 6px;border:1.5px solid '+(_on?"#a5f3fc":"var(--border)")+';border-radius:7px;font-size:11px;font-family:\'DM Sans\',sans-serif">';
-        pinHtml+=_on?('<span style="font-size:10.5px;font-weight:700;color:#0e7490">'+_wl+'</span><button onclick="mrCfgClearWindow(\''+kid+'\','+i+')" title="Always run" style="padding:2px 7px;border-radius:6px;border:1.5px solid var(--border);background:#fff;font-size:10.5px;cursor:pointer;font-family:\'DM Sans\',sans-serif">clear</button>')
-                    :'<span style="font-size:10.5px;color:var(--muted)">always</span>';
-        pinHtml+='</div>'; }
-    });
-    pinHtml+='<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">';
-    pinHtml+='<button onclick="mrCfgAdd(\''+kid+'\')" style="padding:4px 10px;border-radius:8px;background:var(--header);color:#fff;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Step</button>';
-    if(morningRoutineCfg[kid]) pinHtml+='<button onclick="mrCfgReset(\''+kid+'\')" style="padding:4px 10px;border-radius:8px;background:none;border:1.5px solid var(--border);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Reset to default</button>';
-    if(kid==="lincoln") pinHtml+='<button onclick="mrCfgCopy()" style="padding:4px 10px;border-radius:8px;background:linear-gradient(135deg,#2563eb,#1e40af);color:#fff;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Copy → All Others</button>';
-    pinHtml+='</div>';
-    pinHtml+='</div></div>';
-  });
-  pinHtml+='</div>';
-
-  // Afternoon / Chores / Evening routines (config/routines) + evening start time
-  pinHtml+='<div class="rules-wrap" style="margin-top:20px">';
-  pinHtml+='<div class="rules-hdr">☀️ Afternoon · Chores · Evening</div>';
-  pinHtml+='<div class="rules-sub">Afternoon opens once school work is done; Evening opens at the time below.</div>';
-  pinHtml+='<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f9fafb;border:1px solid var(--border);border-radius:10px;margin-bottom:12px;flex-wrap:wrap">';
-  pinHtml+='<div style="font-size:12px"><b>Evening starts at</b><div style="font-size:10px;color:var(--muted)">When the Evening list unlocks each day</div></div>';
-  pinHtml+='<select onchange="rtSetEveningHour(this.value)" style="margin-left:auto;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif">';
-  [16,17,18,19,20,21].forEach(function(hh){ pinHtml+='<option value="'+hh+'"'+(hh===rtEveningHour()?' selected':'')+'>'+rtFmtHour(hh)+'</option>'; });
-  pinHtml+='</select></div>';
-  // The per-kid step editors moved to the Chore Plan (Admin ▸ Chores) — one editor,
-  // one data path. Evening-hour setting stays here; morning routines keep their own cards above.
+  pinHtml+='<div class="rules-hdr">🧹 Routines &amp; Chores</div>';
   pinHtml+='<div class="rules-card" style="padding:12px 14px">';
-  pinHtml+='<div style="font-size:13px;font-weight:700;margin-bottom:4px">🧹 Steps are edited in the Chore Plan now</div>';
-  pinHtml+='<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Afternoon, Chores, and Evening steps — days, stars, 🔄 rotations, every-N schedules, 📅 start/stop windows, order, reset, and copy — all live in one grid.</div>';
-  pinHtml+='<button class="btn-p" onclick="setAdminSub(&#39;chores&#39;)">Open the Chore Plan →</button></div>';
+  pinHtml+='<div style="font-size:13px;font-weight:700;margin-bottom:4px">Everything routine-shaped lives in the Chores tab now</div>';
+  pinHtml+='<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Morning routines · the Chores / Afternoon / Evening lists · Evening start hour · Morning-by-10 no-tech rule · Click-off log — all in one place.</div>';
+  pinHtml+='<button class="btn-p" onclick="setAdminSub(&#39;chores&#39;)">Open Chores →</button></div>';
   pinHtml+='</div>';
 
   // Celebration Songs
@@ -17176,11 +17198,7 @@ let cpEmojiTab="Cleaning";
 function cpSetKid(k){ cpKid=k; renderAll(); }
 function cpSetSlot(s){ cpSlot=s; renderAll(); }
 // Jump from Chores to the Morning Routines editor (Settings): open every kid's morning card and scroll to it.
-function cpGoMornings(){
-  try{ [...ROSTER].forEach(k=>{ rulesOpen["mroutine_"+k]=true; }); }catch(e){}
-  setAdminSub("settings");
-  setTimeout(function(){ const el=document.getElementById("mroutine_anchor")||[...document.querySelectorAll(".rules-hdr")].find(x=>/Morning Routines/.test(x.textContent||"")); if(el&&el.scrollIntoView) el.scrollIntoView({behavior:"smooth",block:"start"}); },60);
-}
+function cpGoMornings(){ cpSlot="morning"; setAdminSub("chores"); }
 function _cpDays(cad){
   if(!cad||cad==="daily") return null;                 // null = daily
   if(cad==="sat") return [5];                          // legacy shorthands = one weekday
@@ -17395,7 +17413,7 @@ function renderChorePlan(el,headerHtml){
   if(!el){el=document.getElementById("content");if(!el)return;}
   const DOW=["M","T","W","T","F","S","S"], FULL=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
   const isGrabs=(cpSlot==="grabs");
-  const steps=isGrabs?(gbList()||[]):(rtStepsFor(cpSlot,cpKid,true)||[]); // raw/BASE steps — this grid EDITS; rotation is display-only on kid views/board
+  const steps=isGrabs?(gbList()||[]):(cpSlot==="morning"?[]:(rtStepsFor(cpSlot,cpKid,true)||[])); // raw/BASE steps — this grid EDITS; rotation is display-only on kid views/board
   let h=(headerHtml||'')+'<div style="padding:12px 12px 80px">';
   h+='<div class="cp-hd">🧹 Chore Plan</div>';
   h+='<div class="cp-sub">Tap a square to put a chore on that day. <b>Daily</b> puts it back on every day. '+
@@ -17406,12 +17424,17 @@ function renderChorePlan(el,headerHtml){
   h+='<div class="cp-picks"'+(isGrabs?' style="display:none"':'')+'>';
   ROSTER.forEach(function(k){ h+='<button class="cp-chip'+(cpKid===k?" on":"")+'" style="'+(cpKid===k?'background:'+(SL_KCOL[k]||"#333")+';border-color:transparent;color:#fff':'')+'" onclick="cpSetKid(\''+k+'\')">'+esc(cap(k))+'</button>'; });
   h+='</div><div class="cp-picks">';
-  [["chores","🧹 Chores"],["afternoon","☀️ Afternoon"],["evening","🌙 Evening"],["grabs","🙌 Up for Grabs"]].forEach(function(s){
+  [["morning","🌅 Morning"],["chores","🧹 Chores"],["afternoon","☀️ Afternoon"],["evening","🌙 Evening"],["grabs","🙌 Up for Grabs"]].forEach(function(s){
     h+='<button class="cp-chip sm'+(cpSlot===s[0]?" on":"")+'" onclick="cpSetSlot(\''+s[0]+'\')">'+s[1]+'</button>';
   });
-  // Mornings are pure routine (no ⭐) and live in Settings → this pill just jumps there (2026-08-17: "chores tab doesn't have mornings").
-  h+='<button class="cp-chip sm" title="Morning routines are edited in Settings — this takes you there" onclick="cpGoMornings()" style="border-style:dashed">🌅 Morning ↗</button>';
   h+='</div>';
+  // 🌅 Morning = the routine editor (pure routine, no ⭐; moved here from Settings 2026-08-17) — its own view,
+  // followed by the routine rules that apply to every list. Nothing below (grid/zones) applies to mornings.
+  if(cpSlot==="morning"){
+    h+='<div class="rules-wrap" style="margin-top:6px">'+chSettingsMorningRoutinesHTML()+'</div>';
+    h+=_cpRoutineRulesHTML();
+    el.innerHTML=h+'</div>'; return;
+  }
   h+=_cpRotationsHTML();
   // ── focus zone per weekday + the bonus rule ──
   const FULLD=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
@@ -17482,8 +17505,19 @@ function renderChorePlan(el,headerHtml){
     if(ROSTER.length>1) h+='<button class="cp-addz" onclick="cpCopyToOthers()" style="margin-left:6px">⇉ Copy '+esc(cap(cpKid))+' → all others</button>';
   }
 
-
+  h+=_cpRoutineRulesHTML();
   el.innerHTML=h+'</div>';
+}
+// Routine rules that apply across the lists — Evening start hour, Morning-by-10 no-tech rule,
+// Click-off Log. Moved here from Settings (2026-08-17): one home for everything chore-shaped.
+function _cpRoutineRulesHTML(){
+  let h='<div class="rules-wrap" style="margin-top:22px"><div class="rules-hdr">⚙️ Routine rules</div>';
+  h+='<div class="rules-sub">Apply to every list above. Afternoon opens once school work is done; Evening opens at the hour below.</div>';
+  try{ h+=chSettingsEveningHourHTML(); }catch(e){}
+  h+='</div>';
+  try{ h+=chSettingsMorningRuleHTML(); }catch(e){}
+  try{ h+=chSettingsClickoffLogHTML(); }catch(e){}
+  return h;
 }
 function renderCalendarView(el, headerHtml){
   let h=headerHtml||'';
