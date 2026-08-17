@@ -14175,7 +14175,6 @@ let ceEditKid=null, ceEditKey=null, ceCloseTimer=null;
 let ceBuildOpen=null;  // "kid|sk" — which subject card has its 🧱 pacing form expanded
 let ceWalkOpen=false, ceWalkSel=new Set(), _ceWalkItems=[], _ceWalkCursor=0, walkbackData=null;
 let ceConvOpen=false; // "Edit as a list" converter for Excel-era grid subjects
-let ceShowPlacementLegacy=false; // placement rules moved to ⚙ Rules (2026-08-16); card can still show them on request
 // The cursor the converter textarea was FILLED from. ceConvApply must rebuild the
 // list with this exact value, not a fresh computeSubjectCursor: the box is filled
 // with seq.slice(cursorPos) and applied as seq.slice(0,cursor)+lines, so if the two
@@ -14460,13 +14459,6 @@ function ceWalkApply(){
 
 // Minutes stepper: update the value + the displayed number in place — no full sheet
 // re-render, so you keep your place while tapping up/down.
-function ceStepMin(delta){
-  if(!currData||!ceEditKid||!ceEditKey) return;
-  const s=currData.subjects[ceEditKid][ceEditKey]; if(!s) return;
-  const v=Math.max(5,Math.min(60,(s.minutes||20)+delta));
-  ceSaveField('minutes',v);
-  const el=document.getElementById('ce-min-val'); if(el) el.textContent=v;
-}
 function ceAddStepMin(delta){
   ceAddForm.minutes=Math.max(5,Math.min(60,(ceAddForm.minutes||20)+delta));
   const el=document.getElementById('ce-add-min-val'); if(el) el.textContent=ceAddForm.minutes;
@@ -14534,65 +14526,8 @@ function ceRenderEditSheet(){
   h+='<input class="ce-sheet-input" value="'+esc(s.display)+'" onchange="ceRenameSubject(this.value)">';
 
   // ONE DOOR (2026-08-16): placement rules live in ⚙ Rules above the grid. The card keeps
-  // subject-shaped fields. The old sections stay in code behind `ceShowPlacementLegacy`
-  // (a "show anyway" link) until Stage 6 deletes them.
-  if(!ceShowPlacementLegacy){
-    h+='<div style="margin-top:10px;padding:8px 10px;background:var(--bg);border-radius:10px;font-size:11px;color:var(--muted)">Device, mom, minutes, days, ×/wk, cap, priority, first/last, sticky and carry now live in <b>⚙ Rules</b> above the Grid — one place for every placement rule. <button onclick="ceShowPlacementLegacy=true;ceRenderEditSheet()" style="border:none;background:none;color:var(--muted);text-decoration:underline;font-size:10px;cursor:pointer;padding:0">show here anyway</button></div>';
-  }
-  if(ceShowPlacementLegacy){
-  // Device
-  h+='<div class="ce-sheet-lbl">Device</div>';
-  h+='<div class="ce-chips">';
-  ["paper","computer","ipad/phone","book"].forEach(d=>{
-    const sel=d==="ipad/phone"?(s.device==="ipad"||s.device==="phone"||s.device==="ipad/phone"):s.device===d;
-    h+='<div class="ce-chip'+(sel?" sel":"")+'" onclick="ceSaveField(\'device\',\''+d+'\');ceRenderEditSheet()">'+(CURR_DEV_EMOJI[d]||"")+" "+(CURR_DEV_LABEL[d]||cap(d))+'</div>';
-  });
-  h+='</div>';
-
-  // Mom requirement
-  h+='<div class="ce-sheet-lbl">Mom Requirement</div>';
-  h+='<div class="ce-chips">';
-  [["none","None"],["maybe","Maybe"],["required","Required"]].forEach(([v,lbl])=>{
-    h+='<div class="ce-chip'+(s.mom===v?" sel":"")+'" onclick="ceSaveField(\'mom\',\''+v+'\');ceRenderEditSheet()">'+lbl+'</div>';
-  });
-  h+='</div>';
-
-  // Duration stepper
-  h+='<div class="ce-sheet-lbl">Duration (minutes)</div>';
-  const mins=s.minutes||20;
-  h+='<div class="ce-stepper">';
-  h+='<button onclick="ceStepMin(-5)">&minus;</button>';
-  h+='<span id="ce-min-val">'+mins+'</span>';
-  h+='<button onclick="ceStepMin(5)">+</button>';
-  h+='</div>';
-
-  // Times per week + Days — DAILY subjects only (2026-08-11 card audit). For
-  // sequenced subjects these were duplicates of the 🧱 pacing form's own tpw +
-  // allowed-day chips, and the standalone stepper was a footgun: it wrote
-  // timesPerWeek WITHOUT re-laying, so the card silently disagreed with the
-  // grid until the next build. The 🧱 form owns both now and always re-lays.
-  if(s.tracking==="daily"){
-    h+='<div class="ce-sheet-lbl">Times Per Week</div>';
-    const tpw=s.timesPerWeek||0;
-    h+='<div class="ce-stepper">';
-    h+='<button onclick="ceSaveField(\'timesPerWeek\',Math.max(1,'+(tpw-1)+'));ceRenderEditSheet()">&minus;</button>';
-    h+='<span>'+( tpw||"—")+'</span>';
-    h+='<button onclick="ceSaveField(\'timesPerWeek\',Math.min(7,'+((tpw||0)+1)+'));ceRenderEditSheet()">+</button>';
-    h+='</div>';
-    h+=cePacingMath(s);
-
-    h+='<div class="ce-sheet-lbl">Days</div>';
-    const allowed=s.allowedDays||[];
-    const daysFromExcel=(s.days||"").split(/[\s,]+/).map(x=>x.trim()).filter(Boolean);
-    const effectiveDays=allowed.length?allowed:daysFromExcel;
-    h+='<div class="ce-chips">';
-    ["Mon","Tue","Wed","Thu","Fri","Sat"].forEach(d=>{
-      const sel=effectiveDays.includes(d);
-      h+='<div class="ce-chip'+(sel?" sel":"")+'" onclick="ceToggleDay(\''+d+'\')">'+d+'</div>';
-    });
-    h+='</div>';
-  }
-  }   // end ceShowPlacementLegacy (range 1)
+  // subject-shaped fields only. (Stage 6b deleted the legacy sections.)
+  h+='<div style="margin-top:10px;padding:8px 10px;background:var(--bg);border-radius:10px;font-size:11px;color:var(--muted)">Device, mom, minutes, days, ×/wk, cap, priority, first/last, sticky, carry, rules and max/day live in <b>⚙ Rules</b> above the Grid — one place for every placement rule.</div>';
   if(s.tracking!=="daily"){
     // 🧱 Pacing & build — INSIDE the sheet, so a card opened from anywhere (the
     // Grid's column headers included) carries the full Builder with it. Same
@@ -14608,91 +14543,6 @@ function ceRenderEditSheet(){
     }
   }
 
-  if(ceShowPlacementLegacy){
-  // Scheduling rules chips
-  h+='<div class="ce-sheet-lbl">Scheduling Rules</div>';
-  const ruleStr=s.rules||"";
-  const allRules=["sequential","sticky","no-fri","mon-thu","max1","first","last","priority"];
-  h+='<div class="ce-chips">';
-  allRules.forEach(r=>{
-    const sel=ruleStr.includes(r);
-    h+='<div class="ce-chip'+(sel?" sel":"")+'" onclick="ceToggleRule(\''+r+'\')">'+r+'</div>';
-  });
-  h+='</div>';
-  const activeEditRules=allRules.filter(r=>ruleStr.includes(r));
-  if(activeEditRules.length){
-    h+='<div style="margin-top:6px">';
-    activeEditRules.forEach(r=>{ h+='<div style="font-size:10px;color:var(--muted);margin-top:2px"><b>'+r+'</b> — '+(RULE_DESC[r]||"")+'</div>'; });
-    h+='</div>';
-  }
-  if(ruleStr.includes("sticky")){
-    const subs=currData.subjects[ceEditKid]||{};
-    const stickyWith=s.stickyWith||"";
-    const stickyOrder=s.stickyOrder||"after";
-    h+='<div style="margin-top:8px;padding:10px;background:#f9fafb;border-radius:8px;border:1px solid var(--border)">';
-    h+='<div style="font-size:11px;font-weight:600;margin-bottom:6px">Stick with:</div>';
-    h+='<select class="ce-sheet-input" style="margin-bottom:8px" onchange="ceSaveField(\'stickyWith\',this.value);ceRenderEditSheet()">';
-    h+='<option value="">— pick a subject —</option>';
-    Object.keys(subs).filter(k=>k!==ceEditKey&&!subs[k].paused).sort().forEach(k=>{
-      h+='<option value="'+k+'"'+(stickyWith===k?' selected':'')+'>'+esc(subs[k].display||k)+'</option>';
-    });
-    h+='</select>';
-    h+='<div style="font-size:11px;font-weight:600;margin-bottom:6px">Order:</div>';
-    h+='<div class="ce-chips">';
-    h+='<div class="ce-chip'+(stickyOrder==="before"?" sel":"")+'" onclick="ceSaveField(\'stickyOrder\',\'before\');ceRenderEditSheet()">Before</div>';
-    h+='<div class="ce-chip'+(stickyOrder==="after"?" sel":"")+'" onclick="ceSaveField(\'stickyOrder\',\'after\');ceRenderEditSheet()">After</div>';
-    h+='</div>';
-    if(stickyWith){ h+='<div style="font-size:10px;color:var(--muted);margin-top:6px">Schedules '+(stickyOrder==="before"?"before":"after")+' '+esc(subs[stickyWith]?.display||stickyWith)+' on the same day</div>'; }
-    h+='</div>';
-  }
-
-  // Inbound sticky — surface pairings set from the OTHER subject so a sticky link shows in both editors
-  {
-    const _subsAll=currData.subjects[ceEditKid]||{};
-    Object.keys(_subsAll).filter(k=>k!==ceEditKey&&_subsAll[k]&&_subsAll[k].stickyWith===ceEditKey&&(_subsAll[k].rules||"").includes("sticky")&&s.stickyWith!==k).forEach(k=>{
-      const _ord=(_subsAll[k].stickyOrder||"after");
-      h+='<div style="margin-top:8px;padding:9px 11px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;font-size:11px;color:#3730a3">🔗 <b>'+esc(_subsAll[k].display||k)+'</b> is kept right '+(_ord==="after"?"after":"before")+' this subject (sticky set on its card). Open that subject to change it.</div>';
-    });
-  }
-
-  // Daily work vs regular grid subject. "Daily work" = done fresh every day, off the grid
-  // (notebooks, reflex, daily drills): the scheduler lays it in AROUND the graded work each
-  // day (never walling it), and a missed day is simply missed. Any new daily subject just
-  // gets flagged here — no code change needed.
-  h+='<div class="ce-sheet-lbl">Daily Work</div>';
-  h+='<div class="ce-chips">';
-  h+='<div class="ce-chip'+(!s.noCarry?" sel":"")+'" onclick="ceSaveField(\'noCarry\',null);ceRenderEditSheet()">Regular subject</div>';
-  h+='<div class="ce-chip'+(s.noCarry?" sel":"")+'" onclick="ceSaveField(\'noCarry\',true);ceRenderEditSheet()">Daily work</div>';
-  h+='</div>';
-  h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">'+(s.noCarry
-    ?'Done fresh every day, like notebooks &amp; reflex. Laid in around the graded work (never walls the day); a missed day is simply missed — never moved to a later day or carried into next week.'
-    :'A graded, sequential subject on the grid. Missed work chases forward: swept into later days and carried into next week until done.')+'</div>';
-
-  // Priority
-  h+='<div class="ce-sheet-lbl">Priority</div>';
-  h+='<div class="ce-chips">';
-  ["low","normal","high"].forEach(p=>{
-    h+='<div class="ce-chip'+((s.priority||"normal")===p?" sel":"")+'" onclick="ceSaveField(\'priority\',\''+p+'\');ceRenderEditSheet()">'+cap(p)+'</div>';
-  });
-  h+='</div>';
-
-  // Max Per Day — caps how many times this subject runs in one day during catch-up. Stored
-  // in config/rules.maxPerDay keyed by the subject's DISPLAY NAME (exactly what the scheduler
-  // reads via catchupDayCap), so this card edits the very same data the engine uses — the
-  // Rules → Per-Subject Settings mirror reflects it. Reuses rulesUpdateMax (auto-creates the
-  // entry, blank → null).
-  h+='<div class="ce-sheet-lbl">Max Per Day</div>';
-  {
-    const _mpc=(rulesData&&rulesData.maxPerDay&&rulesData.maxPerDay[s.display])||{};
-    const _mpk=esc(s.display).replace(/'/g,"\\'");
-    h+='<div class="ce-sheet-row"><label>Weekday</label>';
-    h+='<input class="ce-sheet-input" type="number" min="0" max="10" placeholder="'+DEFAULT_DAY_CAP+' (default)" value="'+(_mpc.max!=null?_mpc.max:"")+'" onchange="rulesUpdateMax(\''+_mpk+'\',\'max\',this.value)"></div>';
-    h+='<div class="ce-sheet-row"><label>Saturday</label>';
-    h+='<input class="ce-sheet-input" type="number" min="0" max="10" placeholder="same as weekday" value="'+(_mpc.saturday_max!=null?_mpc.saturday_max:"")+'" onchange="rulesUpdateMax(\''+_mpk+'\',\'saturday_max\',this.value)"></div>';
-    h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">How many times '+esc(s.display)+' can run in one day during catch-up. Blank weekday = default ('+DEFAULT_DAY_CAP+'/day); blank Saturday = same as weekday. Lessons beyond the cap roll to the Mom-only &ldquo;Carries to Next Week&rdquo; box.</div>';
-  }
-
-  }   // end ceShowPlacementLegacy (range 2)
   // Tracking mode
   h+='<div class="ce-sheet-lbl">Lesson Tracking</div>';
   h+='<div class="ce-chips">';
@@ -15248,18 +15098,6 @@ function ceSetTargetEnd(kid,val){
   renderAll();
 }
 
-function ceToggleDay(d){
-  const s=ceGetSubject();
-  if(!s) return;
-  let arr=s.allowedDays||[];
-  if(arr.includes(d)) arr=arr.filter(x=>x!==d);
-  else arr.push(d);
-  const order=["Mon","Tue","Wed","Thu","Fri","Sat"];
-  arr.sort((a,b)=>order.indexOf(a)-order.indexOf(b));
-  ceSaveField("allowedDays",arr);
-  ceSaveField("days",arr.join(" "));
-  ceRenderEditSheet();
-}
 
 function ceFindRuleOwner(kid,rule,excludeKey){
   const subs=currData&&currData.subjects[kid]||{};
@@ -15271,32 +15109,6 @@ function ceFindRuleOwner(kid,rule,excludeKey){
   return null;
 }
 
-function ceToggleRule(r){
-  const s=ceGetSubject();
-  if(!s) return;
-  let parts=(s.rules||"").split(",").map(x=>x.trim()).filter(Boolean);
-  if(parts.includes(r)){ parts=parts.filter(x=>x!==r); }
-  else {
-    if(r==="first"||r==="last"){
-      const owner=ceFindRuleOwner(ceEditKid,r,ceEditKey);
-      if(owner&&!confirm('"'+owner+'" already has the "'+r+'" rule. Only one subject can be '+r+' in the day. Replace it?')) return;
-      if(owner){
-        const subs=currData.subjects[ceEditKid];
-        for(const k of Object.keys(subs)){
-          if(k===ceEditKey||subs[k].paused) continue;
-          if((subs[k].rules||"").includes(r)){
-            const oldParts=(subs[k].rules||"").split(",").map(x=>x.trim()).filter(Boolean).filter(x=>x!==r);
-            subs[k].rules=oldParts.join(", ");
-            db.ref("curriculum/subjects/"+ceEditKid+"/"+k+"/rules").set(subs[k].rules);
-          }
-        }
-      }
-    }
-    parts.push(r);
-  }
-  ceSaveField("rules",parts.join(", "));
-  ceRenderEditSheet();
-}
 
 function ceTogglePause(){
   const s=ceGetSubject();
