@@ -3848,6 +3848,75 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     return out;
   }
 
+  // ── PDF export (2026-08-16): "make PDFs that print in any browser". Chrome's print
+  // preview was failing on some notebooks and Safari ignores @page, so the notebook is
+  // rendered here page-by-page into a real letter-size PDF the user downloads and prints
+  // (or AirPrints) from anywhere. Pages are rasterised at 2× (~192 dpi) via html2canvas and
+  // packed with jsPDF — crisp for print; text is not selectable; ~0.3–0.8 MB per page.
+  // Both libraries are loaded on demand from cdnjs the first time.
+  var _pdfLibs = null;
+  function _loadScript(src) {
+    return new Promise(function (res, rej) { var s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = function () { rej(new Error("could not load " + src)); }; document.head.appendChild(s); });
+  }
+  function _ensurePdfLibs() {
+    if (_pdfLibs) return _pdfLibs;
+    _pdfLibs = Promise.resolve()
+      .then(function () { return window.html2canvas ? null : _loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"); })
+      .then(function () { return (window.jspdf && window.jspdf.jsPDF) ? null : _loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"); })
+      .then(function () { if (!window.html2canvas || !(window.jspdf && window.jspdf.jsPDF)) throw new Error("PDF libraries did not load"); return true; })
+      .catch(function (e) { _pdfLibs = null; throw e; });
+    return _pdfLibs;
+  }
+  // toPdf(html, filename, opts) → Promise<{pages, bytes}>. opts.onProgress(done,total),
+  // opts.scale (default 2), opts.returnBlob (skip the download; resolve with {blob}).
+  function toPdf(html, filename, opts) {
+    opts = opts || {};
+    var scale = opts.scale || 2, onP = opts.onProgress || function () {};
+    var frame = document.createElement("iframe");
+    frame.setAttribute("aria-hidden", "true");
+    frame.style.cssText = "position:fixed;left:-10000px;top:0;width:900px;height:1200px;border:0;opacity:0;pointer-events:none";
+    document.body.appendChild(frame);
+    var cleanup = function () { try { frame.remove(); } catch (e) {} };
+    return _ensurePdfLibs().then(function () {
+      return new Promise(function (res) {
+        frame.onload = function () { res(); };
+        var d = frame.contentDocument; d.open(); d.write(html); d.close();
+        setTimeout(res, 3000); // belt and braces if onload never fires
+      });
+    }).then(function () {
+      var d = frame.contentDocument;
+      var fontsReady = (d.fonts && d.fonts.ready) ? d.fonts.ready.catch(function () {}) : Promise.resolve();
+      var imgs = Array.prototype.slice.call(d.images || []);
+      var imgsReady = Promise.all(imgs.map(function (im) { return im.complete ? null : new Promise(function (r) { im.onload = r; im.onerror = r; }); }));
+      return Promise.all([fontsReady, imgsReady]).then(function () { return new Promise(function (r) { setTimeout(r, 300); }); });
+    }).then(function () {
+      var d = frame.contentDocument;
+      var pages = Array.prototype.slice.call(d.querySelectorAll(".page"));
+      if (!pages.length) throw new Error("no pages found");
+      var jsPDF = window.jspdf.jsPDF;
+      var pdf = new jsPDF({ unit: "in", format: "letter", orientation: "portrait", compress: true });
+      var i = 0;
+      function next() {
+        if (i >= pages.length) return;
+        var pg = pages[i];
+        return window.html2canvas(pg, { scale: scale, useCORS: true, allowTaint: false, backgroundColor: "#ffffff", logging: false, windowWidth: 900, windowHeight: 1200 })
+          .then(function (canvas) {
+            var data = canvas.toDataURL("image/jpeg", 0.92);
+            if (i > 0) pdf.addPage("letter", "portrait");
+            pdf.addImage(data, "JPEG", 0, 0, 8.5, 11, undefined, "FAST");
+            i++; onP(i, pages.length);
+            return next();
+          });
+      }
+      return Promise.resolve(next()).then(function () {
+        var out = { pages: pages.length };
+        if (opts.returnBlob) { out.blob = pdf.output("blob"); out.bytes = out.blob.size; }
+        else { pdf.save(filename || "notebook.pdf"); }
+        return out;
+      });
+    }).then(function (r) { cleanup(); return r; }, function (e) { cleanup(); throw e; });
+  }
+
   // Open generated HTML in a new tab for viewing/printing; falls back to a
   // download if the popup is blocked. Single window.open per user gesture.
   function openHtml(html, filename) {
@@ -4022,6 +4091,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     generate: generate,
     combinedParent: combinedParent,
     openHtml: openHtml,
+    toPdf: toPdf,
     weekDatesRange: weekDatesRange,
     letterStrokes: JU_LETTER_STROKES,   // HWT-style capital formation scripts — the drill Trace overlay shows them
     juPlanPreview: juPlanPreview,       // Julian's week planner: engine picks + struggled-with flags
