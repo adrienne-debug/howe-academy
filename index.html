@@ -1847,7 +1847,11 @@ function rtApplyRot(slot,kid,steps,dayName){
   });
 }
 function rtDoneOn(slot,kid,d,i){ const s=slState[activeWk()+"_"+d+"_"+kid+"_"+RT_ABBR[slot]+"step"+i]; return !!(s&&s.done); }
-function rtComplete(slot,kid,d){ const steps=rtStepsFor(slot,kid); if(!steps.length){ const s=slState[activeWk()+"_"+d+"_"+kid+"_"+slot]; return !!(s&&s.done); } return steps.every((st,i)=>!cadDueOn(st.cad||"daily",d)||rtDoneOn(slot,kid,d,i)); }
+// A step counts toward "complete" if it's due today OR carried over late (a missed chore keeps showing on the
+// list, so it must keep the list open too — 2026-08-18: Julian's grid dot said ✓ while his list said 0/1).
+// rtLateDays is bound to the viewed day, so the late clause only applies when d is that day.
+function rtDueOrLate(slot,kid,d,i,st){ return cadDueOn((st&&st.cad)||"daily",d)||(d===day&&rtLateDays(slot,kid,i)>0); }
+function rtComplete(slot,kid,d){ const steps=rtStepsFor(slot,kid); if(!steps.length){ const s=slState[activeWk()+"_"+d+"_"+kid+"_"+slot]; return !!(s&&s.done); } return steps.every((st,i)=>!rtDueOrLate(slot,kid,d,i,st)||rtDoneOn(slot,kid,d,i)); }
 function rtEveningHour(){ const h=parseInt(routineTimes&&routineTimes.eveningHour,10); return isNaN(h)?18:h; }
 function rtFmtHour(h){ const ap=h>=12?"PM":"AM"; let hh=h%12; if(hh===0)hh=12; return hh+":00 "+ap; }
 function rtSchoolworkDone(kid,d){ const ts=getActiveTasks().filter(t=>t.who===kid&&effectiveDay(t)===d&&!t.id.endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title)); return ts.length===0?true:ts.every(t=>!!checked[t.id]); }
@@ -1885,7 +1889,7 @@ function toggleRtStep(slot,kid,i){
   }
   const allDone=rtComplete(slot,kid,day), _prevSlot=slState[wk+"_"+day+"_"+kid+"_"+slot];
   slState[wk+"_"+day+"_"+kid+"_"+slot]={done:allDone,ts:allDone?nowTs():""};
-  rtBonusSettle(slot,kid,wk,day,_prevSlot,allDone,rtStepsFor(slot,kid).filter(st=>cadDueOn(st.cad||"daily",day)).length);
+  rtBonusSettle(slot,kid,wk,day,_prevSlot,allDone,rtStepsFor(slot,kid).filter((st,i)=>rtDueOrLate(slot,kid,day,i,st)).length);
   if(allDone) rtOpen[slot+"_"+kid]=false;   // auto-collapse when finished
   sv(wk+"_sl",slState);
   if(db) db.ref(wk+"/sl").set(slState);

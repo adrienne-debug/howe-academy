@@ -8,10 +8,10 @@ const fs = require("fs");
 const src = fs.readFileSync("/Users/adriennehowe/Desktop/howe-academy/index.html", "utf8");
 function slice(name){ const sig="function "+name+"("; const i=src.indexOf(sig); if(i<0) throw new Error("not found: "+name);
   let d=0; for(let k=src.indexOf("{",i);k<src.length;k++){ if(src[k]==="{")d++; else if(src[k]==="}"){ d--; if(d===0) return src.slice(i,k+1);} } throw new Error("unbalanced: "+name); }
-const FNS=["toggleRtStep","rtBonusSettle","rtBonusFor","rtComplete","rtDoneOn","rtStepsFor","rtApplyRot","cadDueOn","cadDowIdx","cadDateNum","routineEditable"].map(slice).join("\n");
+const FNS=["toggleRtStep","rtBonusSettle","rtBonusFor","rtComplete","rtDueOrLate","rtDoneOn","rtStepsFor","rtApplyRot","cadDueOn","cadDowIdx","cadDateNum","routineEditable"].map(slice).join("\n");
 let pass=0,fail=0; const ok=(n,c,x)=>c?(pass++,console.log("  ok  - "+n)):(fail++,console.log("  FAIL- "+n+(x!==undefined?"  "+JSON.stringify(x):"")));
 
-function mk(steps,bonus){
+function mk(steps,bonus,LATE){ LATE=LATE||{};
   const LEDGER=[],REMOVED=[]; let seq=0;
   const env={ day:"monday", _todayDay:"monday", momModeActive:false, adminPinUnlocked:false, slState:{}, rtOpen:{}, db:null, tab:"x",
     DAY_DT:{monday:"August 17"}, RT_ABBR:{afternoon:"a",chores:"c",evening:"e"}, RT_DEFAULT:{chores:{lucy:steps}}, routineCfg2:{}, SL_KIDS:["lucy"],
@@ -21,7 +21,8 @@ function mk(steps,bonus){
     rtAvailable:()=>true, _rtBlockedToast:()=>{}, zoneBonusFor:()=>0, rlogAppend:()=>{}, sv:()=>{}, renderSkylight:()=>{}, renderAll:()=>{},
     bankDirect:(kid,pts,note)=>{ const id="b"+(++seq); LEDGER.push({id,kid,pts,note}); return id; },
     bankDirectRemove:(kid,id)=>{ REMOVED.push(id); const i=LEDGER.findIndex(l=>l.id===id); if(i>=0) LEDGER.splice(i,1); },
-    _CAD_DOW:{monday:0,tuesday:1,wednesday:2,thursday:3,friday:4,saturday:5,sunday:6}, _mrLegacySteps:()=>[] };
+    _CAD_DOW:{monday:0,tuesday:1,wednesday:2,thursday:3,friday:4,saturday:5,sunday:6}, _mrLegacySteps:()=>[],
+    rtLateDays:(slot,kid,i)=>(LATE[i]||0) };
   const keys=Object.keys(env);
   const body=FNS+"\nreturn {toggleRtStep, slState, rtComplete, cadDueOn};";
   const f=new Function(...keys,body); const r=f(...keys.map(k=>env[k]));
@@ -53,4 +54,13 @@ console.log("🔄 rotation: as-needed travels with the job");
 { // lucy's slot is as-needed lizard poop (rot "pets"); ellis's slot is daily "Feed fish" (rot "pets"). Whoever holds lizard poop today sees it as-needed.
   const t=mk([{label:"Lizard poop",pts:15,cad:"asneeded",rot:"pets"}],0);
   ok("harness sanity", typeof t.rtComplete==="function"); }
+console.log("late carry-over counts toward complete (Julian's Tuesday shower)");
+{ // Shower is Mon/Thu/Fri; today is Tuesday in this scenario → not due by cadence, but 1 day late.
+  const t=mk([{label:"Shower",pts:50,cad:"wk:0,3,5"}],10,{0:1}); 
+  const env_day="monday"; // harness day is monday; cadence wk:0 makes it DUE — so use a Tue-only step to isolate late:
+  const u=mk([{label:"Shower",pts:50,cad:"wk:1,3,5"}],10,{0:1});
+  ok("late (not due today) step keeps the list NOT complete", u.rtComplete("chores","lucy","monday")===false);
+  u.toggleRtStep("chores","lucy",0); ok("doing the late step completes the list + pays bonus", u.slState["week18_monday_lucy_chores"].done&&u.bonusLines().length===1, u.bal());
+  const v=mk([{label:"Shower",pts:50,cad:"wk:1,3,5"}],10,{});
+  ok("same step, NOT late → nothing due → complete (vacuous)", v.rtComplete("chores","lucy","monday")===true); }
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
