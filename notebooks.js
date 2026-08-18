@@ -339,6 +339,8 @@
 "         border-radius:20px; padding:2px 10px; font-size:11px; font-weight:800; color:var(--ju-dark); }\n" +
 "  .count-row { display:flex; align-items:center; gap:5px; flex-wrap:wrap; margin:3px 0; }\n" +
 "  .count-ani { font-size:26px; line-height:1; }\n" +
+"  .ten-frame { display:grid; grid-template-columns:repeat(5,auto); border:2px solid var(--ju-green); border-radius:6px; overflow:hidden; background:#fff; }\n" +
+"  .tf-cell { display:flex; align-items:center; justify-content:center; line-height:1; border:1px dashed #b7dcc4; }\n" +
 "  .shape-row { display:flex; align-items:center; justify-content:space-around; gap:6px; margin-top:3px; }\n" +
 "  .shape-cell{ display:flex; flex-direction:column; align-items:center; gap:3px; }\n" +
 "  .shape-cap { font-size:8.5px; font-weight:800; letter-spacing:0.04em; text-transform:uppercase; color:var(--muted); }\n" +
@@ -833,13 +835,26 @@
     var animalPair = pick.animalPair, aname = animalPair[0], aemoji = animalPair[1];
     var badge = pick.anyReview ? "🔁 Let's practice again!" : (JU_DAY_BADGES[day] || "🦕 Great Job!");
     var lw = JU_LETTER_WORDS[String(letter).toUpperCase()] || ["", ""], word = lw[0], wemoji = lw[1];
-    var n = parseInt(number, 10); if (isNaN(n)) n = 1; n = Math.max(1, Math.min(n, 8));
+    // Count = the actual number (was capped at 8, so 9–14 all printed 8 animals — Adrienne
+    // 2026-08-18: "those should match up"). Capped at 20 = two ten-frames.
+    var n = parseInt(number, 10); if (isNaN(n)) n = 1; n = Math.max(1, Math.min(n, 20));
     // "🔁 practice again" markers on the cards for items Julian struggled with in drills
     var letterLab = pick.letterReview ? "Practice Again 🔁" : "Letter of the Day";
     var numberLab = (pick.numberReview ? "Practice Again 🔁 · " : "Number of the Day · ") + number;
     var shapeColorLab = (pick.shapeReview || pick.colorReview) ? "Shape &amp; Color 🔁" : "Shape &amp; Color";
 
-    var countAni = ('<span class="count-ani">' + aemoji + '</span>').repeat(n);
+    // Ten-frames: 5×2 cells per frame, animals fill left→right, top→bottom; empty cells stay
+    // dashed so he can see "how many more to 10". 1–10 = one frame, 11–20 = two frames.
+    var frames = n > 10 ? 2 : 1, cellPx = frames > 1 ? 28 : 36, aniPx = frames > 1 ? 18 : 24;
+    var countAni = "";
+    for (var fi = 0; fi < frames; fi++) {
+      var cells = "";
+      for (var ci = 0; ci < 10; ci++) {
+        var filled = (fi * 10 + ci) < n;
+        cells += '<div class="tf-cell' + (filled ? ' on' : '') + '" style="width:' + cellPx + 'px;height:' + cellPx + 'px;font-size:' + aniPx + 'px;">' + (filled ? aemoji : '') + '</div>';
+      }
+      countAni += '<div class="ten-frame">' + cells + '</div>';
+    }
 
     var tidx = dowIndex(day);
     var ar = aroundDay(day), yest = ar[0], tod = ar[1], tom = ar[2];
