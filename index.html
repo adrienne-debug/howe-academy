@@ -1659,8 +1659,9 @@ function toggleMorningStep(kid,i){
     slState[sk]={done:now,ts:now?nowTs():"",pts:now?_paid:null,bid:now?(_bid||null):null};
     rlogAppend(kid,"morning",_st?_st.label:("Step "+(i+1)),now?"on":"off",_paid); }
   // Derive the Morning slot from the steps so every existing consumer (grid, alert, gate) stays correct.
-  const allDone=morningComplete(kid,day);
+  const allDone=morningComplete(kid,day), _prevSlot=slState[wk+"_"+day+"_"+kid+"_morning"];
   slState[wk+"_"+day+"_"+kid+"_morning"]={done:allDone,ts:allDone?nowTs():""};
+  rtBonusSettle("morning",kid,wk,day,_prevSlot,allDone,morningDueIdx(kid,day).length);
   if(allDone) mrOpen[kid]=false;   // auto-collapse when finished
   sv(wk+"_sl",slState);
   if(db) db.ref(wk+"/sl").set(slState);
@@ -1677,6 +1678,7 @@ function mrIndividualHTML(kid){
       (s.done&&s.ts?'<div class="sl-slot-ts">Checked '+s.ts+'</div>':'')+'</div></div>';
   }
   const _dueIdx=morningDueIdx(kid,day);
+  const _optIdx=steps.map((st,i)=>i).filter(i=>steps[i].cad==="asneeded"&&stepWindowOk(steps[i],day)&&_dueIdx.indexOf(i)<0);   // ✋ shown, optional, paid
   const doneCount=_dueIdx.filter(i=>mStepDoneOn(kid,day,i)).length;
   const allDone=_dueIdx.length>0&&doneCount===_dueIdx.length;
   const isOpen=mrOpen[kid]!==false;
@@ -1697,6 +1699,12 @@ function mrIndividualHTML(kid){
            ((st.pts||0)>0?' <span class="cadtag" style="color:#b45309;border-color:#fde68a">+'+(st.pts||0)+' \u2b50</span>':'')+
            (_wl?' <span class="cadtag" style="color:#0e7490;border-color:#a5f3fc">\u{1F4C5} '+_wl+'</span>':'')+
            (st.time?' <span class="cadtag" style="color:#7c3aed;border-color:#ddd6fe">\u23f0 '+st.time+'</span>':'')+
+         '</div></div>'; });
+    _optIdx.forEach(i=>{ const st=steps[i], sd=mStepDoneOn(kid,day,i);
+      h+='<div class="mr-step'+(sd?" done":"")+'"'+(_ed?' onclick="toggleMorningStep(\''+kid+'\','+i+')"':'')+' style="opacity:'+(sd?'1':'.75')+'">'+
+         '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
+         '<div class="sl-slot-name">'+(st.emoji?st.emoji+" ":"")+st.label+' <span class="cadtag" style="color:#0e7490;border-color:#a5f3fc">\u270B as needed</span>'+
+           ((st.pts||0)>0?' <span class="cadtag" style="color:#b45309;border-color:#fde68a">+'+(st.pts||0)+' \u2b50</span>':'')+
          '</div></div>'; });
     h+='</div>';
   }
@@ -1811,7 +1819,7 @@ function rtApplyRot(slot,kid,steps,dayName){
   const groups={};
   SL_KIDS.forEach(k=>{
     const rawS=(routineCfg2[slot]&&Array.isArray(routineCfg2[slot][k])&&routineCfg2[slot][k].length)?routineCfg2[slot][k]:(((RT_DEFAULT[slot]||{})[k])||[]);
-    rawS.forEach(s=>{ if(s&&s.rot){ (groups[s.rot]=groups[s.rot]||[]).push({kid:k,emoji:s.emoji,label:s.label,pts:(s.pts||0),free:!!s.free}); } });
+    rawS.forEach(s=>{ if(s&&s.rot){ (groups[s.rot]=groups[s.rot]||[]).push({kid:k,emoji:s.emoji,label:s.label,pts:(s.pts||0),free:!!s.free,asneeded:(s.cad==="asneeded")}); } });
   });
   const dt=_rtRotDayNum(dayName);
   return steps.map(s=>{
@@ -1820,10 +1828,12 @@ function rtApplyRot(slot,kid,steps,dayName){
     if(mi<0) return s;
     const pick=g[(mi+dt)%g.length];
     // The whole JOB travels — emoji, label, and its star value — so "Sweep +10" pays 10
-    // to whoever holds it today. A free-day pick hides itself (asneeded = never due), so
+    // to whoever holds it today. A free-day pick hides itself (cad "none" = not scheduled), so
     // that kid simply has nothing from this rotation today.
     const o=Object.assign({},s,{emoji:pick.emoji,label:pick.label,pts:(pick.pts||0),free:!!pick.free});
-    if(pick.free) o.cad="asneeded";
+    if(pick.free) o.cad="none";
+    else if(pick.asneeded) o.cad="asneeded";   // ✋ as-needed is a property of the JOB (lizard poop) — it travels with it
+    else if(s.cad==="asneeded") o.cad="daily"; // ...and a kid whose own slot is as-needed gets today's job on its normal footing
     return o;
   });
 }
@@ -1864,24 +1874,26 @@ function toggleRtStep(slot,kid,i){
     slState[sk]={done:now,ts:now?nowTs():"",pts:now?_paid:null,bid:now?(_bid||null):null};
     rlogAppend(kid,slot,_st?_st.label:("Step "+(i+1)),now?"on":"off",_p);
   }
-  const allDone=rtComplete(slot,kid,day);
+  const allDone=rtComplete(slot,kid,day), _prevSlot=slState[wk+"_"+day+"_"+kid+"_"+slot];
   slState[wk+"_"+day+"_"+kid+"_"+slot]={done:allDone,ts:allDone?nowTs():""};
+  rtBonusSettle(slot,kid,wk,day,_prevSlot,allDone,rtStepsFor(slot,kid).filter(st=>cadDueOn(st.cad||"daily",day)).length);
   if(allDone) rtOpen[slot+"_"+kid]=false;   // auto-collapse when finished
   sv(wk+"_sl",slState);
   if(db) db.ref(wk+"/sl").set(slState);
   renderSkylight();
   if(tab==="schedule"){ const c=document.getElementById("content"); if(c) renderSchedule(c); }
 }
-// ── CADENCE: per-item recurrence. cad = "daily" | "wk:0,2,4" (Mon=0..Sun=6) | "Nd" | "2w" | "asneeded".
+// ── CADENCE: per-item recurrence. cad = "daily" | "wk:0,2,4" (Mon=0..Sun=6) | "Nd" | "2w" | "asneeded" | "none".
+//   "asneeded" (2026-08-17, her ask): the step SHOWS on the kid's list with a ✋ tag, is never DUE (doesn't count
+//   toward the total, can't block list completion or the 🏁 bonus), but PAYS its stars if checked — lizard poop, etc.
+//   "none" = not scheduled: hidden from every kid list (what "asneeded" used to mean; new chores land here).
 const _CAD_DOW={monday:0,tuesday:1,wednesday:2,thursday:3,friday:4,saturday:5,sunday:6};
 function cadDowIdx(dn){ return _CAD_DOW[dn]; }
 function cadDateNum(dn){ try{ var dt=(typeof DAY_DT!=="undefined")&&DAY_DT[dn]; return dt?Math.floor(new Date(dt).getTime()/86400000):null; }catch(e){ return null; } }
 function cadDueOn(cad,dn){
   if(!cad||cad==="daily")return true;
-  // "As needed" = NOT on anyone's due list (it used to mean "due every day", which both
-  // cluttered the kids' lists and BLOCKED slot completion until someone checked it).
-  // Flip it to daily/weekly in the editor when you actually want it done.
-  if(cad==="asneeded")return false;
+  // "asneeded" and "none" are never DUE (as-needed still renders as an optional row; none is hidden).
+  if(cad==="asneeded"||cad==="none")return false;
   var idx=cadDowIdx(dn);
   if(cad==="sat")return idx===5; if(cad==="sun")return idx===6;
   if(cad.indexOf("wk:")===0){ if(idx==null)return true; return cad.slice(3).split(",").filter(function(x){return x!==""}).map(Number).indexOf(idx)>=0; }
@@ -1891,7 +1903,7 @@ function cadDueOn(cad,dn){
   return true;
 }
 function cadLabel(cad){
-  if(!cad||cad==="daily")return "Daily"; if(cad==="asneeded")return "As needed"; if(cad==="2w")return "Every 2 weeks";
+  if(!cad||cad==="daily")return "Daily"; if(cad==="asneeded")return "\u270B As needed"; if(cad==="none")return "Not scheduled"; if(cad==="2w")return "Every 2 weeks";
   if(cad==="sat")return "Weekly \u00b7 Sat"; if(cad==="sun")return "Weekly \u00b7 Sun";
   if(/^\d+d$/.test(cad))return "Every "+parseInt(cad)+" days";
   if(cad.indexOf("wk:")===0){ var N=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]; var ds=cad.slice(3).split(",").filter(function(x){return x!==""}); return ds.length?("Weekly \u00b7 "+ds.map(function(d){return N[+d]}).join(" ")):"Weekly"; }
@@ -1981,6 +1993,8 @@ function rtSlotHTML(slot,kid){
   // stepWindowOk is an AND, not an OR: a course that has ended must not come back as "late".
   const dueIdx=steps.map((st,i)=>i).filter(i=>stepWindowOk(steps[i],day)&&(cadDueOn(steps[i].cad||"daily",day)||rtLateDays(slot,kid,i)>0));
   const total=dueIdx.length;
+  // ✋ as-needed rows: shown, tappable, paid — but never part of total/allDone.
+  const optIdx=steps.map((st,i)=>i).filter(i=>(steps[i].cad==="asneeded")&&stepWindowOk(steps[i],day)&&dueIdx.indexOf(i)<0);
   const doneCount=dueIdx.filter(i=>rtDoneOn(slot,kid,day,i)).length, allDone=total>0&&doneCount===total;
   if(!avail){
     const msg=slot==="afternoon"?"Finish your school work to unlock":("Opens at "+rtFmtHour(rtEveningHour()));
@@ -1989,7 +2003,7 @@ function rtSlotHTML(slot,kid){
       '<div style="flex:1"><div class="sl-slot-name">'+label+' <span style="color:var(--muted);font-weight:700">0/'+total+'</span></div>'+
       '<div class="sl-slot-sub">'+msg+'</div></div></div>';
   }
-  if(total===0){
+  if(total===0&&!optIdx.length){
     return '<div class="sl-check-row done"><div class="sl-checkbox done">✓</div><div><div class="sl-slot-name">'+label+'</div><div class="sl-slot-sub">Nothing due today</div></div></div>';
   }
   const isOpen=rtOpen[slot+"_"+kid]!==false;
@@ -2018,6 +2032,11 @@ function rtSlotHTML(slot,kid){
       h+='<div class="mr-step'+(sd?" done":"")+(_lateTag?" is-late":"")+'"'+(_ed?' onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')"':'')+'>'+
          '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
          '<div class="sl-slot-name" style="flex:1">'+(st.emoji?st.emoji+" ":"")+st.label+_lateTag+cadTag+winTag+timeTag+rotTag+'</div>'+
+         (pts>0?'<span class="mr-pts">+'+pts+' ⭐</span>':'')+'</div>'; });
+    optIdx.forEach(i=>{ const st=steps[i], sd=rtDoneOn(slot,kid,day,i), pts=st.pts||0;
+      h+='<div class="mr-step'+(sd?" done":"")+'"'+(_ed?' onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')"':'')+' style="opacity:'+(sd?'1':'.75')+'">'+
+         '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
+         '<div class="sl-slot-name" style="flex:1">'+(st.emoji?st.emoji+" ":"")+st.label+' <span class="cadtag" style="color:#0e7490;border-color:#a5f3fc">\u270B as needed</span></div>'+
          (pts>0?'<span class="mr-pts">+'+pts+' ⭐</span>':'')+'</div>'; });
     h+='</div>';
   }
@@ -2849,6 +2868,7 @@ function initFb() {
     db.ref("config/grabs").on("value",s=>{ grabs=s.val()||[]; if(typeof renderAll==="function") renderAll(); });
     db.ref("config/zones").on("value",s=>{ zones=s.val()||[]; if(typeof renderAll==="function") renderAll(); });
     db.ref("config/zonePlan").on("value",s=>{ zonePlan=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
+    db.ref("config/routineBonus").on("value",s=>{ routineBonus=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
     db.ref("config/zoneBonus").on("value",s=>{ zoneBonus=Object.assign({enabled:true,mode:"flat",amount:5}, s.val()||{}); if(typeof renderAll==="function") renderAll(); });
     db.ref("pointRequests").on("value",s=>{ pointRequests=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
     db.ref("grabClaims").on("value",s=>{ grabClaims=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
@@ -17126,6 +17146,21 @@ const ZONE_DEFAULT=[{id:"kitchen",name:"Kitchen",emoji:"🍽"},{id:"bath",name:"
 let zones=[];              // config/zones
 let zonePlan={};           // config/zonePlan  {monday:"kitchen",...}
 let zoneBonus={enabled:true,mode:"flat",amount:5};   // config/zoneBonus
+// 🏁 Complete-list bonus (2026-08-17, her ask): config/routineBonus/{slot}/{kid} = stars paid the moment a kid
+// finishes every DUE step in that list. Per kid, per list, so everything is customizable. Reverses on un-check.
+let routineBonus={};
+function rtBonusFor(slot,kid){ const v=routineBonus&&routineBonus[slot]&&routineBonus[slot][kid]; const n=parseInt(v,10); return isNaN(n)||n<0?0:n; }
+function rtBonusSet(slot,kid,v){ if(!momHere()) return; const n=Math.max(0,parseInt(v,10)||0); routineBonus[slot]=routineBonus[slot]||{}; routineBonus[slot][kid]=n; if(db) db.ref("config/routineBonus/"+slot+"/"+kid).set(n); renderAll(); }
+// Called by the step toggles AFTER slState[...slot] is derived. Pays once on the false→true flip (bid stored on the
+// slot record), removes exactly that ledger line on true→false. Needs ≥1 due step so an empty list never pays.
+function rtBonusSettle(slot,kid,wk,d,prev,allDone,dueCount){
+  const bonus=rtBonusFor(slot,kid), key=wk+"_"+d+"_"+kid+"_"+slot, rec=slState[key]||{};
+  const was=!!(prev&&prev.done&&prev.bonusBid);
+  if(allDone&&dueCount>0&&bonus>0&&!was){ const bid=bankDirect(kid,bonus,"🏁 "+cap(slot)+" list complete"); rec.bonusBid=bid||null; rec.bonusPts=bonus; if(typeof rlogAppend==="function") rlogAppend(kid,slot,"🏁 List complete bonus","on",bonus); }
+  else if(!allDone&&was){ bankDirectRemove(kid,prev.bonusBid); rec.bonusBid=null; rec.bonusPts=null; if(typeof rlogAppend==="function") rlogAppend(kid,slot,"🏁 List complete bonus","off",prev.bonusPts||0); }
+  else if(allDone&&was){ rec.bonusBid=prev.bonusBid; rec.bonusPts=prev.bonusPts; }
+  slState[key]=rec;
+}
 function zoneList(){ return (Array.isArray(zones)&&zones.length)?zones:ZONE_DEFAULT.slice(); }
 function zoneById(id){ return zoneList().filter(function(z){return z.id===id;})[0]||null; }
 function zoneToday(dn){ return (zonePlan||{})[dn||day]||""; }
@@ -17177,7 +17212,7 @@ function cpToggle(i,dow){
   const at=d.indexOf(dow);
   if(at>=0) d.splice(at,1); else d.push(dow);
   d.sort((a,b)=>a-b);
-  st.cad = d.length ? ("wk:"+d.join(",")) : "asneeded"; // no days left = not scheduled
+  st.cad = d.length ? ("wk:"+d.join(",")) : "none"; // no days left = not scheduled
   rtCfgSave(); renderAll();
 }
 function cpSetDaily(i){
@@ -17246,7 +17281,7 @@ function cpAddChore(){
   if(cpSlot==="grabs"){ gbAdd(); return; }
   rtCfgEnsure(cpSlot,cpKid);
   // lands "not scheduled" so it stays off the kids' lists until a day (or Daily) is picked
-  routineCfg2[cpSlot][cpKid].push({label:"New chore",emoji:"",pts:0,cad:"asneeded"});
+  routineCfg2[cpSlot][cpKid].push({label:"New chore",emoji:"",pts:0,cad:"none"});
   rtCfgSave(); renderAll();
 }
 function cpDelChore(i){
@@ -17346,7 +17381,7 @@ function _cpCadPanelHTML(slot,kid,i,st){
         :'<span style="font-size:10.5px;color:var(--muted)">always</span>';
     p+='</div>'; }
   p+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:7px">';
-  [["daily","Daily","daily"],["everyN","Every N days","2d"],["weekly","Weekly","wk:"],["biweekly","Every 2 weeks","2w"],["asneeded","As needed","asneeded"]].forEach(function(m){
+  [["daily","Daily","daily"],["everyN","Every N days","2d"],["weekly","Weekly","wk:"],["biweekly","Every 2 weeks","2w"],["asneeded","\u270B As needed","asneeded"],["none","Not scheduled","none"]].forEach(function(m){
     p+='<button onclick="rtCadSet(\''+slot+'\',\''+kid+'\','+i+',\''+m[2]+'\')" style="border:1.5px solid '+(cm===m[0]?"transparent":"var(--border)")+';background:'+(cm===m[0]?"var(--header)":"#fff")+';color:'+(cm===m[0]?"#fff":"#1f2937")+';border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+m[1]+'</button>';
   });
   p+='</div>';
@@ -17410,13 +17445,13 @@ function renderChorePlan(el,headerHtml){
   FULL.forEach(function(d,i){ h+='<th title="'+d+'">'+DOW[i]+'</th>'; });
   h+='<th>Daily</th><th class="cp-zone">Zone</th><th class="cp-pts">⭐</th><th></th></tr></thead><tbody>';
   steps.forEach(function(st,i){
-    const cad=st.cad||"daily", days=_cpDays(cad), exotic=(!isGrabs&&_cpExotic(cad)), isDaily=(!exotic&&days===null&&cad!=="asneeded");
+    const cad=st.cad||"daily", days=_cpDays(cad), exotic=(!isGrabs&&_cpExotic(cad)), isDaily=(!exotic&&days===null&&cad!=="asneeded"&&cad!=="none");
     const _ck=cpSlot+"_"+cpKid+"_"+i, _co=(!isGrabs&&rtCadOpen===_ck);
     const _ek=cpSlot+"_"+cpKid+"_"+i, _eo=(cpEmojiOpen===_ek);
     h+='<tr><td class="cp-name"><input class="cpn-e" value="'+esc(st.emoji||"")+'" onchange="cpSetField('+i+',\'emoji\',this.value)">'+
        '<button class="cpn-pick'+(_eo?" open":"")+'" onclick="cpEmojiToggle('+i+')" title="Pick an icon">'+(st.emoji?"▾":"😀")+'</button>'+
        '<input class="cpn-l" value="'+esc(st.label||"")+'" onchange="cpSetField('+i+',\'label\',this.value)">'+
-       (cad==="asneeded"?' <span class="cp-warn">not scheduled</span>':'')+
+       (cad==="none"?' <span class="cp-warn">not scheduled</span>':'')+(cad==="asneeded"?' <span class="cp-warn" style="color:#0e7490">\u270B as needed \u2014 optional, pays if checked</span>':'')+
        (!isGrabs?('<div><button onclick="rtRotToggle(\''+cpSlot+'\',\''+cpKid+'\','+i+')" title="Swap this chore between kids day by day" style="margin-top:3px;border:1.5px solid '+(st.rot?"#fb923c":"var(--border)")+';background:'+(st.rot?"#fff7ed":"#fff")+';color:'+(st.rot?"#c2410c":"var(--muted)")+';border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔄 '+(st.rot?esc(rtRotChipLabel(cpSlot,st.rot)):"Rotate")+'</button>'+
        '<button onclick="rtCadToggle(\''+_ck+'\')" title="Cadence, time of day, and run window" style="margin-top:3px;margin-left:4px;border:1.5px solid '+((cad!=="daily"||st.time||st.from||st.to)?"var(--header)":"var(--border)")+';background:#fff;color:var(--muted);border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔁 '+esc(cadLabel(cad))+(st.time?(" · ⏰ "+esc(st.time)):"")+((st.from||st.to)?(" · 📅 "+esc(stepWindowLabel(st))):"")+' '+(_co?"▾":"▸")+'</button></div>'):'')+'</td>';
     if(exotic){
@@ -17445,6 +17480,9 @@ function renderChorePlan(el,headerHtml){
   h+='</tbody></table></div>';
   h+='<button class="cp-addz" onclick="cpAddChore()">+ Add chore</button>';
   if(!isGrabs){
+    h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 4px;padding:9px 12px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;font-size:12.5px">'+
+       '<b>🏁 Whole-list bonus for '+esc(cap(cpKid))+'</b><span style="color:var(--muted)">— banks the moment every due step is checked (as-needed items don\'t count). 0 = off.</span>'+
+       '<input class="cpp-in" type="number" min="0" value="'+rtBonusFor(cpSlot,cpKid)+'" onchange="rtBonusSet(\''+cpSlot+'\',\''+cpKid+'\',this.value)" style="width:64px"> ⭐</div>';
     h+='<button class="cp-addz" onclick="cpReset()" style="margin-left:6px">↺ Reset '+esc(cap(cpKid))+' to default</button>';
     if(ROSTER.length>1) h+='<button class="cp-addz" onclick="cpCopyToOthers()" style="margin-left:6px">⇉ Copy '+esc(cap(cpKid))+' → all others</button>';
   }
@@ -34590,7 +34628,7 @@ function rtRotToggle(slot,kid,i){
 }
 function rtSetEveningHour(v){ routineTimes=Object.assign({},routineTimes,{eveningHour:parseInt(v,10)||18}); if(db) db.ref("config/routineTimes").set(routineTimes); renderAll(); }
 // ── Cadence editor (per-item repeat + time) ──
-function cadMode(cad){ if(!cad||cad==="daily")return "daily"; if(cad==="asneeded")return "asneeded"; if(cad==="2w")return "biweekly"; if(cad==="sat"||cad==="sun"||cad.indexOf("wk:")===0)return "weekly"; if(/^\d+d$/.test(cad))return "everyN"; return "daily"; }
+function cadMode(cad){ if(!cad||cad==="daily")return "daily"; if(cad==="asneeded")return "asneeded"; if(cad==="none")return "none"; if(cad==="2w")return "biweekly"; if(cad==="sat"||cad==="sun"||cad.indexOf("wk:")===0)return "weekly"; if(/^\d+d$/.test(cad))return "everyN"; return "daily"; }
 function rtCadToggle(key){ rtCadOpen=(rtCadOpen===key)?null:key; renderAll(); }
 function rtCadSet(slot,kid,i,cad){ rtCfgEnsure(slot,kid); if(!routineCfg2[slot][kid][i])return; routineCfg2[slot][kid][i].cad=cad; rtCfgSave(); renderAll(); }
 function rtCadWeekday(slot,kid,i,dow){ rtCfgEnsure(slot,kid); var it=routineCfg2[slot][kid][i]; if(!it)return; var cad=it.cad||"wk:"; if(cad==="sat")cad="wk:5"; else if(cad==="sun")cad="wk:6"; else if(cad.indexOf("wk:")!==0)cad="wk:"; var ds=cad.slice(3).split(",").filter(function(x){return x!==""}); var s=String(dow); if(ds.indexOf(s)>=0)ds=ds.filter(function(x){return x!==s}); else ds.push(s); ds.sort(function(a,b){return a-b}); it.cad="wk:"+ds.join(","); rtCfgSave(); renderAll(); }
