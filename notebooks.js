@@ -288,7 +288,10 @@
 "  .cal-sub { display:flex; align-items:center; justify-content:space-between; gap:10px; }\n" +
 "  .ytt { font-size:10px; font-weight:700; color:var(--muted); }\n" +
 "  .ytt b { color:var(--ju-deep); font-weight:800; }\n" +
-"  .cal-ms { font-size:11.5px; font-weight:800; color:var(--ju-dark); white-space:nowrap; }\n" +
+"  .cal-ms { font-size:11.5px; font-weight:800; color:var(--ju-dark); white-space:nowrap; display:flex; align-items:center; gap:5px; }\n" +
+"  .date-tile { display:inline-flex; flex-direction:column; align-items:center; width:24px; border:1.5px solid var(--ju-deep); border-radius:4px; overflow:hidden; background:#fff; line-height:1; }\n" +
+"  .dt-m { font-size:6px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:#fff; background:var(--ju-deep); width:100%; text-align:center; padding:1.5px 0; }\n" +
+"  .dt-d { font-size:11px; font-weight:800; color:var(--ju-deep); padding:1.5px 0 1px; }\n" +
 "  .wf-row { display:flex; gap:9px; flex-shrink:0; }\n" +
 "  .wf-group { flex:1; display:flex; align-items:center; gap:6px; background:var(--ju-gpale2);\n" +
 "              border:1.5px solid var(--ju-light); border-radius:10px; padding:4px 10px; }\n" +
@@ -865,7 +868,12 @@
       var cls = (i === tidx) ? "dow-chip on" : ((i === 0 || i === 6) ? "dow-chip wk" : "dow-chip");
       dowChips += '<div class="' + cls + '">' + DOW_ABBR[i] + '</div>';
     }
-    var msHtml = (month ? "📅 " + month : "") + (sname ? " · " + semoji + " " + sname : "");
+    // Real date tile instead of the 📅 emoji — Apple's glyph has "17" printed on it, so every
+    // day read "17" beside the month (Adrienne 2026-08-18: "confusing for learning the date").
+    var dnum = (String(dateStr).match(/\d+/) || [""])[0];
+    var mAbbr = month ? (MONTHS_ABBR[monthIndex(month) - 1] || month.slice(0, 3)) : "";
+    var dateTile = (month && dnum) ? '<span class="date-tile"><span class="dt-m">' + mAbbr + '</span><span class="dt-d">' + dnum + '</span></span>' : "";
+    var msHtml = (month ? dateTile + month : "") + (sname ? " · " + semoji + " " + sname : "");
     var weatherDaily = ["☀️", "⛅", "☁️", "🌧️", "❄️", "🌬️"];
     var weatherHtml = weatherDaily.map(function (e) { return '<span class="wx">' + e + '</span>'; }).join("");
 
