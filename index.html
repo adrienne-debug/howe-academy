@@ -24695,6 +24695,21 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
       const last=fixed.reduce((m,x)=>Math.max(m,opts.toMin(x.time)+(x.dur||20)),ctx.start||0); t.time=opts.fromMin(last); } });
     byDay[day].forEach(t=>{ if(t.time==null) t.time=opts.fromMin(ctx.start||600); });
   });
+  // Closing-last pass (2026-08-18): the generator re-times each kid's Closing Notebook to
+  // sit after their final card; this diff packed AROUND it (packAround skips closings when
+  // seeding) but never re-timed it — so a re-laid lesson landed at/after Closing (Ellis wk18
+  // Tue/Thu: Editor in Chief 3:50 vs Closing 3:50). Now every day this subject has a card
+  // on, Closing = last card's end (skipped when Closing is checked/claimed/already started).
+  summary.closing=[];
+  const isClose=t=>t&&t.who===kid&&(t.subjectKey==="closing_nb"||String(t.title||"").toLowerCase().includes("closing notebook"))&&!String(t.id||"").endsWith("_c");
+  const touchedDays={}; after.forEach(t=>{ if(isPlanCard(t)&&t.day) touchedDays[t.day]=1; });
+  Object.keys(touchedDays).forEach(day=>{
+    const dayCards=after.filter(t=>t&&t.who===kid&&t.day===day&&!String(t.id||"").endsWith("_c")&&t.time!=null);
+    const closing=dayCards.filter(isClose), others=dayCards.filter(t=>!isClose(t));
+    if(!closing.length||!others.length) return;
+    let lastEnd=0; others.forEach(t=>{ const e=opts.toMin(t.time)+(t.dur||20); if(e>lastEnd) lastEnd=e; });
+    closing.forEach(c=>{ if(locked(c)) return; const nt=opts.fromMin(lastEnd); if(nt===c.time) return; c.time=nt; upd[c.id+"/time"]=nt; summary.closing.push(c.id); });
+  });
   summary.added.forEach(id=>{ const t=after.find(x=>x.id===id); upd[id]=t; });
   summary.moved.forEach(id=>{ const t=after.find(x=>x.id===id); upd[id+"/day"]=t.day; upd[id+"/time"]=t.time; });
   return {upd,summary,tasksAfter:after};
@@ -24716,12 +24731,12 @@ function reprojectSubjectWeek(kid,sk,why){
       const gwR=gwRules();
       const dayCtx=day=>({start:(day===todayDay)?Math.max(gwR.schoolStart,nowD.getHours()*60+nowD.getMinutes()):gwR.schoolStart,end:gwR.schoolEnd,lunchStart:gwR.lunchStart,lunchEnd:gwR.lunchEnd,allowOvertime:true,overtimeMax:240});
       const r=_reprojectPlan(kid,sk,weekData.tasks,gen.result.tasks,{todayDay,nowMin:nowD.getHours()*60+nowD.getMinutes(),checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},dayCtx,packAround,toMin,fromMin});
-      const n=r.summary.added.length+r.summary.moved.length+r.summary.removed.length+r.summary.retitled.length;
+      const n=r.summary.added.length+r.summary.moved.length+r.summary.removed.length+r.summary.retitled.length+((r.summary.closing||[]).length);
       out=r.summary;
       if(!n) return;
       weekData.tasks=r.tasksAfter; sv(WK+"_tasks",weekData.tasks);
       if(db&&!_dryRun()) db.ref(WK+"/tasks").update(r.upd);
-      dbg&&dbg("reproject "+kid+"/"+sk+" ("+(why||"")+"): +"+r.summary.added.length+" ↔"+r.summary.moved.length+" −"+r.summary.removed.length+" ✎"+r.summary.retitled.length);
+      dbg&&dbg("reproject "+kid+"/"+sk+" ("+(why||"")+"): +"+r.summary.added.length+" ↔"+r.summary.moved.length+" −"+r.summary.removed.length+" ✎"+r.summary.retitled.length+" 🌙"+((r.summary.closing||[]).length));
     }catch(e){ dbg&&dbg("reproject skip: "+e); }
     finally{ release(); }
   });

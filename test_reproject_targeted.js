@@ -130,6 +130,31 @@ console.log("reprojectSubjectWeek — gating + write");
   ok("nothing to change → no write", eN.reprojectSubjectWeek("lincoln", "ws") && eN.updates.length === 0);
 }
 
+console.log("closing-last: Closing Notebook stays the day's final card");
+{
+  const e = mkEnv();
+  const C = (day, time) => ({ id: "c_" + day, who: "lincoln", subjectKey: "closing_nb", day, time, dur: 5, title: "📖 Closing Notebook — Closing Notebook" });
+  // Thursday: work ends 2:20, Closing at 3:00; the re-lay ADDS a 20-min lesson → packer stub
+  // puts it at 3:05 (after Closing) → the pass moves Closing to 3:25 (one targeted /time).
+  const mkLive = () => [T("lincoln_lincoln__ws_L0004", "thursday", "2:00 PM", "WS — d"), C("thursday", "3:00 PM")];
+  const desired = [T("lincoln_lincoln__ws_L0004", "thursday", "2:00 PM", "WS — d"), T("lincoln_lincoln__ws_L0005", "thursday", "2:20 PM", "WS — e")];
+  const r = e._reprojectPlan("lincoln", "ws", mkLive(), desired, OPTS());
+  const cl = r.tasksAfter.find(t => t.id === "c_thursday"), ad = r.tasksAfter.find(t => t.id.endsWith("L0005"));
+  ok("closing re-timed to after the last card", cl && ad && toMin(cl.time) === toMin(ad.time) + 20, { closing: cl && cl.time, added: ad && ad.time });
+  ok("closing move is a targeted /time write + reported", r.upd["c_thursday/time"] === cl.time && eq(r.summary.closing, ["c_thursday"]));
+  // Nothing added on a day → its Closing is left alone even if oddly early
+  const live2 = [T("lincoln_lincoln__ws_L0004", "friday", "2:00 PM", "WS — d"), C("friday", "1:00 PM")];
+  const r2 = e._reprojectPlan("lincoln", "ws", live2, live2.slice(0, 1), OPTS());
+  ok("still touched (subject has a card that day) → closing after work anyway", r2.tasksAfter.find(t => t.id === "c_friday").time === "2:20 PM");
+  // Checked closing is locked
+  const r3 = e._reprojectPlan("lincoln", "ws", mkLive(), desired, OPTS({ checked: { c_thursday: true } }));
+  ok("checked closing never moves", r3.tasksAfter.find(t => t.id === "c_thursday").time === "3:00 PM" && !r3.upd["c_thursday/time"]);
+  // Past day closing is locked (started)
+  const live4 = [T("lincoln_lincoln__ws_L0004", "monday", "2:00 PM", "WS — d"), C("monday", "1:00 PM")];
+  const r4 = e._reprojectPlan("lincoln", "ws", live4, live4.slice(0, 1), OPTS());
+  ok("past-day closing never moves", r4.tasksAfter.find(t => t.id === "c_monday").time === "1:00 PM");
+}
+
 console.log("hooks (source assertions)");
 {
   ok("cbApply calls reprojectSubjectWeek(kid,sk,'relay') after the cells write", /reprojectSubjectWeek\(kid,sk,"relay"\)/.test(src));
