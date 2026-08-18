@@ -1814,6 +1814,15 @@ function _rtRotDayNum(dayName){
   }
   return Math.round(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())/864e5); // local date, DST-proof
 }
+// 🔄 Rotation period (2026-08-17, her ask): config/rotationPeriod/{tag} = "daily" (default) | "weekly" (flips Monday) | "<N>d".
+// The hop count is derived from the date, so it needs no state and every device agrees.
+let rotationPeriod={};
+function _rotKey(tag){ return String(tag||"").replace(/[.#$\[\]\/]/g,"_"); }
+function rtRotPeriod(tag){ const p=rotationPeriod&&rotationPeriod[_rotKey(tag)]; return (p==="weekly"||/^\d+d$/.test(p||""))?p:"daily"; }
+function rtRotPeriodSet(tag,p){ if(!momHere()) return; if(!(p==="daily"||p==="weekly"||/^\d+d$/.test(p))) p="daily"; rotationPeriod[_rotKey(tag)]=p; if(db) db.ref("config/rotationPeriod/"+_rotKey(tag)).set(p); renderAll(); }
+function rtRotPeriodLabel(tag){ const p=rtRotPeriod(tag); return p==="daily"?"cycles daily":p==="weekly"?"cycles weekly (flips Mon)":("cycles every "+parseInt(p)+" days"); }
+// Day number → hop index for this tag. Weekly is Monday-aligned (epoch day 0 was a Thursday, so +3).
+function _rtRotHop(tag,dt){ const p=rtRotPeriod(tag); if(p==="weekly") return Math.floor((dt+3)/7); if(/^\d+d$/.test(p)) return Math.floor(dt/Math.max(1,parseInt(p))); return dt; }
 function rtApplyRot(slot,kid,steps,dayName){
   if(!steps.some(s=>s&&s.rot)) return steps;
   const groups={};
@@ -1826,7 +1835,7 @@ function rtApplyRot(slot,kid,steps,dayName){
     if(!s||!s.rot||!groups[s.rot]||groups[s.rot].length<2) return s;
     const g=groups[s.rot], mi=g.findIndex(x=>x.kid===kid);
     if(mi<0) return s;
-    const pick=g[(mi+dt)%g.length];
+    const pick=g[(mi+_rtRotHop(s.rot,dt))%g.length];
     // The whole JOB travels — emoji, label, and its star value — so "Sweep +10" pays 10
     // to whoever holds it today. A free-day pick hides itself (cad "none" = not scheduled), so
     // that kid simply has nothing from this rotation today.
@@ -2868,6 +2877,7 @@ function initFb() {
     db.ref("config/grabs").on("value",s=>{ grabs=s.val()||[]; if(typeof renderAll==="function") renderAll(); });
     db.ref("config/zones").on("value",s=>{ zones=s.val()||[]; if(typeof renderAll==="function") renderAll(); });
     db.ref("config/zonePlan").on("value",s=>{ zonePlan=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
+    db.ref("config/rotationPeriod").on("value",s=>{ rotationPeriod=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
     db.ref("config/routineBonus").on("value",s=>{ routineBonus=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
     db.ref("config/zoneBonus").on("value",s=>{ zoneBonus=Object.assign({enabled:true,mode:"flat",amount:5}, s.val()||{}); if(typeof renderAll==="function") renderAll(); });
     db.ref("pointRequests").on("value",s=>{ pointRequests=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
@@ -17336,7 +17346,8 @@ function cpCopyToOthers(){
 // ── 🔄 Rotations box: every rotation group shown WHOLE — its jobs, whose base each
 // is, and who holds what today/tomorrow — instead of chips scattered across kid rows.
 function _cpRotationsHTML(){
-  const SLOTS=[["afternoon","☀️"],["chores","🧹"],["evening","🌙"]];
+  // Only the list you're editing (Morning included — it's a list like the others now); Up for Grabs has no rotations.
+  const SLOTS=[["morning","🌅"],["afternoon","☀️"],["chores","🧹"],["evening","🌙"]].filter(function(sp){ return sp[0]===cpSlot; });
   const cards=[];
   SLOTS.forEach(function(sp){ const slot=sp[0];
     const groups={};
@@ -17344,10 +17355,15 @@ function _cpRotationsHTML(){
     Object.keys(groups).forEach(function(tag){
       const g=groups[tag];
       const dt0=_rtRotDayNum(todayDay());
-      function assign(dt){ return g.map(function(m,mi){ const pk=g[(mi+dt)%g.length]; return '<b style="color:'+(SL_KCOL[m.kid]||"#333")+'">'+cap(m.kid)+'</b> → '+esc((pk.emoji?pk.emoji+" ":"")+pk.label); }).join(' &nbsp;·&nbsp; '); }
+      function assign(dt){ const hop=_rtRotHop(tag,dt); return g.map(function(m,mi){ const pk=g[(mi+hop)%g.length]; return '<b style="color:'+(SL_KCOL[m.kid]||"#333")+'">'+cap(m.kid)+'</b> → '+esc((pk.emoji?pk.emoji+" ":"")+pk.label); }).join(' &nbsp;·&nbsp; '); }
       const nm=(tag==="rot_"+slot)?(cap(slot)+" rotation"):cap(tag);
       let c='<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:10px;margin-bottom:8px">';
-      c+='<div style="font-weight:800;font-size:12.5px;color:#9a3412;margin-bottom:4px">🔄 '+esc(nm)+' <span style="font-weight:600;color:#c2410c">('+sp[1]+' '+slot+' · cycles daily)</span></div>';
+      const _pp=rtRotPeriod(tag), _pn=/^\d+d$/.test(_pp)?parseInt(_pp):3, _tg=tag.replace(/'/g,"\\'");
+      c+='<div style="font-weight:800;font-size:12.5px;color:#9a3412;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">🔄 '+esc(nm)+' <span style="font-weight:600;color:#c2410c">('+sp[1]+' '+slot+' · '+rtRotPeriodLabel(tag)+')</span>'+
+         '<span style="font-weight:600;color:#7c2d12;font-size:11px;margin-left:auto">hops:</span>'+
+         [["daily","Daily"],["weekly","Weekly"],[_pn+"d","Every N days"]].map(function(o){ const on=(o[0]==="daily"&&_pp==="daily")||(o[0]==="weekly"&&_pp==="weekly")||(o[1]==="Every N days"&&/^\d+d$/.test(_pp));
+           return '<button onclick="rtRotPeriodSet(\''+_tg+'\',\''+o[0]+'\')" style="border:1.5px solid '+(on?"transparent":"#fed7aa")+';background:'+(on?"#c2410c":"#fff")+';color:'+(on?"#fff":"#9a3412")+';border-radius:7px;padding:2px 8px;font-size:11px;font-weight:700;cursor:pointer">'+o[1]+'</button>'; }).join('')+
+         (/^\d+d$/.test(_pp)?'<input type="number" min="1" max="30" value="'+_pn+'" onchange="rtRotPeriodSet(\''+_tg+'\',this.value+\'d\')" style="width:44px;padding:2px 4px;border:1.5px solid #fed7aa;border-radius:6px;font-size:11px">':'')+'</div>';
       c+='<div style="font-size:11.5px;color:#7c2d12;margin-bottom:4px">Jobs: '+g.map(function(m){ return esc((m.emoji?m.emoji+" ":"")+m.label)+' <span style="color:#c2410c">('+cap(m.kid)+'\u2019s base)</span> <button onclick="rtRotToggle(\''+slot+'\',\''+m.kid+'\','+m.i+')" title="Remove this job from the rotation" style="border:none;background:none;color:#b91c1c;cursor:pointer;font-weight:800;font-size:11px;padding:0 2px">✕</button>'; }).join(' &nbsp;·&nbsp; ')+'</div>';
       const avail=SL_KIDS.filter(function(k){ return !g.some(function(m){ return m.kid===k; }); });
       if(avail.length){ const sid=("rotfree_"+slot+"_"+tag).replace(/[^a-zA-Z0-9_]/g,"");
