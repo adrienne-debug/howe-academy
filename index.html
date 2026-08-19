@@ -1859,7 +1859,12 @@ function rtSchoolworkDone(kid,d){ const ts=getActiveTasks().filter(t=>t.who===ki
 // 4:00 PM) regardless, so a slow school day never holds the chores hostage. Past days: always open.
 function rtAfternoonHour(){ const h=parseInt(routineTimes&&routineTimes.afternoonHour,10); return isNaN(h)?16:h; }
 function rtAvailable(slot,kid,d){ if(slot==="afternoon") return rtSchoolworkDone(kid,d)||(d!==_todayDay)||(new Date().getHours()>=rtAfternoonHour()); if(slot==="evening") return (d!==_todayDay)||(new Date().getHours()>=rtEveningHour()); return true; }
-function toggleRtOpen(slot,kid){ const k=slot+"_"+kid; rtOpen[k]=(rtOpen[k]!==false)?false:true; renderSkylight(); }
+// Open/closed is DERIVED: a finished list shows collapsed (its green header only) on every device and
+// after reloads; a tap on the header overrides for that day (2026-08-18, her ask — the old in-memory
+// auto-collapse only ran on the device that tapped the last step, so kiosks still showed them open).
+function rtOpenKey(slot,kid){ return slot+"_"+kid+"_"+day; }
+function rtIsOpen(slot,kid,allDone){ const v=rtOpen[rtOpenKey(slot,kid)]; return (v===true||v===false)?v:!allDone; }
+function toggleRtOpen(slot,kid,nowOpen){ rtOpen[rtOpenKey(slot,kid)]=!nowOpen; renderSkylight(); }
 function toggleRtStep(slot,kid,i){
   if(!rtAvailable(slot,kid,day)){
     if(typeof gwShowToast==="function"){
@@ -1893,7 +1898,7 @@ function toggleRtStep(slot,kid,i){
   const allDone=rtComplete(slot,kid,day), _prevSlot=slState[wk+"_"+day+"_"+kid+"_"+slot];
   slState[wk+"_"+day+"_"+kid+"_"+slot]={done:allDone,ts:allDone?nowTs():""};
   rtBonusSettle(slot,kid,wk,day,_prevSlot,allDone,rtStepsFor(slot,kid).filter((st,i)=>rtDueOrLate(slot,kid,day,i,st)).length);
-  if(allDone) rtOpen[slot+"_"+kid]=false;   // auto-collapse when finished
+  delete rtOpen[rtOpenKey(slot,kid)];      // a check-off resets any manual open/close → the list follows completion again
   sv(wk+"_sl",slState);
   if(db) db.ref(wk+"/sl").set(slState);
   renderSkylight();
@@ -2028,9 +2033,9 @@ function rtSlotHTML(slot,kid){
   if(total===0&&!optIdx.length){
     return '<div class="sl-check-row done"><div class="sl-checkbox done">✓</div><div><div class="sl-slot-name">'+label+'</div><div class="sl-slot-sub">Nothing due today</div></div></div>';
   }
-  const isOpen=rtOpen[slot+"_"+kid]!==false;
+  const isOpen=rtIsOpen(slot,kid,allDone);
   const sub=allDone?('✓ '+label+' done'):(SL_STIM[slot]||'');
-  let h='<div class="sl-check-row'+(allDone?" done":"")+'" onclick="toggleRtOpen(\''+slot+'\',\''+kid+'\')" style="cursor:pointer">'+
+  let h='<div class="sl-check-row'+(allDone?" done":"")+'" onclick="toggleRtOpen(\''+slot+'\',\''+kid+'\','+(isOpen?'true':'false')+')" style="cursor:pointer">'+
     '<div class="sl-checkbox'+(allDone?" done":"")+'">'+(allDone?"✓":"")+'</div>'+
     '<div style="flex:1"><div class="sl-slot-name">'+label+' <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+total+'</span></div>'+
     '<div class="sl-slot-sub">'+sub+'</div></div>'+

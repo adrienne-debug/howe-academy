@@ -8,7 +8,7 @@ const fs = require("fs");
 const src = fs.readFileSync("/Users/adriennehowe/Desktop/howe-academy/index.html", "utf8");
 function slice(name){ const sig="function "+name+"("; const i=src.indexOf(sig); if(i<0) throw new Error("not found: "+name);
   let d=0; for(let k=src.indexOf("{",i);k<src.length;k++){ if(src[k]==="{")d++; else if(src[k]==="}"){ d--; if(d===0) return src.slice(i,k+1);} } throw new Error("unbalanced: "+name); }
-const FNS=["toggleRtStep","rtBonusSettle","rtBonusFor","rtComplete","rtDueOrLate","rtDoneOn","rtStepsFor","rtApplyRot","cadDueOn","cadDowIdx","cadDateNum","routineEditable"].map(slice).join("\n");
+const FNS=["toggleRtStep","rtOpenKey","rtBonusSettle","rtBonusFor","rtComplete","rtDueOrLate","rtDoneOn","rtStepsFor","rtApplyRot","cadDueOn","cadDowIdx","cadDateNum","routineEditable"].map(slice).join("\n");
 let pass=0,fail=0; const ok=(n,c,x)=>c?(pass++,console.log("  ok  - "+n)):(fail++,console.log("  FAIL- "+n+(x!==undefined?"  "+JSON.stringify(x):"")));
 
 function mk(steps,bonus,LATE){ LATE=LATE||{};
