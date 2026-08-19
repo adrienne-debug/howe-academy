@@ -1937,9 +1937,15 @@ let prevSlState=null, _prevSlWk=null;
 function _prevWkKey(){ const m=/^week(\d+)$/.exec(activeWk()||""); const n=m?parseInt(m[1],10):0; return n>1?("week"+(n-1)):null; }
 function _loadPrevSl(){
   const pw=_prevWkKey(); if(!pw||_prevSlWk===pw) return;
-  _prevSlWk=pw;
+  // Only LATCH once a real Firebase read has been issued. boot() runs before initFb(), so the
+  // first call here has db=null: it used to latch anyway with just the localStorage copy — fine
+  // on a phone that cached last week while it was active, but a kiosk / freshly set-up tablet
+  // has no such copy, so cross-week late chores (last week's Sat/Sun) never appeared there
+  // (2026-08-18: Ellis's two weekend chores showed late in the app, not on the kiosk).
   prevSlState=ld(pw+"_sl")||null;
-  if(db){ try{ db.ref(pw+"/sl").once("value",function(s){ const v=s.val(); if(v){ prevSlState=v; sv(pw+"_sl",v); renderAll(); } }); }catch(e){} }
+  if(!db) return;
+  _prevSlWk=pw;
+  try{ db.ref(pw+"/sl").once("value",function(s){ const v=s.val(); if(v){ prevSlState=v; sv(pw+"_sl",v); renderAll(); } }); }catch(e){}
 }
 function rtDoneOnWk(wk,slot,kid,d,i){
   const map=(wk===activeWk())?slState:prevSlState;
