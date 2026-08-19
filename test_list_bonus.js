@@ -8,14 +8,14 @@ const fs = require("fs");
 const src = fs.readFileSync("/Users/adriennehowe/Desktop/howe-academy/index.html", "utf8");
 function slice(name){ const sig="function "+name+"("; const i=src.indexOf(sig); if(i<0) throw new Error("not found: "+name);
   let d=0; for(let k=src.indexOf("{",i);k<src.length;k++){ if(src[k]==="{")d++; else if(src[k]==="}"){ d--; if(d===0) return src.slice(i,k+1);} } throw new Error("unbalanced: "+name); }
-const FNS=["toggleRtStep","rtOpenKey","rtBonusSettle","rtBonusFor","rtComplete","rtDueOrLate","rtDoneOn","rtStepsFor","rtApplyRot","cadDueOn","cadDowIdx","cadDateNum","routineEditable"].map(slice).join("\n");
+const FNS=["toggleRtStep","rtOpenKey","rtBonusSettle","rtDayLists","rtDayDone","rtDayBonusSettle","rtBonusFor","rtComplete","rtDueOrLate","rtDoneOn","rtStepsFor","rtApplyRot","cadDueOn","cadDowIdx","cadDateNum","routineEditable"].map(slice).join("\n");
 let pass=0,fail=0; const ok=(n,c,x)=>c?(pass++,console.log("  ok  - "+n)):(fail++,console.log("  FAIL- "+n+(x!==undefined?"  "+JSON.stringify(x):"")));
 
-function mk(steps,bonus,LATE){ LATE=LATE||{};
+function mk(steps,bonus,LATE,dayBonus){ LATE=LATE||{};
   const LEDGER=[],REMOVED=[]; let seq=0;
   const env={ day:"monday", _todayDay:"monday", momModeActive:false, adminPinUnlocked:false, slState:{}, rtOpen:{}, db:null, tab:"x",
     DAY_DT:{monday:"August 17"}, RT_ABBR:{afternoon:"a",chores:"c",evening:"e"}, RT_DEFAULT:{chores:{lucy:steps}}, routineCfg2:{}, SL_KIDS:["lucy"],
-    routineBonus:{chores:{lucy:bonus}},
+    routineBonus:{chores:{lucy:bonus},day:{lucy:(arguments[3]||0)}}, activeSlots:()=>["chores","afternoon"],
     momHere:function(){return this.momModeActive||this.adminPinUnlocked;},
     activeWk:()=>"week18", nowTs:()=>"9:00", cap:s=>s[0].toUpperCase()+s.slice(1),
     rtAvailable:()=>true, _rtBlockedToast:()=>{}, zoneBonusFor:()=>0, rlogAppend:()=>{}, sv:()=>{}, renderSkylight:()=>{}, renderAll:()=>{},
@@ -24,9 +24,9 @@ function mk(steps,bonus,LATE){ LATE=LATE||{};
     _CAD_DOW:{monday:0,tuesday:1,wednesday:2,thursday:3,friday:4,saturday:5,sunday:6}, _mrLegacySteps:()=>[],
     rtLateDays:(slot,kid,i)=>(LATE[i]||0) };
   const keys=Object.keys(env);
-  const body=FNS+"\nreturn {toggleRtStep, slState, rtComplete, cadDueOn};";
+  const body=FNS+"\nreturn {toggleRtStep, slState, rtComplete, cadDueOn, rtDayDone};";
   const f=new Function(...keys,body); const r=f(...keys.map(k=>env[k]));
-  r.bal=()=>LEDGER.reduce((a,l)=>a+l.pts,0); r.bonusLines=()=>LEDGER.filter(l=>/list complete/.test(l.note)); r.removed=REMOVED; return r;
+  r.bal=()=>LEDGER.reduce((a,l)=>a+l.pts,0); r.bonusLines=()=>LEDGER.filter(l=>/list complete/.test(l.note)); r.dayLines=()=>LEDGER.filter(l=>/Whole day/.test(l.note)); r.removed=REMOVED; return r;
 }
 console.log("bonus pays once on completion, reverses on un-check");
 { const t=mk([{label:"A",pts:10},{label:"B",pts:5}],25);
@@ -63,4 +63,18 @@ console.log("late carry-over counts toward complete (Julian's Tuesday shower)");
   u.toggleRtStep("chores","lucy",0); ok("doing the late step completes the list + pays bonus", u.slState["week18_monday_lucy_chores"].done&&u.bonusLines().length===1, u.bal());
   const v=mk([{label:"Shower",pts:50,cad:"wk:1,3,5"}],10,{});
   ok("same step, NOT late → nothing due → complete (vacuous)", v.rtComplete("chores","lucy","monday")===true); }
+console.log("🏆 whole-day bonus: pays when the last due list finishes, lists only, reverses on un-check");
+{ // chores has 2 due steps; afternoon has none configured (RT_DEFAULT only has chores) → day = chores only
+  const t=mk([{label:"A",pts:10},{label:"B",pts:5}],0,{},40);
+  t.toggleRtStep("chores","lucy",0);
+  ok("one step done → day not done, no day bonus", !t.rtDayDone("lucy","monday") && t.dayLines().length===0);
+  t.toggleRtStep("chores","lucy",1);
+  ok("last due list complete → 🏆 pays once (40)", t.rtDayDone("lucy","monday") && t.dayLines().length===1 && t.dayLines()[0].pts===40 && t.slState.week18_monday_lucy_day.done===true && !!t.slState.week18_monday_lucy_day.bonusBid);
+  t.toggleRtStep("chores","lucy",1); t.toggleRtStep("chores","lucy",1);
+  ok("re-check does not double pay", t.dayLines().length===1);
+  t.toggleRtStep("chores","lucy",0);
+  ok("un-check reopens the day → the 🏆 line is removed", !t.rtDayDone("lucy","monday") && t.dayLines().length===0 && t.removed.length>=1);
+  const z=mk([{label:"A",pts:10}],0,{},0); z.toggleRtStep("chores","lucy",0);
+  ok("day bonus 0 → nothing paid, day still marked done", z.dayLines().length===0 && z.slState.week18_monday_lucy_day.done===true);
+}
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

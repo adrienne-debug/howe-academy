@@ -1662,6 +1662,7 @@ function toggleMorningStep(kid,i){
   const allDone=morningComplete(kid,day), _prevSlot=slState[wk+"_"+day+"_"+kid+"_morning"];
   slState[wk+"_"+day+"_"+kid+"_morning"]={done:allDone,ts:allDone?nowTs():""};
   rtBonusSettle("morning",kid,wk,day,_prevSlot,allDone,morningDueIdx(kid,day).length);
+  if(typeof rtDayBonusSettle==="function") rtDayBonusSettle(kid,wk,day);
   if(allDone) mrOpen[kid]=false;   // auto-collapse when finished
   sv(wk+"_sl",slState);
   if(db) db.ref(wk+"/sl").set(slState);
@@ -1898,6 +1899,7 @@ function toggleRtStep(slot,kid,i){
   const allDone=rtComplete(slot,kid,day), _prevSlot=slState[wk+"_"+day+"_"+kid+"_"+slot];
   slState[wk+"_"+day+"_"+kid+"_"+slot]={done:allDone,ts:allDone?nowTs():""};
   rtBonusSettle(slot,kid,wk,day,_prevSlot,allDone,rtStepsFor(slot,kid).filter((st,i)=>rtDueOrLate(slot,kid,day,i,st)).length);
+  if(typeof rtDayBonusSettle==="function") rtDayBonusSettle(kid,wk,day);
   delete rtOpen[rtOpenKey(slot,kid)];      // a check-off resets any manual open/close → the list follows completion again
   sv(wk+"_sl",slState);
   if(db) db.ref(wk+"/sl").set(slState);
@@ -17195,6 +17197,29 @@ function rtBonusSettle(slot,kid,wk,d,prev,allDone,dueCount){
   else if(allDone&&was){ rec.bonusBid=prev.bonusBid; rec.bonusPts=prev.bonusPts; }
   slState[key]=rec;
 }
+// 🏆 Whole-DAY bonus (2026-08-18, her ask): config/routineBonus/day/{kid} = stars paid the moment the kid's LAST
+// open routine list of the day completes — purely the routine lists (Morning/Afternoon/Chores/Evening as they
+// apply that day; a list with nothing due doesn't block it; a not-yet-unlocked list still counts as open).
+// Schoolwork is NOT part of it (her call). Same pay-once / reverse-on-uncheck ledger tracking as the list bonus.
+function rtDayLists(kid,d){
+  const out=[]; (typeof activeSlots==="function"?activeSlots():["morning","afternoon","chores","evening"]).forEach(slot=>{
+    let due=0, done=false;
+    if(slot==="morning"&&typeof morningDueIdx==="function"){ due=morningDueIdx(kid,d).length; done=morningComplete(kid,d); }
+    else { due=rtStepsFor(slot,kid).filter((st,i)=>rtDueOrLate(slot,kid,d,i,st)).length; done=rtComplete(slot,kid,d); }
+    if(due>0) out.push({slot,done});
+  });
+  return out;
+}
+function rtDayDone(kid,d){ const L=rtDayLists(kid,d); return L.length>0&&L.every(x=>x.done); }
+function rtDayBonusSettle(kid,wk,d){
+  const bonus=rtBonusFor("day",kid), key=wk+"_"+d+"_"+kid+"_day", prev=slState[key]||{}, rec={};
+  const allDone=rtDayDone(kid,d), was=!!(prev.done&&prev.bonusBid);
+  rec.done=allDone; rec.ts=allDone?(prev.ts||nowTs()):"";
+  if(allDone&&bonus>0&&!was){ const bid=bankDirect(kid,bonus,"🏆 Whole day complete"); rec.bonusBid=bid||null; rec.bonusPts=bonus; if(typeof rlogAppend==="function") rlogAppend(kid,"day","🏆 Whole day complete bonus","on",bonus); }
+  else if(!allDone&&was){ bankDirectRemove(kid,prev.bonusBid); rec.bonusBid=null; rec.bonusPts=null; if(typeof rlogAppend==="function") rlogAppend(kid,"day","🏆 Whole day complete bonus","off",prev.bonusPts||0); }
+  else if(allDone&&was){ rec.bonusBid=prev.bonusBid; rec.bonusPts=prev.bonusPts; }
+  slState[key]=rec;
+}
 function zoneList(){ return (Array.isArray(zones)&&zones.length)?zones:ZONE_DEFAULT.slice(); }
 function zoneById(id){ return zoneList().filter(function(z){return z.id===id;})[0]||null; }
 function zoneToday(dn){ return (zonePlan||{})[dn||day]||""; }
@@ -17523,6 +17548,9 @@ function renderChorePlan(el,headerHtml){
     h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 4px;padding:9px 12px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;font-size:12.5px">'+
        '<b>🏁 Whole-list bonus for '+esc(cap(cpKid))+'</b><span style="color:var(--muted)">— banks the moment every due step is checked (as-needed items don\'t count). 0 = off.</span>'+
        '<input class="cpp-in" type="number" min="0" value="'+rtBonusFor(cpSlot,cpKid)+'" onchange="rtBonusSet(\''+cpSlot+'\',\''+cpKid+'\',this.value)" style="width:64px"> ⭐</div>';
+    h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 4px;padding:9px 12px;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:10px;font-size:12.5px">'+
+       '<b>🏆 Whole-day bonus for '+esc(cap(cpKid))+'</b><span style="color:var(--muted)">— banks when the LAST of the day\'s routine lists is finished (Morning · Afternoon · Chores · Evening as they apply; not schoolwork). One value per kid, shown on every list. 0 = off.</span>'+
+       '<input class="cpp-in" type="number" min="0" value="'+rtBonusFor("day",cpKid)+'" onchange="rtBonusSet(\'day\',\''+cpKid+'\',this.value)" style="width:64px"> ⭐</div>';
     h+='<button class="cp-addz" onclick="cpReset()" style="margin-left:6px">↺ Reset '+esc(cap(cpKid))+' to default</button>';
     if(ROSTER.length>1) h+='<button class="cp-addz" onclick="cpCopyToOthers()" style="margin-left:6px">⇉ Copy '+esc(cap(cpKid))+' → all others</button>';
   }
