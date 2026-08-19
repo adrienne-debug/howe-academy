@@ -24782,6 +24782,7 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
   const live=(liveTasks||[]).filter(isPlanCard); const want=(desired||[]).filter(isPlanCard);
   const wantBy={}; want.forEach(t=>{ wantBy[t.id]=t; });
   const liveBy={}; live.forEach(t=>{ liveBy[t.id]=t; });
+  const orig0={}; live.forEach(t=>{ orig0[t.id]={day:t.day,time:t.time}; });   // where each card started (objects are edited in place)
   const upd={}; const summary={added:[],moved:[],removed:[],retitled:[]};
   const after=(liveTasks||[]).slice();
   const freed={};   // day → [time] slots this subject just vacated (removed / moved away) — the next lesson takes the finished one's slot
@@ -24813,6 +24814,52 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
   after.forEach(t=>{ if(!isPlanCard(t)||t.time!=null||summary.moved.indexOf(t.id)<0) return; if(t.day!==opts.todayDay) return;
     const ld=landingDay({id:t.id,day:t.day}); if(!ld){ /* nowhere this week: put it back where it was (untouched) */ const i=summary.moved.indexOf(t.id); if(i>=0) summary.moved.splice(i,1); const w=wantBy[t.id]; const orig=(liveTasks||[]).find(x=>x&&x.id===t.id); if(orig){ t.day=orig.day; t.time=orig.time; } return; }
     t.day=ld; });
+  // Her rule (2026-08-19): a push must keep the subject SEQUENTIAL and under its day cap. When
+  // anything was pushed, this subject's open (unlocked) cards on the days after today — pushed,
+  // moved and kept alike — are re-laid in LIST order across the kid's remaining school days,
+  // `dayCap` per day (a locked card on a day uses up its room). A card that falls off the week is
+  // deferred: a new one is not added, an existing one is removed (unchecked, so next week's build
+  // serves it first). Without this, "push to the next school day" stacked pg 30 + pg 29 on one day.
+  summary.resequenced=[];
+  if(summary.pushed.length){
+    const cap=Math.max(1,parseInt(opts.dayCap,10)||1);
+    // Lesson order = the subject's list (lessonIds) when given — lid NUMBERS are not list order
+    // (Lincoln's EIC list runs L0002 → L0154 → L0003); else the generator's own serve order.
+    const lidOf=id=>{ const m=String(id||"").match(/_(L\d+)$/); return m?m[1]:""; };
+    const listIx={}; (opts.lidOrder||[]).forEach((l,i)=>{ if(listIx[l]==null) listIx[l]=i; });
+    const genIx={}; (desired||[]).forEach((w,i)=>{ if(w&&w.id&&genIx[w.id]==null) genIx[w.id]=i; });
+    const rank=t=>{ const li=listIx[lidOf(t.id)]; if(li!=null) return li; const gi=genIx[t.id]; return (gi!=null)?(1e5+gi):1e9; };
+    // Days the re-lay may use: where this subject already sits after today (live, generator-wanted,
+    // or where it started) plus the push landing day(s)…
+    const dayOk={}; after.forEach(t=>{ if(isPlanCard(t)&&dayIx(t.day)>tIx) dayOk[t.day]=1; }); want.forEach(w=>{ if(w.day&&dayIx(w.day)>tIx) dayOk[w.day]=1; });
+    Object.keys(orig0).forEach(id=>{ const d=orig0[id].day; if(dayIx(d)>tIx) dayOk[d]=1; });   // where cards STARTED (the diff above may already have moved them)
+    // …and any later school day the subject is ALLOWED on (no pins = every school day), so
+    // overflow spills forward onto its own pattern instead of falling off the week early.
+    const _abbr={monday:"Mon",tuesday:"Tue",wednesday:"Wed",thursday:"Thu",friday:"Fri",saturday:"Sat"};
+    const allowed=(opts.allowedDays&&opts.allowedDays.length)?opts.allowedDays:null;
+    _RP_DAYS.forEach(d=>{ if(dayIx(d)>tIx&&kidDays[d]&&(!allowed||allowed.indexOf(_abbr[d])>=0)) dayOk[d]=1; });
+    const days=_RP_DAYS.filter(d=>dayIx(d)>tIx&&dayOk[d]);
+    const room={}; days.forEach(d=>{ room[d]=cap-after.filter(t=>isPlanCard(t)&&t.day===d&&locked(t)).length; });
+    const pool=after.filter(t=>isPlanCard(t)&&dayIx(t.day)>tIx&&!locked(t)).sort((a,b)=>(rank(a)-rank(b))||String(a.id).localeCompare(String(b.id)));
+    let di=0;
+    pool.forEach(t=>{
+      while(di<days.length&&room[days[di]]<=0) di++;
+      if(di>=days.length){
+        const i=after.indexOf(t); if(i>=0) after.splice(i,1);
+        const ai=summary.added.indexOf(t.id);
+        if(ai>=0){ summary.added.splice(ai,1); const pi=summary.pushed.indexOf(t.id); if(pi>=0) summary.pushed.splice(pi,1); }
+        else { const mi=summary.moved.indexOf(t.id); if(mi>=0) summary.moved.splice(mi,1);
+          const ti=summary.retitled.indexOf(t.id); if(ti>=0) summary.retitled.splice(ti,1); delete upd[t.id+"/title"];   // one path per card: a removal can't ride with a retitle
+          upd[t.id]=null; summary.removed.push(t.id); }
+        summary.deferred.push(t.id); return;
+      }
+      const d=days[di]; room[d]--;
+      if(t.day===d) return;
+      if(t.time!=null) (freed[t.day]=freed[t.day]||[]).push(t.time);
+      t.day=d; t.time=null;
+      if(summary.added.indexOf(t.id)<0&&summary.moved.indexOf(t.id)<0){ summary.moved.push(t.id); summary.resequenced.push(t.id); }
+    });
+  }
   // time: place every un-timed card (added / moved) into its day.
   summary.shifted=[]; summary.relaid=[];
   const isCloseT=t=>t&&(t.subjectKey==="closing_nb"||String(t.title||"").toLowerCase().includes("closing notebook"));
@@ -24866,6 +24913,8 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
     closing.forEach(c=>{ if(locked(c)) return; const nt=opts.fromMin(momClosingSlot(c,dayAll,lastEnd,opts.toMin)); if(nt===c.time) return; c.time=nt; upd[c.id+"/time"]=nt; summary.closing.push(c.id); });
   });
   summary.added.forEach(id=>{ const t=after.find(x=>x.id===id); upd[id]=t; });
+  // A card the re-sequence carried back to where it started is no move at all — no write.
+  summary.moved=summary.moved.filter(id=>{ const t=after.find(x=>x.id===id); const o=orig0[id]; if(t&&o&&t.day===o.day&&t.time===o.time){ const ri=summary.resequenced.indexOf(id); if(ri>=0) summary.resequenced.splice(ri,1); return false; } return true; });
   summary.moved.forEach(id=>{ const t=after.find(x=>x.id===id); upd[id+"/day"]=t.day; upd[id+"/time"]=t.time; });
   summary.shifted.forEach(id=>{ if(upd[id]!==undefined||upd[id+"/time"]!==undefined) return; const t=after.find(x=>x.id===id); if(t) upd[id+"/time"]=t.time; });
   return {upd,summary,tasksAfter:after};
@@ -24886,13 +24935,14 @@ function reprojectSubjectWeek(kid,sk,why){
       const nowD=new Date(); const todayDay=_RP_DAYS[(nowD.getDay()+6)%7]||null;
       const gwR=gwRules();
       const dayCtx=day=>({start:(day===todayDay)?Math.max(gwR.schoolStart,nowD.getHours()*60+nowD.getMinutes()):gwR.schoolStart,end:gwR.schoolEnd,lunchStart:gwR.lunchStart,lunchEnd:gwR.lunchEnd,allowOvertime:true,overtimeMax:240});
-      const r=_reprojectPlan(kid,sk,weekData.tasks,gen.result.tasks,{todayDay,nowMin:nowD.getHours()*60+nowD.getMinutes(),checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},dayCtx,packAround,toMin,fromMin});
+      const _subj=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid]||{})[sk]||{};
+      const r=_reprojectPlan(kid,sk,weekData.tasks,gen.result.tasks,{todayDay,nowMin:nowD.getHours()*60+nowD.getMinutes(),checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},dayCtx,packAround,toMin,fromMin,dayCap:_subj.cap||1,lidOrder:_subj.lessonIds||[],allowedDays:_subj.allowedDays||[]});
       const n=r.summary.added.length+r.summary.moved.length+r.summary.removed.length+r.summary.retitled.length+((r.summary.closing||[]).length)+((r.summary.shifted||[]).length);
       out=r.summary;
       if(!n) return;
       weekData.tasks=r.tasksAfter; sv(WK+"_tasks",weekData.tasks);
       if(db&&!_dryRun()) db.ref(WK+"/tasks").update(r.upd);
-      dbg&&dbg("reproject "+kid+"/"+sk+" ("+(why||"")+"): +"+r.summary.added.length+" ↔"+r.summary.moved.length+" −"+r.summary.removed.length+" ✎"+r.summary.retitled.length+" 🌙"+((r.summary.closing||[]).length)+" ⤵"+((r.summary.shifted||[]).length)+" ➡"+((r.summary.pushed||[]).length)+" ⏭"+((r.summary.deferred||[]).length));
+      dbg&&dbg("reproject "+kid+"/"+sk+" ("+(why||"")+"): +"+r.summary.added.length+" ↔"+r.summary.moved.length+" −"+r.summary.removed.length+" ✎"+r.summary.retitled.length+" 🌙"+((r.summary.closing||[]).length)+" ⤵"+((r.summary.shifted||[]).length)+" ➡"+((r.summary.pushed||[]).length)+" 🔢"+((r.summary.resequenced||[]).length)+" ⏭"+((r.summary.deferred||[]).length));
     }catch(e){ dbg&&dbg("reproject skip: "+e); }
     finally{ release(); }
   });

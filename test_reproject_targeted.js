@@ -242,5 +242,61 @@ console.log("closing-last: a Mom-required Closing (Julian) never lands on anothe
   ok("helper: 11:20 → 12:10 (past nested Lucy/Ellis block and Lincoln's 12:00; 'maybe' ignored)", slot === tm("12:10 PM"), slot);
 }
 
+console.log("push keeps the subject sequential + under cap (her rule 2026-08-19)");
+{
+  const e = mkEnv();
+  // wk18 live shape: cards Thu pg29 / Fri pg30; generator wants Wed pg29 (today, in progress) / Thu pg30.
+  // Old behavior: pg29 pushed onto Thu next to pg30 (two on Thu, Fri empty). New: pg29 Thu, pg30 Fri.
+  const mkLive = () => [T("lincoln_lincoln__ws_L0014", "thursday", "3:15 PM", "EIC — pg 29"), T("lincoln_lincoln__ws_L0015", "friday", "3:30 PM", "EIC — pg 30"),
+    T("other_thu", "thursday", "10:00 AM", "x", { subjectKey: "zz" }), T("other_fri", "friday", "10:00 AM", "x", { subjectKey: "zz" })];
+  const desired = [T("lincoln_lincoln__ws_L0014", "wednesday", "2:00 PM", "EIC — pg 29"), T("lincoln_lincoln__ws_L0015", "thursday", "3:15 PM", "EIC — pg 30")];
+  const r = e._reprojectPlan("lincoln", "ws", mkLive(), desired, OPTS({ dayCap: 1 }));
+  const at = id => (r.tasksAfter.find(t => t.id.endsWith(id)) || {}).day;
+  ok("pg29 pushed to Thu", at("L0014") === "thursday" && eq(r.summary.pushed, []) === false);
+  ok("pg30 re-sequenced to Fri (not stacked on Thu)", at("L0015") === "friday", at("L0015"));
+  ok("both end where they started (Thu/Fri) → nothing written at all", eq(r.upd, {}) && eq(r.summary.moved, []), r.upd);
+  ok("Thu holds exactly one of the subject", r.tasksAfter.filter(t => /ws_L00/.test(t.id) && t.day === "thursday").length === 1);
+  // cap 2 → both may sit on Thu, order preserved (pg29 before pg30 in time)
+  const r2 = e._reprojectPlan("lincoln", "ws", mkLive(), desired, OPTS({ dayCap: 2 }));
+  const thu2 = r2.tasksAfter.filter(t => /ws_L00/.test(t.id) && t.day === "thursday").sort((a, b) => toMin(a.time) - toMin(b.time)).map(t => t.id.slice(-5));
+  ok("cap 2: both on Thu, pg29 before pg30", eq(thu2, ["L0014", "L0015"]), thu2);
+  // Off the week: today Thu, only Fri left; pg29 (wants Thu) pushed to Fri; pg30 (on Fri) has no day → removed/deferred
+  const live3 = [T("lincoln_lincoln__ws_L0015", "friday", "3:30 PM", "EIC — pg 30"), T("other_fri", "friday", "10:00 AM", "x", { subjectKey: "zz" }), T("other_thu", "thursday", "10:00 AM", "x", { subjectKey: "zz" })];
+  const desired3 = [T("lincoln_lincoln__ws_L0014", "thursday", "2:00 PM", "EIC — pg 29"), T("lincoln_lincoln__ws_L0015", "friday", "3:30 PM", "EIC — pg 30")];
+  const r3 = e._reprojectPlan("lincoln", "ws", live3, desired3, OPTS({ todayDay: "thursday", dayCap: 1 }));
+  const fri3 = r3.tasksAfter.filter(t => /ws_L00/.test(t.id) && t.day === "friday").map(t => t.id.slice(-5));
+  ok("only pg29 on Fri; pg30 removed + deferred (next week's build serves it first)", eq(fri3, ["L0014"]) && r3.upd["lincoln_lincoln__ws_L0015"] === null && r3.summary.deferred.indexOf("lincoln_lincoln__ws_L0015") >= 0, { fri3, def: r3.summary.deferred });
+  // A checked (locked) later lesson never moves and uses up the day's room
+  const live4 = mkLive(); const r4 = e._reprojectPlan("lincoln", "ws", live4, desired, OPTS({ dayCap: 1, checked: { "lincoln_lincoln__ws_L0015": true } }));
+  ok("locked pg30 stays on Fri; pg29 lands Thu", (r4.tasksAfter.find(t => t.id.endsWith("L0015")) || {}).day === "friday" && (r4.tasksAfter.find(t => t.id.endsWith("L0014")) || {}).day === "thursday");
+  // No push → no re-sequencing at all (plain move/add paths untouched)
+  const r5 = e._reprojectPlan("lincoln", "ws", mkLive(), [T("lincoln_lincoln__ws_L0014", "thursday", "3:15 PM", "EIC — pg 29"), T("lincoln_lincoln__ws_L0015", "friday", "3:30 PM", "EIC — pg 30")], OPTS({ dayCap: 1 }));
+  ok("nothing pushed → nothing re-sequenced", eq(r5.summary.resequenced, []) && eq(r5.summary.moved, []));
+}
+
+console.log("push re-sequence: audit cases");
+{
+  const e = mkEnv();
+  // (a) Tue/Thu subject, today Mon: pushed card → Tue; the Thu card STAYS Thu (Wed is not its day)
+  const liveA = [T("lincoln_lincoln__ws_L0002", "thursday", "2:00 PM", "b"),
+    T("o_tue", "tuesday", "10:00 AM", "x", { subjectKey: "zz" }), T("o_wed", "wednesday", "10:00 AM", "x", { subjectKey: "zz" }), T("o_thu", "thursday", "10:00 AM", "x", { subjectKey: "zz" })];
+  const desA = [T("lincoln_lincoln__ws_L0001", "monday", "2:00 PM", "a"), T("lincoln_lincoln__ws_L0002", "thursday", "2:00 PM", "b")];
+  const rA = e._reprojectPlan("lincoln", "ws", liveA, desA, OPTS({ todayDay: "monday", dayCap: 1, allowedDays: ["Mon", "Thu"] }));
+  const dA = id => (rA.tasksAfter.find(t => t.id.endsWith(id)) || {}).day;
+  ok("pushed L0001 → Tue (next school day), L0002 stays Thu — Wed untouched", dA("L0001") === "tuesday" && dA("L0002") === "thursday", { a: dA("L0001"), b: dA("L0002") });
+  // (b) list order beats lid number: list is [L0002, L0154, L0003]; pushed L0154 must sit BEFORE L0003
+  const liveB = [T("lincoln_lincoln__ws_L0003", "thursday", "2:00 PM", "c"), T("o_thu", "thursday", "10:00 AM", "x", { subjectKey: "zz" }), T("o_fri", "friday", "10:00 AM", "x", { subjectKey: "zz" })];
+  const desB = [T("lincoln_lincoln__ws_L0154", "wednesday", "2:00 PM", "m"), T("lincoln_lincoln__ws_L0003", "thursday", "2:00 PM", "c")];
+  const rB = e._reprojectPlan("lincoln", "ws", liveB, desB, OPTS({ dayCap: 1, lidOrder: ["L0001", "L0002", "L0154", "L0003"] }));
+  const dB = id => (rB.tasksAfter.find(t => t.id.endsWith(id)) || {}).day;
+  ok("L0154 (earlier in LIST) → Thu, L0003 → Fri", dB("L0154") === "thursday" && dB("L0003") === "friday", { m: dB("L0154"), c: dB("L0003") });
+  // (c) retitled card that falls off the week: removal only, no /title path riding along
+  const liveC = [T("lincoln_lincoln__ws_L0015", "friday", "3:30 PM", "old title"), T("o_fri", "friday", "10:00 AM", "x", { subjectKey: "zz" }), T("o_thu", "thursday", "10:00 AM", "x", { subjectKey: "zz" })];
+  const desC = [T("lincoln_lincoln__ws_L0014", "thursday", "2:00 PM", "pg 29"), T("lincoln_lincoln__ws_L0015", "friday", "3:30 PM", "NEW title")];
+  const rC = e._reprojectPlan("lincoln", "ws", liveC, desC, OPTS({ todayDay: "thursday", dayCap: 1 }));
+  ok("removed card carries no /title write", rC.upd["lincoln_lincoln__ws_L0015"] === null && rC.upd["lincoln_lincoln__ws_L0015/title"] === undefined && rC.summary.retitled.indexOf("lincoln_lincoln__ws_L0015") < 0, rC.upd);
+  ok("no path in upd is a prefix of another (Firebase multi-path rule)", (() => { const ks = Object.keys(rC.upd); return ks.every(k => ks.every(o => o === k || !o.startsWith(k + "/"))); })(), Object.keys(rC.upd));
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
