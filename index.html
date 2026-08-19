@@ -1855,7 +1855,10 @@ function rtComplete(slot,kid,d){ const steps=rtStepsFor(slot,kid); if(!steps.len
 function rtEveningHour(){ const h=parseInt(routineTimes&&routineTimes.eveningHour,10); return isNaN(h)?18:h; }
 function rtFmtHour(h){ const ap=h>=12?"PM":"AM"; let hh=h%12; if(hh===0)hh=12; return hh+":00 "+ap; }
 function rtSchoolworkDone(kid,d){ const ts=getActiveTasks().filter(t=>t.who===kid&&effectiveDay(t)===d&&!t.id.endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title)); return ts.length===0?true:ts.every(t=>!!checked[t.id]); }
-function rtAvailable(slot,kid,d){ if(slot==="afternoon") return rtSchoolworkDone(kid,d); if(slot==="evening") return (d!==_todayDay)||(new Date().getHours()>=rtEveningHour()); return true; }
+// Afternoon (2026-08-18, her rule): opens when schoolwork is done — or at the afternoon hour (default
+// 4:00 PM) regardless, so a slow school day never holds the chores hostage. Past days: always open.
+function rtAfternoonHour(){ const h=parseInt(routineTimes&&routineTimes.afternoonHour,10); return isNaN(h)?16:h; }
+function rtAvailable(slot,kid,d){ if(slot==="afternoon") return rtSchoolworkDone(kid,d)||(d!==_todayDay)||(new Date().getHours()>=rtAfternoonHour()); if(slot==="evening") return (d!==_todayDay)||(new Date().getHours()>=rtEveningHour()); return true; }
 function toggleRtOpen(slot,kid){ const k=slot+"_"+kid; rtOpen[k]=(rtOpen[k]!==false)?false:true; renderSkylight(); }
 function toggleRtStep(slot,kid,i){
   if(!rtAvailable(slot,kid,day)){
@@ -2010,7 +2013,7 @@ function rtSlotHTML(slot,kid){
   const optIdx=steps.map((st,i)=>i).filter(i=>(steps[i].cad==="asneeded")&&stepWindowOk(steps[i],day)&&dueIdx.indexOf(i)<0);
   const doneCount=dueIdx.filter(i=>rtDoneOn(slot,kid,day,i)).length, allDone=total>0&&doneCount===total;
   if(!avail){
-    const msg=slot==="afternoon"?"Finish your school work to unlock":("Opens at "+rtFmtHour(rtEveningHour()));
+    const msg=slot==="afternoon"?("Finish your school work to unlock \u00b7 opens at "+rtFmtHour(rtAfternoonHour())+" anyway"):("Opens at "+rtFmtHour(rtEveningHour()));
     return '<div class="sl-check-row" style="opacity:.6">'+
       '<div class="sl-checkbox" style="background:none;border-color:var(--border);color:var(--muted)">&#128274;</div>'+
       '<div style="flex:1"><div class="sl-slot-name">'+label+' <span style="color:var(--muted);font-weight:700">0/'+total+'</span></div>'+
@@ -4494,8 +4497,14 @@ function chSettingsClickoffLogHTML(){
 
   return h;
 }
+function rtSetAfternoonHour(v){ routineTimes=Object.assign({},routineTimes,{afternoonHour:parseInt(v,10)||16}); if(db) db.ref("config/routineTimes").set(routineTimes); renderAll(); }
 function chSettingsEveningHourHTML(){
   let h='';
+  h+='<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f9fafb;border:1px solid var(--border);border-radius:10px;margin-bottom:12px;flex-wrap:wrap">';
+  h+='<div style="font-size:12px"><b>Afternoon opens at</b><div style="font-size:10px;color:var(--muted)">Unlocks when schoolwork is done, or at this time regardless</div></div>';
+  h+='<select onchange="rtSetAfternoonHour(this.value)" style="margin-left:auto;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif">';
+  [13,14,15,16,17,18].forEach(function(hh){ h+='<option value="'+hh+'"'+(hh===rtAfternoonHour()?' selected':'')+'>'+rtFmtHour(hh)+'</option>'; });
+  h+='</select></div>';
   h+='<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f9fafb;border:1px solid var(--border);border-radius:10px;margin-bottom:12px;flex-wrap:wrap">';
   h+='<div style="font-size:12px"><b>Evening starts at</b><div style="font-size:10px;color:var(--muted)">When the Evening list unlocks each day</div></div>';
   h+='<select onchange="rtSetEveningHour(this.value)" style="margin-left:auto;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif">';
