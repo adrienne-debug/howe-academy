@@ -23,8 +23,8 @@ const eq = (x, y) => JSON.stringify(x) === JSON.stringify(y);
 
 const toMin = s => { if (!s) return 0; const m = String(s).match(/(\d+):(\d+)\s*(AM|PM)/i); if (!m) return 0; let h = +m[1] % 12; if (/PM/i.test(m[3])) h += 12; return h * 60 + +m[2]; };
 const fromMin = m => { const h = Math.floor(m / 60), mm = m % 60; const ap = h >= 12 ? "PM" : "AM"; const hh = ((h + 11) % 12) + 1; return hh + ":" + String(mm).padStart(2, "0") + " " + ap; };
-// simple packer stub: place each new task right after the last fixed task (or day start)
-const packAround = (fixed, news, ctx) => { let cur = ctx.start; fixed.forEach(t => { cur = Math.max(cur, toMin(t.time) + (t.dur || 20)); }); news.forEach(t => { t.time = fromMin(cur); cur += (t.dur || 20); }); return []; };
+// packer stub: per-kid cursor seeded past that kid's fixed cards (and past ctx.start), places news in order
+const packAround = (fixed, news, ctx) => { const cur = {}; fixed.forEach(t => { cur[t.who] = Math.max(cur[t.who] || ctx.start, toMin(t.time) + (t.dur || 20)); }); news.forEach(t => { const c = Math.max(cur[t.who] || ctx.start, ctx.start); t.time = fromMin(c); cur[t.who] = c + (t.dur || 20); }); return []; };
 const dayCtx = () => ({ start: 600, end: 975, lunchStart: 780, lunchEnd: 840 });
 
 function mkEnv() {
@@ -47,7 +47,7 @@ console.log("_reprojectPlan — pure diff by id");
     { id: "lincoln_lincoln__mr_L0009", who: "lincoln", subjectKey: "mr", day: "friday", time: "10:00 AM", dur: 20, title: "MR z" }, // other subject, plan id
   ];
   const desired = [
-    T("lincoln_lincoln__ws_L0003", "friday", "9:00 AM", "WS — c"),       // moved to friday
+    T("lincoln_lincoln__ws_L0003", "friday", "10:20 AM", "WS — c"),      // moved to friday — generator slot 10:20 (after MR + L0005 at 10:00)
     T("lincoln_lincoln__ws_L0005", "friday", "9:30 AM", "WS — e2"),      // renamed
     T("lincoln_lincoln__ws_L0006", "thursday", "9:00 AM", "WS — f"),     // new
     T("lincoln_lincoln__ws_L0002", "monday", "9:00 AM", "WS — b"),       // generator "wants" it Monday (past) → ignored (started/past)
@@ -60,8 +60,8 @@ console.log("_reprojectPlan — pure diff by id");
   ok("moved: L0003 → friday, day+time paths only", eq(r.summary.moved, ["lincoln_lincoln__ws_L0003"]) && r.upd["lincoln_lincoln__ws_L0003/day"] === "friday" && typeof r.upd["lincoln_lincoln__ws_L0003/time"] === "string" && !("lincoln_lincoln__ws_L0003" in r.upd), r.upd);
   ok("added: L0006 on thursday, full task written, INHERITS the slot L0004 freed there (10:00 AM)", eq(r.summary.added, ["lincoln_lincoln__ws_L0006"]) && r.upd["lincoln_lincoln__ws_L0006"] && r.upd["lincoln_lincoln__ws_L0006"].day === "thursday" && r.upd["lincoln_lincoln__ws_L0006"].time === "10:00 AM", r.upd["lincoln_lincoln__ws_L0006"]);
   ok("retitled: L0005 title path only", eq(r.summary.retitled, ["lincoln_lincoln__ws_L0005"]) && r.upd["lincoln_lincoln__ws_L0005/title"] === "WS — e2");
-  ok("moved L0003 packed on friday after MR (10:20 — nothing freed there) and L0005 stays 10:00", r.upd["lincoln_lincoln__ws_L0003/time"] === "10:20 AM");
-  ok("other subjects never named", !Object.keys(r.upd).some(k => /aas|mr_L|2026d/.test(k)));
+  ok("moved L0003 → friday RE-LAID by rules: L0005 10:00 (gen 9:30) · MR 10:20 (live 10:00) · L0003 10:40 (gen 10:20)", r.upd["lincoln_lincoln__ws_L0003/time"] === "10:40 AM" && r.tasksAfter.find(t => t.id.endsWith("ws_L0005")).time === "10:00 AM" && r.upd["lincoln_lincoln__mr_L0009/time"] === "10:20 AM" && eq(r.summary.relaid, ["friday"]));
+  ok("other subjects only ever get a /time (never added/removed/moved-day/retitled)", Object.keys(r.upd).filter(k => /aas|mr_L|2026d/.test(k)).every(k => /\/time$/.test(k)));
   ok("checked / history paths never named", !Object.keys(r.upd).some(k => /checked|history/.test(k)));
   ok("tasksAfter keeps every non-subject card", r.tasksAfter.some(t => t.id === "2026d230_7") && r.tasksAfter.some(t => t.id === "lincoln_lincoln__mr_L0009"));
   // idempotent
@@ -83,8 +83,8 @@ console.log("_reprojectPlan — pure diff by id");
   ok("desired card on a past day is not added", eq(r.upd, {}));
   // no time room: packer overflows → card lands at end of day, never dropped
   const over = (fixed, news) => news.slice();
-  const r2 = e._reprojectPlan("lincoln", "ws", [T("2026d1_1", "thursday", "3:00 PM", "x", { subjectKey: "aas", dur: 60 })], [T("lincoln_lincoln__ws_L0006", "thursday", "9:00 AM", "WS — f")], OPTS({ packAround: over }));
-  ok("overflow → still added, timed after the last fixed card (4:00 PM)", r2.upd["lincoln_lincoln__ws_L0006"] && r2.upd["lincoln_lincoln__ws_L0006"].time === "4:00 PM", r2.upd);
+  const r2 = e._reprojectPlan("lincoln", "ws", [T("2026d1_1", "thursday", "3:00 PM", "x", { subjectKey: "aas", dur: 60 })], [T("lincoln_lincoln__ws_L0006", "thursday", null, "WS — f")], OPTS({ packAround: over }));
+  ok("no generator slot + packer overflow → still added, timed after the last fixed card (4:00 PM)", r2.upd["lincoln_lincoln__ws_L0006"] && r2.upd["lincoln_lincoln__ws_L0006"].time === "4:00 PM", r2.upd);
   // same-day slot inheritance: finished 12:20 lesson leaves → next lesson moved onto that day takes 12:20
   const r4 = e._reprojectPlan("lincoln", "ws", [T("lincoln_lincoln__ws_L0014", "thursday", "12:20 PM", "WS — a"), T("lincoln_lincoln__ws_L0016", "friday", "11:50 AM", "WS — b")], [T("lincoln_lincoln__ws_L0016", "thursday", "9:00 AM", "WS — b")], OPTS());
   ok("moved-in card inherits the freed same-day slot (12:20 PM), not end of day", r4.upd["lincoln_lincoln__ws_L0016/time"] === "12:20 PM" && r4.upd["lincoln_lincoln__ws_L0016/day"] === "thursday", r4.upd);
@@ -153,6 +153,52 @@ console.log("closing-last: Closing Notebook stays the day's final card");
   const live4 = [T("lincoln_lincoln__ws_L0004", "monday", "2:00 PM", "WS — d"), C("monday", "1:00 PM")];
   const r4 = e._reprojectPlan("lincoln", "ws", live4, live4.slice(0, 1), OPTS());
   ok("past-day closing never moves", r4.tasksAfter.find(t => t.id === "c_monday").time === "1:00 PM");
+}
+
+console.log("extras: swap stays · extra on today → next school day · receiving day re-laid by the rules");
+{
+  const e = mkEnv();
+  const O = (id, who, day, time, dur, extra) => Object.assign({ id, who, subjectKey: "aas", day, time, dur, title: "other " + id }, extra || {});
+  const C = (who, day, time) => ({ id: "c_" + who + "_" + day, who, subjectKey: "closing_nb", day, time, dur: 5, title: "📖 Closing Notebook — Closing Notebook" });
+  // today = wednesday, now 11:00. Thursday has cards for lincoln (10:00 A, 10:20 B) and lucy (10:00 X). Friday: lincoln 10:00 F1.
+  const mk = () => [
+    O("wa", "lincoln", "wednesday", "10:00 AM", 20), O("wb", "lincoln", "wednesday", "12:00 PM", 25), C("lincoln", "wednesday", "12:25 PM"),
+    O("a", "lincoln", "thursday", "10:00 AM", 20), O("b", "lincoln", "thursday", "10:20 AM", 25), C("lincoln", "thursday", "10:45 AM"),
+    O("x", "lucy", "thursday", "10:00 AM", 30),
+    O("f1", "lincoln", "friday", "10:00 AM", 20)];
+  // 1) EXTRA wanted on TODAY (nothing freed today) → pushed to thursday; thursday re-laid in generator order (WS at 10:20 → between A and B)
+  const r = e._reprojectPlan("lincoln", "ws", mk(), [T("lincoln_lincoln__ws_L0007", "wednesday", "11:30 AM", "WS — g"), T("lincoln_lincoln__ws_L0007", "thursday", "10:20 AM", "WS — g")].slice(0, 1).concat([]), OPTS());
+  const at = id => (r.tasksAfter.find(t => t.id === id) || {}).time;
+  const dayOf = id => (r.tasksAfter.find(t => t.id === id) || {}).day;
+  ok("extra on today is NOT placed today — pushed to the next school day (thursday)", dayOf("lincoln_lincoln__ws_L0007") === "thursday" && eq(r.summary.pushed, ["lincoln_lincoln__ws_L0007"]));
+  ok("today's cards untouched", at("wa") === "10:00 AM" && at("wb") === "12:00 PM" && !("wb/time" in r.upd));
+  ok("thursday re-laid: no generator time for the pushed card → goes last in order (10:45), A/B keep 10:00/10:20", at("a") === "10:00 AM" && at("b") === "10:20 AM" && at("lincoln_lincoln__ws_L0007") === "10:45 AM" && eq(r.summary.relaid, ["thursday"]));
+  ok("lucy's thursday card never moves", at("x") === "10:00 AM" && !Object.keys(r.upd).some(k => k.indexOf("x") === 0));
+  ok("thursday closing follows", at("c_lincoln_thursday") === "11:05 AM");
+  // 2) EXTRA wanted on THURSDAY with generator slot 10:20 → thursday re-laid in that order: A · WS · B
+  const r2 = e._reprojectPlan("lincoln", "ws", mk(), [T("lincoln_lincoln__ws_L0007", "thursday", "10:20 AM", "WS — g")], OPTS());
+  const at2 = id => (r2.tasksAfter.find(t => t.id === id) || {}).time;
+  ok("future-day extra: kid's day re-laid in workflow order — A 10:00 · WS 10:20 · B 10:40", at2("a") === "10:00 AM" && at2("lincoln_lincoln__ws_L0007") === "10:20 AM" && at2("b") === "10:40 AM");
+  ok("B's move is a targeted /time write, reported as shifted", r2.upd["b/time"] === "10:40 AM" && eq(r2.summary.shifted, ["b"]));
+  ok("closing follows to 11:05", at2("c_lincoln_thursday") === "11:05 AM" && r2.upd["c_lincoln_thursday/time"] === "11:05 AM");
+  ok("nothing pushed/deferred", eq(r2.summary.pushed, []) && eq(r2.summary.deferred, []));
+  // 3) SWAP on today: L0006 leaves today (unstarted, 12:30), generator wants L0007 today → takes 12:30, nothing else moves
+  const live3 = mk().concat([T("lincoln_lincoln__ws_L0006", "wednesday", "12:30 PM", "WS — f")]);
+  const r3 = e._reprojectPlan("lincoln", "ws", live3, [T("lincoln_lincoln__ws_L0007", "wednesday", "10:00 AM", "WS — g")], OPTS());
+  const at3 = id => (r3.tasksAfter.find(t => t.id === id) || {}).time;
+  ok("swap on today: new card takes the freed 12:30 slot, stays today", (r3.tasksAfter.find(t => t.id.endsWith("L0007")) || {}).day === "wednesday" && at3("lincoln_lincoln__ws_L0007") === "12:30 PM" && eq(r3.summary.pushed, []));
+  ok("swap: no other card on the day moves", at3("wa") === "10:00 AM" && at3("wb") === "12:00 PM" && eq(r3.summary.shifted, []) && eq(r3.summary.relaid, []));
+  // 4) EXTRA on today with NO later school day this week (today = friday) → not added, deferred
+  const r4 = e._reprojectPlan("lincoln", "ws", [O("f1", "lincoln", "friday", "10:00 AM", 20)], [T("lincoln_lincoln__ws_L0007", "friday", "10:20 AM", "WS — g")], OPTS({ todayDay: "friday" }));
+  ok("no next school day → not added this week, reported deferred", !r4.tasksAfter.some(t => t.id.endsWith("L0007")) && eq(r4.summary.deferred, ["lincoln_lincoln__ws_L0007"]) && eq(r4.upd, {}));
+  // 5) checked card on the receiving day never moves; the re-lay packs around it
+  const live5 = [O("a", "lincoln", "thursday", "10:00 AM", 20), O("b", "lincoln", "thursday", "10:20 AM", 25)];
+  const r5 = e._reprojectPlan("lincoln", "ws", live5, [T("lincoln_lincoln__ws_L0007", "thursday", "10:00 AM", "WS — g")], OPTS({ checked: { b: 1 } }));
+  const at5 = id => (r5.tasksAfter.find(t => t.id === id) || {}).time;
+  ok("checked B stays 10:20; A and WS pack after it (kid cursor seeded past the locked card)", at5("b") === "10:20 AM" && !("b/time" in r5.upd) && toMin(at5("lincoln_lincoln__ws_L0007")) >= toMin("10:45 AM") && toMin(at5("a")) >= toMin("10:45 AM"));
+  // idempotent
+  const r6 = e._reprojectPlan("lincoln", "ws", r2.tasksAfter, [T("lincoln_lincoln__ws_L0007", "thursday", "10:20 AM", "WS — g")], OPTS());
+  ok("running again → no changes", eq(r6.upd, {}), r6.upd);
 }
 
 console.log("hooks (source assertions)");
