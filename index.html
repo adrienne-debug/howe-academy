@@ -18563,7 +18563,8 @@ function cascadeIntraWeek(sweepTodayElapsed){
         if(!closes.length) return;
         let lastEnd=_nowMin; others.forEach(t=>{ const e=toMin(t.time)+(t.dur||20); if(e>lastEnd)lastEnd=e; });
         closes.sort((a,b)=>toMin(a.time)-toMin(b.time));
-        closes.forEach((c,i)=>{ if(toMin(c.time)<lastEnd){ c.time=fromMin(lastEnd+i*(c.dur||20)); _healMoved=true; _healUpd[c.id+"/time"]=c.time; } });
+        const dayAll=weekData.tasks.filter(t=>t.day===today&&!t.id.endsWith("_c"));
+        closes.forEach((c,i)=>{ if(toMin(c.time)<lastEnd){ c.time=fromMin(momClosingSlot(c,dayAll,lastEnd+i*(c.dur||20))); _healMoved=true; _healUpd[c.id+"/time"]=c.time; } });
       });
     }
     // ── Scar re-pack (quiet sweeps): a late-day regenerate re-serves lessons that are
@@ -24751,6 +24752,20 @@ function gvMenuOff(kid,dn,sk){
 // re-running it after the relay's Undo re-syncs the cards to the restored cells.
 // Returns {added,moved,removed,retitled} or null (not applicable / lock held elsewhere).
 const _RP_DAYS=["monday","tuesday","wednesday","thursday","friday","saturday"];
+// A Mom-required Closing Notebook (Julian's) is re-timed by every closing-last pass to the
+// kid's last card end — none of them looked at Mom's timeline, so it landed ON another kid's
+// Mom card (wk18 live: Tue 11:15 / Wed 11:20 / Thu 11:00 vs Lucy). Slide it to the first gap at
+// or after `from` where no OTHER kid's Mom-required card on that day is running. Closings that
+// don't need Mom return `from` unchanged. `tm` = toMin (passed in by the pure REPROJ diff).
+function momClosingSlot(closing,dayTasks,from,tm){
+  tm=tm||toMin;
+  if(!closing||closing.mom!=="required") return from;
+  var dur=closing.dur||5, t=from;
+  var busy=(dayTasks||[]).filter(function(x){ return x&&x.id!==closing.id&&x.who!==closing.who&&x.mom==="required"&&x.time!=null; })
+    .map(function(x){ var st=tm(x.time); return [st,st+(x.dur||20)]; }).sort(function(a,b){ return a[0]-b[0]; });
+  for(var i=0;i<busy.length;i++){ if(busy[i][1]<=t) continue; if(busy[i][0]>=t+dur) break; t=busy[i][1]; }
+  return t;
+}
 function _reprojectPlan(kid,sk,liveTasks,desired,opts){
   // Pure diff — no globals except what opts carries. liveTasks/desired = arrays of task
   // objects; opts = {todayDay, nowMin, checked, claimed, dayCtx(day)→ctx for packAround,
@@ -24847,7 +24862,8 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
     const closing=dayCards.filter(isClose), others=dayCards.filter(t=>!isClose(t));
     if(!closing.length||!others.length) return;
     let lastEnd=0; others.forEach(t=>{ const e=opts.toMin(t.time)+(t.dur||20); if(e>lastEnd) lastEnd=e; });
-    closing.forEach(c=>{ if(locked(c)) return; const nt=opts.fromMin(lastEnd); if(nt===c.time) return; c.time=nt; upd[c.id+"/time"]=nt; summary.closing.push(c.id); });
+    const dayAll=after.filter(t=>t&&t.day===day&&!String(t.id||"").endsWith("_c"));
+    closing.forEach(c=>{ if(locked(c)) return; const nt=opts.fromMin(momClosingSlot(c,dayAll,lastEnd,opts.toMin)); if(nt===c.time) return; c.time=nt; upd[c.id+"/time"]=nt; summary.closing.push(c.id); });
   });
   summary.added.forEach(id=>{ const t=after.find(x=>x.id===id); upd[id]=t; });
   summary.moved.forEach(id=>{ const t=after.find(x=>x.id===id); upd[id+"/day"]=t.day; upd[id+"/time"]=t.time; });
@@ -33645,7 +33661,8 @@ function runDisplacement(){
     var closing=mine.filter(_isClosingNb), others=mine.filter(function(t){return !_isClosingNb(t);});
     if(!closing.length||!others.length) return;
     var lastEnd=0; others.forEach(function(t){ var e=toMin(t.time)+(t.dur||20); if(e>lastEnd)lastEnd=e; });
-    closing.forEach(function(c){ c.time=fromMin(lastEnd); });
+    var dayAll=working.filter(function(t){return t.day===d;});
+    closing.forEach(function(c){ c.time=fromMin(momClosingSlot(c,dayAll,lastEnd)); });
   }
 
   // Bumped CLASSES cascade across the open days (workflow order, sticky pairs adjacent);

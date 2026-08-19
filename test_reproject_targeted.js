@@ -208,5 +208,39 @@ console.log("hooks (source assertions)");
   ok("never writes via gwCommit / whole-map set", !/reprojectSubjectWeek[\s\S]{0,4000}gwCommit\(\)/.test(block) && !/\.set\(/.test(block));
 }
 
+console.log("closing-last: a Mom-required Closing (Julian) never lands on another kid's Mom card");
+{
+  const e = mkEnv();
+  const J = (id, day, time, extra) => Object.assign({ id, who: "julian", subjectKey: "ws", day, time, dur: 10, title: "J", lid: id.split("_").pop() }, extra || {});
+  const CJ = (day, time) => ({ id: "cj_" + day, who: "julian", subjectKey: "closing_nb", day, time, dur: 5, mom: "required", title: "📖 Closing Notebook — Closing Notebook" });
+  const CL = (day, time) => ({ id: "cl_" + day, who: "lincoln", subjectKey: "closing_nb", day, time, dur: 5, mom: "none", title: "📖 Closing Notebook — Closing Notebook" });
+  // Thursday: the re-lay re-packs Julian's day from 10:00 (stub) → L0001 10:00, L0002 10:10, work ends 10:20;
+  // Lucy has a Mom-required HWT 10:20–10:30 and Read-Aloud 10:30–10:50 → Julian's closing must land at 10:50, not 10:20.
+  const lucyHWT = { id: "lucy_lucy__hwt_L0026", who: "lucy", subjectKey: "hwt", day: "thursday", time: "10:20 AM", dur: 10, mom: "required", title: "HWT" };
+  const lucyRA = { id: "ra_lucy", who: "lucy", subjectKey: "read_aloud", day: "thursday", time: "10:30 AM", dur: 20, mom: "required", title: "Read-Aloud" };
+  const lucyIndep = { id: "ind_lucy", who: "lucy", subjectKey: "x", day: "thursday", time: "10:50 AM", dur: 20, mom: "none", title: "independent" };
+  const live = [J("julian_julian__ws_L0001", "thursday", "11:00 AM"), CJ("thursday", "11:10 AM"), lucyHWT, lucyRA, lucyIndep];
+  const desired = [J("julian_julian__ws_L0001", "thursday", "11:00 AM"), J("julian_julian__ws_L0002", "thursday", "11:10 AM")];
+  const r = e._reprojectPlan("julian", "ws", live, desired, OPTS());
+  const cj = r.tasksAfter.find(t => t.id === "cj_thursday"), ad = r.tasksAfter.find(t => t.id.endsWith("L0002"));
+  ok("added lesson packed after his last card", ad && ad.time === "10:10 AM", ad && ad.time);
+  ok("Mom-required closing slides past Lucy's Mom cards (10:20→10:50)", cj && cj.time === "10:50 AM", cj && cj.time);
+  ok("write is the slid time", r.upd["cj_thursday/time"] === "10:50 AM" && eq(r.summary.closing, ["cj_thursday"]));
+  // A closing that doesn't need Mom still sits right after the kid's last card, Mom cards or not.
+  const live2 = [T("lincoln_lincoln__ws_L0004", "thursday", "11:00 AM", "WS — d"), CL("thursday", "11:05 AM"), Object.assign({}, lucyHWT, { time: "10:40 AM" })];
+  const desired2 = [T("lincoln_lincoln__ws_L0004", "thursday", "11:00 AM", "WS — d"), T("lincoln_lincoln__ws_L0005", "thursday", "11:20 AM", "WS — e")];
+  const r2 = e._reprojectPlan("lincoln", "ws", live2, desired2, OPTS());
+  ok("non-Mom closing = kid's last end (10:40), ignores Lucy's Mom card", r2.tasksAfter.find(t => t.id === "cl_thursday").time === "10:40 AM", r2.tasksAfter.find(t => t.id === "cl_thursday").time);
+  // Pure helper: nested/overlapping busy intervals
+  const tm = toMin;
+  const slot = e.momClosingSlot({ id: "c", who: "julian", mom: "required", dur: 5 }, [
+    { id: "a", who: "lucy", mom: "required", time: "11:00 AM", dur: 60 },
+    { id: "b", who: "ellis", mom: "required", time: "11:30 AM", dur: 10 },
+    { id: "c2", who: "lincoln", mom: "required", time: "12:00 PM", dur: 10 },
+    { id: "d", who: "lucy", mom: "maybe", time: "12:10 PM", dur: 30 },
+  ], tm("11:20 AM"), tm);
+  ok("helper: 11:20 → 12:10 (past nested Lucy/Ellis block and Lincoln's 12:00; 'maybe' ignored)", slot === tm("12:10 PM"), slot);
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
