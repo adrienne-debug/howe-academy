@@ -25757,7 +25757,7 @@ function renderCurrGrid(el){
     // Retrieval slots (🎯 Daily Drill / 🏃 Sprint / 🎯 Match) — generation adds one ~15-min
     // Mom-required slot per template day; it's not a grid subject, so add it to the load too.
     let retrievalMins=0;
-    if(!offReason&&!mapOff&&typeof retrTracks==="function"&&retrTracks(gvKid).length){ const _rk=((typeof retrWeek==="function"?retrWeek(gvKid):{})||{})[DOWS[d.getDay()].toLowerCase()]||"off"; if(_rk!=="off"&&typeof RETR_SLOT_TITLE!=="undefined"&&RETR_SLOT_TITLE[_rk]) retrievalMins=15; }
+    if(!offReason&&!mapOff&&typeof retrTracks==="function"&&retrTracks(gvKid).length&&typeof retrDayKinds==="function"){ const _rks=retrDayKinds(gvKid,DOWS[d.getDay()].toLowerCase()).filter(k=>typeof RETR_SLOT_TITLE!=="undefined"&&RETR_SLOT_TITLE[k]); retrievalMins=15*_rks.length; }
     const cardMins=(!offReason&&!mapOff)?(_cardMinByDate[l.date]||0):0;
     const mins=gridMins+dailyMins+retrievalMins+cardMins;
     h+='<tr'+(cls?' class="'+cls+'"':'')+'>';
@@ -35310,7 +35310,7 @@ function retrTodayQueue(kid){
   });
   out.sort((a,b)=>a.pri-b.pri||((b.over||0)-(a.over||0)));
   // P3 day-awareness: on a template match day the Match suggestion takes the top seat.
-  if(retrTodayKind(kid)==="match"){
+  if(retrTodayKinds(kid).indexOf("match")>=0){
     const ms=retrMatchSuggest(kid);
     if(ms) out.unshift({pri:0,kind:"match",go:"match",
       label:"\u{1F3AF} Match day: "+ms.deck+(ms.acc!=null?" — "+ms.acc+"% lately, needs love":"")});
@@ -35319,6 +35319,7 @@ function retrTodayQueue(kid){
 }
 // ── P3: weekly rhythm — per-kid day template (data, Mom-editable in Admin) ─────────
 // Seed grid from the plan doc; overrides live at mastery/retrievalPlan/{kid}/week.
+// RETRWEEK_START
 const RETR_DAYS=["mon","tue","wed","thu","fri"];
 const RETR_DAY_KINDS=["sprint","match","recheck","drill","off"];
 const RETR_KIND_ICON={sprint:"\u{1F3C3}",match:"\u{1F3AF}",recheck:"\u{1F4C5}",drill:"\u{1F0CF}",off:"\u{1F6CB}"};
@@ -35338,6 +35339,25 @@ function retrTodayKind(kid){
   if(d===0||d===6) return "off";
   return retrWeek(kid)[RETR_DAYS[d-1]]||"off";
 }
+// Row 2 (optional second retrieval card per day) — opt-in per kid, stored at
+// mastery/retrievalPlan/{kid}/week2. No built-in defaults: a kid without a saved
+// Row 2 behaves exactly as before. The same kind never doubles (retrDayKinds dedupes).
+const RETR_WEEK2_DEFAULT={};
+function retrWeek2(kid){
+  const rp=(masteryData.retrievalPlan||{})[kid]||{};
+  return Object.assign({},RETR_WEEK2_DEFAULT[kid]||{},rp.week2||{});
+}
+function retrDayKinds(kid,dk){
+  const out=[];
+  [retrWeek(kid)[dk],retrWeek2(kid)[dk]].forEach(k=>{ if(k&&k!=="off"&&out.indexOf(k)<0) out.push(k); });
+  return out;
+}
+function retrTodayKinds(kid){
+  const d=new Date().getDay();
+  if(d===0||d===6) return [];
+  return retrDayKinds(kid,RETR_DAYS[d-1]);
+}
+// RETRWEEK_END
 // P3 Match heat-map: per-deck accuracy over the last heatmap_window calendar days of
 // drill history; suggest the WORST deck among those Match can actually play (≥4 pairs).
 // Needs a minimum sample (4 scored) so one bad morning doesn't own the suggestion.
@@ -35397,7 +35417,7 @@ function retrUnlockState(kid,track){
 let retrAdminLocal=null;
 function retrAdminInit(){
   const rp=(masteryData.retrievalPlan||{})[masteryKid]||{};
-  retrAdminLocal={settings:Object.assign({},rp.settings||{}),week:Object.assign({},retrWeek(masteryKid))};
+  retrAdminLocal={settings:Object.assign({},rp.settings||{}),week:Object.assign({},retrWeek(masteryKid)),week2:Object.assign({},retrWeek2(masteryKid))};
 }
 function retrAdminNum(key,val){
   if(!retrAdminLocal) retrAdminInit();
@@ -35419,16 +35439,21 @@ function retrAdminToggle(key,a,b){
   else delete retrAdminLocal.settings[key];                    // b -> inherit
   _mastRe();
 }
-function retrAdminCycleDay(day){
+function retrAdminCycleDay(day,row){
   if(!retrAdminLocal) retrAdminInit();
-  const cur=retrAdminLocal.week[day]||"off";
-  retrAdminLocal.week[day]=RETR_DAY_KINDS[(RETR_DAY_KINDS.indexOf(cur)+1)%RETR_DAY_KINDS.length];
+  if(!retrAdminLocal.week2) retrAdminLocal.week2={};
+  const map=(row===2)?retrAdminLocal.week2:retrAdminLocal.week;
+  const cur=map[day]||"off";
+  map[day]=RETR_DAY_KINDS[(RETR_DAY_KINDS.indexOf(cur)+1)%RETR_DAY_KINDS.length];
   _mastRe();
 }
 function retrAdminSave(){
   if(!retrAdminLocal) return;
   const kid=masteryKid;
-  const payload={settings:retrAdminLocal.settings,week:retrAdminLocal.week};
+  // Row 2 keeps only real extras: off / same-as-Row-1 days are dropped (the generator
+  // would collapse them anyway); an emptied Row 2 saves as {} which clears the node.
+  const w2={}; RETR_DAYS.forEach(d=>{ const k=(retrAdminLocal.week2||{})[d]; if(k&&k!=="off"&&k!==retrAdminLocal.week[d]) w2[d]=k; });
+  const payload={settings:retrAdminLocal.settings,week:retrAdminLocal.week,week2:w2};
   if(!masteryData.retrievalPlan) masteryData.retrievalPlan={};
   masteryData.retrievalPlan[kid]=payload;
   if(db) db.ref("mastery/retrievalPlan/"+kid).update(payload);
@@ -35490,6 +35515,16 @@ function retrAdminHtml(){
       +'<div style="font-size:8.5px;font-weight:700;color:#57534e">'+k+'</div></button>';
   });
   h+='</div>';
+  h+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin:10px 0 6px">Row 2 — optional second card that day</div>';
+  h+='<div style="display:flex;gap:5px">';
+  RETR_DAYS.forEach(d=>{
+    const k=(retrAdminLocal.week2||{})[d]||"off";
+    h+='<button onclick="retrAdminCycleDay(\''+d+'\',2)" style="flex:1;padding:8px 2px;border-radius:10px;border:1.5px solid var(--border);background:'+(k==="off"?"#faf8f5":"#fff")+';cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:center;opacity:'+(k==="off"?"0.65":"1")+'">'
+      +'<div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#78716c">'+d+'</div>'
+      +'<div style="font-size:15px">'+RETR_KIND_ICON[k]+'</div>'
+      +'<div style="font-size:8.5px;font-weight:700;color:#57534e">'+k+'</div></button>';
+  });
+  h+='</div>';
   h+='<div style="display:flex;gap:8px;margin-top:12px">';
   h+='<button class="mast-edit-save" style="flex:1" onclick="retrAdminSave()">Save Retrieval Plan</button>';
   h+='<button onclick="retrAdminReset()" style="padding:8px 14px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:700;cursor:pointer;color:#b5394a;font-family:\'DM Sans\',sans-serif">Reset</button>';
@@ -35538,24 +35573,26 @@ function retrSchedStripHtml(kid,day){
     const sprintToday=retrEntries(kid).some(e=>e&&e.date===today);
     let ml=(masteryData.matchLog||{})[kid]||[]; if(!Array.isArray(ml)) ml=Object.values(ml);
     const matchDone=ml.some(e=>e&&e.date===today);
-    const kind=retrTodayKind(kid);
+    const kinds=retrTodayKinds(kid);
     const chip=(icon,label,done,view)=>'<button onclick="retrSchedGo(\''+kid+'\',\''+view+'\')" '
       +'style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:999px;border:1.5px solid '+(done?'#86efac':'#e2ddd6')
       +';background:'+(done?'#f0fdf4':'#fff')+';color:'+(done?'#15803d':'#57534e')
       +';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+icon+' '+esc(label)+(done?' ✓':'')+'</button>';
     let chips=chip("\u{1F0CF}","Daily Drill",drillDone,"drill");
-    if(kind==="sprint"||kind==="recheck"){
-      let lbl=kind==="recheck"?"Re-checks":"Sprint";
-      try{
-        const top=retrTodayQueue(kid).find(it=>it.kind==="recheck"||it.kind==="focus");
-        if(top&&top.stage) lbl=(top.kind==="recheck"?"Re-check ":"Sprint: ")+top.stage.label;
-      }catch(e){}
-      chips+=chip("\u{1F3C3}",lbl,sprintToday,"sprint");
-    } else if(kind==="match"){
-      let lbl="Match";
-      try{ const ms=retrMatchSuggest(kid); if(ms) lbl="Match: "+ms.deck; }catch(e){}
-      chips+=chip("\u{1F3AF}",lbl,matchDone,"match");
-    }
+    kinds.forEach(kind=>{
+      if(kind==="sprint"||kind==="recheck"){
+        let lbl=kind==="recheck"?"Re-checks":"Sprint";
+        try{
+          const top=retrTodayQueue(kid).find(it=>it.kind==="recheck"||it.kind==="focus");
+          if(top&&top.stage) lbl=(top.kind==="recheck"?"Re-check ":"Sprint: ")+top.stage.label;
+        }catch(e){}
+        chips+=chip("\u{1F3C3}",lbl,sprintToday,"sprint");
+      } else if(kind==="match"){
+        let lbl="Match";
+        try{ const ms=retrMatchSuggest(kid); if(ms) lbl="Match: "+ms.deck; }catch(e){}
+        chips+=chip("\u{1F3AF}",lbl,matchDone,"match");
+      }
+    });
     return '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:#fff;border:1px solid var(--border);border-radius:12px;padding:8px 12px;margin:10px 0">'
       +'<span style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted)">\u{1F9E0} brain work</span>'
       +chips
@@ -35570,10 +35607,11 @@ function retrPlanCardHtml(color){
   if(!tracks.length) return "";
   const S=retrSettings(kid,null);
   let h='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:13px 14px;margin-bottom:14px">';
-  const todayKind=retrTodayKind(kid);
+  const todayKinds=retrTodayKinds(kid);
+  const todayTxt=todayKinds.length?todayKinds.map(k=>RETR_KIND_ICON[k]+" "+k).join(" + "):(RETR_KIND_ICON.off+" off");
   h+='<div onclick="retrTogglePlan()" style="display:flex;align-items:center;gap:7px;cursor:pointer">';
   h+='<span style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700;flex:1">\u{1F3C3} Sprint Plan</span>';
-  h+='<span style="font-size:10px;font-weight:800;color:#57534e;background:#f5f0ea;border-radius:8px;padding:2px 8px">today: '+RETR_KIND_ICON[todayKind]+' '+todayKind+'</span>';
+  h+='<span style="font-size:10px;font-weight:800;color:#57534e;background:#f5f0ea;border-radius:8px;padding:2px 8px">today: '+todayTxt+'</span>';
   h+='<span style="font-size:10px;color:var(--muted)">gate '+S.gate_pct+'% ×'+S.gate_streak+'</span>';
   h+='<span style="font-size:12px;color:var(--muted)">'+(retrPlanOpen?"▾":"▸")+'</span></div>';
   if(!retrPlanOpen) return h+'</div>';
@@ -38928,6 +38966,7 @@ function generateWeek(config){
 
   return {result:output,dropped:allDropped,carryOverCount:coTasks.length,cursors:weekCursors,calendarSkips};
 }
+// GWRETR_START
 // P5 retrieval-slot emission — self-contained so it's testable in isolation and a throw
 // can't take down generation (the caller wraps it in try/catch). Titles are generic (the
 // Mastery tab shows the current focus stage); the id is day-encoded + kid + kind so it's
@@ -38997,9 +39036,14 @@ function gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear
     const idPrefix=d.getFullYear()+"d"+dayOfYear(d)+"_";
     for(const kid of [...ROSTER]){
       if(!retrTracks(kid).length) continue;
-      const kind=(retrWeek(kid)||{})[dn.slice(0,3)]||"off";   // template keys are mon/tue/… (abbreviated)
+      // Row 1 + optional Row 2 (retrievalPlan/{kid}/week2) — up to two slots that day,
+      // never the same kind twice (retrDayKinds dedupes). Template keys are mon/tue/….
+      const kinds=(typeof retrDayKinds==="function")?retrDayKinds(kid,dn.slice(0,3))
+                  :[((retrWeek(kid)||{})[dn.slice(0,3)]||"off")];
+      for(const kind of kinds){
       if(kind==="off"||!RETR_SLOT_TITLE[kind]) continue;
-      // A kid with no tasks that day is off → skip.
+      // A kid with no tasks that day is off → skip. `mine`/placement recompute per row,
+      // so the second slot lands after (never on top of) the first.
       const mine=allTasks.filter(t=>t.who===kid&&t.day===dn);
       if(!mine.length) continue;
       const slot={
@@ -39046,6 +39090,7 @@ function gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear
         slot.time=fromMin(lastEnd);
       }
       allTasks.push(slot);
+      }
     }
   }
   allTasks.sort((a,b)=>{
@@ -39053,6 +39098,7 @@ function gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear
     return ((dord[a.day]||9)-(dord[b.day]||9))||(toMin(a.time)-toMin(b.time));
   });
 }
+// GWRETR_END
 
 function runGenerateWeek(){
   if(!gwConfig.weekNum){
