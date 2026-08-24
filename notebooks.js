@@ -678,7 +678,7 @@
   // replaces only that one slot; every other slot keeps whatever the engine chose. Because the
   // rotation is derived from the week number and never from a stored pointer, overriding a week
   // cannot shift the sequence: the next week resumes exactly where it always would have.
-  function juWeekPicks(weekNum, cur, dayCount, cap, overrides) {
+  function juWeekPicks(weekNum, cur, dayCount, cap, overrides, letterStart) {
     var lim = (cap == null) ? JU_REVIEW_CAP : cap;
     var wk = parseInt(weekNum, 10) || 1;
     var subjects = ["letters", "numbers", "shapes", "colors", "animals"];
@@ -691,9 +691,14 @@
       var flagSet = (cur.flag && cur.flag[sub]) || {};
       var scoreMap = (cur.flagScore && cur.flagScore[sub]) || {};
       var promptOf = function (idx) { var v = list[idx]; return Array.isArray(v) ? v[0] : v; };
-      // natural in-order picks for this week
+      // natural in-order picks for this week. Letters use the stored cursor when the app
+      // provides one (see juLetterStart): the bank GROWS as auto_pull introduces letters,
+      // and `((wk-1)*5) % n` over a growing bank rewinds the window (wk19 landed back on
+      // A B C D E after three near-identical weeks). The cursor continues from wherever
+      // the last printed week left off, so growth only extends the runway ahead.
+      var start = (sub === "letters" && letterStart != null) ? (((letterStart % n) + n) % n) : (((wk - 1) * 5) % n);
       var natural = [], naturalSet = {};
-      for (var i = 0; i < dayCount; i++) { var ni = ((wk - 1) * 5 + i) % n; natural.push(ni); naturalSet[ni] = 1; }
+      for (var i = 0; i < dayCount; i++) { var ni = (start + i) % n; natural.push(ni); naturalSet[ni] = 1; }
       // flagged items not already surfacing this week, worst-first, capped
       var flagged = [];
       for (var j = 0; j < n; j++) { if (flagSet[promptOf(j)] && !naturalSet[j]) flagged.push(j); }
@@ -712,8 +717,33 @@
       out[sub] = picks.map(function (idx, d) {
         return { idx: idx, review: !!flagSet[promptOf(idx)], picked: (ov[d] != null && ov[d] !== "") };
       });
+      // cursor bookkeeping: the window advances by the NATURAL letters actually shown, so a
+      // review-injected week doesn't silently skip the letters it displaced — they open the
+      // next week's window instead.
+      if (sub === "letters") out._letters = { start: start, adv: Math.max(0, dayCount - inject.length) };
     });
     return out;
+  }
+
+  // Resolve where this week's letter window starts. `cursor` is the app-stored
+  // notebookSettings/julian/letterCursor = { week, idx, adv } written after each print:
+  // idx = the start index used for `week`, adv = how many natural letters that week showed.
+  // Weeks after the stored one continue from idx+adv (+5 per further unprinted week);
+  // re-printing the stored week reuses idx unchanged; printing an earlier week walks back.
+  // No cursor (first run) = the legacy ((wk-1)*5) % n bootstrap. Indexes stay valid across
+  // bank growth because mastery items only ever APPEND to the list.
+  function juLetterStart(cursor, wk, n) {
+    if (!n) return 0;
+    var base = ((wk - 1) * 5) % n;
+    if (!cursor || cursor.idx == null) return base;
+    var cw = parseInt(cursor.week, 10), idx = parseInt(cursor.idx, 10), adv = (cursor.adv == null) ? 5 : parseInt(cursor.adv, 10);
+    if (!(cw > 0) || isNaN(idx)) return base;
+    if (isNaN(adv) || adv < 0) adv = 5;
+    var s;
+    if (wk === cw) s = idx;
+    else if (wk > cw) s = idx + adv + 5 * (wk - cw - 1);
+    else s = idx - 5 * (cw - wk);
+    return ((s % n) + n) % n;
   }
 
   // What the engine chose for a week, for the app's Julian planner UI: every item in each
@@ -725,7 +755,7 @@
     var wk = parseInt(String(ctx.weekNum || "").replace(/\D/g, ""), 10) || 1;
     var dayCount = Object.keys((ctx.weekData && ctx.weekData.dates) || {}).length || 5;
     var cap = (ctx.reviewCap == null) ? JU_REVIEW_CAP : Math.max(0, Math.min(5, parseInt(ctx.reviewCap, 10) || 0));
-    var picks = juWeekPicks(wk, cur, dayCount, cap, ctx.juPicks);
+    var picks = juWeekPicks(wk, cur, dayCount, cap, ctx.juPicks, juLetterStart(ctx.letterCursor, wk, cur.letters.length));
     var subjects = ["letters", "numbers", "shapes", "colors", "animals"];
     var out = { weekNum: wk, dayCount: dayCount, subjects: {} };
     subjects.forEach(function (sub) {
@@ -1131,7 +1161,9 @@
     if (xpOn(ctx, "thisMonth")) { var _jym = /\b(\d{4})\b/.exec(weekDates || ""); var _jmp = juPageMonth(weekNum, weekDates, dates, _jym ? _jym[1] : ""); if (_jmp) parts.push(_jmp); }
     // review-slots-per-week cap: app setting (ctx.reviewCap) overrides the default, clamped 0–5
     var reviewCap = (ctx.reviewCap == null) ? JU_REVIEW_CAP : Math.max(0, Math.min(5, parseInt(ctx.reviewCap, 10) || 0));
-    var picks = juWeekPicks(weekNum, cur, days.length, reviewCap, ctx.juPicks);
+    var wkInt = parseInt(weekNum, 10) || 0;
+    var letterStart = juLetterStart(ctx.letterCursor, wkInt || 1, cur.letters.length);
+    var picks = juWeekPicks(weekNum, cur, days.length, reviewCap, ctx.juPicks, letterStart);
     for (var i = 0; i < days.length; i++) {
       parts.push(juPageDaily(weekNum, days[i], dates[days[i]] || "", i, cur, juDayPick(cur, picks, i),
         xpStrip(pagesForDay(ctx, "julian", days[i]), "#d97706", "#fffbeb", "#92400e")));
@@ -1143,7 +1175,11 @@
     var parent = juHtmlHead(weekNum, "Julian's Parent Guide") + "\n" +
       juPageParent(weekNum, weekDates, cur, ctx.teachNotes || "") + "\n</body>\n</html>";
 
-    return { student: student, parent: parent };
+    var out = { student: student, parent: parent };
+    // the app persists this to notebookSettings/julian/letterCursor after a print, so the
+    // next week's letters continue from here (see juLetterStart)
+    if (wkInt > 0 && picks._letters) out.letterCursor = { week: wkInt, idx: picks._letters.start, adv: picks._letters.adv };
+    return out;
   }
 
   /* ============================================================================
@@ -4026,6 +4062,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       out = Object.assign({}, out, { student: applyBindingMargin(out.student), parent: applyBindingMargin(out.parent) });
     }
     if (out) out = Object.assign({}, out, { student: applySafariPrintFit(out.student), parent: applySafariPrintFit(out.parent) });
+    if (out) out = Object.assign({}, out, { student: emojiToImages(out.student), parent: emojiToImages(out.parent) });   // Chrome print-preview emoji bug (see emojiToImages)
     if (out && kid === "julian") { var unk = juUnknownShapes(); if (unk.length) out.warnings = (out.warnings || []).concat(["No drawing for shape" + (unk.length > 1 ? "s" : "") + ": " + unk.join(", ") + " — it prints as a dashed “NO DRAWING” box. Add the drawing in notebooks.js (juSvgShape) or rename the shape."]); juResetUnknownShapes(); }
     return out;
   }
@@ -4128,6 +4165,70 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
         return out;
       });
     }).then(function (r) { cleanup(); return r; }, function (e) { cleanup(); throw e; });
+  }
+
+  // ── Emoji → inline images (2026-08-24). Chrome's print renderer fails outright
+  // ("Print preview failed" after the spinner) on certain COMBINATIONS of color-emoji
+  // glyphs in a document — reproduced with headless --print-to-pdf on Chrome 151/macOS 15:
+  // every page printed alone, whole notebooks failed, and deleting only the emoji fixed
+  // them. Which combinations trip it is chaotic, but each kid's notebook repeats its emoji
+  // set weekly, so the same kids' notebooks (Julian's + Ellis's) failed every week. Fix:
+  // rasterize every emoji to a small inline PNG at build time — the printed document then
+  // contains no emoji text at all, so the print pipeline never touches the emoji font.
+  // Screen rendering is what the canvas captures, so the pages look the same. No-ops
+  // outside a real browser (node tests) and falls back to the untransformed document if
+  // anything throws.
+  var _emjRx = null, _emjRxOne = null;
+  try {
+    _emjRx = new RegExp("\\p{Extended_Pictographic}(?:\\uFE0F|\\u200D\\p{Extended_Pictographic})*", "gu");
+    _emjRxOne = new RegExp("\\p{Extended_Pictographic}", "u");
+  } catch (e) {}
+  var _emjCache = {};
+  function _emjPng(ch) {
+    if (Object.prototype.hasOwnProperty.call(_emjCache, ch)) return _emjCache[ch];
+    var out = null;
+    try {
+      var c = document.createElement("canvas"); c.width = 72; c.height = 72;
+      var g = c.getContext("2d");
+      g.font = "56px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+      g.fillText(ch, 36, 40);
+      out = c.toDataURL("image/png");
+    } catch (e) { out = null; }
+    _emjCache[ch] = out; return out;
+  }
+  function emojiToImages(html) {
+    if (!html || !_emjRx || typeof document === "undefined" || typeof DOMParser === "undefined") return html;
+    if (!_emjRxOne.test(html)) return html;
+    try {
+      var doc = new DOMParser().parseFromString(html, "text/html");
+      if (!doc || !doc.body) return html;
+      var walker = doc.createTreeWalker(doc.body, 4 /* NodeFilter.SHOW_TEXT */, null);
+      var nodes = [];
+      while (walker.nextNode()) {
+        var t = walker.currentNode, pn = t.parentNode && t.parentNode.nodeName;
+        if (pn !== "STYLE" && pn !== "SCRIPT" && _emjRxOne.test(t.nodeValue)) nodes.push(t);
+      }
+      if (!nodes.length) return html;
+      var swapped = false;
+      nodes.forEach(function (t) {
+        var frag = doc.createDocumentFragment(), s = t.nodeValue, last = 0, m;
+        _emjRx.lastIndex = 0;
+        while ((m = _emjRx.exec(s))) {
+          if (m.index > last) frag.appendChild(doc.createTextNode(s.slice(last, m.index)));
+          var png = _emjPng(m[0]);
+          if (png) { var im = doc.createElement("img"); im.className = "ha-emj"; im.setAttribute("alt", ""); im.setAttribute("src", png); frag.appendChild(im); swapped = true; }
+          else frag.appendChild(doc.createTextNode(m[0]));
+          last = m.index + m[0].length;
+        }
+        if (last < s.length) frag.appendChild(doc.createTextNode(s.slice(last)));
+        t.parentNode.replaceChild(frag, t);
+      });
+      if (!swapped) return html;
+      var st = doc.createElement("style");
+      st.textContent = "img.ha-emj{width:1em;height:1em;display:inline-block;vertical-align:-0.13em}";
+      (doc.head || doc.documentElement).appendChild(st);
+      return "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+    } catch (e) { return html; }
   }
 
   // Open generated HTML in a new tab for viewing/printing; falls back to a
@@ -4292,7 +4393,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       "  .page { box-sizing:border-box !important; width:8.5in !important; height:11in !important; min-height:11in !important; max-height:11in !important; overflow:hidden !important; }\n" +
       "  @media print { .page { box-sizing:border-box !important; width:8.5in !important; height:11in !important; min-height:11in !important; max-height:11in !important; margin:0 !important; box-shadow:none !important; overflow:hidden !important; } }\n" +
       "</style>\n</head>\n<body>\n" + cover + "\n" + sections + "\n</body>\n</html>";
-    return applySafariPrintFit(binding ? applyBindingMargin(doc) : doc);
+    return emojiToImages(applySafariPrintFit(binding ? applyBindingMargin(doc) : doc));
   }
 
   window.HoweNotebooks = {

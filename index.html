@@ -2716,6 +2716,11 @@ function initFb() {
       try{HA_LS.setItem("ha_nb_activities",JSON.stringify(nbActivities));}catch(e){}
       if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);}
     });
+    db.ref("workbooks").on("value",s=>{
+      wbBooks=s.val()||{};
+      try{HA_LS.setItem("ha_workbooks",JSON.stringify(wbBooks));}catch(e){}
+      if(document.getElementById("wb-panel-in")) wbPanelRender();
+    });
     db.ref("settings/sitterName").on("value",s=>{
       if(s.val()){ SITTER_NAME=s.val(); sv("ha_sitter_name",SITTER_NAME); }
     });
@@ -4930,6 +4935,13 @@ function _hqRow(target,emoji,label,desc){
     (desc?'<span style="display:block;font-size:11px;color:var(--muted)">'+desc+'</span>':'')+'</span>'+
     '<span style="color:var(--muted);font-size:16px;flex:none">›</span></button>';
 }
+function _hqRowFn(call,emoji,label,desc){
+  return '<button onclick="'+call+'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 14px;border:none;border-top:1px solid var(--border);background:none;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+
+    '<span style="font-size:18px;width:24px;text-align:center;flex:none">'+emoji+'</span>'+
+    '<span style="flex:1;min-width:0"><span style="display:block;font-size:13px;font-weight:700;color:var(--text)">'+label+'</span>'+
+    (desc?'<span style="display:block;font-size:11px;color:var(--muted)">'+desc+'</span>':'')+'</span>'+
+    '<span style="color:var(--muted);font-size:16px;flex:none">›</span></button>';
+}
 // ── 📱 SCREENS & LINKS ─────────────────────────────────────────────
 // Every kiosk address in one place. These only ever existed in a chat log before,
 // which is exactly how you lose them.
@@ -5008,7 +5020,8 @@ function renderMomHQ(el,ah){
     _hqRow("generate","🪄","Generate Week","Regenerate this week, plan next week, notebooks, week JSON"),
     _hqRow("mastery","🧠","Drills & Mastery","Drill rules, decks, review dates (own Mom PIN inside)"),
     _hqRow("units","🗺","Unit Studies","Units, decks, activities (🔒 Mom chip inside)"),
-    _hqRow("notebook","📓","Notebooks","Extra pages, prong margin, printing (🔒 Mom chip inside)")
+    _hqRow("notebook","📓","Notebooks","Extra pages, prong margin, printing (🔒 Mom chip inside)"),
+    _hqRowFn("wbPanelOpen()","📕","Workbooks","Bought workbook PDFs — the kids write on the page with the Apple Pencil")
   ]);
   h+=_hqGroup("🧹","Home & Chores",[
     _hqRow("chorePlan","🧹","Chore Plan","Weekday grid, zones, rotations, focus-zone bonus"),
@@ -17064,13 +17077,17 @@ function haNbContext(kid){
   }catch(e){}
   // Julian only: Mom's hand-picked slots for THIS week (see nbJuPicks). Absent = pure engine.
   let juPicks=null; try{ if(kid==="julian") juPicks=nbJuPicks(tgtWk); }catch(e){}
-  return { weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true };
+  return { weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, letterCursor:((((notebookSettings||{}).julian)||{}).letterCursor)||null, masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true };
 }
 function haNbOpen(kid,which){
   const lib=window.HoweNotebooks; if(!lib){ alert("Notebook builder not loaded yet."); return; }
   try{
     const out=lib.generate(kid, haNbContext(kid));
     if(out&&out.warnings&&out.warnings.length) alert("⚠ "+cap(kid)+"'s notebook:\n\n"+out.warnings.join("\n\n"));   // e.g. a shape with no drawing
+    // Julian letters: remember where this week's window landed so next week CONTINUES
+    // instead of re-deriving from the (growing) bank size — the growth kept rewinding
+    // his letters to A B C D E (2026-08-24). Same-week reprints write the same value.
+    if(kid==="julian"&&out&&out.letterCursor){ try{ const lc=(((notebookSettings||{}).julian)||{}).letterCursor||{}; const nc=out.letterCursor; if(lc.week!==nc.week||lc.idx!==nc.idx||lc.adv!==nc.adv) db.ref("notebookSettings/julian/letterCursor").set(nc); }catch(e){} }
     const html=(which==="parent")?(out.parent||out.student):out.student;
     const fname=kid+"_"+nbTargetWk()+"_"+(which==="parent"?"parent":"notebook")+".html";
     lib.openHtml(html, fname);
@@ -17087,6 +17104,10 @@ async function haNbPdf(kid,which){
   try{
     const out=lib.generate(kid, haNbContext(kid));
     if(out&&out.warnings&&out.warnings.length) alert("⚠ "+cap(kid)+"'s notebook:\n\n"+out.warnings.join("\n\n"));   // e.g. a shape with no drawing
+    // Julian letters: remember where this week's window landed so next week CONTINUES
+    // instead of re-deriving from the (growing) bank size — the growth kept rewinding
+    // his letters to A B C D E (2026-08-24). Same-week reprints write the same value.
+    if(kid==="julian"&&out&&out.letterCursor){ try{ const lc=(((notebookSettings||{}).julian)||{}).letterCursor||{}; const nc=out.letterCursor; if(lc.week!==nc.week||lc.idx!==nc.idx||lc.adv!==nc.adv) db.ref("notebookSettings/julian/letterCursor").set(nc); }catch(e){} }
     const html=(which==="parent")?(out.parent||out.student):out.student;
     const fname=kid+"_"+nbTargetWk()+"_"+(which==="parent"?"parent":"notebook")+".pdf";
     say("📄 Building "+cap(kid)+"'s PDF…");
@@ -20209,6 +20230,287 @@ async function nbActRemoveBook(cat, bookId){
   // best-effort: delete this book's PNGs from Storage
   try{ const dir=firebase.storage().ref("notebookActivities/"+cat+"/"+bookId); const lst=await dir.listAll(); await Promise.all(lst.items.map(it=>it.delete().catch(()=>{}))); }catch(e){}
 }
+// ── 📕 WORKBOOKS — Apple Pencil on a bought workbook page, saved per kid ──────────
+// A purchased PDF workbook (Reading Detective, Math Detective, a WriteShop unit…)
+// becomes pages the kid writes ON: the Pencil draws, the ink is stored per kid per
+// page as vector strokes, and Mom opens any page later and sees exactly what they wrote.
+//
+// WHY PAGES ARE RASTERIZED ON MOM'S MACHINE instead of rendered on the iPad:
+// Firebase Storage download URLs come back with NO Access-Control-Allow-Origin
+// header (verified against a live notebookActivities JPEG, 2026-08-21), so pdf.js
+// cannot fetch the PDF cross-origin. <img> is exempt from CORS, so page JPEGs load
+// anywhere. The PDF is read from the local File at upload time, where there is no
+// origin to cross.
+//
+// Ink is stored NORMALISED (0..1 of page width/height) so the same strokes land
+// correctly on an iPad, a phone, and Mom's laptop with no rescaling anywhere.
+//
+// Nodes: "workbooks/<bookId>" = {id,name,pages,imgs{}}  ·  Storage "workbooks/<id>/pN.jpg"
+//        "workbookWork/<kid>/<bookId>/<page>" = {v:1,s:[{c,w,p:[[x,y]…]}…]}
+// Writes are ALWAYS to one exact path — never a whole-node set.
+let wbBooks={}; try{ const _wbc=HA_LS.getItem("ha_workbooks"); if(_wbc) wbBooks=JSON.parse(_wbc); }catch(e){}
+const WB_MAXP=400;              // Reading Detective Beginning is 193; leave headroom
+const WB_PEN="#1d4ed8", WB_MOMPEN="#dc2626";
+
+function wbList(){ return Object.values(wbBooks||{}).filter(b=>b&&b.id).sort((a,b)=>(a.added||0)-(b.added||0)); }
+function wbBook(id){ return (wbBooks||{})[id]||null; }
+function wbInkPath(kid,bookId,page){ return "workbookWork/"+kid+"/"+bookId+"/"+page; }
+
+// ── Add a book: rasterize every page locally, upload the JPEGs, write metadata ──
+async function wbAddBook(input){
+  const f=input&&input.files&&input.files[0]; if(!f) return;
+  input.value="";
+  const say=s=>{ const m=document.getElementById("wb-msg"); if(m) m.textContent=s; };
+  if(typeof firebase==="undefined"||!firebase.storage){ say("❌ Storage isn't loaded — can't add a book."); return; }
+  if(_dryRun()){ say("🧪 Dry run — nothing was uploaded."); return; }
+  try{
+    say("Reading PDF…");
+    await nbLoadPdfJs();
+    const doc=await window.pdfjsLib.getDocument({data:await f.arrayBuffer()}).promise;
+    const total=Math.min(doc.numPages,WB_MAXP);
+    const id=Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36);
+    const name=(f.name||"workbook").replace(/\.pdf$/i,"").slice(0,40);
+    const dir="workbooks/"+id+"/";
+    const renderBlob=async(p)=>{
+      const page=await doc.getPage(p);
+      const vp=page.getViewport({scale:1.6});   // 1.6: small print stays readable under a Pencil
+      const cv=document.createElement("canvas"); cv.width=Math.round(vp.width); cv.height=Math.round(vp.height);
+      const c2=cv.getContext("2d"); c2.fillStyle="#fff"; c2.fillRect(0,0,cv.width,cv.height);
+      await page.render({canvasContext:c2,viewport:vp}).promise;
+      return new Promise(res=>cv.toBlob(res,"image/jpeg",0.84));
+    };
+    const put=async(p,blob)=>{ const r=firebase.storage().ref(dir+"p"+p+".jpg"); await r.put(blob); return r.getDownloadURL(); };
+    const imgs={}; let done=0;
+    // Page 1 first so the book is openable immediately, then the rest in the background.
+    imgs[1]=await put(1,await renderBlob(1)); done=1;
+    const meta={id:id,name:name,pages:total,imgs:imgs,added:Date.now()};
+    wbBooks[id]=meta;
+    if(db&&!_dryRun()) await db.ref("workbooks/"+id).set(meta);
+    wbPanelRender(); say("Added “"+name+"” — page 1 ready, fetching the other "+(total-1)+"…");
+    for(let p=2;p<=total;p++){
+      imgs[p]=await put(p,await renderBlob(p)); done++;
+      if(db&&!_dryRun()) await db.ref("workbooks/"+id+"/imgs/"+p).set(imgs[p]);   // one page, one path
+      if(done%5===0||p===total) say("Adding pages… ("+done+"/"+total+")");
+    }
+    wbBooks[id].imgs=imgs;
+    try{HA_LS.setItem("ha_workbooks",JSON.stringify(wbBooks));}catch(e){}
+    say("✓ “"+name+"” is in — "+total+" pages.");
+    wbPanelRender();
+  }catch(e){ say("❌ "+(e.message||"Couldn't add that PDF.")); }
+}
+
+async function wbDeleteBook(id){
+  const b=wbBook(id); if(!b) return;
+  if(!confirm("Remove “"+b.name+"”?\n\nThe pages come out of the app. Any writing the kids saved on it stays in the database.")) return;
+  delete wbBooks[id];
+  try{HA_LS.setItem("ha_workbooks",JSON.stringify(wbBooks));}catch(e){}
+  if(db&&!_dryRun()) await db.ref("workbooks/"+id).remove();
+  wbPanelRender();
+  try{ const dir=firebase.storage().ref("workbooks/"+id); const l=await dir.listAll(); await Promise.all(l.items.map(i=>i.delete().catch(()=>{}))); }catch(e){}
+}
+
+// ── The viewer: page image + an ink layer on top ─────────────────────────────
+let wbView=null;   // {bookId,kid,page,strokes,dirty,tool,penOnly,sawPen}
+function wbOpen(bookId,kid,page){
+  const b=wbBook(bookId); if(!b){ alert("That workbook isn't loaded yet."); return; }
+  page=Math.max(1,Math.min(b.pages||1,parseInt(page,10)||1));
+  wbView={bookId:bookId,kid:kid,page:page,strokes:[],dirty:false,tool:"pen",penOnly:false,sawPen:false};
+  let ov=document.getElementById("wb-view"); if(ov) ov.remove();
+  ov=document.createElement("div"); ov.id="wb-view";
+  ov.style.cssText="position:fixed;inset:0;z-index:10050;background:#f8fafc;display:flex;flex-direction:column;overscroll-behavior:none";
+  ov.innerHTML=
+    '<div id="wb-bar" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#fff;border-bottom:1px solid #e2e8f0;flex:none;font-family:\'DM Sans\',sans-serif;flex-wrap:wrap"></div>'+
+    '<div id="wb-stage" style="flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:10px;-webkit-overflow-scrolling:touch">'+
+      '<div id="wb-hold" style="position:relative;line-height:0;box-shadow:0 2px 14px rgba(0,0,0,.18);border-radius:4px;overflow:hidden;background:#fff">'+
+        '<img id="wb-img" style="display:block;max-width:100%;height:auto;user-select:none;-webkit-user-select:none;pointer-events:none">'+
+        '<canvas id="wb-ink" style="position:absolute;inset:0;width:100%;height:100%;touch-action:pan-x pan-y;cursor:crosshair"></canvas>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(ov);
+  wbBarRender(); wbLoadPage();
+}
+function wbClose(){
+  const go=()=>{ try{ if(_wbRO) _wbRO.disconnect(); }catch(e){} _wbRO=null; const ov=document.getElementById("wb-view"); if(ov) ov.remove(); wbView=null; };
+  if(wbView&&wbView.dirty){ wbSave().then(go).catch(go); } else go();
+}
+function wbBarRender(){
+  const bar=document.getElementById("wb-bar"); if(!bar||!wbView) return;
+  const b=wbBook(wbView.bookId)||{}; const v=wbView;
+  const btn=(lbl,fn,on)=>'<button onclick="'+fn+'" style="padding:7px 11px;border-radius:9px;border:1.5px solid '+(on?"#1d4ed8":"#cbd5e1")+';background:'+(on?"#dbeafe":"#fff")+';font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
+  bar.innerHTML=
+    btn("✕","wbClose()")+
+    '<span style="font-weight:800;font-size:13px;color:#0f172a;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(b.name||"Workbook")+'</span>'+
+    '<span style="padding:3px 9px;border-radius:999px;background:'+((typeof SL_KCOL!=="undefined"&&SL_KCOL[v.kid])||"#64748b")+';color:#fff;font-size:11px;font-weight:800">'+((typeof SL_KLBL!=="undefined"&&SL_KLBL[v.kid])||v.kid)+'</span>'+
+    '<span style="flex:1"></span>'+
+    btn("◀","wbGo(-1)")+
+    '<span style="font-size:12px;font-weight:700;color:#475569;min-width:64px;text-align:center">p '+v.page+' / '+(b.pages||"?")+'</span>'+
+    btn("▶","wbGo(1)")+
+    btn("✏️","wbTool(\'pen\')",v.tool==="pen")+
+    btn("🩹 Erase","wbTool(\'erase\')",v.tool==="erase")+
+    btn("↶ Undo","wbUndo()")+
+    btn("🧽 Clear","wbClear()")+
+    btn(v.penOnly?"✍️ Pencil only":"👆 Finger too","wbTogglePen()",v.penOnly)+
+    btn(v.dirty?"💾 Save":"✓ Saved","wbSave()",v.dirty);
+}
+function wbTool(t){ if(!wbView) return; wbView.tool=t; wbBarRender(); }
+function wbTogglePen(){ if(!wbView) return; wbView.penOnly=!wbView.penOnly; wbBarRender(); }
+async function wbGo(d){
+  if(!wbView) return; const b=wbBook(wbView.bookId)||{};
+  const n=wbView.page+d; if(n<1||n>(b.pages||1)) return;
+  if(wbView.dirty) await wbSave();
+  wbView.page=n; wbLoadPage(); wbBarRender();
+}
+async function wbLoadPage(){
+  const v=wbView; if(!v) return;
+  const b=wbBook(v.bookId)||{}; const img=document.getElementById("wb-img");
+  const url=(b.imgs||{})[v.page];
+  if(img) img.src=url||"";
+  v.strokes=[]; v.dirty=false;
+  if(!url){ wbPaint(); return; }
+  try{
+    if(db){ const s=await db.ref(wbInkPath(v.kid,v.bookId,v.page)).once("value"); const d=s.val();
+      if(d&&d.s) v.strokes=(Array.isArray(d.s)?d.s:Object.values(d.s)).map(k=>({c:k.c,w:k.w,p:Array.isArray(k.p)?k.p:Object.values(k.p||{})})); }
+  }catch(e){}
+  const draw=()=>{ wbFit(); wbPaint(); wbWatchFit(); };
+  if(img){ img.onload=draw; img.onerror=()=>{ const b=document.getElementById("wb-bar"); if(b) b.insertAdjacentHTML("beforeend",'<span style="color:#b91c1c;font-size:12px;font-weight:700">page didn\'t load</span>'); }; }
+  if(img&&img.complete) draw();
+  wbBarRender();
+}
+function wbFit(){
+  const img=document.getElementById("wb-img"), cv=document.getElementById("wb-ink"); if(!img||!cv) return false;
+  const r=img.getBoundingClientRect();
+  if(r.width<2||r.height<2) return false;            // laid out yet? if not, the observer will call back
+  const dpr=Math.min(window.devicePixelRatio||1,2.5);
+  const w=Math.max(1,Math.round(r.width*dpr)), h=Math.max(1,Math.round(r.height*dpr));
+  if(cv.width===w&&cv.height===h) return true;       // unchanged: don't wipe the ink for nothing
+  cv.width=w; cv.height=h; return true;
+}
+// The page image lays out AFTER load, and an iPad rotates. Watching the element is the
+// only reliable way to keep the ink layer exactly on top of the page — a one-shot fit
+// after onload leaves a 1x1 canvas whenever layout hasn't settled yet.
+let _wbRO=null;
+function wbWatchFit(){
+  const img=document.getElementById("wb-img"); if(!img) return;
+  try{
+    if(_wbRO) _wbRO.disconnect();
+    if(typeof ResizeObserver==="function"){
+      _wbRO=new ResizeObserver(()=>{ if(wbFit()) wbPaint(); });
+      _wbRO.observe(img);
+    }
+  }catch(e){}
+}
+function wbPaint(){
+  const cv=document.getElementById("wb-ink"); if(!cv||!wbView) return;
+  const g=cv.getContext("2d"); g.clearRect(0,0,cv.width,cv.height);
+  g.lineCap="round"; g.lineJoin="round";
+  (wbView.strokes||[]).forEach(s=>{
+    const pts=s.p||[]; if(!pts.length) return;
+    g.strokeStyle=s.c||WB_PEN; g.lineWidth=Math.max(1,(s.w||0.003)*cv.width);
+    g.beginPath(); g.moveTo(pts[0][0]*cv.width,pts[0][1]*cv.height);
+    for(let i=1;i<pts.length;i++) g.lineTo(pts[i][0]*cv.width,pts[i][1]*cv.height);
+    if(pts.length===1) g.lineTo(pts[0][0]*cv.width+0.6,pts[0][1]*cv.height+0.6);
+    g.stroke();
+  });
+}
+// Pointer plumbing. The first genuine Pencil event flips the board to pen-only, which
+// is what makes a resting palm stop drawing — no setting for her to find.
+(function wbBindOnce(){
+  document.addEventListener("pointerdown",e=>{
+    const cv=document.getElementById("wb-ink"); if(!cv||!wbView||e.target!==cv) return;
+    if(e.pointerType==="pen"&&!wbView.sawPen){ wbView.sawPen=true; wbView.penOnly=true; wbBarRender(); }
+    if(wbView.penOnly&&e.pointerType!=="pen") return;      // palm / finger scrolls instead
+    e.preventDefault();
+    // Fit lazily too: ResizeObserver is the fast path, but a stroke must never be
+    // recorded against a canvas that hasn't been sized to the page yet.
+    const _w0=cv.width; if(!wbFit()) return; if(cv.width!==_w0) wbPaint();
+    const p=wbPt(e,cv); if(!p) return;
+    if(wbView.tool==="erase"){ wbEraseAt(p); return; }
+    const w=0.0026+0.0026*(e.pressure&&e.pressure>0?e.pressure:0.5);
+    wbView._live={c:(typeof momHere==="function"&&momHere())?WB_MOMPEN:WB_PEN,w:+w.toFixed(5),p:[p]};
+    wbView.strokes.push(wbView._live); wbView.dirty=true;
+    try{cv.setPointerCapture(e.pointerId);}catch(err){}
+  },{passive:false});
+  document.addEventListener("pointermove",e=>{
+    const cv=document.getElementById("wb-ink"); if(!cv||!wbView) return;
+    if(wbView.tool==="erase"&&e.buttons&&e.target===cv){ e.preventDefault(); const ep=wbPt(e,cv); if(ep) wbEraseAt(ep); return; }
+    if(!wbView._live) return;
+    e.preventDefault();
+    const evs=(e.getCoalescedEvents&&e.getCoalescedEvents())||[e];   // Pencil reports ~240Hz
+    evs.forEach(ev=>{ const q=wbPt(ev,cv); if(q) wbView._live.p.push(q); });
+    wbPaint();
+  },{passive:false});
+  const end=()=>{ if(!wbView) return; if(wbView._live){ wbView._live=null; wbBarRender(); } };
+  document.addEventListener("pointerup",end); document.addEventListener("pointercancel",end);
+  window.addEventListener("resize",()=>{ if(wbView){ wbFit(); wbPaint(); } });
+})();
+function wbPt(e,cv){ const r=cv.getBoundingClientRect(); if(r.width<2||r.height<2) return null; return [+((e.clientX-r.left)/r.width).toFixed(4),+((e.clientY-r.top)/r.height).toFixed(4)]; }
+function wbEraseAt(p){
+  const v=wbView; if(!v) return; const R=0.018;
+  const before=v.strokes.length;
+  v.strokes=v.strokes.filter(s=>!(s.p||[]).some(q=>Math.abs(q[0]-p[0])<R&&Math.abs(q[1]-p[1])<R));
+  if(v.strokes.length!==before){ v.dirty=true; wbPaint(); wbBarRender(); }
+}
+function wbUndo(){ const v=wbView; if(!v||!v.strokes.length) return; v.strokes.pop(); v.dirty=true; wbPaint(); wbBarRender(); }
+function wbClear(){ const v=wbView; if(!v||!v.strokes.length) return; if(!confirm("Clear everything written on this page?")) return; v.strokes=[]; v.dirty=true; wbPaint(); wbBarRender(); }
+async function wbSave(){
+  const v=wbView; if(!v) return;
+  if(!db||_dryRun()){ v.dirty=false; wbBarRender(); return; }
+  try{
+    await db.ref(wbInkPath(v.kid,v.bookId,v.page)).set({v:1,s:v.strokes,ts:Date.now()});  // one page, one path
+    v.dirty=false; wbBarRender();
+  }catch(e){ alert("Couldn't save that page: "+(e.message||e)); }
+}
+
+// ── Mom's panel: add a book, hand a kid the page, review what they wrote ──────
+function wbPanelOpen(){
+  let ov=document.getElementById("wb-panel"); if(ov) ov.remove();
+  ov=document.createElement("div"); ov.id="wb-panel";
+  ov.style.cssText="position:fixed;inset:0;z-index:10040;background:#f8fafc;overflow:auto;font-family:'DM Sans',sans-serif;padding:14px";
+  ov.innerHTML='<div id="wb-panel-in"></div>';
+  document.body.appendChild(ov); wbPanelRender();
+}
+function wbPanelClose(){ const ov=document.getElementById("wb-panel"); if(ov) ov.remove(); }
+function wbPanelRender(){
+  const el=document.getElementById("wb-panel-in"); if(!el) return;
+  const kids=(typeof ROSTER!=="undefined"?ROSTER:[]);
+  let h='<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'+
+    '<button onclick="wbPanelClose()" style="padding:7px 12px;border-radius:9px;border:1.5px solid #cbd5e1;background:#fff;font-weight:700;cursor:pointer">✕</button>'+
+    '<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:#0f172a">📕 Workbooks</div></div>'+
+    '<div style="font-size:12px;color:#64748b;margin-bottom:12px;line-height:1.45">Add a workbook PDF once. Open a page for a kid and they write on it with the Apple Pencil — their writing saves per page, per kid. <b>Answer keys are not in this yet</b>, so nothing here shows a kid an answer.</div>'+
+    '<label style="display:inline-block;padding:9px 15px;border-radius:10px;border:2px dashed #93c5fd;background:#eff6ff;color:#1d4ed8;font-size:13px;font-weight:800;cursor:pointer">📄 Add a workbook PDF<input type="file" accept="application/pdf,.pdf" onchange="wbAddBook(this)" style="display:none"></label>'+
+    '<div id="wb-msg" style="font-size:12px;color:#475569;margin:9px 0;min-height:16px"></div>';
+  const books=wbList();
+  if(!books.length) h+='<div style="font-size:13px;color:#94a3b8;padding:16px 0">No workbooks yet.</div>';
+  books.forEach(b=>{
+    const ready=Object.keys(b.imgs||{}).length;
+    h+='<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:12px;margin-bottom:10px">'+
+      '<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-weight:800;font-size:14px;color:#0f172a">'+b.name+'</div>'+
+      '<div style="font-size:11px;color:#64748b">'+ready+' / '+(b.pages||0)+' pages</div>'+
+      '<button onclick="wbDeleteBook(\''+b.id+'\')" style="padding:5px 9px;border-radius:8px;border:1px solid #fecaca;background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:700;cursor:pointer">🗑</button></div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:9px">';
+    kids.forEach(k=>{
+      const lbl=(typeof SL_KLBL!=="undefined"&&SL_KLBL[k])||k;
+      h+='<button onclick="wbPanelClose();wbOpen(\''+b.id+'\',\''+k+'\',1)" style="padding:6px 11px;border-radius:9px;border:1.5px solid '+((typeof SL_KCOL!=="undefined"&&SL_KCOL[k])||"#cbd5e1")+';background:#fff;font-size:12px;font-weight:700;cursor:pointer">'+lbl+'</button>';
+    });
+    h+='</div><div style="margin-top:9px;font-size:11px;color:#64748b">iPad link — open this on his iPad and it goes straight to the page, no Mom PIN:<br>';
+    kids.forEach(k=>{ h+='<div style="margin-top:3px"><code style="font-size:10.5px;color:#334155;word-break:break-all">'+(typeof hqBaseUrl==="function"?hqBaseUrl():"")+'?workbook='+b.id+'&kid='+k+'&page=1</code></div>'; });
+    h+='</div></div>';
+  });
+  el.innerHTML=h;
+}
+
+// ?workbook=<id>&kid=<kid>&page=<n> — the iPad's door straight into one page.
+function wbBootFromUrl(){
+  try{
+    const q=new URLSearchParams(location.search);
+    const id=q.get("workbook"); if(!id) return;
+    const kid=q.get("kid")||(typeof ROSTER!=="undefined"?ROSTER[0]:"");
+    const pg=parseInt(q.get("page")||"1",10)||1;
+    if(!wbBook(id)&&db){ db.ref("workbooks/"+id).once("value").then(s=>{ const b=s.val(); if(b){ wbBooks[id]=b; wbOpen(id,kid,pg); } }); return; }
+    wbOpen(id,kid,pg);
+  }catch(e){}
+}
+try{ if(/[?&]workbook=/.test(location.search)) window.addEventListener("load",()=>setTimeout(wbBootFromUrl,600)); }catch(e){}
 // ── UNIT STUDY: British Monarchy "Royal Line" notebook page ───────────────
 // One shared dataset, read from the mastery curriculum bank (all 42 monarchs +
 // house/reign) joined with the kid's live drill items (status/tier → progress)
