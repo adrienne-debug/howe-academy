@@ -3947,6 +3947,19 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
 </div>`;
   }
 
+  // Subtraction within 10 — a fresh, non-repeating set every week. The old static
+  // LUCY_DATA.subtraction held exactly 5 day-sets for 5 school days, so the bank was
+  // fully consumed each week and she got the identical problems from Week 1 onward.
+  function luSubWeek(wn, dayCount) {
+    var facts = [];
+    for (var a = 3; a <= 10; a++) for (var b = 1; b < a; b++) facts.push([a, b]);
+    var r = lnRng(((parseInt(wn, 10) || 1) * 7919) >>> 0);
+    lnRngShuffle(r, facts);
+    var out = [];
+    for (var d = 0; d < dayCount; d++) out.push(facts.slice(d * 3, d * 3 + 3));
+    return out;
+  }
+
   function generateLucy(ctx) {
     ctx = ctx || {};
     var weekData = ctx.weekData || {};
@@ -3958,7 +3971,8 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     var tasks = weekData.tasks || [], dates = weekData.dates || {};
     var DAY_ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday"];
     var days = DAY_ORDER.filter(function (d) { return dates.hasOwnProperty(d); });
-    var blends = LUCY_DATA.blends, subtraction = LUCY_DATA.subtraction, focus = LUCY_DATA.focus, pace = (ctx.pace && ctx.pace.length) ? ctx.pace : LUCY_DATA.pace;
+    var blends = LUCY_DATA.blends, focus = LUCY_DATA.focus, pace = (ctx.pace && ctx.pace.length) ? ctx.pace : LUCY_DATA.pace;
+    var subtraction = luSubWeek(wn, days.length);
     var prevStats = ctx.prevStats || {};   // dashes until the shared history wiring
     var category = LUCY_DATA.category_order[((wn - 1) % LUCY_DATA.category_order.length + LUCY_DATA.category_order.length) % LUCY_DATA.category_order.length];
     var curMonth = days.length ? monthFromDate(dates[days[0]] || "") : "";
@@ -3973,7 +3987,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     days.forEach(function (day, i) {
       var dateStr = dates[day] || "";
       var blend = (i < blends.length) ? blends[i] : blends[blends.length - 1];
-      var subPrbs = (i < subtraction.length) ? subtraction[i] : [];
+      var subPrbs = subtraction[i] || [];
       var badge = LUCY_DATA.day_badges[day] || "🦄 Great Work!";
       parts.push(luPageDaily(wn, day, dateStr, tasks, blend, subPrbs, badge, year,
         xpStrip(pagesForDay(ctx, "lucy", day), "#f472b6", "#fdf2f8", "#be185d")));
