@@ -17155,7 +17155,7 @@ function haParsePassage(raw, topic){
   return { topic:topic, tag:"🐍 CogAT · Verbal Battery · Reading", html:html, q1_stem:ex("Q1_STEM"), q1:ch("Q1"), q1_ans:an("Q1"), q2_stem:ex("Q2_STEM"), q2:ch("Q2"), q2_ans:an("Q2") };
 }
 async function haGenerateStory(kid){
-  const key=haGetKey(); const msg=(s)=>{ const m=document.getElementById("nbs-msg"); if(m) m.textContent=s; };
+  const key=mastAIKey||haGetKey(); const msg=(s)=>{ const m=document.getElementById("nbs-msg"); if(m) m.textContent=s; };
   if(!key){ msg("Add your API key first."); return; }
   try{
     msg("✨ Generating with Claude… (10–20 sec)");
@@ -17167,7 +17167,7 @@ async function haGenerateStory(kid){
     const prompt=haPassagePrompt(lexile, topic, used.slice(-6).join(", ")||"none");
     const resp=await fetch("https://api.anthropic.com/v1/messages",{ method:"POST",
       headers:{ "content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true" },
-      body:JSON.stringify({ model:"claude-sonnet-4-6", max_tokens:1200, messages:[{role:"user",content:prompt}] }) });
+      body:JSON.stringify({ model:"claude-sonnet-5", max_tokens:1200, messages:[{role:"user",content:prompt}] }) });
     if(!resp.ok){ const t=await resp.text(); throw new Error("Claude API "+resp.status+" — "+t.slice(0,160)); }
     const data=await resp.json();
     const txt=(data.content&&data.content[0]&&data.content[0].text)||"";
@@ -21698,13 +21698,20 @@ function renderNotebook(el){
   } else {
     formHtml='<div style="margin-top:14px;font-size:11.5px;color:var(--muted);line-height:1.45">Julian’s pages come straight from his drills — no personal info needed.</div>';
   }
-  // Lincoln-only: generate his reading story in-app via Claude (key stays device-local)
+  // Lincoln-only: generate his reading story in-app via Claude. The key comes from
+  // config/anthropic_key (mastAIKey) like every other AI feature in the app, falling back
+  // to a device-local key — before this the panel read ONLY localStorage, so on any device
+  // without a pasted key the Generate button never rendered and the week silently fell
+  // through to the 3-passage fallback.
   let storyHtml="";
   if(sel==="lincoln"){
-    const key=haGetKey();
+    const devKey=haGetKey();
+    const key=mastAIKey||devKey;
     const wn=nbTargetWkNum();
     const hasStory=!!(notebookStories.lincoln && notebookStories.lincoln["week"+wn] && notebookStories.lincoln["week"+wn].html);
-    const keyRow=key
+    const keyRow=mastAIKey
+      ? '<div style="font-size:11px;color:var(--muted)">🔑 Using the family AI key ✓</div>'
+      : devKey
       ? '<div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)">🔑 API key saved on this device ✓ <button onclick="haClearKey()" style="border:none;background:none;color:#b91c1c;cursor:pointer;font-weight:700;font-size:11px">Remove</button></div>'
       : '<div><div style="display:flex;gap:6px"><input id="nbs-key" type="password" placeholder="sk-ant-…" autocomplete="off" style="flex:1;padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:monospace"><button onclick="haSaveKey()" style="padding:7px 12px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-size:12px;font-weight:700;cursor:pointer">Save key</button></div>'
         +'<div style="font-size:10.5px;color:var(--muted);margin-top:5px;line-height:1.45">🔒 Stored only on this device — never shared, never in the app’s code. Skip this on a shared/public computer.</div></div>';
