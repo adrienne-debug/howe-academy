@@ -24389,6 +24389,48 @@ let gvSelMode=false, gvSel=new Set(), gvSelAnchor=null, gvSelUndo=null;
 const gvFilled=v=>!!(v&&v!=="—"&&v!=="nan"&&String(v).trim());
 
 // Rendered (selectable) dayNums in display order — future rows, plus past only when shown.
+// ── Grid-vs-plan drift (Stage 1 of "one truth") ─────────────────────────────
+// curriculum/lessons stores a lesson TEXT against a date. A rebuild writes it once and
+// nothing updates it again, while the plan (lessonSeq + curriculum/done) advances at the
+// kid's real pace — and nothing ever compared the two. On 2026-08-28, 23 of 24 plan-backed
+// columns disagreed: Ellis's Reading Detective cell read 5 lessons ahead of where he
+// actually was, and Lincoln's Singapore read 2 BEHIND (he was ahead of the calendar). So
+// the Grid can name a lesson that isn't next, which is what the subject card correctly
+// showed instead. This only LOOKS: pure, no writes, nothing re-laid.
+// Returns {delta,gridText,gridDate,onToday,planText,planLid} or null when aligned / N/A.
+// delta = how many list positions the grid's cell sits ahead (+) or behind (-) the kid.
+function gvPlanDrift(kid,sk){
+  try{
+    if(!(typeof planBacked==="function"&&planBacked(kid,sk))) return null;
+    const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s) return null;
+    const ids=(typeof lidsFor==="function")?lidsFor(kid,sk):null; if(!ids) return null;
+    const seq=s.lessonSeq||[]; const done=(typeof lidDoneSet==="function")?lidDoneSet(kid,sk):null;
+    if(!done) return null;
+    // Where the kid ACTUALLY is: the first lesson with no done record.
+    let ni=-1;
+    for(let i=0;i<ids.length;i++){ if(!done.has(ids[i])){ ni=i; break; } }
+    if(ni<0) return null;                       // finished — nothing left to compare
+    // What the Grid has pencilled for today, else the next dated cell it does have.
+    const today=cbTodayISO(); const L=((currData||{}).lessons||{})[kid]||{};
+    let cell=null, ahead=null;
+    Object.keys(L).map(x=>Number(x)).filter(x=>!isNaN(x)).sort((a,b)=>a-b).forEach(dn=>{
+      const r=L[dn]; if(!r||!r.date||!gvFilled(r[sk])) return;
+      if(r.date===today){ if(!cell) cell={text:String(r[sk]).trim(),date:r.date}; }
+      else if(r.date>today){ if(!ahead) ahead={text:String(r[sk]).trim(),date:r.date}; }
+    });
+    const g=cell||ahead; if(!g) return null;
+    // Compare by LIST POSITION, never by text: a sequence repeats texts on purpose, so take
+    // the first occurrence at or after the kid's position, and only fall back to the first
+    // anywhere (which is how a grid that sits BEHIND the kid resolves).
+    const k=_lidNorm(g.text); let gi=-1;
+    for(let i=ni;i<seq.length;i++){ if(_lidNorm(seq[i])===k){ gi=i; break; } }
+    if(gi<0) for(let i=0;i<seq.length;i++){ if(_lidNorm(seq[i])===k){ gi=i; break; } }
+    if(gi<0) return null;                       // cell text isn't in the list at all
+    const delta=gi-ni; if(!delta) return null;
+    return {delta:delta,gridText:g.text,gridDate:g.date,onToday:!!cell,
+            planText:String(seq[ni]==null?"":seq[ni]),planLid:ids[ni]};
+  }catch(e){ return null; }
+}
 function gvRenderedDns(kid){
   const lessons=((currData||{}).lessons||{})[kid]||{};
   const today=cbTodayISO();
@@ -26110,6 +26152,9 @@ function renderCurrGrid(el){
     const _sd=((((currData.subjects||{})[gvKid]||{})[_lm.sk]||{}).display)||_lm.sk;
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:6px 10px;margin:0 0 8px;font-size:11px;color:#3730a3"><span>Moved <b>'+esc(_sd)+'</b> to '+esc(_tdisp)+' (make-up)</span><button onclick="lmUndoMove()" style="border:1px solid #6366f1;background:#fff;color:#4338ca;border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">&#8617; Undo</button></div>';
   }
+  // Drift is computed ONCE per column (below, with the header) and read again by today's
+  // row — per-cell it would walk every subject's whole list on every row.
+  const _gvDrift={};
   h+='<div class="gv-wrap"><table class="gv'+(gvSelMode?' gv-selmode':'')+'"><thead><tr>';
   h+='<th class="gv-fix">Day</th><th class="gv-min">Min</th>';
   for(const sk of cols){
@@ -26126,7 +26171,13 @@ function renderCurrGrid(el){
       const _ow=planOwed(gvKid,sk); const _cap=Math.max(1,parseInt(subs[sk].cap,10)||1);
       if(_ow>0) owedChip='<span title="'+_ow+' owed — behind the pattern since '+esc(subs[sk].planAnchor||"")+'. Cap '+_cap+'/day'+(_cap>1?': second sittings absorb it':': everything slides — raise the cap in the card to catch up faster')+'." style="display:inline-block;margin-left:4px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:8px;padding:0 5px;font-size:9px;font-weight:800">owed '+_ow+'</span>';
     } }catch(e){}
-    h+='<th onclick="'+hact+'" title="'+esc(tip)+'">'+mark+esc((subs[sk]||{}).display||sk)+owedChip+'</th>';
+    // Drift chip: this column's stored calendar no longer agrees with the plan. Says which
+    // way and by how much; the subject card is the one telling the truth.
+    let driftChip='';
+    try{ const _dr=gvPlanDrift(gvKid,sk); _gvDrift[sk]=_dr;
+      if(_dr) driftChip='<span title="'+esc('Grid says \u201C'+_dr.gridText+'\u201D '+(_dr.onToday?'today':'next')+' \u2014 but '+cap(gvKid)+' is actually on \u201C'+_dr.planText+'\u201D. The grid calendar was laid once and does not move when the pace changes; the subject card is right. Rebuild this subject to re-lay it from where they really are.')+'" style="display:inline-block;margin-left:4px;background:#fee2e2;color:#991b1b;border:1px solid #fecaca;border-radius:8px;padding:0 5px;font-size:9px;font-weight:800">'+(_dr.delta>0?'+':'')+_dr.delta+'</span>';
+    }catch(e){}
+    h+='<th onclick="'+hact+'" title="'+esc(tip)+'">'+mark+esc((subs[sk]||{}).display||sk)+owedChip+driftChip+'</th>';
   }
   h+='</tr></thead><tbody>';
 
@@ -26235,6 +26286,11 @@ function renderCurrGrid(el){
         if(addedV!==undefined) cell+=(cell?'<br>':'')+'<span style="color:#15803d">+ '+(typeof addedV==="string"?esc(addedV):"make-up")+'</span><span class="gv-badge" style="background:#bbf7d0;color:#15803d">make-up</span>';
         if(!cell&&_skipAt[dn+"|"+sk]!==undefined) cell='<s style="color:var(--muted);opacity:.7">'+esc(_skipAt[dn+"|"+sk])+'</s><span class="gv-badge" style="background:#fef3c7;color:#92400e" title="Passed over by a rebuild — won\'t come back as carryover or catch-up">skipped</span>';
         if(!cell) cell="·";
+        // On TODAY's row, a drifted column names the lesson that is really next. The stored
+        // cell is left exactly as it is — this only adds the truth underneath it.
+        if(l.date===today&&_gvDrift[sk]){
+          cell+='<div style="margin-top:2px;font-size:9px;font-weight:700;color:#991b1b;white-space:normal;line-height:1.25" title="From the plan \u2014 what they have actually finished. The cell above is what the calendar pencilled in.">\u25B8 really next: '+esc(_gvDrift[sk].planText)+'</div>';
+        }
         const picked=gvSelMode&&gvSel.has(dn+"|"+sk);
         // Past cells open too when FILLED — delete-only view (see the editing branch).
         const click=gvSelMode?(past?'':' onclick="gvSelCell('+dn+',\''+sk+'\')"'):' onclick="gvOpenCell('+dn+',\''+sk+'\')"';
