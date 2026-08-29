@@ -19180,7 +19180,25 @@ function cascadeIntraWeek(sweepTodayElapsed){
     // text-sorts before "pg80-83", so this pass dealt the wrong lesson onto today and the
     // order guard then (rightly) refused every tap (2026-08-20, Ellis). Text order remains
     // the fallback for pre-Stage-1.2 cards with no lid.
-    const byLesson=[...uncheckedGrp].sort((a,b)=>(a.lid&&b.lid)?natCmp(String(a.lid),String(b.lid)):natCmp(lessonKey(a),lessonKey(b)));
+    // Sort by the lesson's POSITION IN THE LIST, not by the lid text. A lid is minted when
+    // a lesson is added and is NEVER renumbered when the list is reordered, so lid order and
+    // list order can disagree: Lincoln's AAS carries L0011="L2-16" at index 9 and
+    // L0009="L2-17" at index 10, so sorting on the lid string dealt L2-17 into the EARLIER
+    // slot and the order guard then (rightly) refused it — live on Saturday's board,
+    // 2026-08-29. Same class as the "Ex." vs "pg" text-sort bug of 08-20, one level down:
+    // that fix moved from title text to lid, and lid is only a proxy for position.
+    // Fallbacks unchanged: lid text when the list can't resolve both, title text when a card
+    // has no lid at all (pre-Stage-1.2).
+    const _lidIdx={};
+    try{ const _ids=(typeof lidsFor==="function")?lidsFor(grp[0].who,grp[0].subjectKey):null;
+      if(_ids) _ids.forEach((l,i)=>{ _lidIdx[l]=i; }); }catch(e){}
+    const _lidPos=t=>(t&&t.lid&&_lidIdx[t.lid]!==undefined)?_lidIdx[t.lid]:null;
+    const byLesson=[...uncheckedGrp].sort((a,b)=>{
+      const pa=_lidPos(a), pb=_lidPos(b);
+      if(pa!==null&&pb!==null) return pa-pb;
+      if(a.lid&&b.lid) return natCmp(String(a.lid),String(b.lid));
+      return natCmp(lessonKey(a),lessonKey(b));
+    });
 
     // Sort by day+time order (the slots). End-of-week overflow slots sort LAST so the
     // LATEST lessons become the overflow (kept in sequence — the earliest lessons take
