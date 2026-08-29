@@ -22914,7 +22914,32 @@ function projectPlans(input){
 // cbDayCap (existing calendar+rules readers), the list minus done-by-id, cap, anchor.
 // With cap 1 and nothing owed it must lay EXACTLY what cbMaterialize lays (verified against
 // all 24 live subjects before it shipped) — caps and owed are the only new behaviour.
-function planMaterialize(kid,sk,form){
+// PLANDROP_START
+// Lessons already sitting on a dealt card come OUT of what the projection lays, or the same
+// lesson shows twice — once on its card, once again later down the column. Match by lid when
+// the card carries one; otherwise spend ONE occurrence per matching text, because a sequence
+// repeats lessons on purpose (Lucy's mathseeds lists "Lesson 68" twice). Pure; never drops
+// more than the cards actually account for.
+function _planDropDealt(lessons,dealt){
+  if(!dealt||!lessons||!lessons.length) return lessons||[];
+  const onCards=new Set(); const byText={};
+  Object.keys(dealt).forEach(function(d){ const c=dealt[d]; if(!c) return;
+    if(c.lid) onCards.add(c.lid);
+    else if(c.text){ const k=_lidNorm(c.text); byText[k]=(byText[k]||0)+1; } });
+  return lessons.filter(function(l){
+    if(l&&l.lid&&onCards.has(l.lid)) return false;
+    const k=_lidNorm(l&&l.text); if(byText[k]>0){ byText[k]--; return false; }
+    return true;
+  });
+}
+// PLANDROP_END
+// opts.dealt — DISPLAY ONLY, and the only caller that passes it is the derived Grid:
+// {iso:{lid,text}} for days the scheduler has already dealt a card. Those days take no
+// projected lesson (the card is what the kid actually has), and the lessons already on
+// those cards come out of the content — otherwise the same lesson shows twice, once on its
+// card and once again later down the column. cbApply passes nothing and is unchanged.
+function planMaterialize(kid,sk,form,opts){
+  const _dealt=(opts&&opts.dealt)||null;
   const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s) return null;
   const f=form||cbDefaultForm(kid,sk);
   // "pages" decides only WHICH UNITS get built (cbMaterialize step 1) — placement is the
@@ -22935,7 +22960,11 @@ function planMaterialize(kid,sk,form){
   if(!content.length) return {error:"Nothing left to lay — every lesson is finished.",warnings:[]};
   const ids=lidsFor(kid,sk)||[]; const seq=s.lessonSeq||[]; const di=lidDoneIdx(kid,sk)||new Set();
   const pool={}; seq.forEach((t,i)=>{ if(di.has(i)) return; const k=_lidNorm(t); (pool[k]=pool[k]||[]).push(ids[i]); });
-  const lessons=content.map(t=>{ const q=pool[_lidNorm(t)]; return {lid:(q&&q.length)?q.shift():null,text:String(t)}; });
+  let lessons=content.map(t=>{ const q=pool[_lidNorm(t)]; return {lid:(q&&q.length)?q.shift():null,text:String(t)}; });
+  if(_dealt){
+    lessons=_planDropDealt(lessons,_dealt);
+    if(!lessons.length) return {error:"Nothing left to lay — every remaining lesson is already on a card.",warnings:[]};
+  }
   // Calendar: existing future rows + a dense extension past the grid end (weekdays; off days
   // via the calendar; existing dates never minted twice) — dayNums are minted later, in date
   // order, only for rows the lay actually touches (same as cbMaterialize's extension).
@@ -22951,7 +22980,7 @@ function planMaterialize(kid,sk,form){
       extRows.push({date:ds,dow:DOW[dow],off:!!ex.isOff(ds),usedMin:0,exists:false});
     }
   }
-  const allRows=cal.concat(extRows).filter(r=>r.date>=today);
+  const allRows=cal.concat(extRows).filter(r=>r.date>=today&&!(_dealt&&_dealt[r.date]));
   // Owed: pattern days since the anchor, minus done since the anchor (records carry ISO days).
   const anchor=s.planAnchor||null; const doneNode=((((currData||{}).done||{})[kid]||{})[sk])||{};
   let doneSince=0; if(anchor) Object.values(doneNode).forEach(r=>{ if(r&&r.day&&String(r.day)>=anchor) doneSince++; });
@@ -24471,6 +24500,60 @@ function gvPlanDrift(kid,sk){
             planText:String(seq[ni]==null?"":seq[ni]),planLid:ids[ni]};
   }catch(e){ return null; }
 }
+// GVDER_START ── the derived column (Stage 2 of "one truth") ─────────────────
+// Grid cells stop being the record for plan-backed subjects: the future is COMPUTED from
+// the plan, live on every render, with no cache — caching is exactly how drift came back.
+// planMaterialize is pure (it returns a lay; cbApply is what writes), and measured
+// 2026-08-29 the projection underneath it runs ~2.3 ms for a whole kid.
+//
+// HER RULE (2026-08-28): CARDS WIN on days the scheduler has already dealt. A day holding a
+// real card shows THAT lesson, so the kids' week is never rewritten underneath them; only
+// days past the dealt week are derived.
+function _gvIso(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+// Dates the ACTIVE WEEK has already dealt a card for this subject → that card's lesson.
+// Carry twins (_c) are not their own sitting and never speak for a day.
+function gvDealtDates(kid,sk){
+  const out={};
+  try{
+    if(typeof weekData==="undefined"||!weekData||!weekData.tasks) return out;
+    const yr=new Date().getFullYear();
+    weekData.tasks.forEach(function(t){
+      if(!t||t.who!==kid||t.subjectKey!==sk) return;
+      if(String(t.id||"").endsWith("_c")) return;
+      const dn=(typeof effectiveDay==="function")?effectiveDay(t):t.day;
+      const ds=(typeof DAY_DT!=="undefined"&&DAY_DT)?DAY_DT[dn]:null; if(!ds) return;
+      const d=new Date(ds+", "+yr); if(isNaN(d.getTime())) return;
+      out[_gvIso(d)]={text:((typeof taskLessonRef==="function"&&taskLessonRef(t))||t.title||""),id:t.id,lid:t.lid||null};
+    });
+  }catch(e){}
+  return out;
+}
+// What each future date should hold: {iso:{text,lid,src:"card"|"plan",extra,disagrees}}.
+// A dealt date shows its card. When the card and the projection name DIFFERENT lessons for
+// that date the card still wins, and the cell is marked `disagrees` — that is information
+// (the schedule and the plan have parted company), never something to hide.
+function gvDerivedColumn(kid,sk){
+  if(!(typeof planBacked==="function"&&planBacked(kid,sk))) return null;
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||s.paused) return null;
+  const dealt=gvDealtDates(kid,sk);
+  let res=null;
+  try{ res=planMaterialize(kid,sk,null,{dealt:dealt}); }catch(e){ return {err:String(e),byDate:{}}; }
+  if(!res) return null;                                   // mode the projection cannot lay
+  if(res.error) return {err:res.error,byDate:{}};
+  const byDate={};
+  (res.assignments||[]).forEach(function(a){ byDate[a.date]={text:a.text,lid:a.lid,src:"plan",backlog:!!a.backlog}; });
+  (res.extras||[]).forEach(function(x){
+    if(byDate[x.date]) byDate[x.date].extra=x.text;
+    else byDate[x.date]={text:x.text,lid:x.lid,src:"plan"};
+  });
+  // The projection was told to skip these days and these lessons, so a card can never
+  // collide with a projected one — no overlap to reconcile, nothing to flag.
+  Object.keys(dealt).forEach(function(iso){
+    byDate[iso]={text:dealt[iso].text,lid:dealt[iso].lid,src:"card"};
+  });
+  return {byDate:byDate,dealt:dealt,stats:res.stats||null,warnings:res.warnings||[]};
+}
+// GVDER_END
 function gvRenderedDns(kid){
   const lessons=((currData||{}).lessons||{})[kid]||{};
   const today=cbTodayISO();
@@ -26192,9 +26275,15 @@ function renderCurrGrid(el){
     const _sd=((((currData.subjects||{})[gvKid]||{})[_lm.sk]||{}).display)||_lm.sk;
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:6px 10px;margin:0 0 8px;font-size:11px;color:#3730a3"><span>Moved <b>'+esc(_sd)+'</b> to '+esc(_tdisp)+' (make-up)</span><button onclick="lmUndoMove()" style="border:1px solid #6366f1;background:#fff;color:#4338ca;border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">&#8617; Undo</button></div>';
   }
-  // Drift is computed ONCE per column (below, with the header) and read again by today's
-  // row — per-cell it would walk every subject's whole list on every row.
-  const _gvDrift={};
+  // ONE TRUTH: the derived column for each plan-backed subject, computed once here and read
+  // by every row below. null = not plan-backed, paused, or a mode the projection cannot lay,
+  // and those columns keep their stored cells exactly as before.
+  const _gvDer={};
+  // The derived grid recomputes on EVERY render — that is the point (no cache means no
+  // drift). projectPlans alone measured 2.3 ms for a whole kid, but planMaterialize adds
+  // cbRemainingContent + cbFutureRows on top and that has never been measured. Log it when a
+  // render is slow, so we learn it from her real devices instead of guessing.
+  let _gvDerMs=0;
   h+='<div class="gv-wrap"><table class="gv'+(gvSelMode?' gv-selmode':'')+'"><thead><tr>';
   h+='<th class="gv-fix">Day</th><th class="gv-min">Min</th>';
   for(const sk of cols){
@@ -26211,13 +26300,8 @@ function renderCurrGrid(el){
       const _ow=planOwed(gvKid,sk); const _cap=Math.max(1,parseInt(subs[sk].cap,10)||1);
       if(_ow>0) owedChip='<span title="'+_ow+' owed — behind the pattern since '+esc(subs[sk].planAnchor||"")+'. Cap '+_cap+'/day'+(_cap>1?': second sittings absorb it':': everything slides — raise the cap in the card to catch up faster')+'." style="display:inline-block;margin-left:4px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:8px;padding:0 5px;font-size:9px;font-weight:800">owed '+_ow+'</span>';
     } }catch(e){}
-    // Drift chip: this column's stored calendar no longer agrees with the plan. Says which
-    // way and by how much; the subject card is the one telling the truth.
-    let driftChip='';
-    try{ const _dr=gvPlanDrift(gvKid,sk); _gvDrift[sk]=_dr;
-      if(_dr) driftChip='<span title="'+esc('Grid says \u201C'+_dr.gridText+'\u201D '+(_dr.onToday?'today':'next')+' \u2014 but '+cap(gvKid)+' is actually on \u201C'+_dr.planText+'\u201D. The grid calendar was laid once and does not move when the pace changes; the subject card is right. Rebuild this subject to re-lay it from where they really are.')+'" style="display:inline-block;margin-left:4px;background:#fee2e2;color:#991b1b;border:1px solid #fecaca;border-radius:8px;padding:0 5px;font-size:9px;font-weight:800">'+(_dr.delta>0?'+':'')+_dr.delta+'</span>';
-    }catch(e){}
-    h+='<th onclick="'+hact+'" title="'+esc(tip)+'">'+mark+esc((subs[sk]||{}).display||sk)+owedChip+driftChip+'</th>';
+    try{ const _t0=Date.now(); _gvDer[sk]=(typeof gvDerivedColumn==="function")?gvDerivedColumn(gvKid,sk):null; _gvDerMs+=Date.now()-_t0; }catch(e){ _gvDer[sk]=null; }
+    h+='<th onclick="'+hact+'" title="'+esc(tip)+'">'+mark+esc((subs[sk]||{}).display||sk)+owedChip+'</th>';
   }
   h+='</tr></thead><tbody>';
 
@@ -26271,7 +26355,14 @@ function renderCurrGrid(el){
     h+='</td>';
     h+='<td class="gv-min'+((cap_&&mins>cap_)?' gv-overcap':'')+'" title="'+gridMins+' grid + '+dailyMins+' daily'+(retrievalMins?' + '+retrievalMins+' drill':'')+(cardMins?' + '+cardMins+' card':'')+' min'+((cap_&&mins>cap_)?' · over the '+cap_+' cap':'')+'">'+(mins||"")+'</td>';
     for(const sk of cols){
-      const v=l[sk];
+      // ONE TRUTH: a FUTURE cell of a plan-backed subject shows what the plan says lands
+      // there — computed every render, never stored, so it cannot drift. Empty means the
+      // plan puts nothing there; falling back to the stored cell is what let the two records
+      // disagree in the first place (23 of 24 columns on 2026-08-28).
+      // PAST rows keep their stored cell: that is the record of what actually happened and
+      // is never recomputed. A cell marked done keeps its own text for the same reason.
+      const _derCol=(!past&&_gvDer[sk]&&!_gvDer[sk].err&&!_doneAt[dn+"|"+sk])?_gvDer[sk]:null;
+      const v=_derCol?((_derCol.byDate[l.date]||{}).text||""):l[sk];
       const removed=!!(ov.removed||{})[sk];
       const addedV=(ov.added||{})[sk];
       const editing=gvEdit===dn+"|"+sk;
@@ -26325,12 +26416,6 @@ function renderCurrGrid(el){
           :(_isDone?'<span class="gv-done" title="'+((typeof lidStamped==="function"&&lidStamped(gvKid,sk)&&((((currData.subjects||{})[gvKid]||{})[sk]||{}).lessonSeq||[]).filter(t=>_lidNorm(t)===_lidNorm(v)).length>1)?"Finished — but this lesson is on the list more than once, and this cell is showing the finished copy. 🗑 here removes the extra copy from the list.":"Finished — this stays as history. Rebuilds never move it and 🗑 won’t remove it.")+'">'+esc(v)+' <span class="gv-badge" style="background:#dcfce7;color:#15803d">&#10003; done</span></span>':esc(v));
         if(addedV!==undefined) cell+=(cell?'<br>':'')+'<span style="color:#15803d">+ '+(typeof addedV==="string"?esc(addedV):"make-up")+'</span><span class="gv-badge" style="background:#bbf7d0;color:#15803d">make-up</span>';
         if(!cell&&_skipAt[dn+"|"+sk]!==undefined) cell='<s style="color:var(--muted);opacity:.7">'+esc(_skipAt[dn+"|"+sk])+'</s><span class="gv-badge" style="background:#fef3c7;color:#92400e" title="Passed over by a rebuild — won\'t come back as carryover or catch-up">skipped</span>';
-        if(!cell) cell="·";
-        // On TODAY's row, a drifted column names the lesson that is really next. The stored
-        // cell is left exactly as it is — this only adds the truth underneath it.
-        if(l.date===today&&_gvDrift[sk]){
-          cell+='<div style="margin-top:2px;font-size:9px;font-weight:700;color:#991b1b;white-space:normal;line-height:1.25" title="From the plan \u2014 what they have actually finished. The cell above is what the calendar pencilled in.">\u25B8 really next: '+esc(_gvDrift[sk].planText)+'</div>';
-        }
         const picked=gvSelMode&&gvSel.has(dn+"|"+sk);
         // Past cells open too when FILLED — delete-only view (see the editing branch).
         const click=gvSelMode?(past?'':' onclick="gvSelCell('+dn+',\''+sk+'\')"'):' onclick="gvOpenCell('+dn+',\''+sk+'\')"';
@@ -26340,6 +26425,7 @@ function renderCurrGrid(el){
     h+='</tr>';
   }
   h+='</tbody></table></div>';
+  if(_gvDerMs>250) dbg("grid derive slow: "+_gvDerMs+"ms for "+cols.length+" columns ("+gvKid+")");
   h+='<div style="font-size:10px;color:var(--muted);padding:0 2px 16px">Red rows = calendar/day-off · <span style="background:#eff6ff;padding:1px 6px;border-radius:6px">blue row</span> = today · past days are editable (tap one to fix a label, fill a gap, or ✓ mark it done) · tap any other filled cell for its menu: ✎ edit · ➡ move (then tap the landing day) · ✕ off this day (re-lays) · 🗑 delete-and-re-lay · tap a column title for its subject card</div>';
   h+='</div>';
   // A build can start from a subject card opened HERE (column-header tap) — the
