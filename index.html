@@ -39513,8 +39513,27 @@ function generateWeek(config){
     const dkDate=gwParseDate(dk);
     const dkAbbr=_WDAY_ABBR2[dkDate.getDay()];
     for(const kid of [...ROSTER]){
-      if(!balanced[dk][kid]||!Object.keys(balanced[dk][kid]).length) continue;
       const subs=currData&&currData.subjects[kid]||{};
+      // A kid with nothing yet on this day is normally off — EXCEPT a kid whose whole
+      // curriculum is bookends. Julian's only subjects are morning_nb (rules "first") and
+      // closing_nb ("last"); resolveWeekSlots skips first/last, so they are injected only
+      // here, and this guard required him to already have something. His `drills` subject
+      // used to be that seed. When it was removed he generated ZERO cards for week 19 —
+      // notebooks never injected, and retrieval (which needs an existing task that day)
+      // skipped him too. One subject deletion silently ended his whole school week.
+      // So: bookends can't be the thing that requires a middle. A bookend-only kid gets
+      // their day as long as the calendar doesn't say they're off.
+      if(!balanced[dk][kid]||!Object.keys(balanced[dk][kid]).length){
+        const _bookendOnly=Object.keys(subs).length&&Object.keys(subs).every(function(k){
+          const _s=subs[k]||{}; const _r=String(_s.rules||"");
+          return _s.paused||_r.includes("first")||_r.includes("last");
+        });
+        if(!_bookendOnly) continue;
+        let _off=false;
+        try{ _off=!!(smapIsKidOff(kid,dk)||schedOvKidOff(kid,dk)); }catch(e){}
+        if(_off) continue;
+        if(!balanced[dk][kid]) balanced[dk][kid]={};
+      }
       for(const sk of Object.keys(subs)){
         if(subs[sk].paused) continue;
         const r=subs[sk].rules||"";
