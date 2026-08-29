@@ -26413,7 +26413,7 @@ function renderCurrGrid(el){
     // Retrieval slots (🎯 Daily Drill / 🏃 Sprint / 🎯 Match) — generation adds one ~15-min
     // Mom-required slot per template day; it's not a grid subject, so add it to the load too.
     let retrievalMins=0;
-    if(!offReason&&!mapOff&&typeof retrTracks==="function"&&retrTracks(gvKid).length&&typeof retrDayKinds==="function"){ const _rks=retrDayKinds(gvKid,DOWS[d.getDay()].toLowerCase()).filter(k=>typeof RETR_SLOT_TITLE!=="undefined"&&RETR_SLOT_TITLE[k]); retrievalMins=15*_rks.length; }
+    if(!offReason&&!mapOff&&typeof retrTracks==="function"&&retrTracks(gvKid).length&&typeof retrDayKinds==="function"){ const _rks=retrDayKinds(gvKid,DOWS[d.getDay()].toLowerCase()).filter(k=>typeof RETR_SLOT_TITLE!=="undefined"&&RETR_SLOT_TITLE[k]); retrievalMins=_rks.reduce((n,k)=>n+((typeof retrSlotMinutes==="function")?retrSlotMinutes(gvKid,k):15),0); }
     const cardMins=(!offReason&&!mapOff)?(_cardMinByDate[l.date]||0):0;
     const mins=gridMins+dailyMins+retrievalMins+cardMins;
     h+='<tr'+(cls?' class="'+cls+'"':'')+'>';
@@ -35729,7 +35729,27 @@ const RETR_DEFAULTS={gate_pct:80,gate_streak:2,min_stage_sessions:0,stuck_after:
   recheck_ladder:[7,14,28],recheck_pass_pct:null,recheck_fail:"review",
   // P3: Match rotation ("heatmap" = suggest the deck with the worst recent drill
   // accuracy; "manual" = no suggestion) over a rolling calendar window.
-  heatmap_window:14,match_rotation:"heatmap"};
+  heatmap_window:14,match_rotation:"heatmap",
+  // How much of the day a retrieval slot actually reserves. Was a hard-coded 15 in the
+  // generator AND again in the Grid's Min column, so a 2-minute sprint held 15 minutes of a
+  // kid's day five days a week (2026-08-29 — she said "retrieval shouldn't be 30, more like
+  // 5–10"). sprint/recheck are DERIVED from sprint_seconds so they follow that setting on
+  // their own — Julian's 45s rounds come out shorter with nothing to set. drill and match
+  // are estimates and are meant to be tuned here.
+  sprint_rounds:2,slot_min_drill:5,slot_min_match:10};
+// Minutes a retrieval slot of `kind` should reserve for this kid. Resolves through
+// RETR_DEFAULTS → _defaults → per-kid → per-track, exactly like sprint_seconds.
+function retrSlotMinutes(kid,kind,track){
+  const S=(typeof retrSettings==="function")?retrSettings(kid,track||null):RETR_DEFAULTS;
+  if(kind==="sprint"||kind==="recheck"){
+    const secs=parseInt(S.sprint_seconds,10)||60;
+    const rounds=(kind==="recheck")?(parseInt(S.review_count,10)||3):(parseInt(S.sprint_rounds,10)||2);
+    return Math.max(1,Math.round(secs*rounds/60));
+  }
+  const key=(kind==="match")?"slot_min_match":(kind==="drill")?"slot_min_drill":null;
+  const v=key?parseInt(S[key],10):NaN;
+  return Math.max(1,isNaN(v)?10:v);
+}
 function retrSettings(kid,track){
   const rp=(masteryData&&masteryData.retrievalPlan)||{};
   return Object.assign({},RETR_DEFAULTS,rp._defaults||{},
@@ -36168,6 +36188,9 @@ function retrAdminHtml(){
   h+=num("review_count","Review mix size");
   h+=num("stuck_after","Stuck after (sessions)");
   h+=num("sprint_seconds","Sprint seconds");
+  h+=num("sprint_rounds","Sprint rounds");
+  h+=num("slot_min_drill","Drill minutes");
+  h+=num("slot_min_match","Match minutes");
   h+=num("heatmap_window","Match window (days)");
   const lad=loc.recheck_ladder!==undefined;
   h+='<div class="mast-edit-row"><span class="mast-edit-label">Re-check ladder'+(lad?' <span style="font-size:8px;font-weight:800;color:#b45309">SET</span>':'')+'</span>'
@@ -39728,7 +39751,7 @@ function gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear
       if(!mine.length) continue;
       const slot={
         id:idPrefix+"retr_"+kind+"_"+kid,
-        who:kid,day:dn,time:null,dur:15,
+        who:kid,day:dn,time:null,dur:((typeof retrSlotMinutes==="function")?retrSlotMinutes(kid,kind):15),
         title:RETR_SLOT_TITLE[kind],detail:RETR_SLOT_DETAIL[kind],
         mom:"required",cascade:true,device:"paper",subjectKey:"retrieval",retrieval:kind
       };
