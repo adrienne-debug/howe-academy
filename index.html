@@ -30000,6 +30000,8 @@ function mastDueItems(kid,pn){
 
 let mastLogMode=false;
 let mastLogScores={};  // {itemId: "c"|"m"|"~"}
+let mastLogPausedMs=0;   // ⏱ total time paused this session — subtracted from the clock
+let mastLogPauseAt=null; // when the current pause began (null = running)
 let mastLogStartTs=null; // ⏱ drill clock — starts on the FIRST score tap (studying is free,
                          // same rule as Match), stamped into the session at save so a
                          // finished-in-under-a-minute run can be compared to a re-run
@@ -30100,14 +30102,33 @@ function mastDeleteScore(dateKey){
     _mastRe();
   }
 }
+// Her second guard: the interruption you DIDN'T catch. Marking a finished session drops it
+// from the drill-length median (mastDrillSamples skips `bad`) without deleting the scores —
+// the kid's work still counts, only the timing is disowned. Reversible.
+function mastToggleBad(dateKey){
+  const days=(masteryData.history||{})[masteryKid]; const e=days&&days[dateKey]; if(!e) return;
+  const now=!e.bad;
+  if(now) e.bad=true; else delete e.bad;
+  if(db) db.ref("mastery/history/"+masteryKid+"/"+dateKey+"/bad").set(now?true:null);
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e2){}
+  _mastRe();
+}
 function mastShowItemHist(id){ mastScoreItemId=mastScoreItemId===id?null:id; _mastRe(); }
 function mastToggleTier(t){ masteryCollapsed[masteryKid+"_"+t]=!masteryCollapsed[masteryKid+"_"+t]; const c=document.getElementById("content"); if(c) renderMastery(c); }
-function mastStartLog(){ mastLogMode=true; mastLogScores={}; mastLogStartTs=null; mastSlideIdx=0; mastOrderedDue(mastGetPrintNum()); /* reuse the frozen quiz order (or build it now if going straight to Log) — never reshuffle */ mastPersistLog(); const c=document.getElementById("content"); if(c) renderMastery(c); }
+// Pause is for an interruption caught IN THE MOMENT. The one you only notice afterwards is
+// what mastToggleBad is for — see the ⏱ chip on a finished session.
+function mastLogPause(){
+  if(!mastLogStartTs) return;                       // clock hasn't started (nothing scored yet)
+  if(mastLogPauseAt){ mastLogPausedMs+=Date.now()-mastLogPauseAt; mastLogPauseAt=null; }
+  else mastLogPauseAt=Date.now();
+  mastPersistLog(); _mastRe();
+}
+function mastStartLog(){ mastLogMode=true; mastLogScores={}; mastLogStartTs=null; mastLogPausedMs=0; mastLogPauseAt=null; mastSlideIdx=0; mastOrderedDue(mastGetPrintNum()); /* reuse the frozen quiz order (or build it now if going straight to Log) — never reshuffle */ mastPersistLog(); const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastCancelLog(){
   // All-or-nothing: nothing has been written yet, so Cancel really does throw the
   // session away — make sure that's what was meant when scores are already down.
   if(Object.keys(mastLogScores).length&&!confirm("Throw away this session? Nothing has been saved yet.")) return;
-  mastLogMode=false; mastLogScores={}; mastLogStartTs=null; mastLogDeck=null; mastSessionKey=""; mastClearLogPersist(); const c=document.getElementById("content"); if(c) renderMastery(c);
+  mastLogMode=false; mastLogScores={}; mastLogStartTs=null; mastLogPausedMs=0; mastLogPauseAt=null; mastLogDeck=null; mastSessionKey=""; mastClearLogPersist(); const c=document.getElementById("content"); if(c) renderMastery(c);
 }
 function mastScore(id,val){ if(!mastLogStartTs) mastLogStartTs=Date.now(); mastLogScores[id]=val; mastPersistLog(); const c=document.getElementById("content"); if(c) renderMastery(c); }
 
@@ -30312,7 +30333,10 @@ function mastSaveResults(){
   const scored=correct+miss+close;
   // ⏱ Session duration — first score tap → this Save. Stored per session (sessTimes)
   // so a drill finished under a minute can be re-run and the two times compared.
-  const drillSecs=mastLogStartTs?Math.max(1,Math.round((Date.now()-mastLogStartTs)/1000)):null;
+  // Paused time is not drill time. An open pause at Save counts too, so hitting Save while
+  // still paused can't smuggle the interruption back into the average.
+  const _pausedMs=mastLogPausedMs+(mastLogPauseAt?(Date.now()-mastLogPauseAt):0);
+  const drillSecs=mastLogStartTs?Math.max(1,Math.round(Math.max(0,(Date.now()-mastLogStartTs)-_pausedMs)/1000)):null;
   let histEntry={
     date:today, printNum:pn, total:due.length, scored:scored,
     correct:correct, miss:miss, close:close, shown:shown,
@@ -30374,7 +30398,7 @@ function mastSaveResults(){
 
   mastLogMode=false;
   mastLogScores={};
-  mastLogStartTs=null;
+  mastLogStartTs=null; mastLogPausedMs=0; mastLogPauseAt=null;
   mastLogDeck=null;
   mastSessionKey="";  // logging is the trigger for a new quiz — drop the persisted shuffle so the next view reshuffles
   try{HA_LS.removeItem("ha_mast_deck_"+masteryKid);}catch(e){}
@@ -31800,7 +31824,7 @@ function mastSlideShown(id){
 // The scores live only in memory until Save, so a half-finished quiz used to evaporate
 // when someone clicked out. Persist {date,scores} per kid and silently resume same-day.
 function mastPersistLog(){
-  try{ HA_LS.setItem("ha_mast_log_"+masteryKid,JSON.stringify({date:new Date().toISOString().slice(0,10),scores:mastLogScores,startTs:mastLogStartTs})); }catch(e){}
+  try{ HA_LS.setItem("ha_mast_log_"+masteryKid,JSON.stringify({date:new Date().toISOString().slice(0,10),scores:mastLogScores,startTs:mastLogStartTs,pausedMs:mastLogPausedMs,pauseAt:mastLogPauseAt})); }catch(e){}
 }
 function mastClearLogPersist(){ try{HA_LS.removeItem("ha_mast_log_"+masteryKid);}catch(e){} }
 function mastRestoreLog(){
@@ -31810,7 +31834,7 @@ function mastRestoreLog(){
     if(!s) return;
     const _today=new Date().toISOString().slice(0,10);
     const _has=s.scores&&Object.keys(s.scores).length;
-    if(s.date===_today&&_has){ mastLogMode=true; mastLogScores=s.scores; mastLogStartTs=s.startTs||null; }
+    if(s.date===_today&&_has){ mastLogMode=true; mastLogScores=s.scores; mastLogStartTs=s.startTs||null; mastLogPausedMs=s.pausedMs||0; mastLogPauseAt=s.pauseAt||null; }
     else if(_has) mastRescueStaleLog(s);  // a prior day's half-log is the ONLY copy of those scores — offer to bank it, never silently drop it (lost Lucy's 7/7 drill to the old delete)
     else mastClearLogPersist();
   }catch(e){}
@@ -32974,7 +32998,7 @@ function _renderMasteryInner(el){
         {
           const _fT=s=>Math.floor(s/60)+":"+String(s%60).padStart(2,"0");
           const _ts=(e.sessTimes&&e.sessTimes.length)?e.sessTimes:(e.secs!=null?[e.secs]:[]);
-          if(_ts.length) h+='<span style="font-size:10px;font-weight:700;color:#0e7490;background:#ecfeff;border-radius:6px;padding:2px 6px">\u{23F1} '+_ts.map(_fT).join(" \u{2192} ")+'</span>';
+          if(_ts.length) h+='<span onclick="event.stopPropagation();mastToggleBad(\''+dateKey+'\')" title="'+(e.bad?"Marked interrupted — this time is ignored when working out how long a drill takes. Tap to count it again.":"Tap if you were interrupted — the scores stay, but this time stops counting toward how long a drill takes.")+'" style="cursor:pointer;font-size:10px;font-weight:700;'+(e.bad?'color:#92400e;background:#fef3c7;text-decoration:line-through':'color:#0e7490;background:#ecfeff')+';border-radius:6px;padding:2px 6px">\u{23F1} '+_ts.map(_fT).join(" \u{2192} ")+(e.bad?' interrupted':'')+'</span>';
         }
         if(e.shown) h+='<span class="sc-s">\u{1F441}\u{FE0F} '+e.shown+'</span>';
         h+='</div>';
@@ -33533,7 +33557,17 @@ function _renderMasteryInner(el){
       const allScored=scored===due.length;
       h+='<div class="mast-save-bar"><span class="mast-save-count">'+scored+' / '+due.length+' scored</span>';
       h+='<button class="mast-save-btn" onclick="mastSaveResults()"'+(allScored?'':' disabled')+'>Save Results</button></div>';
-      h+='<div style="padding:8px 14px;text-align:center"><button class="mast-log-btn" onclick="mastCancelLog()">Cancel</button></div>';
+      // ⏸ Pause — for an interruption caught in the moment, so the clock (and therefore how
+      // long we think a drill takes) doesn't swallow it. Only offered once the clock is
+      // actually running: it starts on the first score tap, studying before that is free.
+      h+='<div style="padding:8px 14px;text-align:center">';
+      if(mastLogStartTs){
+        const _pz=!!mastLogPauseAt;
+        h+='<button class="mast-log-btn" onclick="mastLogPause()" style="margin-right:6px;'+(_pz?'background:#fef3c7;color:#92400e;border-color:#fde68a':'')+'">'+(_pz?'\u{25B6} Resume':'\u{23F8} Pause')+'</button>';
+      }
+      h+='<button class="mast-log-btn" onclick="mastCancelLog()">Cancel</button>';
+      if(mastLogPauseAt) h+='<div style="font-size:10px;color:#92400e;font-weight:700;margin-top:6px">\u{23F8} Paused — the clock is stopped</div>';
+      h+='</div>';
     } else {
       // One quiz per day: once today is logged the Log button steps aside — a second
       // session is an explicit choice ("Log another"), and its results merge into
