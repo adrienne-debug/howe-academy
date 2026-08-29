@@ -270,5 +270,37 @@ console.log("markup");
   ok("nothing leaks undefined/NaN into the markup", !/undefined|NaN/.test(h));
 }
 
+// ── the adopt button cannot delete a plan-backed subject's work ────────────
+// Stage 2 killed this button's premise: the Grid now DISPLAYS the plan, so "take the grid's
+// names" would adopt the STALE stored cells. On Lincoln's AAS (list 95, grid 90, nothing
+// grid-only) that meant rewriting the list to 90 and deleting L2-16…L2-20 — five lessons he
+// had not done. Source assertions, because the guard lives in the render and the action.
+console.log("\nadopt guard (plan-backed)");
+{
+  const srcAll = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+  const fnStart = srcAll.indexOf("function gvReconcileAdopt");
+  const fn = fnStart < 0 ? "" : srcAll.slice(fnStart, fnStart + 6000);   // must span the write path
+  ok("gvReconcileAdopt exists", fnStart >= 0);
+  ok("it refuses outright for a plan-backed subject",
+    /planBacked\(kid,sk\)\)\{[\s\S]{0,400}?return;/.test(fn), "no plan-backed bail-out");
+  const iGuard = fn.indexOf("planBacked(kid,sk)"), iWrite = fn.indexOf("gvSyncSeqInto");
+  ok("the refusal happens BEFORE any patch is built",
+    iGuard >= 0 && iWrite > iGuard, { guard: iGuard, write: iWrite });
+  ok("it points her at Rebuild instead", /Rebuild the subject instead/.test(fn));
+
+  const rStart = srcAll.indexOf("Card list vs grid — out of step");
+  const render = rStart < 0 ? "" : srcAll.slice(rStart, rStart + 4000);
+  ok("the findings section exists", rStart >= 0);
+  ok("a plan-backed row offers NO adopt button",
+    /planBacked\(kid,r\.sk\)\)\s*\n?\s*h\+='<span/.test(render), "plan-backed row still reaches a button");
+  ok("and says the stored cells are the thing that lags",
+    /only the stored cells behind it are/.test(render));
+  ok("and warns against matching the list to the grid",
+    /would delete work still to do/.test(render));
+  // the legacy paths survive for non-plan-backed subjects
+  ok("the lossless button still exists for legacy subjects", /Match the list to the grid/.test(render));
+  ok("the lossy button still exists for legacy stamped subjects", /Take the grid’s names/.test(render));
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
