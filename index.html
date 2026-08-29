@@ -36055,22 +36055,28 @@ function retrUnlockState(kid,track){
 let retrAdminLocal=null;
 function retrAdminInit(){
   const rp=(masteryData.retrievalPlan||{})[masteryKid]||{};
-  retrAdminLocal={settings:Object.assign({},rp.settings||{}),week:Object.assign({},retrWeek(masteryKid)),week2:Object.assign({},retrWeek2(masteryKid))};
+  // Stamp the kid this editor state belongs to. mastSetKid clears mastAdminLocal but not
+  // this one, so after editing Lincoln and switching to Lucy the panel kept rendering
+  // LINCOLN's rows — and retrAdminSave writes retrAdminLocal to whoever masteryKid is now,
+  // so one Save would have put Lincoln's plan onto Lucy (2026-08-29, she spotted the
+  // rows and stopped before saving). Guarding here covers every entry point that sets
+  // masteryKid, instead of relying on each one to remember to reset.
+  retrAdminLocal={kid:masteryKid,settings:Object.assign({},rp.settings||{}),week:Object.assign({},retrWeek(masteryKid)),week2:Object.assign({},retrWeek2(masteryKid))};
 }
 function retrAdminNum(key,val){
-  if(!retrAdminLocal) retrAdminInit();
+  if(!retrAdminLocal||retrAdminLocal.kid!==masteryKid) retrAdminInit();
   const v=String(val).trim();
   if(v==="") delete retrAdminLocal.settings[key];
   else { const n=parseFloat(v); if(!isNaN(n)) retrAdminLocal.settings[key]=n; }
 }
 function retrAdminLadder(val){
-  if(!retrAdminLocal) retrAdminInit();
+  if(!retrAdminLocal||retrAdminLocal.kid!==masteryKid) retrAdminInit();
   const arr=String(val).split(/[,\s]+/).map(x=>parseInt(x,10)).filter(x=>x>0);
   if(arr.length) retrAdminLocal.settings.recheck_ladder=arr;
   else delete retrAdminLocal.settings.recheck_ladder;
 }
 function retrAdminToggle(key,a,b){
-  if(!retrAdminLocal) retrAdminInit();
+  if(!retrAdminLocal||retrAdminLocal.kid!==masteryKid) retrAdminInit();
   const cur=retrAdminLocal.settings[key];
   if(cur===undefined) retrAdminLocal.settings[key]=a;         // inherit -> a
   else if(cur===a) retrAdminLocal.settings[key]=b;            // a -> b
@@ -36078,7 +36084,7 @@ function retrAdminToggle(key,a,b){
   _mastRe();
 }
 function retrAdminCycleDay(day,row){
-  if(!retrAdminLocal) retrAdminInit();
+  if(!retrAdminLocal||retrAdminLocal.kid!==masteryKid) retrAdminInit();
   if(!retrAdminLocal.week2) retrAdminLocal.week2={};
   const map=(row===2)?retrAdminLocal.week2:retrAdminLocal.week;
   const cur=map[day]||"off";
@@ -36087,6 +36093,8 @@ function retrAdminCycleDay(day,row){
 }
 function retrAdminSave(){
   if(!retrAdminLocal) return;
+  // Belt and braces: never write one kid's editor state onto another, whatever the UI did.
+  if(retrAdminLocal.kid&&retrAdminLocal.kid!==masteryKid){ retrAdminInit(); _mastRe(); return; }
   const kid=masteryKid;
   // Row 2 keeps only real extras: off / same-as-Row-1 days are dropped (the generator
   // would collapse them anyway); an emptied Row 2 saves as {} which clears the node.
@@ -36109,7 +36117,7 @@ function retrAdminReset(){
   _mastRe();
 }
 function retrAdminHtml(){
-  if(!retrAdminLocal) retrAdminInit();
+  if(!retrAdminLocal||retrAdminLocal.kid!==masteryKid) retrAdminInit();
   const kid=masteryKid, S=retrSettings(kid,null), loc=retrAdminLocal.settings;
   const num=(key,label,step)=>{
     const set=loc[key]!==undefined;
