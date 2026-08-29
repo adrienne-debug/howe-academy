@@ -14406,6 +14406,13 @@ function ceSaveField(field,val){
   currData.lastEdit=new Date().toISOString();
   db.ref("curriculum/lastEdit").set(currData.lastEdit);
 }
+// Overflow defaults ON, so `undefined` means allowed and only an explicit false turns it
+// off — that way every subject is covered without writing anything to 24 cards.
+function ceToggleOverflow(){
+  if(!currData||!ceEditKid||!ceEditKey) return;
+  const s=currData.subjects[ceEditKid][ceEditKey];
+  ceSaveField("overflowExtras", s.overflowExtras===false);
+}
 function ceToggleField(field){
   if(!currData||!ceEditKid||!ceEditKey) return;
   const cur=!!currData.subjects[ceEditKid][ceEditKey][field];
@@ -14749,6 +14756,17 @@ function ceRenderEditSheet(){
 
   // Mom Check (per subject) — requires the kid's master switch (in the kid header) to take effect
   const _mvKid=!!((currData.momVerifyKid||{})[ceEditKid]);
+  // Catch-up overflow — her rule: run on the normal days, but when behind the extras may
+  // land elsewhere rather than stacking two in a day.
+  const _ovf=s.overflowExtras!==false;
+  h+='<div class="ce-sheet-lbl">When behind</div>';
+  h+='<div class="ce-chips">';
+  h+='<div class="ce-chip'+(_ovf?" sel":"")+'" onclick="ceToggleOverflow();ceRenderEditSheet()">'+(_ovf?"✓ Extras can use other days":"Only its own days")+'</div>';
+  h+='</div>';
+  h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">'+(_ovf
+    ?"Catching up spills onto a free day first, and only doubles up on its own days if it is still behind."
+    :"Catching up happens only on this subject’s own days, by doubling up (per its cap).")+'</div>';
+
   h+='<div class="ce-sheet-lbl">Mom Check</div>';
   h+='<div class="ce-chips">';
   h+='<div class="ce-chip'+(s.momVerify?" sel":"")+'" onclick="ceToggleField(\'momVerify\');ceRenderEditSheet()">'+(s.momVerify?"✓ Required":"Off")+'</div>';
@@ -22826,7 +22844,13 @@ function _pjWeekKey(iso){          // Monday of the ISO week, as "YYYY-MM-DD" �
 function _pjWeeksBetween(aISO,bISO){ return Math.max(1,Math.ceil((Date.UTC(+bISO.slice(0,4),+bISO.slice(5,7)-1,+bISO.slice(8,10))-Date.UTC(+aISO.slice(0,4),+aISO.slice(5,7)-1,+aISO.slice(8,10)))/(7*86400000))); }
 // The subject's PATTERN rows (the days it normally runs), from `rows`, honouring allowed
 // days, off days, blocked days and the per-week times-per-week spread (_cbSpread).
-function _pjPatternRows(plan,rows,tpw){
+// overflowWanted > 0: this subject is BEHIND and its card allows extras on other days.
+// Spill onto free days BEFORE doubling up — an extra day is easier on a kid than two
+// sittings of the same subject stacked in one day, and it spreads the load instead of
+// concentrating it. Off days, ✕'d days and days already in the pattern are never taken.
+// Reports how many it used via plan._overflowUsed so the caller does not also try to
+// absorb the same backlog with cap-extras and overshoot.
+function _pjPatternRows(plan,rows,tpw,overflowWanted){
   const allowed=(plan.allowedDays||[]).map(String);
   const elig=rows.filter(r=>r&&!r.off&&!(plan.offDates||{})[r.date]&&!(plan._blocked||{})[r.date]&&(!allowed.length||allowed.includes(r.dow)));
   let out;
@@ -22853,6 +22877,16 @@ function _pjPatternRows(plan,rows,tpw){
       out.push(r); have.add(r.date);
     });
     out.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+  }
+  plan._overflowUsed=0;
+  if(overflowWanted>0){
+    const seen=new Set(out.map(r=>r.date));
+    const spill=rows.filter(r=>r&&!seen.has(r.date)&&!r.off&&!(plan.offDates||{})[r.date]&&!(plan._blocked||{})[r.date])
+      .sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0)
+      .slice(0,overflowWanted);
+    spill.forEach(r=>out.push(r));
+    plan._overflowUsed=spill.length;
+    if(spill.length) out.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
   }
   return out;
 }
@@ -22884,7 +22918,9 @@ function projectPlans(input){
     // behind by 2 with cap 2 means one extra today and one extra next pattern day.
     // The first `owed` lessons placed are the backlog itself (flagged for the Grid).
     let owedLeft=owed, k=0, placed=0, first="", last=""; const capMin=(input.dayCapMin||{})[kid]||0; const min=plan.minutes||20;
-    const pattern=_pjPatternRows(plan,future,tpw);
+    const pattern=_pjPatternRows(plan,future,tpw,(plan.overflow&&owed>0)?owed:0);
+    // Days gained by spilling already absorb that much backlog — don't also double up for it.
+    owedLeft=Math.max(0,owed-(plan._overflowUsed||0));
     for(const r of pattern){
       if(!lessons.length) break;
       const um=(usedMin[kid]=usedMin[kid]||{}); if(um[r.date]===undefined&&r.usedMin) um[r.date]=r.usedMin;   // minutes other subjects already hold that day
@@ -22900,7 +22936,7 @@ function projectPlans(input){
     }
     if(lessons.length) warnings.push(plan.pid+": "+lessons.length+" lesson"+(lessons.length!==1?"s":"")+" past the calendar horizon");
     stats[plan.pid]={owed,placed,unplaced:lessons.length,firstDate:first,lastDate:last,tpwUsed:tpw||((plan.allowedDays&&plan.allowedDays.length)||0)};
-    delete plan._blocked; delete plan._added;
+    delete plan._blocked; delete plan._added; delete plan._overflowUsed;
   });
   return {byDate,plans:stats,warnings};
 }
@@ -22999,7 +23035,7 @@ function planMaterialize(kid,sk,form,opts){
       if(a[sk]!==undefined&&a[sk]!==null&&a[sk]!==false) _addedIn[d]=1;
     });
   }catch(e){ dbg("added-input skip: "+e); }
-  const plan={pid:planIdFor(kid,sk),kid,sk,priority:s.priority||0,minutes:min,lessons,allowedDays:(f.allowedDays||[]).slice(),cap,anchor,doneSince,offDates:{}};
+  const plan={pid:planIdFor(kid,sk),kid,sk,priority:s.priority||0,minutes:min,lessons,allowedDays:(f.allowedDays||[]).slice(),cap,anchor,doneSince,offDates:{},overflow:s.overflowExtras!==false};
   if(f.mode==="targetDate") plan.targetDate=f.targetDate||""; else plan.tpw=parseInt(f.tpw,10)||0;
   const out=projectPlans({plans:[plan],calendar:{[kid]:pastRows.concat(allRows)},dayCapMin:{[kid]:capMin||0},blocked:{[kid]:{[sk]:blocked}},added:{[kid]:{[sk]:_addedIn}},todayISO:today});
   const st=out.plans[plan.pid]||{}; const warnings=(out.warnings||[]).slice();
@@ -26414,12 +26450,21 @@ function renderCurrGrid(el){
         const _isDone=!!_doneAt[dn+"|"+sk];
         if(gvFilled(v)) cell=removed?'<s style="color:var(--muted)">'+esc(v)+'</s><span class="gv-badge" style="background:#e0e7ff;color:#3730a3">moved</span>'
           :(_isDone?'<span class="gv-done" title="'+((typeof lidStamped==="function"&&lidStamped(gvKid,sk)&&((((currData.subjects||{})[gvKid]||{})[sk]||{}).lessonSeq||[]).filter(t=>_lidNorm(t)===_lidNorm(v)).length>1)?"Finished — but this lesson is on the list more than once, and this cell is showing the finished copy. 🗑 here removes the extra copy from the list.":"Finished — this stays as history. Rebuilds never move it and 🗑 won’t remove it.")+'">'+esc(v)+' <span class="gv-badge" style="background:#dcfce7;color:#15803d">&#10003; done</span></span>':esc(v));
-        if(addedV!==undefined) cell+=(cell?'<br>':'')+'<span style="color:#15803d">+ '+(typeof addedV==="string"?esc(addedV):"make-up")+'</span><span class="gv-badge" style="background:#bbf7d0;color:#15803d">make-up</span>';
+        // A derived column's SECOND SITTING must render or the lesson is invisible. With
+        // owed 6 and cap 2 the projection doubles up the first six days; drawing only the
+        // first of each pair made Lincoln's AAS read 16,18,20,22,24,26 with L2-17/19/21/23/
+        // 25/27 vanished — six missing, exactly the "owed 6" on the header (she caught it
+        // 2026-08-29). Six columns run cap 2 and could hide extras this way.
+        // For a derived column the stored `added` override is NOT drawn separately: it is an
+        // INPUT to the projection now, so its lesson already appears in the cell above.
+        const _derExtra=_derCol?((_derCol.byDate[l.date]||{}).extra||""):"";
+        if(_derExtra) cell+=(cell?'<br>':'')+'<span style="color:#15803d">+ '+esc(_derExtra)+'</span><span class="gv-badge" style="background:#bbf7d0;color:#15803d" title="Second sitting — this subject is behind, and its cap allows catching up two in a day">2nd</span>';
+        else if(!_derCol&&addedV!==undefined) cell+=(cell?'<br>':'')+'<span style="color:#15803d">+ '+(typeof addedV==="string"?esc(addedV):"make-up")+'</span><span class="gv-badge" style="background:#bbf7d0;color:#15803d">make-up</span>';
         if(!cell&&_skipAt[dn+"|"+sk]!==undefined) cell='<s style="color:var(--muted);opacity:.7">'+esc(_skipAt[dn+"|"+sk])+'</s><span class="gv-badge" style="background:#fef3c7;color:#92400e" title="Passed over by a rebuild — won\'t come back as carryover or catch-up">skipped</span>';
         const picked=gvSelMode&&gvSel.has(dn+"|"+sk);
         // Past cells open too when FILLED — delete-only view (see the editing branch).
         const click=gvSelMode?(past?'':' onclick="gvSelCell('+dn+',\''+sk+'\')"'):' onclick="gvOpenCell('+dn+',\''+sk+'\')"';
-        h+='<td id="gv-c-'+dn+'-'+sk+'" class="gv-cell'+(gvFilled(v)||addedV!==undefined?'':' gv-empty')+(picked?' gv-picked':'')+((_mvArmed&&lmMovePick.date===l.date&&lmMovePick.sk===sk)?' gv-movesrc':'')+'"'+click+'>'+cell+'</td>';
+        h+='<td id="gv-c-'+dn+'-'+sk+'" class="gv-cell'+(gvFilled(v)||_derExtra||addedV!==undefined?'':' gv-empty')+(picked?' gv-picked':'')+((_mvArmed&&lmMovePick.date===l.date&&lmMovePick.sk===sk)?' gv-movesrc':'')+'"'+click+'>'+cell+'</td>';
       }
     }
     h+='</tr>';

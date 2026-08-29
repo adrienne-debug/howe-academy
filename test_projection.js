@@ -152,6 +152,54 @@ console.log("hand-added days");
     (() => { const p1 = mk(); P(Object.assign({}, base, { plans: [p1], added: { k: { s: { "2026-08-20": 1 } } } })); return !("_added" in p1) && !("_blocked" in p1); })());
 }
 
+// ── catch-up overflow (her checkbox, 2026-08-29) ───────────────────────────
+// A subject runs on its normal days, but when BEHIND its extras may land on other days.
+// Spill to a free day first; only double up on its own days if still behind. Default ON.
+console.log("catch-up overflow");
+{
+  // Anchor two weeks back with nothing done since → owed accrues against the pattern.
+  const C = cal("2026-08-03", 5);
+  const base = { todayISO: "2026-08-17", calendar: { k: C } };
+  const mk = extra => Object.assign({ pid: "k__s", kid: "k", sk: "s", lessons: L(20), tpw: 2,
+    allowedDays: ["Mon", "Tue"], anchor: "2026-08-03", doneSince: 0, cap: 2 }, extra || {});
+  const dayName = d => DOW[new Date(d + "T00:00:00Z").getUTCDay()];
+
+  const off = P(Object.assign({}, base, { plans: [mk({ overflow: false })] }));
+  const offDates = Object.keys(off.byDate).sort();
+  ok("overflow OFF keeps the subject on its own days only",
+    offDates.every(d => ["Mon", "Tue"].includes(dayName(d))), offDates.filter(d => !["Mon", "Tue"].includes(dayName(d))));
+  ok("overflow OFF still catches up by doubling (cap 2)",
+    offDates.some(d => (off.byDate[d].k || []).length === 2), offDates.map(d => (off.byDate[d].k || []).length));
+
+  const on = P(Object.assign({}, base, { plans: [mk({ overflow: true })] }));
+  const onDates = Object.keys(on.byDate).sort();
+  ok("overflow ON uses days outside allowedDays",
+    onDates.some(d => !["Mon", "Tue"].includes(dayName(d))), onDates);
+  ok("overflow ON spills BEFORE doubling — no day gets two while free days remain",
+    onDates.every(d => (on.byDate[d].k || []).length === 1), onDates.map(d => (on.byDate[d].k || []).length));
+
+  ok("both routes place the same lessons, in the same order",
+    eq(flat(on, "k").map(x => x.lid), flat(off, "k").map(x => x.lid)));
+
+  // not behind → no spill at all, whatever the flag says
+  const notBehind = P(Object.assign({}, base, { plans: [mk({ overflow: true, anchor: null })] }));
+  ok("a subject that is NOT behind never spills",
+    Object.keys(notBehind.byDate).every(d => ["Mon", "Tue"].includes(dayName(d))), Object.keys(notBehind.byDate).sort());
+
+  // a spill day must still respect off days
+  const offCal = cal("2026-08-03", 5, { "2026-08-19": 1, "2026-08-20": 1, "2026-08-21": 1 });
+  const spillOff = P({ todayISO: "2026-08-17", calendar: { k: offCal }, plans: [mk({ overflow: true })] });
+  ok("spill never lands on a day the kid is off",
+    !spillOff.byDate["2026-08-19"] && !spillOff.byDate["2026-08-20"] && !spillOff.byDate["2026-08-21"]);
+
+  // ...and a day ✕'d for this subject
+  const spillBlocked = P(Object.assign({}, base, { plans: [mk({ overflow: true })], blocked: { k: { s: { "2026-08-19": 1 } } } }));
+  ok("spill never lands on a day ✕'d for this subject", !spillBlocked.byDate["2026-08-19"]);
+
+  ok("the engine leaves no _overflowUsed residue on the caller's plan",
+    (() => { const p1 = mk({ overflow: true }); P(Object.assign({}, base, { plans: [p1] })); return !("_overflowUsed" in p1); })());
+}
+
 console.log("week key math");
 {
   ok("_pjWeekKey: Sunday belongs to the week starting the previous Monday", env._pjWeekKey("2026-08-23") === "2026-08-17" && env._pjWeekKey("2026-08-17") === "2026-08-17" && env._pjWeekKey("2026-08-22") === "2026-08-17");

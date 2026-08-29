@@ -194,6 +194,11 @@ console.log("\n── render wiring ──");
   ok("past rows are excluded from derivation", /!past&&_gvDer\[sk\]/.test(grid));
   ok("a done cell keeps its own stored text", /_doneAt\[dn\+"\|"\+sk\]\)\?_gvDer\[sk\]:null/.test(grid));
   ok("slow renders are logged", /grid derive slow/.test(grid));
+  // The backlog feature: owed + cap>1 doubles up a day so the finish date stops sliding.
+  // Drawing only the first lesson of a pair hid six of Lincoln's AAS lessons (2026-08-29).
+  ok("a derived SECOND SITTING is rendered", /_derExtra/.test(grid) && /byDate\[l\.date\]\|\|\{\}\)\.extra/.test(grid), "extras would be invisible");
+  ok("the second sitting counts as content, not an empty cell", /gvFilled\(v\)\|\|_derExtra/.test(grid));
+  ok("a derived column does not ALSO draw the stored make-up (added is an input now)", /else if\(!_derCol&&addedV!==undefined\)/.test(grid));
   // Stage 1's chips were retired with the derived render; the function stays as the
   // instrument that proves derived agrees with the plan (test_grid_drift).
   ok("the retired drift chip is gone from the render", !/driftChip/.test(src));
