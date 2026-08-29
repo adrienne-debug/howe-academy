@@ -33,7 +33,11 @@ function extractFn(name) {
 }
 const defs = src.match(/^const RETR_DEFAULTS=[\s\S]*?\};$/m);
 if (!defs) throw new Error("RETR_DEFAULTS not found");
-const BLOCK = defs[0] + "\n" + extractFn("retrSettings") + "\n" + extractFn("retrSlotMinutes");
+const consts = src.match(/^const MAST_SPC_MIN=.*$/m);
+if (!consts) throw new Error("MAST_SPC_MIN not found");
+const BLOCK = defs[0] + "\n" + consts[0] + "\n" + extractFn("retrSettings") + "\n" +
+  extractFn("mastDrillSamples") + "\n" + extractFn("mastMeasuredDrillMin") + "\n" +
+  extractFn("retrSlotMinutes");
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {
@@ -44,7 +48,7 @@ function ok(name, cond, extra) {
 function mins(kind, opts) {
   opts = opts || {};
   const ctx = { console, Object, Math, parseInt, isNaN,
-    masteryData: { retrievalPlan: opts.plan || {} } };
+    masteryData: { retrievalPlan: opts.plan || {}, history: opts.history || {} } };
   vm.createContext(ctx);
   vm.runInContext(BLOCK + "\nvar __r=retrSlotMinutes(" + JSON.stringify(opts.kid || "lincoln") +
     "," + JSON.stringify(kind) + "," + JSON.stringify(opts.track || null) + ");", ctx);
@@ -77,6 +81,52 @@ ok("per-kid beats global",
   mins("drill", { plan: { _defaults: { slot_min_drill: 3 }, lincoln: { settings: { slot_min_drill: 7 } } } }) === 7);
 ok("another kid's setting doesn't leak",
   mins("drill", { kid: "lucy", plan: { lincoln: { settings: { slot_min_drill: 9 } } } }) === 5);
+
+// ── measured drill length (the clock that already existed, now used) ───────
+// Real medians measured 2026-08-29: Julian 5 min, Lucy 5, Lincoln 10, Ellis 13 — against a
+// flat guess of 5, so Ellis and Lincoln were under-reserved by half. Lucy's log also holds a
+// genuine 4-seconds-for-24-cards session, which must never count.
+console.log("\n── measured drill length ──");
+{
+  const sess = (secs, n) => ({ secs: secs, items: Array.from({ length: n }, (_, i) => ({ id: i })) });
+  const hist = days => ({ lincoln: days });
+
+  ok("no history at all → falls back to the typed default",
+    mins("drill", { history: hist({}) }) === 5);
+  ok("one sample is not enough → still the typed default",
+    mins("drill", { history: hist({ "1": sess(600, 25) }) }) === 5);
+  ok("two clean samples are used — 600s/25c and 600s/25c → 10 min",
+    mins("drill", { history: hist({ "1": sess(600, 25), "2": sess(600, 25) }) }) === 10,
+    mins("drill", { history: hist({ "1": sess(600, 25), "2": sess(600, 25) }) }));
+  ok("it is a median, so one long session does not dominate",
+    mins("drill", { history: hist({ "1": sess(300, 20), "2": sess(300, 20), "3": sess(3000, 20) }) }) === 5);
+
+  // the real garbage case from Lucy's log
+  ok("a 4-second/24-card session is rejected as implausible",
+    mins("drill", { history: hist({ "1": sess(4, 24), "2": sess(600, 25), "3": sess(600, 25) }) }) === 10);
+  ok("an absurdly slow session is rejected too (>60 s/card)",
+    mins("drill", { history: hist({ "1": sess(6000, 20), "2": sess(600, 25), "3": sess(600, 25) }) }) === 10);
+  ok("if rejects leave too few samples, it falls back",
+    mins("drill", { history: hist({ "1": sess(4, 24), "2": sess(600, 25) }) }) === 5);
+
+  ok("a session she marked interrupted is excluded",
+    mins("drill", { history: hist({ "1": Object.assign(sess(3000, 20), { bad: true }), "2": sess(600, 25), "3": sess(600, 25) }) }) === 10);
+  ok("a session with no duration is skipped, not counted as zero",
+    mins("drill", { history: hist({ "1": { items: [{ id: 1 }] }, "2": sess(600, 25), "3": sess(600, 25) }) }) === 10);
+  ok("a session with no items is skipped",
+    mins("drill", { history: hist({ "1": sess(600, 0), "2": sess(600, 25), "3": sess(600, 25) }) }) === 10);
+  ok("two sessions on one day sum their times against the day's cards",
+    mins("drill", { history: hist({ "1": { secs: 300, sessTimes: [300, 300], items: Array.from({ length: 25 }, (_, i) => ({ id: i })) },
+                                    "2": { secs: 300, sessTimes: [300, 300], items: Array.from({ length: 25 }, (_, i) => ({ id: i })) } }) }) === 10);
+
+  ok("a hand-set slot_min_drill still wins over the measurement",
+    mins("drill", { plan: { lincoln: { settings: { slot_min_drill: 4 } } },
+                    history: hist({ "1": sess(600, 25), "2": sess(600, 25) }) }) === 4);
+  ok("another kid's history doesn't leak",
+    mins("drill", { kid: "lucy", history: hist({ "1": sess(600, 25), "2": sess(600, 25) }) }) === 5);
+  ok("sprint is unaffected by drill history",
+    mins("sprint", { history: hist({ "1": sess(600, 25), "2": sess(600, 25) }) }) === 2);
+}
 
 console.log("\n── guards ──");
 ok("an unknown kind falls back to 10", mins("off") === 10, mins("off"));

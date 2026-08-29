@@ -35737,6 +35737,38 @@ const RETR_DEFAULTS={gate_pct:80,gate_streak:2,min_stage_sessions:0,stuck_after:
   // their own — Julian's 45s rounds come out shorter with nothing to set. drill and match
   // are estimates and are meant to be tuned here.
   sprint_rounds:2,slot_min_drill:5,slot_min_match:10};
+// MEASURED drill length. The clock already existed and was never used: mastLogStartTs starts
+// on the FIRST score tap (studying is free), survives a reload via localStorage, and the
+// elapsed seconds land on every session as `secs`/`sessTimes`. A median of recent CLEAN
+// sessions beats any typed estimate — measured 2026-08-29: Julian 5 min, Lucy 5, Lincoln 10,
+// Ellis 13, against a flat guess of 5. So Ellis and Lincoln were being under-reserved by half.
+// CLEAN = has both a duration and an item count, is not flagged `bad` (her "we were
+// interrupted" mark), and sits in a believable seconds-per-card band. That band alone throws
+// out the real 4-seconds-for-24-cards session sitting in Lucy's log.
+const MAST_SPC_MIN=3, MAST_SPC_MAX=60, MAST_DRILL_MIN_SAMPLES=2, MAST_DRILL_WINDOW=10;
+function mastDrillSamples(kid){
+  const days=((typeof masteryData!=="undefined"&&masteryData&&masteryData.history)||{})[kid]||{};
+  const out=[];
+  Object.keys(days).sort().forEach(function(dk){
+    const d=days[dk]; if(!d||d.bad) return;
+    const n=((d.items||[]).length)||0; if(!n) return;
+    const times=(d.sessTimes&&d.sessTimes.length)?d.sessTimes:(d.secs!=null?[d.secs]:[]);
+    let secs=0; times.forEach(function(x){ secs+=(parseInt(x,10)||0); });
+    if(secs<=0) return;
+    const spc=secs/n; if(spc<MAST_SPC_MIN||spc>MAST_SPC_MAX) return;   // implausible → not data
+    out.push({secs:secs,n:n,spc:spc});
+  });
+  return out.slice(-MAST_DRILL_WINDOW);
+}
+// Median minutes over those samples, or null when there aren't enough to beat a guess.
+function mastMeasuredDrillMin(kid){
+  const s=mastDrillSamples(kid);
+  if(s.length<MAST_DRILL_MIN_SAMPLES) return null;
+  const mins=s.map(function(x){ return x.secs/60; }).sort(function(a,b){ return a-b; });
+  const mid=Math.floor(mins.length/2);
+  const med=(mins.length%2)?mins[mid]:(mins[mid-1]+mins[mid])/2;
+  return Math.max(1,Math.round(med));
+}
 // Minutes a retrieval slot of `kind` should reserve for this kid. Resolves through
 // RETR_DEFAULTS → _defaults → per-kid → per-track, exactly like sprint_seconds.
 function retrSlotMinutes(kid,kind,track){
@@ -35745,6 +35777,19 @@ function retrSlotMinutes(kid,kind,track){
     const secs=parseInt(S.sprint_seconds,10)||60;
     const rounds=(kind==="recheck")?(parseInt(S.review_count,10)||3):(parseInt(S.sprint_rounds,10)||2);
     return Math.max(1,Math.round(secs*rounds/60));
+  }
+  if(kind==="drill"){
+    // Prefer what we MEASURED — unless she has actually typed a value. The merged settings
+    // always carry slot_min_drill (it lives in RETR_DEFAULTS), so "hand-set" has to be asked
+    // of the raw sources, not of the merge.
+    const _rp=(typeof masteryData!=="undefined"&&masteryData&&masteryData.retrievalPlan)||{};
+    const _handSet=((_rp._defaults||{}).slot_min_drill!==undefined)
+      ||(((_rp[kid]||{}).settings||{}).slot_min_drill!==undefined)
+      ||(((track||{}).settings||{}).slot_min_drill!==undefined);
+    if(!_handSet){
+      const meas=(typeof mastMeasuredDrillMin==="function")?mastMeasuredDrillMin(kid):null;
+      if(meas) return meas;
+    }
   }
   const key=(kind==="match")?"slot_min_match":(kind==="drill")?"slot_min_drill":null;
   const v=key?parseInt(S[key],10):NaN;
