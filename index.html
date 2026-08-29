@@ -22829,10 +22829,31 @@ function _pjWeeksBetween(aISO,bISO){ return Math.max(1,Math.ceil((Date.UTC(+bISO
 function _pjPatternRows(plan,rows,tpw){
   const allowed=(plan.allowedDays||[]).map(String);
   const elig=rows.filter(r=>r&&!r.off&&!(plan.offDates||{})[r.date]&&!(plan._blocked||{})[r.date]&&(!allowed.length||allowed.includes(r.dow)));
-  if(!tpw||tpw<=0) return elig;
-  const byWk={}; const order=[];
-  elig.forEach(r=>{ const k=_pjWeekKey(r.date); if(!byWk[k]){ byWk[k]=[]; order.push(k); } byWk[k].push(r); });
-  const out=[]; order.forEach(k=>{ _cbSpread(byWk[k],Math.min(tpw,byWk[k].length)).forEach(r=>out.push(r)); });
+  let out;
+  if(!tpw||tpw<=0) out=elig;
+  else{
+    const byWk={}; const order=[];
+    elig.forEach(r=>{ const k=_pjWeekKey(r.date); if(!byWk[k]){ byWk[k]=[]; order.push(k); } byWk[k].push(r); });
+    out=[]; order.forEach(k=>{ _cbSpread(byWk[k],Math.min(tpw,byWk[k].length)).forEach(r=>out.push(r)); });
+  }
+  // Mom's HAND-ADDED days (➕ make-up, and a ➡ move's landing day) are extra sittings she
+  // asked for by name: they ride on top of the pattern, are never filtered out by
+  // allowedDays or thinned by tpw, and are still skipped when the day is off or ✕'d for
+  // this subject. Without this the projection silently dropped every one of them — 56 live
+  // on 2026-08-29, mostly a block of school days she added a year out for all of Lincoln's
+  // subjects at once. Machine-written extras (subjects/…/pjExtras) are OUTPUT, not input,
+  // and the caller filters those out before handing this map in — feeding them back would
+  // make the projection treat its own previous answer as an instruction.
+  const add=plan._added;
+  if(add&&Object.keys(add).length){
+    const have=new Set(out.map(r=>r.date));
+    rows.forEach(r=>{
+      if(!r||!add[r.date]||have.has(r.date)) return;
+      if(r.off||(plan.offDates||{})[r.date]||(plan._blocked||{})[r.date]) return;
+      out.push(r); have.add(r.date);
+    });
+    out.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+  }
   return out;
 }
 function projectPlans(input){
@@ -22843,6 +22864,7 @@ function projectPlans(input){
   plans.forEach(plan=>{
     const kid=plan.kid; const rows=((input.calendar||{})[kid]||[]).slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
     plan._blocked=(((input.blocked||{})[kid]||{})[plan.sk])||{};
+    plan._added=(((input.added||{})[kid]||{})[plan.sk])||{};      // {iso:1} — Mom's ➕ days
     const lessons=(plan.lessons||[]).slice(); const cap=Math.max(1,parseInt(plan.cap,10)||1);
     // tpw: explicit, or auto from a target date, else every allowed day
     let tpw=parseInt(plan.tpw,10)||0;
@@ -22878,7 +22900,7 @@ function projectPlans(input){
     }
     if(lessons.length) warnings.push(plan.pid+": "+lessons.length+" lesson"+(lessons.length!==1?"s":"")+" past the calendar horizon");
     stats[plan.pid]={owed,placed,unplaced:lessons.length,firstDate:first,lastDate:last,tpwUsed:tpw||((plan.allowedDays&&plan.allowedDays.length)||0)};
-    delete plan._blocked;
+    delete plan._blocked; delete plan._added;
   });
   return {byDate,plans:stats,warnings};
 }
@@ -22895,7 +22917,14 @@ function projectPlans(input){
 function planMaterialize(kid,sk,form){
   const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s) return null;
   const f=form||cbDefaultForm(kid,sk);
-  if(!(f.mode==="timesPerWeek"||f.mode==="targetDate")) return null;
+  // "pages" decides only WHICH UNITS get built (cbMaterialize step 1) — placement is the
+  // same tpw + allowedDays walk every other sequenced mode uses, and a PLAN-BACKED pages
+  // subject already has its units materialised into lessonSeq with ids. So the projection
+  // can lay it, and doing so also fixes pages mode's own wart: it re-derives its whole list
+  // from startPage on every build and re-lays pages already finished (2026-08-12, she
+  // predicted it exactly) — plan-backed placement reads done BY LID and cannot.
+  // A pages subject with no tpw has no cadence to project; it stays on cbMaterialize.
+  if(!(f.mode==="timesPerWeek"||f.mode==="targetDate"||(f.mode==="pages"&&parseInt(f.tpw,10)>0))) return null;
   if(!(typeof planBacked==="function"&&planBacked(kid,sk))) return null;
   const rows=cbFutureRows(kid,sk); const ex=cbExtendInfo(kid);
   const blockedArr=cbBlockedDates(kid,sk); const blocked={}; blockedArr.forEach(d=>{ blocked[d]=1; });
@@ -22930,9 +22959,20 @@ function planMaterialize(kid,sk,form){
     Object.keys(L).forEach(dn=>{ const l=L[dn]; if(!l||!l.date||l.date<anchor||l.date>=today) return;
       pastRows.push({date:l.date,dow:DOW[_cbParseDate(l.date).getDay()],off:!!(smapIsKidOff(kid,l.date)||schedOvKidOff(kid,l.date)||((schedOv(l.date,kid)||{}).removed||{})[sk])}); }); }
   const cap=Math.max(1,parseInt(s.cap,10)||1);
+  // Days Mom added BY HAND for this subject (scheduleOverrides…added), minus the ones this
+  // engine wrote itself on the last lay (subjects/…/pjExtras) — those are its own output and
+  // must never come back in as an instruction.
+  const _addedIn={};
+  try{ const _px=s.pjExtras||{};
+    Object.keys(scheduleOverrides||{}).forEach(function(d){
+      if(d<today||_px[d]) return;
+      const a=(((scheduleOverrides[d]||{})[kid]||{}).added)||{};
+      if(a[sk]!==undefined&&a[sk]!==null&&a[sk]!==false) _addedIn[d]=1;
+    });
+  }catch(e){ dbg("added-input skip: "+e); }
   const plan={pid:planIdFor(kid,sk),kid,sk,priority:s.priority||0,minutes:min,lessons,allowedDays:(f.allowedDays||[]).slice(),cap,anchor,doneSince,offDates:{}};
-  if(f.mode==="timesPerWeek") plan.tpw=parseInt(f.tpw,10)||0; else plan.targetDate=f.targetDate||"";
-  const out=projectPlans({plans:[plan],calendar:{[kid]:pastRows.concat(allRows)},dayCapMin:{[kid]:capMin||0},blocked:{[kid]:{[sk]:blocked}},todayISO:today});
+  if(f.mode==="targetDate") plan.targetDate=f.targetDate||""; else plan.tpw=parseInt(f.tpw,10)||0;
+  const out=projectPlans({plans:[plan],calendar:{[kid]:pastRows.concat(allRows)},dayCapMin:{[kid]:capMin||0},blocked:{[kid]:{[sk]:blocked}},added:{[kid]:{[sk]:_addedIn}},todayISO:today});
   const st=out.plans[plan.pid]||{}; const warnings=(out.warnings||[]).slice();
   // Convert byDate → cbMaterialize's shape. First lesson on a day = the cell; the rest = extras.
   const byDate=out.byDate||{}; const dates=Object.keys(byDate).filter(d=>byDate[d][kid]&&byDate[d][kid].length).sort();
@@ -22965,13 +23005,13 @@ function planOwed(kid,sk){
   const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||!s.planAnchor) return 0;
   if(!(typeof planBacked==="function"&&planBacked(kid,sk))) return 0;
   const today=cbTodayISO(); const anchor=s.planAnchor; if(anchor>=today) return 0;
-  const f=cbDefaultForm(kid,sk); if(!(f.mode==="timesPerWeek"||f.mode==="targetDate")) return 0;
+  const f=cbDefaultForm(kid,sk); if(!(f.mode==="timesPerWeek"||f.mode==="targetDate"||(f.mode==="pages"&&parseInt(f.tpw,10)>0))) return 0;
   const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]; const L=((currData||{}).lessons||{})[kid]||{}; const rows=[];
   Object.keys(L).forEach(dn=>{ const l=L[dn]; if(!l||!l.date||l.date<anchor||l.date>=today) return;
     rows.push({date:l.date,dow:DOW[_cbParseDate(l.date).getDay()],off:!!(smapIsKidOff(kid,l.date)||schedOvKidOff(kid,l.date)||((schedOv(l.date,kid)||{}).removed||{})[sk])}); });
   rows.sort((a,b)=>a.date<b.date?-1:1);
   const plan={allowedDays:(f.allowedDays||[]).slice(),offDates:{},_blocked:{}};
-  const tpw=f.mode==="timesPerWeek"?(parseInt(f.tpw,10)||0):0;
+  const tpw=f.mode==="targetDate"?0:(parseInt(f.tpw,10)||0);
   const past=_pjPatternRows(plan,rows,tpw).length;
   const doneNode=((((currData||{}).done||{})[kid]||{})[sk])||{}; let doneSince=0; Object.values(doneNode).forEach(r=>{ if(r&&r.day&&String(r.day)>=anchor) doneSince++; });
   const remaining=(s.lessonSeq||[]).length-(lidDoneIdx(kid,sk)||new Set()).size;

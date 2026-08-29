@@ -99,6 +99,59 @@ console.log("day-minute cap across subjects, priority order");
   ok("plans keyed in output; multiple kids independent", (() => { const o2 = P({ todayISO: "2026-08-17", calendar: { a: cal("2026-08-17", 1), b: cal("2026-08-17", 1) }, plans: [{ pid: "a__s", kid: "a", sk: "s", lessons: L(1) }, { pid: "b__s", kid: "b", sk: "s", lessons: L(1) }] }); return o2.byDate["2026-08-17"].a.length === 1 && o2.byDate["2026-08-17"].b.length === 1; })());
 }
 
+// ── Mom's hand-added days (Stage 2 slice A) ────────────────────────────────
+// ➕ make-up and a ➡ move's landing day write scheduleOverrides…added. They are an INPUT
+// she created: extra sittings on top of the pattern, never thinned by tpw or filtered by
+// allowedDays. Before this the projection never read them and dropped every one.
+console.log("hand-added days");
+{
+  const C = cal("2026-08-17", 2);                       // Mon 8/17 .. Fri 8/28, 10 school days
+  const base = { todayISO: "2026-08-17", calendar: { k: C } };
+  const mk = extra => Object.assign({ pid: "k__s", kid: "k", sk: "s", lessons: L(10), tpw: 2,
+    allowedDays: ["Mon", "Tue"] }, extra || {});
+
+  const noAdd = P(Object.assign({}, base, { plans: [mk()] }));
+  const dates0 = Object.keys(noAdd.byDate).sort();
+  ok("without added days, only allowed days are used",
+    dates0.every(d => ["Mon", "Tue"].includes(DOW[new Date(d + "T00:00:00Z").getUTCDay()])), dates0);
+
+  const withAdd = P(Object.assign({}, base, { plans: [mk()], added: { k: { s: { "2026-08-20": 1 } } } }));
+  const dates1 = Object.keys(withAdd.byDate).sort();
+  ok("a hand-added Thursday gets a lesson even though only Mon/Tue are allowed",
+    dates1.includes("2026-08-20"), dates1);
+  ok("the added day does not duplicate or drop anything",
+    flat(withAdd, "k").length === flat(noAdd, "k").length ||
+    flat(withAdd, "k").map(x => x.lid).join() === L(10).map(x => x.lid).join().slice(0, flat(withAdd, "k").map(x => x.lid).join().length));
+  ok("lessons stay in list order across the added day",
+    (() => { const ls = flat(withAdd, "k").map(x => x.lid); return ls.join() === ls.slice().sort().join(); })(),
+    flat(withAdd, "k").map(x => x.lid));
+
+  // tpw must not thin it: 2 allowed days/week + an added day = 3 sittings that week
+  const wk1 = flat(withAdd, "k").filter(x => x.d >= "2026-08-17" && x.d <= "2026-08-21").length;
+  ok("tpw does not thin a hand-added day (2/wk + 1 added = 3)", wk1 === 3, wk1);
+
+  // an added day that is OFF, or ✕'d for this subject, still takes nothing
+  const offCal = cal("2026-08-17", 2, { "2026-08-20": 1 });
+  const addOff = P({ todayISO: "2026-08-17", calendar: { k: offCal }, plans: [mk()], added: { k: { s: { "2026-08-20": 1 } } } });
+  ok("an added day the kid is OFF takes nothing", !addOff.byDate["2026-08-20"]);
+  const addBlocked = P(Object.assign({}, base, { plans: [mk()], added: { k: { s: { "2026-08-20": 1 } } }, blocked: { k: { s: { "2026-08-20": 1 } } } }));
+  ok("an added day ✕'d for this subject takes nothing", !addBlocked.byDate["2026-08-20"]);
+
+  // an added day already in the pattern is not counted twice
+  const addDup = P(Object.assign({}, base, { plans: [mk()], added: { k: { s: { "2026-08-17": 1 } } } }));
+  ok("an added day already in the pattern places one lesson, not two",
+    (addDup.byDate["2026-08-17"].k || []).length === 1, (addDup.byDate["2026-08-17"].k || []).length);
+
+  // added days for ANOTHER subject never leak in
+  const addOther = P(Object.assign({}, base, { plans: [mk()], added: { k: { other: { "2026-08-20": 1 } } } }));
+  ok("an added day belonging to a different subject is ignored", !addOther.byDate["2026-08-20"]);
+
+  ok("no added input leaves placement byte-identical (regression)",
+    eq(flat(P(Object.assign({}, base, { plans: [mk()] })), "k"), flat(noAdd, "k")));
+  ok("the engine leaves no _added residue on the caller's plan object",
+    (() => { const p1 = mk(); P(Object.assign({}, base, { plans: [p1], added: { k: { s: { "2026-08-20": 1 } } } })); return !("_added" in p1) && !("_blocked" in p1); })());
+}
+
 console.log("week key math");
 {
   ok("_pjWeekKey: Sunday belongs to the week starting the previous Monday", env._pjWeekKey("2026-08-23") === "2026-08-17" && env._pjWeekKey("2026-08-17") === "2026-08-17" && env._pjWeekKey("2026-08-22") === "2026-08-17");
