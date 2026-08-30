@@ -1396,6 +1396,7 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
   <div class="admin-title">Admin Panel</div>
   <div class="admin-row">
     <button class="btn-s" onclick="printSchedule()">Print PDF</button>
+    <button class="btn-s" onclick="printScheduleByKid()">Print by kid</button>
     <button class="btn-s" onclick="toggleAdmin()">Close</button>
   </div>
   <div class="admin-row" style="margin-top:8px">
@@ -18268,6 +18269,78 @@ function toggleAdmin(){
   const p=document.getElementById("admin-panel");
   p.style.display=p.style.display==="none"?"block":"none";
 }
+
+// PSKID_START ── one page per KID, the whole week side by side ────────────────────────
+// Her ask (2026-08-30): "the kids week side by side per kid". The existing Print PDF is a
+// page per DAY with the kids as columns; this is the transpose — a page per kid with the
+// days as columns, so you can see one child's whole week at once.
+// Uses every kid who actually has cards, so Julian appears here even though the by-day
+// page draws SCHOOL_KIDS and leaves him off.
+function printScheduleByKid(){
+  const names=KID_NAME;
+  const momColors={required:"#fde8d8",maybe:"#fdf6e3",none:"#ffffff"};
+  const momLabels={required:"★",maybe:"◆",none:""};
+  const days=DAYS.filter(d=>weekData.tasks.some(t=>t.day===d));
+  const kids=[...ROSTER].filter(k=>weekData.tasks.some(t=>t.who===k&&!String(t.id||"").endsWith("_c")));
+  if(!kids.length||!days.length){ alert("No cards to print for this week yet."); return; }
+  const _min=function(t){
+    const m=String(t||"").match(/(\d+):(\d+)\s*(AM|PM)?/i);
+    if(!m) return 1e9;
+    let h=parseInt(m[1],10); const mm=parseInt(m[2],10), ap=(m[3]||"").toUpperCase();
+    if(ap==="PM"&&h!==12) h+=12;
+    if(ap==="AM"&&h===12) h=0;
+    return h*60+mm;
+  };
+  const fmt=function(t){ t=String(t||"").trim();
+    if(t.endsWith("AM")) return t.slice(0,-3).trim()+"a";
+    if(t.endsWith("PM")) return t.slice(0,-3).trim()+"p";
+    return t; };
+  const clean=function(t){ return String(t||"").replace(/^[\u{1F000}-\u{1FFFF}\u{2600}-\u{27FF}\u{1F300}-\u{1FAFF}]\s*/u,"").trim(); };
+
+  let pages="";
+  for(const kid of kids){
+    let cols="";
+    for(const day of days){
+      const dateStr=DAY_DT[day]||"";
+      const tasks=weekData.tasks.filter(t=>t.day===day&&t.who===kid&&!String(t.id||"").endsWith("_c"))
+        .slice().sort((a,b)=>_min(a.time)-_min(b.time));
+      let rows="";
+      for(const t of tasks){
+        const bg=momColors[t.mom]||"#fff";
+        const star=momLabels[t.mom]||"";
+        const starHtml=star?'<span style="font-size:7pt;margin-left:3px;color:#c0541a">'+star+'</span>':"";
+        rows+='<div style="display:grid;grid-template-columns:42px 1fr;border-bottom:1px solid #eee;background:'+bg+'">'
+          +'<div style="background:#f5f5f5;color:#555;font-size:7pt;padding:2px 3px;text-align:right;border-right:1px solid #e0e0e0;white-space:nowrap">'+fmt(t.time)+'</div>'
+          +'<div style="padding:2px 5px;font-size:7.5pt;line-height:1.25">'+clean(t.title)+starHtml+'</div></div>';
+      }
+      if(!rows) rows='<div style="padding:8px;color:#aaa;font-size:8pt;text-align:center">—</div>';
+      cols+='<div style="border:1px solid #ccc;border-radius:3px;overflow:hidden">'
+        +'<div style="background:#2c5f8a;color:#fff;font-weight:bold;font-size:9.5pt;padding:3px 6px;text-align:center">'
+        +day.charAt(0).toUpperCase()+day.slice(1)
+        +'<span style="font-weight:normal;font-size:7pt;color:#cfe0ee;margin-left:5px">'+dateStr+'</span></div>'
+        +rows+'</div>';
+    }
+    const nCards=weekData.tasks.filter(t=>t.who===kid&&!String(t.id||"").endsWith("_c")).length;
+    const momMin=weekData.tasks.filter(t=>t.who===kid&&t.mom==="required"&&!String(t.id||"").endsWith("_c"))
+      .reduce((a,t)=>a+(t.dur||20),0);
+    pages+='<div style="width:100%;page-break-after:always;padding:8px 10px 4px">'
+      +'<div style="background:#1a1a1a;color:#fff;font-size:11pt;font-weight:bold;padding:5px 10px;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center">'
+      +'<span>'+(names[kid]||kid)+' — '+String(WK||"").replace("week","Week ")+'</span>'
+      +'<span style="font-size:8pt;font-weight:normal;color:#ccc">'+nCards+' cards · '+momMin+' min with Mom</span></div>'
+      +'<div style="display:grid;grid-template-columns:repeat('+days.length+',1fr);gap:5px">'+cols+'</div>'
+      +'<div style="margin-top:6px;font-size:7.5pt;color:#666;text-align:right">★ Mom Required &nbsp;&nbsp; ◆ May need Mom</div>'
+      +'</div>';
+  }
+  const html='<!DOCTYPE html><html><head><meta charset="UTF-8">'
+    +'<title>'+String(WK||"week").replace("week","Week ")+' — by kid</title>'
+    +'<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:9pt;color:#222}'
+    +'@media print{@page{size:landscape;margin:0.4in}div[style*="page-break-after:always"]:last-child{page-break-after:avoid}}</style>'
+    +'</head><body>'+pages+'</body></html>';
+  const w=window.open("","_blank");
+  w.document.write(html); w.document.close();
+  w.onload=function(){ w.print(); };
+}
+// PSKID_END
 
 function printSchedule(){
   const kids=[...SCHOOL_KIDS];
