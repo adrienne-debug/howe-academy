@@ -23053,7 +23053,15 @@ function planMaterialize(kid,sk,form,opts){
       if(a[sk]!==undefined&&a[sk]!==null&&a[sk]!==false) _addedIn[d]=1;
     });
   }catch(e){ dbg("added-input skip: "+e); }
-  const plan={pid:planIdFor(kid,sk),kid,sk,priority:s.priority||0,minutes:min,lessons,allowedDays:(f.allowedDays||[]).slice(),cap,anchor,doneSince,offDates:{},overflow:s.overflowExtras!==false};
+  // opts.absorb===false — lay the PLAIN pattern: no cap extras, no owed, no overflow spill.
+  // Backlog absorption has no weekly rate limit (the legacy catch-up it replaced capped at
+  // carryoverCap, default 2, and fit-checked the day's minutes), so unrestrained it asks a
+  // kid for roughly 3x what they finish in a week — measured 2026-08-30: ellis 47 sittings
+  // against 15.0 done, lincoln 40 against 13.2. Suppressed, the projection lays exactly the
+  // subject's own tpw pattern, which is what the schedule already runs on. The `owed` number
+  // is still computed and still shown by planOwed's chip — it is scheduled, not hidden.
+  const _absorb=!(opts&&opts.absorb===false);
+  const plan={pid:planIdFor(kid,sk),kid,sk,priority:s.priority||0,minutes:min,lessons,allowedDays:(f.allowedDays||[]).slice(),cap:_absorb?cap:1,anchor:_absorb?anchor:null,doneSince,offDates:{},overflow:_absorb&&(s.overflowExtras!==false)};
   if(f.mode==="targetDate") plan.targetDate=f.targetDate||""; else plan.tpw=parseInt(f.tpw,10)||0;
   const out=projectPlans({plans:[plan],calendar:{[kid]:pastRows.concat(allRows)},dayCapMin:{[kid]:capMin||0},blocked:{[kid]:{[sk]:blocked}},added:{[kid]:{[sk]:_addedIn}},todayISO:today});
   const st=out.plans[plan.pid]||{}; const warnings=(out.warnings||[]).slice();
@@ -24591,7 +24599,12 @@ function gvDerivedColumn(kid,sk){
   const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||s.paused) return null;
   const dealt=gvDealtDates(kid,sk);
   let res=null;
-  try{ res=planMaterialize(kid,sk,null,{dealt:dealt}); }catch(e){ return {err:String(e),byDate:{}}; }
+  // absorb:false — the Grid shows what the SCHEDULER will actually deal, not a catch-up plan
+  // nobody delivers. Before this, the Grid ran the projection with owed absorption on while
+  // the generator had no mechanism for it at all: measured 2026-08-30, 19 of 24 columns had
+  // the Grid asking for more days than the generator would ever serve. The backlog is not
+  // hidden — the header's `owed N` chip (planOwed) still counts it, unchanged.
+  try{ res=planMaterialize(kid,sk,null,{dealt:dealt,absorb:false}); }catch(e){ return {err:String(e),byDate:{}}; }
   if(!res) return null;                                   // mode the projection cannot lay
   if(res.error) return {err:res.error,byDate:{}};
   const byDate={};
@@ -39144,6 +39157,35 @@ function _lidServedFor(kid,sk,rows){
 }
 // LID_SERVE_END
 
+// GWPJ_START ── Stage 3a: a plan-backed subject takes its DAYS from the projection ─────────
+// The stored grid cells are a frozen snapshot of the last lay — every column's cells stop
+// exactly at `pacing.builtThrough` (24 of 24, measured 2026-08-30) — so they run short by
+// however much the kid has slipped since: 22 of 24 subjects had more open lessons than
+// future cells, 70 lessons with nowhere to sit. Taking days off those cells is why backlog
+// could only ever slide to the tail of the book, and why the generator's own catch-up was
+// switched off for plan-backed subjects (_pbCatch) on a contract — "the projection owns
+// backlog" — that nothing honoured between Rebuilds.
+// planMaterialize answers the same question from the plan itself. With absorb:false it lays
+// the SAME pattern the cells encode: 22 of 24 columns identical over 8 weeks, and the 2 that
+// differ (ellis math_reason, read_detect) are exactly the columns whose cells ran out.
+// Returns this week's projected dates, or null when the projection cannot lay this subject
+// (a mode it does not handle, nothing left to place) — the caller then keeps the cells.
+// `liveDates` is the set of days this kid actually has this week, so a projected date can
+// never land on an off day, a ✕'d day, or a day with no row at all.
+function _gwPlanDates(kid,sk,liveDates){
+  if(!(typeof planBacked==="function"&&planBacked(kid,sk))) return null;
+  if(typeof planMaterialize!=="function") return null;
+  let res=null;
+  try{ res=planMaterialize(kid,sk,null,{absorb:false}); }
+  catch(e){ dbg("plan dates skip "+kid+"/"+sk+": "+e); return null; }
+  if(!res||res.error||!res.assignments||!res.assignments.length) return null;
+  const out=[];
+  res.assignments.forEach(function(a){ if(a&&a.date&&liveDates[a.date]) out.push(a.date); });
+  (res.extras||[]).forEach(function(x){ if(x&&x.date&&liveDates[x.date]) out.push(x.date); });
+  return out.sort();
+}
+// GWPJ_END
+
 function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
   const resolved=resolveWeekSlots(weekNum,ignoreAuto);
   if(!resolved) return null;
@@ -39160,6 +39202,27 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
 
     for(const sk of Object.keys(subjectSlots)){
       const dates=subjectSlots[sk];
+      // Stage 3a: for a plan-backed subject the DAYS now come from the projection instead of
+      // the frozen cells. Days at or before today keep their cell slots — a mid-week regen
+      // must never rewrite what has already happened, and the projection deliberately lays
+      // nothing on or before today. A day dropped from the list must also have its dayData
+      // entry cleared, or resolveWeekSlots' "TMP" marker is laid as a phantom task.
+      {
+        const _t=(typeof cbTodayISO==="function")?cbTodayISO():"";
+        const _live={};
+        for(const _d of Object.keys(dayData)){ if(dayData[_d]&&dayData[_d][kid]) _live[_d]=1; }
+        const _pjd=_t?_gwPlanDates(kid,sk,_live):null;
+        if(_pjd){
+          const _keep=dates.filter(function(d){ return d<=_t; });
+          const _next=_pjd.filter(function(d){ return d>_t&&_keep.indexOf(d)<0; });
+          const _was=dates.slice();
+          const _now=_keep.concat(_next).sort();
+          const _set={}; _now.forEach(function(d){ _set[d]=1; });
+          _was.forEach(function(d){ if(!_set[d]&&dayData[d]&&dayData[d][kid]) delete dayData[d][kid][sk]; });
+          _now.forEach(function(d){ if(dayData[d]&&dayData[d][kid]&&dayData[d][kid][sk]===undefined) dayData[d][kid][sk]="TMP"; });
+          dates.length=0; _now.forEach(function(d){ dates.push(d); });
+        }
+      }
       const cursor=(savedCursors&&savedCursors[kid]&&savedCursors[kid][sk]!==undefined)
         ?savedCursors[kid][sk]
         :computeSubjectCursor(kid,sk,excludeWeek);
