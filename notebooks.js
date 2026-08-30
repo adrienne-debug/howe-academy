@@ -1366,6 +1366,10 @@
     var dm = weekData.dates || {};
     var order = [], byDay = {};
     tasks.forEach(function (t) { var d = t.day || ""; if (d && dm.hasOwnProperty(d)) { if (!byDay[d]) { byDay[d] = []; order.push(d); } byDay[d].push(t); } });
+    // Same generation-order trap as the daily pages: weekData.tasks is not in clock order.
+    // This is the WEEK-AT-A-GLANCE grid — the page most likely to be read as "the day" — and
+    // the first pass at this fix patched the daily pages and missed all three week grids.
+    Object.keys(byDay).forEach(function (d) { byDay[d] = nbByTime(byDay[d]); });
     if (!order.length) return "";
     var cols = "";
     order.forEach(function (day) {
@@ -2590,6 +2594,8 @@ ${extraStrip || ""}
     var dm = weekData.dates || {};
     var order = [], byDay = {};
     tasks.forEach(function (t) { var d = t.day || "unknown"; if (!byDay[d]) { byDay[d] = []; order.push(d); } byDay[d].push(t); });
+    Object.keys(byDay).forEach(function (d) { byDay[d] = nbByTime(byDay[d]); });   // clock order, not generation order
+
     var cols = "";
     order.forEach(function (day) {
       var lbl = dm[day] || "", rows = "";
