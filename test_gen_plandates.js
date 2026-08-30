@@ -143,5 +143,42 @@ console.log("\n── planMaterialize absorb ──");
   ok("the Grid still lets dealt cards win their day", /dealt:dealt/.test(gd));
 }
 
+// ── the two follow-ups closed after the first audit ─────────────────────────
+console.log("\n── one engine, one answer ──");
+{
+  const e = src.indexOf("function _cbEngine()");
+  const eng = e < 0 ? "" : src.slice(e, e + 1400);
+  ok("_cbEngine exists", e >= 0);
+  // A Rebuild used to lay owed catch-up days and write them as cells. After Stage 3a
+  // nothing reads those cells for placement, so the button did less than it looked like
+  // — while the inflated cells still fed other subjects' usedMin through cbFutureRows.
+  ok("the Builder/relay engine asks for the plain pattern too",
+    /planMaterialize\(cbKid,cbSubjKey,cbForm,\{absorb:false\}\)/.test(eng),
+    "Rebuild would lay catch-up days nothing deals");
+  ok("it still falls back to cbMaterialize for non-plan modes", /return cbMaterialize\(cbBuildCfg\(\)\)/.test(eng));
+}
+{
+  // The Grid logs its own derive time; the generator runs the same projection once per
+  // plan-backed subject, on a path that can fire several times per generation.
+  const g = src.indexOf("function gwReadWeekAutoAdvance");
+  const gen = g < 0 ? "" : src.slice(g, g + 14000);
+  ok("the projection clock resets each pass", /_gwPjMs=0;/.test(gen));
+  ok("a slow generation is logged", /generator plan-dates slow/.test(gen));
+  ok("the clock is accumulated around the helper", /finally \{ _gwPjMs\+=Date\.now\(\)-_t0; \}/.test(src));
+}
+{
+  // overflowExtras' only reader was planMaterialize. With absorption off app-wide the
+  // checkbox on the card is now inert — recorded here so it cannot be forgotten when the
+  // loop restores a rate-limited absorption.
+  // Count CODE mentions only. Twice now a proximity/count assertion has failed on prose I
+  // wrote in a comment beside the code it describes — strip comment lines first.
+  const codeLines = src.split("\n").filter(l => !/^\s*(\/\/|\*)/.test(l)).join("\n");
+  const readers = (codeLines.match(/s\.overflowExtras/g) || []).length;
+  ok("overflowExtras is down to its own UI plus the (suppressed) projection", readers <= 3, readers);
+  // s.cap is NOT dormant — only its projection use sleeps.
+  ok("capFor still has real consumers outside the projection",
+    (src.match(/capFor\(/g) || []).length > 5);
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

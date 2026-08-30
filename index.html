@@ -23644,7 +23644,18 @@ function cbBuildCfg(){
 // The layout engine for the current cbKid/cbSubjKey: plan-backed sequenced subjects go
 // through planMaterialize (projectPlans — caps, owed); everything else through cbMaterialize.
 function _cbEngine(){
-  try{ if(typeof planMaterialize==="function"){ const r=planMaterialize(cbKid,cbSubjKey,cbForm); if(r) return r; } }catch(e){ dbg&&dbg("planMaterialize fell back: "+e.message); }
+  // absorb:false — the same plain pattern the Grid renders and the generator deals. A
+  // Rebuild used to lay owed catch-up days ON TOP of the pattern and write them as cells,
+  // which after Stage 3a nothing reads for placement: the days were never dealt, so the
+  // button quietly did less than it looked like it did, while the inflated cells still fed
+  // other subjects' usedMin through cbFutureRows. One engine, one answer.
+  // NOTE: `s.overflowExtras` (the "when we have extras, they can be added to other days"
+  // checkbox) now has NO functional consumer — planMaterialize was its only reader and
+  // absorption is off app-wide until the loop gives it a weekly rate limit. Dormant, not
+  // removed. `s.cap` is NOT dormant: only its projection use (a second sitting on a day
+  // while owed) sleeps. capFor still drives the cascade sweep, the packer's never-stack
+  // rule and the catch-up day picker, so the Cap stepper keeps working.
+  try{ if(typeof planMaterialize==="function"){ const r=planMaterialize(cbKid,cbSubjKey,cbForm,{absorb:false}); if(r) return r; } }catch(e){ dbg&&dbg("planMaterialize fell back: "+e.message); }
   return cbMaterialize(cbBuildCfg());
 }
 function cbRunPreview(){
@@ -39172,7 +39183,12 @@ function _lidServedFor(kid,sk,rows){
 // (a mode it does not handle, nothing left to place) — the caller then keeps the cells.
 // `liveDates` is the set of days this kid actually has this week, so a projected date can
 // never land on an off day, a ✕'d day, or a day with no row at all.
+let _gwPjMs=0;   // ms spent in the projection during one gwReadWeekAutoAdvance pass
 function _gwPlanDates(kid,sk,liveDates){
+  const _t0=Date.now();
+  try{ return _gwPlanDatesInner(kid,sk,liveDates); } finally { _gwPjMs+=Date.now()-_t0; }
+}
+function _gwPlanDatesInner(kid,sk,liveDates){
   if(!(typeof planBacked==="function"&&planBacked(kid,sk))) return null;
   if(typeof planMaterialize!=="function") return null;
   let res=null;
@@ -39187,6 +39203,7 @@ function _gwPlanDates(kid,sk,liveDates){
 // GWPJ_END
 
 function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
+  _gwPjMs=0;
   const resolved=resolveWeekSlots(weekNum,ignoreAuto);
   if(!resolved) return null;
   const dayData=resolved.dayData;
@@ -39402,6 +39419,10 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
       }
     }
   }
+  // The Grid logs its own derive time; this is the same projection running once per
+  // plan-backed subject on a path that can fire several times per generation, and it has
+  // never been measured on a cold device. Check _debug if a generation feels slow.
+  if(_gwPjMs>250) dbg("generator plan-dates slow: "+_gwPjMs+"ms (week "+weekNum+")");
   return {dayData,cursors,catchup,served};
 }
 
