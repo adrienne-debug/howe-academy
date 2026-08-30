@@ -1211,9 +1211,39 @@
     if (LN_PAPER_EMOJI[emoji]) return ["paper", subject];
     return ["other", subject];
   }
+  // NBTIME_START ── the day's tasks in the order the kid actually meets them ──────────────
+  // weekData.tasks is in GENERATION order, not clock order, and a cascade or a ➡ move
+  // scrambles it further. Every generator filtered by day and printed that raw order, so the
+  // printed page and the board disagreed on every single day — measured on live week 20,
+  // lincoln's Monday printed Closing Notebook 5th of 14 while the board ends with it, and
+  // Wordsmith last when it actually runs at 2:00 PM. All five days were wrong, for all
+  // three kids (".time" appeared nowhere in this file).
+  // Cards carry a "10:05 AM"-style `time`; a card without one keeps its relative position at
+  // the END rather than sorting to midnight.
+  function nbTimeMin(t) {
+    var m = String((t && t.time) || "").match(/(\d+):(\d+)\s*(AM|PM)?/i);
+    if (!m) return null;
+    var h = parseInt(m[1], 10), mm = parseInt(m[2], 10), ap = (m[3] || "").toUpperCase();
+    if (ap === "PM" && h !== 12) h += 12;
+    if (ap === "AM" && h === 12) h = 0;
+    return h * 60 + mm;
+  }
+  function nbByTime(list) {
+    return (list || []).map(function (t, i) { return { t: t, i: i, m: nbTimeMin(t) }; })
+      .sort(function (a, b) {
+        if (a.m === null && b.m === null) return a.i - b.i;
+        if (a.m === null) return 1;
+        if (b.m === null) return -1;
+        return (a.m - b.m) || (a.i - b.i);
+      })
+      .map(function (x) { return x.t; });
+  }
+  // NBTIME_END
+
   function lnDaySubjects(tasks, student, day) {
     var r = [];
-    (tasks || []).forEach(function (t) { if (t.who === student && t.day === day) r.push(lnClassifyTitle(t.title || "")); });
+    nbByTime((tasks || []).filter(function (t) { return t.who === student && t.day === day; }))
+      .forEach(function (t) { r.push(lnClassifyTitle(t.title || "")); });
     return r;
   }
   function lnSkillSubjects(tasks, student, maxRows) {
@@ -3129,7 +3159,7 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
     var dayAssignments = [];
     orderedDays.forEach(function (day, i) {
       var dateStr = datesMap[day] || "";
-      var dayTasks = ellisTasks.filter(function (t) { return t.day === day; });
+      var dayTasks = nbByTime(ellisTasks.filter(function (t) { return t.day === day; }));
       var passage = ellPick(ELLIS_DATA.banks.passages, wn, i);
       var lang = ellPick(ELLIS_DATA.banks.lang, wn, i);
       var mathQ = ellPick(ELLIS_DATA.banks.math, wn, i);
@@ -3160,7 +3190,7 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
 
   function luPillType(title) { title = String(title || ""); return (title.indexOf("📞") === 0 || title.indexOf("💻") === 0 || title.indexOf("📱") === 0) ? "pill-screen" : "pill-paper"; }
   function luSubjectName(title) { var t = String(title || "").replace(/^[^A-Za-z0-9]+/, "").trim(); return t.split(" — ")[0].trim(); }
-  function luTasksForDay(tasks, day) { return (tasks || []).filter(function (t) { return t.who === "lucy" && t.day === day; }); }
+  function luTasksForDay(tasks, day) { return nbByTime((tasks || []).filter(function (t) { return t.who === "lucy" && t.day === day; })); }
   function luNumberLine() {
     var ticks = "";
     for (var i = 0; i < 11; i++) { var big = (i % 5 === 0) ? " big" : ""; ticks += '<div class="nl-num"><div class="nl-tick' + big + '"></div>' + i + '</div>'; }
