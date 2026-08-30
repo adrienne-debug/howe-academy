@@ -18276,6 +18276,16 @@ function printSchedule(){
   const momLabels={required:"★",maybe:"◆",none:""};
   const days=DAYS.filter(d=>weekData.tasks.some(t=>t.day===d));
 
+  // "10:05 AM" -> minutes past midnight, for ordering. A card with no parsable time keeps
+  // its place at the end rather than sorting to midnight.
+  function _psMin(t){
+    const m=String(t||"").match(/(\d+):(\d+)\s*(AM|PM)?/i);
+    if(!m) return 1e9;
+    let h=parseInt(m[1],10); const mm=parseInt(m[2],10), ap=(m[3]||"").toUpperCase();
+    if(ap==="PM"&&h!==12) h+=12;
+    if(ap==="AM"&&h===12) h=0;
+    return h*60+mm;
+  }
   function fmtTime(t){
     t=t.trim();
     if(t.endsWith("AM")) return t.slice(0,-3).trim()+"a";
@@ -18297,7 +18307,12 @@ function printSchedule(){
 
     let cols="";
     for(const kid of kids){
-      const tasks=weekData.tasks.filter(t=>t.day===day&&t.who===kid&&!t.id.endsWith("_c"));
+      // weekData.tasks is in GENERATION order, not clock order, and a cascade or a ➡ move
+      // scrambles it further. This page stamps the TIME on every row, so unsorted it prints
+      // times that visibly run backwards — live week 20 had 3:07p sitting between 12:10p and
+      // 2:57p, and all 15 columns (5 days x 3 kids) were out of order.
+      const tasks=weekData.tasks.filter(t=>t.day===day&&t.who===kid&&!t.id.endsWith("_c"))
+        .slice().sort((a,b)=>_psMin(a.time)-_psMin(b.time));
       let rows="";
       for(const t of tasks){
         const bg=momColors[t.mom]||"#fff";
