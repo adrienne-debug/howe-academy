@@ -140,6 +140,18 @@ console.log("\n── her three standing checks ──");
   ok("a kid with no mastery rows is reported", noMast.some(x => x.kind === "mastery"), noMast);
 }
 
+console.log("\n── cold load ──");
+{
+  // Before the week's cards arrive every number is zero, which the panel would report as
+  // "0 min of you asked this week (fits)" alongside four "no cards at all" alarms — a
+  // reassurance and four false alarms, both wrong. Seen while auditing what had shipped.
+  const R = src.indexOf("// FBRENDER_START"), R2 = src.indexOf("// FBRENDER_END");
+  const REND = R >= 0 ? src.slice(R, R2) : "";
+  ok("the panel says nothing until the week's cards are loaded",
+    /!Array\.isArray\(weekData\.tasks\)\|\|!weekData\.tasks\.length\) return ""/.test(REND),
+    "a cold load would report 0 min asked and four false alarms");
+}
+
 console.log("\n── ranking ──");
 {
   // Daily work can only be counted from this week's check-offs, so on a Monday it reads
