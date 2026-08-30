@@ -140,6 +140,22 @@ console.log("\n── her three standing checks ──");
   ok("a kid with no mastery rows is reported", noMast.some(x => x.kind === "mastery"), noMast);
 }
 
+console.log("\n── ranking ──");
+{
+  // Daily work can only be counted from this week's check-offs, so on a Monday it reads
+  // zero. Ranked against five-week averages it sorts to the top and the panel opens by
+  // reporting the notebooks as the worst thing in the app. Own group, below.
+  const R = src.indexOf("// FBRENDER_START"), R2 = src.indexOf("// FBRENDER_END");
+  const REND = R >= 0 ? src.slice(R, R2) : "";
+  ok("this-week-only rows are separated from tracked ones",
+    /const tracked=rows\.filter\(r=>!r\.thisWeekOnly\)/.test(REND) && /const weekly=rows\.filter\(r=>r\.thisWeekOnly\)/.test(REND),
+    "a Monday would rank the notebooks worst");
+  ok("both groups are still sorted worst-first", (REND.match(/sort\(\(a,b\)=>a\.rate-b\.rate\)/g) || []).length === 2);
+  ok("the this-week group is drawn after the tracked one",
+    REND.indexOf("tracked.forEach(drawRow)") < REND.indexOf("weekly.forEach(drawRow)"));
+  ok("and says why its numbers start at zero", /expect zeros early in the week/.test(REND));
+}
+
 console.log("\n── read-only ──");
 {
   ok("the block never writes to the database", !/db\.ref\(/.test(BLOCK), "a reporting panel must not write");
