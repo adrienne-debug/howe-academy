@@ -90,9 +90,14 @@ ok("no assignments returns null, not an empty list",
 // ── the merge inside gwReadWeekAutoAdvance ──────────────────────────────────
 console.log("\n── generator merge wiring ──");
 {
+  // Slice to the END of the function, not a fixed byte window: a 12000-char window was
+  // outgrown the moment the quota cap was added, and the slow-log assertion failed for no
+  // reason other than having been pushed past the edge.
   const g = src.indexOf("function gwReadWeekAutoAdvance");
-  const gen = g < 0 ? "" : src.slice(g, g + 12000);
+  const gEnd = g < 0 ? -1 : src.indexOf("\n// Which plan week does a date fall in?", g);
+  const gen = g < 0 ? "" : src.slice(g, gEnd > g ? gEnd : g + 20000);
   ok("gwReadWeekAutoAdvance exists", g >= 0);
+  ok("the slice reaches the end of the function", /return \{dayData,cursors,catchup,served\};/.test(gen));
   ok("it calls the helper", /_gwPlanDates\(kid,sk,_live\)/.test(gen));
   ok("live days are the kid's own days in dayData", /if\(dayData\[_d\]&&dayData\[_d\]\[kid\]\) _live\[_d\]=1;/.test(gen));
   // A mid-week regeneration must not rewrite days that already happened. The projection
@@ -110,6 +115,17 @@ console.log("\n── generator merge wiring ──");
   ok("dates are replaced IN PLACE, not rebound", /dates\.length=0; _now\.forEach\(function\(d\)\{ dates\.push\(d\); \}\)/.test(gen),
     "rebinding would leave subjectSlots pointing at the old array");
   ok("nothing happens without a today", /const _pjd=_t\?_gwPlanDates/.test(gen));
+  // A mid-week regen re-spreads the FULL weekly quota over only the days that are left, on
+  // top of the days already kept. Measured on live data: ellis Editor in Chief (tpw 3, no
+  // pinned days) took Mon+Wed from the cells and then Thu AND Fri from the projection —
+  // four sittings in a week that asks for three. Found by the nothing-drops audit.
+  ok("a mid-week regen cannot exceed the week's quota", /_room=Math\.max\(0,_tpwWk-_keep\.filter/.test(gen),
+    "a regen could hand a tpw-3 subject a fourth sitting");
+  ok("the quota is only applied when a tpw is set", /if\(_tpwWk>0\)\{/.test(gen));
+  // Mom's hand-added days ride on top of tpw by design (_pjPatternRows unions them), so
+  // they must not be counted against the quota and must never be trimmed by it.
+  ok("a hand-added day is never counted against the quota", /_keep\.filter\(function\(d\)\{ return !_isAdd\(d\); \}\)/.test(gen));
+  ok("a hand-added day is never trimmed by the quota", /if\(_isAdd\(d\)\) return true;/.test(gen));
   // one owner for backlog: the generator still adds no catch-up slots of its own
   ok("plan-backed catch-up stays switched off", /const _pbCatch=\(typeof planBacked==="function"\)&&planBacked\(kid,sk\)/.test(gen));
   ok("content still comes from the plan, list minus done by id", /_pbServe/.test(gen));
@@ -161,7 +177,8 @@ console.log("\n── one engine, one answer ──");
   // The Grid logs its own derive time; the generator runs the same projection once per
   // plan-backed subject, on a path that can fire several times per generation.
   const g = src.indexOf("function gwReadWeekAutoAdvance");
-  const gen = g < 0 ? "" : src.slice(g, g + 14000);
+  const gEnd2 = g < 0 ? -1 : src.indexOf("\n// Which plan week does a date fall in?", g);
+  const gen = g < 0 ? "" : src.slice(g, gEnd2 > g ? gEnd2 : g + 20000);
   ok("the projection clock resets each pass", /_gwPjMs=0;/.test(gen));
   ok("a slow generation is logged", /generator plan-dates slow/.test(gen));
   ok("the clock is accumulated around the helper", /finally \{ _gwPjMs\+=Date\.now\(\)-_t0; \}/.test(src));

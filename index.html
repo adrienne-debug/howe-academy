@@ -39231,7 +39231,29 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
         const _pjd=_t?_gwPlanDates(kid,sk,_live):null;
         if(_pjd){
           const _keep=dates.filter(function(d){ return d<=_t; });
-          const _next=_pjd.filter(function(d){ return d>_t&&_keep.indexOf(d)<0; });
+          let _next=_pjd.filter(function(d){ return d>_t&&_keep.indexOf(d)<0; });
+          // A MID-WEEK regen re-spreads the subject's FULL weekly quota over only the days
+          // that are left, on top of the days already kept: ellis Editor in Chief (tpw 3, no
+          // pinned days) took Mon+Wed from the cells and then Thu AND Fri from the
+          // projection — four sittings in a week that asks for three. Cap what may be added
+          // to the quota this week has not spent. Mom's hand-added ➕ days ride on top of
+          // tpw by design (_pjPatternRows unions them), so they never count against the
+          // quota and are never trimmed.
+          const _sub=subjects[sk]||{};
+          const _tpwWk=parseInt((_sub.pacing&&_sub.pacing.tpw)||_sub.timesPerWeek,10)||0;
+          if(_tpwWk>0){
+            const _isAdd=function(d){
+              const o=(typeof schedOv==="function")?schedOv(d,kid):null;
+              const v=o&&o.added&&o.added[sk];
+              return v!==undefined&&v!==null&&v!==false;
+            };
+            let _room=Math.max(0,_tpwWk-_keep.filter(function(d){ return !_isAdd(d); }).length);
+            _next=_next.filter(function(d){
+              if(_isAdd(d)) return true;
+              if(_room>0){ _room--; return true; }
+              return false;
+            });
+          }
           const _was=dates.slice();
           const _now=_keep.concat(_next).sort();
           const _set={}; _now.forEach(function(d){ _set[d]=1; });
