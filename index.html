@@ -23037,7 +23037,10 @@ function _pjPatternRows(plan,rows,tpw,overflowWanted){
   else{
     const byWk={}; const order=[];
     elig.forEach(r=>{ const k=_pjWeekKey(r.date); if(!byWk[k]){ byWk[k]=[]; order.push(k); } byWk[k].push(r); });
-    out=[]; order.forEach(k=>{ _cbSpread(byWk[k],Math.min(tpw,byWk[k].length)).forEach(r=>out.push(r)); });
+    // plan._wkUsed = {isoWeekKey: n} — sittings that week ALREADY HAS from elsewhere
+    // (today: the active week's dealt cards, fed by planMaterialize's dealt path). The
+    // quota spreads only what is left. Absent or 0 everywhere = exactly the old behavior.
+    out=[]; order.forEach(k=>{ const q=Math.max(0,tpw-((plan._wkUsed||{})[k]||0)); _cbSpread(byWk[k],Math.min(q,byWk[k].length)).forEach(r=>out.push(r)); });
   }
   // Mom's HAND-ADDED days (➕ make-up, and a ➡ move's landing day) are extra sittings she
   // asked for by name: they ride on top of the pattern, are never filtered out by
@@ -23176,9 +23179,18 @@ function planMaterialize(kid,sk,form,opts){
   const ids=lidsFor(kid,sk)||[]; const seq=s.lessonSeq||[]; const di=lidDoneIdx(kid,sk)||new Set();
   const pool={}; seq.forEach((t,i)=>{ if(di.has(i)) return; const k=_lidNorm(t); (pool[k]=pool[k]||[]).push(ids[i]); });
   let lessons=content.map(t=>{ const q=pool[_lidNorm(t)]; return {lid:(q&&q.length)?q.shift():null,text:String(t)}; });
+  let _dealtMax=null; const _dealtWk={};
   if(_dealt){
     lessons=_planDropDealt(lessons,_dealt);
     if(!lessons.length) return {error:"Nothing left to lay — every remaining lesson is already on a card.",warnings:[]};
+    // Cards win their week's SHAPE, not just their days (found live 2026-08-31: tpw 3 with
+    // Mon/Wed/Thu dealt showed a phantom 4th sitting — Ch4-1 on the free Tuesday, BEFORE
+    // Wednesday's Ch3-7). Two rules: (a) nothing projects at or before the last dealt date,
+    // so a projected lesson can never sit ahead of a card carrying an earlier one; (b) each
+    // ISO week's tpw is charged for the cards it already holds (via plan._wkUsed), so a
+    // partially-dealt week gets only the difference. targetDate mode has no tpw to charge —
+    // rule (a) still orders it.
+    Object.keys(_dealt).forEach(function(d){ if(!_dealtMax||d>_dealtMax) _dealtMax=d; const wk=_pjWeekKey(d); _dealtWk[wk]=(_dealtWk[wk]||0)+1; });
   }
   // Calendar: existing future rows + a dense extension past the grid end (weekdays; off days
   // via the calendar; existing dates never minted twice) — dayNums are minted later, in date
@@ -23195,7 +23207,7 @@ function planMaterialize(kid,sk,form,opts){
       extRows.push({date:ds,dow:DOW[dow],off:!!ex.isOff(ds),usedMin:0,exists:false});
     }
   }
-  const allRows=cal.concat(extRows).filter(r=>r.date>=today&&!(_dealt&&_dealt[r.date]));
+  const allRows=cal.concat(extRows).filter(r=>r.date>=today&&!(_dealt&&(_dealt[r.date]||(_dealtMax&&r.date<=_dealtMax))));
   // Owed: pattern days since the anchor, minus done since the anchor (records carry ISO days).
   const anchor=s.planAnchor||null; const doneNode=((((currData||{}).done||{})[kid]||{})[sk])||{};
   let doneSince=0; if(anchor) Object.values(doneNode).forEach(r=>{ if(r&&r.day&&String(r.day)>=anchor) doneSince++; });
@@ -23222,7 +23234,7 @@ function planMaterialize(kid,sk,form,opts){
   // subject's own tpw pattern, which is what the schedule already runs on. The `owed` number
   // is still computed and still shown by planOwed's chip — it is scheduled, not hidden.
   const _absorb=!(opts&&opts.absorb===false);
-  const plan={pid:planIdFor(kid,sk),kid,sk,priority:s.priority||0,minutes:min,lessons,allowedDays:(f.allowedDays||[]).slice(),cap:_absorb?cap:1,anchor:_absorb?anchor:null,doneSince,offDates:{},overflow:_absorb&&(s.overflowExtras!==false)};
+  const plan={pid:planIdFor(kid,sk),kid,sk,priority:s.priority||0,minutes:min,lessons,allowedDays:(f.allowedDays||[]).slice(),cap:_absorb?cap:1,anchor:_absorb?anchor:null,doneSince,offDates:{},overflow:_absorb&&(s.overflowExtras!==false),_wkUsed:_dealtWk};
   if(f.mode==="targetDate") plan.targetDate=f.targetDate||""; else plan.tpw=parseInt(f.tpw,10)||0;
   const out=projectPlans({plans:[plan],calendar:{[kid]:pastRows.concat(allRows)},dayCapMin:{[kid]:capMin||0},blocked:{[kid]:{[sk]:blocked}},added:{[kid]:{[sk]:_addedIn}},todayISO:today});
   const st=out.plans[plan.pid]||{}; const warnings=(out.warnings||[]).slice();

@@ -12,6 +12,7 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const src2 = src;
 const a = src.indexOf("// PROJ_START"), b = src.indexOf("// PROJ_END");
 if (a < 0 || b < 0) { console.error("PROJ markers not found"); process.exit(1); }
 function extractFn(name) {
@@ -205,6 +206,47 @@ console.log("week key math");
   ok("_pjWeekKey: Sunday belongs to the week starting the previous Monday", env._pjWeekKey("2026-08-23") === "2026-08-17" && env._pjWeekKey("2026-08-17") === "2026-08-17" && env._pjWeekKey("2026-08-22") === "2026-08-17");
   ok("_pjWeeksBetween ceil, min 1", env._pjWeeksBetween("2026-08-17", "2026-08-17") === 1 && env._pjWeeksBetween("2026-08-17", "2026-08-25") === 2);
   ok("empty input → empty output, no throw", eq(P({}), { byDate: {}, plans: {}, warnings: [] }));
+}
+
+console.log("plan._wkUsed — a week already holding sittings gets only the difference");
+{
+  // Found live 2026-08-31: Lucy's Dimensions at tpw 3 with Mon/Wed/Thu dealt as cards
+  // showed a phantom 4th sitting on the free Tuesday — Ch4-1 BEFORE Wednesday's Ch3-7.
+  // The dealt path now charges each ISO week's tpw for its cards via plan._wkUsed.
+  const base = { todayISO: "2026-08-31", calendar: { lucy: cal("2026-08-31", 3) } };
+  const mkp = (wkUsed) => ({ pid: "lucy__dim", kid: "lucy", sk: "dim", lessons: L(6, "Ch"),
+    allowedDays: ["Mon", "Tue", "Wed", "Thu"], tpw: 3, _wkUsed: wkUsed });
+  const wk1 = env._pjWeekKey("2026-08-31"), wk2 = env._pjWeekKey("2026-09-07");
+  {
+    const o = P(Object.assign({}, base, { plans: [mkp({ [wk1]: 3 })] }));
+    const f = flat(o, "lucy");
+    ok("a fully-dealt week takes NOTHING", f.every(x => env._pjWeekKey(x.d) !== wk1), f.map(x => x.d));
+    ok("lessons flow to later weeks, in order",
+      f.length === 6 && eq(f.map(x => x.lid), L(6).map(x => x.lid)) && f[0].d >= "2026-09-07");
+  }
+  {
+    const o = P(Object.assign({}, base, { plans: [mkp({ [wk1]: 2 })] }));
+    const f = flat(o, "lucy");
+    ok("a week holding 2 of tpw 3 gets exactly 1 more",
+      f.filter(x => env._pjWeekKey(x.d) === wk1).length === 1, f.map(x => x.d));
+  }
+  {
+    const o1 = P(Object.assign({}, base, { plans: [mkp(undefined)] }));
+    const o2 = P(Object.assign({}, base, { plans: [mkp({})] }));
+    ok("absent or empty _wkUsed = old behavior exactly", eq(o1.byDate, o2.byDate)
+      && flat(o1, "lucy").filter(x => env._pjWeekKey(x.d) === wk1).length === 3);
+  }
+  {
+    const o = P(Object.assign({}, base, { plans: [mkp({ [wk1]: 99 })] }));
+    ok("over-charge clamps at zero, never throws", flat(o, "lucy").length === 6);
+  }
+  // the planMaterialize plumbing that feeds this — source assertions
+  const pm = src2.slice(src2.indexOf("function planMaterialize"), src2.indexOf("function planOwed"));
+  ok("dealt path computes the last dealt date and per-week counts",
+    pm.indexOf("_dealtMax") > 0 && /_dealtWk\[wk\]=\(_dealtWk\[wk\]\|\|0\)\+1/.test(pm));
+  ok("no row projects at or before the last dealt date",
+    /r\.date<=_dealtMax/.test(pm));
+  ok("the plan carries the week charge", /_wkUsed:_dealtWk/.test(pm));
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");
