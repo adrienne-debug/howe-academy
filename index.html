@@ -1680,6 +1680,11 @@ function toggleMorningStep(kid,i){
   // Derive the Morning slot from the steps so every existing consumer (grid, alert, gate) stays correct.
   const allDone=morningComplete(kid,day), _prevSlot=slState[wk+"_"+day+"_"+kid+"_morning"];
   slState[wk+"_"+day+"_"+kid+"_morning"]={done:allDone,ts:allDone?nowTs():""};
+  // ⏱ The kid is READY the moment their morning routine completes — this gate already
+  // decides when their schedule shows, so it is the same signal, not a new one. Their day
+  // is timed from here rather than from the written 10:00. Fires once, on the flip, and
+  // only for today; a start already set (or set by hand) is never overwritten.
+  if(allDone&&!(_prevSlot&&_prevSlot.done)&&day===_todayDay&&typeof dsAutoStart==="function") dsAutoStart(kid);
   rtBonusSettle("morning",kid,wk,day,_prevSlot,allDone,morningDueIdx(kid,day).length);
   if(typeof rtDayBonusSettle==="function") rtDayBonusSettle(kid,wk,day);
   if(allDone) mrOpen[kid]=false;   // auto-collapse when finished
@@ -34421,7 +34426,19 @@ function dsMomClashes(tasks){
   }catch(e){}
   return out;
 }
-// Mom-gated writers. One tiny value; nothing about the cards themselves is written.
+// Set automatically when the morning routine completes (see the gate in the morning-step
+// handler). Never overwrites a start already recorded, so re-ticking a routine item later
+// in the day cannot move the day again.
+function dsAutoStart(kid){
+  try{
+    if(dsFor(kid)) return;
+    const now=new Date(); const t=fromMin(now.getHours()*60+now.getMinutes());
+    if(!dayStarts[_todayDay]) dayStarts[_todayDay]={};
+    dayStarts[_todayDay][kid]=t;
+    if(db) db.ref(WK+"/dayStart/"+_todayDay+"/"+kid).set(t);
+  }catch(e){ if(typeof dbg==="function") dbg("auto day-start failed for "+kid+": "+e); }
+}
+// Mom-gated overrides. One tiny value; nothing about the cards themselves is written.
 function dsStartNow(kid){
   if(!momHere()&&!adminPinUnlocked) return;
   const now=new Date(); const t=fromMin(now.getHours()*60+now.getMinutes());

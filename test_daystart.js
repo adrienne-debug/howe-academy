@@ -119,6 +119,27 @@ console.log("\n── gaps and Mom clashes ──");
   ok("a late kid landing on another child's Mom time IS reported", clashes.length > 0, clashes.length);
 }
 
+console.log("\n── fires off the morning gate, not a button ──");
+{
+  // The kid is ready when their morning routine completes — the same gate that already
+  // decides when their schedule shows. Assert the wiring at source level, and that
+  // dsAutoStart is idempotent so re-ticking a routine item later cannot move the day again.
+  ok("the morning-step handler calls dsAutoStart on the flip",
+    /if\(allDone&&!\(_prevSlot&&_prevSlot\.done\)&&day===_todayDay&&typeof dsAutoStart==="function"\) dsAutoStart\(kid\);/.test(src),
+    "the day start would only ever be set by hand");
+  ok("it is gated on TODAY", /day===_todayDay&&typeof dsAutoStart/.test(src));
+  ok("it fires on the transition, not on every tick", /!\(_prevSlot&&_prevSlot\.done\)/.test(src));
+
+  vm.runInContext("dayStarts={}; db=null;", ctx);
+  vm.runInContext("dsAutoStart('lincoln')", ctx);
+  const first = vm.runInContext("dsFor('lincoln')", ctx);
+  ok("auto-start records a time", !!first, first);
+  vm.runInContext("dayStarts.monday.lincoln='9:00 AM'; dsAutoStart('lincoln')", ctx);
+  ok("a start already recorded is never overwritten", vm.runInContext("dsFor('lincoln')", ctx) === "9:00 AM",
+    vm.runInContext("dsFor('lincoln')", ctx));
+  vm.runInContext("dayStarts={};", ctx);
+}
+
 console.log("\n── guards ──");
 {
   vm.runInContext("dayStarts={};", ctx);
