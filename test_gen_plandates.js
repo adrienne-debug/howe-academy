@@ -197,5 +197,17 @@ console.log("\n── one engine, one answer ──");
     (src.match(/capFor\(/g) || []).length > 5);
 }
 
+console.log("\nregen never trusts the calendar mirror");
+{
+  const _rg = src.slice(src.indexOf("function schedRegenerateNow"), src.indexOf("function schedRegenerateNow") + 5000);
+  ok("regen pulls a fresh calendar snapshot before generating",
+    _rg.indexOf('db.ref("calendar").once') > 0);
+  ok("— and BEFORE the weekConfig read that starts the deal",
+    _rg.indexOf('db.ref("calendar").once') < _rg.indexOf('db.ref("weekConfig/'));
+  ok("the snapshot replaces the mirror, kidOverrides included",
+    /kidOverrides:cv\.kidOverrides\|\|\{\}/.test(_rg));
+  ok("and leaves a breadcrumb", _rg.indexOf("regen: calendar refreshed") > 0);
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

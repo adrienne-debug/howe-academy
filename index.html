@@ -5185,7 +5185,23 @@ function schedRegenerateNow(){
   haClaimSchedLock("regen",function(release){
     if(!release){ if(typeof gwShowToast==="function") gwShowToast("Another device is updating the schedule — try again in a moment."); return; }
     const _done=v=>{ try{ _run(v); } finally { release(); } };
-    if(db){ db.ref("weekConfig/"+wn).once("value",s=>_done(s.val())); }
+    if(db){
+      // The generator reads the calendar THROUGH the local mirror (smapIsKidOff →
+      // calendarData). Live 2026-08-31: Ellis marked off Mon–Wed, all three marks verified
+      // sitting in the DB, and three consecutive regens still dealt those days — the
+      // generating device's mirror didn't have them. A regen is rare and always deliberate,
+      // so it never trusts the mirror: pull a fresh calendar snapshot first, whatever made
+      // the mirror stale.
+      db.ref("calendar").once("value",cs=>{
+        try{
+          const cv=cs.val()||{};
+          calendarData={holidays:cv.holidays||{},vacations:cv.vacations||{},kidOverrides:cv.kidOverrides||{},events:cv.events||{}};
+          try{ HA_LS.setItem("ha_calendar",JSON.stringify(calendarData)); }catch(e2){}
+          dbg("regen: calendar refreshed — kidOverride kids="+Object.keys(calendarData.kidOverrides).join(",")); 
+        }catch(e){ dbg("regen: calendar refresh FAILED: "+e); }
+        db.ref("weekConfig/"+wn).once("value",s=>_done(s.val()));
+      });
+    }
     else _done(null);
   });
 }
