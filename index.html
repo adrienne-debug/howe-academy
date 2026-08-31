@@ -2719,6 +2719,10 @@ function initFb() {
       if(tab==="schedule"&&!schedShowAdmin&&!schedShowHistory&&!schedShowPace){const el=document.getElementById("content");if(el)renderSchedule(el);}
       else if((tab==="history"||schedShowHistory)&&histTab==="trends"){const el=document.getElementById("content");if(el)renderHistory(el);}
     });
+    db.ref("config/momLoop").on("value",s=>{
+      momLoop=s.val()||{};
+      if(typeof renderAll==="function") renderAll();
+    });
     db.ref("brainBreakSettings").on("value",s=>{
       bbSettings=s.val()||{};
       try{HA_LS.setItem("ha_bb_settings",JSON.stringify(bbSettings));}catch(e){}
@@ -5646,6 +5650,9 @@ function renderSchedule(el){
     '<div class="day-window">'+win+'</div></div>'+
     '<div class="day-pct-badge">'+pct+'%</div></div>'+
     '<div class="day-prog-bar"><div class="day-prog-fill" style="width:'+pct+'%"></div></div></div>';
+  // 👩 the Mom loop — who has her right now. Mom-gated, today only, reports nothing on
+  // another day's view where "ready" and "paused" have no meaning.
+  if(day===_todayDay){ try{ h+=mlStripHTML(); }catch(e){} }
   if(momHere()&&schedDayOffOpen) h+=schedRenderDayOffPicker(day);
 
   if(CONSTRAINT[day]){
@@ -34366,6 +34373,136 @@ function mastPrintCards(){
 // ── DISPLACEMENT ENGINE ──────────────────────────────────────────
 let displacedResult=null; // {tasks:[], carryOver:[]}
 let lastAudit=[]; // auditSchedule() violations for the live schedule ([] = all clear)
+// MOMLOOP_START ── who has Mom right now ────────────────────────────────────────────────
+// Her design, 2026-08-30. Mom's time is the scarce resource — measured 1136 min/wk of
+// Mom-required work against ~900 usable morning minutes — and until now nothing in the app
+// represented it at all: the order she worked through the kids was an emergent side effect
+// of four per-kid workflow lists plus a round-robin, invisible and unarbitrated. The result
+// was Lincoln getting 33% of the Mom time he needs while Lucy got 51%, every week, because
+// whoever sat last in a fixed order always lost.
+//
+// THE RULES, in her words:
+//   · the loop has an order and a cursor; the cursor kid gets Mom for their turn
+//   · a kid isn't ready until their MORNING ROUTINE is done — the same gate that decides
+//     when their schedule shows
+//   · if the cursor kid isn't ready, the first kid who IS ready borrows Mom, and the cursor
+//     does NOT advance — the borrowed turn is not a lost turn
+//   · a PAUSE (brain break, theirs or Mom-started) hands Mom to the next kid in the loop or
+//     anyone free, and again the cursor holds — a break costs a kid their minute, not their place
+//   · when a kid's Mom work is finished the loop moves on to the next kid
+//
+// This is a DECISION, not a re-scheduler: it reads state that already exists
+// (morningComplete, bbActive, checked) and says who is up. It moves no cards and writes
+// nothing except the order and starting cursor Mom sets herself.
+let momLoop={};   // {order:[kid,...], cursor:n} from config/momLoop
+function mlOrder(){
+  const o=(momLoop&&Array.isArray(momLoop.order))?momLoop.order.filter(function(k){ return [...ROSTER].indexOf(k)>=0; }):[];
+  if(o.length) return o;
+  return [...ROSTER];                      // default: roster order (youngest-first is hers to set)
+}
+function mlCursor(){ const n=mlOrder().length; const c=parseInt(momLoop&&momLoop.cursor,10)||0; return n?((c%n)+n)%n:0; }
+function mlReady(kid){ try{ return !!morningComplete(kid,_todayDay); }catch(e){ return true; } }
+function mlPaused(kid){ try{ return !!bbActive(kid); }catch(e){ return false; } }
+// A kid's Mom-required work still outstanding today. Carry twins are not their own sitting.
+function mlRemaining(kid){
+  try{
+    return (getActiveTasks()||[]).filter(function(t){
+      return t&&t.who===kid&&t.day===_todayDay&&t.mom==="required"
+        &&!String(t.id||"").endsWith("_c")
+        &&!(typeof checked!=="undefined"&&checked&&checked[t.id]);
+    });
+  }catch(e){ return []; }
+}
+function mlDone(kid){ return mlRemaining(kid).length===0; }
+// Who Mom should be with right now, and why. Scanning FROM the cursor is what makes a
+// borrowed turn temporary: the cursor kid is still first in line the moment they are ready.
+function mlNow(){
+  const order=mlOrder(), n=order.length; if(!n) return null;
+  const cur=mlCursor(), cursorKid=order[cur];
+  for(let i=0;i<n;i++){
+    const k=order[(cur+i)%n];
+    if(mlDone(k)) continue;
+    if(!mlReady(k)) continue;
+    if(mlPaused(k)) continue;
+    return {kid:k,borrowed:i>0,cursorKid:cursorKid,
+      why:(i===0)?"their turn":(mlPaused(cursorKid)?("borrowed — "+cap(cursorKid)+" is on a break")
+        :(!mlReady(cursorKid)?("borrowed — "+cap(cursorKid)+" is still on their routine"):"borrowed"))};
+  }
+  return {kid:null,cursorKid:cursorKid,why:"nobody is ready and free right now"};
+}
+// Everyone's state, for the strip. Order is the loop order so the queue reads as a queue.
+function mlStatus(){
+  const now=mlNow();
+  return mlOrder().map(function(k){
+    return {kid:k,
+      state: mlDone(k)?"done" : (!mlReady(k)?"routine" : (mlPaused(k)?"paused" : ((now&&now.kid===k)?"withMom":"waiting"))),
+      left: mlRemaining(k).length,
+      isCursor: k===(now&&now.cursorKid)};
+  });
+}
+function mlSetOrder(arr){
+  if(!momHere()&&!adminPinUnlocked) return;
+  momLoop=Object.assign({},momLoop,{order:arr});
+  if(db) db.ref("config/momLoop/order").set(arr);
+  renderAll();
+}
+function mlMove(kid,dir){
+  if(!momHere()&&!adminPinUnlocked) return;
+  const o=mlOrder().slice(); const i=o.indexOf(kid); const j=i+dir;
+  if(i<0||j<0||j>=o.length) return;
+  const t=o[i]; o[i]=o[j]; o[j]=t;
+  mlSetOrder(o);
+}
+// "Start the loop on this kid" — her lever when someone is behind and needs to go first.
+function mlSetCursor(kid){
+  if(!momHere()&&!adminPinUnlocked) return;
+  const i=mlOrder().indexOf(kid); if(i<0) return;
+  momLoop=Object.assign({},momLoop,{cursor:i});
+  if(db) db.ref("config/momLoop/cursor").set(i);
+  renderAll();
+}
+// The strip. Mom-gated: this is her queue, not something the kids act on.
+function mlStripHTML(){
+  try{
+    if(!momHere()&&!adminPinUnlocked) return "";
+    const now=mlNow(); if(!now) return "";
+    const st=mlStatus();
+    const CH={withMom:["#16a34a","#fff","with you"],paused:["#f59e0b","#fff","on a break"],
+              routine:["#94a3b8","#fff","still on routine"],waiting:["#e0e7ff","#3730a3","waiting"],
+              done:["#d1fae5","#065f46","done"]};
+    let h='<div style="background:#f5f3ff;border-left:4px solid #7c3aed;border-radius:0 10px 10px 0;padding:9px 12px;margin:0 0 8px">';
+    h+='<div style="font-size:12px;font-weight:800;color:#5b21b6;margin-bottom:6px">&#128105; Mom loop — '
+      +(now.kid?('now with <span style="color:#16a34a">'+cap(now.kid)+'</span>'
+        +(now.borrowed?' <span style="font-weight:600;color:#7c3aed">('+esc(now.why)+')</span>':''))
+        :('<span style="color:#b45309">'+esc(now.why)+'</span>'))+'</div>';
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
+    st.forEach(function(x,i){
+      const c=CH[x.state]||CH.waiting;
+      h+='<span style="display:inline-flex;align-items:center;gap:5px;background:'+c[0]+';color:'+c[1]
+        +';border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700"'
+        +(x.isCursor?' title="the loop is on this kid"':'')+'>'
+        +(x.isCursor?"&#9656; ":"")+cap(x.kid)
+        +'<span style="font-weight:600;opacity:.85">'+c[2]+(x.left?(" · "+x.left+" left"):"")+'</span></span>';
+      if(i<st.length-1) h+='<span style="color:#a5b4fc;font-size:11px">&rarr;</span>';
+    });
+    h+='</div>';
+    h+='<div style="margin-top:7px;display:flex;gap:5px;flex-wrap:wrap;align-items:center">';
+    h+='<span style="font-size:10.5px;color:#6d28d9">Start the loop on:</span>';
+    mlOrder().forEach(function(k){
+      h+='<button onclick="mlSetCursor(\''+k+'\')" style="border:1px solid #ddd6fe;background:#fff;color:#5b21b6;border-radius:8px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cap(k)+'</button>';
+    });
+    h+='<span style="font-size:10.5px;color:#6d28d9;margin-left:6px">Order:</span>';
+    mlOrder().forEach(function(k,i){
+      h+='<span style="font-size:10.5px;color:#5b21b6">'+cap(k)+'</span>';
+      h+='<button onclick="mlMove(\''+k+'\',-1)"'+(i===0?' disabled style="opacity:.25;border:none;background:none;cursor:default"':' style="border:none;background:none;cursor:pointer;color:#7c3aed"')+'>&#9664;</button>';
+      h+='<button onclick="mlMove(\''+k+'\',1)"'+(i===mlOrder().length-1?' disabled style="opacity:.25;border:none;background:none;cursor:default"':' style="border:none;background:none;cursor:pointer;color:#7c3aed"')+'>&#9654;</button>';
+    });
+    h+='</div></div>';
+    return h;
+  }catch(e){ return ""; }
+}
+// MOMLOOP_END
+
 // DAYSTART_START ── the school day starts when the kid is actually ready ────────────────
 // Measured 2026-08-30 from routineLog: the schedule is written to start at 10:00, and the
 // median morning routine finishes 10:24-10:35 — 75-79% of mornings run late, with a median
