@@ -63,12 +63,19 @@ function fresh() {
       return v; };
     var saves=[];
     var saveRules=function(r){ saves.push(r); rulesData=r; };
+    var confirm=function(){ return true; };
+    var cap=function(s){ return String(s).charAt(0).toUpperCase()+String(s).slice(1); };
     var currData={subjects:{lincoln:${JSON.stringify(SUBJECTS)}}};
     var rulesData={workflow:{lincoln:{normal:${JSON.stringify(STEPS)}}}};
   `;
   return new Function(prelude + block + rankFn + `;
+    var weekData={tasks:[]};
     return { match:wfMatch, resolve:wfResolveEntry, unmatched:wfUnmatched,
       move:wfSubjMove, remove:wfSubjRemove, add:wfSubjAdd,
+      sweep:wfSweepDead, deadList:wfDeadEntries,
+      setTasks:function(ts){ weekData={tasks:ts}; },
+      setSubjects:function(kid,ss){ currData.subjects[kid]=ss; },
+      setWf:function(kid,modes){ rulesData.workflow[kid]=modes; },
       rank:function(sk){ const s=currData.subjects.lincoln[sk];
         return gwWorkflowRank("lincoln", sk, s, "monday", false); },
       rename:function(sk,disp){ currData.subjects.lincoln[sk].display=disp; },
@@ -152,6 +159,43 @@ console.log("\nmutations — clone, saveRules, nothing else");
   ok("a missing step saves nothing", api.saves().length === n + 1);
 }
 
+console.log("\nthe sweep — dead means no subject AND no live card");
+{
+  const api = fresh();
+  // The Julian trap, live 2026-08-30: his "Drills" entry matches no curriculum subject
+  // (his drills are mastery slots) but orders his drill CARDS in _wfWeight/cascadeWeight.
+  api.setSubjects("julian", { morning_nb: { display: "Morning Notebook", rules: "first" },
+                              closing_nb: { display: "Closing Notebook", rules: "last" } });
+  api.setWf("julian", { normal: [ { label: "Mom Required", tier: "required", subjects: ["Drills"] } ] });
+  api.setTasks([{ who: "julian", title: "Drills — sounds", id: "j1" }]);
+  ok("an entry alive only through cards is NOT dead",
+    api.resolve("julian", "Drills").dead === false && api.resolve("julian", "Drills").cardsOnly === true);
+  const dead = api.deadList();
+  ok("the dead list spans kids and finds the 8 (Lincoln) and none of Julian",
+    dead.length === 8 && dead.every(d => d.kid === "lincoln"), dead.map(d => d.kid + ":" + d.entry));
+  api.sweep();
+  ok("sweep removes exactly the dead, one save",
+    api.saves().length === 1 && api.deadList().length === 0);
+  ok("Lincoln keeps his living names",
+    api.steps()[0].subjects.join("|") === "Eggspress" &&
+    api.steps()[3].subjects.join("|") === "Math Sprints|AAS|Wordsmith", api.steps().map(s => s.subjects));
+  ok("Julian's cards-only Drills entry survives the sweep",
+    api.saves()[0].workflow.julian.normal[0].subjects.join("|") === "Drills");
+  api.sweep();
+  ok("a clean workflow sweeps nothing (no save)", api.saves().length === 1);
+}
+{
+  // A kid whose curriculum has NOT loaded is never judged — absence of evidence.
+  const api = fresh();
+  api.setWf("ghost", { normal: [ { label: "X", tier: "maybe", subjects: ["Some Old Name"] } ] });
+  ok("no subjects node -> no dead verdicts for that kid",
+    api.deadList().every(d => d.kid !== "ghost"));
+  api.sweep();
+  const saved = api.saves()[api.saves().length - 1];
+  ok("sweep leaves the unjudgeable kid untouched",
+    saved.workflow.ghost.normal[0].subjects.join("|") === "Some Old Name");
+}
+
 console.log("\nsource wiring — the one matcher really owns all four sites");
 {
   ok("gwWorkflowRank calls wfMatch", src.indexOf("wfMatch(subs[j],key,disp)") > 0);
@@ -168,6 +212,17 @@ console.log("\nsource wiring — the one matcher really owns all four sites");
   ok("the picker never offers free text", card.indexOf("<option value=\"\">+ add</option>") > 0);
   ok("the unmatched readout renders", card.indexOf("No step names these") > 0);
   ok("dead chips explain themselves", card.indexOf("Matches no subject") > 0);
+  ok("cards-only chips say leave it", card.indexOf("it orders those cards") > 0);
+  ok("the sweep button renders with its count", card.indexOf("wfSweepDead()") > 0);
+  const sw = src.slice(src.indexOf("function wfSweepDead"), src.indexOf("function wfSweepDead") + 2000);
+  ok("the sweep confirms before writing", sw.indexOf("confirm(") > 0 && sw.indexOf("confirm(") < sw.indexOf("saveRules"));
+  // delete-subject cleans the workflow: key entries filtered out, saved only when found
+  const del = src.slice(src.indexOf("function ceDeleteSubject"), src.indexOf("function ceDeleteSubject") + 4000);
+  ok("delete filters the subject KEY from workflow steps", del.indexOf("e!==sk") > 0);
+  ok("and saves through saveRules, only when something came out",
+    /if\(_wfN\) saveRules\(_r\);/.test(del));
+  ok("both day modes are cleaned", del.indexOf('["normal","babysitter"]') > 0);
+  ok("the toast reports it", del.indexOf("workflow entry removed") > 0);
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");

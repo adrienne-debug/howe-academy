@@ -16339,7 +16339,7 @@ function ceDeleteSubject(){
   const s=ceGetSubject();
   if(!s) return;
   const kid=ceEditKid, sk=ceEditKey;
-  if(!confirm("Delete \""+s.display+"\" from "+cap(kid)+"'s curriculum? It's removed from the Grid, Calendar and Lesson Map — past history is kept. This cannot be undone.")) return;
+  if(!confirm("Delete \""+s.display+"\" from "+cap(kid)+"'s curriculum? It's removed from the Grid, Calendar, Lesson Map and Rules workflow — past history is kept. This cannot be undone.")) return;
   delete currData.subjects[kid][sk];
   if(db) db.ref("curriculum/subjects/"+kid+"/"+sk).remove();
   const n=_gvPurgeSubject(kid,sk);
@@ -16368,13 +16368,36 @@ function ceDeleteSubject(){
       db.ref("curriculum/rebaseline/"+kid+"/"+sk).remove();
     }
   }
+  // The workflow keeps no ghost (her rule 2026-08-30: deleted means deleted everywhere but
+  // history). The subject's KEY entries come out of every step, both day modes, through the
+  // same clone→saveRules path as the editor. A TYPED name that pointed here can't be safely
+  // inferred — it goes red in the editor and the sweep offers it instead.
+  let _wfN=0;
+  try{
+    if((((rulesData||{}).workflow)||{})[kid]){
+      const _r=JSON.parse(JSON.stringify(rulesData));
+      ["normal","babysitter"].forEach(function(mode){
+        const steps=fbArr((_r.workflow[kid]||{})[mode]); if(!steps) return;
+        steps.forEach(function(st){
+          if(!st||!st.subjects) return;
+          const subs=fbArr(st.subjects)||[];
+          const kept=subs.filter(function(e){ return e!==sk; });
+          _wfN+=subs.length-kept.length;
+          st.subjects=kept;
+        });
+        _r.workflow[kid][mode]=steps;
+      });
+      if(_wfN) saveRules(_r);
+    }
+  }catch(e){ if(typeof dbg==="function") dbg("wf cleanup on delete failed: "+e); }
   currData.lastEdit=new Date().toISOString();
   if(db) db.ref("curriculum/lastEdit").set(currData.lastEdit);
   try{ if(typeof buildCurrPaceCum==="function") buildCurrPaceCum(); }catch(e){}
   ceCloseSheet();
   if(typeof gwShowToast==="function") gwShowToast("Deleted "+(s.display||sk)
     +(n?" — "+n+" grid cell"+(n!==1?"s":"")+" cleared":"")
-    +(_wkN?" · "+_wkN+" open task"+(_wkN!==1?"s":"")+" removed from this week":""));
+    +(_wkN?" · "+_wkN+" open task"+(_wkN!==1?"s":"")+" removed from this week":"")
+    +(_wfN?" · workflow entry removed":""));
   renderAll();
 }
 
@@ -35675,6 +35698,16 @@ function wfResolveEntry(kid,entry){
   if(subs[e]) return {disp:(subs[e].display||e),typed:false,dead:false};
   const eL=e.trim().toLowerCase();
   for(const sk in subs){ if(String(subs[sk].display||sk).trim().toLowerCase().includes(eL)) return {disp:e,typed:true,dead:false}; }
+  // Second chance: live cards. Julian's "Drills" entry matches no curriculum subject (his
+  // drills are mastery slots) but it DOES order his drill cards in _wfWeight/cascadeWeight,
+  // which match by card text. Judged by subjects alone it would read dead, and sweeping it
+  // would silently change his day order. Dead means: no subject AND no live card.
+  try{
+    const ts=(typeof weekData==="object"&&weekData&&weekData.tasks)||[];
+    for(let i=0;i<ts.length;i++){ const t=ts[i];
+      if(t&&t.who===kid&&String(t.title||"").toLowerCase().includes(eL)) return {disp:e,typed:true,dead:false,cardsOnly:true};
+    }
+  }catch(err){}
   return {disp:e,typed:true,dead:true};
 }
 // Active subjects this mode's steps don't reach. They fall to the BACK of their tier
@@ -35720,6 +35753,47 @@ function wfSubjAdd(kid,mode,i,sel){
   const subs=_wfSubs(r,kid,mode,i); if(!subs) return;
   if(subs.indexOf(sk)>=0) return;
   subs.push(sk);                                             // the KEY is stored, never the name
+  saveRules(r);
+}
+// Every dead name, family-wide. A kid whose curriculum has not loaded (or who truly has no
+// subjects node) is never judged — absence of evidence is not a dead name.
+function wfDeadEntries(){
+  const out=[];
+  const wfAll=((rulesData||{}).workflow)||{};
+  const subsAll=((currData||{}).subjects)||{};
+  for(const kid in wfAll){
+    if(!subsAll[kid]||!Object.keys(subsAll[kid]).length) continue;
+    ["normal","babysitter"].forEach(function(mode){
+      const steps=fbArr((wfAll[kid]||{})[mode])||[];
+      steps.forEach(function(st,i){
+        (fbArr((st||{}).subjects)||[]).forEach(function(e){
+          if(wfResolveEntry(kid,e).dead) out.push({kid:kid,mode:mode,step:i,entry:e});
+        });
+      });
+    });
+  }
+  return out;
+}
+// One tap instead of a chip-by-chip hunt. Removing a dead entry cannot change any schedule:
+// it matches no subject and no live card, so it ranks nothing — but left in place it would
+// silently RESURRECT if a future subject happens to contain its text. Confirm lists every
+// name before anything is written; same clone→saveRules path as everything else here.
+function wfSweepDead(){
+  const dead=wfDeadEntries();
+  if(!dead.length) return;
+  const byKid={}; dead.forEach(function(d){ (byKid[d.kid]=byKid[d.kid]||[]).push(d.entry); });
+  const msg=Object.keys(byKid).map(function(kk){ return cap(kk)+": "+byKid[kk].join(", "); }).join("\n");
+  if(!confirm("Remove "+dead.length+" dead name"+(dead.length===1?"":"s")+" from the workflow?\n\nThese match no subject and no card this week, so they rank nothing — removing them cannot change any schedule.\n\n"+msg)) return;
+  const r=JSON.parse(JSON.stringify(rulesData));
+  const subsAll=((currData||{}).subjects)||{};
+  for(const kid in r.workflow||{}){
+    if(!subsAll[kid]||!Object.keys(subsAll[kid]).length) continue;
+    ["normal","babysitter"].forEach(function(mode){
+      const steps=fbArr((r.workflow[kid]||{})[mode]); if(!steps) return;
+      steps.forEach(function(st){ if(st&&st.subjects) st.subjects=(fbArr(st.subjects)||[]).filter(function(e){ return !wfResolveEntry(kid,e).dead; }); });
+      r.workflow[kid][mode]=steps;
+    });
+  }
   saveRules(r);
 }
 // WFEDIT_END
@@ -35987,6 +36061,10 @@ function rulesFamilyCardsHTML(){
     h+='<div>May-Need-Mom: <b>'+mayDay+' min/day</b> ('+fl.may+' /wk) <span style="color:var(--muted)">— flexible, can overlap another kid&#39;s Mom time</span></div>';
     h+='</div></div>';
   })();
+  (function(){
+    const _dead=wfDeadEntries();
+    if(_dead.length) h+='<button onclick="wfSweepDead()" style="margin:0 0 12px;border:1px solid #d97706;background:#fffbeb;color:#b45309;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">&#129529; Sweep '+_dead.length+' dead name'+(_dead.length===1?'':'s')+' <span style="font-weight:600">— they match nothing and rank nobody</span></button>';
+  })();
   [...ROSTER].forEach(k=>{
     const kc=SL_KCOL[k]||"#666";
     const kw=wf[k]||{};
@@ -36009,7 +36087,7 @@ function rulesFamilyCardsHTML(){
           h+='<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:3px 0">';
           subjs.forEach((nm,j)=>{
             const rv=wfResolveEntry(k,nm);
-            h+='<span style="display:inline-flex;align-items:center;gap:2px;border:1px '+(rv.typed&&!rv.dead?'dashed':'solid')+' '+(rv.dead?'#ef4444':'var(--border)')+';border-radius:8px;padding:1px 2px 1px 7px;font-size:10.5px;background:#fff'+(rv.dead?';color:#b91c1c':'')+'" title="'+(rv.dead?'Matches no subject — it ranks nobody. Remove it, then add the right subject from the picker.':(rv.typed?'A typed name. It works, but a rename breaks it — remove it and re-add from the picker to pin it to the subject.':''))+'">';
+            h+='<span style="display:inline-flex;align-items:center;gap:2px;border:1px '+(rv.typed&&!rv.dead?'dashed':'solid')+' '+(rv.dead?'#ef4444':'var(--border)')+';border-radius:8px;padding:1px 2px 1px 7px;font-size:10.5px;background:#fff'+(rv.dead?';color:#b91c1c':'')+'" title="'+(rv.dead?'Matches no subject and no card this week — it ranks nothing. Remove it, then add the right subject from the picker.':(rv.cardsOnly?'Matches live cards (drills/mastery), not a curriculum subject. Leave it — it orders those cards.':(rv.typed?'A typed name. It works, but a rename breaks it — remove it and re-add from the picker to pin it to the subject.':'')))+'">';
             h+=(rv.dead?'&#9888; ':'')+esc(rv.disp);
             h+='<button onclick="event.stopPropagation();wfSubjMove(\''+k+'\',\''+mode+'\','+i+','+j+',-1)"'+(j===0?' disabled style="opacity:0.2;border:none;background:none"':' style="border:none;background:none;cursor:pointer;color:var(--muted);padding:0 1px"')+'>&#9664;</button>';
             h+='<button onclick="event.stopPropagation();wfSubjMove(\''+k+'\',\''+mode+'\','+i+','+j+',1)"'+(j===subjs.length-1?' disabled style="opacity:0.2;border:none;background:none"':' style="border:none;background:none;cursor:pointer;color:var(--muted);padding:0 1px"')+'>&#9654;</button>';
