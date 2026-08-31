@@ -24793,6 +24793,26 @@ function gvDerivedColumn(kid,sk){
   return {byDate:byDate,dealt:dealt,stats:res.stats||null,warnings:res.warnings||[]};
 }
 // GVDER_END
+// GVIDENT_START ── which lesson is this cell DISPLAYING? ─────────────────────────────────
+// Since Stage 2 a plan-backed FUTURE cell renders the DERIVED lesson while the stored text
+// under it lags the plan. Every gesture that acts on "this cell's lesson" must resolve the
+// DISPLAYED identity — acting on the stored text deleted Lucy's Lesson 108 while her screen
+// showed the duplicate Lesson 103 (live, 2026-08-30). Past cells, done cells and legacy
+// columns keep the stored text: there the cell IS the record.
+function gvCellIdentity(kid,dn,sk){
+  try{
+    const l=(((currData||{}).lessons||{})[kid]||{})[dn]||{};
+    const stored={mode:"stored",text:String(l[sk]||"")};
+    if(!(typeof planBacked==="function"&&planBacked(kid,sk))) return stored;
+    if(!l.date||l.date<cbTodayISO()) return stored;
+    const der=gvDerivedColumn(kid,sk);
+    if(!der||der.err) return stored;
+    const e=der.byDate[l.date];
+    if(!e||!gvFilled(e.text)) return stored;      // done cells and empty days fall back to the record
+    return {mode:"plan",text:String(e.text),lid:e.lid||null,src:e.src||"plan"};
+  }catch(err){ return {mode:"stored",text:""}; }
+}
+// GVIDENT_END
 function gvRenderedDns(kid){
   const lessons=((currData||{}).lessons||{})[kid]||{};
   const today=cbTodayISO();
@@ -24922,6 +24942,10 @@ function gvSyncSeqInto(patch,subsArr,kid){
   (subsArr||[]).forEach(sk=>{
     const s=(currData.subjects[kid]||{})[sk];
     if(!s||!s.lessonSeq) return;               // not a card-origin subject
+    // Plan-backed: the LIST is the truth and the cells are a lagging cache — rebuilding
+    // the list from them deletes real work (lincoln/aas: 95 → 90 would drop L2-16…L2-20,
+    // five unfinished lessons). Same reason the adopt button refuses (b2d97c9).
+    if(typeof planBacked==="function"&&planBacked(kid,sk)) return;
     const newSeq=[];
     for(const dn of dns){ const v=(lessons[dn]||{})[sk]; if(gvFilled(v)) newSeq.push(String(v)); }
     seqUndo[sk]={seq:s.lessonSeq.slice(),ids:lidsFor(kid,sk),next:s.nextLid||null};
@@ -25740,7 +25764,10 @@ function gvOpenCell(dn,sk){
   const _ov=schedOv(l.date,gvKid)||{};
   const ovR=!!((_ov.removed||{})[sk]);
   const ovA=(_ov.added||{})[sk]!==undefined;   // make-up-only cells get the menu too
-  if(!past&&(gvFilled(l[sk])||ovR||ovA)){ gvMenu=dn+"|"+sk; gvEdit=null; }
+  // Decide by what the cell DISPLAYS (derived for plan-backed future cells) — the stored
+  // text differs from the screen whenever cells lag the plan.
+  const _shown=(typeof gvCellIdentity==="function")?gvCellIdentity(gvKid,dn,sk).text:String(l[sk]||"");
+  if(!past&&(gvFilled(_shown)||ovR||ovA)){ gvMenu=dn+"|"+sk; gvEdit=null; }
   else { gvEdit=dn+"|"+sk; gvMenu=null; }
   renderAll();
 }
@@ -26071,6 +26098,33 @@ function gvPickMoveTarget(dn){
 function gvMenuDone(kid,dn,sk){
   if(!momModeActive&&!adminPinUnlocked) return;
   const l=((currData.lessons||{})[kid]||{})[dn]; if(!l) return;
+  // PLAN-BACKED FUTURE CELL: mark the DISPLAYED lesson done, by lid — the stored text
+  // under it lags the plan (same disease as 🗑, found live 2026-08-30).
+  {
+    const _idn=(typeof gvCellIdentity==="function")?gvCellIdentity(kid,dn,sk):{mode:"stored"};
+    if(_idn.mode==="plan"){
+      const s2=(((currData||{}).subjects||{})[kid]||{})[sk]||{};
+      if(_idn.src==="card"){ if(typeof gwShowToast==="function") gwShowToast("That&#39;s this week&#39;s card — check it off on the schedule instead."); gvMenu=null; renderAll(); return; }
+      if(!_idn.lid){ if(typeof gwShowToast==="function") gwShowToast("Can&#39;t identify that lesson on the card&#39;s list — nothing marked."); gvMenu=null; renderAll(); return; }
+      if((lidDoneSet(kid,sk)||new Set()).has(_idn.lid)){ if(typeof gwShowToast==="function") gwShowToast("“"+_idn.text+"” is already finished."); gvMenu=null; renderAll(); return; }
+      if(!confirm("Mark “"+_idn.text+"” done?\n\nIt comes out of the plan and the lessons after it move up to fill its day. You can undo this.")) return;
+      gvGrabScroll(); gvMenu=null; gvEdit=null;
+      const up={},prevPaths={};
+      const rec={ts:new Date().toISOString(),day:cbTodayISO(),src:"manual",via:"mark"};
+      prevPaths["done/"+kid+"/"+sk+"/"+_idn.lid]=null;
+      up["done/"+kid+"/"+sk+"/"+_idn.lid]=rec;
+      currData.done=currData.done||{};
+      ((currData.done[kid]=currData.done[kid]||{})[sk]=currData.done[kid][sk]||{})[_idn.lid]=rec;
+      if(db) db.ref("curriculum").update(up).catch(err=>{ cbMsg="⚠ "+err.message; renderAll(); });
+      currData.lastEdit=new Date().toISOString();
+      if(db) db.ref("curriculum/lastEdit").set(currData.lastEdit);
+      try{ buildCurrPaceCum(); }catch(e){}
+      _gvDelUndo={kid,sk,paths:prevPaths,label:"marked “"+_idn.text+"” done"};
+      const msg="✓ Marked “"+_idn.text+"” done";
+      if(s2.pacing&&s2.pacing.mode){ if(_gvRelaySubject(kid,sk,msg)) return; _gvFinishDeleteNoBuild(); return; }
+      cbMsg=msg; _gvFinishDeleteNoBuild(); renderAll(); return;
+    }
+  }
   const txt=String(l[sk]||"").trim();
   if(!txt||!gvFilled(txt)) return;
   const s=(((currData||{}).subjects||{})[kid]||{})[sk]||{};
@@ -26148,6 +26202,17 @@ function gvCommitCell(kid,dn,sk,val){
   const lessons=(currData.lessons||{})[kid]||{};
   const row=lessons[dn];
   if(!row||!db){ gvEdit=null; renderAll(); return; }
+  // PLAN-BACKED FUTURE CELL: the text on screen is the plan&#39;s, not this cell&#39;s. Editing
+  // the stored text would change nothing visible — and the list re-sync below would rebuild
+  // lessonSeq from the LAGGING cells, deleting real work (the adopt catastrophe through a
+  // side door: lincoln/aas would go 95 → 91).
+  {
+    const _idn=(typeof gvCellIdentity==="function")?gvCellIdentity(kid,dn,sk):{mode:"stored"};
+    if(_idn.mode==="plan"){
+      if(typeof gwShowToast==="function") gwShowToast("This cell shows the plan. To remove the lesson use 🗑 here; to rename it, edit the subject card&#39;s list — the grid re-flows on its own.");
+      gvEdit=null; renderAll(); return;
+    }
+  }
   const had=gvFilled(row[sk]);
   if(val===String(row[sk]||"").trim()){ gvEdit=null; renderAll(); return; }
   if(!val&&!had){ gvEdit=null; renderAll(); return; }
@@ -26204,6 +26269,35 @@ function gvDeleteLesson(kid,dn,sk){
   if(!momModeActive&&!adminPinUnlocked) return;
   if(!db||!currData) return;
   _gvDelUndo=null;
+  // PLAN-BACKED FUTURE CELL: delete the DISPLAYED lesson, by lid — duplicates included.
+  // The legacy path below reads the stored text, which lags the plan on these columns.
+  {
+    const _idn=(typeof gvCellIdentity==="function")?gvCellIdentity(kid,dn,sk):{mode:"stored"};
+    if(_idn.mode==="plan"){
+      const s2=(((currData||{}).subjects||{})[kid]||{})[sk]||{};
+      const disp2=s2.display||sk;
+      if(_idn.src==="card"){ if(typeof gwShowToast==="function") gwShowToast("That&#39;s this week&#39;s card — ✕ it off the day, or check it off on the schedule. The plan re-lays at the next regenerate."); gvMenu=null; gvEdit=null; renderAll(); return; }
+      const ids2=lidsFor(kid,sk)||[]; const li=_idn.lid?ids2.indexOf(_idn.lid):-1;
+      if(li<0){ if(typeof gwShowToast==="function") gwShowToast("Can&#39;t find “"+_idn.text+"” on the card&#39;s list — nothing deleted."); gvMenu=null; gvEdit=null; renderAll(); return; }
+      if((lidDoneSet(kid,sk)||new Set()).has(_idn.lid)){ if(typeof gwShowToast==="function") gwShowToast("“"+_idn.text+"” is finished — its record stays."); gvMenu=null; gvEdit=null; renderAll(); return; }
+      if(!confirm("Delete “"+_idn.text+"” from "+disp2+" entirely?\n\nIt comes off the subject card and the plan re-flows from where "+cap(kid)+" is. You can Undo.")) return;
+      gvGrabScroll(); gvEdit=null; gvMenu=null;
+      const seqL=(s2.lessonSeq||[]).slice(); const idsL=ids2.slice();
+      const paths={};
+      paths["subjects/"+kid+"/"+sk+"/lessonSeq"]=seqL.slice();
+      paths["subjects/"+kid+"/"+sk+"/lessonIds"]=idsL.slice();
+      paths["subjects/"+kid+"/"+sk+"/nextLid"]=s2.nextLid||null;
+      paths["subjects/"+kid+"/"+sk+"/total"]=(s2.total!=null?s2.total:null);
+      const seq2=seqL.slice(); seq2.splice(li,1);
+      const up={};
+      setLessonSeq(kid,sk,seq2,{patch:up,hint:{index:li,op:"delete"}});
+      up["lastEdit"]=new Date().toISOString(); currData.lastEdit=up["lastEdit"];
+      db.ref("curriculum").update(up).catch(err=>{ cbMsg="⚠ "+err.message; renderAll(); });
+      _gvDelUndo={kid,sk,paths,label:"deleted “"+_idn.text+"” from the list"};
+      if(_gvRelaySubject(kid,sk,"🗑 Deleted “"+_idn.text+"” from "+disp2)) return;
+      _gvFinishDeleteNoBuild(); renderAll(); return;
+    }
+  }
   const lessons=(currData.lessons||{})[kid]||{};
   const row=lessons[dn]; const val=row&&row[sk];
   if(!gvFilled(val)){ gvEdit=null; renderAll(); return; }
