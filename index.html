@@ -1397,6 +1397,9 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
   <div class="admin-row">
     <button class="btn-s" onclick="printSchedule()">Print PDF</button>
     <button class="btn-s" onclick="printScheduleByKid()">Print by kid</button>
+  </div>
+  <div class="admin-row" id="ds-row"></div>
+  <div class="admin-row">
     <button class="btn-s" onclick="toggleAdmin()">Close</button>
   </div>
   <div class="admin-row" style="margin-top:8px">
@@ -2503,6 +2506,15 @@ function attachWeekListeners(wk){
     if(tab==="schedule") renderAll();
   });
   fbWeekRefs.push(r8);
+
+  // One "10:34 AM" per kid per day. The card TIMES are derived from it by dsRetime — the
+  // schedule itself is never rewritten, so every device shows the same day from one value.
+  const r8b=db.ref(wk+"/dayStart");
+  r8b.on("value",s=>{
+    dayStarts=s.val()||{};
+    if(typeof renderAll==="function") renderAll();
+  });
+  fbWeekRefs.push(r8b);
 
   const r9=db.ref(wk+"/slot_points");
   r9.on("value",s=>{ if(s.val()) sv(wk+"_slot_points",s.val()); });
@@ -3762,7 +3774,7 @@ function showPaceToast(taskId, doneMinOverride){
   // from ever reading as finished. Everything else keeps the displaced day exactly as before.
   const _dayOf=x=>(momMoves[x.id]?effectiveDay(x):(displacedResult?x.day:effectiveDay(x)));
   const taskDay=momMoves[taskId]?effectiveDay(t):(dt?dt.day:effectiveDay(t));
-  const kidDaySource=displacedResult?displacedResult.tasks:weekData.tasks;
+  const kidDaySource=dsRetime(displacedResult?displacedResult.tasks:weekData.tasks);
   const kidDayTasks=kidDaySource.filter(x=>x.who===t.who && _dayOf(x)===taskDay && !x.title.toLowerCase().includes("lunch") && !_dismissed(x));
   const kidDayDone=kidDayTasks.filter(x=>!!checked[x.id]).length;
   const isLastTask=kidDayDone===kidDayTasks.length;
@@ -4053,7 +4065,7 @@ function renderSpinAdmin(d){
   if(!showKids.length) return '';
   const dayBonusUsed=ld(WK+"_day_bonus_used")||{};
   const spinResults=ld(WK+"_spin_results")||{};
-  const activeTasks=displacedResult?displacedResult.tasks:weekData.tasks;
+  const activeTasks=dsRetime(displacedResult?displacedResult.tasks:weekData.tasks);
 
   let h='<div style="margin:12px;border-radius:14px;background:linear-gradient(135deg,#1e1b4b,#312e81);padding:16px;color:#fff">';
   h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">';
@@ -4227,7 +4239,7 @@ function spinAdminResetAll(kid,d){
   if(all[kid]) { all[kid][d]=0; sv(WK+"_slot_points",all); if(db) db.ref(WK+"/slot_points/"+kid+"/"+d).set(0); }
   // Reset spins used for this kid's tasks on this day
   const used=ld(WK+"_spins_used")||{};
-  const activeTasks=displacedResult?displacedResult.tasks:weekData.tasks;
+  const activeTasks=dsRetime(displacedResult?displacedResult.tasks:weekData.tasks);
   const _suUpd={};
   activeTasks.forEach(t=>{
     if(t.who===kid && (displacedResult?t.day:effectiveDay(t))===d && used[t.id]!==undefined){ delete used[t.id]; _suUpd[t.id]=null; }
@@ -5593,7 +5605,7 @@ function renderSchedule(el){
     return "";
   }
   const col=DAY_COL[day]||"#666", pct=dayPct(day);
-  const activeTasks=displacedResult?displacedResult.tasks:weekData.tasks;
+  const activeTasks=dsRetime(displacedResult?displacedResult.tasks:weekData.tasks);
 
   let allDay=activeTasks.filter(t=>effectiveDay(t)===day);
   if(kid==="mom") allDay=allDay.filter(t=>t.mom==="required"||t.mom==="maybe");
@@ -6493,7 +6505,7 @@ function bbActive(k){ return (brainBreaks[k]||{}).active||null; }
 function bbUsedToday(k){ const log=(brainBreaks[k]||{}).log||{}; const tk=bbTodayKey(); return Object.values(log).filter(e=>e&&e.by==="kid"&&e.dateKey===tk).length; }
 // First unchecked task on TODAY's list for the kid — "the task they left" (same-task-on-return)
 function bbNextTask(k){
-  const at=(displacedResult?displacedResult.tasks:weekData.tasks)||[];
+  const at=(dsRetime(displacedResult?displacedResult.tasks:weekData.tasks))||[];
   const todays=at.filter(t=>effectiveDay(t)===_todayDay&&t.who===k&&!t.id.endsWith("_c")&&!t._eowOverflow&&!checked[t.id]&&!String(t.title).toLowerCase().includes("lunch"));
   todays.sort((a,b)=>toMin(a.time)-toMin(b.time));
   return todays[0]||null;
@@ -18265,9 +18277,32 @@ function calDeleteOverride(kid,date){
 }
 
 // ── ADMIN ─────────────────────────────────────────────────────────
+// ⏱ "Started at" — one button per kid. Tapping it says "this child began now", and every
+// card time for that child today is re-derived from it. Tap again to clear back to the
+// written schedule. Nothing about the cards is written; see dsRetime.
+function dsRenderRow(){
+  const el=document.getElementById("ds-row"); if(!el) return;
+  if(!momHere()&&!adminPinUnlocked){ el.innerHTML=""; return; }
+  let h='<span style="font-size:11px;color:var(--muted);align-self:center;margin-right:4px">Started at</span>';
+  [...ROSTER].forEach(function(k){
+    const t=dsFor(k);
+    h+='<button class="btn-s" style="'+(t?"background:#16a34a;color:#fff;border-color:#16a34a":"")+'" '
+      +'onclick="'+(t?("dsClear('"+k+"')"):("dsStartNow('"+k+"')"))+'" '
+      +'title="'+(t?("Started "+t+" — tap to clear"):"Tap when this child is ready to start")+'">'
+      +cap(k)+(t?(" "+t):"")+'</button>';
+  });
+  try{
+    const cl=dsMomClashes(getActiveTasks());
+    if(cl.length) h+='<span style="font-size:11px;color:#b45309;align-self:center;margin-left:8px" '
+      +'title="'+cl.map(function(c){ return c[0].who+" + "+c[1].who; }).join(", ")+'">&#9888; '+cl.length
+      +' Mom clash'+(cl.length===1?'':'es')+'</span>';
+  }catch(e){}
+  el.innerHTML=h;
+}
 function toggleAdmin(){
   const p=document.getElementById("admin-panel");
   p.style.display=p.style.display==="none"?"block":"none";
+  if(p.style.display==="block") dsRenderRow();
 }
 
 // PSKID_START ── one page per KID, the whole week side by side ────────────────────────
@@ -34326,7 +34361,84 @@ function mastPrintCards(){
 // ── DISPLACEMENT ENGINE ──────────────────────────────────────────
 let displacedResult=null; // {tasks:[], carryOver:[]}
 let lastAudit=[]; // auditSchedule() violations for the live schedule ([] = all clear)
-function getActiveTasks(){ return displacedResult?displacedResult.tasks:weekData.tasks; }
+// DAYSTART_START ── the school day starts when the kid is actually ready ────────────────
+// Measured 2026-08-30 from routineLog: the schedule is written to start at 10:00, and the
+// median morning routine finishes 10:24-10:35 — 75-79% of mornings run late, with a median
+// 48-minute gap between the first kid finishing and the last. So every card time downstream
+// is fiction from the first minute, and the tail of the day falls off the end. Measured the
+// same day, work finishes a median 57 min after its printed time IN THE MORNING, which is
+// where that hour comes from.
+//
+// This re-times ONE kid's remaining cards from when they were actually ready. It is a VIEW,
+// not a write: the only thing stored is a single "10:34 AM" per kid per day and every device
+// derives the same times from it — the store-the-fact / derive-the-view shape the Grid uses.
+// Checked work keeps its real time. Other kids are untouched. Mom and device lanes hold
+// because the re-pack runs through packAround with everyone else's cards as fixed `existing`.
+// ⭐ HER RULE: the next card in line must not jump, so the kid can still find it — order is
+// preserved exactly and only the times move.
+let dayStarts={};   // {day:{kid:"10:34 AM"}} for the active week
+function dsFor(kid,d){ try{ return ((dayStarts||{})[d||_todayDay]||{})[kid]||""; }catch(e){ return ""; } }
+function dsRetime(tasks){
+  try{
+    if(!Array.isArray(tasks)||!tasks.length) return tasks;
+    const d=_todayDay;
+    const starts=(dayStarts||{})[d]||{};
+    const kids=Object.keys(starts).filter(function(k){ return starts[k]; });
+    if(!kids.length) return tasks;
+    let out=tasks;
+    kids.forEach(function(kid){
+      const S=toMin(starts[kid]); if(!S) return;
+      const mine=tasks.filter(function(t){ return t&&t.day===d&&t.who===kid&&!(typeof checked!=="undefined"&&checked&&checked[t.id]); });
+      if(!mine.length) return;
+      // Shift by the delay, do not re-pack. Re-packing one kid against a frozen copy of
+      // everyone else forces them to the back of every shared queue: measured on live week
+      // 20, a 34-minute late start pushed Lincoln's day from 3:07 PM out to 5:57 PM. A
+      // straight shift is what "he started 34 minutes late" actually means, it keeps every
+      // gap and every ordering the packer already worked out, and it is predictable.
+      let firstT=null;
+      mine.forEach(function(t){ const m=toMin(t.time); if(firstT===null||m<firstT) firstT=m; });
+      const delta=S-firstT;
+      if(!delta) return;
+      if(out===tasks) out=tasks.map(function(t){ return Object.assign({},t); });
+      const ids={}; mine.forEach(function(t){ ids[t.id]=1; });
+      out.forEach(function(t){ if(ids[t.id]) t.time=fromMin(Math.max(0,toMin(t.time)+delta)); });
+    });
+    return out;
+  }catch(e){ return tasks; }
+}
+// Where a shifted day now collides with another child's Mom time. Reported, never silently
+// "solved" — the clash is real once a kid starts late, and hiding it would be a lie.
+function dsMomClashes(tasks){
+  const out=[];
+  try{
+    const d=_todayDay;
+    const mom=(tasks||[]).filter(function(t){ return t&&t.day===d&&t.mom==="required"&&!String(t.id||"").endsWith("_c"); })
+      .map(function(t){ return {s:toMin(t.time),e:toMin(t.time)+(t.dur||20),who:t.who,title:t.title}; })
+      .sort(function(a,b){ return a.s-b.s; });
+    for(let i=1;i<mom.length;i++){
+      if(mom[i].s<mom[i-1].e&&mom[i].who!==mom[i-1].who) out.push([mom[i-1],mom[i]]);
+    }
+  }catch(e){}
+  return out;
+}
+// Mom-gated writers. One tiny value; nothing about the cards themselves is written.
+function dsStartNow(kid){
+  if(!momHere()&&!adminPinUnlocked) return;
+  const now=new Date(); const t=fromMin(now.getHours()*60+now.getMinutes());
+  if(!dayStarts[_todayDay]) dayStarts[_todayDay]={};
+  dayStarts[_todayDay][kid]=t;
+  if(db) db.ref(WK+"/dayStart/"+_todayDay+"/"+kid).set(t);
+  renderAll();
+}
+function dsClear(kid){
+  if(!momHere()&&!adminPinUnlocked) return;
+  if(dayStarts[_todayDay]) delete dayStarts[_todayDay][kid];
+  if(db) db.ref(WK+"/dayStart/"+_todayDay+"/"+kid).remove();
+  renderAll();
+}
+// DAYSTART_END
+
+function getActiveTasks(){ return dsRetime((displacedResult?displacedResult.tasks:weekData.tasks)); }
 
 function taskDevice(t){
   const d=(t.detail||"").toLowerCase();
