@@ -11827,8 +11827,7 @@ function ceWorkflowTier(kid,sk,s){
   if(/closing notebook/i.test(disp)||rules.includes("last")) return {rank:1000,label:"End of day"};
   if(/morning notebook/i.test(disp)||rules.includes("first")) return {rank:-1,label:"Start of day"};
   const steps=((rulesData&&rulesData.workflow&&rulesData.workflow[kid])?fbArr(rulesData.workflow[kid].normal):null)||[];
-  const subjL=disp.trim().toLowerCase();
-  for(let i=0;i<steps.length;i++){ const subs=fbArr((steps[i]||{}).subjects)||[]; for(let j=0;j<subs.length;j++){ if(subjL.includes(String(subs[j]).toLowerCase())) return {rank:i*10+j,label:(steps[i].label||("Step "+(i+1)))}; } }
+  for(let i=0;i<steps.length;i++){ const subs=fbArr((steps[i]||{}).subjects)||[]; for(let j=0;j<subs.length;j++){ if(wfMatch(subs[j],sk,disp)) return {rank:i*10+j,label:(steps[i].label||("Step "+(i+1)))}; } }
   const tier=(s.device==="computer"||s.device==="ipad"||s.device==="phone")?"computer":(s.mom==="required"?"required":(s.mom==="maybe"?"maybe":"independent"));
   for(let i=0;i<steps.length;i++){ if((steps[i]||{}).tier===tier) return {rank:i*10+9,label:(steps[i].label||("Step "+(i+1)))}; }
   return {rank:500,label:"Other"};
@@ -18938,7 +18937,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
     // Subject-name match first
     for(let i=0;i<steps.length;i++){
       const subs=steps[i].subjects||[];
-      for(let j=0;j<subs.length;j++){ if(subj.includes(subs[j].toLowerCase())) return i*10+j; }
+      for(let j=0;j<subs.length;j++){ if(wfMatch(subs[j],String(t.subjectKey||""),subj)) return i*10+j; }
     }
     // Fallback: tier match
     const tier=taskTier(t);
@@ -34734,7 +34733,7 @@ function runDisplacement(){
     // regardless of device tier — e.g. Reading Eggspress is "independent")
     for(let i=0;i<steps.length;i++){
       const subs=steps[i].subjects||[];
-      for(let j=0;j<subs.length;j++){ if(subj.includes(subs[j].toLowerCase())) return i*10+j; }
+      for(let j=0;j<subs.length;j++){ if(wfMatch(subs[j],String(t.subjectKey||""),subj)) return i*10+j; }
     }
     // Fallback: match by tier if no subject matched
     for(let i=0;i<steps.length;i++){ if(steps[i].tier===tier) return i*10+9; }
@@ -35654,6 +35653,77 @@ function rulesSwapWf(kid,mode,i,dir){
   saveRules(r);
 }
 
+// WFEDIT_START ── the subject names inside a workflow step: editable, and rename-proof ────
+// The stale-list mechanism (measured 2026-08-30): steps stored TYPED display text, matched
+// by substring, with no editor and no staleness flag — so Lincoln's list held 8 names that
+// matched nothing and Editor in Chief / Spelling You See fell to rank 39, dead last, every
+// day. The cure: entries may now be subject KEYS (added from a picker, never typed). A key
+// matches by identity, so a rename can never orphan it. Legacy text entries keep today's
+// substring rule until she replaces them, and go red the moment they match nothing.
+// ONE matcher for all four ranking sites (gwWorkflowRank, ceWorkflowTier, _wfWeight,
+// cascadeWeight) — the editor can never disagree with the ranker.
+function wfMatch(entry,sk,disp){
+  const e=String(entry||""); if(!e) return false;
+  if(e===sk) return true;                                    // key entry — rename-proof
+  return String(disp||"").trim().toLowerCase().includes(e.toLowerCase());  // legacy text
+}
+// What one stored entry means right now. Key entries resolve to the subject's CURRENT
+// display name, so the editor re-labels itself the moment a subject is renamed.
+function wfResolveEntry(kid,entry){
+  const subs=(((currData||{}).subjects)||{})[kid]||{};
+  const e=String(entry||"");
+  if(subs[e]) return {disp:(subs[e].display||e),typed:false,dead:false};
+  const eL=e.trim().toLowerCase();
+  for(const sk in subs){ if(String(subs[sk].display||sk).trim().toLowerCase().includes(eL)) return {disp:e,typed:true,dead:false}; }
+  return {disp:e,typed:true,dead:true};
+}
+// Active subjects this mode's steps don't reach. They fall to the BACK of their tier
+// (rank i*10+9) every single day — the starvation mechanism itself. Notebooks excluded:
+// first/last never consult the workflow.
+function wfUnmatched(kid,mode){
+  const subs=(((currData||{}).subjects)||{})[kid]||{};
+  const steps=fbArr((((rulesData||{}).workflow||{})[kid]||{})[mode])||[];
+  const out=[];
+  for(const sk in subs){
+    const s=subs[sk]; if(!s||s.paused) continue;
+    const disp=s.display||sk, rules=s.rules||"";
+    if(rules.includes("first")||rules.includes("last")||/morning notebook|closing notebook/i.test(disp)) continue;
+    let hit=false;
+    for(let i=0;i<steps.length&&!hit;i++){ const ss=fbArr((steps[i]||{}).subjects)||[]; for(let j=0;j<ss.length;j++){ if(wfMatch(ss[j],sk,disp)){ hit=true; break; } } }
+    if(!hit) out.push({sk:sk,disp:disp});
+  }
+  return out.sort(function(a,b){ return a.disp<b.disp?-1:1; });
+}
+// The three mutations, all through the same clone→saveRules path as the step arrows.
+function _wfSubs(r,kid,mode,i){
+  const arr=fbArr(((r.workflow||{})[kid]||{})[mode]); if(!arr||!arr[i]) return null;
+  const subs=fbArr(arr[i].subjects)||[]; arr[i].subjects=subs; r.workflow[kid][mode]=arr;
+  return subs;
+}
+function wfSubjMove(kid,mode,i,j,dir){
+  const r=JSON.parse(JSON.stringify(rulesData));
+  const subs=_wfSubs(r,kid,mode,i); if(!subs) return;
+  const t=j+dir; if(j<0||j>=subs.length||t<0||t>=subs.length) return;
+  const tmp=subs[j]; subs[j]=subs[t]; subs[t]=tmp;
+  saveRules(r);
+}
+function wfSubjRemove(kid,mode,i,j){
+  const r=JSON.parse(JSON.stringify(rulesData));
+  const subs=_wfSubs(r,kid,mode,i); if(!subs||j<0||j>=subs.length) return;
+  subs.splice(j,1);
+  saveRules(r);
+}
+function wfSubjAdd(kid,mode,i,sel){
+  const sk=sel&&sel.value; if(sel) sel.value="";
+  if(!sk) return;
+  const r=JSON.parse(JSON.stringify(rulesData));
+  const subs=_wfSubs(r,kid,mode,i); if(!subs) return;
+  if(subs.indexOf(sk)>=0) return;
+  subs.push(sk);                                             // the KEY is stored, never the name
+  saveRules(r);
+}
+// WFEDIT_END
+
 
 function rulesUpdateDeviceQueue(device,val){
   const r=JSON.parse(JSON.stringify(rulesData));
@@ -35933,7 +36003,28 @@ function rulesFamilyCardsHTML(){
           h+='<div class="rules-wf-step">';
           h+='<div class="rules-wf-num" style="background:'+tc+'">'+(i+1)+'</div>';
           h+='<div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">'+(st.label||(TIER_LBL2[st.tier]||st.tier))+'</div>';
-          if(subjs.length) h+='<div style="font-size:11px;color:var(--muted)">'+subjs.join(", ")+'</div>';
+          // Chips. Within-step position IS the rank tiebreak (i*10+j — the first listed
+          // wins every day), so ◀▶ here is scheduling, not cosmetics. Red = matches no
+          // subject; dashed = a typed legacy name (works today, breaks on a rename).
+          h+='<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:3px 0">';
+          subjs.forEach((nm,j)=>{
+            const rv=wfResolveEntry(k,nm);
+            h+='<span style="display:inline-flex;align-items:center;gap:2px;border:1px '+(rv.typed&&!rv.dead?'dashed':'solid')+' '+(rv.dead?'#ef4444':'var(--border)')+';border-radius:8px;padding:1px 2px 1px 7px;font-size:10.5px;background:#fff'+(rv.dead?';color:#b91c1c':'')+'" title="'+(rv.dead?'Matches no subject — it ranks nobody. Remove it, then add the right subject from the picker.':(rv.typed?'A typed name. It works, but a rename breaks it — remove it and re-add from the picker to pin it to the subject.':''))+'">';
+            h+=(rv.dead?'&#9888; ':'')+esc(rv.disp);
+            h+='<button onclick="event.stopPropagation();wfSubjMove(\''+k+'\',\''+mode+'\','+i+','+j+',-1)"'+(j===0?' disabled style="opacity:0.2;border:none;background:none"':' style="border:none;background:none;cursor:pointer;color:var(--muted);padding:0 1px"')+'>&#9664;</button>';
+            h+='<button onclick="event.stopPropagation();wfSubjMove(\''+k+'\',\''+mode+'\','+i+','+j+',1)"'+(j===subjs.length-1?' disabled style="opacity:0.2;border:none;background:none"':' style="border:none;background:none;cursor:pointer;color:var(--muted);padding:0 1px"')+'>&#9654;</button>';
+            h+='<button onclick="event.stopPropagation();wfSubjRemove(\''+k+'\',\''+mode+'\','+i+','+j+')" style="border:none;background:none;cursor:pointer;color:#b5394a;padding:0 3px;font-weight:700">&#10005;</button>';
+            h+='</span>';
+          });
+          (function(){
+            const opts=wfUnmatched(k,mode);
+            if(!opts.length) return;
+            h+='<select onchange="wfSubjAdd(\''+k+'\',\''+mode+'\','+i+',this)" onclick="event.stopPropagation()" style="font-size:10.5px;border:1px dashed var(--border);border-radius:8px;padding:2px 3px;color:var(--muted);background:#fff;max-width:120px">';
+            h+='<option value="">+ add</option>';
+            opts.forEach(function(o2){ h+='<option value="'+esc(o2.sk)+'">'+esc(o2.disp)+'</option>'; });
+            h+='</select>';
+          })();
+          h+='</div>';
           h+='</div>';
           if(steps.length>1){
             h+='<div class="rules-wf-arrows">';
@@ -35943,6 +36034,11 @@ function rulesFamilyCardsHTML(){
           }
           h+='</div>';
         });
+      }
+      // The invisible made visible: what no step reaches runs at the back of its tier.
+      if(steps.length){
+        const _um=wfUnmatched(k,mode);
+        if(_um.length) h+='<div style="font-size:10.5px;color:#b45309;line-height:1.45;padding:2px 0 4px">&#9888; No step names these — they run at the back of their tier every day: '+_um.map(function(o2){ return esc(o2.disp); }).join(", ")+'</div>';
       }
     });
     // Time-by-category readout — how much of each tier this kid actually has (from cards),
@@ -39228,8 +39324,7 @@ function gwWorkflowRank(kid, key, s, dayName, isSitterDay){
   const kidWf=wf[kid]; if(!kidWf) return 500;
   const steps=fbArr(isSitterDay?kidWf.babysitter:kidWf.normal)||fbArr(kidWf.normal)||[];
   const tier=(s.device==="computer"||s.device==="ipad"||s.device==="phone")?"computer":(s.mom==="required"?"required":(s.mom==="maybe"?"maybe":"independent"));
-  const subjL=disp.trim().toLowerCase();
-  for(let i=0;i<steps.length;i++){ const subs=fbArr((steps[i]||{}).subjects)||[]; for(let j=0;j<subs.length;j++){ if(subjL.includes(String(subs[j]).toLowerCase())) return i*10+j; } }
+  for(let i=0;i<steps.length;i++){ const subs=fbArr((steps[i]||{}).subjects)||[]; for(let j=0;j<subs.length;j++){ if(wfMatch(subs[j],key,disp)) return i*10+j; } }
   for(let i=0;i<steps.length;i++){ if((steps[i]||{}).tier===tier) return i*10+9; }
   return 500;
 }
