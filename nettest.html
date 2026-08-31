@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Howe Academy — Connection Test</title>
+<style>
+  body{font-family:sans-serif;background:#111;color:#fff;padding:24px;font-size:22px;line-height:1.5}
+  h1{font-size:26px;margin:0 0 18px}
+  .row{padding:14px 16px;margin:10px 0;border-radius:10px;background:#222;font-weight:bold}
+  .wait{color:#aaa}.ok{background:#0a3d1f;color:#7dfca3}.bad{background:#4a1010;color:#ff9d9d}
+  #ua{font-size:13px;color:#888;margin-top:24px;word-break:break-all;font-weight:normal}
+</style>
+</head>
+<body>
+<h1>Connection test — each line answers one question</h1>
+<div id="t1" class="row wait">1. This site (GitHub Pages) … testing</div>
+<div id="t2" class="row wait">2. Firebase DATA server (firebaseio.com) … testing</div>
+<div id="t3" class="row wait">3. Google CDN (gstatic.com) … testing</div>
+<div id="t4" class="row wait">4. Firebase engine runs on this browser … testing</div>
+<div id="t5" class="row wait">5. LIVE connection (the green dot) … waiting for 2–4</div>
+<div id="ua"></div>
+<script src="vendor-firebase-app-compat.js"></script>
+<script src="vendor-firebase-database-compat.js"></script>
+<script>
+// Written for OLD TV browsers on purpose: no arrows, no fetch, no let/const, XHR only.
+function set(id, ok, msg){
+  var el=document.getElementById(id);
+  el.className='row '+(ok?'ok':'bad');
+  el.innerHTML=msg;
+}
+function probe(id, label, url, timeoutMs){
+  try{
+    var x=new XMLHttpRequest();
+    var done=false;
+    var timer=setTimeout(function(){ if(done)return; done=true; try{x.abort();}catch(e){}
+      set(id,false,label+' — <b>NO ANSWER (timed out)</b>'); },timeoutMs||10000);
+    x.onreadystatechange=function(){
+      if(x.readyState!==4||done)return; done=true; clearTimeout(timer);
+      if(x.status>=200&&x.status<400) set(id,true,label+' — <b>REACHABLE</b>');
+      else set(id,false,label+' — <b>BLOCKED / FAILED (status '+x.status+')</b>');
+    };
+    x.open('GET',url,true); x.send();
+  }catch(e){ set(id,false,label+' — <b>ERROR: '+e.message+'</b>'); }
+}
+document.getElementById('ua').innerHTML='Browser: '+navigator.userAgent;
+probe('t1','1. This site','vendor-firebase-app-compat.js?v='+new Date().getTime(),8000);
+probe('t2','2. Firebase DATA server','https://howeacademy-default-rtdb.firebaseio.com/settings/codeVersion.json',10000);
+probe('t3','3. Google CDN','https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js',10000);
+// 4 + 5: does the SDK itself run here, and can it open the LIVE socket
+try{
+  if(typeof firebase==='undefined') throw new Error('engine did not load/run');
+  firebase.initializeApp({databaseURL:'https://howeacademy-default-rtdb.firebaseio.com'});
+  set('t4',true,'4. Firebase engine runs on this browser — <b>YES</b>');
+  var answered=false;
+  var lt=setTimeout(function(){ if(answered)return; answered=true;
+    set('t5',false,'5. LIVE connection — <b>NEVER CONNECTED (15s)</b>'); },15000);
+  firebase.database().ref('.info/connected').on('value',function(s){
+    if(s.val()===true&&!answered){ answered=true; clearTimeout(lt);
+      set('t5',true,'5. LIVE connection — <b>CONNECTED (the dot would be GREEN)</b>'); }
+  });
+}catch(e){
+  set('t4',false,'4. Firebase engine on this browser — <b>FAILED: '+e.message+'</b>');
+  set('t5',false,'5. LIVE connection — <b>cannot try (engine failed)</b>');
+}
+</script>
+</body>
+</html>
