@@ -25567,9 +25567,16 @@ function gvAuditRender(kid,col){
   const BTN='border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif';
   let h='<div style="background:#fffbeb;border-left:4px solid #d97706;border-radius:0 10px 10px 0;padding:10px 12px;margin:0 0 8px">';
   h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">';
-  const _tot=nNow+_rec.length;
+  // Plan-backed insert-only rows are the stored cells lagging the plan — permanent and
+  // harmless since Stage 2 (the Grid and the generator both read the plan, not the cells).
+  // Counted in the headline they made a clean plan read as "7 things to check" (2026-08-30,
+  // the strip's first real render). They stay listed below, but only rows that can still
+  // bite count: anything legacy, or a plan-backed row where a rebuild would DELETE work.
+  const _lagRec=_rec.filter(function(r){ return (typeof planBacked==="function")&&planBacked(kid,r.sk)&&!r.onlyInGrid.length; });
+  const _hotRec=_rec.filter(function(r){ return _lagRec.indexOf(r)<0; });
+  const _tot=nNow+_hotRec.length;
   h+='<div style="font-size:12px;color:#92400e">'+(_tot
-      ?'<b>🔍 '+_tot+' thing'+(_tot>1?'s':'')+' to check</b> in '+cap(kid)+'’s plan — skipped numbers, lessons booked twice, out of order'+(_rec.length?', or a card list that disagrees with the grid':'')+'.'
+      ?'<b>🔍 '+_tot+' thing'+(_tot>1?'s':'')+' to check</b> in '+cap(kid)+'’s plan — skipped numbers, lessons booked twice, out of order'+(_hotRec.length?', or a card list that disagrees with the grid':'')+'.'
       :'<b>🔍 '+cap(kid)+'’s upcoming plan looks clean.</b>')
     +(nPast?' <span style="color:#a16207">'+nPast+' older one'+(nPast>1?'s':'')+' left as the record.</span>':'')+'</div>';
   h+='<button onclick="gvAuditToggle()" style="flex-shrink:0;border:1px solid #d97706;background:#fff;color:#b45309;'+BTN+'">'+(gvAuditOpen?'Hide':'Show')+'</button>';
@@ -25611,8 +25618,10 @@ function gvAuditRender(kid,col){
   // ⚖ The two records for a subject, side by side. Same strip, own section —
   // this is the drift that causes the rest, so it reads before the history.
   if(_rec.length){
-    h+='<div style="font-size:10px;font-weight:800;letter-spacing:0.4px;text-transform:uppercase;color:#b45309;margin-top:12px">Card list vs grid — out of step</div>';
-    h+='<div style="font-size:10.5px;color:#a16207;line-height:1.45;padding:4px 0">A rebuild builds from the card’s list, but the kids work from the grid. Where they disagree, the next rebuild adds or drops work without asking.</div>';
+    h+='<div style="font-size:10px;font-weight:800;letter-spacing:0.4px;text-transform:uppercase;color:#b45309;margin-top:12px">'+(_hotRec.length?'Card list vs grid — out of step':'Stored cells behind the plan — nothing to do')+'</div>';
+    h+='<div style="font-size:10.5px;color:#a16207;line-height:1.45;padding:4px 0">'+(_hotRec.length
+      ?'A rebuild builds from the card’s list, but the kids work from the grid. Where they disagree, the next rebuild adds or drops work without asking.'
+      :'The Grid and the generator both read the plan now, so these stored cells lag it harmlessly until the next Rebuild re-lays them. Nothing to tap.')+'</div>';
     _rec.forEach(r=>{
       h+='<div style="padding:7px 0;border-top:1px solid #fde68a">';
       h+='<div style="font-size:11.5px;color:#78350f;line-height:1.45;margin-bottom:5px"><b>'+esc(r.disp)+'</b> — list '+r.nList+', grid '+r.nGrid+'</div>';

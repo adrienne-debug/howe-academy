@@ -30,6 +30,7 @@ const prelude = `
     return {"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;"}[c];});};
   var gvGrabScroll=function(){}, renderAll=function(){};
   var currData={subjects:{},lessons:{}};
+  var lidDoneIdx=function(){return new Set();};   // plan-backed path: nothing done in fixtures
 `;
 const api = new Function(prelude + block +
   "; return {find:gvAuditFindings, render:gvAuditRender, toggle:gvAuditToggle, rec:gvReconcile," +
@@ -300,6 +301,38 @@ console.log("\nadopt guard (plan-backed)");
   // the legacy paths survive for non-plan-backed subjects
   ok("the lossless button still exists for legacy subjects", /Match the list to the grid/.test(render));
   ok("the lossy button still exists for legacy stamped subjects", /Take the grid’s names/.test(render));
+}
+
+// ── lag rows don't count as "things to check" ──────────────────────────────
+// 2026-08-30, the strip's first real render: Lincoln's headline said "7 things to
+// check — skipped numbers, lessons booked twice, out of order" while nNow was 0 and
+// all 7 rows were plan-backed insert-only lag (stored cells behind the plan, which
+// is permanent and harmless since Stage 2). The count excludes those rows now; the
+// rows themselves stay listed. A plan-backed row a rebuild would DELETE still counts.
+console.log("\nplan-backed lag rows and the headline count");
+{
+  global.planBacked = function(){ return true; };
+  api.set(grid(["L1","L2"], { subj: { lessonSeq: ["L1","L2","L3","L4"] } }));
+  let h = api.render("kid", "#333");
+  ok("insert-only lag does not count", h.indexOf("looks clean") > 0);
+  ok("headline no longer blames the card list", h.indexOf("disagrees with the grid") < 0);
+  api.toggle();
+  h = api.render("kid", "#333");
+  api.toggle();
+  ok("the row is still listed when opened", h.indexOf("A rebuild would <b>insert</b>") > 0);
+  ok("under the calm title", h.indexOf("Stored cells behind the plan") > 0);
+  ok("not the alarming one", h.indexOf("out of step") < 0);
+  api.set(grid(["L1","L2","L3","L4"], { subj: { lessonSeq: ["L1","L2","L3"] } }));
+  h = api.render("kid", "#333");
+  ok("a plan-backed row a rebuild would DELETE still counts", h.indexOf("1 thing to check") > 0);
+  api.toggle();
+  h = api.render("kid", "#333");
+  api.toggle();
+  ok("and keeps the alarming title", h.indexOf("out of step") > 0);
+  delete global.planBacked;
+  api.set(grid(["L1","L2"], { subj: { lessonSeq: ["L1","L2","L3","L4"] } }));
+  h = api.render("kid", "#333");
+  ok("legacy rows count exactly as before", h.indexOf("1 thing to check") > 0);
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");
