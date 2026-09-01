@@ -32190,13 +32190,20 @@ function mastShapeVis(name,px){
   if(more) return _svg(more);
   return name.charAt(0);
 }
-const MAST_COUNT_WORDS={one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10};
+const MAST_COUNT_WORDS={one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90,"one hundred":100};
 function mastCountN(it){ return MAST_COUNT_WORDS[((it&&it.prompt)||"").toLowerCase()]||0; }
 // Counting cards show N dinosaurs to count out loud (never the numeral). Sized in container
 // units (cqw) so the grid always fits the card on any screen — at most 2 rows — with a px
 // fallback for older browsers.
+// Past ten, counting cards switch to the SAME 5×2 ten-frames as Julian's notebook (empty
+// cells stay dashed so "how many more to 10" is visible; frames fill left→right, top→bottom).
+// 11–20: two frames, each dino its own tap target — still counting by ones. 30–100 (tens):
+// every frame is full and the whole FRAME is the tap target — tapping 100 dinos one at a
+// time isn't the lesson at that size; counting groups of ten ("ten, twenty, thirty…") is.
+// The badge and tally count in steps of ten there (data-step on the wrap).
 function mastCountVis(n,box,tap){
   box=box||240;
+  if(n>10) return mastCountVisFrames(n,box,tap);
   const cols=n<=3?n:Math.ceil(n/2);
   const gap=6;
   // Emoji glyphs advance wider than 1em on some platforms (Safari ~1.2em), which made the
@@ -32222,6 +32229,57 @@ function mastCountVis(n,box,tap){
     +'<button data-reset onclick="event.stopPropagation();mastCountReset(this)" style="display:none;padding:5px 12px;border-radius:999px;border:1.5px solid #fdba74;background:#fff7ed;color:#c2410c;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{21BA} Start over</button>'
     +'</div></div>';
 }
+// One 5×2 ten-frame, notebook-styled (green border, dashed empty cells). `fill` of 10 cells
+// are filled; each filled cell holds `inner(idx)`'s markup so the caller decides tap targets.
+function mastCountFrame(fill,cell,inner){
+  let cells='';
+  for(let ci=0;ci<10;ci++){
+    cells+='<div style="width:'+cell+'px;height:'+cell+'px;display:flex;align-items:center;justify-content:center;line-height:1;border:1px dashed #b7dcc4">'+(ci<fill?inner(ci):'')+'</div>';
+  }
+  return '<div style="display:grid;grid-template-columns:repeat(5,auto);border:2px solid #16a34a;border-radius:6px;overflow:hidden;background:#fff">'+cells+'</div>';
+}
+function mastCountVisFrames(n,box,tap){
+  box=box||240;
+  let grid, step;
+  const _dino=(px)=>'<span style="font-size:'+px+'px;line-height:1">\u{1F995}</span>';
+  const _tapDino=(px,bd,bf)=>'<span onclick="event.stopPropagation();mastCountTap(this)" style="position:relative;font-size:'+px+'px;line-height:1;cursor:pointer;transition:opacity 0.15s,transform 0.15s;-webkit-tap-highlight-color:transparent">\u{1F995}'
+    +'<span data-badge style="display:none;position:absolute;top:-2px;right:-4px;width:'+bd+'px;height:'+bd+'px;border-radius:50%;background:#16a34a;color:#fff;font-family:\'DM Sans\',sans-serif;font-size:'+bf+'px;font-weight:800;align-items:center;justify-content:center;line-height:1;box-shadow:0 1px 4px rgba(0,0,0,0.25)"></span>'
+    +'</span>';
+  if(n<=20){
+    // Teens: two stacked frames, count by ones — the tap-each-dino lesson unchanged, the
+    // frames just make "ten and some more" visible.
+    step=1;
+    const cell=Math.floor((box-8)/5), ap=Math.round(cell*0.6);
+    const bd=Math.max(16,Math.round(ap*0.5)), bf=Math.max(9,Math.round(ap*0.28));
+    let frames='';
+    for(let fi=0;fi<2;fi++){
+      const fill=Math.max(0,Math.min(10,n-fi*10));
+      frames+=mastCountFrame(fill,cell,()=>tap?_tapDino(ap,bd,bf):_dino(ap));
+    }
+    grid='<div style="display:flex;flex-direction:column;gap:8px;align-items:center;margin:0 auto;max-width:88vw">'+frames+'</div>';
+  } else {
+    // Tens: N/10 full mini-frames, count by tens — each FRAME is one tap target.
+    step=10;
+    const F=Math.round(n/10);
+    const cell=Math.max(14,Math.floor((box-40)/10)), ap=Math.round(cell*0.65);
+    const bd=Math.max(20,Math.round(cell*1.1)), bf=Math.max(10,Math.round(cell*0.55));
+    let frames='';
+    for(let fi=0;fi<F;fi++){
+      const inner=mastCountFrame(10,cell,()=>_dino(ap));
+      frames+=tap
+        ?'<span onclick="event.stopPropagation();mastCountTap(this)" style="position:relative;display:inline-block;cursor:pointer;transition:opacity 0.15s,transform 0.15s;-webkit-tap-highlight-color:transparent">'+inner
+          +'<span data-badge style="display:none;position:absolute;top:-6px;right:-6px;width:'+bd+'px;height:'+bd+'px;border-radius:50%;background:#16a34a;color:#fff;font-family:\'DM Sans\',sans-serif;font-size:'+bf+'px;font-weight:800;align-items:center;justify-content:center;line-height:1;box-shadow:0 1px 4px rgba(0,0,0,0.25)"></span></span>'
+        :'<span style="display:inline-block">'+inner+'</span>';
+    }
+    grid='<div style="display:grid;grid-template-columns:repeat(2,auto);gap:8px;justify-content:center;margin:0 auto;max-width:88vw">'+frames+'</div>';
+  }
+  if(!tap) return grid;
+  return '<div data-count-wrap data-n="'+n+'" data-step="'+step+'" style="display:flex;flex-direction:column;align-items:center;gap:8px;position:relative;z-index:2">'+grid
+    +'<div style="display:flex;align-items:center;gap:10px;min-height:44px">'
+    +'<span data-tally style="font-family:\'Fraunces\',serif;font-size:40px;font-weight:800;color:#c2410c;min-width:40px;line-height:1"></span>'
+    +'<button data-reset onclick="event.stopPropagation();mastCountReset(this)" style="display:none;padding:5px 12px;border-radius:999px;border:1.5px solid #fdba74;background:#fff7ed;color:#c2410c;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{21BA} Start over</button>'
+    +'</div></div>';
+}
 // Counting cards are the one place where the TAP is the lesson: one-to-one correspondence
 // means touching each object exactly once. Each dino is its own target — pushing one numbers
 // it in the order touched and bumps the running total. A dino already counted ignores repeat
@@ -32233,11 +32291,12 @@ function mastCountTap(el){
   const wrap=el.closest&&el.closest("[data-count-wrap]");
   if(!wrap||el.getAttribute("data-counted")==="1") return;
   const n=parseInt(wrap.getAttribute("data-n"),10)||0;
+  const step=parseInt(wrap.getAttribute("data-step"),10)||1;  // tens frames count 10 per tap
   const k=wrap.querySelectorAll('[data-counted="1"]').length+1;
   el.setAttribute("data-counted","1");
   el.style.opacity="0.45"; el.style.transform="scale(0.92)";
   const b=el.querySelector("[data-badge]");
-  if(b){ b.textContent=String(k); b.style.display="flex"; }
+  if(b){ b.textContent=String(k*step); b.style.display="flex"; }
   mastCountSync(wrap,k,n);
 }
 function mastCountReset(btn){
@@ -32249,11 +32308,12 @@ function mastCountReset(btn){
   mastCountSync(wrap,0,parseInt(wrap.getAttribute("data-n"),10)||0);
 }
 function mastCountSync(wrap,k,n){
+  const step=parseInt(wrap.getAttribute("data-step"),10)||1;
   const out=wrap.querySelector("[data-tally]"), rs=wrap.querySelector("[data-reset]");
   if(rs) rs.style.display=k?"block":"none";
   if(!out) return;
-  out.textContent=k?String(k):"";
-  out.style.color=(n&&k===n)?"#16a34a":"#c2410c";
+  out.textContent=k?String(k*step):"";
+  out.style.color=(n&&k*step===n)?"#16a34a":"#c2410c";
 }
 function mastCountVisBig(it){ return mastCountVis(mastCountN(it),240,true); }
 function mastItemVis(it){
@@ -34455,7 +34515,12 @@ function mastPrintCards(){
     const cat=it.subject||"";
     if(cat==="Colors"&&COLOR_MAP[it.prompt]){const s=Math.round(sz*0.85);return '<div style="width:'+s+'px;height:'+s+'px;border-radius:50%;background:'+COLOR_MAP[it.prompt]+';border:1.5px solid '+mastColorBorder(it.prompt)+';display:inline-block"></div>';}
     if(cat==="Shapes"&&SHAPE_MAP[it.prompt]) return '<span style="font-size:'+sz+'px;color:'+kc+'">'+SHAPE_MAP[it.prompt]+'</span>';
-    if(cat==="Counting"){ const cn=mastCountN(it); let cd=''; for(let i=0;i<cn;i++) cd+='<span style="font-size:'+Math.round(sz*0.5)+'px;line-height:1">\u{1F995}</span>'; return '<span style="display:inline-flex;flex-wrap:wrap;gap:2px;justify-content:center;max-width:'+(sz*3)+'px">'+cd+'</span>'; }
+    if(cat==="Counting"){
+      const cn=mastCountN(it);
+      if(cn>10) return '<span style="display:inline-block">'+mastCountVisFrames(cn,Math.round(sz*2.2),false)+'</span>';  // paper: same ten-frames, no taps
+      let cd=''; for(let i=0;i<cn;i++) cd+='<span style="font-size:'+Math.round(sz*0.5)+'px;line-height:1">\u{1F995}</span>';
+      return '<span style="display:inline-flex;flex-wrap:wrap;gap:2px;justify-content:center;max-width:'+(sz*3)+'px">'+cd+'</span>';
+    }
     return '<span style="font-size:'+sz+'px;font-weight:800;color:'+kc+'">'+it.prompt+'</span>';
   }
 
