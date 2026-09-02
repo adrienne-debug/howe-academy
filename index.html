@@ -2524,6 +2524,15 @@ function attachWeekListeners(wk){
   });
   fbWeekRefs.push(r8b);
 
+  // 👩 Mom-loop hold — "once checked, who has it has it". One tiny value; every device
+  // agrees on who has STARTED with Mom (see mlOnCheck / mlHold).
+  const r8c=db.ref(wk+"/momHold");
+  r8c.on("value",s=>{
+    momHold=s.val()||{};
+    if(typeof renderAll==="function") renderAll();
+  });
+  fbWeekRefs.push(r8c);
+
   const r9=db.ref(wk+"/slot_points");
   r9.on("value",s=>{ if(s.val()) sv(wk+"_slot_points",s.val()); });
   fbWeekRefs.push(r9);
@@ -5646,7 +5655,8 @@ function renderSchedule(el){
     return "";
   }
   const col=DAY_COL[day]||"#666", pct=dayPct(day);
-  const activeTasks=dsRetime(displacedResult?displacedResult.tasks:weekData.tasks);
+  // Stage 2: the loop's pick is pulled forward in the RENDERED day (derived, no writes).
+  const activeTasks=mlPullForward(dsRetime(displacedResult?displacedResult.tasks:weekData.tasks));
 
   let allDay=activeTasks.filter(t=>effectiveDay(t)===day);
   if(kid==="mom") allDay=allDay.filter(t=>t.mom==="required"||t.mom==="maybe");
@@ -5685,6 +5695,8 @@ function renderSchedule(el){
   // 👩 the Mom loop — who has her right now. Mom-gated, today only, reports nothing on
   // another day's view where "ready" and "paused" have no meaning.
   if(day===_todayDay){ try{ h+=mlStripHTML(); }catch(e){} }
+  // Stage 2: the kid's own "Mom's ready for you" banner — their page only, today only.
+  if(day===_todayDay&&kid!=="all"&&kid!=="mom"){ try{ h+=mlBannerHTML(kid); }catch(e){} }
   if(momHere()&&schedDayOffOpen) h+=schedRenderDayOffPicker(day);
 
   if(CONSTRAINT[day]){
@@ -6131,6 +6143,7 @@ function finalizeDone(id, doneTs, score){
     try{ checkBookComplete(t.who, t.subjectKey); }catch(e){}
     try{ checkSessionComplete(t.who); }catch(e){}
     try{ rlOnCheckoff(t); }catch(e){}   // 📚 reading-log subjects: page prompt / pending chip
+    try{ if(typeof mlOnCheck==="function") mlOnCheck(t); }catch(e){}   // 👩 Mom loop: buffer check starts a hold, Mom-card check releases it
     // Where does the completed task belong NOW?
     //  - Completed on a DIFFERENT calendar day than scheduled (worked ahead on Thursday's
     //    task Tuesday night, or caught up late): relocate it to the day+time it was
@@ -34629,6 +34642,21 @@ let lastAudit=[]; // auditSchedule() violations for the live schedule ([] = all 
 // (morningComplete, bbActive, checked) and says who is up. It moves no cards and writes
 // nothing except the order and starting cursor Mom sets herself.
 let momLoop={};   // {order:[kid,...], cursor:n} from config/momLoop
+// Her rule 2026-09-01: the plan can hand Mom around freely UNTIL a kid checks the card
+// ahead of their Mom card — that check means they have STARTED, and "once checked, who has
+// it has it": the turn stays theirs until the Mom card itself is checked. Only then does
+// the next turn re-follow the loop. {kid,id,day} in WK/momHold, set by mlOnCheck.
+let momHold={};
+function mlHold(){
+  try{
+    const h=momHold; if(!h||!h.kid||!h.id) return null;
+    if(h.day!==_todayDay) return null;                    // yesterday's hold means nothing
+    if(mlOrder().indexOf(h.kid)<0) return null;
+    if(typeof checked!=="undefined"&&checked&&checked[h.id]) return null;   // finished on any device
+    if(!(getActiveTasks()||[]).some(function(t){ return t&&t.id===h.id&&t.who===h.kid; })) return null;
+    return h;
+  }catch(e){ return null; }
+}
 function mlOrder(){
   const o=(momLoop&&Array.isArray(momLoop.order))?momLoop.order.filter(function(k){ return [...ROSTER].indexOf(k)>=0; }):[];
   if(o.length) return o;
@@ -34648,11 +34676,27 @@ function mlRemaining(kid){
   }catch(e){ return []; }
 }
 function mlDone(kid){ return mlRemaining(kid).length===0; }
+// The card the loop is pointing at: the kid's earliest unchecked Mom-required card today.
+// Overflow lives in its own end-of-week box and is never the "do this now" card.
+function mlNextCard(kid){
+  try{
+    const r=mlRemaining(kid).filter(function(t){ return !t._eowOverflow; });
+    if(!r.length) return null;
+    return r.slice().sort(function(a,b){ return toMin(a.time)-toMin(b.time); })[0];
+  }catch(e){ return null; }
+}
 // Who Mom should be with right now, and why. Scanning FROM the cursor is what makes a
 // borrowed turn temporary: the cursor kid is still first in line the moment they are ready.
 function mlNow(){
   const order=mlOrder(), n=order.length; if(!n) return null;
   const cur=mlCursor(), cursorKid=order[cur];
+  // A started session outranks the scan: the kid who checked the card ahead of their Mom
+  // card keeps her, even if the kid whose planned turn it was becomes ready mid-session.
+  // A pause still hands Mom on (the hold resumes when the break ends).
+  const hd=mlHold();
+  if(hd&&!mlPaused(hd.kid)&&!mlDone(hd.kid)){
+    return {kid:hd.kid,held:true,borrowed:false,cursorKid:cursorKid,why:"started with you"};
+  }
   for(let i=0;i<n;i++){
     const k=order[(cur+i)%n];
     if(mlDone(k)) continue;
@@ -34693,6 +34737,8 @@ function mlSetCursor(kid){
   const i=mlOrder().indexOf(kid); if(i<0) return;
   momLoop=Object.assign({},momLoop,{cursor:i});
   if(db) db.ref("config/momLoop/cursor").set(i);
+  // Her "Start the loop on X" is the override lever — it beats a started session too.
+  momHold={}; if(db) db.ref(WK+"/momHold").remove();
   renderAll();
 }
 // The strip. Mom-gated: this is her queue, not something the kids act on.
@@ -34706,8 +34752,8 @@ function mlStripHTML(){
               done:["#d1fae5","#065f46","done"]};
     let h='<div style="background:#f5f3ff;border-left:4px solid #7c3aed;border-radius:0 10px 10px 0;padding:9px 12px;margin:0 0 8px">';
     h+='<div style="font-size:12px;font-weight:800;color:#5b21b6;margin-bottom:6px">&#128105; Mom loop — '
-      +(now.kid?('now with <span style="color:#16a34a">'+cap(now.kid)+'</span>'
-        +(now.borrowed?' <span style="font-weight:600;color:#7c3aed">('+esc(now.why)+')</span>':''))
+      +(now.kid?('now with <span style="color:#16a34a">'+cap(now.kid)+'</span>'+(function(){ var nc=mlNextCard(now.kid); return nc?(' <span style="font-weight:700;color:#0f766e">&rarr; '+esc(nc.title)+'</span>'):""; })()
+        +(now.borrowed?' <span style="font-weight:600;color:#7c3aed">('+esc(now.why)+')</span>':(now.held?' <span style="font-weight:600;color:#16a34a">(started)</span>':'')))
         :('<span style="color:#b45309">'+esc(now.why)+'</span>'))+'</div>';
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
     st.forEach(function(x,i){
@@ -34734,6 +34780,84 @@ function mlStripHTML(){
     h+='</div></div>';
     return h;
   }catch(e){ return ""; }
+}
+// ── stage 2 (her yes 2026-09-01): the loop feeds the schedule view ──────────────────────
+// When the loop says a kid has Mom, that kid's next Mom-required card is PULLED FORWARD in
+// the rendered day so it sits right after the card they could already be working on. Her
+// rule: the in-flight card must not move — a kid works on a card before it's checked off,
+// and that card (usually the notebook) is the natural buffer while Mom arrives. Everything
+// here is DERIVED at render time like dsRetime: no card is written, and when the loop moves
+// on the old order simply re-derives.
+function mlPullForward(tasks){
+  try{
+    if(!Array.isArray(tasks)||!tasks.length) return tasks;
+    const now=mlNow(); if(!now||!now.kid) return tasks;
+    const kid=now.kid;
+    // Same membership the loop counts (mlRemaining), minus lunch and overflow — lunch is a
+    // family fixture that never shifts, overflow lives in its own box.
+    const mine=tasks.filter(function(t){
+      return t&&t.who===kid&&t.day===_todayDay
+        &&!String(t.id||"").endsWith("_c")&&!t._eowOverflow
+        &&!/lunch/i.test(t.title||"")
+        &&!(typeof checked!=="undefined"&&checked&&checked[t.id]);
+    }).sort(function(a,b){ return toMin(a.time)-toMin(b.time); });
+    if(!mine.length) return tasks;
+    const mi=mine.findIndex(function(t){ return t.mom==="required"; });
+    // Started (held): the Mom card is IN HAND, so it renders first. Otherwise it renders
+    // right after the in-flight buffer card, which never moves.
+    const pos=now.held?0:1;
+    if(mi<0||mi<=pos) return tasks;         // none left, or already where it belongs
+    const momCard=mine[mi], momDur=momCard.dur||20;
+    const newTimes={};
+    newTimes[momCard.id]=(pos===0)?toMin(mine[0].time):(toMin(mine[0].time)+(mine[0].dur||20));
+    // The cards it jumps shift later by its length; their gaps are preserved, and the slot
+    // it vacates is exactly its own length, so everything after its old spot is untouched.
+    for(let i=pos;i<mi;i++) newTimes[mine[i].id]=toMin(mine[i].time)+momDur;
+    return tasks.map(function(t){
+      return (t&&newTimes[t.id]!==undefined)?Object.assign({},t,{time:fromMin(newTimes[t.id])}):t;
+    });
+  }catch(e){ return tasks; }
+}
+// Kid-facing banner on their own day list: Mom is ready and THIS is the card. Not
+// Mom-gated on purpose — this is the one loop surface the kid acts on.
+function mlBannerHTML(kid){
+  try{
+    const now=mlNow(); if(!now||now.kid!==kid) return "";
+    const nxt=mlNextCard(kid); if(!nxt) return "";
+    return '<div style="background:#ecfdf5;border-left:4px solid #16a34a;border-radius:0 10px 10px 0;padding:10px 12px;margin:0 0 8px;display:flex;align-items:center;gap:9px">'
+      +'<span style="font-size:19px">&#128105;</span>'
+      +'<div><div style="font-size:12.5px;font-weight:800;color:#065f46">'+(now.held?'You&rsquo;re with Mom':('Mom&rsquo;s ready for you'+(now.borrowed?'':' &mdash; it&rsquo;s your turn')))+'</div>'
+      +'<div style="font-size:12px;color:#047857;font-weight:700">'+esc(nxt.title)+'</div>'
+      +'<div style="font-size:10.5px;color:#059669">'+(now.held?'This is your card right now.':'Finish what you&rsquo;re on &mdash; this one is next.')+'</div></div></div>';
+  }catch(e){ return ""; }
+}
+// Called from finalizeDone after a check-off lands. Two jobs, her words 2026-09-01
+// ("use the previous task as the planner and once checked who has it has it"):
+//  · the held Mom card was just finished → release the hold; the NEXT turn follows the
+//    loop again — whoever is there, ready, and not paused
+//  · the loop's pick just checked their BUFFER (their earliest unchecked card, the one
+//    sitting ahead of their pulled Mom card) → they have started with Mom; lock the turn
+// Racing does not steal: if the plan kid is already ready, mlNow points at them and the
+// other kid's check-off sets nothing.
+function mlOnCheck(t){
+  try{
+    if(!t||!t.who) return;
+    const h=momHold;
+    if(h&&h.id===t.id){ momHold={}; if(db) db.ref(WK+"/momHold").remove(); return; }
+    if(t.mom==="required") return;            // a Mom card done out of band locks nothing
+    if(t.day!==_todayDay) return;
+    const now=mlNow(); if(!now||now.kid!==t.who||now.held) return;
+    const nxt=mlNextCard(t.who); if(!nxt) return;
+    const mineLeft=(getActiveTasks()||[]).filter(function(x){
+      return x&&x.who===t.who&&x.day===_todayDay
+        &&!String(x.id||"").endsWith("_c")&&!x._eowOverflow
+        &&!/lunch/i.test(x.title||"")
+        &&!(typeof checked!=="undefined"&&checked&&checked[x.id]);
+    });
+    if(mineLeft.some(function(x){ return toMin(x.time)<toMin(t.time); })) return;  // not the buffer
+    momHold={kid:t.who,id:nxt.id,day:_todayDay};
+    if(db) db.ref(WK+"/momHold").set(momHold);
+  }catch(e){}
 }
 // MOMLOOP_END
 

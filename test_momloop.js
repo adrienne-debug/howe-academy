@@ -143,9 +143,14 @@ console.log("\n── status strip ──");
 
 console.log("\n── it decides, it does not reschedule ──");
 {
-  ok("the block never writes a task", !/week.*tasks|db\.ref\(WK/.test(BLOCK));
-  ok("it writes only the order and the cursor",
-    (BLOCK.match(/db\.ref\(/g) || []).length === 2 && /config\/momLoop\/order/.test(BLOCK) && /config\/momLoop\/cursor/.test(BLOCK));
+  ok("the block never writes a task", !/db\.ref\([^)]*tasks/.test(BLOCK));
+  // Stage 2b (2026-09-01) added ONE more stored fact: the hold ("once checked, who has it
+  // has it") at WK/momHold — set on the buffer check, removed on the Mom-card check and by
+  // Mom's cursor override. Still never a card.
+  ok("it writes only the order, the cursor, and the hold",
+    (BLOCK.match(/db\.ref\(/g) || []).length === 5
+      && /config\/momLoop\/order/.test(BLOCK) && /config\/momLoop\/cursor/.test(BLOCK)
+      && (BLOCK.match(/WK\+"\/momHold"/g) || []).length === 3);
   ok("the setters are Mom-gated", (BLOCK.match(/if\(!momHere\(\)&&!adminPinUnlocked\) return;/g) || []).length === 3);
   const R = src.indexOf("function mlStripHTML"), R2 = src.indexOf("// MOMLOOP_END");
   const strip = R >= 0 ? src.slice(R, R2) : "";
