@@ -7185,6 +7185,12 @@ function renderDadsDay(el){
     // On his own ?kiosk=dad link there is nowhere to go back TO — hide it there only.
     (_kioskD()?'':'<button onclick="mpSubView=null;renderMomsPlan(document.getElementById(\'content\'))" style="border:1.5px solid var(--border);background:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">← Mom\'s Day</button>')+'</div>';
 
+  // ── ⏲ kitchen prep due now — same rows Mom's Day puts in 🔴 NOW ──
+  try{
+    const _dp=kitDuePrepHTML();
+    if(_dp.n) h+='<div style="margin:10px 12px 0;background:#fff;border-radius:12px;padding:10px 12px 4px;box-shadow:0 4px 20px rgba(43,122,120,0.13)">'
+      +'<div style="font-size:11px;font-weight:800;color:#ea580c;letter-spacing:.04em;margin-bottom:6px">🔴 KITCHEN NOW</div>'+_dp.html+'</div>';
+  }catch(e){}
   // ── his checklist — the one card he owns outright ──
   h+='<div style="margin:10px 12px;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
     +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#2C5F8A;color:#fff;font-weight:800;font-size:13px"><span>✅</span> My checklist'
@@ -8315,13 +8321,8 @@ function renderMomsDay(el){
   // everything else on this screen for timing, so these render first.
   // Night-before steps for TOMORROW's meal join once KIT_NB_HOUR turns.
   try{
-    kitDuePrep().forEach(s=>{
-      nowN++;
-      const nb=s.when==="nb";
-      h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fff7ed;border-left:3px solid #ea580c;border-radius:8px;margin-bottom:6px">'
-        +'<span style="flex:1;font-size:13px">'+(nb?'🌙':'⏲')+' <b>'+esc(s.label)+'</b> <span style="color:#6b6560">· '+esc(s.mealName)+(nb?' (tomorrow)':' · '+kitWhenLabel(s.when))+'</span></span>'
-        +'<button onclick="kitMarkPrep(\''+s.iso+'\',\''+s.mid+'_'+s.idx+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#ea580c;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Done</button></div>';
-    });
+    const _dp=kitDuePrepHTML();
+    nowN+=_dp.n; h+=_dp.html;
   }catch(e){}
   if(morningWaiting.length){
     nowN++;
@@ -8551,6 +8552,19 @@ function kitPrepSteps(iso){
 // Steps due RIGHT NOW: today's timed steps whose time has arrived, plus
 // tomorrow's night-before steps once the afternoon turns (KIT_NB_HOUR).
 // nowMin is injectable for tests; real callers omit it.
+// ⏲ Due prep timers as NOW rows — shared by Mom's Day and Dad's Day so both
+// screens show the same step with the same ✓ Done state (kitMarkPrep).
+function kitDuePrepHTML(){
+  let html='', n=0;
+  kitDuePrep().forEach(s=>{
+    n++;
+    const nb=s.when==="nb";
+    html+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fff7ed;border-left:3px solid #ea580c;border-radius:8px;margin-bottom:6px">'
+      +'<span style="flex:1;font-size:13px">'+(nb?'🌙':'⏲')+' <b>'+esc(s.label)+'</b> <span style="color:#6b6560">· '+esc(s.mealName)+(nb?' (tomorrow)':' · '+kitWhenLabel(s.when))+'</span></span>'
+      +'<button onclick="kitMarkPrep(\''+s.iso+'\',\''+s.mid+'_'+s.idx+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#ea580c;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Done</button></div>';
+  });
+  return {html:html,n:n};
+}
 function kitDuePrep(nowMin){
   if(nowMin==null) nowMin=kitNowMin();
   const out=[], today=_todayStr();
@@ -9167,6 +9181,10 @@ function kitImportWeekApply(){
 // food-category usuals (household "other" items don't get judged by kids).
 const KIT_RATES=["love","like","no"];
 const KIT_RATE_META={love:["😍","#f0fdf4","#16a34a"],like:["🙂","#eff6ff","#2563eb"],no:["🚫","#fef2f2","#b91c1c"]};
+// Everyone votes: the four kids plus Mom and Dad (stored under the same
+// kitchen/meals/{id}/ratings/{who} node, so old kid votes are untouched).
+const KIT_RATERS=SL_KIDS.concat(["mom","dad"]);
+const KIT_RATER_COL={mom:"#7c3aed",dad:"#0f766e"};
 function kitRate(kind,id,kid){
   const rec=(kind==="meal")?kitMeals[id]:kitUsuals[id];
   if(!rec) return;
@@ -9187,9 +9205,9 @@ function kitRate(kind,id,kid){
 function kitRateChips(kind,id){
   const rec=(kind==="meal")?kitMeals[id]:kitUsuals[id];
   const ratings=(rec&&rec.ratings)||{};
-  return SL_KIDS.map(k=>{
+  return KIT_RATERS.map(k=>{
     const r=ratings[k]; const m=r&&KIT_RATE_META[r];
-    const col=SL_KCOL[k]||"#666";
+    const col=SL_KCOL[k]||KIT_RATER_COL[k]||"#666";
     return '<span onclick="kitRate(\''+kind+'\',\''+id+'\',\''+k+'\')" title="'+cap(k)+' — tap to cycle 😍 love / 🙂 like / 🚫 won\'t eat" style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:800;padding:2px 7px;border-radius:10px;border:1.5px solid '+(m?m[2]:'#e5e7eb')+';background:'+(m?m[1]:'#f8f7f4')+';color:'+col+'">'+cap(k).slice(0,2)+' '+(m?m[0]:'–')+'</span>';
   }).join('');
 }
