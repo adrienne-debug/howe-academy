@@ -34974,15 +34974,19 @@ function mlQueueLay(tasks){
     // Each kid's OTHER movable cards re-pack around their Mom block: the in-flight buffer
     // (earliest unchecked non-Mom card) keeps its slot; the rest follow in the order the
     // packer laid them, stepping over the kid's Mom intervals and lunch.
+    // 📓 Closing notebooks are the day's wrap-up, not just another card: they sit out of
+    // the buffer/chain and re-tuck to the TRUE end of the kid's re-laid day below.
+    const _mlClose=function(t){ return t.subjectKey==="closing_nb"||(t.title||"").toLowerCase().includes("closing notebook"); };
     order.forEach(function(k){
       const momIv=momQ[k].map(function(c){
         const s=(newTimes[c.id]!==undefined)?newTimes[c.id]:toMin(c.time);
         return [s,s+(c.dur||20)];
       });
       const Ls=lunchOf(k);
-      const buf=mine[k].find(function(x){ return x.mom!=="required"; })||null;
-      const others=mine[k].filter(function(x){ return x.mom!=="required"&&x!==buf; });
-      if(!others.length) return;
+      const buf=mine[k].find(function(x){ return x.mom!=="required"&&!_mlClose(x); })||null;
+      const others=mine[k].filter(function(x){ return x.mom!=="required"&&x!==buf&&!_mlClose(x); });
+      const closes=mine[k].filter(function(x){ return x.mom!=="required"&&_mlClose(x); })
+        .sort(function(a,b){ return toMin(a.time)-toMin(b.time); });
       // Push-later-only: a card keeps the packer's slot (device lanes and gaps survive)
       // and steps later only to clear the kid's Mom block, lunch, or the card before it.
       let p=buf?(toMin(buf.time)+(buf.dur||20)):0;
@@ -34995,6 +34999,21 @@ function mlQueueLay(tasks){
         }
         newTimes[c.id]=s; p=s+d;
       });
+      // Fluid closing tuck: whatever the loop did to this kid's day (Mom block laid
+      // later, independent work pushed), the wrap-up follows the day's new end — later
+      // OR earlier than its packed slot. Skips when nothing else is left (a lone
+      // closing card keeps its own time rather than jumping to the morning).
+      if(closes.length){
+        let lastEnd=0;
+        momIv.forEach(function(iv){ if(iv[1]>lastEnd) lastEnd=iv[1]; });
+        if(buf){ const e=toMin(buf.time)+(buf.dur||20); if(e>lastEnd) lastEnd=e; }
+        others.forEach(function(c){ const e=(newTimes[c.id]!==undefined?newTimes[c.id]:toMin(c.time))+(c.dur||20); if(e>lastEnd) lastEnd=e; });
+        if(lastEnd>0) closes.forEach(function(c){
+          const d=c.dur||20; let s=lastEnd;
+          Ls.forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]) s=iv[1]; });
+          newTimes[c.id]=s; lastEnd=s+d;
+        });
+      }
     });
     if(!Object.keys(newTimes).length) return tasks;
     return tasks.map(function(x){
