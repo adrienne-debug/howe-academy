@@ -1713,7 +1713,7 @@ function mrIndividualHTML(kid){
   let h='<div class="sl-check-row'+(allDone?" done":"")+'" onclick="toggleMrOpen(\''+kid+'\')" style="cursor:pointer">'+
     '<div class="sl-checkbox'+(allDone?" done":"")+'">'+(allDone?"✓":"")+'</div>'+
     '<div style="flex:1"><div class="sl-slot-name">Morning <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+_dueIdx.length+'</span></div>'+
-    '<div class="sl-slot-sub">'+(allDone?'✓ Schedule unlocked':'Finish all to unlock your schedule')+'</div></div>'+
+    '<div class="sl-slot-sub">'+(allDone?(gateClockHeld(day)?'✓ Done — school starts at '+fromMin(gateStartMin(day)):'✓ Schedule unlocked'):'Finish all to unlock your schedule')+'</div></div>'+
     '<div style="font-size:14px;color:var(--muted)">'+(isOpen?"▾":"▸")+'</div></div>';
   if(isOpen){
     const _ed=routineEditable();
@@ -3042,6 +3042,21 @@ function getTodayDayName(){
   return map[new Date().getDay()]||null;
 }
 
+// ⏰ GATE CLOCK-HOLD — the Morning gate also respects the school-day START time, read
+// from the same settings the scheduler uses (config/rules schoolDay: this day's
+// override.start, else defaultStart, else 10:00 AM). A routine finished at 9:30 keeps
+// the schedule shut until the day's start time. The clock only holds TODAY on this
+// device's clock — viewing another day stays purely routine-driven.
+function gateStartMin(d){
+  const sd=((rulesData||{}).schoolDay)||{}, ov=((sd.overrides||{})[d])||{};
+  return toMin(ov.start||sd.defaultStart||"10:00 AM");
+}
+function gateClockHeld(viewDay){
+  if(viewDay!==getTodayDayName()) return false;
+  const n=new Date();
+  return (n.getHours()*60+n.getMinutes())<gateStartMin(viewDay);
+}
+
 // Returns true if the schedule should be shown (unlocked) for the given kid filter and day
 function isScheduleUnlocked(kidFilter, viewDay){
   // Julian has no school tasks — never locked
@@ -3056,6 +3071,10 @@ function isScheduleUnlocked(kidFilter, viewDay){
   if(weekData.tasks.length === 0) return false;
   const hasTasks = weekData.tasks.some(t => t.day === viewDay);
   if(!hasTasks) return true; // day exists in week but has no tasks (e.g. wednesday off)
+
+  // ⏰ Before the day's start time the gate stays shut even with every routine step
+  // checked — done-early kids wait for the start bell (settings-driven, per-day aware).
+  if(gateClockHeld(viewDay)) return false;
 
   // All view or Mom view: every kid must have their Morning routine complete for this day
   if(kidFilter === "all" || kidFilter === "mom"){
@@ -5305,7 +5324,7 @@ function allAgendaHtml(dayTasks){
     kids.map(k=>{
       const L=locked[k];
       return '<div class="all-h" style="color:'+(SL_KCOL[k]||"#666")+(L?';cursor:pointer':'')+'"'+(L?' onclick="scrollToSkylight()"':'')+'>'+cap(k)+
-        (L?'<div style="font-size:9px;font-weight:700;color:#b5394a;text-transform:none;letter-spacing:0">🔒 morning first</div>':'')+'</div>';
+        (L?'<div style="font-size:9px;font-weight:700;color:#b5394a;text-transform:none;letter-spacing:0">'+((gateClockHeld(day)&&morningComplete(k,day))?'🔒 opens '+fromMin(gateStartMin(day)):'🔒 morning first')+'</div>':'')+'</div>';
     }).join('')+'</div>';
   let lunchDone=false;
   mins.forEach(m=>{
@@ -5724,9 +5743,15 @@ function renderSchedule(el){
 
   // ── SCHEDULE LOCK CHECK ──────────────────────────────────────────
   const unlocked = isScheduleUnlocked(kid, day);
-  const lockMsg = (kid==="all")
+  let lockMsg = (kid==="all")
     ? "All four kids need to check off their Morning routine above."
     : cap(kid)+"'s Morning routine needs to be checked off above.";
+  // ⏰ Clock-hold wording: routine already done means the wait is the bell, not the steps
+  if(!unlocked&&gateClockHeld(day)){
+    const _open=fromMin(gateStartMin(day));
+    const _rdone=(kid==="all"||kid==="mom")?SL_KIDS.every(k=>morningComplete(k,day)):morningComplete(kid,day);
+    lockMsg=_rdone?("Morning routine done! School starts at "+_open+"."):(lockMsg+" School starts at "+_open+".");
+  }
 
   if(carriedOver.length){
     // Header is a tap target: collapse to a single line (📋 Carried Over · N) or expand.
@@ -18546,7 +18571,14 @@ function printSchedule(){
 }
 
 // ── ALERTS + CASCADE ──────────────────────────────────────────────
-setInterval(()=>{ if(tab==="schedule")renderSkylight(); },60000);
+let _gateTickSig=null;
+setInterval(()=>{ if(tab!=="schedule")return; renderSkylight();
+  // ⏰ re-render the schedule body only when the gate actually flips (e.g. the clock
+  // reaches school start with routines done) — not every minute, so scroll holds.
+  let sig=""; try{ sig=SL_KIDS.map(k=>isScheduleUnlocked(k,day)?1:0).join(""); }catch(e){}
+  if(_gateTickSig!==null&&sig!==_gateTickSig){ const c=document.getElementById("content"); if(c) renderSchedule(c); }
+  _gateTickSig=sig;
+},60000);
 
 // A history record and a task describe the same lesson when kid matches and the titles
 // agree — exactly, or normalized (emoji/punctuation-blind), or on the lesson text after
