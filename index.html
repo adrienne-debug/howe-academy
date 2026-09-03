@@ -34662,7 +34662,81 @@ function mlOrder(){
   if(o.length) return o;
   return [...ROSTER];                      // default: roster order (youngest-first is hers to set)
 }
-function mlCursor(){ const n=mlOrder().length; const c=parseInt(momLoop&&momLoop.cursor,10)||0; return n?((c%n)+n)%n:0; }
+function mlCursor(){
+  const n=mlOrder().length; if(!n) return 0;
+  const c=parseInt(momLoop&&momLoop.cursor,10)||0; const stored=((c%n)+n)%n;
+  // Her tap today ("Start the loop on X") is still the override lever; otherwise whoever
+  // was cut off at yesterday's end-of-day mark starts today (derived, nothing stored).
+  if(momLoop&&momLoop.cursorSetOn===_mlDayStamp()) return stored;
+  const ovn=mlOvernightStart();
+  return (ovn>=0)?ovn:stored;
+}
+// ── end-of-day cursor capture — her design 2026-09-02 ───────────────────────────────────
+// "capture where it was left off at the end of day mark — and if things are checked off
+// after that it just goes against the next day." No capture event fires and nothing new is
+// stored: it is DERIVED each morning from check-off timestamps that already exist. A
+// Mom-required card from the last school day checked AFTER the 6:00 PM mark — or never —
+// means that kid did not finish inside the day, so the first such kid in ring order from
+// the stored cursor starts today. A late-evening hand-mark completes the CARD but not the
+// claim. Monday falls back to the stored cursor (last school day lives in last week's node).
+const ML_EOD_MARK_MIN=18*60;   // 6:00 PM — after real school work ends, before evening cleanup
+function _mlDayStamp(){ const d=new Date(); return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate(); }
+let _mlOvnMemo=null;
+function mlOvernightStart(){
+  try{
+    const key=_mlDayStamp()+"|"+(typeof WK!=="undefined"?WK:"")+"|"
+      +(typeof lastCheckedWrite!=="undefined"?lastCheckedWrite:0)+"|"
+      +mlOrder().join(",")+"|"+(momLoop&&momLoop.cursor);
+    if(_mlOvnMemo&&_mlOvnMemo.key===key) return _mlOvnMemo.val;
+    const val=_mlOvernightCalc();
+    _mlOvnMemo={key:key,val:val};
+    return val;
+  }catch(e){ return -1; }
+}
+function _mlOvernightCalc(){
+  const order=mlOrder(), n=order.length; if(!n) return -1;
+  const dayOrder=["monday","tuesday","wednesday","thursday","friday","saturday"];
+  const ti=dayOrder.indexOf(_todayDay); if(ti<=0) return -1;
+  const tasks=getActiveTasks()||[];
+  // The last school day = the latest prior day THIS week that actually held Mom-required
+  // work (a holiday with no Mom cards is skipped over).
+  let yd=null;
+  for(let i=ti-1;i>=0&&!yd;i--){
+    const dn=dayOrder[i];
+    if(tasks.some(function(t){ return t&&t.mom==="required"&&_mlClaimDay(t)===dn; })) yd=dn;
+  }
+  if(!yd) return -1;
+  const mark=_mlMarkDate(yd,dayOrder,ti); if(!mark) return -1;
+  const c=parseInt(momLoop&&momLoop.cursor,10)||0; const cur=((c%n)+n)%n;
+  for(let i=0;i<n;i++){
+    const k=order[(cur+i)%n];
+    const cut=tasks.some(function(t){
+      if(!t||t.who!==k||t.mom!=="required") return false;
+      if(String(t.id||"").endsWith("_c")||t._eowOverflow) return false;
+      if(_mlClaimDay(t)!==yd) return false;
+      const ts=(typeof checked!=="undefined"&&checked)?checked[t.id]:null;
+      if(!ts) return true;                                    // never finished — clearest claim
+      const d=(typeof _parseCheckTs==="function")?_parseCheckTs(ts):null;
+      if(!d) return false;                                    // unreadable stamp: assume done in time
+      return d.getTime()>mark.getTime();
+    });
+    if(cut) return (cur+i)%n;
+  }
+  return -1;                                                  // everyone finished by the mark
+}
+// A card's day for claim purposes: Mom's push moved it, her dismiss took it out of play.
+function _mlClaimDay(t){
+  const mv=(typeof momMoves!=="undefined"&&momMoves)?momMoves[t.id]:null;
+  if(mv&&(mv.mode==="skip"||mv.mode==="drop")) return null;
+  return (mv&&mv.mode==="push"&&mv.toDay)||t.day;
+}
+function _mlMarkDate(yd,dayOrder,ti){
+  const s=(typeof DAY_DT==="object"&&DAY_DT)?DAY_DT[yd]:null;
+  if(s){ const c=new Date(s+", "+new Date().getFullYear()); if(!isNaN(c.getTime())){ c.setHours(0,ML_EOD_MARK_MIN,0,0); return c; } }
+  const d=new Date(); d.setHours(0,ML_EOD_MARK_MIN,0,0);      // setHours(0,1080) = 6:00 PM
+  d.setDate(d.getDate()-(ti-dayOrder.indexOf(yd)));
+  return d;
+}
 function mlReady(kid){ try{ return !!morningComplete(kid,_todayDay); }catch(e){ return true; } }
 function mlPaused(kid){ try{ return !!bbActive(kid); }catch(e){ return false; } }
 // A kid's Mom-required work still outstanding today. Carry twins are not their own sitting.
@@ -34735,8 +34809,10 @@ function mlMove(kid,dir){
 function mlSetCursor(kid){
   if(!momHere()&&!adminPinUnlocked) return;
   const i=mlOrder().indexOf(kid); if(i<0) return;
-  momLoop=Object.assign({},momLoop,{cursor:i});
+  momLoop=Object.assign({},momLoop,{cursor:i,cursorSetOn:_mlDayStamp()});
   if(db) db.ref("config/momLoop/cursor").set(i);
+  // Stamped so her tap beats the overnight capture TODAY only — tomorrow derives fresh.
+  if(db) db.ref("config/momLoop/cursorSetOn").set(_mlDayStamp());
   // Her "Start the loop on X" is the override lever — it beats a started session too.
   momHold={}; if(db) db.ref(WK+"/momHold").remove();
   renderAll();

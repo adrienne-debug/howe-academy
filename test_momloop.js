@@ -147,9 +147,12 @@ console.log("\n── it decides, it does not reschedule ──");
   // Stage 2b (2026-09-01) added ONE more stored fact: the hold ("once checked, who has it
   // has it") at WK/momHold — set on the buffer check, removed on the Mom-card check and by
   // Mom's cursor override. Still never a card.
-  ok("it writes only the order, the cursor, and the hold",
-    (BLOCK.match(/db\.ref\(/g) || []).length === 5
+  // 2026-09-02 added cursorSetOn: the day stamp on Mom's "Start the loop on X" tap, so her
+  // tap beats the derived end-of-day capture today only. Written on the same Mom-gated tap.
+  ok("it writes only the order, the cursor + its tap-day stamp, and the hold",
+    (BLOCK.match(/db\.ref\(/g) || []).length === 6
       && /config\/momLoop\/order/.test(BLOCK) && /config\/momLoop\/cursor/.test(BLOCK)
+      && /config\/momLoop\/cursorSetOn/.test(BLOCK)
       && (BLOCK.match(/WK\+"\/momHold"/g) || []).length === 3);
   ok("the setters are Mom-gated", (BLOCK.match(/if\(!momHere\(\)&&!adminPinUnlocked\) return;/g) || []).length === 3);
   const R = src.indexOf("function mlStripHTML"), R2 = src.indexOf("// MOMLOOP_END");
