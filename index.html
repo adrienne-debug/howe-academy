@@ -5655,8 +5655,9 @@ function renderSchedule(el){
     return "";
   }
   const col=DAY_COL[day]||"#666", pct=dayPct(day);
-  // Stage 2: the loop's pick is pulled forward in the RENDERED day (derived, no writes).
-  const activeTasks=mlPullForward(dsRetime(displacedResult?displacedResult.tasks:weekData.tasks));
+  // Stage 3: the loop lays Mom's gap-free queue and re-packs each kid around their block
+  // in the RENDERED day (derived, no writes — every check-off re-derives it).
+  const activeTasks=mlQueueLay(dsRetime(displacedResult?displacedResult.tasks:weekData.tasks));
 
   let allDay=activeTasks.filter(t=>effectiveDay(t)===day);
   if(kid==="mom") allDay=allDay.filter(t=>t.mom==="required"||t.mom==="maybe");
@@ -34857,40 +34858,116 @@ function mlStripHTML(){
     return h;
   }catch(e){ return ""; }
 }
-// ── stage 2 (her yes 2026-09-01): the loop feeds the schedule view ──────────────────────
-// When the loop says a kid has Mom, that kid's next Mom-required card is PULLED FORWARD in
-// the rendered day so it sits right after the card they could already be working on. Her
-// rule: the in-flight card must not move — a kid works on a card before it's checked off,
-// and that card (usually the notebook) is the natural buffer while Mom arrives. Everything
-// here is DERIVED at render time like dsRetime: no card is written, and when the loop moves
-// on the old order simply re-derives.
-function mlPullForward(tasks){
+// ── stage 3 (her "stage 3 go" 2026-09-03): the loop LAYS Mom's schedule ───────────────────
+// Her vision, her words: "the loop lays moms schedule as efficiently as possible with no
+// breaks so we can get things done and schedules will be moving constantly". Everything
+// here is DERIVED at render time like dsRetime: no card is written, and every check-off or
+// routine-end simply re-derives the whole picture from the stored plan.
+//
+// THE RULES, hers:
+//   · Mom's queue is gap-free: the loop kid's Mom-required cards chain as a FULL block,
+//     then the rest of the ring's Mom-required packs in loop order behind it
+//   · loop priority BEATS routine-finished priority — finishing your routine makes you
+//     eligible, never next
+//   · a borrowed turn is one card per DECISION: the borrower's single next card leads,
+//     the loop kid's whole block inserts behind it, the borrower's remaining cards sit at
+//     their own ring position
+//   · the in-flight card never moves — the kid's earliest unchecked independent card is
+//     the buffer they work while Mom arrives (Julian has none: his notebook IS Mom work,
+//     so his block simply starts at his own first slot)
+//   · each kid's independent and may-need-Mom work re-packs around their Mom block, in
+//     the order the packer laid it (sequential rules ride along with that order)
+//   · lunch cards never move, and neither Mom nor a kid is laid on top of one
+function mlQueueLay(tasks){
   try{
     if(!Array.isArray(tasks)||!tasks.length) return tasks;
-    const now=mlNow(); if(!now||!now.kid) return tasks;
-    const kid=now.kid;
-    // Same membership the loop counts (mlRemaining), minus lunch and overflow — lunch is a
-    // family fixture that never shifts, overflow lives in its own box.
-    const mine=tasks.filter(function(t){
-      return t&&t.who===kid&&t.day===_todayDay
-        &&!String(t.id||"").endsWith("_c")&&!t._eowOverflow
+    const order=mlOrder(), n=order.length; if(!n) return tasks;
+    const cur=mlCursor();
+    const now=mlNow();
+    const isToday=function(t){ return t&&t.day===_todayDay; };
+    const movable=function(t){
+      return isToday(t)&&!String(t.id||"").endsWith("_c")&&!t._eowOverflow
         &&!/lunch/i.test(t.title||"")
         &&!(typeof checked!=="undefined"&&checked&&checked[t.id]);
-    }).sort(function(a,b){ return toMin(a.time)-toMin(b.time); });
-    if(!mine.length) return tasks;
-    const mi=mine.findIndex(function(t){ return t.mom==="required"; });
-    // Started (held): the Mom card is IN HAND, so it renders first. Otherwise it renders
-    // right after the in-flight buffer card, which never moves.
-    const pos=now.held?0:1;
-    if(mi<0||mi<=pos) return tasks;         // none left, or already where it belongs
-    const momCard=mine[mi], momDur=momCard.dur||20;
+    };
+    const mine={}, momQ={};
+    order.forEach(function(k){
+      mine[k]=tasks.filter(function(t){ return movable(t)&&t.who===k; })
+        .sort(function(a,b){ return toMin(a.time)-toMin(b.time); });
+      momQ[k]=mine[k].filter(function(t){ return t.mom==="required"; });
+    });
+    // Ring kids who still owe Mom work, in loop order from the cursor.
+    const ring=[]; for(let i=0;i<n;i++){ const k=order[(cur+i)%n]; if(momQ[k].length) ring.push(k); }
+    if(!ring.length) return tasks;
+    // The queue: mlNow's answer leads (held card in hand, or a borrower's ONE card), then
+    // blocks in ring order. The decision layer stays the single authority on "who now".
+    const seq=[];
+    if(now&&now.kid&&momQ[now.kid]&&momQ[now.kid].length){
+      if(now.borrowed){
+        seq.push({kid:now.kid,cards:momQ[now.kid].slice(0,1)});
+        ring.forEach(function(k){
+          const rest=(k===now.kid)?momQ[k].slice(1):momQ[k].slice();
+          if(rest.length) seq.push({kid:k,cards:rest});
+        });
+      }else{
+        seq.push({kid:now.kid,cards:momQ[now.kid].slice()});
+        ring.forEach(function(k){ if(k!==now.kid&&momQ[k].length) seq.push({kid:k,cards:momQ[k].slice()}); });
+      }
+    }else{
+      ring.forEach(function(k){ seq.push({kid:k,cards:momQ[k].slice()}); });
+    }
+    // Where Mom's timeline starts — stage 2's buffer rule, kept exactly:
+    //   held → the Mom card is in hand, it renders where the kid already is
+    //   first unchecked card is the Mom card itself (Julian, or nothing left to buffer
+    //   with) → the block starts at its own printed slot
+    //   otherwise → right after the in-flight buffer card, which never moves
+    const k0=seq[0].kid, first0=mine[k0][0];
+    let t;
+    if((now&&now.held&&now.kid===k0)||!first0||first0.mom==="required") t=toMin((first0||seq[0].cards[0]).time);
+    else t=toMin(first0.time)+(first0.dur||20);
+    // A kid's own lunch interval steps the chain over it — lunch itself never moves.
+    const lunchOf=function(k){
+      return tasks.filter(function(x){ return isToday(x)&&x.who===k&&/lunch/i.test(x.title||""); })
+        .map(function(x){ return [toMin(x.time),toMin(x.time)+(x.dur||30)]; });
+    };
     const newTimes={};
-    newTimes[momCard.id]=(pos===0)?toMin(mine[0].time):(toMin(mine[0].time)+(mine[0].dur||20));
-    // The cards it jumps shift later by its length; their gaps are preserved, and the slot
-    // it vacates is exactly its own length, so everything after its old spot is untouched.
-    for(let i=pos;i<mi;i++) newTimes[mine[i].id]=toMin(mine[i].time)+momDur;
-    return tasks.map(function(t){
-      return (t&&newTimes[t.id]!==undefined)?Object.assign({},t,{time:fromMin(newTimes[t.id])}):t;
+    seq.forEach(function(e){
+      const Ls=lunchOf(e.kid);
+      e.cards.forEach(function(c){
+        const d=c.dur||20;
+        Ls.forEach(function(iv){ if(t<iv[1]&&t+d>iv[0]) t=iv[1]; });
+        newTimes[c.id]=t; t+=d;
+      });
+    });
+    // Each kid's OTHER movable cards re-pack around their Mom block: the in-flight buffer
+    // (earliest unchecked non-Mom card) keeps its slot; the rest follow in the order the
+    // packer laid them, stepping over the kid's Mom intervals and lunch.
+    order.forEach(function(k){
+      const momIv=momQ[k].map(function(c){
+        const s=(newTimes[c.id]!==undefined)?newTimes[c.id]:toMin(c.time);
+        return [s,s+(c.dur||20)];
+      });
+      const Ls=lunchOf(k);
+      const buf=mine[k].find(function(x){ return x.mom!=="required"; })||null;
+      const others=mine[k].filter(function(x){ return x.mom!=="required"&&x!==buf; });
+      if(!others.length) return;
+      // Push-later-only: a card keeps the packer's slot (device lanes and gaps survive)
+      // and steps later only to clear the kid's Mom block, lunch, or the card before it.
+      let p=buf?(toMin(buf.time)+(buf.dur||20)):0;
+      others.forEach(function(c){
+        const d=c.dur||20;
+        let s=Math.max(toMin(c.time),p);
+        let moved=true;
+        while(moved){ moved=false;
+          momIv.concat(Ls).forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]){ s=iv[1]; moved=true; } });
+        }
+        newTimes[c.id]=s; p=s+d;
+      });
+    });
+    if(!Object.keys(newTimes).length) return tasks;
+    return tasks.map(function(x){
+      return (x&&newTimes[x.id]!==undefined&&toMin(x.time)!==newTimes[x.id])
+        ?Object.assign({},x,{time:fromMin(newTimes[x.id])}):x;
     });
   }catch(e){ return tasks; }
 }
