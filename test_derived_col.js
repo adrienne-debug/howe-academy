@@ -45,6 +45,7 @@ function run(opts) {
     effectiveDay: t => t.day,
     DAY_DT: opts.DAY_DT === undefined ? { monday: "August 31" } : opts.DAY_DT,
     taskLessonRef: t => { const m = (t.title || "").match(/[—–]\s*(.+)$/); return m ? m[1].trim() : ""; },
+    toMin: s => { const m = /(\d+):(\d+)\s*(AM|PM)/i.exec(s || ""); if (!m) return 0; let h = +m[1] % 12; if (/pm/i.test(m[3])) h += 12; return h * 60 + +m[2]; },
     Date: Date,
   };
   vm.createContext(ctx);
@@ -203,6 +204,39 @@ console.log("\n── render wiring ──");
   // instrument that proves derived agrees with the plan (test_grid_drift).
   ok("the retired drift chip is gone from the render", !/driftChip/.test(src));
   ok("gvPlanDrift itself is kept", /function gvPlanDrift\(/.test(src));
+}
+
+console.log("\n── every card on a day claims its lesson (cap-2 double sittings, live 2026-09-03) ──");
+{
+  // Lincoln's AAS: L2-17 at 12:30 and L2-18 at 2:00 both on Friday. Keeping only the last card
+  // written lost L2-17's claim, so the plan re-laid it next week BEHIND L2-18.
+  const { col, dealt, opts: o } = run({ DAY_DT: { friday: "September 4" }, tasks: [
+    card("friday", "L2-18", { lid: "L0012", time: "2:00 PM" }),
+    card("friday", "L2-17", { lid: "L0009", time: "12:30 PM" }) ] });
+  ok("one date, both sittings claimed", dealt["2026-09-04"] && dealt["2026-09-04"].more && dealt["2026-09-04"].more.length === 1, dealt);
+  ok("the EARLIEST sitting is the cell, whatever order the cards were written", dealt["2026-09-04"].text === "L2-17" && dealt["2026-09-04"].lid === "L0009", dealt["2026-09-04"]);
+  ok("the later sitting rides in `more`", dealt["2026-09-04"].more[0].text === "L2-18" && dealt["2026-09-04"].more[0].lid === "L0012");
+  ok("the Grid draws the second sitting as the cell's extra", col.byDate["2026-09-04"].src === "card" && col.byDate["2026-09-04"].extra === "L2-18", col.byDate["2026-09-04"]);
+  ok("planMaterialize is handed BOTH claims so neither lesson is re-laid", o.dealt["2026-09-04"].lid === "L0009" && o.dealt["2026-09-04"].more[0].lid === "L0012");
+}
+console.log("\n── an end-of-week overflow card claims no day ──");
+{
+  // Editor in Chief pg35 rolled to the overflow box but still carried Wednesday as its stored
+  // day: the Grid drew it on Wednesday ahead of pg32 and dropped it from the re-lay.
+  const { col, dealt } = run({ DAY_DT: { wednesday: "September 2", thursday: "September 3" }, tasks: [
+    card("wednesday", "B2 pg 35", { lid: "L0020", _eowOverflow: true }),
+    card("thursday", "B2 pg 32", { lid: "L0017" }) ] });
+  ok("the overflow card is not a dealt day", !dealt["2026-09-02"], dealt);
+  ok("the real card still is", dealt["2026-09-03"] && dealt["2026-09-03"].lid === "L0017");
+  ok("Wednesday is not drawn from the overflow card", !col.byDate["2026-09-02"] || col.byDate["2026-09-02"].src !== "card", col.byDate["2026-09-02"]);
+}
+console.log("\n── _planDropDealt takes every sitting out of the content ──");
+{
+  const fn = src.slice(src.indexOf("function _planDropDealt("), src.indexOf("// PLANDROP_END"));
+  const c2 = { console }; vm.createContext(c2);
+  vm.runInContext(norm[0] + "\n" + fn + "\nvar __r=_planDropDealt([{lid:'L0009',text:'L2-17'},{lid:'L0012',text:'L2-18'},{lid:'L0013',text:'L2-19'},{lid:null,text:'pg 7'}],"
+    + "{'2026-09-04':{lid:'L0009',text:'L2-17',more:[{lid:'L0012',text:'L2-18'},{lid:null,text:'pg 7'}]}});", c2);
+  ok("both lid sittings and the text-only sitting are dropped; the next lesson survives", c2.__r.length === 1 && c2.__r[0].lid === "L0013", c2.__r);
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");

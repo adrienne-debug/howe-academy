@@ -23238,8 +23238,9 @@ function _planDropDealt(lessons,dealt){
   if(!dealt||!lessons||!lessons.length) return lessons||[];
   const onCards=new Set(); const byText={};
   Object.keys(dealt).forEach(function(d){ const c=dealt[d]; if(!c) return;
-    if(c.lid) onCards.add(c.lid);
-    else if(c.text){ const k=_lidNorm(c.text); byText[k]=(byText[k]||0)+1; } });
+    [c].concat(c.more||[]).forEach(function(x){      // every sitting on the day, not just the first
+      if(x.lid) onCards.add(x.lid);
+      else if(x.text){ const k=_lidNorm(x.text); byText[k]=(byText[k]||0)+1; } }); });
   return lessons.filter(function(l){
     if(l&&l.lid&&onCards.has(l.lid)) return false;
     const k=_lidNorm(l&&l.text); if(byText[k]>0){ byText[k]--; return false; }
@@ -23286,7 +23287,8 @@ function planMaterialize(kid,sk,form,opts){
     // ISO week's tpw is charged for the cards it already holds (via plan._wkUsed), so a
     // partially-dealt week gets only the difference. targetDate mode has no tpw to charge —
     // rule (a) still orders it.
-    Object.keys(_dealt).forEach(function(d){ if(!_dealtMax||d>_dealtMax) _dealtMax=d; const wk=_pjWeekKey(d); _dealtWk[wk]=(_dealtWk[wk]||0)+1; });
+    Object.keys(_dealt).forEach(function(d){ if(!_dealtMax||d>_dealtMax) _dealtMax=d; const wk=_pjWeekKey(d);
+      _dealtWk[wk]=(_dealtWk[wk]||0)+1+(((_dealt[d]||{}).more||[]).length); });   // two sittings on a day charge two
   }
   // Calendar: existing future rows + a dense extension past the grid end (weekdays; off days
   // via the calendar; existing dates never minted twice) — dayNums are minted later, in date
@@ -24862,10 +24864,26 @@ function gvDealtDates(kid,sk){
     weekData.tasks.forEach(function(t){
       if(!t||t.who!==kid||t.subjectKey!==sk) return;
       if(String(t.id||"").endsWith("_c")) return;
+      // End-of-week overflow is not a sitting on any day: it lives in the Mom-only box and
+      // rolls into next week in sequence. Claiming its stored day drew Editor in Chief pg35
+      // on Wednesday ahead of pg32 (live 2026-09-03), and dropping it from the content made
+      // it vanish from the column. Out of the claims, the projection lays it first next week.
+      if(t._eowOverflow) return;
       const dn=(typeof effectiveDay==="function")?effectiveDay(t):t.day;
       const ds=(typeof DAY_DT!=="undefined"&&DAY_DT)?DAY_DT[dn]:null; if(!ds) return;
       const d=new Date(ds+", "+yr); if(isNaN(d.getTime())) return;
-      out[_gvIso(d)]={text:((typeof taskLessonRef==="function"&&taskLessonRef(t))||t.title||""),id:t.id,lid:t.lid||null};
+      const iso=_gvIso(d);
+      const rec={text:((typeof taskLessonRef==="function"&&taskLessonRef(t))||t.title||""),id:t.id,lid:t.lid||null,
+        min:(typeof toMin==="function"&&t.time)?(toMin(t.time)||0):0};
+      // EVERY card on a day claims its lesson — a cap-2 subject deals two sittings on one day.
+      // Keeping only the last card written lost L2-17's Friday claim, so the plan re-laid it
+      // next week BEHIND L2-18 (live 2026-09-03; Wordsmith pg53-54 the same on Thursday).
+      // The earliest sitting is the cell; later ones ride in `more` (drawn as the second
+      // sitting) and every one of them comes out of the content.
+      const cur=out[iso];
+      if(!cur){ out[iso]=rec; return; }
+      if(rec.min<cur.min){ rec.more=[cur].concat(cur.more||[]); delete cur.more; out[iso]=rec; }
+      else { cur.more=(cur.more||[]).concat([rec]); cur.more.sort(function(a,b){ return a.min-b.min; }); }
     });
   }catch(e){}
   return out;
@@ -24897,6 +24915,8 @@ function gvDerivedColumn(kid,sk){
   // collide with a projected one — no overlap to reconcile, nothing to flag.
   Object.keys(dealt).forEach(function(iso){
     byDate[iso]={text:dealt[iso].text,lid:dealt[iso].lid,src:"card"};
+    const _more=dealt[iso].more||[];
+    if(_more.length) byDate[iso].extra=_more.map(function(m){ return m.text; }).join(" · ");
   });
   return {byDate:byDate,dealt:dealt,stats:res.stats||null,warnings:res.warnings||[]};
 }
