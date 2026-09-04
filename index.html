@@ -40567,9 +40567,11 @@ function _gwPlanDatesInner(kid,sk,liveDates){
 // Checked/claimed cards (the kid did the work) and STARTED cards (a past day this week, or
 // today at/before now — the card is locked where it is) each consume one lesson. Distinct by
 // lesson ref (a _c carry + fresh copy = ONE). Returns the count; `dates` and `dayData` are
-// edited in place: a done card frees a slot from the FRONT of the serving list so cadence
-// holds; a started card frees exactly ITS OWN date when that date is in the list (a cascaded
-// card on an off-pattern day holds no slot, so nothing else may be dropped for it).
+// edited in place: every consumed card frees exactly ITS OWN date when that date is in the
+// serving list, and nothing otherwise. The old rule dropped a done card's slot from the FRONT
+// of the list "so cadence holds" — but a done card on an off-pattern day (cascaded there) holds
+// no slot of its own, so the front-drop ate a real pattern day: Ellis's checked Thursday
+// Editor in Chief made the re-deal drop Friday's Pg 52–54 (live 2026-09-03).
 function _gwWeekConsumed(kid,sk,dates,dayData,seen){
   const DAYS=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
   const ti=DAYS.indexOf(typeof _todayDay==="string"?_todayDay:""); const _now=new Date(); const nowMin=_now.getHours()*60+_now.getMinutes();
@@ -40579,7 +40581,7 @@ function _gwWeekConsumed(kid,sk,dates,dayData,seen){
   const isoOf=t=>{ try{ const ds=(typeof DAY_DT==="object"&&DAY_DT)?DAY_DT[t.day]:null; if(!ds) return null;
     const d=new Date(ds+", "+_now.getFullYear()); if(isNaN(d.getTime())) return null;
     return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }catch(e){ return null; } };
-  seen=seen||{}; let front=0;                                  // filled in place: the caller's serve loop skips these refs
+  seen=seen||{};                                               // filled in place: the caller's serve loop skips these refs
   const freeDate=dt=>{ if(dayData[dt]&&dayData[dt][kid]) delete dayData[dt][kid][sk]; };
   weekData.tasks.forEach(t=>{
     if(!t||t.who!==kid||t.subjectKey!==sk) return;
@@ -40588,14 +40590,11 @@ function _gwWeekConsumed(kid,sk,dates,dayData,seen){
     if(!done&&!started) return;
     const ref=taskLessonRef(t)||("#"+t.id);
     if(seen[ref]) return; seen[ref]=true;
-    if(done){ front++; return; }
+    // Its own slot leaves the serving list AND dayData — the fill loop only visits `dates`,
+    // so a slot left behind would keep its raw grid-cell text and be laid as a phantom task.
     const iso=isoOf(t); const i=iso?dates.indexOf(iso):-1;
     if(i>=0){ dates.splice(i,1); freeDate(iso); }
   });
-  // Drop the done cards' slots from the FRONT of the serving list AND from dayData — the fill
-  // loop only visits `dates`, so a slot left behind would keep its raw grid-cell text and
-  // gwBuildDayTasks would lay it as a phantom task.
-  if(front>0) dates.splice(0,Math.min(front,dates.length)).forEach(freeDate);
   return Object.keys(seen).length;
 }
 function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){

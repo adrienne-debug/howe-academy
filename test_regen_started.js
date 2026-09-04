@@ -70,12 +70,16 @@ console.log("\n── a card later TODAY is not started ──");
   const r = run([card("L0011", "thursday", "4:00 PM", "L2-16")], ["2026-09-03", "2026-09-04"]);
   ok("4:00 PM card at 3:00 PM consumes nothing", r.n === 0 && r.dates.length === 2, r);
 }
-console.log("\n── a checked card frees a slot from the FRONT ──");
+console.log("\n── a checked card frees exactly ITS OWN slot ──");
 {
   const r = run([card("L0011", "wednesday", "1:00 PM", "L2-16")], ["2026-09-02", "2026-09-04"], { lincoln_lincoln__aas_L0011: "1:20 PM Sep 2" });
   ok("one consumed", r.n === 1);
-  ok("the front slot (Wednesday) is dropped, Friday kept", r.dates.join() === "2026-09-04", r.dates);
+  ok("its own slot (Wednesday) is dropped, Friday kept", r.dates.join() === "2026-09-04", r.dates);
   ok("Wednesday's dayData entry cleared so no phantom is laid", r.dayData["2026-09-02"].lincoln.aas === undefined && r.dayData["2026-09-02"].lincoln.other === "x");
+  // Ellis's live case: the checked card sat on an OFF-pattern day (cascaded to Thursday); the old
+  // front-drop took Friday's slot for it and the re-deal removed Friday's Pg 52–54.
+  const r2 = run([card("L0011", "thursday", "11:49 AM", "Pg 49–51")], ["2026-09-04"], { lincoln_lincoln__aas_L0011: "12:10 PM Sep 3" });
+  ok("checked card on an off-pattern day consumes its lesson but frees NO slot — Friday stays", r2.n === 1 && r2.dates.join() === "2026-09-04", r2.dates);
 }
 console.log("\n── a started card on a PATTERN day frees exactly its own date ──");
 {
@@ -89,13 +93,13 @@ console.log("\n── claimed counts like checked; overflow and carry twins ─�
   const r = run([card("L0011", "tuesday", "1:00 PM", "L2-16"), card("L0011_c", "thursday", "2:00 PM", "L2-16"), card("L0020", "wednesday", "1:00 PM", "L2-25", { _eowOverflow: true })],
     ["2026-09-01", "2026-09-04"], {}, { lincoln_lincoln__aas_L0011: true });
   ok("claimed card + its carry twin = ONE lesson; overflow ignored", r.n === 1, r.n);
-  ok("one front slot dropped", r.dates.join() === "2026-09-04", r.dates);
+  ok("the claimed card's own Tuesday slot dropped", r.dates.join() === "2026-09-04", r.dates);
 }
 console.log("\n── mixed: one done + one started ──");
 {
   const r = run([card("L0011", "tuesday", "1:00 PM", "L2-16"), card("L0009", "thursday", "2:40 PM", "L2-17")], ["2026-09-01", "2026-09-04"], { lincoln_lincoln__aas_L0011: "1:20 PM Sep 1" });
   ok("two consumed", r.n === 2, r.n);
-  ok("only the done card's slot is dropped from the front; Friday stays for the NEXT lesson", r.dates.join() === "2026-09-04", r.dates);
+  ok("only the done card's own Tuesday slot is dropped; Friday stays for the NEXT lesson", r.dates.join() === "2026-09-04", r.dates);
 }
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
