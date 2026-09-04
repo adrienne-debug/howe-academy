@@ -54,6 +54,7 @@ function run(o) {
     Object, Array, String, Number, parseInt, isNaN, Math, JSON, Date, RegExp,
   };
   Object.defineProperty(ctx, "_todayDay", { get: () => "thursday" });
+  if (o.effectiveDay) ctx.effectiveDay = o.effectiveDay;
   vm.createContext(ctx);
   vm.runInContext(HELPERS, ctx); vm.runInContext(BLOCK, ctx);
   vm.runInContext("momLoop=" + JSON.stringify(o.momLoop || { cursor: 0 }) + ";", ctx);
@@ -168,6 +169,21 @@ console.log("\n── it derives, it does not write ──");
     const twice = r.call("mlQueueLay(" + JSON.stringify(r.laid) + ")").map(t => t.time).join("|");
     return once === twice;
   })());
+}
+
+
+console.log("\n── a carried-forward Mom card joins Mom's queue (09-04) ──");
+{
+  // lucy: buffer 10:00, one Mom card today 12:30, and a leftover Mom card STORED on wednesday
+  // that the schedule shows today. It must chain into her block, not vanish from the queue.
+  const buf = card("lucy", "10:00 AM", 20, "none", "notebook");
+  const m1 = card("lucy", "12:30 PM", 15, "required");
+  const old = Object.assign(card("lucy", "11:00 AM", 20, "required"), { day: "wednesday" });
+  const r = run({ tasks: [buf, m1, old], momLoop: { cursor: 1, order: ["julian", "lucy", "lincoln", "ellis"] },
+    effectiveDay: t => (t.day === "wednesday" ? "thursday" : t.day) });
+  ok("the buffer never moves", r.at(buf.id) === "10:00 AM");
+  ok("the carried card is laid in her block (earliest stored time first)", r.at(old.id) === "10:20 AM", r.at(old.id));
+  ok("today's own Mom card chains behind it", r.at(m1.id) === "10:40 AM", r.at(m1.id));
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");

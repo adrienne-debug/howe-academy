@@ -227,5 +227,26 @@ console.log("\n── the BEHIND marker (her design 2026-09-03): who owes Mom th
   r7.call("mlSetBehindScope('maybe')"); ok("a valid scope sticks (in memory; db is null here)", r7.call("mlBehindScope()") === "maybe");
 }
 
+
+console.log("\n── a carried-forward Mom card is TODAY's work (found 2026-09-02, built 09-04) ──");
+{
+  // lucy's Mom card is STORED on friday (last week's leftover) but the schedule shows it today
+  // (effectiveDay rolls unfinished work forward). The loop used to compare the stored day.
+  const r = run({ kids: ["lucy", "lincoln"], cards: { lucy: 0, lincoln: 1 } });
+  r.ctx.effectiveDay = t => (t.day === "friday" ? "monday" : t.day);
+  r.tasks.push({ id: "lucy_old", who: "lucy", day: "friday", time: "10:30 AM", mom: "required", title: "LOE — B Lesson 47" });
+  ok("mlRemaining sees the carried card", r.call("mlRemaining('lucy').length") === 1);
+  ok("it is her next card", r.call("(mlNextCard('lucy')||{}).id") === "lucy_old");
+  ok("the strip counts it", r.call("mlStatus().find(x=>x.kid==='lucy').left") === 1);
+  ok("and the loop hands Mom to lucy first (cursor 0)", r.call("mlNow().kid") === "lucy");
+  // a card stored on a FUTURE day is still not today's
+  r.tasks.push({ id: "lucy_fut", who: "lucy", day: "tuesday", time: "10:30 AM", mom: "required", title: "LOE — B Lesson 48" });
+  ok("tomorrow's card is not counted", r.call("mlRemaining('lucy').length") === 1);
+  // without effectiveDay (older harness worlds) the stored day still rules
+  const r2 = run({ kids: ["lucy"], cards: { lucy: 0 } });
+  r2.tasks.push({ id: "lucy_old", who: "lucy", day: "friday", time: "10:30 AM", mom: "required", title: "x" });
+  ok("falls back to the stored day when effectiveDay is absent", r2.call("mlRemaining('lucy').length") === 0);
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
