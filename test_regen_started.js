@@ -42,8 +42,8 @@ function run(tasks, dates, checked, claimed) {
   vm.createContext(ctx);
   const ds = dates.slice();
   ctx.__dates = ds; ctx.__dd = dayData;
-  vm.runInContext(body + "\nvar __n=_gwWeekConsumed('lincoln','aas',__dates,__dd);", ctx);
-  return { n: ctx.__n, dates: ds, dayData };
+  vm.runInContext(body + "\nvar __seen={}; var __n=_gwWeekConsumed('lincoln','aas',__dates,__dd,__seen);", ctx);
+  return { n: ctx.__n, dates: ds, dayData, seen: ctx.__seen };
 }
 const card = (id, day, time, ref, extra) => Object.assign({ id: "lincoln_lincoln__aas_" + id, who: "lincoln", subjectKey: "aas", day, time, title: "📄 AAS Lesson — " + ref }, extra || {});
 
@@ -55,6 +55,10 @@ console.log("\n── her live case: started today, off-pattern day ──");
   ok("the started card consumes ONE lesson (L2-16)", r.n === 1, r.n);
   ok("Friday's slot is NOT dropped for it — Thursday held no slot", r.dates.join() === "2026-09-04", r.dates);
   ok("dayData for Friday still holds the subject", r.dayData["2026-09-04"].lincoln.aas === "TMP");
+  // The serve loop skips lessons BY TEXT through the caller's set — the first live push
+  // returned only a count and left that set empty, so generation threw for every plan-backed
+  // subject and the re-deal silently did nothing (2026-09-03, 9:10 PM).
+  ok("the caller's seen-set is filled with the started lesson's ref", r.seen && r.seen["L2-16"] === true, r.seen);
 }
 console.log("\n── future unchecked cards consume nothing ──");
 {
