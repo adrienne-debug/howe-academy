@@ -25320,6 +25320,11 @@ function fbRender(){
   h+='</div>';
   if(!fbOpen) return h+'</div>';
 
+  // ── the loop's behind marker (owed Mom-required lessons ÷ weekly ask), so the ring's order is explainable here ──
+  try{ if(typeof mlBehindAll==="function"){ const b=mlBehindAll()||{}; const ks=Object.keys(b);
+    if(ks.length) h+='<div style="font-size:11px;color:#3730a3;margin-top:8px"><b>Behind</b> (owed '+((typeof mlBehindScope==="function"&&mlBehindScope()!=="required")?(mlBehindScope()==="all"?"all-subject":"Mom-required + maybe"):"Mom-required")+' lessons ÷ asked per week): '
+      +ks.map(function(k){ return esc(cap(k))+' '+b[k].pct+'%'+(b[k].owed?' <span style="color:#6b7280">('+b[k].owed+' of '+b[k].asked+'/wk)</span>':''); }).join(' · ')+'</div>'; } }catch(e){}
+
   // ── her three standing checks, first: these are breakages, not imbalances ──
   if(checks.length){
     h+='<div style="font-size:10px;font-weight:800;letter-spacing:0.4px;text-transform:uppercase;color:#b91c1c;margin-top:10px">Check these</div>';
@@ -34887,11 +34892,81 @@ function mlNextCard(kid){
     return r.slice().sort(function(a,b){ return toMin(a.time)-toMin(b.time); })[0];
   }catch(e){ return null; }
 }
+// ── BEHIND MARKER — her design 2026-09-03 ─────────────────────────────────────────────────
+// "owed flags amount versus how much work the kid has, to get a percentage; when everyone is
+// caught up use the loop logic, when not, the kid who owes the most percentage-wise."
+// behind% = owed lessons ÷ lessons asked per week, on MOM-REQUIRED subjects only (her call —
+// the loop is Mom's time; a kid behind on Reading Eggs does not need more of her). A Mom-gated
+// scope setting widens it: "required" (default) | "maybe" (+ may-need-Mom) | "all".
+// owed = plan-backed lessons dated STRICTLY BEFORE today and not done (today's lesson is not
+// owed yet — counting it read Lucy 100% before she had started). asked/wk = the subject's tpw.
+// Over 100% is honest (more than a week behind); nothing asked → 0% (Julian, notebooks only).
+// Measured live 2026-09-03 before her re-lays: Ellis 200 · Lincoln 150 · Lucy 78 · Julian 0.
+// Ring effect: if anyone is above zero, today's scan order is highest-first (ties keep the
+// stored order) and the cursor points at that kid; all zero → cursor/overnight/borrow/hold
+// exactly as before. Her "Start the loop on X" tap today still wins over the marker, and a
+// started session (the hold) still wins over everything. Derived, memoized, writes nothing.
+const ML_BEHIND_SCOPES=["required","maybe","all"];
+function mlBehindScope(){ const v=momLoop&&momLoop.behindScope; return ML_BEHIND_SCOPES.indexOf(v)>=0?v:"required"; }
+function _mlInScope(sub){ const sc=mlBehindScope(); const m=(sub&&sub.mom)||"none"; return sc==="all"||m==="required"||(sc==="maybe"&&m==="maybe"); }
+let _mlBehindMemo=null;
+function mlBehindAll(){
+  try{
+    const cd=(typeof currData!=="undefined"&&currData)?currData:null; if(!cd||!cd.subjects) return {};
+    const today=(typeof cbTodayISO==="function")?cbTodayISO():_mlIsoToday();
+    const key=today+"|"+(cd.lastEdit||"")+"|"+mlBehindScope()+"|"+mlOrder().join(",")+"|"+_mlDoneStamp(cd);
+    if(_mlBehindMemo&&_mlBehindMemo.key===key) return _mlBehindMemo.val;
+    const val={};
+    mlOrder().forEach(function(kid){ val[kid]=_mlBehindCalc(cd,kid,today); });
+    _mlBehindMemo={key:key,val:val};
+    return val;
+  }catch(e){ return {}; }
+}
+function mlBehind(kid){ return (mlBehindAll()||{})[kid]||{owed:0,asked:0,pct:0}; }
+function _mlIsoToday(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function _mlDoneStamp(cd){ let n=0; try{ const dn=cd.done||{}; Object.keys(dn).forEach(function(k){ Object.keys(dn[k]||{}).forEach(function(sk){ n+=Object.keys(dn[k][sk]||{}).length; }); }); }catch(e){} return n; }
+function _mlBehindCalc(cd,kid,today){
+  const subs=(cd.subjects||{})[kid]||{}; const L=(cd.lessons||{})[kid]||{};
+  const norm=function(t){ return String(t==null?"":t).replace(/[–—−]/g,"-").replace(/\s+/g," ").trim().toLowerCase(); };
+  let owed=0, asked=0;
+  Object.keys(subs).forEach(function(sk){
+    const s=subs[sk]||{}; if(s.paused||!_mlInScope(s)) return;
+    // plan-backed only: done is known BY LESSON ID, so an owed cell is a fact, not a guess
+    const ids=s.lessonIds, seq=s.lessonSeq;
+    if(!s.planId||!s.doneImportedAt||!Array.isArray(ids)||!Array.isArray(seq)||ids.length!==seq.length) return;
+    const done={}; Object.keys((((cd.done||{})[kid]||{})[sk])||{}).forEach(function(id){ done[id]=1; });
+    asked+=parseInt((s.pacing&&s.pacing.tpw)||s.timesPerWeek,10)||0;
+    // cells before today, in date order, mapped to ids the way the Grid maps them (each text
+    // spends the next unused occurrence in the list)
+    const cells=[]; Object.keys(L).forEach(function(dn){ const l=L[dn]; if(!l||!l.date||l.date>=today) return; const v=l[sk]; if(v&&v!=="—"&&v!=="nan"&&String(v).trim()) cells.push({date:l.date,text:String(v)}); });
+    cells.sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:0; });
+    const pool={}; seq.forEach(function(t,i){ const k=norm(t); (pool[k]=pool[k]||[]).push(ids[i]); });
+    cells.forEach(function(c){ const q=pool[norm(c.text)]; const id=(q&&q.length)?q.shift():null; if(id&&!done[id]) owed++; });
+  });
+  return {owed:owed,asked:asked,pct:asked?Math.round(100*owed/asked):0};
+}
+// The ring the loop scans TODAY: her tap wins, then the behind marker, then the stored order.
+function _mlScan(){
+  const base=mlOrder(), n=base.length; if(!n) return {order:base,cur:0,behind:false};
+  const cur=mlCursor();
+  if(momLoop&&momLoop.cursorSetOn===_mlDayStamp()) return {order:base,cur:cur,behind:false};
+  const b=mlBehindAll(); let any=false; base.forEach(function(k){ if(b[k]&&b[k].pct>0) any=true; });
+  if(!any) return {order:base,cur:cur,behind:false};
+  const order=base.slice().sort(function(x,y){ const px=(b[x]||{}).pct||0, py=(b[y]||{}).pct||0; return (py-px)||(base.indexOf(x)-base.indexOf(y)); });
+  return {order:order,cur:0,behind:true};
+}
+function mlSetBehindScope(v){
+  if(!momHere()&&!adminPinUnlocked) return;
+  if(ML_BEHIND_SCOPES.indexOf(v)<0) return;
+  momLoop=Object.assign({},momLoop,{behindScope:v}); _mlBehindMemo=null;
+  if(db) db.ref("config/momLoop/behindScope").set(v);
+  renderAll();
+}
 // Who Mom should be with right now, and why. Scanning FROM the cursor is what makes a
 // borrowed turn temporary: the cursor kid is still first in line the moment they are ready.
 function mlNow(){
-  const order=mlOrder(), n=order.length; if(!n) return null;
-  const cur=mlCursor(), cursorKid=order[cur];
+  const _sc=_mlScan(); const order=_sc.order, n=order.length; if(!n) return null;
+  const cur=_sc.cur, cursorKid=order[cur];
   // A started session outranks the scan: the kid who checked the card ahead of their Mom
   // card keeps her, even if the kid whose planned turn it was becomes ready mid-session.
   // A pause still hands Mom on (the hold resumes when the break ends).
@@ -34912,11 +34987,12 @@ function mlNow(){
 }
 // Everyone's state, for the strip. Order is the loop order so the queue reads as a queue.
 function mlStatus(){
-  const now=mlNow();
-  return mlOrder().map(function(k){
+  const now=mlNow(); const b=mlBehindAll()||{};
+  return _mlScan().order.map(function(k){
     return {kid:k,
       state: mlDone(k)?"done" : (!mlReady(k)?"routine" : (mlPaused(k)?"paused" : ((now&&now.kid===k)?"withMom":"waiting"))),
       left: mlRemaining(k).length,
+      behind: (b[k]&&b[k].pct)||0,
       isCursor: k===(now&&now.cursorKid)};
   });
 }
@@ -34966,7 +35042,8 @@ function mlStripHTML(){
         +';border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700"'
         +(x.isCursor?' title="the loop is on this kid"':'')+'>'
         +(x.isCursor?"&#9656; ":"")+cap(x.kid)
-        +'<span style="font-weight:600;opacity:.85">'+c[2]+(x.left?(" · "+x.left+" left"):"")+'</span></span>';
+        +'<span style="font-weight:600;opacity:.85">'+c[2]+(x.left?(" · "+x.left+" left"):"")+'</span>'
+        +(x.behind>0?'<span title="owed Mom-required lessons ÷ lessons asked per week" style="background:#fef3c7;color:#92400e;border-radius:8px;padding:0 5px;font-size:9.5px;font-weight:800">behind '+x.behind+'%</span>':'')+'</span>';
       if(i<st.length-1) h+='<span style="color:#a5b4fc;font-size:11px">&rarr;</span>';
     });
     h+='</div>';
@@ -34981,7 +35058,18 @@ function mlStripHTML(){
       h+='<button onclick="mlMove(\''+k+'\',-1)"'+(i===0?' disabled style="opacity:.25;border:none;background:none;cursor:default"':' style="border:none;background:none;cursor:pointer;color:#7c3aed"')+'>&#9664;</button>';
       h+='<button onclick="mlMove(\''+k+'\',1)"'+(i===mlOrder().length-1?' disabled style="opacity:.25;border:none;background:none;cursor:default"':' style="border:none;background:none;cursor:pointer;color:#7c3aed"')+'>&#9654;</button>';
     });
-    h+='</div></div>';
+    h+='</div>';
+    // the behind marker's scope (her 2026-09-03 setting): which subjects' owed lessons count
+    {
+      const sc=mlBehindScope(); const any=mlStatus().some(function(x){ return x.behind>0; });
+      h+='<div style="margin-top:6px;display:flex;gap:5px;flex-wrap:wrap;align-items:center">';
+      h+='<span style="font-size:10.5px;color:#6d28d9">'+(any?'Behind kids go first today. ':'Nobody is behind — plain loop order. ')+'Behind counts:</span>';
+      [["required","Mom-required"],["maybe","+ may need Mom"],["all","all subjects"]].forEach(function(o){
+        h+='<button onclick="mlSetBehindScope(\''+o[0]+'\')" style="border:1px solid '+(sc===o[0]?'#7c3aed':'#ddd6fe')+';background:'+(sc===o[0]?'#7c3aed':'#fff')+';color:'+(sc===o[0]?'#fff':'#5b21b6')+';border-radius:8px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+o[1]+'</button>';
+      });
+      h+='</div>';
+    }
+    h+='</div>';
     return h;
   }catch(e){ return ""; }
 }
@@ -35008,8 +35096,8 @@ function mlStripHTML(){
 function mlQueueLay(tasks){
   try{
     if(!Array.isArray(tasks)||!tasks.length) return tasks;
-    const order=mlOrder(), n=order.length; if(!n) return tasks;
-    const cur=mlCursor();
+    const _sc=_mlScan(); const order=_sc.order, n=order.length; if(!n) return tasks;
+    const cur=_sc.cur;
     const now=mlNow();
     const isToday=function(t){ return t&&t.day===_todayDay; };
     const movable=function(t){

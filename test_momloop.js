@@ -149,16 +149,82 @@ console.log("\n── it decides, it does not reschedule ──");
   // Mom's cursor override. Still never a card.
   // 2026-09-02 added cursorSetOn: the day stamp on Mom's "Start the loop on X" tap, so her
   // tap beats the derived end-of-day capture today only. Written on the same Mom-gated tap.
-  ok("it writes only the order, the cursor + its tap-day stamp, and the hold",
-    (BLOCK.match(/db\.ref\(/g) || []).length === 6
+  // 2026-09-03 added behindScope: the behind marker's subject scope (required | maybe | all),
+  // one Mom-gated tap on the strip. Still never a card.
+  ok("it writes only the order, the cursor + its tap-day stamp, the hold, and the behind scope",
+    (BLOCK.match(/db\.ref\(/g) || []).length === 7
       && /config\/momLoop\/order/.test(BLOCK) && /config\/momLoop\/cursor/.test(BLOCK)
-      && /config\/momLoop\/cursorSetOn/.test(BLOCK)
+      && /config\/momLoop\/cursorSetOn/.test(BLOCK) && /config\/momLoop\/behindScope/.test(BLOCK)
       && (BLOCK.match(/WK\+"\/momHold"/g) || []).length === 3);
-  ok("the setters are Mom-gated", (BLOCK.match(/if\(!momHere\(\)&&!adminPinUnlocked\) return;/g) || []).length === 3);
+  ok("the setters are Mom-gated", (BLOCK.match(/if\(!momHere\(\)&&!adminPinUnlocked\) return;/g) || []).length === 4);
   const R = src.indexOf("function mlStripHTML"), R2 = src.indexOf("// MOMLOOP_END");
   const strip = R >= 0 ? src.slice(R, R2) : "";
   ok("the strip is Mom-gated too", /if\(!momHere\(\)&&!adminPinUnlocked\) return "";/.test(strip));
   ok("it only renders on today", /if\(day===_todayDay\)\{ try\{ h\+=mlStripHTML\(\); \}catch\(e\)\{\} \}/.test(src));
+}
+
+
+console.log("\n── the BEHIND marker (her design 2026-09-03): who owes Mom the most goes first ──");
+{
+  // Plan-backed subjects with lessons dated before today. Today is 2026-09-07 (a Monday) in
+  // this world — the block reads cbTodayISO when present.
+  const mk = (kid, sk, mom, tpw, cellsBefore, doneN) => ({
+    subj: { display: sk, mom, planId: kid + "__" + sk, doneImportedAt: "x", pacing: { mode: "timesPerWeek", tpw },
+            lessonSeq: ["L1", "L2", "L3", "L4", "L5", "L6"], lessonIds: ["A1", "A2", "A3", "A4", "A5", "A6"] },
+    cells: cellsBefore, done: doneN });
+  function world(spec, scope) {
+    const currData = { subjects: {}, lessons: {}, done: {}, lastEdit: "e1" };
+    let dn = 1;
+    Object.keys(spec).forEach(kid => { currData.subjects[kid] = {}; currData.lessons[kid] = {}; currData.done[kid] = {};
+      Object.keys(spec[kid]).forEach(sk => { const w = spec[kid][sk]; currData.subjects[kid][sk] = w.subj;
+        const d = {}; for (let i = 0; i < w.done; i++) d[w.subj.lessonIds[i]] = { day: "2026-08-20" }; currData.done[kid][sk] = d;
+        w.cells.forEach((text, i) => { const row = { date: "2026-09-0" + (1 + i), week: "Wk" }; row[sk] = text; currData.lessons[kid][dn++] = row; }); }); });
+    const r = run({ kids: ["lucy", "lincoln", "ellis"], momLoop: Object.assign({ order: ["lucy", "lincoln", "ellis"], cursor: 0 }, scope ? { behindScope: scope } : {}) });
+    r.ctx.currData = currData; r.ctx.cbTodayISO = () => "2026-09-07";
+    return r;
+  }
+  // lincoln: EIC (required, 5/wk) — cells L1..L4 before today, L1 done → 3 owed of 5 = 60%
+  // ellis:   EIC (required, 3/wk) — cells L1..L4, none done → 4 owed of 3 = 133%
+  //          plus Reading Eggs (none, 1/wk) — 2 owed: OUT of scope by default
+  // lucy:    LOE (required, 2/wk) — L1,L2 both done → 0%
+  const spec = {
+    lincoln: { eic: mk("lincoln", "eic", "required", 5, ["L1", "L2", "L3", "L4"], 1) },
+    ellis: { eic: mk("ellis", "eic", "required", 3, ["L1", "L2", "L3", "L4"], 0), eggs: mk("ellis", "eggs", "none", 1, ["L1", "L2"], 0) },
+    lucy: { loe: mk("lucy", "loe", "required", 2, ["L1", "L2"], 2) },
+  };
+  const r = world(spec);
+  const b = r.call("mlBehindAll()");
+  ok("lincoln 3 owed of 5/wk = 60%", b.lincoln && b.lincoln.owed === 3 && b.lincoln.asked === 5 && b.lincoln.pct === 60, b.lincoln);
+  ok("ellis 4 owed of 3/wk = 133% — over 100 is honest", b.ellis && b.ellis.owed === 4 && b.ellis.pct === 133, b.ellis);
+  ok("lucy all done = 0%", b.lucy && b.lucy.pct === 0, b.lucy);
+  ok("Reading Eggs (mom: none) is NOT counted under the default scope", b.ellis.asked === 3, b.ellis);
+  const sc = r.call("_mlScan()");
+  ok("today's ring re-sorts highest-first: ellis, lincoln, lucy", JSON.stringify(sc.order) === JSON.stringify(["ellis", "lincoln", "lucy"]) && sc.cur === 0 && sc.behind === true, sc);
+  const now = r.call("mlNow()");
+  ok("mlNow hands Mom to ellis first", now && now.kid === "ellis" && now.cursorKid === "ellis" && !now.borrowed, now);
+  const st = r.call("mlStatus()");
+  ok("the strip lists the ring in that order and carries behind%", st.map(x => x.kid + ":" + x.behind).join() === "ellis:133,lincoln:60,lucy:0", st);
+  // her tap today wins over the marker
+  const r2 = world(spec); r2.call("momLoop.cursor=0; momLoop.cursorSetOn=_mlDayStamp();");
+  const sc2 = r2.call("_mlScan()");
+  ok("'Start the loop on X' today beats the marker — stored order, her cursor", JSON.stringify(sc2.order) === JSON.stringify(["lucy", "lincoln", "ellis"]) && sc2.cur === 0 && !sc2.behind, sc2);
+  // scope widened to all → Reading Eggs counts (ellis 6 owed of 4/wk = 150)
+  const r3 = world(spec, "all"); const b3 = r3.call("mlBehindAll()");
+  ok("scope 'all' folds Reading Eggs in: ellis 6 of 4 = 150%", b3.ellis && b3.ellis.owed === 6 && b3.ellis.asked === 4 && b3.ellis.pct === 150, b3.ellis);
+  // everyone caught up → plain loop, cursor as stored
+  const spec0 = { lincoln: { eic: mk("lincoln", "eic", "required", 5, ["L1", "L2"], 2) }, ellis: { eic: mk("ellis", "eic", "required", 3, [], 0) }, lucy: { loe: mk("lucy", "loe", "required", 2, ["L1"], 1) } };
+  const r4 = world(spec0); r4.call("momLoop.cursor=1;");
+  const sc4 = r4.call("_mlScan()");
+  ok("nobody behind → stored order and the stored cursor (lincoln)", JSON.stringify(sc4.order) === JSON.stringify(["lucy", "lincoln", "ellis"]) && sc4.cur === 1 && !sc4.behind, sc4);
+  // a cell dated TODAY is not owed yet
+  const spec5 = { lincoln: { eic: mk("lincoln", "eic", "required", 5, [], 0) }, ellis: { eic: mk("ellis", "eic", "required", 3, [], 0) }, lucy: { loe: mk("lucy", "loe", "required", 2, [], 0) } };
+  const r5 = world(spec5); r5.call("currData.lessons.lucy[99]={date:'2026-09-07',loe:'L1'};");
+  ok("today's own lesson does not count as owed", r5.call("mlBehind('lucy').owed") === 0);
+  // no plan data at all (the other test worlds) → zeros, marker inert
+  const r6 = run({}); ok("without curriculum data the marker is inert (0%, stored order)", r6.call("mlBehind('lucy').pct") === 0 && r6.call("_mlScan().behind") === false);
+  // setter: Mom-gated, validated, writes the one path
+  const r7 = world(spec); r7.call("mlSetBehindScope('bogus')"); ok("an unknown scope is refused", r7.call("mlBehindScope()") === "required");
+  r7.call("mlSetBehindScope('maybe')"); ok("a valid scope sticks (in memory; db is null here)", r7.call("mlBehindScope()") === "maybe");
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");
