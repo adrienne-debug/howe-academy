@@ -26945,7 +26945,7 @@ function renderCurrGrid(el){
   if(pastCount) h+='<button onclick="gvTogglePast()" style="padding:4px 12px;border-radius:14px;border:1px solid var(--border);background:'+(gvShowPast?'var(--header)':'#fff')+';color:'+(gvShowPast?'#fff':'var(--muted)')+';font-size:11px;font-weight:700;cursor:pointer">'+(gvShowPast?'Hide':'Show')+' '+pastCount+' past days</button>';
   h+='<button onclick="gvToggleSelMode()" style="padding:4px 12px;border-radius:14px;border:1px solid '+(gvSelMode?'transparent':'var(--border)')+';background:'+(gvSelMode?col:'#fff')+';color:'+(gvSelMode?'#fff':'var(--muted)')+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(gvSelMode?'✕ Done selecting':'☑︎ Select cells')+'</button>';
   if(gvSelUndo&&!gvSelMode) h+='<button onclick="gvSelUndoApply()" style="padding:4px 12px;border-radius:14px;border:1px solid #d97706;background:#fffbeb;color:#b45309;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">↩ Undo last</button>';
-  if(!gvSelMode) h+='<span style="font-size:11px;color:var(--muted)">'+dayNums.length+' days × '+cols.length+' subjects · tap a cell to edit — Enter saves, blank clears · tap a column name for the Builder</span>';
+  if(!gvSelMode) h+='<span style="font-size:11px;color:var(--muted)">__GV_DAYS__ days × '+cols.length+' subjects__GV_END__ · tap a cell to edit — Enter saves, blank clears · tap a column name for the Builder</span>';
   h+='</div>';
 
   // Multi-select action bar — how-to + Clear/Fill on the current selection.
@@ -27033,6 +27033,23 @@ function renderCurrGrid(el){
   }
   h+='</tr></thead><tbody>';
 
+  // The grid ends where the LAST planned lesson of any column sits — the latest stored cell or
+  // derived (projected) cell across the subjects. Rows past that are dense-extension
+  // placeholders a build minted to keep the grid continuous (Lincoln: 105 empty rows to
+  // Dec 2027 behind a last lesson in June; Ellis: 87), and she asked for them gone
+  // (2026-09-03). Display only — no row is deleted, so the grid grows again by itself the
+  // moment a re-lay or a slipping projection reaches further. Daily subjects have no cells
+  // and no projection, so they never stretch it.
+  let gvEnd="";
+  try{
+    for(const sk of cols){
+      if((subs[sk]||{}).paused) continue;
+      for(const dn of dayNums){ const l=lessons[dn]; if(l&&l.date&&gvFilled(l[sk])&&l.date>gvEnd) gvEnd=l.date; }
+      const der=_gvDer[sk]; if(der&&der.byDate) for(const ds of Object.keys(der.byDate)){ const e=der.byDate[ds]; if(e&&(gvFilled(e.text)||e.extra)&&ds>gvEnd) gvEnd=ds; }
+    }
+  }catch(e){ gvEnd=""; }
+  let _gvShown=0;
+
   const DOWS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   // Card-only sequenced subjects (a lesson-list not yet built into the grid) run on their own
   // cadence with no grid cell — fold their scheduled minutes in per date. Empty today, so the
@@ -27042,11 +27059,16 @@ function renderCurrGrid(el){
     const _fut=(computeFutureSlots()||{})[gvKid]||{};
     _cardOnly.forEach(function(sk){ const s=subs[sk]; if(!s||s.paused) return; const m=s.minutes||20; (_fut[sk]||[]).forEach(function(ds){ _cardMinByDate[ds]=(_cardMinByDate[ds]||0)+m; }); });
   }
+  try{ for(const ds of Object.keys(_cardMinByDate||{})){ if(ds>gvEnd) gvEnd=ds; } }catch(e){}   // card-only subjects' future slots count too
+  const _gvDaysIn=dayNums.filter(dn=>{ const l=lessons[dn]; return l&&l.date&&(!gvEnd||l.date<=gvEnd); }).length;
+  const _gvTrimmed=dayNums.filter(dn=>{ const l=lessons[dn]; return l&&l.date; }).length-_gvDaysIn;
   let lastWk=null;
   for(const dn of dayNums){
     const l=lessons[dn]; if(!l||!l.date) continue;
+    if(gvEnd&&l.date>gvEnd) continue;                                // past the last planned lesson: not drawn
     const past=l.date<today;
     if(past&&!gvShowPast) continue;
+    _gvShown++;
     const d=gwParseDate(l.date);
     if(l.week!==lastWk){
       lastWk=l.week;
@@ -27162,6 +27184,9 @@ function renderCurrGrid(el){
     h+='</tr>';
   }
   h+='</tbody></table></div>';
+  // Fill the header's day count now that the drawn range is known (see gvEnd above).
+  try{ h=h.replace("__GV_DAYS__",String(_gvDaysIn)).replace("__GV_END__",(gvEnd&&_gvTrimmed>0)?(' · ends '+esc(formatPlanDate(gvEnd))+' with the last planned lesson'):''); }
+  catch(e){ h=h.replace("__GV_DAYS__",String(dayNums.length)).replace("__GV_END__",""); }
   if(_gvDerMs>250) dbg("grid derive slow: "+_gvDerMs+"ms for "+cols.length+" columns ("+gvKid+")");
   h+='<div style="font-size:10px;color:var(--muted);padding:0 2px 16px">Red rows = calendar/day-off · <span style="background:#eff6ff;padding:1px 6px;border-radius:6px">blue row</span> = today · past days are editable (tap one to fix a label, fill a gap, or ✓ mark it done) · tap any other filled cell for its menu: ✎ edit · ➡ move (then tap the landing day) · ✕ off this day (re-lays) · 🗑 delete-and-re-lay · tap a column title for its subject card</div>';
   h+='</div>';
