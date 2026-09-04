@@ -24212,6 +24212,11 @@ function cbApply(){
   const pacing=cbPacingFromForm();
   pacing.builtThrough=res.stats.lastDate||""; pacing.builtAt=new Date().toISOString();
   snap("subjects/"+kid+"/"+sk+"/pacing",s.pacing); up["subjects/"+kid+"/"+sk+"/pacing"]=pacing;
+  // A plan-backed build lays everything unfinished from today, so nothing undone is dated
+  // before today any more — the owed chip (planOwed: pattern days since the ANCHOR minus
+  // done since it) must agree. Only ↻ Re-lay remaining moved the anchor; a Rebuild left it,
+  // so the chip kept saying "owed 8" over a column with zero undone past cells (2026-09-03).
+  if(_pbApply){ snap("subjects/"+kid+"/"+sk+"/planAnchor",s.planAnchor); up["subjects/"+kid+"/"+sk+"/planAnchor"]=cbTodayISO(); }
   snap("subjects/"+kid+"/"+sk+"/allowedDays",s.allowedDays); up["subjects/"+kid+"/"+sk+"/allowedDays"]=cbForm.allowedDays;
   if(res.stats.tpwUsed){ snap("subjects/"+kid+"/"+sk+"/timesPerWeek",s.timesPerWeek); up["subjects/"+kid+"/"+sk+"/timesPerWeek"]=res.stats.tpwUsed; }
   snap("lastEdit",currData.lastEdit); up["lastEdit"]=new Date().toISOString();
@@ -40531,6 +40536,41 @@ function _gwPlanDatesInner(kid,sk,liveDates){
 }
 // GWPJ_END
 
+// Mid-week regen: which of this subject's lessons has the ACTIVE week already used up?
+// Checked/claimed cards (the kid did the work) and STARTED cards (a past day this week, or
+// today at/before now — the card is locked where it is) each consume one lesson. Distinct by
+// lesson ref (a _c carry + fresh copy = ONE). Returns the count; `dates` and `dayData` are
+// edited in place: a done card frees a slot from the FRONT of the serving list so cadence
+// holds; a started card frees exactly ITS OWN date when that date is in the list (a cascaded
+// card on an off-pattern day holds no slot, so nothing else may be dropped for it).
+function _gwWeekConsumed(kid,sk,dates,dayData){
+  const DAYS=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
+  const ti=DAYS.indexOf(typeof _todayDay==="string"?_todayDay:""); const _now=new Date(); const nowMin=_now.getHours()*60+_now.getMinutes();
+  const isDone=t=>!!(checked[t.id]||(typeof claimed!=="undefined"&&claimed&&claimed[t.id]));
+  const isStarted=t=>{ const di=DAYS.indexOf(String(t.day||"").toLowerCase()); if(di<0||ti<0) return false;
+    if(di<ti) return true; if(di===ti){ const m=(typeof toMin==="function")?toMin(t.time):null; return m!=null&&m<=nowMin; } return false; };
+  const isoOf=t=>{ try{ const ds=(typeof DAY_DT==="object"&&DAY_DT)?DAY_DT[t.day]:null; if(!ds) return null;
+    const d=new Date(ds+", "+_now.getFullYear()); if(isNaN(d.getTime())) return null;
+    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }catch(e){ return null; } };
+  const seen={}; let front=0;
+  const freeDate=dt=>{ if(dayData[dt]&&dayData[dt][kid]) delete dayData[dt][kid][sk]; };
+  weekData.tasks.forEach(t=>{
+    if(!t||t.who!==kid||t.subjectKey!==sk) return;
+    if(t._eowOverflow) return;                                   // rolls to next week; not a sitting
+    const done=isDone(t); const started=!done&&isStarted(t);
+    if(!done&&!started) return;
+    const ref=taskLessonRef(t)||("#"+t.id);
+    if(seen[ref]) return; seen[ref]=true;
+    if(done){ front++; return; }
+    const iso=isoOf(t); const i=iso?dates.indexOf(iso):-1;
+    if(i>=0){ dates.splice(i,1); freeDate(iso); }
+  });
+  // Drop the done cards' slots from the FRONT of the serving list AND from dayData — the fill
+  // loop only visits `dates`, so a slot left behind would keep its raw grid-cell text and
+  // gwBuildDayTasks would lay it as a phantom task.
+  if(front>0) dates.splice(0,Math.min(front,dates.length)).forEach(freeDate);
+  return Object.keys(seen).length;
+}
 function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
   _gwPjMs=0;
   const resolved=resolveWeekSlots(weekNum,ignoreAuto);
@@ -40608,20 +40648,15 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
       // an ahead subject rests instead of accelerating, and the minute-balancer
       // sees each day's true load. Completed cards survive via gwCommit's
       // keep-pass now, not by re-serving.
-      let doneWk=0; const _seenWk={};
+      let doneWk=0;
       const _rlx=((subjects[sk]||{}).rules||"");
       if(excludeWeek&&excludeWeek===("week"+weekNum)&&typeof weekData==="object"&&weekData&&Array.isArray(weekData.tasks)
          &&!_rlx.includes("first")&&!_rlx.includes("last")){
-        weekData.tasks.forEach(t=>{
-          if(t.who!==kid||t.subjectKey!==sk) return;
-          if(!(checked[t.id]||(typeof claimed!=="undefined"&&claimed&&claimed[t.id]))) return;
-          _seenWk[taskLessonRef(t)||("#"+t.id)]=true;
-        });
-        doneWk=Object.keys(_seenWk).length;
-        // Drop the consumed slots from the serving list AND from dayData — the fill
-        // loop below only visits `dates`, so a slot left behind would keep its raw
-        // grid-cell text and gwBuildDayTasks would lay it as a phantom task.
-        if(doneWk>0) dates.splice(0,Math.min(doneWk,dates.length)).forEach(dt=>{ if(dayData[dt]&&dayData[dt][kid]) delete dayData[dt][kid][sk]; });
+        // Also STARTED cards (a past day this week, or today at/before now): their lesson is
+        // spoken for even though unchecked. Re-serving it put L2-16 on Friday while its card
+        // sat locked on Thursday — the wanted card could not land, and the two real Friday
+        // cards were not wanted, so the re-deal deleted both (live 2026-09-03, Lincoln AAS).
+        doneWk=_gwWeekConsumed(kid,sk,dates,dayData);
       }
       const cursorEff=cursor+doneWk;
 
