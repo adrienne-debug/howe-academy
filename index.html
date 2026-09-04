@@ -26084,25 +26084,52 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
     list.forEach(t=>{ if(t.time!=null||!fr.length) return; const slot=fr.shift(); if(day===opts.todayDay&&opts.nowMin!=null&&opts.toMin(slot)<=opts.nowMin) return; t.time=slot; });
     const rest=byDay[day].filter(t=>t.time==null);
     if(!rest.length) return;
-    // 2) EXTRA: this day is RE-LAID BY THE RULES for this kid — every unchecked/unclaimed/un-started
-    //    card of theirs (the new ones included), in workflow order (the generator's order for cards
-    //    it knows; live time order for dailies), packed by the real packer against everyone else's
-    //    cards on the day (Mom, device lanes, lunch). Checked/claimed/started cards and other kids
-    //    never move; Closing re-times last (pass below). Her rule 2026-08-18: never squeeze an
-    //    extra into a day in progress — the day that takes it regenerates properly.
-    const mineAll=after.filter(x=>x&&x.who===kid&&x.day===day&&!String(x.id||"").endsWith("_c")&&!isCloseT(x));
-    const cand=mineAll.filter(x=>x.time==null||!locked(x));
-    const others=after.filter(x=>x&&x.day===day&&x.time!=null&&!String(x.id||"").endsWith("_c")&&(x.who!==kid||locked(x))&&!isCloseT(x));
-    const keyOf=x=>{ const w=wantBy[x.id]; if(w&&w.time!=null) return opts.toMin(w.time); if(x.time!=null) return opts.toMin(x.time); return 1e9; };
-    const genFirst=x=>(wantBy[x.id]&&wantBy[x.id].time!=null)?0:1;   // tie: the generator's placement wins over where a card merely WAS
-    cand.sort((a,b)=>(keyOf(a)-keyOf(b))||(genFirst(a)-genFirst(b))||String(a.id).localeCompare(String(b.id)));
-    const before={}; cand.forEach(x=>{ before[x.id]=x.time; x.time=null; });
-    try{ over=opts.packAround(others,cand,ctx)||[]; }catch(e){ over=cand.filter(x=>x.time==null); }
-    over.forEach(t=>{ if(t.time!=null) return;
-      if(before[t.id]!=null){ t.time=before[t.id]; return; }        // packer couldn't place an existing card → it keeps its old slot
-      // a NEW card with no room → last card of the day (honest, never dropped)
-      const last=after.filter(x=>x.day===day&&x.time!=null&&x!==t&&!isCloseT(x)).reduce((m,x)=>Math.max(m,opts.toMin(x.time)+(x.dur||20)),ctx.start||0); t.time=opts.fromMin(last); });
-    cand.forEach(x=>{ if(x.time==null) x.time=opts.fromMin(ctx.start||600); if(before[x.id]!==undefined&&before[x.id]!==null&&before[x.id]!==x.time&&summary.added.indexOf(x.id)<0&&summary.moved.indexOf(x.id)<0) summary.shifted.push(x.id); });
+    // 2) INSERT + SHIFT — never a re-pack (her rule, same as day start, 2026-09-03). The old
+    //    step re-laid every unlocked card of the kid's day against a frozen copy of everyone
+    //    else's, which sends that kid to the back of every shared queue: adding ONE AAS card to
+    //    Lincoln's Friday moved six other cards, put Editor in Chief at 3:25 PM, and ran the day
+    //    to 4:58 PM (live wk20). Now each new card goes in at the generator's own time for it on
+    //    THIS day (a pushed card has none → after the kid's last card), never ahead of an earlier
+    //    lesson of the same subject, and only the kid's cards from that point on move, by exactly
+    //    its duration, hopping over a checked/claimed card rather than landing on it. Gaps,
+    //    ordering and everyone else's day stay as they were. Nothing at/before now moves today.
+    const durOf=x=>(x&&x.dur)||20;
+    const isToday=(day===opts.todayDay);
+    const frozen=x=>locked(x)||(isToday&&opts.nowMin!=null&&x.time!=null&&opts.toMin(x.time)<=opts.nowMin);
+    const lidOf=id=>{ const m=String(id||"").match(/_(L\d+)$/); return m?m[1]:""; };
+    const listIx={}; (opts.lidOrder||[]).forEach((l,i)=>{ if(listIx[l]==null) listIx[l]=i; });
+    const genIx={}; (desired||[]).forEach((w,i)=>{ if(w&&w.id&&genIx[w.id]==null) genIx[w.id]=i; });
+    const rankOf=x=>{ const li=listIx[lidOf(x.id)]; if(li!=null) return li; const gi=genIx[x.id]; return (gi!=null)?(1e5+gi):1e9; };
+    const wantedAt=t=>{ const w=wantBy[t.id]; return (w&&w.time!=null&&w.day===day)?opts.toMin(w.time):null; };
+    rest.slice().sort((a,b)=>{ const wa=wantedAt(a), wb=wantedAt(b); return ((wa==null?1e9:wa)-(wb==null?1e9:wb))||(rankOf(a)-rankOf(b))||String(a.id).localeCompare(String(b.id)); })
+      .forEach(t=>{
+        const mine=after.filter(x=>x&&x.who===kid&&x.day===day&&x!==t&&x.time!=null&&!String(x.id||"").endsWith("_c")&&!isCloseT(x))
+          .sort((a,b)=>opts.toMin(a.time)-opts.toMin(b.time));
+        const endOf=x=>opts.toMin(x.time)+durOf(x);
+        const lastEnd=mine.reduce((m,x)=>Math.max(m,endOf(x)),ctx.start||600);
+        let ins=wantedAt(t);
+        if(ins==null){ ins=lastEnd; }                                               // no slot of its own → after the kid's last card
+        else {
+          if(ctx.start!=null&&ins<ctx.start) ins=ctx.start;
+          if(ctx.lunchStart!=null&&ctx.lunchEnd!=null&&ins>=ctx.lunchStart&&ins<ctx.lunchEnd) ins=ctx.lunchEnd;
+          // never ahead of an EARLIER lesson of this subject already on the day
+          mine.forEach(x=>{ if(isPlanCard(x)&&rankOf(x)<rankOf(t)&&endOf(x)>ins) ins=endOf(x); });
+          // never into the past today, never onto a frozen card
+          if(isToday&&opts.nowMin!=null&&ins<opts.nowMin) ins=opts.nowMin;
+          mine.forEach(x=>{ if(frozen(x)&&opts.toMin(x.time)<ins+durOf(t)&&endOf(x)>ins) ins=endOf(x); });
+        }
+        t.time=opts.fromMin(ins);
+        // shift what follows by this card's duration; hop over frozen cards, carrying the delay
+        let d=durOf(t);
+        mine.forEach(x=>{
+          if(frozen(x)) return;
+          const m=opts.toMin(x.time); if(m+durOf(x)<=ins) return;                   // wholly before the insertion point
+          let np=m+d;
+          mine.forEach(f=>{ if(!frozen(f)) return; const fs=opts.toMin(f.time), fe=endOf(f); if(fs<np+durOf(x)&&fe>np) np=fe; });
+          d=np-m;
+          if(np!==m){ x.time=opts.fromMin(np); if(summary.added.indexOf(x.id)<0&&summary.moved.indexOf(x.id)<0&&summary.shifted.indexOf(x.id)<0) summary.shifted.push(x.id); }
+        });
+      });
     summary.relaid.push(day);
   });
   // Closing-last pass (2026-08-18): the generator re-times each kid's Closing Notebook to

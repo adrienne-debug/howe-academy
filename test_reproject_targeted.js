@@ -60,7 +60,9 @@ console.log("_reprojectPlan — pure diff by id");
   ok("moved: L0003 → friday, day+time paths only", eq(r.summary.moved, ["lincoln_lincoln__ws_L0003"]) && r.upd["lincoln_lincoln__ws_L0003/day"] === "friday" && typeof r.upd["lincoln_lincoln__ws_L0003/time"] === "string" && !("lincoln_lincoln__ws_L0003" in r.upd), r.upd);
   ok("added: L0006 on thursday, full task written, INHERITS the slot L0004 freed there (10:00 AM)", eq(r.summary.added, ["lincoln_lincoln__ws_L0006"]) && r.upd["lincoln_lincoln__ws_L0006"] && r.upd["lincoln_lincoln__ws_L0006"].day === "thursday" && r.upd["lincoln_lincoln__ws_L0006"].time === "10:00 AM", r.upd["lincoln_lincoln__ws_L0006"]);
   ok("retitled: L0005 title path only", eq(r.summary.retitled, ["lincoln_lincoln__ws_L0005"]) && r.upd["lincoln_lincoln__ws_L0005/title"] === "WS — e2");
-  ok("moved L0003 → friday RE-LAID by rules: L0005 10:00 (gen 9:30) · MR 10:20 (live 10:00) · L0003 10:40 (gen 10:20)", r.upd["lincoln_lincoln__ws_L0003/time"] === "10:40 AM" && r.tasksAfter.find(t => t.id.endsWith("ws_L0005")).time === "10:00 AM" && r.upd["lincoln_lincoln__mr_L0009/time"] === "10:20 AM" && eq(r.summary.relaid, ["friday"]));
+  // SHIFT, not re-pack (2026-09-03): the moved card goes in at the generator's time for it on
+  // friday (10:20) — nothing there to shift — and NO other card on the day moves.
+  ok("moved L0003 → friday goes in at its generator time 10:20; L0005 and MR stay at 10:00, untouched", r.upd["lincoln_lincoln__ws_L0003/time"] === "10:20 AM" && r.tasksAfter.find(t => t.id.endsWith("ws_L0005")).time === "10:00 AM" && !("lincoln_lincoln__mr_L0009/time" in r.upd) && r.tasksAfter.find(t => t.id === "lincoln_lincoln__mr_L0009").time === "10:00 AM" && eq(r.summary.relaid, ["friday"]), r.upd);
   ok("other subjects only ever get a /time (never added/removed/moved-day/retitled)", Object.keys(r.upd).filter(k => /aas|mr_L|2026d/.test(k)).every(k => /\/time$/.test(k)));
   ok("checked / history paths never named", !Object.keys(r.upd).some(k => /checked|history/.test(k)));
   ok("tasksAfter keeps every non-subject card", r.tasksAfter.some(t => t.id === "2026d230_7") && r.tasksAfter.some(t => t.id === "lincoln_lincoln__mr_L0009"));
@@ -155,7 +157,7 @@ console.log("closing-last: Closing Notebook stays the day's final card");
   ok("past-day closing never moves", r4.tasksAfter.find(t => t.id === "c_monday").time === "1:00 PM");
 }
 
-console.log("extras: swap stays · extra on today → next school day · receiving day re-laid by the rules");
+console.log("extras: swap stays · extra on today → next school day · receiving day: insert + shift, never a re-pack");
 {
   const e = mkEnv();
   const O = (id, who, day, time, dur, extra) => Object.assign({ id, who, subjectKey: "aas", day, time, dur, title: "other " + id }, extra || {});
@@ -195,7 +197,8 @@ console.log("extras: swap stays · extra on today → next school day · receivi
   const live5 = [O("a", "lincoln", "thursday", "10:00 AM", 20), O("b", "lincoln", "thursday", "10:20 AM", 25)];
   const r5 = e._reprojectPlan("lincoln", "ws", live5, [T("lincoln_lincoln__ws_L0007", "thursday", "10:00 AM", "WS — g")], OPTS({ checked: { b: 1 } }));
   const at5 = id => (r5.tasksAfter.find(t => t.id === id) || {}).time;
-  ok("checked B stays 10:20; A and WS pack after it (kid cursor seeded past the locked card)", at5("b") === "10:20 AM" && !("b/time" in r5.upd) && toMin(at5("lincoln_lincoln__ws_L0007")) >= toMin("10:45 AM") && toMin(at5("a")) >= toMin("10:45 AM"));
+  // shift: WS takes its 10:00 slot, A shifts by WS's 20 min → would land ON checked B (10:20–10:45) → hops to 10:45
+  ok("checked B stays 10:20; WS in at 10:00; A shifts and HOPS over the locked card to 10:45", at5("b") === "10:20 AM" && !("b/time" in r5.upd) && at5("lincoln_lincoln__ws_L0007") === "10:00 AM" && at5("a") === "10:45 AM" && eq(r5.summary.shifted, ["a"]), { ws: at5("lincoln_lincoln__ws_L0007"), a: at5("a") });
   // idempotent
   const r6 = e._reprojectPlan("lincoln", "ws", r2.tasksAfter, [T("lincoln_lincoln__ws_L0007", "thursday", "10:20 AM", "WS — g")], OPTS());
   ok("running again → no changes", eq(r6.upd, {}), r6.upd);
@@ -214,23 +217,23 @@ console.log("closing-last: a Mom-required Closing (Julian) never lands on anothe
   const J = (id, day, time, extra) => Object.assign({ id, who: "julian", subjectKey: "ws", day, time, dur: 10, title: "J", lid: id.split("_").pop() }, extra || {});
   const CJ = (day, time) => ({ id: "cj_" + day, who: "julian", subjectKey: "closing_nb", day, time, dur: 5, mom: "required", title: "📖 Closing Notebook — Closing Notebook" });
   const CL = (day, time) => ({ id: "cl_" + day, who: "lincoln", subjectKey: "closing_nb", day, time, dur: 5, mom: "none", title: "📖 Closing Notebook — Closing Notebook" });
-  // Thursday: the re-lay re-packs Julian's day from 10:00 (stub) → L0001 10:00, L0002 10:10, work ends 10:20;
-  // Lucy has a Mom-required HWT 10:20–10:30 and Read-Aloud 10:30–10:50 → Julian's closing must land at 10:50, not 10:20.
-  const lucyHWT = { id: "lucy_lucy__hwt_L0026", who: "lucy", subjectKey: "hwt", day: "thursday", time: "10:20 AM", dur: 10, mom: "required", title: "HWT" };
-  const lucyRA = { id: "ra_lucy", who: "lucy", subjectKey: "read_aloud", day: "thursday", time: "10:30 AM", dur: 20, mom: "required", title: "Read-Aloud" };
-  const lucyIndep = { id: "ind_lucy", who: "lucy", subjectKey: "x", day: "thursday", time: "10:50 AM", dur: 20, mom: "none", title: "independent" };
+  // Thursday: L0001 stays 11:00 (shift never moves what is there); L0002 goes in at its 11:10 slot, work ends 11:20;
+  // Lucy has a Mom-required HWT 11:20–11:30 and Read-Aloud 11:30–11:50 → Julian's closing must land at 11:50, not 11:20.
+  const lucyHWT = { id: "lucy_lucy__hwt_L0026", who: "lucy", subjectKey: "hwt", day: "thursday", time: "11:20 AM", dur: 10, mom: "required", title: "HWT" };
+  const lucyRA = { id: "ra_lucy", who: "lucy", subjectKey: "read_aloud", day: "thursday", time: "11:30 AM", dur: 20, mom: "required", title: "Read-Aloud" };
+  const lucyIndep = { id: "ind_lucy", who: "lucy", subjectKey: "x", day: "thursday", time: "11:50 AM", dur: 20, mom: "none", title: "independent" };
   const live = [J("julian_julian__ws_L0001", "thursday", "11:00 AM"), CJ("thursday", "11:10 AM"), lucyHWT, lucyRA, lucyIndep];
   const desired = [J("julian_julian__ws_L0001", "thursday", "11:00 AM"), J("julian_julian__ws_L0002", "thursday", "11:10 AM")];
   const r = e._reprojectPlan("julian", "ws", live, desired, OPTS());
   const cj = r.tasksAfter.find(t => t.id === "cj_thursday"), ad = r.tasksAfter.find(t => t.id.endsWith("L0002"));
-  ok("added lesson packed after his last card", ad && ad.time === "10:10 AM", ad && ad.time);
-  ok("Mom-required closing slides past Lucy's Mom cards (10:20→10:50)", cj && cj.time === "10:50 AM", cj && cj.time);
-  ok("write is the slid time", r.upd["cj_thursday/time"] === "10:50 AM" && eq(r.summary.closing, ["cj_thursday"]));
+  ok("added lesson goes in at its own slot after his last card (11:10)", ad && ad.time === "11:10 AM", ad && ad.time);
+  ok("Mom-required closing slides past Lucy's Mom cards (11:20→11:50)", cj && cj.time === "11:50 AM", cj && cj.time);
+  ok("write is the slid time", r.upd["cj_thursday/time"] === "11:50 AM" && eq(r.summary.closing, ["cj_thursday"]));
   // A closing that doesn't need Mom still sits right after the kid's last card, Mom cards or not.
-  const live2 = [T("lincoln_lincoln__ws_L0004", "thursday", "11:00 AM", "WS — d"), CL("thursday", "11:05 AM"), Object.assign({}, lucyHWT, { time: "10:40 AM" })];
+  const live2 = [T("lincoln_lincoln__ws_L0004", "thursday", "11:00 AM", "WS — d"), CL("thursday", "11:05 AM"), Object.assign({}, lucyHWT, { time: "11:40 AM" })];
   const desired2 = [T("lincoln_lincoln__ws_L0004", "thursday", "11:00 AM", "WS — d"), T("lincoln_lincoln__ws_L0005", "thursday", "11:20 AM", "WS — e")];
   const r2 = e._reprojectPlan("lincoln", "ws", live2, desired2, OPTS());
-  ok("non-Mom closing = kid's last end (10:40), ignores Lucy's Mom card", r2.tasksAfter.find(t => t.id === "cl_thursday").time === "10:40 AM", r2.tasksAfter.find(t => t.id === "cl_thursday").time);
+  ok("non-Mom closing = kid's last end (11:40), ignores Lucy's Mom card", r2.tasksAfter.find(t => t.id === "cl_thursday").time === "11:40 AM", r2.tasksAfter.find(t => t.id === "cl_thursday").time);
   // Pure helper: nested/overlapping busy intervals
   const tm = toMin;
   const slot = e.momClosingSlot({ id: "c", who: "julian", mom: "required", dur: 5 }, [
