@@ -6485,6 +6485,10 @@ function taskCard(t, fromDay, readOnly, doneId){
   // just switch to the view.
   const _go=(_dlv==="sprint")?("retrOpenSprint('"+t.who+"')"):("retrSchedGo('"+t.who+"','"+_dlv+"')");
   const linkRow=_dlv?'<div style="margin-top:5px"><span onclick="event.stopPropagation();'+_go+'" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#5b3a8c;cursor:pointer;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4C2} Open '+cap(t.who)+'’s '+taskDeepLinkLabel(_dlv)+' →</span></div>':"";
+  // 📕 Workbook: a subject linked to an uploaded workbook opens the viewer on THIS lesson's
+  // exercise page for this kid (wbTaskLink resolves the card label; no page → no row).
+  const _wbl=(!readOnly&&typeof wbTaskLink==="function")?wbTaskLink(t):null;
+  const wbRow=_wbl?'<div style="margin-top:5px"><span onclick="event.stopPropagation();wbOpenFor(\''+_wbl.bookId+'\',\''+t.who+'\','+_wbl.page+')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4D5} Open '+esc(taskLessonRef(t)||_wbl.name)+' →</span></div>':"";
   // Strip the "Cascaded from X" note from detail for display
   const cleanDetail=t.detail.replace(/\s*\(Cascaded from \w+\)/,"");
   const disLabel=(t._displaced&&t._originalDay&&t._originalDay!==t.day)?'<div style="font-size:10px;font-weight:700;color:#7c3aed;background:#ede9fe;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">&#8618; Moved from '+cap(t._originalDay)+'</div><br>':'';
@@ -6528,7 +6532,7 @@ function taskCard(t, fromDay, readOnly, doneId){
     '<div class="card-body">'+
     '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
     '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+pushLabel+t.title+'</div>'+mb+'</div>'+
-    '<div class="task-detail">'+cleanDetail+'</div>'+dr+spinBtn+linkRow+
+    '<div class="task-detail">'+cleanDetail+'</div>'+dr+spinBtn+linkRow+wbRow+
     '</div></div></div>';
 }
 
@@ -14909,6 +14913,23 @@ function ceRenderEditSheet(){
     h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">'+(_rlBy==="mom"?'The kid’s check-off completes normally; a chip waits for you to log it.':(_rlM==="solo"?'The kid enters the page number themselves at check-off.':'The kid’s check-off opens it, but only when you’re on that device — otherwise a chip waits for you.'))+' Books, and this kid’s reading mode, live on the 📚 Reading Log card (Wins tab).</div>';
   }
 
+  // 📕 Workbook — link this subject to an uploaded workbook PDF (📕 Workbooks in HQ).
+  // Cards then carry "📕 Open Ex. N →" straight to that exercise's page for the kid.
+  if(typeof wbList==="function"){
+    const _wbs=wbList(); const _wbCur=s.workbook||"";
+    h+='<div class="ce-sheet-lbl">📕 Workbook <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— cards open the exercise on the iPad</span></div>';
+    if(!_wbs.length) h+='<div style="font-size:11px;color:var(--muted)">No workbooks uploaded yet — add one under 🏡 HQ ▸ 📕 Workbooks.</div>';
+    else {
+      h+='<div class="ce-chips">';
+      h+='<div class="ce-chip'+(!_wbCur?" sel":"")+'" onclick="ceSaveField(\'workbook\',null);ceRenderEditSheet();renderAll()">None</div>';
+      _wbs.forEach(b=>{ h+='<div class="ce-chip'+(_wbCur===b.id?" sel":"")+'" onclick="ceSaveField(\'workbook\',\''+b.id+'\');ceRenderEditSheet();renderAll()">'+esc(b.name||b.id)+'</div>'; });
+      h+='</div>';
+      const _wbB=_wbCur?wbBook(_wbCur):null;
+      if(_wbCur&&_wbB&&!_wbB.toc) h+='<div style="font-size:10px;color:#b45309;margin-top:4px">⚠ This book has no table of contents yet, so cards can’t find their exercise page.</div>';
+      else if(_wbCur&&_wbB) h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Lesson labels like “Ex. 39–40” open exercise 39; “pg14-17” opens printed page 14; Pretest/Posttest open those.</div>';
+    }
+  }
+
   // Record Score (per subject) + format picker
   h+='<div class="ce-sheet-lbl">Record Score</div>';
   h+='<div class="ce-chips">';
@@ -20645,6 +20666,41 @@ const WB_PEN="#1d4ed8", WB_MOMPEN="#dc2626";
 function wbList(){ return Object.values(wbBooks||{}).filter(b=>b&&b.id).sort((a,b)=>(a.added||0)-(b.added||0)); }
 function wbBook(id){ return (wbBooks||{})[id]||null; }
 function wbInkPath(kid,bookId,page){ return "workbookWork/"+kid+"/"+bookId+"/"+page; }
+
+// ── Lesson label → page. A subject links to a book (subject.workbook = bookId) and the
+// book carries its table of contents (workbooks/<id>/toc = {ex:{n:bookPage}, pre, post,
+// offset}) — offset is what the printed page number needs added to reach the PDF page
+// (front matter is roman-numbered). The card label is matched BY EXERCISE, not page:
+// "Ex. 39–40" opens exercise 39's first page; the older "pg14-17" labels open printed
+// page 14; "Pretest"/"Posttest" open those. Anything unreadable → null → no link at all,
+// never a wrong page.
+function wbPageFor(book,label){
+  const toc=book&&book.toc; if(!toc) return null;
+  const off=parseInt(toc.offset,10)||0, last=book.pages||1;
+  const s=String(label||"").trim(); if(!s) return null;
+  const clamp=p=>{ p=parseInt(p,10); if(!p||p<1) return null; p+=off; return (p>=1&&p<=last)?p:null; };
+  let m;
+  if((m=s.match(/^ex(?:ercise)?s?\.?\s*#?\s*(\d+)/i))) return clamp((toc.ex||{})[m[1]]);
+  if((m=s.match(/^(?:pgs?|pp?|pages?)\.?\s*(\d+)/i))) return clamp(m[1]);
+  if(/^pre-?test/i.test(s)) return clamp(toc.pre);
+  if(/^post-?test/i.test(s)) return clamp(toc.post);
+  return null;
+}
+// The book a task's subject is linked to, and the page its label lands on.
+function wbTaskLink(t){
+  try{
+    const sub=(((currData||{}).subjects||{})[t.who]||{})[t.subjectKey]; const id=sub&&sub.workbook; if(!id) return null;
+    const b=wbBook(id); if(!b) return null;
+    const page=wbPageFor(b,typeof taskLessonRef==="function"?taskLessonRef(t):""); if(!page) return null;
+    return {bookId:id,name:b.name||"Workbook",page:page};
+  }catch(e){ return null; }
+}
+// Open from a card: the workbooks listener normally has the book cached; fetch it once if not.
+function wbOpenFor(bookId,kid,page){
+  if(wbBook(bookId)){ wbOpen(bookId,kid,page); return; }
+  if(!db){ alert("That workbook isn't loaded yet."); return; }
+  db.ref("workbooks/"+bookId).once("value").then(s=>{ const b=s.val(); if(b){ wbBooks[bookId]=b; wbOpen(bookId,kid,page); } else alert("That workbook isn't in the app any more."); });
+}
 
 // ── Add a book: rasterize every page locally, upload the JPEGs, write metadata ──
 async function wbAddBook(input){
