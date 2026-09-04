@@ -20,7 +20,9 @@ function slice(name) {
 }
 
 const FNS = ["routineEditable", "toggleMorningStep", "toggleSlot", "slKey", "getSlot",
-             "morningStepsFor", "morningComplete", "mStepDoneOn",
+             "morningStepsFor", "_mrLegacySteps", "morningComplete", "mStepDoneOn",
+             // a blocked tap now explains itself (toast) — the helper and its `cap` come along
+             "_rtBlockedToast", "cap",
              // morningComplete now masks by run-window, so its helpers come along
              "morningDueIdx", "stepWindowOk", "routineDateISO"].map(slice).join("\n");
 
@@ -40,6 +42,8 @@ function scenario({ dayTab, today, mom }) {
     momHere: function () { return this.momModeActive || this.adminPinUnlocked; },
     nowTs: () => "10:23 AM Aug 3",
     rlogAppend: () => {},
+    gwShowToast: () => {},
+    rtBonusSettle: () => {},   // list-bonus side effect, not under test here
     renderSkylight: () => {},
     renderSchedule: () => {},
     document: { getElementById: () => null },

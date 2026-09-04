@@ -175,18 +175,19 @@ console.log("scope");
   ok("a clean column renders no strip at all", api.render("kid", "#333") === "");
 }
 
-console.log("the gap hand-off is disconnected");
+console.log("the gap hand-off is re-connected (2026-09-04) — today-forward gaps offer “Add it back…”");
 {
-  // 2026-08-15: "Add it back…" routed into the Builder and a whole column came
-  // back cleared with no Apply behind it. No gap may offer a fix button until
-  // that write path is traced.
+  // 2026-08-15: "Add it back…" was switched off after a column came back cleared. The
+  // write path is now traced and pinned by test_grid_audit_gapfix.js (list paths only,
+  // preview only), so a live gap offers the fix again; the row still offers “Show me”.
   api.set(grid(["pg 1", "pg 2", "pg 5", "pg 6", "pg 7"], { offset: 0 }));
   const r = api.find("kid");
   ok("the gap is still reported", r.now.some(f => f.type === "gap"));
   api.toggle();
   const h = api.render("kid", "#333");
   api.toggle();
-  ok("no gap fix button is rendered anywhere", h.indexOf("gvAuditFixGap") < 0);
+  const m = h.match(/gvAuditFixGap\('kid','([^']+)',(\d+),'([^']*)','([^']*)'\)/);
+  ok("a live gap renders the fix button with kid / sk / dn / after / missing", !!m && m[3] === "pg 2" && m[4] === "3–4", m && m.slice(1));
   ok("the gap row still offers “Show me”", h.indexOf("gvAuditGoto") > 0);
 }
 

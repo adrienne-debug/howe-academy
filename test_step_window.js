@@ -43,6 +43,7 @@ pin("2026-08-03");
 eval(fn("routineDateISO"));
 eval(fn("stepWindowOk"));
 eval(fn("stepWindowLabel"));
+eval(fn("_mrLegacySteps"));   // morningStepsFor's legacy path (config → MORNING_STEPS_DEFAULT)
 eval(fn("morningStepsFor"));
 eval(fn("mStepDoneOn"));
 eval(fn("morningDueIdx"));

@@ -140,10 +140,10 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   M.renderMomsDay(elStub);
   const h = elStub.innerHTML;
   ok("banner shows Mom's Day + week", h.includes("Mom's Day") && h.includes("Week 16"), null);
-  ok("combined block appears ONCE", (h.match(/Read-aloud: Narnia/g) || []).length === 1, null);
-  ok("combined block: ✓ button per kid", h.includes("tapTask('t1')") && h.includes("tapTask('t2')") && h.includes("✓ Lincoln") && h.includes("✓ Ellis"), null);
-  ok("solo mom block: ✓ button", h.includes("tapTask('t3')") && h.includes("✓ Lucy"), null);
-  ok("solo mom block appears", h.includes("Phonics with Mom"), null);
+  // School blocks that need Mom are deliberately NOT repeated in "Now — needs you";
+  // 📖 Mom's school schedule (momAgendaHtml, stubbed here) is the one place they live.
+  ok("Now card does not repeat the school blocks", !h.includes("Read-aloud: Narnia") && !h.includes("Phonics with Mom") && !h.includes("tapTask('t1')"), null);
+  ok("📖 Mom's school schedule section is on the page", h.includes("school schedule") && h.includes('id="agenda"'), null);
   ok("checked-off mom block excluded", !h.includes("Already done with Mom"), null);
   ok("lunch excluded", !h.includes("Lunch break"), null);
   ok("cascade mirror excluded", !h.includes("Cascade mirror"), null);
@@ -216,7 +216,8 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
 (() => {
   global.tab = "moms-plan"; showTabCalls.length = 0; renderAllCalls = 0; global.schedShowBoard = false; global.schedShowAdmin = true;
   M.renderMomsDay(elStub);
-  ok("board button uses mdOpenBoard", elStub.innerHTML.includes("mdOpenBoard()"), null);
+  // The board-jump button retired with the 🏡 HQ hub (2026-08-05); the function stays callable.
+  ok("no board-jump button on the page any more", !elStub.innerHTML.includes("mdOpenBoard()"), null);
   M.mdOpenBoard();
   ok("jump switches to schedule tab", showTabCalls.length === 1 && showTabCalls[0] === "schedule", showTabCalls);
   ok("jump raises board flag, clears admin", global.schedShowBoard === true && global.schedShowAdmin === false, null);
@@ -1169,11 +1170,18 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   ok("tuesday due = close + tubs + sinks", JSON.stringify(M.mcDueToday("tuesday")) === JSON.stringify(["mc_kclose","mc_tubs","mc_bsinks"]), M.mcDueToday("tuesday"));
   ok("sunday due includes fridge + master", M.mcDueToday("sunday").indexOf("mc_fridge") >= 0 && M.mcDueToday("sunday").indexOf("mc_master") >= 0, null);
 
+  // The day-to-day list now lives on the 🏡 My day strip; the full chores card is the
+  // EDITOR and only renders while managing (mcManage).
+  M.renderMomsDay(elStub);
+  const strip = elStub.innerHTML;
+  ok("My day strip lists today's due chores", strip.includes("Wash the sheets") && strip.includes("Kitchen close-down"), null);
+  ok("not-due default hidden on the strip (mop is Friday)", !strip.includes("Mop kitchen"), null);
+  ok("editor card hidden until managing", mcCard(strip) === "", null);
+  M.mcToggleManage();
   M.renderMomsDay(elStub);
   let c = mcCard(elStub.innerHTML);
-  ok("card renders default chores", c.includes("Wash the sheets") && c.includes("Kitchen close-down"), null);
-  ok("not-due default hidden (mop is Friday)", !c.includes("Mop kitchen"), null);
-  ok("footnote counts the hidden defaults", c.includes("6 more on other days"), null);
+  ok("editor card renders default chores", c.includes("Wash the sheets") && c.includes("Kitchen close-down"), null);
+  ok("editor lists the whole week (mop too)", c.includes("Mop kitchen"), null);
   ok("header count 0/2", c.includes(">0/2<"), null);
 
   // checking a default stamps the DAY without seeding the defs
@@ -1183,9 +1191,11 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   ok("defs still unseeded after a check", Object.keys(M.momChoresData).length === 0, null);
   M.renderMomsDay(elStub);
   c = mcCard(elStub.innerHTML);
-  ok("done default struck through + 1/2", c.includes("line-through") && c.includes(">1/2<"), null);
+  ok("editor header counts 1/2 after the check", c.includes(">1/2<"), null);
+  ok("My day strip's Ongoing column counts 1/2 too", elStub.innerHTML.includes("Ongoing") && elStub.innerHTML.includes(">1/2<"), null);
   M.mcToggle("mc_kclose");
   ok("re-toggle unstamps (db remove)", !M.mcDoneOn("2026-08-10","mc_kclose") && dbRemoves.some(p => p === "momday/2026-08-10/chores/mc_kclose"), null);
+  M.mcToggleManage();   // leave managing OFF so the manage-mode checks below toggle it on themselves
 
   // the FIRST EDIT copies the whole set to momChores/* (rtCfgEnsure pattern)
   dbWrites.length = 0;
@@ -1230,7 +1240,7 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   Object.keys(M.mcAll()).forEach(id => M.mcDel(id));
   ok("delete-all: no default resurrect", Object.keys(M.mcAll()).length === 0, Object.keys(M.mcAll()));
   M.renderMomsDay(elStub);
-  ok("empty card invites the first add", mcCard(elStub.innerHTML).includes("chore rhythm lives here"), null);
+  ok("empty strip says nothing is due and offers the slot basics", elStub.innerHTML.includes("Nothing of yours due today") && elStub.innerHTML.includes("mcSeedSlot("), null);
 
   // wipe module state so no later group inherits it
   Object.keys(M.momChoresData).forEach(k => { delete M.momChoresData[k]; });

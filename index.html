@@ -6074,6 +6074,20 @@ function scoredType(t){ const s=subjCfg(t); return (s&&s.scored)?(s.scoreType||"
 // (e.g. "📄 Editor in Chief — Pg 43–45" → "Pg 43–45"). Used to tell the kid
 // which page to leave open and to show Mom what to check/score.
 function taskLessonRef(t){ const m=(t&&t.title||"").match(/[—–]\s*(.+)$/); return m?m[1].trim():""; }
+// Where a card's lesson sits in its subject's sequence (0-based), or -1 when it can't be placed.
+// Lesson id first (stamped subjects), then the title's lesson text against lessonSeq. Two cards
+// of one subject compare by this, never by day/time — the schedule can hold them out of order
+// (an overflow card, a cascade), and "before" or "after" has to mean the book's order.
+function _lessonPos(t){
+  if(!t||!t.who||!t.subjectKey) return -1;
+  const s=(((typeof currData!=="undefined"&&currData)||{}).subjects||{})[t.who]; const sub=(s||{})[t.subjectKey]||{};
+  const ids=sub.lessonIds||[], seq=sub.lessonSeq||[];
+  if(t.lid&&ids.length){ const i=ids.indexOf(t.lid); if(i>=0) return i; }
+  const ref=taskLessonRef(t); if(!ref||!seq.length) return -1;
+  const n=x=>String(x==null?"":x).replace(/[–—−]/g,"-").replace(/\s+/g," ").trim().toLowerCase();
+  const want=n(ref); for(let i=0;i<seq.length;i++){ if(n(seq[i])===want) return i; }
+  return -1;
+}
 // Clean subject name for a task: prefer the curriculum display name, fall back
 // to the title's subject portion. Used to label slot-point rows by subject.
 function taskSubjDisplay(t){ const s=subjCfg(t); return (s&&s.display)||taskSubject(t); }
@@ -6934,7 +6948,7 @@ function tapTask(id){
       const nowBtn=document.getElementById("dlg-skip-now");
       const goodBtn=document.getElementById("dlg-skip-good");
       const why=document.getElementById("dlg-skip-good-why");
-      nowBtn.textContent="Skip for now — this subject picks up here next week";
+      nowBtn.textContent="Skip for now — this and any later lessons this week come back next week";
       nowBtn.onclick=()=>momDismiss(id,"now");
       // "For good" moves the generator's cursor, which is only meaningful — and only correct —
       // when this lesson is the one it would serve next. Say why when it isn't, rather than
@@ -25648,15 +25662,15 @@ function gvAuditFixDup(kid,sk,dn,txt){
 // here, the LAYOUT is re-materialised by the Builder and applied only when she
 // taps Apply. Nothing is written to the grid by this function.
 function gvAuditFixGap(kid,sk,dn,after,missing){
-  // DISCONNECTED 2026-08-15. Nothing renders a button for this any more; the guard
-  // is here so a stale handler or an old cached page cannot reach the hand-off.
-  // What happened: this wrote the lesson into lessonSeq and then routed to the
-  // Builder to re-lay. Lincoln's AAS came out the far side with all 91 future cells
-  // cleared and `builtAt` untouched — a destructive write with no Apply behind it.
-  // Re-connect only once that path is traced and covered by a test.
-  alert("Adding a missing lesson from here is switched off.\n\nIt handed off to the Builder to re-lay the subject, and on 2026-08-15 that cleared a whole column without an Apply. Use “Show me” to go to the spot and add the lesson to the cell yourself.");
-  return;
-  // ↓ kept, unreachable, so re-connecting is deleting the two lines above.
+  // Disconnected 2026-08-15 after Lincoln's AAS lost 91 future cells with `builtAt`
+  // untouched. RE-CONNECTED 2026-09-04, traced: this function writes ONLY the subject's
+  // list paths (lessonSeq / lessonIds / total / nextLid / lastEdit) and then opens a
+  // Builder PREVIEW — cbOpenSubj + cbRunPreview are pure. The only code that nulls a
+  // grid cell lives in cbApply (behind Apply), gvDeleteLesson, gvMenuDone,
+  // ceMarkLessonDone and ceSetTracking; none is on this path. The 08-15 fingerprint
+  // (lastEdit moved, builtAt not, future cells gone) was the OLD "Edit as a list" Save,
+  // which cleared planned cells by design until the 2026-08-16 one-door rewrite.
+  // test_grid_audit_gapfix.js pins the write set of this path.
   if(!db||(!momModeActive&&!adminPinUnlocked)) return;
   const s=(currData.subjects[kid]||{})[sk]; if(!s) return;
   const disp=s.display||sk;
@@ -25838,10 +25852,11 @@ function gvAuditRender(kid,col){
       return '<div style="padding:7px 0;border-top:1px solid #fde68a"><div style="font-size:11.5px;color:#78350f;line-height:1.45;margin-bottom:5px">'+txt+'</div>'+(fix?'<div style="display:flex;gap:6px;flex-wrap:wrap">'+fix+'</div>':'')+'</div>';
     } else if(f.type==="gap"){
       txt='<b>'+esc(f.disp)+'</b> — '+esc(f.missing)+' never got scheduled, between “'+esc(f.after)+'” and “'+esc(f.before)+'” ('+esc(f.date)+')';
-      // NO fix button. "Add it back…" handed off to the Builder, and on 2026-08-15
-      // that hand-off ended with 91 of Lincoln's AAS cells cleared without an Apply
-      // ever running. Until that write path is understood the audit only reports a
-      // gap and takes you to it — filling it is a manual edit, made deliberately.
+      // "Add it back…" — re-connected 2026-09-04 (see gvAuditFixGap): it inserts the
+      // lesson into the master list and opens a Builder PREVIEW; nothing on the grid
+      // changes until Apply. Today-forward gaps only — a past gap is the record.
+      if(live){ const _js=x=>String(x==null?"":x).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+        fix='<button onclick="gvAuditFixGap(\''+kid+'\',\''+f.sk+'\','+f.dn+',\''+esc(_js(f.after))+'\',\''+esc(_js(f.missing))+'\')" style="border:1px solid #d97706;background:#fff;color:#b45309;'+BTN+'">Add it back…</button>'; }
     } else if(f.type==="order"){
       txt='<b>'+esc(f.disp)+'</b> — “'+esc(f.txt)+'” sits after “'+esc(f.after)+'” ('+esc(f.date)+')';
     } else {
@@ -26053,15 +26068,22 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
   const wantBy={}; want.forEach(t=>{ wantBy[t.id]=t; });
   const liveBy={}; live.forEach(t=>{ liveBy[t.id]=t; });
   const orig0={}; live.forEach(t=>{ orig0[t.id]={day:t.day,time:t.time}; });   // where each card started (objects are edited in place)
-  const upd={}; const summary={added:[],moved:[],removed:[],retitled:[]};
+  const upd={}; const summary={added:[],moved:[],removed:[],retitled:[],kept:[]};
   const after=(liveTasks||[]).slice();
   const freed={};   // day → [time] slots this subject just vacated (removed / moved away) — the next lesson takes the finished one's slot
   // phantoms (date-id cards of this plan-backed subject): remove when unlocked
   (liveTasks||[]).filter(isPhantom).forEach(t=>{ if(locked(t)) return; upd[t.id]=null; summary.removed.push(t.id); (freed[t.day]=freed[t.day]||[]).push(t.time); const i=after.indexOf(t); if(i>=0) after.splice(i,1); });
+  // Her rule: NOTHING drops. A card the plan does not want this week leaves only when its
+  // lesson is already finished (the done record has its id). An unfinished lesson the pattern
+  // has no slot for — a cascade-made second sitting, a card cascaded onto a day the subject
+  // never runs (Lincoln's Saturday pg 34, deleted by the 2026-09-03 rebuild), an overflow card —
+  // stays exactly where it sits; next week's build still sees it undone.
+  const lidOfId=id=>{ const m=String(id||"").match(/_(L\d+)$/); return m?m[1]:""; };
+  const doneLid=t=>{ const l=lidOfId(t.id); return !!(l&&opts.doneLids&&opts.doneLids.indexOf(l)>=0); };
   // removals + moves + retitles
   live.forEach(t=>{
     const w=wantBy[t.id];
-    if(!w){ if(locked(t)) return; upd[t.id]=null; summary.removed.push(t.id); (freed[t.day]=freed[t.day]||[]).push(t.time); const i=after.indexOf(t); if(i>=0) after.splice(i,1); return; }
+    if(!w){ if(locked(t)) return; if(!doneLid(t)){ summary.kept.push(t.id); return; } upd[t.id]=null; summary.removed.push(t.id); (freed[t.day]=freed[t.day]||[]).push(t.time); const i=after.indexOf(t); if(i>=0) after.splice(i,1); return; }
     if(w.title&&w.title!==t.title&&!opts.checked[t.id]){ upd[t.id+"/title"]=w.title; if(w.detail!==undefined) upd[t.id+"/detail"]=w.detail||null; t.title=w.title; if(w.detail!==undefined) t.detail=w.detail; summary.retitled.push(t.id); }
     if(w.day&&w.day!==t.day){ if(locked(t)) return; if(dayIx(w.day)>=0&&tIx>=0&&dayIx(w.day)<tIx) return; // never move into the past
       (freed[t.day]=freed[t.day]||[]).push(t.time); t.day=w.day; t.time=null; summary.moved.push(t.id); }
@@ -26115,13 +26137,13 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
     pool.forEach(t=>{
       while(di<days.length&&room[days[di]]<=0) di++;
       if(di>=days.length){
-        const i=after.indexOf(t); if(i>=0) after.splice(i,1);
         const ai=summary.added.indexOf(t.id);
-        if(ai>=0){ summary.added.splice(ai,1); const pi=summary.pushed.indexOf(t.id); if(pi>=0) summary.pushed.splice(pi,1); }
-        else { const mi=summary.moved.indexOf(t.id); if(mi>=0) summary.moved.splice(mi,1);
-          const ti=summary.retitled.indexOf(t.id); if(ti>=0) summary.retitled.splice(ti,1); delete upd[t.id+"/title"];   // one path per card: a removal can't ride with a retitle
-          upd[t.id]=null; summary.removed.push(t.id); }
-        summary.deferred.push(t.id); return;
+        if(ai>=0){ const i=after.indexOf(t); if(i>=0) after.splice(i,1); summary.added.splice(ai,1); const pi=summary.pushed.indexOf(t.id); if(pi>=0) summary.pushed.splice(pi,1); summary.deferred.push(t.id); return; }
+        // An EXISTING card that does not fit stays where it started (nothing drops): the lesson
+        // is undone, so it is still counted, still next up, and still on a real day.
+        const mi=summary.moved.indexOf(t.id); if(mi>=0) summary.moved.splice(mi,1);
+        const o=orig0[t.id]; if(o){ if(t.time==null&&o.time!=null){ const fr=freed[o.day]; const k=fr?fr.indexOf(o.time):-1; if(k>=0) fr.splice(k,1); } t.day=o.day; t.time=o.time; }
+        summary.kept.push(t.id); return;
       }
       const d=days[di]; room[d]--;
       if(t.day===d) return;
@@ -26169,7 +26191,14 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
         const endOf=x=>opts.toMin(x.time)+durOf(x);
         const lastEnd=mine.reduce((m,x)=>Math.max(m,endOf(x)),ctx.start||600);
         let ins=wantedAt(t);
-        if(ins==null){ ins=lastEnd; }                                               // no slot of its own → after the kid's last card
+        if(ins==null){
+          ins=lastEnd;                                                              // no slot of its own → after the kid's last card…
+          // …unless a LATER lesson of this subject already sits on the day: go in ahead of it (a
+          // pushed pg 29 lands before pg 30, never behind it), shifting it like any other card.
+          mine.forEach(x=>{ if(isPlanCard(x)&&rankOf(x)>rankOf(t)&&!frozen(x)&&opts.toMin(x.time)<ins) ins=opts.toMin(x.time); });
+          if(isToday&&opts.nowMin!=null&&ins<opts.nowMin) ins=opts.nowMin;
+          mine.forEach(x=>{ if(frozen(x)&&opts.toMin(x.time)<ins+durOf(t)&&endOf(x)>ins) ins=endOf(x); });
+        }
         else {
           if(ctx.start!=null&&ins<ctx.start) ins=ctx.start;
           if(ctx.lunchStart!=null&&ctx.lunchEnd!=null&&ins>=ctx.lunchStart&&ins<ctx.lunchEnd) ins=ctx.lunchEnd;
@@ -26229,11 +26258,17 @@ function reprojectSubjectWeek(kid,sk,why){
     try{
       const cfg={weekNum:String(wn),babysitter:{},withSitter:[],skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:gwSatPlanned(wn),redistribute:[],autoAdvance:true};
       const gen=generateWeek(cfg); if(!gen||gen.error||!gen.result) return;
-      const nowD=new Date(); const todayDay=_RP_DAYS[(nowD.getDay()+6)%7]||null;
+      // One clock for the whole re-deal: "today" is the app's date (_todayStr), the same source
+      // the cell lay and the generator read — never a second look at the wall clock.
+      const nowD=new Date();
+      const _tISO=(typeof _todayStr==="function")?_todayStr():_cbISO(nowD);
+      const _tD=(typeof gwParseDate==="function")?gwParseDate(_tISO):new Date(_tISO+"T12:00:00");
+      const todayDay=_RP_DAYS[(_tD.getDay()+6)%7]||null;
+      const _doneLids=Object.keys(((((typeof currData!=="undefined"&&currData)||{}).done||{})[kid]||{})[sk]||{});
       const gwR=gwRules();
       const dayCtx=day=>({start:(day===todayDay)?Math.max(gwR.schoolStart,nowD.getHours()*60+nowD.getMinutes()):gwR.schoolStart,end:gwR.schoolEnd,lunchStart:gwR.lunchStart,lunchEnd:gwR.lunchEnd,allowOvertime:true,overtimeMax:240});
       const _subj=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid]||{})[sk]||{};
-      const r=_reprojectPlan(kid,sk,weekData.tasks,gen.result.tasks,{todayDay,nowMin:nowD.getHours()*60+nowD.getMinutes(),checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},dayCtx,packAround,toMin,fromMin,dayCap:_subj.cap||1,lidOrder:_subj.lessonIds||[],allowedDays:_subj.allowedDays||[]});
+      const r=_reprojectPlan(kid,sk,weekData.tasks,gen.result.tasks,{todayDay,nowMin:nowD.getHours()*60+nowD.getMinutes(),checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},dayCtx,packAround,toMin,fromMin,dayCap:_subj.cap||1,lidOrder:_subj.lessonIds||[],allowedDays:_subj.allowedDays||[],doneLids:_doneLids});
       const n=r.summary.added.length+r.summary.moved.length+r.summary.removed.length+r.summary.retitled.length+((r.summary.closing||[]).length)+((r.summary.shifted||[]).length);
       out=r.summary;
       if(!n) return;
@@ -27394,6 +27429,7 @@ function momDismiss(id,scope){
     dbg("drop id="+id+" cursor adjust "+(ps.adjust|0)+" → "+((ps.adjust|0)+1));
   }
   _saveMomMove(id,rec);
+  let _kept=0;
   if(scope==="now"){
     // "Skip for now" = end this subject for the week: also carry the rest of its undone lessons
     // this week to next week, so nothing after it gets checked out of order and the count-cursor
@@ -27402,15 +27438,24 @@ function momDismiss(id,scope){
     const _s=(((currData.subjects||{})[t.who]||{})[t.subjectKey])||{};
     const _daily=_s.tracking==="daily"||(_s.rules||"").includes("first")||(_s.rules||"").includes("last");
     if(t.subjectKey&&!_daily){
+      // Only lessons AFTER the tapped one in the book's order go with it. Earlier lessons still
+      // on this week's schedule stay live — the tapped card can sit anywhere (an overflow card,
+      // a cascade), and sweeping the lessons before it would take real work off the week and
+      // resume next week past it. When the tapped card can't be placed in the sequence, nothing
+      // else moves: dismissing one card must never silently dismiss others.
+      const _pos=_lessonPos(t);
       (weekData.tasks||[]).forEach(function(x){
         if(x.id===id||x.who!==t.who||x.subjectKey!==t.subjectKey) return;
         if(String(x.id).endsWith("_c")||checked[x.id]||momMoves[x.id]) return;
+        if(_pos<0) { _kept++; return; }
+        const _xp=_lessonPos(x);
+        if(_xp<0||_xp<=_pos){ _kept++; return; }
         _saveMomMove(x.id,{mode:"skip",fromDays:[effectiveDay(x)],ts:nowTs()});
       });
     }
   }
   closeDlg(); schedCascade(); renderAll();
-  if(typeof gwShowToast==="function") gwShowToast(scope==="good"?"Skipped for good — next lesson moves up ✓":"Skipped to next week — this subject picks up here ✓");
+  if(typeof gwShowToast==="function") gwShowToast(scope==="good"?"Skipped for good — next lesson moves up ✓":(_kept?"Skipped to next week ✓ — "+_kept+" earlier lesson"+(_kept>1?"s":"")+" this week stay"+(_kept>1?"":"s")+" on the schedule":"Skipped to next week — this subject picks up here ✓"));
 }
 function undoMomMove(id){
   if(!momHere()) return;
@@ -28933,10 +28978,17 @@ function cbDoneCellSet(kid,sk,cells){
   const _dset=_lids?lidDoneSet(kid,sk):null;
   if(!titles.length&&!_lids) return done;    // nothing checked off yet — a real, usable answer
   let matched=0;
+  // A finished title names ONE lesson: the text after its " — " (the cell text), compared
+  // whole. The old substring test read "5B Ch.1 L1" as finished whenever "5B Ch.1 L10" was
+  // (every chapter with ten or more lessons), so the rebuild split skipped L1 as done and
+  // never filed it stale — found 2026-09-04 while rebuilding test_rebuild_donecells.
+  const _cn=s=>String(s==null?"":s).replace(/[–—−]/g,"-").replace(/\s+/g," ").trim().toLowerCase();
+  const _tp=t=>{ const x=String(t||""); const i=x.indexOf(" — "); return _cn(i>=0?x.slice(i+3):x); };
+  const _parts=new Set(titles.map(_tp));
   cells.forEach((c,i)=>{
     if(_lids&&_lids[i]){ if(_dset.has(_lids[i])){ done.add(i); matched++; } return; }
-    const txt=String((c&&c.text)||"").trim().toLowerCase();
-    if(txt&&titles.some(t=>t.includes(txt))){ done.add(i); matched++; }
+    const txt=_cn((c&&c.text)||"");
+    if(txt&&_parts.has(txt)){ done.add(i); matched++; }
   });
   if(_lids) return done;                     // the id answer is authoritative, even when empty
   // Completions exist but NONE line up with the grid — the two don't share text for this

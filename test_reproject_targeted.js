@@ -41,7 +41,7 @@ console.log("_reprojectPlan — pure diff by id");
     T("lincoln_lincoln__ws_L0001", "monday", "10:00 AM", "WS — a"),      // past, unchecked → untouched even if not desired
     T("lincoln_lincoln__ws_L0002", "wednesday", "10:00 AM", "WS — b"),   // today, started (10:00 ≤ 11:00) → untouched
     T("lincoln_lincoln__ws_L0003", "wednesday", "1:00 PM", "WS — c"),    // today, later → may move
-    T("lincoln_lincoln__ws_L0004", "thursday", "10:00 AM", "WS — d"),    // desired gone → remove
+    T("lincoln_lincoln__ws_L0004", "thursday", "10:00 AM", "WS — d"),    // desired gone AND its lesson is done (doneLids) → remove
     T("lincoln_lincoln__ws_L0005", "friday", "10:00 AM", "WS — e"),      // stays, renamed
     { id: "2026d230_7", who: "lincoln", subjectKey: "aas", day: "thursday", time: "10:00 AM", dur: 30, title: "AAS x" }, // other subject, date-id
     { id: "lincoln_lincoln__mr_L0009", who: "lincoln", subjectKey: "mr", day: "friday", time: "10:00 AM", dur: 20, title: "MR z" }, // other subject, plan id
@@ -53,8 +53,8 @@ console.log("_reprojectPlan — pure diff by id");
     T("lincoln_lincoln__ws_L0002", "monday", "9:00 AM", "WS — b"),       // generator "wants" it Monday (past) → ignored (started/past)
     { id: "lincoln_lincoln__aas_L0001", who: "lincoln", subjectKey: "aas", day: "friday", time: "9:00 AM", dur: 30, title: "AAS y" }, // other subject → ignored
   ];
-  const r = e._reprojectPlan("lincoln", "ws", live, desired, OPTS());
-  ok("removed: only the not-desired, not-started card (L0004)", eq(r.summary.removed, ["lincoln_lincoln__ws_L0004"]) && r.upd["lincoln_lincoln__ws_L0004"] === null, r.summary);
+  const r = e._reprojectPlan("lincoln", "ws", live, desired, OPTS({ doneLids: ["L0004"] }));
+  ok("removed: only the not-desired, not-started card whose lesson is DONE (L0004)", eq(r.summary.removed, ["lincoln_lincoln__ws_L0004"]) && r.upd["lincoln_lincoln__ws_L0004"] === null, r.summary);
   ok("past L0001 untouched though not desired", !("lincoln_lincoln__ws_L0001" in r.upd) && r.tasksAfter.some(t => t.id === "lincoln_lincoln__ws_L0001"));
   ok("today's started L0002 untouched (not moved to Monday)", !Object.keys(r.upd).some(k => k.indexOf("L0002") >= 0) && r.tasksAfter.find(t => t.id.endsWith("L0002")).day === "wednesday");
   ok("moved: L0003 → friday, day+time paths only", eq(r.summary.moved, ["lincoln_lincoln__ws_L0003"]) && r.upd["lincoln_lincoln__ws_L0003/day"] === "friday" && typeof r.upd["lincoln_lincoln__ws_L0003/time"] === "string" && !("lincoln_lincoln__ws_L0003" in r.upd), r.upd);
@@ -88,10 +88,10 @@ console.log("_reprojectPlan — pure diff by id");
   const r2 = e._reprojectPlan("lincoln", "ws", [T("2026d1_1", "thursday", "3:00 PM", "x", { subjectKey: "aas", dur: 60 })], [T("lincoln_lincoln__ws_L0006", "thursday", null, "WS — f")], OPTS({ packAround: over }));
   ok("no generator slot + packer overflow → still added, timed after the last fixed card (4:00 PM)", r2.upd["lincoln_lincoln__ws_L0006"] && r2.upd["lincoln_lincoln__ws_L0006"].time === "4:00 PM", r2.upd);
   // same-day slot inheritance: finished 12:20 lesson leaves → next lesson moved onto that day takes 12:20
-  const r4 = e._reprojectPlan("lincoln", "ws", [T("lincoln_lincoln__ws_L0014", "thursday", "12:20 PM", "WS — a"), T("lincoln_lincoln__ws_L0016", "friday", "11:50 AM", "WS — b")], [T("lincoln_lincoln__ws_L0016", "thursday", "9:00 AM", "WS — b")], OPTS());
+  const r4 = e._reprojectPlan("lincoln", "ws", [T("lincoln_lincoln__ws_L0014", "thursday", "12:20 PM", "WS — a"), T("lincoln_lincoln__ws_L0016", "friday", "11:50 AM", "WS — b")], [T("lincoln_lincoln__ws_L0016", "thursday", "9:00 AM", "WS — b")], OPTS({ doneLids: ["L0014"] }));
   ok("moved-in card inherits the freed same-day slot (12:20 PM), not end of day", r4.upd["lincoln_lincoln__ws_L0016/time"] === "12:20 PM" && r4.upd["lincoln_lincoln__ws_L0016/day"] === "thursday", r4.upd);
   // freed slot already in the past today → not inherited
-  const r5 = e._reprojectPlan("lincoln", "ws", [T("lincoln_lincoln__ws_L0014", "wednesday", "1:00 PM", "WS — a"), T("lincoln_lincoln__ws_L0016", "friday", "11:50 AM", "WS — b")], [T("lincoln_lincoln__ws_L0016", "wednesday", "9:00 AM", "WS — b")], OPTS({ nowMin: 14 * 60, dayCtx: () => ({ start: 14 * 60, end: 975, lunchStart: 780, lunchEnd: 840 }) }));   // real dayCtx floors today at now
+  const r5 = e._reprojectPlan("lincoln", "ws", [T("lincoln_lincoln__ws_L0014", "wednesday", "1:00 PM", "WS — a"), T("lincoln_lincoln__ws_L0016", "friday", "11:50 AM", "WS — b")], [T("lincoln_lincoln__ws_L0016", "wednesday", "9:00 AM", "WS — b")], OPTS({ nowMin: 14 * 60, doneLids: ["L0014"], dayCtx: () => ({ start: 14 * 60, end: 975, lunchStart: 780, lunchEnd: 840 }) }));   // real dayCtx floors today at now
   ok("a freed slot already past now is not inherited (card packs after now instead)", r5.upd["lincoln_lincoln__ws_L0016/day"] === undefined || toMin(r5.upd["lincoln_lincoln__ws_L0016/time"]) >= 14 * 60, r5.upd);
   // date-id card of a PLAN-BACKED subject = phantom: removed when unlocked, kept when checked/started
   const r3 = e._reprojectPlan("lincoln", "ws", [T("2026d230_5", "thursday", "10:00 AM", "WS — old"), T("2026d230_6", "friday", "10:00 AM", "WS — old2")], [T("lincoln_lincoln__ws_L0009", "thursday", "9:00 AM", "WS — new")], OPTS({ checked: { "2026d230_6": 1 } }));
@@ -110,6 +110,8 @@ console.log("reprojectSubjectWeek — gating + write");
       currWeekNum: () => 18, gwWeekDateRange: () => ({ start: "2026-08-17", end: "2026-08-23" }), _schoolWeekDateFor: d => d, _todayStr: () => o.today || "2026-08-19",
       gwSatPlanned: () => false, generateWeek: () => ({ result: { tasks: o.desired || [] } }), gwRules: () => ({ schoolStart: 600, schoolEnd: 975, lunchStart: 780, lunchEnd: 840 }),
       checked: o.checked || {}, claimed: {}, packAround, toMin, fromMin, sv: () => {}, _dryRun: () => false, dbg: () => {}, toast: null,
+      // the live L0004 is not wanted because its lesson is finished (done record) → removed
+      currData: { done: { lincoln: { ws: o.done || { L0004: { src: "check" } } } } },
       gwShowToast: t => { env.toast = t; }, updates: [],
       haClaimSchedLock: (kind, cb) => { if (o.lockHeld) cb(null); else cb(() => {}); },
     };
@@ -186,7 +188,7 @@ console.log("extras: swap stays · extra on today → next school day · receivi
   ok("nothing pushed/deferred", eq(r2.summary.pushed, []) && eq(r2.summary.deferred, []));
   // 3) SWAP on today: L0006 leaves today (unstarted, 12:30), generator wants L0007 today → takes 12:30, nothing else moves
   const live3 = mk().concat([T("lincoln_lincoln__ws_L0006", "wednesday", "12:30 PM", "WS — f")]);
-  const r3 = e._reprojectPlan("lincoln", "ws", live3, [T("lincoln_lincoln__ws_L0007", "wednesday", "10:00 AM", "WS — g")], OPTS());
+  const r3 = e._reprojectPlan("lincoln", "ws", live3, [T("lincoln_lincoln__ws_L0007", "wednesday", "10:00 AM", "WS — g")], OPTS({ doneLids: ["L0006"] }));
   const at3 = id => (r3.tasksAfter.find(t => t.id === id) || {}).time;
   ok("swap on today: new card takes the freed 12:30 slot, stays today", (r3.tasksAfter.find(t => t.id.endsWith("L0007")) || {}).day === "wednesday" && at3("lincoln_lincoln__ws_L0007") === "12:30 PM" && eq(r3.summary.pushed, []));
   ok("swap: no other card on the day moves", at3("wa") === "10:00 AM" && at3("wb") === "12:00 PM" && eq(r3.summary.shifted, []) && eq(r3.summary.relaid, []));
@@ -263,12 +265,13 @@ console.log("push keeps the subject sequential + under cap (her rule 2026-08-19)
   const r2 = e._reprojectPlan("lincoln", "ws", mkLive(), desired, OPTS({ dayCap: 2 }));
   const thu2 = r2.tasksAfter.filter(t => /ws_L00/.test(t.id) && t.day === "thursday").sort((a, b) => toMin(a.time) - toMin(b.time)).map(t => t.id.slice(-5));
   ok("cap 2: both on Thu, pg29 before pg30", eq(thu2, ["L0014", "L0015"]), thu2);
-  // Off the week: today Thu, only Fri left; pg29 (wants Thu) pushed to Fri; pg30 (on Fri) has no day → removed/deferred
+  // Off the week: today Thu, only Fri left; pg29 (wants Thu) pushed to Fri; pg30 (on Fri) no longer fits the cap
+  // → it STAYS (nothing drops, 2026-09-04) and pg29 goes in AHEAD of it, shifting pg30 by pg29's duration.
   const live3 = [T("lincoln_lincoln__ws_L0015", "friday", "3:30 PM", "EIC — pg 30"), T("other_fri", "friday", "10:00 AM", "x", { subjectKey: "zz" }), T("other_thu", "thursday", "10:00 AM", "x", { subjectKey: "zz" })];
   const desired3 = [T("lincoln_lincoln__ws_L0014", "thursday", "2:00 PM", "EIC — pg 29"), T("lincoln_lincoln__ws_L0015", "friday", "3:30 PM", "EIC — pg 30")];
   const r3 = e._reprojectPlan("lincoln", "ws", live3, desired3, OPTS({ todayDay: "thursday", dayCap: 1 }));
-  const fri3 = r3.tasksAfter.filter(t => /ws_L00/.test(t.id) && t.day === "friday").map(t => t.id.slice(-5));
-  ok("only pg29 on Fri; pg30 removed + deferred (next week's build serves it first)", eq(fri3, ["L0014"]) && r3.upd["lincoln_lincoln__ws_L0015"] === null && r3.summary.deferred.indexOf("lincoln_lincoln__ws_L0015") >= 0, { fri3, def: r3.summary.deferred });
+  const fri3 = r3.tasksAfter.filter(t => /ws_L00/.test(t.id) && t.day === "friday").sort((a, b) => toMin(a.time) - toMin(b.time)).map(t => t.id.slice(-5) + "@" + t.time);
+  ok("Fri holds pg29 THEN pg30 — pg30 kept (no delete), shifted behind pg29", eq(fri3, ["L0014@3:30 PM", "L0015@3:50 PM"]) && !("lincoln_lincoln__ws_L0015" in r3.upd) && r3.upd["lincoln_lincoln__ws_L0015/time"] === "3:50 PM" && r3.summary.kept.indexOf("lincoln_lincoln__ws_L0015") >= 0 && eq(r3.summary.deferred, []), { fri3, upd: r3.upd, kept: r3.summary.kept });
   // A checked (locked) later lesson never moves and uses up the day's room
   const live4 = mkLive(); const r4 = e._reprojectPlan("lincoln", "ws", live4, desired, OPTS({ dayCap: 1, checked: { "lincoln_lincoln__ws_L0015": true } }));
   ok("locked pg30 stays on Fri; pg29 lands Thu", (r4.tasksAfter.find(t => t.id.endsWith("L0015")) || {}).day === "friday" && (r4.tasksAfter.find(t => t.id.endsWith("L0014")) || {}).day === "thursday");
@@ -293,12 +296,37 @@ console.log("push re-sequence: audit cases");
   const rB = e._reprojectPlan("lincoln", "ws", liveB, desB, OPTS({ dayCap: 1, lidOrder: ["L0001", "L0002", "L0154", "L0003"] }));
   const dB = id => (rB.tasksAfter.find(t => t.id.endsWith(id)) || {}).day;
   ok("L0154 (earlier in LIST) → Thu, L0003 → Fri", dB("L0154") === "thursday" && dB("L0003") === "friday", { m: dB("L0154"), c: dB("L0003") });
-  // (c) retitled card that falls off the week: removal only, no /title path riding along
+  // (c) retitled card that no longer fits the cap: it STAYS (nothing drops) and keeps its retitle
   const liveC = [T("lincoln_lincoln__ws_L0015", "friday", "3:30 PM", "old title"), T("o_fri", "friday", "10:00 AM", "x", { subjectKey: "zz" }), T("o_thu", "thursday", "10:00 AM", "x", { subjectKey: "zz" })];
   const desC = [T("lincoln_lincoln__ws_L0014", "thursday", "2:00 PM", "pg 29"), T("lincoln_lincoln__ws_L0015", "friday", "3:30 PM", "NEW title")];
   const rC = e._reprojectPlan("lincoln", "ws", liveC, desC, OPTS({ todayDay: "thursday", dayCap: 1 }));
-  ok("removed card carries no /title write", rC.upd["lincoln_lincoln__ws_L0015"] === null && rC.upd["lincoln_lincoln__ws_L0015/title"] === undefined && rC.summary.retitled.indexOf("lincoln_lincoln__ws_L0015") < 0, rC.upd);
+  ok("kept card is not removed and its /title write stays", rC.upd["lincoln_lincoln__ws_L0015"] === undefined && rC.upd["lincoln_lincoln__ws_L0015/title"] === "NEW title" && rC.summary.retitled.indexOf("lincoln_lincoln__ws_L0015") >= 0, rC.upd);
   ok("no path in upd is a prefix of another (Firebase multi-path rule)", (() => { const ks = Object.keys(rC.upd); return ks.every(k => ks.every(o => o === k || !o.startsWith(k + "/"))); })(), Object.keys(rC.upd));
+}
+
+console.log("nothing drops (her rule, 2026-09-04): a re-lay never deletes an unfinished lesson");
+{
+  const e = mkEnv();
+  // Lincoln's live shape before the 2026-09-03 rebuild: Thu pg 32 (started), Fri pg 33, Sat pg 34 CASCADED
+  // there from Monday (the plan runs Mon–Fri, so the generator never wants a Saturday card), Wed pg 35 overflow.
+  const P = (n, day, time, extra) => T("lincoln_lincoln__ws_L00" + n, day, time, "EIC — B2 pg " + n, extra);
+  const live = [P(31, "tuesday", "12:30 PM"), P(32, "thursday", "11:40 AM"), P(33, "friday", "3:25 PM"),
+    P(34, "saturday", "10:00 AM", { cascadedFrom: "monday" }), P(35, "wednesday", "11:53 AM", { cascadedFrom: "monday", _eowOverflow: true })];
+  const desired = [P(33, "friday", "3:25 PM")];   // 11:57 PM Thursday: pg 32 started → consumed; only Friday left on the pattern
+  const r = e._reprojectPlan("lincoln", "ws", live, desired, OPTS({ todayDay: "thursday", nowMin: 23 * 60 + 57, checked: { lincoln_lincoln__ws_L0031: 1 }, doneLids: ["L0031"], allowedDays: ["Mon", "Tue", "Wed", "Thu", "Fri"] }));
+  ok("Saturday pg 34 is KEPT, not removed", eq(r.summary.removed, []) && r.tasksAfter.some(t => t.id.endsWith("L0034") && t.day === "saturday") && !("lincoln_lincoln__ws_L0034" in r.upd), r.summary);
+  ok("reported as kept", r.summary.kept.indexOf("lincoln_lincoln__ws_L0034") >= 0, r.summary.kept);
+  ok("nothing written at all (every card already where it belongs)", eq(r.upd, {}), r.upd);
+  // The same card leaves once its lesson is finished on another card / in the done record
+  const r2 = e._reprojectPlan("lincoln", "ws", live.map(t => Object.assign({}, t)), desired, OPTS({ todayDay: "thursday", nowMin: 23 * 60 + 57, checked: { lincoln_lincoln__ws_L0031: 1 }, doneLids: ["L0031", "L0034"] }));
+  ok("done + not wanted → removed", eq(r2.summary.removed, ["lincoln_lincoln__ws_L0034"]) && r2.upd["lincoln_lincoln__ws_L0034"] === null);
+  // A cascade-made SECOND sitting on a pattern day (AAS L2-17 12:30 + L2-18 2:00 Friday, live 2026-09-03) stays too
+  const live3 = [T("lincoln_lincoln__ws_L0017", "friday", "12:30 PM", "AAS — L2-17"), T("lincoln_lincoln__ws_L0018", "friday", "2:00 PM", "AAS — L2-18")];
+  const r3 = e._reprojectPlan("lincoln", "ws", live3, [T("lincoln_lincoln__ws_L0017", "friday", "12:30 PM", "AAS — L2-17")], OPTS({ todayDay: "thursday" }));
+  ok("second sitting kept in place, nothing written", eq(r3.upd, {}) && eq(r3.summary.kept, ["lincoln_lincoln__ws_L0018"]), r3.summary);
+  // Phantom date-id cards are still cleared (they are not lessons)
+  const r4 = e._reprojectPlan("lincoln", "ws", [T("2026d230_5", "thursday", "10:00 AM", "WS — old")], [], OPTS());
+  ok("unlocked phantom still removed", r4.upd["2026d230_5"] === null);
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");

@@ -63,7 +63,8 @@ const before = flips("lincoln", { ...realCard, prompt: "NOT_IN_ANY_MAP" }, "quiz
 ok("a card with no answer still does not flip", before.flips === false, before);
 
 console.log("\nevery bank word resolves");
-const banks = JSON.parse(fs.readFileSync("/private/tmp/claude-501/-Users-adriennehowe/ce8e1d3a-c7a7-40c9-98a5-4cea32fb95a2/scratchpad/mathbanks.json", "utf8"));
+// Math Facts prompts per kid, snapshot of the live mastery banks (test_fixtures/, regenerate when banks change)
+const banks = JSON.parse(fs.readFileSync(__dirname + "/test_fixtures/mathbanks_2026-09-04.json", "utf8"));
 for (const kid of Object.keys(banks)) {
   const missing = banks[kid].filter(w => !mastGetDef(kid, w));
   ok(kid + ": all " + banks[kid].length + " words have a back", missing.length === 0, missing);
