@@ -34978,8 +34978,50 @@ function _mlMarkDate(yd,dayOrder,ti){
   d.setDate(d.getDate()-(ti-dayOrder.indexOf(yd)));
   return d;
 }
-function mlReady(kid){ try{ return !!morningComplete(kid,_todayDay); }catch(e){ return true; } }
+function mlReady(kid){ try{ return !!morningComplete(kid,_todayDay)&&!mlOff(kid); }catch(e){ return !mlOff(kid); } }
 function mlPaused(kid){ try{ return !!bbActive(kid); }catch(e){ return false; } }
+// ── the READY SWITCH — her ask 2026-09-05 ───────────────────────────────────────────────
+// "a during-the-day switch for each kid that says they are not ready… when they finish
+// morning their switch will automatically go on but manually can be turned off by mom until
+// they say they are ready." A kid poking around is not a kid ready for Mom, and a check-off
+// is a weak signal (they finished a card, they did not come to her), so nothing flips a kid
+// back ON except a person: her tap on the strip, or the kid's own "I'm ready" tap on their
+// banner. OFF behaves exactly like "still on their routine" (her choice 2026-09-05, smallest
+// version first): the ring skips them, the next ready kid borrows card by card, the cursor
+// holds so they lose no place, their schedule stays open for independent work, and a started
+// session (the hold) is suspended like a break and resumes when they are back ON.
+// Stored per kid as the day stamp it was switched off on, so it clears itself overnight.
+function mlOff(kid){ try{ return !!(momLoop&&momLoop.off&&momLoop.off[kid]===_mlDayStamp()); }catch(e){ return false; } }
+function _mlWriteOff(kid,off){
+  const o=Object.assign({},(momLoop&&momLoop.off)||{});
+  if(off) o[kid]=_mlDayStamp(); else delete o[kid];
+  momLoop=Object.assign({},momLoop,{off:o});
+  if(db){ const r=db.ref("config/momLoop/off/"+kid); if(off) r.set(_mlDayStamp()); else r.remove(); }
+  renderAll();
+}
+// Mom's lever on the strip: switch a kid off (not ready yet) or back on.
+function mlSetOff(kid,off){
+  if(!momHere()&&!adminPinUnlocked) return;
+  if(mlOrder().indexOf(kid)<0) return;
+  _mlWriteOff(kid,!!off);
+}
+// The kid's lever, deliberately NOT Mom-gated — "until they say they are ready": their own
+// banner carries the button. It can only turn a kid ON, never off.
+function mlKidReady(kid){ if(mlOff(kid)) _mlWriteOff(kid,false); }
+// ── MOM'S OWN SWITCH — her ask 2026-09-05: "a mom switch that says mom isn't [available]
+// and no mom task." While it is on, nobody has her and no Mom card is anyone's next: the
+// loop answers nobody, the kid banners go quiet, a check-off starts no session, and each
+// kid's Mom-required cards sink behind their own independent work (which keeps its slots)
+// so the day fills with what they can do alone. Flip it back and the loop resumes exactly
+// where its rules say — the cursor, the hold and every kid switch are untouched by it.
+// Day-stamped like the kid switches, so it clears itself overnight.
+function mlMomOff(){ try{ return !!(momLoop&&momLoop.momOff===_mlDayStamp()); }catch(e){ return false; } }
+function mlSetMomOff(off){
+  if(!momHere()&&!adminPinUnlocked) return;
+  momLoop=Object.assign({},momLoop,{momOff:off?_mlDayStamp():null});
+  if(db){ const r=db.ref("config/momLoop/momOff"); if(off) r.set(_mlDayStamp()); else r.remove(); }
+  renderAll();
+}
 // The day a card is ON, as the schedule shows it: an unfinished card rolls forward past the
 // days that have elapsed (effectiveDay), so yesterday's leftover Mom card IS today's work. The
 // loop compared the STORED day, which made every carried-forward card invisible to its counts,
@@ -35080,11 +35122,13 @@ function mlSetBehindScope(v){
 function mlNow(){
   const _sc=_mlScan(); const order=_sc.order, n=order.length; if(!n) return null;
   const cur=_sc.cur, cursorKid=order[cur];
+  // Mom's own switch beats everything, the hold included (it resumes when she is back).
+  if(mlMomOff()) return {kid:null,cursorKid:cursorKid,momOff:true,why:"Mom is not available right now"};
   // A started session outranks the scan: the kid who checked the card ahead of their Mom
   // card keeps her, even if the kid whose planned turn it was becomes ready mid-session.
   // A pause still hands Mom on (the hold resumes when the break ends).
   const hd=mlHold();
-  if(hd&&!mlPaused(hd.kid)&&!mlDone(hd.kid)){
+  if(hd&&!mlPaused(hd.kid)&&!mlOff(hd.kid)&&!mlDone(hd.kid)){
     return {kid:hd.kid,held:true,borrowed:false,cursorKid:cursorKid,why:"started with you"};
   }
   for(let i=0;i<n;i++){
@@ -35094,7 +35138,8 @@ function mlNow(){
     if(mlPaused(k)) continue;
     return {kid:k,borrowed:i>0,cursorKid:cursorKid,
       why:(i===0)?"their turn":(mlPaused(cursorKid)?("borrowed — "+cap(cursorKid)+" is on a break")
-        :(!mlReady(cursorKid)?("borrowed — "+cap(cursorKid)+" is still on their routine"):"borrowed"))};
+        :(mlOff(cursorKid)?("borrowed — "+cap(cursorKid)+" is switched off")
+        :(!mlReady(cursorKid)?("borrowed — "+cap(cursorKid)+" is still on their routine"):"borrowed")))};
   }
   return {kid:null,cursorKid:cursorKid,why:"nobody is ready and free right now"};
 }
@@ -35103,7 +35148,7 @@ function mlStatus(){
   const now=mlNow(); const b=mlBehindAll()||{};
   return _mlScan().order.map(function(k){
     return {kid:k,
-      state: mlDone(k)?"done" : (!mlReady(k)?"routine" : (mlPaused(k)?"paused" : ((now&&now.kid===k)?"withMom":"waiting"))),
+      state: mlDone(k)?"done" : (mlOff(k)?"off" : (!mlReady(k)?"routine" : (mlPaused(k)?"paused" : ((now&&now.kid===k)?"withMom":"waiting")))),
       left: mlRemaining(k).length,
       behind: (b[k]&&b[k].pct)||0,
       isCursor: k===(now&&now.cursorKid)};
@@ -35142,7 +35187,7 @@ function mlStripHTML(){
     const st=mlStatus();
     const CH={withMom:["#16a34a","#fff","with you"],paused:["#f59e0b","#fff","on a break"],
               routine:["#94a3b8","#fff","still on routine"],waiting:["#e0e7ff","#3730a3","waiting"],
-              done:["#d1fae5","#065f46","done"]};
+              off:["#fecaca","#991b1b","not ready"],done:["#d1fae5","#065f46","done"]};
     let h='<div style="background:#f5f3ff;border-left:4px solid #7c3aed;border-radius:0 10px 10px 0;padding:9px 12px;margin:0 0 8px">';
     h+='<div style="font-size:12px;font-weight:800;color:#5b21b6;margin-bottom:6px">&#128105; Mom loop — '
       +(now.kid?('now with <span style="color:#16a34a">'+cap(now.kid)+'</span>'+(function(){ var nc=mlNextCard(now.kid); return nc?(' <span style="font-weight:700;color:#0f766e">&rarr; '+esc(nc.title)+'</span>'):""; })()
@@ -35160,7 +35205,20 @@ function mlStripHTML(){
       if(i<st.length-1) h+='<span style="color:#a5b4fc;font-size:11px">&rarr;</span>';
     });
     h+='</div>';
+    // the ready switch (2026-09-05): flip a kid OFF when they are not really ready for her;
+    // they come back ON by her tap here or their own "I'm ready" tap
     h+='<div style="margin-top:7px;display:flex;gap:5px;flex-wrap:wrap;align-items:center">';
+    {
+      const mo=mlMomOff();
+      h+='<button onclick="mlSetMomOff('+(mo?'false':'true')+')" title="'+(mo?'you are marked not available — tap when you are back':'tap when you are not available: nobody gets a Mom task until you are back')+'" style="border:1px solid '+(mo?'#fca5a5':'#c4b5fd')+';background:'+(mo?'#fee2e2':'#ede9fe')+';color:'+(mo?'#991b1b':'#5b21b6')+';border-radius:8px;padding:2px 9px;font-size:10.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">&#128105; Mom '+(mo?'&#10005; not available':'&#10003; available')+'</button>';
+    }
+    h+='<span style="font-size:10.5px;color:#6d28d9">Ready for Mom:</span>';
+    mlOrder().forEach(function(k){
+      const off=mlOff(k);
+      h+='<button onclick="mlSetOff(\''+k+'\','+(off?'false':'true')+')" title="'+(off?'switched off — tap to turn back on':'on — tap to switch off until they say they are ready')+'" style="border:1px solid '+(off?'#fca5a5':'#86efac')+';background:'+(off?'#fee2e2':'#dcfce7')+';color:'+(off?'#991b1b':'#166534')+';border-radius:8px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cap(k)+' '+(off?'&#10005; off':'&#10003; on')+'</button>';
+    });
+    h+='</div>';
+    h+='<div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap;align-items:center">';
     h+='<span style="font-size:10.5px;color:#6d28d9">Start the loop on:</span>';
     mlOrder().forEach(function(k){
       h+='<button onclick="mlSetCursor(\''+k+'\')" style="border:1px solid #ddd6fe;background:#fff;color:#5b21b6;border-radius:8px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cap(k)+'</button>';
@@ -35229,8 +35287,12 @@ function mlQueueLay(tasks){
     if(!ring.length) return tasks;
     // The queue: mlNow's answer leads (held card in hand, or a borrower's ONE card), then
     // blocks in ring order. The decision layer stays the single authority on "who now".
+    const momOffNow=mlMomOff();
     const seq=[];
-    if(now&&now.kid&&momQ[now.kid]&&momQ[now.kid].length){
+    if(momOffNow){
+      // Mom is not available: no queue is laid for her at all. Each kid's Mom cards sink
+      // behind their own independent work in the per-kid re-pack below.
+    }else if(now&&now.kid&&momQ[now.kid]&&momQ[now.kid].length){
       if(now.borrowed){
         seq.push({kid:now.kid,cards:momQ[now.kid].slice(0,1)});
         ring.forEach(function(k){
@@ -35249,10 +35311,12 @@ function mlQueueLay(tasks){
     //   first unchecked card is the Mom card itself (Julian, or nothing left to buffer
     //   with) → the block starts at its own printed slot
     //   otherwise → right after the in-flight buffer card, which never moves
-    const k0=seq[0].kid, first0=mine[k0][0];
-    let t;
-    if((now&&now.held&&now.kid===k0)||!first0||first0.mom==="required") t=toMin((first0||seq[0].cards[0]).time);
-    else t=toMin(first0.time)+(first0.dur||20);
+    let t=0;
+    if(seq.length){
+      const k0=seq[0].kid, first0=mine[k0][0];
+      if((now&&now.held&&now.kid===k0)||!first0||first0.mom==="required") t=toMin((first0||seq[0].cards[0]).time);
+      else t=toMin(first0.time)+(first0.dur||20);
+    }
     // A kid's own lunch interval steps the chain over it — lunch itself never moves.
     const lunchOf=function(k){
       return tasks.filter(function(x){ return isToday(x)&&x.who===k&&/lunch/i.test(x.title||""); })
@@ -35274,7 +35338,7 @@ function mlQueueLay(tasks){
     // the buffer/chain and re-tuck to the TRUE end of the kid's re-laid day below.
     const _mlClose=function(t){ return t.subjectKey==="closing_nb"||(t.title||"").toLowerCase().includes("closing notebook"); };
     order.forEach(function(k){
-      const momIv=momQ[k].map(function(c){
+      const momIv=momOffNow?[]:momQ[k].map(function(c){
         const s=(newTimes[c.id]!==undefined)?newTimes[c.id]:toMin(c.time);
         return [s,s+(c.dur||20)];
       });
@@ -35285,7 +35349,17 @@ function mlQueueLay(tasks){
         .sort(function(a,b){ return toMin(a.time)-toMin(b.time); });
       // Push-later-only: a card keeps the packer's slot (device lanes and gaps survive)
       // and steps later only to clear the kid's Mom block, lunch, or the card before it.
-      let p=buf?(toMin(buf.time)+(buf.dur||20)):0;
+      // The buffer keeps its slot too — UNLESS the kid's own Mom block covers it (a held
+      // card renders where the kid is; a non-leader's block can reach their slot). Then it
+      // walks to the END of the block like every other card — her rule 2026-09-05: "at the
+      // end of the mom block, not the one mom". Found by the switch day-walk; pre-existing.
+      let p=0;
+      if(buf){
+        const d0=buf.dur||20; let s0=toMin(buf.time); let mv0=true;
+        while(mv0){ mv0=false; momIv.concat(Ls).forEach(function(iv){ if(s0<iv[1]&&s0+d0>iv[0]){ s0=iv[1]; mv0=true; } }); }
+        if(s0!==toMin(buf.time)) newTimes[buf.id]=s0;
+        p=s0+d0;
+      }
       others.forEach(function(c){
         const d=c.dur||20;
         let s=Math.max(toMin(c.time),p);
@@ -35295,6 +35369,19 @@ function mlQueueLay(tasks){
         }
         newTimes[c.id]=s; p=s+d;
       });
+      // Mom off (2026-09-05): her cards chain behind the kid's own work, stepping over
+      // lunch, so the independent day fills first; the closing tuck below then follows
+      // them. A kid with no independent work (Julian) keeps their printed slot.
+      if(momOffNow&&momQ[k].length){
+        let s=buf?p:0;
+        others.forEach(function(c){ const e=(newTimes[c.id]!==undefined?newTimes[c.id]:toMin(c.time))+(c.dur||20); if(e>s) s=e; });
+        if(!buf&&!others.length) s=toMin(momQ[k][0].time);
+        momQ[k].forEach(function(c){
+          const d=c.dur||20;
+          Ls.forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]) s=iv[1]; });
+          newTimes[c.id]=s; momIv.push([s,s+d]); s+=d;
+        });
+      }
       // Fluid closing tuck: whatever the loop did to this kid's day (Mom block laid
       // later, independent work pushed), the wrap-up follows the day's new end — later
       // OR earlier than its packed slot. Skips when nothing else is left (a lone
@@ -35302,7 +35389,7 @@ function mlQueueLay(tasks){
       if(closes.length){
         let lastEnd=0;
         momIv.forEach(function(iv){ if(iv[1]>lastEnd) lastEnd=iv[1]; });
-        if(buf){ const e=toMin(buf.time)+(buf.dur||20); if(e>lastEnd) lastEnd=e; }
+        if(buf){ const e=(newTimes[buf.id]!==undefined?newTimes[buf.id]:toMin(buf.time))+(buf.dur||20); if(e>lastEnd) lastEnd=e; }
         others.forEach(function(c){ const e=(newTimes[c.id]!==undefined?newTimes[c.id]:toMin(c.time))+(c.dur||20); if(e>lastEnd) lastEnd=e; });
         if(lastEnd>0) closes.forEach(function(c){
           const d=c.dur||20; let s=lastEnd;
@@ -35322,6 +35409,19 @@ function mlQueueLay(tasks){
 // Mom-gated on purpose — this is the one loop surface the kid acts on.
 function mlBannerHTML(kid){
   try{
+    if(mlOff(kid)&&!mlDone(kid)){
+      return '<div style="background:#fff7ed;border-left:4px solid #f97316;border-radius:0 10px 10px 0;padding:10px 12px;margin:0 0 8px;display:flex;align-items:center;gap:9px">'
+        +'<span style="font-size:19px">&#9203;</span>'
+        +'<div style="flex:1"><div style="font-size:12.5px;font-weight:800;color:#9a3412">Not with Mom yet</div>'
+        +'<div style="font-size:10.5px;color:#c2410c">Keep going on your own work. When you&rsquo;re really ready for her, tap the button.</div></div>'
+        +'<button onclick="mlKidReady(\''+kid+'\')" style="border:none;background:#f97316;color:#fff;border-radius:10px;padding:7px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">I&rsquo;m ready for Mom</button></div>';
+    }
+    if(mlMomOff()&&!mlDone(kid)){
+      return '<div style="background:#f5f3ff;border-left:4px solid #a78bfa;border-radius:0 10px 10px 0;padding:9px 12px;margin:0 0 8px;display:flex;align-items:center;gap:9px">'
+        +'<span style="font-size:19px">&#128105;</span>'
+        +'<div><div style="font-size:12.5px;font-weight:800;color:#5b21b6">Mom&rsquo;s not available right now</div>'
+        +'<div style="font-size:10.5px;color:#6d28d9">Keep going on your own work &mdash; your Mom cards moved to after it.</div></div></div>';
+    }
     const now=mlNow(); if(!now||now.kid!==kid) return "";
     const nxt=mlNextCard(kid); if(!nxt) return "";
     return '<div style="background:#ecfdf5;border-left:4px solid #16a34a;border-radius:0 10px 10px 0;padding:10px 12px;margin:0 0 8px;display:flex;align-items:center;gap:9px">'

@@ -151,12 +151,20 @@ console.log("\n── it decides, it does not reschedule ──");
   // tap beats the derived end-of-day capture today only. Written on the same Mom-gated tap.
   // 2026-09-03 added behindScope: the behind marker's subject scope (required | maybe | all),
   // one Mom-gated tap on the strip. Still never a card.
-  ok("it writes only the order, the cursor + its tap-day stamp, the hold, and the behind scope",
-    (BLOCK.match(/db\.ref\(/g) || []).length === 7
+  // 2026-09-05 added the READY SWITCH: config/momLoop/off/<kid> = the day stamp it was
+  // switched off on (self-clearing overnight). One write site shared by Mom's strip tap and
+  // the kid's own "I'm ready" tap. Still never a card.
+  // …and Mom's own switch: config/momLoop/momOff = today's stamp while she is not available.
+  ok("it writes only the order, the cursor + its tap-day stamp, the hold, the behind scope, and the two switches",
+    (BLOCK.match(/db\.ref\(/g) || []).length === 9
       && /config\/momLoop\/order/.test(BLOCK) && /config\/momLoop\/cursor/.test(BLOCK)
       && /config\/momLoop\/cursorSetOn/.test(BLOCK) && /config\/momLoop\/behindScope/.test(BLOCK)
+      && (BLOCK.match(/config\/momLoop\/off\//g) || []).length === 1
+      && (BLOCK.match(/config\/momLoop\/momOff/g) || []).length === 1
       && (BLOCK.match(/WK\+"\/momHold"/g) || []).length === 3);
-  ok("the setters are Mom-gated", (BLOCK.match(/if\(!momHere\(\)&&!adminPinUnlocked\) return;/g) || []).length === 4);
+  ok("the setters are Mom-gated", (BLOCK.match(/if\(!momHere\(\)&&!adminPinUnlocked\) return;/g) || []).length === 6);
+  // the ONE deliberately un-gated lever: the kid's "I'm ready" tap, and it can only turn ON
+  ok("the kid's ready tap is un-gated and one-directional", /function mlKidReady\(kid\)\{ if\(mlOff\(kid\)\) _mlWriteOff\(kid,false\); \}/.test(BLOCK));
   const R = src.indexOf("function mlStripHTML"), R2 = src.indexOf("// MOMLOOP_END");
   const strip = R >= 0 ? src.slice(R, R2) : "";
   ok("the strip is Mom-gated too", /if\(!momHere\(\)&&!adminPinUnlocked\) return "";/.test(strip));
@@ -246,6 +254,130 @@ console.log("\n── a carried-forward Mom card is TODAY's work (found 2026-09-
   const r2 = run({ kids: ["lucy"], cards: { lucy: 0 } });
   r2.tasks.push({ id: "lucy_old", who: "lucy", day: "friday", time: "10:30 AM", mom: "required", title: "x" });
   ok("falls back to the stored day when effectiveDay is absent", r2.call("mlRemaining('lucy').length") === 0);
+}
+
+console.log("\n── the READY SWITCH (her ask 2026-09-05): Mom flips a kid off until they say they are ready ──");
+{
+  const O = ["julian", "lucy", "lincoln"];
+  const stamp = run().call("_mlDayStamp()");
+  // OFF = exactly like "still on routine": next ready kid borrows, cursor holds
+  const r = run({ momLoop: { order: O, cursor: 0, off: { julian: stamp } } });
+  const n = r.call("mlNow()");
+  ok("a switched-off cursor kid is skipped — the next ready kid borrows", n.kid === "lucy" && n.borrowed === true, n);
+  ok("the cursor has NOT moved — he loses no place", n.cursorKid === "julian", n);
+  ok("the reason names the switch, not the routine", /Julian/.test(n.why) && /switched off/.test(n.why), n.why);
+  ok("the strip shows him as 'off'", r.call("mlStatus()").find(x => x.kid === "julian").state === "off");
+  ok("his morning routine still counts as done underneath", r.call("morningComplete('julian','monday')") === true);
+  // back ON → his turn again, immediately
+  const r2 = run({ momLoop: { order: O, cursor: 0, off: {} } });
+  ok("flipped back on, he has Mom again", r2.call("mlNow()").kid === "julian" && r2.call("mlNow()").borrowed === false);
+  // the stamp is TODAY's only — yesterday's switch means nothing this morning
+  const r3 = run({ momLoop: { order: O, cursor: 0, off: { julian: "2000-1-1" } } });
+  ok("a stale (yesterday's) switch clears itself", r3.call("mlOff('julian')") === false && r3.call("mlNow()").kid === "julian");
+  // done beats off on the strip: a finished kid is finished
+  const r4 = run({ momLoop: { order: O, cursor: 0, off: { julian: stamp } }, checked: { julian0: "x", julian1: "x" } });
+  ok("a done kid switched off still reads 'done'", r4.call("mlStatus()").find(x => x.kid === "julian").state === "done");
+  // everyone off → nobody, honestly
+  const r5 = run({ momLoop: { order: O, cursor: 0, off: { julian: stamp, lucy: stamp, lincoln: stamp } } });
+  ok("everyone switched off → nobody has Mom", r5.call("mlNow()").kid === null);
+}
+console.log("\n── the switch and the HOLD: a started session is suspended like a break, and resumes ──");
+{
+  const O = ["julian", "lucy", "lincoln"];
+  const stamp = run().call("_mlDayStamp()");
+  const r = run({ momLoop: { order: O, cursor: 1, off: { lucy: stamp } } });
+  r.call("momHold={kid:'lucy',id:'lucy0',day:'monday'}");
+  const n = r.call("mlNow()");
+  ok("switched off mid-session → Mom is handed on", n.kid === "lincoln" && n.held !== true, n);
+  ok("…the hold itself is kept, not cleared", r.call("mlHold()") && r.call("mlHold().kid") === "lucy");
+  r.call("momLoop=Object.assign({},momLoop,{off:{}})");
+  const n2 = r.call("mlNow()");
+  ok("back on → the started session resumes with her card in hand", n2.kid === "lucy" && n2.held === true, n2);
+  // an OFF kid's buffer check starts nothing (they are not the pick)
+  const r6 = run({ momLoop: { order: O, cursor: 1, off: { lucy: stamp } } });
+  r6.tasks.push({ id: "lucy_nb", who: "lucy", day: "monday", time: "9:00 AM", mom: "none", title: "notebook" });
+  r6.call("mlOnCheck(" + JSON.stringify(r6.tasks[r6.tasks.length - 1]) + ")");
+  ok("an OFF kid checking their buffer sets no hold", !r6.call("mlHold()"));
+}
+console.log("\n── the levers: her strip tap (Mom-gated) and the kid's own 'I'm ready' tap ──");
+{
+  const O = ["julian", "lucy", "lincoln"];
+  const stamp = run().call("_mlDayStamp()");
+  function withDb(o) {
+    const r = run(o);
+    r.call("var __w=[]; db={ref:function(p){return {set:function(v){__w.push(['set',p,v]);},remove:function(){__w.push(['remove',p]);}};}};");
+    r.writes = () => r.call("__w");
+    return r;
+  }
+  const r = withDb({ momLoop: { order: O, cursor: 0 } });
+  r.call("mlSetOff('julian',true)");
+  ok("her tap writes exactly config/momLoop/off/<kid> = today's stamp",
+    JSON.stringify(r.writes()) === JSON.stringify([["set", "config/momLoop/off/julian", stamp]]), r.writes());
+  ok("…and the local state flips at once", r.call("mlOff('julian')") === true && r.call("mlNow().kid") === "lucy");
+  r.call("mlSetOff('julian',false)");
+  ok("turning back on removes the path", r.writes()[1][0] === "remove" && r.writes()[1][1] === "config/momLoop/off/julian" && r.call("mlOff('julian')") === false);
+  ok("a kid outside the loop is ignored", (r.call("mlSetOff('nobody',true)"), r.writes().length === 2));
+  // gated: a kid device cannot flip anyone off
+  const g = withDb({ momLoop: { order: O, cursor: 0 } });
+  g.call("momHere=function(){return false}; adminPinUnlocked=false;");
+  g.call("mlSetOff('julian',true)");
+  ok("a kid device cannot switch anyone off", g.writes().length === 0 && g.call("mlOff('julian')") === false);
+  // the kid's own tap: un-gated, ON only
+  const k = withDb({ momLoop: { order: O, cursor: 0, off: { julian: stamp } } });
+  k.call("momHere=function(){return false}; adminPinUnlocked=false;");
+  k.call("mlKidReady('julian')");
+  ok("the kid's 'I'm ready' tap turns them on from their own device",
+    k.call("mlOff('julian')") === false && k.writes().length === 1 && k.writes()[0][0] === "remove");
+  k.call("mlKidReady('julian')");
+  ok("tapping again when already on writes nothing", k.writes().length === 1);
+  // the banner
+  const b = run({ momLoop: { order: O, cursor: 0, off: { julian: stamp } } });
+  const bh = b.call("mlBannerHTML('julian')");
+  ok("an OFF kid's banner carries the 'I'm ready' button, not 'Mom's ready for you'",
+    /mlKidReady\('julian'\)/.test(bh) && /ready for Mom/.test(bh) && !/Mom&rsquo;s ready for you/.test(bh));
+  b.call("toMin=function(){return 0}");   // this world's cards carry no time; the banner sorts by it
+  ok("an ON kid whose turn it is still gets the normal banner", /Mom&rsquo;s ready for you/.test(b.call("mlBannerHTML('lucy')")));
+  const bd = run({ momLoop: { order: O, cursor: 0, off: { julian: stamp } }, checked: { julian0: "x", julian1: "x" } });
+  ok("an OFF kid with nothing left gets no banner at all", bd.call("mlBannerHTML('julian')") === "");
+  const s = b.call("mlStripHTML()");
+  ok("the strip shows the switch row with him off and the others on",
+    /Ready for Mom:/.test(s) && /mlSetOff\('julian',false\)/.test(s) && /mlSetOff\('lucy',true\)/.test(s));
+}
+console.log("\n── MOM'S OWN SWITCH (her ask 2026-09-05): 'mom isn't available — no mom task' ──");
+{
+  const O = ["julian", "lucy", "lincoln"];
+  const stamp = run().call("_mlDayStamp()");
+  const r = run({ momLoop: { order: O, cursor: 0, momOff: stamp } });
+  const n = r.call("mlNow()");
+  ok("Mom off → nobody has her, and it says why", n.kid === null && n.momOff === true && /not available/.test(n.why), n);
+  ok("the cursor is untouched", n.cursorKid === "julian");
+  ok("nobody reads 'with Mom' on the strip", r.call("mlStatus()").every(x => x.state !== "withMom"));
+  // the hold survives her being away, and resumes
+  r.call("momHold={kid:'lucy',id:'lucy0',day:'monday'}");
+  ok("a started session is not the pick while she is off", r.call("mlNow()").kid === null);
+  ok("…but the hold itself is kept", r.call("mlHold().kid") === "lucy");
+  r.call("momLoop=Object.assign({},momLoop,{momOff:null})");
+  ok("back on → the started session resumes", r.call("mlNow()").kid === "lucy" && r.call("mlNow()").held === true);
+  // a check-off while she is off starts nothing
+  const r2 = run({ momLoop: { order: O, cursor: 0, momOff: stamp } });
+  r2.tasks.push({ id: "julian_nb", who: "julian", day: "monday", time: "9:00 AM", mom: "none", title: "notebook" });
+  r2.call("toMin=function(){return 0}");
+  r2.call("mlOnCheck(" + JSON.stringify(r2.tasks[r2.tasks.length - 1]) + ")");
+  ok("a buffer check while Mom is off sets no hold", !r2.call("mlHold()"));
+  ok("kid banner says she is not available, offers no Mom card", /not available/.test(r2.call("mlBannerHTML('julian')")) && !/ready for you/.test(r2.call("mlBannerHTML('julian')")));
+  ok("a done kid gets no banner", (() => { const d = run({ momLoop: { order: O, cursor: 0, momOff: stamp }, checked: { julian0: "x", julian1: "x" } }); return d.call("mlBannerHTML('julian')") === ""; })());
+  // stale = off means on
+  ok("yesterday's Mom switch clears itself", run({ momLoop: { order: O, cursor: 0, momOff: "2000-1-1" } }).call("mlNow()").kid === "julian");
+  // the lever
+  const w = run({ momLoop: { order: O, cursor: 0 } });
+  w.call("var __w=[]; db={ref:function(p){return {set:function(v){__w.push(['set',p,v]);},remove:function(){__w.push(['remove',p]);}};}};");
+  w.call("mlSetMomOff(true)");
+  ok("her tap writes exactly config/momLoop/momOff = today's stamp", JSON.stringify(w.call("__w")) === JSON.stringify([["set", "config/momLoop/momOff", stamp]]) && w.call("mlMomOff()") === true);
+  w.call("mlSetMomOff(false)");
+  ok("tapping back removes it", w.call("__w")[1][0] === "remove" && w.call("mlMomOff()") === false);
+  w.call("momHere=function(){return false}; adminPinUnlocked=false; mlSetMomOff(true)");
+  ok("a kid device cannot flip Mom's switch", w.call("__w").length === 2 && w.call("mlMomOff()") === false);
+  ok("the strip carries her toggle", /mlSetMomOff\(true\)/.test(run({ momLoop: { order: O, cursor: 0 } }).call("mlStripHTML()")));
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");
