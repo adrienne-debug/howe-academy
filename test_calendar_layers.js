@@ -189,6 +189,7 @@ console.log("\n── 📖 School panel in the Corner: today's cards, the real c
   ok("Mom through a kid's lens keeps her actions (meal buttons, edit, approve)", /if\(L\.meals&&kidMode\)\{/.test(sheet) && /\(kidMode\?\(\(e\.addedBy===who\)/.test(sheet));
   ok("Mom's Calendar has Today | Month and Family + each kid", /mpCalSet\('today'\)|tb\('today'/.test(slice("renderMPCalendar")) && /ROSTER\.map\(function\(k\)\{ return wb\(k,/.test(slice("renderMPCalendar")));
   ok("the points card never invents a school number — school pays spins", /bonus spin when done/.test(slice("kcPointsHTML")) && !/cards\.length\*|pts\*cards/.test(slice("kcPointsHTML")));
+  ok("the Spins row spells out what's left and offers Claim only when the gate is met", /leftBits\.join\(", "\)\+" to go"/.test(slice("kcPointsHTML")) && /const canClaim=spun>0&&gateOk&&!\(claim&&\(claim\.status==="claimed"\|\|claim\.status==="cashed"\)\);/.test(slice("kcPointsHTML")) && /Claim my spins/.test(slice("kcPointsHTML")));
 }
 
 console.log("\n── 🎰 spins hold until ALL school work is done (her rule 2026-09-05) ──");
