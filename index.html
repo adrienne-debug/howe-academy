@@ -1718,7 +1718,7 @@ function toggleMorningStep(kid,i){
     const _paid=now?(_b0+((typeof zoneBonusFor==="function")?zoneBonusFor(_st&&_st.zone,_b0):0)):((cur&&cur.pts!=null)?cur.pts:_b0);
     let _bid=null;
     if(_paid>0){
-      if(now){ _bid=bankDirect(kid,_paid,(_st&&_st.emoji?_st.emoji+" ":"")+(_st?_st.label:("Step "+(i+1)))); }
+      if(now){ _bid=bankDirect(kid,_paid,(_st&&_st.emoji?_st.emoji+" ":"")+(_st?_st.label:("Step "+(i+1))),(typeof choreVerifyOn==="function"&&choreVerifyOn(kid))); }
       else if(cur&&cur.bid){ bankDirectRemove(kid,cur.bid); }
       else { bankDirect(kid,-_paid,"↩ unchecked: "+(_st?_st.label:("Step "+(i+1)))); }
     }
@@ -1960,7 +1960,7 @@ function toggleRtStep(slot,kid,i){
     // wrote (bid stored on the check-off), so a mis-tap still costs nothing.
     let _bid=null;
     if(_p>0){
-      if(now){ _bid=bankDirect(kid,_p,(_st&&_st.emoji?_st.emoji+" ":"")+(_st?_st.label:("Step "+(i+1)))); }
+      if(now){ _bid=bankDirect(kid,_p,(_st&&_st.emoji?_st.emoji+" ":"")+(_st?_st.label:("Step "+(i+1))),(typeof choreVerifyOn==="function"&&choreVerifyOn(kid))); }
       else if(cur&&cur.bid){ bankDirectRemove(kid,cur.bid); }
       else { bankDirect(kid,-_p,"↩ unchecked: "+(_st?_st.label:("Step "+(i+1)))); }
     }
@@ -3030,6 +3030,7 @@ function initFb() {
     db.ref("config/zonePlan").on("value",s=>{ zonePlan=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
     db.ref("config/rotationPeriod").on("value",s=>{ rotationPeriod=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
     db.ref("config/routineBonus").on("value",s=>{ routineBonus=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
+    db.ref("config/choreVerify").on("value",s=>{ choreVerify=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
     db.ref("config/zoneBonus").on("value",s=>{ zoneBonus=Object.assign({enabled:true,mode:"flat",amount:5}, s.val()||{}); if(typeof renderAll==="function") renderAll(); });
     db.ref("pointRequests").on("value",s=>{ pointRequests=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
     db.ref("grabClaims").on("value",s=>{ grabClaims=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
@@ -4034,10 +4035,46 @@ function addKidPoints(k,pts,d){
 // claim → Mom approve → forfeit) is ONLY the school-work slot-machine WINNINGS.
 // Entries land in bank/{kid}/adjustments (bankLedger already sums those), each with
 // its own id so a same-day uncheck can remove exactly what was paid.
-function bankDirect(kid,pts,note){
+// 🕵️ Mom-checked chores (her rule 2026-09-05, "a setting to be toggled if they are lying,
+// activated per kid"): config/choreVerify/{kid}=true → that kid's routine steps and list/day
+// bonuses still bank at the tap, but the entry is HELD — it counts for nothing (ledger,
+// balance, "banked today") until Mom releases it on her Board. ✗ removes the pay.
+let choreVerify={};
+function choreVerifyOn(kid){ return !!(choreVerify&&choreVerify[kid]); }
+function choreVerifySet(kid,on){
+  if(!momHere()) return;
+  choreVerify=Object.assign({},choreVerify); if(on) choreVerify[kid]=true; else delete choreVerify[kid];
+  if(db){ const r=db.ref("config/choreVerify/"+kid); if(on) r.set(true); else r.remove(); }
+  renderAll();
+}
+function bankHeldList(kid){
+  const adjs=(bank[kid]&&bank[kid].adjustments)||{};
+  return Object.keys(adjs).filter(function(id){ return adjs[id]&&adjs[id].held; })
+    .map(function(id){ return Object.assign({id:id},adjs[id]); })
+    .sort(function(a,b){ return String(a.iso||"").localeCompare(String(b.iso||"")); });
+}
+function bankHeldToday(kid,d){ let n=0; bankHeldList(kid).forEach(function(a){ if(a.wk===WK&&a.day===d) n+=(a.amount||0); }); return n; }
+function bankHeldRelease(kid,id){
+  if(!momHere()) return;
+  const a=bank[kid]&&bank[kid].adjustments&&bank[kid].adjustments[id]; if(!a||!a.held) return;
+  delete a.held;
+  if(db) db.ref("bank/"+kid+"/adjustments/"+id+"/held").remove();
+  renderAll();
+  if(typeof gwShowToast==="function") gwShowToast("\u2713 "+(a.note||"chore")+" \u2014 +"+(a.amount||0)+" \u2B50 to "+cap(kid));
+}
+function bankHeldReleaseAll(kid){ if(!momHere()) return; bankHeldList(kid).forEach(function(a){ bankHeldRelease(kid,a.id); }); }
+function bankHeldReject(kid,id){
+  if(!momHere()) return;
+  const a=bank[kid]&&bank[kid].adjustments&&bank[kid].adjustments[id]; if(!a||!a.held) return;
+  bankDirectRemove(kid,id);
+  renderAll();
+  if(typeof gwShowToast==="function") gwShowToast("\u2717 "+(a.note||"chore")+" removed \u2014 uncheck it on their list if it wasn\u2019t done");
+}
+function bankDirect(kid,pts,note,hold){
   if(!kid||!pts) return null;
   const id="bd"+Date.now().toString(36)+Math.floor(Math.random()*1e6).toString(36);
   const rec={amount:pts,note:note||"",ts:nowTs(),iso:new Date().toISOString(),src:"earn",wk:activeWk(),day:day};
+  if(hold&&pts>0) rec.held=true;
   bank[kid]=bank[kid]||{}; bank[kid].adjustments=bank[kid].adjustments||{};
   bank[kid].adjustments[id]=rec;
   if(db) db.ref("bank/"+kid+"/adjustments/"+id).set(rec);
@@ -4054,8 +4091,8 @@ function bankDirectRemove(kid,id){
 // Claim tile stay pool-only because there "winnings" is exactly what they mean.
 // (Entries written before the wk/day stamp existed fall out of day/week views but
 // are always in the bank balance itself.)
-function bankEarnedDay(kid,d){ const adjs=(bank[kid]&&bank[kid].adjustments)||{}; let n=0; Object.keys(adjs).forEach(id=>{ const a=adjs[id]; if(a&&a.src==="earn"&&a.wk===WK&&a.day===d) n+=(a.amount||0); }); return n; }
-function bankEarnedWeek(kid){ const adjs=(bank[kid]&&bank[kid].adjustments)||{}; let n=0; Object.keys(adjs).forEach(id=>{ const a=adjs[id]; if(a&&a.src==="earn"&&a.wk===WK) n+=(a.amount||0); }); return n; }
+function bankEarnedDay(kid,d){ const adjs=(bank[kid]&&bank[kid].adjustments)||{}; let n=0; Object.keys(adjs).forEach(id=>{ const a=adjs[id]; if(a&&!a.held&&a.src==="earn"&&a.wk===WK&&a.day===d) n+=(a.amount||0); }); return n; }
+function bankEarnedWeek(kid){ const adjs=(bank[kid]&&bank[kid].adjustments)||{}; let n=0; Object.keys(adjs).forEach(id=>{ const a=adjs[id]; if(a&&!a.held&&a.src==="earn"&&a.wk===WK) n+=(a.amount||0); }); return n; }
 function earnedDayTotal(kid,d){ return getKidDayPoints(kid,d)+bankEarnedDay(kid,d); }
 function earnedWeekTotal(kid){ return getKidPoints(kid)+bankEarnedWeek(kid); }
 
@@ -5493,6 +5530,24 @@ function _boardClaimsHTML(){
       if(String(w.ts||"").endsWith(todayTok)) cashed.push({k,label:"🛍 "+(w.note||"store"),pts:-(w.amount||0),ts:w.ts||""}); });
   });
   let h='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-top:12px">';
+  // 🕵️ chores held for Mom's check (per-kid setting) — release pays, ✗ removes
+  const heldAll=[]; SL_KIDS.forEach(k=>{ if(typeof bankHeldList==="function") bankHeldList(k).forEach(a=>heldAll.push(Object.assign({k:k},a))); });
+  if(heldAll.length||SL_KIDS.some(k=>typeof choreVerifyOn==="function"&&choreVerifyOn(k))){
+    h+='<div style="background:#f5f3ff;border:1px solid #c4b5fd;border-radius:12px;padding:10px">';
+    h+='<div style="font-weight:800;font-size:12px;color:#5b21b6;margin-bottom:6px">\u{1F575} Chores to check ('+heldAll.length+')</div>';
+    if(!heldAll.length) h+='<div style="font-size:12px;color:var(--muted)">Nothing waiting.</div>';
+    SL_KIDS.forEach(k=>{
+      const mine=heldAll.filter(a=>a.k===k); if(!mine.length) return;
+      h+='<div style="display:flex;align-items:center;gap:6px;margin:6px 0 3px"><b style="color:'+(KID_COLOR[k]||"#333")+';font-size:12px">'+cap(k)+'</b><span style="font-size:11px;color:var(--muted)">'+mine.reduce((n,a)=>n+(a.amount||0),0)+' \u2B50 waiting</span><span style="flex:1"></span>'
+        +'<button onclick="bankHeldReleaseAll(\''+k+'\')" style="padding:3px 10px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-size:11px;font-weight:700;cursor:pointer">\u2713 all</button></div>';
+      mine.forEach(a=>{
+        h+='<div style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(a.note||"chore")+' <b>+'+(a.amount||0)+'</b>'+(a.ts?' <span style="color:var(--muted)">'+esc(a.ts)+'</span>':'')+'</span>'
+          +'<button onclick="bankHeldRelease(\''+k+'\',\''+a.id+'\')" style="padding:3px 9px;border-radius:8px;border:none;background:#dcfce7;color:#166534;font-size:11px;font-weight:800;cursor:pointer">\u2713</button>'
+          +'<button onclick="bankHeldReject(\''+k+'\',\''+a.id+'\')" style="padding:3px 9px;border-radius:8px;border:none;background:#fee2e2;color:#b91c1c;font-size:11px;font-weight:800;cursor:pointer">\u2717</button></div>';
+      });
+    });
+    h+='</div>';
+  }
   h+='<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:12px;padding:10px">';
   h+='<div style="font-weight:800;font-size:12px;color:#92400e;margin-bottom:6px">⏳ Claims waiting ('+pending.length+')</div>';
   h+=pending.length?pending.map(c=>'<div style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:5px">'+
@@ -13083,6 +13138,14 @@ function storeConfirmDlg(kid,it,held,bal,onYes){
   document.getElementById("kk-confirm-yes").onclick=function(){ o.remove(); onYes(); };
 }
 function storeBuyCommit(kid,it,held,name,bal){
+  // Duplicate-tap guard (2026-09-05): Ellis cashed "30 min of Tech" six times in 40 minutes,
+  // four inside one minute. The same item within 60 seconds is refused — if it really was
+  // two, wait a minute.
+  try{
+    const wds=(bank[kid]&&bank[kid].withdrawals)||{}; const nowMs=Date.now();
+    const dup=Object.keys(wds).some(function(id){ const w=wds[id]; return w&&w.note===name&&w.status!=="declined"&&w.iso&&(nowMs-new Date(w.iso).getTime())<60000; });
+    if(dup){ if(typeof gwShowToast==="function") gwShowToast("You just got "+it.label+" \u2014 wait a minute before another one"); return; }
+  }catch(e){}
   const rec={amount:it.cost,note:name,ts:nowTs(),iso:new Date().toISOString(),reward:true,status:held?"pending":"owed"};
   let key="wd_"+Date.now();
   if(db){ const r=db.ref("bank/"+kid+"/withdrawals").push(); key=r.key; r.set(rec); }
@@ -13423,7 +13486,7 @@ function bankLedger(kid){   // lifetime, newest-first, each entry carries its ru
     out.push({kind:"wd",id,amount:(w.amount||0),note:w.note||"",dt:_bankTsDate(w.ts,w.iso)});
   });
   const adjs=(bank[kid]&&bank[kid].adjustments)||{};   // Mom's labeled give (+) / dock (−)
-  Object.keys(adjs).forEach(id=>{ const a=adjs[id]; if(!a) return;
+  Object.keys(adjs).forEach(id=>{ const a=adjs[id]; if(!a||a.held) return;   // 🕵️ held = not yet Mom-checked
     out.push({kind:"adj",id,amount:Math.abs(a.amount||0),signed:(a.amount||0),note:a.note||"",dt:_bankTsDate(a.ts,a.iso)});
   });
   out.sort((a,b)=>(b.dt?b.dt.getTime():0)-(a.dt?a.dt.getTime():0));
@@ -17694,7 +17757,7 @@ function rtBonusSet(slot,kid,v){ if(!momHere()) return; const n=Math.max(0,parse
 function rtBonusSettle(slot,kid,wk,d,prev,allDone,dueCount){
   const bonus=rtBonusFor(slot,kid), key=wk+"_"+d+"_"+kid+"_"+slot, rec=slState[key]||{};
   const was=!!(prev&&prev.done&&prev.bonusBid);
-  if(allDone&&dueCount>0&&bonus>0&&!was){ const bid=bankDirect(kid,bonus,"🏁 "+cap(slot)+" list complete"); rec.bonusBid=bid||null; rec.bonusPts=bonus; if(typeof rlogAppend==="function") rlogAppend(kid,slot,"🏁 List complete bonus","on",bonus); }
+  if(allDone&&dueCount>0&&bonus>0&&!was){ const bid=bankDirect(kid,bonus,"🏁 "+cap(slot)+" list complete",(typeof choreVerifyOn==="function"&&choreVerifyOn(kid))); rec.bonusBid=bid||null; rec.bonusPts=bonus; if(typeof rlogAppend==="function") rlogAppend(kid,slot,"🏁 List complete bonus","on",bonus); }
   else if(!allDone&&was){ bankDirectRemove(kid,prev.bonusBid); rec.bonusBid=null; rec.bonusPts=null; if(typeof rlogAppend==="function") rlogAppend(kid,slot,"🏁 List complete bonus","off",prev.bonusPts||0); }
   else if(allDone&&was){ rec.bonusBid=prev.bonusBid; rec.bonusPts=prev.bonusPts; }
   slState[key]=rec;
@@ -17717,7 +17780,7 @@ function rtDayBonusSettle(kid,wk,d){
   const bonus=rtBonusFor("day",kid), key=wk+"_"+d+"_"+kid+"_day", prev=slState[key]||{}, rec={};
   const allDone=rtDayDone(kid,d), was=!!(prev.done&&prev.bonusBid);
   rec.done=allDone; rec.ts=allDone?(prev.ts||nowTs()):"";
-  if(allDone&&bonus>0&&!was){ const bid=bankDirect(kid,bonus,"🏆 Whole day complete"); rec.bonusBid=bid||null; rec.bonusPts=bonus; if(typeof rlogAppend==="function") rlogAppend(kid,"day","🏆 Whole day complete bonus","on",bonus); }
+  if(allDone&&bonus>0&&!was){ const bid=bankDirect(kid,bonus,"🏆 Whole day complete",(typeof choreVerifyOn==="function"&&choreVerifyOn(kid))); rec.bonusBid=bid||null; rec.bonusPts=bonus; if(typeof rlogAppend==="function") rlogAppend(kid,"day","🏆 Whole day complete bonus","on",bonus); }
   else if(!allDone&&was){ bankDirectRemove(kid,prev.bonusBid); rec.bonusBid=null; rec.bonusPts=null; if(typeof rlogAppend==="function") rlogAppend(kid,"day","🏆 Whole day complete bonus","off",prev.bonusPts||0); }
   else if(allDone&&was){ rec.bonusBid=prev.bonusBid; rec.bonusPts=prev.bonusPts; }
   slState[key]=rec;
@@ -18066,6 +18129,12 @@ function _cpRoutineRulesHTML(){
   let h='<div class="rules-wrap" style="margin-top:22px"><div class="rules-hdr">⚙️ Routine rules</div>';
   h+='<div class="rules-sub">Apply to every list above. Afternoon opens once school work is done; Evening opens at the hour below.</div>';
   try{ h+=chSettingsEveningHourHTML(); }catch(e){}
+  // 🕵️ Mom-checked chores — per kid (her rule 2026-09-05)
+  h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 4px;padding:9px 12px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:10px;font-size:12.5px">'
+    +'<b>\u{1F575} Mom checks chores before they pay</b><span style="color:var(--muted)">\u2014 for a kid switched on, every chore and list bonus waits on your Board until you \u2713 it. Off = pays at the tap.</span>'
+    +'<span style="display:flex;gap:6px;flex-wrap:wrap;width:100%;margin-top:4px">'
+    +ROSTER.map(function(k){ const on=(typeof choreVerifyOn==="function")&&choreVerifyOn(k); return '<button onclick="choreVerifySet(\''+k+'\','+(on?'false':'true')+')" style="border:1.5px solid '+(on?'#7c3aed':'#ddd6fe')+';background:'+(on?'#7c3aed':'#fff')+';color:'+(on?'#fff':'#5b21b6')+';border-radius:8px;padding:3px 10px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cap(k)+' '+(on?'\u2713 checked':'off')+'</button>'; }).join('')
+    +'</span></div>';
   h+='</div>';
   try{ h+=chSettingsMorningRuleHTML(); }catch(e){}
   try{ h+=chSettingsClickoffLogHTML(); }catch(e){}
@@ -18708,6 +18777,8 @@ function kcPointsHTML(k){
     });
     if(anyOpen&&dayBonus) h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f1f5f9"><span style="flex:0 0 78px;font-weight:800;color:#475569">\u{1F3C6} All lists</span><span style="flex:1;color:#475569">finish every list</span><span style="font-weight:800;color:#b45309">+'+dayBonus+' \u2B50</span></div>';
     if(cards.length) h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f1f5f9"><span style="flex:0 0 78px;font-weight:800;color:'+(cardsDone===cards.length?'#15803d':'#475569')+'">'+(cardsDone===cards.length?'\u2713 ':'')+'\u{1F4D6} School</span><span style="flex:1;color:#475569">'+cardsDone+' of '+cards.length+' cards'+(cardsDone===cards.length?' \u2014 done!':'')+'</span>'+(spinLeft?'<span style="font-weight:800;color:#7c3aed">\u{1F3B0} bonus spin when done</span>':'')+'</div>';
+    const heldT=(typeof bankHeldToday==="function")?bankHeldToday(k,dn):0;
+    if(heldT>0) h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f1f5f9"><span style="flex:0 0 78px;font-weight:800;color:#5b21b6">\u{1F575} Checked?</span><span style="flex:1;color:#475569">waiting for Mom to check your chores</span><span style="font-weight:800;color:#5b21b6">+'+heldT+' \u2B50</span></div>';
     if(spun>0) h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f1f5f9"><span style="flex:0 0 78px;font-weight:800;color:#7c3aed">\u{1F3B0} Spins</span><span style="flex:1;color:#475569">'+spinNote+'</span><span style="font-weight:800;color:#7c3aed">+'+spun+' \u2B50</span></div>';
     h+='</div></div>';
     return h;
