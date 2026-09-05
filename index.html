@@ -9604,12 +9604,37 @@ const MW_CSS = `
 
 // 🗓 The one calendar, in Mom HQ (2026-09-05): the same month view Admin ▸ Calendar shows —
 // one function, one lens — with the event form when a day sheet asks for it.
+// Her ask 2026-09-05: "mom calendar needs a toggle with a sub toggle for the schedule and then
+// sub that has each kid" — 📆 Today | 🗓 Month, then Family · each kid. One calendar throughout:
+// a kid row is the same month lens / Today view the Corner shows, with Mom's actions kept.
+let mpCalMode=null, mpCalWho="family";
+function mpCalGet(){ if(mpCalMode) return mpCalMode; try{ const v=HA_LS.getItem("ha_mp_calmode"); mpCalMode=(v==="today")?"today":"month"; }catch(e){ mpCalMode="month"; } return mpCalMode; }
+function mpCalSet(v){ mpCalMode=(v==="today")?"today":"month"; try{ HA_LS.setItem("ha_mp_calmode",mpCalMode); }catch(e){} calDaySel=null; renderAll(); }
+function mpCalWhoSet(w){ mpCalWho=(ROSTER.indexOf(w)>=0)?w:"family"; calDaySel=null; kcAddIso=null; renderAll(); }
 function renderMPCalendar(el){
-  let h='<div style="font-family:\'DM Sans\',sans-serif;padding-bottom:28px">'+mwBanner('Breaks, co-ops, events and dinners — tap a day')+mpSubnav('cal');
-  h+='<div style="padding:12px 12px 0">';
-  if(calAddMode==="event") h+=calRenderEventForm();
-  h+=calRenderMonthPreview();
-  h+='</div></div>';
+  const mode=mpCalGet(), who=(mpCalWho!=="family")?mpCalWho:null;
+  let h='<div style="font-family:\'DM Sans\',sans-serif;padding-bottom:28px">'+mwBanner(mode==="today"?'Today \u2014 the family, or one kid\u2019s day':'Breaks, co-ops, events and dinners \u2014 tap a day')+mpSubnav('cal');
+  const tb=(v,lbl)=>'<button onclick="mpCalSet(\''+v+'\')" style="flex:1;padding:8px 10px;border-radius:20px;border:2px solid #2B7A78;background:'+(mode===v?'#2B7A78':'#fff')+';color:'+(mode===v?'#fff':'#2B7A78')+';font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
+  h+='<div style="display:flex;gap:8px;padding:12px 12px 0;max-width:420px;margin:0 auto">'+tb('today','\u{1F4C6} Today')+tb('month','\u{1F5D3} Month')+'</div>';
+  const wb=(w,lbl,col)=>'<button onclick="mpCalWhoSet(\''+w+'\')" style="padding:5px 12px;border-radius:20px;border:1.5px solid '+col+';background:'+(mpCalWho===w?col:'#fff')+';color:'+(mpCalWho===w?'#fff':col)+';font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;padding:10px 12px 0">'+wb('family','\u{1F3E1} Family','#2B7A78')+ROSTER.map(function(k){ return wb(k,kcEmoji(k)+' '+esc(KID_NAME[k]||cap(k)),KID_COLOR[k]||'#64748b'); }).join('')+'</div>';
+  if(mode==="month"){
+    h+='<div style="padding:12px 12px 0">';
+    if(calAddMode==="event") h+=calRenderEventForm();
+    h+=calRenderMonthPreview(who?{who:who}:undefined);
+    h+='</div>';
+  } else if(who){
+    if(calAddMode==="event") h+='<div style="padding:12px 12px 0">'+calRenderEventForm()+'</div>';
+    h+=kcTodayHTML(who);
+  } else {
+    // the whole family today: the day sheet with Mom's actions, then each kid's day at a glance
+    if(calAddMode==="event") h+='<div style="padding:12px 12px 0">'+calRenderEventForm()+'</div>';
+    try{ h+='<div style="padding:12px 12px 0">'+calDaySheetHTML(calToday(),{breaks:true,coops:true,events:true,meals:true},_calDinnerOf,null,{noClose:true,flat:true})+'</div>'; }catch(e){}
+    ROSTER.forEach(function(k){
+      h+='<div onclick="mpCalWhoSet(\''+k+'\')" style="cursor:pointer">'+kcPointsHTML(k)+'</div>';
+    });
+  }
+  h+='</div>';
   el.innerHTML=h;
 }
 function mpSubnav(active){
@@ -18340,8 +18365,20 @@ function calNavMonth(dir){
   calPreviewMonth=nd.getFullYear()+"-"+String(nd.getMonth()+1).padStart(2,"0");
   renderAll();
 }
+// The dinner planned for a day and its status: planned · ate · skip · owed (planned, passed,
+// never marked). Shared by the month cells, the day sheet and the Corner's Today view.
+function _calDinnerOf(iso){
+  if(typeof kitPlanFor!=="function") return null;
+  const pl=kitPlanFor(iso); if(!pl) return null;
+  const raw=(typeof kitPlan!=="undefined"&&kitPlan[iso])||{};
+  const name=pl.meal?((pl.meal.emoji?pl.meal.emoji+" ":"")+(pl.meal.name||"")):(pl.txt?pl.txt:(pl.mid?"(meal removed)":""));
+  if(!name) return null;
+  const st=raw.eaten?"ate":(raw.skipped?"skip":(iso<calToday()?"owed":"planned"));
+  return {name:name,st:st,pl:pl};
+}
 function calRenderMonthPreview(opts){
-  const who=(opts&&opts.who&&ROSTER.indexOf(opts.who)>=0)?opts.who:null;   // a kid's own lens
+  const who=(opts&&opts.who&&ROSTER.indexOf(opts.who)>=0)?opts.who:null;   // whose calendar (a kid's lens)
+  const kidMode=!!who&&!wbMomEyes();                                        // a KID is looking — Mom keeps her switches and actions on her own device
   const now=new Date();
   let year,month;
   if(calPreviewMonth){
@@ -18354,7 +18391,7 @@ function calRenderMonthPreview(opts){
   const firstDay=new Date(year,month,1).getDay();
   const daysInMonth=new Date(year,month+1,0).getDate();
   const todayIso=calToday();
-  const L=who?{breaks:true,coops:true,events:true,meals:true}
+  const L=kidMode?{breaks:true,coops:true,events:true,meals:true}
              :{breaks:calLayerOn("breaks"),coops:calLayerOn("coops"),events:calLayerOn("events"),meals:calLayerOn("meals")};
   const holidays=calendarData.holidays||{}, vacations=calendarData.vacations||{};
   const offDates=new Set();
@@ -18371,21 +18408,13 @@ function calRenderMonthPreview(opts){
   });
   // The dinner planned for a day, as the cell shows it. Status is the ONE thing a past day
   // can owe: planned, passed, never marked eaten or skipped → "owed" dot.
-  const dinnerOf=iso=>{
-    if(typeof kitPlanFor!=="function") return null;
-    const pl=kitPlanFor(iso); if(!pl) return null;
-    const raw=(typeof kitPlan!=="undefined"&&kitPlan[iso])||{};
-    const name=pl.meal?((pl.meal.emoji?pl.meal.emoji+" ":"")+(pl.meal.name||"")):(pl.txt?pl.txt:(pl.mid?"(meal removed)":""));
-    if(!name) return null;
-    const st=raw.eaten?"ate":(raw.skipped?"skip":(iso<todayIso?"owed":"planned"));
-    return {name:name,st:st,pl:pl};
-  };
+  const dinnerOf=_calDinnerOf;
   let h='<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:20px">';
   // Named, because the Lesson Map's printable per-kid calendar sits right below this one and two
   // bare "July 2026" headers in a row look like the same thing twice.
   h+='<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700;margin-bottom:2px">&#128467; Month at a glance</div>';
-  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">'+(who?'Your month. Tap a day to see what\u2019s happening.':'Everything on one calendar. Switch layers on and off; tap a day to see it all and act on it.')+'</div>';
-  if(!who){   // layer chips are a Mom/Dad setting — a kid's Corner shows everything, no switches
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">'+(kidMode?'Your month. Tap a day to see what\u2019s happening.':(who?cap(who)+'\u2019s month \u2014 their lessons, chores and events on the family calendar. Tap a day.':'Everything on one calendar. Switch layers on and off; tap a day to see it all and act on it.'))+'</div>';
+  if(!kidMode){   // layer chips are a Mom/Dad setting — a kid's Corner shows everything, no switches
     h+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px">';
     CAL_LAYERS.forEach(function(c){ h+='<button class="cal-chip'+(L[c[0]]?' on':'')+'" onclick="calLayerToggle(\''+c[0]+'\')">'+c[1]+'</button>'; });
     h+='</div>';
@@ -18492,7 +18521,7 @@ function _calChoresFor(kid,iso){
         if(st.from&&iso<st.from) return; if(st.to&&iso>st.to) return;
         if(!_calCadDueOn(st.cad||"daily",dn,iso)) return;
         out.push({slot:slot,label:st.label||"Chore",emoji:st.emoji||"",pts:st.pts||0,
-          done:isToday&&typeof rtDoneOn==="function"&&rtDoneOn(slot,kid,dn,i)});
+          done:isToday&&(slot==="morning"?(typeof mStepDoneOn==="function"&&mStepDoneOn(kid,dn,i)):(typeof rtDoneOn==="function"&&rtDoneOn(slot,kid,dn,i)))});
       });
     });
     return out;
@@ -18517,17 +18546,19 @@ function _calSlotRows(iso,who){
   });
   return {html:html,n:n};
 }
-function calDaySheetHTML(iso,L,dinnerOf,who){
+function calDaySheetHTML(iso,L,dinnerOf,who,opts){
+  opts=opts||{};
+  const kidMode=!!who&&!wbMomEyes();
   const d=new Date(iso+"T12:00:00"); const todayIso=calToday();
   const lbl=d.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
-  let h='<div class="cal-sheet"><h4><span style="flex:1">'+esc(lbl)+(iso===todayIso?' <span style="font-size:10px;font-weight:800;color:#E07B39">TODAY</span>':'')+'</span>'
-    +'<button class="act" style="background:#f1f5f9;color:#475569" onclick="calDayClick(\''+iso+'\')">✕</button></h4>';
+  let h='<div class="cal-sheet"'+(opts.flat?' style="margin:0 0 12px;border-color:'+(KID_COLOR[who]||"#E07B39")+'"':'')+'><h4><span style="flex:1">'+esc(opts.title||lbl)+(iso===todayIso&&!opts.title?' <span style="font-size:10px;font-weight:800;color:#E07B39">TODAY</span>':'')+'</span>'
+    +(opts.noClose?'':'<button class="act" style="background:#f1f5f9;color:#475569" onclick="calDayClick(\''+iso+'\')">✕</button>')+'</h4>';
   let rows=0;
   if(L.breaks){ calBreaksOn(iso).forEach(function(b){ rows++; h+='<div class="row"><span class="lbl">Break</span><span style="flex:1">'+(b.kind==="holiday"?"\u{1F389} ":"\u{1F3D6} ")+esc(b.name)+'</span></div>'; }); }
   if(L.coops&&typeof coopsOnDate==="function"){ _calCoopsFor(iso,who).forEach(function(c){ rows++;
     const kids=(Array.isArray(c.kids)&&c.kids.length)?c.kids.map(function(k){ return cap(k); }).join(", "):"everyone";
     h+='<div class="row"><span class="lbl">Co-op</span><span style="flex:1">\u{1F3EB} <b>'+esc(c.name||"Co-op")+'</b> <span style="color:#6b7280">· '+(c.mode==="fullDay"?"all day":("out "+esc(c.start||"?")+" – back "+esc(c.end||"?")))+' · '+esc(kids)+'</span></span></div>'; }); }
-  if(who){
+  if(who&&!opts.noWork){
     const _ls=_calLessonsFor(who,iso);
     _ls.forEach(function(l){ rows++; h+='<div class="row"><span class="lbl">School</span><span style="flex:1">\u{1F4DA} <b>'+esc(l.name)+'</b> <span style="color:#6b7280">\u00b7 '+esc(l.text)+'</span></span></div>'; });
     // chores itemised with their stars; the routine lists fold to one line each
@@ -18547,15 +18578,15 @@ function calDaySheetHTML(iso,L,dinnerOf,who){
     h+='<div class="row"><span class="lbl">Event</span><span style="flex:1">'+esc(e.emoji||"\u{1F389}")+' <b>'+esc(e.title||"Event")+'</b>'+(e.time?' <span style="color:#6b7280">· '+esc(e.time)+'</span>':'')+(e.who&&e.who!=="family"?' <span style="color:#6b7280">· '+esc(cap(e.who))+'</span>':'')
       +(e.addedBy?' <span style="font-size:10px;color:#6b7280">· added by '+esc(cap(e.addedBy))+'</span>':'')
       +(e.pending?' <span style="font-size:10px;font-weight:800;color:#b45309;background:#fef3c7;border-radius:8px;padding:1px 6px">\u270B '+(who?'waiting for Mom':'waiting for you')+'</span>':'')+'</span>'
-      +(who?((e.addedBy===who)?'<button class="act" style="background:#fef2f2;color:#b91c1c" onclick="kcDeleteEvent(\''+e.id+'\')">'+(kcConfirmDel===e.id?'Really delete?':'\u{1F5D1}')+'</button>':'')
+      +(kidMode?((e.addedBy===who)?'<button class="act" style="background:#fef2f2;color:#b91c1c" onclick="kcDeleteEvent(\''+e.id+'\')">'+(kcConfirmDel===e.id?'Really delete?':'\u{1F5D1}')+'</button>':'')
            :(e.pending?'<button class="act" style="background:#dcfce7;color:#166534" onclick="calApproveEvent(\''+e.id+'\')">✓ OK</button><button class="act" style="background:#fef2f2;color:#b91c1c" onclick="calDeleteEvent(\''+e.id+'\')">✗</button>'
                       :'<button class="act" style="background:#fdf2f8;color:#9d174d" onclick="calEditEvent(\''+e.id+'\')">✎</button>'))+'</div>'; }); }
   // a kid's own "add something" — inline, their name already on it
-  if(who&&kcAddIso===iso&&kcLittle(who)){
+  if(kidMode&&kcAddIso===iso&&kcLittle(who)){
     h+='<div class="row" style="flex-wrap:wrap;gap:8px;background:#f8fafc;border-radius:10px;padding:8px 8px;border-top:none;justify-content:center">';
     KC_QUICK.forEach(function(q){ h+='<button class="act kc-quick" style="background:#fff;color:#0f172a;border:2px solid '+(KID_COLOR[who]||"#2B7A78")+'" onclick="kcSaveQuick(\''+q[0]+'\',\''+q[1]+'\')"><span class="kc-quick-e">'+q[0]+'</span>'+q[1]+'</button>'; });
     h+='<button class="act" style="background:#f1f5f9;color:#475569;flex-basis:100%" onclick="kcAddOpen(\''+iso+'\')">Never mind</button></div>';
-  } else if(who&&kcAddIso===iso){
+  } else if(kidMode&&kcAddIso===iso){
     h+='<div class="row" style="flex-wrap:wrap;gap:6px;background:#f8fafc;border-radius:10px;padding:8px 8px;border-top:none">'
       +'<input id="kc-ev-emoji" value="\u{1F388}" style="width:44px;text-align:center;font-size:16px;border:1.5px solid #e2e8f0;border-radius:9px;padding:6px 2px">'
       +'<input id="kc-ev-title" placeholder="What is it?" maxlength="60" style="flex:1;min-width:150px;font-size:13px;border:1.5px solid #e2e8f0;border-radius:9px;padding:7px 10px;font-family:\'DM Sans\',sans-serif">'
@@ -18563,7 +18594,7 @@ function calDaySheetHTML(iso,L,dinnerOf,who){
       +'<button class="act" style="background:'+(KID_COLOR[who]||"#2B7A78")+';color:#fff;padding:7px 12px" onclick="kcSaveEvent()">Add it ✓</button>'
       +'<button class="act" style="background:#f1f5f9;color:#475569" onclick="kcAddOpen(\''+iso+'\')">Never mind</button></div>';
   }
-  if(L.meals&&who){
+  if(L.meals&&kidMode){
     // a kid's view: what's for dinner, no buttons — the pantry and the plan are Mom's
     const _sr=_calSlotRows(iso,who); if(_sr.n){ h+=_sr.html; rows+=_sr.n; }
     const din=dinnerOf?dinnerOf(iso):null; rows++;
@@ -18586,7 +18617,7 @@ function calDaySheetHTML(iso,L,dinnerOf,who){
     }
     h+='</div>';
   }
-  if(who){
+  if(kidMode){
     if(!rows||(rows===1&&L.meals)) h+='<div class="row" style="color:#9ca3af;font-size:12.5px">Nothing else on this day yet.</div>';
     if(kcAddIso!==iso) h+='<div class="row" style="justify-content:flex-end"><button class="act" style="background:'+(KID_COLOR[who]||"#2B7A78")+';color:#fff;padding:7px 13px;font-size:12px" onclick="kcAddOpen(\''+iso+'\')">＋ Add something</button></div>';
   } else {
@@ -18602,18 +18633,90 @@ function calDaySheetHTML(iso,L,dinnerOf,who){
 // the only thing a kid can write is an event carrying their name (who + addedBy), which
 // Mom sees on her calendar tagged "added by …". Looks like the app, feels like theirs:
 // their colour, their mascot, the same fonts and cards as Mom's and Dad's pages.
-let kcKid=null, kcAddIso=null, kcConfirmDel=null, kcView="cal";   // "cal" | "school" | "bank" | "chores"
-function kcGo(v){ kcView=(v==="bank"||v==="chores"||v==="school")?v:"cal"; kcAddIso=null; kcConfirmDel=null; renderAll(); try{window.scrollTo(0,0);}catch(e){} }
+let kcKid=null, kcAddIso=null, kcConfirmDel=null, kcView="cal";   // "cal" | "bank" | "chores"  (school lives under cal ▸ Today)
+function kcGo(v){ if(v==="school"){ kcView="cal"; kcCalSet("today"); return; } kcView=(v==="bank"||v==="chores")?v:"cal"; kcAddIso=null; kcConfirmDel=null; renderAll(); try{window.scrollTo(0,0);}catch(e){} }
+// 📆 Today | 🗓 Month — her ask 2026-09-05: "a monthly toggle with their big calendar and a
+// daily tab with their schedule and the things that apply to today". Remembered per device.
+let kcCalMode=null;
+function kcCalGet(){ if(kcCalMode) return kcCalMode; try{ const v=HA_LS.getItem("ha_kc_calmode"); kcCalMode=(v==="month")?"month":"today"; }catch(e){ kcCalMode="today"; } return kcCalMode; }
+function kcCalSet(v){ kcCalMode=(v==="month")?"month":"today"; try{ HA_LS.setItem("ha_kc_calmode",kcCalMode); }catch(e){} kcAddIso=null; kcConfirmDel=null; renderAll(); try{window.scrollTo(0,0);}catch(e){} }
+function kcCalToggleHTML(k){
+  const col=KID_COLOR[k]||"#2B7A78", m=kcCalGet();
+  const b=(v,lbl)=>'<button onclick="kcCalSet(\''+v+'\')" style="flex:1;padding:8px 10px;border-radius:20px;border:2px solid '+col+';background:'+(m===v?col:'#fff')+';color:'+(m===v?'#fff':col)+';font-size:'+(kcLittle(k)?'15px':'13px')+';font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
+  return '<div style="display:flex;gap:8px;padding:12px 12px 0;max-width:420px;margin:0 auto">'+b('today','\u{1F4C6} Today')+b('month','\u{1F5D3} Month')+'</div>';
+}
+// ⭐ What today is worth — her ask: "you completed this chore area, how many points they have,
+// and how many they will get if they finish". Lists pay fixed stars (steps + list bonus + day
+// bonus), so those are counted. School pays SPINS, not a number — so school shows progress
+// and the bonus spin waiting at the end of the day, never an invented amount.
+function kcPointsHTML(k){
+  try{
+    const dn=_todayDay, col=KID_COLOR[k]||"#2B7A78";
+    const bal=(typeof bankBalance==="function")?bankBalance(k):0;
+    const today=(typeof earnedDayTotal==="function")?earnedDayTotal(k,dn):0;
+    const lists=[]; let toGet=0, anyOpen=false;
+    activeSlots().forEach(function(slot){
+      const isM=(slot==="morning");
+      const steps=(isM&&typeof morningStepsFor==="function")?(morningStepsFor(k)||[]):(rtStepsFor(slot,k,false,dn)||[]);
+      const due=(isM&&typeof morningDueIdx==="function")?morningDueIdx(k,dn)
+        :steps.map(function(st,i){ return i; }).filter(function(i){ const st=steps[i]; return st&&stepWindowOk(st,dn)&&(cadDueOn(st.cad||"daily",dn)||(typeof rtLateDays==="function"&&rtLateDays(slot,k,i)>0)); });
+      if(!due.length) return;
+      const isDone=function(i){ return isM?(typeof mStepDoneOn==="function"&&mStepDoneOn(k,dn,i)):rtDoneOn(slot,k,dn,i); };
+      const done=due.filter(isDone);
+      let left=0; due.forEach(function(i){ if(!isDone(i)) left+=((steps[i]||{}).pts||0); });
+      const allDone=done.length===due.length;
+      const bonus=(typeof rtBonusFor==="function")?rtBonusFor(slot,k):0;
+      if(!allDone){ anyOpen=true; left+=bonus; }
+      toGet+=left;
+      lists.push({slot:slot,lbl:(SL_SLBL[slot]||slot),done:done.length,total:due.length,left:left,allDone:allDone,bonus:bonus});
+    });
+    const dayBonus=(typeof rtBonusFor==="function")?rtBonusFor("day",k):0;
+    if(anyOpen&&dayBonus) toGet+=dayBonus;
+    const cards=_kcTodayCards(k); const cardsDone=cards.filter(function(t){ return typeof checked!=="undefined"&&checked&&checked[t.id]; }).length;
+    const spinLeft=cards.length>0&&cardsDone<cards.length&&!(typeof hasDayBonus==="function"&&hasDayBonus(k,dn));
+    const big=kcLittle(k);
+    let h='<div style="margin:12px 12px 0;background:#fff;border-radius:14px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
+    h+='<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:linear-gradient(135deg,'+col+','+_kcTint(col,0.35)+');color:#fff">'
+      +'<div style="font-size:'+(big?'34px':'28px')+';font-weight:800;line-height:1">\u2B50 '+bal+'</div>'
+      +'<div style="flex:1;min-width:0"><div style="font-size:'+(big?'14px':'12px')+';font-weight:800;opacity:.95">in your bank</div>'
+      +'<div style="font-size:'+(big?'13px':'11px')+';font-weight:700;opacity:.9">'+(today>0?('+'+today+' \u2B50 earned today'):'nothing earned yet today')+'</div></div>'
+      +(toGet>0?'<div style="text-align:right"><div style="font-size:'+(big?'22px':'18px')+';font-weight:800;line-height:1">+'+toGet+'</div><div style="font-size:'+(big?'12px':'10px')+';font-weight:800;opacity:.9">still to get</div></div>':'')+'</div>';
+    h+='<div style="padding:8px 14px 10px;font-size:'+(big?'14px':'12.5px')+'">';
+    lists.forEach(function(l){
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f1f5f9">'
+        +'<span style="flex:0 0 78px;font-weight:800;color:'+(l.allDone?'#15803d':'#475569')+'">'+(l.allDone?'\u2713 ':'')+esc(l.lbl)+'</span>'
+        +'<span style="flex:1;color:#475569">'+l.done+' of '+l.total+(l.allDone?' \u2014 done!':'')+'</span>'
+        +(l.left>0?'<span style="font-weight:800;color:#b45309">+'+l.left+' \u2B50</span>':'')+'</div>';
+    });
+    if(anyOpen&&dayBonus) h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f1f5f9"><span style="flex:0 0 78px;font-weight:800;color:#475569">\u{1F3C6} All lists</span><span style="flex:1;color:#475569">finish every list</span><span style="font-weight:800;color:#b45309">+'+dayBonus+' \u2B50</span></div>';
+    if(cards.length) h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f1f5f9"><span style="flex:0 0 78px;font-weight:800;color:'+(cardsDone===cards.length?'#15803d':'#475569')+'">'+(cardsDone===cards.length?'\u2713 ':'')+'\u{1F4D6} School</span><span style="flex:1;color:#475569">'+cardsDone+' of '+cards.length+' cards'+(cardsDone===cards.length?' \u2014 done!':'')+'</span>'+(spinLeft?'<span style="font-weight:800;color:#7c3aed">\u{1F3B0} bonus spin when done</span>':'')+'</div>';
+    h+='</div></div>';
+    return h;
+  }catch(e){ return ''; }
+}
+function kcTodayHTML(k){
+  const iso=calToday();
+  let h=kcPointsHTML(k);
+  h+=kcSchoolHTML(k);
+  try{ h+='<div style="padding:0 12px">'+calDaySheetHTML(iso,{breaks:true,coops:true,events:true,meals:true},_calDinnerOf,k,{noWork:true,noClose:true,flat:true,title:"Also today"})+'</div>'; }catch(e){}
+  return h;
+}
 // 📖 School = TODAY's cards for this kid, exactly as the Schedule tab lays them (the loop's
 // gap-free lay, then Mom's re-times), rendered with the same taskCard so a tap here IS the
 // check-off. Locked behind the morning routine like the Schedule tab is; past and future
 // days live on their calendar.
-function kcSchoolHTML(k){
+function _kcTodayCards(k){
   try{
     const dn=_todayDay;
     const srcTasks=(typeof displacedResult!=="undefined"&&displacedResult)?displacedResult.tasks:((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]);
     const laid=mlQueueLay(dsRetime(srcTasks));
-    const mine=laid.filter(function(t){ return t&&t.who===k&&effectiveDay(t)===dn&&!String(t.id||"").endsWith("_c")&&!t._eowOverflow; });
+    return laid.filter(function(t){ return t&&t.who===k&&effectiveDay(t)===dn&&!String(t.id||"").endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title||""); });
+  }catch(e){ return []; }
+}
+function kcSchoolHTML(k){
+  try{
+    const dn=_todayDay;
+    const mine=_kcTodayCards(k);
     const tmap={}; mine.forEach(function(t){ (tmap[t.time]=tmap[t.time]||[]).push(t); });
     const times=Object.keys(tmap).sort(function(a,b){ return toMin(a)-toMin(b); });
     let h='<div style="padding:12px 12px 0">';
@@ -18625,7 +18728,7 @@ function kcSchoolHTML(k){
       try{ if(gateClockHeld(dn)){ const _open=fromMin(gateStartMin(dn)); msg=morningComplete(k,dn)?("Morning list done! School starts at "+_open+"."):(msg+" School starts at "+_open+"."); } }catch(e){}
       h+='<div style="background:#fff7ed;border-left:4px solid #f97316;border-radius:0 10px 10px 0;padding:12px 14px;margin:0 0 10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
         +'<span style="font-size:22px">\u{1F512}</span><div style="flex:1;font-size:13px;font-weight:700;color:#9a3412">'+esc(msg)+'</div>'
-        +(morningComplete(k,dn)?'':'<button onclick="kcGo(\'chores\')" style="border:none;background:#f97316;color:#fff;border-radius:10px;padding:8px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F4CB} Go to my lists</button>')+'</div>';
+        +((morningComplete(k,dn)||(typeof tab!=="undefined"&&tab!=="kids"))?'':'<button onclick="kcGo(\'chores\')" style="border:none;background:#f97316;color:#fff;border-radius:10px;padding:8px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F4CB} Go to my lists</button>')+'</div>';
     }
     if(!times.length){
       h+='<div style="padding:22px 14px;text-align:center;font-size:15px;font-weight:700;color:var(--muted)">No school cards today \u{1F389}</div>';
@@ -18648,7 +18751,7 @@ function kcSchoolHTML(k){
 function kcSubnav(k){
   const col=KID_COLOR[k]||"#2B7A78";
   const btn=(v,lbl)=>'<button onclick="kcGo(\''+v+'\')" style="flex:1;padding:9px 6px;font-family:\'DM Sans\',sans-serif;font-size:'+(kcLittle(k)?'14px':'12px')+';font-weight:800;border:none;border-radius:9px;cursor:pointer;color:'+(kcView===v?'#fff':'#9ca3af')+';background:'+(kcView===v?col:'transparent')+';white-space:nowrap">'+lbl+'</button>';
-  return '<div style="display:flex;gap:4px;background:#fff;border-bottom:2px solid '+_kcTint(col,0.75)+';padding:8px 10px">'+btn('cal','\u{1F5D3} Calendar')+btn('school','\u{1F4D6} School')+btn('bank','\u2B50 Bank')+btn('chores','\u{1F4CB} Chores')+'</div>';
+  return '<div style="display:flex;gap:4px;background:#fff;border-bottom:2px solid '+_kcTint(col,0.75)+';padding:8px 10px">'+btn('cal','\u{1F5D3} Calendar')+btn('bank','\u2B50 Bank')+btn('chores','\u{1F4CB} Chores')+'</div>';
 }
 // ⭐ Bank = the Star Bank card the app already shows (view-only for them); 📋 Chores = the
 // same routine lists they check on their Schedule day and on the tablet — today's, one truth.
@@ -18713,14 +18816,17 @@ function renderKidsCorner(el){
       +'<div style="position:relative;z-index:1;display:flex;align-items:center;gap:12px">'
       +'<div style="width:54px;height:54px;border-radius:16px;background:rgba(255,255,255,0.22);display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0">'+kcEmoji(k)+'</div>'
       +'<div style="flex:1;min-width:0"><div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;margin-bottom:2px">'+esc(name)+'\u2019s Corner</div>'
-      +'<div style="font-size:12px;opacity:0.9;font-weight:600">'+(kcView==="bank"?'Your stars.':kcView==="chores"?'Your lists for today.':kcView==="school"?'Your school day.':(kcLittle(k)?'Tap a day!':'Tap a day to see what\u2019s up \u2014 and add your own things.'))+'</div></div>'
+      +'<div style="font-size:12px;opacity:0.9;font-weight:600">'+(kcView==="bank"?'Your stars.':kcView==="chores"?'Your lists for today.':(kcCalGet()==="today")?'Your day, your stars, your school.':(kcLittle(k)?'Tap a day!':'Tap a day to see what\u2019s up \u2014 and add your own things.'))+'</div></div>'
       +'<button onclick="kcPick(\'\')" style="border:1.5px solid rgba(255,255,255,0.6);background:rgba(255,255,255,0.15);color:#fff;border-radius:20px;padding:6px 12px;font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">Not '+esc(name)+'?</button>'
       +'</div></div>';
     h+=kcSubnav(k);
     if(kcView==="bank") h+=kcBankHTML(k);
     else if(kcView==="chores") h+=kcChoresHTML(k);
-    else if(kcView==="school") h+=kcSchoolHTML(k);
-    else h+='<div style="padding:12px 12px 0">'+calRenderMonthPreview({who:k,little:kcLittle(k)})+'</div>';
+    else {
+      h+=kcCalToggleHTML(k);
+      if(kcCalGet()==="month") h+='<div style="padding:12px 12px 0">'+calRenderMonthPreview({who:k,little:kcLittle(k)})+'</div>';
+      else h+=kcTodayHTML(k);
+    }
   }
   h+='</div>';
   el.innerHTML=h;

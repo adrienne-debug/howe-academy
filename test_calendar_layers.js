@@ -79,7 +79,7 @@ console.log("\n── one lens, two doors ──");
 {
   ok("tapping a day opens/closes its sheet", (() => { const w = world(); w.call("calDayClick('2026-08-12')"); const a = w.call("calDaySel"); w.call("calDayClick('2026-08-12')"); return a === "2026-08-12" && w.call("calDaySel") === null; })());
   const mp = slice("renderMPCalendar"), adm = src.slice(src.indexOf("function renderCalendarView("), src.indexOf("function renderCalendarView(") + 1500);
-  ok("Mom HQ ▸ Calendar renders calRenderMonthPreview", /calRenderMonthPreview\(\)/.test(mp));
+  ok("Mom HQ ▸ Calendar renders calRenderMonthPreview (family, or one kid's lens)", /calRenderMonthPreview\(who\?\{who:who\}:undefined\)/.test(mp));
   ok("Admin ▸ Calendar renders the same function", /calRenderMonthPreview\(\)/.test(adm));
   ok("the event form is the existing one", /calRenderEventForm\(\)/.test(mp));
   ok("the sheet's eaten button is the kitchen's own function", /onclick="kitMarkEaten\(/.test(slice("calDaySheetHTML")));
@@ -133,7 +133,7 @@ console.log("\n── 🧒 Kids' Corner gates (her rule 2026-09-05: think on wha
   // what a kid's sheet never carries
   const sheet = slice("calDaySheetHTML");
   ok("meal actions are Mom-only in the sheet (kid branch has no eaten/skip/plan buttons)", (() => { const kid = sheet.slice(sheet.indexOf("if(L.meals&&who)"), sheet.indexOf("} else if(L.meals)")); return !/kitMarkEaten|kitMarkSkipped|kitPickDay|kitSlotText\(/.test(kid.replace(/_calSlotRows\(iso,who\)/, "")); })());
-  ok("layer chips never render on a kid's lens", /if\(!who\)\{\s*\/\/ layer chips are a Mom\/Dad setting/.test(src));
+  ok("layer chips never render when a KID is looking (Mom keeps them through a kid's lens)", /if\(!kidMode\)\{\s*\/\/ layer chips are a Mom\/Dad setting/.test(src));
   ok("Dad's page has the Calendar button", /Dad\\'s Day<\/div>'\+\s*'<button onclick="mpGoto\(\\'cal\\'\)"/.test(src));
   ok("the Corner is locked when opened by its kiosk link", /if\(_kioskK\(\)&&t!=="kids"\) return;/.test(src));
 }
@@ -162,18 +162,23 @@ console.log("\n── a kid's lessons and chores on a date (step 2c) ──");
   ok("every-2-weeks is decided by the calendar DATE, not this week's map", c("_calCadDueOn('2w','wednesday','2026-09-09')") === (Math.floor(new Date("2026-09-09T12:00:00").getTime() / 86400000) % 14 === 0));
   ok("Saturday-only chore is due on a Saturday date only", c("_calCadDueOn('sat','saturday','2026-09-12')") === true && c("_calCadDueOn('sat','wednesday','2026-09-09')") === false);
   const sheet = slice("calDaySheetHTML");
-  ok("the sheet lists lessons and chores only on a kid's lens, read-only", /if\(who\)\{\s*const _ls=_calLessonsFor\(who,iso\);/.test(sheet) && !/rtToggle|toggleSlot/.test(sheet));
+  ok("the sheet lists lessons and chores only on a kid's lens, read-only", /if\(who&&!opts\.noWork\)\{\s*const _ls=_calLessonsFor\(who,iso\);/.test(sheet) && !/rtToggle|toggleSlot/.test(sheet));
 }
 
 console.log("\n── 📖 School panel in the Corner: today's cards, the real check-off ──");
 {
-  const sp = slice("kcSchoolHTML");
-  ok("lays the day the way the Schedule tab does (loop lay over Mom's re-times)", /mlQueueLay\(dsRetime\(srcTasks\)\)/.test(sp));
-  ok("only this kid, only today (effectiveDay), no carry twins, no overflow", /t\.who===k&&effectiveDay\(t\)===dn&&!String\(t\.id\|\|""\)\.endsWith\("_c"\)&&!t\._eowOverflow/.test(sp));
+  const sp = slice("kcSchoolHTML"), tc = slice("_kcTodayCards"), sheet = slice("calDaySheetHTML");
+  ok("lays the day the way the Schedule tab does (loop lay over Mom's re-times)", /mlQueueLay\(dsRetime\(srcTasks\)\)/.test(tc) && /_kcTodayCards\(k\)/.test(sp));
+  ok("only this kid, only today (effectiveDay), no carry twins, no overflow", /t\.who===k&&effectiveDay\(t\)===dn&&!String\(t\.id\|\|""\)\.endsWith\("_c"\)&&!t\._eowOverflow/.test(tc));
   ok("renders the same taskCard — a tap is the check-off", /taskCard\(tk\)/.test(sp));
   ok("locked behind the morning routine like the Schedule tab", /isScheduleUnlocked\(k,dn\)/.test(sp) && /pointer-events:none/.test(sp));
   ok("the Corner always opens on TODAY", /if\(t==="kids"\)\{ try\{ day=_todayDay; \}catch\(e\)\{\} \}/.test(src));
-  ok("subnav carries School", /btn\('school','\\u\{1F4D6\} School'\)/.test(slice("kcSubnav")));
+  ok("School lives under Calendar ▸ Today (no separate subnav entry)", !/btn\('school'/.test(slice("kcSubnav")) && /if\(v==="school"\)\{ kcView="cal"; kcCalSet\("today"\); return; \}/.test(slice("kcGo")));
+  // who is LOOKING gates the actions; whose calendar gates the content
+  ok("a kid's own device: kid actions (add / delete own)", /const kidMode=!!who&&!wbMomEyes\(\);/.test(sheet) && /if\(kidMode\)\{/.test(sheet));
+  ok("Mom through a kid's lens keeps her actions (meal buttons, edit, approve)", /if\(L\.meals&&kidMode\)\{/.test(sheet) && /\(kidMode\?\(\(e\.addedBy===who\)/.test(sheet));
+  ok("Mom's Calendar has Today | Month and Family + each kid", /mpCalSet\('today'\)|tb\('today'/.test(slice("renderMPCalendar")) && /ROSTER\.map\(function\(k\)\{ return wb\(k,/.test(slice("renderMPCalendar")));
+  ok("the points card never invents a school number — school pays spins", /bonus spin when done/.test(slice("kcPointsHTML")) && !/cards\.length\*|pts\*cards/.test(slice("kcPointsHTML")));
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");
