@@ -85,5 +85,58 @@ console.log("\n── one lens, two doors ──");
   ok("the sheet's eaten button is the kitchen's own function", /onclick="kitMarkEaten\(/.test(slice("calDaySheetHTML")));
   ok("the subnav has the Calendar entry", /btn\('cal','🗓 Calendar'\)/.test(slice("mpSubnav")));
 }
+console.log("\n── 🧒 Kids' Corner gates (her rule 2026-09-05: think on what should be available to them) ──");
+{
+  // the pieces, extracted: pending filter, kid save, Mom approve, kid delete
+  const GATES = [slice("calEventsOn"), line("let kcKid="), line("function _kcLoadKid()"), slice("kcSaveEvent"), slice("kcSaveQuick"), slice("calApproveEvent"), slice("kcDeleteEvent"), slice("kcLittle")].join("\n");
+  function gw(o) {
+    const store = { ha_kc_kid: o.kid || "lucy" };
+    const ctx = { console, renders: 0, writes: [], removes: [], ROSTER: ["lincoln", "ellis", "lucy", "julian"], SCHOOL_KIDS: ["lincoln", "ellis", "lucy"],
+      HA_LS: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } },
+      renderAll: function () { ctx.renders++; }, gwShowToast: () => {}, momHere: () => !!o.mom, adminPinUnlocked: false,
+      db: { ref: p => ({ set: v => ctx.writes.push([p, v]), remove: () => ctx.removes.push(p) }) },
+      calendarData: { events: o.events || {} }, calEvents: function () { return ctx.calendarData.events || {}; },
+      document: { getElementById: id => ({ value: (o.fields || {})[id] || "", style: {}, focus() {} }) },
+    };
+    vm.createContext(ctx); vm.runInContext(GATES, ctx);
+    vm.runInContext("kcAddIso='2026-09-18'; kcConfirmDel=null;", ctx);
+    return { ctx, call: e => vm.runInContext(e, ctx) };
+  }
+  const w = gw({ fields: { "kc-ev-title": "Sleepover", "kc-ev-time": "6:00 PM", "kc-ev-emoji": "🎈" } });
+  w.call("kcSaveEvent()");
+  const ev = Object.values(w.ctx.calendarData.events)[0];
+  ok("a kid's addition carries their name AND waits for Mom", ev && ev.who === "lucy" && ev.addedBy === "lucy" && ev.pending === true, ev);
+  ok("it is written to the shared events node, nowhere else", w.ctx.writes.length === 1 && /^calendar\/events\/ev_20260918_/.test(w.ctx.writes[0][0]));
+  ok("a pending event is INVISIBLE to the day chips, the Board, the peek", w.call("calEventsOn('2026-09-18','lucy').length") === 0);
+  ok("…but the lenses see it when they ask", w.call("calEventsOn('2026-09-18','lucy',true).length") === 1);
+  ok("another kid never sees it, even pending", w.call("calEventsOn('2026-09-18','ellis',true).length") === 0);
+  const id = Object.keys(w.ctx.calendarData.events)[0];
+  w.call("calApproveEvent('" + id + "')");
+  ok("a kid device cannot approve", w.ctx.calendarData.events[id].pending === true && w.ctx.removes.length === 0);
+  w.ctx.momHere = () => true; w.call("calApproveEvent('" + id + "')");
+  ok("Mom's OK clears the wait and removes only the pending flag", !w.ctx.calendarData.events[id].pending && w.ctx.removes[0] === "calendar/events/" + id + "/pending");
+  ok("…and now the day chips show it", w.call("calEventsOn('2026-09-18','lucy').length") === 1);
+  // little mode + quick tiles
+  const j = gw({ kid: "julian" });
+  ok("Julian (not school-age) is LITTLE; Lincoln is not", j.call("kcLittle('julian')") === true && j.call("kcLittle('lincoln')") === false);
+  j.call("kcSaveQuick('🏊','Swimming')");
+  const je = Object.values(j.ctx.calendarData.events)[0];
+  ok("a quick tile adds a pending event with no typing", je && je.title === "Swimming" && je.emoji === "🏊" && je.addedBy === "julian" && je.pending === true, je);
+  // delete: own only, two taps
+  const d = gw({ events: { a1: { title: "x", date: "2026-09-18", who: "lucy", addedBy: "lucy", pending: true }, m1: { title: "Mom's", date: "2026-09-18", who: "family" } } });
+  d.call("kcDeleteEvent('m1')");
+  ok("a kid cannot delete Mom's event", !!d.ctx.calendarData.events.m1 && d.ctx.removes.length === 0);
+  d.call("kcDeleteEvent('a1')");
+  ok("first tap on their own asks", !!d.ctx.calendarData.events.a1 && d.call("kcConfirmDel") === "a1");
+  d.call("kcDeleteEvent('a1')");
+  ok("second tap deletes", !d.ctx.calendarData.events.a1 && d.ctx.removes[0] === "calendar/events/a1");
+  // what a kid's sheet never carries
+  const sheet = slice("calDaySheetHTML");
+  ok("meal actions are Mom-only in the sheet (kid branch has no eaten/skip/plan buttons)", (() => { const kid = sheet.slice(sheet.indexOf("if(L.meals&&who)"), sheet.indexOf("} else if(L.meals)")); return !/kitMarkEaten|kitMarkSkipped|kitPickDay|kitSlotText\(/.test(kid.replace(/_calSlotRows\(iso,who\)/, "")); })());
+  ok("layer chips never render on a kid's lens", /if\(!who\)\{\s*\/\/ layer chips are a Mom\/Dad setting/.test(src));
+  ok("Dad's page has the Calendar button", /Dad\\'s Day<\/div>'\+\s*'<button onclick="mpGoto\(\\'cal\\'\)"/.test(src));
+  ok("the Corner is locked when opened by its kiosk link", /if\(_kioskK\(\)&&t!=="kids"\) return;/.test(src));
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
