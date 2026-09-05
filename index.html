@@ -6502,7 +6502,9 @@ function taskCard(t, fromDay, readOnly, doneId){
   // 📕 Workbook: a subject linked to an uploaded workbook opens the viewer on THIS lesson's
   // exercise page for this kid (wbTaskLink resolves the card label; no page → no row).
   const _wbl=(!readOnly&&typeof wbTaskLink==="function")?wbTaskLink(t):null;
-  const wbRow=_wbl?'<div style="margin-top:5px"><span onclick="event.stopPropagation();wbOpenFor(\''+_wbl.bookId+'\',\''+t.who+'\','+_wbl.page+')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4D5} Open '+esc(taskLessonRef(t)||_wbl.name)+' →</span></div>':"";
+  const wbRow=_wbl?'<div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap"><span onclick="event.stopPropagation();wbOpenFor(\''+_wbl.bookId+'\',\''+t.who+'\','+_wbl.page+')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4D5} Open '+esc(taskLessonRef(t)||_wbl.name)+' →</span>'
+    +(_wbl.ans?'<span onclick="event.stopPropagation();wbOpenCheck(\''+_wbl.bookId+'\',\''+t.who+'\','+_wbl.page+','+_wbl.ans+')" title="his page and the answer key side by side" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#065f46;cursor:pointer;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">&#9989; Check answers</span>':'')
+    +'</div>':"";
   // Strip the "Cascaded from X" note from detail for display
   const cleanDetail=t.detail.replace(/\s*\(Cascaded from \w+\)/,"");
   const disLabel=(t._displaced&&t._originalDay&&t._originalDay!==t.day)?'<div style="font-size:10px;font-weight:700;color:#7c3aed;background:#ede9fe;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">&#8618; Moved from '+cap(t._originalDay)+'</div><br>':'';
@@ -20700,14 +20702,46 @@ function wbPageFor(book,label){
   if(/^post-?test/i.test(s)) return clamp(toc.post);
   return null;
 }
+// ── Answer key (2026-09-05). The book's toc may also carry ans={n:printedPage} — the
+// page where exercise n's answers START in the key — plus ansPre/ansPost. Same label
+// reading as wbPageFor; a bare page label ("pg26-29") resolves to the exercise that
+// printed page belongs to (the last exercise starting at or before it). Unreadable → null.
+function wbAnsPageFor(book,label){
+  const toc=book&&book.toc; if(!toc||!toc.ans) return null;
+  const off=parseInt(toc.offset,10)||0, last=book.pages||1;
+  const s=String(label||"").trim(); if(!s) return null;
+  const clamp=p=>{ p=parseInt(p,10); if(!p||p<1) return null; p+=off; return (p>=1&&p<=last)?p:null; };
+  let m;
+  if((m=s.match(/^ex(?:ercise)?s?\.?\s*#?\s*(\d+)/i))) return clamp(toc.ans[m[1]]);
+  if((m=s.match(/^(?:pgs?|pp?|pages?)\.?\s*(\d+)/i))){
+    const pg=parseInt(m[1],10); let best=null, bestStart=-1;
+    Object.keys(toc.ex||{}).forEach(n=>{ const st=parseInt(toc.ex[n],10); if(st&&st<=pg&&st>bestStart){ bestStart=st; best=n; } });
+    return best?clamp(toc.ans[best]):null;
+  }
+  if(/^pre-?test/i.test(s)) return clamp(toc.ansPre);
+  if(/^post-?test/i.test(s)) return clamp(toc.ansPost);
+  return null;
+}
+// Only Mom's devices ever learn where the answers are — a kid's card never carries it.
+function wbMomEyes(){ try{ return (typeof momHere==="function"&&momHere())||(typeof adminPinUnlocked!=="undefined"&&!!adminPinUnlocked); }catch(e){ return false; } }
 // The book a task's subject is linked to, and the page its label lands on.
 function wbTaskLink(t){
   try{
     const sub=(((currData||{}).subjects||{})[t.who]||{})[t.subjectKey]; const id=sub&&sub.workbook; if(!id) return null;
     const b=wbBook(id); if(!b) return null;
-    const page=wbPageFor(b,typeof taskLessonRef==="function"?taskLessonRef(t):""); if(!page) return null;
-    return {bookId:id,name:b.name||"Workbook",page:page};
+    const lbl=typeof taskLessonRef==="function"?taskLessonRef(t):"";
+    const page=wbPageFor(b,lbl); if(!page) return null;
+    const ans=wbMomEyes()?wbAnsPageFor(b,lbl):null;
+    return {bookId:id,name:b.name||"Workbook",page:page,ans:ans};
   }catch(e){ return null; }
+}
+// Mom's check: his page and the answer key side by side. Gated here AND in wbOpen.
+function wbOpenCheck(bookId,kid,page,ans){
+  if(!wbMomEyes()) return;
+  const go=()=>wbOpen(bookId,kid,page,{ans:ans});
+  if(wbBook(bookId)){ go(); return; }
+  if(!db){ alert("That workbook isn't loaded yet."); return; }
+  db.ref("workbooks/"+bookId).once("value").then(s=>{ const b=s.val(); if(b){ wbBooks[bookId]=b; go(); } else alert("That workbook isn't in the app any more."); });
 }
 // Open from a card: the workbooks listener normally has the book cached; fetch it once if not.
 function wbOpenFor(bookId,kid,page){
@@ -20770,24 +20804,40 @@ async function wbDeleteBook(id){
 }
 
 // ── The viewer: page image + an ink layer on top ─────────────────────────────
-let wbView=null;   // {bookId,kid,page,strokes,dirty,tool,penOnly,sawPen}
-function wbOpen(bookId,kid,page){
+let wbView=null;   // {bookId,kid,page,strokes,dirty,tool,penOnly,sawPen,ans}
+// opts.ans = an answer-key page to show BESIDE the kid's page (Mom's check, 2026-09-05).
+// The key pane is image-only — no ink, never saved — and it is dropped on any device that
+// is not Mom's, whatever the caller passed. Side by side when there is room, stacked when not.
+function wbOpen(bookId,kid,page,opts){
   const b=wbBook(bookId); if(!b){ alert("That workbook isn't loaded yet."); return; }
   page=Math.max(1,Math.min(b.pages||1,parseInt(page,10)||1));
-  wbView={bookId:bookId,kid:kid,page:page,strokes:[],dirty:false,tool:"pen",penOnly:false,sawPen:false};
+  let ans=(opts&&opts.ans)?parseInt(opts.ans,10):0;
+  if(!(ans>=1&&ans<=(b.pages||1))||!wbMomEyes()) ans=0;
+  wbView={bookId:bookId,kid:kid,page:page,strokes:[],dirty:false,tool:"pen",penOnly:false,sawPen:false,ans:ans};
   let ov=document.getElementById("wb-view"); if(ov) ov.remove();
   ov=document.createElement("div"); ov.id="wb-view";
   ov.style.cssText="position:fixed;inset:0;z-index:10050;background:#f8fafc;display:flex;flex-direction:column;overscroll-behavior:none";
   ov.innerHTML=
     '<div id="wb-bar" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#fff;border-bottom:1px solid #e2e8f0;flex:none;font-family:\'DM Sans\',sans-serif;flex-wrap:wrap"></div>'+
-    '<div id="wb-stage" style="flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:10px;-webkit-overflow-scrolling:touch">'+
-      '<div id="wb-hold" style="position:relative;line-height:0;box-shadow:0 2px 14px rgba(0,0,0,.18);border-radius:4px;overflow:hidden;background:#fff">'+
+    '<div id="wb-stage" style="flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;gap:12px;flex-wrap:wrap;padding:10px;-webkit-overflow-scrolling:touch">'+
+      '<div id="wb-hold" style="position:relative;line-height:0;box-shadow:0 2px 14px rgba(0,0,0,.18);border-radius:4px;overflow:hidden;background:#fff'+(ans?';flex:1 1 380px;max-width:900px;min-width:0':'')+'">'+
         '<img id="wb-img" style="display:block;max-width:100%;height:auto;user-select:none;-webkit-user-select:none;pointer-events:none">'+
         '<canvas id="wb-ink" style="position:absolute;inset:0;width:100%;height:100%;touch-action:pan-x pan-y;cursor:crosshair"></canvas>'+
       '</div>'+
+      (ans?'<div id="wb-ans-hold" style="position:relative;line-height:0;box-shadow:0 2px 14px rgba(0,0,0,.18);border-radius:4px;overflow:hidden;background:#fff;flex:1 1 380px;max-width:900px;min-width:0;outline:3px solid #6ee7b7">'+
+        '<div style="position:absolute;top:8px;left:8px;z-index:1;background:#065f46;color:#fff;font-size:11px;font-weight:800;border-radius:8px;padding:2px 8px;font-family:\'DM Sans\',sans-serif;line-height:1.4">ANSWER KEY</div>'+
+        '<img id="wb-ans-img" style="display:block;max-width:100%;height:auto;user-select:none;-webkit-user-select:none">'+
+      '</div>':'')+
     '</div>';
   document.body.appendChild(ov);
   wbBarRender(); wbLoadPage();
+}
+// The key pane's own page arrows — the answers for one exercise can run onto the next page.
+function wbGoAns(d){
+  const v=wbView; if(!v||!v.ans) return; const b=wbBook(v.bookId)||{};
+  const n=v.ans+d; if(n<1||n>(b.pages||1)) return;
+  v.ans=n; const img=document.getElementById("wb-ans-img"); if(img) img.src=(b.imgs||{})[n]||"";
+  wbBarRender();
 }
 function wbClose(){
   const go=()=>{ try{ if(_wbRO) _wbRO.disconnect(); }catch(e){} _wbRO=null; const ov=document.getElementById("wb-view"); if(ov) ov.remove(); wbView=null; };
@@ -20805,6 +20855,7 @@ function wbBarRender(){
     btn("◀","wbGo(-1)")+
     '<span style="font-size:12px;font-weight:700;color:#475569;min-width:64px;text-align:center">p '+v.page+' / '+(b.pages||"?")+'</span>'+
     btn("▶","wbGo(1)")+
+    (v.ans?('<span style="display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:2px 6px;border-radius:9px;background:#ecfdf5;border:1px solid #a7f3d0"><span style="font-size:11px;font-weight:800;color:#065f46">Key</span>'+btn("◀","wbGoAns(-1)")+'<span style="font-size:12px;font-weight:700;color:#065f46;min-width:34px;text-align:center">p '+v.ans+'</span>'+btn("▶","wbGoAns(1)")+'</span>'):'')+
     btn("✏️","wbTool(\'pen\')",v.tool==="pen")+
     btn("🩹 Erase","wbTool(\'erase\')",v.tool==="erase")+
     btn("↶ Undo","wbUndo()")+
@@ -20825,6 +20876,7 @@ async function wbLoadPage(){
   const b=wbBook(v.bookId)||{}; const img=document.getElementById("wb-img");
   const url=(b.imgs||{})[v.page];
   if(img) img.src=url||"";
+  if(v.ans){ const ai=document.getElementById("wb-ans-img"); if(ai) ai.src=(b.imgs||{})[v.ans]||""; }
   v.strokes=[]; v.dirty=false;
   if(!url){ wbPaint(); return; }
   try{
@@ -20936,7 +20988,7 @@ function wbPanelRender(){
   let h='<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'+
     '<button onclick="wbPanelClose()" style="padding:7px 12px;border-radius:9px;border:1.5px solid #cbd5e1;background:#fff;font-weight:700;cursor:pointer">✕</button>'+
     '<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:#0f172a">📕 Workbooks</div></div>'+
-    '<div style="font-size:12px;color:#64748b;margin-bottom:12px;line-height:1.45">Add a workbook PDF once. Open a page for a kid and they write on it with the Apple Pencil — their writing saves per page, per kid. <b>Answer keys are not in this yet</b>, so nothing here shows a kid an answer.</div>'+
+    '<div style="font-size:12px;color:#64748b;margin-bottom:12px;line-height:1.45">Add a workbook PDF once. Open a page for a kid and they write on it with the Apple Pencil — their writing saves per page, per kid. A book whose table of contents includes the answer key gets a <b>Check answers</b> chip on the card, for you only &mdash; a kid&rsquo;s device never shows an answer.</div>'+
     '<label style="display:inline-block;padding:9px 15px;border-radius:10px;border:2px dashed #93c5fd;background:#eff6ff;color:#1d4ed8;font-size:13px;font-weight:800;cursor:pointer">📄 Add a workbook PDF<input type="file" accept="application/pdf,.pdf" onchange="wbAddBook(this)" style="display:none"></label>'+
     '<div id="wb-msg" style="font-size:12px;color:#475569;margin:9px 0;min-height:16px"></div>';
   const books=wbList();
