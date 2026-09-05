@@ -221,5 +221,15 @@ console.log("\n── 🎰 spins hold until ALL school work is done (her rule 20
   ok("the stars card shows spins on their own line, never as banked", /getKidDayPoints\(k,dn\)/.test(pc) && /banked today/.test(pc) && /holding until school, Afternoon and Chores are done/.test(pc));
 }
 
+console.log("\n── 📋 list pop-ups from the Today card; Store + Grabs on the Bank tab ──");
+{
+  const pp = slice("_popPaint"), pc = slice("kcPointsHTML"), kb = slice("kcBankHTML");
+  ok("a list pop-up renders the SAME list as the Chores panel (morning via mrIndividualHTML, others via rtSlotHTML)", /popView==="list"/.test(pp) && /mrIndividualHTML\(popKid\)/.test(pp) && /rtSlotHTML\(popSlot,popKid\)/.test(pp));
+  ok("opening a list snaps to today first", /function kcOpenList\(kid,slot\)\{ popSlot=slot; try\{ day=_todayDay; \}/.test(src));
+  ok("every list row on the stars card opens its list", /onclick="event\.stopPropagation\(\);kcOpenList\(\\''\+k\+'\\',\\''\+l\.slot\+'\\'\)"/.test(pc));
+  ok("the pop-up repaints on every renderAll, so a check-off inside it shows at once", /if\(popView&&popKid&&document\.getElementById\("kid-pop"\)\) _popPaint\(\);/.test(src));
+  ok("Bank tab carries Store and Up for Grabs pop-up buttons", /popOpen\(\\''\+k\+'\\',\\''\+v\+'\\'\)/.test(kb) && /b\('store'/.test(kb) && /b\('grabs'/.test(kb));
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

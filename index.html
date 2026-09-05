@@ -13412,8 +13412,12 @@ function _grabsHTML(kid,momView){
 // living on it. Every control inside is the real one, and each handler ends in
 // renderAll — which repaints an open pop-up (see the hook in renderAll), so nothing
 // goes stale behind the overlay.
-let popView=null, popKid=null;
+let popView=null, popKid=null, popSlot=null;   // popView: "store" | "grabs" | "list" (+popSlot)
 function popOpen(kid,view){ popKid=kid; popView=view; _popPaint(); }
+// 📋 One routine list as a pop-up (her ask 2026-09-05): the SAME list the Chores panel and the
+// Schedule day render — gates (afternoon after school / 4 PM, evening hour) and check-offs
+// included — so a tap on "Morning 3 of 6" on their Today card lets them finish it right there.
+function kcOpenList(kid,slot){ popSlot=slot; try{ day=_todayDay; }catch(e){} popOpen(kid,"list"); }
 function popClose(){ popView=null; popKid=null; const o=document.getElementById("kid-pop"); if(o) o.remove(); }
 function _popPaint(){
   if(!popView||!popKid) return;
@@ -13421,13 +13425,17 @@ function _popPaint(){
   let o=document.getElementById("kid-pop"); if(o) o.remove();
   o=document.createElement("div"); o.id="kid-pop"; o.className="dlg-overlay"; o.style.display="flex"; o.style.zIndex="9999";
   let body="";
-  try{ body=(popView==="grabs")?_grabsHTML(popKid,momView):_storeCardHTML(popKid,momView); }catch(e){ body='<div style="padding:20px">Could not open that just now.</div>'; }
+  try{
+    if(popView==="list") body='<div id="sl-individual" style="display:block;padding:0">'+((popSlot==="morning"&&typeof mrIndividualHTML==="function")?mrIndividualHTML(popKid):rtSlotHTML(popSlot,popKid))+'</div>';
+    else body=(popView==="grabs")?_grabsHTML(popKid,momView):_storeCardHTML(popKid,momView);
+  }catch(e){ body='<div style="padding:20px">Could not open that just now.</div>'; }
   o.innerHTML='<div class="dlg-box" style="max-width:620px;width:94%;max-height:86vh;overflow-y:auto;text-align:left">'+
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
-    '<div style="flex:1;font-family:\'Fraunces\',serif;font-size:18px;font-weight:700;color:#1e3a5f">'+(popView==="grabs"?"🙌 Up for Grabs":"🏪 "+cap(popKid)+"’s Star Store")+'</div>'+
+    '<div style="flex:1;font-family:\'Fraunces\',serif;font-size:18px;font-weight:700;color:#1e3a5f">'+(popView==="list"?(cap(popKid)+"\u2019s "+((typeof SL_SLBL!=="undefined"&&SL_SLBL[popSlot])||popSlot)+" list"):popView==="grabs"?"🙌 Up for Grabs":"🏪 "+cap(popKid)+"’s Star Store")+'</div>'+
     '<button onclick="popClose()" style="border:none;background:#eef2f7;border-radius:9px;padding:5px 12px;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✕</button></div>'+
     body+'</div>';
   document.body.appendChild(o);
+  if(popView==="list") o.addEventListener("click",function(ev){ if(ev.target&&ev.target.closest&&ev.target.closest("[onclick]")) setTimeout(function(){ if(typeof renderAll==="function") renderAll(); },30); });
 }
 function _storeCardHTML(kid,momView){
   const cat=rwCatalog(), bal=bankBalance(kid), thr=storeCfg.threshold||0;
@@ -18781,8 +18789,8 @@ function kcPointsHTML(k){
       +(toGet>0?'<div style="text-align:right"><div style="font-size:'+(big?'22px':'18px')+';font-weight:800;line-height:1">+'+toGet+'</div><div style="font-size:'+(big?'12px':'10px')+';font-weight:800;opacity:.9">still to get</div></div>':'')+'</div>';
     h+='<div style="padding:8px 14px 10px;font-size:'+(big?'14px':'12.5px')+'">';
     lists.forEach(function(l){
-      h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f1f5f9">'
-        +'<span style="flex:0 0 78px;font-weight:800;color:'+(l.allDone?'#15803d':'#475569')+'">'+(l.allDone?'\u2713 ':'')+esc(l.lbl)+'</span>'
+      h+='<div onclick="event.stopPropagation();kcOpenList(\''+k+'\',\''+l.slot+'\')" title="open this list" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f1f5f9;cursor:pointer">'
+        +'<span style="flex:0 0 78px;font-weight:800;color:'+(l.allDone?'#15803d':'#475569')+'">'+(l.allDone?'\u2713 ':'')+esc(l.lbl)+' <span style="color:#9ca3af;font-weight:700">\u203A</span></span>'
         +'<span style="flex:1;color:#475569">'+l.done+' of '+l.total+(l.allDone?' \u2014 done!':'')+'</span>'
         +(l.left>0?'<span style="font-weight:800;color:#b45309">+'+l.left+' \u2B50</span>':'')+'</div>';
     });
@@ -18857,12 +18865,16 @@ function kcSubnav(k){
 // ⭐ Bank = the Star Bank card the app already shows (view-only for them); 📋 Chores = the
 // same routine lists they check on their Schedule day and on the tablet — today's, one truth.
 function kcBankHTML(k){
-  try{ return '<div style="padding:12px 12px 0">'+_bankCardHTML(k,false)+'</div>'; }
+  try{
+    const col=KID_COLOR[k]||"#2B7A78", big=kcLittle(k);
+    const b=(v,lbl)=>'<button onclick="popOpen(\''+k+'\',\''+v+'\')" style="flex:1;padding:'+(big?'12px':'10px')+';border-radius:12px;border:2px solid '+col+';background:#fff;color:'+col+';font-size:'+(big?'15px':'13px')+';font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
+    return '<div style="display:flex;gap:8px;padding:12px 12px 0">'+b('store','\u{1F3EA} Star Store')+b('grabs','\u{1F64C} Up for Grabs')+'</div>'
+      +'<div style="padding:12px 12px 0">'+_bankCardHTML(k,false)+'</div>'; }
   catch(e){ return '<div style="padding:20px;color:var(--muted)">Couldn\u2019t load your bank \u2014 try again</div>'; }
 }
 function kcChoresHTML(k){
   try{
-    let h='<div style="padding:12px 12px 0">';
+    let h='<div style="padding:12px 12px 0" onclick="if(event.target.closest(\'[onclick]\')) setTimeout(renderAll,30)">';
     activeSlots().forEach(function(slot){
       if(slot==="morning"&&typeof mrIndividualHTML==="function"){ h+=mrIndividualHTML(k); return; }
       h+=rtSlotHTML(slot,k);
