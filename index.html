@@ -127,6 +127,19 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .gmd-evs{display:block;font-size:9px;line-height:1.1;margin-top:1px;white-space:nowrap;overflow:hidden}
 .gmd-more{font-size:8px;font-weight:800;color:#9d174d;margin-left:1px}
 .gcal-month-day.has-ev{box-shadow:inset 0 -2px 0 #f9a8d4}
+.gcal-month-day.lay{flex-direction:column;justify-content:flex-start;align-items:stretch;min-height:36px;padding:3px 2px;text-align:center;min-width:0;overflow:hidden}
+.gcal-month-day.sel{outline:2px solid #E07B39;outline-offset:-1px}
+.gmd-meal{display:block;font-size:8.5px;line-height:1.15;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#9a3412;font-weight:700}
+.gmd-meal.ate{color:#15803d}.gmd-meal.skip{color:#9ca3af;text-decoration:line-through}.gmd-meal.owed::before{content:"\25CF ";color:#f97316}
+.gmd-coop{display:block;font-size:8.5px;line-height:1.1;color:#1d4ed8;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal-chip{border:1.5px solid #d1d5db;background:#fff;color:#6b7280;border-radius:20px;padding:4px 11px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif}
+.cal-chip.on{border-color:#2B7A78;background:#2B7A78;color:#fff}
+.cal-sheet{background:#fff;border:1.5px solid #E07B39;border-radius:12px;padding:12px 14px;margin:-8px 0 16px;font-family:'DM Sans',sans-serif}
+.cal-sheet h4{margin:0 0 8px;font-family:'Fraunces',serif;font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
+.cal-sheet .row{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid #f1f5f9;font-size:13px}
+.cal-sheet .row:first-of-type{border-top:none}
+.cal-sheet .lbl{flex:0 0 70px;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#9ca3af}
+.cal-sheet .act{border:none;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap}
 .earlier-tab{background:#f9fafb!important;color:#9ca3af!important;font-weight:800}
 .earlier-tab.on{background:#f3f4f6!important;color:#6b7280!important}
 .peek-wrap{padding:2px 2px 14px}
@@ -2223,6 +2236,24 @@ let calPrefillDate="";  // date a tapped month-day hands to the new-event form
 let calEditId=null;  // id of holiday/vacation being edited
 let calOverrideKid=null; // kid selected for override add
 let calPreviewMonth=null; // YYYY-MM for calendar preview (null = current)
+// ── ONE CALENDAR (2026-09-05). The month view is the master lens over facts that each live in
+// exactly one place already (calendar/holidays|vacations|coops|events, kitchen/plan). Layers are
+// a per-DEVICE view preference in localStorage — which categories this screen shows — and the
+// day sheet acts through the same functions the other screens use (kitMarkEaten etc.), so
+// nothing here is a second copy that could drift.
+let calDaySel=null;                       // ISO of the open day sheet (null = closed)
+const CAL_LAYERS=[["breaks","\u{1F3D6} Breaks"],["coops","\u{1F3EB} Co-ops"],["events","\u{1F389} Events"],["meals","\u{1F37D} Meals"]];
+let calLayers=null;
+function _calLayersLoad(){ if(calLayers) return; try{ calLayers=JSON.parse((typeof HA_LS!=="undefined"?HA_LS:localStorage).getItem("ha_cal_layers")||"null"); }catch(e){} if(!calLayers||typeof calLayers!=="object") calLayers={}; }
+function calLayerOn(k){ _calLayersLoad(); return calLayers[k]!==false; }
+function calLayerToggle(k){ _calLayersLoad(); calLayers[k]=!calLayerOn(k); try{ (typeof HA_LS!=="undefined"?HA_LS:localStorage).setItem("ha_cal_layers",JSON.stringify(calLayers)); }catch(e){} renderAll(); }
+// Breaks on a date: the holiday / vacation records whose range covers it.
+function calBreaksOn(iso){
+  const out=[]; const scan=(m,kind)=>{ Object.keys(m||{}).forEach(id=>{ const r=m[id]; if(!r||!r.start) return; const e=r.end||r.start; if(r.start<=iso&&iso<=e) out.push({id:id,kind:kind,name:r.name||(kind==="holiday"?"Holiday":"Vacation")}); }); };
+  scan((typeof calendarData!=="undefined"&&calendarData.holidays)||{},"holiday");
+  scan((typeof calendarData!=="undefined"&&calendarData.vacations)||{},"vacation");
+  return out;
+}
 let histTab="log"; // "log" | "attendance" | "trends" | "report"
 let digestData={};      // digest/* mirror — frozen weekly reports + seen/mute (📋 Report)
 let digestWkSel=null;   // 📋 Report week selector (null = current week)
@@ -7283,6 +7314,7 @@ function renderMomsPlan(el){
   if(mpSubView==='prep'){ return renderMPPrep(el); }
   if(mpSubView==='weigh'){ return renderMPWeigh(el); }
   if(mpSubView==='meals'){ return renderKitchen(el); }
+  if(mpSubView==='cal'){ return renderMPCalendar(el); }
   if(mpSubView==='dad'){ return renderDadsDay(el); }
   renderMomsDay(el);
 }
@@ -9125,10 +9157,23 @@ function kitMarkEaten(iso){
     try{HA_LS.setItem('ha_kit_staples',JSON.stringify(kitStaples));}catch(e){}
   }
   plan.eaten=Date.now();
+  if(plan.skipped){ delete plan.skipped; if(typeof db!=='undefined'&&db) db.ref('kitchen/plan/'+iso+'/skipped').remove(); }
   try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
   if(typeof db!=='undefined'&&db) db.ref('kitchen/plan/'+iso+'/eaten').set(plan.eaten);
   if(typeof mwToast==='function') mwToast('🍽 Eaten — pantry ticked down');
-  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+  _kitRefresh();
+}
+// The calendar (2026-09-05) calls these from Admin or Mom HQ, so a re-render must redraw
+// whatever screen is up — not always Mom's Day.
+function _kitRefresh(){ if(typeof renderAll==="function") renderAll(); else { const el=document.getElementById('content'); if(el) renderMomsPlan(el); } }
+// ✗ Didn't happen — the dinner was planned but not cooked. Nothing leaves the pantry; the
+// day just stops showing as owed. Marking it eaten later clears this.
+function kitMarkSkipped(iso){
+  const plan=kitPlan[iso]; if(!plan||plan.eaten||plan.skipped) return;
+  plan.skipped=Date.now();
+  try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('kitchen/plan/'+iso+'/skipped').set(plan.skipped);
+  _kitRefresh();
 }
 // Prompt-edit a day's b/l/s slot — so the whole day is manageable in-app,
 // not only via 📥 import. Blank clears the slot; an empty day is removed.
@@ -9515,9 +9560,19 @@ const MW_CSS = `
 .mwv .sw{width:10px;height:10px;border-radius:3px;display:inline-block}
 `;
 
+// 🗓 The one calendar, in Mom HQ (2026-09-05): the same month view Admin ▸ Calendar shows —
+// one function, one lens — with the event form when a day sheet asks for it.
+function renderMPCalendar(el){
+  let h='<div style="font-family:\'DM Sans\',sans-serif;padding-bottom:28px">'+mwBanner('Breaks, co-ops, events and dinners — tap a day')+mpSubnav('cal');
+  h+='<div style="padding:12px 12px 0">';
+  if(calAddMode==="event") h+=calRenderEventForm();
+  h+=calRenderMonthPreview();
+  h+='</div></div>';
+  el.innerHTML=h;
+}
 function mpSubnav(active){
   const btn=(v,lbl)=>`<button onclick="mpGoto('${v}')" style="flex:1;padding:9px 6px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;border:none;border-radius:9px;cursor:pointer;color:${active===v?'#fff':'#9ca3af'};background:${active===v?'#2B7A78':'transparent'};transition:all .2s;white-space:nowrap">${lbl}</button>`;
-  return `<div style="display:flex;gap:4px;background:#fff;border-bottom:2px solid #DEF2F1;padding:8px 10px">${btn('plan','🏡 Today')}${btn('meals','🍽 Meals')}${btn('prep','🧃 Prep')}${btn('weigh','⚖️ Weigh-In')}</div>`;
+  return `<div style="display:flex;gap:4px;background:#fff;border-bottom:2px solid #DEF2F1;padding:8px 10px">${btn('plan','🏡 Today')}${btn('cal','🗓 Calendar')}${btn('meals','🍽 Meals')}${btn('prep','🧃 Prep')}${btn('weigh','⚖️ Weigh-In')}</div>`;
 }
 function mpGoto(v){ mpSubView=v; const el=document.getElementById('content'); if(el) renderMomsPlan(el); try{window.scrollTo(0,0);}catch(e){} }
 function mwBanner(sub){
@@ -18256,6 +18311,7 @@ function calRenderMonthPreview(){
   const firstDay=new Date(year,month,1).getDay();
   const daysInMonth=new Date(year,month+1,0).getDate();
   const todayIso=calToday();
+  const L={breaks:calLayerOn("breaks"),coops:calLayerOn("coops"),events:calLayerOn("events"),meals:calLayerOn("meals")};
   const holidays=calendarData.holidays||{}, vacations=calendarData.vacations||{};
   const offDates=new Set();
   Object.values(holidays).forEach(h2=>{
@@ -18269,11 +18325,25 @@ function calRenderMonthPreview(){
     const s=new Date(v.start+"T12:00:00"),e=new Date((v.end||v.start)+"T12:00:00");
     for(let d=new Date(s);d<=e;d.setDate(d.getDate()+1)) vacDates.add(d.toISOString().slice(0,10));
   });
+  // The dinner planned for a day, as the cell shows it. Status is the ONE thing a past day
+  // can owe: planned, passed, never marked eaten or skipped → "owed" dot.
+  const dinnerOf=iso=>{
+    if(typeof kitPlanFor!=="function") return null;
+    const pl=kitPlanFor(iso); if(!pl) return null;
+    const raw=(typeof kitPlan!=="undefined"&&kitPlan[iso])||{};
+    const name=pl.meal?((pl.meal.emoji?pl.meal.emoji+" ":"")+(pl.meal.name||"")):(pl.txt?pl.txt:(pl.mid?"(meal removed)":""));
+    if(!name) return null;
+    const st=raw.eaten?"ate":(raw.skipped?"skip":(iso<todayIso?"owed":"planned"));
+    return {name:name,st:st,pl:pl};
+  };
   let h='<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:20px">';
   // Named, because the Lesson Map's printable per-kid calendar sits right below this one and two
   // bare "July 2026" headers in a row look like the same thing twice.
-  h+='<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700;margin-bottom:2px">🗓 Month at a glance</div>';
-  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">School days, breaks and family events. Tap any day to add an event.</div>';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700;margin-bottom:2px">&#128467; Month at a glance</div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Everything on one calendar. Switch layers on and off; tap a day to see it all and act on it.</div>';
+  h+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px">';
+  CAL_LAYERS.forEach(function(c){ h+='<button class="cal-chip'+(L[c[0]]?' on':'')+'" onclick="calLayerToggle(\''+c[0]+'\')">'+c[1]+'</button>'; });
+  h+='</div>';
   h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">';
   h+='<button class="smap-nav-btn" onclick="calNavMonth(-1)">&#8249;</button>';
   h+='<div class="gcal-month-label" style="margin:0">'+monthName+'</div>';
@@ -18286,26 +18356,69 @@ function calRenderMonthPreview(){
     const iso=new Date(year,month,d).toISOString().slice(0,10);
     const dow=new Date(year,month,d).getDay();
     const isWeekend=dow===0||dow===6;
-    const isHol=offDates.has(iso);
-    const isVac=vacDates.has(iso);
+    const isHol=L.breaks&&offDates.has(iso);
+    const isVac=L.breaks&&vacDates.has(iso);
     const isToday=iso===todayIso;
-    let cls="gcal-month-day";
+    let cls="gcal-month-day lay";
     if(isToday) cls+=" today";
+    if(iso===calDaySel) cls+=" sel";
     if(isHol) cls+=" holiday";
     else if(isVac) cls+=" off";
     else if(isWeekend) cls+=" outside";
     else cls+=" school";
-    // family events on this day — the reason to have a month at all
-    const _dayEvs=calEventsOn(iso,"all");
+    const _dayEvs=L.events?calEventsOn(iso,"all"):[];
     if(_dayEvs.length) cls+=" has-ev";
-    h+='<div class="'+cls+'" onclick="calDayClick(\''+iso+'\')" title="'+
-       (_dayEvs.length?esc(_dayEvs.map(e=>(e.title||"Event")+(e.time?" "+e.time:"")).join(" · ")):"Add an event")+'">'+
+    const _coops=(L.coops&&typeof coopsOnDate==="function")?coopsOnDate(iso):[];
+    const _din=L.meals?dinnerOf(iso):null;
+    const tip=[].concat(_dayEvs.map(e=>(e.title||"Event")+(e.time?" "+e.time:"")),_coops.map(c=>"\u{1F3EB} "+(c.name||"Co-op")),_din?["\u{1F37D} "+_din.name+(_din.st==="owed"?" (not marked)":_din.st==="ate"?" (eaten)":_din.st==="skip"?" (didn't happen)":"")]:[]).join(" · ");
+    h+='<div class="'+cls+'" onclick="calDayClick(\''+iso+'\')" title="'+esc(tip||"Tap for the day")+'">'+
        '<span class="gmd-num">'+d+'</span>'+
-       (_dayEvs.length?'<span class="gmd-evs">'+_dayEvs.slice(0,3).map(e=>esc(e.emoji||"🎉")).join("")+
+       (_dayEvs.length?'<span class="gmd-evs">'+_dayEvs.slice(0,3).map(e=>esc(e.emoji||"\u{1F389}")).join("")+
          (_dayEvs.length>3?'<span class="gmd-more">+'+(_dayEvs.length-3)+'</span>':'')+'</span>':'')+
+       (_coops.length?'<span class="gmd-coop">\u{1F3EB}'+(_coops.length>1?' ×'+_coops.length:'')+'</span>':'')+
+       (_din?'<span class="gmd-meal '+_din.st+'">'+esc(_din.name)+'</span>':'')+
        '</div>';
   }
-  h+='</div></div>';
+  h+='</div>';
+  if(calDaySel&&calDaySel.slice(0,7)===(year+"-"+String(month+1).padStart(2,"0"))) h+=calDaySheetHTML(calDaySel,L,dinnerOf);
+  h+='</div>';
+  return h;
+}
+// The day sheet: everything on one date, grouped by layer, with the actions each fact
+// already has elsewhere (edit an event, mark a dinner eaten). Past dinners that were
+// planned but never marked are the reason this exists — her question 2026-09-05.
+function calDaySheetHTML(iso,L,dinnerOf){
+  const d=new Date(iso+"T12:00:00"); const todayIso=calToday();
+  const lbl=d.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
+  let h='<div class="cal-sheet"><h4><span style="flex:1">'+esc(lbl)+(iso===todayIso?' <span style="font-size:10px;font-weight:800;color:#E07B39">TODAY</span>':'')+'</span>'
+    +'<button class="act" style="background:#f1f5f9;color:#475569" onclick="calDayClick(\''+iso+'\')">✕</button></h4>';
+  let rows=0;
+  if(L.breaks){ calBreaksOn(iso).forEach(function(b){ rows++; h+='<div class="row"><span class="lbl">Break</span><span style="flex:1">'+(b.kind==="holiday"?"\u{1F389} ":"\u{1F3D6} ")+esc(b.name)+'</span></div>'; }); }
+  if(L.coops&&typeof coopsOnDate==="function"){ coopsOnDate(iso).forEach(function(c){ rows++;
+    const kids=(Array.isArray(c.kids)&&c.kids.length)?c.kids.map(function(k){ return cap(k); }).join(", "):"everyone";
+    h+='<div class="row"><span class="lbl">Co-op</span><span style="flex:1">\u{1F3EB} <b>'+esc(c.name||"Co-op")+'</b> <span style="color:#6b7280">· '+(c.mode==="fullDay"?"all day":("out "+esc(c.start||"?")+" – back "+esc(c.end||"?")))+' · '+esc(kids)+'</span></span></div>'; }); }
+  if(L.events){ calEventsOn(iso,"all").forEach(function(e){ rows++;
+    h+='<div class="row"><span class="lbl">Event</span><span style="flex:1">'+esc(e.emoji||"\u{1F389}")+' <b>'+esc(e.title||"Event")+'</b>'+(e.time?' <span style="color:#6b7280">· '+esc(e.time)+'</span>':'')+(e.who&&e.who!=="family"?' <span style="color:#6b7280">· '+esc(cap(e.who))+'</span>':'')+'</span>'
+      +'<button class="act" style="background:#fdf2f8;color:#9d174d" onclick="calEditEvent(\''+e.id+'\')">✎</button></div>'; }); }
+  if(L.meals){
+    const din=dinnerOf?dinnerOf(iso):null; rows++;
+    h+='<div class="row"><span class="lbl">Dinner</span>';
+    if(din){
+      h+='<span style="flex:1"><b>'+esc(din.name)+'</b>'+(din.pl&&din.pl.mid&&din.pl.meal?' <span onclick="kitOpenRecipe(\''+din.pl.mid+'\')" style="cursor:pointer;font-size:11px;font-weight:700;color:#E07B39">\u{1F4D6} recipe</span>':'');
+      if(din.st==="ate"){ const ts=(kitPlan[iso]||{}).eaten; h+='<div style="font-size:11px;color:#15803d;font-weight:700">✓ Eaten'+(ts?' · '+new Date(ts).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):'')+'</div>'; }
+      else if(din.st==="skip") h+='<div style="font-size:11px;color:#9ca3af;font-weight:700">✗ Didn’t happen</div>';
+      else if(din.st==="owed") h+='<div style="font-size:11px;color:#c2410c;font-weight:700">● Not marked yet</div>';
+      else h+='<div style="font-size:11px;color:#6b7280;font-weight:700">planned</div>';
+      h+='</span>';
+      if(din.st==="owed"||(din.st==="planned"&&iso===todayIso)) h+='<button class="act" style="background:#dcfce7;color:#166534" onclick="kitMarkEaten(\''+iso+'\')">✓ We ate it</button><button class="act" style="background:#f1f5f9;color:#475569" onclick="kitMarkSkipped(\''+iso+'\')">✗ Didn’t happen</button>';
+      else if(din.st==="skip") h+='<button class="act" style="background:#dcfce7;color:#166534" onclick="kitMarkEaten(\''+iso+'\')">Actually, we ate it</button>';
+    } else {
+      h+='<span style="flex:1;color:#9ca3af">No dinner planned</span>'+((typeof tab!=="undefined"&&tab==="moms-plan")?'<button class="act" style="background:#fff7ed;color:#c2410c" onclick="mpGoto(\'meals\');kitPickDay(\''+iso+'\')">\u{1F5D3} Plan it</button>':'');
+    }
+    h+='</div>';
+  }
+  h+='<div class="row" style="justify-content:flex-end"><button class="act" style="background:#fdf2f8;color:#9d174d" onclick="calDayAddEvent(\''+iso+'\')">＋ Add event</button></div>';
+  h+='</div>';
   return h;
 }
 
@@ -18384,9 +18497,8 @@ function calRenderEventForm(){
     '</div></div>';
 }
 // Tap a day in the month → start a new event on that date (or edit the one that's there).
-function calDayClick(iso){
-  const evs=calEventsOn(iso,"all");
-  if(evs.length===1){ calEditEvent(evs[0].id); return; }
+function calDayClick(iso){ calDaySel=(calDaySel===iso)?null:iso; renderAll(); }
+function calDayAddEvent(iso){
   calAddMode="event"; calEditId=null; calPrefillDate=iso; renderAll();
   setTimeout(function(){ const el=document.getElementById("cal-ev-title"); if(el) el.focus(); },60);
 }
