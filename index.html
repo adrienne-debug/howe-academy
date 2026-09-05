@@ -8355,7 +8355,7 @@ function mdCardDinner(iso){
     +'<span style="margin-left:auto;display:flex;gap:6px;align-items:center">'
     +((kitPlan[iso]||{}).eaten
       ?'<span style="font-size:11px;font-weight:800;background:rgba(255,255,255,0.25);border-radius:8px;padding:3px 10px">✓ Eaten</span>'
-      :(dpl?'<button onclick="kitMarkEaten(\''+iso+'\')" style="border:none;background:rgba(255,255,255,0.25);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">✓ We ate it</button>':''))
+      :((dpl&&kitEatGate())?'<button onclick="kitMarkEaten(\''+iso+'\')" style="border:none;background:rgba(255,255,255,0.25);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">✓ We ate it</button>':''))
     +'<button onclick="mpGoto(\'meals\')" style="border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">🗓 Plan week →</button></span></div>';
   if(dMeal){
     const dSteps=kitPrepSteps(iso);
@@ -9229,7 +9229,14 @@ const KIT_SLOTS=[["b","🌅","Breakfast"],["l","☀️","Lunch"],["s","🍎","Sn
 // passing deducts nothing (plans change); her confirm walks the meal's uses
 // manifest, ticks rough counts down, and an item hitting zero flips its ⭐
 // staple to ❌ out so the order list hears about it without another thought.
+// Who may mark a meal (her rule 2026-09-05: "the we ate it part doesn't need to be for the
+// kids"): Mom mode / admin PIN, or Dad on his own link or with his code. The buttons hide
+// for anyone else AND the functions refuse, so a kid on a shared tablet can't tick the pantry.
+function kitEatGate(){
+  try{ return (typeof momHere==="function"&&momHere())||(typeof _kioskD==="function"&&_kioskD())||(typeof dadAwardOk==="function"&&dadAwardOk()); }catch(e){ return false; }
+}
 function kitMarkEaten(iso){
+  if(!kitEatGate()){ if(typeof gwShowToast==="function") gwShowToast("Ask Mom or Dad to mark dinner"); return; }
   const plan=kitPlan[iso]; if(!plan||plan.eaten) return;
   if(!confirm("Mark this dinner eaten? Rough pantry counts tick down.")) return;
   const meal=plan.mid?kitMeals[plan.mid]:null;
@@ -9266,6 +9273,7 @@ function _kitRefresh(){ if(typeof renderAll==="function") renderAll(); else { co
 // ✗ Didn't happen — the dinner was planned but not cooked. Nothing leaves the pantry; the
 // day just stops showing as owed. Marking it eaten later clears this.
 function kitMarkSkipped(iso){
+  if(!kitEatGate()) return;
   const plan=kitPlan[iso]; if(!plan||plan.eaten||plan.skipped) return;
   plan.skipped=Date.now();
   try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
@@ -9275,6 +9283,7 @@ function kitMarkSkipped(iso){
 // Prompt-edit a day's b/l/s slot — so the whole day is manageable in-app,
 // not only via 📥 import. Blank clears the slot; an empty day is removed.
 function kitSlotText(iso,slot){
+  if(!kitEatGate()) return;
   const meta=KIT_SLOTS.find(s=>s[0]===slot); if(!meta) return;
   const sv=kitPlanSlot(iso,slot);
   const v=prompt(meta[1]+" "+meta[2]+":",(sv&&sv.txt)||"");
@@ -18623,7 +18632,7 @@ function _calSlotRows(iso,who){
     const sv=kitPlanSlot(iso,sp[0]); if(!sv) return; n++;
     const name=sv.meal?((sv.meal.emoji?sv.meal.emoji+" ":"")+(sv.meal.name||"")):(sv.txt||"");
     html+='<div class="row"><span class="lbl">'+sp[2]+'</span><span style="flex:1">'+sp[1]+' <b>'+esc(name)+'</b></span>'
-      +(who?'':'<button class="act" style="background:#fff7ed;color:#c2410c" onclick="kitSlotText(\''+iso+'\',\''+sp[0]+'\')">✎</button>')+'</div>';
+      +((who||!kitEatGate())?'':'<button class="act" style="background:#fff7ed;color:#c2410c" onclick="kitSlotText(\''+iso+'\',\''+sp[0]+'\')">✎</button>')+'</div>';
   });
   return {html:html,n:n};
 }
@@ -18660,8 +18669,9 @@ function calDaySheetHTML(iso,L,dinnerOf,who,opts){
       +(e.addedBy?' <span style="font-size:10px;color:#6b7280">· added by '+esc(cap(e.addedBy))+'</span>':'')
       +(e.pending?' <span style="font-size:10px;font-weight:800;color:#b45309;background:#fef3c7;border-radius:8px;padding:1px 6px">\u270B '+(who?'waiting for Mom':'waiting for you')+'</span>':'')+'</span>'
       +(kidMode?((e.addedBy===who)?'<button class="act" style="background:#fef2f2;color:#b91c1c" onclick="kcDeleteEvent(\''+e.id+'\')">'+(kcConfirmDel===e.id?'Really delete?':'\u{1F5D1}')+'</button>':'')
-           :(e.pending?'<button class="act" style="background:#dcfce7;color:#166534" onclick="calApproveEvent(\''+e.id+'\')">✓ OK</button><button class="act" style="background:#fef2f2;color:#b91c1c" onclick="calDeleteEvent(\''+e.id+'\')">✗</button>'
-                      :'<button class="act" style="background:#fdf2f8;color:#9d174d" onclick="calEditEvent(\''+e.id+'\')">✎</button>'))+'</div>'; }); }
+           :(!kitEatGate()?''   /* a kid on a shared screen: read only */
+             :(e.pending?'<button class="act" style="background:#dcfce7;color:#166534" onclick="calApproveEvent(\''+e.id+'\')">✓ OK</button><button class="act" style="background:#fef2f2;color:#b91c1c" onclick="calDeleteEvent(\''+e.id+'\')">✗</button>'
+                      :'<button class="act" style="background:#fdf2f8;color:#9d174d" onclick="calEditEvent(\''+e.id+'\')">✎</button>')))+'</div>'; }); }
   // a kid's own "add something" — inline, their name already on it
   if(kidMode&&kcAddIso===iso&&kcLittle(who)){
     h+='<div class="row" style="flex-wrap:wrap;gap:8px;background:#f8fafc;border-radius:10px;padding:8px 8px;border-top:none;justify-content:center">';
@@ -18691,17 +18701,18 @@ function calDaySheetHTML(iso,L,dinnerOf,who,opts){
       else if(din.st==="owed") h+='<div style="font-size:11px;color:#c2410c;font-weight:700">● Not marked yet</div>';
       else h+='<div style="font-size:11px;color:#6b7280;font-weight:700">planned</div>';
       h+='</span>';
-      if(din.st==="owed"||(din.st==="planned"&&iso===todayIso)) h+='<button class="act" style="background:#dcfce7;color:#166534" onclick="kitMarkEaten(\''+iso+'\')">✓ We ate it</button><button class="act" style="background:#f1f5f9;color:#475569" onclick="kitMarkSkipped(\''+iso+'\')">✗ Didn’t happen</button>';
+      if(!kitEatGate()){ /* a kid on a shared screen: status only, no buttons */ }
+      else if(din.st==="owed"||(din.st==="planned"&&iso===todayIso)) h+='<button class="act" style="background:#dcfce7;color:#166534" onclick="kitMarkEaten(\''+iso+'\')">✓ We ate it</button><button class="act" style="background:#f1f5f9;color:#475569" onclick="kitMarkSkipped(\''+iso+'\')">✗ Didn’t happen</button>';
       else if(din.st==="skip") h+='<button class="act" style="background:#dcfce7;color:#166534" onclick="kitMarkEaten(\''+iso+'\')">Actually, we ate it</button>';
     } else {
-      h+='<span style="flex:1;color:#9ca3af">No dinner planned</span>'+((typeof tab!=="undefined"&&tab==="moms-plan")?'<button class="act" style="background:#fff7ed;color:#c2410c" onclick="mpGoto(\'meals\');kitPickDay(\''+iso+'\')">\u{1F5D3} Plan it</button>':'');
+      h+='<span style="flex:1;color:#9ca3af">No dinner planned</span>'+((typeof tab!=="undefined"&&tab==="moms-plan"&&kitEatGate())?'<button class="act" style="background:#fff7ed;color:#c2410c" onclick="mpGoto(\'meals\');kitPickDay(\''+iso+'\')">\u{1F5D3} Plan it</button>':'');
     }
     h+='</div>';
   }
   if(kidMode){
     if(!rows||(rows===1&&L.meals)) h+='<div class="row" style="color:#9ca3af;font-size:12.5px">Nothing else on this day yet.</div>';
     if(kcAddIso!==iso) h+='<div class="row" style="justify-content:flex-end"><button class="act" style="background:'+(KID_COLOR[who]||"#2B7A78")+';color:#fff;padding:7px 13px;font-size:12px" onclick="kcAddOpen(\''+iso+'\')">＋ Add something</button></div>';
-  } else {
+  } else if(kitEatGate()){
     h+='<div class="row" style="justify-content:flex-end"><button class="act" style="background:#fdf2f8;color:#9d174d" onclick="calDayAddEvent(\''+iso+'\')">＋ Add event</button></div>';
   }
   h+='</div>';

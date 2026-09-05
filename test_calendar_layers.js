@@ -27,12 +27,14 @@ function ok(n, c, x) { if (c) { pass++; console.log("  ok  - " + n); } else { fa
 const CODE = [
   line("let calDaySel="), line("const CAL_LAYERS="), line("let calLayers="),
   line("function _calLayersLoad()"), line("function calLayerOn("), line("function calLayerToggle("),
-  slice("calBreaksOn"), slice("kitMarkEaten"), slice("_kitRefresh"), slice("kitMarkSkipped"), slice("calDayClick"),
+  slice("calBreaksOn"), slice("kitEatGate"), slice("kitMarkEaten"), slice("_kitRefresh"), slice("kitMarkSkipped"), slice("calDayClick"),
 ].join("\n");
 
-function world() {
+function world(o) {
+  o = o || {};
   const store = {};
-  const ctx = { console, renders: 0, writes: [], removes: [],
+  const ctx = { console, renders: 0, writes: [], removes: [], toasts: [],
+    momHere: () => o.kid ? false : true, gwShowToast: m => ctx.toasts.push(m),
     HA_LS: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } },
     renderAll: function () { ctx.renders++; }, confirm: () => true, mwToast: () => {},
     db: { ref: p => ({ set: v => ctx.writes.push([p, v]), remove: () => ctx.removes.push(p) }) },
@@ -74,6 +76,14 @@ console.log("\n── didn't happen / eaten ──");
   ok("eaten later clears the skip", !w.call("kitPlan['2026-08-13'].skipped") && w.call("kitPlan['2026-08-13'].eaten>0") && w.ctx.removes.indexOf("kitchen/plan/2026-08-13/skipped") >= 0);
   ok("an eaten day cannot be skipped", (w.call("kitMarkSkipped('2026-08-13')"), !w.call("kitPlan['2026-08-13'].skipped")));
   ok("both actions redraw whatever screen is up (renderAll), not Mom's Day specifically", w.ctx.renders >= 2 && !/renderMomsPlan\(el\);\n\}/.test(slice("kitMarkEaten")));
+  // her rule 2026-09-05: "the we ate it part doesn't need to be for the kids" — a kid on a
+  // shared screen can neither see the buttons nor call the functions
+  const k = world({ kid: true });
+  k.call("kitPlan={'2026-08-12':{txt:'Kielbasa'}}");
+  k.call("kitMarkEaten('2026-08-12'); kitMarkSkipped('2026-08-12');");
+  ok("a kid device cannot mark eaten or skipped (toast, nothing written)", !k.call("kitPlan['2026-08-12'].eaten") && !k.call("kitPlan['2026-08-12'].skipped") && k.ctx.writes.length === 0 && k.ctx.toasts.length === 1);
+  ok("the dinner card and the sheet hide the buttons behind the same gate", /\(dpl&&kitEatGate\(\)\)\?'<button onclick="kitMarkEaten/.test(src) && /if\(!kitEatGate\(\)\)\{ \/\* a kid on a shared screen/.test(slice("calDaySheetHTML")));
+  ok("meal pencils and Plan-it are gated too", /\(who\|\|!kitEatGate\(\)\)\?'':'<button class="act" style="background:#fff7ed;color:#c2410c" onclick="kitSlotText/.test(src) && /tab==="moms-plan"&&kitEatGate\(\)\)/.test(src));
 }
 console.log("\n── one lens, two doors ──");
 {
