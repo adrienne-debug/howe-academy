@@ -183,7 +183,7 @@ console.log("\n── 📖 School panel in the Corner: today's cards, the real c
   ok("renders the same taskCard — a tap is the check-off", /taskCard\(tk\)/.test(sp));
   ok("locked behind the morning routine like the Schedule tab", /isScheduleUnlocked\(k,dn\)/.test(sp) && /pointer-events:none/.test(sp));
   ok("the Corner always opens on TODAY", /if\(t==="kids"\)\{ try\{ day=_todayDay; \}catch\(e\)\{\} \}/.test(src));
-  ok("School lives under Calendar ▸ Today (no separate subnav entry)", !/btn\('school'/.test(slice("kcSubnav")) && /if\(v==="school"\)\{ kcView="cal"; kcCalSet\("today"\); return; \}/.test(slice("kcGo")));
+  ok("School lives under Calendar ▸ Today (no separate subnav entry)", !/btn\('school'/.test(slice("kcSubnav")) && /if\(v==="school"\|\|v==="chores"\|\|v==="bank"\)\{ kcView="cal"; kcCalSet\("today"\); return; \}/.test(slice("kcGo")));
   // who is LOOKING gates the actions; whose calendar gates the content
   ok("a kid's own device: kid actions (add / delete own)", /const kidMode=!!who&&!wbMomEyes\(\);/.test(sheet) && /if\(kidMode\)\{/.test(sheet));
   ok("Mom through a kid's lens keeps her actions (meal buttons, edit, approve)", /if\(L\.meals&&kidMode\)\{/.test(sheet) && /\(kidMode\?\(\(e\.addedBy===who\)/.test(sheet));
@@ -229,7 +229,11 @@ console.log("\n── 📋 list pop-ups from the Today card; Store + Grabs on th
   ok("opening a list snaps to today first", /function kcOpenList\(kid,slot\)\{ popSlot=slot; try\{ day=_todayDay; \}/.test(src));
   ok("every list row on the stars card opens its list", /onclick="event\.stopPropagation\(\);kcOpenList\(\\''\+k\+'\\',\\''\+l\.slot\+'\\'\)"/.test(pc));
   ok("the pop-up repaints on every renderAll, so a check-off inside it shows at once", /if\(popView&&popKid&&document\.getElementById\("kid-pop"\)\) _popPaint\(\);/.test(src));
-  ok("Bank tab carries Store and Up for Grabs pop-up buttons", /popOpen\(\\''\+k\+'\\',\\''\+v\+'\\'\)/.test(kb) && /b\('store'/.test(kb) && /b\('grabs'/.test(kb));
+  ok("(the old Bank tab renderer is kept but no longer wired)", !/kcBankHTML\(k\)/.test(slice("renderKidsCorner")));
+  ok("general tablet: a 📆 My Day tab renders the Corner page for the picked kid (kid mode)", /\["myday","\\uD83D\\uDCC6 My Day"\]/.test(slice("renderKioskTabs")) && /kkTab==="myday"/.test(slice("renderKioskView")) && /kcTodayHTML\(kid\)/.test(slice("renderKioskView")) && /calRenderMonthPreview\(\{who:kid,little:kcLittle\(kid\)\}\)/.test(slice("renderKioskView")));
+  ok("tapping a name from the Everyone grid lands on My Day; idle still resets to Everyone/Routines", /if\(kkTab==="routines"&&_kioskR\(\)\) kkTab="myday";/.test(slice("kkSel")) && /kkTab="routines"; renderAll\(\); \}/.test(src));
+  ok("the Chores and Bank tabs are gone; the Corner renders no subnav; old view names route to Today", !/h\+=kcSubnav\(k\)/.test(slice("renderKidsCorner")) && /v==="chores"\|\|v==="bank"/.test(slice("kcGo")));
+  ok("the daily page: balance opens the Star Bank register; Bank · Store · Grabs buttons on that line", /popOpen\(\\''\+k\+'\\',\\'bank\\'\)/.test(slice("kcPointsHTML")) && /pb\('store'/.test(slice("kcPointsHTML")) && /pb\('grabs'/.test(slice("kcPointsHTML")) && /popView==="bank"\) body=_bankCardHTML\(popKid,momView\)/.test(slice("_popPaint")));
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");
