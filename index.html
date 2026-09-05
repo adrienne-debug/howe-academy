@@ -134,7 +134,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .gcal-month-day.lay .gmd-num{margin-bottom:3px}
 .gcal-month-day.sel{outline:2px solid #E07B39;outline-offset:-1px}
 .gmd-line{display:block;font-size:11px;line-height:1.3;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700}
-.gmd-brk{color:#92400e}.gmd-coop{color:#1d4ed8}.gmd-ev{color:#9d174d}.gmd-ev.pend{color:#b45309;opacity:.85}
+.gmd-brk{color:#92400e}.gmd-coop{color:#1d4ed8}.gmd-ev{color:#9d174d}.gmd-ev.pend{color:#b45309;opacity:.85}.gmd-les{color:#0f766e}.gmd-chore{color:#6d28d9}
 .gmd-meal{color:#9a3412}.gmd-meal.ate{color:#15803d}.gmd-meal.skip{color:#9ca3af;text-decoration:line-through}.gmd-meal.owed::before{content:"\25CF ";color:#f97316}
 .gcal-month-day.lay .gmd-more{display:block;font-size:10px;color:var(--muted);font-weight:800;margin:0}
 /* narrow screens: a phone cell is ~50px wide, so a text line is one letter — show one coloured
@@ -18421,9 +18421,14 @@ function calRenderMonthPreview(opts){
     const items=[];
     if(L.breaks) calBreaksOn(iso).forEach(b=>items.push({c:"gmd-brk",t:(b.kind==="holiday"?"\u{1F389} ":"\u{1F3D6} ")+b.name}));
     _coops.forEach(c=>items.push({c:"gmd-coop",t:"\u{1F3EB} "+(c.name||"Co-op")+(c.mode==="fullDay"?"":(c.start?" "+c.start:""))}));
+    if(who){
+      const _ls=_calLessonsFor(who,iso); if(_ls.length) items.push({c:"gmd-les",t:"\u{1F4DA} "+(_ls.length===1?_ls[0].name:(_ls.length+" lessons"))});
+      // the cell counts the CHORES list only — routine steps (teeth, vitamins) are every day and would drown it
+      const _ch=_calChoresFor(who,iso).filter(x=>x.slot==="chores"); if(_ch.length){ const dn=_ch.filter(x=>x.done).length; items.push({c:"gmd-chore",t:"\u{1F9F9} "+_ch.length+" chore"+(_ch.length===1?"":"s")+(dn?(" \u00b7 "+dn+" \u2713"):"")}); }
+    }
     _dayEvs.forEach(e=>items.push({c:"gmd-ev"+(e.pending?" pend":""),t:(e.pending?"\u270B ":"")+(e.emoji||"\u{1F389}")+" "+(e.title||"Event")+(e.time?" "+e.time:"")}));
     if(_din) items.push({c:"gmd-meal "+_din.st,t:_din.name});
-    const MAXL=3, shown=items.slice(0,MAXL), more=items.length-shown.length;
+    const MAXL=who?4:3, shown=items.slice(0,MAXL), more=items.length-shown.length;
     const tip=items.map(x=>x.t+(x.c.indexOf("owed")>=0?" (not marked)":x.c.indexOf("ate")>=0?" (eaten)":x.c.indexOf("skip")>=0?" (didn't happen)":"")).join(" · ");
     h+='<div class="'+cls+'" onclick="calDayClick(\''+iso+'\')" title="'+esc(tip||"Tap for the day")+'">'+
        '<span class="gmd-num">'+d+'</span>'+
@@ -18439,6 +18444,60 @@ function calRenderMonthPreview(opts){
 // The day sheet: everything on one date, grouped by layer, with the actions each fact
 // already has elsewhere (edit an event, mark a dinner eaten). Past dinners that were
 // planned but never marked are the reason this exists — her question 2026-09-05.
+// ── a kid's LESSONS and CHORES on a date (2026-09-05, Kids' Corner step 2c) ───────────────
+// Lessons come from the Lesson Map rows (curriculum/lessons/{kid}: rows with a date and one
+// column per subject) — the plan, the same rows the Grid and the printable calendar read.
+function _calLessonsFor(kid,iso){
+  try{
+    const cd=(typeof currData!=="undefined"&&currData)?currData:null; if(!cd||!cd.lessons||!kid) return [];
+    const rows=cd.lessons[kid]; if(!rows) return [];
+    const subs=(cd.subjects||{})[kid]||{};
+    const out=[];
+    (Array.isArray(rows)?rows:Object.values(rows)).forEach(function(r){
+      if(!r||r.date!==iso) return;
+      Object.keys(r).forEach(function(sk){
+        if(sk==="date"||sk==="week") return;
+        const v=r[sk]; if(v==null) return; const t=String(v).trim(); if(!t||t==="\u2014"||t.toLowerCase()==="nan") return;
+        const sub=subs[sk]||{}; if(sub.paused) return;
+        out.push({sk:sk,name:sub.display||sk,text:t});
+      });
+    });
+    return out;
+  }catch(e){ return []; }
+}
+// Chores: the routine steps due that weekday, by the same cadence rules the lists use, but
+// against the calendar's date instead of the current week's (cadDateNum only knows this week).
+const _CAL_DN=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
+function _calCadDueOn(cad,dn,iso){
+  if(!cad||cad==="daily") return true;
+  if(cad==="asneeded"||cad==="none") return false;
+  const idx=(typeof cadDowIdx==="function")?cadDowIdx(dn):null;
+  if(cad==="sat") return idx===5; if(cad==="sun") return idx===6;
+  if(cad.indexOf("wk:")===0){ if(idx==null) return true; return cad.slice(3).split(",").filter(function(x){ return x!==""; }).map(Number).indexOf(idx)>=0; }
+  const dnum=Math.floor(new Date(iso+"T12:00:00").getTime()/86400000);
+  if(/^\d+d$/.test(cad)) return dnum%parseInt(cad,10)===0;
+  if(cad==="2w") return dnum%14===0;
+  return true;
+}
+function _calChoresFor(kid,iso){
+  try{
+    if(!kid||typeof rtStepsFor!=="function"||typeof activeSlots!=="function") return [];
+    const dn=_CAL_DN[new Date(iso+"T12:00:00").getDay()];
+    const isToday=(typeof calToday==="function")&&iso===calToday();
+    const out=[];
+    activeSlots().forEach(function(slot){
+      const steps=rtStepsFor(slot,kid,false,dn)||[];
+      steps.forEach(function(st,i){
+        if(!st) return;
+        if(st.from&&iso<st.from) return; if(st.to&&iso>st.to) return;
+        if(!_calCadDueOn(st.cad||"daily",dn,iso)) return;
+        out.push({slot:slot,label:st.label||"Chore",emoji:st.emoji||"",pts:st.pts||0,
+          done:isToday&&typeof rtDoneOn==="function"&&rtDoneOn(slot,kid,dn,i)});
+      });
+    });
+    return out;
+  }catch(e){ return []; }
+}
 // Co-ops on a date, for one kid (their own) or everyone (Mom's lens).
 function _calCoopsFor(iso,who){
   const all=(typeof coopsOnDate==="function")?coopsOnDate(iso):[];
@@ -18468,6 +18527,22 @@ function calDaySheetHTML(iso,L,dinnerOf,who){
   if(L.coops&&typeof coopsOnDate==="function"){ _calCoopsFor(iso,who).forEach(function(c){ rows++;
     const kids=(Array.isArray(c.kids)&&c.kids.length)?c.kids.map(function(k){ return cap(k); }).join(", "):"everyone";
     h+='<div class="row"><span class="lbl">Co-op</span><span style="flex:1">\u{1F3EB} <b>'+esc(c.name||"Co-op")+'</b> <span style="color:#6b7280">· '+(c.mode==="fullDay"?"all day":("out "+esc(c.start||"?")+" – back "+esc(c.end||"?")))+' · '+esc(kids)+'</span></span></div>'; }); }
+  if(who){
+    const _ls=_calLessonsFor(who,iso);
+    _ls.forEach(function(l){ rows++; h+='<div class="row"><span class="lbl">School</span><span style="flex:1">\u{1F4DA} <b>'+esc(l.name)+'</b> <span style="color:#6b7280">\u00b7 '+esc(l.text)+'</span></span></div>'; });
+    // chores itemised with their stars; the routine lists fold to one line each
+    const _ch=_calChoresFor(who,iso);
+    const _bySlot={}; _ch.forEach(function(c){ (_bySlot[c.slot]=_bySlot[c.slot]||[]).push(c); });
+    Object.keys(_bySlot).forEach(function(slot){
+      const lbl=esc((typeof SL_SLBL!=="undefined"&&SL_SLBL[slot])||slot); const list=_bySlot[slot];
+      if(slot==="chores"){
+        list.forEach(function(c){ rows++; h+='<div class="row"><span class="lbl">'+lbl+'</span><span style="flex:1;'+(c.done?'opacity:.55;text-decoration:line-through':'')+'">'+(c.done?'\u2713 ':'')+esc(c.emoji?c.emoji+" ":"")+esc(c.label)+(c.pts?' <span style="color:#6b7280">\u00b7 '+c.pts+' \u2b50</span>':'')+'</span></div>'; });
+      } else {
+        rows++; const dn=list.filter(function(c){ return c.done; }).length;
+        h+='<div class="row"><span class="lbl">'+lbl+'</span><span style="flex:1;color:#475569">'+list.length+' step'+(list.length===1?'':'s')+(dn?' \u00b7 '+dn+' \u2713':'')+' <span style="color:#9ca3af">\u00b7 '+esc(list.map(function(c){ return c.label; }).join(", ")).slice(0,90)+(list.map(function(c){ return c.label; }).join(", ").length>90?'\u2026':'')+'</span></span></div>';
+      }
+    });
+  }
   if(L.events){ calEventsOn(iso,who||"all",true).forEach(function(e){ rows++;
     h+='<div class="row"><span class="lbl">Event</span><span style="flex:1">'+esc(e.emoji||"\u{1F389}")+' <b>'+esc(e.title||"Event")+'</b>'+(e.time?' <span style="color:#6b7280">· '+esc(e.time)+'</span>':'')+(e.who&&e.who!=="family"?' <span style="color:#6b7280">· '+esc(cap(e.who))+'</span>':'')
       +(e.addedBy?' <span style="font-size:10px;color:#6b7280">· added by '+esc(cap(e.addedBy))+'</span>':'')

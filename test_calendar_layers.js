@@ -138,5 +138,32 @@ console.log("\n── 🧒 Kids' Corner gates (her rule 2026-09-05: think on wha
   ok("the Corner is locked when opened by its kiosk link", /if\(_kioskK\(\)&&t!=="kids"\) return;/.test(src));
 }
 
+console.log("\n── a kid's lessons and chores on a date (step 2c) ──");
+{
+  const CODE2 = [slice("_calLessonsFor"), line("const _CAL_DN="), slice("_calCadDueOn"), slice("_calChoresFor")].join("\n");
+  const ctx = { console, calToday: () => "2026-09-09", cadDowIdx: dn => ({ monday: 0, tuesday: 1, wednesday: 2, thursday: 3, friday: 4, saturday: 5, sunday: 6 })[dn],
+    activeSlots: () => ["morning", "chores"], rtDoneOn: (slot, kid, dn, i) => slot === "chores" && i === 0,
+    rtStepsFor: (slot, kid, raw, dn) => slot === "morning" ? [{ label: "Brush teeth", cad: "daily" }, { label: "Vitamins", cad: "daily", to: "2026-09-01" }]
+      : [{ label: "Dust", cad: "wk:2", pts: 15 }, { label: "Trash", cad: "wk:1,4" }, { label: "Deep clean", cad: "2w" }, { label: "Never", cad: "none" }, { label: "Help", cad: "asneeded" }],
+    currData: { subjects: { lucy: { dimensions_math_1a: { display: "Dimensions Math 1A" }, hwt: { display: "HWT" }, old: { display: "Old", paused: true } } },
+      lessons: { lucy: [{ date: "2026-09-08", dimensions_math_1a: "Ch4-1", hwt: "p. 33", week: "Wk 21" }, { date: "2026-09-09", dimensions_math_1a: "Ch4-2", old: "x", hwt: "—" }],
+                 ellis: { r1: { date: "2026-09-09", singapore: "3A-12" } } } } };
+  vm.createContext(ctx); vm.runInContext(CODE2, ctx);
+  const c = e => vm.runInContext(e, ctx);
+  ok("lessons on a date from an ARRAY of rows", JSON.stringify(c("_calLessonsFor('lucy','2026-09-08').map(l=>l.name+':'+l.text)")) === '["Dimensions Math 1A:Ch4-1","HWT:p. 33"]');
+  ok("blank / dash / paused subjects are skipped", JSON.stringify(c("_calLessonsFor('lucy','2026-09-09').map(l=>l.sk)")) === '["dimensions_math_1a"]');
+  ok("rows as an OBJECT work too; unknown subject falls back to its key", JSON.stringify(c("_calLessonsFor('ellis','2026-09-09').map(l=>l.name)")) === '["singapore"]');
+  ok("no rows → none", c("_calLessonsFor('julian','2026-09-09').length") === 0);
+  // chores: Wed 2026-09-09
+  const ch = c("_calChoresFor('lucy','2026-09-09')");
+  ok("daily + wk:2 (Wednesday) are due; wk:1,4 / none / asneeded are not", JSON.stringify(ch.map(x => x.label)) === '["Brush teeth","Dust","Deep clean"]' || JSON.stringify(ch.map(x => x.label)) === '["Brush teeth","Dust"]', ch.map(x => x.label));
+  ok("a step whose window ended is not due", ch.every(x => x.label !== "Vitamins"));
+  ok("today's done state rides along; other days never do", ch.find(x => x.label === "Dust").done === true && c("_calChoresFor('lucy','2026-09-16')").find(x => x.label === "Dust").done === false);
+  ok("every-2-weeks is decided by the calendar DATE, not this week's map", c("_calCadDueOn('2w','wednesday','2026-09-09')") === (Math.floor(new Date("2026-09-09T12:00:00").getTime() / 86400000) % 14 === 0));
+  ok("Saturday-only chore is due on a Saturday date only", c("_calCadDueOn('sat','saturday','2026-09-12')") === true && c("_calCadDueOn('sat','wednesday','2026-09-09')") === false);
+  const sheet = slice("calDaySheetHTML");
+  ok("the sheet lists lessons and chores only on a kid's lens, read-only", /if\(who\)\{\s*const _ls=_calLessonsFor\(who,iso\);/.test(sheet) && !/rtToggle|toggleSlot/.test(sheet));
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
