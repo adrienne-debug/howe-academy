@@ -127,11 +127,25 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .gmd-evs{display:block;font-size:9px;line-height:1.1;margin-top:1px;white-space:nowrap;overflow:hidden}
 .gmd-more{font-size:8px;font-weight:800;color:#9d174d;margin-left:1px}
 .gcal-month-day.has-ev{box-shadow:inset 0 -2px 0 #f9a8d4}
-.gcal-month-day.lay{flex-direction:column;justify-content:flex-start;align-items:stretch;min-height:36px;padding:3px 2px;text-align:center;min-width:0;overflow:hidden}
+.gcal-month-grid.lay{gap:6px}
+.gcal-month-day.lay{flex-direction:column;justify-content:flex-start;align-items:stretch;min-height:82px;padding:6px 7px;border-radius:8px;border:0.5px solid var(--border);text-align:left;min-width:0;overflow:hidden}
+.gcal-month-day.lay.today{border:2px solid var(--header)}
+.gcal-month-day.lay .gmd-num{font-size:12px;font-weight:700;margin-bottom:4px}
+.gcal-month-day.lay .gmd-num{margin-bottom:3px}
 .gcal-month-day.sel{outline:2px solid #E07B39;outline-offset:-1px}
-.gmd-meal{display:block;font-size:8.5px;line-height:1.15;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#9a3412;font-weight:700}
-.gmd-meal.ate{color:#15803d}.gmd-meal.skip{color:#9ca3af;text-decoration:line-through}.gmd-meal.owed::before{content:"\25CF ";color:#f97316}
-.gmd-coop{display:block;font-size:8.5px;line-height:1.1;color:#1d4ed8;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gmd-line{display:block;font-size:11px;line-height:1.3;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700}
+.gmd-brk{color:#92400e}.gmd-coop{color:#1d4ed8}.gmd-ev{color:#9d174d}
+.gmd-meal{color:#9a3412}.gmd-meal.ate{color:#15803d}.gmd-meal.skip{color:#9ca3af;text-decoration:line-through}.gmd-meal.owed::before{content:"\25CF ";color:#f97316}
+.gcal-month-day.lay .gmd-more{display:block;font-size:10px;color:var(--muted);font-weight:800;margin:0}
+/* narrow screens: a phone cell is ~50px wide, so a text line is one letter — show one coloured
+   dot per thing instead (the day sheet carries the words); the count still folds into +N */
+@media (max-width:640px){
+  .gcal-month-day.lay{min-height:54px;padding:4px 4px}
+  .gcal-month-day.lay .gmd-num{margin-bottom:2px}
+  .gcal-month-day.lay .gmd-line{font-size:0;display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor;margin:1px 3px 1px 0;vertical-align:middle;text-decoration:none}
+  .gcal-month-day.lay .gmd-meal.owed{color:#f97316}
+  .gcal-month-day.lay .gmd-more{font-size:9px;line-height:1.1}
+}
 .cal-chip{border:1.5px solid #d1d5db;background:#fff;color:#6b7280;border-radius:20px;padding:4px 11px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif}
 .cal-chip.on{border-color:#2B7A78;background:#2B7A78;color:#fff}
 .cal-sheet{background:#fff;border:1.5px solid #E07B39;border-radius:12px;padding:12px 14px;margin:-8px 0 16px;font-family:'DM Sans',sans-serif}
@@ -18349,7 +18363,7 @@ function calRenderMonthPreview(){
   h+='<div class="gcal-month-label" style="margin:0">'+monthName+'</div>';
   h+='<button class="smap-nav-btn" onclick="calNavMonth(1)">&#8250;</button>';
   h+='</div>';
-  h+='<div class="gcal-month-grid">';
+  h+='<div class="gcal-month-grid lay">';
   ["S","M","T","W","T","F","S"].forEach(d=>{ h+='<div class="gcal-month-hdr">'+d+'</div>'; });
   for(let i=0;i<firstDay;i++) h+='<div class="gcal-month-day outside"></div>';
   for(let d=1;d<=daysInMonth;d++){
@@ -18370,13 +18384,19 @@ function calRenderMonthPreview(){
     if(_dayEvs.length) cls+=" has-ev";
     const _coops=(L.coops&&typeof coopsOnDate==="function")?coopsOnDate(iso):[];
     const _din=L.meals?dinnerOf(iso):null;
-    const tip=[].concat(_dayEvs.map(e=>(e.title||"Event")+(e.time?" "+e.time:"")),_coops.map(c=>"\u{1F3EB} "+(c.name||"Co-op")),_din?["\u{1F37D} "+_din.name+(_din.st==="owed"?" (not marked)":_din.st==="ate"?" (eaten)":_din.st==="skip"?" (didn't happen)":"")]:[]).join(" · ");
+    // One line per thing, in the order the day happens: breaks, co-ops, events, dinner.
+    // Three fit the cell (sized like the curriculum calendar); the rest fold into "+N".
+    const items=[];
+    if(L.breaks) calBreaksOn(iso).forEach(b=>items.push({c:"gmd-brk",t:(b.kind==="holiday"?"\u{1F389} ":"\u{1F3D6} ")+b.name}));
+    _coops.forEach(c=>items.push({c:"gmd-coop",t:"\u{1F3EB} "+(c.name||"Co-op")+(c.mode==="fullDay"?"":(c.start?" "+c.start:""))}));
+    _dayEvs.forEach(e=>items.push({c:"gmd-ev",t:(e.emoji||"\u{1F389}")+" "+(e.title||"Event")+(e.time?" "+e.time:"")}));
+    if(_din) items.push({c:"gmd-meal "+_din.st,t:_din.name});
+    const MAXL=3, shown=items.slice(0,MAXL), more=items.length-shown.length;
+    const tip=items.map(x=>x.t+(x.c.indexOf("owed")>=0?" (not marked)":x.c.indexOf("ate")>=0?" (eaten)":x.c.indexOf("skip")>=0?" (didn't happen)":"")).join(" · ");
     h+='<div class="'+cls+'" onclick="calDayClick(\''+iso+'\')" title="'+esc(tip||"Tap for the day")+'">'+
        '<span class="gmd-num">'+d+'</span>'+
-       (_dayEvs.length?'<span class="gmd-evs">'+_dayEvs.slice(0,3).map(e=>esc(e.emoji||"\u{1F389}")).join("")+
-         (_dayEvs.length>3?'<span class="gmd-more">+'+(_dayEvs.length-3)+'</span>':'')+'</span>':'')+
-       (_coops.length?'<span class="gmd-coop">\u{1F3EB}'+(_coops.length>1?' ×'+_coops.length:'')+'</span>':'')+
-       (_din?'<span class="gmd-meal '+_din.st+'">'+esc(_din.name)+'</span>':'')+
+       shown.map(x=>'<span class="gmd-line '+x.c+'">'+esc(x.t)+'</span>').join("")+
+       (more>0?'<span class="gmd-more">+'+more+' more</span>':'')+
        '</div>';
   }
   h+='</div>';
