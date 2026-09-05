@@ -165,5 +165,16 @@ console.log("\n── a kid's lessons and chores on a date (step 2c) ──");
   ok("the sheet lists lessons and chores only on a kid's lens, read-only", /if\(who\)\{\s*const _ls=_calLessonsFor\(who,iso\);/.test(sheet) && !/rtToggle|toggleSlot/.test(sheet));
 }
 
+console.log("\n── 📖 School panel in the Corner: today's cards, the real check-off ──");
+{
+  const sp = slice("kcSchoolHTML");
+  ok("lays the day the way the Schedule tab does (loop lay over Mom's re-times)", /mlQueueLay\(dsRetime\(srcTasks\)\)/.test(sp));
+  ok("only this kid, only today (effectiveDay), no carry twins, no overflow", /t\.who===k&&effectiveDay\(t\)===dn&&!String\(t\.id\|\|""\)\.endsWith\("_c"\)&&!t\._eowOverflow/.test(sp));
+  ok("renders the same taskCard — a tap is the check-off", /taskCard\(tk\)/.test(sp));
+  ok("locked behind the morning routine like the Schedule tab", /isScheduleUnlocked\(k,dn\)/.test(sp) && /pointer-events:none/.test(sp));
+  ok("the Corner always opens on TODAY", /if\(t==="kids"\)\{ try\{ day=_todayDay; \}catch\(e\)\{\} \}/.test(src));
+  ok("subnav carries School", /btn\('school','\\u\{1F4D6\} School'\)/.test(slice("kcSubnav")));
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

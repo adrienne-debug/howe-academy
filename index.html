@@ -18602,13 +18602,53 @@ function calDaySheetHTML(iso,L,dinnerOf,who){
 // the only thing a kid can write is an event carrying their name (who + addedBy), which
 // Mom sees on her calendar tagged "added by …". Looks like the app, feels like theirs:
 // their colour, their mascot, the same fonts and cards as Mom's and Dad's pages.
-let kcKid=null, kcAddIso=null, kcConfirmDel=null, kcView="cal";   // "cal" | "bank" | "chores"
-function kcGo(v){ kcView=(v==="bank"||v==="chores")?v:"cal"; kcAddIso=null; kcConfirmDel=null; renderAll(); try{window.scrollTo(0,0);}catch(e){} }
+let kcKid=null, kcAddIso=null, kcConfirmDel=null, kcView="cal";   // "cal" | "school" | "bank" | "chores"
+function kcGo(v){ kcView=(v==="bank"||v==="chores"||v==="school")?v:"cal"; kcAddIso=null; kcConfirmDel=null; renderAll(); try{window.scrollTo(0,0);}catch(e){} }
+// 📖 School = TODAY's cards for this kid, exactly as the Schedule tab lays them (the loop's
+// gap-free lay, then Mom's re-times), rendered with the same taskCard so a tap here IS the
+// check-off. Locked behind the morning routine like the Schedule tab is; past and future
+// days live on their calendar.
+function kcSchoolHTML(k){
+  try{
+    const dn=_todayDay;
+    const srcTasks=(typeof displacedResult!=="undefined"&&displacedResult)?displacedResult.tasks:((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]);
+    const laid=mlQueueLay(dsRetime(srcTasks));
+    const mine=laid.filter(function(t){ return t&&t.who===k&&effectiveDay(t)===dn&&!String(t.id||"").endsWith("_c")&&!t._eowOverflow; });
+    const tmap={}; mine.forEach(function(t){ (tmap[t.time]=tmap[t.time]||[]).push(t); });
+    const times=Object.keys(tmap).sort(function(a,b){ return toMin(a)-toMin(b); });
+    let h='<div style="padding:12px 12px 0">';
+    try{ h+=mlBannerHTML(k); }catch(e){}
+    try{ h+=bbBlock(k); }catch(e){}
+    const unlocked=isScheduleUnlocked(k,dn);
+    if(!unlocked){
+      let msg="Finish your Morning list to open your school day.";
+      try{ if(gateClockHeld(dn)){ const _open=fromMin(gateStartMin(dn)); msg=morningComplete(k,dn)?("Morning list done! School starts at "+_open+"."):(msg+" School starts at "+_open+"."); } }catch(e){}
+      h+='<div style="background:#fff7ed;border-left:4px solid #f97316;border-radius:0 10px 10px 0;padding:12px 14px;margin:0 0 10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+        +'<span style="font-size:22px">\u{1F512}</span><div style="flex:1;font-size:13px;font-weight:700;color:#9a3412">'+esc(msg)+'</div>'
+        +(morningComplete(k,dn)?'':'<button onclick="kcGo(\'chores\')" style="border:none;background:#f97316;color:#fff;border-radius:10px;padding:8px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F4CB} Go to my lists</button>')+'</div>';
+    }
+    if(!times.length){
+      h+='<div style="padding:22px 14px;text-align:center;font-size:15px;font-weight:700;color:var(--muted)">No school cards today \u{1F389}</div>';
+    } else {
+      const paused=!!bbActive(k);
+      h+='<div class="time-slots"'+((paused||!unlocked)?' style="opacity:.35;pointer-events:none;filter:grayscale(.4)'+(unlocked?'':';filter:blur(2px)')+'"':'')+'>';
+      let lunchDone=false;
+      times.forEach(function(t){
+        if(!lunchDone&&toMin(t)>=13*60){ try{ h+=lunchBlock(); }catch(e){} lunchDone=true; }
+        h+='<div class="time-row"><div class="time-pill">'+t+'</div><div class="slot-tasks">';
+        tmap[t].forEach(function(tk){ h+=taskCard(tk); });
+        h+='</div></div>';
+      });
+      h+='</div>';
+    }
+    return h+'</div>';
+  }catch(e){ return '<div style="padding:20px;color:var(--muted)">Couldn\u2019t load your school day \u2014 try again</div>'; }
+}
 // Their subnav — Mom's and Dad's shape, their colour.
 function kcSubnav(k){
   const col=KID_COLOR[k]||"#2B7A78";
   const btn=(v,lbl)=>'<button onclick="kcGo(\''+v+'\')" style="flex:1;padding:9px 6px;font-family:\'DM Sans\',sans-serif;font-size:'+(kcLittle(k)?'14px':'12px')+';font-weight:800;border:none;border-radius:9px;cursor:pointer;color:'+(kcView===v?'#fff':'#9ca3af')+';background:'+(kcView===v?col:'transparent')+';white-space:nowrap">'+lbl+'</button>';
-  return '<div style="display:flex;gap:4px;background:#fff;border-bottom:2px solid '+_kcTint(col,0.75)+';padding:8px 10px">'+btn('cal','\u{1F5D3} Calendar')+btn('bank','\u2B50 Bank')+btn('chores','\u{1F4CB} Chores')+'</div>';
+  return '<div style="display:flex;gap:4px;background:#fff;border-bottom:2px solid '+_kcTint(col,0.75)+';padding:8px 10px">'+btn('cal','\u{1F5D3} Calendar')+btn('school','\u{1F4D6} School')+btn('bank','\u2B50 Bank')+btn('chores','\u{1F4CB} Chores')+'</div>';
 }
 // ⭐ Bank = the Star Bank card the app already shows (view-only for them); 📋 Chores = the
 // same routine lists they check on their Schedule day and on the tablet — today's, one truth.
@@ -18673,12 +18713,13 @@ function renderKidsCorner(el){
       +'<div style="position:relative;z-index:1;display:flex;align-items:center;gap:12px">'
       +'<div style="width:54px;height:54px;border-radius:16px;background:rgba(255,255,255,0.22);display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0">'+kcEmoji(k)+'</div>'
       +'<div style="flex:1;min-width:0"><div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;margin-bottom:2px">'+esc(name)+'\u2019s Corner</div>'
-      +'<div style="font-size:12px;opacity:0.9;font-weight:600">'+(kcView==="bank"?'Your stars.':kcView==="chores"?'Your lists for today.':(kcLittle(k)?'Tap a day!':'Tap a day to see what\u2019s up \u2014 and add your own things.'))+'</div></div>'
+      +'<div style="font-size:12px;opacity:0.9;font-weight:600">'+(kcView==="bank"?'Your stars.':kcView==="chores"?'Your lists for today.':kcView==="school"?'Your school day.':(kcLittle(k)?'Tap a day!':'Tap a day to see what\u2019s up \u2014 and add your own things.'))+'</div></div>'
       +'<button onclick="kcPick(\'\')" style="border:1.5px solid rgba(255,255,255,0.6);background:rgba(255,255,255,0.15);color:#fff;border-radius:20px;padding:6px 12px;font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">Not '+esc(name)+'?</button>'
       +'</div></div>';
     h+=kcSubnav(k);
     if(kcView==="bank") h+=kcBankHTML(k);
     else if(kcView==="chores") h+=kcChoresHTML(k);
+    else if(kcView==="school") h+=kcSchoolHTML(k);
     else h+='<div style="padding:12px 12px 0">'+calRenderMonthPreview({who:k,little:kcLittle(k)})+'</div>';
   }
   h+='</div>';
