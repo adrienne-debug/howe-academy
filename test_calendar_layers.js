@@ -181,5 +181,35 @@ console.log("\n── 📖 School panel in the Corner: today's cards, the real c
   ok("the points card never invents a school number — school pays spins", /bonus spin when done/.test(slice("kcPointsHTML")) && !/cards\.length\*|pts\*cards/.test(slice("kcPointsHTML")));
 }
 
+console.log("\n── 🎰 spins hold until ALL school work is done (her rule 2026-09-05) ──");
+{
+  const G = [slice("choresGateDone"), slice("schoolDoneOn"), slice("spinClaimGateDone"), slice("getPointClaim"), slice("_setPointClaim"), slice("claimDayPoints")].join("\n");
+  function gw(o) {
+    const ctx = { console, renders: 0, toasts: [], WK: "week21", db: null, pointClaims: {},
+      renderAll: function () { ctx.renders++; }, gwShowToast: m => ctx.toasts.push(m), nowTs: () => "4:00 PM",
+      getSlot: (k, slot) => ({ done: (o.slots || {})[slot] !== false }),
+      getKidDayPoints: () => 40, effectiveDay: t => t.day, _dismissed: t => !!t.dismissed, checked: o.checked || {},
+      weekData: { tasks: o.tasks || [] } };
+    vm.createContext(ctx); vm.runInContext(G, ctx);
+    return { ctx, call: e => vm.runInContext(e, ctx) };
+  }
+  const tasks = [{ id: "a", who: "lucy", day: "monday", title: "Math" }, { id: "b", who: "lucy", day: "monday", title: "Read-Aloud" },
+    { id: "l", who: "lucy", day: "monday", title: "Lunch" }, { id: "x", who: "lucy", day: "monday", title: "Skipped", dismissed: true }, { id: "e", who: "ellis", day: "monday", title: "His" }];
+  const w1 = gw({ tasks, checked: { a: "x" } });
+  ok("one school card left → not done", w1.call("schoolDoneOn('lucy','monday')") === false);
+  w1.call("claimDayPoints('lucy','monday')");
+  ok("…and the claim is refused with a toast, nothing stored", !w1.call("getPointClaim('lucy','monday')") && w1.ctx.toasts.length === 1);
+  const w2 = gw({ tasks, checked: { a: "x", b: "x" } });
+  ok("lunch and dismissed cards don't count; both real cards done → school done", w2.call("schoolDoneOn('lucy','monday')") === true);
+  w2.call("claimDayPoints('lucy','monday')");
+  ok("school + afternoon + chores done → the claim is stored as claimed (still not banked)", (w2.call("getPointClaim('lucy','monday')") || {}).status === "claimed");
+  const w3 = gw({ tasks, checked: { a: "x", b: "x" }, slots: { chores: false } });
+  w3.call("claimDayPoints('lucy','monday')");
+  ok("school done but Chores not → still held", !w3.call("getPointClaim('lucy','monday')"));
+  ok("a day with no school cards is not blocked by school", gw({ tasks: [] }).call("schoolDoneOn('lucy','monday')") === true);
+  const pc = slice("kcPointsHTML");
+  ok("the stars card shows spins on their own line, never as banked", /getKidDayPoints\(k,dn\)/.test(pc) && /banked today/.test(pc) && /holding until school, Afternoon and Chores are done/.test(pc));
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

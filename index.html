@@ -12902,6 +12902,18 @@ function _troShelfHTML(troph,kid){
 // Afternoon + chores gate claiming the day's points. Kid claims → Mom approves (cashed →
 // banked) or rejects (recoverable same day). Claim: pointClaims[kid][WK][day].
 function choresGateDone(kid,d){ return !!(getSlot(kid,"afternoon").done && getSlot(kid,"chores").done); }
+// Her rule 2026-09-05: spins keep HOLDING until ALL school work is done. The claim tile only
+// ever rendered after the last card, but the claim function itself trusted the tile — now
+// the gate checks the cards too, so no path (kiosk, Corner, a stale screen) can claim early.
+function schoolDoneOn(kid,d){
+  try{
+    const src=(typeof displacedResult!=="undefined"&&displacedResult)?displacedResult.tasks:((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]);
+    const mine=(src||[]).filter(function(t){ return t&&t.who===kid&&effectiveDay(t)===d&&!String(t.id||"").endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title||"")&&!(typeof _dismissed==="function"&&_dismissed(t)); });
+    if(!mine.length) return true;                          // nothing to finish
+    return mine.every(function(t){ return !!(typeof checked!=="undefined"&&checked&&checked[t.id]); });
+  }catch(e){ return false; }
+}
+function spinClaimGateDone(kid,d){ return choresGateDone(kid,d)&&schoolDoneOn(kid,d); }
 function getPointClaim(kid,d){ return ((pointClaims[kid]||{})[WK]||{})[d]||null; }
 function _setPointClaim(kid,d,rec){
   if(!pointClaims[kid]) pointClaims[kid]={};
@@ -12910,7 +12922,7 @@ function _setPointClaim(kid,d,rec){
   else { pointClaims[kid][WK][d]=rec; if(db) db.ref("pointClaims/"+kid+"/"+WK+"/"+d).set(rec); }
 }
 function claimDayPoints(kid,d){
-  if(!choresGateDone(kid,d)) return;                   // gate: afternoon + chores first
+  if(!spinClaimGateDone(kid,d)){ if(typeof gwShowToast==="function") gwShowToast("Finish all your school cards, Afternoon and Chores first"); return; }   // gate: school + afternoon + chores
   const ex=getPointClaim(kid,d);
   if(ex&&(ex.status==="claimed"||ex.status==="cashed")) return;
   _setPointClaim(kid,d,{status:"claimed",earned:getKidDayPoints(kid,d),claimedTs:nowTs()});
@@ -18674,12 +18686,18 @@ function kcPointsHTML(k){
     if(anyOpen&&dayBonus) toGet+=dayBonus;
     const cards=_kcTodayCards(k); const cardsDone=cards.filter(function(t){ return typeof checked!=="undefined"&&checked&&checked[t.id]; }).length;
     const spinLeft=cards.length>0&&cardsDone<cards.length&&!(typeof hasDayBonus==="function"&&hasDayBonus(k,dn));
+    // 🎰 spins live in the day's pool until claimed + approved — never counted as banked here
+    const spun=(typeof getKidDayPoints==="function")?getKidDayPoints(k,dn):0;
+    const banked=(typeof bankEarnedDay==="function")?bankEarnedDay(k,dn):0;
+    const claim=(typeof getPointClaim==="function")?getPointClaim(k,dn):null;
+    const gateOk=(typeof spinClaimGateDone==="function")&&spinClaimGateDone(k,dn);
+    const spinNote=!spun?'':(claim&&claim.status==="cashed")?'banked \u2713':(claim&&claim.status==="claimed")?'claimed \u2014 waiting for Mom':(gateOk?'ready to claim!':'holding until school, Afternoon and Chores are done');
     const big=kcLittle(k);
     let h='<div style="margin:12px 12px 0;background:#fff;border-radius:14px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
     h+='<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:linear-gradient(135deg,'+col+','+_kcTint(col,0.35)+');color:#fff">'
       +'<div style="font-size:'+(big?'34px':'28px')+';font-weight:800;line-height:1">\u2B50 '+bal+'</div>'
       +'<div style="flex:1;min-width:0"><div style="font-size:'+(big?'14px':'12px')+';font-weight:800;opacity:.95">in your bank</div>'
-      +'<div style="font-size:'+(big?'13px':'11px')+';font-weight:700;opacity:.9">'+(today>0?('+'+today+' \u2B50 earned today'):'nothing earned yet today')+'</div></div>'
+      +'<div style="font-size:'+(big?'13px':'11px')+';font-weight:700;opacity:.9">'+(banked>0?('+'+banked+' \u2B50 banked today'):'nothing banked yet today')+'</div></div>'
       +(toGet>0?'<div style="text-align:right"><div style="font-size:'+(big?'22px':'18px')+';font-weight:800;line-height:1">+'+toGet+'</div><div style="font-size:'+(big?'12px':'10px')+';font-weight:800;opacity:.9">still to get</div></div>':'')+'</div>';
     h+='<div style="padding:8px 14px 10px;font-size:'+(big?'14px':'12.5px')+'">';
     lists.forEach(function(l){
@@ -18690,6 +18708,7 @@ function kcPointsHTML(k){
     });
     if(anyOpen&&dayBonus) h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f1f5f9"><span style="flex:0 0 78px;font-weight:800;color:#475569">\u{1F3C6} All lists</span><span style="flex:1;color:#475569">finish every list</span><span style="font-weight:800;color:#b45309">+'+dayBonus+' \u2B50</span></div>';
     if(cards.length) h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f1f5f9"><span style="flex:0 0 78px;font-weight:800;color:'+(cardsDone===cards.length?'#15803d':'#475569')+'">'+(cardsDone===cards.length?'\u2713 ':'')+'\u{1F4D6} School</span><span style="flex:1;color:#475569">'+cardsDone+' of '+cards.length+' cards'+(cardsDone===cards.length?' \u2014 done!':'')+'</span>'+(spinLeft?'<span style="font-weight:800;color:#7c3aed">\u{1F3B0} bonus spin when done</span>':'')+'</div>';
+    if(spun>0) h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f1f5f9"><span style="flex:0 0 78px;font-weight:800;color:#7c3aed">\u{1F3B0} Spins</span><span style="flex:1;color:#475569">'+spinNote+'</span><span style="font-weight:800;color:#7c3aed">+'+spun+' \u2B50</span></div>';
     h+='</div></div>';
     return h;
   }catch(e){ return ''; }
