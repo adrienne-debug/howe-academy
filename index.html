@@ -3264,6 +3264,7 @@ function showTab(t){
   document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===t||(t==="supplies"&&b.dataset.tab==="schedule")));
   if(t!=="schedule"){ schedShowAdmin=false; schedShowHistory=false; schedShowPace=false; schedShowBoard=false; schedShowPeek=false; }
   if(t!=="moms-plan") mpDay=null;   // 🧒 Kids always reopens on TODAY — a stale peek-ahead day is the bug class that bit routine check-offs
+  if(t==="kids"){ try{ day=_todayDay; }catch(e){} }   // 🧒 Corner lists are today's — never a day Mom left the schedule on
   document.getElementById("sched-subtabs").style.display=t==="schedule"?"flex":"none";
   document.getElementById("day-tabs").style.display=["schedule","supplies"].includes(t)?"flex":"none";
   document.getElementById("kid-filter").style.display=["schedule","history","pace"].includes(t)?"flex":"none";
@@ -18526,9 +18527,32 @@ function calDaySheetHTML(iso,L,dinnerOf,who){
 // the only thing a kid can write is an event carrying their name (who + addedBy), which
 // Mom sees on her calendar tagged "added by …". Looks like the app, feels like theirs:
 // their colour, their mascot, the same fonts and cards as Mom's and Dad's pages.
-let kcKid=null, kcAddIso=null, kcConfirmDel=null;
+let kcKid=null, kcAddIso=null, kcConfirmDel=null, kcView="cal";   // "cal" | "bank" | "chores"
+function kcGo(v){ kcView=(v==="bank"||v==="chores")?v:"cal"; kcAddIso=null; kcConfirmDel=null; renderAll(); try{window.scrollTo(0,0);}catch(e){} }
+// Their subnav — Mom's and Dad's shape, their colour.
+function kcSubnav(k){
+  const col=KID_COLOR[k]||"#2B7A78";
+  const btn=(v,lbl)=>'<button onclick="kcGo(\''+v+'\')" style="flex:1;padding:9px 6px;font-family:\'DM Sans\',sans-serif;font-size:'+(kcLittle(k)?'14px':'12px')+';font-weight:800;border:none;border-radius:9px;cursor:pointer;color:'+(kcView===v?'#fff':'#9ca3af')+';background:'+(kcView===v?col:'transparent')+';white-space:nowrap">'+lbl+'</button>';
+  return '<div style="display:flex;gap:4px;background:#fff;border-bottom:2px solid '+_kcTint(col,0.75)+';padding:8px 10px">'+btn('cal','\u{1F5D3} Calendar')+btn('bank','\u2B50 Bank')+btn('chores','\u{1F4CB} Chores')+'</div>';
+}
+// ⭐ Bank = the Star Bank card the app already shows (view-only for them); 📋 Chores = the
+// same routine lists they check on their Schedule day and on the tablet — today's, one truth.
+function kcBankHTML(k){
+  try{ return '<div style="padding:12px 12px 0">'+_bankCardHTML(k,false)+'</div>'; }
+  catch(e){ return '<div style="padding:20px;color:var(--muted)">Couldn\u2019t load your bank \u2014 try again</div>'; }
+}
+function kcChoresHTML(k){
+  try{
+    let h='<div style="padding:12px 12px 0">';
+    activeSlots().forEach(function(slot){
+      if(slot==="morning"&&typeof mrIndividualHTML==="function"){ h+=mrIndividualHTML(k); return; }
+      h+=rtSlotHTML(slot,k);
+    });
+    return h+'</div>';
+  }catch(e){ return '<div style="padding:20px;color:var(--muted)">Couldn\u2019t load your lists \u2014 try again</div>'; }
+}
 function _kcLoadKid(){ if(kcKid!==null) return; try{ const v=HA_LS.getItem("ha_kc_kid"); kcKid=(v&&ROSTER.indexOf(v)>=0)?v:""; }catch(e){ kcKid=""; } }
-function kcPick(k){ kcKid=(ROSTER.indexOf(k)>=0)?k:""; try{ HA_LS.setItem("ha_kc_kid",kcKid); }catch(e){} calDaySel=null; kcAddIso=null; kcConfirmDel=null; renderAll(); try{window.scrollTo(0,0);}catch(e){} }
+function kcPick(k){ kcKid=(ROSTER.indexOf(k)>=0)?k:""; try{ HA_LS.setItem("ha_kc_kid",kcKid); }catch(e){} calDaySel=null; kcAddIso=null; kcConfirmDel=null; kcView="cal"; renderAll(); try{window.scrollTo(0,0);}catch(e){} }
 function kcEmoji(k){ return (typeof MAST_KID_EMOJI!=="undefined"&&MAST_KID_EMOJI[k])||"\u{1F31F}"; }
 // Her rule 2026-09-05: "easily navigable for Julian but not too baby for Lincoln — modified
 // by age." One flag: a kid who is not school-age (roster `schoolAge`) gets LITTLE mode —
@@ -18574,10 +18598,13 @@ function renderKidsCorner(el){
       +'<div style="position:relative;z-index:1;display:flex;align-items:center;gap:12px">'
       +'<div style="width:54px;height:54px;border-radius:16px;background:rgba(255,255,255,0.22);display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0">'+kcEmoji(k)+'</div>'
       +'<div style="flex:1;min-width:0"><div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;margin-bottom:2px">'+esc(name)+'\u2019s Corner</div>'
-      +'<div style="font-size:12px;opacity:0.9;font-weight:600">'+(kcLittle(k)?'Tap a day!':'Tap a day to see what\u2019s up \u2014 and add your own things.')+'</div></div>'
+      +'<div style="font-size:12px;opacity:0.9;font-weight:600">'+(kcView==="bank"?'Your stars.':kcView==="chores"?'Your lists for today.':(kcLittle(k)?'Tap a day!':'Tap a day to see what\u2019s up \u2014 and add your own things.'))+'</div></div>'
       +'<button onclick="kcPick(\'\')" style="border:1.5px solid rgba(255,255,255,0.6);background:rgba(255,255,255,0.15);color:#fff;border-radius:20px;padding:6px 12px;font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">Not '+esc(name)+'?</button>'
       +'</div></div>';
-    h+='<div style="padding:12px 12px 0">'+calRenderMonthPreview({who:k,little:kcLittle(k)})+'</div>';
+    h+=kcSubnav(k);
+    if(kcView==="bank") h+=kcBankHTML(k);
+    else if(kcView==="chores") h+=kcChoresHTML(k);
+    else h+='<div style="padding:12px 12px 0">'+calRenderMonthPreview({who:k,little:kcLittle(k)})+'</div>';
   }
   h+='</div>';
   el.innerHTML=h;
