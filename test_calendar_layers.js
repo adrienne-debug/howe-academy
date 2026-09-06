@@ -88,7 +88,7 @@ console.log("\n── didn't happen / eaten ──");
 console.log("\n── one lens, two doors ──");
 {
   ok("tapping a day opens/closes its sheet", (() => { const w = world(); w.call("calDayClick('2026-08-12')"); const a = w.call("calDaySel"); w.call("calDayClick('2026-08-12')"); return a === "2026-08-12" && w.call("calDaySel") === null; })());
-  const mp = slice("renderMPCalendar"), adm = src.slice(src.indexOf("function renderCalendarView("), src.indexOf("function renderCalendarView(") + 1500);
+  const mp = slice("_calPageBody"), adm = src.slice(src.indexOf("function renderCalendarView("), src.indexOf("function renderCalendarView(") + 1500);
   ok("Mom HQ ▸ Calendar renders calRenderMonthPreview (family, or one kid's lens)", /calRenderMonthPreview\(who\?\{who:who\}:undefined\)/.test(mp));
   ok("Admin ▸ Calendar renders the same function", /calRenderMonthPreview\(\)/.test(adm));
   ok("the event form is the existing one", /calRenderEventForm\(\)/.test(mp));
@@ -144,7 +144,7 @@ console.log("\n── 🧒 Kids' Corner gates (her rule 2026-09-05: think on wha
   const sheet = slice("calDaySheetHTML");
   ok("meal actions are Mom-only in the sheet (kid branch has no eaten/skip/plan buttons)", (() => { const kid = sheet.slice(sheet.indexOf("if(L.meals&&who)"), sheet.indexOf("} else if(L.meals)")); return !/kitMarkEaten|kitMarkSkipped|kitPickDay|kitSlotText\(/.test(kid.replace(/_calSlotRows\(iso,who\)/, "")); })());
   ok("layer chips never render when a KID is looking (Mom keeps them through a kid's lens)", /if\(!kidMode\)\{\s*\/\/ layer chips are a Mom\/Dad setting/.test(src));
-  ok("Dad's page has the Calendar button", /Dad\\'s Day<\/div>'\+\s*'<button onclick="mpGoto\(\\'cal\\'\)"/.test(src));
+  ok("Dad's page has the Calendar button (to HIS calendar)", /Dad\\'s Day<\/div>'\+\s*'<button onclick="mpGoto\(\\'dadcal\\'\)"/.test(src));
   ok("the Corner is locked when opened by its kiosk link", /if\(_kioskK\(\)&&t!=="kids"\) return;/.test(src));
 }
 
@@ -187,7 +187,7 @@ console.log("\n── 📖 School panel in the Corner: today's cards, the real c
   // who is LOOKING gates the actions; whose calendar gates the content
   ok("a kid's own device: kid actions (add / delete own)", /const kidMode=!!who&&!wbMomEyes\(\);/.test(sheet) && /if\(kidMode\)\{/.test(sheet));
   ok("Mom through a kid's lens keeps her actions (meal buttons, edit, approve)", /if\(L\.meals&&kidMode\)\{/.test(sheet) && /\(kidMode\?\(\(e\.addedBy===who\)/.test(sheet));
-  ok("Mom's Calendar has Today | Month and Family + each kid", /mpCalSet\('today'\)|tb\('today'/.test(slice("renderMPCalendar")) && /ROSTER\.map\(function\(k\)\{ return wb\(k,/.test(slice("renderMPCalendar")));
+  ok("Mom's Calendar has Today | Month and Family + each kid", /mpCalSet\('today'\)|tb\('today'/.test(slice("_calPageBody")) && /ROSTER\.map\(function\(k\)\{ return wb\(k,/.test(slice("_calPageBody")));
   ok("the points card never invents a school number — school pays spins", /bonus spin when done/.test(slice("kcPointsHTML")) && !/cards\.length\*|pts\*cards/.test(slice("kcPointsHTML")));
   ok("the Spins row spells out what's left and offers Claim only when the gate is met", /leftBits\.join\(", "\)\+" to go"/.test(slice("kcPointsHTML")) && /const canClaim=spun>0&&gateOk&&!\(claim&&\(claim\.status==="claimed"\|\|claim\.status==="cashed"\)\);/.test(slice("kcPointsHTML")) && /Claim my spins/.test(slice("kcPointsHTML")));
 }
@@ -234,6 +234,25 @@ console.log("\n── 📋 list pop-ups from the Today card; Store + Grabs on th
   ok("tapping a name always lands on My Day; the tab row is gone; idle still resets to Everyone/Routines", /if\(_kioskR\(\)\) kkTab=\(k==="all"\)\?"routines":"myday";/.test(slice("kkSel")) && /el\.style\.display="none"; el\.innerHTML=""; return;/.test(slice("renderKioskTabs")) && /kkTab="routines"; renderAll\(\); \}/.test(src));
   ok("the Chores and Bank tabs are gone; the Corner renders no subnav; old view names route to Today", !/h\+=kcSubnav\(k\)/.test(slice("renderKidsCorner")) && /v==="chores"\|\|v==="bank"/.test(slice("kcGo")));
   ok("the daily page: balance opens the Star Bank register; Bank · Store · Grabs buttons on that line", /popOpen\(\\''\+k\+'\\',\\'bank\\'\)/.test(slice("kcPointsHTML")) && /pb\('store'/.test(slice("kcPointsHTML")) && /pb\('grabs'/.test(slice("kcPointsHTML")) && /popView==="bank"\) body=_bankCardHTML\(popKid,momView\)/.test(slice("_popPaint")));
+}
+
+console.log("\n── 👨 Dad's chores as a layer ──");
+{
+  const CODE3 = [line("const _CAL_DN="), slice("_calCadDueOn"), slice("_calDadChoresFor")].join("\n");
+  const ctx = { console, cadDowIdx: dn => ({ monday: 0, tuesday: 1, wednesday: 2, thursday: 3, friday: 4, saturday: 5, sunday: 6 })[dn],
+    dcAll: () => ({ a: { label: "Trash out", cad: "wk:2", slot: "night", ts: 2 }, b: { label: "Water plants", cad: "daily", slot: "morning", ts: 1 }, c: { label: "Bills", cad: "sat", ts: 3 } }),
+    dcDoneOn: (iso, id) => iso === "2026-09-09" && id === "b", MC_SLOTS: { morning: { ic: "☀️", nm: "Morning" }, night: { ic: "🌙", nm: "Night" } }, mcSlotOf: c => c.slot && ["morning", "night"].indexOf(c.slot) >= 0 ? c.slot : "" };
+  vm.createContext(ctx); vm.runInContext(CODE3, ctx);
+  const c = e => vm.runInContext(e, ctx);
+  ok("Wednesday: daily + wk:2 due, in Dad's order; Saturday-only is not", JSON.stringify(c("_calDadChoresFor('2026-09-09').map(x=>x.label)")) === '["Water plants","Trash out"]');
+  ok("done stamps ride along from dadday/{iso}", c("_calDadChoresFor('2026-09-09')").find(x => x.label === "Water plants").done === true && c("_calDadChoresFor('2026-09-10')").find(x => x.label === "Water plants").done === false);
+  ok("Saturday: the Saturday chore appears", JSON.stringify(c("_calDadChoresFor('2026-09-12').map(x=>x.label)")) === '["Water plants","Bills"]');
+  ok("the layer is a chip on the Mom/Dad lens and never on a kid's", /\["dad","\\u\{1F468\} Dad"\]/.test(line("const CAL_LAYERS=")) && /dad:!who&&calLayerOn\("dad"\)/.test(src) && /meals:true,dad:false\}/.test(src));
+  ok("cell line + sheet rows exist", /gmd-dad/.test(slice("calRenderMonthPreview")) && /_calDadChoresFor\(iso\)\.forEach/.test(slice("calDaySheetHTML")));
+  // Dad's own calendar page: same body as Mom's, his header, a way back, reachable on ?kiosk=dad
+  ok("Dad's Day button opens HIS calendar sub-view, not Mom HQ's", /mpGoto\(\\'dadcal\\'\)/.test(slice("renderDadsDay")) && /if\(mpSubView==='dadcal'\)\{ return renderDadCalendar\(el\); \}/.test(src));
+  ok("Mom's and Dad's calendar pages render the SAME body", /h\+=_calPageBody\(\);/.test(slice("renderMPCalendar")) && /h\+=_calPageBody\(\);/.test(slice("renderDadCalendar")));
+  ok("his page carries a way back to Dad's Day and no Mom subnav", /\\u2190 Dad\\u2019s Day/.test(slice("renderDadCalendar")) && !/mpSubnav\(/.test(slice("renderDadCalendar")));
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");
