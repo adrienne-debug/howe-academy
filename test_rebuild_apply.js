@@ -81,7 +81,7 @@ function mkEnv(autoCounts) {
     paceDoneTitles: () => [],
     PACE_ALT_KEYWORDS: {},
     gwRules: () => ({ schoolStart: 600, schoolEnd: 975, lunchStart: 780, lunchEnd: 840 }),
-    smapIsKidOff: () => null, schedOvKidOff: () => null, schedOv: () => null,
+    smapIsKidOff: () => null, schedOvKidOff: () => null, schedOv: () => null, coopBlocksBase: () => false,
     gwParseDate: ds => new Date(ds + "T12:00:00"),
     esc: x => String(x == null ? "" : x), cap: x => x, gwShowToast: () => {}, renderAll: () => {},
     confirm: () => true,

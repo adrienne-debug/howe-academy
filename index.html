@@ -18351,10 +18351,27 @@ function coopTimedEndMin(kid,ds){
   return mx;
 }
 function coopsOnDate(ds){ const out=[]; const m=coopsMap(); for(const id in m){ if(_coopHasDate(m[id],ds)) out.push(m[id]); } return out; }
+// "No Mom-required lessons" co-op option (calendar/coops/{id}.noMomBase): a subject flagged Mom
+// Required has no BASE slot on that co-op's dates for its kids — the plan's own slot vanishes and
+// the cursor serves that lesson on the next slot. Everything else on the day stays: may-need-Mom,
+// independent, daily notebooks/drills, hand-added make-ups, catch-up and carried-over work.
+// Honored by the slot walker (generation / Finish Line / Lesson Map), the expected-pace table,
+// Builder re-lays (past owed + future placement rows) and the grid views, so they all agree.
+function coopNoMomBaseFor(kid,ds){
+  const m=coopsMap();
+  for(const id in m){ const c=m[id]; if(c&&c.noMomBase&&(c.kids||[]).indexOf(kid)>=0&&_coopHasDate(c,ds)) return c.name||"Co-op"; }
+  return null;
+}
+function coopBlocksBase(kid,ds,sk){
+  if(!ds||!sk) return false;
+  const s=(((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[kid]||{})[sk];
+  if(!s||s.mom!=="required") return false;
+  return !!coopNoMomBaseFor(kid,ds);
+}
 function _coop24(t12){ const mn=toMin(t12); if(isNaN(mn)) return ""; const hh=Math.floor(mn/60), mm=mn%60; return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0"); }
 let coopScanStatus="";
-function coopStartAdd(){ coopEditId="__new__"; coopForm={name:"",color:COOP_COLORS[0],kids:[...ROSTER],mode:"timed",start:"09:00",end:"12:00",dates:[]}; coopScanStatus=""; renderAll(); }
-function coopStartEdit(id){ const c=coopsMap()[id]; if(!c) return; coopEditId=id; coopForm={name:c.name||"",color:c.color||COOP_COLORS[0],kids:(c.kids||[]).slice(),mode:c.mode||"timed",start:c.start?_coop24(c.start):"09:00",end:c.end?_coop24(c.end):"12:00",dates:(c.dates||[]).slice().sort()}; coopScanStatus=""; renderAll(); }
+function coopStartAdd(){ coopEditId="__new__"; coopForm={name:"",color:COOP_COLORS[0],kids:[...ROSTER],mode:"timed",start:"09:00",end:"12:00",dates:[],noMomBase:false}; coopScanStatus=""; renderAll(); }
+function coopStartEdit(id){ const c=coopsMap()[id]; if(!c) return; coopEditId=id; coopForm={name:c.name||"",color:c.color||COOP_COLORS[0],kids:(c.kids||[]).slice(),mode:c.mode||"timed",start:c.start?_coop24(c.start):"09:00",end:c.end?_coop24(c.end):"12:00",dates:(c.dates||[]).slice().sort(),noMomBase:!!c.noMomBase}; coopScanStatus=""; renderAll(); }
 function coopCancel(){ coopEditId=null; coopForm=null; coopScanStatus=""; renderAll(); }
 // 📸 Scan a photo of the co-op's printed schedule → Claude extracts the meeting dates (and
 // times, if shown) → merge into the form's date list. Reuses the exact book-scan pipeline
@@ -18418,6 +18435,7 @@ function coopSave(){
   const prevCreated=(coopsMap()[coopEditId]||{}).created;
   const obj={name:coopForm.name.trim(),color:coopForm.color,kids:coopForm.kids.slice(),mode:coopForm.mode,dates:(coopForm.dates||[]).slice().sort(),created:wasNew?Date.now():(prevCreated||Date.now())};
   if(coopForm.mode==="timed"){ obj.start=to12h(coopForm.start); obj.end=to12h(coopForm.end); }
+  if(coopForm.noMomBase) obj.noMomBase=true;
   db.ref("calendar/coops/"+id).set(obj);
   calendarData.coops=calendarData.coops||{}; calendarData.coops[id]=obj;   // optimistic local
   coopEditId=null; coopForm=null;
@@ -18440,7 +18458,7 @@ function renderCoopSection(){
   if(list.length){
     h+='<div class="gcal-card">';
     list.forEach(([id,c])=>{
-      const when=c.mode==="fullDay"?"Full day off":((c.start||"?")+"–"+(c.end||"?"));
+      const when=(c.mode==="fullDay"?"Full day off":((c.start||"?")+"–"+(c.end||"?")))+(c.noMomBase?" · no Mom-required lessons":"");
       const kidsTxt=(c.kids||[]).map(k=>cap(k)).join(", ")||"no kids";
       const nDates=(c.dates||[]).length;
       h+='<div class="gcal-row">'+
@@ -18479,6 +18497,9 @@ function renderCoopForm(){
     h+='<div style="flex:1"><div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">Out from</div><input type="time" value="'+esc(f.start)+'" onchange="coopSet(\'start\',this.value)" style="width:100%;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:13px"></div>';
     h+='<div style="flex:1"><div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">Back by</div><input type="time" value="'+esc(f.end)+'" onchange="coopSet(\'end\',this.value)" style="width:100%;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:13px"></div>';
     h+='</div><div style="font-size:10px;color:var(--muted);margin:2px 0 10px">School work is scheduled after “Back by” on these dates.</div>';
+  }
+  if(f.mode==="timed"){
+    h+='<label style="display:flex;align-items:flex-start;gap:8px;margin:0 0 12px;font-size:12px;cursor:pointer"><input type="checkbox" '+(f.noMomBase?'checked':'')+' onchange="coopSet(\'noMomBase\',this.checked)" style="margin-top:2px"><span><b>No Mom-required lessons on these days</b><br><span style="font-size:10px;color:var(--muted)">Subjects marked Mom Required skip their planned slot here (the lesson moves to the next one). Independent, May-need-Mom, notebooks, drills, make-ups and catch-up still run after \u201cBack by.\u201d</span></span></label>';
   }
   h+='<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">Dates</div>';
   h+='<label style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:9px;border:none;background:#7c3aed;color:#fff;font-size:12px;font-weight:800;cursor:pointer;margin-bottom:8px">\u{1F4F8} Scan schedule photo<input type="file" accept="image/*" multiple style="display:none" onchange="coopScanSchedule(this)"></label>';
@@ -23376,7 +23397,7 @@ function buildCurrPaceCum(){
           // removed slots don't count; manually added slots do.
           const off=date&&(smapIsKidOff(kid,date)||schedOvKidOff(kid,date));
           const ovv=date?(schedOv(date,kid)||{}):{};
-          if(l[sk]&&!off&&!(ovv.removed||{})[sk]) cum++;
+          if(l[sk]&&!off&&!(ovv.removed||{})[sk]&&!coopBlocksBase(kid,date,sk)) cum++;
           if(!off&&(ovv.added||{})[sk]) cum++;
         }
         byWk[wn]=cum;byWkBase[wn]=cumBase;
@@ -24164,7 +24185,7 @@ function planMaterialize(kid,sk,form,opts){
   let doneSince=0; if(anchor) Object.values(doneNode).forEach(r=>{ if(r&&r.day&&String(r.day)>=anchor) doneSince++; });
   const pastRows=[]; if(anchor&&anchor<today){ const L=((currData||{}).lessons||{})[kid]||{};
     Object.keys(L).forEach(dn=>{ const l=L[dn]; if(!l||!l.date||l.date<anchor||l.date>=today) return;
-      pastRows.push({date:l.date,dow:DOW[_cbParseDate(l.date).getDay()],off:!!(smapIsKidOff(kid,l.date)||schedOvKidOff(kid,l.date)||((schedOv(l.date,kid)||{}).removed||{})[sk])}); }); }
+      pastRows.push({date:l.date,dow:DOW[_cbParseDate(l.date).getDay()],off:!!(smapIsKidOff(kid,l.date)||schedOvKidOff(kid,l.date)||((schedOv(l.date,kid)||{}).removed||{})[sk]||coopBlocksBase(kid,l.date,sk))}); }); }
   const cap=Math.max(1,parseInt(s.cap,10)||1);
   // Days Mom added BY HAND for this subject (scheduleOverrides…added), minus the ones this
   // engine wrote itself on the last lay (subjects/…/pjExtras) — those are its own output and
@@ -24223,7 +24244,7 @@ function planOwed(kid,sk){
   const f=cbDefaultForm(kid,sk); if(!(f.mode==="timesPerWeek"||f.mode==="targetDate"||(f.mode==="pages"&&parseInt(f.tpw,10)>0))) return 0;
   const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]; const L=((currData||{}).lessons||{})[kid]||{}; const rows=[];
   Object.keys(L).forEach(dn=>{ const l=L[dn]; if(!l||!l.date||l.date<anchor||l.date>=today) return;
-    rows.push({date:l.date,dow:DOW[_cbParseDate(l.date).getDay()],off:!!(smapIsKidOff(kid,l.date)||schedOvKidOff(kid,l.date)||((schedOv(l.date,kid)||{}).removed||{})[sk])}); });
+    rows.push({date:l.date,dow:DOW[_cbParseDate(l.date).getDay()],off:!!(smapIsKidOff(kid,l.date)||schedOvKidOff(kid,l.date)||((schedOv(l.date,kid)||{}).removed||{})[sk]||coopBlocksBase(kid,l.date,sk))}); });
   rows.sort((a,b)=>a.date<b.date?-1:1);
   const plan={allowedDays:(f.allowedDays||[]).slice(),offDates:{},_blocked:{}};
   const tpw=f.mode==="targetDate"?0:(parseInt(f.tpw,10)||0);
@@ -24259,7 +24280,7 @@ function cbFutureRows(kid,sk){
       // A day the whole kid is off — OR a day Mom ✕'d for THIS subject — takes no
       // placement. Without the per-subject check, a rebuild laid content right back
       // onto a ✕'d day and the strike read as "nothing moved" (2026-08-11, twice).
-      off:!!(smapIsKidOff(kid,l.date)||schedOvKidOff(kid,l.date)||((schedOv(l.date,kid)||{}).removed||{})[sk]),
+      off:!!(smapIsKidOff(kid,l.date)||schedOvKidOff(kid,l.date)||((schedOv(l.date,kid)||{}).removed||{})[sk]||coopBlocksBase(kid,l.date,sk)),
       usedMin,hadMine:!!filled(l[sk])});
   }
   return rows;
@@ -27959,7 +27980,7 @@ function renderCurrGrid(el){
     const cls=[past?"gv-past":"",(offReason||mapOff)?"gv-off":"",l.date===today?"gv-today":"",
       (_mvArmed&&!past&&l.date>today&&l.date>lmMovePick.date&&!(offReason||mapOff))?"gv-movetgt":""].filter(Boolean).join(" ");
     let gridMins=0;
-    for(const sk of Object.keys(subs)){ if(!subs[sk].paused&&gvFilled(l[sk])&&!(ov.removed||{})[sk]) gridMins+=subs[sk].minutes||20; }
+    for(const sk of Object.keys(subs)){ if(!subs[sk].paused&&gvFilled(l[sk])&&!(ov.removed||{})[sk]&&!coopBlocksBase(gvKid,l.date,sk)) gridMins+=subs[sk].minutes||20; }
     // Daily subjects (morning/closing notebook, drills, reflex) run every school day but have
     // no grid cell — add their minutes so the Min column shows the REAL per-day load. Respect
     // allowedDays and skip on off days (they don't run then).
@@ -28041,7 +28062,10 @@ function renderCurrGrid(el){
       } else {
         let cell="";
         const _isDone=!!_doneAt[dn+"|"+sk];
+        const _coopBlk=(!past&&!_isDone&&coopBlocksBase(gvKid,l.date,sk))?coopNoMomBaseFor(gvKid,l.date):null;
+        const _coopTag=_coopBlk?'<span class="gv-badge" title="'+esc(_coopBlk)+' \u2014 no Mom-required lessons this day" style="background:#f5f3ff;color:#6d28d9">\u{1F3EB} co-op</span>':'';
         if(gvFilled(v)) cell=removed?'<s style="color:var(--muted)">'+esc(v)+'</s><span class="gv-badge" style="background:#e0e7ff;color:#3730a3">moved</span>'
+          :(_coopBlk&&!_derCol)?'<s style="color:var(--muted)">'+esc(v)+'</s>'+_coopTag
           :(_isDone?'<span class="gv-done" title="'+((typeof lidStamped==="function"&&lidStamped(gvKid,sk)&&((((currData.subjects||{})[gvKid]||{})[sk]||{}).lessonSeq||[]).filter(t=>_lidNorm(t)===_lidNorm(v)).length>1)?"Finished — but this lesson is on the list more than once, and this cell is showing the finished copy. 🗑 here removes the extra copy from the list.":"Finished — this stays as history. Rebuilds never move it and 🗑 won’t remove it.")+'">'+esc(v)+' <span class="gv-badge" style="background:#dcfce7;color:#15803d">&#10003; done</span></span>':esc(v));
         // A derived column's SECOND SITTING must render or the lesson is invisible. With
         // owed 6 and cap 2 the projection doubles up the first six days; drawing only the
@@ -28054,6 +28078,7 @@ function renderCurrGrid(el){
         if(_derExtra) cell+=(cell?'<br>':'')+'<span style="color:#15803d">+ '+esc(_derExtra)+'</span><span class="gv-badge" style="background:#bbf7d0;color:#15803d" title="Second sitting — this subject is behind, and its cap allows catching up two in a day">2nd</span>';
         else if(!_derCol&&addedV!==undefined) cell+=(cell?'<br>':'')+'<span style="color:#15803d">+ '+(typeof addedV==="string"?esc(addedV):"make-up")+'</span><span class="gv-badge" style="background:#bbf7d0;color:#15803d">make-up</span>';
         if(!cell&&_skipAt[dn+"|"+sk]!==undefined) cell='<s style="color:var(--muted);opacity:.7">'+esc(_skipAt[dn+"|"+sk])+'</s><span class="gv-badge" style="background:#fef3c7;color:#92400e" title="Passed over by a rebuild — won\'t come back as carryover or catch-up">skipped</span>';
+        if(!cell&&_coopTag) cell=_coopTag;
         const picked=gvSelMode&&gvSel.has(dn+"|"+sk);
         // Past cells open too when FILLED — delete-only view (see the editing branch).
         const click=gvSelMode?(past?'':' onclick="gvSelCell('+dn+',\''+sk+'\')"'):' onclick="gvOpenCell('+dn+',\''+sk+'\')"';
@@ -28266,6 +28291,7 @@ function _ovOffX(kid,dateStr,ignoreAuto){
   return !(ignoreAuto&&o._gwOff);
 }
 function _ovRmX(kid,dateStr,sk,ignoreAuto){
+  if(coopBlocksBase(kid,dateStr,sk)) return true; // co-op: no Mom-required base slot this day
   const o=schedOv(dateStr,kid);
   if(!o||!o.removed||!o.removed[sk]) return false;
   return !(ignoreAuto&&o._gwRm&&o._gwRm[sk]);
@@ -29137,7 +29163,8 @@ function lmRenderSubjectView(k,subjects,weekLabels,weekDays,lessons,col){
       const isAdd=!!(ov.added&&ov.added[sk]);
       if(!hasExcel&&!isAdd) return;
       const isRm=hasExcel&&!!(ov.removed&&ov.removed[sk]);
-      const offWhy=smapIsKidOff(k,date)||(ov.dayOff?"Day off":null);
+      const coopBlk=(hasExcel&&!isRm&&coopBlocksBase(k,date,sk))?coopNoMomBaseFor(k,date):null;
+      const offWhy=smapIsKidOff(k,date)||(ov.dayOff?"Day off":null)||(coopBlk?"\u{1F3EB} "+coopBlk+" \u00b7 no Mom-required":null);
       const idx=dm[d];
       const done=hasExcel&&!isRm&&idx!==undefined&&idx<cursor;
       const offRow=!!offWhy&&!done&&!isRm; // slot sits on a no-school day — it won't run as shown
@@ -29277,7 +29304,7 @@ function lmRenderSubjectGrid(k,subjects,weekLabels,weekDays,lessons,col){
     } else if(allMode){
       let any=false;
       sks.forEach(function(sk2){
-        const has=!!(l&&l[sk2]&&l[sk2]!=="—"&&l[sk2]!=="nan"&&!(ov.removed&&ov.removed[sk2]));
+        const has=!!(l&&l[sk2]&&l[sk2]!=="—"&&l[sk2]!=="nan"&&!(ov.removed&&ov.removed[sk2])&&!coopBlocksBase(k,ds,sk2));
         const add=!!(ov.added&&ov.added[sk2]);
         if(!has&&!add) return; any=true;
         h+='<div onclick="lmSelSubj(\''+sk2+'\')" title="Edit" style="cursor:pointer;font-size:10px;line-height:1.3;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="font-weight:700">'+esc(subjShort(sk2))+'</span> '+(has?esc(l[sk2]):((typeof (ov.added||{})[sk2]==='string'&&((ov.added||{})[sk2]||'').trim())?esc((ov.added||{})[sk2])+' ':'')+'<span style="font-size:8px;font-weight:800;color:#1a6b5a">MK</span>')+'</div>';
@@ -29287,7 +29314,8 @@ function lmRenderSubjectGrid(k,subjects,weekLabels,weekDays,lessons,col){
       const hasExcel=!!(l&&l[sk]&&l[sk]!=="—"&&l[sk]!=="nan");
       const isAdd=!!(ov.added&&ov.added[sk]);
       const isRm=hasExcel&&!!(ov.removed&&ov.removed[sk]);
-      const runs=(hasExcel&&!isRm)||isAdd;
+      const coopBlk=(hasExcel&&!isRm&&coopBlocksBase(k,ds,sk))?coopNoMomBaseFor(k,ds):null;
+      const runs=(hasExcel&&!isRm&&!coopBlk)||isAdd;
       if(runs){
         const showBase=hasExcel&&!isRm;
         const canPrev=i>0&&schoolF[i-1], canNext=i<4&&schoolF[i+1];
@@ -29327,6 +29355,11 @@ function lmRenderSubjectGrid(k,subjects,weekLabels,weekDays,lessons,col){
           }
           h+='</div>';
         }
+      } else if(coopBlk){
+        // Co-op day with "no Mom-required lessons": the slot won't run — the cursor serves this
+        // lesson on the next slot. Owned by the co-op setting, so there is no per-cell undo.
+        h+='<div style="font-size:11px;line-height:1.3;word-break:break-word;opacity:0.5;text-decoration:line-through;color:var(--muted)">'+esc(l[sk])+'</div>';
+        h+='<div title="'+esc(coopBlk)+' \u2014 no Mom-required lessons this day" style="margin-top:4px;font-size:9px;font-weight:800;color:#6d28d9;background:#f5f3ff;border-radius:6px;padding:1px 5px;text-align:center">\u{1F3EB} co-op</div>';
       } else if(isRm){
         // Dropped, not empty — show what was there with a way back, so a mis-tap is
         // obvious and one tap undoes it.
