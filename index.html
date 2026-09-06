@@ -5356,9 +5356,11 @@ function schedRegenerateNow(){
       db.ref("calendar").once("value",cs=>{
         try{
           const cv=cs.val()||{};
-          calendarData={holidays:cv.holidays||{},vacations:cv.vacations||{},kidOverrides:cv.kidOverrides||{},events:cv.events||{}};
+          // coops rides along too: without it a Mom regenerate ignored every co-op — the 2:00 PM
+          // start, full-day co-ops and the no-Mom-lessons option (Thursday came back at 10:00 AM, 2026-09-06).
+          calendarData={holidays:cv.holidays||{},vacations:cv.vacations||{},kidOverrides:cv.kidOverrides||{},events:cv.events||{},coops:cv.coops||{}};
           try{ HA_LS.setItem("ha_calendar",JSON.stringify(calendarData)); }catch(e2){}
-          dbg("regen: calendar refreshed — kidOverride kids="+Object.keys(calendarData.kidOverrides).join(",")); 
+          dbg("regen: calendar refreshed — kidOverride kids="+Object.keys(calendarData.kidOverrides).join(",")+" coops="+Object.keys(calendarData.coops).length); 
         }catch(e){ dbg("regen: calendar refresh FAILED: "+e); }
         db.ref("weekConfig/"+wn).once("value",s=>_done(s.val()));
       });
@@ -41730,8 +41732,12 @@ function _gwWeekConsumed(kid,sk,dates,dayData,seen){
   const DAYS=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
   const ti=DAYS.indexOf(typeof _todayDay==="string"?_todayDay:""); const _now=new Date(); const nowMin=_now.getHours()*60+_now.getMinutes();
   const isDone=t=>!!(checked[t.id]||(typeof claimed!=="undefined"&&claimed&&claimed[t.id]));
-  const isStarted=t=>{ const di=DAYS.indexOf(String(t.day||"").toLowerCase()); if(di<0||ti<0) return false;
-    if(di<ti) return true; if(di===ti){ const m=(typeof toMin==="function")?toMin(t.time):null; return m!=null&&m<=nowMin; } return false; };
+  // Started = by REAL DATE. Comparing weekday positions put Sunday (and Saturday) AFTER every
+  // weekday, so a Sunday regen counted every card in the coming week as started, consumed
+  // every lesson and dropped every sequenced subject (week22 went 140→82 tasks, 2026-09-06).
+  const _todayISO=(typeof _todayStr==="function")?_todayStr():null;
+  const isStarted=t=>{ const iso=isoOf(t); if(!iso||!_todayISO) return false;
+    if(iso<_todayISO) return true; if(iso===_todayISO){ const m=(typeof toMin==="function")?toMin(t.time):null; return m!=null&&m<=nowMin; } return false; };
   const isoOf=t=>{ try{ const ds=(typeof DAY_DT==="object"&&DAY_DT)?DAY_DT[t.day]:null; if(!ds) return null;
     const d=new Date(ds+", "+_now.getFullYear()); if(isNaN(d.getTime())) return null;
     return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }catch(e){ return null; } };

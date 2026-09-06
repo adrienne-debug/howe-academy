@@ -36,7 +36,7 @@ function run(tasks, dates, checked, claimed) {
   const dayData = {}; dates.forEach(d => { dayData[d] = { lincoln: { aas: "TMP", other: "x" } }; });
   const ctx = {
     console, Date: class extends Date { constructor(...a) { if (!a.length) { super(2026, 8, 3, 15, 0, 0); } else super(...a); } },
-    weekData: { tasks }, checked: checked || {}, claimed: claimed || {}, _todayDay: "thursday", DAY_DT,
+    weekData: { tasks }, checked: checked || {}, claimed: claimed || {}, _todayDay: "thursday", _todayStr: () => "2026-09-03", DAY_DT,
     toMin: s => { const m = /(\d+):(\d+)\s*(AM|PM)/i.exec(s || ""); if (!m) return null; let h = +m[1] % 12; if (/pm/i.test(m[3])) h += 12; return h * 60 + +m[2]; },
   };
   vm.createContext(ctx);
@@ -101,5 +101,28 @@ console.log("\n── mixed: one done + one started ──");
   ok("two consumed", r.n === 2, r.n);
   ok("only the done card's own Tuesday slot is dropped; Friday stays for the NEXT lesson", r.dates.join() === "2026-09-04", r.dates);
 }
+// ── Sunday regen: the week is all ahead — nothing is started (2026-09-06: weekday-position
+// compare put Sunday after every weekday, consumed every lesson, dropped every subject). ──
+console.log("Sunday regen — nothing started");
+{
+  const tasks = [card(1, "tuesday", "10:00 AM", "L2-16"), card(2, "wednesday", "10:00 AM", "L2-17"), card(3, "friday", "10:00 AM", "L2-18")];
+  const dates = ["2026-09-01", "2026-09-02", "2026-09-04"]; const dayData = {}; dates.forEach(d => { dayData[d] = { lincoln: { aas: "TMP" } }; });
+  const ctx = {
+    console, Date: class extends Date { constructor(...a) { if (!a.length) { super(2026, 7, 30, 16, 0, 0); } else super(...a); } },
+    weekData: { tasks }, checked: {}, claimed: {}, _todayDay: "sunday", _todayStr: () => "2026-08-30", DAY_DT,
+    toMin: s => { const m = /(\d+):(\d+)\s*(AM|PM)/i.exec(s || ""); if (!m) return null; let h = +m[1] % 12; if (/pm/i.test(m[3])) h += 12; return h * 60 + +m[2]; },
+  };
+  vm.createContext(ctx); ctx.__dates = dates; ctx.__dd = dayData;
+  vm.runInContext(body + "\nvar __seen={}; var __n=_gwWeekConsumed('lincoln','aas',__dates,__dd,__seen);", ctx);
+  ok("Sunday before the week consumes nothing", ctx.__n === 0, ctx.__n);
+  ok("every date stays in the serving list", dates.length === 3, dates);
+  ok("dayData slots stay", Object.keys(dayData).every(d => dayData[d].lincoln.aas === "TMP"));
+  // Saturday AFTER the week: every card's day has passed → all consumed (by date, not by weekday position)
+  const ctx2 = Object.assign({}, ctx, { _todayDay: "saturday", _todayStr: () => "2026-09-05", __dates: dates.slice(), __dd: {} });
+  ctx2.__dates.forEach(d => { ctx2.__dd[d] = { lincoln: { aas: "TMP" } }; });
+  vm.createContext(ctx2); vm.runInContext(body + "\nvar __seen={}; var __n=_gwWeekConsumed('lincoln','aas',__dates,__dd,__seen);", ctx2);
+  ok("Saturday after the week: all three consumed by date", ctx2.__n === 3, ctx2.__n);
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
