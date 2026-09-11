@@ -27200,7 +27200,20 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
   // deferred: a new one is not added, an existing one is removed (unchecked, so next week's build
   // serves it first). Without this, "push to the next school day" stacked pg 30 + pg 29 on one day.
   summary.resequenced=[];
-  if(summary.pushed.length){
+  // Her rule (2026-09-11): a re-lay takes the pattern from the NEXT DUE lesson — the one the
+  // overnight cascade carried forward onto an off-pattern day — and re-lays the WHOLE pattern
+  // from there: the carried lesson takes the next pattern sitting, every later lesson slides one
+  // sitting, and what falls off the week is deferred to next week's build (which serves it first
+  // — the lesson is undone, so nothing drops from the plan). A carried card therefore triggers
+  // the same re-sequence a push does, and the day it was swept onto is NOT a day the re-lay may
+  // use: only pattern days, the generator's (➕) days and Mom's push landings are. Checked,
+  // claimed and started cards never move. `cascadedFrom` is set only by the sweep.
+  // (today counts: the sweep lands carried work on TODAY at/after now; an end-of-week overflow
+  // card is not a sitting and is never pulled back in.)
+  const carried=after.filter(t=>isPlanCard(t)&&dayIx(t.day)>=tIx&&!locked(t)&&!t._eowOverflow&&t.cascadedFrom&&t.cascadedFrom!==t.day);
+  const carriedIds={}; carried.forEach(t=>{ carriedIds[t.id]=1; });
+  summary.carried=carried.map(t=>t.id);
+  if(summary.pushed.length||carried.length){
     const cap=Math.max(1,parseInt(opts.dayCap,10)||1);
     // Lesson order = the subject's list (lessonIds) when given — lid NUMBERS are not list order
     // (Lincoln's EIC list runs L0002 → L0154 → L0003); else the generator's own serve order.
@@ -27210,22 +27223,34 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
     const rank=t=>{ const li=listIx[lidOf(t.id)]; if(li!=null) return li; const gi=genIx[t.id]; return (gi!=null)?(1e5+gi):1e9; };
     // Days the re-lay may use: where this subject already sits after today (live, generator-wanted,
     // or where it started) plus the push landing day(s)…
-    const dayOk={}; after.forEach(t=>{ if(isPlanCard(t)&&dayIx(t.day)>tIx) dayOk[t.day]=1; }); want.forEach(w=>{ if(w.day&&dayIx(w.day)>tIx) dayOk[w.day]=1; });
-    Object.keys(orig0).forEach(id=>{ const d=orig0[id].day; if(dayIx(d)>tIx) dayOk[d]=1; });   // where cards STARTED (the diff above may already have moved them)
+    const dayOk={}; after.forEach(t=>{ if(isPlanCard(t)&&dayIx(t.day)>tIx&&!carriedIds[t.id]) dayOk[t.day]=1; }); want.forEach(w=>{ if(w.day&&dayIx(w.day)>tIx) dayOk[w.day]=1; });
+    Object.keys(orig0).forEach(id=>{ if(carriedIds[id]) return; const d=orig0[id].day; if(dayIx(d)>tIx) dayOk[d]=1; });   // where cards STARTED (the diff above may already have moved them) — a carried card's swept-to day does not count
     // …and any later school day the subject is ALLOWED on (no pins = every school day), so
     // overflow spills forward onto its own pattern instead of falling off the week early.
     const _abbr={monday:"Mon",tuesday:"Tue",wednesday:"Wed",thursday:"Thu",friday:"Fri",saturday:"Sat"};
     const allowed=(opts.allowedDays&&opts.allowedDays.length)?opts.allowedDays:null;
     _RP_DAYS.forEach(d=>{ if(dayIx(d)>tIx&&kidDays[d]&&(!allowed||allowed.indexOf(_abbr[d])>=0)) dayOk[d]=1; });
-    const days=_RP_DAYS.filter(d=>dayIx(d)>tIx&&dayOk[d]);
-    const room={}; days.forEach(d=>{ room[d]=cap-after.filter(t=>isPlanCard(t)&&t.day===d&&locked(t)).length; });
-    const pool=after.filter(t=>isPlanCard(t)&&dayIx(t.day)>tIx&&!locked(t)).sort((a,b)=>(rank(a)-rank(b))||String(a.id).localeCompare(String(b.id)));
+    // Today is a landing day only for a CARRIED card, and only when today is a pattern day for the
+    // subject (never via a card merely sitting there) — today's other cards stay put (no moving
+    // goalposts) but still take up its room.
+    if(carried.length&&opts.todayDay&&tIx>=0&&kidDays[opts.todayDay]&&(!allowed||allowed.indexOf(_abbr[opts.todayDay])>=0)) dayOk[opts.todayDay]=1; else delete dayOk[opts.todayDay];
+    const inPool=t=>isPlanCard(t)&&!locked(t)&&!t._eowOverflow&&(dayIx(t.day)>tIx||carriedIds[t.id]);
+    const days=_RP_DAYS.filter(d=>(dayIx(d)>tIx||(d===opts.todayDay&&carried.length))&&dayOk[d]);
+    const room={}; days.forEach(d=>{ room[d]=cap-after.filter(t=>isPlanCard(t)&&t.day===d&&!inPool(t)).length; });
+    const pool=after.filter(inPool).sort((a,b)=>(rank(a)-rank(b))||String(a.id).localeCompare(String(b.id)));
     let di=0;
     pool.forEach(t=>{
-      while(di<days.length&&room[days[di]]<=0) di++;
+      // today (after now) may receive a CARRIED card — the sweep lands carried work exactly so —
+      // but never a card merely sliding in from a later day (a day in progress is not squeezed).
+      while(di<days.length&&(room[days[di]]<=0||(days[di]===opts.todayDay&&t.day!==opts.todayDay&&!carriedIds[t.id]))) di++;
       if(di>=days.length){
         const ai=summary.added.indexOf(t.id);
         if(ai>=0){ const i=after.indexOf(t); if(i>=0) after.splice(i,1); summary.added.splice(ai,1); const pi=summary.pushed.indexOf(t.id); if(pi>=0) summary.pushed.splice(pi,1); summary.deferred.push(t.id); return; }
+        // Under the carried-lesson rule an EXISTING card that falls off the week is deferred:
+        // removed from this week only — its lesson is undone, so next week's build serves it
+        // first (the plan never loses it). A Mom push keeps the older behaviour below.
+        if(carried.length){ const mi2=summary.moved.indexOf(t.id); if(mi2>=0) summary.moved.splice(mi2,1); const ri=summary.resequenced.indexOf(t.id); if(ri>=0) summary.resequenced.splice(ri,1); const ki=summary.kept.indexOf(t.id); if(ki>=0) summary.kept.splice(ki,1);
+          if(t.time!=null){ (freed[t.day]=freed[t.day]||[]).push(t.time); } const i2=after.indexOf(t); if(i2>=0) after.splice(i2,1); upd[t.id]=null; summary.removed.push(t.id); summary.deferred.push(t.id); return; }
         // An EXISTING card that does not fit stays where it started (nothing drops): the lesson
         // is undone, so it is still counted, still next up, and still on a real day.
         const mi=summary.moved.indexOf(t.id); if(mi>=0) summary.moved.splice(mi,1);
@@ -27233,6 +27258,7 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
         summary.kept.push(t.id); return;
       }
       const d=days[di]; room[d]--;
+      if(carriedIds[t.id]){ delete t.cascadedFrom; upd[t.id+"/cascadedFrom"]=null; }   // it is on its pattern now — no longer "carried"
       if(t.day===d) return;
       if(t.time!=null) (freed[t.day]=freed[t.day]||[]).push(t.time);
       t.day=d; t.time=null;
@@ -27364,7 +27390,7 @@ function reprojectSubjectWeek(kid,sk,why){
       if(!n) return;
       weekData.tasks=r.tasksAfter; sv(WK+"_tasks",weekData.tasks);
       if(db&&!_dryRun()) db.ref(WK+"/tasks").update(r.upd);
-      dbg&&dbg("reproject "+kid+"/"+sk+" ("+(why||"")+"): +"+r.summary.added.length+" ↔"+r.summary.moved.length+" −"+r.summary.removed.length+" ✎"+r.summary.retitled.length+" 🌙"+((r.summary.closing||[]).length)+" ⤵"+((r.summary.shifted||[]).length)+" ➡"+((r.summary.pushed||[]).length)+" 🔢"+((r.summary.resequenced||[]).length)+" ⏭"+((r.summary.deferred||[]).length));
+      dbg&&dbg("reproject "+kid+"/"+sk+" ("+(why||"")+"): +"+r.summary.added.length+" ↔"+r.summary.moved.length+" −"+r.summary.removed.length+" ✎"+r.summary.retitled.length+" 🌙"+((r.summary.closing||[]).length)+" ⤵"+((r.summary.shifted||[]).length)+" ➡"+((r.summary.pushed||[]).length)+" 🔁"+((r.summary.carried||[]).length)+" 🔢"+((r.summary.resequenced||[]).length)+" ⏭"+((r.summary.deferred||[]).length));
     }catch(e){ dbg&&dbg("reproject skip: "+e); }
     finally{ release(); }
   });
@@ -42133,6 +42159,15 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
           // handoff (live dry run 2026-09-11: Language Smarts' first same-week card carried
           // Pg 264–269 with 254–263 "spent" on Mon/Wed — and the order guard would refuse it).
           try{ if(_keep.length&&typeof lnOf==="function"&&lnOf(kid,sk)&&typeof weekData!=="undefined"&&weekData&&Array.isArray(weekData.tasks)&&!weekData.tasks.some(function(x){ return x&&x.who===kid&&x.subjectKey===sk&&!String(x.id||"").endsWith("_c"); })) _keep=[]; }catch(e){}
+          // Her re-lay rule (2026-09-11): a past day whose card the cascade carried AWAY holds no
+          // card now, so the generator must not serve the next lesson onto it — that "spends" the
+          // carried lesson on a day that already happened, and the week diff (which ignores past
+          // days) then re-deals from the lesson after it, undoing the re-lay. A past date is kept
+          // only while a live card of this subject still sits on it; today is always kept.
+          try{ if(_keep.length>1||(_keep.length===1&&_keep[0]!==_t)){ if(typeof weekData!=="undefined"&&weekData&&Array.isArray(weekData.tasks)&&typeof DAY_DT==="object"&&DAY_DT){
+            const _yr=new Date().getFullYear(); const _has={};
+            weekData.tasks.forEach(function(x){ if(!x||x.who!==kid||x.subjectKey!==sk||String(x.id||"").endsWith("_c")) return; const ds=DAY_DT[x.day]; if(!ds) return; const d=new Date(ds+", "+_yr); if(isNaN(d.getTime())) return; _has[d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")]=1; });
+            _keep=_keep.filter(function(d){ return d===_t||_has[d]; }); } } }catch(e){}
           let _next=_pjd.filter(function(d){ return d>_t&&_keep.indexOf(d)<0; });
           // A MID-WEEK regen re-spreads the subject's FULL weekly quota over only the days
           // that are left, on top of the days already kept: ellis Editor in Chief (tpw 3, no

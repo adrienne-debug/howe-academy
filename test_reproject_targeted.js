@@ -314,9 +314,13 @@ console.log("nothing drops (her rule, 2026-09-04): a re-lay never deletes an unf
     P(34, "saturday", "10:00 AM", { cascadedFrom: "monday" }), P(35, "wednesday", "11:53 AM", { cascadedFrom: "monday", _eowOverflow: true })];
   const desired = [P(33, "friday", "3:25 PM")];   // 11:57 PM Thursday: pg 32 started → consumed; only Friday left on the pattern
   const r = e._reprojectPlan("lincoln", "ws", live, desired, OPTS({ todayDay: "thursday", nowMin: 23 * 60 + 57, checked: { lincoln_lincoln__ws_L0031: 1 }, doneLids: ["L0031"], allowedDays: ["Mon", "Tue", "Wed", "Thu", "Fri"] }));
-  ok("Saturday pg 34 is KEPT, not removed", eq(r.summary.removed, []) && r.tasksAfter.some(t => t.id.endsWith("L0034") && t.day === "saturday") && !("lincoln_lincoln__ws_L0034" in r.upd), r.summary);
-  ok("reported as kept", r.summary.kept.indexOf("lincoln_lincoln__ws_L0034") >= 0, r.summary.kept);
-  ok("nothing written at all (every card already where it belongs)", eq(r.upd, {}), r.upd);
+  // 2026-09-11 — her re-lay rule supersedes the keep here: pg 34 was CARRIED by the cascade onto
+  // Saturday, which is not this Mon–Fri subject's pattern, and Thursday night has no pattern day left
+  // (Friday holds pg 33). So the re-lay defers it: removed from THIS week only; its lesson is undone,
+  // so next week's build serves it first. The plan never loses it (test_relay_carried.js).
+  ok("carried Saturday pg 34 is deferred to next week (removed from this week's cards, lesson untouched)", eq(r.summary.removed, ["lincoln_lincoln__ws_L0034"]) && eq(r.summary.deferred, ["lincoln_lincoln__ws_L0034"]) && r.upd["lincoln_lincoln__ws_L0034"] === null, r.summary);
+  ok("reported as carried", eq(r.summary.carried, ["lincoln_lincoln__ws_L0034"]), r.summary.carried);
+  ok("nothing else written (pg 33 stays Friday)", eq(Object.keys(r.upd), ["lincoln_lincoln__ws_L0034"]) && r.tasksAfter.some(t => t.id.endsWith("L0033") && t.day === "friday"), r.upd);
   // The same card leaves once its lesson is finished on another card / in the done record
   const r2 = e._reprojectPlan("lincoln", "ws", live.map(t => Object.assign({}, t)), desired, OPTS({ todayDay: "thursday", nowMin: 23 * 60 + 57, checked: { lincoln_lincoln__ws_L0031: 1 }, doneLids: ["L0031", "L0034"] }));
   ok("done + not wanted → removed", eq(r2.summary.removed, ["lincoln_lincoln__ws_L0034"]) && r2.upd["lincoln_lincoln__ws_L0034"] === null);
