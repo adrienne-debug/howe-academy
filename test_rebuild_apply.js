@@ -39,7 +39,7 @@ const FNS = [
   "baseId", "carryRebaselined", "carrySubjectGone", "_gvPurgeSubject", "ceDeleteSubject",
   // impure layer under test
   "cbTodayISO", "cbFutureRows", "cbExtendInfo", "cbBacklogInfo", "cbRemainingContent",
-  "cbDayCap", "cbDayCapDefault", "cbAltGroups", "cbGroupOf", "cbBlockedDates",
+  "cbDayCap", "cbDayCapDefault",
   "cbDefaultForm", "cbParsePattern", "cbBuildCfg", "cbPacingFromForm",
   "cbApply", "cbPatchLocal", "cbUndo", "_cbEngine",
   "_cbGateItem", "cbBuildGate", "cbGateToggle", "cbGateAll", "cbGateCancel", "cbGateConfirm",

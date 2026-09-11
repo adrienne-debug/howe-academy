@@ -6321,6 +6321,7 @@ function finalizeDone(id, doneTs, score){
     try{ lidDoneWrite(t,doneTs,id); }catch(e){ dbg("lid done write skip: "+e); }
     // A check-off may have finished a subject and/or met all session goals.
     try{ checkSubjectComplete(t.who, t.subjectKey); }catch(e){}
+    try{ if(typeof lnHandoff==="function") lnHandoff(t.who,t.subjectKey,"check"); }catch(e){}   // 🛤 a finished lane unit hands this week to the next
     try{ checkBookComplete(t.who, t.subjectKey); }catch(e){}
     try{ checkSessionComplete(t.who); }catch(e){}
     try{ rlOnCheckoff(t); }catch(e){}   // 📚 reading-log subjects: page prompt / pending chip
@@ -10990,7 +10991,7 @@ function renderHistoryReport(){
       h+='</div>';
     }
     // pace flags (live week only — projections aren't frozen)
-    const movers=(kd.paceMovers||[]).filter(f=>f.status!=="ontime"&&f.status!=="done");
+    const movers=(kd.paceMovers||[]).filter(f=>f.status!=="ontime"&&f.status!=="done"&&f.status!=="waiting");   // 🛤 waiting its turn is not a flag
     if(movers.length){
       h+='<div style="font-size:12px;padding:7px 0;border-top:1px solid var(--border)">🏁 Needs a look: ';
       h+=movers.map(f=>'<span style="color:'+(f.status==="red"||f.status==="stalled"?'#dc2626':'#d97706')+';font-weight:600">'+(f.display||f.sk)+(f.projDate?' → '+f.projDate:'')+'</span>').join(' · ');
@@ -12596,11 +12597,12 @@ function ceBuildCard(sk,s,kid){
   // (the same data as Admin → Finish Line, so you can triage without opening the card).
   const _fl=_ceFinishMap[sk];
   if(_fl&&s.tracking!=="daily"&&!s.paused){
-    const FC={done:"#10b981",ontime:"#10b981",amber:"#f59e0b",red:"#ef4444",stalled:"#9ca3af"};
+    const FC={done:"#10b981",ontime:"#10b981",amber:"#f59e0b",red:"#ef4444",stalled:"#9ca3af",waiting:"#6366f1"};
     const fc=FC[_fl.status]||"#9ca3af";
     const fmt=d=>{ if(!d) return "—"; const o=gwParseDate(d); return o.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}); };
     let txt;
     if(_fl.status==="done") txt="Finished ✓";
+    else if(_fl.status==="waiting") txt="🛤 "+_fl.remaining+" left · waits for "+esc(_fl.waitsFor||"")+" (lane "+esc(_fl.lane||"")+")";
     else if(_fl.status==="stalled") txt=_fl.remaining+" left · no planned slots";
     else{
       const late=_fl.status==="red"?" ⚠":_fl.status==="amber"?" ⚠":"";
@@ -15255,6 +15257,9 @@ function ceRenderEditSheet(){
     h+='<div class="ce-sheet-lbl">Progress</div>';
     h+='<div class="pace-auto-info"><span><b>'+_dn+'</b> of '+(s.lessonSeq?s.lessonSeq.length:_total)+' done · next: <b>'+esc(_nextLabel)+'</b></span>'+(_dImp?'<span style="color:var(--muted)">· '+_dImp+' by import (started mid-book)</span>':'')+'</div>';
     h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Counted by lesson id from the done record — check-offs, hand-marks and imports. Mark work done in the list panel below; nothing here to type.</div>';
+    try{ const _lm=(typeof lnMemberInfo==="function")?lnMemberInfo(ceEditKid,ceEditKey):null;   // 🛤 lane standing
+      if(_lm) h+='<div style="font-size:11px;margin-top:6px;padding:5px 8px;border-radius:8px;background:#f8fafc;border:1px solid var(--border)">🛤 Lane <b>'+esc(_lm.name)+'</b> · '+_lm.pos+' of '+_lm.n+' · '+(_lm.state==="up"?'<b>up now</b>':_lm.state==="done"?'finished':'waiting — <b>'+esc(_lm.upLabel)+'</b> is up')+(_lm.prior?' · runs on the same days / ×wk / cap as the unit before it':'')+(_lm.multi?' · shares a multiple card':'')+' <span style="color:var(--muted)">(edit in Grid ▸ ⚙ Rules ▸ 🛤 Lanes)</span></div>';
+    }catch(e){}
     if(_ps&&((_ps.offset||0)||(_ps.adjust||0)||(_ps.paceAdjust||0))){
       h+='<div style="font-size:10px;color:#b45309;margin-top:5px">⚠ Old hand-count corrections on this subject (offset '+(_ps.offset||0)+' · cursor '+(_ps.adjust||0)+' · progress '+(_ps.paceAdjust||0)+') are no longer consulted. <button onclick="cePaceClearHand(\''+ceEditKid+'\',\''+ceEditKey+'\')" style="border:1px solid #d97706;background:#fff;color:#b45309;border-radius:8px;padding:1px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Clear them</button></div>';
     }
@@ -15653,6 +15658,7 @@ function ceMarkLessonDone(kid,sk,lesson,through){
   currData.lastEdit=new Date().toISOString();
   if(db) db.ref("curriculum/lastEdit").set(currData.lastEdit);
   try{ buildCurrPaceCum(); }catch(e){}
+  try{ if(typeof lnHandoff==="function") lnHandoff(kid,sk,"mark"); }catch(e){}   // 🛤 hand-marking the last lesson hands the week on too
   _gvDelUndo={kid,sk,paths:prevPaths,label:"marked "+list.length+" lesson"+(list.length!==1?"s":"")+" done"};
   _ceRelayAfterMark(kid,sk,"✓ Marked "+list.length+" lesson"+(list.length!==1?"s":"")+" done"+(dayISO?(" on "+dayISO):""));
 }
@@ -17129,7 +17135,6 @@ function uploadCurriculum(){
         if(currData.targetEnd) curriculum.targetEnd=currData.targetEnd;
         if(currData.flowOrder) curriculum.flowOrder=currData.flowOrder;
         if(currData.momVerifyKid) curriculum.momVerifyKid=currData.momVerifyKid;
-        if(currData.altGroups) curriculum.altGroups=currData.altGroups;
         if(currData.dayCap) curriculum.dayCap=currData.dayCap;
       }
       const empty=v=>{const s=String(v??"").trim();return !s||s==="nan"||s==="NaN"||s==="None"||s==="—"||s==="undefined";};
@@ -17264,7 +17269,7 @@ function uploadCurriculum(){
 
       // Top-level nodes the sheet can't express ride forward too — a whole-node set()
       // would otherwise wipe them (done = lesson-identity completions, Stage 1.3).
-      if(currData){ ["done","skiplog","rebaseline","dayCap","altGroups","groups","plans"].forEach(k=>{ if(currData[k]!==undefined&&curriculum[k]===undefined) curriculum[k]=currData[k]; }); }
+      if(currData){ ["done","skiplog","rebaseline","dayCap","groups","plans","lanes"].forEach(k=>{ if(currData[k]!==undefined&&curriculum[k]===undefined) curriculum[k]=currData[k]; }); }
 
       const stats=Object.entries(sheetKids).map(([_,kid])=>{
         const ns=Object.keys(curriculum.subjects[kid]||{}).length;
@@ -23994,7 +23999,7 @@ function cbDeriveContent(split,lessonSeq,doneN,dismissedIdx,skipTexts,doneTally,
 //             offDates:{iso:true} }],         // per-subject ✕'d days
 //   calendar: { kid: [{date:"YYYY-MM-DD", dow:"Mon", off:bool}] },   // school days, ANCHOR→horizon, ascending
 //   dayCapMin: { kid: minutes } (0/undefined = uncapped),
-//   blocked: { kid: { sk: {iso:true} } },   // alternation partners' days
+//   blocked: { kid: { sk: {iso:true} } },   // kept as an engine input; nothing feeds it since alternation groups were retired (🛤 multiple cards)
 //   todayISO }
 // output = { byDate:{iso:{kid:[{pid,sk,lid,text,backlog}]}}, plans:{pid:{owed,placed,unplaced,firstDate,lastDate,tpwUsed}}, warnings:[] }
 function _pjWeekKey(iso){          // Monday of the ISO week, as "YYYY-MM-DD" — pure string math
@@ -24111,7 +24116,7 @@ function projectPlans(input){
 // Returns the same shape cbMaterialize returns ({assignments,clears,placeholders,stats,
 // warnings}) plus `extras` — second sittings on a day (her cap rule) — so cbApply and every
 // caller stay unchanged. Sequenced modes only (timesPerWeek / targetDate); pages, minutes and
-// window still go through cbMaterialize. Reads: cbFutureRows / cbExtendInfo / cbBlockedDates /
+// window still go through cbMaterialize. Reads: cbFutureRows / cbExtendInfo /
 // cbDayCap (existing calendar+rules readers), the list minus done-by-id, cap, anchor.
 // With cap 1 and nothing owed it must lay EXACTLY what cbMaterialize lays (verified against
 // all 24 live subjects before it shipped) — caps and owed are the only new behaviour.
@@ -24143,7 +24148,18 @@ function _planDropDealt(lessons,dealt){
 function planMaterialize(kid,sk,form,opts){
   const _dealt=(opts&&opts.dealt)||null;
   const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s) return null;
-  const f=form||cbDefaultForm(kid,sk);
+  let f=form||cbDefaultForm(kid,sk);
+  if(!(typeof planBacked==="function"&&planBacked(kid,sk))) return null;
+  // LANE_HOOK_A ── 🛤 a lane member. A unit that is not up lays nothing: it is waiting its
+  // turn (or, with no lessons left, finished — the content check below says so). A borrowed
+  // rhythm ("same as the one before") replaces the form's days / ×wk / cap; a multiple card's
+  // shared rhythm does the same. Not in a lane → _ln is null and nothing below changes.
+  const _ln=(typeof lnOf==="function")?lnOf(kid,sk):null; let _lnRh=null;
+  if(_ln){
+    if(!lnIsUp(kid,_ln.id,_ln.unitIdx)&&lnOpenCount(kid,sk)>0) return {error:"Waiting in lane "+(_ln.lane.name||_ln.id)+" — "+lnUpLabel(kid,_ln.id)+" is up.",waiting:true,lane:_ln.id,warnings:[]};
+    _lnRh=lnRhythm(kid,_ln.id,_ln.unitIdx);
+    if(_lnRh&&!_lnRh.own) f=Object.assign({},f,{mode:_lnRh.mode,tpw:_lnRh.tpw,targetDate:_lnRh.targetDate||"",allowedDays:(_lnRh.allowedDays||[]).slice()});
+  }
   // "pages" decides only WHICH UNITS get built (cbMaterialize step 1) — placement is the
   // same tpw + allowedDays walk every other sequenced mode uses, and a PLAN-BACKED pages
   // subject already has its units materialised into lessonSeq with ids. So the projection
@@ -24152,18 +24168,20 @@ function planMaterialize(kid,sk,form,opts){
   // predicted it exactly) — plan-backed placement reads done BY LID and cannot.
   // A pages subject with no tpw has no cadence to project; it stays on cbMaterialize.
   if(!(f.mode==="timesPerWeek"||f.mode==="targetDate"||(f.mode==="pages"&&parseInt(f.tpw,10)>0))) return null;
-  if(!(typeof planBacked==="function"&&planBacked(kid,sk))) return null;
   const rows=cbFutureRows(kid,sk); const ex=cbExtendInfo(kid);
-  const blockedArr=cbBlockedDates(kid,sk); const blocked={}; blockedArr.forEach(d=>{ blocked[d]=1; });
+  const blocked={};   // alternation groups retired 2026-09-11 — a 🛤 multiple card is how two subjects share a rhythm now
   const capMin=cbDayCap(kid); const today=cbTodayISO(); const min=s.minutes||20;
   // Content: what cbRemainingContent says is left (list minus done, today-cell rule), mapped
   // to ids by text tally in list order so extras and cards can carry a lid.
   const content=cbRemainingContent(kid,sk)||[];
-  if(!content.length) return {error:"Nothing left to lay — every lesson is finished.",warnings:[]};
+  if(!content.length) return {error:"Nothing left to lay — every lesson is finished.",finished:true,warnings:[]};
   const ids=lidsFor(kid,sk)||[]; const seq=s.lessonSeq||[]; const di=lidDoneIdx(kid,sk)||new Set();
   const pool={}; seq.forEach((t,i)=>{ if(di.has(i)) return; const k=_lidNorm(t); (pool[k]=pool[k]||[]).push(ids[i]); });
   let lessons=content.map(t=>{ const q=pool[_lidNorm(t)]; return {lid:(q&&q.length)?q.shift():null,text:String(t)}; });
   let _dealtMax=null; const _dealtWk={};
+  // 🛤 In a multiple card the partners' dealt cards count too: nothing projects at or before
+  // the last card ANY sub-card holds, and the week's quota is charged for all of them.
+  const _dealtAll=(_dealt&&_ln&&_ln.unit.subs&&typeof gvDealtDates==="function")?lnUnitSubs(_ln.unit).map(function(x){ return x===sk?_dealt:(gvDealtDates(kid,x)||{}); }):(_dealt?[_dealt]:[]);
   if(_dealt){
     lessons=_planDropDealt(lessons,_dealt);
     if(!lessons.length) return {error:"Nothing left to lay — every remaining lesson is already on a card.",warnings:[]};
@@ -24174,8 +24192,8 @@ function planMaterialize(kid,sk,form,opts){
     // ISO week's tpw is charged for the cards it already holds (via plan._wkUsed), so a
     // partially-dealt week gets only the difference. targetDate mode has no tpw to charge —
     // rule (a) still orders it.
-    Object.keys(_dealt).forEach(function(d){ if(!_dealtMax||d>_dealtMax) _dealtMax=d; const wk=_pjWeekKey(d);
-      _dealtWk[wk]=(_dealtWk[wk]||0)+1+(((_dealt[d]||{}).more||[]).length); });   // two sittings on a day charge two
+    _dealtAll.forEach(function(dm){ Object.keys(dm||{}).forEach(function(d){ if(!_dealtMax||d>_dealtMax) _dealtMax=d; const wk=_pjWeekKey(d);
+      _dealtWk[wk]=(_dealtWk[wk]||0)+1+(((dm[d]||{}).more||[]).length); }); });   // two sittings on a day charge two
   }
   // Calendar: existing future rows + a dense extension past the grid end (weekdays; off days
   // via the calendar; existing dates never minted twice) — dayNums are minted later, in date
@@ -24199,7 +24217,7 @@ function planMaterialize(kid,sk,form,opts){
   const pastRows=[]; if(anchor&&anchor<today){ const L=((currData||{}).lessons||{})[kid]||{};
     Object.keys(L).forEach(dn=>{ const l=L[dn]; if(!l||!l.date||l.date<anchor||l.date>=today) return;
       pastRows.push({date:l.date,dow:DOW[_cbParseDate(l.date).getDay()],off:!!(smapIsKidOff(kid,l.date)||schedOvKidOff(kid,l.date)||((schedOv(l.date,kid)||{}).removed||{})[sk]||coopBlocksBase(kid,l.date,sk))}); }); }
-  const cap=Math.max(1,parseInt(s.cap,10)||1);
+  const cap=Math.max(1,parseInt((_lnRh&&!_lnRh.own)?_lnRh.cap:s.cap,10)||1);
   // Days Mom added BY HAND for this subject (scheduleOverrides…added), minus the ones this
   // engine wrote itself on the last lay (subjects/…/pjExtras) — those are its own output and
   // must never come back in as an instruction.
@@ -24211,6 +24229,18 @@ function planMaterialize(kid,sk,form,opts){
       if(a[sk]!==undefined&&a[sk]!==null&&a[sk]!==false) _addedIn[d]=1;
     });
   }catch(e){ dbg("added-input skip: "+e); }
+  // LANE_HOOK_B ── 🛤 multiple card: the shared rhythm's sittings are handed out by the
+  // pattern (AAB, ABA, …); this subject may take only the days its letter names. Every other
+  // future day is off for it, so the plain projection below lays exactly its share, in its
+  // own book order. Mom's ➕ days stay hers.
+  let _lnOff=null;
+  if(_ln&&_ln.unit.subs){
+    // The CARD's calendar is the kid's: only kid-level off days. A member's own ✕'d day is that
+    // member's skipped sitting (its lesson slides), never a shift of the pattern for its partners.
+    const _laneRows=allRows.map(function(r){ return {date:r.date,dow:r.dow,off:!!(smapIsKidOff(kid,r.date)||schedOvKidOff(kid,r.date))}; });
+    const _mine=lnPatternDates(kid,_ln,_laneRows,_dealtAll,_dealtWk)[sk]||[]; const _mset={}; _mine.forEach(function(d){ _mset[d]=1; });
+    _lnOff={}; allRows.forEach(function(r){ if(!_mset[r.date]&&!_addedIn[r.date]) _lnOff[r.date]=true; });
+  }
   // opts.absorb===false — lay the PLAIN pattern: no cap extras, no owed, no overflow spill.
   // Backlog absorption has no weekly rate limit (the legacy catch-up it replaced capped at
   // carryoverCap, default 2, and fit-checked the day's minutes), so unrestrained it asks a
@@ -24219,8 +24249,9 @@ function planMaterialize(kid,sk,form,opts){
   // subject's own tpw pattern, which is what the schedule already runs on. The `owed` number
   // is still computed and still shown by planOwed's chip — it is scheduled, not hidden.
   const _absorb=!(opts&&opts.absorb===false);
-  const plan={pid:planIdFor(kid,sk),kid,sk,priority:s.priority||0,minutes:min,lessons,allowedDays:(f.allowedDays||[]).slice(),cap:_absorb?cap:1,anchor:_absorb?anchor:null,doneSince,offDates:{},overflow:_absorb&&(s.overflowExtras!==false),_wkUsed:_dealtWk};
-  if(f.mode==="targetDate") plan.targetDate=f.targetDate||""; else plan.tpw=parseInt(f.tpw,10)||0;
+  const plan={pid:planIdFor(kid,sk),kid,sk,priority:s.priority||0,minutes:min,lessons,allowedDays:_lnOff?[]:(f.allowedDays||[]).slice(),cap:_absorb?cap:1,anchor:_absorb?anchor:null,doneSince,offDates:_lnOff||{},overflow:_absorb&&(s.overflowExtras!==false),_wkUsed:_dealtWk};
+  if(_lnOff) plan.tpw=0;   // 🛤 every day not off is one of mine — the pattern already chose them
+  else if(f.mode==="targetDate") plan.targetDate=f.targetDate||""; else plan.tpw=parseInt(f.tpw,10)||0;
   const out=projectPlans({plans:[plan],calendar:{[kid]:pastRows.concat(allRows)},dayCapMin:{[kid]:capMin||0},blocked:{[kid]:{[sk]:blocked}},added:{[kid]:{[sk]:_addedIn}},todayISO:today});
   const st=out.plans[plan.pid]||{}; const warnings=(out.warnings||[]).slice();
   // Convert byDate → cbMaterialize's shape. First lesson on a day = the cell; the rest = extras.
@@ -24253,6 +24284,7 @@ function planMaterialize(kid,sk,form,opts){
 function planOwed(kid,sk){
   const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||!s.planAnchor) return 0;
   if(!(typeof planBacked==="function"&&planBacked(kid,sk))) return 0;
+  if(typeof lnOf==="function"){ const _l=lnOf(kid,sk); if(_l&&!lnIsUp(kid,_l.id,_l.unitIdx)) return 0; }   // 🛤 waiting its turn: owes nothing yet
   const today=cbTodayISO(); const anchor=s.planAnchor; if(anchor>=today) return 0;
   const f=cbDefaultForm(kid,sk); if(!(f.mode==="timesPerWeek"||f.mode==="targetDate"||(f.mode==="pages"&&parseInt(f.tpw,10)>0))) return 0;
   const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]; const L=((currData||{}).lessons||{})[kid]||{}; const rows=[];
@@ -24267,6 +24299,150 @@ function planOwed(kid,sk){
   return Math.max(0,Math.min(remaining,past-doneSince));
 }
 // PLANMAT_END
+
+// LANE_START ── 🛤 lanes: a category holding an ordered list of UNITS (Stage 1: engine only) ──
+// Her design (2026-09-10): "the lane owns nothing besides a category." A lane is a name plus
+// an ordered list of units; every subject keeps its own settings. Units run in order — the
+// first unit with open lessons is UP; when it finishes, the next takes its place in the Grid.
+// A unit is a SINGLE card {sk, rhythm:"own"|"prior"} or a MULTIPLE card {subs:[sk…],
+// pattern:"AAB", rhythm:"own"|"prior", allowedDays, timesPerWeek, cap}. rhythm "prior"
+// borrows days / ×wk / cap from the nearest earlier unit that set its own — a pointer, never
+// a copy. A pattern's letters are the sub-cards in order (A = first) and repeat over the
+// shared rhythm's sittings; a finished or paused letter drops out and the rest close ranks.
+// Stored: curriculum/lanes/<kid>/<id> only. Membership, who is up, the pattern position and
+// the resolved rhythm are all COMPUTED here from records already on screen — nothing hidden.
+// Members must be plan-backed (list + done by id); anything else is ignored as if absent.
+// No lanes in the data → lnOf() is null everywhere and every hook below is a no-op.
+function _lnList(v){
+  if(!v) return [];
+  if(Array.isArray(v)) return v.filter(function(x){ return x!==null&&x!==undefined; });
+  return Object.keys(v).sort(function(a,b){ return (+a)-(+b); }).map(function(k){ return v[k]; }).filter(function(x){ return x!==null&&x!==undefined; });
+}
+function lnLanes(kid){ return (((currData||{}).lanes||{})[kid])||{}; }
+function lnUnits(kid,id){ return _lnList((lnLanes(kid)[id]||{}).units); }
+function lnUnitSubs(u){ if(!u) return []; if(u.subs) return _lnList(u.subs).map(String); return u.sk?[String(u.sk)]:[]; }
+function lnOf(kid,sk){
+  const ls=lnLanes(kid);
+  for(const id of Object.keys(ls)){
+    const us=lnUnits(kid,id);
+    for(let i=0;i<us.length;i++){ if(lnUnitSubs(us[i]).indexOf(sk)>=0) return {id:id,lane:ls[id]||{},unitIdx:i,unit:us[i]}; }
+  }
+  return null;
+}
+// Open lessons for a member: list minus done-by-id. 0 when paused, unstamped or not plan-backed.
+function lnOpenCount(kid,sk){
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||s.paused) return 0;
+  if(!(typeof planBacked==="function"&&planBacked(kid,sk))) return 0;
+  return Math.max(0,(s.lessonSeq||[]).length-((typeof lidDoneIdx==="function"&&lidDoneIdx(kid,sk))||new Set()).size);
+}
+function subjectFinished(kid,sk){
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||s.paused) return false;
+  if(!(typeof planBacked==="function"&&planBacked(kid,sk))) return false;
+  return (s.lessonSeq||[]).length>0&&lnOpenCount(kid,sk)===0;
+}
+function lnUnitOpen(kid,u){ return lnUnitSubs(u).some(function(x){ return lnOpenCount(kid,x)>0; }); }
+function lnUp(kid,id){ const us=lnUnits(kid,id); for(let i=0;i<us.length;i++){ if(lnUnitOpen(kid,us[i])) return i; } return -1; }
+function lnIsUp(kid,id,idx){ return lnUp(kid,id)===idx; }
+function lnUpLabel(kid,id){
+  const i=lnUp(kid,id); if(i<0) return "nothing";
+  const subs=(((currData||{}).subjects||{})[kid]||{});
+  return lnUnitSubs(lnUnits(kid,id)[i]).map(function(x){ return (subs[x]||{}).display||x; }).join(" / ");
+}
+// The rhythm a unit actually runs on: its own, or the nearest earlier unit's when "prior".
+// {mode,tpw,targetDate,allowedDays,cap,own,fromIdx}. own=true → a single card on its own
+// settings, which planMaterialize then reads exactly as it does today (form untouched).
+function lnRhythm(kid,id,idx){
+  const us=lnUnits(kid,id); if(!us.length||idx<0||idx>=us.length) return null;
+  const _subs=((currData||{}).subjects||{})[kid]||{};
+  const _valid=function(u){ return !!u&&lnUnitSubs(u).some(function(x){ return !!_subs[x]&&(typeof planBacked==="function")&&planBacked(kid,x); }); };   // a unit with no plan-backed member is as if absent
+  let i=idx;
+  while(us[i]&&us[i].rhythm==="prior"){ let j=i-1; while(j>=0&&!_valid(us[j])) j--; if(j<0) break; i=j; }
+  const u=us[i]; if(!u) return null;
+  let rh;
+  if(u.subs){ rh={mode:"timesPerWeek",tpw:parseInt(u.timesPerWeek,10)||0,targetDate:"",allowedDays:_lnList(u.allowedDays).map(String),cap:Math.max(1,parseInt(u.cap,10)||1)}; }
+  else{
+    const f=(typeof cbDefaultForm==="function")?cbDefaultForm(kid,u.sk):{}; const s=(((currData||{}).subjects||{})[kid]||{})[u.sk]||{};
+    rh={mode:f.mode||"timesPerWeek",tpw:parseInt(f.tpw,10)||0,targetDate:f.targetDate||"",allowedDays:(f.allowedDays||[]).slice(),cap:Math.max(1,parseInt(s.cap,10)||1)};
+  }
+  rh.own=(i===idx&&!us[idx].subs); rh.fromIdx=i; return rh;
+}
+// LNDEAL_START ── pure: deal one multiple card's sittings by its pattern ─────────────────
+// input {pattern:"AAB", subs:[{sk,open}], sittings:[iso… ascending], pos:int}
+// Letters (A = first sub-card…) repeat over the sittings; a letter whose sub-card is closed
+// (finished / paused / missing) is dropped and the rest close ranks. No pattern = one letter
+// per sub-card in order. `pos` = sittings this card has already had, so the pattern picks up
+// where it left off instead of restarting on every render. Returns {bySk:{sk:[iso…]},live}.
+function _lnDeal(input){
+  input=input||{}; const subs=input.subs||[]; const out={}; subs.forEach(function(x){ out[x.sk]=[]; });
+  let pat=String(input.pattern||"").toUpperCase().replace(/[^A-Z]/g,"");
+  if(!pat) pat=subs.map(function(_,i){ return String.fromCharCode(65+i); }).join("");
+  const live=[]; pat.split("").forEach(function(ch){ const i=ch.charCodeAt(0)-65; if(i<subs.length&&subs[i].open) live.push(subs[i].sk); });
+  if(!live.length) return {bySk:out,live:[]};
+  const pos=Math.max(0,parseInt(input.pos,10)||0);
+  (input.sittings||[]).forEach(function(d,k){ out[live[(pos+k)%live.length]].push(d); });
+  return {bySk:out,live:live};
+}
+// LNDEAL_END
+// Which future days each sub-card of a multiple card gets: the shared rhythm's pattern rows
+// (the same _pjPatternRows walk projectPlans uses, the week's quota charged for cards already
+// dealt), handed out by _lnDeal. Position = every sub-card's done records + dealt cards not
+// yet checked (a checked card already has a done record — never counted twice).
+function lnPatternDates(kid,ln,rows,dealtAll,wkUsed){
+  const rh=lnRhythm(kid,ln.id,ln.unitIdx)||{allowedDays:[],tpw:0,targetDate:""};
+  const subsKeys=lnUnitSubs(ln.unit); let tpw=rh.tpw||0;
+  if(!tpw&&rh.targetDate){
+    let n=0; subsKeys.forEach(function(x){ n+=lnOpenCount(kid,x); });
+    const today=(typeof cbTodayISO==="function")?cbTodayISO():((rows[0]||{}).date||rh.targetDate);
+    tpw=Math.min((rh.allowedDays.length||5),Math.max(1,Math.ceil(n/_pjWeeksBetween(today,rh.targetDate))));
+  }
+  const plan={allowedDays:rh.allowedDays||[],offDates:{},_blocked:{},_wkUsed:wkUsed||{}};
+  const sittings=_pjPatternRows(plan,rows,tpw).map(function(r){ return r.date; });
+  let pos=0;
+  const subs=subsKeys.map(function(x){ pos+=((typeof lidDoneIdx==="function"&&lidDoneIdx(kid,x))||new Set()).size; return {sk:x,open:lnOpenCount(kid,x)>0}; });
+  (dealtAll||[]).forEach(function(dm){ Object.keys(dm||{}).forEach(function(d){
+    [dm[d]].concat((dm[d]||{}).more||[]).forEach(function(c){ if(c&&c.id&&!(typeof checked!=="undefined"&&checked&&checked[c.id])) pos++; }); }); });
+  return _lnDeal({pattern:ln.unit.pattern||"",subs:subs,sittings:sittings,pos:pos}).bySk;
+}
+// LANE_GRID_START ── 🛤 the Grid column (Stage 3): readers only, no writes ─────────────────
+// One column per lane, members folded in. Record-driven: a successor with no cells gets a
+// column the day the lane is made (gvSubjectCols is cell-driven and stays that way for
+// everything else). Each ROW of a lane column belongs to ONE member — the one the projection
+// put there (future), or the one holding the stored cell (past / done) — and every id and
+// gesture in that cell is keyed to that member, so ✎ ✓ ➡ ✕ 🗑 and select mode are untouched.
+function lnFoldColumns(kid,cols){
+  const subs=((currData||{}).subjects||{})[kid]||{}; const ls=lnLanes(kid);
+  const member={}; const lanes={};
+  Object.keys(ls).forEach(function(id){
+    const ms=[]; lnUnits(kid,id).forEach(function(u){ lnUnitSubs(u).forEach(function(sk){ if(subs[sk]&&ms.indexOf(sk)<0){ ms.push(sk); member[sk]=id; } }); });
+    if(ms.length) lanes["lane:"+id]={id:id,name:String((ls[id]||{}).name||id),members:ms};
+  });
+  const out=(cols||[]).filter(function(sk){ return !member[sk]; }).concat(Object.keys(lanes));
+  const label=function(ck){ return lanes[ck]?lanes[ck].name:String((subs[ck]||{}).display||ck); };
+  out.sort(function(a,b){ return label(a).localeCompare(label(b)); });
+  return {cols:out,lanes:lanes};
+}
+// Who is up and who comes next in a lane: {up:[sk…], next:[sk…], upIdx}
+function lnColumnStatus(kid,id){
+  const us=lnUnits(kid,id); const up=lnUp(kid,id); const open=function(u){ return lnUnitSubs(u).filter(function(sk){ return lnOpenCount(kid,sk)>0; }); };
+  const out={up:[],next:[],upIdx:up};
+  if(up<0) return out;
+  out.up=open(us[up]);
+  for(let i=up+1;i<us.length;i++){ const o=open(us[i]); if(o.length){ out.next=o; break; } }
+  return out;
+}
+function lnShort(name){ const n=String(name||"").replace(/\s*\(.*\)\s*$/,"").trim(); return n.length>14?(n.slice(0,13).trim()+"…"):n; }
+// The member a lane-column row belongs to. Future: the member the projection laid there.
+// Past / done: the member holding the stored cell. Empty: the member that is up (so typing
+// or ➕ on a blank day lands on the subject actually running), else the first member.
+function lnPickMember(kid,lc,dn,l,past,gvDer,doneAt){
+  const ms=lc.members||[]; l=l||{};
+  if(!past){ for(const m of ms){ const d=gvDer[m]; if(d&&!d.err&&!doneAt[dn+"|"+m]){ const e=(d.byDate||{})[l.date]; if(e&&((e.text&&String(e.text).trim())||e.extra)) return m; } } }
+  for(const m of ms){ const v=l[m]; if(v&&v!=="—"&&v!=="nan"&&String(v).trim()) return m; }
+  const st=lnColumnStatus(kid,lc.id); if(st.up.length) return st.up[0];
+  return ms[0];
+}
+// LANE_GRID_END
+// LANE_END
 
 // ── Impure wrappers: collect rows from live data, apply, undo ────────────────
 
@@ -24406,36 +24582,7 @@ function cbDayCapDefault(){
   return (r.schoolEnd-r.schoolStart)-((r.lunchEnd||0)-(r.lunchStart||0));
 }
 
-// ── CB3: cross-subject rules — alternation groups, day cap, day pinning ─────
-
-function cbAltGroups(kid){ return ((currData||{}).altGroups||{})[kid]||{}; }
-// A subject lives in at most one group (the editor enforces it)
-function cbGroupOf(kid,sk){
-  const gs=cbAltGroups(kid);
-  for(const gid of Object.keys(gs)){
-    if(((gs[gid]||{}).members||[]).includes(sk)) return {gid,group:gs[gid]};
-  }
-  return null;
-}
-// Future dates claimed by the subject's alternation partners — the builder
-// treats them like off days, so group members never share a date.
-function cbBlockedDates(kid,sk){
-  const g=cbGroupOf(kid,sk);
-  if(!g) return [];
-  const others=(g.group.members||[]).filter(m=>m!==sk);
-  if(!others.length) return [];
-  const lessons=(currData.lessons||{})[kid]||{};
-  const today=cbTodayISO();
-  const out={};
-  for(const dn of Object.keys(lessons)){
-    const l=lessons[dn]; if(!l||!l.date||l.date<=today) continue;
-    const ov=schedOv(l.date,kid)||{};
-    for(const m of others){
-      if((gvFilled(l[m])&&!(ov.removed||{})[m])||((ov.added||{})[m]!==undefined)){ out[l.date]=1; break; }
-    }
-  }
-  return Object.keys(out);
-}
+// ── CB3: cross-subject rules — day cap, day pinning (alternation groups retired 2026-09-11: 🛤 lanes' multiple cards replace them) ─────
 
 // Future days already over the cap (same math as the Grid's Min column)
 function cbOverCapDays(kid){
@@ -24466,37 +24613,191 @@ function cbSetCap(kid,val){
 }
 function cbCapStep(kid,d){ cbSetCap(kid,cbDayCap(kid)+d); }
 
-let cbRulesOpen=false, cbNewGroup=null, cbDayPinScroll=0, cbFamilyRulesOpen=false;
-function cbRulesToggle(){ cbRulesOpen=!cbRulesOpen; cbNewGroup=null; renderAll(); }
+let cbRulesOpen=false, cbDayPinScroll=0, cbFamilyRulesOpen=false;
+let lnEdit=null, lnUndo=null;   // 🛤 lane editor state + last lane write (for ↩ Undo)
+function cbRulesToggle(){ cbRulesOpen=!cbRulesOpen; lnEdit=null; renderAll(); }
 function cbFamilyRulesToggle(){ cbFamilyRulesOpen=!cbFamilyRulesOpen; renderAll(); }
-function cbGroupStart(){ cbNewGroup={name:"",members:[]}; renderAll(); }
-function cbGroupCancel(){ cbNewGroup=null; renderAll(); }
-function cbGroupName(v){ cbNewGroup.name=v; }
-function cbGroupToggleMember(sk){
-  const i=cbNewGroup.members.indexOf(sk);
-  if(i>=0) cbNewGroup.members.splice(i,1); else cbNewGroup.members.push(sk);
-  renderAll();
+// LANE_UI_START ── 🛤 Lanes door (Stage 2): the ⚙ Rules panel section + its writes ─────────
+// The engine lives in the LANE block (lnOf / lnUp / lnRhythm …). This is the ONE place a lane
+// is made, edited or removed. Writes: curriculum/lanes/<kid>/<id> (targeted set / remove) +
+// lastEdit. No re-lay is needed: the Grid derives future cells live and the generator reads
+// the same projection, so the next render already shows who is up. Stored cells (the cache)
+// catch up on the next Rebuild.
+function _lnPbList(kid){
+  const subs=((currData||{}).subjects||{})[kid]||{};
+  return Object.keys(subs).filter(function(sk){ const s=subs[sk]||{}; return !s.paused&&s.tracking!=="daily"&&(typeof planBacked==="function")&&planBacked(kid,sk); })
+    .sort(function(a,b){ return String((subs[a]||{}).display||a).localeCompare(String((subs[b]||{}).display||b)); });
 }
-function cbGroupSave(){
-  if(!cbNewGroup||cbNewGroup.members.length<2||!db){ return; }
+function _lnTaken(kid,exceptId){          // sk → lane id, for every lane but `exceptId`
+  const out={}; const ls=lnLanes(kid);
+  Object.keys(ls).forEach(function(id){ if(id===exceptId) return; lnUnits(kid,id).forEach(function(u){ lnUnitSubs(u).forEach(function(sk){ out[sk]=id; }); }); });
+  return out;
+}
+function _lnNormUnit(u){
+  u=u||{};
+  if(u.subs) return {subs:lnUnitSubs(u),pattern:String(u.pattern||""),rhythm:u.rhythm==="prior"?"prior":"own",allowedDays:_lnList(u.allowedDays).map(String),timesPerWeek:parseInt(u.timesPerWeek,10)||3,cap:Math.max(1,parseInt(u.cap,10)||1)};
+  return {sk:String(u.sk||""),rhythm:u.rhythm==="prior"?"prior":"own"};
+}
+function lnEditStart(id){
   const kid=cbKid;
-  const name=String(cbNewGroup.name||"").trim()||"Group";
-  const gid=name.toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"")+"_"+Date.now().toString(36);
-  if(!currData.altGroups) currData.altGroups={};
-  if(!currData.altGroups[kid]) currData.altGroups[kid]={};
-  currData.altGroups[kid][gid]={name,members:cbNewGroup.members.slice()};
-  db.ref("curriculum/altGroups/"+kid+"/"+gid).set(currData.altGroups[kid][gid]);
-  currData.lastEdit=new Date().toISOString();
-  db.ref("curriculum/lastEdit").set(currData.lastEdit);
-  cbNewGroup=null;
+  if(id){ const l=lnLanes(kid)[id]||{}; lnEdit={id:id,name:String(l.name||""),units:lnUnits(kid,id).map(_lnNormUnit)}; }
+  else lnEdit={id:null,name:"",units:[]};
   renderAll();
 }
-function cbGroupDel(gid){
-  const kid=cbKid;
-  if(currData.altGroups&&currData.altGroups[kid]) delete currData.altGroups[kid][gid];
-  if(db){ db.ref("curriculum/altGroups/"+kid+"/"+gid).remove(); db.ref("curriculum/lastEdit").set(new Date().toISOString()); }
+function lnEditCancel(){ lnEdit=null; renderAll(); }
+function lnEditName(v){ if(lnEdit) lnEdit.name=String(v||""); }
+function lnEditAdd(kind){
+  if(!lnEdit) return;
+  const prior=lnEdit.units.length?"prior":"own";
+  lnEdit.units.push(kind==="multi"?{subs:[],pattern:"AB",rhythm:prior,allowedDays:[],timesPerWeek:3,cap:1}:{sk:"",rhythm:prior});
   renderAll();
 }
+function lnEditDel(i){ if(!lnEdit) return; lnEdit.units.splice(i,1); renderAll(); }
+function lnEditMove(i,d){ if(!lnEdit) return; const u=lnEdit.units, j=i+d; if(j<0||j>=u.length) return; const t=u[i]; u[i]=u[j]; u[j]=t; renderAll(); }
+function lnEditSet(i,field,val){
+  if(!lnEdit) return; const u=lnEdit.units[i]; if(!u) return;
+  if(field==="rhythm") u.rhythm=(u.rhythm==="prior")?"own":"prior";
+  else if(field==="day"){ const a=u.allowedDays||(u.allowedDays=[]); const k=a.indexOf(val); if(k>=0) a.splice(k,1); else a.push(val); }
+  else if(field==="tpw") u.timesPerWeek=Math.max(1,Math.min(7,parseInt(val,10)||1));
+  else if(field==="cap") u.cap=Math.max(1,Math.min(4,parseInt(val,10)||1));
+  else if(field==="sub"){ const a=u.subs||(u.subs=[]); const k=a.indexOf(val); if(k>=0) a.splice(k,1); else a.push(val); }
+  else if(field==="pattern"){ u.pattern=String(val||"").toUpperCase().replace(/[^A-Z]/g,""); return; }   // typed: no re-render mid-edit
+  else u[field]=val;
+  renderAll();
+}
+// What stops a save — shown live under the editor, and checked again by lnEditSave.
+function lnEditProblems(kid){
+  const out=[]; if(!lnEdit) return out;
+  const subs=((currData||{}).subjects||{})[kid]||{}; const disp=function(sk){ return (subs[sk]||{}).display||sk; };
+  if(!String(lnEdit.name||"").trim()) out.push("Give the lane a name.");
+  if(!lnEdit.units.length) out.push("Add at least one unit.");
+  const taken=_lnTaken(kid,lnEdit.id); const seen={};
+  lnEdit.units.forEach(function(u,i){
+    const n="Unit "+(i+1);
+    if(i===0&&u.rhythm==="prior") out.push(n+": the first unit has nothing before it — give it its own rhythm.");
+    const members=u.subs?u.subs:(u.sk?[u.sk]:[]);
+    if(!u.subs&&!u.sk) out.push(n+": pick a subject.");
+    if(u.subs&&u.subs.length<2) out.push(n+": a multiple card needs 2+ subjects.");
+    if(u.subs){ const pat=String(u.pattern||""); const bad=pat.split("").filter(function(ch){ return ch.charCodeAt(0)-65>=u.subs.length; }); if(pat&&bad.length) out.push(n+": pattern letter "+bad[0]+" has no subject (only A–"+String.fromCharCode(64+u.subs.length)+")."); }
+    if(u.subs&&u.rhythm==="own"&&!(u.timesPerWeek>0)) out.push(n+": ×/wk must be at least 1.");
+    members.forEach(function(sk){
+      if(seen[sk]) out.push(disp(sk)+" is in this lane twice."); seen[sk]=1;
+      if(taken[sk]) out.push(disp(sk)+" is already in lane “"+((lnLanes(kid)[taken[sk]]||{}).name||taken[sk])+"”.");
+      if(!(typeof planBacked==="function"&&planBacked(kid,sk))) out.push(disp(sk)+" is not plan-backed (needs a list with ids).");
+    });
+  });
+  return out;
+}
+function lnEditSave(){
+  if(!lnEdit||!db) return; const kid=cbKid;
+  const probs=lnEditProblems(kid); if(probs.length){ cbMsg="🛤 "+probs[0]; renderAll(); return; }
+  const name=String(lnEdit.name).trim();
+  const id=lnEdit.id||(name.toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"")+"_"+Date.now().toString(36));
+  const units=lnEdit.units.map(function(u){
+    if(u.subs){ const o={subs:u.subs.slice(),pattern:String(u.pattern||"")||u.subs.map(function(_,i){ return String.fromCharCode(65+i); }).join(""),rhythm:u.rhythm};
+      if(u.rhythm==="own"){ o.allowedDays=(u.allowedDays||[]).slice(); o.timesPerWeek=parseInt(u.timesPerWeek,10)||3; o.cap=Math.max(1,parseInt(u.cap,10)||1); }
+      return o; }
+    return {sk:u.sk,rhythm:u.rhythm};
+  });
+  const lane={name:name,units:units};
+  const prev=lnLanes(kid)[id]?JSON.parse(JSON.stringify(lnLanes(kid)[id])):null;
+  if(!currData.lanes) currData.lanes={}; if(!currData.lanes[kid]) currData.lanes[kid]={};
+  currData.lanes[kid][id]=lane;
+  db.ref("curriculum/lanes/"+kid+"/"+id).set(lane);
+  currData.lastEdit=new Date().toISOString(); db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  lnUndo={kid:kid,id:id,prev:prev,label:(prev?"updated":"created")+" lane “"+name+"”"};
+  lnEdit=null; cbMsg=""; renderAll();
+}
+function lnDelete(id){
+  if(!db) return; const kid=cbKid; const l=lnLanes(kid)[id]; if(!l) return;
+  if(typeof confirm==="function"&&!confirm("Remove lane “"+(l.name||id)+"”? Its subjects go back to their own settings — no lessons or history change.")) return;
+  const prev=JSON.parse(JSON.stringify(l));
+  delete currData.lanes[kid][id];
+  db.ref("curriculum/lanes/"+kid+"/"+id).remove();
+  currData.lastEdit=new Date().toISOString(); db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  lnUndo={kid:kid,id:id,prev:prev,label:"removed lane “"+(l.name||id)+"”"};
+  if(lnEdit&&lnEdit.id===id) lnEdit=null;
+  renderAll();
+}
+function lnUndoLast(){
+  if(!lnUndo||!db) return; const u=lnUndo; lnUndo=null;
+  if(!currData.lanes) currData.lanes={}; if(!currData.lanes[u.kid]) currData.lanes[u.kid]={};
+  if(u.prev){ currData.lanes[u.kid][u.id]=u.prev; db.ref("curriculum/lanes/"+u.kid+"/"+u.id).set(u.prev); }
+  else { delete currData.lanes[u.kid][u.id]; db.ref("curriculum/lanes/"+u.kid+"/"+u.id).remove(); }
+  currData.lastEdit=new Date().toISOString(); db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  renderAll();
+}
+// Where a member stands: {name, pos, n, state:"up"|"waiting"|"done", prior:bool, multi:bool}
+function lnMemberInfo(kid,sk){
+  const ln=(typeof lnOf==="function")?lnOf(kid,sk):null; if(!ln) return null;
+  const up=lnUp(kid,ln.id); const n=lnUnits(kid,ln.id).length;
+  const state=(ln.unitIdx===up)?"up":(lnOpenCount(kid,sk)>0?"waiting":"done");
+  return {id:ln.id,name:ln.lane.name||ln.id,pos:ln.unitIdx+1,n:n,state:state,prior:ln.unit.rhythm==="prior",multi:!!ln.unit.subs,upLabel:lnUpLabel(kid,ln.id)};
+}
+function lnRenderSection(kid,col){
+  const subs=((currData||{}).subjects||{})[kid]||{}; const disp=function(sk){ return esc((subs[sk]||{}).display||sk); };
+  const ls=lnLanes(kid); const ids=Object.keys(ls).sort(function(a,b){ return String((ls[a]||{}).name||a).localeCompare(String((ls[b]||{}).name||b)); });
+  const _pill='display:inline-block;padding:2px 7px;border-radius:9px;border:1px solid var(--border);background:#fff;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap';
+  const _tag=function(t,bg,fg){ return '<span style="display:inline-block;padding:1px 6px;border-radius:8px;background:'+bg+';color:'+fg+';font-size:9px;font-weight:800;margin-left:4px">'+t+'</span>'; };
+  let h='<div class="ce-sheet-lbl">🛤 Lanes — a category: units run in order; when one finishes, the next takes its place in the grid</div>';
+  if(lnUndo&&lnUndo.kid===kid) h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:5px 10px;margin-bottom:6px;font-size:11px;color:#15803d"><span>🛤 '+esc(lnUndo.label)+'</span><button onclick="lnUndoLast()" style="border:1px solid #86efac;background:#fff;color:#15803d;border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer">&#8617; Undo</button></div>';
+  if(!ids.length&&!lnEdit) h+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">None yet. Example: Singapore 3B ▸ Dimensions 4A (“same as before”) — 4A starts the week 3B ends. Or a multiple card: Daily Geo · Daily Sci on one rhythm with pattern AB.</div>';
+  for(const id of ids){
+    if(lnEdit&&lnEdit.id===id) continue;
+    const l=ls[id]||{}; const us=lnUnits(kid,id); const up=lnUp(kid,id);
+    h+='<div style="display:flex;align-items:center;gap:6px;font-size:11.5px;padding:4px 0;flex-wrap:wrap">';
+    h+='<span>🛤</span><b>'+esc(l.name||id)+'</b>';
+    us.forEach(function(u,i){
+      const members=lnUnitSubs(u); const open=lnUnitOpen(kid,u);
+      const st=(i===up)?"up":(open?"waiting":"done");
+      const label=u.subs?('['+members.map(disp).join(" · ")+' <span style="font-family:monospace">'+esc(u.pattern||"")+'</span>]'):disp(members[0]||"?");
+      h+=(i?'<span style="color:var(--muted)">▸</span>':'')+'<span style="'+(st==="done"?'color:var(--muted);text-decoration:line-through':'')+'">'+label+'</span>';
+      h+=st==="up"?_tag("up now",col,"#fff"):st==="done"?_tag("done","#e5e7eb","#6b7280"):_tag("waiting","#fef3c7","#92400e");
+      if(u.rhythm==="prior") h+='<span style="font-size:9px;color:var(--muted)" title="borrows the days / ×wk / cap of the unit before it">↑ same as before</span>';
+    });
+    h+='<span style="margin-left:auto;white-space:nowrap"><button onclick="lnEditStart(\''+id+'\')" style="padding:2px 8px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:10px;cursor:pointer">✎ edit</button> <button onclick="lnDelete(\''+id+'\')" style="padding:2px 8px;border-radius:8px;border:1px solid #fecaca;background:#fff;color:#b5394a;font-size:10px;cursor:pointer">✕ remove</button></span>';
+    h+='</div>';
+  }
+  if(lnEdit){
+    const pb=_lnPbList(kid); const taken=_lnTaken(kid,lnEdit.id);
+    const inThis={}; lnEdit.units.forEach(function(u){ (u.subs?u.subs:(u.sk?[u.sk]:[])).forEach(function(sk){ inThis[sk]=1; }); });
+    h+='<div style="background:var(--bg);border-radius:8px;padding:8px;margin-top:6px">';
+    h+='<input class="ce-sheet-input" style="width:100%;box-sizing:border-box;margin-bottom:6px" placeholder="Lane name (e.g. Math)" value="'+esc(lnEdit.name)+'" onchange="lnEditName(this.value)">';
+    lnEdit.units.forEach(function(u,i){
+      h+='<div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:6px 8px;margin-bottom:6px">';
+      h+='<div style="display:flex;align-items:center;gap:6px;font-size:11px;margin-bottom:4px"><b>'+(i+1)+'.</b> <span style="color:var(--muted)">'+(u.subs?"multiple card":"single card")+'</span>';
+      h+='<span style="margin-left:auto;white-space:nowrap"><span onclick="lnEditMove('+i+',-1)" style="'+_pill+'">▲</span> <span onclick="lnEditMove('+i+',1)" style="'+_pill+'">▼</span> <span onclick="lnEditDel('+i+')" style="'+_pill+';color:#b5394a;border-color:#fecaca">✕</span></span></div>';
+      if(u.subs){
+        h+='<div class="ce-chips" style="margin-bottom:4px">'+pb.map(function(sk){ const sel=u.subs.indexOf(sk)>=0; if(!sel&&(taken[sk]||inThis[sk])) return ""; const letter=sel?String.fromCharCode(65+u.subs.indexOf(sk))+" ":""; return '<div class="ce-chip'+(sel?" sel":"")+'" style="padding:3px 10px;font-size:11px" onclick="lnEditSet('+i+',\'sub\',\''+sk+'\')">'+letter+disp(sk)+'</div>'; }).join("")+'</div>';
+        h+='<div style="display:flex;align-items:center;gap:8px;font-size:11px;flex-wrap:wrap">Pattern <input class="ce-sheet-input" style="width:80px;font-family:monospace;text-transform:uppercase" value="'+esc(u.pattern||"")+'" placeholder="AAB" onchange="lnEditSet('+i+',\'pattern\',this.value)"> <span style="color:var(--muted)">A = first picked, B = second… repeats over the sittings</span></div>';
+      } else {
+        h+='<select onchange="lnEditSet('+i+',\'sk\',this.value)" style="font-size:11px;max-width:260px"><option value="">— pick a subject —</option>'+pb.map(function(sk){ if(sk!==u.sk&&(taken[sk]||inThis[sk])) return ""; return '<option value="'+sk+'"'+(u.sk===sk?' selected':'')+'>'+disp(sk)+'</option>'; }).join("")+'</select>';
+      }
+      h+='<div style="display:flex;align-items:center;gap:8px;font-size:11px;margin-top:5px;flex-wrap:wrap">Rhythm: <span onclick="lnEditSet('+i+',\'rhythm\')" style="'+_pill+(u.rhythm==="prior"?';background:'+col+';color:#fff;border-color:transparent':'')+'">'+(u.rhythm==="prior"?"↑ same as the one before":(u.subs?"own (set below)":"own (this subject’s days · ×/wk · cap)"))+'</span>';
+      if(i===0&&u.rhythm==="prior") h+='<span style="color:#b45309">first unit — nothing before it</span>';
+      h+='</div>';
+      if(u.subs&&u.rhythm!=="prior"){
+        h+='<div style="display:flex;align-items:center;gap:10px;font-size:11px;margin-top:5px;flex-wrap:wrap">';
+        h+='<span>'+["Mon","Tue","Wed","Thu","Fri"].map(function(d){ const on=(u.allowedDays||[]).indexOf(d)>=0; return '<span onclick="lnEditSet('+i+',\'day\',\''+d+'\')" style="display:inline-block;padding:2px 6px;border-radius:9px;border:1px solid '+(on?'transparent':'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:9.5px;font-weight:700;cursor:pointer;margin-right:2px">'+d[0]+'</span>'; }).join("")+'<span style="color:var(--muted);font-size:9.5px">(none = any day)</span></span>';
+        h+='<span>×/wk <span onclick="lnEditSet('+i+',\'tpw\','+((u.timesPerWeek||3)-1)+')" style="'+_pill+'">−</span> <b>'+(u.timesPerWeek||3)+'</b> <span onclick="lnEditSet('+i+',\'tpw\','+((u.timesPerWeek||3)+1)+')" style="'+_pill+'">+</span></span>';
+        h+='<span>Cap <span onclick="lnEditSet('+i+',\'cap\','+((u.cap||1)-1)+')" style="'+_pill+'">−</span> <b>'+(u.cap||1)+'</b> <span onclick="lnEditSet('+i+',\'cap\','+((u.cap||1)+1)+')" style="'+_pill+'">+</span></span>';
+        h+='</div>';
+      }
+      h+='</div>';
+    });
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap"><button onclick="lnEditAdd(\'single\')" style="padding:4px 10px;border-radius:12px;border:1px dashed var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">+ single card</button><button onclick="lnEditAdd(\'multi\')" style="padding:4px 10px;border-radius:12px;border:1px dashed var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">+ multiple card (pattern)</button></div>';
+    const probs=lnEditProblems(kid);
+    if(probs.length) h+='<div style="font-size:10.5px;color:#92400e;background:#fffbeb;border-radius:6px;padding:5px 8px;margin-top:6px">'+probs.map(esc).join("<br>")+'</div>';
+    h+='<div style="display:flex;gap:6px;margin-top:8px">';
+    h+='<button onclick="lnEditSave()" '+(probs.length?'disabled style="opacity:.4;':'style="')+'flex:1;padding:8px;border-radius:8px;border:none;background:'+col+';color:#fff;font-size:12px;font-weight:700;cursor:pointer">Save lane</button>';
+    h+='<button onclick="lnEditCancel()" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer">Cancel</button>';
+    h+='</div></div>';
+  } else {
+    h+='<button onclick="lnEditStart(null)" style="padding:5px 12px;border-radius:14px;border:1px dashed var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">+ New lane</button>';
+  }
+  return h;
+}
+// LANE_UI_END
 // Day pinning — same allowedDays field the subject editor and builder use
 function cbPinDay(sk,d){
   const kid=cbKid;
@@ -24575,7 +24876,6 @@ function cbRenderSummary(col){
   const today=cbTodayISO();
   const cap_=cbDayCap(kid);
   const over=cbOverCapDays(kid);
-  const groups=cbAltGroups(kid);
   const entries=Object.entries(subs).filter(([_,s])=>!s.paused).sort((a,b)=>(a[1].display||a[0]).localeCompare(b[1].display||b[0]));
 
   // Per-subject future stats in one grid pass
@@ -24599,7 +24899,6 @@ function cbRenderSummary(col){
   const tile=(n,l,warn)=>'<div style="background:'+(warn?'#fffbeb':'var(--bg)')+';border-radius:8px;padding:8px;text-align:center"><div style="font-weight:800;font-size:15px;'+(warn?'color:#92400e':'')+'">'+n+'</div><div style="font-size:10px;color:var(--muted)">'+l+'</div></div>';
   h+=tile(futureDays,"school days left on the map");
   h+=tile(cap_+" min",over?over+" days over cap":"day cap — no day over",over>0);
-  h+=tile(Object.keys(groups).length||"—","alternation groups");
   h+='</div>';
 
   h+='<table style="width:100%;border-collapse:collapse;font-size:11px">';
@@ -24610,9 +24909,8 @@ function cbRenderSummary(col){
     const target=p&&p.targetDate;
     const late=!!(target&&st&&st.last>target);
     const dot=!st?'⚪':late?'\u{1F534}':'\u{1F7E2}';
-    const grp=cbGroupOf(kid,sk);
     h+='<tr style="border-top:1px solid #eef0f3;cursor:pointer" onclick="cbOpenSubj(\''+sk+'\')">';
-    h+='<td style="padding:5px 4px;font-weight:700">'+dot+' '+esc(s.display||sk)+(grp?' \u{1F500}':'')+'</td>';
+    h+='<td style="padding:5px 4px;font-weight:700">'+dot+' '+esc(s.display||sk)+'</td>';
     h+='<td style="color:var(--muted)">'+(cbPacingLabel(s)||"—")+'</td>';
     h+='<td style="text-align:right">'+(s.timesPerWeek||"—")+'</td>';
     h+='<td style="text-align:right">'+(st?st.n:"—")+'</td>';
@@ -24630,7 +24928,6 @@ function cbRenderRules(col){
   const kid=cbKid;
   const subs=currData.subjects[kid]||{};
   const entries=Object.entries(subs).filter(([_,s])=>!s.paused).sort((a,b)=>(a[1].display||a[0]).localeCompare(b[1].display||b[0]));
-  const groups=cbAltGroups(kid);
   const capSet=!!((currData.dayCap||{})[kid]);
   const cap=cbDayCap(kid);
   const over=cbOverCapDays(kid);
@@ -24646,34 +24943,8 @@ function cbRenderRules(col){
   h+='</div>';
   if(over) h+='<div style="font-size:11px;color:#92400e;background:#fffbeb;border-radius:6px;padding:5px 8px;margin-top:6px">⚠ '+over+' future day'+(over!==1?'s':'')+' already exceed'+(over===1?'s':'')+' this cap — rebuild the biggest subjects in the Builder, or check the Grid’s Min column.</div>';
 
-  // Alternation groups
-  h+='<div class="ce-sheet-lbl">Alternation groups — members never share a day</div>';
-  const gids=Object.keys(groups);
-  if(!gids.length&&!cbNewGroup) h+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">None yet. Example: put two math programs in a group and they’ll alternate days instead of stacking.</div>';
-  for(const gid of gids){
-    const g=groups[gid]||{};
-    h+='<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:4px 0">';
-    h+='<span>\u{1F500}</span><b>'+esc(g.name||"Group")+'</b><span style="color:var(--muted)">'+(g.members||[]).map(disp).join(" · ")+'</span>';
-    h+='<button onclick="cbGroupDel(\''+gid+'\')" style="margin-left:auto;padding:2px 8px;border-radius:8px;border:1px solid #fecaca;background:#fff;color:#b5394a;font-size:10px;cursor:pointer">✕ remove</button>';
-    h+='</div>';
-  }
-  if(cbNewGroup){
-    const grouped={}; gids.forEach(gid=>(groups[gid].members||[]).forEach(m=>{grouped[m]=1;}));
-    h+='<div style="background:var(--bg);border-radius:8px;padding:8px;margin-top:6px">';
-    h+='<input class="ce-sheet-input" style="width:100%;box-sizing:border-box;margin-bottom:6px" placeholder="Group name (e.g. Math)" value="'+esc(cbNewGroup.name)+'" onchange="cbGroupName(this.value)">';
-    h+='<div class="ce-chips">';
-    for(const [sk] of entries){
-      if(grouped[sk]) continue;
-      h+='<div class="ce-chip'+(cbNewGroup.members.includes(sk)?" sel":"")+'" onclick="cbGroupToggleMember(\''+sk+'\')">'+disp(sk)+'</div>';
-    }
-    h+='</div>';
-    h+='<div style="display:flex;gap:6px;margin-top:8px">';
-    h+='<button onclick="cbGroupSave()" '+(cbNewGroup.members.length<2?'disabled style="opacity:.4;':'style="')+'flex:1;padding:8px;border-radius:8px;border:none;background:'+col+';color:#fff;font-size:12px;font-weight:700;cursor:pointer">Save group'+(cbNewGroup.members.length<2?' (pick 2+)':'')+'</button>';
-    h+='<button onclick="cbGroupCancel()" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer">Cancel</button>';
-    h+='</div></div>';
-  } else {
-    h+='<button onclick="cbGroupStart()" style="padding:5px 12px;border-radius:14px;border:1px dashed var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">+ New group</button>';
-  }
+  // 🛤 Lanes — a category: units in order; the first with open lessons is up
+  if(typeof lnRenderSection==="function") h+=lnRenderSection(kid,col);
 
   // Per-subject placement rules — ONE place (her rule: every setting has a home and a
   // consumer). Each cell writes the same subject field the card used to; plan-backed
@@ -24688,11 +24959,15 @@ function cbRenderRules(col){
     const tpw=(s.pacing&&s.pacing.tpw)||s.timesPerWeek||0; const _capN=(typeof capFor==="function")?capFor(kid,sk,DEFAULT_DAY_CAP):Math.max(1,parseInt(s.cap,10)||1);   // 6c-2: effective cap
     const rules=String(s.rules||""); const fl=rules.includes("first")?"first":rules.includes("last")?"last":"—";
     const dev=(s.device==="ipad"||s.device==="phone")?"ipad/phone":(s.device||"paper");
+    // 🛤 in a lane: say where it stands; a borrowed / shared rhythm makes Days · ×/wk · Cap
+    // here read-only in effect (the lane's unit decides), so they are dimmed and say so.
+    const _lm=(typeof lnMemberInfo==="function")?lnMemberInfo(kid,sk):null;
+    const _lnDim=(_lm&&(_lm.prior||_lm.multi))?';opacity:.4" title="'+(_lm.multi?'the multiple card’s rhythm applies':'same as the unit before it in lane '+esc(_lm.name))+'':'"';
     h+='<tr style="border-top:1px dashed #eef0f3">';
-    h+='<td style="padding:4px 6px;font-weight:700;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis" title="'+disp(sk)+'">'+(pb?'🧭 ':'')+disp(sk)+'</td>';
-    h+='<td style="padding:3px 6px;white-space:nowrap">'+["Mon","Tue","Wed","Thu","Fri"].map(d=>{ const on=al.includes(d); return '<span onclick="cbPinDay(\''+sk+'\',\''+d+'\')" style="display:inline-block;padding:2px 6px;border-radius:9px;border:1px solid '+(on?'transparent':'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:9.5px;font-weight:700;cursor:pointer;margin-right:2px">'+d[0]+'</span>'; }).join("")+'</td>';
-    h+='<td style="padding:3px 6px;white-space:nowrap"><span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'tpw\','+(tpw-1)+',true)" style="'+_pill+'">−</span> <b>'+(tpw||"all")+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'tpw\','+(tpw+1)+',true)" style="'+_pill+'">+</span></td>';
-    h+='<td style="padding:3px 6px;white-space:nowrap">'+((true)?('<span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'cap\','+Math.max(1,_capN-1)+',true)" style="'+_pill+'">−</span> <b>'+_capN+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'cap\','+Math.min(4,_capN+1)+',true)" style="'+_pill+'">+</span>'):'<span style="color:var(--muted)">—</span>')+'</td>';
+    h+='<td style="padding:4px 6px;font-weight:700;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis" title="'+disp(sk)+'">'+(pb?'🧭 ':'')+disp(sk)+(_lm?'<div style="font-size:9px;font-weight:600;color:'+(_lm.state==="up"?col:'var(--muted)')+'">🛤 '+esc(_lm.name)+' · '+_lm.pos+' of '+_lm.n+' · '+(_lm.state==="up"?"up now":_lm.state==="done"?"done":"waiting")+(_lm.prior?' · ↑ same as before':'')+'</div>':'')+'</td>';
+    h+='<td style="padding:3px 6px;white-space:nowrap'+_lnDim+'>'+["Mon","Tue","Wed","Thu","Fri"].map(d=>{ const on=al.includes(d); return '<span onclick="cbPinDay(\''+sk+'\',\''+d+'\')" style="display:inline-block;padding:2px 6px;border-radius:9px;border:1px solid '+(on?'transparent':'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:9.5px;font-weight:700;cursor:pointer;margin-right:2px">'+d[0]+'</span>'; }).join("")+'</td>';
+    h+='<td style="padding:3px 6px;white-space:nowrap'+_lnDim+'><span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'tpw\','+(tpw-1)+',true)" style="'+_pill+'">−</span> <b>'+(tpw||"all")+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'tpw\','+(tpw+1)+',true)" style="'+_pill+'">+</span></td>';
+    h+='<td style="padding:3px 6px;white-space:nowrap'+_lnDim+'>'+((true)?('<span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'cap\','+Math.max(1,_capN-1)+',true)" style="'+_pill+'">−</span> <b>'+_capN+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'cap\','+Math.min(4,_capN+1)+',true)" style="'+_pill+'">+</span>'):'<span style="color:var(--muted)">—</span>')+'</td>';
     h+='<td style="padding:3px 6px;white-space:nowrap"><span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'minutes\','+Math.max(5,(s.minutes||20)-5)+',true)" style="'+_pill+'">−</span> <b>'+(s.minutes||20)+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'minutes\','+Math.min(90,(s.minutes||20)+5)+',true)" style="'+_pill+'">+</span></td>';
     h+='<td style="padding:3px 6px"><span '+_cyc(sk,"mom",["none","maybe","required"],s.mom||"none",false)+' style="'+_pill+'">'+({none:"None",maybe:"Maybe",required:"Required"}[s.mom||"none"])+'</span></td>';
     h+='<td style="padding:3px 6px"><span '+_cyc(sk,"device",["paper","computer","ipad/phone","book"],dev,false)+' style="'+_pill+'">'+(CURR_DEV_EMOJI[dev]||"")+' '+(CURR_DEV_LABEL[dev]||dev)+'</span></td>';
@@ -24763,8 +25038,7 @@ function cbBuildCfg(){
   const kid=cbKid, sk=cbSubjKey, f=cbForm;
   const s=currData.subjects[kid][sk];
   const cfg={sk,minutes:s.minutes||20,mode:f.mode,allowedDays:f.allowedDays.slice(),
-    rows:cbFutureRows(kid,sk),dayCapMin:cbDayCap(kid),extend:cbExtendInfo(kid),
-    blockedDates:cbBlockedDates(kid,sk)};
+    rows:cbFutureRows(kid,sk),dayCapMin:cbDayCap(kid),extend:cbExtendInfo(kid)};
   if(f.mode==="targetDate") cfg.targetDate=f.targetDate;
   if(f.mode==="window"){ cfg.windowEnd=f.windowEnd; cfg.tpw=f.tpw; }
   if(f.mode==="timesPerWeek") cfg.tpw=f.tpw;
@@ -25526,14 +25800,6 @@ function cbRenderForm(col,embedded){
   });
   h+='</div>';
 
-  // Alternation group awareness
-  const grp=cbGroupOf(kid,sk);
-  if(grp){
-    const others=(grp.group.members||[]).filter(m=>m!==sk).map(m=>esc((currData.subjects[kid][m]||{}).display||m));
-    const nBlocked=cbBlockedDates(kid,sk).length;
-    h+='<div style="font-size:11px;color:#3730a3;background:#e0e7ff;border-radius:8px;padding:6px 10px;margin-top:8px">\u{1F500} <b>'+esc(grp.group.name||"Group")+'</b>: never on the same day as '+others.join(", ")+(nBlocked?' — '+nBlocked+' future day'+(nBlocked!==1?'s':'')+' skipped automatically':'')+'.</div>';
-  }
-
   const tpwStepper='<div class="ce-stepper"><button onclick="cbStepTpw(-1)">&minus;</button><span>'+f.tpw+'</span><button onclick="cbStepTpw(1)">+</button></div>';
   const contentLine=(f.mode!=="pages"&&f.mode!=="minutes")?
     '<div style="font-size:11px;color:var(--muted);margin:6px 0 2px">'+(remaining?remaining+' lesson'+(remaining!==1?'s':'')+' remaining of '+seq.length+' — laid from where '+cap(kid)+' actually is':'No lesson sequence found — generate one below')+'</div>':'';
@@ -25796,6 +26062,10 @@ function gvDerivedColumn(kid,sk){
   // hidden — the header's `owed N` chip (planOwed) still counts it, unchanged.
   try{ res=planMaterialize(kid,sk,null,{dealt:dealt,absorb:false}); }catch(e){ return {err:String(e),byDate:{}}; }
   if(!res) return null;                                   // mode the projection cannot lay
+  if(res.waiting||res.finished){                          // 🛤 nothing to lay: blank future cells, never the stale stored text (dealt cards still win their day)
+    const bd={}; Object.keys(dealt).forEach(function(iso){ bd[iso]={text:dealt[iso].text,lid:dealt[iso].lid,src:"card"}; });
+    return {byDate:bd,dealt:dealt,blank:true,why:res.error,stats:null,warnings:[]};
+  }
   if(res.error) return {err:res.error,byDate:{}};
   const byDate={};
   (res.assignments||[]).forEach(function(a){ byDate[a.date]={text:a.text,lid:a.lid,src:"plan",backlog:!!a.backlog}; });
@@ -25894,7 +26164,7 @@ function gvSelSingleSubject(){
 }
 // Delete the selected cells, then RE-LAY the rest of that subject up to close the gap —
 // via the Builder's own materializer, so the shift respects the subject's allowed days,
-// times-per-week, day cap and alternation group. Lands on the Builder preview so the
+// times-per-week and day cap. Lands on the Builder preview so the
 // compacted plan is reviewed before Apply (the delete has its own grid Undo meanwhile).
 function gvSelShiftUp(){
   const sk=gvSelSingleSubject();
@@ -27085,7 +27355,10 @@ function reprojectSubjectWeek(kid,sk,why){
       const gwR=gwRules();
       const dayCtx=day=>({start:(day===todayDay)?Math.max(gwR.schoolStart,nowD.getHours()*60+nowD.getMinutes()):gwR.schoolStart,end:gwR.schoolEnd,lunchStart:gwR.lunchStart,lunchEnd:gwR.lunchEnd,allowOvertime:true,overtimeMax:240});
       const _subj=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid]||{})[sk]||{};
-      const r=_reprojectPlan(kid,sk,weekData.tasks,gen.result.tasks,{todayDay,nowMin:nowD.getHours()*60+nowD.getMinutes(),checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},dayCtx,packAround,toMin,fromMin,dayCap:_subj.cap||1,lidOrder:_subj.lessonIds||[],allowedDays:_subj.allowedDays||[],doneLids:_doneLids});
+      // 🛤 a lane member on a borrowed / shared rhythm is judged by THAT rhythm's days and cap
+      let _rpDays=_subj.allowedDays||[], _rpCap=_subj.cap||1;
+      try{ if(typeof lnOf==="function"){ const _l=lnOf(kid,sk); if(_l){ const _rh=lnRhythm(kid,_l.id,_l.unitIdx); if(_rh&&!_rh.own){ _rpDays=_rh.allowedDays||[]; _rpCap=_rh.cap||1; } } } }catch(e){}
+      const r=_reprojectPlan(kid,sk,weekData.tasks,gen.result.tasks,{todayDay,nowMin:nowD.getHours()*60+nowD.getMinutes(),checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},dayCtx,packAround,toMin,fromMin,dayCap:_rpCap,lidOrder:_subj.lessonIds||[],allowedDays:_rpDays,doneLids:_doneLids});
       const n=r.summary.added.length+r.summary.moved.length+r.summary.removed.length+r.summary.retitled.length+((r.summary.closing||[]).length)+((r.summary.shifted||[]).length);
       out=r.summary;
       if(!n) return;
@@ -27098,6 +27371,27 @@ function reprojectSubjectWeek(kid,sk,why){
   return out;
 }
 // REPROJ_END
+// LANE_HANDOFF_START ── 🛤 same-week handoff (Stage 5) ─────────────────────────────────────
+// When a done record FINISHES a lane unit (no member has an open lesson left), the next unit
+// steps in THIS week: the finished member is re-projected first (drops any unlocked cards for
+// lessons now done), then each member of the unit that is now up — their cards are added on
+// the remaining days by the same targeted diff a grid edit uses (reprojectSubjectWeek: active
+// week only, scheduler lock, one targeted update per subject, never a regenerate). Runs on
+// the device that recorded the finish. No lane, or the unit still open → nothing happens.
+// The other direction (un-finishing) deliberately does nothing: a successor's dealt cards are
+// real work, and the diff never removes a card whose lesson is not done — nothing ever drops.
+function lnHandoff(kid,sk,why){
+  if(typeof lnOf!=="function"||typeof reprojectSubjectWeek!=="function") return null;
+  const ln=lnOf(kid,sk); if(!ln) return null;
+  if(lnUnitOpen(kid,ln.unit)) return null;
+  const up=lnUp(kid,ln.id);
+  const next=(up>=0)?lnUnitSubs(lnUnits(kid,ln.id)[up]).filter(function(x){ return lnOpenCount(kid,x)>0; }):[];
+  [sk].concat(next).forEach(function(x){ try{ reprojectSubjectWeek(kid,x,(why||"lane")+":handoff"); }catch(e){ if(typeof dbg==="function") dbg("lane handoff skip "+kid+"/"+x+": "+e); } });
+  const subs=((currData||{}).subjects||{})[kid]||{}; const nm=function(x){ return (subs[x]||{}).display||x; };
+  if(typeof gwShowToast==="function") gwShowToast(next.length?("🛤 "+nm(sk)+" is finished — "+next.map(nm).join(" / ")+" takes its place from the next open day"):("🛤 "+nm(sk)+" is finished — lane “"+(ln.lane.name||ln.id)+"” is complete"));
+  return {finished:sk,next:next};
+}
+// LANE_HANDOFF_END
 function _gvRelaySubject(kid,sk,doneMsg){
   cbKid=kid; cbSubjKey=sk; cbForm=cbDefaultForm(kid,sk); cbPreviewRes=null;
   try{ cbPreviewRes=_cbEngine(); }
@@ -27192,6 +27486,7 @@ function gvMenuDone(kid,dn,sk){
       currData.lastEdit=new Date().toISOString();
       if(db) db.ref("curriculum/lastEdit").set(currData.lastEdit);
       try{ buildCurrPaceCum(); }catch(e){}
+      try{ if(typeof lnHandoff==="function") lnHandoff(kid,sk,"mark"); }catch(e){}   // 🛤 hand-marking the last lesson hands the week on too
       _gvDelUndo={kid,sk,paths:prevPaths,label:"marked “"+_idn.text+"” done"};
       const msg="✓ Marked “"+_idn.text+"” done";
       if(s2.pacing&&s2.pacing.mode){ if(_gvRelaySubject(kid,sk,msg)) return; _gvFinishDeleteNoBuild(); return; }
@@ -27659,16 +27954,22 @@ function renderCurrGrid(el){
 
   const lessons=(currData.lessons||{})[gvKid]||{};
   const subs=(currData.subjects||{})[gvKid]||{};
-  const cols=gvSubjectCols(gvKid);
+  const _colsRaw=gvSubjectCols(gvKid);
+  // 🛤 lanes: members fold into ONE column per lane (record-driven — a successor with no
+  // cells gets a column on day one). Every gesture still fires on the MEMBER the row shows.
+  const _lnFold=(typeof lnFoldColumns==="function")?lnFoldColumns(gvKid,_colsRaw):{cols:_colsRaw,lanes:{}};
+  const cols=_lnFold.cols; const _lnCols=_lnFold.lanes;
+  const _allSks=[]; cols.forEach(function(ck){ (_lnCols[ck]?_lnCols[ck].members:[ck]).forEach(function(m){ if(_allSks.indexOf(m)<0) _allSks.push(m); }); });
   const dayNums=Object.keys(lessons).map(Number).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
 
   // Card-only subjects: scheduling works off their card sequence, but they have no
   // grid cells — surface them here so the grid never reads as "subjects missing".
-  const _cardOnly=cbCardOnlySubjects(gvKid);
+  // A lane member has a column whether or not it has cells, so it is never "card-only".
+  const _cardOnly=cbCardOnlySubjects(gvKid).filter(function(sk){ return !(typeof lnOf==="function"&&lnOf(gvKid,sk)); });
   // Daily-tracked and no-lesson-list subjects: nothing to pace, so they never had a
   // grid column or a card-sequence chip. Since the Subjects page retired into the Grid,
   // that left notebooks, drills and read-aloud with no route to their card at all.
-  const _other=cbOtherSubjects(gvKid,cols,_cardOnly);
+  const _other=cbOtherSubjects(gvKid,_allSks,_cardOnly);
   const _otherHtml=_other.length
     ?'<div style="background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:10px;padding:8px 12px;margin:0 0 8px">'
       +'<span style="font-size:11px;color:#5b21b6;font-weight:700">🗂 No lessons to pace — tap to open the card: </span>'
@@ -27844,7 +28145,7 @@ function renderCurrGrid(el){
   // archive — far too heavy to call per cell), keyed dayNum|sk like _skipAt.
   const _doneAt={};
   try{
-    for(const sk of cols){
+    for(const sk of _allSks){   // 🛤 members of a lane column too
       const cells=[];
       for(const dn of dayNums){ const l=lessons[dn]; const v=l&&l[sk];
         if(gvFilled(v)) cells.push({dayNum:dn,date:l.date||"",text:String(v)}); }
@@ -27927,12 +28228,25 @@ function renderCurrGrid(el){
   let _gvDerMs=0;
   h+='<div class="gv-wrap"><table class="gv'+(gvSelMode?' gv-selmode':'')+'"><thead><tr>';
   h+='<th class="gv-fix">Day</th><th class="gv-min">Min</th>';
-  for(const sk of cols){
-    const grp=cbGroupOf(gvKid,sk);
-    const mark=grp?'\u{1F500} ':'';
+  for(const ck of cols){
+    const _lc=_lnCols[ck];
+    if(_lc){
+      // 🛤 lane header: name · now → next; owed chip for the member that is up; the tap opens
+      // that member's card. Every member's column is derived here (read per row below).
+      _lc.members.forEach(function(m){ try{ const _t0=Date.now(); _gvDer[m]=(typeof gvDerivedColumn==="function")?gvDerivedColumn(gvKid,m):null; _gvDerMs+=Date.now()-_t0; }catch(e){ _gvDer[m]=null; } });
+      const _st=lnColumnStatus(gvKid,_lc.id); const _upSk=_st.up[0]||_lc.members[_lc.members.length-1];
+      const _nm=function(x){ return esc((subs[x]||{}).display||x); };
+      const _hact=gvSelMode?'gvSelCol(\''+_upSk+'\')':'ceOpenEdit(\''+gvKid+'\',\''+_upSk+'\')';
+      const _tip='Lane '+_lc.name+' — now: '+(_st.up.map(function(x){ return (subs[x]||{}).display||x; }).join(" / ")||"all done")+(_st.next.length?' → next: '+_st.next.map(function(x){ return (subs[x]||{}).display||x; }).join(" / "):'')+'. '+(gvSelMode?'Tap to select the current subject’s cells.':'Tap to open the current subject’s card.');
+      let _oc=''; try{ if(_st.up.length&&typeof planBacked==="function"&&planBacked(gvKid,_upSk)){ const _ow=planOwed(gvKid,_upSk); if(_ow>0) _oc='<span title="'+_ow+' owed on '+esc((subs[_upSk]||{}).display||_upSk)+'" style="display:inline-block;margin-left:4px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:8px;padding:0 5px;font-size:9px;font-weight:800">owed '+_ow+'</span>'; } }catch(e){}
+      h+='<th onclick="'+_hact+'" title="'+esc(_tip)+'">🛤 '+esc(_lc.name)+_oc+'<div style="font-size:9px;font-weight:600;color:var(--muted);white-space:nowrap">'+(_st.up.length?'now: '+_st.up.map(_nm).join(" / "):'all done')+(_st.next.length?' → '+_st.next.map(_nm).join(" / "):'')+'</div></th>';
+      continue;
+    }
+    const sk=ck;
+    const mark='';
     // Header tap opens the SUBJECT CARD right here (the global ✎ sheet — with 🧱
     // pacing inside), not a jump to another tab. The Grid is the one-stop hub.
-    const tip=gvSelMode?'Tap to select the whole '+((subs[sk]||{}).display||sk)+' column':(grp?('Alternates ('+(grp.group.name||"group")+') — never same day as '+(grp.group.members||[]).filter(m=>m!==sk).map(m=>(subs[m]||{}).display||m).join(", ")+'. Tap to open the subject card.'):'Open the subject card');
+    const tip=gvSelMode?'Tap to select the whole '+((subs[sk]||{}).display||sk)+' column':'Open the subject card';
     const hact=gvSelMode?'gvSelCol(\''+sk+'\')':'ceOpenEdit(\''+gvKid+'\',\''+sk+'\')';
     // Owed chip (her backlog rule): pattern days since the anchor minus lessons finished
     // since — computed by the same engine that lays the column. Shown only when > 0.
@@ -27955,7 +28269,7 @@ function renderCurrGrid(el){
   // and no projection, so they never stretch it.
   let gvEnd="";
   try{
-    for(const sk of cols){
+    for(const sk of _allSks){   // 🛤 lane members count individually
       if((subs[sk]||{}).paused) continue;
       for(const dn of dayNums){ const l=lessons[dn]; if(l&&l.date&&gvFilled(l[sk])&&l.date>gvEnd) gvEnd=l.date; }
       const der=_gvDer[sk]; if(der&&der.byDate) for(const ds of Object.keys(der.byDate)){ const e=der.byDate[ds]; if(e&&(gvFilled(e.text)||e.extra)&&ds>gvEnd) gvEnd=ds; }
@@ -28017,7 +28331,13 @@ function renderCurrGrid(el){
     coopsOnDate(l.date).forEach(function(c){ if((c.kids||[]).indexOf(gvKid)>=0&&c.mode==="timed") h+='<span class="gv-badge" title="'+esc(c.name+" "+(c.start||"")+"–"+(c.end||""))+'" style="background:'+(c.color||"#7c3aed")+'22;color:'+(c.color||"#7c3aed")+'">\u{1F3EB} '+esc(c.name)+'</span>'; });
     h+='</td>';
     h+='<td class="gv-min'+((cap_&&mins>cap_)?' gv-overcap':'')+'" title="'+gridMins+' grid + '+dailyMins+' daily'+(retrievalMins?' + '+retrievalMins+' drill':'')+(cardMins?' + '+cardMins+' card':'')+' min'+((cap_&&mins>cap_)?' · over the '+cap_+' cap':'')+'">'+(mins||"")+'</td>';
-    for(const sk of cols){
+    for(const ck of cols){
+      // 🛤 a lane column shows, on each row, the MEMBER that row belongs to; every id and
+      // gesture below is keyed to that member, so the cell menu, ✎, ✓, ➡, ✕, 🗑 and select
+      // mode work exactly as on a plain column. The member's short name prefixes the text.
+      const _lc=_lnCols[ck];
+      const sk=_lc?lnPickMember(gvKid,_lc,dn,l,past,_gvDer,_doneAt):ck;
+      const _lnPre=(_lc&&_lc.members.length>1)?'<span style="font-size:9px;font-weight:700;color:var(--muted)">'+esc(lnShort((subs[sk]||{}).display||sk))+' · </span>':'';
       // ONE TRUTH: a FUTURE cell of a plan-backed subject shows what the plan says lands
       // there — computed every render, never stored, so it cannot drift. Empty means the
       // plan puts nothing there; falling back to the stored cell is what let the two records
@@ -28092,6 +28412,14 @@ function renderCurrGrid(el){
         else if(!_derCol&&addedV!==undefined) cell+=(cell?'<br>':'')+'<span style="color:#15803d">+ '+(typeof addedV==="string"?esc(addedV):"make-up")+'</span><span class="gv-badge" style="background:#bbf7d0;color:#15803d">make-up</span>';
         if(!cell&&_skipAt[dn+"|"+sk]!==undefined) cell='<s style="color:var(--muted);opacity:.7">'+esc(_skipAt[dn+"|"+sk])+'</s><span class="gv-badge" style="background:#fef3c7;color:#92400e" title="Passed over by a rebuild — won\'t come back as carryover or catch-up">skipped</span>';
         if(!cell&&_coopTag) cell=_coopTag;
+        if(cell&&_lnPre) cell=_lnPre+cell;
+        // 🛤 a day where a second member ALSO holds a stored cell — both ran before the lane
+        // existed, or one finished early on a day the other is projected: the record is never
+        // hidden — draw it under the first, read-only.
+        // 🛤 another member the projection ALSO put on this day (possible through Mom's ➕ days on
+        // both): drawn under the first, read-only — a projected lesson must never be invisible.
+        if(_lc&&!past) _lc.members.forEach(function(m){ if(m===sk||_doneAt[dn+"|"+m]) return; const _dm=_gvDer[m]; const _e=_dm&&!_dm.err&&(_dm.byDate||{})[l.date]; if(_e&&gvFilled(_e.text)) cell+=(cell?'<br>':'')+'<span style="font-size:10px;color:var(--muted)" title="'+esc((subs[m]||{}).display||m)+' — also laid here (a ➕ day); edit it from its own card">'+esc(lnShort((subs[m]||{}).display||m))+' · '+esc(_e.text)+'</span>'; });
+        if(_lc) _lc.members.forEach(function(m){ if(m!==sk&&gvFilled(l[m])&&(past||_doneAt[dn+"|"+m])) cell+=(cell?'<br>':'')+'<span style="font-size:10px;color:var(--muted)" title="'+esc((subs[m]||{}).display||m)+' — open its card from ⚙ Rules to edit">'+esc(lnShort((subs[m]||{}).display||m))+' · '+esc(l[m])+'</span>'; });
         const picked=gvSelMode&&gvSel.has(dn+"|"+sk);
         // Past cells open too when FILLED — delete-only view (see the editing branch).
         const click=gvSelMode?(past?'':' onclick="gvSelCell('+dn+',\''+sk+'\')"'):' onclick="gvOpenCell('+dn+',\''+sk+'\')"';
@@ -29999,6 +30327,9 @@ function computeFinishLines(forKid){
     for(const sk of Object.keys(subs)){
       const s=subs[sk];
       if(!s||s.paused||s.tracking==="daily") continue;
+      // 🛤 a lane member waiting its turn is not running: no projection — say who it waits for
+      try{ if(typeof lnOf==="function"){ const _l=lnOf(kid,sk); if(_l&&!lnIsUp(kid,_l.id,_l.unitIdx)&&lnOpenCount(kid,sk)>0){
+        rows.push({kid,sk,display:s.display||sk,remaining:lnOpenCount(kid,sk),slots:0,lastPlanned:null,projDate:null,overflow:0,status:"waiting",target:null,waitsFor:lnUpLabel(kid,_l.id),lane:_l.lane.name||_l.id}); continue; } } }catch(e){}
       const seq=buildSubjectLessons(kid,sk);
       if(!seq.length) continue;
       let cursor=0;
@@ -41561,7 +41892,12 @@ function resolveWeekSlots(weekNum,ignoreAuto){
       if(rules.includes("first")||rules.includes("last")) continue;
       const isDaily=s.tracking==="daily";
       if(!isDaily&&(!s.lessonSeq||!s.lessonSeq.length)) continue;
-      const allowed=s.allowedDays||[];
+      // 🛤 a lane member runs on its RESOLVED rhythm — borrowed from the unit before it, or
+      // its multiple card's — and a member that is not up (waiting its turn, or finished)
+      // takes no slot at all this week. Not in a lane → _lnRh is null, nothing changes.
+      let _lnRh=null;
+      if(typeof lnOf==="function"){ const _l=lnOf(kid,sk); if(_l){ if(!lnIsUp(kid,_l.id,_l.unitIdx)) continue; _lnRh=lnRhythm(kid,_l.id,_l.unitIdx); if(_lnRh&&_lnRh.own) _lnRh=null; } }
+      const allowed=(_lnRh?_lnRh.allowedDays:s.allowedDays)||[];
       const matchDates=sortedDates.filter(d=>{
         if(smapIsKidOff(kid,d)||_ovOffX(kid,d,ignoreAuto)) return false;
         if(_ovRmX(kid,d,sk,ignoreAuto)) return false;
@@ -41575,7 +41911,7 @@ function resolveWeekSlots(weekNum,ignoreAuto){
       // runs, spread evenly across them. Blank/0 or >= the available days = every
       // allowed day (unchanged). Excel-grid subjects are untouched — their grid sets it.
       let runDates=matchDates;
-      const _tpw=parseInt(s.timesPerWeek)||0;
+      const _tpw=parseInt(_lnRh?_lnRh.tpw:s.timesPerWeek)||0;
       if(_tpw>0&&_tpw<matchDates.length){
         runDates=[];
         for(let i=0;i<_tpw;i++){ const dd=matchDates[(_tpw===1)?0:Math.round(i*(matchDates.length-1)/(_tpw-1))]; if(runDates.indexOf(dd)<0) runDates.push(dd); }
@@ -41716,6 +42052,7 @@ function _gwPlanDatesInner(kid,sk,liveDates){
   let res=null;
   try{ res=planMaterialize(kid,sk,null,{absorb:false}); }
   catch(e){ dbg("plan dates skip "+kid+"/"+sk+": "+e); return null; }
+  if(res&&(res.waiting||res.finished)) return [];   // 🛤 lane: waiting its turn, or finished — no days this week (an explicit empty list, not "keep the cells")
   if(!res||res.error||!res.assignments||!res.assignments.length) return null;
   const out=[];
   res.assignments.forEach(function(a){ if(a&&a.date&&liveDates[a.date]) out.push(a.date); });
@@ -41790,7 +42127,12 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
         for(const _d of Object.keys(dayData)){ if(dayData[_d]&&dayData[_d][kid]) _live[_d]=1; }
         const _pjd=_t?_gwPlanDates(kid,sk,_live):null;
         if(_pjd){
-          const _keep=dates.filter(function(d){ return d<=_t; });
+          let _keep=dates.filter(function(d){ return d<=_t; });
+          // 🛤 a lane member with NO card in the live week was waiting when the week was dealt.
+          // Serving lessons onto its days that already happened would start it mid-list on the
+          // handoff (live dry run 2026-09-11: Language Smarts' first same-week card carried
+          // Pg 264–269 with 254–263 "spent" on Mon/Wed — and the order guard would refuse it).
+          try{ if(_keep.length&&typeof lnOf==="function"&&lnOf(kid,sk)&&typeof weekData!=="undefined"&&weekData&&Array.isArray(weekData.tasks)&&!weekData.tasks.some(function(x){ return x&&x.who===kid&&x.subjectKey===sk&&!String(x.id||"").endsWith("_c"); })) _keep=[]; }catch(e){}
           let _next=_pjd.filter(function(d){ return d>_t&&_keep.indexOf(d)<0; });
           // A MID-WEEK regen re-spreads the subject's FULL weekly quota over only the days
           // that are left, on top of the days already kept: ellis Editor in Chief (tpw 3, no
@@ -41800,7 +42142,9 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
           // tpw by design (_pjPatternRows unions them), so they never count against the
           // quota and are never trimmed.
           const _sub=subjects[sk]||{};
-          const _tpwWk=parseInt((_sub.pacing&&_sub.pacing.tpw)||_sub.timesPerWeek,10)||0;
+          let _tpwWk=parseInt((_sub.pacing&&_sub.pacing.tpw)||_sub.timesPerWeek,10)||0;
+          // 🛤 a borrowed / shared rhythm sets the quota, not the member's own ×/wk
+          try{ if(typeof lnOf==="function"){ const _l=lnOf(kid,sk); if(_l){ const _r=lnRhythm(kid,_l.id,_l.unitIdx); if(_r&&!_r.own) _tpwWk=parseInt(_r.tpw,10)||0; } } }catch(e){}
           if(_tpwWk>0){
             const _isAdd=function(d){
               const o=(typeof schedOv==="function")?schedOv(d,kid):null;
