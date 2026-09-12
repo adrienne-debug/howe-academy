@@ -1172,11 +1172,40 @@ function plRet(id){const o=plState[id];if(o)plHist.unshift(plName(o.kid,o)+" ret
   plPlays.forEach(p=>{if(!p.done&&o&&p.kid===o.kid&&p.bin===id){p.done=true;if(plFB&&p._k)db.ref("play/plPlays/"+p._k).update({done:true});}});
   plSave();plRender();}
 
+// 🧸 Toys | 📚 Books — two sub-tabs. Books is the curriculum-book library (library.js, read-only,
+// lazy-loaded). The kids' School Room kiosk stays Toys-only: book cards carry Mom's planning
+// notes and keep/sell calls.
+function plSubAllowed(){return !(document.body&&document.body.classList.contains("kiosk"));}
+window.plSub=(function(){try{return HA_LS.getItem("sr_sub")==="books"?"books":"toys";}catch(e){return "toys";}})();
+function plSubApply(){
+  if(!plSubAllowed())plSub="toys";
+  const bar=document.getElementById("pl-subtabs"),pr=document.getElementById("play-root"),lr=document.getElementById("lib-root");
+  if(bar){bar.style.display=plSubAllowed()?"flex":"none";
+    bar.querySelectorAll("button").forEach(b=>{const on=b.dataset.sub===plSub;b.className="kid-btn"+(on?" active":"");b.style.background=on?"#111827":"";});}
+  if(pr)pr.style.display=plSub==="books"?"none":"";
+  if(lr)lr.style.display=plSub==="books"?"":"none";
+  if(plSub!=="books")return;
+  if(window.renderLibrary){renderLibrary(lr);return;}
+  if(window._lbLoading)return; window._lbLoading=true;
+  lr.innerHTML='<div style="padding:40px;text-align:center;color:var(--muted)">Loading the library…</div>';
+  const s=document.createElement("script");
+  s.src=/github\.io$/.test(location.hostname)?("library.js?v="+Date.now()):"library.js";
+  s.onload=()=>{if(plSub==="books")renderLibrary(document.getElementById("lib-root"));};
+  s.onerror=()=>{window._lbLoading=false;lr.innerHTML='<div style="padding:40px;text-align:center;color:var(--muted)">Couldn\'t load the library.</div>';};
+  document.head.appendChild(s);
+}
+function plSetSub(v){plSub=v;try{HA_LS.setItem("sr_sub",v);}catch(e){}plSubApply();if(v==="toys")plRender();}
+window.plSetSub=plSetSub;
 window.renderPlay=function(c){
   plInit();
   if(!document.getElementById("pl-style")){const st=document.createElement("style");st.id="pl-style";st.textContent=PL_CSS;document.head.appendChild(st);}
-  if(!document.getElementById("play-root")){c.innerHTML=PL_SHELL;
+  if(!document.getElementById("play-root")){
+    c.innerHTML='<div id="pl-subtabs" style="background:#fff;border-bottom:1px solid var(--border);padding:8px 12px;gap:8px">'+
+      '<button data-sub="toys" class="kid-btn" style="flex:1" onclick="plSetSub(\'toys\')">🧸 Toys</button>'+
+      '<button data-sub="books" class="kid-btn" style="flex:1" onclick="plSetSub(\'books\')">📚 Books</button></div>'+
+      PL_SHELL+'<div id="lib-root" style="display:none"></div>';
     document.getElementById("pl-sheet").addEventListener("click",e=>{if(e.target.id=="pl-sheet")plCloseSheet();});}
+  plSubApply();
   plRender();
 };
 window.plAskSave=plAskSave;window.plToggleUnlock=plToggleUnlock;window.plSetMode=plSetMode;window.plSetKid=plSetKid;window.plPickIntent=plPickIntent;window.plShuffle=plShuffle;window.plOpenSheet=plOpenSheet;window.plCloseSheet=plCloseSheet;window.plCo=plCo;window.plRet=plRet;window.plPlayPick=plPlayPick;window.plConfirmPlay=plConfirmPlay;window.plFinishPlay=plFinishPlay;window.plActSheet=plActSheet;window.plWiz=plWiz;window.plWizGo=plWizGo;window.plRender=plRender;window.PL_ACTS=PL_ACTS;window.PL_CATALOG=PL_CATALOG;
