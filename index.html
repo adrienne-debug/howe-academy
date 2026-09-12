@@ -1358,6 +1358,10 @@ body.kioskr #kiosk-kids::-webkit-scrollbar{display:none}
 .ce-stepper button:first-child{border-radius:10px 0 0 10px}
 .ce-stepper button:last-child{border-radius:0 10px 10px 0}
 .ce-stepper span{min-width:48px;text-align:center;font-size:14px;font-weight:700;border-top:1.5px solid var(--border);border-bottom:1.5px solid var(--border);height:36px;line-height:36px}
+/* Typed value inside a stepper. The -+10 buttons could never land on a short course like a
+   16-session class (they start at 50 and move by ten), so the middle is an input. */
+.ce-stepper input.ce-stepnum{width:62px;min-width:62px;text-align:center;font-size:14px;font-weight:800;font-family:'DM Sans',sans-serif;color:var(--text);background:#fff;border:1.5px solid var(--border);border-left:none;border-right:none;height:36px;box-sizing:border-box;-moz-appearance:textfield}
+.ce-stepper input.ce-stepnum::-webkit-outer-spin-button,.ce-stepper input.ce-stepnum::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .ce-sheet-actions{display:flex;gap:8px;margin-top:20px}
 .ce-sheet-actions button{flex:1;padding:12px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;font-family:'DM Sans',sans-serif;border:none}
 .ce-btn-cancel{background:#f3f4f6;color:var(--text)}
@@ -14863,6 +14867,50 @@ function ceSaveField(field,val){
   currData.lastEdit=new Date().toISOString();
   db.ref("curriculum/lastEdit").set(currData.lastEdit);
 }
+// Parse a pasted list of meeting dates. Shared by the edit sheet and the Add sheet so
+// there is ONE definition of a valid date. Real calendar validation (not just a regex:
+// Feb 30 and a non-leap Feb 29 are rejected), sorted, de-duplicated, and anything
+// unreadable is RETURNED so the caller can name it — a silently dropped date is a class
+// nobody gets told about.
+function fxParseDates(txt){
+  const raw=String(txt||"").split(/[\s,;]+/).map(function(x){ return x.trim(); }).filter(Boolean);
+  const good=[], bad=[];
+  raw.forEach(function(x){
+    if(/^\d{4}-\d{2}-\d{2}$/.test(x)){
+      const d=new Date(x+"T12:00:00");
+      if(!isNaN(d.getTime())&&d.toISOString().slice(0,10)===x) good.push(x); else bad.push(x);
+    } else bad.push(x);
+  });
+  good.sort();
+  return {dates:good.filter(function(x,i){ return i===0||x!==good[i-1]; }), bad:bad};
+}
+function fxDatesMsg(n,bad){
+  if(bad&&bad.length) return "\u26a0 "+n+" date"+(n===1?"":"s")+" saved \u2014 could not read: "+bad.join(", ");
+  return n?("\u2713 "+n+" meeting date"+(n===1?"":"s")+" saved"):"Cleared \u2014 it now meets every day it is pinned to.";
+}
+// ── Add-sheet handlers ──
+// These write the FORM, not the database: on the Add sheet the subject does not exist yet.
+// ceAddSubject carries the three class fields onto the record when she saves.
+let ceAddMsg="";
+function ceAddSetTotal(v){
+  ceAddForm.total=Math.max(1,Math.min(500,parseInt(v,10)||1));
+  ceRenderAddSheet();
+}
+function ceAddToggleClass(){
+  if(ceAddForm.fixedTime){ ceAddForm.fixedTime=""; ceAddForm.fixedDates=[]; }
+  else { ceAddForm.fixedTime="10:00 AM"; }
+  ceRenderAddSheet();
+}
+function ceAddSetClassTime(v){
+  ceAddForm.fixedTime=v?to12h(v):"";
+  ceRenderAddSheet();
+}
+function ceAddSetClassDates(txt){
+  const r=fxParseDates(txt);
+  ceAddForm.fixedDates=r.dates;
+  ceAddMsg=fxDatesMsg(r.dates.length,r.bad);
+  ceRenderAddSheet();
+}
 // FIXEDCLASS_DOOR_START
 // ── "Set time" — turn a subject into a fixed-time class ──
 // Every write here is a single targeted field on this one subject, via ceSaveField.
@@ -14889,20 +14937,9 @@ function fxDoorSetTime(v){
 // YYYY-MM-DD. Anything unparseable is reported rather than silently dropped — a missing
 // date means a missing class.
 function fxDoorSetDates(txt){
-  const raw=String(txt||"").split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean);
-  const good=[], bad=[];
-  raw.forEach(x=>{
-    if(/^\d{4}-\d{2}-\d{2}$/.test(x)){
-      const d=new Date(x+"T12:00:00");
-      if(!isNaN(d.getTime())&&d.toISOString().slice(0,10)===x) good.push(x); else bad.push(x);
-    } else bad.push(x);
-  });
-  good.sort();
-  const uniq=good.filter((x,i)=>i===0||x!==good[i-1]);
-  ceSaveField("fixedDates", uniq.length?uniq:null);
-  fxDoorMsg=bad.length
-    ? "⚠ "+uniq.length+" date"+(uniq.length===1?"":"s")+" saved — could not read: "+bad.join(", ")
-    : (uniq.length?"✓ "+uniq.length+" meeting date"+(uniq.length===1?"":"s")+" saved":"Cleared — the class now meets every day it is pinned to.");
+  const r=fxParseDates(txt);
+  ceSaveField("fixedDates", r.dates.length?r.dates:null);
+  fxDoorMsg=fxDatesMsg(r.dates.length,r.bad);
   ceRenderEditSheet(); renderAll();
 }
 let fxDoorMsg="";
@@ -16943,7 +16980,8 @@ let ceAddForm={name:"",device:"paper",mom:"none",minutes:25,days:"",rules:"",tot
 function ceOpenAdd(kid){
   if(ceCloseTimer){clearTimeout(ceCloseTimer);ceCloseTimer=null;}
   ceAddKid=kid;
-  ceAddForm={name:"",device:"paper",mom:"none",minutes:25,days:"Mon Tue Wed Thu Fri",rules:"sequential",total:50,lessonSource:"auto",prefix:"Lesson",manualLessons:"",allowedDays:[],priority:"normal",carryoverCap:2,stickyWith:"",stickyOrder:"after",tracking:"sequenced",timesPerWeek:5};
+  ceAddForm={name:"",device:"paper",mom:"none",minutes:25,days:"Mon Tue Wed Thu Fri",rules:"sequential",total:50,lessonSource:"auto",prefix:"Lesson",manualLessons:"",allowedDays:[],priority:"normal",carryoverCap:2,stickyWith:"",stickyOrder:"after",tracking:"sequenced",timesPerWeek:5,fixedTime:"",fixedDates:[],joinUrl:""};
+  ceAddMsg="";
   ceRenderAddSheet();
 }
 
@@ -17041,6 +17079,36 @@ function ceRenderAddSheet(){
     h+='</div>';
   }
 
+  // Set time (a class) — the same settings as the edit sheet, so a class can be created in
+  // one pass instead of save-then-reopen. Duration and Days are already fields above; this
+  // points at them rather than offering a second copy that could disagree with them.
+  const _afx=!!(f.fixedTime&&String(f.fixedTime).trim());
+  const _afxD=Array.isArray(f.fixedDates)?f.fixedDates:[];
+  h+='<div class="ce-sheet-lbl">\u23F0 Set time <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">\u2014 a class at a fixed clock time</span></div>';
+  h+='<div class="ce-chips">';
+  h+='<div class="ce-chip'+(_afx?" sel":"")+'" onclick="ceAddToggleClass()">'+(_afx?"\u2713 Fixed time":"Off \u2014 packed into the day")+'</div>';
+  h+='</div>';
+  if(!_afx){
+    h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Off: the scheduler picks when this happens. Turn on for an online class or a lesson with a teacher \u2014 the card is pinned to its time and the rest of the day packs around it.</div>';
+  } else {
+    h+='<div style="display:flex;gap:8px;margin-top:6px;align-items:flex-end">';
+    h+='<div style="flex:0 0 auto"><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:3px">Starts at</div>';
+    h+='<input type="time" class="rules-time" value="'+esc(ampmTo24(f.fixedTime||""))+'" onchange="ceAddSetClassTime(this.value)"></div>';
+    h+='<div style="flex:1;font-size:10px;color:var(--muted);padding-bottom:8px">Runs for <b>'+(parseInt(f.minutes,10)||0)+' min</b> on <b>'+esc((f.allowedDays&&f.allowedDays.length)?f.allowedDays.join(" "):(f.days||"any school day"))+'</b> \u2014 set those with Duration and Days above.</div>';
+    h+='</div>';
+    h+='<div class="ce-sheet-lbl" style="margin-top:10px">Meeting dates <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">\u2014 optional, but exact</span></div>';
+    h+='<textarea class="ce-sheet-input" rows="3" placeholder="2026-09-16&#10;2026-09-23&#10;2026-09-30" style="width:100%;box-sizing:border-box;font-family:ui-monospace,monospace;font-size:11px" onchange="ceAddSetClassDates(this.value)">'+esc(_afxD.join("\n"))+'</textarea>';
+    if(_afxD.length){
+      h+='<div style="font-size:10px;color:#0f766e;margin-top:3px"><b>'+_afxD.length+'</b> meeting'+(_afxD.length===1?"":"s")+': '+esc(_afxD[0])+' \u2192 '+esc(_afxD[_afxD.length-1])+'. No card lands on any other day.</div>';
+    } else {
+      h+='<div style="font-size:10px;color:#92400e;margin-top:3px">Empty = it meets <b>every</b> pinned day, including holiday weeks. Paste the real dates so it skips the weeks with no class.</div>';
+    }
+    if(ceAddMsg) h+='<div style="font-size:10px;color:var(--muted);margin-top:3px">'+esc(ceAddMsg)+'</div>';
+    h+='<div class="ce-sheet-lbl" style="margin-top:10px">Join link <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">\u2014 optional</span></div>';
+    h+='<input class="ce-sheet-input" placeholder="https://\u2026" value="'+esc(f.joinUrl||"")+'" oninput="ceAddForm.joinUrl=this.value">';
+    h+='<div style="font-size:10px;color:var(--muted);margin-top:3px">A class wants one lesson per meeting \u2014 '+(_afxD.length?('<b>'+_afxD.length+'</b>'):'as many as there are dates')+', set below.</div>';
+  }
+
   // Tracking mode
   h+='<div class="ce-sheet-lbl">Lesson Tracking</div>';
   h+='<div class="ce-chips">';
@@ -17068,7 +17136,7 @@ function ceRenderAddSheet(){
     h+='<div style="display:flex;align-items:center;gap:10px">';
     h+='<div class="ce-stepper">';
     h+='<button onclick="ceAddForm.total=Math.max(1,ceAddForm.total-10);ceRenderAddSheet()">&minus;10</button>';
-    h+='<span>'+f.total+'</span>';
+    h+='<input type="number" class="ce-stepnum" min="1" max="500" value="'+f.total+'" onchange="ceAddSetTotal(this.value)">';
     h+='<button onclick="ceAddForm.total=Math.min(500,ceAddForm.total+10);ceRenderAddSheet()">+10</button>';
     h+='</div>';
     h+='<span style="font-size:11px;color:var(--muted)">'+f.prefix+' 1 &rarr; '+f.prefix+' '+f.total+'</span>';
@@ -17188,6 +17256,15 @@ function ceAddSave(){
     { const _r=_lidAlign(null,null,lessonSeq,1,null,true); subj.lessonIds=_r.ids; subj.nextLid=_r.nextLid; }   // born with ids — no other device can hold a competing set
   }
   if(f.stickyWith){ subj.stickyWith=f.stickyWith; subj.stickyOrder=f.stickyOrder||"after"; }
+  // A class set up on the Add sheet carries its clock time through to the saved subject.
+  // Both tracking branches build `subj` above, so this rides after them — otherwise the
+  // fields she just typed are silently dropped on save.
+  if(f.fixedTime&&String(f.fixedTime).trim()){
+    subj.fixedTime=f.fixedTime;
+    if(Array.isArray(f.fixedDates)&&f.fixedDates.length) subj.fixedDates=f.fixedDates.slice();
+    const _ju=(typeof fxSafeUrl==="function")?fxSafeUrl(f.joinUrl):String(f.joinUrl||"").trim();
+    if(_ju) subj.joinUrl=_ju;
+  }
   currData.subjects[kid][key]=subj;
   db.ref("curriculum/subjects/"+kid+"/"+key).set(subj);
   currData.lastEdit=new Date().toISOString();

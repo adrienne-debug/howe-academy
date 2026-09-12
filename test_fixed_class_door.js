@@ -39,6 +39,8 @@ const setDates = new Function("SINK", `
   function ceSaveField(f,v){ SINK.saved[f]=v; }
   function ceRenderEditSheet(){}
   function renderAll(){}
+  ${extractFn("fxParseDates")}
+  ${extractFn("fxDatesMsg")}
   ${extractFn("fxDoorSetDates")}
   return function(t){ SINK.saved={}; fxDoorSetDates(t); return {saved:SINK.saved,msg:fxDoorMsg}; };
 `)(SINK);
@@ -155,6 +157,64 @@ console.log("\nC) A class is day-bound — a missed class never cascades\n");
     noCarry({ who:"lincoln", subjectKey:"nb", id:"z" }) === true);
   ok("an unknown subject still carries (no accidental day-binding)",
     noCarry({ who:"lincoln", subjectKey:"nope", id:"w" }) === false);
+})();
+
+console.log("\nD) The ADD sheet can set up a class in one pass\n");
+
+(() => {
+  // The Add sheet writes the FORM (nothing exists in the db yet), so these handlers must
+  // mutate ceAddForm — and ceAddSubject must then carry the fields onto the saved subject.
+  const S = { form: null, rendered: 0 };
+  const api = new Function("S", `
+    let ceAddForm={name:"",minutes:25,allowedDays:[],days:"",total:50,fixedTime:"",fixedDates:[],joinUrl:""};
+    let ceAddMsg="";
+    function ceRenderAddSheet(){ S.rendered++; S.form=JSON.parse(JSON.stringify(ceAddForm)); S.msg=ceAddMsg; }
+    function to12h(s){ if(!s)return""; const p=s.split(":"); if(p.length!==2)return s; let h=parseInt(p[0]);
+      const mn=p[1]; const ap=h>=12?"PM":"AM"; if(h===0)h=12; else if(h>12)h-=12; return h+":"+mn+" "+ap; }
+    ${extractFn("fxParseDates")}
+    ${extractFn("fxDatesMsg")}
+    ${extractFn("ceAddSetTotal")}
+    ${extractFn("ceAddToggleClass")}
+    ${extractFn("ceAddSetClassTime")}
+    ${extractFn("ceAddSetClassDates")}
+    return { total:(v)=>{ceAddSetTotal(v);return S.form;}, toggle:()=>{ceAddToggleClass();return S.form;},
+             time:(v)=>{ceAddSetClassTime(v);return S.form;}, dates:(t)=>{ceAddSetClassDates(t);return {f:S.form,msg:S.msg};} };
+  `)(S);
+
+  // The ±10-only stepper could never reach 16. A typed value must land exactly.
+  ok("Total accepts a typed 16 exactly", api.total("16").total === 16, JSON.stringify(api.total("16")));
+  ok("Total clamps at 1, never 0 or negative", api.total("0").total === 1 && api.total("-5").total === 1);
+  ok("Total clamps at 500", api.total("9999").total === 500);
+  ok("Total ignores junk rather than becoming NaN", api.total("abc").total === 1, JSON.stringify(api.total("abc")));
+
+  ok("toggling on seeds a default time", api.toggle().fixedTime === "10:00 AM");
+  ok("a 24h time input is stored as 12h", api.time("10:00").fixedTime === "10:00 AM");
+  ok("an afternoon time converts correctly", api.time("14:30").fixedTime === "2:30 PM");
+
+  const d = api.dates("2026-09-16\n2026-09-23\n2026-09-30");
+  ok("dates parse into the form", JSON.stringify(d.f.fixedDates) === JSON.stringify(["2026-09-16","2026-09-23","2026-09-30"]), JSON.stringify(d.f.fixedDates));
+  ok("the form reports the count back", /3 meeting dates saved/.test(d.msg || ""), d.msg);
+  const bad = api.dates("2026-09-16\nnope");
+  ok("bad dates are named on the add sheet too", /could not read/.test(bad.msg || ""), bad.msg);
+
+  // Toggling OFF must clear the dates, so a half-configured class can't be saved with a
+  // date list but no time.
+  api.time("10:00");
+  const off = api.toggle();
+  ok("toggling off clears time AND dates", off.fixedTime === "" && off.fixedDates.length === 0, JSON.stringify(off));
+})();
+
+(() => {
+  // ceAddSubject must persist the three fields. Asserted against source: the write block
+  // has to sit AFTER both tracking branches build `subj`, or the values are dropped.
+  const i = src.indexOf("if(f.fixedTime&&String(f.fixedTime).trim()){");
+  ok("ceAddSubject has a class-field write block", i > 0);
+  const blk = src.slice(i, i + 520);
+  ok("it writes fixedTime", /subj\.fixedTime=f\.fixedTime/.test(blk));
+  ok("it writes fixedDates only when non-empty", /f\.fixedDates\.length\) subj\.fixedDates=/.test(blk));
+  ok("it sanitises joinUrl through fxSafeUrl", /fxSafeUrl\(f\.joinUrl\)/.test(blk), blk.slice(0, 200));
+  const after = src.indexOf("currData.subjects[kid][key]=subj;", i);
+  ok("the write happens BEFORE the subject is stored", after > i && after - i < 600, "i=" + i + " store=" + after);
 })();
 
 console.log("\n" + pass + " passed, " + fail + " failed\n");
