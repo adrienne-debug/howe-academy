@@ -284,6 +284,22 @@ console.log("\n── retire: a finished book is filed away in ⚙ Rules (her ru
   ok("a book with lessons left REFUSES to retire, and says why", c.writes.length === 0 && /still has lessons left/.test(c.__toast || ""), c.__toast);
 }
 
+console.log("\n── renaming a lane must not disturb anything ──");
+{
+  const L = { math: { name: "Math", units: [{ sk: "s3b", rhythm: "own", retired: true }, { sk: "s4a", rhythm: "prior" }] } };
+  const c = world({ lanes: L, done: { s3b: doneN(2) } });
+  c.lnEditStart("math");
+  ok("the editor keeps the retired flag when it loads the unit", c.lnEdit.units[0].retired === true, c.lnEdit.units[0]);
+  c.lnEditName("Mathematics");
+  c.writes.length = 0; c.lnEditSave();
+  const w = c.writes.find(x => /lanes/.test(x[0]));
+  ok("the name changes", w && w[2].name === "Mathematics");
+  ok("the lane KEEPS its id (nothing keys off the name)", w && w[0].endsWith("/math"), w && w[0]);
+  ok("THE FIX: a retired book stays retired through a rename", w && w[2].units[0].retired === true, w && w[2].units);
+  ok("the running book is untouched", w && eq(w[2].units[1], { sk: "s4a", rhythm: "prior" }));
+  ok("only the lane node is written — no subject, lesson or done path", c.writes.every(x => /^curriculum\/(lanes|lastEdit)/.test(x[0])), c.writes.map(x => x[0]));
+}
+
 console.log("\n── wiring ──");
 {
   ok("state declared beside the panel's other state", /let lnEdit=null, lnUndo=null;/.test(src));
