@@ -27158,6 +27158,9 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
   const upd={}; const summary={added:[],moved:[],removed:[],retitled:[],kept:[]};
   const after=(liveTasks||[]).slice();
   const freed={};   // day → [time] slots this subject just vacated (removed / moved away) — the next lesson takes the finished one's slot
+  // Firebase multi-path forbids a path that is a prefix of another: drop any `<id>/field`
+  // writes before writing `<id>: null` for the same card.
+  const _rmPaths=id=>{ Object.keys(upd).forEach(k=>{ if(k.indexOf(id+"/")===0) delete upd[k]; }); };
   // phantoms (date-id cards of this plan-backed subject): remove when unlocked
   (liveTasks||[]).filter(isPhantom).forEach(t=>{ if(locked(t)) return; upd[t.id]=null; summary.removed.push(t.id); (freed[t.day]=freed[t.day]||[]).push(t.time); const i=after.indexOf(t); if(i>=0) after.splice(i,1); });
   // Her rule: NOTHING drops. A card the plan does not want this week leaves only when its
@@ -27250,7 +27253,7 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
         // removed from this week only — its lesson is undone, so next week's build serves it
         // first (the plan never loses it). A Mom push keeps the older behaviour below.
         if(carried.length){ const mi2=summary.moved.indexOf(t.id); if(mi2>=0) summary.moved.splice(mi2,1); const ri=summary.resequenced.indexOf(t.id); if(ri>=0) summary.resequenced.splice(ri,1); const ki=summary.kept.indexOf(t.id); if(ki>=0) summary.kept.splice(ki,1);
-          if(t.time!=null){ (freed[t.day]=freed[t.day]||[]).push(t.time); } const i2=after.indexOf(t); if(i2>=0) after.splice(i2,1); upd[t.id]=null; summary.removed.push(t.id); summary.deferred.push(t.id); return; }
+          if(t.time!=null){ (freed[t.day]=freed[t.day]||[]).push(t.time); } const i2=after.indexOf(t); if(i2>=0) after.splice(i2,1); _rmPaths(t.id); upd[t.id]=null; summary.removed.push(t.id); summary.deferred.push(t.id); return; }
         // An EXISTING card that does not fit stays where it started (nothing drops): the lesson
         // is undone, so it is still counted, still next up, and still on a real day.
         const mi=summary.moved.indexOf(t.id); if(mi>=0) summary.moved.splice(mi,1);
@@ -27264,6 +27267,31 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
       t.day=d; t.time=null;
       if(summary.added.indexOf(t.id)<0&&summary.moved.indexOf(t.id)<0){ summary.moved.push(t.id); summary.resequenced.push(t.id); }
     });
+    // A WEEK MUST END ON A CONTIGUOUS RUN (her sequential rule, and what the order guard
+    // enforces). Anything deferred means every LATER lesson of this subject leaves the week
+    // too — including cards parked in the end-of-week carries box, which the pool never sees
+    // (`!t._eowOverflow`). Without this the cascade's overflow re-validation walks into the
+    // room the deferral just freed and promotes the NEXT lesson onto a real day, skipping the
+    // deferred one: live 2026-09-11, Lincoln's Editor in Chief pg 33 was deferred and pg 34
+    // was promoted onto Saturday, where the order guard then refused it ("Not yet — pg 33
+    // isn't done"). Every lesson stays open in the plan; next week's build serves them in order.
+    if(summary.deferred.length){
+      let _minR=Infinity;
+      summary.deferred.forEach(id=>{ const r=rank({id:id}); if(r<_minR) _minR=r; });
+      // A card parked in the carries box is NOT work that happened — it sits on the day it came
+      // from, which is usually in the past, so `locked` (which counts a past day as started)
+      // would skip exactly the cards this rule exists to take. Only a real check/claim, or a
+      // started card that is genuinely ON a day, holds still.
+      const _movable=t=>!(opts.checked&&opts.checked[t.id])&&!(opts.claimed&&opts.claimed[t.id])&&(t._eowOverflow||!started(t));
+      after.slice().forEach(t=>{
+        if(!isPlanCard(t)||!_movable(t)||summary.deferred.indexOf(t.id)>=0) return;
+        if(rank(t)<=_minR) return;                       // earlier in the book: it keeps its place
+        ["added","moved","kept","resequenced","pushed"].forEach(k=>{ const i=summary[k].indexOf(t.id); if(i>=0) summary[k].splice(i,1); });
+        if(t.time!=null) (freed[t.day]=freed[t.day]||[]).push(t.time);
+        const i=after.indexOf(t); if(i>=0) after.splice(i,1);
+        _rmPaths(t.id); upd[t.id]=null; summary.removed.push(t.id); summary.deferred.push(t.id);
+      });
+    }
   }
   // time: place every un-timed card (added / moved) into its day.
   summary.shifted=[]; summary.relaid=[];

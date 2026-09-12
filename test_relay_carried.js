@@ -88,6 +88,46 @@ console.log("\n── cap 2, ➕ days, Saturday, no-op ──");
   const r6 = e._reprojectPlan("lincoln", "ws", same, [T(L5, "wednesday", "10:00 AM", "WS 5")], OPTS());
   ok("cascadedFrom equal to its own day is not a carry", eq(r6.summary.carried, []) && eq(r6.upd, {}));
 }
+console.log("\n── the carries box: a deferral takes the whole tail with it (live bug 2026-09-11) ──");
+{
+  const e = mkEnv();
+  // today Thursday; subject runs Mon/Wed/Fri cap 1, so only Friday is a landing day.
+  // L5 carried onto today, L6 carried onto Saturday (not its pattern), L7 parked in the
+  // end-of-week carries box, L4 also parked but EARLIER in the book.
+  const OPT = OPTS({ todayDay: "thursday", nowMin: 660, allowedDays: ["Mon", "Wed", "Fri"], lidOrder: ["L0004", "L0005", "L0006", "L0007"] });
+  const L4 = "lincoln_lincoln__ws_L0004";
+  const live = kidWeek.concat([
+    T(L5, "thursday", "1:00 PM", "WS 5", { cascadedFrom: "monday" }),
+    T(L6, "saturday", "10:00 AM", "WS 6", { cascadedFrom: "tuesday" }),
+    T(L7, "wednesday", "11:50 AM", "WS 7", { cascadedFrom: "monday", _eowOverflow: true }),
+    T(L4, "monday", "11:50 AM", "WS 4", { cascadedFrom: "monday", _eowOverflow: true })]);
+  const r = e._reprojectPlan("lincoln", "ws", clone(live), [], OPT);
+  ok("L5 (carried, today) takes Friday — the next pattern sitting", dayOf(r, L5) === "friday", dayOf(r, L5));
+  ok("L6 has no pattern day left → deferred", dayOf(r, L6) === null && r.upd[L6] === null && r.summary.deferred.indexOf(L6) >= 0);
+  ok("THE FIX: L7 sits in the carries box AFTER the deferred lesson → it leaves the week too", dayOf(r, L7) === null && r.upd[L7] === null && r.summary.deferred.indexOf(L7) >= 0, { L7: dayOf(r, L7), deferred: r.summary.deferred });
+  ok("an earlier lesson parked in the carries box is NOT touched", dayOf(r, L4) === "monday" && !(L4 in r.upd), { L4: dayOf(r, L4) });
+  ok("no write path is a prefix of another (Firebase multi-path)", (() => { const ks = Object.keys(r.upd); return ks.every(k => ks.every(o => o === k || !o.startsWith(k + "/"))); })(), Object.keys(r.upd));
+}
+{
+  // Lincoln's REAL shape tonight, before the re-lay (week22, Friday): Editor in Chief runs
+  // Mon–Fri cap 1. pg 32 on Friday (its pattern), pg 33 swept onto Saturday, pg 34 parked in
+  // the carries box on Thursday. Old code deferred pg 33 and the cascade then promoted pg 34
+  // onto Saturday, so the week read pg 32 → pg 34 and the order guard refused it.
+  const e = mkEnv();
+  const A = "lincoln_lincoln__ws_L0017", B = "lincoln_lincoln__ws_L0018", C = "lincoln_lincoln__ws_L0019";
+  const OPT = OPTS({ todayDay: "friday", nowMin: 13 * 60, allowedDays: ["Mon", "Tue", "Wed", "Thu", "Fri"], lidOrder: ["L0017", "L0018", "L0019"] });
+  const live = kidWeek.concat([
+    T(A, "friday", "12:45 PM", "EIC — B2 pg 32"),
+    T(B, "saturday", "12:20 PM", "EIC — B2 pg 33", { cascadedFrom: "wednesday" }),
+    T(C, "thursday", "12:45 PM", "EIC — B2 pg 34", { cascadedFrom: "wednesday", _eowOverflow: true })]);
+  const r = e._reprojectPlan("lincoln", "ws", clone(live), [], OPT);
+  ok("pg 32 keeps its Friday slot", dayOf(r, A) === "friday" && !(A in r.upd));
+  ok("pg 33 (carried to Saturday, not a pattern day, no room left) → deferred", dayOf(r, B) === null && r.upd[B] === null);
+  ok("pg 34 goes with it, so the cascade cannot promote it into the gap", dayOf(r, C) === null && r.upd[C] === null, { C: dayOf(r, C) });
+  const left = r.tasksAfter.filter(t => t.subjectKey === "ws").map(t => t.lid);
+  ok("the week ends on a contiguous run: pg 32 alone", JSON.stringify(left) === JSON.stringify(["L0017"]), left);
+}
+
 console.log("\n── wiring ──");
 {
   const rp = block;
@@ -96,6 +136,8 @@ console.log("\n── wiring ──");
   ok("a carried card's swept-to day is never a landing day", /!carriedIds\[t\.id\]\) dayOk\[t\.day\]=1;/.test(rp) && /if\(carriedIds\[id\]\) return; const d=orig0\[id\]\.day;/.test(rp));
   ok("a Mom push alone keeps the older keep-where-started behaviour", /if\(carried\.length\)\{ const mi2=/.test(rp) && /summary\.kept\.push\(t\.id\); return;/.test(rp));
   ok("reprojectSubjectWeek logs the carried count", /🔁"\+\(\(r\.summary\.carried\|\|\[\]\)\.length\)/.test(src));
+  ok("a deferral takes every later lesson of the subject with it", /if\(summary\.deferred\.length\)\{/.test(rp) && /if\(rank\(t\)<=_minR\) return;/.test(rp));
+  ok("sub-path writes are cleared before a card is nulled", /const _rmPaths=id=>/.test(rp) && (rp.match(/_rmPaths\(t\.id\); upd\[t\.id\]=null;/g) || []).length === 2);
 }
 console.log("\n── generator merge: a past day whose card was carried away is not served again ──");
 {
