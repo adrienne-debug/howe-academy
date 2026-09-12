@@ -136,7 +136,8 @@ console.log("\n── wiring ──");
   ok("a carried card's swept-to day is never a landing day", /!carriedIds\[t\.id\]\) dayOk\[t\.day\]=1;/.test(rp) && /if\(carriedIds\[id\]\) return; const d=orig0\[id\]\.day;/.test(rp));
   ok("a Mom push alone keeps the older keep-where-started behaviour", /if\(carried\.length\)\{ const mi2=/.test(rp) && /summary\.kept\.push\(t\.id\); return;/.test(rp));
   ok("reprojectSubjectWeek logs the carried count", /🔁"\+\(\(r\.summary\.carried\|\|\[\]\)\.length\)/.test(src));
-  ok("a deferral takes every later lesson of the subject with it", /if\(summary\.deferred\.length\)\{/.test(rp) && /if\(rank\(t\)<=_minR\) return;/.test(rp));
+  ok("a deferral takes every later lesson of the subject with it", /if\(summary\.deferred\.length\)\{/.test(rp) && /if\(_cgRank\(t\)<=_minR\) return;/.test(rp));
+  ok("the contiguity guard runs for ANY deferral, not just the re-sequence branch", /CONTIGUITY GUARD/.test(rp) && rp.indexOf("if(summary.deferred.length){") > rp.indexOf("if(summary.pushed.length||carried.length){"));
   ok("sub-path writes are cleared before a card is nulled", /const _rmPaths=id=>/.test(rp) && (rp.match(/_rmPaths\(t\.id\); upd\[t\.id\]=null;/g) || []).length === 2);
 }
 console.log("\n── generator merge: a past day whose card was carried away is not served again ──");

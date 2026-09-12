@@ -27267,32 +27267,42 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
       t.day=d; t.time=null;
       if(summary.added.indexOf(t.id)<0&&summary.moved.indexOf(t.id)<0){ summary.moved.push(t.id); summary.resequenced.push(t.id); }
     });
-    // A WEEK MUST END ON A CONTIGUOUS RUN (her sequential rule, and what the order guard
-    // enforces). Anything deferred means every LATER lesson of this subject leaves the week
-    // too — including cards parked in the end-of-week carries box, which the pool never sees
-    // (`!t._eowOverflow`). Without this the cascade's overflow re-validation walks into the
-    // room the deferral just freed and promotes the NEXT lesson onto a real day, skipping the
-    // deferred one: live 2026-09-11, Lincoln's Editor in Chief pg 33 was deferred and pg 34
-    // was promoted onto Saturday, where the order guard then refused it ("Not yet — pg 33
-    // isn't done"). Every lesson stays open in the plan; next week's build serves them in order.
-    if(summary.deferred.length){
-      let _minR=Infinity;
-      summary.deferred.forEach(id=>{ const r=rank({id:id}); if(r<_minR) _minR=r; });
-      // A card parked in the carries box is NOT work that happened — it sits on the day it came
-      // from, which is usually in the past, so `locked` (which counts a past day as started)
-      // would skip exactly the cards this rule exists to take. Only a real check/claim, or a
-      // started card that is genuinely ON a day, holds still.
-      const _movable=t=>!(opts.checked&&opts.checked[t.id])&&!(opts.claimed&&opts.claimed[t.id])&&(t._eowOverflow||!started(t));
-      after.slice().forEach(t=>{
-        if(!isPlanCard(t)||!_movable(t)||summary.deferred.indexOf(t.id)>=0) return;
-        if(rank(t)<=_minR) return;                       // earlier in the book: it keeps its place
-        ["added","moved","kept","resequenced","pushed"].forEach(k=>{ const i=summary[k].indexOf(t.id); if(i>=0) summary[k].splice(i,1); });
-        if(t.time!=null) (freed[t.day]=freed[t.day]||[]).push(t.time);
-        const i=after.indexOf(t); if(i>=0) after.splice(i,1);
-        _rmPaths(t.id); upd[t.id]=null; summary.removed.push(t.id); summary.deferred.push(t.id);
-      });
-    }
   }
+  // ── CONTIGUITY GUARD — a week must never end on a gap ─────────────────────────────────
+  // Runs for ANY deferral, not just one from the re-sequence above: `landingDay` also defers
+  // (an extra wanted on today with no later school day), and the fuzzer found that path left
+  // later lessons sitting on cards while an earlier one had left the week. Once ANY lesson is
+  // deferred, every LATER lesson of this subject leaves too — including cards parked in the
+  // end-of-week carries box, which the cascade's overflow re-validation would otherwise
+  // promote into the freed room, skipping the deferred one (live 2026-09-11: Editor in Chief
+  // pg 33 deferred, pg 34 promoted onto Saturday, order guard then refused pg 34).
+  // Lessons EARLIER in the book keep their place. Nothing is lost: every deferred lesson stays
+  // open in the plan and next week's build serves them in order.
+  if(summary.deferred.length){
+    const _cgLid=id=>{ const m=String(id||"").match(/_(L\d+)$/); return m?m[1]:""; };
+    const _cgList={}; (opts.lidOrder||[]).forEach((l,i)=>{ if(_cgList[l]==null) _cgList[l]=i; });
+    const _cgGen={}; (desired||[]).forEach((w,i)=>{ if(w&&w.id&&_cgGen[w.id]==null) _cgGen[w.id]=i; });
+    const _cgRank=t=>{ const li=_cgList[_cgLid(t.id)]; if(li!=null) return li; const gi=_cgGen[t.id]; return (gi!=null)?(1e5+gi):1e9; };
+    // A card parked in the carries box is NOT work that happened — it sits on the day it came
+    // from, usually in the past, and `locked` counts a past day as started, which would skip
+    // exactly the cards this rule exists to take. Only a real check/claim, or a started card
+    // genuinely ON a day, holds still.
+    // `started()` reads toMin(t.time), and toMin(null) is 0 — so a freshly ADDED card (time is
+    // assigned later, in the timing pass below) looked "already started" on today and this guard
+    // skipped it, leaving the exact gap it exists to prevent. A card with no time has not started.
+    const _cgMovable=t=>!(opts.checked&&opts.checked[t.id])&&!(opts.claimed&&opts.claimed[t.id])&&(t._eowOverflow||t.time==null||!started(t));
+    let _minR=Infinity;
+    summary.deferred.forEach(id=>{ const r=_cgRank({id:id}); if(r<_minR) _minR=r; });
+    after.slice().forEach(t=>{
+      if(!isPlanCard(t)||!_cgMovable(t)||summary.deferred.indexOf(t.id)>=0) return;
+      if(_cgRank(t)<=_minR) return;                    // earlier in the book: it keeps its place
+      ["added","moved","kept","resequenced","pushed"].forEach(k=>{ const i=summary[k].indexOf(t.id); if(i>=0) summary[k].splice(i,1); });
+      if(t.time!=null) (freed[t.day]=freed[t.day]||[]).push(t.time);
+      const i=after.indexOf(t); if(i>=0) after.splice(i,1);
+      _rmPaths(t.id); upd[t.id]=null; summary.removed.push(t.id); summary.deferred.push(t.id);
+    });
+  }
+
   // time: place every un-timed card (added / moved) into its day.
   summary.shifted=[]; summary.relaid=[];
   const isCloseT=t=>t&&(t.subjectKey==="closing_nb"||String(t.title||"").toLowerCase().includes("closing notebook"));
