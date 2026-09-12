@@ -573,6 +573,14 @@ body.kioskr #kiosk-kids::-webkit-scrollbar{display:none}
 .bo-banner-detail{font-size:12px;font-weight:600;margin-top:2px}
 .bo-banner-kids{font-size:11px;color:var(--muted);margin-top:1px}
 .bo-banner-rm{background:none;border:none;font-size:11px;color:#ef4444;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;flex-shrink:0}
+.fx-cls{position:fixed;inset:0;background:#f7f5f2;z-index:400;display:flex;flex-direction:column}
+.fx-cls-hd{position:sticky;top:0;flex:0 0 auto;background:#5b3a8c;color:#fff;padding:12px 14px;display:flex;align-items:center;gap:10px;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.fx-cls-back{flex:0 0 auto;padding:9px 15px;border-radius:11px;border:none;background:rgba(255,255,255,.18);color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif}
+.fx-cls-hd-t{flex:1;min-width:0;font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fx-cls-body{flex:1;overflow-y:auto;padding:22px 16px;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center}
+.fx-cls-go{display:inline-block;padding:18px 26px;border-radius:16px;border:none;background:#5b3a8c;color:#fff;font-size:19px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif;text-decoration:none;box-shadow:0 3px 10px rgba(91,58,140,.32)}
+.fx-cls-done{padding:13px 22px;border-radius:13px;border:2px solid #16a34a;background:#fff;color:#16a34a;font-size:15px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif}
+.fx-cls-note{font-size:12px;color:var(--muted);max-width:420px;line-height:1.5}
 .bo-dlg{position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:300;display:flex;align-items:flex-end;justify-content:center}
 .bo-dlg-box{background:#fff;border-radius:16px 16px 0 0;width:100%;max-width:440px;padding:20px 16px 24px;max-height:85vh;overflow-y:auto}
 .bo-dlg-title{font-family:'Fraunces',serif;font-weight:700;font-size:18px;margin-bottom:12px}
@@ -1467,6 +1475,7 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
 </div>
 
 <div id="bo-dlg-wrap" style="display:none"></div>
+<div id="fx-class-wrap" style="display:none"></div>
 <div id="ce-sheet-wrap" style="display:none"></div>
 <div class="pace-toast" id="pace-toast"></div>
 <div class="slot-overlay" id="slot-overlay">
@@ -3401,6 +3410,9 @@ function _renderAllInner(){
   else if(tab==="mastery") renderMastery(c);
   else if(tab==="notebook") renderNotebook(c);
   else if(tab==="units") renderUnits(c);
+  // The class screen is a full-screen overlay that must survive a re-render (a check-off,
+  // a sync tick) — otherwise it vanishes mid-class and he loses the way back.
+  if(typeof fxRenderClassScreen==="function"&&fxClassOpen) fxRenderClassScreen();
 }
 
 // ── DAY TABS ──────────────────────────────────────────────────────
@@ -6686,6 +6698,24 @@ function taskCard(t, fromDay, readOnly, doneId){
   const wbRow=_wbl?'<div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap"><span onclick="event.stopPropagation();wbOpenFor(\''+_wbl.bookId+'\',\''+t.who+'\','+_wbl.page+')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4D5} Open '+esc(taskLessonRef(t)||_wbl.name)+' →</span>'
     +(_wbl.ans?'<span onclick="event.stopPropagation();wbOpenCheck(\''+_wbl.bookId+'\',\''+t.who+'\','+_wbl.page+','+_wbl.ans+')" title="his page and the answer key side by side" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#065f46;cursor:pointer;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">&#9989; Check answers</span>':'')
     +'</div>':"";
+  // A fixed-time class: the card is his door into the class. Opens the in-app class
+  // screen (which carries the header back to his day) rather than firing the link straight
+  // out, so he is never stranded on a page with no route home.
+  const _fxS=(!readOnly&&typeof fxIsClass==="function"&&t.subjectKey)
+    ? (((typeof gwGetSubjects==="function"?gwGetSubjects(t.who):{})||{})[t.subjectKey]||null) : null;
+  const _fxC=(_fxS&&fxIsClass(_fxS))?_fxS:null;
+  let classRow="";
+  if(_fxC&&!done){
+    const _js=fxJoinState(_fxC,t.day);
+    if(_js.ready){
+      classRow='<div style="margin-top:5px"><span onclick="event.stopPropagation();fxOpenClassScreen(\''+t.who+'\',\''+t.subjectKey+'\',\''+t.id+'\')" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:800;color:#fff;cursor:pointer;background:#5b3a8c;border:1px solid #5b3a8c;border-radius:9px;padding:4px 11px;font-family:\'DM Sans\',sans-serif">\u{1F3A7} '+(_fxC.joinUrl?"Go to my class":"My class")+' \u2192</span></div>';
+    } else {
+      // Shown but shut, with the reason — a button that simply vanished would read as
+      // broken to a kid hunting for it, and he'd start asking whether class was cancelled.
+      const _lbl=_js.why==="over"?"Class has ended":(_js.at?("Opens at "+_js.at):"Class");
+      classRow='<div style="margin-top:5px"><span title="The class door opens shortly before it starts" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;color:#6b7280;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:9px;padding:4px 11px;font-family:\'DM Sans\',sans-serif">\u{1F3A7} '+_lbl+'</span></div>';
+    }
+  }
   // Strip the "Cascaded from X" note from detail for display
   const cleanDetail=t.detail.replace(/\s*\(Cascaded from \w+\)/,"");
   const disLabel=(t._displaced&&t._originalDay&&t._originalDay!==t.day)?'<div style="font-size:10px;font-weight:700;color:#7c3aed;background:#ede9fe;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">&#8618; Moved from '+cap(t._originalDay)+'</div><br>':'';
@@ -6729,7 +6759,7 @@ function taskCard(t, fromDay, readOnly, doneId){
     '<div class="card-body">'+
     '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
     '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+pushLabel+t.title+'</div>'+mb+'</div>'+
-    '<div class="task-detail">'+cleanDetail+'</div>'+dr+spinBtn+linkRow+wbRow+
+    '<div class="task-detail">'+cleanDetail+'</div>'+dr+spinBtn+classRow+linkRow+wbRow+
     '</div></div></div>';
 }
 
@@ -18517,6 +18547,115 @@ function fxWindowsFor(kid,dateStr,dayName){
     if(w){ w.sk=sk; w.display=subs[sk].display||sk; w.mom=subs[sk].mom||"none"; out.push(w); }
   }
   return out.sort((a,b)=>a.s-b.s);
+}
+// ── WHEN THE DOOR IS OPEN ──
+// The class row is not useful all day: at 8am he'd tap into an empty classroom, and a
+// permanent button invites tapping for its own sake. So it opens shortly BEFORE the class
+// and stays open until a bit AFTER it ends.
+// The window is derived from the class's own time, not hard-coded, so every class she adds
+// later gets a sensible door with no extra setup. German (10:00, 45 min) => 9:30-11:00.
+// ⭐ The tail deliberately runs past the END, not the start: if the wifi drops at 10:35 he
+// must still have a way back IN, and a window that shut at 10:30 would have stranded him
+// mid-class.
+const FX_JOIN_LEAD=30;    // doors open this many minutes before the start
+const FX_JOIN_GRACE=15;   // and stay open this long after the end, so he can rejoin
+function fxJoinWindow(s){
+  const st=toMin(s&&s.fixedTime);
+  if(st==null||isNaN(st)) return null;
+  const dur=Math.max(5,parseInt(s.minutes,10)||45);
+  return {open:Math.max(0,st-FX_JOIN_LEAD),close:st+dur+FX_JOIN_GRACE,start:st,end:st+dur};
+}
+// Mom always gets in — a late start, a dropped call or a missed class still needs a route
+// in, and she is the one who judges that. Only the kid's view is clock-gated, and only on
+// the actual day; on another day the row just says when it opens.
+function fxJoinState(s,cardDay){
+  const w=fxJoinWindow(s);
+  if(!w) return {ready:false,why:"notime",at:""};
+  const at=fromMin(w.open);
+  if(typeof momHere==="function"&&momHere()) return {ready:true,why:"mom",at:at};
+  if(cardDay&&typeof _todayDay==="string"&&cardDay!==_todayDay) return {ready:false,why:"otherday",at:at};
+  const n=new Date(), now=n.getHours()*60+n.getMinutes();
+  if(now<w.open) return {ready:false,why:"early",at:at};
+  if(now>w.close) return {ready:false,why:"over",at:at};
+  return {ready:true,why:"now",at:at};
+}
+
+// ── THE CLASS SCREEN ──
+// ⚠ Outschool (and most live-class sites) send `x-frame-options: SAMEORIGIN`, so the class
+// CANNOT be embedded in this app — an <iframe> would render an empty box. Verified against
+// the real classroom URL 2026-09-12. So the shape is: the class opens in its OWN TAB, and
+// the header he navigates back with lives HERE, on a full-screen app page that stays put
+// behind that tab. Tapping the card opens this; the class is one more tap. That way he is
+// never stranded on a page with no way home, which a bare link would do.
+// State is per-device (localStorage), because "Lincoln is in class on THIS tablet" is not
+// family state and must not sync to anyone else's screen.
+let fxClassOpen=null;              // {kid,sk,title,url,taskId}
+const FX_LS="ha_fx_class";
+function fxClassRestore(){
+  try{ const v=localStorage.getItem(FX_LS); if(v) fxClassOpen=JSON.parse(v); }catch(e){}
+}
+function fxClassPersist(){
+  try{ if(fxClassOpen) localStorage.setItem(FX_LS,JSON.stringify(fxClassOpen)); else localStorage.removeItem(FX_LS); }catch(e){}
+}
+// A class URL must be an ordinary web link. Anything else (javascript:, data:) is refused
+// rather than handed to window.open.
+function fxSafeUrl(u){
+  const s=String(u||"").trim();
+  if(!s) return "";
+  if(!/^https?:\/\//i.test(s)) return "";
+  return s;
+}
+function fxOpenClassScreen(kid,sk,taskId){
+  const s=((gwGetSubjects(kid)||{})[sk])||null;
+  if(!s) return;
+  fxClassOpen={kid:kid,sk:sk,taskId:taskId||"",title:s.display||sk,url:fxSafeUrl(s.joinUrl),
+    at:s.fixedTime||"",mins:parseInt(s.minutes,10)||0};
+  fxClassPersist(); fxRenderClassScreen();
+}
+function fxCloseClassScreen(){
+  fxClassOpen=null; fxClassPersist();
+  const w=document.getElementById("fx-class-wrap"); if(w) w.style.display="none";
+  renderAll();
+}
+function fxLaunchClass(){
+  if(!fxClassOpen||!fxClassOpen.url) return;
+  // New tab on purpose: this app page survives behind it, so the header is still here when
+  // he comes back. Same-tab navigation would take his whole day away.
+  window.open(fxClassOpen.url,"_blank","noopener,noreferrer");
+}
+// "I finished" checks the card off through the normal path, so points/pace/Mom-check all
+// behave exactly as a tap on the card would. No separate completion route.
+function fxFinishClass(){
+  const t=fxClassOpen&&fxClassOpen.taskId;
+  fxCloseClassScreen();
+  if(t&&typeof tapTask==="function") tapTask(t);
+}
+function fxRenderClassScreen(){
+  const w=document.getElementById("fx-class-wrap");
+  if(!w) return;
+  if(!fxClassOpen){ w.style.display="none"; return; }
+  const c=fxClassOpen;
+  const when=c.at?(c.at+(c.mins?(" \u00b7 "+c.mins+" min"):"")):"";
+  let h='<div class="fx-cls">';
+  h+='<div class="fx-cls-hd">';
+  h+='<button class="fx-cls-back" onclick="fxCloseClassScreen()">\u2190 My day</button>';
+  h+='<div class="fx-cls-hd-t">\u{1F3A7} '+esc(c.title)+'</div>';
+  h+='</div>';
+  h+='<div class="fx-cls-body">';
+  h+='<div style="font-size:46px">\u{1F3A7}</div>';
+  h+='<div style="font-size:22px;font-weight:800">'+esc(c.title)+'</div>';
+  if(when) h+='<div style="font-size:14px;font-weight:700;color:var(--muted)">'+esc(when)+'</div>';
+  if(c.url){
+    h+='<button class="fx-cls-go" onclick="fxLaunchClass()">\u{1F3A7} Open my class</button>';
+    h+='<div class="fx-cls-note">Your class opens in a new tab. When it\u2019s finished, come back here and tap <b>I finished my class</b>. This page stays open the whole time.</div>';
+    h+='<button class="fx-cls-done" onclick="fxFinishClass()">\u2713 I finished my class</button>';
+  } else {
+    h+='<div class="fx-cls-note">No class link is set yet. Mom can add one in the subject\u2019s <b>\u23F0 Set time</b> settings.</div>';
+    h+='<button class="fx-cls-done" onclick="fxFinishClass()">\u2713 I finished my class</button>';
+  }
+  h+='</div></div>';
+  w.innerHTML=h;
+  w.style.display="block";
 }
 // FIXEDCLASS_END
 
@@ -38910,6 +39049,7 @@ if(_kioskR()){ tab="schedule"; kid="all"; document.body.classList.add("kioskr");
 if(_kioskD()){ tab="moms-plan"; mpSubView="dad"; document.body.classList.add("kioskd"); }
 if(_kioskK()){ tab="kids"; document.body.classList.add("kioskd"); }
 paintBuildFp();
+fxClassRestore();   // a reload mid-class comes back to the class screen, not a blank day
 initFb(); renderAll();
 
 // ══════════════════════════════════════════════════════════════════
