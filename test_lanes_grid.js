@@ -182,6 +182,28 @@ console.log("\n── render ──");
 }
 
 // ── 3. wiring ────────────────────────────────────────────────────────────────
+console.log("\n── a ONE-UNIT lane changes no placement (her safe first lane) ──");
+{
+  const plain = world({ lanes: null });
+  const oneUnit = world({ lanes: { m: { name: "Math", units: [{ sk: "s3b", rhythm: "own" }] } } });
+  let hp = "", ho = "";
+  try { hp = render(plain); ho = render(oneUnit); } catch (e) { ok("renders", false, String(e)); }
+  const cells = h => (h.match(/id="gv-c-(\d+)-(\w+)"[^>]*>([\s\S]*?)<\/td>/g) || [])
+    .map(x => x.replace(/<[^>]+>/g, "").trim()).filter(Boolean);
+  const cellsFor = (h, sk) => (h.match(new RegExp('id="gv-c-\\d+-' + sk + '"[^>]*>([\\s\\S]*?)</td>', "g")) || [])
+    .map(x => x.replace(/<[^>]+>/g, "").trim());
+  ok("every 3B cell is IDENTICAL with and without the one-unit lane",
+    JSON.stringify(cellsFor(hp, "s3b")) === JSON.stringify(cellsFor(ho, "s3b")), { without: cellsFor(hp, "s3b"), with: cellsFor(ho, "s3b") });
+  ok("the other subjects' cells are identical too",
+    JSON.stringify(cellsFor(hp, "plain")) === JSON.stringify(cellsFor(ho, "plain")) &&
+    JSON.stringify(cellsFor(hp, "geo")) === JSON.stringify(cellsFor(ho, "geo")));
+  ok("cell ids still key to the SUBJECT, so every gesture is unchanged", /id="gv-c-\d+-s3b"/.test(ho));
+  ok("no short-name prefix on a single-member lane", !/Singapore 3B · <\/span>/.test(ho));
+  ok("the header now reads as a lane so she can SEE it", /🛤 Math/.test(ho) && /now: Singapore 3B/.test(ho));
+  ok("— and without the lane it is the plain subject header", /<th[^>]*>Singapore 3B</.test(hp) && !/🛤/.test(hp));
+  ok("tapping the header still opens that subject's card", /onclick="ceOpenEdit\('kid','s3b'\)"/.test(ho));
+}
+
 console.log("\n── wiring ──");
 {
   const g = src.indexOf("function renderCurrGrid"); const grid = src.slice(g, g + 70000);
