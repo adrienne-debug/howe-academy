@@ -1939,7 +1939,25 @@ function rtSchoolworkDone(kid,d){ const ts=getActiveTasks().filter(t=>t.who===ki
 // Afternoon (2026-08-18, her rule): opens when schoolwork is done — or at the afternoon hour (default
 // 4:00 PM) regardless, so a slow school day never holds the chores hostage. Past days: always open.
 function rtAfternoonHour(){ const h=parseInt(routineTimes&&routineTimes.afternoonHour,10); return isNaN(h)?16:h; }
-function rtAvailable(slot,kid,d){ if(slot==="afternoon") return rtSchoolworkDone(kid,d)||(d!==_todayDay)||(new Date().getHours()>=rtAfternoonHour()); if(slot==="evening") return (d!==_todayDay)||(new Date().getHours()>=rtEveningHour()); return true; }
+// Days the AFTERNOON list is open all day — no schoolwork test, no clock test. Her rule
+// 2026-09-12: Saturday is not a school day, so gating chores on schoolwork being finished is the
+// wrong test there. Default SAT + SUN so it is live the moment this loads; an explicit empty list
+// means "none" and is honoured (undefined = never set = use the default).
+function rtAlwaysOpenDays(){
+  const v=routineTimes&&routineTimes.alwaysOpenDays;
+  if(v===undefined||v===null) return ["saturday","sunday"];
+  return Array.isArray(v)?v.map(String):[];
+}
+function rtAlwaysOpen(d){ return rtAlwaysOpenDays().indexOf(String(d||""))>=0; }
+function rtSetAlwaysOpenDay(d){
+  if(!momHere()) return;
+  const cur=rtAlwaysOpenDays().slice(); const i=cur.indexOf(d);
+  if(i>=0) cur.splice(i,1); else cur.push(d);
+  routineTimes=Object.assign({},routineTimes,{alwaysOpenDays:cur});
+  if(db) db.ref("config/routineTimes").set(routineTimes);
+  renderAll();
+}
+function rtAvailable(slot,kid,d){ if(slot==="afternoon") return rtAlwaysOpen(d)||rtSchoolworkDone(kid,d)||(d!==_todayDay)||(new Date().getHours()>=rtAfternoonHour()); if(slot==="evening") return (d!==_todayDay)||(new Date().getHours()>=rtEveningHour()); return true; }
 // Open/closed is DERIVED: a finished list shows collapsed (its green header only) on every device and
 // after reloads; a tap on the header overrides for that day (2026-08-18, her ask — the old in-memory
 // auto-collapse only ran on the device that tapped the last step, so kiosks still showed them open).
@@ -1949,7 +1967,7 @@ function toggleRtOpen(slot,kid,nowOpen){ rtOpen[rtOpenKey(slot,kid)]=!nowOpen; r
 function toggleRtStep(slot,kid,i){
   if(!rtAvailable(slot,kid,day)){
     if(typeof gwShowToast==="function"){
-      if(slot==="afternoon") gwShowToast("Afternoon unlocks when school work is done \uD83D\uDCDA");
+      if(slot==="afternoon") gwShowToast("Afternoon unlocks when school work is done, or at "+rtFmtHour(rtAfternoonHour())+" \uD83D\uDCDA");
       else if(slot==="evening") gwShowToast("Evening opens at "+rtFmtHour(rtEveningHour())+" \uD83C\uDF19");
     }
     return;
@@ -4759,6 +4777,18 @@ function chSettingsEveningHourHTML(){
   h+='<select onchange="rtSetEveningHour(this.value)" style="margin-left:auto;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif">';
   [16,17,18,19,20,21].forEach(function(hh){ h+='<option value="'+hh+'"'+(hh===rtEveningHour()?' selected':'')+'>'+rtFmtHour(hh)+'</option>'; });
   h+='</select></div>';
+  // 🗓 Days the afternoon list is open all day (default Sat + Sun)
+  {
+    const on=rtAlwaysOpenDays();
+    h+='<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f9fafb;border:1px solid var(--border);border-radius:10px;margin-bottom:12px;flex-wrap:wrap">';
+    h+='<div style="font-size:12px"><b>Afternoon always open on</b><div style="font-size:10px;color:var(--muted)">No schoolwork needed and no waiting for the clock — for days that are not school days</div></div>';
+    h+='<span style="margin-left:auto;white-space:nowrap">';
+    [["monday","M"],["tuesday","T"],["wednesday","W"],["thursday","T"],["friday","F"],["saturday","Sa"],["sunday","Su"]].forEach(function(p){
+      const sel=on.indexOf(p[0])>=0;
+      h+='<span onclick="rtSetAlwaysOpenDay(\''+p[0]+'\')" title="'+p[0]+'" style="display:inline-block;padding:4px 8px;margin-left:3px;border-radius:9px;border:1px solid '+(sel?'transparent':'var(--border)')+';background:'+(sel?'var(--header)':'#fff')+';color:'+(sel?'#fff':'var(--muted)')+';font-size:11px;font-weight:700;cursor:pointer">'+p[1]+'</span>';
+    });
+    h+='</span></div>';
+  }
   return h;
 }
 
