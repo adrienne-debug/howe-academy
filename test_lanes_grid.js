@@ -213,6 +213,23 @@ console.log("\n── a ONE-UNIT lane changes no placement (her safe first lane)
   ok("the two sticky header rows are pinned at different offsets (or they stack on scroll)", /\.gv thead tr\.gv-bandrow th\{top:0/.test(src) && /\.gv thead tr\.gv-subrow th\{top:17px[;}]/.test(src));
 }
 
+console.log("\n── a lane must never be mistaken for a deleted subject ──");
+{
+  // live 2026-09-12: she opened the Grid after making 8 one-unit lanes and the orphan banner
+  // offered to purge all 8 as "deleted subjects" — the banner was reading the FOLDED column
+  // list, which carries synthetic lane:<id> keys.
+  const c = world(); let h = "";
+  try { h = render(c); } catch (e) { ok("renders", false, String(e)); }
+  ok("NO orphan banner for a kid whose only 'missing subjects' are lane keys", !/deleted subject/.test(h), (h.match(/deleted subject[\s\S]{0,120}/) || [""])[0]);
+  ok("no lane:<id> key is ever offered for purge", !/lane:/.test((h.match(/deleted subject[\s\S]{0,300}/) || [""])[0]));
+  ok("the banner reads the real subject keys", /const _orphans=_allSks\.filter/.test(src));
+  // and a GENUINE orphan (cells, no subject record) must still be caught
+  const g = world({ lanes: null });
+  g.currData.lessons.kid[Object.keys(g.currData.lessons.kid)[0]].ghost_subj = "leftover";
+  let hg = ""; try { hg = render(g); } catch (e) {}
+  ok("a REAL orphan is still reported", /deleted subject/.test(hg) && /ghost_subj/.test(hg), (hg.match(/deleted subject[\s\S]{0,140}/) || [""])[0]);
+}
+
 console.log("\n── wiring ──");
 {
   const g = src.indexOf("function renderCurrGrid"); const grid = src.slice(g, g + 70000);
