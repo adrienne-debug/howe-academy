@@ -1362,6 +1362,15 @@ body.kioskr #kiosk-kids::-webkit-scrollbar{display:none}
 table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'DM Sans',sans-serif}
 .gv th,.gv td{box-sizing:border-box;border-bottom:1px solid #eef0f3;border-right:1px solid #eef0f3;padding:5px 7px;white-space:nowrap;text-align:left;vertical-align:top;background:#fff}
 .gv thead th{position:sticky;top:0;z-index:4;background:var(--bg);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.4px;color:var(--muted);cursor:pointer}
+/* 🛤 TWO header rows: the lane band on top, the subject row pinned directly beneath it. Both must
+   stick or scrolling stacks them; the band has a fixed height so the offset is known. */
+.gv thead tr.gv-bandrow th{top:0;z-index:6;height:17px;padding:1px 7px;font-size:9px;letter-spacing:0.3px;border-bottom:none;cursor:default}
+.gv thead tr.gv-subrow th{top:17px;z-index:4}
+.gv thead tr.gv-subrow th.gv-fix,.gv thead tr.gv-subrow th.gv-min{z-index:7}
+.gv thead tr.gv-bandrow th.gv-fix,.gv thead tr.gv-bandrow th.gv-min{z-index:8}
+.gv-lnband{display:inline-block;padding:0 6px;border-radius:7px;font-weight:800}
+.gv-lnq{display:block;font-size:9px;font-weight:700;color:var(--muted);white-space:nowrap;cursor:pointer}
+.gv-lnq:hover{text-decoration:underline}
 .gv .gv-fix{position:sticky;left:0;z-index:2;background:#fff;width:108px;min-width:108px;max-width:108px;overflow:hidden;text-overflow:ellipsis}
 .gv thead .gv-fix{z-index:5;background:var(--bg);cursor:default}
 .gv .gv-min{position:sticky;left:108px;z-index:2;background:#fff;text-align:right;color:var(--muted);width:44px;min-width:44px;max-width:44px}
@@ -24424,10 +24433,14 @@ function lnFoldColumns(kid,cols){
 // Who is up and who comes next in a lane: {up:[sk…], next:[sk…], upIdx}
 function lnColumnStatus(kid,id){
   const us=lnUnits(kid,id); const up=lnUp(kid,id); const open=function(u){ return lnUnitSubs(u).filter(function(sk){ return lnOpenCount(kid,sk)>0; }); };
-  const out={up:[],next:[],upIdx:up};
+  const out={up:[],next:[],queued:[],upIdx:up};
   if(up<0) return out;
   out.up=open(us[up]);
-  for(let i=up+1;i<us.length;i++){ const o=open(us[i]); if(o.length){ out.next=o; break; } }
+  // EVERY later book still to come — her design 2026-09-12: the queue rides in the HEADER so it
+  // never occupies a day (a queued book taking a day could make a lesson get skipped). FINISHED
+  // units are the ones before `up` and appear here not at all: they drop off the Grid and wait in
+  // the ⚙ Rules panel until she retires them.
+  for(let i=up+1;i<us.length;i++){ const o=open(us[i]); if(!o.length) continue; if(!out.next.length) out.next=o; o.forEach(function(x){ out.queued.push(x); }); }
   return out;
 }
 // A lane names a CATEGORY, so the book's LEVEL does not belong in it: when 3B ends and 4A
@@ -28315,7 +28328,18 @@ function renderCurrGrid(el){
   // cbRemainingContent + cbFutureRows on top and that has never been measured. Log it when a
   // render is slow, so we learn it from her real devices instead of guessing.
   let _gvDerMs=0;
-  h+='<div class="gv-wrap"><table class="gv'+(gvSelMode?' gv-selmode':'')+'"><thead><tr>';
+  h+='<div class="gv-wrap"><table class="gv'+(gvSelMode?' gv-selmode':'')+'"><thead>';
+  // 🛤 BAND ROW — the lane name above its column; columns with no lane leave it blank. A kid with
+  // no lanes gets no band row at all, so the Grid is pixel-identical to before.
+  {
+    let _band='<tr class="gv-bandrow"><th class="gv-fix"></th><th class="gv-min"></th>'; let _any=false;
+    for(const ck of cols){ const _lc=_lnCols[ck];
+      if(_lc){ _any=true; _band+='<th title="'+esc("Lane "+_lc.name)+'"><span class="gv-lnband" style="background:'+col+'18;color:'+col+'">🛤 '+esc(_lc.name)+'</span></th>'; }
+      else _band+='<th></th>';
+    }
+    if(_any) h+=_band+'</tr>';
+  }
+  h+='<tr class="gv-subrow">';
   h+='<th class="gv-fix">Day</th><th class="gv-min">Min</th>';
   for(const ck of cols){
     const _lc=_lnCols[ck];
@@ -28328,7 +28352,19 @@ function renderCurrGrid(el){
       const _hact=gvSelMode?'gvSelCol(\''+_upSk+'\')':'ceOpenEdit(\''+gvKid+'\',\''+_upSk+'\')';
       const _tip='Lane '+_lc.name+' — now: '+(_st.up.map(function(x){ return (subs[x]||{}).display||x; }).join(" / ")||"all done")+(_st.next.length?' → next: '+_st.next.map(function(x){ return (subs[x]||{}).display||x; }).join(" / "):'')+'. '+(gvSelMode?'Tap to select the current subject’s cells.':'Tap to open the current subject’s card.');
       let _oc=''; try{ if(_st.up.length&&typeof planBacked==="function"&&planBacked(gvKid,_upSk)){ const _ow=planOwed(gvKid,_upSk); if(_ow>0) _oc='<span title="'+_ow+' owed on '+esc((subs[_upSk]||{}).display||_upSk)+'" style="display:inline-block;margin-left:4px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:8px;padding:0 5px;font-size:9px;font-weight:800">owed '+_ow+'</span>'; } }catch(e){}
-      h+='<th onclick="'+_hact+'" title="'+esc(_tip)+'">🛤 '+esc(_lc.name)+_oc+'<div style="font-size:9px;font-weight:600;color:var(--muted);white-space:nowrap">'+(_st.up.length?'now: '+_st.up.map(_nm).join(" / "):'all done')+(_st.next.length?' → '+_st.next.map(_nm).join(" / "):'')+'</div></th>';
+      // ACTIVE subject(s) on top, each its own tap target. QUEUED books underneath, also tappable —
+      // that is the ONLY route to a waiting book's card, and it costs no day row. A FINISHED book is
+      // absent entirely (it waits in ⚙ Rules until retired).
+      const _open=function(x){ return gvSelMode?("gvSelCol('"+x+"')"):("ceOpenEdit('"+gvKid+"','"+x+"')"); };
+      const _act=(_st.up.length?_st.up:[_upSk]).map(function(x){
+        return '<span onclick="'+_open(x)+'" title="'+esc(((subs[x]||{}).display||x)+" — open its subject card")+'" style="cursor:pointer">'+_nm(x)+'</span>';
+      }).join('<span style="color:var(--border)"> | </span>');
+      let _q='';
+      (_st.queued||[]).forEach(function(x){
+        _q+='<span class="gv-lnq" onclick="'+_open(x)+'" title="'+esc(((subs[x]||{}).display||x)+" — waiting its turn; tap to open its card")+'">▸ '+_nm(x)+'</span>';
+      });
+      if(!_st.up.length&&!_q) _q='<span class="gv-lnq" style="cursor:default">all done</span>';
+      h+='<th title="'+esc(_tip)+'" style="cursor:default">'+_act+_oc+_q+'</th>';
       continue;
     }
     const sk=ck;

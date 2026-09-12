@@ -106,11 +106,11 @@ console.log("── helpers ──");
   ok("a successor with NO cells is in its lane's member list", eq(f.lanes["lane:math"].members, ["s3b", "s4a"]));
   ok("lane meta carries the name", f.lanes["lane:gs"].name === "Geo/Sci");
   const st = c.lnColumnStatus("kid", "math");
-  ok("status: 3B up, 4A next", eq(st, { up: ["s3b"], next: ["s4a"], upIdx: 0 }), st);
-  ok("multiple card: both up, nothing next", eq(c.lnColumnStatus("kid", "gs"), { up: ["geo", "sci"], next: [], upIdx: 0 }));
+  ok("status: 3B up, 4A next, 4A queued", eq(st, { up: ["s3b"], next: ["s4a"], queued: ["s4a"], upIdx: 0 }), st);
+  ok("multiple card: both up, nothing queued", eq(c.lnColumnStatus("kid", "gs"), { up: ["geo", "sci"], next: [], queued: [], upIdx: 0 }));
   ok("lnShort trims a long name", c.lnShort("Singapore Math 3B Workbook") === "Singapore Mat…" && c.lnShort("DM 4A") === "DM 4A" && c.lnShort("HWT (Printing)") === "HWT");
   const c2 = world({ finish3b: true });
-  ok("3B finished → 4A up, nothing next", eq(c2.lnColumnStatus("kid", "math"), { up: ["s4a"], next: [], upIdx: 1 }));
+  ok("3B finished → 4A up, nothing queued (3B is simply gone from the status)", eq(c2.lnColumnStatus("kid", "math"), { up: ["s4a"], next: [], queued: [], upIdx: 1 }));
   const c3 = world({ lanes: null });
   const f3 = c3.lnFoldColumns("kid", c3.gvSubjectCols("kid"));
   ok("no lanes → columns unchanged, no lane entries", eq(f3.cols, c3.gvSubjectCols("kid")) && eq(f3.lanes, {}));
@@ -137,8 +137,14 @@ console.log("\n── render ──");
   if (h) {
     ok("renders", h.length > 2000);
     ok("ONE header for the Math lane, none for 3B or 4A on their own", (h.match(/🛤 Math/g) || []).length === 1 && !/<th[^>]*>Singapore 3B</.test(h) && !/<th[^>]*>DM 4A</.test(h));
-    ok("header says now: 3B → DM 4A", /now: Singapore 3B → DM 4A/.test(h));
-    ok("header tap opens the UP member's card", /onclick="ceOpenEdit\('kid','s3b'\)"[^>]*>🛤 Math/.test(h));
+    // her design 2026-09-12: lane name in a BAND above; active subject in the header; queued
+    // book underneath and TAPPABLE (the only route to a waiting book's card); costs no day row.
+    ok("a band row carries the lane name above the columns", /<tr class="gv-bandrow">[\s\S]*?🛤 Math[\s\S]*?<\/tr>/.test(h));
+    ok("the lane name is NOT in the subject header any more", !/<th[^>]*>🛤 Math/.test(h));
+    ok("the ACTIVE subject is its own tap target", /onclick="ceOpenEdit\('kid','s3b'\)"[^>]*>Singapore 3B</.test(h));
+    ok("THE FIX: the QUEUED book is tappable too — a waiting book is reachable", /class="gv-lnq" onclick="ceOpenEdit\('kid','s4a'\)"[^>]*>▸ DM 4A</.test(h), "a waiting book would have no route to its card");
+    ok("two active subjects each get their own tap target", /ceOpenEdit\('kid','geo'\)/.test(h) && /ceOpenEdit\('kid','sci'\)/.test(h));
+    ok("a queued book takes NO day row (it lives in the header only)", !/id="gv-c-\d+-s4a"/.test(h));
     ok("4A is NOT in the 'on their cards, not in the grid yet' strip", !/not in the grid yet[\s\S]{0,400}DM 4A/.test(h));
     ok("the plain subject still has its own header", /<th[^>]*>Plain</.test(h));
     ok("column count = lanes + plain (3)", /× 3 subjects/.test(h));
@@ -164,8 +170,9 @@ console.log("\n── render ──");
   const c = world({ finish3b: true }); let h = "";
   try { h = render(c); } catch (e) { ok("renders after 3B finishes", false, String(e)); }
   if (h) {
-    ok("header now says 4A is up", /now: DM 4A/.test(h) && !/→ DM 4A/.test(h));
-    ok("header tap opens 4A's card", /onclick="ceOpenEdit\('kid','s4a'\)"[^>]*>🛤 Math/.test(h));
+    ok("4A is now the ACTIVE subject in the header", /onclick="ceOpenEdit\('kid','s4a'\)"[^>]*>DM 4A</.test(h));
+    ok("finished 3B DROPS OFF the header entirely (it waits in ⚙ Rules until retired)", !/>Singapore 3B</.test(h.slice(h.indexOf('<tr class="gv-subrow">'), h.indexOf("</thead>"))));
+    ok("the band still names the lane", /<tr class="gv-bandrow">[\s\S]*?🛤 Math/.test(h));
     const dns = c._dns; const L = c._lessons;
     const mon = dns.find(dn => L[dn].date === "2026-09-14");
     ok("4A's lessons appear in the lane column on 3B's rhythm, keyed to s4a — with NO cells of its own", /DM 4A L1/.test(cell(h, mon, "s4a") || ""), cell(h, mon, "s4a"));
@@ -178,6 +185,7 @@ console.log("\n── render ──");
   const c = world({ lanes: null }); let h = "";
   try { h = render(c); } catch (e) { ok("renders without lanes", false, String(e)); }
   ok("no lanes → every subject keeps its own header", /<th[^>]*>Singapore 3B</.test(h) && /<th[^>]*>DM 4A</.test(h) === false && /× 4 subjects/.test(h));
+  ok("no lanes → NO band row at all, so the Grid is unchanged for a kid with no lanes", !/gv-bandrow/.test(h));
   ok("— and 4A (no cells) sits in the card-only strip as before", /not in the grid yet[\s\S]{0,400}DM 4A/.test(h));
 }
 
@@ -199,9 +207,10 @@ console.log("\n── a ONE-UNIT lane changes no placement (her safe first lane)
     JSON.stringify(cellsFor(hp, "geo")) === JSON.stringify(cellsFor(ho, "geo")));
   ok("cell ids still key to the SUBJECT, so every gesture is unchanged", /id="gv-c-\d+-s3b"/.test(ho));
   ok("no short-name prefix on a single-member lane", !/Singapore 3B · <\/span>/.test(ho));
-  ok("the header now reads as a lane so she can SEE it", /🛤 Math/.test(ho) && /now: Singapore 3B/.test(ho));
-  ok("— and without the lane it is the plain subject header", /<th[^>]*>Singapore 3B</.test(hp) && !/🛤/.test(hp));
-  ok("tapping the header still opens that subject's card", /onclick="ceOpenEdit\('kid','s3b'\)"/.test(ho));
+  ok("the band row now names the lane so she can SEE it", /<tr class="gv-bandrow">[\s\S]*?🛤 Math/.test(ho) && /ceOpenEdit\('kid','s3b'\)"[^>]*>Singapore 3B</.test(ho));
+  ok("— and without the lane there is no band and no 🛤 at all", /<th[^>]*>Singapore 3B</.test(hp) && !/🛤/.test(hp) && !/gv-bandrow/.test(hp));
+  ok("tapping the subject in the header still opens its card", /onclick="ceOpenEdit\('kid','s3b'\)"/.test(ho));
+  ok("the two sticky header rows are pinned at different offsets (or they stack on scroll)", /\.gv thead tr\.gv-bandrow th\{top:0/.test(src) && /\.gv thead tr\.gv-subrow th\{top:17px[;}]/.test(src));
 }
 
 console.log("\n── wiring ──");
