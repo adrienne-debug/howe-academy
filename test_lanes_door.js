@@ -205,6 +205,51 @@ console.log("\n── panel ──");
 }
 
 // ── 6. wiring in the source ──────────────────────────────────────────────────
+console.log("\n── every column is a lane of one (auto-named, editable) ──");
+{
+  const c = world();
+  const A = c.lnAutoName;
+  ok("a trailing LEVEL token is dropped — the lane names the category, not the book",
+    A("Singapore Math 3B") === "Singapore Math" && A("Dimensions Math 1A") === "Dimensions Math" &&
+    A("Language Smarts D") === "Language Smarts" && A("LOE Foundations B") === "LOE Foundations");
+  ok("real words are never mistaken for a level",
+    A("Editor in Chief") === "Editor in Chief" && A("HWT Printing Power") === "HWT Printing Power" &&
+    A("Spelling You See") === "Spelling You See" && A("Word Roots") === "Word Roots" && A("MR5/MR6 Pages") === "MR5/MR6 Pages");
+  ok("a one-word name survives", A("Mathseeds") === "Mathseeds" && A("") === "");
+  const h = c.lnRenderSection("kid", "#123456");
+  ok("with no lanes, every plan-backed subject offers itself as a lane of one", /Not stacked yet/.test(h) &&
+    /lnEditStart\(null,'s3b'\)/.test(h) && /lnEditStart\(null,'s4a'\)/.test(h) && /lnEditStart\(null,'geo'\)/.test(h), h.slice(h.indexOf("Not stacked"), h.indexOf("Not stacked") + 260));
+  ok("the chip shows the auto name, not the raw subject name", /Singapore ＋/.test(h), h.slice(h.indexOf("Not stacked"), h.indexOf("Not stacked") + 400));
+  ok("the daily subject is never offered", !/lnEditStart\(null,'reflex'\)/.test(h));
+}
+{
+  const c = world({ lanes: MATH });
+  const h = c.lnRenderSection("kid", "#1");
+  ok("a subject already in a lane is NOT offered again", !/lnEditStart\(null,'s3b'\)/.test(h) && !/lnEditStart\(null,'s4a'\)/.test(h));
+  ok("— but the ones that are not stacked still are", /lnEditStart\(null,'geo'\)/.test(h) && /lnEditStart\(null,'sci'\)/.test(h));
+}
+{
+  const c = world();
+  c.lnEditStart(null, "s3b");
+  ok("tapping a chip seeds the editor with that subject as unit 1", c.lnEdit && c.lnEdit.units.length === 1 && c.lnEdit.units[0].sk === "s3b" && c.lnEdit.units[0].rhythm === "own");
+  ok("— and pre-fills the auto name, which is editable", c.lnEdit.name === "Singapore");
+  ok("no problems: it is already a valid one-unit lane", eq(c.lnEditProblems("kid"), []));
+  ok("the chips are hidden while the editor is open", !/Not stacked yet/.test(c.lnRenderSection("kid", "#1")));
+  c.lnEditName("Math");                    // she renames it
+  c.lnEditAdd("single"); c.lnEditSet(1, "sk", "s4a");
+  c.writes.length = 0; c.lnEditSave();
+  const w = c.writes.find(x => /^curriculum\/lanes\/kid\//.test(x[0]));
+  ok("saving writes ONE real lane record with her name and both books", !!w && w[2].name === "Math" &&
+    eq(w[2].units, [{ sk: "s3b", rhythm: "own" }, { sk: "s4a", rhythm: "prior" }]), w && w[2]);
+  ok("nothing is stored until she saves — no lane node per subject", c.writes.filter(x => /lanes/.test(x[0])).length === 1);
+}
+{
+  // the engine must NOT see an implicit lane — only display does
+  const c = world();
+  ok("lnOf still means a REAL stored lane (the generator, projection and re-lay are untouched)", c.lnOf("kid", "s3b") === null);
+  ok("lnMemberInfo is still null for an unstacked subject (no badge noise on 24 rows)", c.lnMemberInfo("kid", "s3b") === null);
+}
+
 console.log("\n── wiring ──");
 {
   ok("state declared beside the panel's other state", /let lnEdit=null, lnUndo=null;/.test(src));

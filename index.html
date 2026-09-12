@@ -24430,6 +24430,16 @@ function lnColumnStatus(kid,id){
   for(let i=up+1;i<us.length;i++){ const o=open(us[i]); if(o.length){ out.next=o; break; } }
   return out;
 }
+// A lane names a CATEGORY, so the book's LEVEL does not belong in it: when 3B ends and 4A
+// steps in, the column should already read "Singapore Math". Strips a trailing level token
+// only — a single letter or a number with an optional letter (3B · 1A · D · B · 2) — so real
+// words survive (Printing Power · Word Roots · Reading Detective · Spelling You See).
+// Her rule 2026-09-12: name it something sensible, and let her rename it.
+function lnAutoName(display){
+  const t=String(display||"").trim(); const p=t.split(/\s+/);
+  if(p.length<2) return t;
+  return /^(\d+[A-Za-z]?|[A-Za-z])$/.test(p[p.length-1])?p.slice(0,-1).join(" "):t;
+}
 function lnShort(name){ const n=String(name||"").replace(/\s*\(.*\)\s*$/,"").trim(); return n.length>14?(n.slice(0,13).trim()+"…"):n; }
 // The member a lane-column row belongs to. Future: the member the projection laid there.
 // Past / done: the member holding the stored cell. Empty: the member that is up (so typing
@@ -24638,9 +24648,13 @@ function _lnNormUnit(u){
   if(u.subs) return {subs:lnUnitSubs(u),pattern:String(u.pattern||""),rhythm:u.rhythm==="prior"?"prior":"own",allowedDays:_lnList(u.allowedDays).map(String),timesPerWeek:parseInt(u.timesPerWeek,10)||3,cap:Math.max(1,parseInt(u.cap,10)||1)};
   return {sk:String(u.sk||""),rhythm:u.rhythm==="prior"?"prior":"own"};
 }
-function lnEditStart(id){
+function lnEditStart(id,seedSk){
   const kid=cbKid;
   if(id){ const l=lnLanes(kid)[id]||{}; lnEdit={id:id,name:String(l.name||""),units:lnUnits(kid,id).map(_lnNormUnit)}; }
+  // Seeded from a column that is not stacked yet: every subject is already a lane of one, so
+  // she never has to "create a lane" first — the auto name is in the field and editable.
+  else if(seedSk){ const d=((((currData||{}).subjects||{})[kid]||{})[seedSk]||{}).display||seedSk;
+    lnEdit={id:null,name:lnAutoName(d),units:[{sk:String(seedSk),rhythm:"own"}]}; }
   else lnEdit={id:null,name:"",units:[]};
   renderAll();
 }
@@ -24757,6 +24771,17 @@ function lnRenderSection(kid,col){
     });
     h+='<span style="margin-left:auto;white-space:nowrap"><button onclick="lnEditStart(\''+id+'\')" style="padding:2px 8px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:10px;cursor:pointer">✎ edit</button> <button onclick="lnDelete(\''+id+'\')" style="padding:2px 8px;border-radius:8px;border:1px solid #fecaca;background:#fff;color:#b5394a;font-size:10px;cursor:pointer">✕ remove</button></span>';
     h+='</div>';
+  }
+  // Every plan-backed column IS a lane — one of one — until she stacks the next book after it.
+  // Shown as tap-to-stack chips rather than 24 full rows, so the panel does not turn into noise.
+  if(!lnEdit){
+    const _tk=_lnTaken(kid,null); const loose=_lnPbList(kid).filter(function(sk){ return !_tk[sk]; });
+    if(loose.length){
+      h+='<div style="font-size:10.5px;color:var(--muted);margin:6px 0 4px">Not stacked yet — every one of these is a lane of one. Tap to name it and add the next book after it:</div>';
+      h+='<div class="ce-chips" style="margin-bottom:6px">'+loose.map(function(sk){
+        return '<div class="ce-chip" style="padding:3px 10px;font-size:11px" title="'+esc((subs[sk]||{}).display||sk)+' — stack the next book after it" onclick="lnEditStart(null,\''+sk+'\')">'+esc(lnAutoName((subs[sk]||{}).display||sk))+' ＋</div>';
+      }).join("")+'</div>';
+    }
   }
   if(lnEdit){
     const pb=_lnPbList(kid); const taken=_lnTaken(kid,lnEdit.id);
