@@ -11687,6 +11687,10 @@ function subjNoCarry(t){
   if(t.subjectKey==="retrieval"||/_retr_/.test(t.id||"")) return true;
   const cs=currData&&currData.subjects&&currData.subjects[t.who];
   const s=(cs&&t.subjectKey)?cs[t.subjectKey]:null;
+  // A fixed-time class is inherently day-bound: the teacher is there at 10:00 Wednesday
+  // and nowhere else, so a missed class is missed — carrying it to Thursday would put a
+  // card for a class that isn't happening on a day it can't happen.
+  if(s&&typeof fxIsClass==="function"&&fxIsClass(s)) return true;
   return !!(s&&(s.noCarry||s.tracking==="daily"));
 }
 
@@ -14829,6 +14833,53 @@ function ceSaveField(field,val){
   currData.lastEdit=new Date().toISOString();
   db.ref("curriculum/lastEdit").set(currData.lastEdit);
 }
+// FIXEDCLASS_DOOR_START
+// ── "Set time" — turn a subject into a fixed-time class ──
+// Every write here is a single targeted field on this one subject, via ceSaveField.
+// Turning it OFF clears fixedTime AND fixedDates, so a half-configured class can never
+// be left behind holding a window.
+function fxDoorToggle(){
+  if(!currData||!ceEditKid||!ceEditKey) return;
+  const s=currData.subjects[ceEditKid][ceEditKey];
+  if(fxIsClass(s)){
+    ceSaveField("fixedTime",null);
+    ceSaveField("fixedDates",null);
+  } else {
+    ceSaveField("fixedTime", s.fixedTime||"10:00 AM");
+  }
+  ceRenderEditSheet(); renderAll();
+}
+function fxDoorSetTime(v){
+  if(!v){ ceSaveField("fixedTime",null); ceRenderEditSheet(); renderAll(); return; }
+  // <input type=time> gives 24h ("10:00"); the app stores clock strings as 12h.
+  ceSaveField("fixedTime", to12h(v));
+  ceRenderEditSheet(); renderAll();
+}
+// Paste the real meeting dates. Accepts one per line or comma/space separated, in
+// YYYY-MM-DD. Anything unparseable is reported rather than silently dropped — a missing
+// date means a missing class.
+function fxDoorSetDates(txt){
+  const raw=String(txt||"").split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean);
+  const good=[], bad=[];
+  raw.forEach(x=>{
+    if(/^\d{4}-\d{2}-\d{2}$/.test(x)){
+      const d=new Date(x+"T12:00:00");
+      if(!isNaN(d.getTime())&&d.toISOString().slice(0,10)===x) good.push(x); else bad.push(x);
+    } else bad.push(x);
+  });
+  good.sort();
+  const uniq=good.filter((x,i)=>i===0||x!==good[i-1]);
+  ceSaveField("fixedDates", uniq.length?uniq:null);
+  fxDoorMsg=bad.length
+    ? "⚠ "+uniq.length+" date"+(uniq.length===1?"":"s")+" saved — could not read: "+bad.join(", ")
+    : (uniq.length?"✓ "+uniq.length+" meeting date"+(uniq.length===1?"":"s")+" saved":"Cleared — the class now meets every day it is pinned to.");
+  ceRenderEditSheet(); renderAll();
+}
+let fxDoorMsg="";
+function fxDoorSetUrl(v){
+  ceSaveField("joinUrl", String(v||"").trim()||null);
+  ceRenderEditSheet();
+}
 // Overflow defaults ON, so `undefined` means allowed and only an explicit false turns it
 // off — that way every subject is covered without writing anything to 24 cards.
 function ceToggleOverflow(){
@@ -15182,6 +15233,38 @@ function ceRenderEditSheet(){
   // Catch-up overflow — her rule: run on the normal days, but when behind the extras may
   // land elsewhere rather than stacking two in a day.
   const _ovf=s.overflowExtras!==false;
+  // ── Set time (a class) ──
+  const _fxOn=fxIsClass(s);
+  const _fxDates=Array.isArray(s.fixedDates)?s.fixedDates:[];
+  h+='<div class="ce-sheet-lbl">\u23F0 Set time <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— a class that happens at a fixed clock time</span></div>';
+  h+='<div class="ce-chips">';
+  h+='<div class="ce-chip'+(_fxOn?" sel":"")+'" onclick="fxDoorToggle()">'+(_fxOn?"\u2713 Fixed time":"Off — packed into the day")+'</div>';
+  h+='</div>';
+  if(!_fxOn){
+    h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Off: the scheduler picks when this happens, around everything else. Turn on for an online class or a lesson with a teacher \u2014 the card is pinned to its time and the rest of the day packs around it.</div>';
+  } else {
+    h+='<div style="display:flex;gap:8px;margin-top:6px">';
+    h+='<div style="flex:1"><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:3px">Starts at</div>';
+    h+='<input type="time" class="rules-time" style="width:100%" value="'+esc(ampmTo24(s.fixedTime||""))+'" onchange="fxDoorSetTime(this.value)"></div>';
+    h+='<div style="flex:1"><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:3px">Runs for</div>';
+    h+='<input type="number" min="5" step="5" class="ce-sheet-input" value="'+(parseInt(s.minutes,10)||45)+'" onchange="ceSaveField(\'minutes\',Math.max(5,parseInt(this.value,10)||45));ceRenderEditSheet();renderAll()"><div style="font-size:10px;color:var(--muted)">minutes</div></div>';
+    h+='</div>';
+    // The days it is pinned to are the existing Days control — say so rather than
+    // duplicating it, so there is only ever one place that decides the weekday.
+    const _fxDow=(s.allowedDays&&s.allowedDays.length)?s.allowedDays.join(" "):(s.days||"any school day");
+    h+='<div style="font-size:10px;color:var(--muted);margin-top:6px">Pinned to: <b>'+esc(_fxDow)+'</b> \u2014 set the weekday with the Days control above.</div>';
+    h+='<div class="ce-sheet-lbl" style="margin-top:10px">Meeting dates <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— optional, but exact</span></div>';
+    h+='<textarea class="ce-sheet-input" rows="3" placeholder="2026-09-16&#10;2026-09-23&#10;2026-09-30" style="width:100%;box-sizing:border-box;font-family:ui-monospace,monospace;font-size:11px" onchange="fxDoorSetDates(this.value)">'+esc(_fxDates.join("\n"))+'</textarea>';
+    if(_fxDates.length){
+      h+='<div style="font-size:10px;color:#0f766e;margin-top:3px"><b>'+_fxDates.length+'</b> meeting'+(_fxDates.length===1?"":"s")+': '+esc(_fxDates[0])+' \u2192 '+esc(_fxDates[_fxDates.length-1])+'. No card lands on any other day.</div>';
+    } else {
+      h+='<div style="font-size:10px;color:#92400e;margin-top:3px">Empty = it meets <b>every</b> pinned day, including holiday weeks. Paste the real dates so it skips the weeks with no class.</div>';
+    }
+    if(fxDoorMsg) h+='<div style="font-size:10px;color:var(--muted);margin-top:3px">'+esc(fxDoorMsg)+'</div>';
+    h+='<div class="ce-sheet-lbl" style="margin-top:10px">Join link <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— optional</span></div>';
+    h+='<input class="ce-sheet-input" placeholder="https://\u2026" value="'+esc(s.joinUrl||"")+'" onchange="fxDoorSetUrl(this.value)">';
+  }
+
   h+='<div class="ce-sheet-lbl">When behind</div>';
   h+='<div class="ce-chips">';
   h+='<div class="ce-chip'+(_ovf?" sel":"")+'" onclick="ceToggleOverflow();ceRenderEditSheet()">'+(_ovf?"✓ Extras can use other days":"Only its own days")+'</div>';
@@ -18374,6 +18457,68 @@ function renderCalendarView(el, headerHtml){
   h+='</div>';
   el.innerHTML=h;
 }
+
+// FIXEDCLASS_START
+// ── FIXED-TIME CLASSES ────────────────────────────────────────────
+// A subject that happens at a SET CLOCK TIME on SET DATES — an online class, a lesson
+// with a teacher, an elective. It is a real curriculum subject (so it lives in the Grid
+// with everything else, paces, and has a Finish Line), but its card is never packed:
+// it is pinned at its own time and the rest of the day packs AROUND it.
+//
+// The distinction that matters, and the reason a co-op could not express this:
+//   co-op  = "out of the house UNTIL x"  → a forward cursor (kidStart). Can only push
+//            work later, so a 2 PM co-op correctly wipes the day before it.
+//   class  = "booked FROM x TO y"        → a window (packDay's ctx.busy). School still
+//            happens on both sides, which is what a cursor cannot do.
+//
+// Shape on the subject record (curriculum/subjects/<kid>/<sk>):
+//   fixedTime:"10:00 AM"            the clock time it starts
+//   minutes:45                      duration (the existing field)
+//   allowedDays:["Wed"]             which weekday(s) — the existing field
+//   fixedDates:["2026-09-16",…]     the real dates; AUTHORITATIVE when present, so a
+//                                   Wednesday class still skips Thanksgiving week
+//   joinUrl:"https://…"             optional link opened from the card
+const FX_DOW={monday:"Mon",tuesday:"Tue",wednesday:"Wed",thursday:"Thu",friday:"Fri",saturday:"Sat",sunday:"Sun"};
+function fxIsClass(s){ return !!(s&&s.fixedTime&&String(s.fixedTime).trim()); }
+function fxDateList(s){ return (s&&Array.isArray(s.fixedDates)&&s.fixedDates.length)?s.fixedDates:null; }
+// Does this class meet on this day? An explicit date list wins outright — if it is set
+// and we don't know the date, the answer is NO (better a missing card than a card on a
+// day the class doesn't meet).
+function fxRunsOn(s,dateStr,dayName){
+  if(!fxIsClass(s)) return false;
+  const fd=fxDateList(s);
+  if(fd) return dateStr?fd.indexOf(dateStr)>=0:false;
+  const al=(s.allowedDays||[]).map(String);
+  if(!al.length) return true;
+  const tok=FX_DOW[String(dayName||"").toLowerCase()];
+  return tok?al.indexOf(tok)>=0:false;
+}
+function fxWindow(s,dateStr,dayName){
+  if(!fxRunsOn(s,dateStr,dayName)) return null;
+  const st=toMin(s.fixedTime);
+  if(st==null||isNaN(st)) return null;
+  const dur=Math.max(5,parseInt(s.minutes,10)||45);
+  return {s:st,e:st+dur};
+}
+// Which device lane a class holds. Mirrors packAround's own laneOf so the window lands on
+// the same pool the packer books from — "paper" is not a contended lane and holds nothing.
+function fxLaneOf(device,who){
+  const dv=device||"paper";
+  if(dv==="ipad"&&who==="lucy") return "ipadLucy";
+  if(dv==="ipad"||dv==="phone"||dv==="ipad/phone") return "screen";
+  return dv;
+}
+// Every class window for a kid on a date, earliest first.
+function fxWindowsFor(kid,dateStr,dayName){
+  const out=[];
+  const subs=(typeof gwGetSubjects==="function")?(gwGetSubjects(kid)||{}):{};
+  for(const sk in subs){
+    const w=fxWindow(subs[sk],dateStr,dayName);
+    if(w){ w.sk=sk; w.display=subs[sk].display||sk; w.mom=subs[sk].mom||"none"; out.push(w); }
+  }
+  return out.sort((a,b)=>a.s-b.s);
+}
+// FIXEDCLASS_END
 
 // ── CO-OPS / CUSTOM DAYS ─────────────────────────────────────────────────────
 // Named calendar categories for co-op days: a kid is out for PART of the day (timed —
@@ -24035,6 +24180,7 @@ function cbDeriveContent(split,lessonSeq,doneN,dismissedIdx,skipTexts,doneTally,
 //             allowedDays:["Mon",...] ([]=any school day), tpw (0/undefined = every allowed day),
 //             targetDate (ISO, optional: tpw auto = ceil(remaining/weeksLeft)),
 //             cap (maxPerDay, default 1), anchor (ISO|null), doneSince (# done with day ≥ anchor),
+//             onlyDates:{iso:true}|null,      // fixed-time class: the ONLY dates it may take
 //             offDates:{iso:true} }],         // per-subject ✕'d days
 //   calendar: { kid: [{date:"YYYY-MM-DD", dow:"Mon", off:bool}] },   // school days, ANCHOR→horizon, ascending
 //   dayCapMin: { kid: minutes } (0/undefined = uncapped),
@@ -24058,7 +24204,10 @@ function _pjWeeksBetween(aISO,bISO){ return Math.max(1,Math.ceil((Date.UTC(+bISO
 // absorb the same backlog with cap-extras and overshoot.
 function _pjPatternRows(plan,rows,tpw,overflowWanted){
   const allowed=(plan.allowedDays||[]).map(String);
-  const elig=rows.filter(r=>r&&!r.off&&!(plan.offDates||{})[r.date]&&!(plan._blocked||{})[r.date]&&(!allowed.length||allowed.includes(r.dow)));
+  // plan.onlyDates (a fixed-time class's real meeting dates) is an ALLOWLIST: no date
+  // outside it is ever eligible, so a Wednesday class skips the Wednesdays it doesn't meet.
+  const _only=plan.onlyDates||null;
+  const elig=rows.filter(r=>r&&!r.off&&!(plan.offDates||{})[r.date]&&!(plan._blocked||{})[r.date]&&(!_only||_only[r.date])&&(!allowed.length||allowed.includes(r.dow)));
   let out;
   if(!tpw||tpw<=0) out=elig;
   else{
@@ -24083,6 +24232,7 @@ function _pjPatternRows(plan,rows,tpw,overflowWanted){
     rows.forEach(r=>{
       if(!r||!add[r.date]||have.has(r.date)) return;
       if(r.off||(plan.offDates||{})[r.date]||(plan._blocked||{})[r.date]) return;
+      if(_only&&!_only[r.date]) return;   // a class cannot be made up on a non-class date
       out.push(r); have.add(r.date);
     });
     out.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
@@ -24090,7 +24240,7 @@ function _pjPatternRows(plan,rows,tpw,overflowWanted){
   plan._overflowUsed=0;
   if(overflowWanted>0){
     const seen=new Set(out.map(r=>r.date));
-    const spill=rows.filter(r=>r&&!seen.has(r.date)&&!r.off&&!(plan.offDates||{})[r.date]&&!(plan._blocked||{})[r.date])
+    const spill=rows.filter(r=>r&&!seen.has(r.date)&&!r.off&&!(plan.offDates||{})[r.date]&&!(plan._blocked||{})[r.date]&&(!_only||_only[r.date]))
       .sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0)
       .slice(0,overflowWanted);
     spill.forEach(r=>out.push(r));
@@ -24288,7 +24438,13 @@ function planMaterialize(kid,sk,form,opts){
   // subject's own tpw pattern, which is what the schedule already runs on. The `owed` number
   // is still computed and still shown by planOwed's chip — it is scheduled, not hidden.
   const _absorb=!(opts&&opts.absorb===false);
-  const plan={pid:planIdFor(kid,sk),kid,sk,priority:s.priority||0,minutes:min,lessons,allowedDays:_lnOff?[]:(f.allowedDays||[]).slice(),cap:_absorb?cap:1,anchor:_absorb?anchor:null,doneSince,offDates:_lnOff||{},overflow:_absorb&&(s.overflowExtras!==false),_wkUsed:_dealtWk};
+  // A fixed-time class projects ONLY onto its real meeting dates, one per sitting.
+  let _fxOnly=null;
+  if(typeof fxIsClass==="function"&&fxIsClass(s)){
+    const _fl=fxDateList(s);
+    if(_fl){ _fxOnly={}; _fl.forEach(function(d){ _fxOnly[d]=true; }); }
+  }
+  const plan={pid:planIdFor(kid,sk),kid,sk,priority:s.priority||0,minutes:min,lessons,allowedDays:_lnOff?[]:(f.allowedDays||[]).slice(),cap:_absorb?cap:1,anchor:_absorb?anchor:null,doneSince,offDates:_lnOff||{},onlyDates:_fxOnly,overflow:_absorb&&(s.overflowExtras!==false),_wkUsed:_dealtWk};
   if(_lnOff) plan.tpw=0;   // 🛤 every day not off is one of mine — the pattern already chose them
   else if(f.mode==="targetDate") plan.targetDate=f.targetDate||""; else plan.tpw=parseInt(f.tpw,10)||0;
   const out=projectPlans({plans:[plan],calendar:{[kid]:pastRows.concat(allRows)},dayCapMin:{[kid]:capMin||0},blocked:{[kid]:{[sk]:blocked}},added:{[kid]:{[sk]:_addedIn}},todayISO:today});
@@ -40857,6 +41013,7 @@ function gwRolloverReportHTML(tasks,cursors,targetWeekNum){
       // subject marked Daily without the noCarry flag was being projected as rolling
       // forward when the cascade will never actually roll it.
       if(s.noCarry||s.tracking==="daily"||sk==="reflex"||/reflex/i.test(s.display||sk)) continue;
+      if(typeof fxIsClass==="function"&&fxIsClass(s)) continue;   // a class never rolls forward
       const missed=missedBy[sk]||[];
       const nx=nextBy[sk]||{n:0,cu:0};
       const cursor=(cursors&&cursors[kid]&&cursors[kid][sk]!==undefined)?cursors[kid][sk]:computeSubjectCursor(kid,sk);
@@ -41550,6 +41707,9 @@ function gwSubjectDetail(kid,key){
 //       lane and momFree ONCE (Mom teaches them together — the intentional exception to
 //       the "no two Mom-required at once" rule, which still holds BETWEEN blocks).
 //   ctx:  { start, end, lunchStart, lunchEnd,        // minutes from midnight
+//           busy, momBusy, laneBusy,                  // optional windows to step OVER, not start after:
+//                                                     //   busy={kid:[{s,e}]} (a fixed-time class), momBusy=[{s,e}],
+//                                                     //   laneBusy={lane:[{s,e}]} (the class also holds its device)
 //           sitterStart, sitterEnd,                   // 0/0 when no babysitter window
 //           kidStart, laneStart, momStart,            // per-kid / per-lane / Mom earliest — seed past already-fixed (checked) work
 //           lanes,                                    // contending device lanes (default below)
@@ -41565,12 +41725,66 @@ function packDay(items, ctx){
   const laneCap = ctx.laneCap || {};
   const capOf = l => Math.max(1, laneCap[l] || (l === "screen" ? 2 : 1)); // screen = iPad+phone pool
   const lunchS = ctx.lunchStart, lunchE = ctx.lunchEnd, hasLunch = (lunchE > lunchS);
-  const skipLunch = (start, dur) => {
-    if(!hasLunch || start >= lunchE || start + dur <= lunchS) return start;
-    return lunchE;
-  };
+  // Lunch was the only interval the packer stepped OVER (work that fits before it stays
+  // before it; work that would straddle it moves past it) — every other constraint is a
+  // forward cursor, which can only push work later. A fixed-time class needs lunch's
+  // shape, not a cursor's: school happens on BOTH sides of a 10:00-10:45 class, whereas
+  // a co-op ("out until 10:45") is correctly a cursor. So lunch and any per-kid busy
+  // window now run through one loop. With no busy intervals this is exactly the old
+  // lunch-only skip, which is what keeps slice 1 inert.
+  const busyMap = ctx.busy || {};
+  const momBusyList = ctx.momBusy || [];
+  function _windows(kids, momReq){
+    const out = [];
+    if(hasLunch) out.push({s: lunchS, e: lunchE});
+    for(const k of kids){
+      const bs = busyMap[k];
+      if(bs) for(const b of bs) if(b && b.e > b.s) out.push(b);
+    }
+    if(momReq) for(const b of momBusyList) if(b && b.e > b.s) out.push(b);
+    return out.sort((a, b) => a.s - b.s);
+  }
+  // Walk forward past every window this task would straddle. Re-checks after each move
+  // because stepping past one window can land inside the next (back-to-back classes);
+  // movement is forward-only, so it settles in at most one pass per window — `guard` is a
+  // belt-and-braces stop, not load-bearing.
+  function _walk(wins, start, dur){
+    if(!wins || !wins.length) return start;
+    let s = start, moved = true, guard = 0;
+    while(moved && guard++ < 64){
+      moved = false;
+      for(const w of wins){
+        if(s < w.e && s + dur > w.s){ s = w.e; moved = true; }
+      }
+    }
+    return s;
+  }
   // Each lane is a pool of `capOf(l)` devices; res[l][i] = when device i is free.
   const res = {}; LANES.forEach(l => { const seed = Math.max(dayStart, (ctx.laneStart && ctx.laneStart[l]) || 0); res[l] = []; for(let i=0;i<capOf(l);i++) res[l].push(seed); });
+  // A class does not just occupy its kid — it occupies a DEVICE. Lincoln's German runs on
+  // the computer 10:00-10:45, so the computer is not bookable then even though no cursor
+  // has reached it. Windows are dealt to individual slots (first slot with no overlap), so
+  // a 2-device lane still has one free during a single class and only a genuine
+  // double-booking closes the lane.
+  const laneBusy = {};
+  LANES.forEach(l => { laneBusy[l] = []; for(let i=0;i<capOf(l);i++) laneBusy[l].push([]); });
+  (() => {
+    const inc = ctx.laneBusy || {};
+    for(const l in inc){
+      if(!laneSet[l]) continue;
+      const slots = laneBusy[l];
+      (inc[l] || []).filter(w => w && w.e > w.s).slice().sort((a, b) => a.s - b.s).forEach(w => {
+        let hit = -1;
+        for(let i = 0; i < slots.length; i++){
+          if(!slots[i].some(x => w.s < x.e && w.e > x.s)){ hit = i; break; }
+        }
+        // More overlapping classes than devices: the extra still holds a slot, so the lane
+        // reads as fully busy rather than silently double-booking a machine.
+        slots[hit < 0 ? 0 : hit].push({s: w.s, e: w.e});
+      });
+      slots.forEach(a => a.sort((x, y) => x.s - y.s));
+    }
+  })();
   let momFree = Math.max(dayStart, ctx.momStart || 0);
   const kidFree = {};
   const hardEnd = ctx.allowOvertime ? (ctx.end + (ctx.overtimeMax || 180)) : ctx.end;
@@ -41582,13 +41796,29 @@ function packDay(items, ctx){
     const lane = (it.lane && laneSet[it.lane]) ? it.lane : null;
     let from = dayStart;
     for(const k of kids) from = Math.max(from, kidFree[k] || 0, (ctx.kidStart && ctx.kidStart[k]) || 0);
-    let lanePick = -1;
-    if(lane){ const pool = res[lane]; lanePick = 0; for(let i=1;i<pool.length;i++) if(pool[i] < pool[lanePick]) lanePick = i; from = Math.max(from, pool[lanePick]); }
     if(it.momRequired) from = Math.max(from, momFree);
-    let start = skipLunch(from, dur);
+    // Windows that apply whichever device is picked: lunch, this kid's classes, and Mom's.
+    const shared = _windows(kids, it.momRequired);
+    let lanePick = -1, start;
+    if(lane){
+      const pool = res[lane], lb = laneBusy[lane] || [];
+      // Pick the device that can genuinely start earliest once the windows it is already
+      // holding are counted. Ties break on the smaller cursor — which IS the old
+      // min-cursor pick — so with no lane windows this chooses the same device as before.
+      let best = -1, bestStart = Infinity;
+      for(let i = 0; i < pool.length; i++){
+        const wins = (lb[i] && lb[i].length) ? shared.concat(lb[i]).sort((a, b) => a.s - b.s) : shared;
+        const cand = _walk(wins, Math.max(from, pool[i]), dur);
+        if(best < 0 || cand < bestStart || (cand === bestStart && pool[i] < pool[best])){ bestStart = cand; best = i; }
+      }
+      lanePick = best; start = bestStart;
+    } else {
+      start = _walk(shared, from, dur);
+    }
     // A Mom-required task can't run during the babysitter window — defer to mom's return.
     if(it.momRequired && ctx.sitterEnd > ctx.sitterStart && start < ctx.sitterEnd && start + dur > ctx.sitterStart){
-      start = skipLunch(ctx.sitterEnd, dur);
+      const own = (lane && lanePick >= 0 && laneBusy[lane]) ? (laneBusy[lane][lanePick] || []) : [];
+      start = _walk(own.length ? shared.concat(own).sort((a, b) => a.s - b.s) : shared, ctx.sitterEnd, dur);
     }
     if(start + dur > hardEnd){ (it.droppable ? dropped : overflow).push(it); continue; }
     const end = start + dur;
@@ -41608,7 +41838,7 @@ function packDay(items, ctx){
 // (overflow — never dropped here). Shared by displacement (_packFit), the daily
 // cascade, and the day re-sort so every engine packs identically.
 //   existing / newTasks: task objects {id, who, time, dur, device, mom}
-//   ctx: {start, end, lunchStart, lunchEnd, momStart?, kidStart?, allowOvertime?, overtimeMax?}
+//   ctx: {start, end, lunchStart, lunchEnd, momStart?, kidStart?, busy?, momBusy?, laneBusy?, allowOvertime?, overtimeMax?}
 function packAround(existing, newTasks, ctx){
   if(!newTasks || !newTasks.length) return [];
   function laneOf(t){ var dv=t.device||taskDevice(t); if(dv==="ipad"&&t.who==="lucy") return "ipadLucy"; if(dv==="ipad"||dv==="phone"||dv==="ipad/phone") return "screen"; return dv; }
@@ -41628,6 +41858,7 @@ function packAround(existing, newTasks, ctx){
   });
   var items=newTasks.map(function(t){ return {id:t.id,who:t.who,lane:laneOf(t),durMin:t.dur||20,momRequired:t.mom==="required"}; });
   var packed=packDay(items,{start:dStart,end:ctx.end,lunchStart:ctx.lunchStart,lunchEnd:ctx.lunchEnd,
+    busy:ctx.busy,momBusy:ctx.momBusy,laneBusy:ctx.laneBusy,
     kidStart:kidStart,laneStart:laneStart,momStart:momStart,allowOvertime:!!ctx.allowOvertime,overtimeMax:ctx.overtimeMax||180,lanes:ctx.lanes,
     laneCap:ctx.laneCap||(typeof gwDeviceCaps==="function"?gwDeviceCaps():undefined)});
   var byId={}; newTasks.forEach(function(t){byId[t.id]=t;});
@@ -41790,10 +42021,30 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
     });
   }
 
+  // ── Fixed-time classes ─────────────────────────────────────────────
+  // A class happens at its own clock time whether the day is busy or not, so it is taken
+  // OUT of the packer's queue, given its time directly, and handed back as a `busy`
+  // window the packer steps over.
+  // ⚠ Deliberately NOT passed as packAround's `existing`: that seeds kidStart past the
+  // class END, which is the co-op "out until" behaviour — it would wipe every morning
+  // before a midday class. The window is the whole point.
+  const fxBusy={}, fxMomBusy=[], fxLaneBusy={}, toPack=[];
+  items.forEach(function(it){
+    const mm=meta[it.id], s=mm&&mm.s;
+    const w=s?fxWindow(s,dayConfig.dateStr,dayName):null;
+    if(!w){ toPack.push(it); return; }
+    it.time=fromMin(w.s);                                    // pinned, not packed
+    (fxBusy[it.who]=fxBusy[it.who]||[]).push({s:w.s,e:w.e});
+    if((s.mom||"none")==="required") fxMomBusy.push({s:w.s,e:w.e});
+    // An online class holds the machine it runs on, not just the kid.
+    const _ln=fxLaneOf(it.device,it.who);
+    if(_ln&&_ln!=="paper") (fxLaneBusy[_ln]=fxLaneBusy[_ln]||[]).push({s:w.s,e:w.e});
+  });
+
   // Place everything through the shared packer (no phone lane, to match the prior
   // generator; Mom deferred past the sitter return on babysitter days).
-  const overflow=packAround([],items,{start:schoolStart,end:cutoff,lunchStart:r.lunchStart,lunchEnd:r.lunchEnd,
-    kidStart:kidStart,momStart:(isSitter?sitterEnd:0),lanes:["computer","screen","ipadLucy"],laneCap:gwDeviceCaps()});
+  const overflow=packAround([],toPack,{start:schoolStart,end:cutoff,lunchStart:r.lunchStart,lunchEnd:r.lunchEnd,
+    kidStart:kidStart,momStart:(isSitter?sitterEnd:0),busy:fxBusy,momBusy:fxMomBusy,laneBusy:fxLaneBusy,lanes:["computer","screen","ipadLucy"],laneCap:gwDeviceCaps()});
   const overflowSet=new Set(overflow);
   items.forEach(it=>{
     const mm=meta[it.id];
