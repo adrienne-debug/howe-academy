@@ -24349,7 +24349,7 @@ function subjectFinished(kid,sk){
   if(!(typeof planBacked==="function"&&planBacked(kid,sk))) return false;
   return (s.lessonSeq||[]).length>0&&lnOpenCount(kid,sk)===0;
 }
-function lnUnitOpen(kid,u){ return lnUnitSubs(u).some(function(x){ return lnOpenCount(kid,x)>0; }); }
+function lnUnitOpen(kid,u){ if(u&&u.retired) return false; return lnUnitSubs(u).some(function(x){ return lnOpenCount(kid,x)>0; }); }
 function lnUp(kid,id){ const us=lnUnits(kid,id); for(let i=0;i<us.length;i++){ if(lnUnitOpen(kid,us[i])) return i; } return -1; }
 function lnIsUp(kid,id,idx){ return lnUp(kid,id)===idx; }
 function lnUpLabel(kid,id){
@@ -24735,6 +24735,28 @@ function lnEditSave(){
   lnUndo={kid:kid,id:id,prev:prev,label:(prev?"updated":"created")+" lane “"+name+"”"};
   lnEdit=null; cbMsg=""; renderAll();
 }
+// 🛤 RETIRE — her rule 2026-09-12: a finished book "drops off and is held in the rules panel
+// until retired by options". Retiring files it away in ⚙ Rules; it STAYS a lane member, so it
+// never reappears as its own Grid column, and its lessons, done records and past cells are all
+// untouched. Reversible. Only a FINISHED unit can be retired.
+function lnRetire(id,idx,on){
+  if(!db) return; const kid=cbKid; const l=lnLanes(kid)[id]; if(!l) return;
+  const us=lnUnits(kid,id); const u=us[idx]; if(!u) return;
+  const subs=((currData||{}).subjects||{})[kid]||{};
+  const nm=lnUnitSubs(u).map(function(x){ return (subs[x]||{}).display||x; }).join(" / ");
+  if(on&&lnUnitSubs(u).some(function(x){ return lnOpenCount(kid,x)>0; })){
+    if(typeof gwShowToast==="function") gwShowToast("“"+nm+"” still has lessons left — it can't be retired yet.");
+    return;
+  }
+  const prev=JSON.parse(JSON.stringify(l));
+  const next=us.map(function(x,i){ const c=Object.assign({},x); if(i===idx){ if(on) c.retired=true; else delete c.retired; } return c; });
+  const lane={name:l.name||id,units:next};
+  currData.lanes[kid][id]=lane;
+  db.ref("curriculum/lanes/"+kid+"/"+id).set(lane);
+  currData.lastEdit=new Date().toISOString(); db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  lnUndo={kid:kid,id:id,prev:prev,label:(on?"retired ":"brought back ")+"“"+nm+"”"};
+  renderAll();
+}
 function lnDelete(id){
   if(!db) return; const kid=cbKid; const l=lnLanes(kid)[id]; if(!l) return;
   if(typeof confirm==="function"&&!confirm("Remove lane “"+(l.name||id)+"”? Its subjects go back to their own settings — no lessons or history change.")) return;
@@ -24774,14 +24796,19 @@ function lnRenderSection(kid,col){
     const l=ls[id]||{}; const us=lnUnits(kid,id); const up=lnUp(kid,id);
     h+='<div style="display:flex;align-items:center;gap:6px;font-size:11.5px;padding:4px 0;flex-wrap:wrap">';
     h+='<span>🛤</span><b>'+esc(l.name||id)+'</b>';
+    const _ret=[];
     us.forEach(function(u,i){
       const members=lnUnitSubs(u); const open=lnUnitOpen(kid,u);
+      if(u.retired){ _ret.push({i:i,label:members.map(disp).join(" / ")}); return; }   // filed away below
       const st=(i===up)?"up":(open?"waiting":"done");
       const label=u.subs?('['+members.map(disp).join(" · ")+' <span style="font-family:monospace">'+esc(u.pattern||"")+'</span>]'):disp(members[0]||"?");
       h+=(i?'<span style="color:var(--muted)">▸</span>':'')+'<span style="'+(st==="done"?'color:var(--muted);text-decoration:line-through':'')+'">'+label+'</span>';
       h+=st==="up"?_tag("up now",col,"#fff"):st==="done"?_tag("done","#e5e7eb","#6b7280"):_tag("waiting","#fef3c7","#92400e");
       if(u.rhythm==="prior") h+='<span style="font-size:9px;color:var(--muted)" title="borrows the days / ×wk / cap of the unit before it">↑ same as before</span>';
+      // a FINISHED book is off the Grid already; this files it away here too
+      if(st==="done") h+='<span onclick="lnRetire(\''+id+'\','+i+',true)" title="Retire it — file it away here. Its lessons and history are untouched, and it never comes back as its own column." style="'+_pill+';font-size:9px;margin-left:2px">⤓ retire</span>';
     });
+    if(_ret.length) h+='<span style="font-size:9.5px;color:var(--muted);width:100%;padding-left:22px">retired: '+_ret.map(function(r){ return esc(r.label)+' <span onclick="lnRetire(\''+id+'\','+r.i+',false)" title="Bring it back into the lane" style="cursor:pointer;text-decoration:underline">↩</span>'; }).join(" · ")+'</span>';
     h+='<span style="margin-left:auto;white-space:nowrap"><button onclick="lnEditStart(\''+id+'\')" style="padding:2px 8px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:10px;cursor:pointer">✎ edit</button> <button onclick="lnDelete(\''+id+'\')" style="padding:2px 8px;border-radius:8px;border:1px solid #fecaca;background:#fff;color:#b5394a;font-size:10px;cursor:pointer">✕ remove</button></span>';
     h+='</div>';
   }

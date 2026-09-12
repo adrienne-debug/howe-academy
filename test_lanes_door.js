@@ -250,6 +250,40 @@ console.log("\n── every column is a lane of one (auto-named, editable) ─�
   ok("lnMemberInfo is still null for an unstacked subject (no badge noise on 24 rows)", c.lnMemberInfo("kid", "s3b") === null);
 }
 
+console.log("\n── retire: a finished book is filed away in ⚙ Rules (her rule) ──");
+{
+  // 3B finished, 4A up
+  const c = world({ lanes: MATH, done: { s3b: doneN(2) } });
+  let h = c.lnRenderSection("kid", "#1");
+  ok("the finished book shows as done with a ⤓ retire option", /line-through[^>]*>Singapore 3B<\/span>[\s\S]{0,200}lnRetire\('math',0,true\)/.test(h), h.slice(h.indexOf("Singapore 3B"), h.indexOf("Singapore 3B") + 420));
+  ok("the book that is UP gets no retire option", !/lnRetire\('math',1,true\)/.test(h));
+  c.writes.length = 0;
+  c.lnRetire("math", 0, true);
+  const w = c.writes.find(x => x[0] === "curriculum/lanes/kid/math");
+  ok("retiring is ONE targeted lane write", c.writes.length === 2 && !!w, c.writes);
+  ok("— it only adds retired:true; the unit and the lane are otherwise unchanged",
+    w && eq(w[2].units, [{ sk: "s3b", rhythm: "own", retired: true }, { sk: "s4a", rhythm: "prior" }]), w && w[2]);
+  ok("nothing is written to the subject, its lessons or its done record", !c.writes.some(x => /subjects|lessons|done/.test(x[0])));
+  h = c.lnRenderSection("kid", "#1");
+  ok("it leaves the main line and is filed underneath as retired", /retired: Singapore 3B/.test(h) && !/line-through[^>]*>Singapore 3B/.test(h));
+  ok("— with a ↩ to bring it back", /lnRetire\('math',0,false\)/.test(h));
+  ok("4A is still up and unaffected", /DM 4A<\/span><span[^>]*>up now/.test(h));
+  ok("it STAYS a lane member, so it never returns as its own Grid column", c.lnOf("kid", "s3b") !== null);
+  ok("a retired unit is never 'open', so it can never be picked as up", c.lnUnitOpen("kid", { sk: "s3b", retired: true }) === false);
+  ok("Undo is armed", c.lnUndo && /retired/.test(c.lnUndo.label));
+  c.writes.length = 0; c.lnRetire("math", 0, false);
+  const w2 = c.writes.find(x => x[0] === "curriculum/lanes/kid/math");
+  ok("↩ brings it back — retired flag removed", w2 && eq(w2[2].units[0], { sk: "s3b", rhythm: "own" }), w2 && w2[2].units[0]);
+}
+{
+  // guard: you cannot retire a book that still has lessons
+  const c = world({ lanes: MATH });
+  c.gwShowToast = m => (c.__toast = m);
+  c.writes.length = 0;
+  c.lnRetire("math", 0, true);
+  ok("a book with lessons left REFUSES to retire, and says why", c.writes.length === 0 && /still has lessons left/.test(c.__toast || ""), c.__toast);
+}
+
 console.log("\n── wiring ──");
 {
   ok("state declared beside the panel's other state", /let lnEdit=null, lnUndo=null;/.test(src));
