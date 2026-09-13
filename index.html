@@ -15909,6 +15909,8 @@ function ceTogglePause(){
   if(s.paused){
     ceSaveField("paused",false);
     ceSaveField("pausedSince",null);
+    // ⏸→▶ re-lay from today: the paused weeks are not a backlog (owed counts pattern days since the anchor)
+    if(s.planAnchor&&typeof planBacked==="function"&&planBacked(ceEditKid,ceEditKey)) ceSaveField("planAnchor",cbTodayISO());
   } else {
     ceSaveField("paused",true);
     ceSaveField("pausedSince",new Date().toISOString());
@@ -15926,6 +15928,7 @@ function ceQuickPause(kid,key){
   if(db){
     db.ref("curriculum/subjects/"+kid+"/"+key+"/paused").set(now);
     db.ref("curriculum/subjects/"+kid+"/"+key+"/pausedSince").set(s.pausedSince);
+    if(!now&&s.planAnchor&&typeof planBacked==="function"&&planBacked(kid,key)){ s.planAnchor=cbTodayISO(); db.ref("curriculum/subjects/"+kid+"/"+key+"/planAnchor").set(s.planAnchor); }   // resumed: paused weeks are not owed
     currData.lastEdit=new Date().toISOString();
     db.ref("curriculum/lastEdit").set(currData.lastEdit);
   }
@@ -26551,8 +26554,16 @@ function gvQueuedAfter(kid,sk){
 }
 function gvDerivedColumn(kid,sk){
   if(!(typeof planBacked==="function"&&planBacked(kid,sk))) return null;
-  const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||s.paused) return null;
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s) return null;
   const dealt=gvDealtDates(kid,sk);
+  // ⏸ PAUSED (her ask 2026-09-12: "pull its grid spots when paused, re-lay when unpaused"): the
+  // future is blank — never the stale stored cells. Nothing is stored or deleted, so resuming
+  // simply lets the projection lay it again from the next open day. Cards already dealt still
+  // show on their day (they are real until the week moves on).
+  if(s.paused){
+    const bd={}; Object.keys(dealt).forEach(function(iso){ bd[iso]={text:dealt[iso].text,lid:dealt[iso].lid,src:"card"}; });
+    return {byDate:bd,dealt:dealt,blank:true,paused:true,why:"Paused",stats:null,warnings:[]};
+  }
   let res=null;
   // absorb:false — the Grid shows what the SCHEDULER will actually deal, not a catch-up plan
   // nobody delivers. Before this, the Grid ran the projection with owed absorption on while
@@ -27581,6 +27592,7 @@ function gvOpenCell(dn,sk){
   const ovA=(_ov.added||{})[sk]!==undefined;   // make-up-only cells get the menu too
   // Decide by what the cell DISPLAYS (derived for plan-backed future cells) — the stored
   // text differs from the screen whenever cells lag the plan.
+  if(!past&&((((currData.subjects||{})[gvKid]||{})[sk]||{}).paused)&&typeof planBacked==="function"&&planBacked(gvKid,sk)){ gvMenu=null; gvEdit=null; if(typeof gwShowToast==="function") gwShowToast("⏸ "+((((currData.subjects||{})[gvKid]||{})[sk]||{}).display||sk)+" is paused — resume it on its card and it re-lays from the next open day."); renderAll(); return; }
   const _idq=(typeof gvCellIdentity==="function")?gvCellIdentity(gvKid,dn,sk):null;
   if(!past&&_idq&&_idq.src==="queued"){ gvMenu=null; gvEdit=null; if(typeof gwShowToast==="function") gwShowToast("🛤 "+(((currData.subjects||{})[gvKid]||{})[sk]||{}).display+" is waiting its turn in the lane — this is where it will land once the book ahead finishes. Nothing to change here yet."); renderAll(); return; }
   const _shown=_idq?_idq.text:String(l[sk]||"");
@@ -28869,7 +28881,8 @@ function renderCurrGrid(el){
       if(_ow>0) owedChip='<span title="'+_ow+' owed — behind the pattern since '+esc(subs[sk].planAnchor||"")+'. Cap '+_cap+'/day'+(_cap>1?': second sittings absorb it':': everything slides — raise the cap in the card to catch up faster')+'." style="display:inline-block;margin-left:4px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:8px;padding:0 5px;font-size:9px;font-weight:800">owed '+_ow+'</span>';
     } }catch(e){}
     try{ const _t0=Date.now(); _gvDer[sk]=(typeof gvDerivedColumn==="function")?gvDerivedColumn(gvKid,sk):null; _gvDerMs+=Date.now()-_t0; }catch(e){ _gvDer[sk]=null; }
-    h+='<th onclick="'+hact+'" title="'+esc(tip)+'">'+mark+esc((subs[sk]||{}).display||sk)+owedChip+'</th>';
+    const _pzChip=(subs[sk]||{}).paused?'<span title="Paused — its future spots are empty; resume it on its card and it re-lays from the next open day" style="display:inline-block;margin-left:4px;font-size:9px;font-weight:800;color:#6b7280;background:#f3f4f6;border-radius:8px;padding:0 5px">⏸ paused</span>':'';
+    h+='<th onclick="'+hact+'" title="'+esc(tip)+'">'+mark+esc((subs[sk]||{}).display||sk)+owedChip+_pzChip+'</th>';
   }
   h+='</tr></thead><tbody>';
 

@@ -245,5 +245,23 @@ console.log("\n── wiring ──");
   ok("no writes in the grid block", !/db\.ref|\.set\(|\.update\(|\.remove\(/.test(block("// LANE_GRID_START", "// LANE_GRID_END")));
 }
 
+// ── ⏸ paused subject (her ask 2026-09-12: pull its grid spots when paused, re-lay on resume) ──
+console.log("\n── paused ──");
+{
+  const c = world(); const dns = c._dns; const L = c._lessons;
+  const thu17 = dns.find(dn => L[dn].date === "2026-09-17"), thu10 = dns.find(dn => L[dn].date === "2026-09-10");
+  let h = render(c);
+  ok("active: Plain's future Thursday shows its lesson", /Plain L\d/.test(cell(h, thu17, "plain") || ""), cell(h, thu17, "plain"));
+  c.currData.subjects.kid.plain.paused = true;
+  h = render(c);
+  ok("paused: its future cells are EMPTY — not the stale stored 'Plain L2'", !/Plain L/.test(cell(h, thu17, "plain") || ""), cell(h, thu17, "plain"));
+  ok("paused: the past cell (the record) is kept", /Plain L1/.test(cell(h, thu10, "plain") || ""), cell(h, thu10, "plain"));
+  ok("paused: header carries a ⏸ paused badge", /Plain<span[^>]*>⏸ paused</.test(h));
+  ok("paused: other columns untouched (3B still laid Mon 9/14)", /Singapore 3B L2/.test(cell(h, dns.find(dn => L[dn].date === "2026-09-14"), "s3b") || ""));
+  c.currData.subjects.kid.plain.paused = false;
+  h = render(c);
+  ok("resumed: it lays again on its own (nothing was deleted)", /Plain L\d/.test(cell(h, thu17, "plain") || ""));
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
