@@ -254,13 +254,16 @@ console.log("\n── paused ──");
   ok("active: Plain's future Thursday shows its lesson", /Plain L\d/.test(cell(h, thu17, "plain") || ""), cell(h, thu17, "plain"));
   c.currData.subjects.kid.plain.paused = true;
   h = render(c);
-  ok("paused: its future cells are EMPTY — not the stale stored 'Plain L2'", !/Plain L/.test(cell(h, thu17, "plain") || ""), cell(h, thu17, "plain"));
-  ok("paused: the past cell (the record) is kept", /Plain L1/.test(cell(h, thu10, "plain") || ""), cell(h, thu10, "plain"));
-  ok("paused: header carries a ⏸ paused badge", /Plain<span[^>]*>⏸ paused</.test(h));
+  // her follow-up 2026-09-12: "could pause come off the grid like it used to … and just rest somewhere"
+  ok("paused: its column is OFF the grid (no header, no cells)", !/id="gv-c-\d+-plain"/.test(h) && !/<th[^>]*>Plain</.test(h));
+  ok("paused: it rests in the ⏸ Paused strip, one tap from its card", /gv-paused-strip[\s\S]*?onclick="ceOpenEdit\('kid','plain'\)"[^>]*>Plain</.test(h));
+  ok("paused: NOT listed under 'No lessons to pace'", !/No lessons to pace[\s\S]{0,600}>Plain</.test(h));
+  ok("paused: its stored cells are untouched", /Plain L1/.test(L[thu10].plain) && /Plain L2/.test(L[thu17].plain));
   ok("paused: other columns untouched (3B still laid Mon 9/14)", /Singapore 3B L2/.test(cell(h, dns.find(dn => L[dn].date === "2026-09-14"), "s3b") || ""));
   c.currData.subjects.kid.plain.paused = false;
   h = render(c);
   ok("resumed: it lays again on its own (nothing was deleted)", /Plain L\d/.test(cell(h, thu17, "plain") || ""));
+  ok("resumed: column back, Paused strip gone", /<th[^>]*>Plain</.test(h) && !/gv-paused-strip/.test(h));
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");
