@@ -15594,6 +15594,7 @@ function ceRenderEditSheet(){
       h+='<button style="border:none;border-radius:10px;background:var(--ink,#1e293b);color:#fff;padding:7px 14px;font-size:12px;cursor:pointer" onclick="ceConvApply()">Save list</button>';
       h+='<button style="border:1.5px solid var(--border);border-radius:10px;background:#fff;padding:7px 12px;font-size:12px;cursor:pointer" onclick="ceConvSortLines()" title="Reorder the lines by their numbers (6d before 6e, pg47 before pg49). Nothing is saved until you tap Save list.">↕ Sort in book order</button>';
       h+='<button style="border:1.5px solid var(--border);border-radius:10px;background:#fff;padding:7px 12px;font-size:12px;cursor:pointer" onclick="ceConvTrimLines()" title="Keep just the code — Ch3-1: Addition as… → Ch3-1. Nothing is saved until you tap Save list.">✂ Trim descriptions</button>';
+      h+='<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--muted)" title="A lesson that takes several days becomes one sitting per day (· day 1 of 4 …). Nothing is saved until you tap Save list.">Days per lesson:'+[1,2,3,4,5].map(function(n){ return '<button style="border:1.5px solid var(--border);border-radius:8px;background:#fff;padding:5px 9px;font-size:12px;cursor:pointer" onclick="ceConvDaysPerLesson('+n+')">×'+n+'</button>'; }).join('')+'</span>';
       h+='<button style="border:1.5px solid var(--border);border-radius:10px;background:#fff;padding:7px 12px;font-size:12px;cursor:pointer" onclick="ceConvOpen=false;ceRenderEditSheet()">Cancel</button>';
       h+='</div></div>';
     }
@@ -16605,6 +16606,32 @@ function lidTrimDescription(t){
   const m=/^((?:ch(?:apter)?\s*\d+[-–.]\d+[a-z]?)|(?:l(?:esson)?\s*\d+[a-z]?)|(?:unit\s*\d+\s*day\s*\d+)|(?:pg\.?\s*[\d–-]+)|(?:pp\.?\s*[\d–-]+))\s*[:–—-]\s+.+$/i.exec(x);
   return m?m[1].trim():x;
 }
+// 🔁 DAYS PER LESSON (her ask 2026-09-13, WriteShop: "it takes 4 days to complete"). A lesson that
+// spans N days becomes N ordinary sittings — "Lesson 3: … · day 2 of 4" — so the scheduler, cards,
+// check-offs, pause and lanes all keep working unchanged. Idempotent: lines already carrying a
+// "· day k of M" suffix are regrouped first, so ×4 on a ×2 list gives 4 each and ×1 undoes it.
+const LESSON_DAY_RE=/\s*·\s*day \d+ of \d+\s*$/i;
+function lessonExpandDays(lines,n){
+  n=Math.max(1,Math.min(10,parseInt(n,10)||1));
+  const bases=[];
+  (lines||[]).map(function(t){ return String(t==null?"":t).trim(); }).filter(Boolean).forEach(function(t){
+    const m=t.match(/·\s*day (\d+) of \d+\s*$/i); const had=!!m; const b=t.replace(LESSON_DAY_RE,"");
+    if(had&&bases.length&&bases[bases.length-1].b===b&&bases[bases.length-1].had) return;   // same lesson, next day of it
+    bases.push({b:b,had:had,start:had?parseInt(m[1],10):1});
+  });
+  const out=[];
+  // A lesson already part-way done (the remaining list starts at "day 3 of 4") keeps only its
+  // remaining days — the finished days are never handed back.
+  bases.forEach(function(x){ if(n===1){ out.push(x.b); return; } for(let i=Math.min(x.start,n);i<=n;i++) out.push(x.b+" · day "+i+" of "+n); });
+  return out;
+}
+function ceConvDaysPerLesson(n){
+  const ta=document.getElementById("ce-conv-lines"); if(!ta) return;
+  const lines=ta.value.split("\n").map(l=>l.trim()).filter(Boolean);
+  const out=lessonExpandDays(lines,n);
+  ta.value=out.join("\n");
+  if(typeof gwShowToast==="function") gwShowToast(n>1?("🔁 "+(out.length/n)+" lessons × "+n+" days = "+out.length+" sittings — look it over, then Save list"):("🔁 Back to one line per lesson ("+out.length+") — look it over, then Save list"));
+}
 function ceConvTrimLines(){
   const ta=document.getElementById("ce-conv-lines"); if(!ta) return;
   const lines=ta.value.split("\n").map(l=>l.trim()).filter(Boolean);
@@ -16984,7 +17011,7 @@ let ceAddForm={name:"",device:"paper",mom:"none",minutes:25,days:"",rules:"",tot
 function ceOpenAdd(kid){
   if(ceCloseTimer){clearTimeout(ceCloseTimer);ceCloseTimer=null;}
   ceAddKid=kid;
-  ceAddForm={name:"",device:"paper",mom:"none",minutes:25,days:"Mon Tue Wed Thu Fri",rules:"sequential",total:50,lessonSource:"auto",prefix:"Lesson",manualLessons:"",allowedDays:[],priority:"normal",carryoverCap:2,stickyWith:"",stickyOrder:"after",tracking:"sequenced",timesPerWeek:5,fixedTime:"",fixedDates:[],joinUrl:""};
+  ceAddForm={name:"",device:"paper",mom:"none",minutes:25,days:"Mon Tue Wed Thu Fri",rules:"sequential",total:50,lessonSource:"auto",prefix:"Lesson",manualLessons:"",daysPerLesson:1,allowedDays:[],priority:"normal",carryoverCap:2,stickyWith:"",stickyOrder:"after",tracking:"sequenced",timesPerWeek:5,fixedTime:"",fixedDates:[],joinUrl:""};
   ceAddMsg="";
   ceRenderAddSheet();
 }
@@ -17151,6 +17178,15 @@ function ceRenderAddSheet(){
       +' onchange="ceAddForm.manualLessons=this.value" oninput="ceAddForm.manualLessons=this.value">'+esc(f.manualLessons||"")+'</textarea>';
     h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Each line becomes one lesson. The generator assigns them in order.</div>';
   }
+  { const _dpl=Math.max(1,parseInt(f.daysPerLesson,10)||1);
+    h+='<div class="ce-sheet-lbl">Days per lesson</div>';
+    h+='<div class="ce-stepper">';
+    h+='<button onclick="ceAddForm.daysPerLesson=Math.max(1,(parseInt(ceAddForm.daysPerLesson,10)||1)-1);ceRenderAddSheet()">&minus;</button>';
+    h+='<span>'+_dpl+'</span>';
+    h+='<button onclick="ceAddForm.daysPerLesson=Math.min(10,(parseInt(ceAddForm.daysPerLesson,10)||1)+1);ceRenderAddSheet()">+</button>';
+    h+='</div>';
+    const _nL=f.lessonSource==="auto"?(parseInt(f.total,10)||0):String(f.manualLessons||"").split("\n").map(x=>x.trim()).filter(Boolean).length;
+    h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">'+(_dpl>1?('Each lesson takes '+_dpl+' days — one sitting per day ("· day 1 of '+_dpl+'" …): '+_nL+' lessons → <b>'+(_nL*_dpl)+' sittings</b>. Set Times Per Week to match.'):'1 = each lesson is done in one sitting.')+'</div>'; }
 
   // Priority
   h+='<div class="ce-sheet-lbl">Priority</div>';
@@ -17255,6 +17291,7 @@ function ceAddSave(){
       if(ta) f.manualLessons=ta.value;
       lessonSeq=(f.manualLessons||"").split("\n").map(l=>l.trim()).filter(Boolean);
     }
+    if((parseInt(f.daysPerLesson,10)||1)>1) lessonSeq=lessonExpandDays(lessonSeq,f.daysPerLesson);
     if(!lessonSeq.length){ alert("Add at least one lesson."); return; }
     subj={display:name,device:f.device,mom:f.mom,minutes:f.minutes,days:f.days,allowedDays:dayArr,rules:f.rules,total:lessonSeq.length,priority:f.priority,carryoverCap:f.carryoverCap,lessonSeq:lessonSeq,timesPerWeek:f.timesPerWeek||5};
     { const _r=_lidAlign(null,null,lessonSeq,1,null,true); subj.lessonIds=_r.ids; subj.nextLid=_r.nextLid; }   // born with ids — no other device can hold a competing set
