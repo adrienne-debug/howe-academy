@@ -144,7 +144,10 @@ console.log("\n── render ──");
     ok("the ACTIVE subject is its own tap target", /onclick="ceOpenEdit\('kid','s3b'\)"[^>]*>Singapore 3B</.test(h));
     ok("THE FIX: the QUEUED book is tappable too — a waiting book is reachable", /class="gv-lnq" onclick="ceOpenEdit\('kid','s4a'\)"[^>]*>▸ DM 4A</.test(h), "a waiting book would have no route to its card");
     ok("two active subjects each get their own tap target", /ceOpenEdit\('kid','geo'\)/.test(h) && /ceOpenEdit\('kid','sci'\)/.test(h));
-    ok("a queued book takes NO day row (it lives in the header only)", !/id="gv-c-\d+-s4a"/.test(h));
+    // Her rule CHANGED 2026-09-12 ("put the next book in the grid after, according to its rules"):
+    // a queued book now SHOWS on the days it will land once the book ahead runs out — faded,
+    // display-only — and still never shares a day with, or lands before, the book that is up.
+    ok("a queued book is previewed in day rows, faded (gv-queued)", /id="gv-c-\d+-s4a"[^>]*>[\s\S]{0,160}class="gv-queued"/.test(h));
     ok("4A is NOT in the 'on their cards, not in the grid yet' strip", !/not in the grid yet[\s\S]{0,400}DM 4A/.test(h));
     ok("the plain subject still has its own header", /<th[^>]*>Plain</.test(h));
     ok("column count = lanes + plain (3)", /× 3 subjects/.test(h));
@@ -153,7 +156,8 @@ console.log("\n── render ──");
     const mon = dns.find(dn => L[dn].date === "2026-09-14"), wed = dns.find(dn => L[dn].date === "2026-09-16"), fri = dns.find(dn => L[dn].date === "2026-09-18");
     ok("Mon 9/14 cell is 3B's L2, keyed to s3b", /Singapore 3B L2/.test(cell(h, mon, "s3b") || ""), cell(h, mon, "s3b"));
     ok("Wed 9/16 cell is 3B's L3 (its last), keyed to s3b", /Singapore 3B L3/.test(cell(h, wed, "s3b") || ""));
-    ok("Fri 9/18: nothing projected → the empty row belongs to the member that is UP (3B), so typing/➕ lands on the running subject; 4A stays waiting", cell(h, fri, "s3b") !== null && cell(h, fri, "s4a") === null && !/L\d/.test(cell(h, fri, "s3b") || ""), cell(h, fri, "s3b"));
+    ok("Fri 9/18 (3B has run out): 4A's first lesson is previewed there on its borrowed M/W/F rhythm, keyed to s4a, faded", /gv-queued[\s\S]*DM 4A L1/.test(cell(h, fri, "s4a") || "") && cell(h, fri, "s3b") === null, cell(h, fri, "s4a"));
+    ok("the preview never lands on or before 3B's last lesson (Wed 9/16)", dns.filter(dn => L[dn].date <= "2026-09-16").every(dn => cell(h, dn, "s4a") === null));
     ok("no cell in the lane column carries the lane key itself", !/id="gv-c-\d+-lane:/.test(h));
     ok("cell tap keeps the (dayNum, memberKey) contract", new RegExp('gvOpenCell\\(' + mon + ",'s3b'\\)").test(h));
     // past row: 3B's done cell shows as done, in the lane column

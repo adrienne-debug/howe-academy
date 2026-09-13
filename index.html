@@ -1382,6 +1382,7 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
 .gv thead tr.gv-bandrow th.gv-fix,.gv thead tr.gv-bandrow th.gv-min{z-index:8}
 .gv-lnband{display:inline-block;padding:0 6px;border-radius:7px;font-weight:800}
 .gv-lnq{display:block;font-size:9px;font-weight:700;color:var(--muted);white-space:nowrap;cursor:pointer}
+.gv-queued{opacity:.55;font-style:italic}
 .gv-lnq:hover{text-decoration:underline}
 .gv .gv-fix{position:sticky;left:0;z-index:2;background:#fff;width:108px;min-width:108px;max-width:108px;overflow:hidden;text-overflow:ellipsis}
 .gv thead .gv-fix{z-index:5;background:var(--bg);cursor:default}
@@ -24561,7 +24562,11 @@ function planMaterialize(kid,sk,form,opts){
   // shared rhythm does the same. Not in a lane → _ln is null and nothing below changes.
   const _ln=(typeof lnOf==="function")?lnOf(kid,sk):null; let _lnRh=null;
   if(_ln){
-    if(!lnIsUp(kid,_ln.id,_ln.unitIdx)&&lnOpenCount(kid,sk)>0) return {error:"Waiting in lane "+(_ln.lane.name||_ln.id)+" — "+lnUpLabel(kid,_ln.id)+" is up.",waiting:true,lane:_ln.id,warnings:[]};
+    // opts.queuedAfter (ISO date) — ONLY the Grid's display asks for it: lay the waiting unit on its
+    // own rhythm starting the day after the books ahead of it run out, so she can see where it
+    // will land. Cards, the generator, rebuilds and handoff never pass it: a waiting unit still
+    // deals nothing until it is actually up.
+    if(!lnIsUp(kid,_ln.id,_ln.unitIdx)&&lnOpenCount(kid,sk)>0&&!(opts&&opts.queuedAfter)) return {error:"Waiting in lane "+(_ln.lane.name||_ln.id)+" — "+lnUpLabel(kid,_ln.id)+" is up.",waiting:true,lane:_ln.id,warnings:[]};
     _lnRh=lnRhythm(kid,_ln.id,_ln.unitIdx);
     if(_lnRh&&!_lnRh.own) f=Object.assign({},f,{mode:_lnRh.mode,tpw:_lnRh.tpw,targetDate:_lnRh.targetDate||"",allowedDays:(_lnRh.allowedDays||[]).slice()});
   }
@@ -24615,7 +24620,8 @@ function planMaterialize(kid,sk,form,opts){
       extRows.push({date:ds,dow:DOW[dow],off:!!ex.isOff(ds),usedMin:0,exists:false});
     }
   }
-  const allRows=cal.concat(extRows).filter(r=>r.date>=today&&!(_dealt&&(_dealt[r.date]||(_dealtMax&&r.date<=_dealtMax))));
+  const _qAfter=(opts&&opts.queuedAfter)||"";
+  const allRows=cal.concat(extRows).filter(r=>r.date>=today&&!(_qAfter&&r.date<=_qAfter)&&!(_dealt&&(_dealt[r.date]||(_dealtMax&&r.date<=_dealtMax))));
   // Owed: pattern days since the anchor, minus done since the anchor (records carry ISO days).
   const anchor=s.planAnchor||null; const doneNode=((((currData||{}).done||{})[kid]||{})[sk])||{};
   let doneSince=0; if(anchor) Object.values(doneNode).forEach(r=>{ if(r&&r.day&&String(r.day)>=anchor) doneSince++; });
@@ -26524,6 +26530,25 @@ function gvDealtDates(kid,sk){
 // A dealt date shows its card. When the card and the projection name DIFFERENT lessons for
 // that date the card still wins, and the cell is marked `disagrees` — that is information
 // (the schedule and the plan have parted company), never something to hide.
+let _gvQueuedDepth=0;
+// The last date any open book AHEAD of this waiting member is projected to (or carded) on — its
+// queued preview starts the day after. "" when a book ahead cannot be projected (no pacing yet):
+// then there is no honest start date and the member stays blank.
+function gvQueuedAfter(kid,sk){
+  const ln=(typeof lnOf==="function")?lnOf(kid,sk):null; if(!ln) return "";
+  const us=lnUnits(kid,ln.id); let last="";
+  for(let i=0;i<ln.unitIdx;i++){
+    const open=lnUnitSubs(us[i]).filter(function(x){ return lnOpenCount(kid,x)>0; });
+    for(const x of open){
+      const d=gvDerivedColumn(kid,x);
+      if(!d||d.err||(d.blank&&!d.queued)) return "";
+      const ks=Object.keys(d.byDate||{}).filter(function(k){ const e=d.byDate[k]; return e&&(gvFilled(e.text)||e.extra); });
+      if(!ks.length) return "";
+      ks.forEach(function(k){ if(k>last) last=k; });
+    }
+  }
+  return last;
+}
 function gvDerivedColumn(kid,sk){
   if(!(typeof planBacked==="function"&&planBacked(kid,sk))) return null;
   const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||s.paused) return null;
@@ -26536,6 +26561,25 @@ function gvDerivedColumn(kid,sk){
   // hidden — the header's `owed N` chip (planOwed) still counts it, unchanged.
   try{ res=planMaterialize(kid,sk,null,{dealt:dealt,absorb:false}); }catch(e){ return {err:String(e),byDate:{}}; }
   if(!res) return null;                                   // mode the projection cannot lay
+  // 🛤 WAITING in a lane (her ask 2026-09-12: "put the next book in the grid after, according to its
+  // rules"): show where it will land — its own rhythm, starting the day after the last projected
+  // lesson of every open book ahead of it. Marked src:"queued"; the cell is display-only.
+  if(res.waiting&&!(_gvQueuedDepth>3)){
+    try{
+      const after=gvQueuedAfter(kid,sk);
+      if(after){
+        _gvQueuedDepth++; let q=null;
+        try{ q=planMaterialize(kid,sk,null,{dealt:dealt,absorb:false,queuedAfter:after}); }finally{ _gvQueuedDepth--; }
+        if(q&&!q.error&&q.assignments){
+          const bd={};
+          q.assignments.forEach(function(a){ bd[a.date]={text:a.text,lid:a.lid,src:"queued"}; });
+          (q.extras||[]).forEach(function(x){ if(bd[x.date]) bd[x.date].extra=x.text; else bd[x.date]={text:x.text,lid:x.lid,src:"queued"}; });
+          Object.keys(dealt).forEach(function(iso){ bd[iso]={text:dealt[iso].text,lid:dealt[iso].lid,src:"card"}; });
+          return {byDate:bd,dealt:dealt,queued:true,after:after,why:res.error,stats:q.stats||null,warnings:q.warnings||[]};
+        }
+      }
+    }catch(e){ dbg("queued preview skip: "+e); }
+  }
   if(res.waiting||res.finished){                          // 🛤 nothing to lay: blank future cells, never the stale stored text (dealt cards still win their day)
     const bd={}; Object.keys(dealt).forEach(function(iso){ bd[iso]={text:dealt[iso].text,lid:dealt[iso].lid,src:"card"}; });
     return {byDate:bd,dealt:dealt,blank:true,why:res.error,stats:null,warnings:[]};
@@ -26592,6 +26636,7 @@ function gvSelDeselect(){ gvSel=new Set(); gvSelAnchor=null; gvGrabScroll(); ren
 // toggle the single cell and move the anchor here.
 function gvSelCell(dn,sk){
   const lessons=(currData.lessons||{})[gvKid]||{};
+  try{ const _iq=gvCellIdentity(gvKid,dn,sk); if(_iq&&_iq.src==="queued") return; }catch(e){}
   const key=dn+"|"+sk;
   if(gvSelAnchor){
     const [adn,ask]=gvSelAnchor.split("|");
@@ -27536,7 +27581,9 @@ function gvOpenCell(dn,sk){
   const ovA=(_ov.added||{})[sk]!==undefined;   // make-up-only cells get the menu too
   // Decide by what the cell DISPLAYS (derived for plan-backed future cells) — the stored
   // text differs from the screen whenever cells lag the plan.
-  const _shown=(typeof gvCellIdentity==="function")?gvCellIdentity(gvKid,dn,sk).text:String(l[sk]||"");
+  const _idq=(typeof gvCellIdentity==="function")?gvCellIdentity(gvKid,dn,sk):null;
+  if(!past&&_idq&&_idq.src==="queued"){ gvMenu=null; gvEdit=null; if(typeof gwShowToast==="function") gwShowToast("🛤 "+(((currData.subjects||{})[gvKid]||{})[sk]||{}).display+" is waiting its turn in the lane — this is where it will land once the book ahead finishes. Nothing to change here yet."); renderAll(); return; }
+  const _shown=_idq?_idq.text:String(l[sk]||"");
   if(!past&&(gvFilled(_shown)||ovR||ovA)){ gvMenu=dn+"|"+sk; gvEdit=null; }
   else { gvEdit=dn+"|"+sk; gvMenu=null; }
   renderAll();
@@ -28978,6 +29025,7 @@ function renderCurrGrid(el){
         else if(!_derCol&&addedV!==undefined) cell+=(cell?'<br>':'')+'<span style="color:#15803d">+ '+(typeof addedV==="string"?esc(addedV):"make-up")+'</span><span class="gv-badge" style="background:#bbf7d0;color:#15803d">make-up</span>';
         if(!cell&&_skipAt[dn+"|"+sk]!==undefined) cell='<s style="color:var(--muted);opacity:.7">'+esc(_skipAt[dn+"|"+sk])+'</s><span class="gv-badge" style="background:#fef3c7;color:#92400e" title="Passed over by a rebuild — won\'t come back as carryover or catch-up">skipped</span>';
         if(!cell&&_coopTag) cell=_coopTag;
+        if(cell&&_derCol&&_derCol.queued&&((_derCol.byDate[l.date]||{}).src==="queued")) cell='<span class="gv-queued" title="Waiting its turn — lands here once the book ahead finishes">'+cell+'</span>';
         if(cell&&_lnPre) cell=_lnPre+cell;
         // 🛤 a day where a second member ALSO holds a stored cell — both ran before the lane
         // existed, or one finished early on a day the other is projected: the record is never
