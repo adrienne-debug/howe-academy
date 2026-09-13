@@ -3,11 +3,12 @@
 //   library/books/<id>   (records: title, level, kid, status, location, toc, planning …)
 //   libraryPhotos/<id>   (150px cover data-URLs — its own node so covers only load here)
 // Loaded lazily by play.js the first time Books is opened.
-// Its ONLY write is library/links/<bookId>/<kid> = {subject, at} after Mom adds a book to a kid
-// through the app's own Add Subject sheet (the subject itself is saved by ceAddSave, unchanged).
+// Writes (both Mom-gated, both in their own nodes so a re-sync of library/books never clobbers them):
+//   library/links/<bookId>/<kid> = {subject, at} — after Mom adds a book through the app's own Add Subject
+//   library/scans/<bookId> = {lessons:[…], at, photos} — a table of contents read from photos by Claude
 (function(){
 "use strict";
-let lbBooks=null, lbPhotos={}, lbLinks={}, lbLoading=false, lbErr="", lbOpenId=null;
+let lbBooks=null, lbPhotos={}, lbLinks={}, lbScans={}, lbScanMsg={}, lbLoading=false, lbErr="", lbOpenId=null;
 const lbF={q:"",kid:"all",lane:"all",status:"all",loc:"all",show:60};
 
 const LB_LANES=[
@@ -56,6 +57,7 @@ function lbLoad(root){
     lbBooks.sort((a,b)=>String(a.title||"").localeCompare(String(b.title||"")));
     lbLoading=false; lbDraw(root);
     db.ref("library/links").once("value").then(l=>{lbLinks=l.val()||{};lbDraw(root);}).catch(()=>{});
+    db.ref("library/scans").once("value").then(l=>{lbScans=l.val()||{};lbDraw(root);}).catch(()=>{});
     // covers second, so the list shows up before ~4 MB of thumbnails arrive
     return db.ref("libraryPhotos").once("value").then(p=>{lbPhotos=p.val()||{};lbDraw(root);});
   }).catch(e=>{lbErr="Couldn't load the library ("+(e&&e.message||e)+").";lbLoading=false;lbDraw(root);});
@@ -143,6 +145,7 @@ function lbKidName(k){const r=LB_KIDS.find(x=>x[0]===k);return r?r[1]:String(k||
 function lbMomOk(){return (typeof momPinUnlocked!=="undefined"&&momPinUnlocked)||window._plMomOk===true;}
 // The book's table of contents → one lesson per line.
 function lbLessons(b,depth){
+  const sc=lbScans[b.id]; if(sc&&Array.isArray(sc.lessons)&&sc.lessons.length) return sc.lessons.map(String);
   let toc=(b.toc||[]).map(t=>String(t).replace(/\s+/g," ").trim()).filter(Boolean);
   // "Same 36 weeks … — see gwtm-purple-workbook" → use that book's list (answer keys, teacher texts)
   if(toc.length<=2&&!depth){const m=toc.join(" ").match(/\bsee ([a-z0-9][a-z0-9-]+)/);
@@ -167,7 +170,12 @@ function lbAddHtml(b){
   const hint=L.length>=3
     ?'Fills in <b>'+L.length+' lessons</b> from the table of contents · suggests <b>'+lbTpw(L.length)+'×/week</b> (≈'+Math.ceil(L.length/lbTpw(L.length))+' weeks). You check it and press <b>Add Subject</b>; then set the pacing.'
     :'No usable lesson list yet — it opens with numbered lessons you can change. You check it and press <b>Add Subject</b>.';
-  return '<div class="lb-sec lb-add"><h4>➕ Add to a kid\'s curriculum</h4><p style="font-size:12px;color:var(--muted)">'+hint+'</p>'+
+  const sc=lbScans[b.id], msg=lbScanMsg[b.id]||"";
+  const scan='<div class="lb-scan"><label class="lb-scanbtn">📸 '+(sc?"Re-scan":"Scan")+' the table of contents'+
+      '<input type="file" accept="image/*" multiple style="display:none" onchange="lbScan(\''+esc(b.id)+'\',this)"></label>'+
+    '<span class="lb-scanmsg">'+(msg?esc(msg):(sc?'✓ Scanned '+new Date(sc.at).toLocaleDateString()+' · '+sc.lessons.length+' lessons — used below':
+      (L.length>=3?'Optional — photos of the contents pages give a better lesson list':'Photograph the contents pages (up to 8) to build the lesson list')))+'</span></div>';
+  return '<div class="lb-sec lb-add"><h4>➕ Add to a kid\'s curriculum</h4>'+scan+'<p style="font-size:12px;color:var(--muted)">'+hint+'</p>'+
     '<div class="lb-addrow">'+kids.map(k=>{const on=links[k];const col=(LB_KIDS.find(x=>x[0]===k)||[])[2]||"#111827";
       return on?'<span class="lb-addbtn done" style="border-color:'+col+';color:'+col+'">✓ '+esc(lbKidName(k))+' · '+esc(on.subject||"")+'</span>'
         :'<button class="lb-addbtn" style="background:'+(mine.includes(k)?col:"#fff")+';color:'+(mine.includes(k)?"#fff":col)+';border-color:'+col+'" onclick="lbAddTo(\''+esc(b.id)+'\',\''+k+'\')">Add to '+esc(lbKidName(k))+'</button>';}).join("")+'</div></div>';
@@ -202,6 +210,46 @@ function lbAddTo(id,kid){
   window._lbPending={bookId:id,kid:kid,form:ceAddForm};
   ceRenderAddSheet();
   if(typeof gwShowToast==="function")gwShowToast("📚 Filled in from "+lbAddName(b)+(L.length>=3?" — "+L.length+" lessons":"")+". Check it, then Add Subject.");
+}
+// 📸 Read a table of contents from photos (same Claude call + image shrink the Builder's
+// "Scan the book" uses) → one lesson per sitting, saved to library/scans/<bookId>.
+async function lbScan(id,input){
+  const files=[...(input.files||[])]; input.value="";
+  const b=(lbBooks||[]).find(x=>x.id===id); if(!b||!files.length)return;
+  if(!lbMomOk()){lbPin(()=>{lbOpen(id);lbScanMsg[id]="Code accepted — tap Scan again.";lbOpen(id);});return;}
+  const say=m=>{lbScanMsg[id]=m;if(lbOpenId===id)lbOpen(id);};
+  const key=(typeof mastAIKey!=="undefined"&&mastAIKey)||(typeof haGetKey==="function"?haGetKey():"");
+  if(!key){say("⚠ No AI key set — add one in Admin → Settings.");return;}
+  if(typeof _cbShrinkImage!=="function"){say("⚠ Scanner not available in this build.");return;}
+  try{
+    say("Reading "+files.length+" photo"+(files.length!==1?"s":"")+"…");
+    const imgs=await Promise.all(files.slice(0,8).map(_cbShrinkImage));
+    say("Asking Claude to read the contents…");
+    const content=imgs.map(d=>({type:"image",source:{type:"base64",media_type:"image/jpeg",data:d}}));
+    content.push({type:"text",text:
+      "These photos show the table of contents of a homeschool book: \""+String(b.title||"")+"\". "+
+      "List the book's LESSONS in book order — one entry per sitting a child would do (a numbered lesson, section, chapter or review). "+
+      "Skip front matter, indexes, glossaries and answer keys. If the contents list chapters that contain numbered lessons, list the lessons. "+
+      "Keep each entry under 70 characters, and end it with the start page like \" (p.12)\" when a page is shown. "+
+      'Return ONLY strict JSON, no commentary: {"lessons":["Lesson 1: Nouns (p.1)","Lesson 2: Adjectives (p.4)"]}'});
+    const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
+      headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:"claude-sonnet-5",max_tokens:8000,messages:[{role:"user",content}]})});
+    if(!resp.ok){const t=await resp.text();throw new Error("Claude API "+resp.status+" — "+t.slice(0,140));}
+    const data=await resp.json();
+    const txt=(data.content||[]).filter(x=>x&&x.type==="text").map(x=>x.text||"").join("");
+    window._lbScanRaw=txt;
+    const a=txt.indexOf("{"),z=txt.lastIndexOf("}");
+    if(a<0||z<=a)throw new Error("Couldn't read a lesson list — try clearer photos.");
+    const lessons=(JSON.parse(txt.slice(a,z+1)).lessons||[]).map(x=>String(x||"").replace(/\s+/g," ").trim().slice(0,140)).filter(Boolean);
+    if(lessons.length<2)throw new Error("Found no lessons — photograph the contents pages flat and in good light.");
+    const rec={lessons:lessons,at:Date.now(),photos:files.length};
+    lbScans[id]=rec;
+    db.ref("library/scans/"+id).set(rec);
+    lbScanMsg[id]="";
+    say("✓ Read "+lessons.length+" lessons — Add to a kid now uses them.");
+    lbDraw();
+  }catch(e){say("❌ "+(e.message||"scan failed"));console.error("[HA] library scan",e);}
 }
 // After the app's Add Subject saves a sheet WE opened, remember which book it came from.
 function lbWrapSave(){
@@ -262,6 +310,9 @@ const LB_CSS=`
 .lb-sec h4{margin:14px 0 4px;font-size:13px}
 .lb-sec p{margin:0;font-size:13px;line-height:1.5;color:#334155}
 .lb-toc{margin:4px 0 0;padding-left:22px;font-size:12.5px;line-height:1.5;color:#334155}
+.lb-scan{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:6px 0 8px}
+.lb-scanbtn{border:1.5px dashed #64748b;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:800;cursor:pointer;background:#f8fafc}
+.lb-scanmsg{font-size:11.5px;color:var(--muted)}
 .lb-addrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .lb-addbtn{border:2px solid;border-radius:10px;padding:8px 12px;font-size:13px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif}
 .lb-addbtn.done{cursor:default;background:#f0fdfa;font-size:12px}
@@ -272,6 +323,6 @@ window.renderLibrary=function(root){
   if(!document.getElementById("lb-style")){const st=document.createElement("style");st.id="lb-style";st.textContent=LB_CSS;document.head.appendChild(st);}
   lbDraw(root); lbLoad(root);
 };
-window.lbSet=lbSet;window.lbReset=lbReset;window.lbOpen=lbOpen;window.lbClose=lbClose;window.lbAddTo=lbAddTo;window.lbPinTry=lbPinTry;
-window._lbTest={lbLane,lbLocKey,lbLocText,lbMatch,lbF,lbLessons,lbTpw,lbAddName,lbWrapSave,links:()=>lbLinks,setData:(b,p)=>{lbBooks=b.map(x=>Object.assign(x,{_lane:lbLane(x),_hay:lbHay(x)}));lbPhotos=p||{};}};
+window.lbSet=lbSet;window.lbReset=lbReset;window.lbOpen=lbOpen;window.lbClose=lbClose;window.lbAddTo=lbAddTo;window.lbPinTry=lbPinTry;window.lbScan=lbScan;
+window._lbTest={lbLane,lbLocKey,lbLocText,lbMatch,lbF,lbLessons,lbTpw,lbAddName,lbWrapSave,links:()=>lbLinks,scans:()=>lbScans,setScans:v=>{lbScans=v;},setData:(b,p)=>{lbBooks=b.map(x=>Object.assign(x,{_lane:lbLane(x),_hay:lbHay(x)}));lbPhotos=p||{};}};
 })();
