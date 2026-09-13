@@ -2,10 +2,12 @@
 // Data is a copy of ~/Desktop/HoweCurriculum/curriculum_books.json written to
 //   library/books/<id>   (records: title, level, kid, status, location, toc, planning …)
 //   libraryPhotos/<id>   (150px cover data-URLs — its own node so covers only load here)
-// This file never writes to Firebase. Loaded lazily by play.js the first time Books is opened.
+// Loaded lazily by play.js the first time Books is opened.
+// Its ONLY write is library/links/<bookId>/<kid> = {subject, at} after Mom adds a book to a kid
+// through the app's own Add Subject sheet (the subject itself is saved by ceAddSave, unchanged).
 (function(){
 "use strict";
-let lbBooks=null, lbPhotos={}, lbLoading=false, lbErr="", lbOpenId=null;
+let lbBooks=null, lbPhotos={}, lbLinks={}, lbLoading=false, lbErr="", lbOpenId=null;
 const lbF={q:"",kid:"all",lane:"all",status:"all",loc:"all",show:60};
 
 const LB_LANES=[
@@ -53,6 +55,7 @@ function lbLoad(root){
     lbBooks.forEach(b=>{b._lane=lbLane(b);b._hay=lbHay(b);});
     lbBooks.sort((a,b)=>String(a.title||"").localeCompare(String(b.title||"")));
     lbLoading=false; lbDraw(root);
+    db.ref("library/links").once("value").then(l=>{lbLinks=l.val()||{};lbDraw(root);}).catch(()=>{});
     // covers second, so the list shows up before ~4 MB of thumbnails arrive
     return db.ref("libraryPhotos").once("value").then(p=>{lbPhotos=p.val()||{};lbDraw(root);});
   }).catch(e=>{lbErr="Couldn't load the library ("+(e&&e.message||e)+").";lbLoading=false;lbDraw(root);});
@@ -76,7 +79,8 @@ function lbCard(b){
     '<div class="lb-cov">'+(ph?'<img loading="lazy" src="'+ph+'" alt="">':'<span>📘</span>')+'</div>'+
     '<div class="lb-body"><div class="lb-t">'+esc(b.title||b.id)+'</div>'+
     '<div class="lb-m">'+esc([b.level,b.grade?"gr "+b.grade:""].filter(Boolean).join(" · "))+'</div>'+
-    '<div class="lb-chips">'+lbKids(b).map(k=>chip(k[1],k[2],true)).join("")+(st?chip(st[0],st[1]):"")+'</div>'+
+    '<div class="lb-chips">'+lbKids(b).map(k=>chip(k[1],k[2],true)).join("")+(st?chip(st[0],st[1]):"")+
+      Object.keys(lbLinks[b.id]||{}).map(k=>chip("🔗 in "+lbKidName(k)+"'s plan","#0f766e")).join("")+'</div>'+
     '<div class="lb-loc">'+esc(lbLocText(b))+'</div></div></button>';
 }
 
@@ -119,6 +123,7 @@ function lbOpen(id){
       (b.recommendation?chip("rec: "+b.recommendation,LB_REC[b.recommendation]||"#64748b"):"")+(b.decision?chip("your call: "+b.decision,LB_REC[b.decision]||"#64748b",true):"")+'</div></div></div>'+
     '<div class="lb-rows">'+row("Where",lbLocText(b))+row("Level",b.level)+row("Age / grade",[b.age,b.grade?"gr "+b.grade:""].filter(Boolean).join(" · "))+
       row("Subject",b.subject)+row("Type",[b.type,b.consumable?"write-in":(b.consumable===false?"reusable":"")].filter(Boolean).join(" · "))+'</div>'+
+    lbAddHtml(b)+
     (b.summary?'<div class="lb-sec"><h4>About</h4><p>'+esc(b.summary)+'</p></div>':"")+
     (b.planning?'<div class="lb-sec"><h4>Planning note</h4><p>'+esc(b.planning)+'</p></div>':"")+
     (b.why?'<div class="lb-sec"><h4>Why '+esc(b.recommendation||"")+'</h4><p>'+esc(b.why)+'</p></div>':"")+
@@ -128,6 +133,98 @@ function lbOpen(id){
       return '<li'+(hd?' class="hd"':'')+'>'+esc(t)+'</li>';}).join("")+'</ol>':'<p style="color:var(--muted)">No table of contents logged yet.</p>')+'</div>';
   document.getElementById("lb-shbody").innerHTML=h;
   document.getElementById("lb-sheet").classList.add("open");
+}
+// ── ➕ Add to a kid's curriculum ─────────────────────────────────────────────
+// Opens the app's OWN Add Subject sheet (ceOpenAdd) pre-filled from the book, so Mom checks it
+// and presses Add Subject herself; ceAddSave then opens the subject with its pacing builder.
+const LB_ADD_KIDS=["lincoln","ellis","lucy","julian"];
+const LB_WEEKS=34;   // school weeks used for the "how often" suggestion
+function lbKidName(k){const r=LB_KIDS.find(x=>x[0]===k);return r?r[1]:String(k||"");}
+function lbMomOk(){return (typeof momPinUnlocked!=="undefined"&&momPinUnlocked)||window._plMomOk===true;}
+// The book's table of contents → one lesson per line.
+function lbLessons(b,depth){
+  let toc=(b.toc||[]).map(t=>String(t).replace(/\s+/g," ").trim()).filter(Boolean);
+  // "Same 36 weeks … — see gwtm-purple-workbook" → use that book's list (answer keys, teacher texts)
+  if(toc.length<=2&&!depth){const m=toc.join(" ").match(/\bsee ([a-z0-9][a-z0-9-]+)/);
+    const o=m&&(lbBooks||[]).find(x=>x.id===m[1]); if(o)return lbLessons(o,1);}
+  // Teacher's-guide chapter lines "Ch 8 Algebraic Expressions — …; Lessons 1-7 (…)" → Ch 8 · Lesson 1…7
+  const out=[];
+  toc.forEach(t=>{const m=t.match(/^(.*?)\s+—.*?\bLessons?\s+1\s*-\s*(\d+)/i);
+    if(m&&+m[2]<=60){const ch=m[1].replace(/\s*\(p\.[^)]*\)\s*$/,"");for(let i=1;i<=+m[2];i++)out.push(ch+" · Lesson "+i);}
+    else out.push(t);});
+  toc=out;
+  let keep;
+  if(toc.some(t=>/^(Lesson|Review)\b/i.test(t))) keep=toc.filter(t=>/^(Lesson|Review)\b/i.test(t)||/ · Lesson \d+$/.test(t));
+  else if(toc.some(t=>/^\d+\.\d+\s/.test(t))) keep=toc.filter(t=>/^\d+\.\d+\s/.test(t));
+  else keep=toc.filter(t=>!/^(Front:|Back:|— |\(|Same |TOC )/.test(t));
+  return keep.map(t=>{if(t.length>80&&t.indexOf(" — ")>0)t=t.slice(0,t.indexOf(" — "));return t.length>140?t.slice(0,137)+"…":t;});
+}
+function lbTpw(n){return Math.max(1,Math.min(5,Math.ceil(n/LB_WEEKS)));}
+function lbAddName(b){return String(b.title||b.id).replace(/\s*\([^)]*\)/g,"").replace(/\s+/g," ").trim();}
+function lbAddHtml(b){
+  const L=lbLessons(b), links=lbLinks[b.id]||{}, mine=lbKids(b).map(k=>k[0]);
+  const kids=LB_ADD_KIDS.slice().sort((x,y)=>(mine.includes(y)?1:0)-(mine.includes(x)?1:0));
+  const hint=L.length>=3
+    ?'Fills in <b>'+L.length+' lessons</b> from the table of contents · suggests <b>'+lbTpw(L.length)+'×/week</b> (≈'+Math.ceil(L.length/lbTpw(L.length))+' weeks). You check it and press <b>Add Subject</b>; then set the pacing.'
+    :'No usable lesson list yet — it opens with numbered lessons you can change. You check it and press <b>Add Subject</b>.';
+  return '<div class="lb-sec lb-add"><h4>➕ Add to a kid\'s curriculum</h4><p style="font-size:12px;color:var(--muted)">'+hint+'</p>'+
+    '<div class="lb-addrow">'+kids.map(k=>{const on=links[k];const col=(LB_KIDS.find(x=>x[0]===k)||[])[2]||"#111827";
+      return on?'<span class="lb-addbtn done" style="border-color:'+col+';color:'+col+'">✓ '+esc(lbKidName(k))+' · '+esc(on.subject||"")+'</span>'
+        :'<button class="lb-addbtn" style="background:'+(mine.includes(k)?col:"#fff")+';color:'+(mine.includes(k)?"#fff":col)+';border-color:'+col+'" onclick="lbAddTo(\''+esc(b.id)+'\',\''+k+'\')">Add to '+esc(lbKidName(k))+'</button>';}).join("")+'</div></div>';
+}
+function lbPin(then){
+  document.getElementById("lb-shbody").innerHTML='<button class="lb-x" onclick="lbClose()">✕</button><div style="text-align:center;padding:14px 4px">'+
+    '<div style="font-size:40px">👩</div><div style="font-size:13px;font-weight:700;color:#b5394a;margin:8px 0 6px">Enter Admin Code to add a subject</div>'+
+    '<input id="lb-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="off" style="width:100px;text-align:center;font-size:20px;letter-spacing:6px;padding:8px 10px;border:2px solid var(--border);border-radius:8px;font-family:monospace" oninput="lbPinTry(this.value)">'+
+    '<div id="lb-pin-err" style="font-size:11px;color:#b5394a;margin-top:4px;min-height:14px"></div></div>';
+  window._lbPinThen=then; document.getElementById("lb-sheet").classList.add("open");
+  setTimeout(()=>{const i=document.getElementById("lb-pin");if(i)i.focus();},50);
+}
+function lbPinTry(v){
+  if(v.length<4)return;
+  const pin=(typeof APP_PIN!=="undefined")?APP_PIN:"0000";
+  if(v===pin){window._plMomOk=true;const t=window._lbPinThen;window._lbPinThen=null;if(t)t();}
+  else{const e=document.getElementById("lb-pin-err"),i=document.getElementById("lb-pin");if(e)e.textContent="Incorrect code";if(i)i.value="";}
+}
+function lbAddTo(id,kid){
+  const b=(lbBooks||[]).find(x=>x.id===id); if(!b)return;
+  if(!lbMomOk()){lbPin(()=>lbAddTo(id,kid));return;}
+  if(typeof ceOpenAdd!=="function"||typeof ceRenderAddSheet!=="function"||typeof currData==="undefined"||!currData){
+    alert("The curriculum is still loading — try again in a moment.");return;}
+  lbWrapSave();
+  const L=lbLessons(b);
+  lbClose();
+  ceOpenAdd(kid);                       // the app's own sheet, fresh form
+  ceAddForm.name=lbAddName(b);
+  ceAddForm.device="book";
+  if(L.length>=3){ceAddForm.lessonSource="manual";ceAddForm.manualLessons=L.join("\n");ceAddForm.total=L.length;}
+  ceAddForm.timesPerWeek=lbTpw(L.length>=3?L.length:ceAddForm.total);
+  window._lbPending={bookId:id,kid:kid,form:ceAddForm};
+  ceRenderAddSheet();
+  if(typeof gwShowToast==="function")gwShowToast("📚 Filled in from "+lbAddName(b)+(L.length>=3?" — "+L.length+" lessons":"")+". Check it, then Add Subject.");
+}
+// After the app's Add Subject saves a sheet WE opened, remember which book it came from.
+function lbWrapSave(){
+  if(typeof window.ceAddSave!=="function"||window.ceAddSave._lb)return;
+  const orig=window.ceAddSave;
+  const w=function(){
+    const p=window._lbPending;
+    const kid=(typeof ceAddKid!=="undefined")?ceAddKid:null, form=(typeof ceAddForm!=="undefined")?ceAddForm:null;
+    const subs=()=>Object.keys(((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[kid]||{});
+    const before=subs();
+    const r=orig.apply(this,arguments);
+    if(p&&form===p.form&&kid===p.kid){
+      const added=subs().filter(k=>before.indexOf(k)<0);
+      if(added.length===1){
+        window._lbPending=null;
+        const link={subject:added[0],at:Date.now()};
+        (lbLinks[p.bookId]=lbLinks[p.bookId]||{})[kid]=link;
+        try{db.ref("library/links/"+p.bookId+"/"+kid).set(link);}catch(e){}
+      }
+    }
+    return r;
+  };
+  w._lb=true; window.ceAddSave=w;
 }
 function lbClose(){lbOpenId=null;const s=document.getElementById("lb-sheet");if(s)s.classList.remove("open");}
 function lbSet(k,v){lbF[k]=v;if(k!=="show")lbF.show=60;lbDraw();}
@@ -165,6 +262,9 @@ const LB_CSS=`
 .lb-sec h4{margin:14px 0 4px;font-size:13px}
 .lb-sec p{margin:0;font-size:13px;line-height:1.5;color:#334155}
 .lb-toc{margin:4px 0 0;padding-left:22px;font-size:12.5px;line-height:1.5;color:#334155}
+.lb-addrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.lb-addbtn{border:2px solid;border-radius:10px;padding:8px 12px;font-size:13px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif}
+.lb-addbtn.done{cursor:default;background:#f0fdfa;font-size:12px}
 .lb-toc li.hd{list-style:none;margin-left:-22px;font-weight:800;color:#0f172a;margin-top:6px}
 `;
 
@@ -172,6 +272,6 @@ window.renderLibrary=function(root){
   if(!document.getElementById("lb-style")){const st=document.createElement("style");st.id="lb-style";st.textContent=LB_CSS;document.head.appendChild(st);}
   lbDraw(root); lbLoad(root);
 };
-window.lbSet=lbSet;window.lbReset=lbReset;window.lbOpen=lbOpen;window.lbClose=lbClose;
-window._lbTest={lbLane,lbLocKey,lbLocText,lbMatch,lbF,setData:(b,p)=>{lbBooks=b.map(x=>Object.assign(x,{_lane:lbLane(x),_hay:lbHay(x)}));lbPhotos=p||{};}};
+window.lbSet=lbSet;window.lbReset=lbReset;window.lbOpen=lbOpen;window.lbClose=lbClose;window.lbAddTo=lbAddTo;window.lbPinTry=lbPinTry;
+window._lbTest={lbLane,lbLocKey,lbLocText,lbMatch,lbF,lbLessons,lbTpw,lbAddName,lbWrapSave,links:()=>lbLinks,setData:(b,p)=>{lbBooks=b.map(x=>Object.assign(x,{_lane:lbLane(x),_hay:lbHay(x)}));lbPhotos=p||{};}};
 })();
