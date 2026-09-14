@@ -22,22 +22,24 @@ function mk(opts) {
   const els = {}; let authCb = null, authErrCb = null;
   const node = id => ({ id, value: "", textContent: "", disabled: false, style: {}, parentNode: null, focus() {} });
   const body = { children: [], appendChild(n) { n.parentNode = body; body.children.push(n); els[n.id] = n; }, removeChild(n) { body.children = body.children.filter(x => x !== n); delete els[n.id]; n.parentNode = null; } };
+  const listeners = {}; const timers = [];
   const document = {
+    visibilityState: "visible", addEventListener(ev, fn) { (listeners[ev] = listeners[ev] || []).push(fn); },
     body, getElementById(id) { if (els[id]) return els[id]; if (/^ha-auth-(e|p|b|m)$/.test(id) && els["ha-auth"]) { return els[id] = node(id); } return null; },
     createElement(t) { const n = node(""); n.style = {}; Object.defineProperty(n, "innerHTML", { set() {}, get() { return ""; } }); return n; },
   };
   const calls = { initFb: 0, renderAll: 0, signIn: [] };
   const firebase = { apps: [], initializeApp() { firebase.apps.push(1); },
-    auth: opts.noAuth ? undefined : function () { return {
+    auth: opts.noAuth ? undefined : function () { return { currentUser: opts.user || null,
       onAuthStateChanged(cb, err) { authCb = cb; authErrCb = err; setTimeout(() => cb(opts.user || null), 0); return () => {}; },
       signInWithEmailAndPassword(e, p) { calls.signIn.push([e, p]); return opts.signInOk ? Promise.resolve({ user: { email: e } }) : Promise.reject({ code: opts.signInErr || "auth/wrong-password" }); },
       signOut() { return Promise.resolve(); },
     }; } };
-  const ctx = { console, setTimeout, Promise, String, document, firebase, FB_CFG: { databaseURL: "https://x.firebaseio.com" }, db: null,
+  let reloads = 0; const ctx = { console, setTimeout, Promise, String, document, firebase, FB_CFG: { databaseURL: "https://x.firebaseio.com" }, db: null, setInterval(fn, ms) { timers.push({ fn, ms }); return 1; },
     fetch: opts.fetchFail ? () => Promise.reject(new Error("offline")) : () => Promise.resolve({ status: opts.probe || 200 }),
-    initFb() { calls.initFb++; }, renderAll() { calls.renderAll++; }, location: { reload() {} } };
+    initFb() { calls.initFb++; ctx.db = {}; }, renderAll() { calls.renderAll++; }, location: { reload() { reloads++; } } };
   ctx.window = ctx; vm.createContext(ctx); vm.runInContext(block, ctx);
-  return { ctx, calls, els, T: n => vm.runInContext(n, ctx) };
+  return { ctx, calls, els, listeners, timers, reloads: () => reloads, setProbe(v) { opts.probe = v; }, T: n => vm.runInContext(n, ctx) };
 }
 const tick = () => new Promise(r => setTimeout(r, 5));
 
@@ -68,6 +70,19 @@ const tick = () => new Promise(r => setTimeout(r, 5));
     ok("auth SDK missing → boots as before", m.calls.initFb === 1 && m.T("_haAuthOk") === true); }
   { const m = mk({ probe: 200 }); m.T("haAuthGate")(); m.T("haAuthGate")(); await tick(); await tick();
     ok("probe is shared (one fetch), boot runs once", m.calls.initFb === 1); }
+  console.log("\n# locked out mid-session");
+  { const m = mk({ probe: 200, signInOk: true }); m.T("haAuthGate")(); await tick(); await tick();
+    ok("booted open; watcher armed (visibility + 5-min timer)", m.calls.initFb === 1 && (m.listeners.visibilitychange || []).length === 1 && m.timers.length === 1 && m.timers[0].ms === 300000);
+    m.setProbe(401); m.listeners.visibilitychange[0](); await tick(); await tick();
+    ok("rules flipped → coming to the foreground shows the card with the signed-out message", !!m.els["ha-auth"] && /signed out/.test(m.els["ha-auth-m"] ? m.els["ha-auth-m"].textContent : (m.ctx.document.getElementById("ha-auth-m") || {}).textContent || ""));
+    m.listeners.visibilitychange[0](); await tick();
+    ok("a second check does not stack a second card", m.ctx.document.body.children.filter(n => n.id === "ha-auth").length === 1);
+    m.els["ha-auth-e"] = { id: "ha-auth-e", value: "fam@x", focus() {} }; m.els["ha-auth-p"] = { id: "ha-auth-p", value: "pw" };
+    m.T("haAuthSubmit")({ preventDefault() {} }); await tick(); await tick();
+    ok("mid-session sign-in → page reload (listeners re-attach), not a second initFb", m.reloads() === 1 && m.calls.initFb === 1 && !m.els["ha-auth"]);
+    const t2 = mk({ probe: 200, user: { email: "fam@x" } }); t2.T("haAuthGate")(); await tick();
+    t2.setProbe(401); t2.timers[0].fn(); await tick(); await tick();
+    ok("a signed-in device is never nagged by the timer", !t2.els["ha-auth"]); }
   console.log("\n# wiring in index.html");
   { ok("auth SDK script tag after database", src.indexOf('<script src="vendor-firebase-auth-v8.js">') > src.indexOf('<script src="vendor-firebase-database-v8.js">') && src.indexOf('<script src="vendor-firebase-auth-v8.js">') < src.indexOf("<script src=\"vendor-firebase-storage-v8.js\">"));
     ok("vendored auth SDK exists (8.10.1 compat)", fs.existsSync(path.join(__dirname, "vendor-firebase-auth-v8.js")) && fs.statSync(path.join(__dirname, "vendor-firebase-auth-v8.js")).size > 100000);

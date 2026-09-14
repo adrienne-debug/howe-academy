@@ -2713,7 +2713,7 @@ function haAuthGate(){
     if(!(firebase.apps&&firebase.apps.length)) firebase.initializeApp(FB_CFG);
     if(!firebase.auth){ _haAuthOk=true; initFb(); renderAll(); return; }   // auth SDK missing → behave as before
     let done=false;
-    const go=function(u){ if(done) return; done=true; _haAuthUser=u||null; _haAuthOk=true; haAuthHide(); initFb(); renderAll(); };
+    const go=function(u){ if(done) return; done=true; _haAuthUser=u||null; _haAuthOk=true; haAuthHide(); initFb(); renderAll(); haAuthWatch(); };
     const unsub=firebase.auth().onAuthStateChanged(function(u){
       if(done){ return; }
       try{ unsub(); }catch(e){}
@@ -2757,7 +2757,8 @@ function haAuthSubmit(ev){
   haAuthShow("");
   firebase.auth().signInWithEmailAndPassword(String(e).trim(),p).then(function(cred){
     _haAuthProbe=null; _haAuthUser=cred&&cred.user||null; _haAuthOk=true; haAuthHide();
-    if(!db){ initFb(); } renderAll();
+    if(db){ location.reload(); return; }   // mid-session: listeners were cut when the rules locked → clean re-attach
+    initFb(); renderAll();
   }).catch(function(err){
     if(b){ b.disabled=false; b.textContent="Sign in"; }
     const code=String(err&&err.code||"");
@@ -2765,6 +2766,24 @@ function haAuthSubmit(ev){
       /too-many/.test(code)?"Too many tries — wait a minute.":/network/.test(code)?"No connection — try again.":(err&&err.message)||"Couldn't sign in.");
   });
   return false;
+}
+// A device that was booted while the rules were still open (or whose session was revoked) gets locked out
+// MID-SESSION: the SDK drops every listener it is refused on, and the app would sit on cached data, saving
+// nothing, until someone reboots it. So: whenever the app comes back to the foreground, and every 5 minutes,
+// re-run the probe if nobody is signed in; refused → the 🔒 card. (2026-09-14, her "build it".)
+let _haAuthWatching=false;
+function haAuthWatch(){
+  if(_haAuthWatching) return; _haAuthWatching=true;
+  const check=function(){
+    try{
+      if(!firebase.auth||_haAuthUser||firebase.auth().currentUser) return;   // a remembered device is never asked again
+      if(document.getElementById("ha-auth")) return;
+      _haAuthProbe=null;
+      haAuthProbe().then(function(open){ if(!open) haAuthShow("This device was signed out \u2014 sign in to keep saving."); }).catch(function(){});
+    }catch(e){}
+  };
+  try{ document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="visible") check(); }); }catch(e){}
+  try{ setInterval(check,300000); }catch(e){}
 }
 // From an Admin console: haSignOut() forgets this device's session and reloads (it will ask again).
 function haSignOut(){ try{ firebase.auth().signOut().then(function(){ location.reload(); }); }catch(e){ location.reload(); } }
