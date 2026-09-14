@@ -22,6 +22,7 @@
      same version 10.12.0, served from the one origin every device provably reaches. -->
 <script src="vendor-firebase-app-v8.js"></script>
 <script src="vendor-firebase-database-v8.js"></script>
+<script src="vendor-firebase-auth-v8.js"></script>
 <script src="vendor-firebase-storage-v8.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <style>
@@ -2687,7 +2688,77 @@ function attachWeekListeners(wk){
   fbWeekRefs.push(r15);
 }
 
+// AUTH_GATE_START — 🔒 Stage 0 (2026-09-13): the database rules become `auth != null`, so every
+// device signs in ONCE with the family account (Firebase keeps the session on the device).
+// Until the rules are flipped this is INERT: a device that is not signed in probes one read
+// over REST; if the read succeeds the rules are still open and boot continues exactly as before.
+// If it is refused, the sign-in card appears; after sign-in, boot continues. Nothing else changes.
+let _haAuthOk=false, _haAuthUser=null, _haAuthProbe=null, _haAuthStarted=false;
+function haAuthGate(){
+  if(_haAuthStarted) return;   // one gate per page load, however many times boot asks
+  _haAuthStarted=true;
+  try{
+    if(!(firebase.apps&&firebase.apps.length)) firebase.initializeApp(FB_CFG);
+    if(!firebase.auth){ _haAuthOk=true; initFb(); renderAll(); return; }   // auth SDK missing → behave as before
+    let done=false;
+    const go=function(u){ if(done) return; done=true; _haAuthUser=u||null; _haAuthOk=true; haAuthHide(); initFb(); renderAll(); };
+    const unsub=firebase.auth().onAuthStateChanged(function(u){
+      if(done){ return; }
+      try{ unsub(); }catch(e){}
+      if(u){ go(u); return; }
+      haAuthProbe().then(function(open){ if(open) go(null); else haAuthShow(""); })
+        .catch(function(){ go(null); });   // network down etc. → don't strand the device; the SDK's own offline cache carries it
+    },function(){ go(null); });
+  }catch(e){ console.error("[HA] auth gate",e); _haAuthOk=true; initFb(); renderAll(); }
+}
+// One tiny REST read. 200 = rules still open (or we are signed in); 401/403 = locked → sign in.
+function haAuthProbe(){
+  if(_haAuthProbe) return _haAuthProbe;
+  const url=String((FB_CFG&&FB_CFG.databaseURL)||"").replace(/\/$/,"")+"/settings/codeVersion.json";
+  _haAuthProbe=(typeof fetch==="function"?fetch(url,{cache:"no-store"}):Promise.reject(new Error("no fetch")))
+    .then(function(r){ return !(r.status===401||r.status===403); });
+  return _haAuthProbe;
+}
+function haAuthShow(msg){
+  let o=document.getElementById("ha-auth");
+  if(!o){
+    o=document.createElement("div"); o.id="ha-auth";
+    o.style.cssText="position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.72);display:flex;align-items:center;justify-content:center;padding:20px;font-family:'DM Sans',system-ui,sans-serif";
+    o.innerHTML='<form onsubmit="haAuthSubmit(event)" style="background:#fff;border-radius:16px;padding:22px 20px;width:100%;max-width:340px;box-shadow:0 20px 60px rgba(0,0,0,.35)">'+
+      '<div style="font-size:34px;text-align:center">🔒</div>'+
+      '<div style="font-weight:800;font-size:16px;text-align:center;margin:6px 0 2px">Sign in to Howe Academy</div>'+
+      '<div style="font-size:12px;color:#64748b;text-align:center;margin-bottom:14px">Once per device — the family account.</div>'+
+      '<input id="ha-auth-e" type="email" autocomplete="username" placeholder="email" required style="width:100%;box-sizing:border-box;font:inherit;font-size:14px;padding:10px 12px;border:1.5px solid #cbd5e1;border-radius:10px;margin-bottom:8px">'+
+      '<input id="ha-auth-p" type="password" autocomplete="current-password" placeholder="password" required style="width:100%;box-sizing:border-box;font:inherit;font-size:14px;padding:10px 12px;border:1.5px solid #cbd5e1;border-radius:10px;margin-bottom:10px">'+
+      '<button id="ha-auth-b" type="submit" style="width:100%;font:inherit;font-weight:800;font-size:14px;padding:11px;border:none;border-radius:10px;background:#111827;color:#fff;cursor:pointer">Sign in</button>'+
+      '<div id="ha-auth-m" style="min-height:16px;font-size:12px;color:#b5394a;text-align:center;margin-top:8px"></div></form>';
+    document.body.appendChild(o);
+    setTimeout(function(){ const i=document.getElementById("ha-auth-e"); if(i) i.focus(); },50);
+  }
+  const m=document.getElementById("ha-auth-m"); if(m) m.textContent=msg||"";
+}
+function haAuthHide(){ const o=document.getElementById("ha-auth"); if(o&&o.parentNode) o.parentNode.removeChild(o); }
+function haAuthSubmit(ev){
+  if(ev&&ev.preventDefault) ev.preventDefault();
+  const e=(document.getElementById("ha-auth-e")||{}).value||"", p=(document.getElementById("ha-auth-p")||{}).value||"";
+  const b=document.getElementById("ha-auth-b"); if(b){ b.disabled=true; b.textContent="Signing in…"; }
+  haAuthShow("");
+  firebase.auth().signInWithEmailAndPassword(String(e).trim(),p).then(function(cred){
+    _haAuthProbe=null; _haAuthUser=cred&&cred.user||null; _haAuthOk=true; haAuthHide();
+    if(!db){ initFb(); } renderAll();
+  }).catch(function(err){
+    if(b){ b.disabled=false; b.textContent="Sign in"; }
+    const code=String(err&&err.code||"");
+    haAuthShow(/wrong-password|invalid-credential|user-not-found|invalid-login/.test(code)?"That email or password isn't right.":
+      /too-many/.test(code)?"Too many tries — wait a minute.":/network/.test(code)?"No connection — try again.":(err&&err.message)||"Couldn't sign in.");
+  });
+  return false;
+}
+// From an Admin console: haSignOut() forgets this device's session and reloads (it will ask again).
+function haSignOut(){ try{ firebase.auth().signOut().then(function(){ location.reload(); }); }catch(e){ location.reload(); } }
+// AUTH_GATE_END
 function initFb() {
+  if(!_haAuthOk){ haAuthGate(); return; }   // 🔒 sign-in first (inert while the rules are open)
   try {
     // The LG StanbyME (webOS) reaches Firebase's REST fine but its live WEBSOCKET hangs
     // instead of failing, so the SDK's automatic long-polling fallback never triggers and
@@ -2702,7 +2773,7 @@ function initFb() {
         firebase.database.INTERNAL.forceLongPolling();
       }
     }catch(eLP){}
-    firebase.initializeApp(FB_CFG);
+    if(!(firebase.apps&&firebase.apps.length)) firebase.initializeApp(FB_CFG);   // haAuthGate may already have
     db = firebase.database();
 
     // DRY-RUN: neutralize every Firebase write (reads stay live) so the modified app
