@@ -23,7 +23,14 @@ let lbRulesEdit=null;       // draft text while ⚙ Room rules is open
 let lbPlan={};              // id → placement proposal from Claude (not written until she taps ✓ Place)
 let lbPlanMsg={};           // id → status line while asking
 let lbMoves=null;           // 🧭 Re-shelve check result {at, moves:[…]} (read-only until a row is applied)
-const lbF={q:"",kid:"all",lane:"all",status:"all",loc:"all",show:60};
+const lbF={q:"",kid:"all",lane:"all",status:"all",loc:"all",cube:"",show:60};
+// 🗺 Kallax map (2026-09-14, her "I like seeing the map of the Kallax"): List | 🗺 Kallax toggle, remembered per device.
+let lbMode=(function(){try{return (typeof HA_LS!=="undefined"?HA_LS:localStorage).getItem("lb_mode")==="map"?"map":"list";}catch(e){return "list";}})();
+let lbKallax=null;          // library/kallax {lanes:{cube:LANE}, drawers:[], noBooks:[]} — the sticker plan; default below until seeded
+const LB_KALLAX_DEFAULT={rows:["A","B","C","D","E"],cols:[1,2,3,4,5],drawers:["C3","D3","E3"],noBooks:["A1","A2","A3","A4"],
+  lanes:{B3:"PHONICS",B4:"PHONICS",B5:"THINKING",B1:"HISTORY",B2:"HISTORY",C1:"WRITING",C2:"WRITING",C4:"GATHER",C5:"GATHER",D1:"LITERATURE",D2:"LITERATURE",D4:"MATH",D5:"MATH",A5:"MINE",E1:"SCIENCE",E2:"SCIENCE",E4:"SCIENCE",E5:"ART"}};
+const LB_LANE_X={GATHER:["GATHER","The Gathering","#DAB162"],MINE:["MINE","Mom's reading","#B59878"]};   // sticker lanes that aren't book-subject lanes
+const LB_CUBE_CAP=25;
 
 const LB_LANES=[
   ["PHONICS","Phonics · Spelling","#EDA1A1"],["WRITING","Writing · Grammar","#508D90"],
@@ -79,6 +86,7 @@ function lbLoad(root){
     db.ref("library/links").once("value").then(l=>{lbLinks=l.val()||{};lbDraw(root);}).catch(()=>{});
     db.ref("library/scans").once("value").then(l=>{lbScans=l.val()||{};lbDraw(root);}).catch(()=>{});
     db.ref("library/rules").once("value").then(l=>{lbRules=l.val()||null;}).catch(()=>{});
+    db.ref("library/kallax").once("value").then(l=>{lbKallax=l.val()||null;if(lbMode==="map")lbDraw(root);}).catch(()=>{});
     // covers second, so the list shows up before ~4 MB of thumbnails arrive
     return db.ref("libraryPhotos").once("value").then(p=>{lbPhotos=p.val()||{};lbDraw(root);});
   }).catch(e=>{lbErr="Couldn't load the library ("+(e&&e.message||e)+").";lbLoading=false;lbDraw(root);});
@@ -88,6 +96,7 @@ function lbMatch(b){
   if(lbF.kid!=="all"&&!String(b.kid||"").toLowerCase().includes(lbF.kid))return false;
   if(lbF.lane!=="all"&&b._lane!==lbF.lane)return false;
   if(lbF.status!=="all"&&(b.status||"")!==lbF.status)return false;
+  if(lbF.cube&&((b.location||{}).kallax||"")!==lbF.cube)return false;
   if(lbF.loc==="toshelve"){if(!lbInTransit(b))return false;}
   else if(lbF.loc!=="all"&&lbLocKey(b)!==lbF.loc)return false;
   if(lbF.q){const w=lbF.q.toLowerCase().split(/\s+/).filter(Boolean);if(!w.every(x=>b._hay.includes(x)))return false;}
@@ -114,7 +123,13 @@ function lbDraw(root){
   if(!lbBooks){root.innerHTML='<div class="lb-empty">Loading the library…</div>';return;}
   const hits=lbBooks.filter(lbMatch);
   const cnt=k=>lbBooks.filter(b=>lbLocKey(b)===k).length;
-  let h='<div class="lb-top">'+
+  const modeBar='<div class="lb-modebar"><button class="lb-mode'+(lbMode==="list"?" on":"")+'" onclick="lbSetMode(\'list\')">☰ List</button><button class="lb-mode'+(lbMode==="map"?" on":"")+'" onclick="lbSetMode(\'map\')">🗺 Kallax</button></div>';
+  if(lbMode==="map"){
+    root.innerHTML='<div class="lb-top">'+modeBar+'</div>'+lbMapHTML()+'<div id="lb-sheet" onclick="if(event.target.id===\'lb-sheet\')lbClose()"><div class="lb-sh" id="lb-shbody"></div></div>';
+    if(lbNew)lbNewDraw(); else if(lbOpenId)lbOpen(lbOpenId);
+    return;
+  }
+  let h='<div class="lb-top">'+modeBar+
     '<input type="search" class="lb-q" placeholder="Search '+lbBooks.length+' books — title, subject, a chapter…" value="'+esc(lbF.q)+'" oninput="lbSet(\'q\',this.value)">'+
     '<div class="lb-filters">'+
     sel("kid",lbF.kid,[["all","Everyone"]].concat(LB_KIDS.map(k=>[k[0],k[1]])))+
@@ -122,7 +137,8 @@ function lbDraw(root){
     sel("status",lbF.status,[["all","Any status"]].concat(Object.entries(LB_STATUS).map(([k,v])=>[k,v[0]])))+
     sel("loc",lbF.loc,[["all","Anywhere"],["toshelve","📦 To shelve ("+lbBooks.filter(lbInTransit).length+")"],["shelf","🗄 On the Kallax"],["cart","🛒 On a cart"],["box","📦 In the box ("+cnt("box")+")"],["unpack","📦 Needs unpacking ("+cnt("unpack")+")"],["table","📥 On the table ("+cnt("table")+")"],["putup","🪜 Put up ("+cnt("putup")+")"],["basket","🧺 Morning Basket"],["online","💻 Online"]])+
     '</div><div class="lb-count" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span>'+hits.length+' of '+lbBooks.length+' books'+
-    ((lbF.q||lbF.kid!=="all"||lbF.lane!=="all"||lbF.status!=="all"||lbF.loc!=="all")?' · <a href="#" onclick="lbReset();return false">clear</a>':'')+'</span>'+
+    (lbF.cube?' · <b>🗄 cube '+esc(lbF.cube)+'</b> <a href="#" onclick="lbSet(\'cube\',\'\');return false">✕</a>':'')+
+    ((lbF.q||lbF.kid!=="all"||lbF.lane!=="all"||lbF.status!=="all"||lbF.loc!=="all"||lbF.cube)?' · <a href="#" onclick="lbReset();return false">clear</a>':'')+'</span>'+
     '<span style="flex:1"></span><button class="lb-tool" onclick="lbNewStart()">➕ New book</button><button class="lb-tool" onclick="lbRulesOpen()" title="The room logic the placement helper follows">⚙ Room rules</button><button class="lb-tool" onclick="lbReshelve()" title="Ask which books break the rules">🧭 Re-shelve check</button><button class="lb-tool" onclick="lbExport()">⬇ Export</button></div></div>';
   h+='<div class="lb-grid">'+hits.slice(0,lbF.show).map(lbCard).join("")+'</div>';
   if(hits.length>lbF.show)h+='<div style="text-align:center;margin:6px 0 22px"><button class="lb-more" onclick="lbSet(\'show\','+(lbF.show+60)+')">Show more ('+(hits.length-lbF.show)+' left)</button></div>';
@@ -648,7 +664,52 @@ function lbWrapSave(){
 }
 function lbClose(){lbOpenId=null;lbEdit=null;lbView=null;lbNew=null;lbRulesEdit=null;lbMoves=null;const s=document.getElementById("lb-sheet");if(s)s.classList.remove("open");}
 function lbSet(k,v){lbF[k]=v;if(k!=="show")lbF.show=60;lbDraw();}
-function lbReset(){Object.assign(lbF,{q:"",kid:"all",lane:"all",status:"all",loc:"all",show:60});lbDraw();}
+function lbReset(){Object.assign(lbF,{q:"",kid:"all",lane:"all",status:"all",loc:"all",cube:"",show:60});lbDraw();}
+function lbSetMode(m){lbMode=m==="map"?"map":"list";try{(typeof HA_LS!=="undefined"?HA_LS:localStorage).setItem("lb_mode",lbMode);}catch(e){}lbDraw();}
+// ── 🗺 Kallax map — the 5×5 shelf, live from library/books locations; lane colours from the sticker plan ──
+function lbKal(){const k=lbKallax||{};const d=LB_KALLAX_DEFAULT;return {rows:k.rows||d.rows,cols:k.cols||d.cols,drawers:k.drawers||d.drawers,noBooks:k.noBooks||d.noBooks,lanes:k.lanes||d.lanes};}
+function lbLaneInfo(code){return LB_LANE[code]||LB_LANE_X[code]||null;}
+function lbCubeBooks(cell){return (lbBooks||[]).filter(b=>((b.location||{}).kallax||"")===cell);}
+function lbCubeHTML(cell){
+  const K=lbKal(), items=lbCubeBooks(cell), n=items.length, plan=K.lanes[cell]||"", li=lbLaneInfo(plan);
+  const drawer=K.drawers.indexOf(cell)>=0, dead=K.noBooks.indexOf(cell)>=0, sel=lbF.cube===cell;
+  if((drawer||dead)&&!n)return '<button class="lb-cube x" onclick="lbMapPick(\''+cell+'\')"><span class="lb-cc">'+cell+'</span><span class="lb-cx">'+(drawer?"drawer":"✕")+'</span></button>';
+  const wrong=(li&&LB_LANE[plan])?items.filter(b=>b._lane!==plan).length:0;
+  let h='<button class="lb-cube'+(sel?" sel":"")+((drawer||dead)?" warn":"")+(n?"":" empty")+'" onclick="lbMapPick(\''+cell+'\')" title="'+esc(cell+(li?" · "+li[1]:""))+'">';
+  h+='<span class="lb-sw" style="background:'+(li?li[2]:"#e2e8f0")+'"></span>';
+  h+='<span class="lb-cc">'+cell+(n?' <span class="lb-cn" style="background:'+(n>LB_CUBE_CAP?"#dc2626":(li?li[2]:"#94a3b8"))+'">'+n+'</span>':'')+(wrong?' <span class="lb-cw" title="'+wrong+' not in this lane">⚠'+wrong+'</span>':'')+((drawer||dead)?' <span class="lb-cw">⚠ no-book cube</span>':'')+'</span>';
+  if(li)h+='<span class="lb-cl" style="color:'+li[2]+'">'+esc(li[1])+'</span>';
+  h+=items.slice(0,3).map(b=>'<span class="lb-ct">'+esc(String(b.title||b.id).replace(/\s*\([^)]*\)/g,"").slice(0,34))+'</span>').join("");
+  if(n>3)h+='<span class="lb-cm">+'+(n-3)+' more</span>';
+  h+='</button>';
+  return h;
+}
+function lbMapHTML(){
+  const K=lbKal(); const books=lbBooks||[];
+  const onShelf=books.filter(b=>/^[A-E][1-5]$/.test((b.location||{}).kallax||"")).length;
+  let h='<div class="lb-map"><div class="lb-mapgrid" style="grid-template-columns:22px repeat('+K.cols.length+',minmax(96px,1fr))">';
+  h+='<span></span>'+K.cols.map(c=>'<span class="lb-mh">'+c+'</span>').join("");
+  K.rows.forEach(r=>{h+='<span class="lb-mh">'+r+'</span>'+K.cols.map(c=>lbCubeHTML(r+c)).join("");});
+  h+='</div>';
+  h+='<div class="lb-legend">'+Object.keys(K.lanes).reduce((acc,cell)=>{const l=K.lanes[cell];if(acc.seen[l])return acc;acc.seen[l]=1;const li=lbLaneInfo(l);if(li)acc.h+='<span class="lb-chip" style="border-color:'+li[2]+';color:'+li[2]+'"><i style="background:'+li[2]+'"></i>'+esc(li[1])+'</span>';return acc;},{seen:{},h:""}).h+
+    '<span style="font-size:11px;color:var(--muted)">'+onShelf+' on the shelf · colour = lane sticker · ⚠ = a book from another lane · tap a cube</span></div>';
+  // the other homes, as tiles
+  const cartN=k=>books.filter(b=>String((b.location||{}).cart||"")===k);
+  const tile=(label,n,click,col)=>'<button class="lb-tile" style="border-color:'+col+'" onclick="'+click+'"><b>'+label+'</b><span style="color:'+col+'">'+n+'</span></button>';
+  h+='<div class="lb-tiles">'+LB_ADD_KIDS.map(k=>{const L=cartN(k);const tiers=[1,2,3].map(t=>L.filter(b=>+(b.location||{}).tier===t).length);return tile("🛒 "+lbKidName(k)+"'s cart <small>"+tiers.map((n,i)=>"t"+(i+1)+":"+n).join(" · ")+"</small>",L.length,"lbMapTile('cart')",(LB_KIDS.find(x=>x[0]===k)||[])[2]||"#111827");}).join("")+
+    tile("🧺 Morning Basket",cnt2("basket"),"lbMapTile('basket')","#DAB162")+tile("📦 To shelve",books.filter(lbInTransit).length,"lbMapTile('toshelve')","#7c3aed")+tile("💻 Online",cnt2("online"),"lbMapTile('online')","#0f766e")+'</div>';
+  if(lbF.cube){const items=lbCubeBooks(lbF.cube), li=lbLaneInfo(K.lanes[lbF.cube]||"");
+    h+='<div class="lb-cubepanel"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:14px">🗄 '+esc(lbF.cube)+'</b>'+(li?chip(li[1],li[2],true):"")+'<span style="font-size:11.5px;color:var(--muted)">'+items.length+' book'+(items.length===1?'':'s')+(items.length>LB_CUBE_CAP?' · <b style="color:#dc2626">over '+LB_CUBE_CAP+'</b>':'')+'</span><span style="flex:1"></span><button class="lb-tool" onclick="lbSetMode(\'list\')">☰ as a list</button><button class="lb-tool" onclick="lbSet(\'cube\',\'\')">✕</button></div>';
+    h+=items.length?'<div class="lb-cubelist">'+items.sort((a,b)=>String(a.title||"").localeCompare(String(b.title||""))).map(b=>{const l=LB_LANE[b._lane];const off=li&&LB_LANE[K.lanes[lbF.cube]]&&b._lane!==K.lanes[lbF.cube];const st=LB_STATUS[b.status];
+      return '<button class="lb-cuberow" onclick="lbOpen(\''+esc(b.id)+'\')"><i style="background:'+l[2]+'"></i><span style="flex:1;min-width:0">'+esc(b.title||b.id)+'</span>'+(off?'<span class="lb-cw">⚠ '+esc(l[1])+'</span>':'')+(st?chip(st[0],st[1]):'')+lbKids(b).map(k=>chip(k[1],k[2],true)).join("")+'</button>';}).join("")+'</div>'
+      :'<div style="font-size:12px;color:var(--muted);padding:8px 0">Empty.</div>';
+    h+='</div>';}
+  h+='</div>';
+  return h;
+  function cnt2(k){return books.filter(b=>lbLocKey(b)===k).length;}
+}
+function lbMapPick(cell){lbF.cube=lbF.cube===cell?"":cell;lbDraw();}
+function lbMapTile(loc){lbF.cube="";lbF.loc=loc;lbMode="list";try{(typeof HA_LS!=="undefined"?HA_LS:localStorage).setItem("lb_mode","list");}catch(e){}lbDraw();}
 
 const LB_CSS=`
 #lib-root{padding-bottom:30px}
@@ -699,6 +760,36 @@ const LB_CSS=`
 .lb-ph{flex:none;border:1.5px solid var(--border);border-radius:8px;background:#fff;padding:3px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;font:inherit;font-size:10px;color:var(--muted)}
 .lb-ph img{height:84px;width:auto;border-radius:5px;display:block}
 .lb-plan{margin-top:10px;padding:10px 12px;border:1.5px dashed #7c3aed;border-radius:12px;background:#faf5ff}
+.lb-modebar{display:flex;gap:6px;margin-bottom:8px}
+.lb-mode{flex:1;padding:7px 6px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-weight:800;font-size:12.5px;cursor:pointer;font-family:'DM Sans',sans-serif;color:var(--muted)}
+.lb-mode.on{background:#111827;color:#fff;border-color:#111827}
+.lb-map{padding:12px}
+.lb-mapgrid{display:grid;gap:6px;min-width:640px}
+.lb-mh{font-size:10px;color:#94a3b8;font-weight:700;display:flex;align-items:center;justify-content:center}
+.lb-cube{position:relative;aspect-ratio:1/1;border:1.5px solid var(--border);border-radius:9px;background:#fff;padding:9px 8px 6px;cursor:pointer;text-align:left;font:inherit;color:inherit;display:flex;flex-direction:column;gap:1px;overflow:hidden}
+.lb-cube:hover{border-color:#94a3b8}
+.lb-cube.sel{outline:3px solid #a5b4fc}
+.lb-cube.empty{background:#fafafa}
+.lb-cube.warn{border-color:#fb923c;background:#fff7ed}
+.lb-cube.x{border-style:dashed;background:repeating-linear-gradient(45deg,#fafafa,#fafafa 5px,#f1f5f9 5px,#f1f5f9 6px);align-items:center;justify-content:center;cursor:default}
+.lb-sw{position:absolute;top:0;left:0;right:0;height:5px}
+.lb-cc{font-size:11px;font-weight:800;color:#94a3b8;display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.lb-cn{color:#fff;border-radius:99px;padding:0 6px;font-size:10px}
+.lb-cw{font-size:9.5px;font-weight:800;color:#c2410c;white-space:nowrap}
+.lb-cx{font-size:10px;color:#cbd5e1}
+.lb-cl{font-size:10.5px;font-weight:700}
+.lb-ct{font-size:10.5px;color:#334155;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lb-cm{font-size:9.5px;color:#94a3b8}
+.lb-legend{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0 4px}
+.lb-legend .lb-chip i{display:inline-block;width:8px;height:8px;border-radius:99px;margin-right:4px}
+.lb-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:10px}
+.lb-tile{display:flex;align-items:center;justify-content:space-between;gap:6px;border:1.5px solid;border-radius:10px;background:#fff;padding:8px 10px;font:inherit;font-size:12px;cursor:pointer;text-align:left}
+.lb-tile small{display:block;font-size:10px;color:var(--muted);font-weight:500}
+.lb-tile span{font-weight:800;font-size:14px}
+.lb-cubepanel{margin-top:12px;background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:10px 12px}
+.lb-cubelist{display:flex;flex-direction:column;gap:4px;margin-top:8px}
+.lb-cuberow{display:flex;align-items:center;gap:8px;border:1px solid #f1f5f9;border-radius:8px;background:#fff;padding:6px 8px;font:inherit;font-size:12.5px;cursor:pointer;text-align:left}
+.lb-cuberow i{flex:none;width:6px;height:22px;border-radius:3px}
 `;
 
 window.renderLibrary=function(root){
@@ -710,8 +801,10 @@ window.lbEditStart=lbEditStart;window.lbEditSet=lbEditSet;window.lbEditSave=lbEd
 window.lbNewStart=lbNewStart;window.lbNewSet=lbNewSet;window.lbNewSave=lbNewSave;window.lbNewCancel=lbNewCancel;window.lbNewCover=lbNewCover;
 window.lbExport=lbExport;window.lbPhotoAdd=lbPhotoAdd;window.lbPhotoView=lbPhotoView;window.lbViewBack=lbViewBack;
 window.lbRulesOpen=lbRulesOpen;window.lbRulesSave=lbRulesSave;window.lbRulesCancel=lbRulesCancel;window.lbPlace=lbPlace;window.lbPlaceApply=lbPlaceApply;window.lbReshelve=lbReshelve;window.lbMoveApply=lbMoveApply;
+window.lbSetMode=lbSetMode;window.lbMapPick=lbMapPick;window.lbMapTile=lbMapTile;
 Object.defineProperty(window,"lbPlan",{get:()=>lbPlan});Object.defineProperty(window,"lbMoves",{get:()=>lbMoves,set:v=>{lbMoves=v;}});Object.defineProperty(window,"lbRulesEdit",{get:()=>lbRulesEdit,set:v=>{lbRulesEdit=v;}});
 window._lbTest={lbLane,lbLocKey,lbLocText,lbMatch,lbF,lbLessons,lbTpw,lbAddName,lbWrapSave,links:()=>lbLinks,scans:()=>lbScans,setScans:v=>{lbScans=v;},setData:(b,p)=>{lbBooks=b.map(x=>Object.assign(x,{_lane:lbLane(x),_hay:lbHay(x)}));lbPhotos=p||{};},
   lbFormFrom,lbRecordFrom,lbPatch,lbLocForm,lbLocFrom,lbSlug,lbNewId,lbExportData,lbPhotoList,books:()=>lbBooks,edit:()=>lbEdit,setEdit:v=>{lbEdit=v;},newState:()=>lbNew,setNew:v=>{lbNew=v;},setFull:(id,v)=>{lbFull[id]=v;},
-  lbInTransit,lbOccupancy,lbBookLine,lbPlacePrompt,lbPlanLoc,lbPlanText,lbPlanHtml,plan:()=>lbPlan,setPlan:(id,v)=>{lbPlan[id]=v;},rules:()=>lbRules,setRules:v=>{lbRules=v;},moves:()=>lbMoves};
+  lbInTransit,lbOccupancy,lbBookLine,lbPlacePrompt,lbPlanLoc,lbPlanText,lbPlanHtml,plan:()=>lbPlan,setPlan:(id,v)=>{lbPlan[id]=v;},rules:()=>lbRules,setRules:v=>{lbRules=v;},moves:()=>lbMoves,
+  lbMapHTML,lbCubeHTML,lbCubeBooks,lbKal,mode:()=>lbMode,setKallax:v=>{lbKallax=v;}};
 })();
