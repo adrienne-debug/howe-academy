@@ -823,10 +823,13 @@ function plRoomBins(codes){const C=(codes||[]).map(function(c){return String(c).
   return PL_CATALOG.filter(function(b){const L=plEffLoc(b);return C.some(function(c){return L===c||L.indexOf(c+"-")===0||(L.indexOf(c)===0&&/^\d+$/.test(L.slice(c.length)));});});}   // unit · dashed slot · glued shelf (BG-L1)
 function plRoomMapHTML(){
   const F=plFloor&&plFloor.boxes;if(!F)return '<div style="padding:14px;font-size:12px;color:var(--muted)">No floorplan in the app yet — it is seeded once from the Mac\'s layout.</div>';
-  const st=document.getElementById("pl-roomstyle")?"":'<style id="pl-roomstyle">.pl-room{position:relative;width:100%;max-width:760px;aspect-ratio:10/12.5;border:3px solid #94a3b8;border-radius:8px;background:#fff;overflow:hidden;margin:8px auto}'+
+  // the stylesheet lives in <head> ONCE — inside the map's own innerHTML it was wiped by every re-render
+  // (tap a unit → plRender → boxes lost position/aspect and the map "squashed"; her report 2026-09-14)
+  if(!document.getElementById("pl-roomstyle")){const _s=document.createElement("style");_s.id="pl-roomstyle";_s.textContent='.pl-room{position:relative;width:100%;max-width:760px;aspect-ratio:10/12.5;border:3px solid #94a3b8;border-radius:8px;background:#fff;overflow:hidden;margin:8px auto}'+
     '.pl-rbox{position:absolute;border:2px solid #64748b;border-radius:6px;background:#f1f5f9;display:flex;flex-direction:column;align-items:center;justify-content:center;font:inherit;font-size:10px;font-weight:700;text-align:center;padding:2px;box-sizing:border-box;cursor:pointer;overflow:hidden;line-height:1.15;color:#0f172a}'+
     '.pl-rbox.deco{cursor:default;color:#64748b;font-weight:600}.pl-rbox.on{outline:3px solid #a5b4fc}.pl-rbox.c-new{border-color:#2563c9;background:#eff6ff}.pl-rbox.c-fire{border-color:#c2410c;background:#fff7ed}.pl-rbox.c-soft{border-color:#cbd5e1;background:#f8fafc;border-style:dashed}.pl-rbox.c-out{border-color:#b5394a;background:#fff1f2;border-style:dashed}'+
-    '.pl-rn{display:inline-block;margin-top:2px;background:#111827;color:#fff;border-radius:99px;padding:0 6px;font-size:10px}.pl-rn.z{background:#cbd5e1}.pl-rbox.books{background:#fdf2f8;border-color:#BB8EA3}</style>';
+    '.pl-rn{display:inline-block;margin-top:2px;background:#111827;color:#fff;border-radius:99px;padding:0 6px;font-size:10px}.pl-rn.z{background:#cbd5e1}.pl-rbox.books{background:#fdf2f8;border-color:#BB8EA3}';document.head.appendChild(_s);}
+  const st="";
   let h=st+'<div style="padding:0 12px"><div class="pl-room">';
   Object.keys(F).forEach(function(k){const b=F[k];if(!b)return;const codes=b.codes||[];const n=codes.length?plRoomBins(codes).length:null;
     const on=codes.length&&(codes.indexOf(plLocF)>=0||codes.some(function(c){return plLocF.indexOf(c)===0;}));

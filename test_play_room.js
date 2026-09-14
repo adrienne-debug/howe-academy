@@ -17,7 +17,7 @@ function slice(a, b) { const i = src.indexOf(a); if (i < 0) { console.error(a + 
 const block = slice("// ROOMMAP_START", "// ROOMMAP_END");
 const effloc = slice("function plEffLoc(c){", "}");
 ok("ROOMMAP block present", block.length > 800);
-const store = {}; const meta = {}; let renders = 0, subs = [];
+const store = {}; const meta = {}; let renders = 0, subs = []; const headStyles = [];
 const CAT = [
   { id: "CLX-1", name: "Clixo", cat: "magna", loc: "F1" }, { id: "MAG-1", name: "Magna-Tiles", cat: "magna", loc: "F1" },
   { id: "W-A", name: "Wall bin A", cat: "x", loc: "W3" }, { id: "MK-A", name: "Maker kit", cat: "maker", loc: "MK-3" },
@@ -25,7 +25,7 @@ const CAT = [
   { id: "CART-A", name: "Lincoln daily", cat: "x", loc: "CART-LIN-3" }, { id: "NONE", name: "Nowhere", cat: "x", loc: "" },
 ];
 const ctx = { console, String, Array, Object, JSON, window: {}, PL_CATALOG: CAT, plMeta: id => ({ loc: meta[id] || null }), plLocF: "F1", plMode: "bins", plRender() { renders++; },
-  HA_LS: { getItem: k => store[k] || null, setItem: (k, v) => { store[k] = v; } }, document: { getElementById: () => null }, plSetSub: v => { subs.push(v); }, lbSetMode: m => { subs.push("mode:" + m); } };
+  HA_LS: { getItem: k => store[k] || null, setItem: (k, v) => { store[k] = v; } }, document: { getElementById: id => (id === "pl-roomstyle" ? headStyles[0] || null : null), createElement: () => ({ id: "", textContent: "" }), head: { appendChild: n => { headStyles.push(n); } } }, plSetSub: v => { subs.push(v); }, lbSetMode: m => { subs.push("mode:" + m); } };
 ctx.window = ctx; vm.createContext(ctx); vm.runInContext(effloc + "\n" + block, ctx);
 const T = n => vm.runInContext(n, ctx);
 
@@ -54,7 +54,8 @@ console.log("\n# counts");
   ok("boxes positioned in %, first label line only, counts shown, zero styled grey", /left:91%;top:25%;width:8.5%;height:11.6%/.test(h) && /F1 🧲<span class="pl-rn">2<\/span>/.test(h) && /F2 daily<span class="pl-rn">1/.test(h) && !/W1-3 ⬆<span/.test(h));
   ok("decoration box has no onclick and 'deco' class; Kallax box opens books", /pl-rbox deco[^>]*title="French doors → patio"/.test(h) && !/plRoomPick\('doors'\)/.test(h) && /books"[^>]*onclick="plRoomBooks\(\)"/.test(h) && /📚/.test(h));
   ok("current filter F1 highlights its box", /pl-rbox on[^>]*>F1/.test(h) || /class="pl-rbox on"/.test(h) || /pl-rbox on/.test(h));
-  ok("style injected once", (h.match(/pl-roomstyle/g) || []).length === 1);
+  T("plRoomMapHTML")(); T("plRoomMapHTML")();
+  ok("stylesheet lives in <head>, added once, never inside the map markup (re-render must not wipe it)", headStyles.length === 1 && /\.pl-rbox\{position:absolute/.test(headStyles[0].textContent) && !/<style/.test(h));
 }
 console.log("\n# tap");
 {
