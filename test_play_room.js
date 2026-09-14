@@ -72,6 +72,7 @@ console.log("\n# wiring");
   ok("listener stores play/floorplan", /plFloor=v\.floorplan\|\|null;/.test(src));
   ok("locbar gets the 🗺 toggle; map rendered only in bins mode when open", /onclick="plRoomToggle\(\)"/.test(src) && /plMode=="bins"&&plRoomOpen/.test(src));
   ok("bar list extends with session extras", /\.concat\(plLocExtra\.filter/.test(src));
+  ok("🗺 onclick targets exported from the closure", ["plRoomToggle","plRoomPick","plRoomBooks"].every(n => new RegExp("window\\." + n + "=" + n + ";").test(src)));
 }
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

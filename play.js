@@ -840,6 +840,7 @@ function plRoomPick(key){const F=plFloor&&plFloor.boxes;const b=F&&F[key];if(!b|
   const code=String(b.codes[0]).toUpperCase();if(plLocExtra.indexOf(code)<0)plLocExtra.push(code);plLocF=code;plRender();
   try{const g=document.getElementById("pl-grid");if(g&&g.scrollIntoView)g.scrollIntoView({behavior:"smooth",block:"start"});}catch(e){}}
 function plRoomBooks(){try{HA_LS.setItem("lb_mode","map");}catch(e){}if(window.lbSetMode){try{lbSetMode("map");}catch(e){}}if(typeof plSetSub==="function")plSetSub("books");}
+window.plRoomToggle=plRoomToggle;window.plRoomPick=plRoomPick;window.plRoomBooks=plRoomBooks;   // closure exports (onclick targets)
 // ROOMMAP_END
 // PLACE_START — 🧭 toy-bin placement (Stage A2b, 2026-09-14): the same helper Books has. The room logic is
 // library/rules (⚙ Room rules in Books, Mom-editable; it already carries the toy slot codes). A proposal is
@@ -909,7 +910,7 @@ function plPlanHtml(id){
   h+='<div style="color:#334155;margin:3px 0 6px">'+p.reason.replace(/</g,"&lt;")+'</div><div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">';
   if(!same)h+=plChip("✓ Place at "+p.loc,true,"#111827","plPlaceApply('"+c.id+"',-1)");
   p.alternates.forEach(function(a,i){h+=plChip(a.loc,false,"#7c3aed","plPlaceApply('"+c.id+"',"+i+")");});
-  h+=plChip("✕",false,"#64748b","delete plPlan['"+c.id+"'];plRender()")+'</div>';
+  h+=plChip("✕",false,"#64748b","plPlanDismiss('"+c.id+"')")+'</div>';
   if(p.alternates.length)h+='<div style="font-size:10.5px;color:var(--muted);margin-top:4px">'+p.alternates.map(function(a){return a.loc+": "+a.why.replace(/</g,"&lt;");}).join(" · ")+'</div>';
   h+='<div style="font-size:10.5px;color:var(--muted);margin-top:4px">A proposal — nothing moves until you tap. Wrong? \u{1F4CD} and type the slot, then fix the ⚙ Room rules in Books so it learns.</div></div>';
   return h;
@@ -946,9 +947,15 @@ function plRoomCheckHtml(){
   else if(!M.moves.length)h+='Nothing breaks the rules. \u{1F389}';
   else{h+='<div style="color:var(--muted);margin-bottom:6px">'+M.moves.length+' suggested move'+(M.moves.length===1?'':'s')+' — each ✓ moves one bin; nothing else changes.</div>';
     M.moves.forEach(function(m,i){h+='<div style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-top:1px solid #e9d5ff"><div style="flex:1;min-width:0"><b>'+m.name+'</b> <span style="color:#475569">'+m.from+' → <b>'+m.to+'</b> · '+m.why.replace(/</g,"&lt;")+'</span></div>'+plChip("✓",false,"#111827","plRoomMoveApply("+i+")")+'</div>';});}
-  h+='<div style="margin-top:6px">'+plChip("✕ close",false,"#64748b","plRoomCheck=null;plRender()")+'</div></div>';
+  h+='<div style="margin-top:6px">'+plChip("✕ close",false,"#64748b","plRoomCheckClose()")+'</div></div>';
   return h;
 }
+function plPlanDismiss(id){delete plPlan[id];plRender();}
+function plRoomCheckClose(){plRoomCheck=null;plRender();}
+// play.js is a closure — every function an onclick names must be exported (2026-09-14: the missing exports were
+// why the 🗺 and 🧭 chips "didn't work").
+window.plPlace=plPlace;window.plPlaceApply=plPlaceApply;window.plPlanDismiss=plPlanDismiss;
+window.plRoomCheckRun=plRoomCheckRun;window.plRoomMoveApply=plRoomMoveApply;window.plRoomCheckClose=plRoomCheckClose;
 // PLACE_END
 function plRoomHtml(){
   const rows=PL_CATALOG.slice().sort(function(a,b){

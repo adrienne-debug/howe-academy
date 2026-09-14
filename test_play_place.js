@@ -80,7 +80,8 @@ const tick = () => new Promise(r => setTimeout(r, 5));
   console.log("\n# Room setup wiring");
   { const r = src.slice(src.indexOf("function plRoomHtml(){"), src.indexOf("function plRoomHtml(){") + 4000);
     ok("🧭 chip beside 📍 on every row; plan card under the row", /plPlace\('"\+c\.id\+"'\)/.test(r) && /'<\/div>'\+plPlanHtml\(c\.id\)\+'<\/div>'/.test(r));
-    ok("check bar drawn above the rows", /plRoomCheckHtml\(\)\+\s*rows/.test(r)); }
+    ok("check bar drawn above the rows", /plRoomCheckHtml\(\)\+\s*rows/.test(r));
+    ok("every onclick target is exported from the closure", ["plPlace","plPlaceApply","plPlanDismiss","plRoomCheckRun","plRoomMoveApply","plRoomCheckClose"].every(n => new RegExp("window\\." + n + "=" + n + ";").test(src)) && !/plRoomCheck=null;plRender\(\)"/.test(src) && !/delete plPlan\[/.test(src.slice(src.indexOf("function plPlanHtml"), src.indexOf("function plPlaceApply")))); }
   console.log("\n" + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);
 })();
