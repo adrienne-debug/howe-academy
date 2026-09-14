@@ -18,6 +18,11 @@ let lbEdit=null;            // {id, form} while a record is being edited in the 
 let lbNew=null;             // {form, cover} while ➕ New book is open
 let lbFull={};              // library/photos/<id> once fetched (undefined = not asked, null = none)
 let lbView=null;            // {id, src} — a photo opened big inside the sheet
+let lbRules=null;           // library/rules {md, updated} — the room logic, Mom-editable (Stage A2)
+let lbRulesEdit=null;       // draft text while ⚙ Room rules is open
+let lbPlan={};              // id → placement proposal from Claude (not written until she taps ✓ Place)
+let lbPlanMsg={};           // id → status line while asking
+let lbMoves=null;           // 🧭 Re-shelve check result {at, moves:[…]} (read-only until a row is applied)
 const lbF={q:"",kid:"all",lane:"all",status:"all",loc:"all",show:60};
 
 const LB_LANES=[
@@ -44,14 +49,20 @@ const LB_STATUS={"in-use":["🟢 in use","#16a34a"],"planned":["🗓 planned","#
 const LB_REC={keep:"#16a34a",sell:"#d97706",donate:"#dc2626",cull:"#7f1d1d",undecided:"#7c3aed"};
 
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+// Transit states (Stage A2, her call 2026-09-13): BOX = arrived, still in its shipping box · UNPACK = needs
+// unpacking · TABLE = pulled, waiting on the table · PUTUP = has a home (nextCube), not there yet. All four
+// show in the 📦 To shelve filter so nothing is lost between the front door and its cube.
+const LB_TRANSIT={BOX:"box",UNPACK:"unpack",TABLE:"table",PUTUP:"putup"};
 function lbLocKey(b){const L=b.location||{};
   if(L.cart)return "cart"; const k=L.kallax||"";
-  if(k==="BOX")return "box"; if(k==="TABLE")return "table"; if(k==="ONLINE")return "online"; if(k==="BASKET")return "basket";
+  if(LB_TRANSIT[k])return LB_TRANSIT[k]; if(k==="ONLINE")return "online"; if(k==="BASKET")return "basket";
   return k?"shelf":"none";}
+function lbInTransit(b){return !!LB_TRANSIT[(b.location||{}).kallax||""];}
 function lbLocText(b){const L=b.location||{};
   if(L.cart)return "🛒 "+String(L.cart).replace(/^./,c=>c.toUpperCase())+"'s cart"+(L.tier?" · tier "+L.tier:"");
   const k=L.kallax||"";
-  if(k==="BOX")return "📦 still in the box"; if(k==="TABLE")return "📥 on the table"+(L.nextCube?" → "+L.nextCube:"");
+  if(k==="BOX")return "📦 still in the box"; if(k==="UNPACK")return "📦 needs unpacking"; if(k==="TABLE")return "📥 on the table"+(L.nextCube?" → "+L.nextCube:"");
+  if(k==="PUTUP")return "🪜 put up → "+(L.nextCube||"?");
   if(k==="ONLINE")return "💻 online"; if(k==="BASKET")return "🧺 Morning Basket";
   return k?"🗄 Kallax "+k:"—";}
 function lbKids(b){const s=String(b.kid||"").toLowerCase();return LB_KIDS.filter(k=>s.includes(k[0]));}
@@ -67,6 +78,7 @@ function lbLoad(root){
     lbLoading=false; lbDraw(root);
     db.ref("library/links").once("value").then(l=>{lbLinks=l.val()||{};lbDraw(root);}).catch(()=>{});
     db.ref("library/scans").once("value").then(l=>{lbScans=l.val()||{};lbDraw(root);}).catch(()=>{});
+    db.ref("library/rules").once("value").then(l=>{lbRules=l.val()||null;}).catch(()=>{});
     // covers second, so the list shows up before ~4 MB of thumbnails arrive
     return db.ref("libraryPhotos").once("value").then(p=>{lbPhotos=p.val()||{};lbDraw(root);});
   }).catch(e=>{lbErr="Couldn't load the library ("+(e&&e.message||e)+").";lbLoading=false;lbDraw(root);});
@@ -76,7 +88,8 @@ function lbMatch(b){
   if(lbF.kid!=="all"&&!String(b.kid||"").toLowerCase().includes(lbF.kid))return false;
   if(lbF.lane!=="all"&&b._lane!==lbF.lane)return false;
   if(lbF.status!=="all"&&(b.status||"")!==lbF.status)return false;
-  if(lbF.loc!=="all"&&lbLocKey(b)!==lbF.loc)return false;
+  if(lbF.loc==="toshelve"){if(!lbInTransit(b))return false;}
+  else if(lbF.loc!=="all"&&lbLocKey(b)!==lbF.loc)return false;
   if(lbF.q){const w=lbF.q.toLowerCase().split(/\s+/).filter(Boolean);if(!w.every(x=>b._hay.includes(x)))return false;}
   return true;
 }
@@ -107,10 +120,10 @@ function lbDraw(root){
     sel("kid",lbF.kid,[["all","Everyone"]].concat(LB_KIDS.map(k=>[k[0],k[1]])))+
     sel("lane",lbF.lane,[["all","All subjects"]].concat(LB_LANES.map(l=>[l[0],l[1]])))+
     sel("status",lbF.status,[["all","Any status"]].concat(Object.entries(LB_STATUS).map(([k,v])=>[k,v[0]])))+
-    sel("loc",lbF.loc,[["all","Anywhere"],["shelf","🗄 On the Kallax"],["cart","🛒 On a cart"],["box","📦 In the box ("+cnt("box")+")"],["table","📥 On the table ("+cnt("table")+")"],["basket","🧺 Morning Basket"],["online","💻 Online"]])+
+    sel("loc",lbF.loc,[["all","Anywhere"],["toshelve","📦 To shelve ("+lbBooks.filter(lbInTransit).length+")"],["shelf","🗄 On the Kallax"],["cart","🛒 On a cart"],["box","📦 In the box ("+cnt("box")+")"],["unpack","📦 Needs unpacking ("+cnt("unpack")+")"],["table","📥 On the table ("+cnt("table")+")"],["putup","🪜 Put up ("+cnt("putup")+")"],["basket","🧺 Morning Basket"],["online","💻 Online"]])+
     '</div><div class="lb-count" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span>'+hits.length+' of '+lbBooks.length+' books'+
     ((lbF.q||lbF.kid!=="all"||lbF.lane!=="all"||lbF.status!=="all"||lbF.loc!=="all")?' · <a href="#" onclick="lbReset();return false">clear</a>':'')+'</span>'+
-    '<span style="flex:1"></span><button class="lb-tool" onclick="lbNewStart()">➕ New book</button><button class="lb-tool" onclick="lbExport()">⬇ Export</button></div></div>';
+    '<span style="flex:1"></span><button class="lb-tool" onclick="lbNewStart()">➕ New book</button><button class="lb-tool" onclick="lbRulesOpen()" title="The room logic the placement helper follows">⚙ Room rules</button><button class="lb-tool" onclick="lbReshelve()" title="Ask which books break the rules">🧭 Re-shelve check</button><button class="lb-tool" onclick="lbExport()">⬇ Export</button></div></div>';
   h+='<div class="lb-grid">'+hits.slice(0,lbF.show).map(lbCard).join("")+'</div>';
   if(hits.length>lbF.show)h+='<div style="text-align:center;margin:6px 0 22px"><button class="lb-more" onclick="lbSet(\'show\','+(lbF.show+60)+')">Show more ('+(hits.length-lbF.show)+' left)</button></div>';
   if(!hits.length)h+='<div class="lb-empty">No books match.</div>';
@@ -125,6 +138,8 @@ function lbOpen(id){
   const b=(lbBooks||[]).find(x=>x.id===id); if(!b)return; lbOpenId=id;
   if(lbEdit&&lbEdit.id===id){lbEditDraw(b);return;}
   if(lbView&&lbView.id===id){lbViewDraw(b);return;}
+  if(lbRulesEdit!==null){lbRulesDraw();return;}
+  if(lbMoves){lbMovesDraw();return;}
   const lane=LB_LANE[b._lane]; const st=LB_STATUS[b.status]; const ph=lbPhotos[b.id];
   const row=(k,v)=>v?'<div class="lb-row"><b>'+k+'</b><span>'+esc(v)+'</span></div>':"";
   const toc=b.toc||[];
@@ -135,7 +150,8 @@ function lbOpen(id){
     '<div class="lb-m" style="margin-top:3px">'+esc([b.series,b.publisher].filter(Boolean).join(" · "))+'</div>'+
     '<div class="lb-chips" style="margin-top:8px">'+chip(lane[1],lane[2],true)+lbKids(b).map(k=>chip(k[1],k[2],true)).join("")+(st?chip(st[0],st[1]):"")+
       (b.recommendation?chip("rec: "+b.recommendation,LB_REC[b.recommendation]||"#64748b"):"")+(b.decision?chip("your call: "+b.decision,LB_REC[b.decision]||"#64748b",true):"")+'</div>'+
-    '<div style="margin-top:8px"><button class="lb-tool" onclick="lbEditStart(\''+esc(b.id)+'\')">✏️ Edit</button></div></div></div>'+
+    '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="lb-tool" onclick="lbEditStart(\''+esc(b.id)+'\')">✏️ Edit</button><button class="lb-tool" onclick="lbPlace(\''+esc(b.id)+'\')">🧭 Where should it go?</button></div></div></div>'+
+    lbPlanHtml(b)+
     '<div class="lb-rows">'+row("Where",lbLocText(b))+row("Level",b.level)+row("Age / grade",[b.age,b.grade?"gr "+b.grade:""].filter(Boolean).join(" · "))+
       row("Subject",b.subject)+row("Type",[b.type,b.consumable?"write-in":(b.consumable===false?"reusable":"")].filter(Boolean).join(" · "))+
       row("Files",b.files)+'</div>'+
@@ -224,16 +240,16 @@ async function lbPhotoAdd(id,input){
 function lbLog(id,keys){try{db.ref("library/log").push({id:id,keys:keys,at:Date.now()});}catch(e){}}
 // ── ✏️ Edit a record (Mom) — one targeted update of only the fields she changed ─────────
 const LB_TYPES=["curriculum","reader","teacher-guide","answer-key","manipulative-book","online-course"];
-const LB_LOCS=[["shelf","🗄 Kallax cube"],["cart","🛒 A kid's cart"],["BOX","📦 Still in the box"],["TABLE","📥 On the table"],["BASKET","🧺 Morning Basket"],["ONLINE","💻 Online / eBook"],["none","— nowhere yet"]];
+const LB_LOCS=[["shelf","🗄 Kallax cube"],["cart","🛒 A kid's cart"],["BOX","📦 Still in the box"],["UNPACK","📦 Needs unpacking"],["TABLE","📥 On the table"],["PUTUP","🪜 Put up (has a home, not there yet)"],["BASKET","🧺 Morning Basket"],["ONLINE","💻 Online / eBook"],["none","— nowhere yet"]];
 function lbLocForm(b){const L=b.location||{};
   if(L.cart)return {mode:"cart",cart:String(L.cart),tier:L.tier==null?"":String(L.tier),cube:"",next:""};
-  const k=L.kallax||""; if(["BOX","TABLE","BASKET","ONLINE"].includes(k))return {mode:k,cart:"",tier:"",cube:"",next:L.nextCube||""};
+  const k=L.kallax||""; if(["BOX","UNPACK","TABLE","PUTUP","BASKET","ONLINE"].includes(k))return {mode:k,cart:"",tier:"",cube:"",next:L.nextCube||""};
   return {mode:k?"shelf":"none",cart:"",tier:"",cube:k,next:""};}
 function lbLocFrom(f){
   if(f.mode==="cart")return {cart:f.cart||"lincoln",tier:f.tier?+f.tier||f.tier:null,kallax:null};
   if(f.mode==="shelf")return {cart:null,tier:null,kallax:String(f.cube||"").trim().toUpperCase()||null};
   if(f.mode==="none")return {cart:null,tier:null,kallax:null};
-  const o={cart:null,tier:null,kallax:f.mode}; if(f.mode==="TABLE"&&f.next)o.nextCube=String(f.next).trim().toUpperCase(); return o;}
+  const o={cart:null,tier:null,kallax:f.mode}; if((f.mode==="TABLE"||f.mode==="PUTUP")&&f.next)o.nextCube=String(f.next).trim().toUpperCase(); return o;}
 function lbFormFrom(b){
   return {title:b.title||"",series:b.series||"",publisher:b.publisher||"",level:b.level||"",grade:b.grade||"",age:b.age||"",subject:b.subject||"",kid:b.kid||"",
     status:b.status||"shelved",type:b.type||"curriculum",consumable:b.consumable===false?"no":(b.consumable?"yes":""),
@@ -272,7 +288,7 @@ function lbFormHtml(f,setFn){
   if(L.mode==="shelf")loc+='<label class="lb-f"><span>Cube</span><input value="'+esc(L.cube)+'" placeholder="D5" oninput="'+setFn+'(\'loc.cube\',this.value)"></label>';
   if(L.mode==="cart")loc+='<label class="lb-f"><span>Whose cart</span><select onchange="'+setFn+'(\'loc.cart\',this.value)">'+LB_ADD_KIDS.map(k=>'<option value="'+k+'"'+(k===L.cart?" selected":"")+'>'+lbKidName(k)+'</option>').join("")+'</select></label>'+
     '<label class="lb-f"><span>Tier</span><input value="'+esc(L.tier)+'" placeholder="2" oninput="'+setFn+'(\'loc.tier\',this.value)"></label>';
-  if(L.mode==="TABLE")loc+='<label class="lb-f"><span>Going to cube</span><input value="'+esc(L.next)+'" placeholder="B4" oninput="'+setFn+'(\'loc.next\',this.value)"></label>';
+  if(L.mode==="TABLE"||L.mode==="PUTUP")loc+='<label class="lb-f"><span>Going to cube</span><input value="'+esc(L.next)+'" placeholder="B4" oninput="'+setFn+'(\'loc.next\',this.value)"></label>';
   return '<div class="lb-form">'+
     inp("title","Title","",true)+inp("series","Series")+inp("publisher","Publisher")+inp("level","Level","3B")+inp("grade","Grade","4")+inp("age","Age","9-10")+
     inp("subject","Subject","Math (spine)")+inp("kid","Kid(s)","ellis, lucy (2027)")+
@@ -353,6 +369,131 @@ function lbNewSave(){
   lbLog(id,["new"]);
   if(typeof gwShowToast==="function")gwShowToast("📚 Added "+rec.title);
   lbF.q=rec.title; lbF.show=60; lbOpenId=id; lbDraw();
+}
+// ── 🧭 Placement (Stage A2, 2026-09-13) — "add new books and AI helps plan where they go; it knows the
+// logic of the room". The logic is DATA: library/rules {md} (⚙ Room rules, Mom-editable). A proposal is
+// Claude reading the rules + what is in every cube/cart right now + this book; ONLY her tap writes.
+function lbRulesText(){return (lbRules&&lbRules.md)||"";}
+function lbRulesOpen(){if(!lbMomOk()){lbPin(()=>lbRulesOpen());return;}lbRulesEdit=lbRulesText();lbRulesDraw();}
+function lbRulesDraw(){
+  document.getElementById("lb-shbody").innerHTML='<button class="lb-x" onclick="lbRulesCancel()">✕</button>'+
+    '<div style="font-size:15px;font-weight:800;margin-bottom:4px">⚙ Room rules</div>'+
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Plain text. The 🧭 placement helper reads this every time — change a rule here and the next proposal follows it.'+(lbRules&&lbRules.updated?' Last saved '+esc(lbRules.updated)+'.':'')+'</div>'+
+    '<textarea id="lb-rules-ta" rows="18" oninput="lbRulesEdit=this.value" style="width:100%;box-sizing:border-box;font:12.5px/1.45 ui-monospace,Menlo,monospace;padding:8px;border:1.5px solid var(--border);border-radius:8px;resize:vertical">'+esc(lbRulesEdit)+'</textarea>'+
+    '<div class="lb-addrow" style="margin-top:10px"><button class="lb-addbtn" style="background:#111827;color:#fff;border-color:#111827" onclick="lbRulesSave()">Save</button><button class="lb-addbtn" style="border-color:var(--border);color:#334155" onclick="lbRulesCancel()">Cancel</button></div>';
+  document.getElementById("lb-sheet").classList.add("open");
+}
+function lbRulesCancel(){lbRulesEdit=null;lbClose();}
+function lbRulesSave(){
+  if(lbRulesEdit===null)return; if(!lbMomOk()){lbPin(()=>lbRulesSave());return;}
+  const rec={md:String(lbRulesEdit).replace(/\r/g,""),updated:new Date().toISOString().slice(0,10)};
+  lbRules=rec; lbRulesEdit=null;
+  try{db.ref("library/rules").set(rec);}catch(e){}
+  lbLog("rules",["md"]);
+  if(typeof gwShowToast==="function")gwShowToast("⚙ Room rules saved");
+  lbClose();
+}
+// What is where right now, compressed for the prompt: one line per cube / cart / basket / transit state.
+function lbOccupancy(skipId){
+  const by={}; (lbBooks||[]).forEach(b=>{ if(b.id===skipId)return; const L=b.location||{}; let k;
+    if(L.cart)k="CART "+String(L.cart).toUpperCase()+(L.tier?" tier "+L.tier:""); else if(L.kallax)k=(LB_TRANSIT[L.kallax]?"TRANSIT ":"")+L.kallax; else k="NOWHERE";
+    (by[k]=by[k]||[]).push(b); });
+  const short=b=>String(b.title||b.id).replace(/\s*\([^)]*\)/g,"").slice(0,42)+" ["+(LB_LANE[b._lane]||["?"])[0].toLowerCase()+(b.status?"·"+b.status:"")+(b.kid?"·"+String(b.kid).split(/[ ,(]/)[0]:"")+"]";
+  return Object.keys(by).sort().map(k=>k+" ("+by[k].length+"): "+by[k].slice(0,40).map(short).join("; ")+(by[k].length>40?"; …":"")).join("\n");
+}
+function lbBookLine(b){return [b.title,b.series?"series: "+b.series:"",b.subject?"subject: "+b.subject:"",b.level?"level: "+b.level:"",b.grade?"grade: "+b.grade:"",b.kid?"kid: "+b.kid:"",b.status?"status: "+b.status:"",b.type?"type: "+b.type:"","lane: "+(LB_LANE[b._lane]||["?"])[1],"now: "+lbLocText(b),b.planning?"planning: "+String(b.planning).slice(0,200):""].filter(Boolean).join(" · ");}
+async function lbAsk(text,max){
+  const key=(typeof mastAIKey!=="undefined"&&mastAIKey)||(typeof haGetKey==="function"?haGetKey():"");
+  if(!key)throw new Error("No AI key set — add one in Admin → Settings.");
+  const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
+    headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({model:"claude-sonnet-5",max_tokens:max||1200,messages:[{role:"user",content:text}]})});
+  if(!resp.ok){const t=await resp.text();throw new Error("Claude API "+resp.status+" — "+t.slice(0,140));}
+  const data=await resp.json(); const txt=(data.content||[]).filter(x=>x&&x.type==="text").map(x=>x.text||"").join("");
+  const a=txt.indexOf("{"),z=txt.lastIndexOf("}"); if(a<0||z<=a)throw new Error("No answer came back — try again.");
+  return JSON.parse(txt.slice(a,z+1));
+}
+function lbPlacePrompt(b){
+  return "You are helping a homeschool mom shelve ONE book in her school room. Follow HER RULES exactly; they beat any general tidiness instinct.\n\n"+
+    "=== HER ROOM RULES ===\n"+(lbRulesText()||"(no rules written yet — use the subject lane and keep like with like)")+"\n\n"+
+    "=== WHAT IS WHERE RIGHT NOW (location (count): title [lane·status·kid]) ===\n"+lbOccupancy(b.id)+"\n\n"+
+    "=== THE BOOK ===\n"+lbBookLine(b)+"\n\n"+
+    "Decide where it should live. If a rule says a book in use this year lives on the kid's cart, say so and ALSO give the cube it goes to when done. "+
+    'Return ONLY strict JSON: {"location":{"type":"kallax"|"cart"|"basket"|"online"|"box","cube":"D5","kid":"ellis","tier":2},"lane":"Math","reason":"one or two plain sentences, mention how full the cube is","alternates":[{"type":"kallax","cube":"D4","why":"…"}],"laterCube":"D5"} — omit keys that do not apply; at most 2 alternates.';
+}
+function lbPlanLoc(p){ if(!p)return null; const t=String(p.type||"").toLowerCase();
+  if(t==="cart")return {cart:String(p.kid||"").toLowerCase()||null,tier:p.tier?+p.tier:null,kallax:null};
+  if(t==="basket")return {cart:null,tier:null,kallax:"BASKET"}; if(t==="online")return {cart:null,tier:null,kallax:"ONLINE"}; if(t==="box")return {cart:null,tier:null,kallax:"BOX"};
+  const c=String(p.cube||"").trim().toUpperCase(); return c?{cart:null,tier:null,kallax:c}:null; }
+function lbPlanText(p){const L=lbPlanLoc(p);return L?lbLocText({location:L}):"?";}
+async function lbPlace(id){
+  const b=(lbBooks||[]).find(x=>x.id===id); if(!b)return;
+  if(!lbMomOk()){lbPin(()=>lbOpen(id));return;}
+  const say=m=>{lbPlanMsg[id]=m;if(lbOpenId===id)lbOpen(id);};
+  try{ say("Reading the room…"); delete lbPlan[id];
+    const j=await lbAsk(lbPlacePrompt(b),900);
+    if(!j||!j.location||!lbPlanLoc(j.location))throw new Error("No clear answer — try again or place it by hand.");
+    lbPlan[id]={at:Date.now(),location:j.location,lane:j.lane||"",reason:String(j.reason||"").slice(0,400),alternates:(Array.isArray(j.alternates)?j.alternates:[]).filter(a=>lbPlanLoc(a)).slice(0,2),laterCube:j.laterCube?String(j.laterCube).toUpperCase():""};
+    say("");
+  }catch(e){say("❌ "+(e.message||"couldn't ask"));console.error("[HA] place",e);}
+}
+function lbPlanHtml(b){
+  const p=lbPlan[b.id], msg=lbPlanMsg[b.id]; if(!p&&!msg)return "";
+  if(!p)return '<div class="lb-plan"><span class="lb-scanmsg">'+esc(msg)+'</span></div>';
+  const cur=lbLocText(b), main=lbPlanText(p.location), same=main===cur;
+  let h='<div class="lb-plan"><div style="font-weight:800;font-size:13px">🧭 '+(same?'Already in the right place':'Proposed: '+esc(main))+(p.lane?' <span style="font-weight:600;color:var(--muted)">· '+esc(p.lane)+' lane</span>':'')+'</div>';
+  if(p.laterCube&&(p.location.type||"").toLowerCase()==="cart")h+='<div style="font-size:12px;color:#334155">When it is done → Kallax '+esc(p.laterCube)+'</div>';
+  h+='<div style="font-size:12.5px;color:#334155;margin:4px 0 6px">'+esc(p.reason)+'</div><div class="lb-addrow">';
+  if(!same)h+='<button class="lb-addbtn" style="background:#111827;color:#fff;border-color:#111827" onclick="lbPlaceApply(\''+esc(b.id)+'\',-1)">✓ Place: '+esc(main)+'</button>';
+  p.alternates.forEach((a,i)=>{h+='<button class="lb-addbtn" style="border-color:var(--border);color:#334155" title="'+esc(a.why||"")+'" onclick="lbPlaceApply(\''+esc(b.id)+'\','+i+')">'+esc(lbPlanText(a))+'</button>';});
+  h+='<button class="lb-addbtn" style="border-color:var(--border);color:#64748b" onclick="delete lbPlan[\''+esc(b.id)+'\'];lbOpen(\''+esc(b.id)+'\')">✕</button></div>'+
+    (p.alternates.length?'<div style="font-size:11px;color:var(--muted);margin-top:4px">'+p.alternates.map(a=>esc(lbPlanText(a))+': '+esc(a.why||"")).join(" · ")+'</div>':'')+
+    '<div style="font-size:11px;color:var(--muted);margin-top:4px">A proposal — nothing moves until you tap. Wrong? ✏️ Edit and type the spot; then fix the ⚙ Room rules so it learns.</div></div>';
+  return h;
+}
+function lbPlaceApply(id,i){
+  const b=(lbBooks||[]).find(x=>x.id===id), p=lbPlan[id]; if(!b||!p)return;
+  if(!lbMomOk()){lbPin(()=>lbOpen(id));return;}
+  const L=lbPlanLoc(i<0?p.location:p.alternates[i]); if(!L)return;
+  if(p.laterCube&&L.cart)L.nextCube=p.laterCube;
+  b.location=L; delete lbPlan[id];
+  try{db.ref("library/books/"+id).update({location:L});}catch(e){alert("Save failed: "+(e.message||e));}
+  lbLog(id,["location","🧭 proposal"+(i>=0?" alt "+(i+1):"")]);
+  if(typeof gwShowToast==="function")gwShowToast("✓ "+lbLocText(b));
+  lbDraw();
+}
+// 🧭 Re-shelve check — the same reading over the WHOLE shelf: which books break the rules? Read-only list;
+// each row has its own ✓ so she applies moves one at a time while she walks.
+async function lbReshelve(){
+  if(!lbBooks)return; if(!lbMomOk()){lbPin(()=>lbReshelve());return;}
+  lbMoves={at:Date.now(),busy:true,moves:[],err:""}; lbOpenId=null; lbMovesDraw();
+  try{
+    const j=await lbAsk("You are checking a homeschool mom's school-room shelf against HER RULES. List only books that are in the WRONG place by her rules (wrong lane cube, finished-but-on-a-cart, in-use-but-on-the-shelf, transit states that have a clear home, an over-full cube). Do not list books that are fine.\n\n=== HER ROOM RULES ===\n"+(lbRulesText()||"(none)")+"\n\n=== WHAT IS WHERE RIGHT NOW ===\n"+lbOccupancy()+"\n\n"+
+      'Return ONLY strict JSON: {"moves":[{"title":"exact title as listed","from":"D5","to":{"type":"kallax","cube":"B4"},"why":"one short sentence"}]} — at most 40 moves, most important first.',4000);
+    const M=(Array.isArray(j.moves)?j.moves:[]).slice(0,40).map(m=>{const t=String(m.title||"").toLowerCase().slice(0,42);const b=(lbBooks||[]).find(x=>String(x.title||x.id).replace(/\s*\([^)]*\)/g,"").slice(0,42).toLowerCase()===t)||(lbBooks||[]).find(x=>String(x.title||"").toLowerCase().startsWith(t.slice(0,25)));
+      return b&&lbPlanLoc(m.to)?{id:b.id,title:b.title,from:lbLocText(b),to:m.to,why:String(m.why||"").slice(0,200)}:null;}).filter(Boolean);
+    lbMoves={at:Date.now(),busy:false,moves:M,err:""};
+  }catch(e){lbMoves={at:Date.now(),busy:false,moves:[],err:e.message||"failed"};}
+  lbMovesDraw();
+}
+function lbMovesDraw(){
+  const M=lbMoves; if(!M)return;
+  let h='<button class="lb-x" onclick="lbMoves=null;lbClose()">✕</button><div style="font-size:15px;font-weight:800;margin-bottom:4px">🧭 Re-shelve check</div>';
+  if(M.busy)h+='<div class="lb-scanmsg">Reading every cube against the rules…</div>';
+  else if(M.err)h+='<div class="lb-scanmsg">❌ '+esc(M.err)+'</div>';
+  else if(!M.moves.length)h+='<div style="font-size:13px;color:#334155">Nothing breaks the rules. 🎉</div>';
+  else{h+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">'+M.moves.length+' suggested move'+(M.moves.length===1?'':'s')+' — a packing list. Each ✓ moves one book; nothing else changes.</div>';
+    M.moves.forEach((m,i)=>{h+='<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-top:1px solid #f1f5f9;font-size:12.5px"><div style="flex:1;min-width:0"><b>'+esc(m.title)+'</b><div style="color:#475569">'+esc(m.from)+' → <b>'+esc(lbPlanText(m.to))+'</b> · '+esc(m.why)+'</div></div><button class="lb-tool" onclick="lbMoveApply('+i+')">✓</button></div>';});}
+  document.getElementById("lb-shbody").innerHTML=h; document.getElementById("lb-sheet").classList.add("open");
+}
+function lbMoveApply(i){
+  const M=lbMoves; if(!M||!M.moves[i])return; if(!lbMomOk()){lbPin(()=>lbMovesDraw());return;}
+  const m=M.moves[i], b=(lbBooks||[]).find(x=>x.id===m.id), L=lbPlanLoc(m.to); if(!b||!L)return;
+  b.location=L; M.moves.splice(i,1);
+  try{db.ref("library/books/"+b.id).update({location:L});}catch(e){}
+  lbLog(b.id,["location","🧭 re-shelve"]);
+  if(typeof gwShowToast==="function")gwShowToast("✓ "+String(b.title||b.id)+" → "+lbLocText(b));
+  lbMovesDraw();
 }
 // ── ⬇ Export — the whole library as the JSON the Mac used to own (a dated backup) ───────────
 function lbExportData(){
@@ -505,7 +646,7 @@ function lbWrapSave(){
   };
   w._lb=true; window.ceAddSave=w;
 }
-function lbClose(){lbOpenId=null;lbEdit=null;lbView=null;lbNew=null;const s=document.getElementById("lb-sheet");if(s)s.classList.remove("open");}
+function lbClose(){lbOpenId=null;lbEdit=null;lbView=null;lbNew=null;lbRulesEdit=null;lbMoves=null;const s=document.getElementById("lb-sheet");if(s)s.classList.remove("open");}
 function lbSet(k,v){lbF[k]=v;if(k!=="show")lbF.show=60;lbDraw();}
 function lbReset(){Object.assign(lbF,{q:"",kid:"all",lane:"all",status:"all",loc:"all",show:60});lbDraw();}
 
@@ -557,6 +698,7 @@ const LB_CSS=`
 .lb-strip{display:flex;gap:8px;overflow-x:auto;padding:4px 0 6px}
 .lb-ph{flex:none;border:1.5px solid var(--border);border-radius:8px;background:#fff;padding:3px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;font:inherit;font-size:10px;color:var(--muted)}
 .lb-ph img{height:84px;width:auto;border-radius:5px;display:block}
+.lb-plan{margin-top:10px;padding:10px 12px;border:1.5px dashed #7c3aed;border-radius:12px;background:#faf5ff}
 `;
 
 window.renderLibrary=function(root){
@@ -567,6 +709,9 @@ window.lbSet=lbSet;window.lbReset=lbReset;window.lbOpen=lbOpen;window.lbClose=lb
 window.lbEditStart=lbEditStart;window.lbEditSet=lbEditSet;window.lbEditSave=lbEditSave;window.lbEditCancel=lbEditCancel;
 window.lbNewStart=lbNewStart;window.lbNewSet=lbNewSet;window.lbNewSave=lbNewSave;window.lbNewCancel=lbNewCancel;window.lbNewCover=lbNewCover;
 window.lbExport=lbExport;window.lbPhotoAdd=lbPhotoAdd;window.lbPhotoView=lbPhotoView;window.lbViewBack=lbViewBack;
+window.lbRulesOpen=lbRulesOpen;window.lbRulesSave=lbRulesSave;window.lbRulesCancel=lbRulesCancel;window.lbPlace=lbPlace;window.lbPlaceApply=lbPlaceApply;window.lbReshelve=lbReshelve;window.lbMoveApply=lbMoveApply;
+Object.defineProperty(window,"lbPlan",{get:()=>lbPlan});Object.defineProperty(window,"lbMoves",{get:()=>lbMoves,set:v=>{lbMoves=v;}});Object.defineProperty(window,"lbRulesEdit",{get:()=>lbRulesEdit,set:v=>{lbRulesEdit=v;}});
 window._lbTest={lbLane,lbLocKey,lbLocText,lbMatch,lbF,lbLessons,lbTpw,lbAddName,lbWrapSave,links:()=>lbLinks,scans:()=>lbScans,setScans:v=>{lbScans=v;},setData:(b,p)=>{lbBooks=b.map(x=>Object.assign(x,{_lane:lbLane(x),_hay:lbHay(x)}));lbPhotos=p||{};},
-  lbFormFrom,lbRecordFrom,lbPatch,lbLocForm,lbLocFrom,lbSlug,lbNewId,lbExportData,lbPhotoList,books:()=>lbBooks,edit:()=>lbEdit,setEdit:v=>{lbEdit=v;},newState:()=>lbNew,setNew:v=>{lbNew=v;},setFull:(id,v)=>{lbFull[id]=v;}};
+  lbFormFrom,lbRecordFrom,lbPatch,lbLocForm,lbLocFrom,lbSlug,lbNewId,lbExportData,lbPhotoList,books:()=>lbBooks,edit:()=>lbEdit,setEdit:v=>{lbEdit=v;},newState:()=>lbNew,setNew:v=>{lbNew=v;},setFull:(id,v)=>{lbFull[id]=v;},
+  lbInTransit,lbOccupancy,lbBookLine,lbPlacePrompt,lbPlanLoc,lbPlanText,lbPlanHtml,plan:()=>lbPlan,setPlan:(id,v)=>{lbPlan[id]=v;},rules:()=>lbRules,setRules:v=>{lbRules=v;},moves:()=>lbMoves};
 })();
