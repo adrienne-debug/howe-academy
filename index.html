@@ -2254,6 +2254,7 @@ let walletScope="lifetime"; // Star Bank statement toggle: "week" | "lifetime" (
 function setWalletScope(s){ walletScope=s; renderAll(); }
 let bank={};               // {kid: {withdrawals: {id: {amount, note, ts, iso}}}} — Star Bank spends (Mom-recorded)
 let bankWdOpen=false;      // the Mom withdrawal form is open (single-kid Wins view, so one flag)
+let esaData={};            // {orders,wishlist,credits,budget,log} — 💰 Purchases & ESA (esa/), rendered by esa.js
 let roadmapData={};        // {kid:{roadmap:{id:{due,text,kind,subject?,book?,done,at}}}} — 📅 Roadmap (plans/<kid>/roadmap)
 let readingLog={};         // {kid: {books:{id:{title,size,totalPages,status,addedTs}}, entries:{...R2}}, settings:{sizePoints}} — 📚 Reading Log
 let rlAddOpen=false, rlAddSize="little", rlPagesEdit=null; // Reading Log Mom-form UI state
@@ -2881,6 +2882,7 @@ function initFb() {
     db.ref("pointClaims").on("value",s=>{ pointClaims=s.val()||{}; pointClaimsLoaded=true; });
     db.ref("bank").on("value",s=>{ bank=s.val()||{}; });
     db.ref("readingLog").on("value",s=>{ readingLog=s.val()||{}; });
+    db.ref("esa").on("value",s=>{ esaData=s.val()||{}; try{ if(adminSubTab==="purchases") renderAll(); }catch(e){} });
     db.ref("plans").on("value",s=>{ roadmapData=s.val()||{}; try{ if(tab==="moms-plan"||adminSubTab==="curriculum") renderAll(); }catch(e){} });
     db.ref("digest").on("value",s=>{ digestData=s.val()||{}; });
     db.ref("scheduleOverrides").on("value",s=>{
@@ -5316,6 +5318,19 @@ function _hqGroup(emoji,title,rows){
   return '<div class="rules-card"><div style="display:flex;align-items:center;gap:8px;padding:12px 14px;font-family:\'Fraunces\',serif;font-size:15px;font-weight:700">'+
     '<span style="font-size:18px">'+emoji+'</span>'+title+'</div>'+rows.join('')+'</div>';
 }
+// PURCHASES_START — 💰 Mom HQ ▸ Purchases lives in esa.js (lazy, like Books/library.js). Stage C, 2026-09-13.
+function renderPurchasesView(el,ah){
+  if(!el){el=document.getElementById("content");if(!el)return;}
+  if(window.renderPurchases){ renderPurchases(el,ah); return; }
+  el.innerHTML=(ah||"")+'<div style="padding:40px;text-align:center;color:var(--muted)">Loading purchases…</div>';
+  if(window._esLoading) return; window._esLoading=true;
+  const s=document.createElement("script");
+  s.src=/github\.io$/.test(location.hostname)?("esa.js?v="+Date.now()):"esa.js";
+  s.onload=()=>{ if(adminSubTab==="purchases") renderAll(); };
+  s.onerror=()=>{ window._esLoading=false; el.innerHTML=(ah||"")+'<div style="padding:40px;text-align:center;color:var(--muted)">Couldn\'t load purchases.</div>'; };
+  document.head.appendChild(s);
+}
+// PURCHASES_END
 function renderMomHQ(el,ah){
   if(!el){el=document.getElementById("content");if(!el)return;}
   let h=(ah||'')+'<div class="rules-wrap">';
@@ -5348,7 +5363,8 @@ function renderMomHQ(el,ah){
   ]);
   h+=_hqGroup("👪","Family & App",[
     _hqRow("settings","👪","Kids, PIN & sitter","Roster, app PIN, babysitter, tech rule, click-off log, songs — in Settings"),
-    _hqRow("calendar","🏖","Breaks & vacations","Holidays, vacations, co-ops, family events, per-kid overrides")
+    _hqRow("calendar","🏖","Breaks & vacations","Holidays, vacations, co-ops, family events, per-kid overrides"),
+    _hqRowFn("setAdminSub('purchases')","💰","Purchases & ESA","Orders, wishlist, two budgets — the ESA grant and family money")
   ]);
   h+=_hqGroup("📊","Reports",[
     _hqRow("board","🗂","Board","Whole-family day at a glance, claims waiting"),
@@ -5916,9 +5932,9 @@ function renderSchedule(el){
       return;
     }
     let ah='<div style="position:sticky;top:118px;z-index:90;background:var(--bg);display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:0">';
-    ["hq","settings","curriculum","calendar","chores"].forEach(s=>{
+    ["hq","settings","curriculum","calendar","chores","purchases"].forEach(s=>{
       const active=adminSubTab===s||(s==="settings"&&adminSubTab==="rules");
-      const label=s==="hq"?"🏡 HQ":s.charAt(0).toUpperCase()+s.slice(1);
+      const label=s==="hq"?"🏡 HQ":s==="purchases"?"💰":s.charAt(0).toUpperCase()+s.slice(1);
       ah+='<button style="flex:1;padding:10px 4px;font-size:12px;font-weight:700;border:none;background:none;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:'+(active?"var(--text)":"var(--muted)")+';border-bottom:2px solid '+(active?"var(--header)":"transparent")+';margin-bottom:-2px" onclick="setAdminSub(\''+s+'\')">'+label+'</button>';
     });
     ah+='</div>';
@@ -5928,6 +5944,7 @@ function renderSchedule(el){
     else if(adminSubTab==="curriculum"){ renderCurriculumView(el,ah); }
     else if(adminSubTab==="calendar"){ renderCalendarView(el,ah); }
     else if(adminSubTab==="chores"){ renderChorePlan(el,ah); }
+    else if(adminSubTab==="purchases"){ renderPurchasesView(el,ah); }
     return;
   }
   // On a holiday/vacation, replace the (often stale last-week) tasks with a
