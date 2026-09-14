@@ -811,6 +811,115 @@ function plLabPrint(){
   w.document.close();
 }
 
+// PLACE_START — 🧭 toy-bin placement (Stage A2b, 2026-09-14): the same helper Books has. The room logic is
+// library/rules (⚙ Room rules in Books, Mom-editable; it already carries the toy slot codes). A proposal is
+// Claude reading the rules + the slot dictionary + what is in every slot right now + this bin. ONLY her tap
+// writes, and it writes exactly what 📍 writes: plMetaSet(id,"loc",code) — one leaf under play/binMeta.
+let plPlan={}, plPlanMsg={}, plRoomCheck=null, plRulesCache=null;
+function plEffLoc(c){const m=plMeta(c.id);return String((m&&m.loc)||c.loc||"");}
+function plNeedsSpot(c){const L=plEffLoc(c);return !L||L==="CONFIRM"||L==="RETIRED"||L==="OUTBOX";}
+// a code the room knows: exact key, or a slot/shelf of a known unit (same shapes plLocDesc understands)
+function plLocKnown(code){const L=String(code||"").toUpperCase().trim();if(!L)return "";if(PL_FDESC[L])return L;
+  let m=L.match(/^(.+)-(\d+)$/);if(m&&PL_FDESC[m[1]])return L;m=L.match(/^(\D+)(\d+)$/);if(m&&PL_FDESC[m[1]])return L;
+  m=L.match(/^([A-Z0-9]+)-/);if(m&&PL_FDESC[m[1]])return L;return "";}
+function plRulesGet(){
+  if(plRulesCache!==null)return Promise.resolve(plRulesCache);
+  if(!plFB||typeof db==="undefined"||!db)return Promise.resolve("");
+  return db.ref("library/rules").once("value").then(function(s){plRulesCache=((s.val()||{}).md)||"";return plRulesCache;}).catch(function(){return "";});
+}
+function plOccupancy(skipId){
+  const by={};PL_CATALOG.forEach(function(c){if(c.id===skipId)return;const k=plEffLoc(c)||"NOWHERE";(by[k]=by[k]||[]).push(c);});
+  return Object.keys(by).sort().map(function(k){return k+(PL_FDESC[k]?" ("+PL_FDESC[k].slice(0,44)+")":"")+" ["+by[k].length+"]: "+
+    by[k].slice(0,30).map(function(c){return plBinName(c)+" {"+c.cat+(plMeta(c.id).rot?"":"·parked")+"}";}).join("; ")+(by[k].length>30?"; …":"");}).join("\n");
+}
+function plBinLine(c){const m=plMeta(c.id);const L=plEffLoc(c);
+  return plBinName(c)+" · id "+c.id+" · category "+c.cat+(c["pl-intents"]&&c["pl-intents"].length?" · used for "+c["pl-intents"].join("/"):"")+
+    (m.kids.length?" · kids "+m.kids.join(","):"")+" · "+(m.rot?"in rotation":"parked")+" · now: "+(L?L+" = "+plLocDesc(L):"nowhere / unconfirmed");}
+function plSlotList(){return Object.keys(PL_FDESC).map(function(k){return k+" = "+PL_FDESC[k];}).join("\n");}
+async function plAskJson(text,max){
+  const key=(typeof mastAIKey!=="undefined"&&mastAIKey)||(typeof haGetKey==="function"?haGetKey():"");
+  if(!key)throw new Error("No AI key set — add one in Admin → Settings.");
+  const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
+    headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({model:"claude-sonnet-5",max_tokens:max||900,messages:[{role:"user",content:text}]})});
+  if(!resp.ok){const t=await resp.text();throw new Error("Claude API "+resp.status+" — "+t.slice(0,140));}
+  const data=await resp.json();const txt=(data.content||[]).filter(function(x){return x&&x.type==="text";}).map(function(x){return x.text||"";}).join("");
+  const a=txt.indexOf("{"),z=txt.lastIndexOf("}");if(a<0||z<=a)throw new Error("No answer came back — try again.");
+  return JSON.parse(txt.slice(a,z+1));
+}
+function plPlacePrompt(c,rules){
+  return "You are helping a homeschool mom decide which SLOT in her school room ONE toy/activity bin lives in. Follow HER RULES exactly; they beat any general tidiness instinct. Use only slot codes from the dictionary.\n\n"+
+    "=== HER ROOM RULES ===\n"+(rules||"(no rules written yet — keep like with like, kid-reach for what the kids fetch themselves)")+"\n\n"+
+    "=== SLOT CODES (code = what it is) ===\n"+plSlotList()+"\n\n"+
+    "=== WHAT IS IN EVERY SLOT RIGHT NOW (slot [count]: bin {category}) ===\n"+plOccupancy(c.id)+"\n\n"+
+    "=== THE BIN ===\n"+plBinLine(c)+"\n\n"+
+    'Return ONLY strict JSON: {"loc":"F2","reason":"one or two plain sentences — mention how full the slot is and which kid reaches it","alternates":[{"loc":"W3","why":"…"}]} — at most 2 alternates.';
+}
+async function plPlace(id){
+  if(!plMomAuthed())return;const c=PL_CATALOG.find(function(x){return x.id==id;});if(!c)return;
+  plPlanMsg[id]="Reading the room…";delete plPlan[id];plRender();
+  try{
+    const rules=await plRulesGet();
+    const j=await plAskJson(plPlacePrompt(c,rules),700);
+    const loc=plLocKnown(j.loc||(j.location&&(j.location.code||j.location.loc))||"");
+    if(!loc)throw new Error("No clear answer — try again, or use 📍 and type the slot.");
+    plPlan[id]={at:Date.now(),loc:loc,reason:String(j.reason||"").slice(0,300),
+      alternates:(Array.isArray(j.alternates)?j.alternates:[]).map(function(a){return {loc:plLocKnown(a&&a.loc),why:String((a&&a.why)||"").slice(0,120)};}).filter(function(a){return a.loc&&a.loc!==loc;}).slice(0,2)};
+    plPlanMsg[id]="";
+  }catch(e){plPlanMsg[id]="❌ "+(e.message||"couldn't ask");console.error("[HA] place bin",e);}
+  plRender();
+}
+function plPlanHtml(id){
+  const p=plPlan[id],msg=plPlanMsg[id];if(!p&&!msg)return "";
+  const c=PL_CATALOG.find(function(x){return x.id==id;});if(!c)return "";
+  if(!p)return '<div style="margin-top:8px;font-size:11.5px;color:var(--muted)">'+msg+'</div>';
+  const same=p.loc===plEffLoc(c);
+  let h='<div style="margin-top:8px;padding:8px 10px;border:1.5px dashed #7c3aed;border-radius:10px;background:#faf5ff;font-size:12px">';
+  h+='<div style="font-weight:800">\u{1F9ED} '+(same?'Already in the right slot':'Proposed: '+p.loc+' — '+plLocDesc(p.loc))+'</div>';
+  h+='<div style="color:#334155;margin:3px 0 6px">'+p.reason.replace(/</g,"&lt;")+'</div><div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">';
+  if(!same)h+=plChip("✓ Place at "+p.loc,true,"#111827","plPlaceApply('"+c.id+"',-1)");
+  p.alternates.forEach(function(a,i){h+=plChip(a.loc,false,"#7c3aed","plPlaceApply('"+c.id+"',"+i+")");});
+  h+=plChip("✕",false,"#64748b","delete plPlan['"+c.id+"'];plRender()")+'</div>';
+  if(p.alternates.length)h+='<div style="font-size:10.5px;color:var(--muted);margin-top:4px">'+p.alternates.map(function(a){return a.loc+": "+a.why.replace(/</g,"&lt;");}).join(" · ")+'</div>';
+  h+='<div style="font-size:10.5px;color:var(--muted);margin-top:4px">A proposal — nothing moves until you tap. Wrong? \u{1F4CD} and type the slot, then fix the ⚙ Room rules in Books so it learns.</div></div>';
+  return h;
+}
+function plPlaceApply(id,i){
+  const p=plPlan[id];if(!p||!plMomAuthed())return;
+  const loc=i<0?p.loc:(p.alternates[i]||{}).loc;if(!loc)return;
+  delete plPlan[id];plMetaSet(id,"loc",loc);plRender();
+}
+// 🧭 Check the room — the same reading over every bin: only the ones that break the rules, as a list with a ✓ each.
+async function plRoomCheckRun(){
+  if(!plMomAuthed())return;plRoomCheck={busy:true,moves:[],err:""};plRender();
+  try{
+    const rules=await plRulesGet();
+    const j=await plAskJson("You are checking a homeschool mom's school-room bins against HER RULES. List only bins that sit in the WRONG slot by her rules (wrong kind of storage for the category, a kid-reach bin up high or a Mom-only bin down low, a parked bin taking a prime slot, a bin with no confirmed slot that clearly has one). Do not list bins that are fine. Use only slot codes from the dictionary.\n\n=== HER ROOM RULES ===\n"+(rules||"(none)")+"\n\n=== SLOT CODES ===\n"+plSlotList()+"\n\n=== WHAT IS IN EVERY SLOT RIGHT NOW ===\n"+plOccupancy()+"\n\n"+
+      'Return ONLY strict JSON: {"moves":[{"id":"CLX-1","to":"F2","why":"one short sentence"}]} — at most 30 moves, most important first.',3000);
+    const M=(Array.isArray(j.moves)?j.moves:[]).map(function(m){
+      const c=PL_CATALOG.find(function(x){return x.id==String(m.id||"").toUpperCase();})||PL_CATALOG.find(function(x){return plBinName(x).toLowerCase()===String(m.name||"").toLowerCase();});
+      const to=plLocKnown(m.to);return c&&to&&to!==plEffLoc(c)?{id:c.id,name:plBinName(c),from:plEffLoc(c)||"nowhere",to:to,why:String(m.why||"").slice(0,160)}:null;}).filter(Boolean).slice(0,30);
+    plRoomCheck={busy:false,moves:M,err:""};
+  }catch(e){plRoomCheck={busy:false,moves:[],err:e.message||"failed"};}
+  plRender();
+}
+function plRoomMoveApply(i){const M=plRoomCheck;if(!M||!M.moves[i]||!plMomAuthed())return;const m=M.moves.splice(i,1)[0];plMetaSet(m.id,"loc",m.to);plRender();}
+function plRoomCheckHtml(){
+  const need=PL_CATALOG.filter(plNeedsSpot).length;
+  let h='<div style="padding:0 14px 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11.5px">'+
+    plChip("\u{1F9ED} Check the room",false,"#7c3aed","plRoomCheckRun()")+
+    '<span style="color:var(--muted)">\u{1F4E6} <b>'+need+'</b> bin'+(need===1?'':'s')+' without a confirmed slot · \u{1F9ED} on a row asks where ONE bin should go</span></div>';
+  const M=plRoomCheck;if(!M)return h;
+  h+='<div style="margin:0 14px 10px;padding:8px 10px;border:1.5px dashed #7c3aed;border-radius:10px;background:#faf5ff;font-size:12px">';
+  if(M.busy)h+='<span style="color:var(--muted)">Reading every slot against the rules…</span>';
+  else if(M.err)h+='❌ '+M.err.replace(/</g,"&lt;");
+  else if(!M.moves.length)h+='Nothing breaks the rules. \u{1F389}';
+  else{h+='<div style="color:var(--muted);margin-bottom:6px">'+M.moves.length+' suggested move'+(M.moves.length===1?'':'s')+' — each ✓ moves one bin; nothing else changes.</div>';
+    M.moves.forEach(function(m,i){h+='<div style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-top:1px solid #e9d5ff"><div style="flex:1;min-width:0"><b>'+m.name+'</b> <span style="color:#475569">'+m.from+' → <b>'+m.to+'</b> · '+m.why.replace(/</g,"&lt;")+'</span></div>'+plChip("✓",false,"#111827","plRoomMoveApply("+i+")")+'</div>';});}
+  h+='<div style="margin-top:6px">'+plChip("✕ close",false,"#64748b","plRoomCheck=null;plRender()")+'</div></div>';
+  return h;
+}
+// PLACE_END
 function plRoomHtml(){
   const rows=PL_CATALOG.slice().sort(function(a,b){
       const A=(plMeta(a.id).loc||a.loc),B=(plMeta(b.id).loc||b.loc);
@@ -832,8 +941,8 @@ function plRoomHtml(){
       ["keep","watch","toss"].map(function(f){
         return plChip(f,mt.cull==f,{keep:"#166534",watch:"#b45309",toss:"#b5394a"}[f],
                       "plMetaSet('"+c.id+"','cull','"+f+"');plRender()");}).join("")+
-      plChip("\u{1F4CD}",false,"#fff","plMetaLoc('"+c.id+"')")+plChip("\u{1F4F7}",false,"#fff","plPhotoPick('"+c.id+"')")+plChip("\u270F\uFE0F",false,"#fff","plRoomRename('"+c.id+"')")+
-      '</div></div>';
+      plChip("\u{1F4CD}",false,"#fff","plMetaLoc('"+c.id+"')")+plChip("\u{1F9ED}",false,"#fff","plPlace('"+c.id+"')")+plChip("\u{1F4F7}",false,"#fff","plPhotoPick('"+c.id+"')")+plChip("\u270F\uFE0F",false,"#fff","plRoomRename('"+c.id+"')")+
+      '</div>'+plPlanHtml(c.id)+'</div>';
   }).join("");
   const n=PL_CATALOG.length;
   const unset=PL_CATALOG.filter(function(c){return plMeta(c.id)._src!="set";}).length;
@@ -842,7 +951,8 @@ function plRoomHtml(){
     '<div style="padding:12px 14px 10px"><h3 style="margin:0 0 3px;font-size:13px">\u{1F9FA} The Room \u2014 who each bin is for</h3>'+
     '<div style="font-size:11px;color:var(--muted);line-height:1.45">'+n+' bins \u00b7 <b>'+unset+
     '</b> still on inventory defaults \u00b7 <b>'+noKid+'</b> with nobody assigned.<br>'+
-    'Tap a name to add or remove that kid. \u{1F4CD} moves a bin. Saves as you tap.</div></div>'+
+    'Tap a name to add or remove that kid. \u{1F4CD} moves a bin · \u{1F9ED} asks where it should go. Saves as you tap.</div></div>'+
+    plRoomCheckHtml()+
     rows+'</div>';
 }
 
