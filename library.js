@@ -23,7 +23,12 @@ let lbRulesEdit=null;       // draft text while ⚙ Room rules is open
 let lbPlan={};              // id → placement proposal from Claude (not written until she taps ✓ Place)
 let lbPlanMsg={};           // id → status line while asking
 let lbMoves=null;           // 🧭 Re-shelve check result {at, moves:[…]} (read-only until a row is applied)
-const lbF={q:"",kid:"all",lane:"all",status:"all",loc:"all",cube:"",show:60};
+const lbF={q:"",kid:"all",lane:"all",status:"all",loc:"all",cube:"",call:"all",show:60};
+// 🏷 Your call (2026-09-14): the keep/sell/donate ruling from the old page. `decision` = HER ruling (one word, or a
+// longer note like "keep — bought 9/13"); `recommendation` = Claude's suggestion. lbCall(b) = the effective word.
+const LB_CALLS=["keep","sell","donate","cull"];
+function lbCallWord(v){const s=String(v||"").toLowerCase();return LB_CALLS.find(w=>s.indexOf(w)===0)||"";}
+function lbCall(b){return {word:lbCallWord(b.decision)||lbCallWord(b.recommendation)||"undecided",hers:!!lbCallWord(b.decision)};}
 // 🗺 Kallax map (2026-09-14, her "I like seeing the map of the Kallax"): List | 🗺 Kallax toggle, remembered per device.
 let lbMode=(function(){try{return (typeof HA_LS!=="undefined"?HA_LS:localStorage).getItem("lb_mode")==="map"?"map":"list";}catch(e){return "list";}})();
 let lbKallax=null;          // library/kallax {lanes:{cube:LANE}, drawers:[], noBooks:[]} — the sticker plan; default below until seeded
@@ -103,6 +108,7 @@ function lbMatch(b){
   if(lbF.lane!=="all"&&b._lane!==lbF.lane)return false;
   if(lbF.status!=="all"&&(b.status||"")!==lbF.status)return false;
   if(lbF.cube&&((b.location||{}).kallax||"")!==lbF.cube)return false;
+  if(lbF.call!=="all"){const c=lbCall(b);if(lbF.call==="unruled"){if(c.hers)return false;}else if(lbF.call==="out"){if(["sell","donate","cull"].indexOf(c.word)<0)return false;}else if(c.word!==lbF.call)return false;}
   if(lbF.loc==="toshelve"){if(!lbInTransit(b))return false;}
   else if(lbF.loc!=="all"&&lbLocKey(b)!==lbF.loc)return false;
   if(lbF.q){const w=lbF.q.toLowerCase().split(/\s+/).filter(Boolean);if(!w.every(x=>b._hay.includes(x)))return false;}
@@ -141,10 +147,11 @@ function lbDraw(root){
     sel("kid",lbF.kid,[["all","Everyone"]].concat(LB_KIDS.map(k=>[k[0],k[1]])))+
     sel("lane",lbF.lane,[["all","All subjects"]].concat(LB_LANES.map(l=>[l[0],l[1]])))+
     sel("status",lbF.status,[["all","Any status"]].concat(Object.entries(LB_STATUS).map(([k,v])=>[k,v[0]])))+
+    sel("call",lbF.call,[["all","Any ruling"],["out","🏷 Leaving: sell · donate · cull ("+lbBooks.filter(b=>["sell","donate","cull"].indexOf(lbCall(b).word)>=0).length+")"],["unruled","❓ Not ruled by you yet ("+lbBooks.filter(b=>!lbCall(b).hers).length+")"],["keep","keep"],["sell","sell"],["donate","donate"],["cull","cull"],["undecided","undecided"]])+
     sel("loc",lbF.loc,[["all","Anywhere"],["toshelve","📦 To shelve ("+lbBooks.filter(lbInTransit).length+")"],["shelf","🗄 On the Kallax"],["cart","🛒 On a cart"],["box","📦 In the box ("+cnt("box")+")"],["unpack","📦 Needs unpacking ("+cnt("unpack")+")"],["table","📥 On the table ("+cnt("table")+")"],["putup","🪜 Put up ("+cnt("putup")+")"],["basket","🧺 Morning Basket"],["online","💻 Online"]])+
     '</div><div class="lb-count" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span>'+hits.length+' of '+lbBooks.length+' books'+
     (lbF.cube?' · <b>🗄 cube '+esc(lbF.cube)+'</b> <a href="#" onclick="lbSet(\'cube\',\'\');return false">✕</a>':'')+
-    ((lbF.q||lbF.kid!=="all"||lbF.lane!=="all"||lbF.status!=="all"||lbF.loc!=="all"||lbF.cube)?' · <a href="#" onclick="lbReset();return false">clear</a>':'')+'</span>'+
+    ((lbF.q||lbF.kid!=="all"||lbF.lane!=="all"||lbF.status!=="all"||lbF.loc!=="all"||lbF.cube||lbF.call!=="all")?' · <a href="#" onclick="lbReset();return false">clear</a>':'')+'</span>'+
     '<span style="flex:1"></span><button class="lb-tool" onclick="lbNewStart()">➕ New book</button><button class="lb-tool" onclick="lbRulesOpen()" title="The room logic the placement helper follows">⚙ Room rules</button><button class="lb-tool" onclick="lbReshelve()" title="Ask which books break the rules">🧭 Re-shelve check</button><button class="lb-tool" onclick="lbExport()">⬇ Export</button></div></div>';
   h+='<div class="lb-grid">'+hits.slice(0,lbF.show).map(lbCard).join("")+'</div>';
   if(hits.length>lbF.show)h+='<div style="text-align:center;margin:6px 0 22px"><button class="lb-more" onclick="lbSet(\'show\','+(lbF.show+60)+')">Show more ('+(hits.length-lbF.show)+' left)</button></div>';
@@ -178,6 +185,7 @@ function lbOpen(id){
       row("Subject",b.subject)+row("Type",[b.type,b.consumable?"write-in":(b.consumable===false?"reusable":"")].filter(Boolean).join(" · "))+
       row("Files",b.files)+'</div>'+
     lbLinksHtml(b)+
+    lbCallHtml(b)+
     lbAddHtml(b)+
     (b.summary?'<div class="lb-sec"><h4>About</h4><p>'+esc(b.summary)+'</p></div>':"")+
     (b.planning?'<div class="lb-sec"><h4>Planning note</h4><p>'+esc(b.planning)+'</p></div>':"")+
@@ -670,7 +678,24 @@ function lbWrapSave(){
 }
 function lbClose(){lbOpenId=null;lbEdit=null;lbView=null;lbNew=null;lbRulesEdit=null;lbMoves=null;const s=document.getElementById("lb-sheet");if(s)s.classList.remove("open");}
 function lbSet(k,v){lbF[k]=v;if(k!=="show")lbF.show=60;lbDraw();}
-function lbReset(){Object.assign(lbF,{q:"",kid:"all",lane:"all",status:"all",loc:"all",cube:"",show:60});lbDraw();}
+function lbReset(){Object.assign(lbF,{q:"",kid:"all",lane:"all",status:"all",loc:"all",cube:"",call:"all",show:60});lbDraw();}
+// 🏷 ruling chips on the sheet — one update of `decision`; tapping the current word clears it back to undecided
+function lbCallHtml(b){
+  const c=lbCall(b);
+  return '<div class="lb-sec"><h4>🏷 Your call <span style="font-weight:600;color:var(--muted)">'+(c.hers?'— yours':(b.recommendation?'— Claude suggests <b>'+esc(b.recommendation)+'</b>'+(b.why?': '+esc(String(b.why).slice(0,120)):''):'— not ruled yet'))+'</span></h4>'+
+    '<div class="lb-addrow">'+LB_CALLS.map(w=>{const on=c.hers&&c.word===w;const col=LB_REC[w];return '<button class="lb-addbtn" style="'+(on?'background:'+col+';color:#fff;':'color:'+col+';')+'border-color:'+col+'" onclick="lbRule(\''+esc(b.id)+'\',\''+w+'\')">'+(on?'✓ ':'')+w+'</button>';}).join("")+'</div>'+
+    (c.hers&&String(b.decision||"").length>12?'<div style="font-size:11.5px;color:var(--muted);margin-top:4px">'+esc(b.decision)+'</div>':'')+'</div>';
+}
+function lbRule(id,word){
+  const b=(lbBooks||[]).find(x=>x.id===id); if(!b)return;
+  if(!lbMomOk()){lbPin(()=>lbOpen(id));return;}
+  const cur=lbCall(b); const v=(cur.hers&&cur.word===word)?null:word;
+  if(v===null)delete b.decision; else b.decision=v;
+  try{db.ref("library/books/"+id).update({decision:v});}catch(e){}
+  lbLog(id,["decision",v||"cleared"]);
+  if(typeof gwShowToast==="function")gwShowToast(v?"🏷 "+v:"🏷 cleared");
+  lbDraw();
+}
 function lbSetMode(m){lbMode=(m==="map"||m==="plan")?m:"list";try{(typeof HA_LS!=="undefined"?HA_LS:localStorage).setItem("lb_mode",lbMode);}catch(e){}lbDraw();}
 // ── 📋 Packing list — the frozen Reset plan as a checklist, in the order she started ──────────────
 function lbPlanRows(cube){const P=lbPlanData||{};const ids=((P.cubes||{})[cube]||{}).ids||[];return ids.map(id=>(lbBooks||[]).find(b=>b.id===id)).filter(Boolean);}
@@ -885,12 +910,12 @@ window.lbEditStart=lbEditStart;window.lbEditSet=lbEditSet;window.lbEditSave=lbEd
 window.lbNewStart=lbNewStart;window.lbNewSet=lbNewSet;window.lbNewSave=lbNewSave;window.lbNewCancel=lbNewCancel;window.lbNewCover=lbNewCover;
 window.lbExport=lbExport;window.lbPhotoAdd=lbPhotoAdd;window.lbPhotoView=lbPhotoView;window.lbViewBack=lbViewBack;
 window.lbRulesOpen=lbRulesOpen;window.lbRulesSave=lbRulesSave;window.lbRulesCancel=lbRulesCancel;window.lbPlace=lbPlace;window.lbPlaceApply=lbPlaceApply;window.lbReshelve=lbReshelve;window.lbMoveApply=lbMoveApply;
-window.lbSetMode=lbSetMode;window.lbMapPick=lbMapPick;window.lbMapTile=lbMapTile;window.lbShelve=lbShelve;window.lbPlanDone=lbPlanDone;
+window.lbSetMode=lbSetMode;window.lbMapPick=lbMapPick;window.lbMapTile=lbMapTile;window.lbShelve=lbShelve;window.lbPlanDone=lbPlanDone;window.lbRule=lbRule;
 Object.defineProperty(window,"lbPlanOpen",{get:()=>lbPlanOpen});
 Object.defineProperty(window,"lbPlan",{get:()=>lbPlan});Object.defineProperty(window,"lbMoves",{get:()=>lbMoves,set:v=>{lbMoves=v;}});Object.defineProperty(window,"lbRulesEdit",{get:()=>lbRulesEdit,set:v=>{lbRulesEdit=v;}});
 window._lbTest={lbLane,lbLocKey,lbLocText,lbMatch,lbF,lbLessons,lbTpw,lbAddName,lbWrapSave,links:()=>lbLinks,scans:()=>lbScans,setScans:v=>{lbScans=v;},setData:(b,p)=>{lbBooks=b.map(x=>Object.assign(x,{_lane:lbLane(x),_hay:lbHay(x)}));lbPhotos=p||{};},
   lbFormFrom,lbRecordFrom,lbPatch,lbLocForm,lbLocFrom,lbSlug,lbNewId,lbExportData,lbPhotoList,books:()=>lbBooks,edit:()=>lbEdit,setEdit:v=>{lbEdit=v;},newState:()=>lbNew,setNew:v=>{lbNew=v;},setFull:(id,v)=>{lbFull[id]=v;},
   lbInTransit,lbOccupancy,lbBookLine,lbPlacePrompt,lbPlanLoc,lbPlanText,lbPlanHtml,plan:()=>lbPlan,setPlan:(id,v)=>{lbPlan[id]=v;},rules:()=>lbRules,setRules:v=>{lbRules=v;},moves:()=>lbMoves,
   lbMapHTML,lbCubeHTML,lbCubeBooks,lbKal,mode:()=>lbMode,setKallax:v=>{lbKallax=v;},
-  lbPlanHTML,lbPlanStats,lbPlanRows,setPlan:v=>{lbPlanData=v;},planData:()=>lbPlanData};
+  lbPlanHTML,lbPlanStats,lbPlanRows,setPlan:v=>{lbPlanData=v;},planData:()=>lbPlanData,lbCall,lbCallHtml};
 })();
