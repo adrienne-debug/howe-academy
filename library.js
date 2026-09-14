@@ -41,6 +41,10 @@ const LB_CUBE_CAP=25;
 // new:{id:{cube,where}}, done:[cubes], generated, note} — the FROZEN plan from the Kallax Reset (planSnapshot), seeded
 // once from the Mac. ✓ on a row = the book is now in that cube (one update of location); ✔ on a cube = cube finished.
 let lbPlanData=null, lbPlanOpen={};
+// 📌 Book & shelf to-dos (2026-09-14): library/todos/<id> = {text, area:shoot|buy|decide|digital|claude, done:ts|null, added}.
+// The living curriculum to-do list from the Mac JSON, seeded once; ✓ = one update of done; ➕ = one set.
+let lbTodos=null, lbTodoOpen=false, lbTodoShowDone=false, lbTodoDraft=null;
+const LB_TODO_AREAS=[["shoot","📸 shoot"],["buy","🛒 buy"],["decide","🧑‍🧒 your call"],["digital","💻 digital"],["claude","🔧 Claude"]];
 
 const LB_LANES=[
   ["PHONICS","Phonics · Spelling","#EDA1A1"],["WRITING","Writing · Grammar","#508D90"],
@@ -98,6 +102,7 @@ function lbLoad(root){
     db.ref("library/rules").once("value").then(l=>{lbRules=l.val()||null;}).catch(()=>{});
     db.ref("library/kallax").once("value").then(l=>{lbKallax=l.val()||null;if(lbMode==="map")lbDraw(root);}).catch(()=>{});
     db.ref("library/plan").once("value").then(l=>{lbPlanData=l.val()||null;if(lbMode==="plan")lbDraw(root);}).catch(()=>{});
+    db.ref("library/todos").once("value").then(l=>{lbTodos=l.val()||{};lbDraw(root);}).catch(()=>{});
     // covers second, so the list shows up before ~4 MB of thumbnails arrive
     return db.ref("libraryPhotos").once("value").then(p=>{lbPhotos=p.val()||{};lbDraw(root);});
   }).catch(e=>{lbErr="Couldn't load the library ("+(e&&e.message||e)+").";lbLoading=false;lbDraw(root);});
@@ -152,7 +157,7 @@ function lbDraw(root){
     '</div><div class="lb-count" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span>'+hits.length+' of '+lbBooks.length+' books'+
     (lbF.cube?' · <b>🗄 cube '+esc(lbF.cube)+'</b> <a href="#" onclick="lbSet(\'cube\',\'\');return false">✕</a>':'')+
     ((lbF.q||lbF.kid!=="all"||lbF.lane!=="all"||lbF.status!=="all"||lbF.loc!=="all"||lbF.cube||lbF.call!=="all")?' · <a href="#" onclick="lbReset();return false">clear</a>':'')+'</span>'+
-    '<span style="flex:1"></span><button class="lb-tool" onclick="lbNewStart()">➕ New book</button><button class="lb-tool" onclick="lbRulesOpen()" title="The room logic the placement helper follows">⚙ Room rules</button><button class="lb-tool" onclick="lbReshelve()" title="Ask which books break the rules">🧭 Re-shelve check</button><button class="lb-tool" onclick="lbExport()">⬇ Export</button></div></div>';
+    '<span style="flex:1"></span><button class="lb-tool" onclick="lbTodoOpenSheet()">📌 To-dos'+(lbTodos?' ('+lbTodoList().filter(t=>!t.done).length+')':'')+'</button><button class="lb-tool" onclick="lbNewStart()">➕ New book</button><button class="lb-tool" onclick="lbRulesOpen()" title="The room logic the placement helper follows">⚙ Room rules</button><button class="lb-tool" onclick="lbReshelve()" title="Ask which books break the rules">🧭 Re-shelve check</button><button class="lb-tool" onclick="lbExport()">⬇ Export</button></div></div>';
   h+='<div class="lb-grid">'+hits.slice(0,lbF.show).map(lbCard).join("")+'</div>';
   if(hits.length>lbF.show)h+='<div style="text-align:center;margin:6px 0 22px"><button class="lb-more" onclick="lbSet(\'show\','+(lbF.show+60)+')">Show more ('+(hits.length-lbF.show)+' left)</button></div>';
   if(!hits.length)h+='<div class="lb-empty">No books match.</div>';
@@ -169,6 +174,7 @@ function lbOpen(id){
   if(lbView&&lbView.id===id){lbViewDraw(b);return;}
   if(lbRulesEdit!==null){lbRulesDraw();return;}
   if(lbMoves){lbMovesDraw();return;}
+  if(lbTodoOpen){lbTodoDraw();return;}
   const lane=LB_LANE[b._lane]; const st=LB_STATUS[b.status]; const ph=lbPhotos[b.id];
   const row=(k,v)=>v?'<div class="lb-row"><b>'+k+'</b><span>'+esc(v)+'</span></div>':"";
   const toc=b.toc||[];
@@ -676,7 +682,42 @@ function lbWrapSave(){
   };
   w._lb=true; window.ceAddSave=w;
 }
-function lbClose(){lbOpenId=null;lbEdit=null;lbView=null;lbNew=null;lbRulesEdit=null;lbMoves=null;const s=document.getElementById("lb-sheet");if(s)s.classList.remove("open");}
+function lbClose(){lbOpenId=null;lbEdit=null;lbView=null;lbNew=null;lbRulesEdit=null;lbMoves=null;lbTodoOpen=false;lbTodoDraft=null;const s=document.getElementById("lb-sheet");if(s)s.classList.remove("open");}
+// ── 📌 To-dos sheet ──────────────────────────────────────────────────────────
+function lbTodoList(){const o=lbTodos||{};return Object.keys(o).map(id=>Object.assign({id},o[id])).filter(t=>t&&t.text).sort((a,b)=>(a.done?1:0)-(b.done?1:0)||String(a.area||"").localeCompare(String(b.area||""))||String(a.added||"").localeCompare(String(b.added||"")));}
+function lbTodoOpenSheet(){lbTodoOpen=true;lbOpenId=null;lbTodoDraw();}
+function lbTodoDraw(){
+  const L=lbTodoList(), open=L.filter(t=>!t.done), done=L.filter(t=>t.done);
+  const areaName=a=>(LB_TODO_AREAS.find(x=>x[0]===a)||[a,a])[1];
+  let h='<button class="lb-x" onclick="lbClose()">✕</button><div style="font-size:15px;font-weight:800;margin-bottom:2px">📌 Book & shelf to-dos</div>'+
+    '<div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">'+open.length+' open'+(done.length?' · '+done.length+' done':'')+' · ✓ when it is done · ➕ to add one</div>';
+  if(lbTodoDraft){h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:8px;margin:0 0 8px;background:#f8fafc;border:1.5px dashed #94a3b8;border-radius:10px">'+
+    '<select class="lb-sel" style="flex:0 0 auto;min-width:0" onchange="lbTodoDraft.area=this.value">'+LB_TODO_AREAS.map(a=>'<option value="'+a[0]+'"'+(a[0]===lbTodoDraft.area?" selected":"")+'>'+a[1]+'</option>').join("")+'</select>'+
+    '<input class="lb-q" style="flex:1 1 200px" placeholder="What needs doing" value="'+esc(lbTodoDraft.text)+'" oninput="lbTodoDraft.text=this.value">'+
+    '<button class="lb-addbtn" style="background:#111827;color:#fff;border-color:#111827" onclick="lbTodoAdd()">Save</button><button class="lb-addbtn" style="border-color:var(--border);color:#334155" onclick="lbTodoDraft=null;lbTodoDraw()">Cancel</button></div>';}
+  else h+='<div style="margin-bottom:8px"><button class="lb-tool" onclick="lbTodoDraft={text:\'\',area:\'decide\'};lbTodoDraw()">➕ Add</button></div>';
+  let lastArea=null;
+  open.forEach(t=>{if(t.area!==lastArea){lastArea=t.area;h+='<div style="font-size:11px;font-weight:800;color:var(--muted);margin:8px 0 2px">'+esc(areaName(t.area))+'</div>';}
+    h+='<div class="lb-prow"><button class="lb-pbox" onclick="lbTodoToggle(\''+esc(t.id)+'\')" title="Done"></button><span style="flex:1;font-size:12.5px">'+esc(t.text)+'</span></div>';});
+  if(!open.length)h+='<div class="lb-pnone">Nothing open. 🎉</div>';
+  if(done.length){h+='<div style="margin-top:8px"><a href="#" onclick="lbTodoShowDone=!lbTodoShowDone;lbTodoDraw();return false" style="font-size:11.5px;color:var(--muted)">'+(lbTodoShowDone?"Hide":"Show")+' '+done.length+' done</a></div>';
+    if(lbTodoShowDone)done.forEach(t=>{h+='<div class="lb-prow ok"><button class="lb-pbox" onclick="lbTodoToggle(\''+esc(t.id)+'\')" title="Reopen">✓</button><span class="lb-ptitle" style="cursor:default">'+esc(t.text)+'</span></div>';});}
+  document.getElementById("lb-shbody").innerHTML=h; document.getElementById("lb-sheet").classList.add("open");
+}
+function lbTodoToggle(id){
+  const t=(lbTodos||{})[id]; if(!t)return; if(!lbMomOk()){lbPin(()=>lbTodoDraw());return;}
+  const v=t.done?null:Date.now(); if(v===null)delete t.done; else t.done=v;
+  try{db.ref("library/todos/"+id).update({done:v});}catch(e){}
+  lbTodoDraw(); lbDraw();
+}
+function lbTodoAdd(){
+  if(!lbTodoDraft)return; if(!lbMomOk()){lbPin(()=>lbTodoDraw());return;}
+  const text=String(lbTodoDraft.text||"").replace(/\s+/g," ").trim(); if(!text){if(typeof gwShowToast==="function")gwShowToast("Say what needs doing");return;}
+  const id="t"+Date.now().toString(36), rec={text,area:LB_TODO_AREAS.some(a=>a[0]===lbTodoDraft.area)?lbTodoDraft.area:"decide",added:new Date().toISOString().slice(0,10)};
+  (lbTodos=lbTodos||{})[id]=rec; lbTodoDraft=null;
+  try{db.ref("library/todos/"+id).set(rec);}catch(e){}
+  lbTodoDraw(); lbDraw();
+}
 function lbSet(k,v){lbF[k]=v;if(k!=="show")lbF.show=60;lbDraw();}
 function lbReset(){Object.assign(lbF,{q:"",kid:"all",lane:"all",status:"all",loc:"all",cube:"",call:"all",show:60});lbDraw();}
 // 🏷 ruling chips on the sheet — one update of `decision`; tapping the current word clears it back to undecided
@@ -911,11 +952,14 @@ window.lbNewStart=lbNewStart;window.lbNewSet=lbNewSet;window.lbNewSave=lbNewSave
 window.lbExport=lbExport;window.lbPhotoAdd=lbPhotoAdd;window.lbPhotoView=lbPhotoView;window.lbViewBack=lbViewBack;
 window.lbRulesOpen=lbRulesOpen;window.lbRulesSave=lbRulesSave;window.lbRulesCancel=lbRulesCancel;window.lbPlace=lbPlace;window.lbPlaceApply=lbPlaceApply;window.lbReshelve=lbReshelve;window.lbMoveApply=lbMoveApply;
 window.lbSetMode=lbSetMode;window.lbMapPick=lbMapPick;window.lbMapTile=lbMapTile;window.lbShelve=lbShelve;window.lbPlanDone=lbPlanDone;window.lbRule=lbRule;
+window.lbTodoOpenSheet=lbTodoOpenSheet;window.lbTodoDraw=lbTodoDraw;window.lbTodoToggle=lbTodoToggle;window.lbTodoAdd=lbTodoAdd;
+Object.defineProperty(window,"lbTodoDraft",{get:()=>lbTodoDraft,set:v=>{lbTodoDraft=v;}});Object.defineProperty(window,"lbTodoShowDone",{get:()=>lbTodoShowDone,set:v=>{lbTodoShowDone=v;}});
 Object.defineProperty(window,"lbPlanOpen",{get:()=>lbPlanOpen});
 Object.defineProperty(window,"lbPlan",{get:()=>lbPlan});Object.defineProperty(window,"lbMoves",{get:()=>lbMoves,set:v=>{lbMoves=v;}});Object.defineProperty(window,"lbRulesEdit",{get:()=>lbRulesEdit,set:v=>{lbRulesEdit=v;}});
 window._lbTest={lbLane,lbLocKey,lbLocText,lbMatch,lbF,lbLessons,lbTpw,lbAddName,lbWrapSave,links:()=>lbLinks,scans:()=>lbScans,setScans:v=>{lbScans=v;},setData:(b,p)=>{lbBooks=b.map(x=>Object.assign(x,{_lane:lbLane(x),_hay:lbHay(x)}));lbPhotos=p||{};},
   lbFormFrom,lbRecordFrom,lbPatch,lbLocForm,lbLocFrom,lbSlug,lbNewId,lbExportData,lbPhotoList,books:()=>lbBooks,edit:()=>lbEdit,setEdit:v=>{lbEdit=v;},newState:()=>lbNew,setNew:v=>{lbNew=v;},setFull:(id,v)=>{lbFull[id]=v;},
   lbInTransit,lbOccupancy,lbBookLine,lbPlacePrompt,lbPlanLoc,lbPlanText,lbPlanHtml,plan:()=>lbPlan,setPlan:(id,v)=>{lbPlan[id]=v;},rules:()=>lbRules,setRules:v=>{lbRules=v;},moves:()=>lbMoves,
   lbMapHTML,lbCubeHTML,lbCubeBooks,lbKal,mode:()=>lbMode,setKallax:v=>{lbKallax=v;},
-  lbPlanHTML,lbPlanStats,lbPlanRows,setPlan:v=>{lbPlanData=v;},planData:()=>lbPlanData,lbCall,lbCallHtml};
+  lbPlanHTML,lbPlanStats,lbPlanRows,setPlan:v=>{lbPlanData=v;},planData:()=>lbPlanData,lbCall,lbCallHtml,
+  lbTodoList,setTodos:v=>{lbTodos=v;},todos:()=>lbTodos,todoOpen:()=>lbTodoOpen};
 })();

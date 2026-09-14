@@ -194,7 +194,7 @@ function plLogArr(id){const L=plLog[id];if(!L)return[];if(Array.isArray(L))retur
 function plInit(){if(plInited)return;plInited=true;
   if(typeof db!=="undefined"&&db&&db.ref){plFB=true;
     db.ref("play").on("value",function(s){var v=s.val()||{};
-      plState=v.checkouts||{};plLog=v.plLog||v.log||{};plStatus=v.status||{};plGuests=v.guests||{};plBinMeta=v.binMeta||{};plStations=v.stations||{};plUnlock=v.unlock||{};plFloor=v.floorplan||null;
+      plState=v.checkouts||{};plLog=v.plLog||v.log||{};plStatus=v.status||{};plGuests=v.guests||{};plBinMeta=v.binMeta||{};plStations=v.stations||{};plUnlock=v.unlock||{};plFloor=v.floorplan||null;plTodos=v.todos||{};
       if(!window._plPhotosSub){window._plPhotosSub=true;
         db.ref("playPhotos").on("value",function(ps){plPhotos=ps.val()||{};
           if(typeof tab!=="undefined"&&tab==="play")plRender();});}
@@ -812,6 +812,39 @@ function plLabPrint(){
   w.document.close();
 }
 
+// ROOMTODO_START — 🧹 Room to-dos (2026-09-14): play/todos/<id> = {text, area, done:ts|null, added} — the CHECKLIST.md
+// chores, seeded once; lives at the top of 👩 Mom ▸ 🧭 Room setup. ✓ = one leaf write of done; ➕ = one set.
+let plTodos={}, plTodoShowDone=false, plTodoDraft=null;
+const PL_TODO_AREAS=[["walk","🚶 walk"],["reshoot","📷 reshoot"],["merge","🔀 merge"],["load","📦 load"],["buy","🛒 buy"],["decide","🧑‍🧒 your call"]];
+function plTodoList(){const o=plTodos||{};return Object.keys(o).map(function(id){return Object.assign({id:id},o[id]);}).filter(function(t){return t&&t.text;})
+  .sort(function(a,b){return (a.done?1:0)-(b.done?1:0)||String(a.area||"").localeCompare(String(b.area||""))||String(a.added||"").localeCompare(String(b.added||""));});}
+function plTodoHtml(){
+  const L=plTodoList(), open=L.filter(function(t){return !t.done;}), done=L.filter(function(t){return t.done;});
+  const nm=function(a){const x=PL_TODO_AREAS.find(function(y){return y[0]===a;});return x?x[1]:a;};
+  let h='<div style="margin:0 12px 10px;background:var(--card);border:1.5px solid var(--border);border-radius:12px;padding:10px 12px">'+
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:13px">\u{1F9F9} Room to-dos</b><span style="font-size:11px;color:var(--muted)">'+open.length+' open'+(done.length?' · '+done.length+' done':'')+'</span><span style="flex:1"></span>'+
+    (plTodoDraft?'':plChip("➕ Add",false,"#111827","plTodoDraft={text:'',area:'load'};plRender()"))+'</div>';
+  if(plTodoDraft)h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 0;padding:8px;background:#f8fafc;border:1.5px dashed #94a3b8;border-radius:10px">'+
+    '<select onchange="plTodoDraft.area=this.value" style="font:inherit;font-size:12px;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;background:#fff">'+PL_TODO_AREAS.map(function(a){return '<option value="'+a[0]+'"'+(a[0]===plTodoDraft.area?" selected":"")+'>'+a[1]+'</option>';}).join("")+'</select>'+
+    '<input value="'+String(plTodoDraft.text||"").replace(/"/g,"&quot;")+'" placeholder="What needs doing" oninput="plTodoDraft.text=this.value" style="flex:1 1 200px;font:inherit;font-size:12.5px;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;background:#fff">'+
+    plChip("Save",true,"#111827","plTodoAdd()")+plChip("Cancel",false,"#64748b","plTodoDraft=null;plRender()")+'</div>';
+  let last=null;
+  open.forEach(function(t){if(t.area!==last){last=t.area;h+='<div style="font-size:10.5px;font-weight:800;color:var(--muted);margin:8px 0 2px">'+nm(t.area)+'</div>';}
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-top:1px solid #f1f5f9;font-size:12.5px"><button onclick="plTodoToggle(\''+t.id+'\')" title="Done" style="flex:none;width:22px;height:22px;border-radius:6px;border:1.5px solid #94a3b8;background:#fff;cursor:pointer"></button><span style="flex:1">'+String(t.text).replace(/</g,"&lt;")+'</span></div>';});
+  if(!open.length)h+='<div style="font-size:12px;color:var(--muted);padding:6px 0">Nothing open. \u{1F389}</div>';
+  if(done.length){h+='<div style="margin-top:6px"><a href="#" onclick="plTodoShowDone=!plTodoShowDone;plRender();return false" style="font-size:11px;color:var(--muted)">'+(plTodoShowDone?"Hide":"Show")+' '+done.length+' done</a></div>';
+    if(plTodoShowDone)done.forEach(function(t){h+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-top:1px solid #f1f5f9;font-size:12.5px;opacity:.55"><button onclick="plTodoToggle(\''+t.id+'\')" title="Reopen" style="flex:none;width:22px;height:22px;border-radius:6px;border:1.5px solid #16a34a;background:#16a34a;color:#fff;cursor:pointer">✓</button><span style="flex:1;text-decoration:line-through">'+String(t.text).replace(/</g,"&lt;")+'</span></div>';});}
+  h+='</div>';
+  return h;
+}
+function plTodoToggle(id){const t=plTodos[id];if(!t||!plMomAuthed())return;const v=t.done?null:Date.now();if(v===null)delete t.done;else t.done=v;
+  if(plFB)db.ref('play/todos/'+id+'/done').set(v);plRender();}
+function plTodoAdd(){if(!plTodoDraft||!plMomAuthed())return;const text=String(plTodoDraft.text||"").replace(/\s+/g," ").trim();if(!text)return;
+  const id="t"+Date.now().toString(36), rec={text:text,area:PL_TODO_AREAS.some(function(a){return a[0]===plTodoDraft.area;})?plTodoDraft.area:"decide",added:new Date().toISOString().slice(0,10)};
+  plTodos[id]=rec;plTodoDraft=null;if(plFB)db.ref('play/todos/'+id).set(rec);plRender();}
+window.plTodoToggle=plTodoToggle;window.plTodoAdd=plTodoAdd;
+Object.defineProperty(window,"plTodoDraft",{get:function(){return plTodoDraft;},set:function(v){plTodoDraft=v;}});Object.defineProperty(window,"plTodoShowDone",{get:function(){return plTodoShowDone;},set:function(v){plTodoShowDone=v;}});
+// ROOMTODO_END
 // ROOMMAP_START — 🗺 the school room, drawn (2026-09-14, her "I would enjoy similar for the toys"). Boxes come from
 // play/floorplan (seeded once from her dragged floorplan_layout.json): {x,y,w,h,t,c,codes?,books?} in % of a
 // 10:12.5 room. A box with slot codes shows how many bins sit in those units right now; tap = that unit's filter
@@ -993,6 +1026,7 @@ function plRoomHtml(){
     '</b> still on inventory defaults \u00b7 <b>'+noKid+'</b> with nobody assigned.<br>'+
     'Tap a name to add or remove that kid. \u{1F4CD} moves a bin · \u{1F9ED} asks where it should go. Saves as you tap.</div></div>'+
     plRoomCheckHtml()+
+    plTodoHtml()+
     rows+'</div>';
 }
 
