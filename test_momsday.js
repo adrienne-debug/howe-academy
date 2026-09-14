@@ -126,7 +126,7 @@ global.renderAll = () => { renderAllCalls++; };
 global.schedShowBoard = false; global.schedShowAdmin = true; global.schedShowHistory = false;
 global.schedShowPace = false; global.schedShowPeek = false;
 
-const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlotCounts,renderMomsDay,renderMomsPlan,mpInit,mdOpenBoard,mdBack,mwBPCat,mwBPChip,mwSaveBP,mwBPSlotNow,momdayAddTodo,momdayToggleTodo,momdayDelTodo,mwToggleSym,mwAllSyms,mwAddSymType,mwDelSymType,billDueInfo,billState,billMarkPaid,billAdd,billDel,laundryAdd,laundryAdvance,laundryDel,laundryData,renderKitchen,kitIsoPlus,kitWhenMin,kitWhenLabel,kitPlanFor,kitPrepSteps,kitDuePrep,kitMarkPrep,kitAssign,kitPickDay,kitPlanText,kitOpenRecipe,kitCloseRecipe,kitEditMeal,kitAddPrepRow,kitDelPrepRow,kitSaveMeal,kitCancelEdit,kitDelMeal,kitMeals,kitPlan,kitPrepDone,kitStapleCycle,kitStapleAdd,kitStapleDel,kitStapleToggleManage,kitUsualAdd,kitUsualDel,kitSetOrderDay,kitOrderList,kitOrderText,kitCopyOrder,kitStaples,kitUsuals,kitSettings,kitPantry,panStatus,panAdd,panAddManual,panDel,panImportToggle,panImportApply,panClearGone,panToggleRegular,panIsRegular,panToggleManage,kitSweepDue,kitUsualQty,kitSlug,kitBuyLog,kitRate,kitRateChips,kitParseWeek,kitWkIso,kitWkImportToggle,kitImportWeekApply,kitPlanSlot,kitSlotText,panQtyEdit,kitMarkEaten,momChoresData,mcAll,mcAdd,mcDel,mcToggle,mcDoneOn,mcSetCad,mcCadToggleDay,mcDueToday,mcToggleManage,momChoresCardHTML};`)();
+const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlotCounts,renderMomsDay,renderMomsPlan,mpInit,mdOpenBoard,mdBack,mwBPCat,mwBPChip,mwSaveBP,mwBPSlotNow,momdayAddTodo,momdayToggleTodo,momdayDelTodo,mwToggleSym,mwAllSyms,mwAddSymType,mwDelSymType,billDueInfo,billState,billMarkPaid,billAdd,billDel,laundryAdd,laundryAdvance,laundryDel,laundryData,renderKitchen,kitIsoPlus,kitWhenMin,kitWhenLabel,kitPlanFor,kitPrepSteps,kitDuePrep,kitMarkPrep,kitAssign,kitPickDay,kitPlanText,kitOpenRecipe,kitCloseRecipe,kitEditMeal,kitAddPrepRow,kitDelPrepRow,kitSaveMeal,kitCancelEdit,kitDelMeal,kitMeals,kitPlan,kitPrepDone,kitStapleCycle,kitStapleAdd,kitStapleDel,kitStapleToggleManage,kitUsualAdd,kitUsualDel,kitSetOrderDay,kitOrderList,kitOrderText,kitCopyOrder,kitStaples,kitUsuals,kitSettings,kitPantry,panStatus,panAdd,panAddManual,panDel,panImportToggle,panImportApply,panClearGone,panToggleRegular,panIsRegular,panToggleManage,kitSweepDue,kitUsualQty,kitSlug,kitBuyLog,kitRate,kitRateChips,kitParseWeek,kitWkIso,kitWkImportToggle,kitImportWeekApply,kitPlanSlot,kitSlotText,panQtyEdit,kitMarkEaten,momChoresData,mcAll,mcAdd,mcDel,mcToggle,mcDoneOn,mcSetCad,mcCadToggleDay,mcDueToday,mcToggleManage,momChoresCardHTML,kitRotations,kitRotAll,kitRotEnsure,kitRotPlanFor,kitRotCapture,kitRotApply,kitRotSave,kitRotDel,kitRotToggle,kitRotSaveToggle,kitRotMondayOf,kitRotationsCardHTML,KIT_ROT_DEFAULT};`)();
 
 // ── mdTodayName: weekday from the DATE ───────────────────────────────────────
 (() => {
@@ -1247,6 +1247,106 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   Object.keys(M.momChoresData).forEach(k => { delete M.momChoresData[k]; });
   global.cadDueOn = oldCad;
   delete domVals["mc-new"]; delete domVals["mc-cad"];
+})();
+
+// ── 📅 KITCHEN · Rotations: code-side 🍂 Fall default, apply-from-Monday, save, delete ─
+(() => {
+  TODAY = "2026-09-14"; // a Monday
+  Object.keys(M.kitMeals).forEach(k => { delete M.kitMeals[k]; });
+  Object.keys(M.kitPlan).forEach(k => { delete M.kitPlan[k]; });
+  Object.keys(M.kitRotations).forEach(k => { delete M.kitRotations[k]; });
+  M.kitMeals.m1 = { name: "Taco Night", emoji: "🌮", ing: "", steps: "", prep: [], ts: 1, ratings: { lucy: "like" } };
+  M.kitMeals.m2 = { name: "Shank & Rice Bowls", emoji: "🍚", ing: "", steps: "", prep: [], ts: 1 };
+  M.kitMeals.m3 = { name: "Sheet-Pan Chicken & Sweet Potatoes", emoji: "🍠", ing: "", steps: "", prep: [], ts: 1 };
+
+  // default shape
+  const fall = M.KIT_ROT_DEFAULT.fall2026;
+  ok("🍂 Fall default: 4 weeks × 7 days", fall.weeks.length === 4 && fall.weeks.every(w => w.length === 7), fall.weeks.map(w => w.length));
+  ok("🍂 Fall default: every day has a dinner + b/l/s", fall.weeks.every(w => w.every(d => d.d && d.b && d.l && d.s)), null);
+  ok("🍂 Fall default: Sunday big cook feeds Monday (wk1 Mon = Shank & Rice Bowls, wk4 Sun = Shank in Tomato)", fall.weeks[0][0].d === "Shank & Rice Bowls" && fall.weeks[3][6].d === "Shank in Tomato", [fall.weeks[0][0].d, fall.weeks[3][6].d]);
+  ok("🍂 Fall default: Thursday is fish all four weeks", fall.weeks.every(w => /Salmon|Shrimp/.test(w[3].d)), fall.weeks.map(w => w[3].d));
+  ok("kitRotAll shows the default while nothing is stored", Object.keys(M.kitRotAll()).join() === "fall2026", Object.keys(M.kitRotAll()));
+
+  // Monday-of helper
+  ok("kitRotMondayOf: Wed 9/16 → Mon 9/14", M.kitRotMondayOf("2026-09-16") === "2026-09-14", M.kitRotMondayOf("2026-09-16"));
+  ok("kitRotMondayOf: Sun 9/20 → Mon 9/14", M.kitRotMondayOf("2026-09-20") === "2026-09-14", M.kitRotMondayOf("2026-09-20"));
+  ok("kitRotMondayOf: a Monday is itself", M.kitRotMondayOf("2026-09-14") === "2026-09-14", null);
+
+  // pure plan: names → library ids, unknown names typed, existing slots merged
+  M.kitPlan["2026-10-12"] = { txt: "Old dinner", b: { txt: "kept? no — replaced" }, eaten: 123 };
+  const plan = M.kitRotPlanFor(fall, "2026-10-12");
+  ok("kitRotPlanFor: 28 days from the Monday", Object.keys(plan).length === 28 && plan["2026-10-12"] && plan["2026-11-08"] && !plan["2026-11-09"], Object.keys(plan).length);
+  ok("kitRotPlanFor: known name → {mid}", plan["2026-10-12"].mid === "m2" && !plan["2026-10-12"].txt, plan["2026-10-12"]);
+  ok("kitRotPlanFor: wk1 Tue → sheet-pan meal id", plan["2026-10-13"].mid === "m3", plan["2026-10-13"]);
+  ok("kitRotPlanFor: unknown name → {txt}", plan["2026-10-14"].txt === "Turkey Chili" && !plan["2026-10-14"].mid, plan["2026-10-14"]);
+  ok("kitRotPlanFor: slots filled as txt", plan["2026-10-12"].b.txt === "PB banana toast" && plan["2026-10-12"].s.txt === "Applesauce + string cheese", plan["2026-10-12"]);
+  ok("kitRotPlanFor: existing ✓ eaten stamp left alone, old dinner replaced", plan["2026-10-12"].eaten === 123 && plan["2026-10-12"].txt === undefined, plan["2026-10-12"]);
+  ok("kitRotPlanFor: nothing written to kitPlan by the pure fn", M.kitPlan["2026-10-13"] === undefined, null);
+  ok("kitRotPlanFor: empty rotation → {}", Object.keys(M.kitRotPlanFor({ weeks: [] }, "2026-10-12")).length === 0, null);
+
+  // apply: date input, confirm, writes
+  dbWrites.length = 0; toasts.length = 0;
+  domVals["kit-rot-from-fall2026"] = { value: "" };
+  M.kitRotApply("fall2026");
+  ok("apply: no date → toast, no writes", toasts.length === 1 && dbWrites.length === 0, toasts);
+  domVals["kit-rot-from-fall2026"] = { value: "2026-10-12" };
+  CONFIRM = false; M.kitRotApply("fall2026");
+  ok("apply: cancel → nothing written", dbWrites.length === 0 && M.kitPlan["2026-10-13"] === undefined, dbWrites.length);
+  CONFIRM = true; toasts.length = 0; M.kitRotApply("fall2026");
+  const planWrites = dbWrites.filter(w => w[0].indexOf("kitchen/plan/") === 0);
+  ok("apply: 28 kitchen/plan/<iso> writes", planWrites.length === 28, planWrites.length);
+  ok("apply: writes carry mid for library meals + txt for the rest", planWrites.find(w => w[0] === "kitchen/plan/2026-10-12")[1].mid === "m2" && planWrites.find(w => w[0] === "kitchen/plan/2026-10-14")[1].txt === "Turkey Chili", null);
+  ok("apply: in-memory plan updated + toast", M.kitPlan["2026-10-13"].mid === "m3" && toasts[0].indexOf("28 days planned") >= 0, toasts);
+  ok("apply: never touches kitchen/rotations or meals", dbWrites.every(w => w[0].indexOf("kitchen/plan/") === 0), dbWrites.map(w => w[0]).filter(p => p.indexOf("kitchen/plan/") !== 0));
+  ok("apply: unknown id is a no-op", (dbWrites.length = 0, M.kitRotApply("nope"), dbWrites.length === 0), null);
+
+  // render: card, default row, apply control, preview toggle
+  M.renderKitchen(elStub);
+  let h = elStub.innerHTML;
+  ok("card renders with the Fall default", h.includes("📅</span> Rotations") && h.includes("🍂 Fall") && h.includes("4 weeks · 28 days"), null);
+  ok("card: per-rotation date input defaults to the next Monday", h.includes('id="kit-rot-from-fall2026" value="2026-09-14"'), null);
+  ok("card: Apply + delete + save buttons wired", h.includes("kitRotApply('fall2026')") && h.includes("kitRotDel('fall2026')") && h.includes("kitRotSaveToggle()"), null);
+  ok("card: preview closed by default", !h.includes("Wk 1</b>"), null);
+  M.kitRotToggle("fall2026"); M.renderKitchen(elStub); h = elStub.innerHTML;
+  ok("card: preview shows the four weeks' dinners", h.includes("Wk 1</b>") && h.includes("Wk 4</b>") && h.includes("Shank in Tomato") && h.includes("Crock-Pot Carnitas"), null);
+  M.kitRotToggle("fall2026");
+
+  // save current plan → seeds defaults + _seeded, then the new rotation
+  dbWrites.length = 0; toasts.length = 0;
+  M.kitRotSaveToggle(); M.renderKitchen(elStub); h = elStub.innerHTML;
+  ok("save form renders with this Monday + 4 weeks", h.includes('id="kit-rot-name"') && h.includes('id="kit-rot-save-from" value="2026-09-14"') && h.includes('id="kit-rot-weeks" value="4"'), null);
+  domVals["kit-rot-name"] = { value: "" }; domVals["kit-rot-save-from"] = { value: "2026-10-12" }; domVals["kit-rot-weeks"] = { value: "2" };
+  M.kitRotSave();
+  ok("save: blank name → toast, nothing written", toasts.length === 1 && dbWrites.length === 0, toasts);
+  domVals["kit-rot-name"] = { value: "Test Fortnight" }; domVals["kit-rot-save-from"] = { value: "2027-01-04" };
+  M.kitRotSave();
+  ok("save: empty range → toast, nothing written", toasts.length === 2 && dbWrites.length === 0, toasts);
+  domVals["kit-rot-save-from"] = { value: "2026-10-12" };
+  M.kitRotSave();
+  const rotWrites = dbWrites.filter(w => w[0].indexOf("kitchen/rotations/") === 0);
+  ok("save: seeds the Fall default + _seeded sentinel + the new rotation", rotWrites.some(w => w[0] === "kitchen/rotations/fall2026") && rotWrites.some(w => w[0] === "kitchen/rotations/_seeded" && w[1] === true) && rotWrites.some(w => /^kitchen\/rotations\/r[0-9a-z]+_\d+$/.test(w[0])), rotWrites.map(w => w[0]));
+  const saved = rotWrites.find(w => /_\d+$/.test(w[0]) && w[0].indexOf("fall2026") < 0)[1];
+  ok("save: captured 2 weeks by NAME from the applied plan", saved.name === "Test Fortnight" && saved.weeks.length === 2 && saved.weeks[0][0].d === "Shank & Rice Bowls" && saved.weeks[0][2].d === "Turkey Chili" && saved.weeks[0][0].b === "PB banana toast", saved.weeks[0][0]);
+  ok("save: kitRotAll now lists stored rotations only (no double Fall)", Object.keys(M.kitRotAll()).length === 2 && !("_seeded" in M.kitRotAll()), Object.keys(M.kitRotAll()));
+  ok("save: form closes + toast", !elStub.innerHTML.includes('id="kit-rot-name"') && toasts[2].indexOf("Saved Test Fortnight") >= 0, toasts);
+
+  // delete the seeded default → stays deleted (sentinel), no resurrect
+  dbRemoves.length = 0;
+  CONFIRM = false; M.kitRotDel("fall2026");
+  ok("delete: cancel keeps it", "fall2026" in M.kitRotAll() && dbRemoves.length === 0, null);
+  CONFIRM = true; M.kitRotDel("fall2026");
+  ok("delete: removes kitchen/rotations/fall2026", dbRemoves.includes("kitchen/rotations/fall2026") && !("fall2026" in M.kitRotAll()), dbRemoves);
+  Object.keys(M.kitRotations).forEach(k => { if (k !== "_seeded") delete M.kitRotations[k]; });
+  ok("delete-all: sentinel blocks the default from resurrecting", Object.keys(M.kitRotAll()).length === 0, Object.keys(M.kitRotAll()));
+  M.renderKitchen(elStub);
+  ok("empty card hints how to save one", elStub.innerHTML.includes("No rotations saved"), null);
+
+  // wipe module state so no later group inherits it
+  Object.keys(M.kitRotations).forEach(k => { delete M.kitRotations[k]; });
+  Object.keys(M.kitPlan).forEach(k => { delete M.kitPlan[k]; });
+  Object.keys(M.kitMeals).forEach(k => { delete M.kitMeals[k]; });
+  ["kit-rot-from-fall2026","kit-rot-name","kit-rot-save-from","kit-rot-weeks"].forEach(k => { delete domVals[k]; });
+  dbWrites.length = 0; dbRemoves.length = 0; toasts.length = 0;
 })();
 
 console.log(pass + " passed, " + fail + " failed");
