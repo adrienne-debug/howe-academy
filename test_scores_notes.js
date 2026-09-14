@@ -72,9 +72,16 @@ console.log("\n# notes: add / edit / delete");
 }
 console.log("\n# wiring");
 {
-  const i = src.indexOf("h+=rmStripHTML(k);");
-  ok("scores + notes strips drawn right after the roadmap strip", src.indexOf("h+=scStripHTML(k);", i) > i && src.indexOf("h+=ntStripHTML(k);", i) > src.indexOf("h+=scStripHTML(k);", i) && src.indexOf("h+=ntStripHTML(k);", i) < src.indexOf(">Scheduling Setup</div>"));
+  ok("cards live in ONE place — the plan bar, not the retired list view", src.indexOf("h+=rmStripHTML(k);") < 0 && src.indexOf("h+=scStripHTML(k);") < 0);
   ok("notes CSS present", /\.nt-md\{/.test(src) && /\.nt-tbl td\{/.test(src));
+  const g = src.indexOf('if(currInnerTab==="grid"){');
+  ok("GRID branch (the real curriculum page) draws the plan bar before renderCurrGrid", src.indexOf("planBarHTML((typeof gvKid", g) > g && src.indexOf("planBarHTML((typeof gvKid", g) < src.indexOf("renderCurrGrid(el);", g));
+  ctx.roadmapData.ellis.roadmap = { r1: { due: "2026-09-10", text: "late", kind: "add" }, r2: { due: "2026-09-18", text: "soon", kind: "add" } };
+  let bar = T("planBarHTML")("ellis");
+  ok("plan bar folded: counts + overdue + this week, no cards", /Ellis&#39;s plan|Ellis's plan/.test(bar) && /2 to do/.test(bar) && /1 overdue/.test(bar) && /1 this week/.test(bar) && /3 reports/.test(bar) && !/Test scores ·/.test(bar), bar);
+  vm.runInContext("planOpen={ellis:true}", ctx); bar = T("planBarHTML")("ellis");
+  ok("plan bar open: all three cards", /Roadmap · Ellis/.test(bar) && /Test scores · Ellis/.test(bar) && /Plan notes · Ellis/.test(bar));
+  ok("no kid → nothing", T("planBarHTML")("") === "");
   ok("no bare column-0 brace in the block", !/\n\}\n(?!function|const|let|\/\/|$)/.test(src.slice(src.indexOf("// SCORES_START"), z)));
 }
 console.log("\n" + pass + " passed, " + fail + " failed");

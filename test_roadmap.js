@@ -108,7 +108,7 @@ console.log("\n# gate + writes");
 console.log("\n# insertion points in index.html");
 {
   ok("global roadmapData + plans listener", /let roadmapData=\{\}/.test(src) && /db\.ref\("plans"\)\.on\("value"/.test(src));
-  ok("curriculum view draws the strip before Scheduling Setup", src.indexOf("h+=rmStripHTML(k);") > 0 && src.indexOf("h+=rmStripHTML(k);") < src.indexOf(">Scheduling Setup</div>"));
+  ok("curriculum GRID page draws the plan bar (which holds the roadmap strip)", /planBarHTML\(\(typeof gvKid/.test(src) && /h\+=rmStripHTML\(kid\)/.test(src));
   ok("My Day draws the week card after the day strip", src.indexOf("h+=rmWeekHTML(iso);") > src.indexOf("h+=momDayStripHTML(iso,today);") && src.indexOf("h+=rmWeekHTML(iso);") < src.indexOf("Now — needs you</div>"));
   const ds = src.indexOf("function calDaySheetHTML(");
   ok("day sheet lists roadmap items after the lessons", src.indexOf("_calRoadmapFor(who,iso).forEach", ds) > src.indexOf("_calLessonsFor(who,iso)", ds));
