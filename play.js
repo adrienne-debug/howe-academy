@@ -81,6 +81,7 @@ const PL_SHELL=`<div id="play-root">
 <span id="pl-outcount" style="align-self:center;font-size:11px;color:var(--muted);white-space:nowrap;padding:0 4px"></span></div>
 <div id="pl-kidbar"></div>
 <div id="pl-locbar"></div>
+<div id="pl-roommap"></div>
 <div id="pl-home"></div>
 <div id="pl-intents" style="display:none"></div>
 <button id="pl-shuffle" onclick="plShuffle()">🎲 Surprise me!</button>
@@ -193,7 +194,7 @@ function plLogArr(id){const L=plLog[id];if(!L)return[];if(Array.isArray(L))retur
 function plInit(){if(plInited)return;plInited=true;
   if(typeof db!=="undefined"&&db&&db.ref){plFB=true;
     db.ref("play").on("value",function(s){var v=s.val()||{};
-      plState=v.checkouts||{};plLog=v.plLog||v.log||{};plStatus=v.status||{};plGuests=v.guests||{};plBinMeta=v.binMeta||{};plStations=v.stations||{};plUnlock=v.unlock||{};
+      plState=v.checkouts||{};plLog=v.plLog||v.log||{};plStatus=v.status||{};plGuests=v.guests||{};plBinMeta=v.binMeta||{};plStations=v.stations||{};plUnlock=v.unlock||{};plFloor=v.floorplan||null;
       if(!window._plPhotosSub){window._plPhotosSub=true;
         db.ref("playPhotos").on("value",function(ps){plPhotos=ps.val()||{};
           if(typeof tab!=="undefined"&&tab==="play")plRender();});}
@@ -811,6 +812,35 @@ function plLabPrint(){
   w.document.close();
 }
 
+// ROOMMAP_START — 🗺 the school room, drawn (2026-09-14, her "I would enjoy similar for the toys"). Boxes come from
+// play/floorplan (seeded once from her dragged floorplan_layout.json): {x,y,w,h,t,c,codes?,books?} in % of a
+// 10:12.5 room. A box with slot codes shows how many bins sit in those units right now; tap = that unit's filter
+// in the Bins grid (a code the bar doesn't list is added to it for the session). The Kallax box opens Books ▸ 🗺.
+let plFloor=null, plLocExtra=[];
+let plRoomOpen=(function(){try{return HA_LS.getItem("lib_room")==="1";}catch(e){return false;}})();
+function plRoomToggle(){plRoomOpen=!plRoomOpen;try{HA_LS.setItem("lib_room",plRoomOpen?"1":"0");}catch(e){}plRender();}
+function plRoomBins(codes){const C=(codes||[]).map(function(c){return String(c).toUpperCase();});
+  return PL_CATALOG.filter(function(b){const L=plEffLoc(b);return C.some(function(c){return L===c||L.indexOf(c+"-")===0||(L.indexOf(c)===0&&/^\d+$/.test(L.slice(c.length)));});});}   // unit · dashed slot · glued shelf (BG-L1)
+function plRoomMapHTML(){
+  const F=plFloor&&plFloor.boxes;if(!F)return '<div style="padding:14px;font-size:12px;color:var(--muted)">No floorplan in the app yet — it is seeded once from the Mac\'s layout.</div>';
+  const st=document.getElementById("pl-roomstyle")?"":'<style id="pl-roomstyle">.pl-room{position:relative;width:100%;max-width:760px;aspect-ratio:10/12.5;border:3px solid #94a3b8;border-radius:8px;background:#fff;overflow:hidden;margin:8px auto}'+
+    '.pl-rbox{position:absolute;border:2px solid #64748b;border-radius:6px;background:#f1f5f9;display:flex;flex-direction:column;align-items:center;justify-content:center;font:inherit;font-size:10px;font-weight:700;text-align:center;padding:2px;box-sizing:border-box;cursor:pointer;overflow:hidden;line-height:1.15;color:#0f172a}'+
+    '.pl-rbox.deco{cursor:default;color:#64748b;font-weight:600}.pl-rbox.on{outline:3px solid #a5b4fc}.pl-rbox.c-new{border-color:#2563c9;background:#eff6ff}.pl-rbox.c-fire{border-color:#c2410c;background:#fff7ed}.pl-rbox.c-soft{border-color:#cbd5e1;background:#f8fafc;border-style:dashed}.pl-rbox.c-out{border-color:#b5394a;background:#fff1f2;border-style:dashed}'+
+    '.pl-rn{display:inline-block;margin-top:2px;background:#111827;color:#fff;border-radius:99px;padding:0 6px;font-size:10px}.pl-rn.z{background:#cbd5e1}.pl-rbox.books{background:#fdf2f8;border-color:#BB8EA3}</style>';
+  let h=st+'<div style="padding:0 12px"><div class="pl-room">';
+  Object.keys(F).forEach(function(k){const b=F[k];if(!b)return;const codes=b.codes||[];const n=codes.length?plRoomBins(codes).length:null;
+    const on=codes.length&&(codes.indexOf(plLocF)>=0||codes.some(function(c){return plLocF.indexOf(c)===0;}));
+    const label=String(b.t||k).split("\n")[0];
+    h+='<button class="pl-rbox'+(codes.length||b.books?"":" deco")+(on?" on":"")+(b.c?" "+b.c:"")+(b.books?" books":"")+'" style="left:'+(+b.x||0)+'%;top:'+(+b.y||0)+'%;width:'+(+b.w||0)+'%;height:'+(+b.h||0)+'%" '+
+      (b.books?'onclick="plRoomBooks()"':codes.length?'onclick="plRoomPick(\''+k+'\')"':'')+' title="'+String(b.t||"").replace(/"/g,"&quot;")+'">'+label.replace(/</g,"&lt;")+(n!==null?'<span class="pl-rn'+(n?"":" z")+'">'+n+'</span>':'')+(b.books?'<span class="pl-rn" style="background:#BB8EA3">📚</span>':'')+'</button>';});
+  h+='</div><div style="font-size:11px;color:var(--muted);text-align:center;margin:2px 0 8px">Numbers = bins in that unit right now · tap a unit to see its bins · the Kallax opens the book map</div></div>';
+  return h;
+}
+function plRoomPick(key){const F=plFloor&&plFloor.boxes;const b=F&&F[key];if(!b||!(b.codes||[]).length)return;
+  const code=String(b.codes[0]).toUpperCase();if(plLocExtra.indexOf(code)<0)plLocExtra.push(code);plLocF=code;plRender();
+  try{const g=document.getElementById("pl-grid");if(g&&g.scrollIntoView)g.scrollIntoView({behavior:"smooth",block:"start"});}catch(e){}}
+function plRoomBooks(){try{HA_LS.setItem("lb_mode","map");}catch(e){}if(window.lbSetMode){try{lbSetMode("map");}catch(e){}}if(typeof plSetSub==="function")plSetSub("books");}
+// ROOMMAP_END
 // PLACE_START — 🧭 toy-bin placement (Stage A2b, 2026-09-14): the same helper Books has. The room logic is
 // library/rules (⚙ Room rules in Books, Mom-editable; it already carries the toy slot codes). A proposal is
 // Claude reading the rules + the slot dictionary + what is in every slot right now + this bin. ONLY her tap
@@ -1087,9 +1117,11 @@ function plRender(){
     PL_KIDS.map(k=>'<button class="kid-btn'+(plKidF==k.id?" active":"")+'" style="'+(plKidF==k.id?"background:"+k.color:"")+'" onclick="plKidF=\''+k.id+'\';plRender()">'+k.name+'</button>').join("");
   // "ALL" chip removed (her call 2026-08-01: the everything-at-once wall was the overwhelm).
   // Browsing is always scoped to one unit; a stale stored "ALL" coerces to the first chip.
-  const locs=["F1","F2","F3","T1","T2","W1","W2","W3","K14","MK","BG","SHOW","CUBE","STATION","SHELF"];
+  const locs=["F1","F2","F3","T1","T2","W1","W2","W3","K14","MK","BG","SHOW","CUBE","STATION","SHELF"].concat(plLocExtra.filter(function(x){return ["F1","F2","F3","T1","T2","W1","W2","W3","K14","MK","BG","SHOW","CUBE","STATION","SHELF"].indexOf(x)<0;}));
   if(locs.indexOf(plLocF)<0)plLocF=locs[0];
-  document.getElementById("pl-locbar").innerHTML=locs.map(l=>'<button class="loc-btn'+(plLocF==l?" active":"")+'" onclick="plLocF=\''+l+'\';plRender()">'+l+'</button>').join("");
+  document.getElementById("pl-locbar").innerHTML='<button class="loc-btn'+(plRoomOpen?" active":"")+'" title="the room, drawn" onclick="plRoomToggle()">\u{1F5FA}</button>'+locs.map(l=>'<button class="loc-btn'+(plLocF==l?" active":"")+'" onclick="plLocF=\''+l+'\';plRender()">'+l+'</button>').join("");
+  // 🗺 Room map (2026-09-14) — her floorplan with live bin counts, above the Bins grid; tap a box = that unit's filter
+  const _rm=document.getElementById("pl-roommap");if(_rm){const _show=plMode=="bins"&&plRoomOpen;_rm.style.display=_show?"block":"none";_rm.innerHTML=_show?plRoomMapHTML():"";}
   // Station-held bins collapse into one station row (no per-bin Return — the set goes
   // home together via the station's give-it-up, never one bin at a time).
   const out=Object.entries(plState).filter(([id])=>!plStagedAt(id));
