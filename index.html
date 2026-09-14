@@ -2253,6 +2253,7 @@ let walletScope="lifetime"; // Star Bank statement toggle: "week" | "lifetime" (
 function setWalletScope(s){ walletScope=s; renderAll(); }
 let bank={};               // {kid: {withdrawals: {id: {amount, note, ts, iso}}}} — Star Bank spends (Mom-recorded)
 let bankWdOpen=false;      // the Mom withdrawal form is open (single-kid Wins view, so one flag)
+let roadmapData={};        // {kid:{roadmap:{id:{due,text,kind,subject?,book?,done,at}}}} — 📅 Roadmap (plans/<kid>/roadmap)
 let readingLog={};         // {kid: {books:{id:{title,size,totalPages,status,addedTs}}, entries:{...R2}}, settings:{sizePoints}} — 📚 Reading Log
 let rlAddOpen=false, rlAddSize="little", rlPagesEdit=null; // Reading Log Mom-form UI state
 let rlDlg=null;            // open page-prompt dialog: {kid, bookId, pendingKey, source, day}
@@ -2809,6 +2810,7 @@ function initFb() {
     db.ref("pointClaims").on("value",s=>{ pointClaims=s.val()||{}; pointClaimsLoaded=true; });
     db.ref("bank").on("value",s=>{ bank=s.val()||{}; });
     db.ref("readingLog").on("value",s=>{ readingLog=s.val()||{}; });
+    db.ref("plans").on("value",s=>{ roadmapData=s.val()||{}; try{ if(tab==="moms-plan"||adminSubTab==="curriculum") renderAll(); }catch(e){} });
     db.ref("digest").on("value",s=>{ digestData=s.val()||{}; });
     db.ref("scheduleOverrides").on("value",s=>{
       scheduleOverrides=s.val()||{};
@@ -8550,6 +8552,8 @@ function renderMomsDay(el){
   // The full chores card becomes the EDITOR (cadence + time of day); it only appears
   // while editing, because the strip above now carries the day-to-day list.
   if(mcManage){ try{ h+=momChoresCardHTML(iso,today); }catch(e){} }
+  // 📅 curriculum roadmap — overdue + due this week (Stage B)
+  try{ h+=rmWeekHTML(iso); }catch(e){}
 
   // ── 🔴 NOW — needs you ──────────────────────────────────────────
   h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
@@ -12241,6 +12245,122 @@ function ceWorkflowTier(kid,sk,s){
   return {rank:500,label:"Other"};
 }
 
+// ROADMAP_START — 📅 dated curriculum to-dos per kid (Stage B, 2026-09-13).
+// plans/<kid>/roadmap/<id> = {due:"YYYY-MM-DD", text, kind:add|append|pause|swap|edit|note, subject?, book?, done:ts|null, at}.
+// The roadmap only REMINDS — the change itself is still made in the app by Mom. Every write is one
+// set/update/remove of ONE item. Shown in Mom HQ ▸ Curriculum (per kid, editable), on the tablet's
+// 📆 My Day (overdue + due this week, ✓ only), and in the calendar day sheet (due that day).
+const RM_KINDS={add:"➕",append:"📝",pause:"⏸",swap:"🔁",edit:"✏️",note:"📌"};
+let rmEdit=null;    // {kid, id|null, form:{due,text,kind,subject,book}} while the inline form is open
+let rmShowDone={};  // kid → true when the finished list is unfolded
+function rmList(kid){
+  const o=(roadmapData&&roadmapData[kid]&&roadmapData[kid].roadmap)||{};
+  return Object.keys(o).map(function(id){ return Object.assign({id:id},o[id]); }).filter(function(r){ return r&&r.due&&r.text; })
+    .sort(function(a,b){ return a.due<b.due?-1:a.due>b.due?1:String(a.id).localeCompare(String(b.id)); });
+}
+function rmWeekEnd(iso){ const d=gwParseDate(iso); const dow=(d.getDay()+6)%7; d.setDate(d.getDate()+(6-dow)); return _cbISO(d); }
+function rmState(r,iso){ if(r.done) return "done"; if(r.due<iso) return "over"; if(r.due<=rmWeekEnd(iso)) return "week"; return "later"; }
+function rmDateTxt(due){ const d=gwParseDate(due); const y=d.getFullYear()!==gwParseDate(_todayStr()).getFullYear(); return d.toLocaleDateString("en-US",{month:"short",day:"numeric"})+(y?" "+d.getFullYear():""); }
+function rmSubjName(kid,sk){ try{ const s=currData&&currData.subjects&&currData.subjects[kid]&&currData.subjects[kid][sk]; return s?(s.display||s.name||sk):sk; }catch(e){ return sk; } }
+function rmCanWrite(){ return !!(adminPinUnlocked||(typeof momPinUnlocked!=="undefined"&&momPinUnlocked)); }
+function rmWrite(path,val,op){ if(typeof db==="undefined"||!db||_dryRun()) return; if(op==="set") db.ref(path).set(val); else if(op==="remove") db.ref(path).remove(); else db.ref(path).update(val); }
+function _calRoadmapFor(kid,iso){ return rmList(kid).filter(function(r){ return !r.done&&r.due===iso; }); }
+const RM_COL={over:"#b5394a",week:"#d97706",later:"#475569",done:"#94a3b8"};
+function rmRowHTML(kid,r,iso,compact){
+  const st=rmState(r,iso), c=RM_COL[st];
+  let h='<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:12.5px;'+(st==="done"?'opacity:.55':'')+'">';
+  h+='<button onclick="rmDone(\''+kid+'\',\''+esc(r.id)+'\')" title="'+(r.done?"Reopen":"Done")+'" style="flex:none;width:22px;height:22px;border-radius:6px;border:1.5px solid '+c+';background:'+(r.done?c:'#fff')+';color:#fff;font-size:12px;cursor:pointer;line-height:1">'+(r.done?'✓':'')+'</button>';
+  h+='<span style="flex:none;min-width:52px;font-weight:800;color:'+c+'">'+(st==="over"?'⚠ ':'')+esc(rmDateTxt(r.due))+'</span>';
+  h+='<span style="flex:1;min-width:0;'+(r.done?'text-decoration:line-through':'')+'">'+(RM_KINDS[r.kind]||'\u{1F4CC}')+' '+esc(r.text);
+  if(r.subject) h+=' <span style="font-size:10.5px;font-weight:700;color:#0f766e;border:1px solid #0f766e55;border-radius:99px;padding:0 6px;white-space:nowrap">'+esc(rmSubjName(kid,r.subject))+'</span>';
+  if(r.book) h+=' <button onclick="rmOpenBook(\''+esc(r.book)+'\')" style="font-size:10.5px;font-weight:700;color:#7c3aed;border:1px solid #7c3aed55;border-radius:99px;padding:0 6px;background:#fff;cursor:pointer;white-space:nowrap">\u{1F4DA} book</button>';
+  h+='</span>';
+  if(!compact) h+='<button onclick="rmEditStart(\''+kid+'\',\''+esc(r.id)+'\')" style="flex:none;border:none;background:none;cursor:pointer;font-size:13px;padding:0 2px" title="Edit">✏️</button>';
+  h+='</div>';
+  return h;
+}
+function rmFormHTML(kid){
+  const f=rmEdit.form; const subs=(currData&&currData.subjects&&currData.subjects[kid])||{};
+  const inp='style="font:inherit;font-size:12.5px;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;background:#fff;font-family:\'DM Sans\',sans-serif"';
+  let h='<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px;margin:6px 0;background:#f8fafc;border:1.5px dashed #94a3b8;border-radius:10px">';
+  h+='<input type="date" value="'+esc(f.due)+'" oninput="rmSet(\'due\',this.value)" '+inp+'>';
+  h+='<select onchange="rmSet(\'kind\',this.value)" '+inp+'>'+Object.keys(RM_KINDS).map(function(k){ return '<option value="'+k+'"'+(k===f.kind?' selected':'')+'>'+RM_KINDS[k]+' '+k+'</option>'; }).join('')+'</select>';
+  h+='<select onchange="rmSet(\'subject\',this.value)" '+inp+'><option value="">(no subject)</option>'+Object.keys(subs).sort().map(function(sk){ return '<option value="'+esc(sk)+'"'+(sk===f.subject?' selected':'')+'>'+esc(rmSubjName(kid,sk))+'</option>'; }).join('')+'</select>';
+  h+='<input value="'+esc(f.text)+'" placeholder="What to do — e.g. Printing Power ends → add Cursive Tue/Thu 10" oninput="rmSet(\'text\',this.value)" '+inp.replace('style="','style="flex:1 1 260px;')+'>';
+  h+='<input value="'+esc(f.book)+'" placeholder="book id from 📚 Books (optional)" oninput="rmSet(\'book\',this.value)" '+inp.replace('style="','style="flex:1 1 160px;')+'>';
+  h+='<button onclick="rmSave()" style="padding:6px 12px;border-radius:8px;border:none;background:#111827;color:#fff;font-weight:800;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save</button>';
+  h+='<button onclick="rmCancel()" style="padding:6px 10px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancel</button>';
+  if(rmEdit.id) h+='<button onclick="rmDelete(\''+kid+'\',\''+esc(rmEdit.id)+'\')" style="margin-left:auto;padding:6px 10px;border-radius:8px;border:1.5px solid #fecaca;background:#fff;color:#b5394a;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif">Delete</button>';
+  h+='</div>';
+  return h;
+}
+// Mom HQ ▸ Curriculum — the per-kid strip (open items by date, finished folded, inline add/edit)
+function rmStripHTML(kid){
+  const iso=_todayStr(), L=rmList(kid), open=L.filter(function(r){ return !r.done; }), done=L.filter(function(r){ return r.done; });
+  const over=open.filter(function(r){ return rmState(r,iso)==="over"; }).length;
+  let h='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:10px 12px;margin:10px 0">';
+  h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-weight:800;font-size:13px">\u{1F4C5} Roadmap · '+cap(kid)+'</span>';
+  h+='<span style="font-size:11.5px;color:var(--muted)">'+open.length+' to do'+(over?' · <b style="color:#b5394a">'+over+' overdue</b>':'')+(done.length?' · '+done.length+' done':'')+'</span>';
+  h+='<span style="flex:1"></span><button onclick="rmNew(\''+kid+'\')" style="padding:4px 10px;border-radius:99px;border:1.5px solid var(--border);background:#fff;font-weight:800;font-size:11.5px;cursor:pointer;font-family:\'DM Sans\',sans-serif">➕ Add</button></div>';
+  if(rmEdit&&rmEdit.kid===kid&&!rmEdit.id) h+=rmFormHTML(kid);
+  if(!open.length&&!(rmEdit&&rmEdit.kid===kid)) h+='<div style="font-size:12px;color:var(--muted);padding:8px 0 2px">Nothing dated yet — add the next book change, pause, or swap with a date and it will remind you here and on My Day.</div>';
+  open.forEach(function(r){ h+=(rmEdit&&rmEdit.kid===kid&&rmEdit.id===r.id)?rmFormHTML(kid):rmRowHTML(kid,r,iso,false); });
+  if(done.length){
+    h+='<div style="margin-top:6px"><a href="#" onclick="rmShowDone[\''+kid+'\']=!rmShowDone[\''+kid+'\'];renderAll();return false" style="font-size:11.5px;color:var(--muted)">'+(rmShowDone[kid]?'Hide':'Show')+' '+done.length+' done</a></div>';
+    if(rmShowDone[kid]) done.slice().reverse().forEach(function(r){ h+=(rmEdit&&rmEdit.kid===kid&&rmEdit.id===r.id)?rmFormHTML(kid):rmRowHTML(kid,r,iso,false); });
+  }
+  h+='</div>';
+  return h;
+}
+// 📆 My Day — overdue + due this week, every kid; ✓ only (edits live in Mom HQ)
+function rmWeekHTML(iso){
+  const kids=(typeof ROSTER!=="undefined"&&ROSTER)?ROSTER:["lincoln","ellis","lucy","julian"];
+  let rows=[]; kids.forEach(function(kid){ rmList(kid).forEach(function(r){ const st=rmState(r,iso); if(st==="over"||st==="week") rows.push({kid:kid,r:r}); }); });
+  if(!rows.length) return "";
+  let h='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden;margin-bottom:12px">';
+  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#7c3aed;color:#fff;font-weight:800;font-size:13px"><span>\u{1F4C5}</span> Curriculum roadmap · this week <span style="margin-left:auto;font-weight:600;font-size:11.5px;opacity:.9">'+rows.length+' item'+(rows.length===1?'':'s')+'</span></div>';
+  h+='<div style="padding:6px 14px 10px">';
+  kids.forEach(function(kid){ const mine=rows.filter(function(x){ return x.kid===kid; }); if(!mine.length) return;
+    h+='<div style="font-size:11px;font-weight:800;color:'+((typeof KID_COLOR!=="undefined"&&KID_COLOR[kid])||"#333")+';margin-top:6px">'+cap(kid)+'</div>';
+    mine.forEach(function(x){ h+=rmRowHTML(kid,x.r,iso,true); }); });
+  h+='</div></div>';
+  return h;
+}
+function rmNew(kid){ if(!rmCanWrite()){ gwShowToast("Enter the Mom code first"); return; } rmEdit={kid:kid,id:null,form:{due:_todayStr(),text:"",kind:"add",subject:"",book:""}}; renderAll(); }
+function rmEditStart(kid,id){ if(!rmCanWrite()){ gwShowToast("Enter the Mom code first"); return; } const r=((roadmapData[kid]||{}).roadmap||{})[id]; if(!r) return; rmEdit={kid:kid,id:id,form:{due:r.due||"",text:r.text||"",kind:r.kind||"note",subject:r.subject||"",book:r.book||""}}; renderAll(); }
+function rmSet(k,v){ if(rmEdit) rmEdit.form[k]=v; }
+function rmCancel(){ rmEdit=null; renderAll(); }
+function rmSave(){
+  if(!rmEdit) return; if(!rmCanWrite()){ gwShowToast("Enter the Mom code first"); return; }
+  const kid=rmEdit.kid, f=rmEdit.form, due=String(f.due||"").trim(), text=String(f.text||"").replace(/\s+/g," ").trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(due)){ gwShowToast("Pick a date"); return; }
+  if(!text){ gwShowToast("Say what to do"); return; }
+  const prev=rmEdit.id?(((roadmapData[kid]||{}).roadmap||{})[rmEdit.id]||{}):{};
+  const id=rmEdit.id||(due.replace(/-/g,"")+"_"+Date.now().toString(36));
+  const rec={due:due,text:text,kind:RM_KINDS[f.kind]?f.kind:"note",done:prev.done||null,at:prev.at||_todayStr()};
+  if(String(f.subject||"").trim()) rec.subject=String(f.subject).trim();
+  if(String(f.book||"").trim()) rec.book=String(f.book).trim();
+  ((roadmapData[kid]=roadmapData[kid]||{}).roadmap=roadmapData[kid].roadmap||{})[id]=rec;
+  rmWrite("plans/"+kid+"/roadmap/"+id,rec,"set");
+  rmEdit=null; gwShowToast("\u{1F4C5} Saved for "+rmDateTxt(due)); renderAll();
+}
+function rmDone(kid,id){
+  if(!rmCanWrite()){ gwShowToast("Enter the Mom code first"); return; }
+  const r=((roadmapData[kid]||{}).roadmap||{})[id]; if(!r) return;
+  const v=r.done?null:Date.now(); r.done=v;
+  rmWrite("plans/"+kid+"/roadmap/"+id,{done:v},"update"); renderAll();
+}
+function rmDelete(kid,id){
+  if(!rmCanWrite()) return; if(!confirm("Delete this roadmap item?")) return;
+  const o=(roadmapData[kid]||{}).roadmap||{}; delete o[id];
+  rmWrite("plans/"+kid+"/roadmap/"+id,null,"remove"); rmEdit=null; renderAll();
+}
+// 📚 book chip → School Room ▸ Books, that book's sheet (library.js loads lazily; wait for it)
+function rmOpenBook(id){
+  if(typeof showTab!=="function") return; showTab("play"); if(typeof plSetSub==="function") plSetSub("books");
+  let n=0; const t=setInterval(function(){ n++; const T=window._lbTest; if(window.lbOpen&&T&&T.books&&T.books()){ clearInterval(t); window.lbOpen(id); } else if(n>60) clearInterval(t); },150);
+}
+// ROADMAP_END
 function renderCurriculumView(el,headerHtml){
   if(!adminPinUnlocked){
     el.innerHTML=(headerHtml||'')+'<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center">'+
@@ -12312,6 +12432,7 @@ function renderCurriculumView(el,headerHtml){
   h+='<button onclick="setAdminSub(\'generate\')" style="padding:5px 12px;border-radius:20px;border:none;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">Generate</button>';
   h+='</div>';
 
+  try{ h+=rmStripHTML(k); }catch(e){ console.error("[HA] roadmap",e); }
   h+='<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:700;margin:10px 0 4px">Scheduling Setup</div>';
 
   // Upload info
@@ -19196,6 +19317,7 @@ function calDaySheetHTML(iso,L,dinnerOf,who,opts){
   if(who&&!opts.noWork){
     const _ls=_calLessonsFor(who,iso);
     _ls.forEach(function(l){ rows++; h+='<div class="row"><span class="lbl">School</span><span style="flex:1">\u{1F4DA} <b>'+esc(l.name)+'</b> <span style="color:#6b7280">\u00b7 '+esc(l.text)+'</span></span></div>'; });
+    _calRoadmapFor(who,iso).forEach(function(r){ rows++; h+='<div class="row"><span class="lbl">Plan</span><span style="flex:1">\u{1F4C5} '+esc(r.text)+'</span></div>'; });
     // chores itemised with their stars; the routine lists fold to one line each
     const _ch=_calChoresFor(who,iso);
     const _bySlot={}; _ch.forEach(function(c){ (_bySlot[c.slot]=_bySlot[c.slot]||[]).push(c); });
