@@ -31,6 +31,11 @@ const LB_KALLAX_DEFAULT={rows:["A","B","C","D","E"],cols:[1,2,3,4,5],drawers:["C
   lanes:{B3:"PHONICS",B4:"PHONICS",B5:"THINKING",B1:"HISTORY",B2:"HISTORY",C1:"WRITING",C2:"WRITING",C4:"GATHER",C5:"GATHER",D1:"LITERATURE",D2:"LITERATURE",D4:"MATH",D5:"MATH",A5:"MINE",E1:"SCIENCE",E2:"SCIENCE",E4:"SCIENCE",E5:"ART"}};
 const LB_LANE_X={GATHER:["GATHER","The Gathering","#DAB162"],MINE:["MINE","Mom's reading","#B59878"]};   // sticker lanes that aren't book-subject lanes
 const LB_CUBE_CAP=25;
+// 📋 Packing list (2026-09-14, her "I will also need the plan and checklist so I know where to put all the books in
+// the order we already started"): library/plan = {order:[[cube,why]…], cubes:{cube:{lane,ids:[…in shelf order]}},
+// new:{id:{cube,where}}, done:[cubes], generated, note} — the FROZEN plan from the Kallax Reset (planSnapshot), seeded
+// once from the Mac. ✓ on a row = the book is now in that cube (one update of location); ✔ on a cube = cube finished.
+let lbPlanData=null, lbPlanOpen={};
 
 const LB_LANES=[
   ["PHONICS","Phonics · Spelling","#EDA1A1"],["WRITING","Writing · Grammar","#508D90"],
@@ -87,6 +92,7 @@ function lbLoad(root){
     db.ref("library/scans").once("value").then(l=>{lbScans=l.val()||{};lbDraw(root);}).catch(()=>{});
     db.ref("library/rules").once("value").then(l=>{lbRules=l.val()||null;}).catch(()=>{});
     db.ref("library/kallax").once("value").then(l=>{lbKallax=l.val()||null;if(lbMode==="map")lbDraw(root);}).catch(()=>{});
+    db.ref("library/plan").once("value").then(l=>{lbPlanData=l.val()||null;if(lbMode==="plan")lbDraw(root);}).catch(()=>{});
     // covers second, so the list shows up before ~4 MB of thumbnails arrive
     return db.ref("libraryPhotos").once("value").then(p=>{lbPhotos=p.val()||{};lbDraw(root);});
   }).catch(e=>{lbErr="Couldn't load the library ("+(e&&e.message||e)+").";lbLoading=false;lbDraw(root);});
@@ -123,9 +129,9 @@ function lbDraw(root){
   if(!lbBooks){root.innerHTML='<div class="lb-empty">Loading the library…</div>';return;}
   const hits=lbBooks.filter(lbMatch);
   const cnt=k=>lbBooks.filter(b=>lbLocKey(b)===k).length;
-  const modeBar='<div class="lb-modebar"><button class="lb-mode'+(lbMode==="list"?" on":"")+'" onclick="lbSetMode(\'list\')">☰ List</button><button class="lb-mode'+(lbMode==="map"?" on":"")+'" onclick="lbSetMode(\'map\')">🗺 Kallax</button></div>';
-  if(lbMode==="map"){
-    root.innerHTML='<div class="lb-top">'+modeBar+'</div>'+lbMapHTML()+'<div id="lb-sheet" onclick="if(event.target.id===\'lb-sheet\')lbClose()"><div class="lb-sh" id="lb-shbody"></div></div>';
+  const modeBar='<div class="lb-modebar"><button class="lb-mode'+(lbMode==="list"?" on":"")+'" onclick="lbSetMode(\'list\')">☰ List</button><button class="lb-mode'+(lbMode==="map"?" on":"")+'" onclick="lbSetMode(\'map\')">🗺 Kallax</button><button class="lb-mode'+(lbMode==="plan"?" on":"")+'" onclick="lbSetMode(\'plan\')">📋 Packing list</button></div>';
+  if(lbMode==="map"||lbMode==="plan"){
+    root.innerHTML='<div class="lb-top">'+modeBar+'</div>'+(lbMode==="map"?lbMapHTML():lbPlanHTML())+'<div id="lb-sheet" onclick="if(event.target.id===\'lb-sheet\')lbClose()"><div class="lb-sh" id="lb-shbody"></div></div>';
     if(lbNew)lbNewDraw(); else if(lbOpenId)lbOpen(lbOpenId);
     return;
   }
@@ -665,7 +671,68 @@ function lbWrapSave(){
 function lbClose(){lbOpenId=null;lbEdit=null;lbView=null;lbNew=null;lbRulesEdit=null;lbMoves=null;const s=document.getElementById("lb-sheet");if(s)s.classList.remove("open");}
 function lbSet(k,v){lbF[k]=v;if(k!=="show")lbF.show=60;lbDraw();}
 function lbReset(){Object.assign(lbF,{q:"",kid:"all",lane:"all",status:"all",loc:"all",cube:"",show:60});lbDraw();}
-function lbSetMode(m){lbMode=m==="map"?"map":"list";try{(typeof HA_LS!=="undefined"?HA_LS:localStorage).setItem("lb_mode",lbMode);}catch(e){}lbDraw();}
+function lbSetMode(m){lbMode=(m==="map"||m==="plan")?m:"list";try{(typeof HA_LS!=="undefined"?HA_LS:localStorage).setItem("lb_mode",lbMode);}catch(e){}lbDraw();}
+// ── 📋 Packing list — the frozen Reset plan as a checklist, in the order she started ──────────────
+function lbPlanRows(cube){const P=lbPlanData||{};const ids=((P.cubes||{})[cube]||{}).ids||[];return ids.map(id=>(lbBooks||[]).find(b=>b.id===id)).filter(Boolean);}
+function lbPlanInPlace(b,cube){return ((b.location||{}).kallax||"")===cube;}
+function lbPlanStats(){
+  const P=lbPlanData||{};let planned=0,inPlace=0;
+  Object.keys(P.cubes||{}).forEach(cu=>{lbPlanRows(cu).forEach(b=>{planned++;if(lbPlanInPlace(b,cu))inPlace++;});});
+  return {planned,inPlace,done:(P.done||[]).length,cubes:Object.keys(P.cubes||{}).length};
+}
+function lbPlanRowHTML(b,cube,why){
+  const ok=lbPlanInPlace(b,cube), st=LB_STATUS[b.status], rec=b.decision||b.recommendation;
+  return '<div class="lb-prow'+(ok?" ok":"")+'"><button class="lb-pbox" onclick="lbShelve(\''+esc(b.id)+'\',\''+cube+'\')" title="'+(ok?"In place":"Tap when it is in "+cube)+'">'+(ok?"✓":"")+'</button>'+
+    '<button class="lb-ptitle" onclick="lbOpen(\''+esc(b.id)+'\')">'+esc(b.title||b.id)+(why?' <span class="lb-pnew">new · '+esc(why)+'</span>':'')+'</button>'+
+    (ok?'':'<span class="lb-pnow">'+esc(lbLocText(b))+'</span>')+(rec&&rec!=="keep"?chip(rec,LB_REC[rec]||"#64748b"):"")+(st&&(b.status==="in-use"||b.status==="planned")?chip(st[0],st[1]):"")+'</div>';
+}
+function lbPlanHTML(){
+  const P=lbPlanData;
+  if(!P||!P.cubes)return '<div class="lb-empty">No packing list in the app yet — it is seeded once from the Kallax Reset plan.</div>';
+  const S=lbPlanStats(), done=P.done||[], K=lbKal();
+  let h='<div class="lb-map"><div class="lb-pstats"><b>'+S.inPlace+' of '+S.planned+'</b> books in their planned cube · <b>'+done.length+' of '+S.cubes+'</b> cubes finished'+(P.generated?' · plan from '+esc(P.generated):'')+'</div>';
+  if(P.note)h+='<div style="font-size:11.5px;color:var(--muted);margin:0 0 10px">'+esc(P.note)+'</div>';
+  h+='<div style="font-size:11.5px;color:var(--muted);margin:0 0 10px">In the order you started. ✓ a row when the book is in the cube · ✔ the cube when you are through it · tap a title to open it.</div>';
+  const order=(P.order||[]).map(o=>Array.isArray(o)?o:[o,""]);
+  const seen={}; order.forEach(o=>{seen[o[0]]=1;}); Object.keys(P.cubes).forEach(cu=>{if(!seen[cu])order.push([cu,""]);});
+  order.forEach(([cube,why])=>{
+    if(cube==="NEW"){
+      const N=Object.keys(P.new||{}).map(id=>({id,b:(lbBooks||[]).find(x=>x.id===id),m:P.new[id]})).filter(x=>x.b);
+      const inN=N.filter(x=>lbPlanInPlace(x.b,x.m.cube)).length;
+      const open=lbPlanOpen.NEW!==undefined?lbPlanOpen.NEW:inN<N.length;
+      h+='<div class="lb-pcube"><div class="lb-phead"><button class="lb-pfold" onclick="lbPlanOpen.NEW='+(!open)+';lbDraw()">'+(open?"▾":"▸")+'</button><b>📦 New arrivals</b><span class="lb-pwhy">'+esc(why||"logged after the plan was set — each shows its cube and the book to shelve it beside")+'</span><span style="flex:1"></span><span class="lb-pcount">'+inN+' / '+N.length+'</span></div>';
+      if(open)h+=N.map(x=>lbPlanRowHTML(x.b,x.m.cube,x.m.cube+(x.m.where?" · "+x.m.where:""))).join("")||'<div class="lb-pnone">None.</div>';
+      h+='</div>';return;
+    }
+    const rows=lbPlanRows(cube), inP=rows.filter(b=>lbPlanInPlace(b,cube)).length, isDone=done.indexOf(cube)>=0;
+    const lane=(P.cubes[cube]||{}).lane||K.lanes[cube]||"", li=lbLaneInfo(lane==="GATHERING"?"GATHER":lane);
+    const open=lbPlanOpen[cube]!==undefined?lbPlanOpen[cube]:(!isDone&&inP<rows.length);
+    h+='<div class="lb-pcube'+(isDone?" done":"")+'"><div class="lb-phead"><button class="lb-pfold" onclick="lbPlanOpen[\''+cube+'\']='+(!open)+';lbDraw()">'+(open?"▾":"▸")+'</button>'+
+      '<span class="lb-sw2" style="background:'+(li?li[2]:"#e2e8f0")+'"></span><b>'+cube+'</b>'+(li?'<span style="font-size:11px;font-weight:700;color:'+li[2]+'">'+esc(li[1])+'</span>':'')+(why?'<span class="lb-pwhy">'+esc(why)+'</span>':'')+
+      '<span style="flex:1"></span><span class="lb-pcount">'+inP+' / '+rows.length+'</span><button class="lb-tool'+(isDone?" on":"")+'" onclick="lbPlanDone(\''+cube+'\')">'+(isDone?"✔ done":"mark done")+'</button></div>';
+    if(open)h+=rows.map(b=>lbPlanRowHTML(b,cube,"")).join("")||'<div class="lb-pnone">Nothing planned here.</div>';
+    h+='</div>';
+  });
+  h+='</div>';
+  return h;
+}
+function lbShelve(id,cube){
+  const b=(lbBooks||[]).find(x=>x.id===id); if(!b)return;
+  if(!lbMomOk()){lbPin(()=>lbDraw());return;}
+  if(lbPlanInPlace(b,cube))return;   // already there — ✓ never un-shelves; move it with ✏️ Edit or 📍
+  const L={cart:null,tier:null,kallax:cube}; b.location=L;
+  try{db.ref("library/books/"+id).update({location:L});}catch(e){}
+  lbLog(id,["location","📋 packing list → "+cube]);
+  lbDraw();
+}
+function lbPlanDone(cube){
+  if(!lbPlanData)return; if(!lbMomOk()){lbPin(()=>lbDraw());return;}
+  const done=(lbPlanData.done||[]).slice(); const i=done.indexOf(cube); if(i>=0)done.splice(i,1); else done.push(cube);
+  lbPlanData.done=done; delete lbPlanOpen[cube];
+  try{db.ref("library/plan/done").set(done);}catch(e){}
+  lbLog("plan",["done",cube]);
+  lbDraw();
+}
 // ── 🗺 Kallax map — the 5×5 shelf, live from library/books locations; lane colours from the sticker plan ──
 function lbKal(){const k=lbKallax||{};const d=LB_KALLAX_DEFAULT;return {rows:k.rows||d.rows,cols:k.cols||d.cols,drawers:k.drawers||d.drawers,noBooks:k.noBooks||d.noBooks,lanes:k.lanes||d.lanes};}
 function lbLaneInfo(code){return LB_LANE[code]||LB_LANE_X[code]||null;}
@@ -790,6 +857,23 @@ const LB_CSS=`
 .lb-cubelist{display:flex;flex-direction:column;gap:4px;margin-top:8px}
 .lb-cuberow{display:flex;align-items:center;gap:8px;border:1px solid #f1f5f9;border-radius:8px;background:#fff;padding:6px 8px;font:inherit;font-size:12.5px;cursor:pointer;text-align:left}
 .lb-cuberow i{flex:none;width:6px;height:22px;border-radius:3px}
+.lb-pstats{font-size:13px;margin:0 0 6px}
+.lb-pcube{background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:8px 10px;margin-bottom:8px}
+.lb-pcube.done{opacity:.6}
+.lb-phead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}
+.lb-pfold{border:none;background:none;font-size:14px;cursor:pointer;padding:0 2px;color:var(--muted)}
+.lb-sw2{display:inline-block;width:10px;height:10px;border-radius:99px}
+.lb-pwhy{font-size:11px;color:var(--muted)}
+.lb-pcount{font-size:11.5px;font-weight:800;color:#334155}
+.lb-tool.on{background:#16a34a;color:#fff;border-color:#16a34a}
+.lb-prow{display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid #f1f5f9;font-size:12.5px}
+.lb-prow.ok .lb-ptitle{color:#94a3b8;text-decoration:line-through}
+.lb-pbox{flex:none;width:24px;height:24px;border-radius:7px;border:1.5px solid #94a3b8;background:#fff;cursor:pointer;font-size:14px;line-height:1;color:#16a34a;font-weight:900}
+.lb-prow.ok .lb-pbox{background:#16a34a;color:#fff;border-color:#16a34a}
+.lb-ptitle{flex:1;min-width:0;text-align:left;border:none;background:none;font:inherit;font-size:12.5px;cursor:pointer;color:#0f172a;padding:0}
+.lb-pnew{font-size:10.5px;font-weight:700;color:#7c3aed}
+.lb-pnow{font-size:10.5px;color:#b45309;white-space:nowrap}
+.lb-pnone{font-size:12px;color:var(--muted);padding:6px 0}
 `;
 
 window.renderLibrary=function(root){
@@ -801,10 +885,12 @@ window.lbEditStart=lbEditStart;window.lbEditSet=lbEditSet;window.lbEditSave=lbEd
 window.lbNewStart=lbNewStart;window.lbNewSet=lbNewSet;window.lbNewSave=lbNewSave;window.lbNewCancel=lbNewCancel;window.lbNewCover=lbNewCover;
 window.lbExport=lbExport;window.lbPhotoAdd=lbPhotoAdd;window.lbPhotoView=lbPhotoView;window.lbViewBack=lbViewBack;
 window.lbRulesOpen=lbRulesOpen;window.lbRulesSave=lbRulesSave;window.lbRulesCancel=lbRulesCancel;window.lbPlace=lbPlace;window.lbPlaceApply=lbPlaceApply;window.lbReshelve=lbReshelve;window.lbMoveApply=lbMoveApply;
-window.lbSetMode=lbSetMode;window.lbMapPick=lbMapPick;window.lbMapTile=lbMapTile;
+window.lbSetMode=lbSetMode;window.lbMapPick=lbMapPick;window.lbMapTile=lbMapTile;window.lbShelve=lbShelve;window.lbPlanDone=lbPlanDone;
+Object.defineProperty(window,"lbPlanOpen",{get:()=>lbPlanOpen});
 Object.defineProperty(window,"lbPlan",{get:()=>lbPlan});Object.defineProperty(window,"lbMoves",{get:()=>lbMoves,set:v=>{lbMoves=v;}});Object.defineProperty(window,"lbRulesEdit",{get:()=>lbRulesEdit,set:v=>{lbRulesEdit=v;}});
 window._lbTest={lbLane,lbLocKey,lbLocText,lbMatch,lbF,lbLessons,lbTpw,lbAddName,lbWrapSave,links:()=>lbLinks,scans:()=>lbScans,setScans:v=>{lbScans=v;},setData:(b,p)=>{lbBooks=b.map(x=>Object.assign(x,{_lane:lbLane(x),_hay:lbHay(x)}));lbPhotos=p||{};},
   lbFormFrom,lbRecordFrom,lbPatch,lbLocForm,lbLocFrom,lbSlug,lbNewId,lbExportData,lbPhotoList,books:()=>lbBooks,edit:()=>lbEdit,setEdit:v=>{lbEdit=v;},newState:()=>lbNew,setNew:v=>{lbNew=v;},setFull:(id,v)=>{lbFull[id]=v;},
   lbInTransit,lbOccupancy,lbBookLine,lbPlacePrompt,lbPlanLoc,lbPlanText,lbPlanHtml,plan:()=>lbPlan,setPlan:(id,v)=>{lbPlan[id]=v;},rules:()=>lbRules,setRules:v=>{lbRules=v;},moves:()=>lbMoves,
-  lbMapHTML,lbCubeHTML,lbCubeBooks,lbKal,mode:()=>lbMode,setKallax:v=>{lbKallax=v;}};
+  lbMapHTML,lbCubeHTML,lbCubeBooks,lbKal,mode:()=>lbMode,setKallax:v=>{lbKallax=v;},
+  lbPlanHTML,lbPlanStats,lbPlanRows,setPlan:v=>{lbPlanData=v;},planData:()=>lbPlanData};
 })();
