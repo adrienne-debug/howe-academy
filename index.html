@@ -28375,7 +28375,12 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
   });
   // Which days this kid has school cards on (for "push an extra to the next school day")
   const kidDays={}; (liveTasks||[]).forEach(t=>{ if(t&&t.who===kid&&!String(t.id||"").endsWith("_c")&&t.day) kidDays[t.day]=1; });
-  const nextSchoolDay=d=>{ const i=dayIx(d); for(let j=i+1;j<_RP_DAYS.length;j++){ if(kidDays[_RP_DAYS[j]]) return _RP_DAYS[j]; } return null; };
+  // 🏫 Days this SUBJECT may not land on this week even though the kid has school: a co-op day
+  // under the no-Mom rule, or a day Mom ✕'d it off. The generator already skips them; the diff's
+  // own landings (a push to the next school day, the whole-pattern re-lay) must too — live
+  // 2026-09-14: AAS with every day allowed was re-laid onto Tuesday's co-op at 4:43 PM.
+  const blockedD={}; (opts.blockedDays||[]).forEach(d=>{ blockedD[String(d||"").toLowerCase()]=1; });
+  const nextSchoolDay=d=>{ const i=dayIx(d); for(let j=i+1;j<_RP_DAYS.length;j++){ if(kidDays[_RP_DAYS[j]]&&!blockedD[_RP_DAYS[j]]) return _RP_DAYS[j]; } return null; };
   // Her rule (2026-08-18): a card that is EXTRA on TODAY (not replacing a freed slot) is not
   // squeezed into a day in progress — it goes to the next school day; if there is none this
   // week it is left for next week's build (the lesson isn't done, so it comes up first).
@@ -28432,6 +28437,7 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
     // subject (never via a card merely sitting there) — today's other cards stay put (no moving
     // goalposts) but still take up its room.
     if(carried.length&&opts.todayDay&&tIx>=0&&kidDays[opts.todayDay]&&(!allowed||allowed.indexOf(_abbr[opts.todayDay])>=0)) dayOk[opts.todayDay]=1; else delete dayOk[opts.todayDay];
+    Object.keys(blockedD).forEach(d=>{ delete dayOk[d]; });   // 🏫 never a landing day, even if a card sits there now
     const inPool=t=>isPlanCard(t)&&!locked(t)&&!t._eowOverflow&&(dayIx(t.day)>tIx||carriedIds[t.id]);
     const days=_RP_DAYS.filter(d=>(dayIx(d)>tIx||(d===opts.todayDay&&carried.length))&&dayOk[d]);
     const room={}; days.forEach(d=>{ room[d]=cap-after.filter(t=>isPlanCard(t)&&t.day===d&&!inPool(t)).length; });
@@ -28619,7 +28625,9 @@ function reprojectSubjectWeek(kid,sk,why,opts){
       // 🛤 a lane member on a borrowed / shared rhythm is judged by THAT rhythm's days and cap
       let _rpDays=_subj.allowedDays||[], _rpCap=_subj.cap||1;
       try{ if(typeof lnOf==="function"){ const _l=lnOf(kid,sk); if(_l){ const _rh=lnRhythm(kid,_l.id,_l.unitIdx); if(_rh&&!_rh.own){ _rpDays=_rh.allowedDays||[]; _rpCap=_rh.cap||1; } } } }catch(e){}
-      const r=_reprojectPlan(kid,sk,weekData.tasks,gen.result.tasks,{todayDay,nowMin:nowD.getHours()*60+nowD.getMinutes(),checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},dayCtx,packAround,toMin,fromMin,dayCap:_rpCap,lidOrder:_subj.lessonIds||[],allowedDays:_rpDays,doneLids:_doneLids,dropUnwanted:!!(opts&&opts.dropUnwanted)});
+      // 🏫 days this subject may not land on this week (co-op no-Mom rule, or ✕'d off for it)
+      const _blockedDays=[]; try{ if(typeof calDateForWeekDay==="function"&&typeof _ovRmX==="function"){ _RP_DAYS.forEach(function(d){ const ds=calDateForWeekDay(d,wn); if(ds&&_ovRmX(kid,ds,sk,false)) _blockedDays.push(d); }); } }catch(e){}
+      const r=_reprojectPlan(kid,sk,weekData.tasks,gen.result.tasks,{todayDay,nowMin:nowD.getHours()*60+nowD.getMinutes(),checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},dayCtx,packAround,toMin,fromMin,dayCap:_rpCap,lidOrder:_subj.lessonIds||[],allowedDays:_rpDays,doneLids:_doneLids,dropUnwanted:!!(opts&&opts.dropUnwanted),blockedDays:_blockedDays});
       const n=r.summary.added.length+r.summary.moved.length+r.summary.removed.length+r.summary.retitled.length+((r.summary.closing||[]).length)+((r.summary.shifted||[]).length);
       out=r.summary;
       if(!n) return;
