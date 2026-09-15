@@ -1403,6 +1403,7 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
 .gv tr.gv-off td{background:#fef2f2}
 .gv tr.gv-hol td{background:#fef3c7}
 .gv tr.gv-today td{background:#eff6ff}
+.gv tr.gv-satrow td{background:#fffbeb}
 .gv tr.gv-wkband td{background:var(--bg);font-weight:800;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;position:sticky;left:auto}
 .gv td.gv-overcap{color:#b5394a;font-weight:800}
 .gv .gv-badge{display:inline-block;font-size:8px;font-weight:800;padding:1px 5px;border-radius:8px;margin-left:4px;vertical-align:middle}
@@ -29659,6 +29660,35 @@ function renderCurrGrid(el){
   const _gvLostChips=function(wk){ const w=_wkLost[wk]; if(!w) return "";
     return Object.keys(w).map(function(sk2){ const ds=w[sk2]; const nm=(typeof coopNoMomBaseFor==="function"&&coopNoMomBaseFor(gvKid,ds[0]))||"co-op"; const shortNm=(typeof lnShort==="function")?lnShort((subs[sk2]||{}).display||sk2):String((subs[sk2]||{}).display||sk2);
       return ' <span class="gv-badge" title="'+esc(nm)+' — no Mom-required lessons on '+esc(ds.join(", "))+'; this sitting moved to the next open day" style="background:#f5f3ff;color:#6d28d9;text-transform:none;letter-spacing:0;font-weight:700">🏫 '+esc(shortNm)+' ×'+ds.length+'</span>'; }).join(""); };
+  // 🅢 SATURDAY ROW (her call 2026-09-15: "Saturday works just like it does — add a Saturday row when
+  // things park in the Saturday spot"). Saturday is the overflow day the generator and cascade
+  // already use (Settings ▸ Saturday rules); the Grid just never drew it. For each week: the
+  // active week's Saturday CARDS (weekData.tasks, this kid) and any ➕ make-up Mom added on that
+  // Saturday. Display only, read-only cells — the cards are the record; edit them on the Schedule.
+  const _satOfWeek={};   // week label → Saturday ISO (Monday of the week's first row + 5)
+  dayNums.forEach(function(dn2){ const l2=lessons[dn2]; if(!l2||!l2.date||!l2.week||_satOfWeek[l2.week]) return; const d2=gwParseDate(l2.date); d2.setDate(d2.getDate()-((d2.getDay()+6)%7)+5); _satOfWeek[l2.week]=d2.getFullYear()+"-"+String(d2.getMonth()+1).padStart(2,"0")+"-"+String(d2.getDate()).padStart(2,"0"); });
+  let _activeSat=null; try{ const yr=new Date().getFullYear(); const fd=(typeof DAY_DT!=="undefined"&&DAY_DT&&(DAY_DT.friday||DAY_DT.monday))?new Date((DAY_DT.friday||DAY_DT.monday)+", "+yr):null; if(fd&&!isNaN(fd.getTime())){ fd.setDate(fd.getDate()+(DAY_DT.friday?1:5)); _activeSat=fd.getFullYear()+"-"+String(fd.getMonth()+1).padStart(2,"0")+"-"+String(fd.getDate()).padStart(2,"0"); } }catch(e){}
+  const _satCards=function(iso){ if(!iso||iso!==_activeSat||typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return []; return weekData.tasks.filter(function(t){ return t&&t.who===gvKid&&t.day==="saturday"&&!String(t.id||"").endsWith("_c")&&!t._eowOverflow; }); };
+  const _gvSatRow=function(wk){
+    try{
+      const iso=wk&&_satOfWeek[wk]; if(!iso) return "";
+      if(iso<today&&!gvShowPast) return "";
+      const cards=_satCards(iso); const added=((((scheduleOverrides||{})[iso]||{})[gvKid]||{}).added)||{};
+      if(!cards.length&&!Object.keys(added).length) return "";
+      const bySk={}; cards.forEach(function(t){ (bySk[t.subjectKey]=bySk[t.subjectKey]||[]).push(t); });
+      const txt=function(t){ const r=(typeof taskLessonRef==="function"&&taskLessonRef(t))||String(t.title||""); const p=r.split(" — "); return p.length>1?p.slice(1).join(" — "):r; };
+      const d=gwParseDate(iso); let mins=0; cards.forEach(function(t){ mins+=(t.dur||20); });
+      let row='<tr class="gv-satrow"><td class="gv-fix" title="Saturday — the overflow day (Settings ▸ Saturday rules). These cards parked here; edit them on the Schedule."><b>Sat</b> '+(d.getMonth()+1)+'/'+d.getDate()+' <span class="gv-badge" style="background:#fef3c7;color:#92400e">overflow</span></td>';
+      row+='<td class="gv-min" title="'+mins+' min of parked cards">'+(mins||"")+'</td>';
+      for(const ck of cols){
+        const ms=_lnCols[ck]?(_lnCols[ck].members||[]):[ck]; let cell="";
+        ms.forEach(function(m){ (bySk[m]||[]).forEach(function(t){ cell+=(cell?'<br>':'')+((_lnCols[ck]&&ms.length>1)?'<span style="font-size:9px;font-weight:700;color:var(--muted)">'+esc((typeof lnShort==="function")?lnShort((subs[m]||{}).display||m):m)+' · </span>':'')+esc(txt(t))+(checked&&checked[t.id]?' <span class="gv-badge" style="background:#dcfce7;color:#15803d">&#10003; done</span>':''); });
+          if(added[m]!==undefined&&added[m]!==null&&added[m]!==false) cell+=(cell?'<br>':'')+'<span style="color:#15803d">+ '+(typeof added[m]==="string"?esc(added[m]):"make-up")+'</span><span class="gv-badge" style="background:#bbf7d0;color:#15803d">make-up</span>'; });
+        row+='<td style="background:#fffbeb">'+cell+'</td>';
+      }
+      return row+'</tr>';
+    }catch(e){ return ""; }
+  };
   let lastWk=null;
   for(const dn of dayNums){
     const l=lessons[dn]; if(!l||!l.date) continue;
@@ -29668,6 +29698,7 @@ function renderCurrGrid(el){
     _gvShown++;
     const d=gwParseDate(l.date);
     if(l.week!==lastWk){
+      h+=_gvSatRow(lastWk);   // 🅢 the week just finished gets its Saturday row, if anything parked there
       lastWk=l.week;
       h+='<tr class="gv-wkband"><td colspan="'+(2+cols.length)+'">'+esc(l.week||"")+_gvLostChips(l.week)+'</td></tr>';
     }
@@ -29799,6 +29830,7 @@ function renderCurrGrid(el){
     }
     h+='</tr>';
   }
+  h+=_gvSatRow(lastWk);   // 🅢 …and the last drawn week's
   h+='</tbody></table></div>';
   // Fill the header's day count now that the drawn range is known (see gvEnd above).
   try{ h=h.replace("__GV_DAYS__",String(_gvDaysIn)).replace("__GV_END__",(gvEnd&&_gvTrimmed>0)?(' · ends '+esc(formatPlanDate(gvEnd))+' with the last planned lesson'):''); }

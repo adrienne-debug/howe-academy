@@ -250,6 +250,33 @@ console.log("\n── 🏫 the week band records what a co-op day blocked (2026-
   ok("no co-op → no chips anywhere", !/🏫 /.test(render(world({}))));
 }
 
+console.log("\n── 🅢 a Saturday row appears where cards parked (2026-09-15) ──");
+{
+  const c = world();
+  ok("no Saturday cards → no Saturday row", !/gv-satrow/.test(render(c)));
+  c.DAY_DT = { monday: "September 14", friday: "September 18" };   // the active week is Wk 2 (9/14–9/18)
+  c.weekData.tasks = [{ id: "sat1", who: "kid", subjectKey: "plain", day: "saturday", time: "10:00 AM", dur: 20, title: "\u{1F4C4} Plain \u2014 Plain L3" },
+                      { id: "sat2", who: "kid", subjectKey: "s3b", day: "saturday", time: "10:30 AM", dur: 25, title: "\u{1F4C4} Singapore 3B \u2014 Singapore 3B L3" }];
+  const h = render(c);
+  const rows = h.match(/<tr class="gv-satrow">[\s\S]*?<\/tr>/g) || [];
+  ok("exactly one Saturday row (the active week's)", rows.length === 1, rows.length);
+  ok("it sits after Wk 2's Friday and before the Wk 3 band", (() => { const i = h.indexOf('gv-satrow'); const f = h.indexOf('id="gv-c-' + c._dns.find(dn => c._lessons[dn].date === "2026-09-18")); const b = h.indexOf('>Wk 3'); return f > 0 && i > f && (b < 0 || i < b); })());
+  ok("it is dated Sat 9/19 and labelled overflow", /<b>Sat<\/b> 9\/19/.test(rows[0]) && /overflow/.test(rows[0]));
+  ok("Plain's cell shows its parked lesson", /Plain L3/.test(rows[0]));
+  ok("the lane column shows its member's parked lesson", /Singapore 3B L3/.test(rows[0]));
+  ok("minutes add up (45)", />45<\/td>/.test(rows[0]), rows[0].match(/gv-min[^>]*>[^<]*</)[0]);
+  ok("cells are read-only (no cell tap)", !/gv-satrow[\s\S]*?gvOpenCell/.test(rows[0]));
+  c.checked = { sat1: "x" };
+  ok("a checked parked card shows done", /Plain L3 <span[^>]*>&#10003; done/.test(render(c)));
+}
+{
+  // a make-up Mom added on a Saturday shows on that week's row even with no cards yet
+  const c = world();
+  c.scheduleOverrides = { "2026-09-26": { kid: { added: { plain: true } } } };
+  const h = render(c);
+  ok("a ➕ make-up on Wk 3's Saturday draws that Saturday row with the make-up chip", /<b>Sat<\/b> 9\/26[\s\S]*?make-up/.test((h.match(/<tr class="gv-satrow">[\s\S]*?<\/tr>/g) || [""])[0]));
+}
+
 console.log("\n── wiring ──");
 {
   const g = src.indexOf("function renderCurrGrid"); const grid = src.slice(g, g + 70000);
