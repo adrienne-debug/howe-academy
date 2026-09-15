@@ -42,6 +42,11 @@ console.log("── un-pinning the last day means ANY day, not the old string �
 {
   const w = world({ display: "Never built", days: "Mon,Wed" });
   ok("a never-pinned subject still gets its legacy days as the form's fallback", eq(w.api.cbDefaultForm("lincoln", "aas").allowedDays, ["Mon", "Wed"]));
+}console.log("\n── the Rebuild itself retires the string (the form chips are the day set) ──");
+{
+  ok("cbApply writes days:null alongside allowedDays", /up\["subjects\/"\+kid\+"\/"\+sk\+"\/allowedDays"\]=cbForm\.allowedDays;[\s\S]{0,700}up\["subjects\/"\+kid\+"\/"\+sk\+"\/days"\]=null;/.test(src));
+  ok("…and snapshots it for undo", /snap\("subjects\/"\+kid\+"\/"\+sk\+"\/days",s\.days\);/.test(src));
 }
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
