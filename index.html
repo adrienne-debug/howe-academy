@@ -2319,6 +2319,7 @@ let nbActivities={}; try{ const _na=HA_LS.getItem("ha_nb_activities"); if(_na) n
 // Per-kid, per-week reading STORIES (passage + comprehension Qs), synced. Generated offline (key
 // stays off the public app) or later by a server proxy; the app just reads {kid:{weekN:{...}}}.
 let notebookStories={}; try{ const _ns=HA_LS.getItem("ha_nb_stories"); if(_ns) notebookStories=JSON.parse(_ns); }catch(e){}
+let notebookBooks={};        // notebookBooks/<id> = Daily Grams book meta (title, kid, days, ansPages, dayAns) — page images are fetched on demand, never at boot
 let _nbColoringPdfPromise=null; // lazy pdf.js loader (used to rasterize pages on upload)
 let scheduleOverrides={}; // {dateStr:{kid:{dayOff:true, removed:{sk:true}, added:{sk:true}}}} — manual Lesson Map edits
 let calAddMode=null; // null | "holiday" | "vacation" | "override" | "event"
@@ -2969,6 +2970,10 @@ function initFb() {
     db.ref("brainBreakSettings").on("value",s=>{
       bbSettings=s.val()||{};
       try{HA_LS.setItem("ha_bb_settings",JSON.stringify(bbSettings));}catch(e){}
+    });
+    db.ref("notebookBooks").on("value",s=>{
+      notebookBooks=s.val()||{};
+      if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);}
     });
     db.ref("notebookActivities").on("value",s=>{
       const v=s.val()||{};
@@ -18450,10 +18455,12 @@ function haNbContext(kid){
   }catch(e){}
   // Julian only: Mom's hand-picked slots for THIS week (see nbJuPicks). Absent = pure engine.
   let juPicks=null; try{ if(kid==="julian") juPicks=nbJuPicks(tgtWk); }catch(e){}
-  return { weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, letterCursor:((((notebookSettings||{}).julian)||{}).letterCursor)||null, masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true };
+  let dailyGrams=null; try{ dailyGrams=nbDgCtx(kid); }catch(e){}
+  return { dailyGrams:dailyGrams, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, letterCursor:((((notebookSettings||{}).julian)||{}).letterCursor)||null, masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true };
 }
-function haNbOpen(kid,which){
+async function haNbOpen(kid,which){
   const lib=window.HoweNotebooks; if(!lib){ alert("Notebook builder not loaded yet."); return; }
+  try{ await nbDgPrefetch(kid); }catch(e){}   // Daily Grams pages for this week (usually already warm from the tab render)
   try{
     const out=lib.generate(kid, haNbContext(kid));
     if(out&&out.warnings&&out.warnings.length) alert("⚠ "+cap(kid)+"'s notebook:\n\n"+out.warnings.join("\n\n"));   // e.g. a shape with no drawing
@@ -18461,6 +18468,7 @@ function haNbOpen(kid,which){
     // instead of re-deriving from the (growing) bank size — the growth kept rewinding
     // his letters to A B C D E (2026-08-24). Same-week reprints write the same value.
     if(kid==="julian"&&out&&out.letterCursor){ try{ const lc=(((notebookSettings||{}).julian)||{}).letterCursor||{}; const nc=out.letterCursor; if(lc.week!==nc.week||lc.idx!==nc.idx||lc.adv!==nc.adv) db.ref("notebookSettings/julian/letterCursor").set(nc); }catch(e){} }
+    nbDgPersistCursor(kid,out);   // Daily Grams: where this week landed, so next week continues
     const html=(which==="parent")?(out.parent||out.student):out.student;
     const fname=kid+"_"+nbTargetWk()+"_"+(which==="parent"?"parent":"notebook")+".html";
     lib.openHtml(html, fname);
@@ -18474,6 +18482,7 @@ async function haNbPdf(kid,which){
   if(_haNbPdfBusy){ if(typeof gwShowToast==="function") gwShowToast("A PDF is already being built — one moment."); return; }
   _haNbPdfBusy=true;
   const say=m=>{ if(typeof gwShowToast==="function") gwShowToast(m); };
+  try{ await nbDgPrefetch(kid); }catch(e){}
   try{
     const out=lib.generate(kid, haNbContext(kid));
     if(out&&out.warnings&&out.warnings.length) alert("⚠ "+cap(kid)+"'s notebook:\n\n"+out.warnings.join("\n\n"));   // e.g. a shape with no drawing
@@ -18481,6 +18490,7 @@ async function haNbPdf(kid,which){
     // instead of re-deriving from the (growing) bank size — the growth kept rewinding
     // his letters to A B C D E (2026-08-24). Same-week reprints write the same value.
     if(kid==="julian"&&out&&out.letterCursor){ try{ const lc=(((notebookSettings||{}).julian)||{}).letterCursor||{}; const nc=out.letterCursor; if(lc.week!==nc.week||lc.idx!==nc.idx||lc.adv!==nc.adv) db.ref("notebookSettings/julian/letterCursor").set(nc); }catch(e){} }
+    nbDgPersistCursor(kid,out);
     const html=(which==="parent")?(out.parent||out.student):out.student;
     const fname=kid+"_"+nbTargetWk()+"_"+(which==="parent"?"parent":"notebook")+".pdf";
     say("📄 Building "+cap(kid)+"'s PDF…");
@@ -18490,8 +18500,9 @@ async function haNbPdf(kid,which){
   finally{ _haNbPdfBusy=false; }
 }
 // One printable packet merging ALL kids' parent guides (in-app combine_parent_docs).
-function haNbCombinedParent(){
+async function haNbCombinedParent(){
   const lib=window.HoweNotebooks; if(!lib||!lib.combinedParent){ alert("Combined parent guide needs the latest builder — reload the page and try again."); return; }
+  try{ await Promise.all(["lincoln","ellis","lucy","julian"].map(k=>nbDgPrefetch(k).catch(()=>{}))); }catch(e){}
   try{
     const ctxByKid={}; ["lincoln","ellis","lucy","julian"].forEach(k=>{ try{ ctxByKid[k]=haNbContext(k); }catch(e){} });
     const html=lib.combinedParent(ctxByKid);
@@ -22284,6 +22295,73 @@ function nbXpSave(kid,key,cfg){
   try{ if(typeof db!=="undefined"&&db) db.ref("notebookSettings/"+kid+"/extraPages/"+key).set(cfg); }catch(e){}
   if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
 }
+// ── Daily Grams — a workbook page per school day printed INTO the notebook ─────────────────
+// notebookSettings/<kid>/dailyGrams = { book:"dailyGrams4", on:true, cursor:{week,day,adv} }.
+// Book meta is notebookBooks/<book> (small, listened to above). Page images are data URIs at
+// notebookBookPages/<book>/day/<n> and /ans/<pdfPage> (~50–70 KB each) — fetched one at a time
+// for the target week right before a print and cached for the session, never pulled at boot.
+// Data URIs rather than Storage URLs on purpose: Storage sends no CORS header, so html2canvas
+// (📄 PDF) would drop them (see the workbooks note below); an inline image rasterises fine.
+// OFF until Mom flips it on in the Notebook tab, so a deploy changes nothing by itself.
+function nbDgDefaultBook(kid){ const ks=Object.keys(notebookBooks||{}); return ks.find(k=>(notebookBooks[k]||{}).kid===kid)||""; }
+function nbDgCfg(kid){ const c=(((notebookSettings||{})[kid]||{}).dailyGrams)||{}; const book=c.book||nbDgDefaultBook(kid); return { book:book, on:!!book&&c.on===true, cursor:c.cursor||null }; }
+function nbDgSave(kid,key,val){
+  if(!notebookSettings[kid]) notebookSettings[kid]={};
+  if(!notebookSettings[kid].dailyGrams) notebookSettings[kid].dailyGrams={};
+  notebookSettings[kid].dailyGrams[key]=val;
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db) db.ref("notebookSettings/"+kid+"/dailyGrams/"+key).set(val); }catch(e){}
+  if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
+}
+function nbDgToggle(kid){ if(!momHere()) return; nbDgSave(kid,"on",!nbDgCfg(kid).on); }
+// school days in the target week (a holiday week has fewer keys in its dates map)
+function nbDgWeekLen(){ try{ const ov=nbWeekOverride; const n=Object.keys(ov?(ov.dates||{}):DAY_DT).length; return n||5; }catch(e){ return 5; } }
+function nbDgTotal(kid){ const m=notebookBooks[nbDgCfg(kid).book]||{}; return parseInt(m.days,10)||180; }
+// first Day of the target week, from the stored cursor (notebooks.js owns the rule)
+function nbDgStartFor(kid){ const c=nbDgCfg(kid); const lib=window.HoweNotebooks; return (lib&&lib.dgStart)?lib.dgStart(c.cursor,nbTargetWkNum(),nbDgTotal(kid)):1; }
+// Mom: "this week starts at Day N" → one cursor for the TARGET week; every later week continues from it.
+function nbDgSetStart(kid,day){
+  if(!momHere()) return;
+  day=Math.max(1,Math.min(nbDgTotal(kid),parseInt(day,10)||1));
+  nbDgSave(kid,"cursor",{week:nbTargetWkNum(),day:day,adv:nbDgWeekLen()});
+}
+function nbDgStep(kid,delta){ nbDgSetStart(kid,nbDgStartFor(kid)+delta); }
+// after a print: remember where this week landed so next week continues (same-week reprints write the same value)
+function nbDgPersistCursor(kid,out){
+  try{
+    if(!out||!out.dailyGramsCursor) return;
+    const cur=nbDgCfg(kid).cursor||{}, nc=out.dailyGramsCursor;
+    if(cur.week===nc.week&&cur.day===nc.day&&cur.adv===nc.adv) return;
+    if(!notebookSettings[kid]) notebookSettings[kid]={};
+    if(!notebookSettings[kid].dailyGrams) notebookSettings[kid].dailyGrams={};
+    notebookSettings[kid].dailyGrams.cursor=nc;
+    try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+    db.ref("notebookSettings/"+kid+"/dailyGrams/cursor").set(nc);
+  }catch(e){}
+}
+let nbBookPageCache={};   // { <book>: { day:{n:dataUri}, ans:{pdfPage:dataUri} } } — session only
+async function nbDgPrefetch(kid){
+  const c=nbDgCfg(kid); if(!c.on||!c.book) return;
+  const meta=notebookBooks[c.book]; if(!meta||typeof db==="undefined"||!db) return;
+  const start=nbDgStartFor(kid), n=nbDgWeekLen(), tot=parseInt(meta.days,10)||180;
+  const want=[];
+  for(let i=0;i<n;i++){
+    const d=start+i; if(d>tot) break;
+    want.push(["day",d]);
+    let ps=(meta.dayAns||{})[d]||[]; if(!Array.isArray(ps)) ps=Object.values(ps);
+    ps.forEach(p=>{ if(p!=null) want.push(["ans",p]); });
+  }
+  const cache=nbBookPageCache[c.book]=nbBookPageCache[c.book]||{day:{},ans:{}};
+  await Promise.all(want.map(async([kind,k])=>{
+    if(cache[kind][k]) return;
+    try{ const s=await db.ref("notebookBookPages/"+c.book+"/"+kind+"/"+k).once("value"); const v=s.val(); if(typeof v==="string"&&v) cache[kind][k]=v; }catch(e){}
+  }));
+}
+function nbDgCtx(kid){
+  const c=nbDgCfg(kid); if(!c.on||!c.book) return null;
+  const meta=notebookBooks[c.book]||{}; const cache=nbBookPageCache[c.book]||{day:{},ans:{}};
+  return { book:c.book, title:meta.title||"Daily Grams", total:parseInt(meta.days,10)||180, cursor:c.cursor, ansMeta:meta.ansPages||{}, dayAns:meta.dayAns||{}, pages:cache };
+}
 // ── Unit-insert day assignment ─────────────────────────────────────────────────
 // notebookSettings[kid].unitDays[unitId] = {monday:true,…}. Mirrors extraPages.days: the unit's
 // pages print regardless (that's the unit's own nbInsert flag) — a day only adds the "📌 Pages to
@@ -24017,6 +24095,7 @@ function renderNotebook(el){
   const wkLabel=String(nbTargetWk()).replace("week","Week ");
   const sel=NB_KIDS.find(x=>x.k===nbSelectedKid)?nbSelectedKid:"lincoln";
   const meta=NB_KIDS.find(x=>x.k===sel);
+  try{ nbDgPrefetch(sel).catch(()=>{}); }catch(e){}   // warm this week's Daily Grams pages so Generate opens without a wait
   const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
   const chips=NB_KIDS.map(x=>{
     const on=x.k===sel;
@@ -24192,6 +24271,35 @@ function renderNotebook(el){
         rows+'</div>';
     }catch(e){ juPlanHtml='<div style="margin-top:14px;font-size:11px;color:var(--muted)">Week plan unavailable ('+String(e.message||e)+').</div>'; }
   }
+  // 📝 Daily Grams — Mom-gated per-kid card (only when a book exists for this kid): on/off + which
+  // Day the target week starts on. It advances one Day per school day on its own after that.
+  let dgHtml="";
+  const dgCfg=nbDgCfg(sel), dgMeta=dgCfg.book?(notebookBooks[dgCfg.book]||null):null;
+  if(momHere() && dgMeta){
+    const tot=parseInt(dgMeta.days,10)||180, start=nbDgStartFor(sel), n=nbDgWeekLen(), end=Math.min(tot,start+n-1), on=dgCfg.on;
+    const stepBtn=(delta,label,off)=>'<button onclick="nbDgStep(\''+sel+'\','+delta+')" '+(off?'disabled ':'')+'style="width:30px;height:30px;border-radius:8px;border:1.5px solid #fed7aa;background:'+(off?'#fafafa':'#fff')+';color:'+(off?'#d1d5db':'#9a3412')+';font-size:17px;font-weight:800;cursor:'+(off?'default':'pointer')+';font-family:\'DM Sans\',sans-serif;line-height:1">'+label+'</button>';
+    dgHtml='<div style="margin-top:14px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;padding:12px 14px">'+
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:2px">'+
+        '<button onclick="nbDgToggle(\''+sel+'\')" title="'+(on?'On — tap to turn off':'Off — tap to turn on')+'" style="width:34px;height:20px;border-radius:20px;border:none;background:'+(on?'#16a34a':'#d1d5db')+';position:relative;cursor:pointer;flex-shrink:0;padding:0"><span style="position:absolute;top:2px;'+(on?'right:2px':'left:2px')+';width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25)"></span></button>'+
+        '<div style="font-size:12px;font-weight:800;color:#9a3412">📝 '+esc(dgMeta.title||"Daily Grams")+' <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#fed7aa;color:#7c2d12;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span></div>'+
+      '</div>'+
+      '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:'+(on?'10px':'0')+'">One workbook page prints right after each daily page; the answer key for those days prints at the end of the Parent book. It moves ahead one Day per school day on its own — change it only if he skips ahead or falls behind.</div>'+
+      (on?(
+        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+          '<span style="font-size:12px;font-weight:700;color:#1f2937">'+wkLabel+' prints</span>'+
+          '<span style="display:inline-flex;align-items:center;gap:8px;margin-left:auto">'+
+            stepBtn(-1,'−',start<=1)+
+            '<span style="font-size:15px;font-weight:800;color:#9a3412;min-width:96px;text-align:center">'+(start>tot?'past the end':('Day '+start+(end>start?'–'+end:'')))+'</span>'+
+            stepBtn(1,'+',start>=tot)+
+          '</span>'+
+        '</div>'+
+        '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:11px;color:var(--muted)">Start '+wkLabel+' at Day '+
+          '<input type="number" min="1" max="'+tot+'" value="'+start+'" onchange="nbDgSetStart(\''+sel+'\',this.value)" style="width:64px;padding:5px 7px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif">'+
+          '<span>of '+tot+'</span></div>'+
+        (start>tot?'<div style="font-size:10.5px;color:#b91c1c;margin-top:6px">Past the last page — nothing prints until you set an earlier Day.</div>':'')
+      ):'')+
+    '</div>';
+  }
   // ½" prong margin — Mom-gated GLOBAL toggle (all kids' notebooks + parent docs).
   let bindHtml="";
   if(momHere()){
@@ -24264,6 +24372,7 @@ function renderNotebook(el){
         formHtml+
         xpHtml+
         reviewHtml+
+        dgHtml+
         juPlanHtml+
         storyHtml+
         coloringHtml+

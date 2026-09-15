@@ -250,6 +250,103 @@
       '<span style="font-size:12px;">📌</span><span><b>' + head + '</b> ' + items + ' — find them in this notebook and do them!</span></div>';
   }
 
+  // ── Daily Grams (Easy Grammar) — one workbook page per school day printed straight into the
+  // notebook after that day's page; the answer-key page(s) covering those days print at the end
+  // of the parent book. The app passes ctx.dailyGrams:
+  //   { book, title, total, cursor:{week,day,adv}|null,
+  //     ansMeta:{ "<pdfPage>":{first,last,cont} },   // which Days each key page holds
+  //     dayAns:{ "<day>":[pdfPage,…] },              // Day → its key page(s)
+  //     pages:{ day:{ "<n>":dataUri }, ans:{ "<pdfPage>":dataUri } } }   // only this week's, prefetched
+  // Cursor rule (same idea as Julian's letters): the app stores {week, day, adv} after each print —
+  // `day` = the first Day printed for `week`, `adv` = how many school days that week had. Later
+  // weeks continue from day+adv (+5 per unprinted week in between); reprinting the stored week
+  // reuses the same start; an earlier week walks back 5 per week. Mom's "starts at Day N" control
+  // just writes a cursor for the target week, so from there it advances on its own — a 4-day week
+  // advances 4, never skipping a page.
+  function dgStart(cursor, wk, total) {
+    wk = parseInt(String(wk).replace(/\D/g, ""), 10) || 1;   // accepts 24 or "week24"
+    if (!cursor || cursor.day == null) return 1;
+    var cw = parseInt(cursor.week, 10), d = parseInt(cursor.day, 10), adv = (cursor.adv == null) ? 5 : parseInt(cursor.adv, 10);
+    if (!(cw > 0) || isNaN(d)) return 1;
+    if (isNaN(adv) || adv < 0) adv = 5;
+    var s;
+    if (wk === cw) s = d;
+    else if (wk > cw) s = d + adv + 5 * (wk - cw - 1);
+    else s = d - 5 * (cw - wk);
+    return Math.max(1, s);
+  }
+  // The week's plan: which Day lands on each school day, the key pages those days need, the
+  // cursor to store, and any warnings. Days past the end of the book simply don't print.
+  function dgWeekPlan(dg, wk, orderedDays, datesMap) {
+    if (!dg || !dg.book) return null;
+    var total = parseInt(dg.total, 10) || 180;
+    var start = dgStart(dg.cursor, wk, total);
+    var pages = dg.pages || {}, dayImgs = pages.day || {}, ansImgs = pages.ans || {};
+    var dayAns = dg.dayAns || {}, ansMeta = dg.ansMeta || {};
+    var days = [], byDay = {}, ansSet = {}, warnings = [];
+    orderedDays.forEach(function (day, i) {
+      var n = start + i; if (n > total) return;
+      var rec = { day: day, date: (datesMap || {})[day] || "", n: n, url: dayImgs[n] || dayImgs[String(n)] || "" };
+      days.push(rec); byDay[day] = rec;
+      var ps = dayAns[n] || dayAns[String(n)] || [];
+      (Array.isArray(ps) ? ps : Object.values(ps)).forEach(function (p) { if (p != null) ansSet[p] = 1; });
+    });
+    var ans = Object.keys(ansSet).map(Number).sort(function (a, b) { return a - b; }).map(function (p) {
+      var m = ansMeta[p] || ansMeta[String(p)] || {};
+      return { page: p, first: m.first, last: m.last, url: ansImgs[p] || ansImgs[String(p)] || "" };
+    });
+    if (days.length < orderedDays.length) warnings.push((dg.title || "Daily Grams") + ": Day " + total + " is the last page — " + (orderedDays.length - days.length) + " day" + (orderedDays.length - days.length > 1 ? "s" : "") + " this week print no Daily Grams page.");
+    var missing = days.filter(function (d) { return !d.url; }).map(function (d) { return d.n; });
+    if (missing.length) warnings.push((dg.title || "Daily Grams") + ": no page image loaded for Day " + missing.join(", ") + " — a placeholder prints instead.");
+    var missA = ans.filter(function (a) { return !a.url; }).map(function (a) { return a.page; });
+    if (missA.length) warnings.push((dg.title || "Daily Grams") + ": answer-key page " + missA.join(", ") + " not loaded — a placeholder prints in the parent book.");
+    return { start: start, days: days, byDay: byDay, ans: ans, cursor: { week: wk, day: start, adv: orderedDays.length }, warnings: warnings };
+  }
+  var DG_THEMES = {
+    ellis:   { accent: "#C41E1E", ink: "#0A1628", muted: "#5b6b82", font: "'Orbitron',sans-serif", bg: "#fdf2f2" },
+    lincoln: { accent: "#2d6a4f", ink: "#1a3a2a", muted: "#6b7280", font: "'Fraunces',serif",     bg: "#f2faf5" }
+  };
+  function dgTheme(kid) { return DG_THEMES[kid] || DG_THEMES.ellis; }
+  function dgStripHtml(t, left, right) {
+    return '<div style="flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:2px solid ' + t.accent + ';padding:0 2px 5px;">' +
+      '<div style="font-family:' + t.font + ';font-size:12px;font-weight:700;color:' + t.ink + ';letter-spacing:0.03em;">' + left + '</div>' +
+      '<div style="font-family:' + t.font + ';font-size:8.5px;font-weight:600;color:' + t.muted + ';letter-spacing:0.08em;text-transform:uppercase;text-align:right;">' + right + '</div>' +
+    '</div>';
+  }
+  function dgImgHtml(t, url, alt, fallback) {
+    if (url) return '<img src="' + url + '" alt="' + alt + '" style="max-width:100%;max-height:100%;object-fit:contain;display:block;"/>';
+    return '<div style="width:100%;height:100%;border:2px dashed ' + t.accent + ';border-radius:8px;display:flex;align-items:center;justify-content:center;text-align:center;padding:30px;font-family:' + t.font + ';font-size:12px;color:' + t.muted + ';line-height:1.5;">' + fallback + '</div>';
+  }
+  // Inner wrapper carries the padding (Lincoln's shell forces .page padding:0).
+  function dgSheet(label, inner) {
+    return '<div class="page-label">' + label + '</div>\n' +
+      '<div class="page" style="background:#fff;">' +
+        '<div style="flex:1;min-height:0;display:flex;flex-direction:column;padding:0.25in 0.3in 0.2in;box-sizing:border-box;height:100%;">' + inner + '</div>' +
+      '</div>';
+  }
+  function dgStudentPage(kid, d, wk, title) {
+    var t = dgTheme(kid);
+    return dgSheet(title + " — Day " + d.n + " · " + cap(d.day),
+      dgStripHtml(t, "📝 " + title + " · <span style='color:" + t.accent + ";'>Day " + d.n + "</span>", cap(d.day) + (d.date ? " · " + d.date : "") + " · Week " + wk) +
+      '<div style="flex:1;min-height:0;display:flex;justify-content:center;align-items:flex-start;margin-top:6px;">' +
+        dgImgHtml(t, d.url, title + " Day " + d.n, title + "<br>Day " + d.n + "<br><span style='font-size:10px;'>page image not loaded — do this Day in the book</span>") +
+      '</div>');
+  }
+  function dgAnswerPage(kid, a, plan, wk, title) {
+    var t = dgTheme(kid);
+    var span = (a.first != null && a.last != null) ? ("Days " + a.first + "–" + a.last) : ("key page " + a.page);
+    var week = plan.days.length ? ("this week: Day " + plan.days[0].n + (plan.days.length > 1 ? "–" + plan.days[plan.days.length - 1].n : "")) : "";
+    return dgSheet(title + " — Answer key · " + span,
+      dgStripHtml(t, "🔑 " + title + " · <span style='color:" + t.accent + ";'>Answer key · " + span + "</span>", week + " · Week " + wk + " · Parent only") +
+      '<div style="flex:1;min-height:0;display:flex;justify-content:center;align-items:flex-start;margin-top:6px;">' +
+        dgImgHtml(t, a.url, title + " answer key " + span, title + " answer key<br>" + span + "<br><span style='font-size:10px;'>page image not loaded — the key is in the back of the book</span>") +
+      '</div>');
+  }
+  function dgAnswerPagesHtml(kid, plan, wk, title) {
+    if (!plan || !plan.ans.length) return "";
+    return plan.ans.map(function (a) { return dgAnswerPage(kid, a, plan, wk, title); }).join("\n\n");
+  }
+
   var JU_REVIEW_CAP = 2;  // max review slots folded into Julian's week per subject
 
   var JU_COLOR_HEX = {
@@ -2538,6 +2635,7 @@ ${extraStrip || ""}
     var bank3 = slotBanks[cfg.prep_slot_3] || LINCOLN_DATA.banks.conventions;
 
     var dailyPages = [], dayAssignments = [];
+    var dgPlan = dgWeekPlan(ctx.dailyGrams, wn, schoolDays, datesMap), dgTitle = (ctx.dailyGrams && ctx.dailyGrams.title) || "Daily Grams";
     schoolDays.forEach(function (day, i) {
       var dateStr = datesMap[day];
       var daySubjects = lnDaySubjects(tasks, student, day);
@@ -2558,6 +2656,8 @@ ${extraStrip || ""}
     (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn, UNIT_INSERT_THEMES.lincoln).forEach(function (p) { parts.push(p); }); });
     dailyPages.forEach(function (dp, i) {
       parts.push(dp);
+      var dgd = dgPlan && dgPlan.byDay[schoolDays[i]];
+      if (dgd) parts.push(dgStudentPage("lincoln", dgd, wn, dgTitle));   // the day's Daily Grams page rides right behind the daily page
       parts.push(i < dailyPages.length - 1 ? lnBrainBreakPage(i + 1, wn) : lnCreativePage(wn));
     });
     parts.push(eowH);
@@ -2565,9 +2665,12 @@ ${extraStrip || ""}
 
     var cp1 = lnCompanionP1(weekNum, weekDates, cfg, dayAssignments, ctx.weekNotes || []);
     var cp2 = lnCompanionP2(weekNum, weekDates, cfg, passage, schoolDays, datesMap);
-    var parent_html = lnFullHtml(cfg.student_short + "'s Teaching Companion — Week " + weekNum, cp1 + "\n\n\n" + cp2);
+    var dgAns = dgAnswerPagesHtml("lincoln", dgPlan, wn, dgTitle);
+    var parent_html = lnFullHtml(cfg.student_short + "'s Teaching Companion — Week " + weekNum, cp1 + "\n\n\n" + cp2 + (dgAns ? "\n\n\n" + dgAns : ""));
 
-    return { student: student_html, parent: parent_html };
+    var out = { student: student_html, parent: parent_html };
+    if (dgPlan) { out.dailyGramsCursor = dgPlan.cursor; if (dgPlan.warnings.length) out.warnings = dgPlan.warnings.slice(); }
+    return out;
   }
 
   /* ============================================================================
@@ -3171,6 +3274,7 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
     (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn, UNIT_INSERT_THEMES.ellis).forEach(function (p) { pages.push(p); }); });
 
     var dayAssignments = [];
+    var dgPlan = dgWeekPlan(ctx.dailyGrams, wn, orderedDays, datesMap), dgTitle = (ctx.dailyGrams && ctx.dailyGrams.title) || "Daily Grams";
     orderedDays.forEach(function (day, i) {
       var dateStr = datesMap[day] || "";
       var dayTasks = nbByTime(ellisTasks.filter(function (t) { return t.day === day; }));
@@ -3181,12 +3285,17 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
       pages.push(ellDailyPage(day, dateStr, wn, dayTasks, passage, lang, mathQ, word,
         xpStrip(pagesForDay(ctx, "ellis", day), "#c41e1e", "#fdf2f2", "#0e2038")));
       dayAssignments.push({ day: day, date: dateStr, day_tasks: dayTasks, passage: passage, lang: lang, math_q: mathQ, word: word });
+      var dgd = dgPlan && dgPlan.byDay[day];
+      if (dgd) pages.push(dgStudentPage("ellis", dgd, wn, dgTitle));   // the day's Daily Grams page rides right behind the daily page
       pages.push(i < orderedDays.length - 1 ? ellBrainBreakPage(i + 1, wn) : ellCreativePage(wn, weekDates));
     });
 
     var cp1 = ellParentPage1(wn, weekDates, dayAssignments, ctx.weekNotes || []);
     var cp2 = ellParentPage2(wn, weekDates, dayAssignments);
-    return { student: ellShell(pages.join("\n\n")), parent: ellShell(cp1 + "\n\n" + cp2) };
+    var dgAns = dgAnswerPagesHtml("ellis", dgPlan, wn, dgTitle);
+    var out = { student: ellShell(pages.join("\n\n")), parent: ellShell(cp1 + "\n\n" + cp2 + (dgAns ? "\n\n" + dgAns : "")) };
+    if (dgPlan) { out.dailyGramsCursor = dgPlan.cursor; if (dgPlan.warnings.length) out.warnings = dgPlan.warnings.slice(); }
+    return out;
   }
 
   /* ============================================================================
@@ -4479,8 +4588,9 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     weekDatesRange: weekDatesRange,
     letterStrokes: JU_LETTER_STROKES,   // HWT-style capital formation scripts — the drill Trace overlay shows them
     juPlanPreview: juPlanPreview,       // Julian's week planner: engine picks + struggled-with flags
+    dgStart: dgStart,                   // Daily Grams: first Day of a week from the stored cursor (Notebook tab card + prefetch)
 
     // exposed for testing
-    _internal: { juCurriculumFromMastery: juCurriculumFromMastery, generateJulian: generateJulian }
+    _internal: { juCurriculumFromMastery: juCurriculumFromMastery, generateJulian: generateJulian, dgWeekPlan: dgWeekPlan }
   };
 })();
