@@ -73,7 +73,7 @@ function world(done, lanes, pausedKeys) {
   const calls = [], toasts = [];
   const ctx = { console, Object, Array, String, Number, Math, JSON, Set, parseInt, Date, calls, toasts,
     currData: { subjects: { kid: subjects }, done: { kid: done || {} }, lanes: lanes ? { kid: lanes } : undefined },
-    reprojectSubjectWeek: (k, sk, why, opts) => { calls.push([k, sk, why, opts || null]); return { added: [] }; }, gwShowToast: m => toasts.push(m), dbg: () => {},
+    reprojectSubjectWeek: (k, sk, why, opts) => { const o = opts ? Object.assign({}, opts) : null; if (o) delete o.then; calls.push([k, sk, why, (o && Object.keys(o).length) ? o : null]); if (opts && typeof opts.then === "function") { if (ctx.deferThen) ctx.pendingThen = opts.then; else opts.then({ added: [] }); } return { added: [] }; }, gwShowToast: m => toasts.push(m), dbg: () => {},
     cbDefaultForm: (k, sk) => ({ mode: "timesPerWeek", tpw: 1, targetDate: "", allowedDays: ["Mon"] }) };
   ctx.lidsFor = (k, sk) => (subjects[sk] || {}).lessonIds || null;
   ctx.lidStamped = (k, sk) => !!(subjects[sk] && subjects[sk].doneImportedAt);
@@ -124,12 +124,22 @@ console.log("\n── lnPauseRelay ──");
   ok("a throw on the subject is caught; the partner still re-lays", !!r && eq(c.calls.map(x => x[1]), ["gwtm"]), c.calls);
 }
 
+{
+  // the ORDER: partners re-lay only after the subject's re-lay has completed (the lock is async)
+  const c8 = world({}, GRAMMAR, ["conv"]); c8.deferThen = true;
+  c8.lnPauseRelay("kid", "conv", true);
+  ok("partner is NOT re-laid while the subject's re-lay is still running", eq(c8.calls.map(x => x[1]), ["conv"]) && typeof c8.pendingThen === "function", c8.calls);
+  c8.pendingThen({ added: [] });
+  ok("…it re-lays once the subject's re-lay reports done", eq(c8.calls.map(x => x[1]), ["conv", "gwtm"]), c8.calls);
+}
+
 console.log("\n── the doors (source checks) ──");
 {
   ok("the editor toggle calls the re-lay with the NEW state, plan-backed only", /const wasPaused=!!s\.paused;[\s\S]{0,900}lnPauseRelay\(ceEditKid,ceEditKey,!wasPaused\)/.test(src));
   ok("the quick ⏸ calls it with the new state, plan-backed only", /planBacked\(kid,key\)\) lnPauseRelay\(kid,key,now\)/.test(src));
   ok("reprojectSubjectWeek forwards the flag into the diff", /dropUnwanted:!!\(opts&&opts\.dropUnwanted\)/.test(src));
   ok("the flag is set in exactly ONE place: the pause re-lay", (src.match(/\{dropUnwanted:true\}/g) || []).length === 1);
+  ok("reprojectSubjectWeek reports completion on every path (early returns, lock refused, done)", (src.match(/_then\(null\)/g) || []).length >= 6 && /finally\{ release\(\); _then\(out\); \}/.test(src));
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");

@@ -28607,15 +28607,21 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
   return {upd,summary,tasksAfter:after};
 }
 function reprojectSubjectWeek(kid,sk,why,opts){
-  if(typeof planBacked!=="function"||!planBacked(kid,sk)) return null;
-  if(!weekData||!Array.isArray(weekData.tasks)||!WK) return null;
-  if(typeof fbTasksLoaded!=="undefined"&&!fbTasksLoaded) return null;
-  const wn=currWeekNum(); if(!wn) return null;
+  // opts.then(summary|null) — called exactly ONCE when this re-lay is over (done, skipped, or the
+  // lock refused). The scheduler lock is async, so a caller that must re-lay a PARTNER after this
+  // subject (the pause re-lay: partners take the freed days) chains through it instead of calling
+  // the partner straight away — live 2026-09-15: GWTM Purple's re-lay ran before Editor in Chief's
+  // cards were gone, saw a full week, laid nothing, and its old date-id cards left as phantoms.
+  const _then=function(v){ if(opts&&typeof opts.then==="function"&&!opts._thenDone){ opts._thenDone=true; try{ opts.then(v); }catch(e){} } };
+  if(typeof planBacked!=="function"||!planBacked(kid,sk)){ _then(null); return null; }
+  if(!weekData||!Array.isArray(weekData.tasks)||!WK){ _then(null); return null; }
+  if(typeof fbTasksLoaded!=="undefined"&&!fbTasksLoaded){ _then(null); return null; }
+  const wn=currWeekNum(); if(!wn){ _then(null); return null; }
   // Only the ACTIVE plan week has cards to keep in step; a parked or past week is left alone.
-  try{ const r=gwWeekDateRange(wn); const eff=_schoolWeekDateFor(_todayStr()); if(!r||eff<r.start||eff>r.end) return null; }catch(e){ return null; }
+  try{ const r=gwWeekDateRange(wn); const eff=_schoolWeekDateFor(_todayStr()); if(!r||eff<r.start||eff>r.end){ _then(null); return null; } }catch(e){ _then(null); return null; }
   let out=null;
   haClaimSchedLock("reproject",function(release){
-    if(!release){ if(typeof gwShowToast==="function") gwShowToast("Another device is updating the schedule — this week's cards catch up on the next regenerate."); return; }
+    if(!release){ if(typeof gwShowToast==="function") gwShowToast("Another device is updating the schedule — this week's cards catch up on the next regenerate."); _then(null); return; }
     try{
       const cfg={weekNum:String(wn),babysitter:{},withSitter:[],skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:gwSatPlanned(wn),redistribute:[],autoAdvance:true};
       const gen=generateWeek(cfg); if(!gen||gen.error||!gen.result) return;
@@ -28644,7 +28650,7 @@ function reprojectSubjectWeek(kid,sk,why,opts){
       if(db&&!_dryRun()) db.ref(WK+"/tasks").update(r.upd);
       dbg&&dbg("reproject "+kid+"/"+sk+" ("+(why||"")+"): +"+r.summary.added.length+" ↔"+r.summary.moved.length+" −"+r.summary.removed.length+" ✎"+r.summary.retitled.length+" 🌙"+((r.summary.closing||[]).length)+" ⤵"+((r.summary.shifted||[]).length)+" ➡"+((r.summary.pushed||[]).length)+" 🔁"+((r.summary.carried||[]).length)+" 🔢"+((r.summary.resequenced||[]).length)+" ⏭"+((r.summary.deferred||[]).length));
     }catch(e){ dbg&&dbg("reproject skip: "+e); }
-    finally{ release(); }
+    finally{ release(); _then(out); }
   });
   return out;
 }
@@ -28682,8 +28688,6 @@ function lnHandoff(kid,sk,why){
 function lnPauseRelay(kid,sk,paused){
   if(typeof reprojectSubjectWeek!=="function") return null;
   const why=paused?"pause":"resume"; const relaid=[];
-  try{ reprojectSubjectWeek(kid,sk,why,paused?{dropUnwanted:true}:undefined); relaid.push(sk); }
-  catch(e){ if(typeof dbg==="function") dbg("pause relay skip "+kid+"/"+sk+": "+e); }
   const partners=[];
   try{
     if(typeof lnOf==="function"){
@@ -28696,7 +28700,11 @@ function lnPauseRelay(kid,sk,paused){
       }
     }
   }catch(e){}
-  partners.forEach(function(x){ try{ reprojectSubjectWeek(kid,x,why+":partner"); relaid.push(x); }catch(e){ if(typeof dbg==="function") dbg("pause relay partner skip "+kid+"/"+x+": "+e); } });
+  // Partners re-lay only AFTER the subject's own re-lay has finished (the lock is async): they
+  // must see the freed days, not the cards that are about to leave.
+  const runPartners=function(){ partners.forEach(function(x){ try{ reprojectSubjectWeek(kid,x,why+":partner"); relaid.push(x); }catch(e){ if(typeof dbg==="function") dbg("pause relay partner skip "+kid+"/"+x+": "+e); } }); };
+  try{ reprojectSubjectWeek(kid,sk,why,Object.assign(paused?{dropUnwanted:true}:{},{then:runPartners})); relaid.push(sk); }
+  catch(e){ if(typeof dbg==="function") dbg("pause relay skip "+kid+"/"+sk+": "+e); runPartners(); }
   const subs=((currData||{}).subjects||{})[kid]||{}; const nm=function(x){ return (subs[x]||{}).display||x; };
   if(typeof gwShowToast==="function") gwShowToast(paused
     ?("⏸ "+nm(sk)+" — this week's open cards cleared"+(partners.length?("; "+partners.map(nm).join(" / ")+" takes the days"):""))
