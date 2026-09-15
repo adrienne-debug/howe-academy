@@ -282,5 +282,18 @@ console.log("\n── paused ──");
   ok("resumed: column back, Paused strip gone", /<th[^>]*>Plain</.test(h) && !/gv-paused-strip/.test(h));
 }
 
+{
+  // a paused LANE MEMBER (Editor in Chief inside the Grammar lane, 2026-09-15): folded into its
+  // lane column and skipped by the lane, it was nowhere on the Grid — it must rest in the ⏸ strip
+  const c = world();
+  c.currData.subjects.kid.s3b.paused = true;
+  const h = render(c);
+  ok("paused lane member rests in the ⏸ Paused strip, one tap from its card", /gv-paused-strip[\s\S]*?onclick="ceOpenEdit\('kid','s3b'\)"[^>]*>Singapore 3B</.test(h), (h.match(/gv-paused-strip[\s\S]{0,400}/) || [""])[0]);
+  ok("…the lane column itself stays (4A is up)", /<th[^>]*>[^<]*Math/.test(h) || /🛤 Math/.test(h));
+  ok("…it is not listed twice", (h.match(/ceOpenEdit\('kid','s3b'\)"[^>]*>Singapore 3B</g) || []).length === 1);
+  c.currData.subjects.kid.s3b.paused = false;
+  ok("resumed: strip gone", !/gv-paused-strip/.test(render(c)));
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
