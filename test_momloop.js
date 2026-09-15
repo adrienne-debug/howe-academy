@@ -48,6 +48,7 @@ function run(o) {
     esc: s => String(s == null ? "" : s),
     Object, Array, String, Number, parseInt, isNaN, Math, JSON,
   };
+  ctx._mlNowOverride = (typeof o.nowMin === "number") ? o.nowMin : 9 * 60;   // the living day lays from NOW; 9:00 = before school
   Object.defineProperty(ctx, "_todayDay", { get: () => "monday" });
   vm.createContext(ctx); vm.runInContext(BLOCK, ctx);
   // The block declares `let momLoop={}`, which WIPES anything seeded before it runs — so the
@@ -155,8 +156,10 @@ console.log("\n── it decides, it does not reschedule ──");
   // switched off on (self-clearing overnight). One write site shared by Mom's strip tap and
   // the kid's own "I'm ready" tap. Still never a card.
   // …and Mom's own switch: config/momLoop/momOff = today's stamp while she is not available.
-  ok("it writes only the order, the cursor + its tap-day stamp, the hold, the behind scope, and the two switches",
-    (BLOCK.match(/db\.ref\(/g) || []).length === 9
+  // 2026-09-14 added the 🌙 8 PM sweep marker: <week>/eveningSweep/<day> = an ISO stamp once the
+  // evening sweep has run (any device), so the fleet sweeps once. Still never a card.
+  ok("it writes only the order, the cursor + its tap-day stamp, the hold, the behind scope, the two switches, and the sweep marker",
+    (BLOCK.match(/db\.ref\(/g) || []).length === 10 && /eveningSweep/.test(BLOCK)
       && /config\/momLoop\/order/.test(BLOCK) && /config\/momLoop\/cursor/.test(BLOCK)
       && /config\/momLoop\/cursorSetOn/.test(BLOCK) && /config\/momLoop\/behindScope/.test(BLOCK)
       && (BLOCK.match(/config\/momLoop\/off\//g) || []).length === 1

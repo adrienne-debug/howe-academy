@@ -89,6 +89,7 @@ function makeCtx(tasks, st) {
     momHere: () => true, adminPinUnlocked: true, renderAll: () => {},
     cap: s => String(s || "").charAt(0).toUpperCase() + String(s || "").slice(1),
     esc: s => String(s == null ? "" : s),
+    _mlNowOverride: (typeof st.nowMin === "number") ? st.nowMin : 9 * 60,   // the living day lays from NOW; pinned per step
   };
   Object.defineProperty(ctx, "_todayDay", { get: () => "thursday" });
   vm.createContext(ctx);
@@ -274,27 +275,48 @@ console.log("── a full day of flips: after every event, nothing is dropped �
 
   // 12:30 — the Mom switch (step 2): Mom is not available; no Mom task is anyone's next
   if (hasMomSwitch) {
-    st.momLoop.momOff = stamp;
+    st.momLoop.momOff = stamp; st.nowMin = 12 * 60 + 30;
     d = derive(tasks, st); invariants("12:30 Mom off", tasks, st, d);
     ok("Mom off → nobody has her", d.now.kid === null, d.now);
     ok("no kid's banner points at a Mom card", ORDER.every(k => !/Mom&rsquo;s ready for you|You&rsquo;re with Mom/.test(d.call("mlBannerHTML('" + k + "')"))));
     ok("Mom's cards are all still there", d.laid.filter(t => t.mom === "required").length === tasks.filter(t => t.mom === "required").length);
-    // "stuff that's not mom dependent can fill calendar": independent work keeps its slots,
-    // Mom cards sink behind it, closing follows
+    // 🌞 LIVING DAY (her rule 2026-09-14): with Mom off each kid's queue re-flows from NOW —
+    // nothing before 12:30, independent work first, EVERY Mom card greyed at the end of the day.
     const at = id => d.laid.find(t => t.id === id).time;
-    ok("lincoln's Eggspress keeps its 12:30 slot while Mom is off", at(byTitle("lincoln", "Eggspress").id) === "12:30 PM");
-    ok("his Spelling + AAS sink behind his own work (after Eggspress)",
-      toMinLocal(at(byTitle("lincoln", "Spelling You See").id)) >= 13 * 60 && toMinLocal(at(byTitle("lincoln", "AAS").id)) > toMinLocal(at(byTitle("lincoln", "Spelling You See").id)),
-      [at(byTitle("lincoln", "Spelling You See").id), at(byTitle("lincoln", "AAS").id)]);
-    ok("ellis's Singapore keeps its slot and his Mom cards sink behind it",
-      at(byTitle("ellis", "Singapore").id) === "10:40 AM" && toMinLocal(at(byTitle("ellis", "Reading Detective").id)) >= 11 * 60 + 5, [at(byTitle("ellis", "Reading Detective").id)]);    // a kid checks independent work while Mom is off → no hold is started
+    const unch = k => d.laid.filter(x => x.who === k && !st.checked[x.id] && !/lunch/i.test(x.title));
+    ORDER.forEach(k => {
+      const u = unch(k);
+      ok(k + ": nothing unchecked sits before now (12:30) while Mom is off", u.every(x => toMinLocal(x.time) >= 12 * 60 + 30), u.map(x => x.title + "@" + x.time));
+      const nonMom = u.filter(x => x.mom !== "required" && x.subjectKey !== "closing_nb"), mom = u.filter(x => x.mom === "required");
+      if (nonMom.length && mom.length) ok(k + ": every Mom card comes after every independent card", Math.min(...mom.map(x => toMinLocal(x.time))) >= Math.max(...nonMom.map(x => toMinLocal(x.time) + (x.dur || 20))), u.map(x => x.title + "@" + x.time));
+      ok(k + ": every unchecked Mom card is flagged waiting (greyed)", mom.every(x => x._momWait === true), mom.map(x => x.id));
+      ok(k + ": no independent card is flagged", nonMom.every(x => !x._momWait));
+    });
+    ok("lincoln's first unchecked independent card (MR5) moved up to now (12:30) — nothing left behind a gap", at(byTitle("lincoln", "MR5").id) === "12:30 PM", at(byTitle("lincoln", "MR5").id));
+    ok("…and Eggspress follows it, before his greyed Mom cards", at(byTitle("lincoln", "Eggspress").id) === "1:00 PM" && toMinLocal(at(byTitle("lincoln", "Spelling You See").id)) >= 13 * 60 + 30, [at(byTitle("lincoln", "Eggspress").id), at(byTitle("lincoln", "Spelling You See").id)]);
+    ok("lincoln (has his own work) gets the keep-going banner", /Keep going on your own work/.test(d.call("mlBannerHTML('lincoln')")));
+    ok("julian finished all his Mom work earlier → no banner at all", d.call("mlBannerHTML('julian')") === "");
+    {
+      // Fresh morning, Mom off before anyone has started: Julian's WHOLE day is Mom work → her
+      // "go play, tidy up, be ready when Mom calls" banner; a kid with own work keeps going.
+      const fresh = world();
+      const fst = { checked: {}, ready: { julian: true, lucy: true, lincoln: true, ellis: true }, paused: {}, momLoop: { order: ORDER, cursor: 0, momOff: stamp }, momHold: {}, nowMin: 10 * 60 + 5 };
+      const fd = derive(fresh, fst);
+      ok("fresh day, Mom off: julian (whole day is Mom work) gets the play-and-tidy-up banner", /Go play/.test(fd.call("mlBannerHTML('julian')")) && /listen for Mom/.test(fd.call("mlBannerHTML('julian')")), fd.call("mlBannerHTML('julian')"));
+      ok("fresh day, Mom off: julian's cards are all greyed, from now (10:05) on", fd.laid.filter(x => x.who === "julian" && x.mom === "required").every(x => x._momWait && toMinLocal(x.time) >= 10 * 60 + 5), fd.laid.filter(x => x.who === "julian").map(x => x.title + "@" + x.time));
+      ok("fresh day, Mom off: lucy (has Reading Eggs + HWT) gets the keep-going banner", /Keep going/.test(fd.call("mlBannerHTML('lucy')")));
+      ok("fresh day, Mom off: lucy's Notebook, Reading Eggs, HWT come first from now, Read-Aloud + Dimensions greyed after", (() => { const L = fd.laid.filter(x => x.who === "lucy"); const t = n => toMinLocal(L.find(x => x.title === n).time); return t("Notebook") === 10 * 60 + 5 && t("Reading Eggs") === 10 * 60 + 25 && t("HWT") === 10 * 60 + 40 && t("Read-Aloud") >= 10 * 60 + 55 && t("Dimensions") > t("Read-Aloud"); })(), fd.laid.filter(x => x.who === "lucy").map(x => x.title + "@" + x.time));
+    }
+    ok("the waiting flag never reaches the stored cards", tasks.every(x => x._momWait === undefined));
+    // a kid checks independent work while Mom is off → no hold is started
     const egg = byTitle("lincoln", "Eggspress");
     st.checked[egg.id] = "x";
     d.call("mlOnCheck(" + JSON.stringify(egg) + ")");
     ok("a check-off while Mom is off starts nothing", !d.call("momHold").kid);
     // Mom back → the loop resumes exactly where the rules say
-    delete st.momLoop.momOff;
+    delete st.momLoop.momOff; st.nowMin = 12 * 60 + 45;
     d = derive(tasks, st); invariants("12:45 Mom back on", tasks, st, d);
+    ok("Mom back on → no card is flagged waiting any more", d.laid.every(x => !x._momWait));
     ok("Mom back on → lucy (cursor, ready, unfinished) has her again", d.now.kid === "lucy", d.now);
   } else {
     console.log("  (Mom switch not built yet — step 2 cases skipped)");

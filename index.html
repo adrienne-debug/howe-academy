@@ -405,6 +405,7 @@ body.kioskr #kiosk-kids::-webkit-scrollbar{display:none}
 .kid-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;flex-shrink:0;margin-top:1px}
 .mom-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:auto}
 .req-badge{background:#fee2e2;color:#991b1b}
+.task-card.mom-wait{opacity:.45;filter:saturate(.6)}   /* 🌞 Mom off: her cards wait, greyed, at the end of the day */
 .maybe-badge{background:#fef9c3;color:#854d0e}
 .task-title{font-size:14px;font-weight:600;line-height:1.3;flex:1;min-width:0}
 .task-detail{font-size:12px;color:var(--muted);margin-top:5px;line-height:1.4}
@@ -2250,6 +2251,8 @@ function dayRollCheck(){
 }
 // A school-room kiosk is never hidden and never blurred, so the interval is the one that
 // actually catches midnight there; visibility/focus catch a tablet waking from sleep.
+// 🌙 8 PM sweep check — every device, every minute; the marker + scheduler lock keep it to one run a day.
+setInterval(function(){ try{ if(typeof mlEveningSweep==="function") mlEveningSweep(false); }catch(e){} },60000);
 setInterval(dayRollCheck,60000);
 document.addEventListener("visibilitychange",function(){ if(!document.hidden) dayRollCheck(); });
 window.addEventListener("focus",dayRollCheck);
@@ -2642,6 +2645,10 @@ function attachWeekListeners(wk){
     if(typeof renderAll==="function") renderAll();
   });
   fbWeekRefs.push(r8b);
+  // 🌙 one ISO stamp per day once the 8 PM sweep has run (any device) — stops repeats.
+  const r8sw=db.ref(wk+"/eveningSweep");
+  r8sw.on("value",s=>{ eveningSweeps=s.val()||{}; });
+  fbWeekRefs.push(r8sw);
 
   // 👩 Mom-loop hold — "once checked, who has it has it". One tiny value; every device
   // agrees on who has STARTED with Mom (see mlOnCheck / mlHold).
@@ -6012,6 +6019,12 @@ function renderSchedule(el){
   // now just last-week _c mirrors.
   let tasks=allDay.filter(t=>!t.id.endsWith("_c")&&!t._eowOverflow);
   let carriedOver=allDay.filter(t=>t.id.endsWith("_c"));
+  // 🌙 LIVING DAY (2026-09-14): cards that fell off the bottom of today (laid past the Settings
+  // school end) leave the timeline for the "didn't fit today" list below — still checkable there
+  // until the 8 PM sweep (or Mom's ⏩) moves them into the rest of the week. Same per-kid
+  // visibility switch as the Carried Over box (her call: she customises who sees a pile).
+  let offToday=(day===_todayDay)?tasks.filter(t=>t._offDay&&!checked[t.id]):[];
+  if(offToday.length){ tasks=tasks.filter(t=>!(t._offDay&&!checked[t.id])); if(!momHere()) offToday=offToday.filter(t=>!carryHidden(t.who)); }
   // Per-kid overwhelm guard: the "Carried Over" mirror box is HIDDEN from a kid's own view
   // (and the shared all-kids view) by DEFAULT — a big carried-over pile can shut a kid down.
   // Mom still sees it whenever she's viewing (momHere). The day-header button re-shows it for
@@ -6031,6 +6044,7 @@ function renderSchedule(el){
     '<div><div class="day-name">'+(DAY_LBL[day]||day)+(momHere()?'<button class="bo-btn" onclick="openBoDialog(\''+day+'\')">+ Blockout</button>':'')+
     (momHere()?'<button class="bo-btn" onclick="schedDayOffToggleOpen()">😷 Kid Off</button>':'')+
     (momHere()?'<button class="bo-btn" onclick="schedRegenerateNow()">🔄 Regenerate</button>':'')+
+    (momHere()&&day===_todayDay?'<button class="bo-btn" onclick="mlSweepEarly()" title="Move today\'s unfinished cards into the rest of the week now instead of at 8 PM">'+((typeof _mlSweepArmed!=="undefined"&&_mlSweepArmed)?'⏩ Tap again to push':'⏩ Push leftovers')+'</button>':'')+
     (momHere()&&kid!=="all"&&kid!=="mom"?'<button class="bo-btn" onclick="toggleHideCarryover(\''+kid+'\')">'+(_carryHiddenKid?'👁 Show':'🙈 Hide')+' Carryover</button>':'')+'</div>'+
     '<div class="day-date">'+_dayDate(day)+" · "+(weekData.week||WK).replace("week","Week ")+'</div>'+
     '<div class="day-window">'+win+'</div></div>'+
@@ -6075,6 +6089,26 @@ function renderSchedule(el){
     const _open=fromMin(gateStartMin(day));
     const _rdone=(kid==="all"||kid==="mom")?SL_KIDS.every(k=>morningComplete(k,day)):morningComplete(kid,day);
     lockMsg=_rdone?("Morning routine done! School starts at "+_open+"."):(lockMsg+" School starts at "+_open+".");
+  }
+
+  if(offToday.length){
+    let offHtml='<div style="margin:10px 12px 0;border-left:4px solid #f59e0b;background:#fffbeb;border-radius:0 10px 10px 0;padding:10px 12px">'
+      +'<div style="font-size:11px;font-weight:800;color:#92400e;text-transform:uppercase;letter-spacing:0.4px">&#127769; Didn&rsquo;t fit today &middot; '+offToday.length+'</div>'
+      +'<div style="font-size:10.5px;color:#b45309;margin:4px 0 8px">Past the end of the school day. Still yours if you get to it &mdash; at 8 PM whatever is left moves into the rest of the week.</div>';
+    if(kid==="all"||kid==="mom"){
+      [...ROSTER].forEach(k=>{ const items=offToday.filter(t=>t.who===k); if(!items.length) return;
+        offHtml+='<div style="margin:8px 0 4px"><span class="kid-badge badge-'+k+'" style="font-size:9px;padding:1px 6px">'+cap(k)+'</span> <span style="font-size:10px;color:#b45309;font-weight:700">'+items.length+' left</span></div>';
+        items.forEach(t=>{ offHtml+=taskCard(t,"Didn\u2019t fit today"); }); });
+    } else {
+      offToday.forEach(t=>{ offHtml+=taskCard(t,"Didn\u2019t fit today"); });
+    }
+    offHtml+='</div>';
+    if(!unlocked){
+      h+='<div class="sched-locked-wrap"><div class="sched-blur">'+offHtml+'</div>'+
+        '<div class="sched-lock-overlay" onclick="scrollToSkylight()"></div></div>';
+    } else {
+      h+=offHtml;
+    }
   }
 
   if(carriedOver.length){
@@ -6797,7 +6831,7 @@ function taskCard(t, fromDay, readOnly, doneId){
     const lbl=t.mom==="required"?"Mom Required — "+klbl:"May Need Mom — "+klbl;
     mb='<span class="mom-badge '+(t.mom==="required"?"req-badge":"maybe-badge")+'">'+lbl+'</span>';
   } else if(t.mom==="required"){
-    mb='<span class="mom-badge req-badge">Mom Required</span>';
+    mb='<span class="mom-badge req-badge">'+(t._momWait?'Waiting for Mom':'Mom Required')+'</span>';
   } else if(t.mom==="maybe"){
     mb='<span class="mom-badge maybe-badge">May Need Mom</span>';
   }
@@ -6885,7 +6919,7 @@ function taskCard(t, fromDay, readOnly, doneId){
       '<div class="task-detail" style="color:#9ca3af">'+cleanDetail+'</div>'+
       '</div></div></div>';
   }
-  return '<div class="task-card '+bcls+(done?" done":"")+(future?" future":"")+(t._displaced?" displaced":"")+'"'+(claimedHere?' style="border-left:3px solid #f59e0b;background:#fffbeb"':'')+'>'+
+  return '<div class="task-card '+bcls+(done?" done":"")+(future?" future":"")+(t._displaced?" displaced":"")+(t._momWait?" mom-wait":"")+'"'+(claimedHere?' style="border-left:3px solid #f59e0b;background:#fffbeb"':'')+'>'+
     '<div class="card-inner">'+
     '<div class="task-cb'+(done?" checked":"")+(readOnly?" readonly":"")+'"'+(claimedHere?' style="border-color:#f59e0b;color:#f59e0b;background:#fffbeb"':'')+(readOnly?"":' onclick="tapTask(\''+t.id+'\')"')+'>'+(done?"✓":claimedHere?"⏳":"")+'</div>'+
     '<div class="card-body">'+
@@ -19317,6 +19351,17 @@ function coopTimedEndMin(kid,ds){
   for(const id in m){ const c=m[id]; if(c&&c.mode==="timed"&&(c.kids||[]).indexOf(kid)>=0&&_coopHasDate(c,ds)){ const e=toMin(c.end||"12:00 PM"); if(e>mx) mx=e; } }
   return mx;
 }
+// Raise each kid's earliest start on `ds` to their timed co-op end. ONE source of truth for
+// every ctx builder: generation had the push (2026-07-17) but every RE-TIMER — the cascade's
+// receiving-day re-pack and scar heal, the subject re-lay, the displacement engine — rebuilt
+// its kidStart map from the sitter alone, so a re-laid co-op day slid back to 10:00 AM (live
+// Tue 2026-09-15 and Thu 2026-09-10, verified 2026-09-14). Merges: never lowers a start.
+function coopApplyStart(kidStart,ds,kids){
+  if(!kidStart||!ds) return kidStart;
+  const list=kids||((typeof ROSTER!=="undefined"&&ROSTER)||[]);
+  list.forEach(function(kid){ const ce=coopTimedEndMin(kid,ds); if(ce>0) kidStart[kid]=Math.max(kidStart[kid]||0,ce); });
+  return kidStart;
+}
 function coopsOnDate(ds){ const out=[]; const m=coopsMap(); for(const id in m){ if(_coopHasDate(m[id],ds)) out.push(m[id]); } return out; }
 // "No Mom-required lessons" co-op option (calendar/coops/{id}.noMomBase): a subject flagged Mom
 // Required has no BASE slot on that co-op's dates for its kids — the plan's own slot vanishes and
@@ -20357,13 +20402,19 @@ function printSchedule(){
 }
 
 // ── ALERTS + CASCADE ──────────────────────────────────────────────
-let _gateTickSig=null;
+let _gateTickSig=null, _layTickSig=null;
 setInterval(()=>{ if(tab!=="schedule")return; renderSkylight();
   // ⏰ re-render the schedule body only when the gate actually flips (e.g. the clock
   // reaches school start with routines done) — not every minute, so scroll holds.
   let sig=""; try{ sig=SL_KIDS.map(k=>isScheduleUnlocked(k,day)?1:0).join(""); }catch(e){}
-  if(_gateTickSig!==null&&sig!==_gateTickSig){ const c=document.getElementById("content"); if(c) renderSchedule(c); }
-  _gateTickSig=sig;
+  // 🌞 LIVING DAY (2026-09-14): today's lay follows the clock, so the body also re-renders
+  // when the LAID times change (a kid's queue slid, Mom's cards greyed/un-greyed) — through
+  // _preserveUI so scroll and typed text hold. Nothing is written; this is display only.
+  let lsig=""; try{ if(day===_todayDay&&typeof mlQueueLay==="function"&&weekData&&Array.isArray(weekData.tasks)){
+    lsig=mlQueueLay(dsRetime(displacedResult?displacedResult.tasks:weekData.tasks)).filter(t=>t&&effectiveDay(t)===day).map(t=>t.id+"@"+t.time+(t._momWait?"w":"")).join("|"); } }catch(e){}
+  const flipped=(_gateTickSig!==null&&sig!==_gateTickSig)||(_layTickSig!==null&&lsig!==_layTickSig);
+  if(flipped){ const c=document.getElementById("content"); if(c){ if(typeof _preserveUI==="function") _preserveUI(()=>renderSchedule(c)); else renderSchedule(c); } }
+  _gateTickSig=sig; _layTickSig=lsig;
 },60000);
 
 // A history record and a task describe the same lesson when kid matches and the titles
@@ -20767,6 +20818,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
         const isSit=_rmag.days&&_rmag.days.includes(dn);
         const sitRet=isSit?toMin(_rmag["mom_return_"+dn]||_rmag.mom_return||"2:00 PM"):0;
         const kidStart={}; if(isSit) _rsitKids.forEach(k=>{ kidStart[k]=sitRet; });
+        if(typeof coopApplyStart==="function") coopApplyStart(kidStart,_cascDate(dn)); // 🏫 timed co-op: home at its end
         const ctx={start:toMin(ov.start||_rsd.defaultStart||"10:00 AM"),
           end:dEndR,
           lunchStart:toMin(ov.lunchStart||_rsd.lunchStart||"1:00 PM"),
@@ -20996,6 +21048,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
     const isLast=(di===_lastValidDi);
     const _floor=(dn===today)?_nowMin:0;
     const kidStart={}; if(isSitterDay) sitterKids.forEach(k=>{ kidStart[k]=Math.max(sitterReturn,_floor); });
+    if(typeof coopApplyStart==="function") coopApplyStart(kidStart,dStr); // 🏫 timed co-op: the re-pack starts those kids at its end, like generation
     const ctx={start:Math.max(dStart,_floor),end:dEnd,lunchStart:lunchS,lunchEnd:lunchE,
       momStart:sitterReturn,kidStart:kidStart,allowOvertime:isLast,overtimeMax:240};
     if(dn==="saturday") satApplyCutoff(ctx,240);
@@ -21282,6 +21335,9 @@ function cascadeIntraWeek(sweepTodayElapsed){
       const lunchS=toMin(sdOv.lunchStart||sd.lunchStart||"1:00 PM");
       const lunchE=toMin(sdOv.lunchEnd||sd.lunchEnd||"2:00 PM");
       const floor=(dn===today)?Math.max(dStart,_nowMin):dStart;
+      // 🏫 timed co-op: a co-op kid's floor is the co-op END, not school start — this float pass
+      // undid generation's 2:00 PM push on every cascade (live Tue 2026-09-15 / Thu 2026-09-10).
+      const _coopKS=(typeof coopApplyStart==="function")?coopApplyStart({},_cascDate(dn)):{};
       const occ=weekData.tasks.filter(t=>t.day===dn&&!t.id.endsWith("_c")&&!t._eowOverflow);
       if(!occ.length) continue;
       const subjCount={};
@@ -21292,9 +21348,10 @@ function cascadeIntraWeek(sweepTodayElapsed){
         .sort((a,b)=>toMin(a.time)-toMin(b.time))
         .forEach(t=>{
           const d=t.dur||20, lane=_laneOf(t), cur=toMin(t.time);
-          if(cur<=floor) return;
-          const bounds=new Set([floor]);
-          kidIv(t.who).forEach(iv=>{ if(iv[2]!==t&&iv[1]<=cur&&iv[1]>=floor) bounds.add(iv[1]); });
+          const kf=Math.max(floor,_coopKS[t.who]||0);
+          if(cur<=kf) return;
+          const bounds=new Set([kf]);
+          kidIv(t.who).forEach(iv=>{ if(iv[2]!==t&&iv[1]<=cur&&iv[1]>=kf) bounds.add(iv[1]); });
           let best=null;
           [...bounds].filter(s=>s<cur).sort((a,b)=>a-b).forEach(s=>{
             if(best!=null) return;
@@ -28507,7 +28564,9 @@ function reprojectSubjectWeek(kid,sk,why){
       const todayDay=_RP_DAYS[(_tD.getDay()+6)%7]||null;
       const _doneLids=Object.keys(((((typeof currData!=="undefined"&&currData)||{}).done||{})[kid]||{})[sk]||{});
       const gwR=gwRules();
-      const dayCtx=day=>({start:(day===todayDay)?Math.max(gwR.schoolStart,nowD.getHours()*60+nowD.getMinutes()):gwR.schoolStart,end:gwR.schoolEnd,lunchStart:gwR.lunchStart,lunchEnd:gwR.lunchEnd,allowOvertime:true,overtimeMax:240});
+      // 🏫 timed co-op: the re-laid subject starts after the kid is home (same push generation applies)
+      const _coopKS=day=>{ try{ return (typeof coopApplyStart==="function"&&typeof calDateForWeekDay==="function")?coopApplyStart({},calDateForWeekDay(day,wn),[kid]):{}; }catch(e){ return {}; } };
+      const dayCtx=day=>({start:(day===todayDay)?Math.max(gwR.schoolStart,nowD.getHours()*60+nowD.getMinutes()):gwR.schoolStart,end:gwR.schoolEnd,lunchStart:gwR.lunchStart,lunchEnd:gwR.lunchEnd,allowOvertime:true,overtimeMax:240,kidStart:_coopKS(day)});
       const _subj=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid]||{})[sk]||{};
       // 🛤 a lane member on a borrowed / shared rhythm is judged by THAT rhythm's days and cap
       let _rpDays=_subj.allowedDays||[], _rpCap=_subj.cap||1;
@@ -37276,6 +37335,59 @@ function mlCursor(){
 // claim. Monday falls back to the stored cursor (last school day lives in last week's node).
 const ML_EOD_MARK_MIN=18*60;   // 6:00 PM — after real school work ends, before evening cleanup
 function _mlDayStamp(){ const d=new Date(); return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate(); }
+// Minutes since midnight, pinnable by the harnesses (`_mlNowOverride`). The living day lays
+// from NOW, so the clock is an input to the lay — never read anywhere else in this block.
+function _mlNowMin(){ try{ if(typeof _mlNowOverride==="number") return _mlNowOverride; const d=new Date(); return d.getHours()*60+d.getMinutes(); }catch(e){ return 0; } }
+// The Settings school END for today (per-day override, else the default) — the living day's
+// cut line. Pinnable by the harnesses (`_mlEndOverride`). Change it in Settings, the cut follows.
+function _mlDayEndMin(){
+  try{
+    if(typeof _mlEndOverride==="number") return _mlEndOverride;
+    const sd=(((typeof rulesData!=="undefined"&&rulesData)||{}).schoolDay)||{}; const ov=((sd.overrides||{})[_todayDay])||{};
+    return toMin(ov.end||sd.defaultEnd||"4:15 PM");
+  }catch(e){ return toMin("4:15 PM"); }
+}
+// 🌙 8 PM SWEEP (her rule 2026-09-14): what fell off the bottom of today moves into the rest of
+// the week — through the SAME intra-week cascade that already carries elapsed work forward
+// (nothing new is invented about WHERE it lands). Runs once per day, at 8:00 PM, on whichever
+// device is awake — the marker `<week>/eveningSweep/<day>` stops repeats across the fleet and
+// the scheduler lock stops two devices sweeping at once. Mom's ⏩ button runs it early. Until it
+// runs, the fallen cards stay on today's "didn't fit" list, still checkable.
+let eveningSweeps={};      // {day: ISO stamp} for the active week (mirrors <week>/eveningSweep)
+let _mlSweepArmed=false;   // ⏩ is a two-tap button: arm, then tap again within 6 s
+const ML_SWEEP_MIN=20*60;
+function _mlSweepDue(nowMin,marker,force){ return !!force||(nowMin>=ML_SWEEP_MIN&&!marker); }
+function mlEveningSweep(force){
+  try{
+    if(typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return false;
+    if(typeof fbTasksLoaded!=="undefined"&&!fbTasksLoaded) return false;
+    const marker=(eveningSweeps||{})[_todayDay];
+    if(!_mlSweepDue(_mlNowMin(),marker,force)) return false;
+    if(typeof lockHeldByOther==="function"&&lockHeldByOther()) return false;
+    if(typeof haClaimSchedLock!=="function"||typeof cascadeIntraWeek!=="function") return false;
+    haClaimSchedLock("cascade",function(release){
+      if(!release){ if(force&&typeof gwShowToast==="function") gwShowToast("Couldn't sweep right now — another device is updating the schedule"); return; }
+      try{ cascadeIntraWeek(true); if(typeof runCascade==="function") runCascade(); }
+      finally{ release(); }
+      const stamp=new Date().toISOString();
+      eveningSweeps=Object.assign({},eveningSweeps); eveningSweeps[_todayDay]=stamp;
+      if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref(WK+"/eveningSweep/"+_todayDay).set(stamp);
+      if(typeof gwShowToast==="function") gwShowToast(force?"⏩ Today's leftovers moved into the rest of the week":"🌙 8 PM — today's leftovers moved into the rest of the week");
+      if(typeof renderAll==="function") renderAll();
+    });
+    return true;
+  }catch(e){ return false; }
+}
+// Mom's ⏩: first tap arms (the button says so), second tap within 6 s sweeps now. No confirm()
+// — dialogs are dead in the kiosk browsers.
+function mlSweepEarly(){
+  if(!momHere()) return;
+  if(!_mlSweepArmed){ _mlSweepArmed=true; setTimeout(function(){ if(_mlSweepArmed){ _mlSweepArmed=false; if(typeof renderAll==="function") renderAll(); } },6000); if(typeof renderAll==="function") renderAll(); return; }
+  _mlSweepArmed=false;
+  const ran=mlEveningSweep(true);
+  if(!ran&&typeof gwShowToast==="function") gwShowToast("Couldn't sweep right now — another device is updating the schedule");
+  if(typeof renderAll==="function") renderAll();
+}
 let _mlOvnMemo=null;
 function mlOvernightStart(){
   try{
@@ -37638,7 +37750,9 @@ function mlQueueLay(tasks){
     });
     // Ring kids who still owe Mom work, in loop order from the cursor.
     const ring=[]; for(let i=0;i<n;i++){ const k=order[(cur+i)%n]; if(momQ[k].length) ring.push(k); }
-    if(!ring.length) return tasks;
+    // 🌞 LIVING DAY (her rule 2026-09-14): the day re-flows from NOW even when nobody owes Mom
+    // work — an empty ring just means an empty Mom queue; each kid's own queue still moves.
+    const nowMin=_mlNowMin();
     // The queue: mlNow's answer leads (held card in hand, or a borrower's ONE card), then
     // blocks in ring order. The decision layer stays the single authority on "who now".
     const momOffNow=mlMomOff();
@@ -37665,23 +37779,38 @@ function mlQueueLay(tasks){
     //   first unchecked card is the Mom card itself (Julian, or nothing left to buffer
     //   with) → the block starts at its own printed slot
     //   otherwise → right after the in-flight buffer card, which never moves
-    let t=0;
-    if(seq.length){
-      const k0=seq[0].kid, first0=mine[k0][0];
-      if((now&&now.held&&now.kid===k0)||!first0||first0.mom==="required") t=toMin((first0||seq[0].cards[0]).time);
-      else t=toMin(first0.time)+(first0.dur||20);
-    }
     // A kid's own lunch interval steps the chain over it — lunch itself never moves.
     const lunchOf=function(k){
       return tasks.filter(function(x){ return isToday(x)&&x.who===k&&/lunch/i.test(x.title||""); })
         .map(function(x){ return [toMin(x.time),toMin(x.time)+(x.dur||30)]; });
     };
-    const newTimes={};
+    // Cards already checked today never move — and nothing is laid on top of them.
+    const fixedOf=function(k){
+      return tasks.filter(function(x){ return isToday(x)&&x.who===k&&typeof checked!=="undefined"&&checked&&checked[x.id]&&!/lunch/i.test(x.title||""); })
+        .map(function(x){ return [toMin(x.time),toMin(x.time)+(x.dur||20)]; });
+    };
+    let t=0;
+    if(seq.length){
+      const k0=seq[0].kid, first0=mine[k0][0];
+      if((now&&now.held&&now.kid===k0)||!first0||first0.mom==="required") t=toMin((first0||seq[0].cards[0]).time);
+      else t=toMin(first0.time)+(first0.dur||20);
+      // 🌞 and never before NOW: the buffer card below lays from now too, so "right after the
+      // buffer" is right after where the buffer really is.
+      if(first0&&first0.mom!=="required"&&!(now&&now.held&&now.kid===k0)){
+        // …where the buffer REALLY lands: from now, stepped over lunch and checked cards (the
+        // per-kid lay below places it identically, so the block sits right behind it).
+        const d0=first0.dur||20; let s0=Math.max(nowMin,toMin(first0.time)); const W=lunchOf(k0).concat(fixedOf(k0)); let mv=true;
+        while(mv){ mv=false; W.forEach(function(iv){ if(s0<iv[1]&&s0+d0>iv[0]){ s0=iv[1]; mv=true; } }); }
+        t=s0+d0;
+      }
+      t=Math.max(t,nowMin);
+    }
+    const newTimes={}; const momWait={};
     seq.forEach(function(e){
-      const Ls=lunchOf(e.kid);
+      const Ls=lunchOf(e.kid).concat(fixedOf(e.kid));
       e.cards.forEach(function(c){
-        const d=c.dur||20;
-        Ls.forEach(function(iv){ if(t<iv[1]&&t+d>iv[0]) t=iv[1]; });
+        const d=c.dur||20; let moved=true;
+        while(moved){ moved=false; Ls.forEach(function(iv){ if(t<iv[1]&&t+d>iv[0]){ t=iv[1]; moved=true; } }); }
         newTimes[c.id]=t; t+=d;
       });
     });
@@ -37692,49 +37821,62 @@ function mlQueueLay(tasks){
     // the buffer/chain and re-tuck to the TRUE end of the kid's re-laid day below.
     const _mlClose=function(t){ return t.subjectKey==="closing_nb"||(t.title||"").toLowerCase().includes("closing notebook"); };
     order.forEach(function(k){
-      const momIv=momOffNow?[]:momQ[k].map(function(c){
-        const s=(newTimes[c.id]!==undefined)?newTimes[c.id]:toMin(c.time);
-        return [s,s+(c.dur||20)];
-      });
       const Ls=lunchOf(k);
-      const buf=mine[k].find(function(x){ return x.mom!=="required"&&!_mlClose(x); })||null;
-      const others=mine[k].filter(function(x){ return x.mom!=="required"&&x!==buf&&!_mlClose(x); });
       const closes=mine[k].filter(function(x){ return x.mom!=="required"&&_mlClose(x); })
         .sort(function(a,b){ return toMin(a.time)-toMin(b.time); });
+      const momIv=[]; let buf=null, others=[];
+      if(momOffNow){
+        // 🌞 LIVING DAY — Mom off (her rule 2026-09-14): this kid's queue re-flows from NOW.
+        // Independent + may-need-Mom work first, in the order the packer laid it, stepping over
+        // lunch and over anything already checked today; then EVERY Mom-required card, greyed
+        // (`_momWait`), at the END of the day — so the kid keeps moving, and Mom's cards are
+        // right there the moment she is back (the next render lays them again from the time it
+        // is). Once the day has started nothing sits before "now"; before it, the plan's times
+        // hold (the queue starts at the first card's slot, not at 6 AM).
+        const own=mine[k].filter(function(x){ return x.mom!=="required"&&!_mlClose(x); });
+        const first=mine[k].find(function(x){ return !_mlClose(x); })||null;
+        const fixed=fixedOf(k);
+        let s=first?Math.max(nowMin,toMin(first.time)):nowMin;
+        own.concat(momQ[k]).forEach(function(c){
+          const d=c.dur||20; let moved=true;
+          while(moved){ moved=false; Ls.concat(fixed).forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]){ s=iv[1]; moved=true; } }); }
+          newTimes[c.id]=s; if(c.mom==="required"){ momWait[c.id]=true; momIv.push([s,s+d]); } s+=d;
+        });
+        others=own;
+      }else{
+      momQ[k].forEach(function(c){
+        const s=(newTimes[c.id]!==undefined)?newTimes[c.id]:toMin(c.time);
+        momIv.push([s,s+(c.dur||20)]);
+      });
+      buf=mine[k].find(function(x){ return x.mom!=="required"&&!_mlClose(x); })||null;
+      others=mine[k].filter(function(x){ return x.mom!=="required"&&x!==buf&&!_mlClose(x); });
       // Push-later-only: a card keeps the packer's slot (device lanes and gaps survive)
       // and steps later only to clear the kid's Mom block, lunch, or the card before it.
       // The buffer keeps its slot too — UNLESS the kid's own Mom block covers it (a held
       // card renders where the kid is; a non-leader's block can reach their slot). Then it
       // walks to the END of the block like every other card — her rule 2026-09-05: "at the
       // end of the mom block, not the one mom". Found by the switch day-walk; pre-existing.
+      // 🌞 LIVING DAY (2026-09-14): nothing sits before NOW. The buffer lays at the later of its
+      // slot and now; the rest keep their order and any printed gap that is still ahead, but
+      // never a slot the clock has passed. Before the day starts, now is earlier than every
+      // slot and the plan's times hold exactly as before.
+      const _fx=fixedOf(k);
       let p=0;
       if(buf){
-        const d0=buf.dur||20; let s0=toMin(buf.time); let mv0=true;
-        while(mv0){ mv0=false; momIv.concat(Ls).forEach(function(iv){ if(s0<iv[1]&&s0+d0>iv[0]){ s0=iv[1]; mv0=true; } }); }
+        const d0=buf.dur||20; let s0=Math.max(toMin(buf.time),nowMin); let mv0=true;
+        while(mv0){ mv0=false; momIv.concat(Ls).concat(_fx).forEach(function(iv){ if(s0<iv[1]&&s0+d0>iv[0]){ s0=iv[1]; mv0=true; } }); }
         if(s0!==toMin(buf.time)) newTimes[buf.id]=s0;
         p=s0+d0;
       }
       others.forEach(function(c){
         const d=c.dur||20;
-        let s=Math.max(toMin(c.time),p);
+        let s=Math.max(toMin(c.time),p,nowMin);
         let moved=true;
         while(moved){ moved=false;
-          momIv.concat(Ls).forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]){ s=iv[1]; moved=true; } });
+          momIv.concat(Ls).concat(_fx).forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]){ s=iv[1]; moved=true; } });
         }
         newTimes[c.id]=s; p=s+d;
       });
-      // Mom off (2026-09-05): her cards chain behind the kid's own work, stepping over
-      // lunch, so the independent day fills first; the closing tuck below then follows
-      // them. A kid with no independent work (Julian) keeps their printed slot.
-      if(momOffNow&&momQ[k].length){
-        let s=buf?p:0;
-        others.forEach(function(c){ const e=(newTimes[c.id]!==undefined?newTimes[c.id]:toMin(c.time))+(c.dur||20); if(e>s) s=e; });
-        if(!buf&&!others.length) s=toMin(momQ[k][0].time);
-        momQ[k].forEach(function(c){
-          const d=c.dur||20;
-          Ls.forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]) s=iv[1]; });
-          newTimes[c.id]=s; momIv.push([s,s+d]); s+=d;
-        });
       }
       // Fluid closing tuck: whatever the loop did to this kid's day (Mom block laid
       // later, independent work pushed), the wrap-up follows the day's new end — later
@@ -37752,10 +37894,19 @@ function mlQueueLay(tasks){
         });
       }
     });
-    if(!Object.keys(newTimes).length) return tasks;
+    // 🌙 END-OF-DAY CUT (her rule 2026-09-14): a card whose laid time runs past the Settings
+    // school end has fallen off the bottom of today — flagged `_offDay` (display only) so the
+    // schedule lists it under "didn't fit today", still checkable, until the 8 PM sweep. The
+    // closing notebook is the wrap-up and never falls off.
+    const endMin=_mlDayEndMin(); const offDay={};
+    order.forEach(function(k){ mine[k].forEach(function(c){ if(_mlClose(c)) return; const s=(newTimes[c.id]!==undefined)?newTimes[c.id]:toMin(c.time); if(s+(c.dur||20)>endMin) offDay[c.id]=true; }); });
+    if(!Object.keys(newTimes).length&&!Object.keys(momWait).length&&!Object.keys(offDay).length) return tasks;
     return tasks.map(function(x){
-      return (x&&newTimes[x.id]!==undefined&&toMin(x.time)!==newTimes[x.id])
-        ?Object.assign({},x,{time:fromMin(newTimes[x.id])}):x;
+      const nt=!!(x&&newTimes[x.id]!==undefined&&toMin(x.time)!==newTimes[x.id]);
+      const mw=!!(x&&momWait[x.id]); const od=!!(x&&offDay[x.id]);
+      if(!nt&&!mw&&!od) return x;
+      const o=Object.assign({},x); if(nt) o.time=fromMin(newTimes[x.id]); if(mw) o._momWait=true; if(od) o._offDay=true;   // display-only flags, never stored
+      return o;
     });
   }catch(e){ return tasks; }
 }
@@ -37771,10 +37922,19 @@ function mlBannerHTML(kid){
         +'<button onclick="mlKidReady(\''+kid+'\')" style="border:none;background:#f97316;color:#fff;border-radius:10px;padding:7px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">I&rsquo;m ready for Mom</button></div>';
     }
     if(mlMomOff()&&!mlDone(kid)){
+      // 🌞 Her wording 2026-09-14 for a kid whose WHOLE remaining day is Mom-required (Lucy, Julian):
+      // "play, but tidy up after yourself and be ready for Mom when she calls you to start."
+      const _rem=(getActiveTasks()||[]).filter(function(t){ return t&&t.who===kid&&_mlDayOf(t)===_todayDay&&!String(t.id||"").endsWith("_c")
+        &&!(typeof checked!=="undefined"&&checked&&checked[t.id])&&!/lunch/i.test(t.title||"")&&!(t.subjectKey==="closing_nb"||/closing notebook/i.test(t.title||"")); });
+      const _allMom=_rem.length>0&&_rem.every(function(t){ return t.mom==="required"; });
+      if(_allMom) return '<div style="background:#f5f3ff;border-left:4px solid #a78bfa;border-radius:0 10px 10px 0;padding:9px 12px;margin:0 0 8px;display:flex;align-items:center;gap:9px">'
+        +'<span style="font-size:19px">&#127918;</span>'
+        +'<div><div style="font-size:12.5px;font-weight:800;color:#5b21b6">Mom&rsquo;s busy right now</div>'
+        +'<div style="font-size:10.5px;color:#6d28d9">Go play! Tidy up when you&rsquo;re done, and listen for Mom to call you to start school.</div></div></div>';
       return '<div style="background:#f5f3ff;border-left:4px solid #a78bfa;border-radius:0 10px 10px 0;padding:9px 12px;margin:0 0 8px;display:flex;align-items:center;gap:9px">'
         +'<span style="font-size:19px">&#128105;</span>'
         +'<div><div style="font-size:12.5px;font-weight:800;color:#5b21b6">Mom&rsquo;s not available right now</div>'
-        +'<div style="font-size:10.5px;color:#6d28d9">Keep going on your own work &mdash; your Mom cards moved to after it.</div></div></div>';
+        +'<div style="font-size:10.5px;color:#6d28d9">Keep going on your own work &mdash; your Mom cards are waiting at the end of your day.</div></div></div>';
     }
     const now=mlNow(); if(!now||now.kid!==kid) return "";
     const nxt=mlNextCard(kid); if(!nxt) return "";
@@ -38256,6 +38416,7 @@ function runDisplacement(){
       if(!toPlace.length) return;
       function _markDisp(t){ if(displacedIds.has(t.id)){ t._displaced=true; t._originalDay=t._originalDay||d; } }
       var _ctx={start:_dayStart(d),end:dEnd,lunchStart:dLunchS,lunchEnd:dLunchE,momStart:momRet,kidStart:{},overtimeMax:240};
+      try{ if(typeof coopApplyStart==="function"&&typeof calDateForWeekDay==="function"){ var _cks=coopApplyStart({},calDateForWeekDay(d),[who]); if((_cks[who]||0)>cursorStart) cursorStart=_cks[who]; } }catch(e){} // 🏫 timed co-op
       _ctx.kidStart[who]=cursorStart;
 
       // Live (unchecked) tasks pack from the blockout end; anything past day-end goes cross-day.
@@ -38377,6 +38538,7 @@ function runDisplacement(){
     _applySticky(take);
     var momRet=_momReturn(d), ks={};
     take.forEach(function(t){ var s=_boEnd(d,t.who); if(_sitterKids.indexOf(t.who)>=0&&momRet>s)s=momRet; if(s)ks[t.who]=s; });
+    try{ if(typeof coopApplyStart==="function"&&typeof calDateForWeekDay==="function") coopApplyStart(ks,calDateForWeekDay(d)); }catch(e){} // 🏫 timed co-op
     var existing=working.filter(function(t){return t.day===d&&!_isClosingNb(t);});
     var _fctx={start:_floorStart(d,_dayStart(d)),end:_dayEnd(d),
       lunchStart:_dayLS(d),lunchEnd:_dayLE(d),momStart:momRet,kidStart:ks,
