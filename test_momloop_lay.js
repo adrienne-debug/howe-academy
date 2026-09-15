@@ -55,6 +55,7 @@ function run(o) {
   };
   ctx._mlNowOverride = (typeof o.nowMin === "number") ? o.nowMin : 9 * 60;   // the living day lays from NOW; 9:00 = before school
   if (typeof o.endMin === "number") ctx._mlEndOverride = o.endMin;   // the cut line (default: the 4:15 PM Settings default)
+  if (o.coopEnd) { ctx.routineDateISO = () => "2026-09-15"; ctx.coopTimedEndMin = (k, ds) => (ds === "2026-09-15" && o.coopEnd[k]) || 0; }   // 🏫 a timed co-op today for these kids
   Object.defineProperty(ctx, "_todayDay", { get: () => "thursday" });
   if (o.effectiveDay) ctx.effectiveDay = o.effectiveDay;
   vm.createContext(ctx);
@@ -252,6 +253,40 @@ console.log("\n── 🌙 END-OF-DAY CUT: laid past the Settings school end →
   const nb = card("ellis", "10:00 AM", 20, "none", "notebook"), a = card("ellis", "10:20 AM", 30, "required");
   const r = run({ tasks: [nb, a], nowMin: 9 * 60, momLoop: { cursor: 3, order: ["julian", "lucy", "lincoln", "ellis"] } });
   ok("morning: no card is flagged", r.laid.every(t => !t._offDay));
+}
+
+const toMinLocal = s => { const m = /^(\d+):(\d+)\s*(AM|PM)$/i.exec(String(s || "").trim()); if (!m) return NaN; let h = parseInt(m[1], 10) % 12; if (/pm/i.test(m[3])) h += 12; return h * 60 + parseInt(m[2], 10); };
+console.log("\n── 🏫 a co-op kid's queue never starts before they are home (2026-09-14) ──");
+{
+  // Cleveland until 2:00 PM for lincoln; ellis is not in it. Stored times say 10:00 (Sunday's deal).
+  const O = ["julian", "lucy", "lincoln", "ellis"];
+  const ln1 = card("lincoln", "10:00 AM", 20, "none", "notebook"), ln2 = card("lincoln", "10:30 AM", 30, "none", "eggspress"), lm = card("lincoln", "11:00 AM", 20, "required", "AAS");
+  const e1 = card("ellis", "10:00 AM", 20, "none", "notebook"), em = card("ellis", "10:20 AM", 20, "required", "EIC");
+  const r = run({ tasks: [ln1, ln2, lm, e1, em], nowMin: 10 * 60 + 30, coopEnd: { lincoln: 14 * 60 }, momLoop: { cursor: 3, order: O } });
+  ok("10:30 AM, lincoln at co-op: his first card lays at 2:00 PM, not 10:30", r.at(ln1.id) === "2:00 PM", r.at(ln1.id));
+  ok("…his Mom card waits until he is home and follows the notebook (notebook first)", r.at(lm.id) === "2:20 PM", r.at(lm.id));
+  ok("…and the rest of his own work steps in behind the block", r.at(ln2.id) === "2:40 PM", r.at(ln2.id));
+  ok("ellis (not in the co-op) lays from now as usual", r.at(e1.id) === "10:30 AM", r.at(e1.id));
+  ok("Mom's chain for ellis is not held hostage by lincoln's co-op", toMinLocal(r.at(em.id)) < 14 * 60, r.at(em.id));
+}
+{
+  const O = ["julian", "lucy", "lincoln", "ellis"];
+  const ln1 = card("lincoln", "10:00 AM", 20, "none", "notebook"), lm = card("lincoln", "11:00 AM", 20, "required", "AAS");
+  const r = run({ tasks: [ln1, lm], nowMin: 14 * 60 + 40, coopEnd: { lincoln: 14 * 60 }, momLoop: { cursor: 2, order: O } });
+  ok("home late (2:40): now wins over the co-op end", r.at(ln1.id) === "2:40 PM", r.at(ln1.id));
+}
+{
+  const O = ["julian", "lucy", "lincoln", "ellis"];
+  const ln1 = card("lincoln", "10:00 AM", 20, "none", "notebook"), lm = card("lincoln", "11:00 AM", 20, "required", "AAS");
+  const stamp = new Date(); const st = stamp.getFullYear() + "-" + (stamp.getMonth() + 1) + "-" + stamp.getDate();
+  const r = run({ tasks: [ln1, lm], nowMin: 10 * 60 + 30, coopEnd: { lincoln: 14 * 60 }, momLoop: { cursor: 2, order: O, momOff: st } });
+  ok("Mom off + co-op: independent work at 2:00 PM, the greyed Mom card after it", r.at(ln1.id) === "2:00 PM" && r.at(lm.id) === "2:20 PM" && !!r.laid.find(t => t.id === lm.id)._momWait, [r.at(ln1.id), r.at(lm.id)]);
+}
+{
+  const O = ["julian", "lucy", "lincoln", "ellis"];
+  const ln1 = card("lincoln", "10:00 AM", 20, "none", "notebook");
+  const r = run({ tasks: [ln1], nowMin: 10 * 60 + 30, momLoop: { cursor: 2, order: O } });
+  ok("no co-op today → unchanged (from now)", r.at(ln1.id) === "10:30 AM");
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");

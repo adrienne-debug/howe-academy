@@ -37851,6 +37851,10 @@ function mlQueueLay(tasks){
     // 🌞 LIVING DAY (her rule 2026-09-14): the day re-flows from NOW even when nobody owes Mom
     // work — an empty ring just means an empty Mom queue; each kid's own queue still moves.
     const nowMin=_mlNowMin();
+    // 🏫 a co-op kid's floor is the later of now and the co-op END on today's date (her rule
+    // 2026-09-14: "the kid's start is the co-op end" — and the morning checklist gate still
+    // applies, upstream). Whatever the stored times say, nothing lays before they are home.
+    const _mlKidFloor=function(k){ try{ if(typeof coopTimedEndMin==="function"&&typeof routineDateISO==="function"){ const ds=routineDateISO(_todayDay); const ce=ds?(coopTimedEndMin(k,ds)||0):0; return Math.max(nowMin,ce); } }catch(e){} return nowMin; };
     // The queue: mlNow's answer leads (held card in hand, or a borrower's ONE card), then
     // blocks in ring order. The decision layer stays the single authority on "who now".
     const momOffNow=mlMomOff();
@@ -37887,6 +37891,11 @@ function mlQueueLay(tasks){
       return tasks.filter(function(x){ return isToday(x)&&x.who===k&&typeof checked!=="undefined"&&checked&&checked[x.id]&&!/lunch/i.test(x.title||""); })
         .map(function(x){ return [toMin(x.time),toMin(x.time)+(x.dur||20)]; });
     };
+    const _mlClose=function(t){ return t.subjectKey==="closing_nb"||(t.title||"").toLowerCase().includes("closing notebook"); };
+    // Where a kid's BUFFER (their first unchecked card, when it is not Mom work) really lands:
+    // the later of its slot and the kid's floor, stepped over lunch and checked cards. Her rule
+    // "still notebook first": Mom's block for ANY kid starts after it, never on top of it.
+    const _bufLanding=function(k){ const f=mine[k][0]; if(!f||f.mom==="required"||_mlClose(f)) return null; const d0=f.dur||20; let s0=Math.max(_mlKidFloor(k),toMin(f.time)); const W=lunchOf(k).concat(fixedOf(k)); let mv=true; while(mv){ mv=false; W.forEach(function(iv){ if(s0<iv[1]&&s0+d0>iv[0]){ s0=iv[1]; mv=true; } }); } return {start:s0,end:s0+d0}; };
     let t=0;
     if(seq.length){
       const k0=seq[0].kid, first0=mine[k0][0];
@@ -37895,17 +37904,17 @@ function mlQueueLay(tasks){
       // 🌞 and never before NOW: the buffer card below lays from now too, so "right after the
       // buffer" is right after where the buffer really is.
       if(first0&&first0.mom!=="required"&&!(now&&now.held&&now.kid===k0)){
-        // …where the buffer REALLY lands: from now, stepped over lunch and checked cards (the
-        // per-kid lay below places it identically, so the block sits right behind it).
-        const d0=first0.dur||20; let s0=Math.max(nowMin,toMin(first0.time)); const W=lunchOf(k0).concat(fixedOf(k0)); let mv=true;
-        while(mv){ mv=false; W.forEach(function(iv){ if(s0<iv[1]&&s0+d0>iv[0]){ s0=iv[1]; mv=true; } }); }
-        t=s0+d0;
+        // …where the buffer REALLY lands (the per-kid lay below places it identically, so the
+        // block sits right behind it).
+        const bl=_bufLanding(k0); if(bl) t=bl.end;
       }
-      t=Math.max(t,nowMin);
+      t=Math.max(t,_mlKidFloor(k0));
     }
     const newTimes={}; const momWait={};
     seq.forEach(function(e){
       const Ls=lunchOf(e.kid).concat(fixedOf(e.kid));
+      t=Math.max(t,_mlKidFloor(e.kid));   // 🏫 a co-op kid's block waits until they are home
+      if(!(now&&now.held&&now.kid===e.kid)){ const bl=_bufLanding(e.kid); if(bl&&t<bl.end&&t+((e.cards[0]||{}).dur||20)>bl.start) t=bl.end; }   // 📓 notebook first: never lay the block ON the buffer
       e.cards.forEach(function(c){
         const d=c.dur||20; let moved=true;
         while(moved){ moved=false; Ls.forEach(function(iv){ if(t<iv[1]&&t+d>iv[0]){ t=iv[1]; moved=true; } }); }
@@ -37917,7 +37926,6 @@ function mlQueueLay(tasks){
     // packer laid them, stepping over the kid's Mom intervals and lunch.
     // 📓 Closing notebooks are the day's wrap-up, not just another card: they sit out of
     // the buffer/chain and re-tuck to the TRUE end of the kid's re-laid day below.
-    const _mlClose=function(t){ return t.subjectKey==="closing_nb"||(t.title||"").toLowerCase().includes("closing notebook"); };
     order.forEach(function(k){
       const Ls=lunchOf(k);
       const closes=mine[k].filter(function(x){ return x.mom!=="required"&&_mlClose(x); })
@@ -37934,7 +37942,8 @@ function mlQueueLay(tasks){
         const own=mine[k].filter(function(x){ return x.mom!=="required"&&!_mlClose(x); });
         const first=mine[k].find(function(x){ return !_mlClose(x); })||null;
         const fixed=fixedOf(k);
-        let s=first?Math.max(nowMin,toMin(first.time)):nowMin;
+        const _kf=_mlKidFloor(k);
+        let s=first?Math.max(_kf,toMin(first.time)):_kf;
         own.concat(momQ[k]).forEach(function(c){
           const d=c.dur||20; let moved=true;
           while(moved){ moved=false; Ls.concat(fixed).forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]){ s=iv[1]; moved=true; } }); }
@@ -37958,17 +37967,17 @@ function mlQueueLay(tasks){
       // slot and now; the rest keep their order and any printed gap that is still ahead, but
       // never a slot the clock has passed. Before the day starts, now is earlier than every
       // slot and the plan's times hold exactly as before.
-      const _fx=fixedOf(k);
+      const _fx=fixedOf(k); const _kf=_mlKidFloor(k);
       let p=0;
       if(buf){
-        const d0=buf.dur||20; let s0=Math.max(toMin(buf.time),nowMin); let mv0=true;
+        const d0=buf.dur||20; let s0=Math.max(toMin(buf.time),_kf); let mv0=true;
         while(mv0){ mv0=false; momIv.concat(Ls).concat(_fx).forEach(function(iv){ if(s0<iv[1]&&s0+d0>iv[0]){ s0=iv[1]; mv0=true; } }); }
         if(s0!==toMin(buf.time)) newTimes[buf.id]=s0;
         p=s0+d0;
       }
       others.forEach(function(c){
         const d=c.dur||20;
-        let s=Math.max(toMin(c.time),p,nowMin);
+        let s=Math.max(toMin(c.time),p,_kf);
         let moved=true;
         while(moved){ moved=false;
           momIv.concat(Ls).concat(_fx).forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]){ s=iv[1]; moved=true; } });
