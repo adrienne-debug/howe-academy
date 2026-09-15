@@ -5547,7 +5547,7 @@ function schedRegenerateNow(){
           const cv=cs.val()||{};
           // coops rides along too: without it a Mom regenerate ignored every co-op — the 2:00 PM
           // start, full-day co-ops and the no-Mom-lessons option (Thursday came back at 10:00 AM, 2026-09-06).
-          calendarData={holidays:cv.holidays||{},vacations:cv.vacations||{},kidOverrides:cv.kidOverrides||{},events:cv.events||{},coops:cv.coops||{}};
+          calendarData={holidays:cv.holidays||{},vacations:cv.vacations||{},kidOverrides:cv.kidOverrides||{},events:cv.events||{},coops:cv.coops||{},coopMomDays:cv.coopMomDays||{}};
           try{ HA_LS.setItem("ha_calendar",JSON.stringify(calendarData)); }catch(e2){}
           dbg("regen: calendar refreshed — kidOverride kids="+Object.keys(calendarData.kidOverrides).join(",")+" coops="+Object.keys(calendarData.coops).length); 
         }catch(e){ dbg("regen: calendar refresh FAILED: "+e); }
@@ -6044,6 +6044,8 @@ function renderSchedule(el){
     '<div><div class="day-name">'+(DAY_LBL[day]||day)+(momHere()?'<button class="bo-btn" onclick="openBoDialog(\''+day+'\')">+ Blockout</button>':'')+
     (momHere()?'<button class="bo-btn" onclick="schedDayOffToggleOpen()">😷 Kid Off</button>':'')+
     (momHere()?'<button class="bo-btn" onclick="schedRegenerateNow()">🔄 Regenerate</button>':'')+
+    (function(){ try{ if(!momHere()||typeof coopTimedOn!=="function"||typeof calDateForWeekDay!=="function") return ''; const _ds=calDateForWeekDay(day); const _co=_ds?coopTimedOn(_ds):[]; if(!_co.length) return ''; const _on=coopMomDay(_ds);
+      return '<button class="bo-btn" onclick="coopToggleMomDay(\''+_ds+'\')" title="'+esc(_co.map(c=>c.name).join(", "))+' — '+(_on?'Mom is available today: Mom-required lessons land here. Tap to go back to the co-op rule.':'Co-op rule: no Mom-required lessons today. Tap if Mom is available after all.')+'" style="'+(_on?'background:#ecfdf5;color:#065f46;border-color:#6ee7b7':'')+'">'+(_on?'👩 Mom\'s here today ✓':'🏫 Co-op · tap if Mom\'s available')+'</button>'; }catch(e){ return ''; } })()+
     (momHere()&&day===_todayDay?'<button class="bo-btn" onclick="mlSweepEarly()" title="Move today\'s unfinished cards into the rest of the week now instead of at 8 PM">'+((typeof _mlSweepArmed!=="undefined"&&_mlSweepArmed)?'⏩ Tap again to push':'⏩ Push leftovers')+'</button>':'')+
     (momHere()&&kid!=="all"&&kid!=="mom"?'<button class="bo-btn" onclick="toggleHideCarryover(\''+kid+'\')">'+(_carryHiddenKid?'👁 Show':'🙈 Hide')+' Carryover</button>':'')+'</div>'+
     '<div class="day-date">'+_dayDate(day)+" · "+(weekData.week||WK).replace("week","Week ")+'</div>'+
@@ -16460,6 +16462,7 @@ function ceFindRuleOwner(kid,rule,excludeKey){
 function ceTogglePause(){
   const s=ceGetSubject();
   if(!s) return;
+  const wasPaused=!!s.paused;
   if(s.paused){
     ceSaveField("paused",false);
     ceSaveField("pausedSince",null);
@@ -16469,6 +16472,8 @@ function ceTogglePause(){
     ceSaveField("paused",true);
     ceSaveField("pausedSince",new Date().toISOString());
   }
+  // ⏸/▶ keep THIS week in step (2026-09-14): open cards off on pause, back on resume; lane partners follow.
+  try{ if(typeof lnPauseRelay==="function"&&typeof planBacked==="function"&&planBacked(ceEditKid,ceEditKey)) lnPauseRelay(ceEditKid,ceEditKey,!wasPaused); }catch(e){}
   ceRenderEditSheet();
   renderAll();
 }
@@ -16486,6 +16491,8 @@ function ceQuickPause(kid,key){
     currData.lastEdit=new Date().toISOString();
     db.ref("curriculum/lastEdit").set(currData.lastEdit);
   }
+  // ⏸/▶ keep THIS week in step (2026-09-14): open cards off on pause, back on resume; lane partners follow.
+  try{ if(typeof lnPauseRelay==="function"&&typeof planBacked==="function"&&planBacked(kid,key)) lnPauseRelay(kid,key,now); }catch(e){}
   renderAll();
 }
 
@@ -19369,10 +19376,48 @@ function coopsOnDate(ds){ const out=[]; const m=coopsMap(); for(const id in m){ 
 // independent, daily notebooks/drills, hand-added make-ups, catch-up and carried-over work.
 // Honored by the slot walker (generation / Finish Line / Lesson Map), the expected-pace table,
 // Builder re-lays (past owed + future placement rows) and the grid views, so they all agree.
+// Her rule 2026-09-14: "no Mom-required lessons" is the NATURAL state of a timed co-op day — ON
+// unless the co-op's box is explicitly unticked (stored false) — and Mom can flip ONE DATE back to
+// "Mom's available" (calendar/coopMomDays/<date> = true) so that day pulls from the Mom-required
+// list again. Generation, the Grid's derived cells, pace and the re-lay all read through here.
+function coopMomDay(ds){ try{ return !!(ds&&(((typeof calendarData!=="undefined"&&calendarData)||{}).coopMomDays||{})[ds]); }catch(e){ return false; } }
 function coopNoMomBaseFor(kid,ds){
+  if(coopMomDay(ds)) return null;
   const m=coopsMap();
-  for(const id in m){ const c=m[id]; if(c&&c.noMomBase&&(c.kids||[]).indexOf(kid)>=0&&_coopHasDate(c,ds)) return c.name||"Co-op"; }
+  for(const id in m){ const c=m[id]; if(c&&(c.mode||"timed")==="timed"&&c.noMomBase!==false&&(c.kids||[]).indexOf(kid)>=0&&_coopHasDate(c,ds)) return c.name||"Co-op"; }
   return null;
+}
+// The timed co-ops on a date (name + kids), for the day banner's flip.
+function coopTimedOn(ds){
+  const m=coopsMap(); const out=[];
+  for(const id in m){ const c=m[id]; if(c&&(c.mode||"timed")==="timed"&&_coopHasDate(c,ds)) out.push({id:id,name:c.name||"Co-op",kids:(c.kids||[]).slice()}); }
+  return out;
+}
+// 👩 Mom's flip for ONE co-op date. Writes the flag, then re-lays every plan-backed Mom-required
+// subject of the co-op kids for the ACTIVE week (reprojectSubjectWeek: lock, targeted update,
+// nothing drops) so the day fills from the Mom-required list right away — or, flipped back, the
+// plan stops wanting them there (cards already laid stay: they grey and flow like any other work).
+// A date in a future week needs no re-lay: generation reads the flag.
+function coopToggleMomDay(ds){
+  if(!momHere()||!ds) return null;
+  const on=!coopMomDay(ds);
+  if(!calendarData.coopMomDays) calendarData.coopMomDays={};
+  if(on) calendarData.coopMomDays[ds]=true; else delete calendarData.coopMomDays[ds];
+  if(typeof db!=="undefined"&&db){ const r=db.ref("calendar/coopMomDays/"+ds); if(on) r.set(true); else r.remove(); }
+  const kids=[]; coopTimedOn(ds).forEach(function(c){ c.kids.forEach(function(k){ if(kids.indexOf(k)<0) kids.push(k); }); });
+  const relaid=[];
+  kids.forEach(function(kid){
+    const subs=(((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[kid])||{};
+    Object.keys(subs).forEach(function(sk){
+      const sub=subs[sk]||{};
+      if(sub.mom!=="required"||sub.paused) return;
+      if(typeof planBacked!=="function"||!planBacked(kid,sk)) return;
+      try{ if(typeof reprojectSubjectWeek==="function"){ reprojectSubjectWeek(kid,sk,on?"coop-mom-on":"coop-mom-off"); relaid.push(kid+"/"+sk); } }catch(e){ if(typeof dbg==="function") dbg("coop mom-day relay skip "+kid+"/"+sk+": "+e); }
+    });
+  });
+  if(typeof gwShowToast==="function") gwShowToast(on?("👩 Mom's available on "+ds+" — Mom-required lessons can land there again"):("🏫 Back to the co-op rule for "+ds+" — no Mom-required lessons laid there"));
+  if(typeof renderAll==="function") renderAll();
+  return {date:ds,on:on,kids:kids,relaid:relaid};
 }
 function coopBlocksBase(kid,ds,sk){
   if(!ds||!sk) return false;
@@ -19382,8 +19427,8 @@ function coopBlocksBase(kid,ds,sk){
 }
 function _coop24(t12){ const mn=toMin(t12); if(isNaN(mn)) return ""; const hh=Math.floor(mn/60), mm=mn%60; return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0"); }
 let coopScanStatus="";
-function coopStartAdd(){ coopEditId="__new__"; coopForm={name:"",color:COOP_COLORS[0],kids:[...ROSTER],mode:"timed",start:"09:00",end:"12:00",dates:[],noMomBase:false}; coopScanStatus=""; renderAll(); }
-function coopStartEdit(id){ const c=coopsMap()[id]; if(!c) return; coopEditId=id; coopForm={name:c.name||"",color:c.color||COOP_COLORS[0],kids:(c.kids||[]).slice(),mode:c.mode||"timed",start:c.start?_coop24(c.start):"09:00",end:c.end?_coop24(c.end):"12:00",dates:(c.dates||[]).slice().sort(),noMomBase:!!c.noMomBase}; coopScanStatus=""; renderAll(); }
+function coopStartAdd(){ coopEditId="__new__"; coopForm={name:"",color:COOP_COLORS[0],kids:[...ROSTER],mode:"timed",start:"09:00",end:"12:00",dates:[],noMomBase:true}; coopScanStatus=""; renderAll(); }
+function coopStartEdit(id){ const c=coopsMap()[id]; if(!c) return; coopEditId=id; coopForm={name:c.name||"",color:c.color||COOP_COLORS[0],kids:(c.kids||[]).slice(),mode:c.mode||"timed",start:c.start?_coop24(c.start):"09:00",end:c.end?_coop24(c.end):"12:00",dates:(c.dates||[]).slice().sort(),noMomBase:c.noMomBase!==false}; coopScanStatus=""; renderAll(); }
 function coopCancel(){ coopEditId=null; coopForm=null; coopScanStatus=""; renderAll(); }
 // 📸 Scan a photo of the co-op's printed schedule → Claude extracts the meeting dates (and
 // times, if shown) → merge into the form's date list. Reuses the exact book-scan pipeline
@@ -19447,7 +19492,7 @@ function coopSave(){
   const prevCreated=(coopsMap()[coopEditId]||{}).created;
   const obj={name:coopForm.name.trim(),color:coopForm.color,kids:coopForm.kids.slice(),mode:coopForm.mode,dates:(coopForm.dates||[]).slice().sort(),created:wasNew?Date.now():(prevCreated||Date.now())};
   if(coopForm.mode==="timed"){ obj.start=to12h(coopForm.start); obj.end=to12h(coopForm.end); }
-  if(coopForm.noMomBase) obj.noMomBase=true;
+  obj.noMomBase=coopForm.noMomBase!==false;   // stored explicitly: false is the only way to turn the natural default off
   db.ref("calendar/coops/"+id).set(obj);
   calendarData.coops=calendarData.coops||{}; calendarData.coops[id]=obj;   // optimistic local
   coopEditId=null; coopForm=null;
@@ -19458,8 +19503,8 @@ function coopSave(){
 // co-op only (never the whole node), so it can be flipped from the list without the edit form.
 function coopToggleNoMom(id,on){
   const c=coopsMap()[id]; if(!c) return;
-  if(db){ if(on) db.ref("calendar/coops/"+id+"/noMomBase").set(true); else db.ref("calendar/coops/"+id+"/noMomBase").remove(); }
-  if(on) c.noMomBase=true; else delete c.noMomBase;   // optimistic local
+  if(db){ db.ref("calendar/coops/"+id+"/noMomBase").set(!!on); }   // explicit false = off (missing = the natural ON)
+  c.noMomBase=!!on;   // optimistic local
   if(coopForm&&coopEditId===id) coopForm.noMomBase=!!on;  // keep an open edit form in step
   if(typeof gwShowToast==="function") gwShowToast((c.name||"Co-op")+": "+(on?"no Mom-required lessons on its days":"Mom-required lessons back on its days")+" \u2014 regenerate a week to reflow");
   renderAll();
@@ -19481,7 +19526,7 @@ function renderCoopSection(){
     h+='<div class="gcal-card">';
     list.forEach(([id,c])=>{
       const when=c.mode==="fullDay"?"Full day off":((c.start||"?")+"–"+(c.end||"?"));
-      const noMomBox=c.mode==="timed"?'<label style="display:inline-flex;align-items:center;gap:5px;margin-top:4px;font-size:11px;color:'+(c.noMomBase?"#6d28d9":"var(--muted)")+';cursor:pointer"><input type="checkbox" '+(c.noMomBase?'checked':'')+' onchange="coopToggleNoMom(\''+id+'\',this.checked)" style="margin:0">No Mom-required lessons on these days</label>':'';
+      const noMomBox=c.mode==="timed"?'<label style="display:inline-flex;align-items:center;gap:5px;margin-top:4px;font-size:11px;color:'+(c.noMomBase!==false?"#6d28d9":"var(--muted)")+';cursor:pointer"><input type="checkbox" '+(c.noMomBase!==false?'checked':'')+' onchange="coopToggleNoMom(\''+id+'\',this.checked)" style="margin:0">No Mom-required lessons on these days</label>':'';
       const kidsTxt=(c.kids||[]).map(k=>cap(k)).join(", ")||"no kids";
       const nDates=(c.dates||[]).length;
       h+='<div class="gcal-row">'+
@@ -19522,7 +19567,7 @@ function renderCoopForm(){
     h+='</div><div style="font-size:10px;color:var(--muted);margin:2px 0 10px">School work is scheduled after “Back by” on these dates.</div>';
   }
   if(f.mode==="timed"){
-    h+='<label style="display:flex;align-items:flex-start;gap:8px;margin:0 0 12px;font-size:12px;cursor:pointer"><input type="checkbox" '+(f.noMomBase?'checked':'')+' onchange="coopSet(\'noMomBase\',this.checked)" style="margin-top:2px"><span><b>No Mom-required lessons on these days</b><br><span style="font-size:10px;color:var(--muted)">Subjects marked Mom Required skip their planned slot here (the lesson moves to the next one). Independent, May-need-Mom, notebooks, drills, make-ups and catch-up still run after \u201cBack by.\u201d</span></span></label>';
+    h+='<label style="display:flex;align-items:flex-start;gap:8px;margin:0 0 12px;font-size:12px;cursor:pointer"><input type="checkbox" '+(f.noMomBase!==false?'checked':'')+' onchange="coopSet(\'noMomBase\',this.checked)" style="margin-top:2px"><span><b>No Mom-required lessons on these days</b><br><span style="font-size:10px;color:var(--muted)">Subjects marked Mom Required skip their planned slot here (the lesson moves to the next one). Independent, May-need-Mom, notebooks, drills, make-ups and catch-up still run after \u201cBack by.\u201d</span></span></label>';
   }
   h+='<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">Dates</div>';
   h+='<label style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:9px;border:none;background:#7c3aed;color:#fff;font-size:12px;font-weight:800;cursor:pointer;margin-bottom:8px">\u{1F4F8} Scan schedule photo<input type="file" accept="image/*" multiple style="display:none" onchange="coopScanSchedule(this)"></label>';
@@ -28311,7 +28356,10 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
   // phantoms (date-id cards of this plan-backed subject): remove when unlocked
   (liveTasks||[]).filter(isPhantom).forEach(t=>{ if(locked(t)) return; upd[t.id]=null; summary.removed.push(t.id); (freed[t.day]=freed[t.day]||[]).push(t.time); const i=after.indexOf(t); if(i>=0) after.splice(i,1); });
   // Her rule: NOTHING drops. A card the plan does not want this week leaves only when its
-  // lesson is already finished (the done record has its id). An unfinished lesson the pattern
+  // lesson is already finished (the done record has its id). ONE deliberate exception
+  // (2026-09-14): `opts.dropUnwanted` — set ONLY by an explicit PAUSE — also removes an
+  // unlocked, unfinished card, because pausing IS the intent to take it off the week. Locked
+  // cards (checked, claimed, started) still never move. An unfinished lesson the pattern
   // has no slot for — a cascade-made second sitting, a card cascaded onto a day the subject
   // never runs (Lincoln's Saturday pg 34, deleted by the 2026-09-03 rebuild), an overflow card —
   // stays exactly where it sits; next week's build still sees it undone.
@@ -28320,7 +28368,7 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
   // removals + moves + retitles
   live.forEach(t=>{
     const w=wantBy[t.id];
-    if(!w){ if(locked(t)) return; if(!doneLid(t)){ summary.kept.push(t.id); return; } upd[t.id]=null; summary.removed.push(t.id); (freed[t.day]=freed[t.day]||[]).push(t.time); const i=after.indexOf(t); if(i>=0) after.splice(i,1); return; }
+    if(!w){ if(locked(t)) return; if(!doneLid(t)&&!opts.dropUnwanted){ summary.kept.push(t.id); return; } upd[t.id]=null; summary.removed.push(t.id); (freed[t.day]=freed[t.day]||[]).push(t.time); const i=after.indexOf(t); if(i>=0) after.splice(i,1); return; }
     if(w.title&&w.title!==t.title&&!opts.checked[t.id]){ upd[t.id+"/title"]=w.title; if(w.detail!==undefined) upd[t.id+"/detail"]=w.detail||null; t.title=w.title; if(w.detail!==undefined) t.detail=w.detail; summary.retitled.push(t.id); }
     if(w.day&&w.day!==t.day){ if(locked(t)) return; if(dayIx(w.day)>=0&&tIx>=0&&dayIx(w.day)<tIx) return; // never move into the past
       (freed[t.day]=freed[t.day]||[]).push(t.time); t.day=w.day; t.time=null; summary.moved.push(t.id); }
@@ -28543,7 +28591,7 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
   summary.shifted.forEach(id=>{ if(upd[id]!==undefined||upd[id+"/time"]!==undefined) return; const t=after.find(x=>x.id===id); if(t) upd[id+"/time"]=t.time; });
   return {upd,summary,tasksAfter:after};
 }
-function reprojectSubjectWeek(kid,sk,why){
+function reprojectSubjectWeek(kid,sk,why,opts){
   if(typeof planBacked!=="function"||!planBacked(kid,sk)) return null;
   if(!weekData||!Array.isArray(weekData.tasks)||!WK) return null;
   if(typeof fbTasksLoaded!=="undefined"&&!fbTasksLoaded) return null;
@@ -28571,7 +28619,7 @@ function reprojectSubjectWeek(kid,sk,why){
       // 🛤 a lane member on a borrowed / shared rhythm is judged by THAT rhythm's days and cap
       let _rpDays=_subj.allowedDays||[], _rpCap=_subj.cap||1;
       try{ if(typeof lnOf==="function"){ const _l=lnOf(kid,sk); if(_l){ const _rh=lnRhythm(kid,_l.id,_l.unitIdx); if(_rh&&!_rh.own){ _rpDays=_rh.allowedDays||[]; _rpCap=_rh.cap||1; } } } }catch(e){}
-      const r=_reprojectPlan(kid,sk,weekData.tasks,gen.result.tasks,{todayDay,nowMin:nowD.getHours()*60+nowD.getMinutes(),checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},dayCtx,packAround,toMin,fromMin,dayCap:_rpCap,lidOrder:_subj.lessonIds||[],allowedDays:_rpDays,doneLids:_doneLids});
+      const r=_reprojectPlan(kid,sk,weekData.tasks,gen.result.tasks,{todayDay,nowMin:nowD.getHours()*60+nowD.getMinutes(),checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},dayCtx,packAround,toMin,fromMin,dayCap:_rpCap,lidOrder:_subj.lessonIds||[],allowedDays:_rpDays,doneLids:_doneLids,dropUnwanted:!!(opts&&opts.dropUnwanted)});
       const n=r.summary.added.length+r.summary.moved.length+r.summary.removed.length+r.summary.retitled.length+((r.summary.closing||[]).length)+((r.summary.shifted||[]).length);
       out=r.summary;
       if(!n) return;
@@ -28605,6 +28653,40 @@ function lnHandoff(kid,sk,why){
   return {finished:sk,next:next};
 }
 // LANE_HANDOFF_END
+// PAUSE_RELAY_START ── ⏸ pause / ▶ resume keep THIS week in step (her ask 2026-09-14) ─────────
+// Pausing used to leave the week's already-dealt cards on the schedule (and, for a lane member,
+// on the Grid) until the week moved on. Now: PAUSE re-lays the subject with `dropUnwanted` — the
+// generator deals nothing for a paused subject, so every unlocked open card leaves the week
+// (checked / claimed / started ones stay as records) — then re-lays its lane partners (a multiple
+// card closes ranks; a stack's next unit steps up) so they take the freed days. RESUME re-lays the
+// subject (planAnchor is already today) and the same partners, so they give the days back.
+// Active week only, scheduler lock, targeted updates — the same reprojectSubjectWeek every grid
+// edit and the lane handoff use. Not plan-backed → nothing to re-lay → the caller skips it.
+function lnPauseRelay(kid,sk,paused){
+  if(typeof reprojectSubjectWeek!=="function") return null;
+  const why=paused?"pause":"resume"; const relaid=[];
+  try{ reprojectSubjectWeek(kid,sk,why,paused?{dropUnwanted:true}:undefined); relaid.push(sk); }
+  catch(e){ if(typeof dbg==="function") dbg("pause relay skip "+kid+"/"+sk+": "+e); }
+  const partners=[];
+  try{
+    if(typeof lnOf==="function"){
+      const ln=lnOf(kid,sk);
+      if(ln){
+        const add=function(x){ if(x!==sk&&partners.indexOf(x)<0&&lnOpenCount(kid,x)>0) partners.push(x); };
+        lnUnitSubs(ln.unit).forEach(add);                                   // the multiple card's other letters
+        const up=lnUp(kid,ln.id); const us=lnUnits(kid,ln.id);
+        if(up>=0&&up!==ln.unitIdx) lnUnitSubs(us[up]).forEach(add);         // the unit now up (stack: the next book)
+      }
+    }
+  }catch(e){}
+  partners.forEach(function(x){ try{ reprojectSubjectWeek(kid,x,why+":partner"); relaid.push(x); }catch(e){ if(typeof dbg==="function") dbg("pause relay partner skip "+kid+"/"+x+": "+e); } });
+  const subs=((currData||{}).subjects||{})[kid]||{}; const nm=function(x){ return (subs[x]||{}).display||x; };
+  if(typeof gwShowToast==="function") gwShowToast(paused
+    ?("⏸ "+nm(sk)+" — this week's open cards cleared"+(partners.length?("; "+partners.map(nm).join(" / ")+" takes the days"):""))
+    :("▶ "+nm(sk)+" is back — laid from the next open day"+(partners.length?("; "+partners.map(nm).join(" / ")+" re-laid around it"):"")));
+  return {subject:sk,paused:!!paused,relaid:relaid,partners:partners};
+}
+// PAUSE_RELAY_END
 function _gvRelaySubject(kid,sk,doneMsg){
   cbKid=kid; cbSubjKey=sk; cbForm=cbDefaultForm(kid,sk); cbPreviewRes=null;
   try{ cbPreviewRes=_cbEngine(); }
@@ -29541,6 +29623,22 @@ function renderCurrGrid(el){
   try{ for(const ds of Object.keys(_cardMinByDate||{})){ if(ds>gvEnd) gvEnd=ds; } }catch(e){}   // card-only subjects' future slots count too
   const _gvDaysIn=dayNums.filter(dn=>{ const l=lessons[dn]; return l&&l.date&&(!gvEnd||l.date<=gvEnd); }).length;
   const _gvTrimmed=dayNums.filter(dn=>{ const l=lessons[dn]; return l&&l.date; }).length-_gvDaysIn;
+  // 🏫 WHAT THIS WEEK LOST TO A CO-OP DAY (her ask 2026-09-14: lessons "hang out in the week they
+  // are supposed to be"): per week, per Mom-required subject, the sittings a no-Mom co-op day
+  // blocked — shown as chips on the week band. Display only: the projection still lays the
+  // lesson on the next open day; this is the record of which week it belonged to.
+  const _wkLost={};
+  try{ if(typeof coopBlocksBase==="function"){
+    dayNums.forEach(function(dn2){ const l2=lessons[dn2]; if(!l2||!l2.date||!l2.week||l2.date<today) return;
+      const dow2=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][gwParseDate(l2.date).getDay()];
+      _allSks.forEach(function(sk2){ const s2=subs[sk2]||{}; if(s2.paused||s2.mom!=="required") return;
+        const runs=(s2.allowedDays&&s2.allowedDays.length)?s2.allowedDays.indexOf(dow2)>=0:gvFilled(l2[sk2]);
+        if(!runs||!coopBlocksBase(gvKid,l2.date,sk2)) return;
+        const w=_wkLost[l2.week]||(_wkLost[l2.week]={}); (w[sk2]||(w[sk2]=[])).push(l2.date); }); });
+  } }catch(e){}
+  const _gvLostChips=function(wk){ const w=_wkLost[wk]; if(!w) return "";
+    return Object.keys(w).map(function(sk2){ const ds=w[sk2]; const nm=(typeof coopNoMomBaseFor==="function"&&coopNoMomBaseFor(gvKid,ds[0]))||"co-op"; const shortNm=(typeof lnShort==="function")?lnShort((subs[sk2]||{}).display||sk2):String((subs[sk2]||{}).display||sk2);
+      return ' <span class="gv-badge" title="'+esc(nm)+' — no Mom-required lessons on '+esc(ds.join(", "))+'; this sitting moved to the next open day" style="background:#f5f3ff;color:#6d28d9;text-transform:none;letter-spacing:0;font-weight:700">🏫 '+esc(shortNm)+' ×'+ds.length+'</span>'; }).join(""); };
   let lastWk=null;
   for(const dn of dayNums){
     const l=lessons[dn]; if(!l||!l.date) continue;
@@ -29551,7 +29649,7 @@ function renderCurrGrid(el){
     const d=gwParseDate(l.date);
     if(l.week!==lastWk){
       lastWk=l.week;
-      h+='<tr class="gv-wkband"><td colspan="'+(2+cols.length)+'">'+esc(l.week||"")+'</td></tr>';
+      h+='<tr class="gv-wkband"><td colspan="'+(2+cols.length)+'">'+esc(l.week||"")+_gvLostChips(l.week)+'</td></tr>';
     }
     const offReason=smapIsKidOff(gvKid,l.date);
     const mapOff=schedOvKidOff(gvKid,l.date);

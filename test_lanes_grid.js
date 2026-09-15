@@ -234,6 +234,22 @@ console.log("\n── a lane must never be mistaken for a deleted subject ──
   ok("a REAL orphan is still reported", /deleted subject/.test(hg) && /ghost_subj/.test(hg), (hg.match(/deleted subject[\s\S]{0,140}/) || [""])[0]);
 }
 
+console.log("\n── 🏫 the week band records what a co-op day blocked (2026-09-14) ──");
+{
+  const c = world({});
+  c.currData.subjects.kid.plain.mom = "required";
+  c.coopBlocksBase = (k, ds, sk) => sk === "plain" && ds === "2026-09-17";
+  c.coopNoMomBaseFor = (k, ds) => ds === "2026-09-17" ? "Cleveland Co-Op" : null;
+  const html = render(c);
+  const band = (html.match(/<tr class="gv-wkband"><td[^>]*>Wk 2(.*?)<\/td><\/tr>/) || [])[1] || "";
+  ok("Wk 2's band carries a 🏫 chip for Plain ×1", /🏫 Plain ×1/.test(band), band);
+  ok("…naming the co-op and the date", /Cleveland Co-Op — no Mom-required lessons on 2026-09-17/.test(band));
+  ok("only that week, only once", (html.match(/🏫 Plain/g) || []).length === 1);
+  const c1 = world({}); c1.coopBlocksBase = (k, ds, sk) => sk === "plain" && ds === "2026-09-17";   // Plain is NOT Mom-required here
+  ok("an independent subject never shows as blocked (the rule only blocks Mom-required)", !/🏫 Plain/.test(render(c1)));
+  ok("no co-op → no chips anywhere", !/🏫 /.test(render(world({}))));
+}
+
 console.log("\n── wiring ──");
 {
   const g = src.indexOf("function renderCurrGrid"); const grid = src.slice(g, g + 70000);
