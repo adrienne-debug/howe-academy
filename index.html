@@ -5284,6 +5284,7 @@ function momHQGo(t){
     case "settings": case "calendar": case "chores": case "generate": setAdminSub(t); return;
     case "grabs": cpSlot="grabs"; setAdminSub("chores"); return;
     case "chorePlan": cpSlot="chores"; setAdminSub("chores"); return;
+    case "admin-mastery": setAdminSub("mastery"); return;   // 🧠 Mastery HQ
     case "curriculum": currInnerTab="subjects"; setAdminSub("curriculum"); return;
     case "builder": currInnerTab="builder"; setAdminSub("curriculum"); return;
     case "grid": currInnerTab="grid"; setAdminSub("curriculum"); return;
@@ -5403,7 +5404,7 @@ function renderMomHQ(el,ah){
     // _hqRow("builder","🧱","Curriculum Builder","Pacing modes, day caps, rebuild-all, book scan"),
     _hqRow("grid","📚","Curriculum","The whole thing — grid, subject cards, pacing & build, rules, add subjects"),
     _hqRow("generate","🪄","Generate Week","Regenerate this week, plan next week, notebooks, week JSON"),
-    _hqRow("mastery","🧠","Drills & Mastery","Drill rules, decks, review dates (own Mom PIN inside)"),
+    _hqRowFn("setAdminSub('mastery')","🧠","Drills & Mastery","Rules, decks, sessions, cards — all in Mastery HQ"),
     _hqRow("units","🗺","Unit Studies","Units, decks, activities (🔒 Mom chip inside)"),
     _hqRow("notebook","📓","Notebooks","Extra pages, prong margin, printing (🔒 Mom chip inside)"),
     _hqRowFn("wbPanelOpen()","📕","Workbooks","Bought workbook PDFs — the kids write on the page with the Apple Pencil")
@@ -36577,7 +36578,7 @@ function mhqFinish(row,perDay,today){
 
 let mhqKid="lincoln",mhqView="week",mhqDeck=null;
 
-function mhqSetKid(k){ mhqKid=k; mhqDeck=null; if(typeof mhqSessEdit!=="undefined"){ mhqSessEdit=null; mhqSessForm=null; mhqSessErr=""; } renderAll(); }
+function mhqSetKid(k){ mhqKid=k; mhqDeck=null; if(typeof mhqSessEdit!=="undefined"){ mhqSessEdit=null; mhqSessForm=null; mhqSessErr=""; } mastAdminLocal=null; renderAll(); }
 function mhqSetView(v){ mhqView=v; mhqDeck=null; if(typeof mhqSessEdit!=="undefined"){ mhqSessEdit=null; mhqSessForm=null; mhqSessErr=""; } renderAll(); }
 function mhqOpenDeck(name){ mhqDeck=name; renderAll(); }
 function mhqBack(){ mhqDeck=null; renderAll(); }
@@ -36619,7 +36620,7 @@ function renderMasteryHQ(el,ah){
   const rows=mhqDeckStats(mhqKid,pn);
 
   if(mhqDeck) h+=_mhqRenderDeckPage(mhqKid,mhqDeck,rows);
-  else if(mhqView==="sessions"||mhqView==="panel"||mhqView==="import") h+=((typeof _mhqExtraView==="function")?_mhqExtraView(mhqKid,rows,pn):'');
+  else if(mhqView==="sessions"||mhqView==="panel"||mhqView==="import"||mhqView==="rules") h+=((typeof _mhqExtraView==="function")?_mhqExtraView(mhqKid,rows,pn):'');
   else if(mhqView==="decks") h+=_mhqRenderDecksList(mhqKid,rows);
   else h+=_mhqRenderWeekView(mhqKid,rows,pn);
 
@@ -36704,6 +36705,10 @@ function _mhqRenderWeekView(kid,rows,pn){
   }
   h+='</div>';
 
+  // 🩹 The stuck-card report sits under the day's table — the attention chip above counts them,
+  // this names them. Cross-deck by nature, so it lives here rather than on one deck's page.
+  try{ const _mk=masteryKid; masteryKid=kid; if(!mastAdminLocal) mastAdminInit(); h+=mastAdminStuckHtml(); masteryKid=_mk; }catch(e){}
+
   return h;
 }
 
@@ -36730,7 +36735,11 @@ function _mhqRenderDeckPage(kid,deck,rows){
   if(!row) return '<div style="padding:20px;text-align:center;color:var(--muted)">Deck not found.</div>';
 
   const _mk=masteryKid; masteryKid=kid; const s=mastDrillSettings(); masteryKid=_mk;
-  const perDay=(s.cat_intro_max&&s.cat_intro_max[deck]!=null)?s.cat_intro_max[deck]:s.max_intro_per_cat;
+  // When a study session owns the deck, IT paces the new cards — the drill's intro cap doesn't
+  // apply, so the finish estimate has to use the session's rate or it reads months too slow.
+  const _own=(typeof mhqDeckOwner==="function")?mhqDeckOwner(kid,deck):null;
+  const _os=_own?(mstSessions(kid).find(function(x){return x.sid===_own;})):null;
+  const perDay=_os?_os.newPerDay:((s.cat_intro_max&&s.cat_intro_max[deck]!=null)?s.cat_intro_max[deck]:s.max_intro_per_cat);
   const fin=mhqFinish(row,perDay);
 
   let h='<div>';
@@ -36746,6 +36755,15 @@ function _mhqRenderDeckPage(kid,deck,rows){
     h+='</div>';
   }
 
+  h+=(typeof _mhqDeckSettings==="function")?_mhqDeckSettings(kid,deck):'';
+
+  const _grid=(typeof _mhqDeckCardsHtml==="function")?_mhqDeckCardsHtml(kid,deck):'';
+  if(_grid){
+    h+=_grid;
+    h+=(typeof _mhqDeckAddHtml==="function")?_mhqDeckAddHtml(kid,deck):'';
+    h+='</div>';
+    return h;
+  }
   const cards=mhqDeckCards(kid,deck).slice(0,400);
   h+='<div style="display:flex;flex-direction:column">';
   if(!cards.length) h+='<div style="padding:16px 8px;text-align:center;color:var(--muted)">Nothing in this deck.</div>';
@@ -37136,6 +37154,9 @@ function _mhqRenderSessions(kid) {
   }
   if (mhqSessEdit === "__new_deck" || mhqSessEdit === "__new_mix" || mhqSessEdit === "__new_all") h += _mhqRenderSessForm(kid);
   h += '</div>';
+  // 🎬 Decks waiting their turn — a dormant deck set to start after another finishes. Same
+  // renderer, same writers as the old page; it belongs here because it is about when a deck begins.
+  try{ const _mk=masteryKid; masteryKid=kid; if(!mastAdminLocal) mastAdminInit(); h+=mastAdminWaitingHtml(); masteryKid=_mk; }catch(e){}
   return h;
 }
 
@@ -37176,7 +37197,7 @@ function _mhqRenderPanel(kid) {
     const eff = mhqEffective(kid, r.deck);
     const sessName = eff.session.v ? ((sessions.find(function (s) { return s.sid === eff.session.v; }) || {}).name || eff.session.v) : "—";
     h += '<tr style="border-bottom:1px solid var(--border)">';
-    h += '<td style="padding:6px 8px;font-weight:700">' + mhqEsc(r.deck) + '</td>';
+    h += '<td style="padding:6px 8px;font-weight:700;cursor:pointer;color:var(--header)" onclick="mhqOpenDeck(\'' + mhqArgEsc(r.deck) + '\')">' + mhqEsc(r.deck) + '</td>';
     h += '<td style="padding:6px 8px;text-align:right"><div>' + mhqEsc(sessName) + '</div><div style="font-size:9px;color:var(--muted)">' + eff.session.src + '</div></td>';
     h += _mhqEffCell(eff.newPerDay) + _mhqEffCell(eff.mixInAt,mhqTierLbl) + _mhqEffCell(eff.handOffAt,mhqTierLbl) +
          _mhqEffCell(eff.introDots) + _mhqEffCell(eff.cap) + _mhqEffCell(eff.mode) + _mhqEffCell(eff.sprint);
@@ -37192,12 +37213,127 @@ function _mhqExtraView(kid, rows, pn) {
   if (mhqView === "sessions") return _mhqRenderSessions(kid);
   if (mhqView === "panel") return _mhqRenderPanel(kid);
   if (mhqView === "import") return (typeof _mhqRenderImport === "function") ? _mhqRenderImport(kid) : "";
+  if (mhqView === "rules") return _mhqRenderRules(kid);
   return "";
 }
 function _mhqExtraPills() {
   return _mhqPill("Sessions", mhqView === "sessions", "mhqSetView('sessions')") +
          _mhqPill("Control panel", mhqView === "panel", "mhqSetView('panel')") +
+         _mhqPill("\u2699 Rules", mhqView === "rules", "mhqSetView('rules')") +
          ((typeof _mhqImportPill === "function") ? _mhqImportPill() : "");
+}
+// ⚙ Rules — the kid-level drill rules, ladder and behaviour, rendered from the SAME section
+// renderers and written by the SAME mastAdmin* functions as the old Admin page. One writer.
+function _mhqRenderRules(kid){
+  const _mk=masteryKid; masteryKid=kid;
+  let h='';
+  try{
+    if(!mastAdminLocal) mastAdminInit();
+    h+='<div style="font-size:12px;color:var(--muted);margin-bottom:10px">These are '+mhqEsc((typeof cap==="function")?cap(kid):kid)+'\u2019s defaults. A deck or a study session can override some of them \u2014 the Control panel shows which.</div>';
+    h+=mastAdminRulesHtml();
+  }catch(e){ h+='<div style="padding:20px;color:var(--muted)">Couldn\u2019t draw the rules.</div>'; }
+  masteryKid=_mk;
+  return h;
+}
+// ── A deck's own settings, on the deck page ─────────────────────────────────────
+// Every control calls the SAME writer the old Admin page used, so the value has one owner:
+//   cap / intro dots / new-at-once / sprint  → edit a draft (mastAdminLocal) + Save
+//   mode / flip direction                    → written immediately, per deck
+// "inherit" clears the override (delta 0) and the value falls back to the kid's default.
+function _mhqStep(label,val,src_,onDown,onUp,onClear){
+  let h='<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">';
+  h+='<div style="flex:1;min-width:130px"><div style="font-size:13px;font-weight:700">'+label+'</div>';
+  h+='<div style="font-size:10px;color:var(--muted)">'+(src_==="deck"?"set for this deck":"from "+mhqEsc(src_))+'</div></div>';
+  h+='<div style="display:flex;align-items:center;gap:6px">';
+  h+='<button onclick="'+onDown+'" style="width:34px;height:34px;border-radius:9px;border:1.5px solid var(--border);background:var(--card);font-size:17px;font-weight:700;cursor:pointer">−</button>';
+  h+='<span style="min-width:30px;text-align:center;font-weight:800;font-variant-numeric:tabular-nums'+(src_==="deck"?";color:var(--header)":"")+'">'+val+'</span>';
+  h+='<button onclick="'+onUp+'" style="width:34px;height:34px;border-radius:9px;border:1.5px solid var(--border);background:var(--card);font-size:17px;font-weight:700;cursor:pointer">+</button>';
+  if(src_==="deck"&&onClear) h+='<button onclick="'+onClear+'" title="use the kid’s default" style="height:34px;padding:0 10px;border-radius:9px;border:1.5px solid var(--border);background:var(--card);font-size:11px;font-weight:700;cursor:pointer;color:var(--muted)">inherit</button>';
+  h+='</div></div>';
+  return h;
+}
+function _mhqDeckSettings(kid,deck){
+  const _mk=masteryKid; masteryKid=kid;
+  let h='';
+  try{
+    if(!mastAdminLocal) mastAdminInit();
+    const L=mastAdminLocal, live=mastDrillSettings();
+    const esc=mhqArgEsc(deck);
+    const capV=(L.cat_caps&&L.cat_caps[deck]!=null)?L.cat_caps[deck]:(L.max_per_cat||5);
+    const capS=(L.cat_caps&&L.cat_caps[deck]!=null)?"deck":"kid";
+    const dotV=(L.cat_intro_dots&&L.cat_intro_dots[deck]!=null)?L.cat_intro_dots[deck]:(L.intro_dots||5);
+    const dotS=(L.cat_intro_dots&&L.cat_intro_dots[deck]!=null)?"deck":"kid";
+    const newV=(L.cat_intro_max&&L.cat_intro_max[deck]!=null)?L.cat_intro_max[deck]:(L.max_intro_per_cat||3);
+    const newS=(L.cat_intro_max&&L.cat_intro_max[deck]!=null)?"deck":"kid";
+    const spr=(L.cat_sprint||{})[deck];
+    const mode=(typeof mastGetCatMode==="function")?mastGetCatMode(kid,deck):(((live.cat_modes||{})[deck])||"flash");
+    const owner=(typeof mhqDeckOwner==="function")?mhqDeckOwner(kid,deck):null;
+    const sess=owner?(mstSessions(kid).find(function(x){return x.sid===owner;})):null;
+
+    h+='<div style="background:var(--card);border:1.5px solid var(--border);border-radius:12px;padding:14px 16px;margin:14px 0">';
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700;margin-bottom:8px">⚙ Settings for this deck</div>';
+    if(sess) h+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">New cards are paced by the <b>'+mhqEsc((sess.emoji||"")+" "+(sess.name||owner))+'</b> session ('+sess.newPerDay+'/day). The numbers below govern Mom’s drill.</div>';
+    h+=_mhqStep("Cards a day (this deck)",capV,capS,"mastAdminCatCap('"+esc+"',-1)","mastAdminCatCap('"+esc+"',1)","mastAdminCatCap('"+esc+"',0)");
+    h+=_mhqStep("Times shown before the ladder",dotV,dotS,"mastAdminCatIntro('"+esc+"',-1)","mastAdminCatIntro('"+esc+"',1)","mastAdminCatIntro('"+esc+"',0)");
+    h+=_mhqStep("New at once",newV,newS,"mastAdminCatIntroMax('"+esc+"',-1)","mastAdminCatIntroMax('"+esc+"',1)","mastAdminCatIntroMax('"+esc+"',0)");
+    // sprint: on / off / inherit, one control cycling through the three
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">';
+    h+='<div style="flex:1;min-width:130px"><div style="font-size:13px;font-weight:700">Feeds Sprints</div><div style="font-size:10px;color:var(--muted)">'+(spr===undefined?("from kid ("+(live.sprint_default?"on":"off")+")"):"set for this deck")+'</div></div>';
+    h+='<button onclick="mastAdminCatSprint(\''+esc+'\')" style="height:34px;padding:0 14px;border-radius:999px;border:1.5px solid '+(spr===undefined?"var(--border)":"var(--header)")+';background:'+(spr===true?"var(--header)":"var(--card)")+';color:'+(spr===true?"#fff":"var(--text)")+';font-size:12px;font-weight:700;cursor:pointer">'+(spr===undefined?"inherit":spr?"on":"off")+'</button></div>';
+    // mode + flip direction write straight through
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:9px 0;flex-wrap:wrap">';
+    h+='<div style="flex:1;min-width:130px"><div style="font-size:13px;font-weight:700">Card type</div><div style="font-size:10px;color:var(--muted)">saves straight away</div></div>';
+    h+='<div style="display:flex;gap:5px;flex-wrap:wrap">';
+    [["flash","⚡ Flash"],["flip","\u{1F504} Flip"],["quiz","\u{1F4DD} Quiz"]].forEach(function(m){
+      h+='<button onclick="mastAdminCatMode(\''+esc+'\',\''+m[0]+'\')" style="height:34px;padding:0 12px;border-radius:999px;border:1.5px solid '+(mode===m[0]?"var(--header)":"var(--border)")+';background:'+(mode===m[0]?"var(--header)":"var(--card)")+';color:'+(mode===m[0]?"#fff":"var(--text)")+';font-size:12px;font-weight:700;cursor:pointer">'+m[1]+'</button>';
+    });
+    h+='</div></div>';
+    if(mode==="flip"&&typeof mastToggleCatFace==="function"){
+      const face=(typeof mastCatFace==="function")?mastCatFace(deck):"desc";
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:0 0 9px;flex-wrap:wrap">';
+      h+='<div style="flex:1;min-width:130px"><div style="font-size:13px;font-weight:700">Which side first</div></div>';
+      h+='<button onclick="mastToggleCatFace(\''+esc+'\')" style="height:34px;padding:0 14px;border-radius:999px;border:1.5px solid var(--border);background:var(--card);font-size:12px;font-weight:700;cursor:pointer">'+(face==="name"?"word → meaning":"meaning → word")+'</button></div>';
+    }
+    // Bank order is the teaching order (a session introduces new cards down this list), so the
+    // reorder handle belongs here — it used to sit in the database header this page hides.
+    try{
+      const _st=mastBankStatus(kid)[deck];
+      if(_st&&_st.available.length>1){
+        h+='<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-top:1px solid var(--border);flex-wrap:wrap">';
+        h+='<div style="flex:1;min-width:130px"><div style="font-size:13px;font-weight:700">Order of the waiting cards</div><div style="font-size:10px;color:var(--muted)">the order new cards are introduced in</div></div>';
+        h+='<button onclick="mastReorderToggle(\''+esc+'\')" style="height:34px;padding:0 14px;border-radius:999px;border:1.5px solid var(--border);background:var(--card);font-size:12px;font-weight:700;cursor:pointer">\u2195 Reorder</button></div>';
+      }
+    }catch(e){}
+    h+='<div style="display:flex;align-items:center;gap:10px;margin-top:10px">';
+    h+='<button onclick="mastAdminSave()" style="padding:9px 20px;border-radius:10px;border:none;background:'+(mastAdminDirty?"var(--header)":"var(--border)")+';color:'+(mastAdminDirty?"#fff":"var(--muted)")+';font-size:13px;font-weight:800;cursor:pointer">Save</button>';
+    h+='<span style="font-size:11px;color:'+(mastAdminDirty?"#b45309":"var(--muted)")+';font-weight:700">'+(mastAdminDirty?"Unsaved changes":"✓ Saved")+'</span></div>';
+    h+='</div>';
+  }catch(e){ h+=''; }
+  masteryKid=_mk;
+  return h;
+}
+// The deck's real card grid — the Mastery Database row for THIS deck, with every action it has
+// always had. Falls back to the plain list if anything it needs isn't there.
+function _mhqDeckCardsHtml(kid,deck){
+  const _mk=masteryKid; masteryKid=kid;
+  let h='';
+  try{
+    if(!mastAdminLocal) mastAdminInit();
+    const bank=mastFullBank(kid);
+    h+=mastAdminBankCatHtml(deck,bank[deck]||[],mastBankStatus(kid),{noHdr:true});
+  }catch(e){ h=''; }
+  masteryKid=_mk;
+  return h;
+}
+// The deck's Add box (single / batch / photo), straight from the old page.
+function _mhqDeckAddHtml(kid,deck){
+  const _mk=masteryKid, _mc=(typeof mastBankAddCat!=="undefined")?mastBankAddCat:null;
+  masteryKid=kid;
+  let h='';
+  try{ if(typeof mastBankAddCat!=="undefined") mastBankAddCat=deck; h+=mastAdminAddHtml(); }catch(e){ h=''; }
+  if(_mc!==null&&typeof mastBankAddCat!=="undefined") mastBankAddCat=_mc;
+  masteryKid=_mk;
+  return h;
 }
 // ── S5_END ──
 // ── S7_START ──
@@ -37487,11 +37623,13 @@ function _mhqRenderImport(kid) {
 // ── S7_END ──
 
 
-function renderMastAdmin(){
+// ── The Mastery Admin sections, one function each. Pure renderers over the SAME state and the
+// SAME mastAdmin* writers as before — split so 🧠 Mastery HQ can show them in its own layout
+// without a second implementation. Bodies are verbatim; only the wrappers are new.
+function mastAdminRulesHtml(){
   const s=mastAdminLocal||mastDrillSettings();
   const catE=MAST_CAT_EMOJI_MAP[masteryKid]||{};
   let h='';
-
   // ── SECTION 1: DRILL RULES ──
   h+='<div class="mast-admin-section">';
   h+='<div class="mast-admin-hdr">\u{2699}\u{FE0F} Drill Rules</div>';
@@ -37567,37 +37705,11 @@ function renderMastAdmin(){
     return '<button onclick="mastAdminCatSprint(\''+esc+'\')" title="Tap: ON \u{2192} OFF \u{2192} inherit default" style="padding:5px 10px;border-radius:14px;border:1.5px solid '+bd+';background:'+bg+';color:'+fg+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+lbl+'</button>';
   };
 
-  h+='<div class="mast-admin-row" style="flex-direction:column;align-items:stretch">';
-  h+='<div style="margin-bottom:8px"><div class="mast-admin-label">Per-Category Overrides</div><div class="mast-admin-desc">Override any knob for a specific category — blank uses the default (Cap <b>'+_capDef+'</b> \u{00B7} Intro Dots <b>'+_dotDef+'</b> \u{00B7} Max New <b>'+_newDef+'</b>).</div></div>';
-  if(coShownCats.length){
-    coShownCats.forEach(cat=>{
-      const inItems=itemCats.includes(cat);
-      h+='<div style="padding:6px 0;border-bottom:1px solid #f3f1ee">';
-      h+='<div style="font-size:12px;font-weight:600;margin-bottom:5px;'+(inItems?'':'color:var(--muted);font-style:italic')+'">'+(catE[cat]||"")+' '+cat+(inItems?'':' <span style="font-size:9px;font-weight:500">(no items yet)</span>')+'</div>';
-      h+='<div style="display:flex;gap:14px;flex-wrap:wrap">';
-      h+=coKnob(cat,'Cap',catCaps[cat],_capDef,'mastAdminCatCap');
-      h+=coKnob(cat,'Dots',catIntro[cat],_dotDef,'mastAdminCatIntro');
-      h+=coKnob(cat,'New',catIntroMax[cat],_newDef,'mastAdminCatIntroMax');
-      h+=coSprint(cat);
-      // Flip decks: restart the whole deck in the other direction (definition → word).
-      if(mastGetCatMode(masteryKid,cat)==="flip"){
-        const _revNow=mastCatFace(cat)==="reversed";
-        const _cesc=cat.replace(/\\/g,"\\\\").replace(/'/g,"\\'");
-        h+='<button onclick="mastRestartDeck(\''+_cesc+'\','+(_revNow?'false':'true')+')" title="Reset every card in this deck to Learning and flip the drill direction" style="padding:5px 10px;border-radius:14px;border:1.5px solid #7c3aed;background:'+(_revNow?'#7c3aed':'#f5f3ff')+';color:'+(_revNow?'#fff':'#7c3aed')+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">\u{1F501} '+(_revNow?'Reversed \u{00B7} restart normal':'Restart reversed')+'</button>';
-      }
-      h+='</div>';
-      h+='</div>';
-    });
-  } else {
-    h+='<div style="font-size:11px;color:var(--muted);padding:4px 0">No overrides set. Every category uses the defaults above.</div>';
-  }
-  h+='<div style="margin-top:8px;display:flex;align-items:center;gap:6px">';
-  h+='<select id="mast-cat-override-add" style="flex:1;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:11px;font-family:\'DM Sans\',sans-serif;background:#fff">';
-  if(coAddableCats.length) coAddableCats.forEach(c=>{ h+='<option value="'+c+'">'+(catE[c]||"")+' '+c+'</option>'; });
-  h+='<option value="__custom__">+ Custom category...</option>';
-  h+='</select>';
-  h+='<button onclick="mastAdminAddCatOverride()" style="padding:6px 14px;border-radius:8px;border:1.5px solid #c2410c;background:#fff7ed;color:#c2410c;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Add</button>';
-  h+='</div>';
+  // RETIRED 2026-09-16 — per-deck knobs now live on each deck's own page in 🧠 Mastery HQ,
+  // where they sit beside that deck's cards. One deck, one place.
+  h+='<div class="mast-admin-row">';
+  h+='<div><div class="mast-admin-label">Per-deck settings</div><div class="mast-admin-desc">A deck\u2019s cap, intro dots, new-at-once, sprint switch and card type live on its own page \u2014 open the deck in <b>Decks</b>.</div></div>';
+  h+='<button onclick="mhqSetView(\'decks\')" style="padding:7px 14px;border-radius:9px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Open Decks</button>';
   h+='</div>';
 
   // Auto-pull toggle
@@ -37735,6 +37847,12 @@ function renderMastAdmin(){
   h+='</div>';
   h+='</div></div>';
 
+  return h;
+}
+function mastAdminWaitingHtml(){
+  const s=mastAdminLocal||mastDrillSettings();
+  const catE=MAST_CAT_EMOJI_MAP[masteryKid]||{};
+  let h='';
   // ── SECTION 1b: WAITING DECKS — deck chaining ──
   // Bank categories with nothing in rotation yet. Each can start now, or be chained to
   // start automatically when another category finishes its ⭐ learning (checked at each
@@ -37769,6 +37887,12 @@ function renderMastAdmin(){
     h+='</div></div>';
   }
 
+  return h;
+}
+function mastAdminStuckHtml(){
+  const s=mastAdminLocal||mastDrillSettings();
+  const catE=MAST_CAT_EMOJI_MAP[masteryKid]||{};
+  let h='';
   // ── SECTION 1c: STUCK CARDS (leech report) ──
   // Cards that keep getting missed are a CARD problem, not a kid problem (Anki calls
   // these leeches). Computed from session history — no new writes, no new fields:
@@ -37797,26 +37921,27 @@ function renderMastAdmin(){
     h+='</div></div>';
   })();
 
-  // ── SECTION 2: CURRICULUM BANK ──
-  h+='<div class="mast-admin-section">';
-  h+='<div class="mast-admin-hdr">\u{1F4DA} Mastery Database</div>';
-
-  const status=mastBankStatus();
-  let totalIn=0,totalGrad=0,totalAvail=0;
-
-  const fullCurr=mastFullBank();
+  return h;
+}
+function mastAdminBankCatHtml(cat,allNames,status,opts){
+  // One deck's row in the Mastery Database — the card grid and every action on it. Verbatim from
+  // the loop in mastAdminBankHtml so the old page and the deck page show exactly the same thing.
+  const s=mastAdminLocal||mastDrillSettings();
+  const catE=MAST_CAT_EMOJI_MAP[masteryKid]||{};
   const customNames=new Set((masteryData[masteryKid+"_custom_items"]||[]).map(ci=>ci.cat+"_"+ci.name));
-  Object.entries(fullCurr).forEach(([cat,allNames])=>{
+  status=status||mastBankStatus();
+  let h='', totalIn=0, totalGrad=0, totalAvail=0;
     const st=status[cat];
     totalIn+=st.inRotation.length;
     totalGrad+=st.graduated.length;
     totalAvail+=st.available.length;
 
+    const _catCurMode=mastGetCatMode(masteryKid,cat);
+    if(!(opts&&opts.noHdr)){
     h+='<div class="mast-curr-cat-hdr">';
     h+='<span style="font-size:18px">'+(catE[cat]||"")+'</span>';
     h+='<span class="mast-curr-cat-title">'+cat+'</span>';
     h+='<span class="mast-curr-cat-counts">'+st.inRotation.length+' active \u{00B7} '+st.graduated.length+' mastered \u{00B7} '+st.available.length+' available</span>';
-    const _catCurMode=mastGetCatMode(masteryKid,cat);
     h+='<select style="margin-left:auto;padding:3px 6px;border-radius:6px;border:1.5px solid var(--border);font-size:10px;font-weight:700;font-family:\'DM Sans\',sans-serif;background:#fff;color:'+(_catCurMode==="quiz"?"#4f46e5":_catCurMode==="flip"?"#7c3aed":"#c45e1a")+';cursor:pointer" onchange="mastAdminCatMode(\''+cat.replace(/'/g,"\\'")+'\',this.value)">';
     h+='<option value="flash"'+(_catCurMode==="flash"?" selected":"")+'>\u{26A1} Flash</option>';
     h+='<option value="flip"'+(_catCurMode==="flip"?" selected":"")+'>\u{1F504} Flip</option>';
@@ -37830,6 +37955,7 @@ function renderMastAdmin(){
     if(st.available.length>1) h+='<button onclick="mastReorderToggle(\''+cat.replace(/'/g,"\\\\'")+'\')" style="border:none;background:none;font-size:11px;cursor:pointer;padding:2px 6px;color:'+(mastReorderCat===cat?"#c45e1a":"var(--muted)")+'" title="Reorder available items">'+(mastReorderCat===cat?"\u{2713} Done":"\u{2195}\u{FE0F}")+'</button>';
     if(st.inRotation.length||st.graduated.length||isCustCat) h+='<button onclick="mastDeleteCategory(\''+cat+'\')" style="border:none;background:none;font-size:12px;cursor:pointer;padding:2px 6px;color:#dc2626" title="Delete category">\u{1F5D1}\u{FE0F}</button>';
     h+='</div>';
+    }
 
     h+='<div class="mast-curr-grid">';
 
@@ -37922,6 +38048,25 @@ function renderMastAdmin(){
         h+='</div>';
       }
     }
+  return h;
+}
+function mastAdminBankHtml(){
+  const s=mastAdminLocal||mastDrillSettings();
+  const catE=MAST_CAT_EMOJI_MAP[masteryKid]||{};
+  let h='';
+  // ── SECTION 2: CURRICULUM BANK ──
+  h+='<div class="mast-admin-section">';
+  h+='<div class="mast-admin-hdr">\u{1F4DA} Mastery Database</div>';
+
+  const status=mastBankStatus();
+  let totalIn=0,totalGrad=0,totalAvail=0;
+
+  const fullCurr=mastFullBank();
+  const customNames=new Set((masteryData[masteryKid+"_custom_items"]||[]).map(ci=>ci.cat+"_"+ci.name));
+  Object.entries(fullCurr).forEach(([cat,allNames])=>{
+    const st=status[cat];
+    totalIn+=st.inRotation.length; totalGrad+=st.graduated.length; totalAvail+=st.available.length;
+    h+=mastAdminBankCatHtml(cat,allNames,status);
   });
 
   // Summary bar
@@ -37931,6 +38076,13 @@ function renderMastAdmin(){
 
   h+='</div>';
 
+  return h;
+}
+function mastAdminAddHtml(){
+  const s=mastAdminLocal||mastDrillSettings();
+  const catE=MAST_CAT_EMOJI_MAP[masteryKid]||{};
+  let h='';
+  const fullCurr=mastFullBank();   // was borrowed from the bank section above
   // ── SECTION 3: ADD TO CURRICULUM ──
   h+='<div class="mast-admin-section">';
   h+='<div class="mast-admin-hdr">\u{2795} Add to Mastery</div>';
@@ -38027,6 +38179,12 @@ function renderMastAdmin(){
   }
   h+='</div></div>';
 
+  return h;
+}
+function mastAdminVisualHtml(){
+  const s=mastAdminLocal||mastDrillSettings();
+  const catE=MAST_CAT_EMOJI_MAP[masteryKid]||{};
+  let h='';
   // ── VISUAL EDIT MODAL ──
   if(mastVisEditKey){
     const vk=mastVisEditKey;
@@ -38064,15 +38222,20 @@ function renderMastAdmin(){
 
   return h;
 }
-
-// Slideshow height lock: cards vary in natural height (big visuals, long definition
-// backs, intro vs streak rows), which made the card visibly resize on every advance.
-// _renderMasteryInner builds EVERY card's HTML for the session (mastSlideCardsHtml);
-// here they're all measured in an invisible box at the real card width, and the slide
-// is pinned to the tallest — locked BEFORE the first card is shown, so the size never
-// changes while paging. Re-measured only when the kid/day/log-mode/deck changes.
-let mastSlideCardsHtml=[];
-let mastSlideMaxH=0, mastSlideHKey="";
+// RETIRED 2026-09-16 — every section of this page now lives in 🧠 Mastery HQ (Mom HQ ▸ Admin ▸
+// Mastery): the rules under ⚙ Rules, a deck's settings and cards on its own deck page, waiting
+// decks under Sessions, stuck cards under Today & Week, and adding under 📥 Import. The section
+// renderers above are unchanged — HQ calls them — so this is only the old assembly going away.
+function renderMastAdmin(){
+  let h='<div style="padding:26px 18px;text-align:center;font-family:\'DM Sans\',sans-serif">';
+  h+='<div style="font-size:34px;margin-bottom:8px">\u{1F9E0}</div>';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700;margin-bottom:6px">Everything here has moved</div>';
+  h+='<div style="font-size:13px;color:var(--muted);max-width:340px;margin:0 auto 14px">Drill rules, the ladder, every deck and its cards now live together in <b>Mastery HQ</b> \u2014 Mom HQ \u25B8 Admin \u25B8 \u{1F9E0} Mastery.</div>';
+  h+='<button onclick="momHQGo(\'admin-mastery\')" style="padding:11px 22px;border-radius:12px;border:none;background:var(--header);color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Open Mastery HQ</button>';
+  h+='</div>';
+  h+=mastAdminVisualHtml();   // the visual-edit overlay is global — keep it reachable
+  return h;
+}
 function mastLockSlideHeight(el){
   const sl=el&&el.querySelector?el.querySelector(".mast-slide"):null;
   if(!sl) return;
@@ -43854,7 +44017,7 @@ function buildSprintFromDrillHtml(color){
     h+='<div id="sp-sheets"></div>';
   } else {
     let msg;
-    if(nSwitchOff>0) msg="<b>"+nSwitchOff+"</b> accurate item"+(nSwitchOff===1?" is":"s are")+" ready to sprint, but the Sprint switch is OFF for "+(deckFilter?"this deck":"this kid")+". Turn it on in <b>Admin \u{2192} Sprint Gate</b> (kid default) or the per-deck pill in <b>Per-Category Overrides</b>.";
+    if(nSwitchOff>0) msg="<b>"+nSwitchOff+"</b> accurate item"+(nSwitchOff===1?" is":"s are")+" ready to sprint, but the Sprint switch is OFF for "+(deckFilter?"this deck":"this kid")+". Turn it on in <b>Mastery HQ \u{2192} \u2699 Rules</b> (kid default) or on the deck\u2019s own page.";
     else if(nNotReady>0) msg="Nothing has cleared the gate yet \u{2014} "+nNotReady+" item"+(nNotReady===1?" is":"s are")+" still climbing toward <b>"+gateLbl+"</b> (or 90% untimed accuracy).";
     else if(nNever>0) msg="The only items here are <b>concept/transfer</b> \u{2014} those are flagged to teach &amp; discuss, never auto-sprinted.";
     else msg="No drill items"+(deckFilter?" in this deck":"")+" to sprint yet. Add items in the Mastery tab first.";
