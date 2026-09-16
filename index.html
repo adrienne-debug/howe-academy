@@ -23496,6 +23496,8 @@ function unitEnroll(unitId,kid){
   (u.decks||[]).forEach(d=>{
     settings.cat_modes[d.key]=d.mode||"flip";
     if(d.introCap) settings.cat_intro_max[d.key]=d.introCap;
+    if(d.gate&&d.gate.subject){ settings.cat_gate=settings.cat_gate||{}; settings.cat_gate[d.key]={subject:d.gate.subject}; }
+    const _gUpto=(d.gate&&d.gate.subject&&typeof mastGateChapter==="function")?mastGateChapter(kid,d.gate.subject):null;  // RS4K gate
     const haveBank=new Set(bank.filter(c=>c&&c.cat===d.key).map(c=>c.name));
     const haveItem=new Set(items.filter(i=>i&&i.subject===d.key).map(i=>i.prompt));
     let started=items.filter(i=>i&&i.subject===d.key&&i.status==="introduction").length;
@@ -23503,8 +23505,8 @@ function unitEnroll(unitId,kid){
       // Rule-sentence cards (fronts with periods etc.) can't be definitions-map KEYS —
       // their back rides the bank entry (def) and the item (answer/recite) instead.
       if(c.def&&mastDefKeyOk(c.name)) settings.definitions[c.name]=c.def;
-      if(!haveBank.has(c.name)){ const be={cat:d.key,name:c.name}; ["house","reign","order","year","sig","def"].forEach(f=>{ if(c[f]!=null&&c[f]!=="") be[f]=c[f]; }); bank.push(be); haveBank.add(c.name); }
-      if(!haveItem.has(c.name) && started<(d.introCap||5)){
+      if(!haveBank.has(c.name)){ const be={cat:d.key,name:c.name}; ["house","reign","order","year","sig","ch","def"].forEach(f=>{ if(c[f]!=null&&c[f]!=="") be[f]=c[f]; }); bank.push(be); haveBank.add(c.name); }
+      if(!haveItem.has(c.name) && started<(d.introCap||5) && (_gUpto==null||c.ch==null||c.ch===""||Number(c.ch)<=_gUpto)){
         const ne={id:kid.slice(0,3)+"_u_"+String(d.key).replace(/[^a-z0-9]/gi,"").slice(0,6).toLowerCase()+"_"+(c.order||items.length),
           subject:d.key,type:"card",prompt:c.name,review_mode:"flash",status:"introduction",tier:"daily",cycle:1,tally_dots:0,drop_count:0,consecutive_correct:0};
         if(c.def&&!mastDefKeyOk(c.name)){ ne.answer=c.def; ne.review_mode="recite"; }  // rule card: flips to the rule
@@ -23518,6 +23520,7 @@ function unitEnroll(unitId,kid){
     const bu={}; for(let i=startBank;i<bank.length;i++) bu[i]=bank[i]; if(Object.keys(bu).length) db.ref("mastery/"+kid+"_custom_items").update(bu);
     db.ref("mastery/"+kid+"_settings/cat_modes").update(settings.cat_modes);
     db.ref("mastery/"+kid+"_settings/cat_intro_max").update(settings.cat_intro_max);
+    if(settings.cat_gate&&(u.decks||[]).some(d=>d&&d.gate&&d.gate.subject)){ const _gu={}; (u.decks||[]).forEach(d=>{ if(d&&d.gate&&d.gate.subject) _gu[d.key]={subject:d.gate.subject}; }); db.ref("mastery/"+kid+"_settings/cat_gate").update(_gu); }
     db.ref("mastery/"+kid+"_settings/definitions").update(settings.definitions);
     db.ref("unitStudies/"+unitId+"/enrolled/"+kid).set(true);
   }
@@ -33464,6 +33467,46 @@ function mastCustomDef(kid,cat,name){
   const cust=masteryData[kid+"_custom_items"]; if(!Array.isArray(cust)) return "";
   const e=cust.find(c=>c&&c.cat===cat&&c.name===name); return (e&&e.def)||"";
 }
+// ── RS4K_GATE_START ── chapter-gated decks ─────────────────────────────────────────────
+// A deck can be gated on a curriculum subject: its bank cards carry `ch`, and a card may only
+// be minted AUTOMATICALLY once the kid has reached that chapter in the grid. Setting:
+// mastery/<kid>_settings/cat_gate/<deck> = {subject:<subjectKey>}.
+// Fails OPEN everywhere (unstamped subject, no chapter found, card without `ch` → allowed), so
+// a surprise can never silently starve a deck. Mom's explicit pull (mastPullItem) is NOT gated.
+// The ladder is untouched: this only narrows which bank names the existing mint paths may pick.
+function mastCustomCh(kid,cat,name){
+  const cust=masteryData[kid+"_custom_items"]; if(!Array.isArray(cust)) return null;
+  const e=cust.find(c=>c&&c.cat===cat&&c.name===name);
+  return (e&&e.ch!=null&&e.ch!=="")?Number(e.ch):null;
+}
+// The chapter of the lesson he is ON (first not-done) — so a chapter's words open when he STARTS
+// it. Reads lesson-identity done records, which are LIVE (curriculum/done is bound with .on).
+// A row with no "Ch N" (Glossary/Index, a unit test) walks back to the nearest chapter row.
+function mastGateChapter(kid,sk){
+  try{
+    if(typeof lidStamped!=="function"||!lidStamped(kid,sk)) return null;
+    const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s) return null;
+    const seq=s.lessonSeq||[]; if(!seq.length) return null;
+    const done=lidDoneIdx(kid,sk)||new Set();
+    let i=seq.findIndex((t,n)=>!done.has(n));
+    if(i<0) i=seq.length-1;                                   // whole book done
+    for(let j=i;j>=0;j--){ const m=/\u00b7\s*Ch\s*(\d+)\b/.exec(String(seq[j]||"")); if(m) return parseInt(m[1],10); }
+    return null;
+  }catch(e){ return null; }
+}
+// The bank names a deck may AUTOMATICALLY mint right now, in bank order. Ungated → the full bank.
+function mastBankEligible(kid,cat){
+  const all=mastFullBank(kid)[cat]||[];
+  const g=((masteryData[kid+"_settings"]||{}).cat_gate||{})[cat];
+  if(!g||!g.subject) return all;
+  const upto=mastGateChapter(kid,g.subject);
+  if(upto==null) return all;
+  let cust=masteryData[kid+"_custom_items"]||[]; if(!Array.isArray(cust)) cust=Object.values(cust);
+  const chOf={};
+  cust.forEach(c=>{ if(c&&c.cat===cat&&c.ch!=null&&c.ch!=="") chOf[c.name]=Number(c.ch); });
+  return all.filter(n=>!(n in chOf)||chOf[n]<=upto);
+}
+// ── RS4K_GATE_END ──
 let mastFlipped=false;
 function mastFlip(){ mastFlipped=!mastFlipped; _mastRe(); }
 function mastBankStatus(kidArg){
@@ -33777,7 +33820,7 @@ function mastApplyScores(items,due,scores,pn,_jset,opts){
             _parked.status="introduction"; _parked.tally_dots=0; _parked.consecutive_correct=0; _parked.tier="daily";
             touched.push(_parked);
           } else {
-            const curriculum=mastFullBank()[cat]||[];
+            const curriculum=mastBankEligible(masteryKid,cat);  // RS4K gate: only chapters he has reached
             const existingPrompts=new Set(items.filter(i=>i.subject===cat).map(i=>i.prompt));
             const next=curriculum.find(name=>!existingPrompts.has(name));
             if(next){
@@ -33810,7 +33853,7 @@ function mastApplyScores(items,due,scores,pn,_jset,opts){
     if(!after) return;
     if(items.some(i=>i&&i.subject===deck)) return;        // already running
     if(!mastCatFinishedLearning(items,after)) return;
-    const bank=mastFullBank()[deck]||[];
+    const bank=mastBankEligible(masteryKid,deck);  // RS4K gate
     const introMax=mastIntroMaxFor(deck,_jset);
     let n=0;
     for(const name of bank){
@@ -34517,7 +34560,7 @@ function mastSeedCat(cat){
   const introMax=mastIntroMaxFor(cat,jset);
   const have=new Set(items.filter(i=>i&&i.subject===cat).map(i=>i.prompt));
   let intro=items.filter(i=>i&&i.subject===cat&&i.status==="introduction").length;
-  const bank=mastFullBank()[cat]||[];
+  const bank=mastBankEligible(kid,cat);  // RS4K gate
   const fresh=[];
   for(const name of bank){
     if(intro>=introMax) break;
