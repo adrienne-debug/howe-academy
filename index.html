@@ -19283,6 +19283,55 @@ function fxWindowsFor(kid,dateStr,dayName){
   }
   return out.sort((a,b)=>a.s-b.s);
 }
+// ── A CLASS SURVIVES A RE-TIME ──
+// The pin above lives in exactly ONE place: gwBuildDayTasks, i.e. generation. Every OTHER
+// path that re-times a day — the cascade's scar re-pack and its receiving-day re-pack, the
+// displacement engine, resortDayTasks — calls packAround knowing nothing about classes, so a
+// 10:00 class is just a 45-minute block that lands wherever the queue reaches it. Live
+// 2026-09-16: Lincoln's 10:00 German sat at 11:00 with three cards inside its own window,
+// because the week was laid before the class had a time and nothing since re-pinned it.
+// This is the class twin of coopApplyStart (2026-09-14, the identical bug for co-op starts):
+// ONE applier every re-timer routes through, so the clock time survives a re-lay.
+//
+// It runs INSIDE packAround off ctx.fxDate/ctx.fxDay, so a caller opts in by naming the date
+// it is packing. A ctx without fxDate is untouched and packs exactly as before.
+// ⚠ A class must leave `existing` too, not just `newTasks`: seeded as existing it advances
+// kidStart past its END — the co-op "out until" cursor — which would wipe the whole morning
+// before a midday class. gwBuildDayTasks calls out the same trap for the same reason.
+function fxSplitDay(tasks,ds,dayName){
+  const pinned=[],rest=[];
+  (tasks||[]).forEach(function(t){
+    let s=null;
+    try{ if(t&&t.subjectKey&&typeof gwGetSubjects==="function") s=(gwGetSubjects(t.who)||{})[t.subjectKey]||null; }catch(e){ s=null; }
+    const w=s?fxWindow(s,ds,dayName):null;
+    if(!w){ rest.push(t); return; }
+    t.time=fromMin(w.s);                       // pinned at its own clock time, never packed
+    pinned.push({t:t,w:w,s:s});
+  });
+  return {pinned:pinned,rest:rest};
+}
+// Merge pinned classes into a packer ctx as windows to step OVER (the kid, Mom, and the
+// device the class runs on) — the same three things gwBuildDayTasks hands the generator's
+// own packAround. Copy-on-write: the caller's ctx and its arrays are never mutated.
+function fxCtxWithClasses(ctx,pinned){
+  if(!pinned||!pinned.length) return ctx;
+  const out=Object.assign({},ctx);
+  const busy={}; for(const k in (ctx.busy||{})) busy[k]=(ctx.busy[k]||[]).slice();
+  const laneBusy={}; for(const l in (ctx.laneBusy||{})) laneBusy[l]=(ctx.laneBusy[l]||[]).slice();
+  const momBusy=(ctx.momBusy||[]).slice();
+  pinned.forEach(function(p){
+    const t=p.t, w={s:p.w.s,e:p.w.e};
+    (busy[t.who]=busy[t.who]||[]).push(w);
+    if((p.s.mom||"none")==="required") momBusy.push(w);
+    let dv=t.device;
+    if(!dv&&typeof taskDevice==="function"){ try{ dv=taskDevice(t); }catch(e){} }
+    const ln=fxLaneOf(dv||"paper",t.who);
+    if(ln&&ln!=="paper") (laneBusy[ln]=laneBusy[ln]||[]).push(w);
+  });
+  out.busy=busy; out.momBusy=momBusy; out.laneBusy=laneBusy;
+  return out;
+}
+
 // ── WHEN THE DOOR IS OPEN ──
 // The class row is not useful all day: at 8am he'd tap into an empty classroom, and a
 // permanent button invites tapping for its own sake. So it opens shortly BEFORE the class
@@ -20925,7 +20974,8 @@ function cascadeIntraWeek(sweepTodayElapsed){
           end:dEndR,
           lunchStart:toMin(ov.lunchStart||_rsd.lunchStart||"1:00 PM"),
           lunchEnd:toMin(ov.lunchEnd||_rsd.lunchEnd||"2:00 PM"),
-          momStart:sitRet,kidStart:kidStart};
+          momStart:sitRet,kidStart:kidStart,
+          fxDate:_cascDate(dn),fxDay:dn};   // \u{1F3A7} a class keeps its clock time through the heal
         const before={}; openAll.forEach(t=>{ before[t.id]=t.time; });
         // Keep the day's own (generation-ordered) sequence — this pass only compacts it.
         open.sort((a,b)=>toMin(a.time)-toMin(b.time));
@@ -21152,7 +21202,8 @@ function cascadeIntraWeek(sweepTodayElapsed){
     const kidStart={}; if(isSitterDay) sitterKids.forEach(k=>{ kidStart[k]=Math.max(sitterReturn,_floor); });
     if(typeof coopApplyStart==="function") coopApplyStart(kidStart,dStr); // 🏫 timed co-op: the re-pack starts those kids at its end, like generation
     const ctx={start:Math.max(dStart,_floor),end:dEnd,lunchStart:lunchS,lunchEnd:lunchE,
-      momStart:sitterReturn,kidStart:kidStart,allowOvertime:isLast,overtimeMax:240};
+      momStart:sitterReturn,kidStart:kidStart,allowOvertime:isLast,overtimeMax:240,
+      fxDate:dStr,fxDay:dn};   // \u{1F3A7} a class keeps its clock time through the re-pack
     if(dn==="saturday") satApplyCutoff(ctx,240);
     // ── Receiving-day RE-PACK: a day that takes swept work is laid out again as ONE
     // day — existing open work and arrivals merged, ordered by the same rules generation
@@ -40536,7 +40587,8 @@ function runDisplacement(){
       });
       if(!toPlace.length) return;
       function _markDisp(t){ if(displacedIds.has(t.id)){ t._displaced=true; t._originalDay=t._originalDay||d; } }
-      var _ctx={start:_dayStart(d),end:dEnd,lunchStart:dLunchS,lunchEnd:dLunchE,momStart:momRet,kidStart:{},overtimeMax:240};
+      var _ctx={start:_dayStart(d),end:dEnd,lunchStart:dLunchS,lunchEnd:dLunchE,momStart:momRet,kidStart:{},overtimeMax:240,
+        fxDate:_dateOfDay(d),fxDay:d};   // \u{1F3A7} a class keeps its clock time through a blockout rebuild
       try{ if(typeof coopApplyStart==="function"&&typeof calDateForWeekDay==="function"){ var _cks=coopApplyStart({},calDateForWeekDay(d),[who]); if((_cks[who]||0)>cursorStart) cursorStart=_cks[who]; } }catch(e){} // 🏫 timed co-op
       _ctx.kidStart[who]=cursorStart;
 
@@ -40663,7 +40715,8 @@ function runDisplacement(){
     var existing=working.filter(function(t){return t.day===d&&!_isClosingNb(t);});
     var _fctx={start:_floorStart(d,_dayStart(d)),end:_dayEnd(d),
       lunchStart:_dayLS(d),lunchEnd:_dayLE(d),momStart:momRet,kidStart:ks,
-      allowOvertime:(d==="saturday"),overtimeMax:180};
+      allowOvertime:(d==="saturday"),overtimeMax:180,
+      fxDate:_dateOfDay(d),fxDay:d};   // \u{1F3A7} bumped work packs AROUND the day's class
     if(d==="saturday") satApplyCutoff(_fctx,180);
     var overflow=packAround(existing,take,_fctx);
     var overSet=new Set(overflow), moved={};
@@ -40702,7 +40755,8 @@ function runDisplacement(){
     var newSet=new Set(newTasks);
     var existing=working.filter(function(t){return t.day===day&&!newSet.has(t);});
     var _pctx={start:_floorStart(day,_dayStart(day)),end:_dayEnd(day),
-      lunchStart:_dayLS(day),lunchEnd:_dayLE(day),allowOvertime:allowOvertime,overtimeMax:180};
+      lunchStart:_dayLS(day),lunchEnd:_dayLE(day),allowOvertime:allowOvertime,overtimeMax:180,
+      fxDate:_dateOfDay(day),fxDay:day};   // \u{1F3A7} a class keeps its clock time
     if(day==="saturday") satApplyCutoff(_pctx,180);
     return packAround(existing,newTasks,_pctx);
   }
@@ -40970,7 +41024,8 @@ function resortDayTasks(day,startOverride,momOverride){
   // (babysitter window). Overtime keeps everything on the day instead of overlapping.
   const before={}; dayTasks.forEach(t=>{ before[t.id]=t.time; });
   const _rctx={start:schoolStart,end:schoolEnd,lunchStart:lunchS,lunchEnd:lunchE,
-    momStart:momAvail,allowOvertime:true,overtimeMax:240};
+    momStart:momAvail,allowOvertime:true,overtimeMax:240,
+    fxDate:(typeof routineDateISO==="function"?routineDateISO(day):null),fxDay:day};   // \u{1F3A7} a class keeps its clock time
   if(day==="saturday") satApplyCutoff(_rctx,240);
   packAround([],dayTasks,_rctx);
   const changed=dayTasks.some(t=>before[t.id]!==t.time);
@@ -44970,6 +45025,16 @@ function packDay(items, ctx){
 //   existing / newTasks: task objects {id, who, time, dur, device, mom}
 //   ctx: {start, end, lunchStart, lunchEnd, momStart?, kidStart?, busy?, momBusy?, laneBusy?, allowOvertime?, overtimeMax?}
 function packAround(existing, newTasks, ctx){
+  // \u{1F3A7} Fixed-time classes are PINNED at their clock time and taken out of the pack; their
+  // windows go to the packer as busy time so the rest of the day lays AROUND them. Opt-in via
+  // ctx.fxDate (the ISO date being packed) — without it this block is a no-op.
+  if(ctx&&ctx.fxDate&&typeof fxSplitDay==="function"){
+    const _fxE=fxSplitDay(existing,ctx.fxDate,ctx.fxDay), _fxN=fxSplitDay(newTasks,ctx.fxDate,ctx.fxDay);
+    if(_fxE.pinned.length||_fxN.pinned.length){
+      existing=_fxE.rest; newTasks=_fxN.rest;
+      ctx=fxCtxWithClasses(ctx,_fxE.pinned.concat(_fxN.pinned));
+    }
+  }
   if(!newTasks || !newTasks.length) return [];
   function laneOf(t){ var dv=t.device||taskDevice(t); if(dv==="ipad"&&t.who==="lucy") return "ipadLucy"; if(dv==="ipad"||dv==="phone"||dv==="ipad/phone") return "screen"; return dv; }
   var dStart=ctx.start;
