@@ -3322,6 +3322,16 @@ function isScheduleUnlocked(kidFilter, viewDay){
   // Individual kid: just that kid's Morning routine for this day
   return morningComplete(kidFilter, viewDay);
 }
+// 👀 LOOK-AHEAD — routine done but the start bell hasn't rung: the day is readable and its
+// links (lesson, workbook, class screen) work; only check-offs wait (checkoffHeld).
+function gateLookAhead(kidFilter, viewDay){
+  if(isScheduleUnlocked(kidFilter, viewDay)) return false;
+  if(!gateClockHeld(viewDay)) return false;
+  return (kidFilter==="all"||kidFilter==="mom") ? SL_KIDS.every(k=>morningComplete(k,viewDay)) : morningComplete(kidFilter,viewDay);
+}
+// Before today's start time a kid can't check off school cards (Mom always can).
+function checkoffHeld(){ return !momHere() && gateClockHeld(_todayDay); }
+function _checkoffHeldToast(){ if(typeof gwShowToast==="function") gwShowToast("Look ahead for now \u2014 check-offs open at "+fromMin(gateStartMin(_todayDay))+" \u23F0"); }
 
 // Scroll to skylight panel so the kid can check off their morning tasks
 function checkMomPin(val){
@@ -5637,7 +5647,8 @@ function allAgendaHtml(dayTasks){
   // three's day — their own column blurs (and can't be tapped) until their routine is
   // checked off, and the rest of the family reads normally.
   const locked={};
-  kids.forEach(k=>{ try{ locked[k]=!isScheduleUnlocked(k,day); }catch(e){ locked[k]=false; } });
+  const lookAhead={};
+  kids.forEach(k=>{ try{ lookAhead[k]=gateLookAhead(k,day); locked[k]=!isScheduleUnlocked(k,day)&&!lookAhead[k]; }catch(e){ locked[k]=false; } });
   const cell=(bag,k)=>{
     const inner=(bag[k]&&bag[k].length)?bag[k].map(tk=>taskCard(tk)).join(''):'<div class="all-empty">·</div>';
     return '<div class="all-col">'+(locked[k]?'<div class="sched-blur">'+inner+'</div>':inner)+'</div>';
@@ -5647,7 +5658,8 @@ function allAgendaHtml(dayTasks){
     kids.map(k=>{
       const L=locked[k];
       return '<div class="all-h" style="color:'+(SL_KCOL[k]||"#666")+(L?';cursor:pointer':'')+'"'+(L?' onclick="scrollToSkylight()"':'')+'>'+cap(k)+
-        (L?'<div style="font-size:9px;font-weight:700;color:#b5394a;text-transform:none;letter-spacing:0">'+((gateClockHeld(day)&&morningComplete(k,day))?'🔒 opens '+fromMin(gateStartMin(day)):'🔒 morning first')+'</div>':'')+'</div>';
+        (L?'<div style="font-size:9px;font-weight:700;color:#b5394a;text-transform:none;letter-spacing:0">'+((gateClockHeld(day)&&morningComplete(k,day))?'🔒 opens '+fromMin(gateStartMin(day)):'🔒 morning first')+'</div>':'')+
+        (lookAhead[k]?'<div style="font-size:9px;font-weight:700;color:#b45309;text-transform:none;letter-spacing:0">👀 checks at '+fromMin(gateStartMin(day))+'</div>':'')+'</div>';
     }).join('')+'</div>';
   let lunchDone=false;
   mins.forEach(m=>{
@@ -6098,7 +6110,9 @@ function renderSchedule(el){
   if(kid!=="all"&&kid!=="mom") h+=retrSchedStripHtml(kid,day); // P4: retrieval strip (derived, no writes)
 
   // ── SCHEDULE LOCK CHECK ──────────────────────────────────────────
-  const unlocked = isScheduleUnlocked(kid, day);
+  const _lookAhead = gateLookAhead(kid, day);
+  const unlocked = isScheduleUnlocked(kid, day) || _lookAhead;
+  if(_lookAhead) h+='<div style="margin:10px 12px 0;border-left:4px solid #f59e0b;background:#fffbeb;border-radius:0 10px 10px 0;padding:10px 12px;font-size:13px;font-weight:700;color:#92400e">\u{1F440} Look ahead \u2014 links work now, check-offs open at '+fromMin(gateStartMin(day))+'.</div>';
   let lockMsg = (kid==="all")
     ? "All four kids need to check off their Morning routine above."
     : cap(kid)+"'s Morning routine needs to be checked off above.";
@@ -7306,6 +7320,7 @@ function bbMomCardHtml(k){
 // ── TASK TAP ──────────────────────────────────────────────────────
 function tapTask(id){
   const t=weekData.tasks.find(x=>x.id===id); if(!t)return;
+  if(checkoffHeld()){ _checkoffHeldToast(); return; }
   const isDone=!!checked[id];
   const isClaimed=!isDone&&!!claimed[id];
   const future=DAYS.indexOf(t.day)>DAYS.indexOf(day);
@@ -7385,6 +7400,7 @@ function tapTask(id){
 }
 document.getElementById("dlg-ok").onclick=()=>{
   if(!pendingId)return;
+  if(checkoffHeld()){ closeDlg(); _checkoffHeldToast(); return; }  // a dialog left open from before the bell
   const id=pendingId;
   const t=weekData.tasks.find(x=>x.id===id);
   const ts=nowTs();
@@ -20095,7 +20111,9 @@ function kcSchoolHTML(k){
     let h='<div style="padding:12px 12px 0">';
     try{ h+=mlBannerHTML(k); }catch(e){}
     try{ h+=bbBlock(k); }catch(e){}
-    const unlocked=isScheduleUnlocked(k,dn);
+    const _lookAhead=gateLookAhead(k,dn);
+    const unlocked=isScheduleUnlocked(k,dn)||_lookAhead;
+    if(_lookAhead) h+='<div style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:0 10px 10px 0;padding:12px 14px;margin:0 0 10px;font-size:13px;font-weight:700;color:#92400e">\u{1F440} Look ahead \u2014 links work now, check-offs open at '+fromMin(gateStartMin(dn))+'.</div>';
     if(!unlocked){
       let msg="Finish your Morning list to open your school day.";
       try{ if(gateClockHeld(dn)){ const _open=fromMin(gateStartMin(dn)); msg=morningComplete(k,dn)?("Morning list done! School starts at "+_open+"."):(msg+" School starts at "+_open+"."); } }catch(e){}
