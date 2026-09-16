@@ -36129,7 +36129,7 @@ function mstRestore(obj) {
 // 📚 Study screen (kid-facing) — Anki-style sitting over mstSessions/mstPile/mstSittingInit
 // etc. (pure engine globals, provided elsewhere). This block owns UI state + rendering +
 // the Save write path only; never reimplements queueing/scoring.
-let mstSid=null, mstState=null, mstFlipped=false, mstStartTs=null, mstDone=null, mstKid=null;
+let mstSid=null, mstState=null, mstFlipped=false, mstStartTs=null, mstDone=null, mstKid=null, mstSaveErr=null;
 
 function mstEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function mstEscJs(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }
@@ -36235,6 +36235,7 @@ function renderMastStudy(){
       // Shouldn't normally happen — mstTap auto-saves the instant the queue empties — but a
       // restored sitting could land here; give an explicit, non-destructive way out.
       h+='<div style="text-align:center;padding:20px;color:var(--muted);font-weight:700">No cards left.</div>';
+      if(mstSaveErr) h+='<div style="margin:0 auto;max-width:420px;background:#fef2f2;border:1.5px solid #fca5a5;border-radius:12px;padding:10px 14px;color:#b91c1c;font-size:13px;font-weight:700;text-align:center">Couldn\u2019t save: '+mstEsc(mstSaveErr)+'</div>';
       h+='<div style="text-align:center;margin-top:10px"><button onclick="mstSave()" style="min-height:48px;padding:0 28px;border-radius:14px;border:none;background:#7c3aed;color:#fff;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save</button></div>';
     }
   } else if(mstDone){
@@ -36303,9 +36304,24 @@ function mstDiscard(){
 
 // ── Save — writes touched/minted cards field-by-field (mirrors mastSaveResults), merges
 // today's session log, updates local state. All remote writes guarded by db.
+// A save that throws used to fail silently — the sitting stayed on "No cards left" with a Save
+// button that did nothing. Now the error is shown on screen and logged to _debug, the sitting
+// is kept (Resume still works), and any cards minted locally before the throw are rolled back
+// so a retry can't double them.
 function mstSave(){
+  const kid=masteryKid, arr=masteryData[kid], len=Array.isArray(arr)?arr.length:null;
+  try{ mstSaveErr=null; _mstSaveInner(); }
+  catch(e){
+    if(len!=null&&Array.isArray(arr)&&arr.length>len) arr.length=len;
+    mstSaveErr=(e&&e.message)||String(e);
+    try{ console.error("Study save error:",e); dbg("study save error ("+kid+"/"+mstSid+"): "+mstSaveErr+" | "+String((e&&e.stack)||"").slice(0,300)); }catch(_){}
+    if(typeof gwShowToast==="function") gwShowToast("Couldn\u2019t save: "+mstSaveErr);
+    try{ _mastRe(); }catch(_){}
+  }
+}
+function _mstSaveInner(){
   const kid=masteryKid, sid=mstSid;
-  if(!mstState||!sid) return;
+  if(!mstState||!sid) throw new Error("no sitting to save (state "+(mstState?"ok":"missing")+", session "+(sid||"missing")+")");
   const pn=mastGetPrintNum();
   let items=masteryData[kid]; if(!items) items=[]; if(!Array.isArray(items)) items=Object.values(items);
 
