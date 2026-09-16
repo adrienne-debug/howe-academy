@@ -5990,9 +5990,9 @@ function renderSchedule(el){
       return;
     }
     let ah='<div style="position:sticky;top:118px;z-index:90;background:var(--bg);display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:0">';
-    ["hq","settings","curriculum","calendar","chores","purchases"].forEach(s=>{
+    ["hq","settings","curriculum","mastery","calendar","chores","purchases"].forEach(s=>{
       const active=adminSubTab===s||(s==="settings"&&adminSubTab==="rules");
-      const label=s==="hq"?"🏡 HQ":s==="purchases"?"💰":s.charAt(0).toUpperCase()+s.slice(1);
+      const label=s==="hq"?"🏡 HQ":s==="purchases"?"💰":s==="mastery"?"🧠 Mastery":s.charAt(0).toUpperCase()+s.slice(1);
       ah+='<button style="flex:1;padding:10px 4px;font-size:12px;font-weight:700;border:none;background:none;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:'+(active?"var(--text)":"var(--muted)")+';border-bottom:2px solid '+(active?"var(--header)":"transparent")+';margin-bottom:-2px" onclick="setAdminSub(\''+s+'\')">'+label+'</button>';
     });
     ah+='</div>';
@@ -6000,6 +6000,7 @@ function renderSchedule(el){
     else if(adminSubTab==="settings"||adminSubTab==="rules"){ renderSettings(el,ah); }
     else if(adminSubTab==="generate"){ renderAdminGenerate(el,ah); }
     else if(adminSubTab==="curriculum"){ renderCurriculumView(el,ah); }
+    else if(adminSubTab==="mastery"){ renderMasteryHQ(el,ah); }
     else if(adminSubTab==="calendar"){ renderCalendarView(el,ah); }
     else if(adminSubTab==="chores"){ renderChorePlan(el,ah); }
     else if(adminSubTab==="purchases"){ renderPurchasesView(el,ah); }
@@ -6819,6 +6820,9 @@ function scoreSave(){
 // matches their kind. Returns the Mastery view name, or null for a normal task.
 function taskDeepLinkView(t){
   const sk=(t&&t.subjectKey)||"";
+  // 📚 A subject linked to a study session (subject.study = session id) opens that sitting.
+  const _ssub=(t&&t.who&&sk&&typeof gwGetSubjects==="function")?(((gwGetSubjects(t.who)||{})[sk])||null):null;
+  if(_ssub&&_ssub.study) return "study";
   if(sk==="drills"||sk==="drills_l"||/^drills(_|$)/.test(sk)) return "drill";
   if(sk==="retrieval"){
     if(t.retrieval==="match") return "match";
@@ -6827,7 +6831,7 @@ function taskDeepLinkView(t){
   }
   return null;
 }
-function taskDeepLinkLabel(view){ return view==="match"?"match":view==="sprint"?"sprint":"drills"; }
+function taskDeepLinkLabel(view){ return view==="match"?"match":view==="sprint"?"sprint":view==="study"?"study cards":"drills"; }
 function taskCard(t, fromDay, readOnly, doneId){
   // doneId: mirror another task's checked-state (used by the read-only "Carried Over"
   // box, which links each item to the lesson already sitting in the schedule).
@@ -6872,8 +6876,19 @@ function taskCard(t, fromDay, readOnly, doneId){
   const _dlv=(!readOnly&&typeof retrSchedGo==="function")?taskDeepLinkView(t):null;
   // Sprint/re-check tasks open the kid's focus sprint loaded (retrOpenSprint); drills/match
   // just switch to the view.
-  const _go=(_dlv==="sprint")?("retrOpenSprint('"+t.who+"')"):("retrSchedGo('"+t.who+"','"+_dlv+"')");
-  const linkRow=_dlv?'<div style="margin-top:5px"><span onclick="event.stopPropagation();'+_go+'" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#5b3a8c;cursor:pointer;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4C2} Open '+cap(t.who)+'’s '+taskDeepLinkLabel(_dlv)+' →</span></div>':"";
+  // 📚 Study: the subject record names the session; the link opens THAT sitting and the card
+  // shows today's pile (new · due · learning) or "done today".
+  const _dlSub=(_dlv==="study"&&typeof gwGetSubjects==="function")?(((gwGetSubjects(t.who)||{})[t.subjectKey])||null):null;
+  const _go=(_dlv==="sprint")?("retrOpenSprint('"+t.who+"')"):(_dlv==="study"&&_dlSub)?("retrSchedGo('"+t.who+"','study','"+_dlSub.study+"')"):("retrSchedGo('"+t.who+"','"+_dlv+"')");
+  let linkRow=_dlv?'<div style="margin-top:5px"><span onclick="event.stopPropagation();'+_go+'" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#5b3a8c;cursor:pointer;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4C2} Open '+cap(t.who)+'’s '+taskDeepLinkLabel(_dlv)+' →</span></div>':"";
+  if(_dlSub&&_dlSub.study&&typeof mstPile==="function"){
+    try{
+      const _sp=mstPile(t.who,_dlSub.study,mastGetPrintNum(),(typeof mstLogGet==="function")?mstLogGet(t.who,_dlSub.study):null);
+      const _n=(_sp.newNames||[]).length,_d=(_sp.reviews||[]).length,_l=(_sp.learning||[]).length;
+      const _txt=(_n+_d+_l)?(_n+' new · '+_d+' due · '+_l+' learning'):((typeof mstLogGet==="function"&&mstLogGet(t.who,_dlSub.study))?'\u2713 done today':'nothing due');
+      linkRow+='<div style="margin-top:4px;font-size:11px;color:var(--muted);font-weight:600">\u{1F4DA} '+_txt+'</div>';
+    }catch(e){}
+  }
   // 📕 Workbook: a subject linked to an uploaded workbook opens the viewer on THIS lesson's
   // exercise page for this kid (wbTaskLink resolves the card label; no page → no row).
   const _wbl=(!readOnly&&typeof wbTaskLink==="function")?wbTaskLink(t):null;
@@ -15849,6 +15864,17 @@ function ceRenderEditSheet(){
   h+='<div class="ce-chip'+(trk==="daily"?" sel":"")+'" onclick="ceSetTracking(\'daily\')">Daily (no lesson #)</div>';
   h+='</div>';
   h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">'+(trk==="daily"?"Shows up each scheduled day without tracking lesson numbers (like notebooks &amp; drills)":"Lessons advance in order and track progress with a cursor")+'</div>';
+
+  // 📚 Study session link (memory curriculum): the card opens this study sitting.
+  {
+    const _ss=(typeof mstSessions==="function")?mstSessions(ceEditKid):[];
+    if(_ss.length||s.study){
+      h+='<div class="ce-sheet-lbl">\u{1F4DA} Study session</div><div class="ce-chips">';
+      h+='<div class="ce-chip'+(!s.study?" sel":"")+'" onclick="ceSaveField(\'study\',null);ceRenderEditSheet()">None</div>';
+      _ss.forEach(x=>{ h+='<div class="ce-chip'+(s.study===x.sid?" sel":"")+'" onclick="ceSaveField(\'study\',\''+esc(x.sid)+'\');ceSaveField(\'noCarry\',true);ceRenderEditSheet()">'+esc((x.emoji||"")+" "+(x.name||x.sid))+'</div>'; });
+      h+='</div><div style="font-size:10px;color:var(--muted);margin-top:4px">The card opens this study sitting and shows today\u2019s pile. Use Daily tracking.</div>';
+    }
+  }
   if(trk!=="daily"&&typeof lidStamped==="function"&&lidStamped(ceEditKid,ceEditKey)){
     h+='<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin-top:6px;cursor:pointer"><input type="checkbox" '+(s.allowOutOfOrder?"checked":"")+' onchange="ceSaveField(\'allowOutOfOrder\',this.checked);ceRenderEditSheet()"> Allow out-of-order check-offs <span style="font-size:10px">(off = a card can’t be checked while an earlier lesson is still open)</span></label>';
     if(typeof planBacked==="function"&&planBacked(ceEditKid,ceEditKey)&&s.pacing&&(s.pacing.mode==="timesPerWeek"||s.pacing.mode==="targetDate")){
@@ -17722,6 +17748,17 @@ function ceRenderAddSheet(){
   h+='</div>';
   h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">'+(f.tracking==="daily"?"Shows up each scheduled day without tracking lesson numbers":"Lessons advance in order and track progress with a cursor")+'</div>';
 
+  // 📚 Study session link (memory curriculum): the card opens this study sitting and shows today's pile.
+  {
+    const _ss=(typeof mstSessions==="function")?mstSessions(ceAddKid):[];
+    if(_ss.length){
+      h+='<div class="ce-sheet-lbl">\u{1F4DA} Study session</div><div class="ce-chips">';
+      h+='<div class="ce-chip'+(!f.study?" sel":"")+'" onclick="ceAddForm.study=\'\';ceRenderAddSheet()">None</div>';
+      _ss.forEach(x=>{ h+='<div class="ce-chip'+(f.study===x.sid?" sel":"")+'" onclick="ceAddForm.study=\''+esc(x.sid)+'\';ceRenderAddSheet()">'+esc((x.emoji||"")+" "+(x.name||x.sid))+'</div>'; });
+      h+='</div><div style="font-size:10px;color:var(--muted);margin-top:4px">The card opens this study sitting and shows today\u2019s pile. Use Daily tracking.</div>';
+    }
+  }
+
   if(f.tracking!=="daily"){
   // Lesson source
   h+='<div class="ce-sheet-lbl">Lessons</div>';
@@ -17854,7 +17891,7 @@ function ceAddSave(){
   const dayArr=(f.days||"").split(/[\s,]+/).map(x=>x.trim()).filter(Boolean);
   let subj;
   if(f.tracking==="daily"){
-    subj={display:name,device:f.device,mom:f.mom,minutes:f.minutes,days:f.days,allowedDays:dayArr,rules:f.rules,tracking:"daily",priority:f.priority||"normal",timesPerWeek:f.timesPerWeek||5};
+    subj={display:name,device:f.device,mom:f.mom,minutes:f.minutes,days:f.days,allowedDays:dayArr,rules:f.rules,tracking:"daily",priority:f.priority||"normal",timesPerWeek:f.timesPerWeek||5}; if(f.study){ subj.study=f.study; subj.noCarry=true; }
   } else {
     // Build lesson sequence
     let lessonSeq=[];
@@ -33436,7 +33473,10 @@ function mastDueItems(kid,pn){
   let items=masteryData[kid];
   if(!items) return [];
   if(!Array.isArray(items)) items=Object.values(items);
-  const due=items.filter(i=>mastIsDue(i,pn)&&!mastIsNeverDrill(i)&&!mastIsParked(i));  // R5: never-drill items never assemble; parked issue-words are held out
+  // 📚 Study sessions own their decks' cards below the mix-in rung — those are reviewed in the
+  // session, never in this drill (mstOwnedIds; empty Set when the kid has no sessions).
+  const _owned=(typeof mstOwnedIds==="function")?mstOwnedIds(kid):null;
+  const due=items.filter(i=>mastIsDue(i,pn)&&!mastIsNeverDrill(i)&&!mastIsParked(i)&&!(_owned&&_owned.has(i.id)));  // R5: never-drill items never assemble; parked issue-words are held out
   due.sort((a,b)=>MAST_TIER_ORDER.indexOf(a.tier||"daily")-MAST_TIER_ORDER.indexOf(b.tier||"daily"));
   const _mk=masteryKid; masteryKid=kid; const settings=mastDrillSettings(); masteryKid=_mk;
   const byCat={};
@@ -33616,36 +33656,29 @@ function mastCancelLog(){
 }
 function mastScore(id,val){ if(!mastLogStartTs) mastLogStartTs=Date.now(); mastLogScores[id]=val; mastPersistLog(); const c=document.getElementById("content"); if(c) renderMastery(c); }
 
-function mastSaveResults(){
-  const pn=mastGetPrintNum();
-  const due=mastSessionDue(pn);
-  const TIER_LADDER=mastDrillSettings().ladder;
-
-  // Get all items for this kid
-  let items=masteryData[masteryKid];
-  if(!items) return;
-  if(!Array.isArray(items)) items=Object.values(items);
-
-  // 🎗 Snapshot which drills curricula were ALREADY fully graduated, so only categories
-  // that cross the finish line in THIS save auto-celebrate (checkDrillsGraduation below).
-  let _preDrillsDone=[]; try{ _preDrillsDone=drillsCompletedCats(masteryKid); }catch(e){}
-
-  // Apply results
+// ── Shared ladder engine ─────────────────────────────────────────────────────
+// The drill's scoring passes, lifted out of mastSaveResults UNCHANGED so the study
+// sessions (📚 Study) score through the exact same code: pass 1 = "shown" dots,
+// graduation into the ladder, auto-pull; deck chaining; pass 2 = c / m / ~ ladder
+// moves. `due` = the cards scored this session ({id} is enough), `scores` = {id:"c"|"m"|"~"|"shown"}.
+// opts.prevShown = ids already dotted today (no double dots); opts.autoPull=false and
+// opts.chain=false let a study session own its own new-card pacing.
+function mastApplyScores(items,due,scores,pn,_jset,opts){
+  opts=opts||{};
+  const _prevShown=opts.prevShown||new Set();
+  const _autoPull=opts.autoPull!==false;
+  const _chain=opts.chain!==false;
+  const TIER_LADDER=_jset.ladder;
   let changes=0;
   const touched=[];  // cards whose ladder state changed — for a targeted, non-destructive write
   const minted=[];   // brand-new auto-pulled cards — need a whole-object write, not field patches
-
   // Pass 1 — "shown" marks on introduction cards: dot fill, graduation, auto-pull.
   // This used to happen immediately in mastSlideShown; doing it here makes the log
   // session all-or-nothing (Cancel discards everything, nothing half-applies) and a
   // card can't change status mid-drill. Items already dotted by an earlier session
   // today (a "log another" run) are skipped so a re-log can't double-fill dots.
-  const _jset=mastDrillSettings();
-  const _todayKey=new Date().toISOString().slice(0,10).replace(/-/g,"");
-  const _prevToday=(masteryData.history&&masteryData.history[masteryKid]&&masteryData.history[masteryKid][_todayKey])||null;
-  const _prevShown=new Set(((_prevToday&&_prevToday.items)||[]).filter(x=>x&&x.result==="shown").map(x=>x.id));
   due.forEach(dueItem=>{
-    if(mastLogScores[dueItem.id]!=="shown") return;
+    if(scores[dueItem.id]!=="shown") return;
     const item=items.find(i=>i.id===dueItem.id);
     if(!item||item.status!=="introduction") return;
     if(_prevShown.has(item.id)) return;
@@ -33663,7 +33696,7 @@ function mastSaveResults(){
       item.consecutive_correct=0;
       item.tally_dots=_need;
       mastStampNextDue(item,items,_gtier,pn);  // book the first review a full interval out, least-loaded slot
-      if(_jset.auto_pull){
+      if(_autoPull&&_jset.auto_pull){
         const cat=item.subject;
         const introCount=items.filter(i=>i.subject===cat&&i.status==="introduction"&&i.id!==item.id).length;
         if(introCount<mastIntroMaxFor(cat,_jset)){
@@ -33697,6 +33730,7 @@ function mastSaveResults(){
     touched.push(item);
   });
 
+  if(_chain){
   // Deck chaining (cat_start_after): a dormant deck configured to "start after" another
   // category begins the moment that category finishes Learning — checked here because
   // pass 1's graduations are what can complete a trigger. Seeded cards ride the same
@@ -33715,10 +33749,11 @@ function mastSaveResults(){
       items.push(it); minted.push(it); n++;
     }
   });
+  }
 
   // Pass 2 — ladder scoring for quizzed cards.
   due.forEach(dueItem=>{
-    const score=mastLogScores[dueItem.id];
+    const score=scores[dueItem.id];
     if(!score||score==="shown") return; // "shown" already saved by mastSlideShown
     // Find in items array
     const item=items.find(i=>i.id===dueItem.id);
@@ -33794,6 +33829,31 @@ function mastSaveResults(){
     touched.push(item);
     changes++;
   });
+
+  return {touched:touched,minted:minted,changes:changes};
+}
+function mastSaveResults(){
+  const pn=mastGetPrintNum();
+  const due=mastSessionDue(pn);
+  const TIER_LADDER=mastDrillSettings().ladder;
+
+  // Get all items for this kid
+  let items=masteryData[masteryKid];
+  if(!items) return;
+  if(!Array.isArray(items)) items=Object.values(items);
+
+  // 🎗 Snapshot which drills curricula were ALREADY fully graduated, so only categories
+  // that cross the finish line in THIS save auto-celebrate (checkDrillsGraduation below).
+  let _preDrillsDone=[]; try{ _preDrillsDone=drillsCompletedCats(masteryKid); }catch(e){}
+
+  // Apply results — through the shared ladder engine (see mastApplyScores above).
+  const _jset=mastDrillSettings();
+  const _todayKey=new Date().toISOString().slice(0,10).replace(/-/g,"");
+  const _prevToday=(masteryData.history&&masteryData.history[masteryKid]&&masteryData.history[masteryKid][_todayKey])||null;
+  const _prevShown=new Set(((_prevToday&&_prevToday.items)||[]).filter(x=>x&&x.result==="shown").map(x=>x.id));
+  const _applied=mastApplyScores(items,due,mastLogScores,pn,_jset,{prevShown:_prevShown,autoPull:true,chain:true});
+  const touched=_applied.touched, minted=_applied.minted;
+  let changes=_applied.changes;
 
   const hasShown=Object.values(mastLogScores).some(v=>v==="shown");
   if(!changes&&!hasShown){ alert("No items scored"); return; }
@@ -34630,27 +34690,26 @@ function mastBankAddItem(){ if(!momHere()&&!mastAdminPinOk) return;
 // Same write paths as single add: ONE bank transaction for all entries (never a whole-
 // array set), definitions in one targeted update. Dupes and period-keyed definitions
 // (Firebase forbids "." in keys) are skipped and reported, never silently dropped.
-function mastBankAddBatch(){ if(!momHere()&&!mastAdminPinOk) return;
-  const kid=masteryKid||"julian";
-  const cat=mastBankAddNewCat||mastBankAddCat;
-  const raw=(document.getElementById("mast-curr-add-batch")||{}).value||"";
-  const lines=raw.split(/\n/).map(l=>l.trim()).filter(Boolean);
-  if(!lines.length){ alert("Paste at least one line (Name | definition)."); return; }
-  const full=mastFullBank();
+// ── ONE import door ──────────────────────────────────────────────────────────────
+// The single write path for adding cards to a kid's bank: bank entries (with `def` riding
+// along so a pull inherits the back even if the definitions map is ever lost), the
+// definitions map, dedup against what's already there, and the Firebase-key check.
+// Both the Batch paste box and 📥 Import in Mastery HQ call this — one implementation.
+function mastBankAddMany(kid,cat,entries){
+  const full=mastFullBank(kid);
   const existing=new Set(full[cat]||[]);
-  const added=[], dupes=[], defs={}, badDefKeys=[];
-  lines.forEach(line=>{
-    const pi=line.indexOf("|");
-    const name=(pi>=0?line.slice(0,pi):line).trim();
-    const def=pi>=0?line.slice(pi+1).trim():"";
+  const added=[],dupes=[],defs={},badDefKeys=[];
+  (entries||[]).forEach(e=>{
+    const name=(e&&e.name||"").trim();
+    const def=(e&&e.def||"").trim();
     if(!name) return;
-    if(existing.has(name)||added.some(e=>e.name===name)){ dupes.push(name); return; }
+    if(existing.has(name)||added.some(x=>x.name===name)){ dupes.push(name); return; }
     const entry={cat:cat,name:name};
-    if(def) entry.def=def;  // def rides the bank entry too, so pulls inherit it even if the definitions map is ever lost
+    if(def) entry.def=def;
     added.push(entry);
     if(def){ if(mastDefKeyOk(name)) defs[name]=def; else badDefKeys.push(name); }
   });
-  if(!added.length){ alert("Nothing new to add — "+(dupes.length?dupes.length+" duplicate(s): "+dupes.slice(0,6).join(", "):"no valid lines")); return; }
+  if(!added.length) return {added:[],dupes:dupes,badDefKeys:badDefKeys};
   if(!masteryData[kid+"_custom_items"]) masteryData[kid+"_custom_items"]=[];
   added.forEach(e=>masteryData[kid+"_custom_items"].push(e));
   if(db) db.ref("mastery/"+kid+"_custom_items").transaction(cur=>{
@@ -34665,11 +34724,25 @@ function mastBankAddBatch(){ if(!momHere()&&!mastAdminPinOk) return;
     masteryData[kid+"_settings"]=s;
     if(db) db.ref("mastery/"+kid+"_settings/definitions").update(defs);  // these keys only
   }
-  if(mastBankAddMode&&mastBankAddMode!==mastGetCatMode(kid,cat)) mastAdminCatMode(cat,mastBankAddMode);
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
-  let msg="\u{2713} Added "+added.length+" to "+cat;
-  if(dupes.length) msg+=" \u{00B7} skipped "+dupes.length+" duplicate(s)";
-  if(badDefKeys.length) msg+=" \u{00B7} "+badDefKeys.length+" definition(s) skipped (name contains a period — use a recite card instead)";
+  return {added:added,dupes:dupes,badDefKeys:badDefKeys};
+}
+function mastBankAddBatch(){ if(!momHere()&&!mastAdminPinOk) return;
+  const kid=masteryKid||"julian";
+  const cat=mastBankAddNewCat||mastBankAddCat;
+  const raw=(document.getElementById("mast-curr-add-batch")||{}).value||"";
+  const lines=raw.split(/\n/).map(l=>l.trim()).filter(Boolean);
+  if(!lines.length){ alert("Paste at least one line (Name | definition)."); return; }
+  const entries=lines.map(line=>{
+    const pi=line.indexOf("|");
+    return {name:(pi>=0?line.slice(0,pi):line).trim(), def:pi>=0?line.slice(pi+1).trim():""};
+  });
+  const r=mastBankAddMany(kid,cat,entries);
+  if(!r.added.length){ alert("Nothing new to add \u2014 "+(r.dupes.length?r.dupes.length+" duplicate(s): "+r.dupes.slice(0,6).join(", "):"no valid lines")); return; }
+  if(mastBankAddMode&&mastBankAddMode!==mastGetCatMode(kid,cat)) mastAdminCatMode(cat,mastBankAddMode);
+  let msg="\u{2713} Added "+r.added.length+" to "+cat;
+  if(r.dupes.length) msg+=" \u{00B7} skipped "+r.dupes.length+" duplicate(s)";
+  if(r.badDefKeys.length) msg+=" \u{00B7} "+r.badDefKeys.length+" definition(s) skipped (name contains a period \u2014 use a recite card instead)";
   if(typeof gwShowToast==="function") gwShowToast(msg); else alert(msg);
   mastBankAddNewCat="";mastBankAddMode="";
   _mastRe();
@@ -35608,6 +35681,1761 @@ function mastRebalanceNow(){
   if(typeof gwShowToast==="function") gwShowToast("Evened out "+r.changed+" review card"+(r.changed!==1?"s":"")+" for "+cap(kid)+" ✓");
   const c=document.getElementById("content"); if(c) renderMastery(c);
 }
+// ── MST_ENGINE_START ──
+// Mastery "study sessions" — pure functions, no DOM, no writes.
+// Relies on globals already defined elsewhere in index.html:
+//   masteryData, masteryKid, MAST_TIER_ORDER,
+//   mastDrillSettings(), mastIsDue(item,pn), mastIsParked(item),
+//   mastIsNeverDrill(item), mastFullBank(kid)
+
+const MST_SESSION_DEFAULTS = {
+  who: "solo",
+  newPerDay: 5,
+  passes: 2,
+  mixInAt: "weekly",
+  handOffAt: "bi_weekly",
+  kind: "deck",
+  audio: "front",
+  order: "bank"
+};
+
+function _mstCmp(a, b) {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
+function _mstHashStr(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
+  }
+  return h >>> 0;
+}
+
+function _mstMulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function _mstShuffle(arr, rng) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    const tmp = a[i]; a[i] = a[j]; a[j] = tmp;
+  }
+  return a;
+}
+
+// 1. Sessions for a kid, in key order, with defaults filled in.
+function mstSessions(kid) {
+  const raw = masteryData[kid + "_sessions"];
+  if (!raw) return [];
+  const entries = Array.isArray(raw)
+    ? raw.map((v, i) => [String(i), v])
+    : Object.keys(raw).map(k => [k, raw[k]]);
+  const out = [];
+  entries.forEach(([sid, rec]) => {
+    if (!rec) return;
+    out.push({
+      sid,
+      name: rec.name,
+      emoji: rec.emoji,
+      decks: rec.decks || [],
+      who: rec.who || MST_SESSION_DEFAULTS.who,
+      newPerDay: rec.newPerDay != null ? rec.newPerDay : MST_SESSION_DEFAULTS.newPerDay,
+      passes: rec.passes != null ? rec.passes : MST_SESSION_DEFAULTS.passes,
+      mixInAt: rec.mixInAt || MST_SESSION_DEFAULTS.mixInAt,
+      handOffAt: rec.handOffAt || MST_SESSION_DEFAULTS.handOffAt,
+      kind: rec.kind || MST_SESSION_DEFAULTS.kind,
+      audio: rec.audio || MST_SESSION_DEFAULTS.audio,
+      order: rec.order || MST_SESSION_DEFAULTS.order,
+      skipDecks: rec.skipDecks || []
+    });
+  });
+  // Second pass — the 📚 Daily Study catch-all (kind "all") owns every deck that no NAMED deck
+  // session claims, minus the decks kept with Mom (skipDecks). Resolved here, once, so the rest of
+  // the engine never needs to know the difference between a catch-all and a hand-picked session.
+  const _all = out.filter(s => s.kind === "all");
+  if (_all.length) {
+    const claimed = new Set();
+    out.forEach(s => { if (s.kind === "deck") (s.decks || []).forEach(d => claimed.add(d)); });
+    const every = new Set(Object.keys(mastFullBank(kid) || {}));
+    let items = masteryData[kid];
+    if (items) { if (!Array.isArray(items)) items = Object.values(items);
+      items.forEach(i => { if (i && i.subject) every.add(i.subject); }); }
+    _all.forEach(s => {
+      const skip = new Set(s.skipDecks || []);
+      s.decks = [...every].filter(d => !claimed.has(d) && !skip.has(d)).sort();
+    });
+  }
+  return out;
+}
+
+// 2. Index of `tier` in `ladder`; snap to the nearest rung at-or-below its
+//    position in MAST_TIER_ORDER when it isn't on the ladder. Minimum 0.
+function mstTierIdx(tier, ladder) {
+  ladder = ladder || [];
+  const direct = ladder.indexOf(tier);
+  if (direct >= 0) return direct;
+  const tPos = MAST_TIER_ORDER.indexOf(tier);
+  let bestIdx = -1, bestPos = -1;
+  ladder.forEach((rung, i) => {
+    const rPos = MAST_TIER_ORDER.indexOf(rung);
+    if (rPos <= tPos && rPos > bestPos) { bestPos = rPos; bestIdx = i; }
+  });
+  return bestIdx >= 0 ? bestIdx : 0;
+}
+
+// 3. Does `session` own `item`?
+function mstOwns(session, item, ladder) {
+  if (!session || !item) return false;
+  if (session.kind === "mix") return false;
+  if (!session.decks || session.decks.indexOf(item.subject) === -1) return false;
+  if (mastIsParked(item)) return false;
+  if (mastIsNeverDrill(item)) return false;
+  if (item.status === "introduction") return true;
+  const tier = item.tier || "daily";
+  return mstTierIdx(tier, ladder) < mstTierIdx(session.mixInAt, ladder);
+}
+
+// 3b. Does the Daily Mix own `item`, on behalf of any of `sessions`' deck
+//     sessions? Middle rungs — at/after a deck session's mixInAt but before
+//     its handOffAt — are interleaved in the mix; at/after handOffAt the
+//     card belongs to Mom's drill instead.
+function mstMixOwns(sessions, item, ladder) {
+  if (!item) return false;
+  if (item.status !== "active") return false;
+  if (mastIsParked(item)) return false;
+  if (mastIsNeverDrill(item)) return false;
+  const tier = item.tier || "daily";
+  const itemIdx = mstTierIdx(tier, ladder);
+  for (let i = 0; i < sessions.length; i++) {
+    const s = sessions[i];
+    // Every session that owns decks feeds the mix — hand-picked ones AND the Daily Study
+    // catch-all. (Only the mix itself is skipped; it owns no decks of its own.)
+    if (s.kind === "mix") continue;
+    if (!s.decks || s.decks.indexOf(item.subject) === -1) continue;
+    const mixInIdx = mstTierIdx(s.mixInAt, ladder);
+    const handOffIdx = mstTierIdx(s.handOffAt, ladder);
+    if (itemIdx >= mixInIdx && itemIdx < handOffIdx) return true;
+  }
+  return false;
+}
+
+// 4. Set of item ids owned by ANY of the kid's sessions — deck sessions as
+//    before, plus the Daily Mix session's owned ids when the kid has one.
+function mstOwnedIds(kid) {
+  const ids = new Set();
+  const sessions = mstSessions(kid);
+  if (sessions.length === 0) return ids;
+  let items = masteryData[kid];
+  if (!items) return ids;
+  if (!Array.isArray(items)) items = Object.values(items);
+  items = items.filter(Boolean);
+  const _mk = masteryKid; masteryKid = kid; const settings = mastDrillSettings(); masteryKid = _mk;
+  const ladder = settings.ladder;
+  const hasMix = sessions.some(s => s.kind === "mix");
+  items.forEach(item => {
+    let owned = false;
+    for (let i = 0; i < sessions.length; i++) {
+      if (mstOwns(sessions[i], item, ladder)) { owned = true; break; }
+    }
+    if (!owned && hasMix && mstMixOwns(sessions, item, ladder)) owned = true;
+    if (owned) ids.add(item.id);
+  });
+  return ids;
+}
+
+// 4b. The kid's Daily Mix session, or null.
+function mstMixSession(kid) {
+  const sessions = mstSessions(kid);
+  for (let i = 0; i < sessions.length; i++) {
+    if (sessions[i].kind === "mix") return sessions[i];
+  }
+  return null;
+}
+
+// 5. The session that owns `deck`, or null.
+function mstDeckInSession(kid, deck) {
+  const sessions = mstSessions(kid);
+  for (let i = 0; i < sessions.length; i++) {
+    if (sessions[i].decks && sessions[i].decks.indexOf(deck) !== -1) return sessions[i];
+  }
+  return null;
+}
+
+// 6. The pile of cards a session presents today.
+function mstPile(kid, sid, pn, todayLog) {
+  const empty = { reviews: [], learning: [], newNames: [] };
+  const sessions = mstSessions(kid);
+  const session = sessions.find(s => s.sid === sid);
+  if (!session) return empty;
+
+  let items = masteryData[kid];
+  if (!items) items = [];
+  if (!Array.isArray(items)) items = Object.values(items);
+  items = items.filter(Boolean);
+
+  const _mk = masteryKid; masteryKid = kid; const settings = mastDrillSettings(); masteryKid = _mk;
+  const ladder = settings.ladder;
+
+  const log = (todayLog && todayLog.items) || [];
+  const scoredIds = new Set(log.filter(e => e && e.id != null && (e.result === "c" || e.result === "m")).map(e => e.id));
+  const shownIds = new Set(log.filter(e => e && e.id != null && e.result === "shown").map(e => e.id));
+  const loggedNames = new Set(log.filter(e => e && e.name != null).map(e => e.name));
+  const shownNewCount = log.filter(e => e && e.name != null && e.result === "shown").length;
+
+  if (session.kind === "mix") {
+    let mixReviews = items.filter(item =>
+      mstMixOwns(sessions, item, ladder) &&
+      mastIsDue(item, pn) &&
+      !scoredIds.has(item.id)
+    );
+    const mixRng = _mstMulberry32(_mstHashStr(String(pn) + ":" + sid));
+    mixReviews = _mstShuffle(mixReviews, mixRng);
+    return { reviews: mixReviews, learning: [], newNames: [] };
+  }
+
+  let reviews = items.filter(item =>
+    mstOwns(session, item, ladder) &&
+    item.status === "active" &&
+    mastIsDue(item, pn) &&
+    !scoredIds.has(item.id)
+  );
+  reviews.sort((a, b) => {
+    const ad = a.next_due != null ? a.next_due : 0;
+    const bd = b.next_due != null ? b.next_due : 0;
+    const c = _mstCmp(ad, bd);
+    return c !== 0 ? c : _mstCmp(a.id, b.id);
+  });
+
+  let learning = items.filter(item =>
+    mstOwns(session, item, ladder) &&
+    item.status === "introduction" &&
+    !shownIds.has(item.id)
+  );
+  learning.sort((a, b) => _mstCmp(a.id, b.id));
+
+  if (session.order === "shuffle") {
+    const rng = _mstMulberry32(_mstHashStr(String(pn) + ":" + sid));
+    reviews = _mstShuffle(reviews, rng);
+    learning = _mstShuffle(learning, rng);
+  }
+
+  const bank = mastFullBank(kid);
+  const existingByDeck = {};
+  items.forEach(item => {
+    const d = item.subject;
+    if (!existingByDeck[d]) existingByDeck[d] = new Set();
+    existingByDeck[d].add(item.prompt);
+  });
+
+  const newPerDay = Math.max(0, session.newPerDay - shownNewCount);
+  const newNames = [];
+  if (newPerDay > 0) {
+    outer:
+    for (let di = 0; di < session.decks.length; di++) {
+      const deck = session.decks[di];
+      const names = bank[deck] || [];
+      for (let ni = 0; ni < names.length; ni++) {
+        const name = names[ni];
+        if (newNames.length >= newPerDay) break outer;
+        if (existingByDeck[deck] && existingByDeck[deck].has(name)) continue;
+        if (loggedNames.has(name)) continue;
+        newNames.push({ deck, name });
+      }
+    }
+  }
+
+  return { reviews, learning, newNames };
+}
+
+// 7. Sitting state machine.
+function mstSittingInit(pile, session) {
+  const cards = {};
+  const queue = [];
+  const counts = { review: 0, learning: 0, new: 0 };
+  (pile.reviews || []).forEach(item => {
+    const key = "r:" + item.id;
+    cards[key] = { key, kind: "review", id: item.id, deck: item.subject, name: item.prompt, goods: 0, first: null, done: false };
+    queue.push(key);
+    counts.review++;
+  });
+  (pile.learning || []).forEach(item => {
+    const key = "l:" + item.id;
+    cards[key] = { key, kind: "learning", id: item.id, deck: item.subject, name: item.prompt, goods: 0, first: null, done: false };
+    queue.push(key);
+    counts.learning++;
+  });
+  (pile.newNames || []).forEach(n => {
+    const key = "n:" + n.deck + "|" + n.name;
+    cards[key] = { key, kind: "new", deck: n.deck, name: n.name, goods: 0, first: null, done: false };
+    queue.push(key);
+    counts.new++;
+  });
+  const passes = (session && session.passes != null) ? session.passes : MST_SESSION_DEFAULTS.passes;
+  return { cards, queue, passes, counts };
+}
+
+function mstAnswer(state, key, ans) {
+  const card = state.cards[key];
+  if (!card || card.done) return state;
+  const idx = state.queue.indexOf(key);
+  if (idx === -1) return state;
+  if (card.first === null) card.first = ans;
+
+  if (card.kind === "review") {
+    state.queue.splice(idx, 1);
+    if (ans === "good") {
+      card.done = true;
+    } else {
+      state.queue.push(key);
+    }
+  } else {
+    state.queue.splice(idx, 1);
+    if (ans === "good") {
+      card.goods++;
+      if (card.goods >= state.passes) {
+        card.done = true;
+      } else {
+        state.queue.push(key);
+      }
+    } else {
+      card.goods = 0;
+      state.queue.push(key);
+    }
+  }
+  return state;
+}
+
+function mstCurrent(state) {
+  if (!state || !state.queue || !state.queue.length) return null;
+  return state.cards[state.queue[0]] || null;
+}
+
+function mstProgress(state) {
+  if (!state || !state.cards) return { done: 0, total: 0, remaining: 0, againCount: 0 };
+  const total = Object.keys(state.cards).length;
+  const remaining = state.queue.length;
+  const done = total - remaining;
+  let againCount = 0;
+  Object.keys(state.cards).forEach(k => { if (state.cards[k].first === "again") againCount++; });
+  return { done, total, remaining, againCount };
+}
+
+function mstOutcomes(state) {
+  const scores = {};
+  const shownIds = [];
+  const shownNew = [];
+  Object.keys(state.cards).forEach(k => {
+    const c = state.cards[k];
+    if (!c.done) return;
+    if (c.kind === "review") {
+      scores[c.id] = c.first === "good" ? "c" : "m";
+    } else if (c.kind === "learning") {
+      shownIds.push(c.id);
+    } else if (c.kind === "new") {
+      shownNew.push({ deck: c.deck, name: c.name });
+    }
+  });
+  return { scores, shownIds, shownNew };
+}
+
+function mstSerialize(state) {
+  return JSON.parse(JSON.stringify({ queue: state.queue, cards: state.cards, passes: state.passes }));
+}
+
+function mstRestore(obj) {
+  const data = (typeof obj === "string") ? JSON.parse(obj) : JSON.parse(JSON.stringify(obj));
+  return { queue: data.queue, cards: data.cards, passes: data.passes };
+}
+// ── MST_ENGINE_END ──
+// ── MST_UI_START ──
+// 📚 Study screen (kid-facing) — Anki-style sitting over mstSessions/mstPile/mstSittingInit
+// etc. (pure engine globals, provided elsewhere). This block owns UI state + rendering +
+// the Save write path only; never reimplements queueing/scoring.
+let mstSid=null, mstState=null, mstFlipped=false, mstStartTs=null, mstDone=null, mstKid=null;
+
+function mstEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function mstEscJs(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }
+function mstDateStr(){ return new Date().toISOString().slice(0,10); }          // "2026-09-15"
+function mstTodayKey(){ return mstDateStr().replace(/-/g,""); }                // "20260915" — mirrors the drill's _todayKey
+function mstStorageKey(kid,sid){ return "ha_mst_"+kid+"_"+sid; }
+function mstLogGet(kid,sid){ const dk=mstTodayKey(); return (masteryData.studyLog&&masteryData.studyLog[kid]&&masteryData.studyLog[kid][sid]&&masteryData.studyLog[kid][sid][dk])||null; }
+function mstItemAnswer(id){
+  try{ let items=masteryData[masteryKid]; if(!Array.isArray(items)) items=Object.values(items||{});
+    const it=items.find(i=>i&&i.id===id); return (it&&it.answer&&it.answer!==it.prompt)?it.answer:""; }catch(e){ return ""; }
+}
+
+// ── Persistence (resumable sitting, same-day only) ──────────────────────────
+function mstPersist(){
+  if(!mstSid||!mstState) return;
+  try{ HA_LS.setItem(mstStorageKey(masteryKid,mstSid),JSON.stringify({date:mstTodayKey(),sid:mstSid,state:mstSerialize(mstState),startTs:mstStartTs})); }catch(e){}
+}
+function mstHasPersisted(sid){
+  try{ const raw=HA_LS.getItem(mstStorageKey(masteryKid,sid)); if(!raw) return false;
+    const obj=JSON.parse(raw); return !!(obj&&obj.date===mstTodayKey()); }catch(e){ return false; }
+}
+function mstRestoreSitting(sid){
+  sid=sid||mstSid; if(!sid) return false;
+  try{
+    const raw=HA_LS.getItem(mstStorageKey(masteryKid,sid)); if(!raw) return false;
+    const obj=JSON.parse(raw); if(!obj||obj.date!==mstTodayKey()) return false;
+    mstState=mstRestore(obj.state); mstSid=obj.sid||sid; mstStartTs=obj.startTs||Date.now(); mstFlipped=false;
+    return true;
+  }catch(e){ return false; }
+}
+function mstClearPersist(sid){ sid=sid||mstSid; if(!sid) return; try{ HA_LS.removeItem(mstStorageKey(masteryKid,sid)); }catch(e){} }
+function mstAutoPlayCurrent(session){
+  if(!session||session.audio==="off"||!mstState) return;
+  try{ const card=mstCurrent(mstState);
+    if(card&&card.name){ if(mastGetDefAudio(masteryKid,card.name)) mastPlayDefAudio(card.name); else mastSpeak(card.name); }
+  }catch(e){}
+}
+
+// ── Render ────────────────────────────────────────────────────────────────
+function mstAudioBtn(name,session){
+  if(session&&session.audio==="off") return "";   // a deck can opt out of sound entirely
+  const esc=mstEscJs(name);
+  if(mastGetDefAudio(masteryKid,name)) return '<button onclick="event.stopPropagation();mastPlayDefAudio(\''+esc+'\')" style="margin-top:10px;padding:9px 20px;border-radius:999px;border:2px solid #7c3aed;background:#f5f3ff;color:#7c3aed;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F50A} Hear it</button>';
+  return '<button onclick="event.stopPropagation();mastSpeak(\''+esc+'\')" style="margin-top:10px;padding:7px 16px;border-radius:999px;border:1.5px solid #c4b5fd;background:#fff;color:#7c3aed;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F5E3} Read it</button>';
+}
+function mstCardHtml(session,card){
+  const name=card.name||"";
+  const def=mastGetDef(masteryKid,name)||mstItemAnswer(card.id);
+  let c='<div class="mast-slide"><div class="mast-flip-wrap'+(mstFlipped?" flipped":"")+'" onclick="mstFlip()"><div class="mast-flip-inner">';
+  c+='<div class="mast-flip-front">';
+  c+='<div class="mast-slide-cat">'+mstEsc(card.deck||session.name||"")+((card.kind==="new"||card.kind==="learning")?' <span style="font-size:9px;color:#9a3412;font-weight:600">\u{2B50} Learning</span>':"")+'</div>';
+  c+='<div class="mast-slide-name">'+mstEsc(name)+'</div>'+mstAudioBtn(name,session);
+  c+='<div class="mast-flip-hint">\u{1F4A1} tap to flip</div></div>';
+  c+='<div class="mast-flip-back">';
+  c+='<div class="mast-flip-def">'+(def?mstEsc(def):'<span style="color:#a78bfa;font-size:16px">no definition yet</span>')+'</div>'+mstAudioBtn(name,session);
+  c+='<div class="mast-flip-hint">\u{1F4A1} tap to flip back</div></div>';
+  return c+'</div></div></div>';
+}
+function renderMastStudy(){
+  const kid=masteryKid;
+  if(mstKid!==kid){ mstKid=kid; mstSid=null; mstState=null; mstFlipped=false; mstDone=null; mstStartTs=null; }  // a sitting never leaks across kids
+  let sessions=[]; try{ sessions=mstSessions(kid)||[]; }catch(e){ sessions=[]; }
+  if(!sessions.length) return '<div style="text-align:center;padding:60px 20px;color:var(--muted);font-family:\'DM Sans\',sans-serif"><div style="font-size:40px;margin-bottom:10px">\u{1F4DA}</div><div style="font-size:16px;font-weight:700">No study sessions yet.</div></div>';
+  if(mstSid==null||!sessions.some(s=>s.sid===mstSid)) mstSid=sessions[0].sid;
+  const session=sessions.find(s=>s.sid===mstSid)||sessions[0];
+  let h="";
+  if(sessions.length>1){
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">';
+    sessions.forEach(s=>{
+      const sel=s.sid===mstSid;
+      h+='<button onclick="mstPick(\''+mstEscJs(s.sid)+'\')" style="padding:10px 16px;border-radius:999px;border:2px solid '+(sel?"#7c3aed":"#e5e0f7")+';background:'+(sel?"#f5f3ff":"#fff")+';color:'+(sel?"#7c3aed":"#555")+';font-weight:700;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;min-height:48px">'+mstEsc(s.emoji||"")+' '+mstEsc(s.name||"")+'</button>';
+    });
+    h+='</div>';
+  }
+  const pn=mastGetPrintNum();
+  const todayLog=mstLogGet(kid,session.sid);
+  let pile={reviews:[],learning:[],newNames:[]};
+  try{ pile=mstPile(kid,session.sid,pn,todayLog)||pile; }catch(e){}
+  h+='<div style="background:#fff7ed;border:2px solid #fed7aa;border-radius:20px;padding:20px;margin-bottom:16px;font-family:\'DM Sans\',sans-serif">';
+  h+='<div style="font-size:22px;font-weight:800;color:#c2410c;margin-bottom:6px">'+mstEsc(session.emoji||"")+' '+mstEsc(session.name||"")+'</div>';
+  h+='<div style="font-size:14px;color:var(--muted);font-weight:600">'+((session.kind==="mix")
+    ? ((pile.reviews||[]).length+' due')
+    : ((pile.newNames||[]).length+' new · '+(pile.reviews||[]).length+' due · '+(pile.learning||[]).length+' learning'))+'</div>';
+  if(todayLog) h+='<div style="margin-top:8px;font-size:13px;color:#16a34a;font-weight:700">Done today: '+(todayLog.total||0)+' cards'+(todayLog.miss?', '+todayLog.miss+' again':'')+'</div>';
+  h+='</div>';
+  const running=mstState&&mstSid===session.sid;
+  if(running){
+    let prog={done:0,total:0,remaining:0,againCount:0};
+    try{ prog=mstProgress(mstState)||prog; }catch(e){}
+    h+='<div style="font-size:13px;color:var(--muted);font-weight:700;margin-bottom:10px;text-align:center">'+prog.done+'/'+prog.total+' · '+prog.againCount+' again</div>';
+    let card=null; try{ card=mstCurrent(mstState); }catch(e){}
+    if(card){
+      h+=mstCardHtml(session,card);
+      if(mstFlipped){
+        h+='<div style="display:flex;gap:12px;margin-top:16px">';
+        h+='<button onclick="mstTap(\'again\')" style="flex:1;min-height:56px;border-radius:16px;border:2px solid #dc2626;background:#fef2f2;color:#dc2626;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Again</button>';
+        h+='<button onclick="mstTap(\'good\')" style="flex:1;min-height:56px;border-radius:16px;border:2px solid #16a34a;background:#f0fdf4;color:#16a34a;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Good</button></div>';
+      } else {
+        h+='<div style="text-align:center;margin-top:14px;font-size:12px;color:#a78bfa;font-weight:700;text-transform:uppercase;letter-spacing:.05em">tap the card to flip</div>';
+      }
+      h+='<div style="text-align:center;margin-top:18px"><a href="javascript:void(0)" onclick="mstQuit()" style="font-size:13px;color:var(--muted);text-decoration:underline;cursor:pointer">Quit for now</a></div>';
+    } else {
+      // Shouldn't normally happen — mstTap auto-saves the instant the queue empties — but a
+      // restored sitting could land here; give an explicit, non-destructive way out.
+      h+='<div style="text-align:center;padding:20px;color:var(--muted);font-weight:700">No cards left.</div>';
+      h+='<div style="text-align:center;margin-top:10px"><button onclick="mstSave()" style="min-height:48px;padding:0 28px;border-radius:14px;border:none;background:#7c3aed;color:#fff;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save</button></div>';
+    }
+  } else if(mstDone){
+    h+='<div style="background:#fff7ed;border:2px solid #fed7aa;border-radius:20px;padding:24px;text-align:center;font-family:\'DM Sans\',sans-serif">';
+    h+='<div style="font-size:32px;margin-bottom:8px">\u{1F389}</div><div style="font-size:17px;font-weight:800;color:#16a34a;margin-bottom:6px">Nice work!</div>';
+    h+='<div style="font-size:14px;color:var(--muted);font-weight:600">'+mstDone.total+' cards · '+mstDone.correct+' good · '+mstDone.miss+' again</div></div>';
+  } else {
+    const donePile=!(pile.newNames||[]).length&&!(pile.reviews||[]).length&&!(pile.learning||[]).length;
+    if(todayLog&&donePile){
+      h+='<div style="text-align:center;padding:30px 20px;color:#16a34a;font-weight:800;font-size:16px;font-family:\'DM Sans\',sans-serif">All done for today ✓</div>';
+    } else {
+      const resume=mstHasPersisted(session.sid);
+      h+='<div style="text-align:center;margin-top:8px"><button onclick="mstStart()" style="min-height:56px;padding:0 40px;border-radius:16px;border:none;background:#7c3aed;color:#fff;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(resume?"Resume":"Start")+'</button></div>';
+    }
+  }
+  return h;
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────
+function mstPick(sid){
+  if(sid===mstSid) return;
+  mstSid=sid; mstState=null; mstFlipped=false; mstDone=null; mstStartTs=null;
+  _mastRe();
+}
+function mstStart(){
+  const kid=masteryKid;
+  let sessions=[]; try{ sessions=mstSessions(kid)||[]; }catch(e){ sessions=[]; }
+  if(!sessions.length) return;
+  if(mstSid==null||!sessions.some(s=>s.sid===mstSid)) mstSid=sessions[0].sid;
+  const session=sessions.find(s=>s.sid===mstSid);
+  if(!session) return;
+  if(mstRestoreSitting(mstSid)){
+    mstDone=null;
+    let cur=null; try{ cur=mstCurrent(mstState); }catch(e){}
+    if(!cur){ mstSave(); return; }
+    _mastRe(); mstAutoPlayCurrent(session);
+    return;
+  }
+  const pn=mastGetPrintNum();
+  const todayLog=mstLogGet(kid,mstSid);
+  let pile; try{ pile=mstPile(kid,mstSid,pn,todayLog); }catch(e){ pile=null; }
+  if(!pile) return;
+  let state; try{ state=mstSittingInit(pile,session); }catch(e){ return; }
+  mstState=state; mstStartTs=Date.now(); mstFlipped=false; mstDone=null;
+  mstPersist(); _mastRe(); mstAutoPlayCurrent(session);
+}
+function mstFlip(){ mstFlipped=!mstFlipped; _mastRe(); }
+function mstTap(ans){
+  if(!mstState) return;
+  let cur=null; try{ cur=mstCurrent(mstState); }catch(e){}
+  if(!cur) return;
+  try{ mstAnswer(mstState,cur.key,ans); }catch(e){}
+  mstFlipped=false; mstPersist();
+  let next=null; try{ next=mstCurrent(mstState); }catch(e){}
+  if(!next){ mstSave(); return; }
+  _mastRe();
+  let sessions=[]; try{ sessions=mstSessions(masteryKid)||[]; }catch(e){}
+  mstAutoPlayCurrent((sessions||[]).find(s=>s.sid===mstSid));
+}
+function mstQuit(){ if(mstState) mstPersist(); mstState=null; mstFlipped=false; _mastRe(); }
+function mstDiscard(){
+  if(!confirm("Discard this study sitting? Progress won't be saved.")) return;
+  mstClearPersist(mstSid); mstState=null; mstFlipped=false; mstStartTs=null;
+  _mastRe();
+}
+
+// ── Save — writes touched/minted cards field-by-field (mirrors mastSaveResults), merges
+// today's session log, updates local state. All remote writes guarded by db.
+function mstSave(){
+  const kid=masteryKid, sid=mstSid;
+  if(!mstState||!sid) return;
+  const pn=mastGetPrintNum();
+  let items=masteryData[kid]; if(!items) items=[]; if(!Array.isArray(items)) items=Object.values(items);
+
+  let outcomes; try{ outcomes=mstOutcomes(mstState); }catch(e){ outcomes={scores:{},shownIds:[],shownNew:[]}; }
+  const todayKey=mstTodayKey();
+  const prevLog=mstLogGet(kid,sid);
+  const prevShownIds=new Set(((prevLog&&prevLog.items)||[]).filter(x=>x&&x.result==="shown").map(x=>x.id));
+
+  // 1) Mint brand-new cards introduced this sitting.
+  const minted=[];
+  (outcomes.shownNew||[]).forEach(sn=>{ try{ const it=mastMintFromBank(sn.deck,sn.name,items); items.push(it); minted.push(it); }catch(e){} });
+
+  // 2) scores = outcomes.scores + "shown" for every shownId AND every freshly-minted id.
+  const scores=Object.assign({},outcomes.scores||{});
+  (outcomes.shownIds||[]).forEach(id=>{ if(scores[id]==null) scores[id]="shown"; });
+  minted.forEach(it=>{ scores[it.id]="shown"; });
+
+  const due=Object.keys(scores).map(id=>({id}));
+  const settings=mastDrillSettings();
+  let r; try{ r=mastApplyScores(items,due,scores,pn,settings,{prevShown:prevShownIds,autoPull:false,chain:false}); }catch(e){ r={touched:[],minted:[],changes:0}; }
+  const touched=r.touched||[];
+  const mintedAll=minted.slice();
+  (r.minted||[]).forEach(it=>{ if(mintedAll.indexOf(it)===-1) mintedAll.push(it); });
+
+  // Session log entry — merges into today's existing entry (sum counts, concat items).
+  const secs=mstStartTs?Math.max(1,Math.round((Date.now()-mstStartTs)/1000)):null;
+  let correct=0,miss=0,shown=0;
+  const logItems=[];
+  Object.keys(scores).forEach(id=>{
+    const sc=scores[id];
+    const it=items.find(i=>i&&i.id===id);
+    const nm=(it&&it.prompt)||id, dk=(it&&it.subject)||"";
+    if(sc==="shown"){ shown++; logItems.push({id:id,name:nm,deck:dk,result:"shown"}); }
+    else { if(sc==="c") correct++; else if(sc==="m") miss++; logItems.push({id:id,name:nm,deck:dk,result:sc}); }
+  });
+  const total=logItems.length;
+  let entry={date:todayKey,printNum:pn,total:total,correct:correct,miss:miss,shown:shown,secs:secs,items:logItems};
+  if(prevLog){
+    entry={ date:todayKey,printNum:pn,
+      total:(prevLog.total||0)+total, correct:(prevLog.correct||0)+correct,
+      miss:(prevLog.miss||0)+miss, shown:(prevLog.shown||0)+shown,
+      secs:secs!=null?secs:(prevLog.secs??null),
+      items:(prevLog.items||[]).concat(logItems) };
+  }
+
+  // Print log — dashed date, dedup by date; append is idempotent, mirrored locally too so
+  // mastGetPrintNum sees today's number without a round-trip.
+  const todayDash=mstDateStr();
+  let pl=masteryData.printLog||[]; if(!Array.isArray(pl)) pl=Object.values(pl);
+  if(!pl.some(x=>x&&x.date===todayDash)){ pl.push({date:todayDash,num:pn}); masteryData.printLog=pl; try{ mastPrintLogAppend(todayDash,pn); }catch(e){} }
+
+  if(db){
+    const upd={};
+    touched.forEach(it=>{
+      const ix=items.indexOf(it); if(ix<0) return;
+      upd[ix+"/tier"]=it.tier; upd[ix+"/consecutive_correct"]=it.consecutive_correct||0;
+      upd[ix+"/cycle"]=it.cycle||1; upd[ix+"/drop_count"]=it.drop_count||0;
+      upd[ix+"/status"]=it.status||"active"; upd[ix+"/tally_dots"]=it.tally_dots??0;
+      upd[ix+"/next_due"]=it.next_due??null;
+      upd[ix+"/dynamic"]=it.dynamic?true:null; upd[ix+"/dynSource"]=it.dynamic?(it.dynSource||null):null;
+      upd[ix+"/dynFromTier"]=it.dynamic?(it.dynFromTier||null):null; upd[ix+"/dynAddedAt"]=it.dynamic?(it.dynAddedAt||null):null;
+    });
+    mintedAll.forEach(it=>{ const ix=items.indexOf(it); if(ix>=0) upd[ix]=it; });
+    if(Object.keys(upd).length) db.ref("mastery/"+kid).update(upd);
+    try{ db.ref("mastery/studyLog/"+kid+"/"+sid+"/"+todayKey).set(entry); }catch(e){}
+  }
+
+  masteryData[kid]=items;
+  if(!masteryData.studyLog) masteryData.studyLog={};
+  if(!masteryData.studyLog[kid]) masteryData.studyLog[kid]={};
+  if(!masteryData.studyLog[kid][sid]) masteryData.studyLog[kid][sid]={};
+  masteryData.studyLog[kid][sid][todayKey]=entry;
+  try{ HA_LS.setItem("ha_mastery",JSON.stringify(masteryData)); }catch(e){}
+
+  mstDone={correct:correct,miss:miss,shown:shown,total:total,secs:secs};
+  mstState=null; mstFlipped=false; mstStartTs=null;
+  mstClearPersist(sid);
+  _mastRe();
+}
+// ── MST_UI_END ──
+// ── MHQ_START ──
+// ── Mastery HQ — Mom-facing, READ-ONLY Anki-style deck browser over the existing
+// Mastery (flashcard drill) data. Never calls db.ref / writes anything, never
+// mutates masteryData. Three sub-views: Today & Week (table), Decks (list), and a
+// deck page (opened by tapping a deck row/name).
+//
+// Reads only (all already-loaded globals): masteryData, masteryKid, ROSTER, and the
+// documented Mastery helpers (mastGetPrintNum, mastDueItems, mastIsDue, mastIsParked,
+// mastIsNeverDrill, mastFullBank, mastDrillSettings, mastGetVisual). Render-only code
+// may also reach for other real app globals (MAST_CAT_EMOJI_MAP, cap(), etc.) since
+// those exist once this block is live inside index.html — guarded with typeof checks
+// so the block still loads standalone (e.g. under the node test harness).
+//
+// Style follows renderMastAdmin() / the Mastery Database section and
+// renderPurchasesView(): plain string-built HTML, inline styles, CSS vars
+// (var(--bg), var(--text), var(--muted), var(--border), var(--header), var(--card)),
+// 'DM Sans',sans-serif, onclick="fn('arg')" handlers with escaped args, renderAll().
+
+// ============================================================
+// Pure compute functions — no DOM, unit-tested by test_mastery_hq.js
+// ============================================================
+
+// Normalized, non-null item array for a kid (masteryData[kid] may be an array or a
+// Firebase sparse object).
+function mhqItems(kid){
+  let items=masteryData[kid];
+  if(!items) return [];
+  if(!Array.isArray(items)) items=Object.values(items);
+  return items.filter(Boolean);
+}
+
+// {deckName:[names in bank order]} — built-in catalog + custom bank + bank_order,
+// exactly what mastFullBank already gives us.
+function mhqBank(kid){
+  return mastFullBank(kid);
+}
+
+// One row per deck (union of decks that appear in items and decks that appear in the
+// bank), sorted by deck name case-insensitive.
+function mhqDeckStats(kid,pn){
+  const items=mhqItems(kid);
+  const bank=mhqBank(kid);
+  const rawSettings=masteryData[kid+"_settings"]||{};
+
+  const deckNames=new Set();
+  items.forEach(function(i){ if(i&&i.subject) deckNames.add(i.subject); });
+  Object.keys(bank).forEach(function(d){ deckNames.add(d); });
+
+  const rows=[];
+  deckNames.forEach(function(deck){
+    const dItems=items.filter(function(i){ return i&&i.subject===deck; });
+
+    const learning=dItems.filter(function(i){ return i.status==="introduction"; }).length;
+    const activeAll=dItems.filter(function(i){ return i.status==="active"&&i.tier!=="graduated"; });
+    const graduated=dItems.filter(function(i){ return i.tier==="graduated"; }).length;
+    const parked=dItems.filter(function(i){ return mastIsParked(i); }).length;
+
+    // Due/forecast pool: active, non-parked, non-never-drill items only.
+    const duePool=activeAll.filter(function(i){ return !mastIsNeverDrill(i)&&!mastIsParked(i); });
+    const forecast=new Array(14).fill(0);
+    duePool.forEach(function(item){
+      for(let d=0;d<14;d++){
+        if(mastIsDue(item,pn+d)){ forecast[d]++; break; } // first due day in the window only — an overdue item counts on day 0 only
+      }
+    });
+    const dueToday=forecast[0];
+    const dueWeek=forecast[0]+forecast[1]+forecast[2]+forecast[3]+forecast[4];
+
+    const bankNames=bank[deck]||[];
+    const promptSet={};
+    dItems.forEach(function(i){ if(i&&i.prompt!=null) promptSet[i.prompt]=true; });
+    const bankAvail=bankNames.filter(function(n){ return !promptSet[n]; });
+    const nextUp=bankAvail.slice(0,3);
+
+    // Tier breakdown — every on-ladder (non-intro, non-parked) item, including graduated.
+    const byTier={};
+    dItems.forEach(function(i){
+      if(i.status==="active"){
+        const t=i.tier||"daily";
+        byTier[t]=(byTier[t]||0)+1;
+      }
+    });
+
+    // Deck mode: read straight off <kid>_settings.cat_modes (documented field); default "flash".
+    const mode=(rawSettings.cat_modes&&rawSettings.cat_modes[deck])||"flash";
+
+    rows.push({
+      deck:deck, mode:mode,
+      learning:learning, active:activeAll.length, graduated:graduated, parked:parked,
+      dueToday:dueToday, dueWeek:dueWeek,
+      bank:bankAvail.length, nextUp:nextUp,
+      forecast:forecast, byTier:byTier
+    });
+  });
+
+  rows.sort(function(a,b){
+    const A=a.deck.toLowerCase(), B=b.deck.toLowerCase();
+    return A<B?-1:(A>B?1:0);
+  });
+  return rows;
+}
+
+// Sum of every numeric field across deck rows (forecast summed elementwise).
+function mhqTotals(rows){
+  const t={learning:0,active:0,dueToday:0,dueWeek:0,bank:0,forecast:new Array(14).fill(0)};
+  rows.forEach(function(r){
+    t.learning+=r.learning;
+    t.active+=r.active;
+    t.dueToday+=r.dueToday;
+    t.dueWeek+=r.dueWeek;
+    t.bank+=r.bank;
+    for(let d=0;d<14;d++) t.forecast[d]+=(r.forecast[d]||0);
+  });
+  return t;
+}
+
+// Deterministic attention chips: stuck cards, decks whose bank has run dry while still
+// learning, and decks with nothing in them at all.
+function mhqAttention(kid,rows,pn){
+  const chips=[];
+  const items=mhqItems(kid);
+
+  const stuckTiers={daily:true,every_other_day:true,weekly:true};
+  const stuckCount=items.filter(function(i){
+    return i&&(i.drop_count||0)>=4&&stuckTiers[i.tier||"daily"];
+  }).length;
+  if(stuckCount>0) chips.push({kind:"stuck",text:stuckCount+(stuckCount===1?" card":" cards")+" stuck (missed 4+ times)"});
+
+  const _mk=masteryKid; masteryKid=kid; const s=mastDrillSettings(); masteryKid=_mk;
+  const bankdryNames=[];
+  rows.forEach(function(r){
+    if(r.bank===0&&(r.learning+r.active)>0){
+      const introCap=(s.cat_intro_max&&s.cat_intro_max[r.deck]!=null)?s.cat_intro_max[r.deck]:s.max_intro_per_cat;
+      if(r.learning<introCap) bankdryNames.push(r.deck);
+    }
+  });
+  if(bankdryNames.length) chips.push({kind:"bankdry",text:"bank empty: "+bankdryNames.slice(0,3).join(", ")+(bankdryNames.length>3?"…":"")});
+
+  const emptyNames=rows.filter(function(r){
+    return (r.learning+r.active+r.graduated+r.parked+r.bank)===0;
+  }).map(function(r){ return r.deck; });
+  if(emptyNames.length) chips.push({kind:"empty",text:emptyNames.length+" empty deck"+(emptyNames.length===1?"":"s")+": "+emptyNames.slice(0,3).join(", ")});
+
+  return chips;
+}
+
+// The deck page's card list: bank order first, then any items not in the bank.
+function mhqDeckCards(kid,deck){
+  const items=mhqItems(kid).filter(function(i){ return i&&i.subject===deck; });
+  const bankNames=mhqBank(kid)[deck]||[];
+  const settings=masteryData[kid+"_settings"]||{};
+  const defs=settings.definitions||{};
+  const byPrompt={};
+  items.forEach(function(i){ if(i&&i.prompt!=null) byPrompt[i.prompt]=i; });
+
+  function cardFor(name,item){
+    if(!item) return {name:name,state:"not started",tier:null,dots:0,drops:0,hasAudio:!!(settings.def_audio&&settings.def_audio[name]),back:defs[name]||""};
+    let state;
+    if(mastIsParked(item)) state="parked";
+    else if(item.status==="introduction") state="learning";
+    else if(item.tier==="graduated") state="graduated";
+    else state="ladder";
+    const isIntro=item.status==="introduction";
+    const dots=isIntro?(item.tally_dots||0):(item.consecutive_correct||0);
+    const back=defs[name]||((item.answer!=null&&item.answer!==item.prompt)?item.answer:"")||"";
+    return {
+      name:name, state:state, tier:item.tier||null, dots:dots, drops:item.drop_count||0,
+      hasAudio:!!(settings.def_audio&&settings.def_audio[name]), back:back
+    };
+  }
+
+  const seen={};
+  const list=[];
+  bankNames.forEach(function(name){ seen[name]=true; list.push(cardFor(name,byPrompt[name])); });
+  items.forEach(function(i){
+    if(i&&i.prompt!=null&&!seen[i.prompt]){ seen[i.prompt]=true; list.push(cardFor(i.prompt,i)); }
+  });
+  return list;
+}
+
+function _mhqIsoDate(d){
+  const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0");
+  return y+"-"+m+"-"+day;
+}
+
+// {cardsDone,total,sessionsLeft,eta} for a deck row, given a caller-supplied perDay
+// (the deck's intro cap). Pure — takes `today` as an optional Date for tests.
+function mhqFinish(row,perDay,today){
+  const cardsDone=row.learning+row.active+row.graduated;
+  const total=cardsDone+row.bank;
+  const safePerDay=perDay>0?perDay:1;
+  const sessionsLeft=Math.ceil(row.bank/safePerDay);
+  const start=today?new Date(today.getTime()):new Date();
+  const d=new Date(start.getFullYear(),start.getMonth(),start.getDate());
+  let count=0;
+  while(count<sessionsLeft){
+    d.setDate(d.getDate()+1);
+    const dow=d.getDay();
+    if(dow!==0&&dow!==6) count++;
+  }
+  const eta=sessionsLeft>0?_mhqIsoDate(d):_mhqIsoDate(start);
+  return {cardsDone:cardsDone,total:total,sessionsLeft:sessionsLeft,eta:eta};
+}
+
+// ============================================================
+// Render — string-built HTML, inline styles, app conventions
+// ============================================================
+
+let mhqKid="lincoln",mhqView="week",mhqDeck=null;
+
+function mhqSetKid(k){ mhqKid=k; mhqDeck=null; if(typeof mhqSessEdit!=="undefined"){ mhqSessEdit=null; mhqSessForm=null; mhqSessErr=""; } renderAll(); }
+function mhqSetView(v){ mhqView=v; mhqDeck=null; if(typeof mhqSessEdit!=="undefined"){ mhqSessEdit=null; mhqSessForm=null; mhqSessErr=""; } renderAll(); }
+function mhqOpenDeck(name){ mhqDeck=name; renderAll(); }
+function mhqBack(){ mhqDeck=null; renderAll(); }
+
+function mhqPlain(s,max){ let t=String(s==null?"":s).replace(/<[^>]+>/g,"").replace(/\s+/g," ").trim(); if(max&&t.length>max) t=t.slice(0,max-1)+"…"; return t; }
+function mhqEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }
+function mhqArgEsc(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }
+
+function _mhqPill(label,active,onclick){
+  return '<button onclick="'+onclick+'" style="padding:6px 14px;border-radius:14px;border:1.5px solid '+(active?"var(--header)":"var(--border)")+';background:'+(active?"var(--header)":"var(--card)")+';color:'+(active?"#fff":"var(--text)")+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+label+'</button>';
+}
+
+function renderMasteryHQ(el,ah){
+  if(!el){ el=document.getElementById("content"); if(!el) return; }
+  if(!Array.isArray(ROSTER)||!ROSTER.length){ el.innerHTML=(ah||"")+'<div style="padding:40px;text-align:center;color:var(--muted)">No kids on the roster.</div>'; return; }
+  if(!ROSTER.includes(mhqKid)) mhqKid=ROSTER[0];
+  const pn=mastGetPrintNum();
+  const kidName=(typeof cap==="function")?cap(mhqKid):mhqKid;
+
+  let h='<div style="padding:12px 12px 60px">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:700;margin-bottom:10px">\u{1F3AF} Mastery HQ</div>';
+
+  // Kid switcher
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">';
+  ROSTER.forEach(function(k){
+    const kLbl=(typeof cap==="function")?cap(k):k;
+    h+=_mhqPill(mhqEsc(kLbl),k===mhqKid,"mhqSetKid('"+mhqArgEsc(k)+"')");
+  });
+  h+='</div>';
+
+  // View pills
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">';
+  h+=_mhqPill("Today &amp; Week",mhqView==="week"&&!mhqDeck,"mhqSetView('week')");
+  h+=_mhqPill("Decks",mhqView==="decks"&&!mhqDeck,"mhqSetView('decks')");
+  h+=(typeof _mhqExtraPills==="function")?_mhqExtraPills():'';
+  if(mhqDeck) h+=_mhqPill("← "+mhqEsc(mhqDeck),true,"mhqBack()");
+  h+='</div>';
+
+  const rows=mhqDeckStats(mhqKid,pn);
+
+  if(mhqDeck) h+=_mhqRenderDeckPage(mhqKid,mhqDeck,rows);
+  else if(mhqView==="sessions"||mhqView==="panel"||mhqView==="import") h+=((typeof _mhqExtraView==="function")?_mhqExtraView(mhqKid,rows,pn):'');
+  else if(mhqView==="decks") h+=_mhqRenderDecksList(mhqKid,rows);
+  else h+=_mhqRenderWeekView(mhqKid,rows,pn);
+
+  h+='</div>';
+  el.innerHTML=(ah||"")+h;
+}
+
+function _mhqChipStyle(kind){
+  if(kind==="stuck") return {col:"#dc2626",bg:"#fef2f2",bd:"#fecaca"};
+  if(kind==="bankdry") return {col:"#c2410c",bg:"#fff7ed",bd:"#fed7aa"};
+  return {col:"#6b7280",bg:"#f9fafb",bd:"var(--border)"};
+}
+
+function _mhqRenderWeekView(kid,rows,pn){
+  const _mk=masteryKid; masteryKid=kid; const s=mastDrillSettings(); masteryKid=_mk;
+  const chips=mhqAttention(kid,rows,pn);
+  let h="";
+
+  if(chips.length){
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">';
+    chips.forEach(function(c){
+      const cs=_mhqChipStyle(c.kind);
+      h+='<span style="padding:5px 10px;border-radius:12px;border:1.5px solid '+cs.bd+';background:'+cs.bg+';color:'+cs.col+';font-size:11px;font-weight:700">'+mhqEsc(c.text)+'</span>';
+    });
+    h+='</div>';
+  }
+
+  function introCapFor(deck){
+    return (s.cat_intro_max&&s.cat_intro_max[deck]!=null)?s.cat_intro_max[deck]:s.max_intro_per_cat;
+  }
+  function newFor(r){ return Math.min(r.bank,Math.max(0,introCapFor(r.deck)-r.learning)); }
+
+  const visRows=rows.filter(function(r){ return r.dueToday>0||r.learning>0||r.bank>0||r.active>0; });
+  const totals=mhqTotals(visRows);
+  const totalNew=visRows.reduce(function(sum,r){ return sum+newFor(r); },0);
+
+  h+='<div style="overflow-x:auto">';
+  h+='<table style="width:100%;border-collapse:collapse;font-size:12px">';
+  h+='<thead><tr style="border-bottom:1.5px solid var(--border)">';
+  ["Deck","New","Learning","Due today","This week","Bank","Next up"].forEach(function(c,i){
+    const align=(i===0||i===6)?"left":"right";
+    h+='<th style="text-align:'+align+';padding:6px 8px;color:var(--muted);font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:0.04em;white-space:nowrap">'+c+'</th>';
+  });
+  h+='</tr></thead><tbody>';
+
+  if(!visRows.length){
+    h+='<tr><td colspan="7" style="padding:16px 8px;text-align:center;color:var(--muted)">Nothing due, learning, or banked for '+mhqEsc((typeof cap==="function")?cap(kid):kid)+'.</td></tr>';
+  }
+
+  visRows.forEach(function(r){
+    h+='<tr style="border-bottom:1px solid var(--border)">';
+    h+='<td style="padding:6px 8px;cursor:pointer;font-weight:700;color:var(--header)" onclick="mhqOpenDeck(\''+mhqArgEsc(r.deck)+'\')">'+mhqEsc(r.deck)+'</td>';
+    [newFor(r),r.learning,r.dueToday,r.dueWeek,r.bank].forEach(function(v){
+      h+='<td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums">'+v+'</td>';
+    });
+    h+='<td style="padding:6px 8px;color:var(--muted);font-size:11px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+mhqEsc(r.nextUp.map(function(n){ return mhqPlain(n,40); }).join(", "))+'</td>';
+    h+='</tr>';
+  });
+
+  if(visRows.length){
+    h+='<tr style="border-top:1.5px solid var(--border);font-weight:800">';
+    h+='<td style="padding:6px 8px">Total</td>';
+    [totalNew,totals.learning,totals.dueToday,totals.dueWeek,totals.bank].forEach(function(v){
+      h+='<td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums">'+v+'</td>';
+    });
+    h+='<td></td></tr>';
+  }
+  h+='</tbody></table></div>';
+
+  // 14-day forecast strip
+  const fc=totals.forecast;
+  const maxV=Math.max(1,fc.reduce(function(m,v){ return Math.max(m,v); },0));
+  h+='<div style="display:flex;align-items:flex-end;gap:3px;height:74px;margin-top:16px;padding:0 2px">';
+  for(let d=0;d<14;d++){
+    const v=fc[d];
+    const barH=Math.round((v/maxV)*44)+4;
+    h+='<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;min-width:0">';
+    h+='<span style="font-size:9px;color:var(--muted);min-height:11px">'+(v>0?v:"")+'</span>';
+    h+='<div style="width:100%;max-width:16px;height:'+barH+'px;background:'+(d===0?"var(--header)":"#d1d5db")+';border-radius:3px 3px 0 0"></div>';
+    h+='<span style="font-size:8px;color:var(--muted);margin-top:2px">'+(d===0?"today":"")+'</span>';
+    h+='</div>';
+  }
+  h+='</div>';
+
+  return h;
+}
+
+function _mhqRenderDecksList(kid,rows){
+  const catE=(typeof MAST_CAT_EMOJI_MAP!=="undefined"&&MAST_CAT_EMOJI_MAP[kid])||{};
+  let h='<div style="display:flex;flex-direction:column;gap:6px">';
+  if(!rows.length) h+='<div style="padding:16px 8px;text-align:center;color:var(--muted)">No decks yet.</div>';
+  rows.forEach(function(r){
+    h+='<div onclick="mhqOpenDeck(\''+mhqArgEsc(r.deck)+'\')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:12px;background:var(--card);cursor:pointer;flex-wrap:wrap">';
+    h+='<span style="font-size:16px;width:20px;text-align:center;flex:none">'+(catE[r.deck]||"")+'</span>';
+    h+='<span style="flex:1;min-width:120px;font-weight:700;font-size:13px">'+mhqEsc(r.deck)+'</span>';
+    h+='<span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:10px;background:#f3f4f6;color:#4b5563;text-transform:capitalize;white-space:nowrap">'+mhqEsc(r.mode)+'</span>';
+    h+='<span style="font-size:11px;color:var(--muted);white-space:nowrap">'+r.learning+' learning · '+r.active+' active · '+r.graduated+' graduated · '+r.bank+' bank</span>';
+    h+='</div>';
+  });
+  h+='</div>';
+  return h;
+}
+
+const MHQ_STATE_COLOR={"not started":"#9ca3af",learning:"#c2410c",ladder:"#2563eb",graduated:"#7c3aed",parked:"#6b7280"};
+
+function _mhqRenderDeckPage(kid,deck,rows){
+  const row=rows.find(function(r){ return r.deck===deck; });
+  if(!row) return '<div style="padding:20px;text-align:center;color:var(--muted)">Deck not found.</div>';
+
+  const _mk=masteryKid; masteryKid=kid; const s=mastDrillSettings(); masteryKid=_mk;
+  const perDay=(s.cat_intro_max&&s.cat_intro_max[deck]!=null)?s.cat_intro_max[deck]:s.max_intro_per_cat;
+  const fin=mhqFinish(row,perDay);
+
+  let h='<div>';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700;margin-bottom:4px">'+mhqEsc(deck)+'</div>';
+  h+='<div style="font-size:12px;color:var(--muted);margin-bottom:12px">card '+fin.cardsDone+' of '+fin.total+' · bank '+row.bank+' · about '+mhqEsc(fin.eta)+' at '+perDay+' a day</div>';
+
+  const tierKeys=Object.keys(row.byTier);
+  if(tierKeys.length){
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">';
+    tierKeys.forEach(function(t){
+      h+='<span style="padding:4px 10px;border-radius:10px;background:#f3f4f6;color:#374151;font-size:11px;font-weight:700">'+mhqEsc(t)+': '+row.byTier[t]+'</span>';
+    });
+    h+='</div>';
+  }
+
+  const cards=mhqDeckCards(kid,deck).slice(0,400);
+  h+='<div style="display:flex;flex-direction:column">';
+  if(!cards.length) h+='<div style="padding:16px 8px;text-align:center;color:var(--muted)">Nothing in this deck.</div>';
+  cards.forEach(function(c){
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid var(--border)">';
+    h+='<span style="flex:1;min-width:0;font-weight:600;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+mhqEsc(mhqPlain(c.name))+'</span>';
+    h+='<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;background:'+(MHQ_STATE_COLOR[c.state]||"#9ca3af")+';color:#fff;white-space:nowrap">'+mhqEsc(c.state)+'</span>';
+    if(c.dots>0) h+='<span style="font-size:10px;color:var(--muted);white-space:nowrap">'+c.dots+'●</span>';
+    if(c.hasAudio) h+='<span style="font-size:11px" title="Has recorded audio">\u{1F50A}</span>';
+    h+='<span style="flex:1;min-width:0;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+mhqEsc(mhqPlain(c.back))+'</span>';
+    h+='</div>';
+  });
+  h+='</div></div>';
+  return h;
+}
+// ── MHQ_END ──
+// ── S5_START ──
+// Ladder rungs are stored as keys (bi_weekly); people read words.
+function mhqTierLbl(t){ return String(t==null?"":t).replace(/^bi_/,"bi-").replace(/_/g," "); }
+// Mastery HQ — Study Sessions editor + read-only Control Panel.
+// Adds mhqView modes "sessions"/"panel" atop the existing Mastery HQ (MHQ_START..MHQ_END)
+// and the study-session engine (MST_ENGINE_START..MST_ENGINE_END). Writes ONLY
+// mastery/<kid>_sessions/<sid> — per-deck overrides (cat_caps/cat_intro_dots/cat_intro_max/
+// cat_modes/cat_sprint) and kid-level drill rules stay owned by the existing Mastery ▸ Admin
+// editor (mastAdminLocal + its wholesale save) and are shown here READ-ONLY only.
+
+// ==== A. Pure compute — no DOM ====
+
+// The sid of the kind:"deck" session that owns `deck`, or null.
+function mhqDeckOwner(kid, deck) {
+  const sessions = mstSessions(kid);
+  for (let i = 0; i < sessions.length; i++) {
+    const s = sessions[i];
+    if (s.kind === "deck" && s.decks && s.decks.indexOf(deck) !== -1) return s.sid;
+  }
+  return null;
+}
+// One row per session, with linked schedule subjects and summed card counts.
+function mhqSessionRows(kid, pn) {
+  if (pn == null) pn = mastGetPrintNum();
+  const sessions = mstSessions(kid);
+  const byDeck = {};
+  mhqDeckStats(kid, pn).forEach(function (r) { byDeck[r.deck] = r; });
+  let subjects = {};
+  if (typeof gwGetSubjects === "function") subjects = gwGetSubjects(kid) || {};
+  return sessions.map(function (s) {
+    const linked = Object.keys(subjects).filter(function (k) {
+      return subjects[k] && subjects[k].study === s.sid;
+    });
+    const cards = { learning: 0, active: 0, bank: 0 };
+    if (s.kind !== "mix") {
+      (s.decks || []).forEach(function (d) {
+        const r = byDeck[d];
+        if (r) { cards.learning += r.learning; cards.active += r.active; cards.bank += r.bank; }
+      });
+    }
+    return {
+      sid: s.sid, name: s.name, emoji: s.emoji, kind: s.kind, decks: s.decks || [],
+      who: s.who, newPerDay: s.newPerDay, passes: s.passes, mixInAt: s.mixInAt, handOffAt: s.handOffAt,
+      audio: s.audio, order: s.order, linked: linked, cards: cards, skipDecks: s.skipDecks || []
+    };
+  });
+}
+
+// "What changes if I turn on the Daily Study catch-all right now" — read-only, writes
+// nothing. Restores masteryData[kid+"_sessions"] exactly, even if mstOwnedIds throws.
+function mhqMigrationPreview(kid, pn) {
+  if (pn == null) pn = mastGetPrintNum();
+  const allItems = mhqItems(kid).filter(function (i) { return !mastIsParked(i) && !mastIsNeverDrill(i); });
+  const ownedNow = mstOwnedIds(kid);
+  const momNow = allItems.filter(function (i) { return !ownedNow.has(i.id); }).length;
+
+  const sessions = mstSessions(kid);
+  const existingAll = sessions.find(function (s) { return s.kind === "all"; });
+  if (existingAll) {
+    return { momNow: momNow, momAfter: momNow, moved: 0, learningMoved: 0, decks: (existingAll.decks || []).slice(), hasAll: true };
+  }
+
+  const sessKey = kid + "_sessions";
+  const hadKey = Object.prototype.hasOwnProperty.call(masteryData, sessKey);
+  const origRaw = masteryData[sessKey];
+  let momAfter = momNow, decks = [], movedItems = [];
+  try {
+    const clone = origRaw ? JSON.parse(JSON.stringify(origRaw)) : {};
+    const hypSid = "__mhq_migration_preview__";
+    clone[hypSid] = { name: "Daily Study", emoji: "📚", kind: "all", skipDecks: [] };
+    masteryData[sessKey] = clone;
+    const ownedAfter = mstOwnedIds(kid);
+    movedItems = allItems.filter(function (i) { return !ownedNow.has(i.id) && ownedAfter.has(i.id); });
+    momAfter = allItems.filter(function (i) { return !ownedAfter.has(i.id); }).length;
+    const afterSessions = mstSessions(kid);
+    const hyp = afterSessions.find(function (s) { return s.sid === hypSid; });
+    decks = hyp ? (hyp.decks || []).slice() : [];
+  } finally {
+    if (hadKey) masteryData[sessKey] = origRaw; else delete masteryData[sessKey];
+  }
+
+  const moved = momNow - momAfter;
+  const learningMoved = movedItems.filter(function (i) { return i.status === "introduction"; }).length;
+  return { momNow: momNow, momAfter: momAfter, moved: moved, learningMoved: learningMoved, decks: decks, hasAll: false };
+}
+
+// {field:{v,src}} — where each dial for `deck` actually comes from.
+function mhqEffective(kid, deck) {
+  const ownerSid = mhqDeckOwner(kid, deck);
+  const owner = ownerSid ? mstSessions(kid).find(function (s) { return s.sid === ownerSid; }) : null;
+  const _mk = masteryKid; masteryKid = kid; const s = mastDrillSettings(); masteryKid = _mk;
+  const rawSettings = masteryData[kid + "_settings"] || {};
+  const catModes = rawSettings.cat_modes || {};
+  const catCaps = s.cat_caps || {}, catIntroDots = s.cat_intro_dots || {};
+  const catIntroMax = s.cat_intro_max || {}, catSprint = s.cat_sprint || {};
+  return {
+    session: { v: ownerSid || null, src: owner ? "session" : "kid" },
+    newPerDay: { v: owner ? owner.newPerDay : null, src: owner ? "session" : "kid" },
+    passes: { v: owner ? owner.passes : null, src: owner ? "session" : "kid" },
+    mixInAt: { v: owner ? owner.mixInAt : null, src: owner ? "session" : "kid" },
+    handOffAt: { v: owner ? owner.handOffAt : null, src: owner ? "session" : "kid" },
+    introDots: (catIntroDots[deck] != null) ? { v: catIntroDots[deck], src: "deck" } : { v: s.intro_dots, src: "kid" },
+    cap: (catCaps[deck] != null) ? { v: catCaps[deck], src: "deck" } : { v: s.max_per_cat, src: "kid" },
+    introMax: (catIntroMax[deck] != null) ? { v: catIntroMax[deck], src: "deck" } : { v: s.max_intro_per_cat, src: "kid" },
+    mode: (catModes[deck] != null) ? { v: catModes[deck], src: "deck" } : { v: "flash", src: "kid" },
+    sprint: (catSprint[deck] !== undefined) ? { v: catSprint[deck], src: "deck" } : { v: s.sprint_default, src: "kid" }
+  };
+}
+
+// {ok,error} — validate a session record before save. `sid` is the record's own sid
+// (null for a not-yet-created one) so it's excluded from collision checks against itself.
+function mhqSessValidate(rec, sessions, sid, ladder) {
+  if (!rec || !String(rec.name || "").trim()) return { ok: false, error: "Name is required" };
+  if (rec.kind === "mix") {
+    const otherMix = sessions.find(function (s) { return s.kind === "mix" && s.sid !== sid; });
+    if (otherMix) return { ok: false, error: "Only one Daily Mix per kid" };
+    return { ok: true, error: "" };
+  }
+  if (rec.kind === "all") {
+    const otherAll = sessions.find(function (s) { return s.kind === "all" && s.sid !== sid; });
+    if (otherAll) return { ok: false, error: "Only one Daily Study per kid" };
+  } else {
+    if (!rec.decks || !rec.decks.length) return { ok: false, error: "Pick at least one deck" };
+    for (let i = 0; i < rec.decks.length; i++) {
+      const deck = rec.decks[i];
+      const other = sessions.find(function (s) {
+        return s.kind === "deck" && s.sid !== sid && s.decks && s.decks.indexOf(deck) !== -1;
+      });
+      if (other) return { ok: false, error: '"' + deck + '" is already in "' + other.name + '"' };
+    }
+  }
+  if (mstTierIdx(rec.handOffAt, ladder) <= mstTierIdx(rec.mixInAt, ladder)) {
+    return { ok: false, error: "Hand-off must be above mix-in" };
+  }
+  const npd = Number(rec.newPerDay);
+  if (!Number.isInteger(npd) || npd < 0 || npd > 50) return { ok: false, error: "New/day must be a whole number 0–50" };
+  const p = Number(rec.passes);
+  if (!Number.isInteger(p) || p < 1 || p > 5) return { ok: false, error: "Passes must be a whole number 1–5" };
+  return { ok: true, error: "" };
+}
+
+function _mhqSlug(name, kid) {
+  let base = String(name || "").toLowerCase().replace(/[^a-z0-9]/g, "_").slice(0, 20);
+  if (!base) base = "session";
+  const existing = masteryData[kid + "_sessions"] || {};
+  if (!existing[base]) return base;
+  let n = 2;
+  while (existing[base + "_" + n]) n++;
+  return base + "_" + n;
+}
+
+// ==== B. Editor state + writes (session records only — see header) ====
+
+let mhqSessEdit = null;   // sid being edited, or "__new_deck" / "__new_mix" / "__new_all"
+let mhqSessForm = null;   // working copy
+let mhqSessErr = "";
+
+function mhqSessOpen(sid) {
+  mhqSessEdit = sid; mhqSessErr = "";
+  if (sid === "__new_deck") {
+    mhqSessForm = { name: "", emoji: "📚", kind: "deck", decks: [], who: "solo", newPerDay: 5, passes: 2, mixInAt: "weekly", handOffAt: "bi_weekly", audio: "front", order: "bank" };
+  } else if (sid === "__new_mix") {
+    mhqSessForm = { name: "Daily Mix", emoji: "🧠", kind: "mix", who: "solo", audio: "off" };
+  } else if (sid === "__new_all") {
+    mhqSessForm = { name: "Daily Study", emoji: "📚", kind: "all", skipDecks: [], who: "solo", newPerDay: 5, passes: 2, mixInAt: "weekly", handOffAt: "bi_weekly", audio: "front", order: "bank" };
+  } else {
+    const existing = mstSessions(mhqKid).find(function (s) { return s.sid === sid; });
+    mhqSessForm = existing ? Object.assign({}, existing, { decks: (existing.decks || []).slice(), skipDecks: (existing.skipDecks || []).slice() }) : null;
+  }
+  renderAll();
+}
+function mhqSessClose() { mhqSessEdit = null; mhqSessForm = null; mhqSessErr = ""; renderAll(); }
+function mhqSessSet(field, val) { if (!mhqSessForm) return; mhqSessForm[field] = val; renderAll(); }
+function mhqSessToggleDeck(deck) {
+  if (!mhqSessForm) return;
+  if (!mhqSessForm.decks) mhqSessForm.decks = [];
+  const i = mhqSessForm.decks.indexOf(deck);
+  if (i === -1) mhqSessForm.decks.push(deck); else mhqSessForm.decks.splice(i, 1);
+  renderAll();
+}
+function mhqSessToggleSkip(deck) {
+  if (!mhqSessForm) return;
+  if (!mhqSessForm.skipDecks) mhqSessForm.skipDecks = [];
+  const i = mhqSessForm.skipDecks.indexOf(deck);
+  if (i === -1) mhqSessForm.skipDecks.push(deck); else mhqSessForm.skipDecks.splice(i, 1);
+  renderAll();
+}
+
+function mhqSessSave() {
+  if (!mhqSessForm) return;
+  const kid = mhqKid;
+  const isNew = (mhqSessEdit === "__new_deck" || mhqSessEdit === "__new_mix" || mhqSessEdit === "__new_all");
+  const sessions = mstSessions(kid);
+  const _mk = masteryKid; masteryKid = kid; const settings = mastDrillSettings(); masteryKid = _mk;
+  const excludeSid = isNew ? null : mhqSessEdit;
+  const v = mhqSessValidate(mhqSessForm, sessions, excludeSid, settings.ladder);
+  if (!v.ok) { mhqSessErr = v.error; renderAll(); return; }
+  const sid = isNew ? _mhqSlug(mhqSessForm.name, kid) : mhqSessEdit;
+  const rec = { name: String(mhqSessForm.name).trim(), emoji: mhqSessForm.emoji || "📚", kind: mhqSessForm.kind, who: mhqSessForm.who || "solo", audio: mhqSessForm.audio || "front" };
+  if (mhqSessForm.kind === "deck") {
+    rec.decks = mhqSessForm.decks || [];
+    rec.newPerDay = mhqSessForm.newPerDay;
+    rec.passes = mhqSessForm.passes;
+    rec.mixInAt = mhqSessForm.mixInAt;
+    rec.handOffAt = mhqSessForm.handOffAt;
+    rec.order = mhqSessForm.order || "bank";
+  }
+  if (mhqSessForm.kind === "all") {
+    rec.skipDecks = mhqSessForm.skipDecks || [];
+    rec.newPerDay = mhqSessForm.newPerDay;
+    rec.passes = mhqSessForm.passes;
+    rec.mixInAt = mhqSessForm.mixInAt;
+    rec.handOffAt = mhqSessForm.handOffAt;
+    rec.order = mhqSessForm.order || "bank";
+  }
+  if (!masteryData[kid + "_sessions"]) masteryData[kid + "_sessions"] = {};
+  masteryData[kid + "_sessions"][sid] = rec;
+  if (typeof db !== "undefined" && db) db.ref("mastery/" + kid + "_sessions/" + sid).set(rec);
+  try { HA_LS.setItem("ha_mastery", JSON.stringify(masteryData)); } catch (e) {}
+  mhqSessClose();
+}
+
+function mhqSessDelete(sid) {
+  const kid = mhqKid;
+  const row = mhqSessionRows(kid).find(function (r) { return r.sid === sid; });
+  let msg = row && row.name ? 'Delete "' + row.name + '"?' : "Delete this study session?";
+  if (row && row.linked && row.linked.length) msg += "\n\nThis is linked from the schedule: " + row.linked.join(", ") + ".";
+  if (!confirm(msg)) return;
+  if (masteryData[kid + "_sessions"]) delete masteryData[kid + "_sessions"][sid];
+  if (typeof db !== "undefined" && db) db.ref("mastery/" + kid + "_sessions/" + sid).remove();
+  try { HA_LS.setItem("ha_mastery", JSON.stringify(masteryData)); } catch (e) {}
+  renderAll();
+}
+
+// ==== C. Render — string-built HTML, matches MHQ conventions ====
+
+function _mhqStepper(val, field, min) {
+  min = min == null ? 0 : min;
+  const v = (val == null) ? min : val;
+  const btn = 'width:40px;height:40px;border-radius:8px;border:1.5px solid var(--border);background:var(--card);font-size:16px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  return '<div style="display:flex;align-items:center;gap:8px">' +
+    '<button onclick="mhqSessSet(\'' + field + '\',' + Math.max(min, v - 1) + ')" style="' + btn + '">&minus;</button>' +
+    '<span style="min-width:28px;text-align:center;font-weight:700;font-size:13px">' + v + '</span>' +
+    '<button onclick="mhqSessSet(\'' + field + '\',' + (v + 1) + ')" style="' + btn + '">+</button>' +
+    '</div>';
+}
+
+function _mhqRenderSessForm(kid) {
+  if (!mhqSessForm) return "";
+  const f = mhqSessForm, isMix = f.kind === "mix", isAll = f.kind === "all";
+  const pn = mastGetPrintNum();
+  const _mk = masteryKid; masteryKid = kid; const settings = mastDrillSettings(); masteryKid = _mk;
+  const ladder = (settings.ladder || []).filter(function (t) { return t !== "graduated"; });
+  const lbl = 'font-size:11px;font-weight:700;color:var(--muted);margin:8px 0 4px';
+  const btn = 'min-height:40px;padding:8px 16px;border-radius:10px;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+
+  let h = '<div style="margin-top:12px;padding:12px;border-radius:10px;border:1.5px dashed var(--border);background:var(--bg)">';
+  h += '<div style="' + lbl + '">Name</div>';
+  h += '<input type="text" value="' + mhqEsc(f.name || "") + '" oninput="mhqSessSet(\'name\',this.value)" style="width:100%;box-sizing:border-box;min-height:40px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:13px;font-family:\'DM Sans\',sans-serif">';
+  h += '<div style="' + lbl + '">Emoji</div>';
+  h += '<input type="text" maxlength="2" value="' + mhqEsc(f.emoji || "") + '" oninput="mhqSessSet(\'emoji\',this.value)" style="width:60px;box-sizing:border-box;min-height:40px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:16px;text-align:center;font-family:\'DM Sans\',sans-serif">';
+  if (!isMix && !isAll) {
+    h += '<div style="' + lbl + '">Decks</div><div style="display:flex;flex-direction:column;gap:4px">';
+    const mySid = (mhqSessEdit === "__new_deck") ? null : mhqSessEdit;
+    mhqDeckStats(kid, pn).forEach(function (r) {
+      const owner = mhqDeckOwner(kid, r.deck);
+      const checked = (f.decks || []).indexOf(r.deck) !== -1;
+      if (owner && owner !== mySid) {
+        const ownerName = (mstSessions(kid).find(function (s) { return s.sid === owner; }) || {}).name || owner;
+        h += '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)"><input type="checkbox" disabled style="width:18px;height:18px">' + mhqEsc(r.deck) + ' — <em>in ' + mhqEsc(ownerName) + '</em></label>';
+      } else {
+        h += '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" ' + (checked ? "checked" : "") + ' onclick="mhqSessToggleDeck(\'' + mhqArgEsc(r.deck) + '\')" style="width:18px;height:18px">' + mhqEsc(r.deck) + '</label>';
+      }
+    });
+    h += '</div>';
+  } else if (isAll) {
+    h += '<div style="' + lbl + '">Keep with Mom</div><div style="display:flex;flex-direction:column;gap:4px">';
+    const claimedByDeck = {};
+    mstSessions(kid).forEach(function (s) { if (s.kind === "deck") (s.decks || []).forEach(function (d) { claimedByDeck[d] = true; }); });
+    const skip = f.skipDecks || [];
+    mhqDeckStats(kid, pn).filter(function (r) { return !claimedByDeck[r.deck]; }).forEach(function (r) {
+      const checked = skip.indexOf(r.deck) !== -1;
+      h += '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" ' + (checked ? "checked" : "") + ' onclick="mhqSessToggleSkip(\'' + mhqArgEsc(r.deck) + '\')" style="width:18px;height:18px">' + mhqEsc(r.deck) + '</label>';
+    });
+    h += '</div>';
+  }
+  h += '<div style="' + lbl + '">Who studies</div><div style="display:flex;gap:6px">';
+  [["solo", "Solo"], ["mom", "With Mom"]].forEach(function (w) { h += _mhqPill(w[1], f.who === w[0], "mhqSessSet('who','" + w[0] + "')"); });
+  h += '</div>';
+  if (!isMix) {
+    h += '<div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:8px">';
+    h += '<div><div style="' + lbl + '">New/day</div>' + _mhqStepper(f.newPerDay, "newPerDay", 0) + '</div>';
+    h += '<div><div style="' + lbl + '">Passes</div>' + _mhqStepper(f.passes, "passes", 1) + '</div>';
+    h += '</div>';
+    h += '<div style="' + lbl + '">Mix in at</div><div style="display:flex;gap:6px;flex-wrap:wrap">';
+    ladder.forEach(function (t) { h += _mhqPill(mhqEsc(mhqTierLbl(t)), f.mixInAt === t, "mhqSessSet('mixInAt','" + t + "')"); });
+    h += '</div>';
+    h += '<div style="' + lbl + '">Hand off at</div><div style="display:flex;gap:6px;flex-wrap:wrap">';
+    ladder.forEach(function (t) { h += _mhqPill(mhqEsc(mhqTierLbl(t)), f.handOffAt === t, "mhqSessSet('handOffAt','" + t + "')"); });
+    h += '</div>';
+  }
+  h += '<div style="' + lbl + '">Audio</div><div style="display:flex;gap:6px">';
+  ["front", "back", "off"].forEach(function (a) { h += _mhqPill(a, f.audio === a, "mhqSessSet('audio','" + a + "')"); });
+  h += '</div>';
+  if (!isMix) {
+    h += '<div style="' + lbl + '">Order</div><div style="display:flex;gap:6px">';
+    ["bank", "shuffle"].forEach(function (o) { h += _mhqPill(o, f.order === o, "mhqSessSet('order','" + o + "')"); });
+    h += '</div>';
+  }
+  if (mhqSessErr) h += '<div style="color:#dc2626;font-size:12px;font-weight:700;margin-top:10px">' + mhqEsc(mhqSessErr) + '</div>';
+  h += '<div style="display:flex;gap:8px;margin-top:12px">';
+  h += '<button onclick="mhqSessSave()" style="' + btn + 'border:none;background:var(--header);color:#fff">Save</button>';
+  h += '<button onclick="mhqSessClose()" style="' + btn + 'border:1.5px solid var(--border);background:var(--card);color:var(--text)">Cancel</button>';
+  h += '</div></div>';
+  return h;
+}
+
+function _mhqRenderSessions(kid) {
+  const rows = mhqSessionRows(kid, mastGetPrintNum());
+  const btn = 'min-height:40px;padding:8px 14px;border-radius:10px;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  let h = '<div style="display:flex;flex-direction:column;gap:10px">';
+  if (!rows.length) h += '<div style="padding:16px 8px;text-align:center;color:var(--muted)">No study sessions yet.</div>';
+  rows.forEach(function (r) {
+    h += '<div style="border:1.5px solid var(--border);border-radius:12px;padding:12px;background:var(--card)">';
+    h += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
+    h += '<span style="font-size:18px">' + mhqEsc(r.emoji || "📚") + '</span>';
+    h += '<span style="font-weight:700;font-size:14px;flex:1;min-width:100px">' + mhqEsc(r.name || "(untitled)") + '</span>';
+    const kindLbl = r.kind === "mix" ? "Daily Mix" : (r.kind === "all" ? "Daily Study" : "Study deck");
+    const kindBg = r.kind === "mix" ? "#ede9fe" : (r.kind === "all" ? "#dcfce7" : "#dbeafe");
+    const kindFg = r.kind === "mix" ? "#6d28d9" : (r.kind === "all" ? "#15803d" : "#1d4ed8");
+    h += '<span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:10px;background:' + kindBg + ';color:' + kindFg + '">' + kindLbl + '</span>';
+    h += '<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#f3f4f6;color:#4b5563;text-transform:capitalize">' + mhqEsc(r.who) + '</span>';
+    h += '</div>';
+
+    if (r.decks.length) {
+      h += '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px;align-items:center">';
+      r.decks.forEach(function (d) { h += '<span style="font-size:10px;padding:2px 7px;border-radius:8px;background:#f3f4f6;color:#374151">' + mhqEsc(d) + '</span>'; });
+      if (r.kind === "all") h += '<span style="font-size:10px;color:var(--muted);font-style:italic">(everything not in another session)</span>';
+      h += '</div>';
+    } else if (r.kind === "all") {
+      h += '<div style="font-size:10px;color:var(--muted);font-style:italic;margin-top:8px">(everything not in another session)</div>';
+    }
+    if (r.kind === "all" && r.skipDecks && r.skipDecks.length) {
+      h += '<div style="font-size:11px;color:var(--muted);margin-top:4px">with Mom: ' + mhqEsc(r.skipDecks.join(", ")) + '</div>';
+    }
+    if (r.kind === "deck" || r.kind === "all") {
+      h += '<div style="font-size:11px;color:var(--muted);margin-top:8px">' + r.newPerDay + ' new/day · ' + r.passes + ' passes · mix in at ' + mhqEsc(mhqTierLbl(r.mixInAt)) + ' · hand off at ' + mhqEsc(mhqTierLbl(r.handOffAt)) + '</div>';
+    }
+    h += '<div style="font-size:11px;color:var(--muted);margin-top:4px">' + r.cards.learning + ' learning · ' + r.cards.active + ' active · ' + r.cards.bank + ' bank</div>';
+    h += r.linked.length
+      ? '<div style="font-size:11px;color:#15803d;margin-top:4px">on the schedule: ' + mhqEsc(r.linked.join(", ")) + '</div>'
+      : '<div style="font-size:11px;color:var(--muted);margin-top:4px;font-style:italic">not on the schedule yet</div>';
+
+    h += '<div style="display:flex;gap:8px;margin-top:10px">';
+    h += '<button onclick="mhqSessOpen(\'' + mhqArgEsc(r.sid) + '\')" style="' + btn + 'border:1.5px solid var(--border);background:var(--card);color:var(--text)">Edit</button>';
+    h += '<button onclick="mhqSessDelete(\'' + mhqArgEsc(r.sid) + '\')" style="' + btn + 'border:1.5px solid #fecaca;background:#fef2f2;color:#dc2626">Delete</button>';
+    h += '</div>';
+    if (mhqSessEdit === r.sid) h += _mhqRenderSessForm(kid);
+    h += '</div>';
+  });
+
+  const hasAll = rows.some(function (r) { return r.kind === "all"; });
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+  h += '<button onclick="mhqSessOpen(\'__new_deck\')" style="' + btn + 'border:1.5px solid var(--header);background:var(--card);color:var(--header)">+ New study session</button>';
+  if (!mstMixSession(kid)) h += '<button onclick="mhqSessOpen(\'__new_mix\')" style="' + btn + 'border:1.5px solid var(--header);background:var(--card);color:var(--header)">+ Add the Daily Mix</button>';
+  if (!hasAll) h += '<button onclick="mhqSessOpen(\'__new_all\')" style="' + btn + 'border:1.5px solid var(--header);background:var(--card);color:var(--header)">+ Add 📚 Daily Study</button>';
+  h += '</div>';
+  if (!hasAll) {
+    const preview = mhqMigrationPreview(kid, mastGetPrintNum());
+    const sentence = _mhqMigrationSentence(kid, preview);
+    if (sentence) h += '<div style="font-size:11px;color:var(--muted);margin-top:4px">' + sentence + '</div>';
+  }
+  if (mhqSessEdit === "__new_deck" || mhqSessEdit === "__new_mix" || mhqSessEdit === "__new_all") h += _mhqRenderSessForm(kid);
+  h += '</div>';
+  return h;
+}
+
+// One muted sentence describing what turning on the Daily Study catch-all would do.
+function _mhqMigrationSentence(kid, preview) {
+  if (!preview || preview.hasAll || !preview.moved) return "";
+  const kidName = (typeof cap === "function") ? cap(kid) : kid;
+  const deckCount = preview.decks.length;
+  return "Turning this on moves " + preview.moved + " card" + (preview.moved === 1 ? "" : "s") +
+    " (" + preview.learningMoved + " still being learned) out of Mom's drill and into " + mhqEsc(kidName) +
+    "'s own study time, across " + deckCount + " deck" + (deckCount === 1 ? "" : "s") + ".";
+}
+
+function _mhqFmtV(v) {
+  if (v == null) return "—";
+  if (v === true) return "on";
+  if (v === false) return "off";
+  return String(v);
+}
+function _mhqEffCell(f,fmt){
+  if(fmt&&f&&f.v!=null) f={v:fmt(f.v),src:f.src};
+  return '<td style="padding:6px 8px;text-align:right"><div>' + mhqEsc(_mhqFmtV(f.v)) + '</div><div style="font-size:9px;color:var(--muted)">' + f.src + '</div></td>';
+}
+
+function _mhqRenderPanel(kid) {
+  const pn = mastGetPrintNum();
+  const rows = mhqDeckStats(kid, pn);
+  const sessions = mstSessions(kid);
+  let h = '<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Legend: <b>kid</b> = kid-level default · <b>session</b> = this deck\'s study session · <b>deck</b> = a per-deck override.</div>';
+  h += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+  h += '<thead><tr style="border-bottom:1.5px solid var(--border)">';
+  ["Deck", "Session", "New/day", "Mix in", "Hand off", "Intro dots", "Cap", "Mode", "Sprint"].forEach(function (c, i) {
+    h += '<th style="text-align:' + (i === 0 ? "left" : "right") + ';padding:6px 8px;color:var(--muted);font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:0.04em;white-space:nowrap">' + c + '</th>';
+  });
+  h += '</tr></thead><tbody>';
+  if (!rows.length) h += '<tr><td colspan="9" style="padding:16px 8px;text-align:center;color:var(--muted)">No decks yet.</td></tr>';
+  rows.forEach(function (r) {
+    const eff = mhqEffective(kid, r.deck);
+    const sessName = eff.session.v ? ((sessions.find(function (s) { return s.sid === eff.session.v; }) || {}).name || eff.session.v) : "—";
+    h += '<tr style="border-bottom:1px solid var(--border)">';
+    h += '<td style="padding:6px 8px;font-weight:700">' + mhqEsc(r.deck) + '</td>';
+    h += '<td style="padding:6px 8px;text-align:right"><div>' + mhqEsc(sessName) + '</div><div style="font-size:9px;color:var(--muted)">' + eff.session.src + '</div></td>';
+    h += _mhqEffCell(eff.newPerDay) + _mhqEffCell(eff.mixInAt,mhqTierLbl) + _mhqEffCell(eff.handOffAt,mhqTierLbl) +
+         _mhqEffCell(eff.introDots) + _mhqEffCell(eff.cap) + _mhqEffCell(eff.mode) + _mhqEffCell(eff.sprint);
+    h += '</tr>';
+  });
+  h += '</tbody></table></div>';
+  h += '<div style="margin-top:10px;font-size:11px;color:var(--muted)">Deck overrides (caps, intro dots, mode, sprint) and the kid\'s ladder are edited in Mastery ▸ Admin — this panel is read-only.</div>';
+  return h;
+}
+
+// Hooks for the existing renderMasteryHQ to call — see header for the write boundary.
+function _mhqExtraView(kid, rows, pn) {
+  if (mhqView === "sessions") return _mhqRenderSessions(kid);
+  if (mhqView === "panel") return _mhqRenderPanel(kid);
+  if (mhqView === "import") return (typeof _mhqRenderImport === "function") ? _mhqRenderImport(kid) : "";
+  return "";
+}
+function _mhqExtraPills() {
+  return _mhqPill("Sessions", mhqView === "sessions", "mhqSetView('sessions')") +
+         _mhqPill("Control panel", mhqView === "panel", "mhqSetView('panel')") +
+         ((typeof _mhqImportPill === "function") ? _mhqImportPill() : "");
+}
+// ── S5_END ──
+// ── S7_START ──
+// 📥 Import — turn a pasted list or a text-export file (Anki "Notes in Plain
+// Text", Quizlet export, CSV/TSV) into cards in a kid's Mastery deck. Adds
+// mhqView==="import" atop Mastery HQ. Only write path is the existing
+// mastBankAddMany(kid,cat,entries) — never touches db.ref/mastery directly.
+// Style follows MHQ_START/S5: string-built HTML, inline styles, CSS vars
+// (var(--bg) var(--text) var(--muted) var(--border) var(--header) var(--card)),
+// 'DM Sans',sans-serif, onclick="fn('arg')" handlers with escaped args, renderAll().
+
+// ==== A. Pure functions — no DOM, unit-tested by test_study_import.js ====
+
+// HTML entity unescape + tag strip (Anki plain-text export carries HTML).
+function mhqImpStripHtml(s) {
+  return String(s == null ? "" : s)
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Strip a CSV-style surrounding quote pair and unescape "" -> ".
+function mhqImpUnquote(s) {
+  let t = String(s == null ? "" : s).trim();
+  if (t.length >= 2 && t.charAt(0) === '"' && t.charAt(t.length - 1) === '"') {
+    t = t.slice(1, -1).replace(/""/g, '"');
+  }
+  return t;
+}
+
+function mhqImpCleanField(s) {
+  return mhqImpStripHtml(mhqImpUnquote(s));
+}
+
+// Split one line on the first occurrence of `sepChar` only, respecting a
+// leading CSV-quoted field (so a comma inside quotes doesn't split early).
+function mhqImpSplitLine(line, sepChar) {
+  if (!sepChar) return [mhqImpCleanField(line), ""];
+  if (line.charAt(0) === '"') {
+    // Find the closing quote of the first field (skipping "" pairs).
+    let i = 1;
+    while (i < line.length) {
+      if (line.charAt(i) === '"') {
+        if (line.charAt(i + 1) === '"') { i += 2; continue; }
+        break;
+      }
+      i++;
+    }
+    const closeAt = i; // index of closing quote, or end of string if unterminated
+    const rest = line.slice(closeAt + 1);
+    const sepAt = rest.indexOf(sepChar);
+    const name = mhqImpCleanField(line.slice(0, closeAt + 1));
+    const def = sepAt >= 0 ? mhqImpCleanField(rest.slice(sepAt + 1)) : "";
+    return [name, def];
+  }
+  const at = line.indexOf(sepChar);
+  if (at < 0) return [mhqImpCleanField(line), ""];
+  return [mhqImpCleanField(line.slice(0, at)), mhqImpCleanField(line.slice(at + 1))];
+}
+
+// {rows:[{name,def}], sep} — sep is "tab"|"pipe"|"comma"|"none".
+function mhqImpSplit(text) {
+  const lines = String(text == null ? "" : text)
+    .split(/\r\n|\r|\n/)
+    .map(function (l) { return l; })
+    .filter(function (l) { return l.trim() !== "" && l.trim().charAt(0) !== "#"; });
+
+  let tabN = 0, pipeN = 0, commaN = 0;
+  lines.forEach(function (l) {
+    if (l.indexOf("\t") >= 0) tabN++;
+    if (l.indexOf("|") >= 0) pipeN++;
+    if (l.indexOf(",") >= 0) commaN++;
+  });
+
+  let sep = "none", sepChar = "";
+  if (tabN > 0 && tabN >= pipeN && tabN >= commaN) { sep = "tab"; sepChar = "\t"; }
+  else if (pipeN > 0 && pipeN >= commaN) { sep = "pipe"; sepChar = "|"; }
+  else if (commaN > 0) { sep = "comma"; sepChar = ","; }
+
+  const rows = lines.map(function (l) {
+    const parts = mhqImpSplitLine(l, sepChar);
+    return { name: parts[0], def: parts[1] };
+  });
+
+  return { rows: rows, sep: sep };
+}
+
+// {name, changed, why} — front must avoid Firebase-illegal key chars . # $ [ ] /
+// (mastDefKeyOk checks exactly these). Order matters: trailing period first,
+// then slash, then quote normalization, then the remaining illegal set.
+function mhqImpClean(name) {
+  let n = String(name == null ? "" : name);
+  const reasons = [];
+
+  if (/\.$/.test(n)) { n = n.replace(/\.$/, ""); reasons.push("trailing period"); }
+  if (n.indexOf("/") >= 0) { n = n.split("/").join("⁄"); reasons.push("slash"); }
+  if (n.indexOf("'") >= 0 || n.indexOf('"') >= 0) {
+    n = n.split("'").join("’").split('"').join("”");
+    reasons.push("quotes");
+  }
+  if (/[.#$\[\]]/.test(n)) {
+    n = n.replace(/[.#$\[\]]/g, " ").replace(/\s+/g, " ").trim();
+    reasons.push("illegal characters");
+  }
+
+  return { name: n, changed: n !== String(name == null ? "" : name), why: reasons.join(", ") };
+}
+
+// Pure plan: what would happen if we imported `text` into kid/deck right now.
+function mhqImpPlan(kid, deck, text) {
+  const split = mhqImpSplit(text);
+  const bank = (typeof mhqBank === "function") ? (mhqBank(kid) || {}) : {};
+  const existing = {};
+  (bank[deck] || []).forEach(function (n) { existing[n] = true; });
+
+  const seen = {};
+  const cleaned = [];
+  const freshRows = [];
+  let dupes = 0;
+
+  split.rows.forEach(function (r) {
+    const c = mhqImpClean(r.name);
+    if (c.changed) cleaned.push({ from: r.name, to: c.name, why: c.why });
+    const name = c.name;
+    if (!name) return;
+    if (existing[name] || seen[name]) { dupes++; return; }
+    seen[name] = true;
+    freshRows.push({ name: name, def: r.def });
+  });
+
+  return {
+    rows: split.rows,
+    sep: split.sep,
+    total: split.rows.length,
+    fresh: freshRows,
+    dupes: dupes,
+    cleaned: cleaned,
+    sample: freshRows.slice(0, 8),
+    deckExists: !!bank[deck]
+  };
+}
+
+// ==== B. State + actions ====
+
+let mhqImpText = "", mhqImpDeck = "", mhqImpNewDeck = "", mhqImpMsg = "", mhqImpFile = "";
+
+function mhqImpSetText(v) { mhqImpText = v; mhqImpMsg = ""; renderAll(); }
+function mhqImpSetDeck(v) { mhqImpDeck = v; mhqImpMsg = ""; renderAll(); }
+function mhqImpSetNewDeck(v) { mhqImpNewDeck = v; mhqImpMsg = ""; renderAll(); }
+
+function mhqImpPickFile(input) {
+  try {
+    const file = input && input.files && input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      try {
+        mhqImpText = String((e.target && e.target.result) || "");
+        mhqImpFile = file.name || "";
+        mhqImpMsg = "";
+        renderAll();
+      } catch (err) {
+        mhqImpMsg = "Couldn't read that file.";
+        renderAll();
+      }
+    };
+    reader.onerror = function () {
+      mhqImpMsg = "Couldn't read that file.";
+      renderAll();
+    };
+    reader.readAsText(file);
+  } catch (err) {
+    mhqImpMsg = "Couldn't read that file.";
+    renderAll();
+  }
+}
+
+function mhqImpRun() {
+  const kid = (typeof mhqKid !== "undefined" && mhqKid) || masteryKid;
+  const deck = (mhqImpNewDeck || "").trim() || mhqImpDeck;
+  if (!deck) { mhqImpMsg = "Pick a deck or type a new deck name."; renderAll(); return; }
+
+  const plan = mhqImpPlan(kid, deck, mhqImpText);
+  if (!plan.fresh.length) {
+    mhqImpMsg = plan.dupes > 0
+      ? "Nothing new to add — all " + plan.dupes + " already in " + deck + "."
+      : "Nothing to import — paste some lines or choose a file.";
+    renderAll();
+    return;
+  }
+
+  const summary = plan.fresh.length + " new card" + (plan.fresh.length === 1 ? "" : "s") +
+    " to " + deck + (plan.dupes ? " (" + plan.dupes + " duplicate" + (plan.dupes === 1 ? "" : "s") + " skipped)" : "") +
+    ". Add them?";
+  if (!confirm(summary)) return;
+
+  const result = mastBankAddMany(kid, deck, plan.fresh);
+  let msg = "✓ Added " + result.added.length + " to " + deck;
+  if (result.dupes.length) msg += " · skipped " + result.dupes.length + " duplicate" + (result.dupes.length === 1 ? "" : "s");
+  if (result.badDefKeys.length) msg += " · " + result.badDefKeys.length + " definition(s) skipped";
+  mhqImpMsg = msg;
+  mhqImpText = "";
+  mhqImpFile = "";
+  renderAll();
+}
+
+// ==== C. Render ====
+
+function _mhqImportPill() {
+  return _mhqPill("\u{1F4E5} Import", mhqView === "import", "mhqSetView('import')");
+}
+
+function _mhqRenderImport(kid) {
+  const pn = (typeof mastGetPrintNum === "function") ? mastGetPrintNum() : 0;
+  const rows = (typeof mhqDeckStats === "function") ? mhqDeckStats(kid, pn) : [];
+  const deck = (mhqImpNewDeck || "").trim() || mhqImpDeck;
+  const plan = mhqImpText ? mhqImpPlan(kid, deck, mhqImpText) : null;
+
+  let h = '<div>';
+  h += '<div style="color:var(--muted);font-size:12px;margin-bottom:14px;max-width:520px">Cards land in the deck’s <b>bank</b> (available, not yet in rotation) and are introduced a few at a time by the deck’s study session or by Mom’s drill.</div>';
+
+  // Deck picker
+  h += '<div style="margin-bottom:12px">';
+  h += '<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px">Deck</div>';
+  h += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">';
+  rows.forEach(function (r) {
+    const active = !mhqImpNewDeck.trim() && mhqImpDeck === r.deck;
+    h += _mhqPill(mhqEsc(r.deck), active, "mhqImpSetDeck('" + mhqArgEsc(r.deck) + "')");
+  });
+  h += '</div>';
+  h += '<input type="text" value="' + mhqEsc(mhqImpNewDeck) + '" oninput="mhqImpSetNewDeck(this.value)" placeholder="...or type a new deck name" style="width:100%;max-width:320px;box-sizing:border-box;min-height:40px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:13px;font-family:\'DM Sans\',sans-serif">';
+  h += '</div>';
+
+  // File row
+  h += '<div style="margin-bottom:12px">';
+  h += '<label style="display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:8px 14px;border-radius:9px;border:1.5px dashed var(--border);background:var(--card);color:var(--text);font-size:12px;font-weight:700;cursor:pointer">\u{1F4C4} Choose a text file<input type="file" accept=".txt,.csv,.tsv,text/plain" onchange="mhqImpPickFile(this)" style="display:none"></label>';
+  if (mhqImpFile) h += '<div style="color:var(--muted);font-size:11px;margin-top:4px">Loaded: ' + mhqEsc(mhqImpFile) + '</div>';
+  h += '</div>';
+
+  // Textarea
+  h += '<div style="margin-bottom:10px">';
+  h += '<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px">...or paste here</div>';
+  h += '<textarea oninput="mhqImpSetText(this.value)" placeholder="der Hund | the dog\ndie Katze | the cat\ndas Haus | the house" style="width:100%;box-sizing:border-box;min-height:110px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:13px;font-family:\'DM Sans\',sans-serif" autocomplete="off" autocapitalize="off" autocorrect="off">' + mhqEsc(mhqImpText) + '</textarea>';
+  h += '</div>';
+
+  // Live preview
+  if (plan) {
+    h += '<div style="border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;background:var(--card)">';
+    h += '<div style="font-size:12px;font-weight:700;margin-bottom:6px">' + plan.total + ' line' + (plan.total === 1 ? "" : "s") +
+      ' · separator: ' + plan.sep + ' · ' + plan.fresh.length + ' new · ' + plan.dupes + ' already there</div>';
+    if (plan.sample.length) {
+      h += '<div style="font-size:11px;color:var(--muted);line-height:1.6">';
+      plan.sample.forEach(function (r) {
+        h += mhqEsc(mhqPlain(r.name, 60)) + (r.def ? ' → ' + mhqEsc(mhqPlain(r.def, 60)) : '') + '<br>';
+      });
+      h += '</div>';
+    }
+    if (plan.cleaned.length) {
+      h += '<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:#fff7ed;border:1.5px solid #fed7aa;color:#c2410c;font-size:11px">';
+      h += '<div style="font-weight:700;margin-bottom:4px">Some fronts were adjusted (Firebase can’t store . # $ [ ] / in a card name):</div>';
+      plan.cleaned.slice(0, 6).forEach(function (c) {
+        h += mhqEsc(mhqPlain(c.from, 40)) + ' → ' + mhqEsc(mhqPlain(c.to, 40)) + ' (' + mhqEsc(c.why) + ')<br>';
+      });
+      if (plan.cleaned.length > 6) h += '…and ' + (plan.cleaned.length - 6) + ' more';
+      h += '</div>';
+    }
+    h += '</div>';
+  }
+
+  // Import button
+  const canImport = !!(plan && plan.fresh.length && deck);
+  h += '<button onclick="mhqImpRun()" style="min-height:40px;padding:8px 16px;border-radius:9px;border:none;background:' + (canImport ? "var(--header)" : "var(--border)") + ';color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Import' + (plan && plan.fresh.length ? ' ' + plan.fresh.length + ' card' + (plan.fresh.length === 1 ? "" : "s") : "") + '</button>';
+
+  if (mhqImpMsg) h += '<div style="margin-top:8px;font-size:12px;color:var(--text)">' + mhqEsc(mhqImpMsg) + '</div>';
+
+  h += '<div style="margin-top:16px;color:var(--muted);font-size:11px;max-width:480px">An Anki <code>.apkg</code> file can’t be read here — it’s a compressed database. In Anki use File ▸ Export ▸ Notes in Plain Text, and choose that file instead.</div>';
+
+  h += '</div>';
+  return h;
+}
+// ── S7_END ──
+
+
 function renderMastAdmin(){
   const s=mastAdminLocal||mastDrillSettings();
   const catE=MAST_CAT_EMOJI_MAP[masteryKid]||{};
@@ -36244,6 +38072,7 @@ function _renderMasteryInner(el){
   // View tabs: Drill / Scores / Heat Map
   h+='<div class="mast-view-tabs" style="margin-top:8px;margin-bottom:0">';
   h+='<button class="mast-view-tab'+(mastView==="drill"?" active":"")+'" onclick="mastSetView(\'drill\')">Drills</button>';
+  h+='<button class="mast-view-tab'+(mastView==="study"?" active":"")+'" onclick="mastSetView(\'study\')">\u{1F4DA} Study</button>';
   h+='<button class="mast-view-tab'+(mastView==="sprint"?" active":"")+'" onclick="mastSetView(\'sprint\')">Sprint</button>';
   h+='<button class="mast-view-tab'+(mastView==="match"?" active":"")+'" onclick="mastSetView(\'match\')">\u{1F3AF} Match</button>';
   h+='<button class="mast-view-tab'+(mastView==="scores"?" active":"")+'" onclick="mastSetView(\'scores\')">Scores</button>';
@@ -36271,6 +38100,14 @@ function _renderMasteryInner(el){
     if(!mastAdminLocal) mastAdminInit();
     h+=renderMastAdmin();
     h+=retrAdminHtml();   // P3: Retrieval Plan knobs + weekly rhythm, same PIN gate
+    h+='</div>';
+    el.innerHTML=h;
+    return;
+  }
+
+  // ── 📚 STUDY VIEW (study sessions: learn a deck Anki-style, own pile, own pace) ──
+  if(mastView==="study"){
+    h+=(typeof renderMastStudy==="function")?renderMastStudy():'';
     h+='</div>';
     el.innerHTML=h;
     return;
@@ -40827,11 +42664,13 @@ function retrAdminHtml(){
 // today's drill history entry IS the drill check-mark, a sprintLog entry today checks
 // the sprint chip, a logged Match game checks Match. Tap a chip → Mastery tab, right
 // kid, right view. Today-only (derived state means nothing for other days).
-function retrSchedGo(kid,view){
+function retrSchedGo(kid,view,sid){
   // Mirror mastSetKid's per-kid state resets so a jump from the schedule can't carry a
   // previous kid's log/slide/add-category state, then land on the requested view.
   masteryKid=kid; mastView=view||"drill";
   mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastSessionKey=""; mastSlideIdx=0; mastScoreItemId=null; mastAdminLocal=null;
+  // 📚 Study deep link: land on that session with no stale sitting from another kid/session.
+  if(view==="study"&&typeof mstKid!=="undefined"){ mstKid=kid; mstSid=sid||null; mstState=null; mstFlipped=false; mstDone=null; }
   try{ const cats=Object.keys((typeof MAST_BANK_MAP!=="undefined"&&MAST_BANK_MAP[kid])||{}); mastAddCat=cats[0]||""; }catch(e){}
   showTab('mastery');
 }

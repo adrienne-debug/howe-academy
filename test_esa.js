@@ -95,7 +95,7 @@ console.log("\n# index.html wiring");
 {
   const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
   ok("global esaData + esa listener", /let esaData=\{\}/.test(src) && /db\.ref\("esa"\)\.on\("value"/.test(src));
-  ok("sub-tab list has purchases with 💰 label", /\["hq","settings","curriculum","calendar","chores","purchases"\]/.test(src) && /s==="purchases"\?"💰"/.test(src));
+  ok("sub-tab list has purchases with 💰 label", /\["hq","settings","curriculum","mastery","calendar","chores","purchases"\]/.test(src) && /s==="purchases"\?"💰"/.test(src));
   ok("dispatch → renderPurchasesView", /adminSubTab==="purchases"\)\{ renderPurchasesView\(el,ah\); \}/.test(src));
   ok("Mom HQ hub row", /_hqRowFn\("setAdminSub\('purchases'\)","💰","Purchases & ESA"/.test(src));
   ok("lazy loader loads esa.js with cache-bust on github.io", /PURCHASES_START/.test(src) && /"esa\.js\?v="\+Date\.now\(\)/.test(src));
