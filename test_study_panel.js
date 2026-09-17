@@ -32,6 +32,9 @@ const MAST_TIER_ORDER = ["daily", "every_other_day", "every_third_day", "weekly"
 const LADDER = ["every_other_day", "weekly", "bi_weekly", "monthly", "graduated"];
 
 const STUB_SRC = `
+function mhqEsc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+const MST_PATTERN_MODES = ["rec", "say", "type"];
+function mstPatternClean(p) { if (!Array.isArray(p)) return null; const out = p.filter(m => MST_PATTERN_MODES.indexOf(m) !== -1); return out.length ? out : null; }
 function mstSessions(kid) {
   const raw = masteryData[kid + "_sessions"];
   if (!raw) return [];
@@ -46,7 +49,8 @@ function mstSessions(kid) {
       passes: rec.passes != null ? rec.passes : 2,
       mixInAt: rec.mixInAt || "weekly", handOffAt: rec.handOffAt || "bi_weekly",
       kind: rec.kind || "deck", audio: rec.audio || "front", order: rec.order || "bank",
-      skipDecks: rec.skipDecks || []
+      skipDecks: rec.skipDecks || [],
+      pattern: mstPatternClean(rec.pattern)
     });
   });
   // Mirrors the real engine's second pass: a kind:"all" catch-all resolves its decks to
@@ -184,7 +188,7 @@ function buildModule(masteryDataObj, kid, subjectsObj) {
     "const SUBJECTS = " + JSON.stringify(subjectsObj || {}) + ";\n" +
     STUB_SRC;
   const footer = "\nreturn { mhqDeckOwner, mhqSessionRows, mhqEffective, mhqSessValidate, mhqSessOpen, mhqSessClose, " +
-    "mhqSessSet, mhqSessToggleDeck, mhqSessToggleSkip, mhqSessSave, mhqSessDelete, mhqMigrationPreview, mstSessions, " +
+    "mhqSessSet, mhqPatToggle, mhqPatCycle, mhqPatLen, mhqSessToggleDeck, mhqSessToggleSkip, mhqSessSave, mhqSessDelete, mhqMigrationPreview, mstSessions, " +
     "getMasteryData: function(){ return masteryData; }, " +
     "getForm: function(){ return mhqSessForm; }, getEdit: function(){ return mhqSessEdit; }, getErr: function(){ return mhqSessErr; }, " +
     "setThrowAt: function(n){ __mstOwnedIdsCallN = 0; __mstOwnedIdsThrowAt = n; } };";
@@ -264,6 +268,24 @@ const BASE_SUBJECTS = { lincoln: { mathSubj: { display: "Math", study: "mathsess
 
   v = m.mhqSessValidate({ name: "Grammar Session", kind: "deck", decks: ["Grammar"], newPerDay: 5, passes: 2, mixInAt: "weekly", handOffAt: "bi_weekly" }, sessions, null, LADDER);
   ok("validate: a well-formed record passes", v.ok === true, v.error);
+})();
+
+// (e2) 🔁 Learning pattern: edit on a copy, save writes it, Off removes it, form renders the slots
+(function () {
+  const m = buildModule({ lincoln_sessions: { german: { name: "German", kind: "deck", decks: ["German"], newPerDay: 5, passes: 3, mixInAt: "weekly", handOffAt: "bi_weekly", who: "solo", audio: "front", order: "bank" } } }, "lincoln", {});
+  m.mhqSessOpen("german");
+  m.mhqPatToggle();
+  ok("pattern On seeds See, See, Say, Say, Type", JSON.stringify(m.getForm().pattern) === '["rec","rec","say","say","type"]');
+  m.mhqPatCycle(1); m.mhqPatLen(1); m.mhqPatLen(-1); m.mhqPatLen(-1);
+  ok("tap cycles a slot; −/+ changes length", JSON.stringify(m.getForm().pattern) === '["rec","say","say","say"]', JSON.stringify(m.getForm().pattern));
+  ok("nothing stored until Save", !m.getMasteryData().lincoln_sessions.german.pattern);
+  m.mhqSessSave();
+  ok("Save writes the pattern into the session record", JSON.stringify(m.getMasteryData().lincoln_sessions.german.pattern) === '["rec","say","say","say"]');
+  ok("mstSessions reads it back", JSON.stringify(m.mstSessions("lincoln")[0].pattern) === '["rec","say","say","say"]');
+  m.mhqSessOpen("german"); m.getForm().pattern.push("type");
+  ok("editing again works on a copy (stored record untouched)", m.getMasteryData().lincoln_sessions.german.pattern.length === 4);
+  m.mhqPatToggle(); m.mhqSessSave();
+  ok("Off + Save removes the pattern", !("pattern" in m.getMasteryData().lincoln_sessions.german));
 })();
 
 // (e) mhqSessSave — db:null, writes into masteryData, mints distinct sids on name collision

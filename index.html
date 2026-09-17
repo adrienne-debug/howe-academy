@@ -35879,7 +35879,8 @@ function mstSessions(kid) {
       kind: rec.kind || MST_SESSION_DEFAULTS.kind,
       audio: rec.audio || MST_SESSION_DEFAULTS.audio,
       order: rec.order || MST_SESSION_DEFAULTS.order,
-      skipDecks: rec.skipDecks || []
+      skipDecks: rec.skipDecks || [],
+      pattern: mstPatternClean(rec.pattern)
     });
   });
   // Second pass — the 📚 Daily Study catch-all (kind "all") owns every deck that no NAMED deck
@@ -36083,8 +36084,10 @@ function mstPile(kid, sid, pn, todayLog) {
 }
 
 // 7. Sitting state machine.
-function mstSittingInit(pile, session) {
+function mstSittingInit(pile, session, opts) {
   const cards = {};
+  const _pat = session && mstPatternClean(session.pattern);
+  const _need = d => { try { return (opts && opts.dotsNeeded) ? opts.dotsNeeded(d) : 5; } catch (e) { return 5; } };
   const queue = [];
   const counts = { review: 0, learning: 0, new: 0 };
   (pile.reviews || []).forEach(item => {
@@ -36096,12 +36099,14 @@ function mstSittingInit(pile, session) {
   (pile.learning || []).forEach(item => {
     const key = "l:" + item.id;
     cards[key] = { key, kind: "learning", id: item.id, deck: item.subject, name: item.prompt, goods: 0, first: null, done: false };
+    if (_pat) cards[key].mode = mstPatternMode(_pat, item.tally_dots || 0, _need(item.subject));
     queue.push(key);
     counts.learning++;
   });
   (pile.newNames || []).forEach(n => {
     const key = "n:" + n.deck + "|" + n.name;
     cards[key] = { key, kind: "new", deck: n.deck, name: n.name, goods: 0, first: null, done: false };
+    if (_pat) cards[key].mode = mstPatternMode(_pat, 0, _need(n.deck));
     queue.push(key);
     counts.new++;
   });
@@ -36181,12 +36186,45 @@ function mstRestore(obj) {
   const data = (typeof obj === "string") ? JSON.parse(obj) : JSON.parse(JSON.stringify(obj));
   return { queue: data.queue, cards: data.cards, passes: data.passes };
 }
+// 🔁 LEARNING PATTERN — which way round a learning card is shown, picked by the dots it
+// already has: "rec" German → meaning · "say" meaning → say the German aloud · "type"
+// meaning → type the German. A pattern whose length differs from the deck's intro dots is
+// stretched to fit (first slot first, last slot last). No pattern = "rec", as before.
+const MST_PATTERN_MODES = ["rec", "say", "type"];
+function mstPatternClean(p) {
+  if (!Array.isArray(p)) return null;
+  const out = p.filter(m => MST_PATTERN_MODES.indexOf(m) !== -1);
+  return out.length ? out : null;
+}
+function mstPatternMode(pattern, dots, need) {
+  const p = mstPatternClean(pattern);
+  if (!p) return "rec";
+  need = Math.max(1, need | 0);
+  const i = Math.max(0, Math.min(need - 1, dots | 0));
+  if (p.length === need) return p[i];
+  if (need === 1) return p[0];
+  return p[Math.round(i * (p.length - 1) / (need - 1))];
+}
+// Typed-answer check: case, umlaut spellings (ae/oe/ue/ss), apostrophes, quotes and
+// punctuation don't count; every word does — a wrong or missing der/die/das is a miss.
+function mstNormAns(s) {
+  return String(s == null ? "" : s).normalize("NFC").toLowerCase()
+    .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+    .replace(/[\u2018\u2019\u201A\u201B'`\u00B4]/g, "").replace(/\u2044/g, "/")
+    .replace(/[.,!?;:\u00BF\u00A1"\u201C\u201D\u201E\u00AB\u00BB()]/g, " ")
+    .replace(/\s+/g, " ").trim();
+}
+function mstTypedOk(typed, answer) {
+  const t = mstNormAns(typed);
+  return !!t && t === mstNormAns(answer);
+}
 // ── MST_ENGINE_END ──
 // ── MST_UI_START ──
 // 📚 Study screen (kid-facing) — Anki-style sitting over mstSessions/mstPile/mstSittingInit
 // etc. (pure engine globals, provided elsewhere). This block owns UI state + rendering +
 // the Save write path only; never reimplements queueing/scoring.
 let mstSid=null, mstState=null, mstFlipped=false, mstStartTs=null, mstDone=null, mstKid=null, mstSaveErr=null;
+let mstTyped="", mstChecked=null;   // ⌨️ type-it card: what he's typed, and the checked result {ok,typed}
 
 function mstEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function mstEscJs(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }
@@ -36218,9 +36256,16 @@ function mstRestoreSitting(sid){
   }catch(e){ return false; }
 }
 function mstClearPersist(sid){ sid=sid||mstSid; if(!sid) return; try{ HA_LS.removeItem(mstStorageKey(masteryKid,sid)); }catch(e){} }
+// The card's direction for THIS showing. Say/type need the meaning to show on the front —
+// a card with no definition falls back to the normal German-first card.
+function mstCardMode(card){
+  const m=(card&&card.mode)||"rec"; if(m==="rec") return m;
+  try{ const def=mastGetDef(masteryKid,card.name||"")||mstItemAnswer(card.id); return def?m:"rec"; }catch(e){ return "rec"; }
+}
 function mstAutoPlayCurrent(session){
   if(!session||session.audio==="off"||!mstState) return;
   try{ const card=mstCurrent(mstState);
+    if(card&&mstCardMode(card)!=="rec") return;   // playing the German first would give away a say/type answer
     if(card&&card.name){ if(mastGetDefAudio(masteryKid,card.name)) mastPlayDefAudio(card.name); else mastSpeak(card.name); }
   }catch(e){}
 }
@@ -36235,6 +36280,34 @@ function mstAudioBtn(name,session){
 function mstCardHtml(session,card){
   const name=card.name||"";
   const def=mastGetDef(masteryKid,name)||mstItemAnswer(card.id);
+  const mode=mstCardMode(card);
+  const _lrn=(card.kind==="new"||card.kind==="learning")?' <span style="font-size:9px;color:#9a3412;font-weight:600">\u{2B50} Learning</span>':"";
+  const _chip=m=>'<div style="display:inline-block;margin-top:2px;padding:3px 10px;border-radius:999px;background:#ede9fe;color:#6d28d9;font-size:11px;font-weight:800">'+(m==="say"?"\u{1F5E3} Say it in German \u2014 out loud":"\u2328\uFE0F Type it in German")+'</div>';
+  if(mode==="type"){
+    let t='<div class="mast-slide"><div class="mast-flip-wrap"><div class="mast-flip-inner"><div class="mast-flip-front">';
+    t+='<div class="mast-slide-cat">'+mstEsc(card.deck||session.name||"")+_lrn+'</div>'+_chip("type");
+    t+='<div class="mast-flip-def">'+mstEsc(def)+'</div>';
+    if(!mstChecked){
+      t+='<input id="mst-type-in" type="text" value="'+mstEsc(mstTyped)+'" oninput="mstTyped=this.value" onkeydown="if(event.key===\'Enter\'){event.preventDefault();mstCheckTyped();}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="der / die / das \u2026" style="margin-top:12px;width:100%;max-width:320px;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:2px solid #c4b5fd;font-size:20px;text-align:center;font-family:\'DM Sans\',sans-serif">';
+      t+='<button onclick="mstCheckTyped()" style="margin-top:12px;min-height:48px;padding:0 32px;border-radius:14px;border:none;background:#7c3aed;color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Check</button>';
+    } else {
+      const ok=mstChecked.ok;
+      t+='<div style="margin-top:12px;font-size:20px;font-weight:800;color:'+(ok?"#16a34a":"#dc2626")+'">'+(ok?"\u2713 Right!":"\u2717 Not quite")+'</div>';
+      if(!ok) t+='<div style="margin-top:6px;font-size:13px;color:var(--muted);font-weight:600">You typed: <span style="text-decoration:line-through">'+mstEsc(mstChecked.typed)+'</span></div>';
+      t+='<div class="mast-slide-name" style="margin-top:6px">'+mstEsc(name)+'</div>'+mstAudioBtn(name,session);
+      t+='<button onclick="mstTap(\''+(ok?"good":"again")+'\')" style="margin-top:14px;min-height:52px;padding:0 36px;border-radius:14px;border:none;background:'+(ok?"#16a34a":"#dc2626")+';color:#fff;font-size:17px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Next \u2192</button>';
+    }
+    return t+'</div></div></div></div>';
+  }
+  if(mode==="say"){
+    let y='<div class="mast-slide"><div class="mast-flip-wrap'+(mstFlipped?" flipped":"")+'" onclick="mstFlip()"><div class="mast-flip-inner">';
+    y+='<div class="mast-flip-front"><div class="mast-slide-cat">'+mstEsc(card.deck||session.name||"")+_lrn+'</div>'+_chip("say");
+    y+='<div class="mast-flip-def">'+mstEsc(def)+'</div>';
+    y+='<div class="mast-flip-hint">\u{1F4A1} say it, then tap to check</div></div>';
+    y+='<div class="mast-flip-back"><div class="mast-slide-name">'+mstEsc(name)+'</div>'+mstAudioBtn(name,session);
+    y+='<div class="mast-flip-hint">\u{1F4A1} did you say it right?</div></div>';
+    return y+'</div></div></div>';
+  }
   let c='<div class="mast-slide"><div class="mast-flip-wrap'+(mstFlipped?" flipped":"")+'" onclick="mstFlip()"><div class="mast-flip-inner">';
   c+='<div class="mast-flip-front">';
   c+='<div class="mast-slide-cat">'+mstEsc(card.deck||session.name||"")+((card.kind==="new"||card.kind==="learning")?' <span style="font-size:9px;color:#9a3412;font-weight:600">\u{2B50} Learning</span>':"")+'</div>';
@@ -36247,7 +36320,7 @@ function mstCardHtml(session,card){
 }
 function renderMastStudy(){
   const kid=masteryKid;
-  if(mstKid!==kid){ mstKid=kid; mstSid=null; mstState=null; mstFlipped=false; mstDone=null; mstStartTs=null; }  // a sitting never leaks across kids
+  if(mstKid!==kid){ mstKid=kid; mstSid=null; mstState=null; mstFlipped=false; mstDone=null; mstStartTs=null; mstTyped=""; mstChecked=null; }  // a sitting never leaks across kids
   let sessions=[]; try{ sessions=mstSessions(kid)||[]; }catch(e){ sessions=[]; }
   if(!sessions.length) return '<div style="text-align:center;padding:60px 20px;color:var(--muted);font-family:\'DM Sans\',sans-serif"><div style="font-size:40px;margin-bottom:10px">\u{1F4DA}</div><div style="font-size:16px;font-weight:700">No study sessions yet.</div></div>';
   if(mstSid==null||!sessions.some(s=>s.sid===mstSid)) mstSid=sessions[0].sid;
@@ -36280,7 +36353,9 @@ function renderMastStudy(){
     let card=null; try{ card=mstCurrent(mstState); }catch(e){}
     if(card){
       h+=mstCardHtml(session,card);
-      if(mstFlipped){
+      if(mstCardMode(card)==="type"){
+        // Check / Next live inside the card — no self-grading on a typed answer.
+      } else if(mstFlipped){
         h+='<div style="display:flex;gap:12px;margin-top:16px">';
         h+='<button onclick="mstTap(\'again\')" style="flex:1;min-height:56px;border-radius:16px;border:2px solid #dc2626;background:#fef2f2;color:#dc2626;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Again</button>';
         h+='<button onclick="mstTap(\'good\')" style="flex:1;min-height:56px;border-radius:16px;border:2px solid #16a34a;background:#f0fdf4;color:#16a34a;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Good</button></div>';
@@ -36314,7 +36389,7 @@ function renderMastStudy(){
 // ── Actions ───────────────────────────────────────────────────────────────
 function mstPick(sid){
   if(sid===mstSid) return;
-  mstSid=sid; mstState=null; mstFlipped=false; mstDone=null; mstStartTs=null;
+  mstSid=sid; mstState=null; mstFlipped=false; mstDone=null; mstStartTs=null; mstTyped=""; mstChecked=null;
   _mastRe();
 }
 function mstStart(){
@@ -36328,6 +36403,7 @@ function mstStart(){
     mstDone=null;
     let cur=null; try{ cur=mstCurrent(mstState); }catch(e){}
     if(!cur){ mstSave(); return; }
+    mstTyped=""; mstChecked=null;
     _mastRe(); mstAutoPlayCurrent(session);
     return;
   }
@@ -36335,12 +36411,25 @@ function mstStart(){
   const todayLog=mstLogGet(kid,mstSid);
   let pile; try{ pile=mstPile(kid,mstSid,pn,todayLog); }catch(e){ pile=null; }
   if(!pile) return;
-  let state; try{ state=mstSittingInit(pile,session); }catch(e){ return; }
+  let state; try{ const _ds=mastDrillSettings(); state=mstSittingInit(pile,session,{dotsNeeded:d=>mastIntroDotsFor(d,_ds)}); }catch(e){ return; }
   mstState=state; mstStartTs=Date.now(); mstFlipped=false; mstDone=null;
   mstPersist(); _mastRe(); mstAutoPlayCurrent(session);
 }
 function mstFlip(){ mstFlipped=!mstFlipped; _mastRe(); }
+function mstCheckTyped(){
+  if(!mstState) return;
+  let cur=null; try{ cur=mstCurrent(mstState); }catch(e){}
+  if(!cur||mstCardMode(cur)!=="type") return;
+  const el=document.getElementById("mst-type-in"); if(el) mstTyped=el.value;
+  if(!String(mstTyped||"").trim()) return;
+  mstChecked={ok:mstTypedOk(mstTyped,cur.name),typed:String(mstTyped)};
+  _mastRe();
+  // Now that he's answered, let him hear it.
+  try{ const ses=(mstSessions(masteryKid)||[]).find(s=>s.sid===mstSid);
+    if(ses&&ses.audio!=="off"){ if(mastGetDefAudio(masteryKid,cur.name)) mastPlayDefAudio(cur.name); else mastSpeak(cur.name); } }catch(e){}
+}
 function mstTap(ans){
+  mstTyped=""; mstChecked=null;
   if(!mstState) return;
   let cur=null; try{ cur=mstCurrent(mstState); }catch(e){}
   if(!cur) return;
@@ -36352,7 +36441,7 @@ function mstTap(ans){
   let sessions=[]; try{ sessions=mstSessions(masteryKid)||[]; }catch(e){}
   mstAutoPlayCurrent((sessions||[]).find(s=>s.sid===mstSid));
 }
-function mstQuit(){ if(mstState) mstPersist(); mstState=null; mstFlipped=false; _mastRe(); }
+function mstQuit(){ if(mstState) mstPersist(); mstState=null; mstFlipped=false; mstTyped=""; mstChecked=null; _mastRe(); }
 function mstDiscard(){
   if(!confirm("Discard this study sitting? Progress won't be saved.")) return;
   mstClearPersist(mstSid); mstState=null; mstFlipped=false; mstStartTs=null;
@@ -37041,12 +37130,16 @@ function mhqSessOpen(sid) {
     mhqSessForm = { name: "Daily Study", emoji: "📚", kind: "all", skipDecks: [], who: "solo", newPerDay: 5, passes: 2, mixInAt: "weekly", handOffAt: "bi_weekly", audio: "front", order: "bank" };
   } else {
     const existing = mstSessions(mhqKid).find(function (s) { return s.sid === sid; });
-    mhqSessForm = existing ? Object.assign({}, existing, { decks: (existing.decks || []).slice(), skipDecks: (existing.skipDecks || []).slice() }) : null;
+    mhqSessForm = existing ? Object.assign({}, existing, { decks: (existing.decks || []).slice(), skipDecks: (existing.skipDecks || []).slice(), pattern: existing.pattern ? existing.pattern.slice() : null }) : null;
   }
   renderAll();
 }
 function mhqSessClose() { mhqSessEdit = null; mhqSessForm = null; mhqSessErr = ""; renderAll(); }
 function mhqSessSet(field, val) { if (!mhqSessForm) return; mhqSessForm[field] = val; renderAll(); }
+// 🔁 Learning pattern editor: On/Off, tap a slot to cycle 🇩🇪 → 🗣 → ⌨️, −/+ slots.
+function mhqPatToggle() { if (!mhqSessForm) return; mhqSessForm.pattern = mhqSessForm.pattern ? null : ["rec", "rec", "say", "say", "type"]; renderAll(); }
+function mhqPatCycle(i) { const p = mhqSessForm && mhqSessForm.pattern; if (!p || i < 0 || i >= p.length) return; p[i] = MST_PATTERN_MODES[(MST_PATTERN_MODES.indexOf(p[i]) + 1) % MST_PATTERN_MODES.length]; renderAll(); }
+function mhqPatLen(d) { const p = mhqSessForm && mhqSessForm.pattern; if (!p) return; if (d > 0 && p.length < 10) p.push(p[p.length - 1] || "rec"); else if (d < 0 && p.length > 1) p.pop(); renderAll(); }
 function mhqSessToggleDeck(deck) {
   if (!mhqSessForm) return;
   if (!mhqSessForm.decks) mhqSessForm.decks = [];
@@ -37080,6 +37173,7 @@ function mhqSessSave() {
     rec.mixInAt = mhqSessForm.mixInAt;
     rec.handOffAt = mhqSessForm.handOffAt;
     rec.order = mhqSessForm.order || "bank";
+    const _pat = mstPatternClean(mhqSessForm.pattern); if (_pat) rec.pattern = _pat;
   }
   if (mhqSessForm.kind === "all") {
     rec.skipDecks = mhqSessForm.skipDecks || [];
@@ -37088,6 +37182,7 @@ function mhqSessSave() {
     rec.mixInAt = mhqSessForm.mixInAt;
     rec.handOffAt = mhqSessForm.handOffAt;
     rec.order = mhqSessForm.order || "bank";
+    const _pat = mstPatternClean(mhqSessForm.pattern); if (_pat) rec.pattern = _pat;
   }
   if (!masteryData[kid + "_sessions"]) masteryData[kid + "_sessions"] = {};
   masteryData[kid + "_sessions"][sid] = rec;
@@ -37168,6 +37263,18 @@ function _mhqRenderSessForm(kid) {
     h += '<div><div style="' + lbl + '">New/day</div>' + _mhqStepper(f.newPerDay, "newPerDay", 0) + '</div>';
     h += '<div><div style="' + lbl + '">Passes</div>' + _mhqStepper(f.passes, "passes", 1) + '</div>';
     h += '</div>';
+    h += '<div style="' + lbl + '">Learning pattern</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
+    h += _mhqPill("Off", !f.pattern, f.pattern ? "mhqPatToggle()" : "") + _mhqPill("On", !!f.pattern, f.pattern ? "" : "mhqPatToggle()");
+    if (f.pattern) {
+      const _pl = { rec: "\u{1F1E9}\u{1F1EA} See it", say: "\u{1F5E3} Say it", type: "\u2328\uFE0F Type it" };
+      f.pattern.forEach(function (m, i) { h += '<button onclick="mhqPatCycle(' + i + ')" style="min-height:40px;padding:6px 10px;border-radius:10px;border:1.5px solid #c4b5fd;background:#f5f3ff;color:#6d28d9;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">' + (i + 1) + ' \u00B7 ' + _pl[m] + '</button>'; });
+      h += '<button onclick="mhqPatLen(-1)" style="width:36px;height:36px;border-radius:8px;border:1.5px solid var(--border);background:var(--card);font-weight:700;cursor:pointer">&minus;</button><button onclick="mhqPatLen(1)" style="width:36px;height:36px;border-radius:8px;border:1.5px solid var(--border);background:var(--card);font-weight:700;cursor:pointer">+</button>';
+    }
+    h += '</div>';
+    if (f.pattern) {
+      let _need = null; try { const _mk2 = masteryKid; masteryKid = kid; const _st = mastDrillSettings(); masteryKid = _mk2; const _d = (f.decks && f.decks[0]) || null; _need = mastIntroDotsFor(_d, _st); } catch (e) {}
+      h += '<div style="font-size:11px;color:var(--muted);margin-top:4px">One slot per learning day (tap a slot to change it).' + (_need && _need !== f.pattern.length ? ' These cards need ' + _need + ' dots \u2014 the pattern stretches to fit.' : '') + '</div>';
+    }
     h += '<div style="' + lbl + '">Mix in at</div><div style="display:flex;gap:6px;flex-wrap:wrap">';
     ladder.forEach(function (t) { h += _mhqPill(mhqEsc(mhqTierLbl(t)), f.mixInAt === t, "mhqSessSet('mixInAt','" + t + "')"); });
     h += '</div>';
