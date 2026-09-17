@@ -2075,7 +2075,12 @@ function _loadPrevSl(){
   // on a phone that cached last week while it was active, but a kiosk / freshly set-up tablet
   // has no such copy, so cross-week late chores (last week's Sat/Sun) never appeared there
   // (2026-08-18: Ellis's two weekend chores showed late in the app, not on the kiosk).
-  prevSlState=ld(pw+"_sl")||null;
+  // 2026-09-15: and do NOT seed from localStorage either. That copy can be a PARTIAL snapshot of
+  // last week — cached midway through a Saturday chore blitz — in which a chore that IS done is
+  // simply absent, so it reads as never-done and the whole week stacks up as "N days late" until
+  // the real read lands and quietly removes it. rtLateDays already treats "no data" as "say
+  // nothing", which is the safe answer, so stay silent until Firebase actually answers.
+  // (Lucy's list showed 5 chores, 4 of them phantom late, then corrected itself seconds later.)
   if(!db) return;
   _prevSlWk=pw;
   try{ db.ref(pw+"/sl").once("value",function(s){ const v=s.val(); if(v){ prevSlState=v; sv(pw+"_sl",v); renderAll(); } }); }catch(e){}
@@ -2095,6 +2100,24 @@ function rtDoneOnWk(wk,slot,kid,d,i){
 // Now it wraps into the previous week using that week's own check-off state. If that
 // state can't be read we return 0 rather than guess — claiming a chore is late when it
 // may have been done is worse than staying quiet.
+// Has this weekday of the ACTIVE week already been and gone? Compares real calendar dates, not
+// day indexes, so a week that has not started yet can never be "late". Unknown date -> false
+// (stay quiet) — same direction as every other bail-out in rtLateDays.
+function _rtDayPassed(dn){
+  if(dn===_todayDay) return true;
+  const iso=routineDateISO(dn); if(!iso) return false;
+  const today=routineDateISO(_todayDay); if(!today) return false;
+  return iso<today;
+}
+// The most recent day earlier in THIS week on which a wk:-pinned step came due AND which has
+// actually been and gone, or -1. rtLateDays and the miss logger MUST agree on this — they used
+// to each keep their own copy and the logger's had no date guard, so a chore that was late for a
+// real cross-week reason still got filed against a day of the new week that hadn't happened yet.
+function _rtLastDueIdx(days,ti){
+  let due=-1;
+  days.forEach(function(d){ if(d<ti&&d>due&&_rtDayPassed(DAYS_ALL[d])) due=d; });
+  return due;
+}
 function rtLateDays(slot,kid,i){
   const steps=rtStepsFor(slot,kid), st=steps[i]; if(!st) return 0;
   const cad=st.cad||"daily";
@@ -2104,8 +2127,14 @@ function rtLateDays(slot,kid,i){
   if(!days.length) return 0;
   const ti=DAYS_ALL.indexOf(day); if(ti<0) return 0;
   const wk=activeWk();
-  // Most recent due day earlier in THIS week.
-  let due=-1; days.forEach(function(d){ if(d<ti&&d>due) due=d; });
+  // Most recent due day earlier in THIS week — but only days that have ACTUALLY HAPPENED.
+  // The active week flips on the weekend, so on a Sunday (index 6) every weekday Mon–Sat of the
+  // NEW week sits "earlier" in the index while still being in the future. Without this the whole
+  // upcoming week rendered as overdue and _rtLogMiss filed a permanent "not done" against days
+  // that had not happened yet (92 such records across all 4 kids, week16–week23, cleared
+  // 2026-09-15). An unknown date counts as NOT passed: attachWeekListeners deliberately clears
+  // DAY_DT on a week switch so this guard holds until the new meta arrives.
+  const due=_rtLastDueIdx(days,ti);
   if(due>=0){
     for(let j=due;j<=ti;j++){ if(rtDoneOnWk(wk,slot,kid,DAYS_ALL[j],i)) return 0; }
     return ti-due;
@@ -2175,8 +2204,8 @@ function rtSlotHTML(slot,kid){
     dueIdx.forEach(i=>{ const st=steps[i], sd=rtDoneOn(slot,kid,day,i), pts=st.pts||0, cad=st.cad||"daily";
       const _lateN=rtLateDays(slot,kid,i);
       if(_lateN>0&&!sd){
-        const _m=/^wk:(.+)$/.exec(cad), _ds=_m?_m[1].split(",").map(Number):[];
-        const _ti=DAYS_ALL.indexOf(day); let _due=-1; _ds.forEach(function(d){ if(d<_ti&&d>_due) _due=d; });
+        const _m=/^wk:(.+)$/.exec(cad), _ds=_m?_m[1].split(",").map(Number).filter(n=>!isNaN(n)):[];
+        const _due=_rtLastDueIdx(_ds,DAYS_ALL.indexOf(day));
         if(_due>=0) _rtLogMiss(kid,slot,i,DAYS_ALL[_due],st.label,pts);
       }
       const _lateTag=(_lateN>0&&!sd)?('<span class="rt-late">'+_lateN+' day'+(_lateN>1?'s':'')+' late</span>'):'';
