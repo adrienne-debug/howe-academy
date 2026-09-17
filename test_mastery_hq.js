@@ -180,6 +180,25 @@ const PN = 100;
   ok("(c) g2 present with tier weekly", g2 && g2.tier === "weekly", g2);
 })();
 
+// ── (c2) ↔ a 🇬🇧→🇩🇪 twin: one row per word, twin shown as rev chip ──
+(() => {
+  const M = build({
+    lincoln: [
+      { id: "h1", subject: "German", prompt: "der Hund", answer: "dog", status: "active", tier: "weekly", next_due: PN },
+      { id: "h1_p", subject: "German", prompt: "der Hund", answer: "dog", status: "active", tier: "every_other_day", next_due: PN, dir: "prod", twinOf: "h1" },
+      { id: "k9", subject: "German", prompt: "die Katze", answer: "cat", status: "introduction", tally_dots: 2 },
+    ],
+    lincoln_custom_items: [{ cat: "German", name: "der Hund" }, { cat: "German", name: "die Katze" }],
+  }, KID);
+  const cards = M.mhqDeckCards(KID, "German");
+  eq("(c2) one row per word", cards.filter(c => c.name === "der Hund").length, 1);
+  const h = cards.find(c => c.name === "der Hund");
+  ok("(c2) row shows the recognition card (weekly)", h && h.tier === "weekly", h);
+  ok("(c2) twin rides along as rev (every_other_day)", h && h.rev && h.rev.tier === "every_other_day", h);
+  const k = cards.find(c => c.name === "die Katze");
+  ok("(c2) word without a twin has rev null", k && k.rev === null, k);
+})();
+
 // ── (d) legacy parity item without next_due ──
 (() => {
   // every_other_day (iv=2); pn=101 odd so (pn-1)=100 is even -> due at offset 0, then

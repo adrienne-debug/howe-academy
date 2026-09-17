@@ -50,7 +50,8 @@ function mstSessions(kid) {
       mixInAt: rec.mixInAt || "weekly", handOffAt: rec.handOffAt || "bi_weekly",
       kind: rec.kind || "deck", audio: rec.audio || "front", order: rec.order || "bank",
       skipDecks: rec.skipDecks || [],
-      pattern: mstPatternClean(rec.pattern)
+      pattern: mstPatternClean(rec.pattern),
+      bothWays: !!rec.bothWays
     });
   });
   // Mirrors the real engine's second pass: a kind:"all" catch-all resolves its decks to
@@ -286,6 +287,21 @@ const BASE_SUBJECTS = { lincoln: { mathSubj: { display: "Math", study: "mathsess
   ok("editing again works on a copy (stored record untouched)", m.getMasteryData().lincoln_sessions.german.pattern.length === 4);
   m.mhqPatToggle(); m.mhqSessSave();
   ok("Off + Save removes the pattern", !("pattern" in m.getMasteryData().lincoln_sessions.german));
+})();
+
+// (e3) ↔ Both directions: deck sessions save it, Off removes it, the Daily Study catch-all never carries it
+(function () {
+  const m = buildModule({ lincoln_sessions: { german: { name: "German", kind: "deck", decks: ["German"], newPerDay: 5, passes: 3, mixInAt: "weekly", handOffAt: "bi_weekly", who: "solo", audio: "front", order: "bank" } } }, "lincoln", {});
+  m.mhqSessOpen("german");
+  ok("bothWays starts off", m.getForm().bothWays === false);
+  m.mhqSessSet("bothWays", true); m.mhqSessSave();
+  ok("Save writes bothWays:true on a deck session", m.getMasteryData().lincoln_sessions.german.bothWays === true);
+  m.mhqSessOpen("german"); ok("reopens as on", m.getForm().bothWays === true);
+  m.mhqSessSet("bothWays", false); m.mhqSessSave();
+  ok("Off + Save removes it", !("bothWays" in m.getMasteryData().lincoln_sessions.german));
+  m.mhqSessOpen("__new_all"); m.mhqSessSet("bothWays", true); m.mhqSessSave();
+  const ds = Object.values(m.getMasteryData().lincoln_sessions).find(r => r.kind === "all");
+  ok("Daily Study catch-all never saves bothWays", ds && !("bothWays" in ds));
 })();
 
 // (e) mhqSessSave — db:null, writes into masteryData, mints distinct sids on name collision

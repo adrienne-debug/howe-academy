@@ -33039,7 +33039,12 @@ function _matchPairHtml(it){
 }
 // Same-pair mode: any tile-able visual counts, glyphs included — two "B" cards to find
 // IS the game for a letters deck.
-function _matchEligible(it){ return matchPairMode==="same"?!!_smTileVis(it):!!_matchPairHtml(it); }
+// ↔ Small 🇬🇧→🇩🇪 tag for a production twin wherever a card's name is listed by id.
+function mastDirTag(id){
+  try{ let its=masteryData[masteryKid]||[]; if(!Array.isArray(its)) its=Object.values(its);
+    const it=its.find(i=>i&&i.id===id); return (it&&it.dir==="prod")?' <span style="font-size:10px;color:#6d28d9;font-weight:800">\u{1F1EC}\u{1F1E7}\u2192\u{1F1E9}\u{1F1EA}</span>':""; }catch(e){ return ""; }
+}
+function _matchEligible(it){ if(it&&it.dir==="prod") return false; return matchPairMode==="same"?!!_smTileVis(it):!!_matchPairHtml(it); }
 function mastMatchDecks(){
   let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
   const by={};
@@ -34237,6 +34242,7 @@ function mastSprintPool(kid,opts){
   const active=Array.isArray(opts.activeSubjects)?opts.activeSubjects:null;
   return items.filter(it=>{
     if(!it||it.status==="introduction"||it.status==="parked") return false;
+    if(it.dir==="prod") return false;   // ↔ 🇬🇧→🇩🇪 twins aren't sprint facts
     if(deck&&it.subject!==deck) return false;
     if(active&&!active.includes(it.subject)) return false;
     const acc=history?mastUntimedAccuracy(history,kid,it.id,opts.accuracyOpts):undefined;
@@ -35880,7 +35886,8 @@ function mstSessions(kid) {
       audio: rec.audio || MST_SESSION_DEFAULTS.audio,
       order: rec.order || MST_SESSION_DEFAULTS.order,
       skipDecks: rec.skipDecks || [],
-      pattern: mstPatternClean(rec.pattern)
+      pattern: mstPatternClean(rec.pattern),
+      bothWays: !!rec.bothWays
     });
   });
   // Second pass — the 📚 Daily Study catch-all (kind "all") owns every deck that no NAMED deck
@@ -36093,6 +36100,7 @@ function mstSittingInit(pile, session, opts) {
   (pile.reviews || []).forEach(item => {
     const key = "r:" + item.id;
     cards[key] = { key, kind: "review", id: item.id, deck: item.subject, name: item.prompt, goods: 0, first: null, done: false };
+    if (item.dir === "prod") cards[key].mode = "type";   // ↔ a 🇬🇧→🇩🇪 twin is always typed in his own sitting
     queue.push(key);
     counts.review++;
   });
@@ -36465,6 +36473,13 @@ function mstSave(){
     try{ _mastRe(); }catch(_){}
   }
 }
+function mstMakeTwin(base,items,tier,pn){
+  const tw={id:mastUniqueId(items,base.id+"_p"),subject:base.subject,type:base.type||String(base.subject||"").toLowerCase(),prompt:base.prompt,
+    review_mode:base.review_mode||"flash",status:"active",tier:tier,drop_count:0,consecutive_correct:0,cycle:1,tally_dots:base.tally_dots||0,dir:"prod",twinOf:base.id};
+  if(base.answer!=null) tw.answer=base.answer;
+  mastStampNextDue(tw,items,tier,pn);
+  return tw;
+}
 function _mstSaveInner(){
   const kid=masteryKid, sid=mstSid;
   if(!mstState||!sid) throw new Error("no sitting to save (state "+(mstState?"ok":"missing")+", session "+(sid||"missing")+")");
@@ -36487,10 +36502,26 @@ function _mstSaveInner(){
 
   const due=Object.keys(scores).map(id=>({id}));
   const settings=mastDrillSettings();
+  const _wasLearning=new Set(items.filter(i=>i&&i.status==="introduction").map(i=>i.id));
   let r; try{ r=mastApplyScores(items,due,scores,pn,settings,{prevShown:prevShownIds,autoPull:false,chain:false}); }catch(e){ r={touched:[],minted:[],changes:0}; }
   const touched=r.touched||[];
   const mintedAll=minted.slice();
   (r.minted||[]).forEach(it=>{ if(mintedAll.indexOf(it)===-1) mintedAll.push(it); });
+  // ↔ BOTH DIRECTIONS: a card that finished learning in this sitting gets its 🇬🇧→🇩🇪 twin —
+  // a card of its own on the first rung, climbing the same ladder by the same rules.
+  try{
+    const _ses=(mstSessions(kid)||[]).find(x=>x.sid===sid);
+    if(_ses&&_ses.bothWays&&_ses.kind==="deck"){
+      const _rung=(settings.ladder&&settings.ladder[0])||"every_other_day";
+      items.slice().forEach(it=>{
+        if(!it||it.dir==="prod"||it.status!=="active"||!_wasLearning.has(it.id)) return;
+        if((_ses.decks||[]).indexOf(it.subject)===-1) return;
+        if(items.some(x=>x&&x.twinOf===it.id)) return;
+        const tw=mstMakeTwin(it,items,_rung,pn);
+        items.push(tw); mintedAll.push(tw);
+      });
+    }
+  }catch(e){ try{ dbg("study twin mint error: "+((e&&e.message)||e)); }catch(_){} }
 
   // Session log entry — merges into today's existing entry (sum counts, concat items).
   const secs=mstStartTs?Math.max(1,Math.round((Date.now()-mstStartTs)/1000)):null;
@@ -36703,8 +36734,8 @@ function mhqDeckCards(kid,deck){
   const bankNames=mhqBank(kid)[deck]||[];
   const settings=masteryData[kid+"_settings"]||{};
   const defs=settings.definitions||{};
-  const byPrompt={};
-  items.forEach(function(i){ if(i&&i.prompt!=null) byPrompt[i.prompt]=i; });
+  const byPrompt={}, twinOf={};
+  items.forEach(function(i){ if(!i||i.prompt==null) return; if(i.dir==="prod") twinOf[i.prompt]=i; else byPrompt[i.prompt]=i; });
 
   function cardFor(name,item){
     if(!item) return {name:name,state:"not started",tier:null,dots:0,drops:0,hasAudio:!!(settings.def_audio&&settings.def_audio[name]),back:defs[name]||""};
@@ -36716,9 +36747,11 @@ function mhqDeckCards(kid,deck){
     const isIntro=item.status==="introduction";
     const dots=isIntro?(item.tally_dots||0):(item.consecutive_correct||0);
     const back=defs[name]||((item.answer!=null&&item.answer!==item.prompt)?item.answer:"")||"";
+    const tw=twinOf[name];
     return {
       name:name, state:state, tier:item.tier||null, dots:dots, drops:item.drop_count||0,
-      hasAudio:!!(settings.def_audio&&settings.def_audio[name]), back:back
+      hasAudio:!!(settings.def_audio&&settings.def_audio[name]), back:back,
+      rev:tw?{tier:tw.tier||null,state:(tw.tier==="graduated"?"graduated":"ladder")}:null
     };
   }
 
@@ -36726,7 +36759,7 @@ function mhqDeckCards(kid,deck){
   const list=[];
   bankNames.forEach(function(name){ seen[name]=true; list.push(cardFor(name,byPrompt[name])); });
   items.forEach(function(i){
-    if(i&&i.prompt!=null&&!seen[i.prompt]){ seen[i.prompt]=true; list.push(cardFor(i.prompt,i)); }
+    if(i&&i.prompt!=null&&i.dir!=="prod"&&!seen[i.prompt]){ seen[i.prompt]=true; list.push(cardFor(i.prompt,i)); }
   });
   return list;
 }
@@ -36955,6 +36988,7 @@ function _mhqRenderDeckPage(kid,deck,rows){
     h+='<span style="flex:1;min-width:0;font-weight:600;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+mhqEsc(mhqPlain(c.name))+'</span>';
     h+='<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;background:'+(MHQ_STATE_COLOR[c.state]||"#9ca3af")+';color:#fff;white-space:nowrap">'+mhqEsc(c.state)+'</span>';
     if(c.dots>0) h+='<span style="font-size:10px;color:var(--muted);white-space:nowrap">'+c.dots+'●</span>';
+    if(c.rev) h+='<span title="English \u2192 German card" style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;background:#ede9fe;color:#6d28d9;white-space:nowrap">\u{1F1EC}\u{1F1E7}\u2192\u{1F1E9}\u{1F1EA} '+mhqEsc(c.rev.tier?mhqTierLbl(c.rev.tier):"")+'</span>';
     if(c.hasAudio) h+='<span style="font-size:11px" title="Has recorded audio">\u{1F50A}</span>';
     h+='<span style="flex:1;min-width:0;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+mhqEsc(mhqPlain(c.back))+'</span>';
     h+='</div>';
@@ -37130,7 +37164,7 @@ function mhqSessOpen(sid) {
     mhqSessForm = { name: "Daily Study", emoji: "📚", kind: "all", skipDecks: [], who: "solo", newPerDay: 5, passes: 2, mixInAt: "weekly", handOffAt: "bi_weekly", audio: "front", order: "bank" };
   } else {
     const existing = mstSessions(mhqKid).find(function (s) { return s.sid === sid; });
-    mhqSessForm = existing ? Object.assign({}, existing, { decks: (existing.decks || []).slice(), skipDecks: (existing.skipDecks || []).slice(), pattern: existing.pattern ? existing.pattern.slice() : null }) : null;
+    mhqSessForm = existing ? Object.assign({}, existing, { decks: (existing.decks || []).slice(), skipDecks: (existing.skipDecks || []).slice(), pattern: existing.pattern ? existing.pattern.slice() : null, bothWays: !!existing.bothWays }) : null;
   }
   renderAll();
 }
@@ -37174,6 +37208,7 @@ function mhqSessSave() {
     rec.handOffAt = mhqSessForm.handOffAt;
     rec.order = mhqSessForm.order || "bank";
     const _pat = mstPatternClean(mhqSessForm.pattern); if (_pat) rec.pattern = _pat;
+    if (mhqSessForm.bothWays) rec.bothWays = true;
   }
   if (mhqSessForm.kind === "all") {
     rec.skipDecks = mhqSessForm.skipDecks || [];
@@ -37271,6 +37306,11 @@ function _mhqRenderSessForm(kid) {
       h += '<button onclick="mhqPatLen(-1)" style="width:36px;height:36px;border-radius:8px;border:1.5px solid var(--border);background:var(--card);font-weight:700;cursor:pointer">&minus;</button><button onclick="mhqPatLen(1)" style="width:36px;height:36px;border-radius:8px;border:1.5px solid var(--border);background:var(--card);font-weight:700;cursor:pointer">+</button>';
     }
     h += '</div>';
+    if (f.kind === "deck") {
+      h += '<div style="' + lbl + '">Both directions</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
+      h += _mhqPill("Off", !f.bothWays, "mhqSessSet(\'bothWays\',false)") + _mhqPill("On", !!f.bothWays, "mhqSessSet(\'bothWays\',true)");
+      h += '</div><div style="font-size:11px;color:var(--muted);margin-top:4px">When a card finishes learning it gets a second card, meaning \u2192 word, on its own ladder (typed in study, said aloud in Mom\u2019s drill).</div>';
+    }
     if (f.pattern) {
       let _need = null; try { const _mk2 = masteryKid; masteryKid = kid; const _st = mastDrillSettings(); masteryKid = _mk2; const _d = (f.decks && f.decks[0]) || null; _need = mastIntroDotsFor(_d, _st); } catch (e) {}
       h += '<div style="font-size:11px;color:var(--muted);margin-top:4px">One slot per learning day (tap a slot to change it).' + (_need && _need !== f.pattern.length ? ' These cards need ' + _need + ' dots \u2014 the pattern stretches to fit.' : '') + '</div>';
@@ -38808,14 +38848,14 @@ function _renderMasteryInner(el){
             const rc=it.result==="c"?"r-c":it.result==="m"?"r-m":it.result==="~"?"r-t":"r-shown";
             const rl=it.result==="c"?"\u{2713}":it.result==="m"?"\u{2717}":it.result==="~"?"~":"\u{1F441}\u{FE0F}";
             h+='<div class="mast-hist-item" onclick="mastShowItemHist(\''+it.id+'\')">';
-            h+='<span class="mast-hist-prompt">'+it.prompt+'</span>';
+            h+='<span class="mast-hist-prompt">'+it.prompt+mastDirTag(it.id)+'</span>';
             h+='<span class="mast-hist-result '+rc+'">'+rl+'</span></div>';
 
             // Per-item history
             if(mastScoreItemId===it.id){
               const allHist=entries.flatMap(en=>(en.items||[]).filter(x=>x.id===it.id).map(x=>({date:en.date,result:x.result})));
               h+='<div class="mast-item-hist-card">';
-              h+='<div class="mast-item-hist-hdr"><span style="font-weight:700;font-size:13px">'+it.prompt+'</span>';
+              h+='<div class="mast-item-hist-hdr"><span style="font-weight:700;font-size:13px">'+it.prompt+mastDirTag(it.id)+'</span>';
               h+='<span style="font-size:10px;color:var(--muted)">'+allHist.length+' session(s)</span></div>';
               allHist.forEach(ah=>{
                 const arc=ah.result==="c"?"r-c":ah.result==="m"?"r-m":ah.result==="~"?"r-t":"r-shown";
@@ -39116,7 +39156,7 @@ function _renderMasteryInner(el){
     const isIntro=it.status==="introduction";
 
     c+='<div class="'+slideClass+'">';
-    c+='<div class="mast-slide-cat">'+(catE3[it.subject]||"")+' '+(it.subject||"")+(isIntro?' <span style="font-size:9px;color:#9a3412;font-weight:600">\u{2B50} Learning</span>':'')+'</div>';
+    c+='<div class="mast-slide-cat">'+(catE3[it.subject]||"")+' '+(it.subject||"")+mastDirTag(it.id)+(isIntro?' <span style="font-size:9px;color:#9a3412;font-weight:600">\u{2B50} Learning</span>':'')+'</div>';
     if(secondLook) c+='<div style="display:inline-block;margin-bottom:8px;padding:4px 12px;border-radius:999px;background:#fef3c7;border:1.5px solid #f59e0b;color:#92400e;font-size:11px;font-weight:800;position:relative;z-index:2">\u{1F440} One more look — just look &amp; say it</div>';
 
     // Big visual
@@ -39169,7 +39209,7 @@ function _renderMasteryInner(el){
       // Reversed deck (Admin → Restart reversed): definition on the FRONT, word on the
       // back — the second pass of a mastered flip deck. The word's visual moves to the
       // back too (a picture on the front would give the answer away).
-      const _faceRev=(!_ruleStyle)&&(!_faceName)&&(!_learnFlip)&&mastCatFace(it.subject)==="reversed"&&!!_vocabDef;
+      const _faceRev=(!_ruleStyle)&&(!_faceName)&&(!_learnFlip)&&(mastCatFace(it.subject)==="reversed"||it.dir==="prod")&&!!_vocabDef;
       // Voice of the definition — rides whichever side SHOWS the definition
       // (stopPropagation so the tap plays instead of flipping). Mom's recording wins;
       // with no clip, the browser reads it aloud (🗣 TTS fallback).
@@ -39187,7 +39227,7 @@ function _renderMasteryInner(el){
       c+='<div class="mast-flip-front">';
       if(_faceRev){
         c+='<div class="mast-flip-def" style="margin-top:14px">&ldquo;'+_vocabDef+'&rdquo;</div>';
-        c+=_audBtn;
+        if(it.dir!=="prod") c+=_audBtn;   // a 🇬🇧→🇩🇪 card's clip says the answer — it rides the back
         c+='<div class="mast-flip-hint">\u{1F4A1} tap to see the word</div>';
       } else {
         c+='<div class="mast-slide-img">'+bigVis+'</div>';
@@ -39201,6 +39241,7 @@ function _renderMasteryInner(el){
       if(_faceRev){
         c+='<div class="mast-slide-img">'+bigVis+'</div>';
         c+='<div class="mast-slide-name">'+it.prompt+'</div>';
+        if(it.dir==="prod") c+=_audBtn;
         c+='<div class="mast-flip-hint">\u{1F4A1} tap to flip back</div>';
       } else {
         { const _bpl=it.prompt.length; const _bfs=_bpl<=6?60:_bpl<=14?42:_bpl<=22?32:24; c+='<div class="mast-slide-img"><span style="font-size:'+_bfs+'px;font-weight:800;color:#7c3aed;word-break:break-word;max-width:100%">'+it.prompt+'</span></div>'; }

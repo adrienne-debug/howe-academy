@@ -1,4 +1,4 @@
-// 🔁 Learning pattern + ⌨️ typed-answer check (study sessions). Extracts MST_ENGINE from index.html.
+// 🔁 Learning pattern + ⌨️ typed-answer check + ↔ both-directions twins (study sessions). Extracts MST_ENGINE from index.html.
 const fs = require("fs"), path = require("path");
 
 const SRC_PATH = process.env.MST_SRC || path.join(__dirname, "index.html");
@@ -120,6 +120,16 @@ M.mstAnswer(s2, "l:l3", "good"); M.mstAnswer(s2, "l:l3", "again"); M.mstAnswer(s
 ok(!s2.cards["l:l3"].done, "again resets goods on a typed card");
 M.mstAnswer(s2, "l:l3", "good");
 ok(s2.cards["l:l3"].done && M.mstOutcomes(s2).shownIds[0] === "l3", "3 typed goods → done → one dot, same as today");
+
+
+// ↔ both directions (slice 2)
+M.setMasteryData({ lincoln_sessions: { german: { name: "German", decks: ["German"], bothWays: true }, plain: { name: "Plain", decks: ["X"] } } });
+const S2 = M.mstSessions("lincoln");
+ok(S2.find(s => s.sid === "german").bothWays === true && S2.find(s => s.sid === "plain").bothWays === false, "mstSessions carries bothWays (default false)");
+const pileT = { reviews: [{ id: "lin_hund_p", subject: "German", prompt: "der Hund", tier: "every_other_day", dir: "prod" }, { id: "lin_hund", subject: "German", prompt: "der Hund", tier: "every_other_day" }], learning: [], newNames: [] };
+const stT = M.mstSittingInit(pileT, S2.find(s => s.sid === "plain"), {});
+ok(stT.cards["r:lin_hund_p"].mode === "type", "🇬🇧→🇩🇪 twin review is typed, even with no pattern");
+ok(stT.cards["r:lin_hund"].mode === undefined, "its recognition card is not");
 
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
