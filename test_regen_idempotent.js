@@ -23,6 +23,7 @@ const idBlock = sliceBlock("// LID_ID_START", "// LID_ID_END");
 const matchBlock = sliceBlock("// GWC_MATCH_START", "// GWC_MATCH_END");
 if (!/function gwPlanIds\(/.test(idBlock)) { console.error("gwPlanIds not in LID_ID block"); process.exit(1); }
 if (!/oldByLid/.test(matchBlock) || !/Keep-pass/.test(matchBlock)) { console.error("GWC_MATCH block missing pass 0 / keep-pass"); process.exit(1); }
+if (!/_gwConsumedCard/.test(matchBlock)) { console.error("GWC_MATCH keep-pass missing the consumed-card rescue"); process.exit(1); }
 if (!/gwPlanIds\(allTasks\)/.test(src)) { console.error("generateWeek does not call gwPlanIds"); process.exit(1); }
 
 let pass = 0, fail = 0;
@@ -107,7 +108,7 @@ console.log("generate twice → same ids regardless of day/time/counter");
 
 // ── gwCommit's re-attach block, run against old/new weeks ────────────────────
 // The block is sliced verbatim and wrapped so it runs on the given weekData / d.
-const runMatch = new Function("weekData", "snapChecked", "snapHist", "d", "claimed", "lidForTask", "Date",
+const runMatch = new Function("weekData", "snapChecked", "snapHist", "d", "claimed", "lidForTask", "Date", "_gwConsumedCard",
   matchBlock + "\n return {oldLookup, oldByLid};");
 const NOW = 1_800_000_000_000;
 const FakeDate = { now: () => NOW };
@@ -116,10 +117,14 @@ function commitMatch(oldTasks, checkedMap, histMap, newTasks, opts) {
   const weekData = { tasks: oldTasks };
   const snapChecked = Object.assign({}, checkedMap);
   const snapHist = JSON.parse(JSON.stringify(histMap || {}));
-  const d = { tasks: newTasks.map(t => Object.assign({}, t)) };
+  const d = { tasks: newTasks.map(t => Object.assign({}, t)), week: opts.week || "week23" };
   const lidForTask = opts.lidForTask || (t => t.lid || null);
   const claimed = opts.claimed || {};
-  const r = runMatch(weekData, snapChecked, snapHist, d, claimed, lidForTask, FakeDate);
+  // The generator's spent-card registry, as gwReadWeekAutoAdvance fills it (week-scoped).
+  const consumed = opts.consumed || {};
+  const consumedWk = opts.consumedWk || "week23";
+  const _gwConsumedCard = (id, wk) => !!(consumed[id] && wk === consumedWk);
+  const r = runMatch(weekData, snapChecked, snapHist, d, claimed, lidForTask, FakeDate, _gwConsumedCard);
   // the GC that follows in gwCommit: purge checks whose id is not in the new set
   const commitIds = new Set(d.tasks.map(t => t.id));
   for (const id in snapChecked) { if (!commitIds.has(id)) delete snapChecked[id]; }
@@ -212,6 +217,44 @@ console.log("gwCommit re-attach — keep-pass, carries, id-less cards");
   const neu = [T("lincoln_lincoln__ws_L0003", "lincoln", "ws", "L0003", "monday", "✍️ WS — pg 5")];
   const out = commitMatch(old, checked, {}, neu);
   ok("stale (>7d) check not re-attached", !out.checked["lincoln_lincoln__ws_L0003"]);
+}
+
+// ── Keep-pass: a card the GENERATOR counted as spent must survive the commit ──
+// The week23 incident (2026-09-17). _gwWeekConsumed treats any card dated before today as
+// "started" — done or not — and marks its lesson spent, so the serve loop deliberately does
+// NOT re-serve it ("that card already holds it"). The keep-pass used to rescue only CHECKED
+// or CLAIMED cards, so an UNDONE one was deleted: the lesson left the week without anyone
+// doing it, and the next slot got the lesson after it. 16 open lessons across 12 subjects
+// vanished that way. Her rule: nothing is ever skipped or dropped.
+console.log("gwCommit keep-pass — cards the generator counted as spent");
+{
+  const card = T("lincoln_lincoln__ws_L0048", "lincoln", "ws", "L0048", "monday", "✍️ WS — 5B Ch.12 L1");
+  const out = commitMatch([card], {}, {}, [], { consumed: { "lincoln_lincoln__ws_L0048": 1 } });
+  ok("UNDONE spent card is kept, not deleted", out.tasks.length === 1 && out.tasks[0].id === card.id, out.tasks.map(t => t.id));
+}
+{
+  // Not consumed by the generator (it was free to re-serve it) → the old behaviour stands.
+  const card = T("lincoln_lincoln__ws_L0048", "lincoln", "ws", "L0048", "friday", "✍️ WS — 5B Ch.12 L1");
+  const out = commitMatch([card], {}, {}, [], { consumed: {} });
+  ok("an undone card the generator did NOT consume is still dropped", out.tasks.length === 0, out.tasks.map(t => t.id));
+}
+{
+  // A registry left over from an earlier week must never speak for this one.
+  const card = T("lincoln_lincoln__ws_L0048", "lincoln", "ws", "L0048", "monday", "✍️ WS — 5B Ch.12 L1");
+  const out = commitMatch([card], {}, {}, [], { consumed: { "lincoln_lincoln__ws_L0048": 1 }, consumedWk: "week22" });
+  ok("a stale registry from another week is ignored", out.tasks.length === 0, out.tasks.map(t => t.id));
+}
+{
+  // The regen DID serve that lesson's card — the rescue must not double it.
+  const card = T("lincoln_lincoln__ws_L0048", "lincoln", "ws", "L0048", "monday", "✍️ WS — 5B Ch.12 L1");
+  const out = commitMatch([card], {}, {}, [card], { consumed: { "lincoln_lincoln__ws_L0048": 1 } });
+  ok("no duplicate when the regen already served it", out.tasks.length === 1, out.tasks.map(t => t.id));
+}
+{
+  // A _c carry twin keeps its own pass — the rescue must not pull it in.
+  const twin = T("2026d200_9_c", "lincoln", "ws", "L0048", "monday", "✍️ WS — 5B Ch.12 L1");
+  const out = commitMatch([twin], {}, {}, [], { consumed: { "2026d200_9_c": 1 } });
+  ok("_c twin is not rescued by the registry", out.tasks.length === 0, out.tasks.map(t => t.id));
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");

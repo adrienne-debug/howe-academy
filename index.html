@@ -46121,6 +46121,20 @@ function _lidServedFor(kid,sk,rows){
 // `liveDates` is the set of days this kid actually has this week, so a projected date can
 // never land on an off day, a ✕'d day, or a day with no row at all.
 let _gwPjMs=0;   // ms spent in the projection during one gwReadWeekAutoAdvance pass
+// A card the generator counted as SPENT this pass (see _gwWeekConsumed): its lesson was
+// deliberately not re-served because THIS card already holds it. gwCommit's keep-pass must
+// therefore keep it too, or the two halves disagree and UNDONE work is deleted — the
+// generator says "that card has it", the commit says "nothing serves it, drop it", and the
+// next slot gets the lesson after it. That gap silently removed 16 open lessons across 12
+// subjects in week23 (2026-09-17, Adrienne: "things have moved out of order"); every one was
+// unchecked, which is exactly the case the keep-pass did not cover (it kept only checked /
+// claimed). Her rule: nothing is ever skipped or dropped — work that shouldn't be done gets
+// CHECKED OFF, never removed from the plan. Keyed by week label so a registry left over from
+// an earlier generation can never speak for this one.
+let _gwConsumedCards=null;
+function _gwConsumedCard(id,weekLabel){
+  return !!(_gwConsumedCards&&_gwConsumedCards.wk===weekLabel&&_gwConsumedCards.ids[id]);
+}
 function _gwPlanDates(kid,sk,liveDates){
   const _t0=Date.now();
   try{ return _gwPlanDatesInner(kid,sk,liveDates); } finally { _gwPjMs+=Date.now()-_t0; }
@@ -46171,6 +46185,7 @@ function _gwWeekConsumed(kid,sk,dates,dayData,seen){
     if(!done&&!started) return;
     const ref=taskLessonRef(t)||("#"+t.id);
     if(seen[ref]) return; seen[ref]=true;
+    try{ if(_gwConsumedCards) _gwConsumedCards.ids[t.id]=1; }catch(eCC){}   // the commit must keep it
     // Its own slot leaves the serving list AND dayData — the fill loop only visits `dates`,
     // so a slot left behind would keep its raw grid-cell text and be laid as a phantom task.
     const iso=isoOf(t); const i=iso?dates.indexOf(iso):-1;
@@ -46180,6 +46195,7 @@ function _gwWeekConsumed(kid,sk,dates,dayData,seen){
 }
 function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
   _gwPjMs=0;
+  _gwConsumedCards={wk:"week"+weekNum,ids:{}};
   const resolved=resolveWeekSlots(weekNum,ignoreAuto);
   if(!resolved) return null;
   const dayData=resolved.dayData;
@@ -47190,7 +47206,8 @@ function gwCommit(){
       Object.values(oldLookup).forEach(v=>{ if(v.used) _moved.add(v.oldId); });
       (weekData.tasks||[]).forEach(t=>{
         if(t.id.endsWith("_c")||_kIds.has(t.id)||_moved.has(t.id)) return;
-        if(!(snapChecked[t.id]||(typeof claimed!=="undefined"&&claimed&&claimed[t.id]))) return;
+        if(!(snapChecked[t.id]||(typeof claimed!=="undefined"&&claimed&&claimed[t.id])
+             ||(typeof _gwConsumedCard==="function"&&_gwConsumedCard(t.id,d&&d.week)))) return;
         d.tasks.push(t); _kIds.add(t.id);
       });
     })();
