@@ -140,6 +140,51 @@ function enrollWorld(o) {
 { const w = enrollWorld({ noGate: true });
   ok("a unit deck with no gate enrolls exactly as before (cap 8, no cat_gate)", w.md().lincoln.filter(i => i.subject === DECK).length === 8 && !w.md().lincoln_settings.cat_gate); }
 
+console.log("# study sessions (real MST engine) respect the gate");
+const MST_BLOCK = src.slice(src.indexOf("// ── MST_ENGINE_START ──"), src.indexOf("// ── MST_ENGINE_END ──"));
+const SESS_FNS = ["function mastCustomCh(", "function mastGateChapter(", "function mastFullBank(", "function lidStamped(",
+  "function lidDoneSet(", "function lidDoneIdx(", "function lidsFor(", "function mastIsDue(", "function mastIsNeverDrill(", "function mastIsParked("].map(extract).join("\n");
+const ELIGIBLE = extract("function mastBankEligible(");
+function sessionWorld(o) {
+  o = o || {};
+  const seq = seqFor([1, 2, 3, 4], true), ids = seq.map((_, i) => "L" + String(24 + i).padStart(4, "0"));
+  const bank = (o.german ? [{ cat: "German", name: "der Hund" }, { cat: "German", name: "die Katze" }] : []);
+  [1, 2, 3, 4].forEach(c => CH[c].forEach(n => bank.push({ cat: DECK, name: n, ch: c })));
+  const items = (o.minted || []).map((n, i) => ({ id: "lin_" + i, subject: DECK, prompt: n, status: "introduction", tier: "daily", tally_dots: 1 }));
+  const doneRecs = {}; (o.doneIdx || []).forEach(i => { doneRecs[ids[i]] = { src: "check" }; });
+  const settings = { ladder: ["every_other_day", "weekly", "bi_weekly", "monthly", "graduated"], cat_gate: { [DECK]: { subject: SK } } };
+  const stubs = `let masteryKid="lincoln"; const MAST_BANK_MAP={};
+    const MAST_TIER_ORDER=["daily","every_other_day","every_third_day","weekly","bi_weekly","monthly","learned","graduated"];
+    const MAST_TIER_INT={daily:1,every_other_day:2,every_third_day:3,weekly:7,bi_weekly:14,monthly:28,learned:60,graduated:null};
+    let masteryData=${JSON.stringify({ lincoln: items, lincoln_custom_items: bank, lincoln_settings: settings, lincoln_sessions: o.sessions })};
+    let currData=${JSON.stringify({ subjects: { lincoln: { [SK]: { lessonSeq: seq, lessonIds: ids, doneImportedAt: "2026-09-13" } } }, done: { lincoln: { [SK]: doneRecs } } })};
+    function mastDrillSettings(){ return masteryData.lincoln_settings; }
+    function mastKnowledgeType(){ return "fact_association"; }   // vocab cards: no knowledge_type set`;
+  return new Function(stubs + "\n" + SESS_FNS + "\n" + (o.noGateFn ? "" : ELIGIBLE) + "\n" + MST_BLOCK + `;
+    return { pile:(sid)=>mstPile("lincoln",sid,100,null), sessions:()=>mstSessions("lincoln") };`)();
+}
+const SCIENCE = { science: { name: "Science", kind: "deck", decks: [DECK], newPerDay: 30, passes: 2, who: "solo" } };
+const newOf = (r) => r.newNames.filter(n => n.deck === DECK).map(n => n.name);
+{ const r = sessionWorld({ sessions: SCIENCE }).pile("science");
+  ok("Science session at Ch 1 (30/day) introduces exactly the 5 Ch 1 words", JSON.stringify(newOf(r)) === JSON.stringify(CH[1])); }
+{ const r = sessionWorld({ sessions: SCIENCE, minted: CH[1] }).pile("science");
+  ok("Ch 1 already in learning, still on Ch 1 → NOTHING new (does not run ahead)", newOf(r).length === 0); }
+{ const r = sessionWorld({ sessions: SCIENCE, minted: CH[1], doneIdx: doneThrough(1) }).pile("science");
+  ok("he starts Ch 2 → the WHOLE chapter (all 17) comes in one sitting", JSON.stringify(newOf(r)) === JSON.stringify(CH[2])); }
+{ const sess = { science: Object.assign({}, SCIENCE.science, { newPerDay: 10 }) };
+  const r = sessionWorld({ sessions: sess, minted: CH[1], doneIdx: doneThrough(1) }).pile("science");
+  ok("a lower per-day number is still honoured (10 of Ch 2's 17)", newOf(r).length === 10); }
+{ const DAILY = { dailystudy: { name: "Daily Study", kind: "all", newPerDay: 5 } };
+  const w = sessionWorld({ sessions: DAILY, minted: CH[1] });
+  ok("Daily Study catch-all owns the RS4K deck when no named session claims it",
+    (w.sessions().find(s => s.sid === "dailystudy").decks || []).includes(DECK));
+  ok("…and does NOT run ahead of the book either", newOf(w.pile("dailystudy")).length === 0); }
+{ const w = sessionWorld({ sessions: Object.assign({ dailystudy: { name: "Daily Study", kind: "all", newPerDay: 5 } }, SCIENCE) });
+  ok("a Science session CLAIMS the deck away from Daily Study",
+    !(w.sessions().find(s => s.sid === "dailystudy").decks || []).includes(DECK)); }
+{ const r = sessionWorld({ sessions: SCIENCE, minted: CH[1], noGateFn: true }).pile("science");
+  ok("engine without the gate helper falls back to the whole deck (old behaviour)", JSON.stringify(newOf(r).slice(0, 3)) === JSON.stringify(CH[2].slice(0, 3))); }
+
 console.log("# source guards");
 ok("mastPullItem (Mom's explicit tap) is NOT gated", !/mastBankEligible/.test(extract("function mastPullItem(")));
 ok("ladder helpers untouched: no gate reference in mastStampNextDue / pass 2",
