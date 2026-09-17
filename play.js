@@ -194,7 +194,7 @@ function plLogArr(id){const L=plLog[id];if(!L)return[];if(Array.isArray(L))retur
 function plInit(){if(plInited)return;plInited=true;
   if(typeof db!=="undefined"&&db&&db.ref){plFB=true;
     db.ref("play").on("value",function(s){var v=s.val()||{};
-      plState=v.checkouts||{};plLog=v.plLog||v.log||{};plStatus=v.status||{};plGuests=v.guests||{};plBinMeta=v.binMeta||{};plStations=v.stations||{};plUnlock=v.unlock||{};plFloor=v.floorplan||null;plTodos=v.todos||{};
+      plState=v.checkouts||{};plLog=v.plLog||v.log||{};plStatus=v.status||{};plGuests=v.guests||{};plBinMeta=v.binMeta||{};plStations=v.stations||{};plUnlock=v.unlock||{};plFloor=v.floorplan||null;plTodos=v.todos||{};plCatalogApply(v.catalog);
       if(!window._plPhotosSub){window._plPhotosSub=true;
         db.ref("playPhotos").on("value",function(ps){plPhotos=ps.val()||{};
           if(typeof tab!=="undefined"&&tab==="play")plRender();});}
@@ -812,6 +812,56 @@ function plLabPrint(){
   w.document.close();
 }
 
+// CATALOG_START — bins become DATA (2026-09-14, her "yes build it"). play/catalog/<id> holds the same record the
+// built-in table holds ({id,name,cat,loc,photo,pl-intents,ideas,actCat,actKey}) plus order, added, retired.
+// Until that node exists the built-in table IS the catalog (inert). When it exists it replaces the working list
+// IN PLACE — same array object, so all 27 readers of PL_CATALOG keep working — retired bins excluded. Seeded once
+// from the built-in table (byte-identical list); after that ➕ New bin / 🗑 retire write one record each.
+const PL_CATALOG_BUILTIN=PL_CATALOG.slice(); let plCatalogLive=false, plBinDraft=null;
+function plCatalogApply(v){
+  if(!v||typeof v!=="object")return;
+  const list=Object.keys(v).map(function(id){return Object.assign({},v[id],{id:id});}).filter(function(c){return c&&c.name&&!c.retired;})
+    .sort(function(a,b){return (+a.order||0)-(+b.order||0)||String(a.id).localeCompare(String(b.id));});
+  if(!list.length)return;
+  list.forEach(function(c){["pl-intents","ideas"].forEach(function(k){if(!Array.isArray(c[k]))c[k]=c[k]?Object.values(c[k]):[];});if(!c.photo)c.photo="";});
+  PL_CATALOG.length=0;list.forEach(function(c){PL_CATALOG.push(c);});plCatalogLive=true;
+}
+function plBinNewId(name){
+  const w=String(name||"").toUpperCase().replace(/[^A-Z0-9 ]/g," ").trim().split(/\s+/)[0]||"BIN";const pre=w.slice(0,4);
+  let n=1;const has=function(id){return PL_CATALOG.some(function(c){return c.id===id;});};while(has(pre+"-"+n))n++;return pre+"-"+n;
+}
+function plBinAddHtml(){
+  if(!plCatalogLive)return '<div style="padding:0 14px 8px;font-size:11px;color:var(--muted)">➕ New bin unlocks once the catalog is in the database (seeded once by Claude).</div>';
+  if(!plBinDraft)return '<div style="padding:0 14px 8px">'+plChip("➕ New bin",false,"#111827","plBinDraft={name:'',cat:'build',loc:''};plRender()")+'</div>';
+  const d=plBinDraft;const inp='style="font:inherit;font-size:12.5px;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;background:#fff"';
+  return '<div style="margin:0 14px 10px;padding:8px 10px;border:1.5px dashed #94a3b8;border-radius:10px;background:#f8fafc;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+
+    '<input value="'+String(d.name||"").replace(/"/g,"&quot;")+'" placeholder="Bin name" oninput="plBinDraft.name=this.value" '+inp.replace('style="','style="flex:1 1 160px;')+'>'+
+    '<select onchange="plBinDraft.cat=this.value" '+inp+'>'+Object.keys(PL_EMOJI).map(function(k){return '<option value="'+k+'"'+(k===d.cat?" selected":"")+'>'+PL_EMOJI[k]+' '+k+'</option>';}).join("")+'</select>'+
+    '<input value="'+String(d.loc||"").replace(/"/g,"&quot;")+'" placeholder="slot (F1, W2, MK-3) — or leave blank and ask 🧭" oninput="plBinDraft.loc=this.value" '+inp.replace('style="','style="flex:1 1 200px;')+'>'+
+    plChip("Save",true,"#111827","plBinAdd()")+plChip("Cancel",false,"#64748b","plBinDraft=null;plRender()")+
+    '<div style="flex-basis:100%;font-size:10.5px;color:var(--muted)">Then 📷 for its photo and 🧭 for where it should go. Ideas and activities can be added later.</div></div>';
+}
+function plBinAdd(){
+  if(!plBinDraft||!plMomAuthed()||!plCatalogLive)return;
+  const name=String(plBinDraft.name||"").replace(/\s+/g," ").trim();if(!name)return;
+  const loc=plBinDraft.loc?plLocKnown(plBinDraft.loc):"";if(plBinDraft.loc&&!loc){alert("That slot code isn't one the room knows — try F1, W2, MK-3, BG-L1, or leave it blank.");return;}
+  const cat=PL_EMOJI[plBinDraft.cat]?plBinDraft.cat:"build";
+  const id=plBinNewId(name), order=PL_CATALOG.reduce(function(m,c){return Math.max(m,+c.order||0);},0)+1;
+  const rec={id:id,name:name,cat:cat,loc:loc,photo:"","pl-intents":[],ideas:[],actCat:"",actKey:"",order:order,added:new Date().toISOString().slice(0,10)};
+  PL_CATALOG.push(rec);plBinDraft=null;
+  if(plFB)db.ref('play/catalog/'+id).set(rec);
+  plRender();
+}
+function plBinRetire(id){
+  if(!plMomAuthed()||!plCatalogLive)return;const c=PL_CATALOG.find(function(x){return x.id===id;});if(!c)return;
+  if(!confirm("Retire "+plBinName(c)+"? It leaves the lists; its history stays."))return;
+  const i=PL_CATALOG.indexOf(c);if(i>=0)PL_CATALOG.splice(i,1);
+  if(plFB)db.ref('play/catalog/'+id+'/retired').set(true);
+  plRender();
+}
+window.plBinAdd=plBinAdd;window.plBinRetire=plBinRetire;
+Object.defineProperty(window,"plBinDraft",{get:function(){return plBinDraft;},set:function(v){plBinDraft=v;}});
+// CATALOG_END
 // ROOMTODO_START — 🧹 Room to-dos (2026-09-14): play/todos/<id> = {text, area, done:ts|null, added} — the CHECKLIST.md
 // chores, seeded once; lives at the top of 👩 Mom ▸ 🧭 Room setup. ✓ = one leaf write of done; ➕ = one set.
 let plTodos={}, plTodoShowDone=false, plTodoDraft=null;
@@ -1014,7 +1064,7 @@ function plRoomHtml(){
       ["keep","watch","toss"].map(function(f){
         return plChip(f,mt.cull==f,{keep:"#166534",watch:"#b45309",toss:"#b5394a"}[f],
                       "plMetaSet('"+c.id+"','cull','"+f+"');plRender()");}).join("")+
-      plChip("\u{1F4CD}",false,"#fff","plMetaLoc('"+c.id+"')")+plChip("\u{1F9ED}",false,"#fff","plPlace('"+c.id+"')")+plChip("\u{1F4F7}",false,"#fff","plPhotoPick('"+c.id+"')")+plChip("\u270F\uFE0F",false,"#fff","plRoomRename('"+c.id+"')")+
+      plChip("\u{1F4CD}",false,"#fff","plMetaLoc('"+c.id+"')")+plChip("\u{1F9ED}",false,"#fff","plPlace('"+c.id+"')")+plChip("\u{1F4F7}",false,"#fff","plPhotoPick('"+c.id+"')")+plChip("\u270F\uFE0F",false,"#fff","plRoomRename('"+c.id+"')")+(plCatalogLive?plChip("\u{1F5D1}",false,"#fff","plBinRetire('"+c.id+"')"):"")+
       '</div>'+plPlanHtml(c.id)+'</div>';
   }).join("");
   const n=PL_CATALOG.length;
@@ -1025,6 +1075,7 @@ function plRoomHtml(){
     '<div style="font-size:11px;color:var(--muted);line-height:1.45">'+n+' bins \u00b7 <b>'+unset+
     '</b> still on inventory defaults \u00b7 <b>'+noKid+'</b> with nobody assigned.<br>'+
     'Tap a name to add or remove that kid. \u{1F4CD} moves a bin · \u{1F9ED} asks where it should go. Saves as you tap.</div></div>'+
+    plBinAddHtml()+
     plRoomCheckHtml()+
     plTodoHtml()+
     rows+'</div>';
