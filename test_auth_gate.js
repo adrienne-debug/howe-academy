@@ -91,6 +91,28 @@ const tick = () => new Promise(r => setTimeout(r, 5));
     ok("initializeApp guarded against the gate's earlier init", /if\(!\(firebase\.apps&&firebase\.apps\.length\)\) firebase\.initializeApp\(FB_CFG\);\s*\/\/ haAuthGate may already have/.test(src));
     ok("boot tail unchanged", /\ninitFb\(\); renderAll\(\);\n/.test(src));
     ok("no bare column-0 brace inside the block", !/\n\}\n(?!function|const|let|\/\/|$)/.test(block)); }
+
+  // ── Where the sign-in is KEPT (2026-09-17) ──────────────────────────────────
+  // The auth SDK stores the session in IndexedDB when window.indexedDB exists, else in
+  // localStorage. webOS (the LG) and iOS (a home-screen web app) both keep IndexedDB alive at
+  // RUNTIME — so the SDK's write-read probe passes — but empty it between launches, while
+  // localStorage survives. Both devices therefore asked for the password after every full close
+  // and never on a refresh. This was once gated on a webOS-only user-agent sniff, which missed
+  // iOS entirely; a sniff can only ever guess which devices have durable IndexedDB, so the hide
+  // is now unconditional. Nothing else in the app touches IndexedDB (only the auth SDK does).
+  console.log("\n# the sign-in is kept in localStorage, on every device");
+  { const gate = src.slice(src.indexOf("function haAuthGate()"), src.indexOf("function haAuthProbe()"));
+    const hide = /Object\.defineProperty\(window,"indexedDB",\{value:undefined,configurable:true\}\)/;
+    ok("IndexedDB is hidden from the auth SDK", hide.test(gate));
+    ok("…unconditionally — no user-agent sniff gating it",
+       !/(if\s*\(|&&|\|\|)[^\n]*navigator\.userAgent[^\n]*\n?\s*Object\.defineProperty\(window,"indexedDB"/.test(gate)
+       && !/Web0S|SmartTV|NetCast/.test(gate), gate.match(/.*userAgent.*/)||null);
+    const iHide = gate.search(hide), iAuth = gate.indexOf("firebase.auth");
+    ok("…and it runs BEFORE firebase.auth is first touched", iHide >= 0 && iAuth >= 0 && iHide < iAuth, {iHide, iAuth});
+    ok("the hide is wrapped so a locked-down window can't break boot",
+       /try\{\s*Object\.defineProperty\(window,"indexedDB"[\s\S]{0,80}?\}catch/.test(gate));
+    // The webOS POLLING TRANSPORT is a different concern and is still correctly UA-gated.
+    ok("the webOS polling-transport sniff is left alone", /Web0S\|SmartTV\|NetCast/.test(src) && /ha_lp/.test(src)); }
   console.log("\n" + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);
 })();

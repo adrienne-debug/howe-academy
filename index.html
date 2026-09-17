@@ -2747,14 +2747,21 @@ let _haAuthOk=false, _haAuthUser=null, _haAuthProbe=null, _haAuthStarted=false;
 function haAuthGate(){
   if(_haAuthStarted) return;   // one gate per page load, however many times boot asks
   _haAuthStarted=true;
-  // The LG StanbyME asked for the password on EVERY reload (2026-09-15). The auth SDK writes
-  // the session to IndexedDB whenever `window.indexedDB` exists, else to localStorage; webOS
-  // keeps IndexedDB alive at runtime (so the SDK's write-read probe passes) but empties it
-  // between launches, so the remembered sign-in was gone each boot while every localStorage
-  // value survived. Hide IndexedDB from the SDK on webOS only → the session lands in
-  // localStorage and sticks. Nothing in this app ever uses IndexedDB itself.
-  try{ if(/Web0S|SmartTV|NetCast/i.test(navigator.userAgent))
-         Object.defineProperty(window,"indexedDB",{value:undefined,configurable:true}); }catch(eIDB){}
+  // Keep the sign-in in localStorage, on EVERY device. The auth SDK writes the session to
+  // IndexedDB whenever `window.indexedDB` exists, else to localStorage — and several of these
+  // devices keep IndexedDB alive at RUNTIME (so the SDK's write-read probe passes) while
+  // emptying it between launches, so the remembered sign-in is gone each boot even though every
+  // localStorage value survives. webOS does this (the LG StanbyME, 2026-09-15) and so does iOS
+  // to a HOME-SCREEN web app (her iPhone, 2026-09-17). The tell for both: it asks only after a
+  // FULL CLOSE, never on a refresh.
+  // This used to be a webOS-only user-agent sniff, and it missed iOS. Sniffing is always a guess
+  // at which devices have durable IndexedDB, so stop guessing — the auth SDK is the ONLY thing
+  // in the app that touches IndexedDB at all (9 refs in vendor-firebase-auth-v8.js; app,
+  // database and storage: zero), so hiding it everywhere costs nothing, and localStorage is
+  // where this app already keeps everything else.
+  // ⚠ Shipping this asks every device to sign in ONE more time — the old IndexedDB session
+  // does not migrate. After that one sign-in it sticks.
+  try{ Object.defineProperty(window,"indexedDB",{value:undefined,configurable:true}); }catch(eIDB){}
   try{
     if(!(firebase.apps&&firebase.apps.length)) firebase.initializeApp(FB_CFG);
     if(!firebase.auth){ _haAuthOk=true; initFb(); renderAll(); return; }   // auth SDK missing → behave as before
