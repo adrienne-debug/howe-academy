@@ -2862,7 +2862,19 @@ function _haAuthDiagNow(){
   try{ n=localStorage.length; for(let i=0;i<n;i++){ const k=localStorage.key(i); if(k&&k.indexOf("firebase:authUser:")===0){ authKey=true; break; } } }catch(e){}
   let idb="?"; try{ idb=(typeof window.indexedDB==="undefined")?"hidden":"PRESENT"; }catch(e){ idb="err"; }
   let sa=false; try{ sa=!!(navigator.standalone||(window.matchMedia&&window.matchMedia("(display-mode: standalone)").matches)); }catch(e){}
+  // 2026-09-17 finding: on the iPhone 155 keys survive launches yet NOTHING new saves — not the
+  // session, not even the boot note above. Leading cause: localStorage is FULL (~5 MB per site on
+  // iOS), so every setItem throws QuotaExceededError silently. Measure it: total size, the biggest
+  // keys, and whether a 1 KB test write succeeds.
+  let bytes=-1, top=[], write="?";
+  try{ const sizes=[]; bytes=0;
+    for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); const v=localStorage.getItem(k)||"";
+      const b=(String(k).length+v.length)*2; bytes+=b; sizes.push([k,b]); }
+    sizes.sort((a,b)=>b[1]-a[1]); top=sizes.slice(0,10).map(x=>x[0].slice(0,40)+"="+Math.round(x[1]/1024)+"KB"); }catch(e){}
+  try{ localStorage.setItem("ha_authdiag_probe","x".repeat(1024)); localStorage.removeItem("ha_authdiag_probe"); write="ok"; }
+  catch(e){ write=String((e&&e.name)||"error")+":"+String((e&&e.message)||"").slice(0,60); }
   return {ts:new Date().toISOString(), idb:idb, authKey:authKey, lsKeys:n, standalone:sa,
+          lsKB:(bytes>=0?Math.round(bytes/1024):-1), write:write, top:top,
           build:(typeof CODE_VERSION!=="undefined"?CODE_VERSION:"?")};
 }
 function haAuthDiagBoot(){
