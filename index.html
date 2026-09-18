@@ -2765,7 +2765,15 @@ function haAuthGate(){
   // where this app already keeps everything else.
   // ⚠ Shipping this asks every device to sign in ONE more time — the old IndexedDB session
   // does not migrate. After that one sign-in it sticks.
-  try{ Object.defineProperty(window,"indexedDB",{value:undefined,configurable:true}); }catch(eIDB){}
+  // 2026-09-17, her iPhone: localStorage was FULL (5,313 KB against iOS's ~5 MB) — every write
+  // threw QuotaExceededError, so the session this fix moved INTO localStorage could not be saved
+  // at all and it asked on every reload (worse than before). Two guards:
+  //   1. clear stale week caches first (weeks before last week; never read again), and
+  //   2. only move the session out of IndexedDB if a test write to localStorage SUCCEEDS — a full
+  //      device keeps the old IndexedDB behaviour (survives a refresh) instead of losing it.
+  try{ _haPruned=haPruneWeekCaches(); }catch(ePr){}
+  _haLsOk=_haLsWritable();
+  if(_haLsOk){ try{ Object.defineProperty(window,"indexedDB",{value:undefined,configurable:true}); }catch(eIDB){} }
   try{ haAuthDiagBoot(); }catch(eAD){}   // diagnostic only (AUTHDIAG) — never blocks boot
   try{
     if(!(firebase.apps&&firebase.apps.length)) firebase.initializeApp(FB_CFG);
@@ -2844,6 +2852,32 @@ function haAuthWatch(){
   try{ document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="visible") check(); }); }catch(e){}
   try{ setInterval(check,300000); }catch(e){}
 }
+// LSPRUNE_START — keep localStorage from filling up (2026-09-17). Each device caches every week it
+// has ever shown under week<N>_tasks / _history / _checked / ... and nothing ever removed them; on
+// her iPhone that plus the mastery and archive mirrors reached 5,313 KB and every write failed.
+// Boot only reads the ACTIVE week's cache; the next-week peek reads week<N+1> (and falls back to
+// Firebase); last week's routine state comes from Firebase. So any week before last week is dead
+// weight. Only this family's keys are touched (the HA_LS prefix), never an ha_* key.
+var _haPruned=0, _haLsOk=null;
+function haPruneWeekCaches(){
+  const p=(window.HA_FAMILY&&window.HA_FAMILY.familyId&&window.HA_FAMILY.familyId!=="howe")?window.HA_FAMILY.familyId+":":"";
+  const cur=parseInt(String((typeof WK!=="undefined"&&WK)||"").replace(/\D/g,""),10);
+  if(!(cur>0)) return 0;
+  const dead=[];
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i); if(!k||k.indexOf(p)!==0) continue;
+    const m=/^week(\d+)_/.exec(k.slice(p.length));
+    if(m&&parseInt(m[1],10)<cur-1) dead.push(k);
+  }
+  dead.forEach(function(k){ try{ localStorage.removeItem(k); }catch(e){} });
+  return dead.length;
+}
+// Can this device actually save to localStorage right now? 8 KB is comfortably more than a session.
+function _haLsWritable(){
+  try{ const k="ha_ls_probe"; localStorage.setItem(k,"x".repeat(8192)); localStorage.removeItem(k); return true; }
+  catch(e){ return false; }
+}
+// LSPRUNE_END
 // AUTHDIAG_START — diagnostic only (2026-09-17). Her iPhone (a home-screen web app) still asks for
 // the password on every launch AFTER the always-localStorage fix, even after a full close and
 // reopen, while the Mac, the kiosk and the rest keep their sign-in. Three causes fit, each with a
@@ -2875,6 +2909,7 @@ function _haAuthDiagNow(){
   catch(e){ write=String((e&&e.name)||"error")+":"+String((e&&e.message)||"").slice(0,60); }
   return {ts:new Date().toISOString(), idb:idb, authKey:authKey, lsKeys:n, standalone:sa,
           lsKB:(bytes>=0?Math.round(bytes/1024):-1), write:write, top:top,
+          pruned:(typeof _haPruned!=="undefined"?_haPruned:"?"), lsOk:(typeof _haLsOk!=="undefined"?_haLsOk:"?"),
           build:(typeof CODE_VERSION!=="undefined"?CODE_VERSION:"?")};
 }
 function haAuthDiagBoot(){

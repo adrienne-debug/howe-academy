@@ -104,7 +104,7 @@ const tick = () => new Promise(r => setTimeout(r, 5));
   { const gate = src.slice(src.indexOf("function haAuthGate()"), src.indexOf("function haAuthProbe()"));
     const hide = /Object\.defineProperty\(window,"indexedDB",\{value:undefined,configurable:true\}\)/;
     ok("IndexedDB is hidden from the auth SDK", hide.test(gate));
-    ok("…unconditionally — no user-agent sniff gating it",
+    ok("…with no user-agent sniff gating it",
        !/(if\s*\(|&&|\|\|)[^\n]*navigator\.userAgent[^\n]*\n?\s*Object\.defineProperty\(window,"indexedDB"/.test(gate)
        && !/Web0S|SmartTV|NetCast/.test(gate), gate.match(/.*userAgent.*/)||null);
     const iHide = gate.search(hide), iAuth = gate.indexOf("firebase.auth");
@@ -113,6 +113,67 @@ const tick = () => new Promise(r => setTimeout(r, 5));
        /try\{\s*Object\.defineProperty\(window,"indexedDB"[\s\S]{0,80}?\}catch/.test(gate));
     // The webOS POLLING TRANSPORT is a different concern and is still correctly UA-gated.
     ok("the webOS polling-transport sniff is left alone", /Web0S\|SmartTV\|NetCast/.test(src) && /ha_lp/.test(src)); }
+
+  // ── A FULL localStorage (2026-09-17, her iPhone: 5,313 KB, every write threw) ──
+  console.log("\n# localStorage full: prune stale week caches, and only move the session if a save works");
+  { const PB = src.slice(src.indexOf("// LSPRUNE_START"), src.indexOf("// LSPRUNE_END"));
+    const vm2 = require("vm");
+    // A localStorage with iOS's ~5 MB cap: a write that would push it over throws QuotaExceededError.
+    function mkLS(init, capKB) {
+      const st = Object.assign({}, init);
+      const size = () => Object.keys(st).reduce((a, k) => a + (k.length + String(st[k]).length) * 2, 0);
+      return { st, size, get length() { return Object.keys(st).length; }, key: i => Object.keys(st)[i],
+        getItem: k => (k in st ? st[k] : null), removeItem: k => { delete st[k]; },
+        setItem: (k, v) => { const prev = k in st ? st[k] : undefined; st[k] = String(v);
+          if (size() > capKB * 1024) { if (prev === undefined) delete st[k]; else st[k] = prev;
+            const e = new Error("The quota has been exceeded."); e.name = "QuotaExceededError"; throw e; } } };
+    }
+    function env(ls, wk, fam) { const e = { localStorage: ls, WK: wk, window: { HA_FAMILY: fam ? { familyId: fam } : null }, String, parseInt };
+      vm2.createContext(e); vm2.runInContext(PB, e); return e; }
+    const KB = n => "x".repeat(Math.round(n * 1024 / 2));
+    {
+      const ls = mkLS({ week3_tasks: "a", week20_history: "b", week21_tasks: "c", week22_tasks: "d", week23_tasks: "e", week24_tasks: "f",
+                        ha_mastery: "g", ha_active_wk: "week23", "burris:week3_tasks": "h" }, 5120);
+      const e = env(ls, "week23");
+      const n = vm2.runInContext("haPruneWeekCaches()", e);
+      ok("weeks before LAST week are removed", !("week3_tasks" in ls.st) && !("week20_history" in ls.st) && !("week21_tasks" in ls.st), Object.keys(ls.st));
+      ok("last week, this week and next week are KEPT", "week22_tasks" in ls.st && "week23_tasks" in ls.st && "week24_tasks" in ls.st);
+      ok("ha_* keys are never touched", "ha_mastery" in ls.st && "ha_active_wk" in ls.st);
+      ok("another family's keys are never touched", "burris:week3_tasks" in ls.st);
+      ok("reports how many it removed", n === 3, n);
+    }
+    {
+      const ls = mkLS({ "burris:week3_tasks": "a", "burris:week23_tasks": "b", week3_tasks: "c" }, 5120);
+      const e = env(ls, "week23", "burris"); vm2.runInContext("haPruneWeekCaches()", e);
+      ok("a beta family prunes only its OWN prefixed keys", !("burris:week3_tasks" in ls.st) && "burris:week23_tasks" in ls.st && "week3_tasks" in ls.st, Object.keys(ls.st));
+    }
+    {
+      const ls = mkLS({ week3_tasks: "a" }, 5120);
+      const e = env(ls, ""); vm2.runInContext("haPruneWeekCaches()", e);
+      ok("an unknown active week prunes nothing", "week3_tasks" in ls.st);
+    }
+    // The iPhone's real shape (its ten biggest keys as reported), model filler for the rest.
+    {
+      const init = { ha_mastery: KB(2392), ha_archive: KB(1168), week5_history: KB(197), week4_tasks: KB(98), week5_tasks: KB(91),
+        week4_history: KB(87), week3_history: KB(85), week12_tasks: KB(83), week6_history: KB(79), week11_tasks: KB(73) };
+      for (let w = 3; w <= 23; w++) ["_meta", "_checked", "_sl", "_claimed"].forEach(x => { if (!init["week" + w + x]) init["week" + w + x] = KB(6); });
+      for (let i = 0; i < 40; i++) init["ha_misc" + i] = KB(1);
+      const ls = mkLS(init, 999999); const before = ls.size() / 1024;
+      const cap = mkLS(init, before - 1);                         // ~full, as on the phone
+      const e = env(cap, "week23");
+      const okBefore = vm2.runInContext("_haLsWritable()", e);
+      vm2.runInContext("haPruneWeekCaches()", e);
+      const okAfter = vm2.runInContext("_haLsWritable()", e);
+      console.log("      model: " + Math.round(before) + " KB before, " + Math.round(cap.size() / 1024) + " KB after prune");
+      ok("on a full store the test save FAILS before pruning", okBefore === false);
+      ok("…and SUCCEEDS after pruning stale weeks", okAfter === true);
+      ok("the mastery and archive mirrors are left in place", "ha_mastery" in cap.st && "ha_archive" in cap.st);
+    }
+    const gate = src.slice(src.indexOf("function haAuthGate()"), src.indexOf("function haAuthProbe()"));
+    ok("the gate prunes BEFORE it tests the store", gate.indexOf("haPruneWeekCaches()") >= 0 && gate.indexOf("haPruneWeekCaches()") < gate.indexOf("_haLsWritable()"));
+    ok("IndexedDB is hidden ONLY when a test save succeeds", /if\(_haLsOk\)\{\s*try\{\s*Object\.defineProperty\(window,"indexedDB"/.test(gate));
+    ok("both run before firebase.auth is first touched", gate.indexOf("_haLsWritable()") < gate.indexOf("firebase.auth"));
+    ok("the pruner and the probe are try-wrapped so boot can never break", /try\{\s*_haPruned=haPruneWeekCaches\(\);\s*\}catch/.test(gate) && /catch\(e\)\{\s*return false;\s*\}/.test(PB)); }
   console.log("\n" + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);
 })();
