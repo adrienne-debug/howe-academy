@@ -2547,6 +2547,10 @@ function safeWriteTasks(reason){
     dbg("BLOCKED task write ("+reason+"): only "+count+" tasks vs high-water "+fbTasksHighWater);
     return;
   }
+  // Her rule (2026-09-17): the scheduler owns how many sittings and when; the PLAN owns which
+  // lesson goes in them, in order. Normalize before the write so a card can never carry a stale
+  // lesson — whatever laid it. Idempotent, and only unlocked plan-backed cards can move.
+  try{ if(typeof seqFillNormalize==="function") seqFillNormalize(weekData.tasks,reason); }catch(eSF){ dbg("seqfill skip: "+eSF); }
   const obj={};
   weekData.tasks.forEach(t=>obj[t.id]=t);
   lastTasksWrite=Date.now();
@@ -46917,6 +46921,140 @@ function gwStampLids(allTasks,served){
   return n;
 }
 // LID_STAMP_END
+// SEQFILL_START — her design (2026-09-17): "everything should get a how many of each subject
+// and then when relay is done the assignments are assigned from grid in order."
+//
+// A card today STORES its lesson, so that lesson goes stale the moment anything moves it. The
+// cascade carries a card forward with its old stamp; a rebuild serves the RIGHT lesson into a
+// new card beside it; nothing reconciles the pair. That is how Lucy's Friday came to hold
+// Ch4-1 AND Ch4-3 with Ch4-2 skipped. It is the same root as the title-sort (2026-08-20) and
+// lid-sort (2026-08-29) bugs: something that merely CORRELATES with position was trusted as
+// position. Here it is the card itself.
+//
+// This pass treats a card as a SLOT. The scheduler keeps what it owns — how many sittings a
+// subject gets, and which day/time each one sits at. The plan owns which lesson goes in them:
+// the list, minus done, minus whatever locked cards already hold, IN ORDER. A slot then cannot
+// hold a stale lesson, two cards cannot disagree, and no gap can open between them.
+//
+// LOCKED cards are fixed points, never touched: checked, claimed, or started — the same
+// definition _gwWeekConsumed uses, passed in as isLocked so this stays pure and testable.
+// Everything else is a slot. Slots are filled in the order the kid meets them, which is why an
+// _eowOverflow card sorts LAST rather than on the day it is parked on (it is the unscheduled
+// tail, not a sitting) — the same rule cascadeIntraWeek's byLesson pass uses.
+//
+// Writes nothing. Returns the plan: what each slot should carry, which slots have no lesson
+// left, and whether the result actually reads in order.
+function seqFillSlots(input){
+  input=input||{};
+  const kid=input.kid, sk=input.sk, planId=input.planId||"";
+  const ids=input.lessonIds||[], seq=input.lessonSeq||[], done=input.done||new Set();
+  const isLocked=input.isLocked||function(){ return false; };
+  const DAYS=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
+  const toMin=input.toMin||function(x){ const m=/^(\d+):(\d+)\s*(AM|PM)/i.exec(x||""); if(!m) return 9999;
+    let h=+m[1]%12; if(/pm/i.test(m[3])) h+=12; return h*60+ +m[2]; };
+  const ord=function(t){ return t._eowOverflow?99:DAYS.indexOf(t.day); };
+  const cards=(input.cards||[]).slice().sort(function(a,b){ return (ord(a)-ord(b))||(toMin(a.time)-toMin(b.time)); });
+
+  const locked=[], slots=[];
+  cards.forEach(function(t){ (isLocked(t)?locked:slots).push(t); });
+
+  // Lessons already spoken for by a locked card never get handed to a slot as well.
+  const spoken={}; locked.forEach(function(t){ if(t.lid) spoken[t.lid]=1; });
+  const avail=[];
+  for(let i=0;i<ids.length;i++){
+    const lid=ids[i];
+    if(done.has&&done.has(lid)) continue;
+    if(spoken[lid]) continue;
+    avail.push({lid:lid,text:String(seq[i]==null?"":seq[i]),i:i});
+  }
+
+  const assign=[], drop=[];
+  for(let k=0;k<slots.length;k++){
+    const t=slots[k], want=avail[k];
+    if(!want){ drop.push({id:t.id,lid:t.lid||null,text:t.title||"",day:t.day,time:t.time}); continue; }
+    const newId=(planId&&kid)?(kid+"_"+planId+"_"+want.lid):t.id;
+    assign.push({oldId:t.id,newId:newId,lid:want.lid,text:want.text,day:t.day,time:t.time,
+                 from:t.lid||null,changed:(t.lid!==want.lid)});
+  }
+
+  // Does the week actually read in order once filled? A locked card holding a lesson later than
+  // the ones still open can make it not — we cannot move a started card, so REPORT it rather
+  // than silently laying a bad sequence.
+  const idx={}; ids.forEach(function(l,i){ idx[l]=i; });
+  const final=locked.map(function(t){ return {t:t,i:(t.lid!=null&&idx[t.lid]!==undefined)?idx[t.lid]:-1}; })
+    .concat(assign.map(function(a){ return {t:a,i:idx[a.lid]}; }))
+    .sort(function(a,b){ return (ord(a.t)-ord(b.t))||(toMin(a.t.time)-toMin(b.t.time)); });
+  const violations=[];
+  for(let k=1;k<final.length;k++){
+    if(final[k].i>=0&&final[k-1].i>=0&&final[k].i<final[k-1].i)
+      violations.push({after:final[k-1].t.lid||final[k-1].t.id,before:final[k].t.lid||final[k].t.id});
+  }
+  return {assign:assign,drop:drop,locked:locked.length,slots:slots.length,
+          ascending:violations.length===0,violations:violations,
+          changed:assign.some(function(a){ return a.changed; })||drop.length>0};
+}
+
+// SEQFILL_NORM — apply the slot rule to the whole week, at the ONE place the week's cards are
+// written (safeWriteTasks). Every lay path — the overnight cascade, a regen commit, a re-lay —
+// funnels through that writer, so normalizing there covers all of them with one call site
+// instead of three hooks that could each drift. The writer uses .set() on the whole tasks node,
+// so a slot changing lesson (and therefore id) needs no path surgery: the old key simply is not
+// in the object any more. No targeted update, no Firebase prefix trap.
+//
+// Only UNLOCKED, plan-backed cards are touched. Locked = checked, claimed, or started (a past
+// day, or today at/before now) — the definition _gwWeekConsumed uses. Idempotent: once a
+// subject's slots read in order this is a no-op, so it can run on every write.
+function _seqFillTitle(title,text){
+  const t=String(title==null?"":title); const i=t.lastIndexOf(" — ");
+  return i>=0 ? t.slice(0,i+3)+text : (t?t+" — "+text:text);
+}
+function seqFillNormalize(tasks,reason){
+  if(!Array.isArray(tasks)||!tasks.length) return {changed:0,notes:[]};
+  if(typeof planBacked!=="function"||typeof lidsFor!=="function"||typeof lidDoneSet!=="function") return {changed:0,notes:[]};
+  const DAYS=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
+  const _now=new Date(), nowMin=_now.getHours()*60+_now.getMinutes();
+  const todayISO=(typeof _todayStr==="function")?_todayStr():null;
+  const isoOf=t=>{ try{ const ds=(typeof DAY_DT==="object"&&DAY_DT)?DAY_DT[t.day]:null; if(!ds) return null;
+    const d=new Date(ds+", "+_now.getFullYear()); if(isNaN(d.getTime())) return null;
+    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }catch(e){ return null; } };
+  const locked=t=>{
+    if(checked&&checked[t.id]) return true;
+    if(typeof claimed!=="undefined"&&claimed&&claimed[t.id]) return true;
+    const iso=isoOf(t); if(!iso||!todayISO) return true;          // unknown date -> treat as fixed, never move it
+    if(iso<todayISO) return true;
+    if(iso===todayISO) return ((typeof toMin==="function")?toMin(t.time):0)<=nowMin;
+    return false;
+  };
+  const groups={}; const live=new Set();
+  tasks.forEach(t=>{ if(t&&t.id) live.add(t.id);
+    if(!t||!t.lid||!t.who||!t.subjectKey||String(t.id||"").endsWith("_c")) return;
+    let pb=false; try{ pb=!!planBacked(t.who,t.subjectKey); }catch(e){}
+    if(pb) (groups[t.who+"|"+t.subjectKey]=groups[t.who+"|"+t.subjectKey]||[]).push(t); });
+  let changed=0; const notes=[];
+  Object.keys(groups).forEach(key=>{
+    const kid=key.split("|")[0], sk=key.split("|")[1];
+    let ids=null,doneSet=null,subj=null;
+    try{ ids=lidsFor(kid,sk); doneSet=lidDoneSet(kid,sk); subj=(((currData||{}).subjects||{})[kid]||{})[sk]; }catch(e){ return; }
+    if(!ids||!ids.length||!doneSet||!subj) return;
+    const res=seqFillSlots({kid:kid,sk:sk,planId:subj.planId||"",lessonIds:ids,lessonSeq:subj.lessonSeq||[],
+      done:doneSet,cards:groups[key],isLocked:locked,toMin:(typeof toMin==="function")?toMin:null});
+    if(!res||!res.changed) return;
+    const byId={}; groups[key].forEach(t=>{ byId[t.id]=t; });
+    res.assign.forEach(a=>{
+      if(!a.changed) return;
+      const t=byId[a.oldId]; if(!t) return;
+      t.lid=a.lid; t.title=_seqFillTitle(t.title,a.text);
+      if(a.newId&&a.newId!==t.id&&!live.has(a.newId)){ live.delete(t.id); live.add(a.newId); t.id=a.newId; }
+      changed++;
+    });
+    if(res.assign.some(a=>a.changed))
+      notes.push(key+": "+res.assign.filter(a=>a.changed).map(a=>(a.from||"?")+"→"+a.lid).join(" "));
+    if(!res.ascending) notes.push(key+" ⚠ locked card out of sequence");
+  });
+  if(changed&&typeof dbg==="function") dbg("seqfill ("+(reason||"?")+"): re-stamped "+changed+" slot"+(changed!==1?"s":"")+" — "+notes.join(" | "));
+  return {changed:changed,notes:notes};
+}
+// SEQFILL_END
 // LID_ID_START — Stage 3c: deterministic ids for plan-backed cards.
 // A plan-backed subject's card is its lesson: id = <kid>_<planId>_<lid> — no date, no
 // counter — so re-generating the week (any day, any reshape) mints the SAME id for the
