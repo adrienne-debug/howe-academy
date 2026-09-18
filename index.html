@@ -36404,11 +36404,23 @@ function mstCardMode(card){
   const m=(card&&card.mode)||"rec"; if(m==="rec") return m;
   try{ const def=mastGetDef(masteryKid,card.name||"")||mstItemAnswer(card.id); return def?m:"rec"; }catch(e){ return "rec"; }
 }
+// Language-arts RULE cards (Capitalization, Punctuation, Articles, Grammar, and every recite card
+// whose answer is a rule — Nouns, Plurals, Verb Tenses, Subject-Verb, Spelling Rules): the same set
+// the drill treats as rule cards. Their prompts carry markup (<u> target word, .mast-hl marks).
+function mstIsRuleCard(card){
+  if(!card) return false;
+  const d=card.deck||"";
+  if(d==="Capitalization"||d==="Punctuation"||d==="Articles"||d==="Grammar") return true;
+  try{ let items=masteryData[masteryKid]; if(!Array.isArray(items)) items=Object.values(items||{});
+    const it=items.find(i=>i&&(card.id?i.id===card.id:(i.prompt===card.name&&i.subject===d)));
+    return !!(it&&it.review_mode==="recite"&&it.answer&&it.answer!==it.prompt); }catch(e){ return false; }
+}
 function mstIsSpellCard(card){ return !!(card&&card.deck&&mastGetCatMode(masteryKid,card.deck)==="spell"); }
 function mstAutoPlayCurrent(session){
   if(!session||session.audio==="off"||!mstState) return;
   try{ const card=mstCurrent(mstState);
-    if(mstIsSpellCard(card)){ if(card.name) mastSpeak(card.name); return; }   // 🔊 Spell: say the word itself (TTS — recordings are definitions)
+    if(mstIsSpellCard(card)){ if(card.name) mastSpeak(card.name); return; }
+    if(mstIsRuleCard(card)) return;   // language-arts rule cards: no sound   // 🔊 Spell: say the word itself (TTS — recordings are definitions)
     if(card&&mstCardMode(card)!=="rec") return;   // playing the German first would give away a say/type answer
     if(card&&card.name){ if(mastGetDefAudio(masteryKid,card.name)) mastPlayDefAudio(card.name); else mastSpeak(card.name); }
   }catch(e){}
@@ -36426,6 +36438,23 @@ function mstCardHtml(session,card){
   const def=mastGetDef(masteryKid,name)||mstItemAnswer(card.id);
   const mode=mstCardMode(card);
   const _lrn=(card.kind==="new"||card.kind==="learning")?' <span style="font-size:9px;color:#9a3412;font-weight:600">\u{2B50} Learning</span>':"";
+  if(mstIsRuleCard(card)){
+    // Language-arts rule card, drawn like the drill's: the sentence with its underline/highlight
+    // markup rendered (NOT escaped — escaping showed literal "<u>E.T.</u>"), the "why" question on
+    // the front, the rule on the back. No speaker.
+    const d=card.deck||"";
+    const q=d==="Capitalization"?"Why is this capitalized?":d==="Punctuation"?"Why is this punctuation used?":d==="Articles"?"Why this article?":"";
+    const _pl=name.replace(/<[^>]*>/g,"").length, _fs=_pl<=14?40:_pl<=40?28:22;
+    const _sent='<div class="mast-slide-img"><span style="font-size:'+_fs+'px;font-weight:800;color:#c2410c;word-break:break-word;max-width:100%;line-height:1.3">'+name+'</span></div>';
+    let r='<div class="mast-slide"><div class="mast-flip-wrap'+(mstFlipped?" flipped":"")+'" onclick="mstFlip()"><div class="mast-flip-inner">';
+    r+='<div class="mast-flip-front"><div class="mast-slide-cat">'+mstEsc(d||session.name||"")+_lrn+'</div>'+_sent;
+    if(q) r+='<div style="font-size:14px;color:#7c3aed;font-weight:700;margin-bottom:2px">'+q+'</div>';
+    r+='<div class="mast-flip-hint">\u{1F4A1} tap to see the rule</div></div>';
+    r+='<div class="mast-flip-back"><div class="mast-slide-cat">'+mstEsc(d||session.name||"")+'</div>'+_sent;
+    r+='<div class="mast-flip-def">'+(def||'<span style="color:#a78bfa;font-size:16px">no rule yet</span>')+'</div>';
+    r+='<div class="mast-flip-hint">\u{1F4A1} tap to flip back</div></div>';
+    return r+'</div></div></div>';
+  }
   if(mstIsSpellCard(card)){
     // 🔊 Spell deck: hear it, spell it out loud, flip to check — the word only on the back.
     const _say=(big)=>'<button onclick="event.stopPropagation();mastSpeak(\''+mstEscJs(name)+'\')" style="'+(big?'margin:18px 0 6px;padding:18px 34px;border:2.5px solid #4f46e5;font-size:30px':'margin-top:10px;padding:8px 18px;border:2px solid #4f46e5;font-size:15px')+';border-radius:999px;background:#eef2ff;color:#4f46e5;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;position:relative;z-index:3">\u{1F50A} Hear it</button>';
