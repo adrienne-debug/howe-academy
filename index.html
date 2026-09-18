@@ -47014,8 +47014,20 @@ function seqFillNormalize(tasks,reason){
   const DAYS=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
   const _now=new Date(), nowMin=_now.getHours()*60+_now.getMinutes();
   const todayISO=(typeof _todayStr==="function")?_todayStr():null;
-  const isoOf=t=>{ try{ const ds=(typeof DAY_DT==="object"&&DAY_DT)?DAY_DT[t.day]:null; if(!ds) return null;
-    const d=new Date(ds+", "+_now.getFullYear()); if(isNaN(d.getTime())) return null;
+  // A card's real date. The week's date map (DAY_DT, from meta.dates) holds only the days the
+  // week was BUILT with — week23 has Mon–Fri and no Saturday, yet 9 cards sat on Saturday
+  // (2026-09-17). An undated card counted as locked, so every Saturday slot was skipped and two
+  // gaps survived the pass. A missing day is derived from any dated day in the same week by its
+  // weekday offset (Saturday = Friday + 1). Only if NO day in the map can be read is the date
+  // unknown — and then the card stays fixed.
+  const _mkD=ds=>{ const d=new Date(ds+", "+_now.getFullYear()); return isNaN(d.getTime())?null:d; };
+  const isoOf=t=>{ try{
+    const dt=(typeof DAY_DT==="object"&&DAY_DT)?DAY_DT:{};
+    let d=dt[t.day]?_mkD(dt[t.day]):null;
+    if(!d){ const ti=DAYS.indexOf(t.day); if(ti<0) return null;
+      for(const k of Object.keys(dt)){ const ki=DAYS.indexOf(k); const b=ki>=0?_mkD(dt[k]):null;
+        if(b){ d=new Date(b.getTime()); d.setDate(d.getDate()+(ti-ki)); break; } } }
+    if(!d) return null;
     return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }catch(e){ return null; } };
   const locked=t=>{
     if(checked&&checked[t.id]) return true;

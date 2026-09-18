@@ -170,6 +170,30 @@ const TT = (id, day, time, lid) => ({ id, who: "lucy", subjectKey: "dm", day, ti
   e.__t = tasks; vm.runInContext("seqFillNormalize(__t,'test')", e);
   ok("ids stay unique when a target id is already taken", new Set(tasks.map(t => t.id)).size === tasks.length, tasks.map(t => t.id));
 }
+console.log("\n── a day missing from the week's date map (2026-09-17: no Saturday in meta.dates) ──");
+{
+  // the LIVE shape: Mon–Fri dated, Saturday absent, yet cards sit on Saturday
+  const e = mkNorm();
+  e.DAY_DT = { monday: "September 14", thursday: "September 17", friday: "September 18" };
+  const tasks = [TT("lucy_lucy__dm_L0060", "friday", "10:05 AM", "L0060"), TT("lucy_lucy__dm_L0062", "saturday", "10:00 AM", "L0062")];
+  e.__t = tasks; vm.runInContext("seqFillNormalize(__t,'test')", e);
+  ok("a Saturday card is dated from Friday + 1 and filled in order", tasks[1].lid === "L0061", tasks[1]);
+}
+{
+  const e = mkNorm();
+  e.DAY_DT = {};                                                       // nothing datable at all
+  const tasks = [TT("lucy_lucy__dm_L0062", "saturday", "10:00 AM", "L0062")];
+  e.__t = tasks; vm.runInContext("seqFillNormalize(__t,'test')", e);
+  ok("…but with NO dated day in the map, an undated card stays fixed", tasks[0].lid === "L0062");
+}
+{
+  const e = mkNorm();
+  e.DAY_DT = { monday: "September 14", friday: "September 18" };
+  const tasks = [TT("lucy_lucy__dm_L0062", "thursday", "10:00 AM", "L0062")];  // Thursday derived = the 17th = past on Friday
+  e.__t = tasks; vm.runInContext("seqFillNormalize(__t,'test')", e);
+  ok("a derived PAST day is still locked (derivation never unlocks a started card)", tasks[0].lid === "L0062");
+}
+
 console.log("\n── wiring ──");
 {
   const w = src.slice(src.indexOf("function safeWriteTasks("), src.indexOf("function dbg("));
