@@ -2766,6 +2766,7 @@ function haAuthGate(){
   // ⚠ Shipping this asks every device to sign in ONE more time — the old IndexedDB session
   // does not migrate. After that one sign-in it sticks.
   try{ Object.defineProperty(window,"indexedDB",{value:undefined,configurable:true}); }catch(eIDB){}
+  try{ haAuthDiagBoot(); }catch(eAD){}   // diagnostic only (AUTHDIAG) — never blocks boot
   try{
     if(!(firebase.apps&&firebase.apps.length)) firebase.initializeApp(FB_CFG);
     if(!firebase.auth){ _haAuthOk=true; initFb(); renderAll(); return; }   // auth SDK missing → behave as before
@@ -2814,8 +2815,9 @@ function haAuthSubmit(ev){
   haAuthShow("");
   firebase.auth().signInWithEmailAndPassword(String(e).trim(),p).then(function(cred){
     _haAuthProbe=null; _haAuthUser=cred&&cred.user||null; _haAuthOk=true; haAuthHide();
-    if(db){ location.reload(); return; }   // mid-session: listeners were cut when the rules locked → clean re-attach
+    if(db){ try{ haAuthDiagReport("after sign-in, reloading"); }catch(eAD){} location.reload(); return; }   // mid-session: listeners were cut when the rules locked → clean re-attach
     initFb(); renderAll();
+    setTimeout(function(){ try{ haAuthDiagReport("after sign-in"); }catch(eAD){} },2500);
   }).catch(function(err){
     if(b){ b.disabled=false; b.textContent="Sign in"; }
     const code=String(err&&err.code||"");
@@ -2842,6 +2844,38 @@ function haAuthWatch(){
   try{ document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="visible") check(); }); }catch(e){}
   try{ setInterval(check,300000); }catch(e){}
 }
+// AUTHDIAG_START — diagnostic only (2026-09-17). Her iPhone (a home-screen web app) still asks for
+// the password on every launch AFTER the always-localStorage fix, even after a full close and
+// reopen, while the Mac, the kiosk and the rest keep their sign-in. Three causes fit, each with a
+// different fix: (1) the IndexedDB hide fails on iOS, so the SDK keeps writing to IndexedDB, which
+// iOS empties between launches; (2) the device runs old code; (3) iOS clears localStorage itself
+// for that app, so no storage choice can help. A boot cannot log — the database refuses every
+// write until sign-in — so each boot leaves a note in localStorage, and the first log after a
+// sign-in reports this boot's note, the previous boot's note, and the state right now.
+//   now.idb "PRESENT" after the hide           -> (1) the hide failed on this browser
+//   now.authKey false right after sign-in      -> the SDK did not save the session to localStorage
+//   boot.authKey false but prevBoot exists     -> localStorage survived, the session key did not
+//   prevBoot missing on the SECOND sign-in     -> (3) localStorage itself was wiped
+// Changes nothing about sign-in. Remove once the cause is known.
+function _haAuthDiagNow(){
+  let authKey=false, n=-1;
+  try{ n=localStorage.length; for(let i=0;i<n;i++){ const k=localStorage.key(i); if(k&&k.indexOf("firebase:authUser:")===0){ authKey=true; break; } } }catch(e){}
+  let idb="?"; try{ idb=(typeof window.indexedDB==="undefined")?"hidden":"PRESENT"; }catch(e){ idb="err"; }
+  let sa=false; try{ sa=!!(navigator.standalone||(window.matchMedia&&window.matchMedia("(display-mode: standalone)").matches)); }catch(e){}
+  return {ts:new Date().toISOString(), idb:idb, authKey:authKey, lsKeys:n, standalone:sa,
+          build:(typeof CODE_VERSION!=="undefined"?CODE_VERSION:"?")};
+}
+function haAuthDiagBoot(){
+  try{ const prev=localStorage.getItem("ha_authdiag_boot"); if(prev) localStorage.setItem("ha_authdiag_prev",prev); }catch(e){}
+  try{ localStorage.setItem("ha_authdiag_boot",JSON.stringify(_haAuthDiagNow())); }catch(e){}
+}
+function haAuthDiagReport(when){
+  let boot=null, prev=null;
+  try{ boot=JSON.parse(localStorage.getItem("ha_authdiag_boot")||"null"); prev=JSON.parse(localStorage.getItem("ha_authdiag_prev")||"null"); }catch(e){}
+  dbg("authdiag ("+when+") ua="+String(navigator.userAgent||"").slice(0,160)+
+      " | now="+JSON.stringify(_haAuthDiagNow())+" | boot="+JSON.stringify(boot)+" | prevBoot="+JSON.stringify(prev));
+}
+// AUTHDIAG_END
 // From an Admin console: haSignOut() forgets this device's session and reloads (it will ask again).
 function haSignOut(){ try{ firebase.auth().signOut().then(function(){ location.reload(); }); }catch(e){ location.reload(); } }
 // AUTH_GATE_END
