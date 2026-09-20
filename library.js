@@ -225,7 +225,7 @@ function lbPhotosHtml(b){
   return '<div class="lb-sec"><h4>Photos <span style="font-weight:600;color:var(--muted)">('+P.length+')</span></h4>'+
     (P.length?'<div class="lb-strip">'+P.map((p,n)=>'<button class="lb-ph" onclick="lbPhotoView(\''+esc(b.id)+'\','+n+')" title="'+p.kind+'"><img src="'+p.src+'" alt=""><span>'+(p.kind==="cover"?"cover":p.kind==="toc"?"contents":"extra")+'</span></button>').join("")+'</div>'
       :'<p style="color:var(--muted)">'+(pend?"No photos in the app for this book yet.":"Loading…")+'</p>')+
-    '<div class="lb-scan"><label class="lb-scanbtn">📷 Add photo<input type="file" accept="image/*" multiple style="display:none" onchange="lbPhotoAdd(\''+esc(b.id)+'\',this)"></label>'+
+    '<div class="lb-scan">'+lbScanSavedBtn(b)+'<label class="lb-scanbtn">📷 Add photo<input type="file" accept="image/*" multiple style="display:none" onchange="lbPhotoAdd(\''+esc(b.id)+'\',this)"></label>'+
     '<select class="lb-sel" id="lb-phkind" style="flex:0 0 auto;min-width:0"><option value="toc">contents page</option><option value="extra">other page</option><option value="cover">cover</option></select></div></div>';
 }
 function lbPhotoView(id,n){const P=lbPhotoList(id);if(!P[n])return;lbView={id,n};lbOpen(id);}
@@ -579,7 +579,7 @@ function lbAddHtml(b){
     ?'Fills in <b>'+L.length+' lessons</b> from the table of contents · suggests <b>'+lbTpw(L.length)+'×/week</b> (≈'+Math.ceil(L.length/lbTpw(L.length))+' weeks). You check it and press <b>Add Subject</b>; then set the pacing.'
     :'No usable lesson list yet — it opens with numbered lessons you can change. You check it and press <b>Add Subject</b>.';
   const sc=lbScans[b.id], msg=lbScanMsg[b.id]||"";
-  const scan='<div class="lb-scan"><label class="lb-scanbtn">📸 '+(sc?"Re-scan":"Scan")+' the table of contents'+
+  const scan='<div class="lb-scan">'+lbScanSavedBtn(b)+'<label class="lb-scanbtn">📸 '+(sc?"Re-scan":"Scan")+' the table of contents'+
       '<input type="file" accept="image/*" multiple style="display:none" onchange="lbScan(\''+esc(b.id)+'\',this)"></label>'+
     '<span class="lb-scanmsg">'+(msg?esc(msg):(sc?'✓ Scanned '+new Date(sc.at).toLocaleDateString()+' · '+sc.lessons.length+' lessons — used below':
       (L.length>=3?'Optional — photos of the contents pages give a better lesson list':'Photograph the contents pages (up to 8) to build the lesson list')))+'</span></div>';
@@ -632,6 +632,28 @@ async function lbScan(id,input){
   try{
     say("Reading "+files.length+" photo"+(files.length!==1?"s":"")+"…");
     const imgs=await Promise.all(files.slice(0,8).map(_cbShrinkImage));
+    await lbScanRead(id,imgs,say);
+  }catch(e){say("❌ "+(e.message||"scan failed"));console.error("[HA] library scan",e);}
+}
+// 📸 Same scan, from the contents photos already saved with 📷 Add photo (library/photos/<id>/toc).
+async function lbScanSaved(id){
+  const b=(lbBooks||[]).find(x=>x.id===id); if(!b)return;
+  if(!lbMomOk()){lbPin(()=>lbScanSaved(id));return;}
+  const say=m=>{lbScanMsg[id]=m;if(lbOpenId===id)lbOpen(id);};
+  const toc=((lbFull[id]||{}).toc||[]).slice(0,8);
+  if(!toc.length){say("No contents photos saved yet — add them with 📷 Add photo.");return;}
+  try{
+    say("Reading "+toc.length+" saved photo"+(toc.length!==1?"s":"")+"…");
+    await lbScanRead(id,toc.map(s=>String(s).split(",")[1]||""),say);
+  }catch(e){say("❌ "+(e.message||"scan failed"));console.error("[HA] library scan",e);}
+}
+function lbScanSavedBtn(b){const n=((lbFull[b.id]||{}).toc||[]).length;
+  return n?'<button class="lb-scanbtn" onclick="lbScanSaved(\''+esc(b.id)+'\')">📸 Make lessons from '+(n===1?'this contents photo':'these '+Math.min(n,8)+' contents photos')+'</button>':'';}
+async function lbScanRead(id,imgs,say){
+  const b=(lbBooks||[]).find(x=>x.id===id); if(!b)return;
+  const key=(typeof mastAIKey!=="undefined"&&mastAIKey)||(typeof haGetKey==="function"?haGetKey():"");
+  if(!key)throw new Error("No AI key set — add one in Admin → Settings.");
+  {
     say("Asking Claude to read the contents…");
     const content=imgs.map(d=>({type:"image",source:{type:"base64",media_type:"image/jpeg",data:d}}));
     content.push({type:"text",text:
@@ -651,13 +673,13 @@ async function lbScan(id,input){
     if(a<0||z<=a)throw new Error("Couldn't read a lesson list — try clearer photos.");
     const lessons=(JSON.parse(txt.slice(a,z+1)).lessons||[]).map(x=>String(x||"").replace(/\s+/g," ").trim().slice(0,140)).filter(Boolean);
     if(lessons.length<2)throw new Error("Found no lessons — photograph the contents pages flat and in good light.");
-    const rec={lessons:lessons,at:Date.now(),photos:files.length};
+    const rec={lessons:lessons,at:Date.now(),photos:imgs.length};
     lbScans[id]=rec;
-    db.ref("library/scans/"+id).set(rec);
+    await db.ref("library/scans/"+id).set(rec);
     lbScanMsg[id]="";
     say("✓ Read "+lessons.length+" lessons — Add to a kid now uses them.");
     lbDraw();
-  }catch(e){say("❌ "+(e.message||"scan failed"));console.error("[HA] library scan",e);}
+  }
 }
 // After the app's Add Subject saves a sheet WE opened, remember which book it came from.
 function lbWrapSave(){
@@ -946,7 +968,7 @@ window.renderLibrary=function(root){
   if(!document.getElementById("lb-style")){const st=document.createElement("style");st.id="lb-style";st.textContent=LB_CSS;document.head.appendChild(st);}
   lbDraw(root); lbLoad(root);
 };
-window.lbSet=lbSet;window.lbReset=lbReset;window.lbOpen=lbOpen;window.lbClose=lbClose;window.lbAddTo=lbAddTo;window.lbPinTry=lbPinTry;window.lbScan=lbScan;
+window.lbSet=lbSet;window.lbReset=lbReset;window.lbOpen=lbOpen;window.lbClose=lbClose;window.lbAddTo=lbAddTo;window.lbPinTry=lbPinTry;window.lbScan=lbScan;window.lbScanSaved=lbScanSaved;
 window.lbEditStart=lbEditStart;window.lbEditSet=lbEditSet;window.lbEditSave=lbEditSave;window.lbEditCancel=lbEditCancel;
 window.lbNewStart=lbNewStart;window.lbNewSet=lbNewSet;window.lbNewSave=lbNewSave;window.lbNewCancel=lbNewCancel;window.lbNewCover=lbNewCover;
 window.lbExport=lbExport;window.lbPhotoAdd=lbPhotoAdd;window.lbPhotoView=lbPhotoView;window.lbViewBack=lbViewBack;
