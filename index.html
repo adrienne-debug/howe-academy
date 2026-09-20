@@ -35962,7 +35962,9 @@ const MST_SESSION_DEFAULTS = {
   handOffAt: "bi_weekly",
   kind: "deck",
   audio: "front",
-  order: "bank"
+  order: "bank",
+  maxCards: 0,    // cards in one sitting (learning + new); 0 = no limit. Booked reviews always ride.
+  focusDecks: 0   // how many decks introduce at once; 0 = every deck in the session
 };
 
 function _mstCmp(a, b) {
@@ -36020,6 +36022,8 @@ function mstSessions(kid) {
       kind: rec.kind || MST_SESSION_DEFAULTS.kind,
       audio: rec.audio || MST_SESSION_DEFAULTS.audio,
       order: rec.order || MST_SESSION_DEFAULTS.order,
+      maxCards: rec.maxCards != null ? rec.maxCards : MST_SESSION_DEFAULTS.maxCards,
+      focusDecks: rec.focusDecks != null ? rec.focusDecks : MST_SESSION_DEFAULTS.focusDecks,
       skipDecks: rec.skipDecks || [],
       pattern: mstPatternClean(rec.pattern),
       bothWays: !!rec.bothWays
@@ -36203,21 +36207,91 @@ function mstPile(kid, sid, pn, todayLog) {
     existingByDeck[d].add(item.prompt);
   });
 
-  const newPerDay = Math.max(0, session.newPerDay - shownNewCount);
+  // ── A few decks at a time, a sitting you can finish ────────────────────────────────
+  // focusDecks (0 = off) = how many decks introduce at once. The decks with the MOST cards
+  // still being learned come first and stay open until those cards climb onto the ladder —
+  // finishing what he started instead of every deck nibbling forever. A deck with nothing
+  // started opens only when a slot frees up.
+  // maxCards (0 = off) = learning + new cards in one sitting. Booked reviews always ride,
+  // exactly as they do in Mom's drill — skipping one breaks the ladder's spacing cursor.
+  // Cards that miss today's cut simply come the next day; nothing leaves the ladder.
+  const learnByDeck = {};      // every card still being learned, per deck (incl. shown today)
+  const shownByDeck = {};      // already shown in an earlier sitting today
+  items.forEach(item => {
+    if (item.status !== "introduction") return;
+    if (!session.decks || session.decks.indexOf(item.subject) === -1) return;
+    learnByDeck[item.subject] = (learnByDeck[item.subject] || 0) + 1;
+    if (shownIds.has(item.id)) shownByDeck[item.subject] = (shownByDeck[item.subject] || 0) + 1;
+  });
+  let focusDecks = session.decks || [];
+  if (session.focusDecks > 0) {
+    const started = focusDecks.filter(d => (learnByDeck[d] || 0) > 0)
+      .sort((a, b) => _mstCmp(learnByDeck[b], learnByDeck[a]) || _mstCmp(a, b));
+    const fresh = focusDecks.filter(d => !(learnByDeck[d] > 0));
+    focusDecks = started.concat(fresh).slice(0, session.focusDecks);
+    const inFocus = new Set(focusDecks);
+    learning = learning.filter(item => inFocus.has(item.subject));
+  }
+  // How many of ONE deck's cards may be in flight: the sitting shared out over the decks
+  // that are open (12 cards across 3 decks = 4 each). Off when either dial is off.
+  const perDeck = (session.maxCards > 0 && session.focusDecks > 0)
+    ? Math.max(1, Math.ceil(session.maxCards / session.focusDecks)) : Infinity;
+  // Seats left today: a second sitting on the same day doesn't hand out a fresh 12.
+  const doneToday = log.filter(e => e && (e.id != null || e.name != null)).length;
+  const seats = session.maxCards > 0 ? Math.max(0, session.maxCards - doneToday) : Infinity;
+
+  // Cards already being learned get the seats first — the backlog he started comes before
+  // anything new. Closest to graduating first inside a deck (they finish and free their
+  // seat), decks taking turns so no one deck eats the whole sitting.
+  if (session.maxCards > 0 || perDeck !== Infinity) {
+    const room = seats;
+    const byDeck = {}, order = [];
+    learning.forEach(item => {
+      const d = item.subject;
+      if (!byDeck[d]) { byDeck[d] = []; order.push(d); }
+      byDeck[d].push(item);
+    });
+    order.forEach(d => byDeck[d].sort((a, b) =>
+      _mstCmp(b.tally_dots || 0, a.tally_dots || 0) || _mstCmp(a.id, b.id)));
+    const pick = new Set();
+    const taken = {};
+    let took = true;
+    while (pick.size < room && took) {
+      took = false;
+      for (const d of order) {
+        if (pick.size >= room) break;
+        const capLeft = perDeck - (shownByDeck[d] || 0) - (taken[d] || 0);
+        if (capLeft <= 0) continue;
+        const nx = byDeck[d].shift();
+        if (nx) { pick.add(nx.id); taken[d] = (taken[d] || 0) + 1; took = true; }
+      }
+    }
+    learning = learning.filter(item => pick.has(item.id));
+  }
+
+  // New cards take the seats left over, and only into a deck with room under perDeck —
+  // a deck full of half-learned cards pulls nothing until those cards finish.
+  const newPerDay = Math.min(Math.max(0, session.newPerDay - shownNewCount),
+    Math.max(0, seats - learning.length));
   const newNames = [];
   if (newPerDay > 0) {
     outer:
-    for (let di = 0; di < session.decks.length; di++) {
-      const deck = session.decks[di];
+    for (let di = 0; di < focusDecks.length; di++) {
+      const deck = focusDecks[di];
+      let room = perDeck - (learnByDeck[deck] || 0);
+      if (perDeck !== Infinity && (learnByDeck[deck] || 0) >= perDeck) continue;
+      if (room <= 0) continue;
       // RS4K gate: a session introduces only words from chapters he has reached. Falls back to the
       // whole deck when the gate helper is absent (engine-only test harnesses), same as ungated.
       const names = (typeof mastBankEligible === "function") ? mastBankEligible(kid, deck) : (bank[deck] || []);
       for (let ni = 0; ni < names.length; ni++) {
         const name = names[ni];
         if (newNames.length >= newPerDay) break outer;
+        if (room <= 0) break;
         if (existingByDeck[deck] && existingByDeck[deck].has(name)) continue;
         if (loggedNames.has(name)) continue;
         newNames.push({ deck, name });
+        room--;
       }
     }
   }
@@ -37319,6 +37393,10 @@ function mhqSessValidate(rec, sessions, sid, ladder) {
   if (!Number.isInteger(npd) || npd < 0 || npd > 50) return { ok: false, error: "New/day must be a whole number 0–50" };
   const p = Number(rec.passes);
   if (!Number.isInteger(p) || p < 1 || p > 5) return { ok: false, error: "Passes must be a whole number 1–5" };
+  const mc = Number(rec.maxCards || 0);
+  if (!Number.isInteger(mc) || mc < 0 || mc > 60) return { ok: false, error: "Cards a sitting must be a whole number 0–60 (0 = no limit)" };
+  const fd = Number(rec.focusDecks || 0);
+  if (!Number.isInteger(fd) || fd < 0 || fd > 20) return { ok: false, error: "Decks at once must be a whole number 0–20 (0 = all of them)" };
   return { ok: true, error: "" };
 }
 
@@ -37341,11 +37419,11 @@ let mhqSessErr = "";
 function mhqSessOpen(sid) {
   mhqSessEdit = sid; mhqSessErr = "";
   if (sid === "__new_deck") {
-    mhqSessForm = { name: "", emoji: "📚", kind: "deck", decks: [], who: "solo", newPerDay: 5, passes: 2, mixInAt: "weekly", handOffAt: "bi_weekly", audio: "front", order: "bank" };
+    mhqSessForm = { name: "", emoji: "📚", kind: "deck", decks: [], who: "solo", newPerDay: 5, passes: 2, mixInAt: "weekly", handOffAt: "bi_weekly", audio: "front", order: "bank", maxCards: 0, focusDecks: 0 };
   } else if (sid === "__new_mix") {
     mhqSessForm = { name: "Daily Mix", emoji: "🧠", kind: "mix", who: "solo", audio: "off" };
   } else if (sid === "__new_all") {
-    mhqSessForm = { name: "Daily Study", emoji: "📚", kind: "all", skipDecks: [], who: "solo", newPerDay: 5, passes: 2, mixInAt: "weekly", handOffAt: "bi_weekly", audio: "front", order: "bank" };
+    mhqSessForm = { name: "Daily Study", emoji: "📚", kind: "all", skipDecks: [], who: "solo", newPerDay: 5, passes: 2, mixInAt: "weekly", handOffAt: "bi_weekly", audio: "front", order: "bank", maxCards: 12, focusDecks: 3 };
   } else {
     const existing = mstSessions(mhqKid).find(function (s) { return s.sid === sid; });
     mhqSessForm = existing ? Object.assign({}, existing, { decks: (existing.decks || []).slice(), skipDecks: (existing.skipDecks || []).slice(), pattern: existing.pattern ? existing.pattern.slice() : null, bothWays: !!existing.bothWays }) : null;
@@ -37391,6 +37469,8 @@ function mhqSessSave() {
     rec.mixInAt = mhqSessForm.mixInAt;
     rec.handOffAt = mhqSessForm.handOffAt;
     rec.order = mhqSessForm.order || "bank";
+    rec.maxCards = mhqSessForm.maxCards || 0;
+    rec.focusDecks = mhqSessForm.focusDecks || 0;
     const _pat = mstPatternClean(mhqSessForm.pattern); if (_pat) rec.pattern = _pat;
     if (mhqSessForm.bothWays) rec.bothWays = true;
   }
@@ -37401,6 +37481,8 @@ function mhqSessSave() {
     rec.mixInAt = mhqSessForm.mixInAt;
     rec.handOffAt = mhqSessForm.handOffAt;
     rec.order = mhqSessForm.order || "bank";
+    rec.maxCards = mhqSessForm.maxCards || 0;
+    rec.focusDecks = mhqSessForm.focusDecks || 0;
     const _pat = mstPatternClean(mhqSessForm.pattern); if (_pat) rec.pattern = _pat;
   }
   if (!masteryData[kid + "_sessions"]) masteryData[kid + "_sessions"] = {};
@@ -37481,7 +37563,13 @@ function _mhqRenderSessForm(kid) {
     h += '<div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:8px">';
     h += '<div><div style="' + lbl + '">New/day</div>' + _mhqStepper(f.newPerDay, "newPerDay", 0) + '</div>';
     h += '<div><div style="' + lbl + '">Passes</div>' + _mhqStepper(f.passes, "passes", 1) + '</div>';
+    h += '<div><div style="' + lbl + '">Cards a sitting</div>' + _mhqStepper(f.maxCards || 0, "maxCards", 0) + '</div>';
+    h += '<div><div style="' + lbl + '">Decks at once</div>' + _mhqStepper(f.focusDecks || 0, "focusDecks", 0) + '</div>';
     h += '</div>';
+    h += '<div style="font-size:11px;color:var(--muted);margin-top:-2px">' +
+      ((f.maxCards > 0 && f.focusDecks > 0)
+        ? ('About ' + Math.max(1, Math.ceil(f.maxCards / f.focusDecks)) + ' cards from each open deck. Cards that don\u2019t fit come the next day; reviews always ride.')
+        : 'Set both to keep a sitting short \u2014 0 means no limit.') + '</div>';
     h += '<div style="' + lbl + '">Learning pattern</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
     h += _mhqPill("Off", !f.pattern, f.pattern ? "mhqPatToggle()" : "") + _mhqPill("On", !!f.pattern, f.pattern ? "" : "mhqPatToggle()");
     if (f.pattern) {
@@ -37551,7 +37639,7 @@ function _mhqRenderSessions(kid) {
       h += '<div style="font-size:11px;color:var(--muted);margin-top:4px">with Mom: ' + mhqEsc(r.skipDecks.join(", ")) + '</div>';
     }
     if (r.kind === "deck" || r.kind === "all") {
-      h += '<div style="font-size:11px;color:var(--muted);margin-top:8px">' + r.newPerDay + ' new/day · ' + r.passes + ' passes · mix in at ' + mhqEsc(mhqTierLbl(r.mixInAt)) + ' · hand off at ' + mhqEsc(mhqTierLbl(r.handOffAt)) + '</div>';
+      h += '<div style="font-size:11px;color:var(--muted);margin-top:8px">' + r.newPerDay + ' new/day · ' + r.passes + ' passes' + (r.maxCards > 0 ? ' · ' + r.maxCards + ' cards a sitting' : '') + (r.focusDecks > 0 ? ' · ' + r.focusDecks + ' decks at once' : '') + ' · mix in at ' + mhqEsc(mhqTierLbl(r.mixInAt)) + ' · hand off at ' + mhqEsc(mhqTierLbl(r.handOffAt)) + '</div>';
     }
     h += '<div style="font-size:11px;color:var(--muted);margin-top:4px">' + r.cards.learning + ' learning · ' + r.cards.active + ' active · ' + r.cards.bank + ' bank</div>';
     h += r.linked.length
