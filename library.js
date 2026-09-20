@@ -14,6 +14,7 @@
 (function(){
 "use strict";
 let lbBooks=null, lbPhotos={}, lbLinks={}, lbScans={}, lbScanMsg={}, lbLoading=false, lbErr="", lbOpenId=null;
+let lbScanBusy={};       // book id → true while its contents photos are being read (the button says so)
 let lbEdit=null;            // {id, form} while a record is being edited in the sheet
 let lbNew=null;             // {form, cover} while ➕ New book is open
 let lbFull={};              // library/photos/<id> once fetched (undefined = not asked, null = none)
@@ -642,13 +643,21 @@ async function lbScanSaved(id){
   const say=m=>{lbScanMsg[id]=m;if(lbOpenId===id)lbOpen(id);};
   const toc=((lbFull[id]||{}).toc||[]).slice(0,8);
   if(!toc.length){say("No contents photos saved yet — add them with 📷 Add photo.");return;}
+  if(lbScanBusy[id])return;
+  lbScanBusy[id]=true;
   try{
     say("Reading "+toc.length+" saved photo"+(toc.length!==1?"s":"")+"…");
-    await lbScanRead(id,toc.map(s=>String(s).split(",")[1]||""),say);
+    const n=await lbScanRead(id,toc.map(s=>String(s).split(",")[1]||""),say);
+    if(typeof gwShowToast==="function")gwShowToast("✓ Read "+n+" lessons from "+toc.length+" photo"+(toc.length!==1?"s":""));
   }catch(e){say("❌ "+(e.message||"scan failed"));console.error("[HA] library scan",e);}
+  finally{lbScanBusy[id]=false;if(lbOpenId===id)lbOpen(id);}
 }
-function lbScanSavedBtn(b){const n=((lbFull[b.id]||{}).toc||[]).length;
-  return n?'<button class="lb-scanbtn" onclick="lbScanSaved(\''+esc(b.id)+'\')">📸 Make lessons from '+(n===1?'this contents photo':'these '+Math.min(n,8)+' contents photos')+'</button>':'';}
+function lbScanSavedBtn(b){const n=Math.min(((lbFull[b.id]||{}).toc||[]).length,8); if(!n)return "";
+  const busy=lbScanBusy[b.id], sc=lbScans[b.id], msg=lbScanMsg[b.id]||"";
+  const label=busy?'⏳ Reading your '+n+' contents photo'+(n===1?'':'s')+'…'
+    :(sc?'📸 Re-read the '+n+' contents photo'+(n===1?'':'s'):'📸 Make lessons from '+(n===1?'this contents photo':'these '+n+' contents photos'));
+  return '<button class="lb-scanbtn"'+(busy?' disabled style="opacity:.6;cursor:progress"':' onclick="lbScanSaved(\''+esc(b.id)+'\')"')+'>'+label+'</button>'+
+    (msg?'<span class="lb-scanmsg">'+esc(msg)+'</span>':'');}
 async function lbScanRead(id,imgs,say){
   const b=(lbBooks||[]).find(x=>x.id===id); if(!b)return;
   const key=(typeof mastAIKey!=="undefined"&&mastAIKey)||(typeof haGetKey==="function"?haGetKey():"");
@@ -679,6 +688,7 @@ async function lbScanRead(id,imgs,say){
     lbScanMsg[id]="";
     say("✓ Read "+lessons.length+" lessons — Add to a kid now uses them.");
     lbDraw();
+    return lessons.length;
   }
 }
 // After the app's Add Subject saves a sheet WE opened, remember which book it came from.
