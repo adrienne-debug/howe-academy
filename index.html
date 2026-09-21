@@ -5521,6 +5521,17 @@ function renderPurchasesView(el,ah){
   document.head.appendChild(s);
 }
 // PURCHASES_END
+// EIC_START — ✏️ Editor in Chief skill engine lives in eic.js (lazy, like esa.js). Slice 2, 2026-09-20.
+function eicPanelOpen(kid){
+  if(window.eicPanel){ eicPanel(kid); return; }
+  if(window._eicLoading) return; window._eicLoading=true;
+  const s=document.createElement("script");
+  s.src=/github\.io$/.test(location.hostname)?("eic.js?v="+Date.now()):"eic.js";
+  s.onload=()=>{ window._eicLoading=false; if(window.eicPanel) eicPanel(kid); };
+  s.onerror=()=>{ window._eicLoading=false; if(typeof gwShowToast==="function") gwShowToast("Couldn't load Editor in Chief."); };
+  document.head.appendChild(s);
+}
+// EIC_END
 function renderMomHQ(el,ah){
   if(!el){el=document.getElementById("content");if(!el)return;}
   let h=(ah||'')+'<div class="rules-wrap">';
@@ -5538,7 +5549,8 @@ function renderMomHQ(el,ah){
     _hqRowFn("setAdminSub('mastery')","🧠","Drills & Mastery","Rules, decks, sessions, cards — all in Mastery HQ"),
     _hqRow("units","🗺","Unit Studies","Units, decks, activities (🔒 Mom chip inside)"),
     _hqRow("notebook","📓","Notebooks","Extra pages, prong margin, printing (🔒 Mom chip inside)"),
-    _hqRowFn("wbPanelOpen()","📕","Workbooks","Bought workbook PDFs — the kids write on the page with the Apple Pencil")
+    _hqRowFn("wbPanelOpen()","📕","Workbooks","Bought workbook PDFs — the kids write on the page with the Apple Pencil"),
+    _hqRowFn("eicPanelOpen()","✏️","Editor in Chief","One skill at a time — rules beside the page, you grade against the key, the app keeps score")
   ]);
   h+=_hqGroup("🧹","Home & Chores",[
     _hqRow("chorePlan","🧹","Chore Plan","Weekday grid, zones, rotations, focus-zone bonus"),
@@ -23053,14 +23065,20 @@ function wbOpen(bookId,kid,page,opts){
   page=Math.max(1,Math.min(b.pages||1,parseInt(page,10)||1));
   let ans=(opts&&opts.ans)?parseInt(opts.ans,10):0;
   if(!(ans>=1&&ans<=(b.pages||1))||!wbMomEyes()) ans=0;
-  wbView={bookId:bookId,kid:kid,page:page,strokes:[],dirty:false,tool:"pen",penOnly:false,sawPen:false,ans:ans};
+  // ✏️ EIC (eic.js): the skill's rule page(s) sit to the LEFT of the page for the kid. Mom's check view is page + key only.
+  const rules=(!ans&&opts&&Array.isArray(opts.rules))?opts.rules.map(n=>parseInt(n,10)).filter(n=>n>=1&&n<=(b.pages||1)):[];
+  wbView={bookId:bookId,kid:kid,page:page,strokes:[],dirty:false,tool:"pen",penOnly:false,sawPen:false,ans:ans,rules:rules,eic:(opts&&opts.eic)||null};
   let ov=document.getElementById("wb-view"); if(ov) ov.remove();
   ov=document.createElement("div"); ov.id="wb-view";
   ov.style.cssText="position:fixed;inset:0;z-index:10050;background:#f8fafc;display:flex;flex-direction:column;overscroll-behavior:none";
   ov.innerHTML=
     '<div id="wb-bar" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#fff;border-bottom:1px solid #e2e8f0;flex:none;font-family:\'DM Sans\',sans-serif;flex-wrap:wrap"></div>'+
     '<div id="wb-stage" style="flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;gap:12px;flex-wrap:wrap;padding:10px;-webkit-overflow-scrolling:touch">'+
-      '<div id="wb-hold" style="position:relative;line-height:0;box-shadow:0 2px 14px rgba(0,0,0,.18);border-radius:4px;overflow:hidden;background:#fff'+(ans?';flex:1 1 380px;max-width:900px;min-width:0':'')+'">'+
+      (rules.length?'<div id="wb-rules-hold" style="position:relative;line-height:0;box-shadow:0 2px 14px rgba(0,0,0,.18);border-radius:4px;overflow-y:auto;max-height:calc(100vh - 84px);background:#fff;flex:1 1 340px;max-width:820px;min-width:0;outline:3px solid #fcd34d;-webkit-overflow-scrolling:touch">'+
+        '<div style="position:sticky;top:8px;margin:8px 0 -28px 8px;display:inline-block;z-index:1;background:#92400e;color:#fff;font-size:11px;font-weight:800;border-radius:8px;padding:2px 8px;font-family:\'DM Sans\',sans-serif;line-height:1.4">📖 RULES</div>'+
+        rules.map(n=>'<img src="'+((b.imgs||{})[n]||"")+'" style="display:block;width:100%;height:auto;user-select:none;-webkit-user-select:none">').join("")+
+      '</div>':'')+
+      '<div id="wb-hold" style="position:relative;line-height:0;box-shadow:0 2px 14px rgba(0,0,0,.18);border-radius:4px;overflow:hidden;background:#fff'+((ans||rules.length)?';flex:1 1 380px;max-width:900px;min-width:0':'')+'">'+
         '<img id="wb-img" style="display:block;max-width:100%;height:auto;user-select:none;-webkit-user-select:none;pointer-events:none">'+
         '<canvas id="wb-ink" style="position:absolute;inset:0;width:100%;height:100%;touch-action:pan-x pan-y;cursor:crosshair"></canvas>'+
       '</div>'+
@@ -23096,6 +23114,7 @@ function wbBarRender(){
     '<span style="font-size:12px;font-weight:700;color:#475569;min-width:64px;text-align:center">p '+v.page+' / '+(b.pages||"?")+'</span>'+
     btn("▶","wbGo(1)")+
     (v.ans?('<span style="display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:2px 6px;border-radius:9px;background:#ecfdf5;border:1px solid #a7f3d0"><span style="font-size:11px;font-weight:800;color:#065f46">Key</span>'+btn("◀","wbGoAns(-1)")+'<span style="font-size:12px;font-weight:700;color:#065f46;min-width:34px;text-align:center">p '+v.ans+'</span>'+btn("▶","wbGoAns(1)")+'</span>'):'')+
+    ((v.eic&&wbMomEyes()&&window.eicScoreOpen)?btn("📊 Score","eicScoreOpen()"):"")+
     btn("✏️","wbTool(\'pen\')",v.tool==="pen")+
     btn("🩹 Erase","wbTool(\'erase\')",v.tool==="erase")+
     btn("↶ Undo","wbUndo()")+
@@ -38890,6 +38909,7 @@ function _renderMasteryInner(el){
     h+=MAST_KID_EMOJI[k]+' '+SL_KLBL[k]+' <span style="opacity:0.6;font-size:10px">('+kitems.length+')</span></button>';
   });
   if(momHere()||mastAdminPinOk) h+='<button onclick="mastOpenAdd()" style="width:32px;height:32px;border-radius:50%;border:1.5px solid var(--border);background:#fff;font-size:18px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:'+color+'">+</button>';
+  if(((masteryData||{})[masteryKid+"_settings"]||{}).eic) h+='<button onclick="eicPanelOpen(\''+masteryKid+'\')" style="height:32px;padding:0 11px;border-radius:16px;border:1.5px solid var(--border);background:#fff;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0;white-space:nowrap">✏️ Editor in Chief</button>';
   h+='</div>';
 
   // View tabs: Drill / Scores / Heat Map
