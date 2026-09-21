@@ -9706,6 +9706,95 @@ function kitMarkSkipped(iso){
   if(typeof db!=='undefined'&&db) db.ref('kitchen/plan/'+iso+'/skipped').set(plan.skipped);
   _kitRefresh();
 }
+// ➡ Move forward (her ask 2026-09-20: "in case we eat out and want to stay on the plan") —
+// one category (d|b|l|s) or the whole day ('all'). The meal lands on the next day and every
+// later meal of that category slides along behind it, order kept, until the first day with
+// nothing planned absorbs the slide — nothing is dropped or overwritten. A past day's meal
+// lands on TODAY, never on another past day. Dinners marked eaten / didn't-happen never move
+// (the slide hops over them). A dinner's prep ticks travel with it. ONE atomic multi-path
+// write, so a half-moved chain can't happen.
+const KIT_MOVE_NAMES={d:["dinner","dinners"],b:["breakfast","breakfasts"],l:["lunch","lunches"],s:["snack","snacks"]};
+function _kitMvGet(iso,slot){
+  const p=kitPlan[iso]; if(!p) return null;
+  if(slot==="d") return p.mid?{mid:p.mid}:(p.txt?{txt:p.txt}:null);
+  const v=p[slot]; return (v&&(v.mid||v.txt))?v:null;
+}
+function _kitMvFixed(iso,slot){ const p=kitPlan[iso]; return slot==="d"&&!!p&&!!(p.eaten||p.skipped); }
+// The slide for one category: [{iso,val}] in order — first = the day being moved, last = the
+// empty day that absorbs it. null when `iso` has nothing movable in that category.
+function kitMoveChain(iso,slot){
+  if(!KIT_MOVE_NAMES[slot]||!_kitMvGet(iso,slot)||_kitMvFixed(iso,slot)) return null;
+  const today=_todayStr();
+  const chain=[{iso:iso,val:_kitMvGet(iso,slot)}];
+  let cur=kitIsoPlus(iso,1); if(cur<today) cur=today;
+  for(let i=0;i<730;i++,cur=kitIsoPlus(cur,1)){
+    if(_kitMvFixed(cur,slot)) continue;
+    const v=_kitMvGet(cur,slot);
+    chain.push({iso:cur,val:v});
+    if(!v) return chain;
+  }
+  return null;
+}
+function kitMoveForward(iso,slot){
+  if(!kitEatGate()) return;
+  const chains=[];
+  (slot==="all"?["d","b","l","s"]:[slot]).forEach(s=>{ const c=kitMoveChain(iso,s); if(c) chains.push([s,c]); });
+  if(!chains.length){ if(typeof mwToast==='function') mwToast('Nothing to move on this day'); return; }
+  const lbl=i=>gwParseDate(i).toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"});
+  const tail=(s,c)=>{ const n=c.length-2; return n>0?(n+" later "+KIT_MOVE_NAMES[s][n===1?0:1]+" slide"+(n===1?"s":"")+" forward too"):""; };
+  let msg;
+  if(chains.length===1){
+    const s=chains[0][0], c=chains[0][1], t=tail(s,c);
+    msg="Move "+lbl(iso)+"'s "+KIT_MOVE_NAMES[s][0]+" to "+lbl(c[1].iso)+"?"+(t?"\n\n"+t+" \u2014 the order stays the same.":"");
+  } else {
+    msg="Move ALL of "+lbl(iso)+"'s meals forward?\n\n"+chains.map(x=>{ const t=tail(x[0],x[1]); return "\u2022 "+KIT_MOVE_NAMES[x[0]][0]+" \u2192 "+lbl(x[1][1].iso)+(t?" ("+t+")":""); }).join("\n")+"\n\nThe order stays the same.";
+  }
+  if(!confirm(msg)) return;
+  const up={};
+  const put=(dIso,s,val)=>{
+    const cur=Object.assign({},kitPlan[dIso]);
+    if(s==="d"){
+      delete cur.mid; delete cur.txt; if(val) Object.assign(cur,val);
+      up["plan/"+dIso+"/mid"]=(val&&val.mid)||null; up["plan/"+dIso+"/txt"]=(val&&val.txt)||null;
+    } else {
+      if(val) cur[s]=val; else delete cur[s];
+      up["plan/"+dIso+"/"+s]=val||null;
+    }
+    if(Object.keys(cur).length) kitPlan[dIso]=cur; else delete kitPlan[dIso];
+  };
+  chains.forEach(x=>{
+    const s=x[0], c=x[1];
+    if(s==="d"){
+      // prep ticks ride with their dinner: lift them all off first, then set them down a day on
+      const lifted=c.map(d=>{
+        const out={}; if(!d.val||!d.val.mid) return out;
+        const map=kitPrepDone[d.iso]||{};
+        Object.keys(map).forEach(k=>{ if(k.indexOf(d.val.mid+"_")===0&&/^\d+$/.test(k.slice(d.val.mid.length+1))) out[k]=map[k]; });
+        return out;
+      });
+      c.forEach((d,i)=>{ Object.keys(lifted[i]).forEach(k=>{
+        const m=Object.assign({},kitPrepDone[d.iso]); delete m[k];
+        if(Object.keys(m).length) kitPrepDone[d.iso]=m; else delete kitPrepDone[d.iso];
+        up["prepDone/"+d.iso+"/"+k]=null;
+      }); });
+      for(let i=0;i<c.length-1;i++){ Object.keys(lifted[i]).forEach(k=>{
+        const to=c[i+1].iso;
+        kitPrepDone[to]=Object.assign({},kitPrepDone[to]); kitPrepDone[to][k]=lifted[i][k];
+        up["prepDone/"+to+"/"+k]=lifted[i][k];
+      }); }
+    }
+    for(let i=c.length-1;i>=1;i--) put(c[i].iso,s,c[i-1].val);
+    put(c[0].iso,s,null);
+  });
+  try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
+  try{HA_LS.setItem('ha_kit_prepdone',JSON.stringify(kitPrepDone));}catch(e){}
+  if(typeof db!=='undefined'&&db){
+    const pr=db.ref('kitchen').update(up); // targeted multi-path — never the whole node
+    if(pr&&pr.catch) pr.catch(err=>{ if(typeof mwToast==='function') mwToast('\u26A0 Move didn\u2019t save \u2014 '+err.message); });
+  }
+  if(typeof mwToast==='function') mwToast('\u27A1 Moved \u2014 the plan slid forward');
+  _kitRefresh();
+}
 // Prompt-edit a day's b/l/s slot — so the whole day is manageable in-app,
 // not only via 📥 import. Blank clears the slot; an empty day is removed.
 function kitSlotText(iso,slot){
@@ -20027,7 +20116,7 @@ function _calSlotRows(iso,who){
     const sv=kitPlanSlot(iso,sp[0]); if(!sv) return; n++;
     const name=sv.meal?((sv.meal.emoji?sv.meal.emoji+" ":"")+(sv.meal.name||"")):(sv.txt||"");
     html+='<div class="row"><span class="lbl">'+sp[2]+'</span><span style="flex:1">'+sp[1]+' <b>'+esc(name)+'</b></span>'
-      +((who||!kitEatGate())?'':'<button class="act" style="background:#fff7ed;color:#c2410c" onclick="kitSlotText(\''+iso+'\',\''+sp[0]+'\')">✎</button>')+'</div>';
+      +((who||!kitEatGate())?'':'<button class="act" style="background:#fff7ed;color:#c2410c" onclick="kitSlotText(\''+iso+'\',\''+sp[0]+'\')">✎</button><button class="act" style="background:#eff6ff;color:#1d4ed8" onclick="kitMoveForward(\''+iso+'\',\''+sp[0]+'\')">➡ Move</button>')+'</div>';
   });
   return {html:html,n:n};
 }
@@ -20092,16 +20181,18 @@ function calDaySheetHTML(iso,L,dinnerOf,who,opts){
   } else if(L.meals){
     const _sr=_calSlotRows(iso,null); if(_sr.n){ h+=_sr.html; rows+=_sr.n; }
     const din=dinnerOf?dinnerOf(iso):null; rows++;
-    h+='<div class="row"><span class="lbl">Dinner</span>';
+    h+='<div class="row" style="flex-wrap:wrap"><span class="lbl">Dinner</span>';
     if(din){
-      h+='<span style="flex:1"><b>'+esc(din.name)+'</b>'+(din.pl&&din.pl.mid&&din.pl.meal?' <span onclick="kitOpenRecipe(\''+din.pl.mid+'\')" style="cursor:pointer;font-size:11px;font-weight:700;color:#E07B39">\u{1F4D6} recipe</span>':'');
+      const _mvBtn='<button class="act" style="background:#eff6ff;color:#1d4ed8" onclick="kitMoveForward(\''+iso+'\',\'d\')">➡ Move forward</button>';
+      h+='<span style="flex:1;min-width:130px"><b>'+esc(din.name)+'</b>'+(din.pl&&din.pl.mid&&din.pl.meal?' <span onclick="kitOpenRecipe(\''+din.pl.mid+'\')" style="cursor:pointer;font-size:11px;font-weight:700;color:#E07B39">\u{1F4D6} recipe</span>':'');
       if(din.st==="ate"){ const ts=(kitPlan[iso]||{}).eaten; h+='<div style="font-size:11px;color:#15803d;font-weight:700">✓ Eaten'+(ts?' · '+new Date(ts).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):'')+'</div>'; }
       else if(din.st==="skip") h+='<div style="font-size:11px;color:#9ca3af;font-weight:700">✗ Didn’t happen</div>';
       else if(din.st==="owed") h+='<div style="font-size:11px;color:#c2410c;font-weight:700">● Not marked yet</div>';
       else h+='<div style="font-size:11px;color:#6b7280;font-weight:700">planned</div>';
       h+='</span>';
       if(!kitEatGate()){ /* a kid on a shared screen: status only, no buttons */ }
-      else if(din.st==="owed"||(din.st==="planned"&&iso===todayIso)) h+='<button class="act" style="background:#dcfce7;color:#166534" onclick="kitMarkEaten(\''+iso+'\')">✓ We ate it</button><button class="act" style="background:#f1f5f9;color:#475569" onclick="kitMarkSkipped(\''+iso+'\')">✗ Didn’t happen</button>';
+      else if(din.st==="owed"||(din.st==="planned"&&iso===todayIso)) h+='<button class="act" style="background:#dcfce7;color:#166534" onclick="kitMarkEaten(\''+iso+'\')">✓ We ate it</button><button class="act" style="background:#f1f5f9;color:#475569" onclick="kitMarkSkipped(\''+iso+'\')">✗ Didn’t happen</button>'+_mvBtn;
+      else if(din.st==="planned") h+=_mvBtn;
       else if(din.st==="skip") h+='<button class="act" style="background:#dcfce7;color:#166534" onclick="kitMarkEaten(\''+iso+'\')">Actually, we ate it</button>';
     } else {
       h+='<span style="flex:1;color:#9ca3af">No dinner planned</span>'+((typeof tab!=="undefined"&&tab==="moms-plan"&&kitEatGate())?'<button class="act" style="background:#fff7ed;color:#c2410c" onclick="mpGoto(\'meals\');kitPickDay(\''+iso+'\')">\u{1F5D3} Plan it</button>':'');
@@ -20112,7 +20203,8 @@ function calDaySheetHTML(iso,L,dinnerOf,who,opts){
     if(!rows||(rows===1&&L.meals)) h+='<div class="row" style="color:#9ca3af;font-size:12.5px">Nothing else on this day yet.</div>';
     if(kcAddIso!==iso) h+='<div class="row" style="justify-content:flex-end"><button class="act" style="background:'+(KID_COLOR[who]||"#2B7A78")+';color:#fff;padding:7px 13px;font-size:12px" onclick="kcAddOpen(\''+iso+'\')">＋ Add something</button></div>';
   } else if(kitEatGate()){
-    h+='<div class="row" style="justify-content:flex-end"><button class="act" style="background:#fdf2f8;color:#9d174d" onclick="calDayAddEvent(\''+iso+'\')">＋ Add event</button></div>';
+    const _mvAll=L.meals&&typeof kitMoveChain==="function"&&["d","b","l","s"].filter(function(s){ return kitMoveChain(iso,s); }).length>1;
+    h+='<div class="row" style="justify-content:flex-end;flex-wrap:wrap">'+(_mvAll?'<button class="act" style="background:#eff6ff;color:#1d4ed8" onclick="kitMoveForward(\''+iso+'\',\'all\')">➡ Move the whole day forward</button>':'')+'<button class="act" style="background:#fdf2f8;color:#9d174d" onclick="calDayAddEvent(\''+iso+'\')">＋ Add event</button></div>';
   }
   h+='</div>';
   return h;
