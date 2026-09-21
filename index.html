@@ -3985,7 +3985,7 @@ function renderWeekStrip(){
   // week you are previewing were already part-done.
   if(tab!=="schedule"||schedShowAdmin||schedShowHistory||schedShowPace||schedShowBoard||schedShowPeek){ el.style.display="none"; return; }
   const kidMatch=t=>kid==="all"||kid==="mom"?true:t.who===kid;
-  const countable=getActiveTasks().filter(t=>kidMatch(t)&&effectiveDay(t)!=="carryover"&&!t.id.endsWith("_c")&&!t._eowOverflow);
+  const countable=getActiveTasks().filter(t=>kidMatch(t)&&effectiveDay(t)!=="carryover"&&effectiveDay(t)!=="dayoff"&&!t.id.endsWith("_c")&&!t._eowOverflow);
   const all=countable.length, done=countable.filter(t=>!!checked[t.id]).length;
   const pct=all?Math.round(done/all*100):0;
   el.style.display="grid";
@@ -5751,7 +5751,12 @@ function schedToggleKidOff(k,ds){
     db.ref("calendar/kidOverrides/"+k+"/"+ds).set(entry);
     calendarData.kidOverrides=calendarData.kidOverrides||{};
     (calendarData.kidOverrides[k]=calendarData.kidOverrides[k]||{})[ds]=entry;
-    gwShowToast(cap(k)+" marked off — regenerate to reflow their lessons");
+    // 😷 Off TODAY takes effect now: the cascade moves their unfinished lessons into the rest
+    // of the week (same lock + debounce as every other sweep). A future date still waits for
+    // that morning's sweep, or a regenerate.
+    const _offToday=(typeof routineDateISO==="function"&&routineDateISO(_todayDay)===ds);
+    if(_offToday&&typeof schedCascade==="function") schedCascade();
+    gwShowToast(_offToday?cap(k)+" is off today — moving their lessons into the rest of the week":cap(k)+" marked off — regenerate to reflow their lessons");
   }
   renderAll();
 }
@@ -21083,6 +21088,20 @@ function cascadeIntraWeek(sweepTodayElapsed){
   // Collect unchecked tasks from past days (don't move them yet). Notebooks go to a
   // separate list so they keep their bookend treatment instead of clustering.
   const pastTasks=[], pastNotes=[];
+  // 😷 Is this kid marked off TODAY by Mom's own per-kid override? (memoised per sweep)
+  const _offTodayMemo={};
+  const _kidOffToday=function(who){
+    if(_offTodayMemo[who]===undefined){
+      let off=false;
+      try{
+        const ds=_cascDate(today);
+        const o=(ds&&typeof calendarData!=="undefined"&&calendarData&&((calendarData.kidOverrides||{})[who]||{})[ds])||null;
+        off=!!(o&&o.school===false);
+      }catch(e){ off=false; }
+      _offTodayMemo[who]=off;
+    }
+    return _offTodayMemo[who];
+  };
   const _dbCursor={}; // per-kid chain cursor for regen re-timed day-bound tasks (today only)
   weekData.tasks.forEach(t=>{
     if(t.id.endsWith("_c")) return;
@@ -21145,9 +21164,20 @@ function cascadeIntraWeek(sweepTodayElapsed){
       // regen nothing is elapsed and the fresh lay survives untouched. (2026-07-21:
       // letting the sweep re-pack the WHOLE day let its cruder catch-up packer
       // overwrite the generator's correct layout — Mom idle till noon, every time.)
+      // 😷 SICK DAY (her ask 2026-09-21: "the sick kid take the day off isn't working"): a kid
+      // Mom marked OFF today (the 😷 toggle / Admin → Calendar per-kid override, school:false)
+      // is not working today at all — so the whole of their unfinished day sweeps into the
+      // rest of the week NOW, elapsed or not, through the same pool as any missed day (today
+      // is already refused as a landing day for them by offHere below). Deliberately narrow:
+      // only her explicit per-kid mark counts, never a holiday or co-op. Day-bound cards
+      // never reach here (a missed day is just missed); claimed work stays frozen.
+      if(_kidOffToday(t.who)){
+        if(claimed&&claimed[t.id]) return;
+      } else {
       if(!sweepTodayElapsed) return;
       if(claimed&&claimed[t.id]) return; // done, awaiting Mom approval — frozen
       if(toMin(t.time)>=_nowMin) return;
+      }
     } else {
       let isPast=false;
       if(DAY_DT[t.day]){
@@ -31872,6 +31902,17 @@ function _isPastDay(dn){
   const dIdx={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6}[dn]||0;
   return dIdx<(jsDay||7);
 }
+// 😷 Is `who` off on weekday `dn` by Mom's OWN per-kid mark (the 😷 toggle / Admin → Calendar
+// per-kid override, school:false)? Deliberately narrow — never a holiday, vacation or co-op.
+function kidOffOwnDay(who,dn){
+  try{
+    const ov=(typeof calendarData!=="undefined"&&calendarData&&calendarData.kidOverrides&&calendarData.kidOverrides[who])||null;
+    if(!ov) return false;
+    const ds=(typeof routineDateISO==="function")?routineDateISO(dn):null;
+    const o=ds?ov[ds]:null;
+    return !!(o&&o.school===false);
+  }catch(e){ return false; }
+}
 function effectiveDay(t){
   if(t.id.endsWith("_c")) return t.day;
   if(checked[t.id]){
@@ -31892,7 +31933,11 @@ function effectiveDay(t){
   // Day-bound (If-Missed → drops): never roll forward for display either — the engine
   // leaves a missed one on its own day, so showing it in today's Carried Over box would
   // contradict the drop. It stays (and reads as missed) on the day it belonged to.
-  if(subjNoCarry(t)) return base;
+  // 😷 SICK DAY (her yes 2026-09-21: "hide daily cards on an off day"): a day-bound card on a day
+  // Mom marked this kid OFF is not missed and not owed — it belongs to no day ("dayoff"), so
+  // it leaves every list, the Mom queue and the day's %. Derived, nothing written: un-mark the
+  // kid and it is back; a card already checked never gets here, so done work stays visible.
+  if(subjNoCarry(t)) return (typeof kidOffOwnDay==="function"&&kidOffOwnDay(t.who,base))?"dayoff":base;
   const order=["monday","tuesday","wednesday","thursday","friday","saturday"];
   const todayMid=new Date(); todayMid.setHours(0,0,0,0);
   const jsDay=new Date().getDay();
@@ -40743,6 +40788,13 @@ function mlQueueLay(tasks){
     });
     // Ring kids who still owe Mom work, in loop order from the cursor.
     const ring=[]; for(let i=0;i<n;i++){ const k=order[(cur+i)%n]; if(momQ[k].length) ring.push(k); }
+    // 🔛 A kid Mom switched OFF ("not ready") keeps their place in the LOOP (the cursor holds,
+    // they lose no turn) but not in the LAID queue: their Mom block drops behind every ON
+    // kid's, so the others move up and Mom's time is not held for someone who is not coming
+    // (her yes 2026-09-21 — live: Julian's Mom work sat at 3:31 PM behind an off Lincoln).
+    // Loop order is kept inside each group; flip them back ON and the next render re-derives.
+    { const _on=ring.filter(function(k){ return !mlOff(k); }), _off=ring.filter(function(k){ return mlOff(k); });
+      if(_off.length&&_on.length){ ring.length=0; _on.concat(_off).forEach(function(k){ ring.push(k); }); } }
     // 🌞 LIVING DAY (her rule 2026-09-14): the day re-flows from NOW even when nobody owes Mom
     // work — an empty ring just means an empty Mom queue; each kid's own queue still moves.
     const nowMin=_mlNowMin();
@@ -43579,6 +43631,7 @@ function retrSchedStripHtml(kid,day){
   try{
     if(typeof masteryData==="undefined"||!masteryData||!retrTracks(kid).length) return "";
     if(day!==_todayDay) return "";
+    if(typeof kidOffOwnDay==="function"&&kidOffOwnDay(kid,day)) return "";   // 😷 off today: no drill chips either
     // If the week was generated WITH retrieval slots, the real task owns the day — the
     // derived strip would just double it, so stand down.
     try{ if((weekData.tasks||[]).some(t=>t&&t.who===kid&&t.subjectKey==="retrieval"&&effectiveDay(t)===day)) return ""; }catch(e){}
