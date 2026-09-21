@@ -23067,7 +23067,9 @@ function wbOpen(bookId,kid,page,opts){
   if(!(ans>=1&&ans<=(b.pages||1))||!wbMomEyes()) ans=0;
   // ✏️ EIC (eic.js): the skill's rule page(s) sit to the LEFT of the page for the kid. Mom's check view is page + key only.
   const rules=(!ans&&opts&&Array.isArray(opts.rules))?opts.rules.map(n=>parseInt(n,10)).filter(n=>n>=1&&n<=(b.pages||1)):[];
-  wbView={bookId:bookId,kid:kid,page:page,strokes:[],dirty:false,tool:"pen",penOnly:false,sawPen:false,ans:ans,rules:rules,eic:(opts&&opts.eic)||null};
+  // ✏️ EIC step 2: white boxes over the margin's error COUNTS (fractions of the page image). Never for Mom's eyes.
+  const cover=(!wbMomEyes()&&opts&&Array.isArray(opts.cover))?opts.cover.filter(c=>Array.isArray(c)&&c.length===4&&c.every(n=>typeof n==="number"&&n>=0&&n<=1)&&c[2]>c[0]&&c[3]>c[1]):[];
+  wbView={bookId:bookId,kid:kid,page:page,strokes:[],dirty:false,tool:"pen",penOnly:false,sawPen:false,ans:ans,rules:rules,eic:(opts&&opts.eic)||null,cover:cover};
   let ov=document.getElementById("wb-view"); if(ov) ov.remove();
   ov=document.createElement("div"); ov.id="wb-view";
   ov.style.cssText="position:fixed;inset:0;z-index:10050;background:#f8fafc;display:flex;flex-direction:column;overscroll-behavior:none";
@@ -23080,6 +23082,7 @@ function wbOpen(bookId,kid,page,opts){
       '</div>':'')+
       '<div id="wb-hold" style="position:relative;line-height:0;box-shadow:0 2px 14px rgba(0,0,0,.18);border-radius:4px;overflow:hidden;background:#fff'+((ans||rules.length)?';flex:1 1 380px;max-width:900px;min-width:0':'')+'">'+
         '<img id="wb-img" style="display:block;max-width:100%;height:auto;user-select:none;-webkit-user-select:none;pointer-events:none">'+
+        cover.map(c=>'<div class="wb-cover" style="position:absolute;pointer-events:none;background:#fff;left:'+(c[0]*100)+'%;top:'+(c[1]*100)+'%;width:'+((c[2]-c[0])*100)+'%;height:'+((c[3]-c[1])*100)+'%"></div>').join("")+
         '<canvas id="wb-ink" style="position:absolute;inset:0;width:100%;height:100%;touch-action:pan-x pan-y;cursor:crosshair"></canvas>'+
       '</div>'+
       (ans?'<div id="wb-ans-hold" style="position:relative;line-height:0;box-shadow:0 2px 14px rgba(0,0,0,.18);border-radius:4px;overflow:hidden;background:#fff;flex:1 1 380px;max-width:900px;min-width:0;outline:3px solid #6ee7b7">'+
@@ -23110,9 +23113,9 @@ function wbBarRender(){
     '<span style="font-weight:800;font-size:13px;color:#0f172a;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(b.name||"Workbook")+'</span>'+
     '<span style="padding:3px 9px;border-radius:999px;background:'+((typeof SL_KCOL!=="undefined"&&SL_KCOL[v.kid])||"#64748b")+';color:#fff;font-size:11px;font-weight:800">'+((typeof SL_KLBL!=="undefined"&&SL_KLBL[v.kid])||v.kid)+'</span>'+
     '<span style="flex:1"></span>'+
-    btn("◀","wbGo(-1)")+
+    ((v.eic&&!wbMomEyes())?"":btn("◀","wbGo(-1)"))+
     '<span style="font-size:12px;font-weight:700;color:#475569;min-width:64px;text-align:center">p '+v.page+' / '+(b.pages||"?")+'</span>'+
-    btn("▶","wbGo(1)")+
+    ((v.eic&&!wbMomEyes())?"":btn("▶","wbGo(1)"))+
     (v.ans?('<span style="display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:2px 6px;border-radius:9px;background:#ecfdf5;border:1px solid #a7f3d0"><span style="font-size:11px;font-weight:800;color:#065f46">Key</span>'+btn("◀","wbGoAns(-1)")+'<span style="font-size:12px;font-weight:700;color:#065f46;min-width:34px;text-align:center">p '+v.ans+'</span>'+btn("▶","wbGoAns(1)")+'</span>'):'')+
     ((v.eic&&wbMomEyes()&&window.eicScoreOpen)?btn("📊 Score","eicScoreOpen()"):"")+
     btn("✏️","wbTool(\'pen\')",v.tool==="pen")+
@@ -23126,6 +23129,7 @@ function wbTool(t){ if(!wbView) return; wbView.tool=t; wbBarRender(); }
 function wbTogglePen(){ if(!wbView) return; wbView.penOnly=!wbView.penOnly; wbBarRender(); }
 async function wbGo(d){
   if(!wbView) return; const b=wbBook(wbView.bookId)||{};
+  if(wbView.eic&&!wbMomEyes()) return;   // ✏️ EIC: a kid stays on the page he was given
   const n=wbView.page+d; if(n<1||n>(b.pages||1)) return;
   if(wbView.dirty) await wbSave();
   wbView.page=n; wbLoadPage(); wbBarRender();
