@@ -1420,16 +1420,33 @@
     if (w.length > 4 && /[ey]$/.test(w)) w = w.slice(0, -1);
     return t.replace(new RegExp("\\b(" + w + "[a-z]*)", "gi"), "<strong>$1</strong>");
   }
+  // Where a bank stands for week `wk`. Like dgStart, plus two things a bank needs: it WRAPS, and it has a START WEEK —
+  // cursor.from, the first week the bank ever printed (older cursors without it: worked out from week/day). A week BEFORE
+  // the start week is not the bank's: { before:true } → the built-in content prints and no cursor is handed back, so
+  // reprinting an old week can never drag the bank's place backwards (it used to clamp to #1 and re-save the cursor).
+  function lnBankStart(cursor, wk, n) {
+    wk = parseInt(String(wk).replace(/\D/g, ""), 10) || 1;
+    if (!cursor || cursor.day == null) return { start: 1, from: wk };
+    var cw = parseInt(cursor.week, 10), d = parseInt(cursor.day, 10), adv = (cursor.adv == null) ? 5 : parseInt(cursor.adv, 10);
+    if (!(cw > 0) || isNaN(d)) return { start: 1, from: wk };
+    if (isNaN(adv) || adv < 0) adv = 5;
+    var from = parseInt(cursor.from, 10); if (!(from > 0)) from = cw - Math.floor((Math.max(1, d) - 1) / 5);
+    if (wk < from) return { before: true, from: from };
+    var s = (wk === cw) ? d : (wk > cw ? d + adv + 5 * (wk - cw - 1) : d - 5 * (cw - wk));
+    return { start: (((s - 1) % n) + n) % n + 1, from: from };
+  }
   function lnWordBankPlan(wb, wk, orderedDays) {
     var list = (wb && wb.words) || [];
     if (!list.length) return null;
-    var n = list.length, start = dgStart(wb.cursor, wk, n), words = [];
+    var n = list.length, st = lnBankStart(wb.cursor, wk, n), words = [];
+    if (st.before) return { before: true, from: st.from, total: n, words: [] };
+    var start = st.start;
     orderedDays.forEach(function (d, i) {
       var e = list[(((start - 1 + i) % n) + n) % n] || {};
       words.push({ bank: true, label: wb.label || "", word: lnEsc(e.word), pos: lnEsc(e.pos), def: lnEsc(e.def), syn: lnEsc(e.syn),
         ex1: e.ex1 ? lnBoldWord(e.ex1, e.word) : "", ex2: e.ex2 ? lnBoldWord(e.ex2, e.word) : "" });
     });
-    return { start: ((start - 1) % n) + 1, total: n, words: words, cursor: { week: wk, day: ((start - 1) % n) + 1, adv: orderedDays.length } };
+    return { start: start, from: st.from, total: n, words: words, cursor: { week: parseInt(String(wk).replace(/\D/g, ""), 10) || 1, day: start, adv: orderedDays.length, from: st.from } };
   }
   // ── CogAT verbal bank (Mom's list, Notebook tab) — same shape and cursor rule as the word bank ──
   // ctx.cogatBank = { cursor, items:[{type:"A"|"S"|"C", text, c:[up to 5 choices], ans:"A".."E"},…] } in Mom's order.
@@ -1438,7 +1455,9 @@
   function lnCogatBankPlan(cb, wk, orderedDays) {
     var list = (cb && cb.items) || [];
     if (!list.length) return null;
-    var n = list.length, start = dgStart(cb.cursor, wk, n), items = [];
+    var n = list.length, st = lnBankStart(cb.cursor, wk, n), items = [];
+    if (st.before) return { before: true, from: st.from, total: n, items: [] };
+    var start = st.start;
     orderedDays.forEach(function (d, i) {
       var e = list[(((start - 1 + i) % n) + n) % n] || {}, type = LN_CQ_TAG[e.type] ? e.type : "A";
       var ch = (Array.isArray(e.c) ? e.c : Object.keys(e.c || {}).sort().map(function (k) { return e.c[k]; })).filter(function (x) { return x != null && x !== ""; }).slice(0, 5);
@@ -1446,7 +1465,7 @@
         text: type === "C" ? ('<span style="font-weight:500;">Which word belongs with these?</span><br>' + lnEsc(e.text)) : lnEsc(e.text),
         choices: ch.map(function (t, k) { return { l: "ABCDE".charAt(k), t: lnEsc(t) }; }), ans: String(e.ans || "").toUpperCase().charAt(0) });
     });
-    return { start: ((start - 1) % n) + 1, total: n, items: items, cursor: { week: wk, day: ((start - 1) % n) + 1, adv: orderedDays.length } };
+    return { start: start, from: st.from, total: n, items: items, cursor: { week: parseInt(String(wk).replace(/\D/g, ""), 10) || 1, day: start, adv: orderedDays.length, from: st.from } };
   }
   function lnWordCard(word) {
     var label = word.bank ? (word.label || "Word of the day") : ('Word of the day — AAS Level ' + (word.aas_level || 2));
@@ -2693,7 +2712,9 @@ ${extraStrip || ""}
     var dailyPages = [], dayAssignments = [];
     var dgPlan = dgWeekPlan(ctx.dailyGrams, wn, schoolDays, datesMap), dgTitle = (ctx.dailyGrams && ctx.dailyGrams.title) || "Daily Grams";
     var wbPlan = lnWordBankPlan(ctx.wordBank, wn, schoolDays);   // Mom's word bank replaces the built-in words when it has any
+    if (wbPlan && wbPlan.before) wbPlan = null;                    // …but not in a week before the bank's start week
     var cqPlan = lnCogatBankPlan(ctx.cogatBank, wn, schoolDays);   // …and her CogAT verbal bank replaces the built-in analogies
+    if (cqPlan && cqPlan.before) cqPlan = null;
     schoolDays.forEach(function (day, i) {
       var dateStr = datesMap[day];
       var daySubjects = lnDaySubjects(tasks, student, day);

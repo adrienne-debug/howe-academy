@@ -73,7 +73,7 @@ let o=gen(NEW,mk(23,dates5,{label:"Word of the day",cursor:null,words}));
 ok(/class="word-main">copious</.test(o.student)&&/class="word-main">surplus</.test(o.student),"week prints words 1-5");
 ok(!/AAS Level/.test(o.student),"AAS label gone");ok(/Synonyms:<\/strong> abundant, plentiful/.test(o.student),"syn line");
 ok(/After <strong>copious<\/strong> spring rain/.test(o.student),"bolded");ok(!/class="word-main">strain</.test(o.student),"no built-in words");
-ok(JSON.stringify(o.wordBankCursor)===JSON.stringify({week:23,day:1,adv:5}),"cursor out "+JSON.stringify(o.wordBankCursor));
+ok(JSON.stringify(o.wordBankCursor)===JSON.stringify({week:23,day:1,adv:5,from:23}),"cursor out "+JSON.stringify(o.wordBankCursor));
 ok(/Synonyms: abundant, plentiful/.test(o.parent)&&/took <strong>copious<\/strong> notes/.test(o.parent),"companion has syn + ex2");
 // next week continues; 4-day week advances 4
 let o2=gen(NEW,mk(24,dates4,{cursor:o.wordBankCursor,words}));ok(/word-main">colossal</.test(o2.student)&&/word-main">negligible</.test(o2.student)&&!/word-main">substantial</.test(o2.student),"wk24 4-day = words 6-9");
@@ -86,4 +86,17 @@ ok(o4.wordBankCursor.day===124,"cursor normalised");
 let o5=gen(NEW,mk(23,dates5,{label:"My <label>",words:[{word:"brisk",def:"Quick & lively <fast>"}]}));
 ok(/word-main">brisk</.test(o5.student)&&/Quick &amp; lively &lt;fast>/.test(o5.student)&&!/Synonyms/.test(o5.student.split("word-main")[1].slice(0,600)),"minimal entry ok + escaped");
 ok(!/undefined/.test(o5.student.split("word-main")[1].slice(0,700)),"no 'undefined' in minimal card");
+// ── start week: a week BEFORE the bank's start prints the built-in words and hands back NO cursor ──
+const LIVE={week:24,day:1,adv:5};   // the shape already stored live (no `from`)
+let b23=gen(NEW,mk(23,dates5,{cursor:LIVE,words}));ok(/AAS Level/.test(b23.student)&&!/word-main">copious</.test(b23.student)&&b23.wordBankCursor===undefined,"week before the start = built-in words, no cursor");
+let b24=gen(NEW,mk(24,dates5,{cursor:LIVE,words}));ok(/word-main">copious</.test(b24.student)&&JSON.stringify(b24.wordBankCursor)===JSON.stringify({week:24,day:1,adv:5,from:24}),"start week = #1 and remembers from:24");
+let b25=gen(NEW,mk(25,dates5,{cursor:b24.wordBankCursor,words}));ok(/word-main">colossal</.test(b25.student)&&b25.wordBankCursor.from===24,"next week continues, start week carried");
+ok(/word-main">copious</.test(gen(NEW,mk(24,dates5,{cursor:{week:26,day:11,adv:5,from:24},words})).student)&&gen(NEW,mk(23,dates5,{cursor:{week:26,day:11,adv:5,from:24},words})).wordBankCursor===undefined,"walk back to the start week works; one week earlier is before");
+let bw=gen(NEW,mk(49,dates5,{cursor:{week:50,day:3,adv:5,from:24},words}));ok(/word-main">conduct</.test(bw.student)&&/word-main">sparse</.test(bw.student)&&bw.wordBankCursor.day===123,"reprinting the week before a wrap walks back THROUGH the wrap (123,124,125,1,2)");
+// card side
+api.nbWbSave("lincoln","cursor",LIVE);api.wk=23;let cb=api.nbWbCardHTML("lincoln","Week 23");ok(/Week 23 prints: <span[^>]*>the built-in words — this bank starts Week 24/.test(cb)&&/unused words? in the bank/.test(cb),"card says the week is before the start");
+writes.length=0;api.nbWbPersistCursor("lincoln",b23);ok(writes.length===0&&api.S.lincoln.wordBank.cursor.week===24,"printing an earlier week never moves the saved place");
+api.nbWbPersistCursor("lincoln",b24);ok(writes.length===1&&api.S.lincoln.wordBank.cursor.from===24,"the start week gets stored on the next print");
+api.wk=26;api.nbWbSetStart("lincoln",3);ok(JSON.stringify(api.S.lincoln.wordBank.cursor)===JSON.stringify({week:26,day:3,adv:5,from:24}),"start-at-# keeps the start week");
+api.wk=23;api.nbWbSetStart("lincoln",1);ok(JSON.stringify(api.S.lincoln.wordBank.cursor)===JSON.stringify({week:23,day:1,adv:5,from:23}),"Mom can still start an EARLIER week on purpose");
 console.log("\n"+pass+" passed, "+fail+" failed");process.exit(fail?1:0);

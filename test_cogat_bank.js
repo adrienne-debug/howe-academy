@@ -54,11 +54,17 @@ ok(gen(mk(23,d5,{items:[]})).student===base.student,"empty bank = built-in");
 let o=gen(mk(23,d5,{cursor:null,items:qs}));
 ok(/SCULPTOR is to STATUE/.test(o.student)&&/CogAT · Sentence Completion/.test(o.student)&&/CogAT · Verbal Classification/.test(o.student)&&/Which word belongs with these\?<\/span><br>gigantic · massive · immense/.test(o.student)&&!/SKELETON is to BONES/.test(o.student),"bank questions print with their type tags");
 ok((o.student.match(/grid-template-columns:1fr 1fr 1fr/g)||[]).length===5&&/<div class="c-letter">E<\/div> theater/.test(o.student),"five choices, three across");
-ok(JSON.stringify(o.cogatBankCursor)===JSON.stringify({week:23,day:1,adv:5}),"cursor out");
+ok(JSON.stringify(o.cogatBankCursor)===JSON.stringify({week:23,day:1,adv:5,from:23}),"cursor out");
 ok(/\(B\)<\/span> <span class="key-sub">dance — 🐍 CogAT · Verbal Analogy/.test(o.parent)&&/\(D\)<\/span> <span class="key-sub">colossal/.test(o.parent),"answer key in the companion");
 let o2=gen(mk(24,d4,{cursor:o.cogatBankCursor,items:qs}));ok(/copious · abundant · bountiful/.test(o2.student)&&/meager · scanty · sparse/.test(o2.student)&&!/SHORTAGE is to SURPLUS/.test(o2.student),"4-day week uses 4");
 let o3=gen(mk(25,d5,{cursor:o2.cogatBankCursor,items:qs}));ok(/SHORTAGE is to SURPLUS/.test(o3.student),"next week picks up with no skip");
 let o4=gen(mk(30,d5,{cursor:{week:30,day:124,adv:5},items:qs}));ok(/FINGERPRINT is to DISTINCTIVE/.test(o4.student)&&/SCULPTOR is to STATUE/.test(o4.student),"wraps to the top");
 let o5=gen(mk(23,d5,{items:[{type:"zzz",text:"A <b> & c ___",c:{a:"one",b:"two",c:"three",d:"four"},ans:"b"}]}));
 ok(/A &lt;b> &amp; c ___/.test(o5.student)&&/\(B\)<\/span> <span class="key-sub">two/.test(o5.parent),"odd input is escaped, object choices + lower-case answer tolerated");
+// ── start week ──
+const LIVEC={week:24,day:1,adv:5};
+let c23=gen(mk(23,d5,{cursor:LIVEC,items:qs}));ok(/SKELETON is to BONES/.test(c23.student)&&!/SCULPTOR is to STATUE/.test(c23.student)&&c23.cogatBankCursor===undefined,"week before the start = built-in analogies, no cursor");
+let c24=gen(mk(24,d5,{cursor:LIVEC,items:qs}));ok(/SCULPTOR is to STATUE/.test(c24.student)&&JSON.stringify(c24.cogatBankCursor)===JSON.stringify({week:24,day:1,adv:5,from:24}),"start week = #1, remembers from:24");
+api.nbCqSave("lincoln","cursor",LIVEC);api.wk=23;ok(/the built-in analogies — this bank starts Week 24/.test(api.nbCqCardHTML("lincoln","Week 23")),"card says the week is before the start");
+writes.length=0;api.nbCqPersistCursor("lincoln",c23);ok(writes.length===0,"printing an earlier week never moves the saved place");
 console.log("\n"+pass+" passed, "+fail+" failed");process.exit(fail?1:0);
