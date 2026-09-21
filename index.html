@@ -9054,6 +9054,7 @@ function renderMomsDay(el){
     }
   }catch(e){}
 
+  try{ h+=nbBankLowAlertHTML(); }catch(e){}   // 📓 a notebook word bank about to run out of unused words
   // 💳 Bills + 🧺 Laundry now live in shared card functions (Dad's Day renders the same two).
   h+=mdCardBills(iso);
   h+=mdCardLaundry();
@@ -18745,7 +18746,9 @@ function haNbContext(kid){
   // Julian only: Mom's hand-picked slots for THIS week (see nbJuPicks). Absent = pure engine.
   let juPicks=null; try{ if(kid==="julian") juPicks=nbJuPicks(tgtWk); }catch(e){}
   let dailyGrams=null; try{ dailyGrams=nbDgCtx(kid); }catch(e){}
-  return { dailyGrams:dailyGrams, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, letterCursor:((((notebookSettings||{}).julian)||{}).letterCursor)||null, masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true };
+  let wordBank=null; try{ wordBank=nbWbCtx(kid); }catch(e){}   // Mom's Word-of-the-day bank (Lincoln) — null = built-in words
+  let cogatBank=null; try{ cogatBank=nbCqCtx(kid); }catch(e){}   // Mom's CogAT verbal bank (Lincoln) — null = built-in analogies
+  return { wordBank:wordBank, cogatBank:cogatBank, dailyGrams:dailyGrams, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, letterCursor:((((notebookSettings||{}).julian)||{}).letterCursor)||null, masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true };
 }
 async function haNbOpen(kid,which){
   const lib=window.HoweNotebooks; if(!lib){ alert("Notebook builder not loaded yet."); return; }
@@ -18758,6 +18761,8 @@ async function haNbOpen(kid,which){
     // his letters to A B C D E (2026-08-24). Same-week reprints write the same value.
     if(kid==="julian"&&out&&out.letterCursor){ try{ const lc=(((notebookSettings||{}).julian)||{}).letterCursor||{}; const nc=out.letterCursor; if(lc.week!==nc.week||lc.idx!==nc.idx||lc.adv!==nc.adv) db.ref("notebookSettings/julian/letterCursor").set(nc); }catch(e){} }
     nbDgPersistCursor(kid,out);   // Daily Grams: where this week landed, so next week continues
+    nbWbPersistCursor(kid,out);   // Word-of-the-day bank: same idea
+    nbCqPersistCursor(kid,out);   // CogAT verbal bank: same idea
     const html=(which==="parent")?(out.parent||out.student):out.student;
     const fname=kid+"_"+nbTargetWk()+"_"+(which==="parent"?"parent":"notebook")+".html";
     lib.openHtml(html, fname);
@@ -18780,6 +18785,8 @@ async function haNbPdf(kid,which){
     // his letters to A B C D E (2026-08-24). Same-week reprints write the same value.
     if(kid==="julian"&&out&&out.letterCursor){ try{ const lc=(((notebookSettings||{}).julian)||{}).letterCursor||{}; const nc=out.letterCursor; if(lc.week!==nc.week||lc.idx!==nc.idx||lc.adv!==nc.adv) db.ref("notebookSettings/julian/letterCursor").set(nc); }catch(e){} }
     nbDgPersistCursor(kid,out);
+    nbWbPersistCursor(kid,out);
+    nbCqPersistCursor(kid,out);
     const html=(which==="parent")?(out.parent||out.student):out.student;
     const fname=kid+"_"+nbTargetWk()+"_"+(which==="parent"?"parent":"notebook")+".pdf";
     say("📄 Building "+cap(kid)+"'s PDF…");
@@ -22732,6 +22739,274 @@ function nbDgCtx(kid){
   const meta=notebookBooks[c.book]||{}; const cache=nbBookPageCache[c.book]||{day:{},ans:{}};
   return { book:c.book, title:meta.title||"Daily Grams", total:parseInt(meta.days,10)||180, cursor:c.cursor, ansMeta:meta.ansPages||{}, dayAns:meta.dayAns||{}, pages:cache };
 }
+// ── 📖 Word-of-the-day bank — Mom's own word list for a kid's daily "Word of the day" box ─────
+// notebookSettings/<kid>/wordBank = { label, cursor:{week,day,adv}, words:{ <id>:{o,word,pos,def,syn,ex1,ex2,theme} } }.
+// While the bank holds words they REPLACE the list built into notebooks.js; an empty bank falls back
+// to the built-in words, so a deploy changes nothing until words are loaded. Lincoln only for now.
+// Same cursor idea as Daily Grams: the week continues where the last printed week stopped, a 4-day
+// week uses 4 words, and the end of the list wraps to the top. Every write is a targeted path.
+// Typing rule (see mhqSessSet): inputs here only fill nbWbDraft — they never repaint mid-typing.
+const NB_WB_KIDS={lincoln:1};
+const NB_WB_LOW=10;          // fewer unused words than this = "running low" (about two weeks)
+let nbWbDraft=null;          // {id|null, word,pos,def,syn,ex1,ex2} while the add/edit form is open
+let nbWbPaste=null;          // paste-a-list text while that box is open (null = closed)
+let nbWbShowAll=false, nbWbDelArm="", nbWbMsg="";
+function nbWbCfg(kid){ return (((notebookSettings||{})[kid]||{}).wordBank)||{}; }
+function nbWbList(kid){ const w=nbWbCfg(kid).words||{}; return Object.keys(w).map(id=>Object.assign({},w[id],{id:id})).filter(e=>e&&e.word).sort((a,b)=>(a.o||0)-(b.o||0)); }
+function nbWbCtx(kid){ if(!NB_WB_KIDS[kid]) return null; const list=nbWbList(kid); if(!list.length) return null; const c=nbWbCfg(kid); return { label:c.label||"", cursor:c.cursor||null, words:list }; }
+function nbWbRepaint(){ if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); } }
+// one targeted write: path is relative to notebookSettings/<kid>/wordBank ("label", "cursor", "words/<id>"); val null = remove
+function nbWbSave(kid,path,val){ nbBankSave(kid,"wordBank",path,val); }
+function nbBankSave(kid,node,path,val){
+  if(!notebookSettings[kid]) notebookSettings[kid]={};
+  if(!notebookSettings[kid][node]) notebookSettings[kid][node]={};
+  const parts=path.split("/"); let o=notebookSettings[kid][node];
+  for(let i=0;i<parts.length-1;i++){ if(!o[parts[i]]) o[parts[i]]={}; o=o[parts[i]]; }
+  if(val==null) delete o[parts[parts.length-1]]; else o[parts[parts.length-1]]=val;
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db){ const r=db.ref("notebookSettings/"+kid+"/"+node+"/"+path); if(val==null) r.remove(); else r.set(val); } }catch(e){}
+}
+// which words the TARGET week prints (notebooks.js owns the rule); null until the lib is loaded or the bank is empty
+function nbWbPlan(kid){ const lib=window.HoweNotebooks, ctx=nbWbCtx(kid); if(!lib||!lib.wordBankPlan||!ctx) return null; return lib.wordBankPlan(ctx,nbTargetWkNum(),new Array(nbDgWeekLen()).fill("")); }
+// unused words after the last PRINTED week — straight off the stored cursor, so Mom's Day can ask without the notebook lib
+function nbWbLeft(kid){ return nbBankLeft(nbWbList(kid).length,nbWbCfg(kid).cursor); }
+function nbBankLeft(n,c){ if(!n) return null; if(!c||c.day==null) return n; return Math.max(0,n-((parseInt(c.day,10)||1)-1)-(c.adv==null?5:(parseInt(c.adv,10)||0))); }
+function nbWbSetStart(kid,pos){ if(!momHere()) return; const n=nbWbList(kid).length; if(!n) return; pos=Math.max(1,Math.min(n,parseInt(pos,10)||1)); nbWbSave(kid,"cursor",{week:nbTargetWkNum(),day:pos,adv:nbDgWeekLen()}); nbWbRepaint(); }
+function nbWbSetLabel(kid,v){ if(!momHere()) return; v=String(v||"").trim().slice(0,60); nbWbSave(kid,"label",v||null); nbWbRepaint(); }
+function nbWbOpenForm(kid,id){ if(!momHere()) return; const e=id?(nbWbCfg(kid).words||{})[id]:null; nbWbDraft={id:id||null,word:(e&&e.word)||"",pos:(e&&e.pos)||"",def:(e&&e.def)||"",syn:(e&&e.syn)||"",ex1:(e&&e.ex1)||"",ex2:(e&&e.ex2)||""}; nbWbPaste=null; nbWbMsg=""; nbWbRepaint(); }
+function nbWbCloseForm(){ nbWbDraft=null; nbWbPaste=null; nbWbMsg=""; nbWbRepaint(); }
+function nbWbNewId(i){ return "w"+Date.now().toString(36)+(i?("x"+i):""); }
+function nbWbClean(v,max){ return String(v||"").replace(/\s+/g," ").trim().slice(0,max); }
+function nbWbSaveDraft(kid){
+  if(!momHere()||!nbWbDraft) return;
+  const d=nbWbDraft, word=nbWbClean(d.word,40), def=nbWbClean(d.def,300);
+  if(!word||!def){ nbWbMsg="A word needs at least the word and its definition."; nbWbRepaint(); return; }
+  const list=nbWbList(kid), old=d.id?((nbWbCfg(kid).words||{})[d.id]||{}):{};
+  const rec={ o:d.id?(old.o||list.length+1):((list.length?list[list.length-1].o||list.length:0)+1), word:word, def:def };
+  const pos=nbWbClean(d.pos,50), syn=nbWbClean(d.syn,120), ex1=nbWbClean(d.ex1,300), ex2=nbWbClean(d.ex2,300);
+  if(pos) rec.pos=pos; if(syn) rec.syn=syn; if(ex1) rec.ex1=ex1; if(ex2) rec.ex2=ex2; if(old.theme) rec.theme=old.theme;
+  nbWbSave(kid,"words/"+(d.id||nbWbNewId()),rec);
+  nbWbDraft=null; nbWbMsg=""; nbWbRepaint();
+}
+function nbWbDelete(kid,id){
+  if(!momHere()) return;
+  if(nbWbDelArm!==id){ nbWbDelArm=id; nbWbRepaint(); return; }   // first tap arms, second tap deletes (confirm() is dead on kiosk browsers)
+  const list=nbWbList(kid), idx=list.findIndex(e=>e.id===id), c=nbWbCfg(kid).cursor;
+  nbWbSave(kid,"words/"+id,null);
+  // a word removed from BEFORE this week's start would slide every later week by one — pull the start back with it
+  if(c&&c.day!=null&&idx>=0&&idx+1<(parseInt(c.day,10)||1)) nbWbSave(kid,"cursor",{week:c.week,day:(parseInt(c.day,10)||1)-1,adv:c.adv==null?5:c.adv});
+  nbWbDelArm=""; nbWbRepaint();
+}
+function nbWbOpenPaste(){ if(!momHere()) return; nbWbPaste=""; nbWbDraft=null; nbWbMsg=""; nbWbRepaint(); }
+// one word per line:  word | definition   — or the full row —   word | part of speech | definition | synonyms | example 1 | example 2
+function nbWbAddPasted(kid){
+  if(!momHere()||nbWbPaste==null) return;
+  const list=nbWbList(kid); let o=list.length?(list[list.length-1].o||list.length):0, added=0, skipped=0;
+  const have={}; list.forEach(e=>{ have[String(e.word).toLowerCase()]=1; });
+  String(nbWbPaste).split(/\n/).forEach((line,i)=>{
+    const f=line.split("|").map(x=>nbWbClean(x,300)); if(!f[0]) return;
+    const full=f.length>2, word=f[0].slice(0,40), def=full?f[2]:f[1];
+    if(!def||have[word.toLowerCase()]){ skipped++; return; }
+    const rec={o:++o,word:word,def:def};
+    if(full){ if(f[1]) rec.pos=f[1].slice(0,50); if(f[3]) rec.syn=f[3].slice(0,120); if(f[4]) rec.ex1=f[4]; if(f[5]) rec.ex2=f[5]; }
+    have[word.toLowerCase()]=1; nbWbSave(kid,"words/"+nbWbNewId(i+1),rec); added++;
+  });
+  nbWbMsg=added?("Added "+added+" word"+(added>1?"s":"")+(skipped?" · skipped "+skipped+" (no definition, or already in the bank)":"")+"."):"Nothing added — each line needs  word | definition.";
+  if(added) nbWbPaste=null;
+  nbWbRepaint();
+}
+// after a print: remember where this week landed so next week continues (same-week reprints write the same value)
+function nbWbPersistCursor(kid,out){
+  try{
+    if(!out||!out.wordBankCursor||!NB_WB_KIDS[kid]) return;
+    const cur=nbWbCfg(kid).cursor||{}, nc=out.wordBankCursor;
+    if(cur.week===nc.week&&cur.day===nc.day&&cur.adv===nc.adv) return;
+    nbWbSave(kid,"cursor",nc);
+  }catch(e){}
+}
+function nbWbCardHTML(kid,wkLabel){
+  if(!momHere()||!NB_WB_KIDS[kid]) return "";
+  const list=nbWbList(kid), n=list.length, c=nbWbCfg(kid), plan=nbWbPlan(kid), F="font-family:'DM Sans',sans-serif;";
+  const btn=(on,label,extra)=>'<button onclick="'+on+'" style="padding:7px 12px;border-radius:9px;border:1.5px solid #86efac;background:#fff;color:#166534;font-size:11.5px;font-weight:800;cursor:pointer;'+F+(extra||'')+'">'+label+'</button>';
+  const inp=(id,key,ph,val,w)=>'<input id="'+id+'" value="'+esc(val)+'" placeholder="'+esc(ph)+'" oninput="if(nbWbDraft)nbWbDraft.'+key+'=this.value" style="'+(w||'width:100%')+';box-sizing:border-box;padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;margin-bottom:6px;'+F+'">';
+  let h='<div style="margin-top:14px;background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:12px;padding:12px 14px">'+
+    '<div style="font-size:12px;font-weight:800;color:#166534;margin-bottom:2px">📖 Word of the Day bank <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#bbf7d0;color:#14532d;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span>'+
+      '<span style="float:right;font-weight:700;color:#166534">'+n+' word'+(n===1?'':'s')+'</span></div>'+
+    '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:10px">'+(n?'These print in the Word of the day box on his daily pages — in this order, one per school day. It keeps its place from week to week and starts over at the top when it reaches the end.':'Empty — the built-in words print until you add some. Words you add here take their place.')+'</div>';
+  if(n){
+    const left=plan?Math.max(0,n-(plan.start-1)-nbDgWeekLen()):nbWbLeft(kid), low=left!=null&&left<NB_WB_LOW;
+    h+='<div style="background:#fff;border:1px solid #bbf7d0;border-radius:10px;padding:9px 11px;margin-bottom:10px">'+
+      '<div style="font-size:12px;font-weight:700;color:#1f2937">'+esc(wkLabel)+' prints: <span style="color:#166534">'+(plan?plan.words.map(w=>w.word).join(" · "):"…")+'</span></div>'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-top:7px;font-size:11px;color:var(--muted);flex-wrap:wrap">Start '+esc(wkLabel)+' at word # '+
+        '<input id="nbwb-start" type="number" min="1" max="'+n+'" value="'+(plan?plan.start:1)+'" onchange="nbWbSetStart(\''+kid+'\',this.value)" style="width:64px;padding:5px 7px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;'+F+'"><span>of '+n+'</span></div>'+
+      '<div style="font-size:11px;margin-top:7px;font-weight:700;color:'+(low?'#b91c1c':'#166534')+'">'+(low?'⚠ ':'')+left+' unused word'+(left===1?'':'s')+' after this week'+(left?' (about '+Math.max(1,Math.round(left/5))+' week'+(Math.round(left/5)>1?'s':'')+')':'')+(low?' — add more, or it starts over from the top.':'')+'</div>'+
+    '</div>';
+  }
+  h+='<div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);margin-bottom:10px">Box title '+
+    '<input id="nbwb-label" value="'+esc(c.label||"")+'" placeholder="Word of the day" onchange="nbWbSetLabel(\''+kid+'\',this.value)" style="flex:1;padding:6px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;'+F+'"></div>';
+  if(nbWbMsg) h+='<div style="font-size:11px;font-weight:700;color:#9a3412;background:#fff7ed;border-radius:8px;padding:6px 9px;margin-bottom:8px">'+esc(nbWbMsg)+'</div>';
+  if(nbWbDraft){
+    const d=nbWbDraft;
+    h+='<div style="background:#fff;border:1.5px solid #86efac;border-radius:10px;padding:10px 11px;margin-bottom:10px">'+
+      '<div style="font-size:11.5px;font-weight:800;color:#166534;margin-bottom:7px">'+(d.id?'Edit word':'Add a word')+'</div>'+
+      '<div style="display:flex;gap:6px">'+inp("nbwb-word","word","word",d.word,"flex:1;min-width:0")+inp("nbwb-pos","pos","part of speech (optional)",d.pos,"flex:1;min-width:0")+'</div>'+
+      inp("nbwb-def","def","definition — in kid words",d.def)+
+      inp("nbwb-syn","syn","synonyms, separated by commas (optional)",d.syn)+
+      inp("nbwb-ex1","ex1","example sentence — prints on his page (optional)",d.ex1)+
+      inp("nbwb-ex2","ex2","second example — Teaching Companion only (optional)",d.ex2)+
+      '<div style="display:flex;gap:8px">'+btn("nbWbSaveDraft('"+kid+"')",d.id?"Save":"Add to bank","background:#16a34a;color:#fff;border-color:#16a34a;")+btn("nbWbCloseForm()","Cancel")+'</div></div>';
+  }else if(nbWbPaste!=null){
+    h+='<div style="background:#fff;border:1.5px solid #86efac;border-radius:10px;padding:10px 11px;margin-bottom:10px">'+
+      '<div style="font-size:11.5px;font-weight:800;color:#166534;margin-bottom:4px">Paste a list</div>'+
+      '<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin-bottom:6px">One word per line: <b>word | definition</b><br>or the full row: <b>word | part of speech | definition | synonyms | example 1 | example 2</b></div>'+
+      '<textarea id="nbwb-paste" rows="6" oninput="nbWbPaste=this.value" placeholder="brisk | quick and full of energy" style="width:100%;box-sizing:border-box;padding:8px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;margin-bottom:6px;'+F+'">'+esc(nbWbPaste)+'</textarea>'+
+      '<div style="display:flex;gap:8px">'+btn("nbWbAddPasted('"+kid+"')","Add these","background:#16a34a;color:#fff;border-color:#16a34a;")+btn("nbWbCloseForm()","Cancel")+'</div></div>';
+  }else{
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap">'+btn("nbWbOpenForm('"+kid+"','')","＋ Add a word")+btn("nbWbOpenPaste()","📋 Paste a list")+(n?btn("nbWbShowAll=!nbWbShowAll;nbWbDelArm='';nbWbRepaint()",nbWbShowAll?"Hide the list ▴":"Show all "+n+" ▾"):"")+'</div>';
+  }
+  if(n&&nbWbShowAll&&!nbWbDraft&&nbWbPaste==null){
+    const startAt=plan?plan.start:0, wl=nbDgWeekLen();
+    h+='<div style="margin-top:10px;max-height:340px;overflow-y:auto;background:#fff;border:1px solid #bbf7d0;border-radius:10px">'+list.map((e,i)=>{
+      const thisWk=startAt&&(((i+1-startAt)%n+n)%n)<wl, arm=nbWbDelArm===e.id;
+      return '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #f0fdf4;'+(thisWk?'background:#f0fdf4;':'')+'">'+
+        '<span style="font-size:10px;color:var(--muted);width:26px;flex-shrink:0;text-align:right">'+(i+1)+'</span>'+
+        '<span style="flex:1;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><b>'+esc(e.word)+'</b> <span style="color:var(--muted)">— '+esc(e.def)+'</span></span>'+
+        '<button onclick="nbWbOpenForm(\''+kid+'\',\''+esc(e.id)+'\')" title="Edit" style="border:none;background:none;cursor:pointer;font-size:13px;padding:2px 4px">✎</button>'+
+        '<button onclick="nbWbDelete(\''+kid+'\',\''+esc(e.id)+'\')" title="Delete" style="border:none;background:'+(arm?'#fee2e2':'none')+';color:#b91c1c;border-radius:6px;cursor:pointer;font-size:'+(arm?'10.5px;font-weight:800':'13px')+';padding:2px 5px;'+F+'">'+(arm?'Delete?':'🗑')+'</button></div>';
+    }).join("")+'</div>';
+  }
+  return h+'</div>';
+}
+// ── 🧠 CogAT verbal bank — Mom's own question list for the daily CogAT box (same pattern as the word bank) ──
+// notebookSettings/<kid>/cogatBank = { cursor:{week,day,adv}, items:{ <id>:{o,type,text,c:[5 choices],ans} } }.
+// type: A = verbal analogy · S = sentence completion · C = verbal classification (text = the three words that go together).
+// While it holds questions they REPLACE the analogies built into notebooks.js; empty = built-in. Lincoln only for now.
+const NB_CQ_TYPES={A:"Analogy",S:"Sentence",C:"Belongs with"};
+let nbCqDraft=null;          // {id|null,type,text,c0..c4,ans} while the add/edit form is open
+let nbCqPaste=null, nbCqShowAll=false, nbCqDelArm="", nbCqMsg="";
+function nbCqCfg(kid){ return (((notebookSettings||{})[kid]||{}).cogatBank)||{}; }
+function nbCqChoices(e){ const c=e&&e.c; return (Array.isArray(c)?c:Object.keys(c||{}).sort().map(k=>c[k])).filter(x=>x!=null&&x!==""); }
+function nbCqList(kid){ const w=nbCqCfg(kid).items||{}; return Object.keys(w).map(id=>Object.assign({},w[id],{id:id})).filter(e=>e&&e.text).sort((a,b)=>(a.o||0)-(b.o||0)); }
+function nbCqCtx(kid){ if(!NB_WB_KIDS[kid]) return null; const list=nbCqList(kid); if(!list.length) return null; return { cursor:nbCqCfg(kid).cursor||null, items:list }; }
+function nbCqSave(kid,path,val){ nbBankSave(kid,"cogatBank",path,val); }
+function nbCqPlan(kid){ const lib=window.HoweNotebooks, ctx=nbCqCtx(kid); if(!lib||!lib.cogatBankPlan||!ctx) return null; return lib.cogatBankPlan(ctx,nbTargetWkNum(),new Array(nbDgWeekLen()).fill("")); }
+function nbCqLeft(kid){ return nbBankLeft(nbCqList(kid).length,nbCqCfg(kid).cursor); }
+function nbCqSetStart(kid,pos){ if(!momHere()) return; const n=nbCqList(kid).length; if(!n) return; pos=Math.max(1,Math.min(n,parseInt(pos,10)||1)); nbCqSave(kid,"cursor",{week:nbTargetWkNum(),day:pos,adv:nbDgWeekLen()}); nbWbRepaint(); }
+function nbCqOpenForm(kid,id){ if(!momHere()) return; const e=id?(nbCqCfg(kid).items||{})[id]:null, c=nbCqChoices(e); nbCqDraft={id:id||null,type:(e&&e.type)||"A",text:(e&&e.text)||"",c0:c[0]||"",c1:c[1]||"",c2:c[2]||"",c3:c[3]||"",c4:c[4]||"",ans:(e&&e.ans)||"A"}; nbCqPaste=null; nbCqMsg=""; nbWbRepaint(); }
+function nbCqCloseForm(){ nbCqDraft=null; nbCqPaste=null; nbCqMsg=""; nbWbRepaint(); }
+function nbCqType(v){ v=String(v||"").trim().toUpperCase(); if(/^(A|ANALOG)/.test(v)) return "A"; if(/^(S|SENT)/.test(v)) return "S"; if(/^(C|CLASS|BELONG)/.test(v)) return "C"; return ""; }
+// one clean record, or a string saying what is missing
+function nbCqRecord(type,text,choices,ans,o){
+  type=nbCqType(type); text=nbWbClean(text,260); choices=choices.map(x=>nbWbClean(x,60)).filter(Boolean).slice(0,5); ans=String(ans||"").trim().toUpperCase().charAt(0);
+  if(!type) return "pick a type (A, S or C)"; if(!text) return "the question is blank"; if(choices.length<4) return "it needs at least 4 answer choices";
+  if("ABCDE".indexOf(ans)<0||"ABCDE".indexOf(ans)>=choices.length) return "the answer must be the letter of one of the choices";
+  return {o:o,type:type,text:text,c:choices,ans:ans};
+}
+function nbCqSaveDraft(kid){
+  if(!momHere()||!nbCqDraft) return;
+  const d=nbCqDraft, list=nbCqList(kid), old=d.id?((nbCqCfg(kid).items||{})[d.id]||{}):{};
+  const rec=nbCqRecord(d.type,d.text,[d.c0,d.c1,d.c2,d.c3,d.c4],d.ans,d.id?(old.o||list.length+1):((list.length?list[list.length-1].o||list.length:0)+1));
+  if(typeof rec==="string"){ nbCqMsg="Not saved — "+rec+"."; nbWbRepaint(); return; }
+  nbCqSave(kid,"items/"+(d.id||nbWbNewId()),rec);
+  nbCqDraft=null; nbCqMsg=""; nbWbRepaint();
+}
+function nbCqDelete(kid,id){
+  if(!momHere()) return;
+  if(nbCqDelArm!==id){ nbCqDelArm=id; nbWbRepaint(); return; }
+  const list=nbCqList(kid), idx=list.findIndex(e=>e.id===id), c=nbCqCfg(kid).cursor;
+  nbCqSave(kid,"items/"+id,null);
+  if(c&&c.day!=null&&idx>=0&&idx+1<(parseInt(c.day,10)||1)) nbCqSave(kid,"cursor",{week:c.week,day:(parseInt(c.day,10)||1)-1,adv:c.adv==null?5:c.adv});
+  nbCqDelArm=""; nbWbRepaint();
+}
+function nbCqOpenPaste(){ if(!momHere()) return; nbCqPaste=""; nbCqDraft=null; nbCqMsg=""; nbWbRepaint(); }
+// one question per line:  type | question | A | B | C | D | E | answer letter
+function nbCqAddPasted(kid){
+  if(!momHere()||nbCqPaste==null) return;
+  const list=nbCqList(kid); let o=list.length?(list[list.length-1].o||list.length):0, added=0, bad=[];
+  String(nbCqPaste).split(/\n/).forEach((line,i)=>{
+    if(!line.trim()) return;
+    const f=line.split("|").map(x=>x.trim()); const rec=nbCqRecord(f[0],f[1],f.slice(2,f.length-1),f[f.length-1],o+1);
+    if(typeof rec==="string"){ bad.push("line "+(i+1)+": "+rec); return; }
+    o++; nbCqSave(kid,"items/"+nbWbNewId(i+1),rec); added++;
+  });
+  nbCqMsg=(added?"Added "+added+" question"+(added>1?"s":"")+". ":"")+(bad.length?"Skipped — "+bad.slice(0,3).join("; ")+(bad.length>3?" (+"+(bad.length-3)+" more)":"")+".":"")||"Nothing to add.";
+  if(added&&!bad.length) nbCqPaste=null;
+  nbWbRepaint();
+}
+function nbCqPersistCursor(kid,out){
+  try{
+    if(!out||!out.cogatBankCursor||!NB_WB_KIDS[kid]) return;
+    const cur=nbCqCfg(kid).cursor||{}, nc=out.cogatBankCursor;
+    if(cur.week===nc.week&&cur.day===nc.day&&cur.adv===nc.adv) return;
+    nbCqSave(kid,"cursor",nc);
+  }catch(e){}
+}
+function nbCqCardHTML(kid,wkLabel){
+  if(!momHere()||!NB_WB_KIDS[kid]) return "";
+  const list=nbCqList(kid), n=list.length, plan=nbCqPlan(kid), F="font-family:'DM Sans',sans-serif;";
+  const btn=(on,label,extra)=>'<button onclick="'+on+'" style="padding:7px 12px;border-radius:9px;border:1.5px solid #c4b5fd;background:#fff;color:#5b21b6;font-size:11.5px;font-weight:800;cursor:pointer;'+F+(extra||'')+'">'+label+'</button>';
+  const inp=(id,key,ph,val,w)=>'<input id="'+id+'" value="'+esc(val)+'" placeholder="'+esc(ph)+'" oninput="if(nbCqDraft)nbCqDraft.'+key+'=this.value" style="'+(w||'width:100%')+';box-sizing:border-box;padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;margin-bottom:6px;'+F+'">';
+  let h='<div style="margin-top:14px;background:#f5f3ff;border:1.5px solid #ddd6fe;border-radius:12px;padding:12px 14px">'+
+    '<div style="font-size:12px;font-weight:800;color:#5b21b6;margin-bottom:2px">🧠 CogAT Verbal bank <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#ddd6fe;color:#4c1d95;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span>'+
+      '<span style="float:right;font-weight:700;color:#5b21b6">'+n+' question'+(n===1?'':'s')+'</span></div>'+
+    '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:10px">'+(n?'One prints in the CogAT box on his daily pages — in this order, one per school day; the answers print in the Teaching Companion. It keeps its place from week to week and starts over at the top when it reaches the end.':'Empty — the built-in analogies print until you add some. Questions you add here take their place.')+'</div>';
+  if(n){
+    const left=plan?Math.max(0,n-(plan.start-1)-nbDgWeekLen()):nbCqLeft(kid), low=left!=null&&left<NB_WB_LOW;
+    h+='<div style="background:#fff;border:1px solid #ddd6fe;border-radius:10px;padding:9px 11px;margin-bottom:10px">'+
+      '<div style="font-size:12px;font-weight:700;color:#1f2937">'+esc(wkLabel)+' prints: <span style="color:#5b21b6">'+(plan?plan.items.map(q=>NB_CQ_TYPES[q.type]||"").join(" · "):"…")+'</span></div>'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-top:7px;font-size:11px;color:var(--muted);flex-wrap:wrap">Start '+esc(wkLabel)+' at question # '+
+        '<input id="nbcq-start" type="number" min="1" max="'+n+'" value="'+(plan?plan.start:1)+'" onchange="nbCqSetStart(\''+kid+'\',this.value)" style="width:64px;padding:5px 7px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;'+F+'"><span>of '+n+'</span></div>'+
+      '<div style="font-size:11px;margin-top:7px;font-weight:700;color:'+(low?'#b91c1c':'#5b21b6')+'">'+(low?'⚠ ':'')+left+' unused question'+(left===1?'':'s')+' after this week'+(left?' (about '+Math.max(1,Math.round(left/5))+' week'+(Math.round(left/5)>1?'s':'')+')':'')+(low?' — add more, or it starts over from the top.':'')+'</div>'+
+    '</div>';
+  }
+  if(nbCqMsg) h+='<div style="font-size:11px;font-weight:700;color:#9a3412;background:#fff7ed;border-radius:8px;padding:6px 9px;margin-bottom:8px">'+esc(nbCqMsg)+'</div>';
+  if(nbCqDraft){
+    const d=nbCqDraft, sel=(id,key,opts,val)=>'<select id="'+id+'" onchange="if(nbCqDraft)nbCqDraft.'+key+'=this.value" style="padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;margin-bottom:6px;background:#fff;'+F+'">'+opts.map(o=>'<option value="'+o[0]+'"'+(o[0]===val?' selected':'')+'>'+o[1]+'</option>').join("")+'</select>';
+    h+='<div style="background:#fff;border:1.5px solid #c4b5fd;border-radius:10px;padding:10px 11px;margin-bottom:10px">'+
+      '<div style="font-size:11.5px;font-weight:800;color:#5b21b6;margin-bottom:7px">'+(d.id?'Edit question':'Add a question')+'</div>'+
+      sel("nbcq-type","type",[["A","Analogy —  X is to Y as Z is to ___"],["S","Sentence completion —  use ___ for the blank"],["C","Belongs with —  type the three words that go together"]],d.type)+
+      inp("nbcq-text","text","the question",d.text)+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 6px">'+["A","B","C","D","E"].map((L,i)=>inp("nbcq-c"+i,"c"+i,"choice "+L+(i===4?" (optional)":""),d["c"+i])).join("")+
+        '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin-bottom:6px">Answer '+sel("nbcq-ans","ans",["A","B","C","D","E"].map(L=>[L,L]),d.ans).replace("margin-bottom:6px;","margin-bottom:0;")+'</div></div>'+
+      '<div style="display:flex;gap:8px">'+btn("nbCqSaveDraft('"+kid+"')",d.id?"Save":"Add to bank","background:#7c3aed;color:#fff;border-color:#7c3aed;")+btn("nbCqCloseForm()","Cancel")+'</div></div>';
+  }else if(nbCqPaste!=null){
+    h+='<div style="background:#fff;border:1.5px solid #c4b5fd;border-radius:10px;padding:10px 11px;margin-bottom:10px">'+
+      '<div style="font-size:11.5px;font-weight:800;color:#5b21b6;margin-bottom:4px">Paste a list</div>'+
+      '<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin-bottom:6px">One question per line: <b>type | question | A | B | C | D | E | answer letter</b><br>Type is A (analogy), S (sentence) or C (belongs with).</div>'+
+      '<textarea id="nbcq-paste" rows="6" oninput="nbCqPaste=this.value" placeholder="A | GLOVE is to HAND as SOCK is to ___ | shoe | foot | leg | toe | wool | B" style="width:100%;box-sizing:border-box;padding:8px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;margin-bottom:6px;'+F+'">'+esc(nbCqPaste)+'</textarea>'+
+      '<div style="display:flex;gap:8px">'+btn("nbCqAddPasted('"+kid+"')","Add these","background:#7c3aed;color:#fff;border-color:#7c3aed;")+btn("nbCqCloseForm()","Cancel")+'</div></div>';
+  }else{
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap">'+btn("nbCqOpenForm('"+kid+"','')","＋ Add a question")+btn("nbCqOpenPaste()","📋 Paste a list")+(n?btn("nbCqShowAll=!nbCqShowAll;nbCqDelArm='';nbWbRepaint()",nbCqShowAll?"Hide the list ▴":"Show all "+n+" ▾"):"")+'</div>';
+  }
+  if(n&&nbCqShowAll&&!nbCqDraft&&nbCqPaste==null){
+    const startAt=plan?plan.start:0, wl=nbDgWeekLen();
+    h+='<div style="margin-top:10px;max-height:340px;overflow-y:auto;background:#fff;border:1px solid #ddd6fe;border-radius:10px">'+list.map((e,i)=>{
+      const thisWk=startAt&&(((i+1-startAt)%n+n)%n)<wl, arm=nbCqDelArm===e.id, ch=nbCqChoices(e), ai="ABCDE".indexOf(e.ans);
+      return '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #f5f3ff;'+(thisWk?'background:#f5f3ff;':'')+'">'+
+        '<span style="font-size:10px;color:var(--muted);width:26px;flex-shrink:0;text-align:right">'+(i+1)+'</span>'+
+        '<span style="font-size:9px;font-weight:800;color:#5b21b6;background:#ede9fe;border-radius:6px;padding:1px 5px;flex-shrink:0">'+esc(e.type||"A")+'</span>'+
+        '<span style="flex:1;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(e.text)+'</span>'+
+        '<span style="flex-shrink:0;max-width:96px;font-size:11.5px;color:#16a34a;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">→ '+esc(ch[ai]||"?")+'</span>'+
+        '<button onclick="nbCqOpenForm(\''+kid+'\',\''+esc(e.id)+'\')" title="Edit" style="border:none;background:none;cursor:pointer;font-size:13px;padding:2px 4px">✎</button>'+
+        '<button onclick="nbCqDelete(\''+kid+'\',\''+esc(e.id)+'\')" title="Delete" style="border:none;background:'+(arm?'#fee2e2':'none')+';color:#b91c1c;border-radius:6px;cursor:pointer;font-size:'+(arm?'10.5px;font-weight:800':'13px')+';padding:2px 5px;'+F+'">'+(arm?'Delete?':'🗑')+'</button></div>';
+    }).join("")+'</div>';
+  }
+  return h+'</div>';
+}
+// Mom's Day: a notebook bank that is about to run out of unused content. Returns "" when nothing is low.
+function nbBankLowAlertHTML(){
+  let rows="";
+  Object.keys(NB_WB_KIDS).forEach(kid=>{ [["Word of the Day bank","word",nbWbLeft(kid)],["CogAT Verbal bank","question",nbCqLeft(kid)]].forEach(b=>{
+    const left=b[2], unit=b[1]; if(left==null||left>=NB_WB_LOW) return;
+    rows+='<div onclick="nbSelectedKid=\''+kid+'\';showTab(\'notebook\')" style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fffbeb;border-left:3px solid #b45309;border-radius:8px;margin-bottom:6px;cursor:pointer">'+
+      '<span style="flex:1;font-size:13px;font-weight:700">'+esc(cap(kid))+'\'s '+b[0]+' <span style="color:#6b6560;font-weight:600">· '+(left?left+' unused '+unit+(left===1?'':'s')+' left (about '+Math.max(1,Math.round(left/5))+' week'+(Math.round(left/5)>1?'s':'')+')':'every '+unit+' has been used — it is repeating from the top')+'</span></span>'+
+      '<span style="font-size:11px;font-weight:800;color:#b45309">Add '+unit+'s ›</span></div>';
+  }); });
+  if(!rows) return "";
+  return '<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'+
+    '<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#b45309;color:#fff;font-weight:800;font-size:13px"><span>📓</span> Notebook banks running low</div>'+
+    '<div style="padding:10px 14px 6px">'+rows+'</div></div>';
+}
 // ── Unit-insert day assignment ─────────────────────────────────────────────────
 // notebookSettings[kid].unitDays[unitId] = {monday:true,…}. Mirrors extraPages.days: the unit's
 // pages print regardless (that's the unit's own nbInsert flag) — a day only adds the "📌 Pages to
@@ -24769,6 +25044,8 @@ function renderNotebook(el){
         xpHtml+
         reviewHtml+
         dgHtml+
+        nbWbCardHTML(sel,wkLabel)+
+        nbCqCardHTML(sel,wkLabel)+
         juPlanHtml+
         storyHtml+
         coloringHtml+
