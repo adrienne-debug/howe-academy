@@ -2685,7 +2685,16 @@ ${extraStrip || ""}
         '<div style="height:5px;flex-shrink:0;background:repeating-linear-gradient(90deg,' + GM + ' 0,' + GM + ' 18px,' + GOLD + ' 18px,' + GOLD + ' 22px,' + GM + ' 22px,' + GM + ' 40px)"></div>';
     }
     var acts = (ins.activities && ins.activities.length) ? ins.activities : (ins.activity ? [ins.activity] : []);
-    var tot = 2 + acts.length;
+    // One page when it fits: "This Week" on top, "Your Journey" folded underneath (2026-09-21 — the two pages
+    // averaged under half full). Height is estimated from the text; a unit that would overflow keeps its two pages.
+    var learnList = (ins.learning || []).slice(0, 5), learnedN = (ins.learned || []).length, nextN = (ins.next || []).length, extrasList = (ins.extras || []).slice(0, 8);
+    var estH = 60;   // intro line + gaps
+    learnList.forEach(function (m) { estH += 36 + Math.ceil(String(m.bio || "").length / 105) * 14.5; });
+    estH += 34 + (learnedN + nextN ? 74 : 0) + (learnedN > 12 ? 20 : 0);
+    if (extrasList.length) estH += 22 + Math.ceil(extrasList.length / 2) * (extrasList.some(function (e) { return String(e.text || "").length > 70; }) ? 30 : 17);
+    estH += 78;   // challenge box
+    var onePage = estH <= 880;
+    var tot = (onePage ? 1 : 2) + acts.length;
     var p1 = '<div class="page-label">Unit Study — ' + esc(title) + ' (1/' + tot + ')</div>\n<div class="page">\n' + hdr(emoji + " This Week", "Week " + weekNum) +
       '<div style="padding:16px 40px;flex:1;display:flex;flex-direction:column;gap:11px;overflow:hidden">' +
       '<div style="font-size:11px;color:' + MUT + '">What you’re learning right now — read each one’s story.</div>';
@@ -2710,10 +2719,42 @@ ${extraStrip || ""}
     // U5/U7: one insert page per activity Mom queued in the Units tab (ins.activities, built by
     // haBuildUnitInsight; falls back to the legacy single ins.activity). Four generic kinds:
     // sheet / bio / compare / timeline.
-    if (!acts.length) return [p1, p2];
+    var p12 = null;
+    if (onePage) {
+      p12 = '<div class="page-label">Unit Study — ' + esc(title) + ' (1/' + tot + ')</div>\n<div class="page">\n' + hdr(emoji + " This Week", "Week " + weekNum) +
+        '<div style="padding:12px 40px 14px;flex:1;display:flex;flex-direction:column;gap:8px;overflow:hidden">' +
+        '<div style="font-size:10.5px;color:' + MUT + '">What you’re learning right now — read each one’s story.</div>';
+      learnList.forEach(function (m) {
+        var subline = [(m.group || ""), (m.sub || "")].filter(Boolean).map(esc).join(" · ");
+        p12 += '<div style="display:flex;gap:11px;align-items:flex-start;border:1.5px solid ' + GL + ';background:' + GP + ';border-radius:10px;padding:7px 11px">' + face(m.portrait, 48) +
+          '<div style="flex:1;min-width:0"><div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><span style="font-family:\'Fraunces\',serif;font-size:14px;font-weight:700;color:' + GD + ';line-height:1.1">' + esc(m.name) + '</span>' +
+          (subline ? '<span style="font-family:\'DM Mono\',monospace;font-size:8.5px;color:' + MUT + '">' + subline + '</span>' : '') + '</div>' +
+          '<div style="font-size:10.5px;line-height:1.4;color:' + INK + ';margin-top:2px">' + esc(m.bio || "") + '</div></div></div>';
+      });
+      if (!learnList.length) p12 += '<div style="font-size:11px;color:' + MUT + '">Nothing in the learning phase this week.</div>';
+      // ── Your Journey, folded under ──
+      p12 += '<div style="margin-top:4px;display:flex;align-items:center;gap:10px"><span style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700;color:' + GD + '">Your Journey</span><span style="flex:1;height:3px;background:repeating-linear-gradient(90deg,' + GM + ' 0,' + GM + ' 14px,' + GOLD + ' 14px,' + GOLD + ' 17px,' + GM + ' 17px,' + GM + ' 31px)"></span></div>';
+      if (learnedN + nextN) {
+        p12 += '<div style="display:flex;gap:18px;align-items:flex-start">';
+        p12 += '<div style="flex:1;min-width:0"><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:' + GM + ';margin-bottom:5px">✅ Learned so far (' + learnedN + ')</div>';
+        if (learnedN) { p12 += '<div style="display:flex;flex-wrap:wrap;gap:7px">'; ins.learned.slice(0, 12).forEach(function (m) { p12 += '<div style="width:58px;text-align:center">' + face(m.portrait, 42) + '<div style="font-size:8px;font-weight:700;color:' + INK + ';margin-top:2px;line-height:1.1">' + esc(m.name) + '</div></div>'; }); if (learnedN > 12) p12 += '<div style="align-self:center;font-size:9px;color:' + MUT + '">+' + (learnedN - 12) + ' more</div>'; p12 += '</div>'; }
+        else p12 += '<div style="font-size:10px;color:' + MUT + '">None finished yet — keep going!</div>';
+        p12 += '</div>';
+        if (nextN) { p12 += '<div style="flex:1;min-width:0"><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:' + GOLDD + ';margin-bottom:5px">⏭️ Coming up next</div><div style="display:flex;flex-wrap:wrap;gap:7px">'; ins.next.forEach(function (m) { p12 += '<div style="width:58px;text-align:center;opacity:0.75">' + face(m.portrait, 42) + '<div style="font-size:8px;font-weight:700;color:' + INK + ';margin-top:2px;line-height:1.1">' + esc(m.name) + '</div></div>'; }); p12 += '</div></div>'; }
+        p12 += '</div>';
+      }
+      if (extrasList.length) {
+        p12 += '<div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:' + EXTRA + ';margin-bottom:4px">' + esc(ins.extrasTitle || "Lore") + '</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:1px 16px">';
+        extrasList.forEach(function (e) { p12 += '<div style="font-size:9.5px;line-height:1.35;padding:1px 0;color:' + INK + '">' + (e.year ? '<span style="font-weight:800;color:' + GM + '">' + esc(e.year) + '</span> ' : '') + '<span style="font-weight:700">' + esc(e.name) + '</span>' + (e.text ? ' <span style="color:' + MUT + '">— ' + esc(e.text) + '</span>' : '') + '</div>'; });
+        p12 += '</div></div>';
+      }
+      p12 += '<div style="border:1.5px dashed ' + GOLD + ';border-radius:10px;padding:8px 13px;background:' + CREAM + ';margin-top:auto"><div style="font-family:\'Fraunces\',serif;font-size:12.5px;font-weight:700;color:' + GD + ';margin-bottom:4px">🎯 Challenge</div><div style="font-size:10.5px;color:' + INK + ';line-height:1.45">Can you name this week’s ' + esc(title) + ' and tell someone one fact about each? Write your favorite below:</div><div style="border-bottom:1.5px solid #cbd5d1;height:20px"></div><div style="border-bottom:1.5px solid #cbd5d1;height:20px"></div></div>';
+      p12 += '</div></div>';
+    }
+    if (!acts.length) return onePage ? [p12] : [p1, p2];
     var wline = function (n) { var s = ""; for (var i = 0; i < n; i++) s += '<div style="border-bottom:1.5px solid #cbd5d1;height:22px"></div>'; return s; };
     var actPages = acts.map(function (act, ai) {
-      var pg = '<div class="page-label">Unit Study — ' + esc(title) + ' (' + (3 + ai) + '/' + tot + ')</div>\n<div class="page">\n' + hdr((act.emoji || "🎨") + " " + esc(act.title), "Week " + weekNum) +
+      var pg = '<div class="page-label">Unit Study — ' + esc(title) + ' (' + ((onePage ? 2 : 3) + ai) + '/' + tot + ')</div>\n<div class="page">\n' + hdr((act.emoji || "🎨") + " " + esc(act.title), "Week " + weekNum) +
         '<div style="padding:16px 40px;flex:1;display:flex;flex-direction:column;gap:10px;overflow:hidden">';
       if (act.points) pg += '<div style="align-self:flex-start;border:1.5px solid ' + GOLD + ';background:'+CREAM+';border-radius:9px;padding:4px 12px;font-size:11px;font-weight:800;color:'+GOLDD+'">⭐ Worth ' + act.points + ' points — show Mom your finished work, then tap “I finished it!” in the app</div>';
       if (act.desc) pg += '<div style="font-size:11.5px;line-height:1.5;color:' + INK + '">' + esc(act.desc) + '</div>';
@@ -2740,7 +2781,7 @@ ${extraStrip || ""}
       pg += '</div></div>';
       return pg;
     });
-    return [p1, p2].concat(actPages);
+    return (onePage ? [p12] : [p1, p2]).concat(actPages);
   }
 
   function generateLincoln(ctx) {
