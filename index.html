@@ -2968,6 +2968,47 @@ function haAuthDiagReport(when){
 // From an Admin console: haSignOut() forgets this device's session and reloads (it will ask again).
 function haSignOut(){ try{ firebase.auth().signOut().then(function(){ location.reload(); }); }catch(e){ location.reload(); } }
 // AUTH_GATE_END
+// CVRELOAD_START — a code-version reload waits for an idle moment (her report 2026-09-22)
+// Every deploy — and every stale device that reconnects and republishes its OLD hash — used to
+// reload the whole fleet on the spot: she and Ellis were thrown out of the workbook viewer on two
+// devices at once, and a drill she was scoring with a kid was cut off the same way. A reload is
+// still how new code reaches a device, but it now waits until THIS device is idle: no workbook
+// open, no drill being scored, no study sitting, no recording, no dialog up. Checked again every
+// 20 s; after 30 minutes of "busy" it reloads anyway so a kiosk with a dialog left open still
+// gets the deploy. `sessionStorage ha_cv_reload` keeps the old loop guard exactly as before.
+let _haCvPending=null, _haCvTimer=null, _haCvSince=0;
+const HA_CV_MAX_WAIT_MS=30*60*1000;
+function haBusyReason(){
+  try{
+    if(typeof wbView!=="undefined"&&wbView) return "workbook open";
+    if(typeof mastLogMode!=="undefined"&&mastLogMode) return "drill being scored";
+    if(typeof mastRecState!=="undefined"&&mastRecState) return "recording";
+    if(typeof mstState!=="undefined"&&mstState) return "study sitting";
+    if(document.getElementById("wb-view")||document.getElementById("ordblk-dlg")) return "viewer open";
+    const ov=document.querySelectorAll(".dlg-overlay");
+    for(let i=0;i<ov.length;i++){ if(ov[i].style&&ov[i].style.display==="flex") return "dialog open"; }
+  }catch(e){}
+  return null;
+}
+function haCvReloadWhenIdle(remote){
+  if(!remote) return;
+  const why=haBusyReason();
+  const waited=_haCvSince?(Date.now()-_haCvSince):0;
+  if(why&&waited<HA_CV_MAX_WAIT_MS){
+    if(!_haCvPending){ _haCvSince=Date.now(); console.log("[HA] new code available — reload waits: "+why); }
+    _haCvPending=remote;
+    if(!_haCvTimer) _haCvTimer=setInterval(function(){ haCvReloadWhenIdle(_haCvPending); },20000);
+    return;
+  }
+  if(_haCvTimer){ clearInterval(_haCvTimer); _haCvTimer=null; }
+  _haCvPending=null; _haCvSince=0;
+  sessionStorage.setItem("ha_cv_reload",String(remote));
+  console.log("[HA] Code hash mismatch remote="+remote+" local="+CODE_VERSION+", cache-busting reload...");
+  // location.reload(true) is deprecated/ignored by modern browsers (serves the CACHED old file),
+  // which left devices stale. Force a fresh network fetch by changing the URL query.
+  var u=new URL(location.href); u.searchParams.set("_cv",remote); location.replace(u.href);
+}
+// CVRELOAD_END
 function initFb() {
   if(!_haAuthOk){ haAuthGate(); return; }   // 🔒 sign-in first (inert while the rules are open)
   try {
@@ -3047,12 +3088,7 @@ function initFb() {
         if(remote && remote!==CODE_VERSION){
           // Guard against reload loops if a stale device keeps republishing an old hash
           if(sessionStorage.getItem("ha_cv_reload")===String(remote)) return;
-          sessionStorage.setItem("ha_cv_reload",String(remote));
-          console.log("[HA] Code hash mismatch remote="+remote+" local="+CODE_VERSION+", cache-busting reload...");
-          // location.reload(true) is deprecated/ignored by modern browsers (serves the
-          // CACHED old file), which left devices stale. Force a fresh network fetch by
-          // changing the URL query so constantly-running devices actually pick up deploys.
-          var u=new URL(location.href); u.searchParams.set("_cv",remote); location.replace(u.href);
+          haCvReloadWhenIdle(remote);   // 🕰 waits for an idle moment — never mid-workbook, mid-drill or mid-dialog
         }
       });
     }
@@ -23764,7 +23800,7 @@ function wbOpen(bookId,kid,page,opts){
       '<div id="wb-hold" style="position:relative;line-height:0;box-shadow:0 2px 14px rgba(0,0,0,.18);border-radius:4px;overflow:hidden;background:#fff'+((ans||rules.length)?';flex:1 1 380px;max-width:900px;min-width:0':'')+'">'+
         '<img id="wb-img" style="display:block;max-width:100%;height:auto;user-select:none;-webkit-user-select:none;pointer-events:none">'+
         cover.map(c=>'<div class="wb-cover" style="position:absolute;pointer-events:none;background:#fff;left:'+(c[0]*100)+'%;top:'+(c[1]*100)+'%;width:'+((c[2]-c[0])*100)+'%;height:'+((c[3]-c[1])*100)+'%"></div>').join("")+
-        '<canvas id="wb-ink" style="position:absolute;inset:0;width:100%;height:100%;touch-action:pan-x pan-y;cursor:crosshair"></canvas>'+
+        '<canvas id="wb-ink" style="position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair"></canvas>'+
       '</div>'+
       (ans?'<div id="wb-ans-hold" style="position:relative;line-height:0;box-shadow:0 2px 14px rgba(0,0,0,.18);border-radius:4px;overflow:hidden;background:#fff;flex:1 1 380px;max-width:900px;min-width:0;outline:3px solid #6ee7b7">'+
         '<div style="position:absolute;top:8px;left:8px;z-index:1;background:#065f46;color:#fff;font-size:11px;font-weight:800;border-radius:8px;padding:2px 8px;font-family:\'DM Sans\',sans-serif;line-height:1.4">ANSWER KEY</div>'+
@@ -23805,6 +23841,11 @@ function wbBarRender(){
     btn("🧽 Clear","wbClear()")+
     btn(v.penOnly?"✍️ Pencil only":"👆 Finger too","wbTogglePen()",v.penOnly)+
     btn(v.dirty?"💾 Save":"✓ Saved","wbSave()",v.dirty);
+  // 👆 The canvas's touch handling follows the switch (her report 2026-09-22: on the LG StanbyME a
+  // finger left "little dots" — the canvas always told the browser a finger drag is a SCROLL, so the
+  // engine took the gesture after the first touch and cancelled the stroke). Finger draws → the
+  // browser gets no gesture; Pencil only → a finger (or resting palm) scrolls the page as before.
+  try{ const cv=document.getElementById("wb-ink"); if(cv) cv.style.touchAction=v.penOnly?"pan-x pan-y":"none"; }catch(e){}
 }
 function wbTool(t){ if(!wbView) return; wbView.tool=t; wbBarRender(); }
 function wbTogglePen(){ if(!wbView) return; wbView.penOnly=!wbView.penOnly; wbBarRender(); }

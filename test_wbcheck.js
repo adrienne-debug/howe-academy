@@ -78,5 +78,10 @@ console.log("\n── the card ──");
   ok("Check answers chip is rendered only when the link carries an answer page", /\(_wbl\.ans\?'<span onclick="event\.stopPropagation\(\);wbOpenCheck\(/.test(row));
   ok("the plain Open chip is still there for the kid", /wbOpenFor\(/.test(row));
 }
+console.log("\n── 👆 finger drawing (2026-09-22): the canvas only yields the gesture to the browser in Pencil-only mode ──");
+{
+  ok("the ink canvas starts with touch-action:none (finger draws by default)", /<canvas id="wb-ink" style="[^"]*touch-action:none;[^"]*"/.test(src));
+  ok("the toolbar re-binds touch-action to the Pencil-only switch on every render", /cv\.style\.touchAction=v\.penOnly\?"pan-x pan-y":"none";/.test(src));
+}
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
