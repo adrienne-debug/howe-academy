@@ -4712,6 +4712,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     weekDatesRange: weekDatesRange,
     letterStrokes: JU_LETTER_STROKES,   // HWT-style capital formation scripts — the drill Trace overlay shows them
     juPlanPreview: juPlanPreview,       // Julian's week planner: engine picks + struggled-with flags
+    lincolnBuiltinQ3: function (wk, i) { return lnPick(LINCOLN_DATA.banks.conventions, wk, i); },   // the day's built-in conventions item (Mom's answer check)
     quantBankPlan: lnQuantBankPlan,     // Lincoln's number-reasoning bank: same, for the Q2 math slot
     cogatBankPlan: lnCogatBankPlan,     // Lincoln's CogAT verbal bank: same, for the Q1 slot
     wordBankPlan: lnWordBankPlan,       // Lincoln's word bank: which words a week prints + the cursor to store (Notebook tab card)
