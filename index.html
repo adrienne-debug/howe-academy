@@ -5769,6 +5769,7 @@ function schedRegenerateNow(){
       gwConfig={weekNum:String(wn),babysitter:{},withSitter:(rulesData&&rulesData.withSitter)||[],skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:false,redistribute:[],autoAdvance:true};
     }
     gwResult=null;               // don't let a stale preview commit if generation errors out
+    try{ if(typeof pgAutoApplyAll==="function"){ const _pa=pgAutoApplyAll("regenerate"); if(_pa.length&&typeof gwShowToast==="function") gwShowToast("\u23F3 Re-averaged "+_pa.map(x=>cap(x.kid)+" "+x.sk+" \u2192 "+x.chunk+"/sitting").join(", ")); } }catch(e){}
     runGenerateWeek();           // sets gwResult / gwCursors (or toasts + leaves gwResult null)
     dbg("regen: generated "+(gwResult?"tasks="+((gwResult.tasks||[]).length):"NULL (generation failed/aborted)"));
     if(gwResult){ gwCommit(); dbg("regen: committed wk"+wn); if(typeof gwShowToast==="function") gwShowToast("Week "+wn+" regenerated from now ✓"); }
@@ -26530,6 +26531,73 @@ function _planDropDealt(lessons,dealt){
 // projected lesson (the card is what the kid actually has), and the lessons already on
 // those cards come out of the content — otherwise the same lesson shows twice, once on its
 // card and once again later down the column. cbApply passes nothing and is unchanged.
+// PGAUTO_START — ⏳ a page book that keeps averaging toward its finish date (her rule 2026-09-22)
+// "more pages will have to be averaged per day if it keeps getting closer to the end date and not
+// getting done." A pages-mode plan with a Finish-by date no longer carries a fixed pages-per-day
+// pattern: every time the list is laid (a Build, and every weekly generation / Regenerate) the
+// UNPROTECTED tail of the lesson list is re-cut so that (pages left) ÷ (sittings left before the
+// date) is what each sitting asks for. Protected = every lesson already done or already on a card
+// this week (a dealt card never changes under a kid). Sittings left = weeks to the date × per week.
+// Past the date it simply crams what is left into the next sittings — the number is shown, never hidden.
+function pgAutoOn(s){
+  return !!(s&&s.pacing&&s.pacing.mode==="pages"&&s.pacing.targetDate&&s.pacing.pages&&((s.pacing.pages.totalPages|0)>0)
+    &&!(s.pacing.pages.units&&s.pacing.pages.units.length)&&((parseInt(s.pacing.tpw,10)||0)>0));
+}
+function _pgEndPage(text){ const m=String(text||"").match(/(\d+)\s*$/); return m?parseInt(m[1],10):null; }
+function _pgRanges(start,end,chunk,label){
+  const out=[]; const u=label||"pp."; let p=start;
+  while(p<=end){ const q=Math.min(p+chunk-1,end); out.push(u==="pp."?(p===q?("p. "+p):("pp. "+p+"\u2013"+q)):(p===q?(u+" "+p):(u+" "+p+"\u2013"+q))); p=q+1; }
+  return out;
+}
+// The re-cut list for one subject, or null when nothing applies. {seq,resumeIdx,chunk,pagesLeft,sittings,weeks,changed}
+function pgAutoChunk(kid,sk,todayISO){
+  try{
+    const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||!pgAutoOn(s)) return null;
+    if(typeof planBacked==="function"&&!planBacked(kid,sk)) return null;
+    const pg=s.pacing.pages, tpw=parseInt(s.pacing.tpw,10)||1, today=todayISO||cbTodayISO();
+    const seq=(s.lessonSeq||[]).map(x=>String(x==null?"":x)), ids=lidsFor(kid,sk)||[];
+    let keep=-1;
+    const di=lidDoneIdx(kid,sk)||new Set(); di.forEach(i=>{ if(i>keep) keep=i; });
+    try{
+      const dealt=(typeof gvDealtDates==="function")?gvDealtDates(kid,sk):null;
+      if(dealt) Object.keys(dealt).forEach(d=>{ const c=dealt[d]; if(!c) return; [c].concat(c.more||[]).forEach(x=>{
+        let i=(x&&x.lid)?ids.indexOf(x.lid):-1;
+        if(i<0&&x&&x.text){ const k=_lidNorm(x.text); i=seq.findIndex(t=>_lidNorm(t)===k); }
+        if(i>keep) keep=i; }); });
+    }catch(e){}
+    const resumeIdx=keep+1;
+    const lastEnd=keep>=0?_pgEndPage(seq[keep]):null;
+    const start=(lastEnd!=null)?lastEnd+1:((pg.startPage|0)||1), end=pg.totalPages|0;
+    const pagesLeft=end-start+1; if(pagesLeft<=0) return null;
+    const weeks=_pjWeeksBetween(today,s.pacing.targetDate); const sittings=Math.max(1,weeks*tpw);
+    const chunk=Math.max(1,Math.ceil(pagesLeft/sittings));
+    const newSeq=seq.slice(0,resumeIdx).concat(_pgRanges(start,end,chunk,pg.unitLabel));
+    const changed=newSeq.length!==seq.length||newSeq.some((t,i)=>t!==seq[i]);
+    return {seq:newSeq,resumeIdx,chunk,pagesLeft,sittings,weeks,changed};
+  }catch(e){ return null; }
+}
+// Write the re-cut list (THE one list writer, ids aligned; done + dealt prefix untouched). Returns the cut or null.
+function pgAutoApply(kid,sk,why){
+  try{
+    const rc=pgAutoChunk(kid,sk); if(!rc||!rc.changed) return null;
+    if(!db) return null;
+    const up={}; setLessonSeq(kid,sk,rc.seq,{patch:up,mint:true});
+    up["lastEdit"]=new Date().toISOString(); currData.lastEdit=up["lastEdit"];
+    if(!(typeof _dryRun==="function"&&_dryRun())) db.ref("curriculum").update(up).catch(function(err){ dbg("pages re-average write failed: "+err.message); });
+    dbg("\u23F3 pages re-averaged "+kid+"/"+sk+" ("+(why||"")+"): "+rc.pagesLeft+" pages over "+rc.sittings+" sittings \u2192 "+rc.chunk+"/sitting");
+    return rc;
+  }catch(e){ dbg("pages re-average error: "+e); return null; }
+}
+// Every auto-averaged book, before a week is generated. Returns [{kid,sk,chunk}] of what changed.
+function pgAutoApplyAll(why){
+  const out=[];
+  try{
+    const subs=(currData||{}).subjects||{};
+    Object.keys(subs).forEach(kid=>Object.keys(subs[kid]||{}).forEach(sk=>{ const rc=pgAutoApply(kid,sk,why); if(rc) out.push({kid,sk,chunk:rc.chunk}); }));
+  }catch(e){}
+  return out;
+}
+// PGAUTO_END
 function planMaterialize(kid,sk,form,opts){
   const _dealt=(opts&&opts.dealt)||null;
   const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s) return null;
@@ -27465,7 +27533,7 @@ function cbPacingLabel(s){
   if(p.mode==="targetDate") return "\u{1F3AF} by "+(p.targetDate||"?");
   if(p.mode==="timesPerWeek") return "\u{1F4C5} "+(p.tpw||"?")+"×/wk";
   if(p.mode==="window") return "⏳ until "+(p.windowEnd||"?");
-  if(p.mode==="pages") return "\u{1F4D6} "+((p.pages&&p.pages.totalPages)||"?")+" pages";
+  if(p.mode==="pages") return "\u{1F4D6} "+((p.pages&&p.pages.totalPages)||"?")+" pages"+(p.targetDate?(" \u00b7 by "+p.targetDate):"");
   if(p.mode==="minutes") return "⏱ "+(p.minutesText||"minutes");
   return "";
 }
@@ -27549,6 +27617,27 @@ function _cbEngine(){
   // removed. `s.cap` is NOT dormant: only its projection use (a second sitting on a day
   // while owed) sleeps. capFor still drives the cascade sweep, the packer's never-stack
   // rule and the catch-up day picker, so the Cap stepper keeps working.
+  // ⏳ a page book with a Finish-by date previews on its RE-CUT list (overlaid for the projection
+  // only, restored after); cbApply writes that list first, so what she saw is what gets built.
+  try{
+    const _s=(((currData||{}).subjects||{})[cbKid]||{})[cbSubjKey];
+    if(_s&&typeof pgAutoChunk==="function"){
+      const _f=cbForm||{}; const _pace=Object.assign({},_s.pacing||{});
+      if(_f.mode==="pages"&&_f.targetDate){ _s.pacing=Object.assign({},_s.pacing||{},cbPacingFromForm()); }
+      const rc=(_f.mode==="pages"&&_f.targetDate)?pgAutoChunk(cbKid,cbSubjKey):null;
+      _s.pacing=_pace;
+      if(rc&&rc.changed){
+        const keepSeq=_s.lessonSeq, keepIds=_s.lessonIds, keepNext=_s.nextLid;
+        try{
+          const al=_lidAlign(_s.lessonSeq,_s.lessonIds,rc.seq,_s.nextLid,null,true);
+          _s.lessonSeq=rc.seq; _s.lessonIds=al.ids; _s.nextLid=al.nextLid;
+          _s.pacing=Object.assign({},_pace,cbPacingFromForm());
+          const r=planMaterialize(cbKid,cbSubjKey,cbForm,{absorb:false});
+          if(r){ r.rechunk={seq:rc.seq,chunk:rc.chunk,pagesLeft:rc.pagesLeft,sittings:rc.sittings}; (r.warnings=r.warnings||[]).unshift("\u23F3 "+rc.pagesLeft+" pages left \u00f7 "+rc.sittings+" sittings before "+cbForm.targetDate+" = "+rc.chunk+" page"+(rc.chunk!==1?"s":"")+" per sitting (re-averaged on every build and week)"); return r; }
+        } finally { _s.lessonSeq=keepSeq; _s.lessonIds=keepIds; _s.nextLid=keepNext; _s.pacing=_pace; }
+      }
+    }
+  }catch(e){ dbg&&dbg("pages re-average preview fell back: "+e.message); }
   try{ if(typeof planMaterialize==="function"){ const r=planMaterialize(cbKid,cbSubjKey,cbForm,{absorb:false}); if(r) return r; } }catch(e){ dbg&&dbg("planMaterialize fell back: "+e.message); }
   return cbMaterialize(cbBuildCfg());
 }
@@ -27567,6 +27656,7 @@ function cbPacingFromForm(){
   if(f.mode==="pages"){
     p.pages={totalPages:parseInt(f.totalPages)||0,startPage:parseInt(f.startPage)||1,pattern:cbParsePattern(f.patternStr),unitLabel:f.unitLabel};
     if(f.units&&f.units.length) p.pages.units=f.units;
+    if(f.targetDate&&String(f.targetDate).trim()) p.targetDate=String(f.targetDate).trim();   // ⏳ finish by → pages per sitting re-average
   }
   return p;
 }
@@ -27832,6 +27922,11 @@ function cbApply(){
       snap(p,(lessons[dnn]||{})[sk]); up[p]=done[i];
     });
   })();
+  // ⏳ the preview was laid on a re-cut page list — write that list (ids aligned, done/dealt prefix kept)
+  if(res.rechunk&&Array.isArray(res.rechunk.seq)){
+    snap("subjects/"+kid+"/"+sk+"/lessonSeq",s.lessonSeq); snap("subjects/"+kid+"/"+sk+"/lessonIds",s.lessonIds); snap("subjects/"+kid+"/"+sk+"/nextLid",s.nextLid); snap("subjects/"+kid+"/"+sk+"/total",s.total);
+    setLessonSeq(kid,sk,res.rechunk.seq,{patch:up,mint:true});
+  }
   const pacing=cbPacingFromForm();
   pacing.builtThrough=res.stats.lastDate||""; pacing.builtAt=new Date().toISOString();
   snap("subjects/"+kid+"/"+sk+"/pacing",s.pacing); up["subjects/"+kid+"/"+sk+"/pacing"]=pacing;
@@ -28322,6 +28417,10 @@ function cbRenderForm(col,embedded){
       h+='<input type="number" class="ce-sheet-input" value="'+esc(f.startPage)+'" onchange="cbSetField(\'startPage\',this.value)"></div></div>';
       h+='<div class="ce-sheet-lbl">Pages per day pattern <span style="font-weight:400;color:var(--muted)">(one number, or a cycle like 3, 4, 5, 3)</span></div>';
       h+='<input class="ce-sheet-input" placeholder="e.g. 3, 4, 5, 3" value="'+esc(f.patternStr)+'" onchange="cbSetField(\'patternStr\',this.value)">';
+      // ⏳ Finish by: the pages per sitting are re-averaged toward this date on every build and every
+      // week, so a book that slips asks a little more per sitting instead of sliding to 2028.
+      h+='<div class="ce-sheet-lbl">Finish by <span style="font-weight:400;color:var(--muted)">(optional \u2014 pages per sitting are re-averaged toward this date on every build and every week; the pattern above is ignored while it is set)</span></div>';
+      h+='<input type="date" class="ce-sheet-input" value="'+esc(f.targetDate||"")+'" onchange="cbSetField(\'targetDate\',this.value)">';
       h+='<div class="ce-sheet-lbl">Label</div><div class="ce-chips">';
       [["pp.","pp. 12–15"],["Lesson","Lesson 12–15"],["Day","Day 12–15"]].forEach(([v,lbl])=>{
         h+='<div class="ce-chip'+(f.unitLabel===v?" sel":"")+'" onclick="cbSetField(\'unitLabel\',\''+v+'\')">'+lbl+'</div>';
@@ -47828,6 +47927,7 @@ function autoGenerateWeekIfNeeded(){
     haClaimSchedLock("autogen",function(release){
       if(!release){ dbg("auto-gen wk"+wn+" skipped: another device holds the scheduler lock"); return; }
       try{
+        try{ if(typeof pgAutoApplyAll==="function") pgAutoApplyAll("weekly"); }catch(e){}   // ⏳ page books re-average before the deal
         const cfg={weekNum:String(wn),babysitter:{},withSitter:[],skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:gwSatPlanned(wn),redistribute:[],autoAdvance:true};
         const gen=generateWeek(cfg);
         if(gen.error){ dbg("auto-gen wk"+wn+" skipped: "+gen.error); return; }

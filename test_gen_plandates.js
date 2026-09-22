@@ -163,7 +163,7 @@ console.log("\n── planMaterialize absorb ──");
 console.log("\n── one engine, one answer ──");
 {
   const e = src.indexOf("function _cbEngine()");
-  const eng = e < 0 ? "" : src.slice(e, e + 1400);
+  const eng = e < 0 ? "" : src.slice(e, e + 4500);   // 2026-09-22: the ⏳ pages re-average overlay sits ahead of the plain call
   ok("_cbEngine exists", e >= 0);
   // A Rebuild used to lay owed catch-up days and write them as cells. After Stage 3a
   // nothing reads those cells for placement, so the button did less than it looked like
