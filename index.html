@@ -18748,7 +18748,8 @@ function haNbContext(kid){
   let dailyGrams=null; try{ dailyGrams=nbDgCtx(kid); }catch(e){}
   let wordBank=null; try{ wordBank=nbWbCtx(kid); }catch(e){}   // Mom's Word-of-the-day bank (Lincoln) — null = built-in words
   let cogatBank=null; try{ cogatBank=nbCqCtx(kid); }catch(e){}   // Mom's CogAT verbal bank (Lincoln) — null = built-in analogies
-  return { wordBank:wordBank, cogatBank:cogatBank, dailyGrams:dailyGrams, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, letterCursor:((((notebookSettings||{}).julian)||{}).letterCursor)||null, masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true };
+  let quantBank=null; try{ quantBank=nbQbCtx(kid); }catch(e){}   // Mom's number-reasoning bank (Lincoln) — null = built-in math questions
+  return { wordBank:wordBank, cogatBank:cogatBank, quantBank:quantBank, dailyGrams:dailyGrams, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, letterCursor:((((notebookSettings||{}).julian)||{}).letterCursor)||null, masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true };
 }
 async function haNbOpen(kid,which){
   const lib=window.HoweNotebooks; if(!lib){ alert("Notebook builder not loaded yet."); return; }
@@ -18763,6 +18764,7 @@ async function haNbOpen(kid,which){
     nbDgPersistCursor(kid,out);   // Daily Grams: where this week landed, so next week continues
     nbWbPersistCursor(kid,out);   // Word-of-the-day bank: same idea
     nbCqPersistCursor(kid,out);   // CogAT verbal bank: same idea
+    nbQbPersistCursor(kid,out);   // number-reasoning bank: same idea
     const html=(which==="parent")?(out.parent||out.student):out.student;
     const fname=kid+"_"+nbTargetWk()+"_"+(which==="parent"?"parent":"notebook")+".html";
     lib.openHtml(html, fname);
@@ -18787,6 +18789,7 @@ async function haNbPdf(kid,which){
     nbDgPersistCursor(kid,out);
     nbWbPersistCursor(kid,out);
     nbCqPersistCursor(kid,out);
+    nbQbPersistCursor(kid,out);
     const html=(which==="parent")?(out.parent||out.student):out.student;
     const fname=kid+"_"+nbTargetWk()+"_"+(which==="parent"?"parent":"notebook")+".pdf";
     say("📄 Building "+cap(kid)+"'s PDF…");
@@ -22777,7 +22780,7 @@ function nbWbSetStart(kid,pos){ if(!momHere()) return; const n=nbWbList(kid).len
 function nbWbSetLabel(kid,v){ if(!momHere()) return; v=String(v||"").trim().slice(0,60); nbWbSave(kid,"label",v||null); nbWbRepaint(); }
 function nbWbOpenForm(kid,id){ if(!momHere()) return; const e=id?(nbWbCfg(kid).words||{})[id]:null; nbWbDraft={id:id||null,word:(e&&e.word)||"",pos:(e&&e.pos)||"",def:(e&&e.def)||"",syn:(e&&e.syn)||"",ex1:(e&&e.ex1)||"",ex2:(e&&e.ex2)||""}; nbWbPaste=null; nbWbMsg=""; nbWbRepaint(); }
 function nbWbCloseForm(){ nbWbDraft=null; nbWbPaste=null; nbWbMsg=""; nbWbRepaint(); }
-function nbWbNewId(i){ return "w"+Date.now().toString(36)+(i?("x"+i):""); }
+function nbWbNewId(i){ return "w"+Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36).padStart(3,"0")+(i?("x"+i):""); }   // time + a random tail: two saves in one millisecond can never share an id
 function nbWbClean(v,max){ return String(v||"").replace(/\s+/g," ").trim().slice(0,max); }
 function nbWbSaveDraft(kid){
   if(!momHere()||!nbWbDraft) return;
@@ -22995,10 +22998,128 @@ function nbCqCardHTML(kid,wkLabel){
   }
   return h+'</div>';
 }
+// ── 🔢 Number Reasoning bank — Mom's own questions for the daily math box (same pattern as the CogAT bank) ──
+// notebookSettings/<kid>/quantBank = { cursor:{week,day,adv,from}, items:{ <id>:{o,type,text,c:[5],ans,rule} } }.
+// type: NS number series · NA number analogies · NP number puzzles (lines joined by " / ") · ET elapsed time ·
+// CO computation · BK = a CogAT-book assignment (text only, no choices). `rule` prints in the Teaching Companion key.
+const NB_QB_TYPES={NS:"Series",NA:"Analogies",NP:"Puzzles",ET:"Elapsed time",CO:"Computation",BK:"📘 Book day"};
+let nbQbDraft=null, nbQbPaste=null, nbQbShowAll=false, nbQbDelArm="", nbQbMsg="";
+function nbQbCfg(kid){ return (((notebookSettings||{})[kid]||{}).quantBank)||{}; }
+function nbQbList(kid){ const w=nbQbCfg(kid).items||{}; return Object.keys(w).map(id=>Object.assign({},w[id],{id:id})).filter(e=>e&&e.text).sort((a,b)=>(a.o||0)-(b.o||0)); }
+function nbQbCtx(kid){ if(!NB_WB_KIDS[kid]) return null; const list=nbQbList(kid); if(!list.length) return null; return { cursor:nbQbCfg(kid).cursor||null, items:list }; }
+function nbQbSave(kid,path,val){ nbBankSave(kid,"quantBank",path,val); }
+function nbQbPlan(kid){ const lib=window.HoweNotebooks, ctx=nbQbCtx(kid); if(!lib||!lib.quantBankPlan||!ctx) return null; return lib.quantBankPlan(ctx,nbTargetWkNum(),new Array(nbDgWeekLen()).fill("")); }
+function nbQbLeft(kid){ return nbBankLeft(nbQbList(kid).length,nbQbCfg(kid).cursor); }
+function nbQbSetStart(kid,pos){ if(!momHere()) return; const n=nbQbList(kid).length; if(!n) return; pos=Math.max(1,Math.min(n,parseInt(pos,10)||1)); nbQbSave(kid,"cursor",nbBankCursorFor(nbQbCfg(kid).cursor,pos)); nbWbRepaint(); }
+function nbQbOpenForm(kid,id){ if(!momHere()) return; const e=id?(nbQbCfg(kid).items||{})[id]:null, c=nbCqChoices(e); nbQbDraft={id:id||null,type:(e&&e.type)||"NS",text:(e&&e.text)||"",c0:c[0]||"",c1:c[1]||"",c2:c[2]||"",c3:c[3]||"",c4:c[4]||"",ans:(e&&e.ans)||"A",rule:(e&&e.rule)||""}; nbQbPaste=null; nbQbMsg=""; nbWbRepaint(); }
+function nbQbCloseForm(){ nbQbDraft=null; nbQbPaste=null; nbQbMsg=""; nbWbRepaint(); }
+function nbQbType(v){ v=String(v||"").trim().toUpperCase(); if(NB_QB_TYPES[v]) return v; if(/^SER/.test(v)) return "NS"; if(/^ANA/.test(v)) return "NA"; if(/^PUZ/.test(v)) return "NP"; if(/^(EL|TIME)/.test(v)) return "ET"; if(/^COMP/.test(v)) return "CO"; if(/^BOOK/.test(v)) return "BK"; return ""; }
+function nbQbRecord(type,text,choices,ans,rule,o){
+  type=nbQbType(type); text=nbWbClean(text,220); rule=nbWbClean(rule,220); choices=choices.map(x=>nbWbClean(x,24)).filter(Boolean).slice(0,5); ans=String(ans||"").trim().toUpperCase().charAt(0);
+  if(!type) return "pick a type (Series, Analogies, Puzzles, Elapsed time, Computation or Book day)"; if(!text) return "the question is blank";
+  const rec={o:o,type:type,text:text}; if(rule) rec.rule=rule;
+  if(type==="BK") return rec;
+  if(choices.length<4) return "it needs at least 4 answer choices"; if("ABCDE".indexOf(ans)<0||"ABCDE".indexOf(ans)>=choices.length) return "the answer must be the letter of one of the choices";
+  rec.c=choices; rec.ans=ans; return rec;
+}
+function nbQbSaveDraft(kid){
+  if(!momHere()||!nbQbDraft) return;
+  const d=nbQbDraft, list=nbQbList(kid), old=d.id?((nbQbCfg(kid).items||{})[d.id]||{}):{};
+  const rec=nbQbRecord(d.type,d.text,[d.c0,d.c1,d.c2,d.c3,d.c4],d.ans,d.rule,d.id?(old.o||list.length+1):((list.length?list[list.length-1].o||list.length:0)+1));
+  if(typeof rec==="string"){ nbQbMsg="Not saved — "+rec+"."; nbWbRepaint(); return; }
+  nbQbSave(kid,"items/"+(d.id||nbWbNewId()),rec);
+  nbQbDraft=null; nbQbMsg=""; nbWbRepaint();
+}
+function nbQbDelete(kid,id){
+  if(!momHere()) return;
+  if(nbQbDelArm!==id){ nbQbDelArm=id; nbWbRepaint(); return; }
+  const list=nbQbList(kid), idx=list.findIndex(e=>e.id===id), c=nbQbCfg(kid).cursor;
+  nbQbSave(kid,"items/"+id,null);
+  if(c&&c.day!=null&&idx>=0&&idx+1<(parseInt(c.day,10)||1)) nbQbSave(kid,"cursor",Object.assign({},c,{day:(parseInt(c.day,10)||1)-1,adv:c.adv==null?5:c.adv}));
+  nbQbDelArm=""; nbWbRepaint();
+}
+function nbQbOpenPaste(){ if(!momHere()) return; nbQbPaste=""; nbQbDraft=null; nbQbMsg=""; nbWbRepaint(); }
+// one question per line:  type | question | A | B | C | D | E | answer letter | rule      — a Book day line is just:  BK | assignment | rule
+function nbQbAddPasted(kid){
+  if(!momHere()||nbQbPaste==null) return;
+  const list=nbQbList(kid); let o=list.length?(list[list.length-1].o||list.length):0, added=0, bad=[];
+  String(nbQbPaste).split(/\n/).forEach((line,i)=>{
+    if(!line.trim()) return;
+    const f=line.split("|").map(x=>x.trim()); const t=nbQbType(f[0]); let rec;
+    if(t==="BK") rec=nbQbRecord(t,f[1],[],"",f[2]||"",o+1);
+    else { const ai=f.findIndex((x,k)=>k>=6&&/^[A-Ea-e]$/.test(x)); rec=ai<0?"missing the answer letter":nbQbRecord(t,f[1],f.slice(2,ai),f[ai],f.slice(ai+1).join(" | "),o+1); }
+    if(typeof rec==="string"){ bad.push("line "+(i+1)+": "+rec); return; }
+    o++; nbQbSave(kid,"items/"+nbWbNewId(i+1),rec); added++;
+  });
+  nbQbMsg=(added?"Added "+added+" question"+(added>1?"s":"")+". ":"")+(bad.length?"Skipped — "+bad.slice(0,3).join("; ")+(bad.length>3?" (+"+(bad.length-3)+" more)":"")+".":"")||"Nothing to add.";
+  if(added&&!bad.length) nbQbPaste=null;
+  nbWbRepaint();
+}
+function nbQbPersistCursor(kid,out){
+  try{
+    if(!out||!out.quantBankCursor||!NB_WB_KIDS[kid]) return;
+    const cur=nbQbCfg(kid).cursor||{}, nc=out.quantBankCursor;
+    if(cur.week===nc.week&&cur.day===nc.day&&cur.adv===nc.adv&&cur.from===nc.from) return;
+    nbQbSave(kid,"cursor",nc);
+  }catch(e){}
+}
+function nbQbCardHTML(kid,wkLabel){
+  if(!momHere()||!NB_WB_KIDS[kid]) return "";
+  const list=nbQbList(kid), n=list.length, plan0=nbQbPlan(kid), before=!!(plan0&&plan0.before), plan=before?null:plan0, F="font-family:'DM Sans',sans-serif;";
+  const btn=(on,label,extra)=>'<button onclick="'+on+'" style="padding:7px 12px;border-radius:9px;border:1.5px solid #93c5fd;background:#fff;color:#1e40af;font-size:11.5px;font-weight:800;cursor:pointer;'+F+(extra||'')+'">'+label+'</button>';
+  const inp=(id,key,ph,val,w)=>'<input id="'+id+'" value="'+esc(val)+'" placeholder="'+esc(ph)+'" oninput="if(nbQbDraft)nbQbDraft.'+key+'=this.value" style="'+(w||'width:100%')+';box-sizing:border-box;padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;margin-bottom:6px;'+F+'">';
+  let h='<div style="margin-top:14px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;padding:12px 14px">'+
+    '<div style="font-size:12px;font-weight:800;color:#1e40af;margin-bottom:2px">🔢 Number Reasoning bank <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#bfdbfe;color:#1e3a8a;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span>'+
+      '<span style="float:right;font-weight:700;color:#1e40af">'+n+' item'+(n===1?'':'s')+'</span></div>'+
+    '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:10px">'+(n?'One prints in the math box on his daily pages — in this order, one per school day; each answer and its rule print in the Teaching Companion. A 📘 Book day prints an assignment instead of a question.':'Empty — the built-in math questions print until you add some. Items you add here take their place.')+'</div>';
+  if(n){
+    const left=plan?Math.max(0,n-(plan.start-1)-nbDgWeekLen()):nbQbLeft(kid), low=left!=null&&left<NB_WB_LOW;
+    h+='<div style="background:#fff;border:1px solid #bfdbfe;border-radius:10px;padding:9px 11px;margin-bottom:10px">'+
+      '<div style="font-size:12px;font-weight:700;color:#1f2937">'+esc(wkLabel)+' prints: <span style="color:#1e40af">'+(before?'the built-in math questions — this bank starts Week '+plan0.from:(plan?plan.items.map(q=>NB_QB_TYPES[q.qtype]||"").join(" · "):"…"))+'</span></div>'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-top:7px;font-size:11px;color:var(--muted);flex-wrap:wrap">Start '+esc(wkLabel)+' at item # '+
+        '<input id="nbqb-start" type="number" min="1" max="'+n+'" value="'+(plan?plan.start:1)+'" onchange="nbQbSetStart(\''+kid+'\',this.value)" style="width:64px;padding:5px 7px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;'+F+'"><span>of '+n+'</span></div>'+
+      '<div style="font-size:11px;margin-top:7px;font-weight:700;color:'+(low?'#b91c1c':'#1e40af')+'">'+(low?'⚠ ':'')+left+' unused item'+(left===1?'':'s')+(before?' in the bank':' after this week')+(left?' (about '+Math.max(1,Math.round(left/5))+' week'+(Math.round(left/5)>1?'s':'')+')':'')+(low?' — add more, or it starts over from the top.':'')+'</div>'+
+    '</div>';
+  }
+  if(nbQbMsg) h+='<div style="font-size:11px;font-weight:700;color:#9a3412;background:#fff7ed;border-radius:8px;padding:6px 9px;margin-bottom:8px">'+esc(nbQbMsg)+'</div>';
+  if(nbQbDraft){
+    const d=nbQbDraft, isBK=d.type==="BK", sel=(id,key,opts,val)=>'<select id="'+id+'" onchange="if(nbQbDraft){nbQbDraft.'+key+'=this.value;'+(key==="type"?'nbWbRepaint();':'')+'}" style="padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;margin-bottom:6px;background:#fff;'+F+'">'+opts.map(o=>'<option value="'+o[0]+'"'+(o[0]===val?' selected':'')+'>'+o[1]+'</option>').join("")+'</select>';
+    h+='<div style="background:#fff;border:1.5px solid #93c5fd;border-radius:10px;padding:10px 11px;margin-bottom:10px">'+
+      '<div style="font-size:11.5px;font-weight:800;color:#1e40af;margin-bottom:7px">'+(d.id?'Edit item':'Add an item')+'</div>'+
+      sel("nbqb-type","type",Object.keys(NB_QB_TYPES).map(k=>[k,NB_QB_TYPES[k]+(k==="NP"?" — separate lines with  /  and use ◆ ● for symbols":(k==="BK"?" — an assignment, no choices":""))]),d.type)+
+      inp("nbqb-text","text",isBK?"the assignment, e.g.  Practice Test 1 · Number Series · pages 50–54":"the question — use ? for the blank",d.text)+
+      (isBK?'':'<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 6px">'+["A","B","C","D","E"].map((L,i)=>inp("nbqb-c"+i,"c"+i,"choice "+L+(i===4?" (optional)":""),d["c"+i])).join("")+
+        '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin-bottom:6px">Answer '+sel("nbqb-ans","ans",["A","B","C","D","E"].map(L=>[L,L]),d.ans).replace("margin-bottom:6px;","margin-bottom:0;")+'</div></div>')+
+      inp("nbqb-rule","rule",isBK?"note for the Teaching Companion (optional)":"the rule, for the Teaching Companion key (optional)",d.rule)+
+      '<div style="display:flex;gap:8px">'+btn("nbQbSaveDraft('"+kid+"')",d.id?"Save":"Add to bank","background:#2563eb;color:#fff;border-color:#2563eb;")+btn("nbQbCloseForm()","Cancel")+'</div></div>';
+  }else if(nbQbPaste!=null){
+    h+='<div style="background:#fff;border:1.5px solid #93c5fd;border-radius:10px;padding:10px 11px;margin-bottom:10px">'+
+      '<div style="font-size:11.5px;font-weight:800;color:#1e40af;margin-bottom:4px">Paste a list</div>'+
+      '<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin-bottom:6px">One item per line: <b>type | question | A | B | C | D | E | answer letter | rule</b><br>Type is NS, NA, NP, ET, CO or BK. A book day is just <b>BK | assignment | note</b>.</div>'+
+      '<textarea id="nbqb-paste" rows="6" oninput="nbQbPaste=this.value" placeholder="NS | 4  9  14  19  ? | 21 | 23 | 24 | 25 | 29 | C | add 5 each time" style="width:100%;box-sizing:border-box;padding:8px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;margin-bottom:6px;'+F+'">'+esc(nbQbPaste)+'</textarea>'+
+      '<div style="display:flex;gap:8px">'+btn("nbQbAddPasted('"+kid+"')","Add these","background:#2563eb;color:#fff;border-color:#2563eb;")+btn("nbQbCloseForm()","Cancel")+'</div></div>';
+  }else{
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap">'+btn("nbQbOpenForm('"+kid+"','')","＋ Add an item")+btn("nbQbOpenPaste()","📋 Paste a list")+(n?btn("nbQbShowAll=!nbQbShowAll;nbQbDelArm='';nbWbRepaint()",nbQbShowAll?"Hide the list ▴":"Show all "+n+" ▾"):"")+'</div>';
+  }
+  if(n&&nbQbShowAll&&!nbQbDraft&&nbQbPaste==null){
+    const startAt=plan?plan.start:0, wl=nbDgWeekLen();
+    h+='<div style="margin-top:10px;max-height:340px;overflow-y:auto;background:#fff;border:1px solid #bfdbfe;border-radius:10px">'+list.map((e,i)=>{
+      const thisWk=startAt&&(((i+1-startAt)%n+n)%n)<wl, arm=nbQbDelArm===e.id, ch=nbCqChoices(e), ai="ABCDE".indexOf(e.ans);
+      return '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #eff6ff;'+(thisWk?'background:#eff6ff;':'')+'">'+
+        '<span style="font-size:10px;color:var(--muted);width:26px;flex-shrink:0;text-align:right">'+(i+1)+'</span>'+
+        '<span style="font-size:9px;font-weight:800;color:#1e40af;background:#dbeafe;border-radius:6px;padding:1px 5px;flex-shrink:0">'+esc(e.type||"NS")+'</span>'+
+        '<span style="flex:1;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(e.text)+'</span>'+
+        (e.type==="BK"?'':'<span style="flex-shrink:0;max-width:96px;font-size:11.5px;color:#16a34a;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">→ '+esc(ch[ai]||"?")+'</span>')+
+        '<button onclick="nbQbOpenForm(\''+kid+'\',\''+esc(e.id)+'\')" title="Edit" style="border:none;background:none;cursor:pointer;font-size:13px;padding:2px 4px">✎</button>'+
+        '<button onclick="nbQbDelete(\''+kid+'\',\''+esc(e.id)+'\')" title="Delete" style="border:none;background:'+(arm?'#fee2e2':'none')+';color:#b91c1c;border-radius:6px;cursor:pointer;font-size:'+(arm?'10.5px;font-weight:800':'13px')+';padding:2px 5px;'+F+'">'+(arm?'Delete?':'🗑')+'</button></div>';
+    }).join("")+'</div>';
+  }
+  return h+'</div>';
+}
 // Mom's Day: a notebook bank that is about to run out of unused content. Returns "" when nothing is low.
 function nbBankLowAlertHTML(){
   let rows="";
-  Object.keys(NB_WB_KIDS).forEach(kid=>{ [["Word of the Day bank","word",nbWbLeft(kid)],["CogAT Verbal bank","question",nbCqLeft(kid)]].forEach(b=>{
+  Object.keys(NB_WB_KIDS).forEach(kid=>{ [["Word of the Day bank","word",nbWbLeft(kid)],["CogAT Verbal bank","question",nbCqLeft(kid)],["Number Reasoning bank","item",nbQbLeft(kid)]].forEach(b=>{
     const left=b[2], unit=b[1]; if(left==null||left>=NB_WB_LOW) return;
     rows+='<div onclick="nbSelectedKid=\''+kid+'\';showTab(\'notebook\')" style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fffbeb;border-left:3px solid #b45309;border-radius:8px;margin-bottom:6px;cursor:pointer">'+
       '<span style="flex:1;font-size:13px;font-weight:700">'+esc(cap(kid))+'\'s '+b[0]+' <span style="color:#6b6560;font-weight:600">· '+(left?left+' unused '+unit+(left===1?'':'s')+' left (about '+Math.max(1,Math.round(left/5))+' week'+(Math.round(left/5)>1?'s':'')+')':'every '+unit+' has been used — it is repeating from the top')+'</span></span>'+
@@ -25048,6 +25169,7 @@ function renderNotebook(el){
         dgHtml+
         nbWbCardHTML(sel,wkLabel)+
         nbCqCardHTML(sel,wkLabel)+
+        nbQbCardHTML(sel,wkLabel)+
         juPlanHtml+
         storyHtml+
         coloringHtml+
