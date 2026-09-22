@@ -2559,6 +2559,46 @@ function safeWriteTasks(reason){
 }
 function dbg(msg){ console.log("[HA]",msg); try{if(db)db.ref("_debug").push({msg,wk:WK,t:Date.now()});}catch(e){} }
 
+// CKRECOVER_START — check-offs the server REFUSED are kept and replayed (her yes 2026-09-22)
+// A device that is signed out (the 9/14 lockout class: dot says Live, every write refused) shows
+// its check-offs on its own screen only; the first server snapshot after a sign-in replaced them
+// and they were gone for good (live: the Fire HD 8, ~Thu 9/17 → Tue 9/22 11:02, week 23 = 21
+// checks all week, Monday 9/21 = 5). Now the refused write itself is the trigger: finalizeDone's
+// checked write rejects → the id + its done-time go to localStorage `<week>_pendck`; once the
+// server's checked list has loaded on a signed-in device, each pending id the server still lacks
+// is replayed through finalizeDone (history, lesson done-mark, Mom-loop hold, heal — everything a
+// real check does), then forgotten. Only this device's own refused writes, only the active week,
+// never a guess from comparing lists — an un-check made on another device is never resurrected.
+let _ckPending=null, _ckReplayTries=0;
+function _ckPendLoad(){ if(_ckPending===null){ try{ _ckPending=ld(WK+"_pendck")||{}; }catch(e){ _ckPending={}; } } return _ckPending; }
+function ckNoteRefused(id,ts,err){
+  try{
+    const p=_ckPendLoad(); p[id]=ts||nowTs(); sv(WK+"_pendck",p);
+    dbg("check-off REFUSED, kept for recovery: "+id+" "+String((err&&err.code)||err||"").slice(0,40));
+  }catch(e){}
+}
+function ckReplayPending(){
+  try{
+    const p=_ckPendLoad(); const ids=Object.keys(p); if(!ids.length) return;
+    if(!fbCheckedLoaded||!fbTasksLoaded||!fbHistoryLoaded){ if(_ckReplayTries++<40) setTimeout(ckReplayPending,500); return; }
+    if(typeof firebase!=="undefined"&&firebase&&firebase.auth&&!firebase.auth().currentUser) return;   // still signed out — wait for the sign-in
+    let done=0, skipped=0;
+    ids.forEach(function(id){
+      if(checked[id]){ delete p[id]; return; }                                   // landed after all
+      const t=(weekData&&weekData.tasks||[]).find(function(x){ return x&&x.id===id; });
+      if(!t){ delete p[id]; skipped++; return; }                                  // card is gone from this week
+      if(finalizeDone(id,p[id],null)===false){ delete p[id]; skipped++; return; } // order guard: Mom's call, not a replay's
+      delete p[id]; done++;
+    });
+    sv(WK+"_pendck",p);
+    if(done||skipped){
+      dbg("recovered "+done+" refused check-off(s)"+(skipped?(", "+skipped+" could not be replayed"):""));
+      if(typeof gwShowToast==="function") gwShowToast("\u{1F501} Recovered "+done+" check-off"+(done!==1?"s":"")+" this device couldn\u2019t save earlier"+(skipped?(" \u00b7 "+skipped+" couldn\u2019t be replayed"):""));
+      if(typeof renderAll==="function") renderAll();
+    }
+  }catch(e){ dbg("ck replay error: "+e); }
+}
+// CKRECOVER_END
 // Detach all week-scoped listeners, then re-attach for the given week.
 // Called on first load and whenever WK changes (new week upload or cross-device week switch).
 function detachWeekListeners(){
@@ -2568,6 +2608,7 @@ function detachWeekListeners(){
 
 function attachWeekListeners(wk){
   detachWeekListeners();
+  _ckPending=null; _ckReplayTries=0;   // 🔁 pending refused check-offs are per week
   DAY_DT={}; // Clear stale dates so Sunday guard fires until meta arrives
   fbCheckedLoaded=false; // Reset so cascade waits for fresh data from Firebase
   fbTasksLoaded=false;
@@ -2590,6 +2631,7 @@ function attachWeekListeners(wk){
     fbCheckedLoaded=true;
     schedCascade();
     renderAll();
+    try{ ckReplayPending(); }catch(e){}   // 🔁 anything this device was refused earlier lands now
   });
   fbWeekRefs.push(r1);
 
@@ -6692,7 +6734,7 @@ function finalizeDone(id, doneTs, score){
   // erase other tablets' fresh checks (two kids checking within seconds = one check
   // vanished from every other screen until history-reconcile restored it). Same
   // clobber class as the 2026-06-18 drills multi-device fix.
-  if(db) db.ref(WK+"/checked/"+id).set(doneTs);
+  if(db){ const _w=db.ref(WK+"/checked/"+id).set(doneTs); if(_w&&typeof _w.catch==="function") _w.catch(function(err){ ckNoteRefused(id,doneTs,err); }); }   // 🔁 refused (signed-out device) → kept, replayed after sign-in
   if(claimed[id]!=null){ delete claimed[id]; sv(WK+"_claimed",claimed); if(db) db.ref(WK+"/claimed/"+id).remove(); }
   const hist=ld(WK+"_history")||{};
   const t=weekData.tasks.find(x=>x.id===id);
@@ -41004,6 +41046,17 @@ function _mlDayEndMin(){
     return toMin(ov.end||sd.defaultEnd||"4:15 PM");
   }catch(e){ return toMin("4:15 PM"); }
 }
+// 🍎 The lunch window from Settings (schoolDay.lunchStart–lunchEnd, default 1:00–2:00 PM) as a
+// [start,end] interval, or null when it is not a real window. Pinnable by the harnesses
+// (`_mlLunchOverride` = [s,e], or false for "no lunch"). Change it in Settings, the lay follows.
+function _mlLunchWin(){
+  try{
+    if(typeof _mlLunchOverride!=="undefined"&&_mlLunchOverride!==null){ return _mlLunchOverride||null; }
+    const sd=(((typeof rulesData!=="undefined"&&rulesData)||{}).schoolDay)||{};
+    const s=toMin(sd.lunchStart||"1:00 PM"), e=toMin(sd.lunchEnd||"2:00 PM");
+    return (s>0&&e>s)?[s,e]:null;
+  }catch(e){ return [13*60,14*60]; }
+}
 // 🌙 8 PM SWEEP (her rule 2026-09-14): what fell off the bottom of today moves into the rest of
 // the week — through the SAME intra-week cascade that already carries elapsed work forward
 // (nothing new is invented about WHERE it lands). Runs once per day, at 8:00 PM, on whichever
@@ -41448,14 +41501,31 @@ function mlQueueLay(tasks){
     //   with) → the block starts at its own printed slot
     //   otherwise → right after the in-flight buffer card, which never moves
     // A kid's own lunch interval steps the chain over it — lunch itself never moves.
+    // 🍎 Lunch is the Settings window for EVERY kid, whether or not a lunch card exists: no week
+    // has ever carried one, so the living-day lay ran straight through 1:00–2:00 PM (her report
+    // 2026-09-22 "it's not respecting the hour lunch"). A lunch card, if one exists, still counts.
+    const _lw=_mlLunchWin();
     const lunchOf=function(k){
       return tasks.filter(function(x){ return isToday(x)&&x.who===k&&/lunch/i.test(x.title||""); })
-        .map(function(x){ return [toMin(x.time),toMin(x.time)+(x.dur||30)]; });
+        .map(function(x){ return [toMin(x.time),toMin(x.time)+(x.dur||30)]; })
+        .concat(_lw?[_lw]:[]);
     };
     // Cards already checked today never move — and nothing is laid on top of them.
+    // A checked card is over at the moment it was checked: its slot never reaches past the check
+    // (live 9/22: Sprints healed to 11:36 + 10 min dur held Mom's next card until 11:46).
+    const _ckEnd=function(x){
+      const e=toMin(x.time)+(x.dur||20);
+      try{
+        const v=checked[x.id]; const h=(typeof histState!=="undefined"&&histState&&histState[x.id])||null;
+        const ts=(typeof v==="string"&&v)||(h&&h.ts)||"";
+        const m=String(ts).match(/^\s*(\d{1,2}:\d{2}\s*[AP]M)/i);
+        if(m){ const c=toMin(m[1]); if(c>0&&c<e) return c; }
+      }catch(e2){}
+      return e;
+    };
     const fixedOf=function(k){
       return tasks.filter(function(x){ return isToday(x)&&x.who===k&&typeof checked!=="undefined"&&checked&&checked[x.id]&&!/lunch/i.test(x.title||""); })
-        .map(function(x){ return [toMin(x.time),toMin(x.time)+(x.dur||20)]; });
+        .map(function(x){ return [toMin(x.time),_ckEnd(x)]; });
     };
     const _mlClose=function(t){ return t.subjectKey==="closing_nb"||(t.title||"").toLowerCase().includes("closing notebook"); };
     // Where a kid's BUFFER (their first unchecked card, when it is not Mom work) really lands:
@@ -41475,6 +41545,10 @@ function mlQueueLay(tasks){
         const bl=_bufLanding(k0); if(bl) t=bl.end;
       }
       t=Math.max(t,_mlKidFloor(k0));
+      // 👩 a session in progress (held, and the kid has already checked something today) lays
+      // from the moment Mom is free — the later of now and the end of what the kid has checked —
+      // not from the kid's next printed slot (her rule 2026-09-22).
+      if(now&&now.held&&now.kid===k0&&fixedOf(k0).length){ let _le=0; fixedOf(k0).forEach(function(iv){ if(iv[1]>_le) _le=iv[1]; }); t=Math.max(_mlKidFloor(k0),_le); }
     }
     const newTimes={}; const momWait={};
     seq.forEach(function(e){
@@ -41626,12 +41700,28 @@ function mlBannerHTML(kid){
 //    sitting ahead of their pulled Mom card) → they have started with Mom; lock the turn
 // Racing does not steal: if the plan kid is already ready, mlNow points at them and the
 // other kid's check-off sets nothing.
+// 👩 Her rule 2026-09-22: "if I check something off and I'm still on the same kid, their next
+// Mom-required card should hit the time I'm now available and everything after moves." A Mom
+// card checked while the loop still says that kid re-points the hold at their NEXT Mom card, so
+// the block keeps laying from now instead of re-deriving behind their buffer (live 9/22:
+// Lincoln's Sprints checked 11:36 → his AAS re-laid 12:11, Mom idle 34 min). The loop still
+// moves on when the kid is done, on a break, or switched off — mlNow ignores the hold then.
+function _mlStayWith(t){
+  try{
+    if(!t||!t.who||_mlDayOf(t)!==_todayDay) return;
+    if(mlDone(t.who)||mlPaused(t.who)||mlOff(t.who)) return;
+    const now=mlNow(); if(!now||now.kid!==t.who||now.held) return;
+    const nxt=mlNextCard(t.who); if(!nxt||nxt.id===t.id) return;
+    momHold={kid:t.who,id:nxt.id,day:_todayDay};
+    if(db) db.ref(WK+"/momHold").set(momHold);
+  }catch(e){}
+}
 function mlOnCheck(t){
   try{
     if(!t||!t.who) return;
     const h=momHold;
-    if(h&&h.id===t.id){ momHold={}; if(db) db.ref(WK+"/momHold").remove(); return; }
-    if(t.mom==="required") return;            // a Mom card done out of band locks nothing
+    if(h&&h.id===t.id){ momHold={}; if(db) db.ref(WK+"/momHold").remove(); _mlStayWith(t); return; }
+    if(t.mom==="required"){ _mlStayWith(t); return; }   // out of band (not the loop's kid) locks nothing — _mlStayWith checks
     if(_mlDayOf(t)!==_todayDay) return;
     const now=mlNow(); if(!now||now.kid!==t.who||now.held) return;
     const nxt=mlNextCard(t.who); if(!nxt) return;

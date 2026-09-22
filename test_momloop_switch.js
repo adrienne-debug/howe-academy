@@ -293,7 +293,8 @@ console.log("── a full day of flips: after every event, nothing is dropped �
       ok(k + ": no independent card is flagged", nonMom.every(x => !x._momWait));
     });
     ok("lincoln's first unchecked independent card (MR5) moved up to now (12:30) — nothing left behind a gap", at(byTitle("lincoln", "MR5").id) === "12:30 PM", at(byTitle("lincoln", "MR5").id));
-    ok("…and Eggspress follows it, before his greyed Mom cards", at(byTitle("lincoln", "Eggspress").id) === "1:00 PM" && toMinLocal(at(byTitle("lincoln", "Spelling You See").id)) >= 13 * 60 + 30, [at(byTitle("lincoln", "Eggspress").id), at(byTitle("lincoln", "Spelling You See").id)]);
+    // 🍎 2026-09-22: 1:00–2:00 PM is the Settings lunch window — Eggspress steps over it to 2:00 PM.
+    ok("…and Eggspress follows it (after the lunch window), before his greyed Mom cards", at(byTitle("lincoln", "Eggspress").id) === "2:00 PM" && toMinLocal(at(byTitle("lincoln", "Spelling You See").id)) >= 14 * 60 + 30, [at(byTitle("lincoln", "Eggspress").id), at(byTitle("lincoln", "Spelling You See").id)]);
     ok("lincoln (has his own work) gets the keep-going banner", /Keep going on your own work/.test(d.call("mlBannerHTML('lincoln')")));
     ok("julian finished all his Mom work earlier → no banner at all", d.call("mlBannerHTML('julian')") === "");
     {

@@ -158,13 +158,15 @@ console.log("\n── it decides, it does not reschedule ──");
   // …and Mom's own switch: config/momLoop/momOff = today's stamp while she is not available.
   // 2026-09-14 added the 🌙 8 PM sweep marker: <week>/eveningSweep/<day> = an ISO stamp once the
   // evening sweep has run (any device), so the fleet sweeps once. Still never a card.
+  // 2026-09-22 (her rule "still on the same kid"): a Mom-card check re-points the SAME hold at the
+  // kid's next Mom card (one more WK/momHold set site, same stored fact). Still never a card.
   ok("it writes only the order, the cursor + its tap-day stamp, the hold, the behind scope, the two switches, and the sweep marker",
-    (BLOCK.match(/db\.ref\(/g) || []).length === 10 && /eveningSweep/.test(BLOCK)
+    (BLOCK.match(/db\.ref\(/g) || []).length === 11 && /eveningSweep/.test(BLOCK)
       && /config\/momLoop\/order/.test(BLOCK) && /config\/momLoop\/cursor/.test(BLOCK)
       && /config\/momLoop\/cursorSetOn/.test(BLOCK) && /config\/momLoop\/behindScope/.test(BLOCK)
       && (BLOCK.match(/config\/momLoop\/off\//g) || []).length === 1
       && (BLOCK.match(/config\/momLoop\/momOff/g) || []).length === 1
-      && (BLOCK.match(/WK\+"\/momHold"/g) || []).length === 3);
+      && (BLOCK.match(/WK\+"\/momHold"/g) || []).length === 4);
   ok("the setters are Mom-gated", (BLOCK.match(/if\(!momHere\(\)&&!adminPinUnlocked\) return;/g) || []).length === 6);
   // the ONE deliberately un-gated lever: the kid's "I'm ready" tap, and it can only turn ON
   ok("the kid's ready tap is un-gated and one-directional", /function mlKidReady\(kid\)\{ if\(mlOff\(kid\)\) _mlWriteOff\(kid,false\); \}/.test(BLOCK));
@@ -383,5 +385,43 @@ console.log("\n── MOM'S OWN SWITCH (her ask 2026-09-05): 'mom isn't availabl
   ok("the strip carries her toggle", /mlSetMomOff\(true\)/.test(run({ momLoop: { order: O, cursor: 0 } }).call("mlStripHTML()")));
 }
 
+console.log("\n── her rule 2026-09-22: a Mom-card check keeps Mom on the SAME kid until they are done ──");
+{
+  const O = ["julian", "lucy", "lincoln"];
+  const TOMIN = src.slice(src.indexOf("function toMin"), src.indexOf("\n}", src.indexOf("function toMin")) + 2);
+  const mk = (extra) => {
+    const r = run(Object.assign({ momLoop: { order: O, cursor: 1 }, cards: { julian: 0, lucy: 0, lincoln: 0 } }, extra || {}));
+    r.call(TOMIN);
+    r.tasks.push({ id: "lucy_nb", who: "lucy", day: "monday", time: "10:00 AM", dur: 5, mom: "none", title: "notebook" });
+    r.tasks.push({ id: "lucy_m1", who: "lucy", day: "monday", time: "10:05 AM", dur: 20, mom: "required", title: "Dimensions" });
+    r.tasks.push({ id: "lucy_m2", who: "lucy", day: "monday", time: "10:25 AM", dur: 20, mom: "required", title: "LOE" });
+    r.tasks.push({ id: "linc_m1", who: "lincoln", day: "monday", time: "10:05 AM", dur: 20, mom: "required", title: "AAS" });
+    r.tasks.push({ id: "linc_m2", who: "lincoln", day: "monday", time: "10:25 AM", dur: 20, mom: "required", title: "Drill" });
+    return r;
+  };
+  const check = (r, id) => { r.ctx.checked[id] = "11:36 AM Sep 22"; r.call("mlOnCheck(" + JSON.stringify(r.tasks.find(t => t.id === id)) + ")"); };
+  // (1) the started session: notebook checked → hold on m1; m1 checked → the hold moves to m2
+  let r = mk(); check(r, "lucy_nb");
+  ok("buffer check starts the hold on her first Mom card (unchanged)", r.call("mlHold()") && r.call("mlHold().id") === "lucy_m1", r.call("mlHold()"));
+  check(r, "lucy_m1");
+  ok("her Mom card checked → the hold re-points at her NEXT Mom card", r.call("mlHold()") && r.call("mlHold().id") === "lucy_m2", r.call("mlHold()"));
+  ok("…and mlNow says she is still started with Mom", r.call("mlNow()").kid === "lucy" && r.call("mlNow()").held === true, r.call("mlNow()"));
+  // (2) a Mom card checked with NO hold (Mom did it ahead of the lay) still keeps her on that kid
+  r = mk(); check(r, "lucy_m1");
+  ok("no hold before, still her turn → the next card is held from now", r.call("mlHold()") && r.call("mlHold().id") === "lucy_m2", r.call("mlHold()"));
+  // (3) done → the loop moves on, no hold
+  r = mk(); check(r, "lucy_m1"); check(r, "lucy_m2");
+  ok("her last Mom card checked → no hold, the loop moves to the next kid", !r.call("mlHold()") && r.call("mlNow()").kid === "lincoln", r.call("mlNow()"));
+  // (4) on a break → the hold is not re-pointed, Mom is handed on
+  r = mk({ paused: { lucy: true } }); check(r, "lucy_m1");
+  ok("on a brain break when the card is checked → no hold, Mom goes to the next kid", !r.call("mlHold()") && r.call("mlNow()").kid === "lincoln", r.call("mlNow()"));
+  // (5) switched off → same
+  const stamp = run().call("_mlDayStamp()");
+  r = mk({ momLoop: { order: O, cursor: 1, off: { lucy: stamp } } }); check(r, "lucy_m1");
+  ok("switched off when the card is checked → no hold", !r.call("mlHold()"));
+  // (6) a Mom card done out of band (not the loop's kid) locks nothing (unchanged)
+  r = mk(); check(r, "linc_m1");
+  ok("lincoln's Mom card checked while it is lucy's turn → no hold on him", !r.call("mlHold()") && r.call("mlNow()").kid === "lucy");
+}
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
