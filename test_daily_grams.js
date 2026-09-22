@@ -40,7 +40,8 @@ console.log("1) cursor rule — dgStart");
   ok(NB.dgStart({ week: 23, day: 12, adv: 4 }, 24) === 16, "a 4-day week advances 4, not 5");
   ok(NB.dgStart({ week: 23, day: 12, adv: 5 }, 26) === 27, "two unprinted weeks between → +5 each");
   ok(NB.dgStart({ week: 23, day: 12, adv: 5 }, 22) === 7, "earlier week walks back 5");
-  ok(NB.dgStart({ week: 23, day: 3, adv: 5 }, 21) === 1, "never below Day 1");
+  ok(NB.dgStart({ week: 23, day: 3, adv: 5 }, 21) === 0, "a week before the start → 0 (nothing prints, nothing stored) — was: clamp to Day 1");
+  ok(NB.dgStart({ week: 23, day: 7, adv: 5 }, 22) === 2 && NB.dgStart({ week: 23, day: 7, adv: 5 }, 21) === 0, "walk back stops at the start week (23 − 1 = 22)");
   ok(NB.dgStart({ week: "23", day: "12", adv: "5" }, "week24") === 17, "string fields (RTDB) parse");
 }
 
@@ -106,3 +107,20 @@ console.log("5) combined parent packet carries the key pages too");
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
+
+// ── start week (2026-09-21): an earlier week prints no Daily Grams pages and hands back no cursor ──
+(function(){
+  const fs=require("fs");const w={};(new Function("window","document",fs.readFileSync("notebooks.js","utf8")))(w,{});const H=w.HoweNotebooks;
+  let p=0,f=0;const ok=(c,m)=>{c?p++:(f++,console.log("FAIL",m));};
+  const LIVE={week:24,day:2,adv:5};                                  // the shape stored live tonight (no `from`)
+  ok(H.dgStart(LIVE,23,180)===0&&H.dgStart(LIVE,24,180)===2&&H.dgStart(LIVE,25,180)===7,"dgStart: wk23 → 0 (before), wk24 → 2, wk25 → 7");
+  ok(H.dgStart({week:26,day:11,adv:5,from:24},24,180)===1&&H.dgStart({week:26,day:11,adv:5,from:24},23,180)===0,"stored from: walk back to the start week works, one earlier is before");
+  ok(H.dgStart({week:30,day:32,adv:5},24,180)===2&&H.dgStart({week:30,day:32,adv:5},23,180)===0,"old cursor without from: start week worked out (30 − 6 = 24)");
+  const dg={book:"b",title:"DG",total:180,cursor:LIVE,ansMeta:{},dayAns:{},pages:{day:{},ans:{}}};
+  const days=["monday","tuesday","wednesday","thursday","friday"];
+  ok(H._internal.dgWeekPlan(dg,23,days,{})===null,"week before the start → no plan (no pages, no cursor)");
+  const p24=H._internal.dgWeekPlan(dg,24,days,{});ok(p24&&p24.start===2&&JSON.stringify(p24.cursor)===JSON.stringify({week:24,day:2,adv:5,from:24}),"week 24 → Days 2–6, cursor now carries from:24");
+  const p25=H._internal.dgWeekPlan(Object.assign({},dg,{cursor:p24.cursor}),25,days,{});ok(p25.start===7&&p25.cursor.from===24,"week 25 continues at Day 7, start week kept");
+  ok(H._internal.dgWeekPlan(Object.assign({},dg,{cursor:{week:23,day:1,adv:5,from:23}}),23,days,{}).start===1,"Mom can still start an earlier week on purpose (from moves back)");
+  console.log("\n[start week] "+p+" passed, "+f+" failed");if(f)process.exit(1);
+})();

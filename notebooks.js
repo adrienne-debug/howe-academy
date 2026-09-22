@@ -264,12 +264,16 @@
   // reuses the same start; an earlier week walks back 5 per week. Mom's "starts at Day N" control
   // just writes a cursor for the target week, so from there it advances on its own — a 4-day week
   // advances 4, never skipping a page.
+  // cursor.from = the week Daily Grams started (older cursors: worked out from week/day). A week BEFORE it returns 0:
+  // no pages print and no cursor is stored, so looking at an old week can never drag the place backwards (2026-09-21).
+  function dgFrom(cursor) { var cw = parseInt(cursor.week, 10), d = parseInt(cursor.day, 10), f = parseInt(cursor.from, 10); return (f > 0) ? f : cw - Math.floor((Math.max(1, d) - 1) / 5); }
   function dgStart(cursor, wk, total) {
     wk = parseInt(String(wk).replace(/\D/g, ""), 10) || 1;   // accepts 24 or "week24"
     if (!cursor || cursor.day == null) return 1;
     var cw = parseInt(cursor.week, 10), d = parseInt(cursor.day, 10), adv = (cursor.adv == null) ? 5 : parseInt(cursor.adv, 10);
     if (!(cw > 0) || isNaN(d)) return 1;
     if (isNaN(adv) || adv < 0) adv = 5;
+    if (wk < dgFrom(cursor)) return 0;
     var s;
     if (wk === cw) s = d;
     else if (wk > cw) s = d + adv + 5 * (wk - cw - 1);
@@ -282,6 +286,7 @@
     if (!dg || !dg.book) return null;
     var total = parseInt(dg.total, 10) || 180;
     var start = dgStart(dg.cursor, wk, total);
+    if (start < 1) return null;   // before Daily Grams started — nothing prints, nothing is stored
     var pages = dg.pages || {}, dayImgs = pages.day || {}, ansImgs = pages.ans || {};
     var dayAns = dg.dayAns || {}, ansMeta = dg.ansMeta || {};
     var days = [], byDay = {}, ansSet = {}, warnings = [];
@@ -301,7 +306,8 @@
     if (missing.length) warnings.push((dg.title || "Daily Grams") + ": no page image loaded for Day " + missing.join(", ") + " — a placeholder prints instead.");
     var missA = ans.filter(function (a) { return !a.url; }).map(function (a) { return a.page; });
     if (missA.length) warnings.push((dg.title || "Daily Grams") + ": answer-key page " + missA.join(", ") + " not loaded — a placeholder prints in the parent book.");
-    return { start: start, days: days, byDay: byDay, ans: ans, cursor: { week: wk, day: start, adv: orderedDays.length }, warnings: warnings };
+    var wkN = parseInt(String(wk).replace(/\D/g, ""), 10) || 1, from = (dg.cursor && dg.cursor.day != null) ? Math.min(dgFrom(dg.cursor), wkN) : wkN;
+    return { start: start, days: days, byDay: byDay, ans: ans, cursor: { week: wkN, day: start, adv: orderedDays.length, from: from }, warnings: warnings };
   }
   var DG_THEMES = {
     ellis:   { accent: "#C41E1E", ink: "#0A1628", muted: "#5b6b82", font: "'Orbitron',sans-serif", bg: "#fdf2f2" },
