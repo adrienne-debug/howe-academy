@@ -6806,6 +6806,7 @@ function finalizeDone(id, doneTs, score){
     if(t.lid){ entry.lid=t.lid; entry.pid=t.who+"__"+t.subjectKey; }   // frozen record is lid-resolvable without title parsing
     hist[id]=entry; histState[id]=entry; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+id).set(entry);
     try{ lidDoneWrite(t,doneTs,id); }catch(e){ dbg("lid done write skip: "+e); }
+    try{ if(Array.isArray(t.lids)) t.lids.forEach(function(l){ if(l&&l!==t.lid) lidDoneWrite(Object.assign({},t,{lid:l}),doneTs,id); }); }catch(e){ dbg("lid done write (merged) skip: "+e); }   // 🧩 a merged page card finishes every lesson it holds
     // A check-off may have finished a subject and/or met all session goals.
     try{ checkSubjectComplete(t.who, t.subjectKey); }catch(e){}
     try{ if(typeof lnHandoff==="function") lnHandoff(t.who,t.subjectKey,"check"); }catch(e){}   // 🛤 a finished lane unit hands this week to the next
@@ -7786,6 +7787,7 @@ document.getElementById("dlg-uncheck").onclick=()=>{
   delete hist[id]; delete histState[id]; sv(WK+"_history",hist);
   if(db) db.ref(WK+"/history/"+id).remove();
   try{ lidDoneRemove(weekData.tasks.find(x=>x.id===id),id); }catch(e){ dbg("lid done remove skip: "+e); }
+  try{ const _mt=weekData.tasks.find(x=>x.id===id); if(_mt&&Array.isArray(_mt.lids)) _mt.lids.forEach(function(l){ if(l&&l!==_mt.lid) lidDoneRemove(Object.assign({},_mt,{lid:l}),id); }); }catch(e){}   // 🧩 un-checking a merged card un-does every lesson on it
   closeDlg(); schedCascade(); renderAll();
 };
 function closeDlg(){ document.getElementById("dlg").style.display="none"; pendingId=null; }
@@ -22009,6 +22011,8 @@ function cascadeIntraWeek(sweepTodayElapsed){
       });
     }
   }
+  // 🧩 a carried page-book sitting landing beside the day's own sitting folds into one card
+  try{ if(typeof pgMergeDayCards==="function"){ const _pm=pgMergeDayCards(weekData.tasks,checked,(typeof claimed!=="undefined"&&claimed)||{}); if(_pm) dbg("page merge (cascade): folded "+_pm+" card(s)"); } }catch(e){ dbg("page merge skip: "+e); }
 
   sv(WK+"_tasks",weekData.tasks);
   safeWriteTasks("cascade");
@@ -26531,6 +26535,52 @@ function _planDropDealt(lessons,dealt){
 // projected lesson (the card is what the kid actually has), and the lessons already on
 // those cards come out of the content — otherwise the same lesson shows twice, once on its
 // card and once again later down the column. cbApply passes nothing and is unchanged.
+// PGMERGE_START — 🧩 one card per day per page book (her yes 2026-09-22)
+// Two sittings of a page book on one day (a missed sitting carried onto the next day, or a catch-up
+// extra) sat as two cards — "pp. 1–2" and "pp. 3–4". Now, wherever a day's cards are laid (the week
+// generator, the carry-forward sweep), adjacent unchecked page-range cards of the same book collapse
+// into ONE card, "pp. 1–4": minutes added, every lesson id kept in `lids`, the first card's id kept so
+// history stays keyed. Checking it marks every lesson done; the projection (gvDealtDates) and the slot
+// normalizer (seqFillNormalize) both treat those lessons as dealt. Only page books (pacing mode "pages"),
+// only contiguous ranges, never a checked, claimed, carried-twin or overflow card.
+function pgIsPageBook(kid,sk){ try{ const s=(((currData||{}).subjects||{})[kid]||{})[sk]; return !!(s&&s.pacing&&s.pacing.mode==="pages"); }catch(e){ return false; } }
+function _pgCardRange(t){ const m=String(t&&t.title||"").match(/\bpp?\.\s*(\d+)(?:\s*[\u2013\-]\s*(\d+))?\s*$/); if(!m) return null; const a=parseInt(m[1],10), b=m[2]?parseInt(m[2],10):a; return (b>=a)?{a:a,b:b}:null; }
+function _pgCardTitle(title,a,b){ return String(title||"").replace(/\bpp?\.\s*\d+(?:\s*[\u2013\-]\s*\d+)?\s*$/, a===b?("p. "+a):("pp. "+a+"\u2013"+b)); }
+function pgMergeDayCards(tasks,checkedMap,claimedMap){
+  if(!Array.isArray(tasks)||tasks.length<2) return 0;
+  const ck=checkedMap||{}, cl=claimedMap||{};
+  const groups={};
+  tasks.forEach(function(t,i){
+    if(!t||!t.who||!t.subjectKey||!t.day) return;
+    if(String(t.id||"").endsWith("_c")||t._eowOverflow) return;
+    if(ck[t.id]||cl[t.id]!=null) return;
+    if(!pgIsPageBook(t.who,t.subjectKey)) return;
+    const r=_pgCardRange(t); if(!r) return;
+    const k=t.who+"|"+t.day+"|"+t.subjectKey; (groups[k]=groups[k]||[]).push({t:t,r:r,i:i});
+  });
+  const drop={}; let folded=0;
+  Object.keys(groups).forEach(function(k){
+    const g=groups[k]; if(g.length<2) return;
+    g.sort(function(x,y){ return (x.r.a-y.r.a)||(x.i-y.i); });
+    let cur=g[0];
+    for(let j=1;j<g.length;j++){
+      const nx=g[j];
+      if(nx.r.a===cur.r.b+1){
+        const t=cur.t, u=nx.t;
+        t.lids=(t.lids||(t.lid?[t.lid]:[])).concat(u.lids||(u.lid?[u.lid]:[]));
+        t.dur=(t.dur||20)+(u.dur||20);
+        t.title=_pgCardTitle(t.title,cur.r.a,nx.r.b);
+        t.mergedFrom=(t.mergedFrom||[]).concat([u.id]);
+        cur.r={a:cur.r.a,b:nx.r.b};
+        drop[u.id]=true; folded++;
+      } else cur=nx;
+    }
+  });
+  if(!folded) return 0;
+  for(let i=tasks.length-1;i>=0;i--){ if(tasks[i]&&drop[tasks[i].id]) tasks.splice(i,1); }
+  return folded;
+}
+// PGMERGE_END
 // PGAUTO_START — ⏳ a page book that keeps averaging toward its finish date (her rule 2026-09-22)
 // "more pages will have to be averaged per day if it keeps getting closer to the end date and not
 // getting done." A pages-mode plan with a Finish-by date no longer carries a fixed pages-per-day
@@ -28599,6 +28649,8 @@ function gvDealtDates(kid,sk){
       const iso=_gvIso(d);
       const rec={text:((typeof taskLessonRef==="function"&&taskLessonRef(t))||t.title||""),id:t.id,lid:t.lid||null,
         min:(typeof toMin==="function"&&t.time)?(toMin(t.time)||0):0};
+      // 🧩 a merged page card claims every lesson it holds (the extra lessons ride in `more`)
+      if(Array.isArray(t.lids)&&t.lids.length>1) rec.more=t.lids.filter(function(l){ return l&&l!==rec.lid; }).map(function(l){ return {text:"",id:t.id,lid:l,min:rec.min}; });
       // EVERY card on a day claims its lesson — a cap-2 subject deals two sittings on one day.
       // Keeping only the last card written lost L2-17's Friday claim, so the plan re-laid it
       // next week BEHIND L2-18 (live 2026-09-03; Wordsmith pg53-54 the same on Thursday).
@@ -28606,8 +28658,8 @@ function gvDealtDates(kid,sk){
       // sitting) and every one of them comes out of the content.
       const cur=out[iso];
       if(!cur){ out[iso]=rec; return; }
-      if(rec.min<cur.min){ rec.more=[cur].concat(cur.more||[]); delete cur.more; out[iso]=rec; }
-      else { cur.more=(cur.more||[]).concat([rec]); cur.more.sort(function(a,b){ return a.min-b.min; }); }
+      if(rec.min<cur.min){ rec.more=(rec.more||[]).concat([cur]).concat(cur.more||[]); delete cur.more; out[iso]=rec; }
+      else { const _rm=rec.more||[]; delete rec.more; cur.more=(cur.more||[]).concat([rec]).concat(_rm); cur.more.sort(function(a,b){ return a.min-b.min; }); }
     });
   }catch(e){}
   return out;
@@ -48268,6 +48320,8 @@ function generateWeek(config){
   try{ gwStampLids(allTasks,weekServed); }catch(e){ dbg&&dbg("lid stamp skip: "+e); }
   // Stage 3c — plan-backed cards get their deterministic id (<kid>_<pid>_<lid>).
   try{ gwPlanIds(allTasks); }catch(e){ dbg&&dbg("plan id skip: "+e); }
+  // 🧩 one card per day per page book — adjacent page-range sittings on a day fold into one card
+  try{ if(typeof pgMergeDayCards==="function"){ const _pm=pgMergeDayCards(allTasks,(typeof checked!=="undefined"&&checked)||{},(typeof claimed!=="undefined"&&claimed)||{}); if(_pm) dbg&&dbg("page merge: folded "+_pm+" card(s)"); } }catch(e){ dbg&&dbg("page merge skip: "+e); }
 
   try{ gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear); }catch(e){ dbg&&dbg("retr inject skip: "+e); }
 
@@ -48433,19 +48487,23 @@ function seqFillNormalize(tasks,reason){
     if(iso===todayISO) return ((typeof toMin==="function")?toMin(t.time):0)<=nowMin;
     return false;
   };
-  const groups={}; const live=new Set();
+  const groups={}; const live=new Set(); const takenBy={};
   tasks.forEach(t=>{ if(t&&t.id) live.add(t.id);
     if(!t||!t.lid||!t.who||!t.subjectKey||String(t.id||"").endsWith("_c")) return;
     let pb=false; try{ pb=!!planBacked(t.who,t.subjectKey); }catch(e){}
-    if(pb) (groups[t.who+"|"+t.subjectKey]=groups[t.who+"|"+t.subjectKey]||[]).push(t); });
+    if(!pb) return;
+    // 🧩 a merged page card HOLDS its lessons — not a slot to re-stamp, and its lessons are spoken for
+    if(Array.isArray(t.lids)&&t.lids.length>1){ const k=t.who+"|"+t.subjectKey; (takenBy[k]=takenBy[k]||[]).push.apply(takenBy[k],t.lids); return; }
+    (groups[t.who+"|"+t.subjectKey]=groups[t.who+"|"+t.subjectKey]||[]).push(t); });
   let changed=0; const notes=[];
   Object.keys(groups).forEach(key=>{
     const kid=key.split("|")[0], sk=key.split("|")[1];
     let ids=null,doneSet=null,subj=null;
     try{ ids=lidsFor(kid,sk); doneSet=lidDoneSet(kid,sk); subj=(((currData||{}).subjects||{})[kid]||{})[sk]; }catch(e){ return; }
     if(!ids||!ids.length||!doneSet||!subj) return;
+    const taken=new Set(doneSet); (takenBy[key]||[]).forEach(l=>taken.add(l));   // 🧩 lessons held by a merged card
     const res=seqFillSlots({kid:kid,sk:sk,planId:subj.planId||"",lessonIds:ids,lessonSeq:subj.lessonSeq||[],
-      done:doneSet,cards:groups[key],isLocked:locked,toMin:(typeof toMin==="function")?toMin:null});
+      done:taken,cards:groups[key],isLocked:locked,toMin:(typeof toMin==="function")?toMin:null});
     if(!res||!res.changed) return;
     const byId={}; groups[key].forEach(t=>{ byId[t.id]=t; });
     res.assign.forEach(a=>{
