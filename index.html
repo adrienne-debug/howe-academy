@@ -18750,7 +18750,8 @@ function haNbContext(kid){
   let wordBank=null; try{ wordBank=nbWbCtx(kid); }catch(e){}   // Mom's Word-of-the-day bank (Lincoln) — null = built-in words
   let cogatBank=null; try{ cogatBank=nbCqCtx(kid); }catch(e){}   // Mom's CogAT verbal bank (Lincoln) — null = built-in analogies
   let quantBank=null; try{ quantBank=nbQbCtx(kid); }catch(e){}   // Mom's number-reasoning bank (Lincoln) — null = built-in math questions
-  return { wordBank:wordBank, cogatBank:cogatBank, quantBank:quantBank, dailyGrams:dailyGrams, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, letterCursor:((((notebookSettings||{}).julian)||{}).letterCursor)||null, masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true };
+  let convBank=null; try{ convBank=nbCvCtx(kid); }catch(e){}   // Mom's conventions bank (Lincoln) — null = built-in fix-the-sentence items
+  return { wordBank:wordBank, cogatBank:cogatBank, quantBank:quantBank, convBank:convBank, dailyGrams:dailyGrams, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, letterCursor:((((notebookSettings||{}).julian)||{}).letterCursor)||null, masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true };
 }
 async function haNbOpen(kid,which){
   const lib=window.HoweNotebooks; if(!lib){ alert("Notebook builder not loaded yet."); return; }
@@ -18766,6 +18767,7 @@ async function haNbOpen(kid,which){
     nbWbPersistCursor(kid,out);   // Word-of-the-day bank: same idea
     nbCqPersistCursor(kid,out);   // CogAT verbal bank: same idea
     nbQbPersistCursor(kid,out);   // number-reasoning bank: same idea
+    nbCvPersistCursor(kid,out);   // conventions bank: same idea
     const html=(which==="parent")?(out.parent||out.student):out.student;
     const fname=kid+"_"+nbTargetWk()+"_"+(which==="parent"?"parent":"notebook")+".html";
     lib.openHtml(html, fname);
@@ -18791,6 +18793,7 @@ async function haNbPdf(kid,which){
     nbWbPersistCursor(kid,out);
     nbCqPersistCursor(kid,out);
     nbQbPersistCursor(kid,out);
+    nbCvPersistCursor(kid,out);
     const html=(which==="parent")?(out.parent||out.student):out.student;
     const fname=kid+"_"+nbTargetWk()+"_"+(which==="parent"?"parent":"notebook")+".pdf";
     say("📄 Building "+cap(kid)+"'s PDF…");
@@ -23119,6 +23122,123 @@ function nbQbCardHTML(kid,wkLabel){
   }
   return h+'</div>';
 }
+// ── ✏️ Conventions bank — Mom's own spelling / usage items for the daily conventions box (same pattern as the others) ──
+// notebookSettings/<kid>/convBank = { cursor:{week,day,adv,from}, items:{ <id>:{o,type,text,c:[4 + No mistake],ans,rule} } }.
+// type: SP = which word is spelled wrong (four words + No mistake) · US = which line has a mistake (three lines + No mistake).
+// `rule` prints in the Teaching Companion key. Empty = the built-in fix-the-sentence items.
+const NB_CV_TYPES={SP:"Spelling",US:"Usage"};
+let nbCvDraft=null, nbCvPaste=null, nbCvShowAll=false, nbCvDelArm="", nbCvMsg="";
+function nbCvCfg(kid){ return (((notebookSettings||{})[kid]||{}).convBank)||{}; }
+function nbCvList(kid){ const w=nbCvCfg(kid).items||{}; return Object.keys(w).map(id=>Object.assign({},w[id],{id:id})).filter(e=>e&&e.text).sort((a,b)=>(a.o||0)-(b.o||0)); }
+function nbCvCtx(kid){ if(!NB_WB_KIDS[kid]) return null; const list=nbCvList(kid); if(!list.length) return null; return { cursor:nbCvCfg(kid).cursor||null, items:list }; }
+function nbCvSave(kid,path,val){ nbBankSave(kid,"convBank",path,val); }
+function nbCvPlan(kid){ const lib=window.HoweNotebooks, ctx=nbCvCtx(kid); if(!lib||!lib.convBankPlan||!ctx) return null; return lib.convBankPlan(ctx,nbTargetWkNum(),new Array(nbDgWeekLen()).fill("")); }
+function nbCvLeft(kid){ return nbBankLeft(nbCvList(kid).length,nbCvCfg(kid).cursor); }
+function nbCvSetStart(kid,pos){ if(!momHere()) return; const n=nbCvList(kid).length; if(!n) return; pos=Math.max(1,Math.min(n,parseInt(pos,10)||1)); nbCvSave(kid,"cursor",nbBankCursorFor(nbCvCfg(kid).cursor,pos)); nbWbRepaint(); }
+function nbCvOpenForm(kid,id){ if(!momHere()) return; const e=id?(nbCvCfg(kid).items||{})[id]:null, c=nbCqChoices(e); nbCvDraft={id:id||null,type:(e&&e.type)||"NS",text:(e&&e.text)||"",c0:c[0]||"",c1:c[1]||"",c2:c[2]||"",c3:c[3]||"",c4:c[4]||"",ans:(e&&e.ans)||"A",rule:(e&&e.rule)||""}; nbCvPaste=null; nbCvMsg=""; nbWbRepaint(); }
+function nbCvCloseForm(){ nbCvDraft=null; nbCvPaste=null; nbCvMsg=""; nbWbRepaint(); }
+function nbCvType(v){ v=String(v||"").trim().toUpperCase(); if(NB_CV_TYPES[v]) return v; if(/^SP/.test(v)) return "SP"; if(/^US/.test(v)) return "US"; return ""; }
+function nbCvRecord(type,text,choices,ans,rule,o){
+  type=nbCvType(type); text=nbWbClean(text,220); rule=nbWbClean(rule,220); choices=choices.map(x=>nbWbClean(x,24)).filter(Boolean).slice(0,5); ans=String(ans||"").trim().toUpperCase().charAt(0);
+  if(!type) return "pick a type (Spelling or Usage)"; if(!text) return "the question is blank";
+  const rec={o:o,type:type,text:text}; if(rule) rec.rule=rule;
+  if(choices.length<4) return "it needs at least 4 choices (the last one is usually (No mistake))"; if("ABCDE".indexOf(ans)<0||"ABCDE".indexOf(ans)>=choices.length) return "the answer must be the letter of one of the choices";
+  rec.c=choices; rec.ans=ans; return rec;
+}
+function nbCvSaveDraft(kid){
+  if(!momHere()||!nbCvDraft) return;
+  const d=nbCvDraft, list=nbCvList(kid), old=d.id?((nbCvCfg(kid).items||{})[d.id]||{}):{};
+  const rec=nbCvRecord(d.type,d.text,[d.c0,d.c1,d.c2,d.c3,d.c4],d.ans,d.rule,d.id?(old.o||list.length+1):((list.length?list[list.length-1].o||list.length:0)+1));
+  if(typeof rec==="string"){ nbCvMsg="Not saved — "+rec+"."; nbWbRepaint(); return; }
+  nbCvSave(kid,"items/"+(d.id||nbWbNewId()),rec);
+  nbCvDraft=null; nbCvMsg=""; nbWbRepaint();
+}
+function nbCvDelete(kid,id){
+  if(!momHere()) return;
+  if(nbCvDelArm!==id){ nbCvDelArm=id; nbWbRepaint(); return; }
+  const list=nbCvList(kid), idx=list.findIndex(e=>e.id===id), c=nbCvCfg(kid).cursor;
+  nbCvSave(kid,"items/"+id,null);
+  if(c&&c.day!=null&&idx>=0&&idx+1<(parseInt(c.day,10)||1)) nbCvSave(kid,"cursor",Object.assign({},c,{day:(parseInt(c.day,10)||1)-1,adv:c.adv==null?5:c.adv}));
+  nbCvDelArm=""; nbWbRepaint();
+}
+function nbCvOpenPaste(){ if(!momHere()) return; nbCvPaste=""; nbCvDraft=null; nbCvMsg=""; nbWbRepaint(); }
+// one item per line:  type | question | A | B | C | D | E | answer letter | rule
+function nbCvAddPasted(kid){
+  if(!momHere()||nbCvPaste==null) return;
+  const list=nbCvList(kid); let o=list.length?(list[list.length-1].o||list.length):0, added=0, bad=[];
+  String(nbCvPaste).split(/\n/).forEach((line,i)=>{
+    if(!line.trim()) return;
+    const f=line.split("|").map(x=>x.trim()); const t=nbCvType(f[0]); let rec;
+    { const ai=f.findIndex((x,k)=>k>=6&&/^[A-Ea-e]$/.test(x)); rec=ai<0?"missing the answer letter":nbCvRecord(t,f[1],f.slice(2,ai),f[ai],f.slice(ai+1).join(" | "),o+1); }
+    if(typeof rec==="string"){ bad.push("line "+(i+1)+": "+rec); return; }
+    o++; nbCvSave(kid,"items/"+nbWbNewId(i+1),rec); added++;
+  });
+  nbCvMsg=(added?"Added "+added+" question"+(added>1?"s":"")+". ":"")+(bad.length?"Skipped — "+bad.slice(0,3).join("; ")+(bad.length>3?" (+"+(bad.length-3)+" more)":"")+".":"")||"Nothing to add.";
+  if(added&&!bad.length) nbCvPaste=null;
+  nbWbRepaint();
+}
+function nbCvPersistCursor(kid,out){
+  try{
+    if(!out||!out.convBankCursor||!NB_WB_KIDS[kid]) return;
+    const cur=nbCvCfg(kid).cursor||{}, nc=out.convBankCursor;
+    if(cur.week===nc.week&&cur.day===nc.day&&cur.adv===nc.adv&&cur.from===nc.from) return;
+    nbCvSave(kid,"cursor",nc);
+  }catch(e){}
+}
+function nbCvCardHTML(kid,wkLabel){
+  if(!momHere()||!NB_WB_KIDS[kid]) return "";
+  const list=nbCvList(kid), n=list.length, plan0=nbCvPlan(kid), before=!!(plan0&&plan0.before), plan=before?null:plan0, F="font-family:'DM Sans',sans-serif;";
+  const btn=(on,label,extra)=>'<button onclick="'+on+'" style="padding:7px 12px;border-radius:9px;border:1.5px solid #fcd34d;background:#fff;color:#854d0e;font-size:11.5px;font-weight:800;cursor:pointer;'+F+(extra||'')+'">'+label+'</button>';
+  const inp=(id,key,ph,val,w)=>'<input id="'+id+'" value="'+esc(val)+'" placeholder="'+esc(ph)+'" oninput="if(nbCvDraft)nbCvDraft.'+key+'=this.value" style="'+(w||'width:100%')+';box-sizing:border-box;padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;margin-bottom:6px;'+F+'">';
+  let h='<div style="margin-top:14px;background:#fefce8;border:1.5px solid #fde68a;border-radius:12px;padding:12px 14px">'+
+    '<div style="font-size:12px;font-weight:800;color:#854d0e;margin-bottom:2px">✏️ Conventions bank <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#fde68a;color:#713f12;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span>'+
+      '<span style="float:right;font-weight:700;color:#854d0e">'+n+' item'+(n===1?'':'s')+'</span></div>'+
+    '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:10px">'+(n?'One prints in the conventions box on his daily pages — in this order, one per school day; each answer and its rule print in the Teaching Companion.':'Empty — the built-in fix-the-sentence items print until you add some. Items you add here take their place.')+'</div>';
+  if(n){
+    const left=plan?Math.max(0,n-(plan.start-1)-nbDgWeekLen()):nbCvLeft(kid), low=left!=null&&left<NB_WB_LOW;
+    h+='<div style="background:#fff;border:1px solid #fde68a;border-radius:10px;padding:9px 11px;margin-bottom:10px">'+
+      '<div style="font-size:12px;font-weight:700;color:#1f2937">'+esc(wkLabel)+' prints: <span style="color:#854d0e">'+(before?'the built-in conventions items — this bank starts Week '+plan0.from:(plan?plan.items.map(q=>NB_CV_TYPES[q.ctype]||"").join(" · "):"…"))+'</span></div>'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-top:7px;font-size:11px;color:var(--muted);flex-wrap:wrap">Start '+esc(wkLabel)+' at item # '+
+        '<input id="nbcv-start" type="number" min="1" max="'+n+'" value="'+(plan?plan.start:1)+'" onchange="nbCvSetStart(\''+kid+'\',this.value)" style="width:64px;padding:5px 7px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;'+F+'"><span>of '+n+'</span></div>'+
+      '<div style="font-size:11px;margin-top:7px;font-weight:700;color:'+(low?'#b91c1c':'#854d0e')+'">'+(low?'⚠ ':'')+left+' unused item'+(left===1?'':'s')+(before?' in the bank':' after this week')+(left?' (about '+Math.max(1,Math.round(left/5))+' week'+(Math.round(left/5)>1?'s':'')+')':'')+(low?' — add more, or it starts over from the top.':'')+'</div>'+
+    nbChkLineHTML(kid,"q3",{all:"Conventions",SP:"Spelling",US:"Usage"},"#854d0e")+
+    '</div>';
+  }
+  if(nbCvMsg) h+='<div style="font-size:11px;font-weight:700;color:#9a3412;background:#fff7ed;border-radius:8px;padding:6px 9px;margin-bottom:8px">'+esc(nbCvMsg)+'</div>';
+  if(nbCvDraft){
+    const d=nbCvDraft, isBK=false, sel=(id,key,opts,val)=>'<select id="'+id+'" onchange="if(nbCvDraft){nbCvDraft.'+key+'=this.value;'+(key==="type"?'nbWbRepaint();':'')+'}" style="padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;margin-bottom:6px;background:#fff;'+F+'">'+opts.map(o=>'<option value="'+o[0]+'"'+(o[0]===val?' selected':'')+'>'+o[1]+'</option>').join("")+'</select>';
+    h+='<div style="background:#fff;border:1.5px solid #fcd34d;border-radius:10px;padding:10px 11px;margin-bottom:10px">'+
+      '<div style="font-size:11.5px;font-weight:800;color:#854d0e;margin-bottom:7px">'+(d.id?'Edit item':'Add an item')+'</div>'+
+      sel("nbcv-type","type",[["SP","Spelling — which word is spelled wrong? (four words, then (No mistake))"],["US","Usage — which line has a mistake? (three lines, then (No mistake))"]],d.type)+
+      inp("nbcv-text","text","the question, e.g.  Which word is spelled wrong?",d.text)+
+      (isBK?'':'<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 6px">'+["A","B","C","D","E"].map((L,i)=>inp("nbcv-c"+i,"c"+i,"choice "+L+(i===4?" (optional)":""),d["c"+i])).join("")+
+        '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin-bottom:6px">Answer '+sel("nbcv-ans","ans",["A","B","C","D","E"].map(L=>[L,L]),d.ans).replace("margin-bottom:6px;","margin-bottom:0;")+'</div></div>')+
+      inp("nbcv-rule","rule","the rule, for the Teaching Companion key (optional)",d.rule)+
+      '<div style="display:flex;gap:8px">'+btn("nbCvSaveDraft('"+kid+"')",d.id?"Save":"Add to bank","background:#ca8a04;color:#fff;border-color:#ca8a04;")+btn("nbCvCloseForm()","Cancel")+'</div></div>';
+  }else if(nbCvPaste!=null){
+    h+='<div style="background:#fff;border:1.5px solid #fcd34d;border-radius:10px;padding:10px 11px;margin-bottom:10px">'+
+      '<div style="font-size:11.5px;font-weight:800;color:#854d0e;margin-bottom:4px">Paste a list</div>'+
+      '<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin-bottom:6px">One item per line: <b>type | question | A | B | C | D | E | answer letter | rule</b><br>Type is SP (spelling) or US (usage). The last choice is usually (No mistake).</div>'+
+      '<textarea id="nbcv-paste" rows="6" oninput="nbCvPaste=this.value" placeholder="SP | Which word is spelled wrong? | freind | answer | island | listen | (No mistake) | A | i before e: friend" style="width:100%;box-sizing:border-box;padding:8px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;margin-bottom:6px;'+F+'">'+esc(nbCvPaste)+'</textarea>'+
+      '<div style="display:flex;gap:8px">'+btn("nbCvAddPasted('"+kid+"')","Add these","background:#ca8a04;color:#fff;border-color:#ca8a04;")+btn("nbCvCloseForm()","Cancel")+'</div></div>';
+  }else{
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap">'+btn("nbCvOpenForm('"+kid+"','')","＋ Add an item")+btn("nbCvOpenPaste()","📋 Paste a list")+(n?btn("nbCvShowAll=!nbCvShowAll;nbCvDelArm='';nbWbRepaint()",nbCvShowAll?"Hide the list ▴":"Show all "+n+" ▾"):"")+'</div>';
+  }
+  if(n&&nbCvShowAll&&!nbCvDraft&&nbCvPaste==null){
+    const startAt=plan?plan.start:0, wl=nbDgWeekLen();
+    h+='<div style="margin-top:10px;max-height:340px;overflow-y:auto;background:#fff;border:1px solid #fde68a;border-radius:10px">'+list.map((e,i)=>{
+      const thisWk=startAt&&(((i+1-startAt)%n+n)%n)<wl, arm=nbCvDelArm===e.id, ch=nbCqChoices(e), ai="ABCDE".indexOf(e.ans);
+      return '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #fefce8;'+(thisWk?'background:#fefce8;':'')+'">'+
+        '<span style="font-size:10px;color:var(--muted);width:26px;flex-shrink:0;text-align:right">'+(i+1)+'</span>'+
+        '<span style="font-size:9px;font-weight:800;color:#854d0e;background:#fef3c7;border-radius:6px;padding:1px 5px;flex-shrink:0">'+esc(e.type||"NS")+'</span>'+
+        '<span style="flex:1;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(e.text)+'</span>'+
+        '<span style="flex-shrink:0;max-width:96px;font-size:11.5px;color:#16a34a;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">→ '+esc(ch[ai]||"?")+'</span>'+
+        '<button onclick="nbCvOpenForm(\''+kid+'\',\''+esc(e.id)+'\')" title="Edit" style="border:none;background:none;cursor:pointer;font-size:13px;padding:2px 4px">✎</button>'+
+        '<button onclick="nbCvDelete(\''+kid+'\',\''+esc(e.id)+'\')" title="Delete" style="border:none;background:'+(arm?'#fee2e2':'none')+';color:#b91c1c;border-radius:6px;cursor:pointer;font-size:'+(arm?'10.5px;font-weight:800':'13px')+';padding:2px 5px;'+F+'">'+(arm?'Delete?':'🗑')+'</button></div>';
+    }).join("")+'</div>';
+  }
+  return h+'</div>';
+}
 // ── ✅ Notebook answer check — Mom marks each of the day's test-prep answers right / wrong ─────────
 // Opens after she approves Lincoln's Morning Notebook (Mom-Check), or from the Notebook tab button.
 // notebookSettings/<kid>/checks/<weekN>/<day> = { q1:{t,ok}, q2:{t,ok}, q3:{ok}, ts }  — one targeted set per day.
@@ -23134,7 +23254,8 @@ function nbChkItems(kid,wk,day){
   const wn=parseInt(String(wk).replace(/\D/g,""),10)||1, out={};
   const cq=nbCqCtx(kid), cp=cq?lib.cogatBankPlan(cq,wn,days):null; out.q1=(cp&&!cp.before)?cp.items[i]:null;
   const qb=nbQbCtx(kid), qp=qb?lib.quantBankPlan(qb,wn,days):null; out.q2=(qp&&!qp.before)?qp.items[i]:null;
-  try{ out.q3=lib.lincolnBuiltinQ3?lib.lincolnBuiltinQ3(wn,i):null; }catch(e){ out.q3=null; }
+  const cv=nbCvCtx(kid), vp=cv?lib.convBankPlan(cv,wn,days):null;
+  if(vp&&!vp.before) out.q3=vp.items[i]; else { try{ out.q3=lib.lincolnBuiltinQ3?lib.lincolnBuiltinQ3(wn,i):null; }catch(e){ out.q3=null; } }
   return out;
 }
 function nbChkOpen(kid,wk,day){
@@ -23142,14 +23263,14 @@ function nbChkOpen(kid,wk,day){
   wk=wk||WK; day=day||NB_CHK_DAYS[(new Date().getDay()+6)%7];
   const it=nbChkItems(kid,wk,day); if(!it||(!it.q1&&!it.q2&&!it.q3)){ if(typeof gwShowToast==="function") gwShowToast("No notebook answers to check for "+cap(day)+"."); return; }
   const old=(((notebookSettings||{})[kid]||{}).checks||{})[wk]||{}; const prev=old[day]||{};
-  nbChkState={kid,wk,day,it,q1:{t:it.q1?(it.q1.type||""):"",ok:prev.q1?prev.q1.ok:null},q2:{t:it.q2?(it.q2.qtype||""):"",ok:prev.q2?prev.q2.ok:null},q3:{ok:prev.q3?prev.q3.ok:null}};
+  nbChkState={kid,wk,day,it,q1:{t:it.q1?(it.q1.type||""):"",ok:prev.q1?prev.q1.ok:null},q2:{t:it.q2?(it.q2.qtype||""):"",ok:prev.q2?prev.q2.ok:null},q3:{t:(it.q3&&it.q3.bank)?(it.q3.ctype||""):"",ok:prev.q3?prev.q3.ok:null}};
   nbChkRender();
 }
 function nbChkMark(q,ok){ if(!nbChkState) return; nbChkState[q].ok=(nbChkState[q].ok===ok)?null:ok; nbChkRender(); }
 function nbChkClose(){ const ov=document.getElementById("nbchk-dlg"); if(ov) ov.remove(); nbChkState=null; }
 function nbChkSave(){
   if(!momHere()||!nbChkState) return; const s=nbChkState, rec={ts:Date.now()};
-  if(s.q1.ok!=null) rec.q1={t:s.q1.t,ok:s.q1.ok}; if(s.q2.ok!=null) rec.q2={t:s.q2.t,ok:s.q2.ok}; if(s.q3.ok!=null) rec.q3={ok:s.q3.ok};
+  if(s.q1.ok!=null) rec.q1={t:s.q1.t,ok:s.q1.ok}; if(s.q2.ok!=null) rec.q2={t:s.q2.t,ok:s.q2.ok}; if(s.q3.ok!=null) rec.q3=s.q3.t?{t:s.q3.t,ok:s.q3.ok}:{ok:s.q3.ok};
   if(!rec.q1&&!rec.q2&&!rec.q3){ nbChkClose(); return; }
   nbBankSave(s.kid,"checks",s.wk+"/"+s.day,rec);
   nbChkClose(); if(typeof gwShowToast==="function") gwShowToast("✅ Saved "+cap(s.day)+"'s notebook check."); nbWbRepaint();
@@ -23166,7 +23287,9 @@ function nbChkRender(){
   let h='';
   if(it.q1) h+=box(it.q1.tag,'<div style="font-size:12.5px;line-height:1.4">'+it.q1.text+'</div><div style="font-size:12.5px;margin-top:3px">Answer: '+ansOf(it.q1)+'</div>','q1',s.q1.ok);
   if(it.q2) h+=box(it.q2.tag,(it.q2.qtype==="BK"?'<div style="font-size:12.5px;line-height:1.4">'+it.q2.text+'</div><div style="font-size:11px;color:var(--muted);margin-top:3px">Right = he did the section</div>':'<div style="font-size:12.5px;line-height:1.5">'+it.q2.text.split(" / ").join("<br>")+'</div><div style="font-size:12.5px;margin-top:3px">Answer: '+ansOf(it.q2)+'</div>'+(it.q2.rule?'<div style="font-size:11px;color:#2d6a4f;margin-top:2px">'+it.q2.rule+'</div>':'')),'q2',s.q2.ok);
-  if(it.q3) h+=box('✏️ Conventions','<div style="font-size:12px;color:var(--muted);font-style:italic">'+esc(it.q3.sentence||"")+'</div><div style="font-size:12.5px;margin-top:3px">Fix: <b style="color:#166534">'+esc(it.q3.corrected||"")+'</b></div>','q3',s.q3.ok);
+  if(it.q3) h+=it.q3.bank
+    ? box(it.q3.tag,'<div style="font-size:12.5px;line-height:1.5">'+it.q3.text+'<br>'+(it.q3.choices||[]).map(c=>'<span style="display:inline-block;margin-right:8px"><b>'+c.l+'</b> '+c.t+'</span>').join("")+'</div><div style="font-size:12.5px;margin-top:3px">Answer: '+ansOf(it.q3)+'</div>'+(it.q3.rule?'<div style="font-size:11px;color:#2d6a4f;margin-top:2px">'+it.q3.rule+'</div>':''),'q3',s.q3.ok)
+    : box('✏️ Conventions','<div style="font-size:12px;color:var(--muted);font-style:italic">'+esc(it.q3.sentence||"")+'</div><div style="font-size:12.5px;margin-top:3px">Fix: <b style="color:#166534">'+esc(it.q3.corrected||"")+'</b></div>','q3',s.q3.ok);
   ov.innerHTML='<div class="dlg-box" style="max-width:400px;max-height:88vh;overflow-y:auto">'+
     '<div class="dlg-title">✅ '+esc(cap(s.kid))+'’s notebook — '+esc(cap(s.day))+'</div>'+
     '<div class="dlg-detail" style="margin-bottom:10px">Mark what he got. Leave a row blank if you didn’t check it.</div>'+h+
@@ -23182,7 +23305,7 @@ function nbChkHistory(kid){
 }
 // per question type: last 8 results + the current miss streak. slot = "q1"|"q2"|"q3"
 function nbChkByType(kid,slot){
-  const by={}; nbChkHistory(kid).forEach(r=>{ const x=r[slot]; if(!x) return; const t=slot==="q3"?"all":(x.t||"?"); (by[t]=by[t]||[]).push(!!x.ok); });
+  const by={}; nbChkHistory(kid).forEach(r=>{ const x=r[slot]; if(!x) return; const t=(x.t||(slot==="q3"?"all":"?")); (by[t]=by[t]||[]).push(!!x.ok); });
   const out={}; Object.keys(by).forEach(t=>{ const a=by[t]; let streak=0; for(let i=a.length-1;i>=0&&!a[i];i--) streak++; out[t]={recent:a.slice(-8),streak:streak,n:a.length}; }); return out;
 }
 // the little "how he's doing" line for a bank card. names = {type:label}
@@ -23195,7 +23318,7 @@ function nbChkLineHTML(kid,slot,names,color){
 }
 // Mom's Day: any type with 3+ misses in a row
 function nbChkFlagRows(){
-  let rows=""; const NAMES={q1:{A:"CogAT analogies",S:"CogAT sentence completion",C:"CogAT classification"},q2:Object.assign({},typeof NB_QB_TYPES!=="undefined"?NB_QB_TYPES:{}),q3:{all:"Conventions"}};
+  let rows=""; const NAMES={q1:{A:"CogAT analogies",S:"CogAT sentence completion",C:"CogAT classification"},q2:Object.assign({},typeof NB_QB_TYPES!=="undefined"?NB_QB_TYPES:{}),q3:{all:"Conventions",SP:"Spelling",US:"Usage"}};
   Object.keys(NB_WB_KIDS).forEach(kid=>["q1","q2","q3"].forEach(slot=>{ const by=nbChkByType(kid,slot); Object.keys(by).forEach(t=>{ if(by[t].streak<3) return;
     rows+='<div onclick="nbSelectedKid=\''+kid+'\';showTab(\'notebook\')" style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fef2f2;border-left:3px solid #b91c1c;border-radius:8px;margin-bottom:6px;cursor:pointer"><span style="flex:1;font-size:13px;font-weight:700">'+esc(cap(kid))+' · '+esc((NAMES[slot]||{})[t]||t)+' <span style="color:#6b6560;font-weight:600">· '+by[t].streak+' misses in a row</span></span><span style="font-size:11px;font-weight:800;color:#b91c1c">Sit-down ›</span></div>'; }); }));
   return rows;
@@ -23203,7 +23326,7 @@ function nbChkFlagRows(){
 // Mom's Day: a notebook bank that is about to run out of unused content. Returns "" when nothing is low.
 function nbBankLowAlertHTML(){
   let rows="";
-  Object.keys(NB_WB_KIDS).forEach(kid=>{ [["Word of the Day bank","word",nbWbLeft(kid)],["CogAT Verbal bank","question",nbCqLeft(kid)],["Number Reasoning bank","item",nbQbLeft(kid)]].forEach(b=>{
+  Object.keys(NB_WB_KIDS).forEach(kid=>{ [["Word of the Day bank","word",nbWbLeft(kid)],["CogAT Verbal bank","question",nbCqLeft(kid)],["Number Reasoning bank","item",nbQbLeft(kid)],["Conventions bank","item",nbCvLeft(kid)]].forEach(b=>{
     const left=b[2], unit=b[1]; if(left==null||left>=NB_WB_LOW) return;
     rows+='<div onclick="nbSelectedKid=\''+kid+'\';showTab(\'notebook\')" style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fffbeb;border-left:3px solid #b45309;border-radius:8px;margin-bottom:6px;cursor:pointer">'+
       '<span style="flex:1;font-size:13px;font-weight:700">'+esc(cap(kid))+'\'s '+b[0]+' <span style="color:#6b6560;font-weight:600">· '+(left?left+' unused '+unit+(left===1?'':'s')+' left (about '+Math.max(1,Math.round(left/5))+' week'+(Math.round(left/5)>1?'s':'')+')':'every '+unit+' has been used — it is repeating from the top')+'</span></span>'+
@@ -25256,6 +25379,7 @@ function renderNotebook(el){
         nbWbCardHTML(sel,wkLabel)+
         nbCqCardHTML(sel,wkLabel)+
         nbQbCardHTML(sel,wkLabel)+
+        nbCvCardHTML(sel,wkLabel)+
         juPlanHtml+
         storyHtml+
         coloringHtml+

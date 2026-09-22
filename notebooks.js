@@ -1493,6 +1493,34 @@
     });
     return { start: start, from: st.from, total: n, items: items, cursor: { week: parseInt(String(wk).replace(/\D/g, ""), 10) || 1, day: start, adv: orderedDays.length, from: st.from } };
   }
+  // ── Conventions bank (Mom's list, Notebook tab) — the Q3 box, in the Iowa format. Same shape and cursor rule as the others ──
+  // ctx.convBank = { cursor, items:[{type:"SP"|"US", text, c:[4 + "No mistake"], ans, rule},…] }.
+  // SP = which word is spelled wrong (four words + No mistake) · US = which line has a mistake (three lines + No mistake).
+  var LN_CV = { SP: { tag: "✏️ Spelling", check: "Check: say each word slowly — does every sound have its letters?" }, US: { tag: "✏️ Usage", check: "Check: read the whole sentence aloud — does it sound like a book?" } };
+  function lnConvBankPlan(cb, wk, orderedDays) {
+    var list = (cb && cb.items) || [];
+    if (!list.length) return null;
+    var n = list.length, st = lnBankStart(cb.cursor, wk, n), items = [];
+    if (st.before) return { before: true, from: st.from, total: n, items: [] };
+    var start = st.start;
+    orderedDays.forEach(function (d, i) {
+      var e = list[(((start - 1 + i) % n) + n) % n] || {}, type = LN_CV[e.type] ? e.type : "SP";
+      var ch = (Array.isArray(e.c) ? e.c : Object.keys(e.c || {}).sort().map(function (k) { return e.c[k]; })).filter(function (x) { return x != null && x !== ""; }).slice(0, 5);
+      items.push({ bank: true, ctype: type, tag: LN_CV[type].tag, check: LN_CV[type].check, text: lnEsc(e.text), rule: lnEsc(e.rule || ""),
+        choices: ch.map(function (t, k) { return { l: "ABCDE".charAt(k), t: lnEsc(t) }; }), ans: String(e.ans || "").toUpperCase().charAt(0) });
+    });
+    return { start: start, from: st.from, total: n, items: items, cursor: { week: parseInt(String(wk).replace(/\D/g, ""), 10) || 1, day: start, adv: orderedDays.length, from: st.from } };
+  }
+  // the Q3 box: a usage item lists its lines one under another; a spelling item lays its words out like the test
+  function lnConvCard(q) {
+    var stem = '<span style="font-weight:600;">' + q.text + '</span>';
+    var rows = q.ctype === "US"
+      ? '<div class="choices" style="grid-template-columns:1fr;gap:2px 0;">' + q.choices.map(function (c) { return '<div class="choice" style="font-size:11.5px;"><div class="c-letter">' + c.l + '</div> ' + c.t + '</div>'; }).join("") + '</div>'
+      : '<div class="choices" style="grid-template-columns:repeat(5,auto);justify-content:start;gap:2px 18px;">' + q.choices.map(function (c) { return '<div class="choice" style="font-size:12px;"><div class="c-letter">' + c.l + '</div> ' + c.t + '</div>'; }).join("") + '</div>';
+    return '<div class="card card-plain" style="padding:6px 13px;">' +
+      '<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px;"><div class="q-tag" style="background:var(--green-mid);margin-bottom:0;flex-shrink:0;">' + q.tag + '</div><div style="font-size:12px;color:var(--ink);">' + stem + '</div></div>' +
+      rows + '<div style="font-size:9.5px;color:var(--muted);margin-top:4px;border-top:1px dashed #d1d5db;padding-top:3px;">' + q.check + '</div></div>';
+  }
   function lnQuantCard(q) {
     if (!q.bank) return lnQuestionCard(q);
     var body;
@@ -1625,7 +1653,7 @@
     var ss = config.student_short, sf = config.student_full || ss, grade = config.grade, te = config.theme_emoji || "🐍";
     var pills = lnSubjectPills(daySubjects), skill = lnSkillTable(skillSubjects), wordH = lnWordCard(word);
     var q1H = lnQuestionCard(q1), q2H = lnQuantCard(q2);
-    var q3H = `<div class="card card-plain" style="padding:6px 13px;">
+    var q3H = q3.bank ? lnConvCard(q3) : `<div class="card card-plain" style="padding:6px 13px;">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:5px;">
     <div class="q-tag" style="background:var(--green-mid);margin-bottom:0;flex-shrink:0;">${q3.tag}</div>
     <div style="font-size:12px;color:var(--ink);font-style:italic;">"${q3.sentence}"</div>
@@ -1945,7 +1973,7 @@ ${extraStrip || ""}
         '<div class="key-row"><div class="key-label">Word</div><div><span class="key-ans">' + word.word + '</span> <span class="key-sub">— ' + wordShort + '</span></div></div>' +
         '<div class="key-row"><div class="key-label">Q1</div><div><span class="key-ans">' + a1[0] + '</span> <span class="key-sub">' + a1[1] + ' — ' + da.q1.tag + '</span></div></div>' +
         '<div class="key-row"><div class="key-label">Q2</div><div><span class="key-ans">' + (da.q2.qtype === "BK" ? "📘" : a2[0]) + '</span> <span class="key-sub">' + (da.q2.qtype === "BK" ? da.q2.text : a2[1]) + ' — ' + da.q2.tag + (da.q2.rule ? '<br><span style="color:var(--green-mid);">' + da.q2.rule + '</span>' : '') + '</span></div></div>' +
-        '<div class="key-row"><div class="key-label">Q3</div><div><span class="key-ans">' + a3[0] + '</span> <span class="key-sub">' + a3[1] + ' — ' + da.q3.tag + '</span></div></div>' +
+        '<div class="key-row"><div class="key-label">Q3</div><div><span class="key-ans">' + a3[0] + '</span> <span class="key-sub">' + a3[1] + ' — ' + da.q3.tag + (da.q3.rule ? '<br><span style="color:var(--green-mid);">' + da.q3.rule + '</span>' : '') + '</span></div></div>' +
         '</div>';
     });
     var wordDetails = lnWordDetails(dayAssignments);
@@ -2757,11 +2785,13 @@ ${extraStrip || ""}
     if (cqPlan && cqPlan.before) cqPlan = null;
     var qbPlan = lnQuantBankPlan(ctx.quantBank, wn, schoolDays);    // …and her number-reasoning bank replaces the built-in math questions
     if (qbPlan && qbPlan.before) qbPlan = null;
+    var cvPlan = lnConvBankPlan(ctx.convBank, wn, schoolDays);      // …and her conventions bank replaces the built-in fix-the-sentence items
+    if (cvPlan && cvPlan.before) cvPlan = null;
     schoolDays.forEach(function (day, i) {
       var dateStr = datesMap[day];
       var daySubjects = lnDaySubjects(tasks, student, day);
       var word = wbPlan ? wbPlan.words[i] : Object.assign({}, lnPick(LINCOLN_DATA.banks.words, weekNum, i)); if (!wbPlan) word.aas_level = cfg.aas_level;
-      var q1 = (cqPlan && cfg.prep_slot_1 === "cogat_verbal") ? cqPlan.items[i] : lnPick(bank1, weekNum, i), q2 = (qbPlan && cfg.prep_slot_2 === "iowa_math") ? qbPlan.items[i] : lnPick(bank2, weekNum, i), q3 = lnPick(bank3, weekNum, i);
+      var q1 = (cqPlan && cfg.prep_slot_1 === "cogat_verbal") ? cqPlan.items[i] : lnPick(bank1, weekNum, i), q2 = (qbPlan && cfg.prep_slot_2 === "iowa_math") ? qbPlan.items[i] : lnPick(bank2, weekNum, i), q3 = (cvPlan && cfg.prep_slot_3 === "conventions") ? cvPlan.items[i] : lnPick(bank3, weekNum, i);
       dailyPages.push(lnDailyPage(day, dateStr, weekNum, cfg, daySubjects, skillSubjects, word, q1, q2, q3,
         xpStrip(pagesForDay(ctx, "lincoln", day), "#2d6a4f", "#f2faf5", "#1a3a2a")));
       dayAssignments.push({ day: day, date: dateStr, word: word, q1: q1, q2: q2, q3: q3 });
@@ -2794,6 +2824,7 @@ ${extraStrip || ""}
     if (wbPlan) out.wordBankCursor = wbPlan.cursor;
     if (cqPlan) out.cogatBankCursor = cqPlan.cursor;
     if (qbPlan) out.quantBankCursor = qbPlan.cursor;
+    if (cvPlan) out.convBankCursor = cvPlan.cursor;
     return out;
   }
 
@@ -4713,6 +4744,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     letterStrokes: JU_LETTER_STROKES,   // HWT-style capital formation scripts — the drill Trace overlay shows them
     juPlanPreview: juPlanPreview,       // Julian's week planner: engine picks + struggled-with flags
     lincolnBuiltinQ3: function (wk, i) { return lnPick(LINCOLN_DATA.banks.conventions, wk, i); },   // the day's built-in conventions item (Mom's answer check)
+    convBankPlan: lnConvBankPlan,       // Lincoln's conventions bank: same, for the Q3 slot
     quantBankPlan: lnQuantBankPlan,     // Lincoln's number-reasoning bank: same, for the Q2 math slot
     cogatBankPlan: lnCogatBankPlan,     // Lincoln's CogAT verbal bank: same, for the Q1 slot
     wordBankPlan: lnWordBankPlan,       // Lincoln's word bank: which words a week prints + the cursor to store (Notebook tab card)
