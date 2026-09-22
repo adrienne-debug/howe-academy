@@ -203,7 +203,8 @@
       { key: "allAboutMe",   label: "All About Me",        emoji: "🙋" },
       { key: "moneyLife",    label: "Money & Life Skills", emoji: "💰" },
       { key: "wilderness",   label: "Wilderness Skills",   emoji: "🏕️" },
-      { key: "memoryCivics", label: "Memory & Civics",     emoji: "🇺🇸" }
+      { key: "memoryCivics", label: "Memory & Civics",     emoji: "🇺🇸" },
+      { key: "brainBreaks",  label: "Brain Breaks",        emoji: "🧠" }   // the 5 puzzle pages between days; off = they simply don't print (Draw & Imagine stays)
     ],
     ellis: [
       { key: "allAboutMe",   label: "All About Me",        emoji: "🙋" },
@@ -2840,7 +2841,8 @@ ${extraStrip || ""}
 
     // Full page order: weekly · bb0 · 4 enrichment · (day · bb)×4 · day5 · creative · eow
     var T = LN_EXTRA.enrich.theme_lincoln;
-    var parts = [weeklyH, lnBrainBreakPage(0, wn)];
+    var bbOn = xpOn(ctx, "brainBreaks");   // Notebook tab ▸ Extra Pages toggle; missing config = on
+    var parts = bbOn ? [weeklyH, lnBrainBreakPage(0, wn)] : [weeklyH];
     if (xpOn(ctx, "allAboutMe")) parts.push(enPageAllAboutMe(T, ctx.personal || null, wn));
     if (xpOn(ctx, "moneyLife")) parts.push(enPageMoneyLife(T, wn));
     if (xpOn(ctx, "wilderness")) parts.push(enPageWilderness(T, wn));
@@ -2850,7 +2852,7 @@ ${extraStrip || ""}
       parts.push(dp);
       var dgd = dgPlan && dgPlan.byDay[schoolDays[i]];
       if (dgd) parts.push(dgStudentPage("lincoln", dgd, wn, dgTitle));   // the day's Daily Grams page rides right behind the daily page
-      parts.push(i < dailyPages.length - 1 ? lnBrainBreakPage(i + 1, wn) : lnCreativePage(wn));
+      if (i < dailyPages.length - 1) { if (bbOn) parts.push(lnBrainBreakPage(i + 1, wn)); } else parts.push(lnCreativePage(wn));
     });
     parts.push(eowH);
     var student_html = lnFullHtml(cfg.student_short + "'s Notebook — Week " + weekNum, parts.join("\n\n\n"));
