@@ -42194,6 +42194,43 @@ function mlStripHTML(){
 //   · each kid's independent and may-need-Mom work re-packs around their Mom block, in
 //     the order the packer laid it (sequential rules ride along with that order)
 //   · lunch cards never move, and neither Mom nor a kid is laid on top of one
+// 🎯 PRIORITY inside a kid's block with Mom (her rule 2026-09-23: "the Mom flow today was perfect — don't mess with it —
+// but within those kid windows with Mom their school work can move around… in the order of what is needed first").
+// Only the ORDER of a kid's Mom-required cards changes; the block starts and ends where the loop put it, so the flow
+// (who, when, how long) is untouched. Order: the card in hand · a Mom-required Morning Notebook · a daily missed 2+
+// school days running (the 🗓 tracker) · the most-behind lessons (lessons behind pace) · everything else in plan order ·
+// a Closing Notebook last. Sticky pairs stay together.
+let _prDmCache={at:0,key:"",map:{}};
+function prDailyStreak(kid,label){
+  try{
+    if(typeof dmCompute!=="function"||typeof dmWeeks!=="function") return 0;
+    const key=String((typeof WK!=="undefined"&&WK)||"")+"|"+Object.keys((typeof checked!=="undefined"&&checked)||{}).length+"|"+(typeof _todayDay!=="undefined"?_todayDay:"");
+    if(_prDmCache.key!==key||Date.now()-_prDmCache.at>60000){
+      const off=(k,iso)=>{ try{ return typeof smapIsKidOff==="function"&&smapIsKidOff(k,iso); }catch(e){ return false; } };
+      const R=dmCompute(dmWeeks(),{todayISO:(typeof cbTodayISO==="function")?cbTodayISO():new Date().toISOString().slice(0,10),kids:[...ROSTER],isDaily:dmIsDaily,labelOf:dmLabel,kidOff:off});
+      const map={}; R.rows.forEach(r=>{ map[r.kid+"|"+r.label]=r.streak; });
+      _prDmCache={at:Date.now(),key:key,map:map};
+    }
+    return _prDmCache.map[kid+"|"+label]||0;
+  }catch(e){ return 0; }
+}
+function prNeed(t){   // bigger = sooner; 0 = keep the plan's order
+  try{
+    if(typeof planBacked==="function"&&planBacked(t.who,t.subjectKey)){ const b=(typeof _efBehind==="function")?_efBehind(t.who,t.subjectKey):0; return b>0?100+b:0; }
+    const st=prDailyStreak(t.who,(typeof dmLabel==="function")?dmLabel(t):""); return st>=2?1000+st:0;
+  }catch(e){ return 0; }
+}
+function prMomOrder(k,cards){
+  if(!Array.isArray(cards)||cards.length<2) return cards;
+  const held=(typeof momHold!=="undefined"&&momHold&&momHold.kid===k)?momHold.id:null;
+  const isM=t=>t.subjectKey==="morning_nb"||/morning notebook/i.test(t.title||"");
+  const isC=t=>t.subjectKey==="closing_nb"||/closing notebook/i.test(t.title||"");
+  const need={}; cards.forEach(t=>{ need[t.id]=prNeed(t); });
+  const rank=t=>t.id===held?0:isM(t)?1:isC(t)?3:2;
+  const out=cards.map((t,i)=>({t:t,i:i})).sort((a,b)=>(rank(a.t)-rank(b.t))||(need[b.t.id]-need[a.t.id])||(toMin(a.t.time)-toMin(b.t.time))||(a.i-b.i)).map(x=>x.t);
+  try{ if(typeof applyStickyOrder==="function") applyStickyOrder(out,t=>t.subjectKey||"",t=>((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[t.who]||{})[t.subjectKey]||null,t=>t.who); }catch(e){}
+  return out;
+}
 function mlQueueLay(tasks){
   try{
     if(!Array.isArray(tasks)||!tasks.length) return tasks;
@@ -42211,6 +42248,7 @@ function mlQueueLay(tasks){
       mine[k]=tasks.filter(function(t){ return movable(t)&&t.who===k; })
         .sort(function(a,b){ return toMin(a.time)-toMin(b.time); });
       momQ[k]=mine[k].filter(function(t){ return t.mom==="required"; });
+      if(momQ[k].length>1) momQ[k]=prMomOrder(k,momQ[k]);   // 🎯 what's needed first, inside the kid's own Mom block
     });
     // Ring kids who still owe Mom work, in loop order from the cursor.
     const ring=[]; for(let i=0;i<n;i++){ const k=order[(cur+i)%n]; if(momQ[k].length) ring.push(k); }
