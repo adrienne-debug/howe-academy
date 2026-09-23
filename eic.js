@@ -8,6 +8,7 @@
 //         eic/<kid>/log            = graded sittings
 // Writes: ONE exact path each —  eic/<kid>/log/<push> (a sitting) · remove of one log line ·
 //         workbooks/<id>/tagsBook (link a PDF) · mastery/<kid>_settings/eic (show the ✏️ button on that kid's Mastery page)
+//         eic/<kid>/iowa/<push> (step 4: one Iowa practice set) · remove of one Iowa line (Mom)
 //         eic/<kid>/counts/<book>_p<N>_r<round> (step 3: the kid's locked "how many" guess — set once, never overwritten)
 // Firebase never stores [] or null: a rule page reads back with NO `paragraphs`, a review page with NO `skill`.
 // Slice 3 (2026-09-20): the TWO-GREENS GATE for step 1. A skill's pool is dealt every other page —
@@ -26,7 +27,11 @@
 //   guess of how many mistakes the page has → eic/<kid>/counts/<book>_p<N>_r<round> = {ts,said,book,page,round}.
 //   GREEN on step 3 = found ≥80% AND his guess within 1 of the true count (found + missed). Every error type counts.
 //   Same two-greens gate, Redo / Move on, ✍ manual marks. The log line adds said / total / countOk.
-// NOT here yet (later slices): Iowa cards.
+// Slice 6B (2026-09-22, her yes): STEP 4 = IOWA PRACTICE — the tap-to-answer player. Bank = eic_iowa.json beside this file
+//   (160 new passages: Beginning = Ellis, Level = Lincoln; capitalization + punctuation, 40 each, 10 clean). 3 lines +
+//   4 "No mistakes"; the APP grades. One clock per set (30 s a passage). Green = 80%+ timed, finished before time ran out.
+//   Log: eic/<kid>/iowa/<push>. This slice: only Mom opens it (🧪 Try a set) — those are trial:true, never count, and
+//   never use up his unseen passages. Slice C (next) = the gate, the schedule card and the kid's doorway.
 (function(){
 "use strict";
 // Every book the engine knows, in ladder order (first book first). Level 1 + Level 2 added 2026-09-22 from her eBooks.
@@ -42,7 +47,7 @@ const FIRST=["capitalization","punctuation"];                                 //
 const ALIAS={an_and_a:"a_an_and_the"};                                        // same skill, named differently per book
 const GREEN=80;
 const REV="review";   // step 3's key — a page with no skill has always been logged under "review"
-let tags=null, logs={}, decs={}, counts={}, kid="ellis", showAll=true, busy=false;   // every skill shows by default (her ask 2026-09-22: "get all skill in the engine")
+let tags=null, logs={}, decs={}, counts={}, iowaLogs={}, kid="ellis", showAll=true, busy=false;   // every skill shows by default (her ask 2026-09-22: "get all skill in the engine")
 
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function dry(){return typeof _dryRun==="function"&&_dryRun();}
@@ -171,7 +176,8 @@ function load(){
   const b=db.ref("eic/"+kid+"/log").once("value").then(s=>{logs=s.val()||{};});
   const c=db.ref("eic/"+kid+"/decisions").once("value").then(s=>{decs=s.val()||{};});
   const d=db.ref("eic/"+kid+"/counts").once("value").then(s=>{counts=s.val()||{};});
-  return Promise.all([a,b,c,d]).catch(()=>{});
+  const e=db.ref("eic/"+kid+"/iowa").once("value").then(s=>{iowaLogs=s.val()||{};});
+  return Promise.all([a,b,c,d,e]).catch(()=>{});
 }
 function books(){return (typeof wbList==="function")?wbList():[];}
 function TK(k){ return eicTagsFor(tags||{},k||kid); }   // the current kid's ladder only
@@ -243,6 +249,7 @@ function draw(){
     h+='</div>';
   });
   if(!rvDone) h+=reviewCard(T,M,list);
+  if(M) h+=iowaTryCard();
   h+='<div style="text-align:center">'+chip(showAll?"Just capitalization & punctuation":"All "+skills.length+" skills","eicToggleAll()")+'</div>';
   box.innerHTML=h;
 }
@@ -294,6 +301,129 @@ function reviewCard(T,M,list){
   return h+'</div>';
 }
 
+// ── 🧪 STEP 4 — IOWA PRACTICE ──────────────────────────────────────────────────────────────
+const IOWA_LEVEL={ellis:"beginning",lincoln:"level"}, IOWA_N=10, IOWA_SECS=30;
+const IOWA_NAME={capitalization:"Capitalization",punctuation:"Punctuation"};
+let iowaBank=null, iowaRun=null, iowaTimed=true;
+function eicIowaLevel(k){ return IOWA_LEVEL[k]||"beginning"; }
+// A green: 80%+, timed, finished before the clock ran out. A Mom try-out never counts.
+function eicIowaGreen(r){ return !!(r&&r.timed&&!r.timeUp&&!r.trial&&+r.pct>=GREEN); }
+// One set: passages he hasn't had first (then the longest-ago), about 2–3 clean, shuffled. Try-outs don't count as "had".
+function eicIowaPick(items,level,skill,L,n,rnd){
+  rnd=rnd||Math.random; n=n||IOWA_N;
+  const pool=arr(items).filter(it=>it&&it.bank===level&&it.skill===skill); if(!pool.length) return [];
+  const last={};
+  Object.keys(L||{}).map(id=>L[id]).filter(r=>r&&!r.trial&&r.skill===skill).sort((a,b)=>(a.ts||0)-(b.ts||0))
+    .forEach(r=>arr(r.items).forEach(id=>{ last[id]=r.ts||1; }));
+  const shuf=a=>{ a=a.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; };
+  const order=a=>shuf(a).sort((x,y)=>(last[x.id]||0)-(last[y.id]||0));   // stable: unseen stay shuffled
+  const clean=order(pool.filter(it=>+it.answer===4)), err=order(pool.filter(it=>+it.answer!==4));
+  const want=Math.min(clean.length,rnd()<0.5?2:3), take=Math.min(n,pool.length);
+  let set=clean.slice(0,want).concat(err.slice(0,take-want));
+  if(set.length<take) set=set.concat(clean.slice(want,want+(take-set.length)));
+  return shuf(set);
+}
+function eicIowaScore(set,answers){
+  let right=0; const miss=[];
+  arr(set).forEach((it,i)=>{ const a=+((answers||[])[i])||0; if(a===+it.answer) right++; else miss.push({n:i+1,it:it,said:a}); });
+  const total=arr(set).length; return {right:right,total:total,pct:total?Math.round(right/total*100):0,miss:miss};
+}
+function loadIowa(){
+  if(iowaBank) return Promise.resolve(iowaBank);
+  const url=/github\.io$/.test(location.hostname)?("eic_iowa.json?v="+Date.now()):"eic_iowa.json";
+  return fetch(url).then(r=>r.json()).then(d=>{ iowaBank=arr(d&&d.items); return iowaBank; })
+    .catch(()=>{ toast("Couldn't load the Iowa practice passages."); return null; });
+}
+function clock(sec){ sec=Math.max(0,Math.ceil(sec)); return Math.floor(sec/60)+":"+String(sec%60).padStart(2,"0"); }
+// Mom's try-out card in the panel (slice B): pick a skill, timed or not; the last few sets underneath.
+function iowaTryCard(){
+  const lv=eicIowaLevel(kid), who=esc((typeof SL_KLBL!=="undefined"&&SL_KLBL[kid])||kid);
+  let h='<div style="margin-bottom:12px;padding:12px;border-radius:13px;border:1.5px dashed #a78bfa;background:#faf5ff"><div style="font-weight:800;font-size:15px;color:#0f172a;margin-bottom:3px">🧪 Iowa practice — step 4 (try it out)</div>'+
+    '<div style="font-size:12px;color:#6b21a8;margin-bottom:9px">'+who+' gets the '+(lv==="level"?"Level":"Beginning")+' sets. Only you can open this for now; your tries are marked practice — they never count and don\'t use up his passages.</div>'+
+    '<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">'+chip("🧪 Capitalization","eicIowaTry(\'capitalization\')","background:#7c3aed;color:#fff;border-color:#7c3aed")+chip("🧪 Punctuation","eicIowaTry(\'punctuation\')","background:#7c3aed;color:#fff;border-color:#7c3aed")+
+    chip(iowaTimed?"⏱ Timed":"Untimed","eicIowaTimed()",iowaTimed?"background:#ede9fe;border-color:#7c3aed;color:#5b21b6":"")+'</div>';
+  const mine=Object.keys(iowaLogs).map(id=>Object.assign({id},iowaLogs[id])).filter(r=>r&&r.skill).sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,5);
+  if(mine.length) h+='<div style="margin-top:9px;font-size:12px;color:#475569">'+mine.map(r=>'<div style="display:flex;gap:8px;align-items:center;padding:2px 0"><span style="flex:1">'+esc(r.date||"")+' · '+esc(IOWA_NAME[r.skill]||r.skill)+' · '+esc(r.right)+' of '+esc(r.total)+' · <b>'+esc(r.pct)+'%</b> · '+(r.timed?clock(r.secs)+(r.timeUp?" ⏰":""):"untimed")+(r.trial?' <span style="color:#94a3b8">(your try)</span>':(eicIowaGreen(r)?' ✅':''))+'</span>'+rmBtn("eicIowaDel('"+esc(r.id)+"')")+'</div>').join("")+'</div>';
+  return h+'</div>';
+}
+function iowaStart(skill,opts){
+  opts=opts||{}; const trial=!!opts.trial, k=opts.kid||kid;
+  if(trial&&!mom()) return; if(!IOWA_NAME[skill]) return;
+  loadIowa().then(b=>{ if(!b) return;
+    const set=eicIowaPick(b,eicIowaLevel(k),skill,k===kid?iowaLogs:{},IOWA_N); if(!set.length){ toast("No passages for that set yet."); return; }
+    iowaRun={kid:k,skill:skill,level:eicIowaLevel(k),set:set,answers:[],i:0,start:Date.now(),limit:set.length*IOWA_SECS,timed:opts.timed!==false,trial:trial,done:false,timer:null};
+    let ov=document.getElementById("eic-iowa"); if(ov) ov.remove();
+    ov=document.createElement("div"); ov.id="eic-iowa";
+    ov.style.cssText="position:fixed;inset:0;z-index:10070;background:#f8fafc;overflow:auto;font-family:'DM Sans',sans-serif;-webkit-user-select:none;user-select:none";
+    document.body.appendChild(ov); iowaDraw();
+    if(iowaRun.timed) iowaRun.timer=setInterval(iowaTick,250);
+  });
+}
+function iowaTick(){
+  const R=iowaRun; if(!R||R.done) return; const left=R.limit-(Date.now()-R.start)/1000;
+  const bar=document.getElementById("eic-iowa-bar"), tx=document.getElementById("eic-iowa-clock");
+  if(bar){ bar.style.width=Math.max(0,left/R.limit*100)+"%"; bar.style.background=left<=60?"#dc2626":"#7c3aed"; }
+  if(tx) tx.textContent=clock(left);
+  if(left<=0) iowaFinish(true);
+}
+function iowaTop(R,sub){
+  return '<div style="position:sticky;top:0;background:#fff;border-bottom:1px solid #e2e8f0;padding:10px 14px;z-index:1"><div style="display:flex;align-items:center;gap:10px;max-width:760px;margin:0 auto">'+
+    '<button onclick="eicIowaQuit()" style="padding:7px 11px;border-radius:9px;border:1.5px solid #cbd5e1;background:#fff;font-size:14px;font-weight:700;cursor:pointer">✕</button>'+
+    '<div style="flex:1;font-weight:800;font-size:15px;color:#0f172a">✏️ '+esc(IOWA_NAME[R.skill])+' · Iowa practice'+(R.trial?' <span style="font-size:11px;color:#7c3aed">(try-out)</span>':'')+'</div>'+
+    '<div style="font-size:13px;font-weight:700;color:#475569">'+sub+'</div>'+
+    (R.timed&&!R.done?'<div id="eic-iowa-clock" style="font-size:16px;font-weight:800;color:#0f172a;min-width:48px;text-align:right">'+clock(R.limit-(Date.now()-R.start)/1000)+'</div>':'')+'</div>'+
+    (R.timed&&!R.done?'<div style="max-width:760px;margin:8px auto 0;height:8px;border-radius:99px;background:#ede9fe;overflow:hidden"><div id="eic-iowa-bar" style="height:100%;width:'+Math.max(0,(R.limit-(Date.now()-R.start)/1000)/R.limit*100)+'%;background:#7c3aed;transition:width .25s linear"></div></div>':'')+'</div>';
+}
+function iowaDraw(){
+  const R=iowaRun, box=document.getElementById("eic-iowa"); if(!R||!box||R.done) return;
+  const it=R.set[R.i];
+  const line=(n,txt)=>'<button onclick="eicIowaAnswer('+n+')" style="display:flex;align-items:center;gap:14px;width:100%;text-align:left;padding:16px 16px;margin-bottom:10px;border-radius:14px;border:2px solid #cbd5e1;background:#fff;cursor:pointer;font-family:\'DM Sans\',sans-serif;font-size:22px;line-height:1.35;color:#0f172a;-webkit-tap-highlight-color:transparent">'+
+    '<span style="flex:none;width:36px;height:36px;border-radius:50%;background:#ede9fe;color:#5b21b6;font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center">'+n+'</span><span>'+txt+'</span></button>';
+  box.innerHTML=iowaTop(R,"Passage "+(R.i+1)+" of "+R.set.length)+
+    '<div style="max-width:760px;margin:0 auto;padding:18px 14px 30px"><div style="font-size:14px;color:#475569;margin-bottom:14px">Tap the line with the mistake — or <b>No mistakes</b>.</div>'+
+    arr(it.lines).map((t,i)=>line(i+1,esc(t))).join("")+line(4,'<i style="color:#475569">No mistakes</i>')+'</div>';
+}
+function iowaAnswer(n){
+  const R=iowaRun; if(!R||R.done||!(n>=1&&n<=4)) return;
+  R.answers[R.i]=n; R.i++;
+  if(R.i>=R.set.length) iowaFinish(false); else iowaDraw();
+}
+function iowaFinish(timeUp){
+  const R=iowaRun; if(!R||R.done) return; R.done=true; if(R.timer){ clearInterval(R.timer); R.timer=null; }
+  const el=Math.round((Date.now()-R.start)/1000), sc=eicIowaScore(R.set,R.answers), now=Date.now();
+  const rec={ts:now,date:(typeof _todayStr==="function")?_todayStr():new Date(now).toISOString().slice(0,10),skill:R.skill,level:R.level,
+    items:R.set.map(x=>x.id),answers:R.set.map((x,i)=>+R.answers[i]||0),right:sc.right,total:sc.total,pct:sc.pct,
+    secs:R.timed?Math.min(el,R.limit):el,limit:R.limit,timed:R.timed,timeUp:!!(R.timed&&timeUp)};
+  if(R.trial) rec.trial=true;
+  R.rec=rec; R.score=sc; iowaResults();
+  const keep=id=>{ if(R.kid===kid) iowaLogs[id]=rec; };
+  if(typeof db==="undefined"||!db||dry()){ keep("local"+now); return; }
+  const r=db.ref("eic/"+R.kid+"/iowa").push(); r.set(rec).then(()=>keep(r.key)).catch(()=>toast("Couldn't save that set — tell Mom."));
+}
+function iowaResults(){
+  const R=iowaRun, box=document.getElementById("eic-iowa"); if(!R||!box) return;
+  const r=R.rec, sc=R.score, green=eicIowaGreen(r);
+  const badge=r.trial?'<span style="color:#7c3aed">Try-out — doesn\'t count</span>':green?'<span style="color:#16a34a">✅ Green!</span>':r.timeUp?'<span style="color:#b45309">⏰ Time ran out — finish inside the clock for a green</span>':(!r.timed?'<span style="color:#475569">Untimed — practice only</span>':'<span style="color:#b45309">Not yet — 80% is green</span>');
+  let h=iowaTop(R,"Done")+'<div style="max-width:760px;margin:0 auto;padding:18px 14px 30px">'+
+    '<div style="text-align:center;padding:18px;border-radius:16px;background:#fff;border:1.5px solid #e2e8f0;margin-bottom:16px"><div style="font-family:\'Fraunces\',serif;font-size:34px;font-weight:800;color:#0f172a">'+sc.right+' of '+sc.total+' · '+sc.pct+'%</div>'+
+    '<div style="font-size:14px;font-weight:700;color:#475569;margin-top:4px">'+(r.timed?"Time "+clock(r.secs)+" of "+clock(r.limit):"Untimed")+'</div><div style="font-size:15px;font-weight:800;margin-top:8px">'+badge+'</div></div>';
+  if(sc.miss.length){ h+='<div style="font-weight:800;font-size:15px;color:#0f172a;margin-bottom:8px">Let\'s look at the ones you missed</div>';
+    sc.miss.forEach(m=>{ const it=m.it, ans=+it.answer;
+      h+='<div style="padding:12px;border-radius:13px;background:#fff;border:1.5px solid #e2e8f0;margin-bottom:10px"><div style="font-size:12px;font-weight:700;color:#64748b;margin-bottom:6px">Passage '+m.n+' · you tapped '+(m.said?(m.said===4?"No mistakes":"line "+m.said):"nothing (time ran out)")+'</div>'+
+        arr(it.lines).map((t,i)=>'<div style="display:flex;gap:8px;padding:5px 8px;border-radius:8px;font-size:17px;'+(i+1===ans?'background:#fef3c7;font-weight:700':'')+'"><span style="color:#94a3b8;font-weight:800">'+(i+1)+'</span><span>'+esc(t)+'</span></div>').join("")+
+        '<div style="margin-top:7px;font-size:14px;color:#166534">'+(ans===4?'<b>No mistakes</b> — every line was right. ':'<b>Line '+ans+'</b> should read: <i>'+esc(it.fix&&it.fix.text)+'</i><br>')+'<span style="color:#475569">'+esc(String(it.rule||"").replace(/^Clean\.\s*/,""))+'</span></div></div>'; }); }
+  else h+='<div style="text-align:center;font-size:16px;font-weight:700;color:#166534;margin-bottom:12px">Every one right! 🎉</div>';
+  h+='<div style="text-align:center;margin-top:8px"><button onclick="eicIowaDone()" style="padding:13px 30px;border-radius:12px;border:none;background:#1d4ed8;color:#fff;font-size:16px;font-weight:800;cursor:pointer">Done</button></div></div>';
+  box.innerHTML=h; box.scrollTop=0;
+}
+function iowaClose(){ const R=iowaRun; if(R&&R.timer) clearInterval(R.timer); iowaRun=null; const ov=document.getElementById("eic-iowa"); if(ov) ov.remove(); draw(); }
+function iowaQuit(){ const R=iowaRun; if(R&&!R.done&&!confirm("Stop this set? It won't be saved.")) return; iowaClose(); }
+function delIowa(id){
+  if(!mom()||!iowaLogs[id]) return; if(!confirm("Remove this Iowa set?")) return;
+  delete iowaLogs[id]; if(typeof db!=="undefined"&&db&&!dry()&&!/^local/.test(id)) db.ref("eic/"+kid+"/iowa/"+id).remove();
+  draw();
+}
+
 // ── 🗓 the schedule's doorway (her ask 2026-09-22: "can we get it linked to the schedule" + "make page numbers
 // out"): the Editor in Chief card opens the engine's NEXT page — first skill (capitalization, then punctuation, then
 // the rest) whose current step still has a page to do. Pure, so the harness can pin it.
@@ -315,7 +445,7 @@ function eicNextSitting(T,L,D,isMom){
   return null;
 }
 function openNext(k){
-  if(k){ kid=k; try{ HA_LS.setItem("ha_eic_kid",kid); }catch(e){} logs={}; decs={}; counts={}; }
+  if(k){ kid=k; try{ HA_LS.setItem("ha_eic_kid",kid); }catch(e){} logs={}; decs={}; counts={}; iowaLogs={}; }
   load().then(()=>{
     const n=eicNextSitting(TK(),logs,decs,mom());
     if(n&&eicWorkbook(books(),n.book)){ openPage(n.book,n.page); return; }
@@ -510,11 +640,13 @@ function toggleKid(){ if(!mom()) return;
   draw(); }
 
 window.eicPanel=panel; window.eicClose=close; window.eicOpen=openPage; window.eicCheck=checkPage; window.eicOpenNext=openNext; window.eicNextSitting=eicNextSitting;
-window.eicSetKid=k=>{ kid=k; try{HA_LS.setItem("ha_eic_kid",k);}catch(e){} logs={}; decs={}; counts={}; load().then(draw); };
+window.eicSetKid=k=>{ kid=k; try{HA_LS.setItem("ha_eic_kid",k);}catch(e){} logs={}; decs={}; counts={}; iowaLogs={}; load().then(draw); };
 window.eicToggleAll=()=>{ showAll=!showAll; draw(); }; window.eicNoBook=()=>toast("That book's PDF isn't linked yet.");
 window.eicScoreOpen=scoreOpen; window.eicScorePreview=scorePreview; window.eicScoreClose=scoreClose; window.eicScoreSave=scoreSave;
 window.eicDelLog=delLog; window.eicDelDec=delDec; window.eicManual=manualOpen; window.eicManualClose=manualClose; window.eicManualSave=manualSave; window.eicStepDone=stepDone; window.eicLink=link; window.eicToggleKid=toggleKid; window.eicDecide=decide;
 window.eicLocked=()=>toast("That page is saved for step 2."); window.eicRvLocked=()=>toast("The reviews open once capitalization and punctuation clear step 2.");
+window.eicIowaTry=sk=>iowaStart(sk,{trial:true,timed:iowaTimed}); window.eicIowaTimed=()=>{ iowaTimed=!iowaTimed; draw(); };
+window.eicIowaAnswer=iowaAnswer; window.eicIowaQuit=iowaQuit; window.eicIowaDone=iowaClose; window.eicIowaDel=delIowa;
 window.eicCountBtn=countBtn; window.eicCountOpen=countOpen; window.eicCountClose=countClose; window.eicCountSave=countSave; window.eicNotReady=()=>toast("That page isn't ready yet — ask Mom.");
-window._eicTest={eicReviewPool,eicReviews,eicIsReview,eicCountOk,eicCountKey,eicLadder,eicTagsFor,eicManualTs,eicNextSitting,eicCover,eicProgress,eicStepPools,eicStepOf,eicGate,eicPct,eicSkills,eicPool,eicPdf,eicPrinted,eicKeyPage,eicParagraphs,eicSkillOf,eicLast,eicWorkbook,canon,setTags:t=>{tags=t;}};
+window._eicTest={eicIowaPick,eicIowaScore,eicIowaGreen,eicIowaLevel,eicReviewPool,eicReviews,eicIsReview,eicCountOk,eicCountKey,eicLadder,eicTagsFor,eicManualTs,eicNextSitting,eicCover,eicProgress,eicStepPools,eicStepOf,eicGate,eicPct,eicSkills,eicPool,eicPdf,eicPrinted,eicKeyPage,eicParagraphs,eicSkillOf,eicLast,eicWorkbook,canon,setTags:t=>{tags=t;}};
 })();

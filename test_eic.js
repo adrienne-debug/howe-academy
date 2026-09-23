@@ -271,4 +271,33 @@ console.log("🔁 step 3 — the reviews (her \"go to step 3\" 2026-09-22)");
   ok("a kid never opens a review page before the reviews open, or without covers",/if\(step===3&&!mom\(\)\)\{\s*if\(!eicReviews\(TK\(\),logs,decs\)\.unlocked\)/.test(ee));
   ok("the cover rides along on step 3 pages",/cover=\(step===2\|\|step===3\)\?eicCover\(TK\(\),bk,printed\):\[\]/.test(ee));
 }
+console.log("🧪 step 4 — Iowa practice player (slice B, 2026-09-22)");
+{
+  const bank=JSON.parse(fs.readFileSync(path.join(__dirname,"eic_iowa.json"),"utf8")), I=bank.items;
+  const sets=[["beginning","capitalization"],["beginning","punctuation"],["level","capitalization"],["level","punctuation"]];
+  ok("the bank ships with the app: 160 passages, 40 in each of the four sets",I.length===160&&sets.every(([b,k])=>I.filter(x=>x.bank===b&&x.skill===k).length===40));
+  ok("every set has 10 clean passages and 10 errors on each line",sets.every(([b,k])=>[1,2,3,4].every(a=>I.filter(x=>x.bank===b&&x.skill===k&&x.answer===a).length===10)));
+  ok("every passage has 3 lines; an error's fix names its own line; a clean one has no fix",I.every(x=>x.lines.length===3&&(x.answer===4?x.fix===null:(x.fix&&x.fix.line===x.answer&&x.fix.text!==x.lines[x.answer-1]))));
+  ok("ids are unique",new Set(I.map(x=>x.id)).size===160);
+  ok("Ellis gets the Beginning sets, Lincoln the Level sets, anyone else Beginning",E.eicIowaLevel("ellis")==="beginning"&&E.eicIowaLevel("lincoln")==="level"&&E.eicIowaLevel("lucy")==="beginning");
+  let seed=7; const rnd=()=>{ seed=(seed*1103515245+12345)%2147483648; return seed/2147483648; };
+  const s1=E.eicIowaPick(I,"beginning","capitalization",{},10,rnd);
+  ok("a set = 10 passages, all from his level and that skill, none twice",s1.length===10&&s1.every(x=>x.bank==="beginning"&&x.skill==="capitalization")&&new Set(s1.map(x=>x.id)).size===10);
+  ok("…with 2 or 3 clean passages",[2,3].includes(s1.filter(x=>x.answer===4).length),s1.filter(x=>x.answer===4).length);
+  const L={}; let t=1, seen=new Set(), overlap=0;
+  for(let k=0;k<3;k++){ const st=E.eicIowaPick(I,"level","punctuation",L,10,rnd); st.forEach(x=>{ if(seen.has(x.id)) overlap++; seen.add(x.id); }); L["s"+k]={ts:t++,skill:"punctuation",items:st.map(x=>x.id),timed:true,pct:50}; }
+  ok("three sets in a row never repeat a passage (unseen ones come first)",overlap===0&&seen.size===30,[overlap,seen.size]);
+  seed=11; const a=E.eicIowaPick(I,"level","punctuation",{},10,rnd).map(x=>x.id).join();
+  seed=11; const b=E.eicIowaPick(I,"level","punctuation",{t:{ts:1,skill:"punctuation",items:I.slice(120,140).map(x=>x.id),trial:true}},10,rnd).map(x=>x.id).join();
+  ok("Mom's try-outs never use up his unseen passages",a===b);
+  const sc=E.eicIowaScore(s1,s1.map((x,i)=>i<8?x.answer:(x.answer===4?1:4)));
+  ok("scoring: 8 right of 10 = 80%, the two misses listed with what he tapped",sc.right===8&&sc.pct===80&&sc.miss.length===2&&sc.miss[0].n===9);
+  ok("an unanswered passage (time ran out) is a miss",E.eicIowaScore(s1,[s1[0].answer]).right===1);
+  const G=E.eicIowaGreen;
+  ok("green = 80%+, timed, finished inside the clock",G({pct:80,timed:true,timeUp:false})&&!G({pct:79,timed:true}));
+  ok("untimed, out of time, or Mom's try-out is never green",!G({pct:100,timed:false})&&!G({pct:100,timed:true,timeUp:true})&&!G({pct:100,timed:true,trial:true}));
+  ok("slice B: only Mom opens it, and only as a try-out",/if\(trial&&!mom\(\)\) return;/.test(ee)&&/window\.eicIowaTry=sk=>iowaStart\(sk,\{trial:true,timed:iowaTimed\}\)/.test(ee)&&(ee.match(/iowaStart\(/g)||[]).length===2&&/if\(M\) h\+=iowaTryCard\(\);/.test(ee));
+  ok("a finished set writes ONE log line (push), never a whole node",/const r=db\.ref\("eic\/"\+R\.kid\+"\/iowa"\)\.push\(\); r\.set\(rec\)/.test(ee));
+  ok("the bank loads fresh past the Pages cache",/"eic_iowa\.json\?v="\+Date\.now\(\)/.test(ee));
+}
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
