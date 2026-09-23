@@ -201,6 +201,28 @@ function draw(){
   box.innerHTML=h;
 }
 
+// ── 🗓 the schedule's doorway (her ask 2026-09-22: "can we get it linked to the schedule" + "make page numbers
+// out"): the Editor in Chief card opens the engine's NEXT page — first skill (capitalization, then punctuation, then
+// the rest) whose current step still has a page to do. Pure, so the harness can pin it.
+function eicNextSitting(T,L,D,isMom){
+  const order=eicSkills(T).map(s=>s.key).sort((a,b)=>{ const ia=FIRST.indexOf(a), ib=FIRST.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib); });
+  for(const key of order){
+    const pr=eicProgress(T,L,D,key), g=pr.gate, cur=pr.step;
+    if(cur>=3||!g||!g.next||g.empty) continue;
+    if(cur===2&&!isMom&&!eicCover(T,g.next.book,g.next.page).length) continue;   // a kid never gets a step-2 page without its covers
+    return {skill:key,step:cur,book:g.next.book,page:g.next.page};
+  }
+  return null;
+}
+function openNext(k){
+  if(k){ kid=k; try{ HA_LS.setItem("ha_eic_kid",kid); }catch(e){} logs={}; decs={}; }
+  load().then(()=>{
+    const n=eicNextSitting(tags||{},logs,decs,mom());
+    if(n&&eicWorkbook(books(),n.book)){ openPage(n.book,n.page); return; }
+    panel(kid);
+    toast(n?"That book's PDF isn't linked yet.":"Nothing waiting in the skills built so far — the reviews step comes next.");
+  });
+}
 // ── open a page ────────────────────────────────────────────────────────────────────────────
 function withBook(bk,go){
   const wb=eicWorkbook(books(),bk); if(!wb){ toast("That book's PDF isn't linked yet."); return; }
@@ -245,7 +267,8 @@ function scoreSave(){
   const rec={ts:now,date:(typeof _todayStr==="function")?_todayStr():new Date(now).toISOString().slice(0,10),step:eicStepOf(tags,bk,printed)||1,book:bk,page:printed,
     skill:eicSkillOf(tags,bk,printed)||"review",paragraphs:eicParagraphs(tags,bk,printed),found:v.found,missed:v.missed,extra:v.extra,pct:pct};
   busy=true;
-  const done=id=>{ busy=false; if(k===kid) logs[id]=rec; scoreClose(); toast("📊 Logged — "+pct+"%"); };
+  const done=id=>{ busy=false; if(k===kid) logs[id]=rec; scoreClose(); toast("📊 Logged — "+pct+"%");
+    try{ if(typeof eicCheckCard==="function") eicCheckCard(k); }catch(e){} };   // 🗓 today's Editor in Chief card checks itself off
   if(typeof db==="undefined"||!db||dry()){ done("local"+now); return; }
   const r=db.ref("eic/"+k+"/log").push(); r.set(rec).then(()=>done(r.key)).catch(()=>{ busy=false; toast("Couldn't save that score — try again."); });
 }
@@ -274,11 +297,11 @@ function toggleKid(){ if(!mom()) return;
   if(typeof db!=="undefined"&&db&&!dry()){ const r=db.ref("mastery/"+key+"/eic"); if(on) r.set(true); else r.remove(); }
   draw(); }
 
-window.eicPanel=panel; window.eicClose=close; window.eicOpen=openPage; window.eicCheck=checkPage;
+window.eicPanel=panel; window.eicClose=close; window.eicOpen=openPage; window.eicCheck=checkPage; window.eicOpenNext=openNext; window.eicNextSitting=eicNextSitting;
 window.eicSetKid=k=>{ kid=k; try{HA_LS.setItem("ha_eic_kid",k);}catch(e){} logs={}; decs={}; load().then(draw); };
 window.eicToggleAll=()=>{ showAll=!showAll; draw(); }; window.eicNoBook=()=>toast("That book's PDF isn't linked yet.");
 window.eicScoreOpen=scoreOpen; window.eicScorePreview=scorePreview; window.eicScoreClose=scoreClose; window.eicScoreSave=scoreSave;
 window.eicDelLog=delLog; window.eicLink=link; window.eicToggleKid=toggleKid; window.eicDecide=decide;
 window.eicLocked=()=>toast("That page is saved for step 2."); window.eicNotReady=()=>toast("That page isn't ready yet — ask Mom.");
-window._eicTest={eicCover,eicProgress,eicStepPools,eicStepOf,eicGate,eicPct,eicSkills,eicPool,eicPdf,eicPrinted,eicKeyPage,eicParagraphs,eicSkillOf,eicLast,eicWorkbook,canon,setTags:t=>{tags=t;}};
+window._eicTest={eicNextSitting,eicCover,eicProgress,eicStepPools,eicStepOf,eicGate,eicPct,eicSkills,eicPool,eicPdf,eicPrinted,eicKeyPage,eicParagraphs,eicSkillOf,eicLast,eicWorkbook,canon,setTags:t=>{tags=t;}};
 })();

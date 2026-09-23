@@ -1400,6 +1400,7 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
    past rows are already at half opacity, so grey alone made done and undone cells look the same. */
 .gv .gv-done{color:#15803d;text-decoration:line-through;text-decoration-color:#15803d}
 .gv .gv-chk{color:#15803d;font-weight:800;margin-right:3px}
+.gv .gv-away{font-size:10px;font-weight:700;color:#64748b;white-space:nowrap}
 .gv tr.gv-movetgt td{background:#eef2ff!important;cursor:copy}
 .gv td.gv-movesrc{box-shadow:inset 0 0 0 2px #6366f1}
 .gv tr.gv-past td{opacity:0.5}
@@ -5610,6 +5611,33 @@ function renderPurchasesView(el,ah){
 }
 // PURCHASES_END
 // EIC_START — ✏️ Editor in Chief skill engine lives in eic.js (lazy, like esa.js). Slice 2, 2026-09-20.
+// 🗓 THE SCHEDULE LINK (her ask 2026-09-22): when a kid's ✏️ switch is on, their Editor in Chief card drops its page
+// numbers, and its button opens the engine's next page. Mom saving a score checks off today's card.
+function eicLinked(t){ try{ return !!(t&&t.subjectKey==="editor_chief"&&t.who&&((((typeof masteryData!=="undefined"&&masteryData)||{})[t.who+"_settings"]||{}).eic)); }catch(e){ return false; } }
+function eicCardTitle(t){ const ref=(typeof taskLessonRef==="function")?taskLessonRef(t):""; const ti=String(t&&t.title||""); return (ref&&ti.endsWith(ref))?ti.slice(0,ti.length-ref.length).replace(/\s*[\u2014\u2013-]\s*$/,""):ti; }
+function eicOpenNextFor(kid){
+  if(window.eicOpenNext){ window.eicOpenNext(kid); return; }
+  if(window._eicLoading) return; window._eicLoading=true;
+  const s=document.createElement("script");
+  s.src=/github\.io$/.test(location.hostname)?("eic.js?v="+Date.now()):"eic.js";
+  s.onload=()=>{ window._eicLoading=false; if(window.eicOpenNext) window.eicOpenNext(kid); };
+  s.onerror=()=>{ window._eicLoading=false; if(typeof gwShowToast==="function") gwShowToast("Couldn't load Editor in Chief."); };
+  document.head.appendChild(s);
+}
+// A score saved on the engine = today's sitting done: check off today's first open Editor in Chief card for that kid.
+function eicCheckCard(kid){
+  try{
+    if(typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return false;
+    const t=weekData.tasks.filter(x=>x&&x.who===kid&&x.subjectKey==="editor_chief"&&!String(x.id||"").endsWith("_c")&&!x._eowOverflow
+      &&!(checked&&checked[x.id])&&effectiveDay(x)===_todayDay).sort((a,b)=>toMin(a.time)-toMin(b.time))[0];
+    if(!t) return false;
+    const ts=(claimed&&claimed[t.id])||nowTs();
+    if(finalizeDone(t.id,ts,null)===false) return false;
+    try{ showPaceToast(t.id,tsToMin(ts)); }catch(e){}
+    if(typeof renderAll==="function") renderAll();
+    return true;
+  }catch(e){ if(typeof dbg==="function") dbg("eic card check skip: "+e); return false; }
+}
 function eicPanelOpen(kid){
   if(window.eicPanel){ eicPanel(kid); return; }
   if(window._eicLoading) return; window._eicLoading=true;
@@ -7242,7 +7270,10 @@ function taskCard(t, fromDay, readOnly, doneId){
   // 📕 Workbook: a subject linked to an uploaded workbook opens the viewer on THIS lesson's
   // exercise page for this kid (wbTaskLink resolves the card label; no page → no row).
   const _wbl=(!readOnly&&typeof wbTaskLink==="function")?wbTaskLink(t):null;
-  const wbRow=_wbl?'<div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap"><span onclick="event.stopPropagation();wbOpenFor(\''+_wbl.bookId+'\',\''+t.who+'\','+_wbl.page+')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4D5} Open '+esc(taskLessonRef(t)||_wbl.name)+' →</span>'
+  // ✏️ Editor in Chief on the engine: its own doorway instead of the book-page link (her ask 2026-09-22)
+  const _eicL=(!readOnly&&typeof eicLinked==="function")&&eicLinked(t);
+  const eicRow=(_eicL&&!done)?'<div style="margin-top:5px"><span onclick="event.stopPropagation();eicOpenNextFor(\''+t.who+'\')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u270F\uFE0F Open today\u2019s page \u2192</span></div>':"";
+  const wbRow=(_wbl&&!_eicL)?'<div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap"><span onclick="event.stopPropagation();wbOpenFor(\''+_wbl.bookId+'\',\''+t.who+'\','+_wbl.page+')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4D5} Open '+esc(taskLessonRef(t)||_wbl.name)+' →</span>'
     +(_wbl.ans?'<span onclick="event.stopPropagation();wbOpenCheck(\''+_wbl.bookId+'\',\''+t.who+'\','+_wbl.page+','+_wbl.ans+')" title="his page and the answer key side by side" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#065f46;cursor:pointer;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">&#9989; Check answers</span>':'')
     +'</div>':"";
   // A fixed-time class: the card is his door into the class. Opens the in-app class
@@ -7305,8 +7336,8 @@ function taskCard(t, fromDay, readOnly, doneId){
     '<div class="task-cb'+(done?" checked":"")+(readOnly?" readonly":"")+'"'+(claimedHere?' style="border-color:#f59e0b;color:#f59e0b;background:#fffbeb"':'')+(readOnly?"":' onclick="tapTask(\''+t.id+'\')"')+'>'+(done?"✓":claimedHere?"⏳":"")+'</div>'+
     '<div class="card-body">'+
     '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
-    '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+pushLabel+t.title+'</div>'+mb+'</div>'+
-    '<div class="task-detail">'+cleanDetail+'</div>'+dr+spinBtn+classRow+linkRow+wbRow+
+    '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+pushLabel+(_eicL?eicCardTitle(t):t.title)+'</div>'+mb+'</div>'+
+    '<div class="task-detail">'+cleanDetail+'</div>'+dr+spinBtn+classRow+linkRow+wbRow+eicRow+
     '</div></div></div>';
 }
 
@@ -28180,15 +28211,27 @@ function cbRenderGate(){
 // Rebuild every Builder-paced subject for the CURRENT kid — now gated: subjects
 // with leftover lessons go through the Keep/Dismiss sheet first, then the whole
 // batch runs with one combined Undo.
+// ↻ What "Rebuild all" rebuilds (her rule 2026-09-22: "when i push the rebuild button i need it to rebuild all like its
+// supposed to"). Every unpaused, non-daily, non first/last subject that is Builder-paced OR plan-backed — a plan-backed
+// subject that never got a Builder pacing record (Grammar for the Well-Trained Mind; Ellis's RS4K 4, FLL 4) was skipped
+// entirely, so its "owed" never reset. One definition, used by the button counts and the run.
+function cbRebuildable(kid,sk){
+  const s=((((currData||{}).subjects||{})[kid])||{})[sk]; if(!s||s.paused||s.tracking==="daily") return false;
+  const r=s.rules||""; if(r.includes("first")||r.includes("last")) return false;
+  return !!(s.pacing&&s.pacing.mode)||((typeof planBacked==="function")&&planBacked(kid,sk));
+}
 function cbRebuildAll(){
   if(!momModeActive&&!adminPinUnlocked) return;
   if(!db||!currData||!currData.subjects||!cbKid) return;
   const kid=cbKid, subs=currData.subjects[kid]||{};
-  const isPaced=sk=>{ const s=subs[sk]; if(!s||s.paused||s.tracking==="daily") return false; const r=s.rules||""; if(r.includes("first")||r.includes("last")) return false; return !!(s.pacing&&s.pacing.mode); };
-  const list=Object.keys(subs).filter(isPaced);
+  const list=Object.keys(subs).filter(sk=>cbRebuildable(kid,sk));
   if(!list.length){ if(typeof gwShowToast==="function") gwShowToast("No Builder-paced subjects for "+cap(kid)+" yet — open a subject and build it first."); return; }
   const items=[];
   for(const sk of list){
+    // A plan-backed subject has no hidden backlog to keep or dismiss — its list minus done IS the plan, and a build
+    // lays everything unfinished from today. Asking about its "stale" lessons stalled the whole rebuild behind a
+    // sheet (live 9/22: 7 of Lincoln's 9 subjects), so only legacy subjects go through the gate.
+    if((typeof planBacked==="function")&&planBacked(kid,sk)) continue;
     try{ const info=cbBacklogInfo(kid,sk); if(info.split.stale.length||info.dupFuture) items.push(_cbGateItem(kid,sk,info)); }catch(e){}
   }
   if(items.length){
@@ -28349,7 +28392,7 @@ function renderCurrBuilder(el){
     if(cbRulesOpen) h+=cbRenderRules(col);
     // Rebuild all (Mom/PIN-gated) — one-tap re-lay of every Builder-paced subject for this kid
     if(momModeActive||adminPinUnlocked){
-      const _pacedN=Object.keys(subs).filter(sk=>{const s=subs[sk];if(!s||s.paused||s.tracking==="daily")return false;const r=s.rules||"";if(r.includes("first")||r.includes("last"))return false;return !!(s.pacing&&s.pacing.mode);}).length;
+      const _pacedN=Object.keys(subs).filter(sk=>(typeof cbRebuildable==="function")?cbRebuildable(cbKid,sk):false).length;
       if(_pacedN) h+='<button onclick="cbRebuildAll()" style="width:100%;margin-bottom:10px;padding:9px;border-radius:10px;border:1px solid #bbf7d0;background:#f0fdf4;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:#15803d;text-align:left">↻ Rebuild all '+cap(cbKid)+'’s subjects <span style="float:right;color:#16a34a;font-weight:400">'+_pacedN+' paced · from where they are</span></button>';
     }
     // Subject list
@@ -30721,7 +30764,7 @@ function renderCurrGrid(el){
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px">';
   if(momModeActive||adminPinUnlocked){
     const _gsubs=(currData.subjects||{})[gvKid]||{};
-    const _pacedN=Object.keys(_gsubs).filter(sk=>{const s=_gsubs[sk];return s&&!s.paused&&s.tracking!=="daily"&&!!(s.pacing&&s.pacing.mode);}).length;
+    const _pacedN=Object.keys(_gsubs).filter(sk=>(typeof cbRebuildable==="function")?cbRebuildable(gvKid,sk):false).length;
     if(_pacedN) h+='<button onclick="gvRebuildAll()" style="padding:5px 12px;border-radius:10px;border:1px solid #bbf7d0;background:#f0fdf4;color:#15803d;font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">↻ Rebuild all ('+_pacedN+')</button>';
   }
   h+='<button onclick="gvRulesToggle()" style="padding:5px 12px;border-radius:10px;border:1px solid var(--border);background:'+(cbRulesOpen?'var(--bg)':'#fff')+';font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">⚙ Rules &amp; day cap '+(cbRulesOpen?'▴':'▾')+'</button>';
@@ -30961,6 +31004,23 @@ function renderCurrGrid(el){
       if(!cells.length) continue;
       const ds=cbDoneCellSet(gvKid,sk,cells);
       if(ds) cells.forEach((c,i)=>{ if(ds.has(i)) _doneAt[c.dayNum+"|"+sk]=1; });
+    }
+  }catch(e){}
+  // 📅 DONE WHERE IT WAS DONE (her ask 2026-09-22 — Ellis's MR pp. 294–297 was planned Monday, done Tuesday, and
+  // Tuesday's row read as undone). From the done records (lesson id + the ISO day it was checked): a finished cell on
+  // a different day than it was done reads "↪ done Tue"; the day it WAS done shows it with a ✓ (today and earlier only).
+  const _gvDoneAway={}, _gvDoneOn={};
+  try{
+    const _gvToday=cbTodayISO(), _DOWS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    for(const sk of _allSks){
+      const node=((((currData||{}).done||{})[gvKid]||{})[sk])||{}; const ids=(typeof lidsFor==="function"&&lidsFor(gvKid,sk))||[]; const seq=(((subs||{})[sk]||{}).lessonSeq)||[];
+      if(!ids.length||!Object.keys(node).length) continue;
+      const recs=[]; Object.keys(node).forEach(lid=>{ const r=node[lid]; const i=ids.indexOf(lid); if(r&&r.day&&i>=0) recs.push({day:String(r.day),text:String(seq[i]==null?"":seq[i]),used:false}); });
+      recs.sort((a,b)=>a.day<b.day?-1:a.day>b.day?1:0);
+      for(const dn of dayNums){ const l=lessons[dn]; if(!l||!l.date||!_doneAt[dn+"|"+sk]) continue; const k=_lidNorm(l[sk]);
+        const r=recs.find(x=>!x.used&&_lidNorm(x.text)===k); if(!r) continue; r.used=true;
+        if(r.day!==l.date){ _gvDoneAway[dn+"|"+sk]=_DOWS[_cbParseDate(r.day).getDay()]; (((_gvDoneOn[sk]=_gvDoneOn[sk]||{})[r.day])=((_gvDoneOn[sk]||{})[r.day]||[])).push(r.text); } }
+      recs.forEach(r=>{ if(r.used||r.day>_gvToday) return; (((_gvDoneOn[sk]=_gvDoneOn[sk]||{})[r.day])=((_gvDoneOn[sk]||{})[r.day]||[])).push(r.text); });
     }
   }catch(e){}
 
@@ -31278,6 +31338,7 @@ function renderCurrGrid(el){
         const _coopTag=_coopBlk?'<span class="gv-badge" title="'+esc(_coopBlk)+' \u2014 no Mom-required lessons this day" style="background:#f5f3ff;color:#6d28d9">\u{1F3EB} co-op</span>':'';
         if(gvFilled(v)) cell=removed?'<s style="color:var(--muted)">'+esc(v)+'</s><span class="gv-badge" style="background:#e0e7ff;color:#3730a3">moved</span>'
           :(_coopBlk&&!_derCol)?'<s style="color:var(--muted)">'+esc(v)+'</s>'+_coopTag
+          :(_isDone&&_gvDoneAway[dn+"|"+sk])?'<s style="color:var(--muted)">'+esc(v)+'</s> <span class="gv-away" title="Finished on another day \u2014 shown with a \u2713 on that day">\u21AA done '+esc(_gvDoneAway[dn+"|"+sk])+'</span>'
           :(_isDone?'<span class="gv-chk">&#10003;</span><span class="gv-done" title="'+((typeof lidStamped==="function"&&lidStamped(gvKid,sk)&&((((currData.subjects||{})[gvKid]||{})[sk]||{}).lessonSeq||[]).filter(t=>_lidNorm(t)===_lidNorm(v)).length>1)?"Finished — but this lesson is on the list more than once, and this cell is showing the finished copy. 🗑 here removes the extra copy from the list.":"Finished — this stays as history. Rebuilds never move it and 🗑 won’t remove it.")+'">'+esc(v)+' <span class="gv-badge" style="background:#dcfce7;color:#15803d">&#10003; done</span></span>':esc(v));
         // A derived column's SECOND SITTING must render or the lesson is invisible. With
         // owed 6 and cap 2 the projection doubles up the first six days; drawing only the
@@ -31291,6 +31352,9 @@ function renderCurrGrid(el){
         else if(!_derCol&&addedV!==undefined) cell+=(cell?'<br>':'')+'<span style="color:#15803d">+ '+(typeof addedV==="string"?esc(addedV):"make-up")+'</span><span class="gv-badge" style="background:#bbf7d0;color:#15803d">make-up</span>';
         if(!cell&&_skipAt[dn+"|"+sk]!==undefined) cell='<s style="color:var(--muted);opacity:.7">'+esc(_skipAt[dn+"|"+sk])+'</s><span class="gv-badge" style="background:#fef3c7;color:#92400e" title="Passed over by a rebuild — won\'t come back as carryover or catch-up">skipped</span>';
         if(!cell&&_coopTag) cell=_coopTag;
+        // 📅 lessons finished ON this day whose planned cell sits on another day (or on none)
+        { const _on=(_lc?_lc.members:[sk]).reduce(function(a,m){ return a.concat((((_gvDoneOn[m]||{})[l.date])||[])); },[]);
+          _on.forEach(function(tx){ if(_isDone&&!_gvDoneAway[dn+"|"+sk]&&_lidNorm(tx)===_lidNorm(v)) return; cell+=(cell?'<br>':'')+'<span class="gv-chk">&#10003;</span><span class="gv-done" title="Done on this day \u2014 it was planned for another day">'+esc(tx)+'</span>'; }); }
         if(cell&&_derCol&&_derCol.queued&&((_derCol.byDate[l.date]||{}).src==="queued")) cell='<span class="gv-queued" title="Waiting its turn — lands here once the book ahead finishes">'+cell+'</span>';
         if(cell&&_lnPre) cell=_lnPre+cell;
         // 🛤 a day where a second member ALSO holds a stored cell — both ran before the lane

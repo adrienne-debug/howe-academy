@@ -154,4 +154,21 @@ ok("a kid can't open a step-2 page early or without its covers",/if\(step===2&&!
 ok("eic.js never writes a whole node",!/db\.ref\("(eic|workbooks|mastery|library)"\)\.(set|update|remove)/.test(e)&&!/db\.ref\("eic\/"\+\w+\)\.(set|remove)/.test(e));
 ok("eic.js never touches weeks, curriculum or config",!/db\.ref\([^)]*(week|curriculum|config|settings\/)/.test(e.replace(/_settings/g,"")));
 
+console.log("🗓 the schedule's doorway (her ask 2026-09-22)");
+{
+  const N=(L,D,m)=>E.eicNextSitting(T,L||{},D||{},!!m);
+  let n=N({});
+  ok("nothing sat → capitalization, step 1, Beg 1 p2",n&&n.skill==="capitalization"&&n.step===1&&n.book===B1&&n.page===2,n);
+  n=N({a:sit(B1,2,90,1)});
+  ok("one green → the next capitalization page (Beg 2 p3)",n&&n.skill==="capitalization"&&n.page===3&&n.book===B2,n);
+  n=N({a:sit(B1,2,90,1),b:sit(B2,3,90,2)});
+  ok("capitalization step 1 cleared → its step-2 page (covers exist for Beg 1 p3)",n&&n.skill==="capitalization"&&n.step===2&&n.book===B1&&n.page===3,n);
+  n=N({a:sit(B1,2,90,1),b:sit(B2,3,60,2),c:sit(B2,5,90,3)});
+  ok("capitalization pool empty (Mom decides) → the doorway moves to punctuation",n&&n.skill==="punctuation"&&n.step===1,n);
+  ok("the card title drops the page numbers",/function eicCardTitle\(t\)\{ const ref=\(typeof taskLessonRef==="function"\)\?taskLessonRef\(t\)/.test(fs.readFileSync(path.join(__dirname,"index.html"),"utf8")));
+  const ih=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
+  ok("a linked card shows the doorway instead of the book-page link",/const wbRow=\(_wbl&&!_eicL\)\?/.test(ih)&&/eicOpenNextFor\(\\''\+t\.who\+'\\'\)/.test(ih)&&/wbRow\+eicRow\+/.test(ih));
+  ok("linked only when the kid's ✏️ switch is on and the card is Editor in Chief",/function eicLinked\(t\)\{ try\{ return !!\(t&&t\.subjectKey==="editor_chief"&&t\.who&&/.test(ih));
+  ok("saving a score checks off today's card",/if\(typeof eicCheckCard==="function"\) eicCheckCard\(k\);/.test(ee)&&/function eicCheckCard\(kid\)\{[\s\S]{0,500}effectiveDay\(x\)===_todayDay[\s\S]{0,300}finalizeDone\(t\.id,ts,null\)/.test(ih));
+}
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
