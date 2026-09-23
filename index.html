@@ -28107,6 +28107,7 @@ function cbApply(){
     _gvDelUndo=null;
   }
   cbLastBuild={kid,sk,paths:prev,pace:_paceRestores,ovs:_delOvs||undefined,label:(s.display||sk)+" — "+res.stats.placed+" placed"};
+  try{ if(!_rbInAll&&typeof rbLog==="function") rbLog("rebuild",kid,1,s.display||sk); }catch(e){}   // ↻ a single-subject build
   try{HA_LS.setItem("ha_cbUndo",JSON.stringify(cbLastBuild));}catch(e){}
   delete cbBacklogStash[_blKey]; delete cbDecisions[_blKey];
   const _nMoved=_bl.split.stale.length, _nDis=_disSet.size;
@@ -28302,6 +28303,9 @@ function cbRebuildAll(){
   renderAll();
 }
 function _cbRebuildAllRun(kid,list){
+  _rbInAll=true; try{ return _cbRebuildAllRunInner(kid,list); } finally{ _rbInAll=false; }
+}
+function _cbRebuildAllRunInner(kid,list){
   const subs=currData.subjects[kid]||{};
   const savedSubj=cbSubjKey, savedForm=cbForm, savedPrev=cbPreviewRes;
   const bulkPaths={}; const bulkPace=[]; let built=0; const skipped=[];
@@ -28319,6 +28323,7 @@ function _cbRebuildAllRun(kid,list){
   }
   cbSubjKey=savedSubj; cbForm=savedForm; cbPreviewRes=savedPrev;
   if(built){
+    try{ if(typeof rbLog==="function") rbLog("rebuild-all",kid,built,built+" subjects"); }catch(e){}   // ↻ for the daily-miss tracker
     cbLastBuild={kid,sk:"*",paths:bulkPaths,pace:bulkPace,label:"Rebuilt "+built+" of "+cap(kid)+"’s subjects"};
     try{HA_LS.setItem("ha_cbUndo",JSON.stringify(cbLastBuild));}catch(e){}
   }
@@ -29220,6 +29225,134 @@ function fbStandingChecks(){
 }
 // FALLBEHIND_END
 
+// DAILYMISS_START ── 🗓 Daily cards missed (her ask 2026-09-23: "the daily cards stay on their day, but we need a way to
+// track how many days they aren't getting done"). READ-ONLY: reads the live week + the archived weeks; writes nothing.
+// A daily = a card that is not a plan-backed lesson (notebooks, drills, flash cards, reading, Match & Play, Reflex,
+// sprints…). "Missed" = not checked ON ITS OWN DAY (checked on a later day = late, still a miss). Days the kid was off
+// don't count; a day the card wasn't laid doesn't count. Today is still open, so it never counts as a miss.
+// Pure core: dmCompute(weeks, o) — weeks=[{dates:{day:iso}, tasks, checked, history}], o={todayISO, kids, isDaily(t),
+// labelOf(t), kidOff(kid,iso)} → {rows:[{kid,label,days:[{iso,st}],weekMiss,weekOf,streak,lastDone}], thisWeek:[iso…]}.
+function dmCompute(weeks,o){
+  const cells={}; const allIso=new Set();
+  (weeks||[]).forEach(w=>{
+    const dates=(w&&w.dates)||{}, ck=(w&&w.checked)||{}, hs=(w&&w.history)||{};
+    (w&&w.tasks||[]).forEach(t=>{
+      if(!t||!t.who||String(t.id||"").endsWith("_c")||(o.kids&&o.kids.indexOf(t.who)<0)) return;
+      if(!o.isDaily(t)) return;
+      const iso=dates[String(t.day||"").toLowerCase()]; if(!iso||iso>=o.todayISO) return;
+      if(o.kidOff&&o.kidOff(t.who,iso)) return;
+      const label=o.labelOf(t); if(!label) return;
+      const key=t.who+"|"+label; allIso.add(iso);
+      let st="miss";
+      if(ck[t.id]){ const on=String(((hs[t.id]||{}).checkedOnDay)||t.day||"").toLowerCase(); st=(on===String(t.day||"").toLowerCase())?"done":"late"; }
+      const c=(cells[key]=cells[key]||{}); const rank={done:3,late:2,miss:1};
+      if(!c[iso]||rank[st]>rank[c[iso]]) c[iso]=st;   // two cards of the same daily that day: the better one stands
+    });
+  });
+  const isoList=Array.from(allIso).sort();
+  const lastWeek=(weeks&&weeks.length)?weeks[weeks.length-1]:null;
+  const thisWeek=lastWeek?Object.values(lastWeek.dates||{}).filter(d=>d&&d<o.todayISO).sort():[];
+  const rows=Object.keys(cells).map(key=>{
+    const c=cells[key], kid=key.split("|")[0], label=key.slice(kid.length+1);
+    const days=isoList.filter(d=>c[d]).map(d=>({iso:d,st:c[d]}));
+    const wk=days.filter(x=>thisWeek.indexOf(x.iso)>=0);
+    let streak=0; for(let i=days.length-1;i>=0;i--){ if(days[i].st==="done") break; streak++; }
+    const ld=days.slice().reverse().find(x=>x.st==="done");
+    return {kid:kid,label:label,days:days,weekMiss:wk.filter(x=>x.st!=="done").length,weekOf:wk.length,streak:streak,lastDone:ld?ld.iso:null};
+  });
+  return {rows:rows,thisWeek:thisWeek};
+}
+// The app's weeks: the archived weeks (newest 3) + the live one, each with ISO dates.
+function dmWeeks(){
+  const toIso=(label,yr)=>{ try{ const d=new Date(label+", "+yr); if(isNaN(d.getTime())) return null; return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }catch(e){ return null; } };
+  const yr=new Date().getFullYear(); const isoMap=m=>{ const o={}; Object.keys(m||{}).forEach(k=>{ const v=toIso(m[k],yr); if(v) o[k.toLowerCase()]=v; }); return o; };
+  const num=l=>parseInt(String(l||"").replace(/\D/g,""),10)||0;
+  const cur=num(typeof WK!=="undefined"?WK:"");
+  // A saved week is only trusted when it is whole: both its Monday and Friday dates, and check-offs on at least 10% of its
+  // cards. Live 9/23: week 21's copy was saved 9/6 BEFORE the week (0 checks, no Monday) and week 22's has 1 check (the
+  // Sunday-regen week) — counted, every daily would read "missed" for two weeks. Skipped weeks are named on the card.
+  const whole=a=>{ const dd=a.dates||{}; const n=(a.tasks||[]).length, c=Object.keys(a.checked||{}).length; return !!(dd.monday&&dd.friday&&n&&c>=n*0.1); };
+  const all=Object.values((typeof archive!=="undefined"&&archive)||{}).filter(a=>a&&a.tasks&&num(a.weekLabel)<cur).sort((a,b)=>num(a.weekLabel)-num(b.weekLabel)).slice(-3);
+  dmSkipped=all.filter(a=>!whole(a)).map(a=>a.weekLabel);
+  const arch=all.filter(whole);
+  const out=arch.map(a=>({dates:isoMap(a.dates),tasks:a.tasks,checked:a.checked||{},history:a.history||{}}));
+  out.push({dates:isoMap((typeof DAY_DT==="object"&&DAY_DT)||{}),tasks:(weekData&&weekData.tasks)||[],checked:(typeof checked!=="undefined"&&checked)||{},history:(typeof histState!=="undefined"&&histState)||{}});
+  return out;
+}
+function dmLabel(t){
+  const ti=String(t.title||"").replace(/^[^A-Za-z0-9]+/,"").trim();
+  if(t.subjectKey==="retrieval"||/_retr_/.test(t.id||"")) return ti.replace(/\s[—–-]\s.*$/,"")||"Retrieval";   // cut at a SPACED dash only ("Sprint Re-checks" stays whole)
+  const i=ti.indexOf(" — "); return (i>0?ti.slice(0,i):ti)||t.subjectKey||"";
+}
+function dmIsDaily(t){
+  try{ if(typeof planBacked==="function"&&planBacked(t.who,t.subjectKey)) return false; }catch(e){}
+  if(/lunch/i.test(t.title||"")) return false;
+  return true;
+}
+// ↻ Rebuild log (her ask 2026-09-23: "show rebuilds as well because rebuilds can skew things"). One push per Rebuild all /
+// single-subject build / Regenerate → rebuildLog/<push> = {ts,date,time,kind,kid,n,label}. The only write in this block.
+let _rbInAll=false, rbLogCache=null, _rbLogOn=false;
+function rbLog(kind,kid,n,label){
+  try{ if(typeof db==="undefined"||!db||(typeof _dryRun==="function"&&_dryRun())) return;
+    const d=new Date(), iso=(typeof cbTodayISO==="function")?cbTodayISO():d.toISOString().slice(0,10);
+    db.ref("rebuildLog").push({ts:d.getTime(),date:iso,time:(typeof fromMin==="function")?fromMin(d.getHours()*60+d.getMinutes()):"",kind:kind,kid:kid||"all",n:n||0,label:String(label||"").slice(0,80)});
+  }catch(e){}
+}
+function rbLogListen(){
+  if(_rbLogOn||typeof db==="undefined"||!db) return; _rbLogOn=true;
+  try{ db.ref("rebuildLog").orderByChild("ts").limitToLast(200).on("value",function(snap){ rbLogCache=Object.values(snap.val()||{}); if(dmOpen) renderAll(); }); }catch(e){ _rbLogOn=false; }
+}
+let dmOpen=false, dmAll=false, dmSkipped=[];
+function dmToggle(){ dmOpen=!dmOpen; renderAll(); }
+function dmToggleAll(){ dmAll=!dmAll; renderAll(); }
+function dmRender(){
+  try{ if(typeof weekData!=="object"||!weekData||!Array.isArray(weekData.tasks)||!weekData.tasks.length) return ""; }catch(e){ return ""; }
+  let R; try{
+    const off=(k,iso)=>{ try{ return typeof smapIsKidOff==="function"&&smapIsKidOff(k,iso); }catch(e){ return false; } };
+    R=dmCompute(dmWeeks(),{todayISO:(typeof cbTodayISO==="function")?cbTodayISO():new Date().toISOString().slice(0,10),kids:[...ROSTER],isDaily:dmIsDaily,labelOf:dmLabel,kidOff:off});
+  }catch(e){ return ""; }
+  const probs=R.rows.filter(r=>r.weekMiss>0||r.streak>0);
+  const red=R.rows.filter(r=>r.streak>=2).length;
+  const BTN='border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  const fmt=iso=>{ try{ const d=new Date(iso+"T12:00:00"); return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()]+" "+(d.getMonth()+1)+"/"+d.getDate(); }catch(e){ return iso; } };
+  rbLogListen();
+  // ↻ rebuilds in the window: the log (from 2026-09-23 on) + each kid's latest build stamp (pacing.builtAt) so today's show
+  const _first=(R.rows.reduce((m,r)=>r.days.length&&(!m||r.days[0].iso<m)?r.days[0].iso:m,null))||"";
+  const rb=[]; const seen={};
+  (rbLogCache||[]).forEach(e=>{ if(e&&e.date&&e.date>=_first){ rb.push(e); seen[e.kid+"|"+e.date]=1; } });
+  try{ [...ROSTER].forEach(k=>{ let last=""; Object.values((((currData||{}).subjects||{})[k])||{}).forEach(x=>{ const b=((x||{}).pacing||{}).builtAt||""; if(b>last) last=b; });
+    if(last){ const dd=new Date(last), iso=dd.getFullYear()+"-"+String(dd.getMonth()+1).padStart(2,"0")+"-"+String(dd.getDate()).padStart(2,"0");
+      if(iso>=_first&&!seen[k+"|"+iso]&&!seen["all|"+iso]) rb.push({date:iso,time:fromMin(dd.getHours()*60+dd.getMinutes()),kind:"rebuild",kid:k,label:"latest build"}); } }); }catch(e){}
+  rb.sort((a,b)=>(a.date<b.date?-1:a.date>b.date?1:0)||(toMin(a.time)||0)-(toMin(b.time)||0));
+  const rbOn=(k,iso)=>rb.some(e=>e.date===iso&&(e.kid===k||e.kid==="all"));
+  let h='<div style="background:#fff7ed;border-left:4px solid #ea580c;border-radius:0 10px 10px 0;padding:10px 12px;margin:0 0 8px">';
+  h+='<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-size:12px;color:#9a3412"><b>🗓 Daily cards missed</b> — '+(probs.length?probs.length+' daily card'+(probs.length!==1?'s':'')+' missed this week or in a row'+(red?' · <b style="color:#b91c1c">'+red+' missed 2+ days running</b>':''):'every daily card done on its day ✓')+'</div>';
+  h+='<button onclick="dmToggle()" style="flex-shrink:0;border:1px solid #ea580c;background:#fff;color:#c2410c;'+BTN+'">'+(dmOpen?'Hide':'Show')+'</button></div>';
+  if(dmOpen){
+    const rows=(dmAll?R.rows:probs);
+    h+='<div style="font-size:11px;color:#9a3412;margin:6px 0 4px">Missed = not checked on its own day (a later check = <b>late</b>). Days a kid was off don\'t count; today is still open. Dots: last 4 weeks, oldest → newest. <b>↻</b> = a rebuild that day (cards moved — read misses next to it with that in mind). Week 23 (Sep 14–18): the Fire HD 8 lost its check-offs that week, so some of its misses may be done-but-lost.'+(dmSkipped.length?' Skipped (saved copy incomplete): '+esc(dmSkipped.join(", ").replace(/week/g,"week "))+'.':'')+'</div>';
+    if(rb.length){ const KIND={"rebuild-all":"Rebuild all",rebuild:"Build",regenerate:"Regenerate"};
+      h+='<div style="font-size:11px;color:#7c2d12;margin:2px 0 4px"><b>↻ Rebuilds:</b> '+rb.slice(-12).map(e=>esc(fmt(e.date)+" "+(e.time||"")+" · "+(KIND[e.kind]||e.kind)+" · "+(e.kid==="all"?"everyone":((typeof SL_KLBL!=="undefined"&&SL_KLBL[e.kid])||e.kid))+(e.label&&e.label!=="latest build"?" ("+e.label+")":e.label==="latest build"?" (latest)":""))).join(" &nbsp;·&nbsp; ")+'</div>'; }
+    [...ROSTER].forEach(k=>{
+      const mine=rows.filter(r=>r.kid===k).sort((a,b)=>(b.streak-a.streak)||(b.weekMiss-a.weekMiss)||a.label.localeCompare(b.label));
+      if(!mine.length) return;
+      h+='<div style="margin-top:8px;font-weight:800;font-size:12px;color:#7c2d12">'+esc((typeof SL_KLBL!=="undefined"&&SL_KLBL[k])||k)+'</div>';
+      mine.forEach(r=>{
+        const dots=r.days.map(x=>(rbOn(r.kid,x.iso)?'<span title="'+esc("rebuild "+fmt(x.iso))+'" style="font-size:9px;color:#7c2d12;margin-right:1px">↻</span>':'')+'<span title="'+esc(fmt(x.iso)+": "+(x.st==="done"?"done":x.st==="late"?"done late":"missed"))+'" style="display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:2px;'+(x.st==="done"?'background:#16a34a':x.st==="late"?'background:#f59e0b':'background:#fff;border:1.5px solid #dc2626;box-sizing:border-box')+'"></span>').join("");
+        h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:3px 0;font-size:12px;color:#431407;border-bottom:1px dashed #fed7aa">'+
+          '<span style="min-width:130px;font-weight:700">'+esc(r.label)+'</span>'+
+          '<span style="min-width:120px">'+(r.weekOf?('missed <b>'+r.weekMiss+'</b> of '+r.weekOf+' this week'):'not laid this week')+'</span>'+
+          '<span style="min-width:90px;'+(r.streak>=2?'color:#b91c1c;font-weight:800':'')+'">'+(r.streak?r.streak+' in a row':'—')+'</span>'+
+          '<span style="min-width:110px;color:#9a3412">'+(r.lastDone?'last done '+fmt(r.lastDone):'not done in 4 wks')+'</span>'+
+          '<span>'+dots+'</span></div>';
+      });
+    });
+    if(!rows.length) h+='<div style="font-size:12px;color:#166534;margin-top:6px">Nothing missed ✓</div>';
+    h+='<div style="margin-top:8px"><button onclick="dmToggleAll()" style="border:1px solid #fdba74;background:#fff;color:#9a3412;'+BTN+'">'+(dmAll?'Only the missed ones':'Show every daily card')+'</button></div>';
+  }
+  return h+'</div>';
+}
+// DAILYMISS_END
 // FBRENDER_START ── the panel. Read-only: no button here writes anything. ──────────────
 function fbRender(){
   // Before the week's cards have loaded there is nothing to measure, and every number
@@ -31147,6 +31280,7 @@ function renderCurrGrid(el){
   // 🔍 Sequence audit — skipped numbers, lessons booked twice, out-of-order work.
   // Sits with the other checks; only mom sees it, and only she can act on it.
   if(momModeActive||adminPinUnlocked){ try{ h+=fbRender(); }catch(e){} }
+  if(momModeActive||adminPinUnlocked){ try{ h+=dmRender(); }catch(e){} }   // 🗓 daily cards missed (read-only)
   if(momModeActive||adminPinUnlocked){ try{ h+=gvAuditRender(gvKid,_gcol); }catch(e){} }
 
   const today=cbTodayISO();
@@ -49240,6 +49374,7 @@ function gwCommit(){
     sv(WK+"_tasks",d.tasks); sv(WK+"_babysitter",d.babysitter||null);
     sv(WK+"_checked",snapChecked); sv(WK+"_history",snapHist); sv(WK+"_sl",snapSl);
     sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
+    try{ if(typeof rbLog==="function") rbLog("regenerate","all",0,d.week||""); }catch(e){}   // ↻ for the daily-miss tracker
     try{ if(typeof seGuardWeek==="function"){ const _se=seGuardWeek(d.tasks,seGuardCtx({checked:snapChecked})); if(_se.retimed.length||_se.rolled.length||_se.deferred.length){ sv(WK+"_tasks",d.tasks); dbg("⏰ school end (regenerate): re-laid "+_se.retimed.length+", rolled "+_se.rolled.length+", deferred "+_se.deferred.length); } } }catch(eSE){ dbg("school-end skip: "+eSE); }
     if(db){
       const obj={};d.tasks.forEach(t=>obj[t.id]=t);
