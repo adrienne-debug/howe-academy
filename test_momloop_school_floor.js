@@ -79,4 +79,29 @@ console.log("── ⏰ nothing is laid before the school start (her rule 2026-0
     momLoop: { cursor: 0, order: ["ellis"] } });
   ok("once school has started, now is still the floor (11:00, not 10:00)", m(mid.laid[0].time) >= 11 * 60, mid.laid[0].time);
 }
+
+console.log("── 📓 Morning Notebook first at the school start — even for the kid Mom is holding (her rule 2026-09-23) ──");
+{
+  const m = s => { const x = /(\d+):(\d+)\s*([AP]M)/.exec(s); return (+x[1] % 12 + (x[3] === "PM" ? 12 : 0)) * 60 + +x[2]; };
+  // Live shape after dsRetime: Science checked 9:40 with Mom; notebook at 10:00; Mom cards later.
+  const sci = card("ellis", "9:40 AM", 25, "required", "Science"), nb = card("ellis", "10:00 AM", 5, "none", "📖 Morning Notebook — Morning Notebook");
+  nb.subjectKey = "morning_nb";
+  const eic = card("ellis", "12:40 PM", 20, "required", "Editor in Chief"), wr = card("ellis", "3:40 PM", 15, "required", "Word Roots"),
+        dm = card("ellis", "10:25 AM", 25, "none", "Dimensions Math");
+  const r = run({ tasks: [sci, nb, eic, wr, dm], roster: ["ellis"], nowMin: 9 * 60 + 45, checked: { [sci.id]: "9:40 AM Sep 23" },
+    momLoop: { cursor: 0, order: ["ellis"] }, momHold: { kid: "ellis", id: eic.id, day: "thursday" } });
+  ok("Morning Notebook stays FIRST at 10:00 for the held kid", r.at(nb.id) === "10:00 AM", r.at(nb.id));
+  ok("…and Mom's block with him starts right after it (10:05), not before", m(r.at(eic.id)) >= 10 * 60 + 5 && m(r.at(eic.id)) <= 10 * 60 + 10, r.at(eic.id));
+  ok("the rest of his Mom block still follows back to back", m(r.at(wr.id)) === m(r.at(eic.id)) + 20, [r.at(eic.id), r.at(wr.id)]);
+  ok("nothing of his lays before 10:00", [nb, eic, wr, dm].every(t => m(r.at(t.id)) >= 600));
+  // A fixed-time class goes ahead of the notebook: dsRetime lays the notebook after it (German 10:00–10:45 → notebook 10:45).
+  const lnb = card("lincoln", "10:45 AM", 5, "none", "📖 Morning Notebook — Morning Notebook"); lnb.subjectKey = "morning_nb";
+  const mr = card("lincoln", "1:00 PM", 25, "required", "MR5");
+  const r2 = run({ tasks: [lnb, mr], roster: ["lincoln"], nowMin: 9 * 60 + 50, momLoop: { cursor: 0, order: ["lincoln"] }, momHold: { kid: "lincoln", id: mr.id, day: "thursday" } });
+  ok("after a class, the notebook keeps its after-class slot (10:45) and Mom's block waits for it", r2.at(lnb.id) === "10:45 AM" && m(r2.at(mr.id)) >= 10 * 60 + 50, [r2.at(lnb.id), r2.at(mr.id)]);
+  // Once the notebook is checked, it no longer holds anything back.
+  const r3 = run({ tasks: [sci, nb, eic], roster: ["ellis"], nowMin: 10 * 60 + 6, checked: { [sci.id]: "9:40 AM Sep 23", [nb.id]: "10:05 AM Sep 23" },
+    momLoop: { cursor: 0, order: ["ellis"] }, momHold: { kid: "ellis", id: eic.id, day: "thursday" } });
+  ok("with the notebook done, Mom's block lays from now (10:06)", m(r3.at(eic.id)) >= 10 * 60 + 5 && m(r3.at(eic.id)) <= 10 * 60 + 10, r3.at(eic.id));
+}
 console.log("\n" + pass + " passed, " + fail + " failed"); process.exit(fail ? 1 : 0);

@@ -42076,6 +42076,10 @@ function mlQueueLay(tasks){
         .map(function(x){ return [toMin(x.time),_ckEnd(x)]; });
     };
     const _mlClose=function(t){ return t.subjectKey==="closing_nb"||(t.title||"").toLowerCase().includes("closing notebook"); };
+    // 📓 Her rule 2026-09-23: "notebook always comes first at the school start" — even for the kid Mom is holding
+    // (Ellis did Science with her at 9:40; his Mom block then laid ahead of his Morning Notebook, pushing it to 11:13).
+    // The only thing that goes ahead of it is a fixed-time class, and dsRetime already lays the notebook after one.
+    const _mlMorn=function(t){ return !!t&&(t.subjectKey==="morning_nb"||(t.title||"").toLowerCase().includes("morning notebook")); };
     // Where a kid's BUFFER (their first unchecked card, when it is not Mom work) really lands:
     // the later of its slot and the kid's floor, stepped over lunch and checked cards. Her rule
     // "still notebook first": Mom's block for ANY kid starts after it, never on top of it.
@@ -42087,7 +42091,7 @@ function mlQueueLay(tasks){
       else t=toMin(first0.time)+(first0.dur||20);
       // 🌞 and never before NOW: the buffer card below lays from now too, so "right after the
       // buffer" is right after where the buffer really is.
-      if(first0&&first0.mom!=="required"&&!(now&&now.held&&now.kid===k0)){
+      if(first0&&first0.mom!=="required"&&(!(now&&now.held&&now.kid===k0)||_mlMorn(first0))){
         // …where the buffer REALLY lands (the per-kid lay below places it identically, so the
         // block sits right behind it).
         const bl=_bufLanding(k0); if(bl) t=bl.end;
@@ -42097,12 +42101,13 @@ function mlQueueLay(tasks){
       // from the moment Mom is free — the later of now and the end of what the kid has checked —
       // not from the kid's next printed slot (her rule 2026-09-22).
       if(now&&now.held&&now.kid===k0&&fixedOf(k0).length){ let _le=0; fixedOf(k0).forEach(function(iv){ if(iv[1]>_le) _le=iv[1]; }); t=Math.max(_mlKidFloor(k0),_le); }
+      if(_mlMorn(first0)){ const _nb=_bufLanding(k0); if(_nb) t=Math.max(t,_nb.end); }   // 📓 the held session still waits for the notebook
     }
     const newTimes={}; const momWait={};
     seq.forEach(function(e){
       const Ls=lunchOf(e.kid).concat(fixedOf(e.kid));
       t=Math.max(t,_mlKidFloor(e.kid));   // 🏫 a co-op kid's block waits until they are home
-      if(!(now&&now.held&&now.kid===e.kid)){ const bl=_bufLanding(e.kid); if(bl&&t<bl.end&&t+((e.cards[0]||{}).dur||20)>bl.start) t=bl.end; }   // 📓 notebook first: never lay the block ON the buffer
+      if(!(now&&now.held&&now.kid===e.kid)||_mlMorn(mine[e.kid][0])){ const bl=_bufLanding(e.kid); if(bl&&t<bl.end&&t+((e.cards[0]||{}).dur||20)>bl.start) t=bl.end; }   // 📓 notebook first: never lay the block ON the buffer (a held kid's too, when it is the Morning Notebook)
       e.cards.forEach(function(c){
         const d=c.dur||20; let moved=true;
         while(moved){ moved=false; Ls.forEach(function(iv){ if(t<iv[1]&&t+d>iv[0]){ t=iv[1]; moved=true; } }); }
