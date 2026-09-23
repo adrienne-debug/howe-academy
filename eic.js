@@ -33,7 +33,7 @@ function bookOrder(T){ return ORDER.filter(b=>T&&T[b]); }
 const FIRST=["capitalization","punctuation"];                                 // the Iowa gap — shown on top
 const ALIAS={an_and_a:"a_an_and_the"};                                        // same skill, named differently per book
 const GREEN=80;
-let tags=null, logs={}, decs={}, kid="ellis", showAll=false, busy=false;
+let tags=null, logs={}, decs={}, kid="ellis", showAll=true, busy=false;   // every skill shows by default (her ask 2026-09-22: "get all skill in the engine")
 
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function dry(){return typeof _dryRun==="function"&&_dryRun();}

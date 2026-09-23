@@ -207,6 +207,8 @@ console.log("🪜 Level 1 + Level 2, each kid's own ladder (2026-09-22)");
   ok("Level 1 page p9 (Lonesome George's lesson) lands on PDF page 14 and its key starts on p109",E.eicPdf(TE,L1,9)===14&&E.eicKeyPage(TE,L1,9)===109,[E.eicPdf(TE,L1,9),E.eicKeyPage(TE,L1,9)]);
   ok("Level 1's homograph multiple-choice pages are never in a pool",E.eicSkills(TE).every(s=>E.eicPool(TE,s.key).every(p=>!(p.book===L1&&(p.page===89||p.page===90)))));
   ok("Level-only skills show up for Ellis (content, verbs…) but Level 2-only skills don't (clauses and phrases)",E.eicSkills(TE).some(s=>s.key==="content")&&!E.eicSkills(TE).some(s=>s.key==="clauses_and_phrases")&&E.eicSkills(TL).some(s=>s.key==="clauses_and_phrases"));
+  ok("EVERY step-2 page on both ladders now carries covers (Beginning books' later skills done 2026-09-22)",[TE,TL].every(TT=>E.eicSkills(TT).every(s=>E.eicStepPools(TT,s.key)[2].every(p=>E.eicCover(TT,p.book,p.page).length>0))));
+  ok("the panel lists every skill by default",/showAll=true/.test(ee));
   ok("eic.js reads every pool through the kid's ladder",!/\(tags,/.test(ee)&&/function TK\(k\)\{ return eicTagsFor\(tags\|\|\{\},k\|\|kid\); \}/.test(ee));
 }
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
