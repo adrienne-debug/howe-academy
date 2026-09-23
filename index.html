@@ -2561,6 +2561,7 @@ function safeWriteTasks(reason){
   // lesson goes in them, in order. Normalize before the write so a card can never carry a stale
   // lesson — whatever laid it. Idempotent, and only unlocked plan-backed cards can move.
   try{ if(typeof seqFillNormalize==="function") seqFillNormalize(weekData.tasks,reason); }catch(eSF){ dbg("seqfill skip: "+eSF); }
+  try{ if(typeof seGuardWeek==="function"){ const _se=seGuardWeek(weekData.tasks,seGuardCtx()); if(_se.retimed.length||_se.rolled.length||_se.deferred.length) dbg("⏰ school end ("+reason+"): re-laid "+_se.retimed.length+", rolled "+_se.rolled.length+", deferred "+_se.deferred.length+(_se.stuck.length?", daily-only overflow "+_se.stuck.join(" "):"")); } }catch(eSE){ dbg("school-end skip: "+eSE); }
   const obj={};
   weekData.tasks.forEach(t=>obj[t.id]=t);
   lastTasksWrite=Date.now();
@@ -30325,6 +30326,9 @@ function reprojectSubjectWeek(kid,sk,why,opts){
       const _nowMin=nowD.getHours()*60+nowD.getMinutes();
       const _pw=_rpPatternWant(kid,sk,{wn,todayDay,nowMin:_nowMin,toMin,mode:_rpMode,dayCap:_rpCap,blockedDays:_blockedDays,liveTasks:weekData.tasks,genTasks:gen.result.tasks,checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{}});
       const r=_reprojectPlan(kid,sk,weekData.tasks,_pw?_pw.desired:gen.result.tasks,{todayDay,nowMin:_nowMin,checked:checked||{},claimed:_pw?_pw.claimed:((typeof claimed!=="undefined"&&claimed)||{}),dayCtx,packAround,toMin,fromMin,dayCap:_rpCap,lidOrder:_subj.lessonIds||[],allowedDays:_rpDays,doneLids:_doneLids,dropUnwanted:!!(opts&&opts.dropUnwanted)||!!_pw,patternForward:!!_pw,freshToday:!!_pw&&_rpMode==="fresh",blockedDays:_blockedDays});
+      try{ if(typeof seGuardWeek==="function"){ const _se=seGuardWeek(r.tasksAfter,seGuardCtx({kids:[kid],checked:checked||{}}));
+        Object.keys(_se.upd).forEach(p=>{ if(_se.upd[p]===null){ Object.keys(r.upd).forEach(q=>{ if(q.indexOf(p+"/")===0) delete r.upd[q]; }); } r.upd[p]=_se.upd[p]; });
+        r.summary.shifted=(r.summary.shifted||[]).concat(_se.retimed,_se.rolled); r.summary.removed=r.summary.removed.concat(_se.deferred); } }catch(eSE){ dbg&&dbg("school-end skip: "+eSE); }
       const n=r.summary.added.length+r.summary.moved.length+r.summary.removed.length+r.summary.retitled.length+((r.summary.closing||[]).length)+((r.summary.shifted||[]).length);
       out=r.summary;
       if(!n) return;
@@ -48635,6 +48639,109 @@ function gwStampLids(allTasks,served){
   return n;
 }
 // LID_STAMP_END
+// SCHOOLEND_START — the school day's END is respected, and no two of a kid's cards ever stack (her rules 2026-09-23:
+// "school day end should be respected", "no stacked subjects", dailies stay on their day, lessons move "in sequential
+// order … moved and relayed in order", the subject FURTHEST AHEAD gives way, next week when the week has no room).
+// Live: Lincoln's Thursday (co-op until 2:00) held Editor in Chief AND Singapore at 4:10, MR5 5:20, drill 6:43 — the
+// re-lay allowed 4 h of overtime and left a card it could not place in its old slot.
+// For each kid and school day from now on: a day that is already fine is left ALONE. Otherwise the kid's open cards are
+// re-laid in their current order from the day's first slot — checked / claimed / started cards and fixed-time classes
+// never move, lunch is stepped over, and a Mom-required card steps over the other kids' Mom-required cards. If it still
+// runs past the end, the lesson whose subject is furthest ahead of pace (tie → the later card) ROLLS: it takes its
+// subject's next sitting this week, each later sitting takes the next one, and the last is deferred (off this week's
+// cards, lesson undone → next week's build serves it first). Daily cards never leave their day. Pure; returns targeted
+// writes. o = {days, todayDay, nowMin, checked, claimed, kids?, win(day)→{start,end,lunchStart,lunchEnd}|null,
+// kidOff(kid,day), isClass(t), isLesson(t), ahead(kid,sk), toMin, fromMin}.
+function seGuardWeek(tasks,o){
+  const out={upd:{},retimed:[],rolled:[],deferred:[],stuck:[]};
+  if(!Array.isArray(tasks)||!tasks.length||!o||!Array.isArray(o.days)) return out;
+  const DAYS=o.days, tm=o.toMin, fm=o.fromMin, ck=o.checked||{}, cl=o.claimed||{};
+  const ti=DAYS.indexOf(o.todayDay);
+  const dIx=t=>DAYS.indexOf(String(t.day||"").toLowerCase());
+  const isClose=t=>t.subjectKey==="closing_nb"||/closing notebook/i.test(t.title||"");
+  const skip=t=>!t||!t.who||String(t.id||"").endsWith("_c")||!!t._eowOverflow||/lunch/i.test(t.title||"")||tm(t.time)==null;
+  const started=t=>dIx(t)===ti&&o.nowMin!=null&&tm(t.time)<=o.nowMin;
+  const fixed=t=>!!(ck[t.id]||cl[t.id])||started(t)||!!(o.isClass&&o.isClass(t));
+  const dur=t=>+t.dur||20;
+  const setT=(t,day,min)=>{ const nt=fm(min); if(t.day!==day){ t.day=day; out.upd[t.id+"/day"]=day; } if(t.time!==nt){ t.time=nt; out.upd[t.id+"/time"]=nt; } };
+  const kids=o.kids||Array.from(new Set(tasks.filter(t=>t&&t.who).map(t=>t.who)));
+  const first=ti>=0?ti:0;
+  for(let di=first;di<DAYS.length;di++){
+    const day=DAYS[di], W=o.win?o.win(day):null; if(!W||!(W.end>W.start)) continue;
+    kids.forEach(kid=>{
+      if(o.kidOff&&o.kidOff(kid,day)) return;
+      // the kid's day starts where it was laid (school start, or after co-op) — fixed ONCE, so a first card that rolls
+      // away never takes the start with it
+      const _m0=tasks.filter(t=>!skip(t)&&t.who===kid&&dIx(t)===di&&!fixed(t)).map(t=>tm(t.time)); if(!_m0.length) return;
+      const S0=Math.max(W.start,Math.min.apply(null,_m0),(di===ti&&o.nowMin!=null)?o.nowMin:0);
+      for(let pass=0;pass<30;pass++){
+        const mine=tasks.filter(t=>!skip(t)&&t.who===kid&&dIx(t)===di);
+        const mov=mine.filter(t=>!fixed(t)); if(!mov.length) return;
+        const iv=mine.map(t=>[tm(t.time),tm(t.time)+dur(t),t]).sort((a,b)=>a[0]-b[0]);
+        let stacked=false; for(let i=1;i<iv.length;i++) if(iv[i][0]<iv[i-1][1]) stacked=true;
+        const late=mov.some(t=>tm(t.time)+dur(t)>W.end);
+        if(!stacked&&!late) return;                                                  // a fine day is left alone
+        // re-lay this kid's open cards in their current order
+        const busy=mine.filter(fixed).map(t=>[tm(t.time),tm(t.time)+dur(t)]);
+        if(W.lunchEnd>W.lunchStart) busy.push([W.lunchStart,W.lunchEnd]);
+        const momBusy=tasks.filter(t=>!skip(t)&&t.who!==kid&&dIx(t)===di&&t.mom==="required").map(t=>[tm(t.time),tm(t.time)+dur(t)]);
+        const order=mov.map((t,i)=>({t,i})).sort((a,b)=>(isClose(a.t)-isClose(b.t))||(tm(a.t.time)-tm(b.t.time))||(a.i-b.i)).map(x=>x.t);
+        const lay=list=>{ let at=S0; const plan=new Map(); let over=false;
+          list.forEach(t=>{ const d=dur(t); const B=(t.mom==="required")?busy.concat(momBusy):busy; let mv=true;
+            while(mv){ mv=false; B.forEach(b=>{ if(at<b[1]&&at+d>b[0]){ at=b[1]; mv=true; } }); }
+            plan.set(t,at); if(at+d>W.end) over=true; at+=d; });
+          return {plan:plan,over:over,end:at}; };
+        const L0=lay(order), plan=L0.plan, over=L0.over;
+        if(!over){ plan.forEach((m,t)=>{ if(tm(t.time)!==m){ setT(t,day,m); if(out.retimed.indexOf(t.id)<0) out.retimed.push(t.id); } }); return; }
+        // still past the end → the lesson furthest ahead of pace rolls forward in sequence
+        const cand=order.filter(t=>!isClose(t)&&o.isLesson&&o.isLesson(t));
+        if(!cand.length){ plan.forEach((m,t)=>{ if(tm(t.time)!==m){ setT(t,day,m); if(out.retimed.indexOf(t.id)<0) out.retimed.push(t.id); } }); out.stuck.push(kid+"|"+day); return; }
+        const ah=t=>{ try{ return +o.ahead(kid,t.subjectKey)||0; }catch(e){ return 0; } };
+        // furthest ahead first — but the one that actually makes the day fit (live 9/23: Friday ran 6 min over because an
+        // afternoon Mom card waited for another kid's; rolling the morning's most-ahead lessons freed nothing after lunch,
+        // and three lessons left for a 6-minute problem). None fits alone → the one that shortens the day most.
+        const ranked=cand.slice().sort((a,b)=>(ah(b)-ah(a))||(tm(b.time)-tm(a.time)));
+        let g=null, best=null;
+        for(const c of ranked){ const Lc=lay(order.filter(x=>x!==c)); if(!Lc.over){ g=c; break; } const gain=L0.end-Lc.end; if(!best||gain>best.gain) best={c:c,gain:gain}; }
+        if(!g) g=(best&&best.gain>0)?best.c:ranked[0];
+        const chain=tasks.filter(t=>!skip(t)&&t!==g&&t.who===kid&&t.subjectKey===g.subjectKey&&!fixed(t)&&(dIx(t)>di||(dIx(t)===di&&tm(t.time)>tm(g.time))))
+          .sort((a,b)=>(dIx(a)-dIx(b))||(tm(a.time)-tm(b.time)));
+        const slots=chain.map(t=>({day:t.day,time:tm(t.time)}));
+        const moving=[g].concat(chain);
+        for(let k=moving.length-1;k>=0;k--){
+          const t=moving[k];
+          if(k===moving.length-1){ const i=tasks.indexOf(t); if(i>=0) tasks.splice(i,1); Object.keys(out.upd).forEach(p=>{ if(p.indexOf(t.id+"/")===0) delete out.upd[p]; }); out.upd[t.id]=null; out.deferred.push(t.id); }
+          else { const sl=slots[k]; setT(t,sl.day,sl.time); out.rolled.push(t.id); }
+        }
+      }
+    });
+  }
+  return out;
+}
+// The app's context for seGuardWeek: Settings school day (per-day override, else the default), the kid's off days,
+// fixed-time classes, plan-backed lessons (dailies and the notebooks never roll), and pace (cursor − expected, signed).
+function seGuardCtx(extra){
+  const _sd=((typeof rulesData!=="undefined"&&rulesData)||{}).schoolDay||{};
+  const _r=(typeof gwRules==="function")?gwRules():{lunchStart:toMin("1:00 PM"),lunchEnd:toMin("2:00 PM")};
+  const DAYS=["monday","tuesday","wednesday","thursday","friday"];
+  const iso=day=>{ try{ const dt=(typeof DAY_DT==="object"&&DAY_DT)?DAY_DT[day]:null; if(!dt) return null; const d=new Date(dt+", "+new Date().getFullYear()); if(isNaN(d.getTime())) return null; return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }catch(e){ return null; } };
+  const subj=t=>(((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[t.who]||{})[t.subjectKey])||null;
+  const now=new Date();
+  return Object.assign({
+    days:DAYS, todayDay:(typeof _todayDay!=="undefined")?_todayDay:null, nowMin:now.getHours()*60+now.getMinutes(),
+    checked:(typeof checked!=="undefined"&&checked)||{}, claimed:(typeof claimed!=="undefined"&&claimed)||{},
+    win:day=>{ const ov=(_sd.overrides||{})[day]||{}; return {start:toMin(ov.start||_sd.defaultStart||"10:00 AM"),end:toMin(ov.end||_sd.defaultEnd||"4:15 PM"),lunchStart:_r.lunchStart,lunchEnd:_r.lunchEnd}; },
+    kidOff:(kid,day)=>{ try{ const ds=iso(day); return !!(ds&&typeof smapIsKidOff==="function"&&smapIsKidOff(kid,ds)); }catch(e){ return false; } },
+    isClass:t=>{ try{ return typeof fxIsClass==="function"&&fxIsClass(subj(t)); }catch(e){ return false; } },
+    isLesson:t=>{ try{ if(t.subjectKey==="morning_nb"||t.subjectKey==="closing_nb"||/notebook/i.test(t.title||"")) return false;
+      if(typeof subjNoCarry==="function"&&subjNoCarry(t)) return false; return typeof planBacked==="function"&&!!planBacked(t.who,t.subjectKey); }catch(e){ return false; } },
+    ahead:(kid,sk)=>{ const wn=parseInt(String((typeof WK!=="undefined"&&WK)||"").replace(/\D/g,""),10)||0;
+      const exp=(typeof currExpectedBase==="function")?currExpectedBase(kid,sk,wn-1):null; const cur=(typeof computeSubjectCursor==="function")?(computeSubjectCursor(kid,sk)||0):0;
+      return exp==null?0:(cur-exp); },
+    toMin:toMin, fromMin:fromMin
+  },extra||{});
+}
+// SCHOOLEND_END
 // SEQFILL_START — her design (2026-09-17): "everything should get a how many of each subject
 // and then when relay is done the assignments are assigned from grid in order."
 //
@@ -49133,6 +49240,7 @@ function gwCommit(){
     sv(WK+"_tasks",d.tasks); sv(WK+"_babysitter",d.babysitter||null);
     sv(WK+"_checked",snapChecked); sv(WK+"_history",snapHist); sv(WK+"_sl",snapSl);
     sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
+    try{ if(typeof seGuardWeek==="function"){ const _se=seGuardWeek(d.tasks,seGuardCtx({checked:snapChecked})); if(_se.retimed.length||_se.rolled.length||_se.deferred.length){ sv(WK+"_tasks",d.tasks); dbg("⏰ school end (regenerate): re-laid "+_se.retimed.length+", rolled "+_se.rolled.length+", deferred "+_se.deferred.length); } } }catch(eSE){ dbg("school-end skip: "+eSE); }
     if(db){
       const obj={};d.tasks.forEach(t=>obj[t.id]=t);
       db.ref(WK+"/tasks").set(obj);
