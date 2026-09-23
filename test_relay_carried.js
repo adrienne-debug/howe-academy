@@ -132,7 +132,7 @@ console.log("\n── wiring ──");
 {
   const rp = block;
   ok("carried = unlocked, today or later, not overflow, swept by the cascade", /const carried=after\.filter\(t=>isPlanCard\(t\)&&dayIx\(t\.day\)>=tIx&&!locked\(t\)&&!t\._eowOverflow&&t\.cascadedFrom&&t\.cascadedFrom!==t\.day\);/.test(rp));
-  ok("the re-sequence runs for a push OR a carried card", /if\(summary\.pushed\.length\|\|carried\.length\)\{/.test(rp));
+  ok("the re-sequence runs for a push OR a carried card (not in a pattern-forward re-lay)", /if\(!opts\.patternForward&&\(summary\.pushed\.length\|\|carried\.length\)\)\{/.test(rp));
   ok("a carried card's swept-to day is never a landing day", /!carriedIds\[t\.id\]\) dayOk\[t\.day\]=1;/.test(rp) && /if\(carriedIds\[id\]\) return; const d=orig0\[id\]\.day;/.test(rp));
   ok("a Mom push alone keeps the older keep-where-started behaviour", /if\(carried\.length\)\{ const mi2=/.test(rp) && /summary\.kept\.push\(t\.id\); return;/.test(rp));
   ok("reprojectSubjectWeek logs the carried count", /🔁"\+\(\(r\.summary\.carried\|\|\[\]\)\.length\)/.test(src));

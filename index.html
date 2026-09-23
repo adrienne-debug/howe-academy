@@ -29948,7 +29948,11 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
   const carried=after.filter(t=>isPlanCard(t)&&dayIx(t.day)>=tIx&&!locked(t)&&!t._eowOverflow&&t.cascadedFrom&&t.cascadedFrom!==t.day);
   const carriedIds={}; carried.forEach(t=>{ carriedIds[t.id]=1; });
   summary.carried=carried.map(t=>t.id);
-  if(summary.pushed.length||carried.length){
+  // ⏭ pattern-forward re-lay: the days already came from the plan, in list order and under the cap,
+  // so the push/carried re-sequence below must not run (it would land a carried card back on today).
+  // A card now sitting on its pattern day is no longer "carried".
+  if(opts.patternForward){ after.forEach(t=>{ if(isPlanCard(t)&&t.cascadedFrom&&wantBy[t.id]&&!locked(t)){ delete t.cascadedFrom; upd[t.id+"/cascadedFrom"]=null; } }); }
+  if(!opts.patternForward&&(summary.pushed.length||carried.length)){
     const cap=Math.max(1,parseInt(opts.dayCap,10)||1);
     // Lesson order = the subject's list (lessonIds) when given — lid NUMBERS are not list order
     // (Lincoln's EIC list runs L0002 → L0154 → L0003); else the generator's own serve order.
@@ -30129,6 +30133,100 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
   summary.shifted.forEach(id=>{ if(upd[id]!==undefined||upd[id+"/time"]!==undefined) return; const t=after.find(x=>x.id===id); if(t) upd[id+"/time"]=t.time; });
   return {upd,summary,tasksAfter:after};
 }
+// RPPAT_START ── ⏭ PATTERN-FORWARD RE-LAY (her rule 2026-09-22) ──────────────────────────
+// "the general pattern for a week including any holidays co ops being respected from when things
+// would normally be laid by the patterns of that day forward … and push all things forward
+// following all the rules." A re-lay no longer takes its days from the week generator (its
+// minute-balancer pulled lessons into past days and stacked the rest — Ellis's Language Smarts ×3
+// on Wed 9/23, next week's lesson pulled in). The days come from the subject's own PLAN
+// (planMaterialize — the same pattern the Grid shows: card days, times/week, cap, lanes, off days),
+// minus co-op/✕ blocked days, Monday–Friday only (never Saturday on a re-lay — her rule), and the
+// lessons fill those days in LIST order from the first one not already done or held. A card the
+// week no longer has room for leaves this week (unlocked, unfinished) — its lesson is undone, so
+// next week's build serves it first. No catch-ups, no doubling beyond the subject's cap.
+// Mid-school-day, Mom is asked once per re-lay run: re-lay today's unfinished too, or start tomorrow.
+let _rpModeAsk=null;   // {mode, at} — one answer covers a whole run (Rebuild all = many subjects)
+function _rpRelayMode(){
+  try{
+    const now=new Date(); const nowMin=now.getHours()*60+now.getMinutes();
+    const td=(typeof _todayDay==="string")?_todayDay:"";
+    const r=(typeof gwRules==="function")?gwRules():{};
+    const schoolDay=["monday","tuesday","wednesday","thursday","friday"].indexOf(td)>=0&&!!((typeof DAY_DT!=="undefined"&&DAY_DT)||{})[td];
+    if(!schoolDay) return "tomorrow";
+    if(r.schoolStart!=null&&nowMin<r.schoolStart) return "today";      // before school: nothing has started
+    if(r.schoolEnd!=null&&nowMin>=r.schoolEnd) return "tomorrow";      // after school: today is over
+    if(_rpModeAsk&&(Date.now()-_rpModeAsk.at)<180000) return _rpModeAsk.mode;
+    // Only Mom is asked; an automatic re-lay on a kid's device (a lane handoff) never pops a question
+    // and keeps today's cards where they are.
+    if(!(typeof momHere==="function"&&momHere())) return "today";
+    const inc=confirm("Re-lay in the middle of the school day\n\nOK = re-lay today's unfinished cards too\nCancel = leave today as it is and start from tomorrow");
+    _rpModeAsk={mode:inc?"today":"tomorrow",at:Date.now()};
+    return _rpModeAsk.mode;
+  }catch(e){ return "tomorrow"; }
+}
+// Pure-ish: returns {desired, claimed} for _reprojectPlan, or null to fall back to the old path.
+// o = {wn, todayDay, nowMin, toMin, mode:"today"|"tomorrow", blockedDays:[day], liveTasks, genTasks, checked, claimed}
+function _rpPatternWant(kid,sk,o){
+  if(typeof planBacked!=="function"||!planBacked(kid,sk)||typeof planMaterialize!=="function") return null;
+  const subj=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid]||{})[sk]||{};
+  if(subj.paused) return null;   // a paused subject keeps the old path (the pause re-lay owns taking its cards off)
+  const ids=subj.lessonIds||[], seq=subj.lessonSeq||[];
+  let pm=null; try{ pm=planMaterialize(kid,sk,null,{absorb:false}); }catch(e){ return null; }
+  if(!pm||pm.error) return null;
+  const WD=["monday","tuesday","wednesday","thursday","friday"];   // never Saturday on a re-lay
+  const dayOfISO={}; WD.forEach(function(d){ const iso=(typeof calDateForWeekDay==="function")?calDateForWeekDay(d,o.wn):null; if(iso) dayOfISO[iso]=d; });
+  const tIx=_RP_DAYS.indexOf(o.todayDay);
+  const blocked={}; (o.blockedDays||[]).forEach(function(d){ blocked[d]=1; });
+  const isCard=function(t){ return t&&t.who===kid&&t.subjectKey===sk&&!String(t.id||"").endsWith("_c")&&/_L\d+$/.test(String(t.id||"")); };
+  const lidOf=function(id){ const m=String(id||"").match(/_(L\d+)$/); return m?m[1]:""; };
+  const live=(o.liveTasks||[]).filter(isCard);
+  const claimed=Object.assign({},o.claimed||{});
+  const isDone=function(t){ return !!((o.checked||{})[t.id]||(o.claimed||{})[t.id]); };
+  const started=function(t){ const di=_RP_DAYS.indexOf(t.day); if(di<0) return false; if(tIx>=0&&di<tIx) return true; if(di===tIx&&o.nowMin!=null&&o.toMin&&o.toMin(t.time)<=o.nowMin) return true; return false; };
+  // Lessons already HELD this week: done/claimed, started, and — "start from tomorrow" — every card on today.
+  const planLids={}; [].concat(pm.assignments||[],pm.extras||[]).forEach(function(a){ if(a&&a.lid) planLids[a.lid]=1; });
+  const taken={}; let todaySlots=0;
+  live.forEach(function(t){
+    const l=lidOf(t.id);
+    if(isDone(t)||started(t)){ taken[l]=1; return; }
+    if(t.day===o.todayDay){
+      if(o.mode==="tomorrow"){ taken[l]=1; claimed[t.id]=true; }   // frozen: stays exactly as it is
+      else if(planLids[l]) todaySlots++;                          // re-laid: today keeps its slot
+      else taken[l]=1;                                             // its lesson is already recorded done
+    }
+  });
+  // The pattern's days this week, after today, Mon–Fri, not blocked (co-op no-Mom / ✕).
+  const plan=[].concat(pm.assignments||[],pm.extras||[]).filter(function(a){ return a&&a.date&&a.lid; })
+    .sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:((a.dayNum||0)-(b.dayNum||0)); });
+  const slots=[]; for(let i=0;i<todaySlots;i++) slots.push(o.todayDay);
+  plan.forEach(function(a){ const d=dayOfISO[a.date]; if(!d) return; if(_RP_DAYS.indexOf(d)<=tIx) return; if(blocked[d]) return; slots.push(d); });
+  slots.sort(function(a,b){ return _RP_DAYS.indexOf(a)-_RP_DAYS.indexOf(b); });
+  // Lessons in LIST order from the first one not done/held (the plan already skips done ones).
+  const seen={}; const lessons=[];
+  plan.forEach(function(a){ if(taken[a.lid]||seen[a.lid]) return; seen[a.lid]=1; lessons.push(a); });
+  const gen=(o.genTasks||[]).filter(isCard);
+  const template=gen[0]||live[0]||null;
+  if(!template&&slots.length) return null;
+  const titleFor=function(lid,text){
+    const g=gen.find(function(t){ return lidOf(t.id)===lid; })||live.find(function(t){ return lidOf(t.id)===lid; });
+    if(g) return g.title;
+    const tl=lidOf(template.id); const tt=seq[ids.indexOf(tl)];
+    if(tt&&String(template.title||"").endsWith(tt)) return String(template.title).slice(0,String(template.title).length-tt.length)+text;
+    return String(template.title||"").split(" ")[0]+" "+(subj.display||sk)+" — "+text;
+  };
+  const mine=[];
+  for(let i=0;i<slots.length&&i<lessons.length;i++){
+    const a=lessons[i]; const text=a.text||seq[ids.indexOf(a.lid)]||a.lid;
+    const base=gen.find(function(t){ return lidOf(t.id)===a.lid; })||live.find(function(t){ return lidOf(t.id)===a.lid; })||template;
+    const nt=Object.assign({},base);
+    nt.id=String(template.id).replace(/_L\d+$/,"_"+a.lid); nt.lid=a.lid; nt.day=slots[i]; nt.title=titleFor(a.lid,text);
+    delete nt.catchup; delete nt.cascadedFrom; delete nt._eowOverflow; delete nt.pulledFrom;
+    mine.push(nt);
+  }
+  const desired=(o.genTasks||[]).filter(function(t){ return !(t&&t.who===kid&&t.subjectKey===sk); }).concat(mine);
+  return {desired:desired,claimed:claimed,slots:slots,lessons:mine.map(function(t){ return t.day+" "+t.lid; })};
+}
+// RPPAT_END
 function reprojectSubjectWeek(kid,sk,why,opts){
   // opts.then(summary|null) — called exactly ONCE when this re-lay is over (done, skipped, or the
   // lock refused). The scheduler lock is async, so a caller that must re-lay a PARTNER after this
@@ -30142,6 +30240,7 @@ function reprojectSubjectWeek(kid,sk,why,opts){
   const wn=currWeekNum(); if(!wn){ _then(null); return null; }
   // Only the ACTIVE plan week has cards to keep in step; a parked or past week is left alone.
   try{ const r=gwWeekDateRange(wn); const eff=_schoolWeekDateFor(_todayStr()); if(!r||eff<r.start||eff>r.end){ _then(null); return null; } }catch(e){ _then(null); return null; }
+  const _rpMode=(opts&&opts.relayFrom)||_rpRelayMode();   // ⏭ asked once, before the lock
   let out=null;
   haClaimSchedLock("reproject",function(release){
     if(!release){ if(typeof gwShowToast==="function") gwShowToast("Another device is updating the schedule — this week's cards catch up on the next regenerate."); _then(null); return; }
@@ -30165,7 +30264,10 @@ function reprojectSubjectWeek(kid,sk,why,opts){
       try{ if(typeof lnOf==="function"){ const _l=lnOf(kid,sk); if(_l){ const _rh=lnRhythm(kid,_l.id,_l.unitIdx); if(_rh&&!_rh.own){ _rpDays=_rh.allowedDays||[]; _rpCap=_rh.cap||1; } } } }catch(e){}
       // 🏫 days this subject may not land on this week (co-op no-Mom rule, or ✕'d off for it)
       const _blockedDays=[]; try{ if(typeof calDateForWeekDay==="function"&&typeof _ovRmX==="function"){ _RP_DAYS.forEach(function(d){ const ds=calDateForWeekDay(d,wn); if(ds&&_ovRmX(kid,ds,sk,false)) _blockedDays.push(d); }); } }catch(e){}
-      const r=_reprojectPlan(kid,sk,weekData.tasks,gen.result.tasks,{todayDay,nowMin:nowD.getHours()*60+nowD.getMinutes(),checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},dayCtx,packAround,toMin,fromMin,dayCap:_rpCap,lidOrder:_subj.lessonIds||[],allowedDays:_rpDays,doneLids:_doneLids,dropUnwanted:!!(opts&&opts.dropUnwanted),blockedDays:_blockedDays});
+      // ⏭ pattern-forward: the subject's days come from its plan, not the generator's balancer
+      const _nowMin=nowD.getHours()*60+nowD.getMinutes();
+      const _pw=_rpPatternWant(kid,sk,{wn,todayDay,nowMin:_nowMin,toMin,mode:_rpMode,blockedDays:_blockedDays,liveTasks:weekData.tasks,genTasks:gen.result.tasks,checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{}});
+      const r=_reprojectPlan(kid,sk,weekData.tasks,_pw?_pw.desired:gen.result.tasks,{todayDay,nowMin:_nowMin,checked:checked||{},claimed:_pw?_pw.claimed:((typeof claimed!=="undefined"&&claimed)||{}),dayCtx,packAround,toMin,fromMin,dayCap:_rpCap,lidOrder:_subj.lessonIds||[],allowedDays:_rpDays,doneLids:_doneLids,dropUnwanted:!!(opts&&opts.dropUnwanted)||!!_pw,patternForward:!!_pw,blockedDays:_blockedDays});
       const n=r.summary.added.length+r.summary.moved.length+r.summary.removed.length+r.summary.retitled.length+((r.summary.closing||[]).length)+((r.summary.shifted||[]).length);
       out=r.summary;
       if(!n) return;
