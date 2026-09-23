@@ -108,6 +108,8 @@ function run(env, script) {
     showPaceToast: (id) => env.spins.push(id),
     esc: s => String(s), cap: s => String(s), taskSubject: () => "Singapore",
     scoredType: () => null, openScoreDialog: () => {},
+    ckNotePending: () => {}, ckConfirmed: () => {}, ckNoteRefused: () => {}, ckForget: () => {},   // 📮 (2026-09-23)
+    obSet: (p, v) => { env.dbWrites[p] = v; }, obRemove: p => { env.removed.push(p); },
     db: {
       ref: p => ({
         set: v => { env.dbWrites[p] = v; },

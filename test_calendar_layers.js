@@ -38,6 +38,7 @@ function world(o) {
     HA_LS: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } },
     renderAll: function () { ctx.renders++; }, confirm: () => true, mwToast: () => {},
     db: { ref: p => ({ set: v => ctx.writes.push([p, v]), remove: () => ctx.removes.push(p) }) },
+    obSet: (p, v) => ctx.db && ctx.db.ref(p).set(v), obRemove: p => ctx.db && ctx.db.ref(p).remove(),   // 📮 outbox stubs (2026-09-23)
     kitPlan: {}, kitMeals: {}, kitPantry: {}, kitStaples: {}, calendarData: {}, document: { getElementById: () => null },
   };
   vm.createContext(ctx); vm.runInContext(CODE, ctx);
@@ -105,6 +106,7 @@ console.log("\n── 🧒 Kids' Corner gates (her rule 2026-09-05: think on wha
       HA_LS: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } },
       renderAll: function () { ctx.renders++; }, gwShowToast: () => {}, momHere: () => !!o.mom, adminPinUnlocked: false,
       db: { ref: p => ({ set: v => ctx.writes.push([p, v]), remove: () => ctx.removes.push(p) }) },
+      obSet: (p, v) => ctx.db && ctx.db.ref(p).set(v), obRemove: p => ctx.db && ctx.db.ref(p).remove(),   // 📮 outbox stubs (2026-09-23)
       calendarData: { events: o.events || {} }, calEvents: function () { return ctx.calendarData.events || {}; },
       document: { getElementById: id => ({ value: (o.fields || {})[id] || "", style: {}, focus() {} }) },
     };
@@ -196,7 +198,7 @@ console.log("\n── 🎰 spins hold until ALL school work is done (her rule 20
 {
   const G = [slice("choresGateDone"), slice("schoolDoneOn"), slice("spinClaimGateDone"), slice("getPointClaim"), slice("_setPointClaim"), slice("claimDayPoints")].join("\n");
   function gw(o) {
-    const ctx = { console, renders: 0, toasts: [], WK: "week21", db: null, pointClaims: {},
+    const ctx = { console, renders: 0, toasts: [], WK: "week21", db: null, pointClaims: {}, obSet: () => null, obRemove: () => null,
       renderAll: function () { ctx.renders++; }, gwShowToast: m => ctx.toasts.push(m), nowTs: () => "4:00 PM",
       getSlot: (k, slot) => ({ done: (o.slots || {})[slot] !== false }),
       getKidDayPoints: () => 40, effectiveDay: t => t.day, _dismissed: t => !!t.dismissed, checked: o.checked || {},

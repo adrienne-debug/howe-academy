@@ -6,8 +6,9 @@
  */
 const fs = require("fs"), path = require("path"), vm = require("vm");
 const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
-const a = src.indexOf("// CKRECOVER_START"), b = src.indexOf("// CKRECOVER_END");
-if (a < 0 || b < 0) { console.error("CKRECOVER markers not found"); process.exit(1); }
+// CKRECOVER uses the outbox session id (2026-09-23) — load both blocks
+const a = src.indexOf("// OUTBOX_START"), b = src.indexOf("// CKRECOVER_END");
+if (a < 0 || b < 0 || a > b) { console.error("OUTBOX/CKRECOVER markers not found"); process.exit(1); }
 const BLOCK = src.slice(a, b);
 let pass = 0, fail = 0;
 function ok(n, c, x) { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  (" + JSON.stringify(x) + ")" : "")); } }
@@ -23,7 +24,7 @@ function world(o) {
     dbg: m => logs.push(m), gwShowToast: m => toasts.push(m), renderAll: () => {}, nowTs: () => "1:00 PM Sep 22",
     setTimeout: (fn, ms) => timers.push([fn, ms]),
     finalizeDone: (id, ts) => { calls.push([id, ts]); if (o.refuseOrder && o.refuseOrder[id]) return false; ctx.checked[id] = ts; return true; },
-    Object, String, JSON, Math,
+    Object, String, JSON, Math, Date, db: null, _dryRun: () => false,
   };
   vm.createContext(ctx); vm.runInContext(BLOCK, ctx);
   return { ctx, store, calls, toasts, logs, timers, call: e => vm.runInContext(e, ctx) };
@@ -33,7 +34,8 @@ console.log("── a refused write is remembered, per week, with its done-time 
   const w = world();
   w.call("ckNoteRefused('t1','11:05 AM Sep 21',{code:'PERMISSION_DENIED'})");
   w.call("ckNoteRefused('t2','11:20 AM Sep 21',{code:'PERMISSION_DENIED'})");
-  ok("both ids stored under <week>_pendck with their times", JSON.stringify(w.store.week24_pendck) === JSON.stringify({ t1: "11:05 AM Sep 21", t2: "11:20 AM Sep 21" }), w.store.week24_pendck);
+  const pc = w.store.week24_pendck || {};
+  ok("both ids stored under <week>_pendck with their times, marked refused", pc.t1 && pc.t1.t === "11:05 AM Sep 21" && pc.t1.r === 1 && pc.t2 && pc.t2.t === "11:20 AM Sep 21" && pc.t2.r === 1, pc);
   ok("the refusal is logged", w.logs.some(m => /REFUSED/.test(m) && /t1/.test(m)));
 }
 console.log("\n── replay after the server's list has loaded on a signed-in device ──");
@@ -83,7 +85,7 @@ console.log("\n── it never guesses from a list comparison ──");
   ok("an id missing on the server without a refusal record is never resurrected", w.calls.length === 0);
 }
 console.log("\n── the wiring in index.html ──");
-ok("finalizeDone's checked write has the refusal hook", /db\.ref\(WK\+"\/checked\/"\+id\)\.set\(doneTs\); if\(_w&&typeof _w\.catch==="function"\) _w\.catch\(function\(err\)\{ ckNoteRefused\(id,doneTs,err\); \}\);/.test(src));
+ok("finalizeDone notes the check, clears it on confirm, keeps it on refusal", /ckNotePending\(id,doneTs\); const _w=db\.ref\(WK\+"\/checked\/"\+id\)\.set\(doneTs\); if\(_w&&typeof _w\.then==="function"\) _w\.then\(function\(\)\{ ckConfirmed\(id,doneTs\); \},function\(err\)\{ ckNoteRefused\(id,doneTs,err\); \}\);/.test(src));
 ok("the checked snapshot handler triggers the replay after fbCheckedLoaded", /fbCheckedLoaded=true;\s*schedCascade\(\);\s*renderAll\(\);\s*try\{ ckReplayPending\(\); \}catch\(e\)\{\}/.test(src));
 ok("attaching a week resets the per-week pending cache", /detachWeekListeners\(\);\s*_ckPending=null; _ckReplayTries=0;/.test(src));
 console.log("\n" + pass + " passed, " + fail + " failed");

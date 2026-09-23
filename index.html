@@ -1759,6 +1759,7 @@ function toggleMorningStep(kid,i){
   if(!routineEditable()){ _rtBlockedToast(); return; }
   const wk=activeWk();
   const sk=wk+"_"+day+"_"+kid+"_mstep"+i, cur=slState[sk], now=!(cur&&cur.done);
+  const _obPrev={}; _obPrev[sk]=cur||null; _obPrev[wk+"_"+day+"_"+kid+"_morning"]=slState[wk+"_"+day+"_"+kid+"_morning"]||null;   // 📮
   { const _st=morningStepsFor(kid)[i], _b0=_st?(_st.pts||0):0;
     // ⭐ same wages rule as the other lists (2026-08-17): base + zone bonus banks on check, the
     // recorded amount reverses on un-check; 0-⭐ steps stay pure routine.
@@ -1783,7 +1784,7 @@ function toggleMorningStep(kid,i){
   if(typeof rtDayBonusSettle==="function") rtDayBonusSettle(kid,wk,day);
   if(allDone) mrOpen[kid]=false;   // auto-collapse when finished
   sv(wk+"_sl",slState);
-  if(db) db.ref(wk+"/sl").set(slState);
+  if(db) obNoteSl(wk,db.ref(wk+"/sl").set(slState),_obPrev);
   renderSkylight();
   if(tab==="schedule"){ const c=document.getElementById("content"); if(c) renderSchedule(c); }
 }
@@ -2014,6 +2015,7 @@ function toggleRtStep(slot,kid,i){
   }
   if(!routineEditable()){ _rtBlockedToast(); return; }  // stars ride this path too — a stray tap paid the wrong day
   const wk=activeWk(), sk=wk+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i, cur=slState[sk], now=!(cur&&cur.done);
+  const _obPrev={}; _obPrev[sk]=cur||null; _obPrev[wk+"_"+day+"_"+kid+"_"+slot]=slState[wk+"_"+day+"_"+kid+"_"+slot]||null;   // 📮
   { const _st0=rtStepsFor(slot,kid)[i], _b0=_st0?(_st0.pts||0):0;
     // Pay base + any focus-zone bonus, and RECORD the total on the check-off. Unchecking reverses
     // that stored number rather than recomputing — the zone or bonus may have changed since, and
@@ -2040,7 +2042,7 @@ function toggleRtStep(slot,kid,i){
   if(typeof rtDayBonusSettle==="function") rtDayBonusSettle(kid,wk,day);
   delete rtOpen[rtOpenKey(slot,kid)];      // a check-off resets any manual open/close → the list follows completion again
   sv(wk+"_sl",slState);
-  if(db) db.ref(wk+"/sl").set(slState);
+  if(db) obNoteSl(wk,db.ref(wk+"/sl").set(slState),_obPrev);
   renderSkylight();
   if(tab==="schedule"){ const c=document.getElementById("content"); if(c) renderSchedule(c); }
 }
@@ -2573,6 +2575,103 @@ function safeWriteTasks(reason){
 }
 function dbg(msg){ console.log("[HA]",msg); try{if(db)db.ref("_debug").push({msg,wk:WK,t:Date.now()});}catch(e){} }
 
+// OUTBOX_START — 📮 taps made offline survive a reload (her yes 2026-09-23, "yes also chores and claims")
+// Live 9/23 11:41: a console that had been offline came back holding 53 check-offs, the server had 51,
+// the server's list replaced the device's, and Lincoln re-checked Discover L3 + WriteShop L18 20s later.
+// Firebase keeps an offline write only in the page's memory — a reload throws it away, and nothing
+// ever saw it fail (so CKRECOVER, which catches REFUSED writes, never fired). Now each tap's write is
+// also noted in localStorage `ha_outbox` and forgotten the moment the server confirms it. Notes left
+// over from an EARLIER page load (so truly orphaned, ≥30s old) are replayed once this device is
+// back online and signed in — but only where the server still shows exactly what this device saw
+// before its tap (`w`). If the server already has the new value it landed; if anyone else changed
+// it since, theirs wins and the note is dropped. Nothing is ever guessed from comparing lists.
+// Check-offs themselves ride CKRECOVER below (replayed through finalizeDone — history, lesson marks,
+// everything); this covers chores (routine steps, their stars, the log), claims (Mom-check claims,
+// point claims, grab claims) and spins (points, spin records). Dry-run records nothing.
+const OB_KEY="ha_outbox", OB_SESS=Date.now().toString(36)+Math.floor(Math.random()*1e6).toString(36);
+const OB_MIN_AGE=30000, OB_MAX_AGE=7*864e5, OB_CAP=400;
+let _obSeq=0, _obBusy=false, _obRetry=null;
+function _obLoad(){ const o=ld(OB_KEY); return (o&&typeof o==="object"&&!Array.isArray(o))?o:{}; }
+function _obCanon(v){
+  if(v===undefined||v===null) return "null";
+  if(typeof v!=="object") return JSON.stringify(v);
+  const ks=Object.keys(v).filter(function(k){ return v[k]!==undefined&&v[k]!==null; }).sort();
+  if(!ks.length) return "null";   // Firebase stores an empty object as nothing
+  return "{"+ks.map(function(k){ return JSON.stringify(k)+":"+_obCanon(v[k]); }).join(",")+"}";
+}
+function _obDrop(id){ try{ const o=_obLoad(); if(o[id]){ delete o[id]; sv(OB_KEY,o); } }catch(e){} }
+function obNote(path,op,val,was,p,extra){
+  try{
+    if(typeof _dryRun==="function"&&_dryRun()) return null;
+    const o=_obLoad(), now=Date.now(), id=OB_SESS+"_"+(++_obSeq);
+    const e={p:path,op:op,v:(val===undefined?null:val),w:(was===undefined?null:was),s:OB_SESS,n:_obSeq,at:now};
+    if(extra) Object.keys(extra).forEach(function(k){ e[k]=extra[k]; });
+    o[id]=e;
+    Object.keys(o).forEach(function(k){ if(!o[k]||now-(o[k].at||0)>OB_MAX_AGE) delete o[k]; });
+    const ks=Object.keys(o); if(ks.length>OB_CAP) ks.sort(function(a,b){ return o[a].at-o[b].at; }).slice(0,ks.length-OB_CAP).forEach(function(k){ delete o[k]; });
+    sv(OB_KEY,o);
+    if(p&&typeof p.then==="function") p.then(function(){ _obDrop(id); },function(){ /* refused (signed out) — kept for replay */ });
+    return id;
+  }catch(err){ return null; }
+}
+function obSet(path,val,was,extra){ if(!db) return null; let p=null; try{ p=db.ref(path).set(val); }catch(e){} obNote(path,"set",val,was,p,extra); return p; }
+function obRemove(path,was,extra){ if(!db) return null; let p=null; try{ p=db.ref(path).remove(); }catch(e){} obNote(path,"remove",null,was,p,extra); return p; }
+function obInc(path,n,extra){ if(!db) return null; let p=null; try{ p=db.ref(path).transaction(function(c){ return (c||0)+n; }); }catch(e){} obNote(path,"inc",n,null,p,extra); return p; }
+// A routine step is saved inside the whole-map sl write — note just the keys this tap changed, tied to that write.
+function obNoteSl(wk,p,prev){ try{ Object.keys(prev||{}).forEach(function(k){ obNote(wk+"/sl/"+k,"set",slState[k]===undefined?null:slState[k],prev[k],p); }); }catch(e){} }
+function _obRead(path,f){ try{ db.ref(path).once("value",function(s){ f(s.val()); },function(){ f(undefined); }); }catch(e){ f(undefined); } }
+// cb(true)=written now · cb(false)=nothing to do, forget it · cb(null)=couldn't tell, keep it for next time
+function _obDecide(e,cb){
+  const go=function(){
+    if(e.op==="inc"){
+      const inc=function(){ try{ db.ref(e.p).transaction(function(c){ return (c||0)+(e.v||0); }).then(function(){ cb(true); },function(){ cb(null); }); }catch(x){ cb(null); } };
+      if(e.g) _obRead(e.g,function(gv){ if(gv===undefined) return cb(null); if(gv!==null) return cb(false); inc(); });   // its spin record is on the server → the points landed with it
+      else inc();
+      return;
+    }
+    _obRead(e.p,function(cur){
+      if(cur===undefined) return cb(null);
+      const c=_obCanon(cur);
+      if(e.op==="set"&&c===_obCanon(e.v)) return cb(false);        // it landed
+      if(e.op==="remove"&&c==="null") return cb(false);
+      if(c!==_obCanon(e.w)) return cb(false);                        // changed by someone else since — theirs wins
+      let p=null; try{ p=(e.op==="set")?db.ref(e.p).set(e.v):db.ref(e.p).remove(); }catch(x){}
+      if(p&&typeof p.then==="function") p.then(function(){ cb(true); },function(){ cb(null); }); else cb(null);
+    });
+  };
+  if(e.u) _obRead(e.u,function(uv){ if(uv===undefined) return cb(null); if(uv!==null) return cb(false); go(); });   // e.g. a claim on a card that's now checked
+  else go();
+}
+function obReplay(){
+  try{
+    if(!db||_obBusy) return;
+    if(typeof _dryRun==="function"&&_dryRun()) return;
+    if(typeof firebase!=="undefined"&&firebase&&firebase.auth&&!firebase.auth().currentUser) return;   // signed out — wait
+    const o=_obLoad(), now=Date.now();
+    const mine=Object.keys(o).filter(function(k){ return o[k]&&o[k].s!==OB_SESS; });
+    const ready=mine.filter(function(k){ return now-(o[k].at||0)>=OB_MIN_AGE; })
+      .sort(function(a,b){ return (o[a].at-o[b].at)||((o[a].n||0)-(o[b].n||0)); });   // original tap order
+    if(mine.length>ready.length&&!_obRetry) _obRetry=setTimeout(function(){ _obRetry=null; obReplay(); },OB_MIN_AGE+1000);
+    if(!ready.length) return;
+    _obBusy=true;
+    let done=0, i=0;
+    const next=function(){
+      if(i>=ready.length){
+        _obBusy=false;
+        if(done){
+          dbg("outbox: replayed "+done+" offline write(s)");
+          if(typeof gwShowToast==="function") gwShowToast("\u{1F501} Recovered "+done+" chore/claim/points save"+(done!==1?"s":"")+" from when this device was offline");
+          if(typeof renderAll==="function") renderAll();
+        }
+        return;
+      }
+      const id=ready[i++], e=o[id];
+      _obDecide(e,function(r){ if(r===true) done++; if(r!==null) _obDrop(id); next(); });
+    };
+    next();
+  }catch(err){ _obBusy=false; dbg("outbox replay error: "+err); }
+}
+// OUTBOX_END
 // CKRECOVER_START — check-offs the server REFUSED are kept and replayed (her yes 2026-09-22)
 // A device that is signed out (the 9/14 lockout class: dot says Live, every write refused) shows
 // its check-offs on its own screen only; the first server snapshot after a sign-in replaced them
@@ -2583,17 +2682,28 @@ function dbg(msg){ console.log("[HA]",msg); try{if(db)db.ref("_debug").push({msg
 // is replayed through finalizeDone (history, lesson done-mark, Mom-loop hold, heal — everything a
 // real check does), then forgotten. Only this device's own refused writes, only the active week,
 // never a guess from comparing lists — an un-check made on another device is never resurrected.
-let _ckPending=null, _ckReplayTries=0;
+let _ckPending=null, _ckReplayTries=0, _ckRetry=null;
 function _ckPendLoad(){ if(_ckPending===null){ try{ _ckPending=ld(WK+"_pendck")||{}; }catch(e){ _ckPending={}; } } return _ckPending; }
+// 📮 2026-09-23: every check-off is noted when it's written (not only when refused) and forgotten when
+// the server confirms — a check made offline then lost to a reload is an orphan from an earlier page
+// load and is replayed the same way. Entries: "ts" (legacy/refused) or {t,s,at,r}.
+function _ckTs(v){ return (v&&typeof v==="object")?v.t:v; }
+function _ckReady(v){ if(!v||typeof v!=="object") return true; if(v.r) return true; return v.s!==OB_SESS&&Date.now()-(v.at||0)>=OB_MIN_AGE; }
+function ckNotePending(id,ts){ try{ if(typeof _dryRun==="function"&&_dryRun()) return; const p=_ckPendLoad(); p[id]={t:ts||nowTs(),s:OB_SESS,at:Date.now()}; sv(WK+"_pendck",p); }catch(e){} }
+function ckConfirmed(id,ts){ try{ const p=_ckPendLoad(); if(p[id]&&_ckTs(p[id])===ts){ delete p[id]; sv(WK+"_pendck",p); } }catch(e){} }
+function ckForget(id){ try{ const p=_ckPendLoad(); if(p[id]){ delete p[id]; sv(WK+"_pendck",p); } }catch(e){} }   // un-checked here → never resurrect it
 function ckNoteRefused(id,ts,err){
   try{
-    const p=_ckPendLoad(); p[id]=ts||nowTs(); sv(WK+"_pendck",p);
+    const p=_ckPendLoad(); p[id]={t:ts||nowTs(),s:OB_SESS,at:Date.now(),r:1}; sv(WK+"_pendck",p);
     dbg("check-off REFUSED, kept for recovery: "+id+" "+String((err&&err.code)||err||"").slice(0,40));
   }catch(e){}
 }
 function ckReplayPending(){
   try{
-    const p=_ckPendLoad(); const ids=Object.keys(p); if(!ids.length) return;
+    const p=_ckPendLoad(); const all=Object.keys(p); if(!all.length) return;
+    const ids=all.filter(function(id){ return _ckReady(p[id]); });   // this page's own unconfirmed taps are still in flight — leave them
+    if(ids.length<all.length&&!_ckRetry) _ckRetry=setTimeout(function(){ _ckRetry=null; ckReplayPending(); },OB_MIN_AGE+1000);
+    if(!ids.length) return;
     if(!fbCheckedLoaded||!fbTasksLoaded||!fbHistoryLoaded){ if(_ckReplayTries++<40) setTimeout(ckReplayPending,500); return; }
     if(typeof firebase!=="undefined"&&firebase&&firebase.auth&&!firebase.auth().currentUser) return;   // still signed out — wait for the sign-in
     let done=0, skipped=0;
@@ -2601,7 +2711,7 @@ function ckReplayPending(){
       if(checked[id]){ delete p[id]; return; }                                   // landed after all
       const t=(weekData&&weekData.tasks||[]).find(function(x){ return x&&x.id===id; });
       if(!t){ delete p[id]; skipped++; return; }                                  // card is gone from this week
-      if(finalizeDone(id,p[id],null)===false){ delete p[id]; skipped++; return; } // order guard: Mom's call, not a replay's
+      if(finalizeDone(id,_ckTs(p[id]),null)===false){ delete p[id]; skipped++; return; } // order guard: Mom's call, not a replay's
       delete p[id]; done++;
     });
     sv(WK+"_pendck",p);
@@ -2646,6 +2756,7 @@ function attachWeekListeners(wk){
     schedCascade();
     renderAll();
     try{ ckReplayPending(); }catch(e){}   // 🔁 anything this device was refused earlier lands now
+    try{ obReplay(); }catch(e){}         // 📮 chores/claims/points from an earlier offline page load (no-op once done)
   });
   fbWeekRefs.push(r1);
 
@@ -3117,6 +3228,7 @@ function initFb() {
       // Skip on localhost — preview server has a different hash than GitHub Pages
       const isLocal=location.hostname==='localhost'||location.hostname==='127.0.0.1';
       if(on && !isLocal) db.ref("settings/codeVersion").set(CODE_VERSION);
+      if(on) setTimeout(function(){ try{ obReplay(); }catch(e){} },4000);   // 📮 offline taps from an earlier page load land now
     });
 
     // Auto-reload when a different code version is deployed by another device
@@ -4429,9 +4541,9 @@ function hasSpun(taskId){
 }
 function markSpun(taskId){
   const used=ld(WK+"_spins_used")||{};
-  used[taskId]=true;
+  const _uw=used[taskId]; used[taskId]=true;
   sv(WK+"_spins_used",used);
-  if(db) db.ref(WK+"/spins_used/"+taskId).set(true);
+  obSet(WK+"/spins_used/"+taskId,true,_uw);
 }
 function hasDayBonus(kid,d){
   const used=ld(WK+"_day_bonus_used")||{};
@@ -4439,20 +4551,20 @@ function hasDayBonus(kid,d){
 }
 function markDayBonus(kid,d){
   const used=ld(WK+"_day_bonus_used")||{};
-  used[kid+"_"+d]=true;
+  const _uw=used[kid+"_"+d]; used[kid+"_"+d]=true;
   sv(WK+"_day_bonus_used",used);
-  if(db) db.ref(WK+"/day_bonus_used/"+kid+"_"+d).set(true);
+  obSet(WK+"/day_bonus_used/"+kid+"_"+d,true,_uw);
 }
 
 function addPendingSpin(taskId,kid,d){
-  pendingSpins[taskId]={kid:kid,day:d};
+  const _pw=pendingSpins[taskId]; pendingSpins[taskId]={kid:kid,day:d};
   sv(WK+"_pending_spins",pendingSpins);
-  if(db) db.ref(WK+"/pending_spins/"+taskId).set({kid:kid,day:d});
+  obSet(WK+"/pending_spins/"+taskId,{kid:kid,day:d},_pw);
 }
 function claimPendingSpin(taskId){
-  delete pendingSpins[taskId];
+  const _pw=pendingSpins[taskId]; delete pendingSpins[taskId];
   sv(WK+"_pending_spins",pendingSpins);
-  if(db) db.ref(WK+"/pending_spins/"+taskId).remove();
+  obRemove(WK+"/pending_spins/"+taskId,_pw);
 }
 
 // Points: stored per kid per day
@@ -4467,14 +4579,14 @@ function getKidDayPoints(k,d){
   if(!pts[k]||typeof pts[k]==="number") return 0;
   return pts[k][d]||0;
 }
-function addKidPoints(k,pts,d){
+function addKidPoints(k,pts,d,guard){
   const all=ld(WK+"_slot_points")||{};
   if(!all[k]||typeof all[k]==="number") all[k]={};
   all[k][d]=(all[k][d]||0)+pts;
   sv(WK+"_slot_points",all);
   // Atomic per-leaf increment — never set() the whole slot_points object. The whole-object
   // write clobbered other kids'/days' points when two devices spun at the same time.
-  if(db) db.ref(WK+"/slot_points/"+k+"/"+d).transaction(c=>(c||0)+pts);
+  obInc(WK+"/slot_points/"+k+"/"+d,pts,guard?{g:guard}:null);   // 📮 replayed only if its spin record never reached the server
 }
 // ── 💰 WAGES vs WINNINGS (Adrienne's rule, 2026-08-04) ──────────────────────
 // Earned points — routine/chore stars, grabs, trophies, ribbons, unit activities —
@@ -4525,13 +4637,14 @@ function bankDirect(kid,pts,note,hold){
   if(hold&&pts>0) rec.held=true;
   bank[kid]=bank[kid]||{}; bank[kid].adjustments=bank[kid].adjustments||{};
   bank[kid].adjustments[id]=rec;
-  if(db) db.ref("bank/"+kid+"/adjustments/"+id).set(rec);
+  obSet("bank/"+kid+"/adjustments/"+id,rec,null);
   return id;
 }
 function bankDirectRemove(kid,id){
   if(!kid||!id) return;
-  if(bank[kid]&&bank[kid].adjustments&&bank[kid].adjustments[id]) delete bank[kid].adjustments[id];
-  if(db) db.ref("bank/"+kid+"/adjustments/"+id).remove();
+  const _bw=(bank[kid]&&bank[kid].adjustments&&bank[kid].adjustments[id])||null;
+  if(_bw) delete bank[kid].adjustments[id];
+  obRemove("bank/"+kid+"/adjustments/"+id,_bw);
 }
 // Combined "how did this kid do" numbers: spin-pool winnings PLUS the wages that
 // banked directly (src:"earn" entries stamped with wk/day). Used by the Board, the
@@ -4642,7 +4755,7 @@ function spinSlots(){
     if(outcome.pts>0){
       resEl.textContent=_gaOn?("+"+_gaTot+" points — straight to your bank!"):("+"+outcome.pts+" points!");
       resEl.className="slot-result show";
-      if(!_gaOn) addKidPoints(k,outcome.pts,d);
+      if(!_gaOn) addKidPoints(k,outcome.pts,d,slotPendingTaskId?(WK+"/spin_results/"+slotPendingTaskId):null);
       const todayPts=getKidDayPoints(k,d);
       const weekPts=getKidPoints(k);
       document.getElementById("slot-pts-display").textContent="Today ⭐"+todayPts+" · Week ⭐"+weekPts;
@@ -4659,9 +4772,9 @@ function spinSlots(){
       var _srRec={pts:outcome.pts,kid:k,day:d,ts:Date.now()};
       if(_gaOn){ _srRec.gaBank=_gaTot; _srRec.gaBonus=_gaTot-outcome.pts; if(_gaBid) _srRec.gaBid=_gaBid; msgEl.textContent=outcome.msg+"  ⏩ Got ahead: spin "+outcome.pts+" + "+(_gaTot-outcome.pts)+" bonus = "+_gaTot+" in your bank!"; }
       var sr=ld(WK+"_spin_results")||{};
-      sr[slotPendingTaskId]=_srRec;
+      var _sw=sr[slotPendingTaskId]; sr[slotPendingTaskId]=_srRec;
       sv(WK+"_spin_results",sr);
-      if(db) db.ref(WK+"/spin_results/"+slotPendingTaskId).set(_srRec); // targeted — never clobber the table
+      obSet(WK+"/spin_results/"+slotPendingTaskId,_srRec,_sw); // targeted — never clobber the table
       claimPendingSpin(slotPendingTaskId); slotPendingTaskId=null;
     }
   },totalTime);
@@ -6882,8 +6995,8 @@ function finalizeDone(id, doneTs, score){
   // erase other tablets' fresh checks (two kids checking within seconds = one check
   // vanished from every other screen until history-reconcile restored it). Same
   // clobber class as the 2026-06-18 drills multi-device fix.
-  if(db){ const _w=db.ref(WK+"/checked/"+id).set(doneTs); if(_w&&typeof _w.catch==="function") _w.catch(function(err){ ckNoteRefused(id,doneTs,err); }); }   // 🔁 refused (signed-out device) → kept, replayed after sign-in
-  if(claimed[id]!=null){ delete claimed[id]; sv(WK+"_claimed",claimed); if(db) db.ref(WK+"/claimed/"+id).remove(); }
+  if(db){ ckNotePending(id,doneTs); const _w=db.ref(WK+"/checked/"+id).set(doneTs); if(_w&&typeof _w.then==="function") _w.then(function(){ ckConfirmed(id,doneTs); },function(err){ ckNoteRefused(id,doneTs,err); }); }   // 📮 noted until confirmed · 🔁 refused → kept, replayed after sign-in   // 🔁 refused (signed-out device) → kept, replayed after sign-in
+  if(claimed[id]!=null){ const _cw=claimed[id]; delete claimed[id]; sv(WK+"_claimed",claimed); obRemove(WK+"/claimed/"+id,_cw); }
   const hist=ld(WK+"_history")||{};
   const t=weekData.tasks.find(x=>x.id===id);
   if(t){
@@ -7162,7 +7275,7 @@ function orderBlockApproveThrough(){
 }
 function momReject(id){
   if(!momHere()) return;
-  if(claimed[id]!=null){ delete claimed[id]; sv(WK+"_claimed",claimed); if(db) db.ref(WK+"/claimed/"+id).remove(); }
+  if(claimed[id]!=null){ const _cw=claimed[id]; delete claimed[id]; sv(WK+"_claimed",claimed); obRemove(WK+"/claimed/"+id,_cw); }
   renderAll();
   if(typeof gwShowToast==="function") gwShowToast("Sent back — not done yet.");
 }
@@ -7880,8 +7993,8 @@ document.getElementById("dlg-ok").onclick=()=>{
   if(!t){ dbg("stale check-off blocked: "+id); closeDlg(); renderAll(); if(typeof gwShowToast==="function") gwShowToast("Schedule just updated — tap it again."); return; }
   if(pendingClaimMode){
     // Kid says done — park it as a claim until Mom approves (doesn't count yet)
-    claimed[id]=ts; sv(WK+"_claimed",claimed);
-    if(db) db.ref(WK+"/claimed/"+id).set(ts);
+    const _cw0=claimed[id]; claimed[id]=ts; sv(WK+"_claimed",claimed);
+    obSet(WK+"/claimed/"+id,ts,_cw0,{u:WK+"/checked/"+id});   // 📮 replayed only while the card is still unchecked
     dbg("write claim id="+id);
     closeDlg(); renderAll();
     if(typeof gwShowToast==="function") gwShowToast("Sent to Mom to check ✓");
@@ -7912,11 +8025,11 @@ document.getElementById("dlg-uncheck").onclick=()=>{
   const id=pendingId;
   // Retract a pending claim (kid undoing their own "I'm done")
   if(claimed[id]!=null&&!checked[id]){
-    delete claimed[id]; sv(WK+"_claimed",claimed);
-    if(db) db.ref(WK+"/claimed/"+id).remove();
+    const _cw=claimed[id]; delete claimed[id]; sv(WK+"_claimed",claimed);
+    obRemove(WK+"/claimed/"+id,_cw);
     closeDlg(); renderAll(); return;
   }
-  manualUnchecks.add(id);
+  manualUnchecks.add(id); ckForget(id);
   delete checked[id]; sv(WK+"_checked",checked);
   lastCheckedWrite=Date.now();
   dbg("write uncheck id="+id+" n="+Object.keys(checked).length);
@@ -14261,8 +14374,9 @@ function getPointClaim(kid,d){ return ((pointClaims[kid]||{})[WK]||{})[d]||null;
 function _setPointClaim(kid,d,rec){
   if(!pointClaims[kid]) pointClaims[kid]={};
   if(!pointClaims[kid][WK]) pointClaims[kid][WK]={};
-  if(rec===null){ delete pointClaims[kid][WK][d]; if(db) db.ref("pointClaims/"+kid+"/"+WK+"/"+d).remove(); }
-  else { pointClaims[kid][WK][d]=rec; if(db) db.ref("pointClaims/"+kid+"/"+WK+"/"+d).set(rec); }
+  const _pw=pointClaims[kid][WK][d];   // 📮 what this device saw before — replay only if the server still shows it
+  if(rec===null){ delete pointClaims[kid][WK][d]; obRemove("pointClaims/"+kid+"/"+WK+"/"+d,_pw); }
+  else { pointClaims[kid][WK][d]=rec; obSet("pointClaims/"+kid+"/"+WK+"/"+d,rec,_pw); }
 }
 function claimDayPoints(kid,d){
   if(!spinClaimGateDone(kid,d)){ if(typeof gwShowToast==="function") gwShowToast("Finish all your school cards, Afternoon and Chores first"); return; }   // gate: school + afternoon + chores
@@ -14500,12 +14614,13 @@ function gbCur(i){
 function gbGet(i){ return grabClaims[_gbKey(i)]||null; }
 function gbHasActive(kid){ return gbList().some((g,i)=>{ var s=grabClaims[_gbKey(i)]; return s&&s.by===kid&&!s.done; }); }
 function _gbWrite(i,rec){ var k=_gbKey(i);
-  if(rec===null){ delete grabClaims[k]; if(db) db.ref("grabClaims/"+k).remove(); }
-  else { grabClaims[k]=rec; if(db) db.ref("grabClaims/"+k).set(rec); } }
+  const _gw=grabClaims[k];
+  if(rec===null){ delete grabClaims[k]; obRemove("grabClaims/"+k,_gw); }
+  else { grabClaims[k]=rec; obSet("grabClaims/"+k,rec,_gw); } }
 function _gbStampDone(i,kid){
   const rec={doneMs:Date.now(),by:kid};
-  grabClaims["last_"+i]=rec;
-  if(db) db.ref("grabClaims/last_"+i).set(rec);
+  const _gw=grabClaims["last_"+i]; grabClaims["last_"+i]=rec;
+  obSet("grabClaims/last_"+i,rec,_gw);
 }
 function _gbEarn(i,kid){ var g=gbList()[i]; if(!g) return;
   // Grabs get the focus-zone bonus too — they ARE the deep-clean list, so this is the lever that
@@ -16296,10 +16411,10 @@ function ceWalkApply(){
   if(_wbN&&db){ _wbLid["lastEdit"]=new Date().toISOString(); currData.lastEdit=_wbLid["lastEdit"]; db.ref("curriculum").update(_wbLid); }
   items.forEach(it=>{
     if(!it.archive){
-      manualUnchecks.add(it.doneKey);
+      manualUnchecks.add(it.doneKey); ckForget(it.doneKey);
       delete checked[it.doneKey]; wbChecked[it.doneKey]=null;
       const hist=ld(WK+"_history")||{}; delete hist[it.doneKey]; delete histState[it.doneKey]; sv(WK+"_history",hist);
-      if(claimed[it.doneKey]!=null){ delete claimed[it.doneKey]; sv(WK+"_claimed",claimed); if(db) db.ref(WK+"/claimed/"+it.doneKey).remove(); }
+      if(claimed[it.doneKey]!=null){ const _cw=claimed[it.doneKey]; delete claimed[it.doneKey]; sv(WK+"_claimed",claimed); obRemove(WK+"/claimed/"+it.doneKey,_cw); }
       if(db) db.ref(WK+"/history/"+it.doneKey).remove();
       // Remove the retracted task rows (base + _c twins) so they can't cascade
       // forward and get re-checked — the round-2 lesson. Full copies go in the
@@ -44429,7 +44544,7 @@ function rtCadClearWindow(slot,kid,i){ rtCfgEnsure(slot,kid); const it=routineCf
 function rlogAppend(kid,slot,label,act,pts){
   const wk=activeWk(), rec={label:label||"",slot:slot,act:act,ts:nowTs(),at:Date.now(),pts:pts||0};
   let key="rl_"+Date.now()+"_"+Math.floor(Math.random()*1e6);
-  if(db){ try{ const r=db.ref("routineLog/"+kid+"/"+wk+"/"+day).push(); key=r.key; r.set(rec); }catch(e){} }
+  if(db){ try{ const r=db.ref("routineLog/"+kid+"/"+wk+"/"+day).push(); key=r.key; obSet("routineLog/"+kid+"/"+wk+"/"+day+"/"+key,rec,null); }catch(e){} }
   routineLog[kid]=routineLog[kid]||{}; routineLog[kid][wk]=routineLog[kid][wk]||{}; routineLog[kid][wk][day]=routineLog[kid][wk][day]||{};
   routineLog[kid][wk][day][key]=rec;
 }

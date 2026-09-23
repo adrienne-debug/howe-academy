@@ -28,6 +28,7 @@ function world(o) {
     bank: o.bank || {}, pointClaims: {}, momHere: () => !!o.mom, activeWk: () => "week21", nowTs: () => "10:00 AM Sep 7",
     renderAll: function () { ctx.renders++; }, gwShowToast: m => ctx.toasts.push(m), cap: s => s.charAt(0).toUpperCase() + s.slice(1),
     _bankTsDate: (ts, iso) => iso ? new Date(iso) : new Date(0),
+    obSet: (p, v) => ctx.db && ctx.db.ref(p).set(v), obRemove: p => ctx.db && ctx.db.ref(p).remove(),   // 📮 outbox stubs (2026-09-23)
     db: { ref: p => ({ set: v => ctx.writes.push([p, v]), remove: () => ctx.removes.push(p), push: () => { const key = "wd_" + (++ctx.renders) + "_" + Math.random().toString(36).slice(2, 6); return { key, set: v => ctx.writes.push([p + "/" + key, v]) }; } }) } };
   vm.createContext(ctx); vm.runInContext(CODE, ctx);
   if (o.verify) vm.runInContext("choreVerify=" + JSON.stringify(o.verify) + ";", ctx);
