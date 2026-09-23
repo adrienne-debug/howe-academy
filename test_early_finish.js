@@ -1,6 +1,9 @@
 /*
  * ⏩ Early finish pulls the next lesson forward (her rule 2026-09-22): automatic, Mom-required
  * too when Mom is free, furthest-behind subject first, lesson order held by a chain slide.
+ * Narrowed 2026-09-23 (her rule): AUTOMATIC only for work that FELL OFF today (rolledFrom / cascadedFrom = today);
+ * any other later-day lesson is a ⏩ Get ahead choice, never pulled on its own. The week below marks each subject's
+ * next lesson as fallen off Tuesday (the school-end rule rolled it), so the original scenarios still apply.
  *   run:  node test_early_finish.js
  */
 const fs = require("fs"), path = require("path"), vm = require("vm");
@@ -36,10 +39,10 @@ function lincolnWeek() {
   ID = 0;
   const done1 = card("lincoln", "tuesday", "12:05 PM", 25, "maybe", "singapore_l", "Singapore L1"), done2 = card("lincoln", "tuesday", "12:30 PM", 25, "maybe", "mr_pages", "MR5 a");
   const close = card("lincoln", "tuesday", "2:26 PM", 5, "none", "closing_nb", "Closing Notebook");
-  const s2 = card("lincoln", "wednesday", "12:25 PM", 25, "maybe", "singapore_l", "Singapore L2"), s3 = card("lincoln", "friday", "12:05 PM", 25, "maybe", "singapore_l", "Singapore L3"),
+  const s2 = card("lincoln", "wednesday", "12:25 PM", 25, "maybe", "singapore_l", "Singapore L2", { rolledFrom: "tuesday" }), s3 = card("lincoln", "friday", "12:05 PM", 25, "maybe", "singapore_l", "Singapore L3"),
         s4 = card("lincoln", "friday", "12:30 PM", 25, "maybe", "singapore_l", "Singapore L4"), s5 = card("lincoln", "saturday", "10:00 AM", 25, "maybe", "singapore_l", "Singapore L5");
-  const m2 = card("lincoln", "wednesday", "2:00 PM", 25, "maybe", "mr_pages", "MR5 b"), m3 = card("lincoln", "saturday", "10:25 AM", 25, "maybe", "mr_pages", "MR5 c");
-  const w1 = card("lincoln", "wednesday", "3:10 PM", 25, "required", "writeshop", "WriteShop 1a"), w2 = card("lincoln", "saturday", "11:15 AM", 25, "required", "writeshop", "WriteShop 1b");
+  const m2 = card("lincoln", "wednesday", "2:00 PM", 25, "maybe", "mr_pages", "MR5 b", { rolledFrom: "tuesday" }), m3 = card("lincoln", "saturday", "10:25 AM", 25, "maybe", "mr_pages", "MR5 c");
+  const w1 = card("lincoln", "wednesday", "3:10 PM", 25, "required", "writeshop", "WriteShop 1a", { cascadedFrom: "tuesday" }), w2 = card("lincoln", "saturday", "11:15 AM", 25, "required", "writeshop", "WriteShop 1b");
   const drill = card("lincoln", "wednesday", "2:55 PM", 13, "required", "retrieval", "Daily Drill", { id: "2026d265_retr_drill_lincoln" });
   const nb = card("lincoln", "wednesday", "10:45 AM", 5, "none", "morning_nb", "Morning Notebook");
   const ellis = card("ellis", "wednesday", "10:00 AM", 25, "none", "dm4a", "Ellis DM");
@@ -67,7 +70,7 @@ console.log("\n── finished at 2:26: the furthest-behind subject's NEXT lesso
   ok("L3 slides into L2's Wednesday slot", c.s3.day === "wednesday" && c.s3.time === "12:25 PM", [c.s3.day, c.s3.time]);
   ok("L4 slides into L3's Friday slot, L5 into L4's — Saturday's Singapore is gone", c.s4.day === "friday" && c.s4.time === "12:05 PM" && c.s5.day === "friday" && c.s5.time === "12:30 PM", [c.s4.day, c.s4.time, c.s5.day, c.s5.time]);
   ok("MR5 and WriteShop untouched", c.m2.day === "wednesday" && c.m3.day === "saturday" && c.w1.day === "wednesday" && c.w2.day === "saturday");
-  ok("one targeted multi-path write to the week's tasks", w.writes.length === 1 && w.writes[0][0] === "week24/tasks" && Object.keys(w.writes[0][1]).length === 9, w.writes[0] && Object.keys(w.writes[0][1]));
+  ok("one targeted multi-path write to the week's tasks", w.writes.length === 1 && w.writes[0][0] === "week24/tasks" && Object.keys(w.writes[0][1]).length === 10 && w.writes[0][1]["singapore_l_3/rolledFrom"] === null, w.writes[0] && Object.keys(w.writes[0][1]));   // +1: the "fell off today" mark cleared
   ok("the kid hears what is next", w.toasts.length === 1 && /next up: Singapore L2 \(from Wednesday\)/.test(w.toasts[0]), w.toasts);
   // the pulled card is open now → a second call pulls nothing until it is checked
   ok("nothing more until the pulled card is done", w.pull() === null);
@@ -114,7 +117,7 @@ console.log("\n── the guards ──");
 }
 {
   const L = lincolnWeek(); const c = L.cards;
-  const short = card("lincoln", "friday", "11:30 AM", 10, "none", "gwtm", "GWTM"); L.tasks.push(short);
+  const short = card("lincoln", "friday", "11:30 AM", 10, "none", "gwtm", "GWTM", { rolledFrom: "tuesday" }); L.tasks.push(short);
   const w = world({ tasks: L.tasks, checked: L.checked, now: 16 * 60, behind: { singapore_l: 9 } });
   const got = w.pull();
   ok("…but a 10-minute subject that fits is taken", got && got.id === short.id && short.day === "tuesday" && short.time === "4:00 PM", got && got.title);
@@ -146,5 +149,16 @@ console.log("\n── the guards ──");
 }
 console.log("\n── wiring ──");
 ok("finalizeDone hands the kid to efPullNext after a today check-off", /efPullNext\(t\.who\)/.test(src) && /mlOnCheck\(t\); \}catch\(e\)\{\}[^\n]*\n\s*\/\/ ⏩ last open card/.test(src));
+console.log("\n── her rule 2026-09-23: only what fell off TODAY comes in on its own ──");
+{
+  const L = lincolnWeek(); [L.cards.s2, L.cards.m2].forEach(t => { delete t.rolledFrom; }); delete L.cards.w1.cascadedFrom;
+  const w = world({ tasks: L.tasks, checked: L.checked, now: 14 * 60 + 26, behind: { singapore_l: 2, writeshop: 1, mr_pages: 0 } });
+  ok("a later day's lesson that did NOT fall off today is never pulled (it is a ⏩ Get ahead choice)", w.pull() === null && w.writes.length === 0);
+}
+{
+  const L = lincolnWeek(); const w = world({ tasks: L.tasks, checked: L.checked, now: 14 * 60 + 26, behind: { singapore_l: 2, writeshop: 1, mr_pages: 0 } });
+  const c = w.pull();
+  ok("a fallen-off lesson comes back home and loses its 'fell off' mark", c && c.id === L.cards.s2.id && c.rolledFrom === undefined && w.writes.some(x => x[1][c.id + "/rolledFrom"] === null));
+}
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

@@ -1973,7 +1973,9 @@ function rtDueOrLate(slot,kid,d,i,st){ return cadDueOn((st&&st.cad)||"daily",d)|
 function rtComplete(slot,kid,d){ const steps=rtStepsFor(slot,kid); if(!steps.length){ const s=slState[activeWk()+"_"+d+"_"+kid+"_"+slot]; return !!(s&&s.done); } return steps.every((st,i)=>!rtDueOrLate(slot,kid,d,i,st)||rtDoneOn(slot,kid,d,i)); }
 function rtEveningHour(){ const h=parseInt(routineTimes&&routineTimes.eveningHour,10); return isNaN(h)?18:h; }
 function rtFmtHour(h){ const ap=h>=12?"PM":"AM"; let hh=h%12; if(hh===0)hh=12; return hh+":00 "+ap; }
-function rtSchoolworkDone(kid,d){ const ts=getActiveTasks().filter(t=>t.who===kid&&effectiveDay(t)===d&&!t.id.endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title)); return ts.length===0?true:ts.every(t=>!!checked[t.id]); }
+// ✅ Her rule 2026-09-23: the day ENDS when every card is done or sent to Mom for her check — afternoon chores open and the
+// kid celebrates then; Mom can still send work back after. (Checked-only made the kid wait for Mom's approval.)
+function rtSchoolworkDone(kid,d){ const ts=getActiveTasks().filter(t=>t.who===kid&&effectiveDay(t)===d&&!t.id.endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title)); return ts.length===0?true:ts.every(t=>!!checked[t.id]||!!(typeof claimed!=="undefined"&&claimed&&claimed[t.id])); }
 // Afternoon (2026-08-18, her rule): opens when schoolwork is done — or at the afternoon hour (default
 // 4:00 PM) regardless, so a slow school day never holds the chores hostage. Past days: always open.
 function rtAfternoonHour(){ const h=parseInt(routineTimes&&routineTimes.afternoonHour,10); return isNaN(h)?16:h; }
@@ -4631,10 +4633,15 @@ function spinSlots(){
   setTimeout(()=>{
     const resEl=document.getElementById("slot-result");
     const msgEl=document.getElementById("slot-msg");
+    // ⏩ her rule 2026-09-23: a got-ahead card's spin + half of it ALL goes straight to the bank (spin 20 → 30 banked),
+    // not into the day pool / claim. No cap. Mom-checked subjects spin on her approval, so this follows it.
+    var _gaT=slotPendingTaskId?(weekData.tasks||[]).find(function(x){ return x.id===slotPendingTaskId; }):null;
+    var _gaOn=!!(_gaT&&_gaT.gotAhead&&outcome.pts>0), _gaTot=_gaOn?(outcome.pts+Math.round(outcome.pts*0.5)):0, _gaBid=null;
+    if(_gaOn){ try{ _gaBid=bankDirect(k,_gaTot,"⏩ Got ahead — "+((typeof taskLessonRef==="function"&&taskLessonRef(_gaT))||_gaT.title||"")+" (spin "+outcome.pts+" + "+(_gaTot-outcome.pts)+")"); }catch(e){ _gaOn=false; } }
     if(outcome.pts>0){
-      resEl.textContent="+"+outcome.pts+" points!";
+      resEl.textContent=_gaOn?("+"+_gaTot+" points — straight to your bank!"):("+"+outcome.pts+" points!");
       resEl.className="slot-result show";
-      addKidPoints(k,outcome.pts,d);
+      if(!_gaOn) addKidPoints(k,outcome.pts,d);
       const todayPts=getKidDayPoints(k,d);
       const weekPts=getKidPoints(k);
       document.getElementById("slot-pts-display").textContent="Today ⭐"+todayPts+" · Week ⭐"+weekPts;
@@ -4649,6 +4656,7 @@ function spinSlots(){
     if(slotPendingTaskId){
       // Track per-task spin result for admin panel
       var _srRec={pts:outcome.pts,kid:k,day:d,ts:Date.now()};
+      if(_gaOn){ _srRec.gaBank=_gaTot; _srRec.gaBonus=_gaTot-outcome.pts; if(_gaBid) _srRec.gaBid=_gaBid; msgEl.textContent=outcome.msg+"  ⏩ Got ahead: spin "+outcome.pts+" + "+(_gaTot-outcome.pts)+" bonus = "+_gaTot+" in your bank!"; }
       var sr=ld(WK+"_spin_results")||{};
       sr[slotPendingTaskId]=_srRec;
       sv(WK+"_spin_results",sr);
@@ -4778,7 +4786,8 @@ function spinAdminResetSpin(taskId,kid,d){
   const sr=ld(WK+"_spin_results")||{};
   if(sr[taskId]){
     const pts=sr[taskId].pts||0;
-    if(pts>0){
+    if(sr[taskId].gaBid&&typeof bankDirectRemove==="function"){ try{ bankDirectRemove(kid,sr[taskId].gaBid); }catch(e){} }   // ⏩ got-ahead: it was banked, not pooled
+    else if(pts>0){
       const all=ld(WK+"_slot_points")||{};
       if(all[kid]&&all[kid][d]){ all[kid][d]=Math.max(0,all[kid][d]-pts); sv(WK+"_slot_points",all); if(db) db.ref(WK+"/slot_points/"+kid+"/"+d).transaction(c=>Math.max(0,(c||0)-pts)); }
     }
@@ -4880,8 +4889,8 @@ function markCelebrated(kid,d){
 }
 
 let celebSongName="";
-function celebrateDayComplete(kid){
-  const d=day;
+function celebrateDayComplete(kid,d0){
+  const d=d0||day;
   if(hasCelebrated(kid,d)) return;
   markCelebrated(kid,d);
   _showCelebration(kid, cap(kid)+" finished the day!", {occasion:"day"});
@@ -6646,6 +6655,16 @@ function renderSchedule(el){
   if(!["all","mom"].includes(kid) && unlocked){
     const kidDayTasks=allDay.filter(t=>t.who===kid&&!t.title.toLowerCase().includes("lunch")&&!_dismissed(t));
     const kidDayDone=kidDayTasks.filter(t=>!!checked[t.id]).length;
+    const kidDaySent=kidDayTasks.filter(t=>!checked[t.id]&&!!(claimed&&claimed[t.id])).length;
+    if(kidDayTasks.length && kidDayDone<kidDayTasks.length && kidDayDone+kidDaySent===kidDayTasks.length){
+      // 🎉 her rule 2026-09-23: the day is DONE when the rest is waiting for Mom's check — celebrate now; points after her OK
+      const _song2=(!hasCelebrated(kid,day)?'<button onclick="kidReplayCeleb(\''+kid+'\')" style="padding:8px 20px;border-radius:12px;background:linear-gradient(135deg,#8b5cf6,#ec4899);color:#fff;border:none;font-size:13px;font-weight:800;cursor:pointer;margin-top:8px">🎉 Celebrate!</button>':'');
+      h+='<div style="margin:16px 12px;border-radius:12px;padding:16px;background:#f0fdf4;border:1.5px solid #86efac;text-align:center">'+
+        '<div style="font-size:28px;margin-bottom:6px">🎉</div>'+
+        '<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:#15803d;margin-bottom:2px">Day done, '+cap(kid)+'!</div>'+
+        '<div style="font-size:13px;color:#166534">'+kidDaySent+' waiting for Mom to check — your points unlock once she does. Afternoon chores are open.</div>'+_song2+'</div>';
+    }
+    if(kidDayTasks.length && kidDayDone+kidDaySent===kidDayTasks.length) h+=gaRender(kid);   // ⏩ get ahead — only once the day is done
     if(kidDayTasks.length && kidDayDone===kidDayTasks.length){
       const aftDone=getSlot(kid,"afternoon").done;
       const choresDone=getSlot(kid,"chores").done;
@@ -6886,6 +6905,7 @@ function finalizeDone(id, doneTs, score){
     try{ if(typeof mlOnCheck==="function") mlOnCheck(t); }catch(e){}   // 👩 Mom loop: buffer check starts a hold, Mom-card check releases it
     // ⏩ last open card of today checked → the next lesson follows (after the heal below has settled)
     try{ if(typeof efPullNext==="function"&&effectiveDay(t)===_todayDay) setTimeout(function(){ try{ if(efPullNext(t.who)&&typeof renderAll==="function") renderAll(); }catch(e){} },0); }catch(e){}
+    try{ if(effectiveDay(t)===_todayDay&&!t.gotAhead&&rtSchoolworkDone(t.who,_todayDay)) setTimeout(function(){ try{ celebrateDayComplete(t.who,_todayDay); }catch(e){} },700); }catch(e){}   // 🎉 fire-once (celeb_used)
     // Where does the completed task belong NOW?
     //  - Completed on a DIFFERENT calendar day than scheduled (worked ahead on Thursday's
     //    task Tuesday night, or caught up late): relocate it to the day+time it was
@@ -6903,6 +6923,11 @@ function finalizeDone(id, doneTs, score){
         }
       }
       if(movedDay&&movedDay!==t.day){
+        // ⏩ GOT AHEAD (her rule 2026-09-23): a later day's lesson checked early. The card only moves when it is checked
+        // (this heal); the flag earns the +50% spin bonus and never reopens the day.
+        const _ga=(typeof EF_DAYS!=="undefined")&&EF_DAYS.indexOf(movedDay)>=0&&EF_DAYS.indexOf(movedDay)<EF_DAYS.indexOf(t.day)
+          &&!String(t.id||"").endsWith("_c")&&!(typeof subjNoCarry==="function"&&subjNoCarry(t))&&!/notebook/i.test(t.title||"");
+        if(_ga){ t.gotAhead=t.day; if(hist[id]) hist[id].gotAhead=t.day; }
         t.day=movedDay;
         t.time=fromMin(cd.getHours()*60+cd.getMinutes());
         if(t.cascadedFrom===t.day) delete t.cascadedFrom;
@@ -6911,7 +6936,7 @@ function finalizeDone(id, doneTs, score){
         if(hist[id]){ hist[id].checkedOnDay=movedDay; hist[id].day=movedDay; histState[id]=hist[id]; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+id).set(hist[id]); }
         sv(WK+"_tasks",weekData.tasks);
         lastTasksWrite=Date.now();
-        if(db&&!_dryRun()){ const _mu={}; _mu[id+"/day"]=movedDay; _mu[id+"/time"]=t.time; db.ref(WK+"/tasks").update(_mu); }
+        if(db&&!_dryRun()){ const _mu={}; _mu[id+"/day"]=movedDay; _mu[id+"/time"]=t.time; if(t.gotAhead) _mu[id+"/gotAhead"]=t.gotAhead; db.ref(WK+"/tasks").update(_mu); }
         dbg("checkoff heal: "+id+" → "+movedDay+" "+t.time);
       } else {
         bumpSkippedInTier(t);
@@ -6988,7 +7013,11 @@ function efPullNext(kid){
     const bySub={}; later.forEach(function(t){ const k=t.subjectKey||t.title; (bySub[k]=bySub[k]||[]).push(t); });
     const momFree=_efMomFree(kid);
     const todayCount={}; mine.forEach(function(t){ const k=t.subjectKey||t.title; todayCount[k]=(todayCount[k]||0)+1; });
+    // ⏩ Her rule 2026-09-23: only work that FELL OFF today (the school-end rule rolled it, or the sweep carried it, off
+    // today) feeds the bottom automatically. A later day's lesson is a ⏩ Get ahead CHOICE (gaRender) — nothing else is
+    // pulled, so the day can end, celebrate and open afternoon chores.
     const picks=Object.keys(bySub).map(function(k){ return {k:k,card:bySub[k][0],chain:bySub[k],behind:_efBehind(kid,k)}; })
+      .filter(function(p){ return (p.card.rolledFrom===today||p.card.cascadedFrom===today); })
       .filter(function(p){ return (p.card.mom!=="required"||momFree)&&_efCapOk(kid,p.card,todayCount[p.k]||0); })
       .sort(function(a,b){ return (b.behind-a.behind)||(_efDayIdx(a.card.day)-_efDayIdx(b.card.day))||(toMin(a.card.time)-toMin(b.card.time)); });
     for(let i=0;i<picks.length;i++){
@@ -6999,7 +7028,8 @@ function efPullNext(kid){
       const slots=p.chain.map(function(x){ return {day:x.day,time:x.time}; });
       c.day=today; c.time=fromMin(s); c.pulledFrom=from;
       upd[c.id+"/day"]=today; upd[c.id+"/time"]=c.time; upd[c.id+"/pulledFrom"]=from;
-      for(let j=1;j<p.chain.length;j++){ const x=p.chain[j], sl=slots[j-1]; if(x.day!==sl.day||x.time!==sl.time){ x.day=sl.day; x.time=sl.time; upd[x.id+"/day"]=sl.day; upd[x.id+"/time"]=sl.time; } }
+      if(c.rolledFrom!=null){ delete c.rolledFrom; upd[c.id+"/rolledFrom"]=null; }   // back home
+      for(let j=1;j<p.chain.length;j++){ const x=p.chain[j], sl=slots[j-1]; if(x.day!==sl.day||x.time!==sl.time){ x.day=sl.day; x.time=sl.time; upd[x.id+"/day"]=sl.day; upd[x.id+"/time"]=sl.time; if(x.rolledFrom===sl.day){ delete x.rolledFrom; upd[x.id+"/rolledFrom"]=null; } } }
       sv(WK+"_tasks",weekData.tasks); lastTasksWrite=Date.now();
       if(db&&!_dryRun()) db.ref(WK+"/tasks").update(upd);   // targeted multi-path — never the whole node
       dbg("\u23E9 early finish: "+kid+" pulled "+c.id+" "+from+" \u2192 "+today+" "+c.time+" (behind "+p.behind+", "+Object.keys(upd).length+" paths)");
@@ -7010,6 +7040,44 @@ function efPullNext(kid){
   }catch(e){ try{ dbg("early-finish pull error: "+e); }catch(e2){} return null; }
 }
 // EFPULL_END
+// GETAHEAD_START — ⏩ Get ahead (her design 2026-09-23). When a kid's day is done (every card done or sent to Mom), the
+// bottom of the day lists each subject's NEXT lesson from a later day THIS week (never a future week) — most behind first.
+// Nothing moves until it is checked off: the tap is the normal check (tapTask); finalizeDone's heal then moves the card to
+// today at the time it was done and flags it gotAhead (+50% of its spin to the bank). The plan re-stamps the later sitting.
+// A subject with open work today is not "ahead" yet. Mom-required lessons are offered only when Mom is free.
+function gaCandidates(kid){
+  try{
+    if(!kid||typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return [];
+    const ti=_efDayIdx(_todayDay); if(ti<0) return [];
+    const open=t=>!(checked&&checked[t.id])&&!(typeof claimed!=="undefined"&&claimed&&claimed[t.id]);
+    const openToday=new Set(weekData.tasks.filter(t=>t&&t.who===kid&&effectiveDay(t)===_todayDay&&open(t)).map(t=>t.subjectKey||t.title));
+    const later=weekData.tasks.filter(t=>_efEligible(t,kid)&&open(t)&&_efDayIdx(t.day)>ti)
+      .sort((a,b)=>(_efDayIdx(a.day)-_efDayIdx(b.day))||(toMin(a.time)-toMin(b.time)));
+    const first={}; later.forEach(t=>{ const k=t.subjectKey||t.title; if(!first[k]&&!openToday.has(k)) first[k]=t; });
+    return Object.keys(first).map(k=>({card:first[k],behind:_efBehind(kid,k)}))
+      .sort((a,b)=>(b.behind-a.behind)||(_efDayIdx(a.card.day)-_efDayIdx(b.card.day))||(toMin(a.card.time)-toMin(b.card.time)));
+  }catch(e){ return []; }
+}
+function gaRender(kid){
+  if(typeof day==="undefined"||day!==_todayDay) return "";
+  const list=gaCandidates(kid); if(!list.length) return "";
+  const momFree=_efMomFree(kid);
+  let h='<div style="margin:12px 12px 16px;border-radius:12px;padding:14px;background:#f5f3ff;border:1.5px solid #c4b5fd">'+
+    '<div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700;color:#5b21b6">⏩ Get ahead</div>'+
+    '<div style="font-size:12px;color:#6d28d9;margin:2px 0 10px">Optional. Finish one and it moves to today. Every get-ahead spin earns <b>+50%</b> straight to your bank.</div>';
+  list.slice(0,8).forEach(x=>{
+    const t=x.card, needMom=t.mom==="required"&&!momFree;
+    const ref=(typeof taskLessonRef==="function"&&taskLessonRef(t))||"";
+    const name=String(t.title||"").replace(/\s*[—–]\s*.*$/,"");
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:6px;border-radius:10px;background:#fff;border:1px solid #ddd6fe'+(needMom?';opacity:.55':'')+'">'+
+      '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px;color:#1e1b4b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(name)+'</div>'+
+      '<div style="font-size:11px;color:#6b7280">'+esc(ref?ref+" · ":"")+'from '+esc(cap(t.day))+(t.mom==="required"?' · 👩 with Mom':'')+(x.behind>0?' · behind '+x.behind:'')+'</div></div>'+
+      (needMom?'<span style="font-size:11px;font-weight:800;color:#6b7280">needs Mom</span>'
+        :'<button onclick="tapTask(\''+esc(t.id)+'\')" style="padding:7px 14px;border-radius:10px;background:#7c3aed;color:#fff;border:none;font-size:13px;font-weight:800;cursor:pointer">Did it ✓</button>')+'</div>';
+  });
+  return h+'</div>';
+}
+// GETAHEAD_END
 // Mom approves a kid's claim. Done-time = the kid's claim time (so a late
 // approval never penalizes the kid), and the spin is judged off that time.
 function momApprove(id){
@@ -7820,6 +7888,8 @@ document.getElementById("dlg-ok").onclick=()=>{
     dbg("write claim id="+id);
     closeDlg(); renderAll();
     if(typeof gwShowToast==="function") gwShowToast("Sent to Mom to check ✓");
+    // 🎉 her rule 2026-09-23: the kid celebrates when the day is done — not later on Mom's phone when she approves
+    try{ if(effectiveDay(t)===_todayDay&&rtSchoolworkDone(t.who,_todayDay)) setTimeout(function(){ celebrateDayComplete(t.who,_todayDay); },600); }catch(e){}
     return;
   }
   if(finalizeDone(id, ts, null)===false){
@@ -7861,6 +7931,7 @@ document.getElementById("dlg-uncheck").onclick=()=>{
   if(db) db.ref(WK+"/history/"+id).remove();
   try{ lidDoneRemove(weekData.tasks.find(x=>x.id===id),id); }catch(e){ dbg("lid done remove skip: "+e); }
   try{ const _mt=weekData.tasks.find(x=>x.id===id); if(_mt&&Array.isArray(_mt.lids)) _mt.lids.forEach(function(l){ if(l&&l!==_mt.lid) lidDoneRemove(Object.assign({},_mt,{lid:l}),id); }); }catch(e){}   // 🧩 un-checking a merged card un-does every lesson on it
+  try{ const _sr=(ld(WK+"_spin_results")||{})[id]; if(_sr&&_sr.gaBid&&typeof bankDirectRemove==="function") bankDirectRemove(_sr.kid,_sr.gaBid); }catch(e){}   // ⏩ sent back → the got-ahead bonus comes off
   closeDlg(); schedCascade(); renderAll();
 };
 function closeDlg(){ document.getElementById("dlg").style.display="none"; pendingId=null; }
@@ -29341,7 +29412,9 @@ function dmRender(){
         const dots=r.days.map(x=>(rbOn(r.kid,x.iso)?'<span title="'+esc("rebuild "+fmt(x.iso))+'" style="font-size:9px;color:#7c2d12;margin-right:1px">↻</span>':'')+'<span title="'+esc(fmt(x.iso)+": "+(x.st==="done"?"done":x.st==="late"?"done late":"missed"))+'" style="display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:2px;'+(x.st==="done"?'background:#16a34a':x.st==="late"?'background:#f59e0b':'background:#fff;border:1.5px solid #dc2626;box-sizing:border-box')+'"></span>').join("");
         h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:3px 0;font-size:12px;color:#431407;border-bottom:1px dashed #fed7aa">'+
           '<span style="min-width:130px;font-weight:700">'+esc(r.label)+'</span>'+
-          '<span style="min-width:120px">'+(r.weekOf?('missed <b>'+r.weekMiss+'</b> of '+r.weekOf+' this week'):'not laid this week')+'</span>'+
+          '<span style="min-width:120px">'+(r.weekOf?('missed <b>'+r.weekMiss+'</b> of '+r.weekOf+' this week'):(function(){ try{ const DD=["monday","tuesday","wednesday","thursday","friday","saturday"], ti=DD.indexOf(_todayDay);
+            const nx=(weekData.tasks||[]).filter(t=>t&&t.who===r.kid&&!String(t.id||"").endsWith("_c")&&dmIsDaily(t)&&dmLabel(t)===r.label&&DD.indexOf(t.day)>=ti).sort((a,b)=>DD.indexOf(a.day)-DD.indexOf(b.day))[0];
+            return nx?('none due yet · next '+(nx.day===_todayDay?'today':cap(nx.day).slice(0,3))):'not on this week'; }catch(e){ return 'none due yet'; } })())+'</span>'+
           '<span style="min-width:90px;'+(r.streak>=2?'color:#b91c1c;font-weight:800':'')+'">'+(r.streak?r.streak+' in a row':'—')+'</span>'+
           '<span style="min-width:110px;color:#9a3412">'+(r.lastDone?'last done '+fmt(r.lastDone):'not done in 4 wks')+'</span>'+
           '<span>'+dots+'</span></div>';
@@ -48797,7 +48870,7 @@ function seGuardWeek(tasks,o){
   const started=t=>dIx(t)===ti&&o.nowMin!=null&&tm(t.time)<=o.nowMin;
   const fixed=t=>!!(ck[t.id]||cl[t.id])||started(t)||!!(o.isClass&&o.isClass(t));
   const dur=t=>+t.dur||20;
-  const setT=(t,day,min)=>{ const nt=fm(min); if(t.day!==day){ t.day=day; out.upd[t.id+"/day"]=day; } if(t.time!==nt){ t.time=nt; out.upd[t.id+"/time"]=nt; } };
+  const setT=(t,day,min)=>{ const nt=fm(min); if(t.day!==day){ if(t.rolledFrom==null){ t.rolledFrom=t.day; out.upd[t.id+"/rolledFrom"]=t.day; } t.day=day; out.upd[t.id+"/day"]=day; } if(t.time!==nt){ t.time=nt; out.upd[t.id+"/time"]=nt; } };   // rolledFrom = "fell off that day" (early finish feeds it back)
   const kids=o.kids||Array.from(new Set(tasks.filter(t=>t&&t.who).map(t=>t.who)));
   const first=ti>=0?ti:0;
   for(let di=first;di<DAYS.length;di++){
