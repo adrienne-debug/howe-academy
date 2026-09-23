@@ -21,8 +21,15 @@
 // NOT here yet (later slices): the reviews step, Iowa cards.
 (function(){
 "use strict";
-const BOOKS=["editor-in-chief-beginning-1","editor-in-chief-beginning-2"];   // pool order = first book first
-const SHORT={"editor-in-chief-beginning-1":"Beg 1","editor-in-chief-beginning-2":"Beg 2"};
+// Every book the engine knows, in ladder order (first book first). Level 1 + Level 2 added 2026-09-22 from her eBooks.
+const ORDER=["editor-in-chief-beginning-1","editor-in-chief-beginning-2","editor-in-chief-level-1","editor-in-chief-level-2"];
+const SHORT={"editor-in-chief-beginning-1":"Beg 1","editor-in-chief-beginning-2":"Beg 2","editor-in-chief-level-1":"Lv 1","editor-in-chief-level-2":"Lv 2"};
+// 🪜 Each kid's own ladder (her call 2026-09-22): Ellis stops at Level 1 (grades 4–5); Lincoln climbs to Level 2
+// (grades 6–8). A kid not listed gets the two Beginning books. Only these books ever enter that kid's skill pools.
+const LADDER={ellis:ORDER.slice(0,3),lincoln:ORDER.slice(0,4)};
+function eicLadder(k){ return LADDER[k]||ORDER.slice(0,2); }
+function eicTagsFor(T,k){ const out={}; eicLadder(k).forEach(b=>{ if(T&&T[b]) out[b]=T[b]; }); return out; }
+function bookOrder(T){ return ORDER.filter(b=>T&&T[b]); }
 const FIRST=["capitalization","punctuation"];                                 // the Iowa gap — shown on top
 const ALIAS={an_and_a:"a_an_and_the"};                                        // same skill, named differently per book
 const GREEN=80;
@@ -45,7 +52,7 @@ function eicPct(found,missed,extra){
 // Every skill across both books, the two Iowa-gap skills first, then book order.
 function eicSkills(T){
   const seen={}, out=[];
-  BOOKS.forEach(bk=>{ const sk=(T&&T[bk]&&T[bk].skills)||{};
+  bookOrder(T).forEach(bk=>{ const sk=(T&&T[bk]&&T[bk].skills)||{};
     Object.keys(sk).sort((a,b)=>(sk[a].lesson||0)-(sk[b].lesson||0)).forEach(k=>{ const c=canon(k);
       if(!seen[c]){ seen[c]={key:c,name:sk[k].name}; out.push(seen[c]); } }); });
   const rank=s=>{ const i=FIRST.indexOf(s.key); return i<0?99:i; };
@@ -54,7 +61,7 @@ function eicSkills(T){
 // A skill's pool: its exercise pages, first book first. Printed page numbers.
 function eicPool(T,skill){
   const out=[];
-  BOOKS.forEach(bk=>{ const sk=(T&&T[bk]&&T[bk].skills)||{};
+  bookOrder(T).forEach(bk=>{ const sk=(T&&T[bk]&&T[bk].skills)||{};
     Object.keys(sk).forEach(k=>{ if(canon(k)!==skill) return;
       arr(sk[k].exercisePages).forEach(p=>out.push({book:bk,page:+p,rules:arr(sk[k].rulePages).map(Number)})); }); });
   return out;
@@ -118,7 +125,8 @@ function eicGate(L,D,skill,step,pages){
 // The uploaded PDF linked to a tag book: an explicit link wins, else a careful name guess.
 function eicWorkbook(list,bk){
   list=list||[]; const hit=list.find(b=>b&&b.tagsBook===bk); if(hit) return hit;
-  const want=bk==="editor-in-chief-beginning-1"?/beg(?:inning)?[\s_-]*1(?!\d)/i:/beg(?:inning)?[\s_-]*2(?!\d)/i;
+  const want={"editor-in-chief-beginning-1":/beg(?:inning)?[\s_-]*1(?!\d)/i,"editor-in-chief-beginning-2":/beg(?:inning)?[\s_-]*2(?!\d)/i,
+    "editor-in-chief-level-1":/level[\s_-]*1(?!\d)/i,"editor-in-chief-level-2":/level[\s_-]*2(?!\d)/i}[bk]||/(?!)/;
   const g=list.filter(b=>b&&!b.tagsBook&&/eic|editor/i.test(b.name||"")&&want.test(b.name||""));
   return g.length===1?g[0]:null;
 }
@@ -132,6 +140,7 @@ function load(){
   return Promise.all([a,b,c]).catch(()=>{});
 }
 function books(){return (typeof wbList==="function")?wbList():[];}
+function TK(k){ return eicTagsFor(tags||{},k||kid); }   // the current kid's ladder only
 
 // ── the panel ──────────────────────────────────────────────────────────────────────────────
 function panel(k){
@@ -149,7 +158,7 @@ function close(){const ov=document.getElementById("eic-panel"); if(ov) ov.remove
 function chip(lbl,fn,st){return '<button onclick="'+fn+'" style="padding:7px 11px;border-radius:10px;border:1.5px solid #cbd5e1;background:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;'+(st||"")+'">'+lbl+'</button>';}
 function draw(){
   const box=document.getElementById("eic-box"); if(!box) return;
-  const M=mom(), T=tags||{}, list=books();
+  const M=mom(), T=TK(), list=books();
   let h='<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px"><div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:#0f172a;flex:1">✏️ Editor in Chief</div>'+chip("✕","eicClose()")+'</div>';
   h+='<div style="font-size:12px;color:#64748b;margin-bottom:10px">One skill at a time. Rules on the left, the page on the right — first book first.</div>';
   if(M){
@@ -160,7 +169,7 @@ function draw(){
   }
   if(!Object.keys(T).length){ box.innerHTML=h+'<div style="padding:24px;text-align:center;color:#64748b">The page tags aren\'t loaded yet.</div>'; return; }
   // which PDFs are linked
-  BOOKS.forEach(bk=>{ const wb=eicWorkbook(list,bk); if(wb) return;
+  bookOrder(T).forEach(bk=>{ const wb=eicWorkbook(list,bk); if(wb) return;
     h+='<div style="margin-bottom:10px;padding:10px 12px;border-radius:11px;background:#fffbeb;border:1px solid #fcd34d;font-size:13px"><b>'+esc((T[bk]&&T[bk].title)||bk)+'</b> has no PDF linked.';
     if(M) h+=(list.length?' <select onchange="eicLink(\''+bk+'\',this.value)" style="margin-left:6px;padding:5px;border-radius:8px;border:1px solid #cbd5e1;font-size:13px"><option value="">Link a workbook…</option>'+list.map(b=>'<option value="'+esc(b.id)+'">'+esc(b.name||b.id)+'</option>').join("")+'</select>':' Add it in Mom HQ ▸ 📕 Workbooks first.');
     else h+=' Ask Mom to add it.';
@@ -220,7 +229,7 @@ function eicNextSitting(T,L,D,isMom){
 function openNext(k){
   if(k){ kid=k; try{ HA_LS.setItem("ha_eic_kid",kid); }catch(e){} logs={}; decs={}; }
   load().then(()=>{
-    const n=eicNextSitting(tags||{},logs,decs,mom());
+    const n=eicNextSitting(TK(),logs,decs,mom());
     if(n&&eicWorkbook(books(),n.book)){ openPage(n.book,n.page); return; }
     panel(kid);
     toast(n?"That book's PDF isn't linked yet.":"Nothing waiting in the skills built so far — the reviews step comes next.");
@@ -232,24 +241,24 @@ function withBook(bk,go){
   if(typeof wbOpen!=="function") return; go(wb);
 }
 function openPage(bk,printed){ withBook(bk,wb=>{
-  const skill=eicSkillOf(tags,bk,printed), pool=skill?eicPool(tags,skill):[], me=pool.find(p=>p.book===bk&&p.page===+printed);
-  const rules=((me&&me.rules)||[]).map(p=>eicPdf(tags,bk,p));
-  const step=eicStepOf(tags,bk,printed), cover=step===2?eicCover(tags,bk,printed):[];
-  if(step===2&&!mom()){ const pr=skill?eicProgress(tags,logs,decs,skill):null;
+  const skill=eicSkillOf(TK(),bk,printed), pool=skill?eicPool(TK(),skill):[], me=pool.find(p=>p.book===bk&&p.page===+printed);
+  const rules=((me&&me.rules)||[]).map(p=>eicPdf(TK(),bk,p));
+  const step=eicStepOf(TK(),bk,printed), cover=step===2?eicCover(TK(),bk,printed):[];
+  if(step===2&&!mom()){ const pr=skill?eicProgress(TK(),logs,decs,skill):null;
     if(!pr||!pr.g1.cleared){ toast("That page is saved for step 2."); return; }
     if(!cover.length){ toast("That page isn't ready yet — ask Mom."); return; } }
-  close(); wbOpen(wb.id,kid,eicPdf(tags,bk,printed),{rules:rules,cover:cover,eic:{book:bk}});
-  if(skill&&step){ const g=eicGate(logs,decs,skill,step,eicStepPools(tags,skill)[step]); if(g.round>1) toast("Round "+g.round+" — tap 🧽 Clear to start this page fresh."); } }); }
+  close(); wbOpen(wb.id,kid,eicPdf(TK(),bk,printed),{rules:rules,cover:cover,eic:{book:bk}});
+  if(skill&&step){ const g=eicGate(logs,decs,skill,step,eicStepPools(TK(),skill)[step]); if(g.round>1) toast("Round "+g.round+" — tap 🧽 Clear to start this page fresh."); } }); }
 function checkPage(bk,printed){ if(!mom()) return; withBook(bk,wb=>{
-  const kp=eicKeyPage(tags,bk,printed);
-  close(); wbOpen(wb.id,kid,eicPdf(tags,bk,printed),{ans:kp?eicPdf(tags,bk,kp):0,eic:{book:bk}}); }); }
+  const kp=eicKeyPage(TK(),bk,printed);
+  close(); wbOpen(wb.id,kid,eicPdf(TK(),bk,printed),{ans:kp?eicPdf(TK(),bk,kp):0,eic:{book:bk}}); }); }
 
 // ── Mom's score: found / missed / extra for the page ON SCREEN ─────────────────────────────
 function scoreOpen(){
   if(!mom()||typeof wbView==="undefined"||!wbView||!wbView.eic) return;
-  const bk=wbView.eic.book, printed=eicPrinted(tags,bk,wbView.page), skill=eicSkillOf(tags,bk,printed);
-  if(!skill&&!eicParagraphs(tags,bk,printed).length){ toast("That page isn't an exercise page."); return; }
-  if(eicStepOf(tags,bk,printed)===2&&skill&&!eicProgress(tags,logs,decs,skill).g1.cleared){ toast("Step 1 isn't cleared yet — that page is saved for step 2."); return; }
+  const bk=wbView.eic.book, printed=eicPrinted(TK(wbView.kid),bk,wbView.page), skill=eicSkillOf(TK(wbView.kid),bk,printed);
+  if(!skill&&!eicParagraphs(TK(wbView.kid),bk,printed).length){ toast("That page isn't an exercise page."); return; }
+  if(eicStepOf(TK(wbView.kid),bk,printed)===2&&skill&&!eicProgress(TK(wbView.kid),logs,decs,skill).g1.cleared){ toast("Step 1 isn't cleared yet — that page is saved for step 2."); return; }
   let ov=document.getElementById("eic-score"); if(ov) ov.remove();
   ov=document.createElement("div"); ov.id="eic-score"; ov.className="dlg-overlay"; ov.style.display="flex"; ov.style.zIndex="10060";
   const inp=(id,ph)=>'<div style="text-align:center"><input id="'+id+'" inputmode="numeric" oninput="eicScorePreview()" placeholder="0" style="width:70px;text-align:center;font-size:22px;padding:10px;border:1.5px solid var(--border,#cbd5e1);border-radius:10px;font-family:\'DM Sans\',sans-serif"><div style="font-size:11px;font-weight:700;color:#64748b;margin-top:4px">'+ph+'</div></div>';
@@ -266,9 +275,9 @@ function scoreClose(){const ov=document.getElementById("eic-score"); if(ov) ov.r
 function scoreSave(){
   if(busy||!mom()||typeof wbView==="undefined"||!wbView||!wbView.eic) return;
   const v=vals(), pct=eicPct(v.found,v.missed,v.extra); if(pct==null){ toast("Enter how many he found and missed."); return; }
-  const bk=wbView.eic.book, k=wbView.kid, printed=eicPrinted(tags,bk,wbView.page), now=Date.now();
-  const rec={ts:now,date:(typeof _todayStr==="function")?_todayStr():new Date(now).toISOString().slice(0,10),step:eicStepOf(tags,bk,printed)||1,book:bk,page:printed,
-    skill:eicSkillOf(tags,bk,printed)||"review",paragraphs:eicParagraphs(tags,bk,printed),found:v.found,missed:v.missed,extra:v.extra,pct:pct};
+  const bk=wbView.eic.book, k=wbView.kid, printed=eicPrinted(TK(wbView.kid),bk,wbView.page), now=Date.now();
+  const rec={ts:now,date:(typeof _todayStr==="function")?_todayStr():new Date(now).toISOString().slice(0,10),step:eicStepOf(TK(wbView.kid),bk,printed)||1,book:bk,page:printed,
+    skill:eicSkillOf(TK(wbView.kid),bk,printed)||"review",paragraphs:eicParagraphs(TK(wbView.kid),bk,printed),found:v.found,missed:v.missed,extra:v.extra,pct:pct};
   busy=true;
   const done=id=>{ busy=false; if(k===kid) logs[id]=rec; scoreClose(); toast("📊 Logged — "+pct+"%");
     try{ if(typeof eicCheckCard==="function") eicCheckCard(k); }catch(e){} };   // 🗓 today's Editor in Chief card checks itself off
@@ -310,8 +319,8 @@ function manualSave(kind){
   else { const g=id=>{const e=document.getElementById(id);const v=e&&e.value!==""?Number(e.value):0;return (isFinite(v)&&v>=0)?Math.floor(v):NaN;};
     found=g("eic-man-found"); missed=g("eic-man-missed"); extra=g("eic-man-extra"); pct=eicPct(found,missed,extra);
     if(pct==null){ toast("Enter how many he found and missed — or tap Passed / Not yet."); return; } }
-  const rec={ts:eicManualTs(date),date:date,step:eicStepOf(tags,bk,printed)||1,book:bk,page:printed,skill:eicSkillOf(tags,bk,printed)||"review",
-    paragraphs:eicParagraphs(tags,bk,printed),pct:pct,manual:true};
+  const rec={ts:eicManualTs(date),date:date,step:eicStepOf(TK(),bk,printed)||1,book:bk,page:printed,skill:eicSkillOf(TK(),bk,printed)||"review",
+    paragraphs:eicParagraphs(TK(),bk,printed),pct:pct,manual:true};
   if(found!=null){ rec.found=found; rec.missed=missed; rec.extra=extra; }
   busy=true;
   const done=id=>{ busy=false; logs[id]=rec; manualClose(); toast("\u270D Marked "+(SHORT[bk]||bk)+" p "+printed+" \u2014 "+(kind==="pass"?"passed":kind==="fail"?"not yet":pct+"%")); draw(); };
@@ -339,7 +348,7 @@ function delLog(id){
 }
 function decide(skill,step,action){
   if(busy||!mom()||(action!=="redo"&&action!=="moveon")) return;
-  const g=eicGate(logs,decs,skill,step,eicStepPools(tags,skill)[step]||[]); if(!g.empty) return;   // only when the pool really ran out
+  const g=eicGate(logs,decs,skill,step,eicStepPools(TK(),skill)[step]||[]); if(!g.empty) return;   // only when the pool really ran out
   if(!confirm(action==="redo"?"Redo this step's pages?\n\nHis old writing stays on the pages — he taps 🧽 Clear, or you reprint them.":"Move him on without two greens in a row?")) return;
   const now=Date.now(), rec={ts:now,date:(typeof _todayStr==="function")?_todayStr():new Date(now).toISOString().slice(0,10),skill:skill,step:step,action:action};
   const done=id=>{ busy=false; decs[id]=rec; draw(); };
@@ -363,5 +372,5 @@ window.eicToggleAll=()=>{ showAll=!showAll; draw(); }; window.eicNoBook=()=>toas
 window.eicScoreOpen=scoreOpen; window.eicScorePreview=scorePreview; window.eicScoreClose=scoreClose; window.eicScoreSave=scoreSave;
 window.eicDelLog=delLog; window.eicDelDec=delDec; window.eicManual=manualOpen; window.eicManualClose=manualClose; window.eicManualSave=manualSave; window.eicStepDone=stepDone; window.eicLink=link; window.eicToggleKid=toggleKid; window.eicDecide=decide;
 window.eicLocked=()=>toast("That page is saved for step 2."); window.eicNotReady=()=>toast("That page isn't ready yet — ask Mom.");
-window._eicTest={eicManualTs,eicNextSitting,eicCover,eicProgress,eicStepPools,eicStepOf,eicGate,eicPct,eicSkills,eicPool,eicPdf,eicPrinted,eicKeyPage,eicParagraphs,eicSkillOf,eicLast,eicWorkbook,canon,setTags:t=>{tags=t;}};
+window._eicTest={eicLadder,eicTagsFor,eicManualTs,eicNextSitting,eicCover,eicProgress,eicStepPools,eicStepOf,eicGate,eicPct,eicSkills,eicPool,eicPdf,eicPrinted,eicKeyPage,eicParagraphs,eicSkillOf,eicLast,eicWorkbook,canon,setTags:t=>{tags=t;}};
 })();

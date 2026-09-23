@@ -142,9 +142,9 @@ ok("eic.js is lazy — no <script src> at boot",!/<script[^>]+src=["']eic\.js/.t
 const e=fs.readFileSync(path.join(__dirname,"eic.js"),"utf8");
 const ee=fs.readFileSync(path.join(__dirname,"eic.js"),"utf8");
 ok("Redo / Move on only fire when the pool really ran out, and only for Mom",/function decide\(skill,step,action\)\{\s*if\(busy\|\|!mom\(\)/.test(ee)&&/if\(!g\.empty\) return;/.test(ee));
-ok("a step-2 page can't be scored until step 1 is cleared",/eicStepOf\(tags,bk,printed\)===2&&skill&&!eicProgress\(tags,logs,decs,skill\)\.g1\.cleared\)\{ toast\(/.test(ee));
+ok("a step-2 page can't be scored until step 1 is cleared",/eicStepOf\(TK\(wbView\.kid\),bk,printed\)===2&&skill&&!eicProgress\(TK\(wbView\.kid\),logs,decs,skill\)\.g1\.cleared\)\{ toast\(/.test(ee));
 ok("Redo never deletes his writing (no workbookWork writes anywhere)",!/workbookWork/.test(ee));
-ok("the log line carries the page's real step",/step:eicStepOf\(tags,bk,printed\)\|\|1/.test(ee));
+ok("the log line carries the page's real step",/step:eicStepOf\(TK\(wbView\.kid\),bk,printed\)\|\|1/.test(ee));
 ok("covers are painted only when it is NOT Mom's eyes",/const cover=\(!wbMomEyes\(\)&&opts&&Array\.isArray\(opts\.cover\)\)/.test(src));
 ok("covers sit under the ink canvas and ignore touches",/class=\\?"wb-cover\\?" style=\\?"position:absolute;pointer-events:none;background:#fff/.test(src)&&src.indexOf('class="wb-cover"')<src.indexOf('<canvas id="wb-ink"'));
 ok("a kid on an EIC page gets no ◀ ▶",src.indexOf('((v.eic&&!wbMomEyes())?"":btn("◀","wbGo(-1)"))')>0&&src.indexOf('((v.eic&&!wbMomEyes())?"":btn("▶","wbGo(1)"))')>0);
@@ -188,5 +188,25 @@ console.log("✍ Mom's manual marks (her ask 2026-09-22)");
   ok("the ✍ chip and the step-done button are Mom-only",/\(M\?chip\("\\u270D","eicManual\(/.test(ee)&&/if\(cur<3&&M&&!g\.empty\) h\+=/.test(ee));
   ok("a manual 'step done' shows under its skill with a remove that deletes only that one decision",/function delDec\(id\)\{[\s\S]{0,160}decs\[id\]\.manual[\s\S]{0,200}db\.ref\("eic\/"\+kid\+"\/decisions\/"\+id\)\.remove\(\)/.test(ee)&&/eicDelDec\(/.test(ee));
   ok("manual marks write one log line / one decision, never a whole node",/const r=db\.ref\("eic\/"\+kid\+"\/log"\)\.push\(\); r\.set\(rec\)/.test(ee)&&/const r=db\.ref\("eic\/"\+kid\+"\/decisions"\)\.push\(\); r\.set\(rec\)/.test(ee));
+}
+console.log("🪜 Level 1 + Level 2, each kid's own ladder (2026-09-22)");
+{
+  const L1="editor-in-chief-level-1", L2="editor-in-chief-level-2";
+  const TA=Object.assign({},T,{[L1]:prune(JSON.parse(fs.readFileSync(path.join(dir,"eic_lv1_tags.json"),"utf8"))),[L2]:prune(JSON.parse(fs.readFileSync(path.join(dir,"eic_lv2_tags.json"),"utf8")))});
+  ok("Ellis's ladder = Beg 1 → Beg 2 → Level 1",JSON.stringify(E.eicLadder("ellis"))===JSON.stringify([B1,B2,L1]));
+  ok("Lincoln's ladder = Beg 1 → Beg 2 → Level 1 → Level 2",JSON.stringify(E.eicLadder("lincoln"))===JSON.stringify([B1,B2,L1,L2]));
+  ok("any other kid gets the two Beginning books",JSON.stringify(E.eicLadder("lucy"))===JSON.stringify([B1,B2]));
+  const TE=E.eicTagsFor(TA,"ellis"), TL=E.eicTagsFor(TA,"lincoln");
+  const capE=E.eicPool(TE,"capitalization"), capL=E.eicPool(TL,"capitalization");
+  ok("Ellis's capitalization pool runs Beg 1, Beg 2, then Level 1 — never Level 2",capE.map(p=>p.book).join()===[B1,B1,B2,B2,B2,L1,L1,L1,L1].join(),capE.map(p=>(p.book===L1?"L1":p.book===B1?"B1":p.book===B2?"B2":"L2")+p.page));
+  ok("Lincoln's adds Level 2 after Level 1",capL.length===13&&capL.slice(-4).every(p=>p.book===L2)&&capL[9].book===L2);
+  const spE=E.eicStepPools(TE,"capitalization");
+  ok("adding books never changes which Beginning pages are step 1 or step 2",JSON.stringify(spE[1].slice(0,3).map(p=>p.page))==="[2,3,5]"&&JSON.stringify(spE[2].slice(0,2).map(p=>p.page))==="[3,4]");
+  ok("every Level 1 / Level 2 step-2 page carries covers, so a kid can open it",[TE,TL].every(TT=>E.eicSkills(TT).every(s=>E.eicStepPools(TT,s.key)[2].filter(p=>p.book===L1||p.book===L2).every(p=>E.eicCover(TT,p.book,p.page).length>0))));
+  ok("in fact every Level 1 / Level 2 editing page carries covers",[L1,L2].every(b=>Object.keys(TA[b].pages).filter(k=>TA[b].pages[k].role==="exercise").every(k=>(TA[b].pages[k].cover||[]).length>0)));
+  ok("Level 1 page p9 (Lonesome George's lesson) lands on PDF page 14 and its key starts on p109",E.eicPdf(TE,L1,9)===14&&E.eicKeyPage(TE,L1,9)===109,[E.eicPdf(TE,L1,9),E.eicKeyPage(TE,L1,9)]);
+  ok("Level 1's homograph multiple-choice pages are never in a pool",E.eicSkills(TE).every(s=>E.eicPool(TE,s.key).every(p=>!(p.book===L1&&(p.page===89||p.page===90)))));
+  ok("Level-only skills show up for Ellis (content, verbs…) but Level 2-only skills don't (clauses and phrases)",E.eicSkills(TE).some(s=>s.key==="content")&&!E.eicSkills(TE).some(s=>s.key==="clauses_and_phrases")&&E.eicSkills(TL).some(s=>s.key==="clauses_and_phrases"));
+  ok("eic.js reads every pool through the kid's ladder",!/\(tags,/.test(ee)&&/function TK\(k\)\{ return eicTagsFor\(tags\|\|\{\},k\|\|kid\); \}/.test(ee));
 }
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
