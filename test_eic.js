@@ -168,7 +168,8 @@ console.log("🗓 the schedule's doorway (her ask 2026-09-22)");
   ok("the card title drops the page numbers",/function eicCardTitle\(t\)\{ const ref=\(typeof taskLessonRef==="function"\)\?taskLessonRef\(t\)/.test(fs.readFileSync(path.join(__dirname,"index.html"),"utf8")));
   const ih=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
   ok("a linked card shows the doorway instead of the book-page link",/const wbRow=\(_wbl&&!_eicL\)\?/.test(ih)&&/eicOpenNextFor\(\\''\+t\.who\+'\\'\)/.test(ih)&&/wbRow\+eicRow\+/.test(ih));
-  ok("linked only when the kid's ✏️ switch is on and the card is Editor in Chief",/function eicLinked\(t\)\{ try\{ return !!\(t&&t\.subjectKey==="editor_chief"&&t\.who&&/.test(ih));
+  ok("linked only when the kid's ✏️ switch is on and the card is that kid's Editor in Chief subject",/function eicLinked\(t\)\{ try\{ return !!\(t&&t\.who&&eicIsSubject\(t\.who,t\.subjectKey\)&&/.test(ih));
+  ok("Lincoln's subject (key 'conventions', display 'Editor in Chief') counts as Editor in Chief",/function eicIsSubject\(kid,sk\)\{ try\{ if\(sk==="editor_chief"\) return true;[\s\S]{0,200}\/\^\\s\*editor in chief\\b\/i\.test/.test(ih)&&/x\.who===kid&&eicIsSubject\(kid,x\.subjectKey\)/.test(ih));
   ok("saving a score checks off today's card",/if\(typeof eicCheckCard==="function"\) eicCheckCard\(k\);/.test(ee)&&/function eicCheckCard\(kid\)\{[\s\S]{0,500}effectiveDay\(x\)===_todayDay[\s\S]{0,300}finalizeDone\(t\.id,ts,null\)/.test(ih));
 }
 console.log("✍ Mom's manual marks (her ask 2026-09-22)");
