@@ -2563,6 +2563,7 @@ function safeWriteTasks(reason){
   // lesson goes in them, in order. Normalize before the write so a card can never carry a stale
   // lesson — whatever laid it. Idempotent, and only unlocked plan-backed cards can move.
   try{ if(typeof seqFillNormalize==="function") seqFillNormalize(weekData.tasks,reason); }catch(eSF){ dbg("seqfill skip: "+eSF); }
+  try{ if(typeof prExtraCore==="function"){ const _px=prExtraCore(weekData.tasks,prExtraCtx()); if(_px.added.length){ dbg("🎯 catch-up ("+reason+"): +"+_px.added.length+" extra sitting(s) — "+_px.added.map(t=>t.who+" "+t.subjectKey+" "+t.day).join(", ")); if(typeof seqFillNormalize==="function") seqFillNormalize(weekData.tasks,reason+"+catchup"); } } }catch(ePX){ dbg("catch-up skip: "+ePX); }
   try{ if(typeof seGuardWeek==="function"){ const _se=seGuardWeek(weekData.tasks,seGuardCtx()); if(_se.retimed.length||_se.rolled.length||_se.deferred.length) dbg("⏰ school end ("+reason+"): re-laid "+_se.retimed.length+", rolled "+_se.rolled.length+", deferred "+_se.deferred.length+(_se.stuck.length?", daily-only overflow "+_se.stuck.join(" "):"")); } }catch(eSE){ dbg("school-end skip: "+eSE); }
   const obj={};
   weekData.tasks.forEach(t=>obj[t.id]=t);
@@ -6977,13 +6978,9 @@ function _efEligible(t,kid){
   if(typeof momMoves!=="undefined"&&momMoves&&momMoves[t.id]) return false;
   return true;
 }
+// behind = against the CURRENT plan (planPace) — her rule 2026-09-23; the original-plan pace is no longer used here.
 function _efBehind(kid,sk){
-  try{
-    const wn=parseInt(String((typeof WK!=="undefined"&&WK)||"").replace(/\D/g,""),10)||0;
-    const exp=(typeof currExpectedBase==="function")?currExpectedBase(kid,sk,wn-1):null;
-    const cur=(typeof computeSubjectCursor==="function")?(computeSubjectCursor(kid,sk)||0):0;
-    return (exp==null)?0:Math.max(0,exp-cur);
-  }catch(e){ return 0; }
+  try{ return (typeof planPace==="function")?(planPace(kid,sk).behind||0):0; }catch(e){ return 0; }
 }
 function _efCapOk(kid,t,todayCount){
   try{
@@ -21677,7 +21674,11 @@ function cascadeIntraWeek(sweepTodayElapsed){
     const w=function(t){
       const r=ovRank[t.who];
       if(r&&t.subjectKey&&r[t.subjectKey]!==undefined) return r[t.subjectKey];
-      return cascadeWeight(t,dn);
+      const cw=cascadeWeight(t,dn);
+      // 🎯 her rule 2026-09-23: a daily missed 2+ running, then the most-behind lessons, go right after the morning notebook /
+      // first-of-day subjects — ahead of the Workflow order. Mom's hand-set Lesson-Map order (above) still wins.
+      if(cw>=0&&cw<1000&&typeof prNeed==="function"){ const n=prNeed(t); if(n>0) return -0.5-n/1e6; }
+      return cw;
     };
     const byKid={};
     arr.forEach(function(t){ (byKid[t.who]=byKid[t.who]||[]).push(t); });
@@ -26940,6 +26941,39 @@ function planMaterialize(kid,sk,form,opts){
 }
 // Owed only (for chips): pattern days since the anchor minus lessons finished since —
 // same numbers planMaterialize reports, without laying anything.
+// 📈 PACE against the CURRENT plan (her rule 2026-09-23: "a rebuild makes it a normal week"; the old original-plan pace
+// is a leftover — Lucy's HWT read "23 ahead", Lincoln's renumbered Editor in Chief "6 ahead"). Since the last rebuild
+// (planAnchor): behind = pattern sittings due BEFORE today not yet done; ahead = lessons done beyond the sittings due
+// THROUGH today. Paused, a lane member waiting its turn, not plan-backed, or a mode without a pattern → 0. Set a subject's
+// pace in the Builder (times a week / finish by / pages re-average); rebuild; this follows. Cached briefly (sorts call it a lot).
+let _ppCache={key:"",at:0,map:{}};
+function planPace(kid,sk){
+  const z={behind:0,ahead:0,score:0};
+  try{
+    const ck=cbTodayISO()+"|"+String(((currData||{}).lastEdit)||"")+"|"+Object.keys((typeof checked!=="undefined"&&checked)||{}).length;
+    if(_ppCache.key!==ck||Date.now()-_ppCache.at>20000) _ppCache={key:ck,at:Date.now(),map:{}};
+    const mk=kid+"|"+sk; if(_ppCache.map[mk]) return _ppCache.map[mk];
+    const res=(function(){
+      const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||!s.planAnchor||s.paused) return z;
+      if(!(typeof planBacked==="function"&&planBacked(kid,sk))) return z;
+      if(typeof lnOf==="function"){ const _l=lnOf(kid,sk); if(_l&&!lnIsUp(kid,_l.id,_l.unitIdx)) return z; }
+      const today=cbTodayISO(), anchor=s.planAnchor; if(anchor>today) return z;
+      const f=cbDefaultForm(kid,sk); if(!(f.mode==="timesPerWeek"||f.mode==="targetDate"||(f.mode==="pages"&&parseInt(f.tpw,10)>0))) return z;
+      const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]; const L=((currData||{}).lessons||{})[kid]||{}; const rows=[];
+      Object.keys(L).forEach(dn=>{ const l=L[dn]; if(!l||!l.date||l.date<anchor||l.date>today) return;
+        rows.push({date:l.date,dow:DOW[_cbParseDate(l.date).getDay()],off:!!(smapIsKidOff(kid,l.date)||schedOvKidOff(kid,l.date)||((schedOv(l.date,kid)||{}).removed||{})[sk]||coopBlocksBase(kid,l.date,sk))}); });
+      rows.sort((a,b)=>a.date<b.date?-1:1);
+      const plan={allowedDays:(f.allowedDays||[]).slice(),offDates:{},_blocked:{}};
+      const tpw=f.mode==="targetDate"?0:(parseInt(f.tpw,10)||0);
+      const pat=_pjPatternRows(plan,rows,tpw)||[];
+      const before=pat.filter(r=>r&&r.date<today).length, through=pat.length;
+      const doneNode=((((currData||{}).done||{})[kid]||{})[sk])||{}; let doneSince=0; Object.values(doneNode).forEach(r=>{ if(r&&r.day&&String(r.day)>=anchor) doneSince++; });
+      const behind=Math.max(0,before-doneSince), ahead=Math.max(0,doneSince-through);
+      return {behind:behind,ahead:ahead,score:ahead-behind};
+    })();
+    _ppCache.map[mk]=res; return res;
+  }catch(e){ return z; }
+}
 function planOwed(kid,sk){
   const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||!s.planAnchor) return 0;
   if(s.paused) return 0;   // ⏸ paused weeks are not a backlog (resume re-anchors on that day) — never an owed chip (2026-09-23)
@@ -47600,7 +47634,10 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   function _feedRank(kid,e){
     var dord=dayOrder[kid];
     if(dord){ var di=dord.indexOf(e.key); if(di>=0) return e.base+di; } // explicit Lesson-Map order within the group
-    return e.base+gwWorkflowRank(kid,e.key,getMeta(kid,e.key)||{},dayName,isSitter);
+    var _wr=gwWorkflowRank(kid,e.key,getMeta(kid,e.key)||{},dayName,isSitter);
+    // 🎯 her rule 2026-09-23: most-needed first (a daily missed 2+ running, then the most-behind lessons) after first-of-day
+    if(e.base===0&&_wr>=0&&_wr<1000&&typeof prNeed==="function"){ var _n=prNeed({who:kid,subjectKey:e.key,title:((getMeta(kid,e.key)||{}).display)||e.key}); if(_n>0) return -0.5-_n/1e6; }
+    return e.base+_wr;
   }
   const perKid={};
   KIDS.forEach(function(kid){ var list=collectKid(kid); list.sort(function(a,b){return _feedRank(kid,a)-_feedRank(kid,b);}); applyStickyOrder(list,function(e){return e.key;},function(e){return getMeta(kid,e.key);}); perKid[kid]=list; });
@@ -48980,11 +49017,79 @@ function seGuardCtx(extra){
     isClass:t=>{ try{ return typeof fxIsClass==="function"&&fxIsClass(subj(t)); }catch(e){ return false; } },
     isLesson:t=>{ try{ if(t.subjectKey==="morning_nb"||t.subjectKey==="closing_nb"||/notebook/i.test(t.title||"")) return false;
       if(typeof subjNoCarry==="function"&&subjNoCarry(t)) return false; return typeof planBacked==="function"&&!!planBacked(t.who,t.subjectKey); }catch(e){ return false; } },
-    ahead:(kid,sk)=>{ const wn=parseInt(String((typeof WK!=="undefined"&&WK)||"").replace(/\D/g,""),10)||0;
-      const exp=(typeof currExpectedBase==="function")?currExpectedBase(kid,sk,wn-1):null; const cur=(typeof computeSubjectCursor==="function")?(computeSubjectCursor(kid,sk)||0):0;
-      return exp==null?0:(cur-exp); },
+    ahead:(kid,sk)=>{ try{ return (typeof planPace==="function")?(planPace(kid,sk).score||0):0; }catch(e){ return 0; } },   // vs the CURRENT plan
     toMin:toMin, fromMin:fromMin
   },extra||{});
+}
+// 🎯 C (her yes 2026-09-23): when a day has ROOM before its end, the most-behind subject gets an extra sitting of its next
+// lesson — within its per-day cap and allowed days, never on another kid's Mom time, lunch stepped over, the Closing
+// Notebook kept last and the day still ending on time. Only days AFTER today (or today before school): once a day has
+// started it ends when its own work is done, and ⏏ Get ahead takes over. A rebuild makes behind 0, so a normal week adds
+// nothing. Lessons come from the list (next undone, not dealt this week); seqFill then keeps book order. Pure core.
+function prExtraCore(tasks,o){
+  const out={added:[],upd:{}};
+  if(!Array.isArray(tasks)||!o||!Array.isArray(o.days)) return out;
+  const DAYS=o.days, tm=o.toMin, fm=o.fromMin, ti=DAYS.indexOf(o.todayDay);
+  const firstDi=ti<0?0:(o.beforeSchool?ti:ti+1);
+  const dur=t=>+t.dur||20; const isClose=t=>t.subjectKey==="closing_nb"||/closing notebook/i.test(t.title||"");
+  const skip=t=>!t||!t.who||String(t.id||"").endsWith("_c")||!!t._eowOverflow||/lunch/i.test(t.title||"")||tm(t.time)==null;
+  const kids=o.kids||Array.from(new Set(tasks.filter(t=>t&&t.who).map(t=>t.who)));
+  const have=new Set(tasks.map(t=>t&&t.id));
+  kids.forEach(kid=>{
+    const subs=((o.subjects&&o.subjects(kid))||[]).filter(x=>x&&x.behind>0&&x.next&&x.next.length).map(x=>Object.assign({},x,{next:x.next.filter(l=>!have.has(l.id))}));
+    if(!subs.length) return;
+    for(let di=firstDi;di<DAYS.length;di++){
+      const day=DAYS[di], W=o.win?o.win(day):null; if(!W) continue; if(o.kidOff&&o.kidOff(kid,day)) continue;
+      const mine=tasks.filter(t=>!skip(t)&&t.who===kid&&t.day===day); if(!mine.length) continue;   // no school for him that day
+      const close=mine.filter(isClose)[0]||null;
+      let lastEnd=Math.max.apply(null,mine.filter(t=>!isClose(t)).map(t=>tm(t.time)+dur(t)).concat([W.start]));
+      const momBusy=tasks.filter(t=>!skip(t)&&t.who!==kid&&t.day===day&&t.mom==="required").map(t=>[tm(t.time),tm(t.time)+dur(t)]);
+      let placed=true;
+      while(placed){
+        placed=false;
+        subs.sort((a,b)=>b.behind-a.behind);
+        for(const x of subs){
+          if(x.behind<=0||!x.next.length) continue;
+          if(x.days&&x.days.length&&x.days.indexOf(day)<0) continue;
+          const count=tasks.filter(t=>!skip(t)&&t.who===kid&&t.day===day&&t.subjectKey===x.sk).length; if(count>=(x.cap||1)) continue;
+          let st=lastEnd; if(W.lunchEnd>W.lunchStart&&st<W.lunchEnd&&st+x.dur>W.lunchStart) st=W.lunchEnd;
+          if(x.mom==="required"&&momBusy.some(b=>st<b[1]&&st+x.dur>b[0])) continue;
+          if(st+x.dur+(close?dur(close):0)>W.end) continue;
+          const ls=x.next.shift();
+          const card=Object.assign({},x.base||{},{id:ls.id,who:kid,day:day,time:fm(st),dur:x.dur,mom:x.mom||"none",subjectKey:x.sk,title:ls.title,lid:ls.lid,catchUp:true});
+          tasks.push(card); have.add(card.id); out.added.push(card); out.upd[card.id]=card;
+          lastEnd=st+x.dur; x.behind--;
+          if(close&&tm(close.time)<lastEnd){ const ct=fm(lastEnd); close.time=ct; out.upd[close.id+"/time"]=ct; }
+          placed=true; break;
+        }
+      }
+    }
+  });
+  return out;
+}
+function prExtraCtx(extra){
+  const base=seGuardCtx(extra);
+  const DN={mon:"monday",tue:"tuesday",wed:"wednesday",thu:"thursday",fri:"friday",sat:"saturday",sun:"sunday"};
+  const before=(typeof cbBeforeSchoolToday==="function")?!!cbBeforeSchoolToday():false;
+  const tasksNow=((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]);
+  return Object.assign(base,{beforeSchool:before,subjects:kid=>{
+    const subs=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid])||{}, out=[];
+    Object.keys(subs).forEach(sk=>{ try{
+      const s=subs[sk]; if(!s||s.paused||!(typeof planBacked==="function"&&planBacked(kid,sk))) return;
+      if(typeof fxIsClass==="function"&&fxIsClass(s)) return;
+      const probe={who:kid,subjectKey:sk,title:s.display||sk}; if(typeof subjNoCarry==="function"&&subjNoCarry(probe)) return;
+      const behind=planPace(kid,sk).behind; if(!(behind>0)) return;
+      const ids=lidsFor(kid,sk)||[], seq=s.lessonSeq||[], done=lidDoneSet(kid,sk)||new Set();
+      const mine=tasksNow.filter(t=>t&&t.who===kid&&t.subjectKey===sk);
+      const dealt=new Set(); mine.forEach(t=>{ if(t.lid) dealt.add(t.lid); (t.lids||[]).forEach(l=>dealt.add(l)); });
+      const tpl=mine.slice().sort((a,b)=>(b.title||"").length-(a.title||"").length)[0]||null;
+      const next=[]; for(let i=0;i<ids.length&&next.length<behind;i++){ const l=ids[i]; if(!l||done.has(l)||dealt.has(l)) continue;
+        const text=String(seq[i]==null?"":seq[i]); next.push({lid:l,id:kid+"_"+planIdFor(kid,sk)+"_"+l,title:tpl?_seqFillTitle(tpl.title,text):((s.display||sk)+" — "+text)}); }
+      const days=(s.allowedDays||[]).map(d=>DN[String(d).slice(0,3).toLowerCase()]).filter(Boolean);
+      out.push({sk:sk,behind:behind,cap:Math.max(1,parseInt(s.cap,10)||1),days:days,dur:+s.minutes||(tpl&&tpl.dur)||20,mom:s.mom||(tpl&&tpl.mom)||"none",next:next,
+        base:{device:(tpl&&tpl.device)||s.device||"",detail:(tpl&&tpl.detail)||"",cascade:true}});
+    }catch(e){} });
+    return out; }});
 }
 // SCHOOLEND_END
 // SEQFILL_START — her design (2026-09-17): "everything should get a how many of each subject
@@ -49486,6 +49591,7 @@ function gwCommit(){
     sv(WK+"_checked",snapChecked); sv(WK+"_history",snapHist); sv(WK+"_sl",snapSl);
     sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
     try{ if(typeof rbLog==="function") rbLog("regenerate","all",0,d.week||""); }catch(e){}   // ↻ for the daily-miss tracker
+    try{ if(typeof prExtraCore==="function"){ const _px=prExtraCore(d.tasks,prExtraCtx({checked:snapChecked})); if(_px.added.length){ dbg("🎯 catch-up (regenerate): +"+_px.added.length+" extra sitting(s)"); if(typeof seqFillNormalize==="function") seqFillNormalize(d.tasks,"regenerate+catchup"); sv(WK+"_tasks",d.tasks); } } }catch(ePX){ dbg("catch-up skip: "+ePX); }
     try{ if(typeof seGuardWeek==="function"){ const _se=seGuardWeek(d.tasks,seGuardCtx({checked:snapChecked})); if(_se.retimed.length||_se.rolled.length||_se.deferred.length){ sv(WK+"_tasks",d.tasks); dbg("⏰ school end (regenerate): re-laid "+_se.retimed.length+", rolled "+_se.rolled.length+", deferred "+_se.deferred.length); } } }catch(eSE){ dbg("school-end skip: "+eSE); }
     if(db){
       const obj={};d.tasks.forEach(t=>obj[t.id]=t);

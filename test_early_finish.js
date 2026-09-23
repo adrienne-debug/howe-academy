@@ -25,6 +25,7 @@ function world(o) {
     _mlNowMin: () => o.now, _mlDayEndMin: () => 16 * 60 + 15, _mlLunchWin: () => [13 * 60, 14 * 60],
     mlMomOff: () => !!o.momOff, mlNow: () => ({ kid: o.momWith === undefined ? null : o.momWith }),
     currExpectedBase: (kid, sk) => (o.behind || {})[sk] === undefined ? null : (o.behind || {})[sk], computeSubjectCursor: () => 0,
+    planPace: (kid, sk) => ({ behind: (o.behind || {})[sk] || 0, ahead: 0, score: -((o.behind || {})[sk] || 0) }),   // 2026-09-23: behind vs the CURRENT plan
     catchupDayCap: (kid, subj) => (o.caps || {})[subj] === undefined ? 2 : o.caps[subj], taskSubject: t => t.subjectKey,
     subjNoCarry: t => /_retr_|reflex/.test(t.id + t.subjectKey), _mlDayOf: t => t.day,
     sv: () => {}, dbg: m => logs.push(m), gwShowToast: m => toasts.push(m), cap: s => s, _dryRun: () => false,

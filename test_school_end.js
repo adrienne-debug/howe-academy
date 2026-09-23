@@ -95,5 +95,5 @@ console.log("wiring");
 ok("safeWriteTasks runs it (cascade + Mom push)",/const _se=seGuardWeek\(weekData\.tasks,seGuardCtx\(\)\)/.test(src));
 ok("Regenerate runs it before the week is written",/const _se=seGuardWeek\(d\.tasks,seGuardCtx\(\{checked:snapChecked\}\)\)/.test(src));
 ok("the re-lay runs it for that kid and merges into its ONE targeted update",/seGuardWeek\(r\.tasksAfter,seGuardCtx\(\{kids:\[kid\],checked:checked\|\|\{\}\}\)\)/.test(src));
-ok("pace: furthest ahead = cursor − expected (signed)",/return exp==null\?0:\(cur-exp\);/.test(src));
+ok("pace: furthest ahead is measured against the CURRENT plan (planPace score; a rebuild = normal week)",/ahead:\(kid,sk\)=>\{ try\{ return \(typeof planPace==="function"\)\?\(planPace\(kid,sk\)\.score\|\|0\):0; \}catch\(e\)\{ return 0; \} \}/.test(src));
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

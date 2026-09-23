@@ -16,6 +16,7 @@ let ID=0; const card=(who,day,time,dur,mom,sk,title,x)=>Object.assign({id:sk+"_"
 function world(o){
   const ctx={console,weekData:{tasks:o.tasks},checked:o.checked||{},claimed:o.claimed||{},momMoves:{},_todayDay:"wednesday",day:o.viewDay||"wednesday",
     effectiveDay:t=>t.day,currExpectedBase:(k,sk)=>(o.behind||{})[sk]===undefined?null:(o.behind||{})[sk],computeSubjectCursor:()=>0,WK:"week24",
+    planPace:(k,sk)=>({behind:(o.behind||{})[sk]||0,ahead:0,score:-((o.behind||{})[sk]||0)}),
     subjNoCarry:t=>/retrieval|reflex/.test(t.subjectKey),mlMomOff:()=>false,mlNow:()=>({kid:o.momWith===undefined?null:o.momWith}),
     taskLessonRef:t=>(t.title.split(" — ")[1]||""),esc:s=>String(s==null?"":s),cap:s=>String(s).charAt(0).toUpperCase()+String(s).slice(1),
     Object,String,Array,Math,Date,RegExp,parseInt,JSON,Set};
