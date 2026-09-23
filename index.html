@@ -3107,6 +3107,10 @@ function haBusyReason(){
   try{
     if(typeof wbView!=="undefined"&&wbView) return "workbook open";
     if(typeof mastLogMode!=="undefined"&&mastLogMode) return "drill being scored";
+    // 🧠 her rule 2026-09-23: anywhere in Mastery — flashcards, Sprint, Match, decks — an update waits
+    // (a mid-drill update reload threw her back to the Schedule while drilling)
+    if(typeof tab!=="undefined"&&tab==="mastery") return "in Mastery";
+    if(typeof tab!=="undefined"&&tab==="schedule"&&typeof schedShowAdmin!=="undefined"&&schedShowAdmin&&typeof adminSubTab!=="undefined"&&adminSubTab==="mastery") return "in Mastery HQ";
     if(typeof mastRecState!=="undefined"&&mastRecState) return "recording";
     if(typeof mstState!=="undefined"&&mstState) return "study sitting";
     if(document.getElementById("wb-view")||document.getElementById("ordblk-dlg")) return "viewer open";
@@ -3128,10 +3132,41 @@ function haCvReloadWhenIdle(remote){
   if(_haCvTimer){ clearInterval(_haCvTimer); _haCvTimer=null; }
   _haCvPending=null; _haCvSince=0;
   sessionStorage.setItem("ha_cv_reload",String(remote));
+  haCvReturnSave();   // ↩ come back to this same screen after the update
   console.log("[HA] Code hash mismatch remote="+remote+" local="+CODE_VERSION+", cache-busting reload...");
   // location.reload(true) is deprecated/ignored by modern browsers (serves the CACHED old file),
   // which left devices stale. Force a fresh network fetch by changing the URL query.
   var u=new URL(location.href); u.searchParams.set("_cv",remote); location.replace(u.href);
+}
+// ↩ CVRETURN (her rule 2026-09-23): an update reload comes back to the screen it left — same tab,
+// same kid, same Mastery view and card — instead of the main Schedule. Only for the update reload,
+// only within 2 minutes, never on a kiosk (those are locked to their own view).
+function haCvReturnSave(){
+  try{
+    const st={at:Date.now(),tab:tab,kid:kid,masteryKid:masteryKid,mastView:mastView,mastSlideIdx:mastSlideIdx,
+      schedShowAdmin:schedShowAdmin,adminSubTab:adminSubTab,mhqKid:mhqKid,mhqView:mhqView,mhqDeck:mhqDeck};
+    sessionStorage.setItem("ha_cv_return",JSON.stringify(st));
+  }catch(e){}
+}
+function haCvReturnRestore(){
+  try{
+    const raw=sessionStorage.getItem("ha_cv_return"); if(!raw) return false;
+    sessionStorage.removeItem("ha_cv_return");
+    const st=JSON.parse(raw);
+    if(!st||Date.now()-(st.at||0)>120000) return false;
+    if(_kiosk()||_kioskR()||_kioskD()||_kioskK()) return false;
+    if(typeof st.tab==="string") tab=st.tab;
+    if(typeof st.kid==="string") kid=st.kid;
+    if(typeof st.masteryKid==="string") masteryKid=st.masteryKid;
+    if(typeof st.mastView==="string") mastView=st.mastView;
+    if(typeof st.mastSlideIdx==="number") mastSlideIdx=st.mastSlideIdx;
+    if(typeof st.schedShowAdmin==="boolean") schedShowAdmin=st.schedShowAdmin;
+    if(typeof st.adminSubTab==="string") adminSubTab=st.adminSubTab;
+    if(typeof st.mhqKid==="string") mhqKid=st.mhqKid;
+    if(typeof st.mhqView==="string") mhqView=st.mhqView;
+    if(st.mhqDeck===null||typeof st.mhqDeck==="string") mhqDeck=st.mhqDeck;
+    return true;
+  }catch(e){ return false; }
 }
 // CVRELOAD_END
 var _haMastReady=false, _haMastSkips=0;   // MASTGATE — see initFb
@@ -37384,8 +37419,8 @@ function mastSetSubject(s){ mastAddSubject=s; mastAddCustomSubject=""; _mastRe()
 function mastSetCustomSubj(){ mastAddCustomSubject=mastAddCustomSubject||"New"; _mastRe(); }
 function mastSetCat(s){ mastAddCat=s; mastAddItemMode=""; _mastRe(); }
 function mastSetAddItemMode(m){ mastAddItemMode=m; _mastRe(); }
-function mastSlideNext(){ mastSlideIdx++; mastFlipped=false; _mastRe(); }
-function mastSlidePrev(){ mastSlideIdx--; mastFlipped=false; _mastRe(); }
+function mastSlideNext(){ mastSlideIdx++; mastFlipped=false; if(mastLogMode) mastPersistLog(); _mastRe(); }   // 🃏 the card position rides the saved drill
+function mastSlidePrev(){ mastSlideIdx--; mastFlipped=false; if(mastLogMode) mastPersistLog(); _mastRe(); }
 function mastSlideScore(id,val){ if(!mastLogStartTs) mastLogStartTs=Date.now(); mastLogScores[id]=val; mastSlideIdx++; mastFlipped=false; mastPersistLog(); _mastRe(); }
 
 // ── Concurrency-safe mastery writes ───────────────────────────────────────────
@@ -37425,7 +37460,7 @@ function mastSlideShown(id){
 // The scores live only in memory until Save, so a half-finished quiz used to evaporate
 // when someone clicked out. Persist {date,scores} per kid and silently resume same-day.
 function mastPersistLog(){
-  try{ HA_LS.setItem("ha_mast_log_"+masteryKid,JSON.stringify({date:new Date().toISOString().slice(0,10),scores:mastLogScores,startTs:mastLogStartTs,pausedMs:mastLogPausedMs,pauseAt:mastLogPauseAt})); }catch(e){}
+  try{ HA_LS.setItem("ha_mast_log_"+masteryKid,JSON.stringify({date:new Date().toISOString().slice(0,10),scores:mastLogScores,startTs:mastLogStartTs,pausedMs:mastLogPausedMs,pauseAt:mastLogPauseAt,slideIdx:mastSlideIdx})); }catch(e){}   // 🃏 + the card they were on (2026-09-23)
 }
 function mastClearLogPersist(){ try{HA_LS.removeItem("ha_mast_log_"+masteryKid);}catch(e){} }
 function mastRestoreLog(){
@@ -37435,7 +37470,7 @@ function mastRestoreLog(){
     if(!s) return;
     const _today=new Date().toISOString().slice(0,10);
     const _has=s.scores&&Object.keys(s.scores).length;
-    if(s.date===_today&&_has){ mastLogMode=true; mastLogScores=s.scores; mastLogStartTs=s.startTs||null; mastLogPausedMs=s.pausedMs||0; mastLogPauseAt=s.pauseAt||null; }
+    if(s.date===_today&&_has){ mastLogMode=true; mastLogScores=s.scores; mastLogStartTs=s.startTs||null; mastLogPausedMs=s.pausedMs||0; mastLogPauseAt=s.pauseAt||null; if(typeof s.slideIdx==="number") mastSlideIdx=s.slideIdx; }   // 🃏 resume on the same card
     else if(_has) mastRescueStaleLog(s);  // a prior day's half-log is the ONLY copy of those scores — offer to bank it, never silently drop it (lost Lucy's 7/7 drill to the old delete)
     else mastClearLogPersist();
   }catch(e){}
@@ -44650,6 +44685,7 @@ if(_kioskD()){ tab="moms-plan"; mpSubView="dad"; document.body.classList.add("ki
 if(_kioskK()){ tab="kids"; document.body.classList.add("kioskd"); }
 paintBuildFp();
 fxClassRestore();   // a reload mid-class comes back to the class screen, not a blank day
+if(haCvReturnRestore()){ try{ document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab||(tab==="supplies"&&b.dataset.tab==="schedule"))); }catch(e){} }   // ↩ back where the update found us
 initFb(); renderAll();
 
 // ══════════════════════════════════════════════════════════════════
