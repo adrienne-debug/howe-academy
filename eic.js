@@ -507,10 +507,22 @@ function openNext(k){
   load().then(()=>{
     const n=eicNextSitting(TK(),logs,decs,mom(),iowaLogs);
     if(n&&n.iowa){ iowaStart(n.iowa,{timed:true}); return; }
-    if(n&&eicWorkbook(books(),n.book)){ openPage(n.book,n.page); return; }
+    if(n&&eicWorkbook(books(),n.book)){ rememberToday(kid,n.book,n.page); openPage(n.book,n.page); return; }
     panel(kid);
     toast(n?"That book's PDF isn't linked yet.":"Nothing waiting right now — every page built so far is done.");
   });
+}
+// ↩ today's page, so a checked card can reopen it (her ask 2026-09-23)
+function localDate(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function rememberToday(k,bk,printed){ try{ if(typeof db!=="undefined"&&db&&!dry()) db.ref("eic/"+k+"/today").set({date:localDate(),book:bk,page:+printed,ts:Date.now()}); }catch(e){} }
+function reopenToday(k){
+  if(k){ kid=k; try{ HA_LS.setItem("ha_eic_kid",kid); }catch(e){} logs={}; decs={}; counts={}; iowaLogs={}; }
+  if(typeof db==="undefined"||!db){ toast("Editor in Chief isn't loaded yet."); return; }
+  load().then(()=>db.ref("eic/"+kid+"/today").once("value")).then(s=>{
+    const t=s&&s.val();
+    if(t&&t.date===localDate()&&t.book&&t.page){ openPage(t.book,t.page); return; }
+    toast("No Editor in Chief page was opened today."); panel(kid);
+  }).catch(()=>toast("Couldn't reach Editor in Chief — try again."));
 }
 // ── open a page ────────────────────────────────────────────────────────────────────────────
 function withBook(bk,go){
@@ -698,6 +710,7 @@ function toggleKid(){ if(!mom()) return;
   if(typeof db!=="undefined"&&db&&!dry()){ const r=db.ref("mastery/"+key+"/eic"); if(on) r.set(true); else r.remove(); }
   draw(); }
 
+window.eicReopenToday=reopenToday;
 window.eicPanel=panel; window.eicClose=close; window.eicOpen=openPage; window.eicCheck=checkPage; window.eicOpenNext=openNext; window.eicNextSitting=eicNextSitting;
 window.eicSetKid=k=>{ kid=k; try{HA_LS.setItem("ha_eic_kid",k);}catch(e){} logs={}; decs={}; counts={}; iowaLogs={}; load().then(draw); };
 window.eicToggleAll=()=>{ showAll=!showAll; draw(); }; window.eicNoBook=()=>toast("That book's PDF isn't linked yet.");

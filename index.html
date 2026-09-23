@@ -5821,6 +5821,18 @@ function eicOpenNextFor(kid){
   s.onerror=()=>{ window._eicLoading=false; if(typeof gwShowToast==="function") gwShowToast("Couldn't load Editor in Chief."); };
   document.head.appendChild(s);
 }
+// ✏️ ↩ Back to today's page (her ask 2026-09-23): once the card is checked the doorway row went away and
+// there was no way back to the page (Ellis's was hand-checked 10:14 and Mom couldn't reopen it to score).
+// The doorway remembers today's page (eic/<kid>/today); a checked card of today reopens that same page.
+function eicReopenTodayFor(kid){
+  if(window.eicReopenToday){ window.eicReopenToday(kid); return; }
+  if(window._eicLoading) return; window._eicLoading=true;
+  const s=document.createElement("script");
+  s.src=/github\.io$/.test(location.hostname)?("eic.js?v="+Date.now()):"eic.js";
+  s.onload=()=>{ window._eicLoading=false; if(window.eicReopenToday) window.eicReopenToday(kid); };
+  s.onerror=()=>{ window._eicLoading=false; if(typeof gwShowToast==="function") gwShowToast("Couldn't load Editor in Chief."); };
+  document.head.appendChild(s);
+}
 // A score saved on the engine = today's sitting done: check off today's first open Editor in Chief card for that kid.
 function eicCheckCard(kid){
   try{
@@ -7524,7 +7536,8 @@ function taskCard(t, fromDay, readOnly, doneId){
   const _wbl=(!readOnly&&typeof wbTaskLink==="function")?wbTaskLink(t):null;
   // ✏️ Editor in Chief on the engine: its own doorway instead of the book-page link (her ask 2026-09-22)
   const _eicL=(!readOnly&&typeof eicLinked==="function")&&eicLinked(t);
-  const eicRow=(_eicL&&!done)?'<div style="margin-top:5px"><span onclick="event.stopPropagation();eicOpenNextFor(\''+t.who+'\')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u270F\uFE0F Open today\u2019s page \u2192</span></div>':"";
+  const eicRow=(_eicL&&!done)?'<div style="margin-top:5px"><span onclick="event.stopPropagation();eicOpenNextFor(\''+t.who+'\')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u270F\uFE0F Open today\u2019s page \u2192</span></div>'
+    :(_eicL&&done&&effectiveDay(t)===_todayDay)?'<div style="margin-top:5px"><span onclick="event.stopPropagation();eicReopenTodayFor(\''+t.who+'\')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u270F\uFE0F Back to today\u2019s page \u2192</span></div>':"";   // ↩ checked today → the same page again
   const wbRow=(_wbl&&!_eicL)?'<div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap"><span onclick="event.stopPropagation();wbOpenFor(\''+_wbl.bookId+'\',\''+t.who+'\','+_wbl.page+')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4D5} Open '+esc(taskLessonRef(t)||_wbl.name)+' →</span>'
     +(_wbl.ans?'<span onclick="event.stopPropagation();wbOpenCheck(\''+_wbl.bookId+'\',\''+t.who+'\','+_wbl.page+','+_wbl.ans+')" title="his page and the answer key side by side" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#065f46;cursor:pointer;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">&#9989; Check answers</span>':'')
     +'</div>':"";
@@ -24231,6 +24244,7 @@ function wbGoAns(d){
   wbBarRender();
 }
 function wbClose(){
+  clearTimeout(_wbAutoT); _wbAutoT=null;   // 💾 the close saves it now
   const go=()=>{ try{ if(_wbRO) _wbRO.disconnect(); }catch(e){} _wbRO=null; const ov=document.getElementById("wb-view"); if(ov) ov.remove(); wbView=null; };
   if(wbView&&wbView.dirty){ wbSave().then(go).catch(go); } else go();
 }
@@ -24338,7 +24352,7 @@ function wbPaint(){
     if(wbView.tool==="erase"){ wbEraseAt(p); return; }
     const w=0.0026+0.0026*(e.pressure&&e.pressure>0?e.pressure:0.5);
     wbView._live={c:(typeof momHere==="function"&&momHere())?WB_MOMPEN:WB_PEN,w:+w.toFixed(5),p:[p]};
-    wbView.strokes.push(wbView._live); wbView.dirty=true;
+    wbView.strokes.push(wbView._live); wbMarkDirty(wbView);
     try{cv.setPointerCapture(e.pointerId);}catch(err){}
   },{passive:false});
   document.addEventListener("pointermove",e=>{
@@ -24350,7 +24364,7 @@ function wbPaint(){
     evs.forEach(ev=>{ const q=wbPt(ev,cv); if(q) wbView._live.p.push(q); });
     wbPaint();
   },{passive:false});
-  const end=()=>{ if(!wbView) return; if(wbView._live){ wbView._live=null; wbBarRender(); } };
+  const end=()=>{ if(!wbView) return; if(wbView._live){ wbView._live=null; wbMarkDirty(wbView); wbBarRender(); } };   // 💾 the finished stroke counts
   document.addEventListener("pointerup",end); document.addEventListener("pointercancel",end);
   window.addEventListener("resize",()=>{ if(wbView){ wbFit(); wbPaint(); } });
 })();
@@ -24359,17 +24373,30 @@ function wbEraseAt(p){
   const v=wbView; if(!v) return; const R=0.018;
   const before=v.strokes.length;
   v.strokes=v.strokes.filter(s=>!(s.p||[]).some(q=>Math.abs(q[0]-p[0])<R&&Math.abs(q[1]-p[1])<R));
-  if(v.strokes.length!==before){ v.dirty=true; wbPaint(); wbBarRender(); }
+  if(v.strokes.length!==before){ wbMarkDirty(v); wbPaint(); wbBarRender(); }
 }
-function wbUndo(){ const v=wbView; if(!v||!v.strokes.length) return; v.strokes.pop(); v.dirty=true; wbPaint(); wbBarRender(); }
-function wbClear(){ const v=wbView; if(!v||!v.strokes.length) return; if(!confirm("Clear everything written on this page?")) return; v.strokes=[]; v.dirty=true; wbPaint(); wbBarRender(); }
-async function wbSave(){
+function wbUndo(){ const v=wbView; if(!v||!v.strokes.length) return; v.strokes.pop(); wbMarkDirty(v); wbPaint(); wbBarRender(); }
+function wbClear(){ const v=wbView; if(!v||!v.strokes.length) return; if(!confirm("Clear everything written on this page?")) return; v.strokes=[]; wbMarkDirty(v); wbPaint(); wbBarRender(); }
+// 💾 AUTOSAVE (her yes 2026-09-23, all workbooks): writing used to save only on ✕ / page turn, so a
+// reload or a dead tablet lost the whole page. Every change bumps _rev and saves 3s after the pen
+// stops; a save only clears `dirty` if nothing new was written while it was in flight.
+let _wbAutoT=null;
+function wbMarkDirty(v){ if(!v) return; v.dirty=true; v._rev=(v._rev||0)+1; wbAutoSaveSoon(); }
+function wbAutoSaveSoon(){
+  clearTimeout(_wbAutoT);
+  _wbAutoT=setTimeout(function(){ _wbAutoT=null; const v=wbView; if(!v||!v.dirty) return;
+    if(v._live){ wbAutoSaveSoon(); return; }   // mid-stroke — wait for the pen to lift
+    wbSave(true); },3000);
+}
+async function wbSave(quiet){
   const v=wbView; if(!v) return;
   if(!db||_dryRun()){ v.dirty=false; wbBarRender(); return; }
+  const rev=v._rev||0;
   try{
     await db.ref(wbInkPath(v.kid,v.bookId,v.page)).set({v:1,s:v.strokes,ts:Date.now()});  // one page, one path
-    v.dirty=false; wbBarRender();
-  }catch(e){ alert("Couldn't save that page: "+(e.message||e)); }
+    if((v._rev||0)===rev) v.dirty=false;   // written to while saving → stays dirty, the next save gets it
+    if(wbView===v) wbBarRender();
+  }catch(e){ if(!quiet) alert("Couldn't save that page: "+(e.message||e)); else if(typeof dbg==="function") dbg("wb autosave failed: "+(e.message||e)); }
 }
 
 // ── Mom's panel: add a book, hand a kid the page, review what they wrote ──────
