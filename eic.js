@@ -31,7 +31,11 @@
 //   (160 new passages: Beginning = Ellis, Level = Lincoln; capitalization + punctuation, 40 each, 10 clean). 3 lines +
 //   4 "No mistakes"; the APP grades. One clock per set (30 s a passage). Green = 80%+ timed, finished before time ran out.
 //   Log: eic/<kid>/iowa/<push>. This slice: only Mom opens it (🧪 Try a set) — those are trial:true, never count, and
-//   never use up his unseen passages. Slice C (next) = the gate, the schedule card and the kid's doorway.
+//   never use up his unseen passages.
+// Slice 6C (2026-09-22, her yes + "5 yes" = more than one set a day is fine): the kids get it. Opens once the reviews are
+//   cleared — the capitalization set first, punctuation once capitalization graduates. Two greens in a row graduate a
+//   skill (or Mom's ✓ Mark done = a manual Move-on decision, skill "iowa_<skill>", step 4). Kids' sets are always timed.
+//   The schedule card's doorway deals it right after the reviews; a finished set checks today's card off.
 (function(){
 "use strict";
 // Every book the engine knows, in ladder order (first book first). Level 1 + Level 2 added 2026-09-22 from her eBooks.
@@ -217,7 +221,7 @@ function draw(){
   const skills=eicSkills(T), shown=showAll?skills:skills.filter(s=>FIRST.indexOf(s.key)>=0);
   let rvDone=false;   // 🔁 the Reviews card sits right after capitalization + punctuation
   shown.forEach(s=>{
-    if(!rvDone&&FIRST.indexOf(s.key)<0){ rvDone=true; h+=reviewCard(T,M,list); }
+    if(!rvDone&&FIRST.indexOf(s.key)<0){ rvDone=true; h+=reviewCard(T,M,list)+iowaCard(T,M); }
     const pr=eicProgress(T,logs,decs,s.key), sp=pr.pools, g=pr.gate, cur=pr.step;
     const nextWb=g.next&&eicWorkbook(list,g.next.book);
     const nextReady=g.next&&(cur===1||M||eicCover(T,g.next.book,g.next.page).length>0);
@@ -248,8 +252,7 @@ function draw(){
     if(M) h+=decsHtml(s.key)+logsHtml(s.key);
     h+='</div>';
   });
-  if(!rvDone) h+=reviewCard(T,M,list);
-  if(M) h+=iowaTryCard();
+  if(!rvDone) h+=reviewCard(T,M,list)+iowaCard(T,M);
   h+='<div style="text-align:center">'+chip(showAll?"Just capitalization & punctuation":"All "+skills.length+" skills","eicToggleAll()")+'</div>';
   box.innerHTML=h;
 }
@@ -258,7 +261,7 @@ function rmBtn(fn){ return '<button onclick="'+fn+'" style="border:none;backgrou
 // Mom's "step done" marks for one skill (or the reviews), removable.
 function decsHtml(key){
   const md=Object.keys(decs).map(id=>Object.assign({id},decs[id])).filter(d=>d&&d.manual&&d.skill===key&&d.action==="moveon");
-  return md.length?'<div style="margin-top:7px;font-size:12px;color:#475569">'+md.map(d=>'<div style="display:flex;gap:8px;align-items:center;padding:2px 0"><span style="flex:1">'+esc(d.date||"")+' · <b>'+(key===REV?"reviews":"step "+esc(d.step))+' marked done</b> <span style="color:#94a3b8">(by Mom)</span></span>'+rmBtn("eicDelDec('"+esc(d.id)+"')")+'</div>').join("")+'</div>':"";
+  return md.length?'<div style="margin-top:7px;font-size:12px;color:#475569">'+md.map(d=>'<div style="display:flex;gap:8px;align-items:center;padding:2px 0"><span style="flex:1">'+esc(d.date||"")+' · <b>'+(key===REV?"reviews":key.indexOf(IOWA_KEY)===0?"Iowa "+esc(IOWA_NAME[key.slice(IOWA_KEY.length)]||""):"step "+esc(d.step))+' marked done</b> <span style="color:#94a3b8">(by Mom)</span></span>'+rmBtn("eicDelDec('"+esc(d.id)+"')")+'</div>').join("")+'</div>':"";
 }
 // The newest five sittings for one skill (or the reviews), removable.
 function logsHtml(key){
@@ -323,6 +326,21 @@ function eicIowaPick(items,level,skill,L,n,rnd){
   if(set.length<take) set=set.concat(clean.slice(want,want+(take-set.length)));
   return shuf(set);
 }
+// Where he is in step 4, worked out from the reviews gate + his Iowa sets (I) + Mom's decisions. Nothing stored.
+const IOWA_SKILLS=["capitalization","punctuation"], IOWA_KEY="iowa_";
+function eicIowaProgress(T,L,D,I){
+  let prev=eicReviews(T,L,D).gate.cleared; const out={unlocked:prev,skills:{},cur:null};
+  IOWA_SKILLS.forEach(sk=>{
+    const sets=Object.keys(I||{}).map(id=>I[id]).filter(r=>r&&!r.trial&&r.skill===sk).sort((a,b)=>(a.ts||0)-(b.ts||0));
+    let run=0, two=false; sets.forEach(r=>{ run=eicIowaGreen(r)?run+1:0; if(run>=2) two=true; });
+    const moved=Object.keys(D||{}).map(id=>D[id]).some(d=>d&&d.skill===IOWA_KEY+sk&&d.action==="moveon");
+    const open=prev, cleared=two||moved;
+    out.skills[sk]={open:open,cleared:cleared,streak:run,sets:sets.length,moved:moved&&!two};
+    if(open&&!cleared&&!out.cur) out.cur=sk;
+    prev=open&&cleared;
+  });
+  return out;
+}
 function eicIowaScore(set,answers){
   let right=0; const miss=[];
   arr(set).forEach((it,i)=>{ const a=+((answers||[])[i])||0; if(a===+it.answer) right++; else miss.push({n:i+1,it:it,said:a}); });
@@ -335,15 +353,28 @@ function loadIowa(){
     .catch(()=>{ toast("Couldn't load the Iowa practice passages."); return null; });
 }
 function clock(sec){ sec=Math.max(0,Math.ceil(sec)); return Math.floor(sec/60)+":"+String(sec%60).padStart(2,"0"); }
-// Mom's try-out card in the panel (slice B): pick a skill, timed or not; the last few sets underneath.
-function iowaTryCard(){
-  const lv=eicIowaLevel(kid), who=esc((typeof SL_KLBL!=="undefined"&&SL_KLBL[kid])||kid);
-  let h='<div style="margin-bottom:12px;padding:12px;border-radius:13px;border:1.5px dashed #a78bfa;background:#faf5ff"><div style="font-weight:800;font-size:15px;color:#0f172a;margin-bottom:3px">🧪 Iowa practice — step 4 (try it out)</div>'+
-    '<div style="font-size:12px;color:#6b21a8;margin-bottom:9px">'+who+' gets the '+(lv==="level"?"Level":"Beginning")+' sets. Only you can open this for now; your tries are marked practice — they never count and don\'t use up his passages.</div>'+
-    '<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">'+chip("🧪 Capitalization","eicIowaTry(\'capitalization\')","background:#7c3aed;color:#fff;border-color:#7c3aed")+chip("🧪 Punctuation","eicIowaTry(\'punctuation\')","background:#7c3aed;color:#fff;border-color:#7c3aed")+
-    chip(iowaTimed?"⏱ Timed":"Untimed","eicIowaTimed()",iowaTimed?"background:#ede9fe;border-color:#7c3aed;color:#5b21b6":"")+'</div>';
-  const mine=Object.keys(iowaLogs).map(id=>Object.assign({id},iowaLogs[id])).filter(r=>r&&r.skill).sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,5);
-  if(mine.length) h+='<div style="margin-top:9px;font-size:12px;color:#475569">'+mine.map(r=>'<div style="display:flex;gap:8px;align-items:center;padding:2px 0"><span style="flex:1">'+esc(r.date||"")+' · '+esc(IOWA_NAME[r.skill]||r.skill)+' · '+esc(r.right)+' of '+esc(r.total)+' · <b>'+esc(r.pct)+'%</b> · '+(r.timed?clock(r.secs)+(r.timeUp?" ⏰":""):"untimed")+(r.trial?' <span style="color:#94a3b8">(your try)</span>':(eicIowaGreen(r)?' ✅':''))+'</span>'+rmBtn("eicIowaDel('"+esc(r.id)+"')")+'</div>').join("")+'</div>';
+// The step-4 card in the panel: each skill's status + ▶ Start a set (kid and Mom); Mom also gets ✓ Mark done, her try-out
+// buttons (practice, timed or not) and the last sets.
+function iowaCard(T,M){
+  const ip=eicIowaProgress(T,logs,decs,iowaLogs), lv=eicIowaLevel(kid), who=esc((typeof SL_KLBL!=="undefined"&&SL_KLBL[kid])||kid);
+  const live=ip.unlocked&&!!ip.cur;
+  let h='<div style="margin-bottom:12px;padding:12px;border-radius:13px;border:1.5px solid '+(live?"#a78bfa":"#e2e8f0")+';background:'+(live?"#faf5ff":"#fff")+'"><div style="font-weight:800;font-size:15px;color:#0f172a;margin-bottom:3px">⏱ Iowa practice — step 4</div>'+
+    '<div style="font-size:12px;color:#6b21a8;margin-bottom:9px">'+(ip.unlocked?"Tap the line with the mistake — or No mistakes. 10 passages, 5 minutes. Green = 80% inside the clock; two greens in a row graduate the skill.":"🔒 Opens when the reviews are cleared.")+'</div>';
+  IOWA_SKILLS.forEach(sk=>{ const g=ip.skills[sk];
+    const st=g.cleared?"✅ Graduated"+(g.moved?" (marked done)":""):!g.open?"🔒 "+(sk==="punctuation"?"after capitalization":"after the reviews"):(g.streak>=1?"one green — one more to go":"two greens in a row to graduate");
+    h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px"><span style="font-weight:800;font-size:14px;color:#0f172a;min-width:120px">'+esc(IOWA_NAME[sk])+'</span><span style="flex:1;font-size:12px;font-weight:700;color:'+(g.cleared?"#166534":"#475569")+'">'+esc(st)+'</span>'+
+      ((g.open&&!g.cleared)?chip("▶ Start a set","eicIowaStart(\'"+sk+"\')","background:#7c3aed;color:#fff;border-color:#7c3aed"):"")+
+      ((M&&g.open&&!g.cleared)?chip("✓ Mark done","eicStepDone(\'"+IOWA_KEY+sk+"\',4)","padding:5px 10px;font-size:12px;background:#f0fdf4;border-color:#86efac;color:#166534"):"")+'</div>';
+  });
+  if(M){
+    h+='<div style="margin-top:6px;padding-top:9px;border-top:1px dashed #d8b4fe;display:flex;gap:7px;flex-wrap:wrap;align-items:center"><span style="font-size:11px;font-weight:800;color:#7c3aed">YOUR TRY-OUT</span>'+
+      chip("🧪 Capitalization","eicIowaTry(\'capitalization\')")+chip("🧪 Punctuation","eicIowaTry(\'punctuation\')")+
+      chip(iowaTimed?"⏱ Timed":"Untimed","eicIowaTimed()",iowaTimed?"background:#ede9fe;border-color:#7c3aed;color:#5b21b6":"")+'</div>'+
+      '<div style="font-size:11px;color:#94a3b8;margin-top:4px">'+who+' gets the '+(lv==="level"?"Level":"Beginning")+' sets. Try-outs never count and don\'t use up his passages.</div>';
+    h+=IOWA_SKILLS.map(sk=>decsHtml(IOWA_KEY+sk)).join("");
+    const mine=Object.keys(iowaLogs).map(id=>Object.assign({id},iowaLogs[id])).filter(r=>r&&r.skill).sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,5);
+    if(mine.length) h+='<div style="margin-top:9px;font-size:12px;color:#475569">'+mine.map(r=>'<div style="display:flex;gap:8px;align-items:center;padding:2px 0"><span style="flex:1">'+esc(r.date||"")+' · '+esc(IOWA_NAME[r.skill]||r.skill)+' · '+esc(r.right)+' of '+esc(r.total)+' · <b>'+esc(r.pct)+'%</b> · '+(r.timed?clock(r.secs)+(r.timeUp?" ⏰":""):"untimed")+(r.trial?' <span style="color:#94a3b8">(your try)</span>':(eicIowaGreen(r)?' ✅':''))+'</span>'+rmBtn("eicIowaDel('"+esc(r.id)+"')")+'</div>').join("")+'</div>';
+  }
   return h+'</div>';
 }
 function iowaStart(skill,opts){
@@ -396,9 +427,11 @@ function iowaFinish(timeUp){
     secs:R.timed?Math.min(el,R.limit):el,limit:R.limit,timed:R.timed,timeUp:!!(R.timed&&timeUp)};
   if(R.trial) rec.trial=true;
   R.rec=rec; R.score=sc; iowaResults();
-  const keep=id=>{ if(R.kid===kid) iowaLogs[id]=rec; };
-  if(typeof db==="undefined"||!db||dry()){ keep("local"+now); return; }
-  const r=db.ref("eic/"+R.kid+"/iowa").push(); r.set(rec).then(()=>keep(r.key)).catch(()=>toast("Couldn't save that set — tell Mom."));
+  const tmp="local"+now; if(R.kid===kid) iowaLogs[tmp]=rec;   // at once: a second set today skips these passages
+  const saved=()=>{ if(!R.trial){ try{ if(typeof eicCheckCard==="function") eicCheckCard(R.kid); }catch(e){} } };   // 🗓 today's card checks itself off
+  if(typeof db==="undefined"||!db||dry()){ saved(); return; }
+  const r=db.ref("eic/"+R.kid+"/iowa").push(); r.set(rec).then(()=>{ if(R.kid===kid&&iowaLogs[tmp]){ delete iowaLogs[tmp]; iowaLogs[r.key]=rec; } saved(); })
+    .catch(()=>{ if(R.kid===kid) delete iowaLogs[tmp]; toast("Couldn't save that set — tell Mom."); });
 }
 function iowaResults(){
   const R=iowaRun, box=document.getElementById("eic-iowa"); if(!R||!box) return;
@@ -427,11 +460,12 @@ function delIowa(id){
 // ── 🗓 the schedule's doorway (her ask 2026-09-22: "can we get it linked to the schedule" + "make page numbers
 // out"): the Editor in Chief card opens the engine's NEXT page — first skill (capitalization, then punctuation, then
 // the rest) whose current step still has a page to do. Pure, so the harness can pin it.
-function eicNextSitting(T,L,D,isMom){
+function eicNextSitting(T,L,D,isMom,I){
   const order=eicSkills(T).map(s=>s.key).sort((a,b)=>{ const ia=FIRST.indexOf(a), ib=FIRST.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib); });
   let rvTried=false;
   const tryRv=()=>{ rvTried=true; const rv=eicReviews(T,L,D), g=rv.gate;   // 🔁 step 3 comes right after capitalization + punctuation
-    if(!rv.unlocked||g.cleared||!g.next||g.empty) return null;
+    if(g.cleared){ const ip=eicIowaProgress(T,L,D,I); return ip.cur?{skill:"iowa",step:4,iowa:ip.cur}:null; }   // 🧪 then step 4
+    if(!rv.unlocked||!g.next||g.empty) return null;
     if(!isMom&&!eicCover(T,g.next.book,g.next.page).length) return null;
     return {skill:REV,step:3,book:g.next.book,page:g.next.page}; };
   for(const key of order){
@@ -447,7 +481,8 @@ function eicNextSitting(T,L,D,isMom){
 function openNext(k){
   if(k){ kid=k; try{ HA_LS.setItem("ha_eic_kid",kid); }catch(e){} logs={}; decs={}; counts={}; iowaLogs={}; }
   load().then(()=>{
-    const n=eicNextSitting(TK(),logs,decs,mom());
+    const n=eicNextSitting(TK(),logs,decs,mom(),iowaLogs);
+    if(n&&n.iowa){ iowaStart(n.iowa,{timed:true}); return; }
     if(n&&eicWorkbook(books(),n.book)){ openPage(n.book,n.page); return; }
     panel(kid);
     toast(n?"That book's PDF isn't linked yet.":"Nothing waiting right now — every page built so far is done.");
@@ -645,8 +680,9 @@ window.eicToggleAll=()=>{ showAll=!showAll; draw(); }; window.eicNoBook=()=>toas
 window.eicScoreOpen=scoreOpen; window.eicScorePreview=scorePreview; window.eicScoreClose=scoreClose; window.eicScoreSave=scoreSave;
 window.eicDelLog=delLog; window.eicDelDec=delDec; window.eicManual=manualOpen; window.eicManualClose=manualClose; window.eicManualSave=manualSave; window.eicStepDone=stepDone; window.eicLink=link; window.eicToggleKid=toggleKid; window.eicDecide=decide;
 window.eicLocked=()=>toast("That page is saved for step 2."); window.eicRvLocked=()=>toast("The reviews open once capitalization and punctuation clear step 2.");
-window.eicIowaTry=sk=>iowaStart(sk,{trial:true,timed:iowaTimed}); window.eicIowaTimed=()=>{ iowaTimed=!iowaTimed; draw(); };
+window.eicIowaTry=sk=>iowaStart(sk,{trial:true,timed:iowaTimed});
+window.eicIowaStart=sk=>{ const g=eicIowaProgress(TK(),logs,decs,iowaLogs).skills[sk]; if(!g||!g.open||g.cleared){ toast(g&&g.cleared?"That one is graduated ✅":"That set isn't open yet."); return; } iowaStart(sk,{timed:true}); }; window.eicIowaTimed=()=>{ iowaTimed=!iowaTimed; draw(); };
 window.eicIowaAnswer=iowaAnswer; window.eicIowaQuit=iowaQuit; window.eicIowaDone=iowaClose; window.eicIowaDel=delIowa;
 window.eicCountBtn=countBtn; window.eicCountOpen=countOpen; window.eicCountClose=countClose; window.eicCountSave=countSave; window.eicNotReady=()=>toast("That page isn't ready yet — ask Mom.");
-window._eicTest={eicIowaPick,eicIowaScore,eicIowaGreen,eicIowaLevel,eicReviewPool,eicReviews,eicIsReview,eicCountOk,eicCountKey,eicLadder,eicTagsFor,eicManualTs,eicNextSitting,eicCover,eicProgress,eicStepPools,eicStepOf,eicGate,eicPct,eicSkills,eicPool,eicPdf,eicPrinted,eicKeyPage,eicParagraphs,eicSkillOf,eicLast,eicWorkbook,canon,setTags:t=>{tags=t;}};
+window._eicTest={eicIowaProgress,eicIowaPick,eicIowaScore,eicIowaGreen,eicIowaLevel,eicReviewPool,eicReviews,eicIsReview,eicCountOk,eicCountKey,eicLadder,eicTagsFor,eicManualTs,eicNextSitting,eicCover,eicProgress,eicStepPools,eicStepOf,eicGate,eicPct,eicSkills,eicPool,eicPdf,eicPrinted,eicKeyPage,eicParagraphs,eicSkillOf,eicLast,eicWorkbook,canon,setTags:t=>{tags=t;}};
 })();
