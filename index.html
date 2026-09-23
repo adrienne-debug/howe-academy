@@ -1580,12 +1580,18 @@ const FB_CFG = (window.HA_FAMILY && window.HA_FAMILY.firebase) || {
 // wrapper, which prefixes keys with the family id ("burris:ha_active_wk").
 // EXCEPTION: the Howe family — and any boot with no config file — keeps the
 // historical bare keys, so existing devices lose no caches, PINs, or flags.
+// NO_MIRROR (2026-09-23): the whole-Mastery copy ("ha_mastery", ~6 MB and growing) filled
+// devices' ~5M-char localStorage (Mac, Fire, very likely the LG). It is no longer kept: reads
+// get nothing, saves are dropped, and any old copy is deleted at startup. Mastery now comes
+// only from Firebase; MASTGATE (initFb) blocks Mastery writes until it has arrived.
 window.HA_LS=(function(){
   var S=window.localStorage;
   var p=(window.HA_FAMILY&&window.HA_FAMILY.familyId&&window.HA_FAMILY.familyId!=="howe")?window.HA_FAMILY.familyId+":":"";
+  var NO_MIRROR={"ha_mastery":1};
+  try{ for(var nk in NO_MIRROR) S.removeItem(p+nk); }catch(e){}
   return {
-    getItem:function(k){ return S.getItem(p+k); },
-    setItem:function(k,v){ return S.setItem(p+k,v); },
+    getItem:function(k){ if(NO_MIRROR[k]) return null; return S.getItem(p+k); },
+    setItem:function(k,v){ if(NO_MIRROR[k]) return; return S.setItem(p+k,v); },
     removeItem:function(k){ return S.removeItem(p+k); }
   };
 })();
@@ -3421,9 +3427,12 @@ function initFb() {
     db.ref("mastery").on("value",s=>{
       const v=s.val()||{};
       masteryData={...v};
+      const _mastFirst=!_haMastReady;
       _haMastReady=true;   // MASTGATE: real data is in — Mastery writes allowed from here on
-      try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
-      if(tab==="mastery"){const el=document.getElementById("content");if(el)renderMastery(el);}
+      // NO_MIRROR: there is no local copy any more, so the first arrival repaints whatever is
+      // showing (Mastery HQ, Editor-in-Chief cards, drill strips), not just the Mastery tab.
+      if(_mastFirst){ try{ renderAll(); }catch(e){} }
+      else if(tab==="mastery"){const el=document.getElementById("content");if(el)renderMastery(el);}
     });
     db.ref("config/anthropic_key").once("value",s=>{ if(s.val()) mastAIKey=s.val(); });
     db.ref("config/slot_config").on("value",s=>{ slotConfig=s.val()||{}; });
@@ -38389,6 +38398,7 @@ function _mhqPill(label,active,onclick){
 
 function renderMasteryHQ(el,ah){
   if(!el){ el=document.getElementById("content"); if(!el) return; }
+  if(!_haMastReady){ el.innerHTML=(ah||"")+'<div style="padding:40px;text-align:center;color:var(--muted)">Loading Mastery cards…</div>'; return; }   // NO_MIRROR
   if(!Array.isArray(ROSTER)||!ROSTER.length){ el.innerHTML=(ah||"")+'<div style="padding:40px;text-align:center;color:var(--muted)">No kids on the roster.</div>'; return; }
   if(!ROSTER.includes(mhqKid)) mhqKid=ROSTER[0];
   // Every HQ button (deck mode, Save, pull, delete, reorder, rules…) runs a shared mast* writer
@@ -40109,6 +40119,7 @@ function renderMastery(el){
   try{ _renderMasteryInner(el); mastLockSlideHeight(el); }catch(e){ console.error("Mastery render error:",e); el.innerHTML='<div style="padding:40px;text-align:center;color:#dc2626"><b>Mastery tab error</b><br><span style="font-size:11px;color:#666">'+e.message+'</span></div>'; }
 }
 function _renderMasteryInner(el){
+  if(!_haMastReady){ el.innerHTML='<div style="padding:40px;text-align:center;color:var(--muted)">Loading Mastery cards…</div>'; return; }   // NO_MIRROR
   const kids=[...ROSTER];
   if(!kids.includes(masteryKid)) masteryKid=kids[0];
 
@@ -48162,7 +48173,8 @@ function autoGenerateWeekIfNeeded(){
   // archive. On a cold cache (fresh device, cleared storage) the localStorage seeds are
   // empty; generating then would undercount cursors and re-schedule finished lessons.
   // Retry until the listeners have answered.
-  if(!fbCheckedLoaded||!fbTasksLoaded||!fbArchiveLoaded){ setTimeout(autoGenerateWeekIfNeeded,5000); return; }
+  // NO_MIRROR: the retrieval (drill/sprint) slots come from Mastery's retrievalPlan — wait for it too.
+  if(!fbCheckedLoaded||!fbTasksLoaded||!fbArchiveLoaded||!_haMastReady){ setTimeout(autoGenerateWeekIfNeeded,5000); return; }
   _autoGenTried=true;
   db.ref("week"+wn+"/tasks").once("value",s=>{
     const _existing=s.val();
