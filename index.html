@@ -3013,6 +3013,7 @@ function haCvReloadWhenIdle(remote){
   var u=new URL(location.href); u.searchParams.set("_cv",remote); location.replace(u.href);
 }
 // CVRELOAD_END
+var _haMastReady=false, _haMastSkips=0;   // MASTGATE — see initFb
 function initFb() {
   if(!_haAuthOk){ haAuthGate(); return; }   // 🔒 sign-in first (inert while the rules are open)
   try {
@@ -3049,6 +3050,30 @@ function initFb() {
         console.warn("⚠️ HA DRY-RUN active — Firebase writes are disabled (reads live).");
       }catch(e){ console.warn("dryrun patch failed",e); }
     }
+
+    // MASTGATE — no Mastery write until Firebase's real Mastery data has arrived (2026-09-23).
+    // Many Mastery writes go by LIST INDEX (mastery/<kid>/<i>). Before the first value event,
+    // masteryData is only the device's local copy — possibly old (a full localStorage stops it
+    // updating) or empty — so an index write from it could overwrite a real card. Until
+    // _haMastReady, every set/update/remove/transaction/push under mastery/ is skipped and logged.
+    try{
+      const _gRef=db.ref.bind(db);
+      const _gate=(ref,path)=>{
+        const _skip=(op)=>{ if(_haMastReady) return false;
+          if(_haMastSkips++<5){ try{ dbg("mastgate skipped "+op+" "+path+" (Mastery not loaded yet)"); }catch(e){} }
+          return true; };
+        ["set","update","remove"].forEach(op=>{ const f=ref[op]&&ref[op].bind(ref); if(f) ref[op]=function(){ return _skip(op)?Promise.resolve():f.apply(null,arguments); }; });
+        const _tx=ref.transaction&&ref.transaction.bind(ref);
+        if(_tx) ref.transaction=function(){ return _skip("transaction")?Promise.resolve({committed:false}):_tx.apply(null,arguments); };
+        const _push=ref.push&&ref.push.bind(ref);
+        if(_push) ref.push=function(v){ if(v!==undefined&&_skip("push")) return Promise.resolve(); return _push.apply(null,arguments); };
+        const _child=ref.child&&ref.child.bind(ref);
+        if(_child) ref.child=(c)=>_gate(_child(c),path+"/"+c);
+        return ref;
+      };
+      db.ref=(p)=>{ const r=_gRef(p); const path=String(p||"").replace(/^\/+/,"");
+        return (path==="mastery"||path.indexOf("mastery/")===0)?_gate(r,path):r; };
+    }catch(e){ console.warn("mastgate patch failed",e); }
 
     // Scheduler-lock mirror + banner. The banner shows ONLY for long operations
     // (a real Regenerate / Sunday auto-gen) — routine cascade sweeps also claim the
@@ -3396,6 +3421,7 @@ function initFb() {
     db.ref("mastery").on("value",s=>{
       const v=s.val()||{};
       masteryData={...v};
+      _haMastReady=true;   // MASTGATE: real data is in — Mastery writes allowed from here on
       try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
       if(tab==="mastery"){const el=document.getElementById("content");if(el)renderMastery(el);}
     });
