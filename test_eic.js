@@ -78,7 +78,7 @@ const PP=E.eicStepPools(T,"punctuation");
 ok("punctuation step 1 = B1p6, B2p8, B2p10 · step 2 = B1p7, B2p9",key(PP[1])==="B1p6,B2p8,B2p10"&&key(PP[2])==="B1p7,B2p9");
 ok("no page is in both steps, none is lost",S.every(s=>{const q=E.eicStepPools(T,s.key),all=E.eicPool(T,s.key);return q[1].length+q[2].length===all.length&&!q[1].some(a=>q[2].some(b=>a.book===b.book&&a.page===b.page));}));
 ok("a page knows its step",E.eicStepOf(T,B1,2)===1&&E.eicStepOf(T,B1,3)===2&&E.eicStepOf(T,B2,4)===2&&E.eicStepOf(T,B2,5)===1);
-ok("a rule page and a review page have no step",E.eicStepOf(T,B2,1)===null&&E.eicStepOf(T,B2,31)===null);
+ok("a rule page has no step; a review page is step 3 (the reviews, 2026-09-22)",E.eicStepOf(T,B2,1)===null&&E.eicStepOf(T,B2,31)===3);
 
 console.log("the two-greens gate");
 const P1=SP[1], sit=(book,page,pct,ts,step)=>({book,page,pct,ts,step:step||1,skill:"capitalization"});
@@ -210,5 +210,65 @@ console.log("🪜 Level 1 + Level 2, each kid's own ladder (2026-09-22)");
   ok("EVERY step-2 page on both ladders now carries covers (Beginning books' later skills done 2026-09-22)",[TE,TL].every(TT=>E.eicSkills(TT).every(s=>E.eicStepPools(TT,s.key)[2].every(p=>E.eicCover(TT,p.book,p.page).length>0))));
   ok("the panel lists every skill by default",/showAll=true/.test(ee));
   ok("eic.js reads every pool through the kid's ladder",!/\(tags,/.test(ee)&&/function TK\(k\)\{ return eicTagsFor\(tags\|\|\{\},k\|\|kid\); \}/.test(ee));
+}
+console.log("🔁 step 3 — the reviews (her \"go to step 3\" 2026-09-22)");
+{
+  const L1="editor-in-chief-level-1", L2="editor-in-chief-level-2";
+  const TA=Object.assign({},T,{[L1]:prune(JSON.parse(fs.readFileSync(path.join(dir,"eic_lv1_tags.json"),"utf8"))),[L2]:prune(JSON.parse(fs.readFileSync(path.join(dir,"eic_lv2_tags.json"),"utf8")))});
+  const TE=E.eicTagsFor(TA,"ellis"), TL=E.eicTagsFor(TA,"lincoln"), R="review";
+  const tag=p=>(p.book===B1?"B1":p.book===B2?"B2":p.book===L1?"L1":"L2")+"p"+p.page;
+  const PE=E.eicReviewPool(TE), PL=E.eicReviewPool(TL);
+  ok("Ellis's review pool = every review page on his ladder (18 + 16 + 19)",PE.length===53,PE.length);
+  ok("Lincoln's adds Level 2's 19",PL.length===72,PL.length);
+  ok("cumulative reviews come first, book by book: Beg 1 p16 leads",tag(PE[0])==="B1p16"&&tag(PE[1])==="B1p17"&&!PE[0].mini,PE.slice(0,3).map(tag));
+  const firstMini=PE.findIndex(p=>p.mini);
+  ok("…then every Mini Review as reserve (Beg 1 p8 first), never mixed back in",firstMini===31&&tag(PE[firstMini])==="B1p8"&&PE.slice(firstMini).every(p=>p.mini)&&PE.slice(0,firstMini).every(p=>!p.mini),[firstMini,tag(PE[firstMini]||{})]);
+  ok("Beginning 2's Final Review and Level 1's Final Review are cumulative",PE.some(p=>tag(p)==="B2p98"&&!p.mini)&&PE.some(p=>tag(p)==="L1p105"&&!p.mini));
+  ok("no Level 2 page ever reaches Ellis",!PE.some(p=>p.book===L2));
+  ok("every review page is a review page and carries its covers",[PE,PL].every(P=>P.every(p=>(TA[p.book].pages["p"+p.page]||{}).role==="review"&&E.eicCover(TA,p.book,p.page).length>0)));
+  ok("no review page is in any skill's pool",E.eicSkills(TL).every(s=>E.eicPool(TL,s.key).every(p=>!PL.some(q=>q.book===p.book&&q.page===p.page))));
+  // unlock
+  const mv=(skill,step,ts)=>({skill,step,action:"moveon",ts,manual:true});
+  const D2={a:mv("capitalization",1,1),b:mv("capitalization",2,2),c:mv("punctuation",1,3),d:mv("punctuation",2,4)};
+  ok("locked with nothing done",!E.eicReviews(TE,{},{}).unlocked);
+  ok("still locked with capitalization cleared but punctuation not",!E.eicReviews(TE,{},{a:D2.a,b:D2.b,c:D2.c}).unlocked);
+  ok("opens once capitalization AND punctuation have both cleared step 2",E.eicReviews(TE,{},D2).unlocked);
+  // the count
+  ok("said 7, true 6 + 1 = 7 → ok",E.eicCountOk(7,6,1));
+  ok("off by one either way is still ok",E.eicCountOk(8,6,1)&&E.eicCountOk(6,6,1));
+  ok("off by two is not",!E.eicCountOk(5,6,1)&&!E.eicCountOk(9,6,1));
+  ok("no guess is never ok",!E.eicCountOk(null,6,1)&&!E.eicCountOk("",6,1));
+  ok("count key = book_pN_rRound (no periods for Firebase)",E.eicCountKey(B1,16,2)==="editor-in-chief-beginning-1_p16_r2");
+  // the gate
+  const rs=(book,page,pct,ts,countOk,extra)=>Object.assign({book,page,pct,ts,step:3,skill:R},countOk==null?{}:{countOk},extra||{});
+  const GR=(L,D)=>E.eicGate(L,D||{},R,3,PE);
+  let g=GR({a:rs(B1,16,90,1,false),b:rs(B1,17,95,2,true)});
+  ok("90% with the count wrong is NOT a green — streak 1 after the next green",!g.cleared&&g.streak===1&&tag(g.next)==="B1p32",[g.streak,g.next&&tag(g.next)]);
+  g=GR({a:rs(B1,16,90,1,true),b:rs(B1,17,85,2,true)});
+  ok("two greens in a row with the count right each time clears the reviews",g.cleared);
+  g=GR({a:rs(B1,16,100,1,null,{manual:true}),b:rs(B1,17,100,2,null,{manual:true})});
+  ok("Mom's ✍ Passed marks count as greens (no guess needed)",g.cleared);
+  g=GR({a:rs(B1,16,70,1,true)});
+  ok("found under 80% is not a green even with the count right",g.streak===0);
+  ok("a step-1 sitting on a review page never counts toward step 3",GR({a:Object.assign(rs(B1,16,100,1,true),{step:1}),b:rs(B1,17,100,2,true)}).streak===1);
+  // the doorway
+  let n=E.eicNextSitting(TE,{},D2,false);
+  ok("once open, the card's doorway deals the first review page — to the kid too (covers exist)",n&&n.skill===R&&n.step===3&&tag(n)==="B1p16",n);
+  n=E.eicNextSitting(TE,{a:rs(B1,16,90,5,true)},D2,false);
+  ok("…then the next one",n&&tag(n)==="B1p17",n);
+  n=E.eicNextSitting(TE,{},{a:D2.a,b:D2.b,c:D2.c},false);
+  ok("while locked, the doorway stays on the skills (punctuation step 2)",n&&n.skill==="punctuation"&&n.step===2,n);
+  n=E.eicNextSitting(TE,{x:rs(B1,16,90,5,true),y:rs(B1,17,90,6,true)},D2,true);
+  const third=E.eicSkills(TE)[2].key;
+  ok("reviews cleared → the doorway moves on to the next skill ("+third+")",n&&n.skill===third&&n.step===1,n);
+  ok("the Redo / Move-on check reads the review pool for step 3",/function poolFor\(T,skill,step\)\{ return skill===REV\?eicReviewPool\(T\)/.test(ee)&&/eicGate\(logs,decs,skill,step,poolFor\(TK\(\),skill,step\)\)/.test(ee));
+  // the kid's guess + Mom's score
+  const ih=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
+  ok("the viewer bar shows 🔢 How many? for the KID only",/\(\(v\.eic&&!wbMomEyes\(\)&&window\.eicCountBtn\)\?window\.eicCountBtn\(v\):""\)/.test(ih));
+  ok("the button only appears on a review page",/function countCtx\(v\)\{[\s\S]{0,200}if\(!eicIsReview\(T,bk,printed\)\) return null;/.test(ee));
+  ok("a locked guess is never overwritten (read first, even from another device)",/if\(old&&old\.said!=null\)\{ done\(old\); return; \}/.test(ee)&&/db\.ref\("eic\/"\+c\.k\+"\/counts\/"\+c\.key\)/.test(ee));
+  ok("Mom's score on a review page logs said / total / countOk under 'review' step 3",/if\(rec\.step===3\)\{ rec\.skill=REV; rec\.total=v\.found\+v\.missed; rec\.countOk=eicCountOk\(v\.said,v\.found,v\.missed\);/.test(ee));
+  ok("a kid never opens a review page before the reviews open, or without covers",/if\(step===3&&!mom\(\)\)\{\s*if\(!eicReviews\(TK\(\),logs,decs\)\.unlocked\)/.test(ee));
+  ok("the cover rides along on step 3 pages",/cover=\(step===2\|\|step===3\)\?eicCover\(TK\(\),bk,printed\):\[\]/.test(ee));
 }
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
