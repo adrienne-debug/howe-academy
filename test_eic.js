@@ -253,9 +253,9 @@ console.log("🔁 step 3 — the reviews (her \"go to step 3\" 2026-09-22)");
   ok("a step-1 sitting on a review page never counts toward step 3",GR({a:Object.assign(rs(B1,16,100,1,true),{step:1}),b:rs(B1,17,100,2,true)}).streak===1);
   // the doorway
   let n=E.eicNextSitting(TE,{},D2,false);
-  ok("once open, the card's doorway deals the first review page — to the kid too (covers exist)",n&&n.skill===R&&n.step===3&&tag(n)==="B1p16",n);
-  n=E.eicNextSitting(TE,{a:rs(B1,16,90,5,true)},D2,false);
-  ok("…then the next one",n&&tag(n)==="B1p17",n);
+  ok("with only capitalization + punctuation taught, the doorway deals Mini Review 1 & 2 (Beg 1 p8) — to the kid too",n&&n.skill===R&&n.step===3&&tag(n)==="B1p8",n);
+  n=E.eicNextSitting(TE,{a:rs(B1,8,90,5,true)},D2,false);
+  ok("…then no other review is ready, so he carries on with the next skill (not Review 1–4)",n&&n.skill===E.eicSkills(TE)[2].key&&n.step===1,n);
   n=E.eicNextSitting(TE,{},{a:D2.a,b:D2.b,c:D2.c},false);
   ok("while locked, the doorway stays on the skills (punctuation step 2)",n&&n.skill==="punctuation"&&n.step===2,n);
   n=E.eicNextSitting(TE,{x:rs(B1,16,90,5,true),y:rs(B1,17,90,6,true)},D2,true);
@@ -268,7 +268,7 @@ console.log("🔁 step 3 — the reviews (her \"go to step 3\" 2026-09-22)");
   ok("the button only appears on a review page",/function countCtx\(v\)\{[\s\S]{0,200}if\(!eicIsReview\(T,bk,printed\)\) return null;/.test(ee));
   ok("a locked guess is never overwritten (read first, even from another device)",/if\(old&&old\.said!=null\)\{ done\(old\); return; \}/.test(ee)&&/db\.ref\("eic\/"\+c\.k\+"\/counts\/"\+c\.key\)/.test(ee));
   ok("Mom's score on a review page logs said / total / countOk under 'review' step 3",/if\(rec\.step===3\)\{ rec\.skill=REV; rec\.total=v\.found\+v\.missed; rec\.countOk=eicCountOk\(v\.said,v\.found,v\.missed\);/.test(ee));
-  ok("a kid never opens a review page before the reviews open, or without covers",/if\(step===3&&!mom\(\)\)\{\s*if\(!eicReviews\(TK\(\),logs,decs\)\.unlocked\)/.test(ee));
+  ok("a kid never opens a review page before its skills are taught, or without covers",/if\(step===3&&!mom\(\)\)\{\s*if\(!eicReviews\(TK\(\),logs,decs\)\.isReady\(bk,printed\)\)/.test(ee));
   ok("the cover rides along on step 3 pages",/cover=\(step===2\|\|step===3\)\?eicCover\(TK\(\),bk,printed\):\[\]/.test(ee));
 }
 console.log("🧪 step 4 — Iowa practice player (slice B, 2026-09-22)");
@@ -337,5 +337,34 @@ console.log("⏱ step 4 for the kids — gate + doorway (slice C, 2026-09-22)");
   ok("a kid's ▶ Start a set is always timed and only when that set is open",/window\.eicIowaStart=sk=>\{ const g=eicIowaProgress\(TK\(\),logs,decs,iowaLogs\)\.skills\[sk\]; if\(!g\|\|!g\.open\|\|g\.cleared\)/.test(ee)&&/iowaStart\(sk,\{timed:true\}\); \};/.test(ee));
   ok("a finished real set checks off today's card; a try-out never does",/const saved=\(\)=>\{ if\(!R\.trial\)\{ try\{ if\(typeof eicCheckCard==="function"\) eicCheckCard\(R\.kid\);/.test(ee));
   ok("a second set the same day skips the passages he just had (kept locally at once)",/const tmp="local"\+now; if\(R\.kid===kid\) iowaLogs\[tmp\]=rec;/.test(ee));
+}
+console.log("🧩 reviews wait for their skills (her rule 2026-09-23, option A)");
+{
+  const L1="editor-in-chief-level-1";
+  const TE=E.eicTagsFor(Object.assign({},T,{[L1]:prune(JSON.parse(fs.readFileSync(path.join(dir,"eic_lv1_tags.json"),"utf8")))}),"ellis");
+  const need=(bk,name)=>E.eicReviewNeeds(TE,bk,name).slice().sort().join(",");
+  ok("Beg 1 Mini Review 1 and 2 needs capitalization + punctuation",need(B1,"Mini Review: Lessons 1 and 2")==="capitalization,punctuation");
+  ok("Beg 1 Review 1–4 also needs a/an/the and verb tenses",need(B1,"Review: Lessons 1-4")==="a_an_and_the,capitalization,punctuation,verb_tenses");
+  ok("Beg 2 Final Review needs all 18 of its skills",E.eicReviewNeeds(TE,B2,"Final Review: Lessons 1-18").length===18);
+  ok("Level 1 Mini Review 1–3 (en dash) needs content too",need(L1,"Mini Review: Lessons 1–3")==="capitalization,content,punctuation");
+  ok("every review page on the ladder knows its skills",E.eicReviewPool(TE).every(p=>p.needs.length>=2));
+  const mv=(skill,step,ts)=>({skill,step,action:"moveon",ts,manual:true});
+  const teach=(keys,t0)=>{ const D={}; let t=t0||1; keys.forEach(k=>{ D[k+"1"]=mv(k,1,t++); D[k+"2"]=mv(k,2,t++); }); return D; };
+  const rs=(book,page,pct,ts,countOk)=>({book,page,pct,ts,step:3,skill:"review",countOk:countOk!==false});
+  let rv=E.eicReviews(TE,{},teach(["capitalization","punctuation"]));
+  ok("caps + punctuation taught → exactly one review page is ready (Beg 1 p8)",rv.ready.length===1&&rv.ready[0].page===8&&rv.ready[0].book===B1);
+  rv=E.eicReviews(TE,{a:rs(B1,8,50,99)},teach(["capitalization","punctuation"]));
+  ok("that one sat (not green) → WAITING, not 'out of pages' — no Redo/Move on yet",rv.waiting&&!rv.gate.empty&&!rv.gate.next);
+  const D4=teach(["capitalization","punctuation","a_an_and_the","verb_tenses"]);
+  rv=E.eicReviews(TE,{a:rs(B1,8,90,99)},D4);
+  ok("a/an/the + verb tenses taught too → Review 1–4 (p16) is next, then Mini 3 & 4",rv.gate.next&&rv.gate.next.page===16&&rv.ready.some(p=>p.page===15&&p.book===B1));
+  let n=E.eicNextSitting(TE,{a:rs(B1,8,90,99)},D4,false,{});
+  ok("the doorway deals Review 1–4 before the next NEW skill",n&&n.skill==="review"&&n.book===B1&&n.page===16,n);
+  const Dmid=Object.assign({},teach(["capitalization","punctuation"]));
+  const Lmid={x:{book:B1,page:10,pct:90,ts:50,step:1,skill:"a_an_and_the"}};
+  n=E.eicNextSitting(TE,Lmid,Dmid,false,{});
+  ok("a skill already under way finishes first — the ready review waits",n&&n.skill==="a_an_and_the",n);
+  rv=E.eicReviews(TE,{a:rs(B1,8,90,99),b:rs(B1,16,85,100)},D4);
+  ok("two greens in a row across ready reviews still clear the reviews step",rv.gate.cleared);
 }
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

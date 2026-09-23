@@ -27,6 +27,9 @@
 //   guess of how many mistakes the page has → eic/<kid>/counts/<book>_p<N>_r<round> = {ts,said,book,page,round}.
 //   GREEN on step 3 = found ≥80% AND his guess within 1 of the true count (found + missed). Every error type counts.
 //   Same two-greens gate, Redo / Move on, ✍ manual marks. The log line adds said / total / countOk.
+// 2026-09-23 (her rule, option A): a review page is dealt only once EVERY skill in it has been taught (both steps
+//   cleared or marked done) — eicReviewNeeds reads the lessons from the review's name. Ready reviews slot in before the
+//   next NEW skill; a skill already under way finishes first. Two greens in a row still clear the reviews step.
 // Slice 6B (2026-09-22, her yes): STEP 4 = IOWA PRACTICE — the tap-to-answer player. Bank = eic_iowa.json beside this file
 //   (160 new passages: Beginning = Ellis, Level = Lincoln; capitalization + punctuation, 40 each, 10 clean). 3 lines +
 //   4 "No mistakes"; the APP grades. One clock per set (30 s a passage). Green = 80%+ timed, finished before time ran out.
@@ -141,7 +144,7 @@ function eicGate(L,D,skill,step,pages){
   const since=redos.length?(redos[redos.length-1].ts||0):0;
   const sat=p=>sits.some(e=>e.book===p.book&&+e.page===p.page&&(e.ts||0)>since);
   const cleared=two||moved, next=cleared?null:(pages.find(p=>!sat(p))||null);
-  return {sittings:sits.length,streak:run,cleared:cleared,moved:moved&&!two,round:redos.length+1,next:next,empty:!cleared&&!next&&pages.length>0};
+  return {sittings:sits.length,streak:run,cleared:cleared,moved:moved&&!two,round:redos.length+1,next:next,empty:!cleared&&!next&&pages.length>0,since:since};
 }
 // 🔁 STEP 3 — the reviews. Cumulative review pages first (ladder order), then the Mini Reviews as reserve.
 function eicIsReview(T,bk,printed){ const B=T&&T[bk], pg=B&&(B.pages||{})["p"+printed]; return !!(pg&&pg.role==="review"); }
@@ -149,13 +152,33 @@ function eicReviewPool(T){
   const cum=[], mini=[], seen={};
   bookOrder(T).forEach(bk=>{ arr(T[bk].reviews).forEach(r=>{ const isMini=/^\s*mini/i.test((r&&r.name)||"");
     arr(r&&r.pages).map(Number).forEach(p=>{ const id=bk+"|"+p; if(!(p>0)||seen[id]) return; seen[id]=1;
-      (isMini?mini:cum).push({book:bk,page:p,unit:String((r&&r.name)||""),mini:isMini}); }); }); });
+      (isMini?mini:cum).push({book:bk,page:p,unit:String((r&&r.name)||""),mini:isMini,needs:eicReviewNeeds(T,bk,r&&r.name)}); }); }); });
   return cum.concat(mini);
 }
-// Unlocked once capitalization AND punctuation have both cleared step 2. Gate = the same two greens in a row.
+// 🧩 Her rule 2026-09-23: a review only comes once EVERY skill in it has been taught. The skills = that book's lessons in the
+// review's name ("Review: Lessons 1-4" → lessons 1–4; "Mini Review: Lessons 1 and 2" → 1, 2), by the book's own lesson numbers.
+function eicReviewNeeds(T,bk,name){
+  const after=String(name||"").split(":").slice(1).join(":"), nums=(after.match(/\d+/g)||[]).map(Number); if(!nums.length) return [];
+  const want=/\band\b/i.test(after)?nums:(()=>{ const o=[]; for(let l=nums[0];l<=nums[nums.length-1];l++) o.push(l); return o; })();
+  const sk=(T&&T[bk]&&T[bk].skills)||{}, out=[];
+  Object.keys(sk).forEach(k=>{ if(want.indexOf(+sk[k].lesson)>=0&&out.indexOf(canon(k))<0) out.push(canon(k)); });
+  return out;
+}
+// "Taught" = the skill has cleared both steps (or Mom marked them done). Reviews whose skills are all taught are READY.
+// Gate = the same two greens in a row over every review sitting; the next page comes from the READY pages only.
+//   waiting = review pages exist but none is ready and unsat → the doorway just carries on with the next skill.
+//   empty   = every review page is ready and sat this round without two greens → Mom picks Redo / Move on.
 function eicReviews(T,L,D){
-  const pool=eicReviewPool(T), unlocked=FIRST.every(k=>eicProgress(T,L,D,k).step===3);
-  return {pool:pool,unlocked:unlocked,gate:eicGate(L,D,REV,3,pool)};
+  const pool=eicReviewPool(T), memo={};
+  const taught=k=>(k in memo)?memo[k]:(memo[k]=eicProgress(T,L,D,k).step===3);
+  const ready=pool.filter(p=>p.needs.length>0&&p.needs.every(taught));
+  const g=eicGate(L,D,REV,3,pool);
+  const sat=p=>Object.keys(L||{}).some(id=>{ const e=L[id]; return e&&e.book===p.book&&+e.page===p.page&&(+e.step||1)===3&&(e.ts||0)>g.since; });
+  const next=g.cleared?null:(ready.find(p=>!sat(p))||null);
+  const empty=!g.cleared&&!next&&pool.length>0&&ready.length===pool.length;
+  const gate=Object.assign({},g,{next:next,empty:empty});
+  return {pool:pool,ready:ready,unlocked:ready.length>0,waiting:!g.cleared&&!next&&!empty,gate:gate,
+    isReady:(bk,pg)=>ready.some(p=>p.book===bk&&p.page===+pg)};
 }
 // His guess vs the true count (found + missed), within 1. No guess → not ok.
 function eicCountOk(said,found,missed){
@@ -274,28 +297,29 @@ function logsHtml(key){
 // 🔁 STEP 3's card: every review page on the ladder — cumulative first, Mini Reviews as reserve.
 function reviewCard(T,M,list){
   const rv=eicReviews(T,logs,decs), g=rv.gate, pool=rv.pool; if(!pool.length) return "";
-  const live=rv.unlocked&&!g.cleared;
+  const live=!!g.next&&!g.cleared;
   const nextWb=g.next&&eicWorkbook(list,g.next.book), nextReady=g.next&&(M||eicCover(T,g.next.book,g.next.page).length>0);
   let status, tone="#475569";
   if(g.cleared){ status="Reviews cleared ✓"+(g.moved?" (moved on)":""); tone="#166534"; }
-  else if(!rv.unlocked) status="🔒 Opens when capitalization and punctuation have both cleared step 2";
+  else if(!rv.unlocked) status="🔒 Each review opens once every skill in it has been taught";
+  else if(rv.waiting) status="Waiting — the next review opens when its skills are taught"+(g.streak>=1?" · one green so far":"");
   else if(g.empty){ status="Out of review pages before two greens in a row"+(M?"":" — ask Mom"); tone="#b45309"; }
   else status="Step 3: "+(g.streak>=1?"one green — one more to go":"two greens in a row to clear")+" · green = found 80%+ AND his “how many” within 1"+(g.round>1?" · round "+g.round:"");
   let h='<div style="margin-bottom:12px;padding:12px;border-radius:13px;border:1.5px solid '+(live?"#93c5fd":"#e2e8f0")+';background:'+(live?"#f8fbff":"#fff")+'"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px"><div style="font-weight:800;font-size:15px;color:#0f172a;flex:1">🔁 Reviews — every skill mixed</div>'+
     ((live&&g.next)?chip("▶ Next page",(nextWb&&nextReady)?"eicOpen(\'"+g.next.book+"\',"+g.next.page+")":(nextWb?"eicNotReady()":"eicNoBook()"),"background:#1d4ed8;color:#fff;border-color:#1d4ed8"+((nextWb&&nextReady)?"":";opacity:.45")):"")+'</div>';
   h+='<div style="font-size:12px;font-weight:700;color:'+tone+';margin-bottom:9px">'+esc(status)+'</div>';
-  if(live&&M&&!g.empty) h+='<div style="margin-bottom:9px">'+chip("\u2713 Mark reviews done","eicStepDone(\'"+REV+"\',3)","padding:5px 10px;font-size:12px;background:#f0fdf4;border-color:#86efac;color:#166534")+'</div>';
-  if(live&&g.empty&&M) h+='<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px">'+chip("↻ Redo these pages","eicDecide(\'"+REV+"\',3,\'redo\')","background:#fef3c7;border-color:#d97706;color:#92400e")+chip("➡ Move on anyway","eicDecide(\'"+REV+"\',3,\'moveon\')")+'</div>';
+  if(rv.unlocked&&!g.cleared&&M&&!g.empty) h+='<div style="margin-bottom:9px">'+chip("\u2713 Mark reviews done","eicStepDone(\'"+REV+"\',3)","padding:5px 10px;font-size:12px;background:#f0fdf4;border-color:#86efac;color:#166534")+'</div>';
+  if(!g.cleared&&g.empty&&M) h+='<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px">'+chip("↻ Redo these pages","eicDecide(\'"+REV+"\',3,\'redo\')","background:#fef3c7;border-color:#d97706;color:#92400e")+chip("➡ Move on anyway","eicDecide(\'"+REV+"\',3,\'moveon\')")+'</div>';
   [["REVIEW",pool.filter(p=>!p.mini)],["MINI",pool.filter(p=>p.mini)]].forEach(row=>{
     if(!row[1].length) return;
-    h+='<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:6px"><span style="font-size:11px;font-weight:800;color:#64748b;min-width:52px">'+row[0]+(rv.unlocked?'':' 🔒')+'</span>';
+    h+='<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:6px"><span style="font-size:11px;font-weight:800;color:#64748b;min-width:52px">'+row[0]+'</span>';
     row[1].forEach(p=>{
       const wb=eicWorkbook(list,p.book), last=eicLast(logs,p.book,p.page);
       const ok=last&&+last.pct>=GREEN&&last.countOk!==false;
       const tone2=last?(ok?"background:#dcfce7;border-color:#16a34a;color:#166534":"background:#fef3c7;border-color:#d97706;color:#92400e"):"";
       const lbl=esc(SHORT[p.book]||p.book)+" · p "+p.page+(last?' <span style="font-weight:800">'+last.pct+'%'+(last.countOk===false?" #✗":"")+'</span>':"");
-      const covered=eicCover(T,p.book,p.page).length>0, can=wb&&(M||rv.unlocked&&covered);
-      h+='<span style="display:inline-flex;gap:3px" title="'+esc(p.unit)+'">'+chip(lbl,can?"eicOpen(\'"+p.book+"\',"+p.page+")":(wb?(rv.unlocked?"eicNotReady()":"eicRvLocked()"):"eicNoBook()"),tone2+((can&&rv.unlocked)?"":";opacity:.5"))+
+      const covered=eicCover(T,p.book,p.page).length>0, rdy=rv.isReady(p.book,p.page), can=wb&&(M||rdy&&covered);
+      h+='<span style="display:inline-flex;gap:3px" title="'+esc(p.unit)+'">'+chip(lbl+(rdy?"":" 🔒"),can?"eicOpen(\'"+p.book+"\',"+p.page+")":(wb?(rdy?"eicNotReady()":"eicRvLocked()"):"eicNoBook()"),tone2+((can&&rdy)?"":";opacity:.5"))+
         (M&&wb?chip("✅","eicCheck(\'"+p.book+"\',"+p.page+")","padding:7px 8px"):"")+(M?chip("\u270D","eicManual(\'"+p.book+"\',"+p.page+")","padding:7px 8px"):"")+'</span>';
     });
     h+='</div>';
@@ -462,21 +486,21 @@ function delIowa(id){
 // the rest) whose current step still has a page to do. Pure, so the harness can pin it.
 function eicNextSitting(T,L,D,isMom,I){
   const order=eicSkills(T).map(s=>s.key).sort((a,b)=>{ const ia=FIRST.indexOf(a), ib=FIRST.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib); });
-  let rvTried=false;
-  const tryRv=()=>{ rvTried=true; const rv=eicReviews(T,L,D), g=rv.gate;   // 🔁 step 3 comes right after capitalization + punctuation
-    if(g.cleared){ const ip=eicIowaProgress(T,L,D,I); return ip.cur?{skill:"iowa",step:4,iowa:ip.cur}:null; }   // 🧪 then step 4
-    if(!rv.unlocked||!g.next||g.empty) return null;
+  // 🔁 a READY review (every skill in it taught) is dealt before the next NEW skill; once the reviews clear → 🧪 step 4.
+  const tryRv=()=>{ const rv=eicReviews(T,L,D), g=rv.gate;
+    if(g.cleared){ const ip=eicIowaProgress(T,L,D,I); return ip.cur?{skill:"iowa",step:4,iowa:ip.cur}:null; }
+    if(!g.next) return null;
     if(!isMom&&!eicCover(T,g.next.book,g.next.page).length) return null;
     return {skill:REV,step:3,book:g.next.book,page:g.next.page}; };
+  const fresh=(key,pr)=>pr.step===1&&pr.g1.sittings===0&&!Object.keys(D||{}).some(id=>D[id]&&D[id].skill===key);
   for(const key of order){
-    if(!rvTried&&FIRST.indexOf(key)<0){ const r=tryRv(); if(r) return r; }
     const pr=eicProgress(T,L,D,key), g=pr.gate, cur=pr.step;
+    if(cur<3&&fresh(key,pr)){ const r=tryRv(); if(r) return r; }
     if(cur>=3||!g||!g.next||g.empty) continue;
     if(cur===2&&!isMom&&!eicCover(T,g.next.book,g.next.page).length) continue;   // a kid never gets a step-2 page without its covers
     return {skill:key,step:cur,book:g.next.book,page:g.next.page};
   }
-  if(!rvTried){ const r=tryRv(); if(r) return r; }
-  return null;
+  return tryRv();
 }
 function openNext(k){
   if(k){ kid=k; try{ HA_LS.setItem("ha_eic_kid",kid); }catch(e){} logs={}; decs={}; counts={}; iowaLogs={}; }
@@ -498,7 +522,7 @@ function openPage(bk,printed){ withBook(bk,wb=>{
   const rules=((me&&me.rules)||[]).map(p=>eicPdf(TK(),bk,p));
   const step=eicStepOf(TK(),bk,printed), cover=(step===2||step===3)?eicCover(TK(),bk,printed):[];
   if(step===3&&!mom()){
-    if(!eicReviews(TK(),logs,decs).unlocked){ toast("The reviews open once capitalization and punctuation clear step 2."); return; }
+    if(!eicReviews(TK(),logs,decs).isReady(bk,printed)){ toast("That review opens once every skill in it has been taught."); return; }
     if(!cover.length){ toast("That page isn't ready yet — ask Mom."); return; } }
   if(step===2&&!mom()){ const pr=skill?eicProgress(TK(),logs,decs,skill):null;
     if(!pr||!pr.g1.cleared){ toast("That page is saved for step 2."); return; }
@@ -679,10 +703,10 @@ window.eicSetKid=k=>{ kid=k; try{HA_LS.setItem("ha_eic_kid",k);}catch(e){} logs=
 window.eicToggleAll=()=>{ showAll=!showAll; draw(); }; window.eicNoBook=()=>toast("That book's PDF isn't linked yet.");
 window.eicScoreOpen=scoreOpen; window.eicScorePreview=scorePreview; window.eicScoreClose=scoreClose; window.eicScoreSave=scoreSave;
 window.eicDelLog=delLog; window.eicDelDec=delDec; window.eicManual=manualOpen; window.eicManualClose=manualClose; window.eicManualSave=manualSave; window.eicStepDone=stepDone; window.eicLink=link; window.eicToggleKid=toggleKid; window.eicDecide=decide;
-window.eicLocked=()=>toast("That page is saved for step 2."); window.eicRvLocked=()=>toast("The reviews open once capitalization and punctuation clear step 2.");
+window.eicLocked=()=>toast("That page is saved for step 2."); window.eicRvLocked=()=>toast("That review opens once every skill in it has been taught.");
 window.eicIowaTry=sk=>iowaStart(sk,{trial:true,timed:iowaTimed});
 window.eicIowaStart=sk=>{ const g=eicIowaProgress(TK(),logs,decs,iowaLogs).skills[sk]; if(!g||!g.open||g.cleared){ toast(g&&g.cleared?"That one is graduated ✅":"That set isn't open yet."); return; } iowaStart(sk,{timed:true}); }; window.eicIowaTimed=()=>{ iowaTimed=!iowaTimed; draw(); };
 window.eicIowaAnswer=iowaAnswer; window.eicIowaQuit=iowaQuit; window.eicIowaDone=iowaClose; window.eicIowaDel=delIowa;
 window.eicCountBtn=countBtn; window.eicCountOpen=countOpen; window.eicCountClose=countClose; window.eicCountSave=countSave; window.eicNotReady=()=>toast("That page isn't ready yet — ask Mom.");
-window._eicTest={eicIowaProgress,eicIowaPick,eicIowaScore,eicIowaGreen,eicIowaLevel,eicReviewPool,eicReviews,eicIsReview,eicCountOk,eicCountKey,eicLadder,eicTagsFor,eicManualTs,eicNextSitting,eicCover,eicProgress,eicStepPools,eicStepOf,eicGate,eicPct,eicSkills,eicPool,eicPdf,eicPrinted,eicKeyPage,eicParagraphs,eicSkillOf,eicLast,eicWorkbook,canon,setTags:t=>{tags=t;}};
+window._eicTest={eicReviewNeeds,eicIowaProgress,eicIowaPick,eicIowaScore,eicIowaGreen,eicIowaLevel,eicReviewPool,eicReviews,eicIsReview,eicCountOk,eicCountKey,eicLadder,eicTagsFor,eicManualTs,eicNextSitting,eicCover,eicProgress,eicStepPools,eicStepOf,eicGate,eicPct,eicSkills,eicPool,eicPdf,eicPrinted,eicKeyPage,eicParagraphs,eicSkillOf,eicLast,eicWorkbook,canon,setTags:t=>{tags=t;}};
 })();
