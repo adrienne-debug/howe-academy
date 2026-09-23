@@ -171,4 +171,21 @@ console.log("🗓 the schedule's doorway (her ask 2026-09-22)");
   ok("linked only when the kid's ✏️ switch is on and the card is Editor in Chief",/function eicLinked\(t\)\{ try\{ return !!\(t&&t\.subjectKey==="editor_chief"&&t\.who&&/.test(ih));
   ok("saving a score checks off today's card",/if\(typeof eicCheckCard==="function"\) eicCheckCard\(k\);/.test(ee)&&/function eicCheckCard\(kid\)\{[\s\S]{0,500}effectiveDay\(x\)===_todayDay[\s\S]{0,300}finalizeDone\(t\.id,ts,null\)/.test(ih));
 }
+console.log("✍ Mom's manual marks (her ask 2026-09-22)");
+{
+  const man=(book,page,pct,ts,step)=>({book,page,pct,ts,step:step||1,skill:"capitalization",manual:true});
+  let g=G({a:man(B1,2,100,1),b:man(B2,3,100,2)});
+  ok("two pages marked Passed clear step 1, exactly like two scored greens",g.cleared,g);
+  g=G({a:man(B1,2,100,1),b:man(B2,3,0,2)});
+  ok("Passed then Not yet = streak broken, one page left",!g.cleared&&g.streak===0&&g.next&&g.next.page===5,g);
+  g=G({},{d:{skill:"capitalization",step:1,action:"moveon",ts:1,manual:true}});
+  ok("'Mark step done' clears the step at any time — no need to run the pool dry",g.cleared&&g.next===null);
+  const n=E.eicNextSitting(T,{},{d:{skill:"capitalization",step:1,action:"moveon",ts:1,manual:true}},true);
+  ok("…and the doorway moves on to capitalization step 2",n&&n.skill==="capitalization"&&n.step===2,n);
+  const t0=E.eicManualTs("2026-09-10"), t1=E.eicManualTs("2026-09-11");
+  ok("a back-dated mark sorts by its date (so the streak reads in the order he did them)",t0<t1&&t1<Date.now());
+  ok("the ✍ chip and the step-done button are Mom-only",/\(M\?chip\("\\u270D","eicManual\(/.test(ee)&&/if\(cur<3&&M&&!g\.empty\) h\+=/.test(ee));
+  ok("a manual 'step done' shows under its skill with a remove that deletes only that one decision",/function delDec\(id\)\{[\s\S]{0,160}decs\[id\]\.manual[\s\S]{0,200}db\.ref\("eic\/"\+kid\+"\/decisions\/"\+id\)\.remove\(\)/.test(ee)&&/eicDelDec\(/.test(ee));
+  ok("manual marks write one log line / one decision, never a whole node",/const r=db\.ref\("eic\/"\+kid\+"\/log"\)\.push\(\); r\.set\(rec\)/.test(ee)&&/const r=db\.ref\("eic\/"\+kid\+"\/decisions"\)\.push\(\); r\.set\(rec\)/.test(ee));
+}
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

@@ -177,6 +177,7 @@ function draw(){
     h+='<div style="margin-bottom:12px;padding:12px;border-radius:13px;border:1.5px solid #e2e8f0"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px"><div style="font-weight:800;font-size:15px;color:#0f172a;flex:1">'+esc(s.name)+'</div>'+
       ((cur<3&&g.next)?chip("▶ Next page",(nextWb&&nextReady)?"eicOpen(\'"+g.next.book+"\',"+g.next.page+")":(nextWb?"eicNotReady()":"eicNoBook()"),"background:#1d4ed8;color:#fff;border-color:#1d4ed8"+((nextWb&&nextReady)?"":";opacity:.45")):"")+'</div>';
     h+='<div style="font-size:12px;font-weight:700;color:'+tone+';margin-bottom:9px">'+esc(status)+'</div>';
+    if(cur<3&&M&&!g.empty) h+='<div style="margin-bottom:9px">'+chip("\u2713 Mark step "+cur+" done","eicStepDone(\'"+s.key+"\',"+cur+")","padding:5px 10px;font-size:12px;background:#f0fdf4;border-color:#86efac;color:#166534")+'</div>';
     if(cur<3&&g.empty&&M) h+='<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px">'+chip("↻ Redo these pages","eicDecide(\'"+s.key+"\',"+cur+",\'redo\')","background:#fef3c7;border-color:#d97706;color:#92400e")+chip("➡ Move on anyway","eicDecide(\'"+s.key+"\',"+cur+",\'moveon\')")+'</div>';
     [1,2].forEach(step=>{
       if(!sp[step].length) return;
@@ -189,12 +190,14 @@ function draw(){
         // step 2 pages stay fresh until step 1 is cleared, and never open for a kid without their covers
         const covered=step===1||eicCover(T,p.book,p.page).length>0;
         const can=wb&&(M||(step===1||open2)&&covered);
-        h+='<span style="display:inline-flex;gap:3px">'+chip(lbl,can?"eicOpen(\'"+p.book+"\',"+p.page+")":(wb?((step===2&&open2)?"eicNotReady()":"eicLocked()"):"eicNoBook()"),tone2+((can&&(step===1||open2))?"":";opacity:.5"))+(M&&wb&&(step===1||open2)?chip("✅","eicCheck(\'"+p.book+"\',"+p.page+")","padding:7px 8px"):"")+'</span>';
+        h+='<span style="display:inline-flex;gap:3px">'+chip(lbl,can?"eicOpen(\'"+p.book+"\',"+p.page+")":(wb?((step===2&&open2)?"eicNotReady()":"eicLocked()"):"eicNoBook()"),tone2+((can&&(step===1||open2))?"":";opacity:.5"))+(M&&wb&&(step===1||open2)?chip("✅","eicCheck(\'"+p.book+"\',"+p.page+")","padding:7px 8px"):"")+(M?chip("\u270D","eicManual(\'"+p.book+"\',"+p.page+")","padding:7px 8px"):"")+'</span>';
       });
       h+='</div>';
     });
+    if(M){ const md=Object.keys(decs).map(id=>Object.assign({id},decs[id])).filter(d=>d&&d.manual&&d.skill===s.key&&d.action==="moveon");
+      if(md.length) h+='<div style="margin-top:7px;font-size:12px;color:#475569">'+md.map(d=>'<div style="display:flex;gap:8px;align-items:center;padding:2px 0"><span style="flex:1">'+esc(d.date||"")+' · <b>step '+esc(d.step)+' marked done</b> <span style="color:#94a3b8">(by Mom)</span></span><button onclick="eicDelDec(\''+esc(d.id)+'\')" style="border:none;background:none;color:#94a3b8;cursor:pointer;font-size:12px">remove</button></div>').join("")+'</div>'; }
     if(M){ const mine=Object.keys(logs).map(id=>Object.assign({id},logs[id])).filter(e=>e&&canon(e.skill||"")===s.key).sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,5);
-      if(mine.length) h+='<div style="margin-top:9px;font-size:12px;color:#475569">'+mine.map(e=>'<div style="display:flex;gap:8px;align-items:center;padding:2px 0"><span style="flex:1">'+esc(e.date||"")+' · '+esc(SHORT[e.book]||e.book)+' p '+esc(e.page)+' · found '+esc(e.found)+' of '+esc((+e.found||0)+(+e.missed||0))+(e.extra?' · '+esc(e.extra)+' extra':'')+' · <b>'+esc(e.pct)+'%</b></span><button onclick="eicDelLog(\''+esc(e.id)+'\')" style="border:none;background:none;color:#94a3b8;cursor:pointer;font-size:12px">remove</button></div>').join("")+'</div>'; }
+      if(mine.length) h+='<div style="margin-top:9px;font-size:12px;color:#475569">'+mine.map(e=>'<div style="display:flex;gap:8px;align-items:center;padding:2px 0"><span style="flex:1">'+esc(e.date||"")+' · '+esc(SHORT[e.book]||e.book)+' p '+esc(e.page)+(e.manual&&e.found==null?(' · <b>'+(+e.pct>=GREEN?"\u2713 passed":"not yet")+'</b> <span style="color:#94a3b8">(marked by Mom)</span>'):(' · found '+esc(e.found)+' of '+esc((+e.found||0)+(+e.missed||0))+(e.extra?' · '+esc(e.extra)+' extra':'')+' · <b>'+esc(e.pct)+'%</b>'+(e.manual?' <span style="color:#94a3b8">(entered by Mom)</span>':'')))+'</span><button onclick="eicDelLog(\''+esc(e.id)+'\')" style="border:none;background:none;color:#94a3b8;cursor:pointer;font-size:12px">remove</button></div>').join("")+'</div>'; }
     h+='</div>';
   });
   h+='<div style="text-align:center">'+chip(showAll?"Just capitalization & punctuation":"All "+skills.length+" skills","eicToggleAll()")+'</div>';
@@ -272,6 +275,63 @@ function scoreSave(){
   if(typeof db==="undefined"||!db||dry()){ done("local"+now); return; }
   const r=db.ref("eic/"+k+"/log").push(); r.set(rec).then(()=>done(r.key)).catch(()=>{ busy=false; toast("Couldn't save that score — try again."); });
 }
+// ✍ MANUAL MARKS (her ask 2026-09-22: "i def have been working on this loop manually and hes further ahead than
+// page 1"). Mom only. A page can be marked Passed (a green, 100%) or Not yet (0%), or given a found/missed/extra score,
+// on any date (default today) — same log line as a scored sitting, flagged manual. "Mark step done" = a Move-on
+// decision flagged manual, allowed any time (the gate already honours Move on). All removable from the recent list.
+let manTarget=null;
+function eicManualTs(date){
+  const now=Date.now(), today=(typeof _todayStr==="function")?_todayStr():new Date(now).toISOString().slice(0,10);
+  if(!date||date===today) return now;
+  const t=Date.parse(date+"T12:00:00"); return isFinite(t)?t+(now%60000):now;
+}
+function manualOpen(bk,printed){
+  if(!mom()) return; manTarget={book:bk,page:+printed};
+  let ov=document.getElementById("eic-man"); if(ov) ov.remove();
+  ov=document.createElement("div"); ov.id="eic-man"; ov.className="dlg-overlay"; ov.style.display="flex"; ov.style.zIndex="10060";
+  const today=(typeof _todayStr==="function")?_todayStr():new Date().toISOString().slice(0,10);
+  const inp=(id,ph)=>'<div style="text-align:center"><input id="'+id+'" inputmode="numeric" placeholder="0" style="width:62px;text-align:center;font-size:18px;padding:8px;border:1.5px solid #cbd5e1;border-radius:10px;font-family:\'DM Sans\',sans-serif"><div style="font-size:11px;color:#64748b;margin-top:3px">'+ph+'</div></div>';
+  const btn=(lbl,fn,st)=>'<button onclick="'+fn+'" style="flex:1;padding:11px;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer;border:none;font-family:\'DM Sans\',sans-serif;'+st+'">'+lbl+'</button>';
+  ov.innerHTML='<div class="dlg-box" style="max-width:360px"><div class="dlg-title">\u270D Mark '+esc(SHORT[bk]||bk)+' p '+esc(printed)+'</div>'+
+    '<div class="dlg-detail" style="margin-bottom:10px">'+esc((typeof SL_KLBL!=="undefined"&&SL_KLBL[kid])||kid)+' \u00b7 done on <input id="eic-man-date" type="date" value="'+today+'" style="font-size:13px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:8px"></div>'+
+    '<div style="display:flex;gap:8px;margin-bottom:12px">'+btn("\u2713 Passed","eicManualSave(\'pass\')","background:#16a34a;color:#fff")+btn("Not yet","eicManualSave(\'fail\')","background:#fef3c7;color:#92400e")+'</div>'+
+    '<div style="font-size:12px;color:#64748b;text-align:center;margin-bottom:6px">or enter his score</div>'+
+    '<div style="display:flex;gap:8px;justify-content:center">'+inp("eic-man-found","found")+inp("eic-man-missed","missed")+inp("eic-man-extra","extra")+'</div>'+
+    '<div style="display:flex;gap:8px;margin-top:14px">'+btn("Cancel","eicManualClose()","background:#f3f4f6;color:#374151")+btn("Save score","eicManualSave(\'score\')","background:#1d4ed8;color:#fff")+'</div></div>';
+  document.body.appendChild(ov);
+}
+function manualClose(){ const ov=document.getElementById("eic-man"); if(ov) ov.remove(); manTarget=null; }
+function manualSave(kind){
+  if(busy||!mom()||!manTarget) return;
+  const bk=manTarget.book, printed=manTarget.page, de=document.getElementById("eic-man-date");
+  const date=(de&&de.value)||((typeof _todayStr==="function")?_todayStr():new Date().toISOString().slice(0,10));
+  let found=null, missed=null, extra=null, pct;
+  if(kind==="pass") pct=100; else if(kind==="fail") pct=0;
+  else { const g=id=>{const e=document.getElementById(id);const v=e&&e.value!==""?Number(e.value):0;return (isFinite(v)&&v>=0)?Math.floor(v):NaN;};
+    found=g("eic-man-found"); missed=g("eic-man-missed"); extra=g("eic-man-extra"); pct=eicPct(found,missed,extra);
+    if(pct==null){ toast("Enter how many he found and missed — or tap Passed / Not yet."); return; } }
+  const rec={ts:eicManualTs(date),date:date,step:eicStepOf(tags,bk,printed)||1,book:bk,page:printed,skill:eicSkillOf(tags,bk,printed)||"review",
+    paragraphs:eicParagraphs(tags,bk,printed),pct:pct,manual:true};
+  if(found!=null){ rec.found=found; rec.missed=missed; rec.extra=extra; }
+  busy=true;
+  const done=id=>{ busy=false; logs[id]=rec; manualClose(); toast("\u270D Marked "+(SHORT[bk]||bk)+" p "+printed+" \u2014 "+(kind==="pass"?"passed":kind==="fail"?"not yet":pct+"%")); draw(); };
+  if(typeof db==="undefined"||!db||dry()){ done("local"+rec.ts); return; }
+  const r=db.ref("eic/"+kid+"/log").push(); r.set(rec).then(()=>done(r.key)).catch(()=>{ busy=false; toast("Couldn't save that — try again."); });
+}
+function stepDone(skill,step){
+  if(busy||!mom()) return;
+  if(!confirm("Mark step "+step+" done for this skill?\n\nUse this when he has already worked past it. It shows in the list under the skill — tap remove to undo.")) return;
+  const now=Date.now(), rec={ts:now,date:(typeof _todayStr==="function")?_todayStr():new Date(now).toISOString().slice(0,10),skill:skill,step:step,action:"moveon",manual:true};
+  busy=true;
+  const done=id=>{ busy=false; decs[id]=rec; draw(); toast("\u2713 Step "+step+" marked done"); };
+  if(typeof db==="undefined"||!db||dry()){ done("local"+now); return; }
+  const r=db.ref("eic/"+kid+"/decisions").push(); r.set(rec).then(()=>done(r.key)).catch(()=>{ busy=false; toast("Couldn't save that — try again."); });
+}
+function delDec(id){
+  if(!mom()||!decs[id]||!decs[id].manual) return; if(!confirm("Undo this 'step done' mark?")) return;
+  delete decs[id]; if(typeof db!=="undefined"&&db&&!dry()&&!/^local/.test(id)) db.ref("eic/"+kid+"/decisions/"+id).remove();
+  draw();
+}
 function delLog(id){
   if(!mom()||!logs[id]) return; if(!confirm("Remove this score?")) return;
   delete logs[id]; if(typeof db!=="undefined"&&db&&!dry()&&!/^local/.test(id)) db.ref("eic/"+kid+"/log/"+id).remove();
@@ -301,7 +361,7 @@ window.eicPanel=panel; window.eicClose=close; window.eicOpen=openPage; window.ei
 window.eicSetKid=k=>{ kid=k; try{HA_LS.setItem("ha_eic_kid",k);}catch(e){} logs={}; decs={}; load().then(draw); };
 window.eicToggleAll=()=>{ showAll=!showAll; draw(); }; window.eicNoBook=()=>toast("That book's PDF isn't linked yet.");
 window.eicScoreOpen=scoreOpen; window.eicScorePreview=scorePreview; window.eicScoreClose=scoreClose; window.eicScoreSave=scoreSave;
-window.eicDelLog=delLog; window.eicLink=link; window.eicToggleKid=toggleKid; window.eicDecide=decide;
+window.eicDelLog=delLog; window.eicDelDec=delDec; window.eicManual=manualOpen; window.eicManualClose=manualClose; window.eicManualSave=manualSave; window.eicStepDone=stepDone; window.eicLink=link; window.eicToggleKid=toggleKid; window.eicDecide=decide;
 window.eicLocked=()=>toast("That page is saved for step 2."); window.eicNotReady=()=>toast("That page isn't ready yet — ask Mom.");
-window._eicTest={eicNextSitting,eicCover,eicProgress,eicStepPools,eicStepOf,eicGate,eicPct,eicSkills,eicPool,eicPdf,eicPrinted,eicKeyPage,eicParagraphs,eicSkillOf,eicLast,eicWorkbook,canon,setTags:t=>{tags=t;}};
+window._eicTest={eicManualTs,eicNextSitting,eicCover,eicProgress,eicStepPools,eicStepOf,eicGate,eicPct,eicSkills,eicPool,eicPdf,eicPrinted,eicKeyPage,eicParagraphs,eicSkillOf,eicLast,eicWorkbook,canon,setTags:t=>{tags=t;}};
 })();
