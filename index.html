@@ -6499,7 +6499,7 @@ function renderSchedule(el){
   const col=DAY_COL[day]||"#666", pct=dayPct(day);
   // Stage 3: the loop lays Mom's gap-free queue and re-packs each kid around their block
   // in the RENDERED day (derived, no writes — every check-off re-derives it).
-  const activeTasks=mlQueueLay(dsRetime(displacedResult?displacedResult.tasks:weekData.tasks));
+  const activeTasks=dsDoneAtTime(mlQueueLay(dsRetime(displacedResult?displacedResult.tasks:weekData.tasks)));   // ✓ done cards at their real time
 
   let allDay=activeTasks.filter(t=>effectiveDay(t)===day);
   if(kid==="mom") allDay=allDay.filter(t=>t.mom==="required"||t.mom==="maybe");
@@ -6682,7 +6682,8 @@ function renderSchedule(el){
   const _singleKid=(kid!=="all"&&kid!=="mom");
   times.forEach(t=>{
     const _ss=toMin(t);
-    if(_singleKid&&_prevEnd>0&&_ss-_prevEnd>=15&&!(_prevEnd<14*60&&_ss>13*60)){
+    const _slotDone=tmap[t].every(tk=>!!checked[tk.id]);   // ✓ finished work sits at its real time — gaps there aren't breaks
+    if(_singleKid&&!_slotDone&&_prevEnd>0&&_ss-_prevEnd>=15&&!(_prevEnd<14*60&&_ss>13*60)){
       h+='<div class="time-row"><div class="time-pill" style="color:#16a34a">'+fromMin(_prevEnd)+'</div>'+
          '<div class="slot-tasks"><div style="background:#f0fdf4;border:1px dashed #86efac;border-radius:10px;padding:8px 12px;font-size:12px;color:#15803d;font-weight:600">'+
          '\u{1F33F} Break · '+(_ss-_prevEnd)+' min <span style="font-weight:400;color:#4d7c53">— Mom’s with a sibling, take a breather</span></div></div></div>';
@@ -6691,7 +6692,7 @@ function renderSchedule(el){
     h+='<div class="time-row"><div class="time-pill">'+t+'</div><div class="slot-tasks">';
     tmap[t].forEach(tk=>{ h+=taskCard(tk); });
     h+='</div></div>';
-    _prevEnd=Math.max(_prevEnd,_ss+Math.max.apply(null,tmap[t].map(tk=>tk.dur||20)));
+    if(!_slotDone) _prevEnd=Math.max(_prevEnd,_ss+Math.max.apply(null,tmap[t].map(tk=>tk.dur||20)));   // breaks are measured between open work only
   });
   if(!lunchDone&&times.length&&toMin(times[times.length-1])<13*60) h+=lunchBlock();
 
@@ -20888,7 +20889,7 @@ function _kcTodayCards(k){
   try{
     const dn=_todayDay;
     const srcTasks=(typeof displacedResult!=="undefined"&&displacedResult)?displacedResult.tasks:((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]);
-    const laid=mlQueueLay(dsRetime(srcTasks));
+    const laid=dsDoneAtTime(mlQueueLay(dsRetime(srcTasks)));   // ✓ done cards at their real time
     return laid.filter(function(t){ return t&&t.who===k&&effectiveDay(t)===dn&&!String(t.id||"").endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title||""); });
   }catch(e){ return []; }
 }
@@ -42816,6 +42817,26 @@ function mlOnCheck(t){
 // preserved exactly and only the times move.
 let dayStarts={};   // {day:{kid:"10:34 AM"}} for the active week
 function dsFor(kid,d){ try{ return ((dayStarts||{})[d||_todayDay]||{})[kid]||""; }catch(e){ return ""; } }
+// DONEAT_START — ✓ a finished card shows at the time it was really finished (her report 2026-09-23:
+// "it showed 2:48 and went to 10:05 when clicked"). The rendered day re-lays OPEN cards from now,
+// but finished ones fell back to their stored slot — so a check made the card jump up to 10:05.
+// Display only: a copy of each card checked on its own day gets time = its completion time; the
+// stored task is never touched. Done work lands on top in the order it was done, open work below.
+function dsDoneAtTime(list){
+  try{
+    if(!Array.isArray(list)||typeof checked==="undefined"||!checked) return list;
+    return list.map(function(t){
+      const ts=t&&checked[t.id]; if(!ts) return t;
+      const cd=(typeof _parseCheckTs==="function")?_parseCheckTs(ts):null; if(!cd) return t;
+      const dn=effectiveDay(t), ds=(typeof DAY_DT!=="undefined"&&DAY_DT)?DAY_DT[dn]:null; if(!ds) return t;
+      const dd=new Date(ds+", "+cd.getFullYear());
+      if(isNaN(dd.getTime())||dd.getMonth()!==cd.getMonth()||dd.getDate()!==cd.getDate()) return t;   // finished on another day — leave it
+      const tm=fromMin(cd.getHours()*60+cd.getMinutes());
+      return tm===t.time?t:Object.assign({},t,{time:tm});
+    });
+  }catch(e){ return list; }
+}
+// DONEAT_END
 function dsRetime(tasks){
   try{
     if(!Array.isArray(tasks)||!tasks.length) return tasks;
