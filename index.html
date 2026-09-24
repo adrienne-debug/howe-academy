@@ -7823,9 +7823,57 @@ function bbAlarmStart(k){
 function bbAlarmStop(){
   if(bbAlarmInt){ clearInterval(bbAlarmInt); bbAlarmInt=null; }
   bbAlarmKid=null;
-  if(bbAlarmCtx){ try{bbAlarmCtx.close();}catch(e){} bbAlarmCtx=null; }
+  // 🔔 the audio context is KEPT (not closed): a new one made later, outside a tap, starts muted on tablets
   const bar=document.getElementById("bb-np"); if(bar) bar.classList.remove("show");
 }
+// BBRING_START — 🔔 every awake device rings when a brain break ends (her yes 2026-09-23)
+// Was: only a device SHOWING the countdown could ring, and only the first one to hit 0:00 did — the
+// rest silently saw "done"; a device that left the card rang nobody; the LG rang late when its TV
+// screensaver lifted. Now every device watches every break once a second, whatever screen it's on.
+// The end is stamped once (endedAt = start + minutes, the same value from any device) and each
+// awake device rings once for it — but never more than 2 minutes late (a device that slept through
+// it just shows "done"). Dad's link never rings (he may be at work). The first tap after a load
+// unlocks sound, since tablets block audio until someone touches the page.
+const BB_RING_LATE_MS=120000;
+let _bbRung={};
+function bbEndAt(a){ return (a&&a.startedAt&&a.minutes)?(a.startedAt+a.minutes*60000):0; }
+function bbEnd(k,a){   // a timer reached 0 — stamp it done (idempotent across devices)
+  const end=bbEndAt(a); if(!end) return;
+  bbPatchActive(k,{phase:"done",endedAt:end});
+}
+function bbRingKey(k,a){ return k+"_"+(a.startedAt||0); }
+function bbMaybeRing(k,a){
+  try{
+    if(typeof _kioskD==="function"&&_kioskD()) return false;
+    const end=a.endedAt||bbEndAt(a), key=bbRingKey(k,a);
+    if(!end||_bbRung[key]) return false;
+    _bbRung[key]=1;
+    let seen={}; try{ seen=JSON.parse(sessionStorage.getItem("ha_bb_rung")||"{}")||{}; }catch(e){}
+    if(seen[key]) return false;                                   // this page already rang it before a reload
+    seen[key]=1; try{ sessionStorage.setItem("ha_bb_rung",JSON.stringify(seen)); }catch(e){}
+    if(Date.now()-end>BB_RING_LATE_MS) return false;               // slept through it — no surprise alarm now
+    bbAlarmStart(k); return true;
+  }catch(e){ return false; }
+}
+function bbWatch(){
+  try{
+    const now=Date.now();
+    Object.keys(brainBreaks||{}).forEach(function(k){
+      const a=brainBreaks[k]&&brainBreaks[k].active; if(!a) return;
+      if(a.phase==="timer"&&bbEndAt(a)&&now>=bbEndAt(a)){ bbEnd(k,a); bbMaybeRing(k,a); }
+      else if(a.phase==="done") bbMaybeRing(k,a);
+    });
+    // the break was finished (Back to my work) on another device → this one stops ringing too
+    if(bbAlarmKid){ const cur=brainBreaks[bbAlarmKid]&&brainBreaks[bbAlarmKid].active; if(!cur||cur.phase!=="done") bbAlarmStop(); }
+  }catch(e){}
+}
+function bbAudioUnlock(){
+  try{
+    if(!bbAlarmCtx||bbAlarmCtx.state==="closed") bbAlarmCtx=new (window.AudioContext||window.webkitAudioContext)();
+    if(bbAlarmCtx.state==="suspended") bbAlarmCtx.resume().catch(function(){});
+  }catch(e){}
+}
+// BBRING_END
 function bbTickStart(){
   if(bbTimerInt) return;
   bbTimerInt=setInterval(()=>{
@@ -7834,7 +7882,7 @@ function bbTickStart(){
     const k=el.dataset.kid, a=bbActive(k);
     if(!a||a.phase!=="timer"){ clearInterval(bbTimerInt); bbTimerInt=null; return; }
     const rem=a.startedAt+a.minutes*60000-Date.now();
-    if(rem<=0){ clearInterval(bbTimerInt); bbTimerInt=null; bbAlarmStart(k); bbPatchActive(k,{phase:"done"}); return; }
+    if(rem<=0){ clearInterval(bbTimerInt); bbTimerInt=null; bbEnd(k,a); bbMaybeRing(k,a); return; }   // 🔔 same path as every other device
     el.textContent=bbFmt(rem);
     const bar=document.getElementById("bb-prog"); if(bar) bar.style.width=Math.max(0,Math.min(100,100*(1-rem/(a.minutes*60000))))+"%";
   },500);
@@ -7898,7 +7946,7 @@ function bbCardHtml(k,a){
   if(a.phase==="timer"){
     const rem=a.startedAt+a.minutes*60000-Date.now();
     if(rem<=0){ // expired while nobody was watching — flip lazily (no chime, the moment passed)
-      setTimeout(()=>{ const cur=bbActive(k); if(cur&&cur.phase==="timer") bbPatchActive(k,{phase:"done"}); },50);
+      setTimeout(()=>{ const cur=bbActive(k); if(cur&&cur.phase==="timer"){ bbEnd(k,cur); bbMaybeRing(k,cur); } },50);   // 🔔 rings only if under 2 min late
     } else { setTimeout(bbTickStart,50); }
     const o=BB_OPTS[a.choice]||{e:"\u{1F9E0}",l:""};
     const pct=Math.max(0,Math.min(100,100*(1-rem/(a.minutes*60000))));
@@ -44714,6 +44762,8 @@ paintBuildFp();
 fxClassRestore();   // a reload mid-class comes back to the class screen, not a blank day
 if(haCvReturnRestore()){ try{ document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab||(tab==="supplies"&&b.dataset.tab==="schedule"))); }catch(e){} }   // ↩ back where the update found us
 initFb(); renderAll();
+setInterval(bbWatch,1000);   // 🔔 every device watches every brain break
+document.addEventListener("pointerdown",bbAudioUnlock,true);   // 🔔 a tap unlocks sound on this device
 
 // ══════════════════════════════════════════════════════════════════
 // PHONICS SPRINT TAB
