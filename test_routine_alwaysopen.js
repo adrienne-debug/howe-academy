@@ -28,6 +28,7 @@ function env(o) {
     routineTimes: o.routineTimes === undefined ? {} : o.routineTimes,
     _todayDay: o.today || "saturday", checked: o.checked || {},
     getActiveTasks: () => o.tasks || [], effectiveDay: t => t.day,
+    _rtSwTodayLay: () => null,   // 🎉 today's rendered lay (2026-09-24) — null = fall back to the task list, as these fixtures expect
     momHere: () => o.momHere !== false, renderAll: () => {}, rtSetEveningHour: () => {},
     db: { ref: p => ({ set: v => writes.push([p, JSON.parse(JSON.stringify(v))]) }) } };
   vm.createContext(e); new vm.Script(CODE).runInContext(e); return e;

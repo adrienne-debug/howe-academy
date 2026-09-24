@@ -1976,7 +1976,19 @@ function rtEveningHour(){ const h=parseInt(routineTimes&&routineTimes.eveningHou
 function rtFmtHour(h){ const ap=h>=12?"PM":"AM"; let hh=h%12; if(hh===0)hh=12; return hh+":00 "+ap; }
 // ✅ Her rule 2026-09-23: the day ENDS when every card is done or sent to Mom for her check — afternoon chores open and the
 // kid celebrates then; Mom can still send work back after. (Checked-only made the kid wait for Mom's approval.)
-function rtSchoolworkDone(kid,d){ const ts=getActiveTasks().filter(t=>t.who===kid&&effectiveDay(t)===d&&!t.id.endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title)); return ts.length===0?true:ts.every(t=>!!checked[t.id]||!!(typeof claimed!=="undefined"&&claimed&&claimed[t.id])); }
+// 🎉 her report 2026-09-24: Ellis (co-op day, started 3:39) finished everything ON HIS DAY — the rest had fallen to
+// "didn't fit today", hidden from kids — and got no celebration: this counted the hidden cards. TODAY now counts the
+// kid's timeline only (the rendered lay; open `_offDay` cards are left out — they sweep into the week at 8 PM).
+let _rtSwLay=null, _rtSwKey="";
+function _rtSwTodayLay(){
+  try{
+    if(typeof mlQueueLay!=="function") return null;
+    const k=Object.keys(checked||{}).length+"|"+Object.keys((typeof claimed!=="undefined"&&claimed)||{}).length+"|"+Math.floor(Date.now()/60000)+"|"+((weekData&&weekData.tasks)||[]).length+"|"+JSON.stringify(((typeof dayStarts!=="undefined"&&dayStarts)||{})[_todayDay]||{});
+    if(k!==_rtSwKey||!_rtSwLay){ _rtSwLay=mlQueueLay(getActiveTasks()); _rtSwKey=k; }
+    return _rtSwLay;
+  }catch(e){ return null; }
+}
+function rtSchoolworkDone(kid,d){ const _lay=(d===_todayDay)?_rtSwTodayLay():null; const ts=(_lay||getActiveTasks()).filter(t=>t.who===kid&&effectiveDay(t)===d&&!t.id.endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title)&&!(t._offDay&&!checked[t.id])); return ts.length===0?true:ts.every(t=>!!checked[t.id]||!!(typeof claimed!=="undefined"&&claimed&&claimed[t.id])); }
 // Afternoon (2026-08-18, her rule): opens when schoolwork is done — or at the afternoon hour (default
 // 4:00 PM) regardless, so a slow school day never holds the chores hostage. Past days: always open.
 function rtAfternoonHour(){ const h=parseInt(routineTimes&&routineTimes.afternoonHour,10); return isNaN(h)?16:h; }
@@ -42877,11 +42889,21 @@ function dsRetime(tasks){
       // gap and every ordering the packer already worked out, and it is predictable.
       let firstT=null;
       mine.forEach(function(t){ const m=toMin(t.time); if(firstT===null||m<firstT) firstT=m; });
+      // 📓 her rule (2026-09-23, again 9/24): the Morning Notebook comes FIRST when the day starts — only a running
+      // class goes ahead of it. Live 9/24: an early-finish pull carried back overnight sat at 2:00 PM ahead of Lincoln's
+      // notebook (2:25), and this shift kept that order. The notebook takes the first slot; the cards that were ahead
+      // of it slide later by its length, in their own order. Nothing else moves.
+      const _nb=mine.find(function(t){ return t.subjectKey==="morning_nb"||/morning notebook/i.test(t.title||""); });
+      const _nbT=_nb?toMin(_nb.time):null, _nbFix=!!(_nb&&_nbT>firstT);
+      const _ahead={}; if(_nbFix) mine.forEach(function(t){ if(t!==_nb&&toMin(t.time)<_nbT) _ahead[t.id]=1; });
       const delta=S-firstT;
-      if(!delta) return;
+      if(!delta&&!_nbFix) return;
       if(out===tasks) out=tasks.map(function(t){ return Object.assign({},t); });
       const ids={}; mine.forEach(function(t){ ids[t.id]=1; });
-      out.forEach(function(t){ if(ids[t.id]) t.time=fromMin(Math.max(0,toMin(t.time)+delta)); });
+      out.forEach(function(t){ if(!ids[t.id]) return;
+        let m=toMin(t.time);
+        if(_nbFix){ if(t.id===_nb.id) m=firstT; else if(_ahead[t.id]) m+=(_nb.dur||5); }
+        t.time=fromMin(Math.max(0,m+delta)); });
     });
     return out;
   }catch(e){ return tasks; }
@@ -49196,6 +49218,7 @@ function seGuardWeek(tasks,o){
   const ti=DAYS.indexOf(o.todayDay);
   const dIx=t=>DAYS.indexOf(String(t.day||"").toLowerCase());
   const isClose=t=>t.subjectKey==="closing_nb"||/closing notebook/i.test(t.title||"");
+  const isMorn=t=>t.subjectKey==="morning_nb"||/morning notebook/i.test(t.title||"");   // 📓 her rule: the notebook opens the day
   const skip=t=>!t||!t.who||String(t.id||"").endsWith("_c")||!!t._eowOverflow||/lunch/i.test(t.title||"")||tm(t.time)==null;
   const started=t=>dIx(t)===ti&&o.nowMin!=null&&tm(t.time)<=o.nowMin;
   const fixed=t=>!!(ck[t.id]||cl[t.id])||started(t)||!!(o.isClass&&o.isClass(t));
@@ -49217,12 +49240,30 @@ function seGuardWeek(tasks,o){
         const iv=mine.map(t=>[tm(t.time),tm(t.time)+dur(t),t]).sort((a,b)=>a[0]-b[0]);
         let stacked=false; for(let i=1;i<iv.length;i++) if(iv[i][0]<iv[i-1][1]) stacked=true;
         const late=mov.some(t=>tm(t.time)+dur(t)>W.end);
+        // 📓 live 9/24: the 8 PM sweep carried Lincoln's pulled Eggspress back to Thursday's first slot, AHEAD of his
+        // Morning Notebook — a day with the notebook behind other open work is not fine either
+        const _nb=mov.find(isMorn), nbBehind=!!_nb&&mov.some(t=>t!==_nb&&tm(t.time)<tm(_nb.time));
+        if(!stacked&&!late&&nbBehind){
+          // only the notebook is out of place → a SWAP, never a re-pack (a re-pack can run a minute past the end and roll a
+          // lesson off the week — dry-run on live 9/24 did exactly that). The notebook takes the first open card's slot, the
+          // cards that were ahead of it slide back by its length; skipped if that would touch a class, a checked card or
+          // another kid's Mom-required card.
+          const d0=dur(_nb), ahead=mov.filter(t=>t!==_nb&&tm(t.time)<tm(_nb.time)), s0=Math.min.apply(null,ahead.map(t=>tm(t.time)));
+          const hits=(a,b,x)=>a<tm(x.time)+dur(x)&&tm(x.time)<b;
+          const clash=ahead.some(t=>{ const a=tm(t.time)+d0, b=a+dur(t);
+            return mine.some(x=>fixed(x)&&hits(a,b,x))||(t.mom==="required"&&tasks.some(x=>!skip(x)&&x.who!==kid&&dIx(x)===di&&x.mom==="required"&&hits(a,b,x))); });
+          if(!clash){
+            setT(_nb,day,s0); if(out.retimed.indexOf(_nb.id)<0) out.retimed.push(_nb.id);
+            ahead.forEach(t=>{ setT(t,day,tm(t.time)+d0); if(out.retimed.indexOf(t.id)<0) out.retimed.push(t.id); });
+          }
+          return;
+        }
         if(!stacked&&!late) return;                                                  // a fine day is left alone
         // re-lay this kid's open cards in their current order
         const busy=mine.filter(fixed).map(t=>[tm(t.time),tm(t.time)+dur(t)]);
         if(W.lunchEnd>W.lunchStart) busy.push([W.lunchStart,W.lunchEnd]);
         const momBusy=tasks.filter(t=>!skip(t)&&t.who!==kid&&dIx(t)===di&&t.mom==="required").map(t=>[tm(t.time),tm(t.time)+dur(t)]);
-        const order=mov.map((t,i)=>({t,i})).sort((a,b)=>(isClose(a.t)-isClose(b.t))||(tm(a.t.time)-tm(b.t.time))||(a.i-b.i)).map(x=>x.t);
+        const order=mov.map((t,i)=>({t,i})).sort((a,b)=>(isMorn(b.t)-isMorn(a.t))||(isClose(a.t)-isClose(b.t))||(tm(a.t.time)-tm(b.t.time))||(a.i-b.i)).map(x=>x.t);   // 📓 notebook first · Closing last
         const lay=list=>{ let at=S0; const plan=new Map(); let over=false;
           list.forEach(t=>{ const d=dur(t); const B=(t.mom==="required")?busy.concat(momBusy):busy; let mv=true;
             while(mv){ mv=false; B.forEach(b=>{ if(at<b[1]&&at+d>b[0]){ at=b[1]; mv=true; } }); }

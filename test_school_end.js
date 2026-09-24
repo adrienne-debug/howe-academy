@@ -27,6 +27,37 @@ console.log("a fine day is left alone");
 { const T=[c("lincoln","thursday","2:00 PM",25,"rs4k"),c("lincoln","thursday","2:25 PM",5,"flash"),c("lincoln","thursday","4:05 PM",5,"closing_nb",{title:"Closing Notebook"})];
   const r=G(T,ctx()); ok("no writes",!Object.keys(r.upd).length,r.upd); }
 
+console.log("📓 the Morning Notebook opens the day (live 9/24: Lincoln's carried Eggspress sat ahead of it)");
+{ const egg=c("lincoln","thursday","2:00 PM",25,"eggspress_l"), nb=c("lincoln","thursday","2:25 PM",5,"morning_nb",{title:"📖 Morning Notebook — Morning Notebook"}),
+    ger=c("lincoln","thursday","2:30 PM",25,"german"), cl=c("lincoln","thursday","4:00 PM",5,"closing_nb",{title:"Closing Notebook"});
+  const T=[egg,nb,ger,cl]; const r=G(T,ctx({win:()=>({start:toMin("2:00 PM"),end:toMin("4:15 PM"),lunchStart:780,lunchEnd:840})}));
+  ok("a card ahead of the notebook → the day is re-laid (not 'fine')",Object.keys(r.upd).length>0,r.upd);
+  ok("notebook takes the day's first slot (2:00)",nb.time==="2:00 PM",nb.time);
+  ok("Eggspress follows it, the rest keep their order",egg.time==="2:05 PM"&&toMin(ger.time)>=toMin(egg.time)+25,[egg.time,ger.time]);
+  ok("Closing still last",toMin(cl.time)>=toMin(ger.time),cl.time); }
+{ const egg=c("lincoln","thursday","2:00 PM",25,"eggspress_l"), nb=c("lincoln","thursday","2:00 PM",5,"morning_nb",{title:"📖 Morning Notebook — Morning Notebook"});
+  const T=[egg,nb]; G(T,ctx({win:()=>({start:toMin("2:00 PM"),end:toMin("4:15 PM"),lunchStart:780,lunchEnd:840})}));
+  ok("stacked on the same slot → the notebook wins the slot",nb.time==="2:00 PM"&&egg.time==="2:05 PM",[nb.time,egg.time]); }
+{ const nb=c("lincoln","thursday","2:00 PM",5,"morning_nb",{title:"📖 Morning Notebook — Morning Notebook"}), egg=c("lincoln","thursday","2:05 PM",25,"eggspress_l");
+  const r=G([nb,egg],ctx({win:()=>({start:toMin("2:00 PM"),end:toMin("4:15 PM"),lunchStart:780,lunchEnd:840})}));
+  ok("notebook already first → a fine day, left alone",!Object.keys(r.upd).length,r.upd); }
+{ const nb=c("lincoln","thursday","2:25 PM",5,"morning_nb",{title:"📖 Morning Notebook — Morning Notebook"}), cls=c("lincoln","thursday","2:00 PM",25,"outschool",{cls:true});
+  const r=G([cls,nb],ctx({win:()=>({start:toMin("2:00 PM"),end:toMin("4:15 PM"),lunchStart:780,lunchEnd:840})}));
+  ok("a fixed-time class ahead of the notebook stays — the only exception",cls.time==="2:00 PM"&&!Object.keys(r.upd).length,r.upd); }
+
+{ // live 9/24 dry-run: a full re-pack ran Lincoln's Thursday 1 min past 4:15 and rolled a lesson off the week — the swap must not
+  const W={win:()=>({start:toMin("2:00 PM"),end:toMin("4:15 PM"),lunchStart:780,lunchEnd:840})};
+  const egg=c("lincoln","thursday","2:00 PM",25,"singapore"), nb=c("lincoln","thursday","2:25 PM",5,"morning_nb",{title:"📖 Morning Notebook — Morning Notebook"}),
+    rd=c("lincoln","thursday","3:00 PM",20,"rs4k"), m1=c("lincoln","thursday","3:37 PM",10,"match",{mom:"required"}), m2=c("lincoln","thursday","3:47 PM",13,"drill",{mom:"required"}),
+    cl=c("lincoln","thursday","4:00 PM",5,"closing_nb",{title:"Closing Notebook"}), oth=c("ellis","thursday","3:20 PM",30,"drill",{mom:"required"});
+  const T=[egg,nb,rd,m1,m2,cl,oth]; const r=G(T,ctx(W));
+  ok("notebook-only problem → just the swap: 2:00 notebook, 2:05 lesson",nb.time==="2:00 PM"&&egg.time==="2:05 PM",[nb.time,egg.time]);
+  ok("…nothing else re-timed, nothing rolled or deferred",rd.time==="3:00 PM"&&m1.time==="3:37 PM"&&m2.time==="3:47 PM"&&cl.time==="4:00 PM"&&!r.rolled.length&&!r.deferred.length,[r.rolled,r.deferred]); }
+{ const W={win:()=>({start:toMin("2:00 PM"),end:toMin("4:15 PM"),lunchStart:780,lunchEnd:840})};
+  const cls=c("lincoln","thursday","2:10 PM",15,"outschool",{cls:true}), egg=c("lincoln","thursday","2:00 PM",10,"singapore"), nb=c("lincoln","thursday","2:25 PM",5,"morning_nb",{title:"📖 Morning Notebook — Morning Notebook"});
+  const r=G([egg,cls,nb],ctx(W));
+  ok("a swap that would run into a class is skipped (the screen still shows the notebook first)",egg.time==="2:00 PM"&&nb.time==="2:25 PM"&&!Object.keys(r.upd).length,r.upd); }
+
 console.log("stacked cards with room → re-laid in order, nothing rolls");
 { const a1=c("ellis","friday","3:00 PM",15,"wr",{mom:"required"}), a2=c("ellis","friday","3:02 PM",25,"aas",{mom:"required"}), a3=c("ellis","friday","3:15 PM",10,"match",{mom:"required"});
   const T=[c("ellis","friday","10:00 AM",5,"morning_nb"),a1,a2,a3]; const r=G(T,ctx());
