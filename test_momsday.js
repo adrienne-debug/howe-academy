@@ -52,6 +52,7 @@ global.SL_KIDS = ["julian","lincoln","ellis","lucy"];
 global.SL_KCOL = { julian:"#e07b39", lincoln:"#2b7a78", ellis:"#6b4c93", lucy:"#c2547e" };
 global.morningStepsFor = k => [{},{},{}];
 global.mStepDoneOn = (k,d,i) => i === 0;
+global.morningDueIdx = (k,d) => [0,1,2];   // 🌅 Kids today counts that day's due steps (2026-09-23)
 const morningDone = { julian:true, lincoln:false, ellis:true, lucy:false };
 global.morningComplete = (k,d) => morningDone[k];
 global._boardTaskCounts = (k,d) => ({ total:5, done:2 });
