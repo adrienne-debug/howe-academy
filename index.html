@@ -2836,6 +2836,7 @@ function attachWeekListeners(wk){
     if(inFP!==curFP){ dbg("tasks updated count="+incoming.length); weekData.tasks=incoming; sv(wk+"_tasks",incoming); renderAll(); }
     // Schedule cascade on first load OR when another device changed the task set
     if(firstLoad || inFP!==curFP) schedCascade();
+    if(firstLoad || inFP!==curFP){ try{ rvHeal(); }catch(e){} }   // 📅 a booked review whose card a rebuild dropped comes back
   });
   fbWeekRefs.push(r5);
 
@@ -3362,6 +3363,7 @@ function initFb() {
       try{HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings));}catch(e){}
       if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);}
     });
+    db.ref("reviews").on("value",s=>{ reviews=s.val()||{}; try{ rvHeal(); }catch(e){} if(tab==="schedule"&&typeof renderAll==="function") renderAll(); });   // 📅 Review with Mom
     db.ref("brainBreaks").on("value",s=>{
       brainBreaks=s.val()||{};
       try{HA_LS.setItem("ha_brainbreaks",JSON.stringify(brainBreaks));}catch(e){}
@@ -7254,6 +7256,131 @@ function gaRender(kid){
 // GETAHEAD_END
 // Mom approves a kid's claim. Done-time = the kid's claim time (so a late
 // approval never penalizes the kid), and the spin is judged off that time.
+// REVIEW_START — 📅 Review with Mom (her yes 2026-09-24: "build it")
+// When Mom grades a kid's work (approve, score, or a done card in History) she can book a short review:
+// 5/10/15/20 min, later today or the next school day, with a note. It becomes a Mom-required card on the
+// kid's schedule ("🔁 Review with Mom — <lesson>", the note as its detail), laid like any other Mom card
+// (today: after the kid's last open card; next day: at school start, the notebook still first; co-op and
+// kid-off days skipped). It is Mom time, not a lesson: subjectKey "review", no lid, so no book's pace or
+// order moves. The graded lesson's history entry gets a `review` chip. Source of truth: reviews/<kid>/<id>
+// — if a week rebuild drops the card, rvHeal re-adds it; a review with no school day left this week waits
+// as "pending" and is placed when a school day exists. Every write is targeted. Dry-run writes nothing.
+let reviews={};
+const RV_MINS=[5,10,15,20];
+let _rvHealed={};
+function rvRecOf(id){ for(const k in (reviews||{})){ const r=(reviews[k]||{})[id]; if(r) return r; } return null; }
+function rvSchoolEndMin(){ try{ return _mlDayEndMin(); }catch(e){ return toMin("4:15 PM"); } }
+function rvKidOff(kid,dn){ try{ const ds=_pushDateStr(dn); if(!ds) return true; if(typeof schedOvKidOff==="function"&&schedOvKidOff(kid,ds)) return true; if(typeof smapIsKidOff==="function"&&smapIsKidOff(kid,ds)) return true; if(typeof coopTimedEndMin==="function"&&coopTimedEndMin(kid,(typeof routineDateISO==="function"?routineDateISO(dn):ds))>0) return true; if(typeof coopFullDayFor==="function"&&coopFullDayFor(kid,(typeof routineDateISO==="function"?routineDateISO(dn):ds))) return true; }catch(e){} return false; }
+function rvCanToday(kid,minutes){ try{ return !rvKidOff(kid,_todayDay)&&(_mlNowMin()+minutes<=rvSchoolEndMin()); }catch(e){ return false; } }
+function rvNextSchoolDay(kid,from){ let dn=(typeof _nextSchoolDay==="function")?_nextSchoolDay(kid,from):null; let g=0; while(dn&&rvKidOff(kid,dn)&&g++<7){ dn=_nextSchoolDay(kid,dn); } return dn||null; }
+// → {day,time} or null (no school day left this week)
+function rvPlanDay(kid,minutes,when){
+  if(when==="today"&&rvCanToday(kid,minutes)){
+    let last=_mlNowMin();
+    ((weekData&&weekData.tasks)||[]).forEach(t=>{ if(t&&t.who===kid&&effectiveDay(t)===_todayDay&&!checked[t.id]&&!String(t.id||"").endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title||"")){ const e=toMin(t.time)+(t.dur||20); if(e>last) last=e; } });
+    if(last+minutes>rvSchoolEndMin()) last=_mlNowMin();   // a full day: right after now, Mom's queue lays it in
+    return {day:_todayDay,time:fromMin(last)};
+  }
+  const nd=rvNextSchoolDay(kid,_todayDay); if(!nd) return null;
+  const sd=(((typeof rulesData!=="undefined"&&rulesData)||{}).schoolDay)||{}; const ov=((sd.overrides||{})[nd])||{};
+  return {day:nd,time:ov.start||sd.defaultStart||"10:00 AM"};
+}
+function rvNewId(){ const d=new Date(); return d.getFullYear()+"d"+dayOfYear(d)+"_rev_"+Date.now().toString(36).slice(-5)+Math.floor(Math.random()*1296).toString(36); }
+function rvCard(rec,slot){
+  const t=((weekData&&weekData.tasks)||[]).find(x=>x&&x.id===rec.fromId)||null;
+  const ref=(t&&typeof taskLessonRef==="function"&&taskLessonRef(t))||"";
+  const subj=t?taskSubject(t):(rec.fromTitle||"");
+  return {id:rec.id,who:rec.kid,day:slot.day,time:slot.time,dur:rec.minutes,mom:"required",device:"book",subjectKey:"review",review:true,
+    fromId:rec.fromId||null,origSubjectKey:rec.origSubjectKey||null,
+    title:"🔁 Review with Mom — "+(subj+(ref?" "+ref:"")).trim(),detail:rec.note?("📝 "+rec.note):"Go over what was missed."};
+}
+function _rvWriteCard(card){
+  weekData.tasks.push(card); sv(WK+"_tasks",weekData.tasks); lastTasksWrite=Date.now();
+  if(db&&!_dryRun()){ const u={}; u[card.id]=card; db.ref(WK+"/tasks").update(u); }
+}
+function rvBook(kid,fromId,opts){
+  if(!momHere()||!kid) return null; opts=opts||{};
+  const from=((weekData&&weekData.tasks)||[]).find(x=>x&&x.id===fromId)||null;
+  const minutes=RV_MINS.indexOf(+opts.minutes)>=0?+opts.minutes:10;
+  const rec={id:rvNewId(),kid:kid,fromId:fromId||null,fromTitle:(from&&from.title)||String(opts.fromTitle||""),origSubjectKey:(from&&from.subjectKey)||null,
+    minutes:minutes,note:String(opts.note||"").trim(),bookedTs:nowTs(),bookedAt:Date.now(),status:"booked",week:WK,day:null};
+  const slot=rvPlanDay(kid,minutes,opts.when||"next");
+  if(slot){ rec.day=slot.day; _rvWriteCard(rvCard(rec,slot)); } else { rec.status="pending"; rec.week=null; }
+  reviews[kid]=reviews[kid]||{}; reviews[kid][rec.id]=rec;
+  if(db&&!_dryRun()) db.ref("reviews/"+kid+"/"+rec.id).set(rec);
+  try{ if(fromId&&histState&&histState[fromId]){ const chip={id:rec.id,minutes:minutes}; histState[fromId].review=chip; const h=ld(WK+"_history")||{}; if(h[fromId]){ h[fromId].review=chip; sv(WK+"_history",h); } if(db&&!_dryRun()) db.ref(WK+"/history/"+fromId+"/review").set(chip); } }catch(e){}
+  dbg("📅 review booked "+kid+" "+rec.id+" "+(slot?(slot.day+" "+slot.time):"PENDING")+" "+minutes+"m");
+  if(typeof gwShowToast==="function") gwShowToast(slot?("📅 Review with "+cap(kid)+" — "+(slot.day===_todayDay?"later today":((typeof DAY_LBL!=="undefined"&&DAY_LBL[slot.day])||slot.day))+", "+minutes+" min"):("📅 No school day left this week — "+cap(kid)+"’s review will be placed when next week opens"));
+  if(typeof renderAll==="function") renderAll();
+  return rec;
+}
+function rvRemove(id){
+  if(!momHere()) return; const rec=rvRecOf(id); const kid=rec?rec.kid:null;
+  const i=((weekData&&weekData.tasks)||[]).findIndex(x=>x&&x.id===id);
+  if(i>=0){ weekData.tasks.splice(i,1); sv(WK+"_tasks",weekData.tasks); lastTasksWrite=Date.now(); if(db&&!_dryRun()){ const u={}; u[id]=null; db.ref(WK+"/tasks").update(u); } }
+  if(rec){ rec.status="removed"; if(db&&!_dryRun()) db.ref("reviews/"+kid+"/"+id+"/status").set("removed");
+    try{ if(rec.fromId&&histState&&histState[rec.fromId]&&histState[rec.fromId].review&&histState[rec.fromId].review.id===id){ delete histState[rec.fromId].review; if(db&&!_dryRun()) db.ref(WK+"/history/"+rec.fromId+"/review").remove(); } }catch(e){} }
+  if(typeof gwShowToast==="function") gwShowToast("Review removed");
+  if(typeof renderAll==="function") renderAll();
+}
+// After the week's cards load: a booked review of THIS week whose card vanished (a rebuild) comes back;
+// a pending one is placed once a school day exists. Once per id per page load — never a loop.
+function rvHeal(){
+  try{
+    if(!db||_dryRun()||!momHere()) return;
+    const ids=new Set(((weekData&&weekData.tasks)||[]).map(t=>t&&t.id));
+    Object.keys(reviews||{}).forEach(kid=>{ Object.keys(reviews[kid]||{}).forEach(id=>{
+      const rec=reviews[kid][id]; if(!rec||_rvHealed[id]) return;
+      if(rec.status==="booked"&&rec.week===WK&&!ids.has(id)&&!(checked&&checked[id])){
+        const slot=rvPlanDay(kid,rec.minutes||10,"next")||rvPlanDay(kid,rec.minutes||10,"today"); if(!slot) return;
+        _rvHealed[id]=1; rec.day=slot.day; _rvWriteCard(rvCard(rec,slot)); db.ref("reviews/"+kid+"/"+id+"/day").set(slot.day); dbg("📅 review re-added "+id+" "+slot.day);
+      } else if(rec.status==="pending"){
+        const slot=rvPlanDay(kid,rec.minutes||10,"next")||rvPlanDay(kid,rec.minutes||10,"today"); if(!slot) return;
+        _rvHealed[id]=1; rec.status="booked"; rec.week=WK; rec.day=slot.day; _rvWriteCard(rvCard(rec,slot));
+        db.ref("reviews/"+kid+"/"+id).update({status:"booked",week:WK,day:slot.day}); dbg("📅 pending review placed "+id+" "+slot.day);
+        if(typeof gwShowToast==="function") gwShowToast("📅 "+cap(kid)+"’s review placed on "+((typeof DAY_LBL!=="undefined"&&DAY_LBL[slot.day])||slot.day));
+      }
+    }); });
+  }catch(e){ dbg("review heal error: "+e); }
+}
+// ── the picker (score dialog row + standalone sheet) ──
+function rvRowHtml(kid,prefix){
+  const p=prefix||"rv", today=rvCanToday(kid,5);
+  const pill=(id,v,lbl,on)=>'<button type="button" data-'+id+'="'+v+'" onclick="rvPick(\''+p+'\',\''+id+'\',\''+v+'\')" style="padding:5px 11px;border-radius:14px;border:1.5px solid '+(on?"#7c3aed":"var(--border)")+';background:'+(on?"#7c3aed":"#fff")+';color:'+(on?"#fff":"#374151")+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
+  return '<div id="'+p+'-row" data-on="0" style="text-align:left;border-top:1px dashed var(--border);margin-top:14px;padding-top:10px">'+
+    '<label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800;color:#5b21b6;cursor:pointer"><input type="checkbox" id="'+p+'-on" onchange="rvToggle(\''+p+'\')"> 📅 Review with Mom</label>'+
+    '<div id="'+p+'-body" style="display:none;margin-top:8px">'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'+RV_MINS.map(m=>pill("min",m,m+" min",m===10)).join("")+'</div>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'+(today?pill("when","today","Later today",true):"")+pill("when","next","Next school day",!today)+'</div>'+
+    '<input id="'+p+'-note" type="text" placeholder="What to go over (optional)" autocomplete="off" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif;box-sizing:border-box">'+
+    '</div></div>';
+}
+function rvToggle(p){ const on=document.getElementById(p+"-on"), body=document.getElementById(p+"-body"), row=document.getElementById(p+"-row"); if(!on||!body) return; body.style.display=on.checked?"block":"none"; if(row) row.setAttribute("data-on",on.checked?"1":"0"); }
+function rvPick(p,id,v){ const row=document.getElementById(p+"-row"); if(!row) return; row.querySelectorAll("[data-"+id+"]").forEach(b=>{ const on=String(b.getAttribute("data-"+id))===String(v); b.style.background=on?"#7c3aed":"#fff"; b.style.color=on?"#fff":"#374151"; b.style.borderColor=on?"#7c3aed":"var(--border)"; b.setAttribute("data-sel",on?"1":"0"); }); }
+function rvReadRow(p){
+  p=p||"rv"; const on=document.getElementById(p+"-on"); if(!on||!on.checked) return null;
+  const row=document.getElementById(p+"-row"); const sel=id=>{ const b=row&&row.querySelector("[data-"+id+"][data-sel='1']"); return b?b.getAttribute("data-"+id):null; };
+  const def=id=>{ const b=row&&row.querySelector("[data-"+id+"]"); return b?b.getAttribute("data-"+id):null; };
+  const note=document.getElementById(p+"-note");
+  return {minutes:+(sel("min")||10),when:sel("when")||def("when")||"next",note:note?note.value:""};
+}
+function rvOpen(fromId){
+  if(!momHere()) return; const t=((weekData&&weekData.tasks)||[]).find(x=>x&&x.id===fromId); if(!t) return;
+  let ov=document.getElementById("rv-dlg"); if(ov) ov.remove();
+  ov=document.createElement("div"); ov.id="rv-dlg"; ov.className="dlg-overlay"; ov.style.display="flex"; ov.style.zIndex="9999";
+  ov.innerHTML='<div class="dlg-box" style="max-width:360px"><div class="dlg-title">📅 Review with Mom</div>'+
+    '<div class="dlg-detail" style="margin-bottom:6px">'+esc(cap(t.who))+' · '+esc(taskSubject(t))+(taskLessonRef(t)?' '+esc(taskLessonRef(t)):'')+'</div>'+
+    rvRowHtml(t.who,"rvd")+
+    '<div style="display:flex;gap:8px;margin-top:16px">'+
+    '<button onclick="rvClose()" style="flex:1;padding:12px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;border:none;background:#f3f4f6;color:#374151">Cancel</button>'+
+    '<button onclick="rvBookFromDlg(\''+fromId+'\')" style="flex:1;padding:12px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;border:none;background:#7c3aed;color:#fff">Book it</button></div></div>';
+  document.body.appendChild(ov);
+  const on=document.getElementById("rvd-on"); if(on){ on.checked=true; rvToggle("rvd"); }
+}
+function rvClose(){ const ov=document.getElementById("rv-dlg"); if(ov) ov.remove(); }
+function rvBookFromDlg(fromId){ const t=((weekData&&weekData.tasks)||[]).find(x=>x&&x.id===fromId); const o=rvReadRow("rvd"); rvClose(); if(t&&o) rvBook(t.who,fromId,o); }
+function rvBtn(id){ return momHere()?'<button onclick="event.stopPropagation();rvOpen(\''+id+'\')" title="Book a review with Mom" style="flex-shrink:0;padding:4px 9px;border-radius:8px;border:1px solid #7c3aed;background:#fff;color:#7c3aed;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">📅</button>':""; }
+// REVIEW_END
 function momApprove(id){
   if(!momHere()) return;
   const t=weekData.tasks.find(x=>x.id===id); if(!t) return;
@@ -7393,6 +7520,7 @@ function renderClaimQueue(){
       const _qref=taskLessonRef(o.t);
       h+='<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">'+esc(taskSubject(o.t))+(_qref?' <b style="color:#b45309">📖 '+esc(_qref)+'</b>':'')+' <span style="color:var(--muted);font-size:10px">'+claimed[o.id]+'</span></span>';
       h+='<button onclick="momApprove(\''+o.id+'\')" style="flex-shrink:0;padding:4px 12px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Approve</button>';
+      h+=rvBtn(o.id);   // 📅 Review with Mom
       h+='<button onclick="momReject(\''+o.id+'\')" style="flex-shrink:0;padding:4px 10px;border-radius:8px;border:1px solid #ef4444;background:#fff;color:#ef4444;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✗</button>';
       h+='</div>';
     });
@@ -7431,6 +7559,7 @@ function openScoreDialog(id, doneTs, mode){
     '<div class="dlg-title">Score — '+esc(taskSubject(t))+'</div>'+
     '<div class="dlg-detail" style="margin-bottom:14px">'+esc(cap(t.who))+'</div>'+
     body+
+    rvRowHtml(t.who,"rv")+   // 📅 Review with Mom
     '<div style="display:flex;gap:8px;margin-top:18px">'+
     '<button onclick="scoreCancel()" style="flex:1;padding:12px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;border:none;background:#f3f4f6;color:#374151">'+(mode==="approve"?"Skip score":"Cancel")+'</button>'+
     '<button onclick="scoreSave()" style="flex:1;padding:12px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;border:none;background:#16a34a;color:#fff">'+(mode==="approve"?"Approve ✓":"Save")+'</button>'+
@@ -7444,7 +7573,8 @@ function scoreSetRating(n){
 function scoreClose(){ const ov=document.getElementById("score-dlg"); if(ov) ov.remove(); scorePending=null; }
 function scoreCancel(){
   const sp=scorePending;
-  if(sp&&sp.mode==="approve"){ scoreClose();
+  const _rv=(sp&&sp.mode==="approve")?rvReadRow("rv"):null;   // 📅 approve without a score can still book the review
+  if(sp&&sp.mode==="approve"){ scoreClose(); if(_rv){ const _t=weekData.tasks.find(x=>x.id===sp.id); if(_t) setTimeout(function(){ rvBook(_t.who,sp.id,_rv); },0); }
     if(finalizeDone(sp.id, sp.doneTs, null)===false){ renderAll(); openOrderBlockDialog(sp.id, sp.doneTs, null); return; }
     renderAll(); showPaceToast(sp.id, tsToMin(sp.doneTs)); return; }
   scoreClose();
@@ -7462,15 +7592,18 @@ function scoreSave(){
   } else {
     if(sp.rating>0) score={rating:sp.rating};
   }
+  const _rv=rvReadRow("rv"), _rt=weekData.tasks.find(x=>x.id===sp.id);   // 📅 Review with Mom, read before the dialog closes
   if(sp.mode==="approve"){
     scoreClose();
     if(finalizeDone(sp.id, sp.doneTs, score)===false){ renderAll(); openOrderBlockDialog(sp.id, sp.doneTs, score); return; }
     renderAll(); showPaceToast(sp.id, tsToMin(sp.doneTs));
+    if(_rv&&_rt) setTimeout(function(){ rvBook(_rt.who,sp.id,_rv); },0);
   } else {
     // edit: patch score onto the existing done entry
     const hist=ld(WK+"_history")||{};
     if(hist[sp.id]){ if(score) hist[sp.id].score=score; else delete hist[sp.id].score; sv(WK+"_history",hist); histState[sp.id]=hist[sp.id]; if(db) db.ref(WK+"/history/"+sp.id).set(hist[sp.id]); }
     scoreClose(); renderAll();
+    if(_rv&&_rt) rvBook(_rt.who,sp.id,_rv);   // 📅 graded later (History) — same booking
   }
 }
 
@@ -7517,11 +7650,14 @@ function taskCard(t, fromDay, readOnly, doneId){
   const hasPending=!readOnly&&done&&!!pendingSpins[t.id];
   const _he=histState[srcId];
   const scoreChip=(done&&_he&&_he.score)?' <span style="display:inline-block;margin-left:6px;font-size:10px;font-weight:700;color:#3730a3;background:#e0e7ff;padding:1px 7px;border-radius:8px">📊 '+scoreLabel(_he.score)+'</span>':"";
-  let dr=done?'<div class="done-row">✓ '+checked[srcId]+scoreChip+'</div>':"";
+  const rvChip=(done&&_he&&_he.review)?' <span style="display:inline-block;margin-left:6px;font-size:10px;font-weight:700;color:#5b21b6;background:#ede9fe;padding:1px 7px;border-radius:8px">📅 review '+(_he.review.minutes||"")+'m</span>':"";   // 📅
+  const rvDoneBtn=(done&&momHere()&&!readOnly&&!t.review&&!(_he&&_he.review))?' <button onclick="event.stopPropagation();rvOpen(\''+srcId+'\')" title="Book a review with Mom" style="margin-left:6px;padding:1px 7px;border-radius:8px;border:1px solid #7c3aed;background:#fff;color:#7c3aed;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">📅</button>':"";
+  let dr=done?'<div class="done-row">✓ '+checked[srcId]+scoreChip+rvChip+rvDoneBtn+'</div>':"";
   if(claimedHere){
     if(momHere()&&!readOnly){
       dr='<div class="done-row" style="background:#fffbeb;color:#b45309;display:flex;align-items:center;gap:6px;flex-wrap:wrap">⏳ Claimed '+claimed[srcId]+
         '<button onclick="event.stopPropagation();momApprove(\''+srcId+'\')" style="padding:3px 10px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Approve</button>'+
+        rvBtn(srcId)+   // 📅 Review with Mom
         '<button onclick="event.stopPropagation();momReject(\''+srcId+'\')" style="padding:3px 10px;border-radius:8px;border:1px solid #ef4444;background:#fff;color:#ef4444;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✗ Not yet</button></div>';
     } else {
       const _ref=taskLessonRef(t);
@@ -7555,6 +7691,7 @@ function taskCard(t, fromDay, readOnly, doneId){
   const _eicL=(!readOnly&&typeof eicLinked==="function")&&eicLinked(t);
   const eicRow=(_eicL&&!done)?'<div style="margin-top:5px"><span onclick="event.stopPropagation();eicOpenNextFor(\''+t.who+'\')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u270F\uFE0F Open today\u2019s page \u2192</span></div>'
     :(_eicL&&done&&effectiveDay(t)===_todayDay)?'<div style="margin-top:5px"><span onclick="event.stopPropagation();eicReopenTodayFor(\''+t.who+'\')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u270F\uFE0F Back to today\u2019s page \u2192</span></div>':"";   // ↩ checked today → the same page again
+  const rvRow=(t.review&&momHere()&&!readOnly&&!done)?'<div style="margin-top:5px"><span onclick="event.stopPropagation();rvRemove(\''+t.id+'\')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#7c3aed;cursor:pointer;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">✕ Remove review</span></div>':"";   // 📅
   const wbRow=(_wbl&&!_eicL)?'<div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap"><span onclick="event.stopPropagation();wbOpenFor(\''+_wbl.bookId+'\',\''+t.who+'\','+_wbl.page+')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4D5} Open '+esc(taskLessonRef(t)||_wbl.name)+' →</span>'
     +(_wbl.ans?'<span onclick="event.stopPropagation();wbOpenCheck(\''+_wbl.bookId+'\',\''+t.who+'\','+_wbl.page+','+_wbl.ans+')" title="his page and the answer key side by side" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#065f46;cursor:pointer;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">&#9989; Check answers</span>':'')
     +'</div>':"";
@@ -7619,7 +7756,7 @@ function taskCard(t, fromDay, readOnly, doneId){
     '<div class="card-body">'+
     '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
     '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+pushLabel+(_eicL?eicCardTitle(t):t.title)+'</div>'+mb+'</div>'+
-    '<div class="task-detail">'+cleanDetail+'</div>'+dr+spinBtn+classRow+linkRow+wbRow+eicRow+
+    '<div class="task-detail">'+cleanDetail+'</div>'+dr+spinBtn+classRow+linkRow+wbRow+eicRow+rvRow+
     '</div></div></div>';
 }
 
@@ -12644,7 +12781,9 @@ function renderHistory(el){
         }
         carriedBadge=' <span style="font-size:10px;background:#e0e7ff;color:#4338ca;padding:1px 5px;border-radius:6px;font-weight:700">Carried over'+(fromDay?' from '+fromDay:'')+' </span>';
       }
-      const scChip=e.score?' <span style="font-size:10px;font-weight:700;color:#3730a3;background:#e0e7ff;padding:1px 7px;border-radius:8px">📊 '+scoreLabel(e.score)+'</span>':'';
+      const scChip=(e.score?' <span style="font-size:10px;font-weight:700;color:#3730a3;background:#e0e7ff;padding:1px 7px;border-radius:8px">📊 '+scoreLabel(e.score)+'</span>':'')
+        +(e.review?' <span style="font-size:10px;font-weight:700;color:#5b21b6;background:#ede9fe;padding:1px 7px;border-radius:8px">📅 review '+(e.review.minutes||"")+'m</span>':'')
+        +((momHere()&&!e.review&&weekData.tasks.some(x=>x.id===e.id))?' <button onclick="rvOpen(\''+e.id+'\')" title="Book a review with Mom" style="border:1px solid #7c3aed;background:#fff;color:#7c3aed;font-size:10px;font-weight:700;padding:1px 7px;border-radius:8px;cursor:pointer;font-family:\'DM Sans\',sans-serif">📅</button>':'');   // 📅
       const _et=weekData.tasks.find(x=>x.id===e.id);
       const scBtn=(momHere()&&_et&&scoredType(_et))?' <button onclick="openScoreDialog(\''+e.id+'\',\''+(e.ts||"")+'\',\'edit\')" style="border:none;background:none;color:var(--header);font-size:10px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif">'+(e.score?'edit':'＋ score')+'</button>':'';
       rows.push({subj:histSubjOf(e.title,_et&&_et.subjectKey),isDone:true,html:
