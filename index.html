@@ -46235,6 +46235,27 @@ const LA_FB={
 };
 // Fallback A/B sheets from the authored bank — disjoint halves of a shuffle, mapped per mode,
 // with spiral-review items borrowed from the review decks' banks (marked review:true).
+// LASTAGGER_START — ↕ A and B never test the same rule at the same item number (her report 2026-09-23:
+// "the first sprint and the second sprint basically have the same exact rule ... even though the sentences
+// are changing ... make sure the A and the B are set different"). The AI walked the rule list top to bottom on
+// both sheets, so item N on A and item N on B were the same rule. B is rotated half a sheet and then any
+// remaining same-rule collision is swapped away; every item is kept, only B's order changes.
+function laStaggerB(a,b){
+  try{
+    if(!Array.isArray(a)||!Array.isArray(b)||b.length<2) return b;
+    const tag=it=>String((it&&it.rule)||"").trim().toLowerCase();
+    const n=b.length, k=Math.floor(n/2);
+    const out=b.slice(k).concat(b.slice(0,k));
+    const clash=i=>i<a.length&&tag(out[i])!==""&&tag(out[i])===tag(a[i]);
+    for(let i=0;i<n;i++){ if(!clash(i)) continue;
+      for(let j=0;j<n;j++){ if(j===i) continue;
+        const ti=tag(out[i]), tj=tag(out[j]);
+        const okI=!(i<a.length&&tj===tag(a[i])), okJ=!(j<a.length&&ti===tag(a[j]));
+        if(okI&&okJ){ const t=out[i]; out[i]=out[j]; out[j]=t; break; } } }
+    return out;
+  }catch(e){ return b; }
+}
+// LASTAGGER_END
 function laFallbackSheets(total,revCount){
   const shuffle=a=>{ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; };
   const mapMode=(it,i)=>{
@@ -46305,6 +46326,7 @@ COUNT: exactly ${focusCount} focus items per sheet.${revCount?`
 Each sheet also gets exactly ${revCount} extra items (marked "review":true) that practice these previously learned REVIEW rules instead:
 ${revRules.map(r=>"- "+r.rule).join("\n")}`:""}
 Sheet B must use COMPLETELY DIFFERENT sentences, names, and topics from Sheet A \u{2014} no shared subject matter between the two sheets.
+Sheet B must also test the focus rules in a DIFFERENT ORDER from Sheet A: item N on Sheet B must not practice the same rule as item N on Sheet A. Shuffle which rule each item number tests.
 FRESHNESS \u{2014} CRITICAL: the student memorized these drill examples; do NOT reuse or closely paraphrase ANY of them. New names, new topics:
 ${forbidden.map(e=>"- "+e).join("\n")}
 STYLE: fun, concrete kid life (pets, camping, sports, space, cooking, siblings). Different names in every sentence.
@@ -46323,11 +46345,11 @@ Respond ONLY with valid JSON, no markdown:
     const parsed=JSON.parse(_fixJson(txt));
     const pA=parsed.a||[], pB=parsed.b||[];
     if(!pA.length||!pB.length) throw new Error("empty sheet");
-    laRenderSheets(pA,pB);
+    laRenderSheets(pA,laStaggerB(pA,pB));   // ↕ same rule never sits at the same item number on A and B
   } catch(e){
     console.error("LA sprint generate error:",e);
     const [fA,fB]=laFallbackSheets(total,revCount);
-    laRenderSheets(fA,fB);
+    laRenderSheets(fA,laStaggerB(fA,fB));
     const errMsg=mastAIKey?"\u{26A0}\u{FE0F} API call failed: "+e.message+" \u{2014} using the built-in practice set":"\u{26A0}\u{FE0F} No API key found in Firebase at config/anthropic_key \u{2014} using the built-in practice set";
     if(statusEl){statusEl.textContent=errMsg;statusEl.style.display="block";statusEl.style.background="#ede9fe";statusEl.style.color="#5b3a8c";}
   } finally{
