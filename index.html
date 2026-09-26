@@ -44849,15 +44849,53 @@ let laSize="standard";
 let laReviewDecks=[];
 let laGenerating=false;
 
+// LOELINK_START — 📖 the phonogram ladder is Logic of English Foundations B in the BOOK's order (her Q 2026-09-23,
+// checked against LoE's official A–D scope & sequence 9/24): lesson = the Foundations lesson that introduces it.
+// Was: a hand-typed list (igh 11th, er 18th, ng 6th…), missing or/tch/ough, and carrying ow/oo/ir/ur (Foundations C).
 const SPRINT_LOE_B=[
-  {pg:"sh",sounds:"/sh/"},{pg:"th",sounds:"/th/·/ð/"},{pg:"ch",sounds:"/ch/·/k/·/sh/"},
-  {pg:"ck",sounds:"/k/"},{pg:"wh",sounds:"/wh/·/h/"},{pg:"ng",sounds:"/ng/"},
-  {pg:"ai",sounds:"/ā/"},{pg:"ay",sounds:"/ā/"},{pg:"ee",sounds:"/ē/"},
-  {pg:"ea",sounds:"/ē/·/ĕ/·/ā/"},{pg:"igh",sounds:"/ī/"},{pg:"oa",sounds:"/ō/"},
-  {pg:"ow",sounds:"/ō/·/ow/"},{pg:"oo",sounds:"/ū/·/ʊ/"},{pg:"ou",sounds:"/ow/·/ō/·/ū/"},
-  {pg:"oi",sounds:"/oi/"},{pg:"oy",sounds:"/oi/"},{pg:"er",sounds:"/er/"},
-  {pg:"ir",sounds:"/er/"},{pg:"ur",sounds:"/er/"},{pg:"ar",sounds:"/ar/"}
+  {pg:"sh",sounds:"/sh/",lesson:41},{pg:"th",sounds:"/th/·/ð/",lesson:42},{pg:"ck",sounds:"/k/",lesson:46},
+  {pg:"igh",sounds:"/ī/",lesson:48},{pg:"ch",sounds:"/ch/·/k/·/sh/",lesson:49},{pg:"ee",sounds:"/ē/",lesson:50},
+  {pg:"er",sounds:"/er/",lesson:51},{pg:"wh",sounds:"/wh/·/h/",lesson:52},{pg:"oi",sounds:"/oi/",lesson:53},
+  {pg:"oy",sounds:"/oi/",lesson:53},{pg:"ai",sounds:"/ā/",lesson:54},{pg:"ay",sounds:"/ā/",lesson:54},
+  {pg:"ng",sounds:"/ng/",lesson:60},{pg:"ar",sounds:"/ar/",lesson:64},{pg:"or",sounds:"/or/",lesson:65},
+  {pg:"tch",sounds:"/ch/",lesson:71},{pg:"ou",sounds:"/ow/·/ō/·/ū/·/ŭ/",lesson:73},{pg:"ough",sounds:"/ŏ/·/ō/·/ö/·/ow/·/ŭf/·/ŏf/",lesson:74},
+  {pg:"ea",sounds:"/ē/·/ĕ/·/ā/",lesson:79},{pg:"oa",sounds:"/ō/",lesson:80}
 ];
+// Foundations C (lessons 81+): still pickable by hand, never on the B ladder.
+const SPRINT_LOE_C=[
+  {pg:"ir",sounds:"/er/",lesson:81},{pg:"ur",sounds:"/er/",lesson:82},{pg:"ear",sounds:"/er/·/ēr/·/ār/",lesson:83},
+  {pg:"wor",sounds:"/wer/",lesson:85},{pg:"wr",sounds:"/r/",lesson:87},{pg:"oo",sounds:"/ū/·/ʊ/·/ō/",lesson:89},
+  {pg:"ow",sounds:"/ō/·/ow/",lesson:91},{pg:"kn",sounds:"/n/",lesson:93}
+];
+const SPRINT_LOE_ALL=SPRINT_LOE_B.concat(SPRINT_LOE_C);
+function spPhono(pg){ return SPRINT_LOE_ALL.find(p=>p.pg===pg)||null; }
+// The kid's place in Foundations: the highest "B Lesson N" checked off + the lesson they are on now. Reads the
+// LoE subject (key "loe", or any subject displayed as "LOE Foundations …") and its done marks. null = no LoE link.
+function loeLessonReached(kid,cd){
+  try{
+    cd=cd||((typeof currData!=="undefined")?currData:null); if(!cd||!kid) return null;
+    const subs=((cd.subjects||{})[kid])||{};
+    let sk=subs.loe?"loe":Object.keys(subs).find(k=>/foundations/i.test(String((subs[k]||{}).display||"")));
+    const sub=sk&&subs[sk]; if(!sub||!Array.isArray(sub.lessonSeq)||!Array.isArray(sub.lessonIds)) return null;
+    const done=(((cd.done||{})[kid]||{})[sk])||{};
+    const num=t=>{ const m=/Lesson\s+(\d+)/i.exec(String(t||"")); return m?+m[1]:null; };
+    let hi=-1; sub.lessonIds.forEach((lid,i)=>{ if(done[lid]&&i>hi) hi=i; });
+    let doneN=null; for(let i=hi;i>=0;i--){ const n=num(sub.lessonSeq[i]); if(n!=null){ doneN=n; break; } }
+    let curN=null; for(let i=hi+1;i<sub.lessonSeq.length;i++){ const n=num(sub.lessonSeq[i]); if(n!=null){ curN=n; break; } }
+    if(curN==null) curN=doneN;
+    if(curN==null) return null;
+    return {sk:sk,done:doneN,current:curN};
+  }catch(e){ return null; }
+}
+// Phonograms the book has taught this kid so far (the one in the current lesson counts — that is the sprint's focus).
+function loeTaught(kid,cd){ const r=loeLessonReached(kid,cd); if(!r) return null; return SPRINT_LOE_B.filter(p=>p.lesson<=r.current); }
+// Index (in a stage-key list) of the newest taught phonogram, -1 when the kid has no LoE link.
+function loeFocusIdx(kid,keys,cd){
+  const t=loeTaught(kid,cd); if(!t||!t.length||!Array.isArray(keys)) return -1;
+  let best=-1; t.forEach(p=>{ const i=keys.indexOf(p.pg); if(i>best) best=i; });
+  return best;
+}
+// LOELINK_END
 
 // Ellis added 2026-08-18 (Adrienne: "turn it on for ellis, start as lucy" — same LOE-B
 // phonogram list, as REVIEW; his ladder track gates on ONE clean pass so he moves on quickly).
@@ -45119,11 +45157,24 @@ function retrEvalTrack(kid,track){
   });
   let focus=stages.length;
   for(let i=0;i<stages.length;i++){ if(!stages[i].passed){focus=i;break;} }
-  // review mix: demoted stages take the first seats (they need eyes), then most recent
-  const done=stages.slice(0,focus).filter(x=>x.passed);
-  const demoted=done.filter(x=>x.demoted).map(x=>x.key);
-  const rest=done.filter(x=>!x.demoted).map(x=>x.key).slice(-Math.max(0,s.review_count-demoted.length)).reverse();
-  const review=demoted.concat(rest).slice(0,s.review_count);
+  let review;
+  // 📖 her call 2026-09-24: on a lesson-linked phonogram ladder the focus FOLLOWS THE LESSON (the phonogram the book
+  // just taught), and earlier rungs not yet passed ride along as review — Lucy sat on "sh" for 7 sessions while her
+  // lessons moved on to igh/ch. Kids without an LoE link keep the earned-rung gate exactly as before.
+  const _lf=(track.src==="phonogram"&&typeof loeFocusIdx==="function")?loeFocusIdx(kid,stages.map(x=>x.key)):-1;
+  if(_lf>=0){
+    focus=_lf;
+    const before=stages.slice(0,focus);
+    const dem=before.filter(x=>x.passed&&x.demoted).map(x=>x.key);
+    const unpassed=before.filter(x=>!x.passed).map(x=>x.key).reverse();
+    review=dem.concat(unpassed).slice(0,s.review_count);
+  } else {
+    // review mix: demoted stages take the first seats (they need eyes), then most recent
+    const done=stages.slice(0,focus).filter(x=>x.passed);
+    const demoted=done.filter(x=>x.demoted).map(x=>x.key);
+    const rest=done.filter(x=>!x.demoted).map(x=>x.key).slice(-Math.max(0,s.review_count-demoted.length)).reverse();
+    review=demoted.concat(rest).slice(0,s.review_count);
+  }
   const f=stages[focus]||null;
   return {stages,focus,review,stuck:!!(f&&f.n>=s.stuck_after),done:focus>=stages.length,s};
 }
@@ -45134,8 +45185,8 @@ function retrApplyPlan(kid,trackKey){
   const ev=retrEvalTrack(kid,track);
   const f=ev.stages[ev.focus]; if(!f) return;
   if(track.src==="phonogram"){
-    sprintSelectedPhono=SPRINT_LOE_B.find(p=>p.pg===f.key)||null;
-    sprintReviewPhonos=ev.review.map(pg=>SPRINT_LOE_B.find(p=>p.pg===pg)).filter(Boolean).slice(0,3);
+    sprintSelectedPhono=spPhono(f.key);
+    sprintReviewPhonos=ev.review.map(pg=>spPhono(pg)).filter(Boolean).slice(0,3);
     sprintSource="phonogram";
   } else if(track.src==="drill"){
     const sc=f.scope||track.scope;
@@ -45152,7 +45203,7 @@ function retrApplyPlan(kid,trackKey){
 function retrApplyRecheck(kid,trackKey,stageKey){
   const track=retrTracks(kid).find(t=>t.key===trackKey); if(!track||track.locked) return;
   if(track.src==="phonogram"){
-    sprintSelectedPhono=SPRINT_LOE_B.find(p=>p.pg===stageKey)||null;
+    sprintSelectedPhono=spPhono(stageKey);
     sprintReviewPhonos=[];
     sprintSource="phonogram";
   } else if(track.src==="drill"){
@@ -45664,7 +45715,7 @@ function sprintSetPill(groupId,val){
 
 function sprintSelectPhono(pg){
   sprintSaveInputs();
-  sprintSelectedPhono=SPRINT_LOE_B.find(p=>p.pg===pg)||null;
+  sprintSelectedPhono=spPhono(pg);
   _mastRe();
 }
 
@@ -45674,7 +45725,7 @@ function sprintToggleReview(pg){
   if(idx>=0){
     sprintReviewPhonos.splice(idx,1);
   } else if(sprintReviewPhonos.length<3){
-    const p=SPRINT_LOE_B.find(x=>x.pg===pg);
+    const p=spPhono(pg);
     if(p) sprintReviewPhonos.push(p);
   }
   _mastRe();
@@ -45783,7 +45834,7 @@ ${sprintReviewPhonos.length>0?`Include exactly ${revCount} review words using: $
 ${nw==="yes"?`Include exactly ${nsCount} nonsense/pseudo-words following the phonogram pattern. Mark each with * suffix in JSON.`:""}
 ${(ps==="both"||ps==="phrases")?`Generate 4 short decodable phrases (3-5 words) using "${focusPhono}". Fun and concrete.`:""}
 ${(ps==="both"||ps==="sentences")?`Generate 3 decodable sentences (6-10 words). Sight words allowed: the, a, I, is, was, his, her, said, to, do, of, are, my, we.`:""}
-RULES: All words decodable with LOE Foundations A+B only. ${sheet==="B"?"Completely different word list from Sheet A.":"No repeated words."} Nonsense words marked with * in JSON only.
+RULES: ${(function(){ const t=(typeof loeTaught==="function")?loeTaught(masteryKid):null; return t?("All words decodable with Logic of English Foundations A (single-letter phonograms and qu) plus ONLY these multi-letter phonograms, the only ones "+kidName+" has been taught so far: "+t.map(p=>p.pg).join(", ")+". Never use any other multi-letter phonogram."):"All words decodable with LOE Foundations A+B only."; })()} ${sheet==="B"?"Completely different word list from Sheet A.":"No repeated words."} Nonsense words marked with * in JSON only.
 Respond ONLY with valid JSON, no markdown:
 {"focusPhono":"${focusPhono}","focusSounds":"${focusSounds}","gridWords":["w1","w2"],"reviewWords":[],"nonsenseWords":[],"phrases":[],"sentences":[]}`;
 
@@ -46657,7 +46708,7 @@ function buildSprintHtml(){
   h+=`<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">`;
   h+=`<div style="font-family:'Fraunces',serif;font-size:16px;font-weight:700;margin-bottom:12px">🔤 Focus Phonogram</div>`;
   h+=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:5px;margin-bottom:12px">`;
-  SPRINT_LOE_B.forEach(p=>{
+  SPRINT_LOE_ALL.forEach(p=>{
     const act=sprintSelectedPhono&&sprintSelectedPhono.pg===p.pg;
     h+=`<button class="sp-phono-btn" data-pg="${p.pg}" onclick="sprintSelectPhono('${p.pg}')" style="padding:7px 3px;border-radius:9px;border:1.5px solid ${act?color:"#e2ddd6"};background:${act?color:"#fff"};color:${act?"#fff":"#1c1917"};font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Mono',monospace;text-align:center">${p.pg}</button>`;
   });
@@ -46669,7 +46720,7 @@ function buildSprintHtml(){
   h+=`<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">`;
   h+=`<div style="font-family:'Fraunces',serif;font-size:16px;font-weight:700;margin-bottom:6px">🔁 Spiral Review <span style="font-size:12px;font-weight:400;color:#78716c">(optional — up to 3)</span></div>`;
   h+=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:5px;margin-bottom:8px">`;
-  SPRINT_LOE_B.forEach(p=>{
+  SPRINT_LOE_ALL.forEach(p=>{
     const act=!!sprintReviewPhonos.find(r=>r.pg===p.pg);
     h+=`<button class="sp-review-btn" data-pg="${p.pg}" onclick="sprintToggleReview('${p.pg}')" style="padding:7px 3px;border-radius:9px;border:1.5px solid ${act?"#d97706":"#e2ddd6"};background:${act?"#fef3c7":"#fff"};color:${act?"#d97706":"#78716c"};font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Mono',monospace;text-align:center">${p.pg}</button>`;
   });
