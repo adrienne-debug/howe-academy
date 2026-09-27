@@ -3363,6 +3363,7 @@ function initFb() {
       try{HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings));}catch(e){}
       if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);}
     });
+    db.ref("together").on("value",s=>{ together=s.val()||{}; if(tab==="kids"||tab==="moms-plan") renderAll(); });   // 🤝 Together — both devices follow the same session
     db.ref("mathSprints").on("value",s=>{ mathSprints=s.val()||{}; if(tab==="mastery"||tab==="schedule") renderAll(); });   // 🔢 Book Sprints
     db.ref("library/scans").on("value",s=>{ lbScansMS=s.val()||{}; if(tab==="mastery"&&typeof _mastRe==="function") _mastRe(); });   // 🔢 sprint titles (editable in the panel)
     db.ref("reviews").on("value",s=>{ reviews=s.val()||{}; try{ rvHeal(); }catch(e){} if(tab==="schedule"&&typeof renderAll==="function") renderAll(); });   // 📅 Review with Mom
@@ -9393,6 +9394,146 @@ function mdCardStarBank(canAward){
 // ── 🧒 Kids today card ───────────────────────
 // Extracted from renderMomsDay (2026-08-15) so Dad's Day renders the SAME card against
 // the SAME data. One truth — not a second copy that can drift.
+// TOGETHER_START — 🤝 Together (her design 2026-09-24: "the first point that we interlink kids")
+// Two kids share ONE live thing at the same time. A def (Mom's list: name, roles, max points, kind pair|lottery)
+// → an active session everyone watches at together/active/<id>: invited → live → rating → done. Pair: one kid
+// starts, the other gets Let's go / Not now on their device. Lottery (Julian's bath): a spin picks a helper from
+// the eligible list; a decline spins again without them. When it's done, each side rates the OTHER on their own
+// device (stars, or 😀😐😞 for Julian, Mom may tap for him); once both ratings are in, each kid banks
+// max × rating — wages, straight to the Star Bank, logged in the check-off log. Nothing touches the schedule
+// (v2: a Together card on both schedules at once). Targeted writes; dry-run inert.
+let together={}, tgEdit=false, tgSpinTimer=null, tgSpinFace=null;
+const TG_DEFAULT_DEFS={
+  math_teach:{id:"math_teach",emoji:"🧮",name:"Math teaching",kind:"pair",a:{kid:"ellis",role:"Teacher"},b:{kid:"lucy",role:"Learner"},max:35},
+  read_aloud:{id:"read_aloud",emoji:"📖",name:"Read-aloud",kind:"pair",a:{kid:"lincoln",role:"Reader"},b:{kid:"lucy",role:"Listener"},max:35},
+  bath:{id:"bath",emoji:"🛁",name:"Julian’s bath helper",kind:"lottery",a:{kid:"julian",role:"Julian"},helpers:["lincoln","ellis","lucy"],max:50,faces:true}
+};
+const TG_FACES=[{v:0,f:"😞",l:"Not great"},{v:2.5,f:"😐",l:"Okay"},{v:5,f:"😀",l:"Great"}];
+function tgDefs(){ const d=(together&&together.defs)||{}; const out={}; Object.keys(TG_DEFAULT_DEFS).forEach(k=>{ out[k]=Object.assign({},TG_DEFAULT_DEFS[k]); }); Object.keys(d).forEach(k=>{ if(d[k]) out[k]=Object.assign({},out[k]||{},d[k],{id:k}); }); Object.keys(out).forEach(k=>{ if(out[k].off) delete out[k]; }); return out; }
+function tgDef(id){ return tgDefs()[id]||null; }
+function tgActive(id){ const a=(together&&together.active)||{}; return a[id]||null; }
+function tgWrite(id,rec){ if(!together.active) together.active={}; if(rec===null) delete together.active[id]; else together.active[id]=rec; if(db&&!_dryRun()){ if(rec===null) db.ref("together/active/"+id).remove(); else db.ref("together/active/"+id).set(rec); } }
+function tgPatch(id,upd){ const a=tgActive(id); if(!a) return; Object.assign(a,upd); if(db&&!_dryRun()) db.ref("together/active/"+id).update(upd); }
+function tgKidsOf(a){ return a?[a.a&&a.a.kid,a.b&&a.b.kid].filter(Boolean):[]; }
+function tgRoleOf(a,kid){ if(!a) return ""; if(a.a&&a.a.kid===kid) return a.a.role||""; if(a.b&&a.b.kid===kid) return a.b.role||""; return ""; }
+function tgOther(a,kid){ const ks=tgKidsOf(a); return ks.find(k=>k!==kid)||null; }
+function tgCanAct(kid){ try{ return momHere()||(typeof kcKid!=="undefined"&&kcKid===kid)||(typeof _kioskK==="function"&&_kioskK()&&kcKid===kid); }catch(e){ return false; } }
+function tgPts(def,rating){ const max=+(def&&def.max)||0; const r=Math.max(0,Math.min(5,+rating||0)); return Math.round(max*r/5); }
+// start: pair → the starter waits for the other; Mom starting a pair → live at once. lottery → spin.
+function tgStart(id,byKid){
+  const def=tgDef(id); if(!def) return null; if(tgActive(id)) return tgActive(id);
+  const rec={id:id,name:def.name,emoji:def.emoji,kind:def.kind,max:def.max,faces:!!def.faces,startedBy:byKid||"mom",startedAt:Date.now(),startedTs:nowTs(),status:"invited",a:{kid:def.a.kid,role:def.a.role||""},ratings:{},declined:[]};
+  if(def.kind==="lottery"){ rec.b=null; rec.status="spinning"; tgWrite(id,rec); tgSpinPick(id); return tgActive(id); }
+  rec.b={kid:def.b.kid,role:def.b.role||""};
+  if(!byKid||byKid==="mom"){ rec.status="live"; rec.liveAt=Date.now(); }
+  else { rec.invitee=tgOther(rec,byKid); if(!rec.invitee){ rec.status="live"; rec.liveAt=Date.now(); } }
+  tgWrite(id,rec); if(typeof renderAll==="function") renderAll(); return rec;
+}
+function tgSpinPick(id){
+  const a=tgActive(id), def=tgDef(id); if(!a||!def||def.kind!=="lottery") return null;
+  const pool=(def.helpers||[]).filter(k=>(a.declined||[]).indexOf(k)<0);
+  if(!pool.length){ tgPatch(id,{status:"nohelper",b:null}); if(typeof renderAll==="function") renderAll(); return null; }
+  const pick=pool[Math.floor(Math.random()*pool.length)];
+  tgPatch(id,{status:"invited",b:{kid:pick,role:"Helper"},invitee:pick,spunAt:Date.now()});
+  if(typeof renderAll==="function") renderAll(); return pick;
+}
+function tgAccept(id,kid){ const a=tgActive(id); if(!a||a.status!=="invited"||a.invitee!==kid||!tgCanAct(kid)) return; tgPatch(id,{status:"live",liveAt:Date.now(),invitee:null}); if(typeof renderAll==="function") renderAll(); }
+function tgDecline(id,kid){
+  const a=tgActive(id); if(!a||a.status!=="invited"||a.invitee!==kid||!tgCanAct(kid)) return;
+  if(a.kind==="lottery"){ const d=(a.declined||[]).concat([kid]); tgPatch(id,{declined:d,status:"spinning",b:null,invitee:null}); tgSpinPick(id); return; }
+  tgLog(Object.assign({},a,{status:"declined",declinedBy:kid,endedAt:Date.now()})); tgWrite(id,null); if(typeof renderAll==="function") renderAll();
+}
+function tgDone(id,kid){ const a=tgActive(id); if(!a||a.status!=="live") return; if(!(tgCanAct(kid)&&tgKidsOf(a).indexOf(kid)>=0)&&!momHere()) return; tgPatch(id,{status:"rating",doneAt:Date.now(),doneBy:kid||"mom"}); if(typeof renderAll==="function") renderAll(); }
+// each side rates the OTHER; Mom may rate on behalf of either. Both in → pay both.
+function tgRate(id,raterKid,value){
+  const a=tgActive(id); if(!a||a.status!=="rating") return; if(tgKidsOf(a).indexOf(raterKid)<0) return; if(!tgCanAct(raterKid)) return;
+  const r=Math.max(0,Math.min(5,+value||0)); const ratings=Object.assign({},a.ratings||{}); ratings[raterKid]=r; tgPatch(id,{ratings:ratings});
+  const ks=tgKidsOf(a); if(ks.every(k=>ratings[k]!=null)) tgPay(id);
+  if(typeof renderAll==="function") renderAll();
+}
+function tgPay(id){
+  const a=tgActive(id); if(!a||a.status!=="rating") return; const def=tgDef(id)||{max:a.max};
+  const ks=tgKidsOf(a), paid={};
+  ks.forEach(k=>{ const other=tgOther(a,k); const r=(a.ratings||{})[other]; const pts=tgPts({max:a.max!=null?a.max:def.max},r); paid[k]=pts;
+    const stars=a.faces&&k!==a.a.kid?(TG_FACES.find(f=>f.v===r)||{}).f||"":"★".repeat(Math.round(r))+"☆".repeat(5-Math.round(r));
+    const note=(a.emoji||"🤝")+" "+a.name+" · "+(tgRoleOf(a,k)||"")+" · "+stars+" from "+cap(other);
+    if(pts>0&&typeof bankDirect==="function") bankDirect(k,pts,note);
+    if(typeof rlogAppend==="function") rlogAppend(k,"together",note,"on",pts); });
+  tgLog(Object.assign({},a,{status:"done",paid:paid,endedAt:Date.now()})); tgWrite(id,null);
+  if(typeof gwShowToast==="function") gwShowToast((a.emoji||"🤝")+" "+a.name+" — "+ks.map(k=>cap(k)+" +"+paid[k]+"⭐").join(", "));
+  dbg("🤝 together paid "+id+" "+JSON.stringify(paid));
+}
+function tgCancel(id){ if(!momHere()) return; const a=tgActive(id); if(!a) return; tgLog(Object.assign({},a,{status:"cancelled",endedAt:Date.now()})); tgWrite(id,null); if(typeof renderAll==="function") renderAll(); }
+function tgLog(rec){ try{ if(!together.log) together.log={}; const k="tg"+Date.now().toString(36); together.log[k]=rec; if(db&&!_dryRun()) db.ref("together/log/"+k).set(rec); }catch(e){} }
+function tgSaveDef(id,fields){ if(!momHere()||!id) return; if(!together.defs) together.defs={}; together.defs[id]=Object.assign({},together.defs[id]||{},fields); if(db&&!_dryRun()) db.ref("together/defs/"+id).update(fields); if(typeof renderAll==="function") renderAll(); }
+function tgEditToggle(){ tgEdit=!tgEdit; if(typeof renderAll==="function") renderAll(); }
+function tgSaveDefFromForm(id){ const g=x=>{ const e=document.getElementById("tg-"+id+"-"+x); return e?e.value:null; }; const f={}; const nm=g("name"); if(nm!=null) f.name=nm.trim(); const mx=g("max"); if(mx!=null) f.max=Math.max(0,parseInt(mx,10)||0); const ak=g("akid"); if(ak) f.a={kid:ak,role:(g("arole")||"").trim()}; const bk=g("bkid"); if(bk!=null&&tgDef(id)&&tgDef(id).kind==="pair") f.b={kid:bk,role:(g("brole")||"").trim()}; const hl=g("helpers"); if(hl!=null) f.helpers=hl.split(",").map(x=>x.trim().toLowerCase()).filter(Boolean); tgSaveDef(id,f); }
+function tgClock(a){ if(!a||!a.liveAt) return ""; const m=Math.floor((Date.now()-a.liveAt)/60000); return m<1?"just started":m+" min"; }
+const _tgBtn=(lbl,fn,bg,fg,border)=>'<button onclick="'+fn+'" style="padding:11px 16px;border-radius:12px;border:'+(border||"none")+';background:'+bg+';color:'+fg+';font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
+// ── what one kid sees (Kids' Corner) ──
+function tgKidHTML(kid){
+  try{
+    const defs=tgDefs(); const esc_=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;");
+    const mine=Object.keys(defs).filter(id=>{ const d=defs[id]; return (d.a&&d.a.kid===kid)||(d.b&&d.b.kid===kid)||(d.kind==="lottery"&&(d.helpers||[]).indexOf(kid)>=0); });
+    if(!mine.length) return "";
+    const col=(typeof KID_COLOR!=="undefined"&&KID_COLOR[kid])||"#2B7A78";
+    let h='<div style="margin:12px 12px 0;background:#fff;border-radius:14px;border:2px solid '+col+';padding:12px 14px">';
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:17px;font-weight:800;color:'+col+';margin-bottom:6px">🤝 Together</div>';
+    mine.forEach(id=>{ const d=defs[id], a=tgActive(id);
+      h+='<div style="padding:8px 0;border-top:1px solid #f3f4f6">';
+      if(!a){
+        const other=d.kind==="lottery"?null:(d.a.kid===kid?d.b.kid:d.a.kid);
+        h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="flex:1;font-size:14px;font-weight:700">'+esc_(d.emoji+" "+d.name)+(other?' <span style="font-weight:600;color:#78716c">with '+esc_(cap(other))+'</span>':'')+' <span style="font-size:11px;color:#b45309;font-weight:700">up to '+d.max+'⭐</span></span>';
+        if(d.kind==="lottery"){ if(d.a.kid===kid) h+=_tgBtn("🎰 Who helps me?","tgStart('"+id+"','"+kid+"')",col,"#fff"); }
+        else h+=_tgBtn("Start with "+esc_(cap(other)),"tgStart('"+id+"','"+kid+"')",col,"#fff");
+        h+='</div>'; h+='</div>'; return; }
+      h+='<div style="font-size:14px;font-weight:800;margin-bottom:4px">'+esc_(a.emoji+" "+a.name)+'</div>';
+      const other=tgOther(a,kid);
+      if(a.status==="spinning"){ h+='<div style="font-size:14px">🎰 Spinning for a helper…</div>'; }
+      else if(a.status==="nohelper"){ h+='<div style="font-size:13px;color:#b91c1c">Nobody could help tonight. '+(momHere()||a.a.kid===kid?_tgBtn("Try again","tgPatch('"+id+"',{declined:[]});tgSpinPick('"+id+"')",col,"#fff"):"")+'</div>'; }
+      else if(a.status==="invited"){
+        if(a.invitee===kid) h+='<div style="font-size:15px;margin-bottom:8px">'+esc_(cap(a.startedBy==="mom"?a.a.kid:a.startedBy))+(a.kind==="lottery"?' picked <b>you</b> to help with the bath!':' wants to do this with <b>you</b>!')+'</div><div style="display:flex;gap:8px;flex-wrap:wrap">'+_tgBtn("Let’s go ✓","tgAccept('"+id+"','"+kid+"')","#16a34a","#fff")+_tgBtn("Not now","tgDecline('"+id+"','"+kid+"')","#fff","#b91c1c","2px solid #ef4444")+'</div>';
+        else h+='<div style="font-size:14px;color:#78716c">⏳ Waiting for '+esc_(cap(a.invitee||other||""))+'…</div>';
+      }
+      else if(a.status==="live"){ h+='<div style="font-size:14px;color:#16a34a;font-weight:700">● Live with '+esc_(cap(other||""))+' · '+tgClock(a)+'</div><div style="font-size:12px;color:#78716c;margin:2px 0 8px">You are the '+esc_(tgRoleOf(a,kid)||"partner")+'.</div>'+_tgBtn("We’re done ✓","tgDone('"+id+"','"+kid+"')",col,"#fff"); }
+      else if(a.status==="rating"){
+        const mine_=(a.ratings||{})[kid];
+        if(mine_!=null) h+='<div style="font-size:13px;color:#78716c">Thanks! Waiting for '+esc_(cap(other||""))+' to rate…</div>';
+        else if(a.faces&&kid===a.a.kid){ h+='<div style="font-size:14px;margin-bottom:6px">How did '+esc_(cap(other))+' do?</div><div style="display:flex;gap:10px">'+TG_FACES.map(f=>'<button onclick="tgRate(\''+id+'\',\''+kid+'\','+f.v+')" style="flex:1;padding:12px 6px;border-radius:14px;border:2px solid #e2ddd6;background:#fff;font-size:34px;cursor:pointer">'+f.f+'<div style="font-size:11px;font-weight:700;color:#78716c">'+f.l+'</div></button>').join("")+'</div>'; }
+        else { h+='<div style="font-size:14px;margin-bottom:6px">How did '+esc_(cap(other))+' do as your '+esc_(tgRoleOf(a,other)||"partner")+'?</div><div style="display:flex;gap:6px;justify-content:center">'+[1,2,3,4,5].map(n=>'<button onclick="tgRate(\''+id+'\',\''+kid+'\','+n+')" style="flex:1;padding:10px 4px;border-radius:12px;border:2px solid #f59e0b;background:#fff;font-size:26px;cursor:pointer" title="'+n+' star'+(n>1?'s':'')+'">'+"★".repeat(n)+'</button>').join("")+'</div><div style="font-size:11px;color:#78716c;margin-top:4px;text-align:center">5 stars = '+a.max+'⭐ for '+esc_(cap(other))+'</div>'; }
+      }
+      h+='</div>'; });
+    h+='</div>'; return h;
+  }catch(e){ return ""; }
+}
+// ── Mom's Plan card: sessions, start buttons, the list ──
+function mdCardTogether(){
+  try{
+    if(!momHere()) return "";
+    const defs=tgDefs(), esc_=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;");
+    let h='<div style="margin:10px 12px;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#0f766e;color:#fff;font-weight:800;font-size:13px"><span>🤝</span> Together<button onclick="tgEditToggle()" style="margin-left:auto;border:none;background:rgba(255,255,255,.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">'+(tgEdit?"Done":"✎ Edit list")+'</button></div>';
+    h+='<div style="padding:8px 14px 10px">';
+    Object.keys(defs).forEach(id=>{ const d=defs[id], a=tgActive(id);
+      h+='<div style="padding:6px 0;border-bottom:1px solid #f3f4f6">';
+      h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="flex:1;font-size:13px;font-weight:700">'+esc_(d.emoji+" "+d.name)+' <span style="font-weight:600;color:#78716c">· '+(d.kind==="lottery"?esc_(cap(d.a.kid))+' + a helper ('+(d.helpers||[]).map(cap).join(", ")+')':esc_(cap(d.a.kid))+' ('+esc_(d.a.role)+') + '+esc_(cap(d.b.kid))+' ('+esc_(d.b.role)+')')+' · up to '+d.max+'⭐ each</span></span>';
+      if(!a) h+='<button onclick="tgStart(\''+id+'\',\'mom\')" style="padding:5px 12px;border-radius:8px;border:none;background:#0f766e;color:#fff;font-size:11px;font-weight:700;cursor:pointer">'+(d.kind==="lottery"?"🎰 Spin":"▶ Start")+'</button>';
+      else h+='<span style="font-size:11px;font-weight:800;color:#0f766e">'+esc_(a.status)+(a.b&&a.b.kid?' · '+esc_(cap(a.b.kid)):'')+'</span><button onclick="tgCancel(\''+id+'\')" style="padding:4px 9px;border-radius:8px;border:1px solid #ef4444;background:#fff;color:#ef4444;font-size:11px;font-weight:700;cursor:pointer">✕</button>';
+      h+='</div>';
+      if(a&&a.status==="rating"){ const ks=tgKidsOf(a); h+='<div style="font-size:11px;color:#78716c;margin-top:3px">Ratings in: '+ks.map(k=>cap(k)+(((a.ratings||{})[k]!=null)?' ✓':' …')).join(" · ")+' — you can rate for a kid from their Kids’ Corner.</div>'; }
+      if(tgEdit){
+        const inp=(x,v,w)=>'<input id="tg-'+id+'-'+x+'" value="'+esc_(v==null?"":v).replace(/"/g,"&quot;")+'" style="width:'+(w||90)+'px;padding:5px 7px;border:1.5px solid #e2ddd6;border-radius:7px;font-size:12px">';
+        h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px;font-size:11px;color:#78716c">Name '+inp("name",d.name,150)+' Max ⭐ '+inp("max",d.max,50);
+        if(d.kind==="lottery") h+=' Kid '+inp("akid",d.a.kid,70)+' Helpers '+inp("helpers",(d.helpers||[]).join(", "),170);
+        else h+=' A '+inp("akid",d.a.kid,70)+inp("arole",d.a.role,80)+' B '+inp("bkid",d.b.kid,70)+inp("brole",d.b.role,80);
+        h+='<button onclick="tgSaveDefFromForm(\''+id+'\')" style="padding:5px 10px;border-radius:7px;border:none;background:#0f766e;color:#fff;font-size:11px;font-weight:700;cursor:pointer">Save</button></div>';
+      }
+      h+='</div>'; });
+    h+='<div style="font-size:10.5px;color:#78716c;margin-top:8px">Each side rates the other; points = max × rating. Wages: straight to the Star Bank, listed in the check-off log. Not on the schedule yet.</div>';
+    h+='</div></div>'; return h;
+  }catch(e){ return ""; }
+}
+// TOGETHER_END
 // CKLOG_START — 🧾 Today's check-offs with a −100 dock (her ask 2026-09-23; "on the dad build too" 9/24)
 // One card on Mom's Plan and on Dad's Day: everything every kid checked off TODAY — school cards (this week's
 // checked map, done today) and routine/chore steps (routineLog "on" entries) — grouped by kid, newest first,
@@ -9767,6 +9908,7 @@ function renderMomsDay(el){
   h+=mdCardStarBank(true);
   h+=mdCardKidsToday(today,isSchoolDay);
   try{ h+=mdCardCheckLog(); }catch(e){}   // 🧾 Today's check-offs · −100
+  try{ h+=mdCardTogether(); }catch(e){}   // 🤝 Together
 
   // ── 📖 Mom's school schedule — the SAME two-column agenda as Schedule ▸
   // Mom, pinned to today. taskCard/tapTask are shared, so a check-off here is
@@ -21119,7 +21261,8 @@ function kcPointsHTML(k){
 }
 function kcTodayHTML(k){
   const iso=calToday();
-  let h=kcPointsHTML(k);
+  let h=(typeof tgKidHTML==="function")?tgKidHTML(k):"";   // 🤝 Together — invites, live session, rating
+  h+=kcPointsHTML(k);
   h+=kcSchoolHTML(k);
   try{ h+='<div style="padding:0 12px">'+calDaySheetHTML(iso,{breaks:true,coops:true,events:true,meals:true},_calDinnerOf,k,{noWork:true,noClose:true,flat:true,title:"Also today"})+'</div>'; }catch(e){}
   return h;
