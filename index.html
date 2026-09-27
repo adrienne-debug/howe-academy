@@ -11263,6 +11263,7 @@ const MW_CSS = `
 .mwv details{background:#fff;border-radius:12px;box-shadow:0 3px 16px rgba(43,122,120,0.10);overflow:hidden}
 .mwv details>summary{list-style:none;cursor:pointer;padding:12px 14px;font-weight:800;font-size:13px;color:#1a1a1a;display:flex;justify-content:space-between;align-items:center}
 .mwv details>summary::-webkit-details-marker{display:none}
+.sp-fold>summary::-webkit-details-marker{display:none} /* SPRINTFOLD: the sprint lists draw their own caret */
 .mwv details>summary .caret{color:#2B7A78;font-size:12px;transition:transform .2s}
 .mwv details[open]>summary .caret{transform:rotate(90deg)}
 .mwv details .inner{padding:0 14px 14px}
@@ -47108,15 +47109,18 @@ function buildSprintEditorHtml(color){
   h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">';
   h+='<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:4px"><span style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700">\u{1F3AF} Focus Rules</span><span style="font-size:11px;color:#78716c;font-weight:600">'+nSel+' of '+rules.length+' selected</span>';
   h+='<span style="margin-left:auto;display:inline-flex;gap:6px"><button onclick="laRulesQuick(\'started\')" style="padding:4px 10px;border-radius:12px;border:1.5px solid #86efac;background:#f0fdf4;color:#15803d;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{2713} Learned only</button><button onclick="laRulesQuick(\'all\')" style="padding:4px 10px;border-radius:12px;border:1.5px solid #e2ddd6;background:#fff;color:#78716c;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">All</button></span></div>';
-  h+='<div style="font-size:11px;color:#78716c;line-height:1.5;margin-bottom:10px">\u{2713} cleared the drill gate \u{B7} \u{2B50} still learning \u{B7} \u{25CB} not started \u{2014} tap to include/exclude.</div>';
-  h+='<div style="display:flex;gap:5px;flex-wrap:wrap">';
+  // SPRINTFOLD: the rule buttons fold away; the count and the quick picks above stay visible.
+  let ruleList='<div style="font-size:11px;color:#78716c;line-height:1.5;margin-bottom:10px">\u{2713} cleared the drill gate \u{B7} \u{2B50} still learning \u{B7} \u{25CB} not started \u{2014} tap to include/exclude.</div>';
+  ruleList+='<div style="display:flex;gap:5px;flex-wrap:wrap">';
   rules.forEach((r,i)=>{
     const act=!!sel[i];
     const mark=r.st==="learned"?"\u{2713}":r.st==="learning"?"\u{2B50}":"\u{25CB}";
     const fg=act?"#fff":(r.st==="learned"?"#15803d":r.st==="learning"?"#b45309":"#a8a29e");
-    h+='<button onclick="laToggleRule('+i+')" style="padding:6px 10px;border-radius:14px;border:1.5px solid '+(act?color:"#e2ddd6")+';background:'+(act?color:"#fff")+';color:'+fg+';font-size:11px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:left;line-height:1.35;max-width:100%">'+mark+' '+esc(r.rule)+'</button>';
+    ruleList+='<button onclick="laToggleRule('+i+')" style="padding:6px 10px;border-radius:14px;border:1.5px solid '+(act?color:"#e2ddd6")+';background:'+(act?color:"#fff")+';color:'+fg+';font-size:11px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:left;line-height:1.35;max-width:100%">'+mark+' '+esc(r.rule)+'</button>';
   });
-  h+='</div></div>';
+  ruleList+='</div>';
+  h+=sprintFoldHtml("editor-rules",'Pick rules one by one',ruleList,false);
+  h+='</div>';
   // Mode + options
   h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">';
   h+='<div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700;margin-bottom:12px">\u{1F3AE} Game Mode</div>';
@@ -47158,6 +47162,30 @@ function buildSprintEditorHtml(color){
   return h;
 }
 
+// SPRINTFOLD_START — 📂 long lists on the sprint setup fold away (her ask 2026-09-27: "the huge list of spelling
+// words makes it where you have to scroll all the way down to setup … I won't need to look at the list most of
+// the time but being able to see it when needed would be ideal — for all the different types of sprints").
+// One helper for every source: the list sits inside a native <details> with a one-line summary that stays
+// visible (count, what's picked, the quick buttons), CLOSED by default so Grid Size / options / Generate are
+// right there. Tapping the summary opens it; the choice is remembered for the session (sprintFoldOpen, in
+// memory only) so a pill tap's re-render doesn't snap it shut. Used by: the drill-item list (spelling words),
+// the Editor focus-rules list, and the phonogram sprint's two grids — the focus grid stays open until a
+// phonogram is picked (there's nothing to summarize yet), then folds to show the pick. Unit sprints show
+// only round pills and the Book list already sits at the bottom, so neither changes. No Firebase writes.
+let sprintFoldOpen={};
+function sprintFoldIsOpen(key,dflt){ return (key in sprintFoldOpen)?!!sprintFoldOpen[key]:!!dflt; }
+function sprintFoldSet(key,open){ sprintFoldOpen[key]=!!open; }
+// summary: the always-visible line (HTML). body: the list (HTML). dflt: open when Mom hasn't chosen yet.
+function sprintFoldHtml(key,summary,body,dflt){
+  const open=sprintFoldIsOpen(key,dflt);
+  return '<details class="sp-fold" data-fold="'+key+'"'+(open?' open':'')+' ontoggle="sprintFoldSet(\''+key+'\',this.open)">'
+    +'<summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;padding:8px 0;font-size:12px;color:#78716c;font-weight:600;user-select:none">'
+    +'<span class="sp-fold-caret" style="display:inline-block;width:14px;text-align:center;font-size:10px;color:#a8a29e;transition:transform .15s'+(open?';transform:rotate(90deg)':'')+'">\u{25B6}</span>'
+    +'<span style="flex:1;min-width:0">'+summary+'</span>'
+    +'<span style="font-size:11px;font-weight:700;color:#5b3a8c;white-space:nowrap">'+(open?'Hide':'Show')+'</span></summary>'
+    +'<div style="padding-top:4px">'+body+'</div></details>';
+}
+// SPRINTFOLD_END
 function buildSprintFromDrillHtml(color){
   const catE=MAST_CAT_EMOJI_MAP[masteryKid]||{};
   const settings=mastDrillSettings();
@@ -47210,15 +47238,18 @@ function buildSprintFromDrillHtml(color){
   h+='</div></div>';
   // The set, or a guided empty state
   if(pool.length){
-    h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:4px 14px">';
+    // SPRINTFOLD: the list folds away behind a one-line summary so Grid Size + Generate sit right here.
+    let list='';
     pool.forEach(it=>{
       const col=MAST_TIER_COL[it.tier]||"#666";
-      h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f3f1ee">';
-      h+='<span style="flex:1;font-size:14px;font-weight:600;color:#1c1917">'+(it.prompt||it.id)+'</span>';
-      h+='<span style="font-size:10px;color:#78716c">'+((catE[it.subject]||"")+" "+(it.subject||"")).trim()+'</span>';
-      h+='<span style="font-size:10px;font-weight:700;color:'+col+';padding:2px 7px;border-radius:6px;border:1px solid '+col+'">'+(MAST_TIER_LBL[it.tier]||it.tier||"")+'</span>';
-      h+='</div>';
+      list+='<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f3f1ee">';
+      list+='<span style="flex:1;font-size:14px;font-weight:600;color:#1c1917">'+(it.prompt||it.id)+'</span>';
+      list+='<span style="font-size:10px;color:#78716c">'+((catE[it.subject]||"")+" "+(it.subject||"")).trim()+'</span>';
+      list+='<span style="font-size:10px;font-weight:700;color:'+col+';padding:2px 7px;border-radius:6px;border:1px solid '+col+'">'+(MAST_TIER_LBL[it.tier]||it.tier||"")+'</span>';
+      list+='</div>';
     });
+    h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:4px 14px">';
+    h+=sprintFoldHtml("drill",'\u{1F4CB} The '+pool.length+' item'+(pool.length===1?"":"s")+' in this set',list,false);
     h+='</div>';
     h+=sprintDrillGridPillsHtml(color,pool.length);   // DRILLGRID: Fit / Small / Medium / Large
     // R3: build offline A/B sprint sheets from this pooled set (two shuffles = first/second pass).
@@ -47287,25 +47318,29 @@ function buildSprintHtml(){
   h+=`</div></div></div>`;
 
   h+=`<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">`;
-  h+=`<div style="font-family:'Fraunces',serif;font-size:16px;font-weight:700;margin-bottom:12px">🔤 Focus Phonogram</div>`;
-  h+=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:5px;margin-bottom:12px">`;
+  h+=`<div style="font-family:'Fraunces',serif;font-size:16px;font-weight:700;margin-bottom:6px">🔤 Focus Phonogram</div>`;
+  // SPRINTFOLD: the grid stays open until a phonogram is picked, then folds behind the pick.
+  let focusGrid=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:5px;margin-bottom:12px">`;
   SPRINT_LOE_ALL.forEach(p=>{
     const act=sprintSelectedPhono&&sprintSelectedPhono.pg===p.pg;
-    h+=`<button class="sp-phono-btn" data-pg="${p.pg}" onclick="sprintSelectPhono('${p.pg}')" style="padding:7px 3px;border-radius:9px;border:1.5px solid ${act?color:"#e2ddd6"};background:${act?color:"#fff"};color:${act?"#fff":"#1c1917"};font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Mono',monospace;text-align:center">${p.pg}</button>`;
+    focusGrid+=`<button class="sp-phono-btn" data-pg="${p.pg}" onclick="sprintSelectPhono('${p.pg}')" style="padding:7px 3px;border-radius:9px;border:1.5px solid ${act?color:"#e2ddd6"};background:${act?color:"#fff"};color:${act?"#fff":"#1c1917"};font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Mono',monospace;text-align:center">${p.pg}</button>`;
   });
-  h+=`</div>`;
+  focusGrid+=`</div>`;
+  h+=sprintFoldHtml("phono-focus",sprintSelectedPhono?`Focus: <b style="font-family:'DM Mono',monospace;color:${color}">${sprintSelectedPhono.pg}</b> ${sprintSelectedPhono.sounds||""}`:"Pick the focus phonogram",focusGrid,!sprintSelectedPhono);
   h+=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:5px">Or type a custom pattern</div>
   <input id="sp-custom-phono" type="text" placeholder="e.g. silent-e, soft-c..." autocomplete="off" style="width:100%;padding:9px 10px;border:1.5px solid #e2ddd6;border-radius:9px;font-size:14px;font-family:'DM Sans',sans-serif"/>`;
   h+=`</div>`;
 
   h+=`<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">`;
   h+=`<div style="font-family:'Fraunces',serif;font-size:16px;font-weight:700;margin-bottom:6px">🔁 Spiral Review <span style="font-size:12px;font-weight:400;color:#78716c">(optional — up to 3)</span></div>`;
-  h+=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:5px;margin-bottom:8px">`;
+  // SPRINTFOLD: the review grid folds by default; the chips of what's picked stay visible below.
+  let reviewGrid=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:5px;margin-bottom:8px">`;
   SPRINT_LOE_ALL.forEach(p=>{
     const act=!!sprintReviewPhonos.find(r=>r.pg===p.pg);
-    h+=`<button class="sp-review-btn" data-pg="${p.pg}" onclick="sprintToggleReview('${p.pg}')" style="padding:7px 3px;border-radius:9px;border:1.5px solid ${act?"#d97706":"#e2ddd6"};background:${act?"#fef3c7":"#fff"};color:${act?"#d97706":"#78716c"};font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Mono',monospace;text-align:center">${p.pg}</button>`;
+    reviewGrid+=`<button class="sp-review-btn" data-pg="${p.pg}" onclick="sprintToggleReview('${p.pg}')" style="padding:7px 3px;border-radius:9px;border:1.5px solid ${act?"#d97706":"#e2ddd6"};background:${act?"#fef3c7":"#fff"};color:${act?"#d97706":"#78716c"};font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Mono',monospace;text-align:center">${p.pg}</button>`;
   });
-  h+=`</div>`;
+  reviewGrid+=`</div>`;
+  h+=sprintFoldHtml("phono-review",sprintReviewPhonos.length?("Reviewing "+sprintReviewPhonos.length+" of 3"):"Add up to 3 review phonograms",reviewGrid,false);
   h+=`<div id="sp-review-chips" style="display:flex;gap:4px;flex-wrap:wrap">${sprintReviewPhonos.map(r=>`<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;background:#fef3c7;color:#d97706;font-size:12px;font-weight:700;font-family:'DM Mono',monospace">${r.pg}<button onclick="sprintToggleReview('${r.pg}')" style="background:none;border:none;cursor:pointer;color:#d97706;font-size:11px;font-weight:700;padding:0;line-height:1">✕</button></span>`).join("")}</div>`;
   h+=`</div>`;
 
