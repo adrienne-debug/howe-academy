@@ -3363,6 +3363,8 @@ function initFb() {
       try{HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings));}catch(e){}
       if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);}
     });
+    db.ref("mathSprints").on("value",s=>{ mathSprints=s.val()||{}; if(tab==="mastery"||tab==="schedule") renderAll(); });   // 🔢 Book Sprints
+    db.ref("library/scans").on("value",s=>{ lbScansMS=s.val()||{}; if(tab==="mastery"&&typeof _mastRe==="function") _mastRe(); });   // 🔢 sprint titles (editable in the panel)
     db.ref("reviews").on("value",s=>{ reviews=s.val()||{}; try{ rvHeal(); }catch(e){} if(tab==="schedule"&&typeof renderAll==="function") renderAll(); });   // 📅 Review with Mom
     db.ref("brainBreaks").on("value",s=>{
       brainBreaks=s.val()||{};
@@ -7691,6 +7693,7 @@ function taskCard(t, fromDay, readOnly, doneId){
   const _eicL=(!readOnly&&typeof eicLinked==="function")&&eicLinked(t);
   const eicRow=(_eicL&&!done)?'<div style="margin-top:5px"><span onclick="event.stopPropagation();eicOpenNextFor(\''+t.who+'\')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u270F\uFE0F Open today\u2019s page \u2192</span></div>'
     :(_eicL&&done&&effectiveDay(t)===_todayDay)?'<div style="margin-top:5px"><span onclick="event.stopPropagation();eicReopenTodayFor(\''+t.who+'\')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u270F\uFE0F Back to today\u2019s page \u2192</span></div>':"";   // ↩ checked today → the same page again
+  const msRow=(!readOnly&&!done&&typeof msIsCard==="function"&&msIsCard(t)&&typeof msState==="function"&&msState(t.who))?'<div style="margin-top:5px"><span onclick="event.stopPropagation();msOpenFor(\''+t.who+'\')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F522} Open today\u2019s sprint \u2192</span></div>':"";   // 🔢
   const rvRow=(t.review&&momHere()&&!readOnly&&!done)?'<div style="margin-top:5px"><span onclick="event.stopPropagation();rvRemove(\''+t.id+'\')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#7c3aed;cursor:pointer;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">✕ Remove review</span></div>':"";   // 📅
   const wbRow=(_wbl&&!_eicL)?'<div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap"><span onclick="event.stopPropagation();wbOpenFor(\''+_wbl.bookId+'\',\''+t.who+'\','+_wbl.page+')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4D5} Open '+esc(taskLessonRef(t)||_wbl.name)+' →</span>'
     +(_wbl.ans?'<span onclick="event.stopPropagation();wbOpenCheck(\''+_wbl.bookId+'\',\''+t.who+'\','+_wbl.page+','+_wbl.ans+')" title="his page and the answer key side by side" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#065f46;cursor:pointer;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">&#9989; Check answers</span>':'')
@@ -7756,7 +7759,7 @@ function taskCard(t, fromDay, readOnly, doneId){
     '<div class="card-body">'+
     '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
     '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+pushLabel+(_eicL?eicCardTitle(t):t.title)+'</div>'+mb+'</div>'+
-    '<div class="task-detail">'+cleanDetail+'</div>'+dr+spinBtn+classRow+linkRow+wbRow+eicRow+rvRow+
+    '<div class="task-detail">'+cleanDetail+'</div>'+dr+spinBtn+classRow+linkRow+wbRow+eicRow+rvRow+msRow+
     '</div></div></div>';
 }
 
@@ -46260,6 +46263,178 @@ function sprintGenerateFromPool(){
   const mk=()=>({focusPhono:label,focusSounds:"",gridWords:words.slice(),reviewWords:[],nonsenseWords:[],phrases:[],sentences:[]});
   sprintRenderSheets(mk(),mk(),{sprintNum,date:sprintDate,prevBest:null,cols,rows,ps:"none",kidName:(SL_KLBL[masteryKid]||"Student"),sheetLabel:label+" Sprint"});
 }
+// MSPRINT_START — 🔢 Book Sprints (Singapore Math Sprints books; her design 2026-09-24, "kinda like Editor in Chief")
+// Per kid: a book + the sprint they are on (editable any time, moves logged) and a run history — like EIC, every
+// kid runs their own level. A session = 4 timed 60-second runs. Each run is ONE sheet of the current sprint, in
+// the order A 1st → B 1st → A 2nd → B 2nd: met → the sprint is PASSED and the next run is the next sprint's
+// A 1st (a flying kid can pass 4 sprints in a session); not met → the same sprint's next sheet; four misses →
+// that sprint starts over at A 1st next time (repeat until met). Mom marks (Mom-required); the kid sees the
+// sheet and the timer. Sprint titles come from the library lists (library/scans/<book>, editable here: count +
+// titles). Data: mathSprints/<kid> = {book, cur, moves[], log{<n>:{runs[], passed}}}. Targeted writes; dry-run inert.
+let mathSprints={}, lbScansMS={}, msTimer=null, msTimerLeft=0, msTimerDone=false, msEditBook=null;
+const MS_BOOKS=[{id:"sm-sprints-1",label:"Sprints 1",base:100},{id:"sm-sprints-2",label:"Sprints 2",base:200},{id:"sm-sprints-3",label:"Sprints 3",base:300},
+  {id:"sm-sprints-4",label:"Sprints 4",base:400},{id:"sm-sprints-5",label:"Sprints 5",base:500},{id:"math-sprints-6",label:"Math Sprints 6",base:600}];
+const MS_SHEETS=[{k:"a1",l:"A · 1st half",goal:"Standard: at least half the problems done in 60 s, 80% of those right"},
+  {k:"b1",l:"B · 1st half",goal:"Honors: at least a third done in 60 s, 70% of those right"},
+  {k:"a2",l:"A · 2nd half",goal:"Standard: at least half the problems done in 60 s, 80% of those right"},
+  {k:"b2",l:"B · 2nd half",goal:"Honors: at least a third done in 60 s, 70% of those right"}];
+function msTodayISO(){ try{ return (typeof cbTodayISO==="function")?cbTodayISO():new Date().toISOString().slice(0,10); }catch(e){ return new Date().toISOString().slice(0,10); } }
+function msBookMeta(id){ return MS_BOOKS.find(b=>b.id===id)||null; }
+// → [{n,title}] from the library list "Sprint 407 · Title (p. 43)"; a missing title becomes "Sprint 407"
+function msBookList(bookId){
+  const sc=(lbScansMS||{})[bookId]; const L=(sc&&Array.isArray(sc.lessons))?sc.lessons:[]; const out=[];
+  L.forEach(x=>{ const m=/Sprint\s+(\d+)\s*(?:·|:|-|—)?\s*(.*)$/i.exec(String(x||"").trim()); if(m) out.push({n:+m[1],title:String(m[2]||"").replace(/\s*\(p\.[^)]*\)\s*$/,"").trim()}); });
+  return out.sort((a,b)=>a.n-b.n);
+}
+function msState(kid){ const st=(mathSprints||{})[kid]; return (st&&st.book)?st:null; }
+function msRuns(kid,n){ const st=msState(kid); const e=st&&st.log&&st.log[n]; const r=e&&e.runs; return Array.isArray(r)?r.filter(Boolean):(r?Object.values(r).filter(Boolean):[]); }
+function msPassed(kid,n){ const st=msState(kid); const e=st&&st.log&&st.log[n]; return !!(e&&e.passed); }
+// the next sheet for sprint n: runs since the last pass, cycling A1→B1→A2→B2; null when the sprint is passed
+function msNextSheet(kid,n){ if(msPassed(kid,n)) return null; return MS_SHEETS[msRuns(kid,n).length%4]; }
+function msTodayRuns(kid){ const st=msState(kid); if(!st||!st.log) return 0; const d=msTodayISO(); let c=0; Object.keys(st.log).forEach(n=>{ msRuns(kid,n).forEach(r=>{ if(r&&r.d===d) c++; }); }); return c; }
+function msNextSprintN(kid,n){ const st=msState(kid); const L=msBookList(st.book); const i=L.findIndex(x=>x.n===n); return (i>=0&&i+1<L.length)?L[i+1].n:null; }
+function msSetPosition(kid,book,cur,why){
+  if(!momHere()||!kid||!book) return;
+  const st=(mathSprints[kid]=mathSprints[kid]||{}); const from={book:st.book||null,cur:st.cur||null};
+  const L=msBookList(book); if(!cur||!L.some(x=>x.n===cur)) cur=(L[0]||{}).n||null;
+  st.book=book; st.cur=cur; st.moves=st.moves||[]; const mv={at:Date.now(),ts:nowTs(),from:from,to:{book:book,cur:cur},why:why||"set by Mom"}; st.moves.push(mv);
+  if(db&&!_dryRun()){ const u={}; u["book"]=book; u["cur"]=cur; u["moves/"+(st.moves.length-1)]=mv; db.ref("mathSprints/"+kid).update(u); }
+  dbg("🔢 sprint position "+kid+" → "+book+" #"+cur+" ("+(why||"set")+")");
+  if(typeof _mastRe==="function") _mastRe();
+}
+// one run: records the sheet + result; a met sheet passes the sprint and moves the kid on; the 4th run of the day
+// checks off today's Math Sprints card
+function msRecordRun(kid,met){
+  if(!momHere()) return null; const st=msState(kid); if(!st||!st.cur) return null;
+  const n=st.cur, sheet=msNextSheet(kid,n); if(!sheet) return null;
+  const runs=msRuns(kid,n); const run={d:msTodayISO(),ts:nowTs(),sheet:sheet.k,met:!!met};
+  st.log=st.log||{}; st.log[n]=st.log[n]||{}; const arr=runs.concat([run]); st.log[n].runs=arr;
+  const u={}; u["log/"+n+"/runs/"+(arr.length-1)]=run;
+  let advanced=null;
+  if(met){ st.log[n].passed=run.ts; u["log/"+n+"/passed"]=run.ts; const nx=msNextSprintN(kid,n); if(nx){ st.cur=nx; u["cur"]=nx; advanced=nx; } else { st.done=true; u["done"]=true; } }
+  if(db&&!_dryRun()) db.ref("mathSprints/"+kid).update(u);
+  dbg("🔢 sprint run "+kid+" #"+n+" "+sheet.k+" "+(met?"MET":"miss")+(advanced?" → #"+advanced:""));
+  msTimerReset();
+  if(msTodayRuns(kid)>=4){ try{ msCheckCard(kid); }catch(e){} if(typeof gwShowToast==="function") gwShowToast("🔢 Sprint session done — 4 runs"); }
+  if(typeof _mastRe==="function") _mastRe();
+  return {n:n,sheet:sheet.k,met:!!met,advanced:advanced};
+}
+// today's open Math Sprints card for the kid checks itself off (same as EIC)
+function msCheckCard(kid){
+  try{
+    if(typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return false;
+    const t=weekData.tasks.filter(x=>x&&x.who===kid&&msIsCard(x)&&!String(x.id||"").endsWith("_c")&&!x._eowOverflow&&!(checked&&checked[x.id])&&effectiveDay(x)===_todayDay).sort((a,b)=>toMin(a.time)-toMin(b.time))[0];
+    if(!t) return false; const ts=(claimed&&claimed[t.id])||nowTs();
+    if(finalizeDone(t.id,ts,null)===false) return false;
+    try{ showPaceToast(t.id,tsToMin(ts)); }catch(e){}
+    if(typeof renderAll==="function") renderAll(); return true;
+  }catch(e){ return false; }
+}
+function msIsCard(t){ return !!(t&&(t.subjectKey==="math_sprints"||/math sprints?/i.test(t.title||""))); }
+function msEnabled(kid){ return !!(msState(kid)||momHere()); }
+function msOpenFor(kid){ masteryKid=kid; mastView="sprint"; sprintSource="book"; mastLogMode=false; mastScoreItemId=null; showTab('mastery'); }
+// ── the 60-second timer ──
+function msTimerReset(){ if(msTimer){ clearInterval(msTimer); msTimer=null; } msTimerLeft=0; msTimerDone=false; }
+function msTimerStart(){
+  msTimerReset(); msTimerLeft=60; try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}
+  const paint=()=>{ const el=document.getElementById("ms-timer"); if(el) el.textContent=(msTimerLeft>0?("0:"+String(msTimerLeft).padStart(2,"0")):"0:00"); const bar=document.getElementById("ms-timer-bar"); if(bar) bar.style.width=Math.round(100*(60-msTimerLeft)/60)+"%"; };
+  paint();
+  msTimer=setInterval(()=>{ msTimerLeft--; paint(); if(msTimerLeft<=0){ clearInterval(msTimer); msTimer=null; msTimerDone=true; try{ bbChime(); }catch(e){} const m=document.getElementById("ms-mark"); if(m) m.style.display="flex"; const b=document.getElementById("ms-start"); if(b) b.style.display="none"; } },1000);
+  const m=document.getElementById("ms-mark"); if(m) m.style.display="none"; const b=document.getElementById("ms-start"); if(b) b.textContent="⏱ Running…";
+}
+// ── book editor: count + titles, saved to the library list everyone reads ──
+function msBookEditOpen(bookId){ if(!momHere()) return; msEditBook=bookId; if(typeof _mastRe==="function") _mastRe(); }
+function msBookEditClose(){ msEditBook=null; if(typeof _mastRe==="function") _mastRe(); }
+function msBookLinesFor(bookId,count){
+  const meta=msBookMeta(bookId)||{base:0}; const L=msBookList(bookId); const out=[];
+  const n=Math.max(1,Math.min(99,parseInt(count,10)||L.length||1));
+  for(let i=1;i<=n;i++){ const num=meta.base+i; const e=L.find(x=>x.n===num); out.push("Sprint "+num+(e&&e.title?" · "+e.title:"")); }
+  return out;
+}
+function msBookSave(bookId,count,text){
+  if(!momHere()||!bookId) return;
+  const lines=String(text||"").split("\n").map(x=>x.trim()).filter(Boolean);
+  const meta=msBookMeta(bookId)||{base:0}; const n=Math.max(1,Math.min(99,parseInt(count,10)||lines.length||1));
+  // normalise to "Sprint <base+i> · <title>": a line that names its number lands on that number ("604: Ratios" → 604);
+  // unnumbered lines fill the remaining slots in order, so a blank line or a missing title never shifts the rest
+  const titles={}; const loose=[];
+  lines.forEach(raw=>{ const m=/^(?:Sprint\s*)?(\d+)?\s*(?:·|:|-|—)?\s*(.*)$/i.exec(raw); const num=m&&m[1]?+m[1]:null, title=(m&&m[2]||"").trim();
+    if(num!=null&&num>meta.base&&num<=meta.base+n) titles[num]=title; else loose.push(title); });
+  for(let i=1;i<=n&&loose.length;i++){ const num=meta.base+i; if(titles[num]===undefined) titles[num]=loose.shift(); }
+  const out=[]; for(let i=1;i<=n;i++){ const num=meta.base+i; const title=titles[num]||""; out.push("Sprint "+num+(title?" · "+title:"")); }
+  lbScansMS[bookId]=Object.assign({},lbScansMS[bookId]||{},{lessons:out,editedAt:Date.now(),source:((lbScansMS[bookId]||{}).source||"")+" | edited in app "+msTodayISO()});
+  if(db&&!_dryRun()) db.ref("library/scans/"+bookId).update({lessons:out,editedAt:Date.now(),source:lbScansMS[bookId].source});
+  dbg("🔢 book list saved "+bookId+" ("+out.length+")");
+  msEditBook=null; if(typeof _mastRe==="function") _mastRe();
+}
+function msBookSaveFromForm(bookId){ const c=document.getElementById("ms-ed-count"), t=document.getElementById("ms-ed-text"); msBookSave(bookId,c?c.value:0,t?t.value:""); }
+function msSetPosFromForm(kid){ const b=document.getElementById("ms-pos-book"), c=document.getElementById("ms-pos-cur"); if(!b) return; msSetPosition(kid,b.value,parseInt(c&&c.value,10)||null,"set by Mom"); }
+// ── the panel ──
+function buildSprintBookHtml(color){
+  const kid=masteryKid, st=msState(kid), mom=momHere(), esc_=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;");
+  let h='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700;margin-bottom:4px">🔢 Book Sprints — '+esc_(SL_KLBL[kid]||kid)+'</div>';
+  if(!st){
+    h+='<div style="font-size:12px;color:#78716c;margin-bottom:10px">Not set up yet. Pick the book and the sprint to start on.</div>';
+    if(!mom) return h+'<div style="font-size:12px;color:#78716c">Ask Mom to set it up.</div></div>';
+  } else {
+    const meta=msBookMeta(st.book)||{label:st.book}; const L=msBookList(st.book); const cur=L.find(x=>x.n===st.cur);
+    h+='<div style="font-size:12px;color:#78716c;margin-bottom:10px">'+esc_(meta.label)+' · on <b>Sprint '+st.cur+'</b>'+(cur&&cur.title?' · '+esc_(cur.title):'')+' · '+L.filter(x=>msPassed(kid,x.n)).length+' of '+L.length+' passed</div>';
+  }
+  if(mom){
+    const book=(st&&st.book)||"sm-sprints-4"; const L=msBookList(book);
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">';
+    h+='<select id="ms-pos-book" onchange="msSetPosFromForm(\''+kid+'\')" style="padding:7px 9px;border:1.5px solid #e2ddd6;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'+MS_BOOKS.map(b=>'<option value="'+b.id+'"'+(b.id===book?' selected':'')+'>'+b.label+' ('+msBookList(b.id).length+')</option>').join("")+'</select>';
+    h+='<select id="ms-pos-cur" onchange="msSetPosFromForm(\''+kid+'\')" style="padding:7px 9px;border:1.5px solid #e2ddd6;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif;max-width:260px">'+(L.length?L.map(x=>'<option value="'+x.n+'"'+(st&&st.cur===x.n?' selected':'')+'>'+x.n+(x.title?' · '+esc_(x.title.slice(0,40)):'')+(msPassed(kid,x.n)?' ✓':'')+'</option>').join(""):'<option value="">— no list yet —</option>')+'</select>';
+    if(!st) h+='<button onclick="msSetPosFromForm(\''+kid+'\')" style="padding:8px 14px;border-radius:9px;border:none;background:'+color+';color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Set</button>';
+    h+='<button onclick="msBookEditOpen(\''+book+'\')" style="padding:7px 11px;border-radius:9px;border:1.5px solid #e2ddd6;background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✎ Edit book</button>';
+    h+='</div>';
+    if(st&&st.moves&&st.moves.length) h+='<div style="font-size:10.5px;color:#78716c;margin-bottom:4px">Moves: '+st.moves.slice(-4).map(m=>esc_((m.to&&(msBookMeta(m.to.book)||{}).label)||"")+' #'+(m.to&&m.to.cur)+' · '+esc_(m.ts||"")).join(" → ")+'</div>';
+  }
+  h+='</div>';
+  if(msEditBook){
+    const bid=msEditBook, meta=msBookMeta(bid)||{label:bid}, lines=msBookLinesFor(bid,msBookList(bid).length||1);
+    h+='<div style="background:#fffbeb;border:1.5px solid #f59e0b;border-radius:14px;padding:14px;margin-bottom:14px">';
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700;margin-bottom:6px">✎ '+esc_(meta.label)+' — sprint list</div>';
+    h+='<div style="font-size:11.5px;color:#78716c;margin-bottom:8px">One line per sprint, in order. Set how many sprints the book has; blank titles are fine until you have the book. Saved to the library list every kid reads.</div>';
+    h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><label style="font-size:12px;font-weight:700">Sprints in this book</label><input id="ms-ed-count" type="number" min="1" max="99" value="'+lines.length+'" style="width:70px;padding:6px 8px;border:1.5px solid #e2ddd6;border-radius:8px;font-size:14px"></div>';
+    h+='<textarea id="ms-ed-text" rows="14" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e2ddd6;border-radius:9px;font-size:12.5px;font-family:\'DM Sans\',sans-serif;line-height:1.5">'+esc_(lines.join("\n"))+'</textarea>';
+    h+='<div style="display:flex;gap:8px;margin-top:8px"><button onclick="msBookEditClose()" style="flex:1;padding:10px;border-radius:9px;border:none;background:#f3f4f6;color:#374151;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancel</button><button onclick="msBookSaveFromForm(\''+bid+'\')" style="flex:1;padding:10px;border-radius:9px;border:none;background:#b45309;color:#fff;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save list</button></div>';
+    h+='</div>';
+  }
+  if(!st) return h;
+  // ── today's run ──
+  const L=msBookList(st.book), cur=L.find(x=>x.n===st.cur), sheet=msNextSheet(kid,st.cur), today=msTodayRuns(kid), runs=msRuns(kid,st.cur);
+  h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:16px;margin-bottom:14px;text-align:center">';
+  h+='<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#78716c">Run '+Math.min(today+1,4)+' of 4 today'+(today>=4?' · session done':'')+'</div>';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800;color:'+color+';margin:6px 0 2px">Sprint '+st.cur+'</div>';
+  if(cur&&cur.title) h+='<div style="font-size:14px;font-weight:600;color:#1c1917;margin-bottom:8px">'+esc_(cur.title)+'</div>';
+  if(st.done) h+='<div style="font-size:13px;color:#16a34a;font-weight:700">🏁 Book finished — pick the next book above.</div>';
+  else if(sheet){
+    h+='<div style="display:inline-block;padding:4px 12px;border-radius:12px;background:#eef2ff;color:#3730a3;font-size:13px;font-weight:800;margin-bottom:6px">Sheet '+esc_(sheet.l)+'</div>';
+    h+='<div style="font-size:11.5px;color:#78716c;margin-bottom:12px">Goal — '+esc_(sheet.goal)+'</div>';
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:56px;font-weight:800;color:#1c1917" id="ms-timer">'+(msTimer?("0:"+String(msTimerLeft).padStart(2,"0")):(msTimerDone?"0:00":"1:00"))+'</div>';
+    h+='<div style="height:8px;border-radius:4px;background:#eee;overflow:hidden;margin:8px auto 12px;max-width:320px"><div id="ms-timer-bar" style="height:100%;width:'+(msTimer||msTimerDone?Math.round(100*(60-msTimerLeft)/60):0)+'%;background:'+color+';transition:width 1s linear"></div></div>';
+    h+='<button id="ms-start" onclick="msTimerStart()" style="'+(msTimerDone?'display:none;':'')+'padding:14px 28px;border-radius:14px;border:none;background:'+color+';color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(msTimer?"⏱ Running…":"▶ Start 60 seconds")+'</button>';
+    h+='<div id="ms-mark" style="display:'+(msTimerDone?'flex':'none')+';gap:10px;justify-content:center;margin-top:6px">'+
+      (mom?'<button onclick="msRecordRun(\''+kid+'\',true)" style="flex:1;max-width:180px;padding:14px;border-radius:14px;border:none;background:#16a34a;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Met ✓</button><button onclick="msRecordRun(\''+kid+'\',false)" style="flex:1;max-width:180px;padding:14px;border-radius:14px;border:2px solid #ef4444;background:#fff;color:#ef4444;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Not ✗</button>':'<span style="font-size:12px;color:#78716c">Mom marks met / not</span>')+'</div>';
+    if(!mom) h+='<div style="font-size:11px;color:#78716c;margin-top:8px">Mom marks met / not after the timer.</div>';
+  }
+  if(runs.length) h+='<div style="font-size:11.5px;color:#78716c;margin-top:12px">This sprint: '+runs.map(r=>'<span style="color:'+(r.met?"#16a34a":"#b91c1c")+';font-weight:700">'+esc_(r.sheet.toUpperCase())+(r.met?" ✓":" ✗")+'</span>').join(" · ")+(msPassed(kid,st.cur)?' — PASSED':'')+'</div>';
+  h+='</div>';
+  // ── the book ──
+  h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:12px 14px;margin-bottom:14px">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:14px;font-weight:700;margin-bottom:6px">'+esc_((msBookMeta(st.book)||{label:st.book}).label)+'</div>';
+  if(!L.length) h+='<div style="font-size:12px;color:#78716c">No sprint list for this book yet — ✎ Edit book to type it in.</div>';
+  L.forEach(x=>{ const p=msPassed(kid,x.n), isCur=x.n===st.cur, r=msRuns(kid,x.n);
+    h+='<div '+(mom?'onclick="msSetPosition(\''+kid+'\',\''+st.book+'\','+x.n+',\'tapped in list\')" style="cursor:pointer;"':'style="')+'display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:8px;background:'+(isCur?'#eef2ff':'transparent')+'">'+
+      '<span style="width:20px;text-align:center;font-weight:800;color:'+(p?"#16a34a":isCur?color:"#c4c0b8")+'">'+(p?"✓":isCur?"▶":"·")+'</span>'+
+      '<span style="flex:1;min-width:0;font-size:12.5px;'+(isCur?'font-weight:800;':'')+'color:'+(p||isCur?"#1c1917":"#78716c")+'">'+x.n+(x.title?' · '+esc_(x.title):'')+'</span>'+
+      (r.length?'<span style="font-size:10.5px;color:#78716c">'+r.map(q=>q.sheet.toUpperCase()+(q.met?"✓":"✗")).join(" ")+'</span>':'')+'</div>'; });
+  h+='</div>';
+  return h;
+}
+// MSPRINT_END
 function buildSprintSourceToggle(color){
   const opt=(v,l)=>{
     const act=sprintSource===v;
@@ -46269,7 +46444,8 @@ function buildSprintSourceToggle(color){
   s+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:7px">Sprint Source</div>';
   s+='<div style="display:flex;gap:8px;flex-wrap:wrap">'+opt("phonogram","\u{1F524} Phonogram")+opt("drill","\u{1F5C2}\u{FE0F} From drill items")
     +(haKidUnits(masteryKid).length?opt("unit","\u{1F393} Unit"):"")
-    +(laUnitFor(masteryKid)?opt("editor","\u{270F}\u{FE0F} Rules"):"")+'</div>';
+    +(laUnitFor(masteryKid)?opt("editor","\u{270F}\u{FE0F} Rules"):"")
+    +(msEnabled(masteryKid)?opt("book","\u{1F522} Book sprints"):"")+'</div>';   // 🔢 Singapore Math Sprints books
   return s+'</div>';
 }
 // ── U5: the "Unit" sprint source — speed rounds derived from a unit study's decks. ──
@@ -46890,6 +47066,7 @@ function buildSprintHtml(){
   if(sprintSource==="drill") return h+buildSprintFromDrillHtml(color);
   if(sprintSource==="unit") return h+buildSprintUnitHtml(color);
   if(sprintSource==="editor") return h+buildSprintEditorHtml(color);
+  if(sprintSource==="book") return h+buildSprintBookHtml(color);   // 🔢 works for every kid — before the phonogram gate
 
   if(!isActive){
     const msg=SPRINT_KID_MSG[masteryKid]||"Phonics Sprint not configured for this student.";
