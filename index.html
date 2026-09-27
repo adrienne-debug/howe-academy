@@ -969,6 +969,9 @@ body.kioskr #kiosk-kids::-webkit-scrollbar{display:none}
    photos), so the slideshow never changes size card-to-card; images scale up to fill. */
 .mast-slide-img{font-size:280px;line-height:1;margin-bottom:12px;height:420px;min-height:420px;display:flex;align-items:center;justify-content:center;width:100%;overflow:hidden;font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif}
 .mast-bigmoji{font-size:280px;font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif}
+/* SHAPE_SIDES: the count above a polygon pulses once when every side is lit */
+@keyframes sidesPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.35)}}
+.mast-sides-pulse{animation:sidesPulse .5s ease-in-out 1}
 .memoji{font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif!important}
 .mast-slide-img img{height:100%;width:auto;max-width:100%;border-radius:18px;object-fit:contain}
 @media(max-width:480px){.mast-slide-img{height:300px;min-height:300px;font-size:200px}.mast-bigmoji{font-size:190px}}
@@ -37928,26 +37931,15 @@ function mastEditDelete(){
 // those are drawn with CSS; px sets the drawn height (emoji inherit font-size
 // from their container like every other card visual).
 function mastShapeVis(name,px){
-  const em={Circle:"\u{1F534}",Square:"\u{1F7E7}",Star:"\u{2B50}",Heart:"❤️",Diamond:"\u{1F537}"}[name];
+  const em={Circle:"\u{1F534}",Star:"\u{2B50}",Heart:"❤️"}[name];
   if(em) return em;
-  // Triangle is NOT in that map on purpose: \u{1F53A} is a small-by-design glyph and next to
-  // the circle/square emoji it renders about half their size. Drawn to fill the same box.
-  if(name==="Triangle"){
-    const s=px, i=Math.max(1,px*0.05), w=Math.max(1,px*0.045).toFixed(2);
-    return '<svg width="'+s+'" height="'+s+'" viewBox="0 0 '+s+' '+s+'" style="vertical-align:middle;display:inline-block">'+
-      '<polygon points="'+(s/2)+','+i+' '+(s-i)+','+(s-i)+' '+i+','+(s-i)+'" fill="#ef4444" stroke="#b91c1c" stroke-width="'+w+'" stroke-linejoin="round"/></svg>';
-  }
-  if(name==="Rectangle") return '<span style="display:inline-block;width:'+Math.round(px*1.6)+'px;max-width:80%;height:'+px+'px;background:#a855f7;vertical-align:middle"></span>';
+  // Straight-sided shapes (Triangle, Square, Rectangle, Diamond and the regular polygons) are
+  // real SVG polygons from mastShapePoly — one geometry for this static picture and for the
+  // tap-each-side drill (SHAPE_SIDES). Square/Diamond used to be emoji and Rectangle a CSS box;
+  // 2026-09-27 they became polygons so each side can be its own tap target.
+  const _sp=mastShapePoly(name,px);
+  if(_sp) return '<svg width="'+_sp.w+'" height="'+_sp.h+'" viewBox="0 0 '+_sp.w+' '+_sp.h+'" style="vertical-align:middle;display:inline-block"><polygon points="'+_sp.pts.map(p=>p[0]+','+p[1]).join(' ')+'" fill="'+_sp.fill+'" stroke="'+_sp.stroke+'" stroke-width="'+Math.max(1,px*0.045).toFixed(2)+'" stroke-linejoin="round"/></svg>';
   if(name==="Oval") return '<span style="display:inline-block;width:'+Math.round(px*1.5)+'px;max-width:80%;height:'+px+'px;background:#22c55e;border-radius:50%;vertical-align:middle"></span>';
-  // Native regular polygons as transparent SVG — pentagon/hexagon point-top, octagon flat-top (stop-sign)
-  const poly={Pentagon:{n:5,fill:"#38bdf8",stroke:"#0284c7"},Hexagon:{n:6,fill:"#3b82f6",stroke:"#1d4ed8"},Octagon:{n:8,fill:"#22d3ee",stroke:"#0891b2"},
-    Heptagon:{n:7,fill:"#a78bfa",stroke:"#7c3aed"},Nonagon:{n:9,fill:"#f472b6",stroke:"#db2777"},Decagon:{n:10,fill:"#fb923c",stroke:"#ea580c"}}[name];
-  if(poly){
-    const s=px,c=px/2,r=px*0.46,rot=(name==="Octagon"?-67.5:(name==="Decagon"?0:-90))*Math.PI/180;
-    const pts=[];
-    for(let i=0;i<poly.n;i++){ const a=rot+i*2*Math.PI/poly.n; pts.push((c+r*Math.cos(a)).toFixed(1)+','+(c+r*Math.sin(a)).toFixed(1)); }
-    return '<svg width="'+s+'" height="'+s+'" viewBox="0 0 '+s+' '+s+'" style="vertical-align:middle;display:inline-block"><polygon points="'+pts.join(' ')+'" fill="'+poly.fill+'" stroke="'+poly.stroke+'" stroke-width="'+Math.max(1,px*0.045).toFixed(2)+'" stroke-linejoin="round"/></svg>';
-  }
   // 2026-08-17: the rest of Julian's shape bank (flat + 3-D), drawn on an 80×80 grid and scaled
   // to px so every card visual is a real picture. Same geometry family as the notebook's juSvgShape.
   const _sw=Math.max(1,px*0.045).toFixed(2);
@@ -37971,6 +37963,100 @@ function mastShapeVis(name,px){
   if(more) return _svg(more);
   return name.charAt(0);
 }
+// SHAPE_SIDES_START — Julian's polygon drill: tap each side to count the sides (2026-09-27).
+// The lesson is one-to-one correspondence on a shape's EDGES: touch each side once, the big
+// number above the shape counts up (1, 2, 3…), touch a lit side again and it counts back down.
+// All sides lit → the number pulses once and a soft ✓ appears. No sound, no points, no ladder
+// or score contact — Mom still scores the card as usual. State is memory only (mastSides) and
+// resets when the slideshow moves to another card; it survives a flip re-render on the SAME
+// card so Mom flipping to the name doesn't wipe his count. Straight-sided shapes only —
+// Circle, Oval, Heart and Star are untouched. Sizes are px on purpose: container units (cqw)
+// render blank in this card area (see mastCountVis).
+const MAST_SHAPE_SIDES={Triangle:3,Square:4,Rectangle:4,Diamond:4,Pentagon:5,Hexagon:6,Octagon:8,Decagon:10};
+// Corner points (px, on a w×h canvas) + fill/stroke for every straight-sided drill shape.
+// Pentagon/hexagon point-top, octagon flat-top (stop-sign), decagon flat-side — same numbers
+// the static picture always used. Returns null for anything that isn't a polygon.
+function mastShapePoly(name,px){
+  const s=px, i=Math.max(1,px*0.05);
+  const r1=v=>(+v).toFixed(1);   // one decimal, as the static picture always drew them
+  if(name==="Triangle") return {w:s,h:s,fill:"#ef4444",stroke:"#b91c1c",pts:[[r1(s/2),r1(i)],[r1(s-i),r1(s-i)],[r1(i),r1(s-i)]]};
+  if(name==="Square"){ const q=Math.max(1,px*0.08); return {w:s,h:s,fill:"#f97316",stroke:"#c2410c",pts:[[r1(q),r1(q)],[r1(s-q),r1(q)],[r1(s-q),r1(s-q)],[r1(q),r1(s-q)]]}; }
+  if(name==="Rectangle"){ const w=Math.round(px*1.6), h=s, q=Math.max(1,px*0.06); return {w:w,h:h,fill:"#a855f7",stroke:"#7e22ce",pts:[[r1(q),r1(q)],[r1(w-q),r1(q)],[r1(w-q),r1(h-q)],[r1(q),r1(h-q)]]}; }
+  if(name==="Diamond") return {w:s,h:s,fill:"#60a5fa",stroke:"#2563eb",pts:[[r1(s/2),r1(i)],[r1(s-i),r1(s/2)],[r1(s/2),r1(s-i)],[r1(i),r1(s/2)]]};
+  const reg={Pentagon:{n:5,fill:"#38bdf8",stroke:"#0284c7"},Hexagon:{n:6,fill:"#3b82f6",stroke:"#1d4ed8"},Octagon:{n:8,fill:"#22d3ee",stroke:"#0891b2"},
+    Heptagon:{n:7,fill:"#a78bfa",stroke:"#7c3aed"},Nonagon:{n:9,fill:"#f472b6",stroke:"#db2777"},Decagon:{n:10,fill:"#fb923c",stroke:"#ea580c"}}[name];
+  if(!reg) return null;
+  const c=px/2,r=px*0.46,rot=(name==="Octagon"?-67.5:(name==="Decagon"?0:-90))*Math.PI/180;
+  const pts=[];
+  for(let k=0;k<reg.n;k++){ const a=rot+k*2*Math.PI/reg.n; pts.push([r1(c+r*Math.cos(a)),r1(c+r*Math.sin(a))]); }
+  return {w:s,h:s,fill:reg.fill,stroke:reg.stroke,pts:pts};
+}
+let mastSides={key:null,on:{}};   // which sides are lit on the card being drilled — memory only
+function mastSidesKey(it,secondLook){ return String(it&&it.id)+(secondLook?"|2":""); }
+function mastSidesCount(){ return Object.keys(mastSides.on).length; }
+// Called by the render with the key of the card on screen: a different card → start clean.
+function mastSidesSync(key){ if(mastSides.key!==key) mastSides={key:null,on:{}}; }
+// The drill visual: the polygon, then one tappable group per side — a thick highlight line
+// (hidden until tapped) under a wide transparent stroke sized for a 4-year-old's finger.
+// The number row sits ABOVE the shape (count, ✓, ↺). Falls back to the plain picture for
+// anything that isn't in MAST_SHAPE_SIDES.
+function mastShapeSidesVis(name,px,key){
+  const n=MAST_SHAPE_SIDES[name], p=n?mastShapePoly(name,px):null;
+  if(!p) return '<span class="mast-bigmoji">'+mastShapeVis(name,px)+'</span>';
+  const on=(mastSides.key===key)?mastSides.on:{};
+  const k=Object.keys(on).length, all=k===n;
+  const kEsc=String(key).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
+  const hit=Math.max(28,Math.round(px*0.2)), hl=Math.max(6,px*0.09).toFixed(1);
+  let svg='<svg width="'+p.w+'" height="'+p.h+'" viewBox="0 0 '+p.w+' '+p.h+'" style="display:block;max-width:100%;height:auto;overflow:visible">';
+  svg+='<polygon points="'+p.pts.map(q=>q[0]+','+q[1]).join(' ')+'" fill="'+p.fill+'" stroke="'+p.stroke+'" stroke-width="'+Math.max(1,px*0.045).toFixed(2)+'" stroke-linejoin="round"/>';
+  for(let i=0;i<n;i++){
+    const a=p.pts[i], b=p.pts[(i+1)%n];
+    const xy='x1="'+a[0]+'" y1="'+a[1]+'" x2="'+b[0]+'" y2="'+b[1]+'"';
+    svg+='<g data-side="'+i+'" onclick="event.stopPropagation();mastSideTap(this)" style="cursor:pointer">'
+      +'<line data-side-hl '+xy+' stroke="#16a34a" stroke-width="'+hl+'" stroke-linecap="round" style="opacity:'+(on[i]?1:0)+';transition:opacity .15s;pointer-events:none"/>'
+      +'<line '+xy+' stroke="transparent" stroke-width="'+hit+'" stroke-linecap="round" pointer-events="stroke"/>'
+      +'</g>';
+  }
+  svg+='</svg>';
+  return '<div data-sides-wrap data-key="'+kEsc+'" data-n="'+n+'" style="display:inline-flex;flex-direction:column;align-items:center;justify-content:center;max-width:100%;font-size:16px;line-height:1;position:relative;z-index:2">'
+    +'<div style="display:flex;align-items:center;justify-content:center;gap:12px;height:72px;margin-bottom:6px">'
+    +'<span data-sides-num style="font-family:\'Fraunces\',serif;font-size:64px;font-weight:800;color:'+(all?'#16a34a':'#c2410c')+';min-width:64px;text-align:center;line-height:1;display:inline-block">'+(k?k:'')+'</span>'
+    +'<span data-sides-done style="font-size:40px;font-weight:800;color:#16a34a;opacity:'+(all?1:0)+';transition:opacity .3s">\u2713</span>'
+    +'<button data-sides-reset onclick="event.stopPropagation();mastSidesReset(this)" title="Start over" style="display:'+(k?'inline-block':'none')+';padding:5px 12px;border-radius:999px;border:1.5px solid #fdba74;background:#fff7ed;color:#c2410c;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u21BA</button>'
+    +'</div>'+svg+'</div>';
+}
+// Tap a side: lit ↔ unlit, then repaint in place (pure DOM — no _mastRe, no re-lock of the
+// slideshow height, nothing stored).
+function mastSideTap(el){
+  const wrap=el.closest&&el.closest("[data-sides-wrap]"); if(!wrap) return;
+  const key=wrap.getAttribute("data-key"), i=el.getAttribute("data-side");
+  if(i==null) return;
+  if(mastSides.key!==key) mastSides={key:key,on:{}};
+  const nowOn=!mastSides.on[i];
+  if(nowOn) mastSides.on[i]=true; else delete mastSides.on[i];
+  mastSidesPaint(wrap,nowOn);
+}
+function mastSidesReset(btn){
+  const wrap=btn.closest&&btn.closest("[data-sides-wrap]"); if(!wrap) return;
+  mastSides={key:null,on:{}};
+  mastSidesPaint(wrap,false);
+}
+function mastSidesPaint(wrap,justLit){
+  const key=wrap.getAttribute("data-key"), n=parseInt(wrap.getAttribute("data-n"),10)||0;
+  const on=(mastSides.key===key)?mastSides.on:{};
+  const k=Object.keys(on).length, all=n>0&&k===n;
+  wrap.querySelectorAll("[data-side]").forEach(g=>{ const hl=g.querySelector("[data-side-hl]"); if(hl) hl.style.opacity=on[g.getAttribute("data-side")]?"1":"0"; });
+  const num=wrap.querySelector("[data-sides-num]"), done=wrap.querySelector("[data-sides-done]"), rs=wrap.querySelector("[data-sides-reset]");
+  if(num){
+    num.textContent=k?String(k):"";
+    num.style.color=all?"#16a34a":"#c2410c";
+    num.classList.remove("mast-sides-pulse");
+    if(all&&justLit){ void num.offsetWidth; num.classList.add("mast-sides-pulse"); }   // pulse ONCE, on the tap that finished the shape
+  }
+  if(done) done.style.opacity=all?"1":"0";
+  if(rs) rs.style.display=k?"inline-block":"none";
+}
+// SHAPE_SIDES_END
 const MAST_COUNT_WORDS={one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90,"one hundred":100};
 function mastCountN(it){ return MAST_COUNT_WORDS[((it&&it.prompt)||"").toLowerCase()]||0; }
 // Counting cards show N dinosaurs to count out loud (never the numeral). Sized in container
@@ -41948,7 +42034,7 @@ function _renderMasteryInner(el){
     if(!bigVis&&MAST_ANIMAL_EMOJI[it.prompt]) bigVis='<span class="mast-bigmoji">'+MAST_ANIMAL_EMOJI[it.prompt]+'</span>';
     const cat=it.subject||"";
     if(!bigVis&&cat==="Colors"&&MAST_COLOR_MAP[it.prompt]) bigVis='<div style="width:240px;height:240px;border-radius:50%;background:'+MAST_COLOR_MAP[it.prompt]+';border:3px solid '+mastColorBorder(it.prompt)+'"></div>';
-    if(!bigVis&&cat==="Shapes") bigVis='<span class="mast-bigmoji">'+mastShapeVis(it.prompt,210)+'</span>';
+    if(!bigVis&&cat==="Shapes") bigVis=MAST_SHAPE_SIDES[it.prompt]?mastShapeSidesVis(it.prompt,210,mastSidesKey(it,secondLook)):'<span class="mast-bigmoji">'+mastShapeVis(it.prompt,210)+'</span>';   // SHAPE_SIDES: tap-each-side drill for straight-sided shapes
     if(!bigVis&&cat==="Counting") bigVis=mastCountVisBig(it);
     if(!bigVis){ const _pl=it.prompt.length; const _fs=_pl<=3?200:_pl<=8?120:_pl<=14?72:_pl<=22?48:36; const _lf=cat==="Letters"?"font-family:'Fraunces',serif;":""; bigVis='<span style="'+_lf+'font-size:'+_fs+'px;font-weight:800;color:#c2410c;word-break:break-word;max-width:100%">'+it.prompt+'</span>'; }
     // Definitions-map first; fall back to the card's own answer (when it's a real answer,
@@ -42126,6 +42212,7 @@ function _renderMasteryInner(el){
     // All cards for this session — the shown one goes in the page, the rest feed the
     // invisible tallest-card measurement in mastLockSlideHeight. Cards past _slBase are
     // the 👀 second-look tail.
+    mastSidesSync(slideList[mastSlideIdx]?mastSidesKey(slideList[mastSlideIdx],mastSlideIdx>=_slBase):null);   // SHAPE_SIDES: a new card on screen starts with no sides lit
     mastSlideCardsHtml=slideList.map((it,ix)=>buildSlideCard(it,ix>=_slBase));
     h+='<div style="padding:10px 14px">';
     h+=mastSlideCardsHtml[mastSlideIdx];
