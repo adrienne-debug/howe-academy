@@ -7699,6 +7699,12 @@ function taskCard(t, fromDay, readOnly, doneId){
   const wbRow=(_wbl&&!_eicL)?'<div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap"><span onclick="event.stopPropagation();wbOpenFor(\''+_wbl.bookId+'\',\''+t.who+'\','+_wbl.page+')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4D5} Open '+esc(taskLessonRef(t)||_wbl.name)+' →</span>'
     +(_wbl.ans?'<span onclick="event.stopPropagation();wbOpenCheck(\''+_wbl.bookId+'\',\''+t.who+'\','+_wbl.page+','+_wbl.ans+')" title="his page and the answer key side by side" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#065f46;cursor:pointer;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">&#9989; Check answers</span>':'')
     +'</div>':"";
+  // LESSONLINK_CARD_START — "▶ Nicole the Math Lady →": the lesson's own page/video, when one
+  // resolves for this card (override, else the subject template). Not on done or read-only cards.
+  const _llS=(!readOnly&&!done&&typeof llUrlFor==="function")?llSubjectFor(t):null;
+  const _llU=_llS?llUrlFor(t,_llS):"";
+  const llRow=_llU?'<div style="margin-top:5px"><a href="'+esc(_llU)+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif;text-decoration:none">▶ '+esc(llLabelFor(_llS))+' →</a></div>':"";
+  // LESSONLINK_CARD_END
   // A fixed-time class: the card is his door into the class. Opens the in-app class
   // screen (which carries the header back to his day) rather than firing the link straight
   // out, so he is never stranded on a page with no route home.
@@ -7760,7 +7766,7 @@ function taskCard(t, fromDay, readOnly, doneId){
     '<div class="card-body">'+
     '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
     '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+pushLabel+(_eicL?eicCardTitle(t):t.title)+'</div>'+mb+'</div>'+
-    '<div class="task-detail">'+cleanDetail+'</div>'+dr+spinBtn+classRow+linkRow+wbRow+eicRow+rvRow+msRow+
+    '<div class="task-detail">'+cleanDetail+'</div>'+dr+spinBtn+classRow+linkRow+wbRow+eicRow+rvRow+msRow+llRow+
     '</div></div></div>';
 }
 
@@ -17107,6 +17113,44 @@ function ceRenderEditSheet(){
     h+='<input class="ce-sheet-input" placeholder="https://\u2026" value="'+esc(s.joinUrl||"")+'" onchange="fxDoorSetUrl(this.value)">';
   }
 
+  // LESSONLINK_SHEET_START — 🔗 Lesson link (Mom-only). Template + label + per-lesson override.
+  if(momHere()){
+    const _llTpl=String(s.lessonUrl||"");
+    h+='<div class="ce-sheet-lbl" style="margin-top:10px">🔗 Lesson link <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— optional; each card opens its own lesson page or video</span></div>';
+    h+='<input class="ce-sheet-input" placeholder="https://example.com/{book}/chapter-{chapter}/lesson-{lesson}" value="'+esc(_llTpl)+'" onchange="llSetTemplate(this.value)">';
+    h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Paste the address of one lesson page, then swap its numbers for <b>{book}</b>, <b>{chapter}</b>, <b>{lesson}</b> (or <b>{ref}</b> for the whole lesson text). “5B Ch.12 L2” fills in 5B / 12 / 2. A card only shows the link when every hole is filled; https:// only. Nicole the Math Lady’s Dimensions videos start at <span style="font-family:ui-monospace,monospace">nicolethemathlady.com/curriculum/singapore-math-dimensions/grade-5</span> — log in, open a lesson, copy its address.</div>';
+    h+='<div style="display:flex;gap:8px;align-items:center;margin-top:6px"><div style="flex:1"><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:3px">Button says</div>';
+    h+='<input class="ce-sheet-input" placeholder="Nicole the Math Lady" value="'+esc(s.linkLabel||"")+'" onchange="llSetLabel(this.value)"></div>';
+    h+='<div style="flex:1;font-size:10px;color:var(--muted)">On the card: <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px">▶ '+esc(llLabelFor(s))+' →</span></div></div>';
+    const _llCh=llLessonChoices(ceEditKid,ceEditKey);
+    if(_llCh.length){
+      // Preview on the next open lesson so she can see the template land before a kid does.
+      const _llNext=_llCh.find(function(c){ return !c.done; })||_llCh[0];
+      if(_llTpl){
+        const _llPv=llSafeUrl(llFillTemplate(_llTpl,llParseRef(_llNext.label)));
+        h+='<div style="font-size:10px;margin-top:4px;color:'+(_llPv?'#0f766e':'#92400e')+'">'+esc(_llNext.label)+' → '+(_llPv?('<span style="font-family:ui-monospace,monospace;word-break:break-all">'+esc(_llPv)+'</span>'):'no link (a hole in the template has nothing to fill it, or it is not https://)')+'</div>';
+      }
+      const _llPick=_llCh.some(function(c){ return c.key===llPickKey; })?llPickKey:_llNext.key;
+      const _llCur=(s.lessonUrls&&typeof s.lessonUrls==="object")?String(s.lessonUrls[_llPick]||""):"";
+      h+='<div style="font-size:10px;font-weight:700;color:var(--muted);margin-top:8px">🔗 Set link for this lesson <span style="font-weight:400">— wins over the template</span></div>';
+      h+='<div style="display:flex;gap:6px;margin-top:3px"><select class="ce-sheet-input" style="flex:0 1 40%" onchange="llPick(this.value)">';
+      _llCh.forEach(function(c){ h+='<option value="'+esc(c.key)+'"'+(c.key===_llPick?' selected':'')+'>'+(c.done?'✓ ':'')+esc(c.label)+'</option>'; });
+      h+='</select><input class="ce-sheet-input" style="flex:1" placeholder="https://… (empty = use the template)" value="'+esc(_llCur)+'" onchange="llSetOverride(\''+esc(_llPick)+'\',this.value)"></div>';
+      const _llOv=(s.lessonUrls&&typeof s.lessonUrls==="object")?Object.keys(s.lessonUrls).filter(function(k){ return !!s.lessonUrls[k]; }):[];
+      if(_llOv.length){
+        h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">'+_llOv.length+' lesson'+(_llOv.length===1?'':'s')+' with its own link:</div>';
+        _llOv.forEach(function(k){
+          const c=_llCh.find(function(x){ return x.key===k; });
+          h+='<div style="display:flex;align-items:center;gap:6px;font-size:10px;margin-top:2px"><b style="flex:0 0 auto">'+esc(c?c.label:k)+'</b><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,monospace;color:var(--muted)">'+esc(s.lessonUrls[k])+'</span><button onclick="llSetOverride(\''+esc(k)+'\',\'\')" title="Back to the template" style="border:1px solid var(--border);background:#fff;border-radius:6px;padding:0 6px;font-size:10px;cursor:pointer">✕</button></div>';
+        });
+      }
+    } else {
+      h+='<div style="font-size:10px;color:var(--muted);margin-top:6px">Per-lesson links appear here once this subject has a lesson list.</div>';
+    }
+    if(llMsg){ h+='<div style="font-size:10px;color:var(--muted);margin-top:3px">'+esc(llMsg)+'</div>'; llMsg=""; }
+  }
+  // LESSONLINK_SHEET_END
+
   h+='<div class="ce-sheet-lbl">When behind</div>';
   h+='<div class="ce-chips">';
   h+='<div class="ce-chip'+(_ovf?" sel":"")+'" onclick="ceToggleOverflow();ceRenderEditSheet()">'+(_ovf?"✓ Extras can use other days":"Only its own days")+'</div>';
@@ -20580,6 +20624,118 @@ function fxSafeUrl(u){
   if(!/^https?:\/\//i.test(s)) return "";
   return s;
 }
+
+// LESSONLINK_START — a per-lesson "open the video" link on a card (her ask 2026-09-27: Lincoln's
+// Singapore Math cards should open Nicole the Math Lady's lesson for THAT card, the way a class
+// card opens its join link). Generic on purpose — any subject whose cards carry a lesson ref.
+//   subject.lessonUrl   — a URL template Mom pastes, with {book} {chapter} {lesson} {ref} holes,
+//                          filled from the card's lesson ref ("5B Ch.12 L2" → 5B / 12 / 2).
+//   subject.lessonUrls  — { <lesson id>: url } per-lesson overrides; an override wins over the template.
+//   subject.linkLabel   — the words on the button ("Nicole the Math Lady"); default "Open lesson".
+// Every write is one targeted field on this one subject (ceSaveField, or lessonUrls/<id>), so
+// ?dryrun=1 stays inert. Settings are Mom-only (momHere()); kids only ever see the link.
+// The app never invents the site's URL pattern: the template is hers to paste.
+// Pull book / chapter / lesson out of a lesson ref. Book = a token like "5B" or "6A";
+// chapter = "Ch.12" / "Chapter 12"; lesson = "L2" / "Lesson 2". Missing parts are "".
+function llParseRef(ref){
+  const r=String(ref||"").replace(/[–—−]/g,"-").replace(/\s+/g," ").trim();
+  const out={ref:r,book:"",chapter:"",lesson:""};
+  if(!r) return out;
+  const b=/(?:^|[\s(])(\d{1,2}[A-Za-z])(?=$|[\s):,])/.exec(r); if(b) out.book=b[1].toUpperCase();
+  const c=/\bCh(?:apter)?\.?\s*(\d+)/i.exec(r); if(c) out.chapter=c[1];
+  const l=/\bL(?:esson)?\.?\s*(\d+)/i.exec(r); if(l) out.lesson=l[1];
+  return out;
+}
+// Fill a template's holes from the parsed ref. A hole with nothing to fill it (a ref with no
+// chapter, a template asking for {chapter}) yields "" — a half-built link would only 404 on him.
+// A template with no holes at all is a fixed link, shown on every card of the subject.
+function llFillTemplate(tpl,parts){
+  const t=String(tpl||"").trim(); if(!t) return "";
+  const p=parts||{}; let missing=false;
+  const out=t.replace(/\{(book|chapter|lesson|ref)\}/gi,function(_,k){
+    const v=String(p[k.toLowerCase()]||"").trim();
+    if(!v){ missing=true; return ""; }
+    return encodeURIComponent(v);
+  });
+  return missing?"":out;
+}
+// https only (stricter than a class join link): the kid's tap goes straight to a new tab.
+function llSafeUrl(u){
+  const s=String(u||"").trim();
+  if(!s) return "";
+  if(!/^https:\/\//i.test(s)) return "";
+  return s;
+}
+// The key an override is stored under: the lesson id when the subject is stamped, else the
+// normalized ref with Firebase's forbidden key characters (. # $ / [ ]) and spaces swapped for _.
+function llKeyForRef(ref){
+  const n=(typeof _lidNorm==="function")?_lidNorm(ref):String(ref||"").trim().toLowerCase();
+  return n.replace(/[.#$\/\[\]\s]+/g,"_");
+}
+function llLessonKey(t){
+  let lid=null;
+  try{ if(typeof lidForTask==="function") lid=lidForTask(t); }catch(e){ lid=null; }
+  if(lid) return String(lid);
+  const ref=(typeof taskLessonRef==="function")?taskLessonRef(t):"";
+  return ref?llKeyForRef(ref):"";
+}
+function llSubjectFor(t){
+  if(!t||!t.who||!t.subjectKey) return null;
+  try{ return (((typeof gwGetSubjects==="function"?gwGetSubjects(t.who):{})||{})[t.subjectKey])||null; }catch(e){ return null; }
+}
+// The link a card should carry, or "" when nothing resolves (no row is drawn).
+// Order: a per-lesson override for this lesson's id → the subject template filled from the ref.
+function llUrlFor(t,subj){
+  const s=subj||llSubjectFor(t); if(!s) return "";
+  const key=llLessonKey(t);
+  if(key&&s.lessonUrls&&typeof s.lessonUrls==="object"&&s.lessonUrls[key]){
+    const o=llSafeUrl(s.lessonUrls[key]); if(o) return o;
+  }
+  if(!s.lessonUrl) return "";
+  const ref=(typeof taskLessonRef==="function")?taskLessonRef(t):"";
+  return llSafeUrl(llFillTemplate(s.lessonUrl,llParseRef(ref)));
+}
+function llLabelFor(s){ const l=String((s&&s.linkLabel)||"").trim(); return l||"Open lesson"; }
+// ── Mom's settings (subject edit sheet) ──
+function llSetTemplate(v){
+  if(!momHere()) return;
+  ceSaveField("lessonUrl", String(v||"").trim()||null);
+  ceRenderEditSheet(); renderAll();
+}
+function llSetLabel(v){
+  if(!momHere()) return;
+  ceSaveField("linkLabel", String(v||"").trim()||null);
+  ceRenderEditSheet(); renderAll();
+}
+let llPickKey="", llMsg="";
+function llPick(k){ llPickKey=String(k||""); ceRenderEditSheet(); }
+// One targeted write: curriculum/subjects/<kid>/<sk>/lessonUrls/<lesson id>. Never the whole map.
+function llSetOverride(key,url){
+  if(!momHere()||!currData||!ceEditKid||!ceEditKey||!db) return;
+  const k=String(key||"").trim(); if(!k) return;
+  const u=String(url||"").trim();
+  if(u&&!llSafeUrl(u)){ llMsg="⚠ Not saved — the link has to start with https://"; ceRenderEditSheet(); return; }
+  const s=currData.subjects[ceEditKid][ceEditKey];
+  if(!s.lessonUrls||typeof s.lessonUrls!=="object") s.lessonUrls={};
+  if(u) s.lessonUrls[k]=u; else delete s.lessonUrls[k];
+  db.ref("curriculum/subjects/"+ceEditKid+"/"+ceEditKey+"/lessonUrls/"+k).set(u||null);
+  currData.lastEdit=new Date().toISOString();
+  db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  llMsg=u?"✓ Link saved for this lesson":"Cleared — this lesson uses the template again.";
+  ceRenderEditSheet(); renderAll();
+}
+// The lessons the sheet can pick from: [{key,label,done}] in book order (stamped → lesson ids).
+function llLessonChoices(kid,sk){
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s) return [];
+  const seq=Array.isArray(s.lessonSeq)?s.lessonSeq:[];
+  const ids=(typeof lidStamped==="function"&&lidStamped(kid,sk)&&typeof lidsFor==="function")?lidsFor(kid,sk):null;
+  const done=(ids&&typeof lidDoneSet==="function")?lidDoneSet(kid,sk):null;
+  return seq.map(function(x,i){
+    const label=String(x==null?"":x); const key=ids?String(ids[i]):llKeyForRef(label);
+    return {key:key,label:label,done:!!(done&&done.has(key))};
+  }).filter(function(c){ return !!c.key; });
+}
+// LESSONLINK_END
 function fxOpenClassScreen(kid,sk,taskId){
   const s=((gwGetSubjects(kid)||{})[sk])||null;
   if(!s) return;
