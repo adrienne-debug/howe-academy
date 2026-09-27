@@ -46145,7 +46145,7 @@ function sprintLogResult(){
   const accOf=(cnt,err)=>{ if(!cnt||!eaEl) return null; const e=err==null?0:Math.min(err,cnt); return Math.round((cnt-e)/cnt*100); };
   const accA=accOf(a,errA), accB=accOf(b,errB);
   const entry={date,deck,a:a||null,b:b||null,best,pctA,pctB,gain,gainPct,total,snum:sprintNum,
-    diff:isPhon?sprintPillState.diff:(isEd?laDiff:null),gs:isPhon?sprintPillState.gs:(isEd?laSize:null),nw:isPhon?sprintPillState.nw:null,ps:isPhon?sprintPillState.ps:null,
+    diff:isPhon?sprintPillState.diff:(isEd?laDiff:null),gs:isPhon?sprintPillState.gs:(isEd?laSize:sprintDrillLoggedGs()),nw:isPhon?sprintPillState.nw:null,ps:isPhon?sprintPillState.ps:null,
     mode:isEd?laMode:null,
     ts:Date.now(),src:sprintSource};
   if(errA!=null){ entry.errA=errA; entry.accA=accA; }
@@ -46400,12 +46400,50 @@ function sprintGenerateFromPool(){
   const pool=sprintDrillPool(masteryKid,items,settings,masteryData.history);
   if(!pool.length) return;
   const words=pool.map(it=>String(it.prompt||it.answer||it.id));
-  const cols=4;
-  const rows=Math.max(3,Math.min(10,Math.ceil(words.length/cols)));
+  const {cols,rows}=sprintDrillGrid(words.length);  // DRILLGRID: Fit (the old 4-across auto-size) or S / M / L
   const label=sprintDeck==="__all__"?"All decks":sprintDeck;
   const mk=()=>({focusPhono:label,focusSounds:"",gridWords:words.slice(),reviewWords:[],nonsenseWords:[],phrases:[],sentences:[]});
   sprintRenderSheets(mk(),mk(),{sprintNum,date:sprintDate,prevBest:null,cols,rows,ps:"none",kidName:(SL_KLBL[masteryKid]||"Student"),sheetLabel:label+" Sprint"});
 }
+// DRILLGRID_START — 🔡 Grid Size S / M / L for spelling sprints, like Lucy's phonogram sprint (her ask 2026-09-27).
+// The drill-item sprint (Lincoln's AAS + Spelling set) used to size its grid by itself: 4 across, as many rows
+// as the set needs (3–10). Now the form has the same Grid Size pills as the phonogram sprint — Small 3×6,
+// Medium 4×7, Large 5×8 — plus "Fit", the default, which is exactly the old auto-size, so nothing changes until
+// Mom taps a size. The pill is its own key (sprintPillState.dgs) so Lincoln's choice never moves Lucy's
+// phonogram grid. With a fixed size, each sheet draws its own words from the set (sprintBuildSheet shuffles
+// A and B independently and trims to the grid); a set smaller than the grid leaves the rest of the tiles
+// blank, as before. A fixed size is logged with the result (entry.gs) so Scores shows "4×7 (28w)" like Lucy's;
+// Fit logs nothing new. In-memory only — no new Firebase paths.
+const SPRINT_DRILL_GRIDS={small:[3,6],medium:[4,7],large:[5,8]};   // same table as the phonogram sprint
+function sprintDrillGridChoice(){ const v=sprintPillState&&sprintPillState.dgs; return SPRINT_DRILL_GRIDS[v]?v:"fit"; }
+function sprintDrillGrid(n){
+  const v=sprintDrillGridChoice();
+  if(v==="fit"){ const cols=4; return {cols,rows:Math.max(3,Math.min(10,Math.ceil((n||0)/cols)))}; }
+  const [cols,rows]=SPRINT_DRILL_GRIDS[v]; return {cols,rows};
+}
+// The logged grid size for a drill-source result: the fixed size Mom picked, or null on Fit (unchanged log).
+function sprintDrillLoggedGs(){ return (sprintSource==="drill"&&sprintDrillGridChoice()!=="fit")?sprintDrillGridChoice():null; }
+function sprintDrillGridPillsHtml(color,poolLen){
+  const cur=sprintDrillGridChoice();
+  const opts=[{v:"fit",l:"Fit"},{v:"small",l:"Small (3×6)"},{v:"medium",l:"Medium (4×7)"},{v:"large",l:"Large (5×8)"}];
+  let h='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-top:14px">';
+  h+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:6px">Grid Size</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+  opts.forEach(({v,l})=>{
+    const act=cur===v;
+    h+='<button class="sp-pill-dgs" data-val="'+v+'" onclick="sprintSetPill(\'dgs\',\''+v+'\')" style="padding:6px 11px;border-radius:20px;border:1.5px solid '+(act?color:"#e2ddd6")+';background:'+(act?color:"#fff")+';color:'+(act?"#fff":"#78716c")+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+l+'</button>';
+  });
+  h+='</div>';
+  const g=sprintDrillGrid(poolLen), slots=g.cols*g.rows, n=poolLen||0;
+  let hint;
+  if(cur==="fit") hint="Fit sizes the grid to the set: 4 across, "+slots+" tile"+(slots===1?"":"s")+" a sheet for these "+n+" item"+(n===1?"":"s")+".";
+  else if(n>slots) hint=g.cols+"×"+g.rows+" — "+slots+" of the "+n+" items on each sheet; A and B each draw their own.";
+  else hint=g.cols+"×"+g.rows+" — "+n+" item"+(n===1?"":"s")+" on "+slots+" tiles"+(n<slots?"; the rest stay blank":"")+".";
+  h+='<div style="font-size:11px;color:#78716c;margin-top:8px;line-height:1.5">'+hint+'</div>';
+  h+='</div>';
+  return h;
+}
+// DRILLGRID_END
 // MSPRINT_START — 🔢 Book Sprints (Singapore Math Sprints books; her design 2026-09-24, "kinda like Editor in Chief")
 // Per kid: a book + the sprint they are on (editable any time, moves logged) and a run history — like EIC, every
 // kid runs their own level. A session = 4 timed 60-second runs. Each run is ONE sheet of the current sprint, in
@@ -47182,6 +47220,7 @@ function buildSprintFromDrillHtml(color){
       h+='</div>';
     });
     h+='</div>';
+    h+=sprintDrillGridPillsHtml(color,pool.length);   // DRILLGRID: Fit / Small / Medium / Large
     // R3: build offline A/B sprint sheets from this pooled set (two shuffles = first/second pass).
     h+='<button onclick="sprintGenerateFromPool()" style="width:100%;padding:13px;border-radius:12px;border:none;background:'+color+';color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin:14px 0 16px">\u{2728} Generate A &amp; B sprint sheets ('+pool.length+' item'+(pool.length===1?'':'s')+')</button>';
     h+=sprintScoreRowHtml();
