@@ -35959,6 +35959,7 @@ function buildMatchHtml(color){
   h+='</span>';
   h+='<span style="font-size:11px;color:var(--muted);font-weight:700">'+(best!=null?'\u{1F3C6} best '+best+'s':(st.startTs?'':'tap a card to start \u{23F1}'))+'</span>';
   h+='</div>';
+  if(typeof deckInstrStripHtml==="function") h+=deckInstrStripHtml(masteryKid,st.deck);   // DECKINSTR: this round's deck
   if(st.pausedAt&&!st.endTs){
     // Paused: hide the board — otherwise the layout can be studied on a frozen clock.
     h+='<div style="min-height:200px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;border-radius:14px;border:2px dashed #e2ddd6;background:#faf9f7">';
@@ -39708,6 +39709,7 @@ function _mhqRenderWeekView(kid,rows,pn){
     });
     h+='</div>';
   }
+  h+=(typeof deckInstrMissingHtml==="function")?deckInstrMissingHtml(pn):'';   // DECKINSTR: decks with no "How to" yet, LA first
 
   function introCapFor(deck){
     return (s.cat_intro_max&&s.cat_intro_max[deck]!=null)?s.cat_intro_max[deck]:s.max_intro_per_cat;
@@ -39817,6 +39819,7 @@ function _mhqRenderDeckPage(kid,deck,rows){
   }
 
   h+=(typeof _mhqDeckSettings==="function")?_mhqDeckSettings(kid,deck):'';
+  h+=(typeof deckInstrEditorHtml==="function")?deckInstrEditorHtml(kid,deck):'';   // DECKINSTR: Mom's per-deck "How to" note
 
   const _grid=(typeof _mhqDeckCardsHtml==="function")?_mhqDeckCardsHtml(kid,deck):'';
   if(_grid){
@@ -40440,6 +40443,143 @@ function _mhqDeckAddHtml(kid,deck){
   return h;
 }
 // ── S5_END ──
+// DECKINSTR_START — per-deck "How to" instructions (her ask 2026-09-27). Mom types a short note
+// on a deck's Mastery HQ page; the kid sees it as a slim ℹ️ strip wherever that deck is drilled
+// (Today's Drill slideshow + quiz list, a deck-based Sprint, a Match round). Mastery HQ → Today &
+// Week lists the decks that still have no note, Language Arts decks first, so she can fill them in.
+// Nothing here touches the ladder, due logic or drill order. The ONLY writes are
+// mastery/<kid>_settings/cat_instructions and mastery/<kid>_settings/cat_instructions_kid, one deck
+// key at a time (targeted update, like cat_modes) — and only when Mom is here. No text is ever
+// invented or auto-generated: a deck stays empty until she types it.
+const DECKINSTR_MAX=240;
+// Her order for the list: Language Arts decks first, then everything else alphabetically.
+const DECKINSTR_LA_FIRST=["Capitalization","Punctuation","Spelling","AAS Words","SpellingYouSee","Phonograms","Nouns & Pronouns","Articles","Subject-Verb Agreement","Plural Nouns","Verb Tenses","Grammar"];
+function deckInstrClean(t){ return String(t==null?"":t).replace(/\r/g,"").replace(/[ \t]+\n/g,"\n").trim().slice(0,DECKINSTR_MAX); }
+function _deckInstrEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }
+function _deckInstrArg(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }
+// {main, kid} — both from <kid>_settings (cat_instructions[deck], cat_instructions_kid[deck]).
+function deckInstrGet(kid,deck){
+  const s=(typeof masteryData!=="undefined"&&masteryData&&masteryData[kid+"_settings"])||{};
+  return {main:deckInstrClean((s.cat_instructions||{})[deck]),kid:deckInstrClean((s.cat_instructions_kid||{})[deck])};
+}
+// What the strip shows: the kid-facing one-liner when Mom wrote one, else the main note.
+function deckInstrText(kid,deck){ if(!deck) return ""; const o=deckInstrGet(kid,deck); return o.kid||o.main; }
+// Collapsed/expanded is remembered per device (one flag for every strip), never per kid in Firebase.
+function deckInstrCollapsed(){ try{ return HA_LS.getItem("ha_deckinstr_collapsed")==="1"; }catch(e){ return false; } }
+function deckInstrToggle(){
+  const nowCollapsed=!deckInstrCollapsed();
+  try{ if(nowCollapsed) HA_LS.setItem("ha_deckinstr_collapsed","1"); else HA_LS.removeItem("ha_deckinstr_collapsed"); }catch(e){}
+  // Flip every strip on the page in place — no re-render, so a Match clock or a typed Sprint field is untouched.
+  try{
+    document.querySelectorAll(".deck-instr").forEach(function(d){
+      const s=d.querySelector(".di-short"), f=d.querySelector(".di-full");
+      if(s) s.style.display=nowCollapsed?"inline":"none";
+      if(f) f.style.display=nowCollapsed?"none":"block";
+    });
+  }catch(e){}
+}
+// The slim strip. Empty string when the deck has no note (so nothing renders), otherwise a tap-to-
+// expand row: collapsed = one ellipsised line, expanded = the full note.
+function deckInstrStripHtml(kid,deck){
+  const t=deckInstrText(kid,deck); if(!t) return "";
+  const col=deckInstrCollapsed();
+  let h='<div class="deck-instr" data-deck="'+_deckInstrEsc(deck)+'" onclick="deckInstrToggle()" style="display:flex;align-items:flex-start;gap:7px;margin:0 0 10px;padding:7px 11px;border-radius:10px;border:1.5px solid #bfdbfe;background:#eff6ff;color:#1e3a8a;font-size:12.5px;line-height:1.45;cursor:pointer;min-width:0">';
+  h+='<span style="flex-shrink:0">ℹ️</span><span style="flex-shrink:0;font-weight:800">How to</span>';
+  h+='<span class="di-short" style="display:'+(col?"inline":"none")+';flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_deckInstrEsc(t.replace(/\s+/g," "))+'</span>';
+  h+='<span class="di-full" style="display:'+(col?"none":"block")+';flex:1;min-width:0;white-space:pre-wrap">'+_deckInstrEsc(t)+'</span>';
+  h+='</div>';
+  return h;
+}
+// LA decks first (in her order, case-insensitive), then the rest A→Z.
+function deckInstrOrder(decks){
+  const rank={}; DECKINSTR_LA_FIRST.forEach(function(d,i){ rank[d.toLowerCase()]=i; });
+  return (decks||[]).slice().sort(function(a,b){
+    const ra=rank[String(a).toLowerCase()], rb=rank[String(b).toLowerCase()];
+    if(ra!=null&&rb!=null) return ra-rb;
+    if(ra!=null) return -1;
+    if(rb!=null) return 1;
+    return String(a).toLowerCase()<String(b).toLowerCase()?-1:(String(a).toLowerCase()>String(b).toLowerCase()?1:0);
+  });
+}
+// decksByKid {kid:[deck names]} → {total, byKid:[{kid, decks:[ordered names with no note]}]}.
+function deckInstrMissing(decksByKid){
+  let total=0; const byKid=[];
+  Object.keys(decksByKid||{}).forEach(function(kid){
+    const miss=deckInstrOrder((decksByKid[kid]||[]).filter(function(d){ return !deckInstrText(kid,d); }));
+    if(miss.length){ byKid.push({kid:kid,decks:miss}); total+=miss.length; }
+  });
+  return {total:total,byKid:byKid};
+}
+// Mastery HQ → Today & Week: "📝 N decks have no instructions yet", deck chips per kid; a tap opens
+// that deck's page with the note box focused. Mom-only (the kids never see HQ anyway).
+function deckInstrMissingHtml(pn){
+  if(typeof momHere==="function"&&!momHere()) return "";
+  const decksByKid={};
+  const kids=(typeof ROSTER!=="undefined"&&Array.isArray(ROSTER))?ROSTER:[];
+  kids.forEach(function(k){ try{ decksByKid[k]=mhqDeckStats(k,pn).map(function(r){ return r.deck; }); }catch(e){ decksByKid[k]=[]; } });
+  const m=deckInstrMissing(decksByKid); if(!m.total) return "";
+  let h='<div id="deckinstr-missing" style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;padding:10px 12px;margin-bottom:12px">';
+  h+='<div style="font-size:13px;font-weight:800;color:#92400e;margin-bottom:6px">\u{1F4DD} '+m.total+' deck'+(m.total===1?" has":"s have")+' no instructions yet</div>';
+  m.byKid.forEach(function(g){
+    const nm=(typeof cap==="function")?cap(g.kid):g.kid;
+    h+='<div style="display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;margin:4px 0"><span style="font-size:11.5px;font-weight:800;color:#78350f;padding-top:4px;min-width:52px">'+_deckInstrEsc(nm)+'</span>';
+    g.decks.forEach(function(d){
+      h+='<button onclick="mhqOpenDeckInstr(\''+_deckInstrArg(g.kid)+'\',\''+_deckInstrArg(d)+'\')" style="padding:4px 10px;border-radius:999px;border:1.5px solid #fcd34d;background:#fff;color:#92400e;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+_deckInstrEsc(d)+'</button>';
+    });
+    h+='</div>';
+  });
+  h+='</div>';
+  return h;
+}
+// Jump to a kid's deck page and put the caret in the note box (same kid switch as mhqSetKid).
+function mhqOpenDeckInstr(kid,deck){
+  mhqKid=kid; mhqDeck=deck;
+  if(typeof mhqSessEdit!=="undefined"){ mhqSessEdit=null; mhqSessForm=null; mhqSessErr=""; }
+  if(typeof mastAdminLocal!=="undefined") mastAdminLocal=null;
+  renderAll();
+  setTimeout(function(){ const t=document.getElementById("deckinstr-main"); if(t){ try{ t.scrollIntoView({block:"center"}); }catch(e){} t.focus(); } },60);
+}
+// The deck page's editor card (Mom only): the note, the optional kid-facing one-liner, Save.
+function deckInstrEditorHtml(kid,deck){
+  if(typeof momHere==="function"&&!momHere()) return "";
+  const o=deckInstrGet(kid,deck), esc=_deckInstrArg(deck);
+  let h='<div style="background:var(--card);border:1.5px solid var(--border);border-radius:12px;padding:14px 16px;margin:14px 0">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700;margin-bottom:4px">ℹ️ How to (instructions for this deck)</div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Shows as a strip at the top of the drill, a Sprint on this deck and a Match round. Up to '+DECKINSTR_MAX+' characters. Leave it blank if there is nothing to say.</div>';
+  h+='<textarea id="deckinstr-main" maxlength="'+DECKINSTR_MAX+'" rows="3" placeholder="How to work this deck…" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif;resize:vertical">'+_deckInstrEsc(o.main)+'</textarea>';
+  h+='<div style="font-size:11px;font-weight:700;color:var(--muted);margin:8px 0 4px">Kid-facing one-liner (optional — if empty, the note above is shown)</div>';
+  h+='<input id="deckinstr-kid" maxlength="'+DECKINSTR_MAX+'" value="'+_deckInstrEsc(o.kid)+'" placeholder="Short version for the kid" autocomplete="off" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif"/>';
+  h+='<div style="display:flex;align-items:center;gap:10px;margin-top:10px">';
+  h+='<button onclick="deckInstrSave(\''+esc+'\')" style="padding:9px 20px;border-radius:10px;border:none;background:var(--header);color:#fff;font-size:13px;font-weight:800;cursor:pointer">Save</button>';
+  h+='<span id="deckinstr-status" style="font-size:11px;color:var(--muted);font-weight:700">'+((o.main||o.kid)?"✓ Saved":"No instructions yet")+'</span></div>';
+  h+='</div>';
+  return h;
+}
+// The one writer. Targeted: this deck's key only under each map — never the whole map from local
+// state (same wipe class as the old mastAdminSave bug). Inert under ?dryrun=1. Mom only.
+function deckInstrSet(kid,deck,main,kidText){
+  if(typeof momHere==="function"&&!momHere()) return false;
+  if(!kid||!deck) return false;
+  main=deckInstrClean(main); kidText=deckInstrClean(kidText);
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.cat_instructions) s.cat_instructions={};
+  if(!s.cat_instructions_kid) s.cat_instructions_kid={};
+  if(main) s.cat_instructions[deck]=main; else delete s.cat_instructions[deck];
+  if(kidText) s.cat_instructions_kid[deck]=kidText; else delete s.cat_instructions_kid[deck];
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){
+    db.ref("mastery/"+kid+"_settings/cat_instructions").update({[deck]:main||null});
+    db.ref("mastery/"+kid+"_settings/cat_instructions_kid").update({[deck]:kidText||null});
+  }
+  try{ HA_LS.setItem("ha_mastery",JSON.stringify(masteryData)); }catch(e){}
+  return true;
+}
+function deckInstrSave(deck){
+  const kid=(typeof mhqKid!=="undefined"&&mhqKid)||masteryKid;
+  const m=document.getElementById("deckinstr-main"), k=document.getElementById("deckinstr-kid");
+  const ok=deckInstrSet(kid,deck,m?m.value:"",k?k.value:"");
+  const st=document.getElementById("deckinstr-status"); if(st) st.textContent=ok?"✓ Saved":"Only Mom can change this";
+}
+// DECKINSTR_END
 // ── S7_START ──
 // 📥 Import — turn a pasted list or a text-export file (Anki "Notes in Plain
 // Text", Quizlet export, CSV/TSV) into cards in a kid's Mastery deck. Adds
@@ -42215,6 +42355,7 @@ function _renderMasteryInner(el){
     mastSidesSync(slideList[mastSlideIdx]?mastSidesKey(slideList[mastSlideIdx],mastSlideIdx>=_slBase):null);   // SHAPE_SIDES: a new card on screen starts with no sides lit
     mastSlideCardsHtml=slideList.map((it,ix)=>buildSlideCard(it,ix>=_slBase));
     h+='<div style="padding:10px 14px">';
+    if(typeof deckInstrStripHtml==="function") h+=deckInstrStripHtml(masteryKid,(slideList[mastSlideIdx]||{}).subject);   // DECKINSTR: strip follows the card on screen (every arrow/score re-renders)
     h+=mastSlideCardsHtml[mastSlideIdx];
 
     h+='<div class="mast-slide-nav">';
@@ -42240,6 +42381,7 @@ function _renderMasteryInner(el){
       Object.entries(qCats).forEach(([qcat,qitems])=>{
         const qEmoji=catE3[qcat]||"";
         h+='<div class="mast-section"><div class="mast-section-lbl">'+qEmoji+' '+qcat+' <span class="cnt">'+qitems.length+'</span></div>';
+        if(typeof deckInstrStripHtml==="function") h+=deckInstrStripHtml(masteryKid,qcat);   // DECKINSTR
         qitems.forEach((it,i)=>{
           const tc=MAST_TIER_COL[it.tier]||"#666";
           if(mastGetCatMode(masteryKid,it.subject)==="spell"){
@@ -47596,6 +47738,7 @@ function buildSprintFromDrillHtml(color){
   });
   decks.forEach(d=>{ h+=deckPill(d,((catE[d]||"")+" "+d).trim()); });
   h+='</div></div>';
+  if(deckFilter&&typeof deckInstrStripHtml==="function") h+=deckInstrStripHtml(masteryKid,deckFilter);   // DECKINSTR: a deck-based sprint
   // Summary + breakdown
   h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">';
   h+='<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:10px"><span style="font-family:\'Fraunces\',serif;font-size:28px;font-weight:800;color:'+color+'">'+pool.length+'</span><span style="font-size:13px;color:#78716c;font-weight:600">item'+(pool.length===1?"":"s")+' in this sprint set</span></div>';
