@@ -1386,6 +1386,8 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
 .gv-lnq{display:block;font-size:9px;font-weight:700;color:var(--muted);white-space:nowrap;cursor:pointer}
 .gv-queued{opacity:.55;font-style:italic}
 .gv-lnq:hover{text-decoration:underline}
+/* GRIDEND: the small "ends Feb 4" line under a column name — its own row inside the header cell */
+.gv-end{display:block;font-size:9px;font-weight:700;text-transform:none;letter-spacing:0;white-space:nowrap;margin-top:1px}
 .gv .gv-fix{position:sticky;left:0;z-index:2;background:#fff;width:108px;min-width:108px;max-width:108px;overflow:hidden;text-overflow:ellipsis}
 .gv thead .gv-fix{z-index:5;background:var(--bg);cursor:default}
 .gv .gv-min{position:sticky;left:108px;z-index:2;background:#fff;text-align:right;color:var(--muted);width:44px;min-width:44px;max-width:44px}
@@ -30896,6 +30898,57 @@ function gvPurgeOrphans(){
 }
 function gvSetKid(k){ gvKid=k; gvEdit=null; gvSelMode=false; gvSel=new Set(); gvSelAnchor=null; gvSelUndo=null; gvScrollTop=0; gvScrollLeft=0; renderAll(); }
 function gvTogglePast(){ gvShowPast=!gvShowPast; gvEdit=null; renderAll(); }
+// GRIDEND_START — 📅 each subject's end date under its Grid column name (her ask 2026-09-27): a small
+// "ends Feb 4" line from pacing.builtThrough (the plan's last date, set when the plan is built), colored
+// by planPace — behind → amber "· 3 behind", ahead → green "· 2 ahead", on track → muted. A paused
+// subject reads "paused"; a subject with no plan date shows nothing. A Mom-only toolbar toggle,
+// "Sort by end date", orders the columns earliest-ending first — in memory only, remembered per device
+// (HA_LS "ha_gv_endsort"), never written to Firebase. Read-only feature: it writes nothing anywhere.
+let gvEndSort=false; try{ gvEndSort=HA_LS.getItem("ha_gv_endsort")==="1"; }catch(e){}
+function gvEndSortOn(){ return !!gvEndSort&&momHere(); }
+function gvEndSortToggle(){ if(!momHere()) return; gvEndSort=!gvEndSort; try{ HA_LS.setItem("ha_gv_endsort",gvEndSort?"1":"0"); }catch(e){} gvEdit=null; renderAll(); }
+// Short date the Grid already uses elsewhere ("Feb 4") — a school year spans two calendar years, so no year.
+function gvEndFmt(iso){
+  try{ const d=gwParseDate(iso); if(isNaN(d.getTime())) return String(iso);
+    return d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
+  }catch(e){ return String(iso); }
+}
+// The Grid repaints often, so each subject's line is computed once per render — cached on kid|sk
+// with planPace's own key (today + last edit + check-offs), so the header line, the lane header
+// and the sort comparator all share one lookup.
+let _geCache={key:"",at:0,map:{}};
+function gvEndInfo(kid,sk){
+  const z={iso:"",text:"",color:"",behind:0,ahead:0};
+  try{
+    const ck=cbTodayISO()+"|"+String(((currData||{}).lastEdit)||"")+"|"+Object.keys((typeof checked!=="undefined"&&checked)||{}).length;
+    if(_geCache.key!==ck||Date.now()-_geCache.at>20000) _geCache={key:ck,at:Date.now(),map:{}};
+    const mk=kid+"|"+sk; if(_geCache.map[mk]) return _geCache.map[mk];
+    const s=(((currData||{}).subjects||{})[kid]||{})[sk]; let r=z;
+    if(s&&s.paused) r={iso:"",text:"paused",color:"#6b7280",behind:0,ahead:0};
+    else if(s&&s.pacing&&s.pacing.builtThrough){
+      const iso=String(s.pacing.builtThrough);
+      const p=(typeof planPace==="function"&&planPace(kid,sk))||{}; const behind=parseInt(p.behind,10)||0, ahead=parseInt(p.ahead,10)||0;
+      let text="ends "+gvEndFmt(iso), color="var(--muted)";
+      if(behind>0){ text+=" · "+behind+" behind"; color="#b45309"; }
+      else if(ahead>0){ text+=" · "+ahead+" ahead"; color="#15803d"; }
+      r={iso:iso,text:text,color:color,behind:behind,ahead:ahead};
+    }
+    _geCache.map[mk]=r; return r;
+  }catch(e){ return z; }
+}
+// The one small line under a column name ('' when there is nothing to say). Its own tap does nothing
+// extra — the whole header still opens the subject card as before.
+function gvEndLine(kid,sk){ const r=gvEndInfo(kid,sk); return r.text?'<span class="gv-end" style="color:'+r.color+'">'+esc(r.text)+'</span>':''; }
+// Earliest-ending column first; columns with no plan date keep their current order at the end.
+// A 🛤 lane column ends when its LAST book ends, so its key is the latest end among its members.
+function gvEndSortCols(kid,cols,lanes){
+  const key=function(ck){ const _lc=(lanes||{})[ck]; const ms=_lc?(_lc.members||[]):[ck]; let k="";
+    ms.forEach(function(m){ const i=gvEndInfo(kid,m).iso; if(i&&i>k) k=i; }); return k; };
+  return (cols||[]).map(function(ck,i){ return {ck:ck,i:i,k:key(ck)}; })
+    .sort(function(a,b){ if(a.k&&b.k&&a.k!==b.k) return a.k<b.k?-1:1; if(a.k&&!b.k) return -1; if(!a.k&&b.k) return 1; return a.i-b.i; })
+    .map(function(x){ return x.ck; });
+}
+// GRIDEND_END
 function gvGrabScroll(){ const w=document.querySelector(".gv-wrap"); if(w){ gvScrollTop=w.scrollTop; gvScrollLeft=w.scrollLeft; } }
 function gvOpenCell(dn,sk){
   // ➡ Move mode armed from THIS grid: the tap picks the destination day instead.
@@ -32046,7 +32099,9 @@ function renderCurrGrid(el){
   // 🛤 lanes: members fold into ONE column per lane (record-driven — a successor with no
   // cells gets a column on day one). Every gesture still fires on the MEMBER the row shows.
   const _lnFold=(typeof lnFoldColumns==="function")?lnFoldColumns(gvKid,_colsRaw):{cols:_colsRaw,lanes:{}};
-  const cols=_lnFold.cols; const _lnCols=_lnFold.lanes;
+  const _lnCols=_lnFold.lanes;
+  // GRIDEND: Mom's "Sort by end date" toggle re-orders the columns in memory only (see GRIDEND_START).
+  const cols=(typeof gvEndSortOn==="function"&&gvEndSortOn())?gvEndSortCols(gvKid,_lnFold.cols,_lnCols):_lnFold.cols;
   const _allSks=[]; cols.forEach(function(ck){ (_lnCols[ck]?_lnCols[ck].members:[ck]).forEach(function(m){ if(_allSks.indexOf(m)<0) _allSks.push(m); }); });
   const dayNums=Object.keys(lessons).map(Number).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
 
@@ -32281,6 +32336,8 @@ function renderCurrGrid(el){
   h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">';
   if(pastCount) h+='<button onclick="gvTogglePast()" style="padding:4px 12px;border-radius:14px;border:1px solid var(--border);background:'+(gvShowPast?'var(--header)':'#fff')+';color:'+(gvShowPast?'#fff':'var(--muted)')+';font-size:11px;font-weight:700;cursor:pointer">'+(gvShowPast?'Hide':'Show')+' '+pastCount+' past days</button>';
   h+='<button onclick="gvToggleSelMode()" style="padding:4px 12px;border-radius:14px;border:1px solid '+(gvSelMode?'transparent':'var(--border)')+';background:'+(gvSelMode?col:'#fff')+';color:'+(gvSelMode?'#fff':'var(--muted)')+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(gvSelMode?'✕ Done selecting':'☑︎ Select cells')+'</button>';
+  // GRIDEND: Mom-only "Sort by end date" — earliest-ending column first; per-device memory, no Firebase.
+  if((momModeActive||adminPinUnlocked)&&typeof gvEndSortToggle==="function") h+='<button onclick="gvEndSortToggle()" title="Order the columns by each subject\'s plan end date, earliest first (this device only)" style="padding:4px 12px;border-radius:14px;border:1px solid '+(gvEndSort?'transparent':'var(--border)')+';background:'+(gvEndSort?col:'#fff')+';color:'+(gvEndSort?'#fff':'var(--muted)')+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(gvEndSort?'✓ ':'')+'Sort by end date</button>';
   if(gvSelUndo&&!gvSelMode) h+='<button onclick="gvSelUndoApply()" style="padding:4px 12px;border-radius:14px;border:1px solid #d97706;background:#fffbeb;color:#b45309;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">↩ Undo last</button>';
   if(!gvSelMode) h+='<span style="font-size:11px;color:var(--muted)">__GV_DAYS__ days × '+cols.length+' subjects__GV_END__ · tap a cell to edit — Enter saves, blank clears · tap a column name for the Builder</span>';
   h+='</div>';
@@ -32385,7 +32442,7 @@ function renderCurrGrid(el){
         _q+='<span class="gv-lnq" onclick="'+_open(x)+'" title="'+esc(((subs[x]||{}).display||x)+" — waiting its turn; tap to open its card")+'">▸ '+_nm(x)+'</span>';
       });
       if(!_st.up.length&&!_q) _q='<span class="gv-lnq" style="cursor:default">all done</span>';
-      h+='<th title="'+esc(_tip)+'" style="cursor:default">'+_act+_oc+_q+'</th>';
+      h+='<th title="'+esc(_tip)+'" style="cursor:default">'+_act+_oc+(typeof gvEndLine==="function"?gvEndLine(gvKid,_upSk):'')+_q+'</th>';
       continue;
     }
     const sk=ck;
@@ -32403,7 +32460,7 @@ function renderCurrGrid(el){
     } }catch(e){}
     try{ const _t0=Date.now(); _gvDer[sk]=(typeof gvDerivedColumn==="function")?gvDerivedColumn(gvKid,sk):null; _gvDerMs+=Date.now()-_t0; }catch(e){ _gvDer[sk]=null; }
     const _pzChip=(subs[sk]||{}).paused?'<span title="Paused — its future spots are empty; resume it on its card and it re-lays from the next open day" style="display:inline-block;margin-left:4px;font-size:9px;font-weight:800;color:#6b7280;background:#f3f4f6;border-radius:8px;padding:0 5px">⏸ paused</span>':'';
-    h+='<th onclick="'+hact+'" title="'+esc(tip)+'">'+mark+esc((subs[sk]||{}).display||sk)+owedChip+_pzChip+'</th>';
+    h+='<th onclick="'+hact+'" title="'+esc(tip)+'">'+mark+esc((subs[sk]||{}).display||sk)+owedChip+_pzChip+(typeof gvEndLine==="function"?gvEndLine(gvKid,sk):'')+'</th>';
   }
   h+='</tr></thead><tbody>';
 
