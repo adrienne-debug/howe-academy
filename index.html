@@ -50535,7 +50535,15 @@ function prExtraCore(tasks,o){
   const kids=o.kids||Array.from(new Set(tasks.filter(t=>t&&t.who).map(t=>t.who)));
   const have=new Set(tasks.map(t=>t&&t.id));
   kids.forEach(kid=>{
-    const subs=((o.subjects&&o.subjects(kid))||[]).filter(x=>x&&x.behind>0&&x.next&&x.next.length).map(x=>Object.assign({},x,{next:x.next.filter(l=>!have.has(l.id))}));
+    // 🔁 9/28 loop fix (live: +1 Ellis MR card per cascade pass, 202→221 cards): an extra already dealt this week counts
+    // against "behind" — the plan's number never moves until a done lands — and a subject whose card the cascade could
+    // not place (parked as _eowOverflow) has no room, so it gets nothing more. Checked extras are left to planPace.
+    const ck=o.checked||{};
+    const subs=((o.subjects&&o.subjects(kid))||[]).filter(x=>x&&x.behind>0&&x.next&&x.next.length).map(x=>{
+      const mine=tasks.filter(t=>t&&t.who===kid&&t.subjectKey===x.sk&&!String(t.id||"").endsWith("_c"));
+      const dealt=mine.filter(t=>t.catchUp&&!ck[t.id]).length, parked=mine.some(t=>!!t._eowOverflow);
+      return Object.assign({},x,{behind:parked?0:Math.max(0,x.behind-dealt),next:x.next.filter(l=>!have.has(l.id))});
+    }).filter(x=>x.behind>0&&x.next.length);
     if(!subs.length) return;
     for(let di=firstDi;di<DAYS.length;di++){
       const day=DAYS[di], W=o.win?o.win(day):null; if(!W) continue; if(o.kidOff&&o.kidOff(kid,day)) continue;
@@ -50550,7 +50558,7 @@ function prExtraCore(tasks,o){
         for(const x of subs){
           if(x.behind<=0||!x.next.length) continue;
           if(x.days&&x.days.length&&x.days.indexOf(day)<0) continue;
-          const count=tasks.filter(t=>!skip(t)&&t.who===kid&&t.day===day&&t.subjectKey===x.sk).length; if(count>=(x.cap||1)) continue;
+          const count=tasks.filter(t=>t&&t.who===kid&&t.day===day&&t.subjectKey===x.sk&&!String(t.id||"").endsWith("_c")&&!/lunch/i.test(t.title||"")).length; if(count>=(x.cap||1)) continue;   // 🔁 9/28: a parked (_eowOverflow) card still holds its day's slot
           let st=lastEnd; if(W.lunchEnd>W.lunchStart&&st<W.lunchEnd&&st+x.dur>W.lunchStart) st=W.lunchEnd;
           if(x.mom==="required"&&momBusy.some(b=>st<b[1]&&st+x.dur>b[0])) continue;
           if(st+x.dur+(close?dur(close):0)>W.end) continue;
