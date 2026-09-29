@@ -70,7 +70,7 @@ console.log("\n── titles ──");
 }
 console.log("\n── wiring ──");
 ok("the week generator folds after lesson ids are stamped", /gwPlanIds\(allTasks\);[\s\S]{0,400}pgMergeDayCards\(allTasks,/.test(src));
-ok("the carry-forward sweep folds before it writes", /pgMergeDayCards\(weekData\.tasks,checked,[\s\S]{0,200}safeWriteTasks\("cascade"\)/.test(src));
+ok("the carry-forward sweep folds before it writes", /pgMergeDayCards\(weekData\.tasks,checked,[\s\S]{0,200}safeWriteTasks\("cascade"[^)]*\)/.test(src));
 ok("a check-off finishes every lesson on a merged card", /t\.lids\.forEach\(function\(l\)\{ if\(l&&l!==t\.lid\) lidDoneWrite\(Object\.assign\(\{\},t,\{lid:l\}\),doneTs,id\); \}\)/.test(src));
 ok("an un-check un-does every lesson on a merged card", /_mt\.lids\.forEach\(function\(l\)\{ if\(l&&l!==_mt\.lid\) lidDoneRemove\(/.test(src));
 ok("the projection sees every lesson a merged card holds as dealt", /if\(Array\.isArray\(t\.lids\)&&t\.lids\.length>1\) rec\.more=t\.lids\.filter/.test(src) && /rec\.more=\(rec\.more\|\|\[\]\)\.concat\(\[cur\]\)\.concat\(cur\.more\|\|\[\]\)/.test(src));

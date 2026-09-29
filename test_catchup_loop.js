@@ -66,4 +66,16 @@ console.log("🔁 the real week25 snapshot (2026-09-28 21:10, 221 cards)");
 console.log("wiring");
 ok("prExtraCore subtracts undone catchUp cards and skips a subject with a parked card",/const dealt=mine\.filter\(t=>t\.catchUp&&!ck\[t\.id\]\)\.length, parked=mine\.some\(t=>!!t\._eowOverflow\);/.test(src));
 ok("the per-day count no longer skips parked cards",/const count=tasks\.filter\(t=>t&&t\.who===kid&&t\.day===day&&t\.subjectKey===x\.sk&&!String\(t\.id\|\|""\)\.endsWith\("_c"\)/.test(src));
+console.log("🔁 echo cascades deal no extras (her yes 2026-09-29: Chrome vs Safari ping-pong)");
+ok("the listener path (schedCascade) starts the cascade with no argument — an echo",/haClaimSchedLock\("cascade",function\(release\)\{\n\s*if\(!release\) return;\n\s*try\{ cascadeIntraWeek\(\); runCascade\(\); \}/.test(src));
+ok("the 8 PM sweep and Regenerate start it deliberately (true)",(src.match(/cascadeIntraWeek\(true\)/g)||[]).length>=2);
+ok("the cascade tells the write path whether it is an echo",/safeWriteTasks\("cascade",\{echo:!sweepTodayElapsed\}\);/.test(src));
+ok("safeWriteTasks skips the catch-up engine on an echo",/function safeWriteTasks\(reason,opts\)\{/.test(src)&&/try\{ if\(!\(opts&&opts\.echo\)&&typeof prExtraCore==="function"\)\{ const _px=prExtraCore\(weekData\.tasks,prExtraCtx\(\)\);/.test(src));
+ok("seqFill and the school-end guard still run on every pass (not gated)",/try\{ if\(typeof seqFillNormalize==="function"\) seqFillNormalize\(weekData\.tasks,reason\); \}/.test(src)&&/try\{ if\(typeof seGuardWeek==="function"\)\{ const _se=seGuardWeek\(weekData\.tasks,seGuardCtx\(\)\);/.test(src));
+ok("a Mom push (runDisplacement) and Regenerate keep dealing extras",/safeWriteTasks\("runDisplacement"\)/.test(src)&&/const _px=prExtraCore\(d\.tasks,prExtraCtx\(\{checked:snapChecked\}\)\);/.test(src));
+{ // the flag as a pure gate: the same write path, with and without the echo flag
+  const G=new Function("const calls=[]; function prExtraCore(){ calls.push('extras'); return {added:[]}; }"+
+    "function pass(opts){ if(!(opts&&opts.echo)&&typeof prExtraCore==='function'){ prExtraCore(); } }"+
+    "pass({echo:true}); pass({echo:false}); pass(); pass({echo:true}); return calls;")();
+  ok("echo, deliberate, no opts (a Mom push), echo → the engine ran exactly twice",G.length===2); }
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

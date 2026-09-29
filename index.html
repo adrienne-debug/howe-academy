@@ -2569,7 +2569,12 @@ function haClaimSchedLock(kind,cb,_attempt){
     });
   });
 }
-function safeWriteTasks(reason){
+// 🔁 9/29 (her yes): a cascade that another device's write triggered (tasks listener → schedCascade) never deals
+// catch-up extras. Two devices dealing / deferring the same extra ping-ponged the week every 4 s (her Chrome vs her
+// Safari, 08:02 and 08:28 today). Extras come from deliberate builds only: Regenerate, Rebuild all, the 8 PM sweep,
+// a Mom push. The school-end guard still runs on every pass. Passed as opts.echo (no global: the cascade harness
+// tests run cascadeIntraWeek in strict mode with a stubbed safeWriteTasks).
+function safeWriteTasks(reason,opts){
   // Guard: never write tasks to Firebase if we'd be dropping below 50% of what we've seen
   if(!db||_dryRun()) return;
   if(lockHeldByOther()){ dbg("skip task write ("+reason+"): another device holds the scheduler lock"); return; }
@@ -2582,7 +2587,7 @@ function safeWriteTasks(reason){
   // lesson goes in them, in order. Normalize before the write so a card can never carry a stale
   // lesson — whatever laid it. Idempotent, and only unlocked plan-backed cards can move.
   try{ if(typeof seqFillNormalize==="function") seqFillNormalize(weekData.tasks,reason); }catch(eSF){ dbg("seqfill skip: "+eSF); }
-  try{ if(typeof prExtraCore==="function"){ const _px=prExtraCore(weekData.tasks,prExtraCtx()); if(_px.added.length){ dbg("🎯 catch-up ("+reason+"): +"+_px.added.length+" extra sitting(s) — "+_px.added.map(t=>t.who+" "+t.subjectKey+" "+t.day).join(", ")); if(typeof seqFillNormalize==="function") seqFillNormalize(weekData.tasks,reason+"+catchup"); } } }catch(ePX){ dbg("catch-up skip: "+ePX); }
+  try{ if(!(opts&&opts.echo)&&typeof prExtraCore==="function"){ const _px=prExtraCore(weekData.tasks,prExtraCtx()); if(_px.added.length){ dbg("🎯 catch-up ("+reason+"): +"+_px.added.length+" extra sitting(s) — "+_px.added.map(t=>t.who+" "+t.subjectKey+" "+t.day).join(", ")); if(typeof seqFillNormalize==="function") seqFillNormalize(weekData.tasks,reason+"+catchup"); } } }catch(ePX){ dbg("catch-up skip: "+ePX); }
   try{ if(typeof seGuardWeek==="function"){ const _se=seGuardWeek(weekData.tasks,seGuardCtx()); if(_se.retimed.length||_se.rolled.length||_se.deferred.length) dbg("⏰ school end ("+reason+"): re-laid "+_se.retimed.length+", rolled "+_se.rolled.length+", deferred "+_se.deferred.length+(_se.stuck.length?", daily-only overflow "+_se.stuck.join(" "):"")); } }catch(eSE){ dbg("school-end skip: "+eSE); }
   const obj={};
   weekData.tasks.forEach(t=>obj[t.id]=t);
@@ -22920,7 +22925,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
   try{ if(typeof pgMergeDayCards==="function"){ const _pm=pgMergeDayCards(weekData.tasks,checked,(typeof claimed!=="undefined"&&claimed)||{}); if(_pm) dbg("page merge (cascade): folded "+_pm+" card(s)"); } }catch(e){ dbg("page merge skip: "+e); }
 
   sv(WK+"_tasks",weekData.tasks);
-  safeWriteTasks("cascade");
+  safeWriteTasks("cascade",{echo:!sweepTodayElapsed});   // 🔁 listener echo (no arg) deals no extras; the 8 PM sweep / Regenerate (true) do
   renderAll();
 }
 
