@@ -4812,7 +4812,7 @@ function spinSlots(){
     // ⏩ her rule 2026-09-23: a got-ahead card's spin + half of it ALL goes straight to the bank (spin 20 → 30 banked),
     // not into the day pool / claim. No cap. Mom-checked subjects spin on her approval, so this follows it.
     var _gaT=slotPendingTaskId?(weekData.tasks||[]).find(function(x){ return x.id===slotPendingTaskId; }):null;
-    var _gaOn=!!(_gaT&&_gaT.gotAhead&&outcome.pts>0), _gaTot=_gaOn?(outcome.pts+Math.round(outcome.pts*0.5)):0, _gaBid=null;
+    var _gaOn=!!(_gaT&&_gaT.gotAhead&&outcome.pts>0), _gaTot=_gaOn?(outcome.pts+Math.round(outcome.pts*((typeof gaBonusPctFor==="function"?gaBonusPctFor(_gaT):50)/100))):0, _gaBid=null;
     if(_gaOn){ try{ _gaBid=bankDirect(k,_gaTot,"⏩ Got ahead — "+((typeof taskLessonRef==="function"&&taskLessonRef(_gaT))||_gaT.title||"")+" (spin "+outcome.pts+" + "+(_gaTot-outcome.pts)+")"); }catch(e){ _gaOn=false; } }
     if(outcome.pts>0){
       resEl.textContent=_gaOn?("+"+_gaTot+" points — straight to your bank!"):("+"+outcome.pts+" points!");
@@ -5452,6 +5452,14 @@ function renderSettings(el,ah){
     if(kid==="lincoln") pinHtml+='<div id="slot-cfg-msg" style="font-size:12px;color:#16a34a;min-height:16px;margin-top:6px"></div>';
     pinHtml+='</div></div>';
   });
+  // 🔁⏩ Bonus points (her ask 2026-10-01: adjustable here, like the spins)
+  { const _b=(slotConfig&&slotConfig.bonus)||{}; const _ga=(typeof gaBonusPct==="function")?gaBonusPct("ahead"):50, _ms=(typeof gaBonusPct==="function")?gaBonusPct("master"):100;
+    pinHtml+='<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px"><div style="font-weight:800;font-size:13px;margin-bottom:4px">Bonus points</div>'+
+      '<div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5">Extra on top of the spin, banked straight away, for work done beyond the day\'s goal. <b>Get ahead</b> = a catch-up card or a later day\'s lesson this week. <b>Master pull</b> = a lesson pulled from the plan beyond this week.</div>'+
+      '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">'+
+      '<label style="font-size:12px;font-weight:700">Get-ahead bonus <input type="number" min="0" max="500" step="5" value="'+_ga+'" onchange="slotBonusSet(\'getAhead\',this.value)" style="width:70px;padding:6px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;margin-left:6px"> %</label>'+
+      '<label style="font-size:12px;font-weight:700">Master-pull bonus <input type="number" min="0" max="500" step="5" value="'+_ms+'" onchange="slotBonusSet(\'master\',this.value)" style="width:70px;padding:6px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;margin-left:6px"> %</label>'+
+      '</div><div id="slot-bonus-msg" style="font-size:12px;color:#16a34a;min-height:16px;margin-top:6px"></div></div>'; }
   pinHtml+='</div>';
 
   // Routines & chores live in Admin ▸ Chores (moved 2026-08-17); no pointer card here (her ask).
@@ -7193,12 +7201,14 @@ function efPullNext(kid){
     if(mine.some(function(t){ return !_efIsClose(t)&&!(checked&&checked[t.id]); })) return null;   // still has open work today
     const nowMin=(typeof _mlNowMin==="function")?_mlNowMin():(function(){ const d=new Date(); return d.getHours()*60+d.getMinutes(); })();
     const endMin=(typeof _mlDayEndMin==="function")?_mlDayEndMin():toMin("4:15 PM");
+    // 🔁 Rules "comes back on its own": when nothing fell off today, behind-work (BEHIND block) returns automatically
+    const _bwAuto=function(){ try{ if(typeof bwNextAuto==="function") return bwNextAuto(kid,endMin); }catch(e){} return null; };
     let lastEnd=0; mine.forEach(function(t){ if(_efIsClose(t)) return; const e=toMin(t.time)+(t.dur||20); if(e>lastEnd) lastEnd=e; });
     const start=Math.max(nowMin,lastEnd);
     const lw=(typeof _mlLunchWin==="function")?_mlLunchWin():null;
     const later=tasks.filter(function(t){ return _efEligible(t,kid)&&_efDayIdx(t.day)>ti; })
       .sort(function(a,b){ return (_efDayIdx(a.day)-_efDayIdx(b.day))||(toMin(a.time)-toMin(b.time)); });
-    if(!later.length) return null;
+    if(!later.length) return _bwAuto();
     const bySub={}; later.forEach(function(t){ const k=t.subjectKey||t.title; (bySub[k]=bySub[k]||[]).push(t); });
     const momFree=_efMomFree(kid);
     const todayCount={}; mine.forEach(function(t){ const k=t.subjectKey||t.title; todayCount[k]=(todayCount[k]||0)+1; });
@@ -7225,7 +7235,7 @@ function efPullNext(kid){
       if(typeof gwShowToast==="function") gwShowToast("\u23E9 "+cap(kid)+" finished early \u2014 next up: "+String(c.title||"").slice(0,48)+" (from "+from.charAt(0).toUpperCase()+from.slice(1)+")");
       return c;
     }
-    return null;
+    return _bwAuto();
   }catch(e){ try{ dbg("early-finish pull error: "+e); }catch(e2){} return null; }
 }
 // EFPULL_END
@@ -7249,23 +7259,153 @@ function gaCandidates(kid){
 }
 function gaRender(kid){
   if(typeof day==="undefined"||day!==_todayDay) return "";
-  const list=gaCandidates(kid); if(!list.length) return "";
-  const momFree=_efMomFree(kid);
-  let h='<div style="margin:12px 12px 16px;border-radius:12px;padding:14px;background:#f5f3ff;border:1.5px solid #c4b5fd">'+
-    '<div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700;color:#5b21b6">⏩ Get ahead</div>'+
-    '<div style="font-size:12px;color:#6d28d9;margin:2px 0 10px">Optional. Finish one and it moves to today. Every get-ahead spin earns <b>+50%</b> straight to your bank.</div>';
-  list.slice(0,8).forEach(x=>{
-    const t=x.card, needMom=t.mom==="required"&&!momFree;
+  const list=gaCandidates(kid); const bw=(typeof bwCandidates==="function")?bwCandidates(kid):[];
+  if(!list.length&&!bw.length) return "";
+  const momFree=_efMomFree(kid), pct=(typeof gaBonusPct==="function")?gaBonusPct("ahead"):50;
+  const mustCatch=bw.some(function(x){ return !x.gate; });   // 🔁 something behind can be taken → it comes before Get ahead
+  const F="font-family:'DM Sans',sans-serif;";
+  const rowStart=function(t,x,btn){
     const ref=(typeof taskLessonRef==="function"&&taskLessonRef(t))||"";
     const name=String(t.title||"").replace(/\s*[—–]\s*.*$/,"");
-    h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:6px;border-radius:10px;background:#fff;border:1px solid #ddd6fe'+(needMom?';opacity:.55':'')+'">'+
+    const from=t._eowOverflow?"carry-over box":("from "+cap(t.day));
+    return '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:6px;border-radius:10px;background:#fff;border:1px solid #ddd6fe'+(btn?'':';opacity:.55')+'">'+
       '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px;color:#1e1b4b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(name)+'</div>'+
-      '<div style="font-size:11px;color:#6b7280">'+esc(ref?ref+" · ":"")+'from '+esc(cap(t.day))+(t.mom==="required"?' · 👩 with Mom':'')+(x.behind>0?' · behind '+x.behind:'')+'</div></div>'+
-      (needMom?'<span style="font-size:11px;font-weight:800;color:#6b7280">needs Mom</span>'
-        :'<button onclick="tapTask(\''+esc(t.id)+'\')" style="padding:7px 14px;border-radius:10px;background:#7c3aed;color:#fff;border:none;font-size:13px;font-weight:800;cursor:pointer">Did it ✓</button>')+'</div>';
-  });
+      '<div style="font-size:11px;color:#6b7280">'+esc(ref?ref+" · ":"")+esc(from)+(t.mom==="required"?' · 👩 with Mom':'')+(x.behind>0?' · behind '+x.behind:'')+'</div></div>'+btn+'</div>';
+  };
+  let h='<div style="margin:12px 12px 16px;border-radius:12px;padding:14px;background:#f5f3ff;border:1.5px solid #c4b5fd">';
+  if(bw.length){
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700;color:#9a3412">🔁 Catch up first</div>'+
+       '<div style="font-size:12px;color:#9a3412;margin:2px 0 10px">Work that fell behind this week. These come first — tap Start, do it, check it off. Every catch-up spin earns <b>+'+pct+'%</b> straight to your bank.</div>';
+    bw.slice(0,8).forEach(function(x){
+      const t=x.card;
+      const btn=x.gate?'<span style="font-size:11px;font-weight:800;color:#6b7280">'+esc(x.gate)+'</span>'
+        :'<button onclick="bwPullTap(\''+esc(kid)+'\',\''+esc(t.id)+'\')" style="padding:7px 14px;border-radius:10px;background:#c2410c;color:#fff;border:none;font-size:13px;font-weight:800;cursor:pointer;'+F+'">Start ▶</button>';
+      h+=rowStart(t,x,btn);
+    });
+  }
+  if(list.length){
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700;color:#5b21b6'+(bw.length?';margin-top:10px':'')+'">⏩ Get ahead</div>'+
+       '<div style="font-size:12px;color:#6d28d9;margin:2px 0 10px">Optional. Finish one and it moves to today. Every get-ahead spin earns <b>+'+pct+'%</b> straight to your bank.'+(mustCatch?' <b>Catch up first.</b>':'')+'</div>';
+    list.slice(0,8).forEach(function(x){
+      const t=x.card, needMom=t.mom==="required"&&!momFree;
+      const dev=(typeof _efDevFree==="function")&&!_efDevFree(kid,t);
+      const capped=(typeof _efTodayCount==="function")&&!_efCapOk(kid,t,_efTodayCount(kid,t.subjectKey||t.title));
+      const why=mustCatch?"catch up first":needMom?"needs Mom":dev?"device busy":capped?"at today's cap":"";
+      const btn=why?'<span style="font-size:11px;font-weight:800;color:#6b7280">'+esc(why)+'</span>'
+        :'<button onclick="tapTask(\''+esc(t.id)+'\')" style="padding:7px 14px;border-radius:10px;background:#7c3aed;color:#fff;border:none;font-size:13px;font-weight:800;cursor:pointer">Did it ✓</button>';
+      h+=rowStart(t,x,btn);
+    });
+  }
   return h+'</div>';
 }
+// BEHIND_START — 🔁 Catch up first (her rules 2026-10-01). When the goal is done, the kid's BEHIND-WORK comes before any
+// Get-ahead choice: a card that fell off an earlier day this week (now sitting on a later day) or one parked in the
+// carry-over box. One card at a time, most-behind subject first. A card is a SLOT: the pulled slot takes the subject's
+// next unfinished lesson (seqFillNormalize re-stamps) and the later slots shift, so sequence holds by construction and
+// the box / the week's end shrinks. Rules ▸ "When the goal is done, catch-up work…": "offered" (default) = the day ends
+// at the goal, the extend list shows catch-up on top and Get ahead is enabled only when nothing behind can be taken;
+// "auto" = it comes back on its own (efPullNext → bwNextAuto), the day ends when none is left. Both pay the Get-ahead
+// bonus (Admin ▸ Adjust Slots ▸ Bonus points; "master" = a card pulled from the plan beyond this week, change B).
+// Gates everywhere: Mom free for a Mom-required card · the card's device lane has room right now · the subject under its
+// per-day cap. Fell-off-TODAY work keeps its own automatic return (EFPULL) in both modes.
+function catchupMode(){ try{ return (typeof rulesData!=="undefined"&&rulesData&&rulesData.catchupMode==="auto")?"auto":"offered"; }catch(e){ return "offered"; } }
+function gaBonusPct(kind){ try{ const b=(typeof slotConfig!=="undefined"&&slotConfig&&slotConfig.bonus)||{}; const v=parseInt(kind==="master"?b.master:b.getAhead,10); if(!isNaN(v)&&v>=0) return v; }catch(e){} return kind==="master"?100:50; }
+function gaBonusPctFor(t){ return gaBonusPct(t&&t.gotAhead==="master"?"master":"ahead"); }
+// Device lanes, as the generator packs them: one computer, two screens (iPad/phone), Lucy's own iPad; paper is free.
+function _efLane(t){ const dv=(t&&(t.device||((typeof taskDevice==="function")?taskDevice(t):"paper")))||"paper"; if(dv==="ipad"&&t.who==="lucy") return "ipadLucy"; if(dv==="ipad"||dv==="phone"||dv==="ipad/phone") return "screen"; return dv; }
+function _efLaneCap(lane){ try{ const c=(typeof gwDeviceCaps==="function")?gwDeviceCaps():{computer:1,screen:2}; if(lane==="computer") return c.computer||1; if(lane==="screen") return c.screen||2; }catch(e){} return 1; }
+// Another kid holds a lane with the card they are on: an open card of today in that lane whose time has come
+// (running late still counts). Free = fewer holders than the lane's capacity.
+function _efDevFree(kid,t){
+  try{
+    const lane=_efLane(t); if(!lane||lane==="paper"||lane==="book") return true;
+    const now=(typeof _mlNowMin==="function")?_mlNowMin():(function(){ const d=new Date(); return d.getHours()*60+d.getMinutes(); })();
+    const open=function(x){ return !(typeof checked!=="undefined"&&checked&&checked[x.id])&&!(typeof claimed!=="undefined"&&claimed&&claimed[x.id]); };
+    const dayOf=function(x){ try{ return (typeof _mlDayOf==="function")?_mlDayOf(x):x.day; }catch(e){ return x.day; } };
+    const holders={};
+    (weekData.tasks||[]).forEach(function(x){ if(!x||x.who===kid||x.id===t.id||String(x.id||"").endsWith("_c")||x._eowOverflow||dayOf(x)!==_todayDay||!open(x)||_efLane(x)!==lane) return; if(toMin(x.time)<=now) holders[x.who]=true; });
+    return Object.keys(holders).length<_efLaneCap(lane);
+  }catch(e){ return true; }
+}
+function _efSubjKey(t){ return t.subjectKey||t.title; }
+function _efTodayCount(kid,sk){ try{ const dayOf=function(x){ try{ return (typeof _mlDayOf==="function")?_mlDayOf(x):x.day; }catch(e){ return x.day; } }; return (weekData.tasks||[]).filter(function(x){ return x&&x.who===kid&&dayOf(x)===_todayDay&&!String(x.id||"").endsWith("_c")&&!x._eowOverflow&&_efSubjKey(x)===sk; }).length; }catch(e){ return 0; } }
+// why a card can't be taken right now ("" = it can)
+function bwGate(kid,t){
+  if(t.mom==="required"&&!_efMomFree(kid)) return "needs Mom";
+  if(!_efDevFree(kid,t)) return "device busy";
+  if(!_efCapOk(kid,t,_efTodayCount(kid,_efSubjKey(t)))) return "at today's cap";
+  return "";
+}
+// behind-work: parked in the carry-over box, or on a later day with a fell-off stamp from a day that has passed
+function bwIs(t){
+  if(!t) return false;
+  if(t._eowOverflow) return true;
+  const ti=_efDayIdx(_todayDay), di=_efDayIdx(t.day); if(ti<0||di<=ti) return false;
+  const from=t.rolledFrom||t.cascadedFrom; if(!from||from===t.day) return false;
+  const fi=_efDayIdx(from); return fi>=0&&fi<=ti;
+}
+function _bwEligible(t,kid){
+  if(!t||t.who!==kid) return false;
+  if(String(t.id||"").endsWith("_c")) return false;
+  if(typeof checked!=="undefined"&&checked&&checked[t.id]) return false;
+  if(typeof claimed!=="undefined"&&claimed&&claimed[t.id]) return false;
+  if(/lunch/i.test(t.title||"")) return false;
+  if(_efIsClose(t)||t.subjectKey==="morning_nb"||/Morning Notebook/i.test(t.title||"")) return false;
+  if(typeof subjNoCarry==="function"&&subjNoCarry(t)) return false;
+  if(typeof momMoves!=="undefined"&&momMoves&&momMoves[t.id]) return false;
+  return bwIs(t);
+}
+// One card per subject: a parked card first (the box shrinks), else the LATEST-day card (the week shrinks from its end).
+// Subjects most-behind first, parked before scheduled on a tie. Each entry: {card, behind, gate}.
+function bwCandidates(kid){
+  try{
+    if(!kid||typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return [];
+    const bySub={};
+    weekData.tasks.filter(function(t){ return _bwEligible(t,kid); }).forEach(function(t){ const k=_efSubjKey(t); (bySub[k]=bySub[k]||[]).push(t); });
+    return Object.keys(bySub).map(function(k){
+      const L=bySub[k];
+      const parked=L.filter(function(t){ return t._eowOverflow; }).sort(function(a,b){ return String(a.id||"").localeCompare(String(b.id||"")); });
+      const pick=parked.length?parked[0]:L.slice().sort(function(a,b){ return (_efDayIdx(b.day)-_efDayIdx(a.day))||(toMin(b.time)-toMin(a.time)); })[0];
+      return {card:pick,behind:_efBehind(kid,k),gate:bwGate(kid,pick)};
+    }).sort(function(a,b){ return (b.behind-a.behind)||((a.card._eowOverflow?0:1)-(b.card._eowOverflow?0:1))||(_efDayIdx(a.card.day)-_efDayIdx(b.card.day)); });
+  }catch(e){ return []; }
+}
+// Pull ONE behind-work card onto today after "now" (or after the kid's last card, stepping over lunch): the box / the
+// later day gives up a slot, the plan re-stamps the subject's lessons in sequence, and the card earns the bonus when
+// checked (gotAhead = where it came from). Targeted multi-path write only — never the whole node.
+function bwPull(kid,id){
+  try{
+    if(!kid||typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return null;
+    const c=weekData.tasks.filter(function(t){ return t&&t.id===id; })[0]; if(!c||!_bwEligible(c,kid)) return null;
+    const nowMin=(typeof _mlNowMin==="function")?_mlNowMin():(function(){ const d=new Date(); return d.getHours()*60+d.getMinutes(); })();
+    const dayOf=function(t){ try{ return (typeof _mlDayOf==="function")?_mlDayOf(t):t.day; }catch(e){ return t.day; } };
+    let lastEnd=0; weekData.tasks.forEach(function(t){ if(!t||t.who!==kid||dayOf(t)!==_todayDay||String(t.id||"").endsWith("_c")||t._eowOverflow||_efIsClose(t)) return; const e=toMin(t.time)+(t.dur||20); if(e>lastEnd) lastEnd=e; });
+    let s=Math.max(nowMin,lastEnd); const lw=(typeof _mlLunchWin==="function")?_mlLunchWin():null; const d=c.dur||20; if(lw&&s<lw[1]&&s+d>lw[0]) s=lw[1];
+    const from=c._eowOverflow?"carryover":c.day, upd={};
+    c.day=_todayDay; c.time=fromMin(s); c.pulledFrom=from; c.gotAhead=from;
+    upd[id+"/day"]=c.day; upd[id+"/time"]=c.time; upd[id+"/pulledFrom"]=from; upd[id+"/gotAhead"]=from;
+    if(c._eowOverflow){ delete c._eowOverflow; upd[id+"/_eowOverflow"]=null; }
+    if(c.rolledFrom!=null){ delete c.rolledFrom; upd[id+"/rolledFrom"]=null; }
+    if(c.cascadedFrom!=null){ delete c.cascadedFrom; upd[id+"/cascadedFrom"]=null; }
+    // the slot's lesson = the plan's next unfinished one: re-stamp this subject's slots in order, write what changed
+    try{ if(typeof seqFillNormalize==="function"){ const sk=_efSubjKey(c), before={}; weekData.tasks.forEach(function(t){ if(t&&t.who===kid&&_efSubjKey(t)===sk) before[t.id]={lid:t.lid,title:t.title}; }); seqFillNormalize(weekData.tasks,"catch-up pull"); weekData.tasks.forEach(function(t){ const b=before[t.id]; if(!b) return; if(b.lid!==t.lid) upd[t.id+"/lid"]=(t.lid==null?null:t.lid); if(b.title!==t.title) upd[t.id+"/title"]=t.title; }); } }catch(e){ try{ dbg("catch-up pull re-stamp skip: "+e); }catch(e2){} }
+    sv(WK+"_tasks",weekData.tasks); lastTasksWrite=Date.now();
+    if(db&&!_dryRun()) db.ref(WK+"/tasks").update(upd);
+    dbg("\u{1F501} catch-up: "+kid+" pulled "+id+" "+from+" → "+_todayDay+" "+c.time+" ("+Object.keys(upd).length+" paths)");
+    if(typeof gwShowToast==="function") gwShowToast("\u{1F501} "+cap(kid)+" — catching up: "+String(c.title||"").slice(0,48)+(from==="carryover"?" (from the carry-over box)":" (from "+cap(from)+")"));
+    return c;
+  }catch(e){ try{ dbg("catch-up pull error: "+e); }catch(e2){} return null; }
+}
+function bwPullTap(kid,id){ if(bwPull(kid,id)&&typeof renderAll==="function") renderAll(); }
+// "comes back on its own": the next behind-work card that passes its gates and fits before the school end
+function bwNextAuto(kid,endMin){
+  if(catchupMode()!=="auto") return null;
+  const nowMin=(typeof _mlNowMin==="function")?_mlNowMin():0;
+  const L=bwCandidates(kid).filter(function(x){ return !x.gate; });
+  for(let i=0;i<L.length;i++){ const t=L[i].card; if(nowMin+(t.dur||20)>endMin) continue; const c=bwPull(kid,t.id); if(c) return c; }
+  return null;
+}
+// BEHIND_END
 // GETAHEAD_END
 // Mom approves a kid's claim. Done-time = the kid's claim time (so a late
 // approval never penalizes the kid), and the spin is judged off that time.
@@ -44904,6 +45044,12 @@ function rulesUpdateSaturdayOverflow(on){
   saveRules(r);
   renderAll();
 }
+function rulesUpdateCatchupMode(v){
+  const r=JSON.parse(JSON.stringify(rulesData||{}));
+  r.catchupMode=(v==="auto")?"auto":"offered";
+  saveRules(r);
+  renderAll();
+}
 function rulesUpdateDayOverride(day,field,val){
   const r=JSON.parse(JSON.stringify(rulesData));
   if(!r.schoolDay) r.schoolDay={};
@@ -45285,6 +45431,13 @@ function rulesFamilyCardsHTML(){
   h+='<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px"><div class="rules-row"><div class="rules-label">Use Saturday for overflow</div>'+
      '<button onclick="rulesUpdateSaturdayOverflow('+(!_satOv)+')" style="padding:6px 16px;border-radius:10px;border:1.5px solid '+(_satOv?'#1a6b5a':'var(--border)')+';background:'+(_satOv?'#1a6b5a':'#fff')+';color:'+(_satOv?'#fff':'var(--text)')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(_satOv?'On':'Off')+'</button></div>'+
      '<div style="font-size:11px;color:var(--muted);padding:6px 0 0;line-height:1.5">When a week has more work than fits Mon–Fri, the extra spills onto Saturday before rolling to next week. Turn off if you never do Saturday school — the extra rolls straight to next week.</div></div>';
+  // 🔁 Catch-up mode (her rules 2026-10-01) — see the BEHIND block
+  const _cuAuto=(typeof catchupMode==="function")&&catchupMode()==="auto";
+  h+='<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px"><div class="rules-row"><div class="rules-label">When the goal is done, catch-up work…</div>'+
+     '<div style="display:flex;gap:6px">'+
+     '<button onclick="rulesUpdateCatchupMode(\'offered\')" style="padding:6px 12px;border-radius:10px;border:1.5px solid '+(!_cuAuto?'#1a6b5a':'var(--border)')+';background:'+(!_cuAuto?'#1a6b5a':'#fff')+';color:'+(!_cuAuto?'#fff':'var(--text)')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">is offered first</button>'+
+     '<button onclick="rulesUpdateCatchupMode(\'auto\')" style="padding:6px 12px;border-radius:10px;border:1.5px solid '+(_cuAuto?'#1a6b5a':'var(--border)')+';background:'+(_cuAuto?'#1a6b5a':'#fff')+';color:'+(_cuAuto?'#fff':'var(--text)')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">comes back on its own</button></div></div>'+
+     '<div style="font-size:11px;color:var(--muted);padding:6px 0 0;line-height:1.5">Whatever is on a kid\'s day at school start is the goal. <b>Offered first:</b> the day ends at the goal; the extend list shows work that fell behind this week (and the carry-over box) on top, Get ahead opens once nothing behind can be taken. <b>Comes back on its own:</b> behind-work returns one card at a time as the kid finishes; the day ends when none is left. Both pay the Get-ahead bonus (Admin ▸ Adjust Slots). Mom, device and daily-cap rules always apply.</div></div>';
   h+='<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px"><div class="rules-row"><div class="rules-label">Saturday cutoff</div>'+
      '<input type="time" class="rules-time" value="'+ampmTo24(sat.cutoff||"")+'" onchange="rulesUpdateSatCutoff(this.value)"></div>'+
      '<div style="font-size:11px;color:var(--muted);padding:6px 0 0;line-height:1.5">Hard stop for Saturday catch-up — nothing is scheduled past this time. Whatever can\'t fit by then is listed on the Saturday page as carrying to next week. Blank = old behavior: catch-up may stack up to 4 hours past the school-day end.</div></div>';
@@ -45547,6 +45700,14 @@ function renderRules(el,headerHtml){
   el.innerHTML=(headerHtml||'');
 }
 
+// 🔁⏩ Bonus % (Admin ▸ Adjust Slots ▸ Bonus points) — one targeted set under config/slot_config/bonus
+function slotBonusSet(field,val){
+  if(field!=="getAhead"&&field!=="master") return;
+  const n=Math.max(0,Math.min(500,parseInt(val,10)||0));
+  slotConfig.bonus=Object.assign({},slotConfig.bonus||{}); slotConfig.bonus[field]=n;
+  if(db&&!_dryRun()) db.ref("config/slot_config/bonus/"+field).set(n);
+  const m=document.getElementById("slot-bonus-msg"); if(m){ m.textContent="✓ Saved — "+(field==="getAhead"?"Get-ahead":"Master-pull")+" bonus "+n+"%"; setTimeout(function(){ if(m.textContent.indexOf(String(n))>=0) m.textContent=""; },2500); }
+}
 function slotCfgEnsure(kid){
   if(!slotConfig[kid]||!slotConfig[kid].length) slotConfig[kid]=JSON.parse(JSON.stringify(SLOT_DEFAULTS));
 }
