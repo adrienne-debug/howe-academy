@@ -2264,6 +2264,34 @@ let db=null, weekData={week:WK,tasks:[],babysitter:null};
 // Per-family: config supplies the sitter's name; a family with none configured gets
 // no sitter tab at all. No config file at all = classic Howe behavior.
 let SITTER_NAME=window.HA_FAMILY?(window.HA_FAMILY.sitterName||""):"Maggie";
+// 🧩 PAGES — per-family top-tab switches, settings/pages/<tab> = true|false (2026-10-01, for the Dewalt
+// start). Howe: everything on. Any other family starts on Schedule + Mom's Day + Kids' Corner + Admin, and Mom
+// turns the rest on in Settings ▸ Pages as the family is ready. Kiosk links (?kiosk=…) ignore this.
+const PAGE_KEYS=["notebook","mastery","units","play","moms-plan","kids"];
+const PAGE_LABEL={notebook:"Notebook",mastery:"Mastery",units:"Units",play:"School Room","moms-plan":"Mom's Day",kids:"Kids' Corner"};
+const PAGE_DEFAULT=(function(){ const howe=!(window.HA_FAMILY&&window.HA_FAMILY.familyId&&window.HA_FAMILY.familyId!=="howe"); const d={}; PAGE_KEYS.forEach(k=>{ d[k]=howe||k==="moms-plan"||k==="kids"; }); return d; })();
+let PAGES=(function(){ try{ const v=JSON.parse(HA_LS.getItem("ha_pages")||"null"); if(v&&typeof v==="object") return Object.assign({},PAGE_DEFAULT,v); }catch(e){} return Object.assign({},PAGE_DEFAULT); })();
+function pageOn(k){ return PAGE_KEYS.includes(k)?PAGES[k]!==false:true; }
+function pagesApply(v){
+  PAGES=Object.assign({},PAGE_DEFAULT,(v&&typeof v==="object")?v:{});
+  try{ HA_LS.setItem("ha_pages",JSON.stringify(PAGES)); }catch(e){}
+  const kiosk=(typeof _kiosk==="function"&&_kiosk())||(typeof _kioskR==="function"&&_kioskR())||(typeof _kioskD==="function"&&_kioskD())||(typeof _kioskK==="function"&&_kioskK());
+  if(!kiosk&&!pageOn(tab)) showTab("schedule"); else renderAll();
+}
+function pagesToggle(k){
+  if(!momHere()||!PAGE_KEYS.includes(k)) return;
+  const next=Object.assign({},PAGES); next[k]=!pageOn(k);
+  if(db) db.ref("settings/pages/"+k).set(next[k]);
+  pagesApply(next);
+}
+function renderPagesCard(){
+  let h='<div class="rules-wrap"><div class="rules-hdr">Pages</div>';
+  h+='<div class="rules-sub">Which top tabs this family sees. Schedule and Admin are always on. Turn a page on when the family is ready for it — every device picks it up right away.</div>';
+  h+='<div class="rules-card open"><div class="rules-card-body">';
+  PAGE_KEYS.forEach(k=>{ h+='<div class="rules-row"><div class="rules-label">'+PAGE_LABEL[k]+'</div><div class="rules-toggle'+(pageOn(k)?" on":"")+'" onclick="pagesToggle(\''+k+'\')"></div></div>'; });
+  h+='</div></div></div>';
+  return h;
+}
 let celebSongs=[];
 let momPinUnlocked=false;
 let momModeActive=false;
@@ -3415,6 +3443,7 @@ function initFb() {
     db.ref("settings/sitterName").on("value",s=>{
       if(s.val()){ SITTER_NAME=s.val(); sv("ha_sitter_name",SITTER_NAME); }
     });
+    db.ref("settings/pages").on("value",s=>{ pagesApply(s.val()); });   // 🧩 per-family top-tab switches
     db.ref("settings/pin").on("value",s=>{
       if(s.val()){ APP_PIN=s.val(); HA_LS.setItem("ha_app_pin",s.val()); }
     });
@@ -3947,6 +3976,7 @@ function renderAll(){
 }
 function _renderAllInner(){
   const stb=document.getElementById("sitter-tab-btn"); if(stb){ if(SITTER_NAME){stb.textContent=SITTER_NAME;stb.style.display="";} else {stb.style.display="none";} }
+  PAGE_KEYS.forEach(k=>{ const b=document.querySelector('.nav-tab[data-tab="'+k+'"]'); if(b) b.style.display=pageOn(k)?"":"none"; });   // 🧩 pages that are off leave the tab bar
   renderSchedSubtabs(); renderDayTabs(); renderKidFilter(); renderSkylight(); renderWeekStrip(); renderKioskKids(); renderKioskTabs(); renderKioskView(); renderKioskPerson();
   if(tab==="schedule") document.getElementById("day-tabs").style.display=(schedShowHistory||schedShowPace||schedShowAdmin)?"none":"flex";
   const showKidFilter=(tab==="schedule"&&!schedShowAdmin&&!schedShowBoard)||(tab==="history")||(tab==="pace");
@@ -5393,6 +5423,7 @@ function renderSettings(el,ah){
   const o=id=>rulesOpen[id]?" open":"";
   let pinHtml=(ah||'');
   pinHtml+=renderFamilyCard();
+  pinHtml+=renderPagesCard();   // 🧩 per-family top-tab switches
   pinHtml+='<div class="rules-wrap">';
   pinHtml+='<div class="rules-hdr">Change PIN</div>';
   pinHtml+='<div class="rules-sub">This PIN is used for Mom mode, Admin, Blockouts, Points, and all locked areas.</div>';
@@ -5912,8 +5943,8 @@ function renderMomHQ(el,ah){
     _hqRow("grid","📚","Curriculum","The whole thing — grid, subject cards, pacing & build, rules, add subjects"),
     _hqRow("generate","🪄","Generate Week","Regenerate this week, plan next week, notebooks, week JSON"),
     _hqRowFn("setAdminSub('mastery')","🧠","Drills & Mastery","Rules, decks, sessions, cards — all in Mastery HQ"),
-    _hqRow("units","🗺","Unit Studies","Units, decks, activities (🔒 Mom chip inside)"),
-    _hqRow("notebook","📓","Notebooks","Extra pages, prong margin, printing (🔒 Mom chip inside)"),
+    pageOn("units")?_hqRow("units","🗺","Unit Studies","Units, decks, activities (🔒 Mom chip inside)"):"",
+    pageOn("notebook")?_hqRow("notebook","📓","Notebooks","Extra pages, prong margin, printing (🔒 Mom chip inside)"):"",
     _hqRowFn("wbPanelOpen()","📕","Workbooks","Bought workbook PDFs — the kids write on the page with the Apple Pencil"),
     _hqRowFn("eicPanelOpen()","✏️","Editor in Chief","One skill at a time — rules beside the page, you grade against the key, the app keeps score")
   ]);
@@ -5922,7 +5953,7 @@ function renderMomHQ(el,ah){
     _hqRow("dadsday","👨","Dad's Day","His own checklist plus bills, laundry, dinner and the kids"),
     _hqRow("grabs","🙌","Up for Grabs","Stock the grab list kids can claim"),
     _hqRow("settings","☀️","Routine editors","Morning steps, afternoon/chores/evening, cadence & 📅 windows — in Settings"),
-    _hqRow("play","🧸","School Room","Bins, stations, labels (Mom mode inside)")
+    pageOn("play")?_hqRow("play","🧸","School Room","Bins, stations, labels (Mom mode inside)"):""
   ]);
   h+=_hqGroup("⭐","Stars & Rewards",[
     _hqRow("wins","🌟","Wins · Star Bank · Store","Claims, give/dock, withdrawals, forfeited, store editor — tap ✓ Mom on the kid bar for Mom tools"),
