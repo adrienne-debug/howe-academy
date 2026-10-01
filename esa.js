@@ -38,7 +38,7 @@ function esBalance(fund){
   return {fund,year:b.year||"",total,committed,pending,denied,returned,placed:committed+pending,remaining:total?total-committed:null,ifPending:total?total-committed-pending:null,count:O.length};
 }
 function esBalanceCard(fund){
-  const B=esBalance(fund), col=fund==="esa"?"#2563eb":"#b5394a", nm=fund==="esa"?"💰 ESA grant (Lincoln)":"💳 Family money";
+  const B=esBalance(fund), col=fund==="esa"?"#2563eb":"#b5394a", nm=fund==="esa"?"💰 ESA grant":"💳 Family money";
   let h='<div class="es-card"><div class="es-hd" style="background:'+col+'">'+nm+(B.year?' <span style="opacity:.85;font-weight:600">· '+esc(B.year)+'</span>':'')+'<span style="margin-left:auto;font-weight:600;font-size:11.5px">'+B.count+' order'+(B.count===1?'':'s')+'</span></div><div class="es-bd">';
   const row=(l,v,c,b)=>'<div class="es-row"><span>'+l+'</span><b style="'+(c?'color:'+c+';':'')+(b?'font-size:15px':'')+'">'+v+'</b></div>';
   if(B.total){h+=row("Grant total",money(B.total));h+=row("Approved / arrived",money(B.committed),"#16a34a");h+=row("Pending approval",money(B.pending),"#d97706");
