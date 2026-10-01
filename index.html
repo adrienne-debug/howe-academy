@@ -7260,14 +7260,15 @@ function gaCandidates(kid){
 function gaRender(kid){
   if(typeof day==="undefined"||day!==_todayDay) return "";
   const list=gaCandidates(kid); const bw=(typeof bwCandidates==="function")?bwCandidates(kid):[];
-  if(!list.length&&!bw.length) return "";
+  const mp=(typeof mpCandidates==="function")?mpCandidates(kid):[];   // 📘 master pulls: subjects with nothing left this week
+  if(!list.length&&!bw.length&&!mp.length) return "";
   const momFree=_efMomFree(kid), pct=(typeof gaBonusPct==="function")?gaBonusPct("ahead"):50;
   const mustCatch=bw.some(function(x){ return !x.gate; });   // 🔁 something behind can be taken → it comes before Get ahead
   const F="font-family:'DM Sans',sans-serif;";
   const rowStart=function(t,x,btn){
     const ref=(typeof taskLessonRef==="function"&&taskLessonRef(t))||"";
     const name=String(t.title||"").replace(/\s*[—–]\s*.*$/,"");
-    const from=t._eowOverflow?"carry-over box":("from "+cap(t.day));
+    const from=t.masterPull?"from the plan":t._eowOverflow?"carry-over box":("from "+cap(t.day));
     return '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:6px;border-radius:10px;background:#fff;border:1px solid #ddd6fe'+(btn?'':';opacity:.55')+'">'+
       '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px;color:#1e1b4b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(name)+'</div>'+
       '<div style="font-size:11px;color:#6b7280">'+esc(ref?ref+" · ":"")+esc(from)+(t.mom==="required"?' · 👩 with Mom':'')+(x.behind>0?' · behind '+x.behind:'')+'</div></div>'+btn+'</div>';
@@ -7293,6 +7294,17 @@ function gaRender(kid){
       const why=mustCatch?"catch up first":needMom?"needs Mom":dev?"device busy":capped?"at today's cap":"";
       const btn=why?'<span style="font-size:11px;font-weight:800;color:#6b7280">'+esc(why)+'</span>'
         :'<button onclick="tapTask(\''+esc(t.id)+'\')" style="padding:7px 14px;border-radius:10px;background:#7c3aed;color:#fff;border:none;font-size:13px;font-weight:800;cursor:pointer">Did it ✓</button>';
+      h+=rowStart(t,x,btn);
+    });
+  }
+  if(mp.length){
+    const mpct=(typeof gaBonusPct==="function")?gaBonusPct("master"):100;
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700;color:#1d4ed8'+((bw.length||list.length)?';margin-top:10px':'')+'">📘 From the plan</div>'+
+       '<div style="font-size:12px;color:#1e40af;margin:2px 0 10px">Nothing of these is left this week. Pull the next lesson from the plan — every master-pull spin earns <b>+'+mpct+'%</b> straight to your bank.'+(mustCatch?' <b>Catch up first.</b>':'')+'</div>';
+    mp.slice(0,8).forEach(function(x){
+      const t=x.card, why=mustCatch?"catch up first":x.gate;
+      const btn=why?'<span style="font-size:11px;font-weight:800;color:#6b7280">'+esc(why)+'</span>'
+        :'<button onclick="mpPullTap(\''+esc(kid)+'\',\''+esc(x.sk)+'\')" style="padding:7px 14px;border-radius:10px;background:#1d4ed8;color:#fff;border:none;font-size:13px;font-weight:800;cursor:pointer;'+F+'">Pull next ▶</button>';
       h+=rowStart(t,x,btn);
     });
   }
@@ -7405,6 +7417,65 @@ function bwNextAuto(kid,endMin){
   for(let i=0;i<L.length;i++){ const t=L[i].card; if(nowMin+(t.dur||20)>endMin) continue; const c=bwPull(kid,t.id); if(c) return c; }
   return null;
 }
+// 📘 MASTER PULL (her rule 2026-10-01: "no saturday work — the kid can still have the extend and get to pull from the
+// master schedule, ×2 the bonus"). A subject with NOTHING open this week offers "next <subject>": Pull next ▶ creates ONE
+// sitting on today after now, stamped with the plan's next unfinished lesson (same id/title shape as a catch-up extra),
+// gotAhead="master" → the Master-pull bonus (Admin ▸ Adjust Slots). Never automatic, Mom/device/cap gates apply, and
+// catch-up still comes first. Untouched → dissolves at the day's end (cascade MASTERPULL), nothing owed.
+function mpNextLesson(kid,sk){
+  try{
+    const subs=(((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid]; const sub=subs&&subs[sk]; if(!sub) return null;
+    const ids=(typeof lidsFor==="function")?lidsFor(kid,sk):null; if(!ids||!ids.length) return null;
+    const seq=sub.lessonSeq||[], done=((typeof lidDoneSet==="function")&&lidDoneSet(kid,sk))||new Set();
+    const mine=(weekData.tasks||[]).filter(function(t){ return t&&t.who===kid&&t.subjectKey===sk&&!String(t.id||"").endsWith("_c"); });
+    const dealt=new Set(); mine.forEach(function(t){ if(t.lid) dealt.add(t.lid); (t.lids||[]).forEach(function(l){ dealt.add(l); }); });
+    const tpl=mine.slice().sort(function(a,b){ return (b.title||"").length-(a.title||"").length; })[0]||null;
+    for(let i=0;i<ids.length;i++){ const l=ids[i]; if(!l||done.has(l)||dealt.has(l)) continue;
+      const text=String(seq[i]==null?"":seq[i]);
+      const title=tpl?((typeof _seqFillTitle==="function")?_seqFillTitle(tpl.title,text):(String(tpl.title||"").split(" — ")[0]+" — "+text)):((sub.display||sk)+" — "+text);
+      return {lid:l,text:text,tpl:tpl,sub:sub,title:title,id:kid+"_"+((typeof planIdFor==="function")?planIdFor(kid,sk):(kid+"__"+sk))+"_"+l}; }
+    return null;
+  }catch(e){ return null; }
+}
+// {card (not yet in the week), sk, behind, gate} per plan-backed subject with nothing open this week
+function mpCandidates(kid){
+  try{
+    if(!kid||typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return [];
+    const subs=(((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid]||{}; const out=[];
+    const open=function(t){ return !(typeof checked!=="undefined"&&checked&&checked[t.id])&&!(typeof claimed!=="undefined"&&claimed&&claimed[t.id]); };
+    Object.keys(subs).forEach(function(sk){ try{
+      const s=subs[sk]; if(!s||s.paused) return;
+      if(typeof planBacked==="function"&&!planBacked(kid,sk)) return;
+      if(typeof fxIsClass==="function"&&fxIsClass(s)) return;
+      const probe={who:kid,subjectKey:sk,title:s.display||sk}; if(typeof subjNoCarry==="function"&&subjNoCarry(probe)) return;
+      if(weekData.tasks.some(function(t){ return t&&t.who===kid&&t.subjectKey===sk&&!String(t.id||"").endsWith("_c")&&open(t); })) return;   // still open this week → catch-up / Get ahead own it
+      const nx=mpNextLesson(kid,sk); if(!nx) return;
+      const tpl=nx.tpl;
+      const card={id:nx.id,who:kid,day:_todayDay,time:"",dur:(+s.minutes)||(tpl&&tpl.dur)||20,mom:s.mom||(tpl&&tpl.mom)||"none",subjectKey:sk,title:nx.title,lid:nx.lid,
+        device:(tpl&&tpl.device)||s.device||"",detail:(tpl&&tpl.detail)||"",masterPull:true,gotAhead:"master",pulledFrom:"plan"};
+      out.push({card:card,sk:sk,behind:_efBehind(kid,sk),gate:bwGate(kid,card)});
+    }catch(e){} });
+    return out.sort(function(a,b){ return (b.behind-a.behind)||String(a.card.title||"").localeCompare(String(b.card.title||"")); });
+  }catch(e){ return []; }
+}
+function mpPull(kid,sk){
+  try{
+    const x=mpCandidates(kid).filter(function(c){ return c.sk===sk; })[0]; if(!x||x.gate) return null;
+    const c=x.card; if(weekData.tasks.some(function(t){ return t&&t.id===c.id; })) return null;
+    const nowMin=(typeof _mlNowMin==="function")?_mlNowMin():(function(){ const d=new Date(); return d.getHours()*60+d.getMinutes(); })();
+    const dayOf=function(t){ try{ return (typeof _mlDayOf==="function")?_mlDayOf(t):t.day; }catch(e){ return t.day; } };
+    let lastEnd=0; weekData.tasks.forEach(function(t){ if(!t||t.who!==kid||dayOf(t)!==_todayDay||String(t.id||"").endsWith("_c")||t._eowOverflow||_efIsClose(t)) return; const e=toMin(t.time)+(t.dur||20); if(e>lastEnd) lastEnd=e; });
+    let st=Math.max(nowMin,lastEnd); const lw=(typeof _mlLunchWin==="function")?_mlLunchWin():null; const d=c.dur||20; if(lw&&st<lw[1]&&st+d>lw[0]) st=lw[1];
+    c.time=fromMin(st);
+    weekData.tasks.push(c);
+    sv(WK+"_tasks",weekData.tasks); lastTasksWrite=Date.now();
+    if(db&&!_dryRun()) db.ref(WK+"/tasks/"+c.id).set(c);   // one new card, targeted — never the whole node
+    dbg("\u{1F4D8} master pull: "+kid+" "+sk+" "+c.lid+" → "+_todayDay+" "+c.time);
+    if(typeof gwShowToast==="function") gwShowToast("\u{1F4D8} "+cap(kid)+" — from the plan: "+String(c.title||"").slice(0,48));
+    return c;
+  }catch(e){ try{ dbg("master pull error: "+e); }catch(e2){} return null; }
+}
+function mpPullTap(kid,sk){ if(mpPull(kid,sk)&&typeof renderAll==="function") renderAll(); }
 // BEHIND_END
 // GETAHEAD_END
 // Mom approves a kid's claim. Done-time = the kid's claim time (so a late
@@ -22355,6 +22426,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
   // and last week's parked extras into Ellis's Thursday after "now" — his day grew all afternoon. Fell-off-today work
   // still returns through the early-finish pull (EFPULL); more work is the kid's Get-ahead choice.
   const _fromToday=new Set();
+  const _mpDissolve=[];   // 📘 MASTERPULL: untouched master-pull cards this pass removes (see the pooling loop)
   const _todayOpen=(function(){ try{ const _s=((rulesData||{}).schoolDay)||{}; return _nowMin<=toMin((((_s.overrides||{})[today])||{}).start||_s.defaultStart||"10:00 AM"); }catch(e){ return true; } })();
   // DAYGOAL_END (see the two DAYGOAL lines in the subject-spread and the receiving-day loop below)
   // 😷 Is this kid marked off TODAY by Mom's own per-kid override? (memoised per sweep)
@@ -22375,6 +22447,10 @@ function cascadeIntraWeek(sweepTodayElapsed){
   weekData.tasks.forEach(t=>{
     if(t.id.endsWith("_c")) return;
     if(checked[t.id]) return;
+    // 📘 MASTERPULL (her rule 2026-10-01): a lesson the kid pulled from the plan beyond this week and left untouched
+    // dissolves at the day's end — the 8 PM sweep (today, elapsed) or any pass once its day has passed. Nothing is
+    // owed, nothing rolls forward; the plan still holds that lesson for its normal turn. A claimed one waits for Mom.
+    if(t.masterPull&&!(claimed&&claimed[t.id])){ const _mi=dayOrder.indexOf(t.day); if(_mi>=0&&(_mi<todayIdx||(_mi===todayIdx&&sweepTodayElapsed&&toMin(t.time)<_nowMin))){ _mpDissolve.push(t); return; } }
     // Mom took this off its day: the sweep must not pull it back onto today and reserve a slot
     // for work that isn't being shown. Dismissed work is pinned for good; a push owns its day
     // until the landing day arrives, after which normal rules resume.
@@ -22465,6 +22541,12 @@ function cascadeIntraWeek(sweepTodayElapsed){
     if(idx===todayIdx) _fromToday.add(t);   // DAYGOAL: today's own card — may re-lay on today
     if(_isNote(t)) pastNotes.push(t); else pastTasks.push(t);
   });
+  if(_mpDissolve.length){   // 📘 MASTERPULL: drop them from the week (whole-node write below, or the targeted heal write)
+    const _ids=new Set(_mpDissolve.map(t=>t.id));
+    for(let i=weekData.tasks.length-1;i>=0;i--){ if(_ids.has(weekData.tasks[i].id)) weekData.tasks.splice(i,1); }
+    _mpDissolve.forEach(t=>{ _healUpd[t.id]=null; }); _healMoved=true;
+    dbg("\u{1F4D8} master pull dissolved: "+_mpDissolve.map(t=>t.id).join(" "));
+  }
   if(!pastTasks.length&&!pastNotes.length){
     // Nothing to sweep — but a regen may still have re-timed today's day-bound tasks
     // above, and the closing-last pass below won't run. Pull today's closings out of
