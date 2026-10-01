@@ -89,7 +89,7 @@ const tick = () => new Promise(r => setTimeout(r, 5));
     const i = src.indexOf("function initFb() {");
     ok("initFb's first line is the gate", /^function initFb\(\) \{\n  if\(!_haAuthOk\)\{ haAuthGate\(\); return; \}/.test(src.slice(i, i + 90)), src.slice(i, i + 90));
     ok("initializeApp guarded against the gate's earlier init", /if\(!\(firebase\.apps&&firebase\.apps\.length\)\) firebase\.initializeApp\(FB_CFG\);\s*\/\/ haAuthGate may already have/.test(src));
-    ok("boot tail unchanged", /\ninitFb\(\); renderAll\(\);\n/.test(src));
+    ok("boot tail unchanged (2026-09-30: the block runs last and the first paint is wrapped — see test_boot_order.js)", /\ninitFb\(\);\n(?:\/\/[^\n]*\n)*try\{ renderAll\(\); \}catch\(e\)\{/.test(src));
     ok("no bare column-0 brace inside the block", !/\n\}\n(?!function|const|let|\/\/|$)/.test(block)); }
 
   // ── Where the sign-in is KEPT (2026-09-17) ──────────────────────────────────

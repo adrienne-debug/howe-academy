@@ -22830,13 +22830,22 @@ function cascadeIntraWeek(sweepTodayElapsed){
     const bySlot=[...uncheckedGrp].sort((a,b)=>{
       const ao=a._eowOverflow?99:dayIdx(a.day), bo=b._eowOverflow?99:dayIdx(b.day);
       if(ao!==bo) return ao-bo;
-      return toMin(a.time)-toMin(b.time);
+      const dt=toMin(a.time)-toMin(b.time); if(dt) return dt;
+      // 🔁 live 9/29–9/30: parked (overflow) slots all sit at the same clock time on different days. A tie here fell
+      // back to array order, which differs per device (a writer's in-memory order vs. a reader's key order), so the
+      // same lessons swapped Monday↔Friday on every pass and two devices re-wrote the week every 3–4 s for hours.
+      // Same day + time + parked state is the same slot: keep a fixed order (earlier day, then id).
+      const dd=dayIdx(a.day)-dayIdx(b.day); if(dd) return dd;
+      return String(a.id||"").localeCompare(String(b.id||""));
     });
 
-    // Check if order already matches — skip if so
+    // Check if order already matches — compare the SLOT (day/time/parked), not the card. Two parked cards at the
+    // same day+time are interchangeable: moving one onto the other's slot changes nothing on paper, but it WAS a
+    // write that woke the other device (9/30).
+    const _slotKey=t=>String(t.day)+"|"+String(t.time)+"|"+(t._eowOverflow?1:0);
     let needSwap=false;
     for(let i=0;i<byLesson.length;i++){
-      if(byLesson[i].id!==bySlot[i].id){ needSwap=true; break; }
+      if(_slotKey(byLesson[i])!==_slotKey(bySlot[i])){ needSwap=true; break; }
     }
     if(!needSwap) continue;
 
@@ -45688,18 +45697,11 @@ window.addEventListener("scroll",()=>{
   document.getElementById("scroll-top").style.display=window.scrollY>300?"block":"none";
 });
 
-// ── INIT ──────────────────────────────────────────────────────────
-boot();
-if(_kiosk()){ tab="play"; document.body.classList.add("kiosk"); }
-if(_kioskR()){ tab="schedule"; kid="all"; document.body.classList.add("kioskr"); kkArm(); }
-if(_kioskD()){ tab="moms-plan"; mpSubView="dad"; document.body.classList.add("kioskd"); }
-if(_kioskK()){ tab="kids"; document.body.classList.add("kioskd"); }
-paintBuildFp();
-fxClassRestore();   // a reload mid-class comes back to the class screen, not a blank day
-if(haCvReturnRestore()){ try{ document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab||(tab==="supplies"&&b.dataset.tab==="schedule"))); }catch(e){} }   // ↩ back where the update found us
-initFb(); renderAll();
-setInterval(bbWatch,1000);   // 🔔 every device watches every brain break
-document.addEventListener("pointerdown",bbAudioUnlock,true);   // 🔔 a tap unlocks sound on this device
+// ── INIT ── moved to the END of this script (2026-09-30) — see the block just above </script>.
+// The first paint draws the cached week, and taskCard reads Math Sprints / retrieval state that is declared
+// BELOW this point; from here those `let`/`const`s were still uninitialised, so on any device whose cache held
+// an undone Lincoln Math Sprints card the paint threw a ReferenceError, the whole script stopped right here, and
+// his schedule (and the All / Mom views and the Grid) stayed blank or kept the last kid on screen.
 
 // ══════════════════════════════════════════════════════════════════
 // PHONICS SPRINT TAB
@@ -51186,6 +51188,24 @@ function gwCommit(){
   renderAll();
   gwShowToast("Week "+gwConfig.weekNum+" applied to schedule!");
 }
+
+// ── INIT ── runs LAST, after every declaration above exists (2026-09-30; it used to sit at ~45700, before
+// `let mathSprints…` and the RETR_* tables — see the note left there). Nothing between the old spot and here
+// runs at top level (functions, literals, one class), so this changes only WHEN boot runs, not what it does.
+boot();
+if(_kiosk()){ tab="play"; document.body.classList.add("kiosk"); }
+if(_kioskR()){ tab="schedule"; kid="all"; document.body.classList.add("kioskr"); kkArm(); }
+if(_kioskD()){ tab="moms-plan"; mpSubView="dad"; document.body.classList.add("kioskd"); }
+if(_kioskK()){ tab="kids"; document.body.classList.add("kioskd"); }
+paintBuildFp();
+fxClassRestore();   // a reload mid-class comes back to the class screen, not a blank day
+if(haCvReturnRestore()){ try{ document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab||(tab==="supplies"&&b.dataset.tab==="schedule"))); }catch(e){} }   // ↩ back where the update found us
+initFb();
+// A first-paint error must never take the boot down with it: log it (console + _debug) and let the live-data
+// paint that follows a moment later repaint the screen.
+try{ renderAll(); }catch(e){ console.error("[HA] boot paint failed",e); try{ dbg("boot paint failed: "+((e&&e.message)||e)); }catch(_e){} }
+setInterval(bbWatch,1000);   // 🔔 every device watches every brain break
+document.addEventListener("pointerdown",bbAudioUnlock,true);   // 🔔 a tap unlocks sound on this device
 </script>
 </body>
 </html>
