@@ -25,6 +25,7 @@ const STUB_SRC = `
   const MAST_TIER_INT={daily:1,every_other_day:2,every_third_day:3,weekly:7,bi_weekly:14,monthly:28,learned:60,graduated:null};
   const MAST_TIER_ORDER=["daily","every_other_day","every_third_day","weekly","bi_weekly","monthly","learned","graduated"];
   const ROSTER=["lincoln","ellis","lucy","julian"];
+  const FIRST_KID=ROSTER[0];
   function renderAll(){}
   function mastGetVisual(cat,name){ return null; }
   function mastIsParked(i){ return !!(i&&i.status==="parked"); }
