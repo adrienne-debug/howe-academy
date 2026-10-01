@@ -22207,6 +22207,16 @@ function cascadeIntraWeek(sweepTodayElapsed){
   // Collect unchecked tasks from past days (don't move them yet). Notebooks go to a
   // separate list so they keep their bookend treatment instead of clustering.
   const pastTasks=[], pastNotes=[];
+  // DAYGOAL_START — 🎯 her rule 2026-10-01: "whatever is on that day at 9:59, after the earlier days moved over and the
+  // day settles, is the goal for the day." Once school has started, the cascade never ADDS a card to today: swept work
+  // from earlier days, re-validated parked overflow and later-day lessons all land tomorrow onward (or the carry-over
+  // box). Today's OWN cards (a mid-day regenerate re-flowing elapsed slots, a sick kid's day) may still re-lay on today —
+  // _fromToday marks them. Live 10/1: every check-off ran a pass that packed Monday's leftovers, Friday's Math Reasoning
+  // and last week's parked extras into Ellis's Thursday after "now" — his day grew all afternoon. Fell-off-today work
+  // still returns through the early-finish pull (EFPULL); more work is the kid's Get-ahead choice.
+  const _fromToday=new Set();
+  const _todayOpen=(function(){ try{ const _s=((rulesData||{}).schoolDay)||{}; return _nowMin<=toMin((((_s.overrides||{})[today])||{}).start||_s.defaultStart||"10:00 AM"); }catch(e){ return true; } })();
+  // DAYGOAL_END (see the two DAYGOAL lines in the subject-spread and the receiving-day loop below)
   // 😷 Is this kid marked off TODAY by Mom's own per-kid override? (memoised per sweep)
   const _offTodayMemo={};
   const _kidOffToday=function(who){
@@ -22312,6 +22322,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
       if(!isPast) return;
     }
     t.cascadedFrom=t.cascadedFrom||t.day;
+    if(idx===todayIdx) _fromToday.add(t);   // DAYGOAL: today's own card — may re-lay on today
     if(_isNote(t)) pastNotes.push(t); else pastTasks.push(t);
   });
   if(!pastTasks.length&&!pastNotes.length){
@@ -22527,6 +22538,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
     ordered.forEach(function(t){
       const who=t.who, subj=taskSubject(t);
       const days=wdays.filter(function(dn){
+        if(dn===today&&!_todayOpen&&!_fromToday.has(t)) return false;   // DAYGOAL: today's goal is set — no new arrivals
         const ds=_cascDate(dn);
         if(!ds) return !_wkHasDates; // date-less day = not part of this week
         return !smapIsKidOff(who,ds);
@@ -22567,6 +22579,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
     const dStr=_cascDate(dn);
     const offHere=t=>!!(dStr&&smapIsKidOff(t.who,dStr)); // holiday/vacation/kid-off → wait for a later day
     let tryHere=pool.filter(t=>!offHere(t)&&_prefIdx(t)<=di); // wait for the assigned day; overflow chains forward
+    if(dn===today&&!_todayOpen) tryHere=tryHere.filter(t=>_fromToday.has(t));   // DAYGOAL: mid-day, only today's own cards re-lay here
     if(!tryHere.length) continue;
     // ── Per-subject catch-up cap (config-gated) ── a subject can't exceed its per-day
     // ceiling on this receiving day; the excess waits for a later day (stays in pool via
