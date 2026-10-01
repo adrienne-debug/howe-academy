@@ -31,4 +31,6 @@ const decl=name=>L.findIndex(l=>l.startsWith("let "+name)||l.startsWith("const "
 ok("`let mathSprints` is declared before the boot paint",decl("mathSprints")>0&&decl("mathSprints")<bootIdx,decl("mathSprints"));
 ok("`const RETR_WEEK_DEFAULT` is declared before the boot paint",decl("RETR_WEEK_DEFAULT")>0&&decl("RETR_WEEK_DEFAULT")<bootIdx,decl("RETR_WEEK_DEFAULT"));
 try{ new Function(L.slice(a+1,b).join("\n")); ok("the main script parses",true); }catch(e){ ok("the main script parses",false,e.message); }
+const stray=L.map((l,i)=>[l,i]).filter(([l,i])=>i>a&&i<b&&/<\/script/i.test(l)).map(([l,i])=>i+1);
+ok("no closing-script-tag text inside the main script (a comment with one ended the script early and took the app Offline, 2026-10-01)",stray.length===0,stray);
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
