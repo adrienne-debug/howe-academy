@@ -21984,6 +21984,11 @@ function cascadeIntraWeek(sweepTodayElapsed){
   if(lockHeldByOther()) return; // another device is scheduling — read-only until it's done
   const dayOrder=["monday","tuesday","wednesday","thursday","friday","saturday"];
   const JS_DAY_MAP={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
+  // 🅢 Rules → "Use Saturday for overflow" (default on; the same reading the Sunday generator uses). OFF = Saturday is
+  // never a receiving day HERE either: the sweep, the safety net and the notebook pass skip it, no day runs past its
+  // end, and what Mon–Fri can't hold carries to next week (Mom's box). Her rule 9/22 "no Saturday"; live 10/1 the
+  // cascade after a Rebuild all still put 13 swept cards on Saturday because only the generator read the switch.
+  const _satOk=(typeof rulesData==="undefined"||!rulesData||rulesData.saturdayOverflow!==false);
   const todayMid=new Date(); todayMid.setHours(0,0,0,0);
   const jsDay=new Date().getDay()||7;
   // A vacation-shortened week omits its off days from meta.dates entirely — a weekday
@@ -22268,6 +22273,12 @@ function cascadeIntraWeek(sweepTodayElapsed){
       if(_isNote(t)) pastNotes.push(t); else pastTasks.push(t);
       return;
     }
+    // 🅢 Saturday overflow OFF → a card the cascade swept onto Saturday is stranded too: back into the pool, so flipping
+    // the switch heals the week on the next pass (no rebuild needed). Saturday work laid on purpose (no cascadedFrom) stays.
+    if(!_satOk&&t.day==="saturday"&&t.cascadedFrom&&t.cascadedFrom!=="saturday"){
+      if(_isNote(t)) pastNotes.push(t); else pastTasks.push(t);
+      return;
+    }
     const idx=dayOrder.indexOf(t.day);
     if(idx<0||idx>todayIdx) return;
     if(idx===todayIdx){
@@ -22541,9 +22552,10 @@ function cascadeIntraWeek(sweepTodayElapsed){
   // Last remaining day that actually exists this week (date-less days don't count) —
   // that's where the overtime valve opens so a shortened week can still absorb its load.
   let _lastValidDi=todayIdx;
-  for(let di=todayIdx; di<dayOrder.length; di++){ if(!(_wkHasDates&&!_cascDate(dayOrder[di]))) _lastValidDi=di; }
+  for(let di=todayIdx; di<dayOrder.length; di++){ if(dayOrder[di]==="saturday"&&!_satOk) continue; if(!(_wkHasDates&&!_cascDate(dayOrder[di]))) _lastValidDi=di; }
   for(let di=todayIdx; di<dayOrder.length&&pool.length; di++){
     const dn=dayOrder[di];
+    if(dn==="saturday"&&!_satOk) continue; // 🅢 Saturday overflow off — not a receiving day
     if(_wkHasDates&&!_cascDate(dn)) continue; // day isn't part of this week — never a receiving day
     const sdOv=(sd.overrides||{})[dn]||{};
     const dStart=toMin(sdOv.start||sd.defaultStart||"10:00 AM");
@@ -22594,7 +22606,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
     const kidStart={}; if(isSitterDay) sitterKids.forEach(k=>{ kidStart[k]=Math.max(sitterReturn,_floor); });
     if(typeof coopApplyStart==="function") coopApplyStart(kidStart,dStr); // 🏫 timed co-op: the re-pack starts those kids at its end, like generation
     const ctx={start:Math.max(dStart,_floor),end:dEnd,lunchStart:lunchS,lunchEnd:lunchE,
-      momStart:sitterReturn,kidStart:kidStart,allowOvertime:isLast,overtimeMax:240,
+      momStart:sitterReturn,kidStart:kidStart,allowOvertime:isLast&&_satOk,overtimeMax:240,   // 🅢 Saturday off: no day runs past its end — the rest carries to next week
       fxDate:dStr,fxDay:dn};   // \u{1F3A7} a class keeps its clock time through the re-pack
     if(dn==="saturday") satApplyCutoff(ctx,240);
     // ── Receiving-day RE-PACK: a day that takes swept work is laid out again as ONE
@@ -22675,6 +22687,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
       if(isCatchupCapped(t.who,taskSubject(t))){ t._eowOverflow=true; return; }
       for(let di=dayOrder.length-1; di>=todayIdx; di--){
         const dn=dayOrder[di], ds=_cascDate(dn);
+        if(dn==="saturday"&&!_satOk) continue; // 🅢 Saturday overflow off
         if(_wkHasDates&&!ds) continue; // day isn't part of this week
         if(ds&&smapIsKidOff(t.who,ds)) continue;
         const ov=(sd.overrides||{})[dn]||{};
@@ -22685,7 +22698,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
         // Next Week" box, rolling into next week in sequence. Without a cutoff (or when the
         // last working day is earlier than Saturday) keep the legacy force-stack so nothing
         // an un-capped kid needs silently vanishes.
-        if(_cut!=null){ t._eowOverflow=true; break; }
+        if(_cut!=null||!_satOk){ t._eowOverflow=true; break; }   // 🅢 Saturday off = the same end-of-week rule: carry, never stack
         t.day=dn; t.time=fromMin(toMin(ov.end||sd.defaultEnd||"4:15 PM")-20); break;
       }
     });
@@ -22701,6 +22714,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
       const ds=_cascDate(dn);
       if(_wkHasDates&&!ds) continue; // day isn't part of this week
       if(ds&&smapIsKidOff(nb.who,ds)) continue;
+      if(dn==="saturday"&&!_satOk) continue; // 🅢 Saturday overflow off
       nb.day=dn;
       const mine=weekData.tasks.filter(t=>t!==nb&&t.who===nb.who&&t.day===dn&&!t.id.endsWith("_c"));
       if(_isMorn(nb)){
