@@ -5428,6 +5428,7 @@ function renderSettings(el,ah){
   // 🧩 Page switches are set from Adrienne's families dashboard (writes settings/pages/<k>), not in-app — her call
   // 2026-10-01: other families should not be able to turn pages on and off themselves. renderPagesCard() stays for the record.
   pinHtml+=renderFamilyRulesWrap();   // 🏠 all family-wide rules, one home (2026-10-02)
+  pinHtml+=renderAIKeyCard();   // ✨ the family's Claude key (recipes from a paste or a photo, book scans, stories)
   pinHtml+='<div class="rules-wrap">';
   pinHtml+='<div class="rules-hdr">Change PIN</div>';
   pinHtml+='<div class="rules-sub">This PIN is used for Mom mode, Admin, Blockouts, Points, and all locked areas.</div>';
@@ -11297,6 +11298,7 @@ function kitEditorHTML(){
     +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#6B4C93;color:#fff;font-weight:800;font-size:13px"><span>'+(isNew?'＋':'✎')+'</span> '+(isNew?'New meal':'Edit meal')
     +'<button onclick="kitCancelEdit()" style="margin-left:auto;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">✕ Cancel</button></div>'
     +'<div style="padding:12px 14px">'
+    +kitCaptureHTML()
     +'<div style="display:flex;gap:8px;margin-bottom:9px">'
     +'<input type="text" id="kit-name" value="'+esc(d.name||"")+'" placeholder="Meal (Taco night…)" style="flex:1;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:14px;font-weight:700;font-family:\'DM Sans\',sans-serif">'
     +'<input type="text" id="kit-emoji" value="'+esc(d.emoji||"")+'" placeholder="🌮" maxlength="4" style="width:56px;text-align:center;padding:9px 6px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:16px">'
@@ -11344,6 +11346,77 @@ function kitPhotoPick(input){
   };
   img.onerror=function(){ URL.revokeObjectURL(url); alert("Couldn't read that picture."); };
   img.src=url;
+}
+// ── ✨ capture doors (phase 2, 2026-10-02): paste text or photos → Claude drafts the fields → Mom reviews → Save.
+//    Nothing is saved by the capture itself. Key = the family key (config/anthropic_key) or a device key.
+let kitCap={mode:null,busy:false,msg:""};
+function kitCapKey(){ return (typeof mastAIKey!=="undefined"&&mastAIKey)||(typeof haGetKey==="function"?haGetKey():"")||""; }
+function kitCapToggle(mode){ _kitStash(); kitCap.mode=(kitCap.mode===mode)?null:mode; kitCap.msg=""; const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
+function kitCaptureHTML(){
+  const key=kitCapKey();
+  let h='<div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:10px;padding:9px 11px;margin-bottom:10px">';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="font-size:12px;font-weight:800;color:#15803d">✨ Fill it in from</span>';
+  h+='<button onclick="kitCapToggle(\'paste\')" style="padding:5px 11px;border-radius:999px;border:1.5px solid #86efac;background:'+(kitCap.mode==='paste'?'#16a34a;color:#fff':'#fff;color:#15803d')+';font-size:12px;font-weight:700;cursor:pointer">📋 Pasted text</button>';
+  h+='<label style="padding:5px 11px;border-radius:999px;border:1.5px solid #86efac;background:#fff;color:#15803d;font-size:12px;font-weight:700;cursor:pointer"><input type="file" accept="image/*" multiple onchange="kitCapPhotos(this)" style="display:none">📸 Photos of a recipe</label>';
+  h+='</div>';
+  if(!key) h+='<div style="font-size:11px;color:#92400e;margin-top:6px">Needs a Claude key — Admin ▸ Settings ▸ ✨ AI key. Typing a recipe in by hand always works.</div>';
+  if(kitCap.mode==='paste') h+='<textarea id="kit-cap-text" rows="6" placeholder="Paste the whole recipe — title, ingredients, directions, anything. Claude sorts it into the boxes below for you to check." style="width:100%;box-sizing:border-box;margin-top:8px;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12.5px;font-family:\'DM Sans\',sans-serif"></textarea>'
+    +'<button onclick="kitCapRunText()" '+(kitCap.busy?'disabled':'')+' style="margin-top:6px;padding:8px 14px;border-radius:9px;border:none;background:#16a34a;color:#fff;font-size:12px;font-weight:800;cursor:pointer">'+(kitCap.busy?'⏳ Reading…':'Turn it into a recipe')+'</button>';
+  if(kitCap.busy&&kitCap.mode!=='paste') h+='<div style="font-size:12px;color:#15803d;margin-top:6px">⏳ Reading the photos…</div>';
+  if(kitCap.msg) h+='<div style="font-size:11.5px;color:'+(/^✓/.test(kitCap.msg)?'#15803d':'#b45309')+';margin-top:6px">'+esc(kitCap.msg)+'</div>';
+  return h+'</div>';
+}
+const KIT_CAP_PROMPT='Turn this into one recipe record. Use ONLY what is in the material — never invent ingredients, amounts or steps; leave a field empty if it is not there. '
+  +'Return ONLY strict JSON, no commentary: {"name":"","ingredients":["one per line, with amounts as written"],"steps":["one step per line, in order"],"yield":"what it makes, e.g. 6 servings or 1 gallon","tags":["any of: gf, df, kid, batch, juice"],"prep":[{"when":"nb","label":"a night-before step such as thaw or soak"}]}. '
+  +'Tags: gf only if clearly gluten-free, df only if clearly dairy-free, batch for make-ahead or freezer recipes, juice for juices and smoothies. prep may be empty.';
+async function kitCapAsk(content){
+  const key=kitCapKey(); if(!key) throw new Error("No Claude key — Admin ▸ Settings ▸ ✨ AI key.");
+  const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
+    headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({model:"claude-sonnet-5",max_tokens:3000,messages:[{role:"user",content:content}]})});
+  if(!resp.ok){ const t=await resp.text(); throw new Error("Claude "+resp.status+" — "+t.slice(0,120)); }
+  const data=await resp.json(); const txt=(data.content||[]).filter(x=>x&&x.type==="text").map(x=>x.text||"").join("");
+  return kitCapParse(txt);
+}
+function kitCapParse(txt){
+  const a=String(txt||"").indexOf("{"), z=String(txt||"").lastIndexOf("}");
+  if(a<0||z<=a) throw new Error("Couldn't read a recipe out of that.");
+  const j=JSON.parse(String(txt).slice(a,z+1)); const L=x=>Array.isArray(x)?x.map(v=>String(v||"").trim()).filter(Boolean):[];
+  return {name:String(j.name||"").trim().slice(0,80),ingredients:L(j.ingredients),steps:L(j.steps),yield:String(j.yield||"").trim().slice(0,60),
+    tags:L(j.tags).map(t=>t.toLowerCase()).filter(t=>KIT_TAGS.some(k=>k[0]===t)),
+    prep:(Array.isArray(j.prep)?j.prep:[]).map(x=>({when:(x&&x.when==="nb")?"nb":(x&&kitWhenMin(String(x.when||""))!=null?String(x.when):"nb"),label:String((x&&x.label)||"").trim().slice(0,90)})).filter(x=>x.label)};
+}
+function kitCapApply(r){
+  _kitStash(); const d=kitEditDraft=kitEditDraft||{};
+  if(r.name&&!(d.name||"").trim()) d.name=r.name; else if(r.name&&!d.name) d.name=r.name;
+  if(r.ingredients.length) d.ing=r.ingredients.join("\n");
+  if(r.steps.length) d.steps=r.steps.join("\n");
+  if(r.yield) d.yield=r.yield;
+  if(r.tags.length) d.tags=r.tags.slice();
+  if(r.prep.length) kitEditPrep=r.prep.slice();
+  kitCap.msg="✓ Filled in — check every box, then Save. Nothing is saved until you do.";
+}
+async function kitCapRunText(){
+  const t=((document.getElementById('kit-cap-text')||{}).value||"").trim(); if(!t){ kitCap.msg="Paste the recipe first."; const el=document.getElementById('content'); if(el) renderMomsPlan(el); return; }
+  kitCap.busy=true; kitCap.msg=""; const el0=document.getElementById('content'); if(el0) renderMomsPlan(el0);
+  try{ const r=await kitCapAsk([{type:"text",text:KIT_CAP_PROMPT+"\n\nMATERIAL:\n"+t.slice(0,12000)}]); kitCapApply(r); kitCap.mode=null; }
+  catch(e){ kitCap.msg=String(e&&e.message||e); }
+  kitCap.busy=false; const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function kitCapShrink(file,max,q){ return new Promise((res,rej)=>{ const img=new Image(); const url=URL.createObjectURL(file);
+  img.onload=()=>{ try{ const r=Math.min(1,max/Math.max(img.width,img.height)); const c=document.createElement('canvas'); c.width=Math.round(img.width*r); c.height=Math.round(img.height*r); c.getContext('2d').drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg',q)); }catch(e){ rej(e); } };
+  img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error("Couldn't read a photo.")); }; img.src=url; }); }
+async function kitCapPhotos(input){
+  const files=[...((input&&input.files)||[])].slice(0,6); if(!files.length) return;
+  _kitStash(); kitCap.mode='photos'; kitCap.busy=true; kitCap.msg=""; const el0=document.getElementById('content'); if(el0) renderMomsPlan(el0);
+  try{
+    const big=[]; for(const f of files) big.push((await kitCapShrink(f,1400,0.8)).split(",")[1]);
+    const content=big.map(d=>({type:"image",source:{type:"base64",media_type:"image/jpeg",data:d}})); content.push({type:"text",text:KIT_CAP_PROMPT+" The material is the photo(s) above — a recipe card, cookbook page or screenshot."});
+    const r=await kitCapAsk(content); kitCapApply(r);
+    if(!(kitEditDraft.photo)) { let th=await kitCapShrink(files[0],480,0.72); let q=0.72; while(th.length>80000&&q>0.4){ q-=0.1; th=await kitCapShrink(files[0],480,q); } kitEditDraft.photo=th; }   // the first photo becomes the picture
+    kitCap.mode=null;
+  }catch(e){ kitCap.msg=String(e&&e.message||e); }
+  kitCap.busy=false; const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
 function kitRecipeExtrasEditorHTML(d){
   const tags=Array.isArray(d.tags)?d.tags:[];
@@ -45964,6 +46037,21 @@ function renderRules(el,headerHtml){
   el.innerHTML=(headerHtml||'');
 }
 // 🏠 ALL family-wide rules live here, once (her ask 2026-10-02). Subject-level placement stays on the Grid.
+// ✨ Family AI key (2026-10-02): one key per family in config/anthropic_key — every device uses it; the family pays its own usage.
+function renderAIKeyCard(){
+  const fam=(typeof mastAIKey!=="undefined"&&mastAIKey)?true:false, dev=(typeof haGetKey==="function"&&haGetKey())?true:false;
+  let h='<div class="rules-wrap"><div class="rules-hdr">✨ AI key</div>';
+  h+='<div class="rules-sub">A Claude API key lets Mom turn a pasted or photographed recipe into a card, scan a book\'s contents, and write reading stories. Without one, everything still works by typing. Usage is billed to the key\'s own account.</div>';
+  h+='<div class="rules-card open"><div class="rules-card-body">';
+  if(fam) h+='<div class="rules-row"><div class="rules-label">Family key</div><div style="font-size:13px;font-weight:700;color:#15803d">Set ✓ <span style="font-weight:400;color:var(--muted)">(sk-ant-…'+esc(String(mastAIKey).slice(-4))+')</span></div></div><div class="rules-row"><div class="rules-label"></div><button onclick="haFamilyKeyClear()" style="padding:6px 12px;border-radius:8px;border:1.5px solid #fecaca;background:#fff;color:#b91c1c;font-size:12px;font-weight:700;cursor:pointer">Remove the family key</button></div>';
+  else h+='<div class="rules-row"><div class="rules-label">Family key</div><input id="ha-famkey" type="password" placeholder="sk-ant-…" autocomplete="off" style="flex:1;min-width:0;padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif"></div><div class="rules-row"><div class="rules-label"></div><button onclick="haFamilyKeySave()" style="padding:7px 14px;border-radius:9px;border:none;background:#111827;color:#fff;font-size:12px;font-weight:700;cursor:pointer">Save for the whole family</button></div>'
+    +(dev?'<div style="font-size:11px;color:var(--muted);padding:4px 0">A key saved on this device only is in use ✓</div>':'');
+  h+='<div style="font-size:11px;color:var(--muted);padding:6px 0 0;line-height:1.45">Get one at console.anthropic.com → API keys. 🔒 Stored in your family\'s own database, never in the app\'s code.</div>';
+  h+='</div></div></div>';
+  return h;
+}
+function haFamilyKeySave(){ if(!momHere()) return; const el=document.getElementById('ha-famkey'); const k=((el&&el.value)||"").trim(); if(!/^sk-ant-/.test(k)){ alert("That doesn\'t look like a Claude key (they start with sk-ant-)."); return; } mastAIKey=k; if(db&&!_dryRun()) db.ref("config/anthropic_key").set(k); renderAll(); }
+function haFamilyKeyClear(){ if(!momHere()) return; if(!confirm("Remove the family\'s AI key? Recipe capture, book scans and stories stop until a key is added again.")) return; mastAIKey=""; if(db&&!_dryRun()) db.ref("config/anthropic_key").remove(); renderAll(); }
 function renderFamilyRulesWrap(){
   return '<div class="rules-wrap"><div class="rules-hdr">Family rules</div>'+
     '<div class="rules-sub">The shape of every school day — hours and lunch, sitter, workflow order, devices, overlap, carry-over &amp; Saturday, calendar. Per-subject settings (device, Mom, minutes, days, cap, priority) stay with the subject on the Grid.</div>'+
