@@ -6010,33 +6010,64 @@ function eicPanelOpen(kid){
 // notes box. Data lives in the family's own DB at worksheets/<id>:
 //   {title, intro, kid?, createdAt, status:"open"|"submitted", questions:[{q, options:[…]}],
 //    answers:{<i>:{pick, note}}, submittedAt}
-// Inert until a worksheet exists. Only Mom sees it (momHere()): a card on top of Mom HQ, and it pops up
-// by itself the first time Mom HQ opens in a session. Every pick / note saves at once as ONE leaf, so
+// Inert until a worksheet exists. It shows as a TASK on Mom's Day (and a card on Mom HQ); nothing pops up
+// on its own — she taps it when it suits her (her ask 10/2: "convenient for her"). Answering is Mom-only:
+// a tap outside Mom mode asks for the Mom PIN first. Every pick / note saves at once as ONE leaf, so
 // closing loses nothing; Submit stamps status + submittedAt (Adrienne's dashboard and Claude watch that).
-let wsData={}; const wsPopped={}; let wsOpenKey="";
+// A sent worksheet stays on the list with a ✓ for 14 days, so she knows it's done.
+let wsData={}; let wsOpenKey="|";   // "|" = nothing open, nothing sent
+const WS_DONE_DAYS=14;
 function wsOpenList(){
   return Object.entries(wsData||{})
     .filter(([id,w])=>w&&w.status==="open"&&Array.isArray(w.questions)&&w.questions.length)
     .sort((a,b)=>(a[1].createdAt||0)-(b[1].createdAt||0));
 }
 function wsAns(w,i){ return ((w&&w.answers)||{})[i]||{}; }
-function wsBannerHTML(){
-  if(typeof momHere==="function"&&!momHere()) return "";
-  const l=wsOpenList(); if(!l.length) return "";
-  return l.map(([id,w])=>{
-    const n=w.questions.length, done=w.questions.filter((q,i)=>wsAns(w,i).pick).length;
-    return '<div onclick="wsOpen(\''+esc(id)+'\')" style="cursor:pointer;display:flex;align-items:center;gap:10px;background:#eff6ff;border:2px solid #93c5fd;border-radius:14px;padding:12px 14px;margin:0 0 12px">'+
-      '<div style="font-size:24px">📋</div><div style="flex:1"><div style="font-weight:800;font-size:14px;color:#1e3a8a">'+esc(w.title||"Questions from Adrienne")+'</div>'+
-      '<div style="font-size:12px;color:#475569">Adrienne sent you '+n+' question'+(n===1?'':'s')+(done?' · '+done+' answered':'')+' — tap to answer</div></div>'+
-      '<div style="font-size:12px;font-weight:800;color:#1d4ed8">Open ›</div></div>';
-  }).join("");
+function wsSentList(now){
+  const cut=(now||Date.now())-WS_DONE_DAYS*864e5;
+  return Object.entries(wsData||{})
+    .filter(([id,w])=>w&&w.status==="submitted"&&(w.submittedAt||0)>=cut)
+    .sort((a,b)=>(b[1].submittedAt||0)-(a[1].submittedAt||0));
 }
-// First Mom HQ visit of the session pops the oldest open worksheet once.
-function wsMaybePop(){
-  if(typeof momHere==="function"&&!momHere()) return;
-  if(document.getElementById("ws-panel")) return;
-  const next=wsOpenList().find(([id])=>!wsPopped[id]);
-  if(next){ wsPopped[next[0]]=true; wsOpen(next[0]); }
+function wsRowsHTML(now){
+  const open=wsOpenList(), sent=wsSentList(now);
+  if(!open.length&&!sent.length) return "";
+  let h="";
+  open.forEach(([id,w])=>{
+    const n=w.questions.length, done=w.questions.filter((q,i)=>wsAns(w,i).pick).length;
+    h+='<div onclick="wsTap(\''+esc(id)+'\')" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:11px;border:2px solid #93c5fd;background:#eff6ff;margin-top:8px">'+
+      '<span style="width:20px;height:20px;border-radius:6px;border:2px solid #60a5fa;background:#fff;flex:none"></span>'+
+      '<div style="flex:1"><div style="font-weight:800;font-size:14px;color:#1e3a8a">'+esc(w.title||"Questions from Adrienne")+'</div>'+
+      '<div style="font-size:12px;color:#475569">'+n+' question'+(n===1?'':'s')+(done?' · '+done+' answered':'')+' — tap to answer</div></div>'+
+      '<div style="font-size:12px;font-weight:800;color:#1d4ed8">Open ›</div></div>';
+  });
+  sent.forEach(([id,w])=>{
+    const d=new Date(w.submittedAt).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+    h+='<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:11px;border:1.5px solid #bbf7d0;background:#f0fdf4;margin-top:8px">'+
+      '<span style="width:20px;height:20px;border-radius:6px;background:#16a34a;color:#fff;font-size:13px;font-weight:900;display:flex;align-items:center;justify-content:center;flex:none">✓</span>'+
+      '<div style="flex:1"><div style="font-weight:700;font-size:14px;color:#166534;text-decoration:line-through;text-decoration-color:#86efac">'+esc(w.title||"Questions from Adrienne")+'</div>'+
+      '<div style="font-size:12px;color:#15803d">Sent to Adrienne · '+esc(d)+'</div></div></div>';
+  });
+  return h;
+}
+// 🏡 Mom's Day: a "From Adrienne" task card, right under her own day.
+function wsTaskHTML(now){
+  const rows=wsRowsHTML(now); if(!rows) return "";
+  return '<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);padding:11px 14px 13px">'+
+    '<div style="font-weight:800;font-size:13px;color:#1e3a8a">📋 From Adrienne</div>'+rows+'</div>';
+}
+// 🏡 Mom HQ: the same rows on top of the map (Mom HQ is already behind the PIN).
+function wsBannerHTML(now){
+  const rows=wsRowsHTML(now); if(!rows) return "";
+  return '<div style="margin:0 0 12px">'+rows+'</div>';
+}
+// A tap outside Mom mode asks for the Mom PIN first (the recipe gate, with its own words).
+function wsTap(id){
+  if(typeof momHere==="function"&&momHere()){ wsOpen(id); return; }
+  if(typeof kitPinGate!=="function") return;
+  kitPinGate(()=>wsOpen(id));
+  const w=document.getElementById("kit-pin-wrap");
+  if(w) w.innerHTML=w.innerHTML.replace("Adding, changing or importing recipes is for Mom.","Questions from Adrienne are for Mom.");
 }
 function wsOpen(id){
   if(typeof momHere==="function"&&!momHere()) return;
@@ -6101,8 +6132,8 @@ function wsSubmit(id){
 // so the popup's text boxes keep focus).
 function wsOnValue(v){
   wsData=v||{};
-  const key=wsOpenList().map(([id])=>id).join(",");
-  if(key!==wsOpenKey){ wsOpenKey=key; try{ if(typeof momHere==="function"&&momHere()) renderAll(); }catch(e){} }
+  const key=wsOpenList().map(([id])=>id).join(",")+"|"+wsSentList().map(([id])=>id).join(",");
+  if(key!==wsOpenKey){ wsOpenKey=key; try{ renderAll(); }catch(e){} }
 }
 // ── WORKSHEETS_END ──
 function renderMomHQ(el,ah){
@@ -6110,7 +6141,7 @@ function renderMomHQ(el,ah){
   let h=(ah||'')+'<div class="rules-wrap">';
   h+='<div class="rules-hdr">🏡 Mom HQ</div>';
   h+='<div class="rules-sub">Every Mom tool, one map. Tap a row to jump — everything still lives where it always has.</div>';
-  h+=wsBannerHTML(); setTimeout(wsMaybePop,0);   // 📋 worksheets from Adrienne
+  h+=wsBannerHTML();   // 📋 worksheets from Adrienne (tap to open — nothing pops up)
   h+=_hqGroup("🏫","School",[
     // RETIREMENT Stage 2 (2026-08-11): the Subjects & Builder rows are hidden — the
     // Grid is the whole curriculum now (cards pop from column titles, 🧱 pacing
@@ -10277,6 +10308,7 @@ function renderMomsDay(el){
   // and it was ninth — below Now, Order day, Today, Star Bank, her schedule, the
   // weigh-in, Win of the day and Use soon. Her own day should not need scrolling to.
   try{ h+=momDayStripHTML(iso,today); }catch(e){}
+  try{ h+=wsTaskHTML(); }catch(e){}   // 📋 From Adrienne — tap to answer, ✓ once sent
   // The full chores card becomes the EDITOR (cadence + time of day); it only appears
   // while editing, because the strip above now carries the day-to-day list.
   if(mcManage){ try{ h+=momChoresCardHTML(iso,today); }catch(e){} }

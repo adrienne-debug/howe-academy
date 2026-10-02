@@ -1,5 +1,5 @@
 /*
- * 📋 Worksheets from Adrienne — popup, saving, submit, Mom-only, inert when empty.
+ * 📋 Worksheets from Adrienne — Mom's Day task, tap to open (never pops by itself), saving, submit → ✓, Mom-only answering, inert when empty.
  *   run:  node test_worksheets.js
  */
 const fs = require("fs"), path = require("path"), vm = require("vm");
@@ -13,7 +13,7 @@ const escLine = src.match(/function esc\(s\)\{[^\n]*\n/)[0];
 
 // ── tiny fake DOM + db ────────────────────────────────────────────────────
 function mkEnv(mom) {
-  const els = {}, writes = [], renders = [];
+  const els = {}, writes = [], renders = [], pinAsks = [];
   const body = { appendChild: el => { els[el.id] = el; } };
   const document = {
     body,
@@ -25,10 +25,10 @@ function mkEnv(mom) {
     createElement: () => { const el = { style: {}, dataset: {}, innerHTML: "", remove() { delete els[el.id]; delete els["ws-panel-in"]; } }; return el; },
   };
   const ref = p => ({ set: v => writes.push(["set", p, v]), update: v => writes.push(["update", p, v]) });
-  const ctx = { document, db: { ref }, _dryRun: () => false, momHere: () => mom.v, renderAll: () => renders.push(1), confirm: () => mom.confirm !== false, setTimeout: f => f(), console };
+  const ctx = { document, db: { ref }, _dryRun: () => false, kitPinGate: f => { pinAsks.push(f); },  momHere: () => mom.v, renderAll: () => renders.push(1), confirm: () => mom.confirm !== false, setTimeout: f => f(), console };
   vm.createContext(ctx);
   new vm.Script(escLine + block + "\nthis.wsDataGet=()=>wsData;").runInContext(ctx);
-  return { ctx, els, writes, renders };
+  return { ctx, els, writes, renders, pinAsks };
 }
 const WS = () => ({
   andrew_setup: { title: "Andrew setup", intro: "A few questions", createdAt: 1, status: "open",
@@ -39,30 +39,33 @@ const WS = () => ({
 // 1. inert when there is nothing
 { const mom = { v: true }, E = mkEnv(mom);
   E.ctx.wsOnValue(null);
-  ok("no worksheets → no card", E.ctx.wsBannerHTML() === "");
-  E.ctx.wsMaybePop(); ok("no worksheets → no popup", !E.els["ws-panel"]);
+  ok("no worksheets → no card", E.ctx.wsBannerHTML() === "" && E.ctx.wsTaskHTML() === "");
   ok("no worksheets → no repaint", E.renders.length === 0);
 }
 // 2. Mom-only
 { const mom = { v: false }, E = mkEnv(mom);
   E.ctx.wsOnValue(WS());
-  ok("kid view → no card", E.ctx.wsBannerHTML() === "");
-  E.ctx.wsMaybePop(); ok("kid view → no popup", !E.els["ws-panel"]);
-  E.ctx.wsOpen("andrew_setup"); ok("kid view → wsOpen refuses", !E.els["ws-panel"]);
+  ok("Mom's Day shows the task even before the PIN", E.ctx.wsTaskHTML().includes("Andrew setup"));
+  E.ctx.wsOpen("andrew_setup"); ok("outside Mom mode → wsOpen refuses", !E.els["ws-panel"]);
+  E.ctx.wsTap("andrew_setup"); ok("tap outside Mom mode → asks for the PIN, opens nothing", E.pinAsks.length === 1 && !E.els["ws-panel"]);
+  mom.v = true; E.pinAsks[0](); ok("right PIN → the worksheet opens", !!E.els["ws-panel"]);
 }
 // 3. card + popup once
 { const mom = { v: true }, E = mkEnv(mom);
   E.ctx.wsOnValue(WS());
   const card = E.ctx.wsBannerHTML();
-  ok("Mom sees a card for the OPEN worksheet only", card.includes("Andrew setup") && !card.includes(">Old<"));
+  ok("open worksheet = a tap-to-answer task", card.includes("Andrew setup") && card.includes("tap to answer"));
+  ok("long-ago sent worksheet is not listed", !card.includes(">Old<"));
+  ok("Mom's Day task card titled From Adrienne", E.ctx.wsTaskHTML().includes("From Adrienne"));
+  ok("nothing pops up by itself", !E.els["ws-panel"] && typeof E.ctx.wsMaybePop === "undefined");
   ok("card counts questions", card.includes("2 questions"));
   ok("open set changed → one repaint", E.renders.length === 1);
   E.ctx.wsOnValue(WS()); ok("same open set → no extra repaint", E.renders.length === 1);
-  E.ctx.wsMaybePop(); ok("first Mom HQ visit pops it", !!E.els["ws-panel"] && E.els["ws-panel"].dataset.ws === "andrew_setup");
+  E.ctx.wsTap("andrew_setup"); ok("Mom's tap opens it", !!E.els["ws-panel"] && E.els["ws-panel"].dataset.ws === "andrew_setup" && E.pinAsks.length === 0);
   const html = E.els["ws-panel-in"].innerHTML;
   ok("popup shows title, intro, questions, options", ["Andrew setup", "A few questions", "Co-op Thursdays?", "Piano?", ">Off<", ">20<"].every(s => html.includes(s)), html.slice(0, 200));
   ok("popup has notes boxes", (html.match(/<textarea/g) || []).length === 2);
-  E.ctx.wsClose(); E.ctx.wsMaybePop(); ok("popped once per session (closing doesn't re-pop)", !E.els["ws-panel"]);
+  E.ctx.wsClose(); ok("close shuts it", !E.els["ws-panel"]);
 }
 // 4. picks + notes save as single leaves
 { const mom = { v: true }, E = mkEnv(mom);
@@ -85,7 +88,10 @@ const WS = () => ({
   const u = E.writes.find(w => w[0] === "update");
   ok("submit = targeted update of status + submittedAt", u && u[1] === "worksheets/andrew_setup" && u[2].status === "submitted" && typeof u[2].submittedAt === "number" && Object.keys(u[2]).length === 2, u);
   ok("thank-you screen shown", E.els["ws-panel-in"].innerHTML.includes("Sent to Adrienne"));
-  ok("submitted worksheet leaves the card", E.ctx.wsBannerHTML() === "");
+  const after = E.ctx.wsTaskHTML();
+  ok("sent worksheet stays with a ✓", after.includes("✓") && after.includes("Sent to Adrienne") && after.includes("Andrew setup"));
+  ok("sent worksheet is no longer tap-to-answer", !after.includes("tap to answer") && !after.includes("wsTap("));
+  ok("✓ drops off after 14 days", E.ctx.wsTaskHTML(Date.now() + 15 * 864e5) === "");
 }
 // 6. hostile text is escaped
 { const mom = { v: true }, E = mkEnv(mom);
@@ -95,7 +101,8 @@ const WS = () => ({
 }
 // 7. wiring in the real file
 ok("listener wired beside config/rules", /db\.ref\("worksheets"\)\.on\("value",s=>\{ wsOnValue\(s\.val\(\)\); \}\);[^\n]*\n\s*db\.ref\("config\/rules"\)/.test(src));
-ok("card + popup wired into Mom HQ", /function renderMomHQ\(el,ah\)\{[\s\S]{0,400}h\+=wsBannerHTML\(\); setTimeout\(wsMaybePop,0\);/.test(src));
+ok("card wired into Mom HQ, no auto-pop", /function renderMomHQ\(el,ah\)\{[\s\S]{0,400}h\+=wsBannerHTML\(\);/.test(src) && !/wsMaybePop/.test(src));
+ok("task wired into Mom's Day under her own day", /h\+=momDayStripHTML\(iso,today\); \}catch\(e\)\{\}\n  try\{ h\+=wsTaskHTML\(\); \}catch\(e\)\{\}/.test(src));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
