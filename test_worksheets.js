@@ -99,6 +99,17 @@ const WS = () => ({
   E.ctx.wsOpen("x"); const h = E.els["ws-panel-in"].innerHTML;
   ok("title/question/option text escaped", !h.includes("<img") && !h.includes("<script>") && !h.includes("<b>q"));
 }
+// 6b. folded plan info + per-question hints (v3)
+{ const mom = { v: true }, E = mkEnv(mom);
+  const W = WS(); W.andrew_setup.info = ["Starts Monday: Lesson 35", "Finish: May 21"]; W.andrew_setup.infoTitle = "Andrew's plan at a glance";
+  W.andrew_setup.questions[1].hint = "Your times sheet said 30";
+  E.ctx.wsOnValue(W); E.ctx.wsOpen("andrew_setup"); const h = E.els["ws-panel-in"].innerHTML;
+  ok("plan info is a folded <details>, closed by default", /<details style=[^>]*>/.test(h) && !/<details[^>]*open/.test(h) && h.includes("Andrew&#39;s plan at a glance") || h.includes("Andrew's plan at a glance"));
+  ok("each info line listed", h.includes("Starts Monday: Lesson 35") && h.includes("Finish: May 21"));
+  ok("hint shown under its question only", h.includes("Your times sheet said 30") && (h.match(/#64748b;line-height:1.4;margin-bottom:8px/g) || []).length === 1);
+  const E2 = mkEnv(mom); E2.ctx.wsOnValue(WS()); E2.ctx.wsOpen("andrew_setup");
+  ok("no info / no hints → nothing extra drawn", !E2.els["ws-panel-in"].innerHTML.includes("<details"));
+}
 // 7. wiring in the real file
 ok("listener wired beside config/rules", /db\.ref\("worksheets"\)\.on\("value",s=>\{ wsOnValue\(s\.val\(\)\); \}\);[^\n]*\n\s*db\.ref\("config\/rules"\)/.test(src));
 ok("card wired into Mom HQ, no auto-pop", /function renderMomHQ\(el,ah\)\{[\s\S]{0,400}h\+=wsBannerHTML\(\);/.test(src) && !/wsMaybePop/.test(src));
