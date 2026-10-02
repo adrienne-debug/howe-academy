@@ -3701,6 +3701,7 @@ function initFb() {
       else if(!currData||!currData.subjects){ currData=Object.assign(currData||{},{subjects:{},lessons:{},weekDays:{}}); dbg("curriculum empty — blank skeleton so the Subjects tab can add the first subject"); renderAll(); }   // (the done-marks listener may already have made a {done:{}} stub — keep it)
       schedCascade(); // curriculum may be the LAST loader to answer — re-arm the debounced sweep
     });
+    db.ref("worksheets").on("value",s=>{ wsOnValue(s.val()); });   // 📋 worksheets from Adrienne
     db.ref("config/rules").on("value",s=>{
       rulesData=s.val()||null; rulesLoaded=true;
       runDisplacement();
@@ -6004,11 +6005,112 @@ function eicPanelOpen(kid){
   document.head.appendChild(s);
 }
 // EIC_END
+// ── WORKSHEETS_START ── 📋 worksheets from Adrienne (2026-10-02) ───────────────────────────
+// Adrienne (who sets families up) sends a family's Mom a short worksheet: questions with picks and a
+// notes box. Data lives in the family's own DB at worksheets/<id>:
+//   {title, intro, kid?, createdAt, status:"open"|"submitted", questions:[{q, options:[…]}],
+//    answers:{<i>:{pick, note}}, submittedAt}
+// Inert until a worksheet exists. Only Mom sees it (momHere()): a card on top of Mom HQ, and it pops up
+// by itself the first time Mom HQ opens in a session. Every pick / note saves at once as ONE leaf, so
+// closing loses nothing; Submit stamps status + submittedAt (Adrienne's dashboard and Claude watch that).
+let wsData={}; const wsPopped={}; let wsOpenKey="";
+function wsOpenList(){
+  return Object.entries(wsData||{})
+    .filter(([id,w])=>w&&w.status==="open"&&Array.isArray(w.questions)&&w.questions.length)
+    .sort((a,b)=>(a[1].createdAt||0)-(b[1].createdAt||0));
+}
+function wsAns(w,i){ return ((w&&w.answers)||{})[i]||{}; }
+function wsBannerHTML(){
+  if(typeof momHere==="function"&&!momHere()) return "";
+  const l=wsOpenList(); if(!l.length) return "";
+  return l.map(([id,w])=>{
+    const n=w.questions.length, done=w.questions.filter((q,i)=>wsAns(w,i).pick).length;
+    return '<div onclick="wsOpen(\''+esc(id)+'\')" style="cursor:pointer;display:flex;align-items:center;gap:10px;background:#eff6ff;border:2px solid #93c5fd;border-radius:14px;padding:12px 14px;margin:0 0 12px">'+
+      '<div style="font-size:24px">📋</div><div style="flex:1"><div style="font-weight:800;font-size:14px;color:#1e3a8a">'+esc(w.title||"Questions from Adrienne")+'</div>'+
+      '<div style="font-size:12px;color:#475569">Adrienne sent you '+n+' question'+(n===1?'':'s')+(done?' · '+done+' answered':'')+' — tap to answer</div></div>'+
+      '<div style="font-size:12px;font-weight:800;color:#1d4ed8">Open ›</div></div>';
+  }).join("");
+}
+// First Mom HQ visit of the session pops the oldest open worksheet once.
+function wsMaybePop(){
+  if(typeof momHere==="function"&&!momHere()) return;
+  if(document.getElementById("ws-panel")) return;
+  const next=wsOpenList().find(([id])=>!wsPopped[id]);
+  if(next){ wsPopped[next[0]]=true; wsOpen(next[0]); }
+}
+function wsOpen(id){
+  if(typeof momHere==="function"&&!momHere()) return;
+  let ov=document.getElementById("ws-panel"); if(ov) ov.remove();
+  ov=document.createElement("div"); ov.id="ws-panel"; ov.dataset.ws=id;
+  ov.style.cssText="position:fixed;inset:0;z-index:10050;background:rgba(15,23,42,.45);overflow:auto;font-family:'DM Sans',sans-serif;padding:18px 12px";
+  ov.innerHTML='<div id="ws-panel-in" style="max-width:640px;margin:0 auto;background:#fff;border-radius:16px;padding:16px 16px 20px;box-shadow:0 10px 40px rgba(0,0,0,.25)"></div>';
+  document.body.appendChild(ov); wsRender(id);
+}
+function wsClose(){ const ov=document.getElementById("ws-panel"); if(ov) ov.remove(); try{ renderAll(); }catch(e){} }
+function wsRender(id){
+  const el=document.getElementById("ws-panel-in"); if(!el) return;
+  const w=(wsData||{})[id]; if(!w){ wsClose(); return; }
+  const qs=w.questions||[], n=qs.length, done=qs.filter((q,i)=>wsAns(w,i).pick).length;
+  let h='<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:6px">'+
+    '<div style="flex:1;font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:#0f172a">📋 '+esc(w.title||"Questions from Adrienne")+'</div>'+
+    '<button onclick="wsClose()" title="Close — your answers are saved" style="padding:6px 11px;border-radius:9px;border:1.5px solid #cbd5e1;background:#fff;font-weight:700;cursor:pointer">✕</button></div>';
+  if(w.intro) h+='<div style="font-size:13px;color:#475569;line-height:1.5;margin-bottom:10px">'+esc(w.intro)+'</div>';
+  h+='<div style="font-size:11px;color:#64748b;margin-bottom:12px">'+done+' of '+n+' answered · every answer saves as you go</div>';
+  qs.forEach((q,i)=>{
+    const a=wsAns(w,i), opts=Array.isArray(q.options)?q.options:[];
+    h+='<div style="border:1px solid #e2e8f0;border-radius:12px;padding:11px 12px;margin-bottom:10px;background:'+(a.pick?'#f0fdf4':'#fff')+'">'+
+      '<div style="font-size:13.5px;font-weight:700;color:#0f172a;line-height:1.4;margin-bottom:8px">'+(i+1)+'. '+esc(q.q)+'</div>';
+    opts.forEach((o,k)=>{
+      const on=a.pick===o;
+      h+='<div onclick="wsPick(\''+esc(id)+'\','+i+','+k+')" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:7px 9px;margin-bottom:5px;border-radius:9px;border:1.5px solid '+(on?'#16a34a':'#e2e8f0')+';background:'+(on?'#dcfce7':'#f8fafc')+'">'+
+        '<span style="width:16px;height:16px;border-radius:50%;border:2px solid '+(on?'#16a34a':'#94a3b8')+';background:'+(on?'#16a34a':'#fff')+';flex:none"></span>'+
+        '<span style="font-size:13px;color:#0f172a">'+esc(o)+'</span></div>';
+    });
+    // onchange (not oninput): typing never re-renders, so the box keeps focus.
+    h+='<textarea id="ws-note-'+i+'" onchange="wsNote(\''+esc(id)+'\','+i+',this.value)" placeholder="Notes or instructions (optional)" style="width:100%;box-sizing:border-box;margin-top:4px;min-height:44px;padding:7px 9px;border:1.5px solid #e2e8f0;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'+esc(a.note||"")+'</textarea></div>';
+  });
+  h+='<div id="ws-msg" style="font-size:12px;color:#b91c1c;min-height:16px;margin:4px 0"></div>'+
+    '<button onclick="wsSubmit(\''+esc(id)+'\')" style="width:100%;padding:12px;border-radius:12px;border:none;background:#1d4ed8;color:#fff;font-size:15px;font-weight:800;cursor:pointer">Send to Adrienne</button>';
+  el.innerHTML=h;
+}
+function wsSave(id,i,field,val){
+  const w=(wsData||{})[id]; if(!w) return;
+  w.answers=w.answers||{}; w.answers[i]=Object.assign({},w.answers[i]||{},{[field]:val});
+  if(db&&!_dryRun()) db.ref("worksheets/"+id+"/answers/"+i+"/"+field).set(val);
+}
+function wsPick(id,i,k){
+  const w=(wsData||{})[id]; if(!w) return;
+  const o=((w.questions||[])[i]||{}).options||[]; if(o[k]==null) return;
+  // keep whatever is typed in the notes boxes before re-rendering
+  (w.questions||[]).forEach((q,j)=>{ const t=document.getElementById("ws-note-"+j); if(t&&t.value!==(wsAns(w,j).note||"")) wsSave(id,j,"note",t.value); });
+  wsSave(id,i,"pick",o[k]); wsRender(id);
+}
+function wsNote(id,i,val){ wsSave(id,i,"note",String(val||"")); }
+function wsSubmit(id){
+  const w=(wsData||{})[id]; if(!w) return;
+  (w.questions||[]).forEach((q,j)=>{ const t=document.getElementById("ws-note-"+j); if(t&&t.value!==(wsAns(w,j).note||"")) wsSave(id,j,"note",t.value); });
+  const left=(w.questions||[]).filter((q,i)=>!wsAns(w,i).pick).length;
+  if(left&&!confirm(left+" question"+(left===1?" is":"s are")+" still unanswered. Send to Adrienne anyway?")) return;
+  const ts=Date.now();
+  w.status="submitted"; w.submittedAt=ts;
+  if(db&&!_dryRun()) db.ref("worksheets/"+id).update({status:"submitted",submittedAt:ts});
+  const ov=document.getElementById("ws-panel");
+  if(ov){ const el=document.getElementById("ws-panel-in"); if(el) el.innerHTML='<div style="text-align:center;padding:28px 10px"><div style="font-size:40px">✅</div><div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:#0f172a;margin:8px 0 4px">Sent to Adrienne</div><div style="font-size:13px;color:#475569;margin-bottom:16px">Thank you! She\'ll take it from here.</div><button onclick="wsClose()" style="padding:10px 22px;border-radius:11px;border:none;background:#1d4ed8;color:#fff;font-weight:800;cursor:pointer">Done</button></div>'; }
+}
+// Listener: repaint Mom HQ only when the set of open worksheets changes (an answer echo never repaints,
+// so the popup's text boxes keep focus).
+function wsOnValue(v){
+  wsData=v||{};
+  const key=wsOpenList().map(([id])=>id).join(",");
+  if(key!==wsOpenKey){ wsOpenKey=key; try{ if(typeof momHere==="function"&&momHere()) renderAll(); }catch(e){} }
+}
+// ── WORKSHEETS_END ──
 function renderMomHQ(el,ah){
   if(!el){el=document.getElementById("content");if(!el)return;}
   let h=(ah||'')+'<div class="rules-wrap">';
   h+='<div class="rules-hdr">🏡 Mom HQ</div>';
   h+='<div class="rules-sub">Every Mom tool, one map. Tap a row to jump — everything still lives where it always has.</div>';
+  h+=wsBannerHTML(); setTimeout(wsMaybePop,0);   // 📋 worksheets from Adrienne
   h+=_hqGroup("🏫","School",[
     // RETIREMENT Stage 2 (2026-08-11): the Subjects & Builder rows are hidden — the
     // Grid is the whole curriculum now (cards pop from column titles, 🧱 pacing
