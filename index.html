@@ -10522,6 +10522,7 @@ function _kitEditMealGo(id){
   const m=(id&&kitMeals[id])||{};
   kitEditPrep=(m.prep||[]).map(s=>({when:s.when,label:s.label}));
   kitEditDraft={name:m.name||"",emoji:m.emoji||"",ing:m.ing||"",steps:m.steps||"",photo:m.photo||"",url:m.url||"",yield:m.yield||"",tags:Array.isArray(m.tags)?m.tags.slice():[]};
+  kitCap={mode:null,busy:false,msg:"",photos:[]};   // a fresh photo tray for each recipe
   mpGoto('meals');
 }
 // Keep typed-but-unsaved fields across the re-renders the prep builder causes.
@@ -11445,7 +11446,7 @@ function kitPhotoPick(input){
 }
 // ── ✨ capture doors (phase 2, 2026-10-02): paste text or photos → Claude drafts the fields → Mom reviews → Save.
 //    Nothing is saved by the capture itself. Key = the family key (config/anthropic_key) or a device key.
-let kitCap={mode:null,busy:false,msg:""};
+let kitCap={mode:null,busy:false,msg:"",photos:[]};
 function kitCapKey(){ return (typeof mastAIKey!=="undefined"&&mastAIKey)||(typeof haGetKey==="function"?haGetKey():"")||""; }
 function kitCapToggle(mode){ _kitStash(); kitCap.mode=(kitCap.mode===mode)?null:mode; kitCap.msg=""; const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
 function kitCaptureHTML(){
@@ -11453,7 +11454,7 @@ function kitCaptureHTML(){
   let h='<div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:10px;padding:9px 11px;margin-bottom:10px">';
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="font-size:12px;font-weight:800;color:#15803d">✨ Fill it in from</span>';
   h+='<button onclick="kitCapToggle(\'paste\')" style="padding:5px 11px;border-radius:999px;border:1.5px solid #86efac;background:'+(kitCap.mode==='paste'?'#16a34a;color:#fff':'#fff;color:#15803d')+';font-size:12px;font-weight:700;cursor:pointer">📋 Pasted text</button>';
-  h+='<label style="padding:5px 11px;border-radius:999px;border:1.5px solid #86efac;background:#fff;color:#15803d;font-size:12px;font-weight:700;cursor:pointer"><input type="file" accept="image/*" multiple onchange="kitCapPhotos(this)" style="display:none">📸 Photos of a recipe</label>';
+  h+='<label style="padding:5px 11px;border-radius:999px;border:1.5px solid #86efac;background:#fff;color:#15803d;font-size:12px;font-weight:700;cursor:pointer"><input type="file" accept="image/*" multiple onchange="kitCapAddPhotos(this)" style="display:none">📸 Photos of a recipe</label>';
   h+='<button onclick="kitCapToggle(\'link\')" style="padding:5px 11px;border-radius:999px;border:1.5px solid #86efac;background:'+(kitCap.mode==='link'?'#16a34a;color:#fff':'#fff;color:#15803d')+';font-size:12px;font-weight:700;cursor:pointer">🔗 A link</button>';
   h+='</div>';
   if(!key) h+='<div style="font-size:11px;color:#92400e;margin-top:6px">Needs a Claude key — Admin ▸ Settings ▸ ✨ AI key. Typing a recipe in by hand always works.</div>';
@@ -11462,18 +11463,18 @@ function kitCaptureHTML(){
   if(kitCap.mode==='link') h+='<input id="kit-cap-url" type="url" placeholder="https://… the recipe page" style="width:100%;box-sizing:border-box;margin-top:8px;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12.5px;font-family:\'DM Sans\',sans-serif">'
     +'<button onclick="kitCapRunLink()" '+(kitCap.busy?'disabled':'')+' style="margin-top:6px;padding:8px 14px;border-radius:9px;border:none;background:#16a34a;color:#fff;font-size:12px;font-weight:800;cursor:pointer">'+(kitCap.busy?'⏳ Reading the page…':'Read the recipe')+'</button>'
     +'<div style="font-size:10.5px;color:var(--muted);margin-top:4px">Some sites block readers. If one does, copy the recipe off the page and use 📋 Pasted text.</div>';
-  if(kitCap.busy&&kitCap.mode==='photos') h+='<div style="font-size:12px;color:#15803d;margin-top:6px">⏳ Reading the photos…</div>';
+  if(kitCap.mode==='photos'&&kitCap.photos.length) h+=kitCapTrayHTML();
   if(kitCap.msg) h+='<div style="font-size:11.5px;color:'+(/^✓/.test(kitCap.msg)?'#15803d':'#b45309')+';margin-top:6px">'+esc(kitCap.msg)+'</div>';
   return h+'</div>';
 }
 const KIT_CAP_PROMPT='Turn this into one recipe record. Use ONLY what is in the material — never invent ingredients, amounts or steps; leave a field empty if it is not there. '
   +'Return ONLY strict JSON, no commentary: {"name":"","ingredients":["one per line, with amounts as written"],"steps":["one step per line, in order"],"yield":"what it makes, e.g. 6 servings or 1 gallon","tags":["any of: gf, df, kid, batch, juice"],"prep":[{"when":"nb","label":"a night-before step such as thaw or soak"}]}. '
   +'Tags: gf only if clearly gluten-free, df only if clearly dairy-free, batch for make-ahead or freezer recipes, juice for juices and smoothies. prep may be empty.';
-async function kitCapAsk(content,tools){
+async function kitCapAsk(content,tools,opt){
   const key=kitCapKey(); if(!key) throw new Error("No Claude key — Admin ▸ Settings ▸ ✨ AI key.");
   const msgs=[{role:"user",content:content}]; let data=null;
   for(let turn=0;turn<3;turn++){   // a server tool (web fetch) can pause a long turn — continue it, at most twice
-    const body={model:"claude-sonnet-5",max_tokens:3000,messages:msgs}; if(tools) body.tools=tools;
+    const body={model:"claude-sonnet-5",max_tokens:(opt&&opt.maxTokens)||3000,messages:msgs}; if(tools) body.tools=tools;
     const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
       headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
       body:JSON.stringify(body)});
@@ -11486,7 +11487,7 @@ async function kitCapAsk(content,tools){
   }
   if(data&&data.stop_reason==="refusal") throw new Error("Claude declined that one — try 📋 Pasted text.");
   const txt=((data&&data.content)||[]).filter(x=>x&&x.type==="text").map(x=>x.text||"").join("");
-  return kitCapParse(txt);
+  return (opt&&opt.raw)?txt:kitCapParse(txt);
 }
 async function kitCapRunLink(){
   const u=((document.getElementById('kit-cap-url')||{}).value||"").trim();
@@ -11527,23 +11528,55 @@ async function kitCapRunText(){
 function kitCapShrink(file,max,q){ return new Promise((res,rej)=>{ const img=new Image(); const url=URL.createObjectURL(file);
   img.onload=()=>{ try{ const r=Math.min(1,max/Math.max(img.width,img.height)); const c=document.createElement('canvas'); c.width=Math.round(img.width*r); c.height=Math.round(img.height*r); c.getContext('2d').drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg',q)); }catch(e){ rej(e); } };
   img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error("Couldn't read a photo.")); }; img.src=url; }); }
-async function kitCapPhotos(input){
-  const files=[...((input&&input.files)||[])].slice(0,6); if(!files.length) return;
-  _kitStash(); kitCap.mode='photos'; kitCap.busy=true; kitCap.msg=""; const el0=document.getElementById('content'); if(el0) renderMomsPlan(el0);
+// RECIPE_PHOTO_TRAY_START — front + back of one card (the DeWalt family's report 10/2: snapping the back wiped out
+//   what the front had filled in). Photos now collect in a tray — Front, Back, Page 3… up to 6 — and one
+//   "Read these photos" sends them all together as ONE recipe. Still fills the draft only; nothing saves itself.
+const KIT_CAP_MAX=6;
+function kitPhotoLabel(i){ return i===0?"Front":i===1?"Back":"Page "+(i+1); }
+async function kitCapReadFile(f){   // the big copy goes to Claude; the small one is the tray picture (and the recipe picture)
+  const big=(await kitCapShrink(f,1400,0.8)).split(",")[1];
+  let q=0.72, th=await kitCapShrink(f,480,q); while(th.length>80000&&q>0.4){ q-=0.1; th=await kitCapShrink(f,480,q); }
+  return {big:big,thumb:th};
+}
+function kitCapImages(photos,label){ const c=[]; photos.forEach((p,i)=>{ c.push({type:"text",text:"Photo "+(i+1)+(label?" ("+label(i).toLowerCase()+")":"")+":"}); c.push({type:"image",source:{type:"base64",media_type:"image/jpeg",data:p.big}}); }); return c; }
+async function kitCapAddPhotos(input){
+  const files=[...((input&&input.files)||[])]; if(input) input.value=""; if(!files.length) return;
+  _kitStash(); kitCap.mode='photos'; kitCap.msg="";
+  const room=Math.max(0,KIT_CAP_MAX-kitCap.photos.length);
+  try{ for(const f of files.slice(0,room)) kitCap.photos.push(await kitCapReadFile(f)); }catch(e){ kitCap.msg=String(e&&e.message||e); }
+  if(files.length>room) kitCap.msg="Up to "+KIT_CAP_MAX+" photos for one recipe — the extra ones were left out.";
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function kitCapDropPhoto(i){ _kitStash(); kitCap.photos.splice(i,1); kitCap.msg=""; if(!kitCap.photos.length) kitCap.mode=null; const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
+function kitCapTrayHTML(){
+  const n=kitCap.photos.length, busy=kitCap.busy;
+  let h='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">';
+  kitCap.photos.forEach((p,i)=>{ h+='<div style="position:relative;text-align:center"><img src="'+p.thumb+'" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1.5px solid #86efac;display:block"><div style="font-size:10.5px;font-weight:700;color:#15803d;margin-top:2px">'+kitPhotoLabel(i)+'</div>'
+    +(busy?'':'<button onclick="kitCapDropPhoto('+i+')" title="Remove this photo" style="position:absolute;top:-7px;right:-7px;width:20px;height:20px;border-radius:50%;border:none;background:#475569;color:#fff;font-size:11px;line-height:20px;padding:0;cursor:pointer">✕</button>')+'</div>'; });
+  h+='</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">';
+  if(!busy&&n<KIT_CAP_MAX) h+='<label style="padding:7px 12px;border-radius:9px;border:1.5px solid #86efac;background:#fff;color:#15803d;font-size:12px;font-weight:700;cursor:pointer"><input type="file" accept="image/*" multiple onchange="kitCapAddPhotos(this)" style="display:none">＋ Add the '+(n===1?'back':'next page')+'</label>';
+  h+='<button onclick="kitCapPhotos()" '+(busy?'disabled':'')+' style="padding:8px 14px;border-radius:9px;border:none;background:#16a34a;color:#fff;font-size:12px;font-weight:800;cursor:pointer">'+(busy?'⏳ Reading the photos…':'✨ Read '+(n===1?'this photo':'these '+n+' photos'))+'</button></div>';
+  if(!busy) h+='<div style="font-size:10.5px;color:var(--muted);margin-top:5px">'+(n===1?'Card has a back? Add it before you tap Read. ':'')+'Several different recipes? Use 📥 Import ▸ Photos of recipe cards in the Meal library.</div>';
+  return h;
+}
+async function kitCapPhotos(){   // reads the whole tray as one recipe
+  const ph=kitCap.photos.slice(); if(!ph.length) return;
+  _kitStash(); kitCap.busy=true; kitCap.msg=""; const el0=document.getElementById('content'); if(el0) renderMomsPlan(el0);
   try{
-    const big=[]; for(const f of files) big.push((await kitCapShrink(f,1400,0.8)).split(",")[1]);
-    const content=big.map(d=>({type:"image",source:{type:"base64",media_type:"image/jpeg",data:d}})); content.push({type:"text",text:KIT_CAP_PROMPT+" The material is the photo(s) above — a recipe card, cookbook page or screenshot."});
+    const content=kitCapImages(ph,kitPhotoLabel);
+    content.push({type:"text",text:KIT_CAP_PROMPT+" The material is the photo(s) above — the front, back or pages of ONE recipe card, cookbook page or screenshot. Put them together into one recipe."});
     const r=await kitCapAsk(content); kitCapApply(r);
-    if(!(kitEditDraft.photo)) { let th=await kitCapShrink(files[0],480,0.72); let q=0.72; while(th.length>80000&&q>0.4){ q-=0.1; th=await kitCapShrink(files[0],480,q); } kitEditDraft.photo=th; }   // the first photo becomes the picture
-    kitCap.mode=null;
+    if(!(kitEditDraft.photo)) kitEditDraft.photo=ph[0].thumb;   // the front becomes the picture
+    kitCap.photos=[]; kitCap.mode=null;
   }catch(e){ kitCap.msg=String(e&&e.message||e); }
   kitCap.busy=false; const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
+// RECIPE_PHOTO_TRAY_END
 // ── 📥 Import recipes (phase 3, 2026-10-02): a Paprika export or a spreadsheet → a preview Mom ticks → Save writes only
 //    the ticked ones, one recipe path each. Pictures are shrunk to small thumbnails. Read entirely in the browser.
-let kitImp={open:false,busy:false,msg:"",items:[],src:""};
+let kitImp={open:false,busy:false,msg:"",items:[],src:"",photos:[]};
 function kitImpRender(){ const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
-function kitImpToggle(){ if(!kitImp.open&&!(typeof momHere==="function"&&momHere())){ kitPinGate(kitImpToggle); return; } kitImp.open=!kitImp.open; if(!kitImp.open){ kitImp.items=[]; kitImp.msg=""; kitImp.src=""; } kitImpRender(); }
+function kitImpToggle(){ if(!kitImp.open&&!(typeof momHere==="function"&&momHere())){ kitPinGate(kitImpToggle); return; } kitImp.open=!kitImp.open; if(!kitImp.open){ kitImp.items=[]; kitImp.msg=""; kitImp.src=""; kitImp.photos=[]; } kitImpRender(); }
 function kitImpTick(i){ const it=kitImp.items[i]; if(it){ it.on=!it.on; kitImpRender(); } }
 function kitImpAll(on){ kitImp.items.forEach(it=>{ it.on=on; }); kitImpRender(); }
 async function kitInflate(bytes,fmt){ const st=new Blob([bytes]).stream().pipeThrough(new DecompressionStream(fmt)); return new Uint8Array(await new Response(st).arrayBuffer()); }
@@ -11620,20 +11653,78 @@ function kitImpSave(){
   const base=Date.now();
   pick.forEach((r,i)=>{
     const id="m"+(base+i).toString(36)+"_i"+i;
-    const m={name:r.name,ing:r.ing||"",steps:r.steps||"",prep:[],ts:base+i};
+    const m={name:r.name,ing:r.ing||"",steps:r.steps||"",prep:Array.isArray(r.prep)?r.prep.slice():[],ts:base+i};
     if(r.url) m.url=r.url; if(r.yield) m.yield=r.yield; if(r.tags&&r.tags.length) m.tags=r.tags.slice(); if(r.photo) m.photo=r.photo;
     kitMeals[id]=m;
     if(typeof db!=='undefined'&&db) db.ref('kitchen/meals/'+id).set(m);   // one path per recipe — never the whole box
   });
   kitMealsLSSave();
   if(typeof mwToast==='function') mwToast('📥 '+pick.length+' recipe'+(pick.length!==1?'s':'')+' added');
-  kitImp={open:false,busy:false,msg:"",items:[],src:""}; kitImpRender();
+  kitImp={open:false,busy:false,msg:"",items:[],src:"",photos:[]}; kitImpRender();
 }
+// RECIPE_PHOTO_BATCH_START — several recipes from a stack of photos (her ask 10/2: "allow several pics and several
+//   recipes"). Snap as many cards as you like, fronts and backs; Claude groups each card's photos into one recipe →
+//   the same tick-list preview as a Paprika import → Save writes only the ticked ones, one recipe path each.
+const KIT_IMP_PHOTO_MAX=20;
+const KIT_CAP_MULTI_PROMPT='These photos hold one or more recipes. Photos of the SAME recipe — the front and back of a card, or pages that continue — go together into ONE record; each different recipe is its own record. '
+  +'Use ONLY what is in the photos — never invent ingredients, amounts or steps; leave a field empty if it is not there. '
+  +'Return ONLY strict JSON, no commentary: {"recipes":[{"photos":[1,2],"name":"","ingredients":["one per line, with amounts as written"],"steps":["one step per line, in order"],"yield":"what it makes","tags":["any of: gf, df, kid, batch, juice"],"prep":[{"when":"nb","label":"a night-before step such as thaw or soak"}]}]}. '
+  +'photos = the photo numbers that recipe came from. Tags: gf only if clearly gluten-free, df only if clearly dairy-free, batch for make-ahead or freezer recipes, juice for juices and smoothies. prep may be empty.';
+function kitImpParsePhotos(txt,n){
+  const s=String(txt||""), a=s.indexOf("{"), z=s.lastIndexOf("}");
+  if(a<0||z<=a) throw new Error("Couldn't read any recipes out of those photos.");
+  const j=JSON.parse(s.slice(a,z+1)); const list=Array.isArray(j.recipes)?j.recipes:(Array.isArray(j)?j:[]);
+  const out=[];
+  list.forEach(x=>{ if(!x||typeof x!=="object") return; let r; try{ r=kitCapParse(JSON.stringify(x)); }catch(e){ return; }
+    const ph=(Array.isArray(x.photos)?x.photos:[]).map(v=>parseInt(v,10)).filter(v=>v>=1&&v<=n);
+    if(!r.name&&!r.ingredients.length&&!r.steps.length) return;
+    out.push({name:r.name||("Recipe from photo "+(ph[0]||out.length+1)),ing:r.ingredients.join("\n"),steps:r.steps.join("\n"),yield:r.yield,tags:r.tags,prep:r.prep,url:"",photoIdx:ph.length?ph[0]-1:-1}); });
+  if(!out.length) throw new Error("Couldn't read any recipes out of those photos.");
+  return out;
+}
+async function kitImpAddPhotos(input){
+  const files=[...((input&&input.files)||[])]; if(input) input.value=""; if(!files.length) return;
+  kitImp.msg=""; const room=Math.max(0,KIT_IMP_PHOTO_MAX-kitImp.photos.length);
+  try{ for(const f of files.slice(0,room)) kitImp.photos.push(await kitCapReadFile(f)); }catch(e){ kitImp.msg=String(e&&e.message||e); }
+  if(files.length>room) kitImp.msg="Up to "+KIT_IMP_PHOTO_MAX+" photos at a time — the extra ones were left out. Read these, then snap the rest.";
+  kitImpRender();
+}
+function kitImpDropPhoto(i){ kitImp.photos.splice(i,1); kitImp.msg=""; kitImpRender(); }
+async function kitImpReadPhotos(){
+  const ph=kitImp.photos.slice(); if(!ph.length) return;
+  kitImp.busy=true; kitImp.msg=""; kitImp.items=[]; kitImp.src=ph.length+" photo"+(ph.length!==1?"s":""); kitImpRender();
+  try{
+    const content=kitCapImages(ph); content.push({type:"text",text:KIT_CAP_MULTI_PROMPT});
+    const recs=kitImpParsePhotos(await kitCapAsk(content,null,{maxTokens:12000,raw:true}),ph.length);
+    const have=new Set(Object.values(kitMeals||{}).map(m=>String((m||{}).name||"").trim().toLowerCase()));
+    recs.forEach(r=>{ r.photo=r.photoIdx>=0&&ph[r.photoIdx]?ph[r.photoIdx].thumb:""; delete r.photoIdx; r.dupe=have.has(r.name.toLowerCase()); r.on=!r.dupe; });
+    kitImp.items=recs; kitImp.photos=[];
+    kitImp.msg=recs.length+" recipe"+(recs.length!==1?"s":"")+" read from "+ph.length+" photo"+(ph.length!==1?"s":"")+(recs.some(r=>r.dupe)?" — the ones already in your library are unticked":"")+". Check them, then tap Save — you can fix any detail afterward with ✏️ Edit.";
+  }catch(e){ kitImp.msg=String(e&&e.message||e); }
+  kitImp.busy=false; kitImpRender();
+}
+function kitImpPhotosHTML(){
+  const n=kitImp.photos.length, busy=kitImp.busy;
+  let h='<div style="border-top:1px dashed #ddd6fe;margin-top:10px;padding-top:9px">';
+  h+='<div style="font-size:12.5px;font-weight:800;color:#5b21b6">📸 Photos of recipe cards</div>';
+  h+='<div style="font-size:11.5px;color:var(--muted);line-height:1.5;margin:2px 0 7px">Snap as many cards as you like — fronts and backs (up to '+KIT_IMP_PHOTO_MAX+' photos at a time). Claude keeps each card\'s front and back together and makes one recipe per card.</div>';
+  if(!kitCapKey()) h+='<div style="font-size:11px;color:#92400e;margin-bottom:6px">Needs a Claude key — Admin ▸ Settings ▸ ✨ AI key.</div>';
+  if(n){ h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">';
+    kitImp.photos.forEach((p,i)=>{ h+='<div style="position:relative;text-align:center"><img src="'+p.thumb+'" alt="" style="width:56px;height:56px;object-fit:cover;border-radius:8px;border:1.5px solid #ddd6fe;display:block"><div style="font-size:10px;font-weight:700;color:#5b21b6">'+(i+1)+'</div>'
+      +(busy?'':'<button onclick="kitImpDropPhoto('+i+')" title="Remove this photo" style="position:absolute;top:-7px;right:-7px;width:20px;height:20px;border-radius:50%;border:none;background:#475569;color:#fff;font-size:11px;line-height:20px;padding:0;cursor:pointer">✕</button>')+'</div>'; });
+    h+='</div>'; }
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+  if(!busy&&n<KIT_IMP_PHOTO_MAX) h+='<label style="padding:7px 13px;border-radius:9px;border:1.5px solid #6B4C93;background:#fff;color:#6B4C93;font-size:12px;font-weight:800;cursor:pointer"><input type="file" accept="image/*" multiple onchange="kitImpAddPhotos(this)" style="display:none">＋ '+(n?'Add more photos':'Add photos')+'</label>';
+  if(n) h+='<button onclick="kitImpReadPhotos()" '+(busy?'disabled':'')+' style="padding:7px 13px;border-radius:9px;border:none;background:#6B4C93;color:#fff;font-size:12px;font-weight:800;cursor:pointer">'+(busy?'⏳ Reading '+n+' photo'+(n!==1?'s':'')+'…':'✨ Read '+n+' photo'+(n!==1?'s':''))+'</button>';
+  return h+'</div></div>';
+}
+// RECIPE_PHOTO_BATCH_END
 function kitImportHTML(){
   let h='<div style="background:#f5f3ff;border:1.5px solid #ddd6fe;border-radius:10px;padding:10px 12px;margin-bottom:10px">';
   h+='<div style="font-size:13px;font-weight:800;color:#5b21b6;margin-bottom:4px">📥 Import recipes</div>';
   h+='<div style="font-size:11.5px;color:var(--muted);line-height:1.5;margin-bottom:8px"><b>From Paprika:</b> on a computer, File ▸ Export ▸ All recipes (a .paprikarecipes file). On iPhone, select recipes ▸ Share ▸ Paprika Recipe Format. <b>From a spreadsheet:</b> a .csv with a header row — name, ingredients, steps, yield, url, tags.</div>';
-  h+='<label style="display:inline-block;padding:7px 13px;border-radius:9px;background:#6B4C93;color:#fff;font-size:12px;font-weight:800;cursor:pointer"><input type="file" accept=".paprikarecipes,.paprikarecipe,.csv" onchange="kitImpPick(this)" style="display:none">'+(kitImp.busy?'⏳ Reading '+esc(kitImp.src)+'…':'Choose a file')+'</label>';
+  h+='<label style="display:inline-block;padding:7px 13px;border-radius:9px;background:#6B4C93;color:#fff;font-size:12px;font-weight:800;cursor:pointer"><input type="file" accept=".paprikarecipes,.paprikarecipe,.csv" onchange="kitImpPick(this)" style="display:none">'+(kitImp.busy&&!/photo/.test(kitImp.src)?'⏳ Reading '+esc(kitImp.src)+'…':'Choose a file')+'</label>';
+  h+=kitImpPhotosHTML();
   if(kitImp.msg) h+='<div style="font-size:11.5px;color:#5b21b6;margin-top:8px">'+esc(kitImp.msg)+'</div>';
   if(kitImp.items.length){
     const n=kitImp.items.filter(it=>it.on).length;
