@@ -8,7 +8,7 @@ function ok(msg, cond){ if(cond){ pass++; } else { fail++; console.log("FAIL:", 
 
 let day = "monday", ISO = {};
 function routineDateISO(dn){ return ISO[dn]; }
-eval(slice("stepCycleOk") + slice("stepWindowOk") + slice("stepWindowLabel") + slice("_stepDateLabel").replace("routineDateISO(_todayDay)", "null"));
+eval(slice("stepCycleOk") + slice("stepWindowOk") + slice("stepWindowLabel").replace("routineDateISO(_todayDay)", "null"));
 
 const st = { label: "Kitchen", cad: "wk:0", cycW: 2, cycN: 4, cycStart: "2026-10-05" };
 ok("week 1 Monday is off for a wk-2 step", stepCycleOk(st, "2026-10-05") === false);
@@ -23,7 +23,7 @@ ISO.monday = "2026-10-12"; ok("stepWindowOk on in its week", stepWindowOk(st, "m
 ISO.monday = "2026-10-26"; ok("stepWindowOk off out of its week", stepWindowOk(st, "monday") === false);
 ISO.monday = undefined; ok("unknown date never hides a step", stepWindowOk(st, "monday") === true);
 ok("label", stepWindowLabel(st) === "wk 2 of 4" && stepWindowLabel({ label: "x" }) === "");
-ok("due/late respects the window", /function rtDueOrLate\(slot,kid,d,i,st\)\{ if\(!stepWindowOk\(st,d\)\) return false;/.test(s));
+ok("due/late respects the window", /function rtDueOrLate\(slot,kid,d,i,st\)\{ if\(typeof stepWindowOk==="function"&&!stepWindowOk\(st,d\)\) return false;/.test(s));
 ok("family calendar respects the cycle", /stepCycleOk\(st,iso\)\) return;/.test(slice("_calChoresFor")));
 ok("seeding keeps the cycle fields", /o\.cycW=s\.cycW/.test(slice("rtCfgEnsure")));
 

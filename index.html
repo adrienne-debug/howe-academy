@@ -1719,15 +1719,12 @@ function stepWindowOk(st,dn){
   if(!iso) return true;
   if(st.from&&iso<st.from) return false;
   if(st.to&&iso>st.to) return false;
-  if(!stepCycleOk(st,iso)) return false;
+  if(typeof stepCycleOk==="function"&&!stepCycleOk(st,iso)) return false;
   return true;
 }
 // Short human label for the window, for the kid's chip and Mom's editor.
 function stepWindowLabel(st){
-  const cy=(st&&st.cycW)?("wk "+st.cycW+" of "+(st.cycN||4)):"", dl=_stepDateLabel(st);
-  return (cy&&dl)?(cy+" \u00b7 "+dl):(cy||dl);
-}
-function _stepDateLabel(st){
+  const cy=(st&&st.cycW)?("wk "+st.cycW+" of "+(st.cycN||4)):"", dl=(function(){
   if(!st||(!st.from&&!st.to)) return "";
   const md=s=>{ const p=String(s).split("-"); return p.length===3?((+p[1])+"/"+(+p[2])):s; };
   const today=routineDateISO(_todayDay);
@@ -1735,6 +1732,8 @@ function _stepDateLabel(st){
   if(today&&st.from&&today<st.from) return "starts "+md(st.from);
   if(st.from&&st.to) return "thru "+md(st.to);
   return st.to?("thru "+md(st.to)):("from "+md(st.from));
+  })();
+  return (cy&&dl)?(cy+" \u00b7 "+dl):(cy||dl);
 }
 // Morning steps that actually apply on day d, BY INDEX. Index matters: check-offs are keyed
 // _mstep<i>, so the array must never be filtered — only masked at render/tally time.
@@ -1773,7 +1772,7 @@ function mStepDoneOn(kid,d,i){ const s=slState[activeWk()+"_"+d+"_"+kid+"_mstep"
 function morningComplete(kid,d){
   const steps=morningStepsFor(kid);
   if(!steps.length){ const s=slState[activeWk()+"_"+d+"_"+kid+"_morning"]; return !!(s&&s.done); }
-  const idx=morningDueIdx(kid,d);
+  const _bg=(typeof mealCfg!=="function")||mealCfg().breakfastGate, idx=morningDueIdx(kid,d).filter(i=>_bg||!mealOf("morning",steps[i]));
   if(!idx.length) return true;   // nothing applies today — don't hold the gate shut
   return idx.every(i=>mStepDoneOn(kid,d,i));
 }
@@ -1828,13 +1827,15 @@ function mrIndividualHTML(kid){
   let h='<div class="sl-check-row'+(allDone?" done":"")+'" onclick="toggleMrOpen(\''+kid+'\')" style="cursor:pointer">'+
     '<div class="sl-checkbox'+(allDone?" done":"")+'">'+(allDone?"✓":"")+'</div>'+
     '<div style="flex:1"><div class="sl-slot-name">Morning <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+_dueIdx.length+'</span></div>'+
-    '<div class="sl-slot-sub">'+(allDone?(gateClockHeld(day)?'✓ Done — school starts at '+fromMin(gateStartMin(day)):'✓ Schedule unlocked'):'Finish all to unlock your schedule')+'</div></div>'+
+    '<div class="sl-slot-sub">'+((allDone||morningComplete(kid,day))?(gateClockHeld(day)?'✓ Done — school starts at '+fromMin(gateStartMin(day)):'✓ Schedule unlocked'):'Finish all to unlock your schedule')+'</div></div>'+
     '<div style="font-size:14px;color:var(--muted)">'+(isOpen?"▾":"▸")+'</div></div>';
   if(isOpen){
     const _ed=routineEditable();
     if(!_ed) h+=routineLockNote();
     h+='<div class="mr-steps"'+(_ed?'':' style="opacity:.6"')+'>';
-    _dueIdx.forEach(i=>{ const st=steps[i], sd=mStepDoneOn(kid,day,i);
+    let _mHd=false;
+    _dueIdx.filter(i=>!mealOf("morning",steps[i])).concat(_dueIdx.filter(i=>mealOf("morning",steps[i]))).forEach(i=>{ const st=steps[i], sd=mStepDoneOn(kid,day,i);
+      if(!_mHd&&mealOf("morning",st)){ _mHd=true; h+=mealHeadHTML("breakfast",day); }
       const _wl=stepWindowLabel(st);
       h+='<div class="mr-step'+(sd?" done":"")+'"'+(_ed?' onclick="toggleMorningStep(\''+kid+'\','+i+')"':'')+'>'+
          '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
@@ -1993,7 +1994,7 @@ function rtDoneOn(slot,kid,d,i){ const s=slState[activeWk()+"_"+d+"_"+kid+"_"+RT
 // A step counts toward "complete" if it's due today OR carried over late (a missed chore keeps showing on the
 // list, so it must keep the list open too — 2026-08-18: Julian's grid dot said ✓ while his list said 0/1).
 // rtLateDays is bound to the viewed day, so the late clause only applies when d is that day.
-function rtDueOrLate(slot,kid,d,i,st){ if(!stepWindowOk(st,d)) return false; return cadDueOn((st&&st.cad)||"daily",d)||(d===day&&rtLateDays(slot,kid,i)>0); }
+function rtDueOrLate(slot,kid,d,i,st){ if(typeof stepWindowOk==="function"&&!stepWindowOk(st,d)) return false; return cadDueOn((st&&st.cad)||"daily",d)||(d===day&&rtLateDays(slot,kid,i)>0); }
 function rtComplete(slot,kid,d){ const steps=rtStepsFor(slot,kid); if(!steps.length){ const s=slState[activeWk()+"_"+d+"_"+kid+"_"+slot]; return !!(s&&s.done); } return steps.every((st,i)=>!rtDueOrLate(slot,kid,d,i,st)||rtDoneOn(slot,kid,d,i)); }
 function rtEveningHour(){ const h=parseInt(routineTimes&&routineTimes.eveningHour,10); return isNaN(h)?18:h; }
 function rtFmtHour(h){ const ap=h>=12?"PM":"AM"; let hh=h%12; if(hh===0)hh=12; return hh+":00 "+ap; }
@@ -2034,6 +2035,51 @@ function rtSetAlwaysOpenDay(d){
   renderAll();
 }
 function rtAvailable(slot,kid,d){ if(slot==="afternoon") return rtAlwaysOpen(d)||rtSchoolworkDone(kid,d)||(d!==_todayDay)||(new Date().getHours()>=rtAfternoonHour()); if(slot==="evening") return (d!==_todayDay)||(new Date().getHours()>=rtEveningHour()); return true; }
+// MEALS_START — after-meal jobs (her ask 2026-10-02, DeWalt table-jobs chart: set/clear/wipe table, sweep,
+// dishwasher after every meal). A step tagged st.meal sits in its meal's list under its own heading:
+// breakfast → Morning, lunch → Afternoon, supper → Evening. Lunch and Supper open at their OWN hour
+// (default 12 PM / 5 PM) whatever the rest of the list is waiting on; everything else keeps its normal rule.
+// Names + hours are per family in config/routineTimes/meals (Mom renames "Supper" → "Dinner", etc.).
+// breakfastGate (default on): breakfast jobs count toward finishing Morning, which unlocks the schedule.
+const MEAL_SLOT={breakfast:"morning",lunch:"afternoon",supper:"evening"};
+const MEAL_EMOJI={breakfast:"\u{1F373}",lunch:"\u{1F96A}",supper:"\u{1F37D}\uFE0F"};
+function mealCfg(){
+  const m=(routineTimes&&routineTimes.meals)||{}, hr=(v,d)=>{ const n=parseInt(v,10); return isNaN(n)?d:n; };
+  return {breakfast:m.breakfast||"Breakfast",lunch:m.lunch||"Lunch",supper:m.supper||"Supper",
+          lunchHour:hr(m.lunchHour,12),supperHour:hr(m.supperHour,17),breakfastGate:m.breakfastGate!==false};
+}
+function mealOf(slot,st){ return (st&&st.meal&&MEAL_SLOT[st.meal]===slot)?st.meal:""; }
+function mealHour(meal){ const c=mealCfg(); return meal==="lunch"?c.lunchHour:meal==="supper"?c.supperHour:null; }
+function mealOpen(meal,d){ const h=mealHour(meal); return h==null||d!==_todayDay||new Date().getHours()>=h; }
+function rtStepAvail(slot,kid,d,st){ const m=mealOf(slot,st); return m?mealOpen(m,d):rtAvailable(slot,kid,d); }
+function mealHeadHTML(meal,d){
+  const h=mealHour(meal), open=mealOpen(meal,d);
+  return '<div style="font-size:11.5px;font-weight:800;color:#9a3412;margin:6px 0 0;padding-top:6px;border-top:1.5px dashed #fed7aa">'+
+    MEAL_EMOJI[meal]+' After '+esc(mealCfg()[meal])+(h!=null&&!open?' <span style="font-weight:600;color:var(--muted)">\u00b7 opens at '+rtFmtHour(h)+'</span>':'')+'</div>';
+}
+function mealSet(field,v){
+  if(!momHere()) return;
+  const m=Object.assign({},(routineTimes&&routineTimes.meals)||{});
+  if(field==="lunchHour"||field==="supperHour") m[field]=parseInt(v,10);
+  else if(field==="breakfastGate") m[field]=!!v;
+  else { v=String(v||"").trim(); if(!v) return; m[field]=v; }
+  routineTimes=Object.assign({},routineTimes,{meals:m});
+  if(db) db.ref("config/routineTimes/meals").set(m);
+  renderAll();
+}
+function mealSettingsHTML(){
+  const c=mealCfg(), box='display:flex;align-items:center;gap:8px;padding:10px 12px;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;margin-bottom:12px;flex-wrap:wrap';
+  const inp=k=>'<input value="'+esc(c[k])+'" onchange="mealSet(\''+k+'\',this.value)" style="width:96px;padding:5px 8px;border:1.5px solid var(--border);border-radius:7px;font-size:12px">';
+  const sel=(k,hs)=>'<select onchange="mealSet(\''+k+'\',this.value)" style="padding:5px 8px;border:1.5px solid var(--border);border-radius:7px;font-size:12px">'+hs.map(hh=>'<option value="'+hh+'"'+(hh===c[k]?' selected':'')+'>'+rtFmtHour(hh)+'</option>').join("")+'</select>';
+  let h='<div style="'+box+'"><div style="font-size:12px;width:100%"><b>\u{1F37D}\uFE0F After-meal jobs</b><div style="font-size:10px;color:var(--muted)">Tag a chore with a meal (in its row above) and it shows under its own heading. Lunch and supper jobs open at their own time; the rest of the list keeps its normal rule.</div></div>';
+  h+='<span style="font-size:12px">'+MEAL_EMOJI.breakfast+' '+inp("breakfast")+' <span style="color:var(--muted)">in Morning</span></span>';
+  h+='<span style="font-size:12px">'+MEAL_EMOJI.lunch+' '+inp("lunch")+' opens '+sel("lunchHour",[10,11,12,13,14])+'</span>';
+  h+='<span style="font-size:12px">'+MEAL_EMOJI.supper+' '+inp("supper")+' opens '+sel("supperHour",[15,16,17,18,19,20])+'</span>';
+  h+='<span style="font-size:12px;width:100%">'+MEAL_EMOJI.breakfast+' '+esc(c.breakfast)+' jobs must be done to unlock the schedule: '+
+     '<button onclick="mealSet(\'breakfastGate\','+(c.breakfastGate?'false':'true')+')" style="border:1.5px solid '+(c.breakfastGate?'transparent':'var(--border)')+';background:'+(c.breakfastGate?'#c2410c':'#fff')+';color:'+(c.breakfastGate?'#fff':'#1f2937')+';border-radius:7px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">'+(c.breakfastGate?'Yes':'No')+'</button></span>';
+  return h+'</div>';
+}
+// MEALS_END
 // Open/closed is DERIVED: a finished list shows collapsed (its green header only) on every device and
 // after reloads; a tap on the header overrides for that day (2026-08-18, her ask — the old in-memory
 // auto-collapse only ran on the device that tapped the last step, so kiosks still showed them open).
@@ -2041,7 +2087,9 @@ function rtOpenKey(slot,kid){ return slot+"_"+kid+"_"+day; }
 function rtIsOpen(slot,kid,allDone){ const v=rtOpen[rtOpenKey(slot,kid)]; return (v===true||v===false)?v:!allDone; }
 function toggleRtOpen(slot,kid,nowOpen){ rtOpen[rtOpenKey(slot,kid)]=!nowOpen; renderSkylight(); }
 function toggleRtStep(slot,kid,i){
-  if(!rtAvailable(slot,kid,day)){
+  if(!((typeof rtStepAvail==="function")?rtStepAvail(slot,kid,day,rtStepsFor(slot,kid)[i]):rtAvailable(slot,kid,day))){
+    const _ml=(typeof mealOf==="function")?mealOf(slot,rtStepsFor(slot,kid)[i]):"";
+    if(_ml&&typeof gwShowToast==="function"){ gwShowToast("After "+mealCfg()[_ml]+" opens at "+rtFmtHour(mealHour(_ml))); return; }
     if(typeof gwShowToast==="function"){
       if(slot==="afternoon") gwShowToast("Afternoon unlocks when school work is done, or at "+rtFmtHour(rtAfternoonHour())+" \uD83D\uDCDA");
       else if(slot==="evening") gwShowToast("Evening opens at "+rtFmtHour(rtEveningHour())+" \uD83C\uDF19");
@@ -2229,8 +2277,9 @@ function rtSlotHTML(slot,kid){
   // ✋ as-needed rows: shown, tappable, paid — but never part of total/allDone.
   const optIdx=steps.map((st,i)=>i).filter(i=>(steps[i].cad==="asneeded")&&stepWindowOk(steps[i],day)&&dueIdx.indexOf(i)<0);
   const doneCount=dueIdx.filter(i=>rtDoneOn(slot,kid,day,i)).length, allDone=total>0&&doneCount===total;
-  if(!avail){
-    const msg=slot==="afternoon"?("Finish your school work to unlock \u00b7 opens at "+rtFmtHour(rtAfternoonHour())+" anyway"):("Opens at "+rtFmtHour(rtEveningHour()));
+  const _lockMsg=slot==="afternoon"?("Finish your school work to unlock \u00b7 opens at "+rtFmtHour(rtAfternoonHour())+" anyway"):("Opens at "+rtFmtHour(rtEveningHour()));
+  if(!avail&&!dueIdx.concat(optIdx).some(i=>mealOf(slot,steps[i])&&mealOpen(mealOf(slot,steps[i]),day))){
+    const msg=_lockMsg;
     return '<div class="sl-check-row" style="opacity:.6">'+
       '<div class="sl-checkbox" style="background:none;border-color:var(--border);color:var(--muted)">&#128274;</div>'+
       '<div style="flex:1"><div class="sl-slot-name">'+label+' <span style="color:var(--muted);font-weight:700">0/'+total+'</span></div>'+
@@ -2240,7 +2289,7 @@ function rtSlotHTML(slot,kid){
     return '<div class="sl-check-row done"><div class="sl-checkbox done">✓</div><div><div class="sl-slot-name">'+label+'</div><div class="sl-slot-sub">Nothing due today</div></div></div>';
   }
   const isOpen=rtIsOpen(slot,kid,allDone);
-  const sub=allDone?('✓ '+label+' done'):(SL_STIM[slot]||'');
+  const sub=allDone?('✓ '+label+' done'):(!avail?('\u{1F512} '+_lockMsg):(SL_STIM[slot]||''));
   let h='<div class="sl-check-row'+(allDone?" done":"")+'" onclick="toggleRtOpen(\''+slot+'\',\''+kid+'\','+(isOpen?'true':'false')+')" style="cursor:pointer">'+
     '<div class="sl-checkbox'+(allDone?" done":"")+'">'+(allDone?"✓":"")+'</div>'+
     '<div style="flex:1"><div class="sl-slot-name">'+label+' <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+total+'</span></div>'+
@@ -2250,7 +2299,10 @@ function rtSlotHTML(slot,kid){
     const _ed=routineEditable();
     if(!_ed) h+=routineLockNote();
     h+='<div class="mr-steps"'+(_ed?'':' style="opacity:.6"')+'>';
-    dueIdx.forEach(i=>{ const st=steps[i], sd=rtDoneOn(slot,kid,day,i), pts=st.pts||0, cad=st.cad||"daily";
+    let _mHd=false;
+    dueIdx.filter(i=>!mealOf(slot,steps[i])).concat(dueIdx.filter(i=>mealOf(slot,steps[i]))).forEach(i=>{ const st=steps[i], sd=rtDoneOn(slot,kid,day,i), pts=st.pts||0, cad=st.cad||"daily";
+      const _ml=mealOf(slot,st), _ok=rtStepAvail(slot,kid,day,st);
+      if(_ml&&!_mHd){ _mHd=true; h+=mealHeadHTML(_ml,day); }
       const _lateN=rtLateDays(slot,kid,i);
       if(_lateN>0&&!sd){
         const _m=/^wk:(.+)$/.exec(cad), _ds=_m?_m[1].split(",").map(Number).filter(n=>!isNaN(n)):[];
@@ -2262,7 +2314,7 @@ function rtSlotHTML(slot,kid){
       const _wl=stepWindowLabel(st), winTag=_wl?' <span class="cadtag" style="color:#0e7490;border-color:#a5f3fc">\u{1F4C5} '+_wl+'</span>':'';
       const timeTag=st.time?' <span class="cadtag" style="color:#7c3aed;border-color:#ddd6fe">\u23f0 '+st.time+'</span>':'';
       const rotTag=st.rot?' <span class="cadtag" style="color:#c2410c;border-color:#fed7aa">🔄 rotates</span>':'';
-      h+='<div class="mr-step'+(sd?" done":"")+(_lateTag?" is-late":"")+'"'+(_ed?' onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')"':'')+'>'+
+      h+='<div class="mr-step'+(sd?" done":"")+(_lateTag?" is-late":"")+'"'+(_ed?' onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')"':'')+(_ok?'':' style="opacity:.5"')+'>'+
          '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
          '<div class="sl-slot-name" style="flex:1">'+(st.emoji?st.emoji+" ":"")+st.label+_lateTag+cadTag+winTag+timeTag+rotTag+'</div>'+
          (pts>0?'<span class="mr-pts">+'+pts+' ⭐</span>':'')+'</div>'; });
@@ -5421,6 +5473,7 @@ function chSettingsEveningHourHTML(){
   h+='<select onchange="rtSetEveningHour(this.value)" style="margin-left:auto;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif">';
   [16,17,18,19,20,21].forEach(function(hh){ h+='<option value="'+hh+'"'+(hh===rtEveningHour()?' selected':'')+'>'+rtFmtHour(hh)+'</option>'; });
   h+='</select></div>';
+  if(typeof mealSettingsHTML==="function") h+=mealSettingsHTML();
   // 🗓 Days the afternoon list is open all day (default Sat + Sun)
   {
     const on=rtAlwaysOpenDays();
@@ -20724,6 +20777,7 @@ function zoneSet(i,f,v){ if(!momHere())return; const z=zoneList().slice(); if(!z
 function zoneDel(i){ if(!momHere())return; const z=zoneList().slice(); if(!z[i])return;
   if(!confirm('Remove the "'+(z[i].name||"zone")+'" zone? Chores in it just lose their zone.')) return;
   z.splice(i,1); zones=z; _zoneSave(); renderAll(); }
+function cpSetMeal(i,m){ if(!momHere()) return; rtCfgSet(cpSlot,cpKid,i,"meal",m||""); renderAll(); }
 function cpSetField(i,f,v){
   if(!momHere()) return;
   if(cpSlot==="grabs"){ gbSet(i,f,v); return; }
@@ -20951,6 +21005,8 @@ function renderChorePlan(el,headerHtml){
        '<input class="cpn-l" value="'+esc(st.label||"")+'" onchange="cpSetField('+i+',\'label\',this.value)">'+
        (cad==="none"?' <span class="cp-warn">not scheduled</span>':'')+(cad==="asneeded"?' <span class="cp-warn" style="color:#0e7490">\u270B as needed \u2014 optional, pays if checked</span>':'')+
        (!isGrabs?('<div><button onclick="rtRotToggle(\''+cpSlot+'\',\''+cpKid+'\','+i+')" title="Swap this chore between kids day by day" style="margin-top:3px;border:1.5px solid '+(st.rot?"#fb923c":"var(--border)")+';background:'+(st.rot?"#fff7ed":"#fff")+';color:'+(st.rot?"#c2410c":"var(--muted)")+';border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔄 '+(st.rot?esc(rtRotChipLabel(cpSlot,st.rot)):"Rotate")+'</button>'+
+       (Object.keys(MEAL_SLOT).filter(function(m){ return MEAL_SLOT[m]===cpSlot; }).map(function(m){ const on=(st.meal===m);
+         return '<button onclick="cpSetMeal('+i+',\''+(on?'':m)+'\')" title="Show under After '+esc(mealCfg()[m])+'" style="margin-top:3px;margin-right:4px;border:1.5px solid '+(on?"#fb923c":"var(--border)")+';background:'+(on?"#fff7ed":"#fff")+';color:'+(on?"#c2410c":"var(--muted)")+';border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+MEAL_EMOJI[m]+' '+(on?'After '+esc(mealCfg()[m]):'Meal job?')+'</button>'; }).join(''))+
        '<button onclick="rtCadToggle(\''+_ck+'\')" title="Cadence, time of day, and run window" style="margin-top:3px;margin-left:4px;border:1.5px solid '+((cad!=="daily"||st.time||st.from||st.to||st.cycW)?"var(--header)":"var(--border)")+';background:#fff;color:var(--muted);border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔁 '+esc(cadLabel(cad))+(st.time?(" · ⏰ "+esc(st.time)):"")+((st.from||st.to||st.cycW)?(" · 📅 "+esc(stepWindowLabel(st))):"")+' '+(_co?"▾":"▸")+'</button></div>'):'')+'</td>';
     if(exotic){
       h+='<td colspan="8" style="text-align:center"><button onclick="rtCadToggle(\''+_ck+'\')" style="border:1.5px dashed var(--header);background:var(--bg);color:var(--text);border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔁 '+esc(cadLabel(cad))+' — tap to change</button></td>';
@@ -46363,7 +46419,7 @@ function slotCfgSave(){
 }
 // ── Morning routine editor (config/morningRoutine) ──
 // ── Afternoon/Chores/Evening routine editor (config/routines) ──
-function rtCfgEnsure(slot,kid){ if(!routineCfg2[slot]) routineCfg2[slot]={}; if(!Array.isArray(routineCfg2[slot][kid])||!routineCfg2[slot][kid].length){ routineCfg2[slot][kid]=(rtStepsFor(slot,kid,true)||[]).map(s=>{ const o={label:s.label||"",emoji:s.emoji||"",pts:s.pts||0,cad:s.cad||"daily",time:s.time||"",from:s.from||"",to:s.to||""}; if(s.rot) o.rot=s.rot; if(s.cycW){ o.cycW=s.cycW; o.cycN=s.cycN||4; o.cycStart=s.cycStart||""; } return o; }); } }
+function rtCfgEnsure(slot,kid){ if(!routineCfg2[slot]) routineCfg2[slot]={}; if(!Array.isArray(routineCfg2[slot][kid])||!routineCfg2[slot][kid].length){ routineCfg2[slot][kid]=(rtStepsFor(slot,kid,true)||[]).map(s=>{ const o={label:s.label||"",emoji:s.emoji||"",pts:s.pts||0,cad:s.cad||"daily",time:s.time||"",from:s.from||"",to:s.to||""}; if(s.rot) o.rot=s.rot; if(s.meal) o.meal=s.meal; if(s.cycW){ o.cycW=s.cycW; o.cycN=s.cycN||4; o.cycStart=s.cycStart||""; } return o; }); } }
 function rtCfgSave(){ if(db) db.ref("config/routines").set(routineCfg2); }
 function rtCfgSet(slot,kid,i,field,val){ rtCfgEnsure(slot,kid); if(!routineCfg2[slot][kid][i]) return; routineCfg2[slot][kid][i][field]=(field==="pts"?(parseInt(val,10)||0):val); rtCfgSave(); }
 function rtCfgAdd(slot,kid){ rtCfgEnsure(slot,kid); routineCfg2[slot][kid].push({label:"New step",emoji:"",pts:0}); rtCfgSave(); renderAll(); }
