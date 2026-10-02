@@ -10426,7 +10426,29 @@ function kitCloseRecipe(){ kitView=null; const el=document.getElementById('conte
 // The device copy of the recipe box leaves pictures out — they stay in the family database. A few hundred imported
 // thumbnails would otherwise fill the browser's storage, the bug class that cost sign-ins in September.
 function kitMealsLSSave(){ try{ const o={}; Object.keys(kitMeals||{}).forEach(k=>{ const m=kitMeals[k]; if(m&&m.photo){ const c=Object.assign({},m); delete c.photo; o[k]=c; } else o[k]=m; }); HA_LS.setItem('ha_kit_meals',JSON.stringify(o)); }catch(e){} }
-function kitEditMeal(id){
+// 🔒 Recipe changes need the Mom PIN (her ask 2026-10-02: kids shouldn't add recipes yet). Mom's Day itself stays
+//    open — kids still see the plan and vote. Once the PIN is in, it holds for the session (same as Blockout).
+function kitPinGate(then){
+  if(typeof momHere==="function"&&momHere()){ then(); return; }
+  window._kitPinThen=then;
+  let w=document.getElementById("kit-pin-wrap"); if(!w){ w=document.createElement("div"); w.id="kit-pin-wrap"; document.body.appendChild(w); }
+  w.innerHTML='<div onclick="if(event.target===this)kitPinClose()" style="position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.6);display:flex;align-items:center;justify-content:center;padding:20px">'
+    +'<div style="background:#fff;border-radius:16px;padding:22px 20px;width:100%;max-width:300px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.35)">'
+    +'<div style="font-size:34px">🔒</div><div style="font-weight:800;font-size:15px;margin:4px 0 2px">Mom PIN</div>'
+    +'<div style="font-size:12px;color:#64748b;margin-bottom:12px">Adding, changing or importing recipes is for Mom.</div>'
+    +'<input id="kit-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="PIN" autocomplete="off" oninput="kitPinCheck(this.value)" style="width:120px;text-align:center;padding:10px;border:1.5px solid #cbd5e1;border-radius:10px;font-size:18px;font-weight:700;letter-spacing:8px;font-family:\'DM Sans\',sans-serif">'
+    +'<div id="kit-pin-err" style="font-size:11px;color:#b5394a;margin-top:6px;min-height:14px"></div>'
+    +'<button onclick="kitPinClose()" style="margin-top:4px;border:none;background:none;color:#64748b;font-size:12px;cursor:pointer">Cancel</button></div></div>';
+  setTimeout(()=>{ const i=document.getElementById("kit-pin-input"); if(i) i.focus(); },50);
+}
+function kitPinClose(){ const w=document.getElementById("kit-pin-wrap"); if(w) w.innerHTML=""; window._kitPinThen=null; }
+function kitPinCheck(v){
+  if(String(v).length<4) return;
+  if(v===APP_PIN){ adminPinUnlocked=true; const t=window._kitPinThen; kitPinClose(); if(typeof t==="function") t(); }
+  else { const e=document.getElementById("kit-pin-err"), i=document.getElementById("kit-pin-input"); if(e) e.textContent="Incorrect PIN"; if(i){ i.value=""; } }
+}
+function kitEditMeal(id){ kitPinGate(function(){ _kitEditMealGo(id); }); }
+function _kitEditMealGo(id){
   kitEditId=id||"new"; kitView=null;
   const m=(id&&kitMeals[id])||{};
   kitEditPrep=(m.prep||[]).map(s=>({when:s.when,label:s.label}));
@@ -10479,7 +10501,8 @@ function kitCancelEdit(){
   kitEditId=null; kitEditDraft=null; kitEditPrep=[];
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
-function kitDelMeal(id){
+function kitDelMeal(id){ kitPinGate(function(){ _kitDelMealGo(id); }); }
+function _kitDelMealGo(id){
   const m=kitMeals[id]; if(!m) return;
   if(!confirm('Remove "'+(m.name||'this meal')+'" and its recipe?')) return;
   delete kitMeals[id];
@@ -11450,7 +11473,7 @@ async function kitCapPhotos(input){
 //    the ticked ones, one recipe path each. Pictures are shrunk to small thumbnails. Read entirely in the browser.
 let kitImp={open:false,busy:false,msg:"",items:[],src:""};
 function kitImpRender(){ const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
-function kitImpToggle(){ kitImp.open=!kitImp.open; if(!kitImp.open){ kitImp.items=[]; kitImp.msg=""; kitImp.src=""; } kitImpRender(); }
+function kitImpToggle(){ if(!kitImp.open&&!(typeof momHere==="function"&&momHere())){ kitPinGate(kitImpToggle); return; } kitImp.open=!kitImp.open; if(!kitImp.open){ kitImp.items=[]; kitImp.msg=""; kitImp.src=""; } kitImpRender(); }
 function kitImpTick(i){ const it=kitImp.items[i]; if(it){ it.on=!it.on; kitImpRender(); } }
 function kitImpAll(on){ kitImp.items.forEach(it=>{ it.on=on; }); kitImpRender(); }
 async function kitInflate(bytes,fmt){ const st=new Blob([bytes]).stream().pipeThrough(new DecompressionStream(fmt)); return new Uint8Array(await new Response(st).arrayBuffer()); }
