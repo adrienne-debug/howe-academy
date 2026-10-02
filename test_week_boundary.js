@@ -74,7 +74,7 @@ console.log("peekWeekAvailable — look-ahead only until its Sunday");
 
 console.log("auto-gen trigger + day strip (source assertions)");
 {
-  ok("auto-gen asks weekNumForDate(_todayStr()) — fires on Sunday via the mapping", /const wn=weekNumForDate\(_todayStr\(\)\);\s*\n\s*if\(!wn\|\|wn<=currWeekNum\(\)\) return;/.test(src));
+  ok("auto-gen asks weekNumForDate(_todayStr()) — fires on Sunday via the mapping", /const wn=weekNumForDate\(_todayStr\(\)\);\s*\n\s*if\(!wn\) return;\s*\n\s*if\(wn<=currWeekNum\(\)&&!_activeWeekEmpty\(\)\) return;/.test(src));
   ok("day strip does not fold the coming week's days on Sunday", /weekNumForDate\(_todayStr\(\)\)===currWeekNum\(\)&&_todayDay!=="sunday"/.test(src));
   ok("gwWeekDateRange keeps its Monday-anchored span (day math untouched)", /mon\.setDate\(mon\.getDate\(\)-\(\(mon\.getDay\(\)\+6\)%7\)\);/.test(src));
 }

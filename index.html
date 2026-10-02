@@ -6765,13 +6765,13 @@ function renderSchedule(el){
          '<div class="slot-tasks"><div style="background:#f0fdf4;border:1px dashed #86efac;border-radius:10px;padding:8px 12px;font-size:12px;color:#15803d;font-weight:600">'+
          '\u{1F33F} Break · '+(_ss-_prevEnd)+' min <span style="font-weight:400;color:#4d7c53">— Mom’s with a sibling, take a breather</span></div></div></div>';
     }
-    if(!lunchDone&&_ss>=13*60){ h+=lunchBlock(); lunchDone=true; }
+    if(!lunchDone&&_ss>=_haLunchMin()){ h+=lunchBlock(); lunchDone=true; }
     h+='<div class="time-row"><div class="time-pill">'+t+'</div><div class="slot-tasks">';
     tmap[t].forEach(tk=>{ h+=taskCard(tk); });
     h+='</div></div>';
     if(!_slotDone) _prevEnd=Math.max(_prevEnd,_ss+Math.max.apply(null,tmap[t].map(tk=>tk.dur||20)));   // breaks are measured between open work only
   });
-  if(!lunchDone&&times.length&&toMin(times[times.length-1])<13*60) h+=lunchBlock();
+  if(!lunchDone&&times.length&&toMin(times[times.length-1])<_haLunchMin()) h+=lunchBlock();
 
   if(!unlocked){
     // Close the blurred inner wrapper, then add the overlay
@@ -6956,11 +6956,15 @@ function renderSchedule(el){
   if(pnwOpen) renderPlanNextWeek();
 }
 
+// Where lunch falls for THIS family (minutes from midnight) — the three insert points below used a hardcoded 1 PM.
+function _haLunchMin(){ try{ return toMin((((rulesData||{}).schoolDay)||{}).lunchStart||"1:00 PM"); }catch(e){ return 13*60; } }
 function lunchBlock(){
-  return '<div class="time-row"><div class="time-pill" style="color:#d97706">1:00 PM</div>'+
+  // Reads the family's School Day Times (was hardcoded 1:00–2:00 PM — Dewalt's 12:00–12:45 lunch still said 1:00, 2026-10-02)
+  const _sd=((rulesData||{}).schoolDay)||{}; const _ls=_sd.lunchStart||"1:00 PM", _le=_sd.lunchEnd||"2:00 PM";
+  return '<div class="time-row"><div class="time-pill" style="color:#d97706">'+esc(_ls)+'</div>'+
     '<div class="slot-tasks"><div class="task-card" style="border-left:3px solid #f59e0b;background:#fffbeb">'+
     '<div class="card-header"><div class="task-title">Lunch — Family Block</div></div>'+
-    '<div class="task-detail">1:00–2:00 PM · Nothing scheduled during lunch.</div></div></div></div>';
+    '<div class="task-detail">'+esc(_ls.replace(/ (AM|PM)$/,""))+'–'+esc(_le)+' · Nothing scheduled during lunch.</div></div></div></div>';
 }
 
 function notebookBlock(){
@@ -9677,7 +9681,7 @@ function mdCardStarBank(canAward){
 // max × rating — wages, straight to the Star Bank, logged in the check-off log. Nothing touches the schedule
 // (v2: a Together card on both schedules at once). Targeted writes; dry-run inert.
 let together={}, tgEdit=false, tgSpinTimer=null, tgSpinFace=null;
-const TG_DEFAULT_DEFS={
+const TG_DEFAULT_DEFS=(typeof window!=="undefined"&&window.HA_FAMILY&&window.HA_FAMILY.familyId&&window.HA_FAMILY.familyId!=="howe")?{}:{   // 🤝 Howe's own pairs; another family starts empty and adds its own (Dewalt showed Lincoln/Ellis/Lucy/Julian, 2026-10-02)
   math_teach:{id:"math_teach",emoji:"🧮",name:"Math teaching",kind:"pair",a:{kid:"ellis",role:"Teacher"},b:{kid:"lucy",role:"Learner"},max:35},
   read_aloud:{id:"read_aloud",emoji:"📖",name:"Read-aloud",kind:"pair",a:{kid:"lincoln",role:"Reader"},b:{kid:"lucy",role:"Listener"},max:35},
   bath:{id:"bath",emoji:"🛁",name:"Julian’s bath helper",kind:"lottery",a:{kid:"julian",role:"Julian"},helpers:["lincoln","ellis","lucy"],max:50,faces:true}
@@ -21731,7 +21735,7 @@ function kcSchoolHTML(k){
       h+='<div class="time-slots"'+((paused||!unlocked)?' style="opacity:.35;pointer-events:none;filter:grayscale(.4)'+(unlocked?'':';filter:blur(2px)')+'"':'')+'>';
       let lunchDone=false;
       times.forEach(function(t){
-        if(!lunchDone&&toMin(t)>=13*60){ try{ h+=lunchBlock(); }catch(e){} lunchDone=true; }
+        if(!lunchDone&&toMin(t)>=_haLunchMin()){ try{ h+=lunchBlock(); }catch(e){} lunchDone=true; }
         h+='<div class="time-row"><div class="time-pill">'+t+'</div><div class="slot-tasks">';
         tmap[t].forEach(function(tk){ h+=taskCard(tk); });
         h+='</div></div>';
@@ -48372,7 +48376,7 @@ function gwNextRealWeek(start){
 }
 
 function pnwStartWizard(weekOverride){
-  const nw=weekOverride||gwNextRealWeek(currWeekNum()+1);
+  const nw=weekOverride||(_activeWeekEmpty()&&_firstPlanWeekOnOrAfter(_todayStr()))||gwNextRealWeek(currWeekNum()+1);   // 🆕 empty active week → the real first week, not "next"
   gwConfig={weekNum:String(nw),babysitter:{},withSitter:(rulesData&&rulesData.withSitter)||[],skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:false,redistribute:[],autoAdvance:true};
   pnwStep=0; pnwResult=null; pnwDropped=null; pnwError=null; pnwConfigReady=false; pnwOpen=true;
   renderPlanNextWeek();
@@ -48399,7 +48403,7 @@ function closePlanNextWeek(){
 
 function pnwGenerate(){
   if(!currData||!currData.subjects) return;
-  if(parseInt(gwConfig.weekNum)<currWeekNum()){
+  if(parseInt(gwConfig.weekNum)<currWeekNum()&&!_activeWeekEmpty()){   // 🆕 an EMPTY active week (new family) may be replaced by an earlier real one
     gwShowToast("Can't generate a past week (current is Week "+currWeekNum()+").");
     return;
   }
@@ -49434,13 +49438,11 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   }
   function pushBucket(kid,bucket){ (bucket||[]).forEach(([key,val])=>pushItem(kid,key,val)); }
 
-  const buckets={
-    lincoln:gwByCategory("lincoln",kidAssignments.lincoln||{}),
-    ellis:gwByCategory("ellis",kidAssignments.ellis||{}),
-    lucy:gwByCategory("lucy",kidAssignments.lucy||{}),
-    julian:gwByCategory("julian",kidAssignments.julian||{})
-  };
-  const KIDS=[...ROSTER]; // Julian is a first-class kid now
+  // Buckets per ROSTER kid — was hardcoded to the four Howe names, which threw
+  // "Cannot read properties of undefined (reading 'first')" for any other family (Dewalt, 2026-10-02).
+  const KIDS=[...ROSTER];
+  const buckets={};
+  KIDS.forEach(function(k){ buckets[k]=gwByCategory(k,kidAssignments[k]||{}); });
 
   // Lesson Map per-day run order (scheduleOverrides[date][kid].order): rank-sort each bucket.
   const dayOrder={};
@@ -50309,6 +50311,17 @@ function _schoolWeekDateFor(dateStr){
     return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); } }catch(e){}
   return dateStr;
 }
+// 🆕 A brand-new family (2026-10-02): the active week is the hardcoded "week3" until a week is committed,
+// and both the wizard and auto-generate refused anything "behind" it — so week 1 was unreachable. These two
+// say when the active week is still EMPTY (nothing to lose) and which plan week today belongs to (or the
+// first one coming), so a fresh family can generate its real first week.
+function _activeWeekEmpty(){ try{ return !(weekData&&Array.isArray(weekData.tasks)&&weekData.tasks.length); }catch(e){ return false; } }
+function _firstPlanWeekOnOrAfter(dateStr){
+  const w=weekNumForDate(dateStr); if(w) return w;
+  const mx=_maxPlanWeek();
+  for(let n=1;n<=mx;n++){ const r=gwWeekDateRange(n); if(r&&r.end>=dateStr) return n; }
+  return null;
+}
 function weekNumForDate(dateStr){
   const eff=_schoolWeekDateFor(dateStr);
   const mx=_maxPlanWeek();
@@ -50341,7 +50354,8 @@ function autoGenerateWeekIfNeeded(){
   if(_autoGenTried) return;
   if(!db||!currData||!currData.subjects||!currData.weekDays||!currData.lessons) return;
   const wn=weekNumForDate(_todayStr());
-  if(!wn||wn<=currWeekNum()) return; // still inside (or behind) the active week
+  if(!wn) return;
+  if(wn<=currWeekNum()&&!_activeWeekEmpty()) return; // still inside (or behind) the active week — unless that week is EMPTY (new family: build today's real week)
   // Cursor math needs the REAL completion record — this week's checked/tasks and the
   // archive. On a cold cache (fresh device, cleared storage) the localStorage seeds are
   // empty; generating then would undercount cursors and re-schedule finished lessons.
@@ -51214,7 +51228,7 @@ function runGenerateWeek(){
     gwShowToast("Enter a week number first.");
     return;
   }
-  if(parseInt(gwConfig.weekNum)<currWeekNum()){
+  if(parseInt(gwConfig.weekNum)<currWeekNum()&&!_activeWeekEmpty()){   // 🆕 an EMPTY active week (new family) may be replaced by an earlier real one
     gwShowToast("Can't generate a past week (current is Week "+currWeekNum()+").");
     return;
   }
