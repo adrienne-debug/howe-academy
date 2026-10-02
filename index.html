@@ -1702,16 +1702,32 @@ function routineDateISO(dn){
 }
 // Unknown date (no week meta yet) deliberately returns TRUE — a medicine step must never
 // silently disappear just because the date map hasn't arrived.
+// 🗓 4-week cycle (2026-10-02, her ask — DeWalt zone chores: Living Room wk1, Kitchen wk2, Bathrooms wk3,
+// Bedrooms wk4, then repeat). st.cycW = which week (1..cycN) the step runs; st.cycStart = the Monday that is week 1.
+// Off-cycle weeks behave like outside a date window: not shown, not due, never late.
+function stepCycleOk(st,iso){
+  if(!st||!st.cycW||!st.cycStart||!iso) return true;
+  const n=Math.max(1,parseInt(st.cycN,10)||4);
+  const a=Date.parse(st.cycStart+"T12:00:00"), b=Date.parse(iso+"T12:00:00");
+  if(isNaN(a)||isNaN(b)) return true;
+  const wk=Math.floor(Math.round((b-a)/864e5)/7);
+  return (((wk%n)+n)%n)+1===parseInt(st.cycW,10);
+}
 function stepWindowOk(st,dn){
-  if(!st||(!st.from&&!st.to)) return true;
+  if(!st||(!st.from&&!st.to&&!st.cycW)) return true;
   const iso=routineDateISO(dn||day);
   if(!iso) return true;
   if(st.from&&iso<st.from) return false;
   if(st.to&&iso>st.to) return false;
+  if(!stepCycleOk(st,iso)) return false;
   return true;
 }
 // Short human label for the window, for the kid's chip and Mom's editor.
 function stepWindowLabel(st){
+  const cy=(st&&st.cycW)?("wk "+st.cycW+" of "+(st.cycN||4)):"", dl=_stepDateLabel(st);
+  return (cy&&dl)?(cy+" \u00b7 "+dl):(cy||dl);
+}
+function _stepDateLabel(st){
   if(!st||(!st.from&&!st.to)) return "";
   const md=s=>{ const p=String(s).split("-"); return p.length===3?((+p[1])+"/"+(+p[2])):s; };
   const today=routineDateISO(_todayDay);
@@ -1977,7 +1993,7 @@ function rtDoneOn(slot,kid,d,i){ const s=slState[activeWk()+"_"+d+"_"+kid+"_"+RT
 // A step counts toward "complete" if it's due today OR carried over late (a missed chore keeps showing on the
 // list, so it must keep the list open too — 2026-08-18: Julian's grid dot said ✓ while his list said 0/1).
 // rtLateDays is bound to the viewed day, so the late clause only applies when d is that day.
-function rtDueOrLate(slot,kid,d,i,st){ return cadDueOn((st&&st.cad)||"daily",d)||(d===day&&rtLateDays(slot,kid,i)>0); }
+function rtDueOrLate(slot,kid,d,i,st){ if(!stepWindowOk(st,d)) return false; return cadDueOn((st&&st.cad)||"daily",d)||(d===day&&rtLateDays(slot,kid,i)>0); }
 function rtComplete(slot,kid,d){ const steps=rtStepsFor(slot,kid); if(!steps.length){ const s=slState[activeWk()+"_"+d+"_"+kid+"_"+slot]; return !!(s&&s.done); } return steps.every((st,i)=>!rtDueOrLate(slot,kid,d,i,st)||rtDoneOn(slot,kid,d,i)); }
 function rtEveningHour(){ const h=parseInt(routineTimes&&routineTimes.eveningHour,10); return isNaN(h)?18:h; }
 function rtFmtHour(h){ const ap=h>=12?"PM":"AM"; let hh=h%12; if(hh===0)hh=12; return hh+":00 "+ap; }
@@ -20854,6 +20870,14 @@ function _cpCadPanelHTML(slot,kid,i,st){
     p+=on?('<span style="font-size:10.5px;font-weight:700;color:#0e7490">'+wl+'</span><button onclick="rtCadClearWindow(\''+slot+'\',\''+kid+'\','+i+')" title="Always run" style="padding:2px 7px;border-radius:6px;border:1.5px solid var(--border);background:#fff;font-size:10.5px;cursor:pointer;font-family:\'DM Sans\',sans-serif">clear</button>')
         :'<span style="font-size:10.5px;color:var(--muted)">always</span>';
     p+='</div>'; }
+  { const cw=parseInt(st.cycW,10)||0;
+    p+='<div style="display:flex;gap:5px;align-items:center;margin-bottom:8px;flex-wrap:wrap">';
+    p+='<span style="font-size:10.5px;font-weight:700;color:'+(cw?"#0e7490":"var(--muted)")+'">🗓 4-week cycle</span>';
+    [0,1,2,3,4].forEach(function(w){ const on=(w===cw);
+      p+='<button onclick="rtCadCycle(\''+slot+'\',\''+kid+'\','+i+','+w+')" style="border:1.5px solid '+(on?"transparent":"var(--border)")+';background:'+(on?"#0e7490":"#fff")+';color:'+(on?"#fff":"#1f2937")+';border-radius:7px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(w?("Wk "+w):"Off")+'</button>'; });
+    if(cw){ p+='<span style="font-size:10.5px;color:var(--muted)">week 1 starts</span><input type="date" value="'+(st.cycStart||"")+'" onchange="rtCadCycleStart(\''+slot+'\',\''+kid+'\','+i+',this.value)" style="padding:3px 6px;border:1.5px solid #a5f3fc;border-radius:7px;font-size:11px;font-family:\'DM Sans\',sans-serif">'; }
+    else p+='<span style="font-size:10.5px;color:var(--muted)">every week</span>';
+    p+='</div>'; }
   p+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:7px">';
   [["daily","Daily","daily"],["everyN","Every N days","2d"],["weekly","Weekly","wk:"],["biweekly","Every 2 weeks","2w"],["asneeded","\u270B As needed","asneeded"],["none","Not scheduled","none"]].forEach(function(m){
     p+='<button onclick="rtCadSet(\''+slot+'\',\''+kid+'\','+i+',\''+m[2]+'\')" style="border:1.5px solid '+(cm===m[0]?"transparent":"var(--border)")+';background:'+(cm===m[0]?"var(--header)":"#fff")+';color:'+(cm===m[0]?"#fff":"#1f2937")+';border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+m[1]+'</button>';
@@ -20927,7 +20951,7 @@ function renderChorePlan(el,headerHtml){
        '<input class="cpn-l" value="'+esc(st.label||"")+'" onchange="cpSetField('+i+',\'label\',this.value)">'+
        (cad==="none"?' <span class="cp-warn">not scheduled</span>':'')+(cad==="asneeded"?' <span class="cp-warn" style="color:#0e7490">\u270B as needed \u2014 optional, pays if checked</span>':'')+
        (!isGrabs?('<div><button onclick="rtRotToggle(\''+cpSlot+'\',\''+cpKid+'\','+i+')" title="Swap this chore between kids day by day" style="margin-top:3px;border:1.5px solid '+(st.rot?"#fb923c":"var(--border)")+';background:'+(st.rot?"#fff7ed":"#fff")+';color:'+(st.rot?"#c2410c":"var(--muted)")+';border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔄 '+(st.rot?esc(rtRotChipLabel(cpSlot,st.rot)):"Rotate")+'</button>'+
-       '<button onclick="rtCadToggle(\''+_ck+'\')" title="Cadence, time of day, and run window" style="margin-top:3px;margin-left:4px;border:1.5px solid '+((cad!=="daily"||st.time||st.from||st.to)?"var(--header)":"var(--border)")+';background:#fff;color:var(--muted);border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔁 '+esc(cadLabel(cad))+(st.time?(" · ⏰ "+esc(st.time)):"")+((st.from||st.to)?(" · 📅 "+esc(stepWindowLabel(st))):"")+' '+(_co?"▾":"▸")+'</button></div>'):'')+'</td>';
+       '<button onclick="rtCadToggle(\''+_ck+'\')" title="Cadence, time of day, and run window" style="margin-top:3px;margin-left:4px;border:1.5px solid '+((cad!=="daily"||st.time||st.from||st.to||st.cycW)?"var(--header)":"var(--border)")+';background:#fff;color:var(--muted);border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔁 '+esc(cadLabel(cad))+(st.time?(" · ⏰ "+esc(st.time)):"")+((st.from||st.to||st.cycW)?(" · 📅 "+esc(stepWindowLabel(st))):"")+' '+(_co?"▾":"▸")+'</button></div>'):'')+'</td>';
     if(exotic){
       h+='<td colspan="8" style="text-align:center"><button onclick="rtCadToggle(\''+_ck+'\')" style="border:1.5px dashed var(--header);background:var(--bg);color:var(--text);border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔁 '+esc(cadLabel(cad))+' — tap to change</button></td>';
     } else {
@@ -21864,6 +21888,7 @@ function _calChoresFor(kid,iso){
       steps.forEach(function(st,i){
         if(!st) return;
         if(st.from&&iso<st.from) return; if(st.to&&iso>st.to) return;
+        if(typeof stepCycleOk==="function"&&!stepCycleOk(st,iso)) return;
         if(!_calCadDueOn(st.cad||"daily",dn,iso)) return;
         out.push({slot:slot,label:st.label||"Chore",emoji:st.emoji||"",pts:st.pts||0,
           done:isToday&&(slot==="morning"?(typeof mStepDoneOn==="function"&&mStepDoneOn(kid,dn,i)):(typeof rtDoneOn==="function"&&rtDoneOn(slot,kid,dn,i)))});
@@ -46338,7 +46363,7 @@ function slotCfgSave(){
 }
 // ── Morning routine editor (config/morningRoutine) ──
 // ── Afternoon/Chores/Evening routine editor (config/routines) ──
-function rtCfgEnsure(slot,kid){ if(!routineCfg2[slot]) routineCfg2[slot]={}; if(!Array.isArray(routineCfg2[slot][kid])||!routineCfg2[slot][kid].length){ routineCfg2[slot][kid]=(rtStepsFor(slot,kid,true)||[]).map(s=>{ const o={label:s.label||"",emoji:s.emoji||"",pts:s.pts||0,cad:s.cad||"daily",time:s.time||"",from:s.from||"",to:s.to||""}; if(s.rot) o.rot=s.rot; return o; }); } }
+function rtCfgEnsure(slot,kid){ if(!routineCfg2[slot]) routineCfg2[slot]={}; if(!Array.isArray(routineCfg2[slot][kid])||!routineCfg2[slot][kid].length){ routineCfg2[slot][kid]=(rtStepsFor(slot,kid,true)||[]).map(s=>{ const o={label:s.label||"",emoji:s.emoji||"",pts:s.pts||0,cad:s.cad||"daily",time:s.time||"",from:s.from||"",to:s.to||""}; if(s.rot) o.rot=s.rot; if(s.cycW){ o.cycW=s.cycW; o.cycN=s.cycN||4; o.cycStart=s.cycStart||""; } return o; }); } }
 function rtCfgSave(){ if(db) db.ref("config/routines").set(routineCfg2); }
 function rtCfgSet(slot,kid,i,field,val){ rtCfgEnsure(slot,kid); if(!routineCfg2[slot][kid][i]) return; routineCfg2[slot][kid][i][field]=(field==="pts"?(parseInt(val,10)||0):val); rtCfgSave(); }
 function rtCfgAdd(slot,kid){ rtCfgEnsure(slot,kid); routineCfg2[slot][kid].push({label:"New step",emoji:"",pts:0}); rtCfgSave(); renderAll(); }
@@ -46379,6 +46404,11 @@ function rtCadTime(slot,kid,i,v){ rtCfgEnsure(slot,kid); if(!routineCfg2[slot][k
 // Run window setters. Kept separate from rtCfgSet so clearing both fields is one action —
 // a finished course should be one tap to retire, not two blanked date pickers.
 function rtCadWindow(slot,kid,i,field,v){ rtCfgEnsure(slot,kid); const it=routineCfg2[slot][kid][i]; if(!it)return; it[field]=v||""; rtCfgSave(); renderAll(); }
+function rtCadCycle(slot,kid,i,w){ rtCfgEnsure(slot,kid); const it=routineCfg2[slot][kid][i]; if(!it)return; w=parseInt(w,10)||0;
+  if(!w){ delete it.cycW; delete it.cycN; delete it.cycStart; }
+  else { it.cycW=w; it.cycN=4; if(!it.cycStart){ const d=new Date(); d.setDate(d.getDate()-((d.getDay()+6)%7)); it.cycStart=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); } }
+  rtCfgSave(); renderAll(); }
+function rtCadCycleStart(slot,kid,i,v){ rtCfgEnsure(slot,kid); const it=routineCfg2[slot][kid][i]; if(!it||!v)return; it.cycStart=v; rtCfgSave(); renderAll(); }
 function rtCadClearWindow(slot,kid,i){ rtCfgEnsure(slot,kid); const it=routineCfg2[slot][kid][i]; if(!it)return; it.from=""; it.to=""; rtCfgSave(); renderAll(); }
 // ── Accountability: audit log of check-offs + false-check-off penalty ──
 function rlogAppend(kid,slot,label,act,pts){
