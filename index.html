@@ -2471,7 +2471,7 @@ let pendingSpins={}; // {taskId: {kid, day}} — earned but not yet spun
 let manualUnchecks=new Set(); // task IDs explicitly unchecked this session — runCascade must not override
 
 // ── RULES STATE ──────────────────────────────────────────────────
-let rulesData=null;
+let rulesData=null, rulesLoaded=false;   // rulesLoaded: the config/rules answer arrived — even empty (a new family has no rules yet, 2026-10-01)
 let rulesOpen={};
 const TIER_LBL2={computer:"Computer",independent:"Independent",maybe:"May Need Mom",required:"Mom Required"};
 const TIER_COL={computer:"#3b82f6",independent:"#10b981",maybe:"#f59e0b",required:"#ef4444"};
@@ -3633,7 +3633,7 @@ function initFb() {
       schedCascade(); // curriculum may be the LAST loader to answer — re-arm the debounced sweep
     });
     db.ref("config/rules").on("value",s=>{
-      rulesData=s.val()||null;
+      rulesData=s.val()||null; rulesLoaded=true;
       runDisplacement();
       if(tab==="schedule"){renderAll();}
     });
@@ -6992,7 +6992,7 @@ function toggleCarryKid(k){ coKidOpen[k]=!coKidOpen[k]; try{HA_LS.setItem("ha_co
 // Only rendered to Mom (momHere). Persisted in config/rules so it syncs across the fleet.
 function toggleHideCarryover(kid){
   if(!rulesData) return;
-  const r=JSON.parse(JSON.stringify(rulesData));
+  const r=JSON.parse(JSON.stringify(rulesData||{}));
   if(!r.hideCarryoverKids) r.hideCarryoverKids={};
   r.hideCarryoverKids[kid]=carryHidden(kid)?false:true; // hidden→show, shown→hide
   saveRules(r);
@@ -17011,7 +17011,7 @@ function ceRenameSubject(newVal){
   ceSaveField("display",newVal);
   const newDisp=newVal;
   if(oldDisp&&newDisp&&oldDisp!==newDisp&&rulesData){
-    const r=JSON.parse(JSON.stringify(rulesData));
+    const r=JSON.parse(JSON.stringify(rulesData||{}));
     let dirty=false;
     // (b) Workflow-order overrides for this kid (normal + babysitter day)
     const wf=r.workflow&&r.workflow[ceEditKid];
@@ -19066,7 +19066,7 @@ function ceDeleteSubject(){
   let _wfN=0;
   try{
     if((((rulesData||{}).workflow)||{})[kid]){
-      const _r=JSON.parse(JSON.stringify(rulesData));
+      const _r=JSON.parse(JSON.stringify(rulesData||{}));
       ["normal","babysitter"].forEach(function(mode){
         const steps=fbArr((_r.workflow[kid]||{})[mode]); if(!steps) return;
         steps.forEach(function(st){
@@ -19101,7 +19101,7 @@ let ceAddForm={name:"",device:"paper",mom:"none",minutes:25,days:"",rules:"",tot
 function ceOpenAdd(kid){
   if(ceCloseTimer){clearTimeout(ceCloseTimer);ceCloseTimer=null;}
   ceAddKid=kid;
-  ceAddForm={name:"",device:"paper",mom:"none",minutes:25,days:"Mon Tue Wed Thu Fri",rules:"sequential",total:50,lessonSource:"auto",prefix:"Lesson",manualLessons:"",daysPerLesson:1,allowedDays:[],priority:"normal",carryoverCap:2,stickyWith:"",stickyOrder:"after",tracking:"sequenced",timesPerWeek:5,fixedTime:"",fixedDates:[],joinUrl:""};
+  ceAddForm={name:"",device:"paper",mom:"none",minutes:25,days:"Mon Tue Wed Thu Fri",rules:"sequential",total:50,startAt:1,lessonSource:"auto",prefix:"Lesson",manualLessons:"",daysPerLesson:1,allowedDays:[],priority:"normal",carryoverCap:2,stickyWith:"",stickyOrder:"after",tracking:"sequenced",timesPerWeek:5,fixedTime:"",fixedDates:[],joinUrl:""};
   ceAddMsg="";
   ceRenderAddSheet();
 }
@@ -19271,7 +19271,8 @@ function ceRenderAddSheet(){
     h+='<input type="number" class="ce-stepnum" min="1" max="500" value="'+f.total+'" onchange="ceAddSetTotal(this.value)">';
     h+='<button onclick="ceAddForm.total=Math.min(500,ceAddForm.total+10);ceRenderAddSheet()">+10</button>';
     h+='</div>';
-    h+='<span style="font-size:11px;color:var(--muted)">'+f.prefix+' 1 &rarr; '+f.prefix+' '+f.total+'</span>';
+    h+='<span style="font-size:11px;color:var(--muted)">start at</span><input type="number" class="ce-stepnum" min="1" max="500" value="'+(f.startAt||1)+'" title="The first lesson this kid will see \u2014 earlier ones are simply not in the list, so nothing has to be checked off to get there" onchange="ceAddForm.startAt=Math.max(1,parseInt(this.value,10)||1);ceRenderAddSheet()">';
+    h+='<span style="font-size:11px;color:var(--muted)">'+f.prefix+' '+(f.startAt||1)+' &rarr; '+f.prefix+' '+f.total+'</span>';
     h+='</div>';
   } else {
     h+='<div class="ce-sheet-lbl">Lessons (one per line)</div>';
@@ -19286,7 +19287,7 @@ function ceRenderAddSheet(){
     h+='<span>'+_dpl+'</span>';
     h+='<button onclick="ceAddForm.daysPerLesson=Math.min(10,(parseInt(ceAddForm.daysPerLesson,10)||1)+1);ceRenderAddSheet()">+</button>';
     h+='</div>';
-    const _nL=f.lessonSource==="auto"?(parseInt(f.total,10)||0):String(f.manualLessons||"").split("\n").map(x=>x.trim()).filter(Boolean).length;
+    const _nL=f.lessonSource==="auto"?Math.max(0,(parseInt(f.total,10)||0)-Math.max(1,parseInt(f.startAt,10)||1)+1):String(f.manualLessons||"").split("\n").map(x=>x.trim()).filter(Boolean).length;
     h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">'+(_dpl>1?('Each lesson takes '+_dpl+' days — one sitting per day ("· day 1 of '+_dpl+'" …): '+_nL+' lessons → <b>'+(_nL*_dpl)+' sittings</b>. Set Times Per Week to match.'):'1 = each lesson is done in one sitting.')+'</div>'; }
 
   // Priority
@@ -19386,7 +19387,7 @@ function ceAddSave(){
     // Build lesson sequence
     let lessonSeq=[];
     if(f.lessonSource==="auto"){
-      for(let i=1;i<=f.total;i++) lessonSeq.push(f.prefix+" "+i);
+      for(let i=Math.max(1,parseInt(f.startAt,10)||1);i<=f.total;i++) lessonSeq.push(f.prefix+" "+i);   // 🔢 Start at: earlier lessons are simply not in the list — no fake check-offs (2026-10-01)
     } else {
       const ta=document.getElementById("ce-add-lessons");
       if(ta) f.manualLessons=ta.value;
@@ -27975,7 +27976,7 @@ function planMaterialize(kid,sk,form,opts){
   // predicted it exactly) — plan-backed placement reads done BY LID and cannot.
   // A pages subject with no tpw has no cadence to project; it stays on cbMaterialize.
   if(!(f.mode==="timesPerWeek"||f.mode==="targetDate"||(f.mode==="pages"&&parseInt(f.tpw,10)>0))) return null;
-  const rows=cbFutureRows(kid,sk); const ex=cbExtendInfo(kid);
+  const rows=cbFutureRows(kid,sk,f.startDate); const ex=cbExtendInfo(kid,f.startDate);   // 🗓 Start on
   const blocked={};   // alternation groups retired 2026-09-11 — a 🛤 multiple card is how two subjects share a rhythm now
   const capMin=cbDayCap(kid); const today=(typeof cbPlanTodayISO=='function')?cbPlanTodayISO():cbTodayISO(); const min=s.minutes||20;   // 🌅
   // Content: what cbRemainingContent says is left (list minus done, today-cell rule), mapped
@@ -28321,7 +28322,7 @@ function cbBeforeSchoolToday(){
 function cbPlanTodayISO(){ if(!cbBeforeSchoolToday()) return cbTodayISO(); const d=new Date(); d.setDate(d.getDate()-1); return _cbISO(d); }
 
 // Future rows only (date > today), chronological, with per-day used minutes.
-function cbFutureRows(kid,sk){
+function cbFutureRows(kid,sk,startISO){
   const lessons=((currData||{}).lessons||{})[kid]||{};
   const subs=((currData||{}).subjects||{})[kid]||{};
   const today=(typeof cbPlanTodayISO=='function')?cbPlanTodayISO():cbTodayISO();   // 🌅 before school, today is still layable
@@ -28331,7 +28332,7 @@ function cbFutureRows(kid,sk){
   const dayNums=Object.keys(lessons).map(Number).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
   for(const dnn of dayNums){
     const l=lessons[dnn];
-    if(!l||!l.date||l.date<=today) continue;
+    if(!l||!l.date||l.date<=today||(startISO&&l.date<startISO)) continue;   // 🗓 Start on: rows before it take nothing
     let usedMin=0;
     for(const k2 of Object.keys(subs)){
       if(k2===sk||subs[k2].paused) continue;
@@ -28348,7 +28349,7 @@ function cbFutureRows(kid,sk){
 }
 
 // Extension anchor: the grid's last row + last week number, for growing past the end.
-function cbExtendInfo(kid){
+function cbExtendInfo(kid,startISO){
   const lessons=((currData||{}).lessons||{})[kid]||{};
   let lastDayNum=0,lastDate="",lastWeekLabel="";
   for(const dnStr of Object.keys(lessons)){
@@ -28356,13 +28357,21 @@ function cbExtendInfo(kid){
     const l=lessons[dnStr]; if(!l||!l.date) continue;
     if(dnn>lastDayNum){ lastDayNum=dnn; lastDate=l.date; lastWeekLabel=l.week||""; }
   }
-  if(!lastDate) return null;
+  if(!lastDate){
+    // 🗓 A kid with NO grid yet (a brand-new family, 2026-10-01): anchor the extension the day before
+    // the Start-on date (or today), so the normal extension loop mints "Wk 1…" rows from there. A
+    // mid-week start keeps "Wk 1" for the rest of that week; a Monday start begins at Wk 1 too.
+    const st=(startISO&&/^\d{4}-\d{2}-\d{2}$/.test(startISO))?startISO:((typeof cbPlanTodayISO=="function")?cbPlanTodayISO():cbTodayISO());
+    const d0=_cbParseDate(st); const monday=d0.getDay()===1; d0.setDate(d0.getDate()-1);
+    return {lastDayNum:0,lastDate:_cbISO(d0),lastWeekNum:monday?0:1,lastWeekLabel:monday?"":"Wk 1",synthetic:true,
+      isOff:ds=>!!(ds<st||smapIsKidOff(kid,ds)||schedOvKidOff(kid,ds))};
+  }
   let lastWeekNum=0;
   for(const wk of Object.keys(((currData||{}).weekDays||{})[kid]||{})){
     const m=wk.match(/Wk\s*(\d+)/i); if(m) lastWeekNum=Math.max(lastWeekNum,parseInt(m[1]));
   }
   return {lastDayNum,lastDate,lastWeekNum,lastWeekLabel,
-    isOff:ds=>!!(smapIsKidOff(kid,ds)||schedOvKidOff(kid,ds))};
+    isOff:ds=>!!((startISO&&ds<startISO)||smapIsKidOff(kid,ds)||schedOvKidOff(kid,ds))};   // 🗓 days before Start on are off for this build
 }
 
 // Snapshot of a subject's cells vs the kid's real position, for rebuild hygiene.
@@ -28946,6 +28955,7 @@ function cbDefaultForm(kid,sk){
     tpw:p.tpw||s.timesPerWeek||3,
     targetDate:p.targetDate||(s.targetEnd||""),
     windowEnd:p.windowEnd||"",
+    startDate:p.startDate||"",   // 🗓 Start on — nothing lands before this day; a kid with no grid yet gets one built from here (2026-10-01)
     totalPages:(p.pages&&p.pages.totalPages)||100,
     startPage:(p.pages&&p.pages.startPage)||1,
     patternStr:(p.pages&&p.pages.pattern||[]).join(", "),
@@ -28966,7 +28976,7 @@ function cbBuildCfg(){
   const kid=cbKid, sk=cbSubjKey, f=cbForm;
   const s=currData.subjects[kid][sk];
   const cfg={sk,minutes:s.minutes||20,mode:f.mode,allowedDays:f.allowedDays.slice(),
-    rows:cbFutureRows(kid,sk),dayCapMin:cbDayCap(kid),extend:cbExtendInfo(kid)};
+    rows:cbFutureRows(kid,sk,f.startDate),dayCapMin:cbDayCap(kid),extend:cbExtendInfo(kid,f.startDate)};
   if(f.mode==="targetDate") cfg.targetDate=f.targetDate;
   if(f.mode==="window"){ cfg.windowEnd=f.windowEnd; cfg.tpw=f.tpw; }
   if(f.mode==="timesPerWeek") cfg.tpw=f.tpw;
@@ -29047,6 +29057,7 @@ function cbRunPreview(){
 function cbPacingFromForm(){
   const f=cbForm;
   const p={mode:f.mode};
+  if(f.startDate&&String(f.startDate).trim()) p.startDate=String(f.startDate).trim();   // 🗓 Start on
   if(f.mode==="targetDate") p.targetDate=f.targetDate;
   if(f.mode==="timesPerWeek"||f.mode==="window"||f.mode==="pages"||f.mode==="minutes") p.tpw=f.tpw;
   if(f.mode==="window") p.windowEnd=f.windowEnd;
@@ -29774,6 +29785,8 @@ function cbRenderForm(col,embedded){
   h+='</div>';
 
   // Days
+  h+='<div class="ce-sheet-lbl">Start on <span style="font-weight:400;color:var(--muted)">(optional \u2014 nothing lands before this day; a kid with no grid yet gets one built from here)</span></div>';
+  h+='<input type="date" class="ce-sheet-input" value="'+esc(f.startDate||"")+'" onchange="cbSetField(\'startDate\',this.value)">';
   h+='<div class="ce-sheet-lbl">Days it can land on <span style="font-weight:400;color:var(--muted)">(none selected = any school day)</span></div><div class="ce-chips">';
   ["Mon","Tue","Wed","Thu","Fri"].forEach(d=>{
     h+='<div class="ce-chip'+(f.allowedDays.includes(d)?" sel":"")+'" onclick="cbToggleDay(\''+d+'\')">'+d+'</div>';
@@ -45129,7 +45142,9 @@ function saveRules(r){
 }
 
 function rulesToggleCard(id){
-  rulesOpen[id]=!rulesOpen[id];
+  // In Settings the School Day card opens by itself (rulesOpen.school undefined) — first tap closes it.
+  if(id==="school"&&rulesOpen[id]===undefined&&typeof schedShowAdmin!=="undefined"&&schedShowAdmin&&typeof adminSubTab!=="undefined"&&(adminSubTab==="settings"||adminSubTab==="rules")) rulesOpen[id]=false;
+  else rulesOpen[id]=!rulesOpen[id];
   renderAll();
 }
 function rulesUpdateSitterName(val){
@@ -45148,7 +45163,7 @@ function rulesToggleWithSitter(kid){
 }
 
 function rulesUpdateTime(field,val){
-  const r=JSON.parse(JSON.stringify(rulesData));
+  const r=JSON.parse(JSON.stringify(rulesData||{}));
   if(!r.schoolDay) r.schoolDay={};
   r.schoolDay[field]=to12h(val);
   saveRules(r);
@@ -45179,7 +45194,7 @@ function rulesUpdateCatchupMode(v){
   renderAll();
 }
 function rulesUpdateDayOverride(day,field,val){
-  const r=JSON.parse(JSON.stringify(rulesData));
+  const r=JSON.parse(JSON.stringify(rulesData||{}));
   if(!r.schoolDay) r.schoolDay={};
   if(!r.schoolDay.overrides) r.schoolDay.overrides={};
   if(!r.schoolDay.overrides[day]) r.schoolDay.overrides[day]={};
@@ -45190,7 +45205,7 @@ function rulesUpdateDayOverride(day,field,val){
   saveRules(r);
 }
 function rulesRemoveDayOverride(day){
-  const r=JSON.parse(JSON.stringify(rulesData));
+  const r=JSON.parse(JSON.stringify(rulesData||{}));
   if(r.schoolDay&&r.schoolDay.overrides&&r.schoolDay.overrides[day]){
     delete r.schoolDay.overrides[day];
     if(Object.keys(r.schoolDay.overrides).length===0) delete r.schoolDay.overrides;
@@ -45199,7 +45214,7 @@ function rulesRemoveDayOverride(day){
 }
 
 function rulesSwapWf(kid,mode,i,dir){
-  const r=JSON.parse(JSON.stringify(rulesData));
+  const r=JSON.parse(JSON.stringify(rulesData||{}));
   const arr=fbArr(r.workflow[kid][mode]);
   const j=i+dir;
   if(j<0||j>=arr.length) return;
@@ -45266,14 +45281,14 @@ function _wfSubs(r,kid,mode,i){
   return subs;
 }
 function wfSubjMove(kid,mode,i,j,dir){
-  const r=JSON.parse(JSON.stringify(rulesData));
+  const r=JSON.parse(JSON.stringify(rulesData||{}));
   const subs=_wfSubs(r,kid,mode,i); if(!subs) return;
   const t=j+dir; if(j<0||j>=subs.length||t<0||t>=subs.length) return;
   const tmp=subs[j]; subs[j]=subs[t]; subs[t]=tmp;
   saveRules(r);
 }
 function wfSubjRemove(kid,mode,i,j){
-  const r=JSON.parse(JSON.stringify(rulesData));
+  const r=JSON.parse(JSON.stringify(rulesData||{}));
   const subs=_wfSubs(r,kid,mode,i); if(!subs||j<0||j>=subs.length) return;
   subs.splice(j,1);
   saveRules(r);
@@ -45281,7 +45296,7 @@ function wfSubjRemove(kid,mode,i,j){
 function wfSubjAdd(kid,mode,i,sel){
   const sk=sel&&sel.value; if(sel) sel.value="";
   if(!sk) return;
-  const r=JSON.parse(JSON.stringify(rulesData));
+  const r=JSON.parse(JSON.stringify(rulesData||{}));
   const subs=_wfSubs(r,kid,mode,i); if(!subs) return;
   if(subs.indexOf(sk)>=0) return;
   subs.push(sk);                                             // the KEY is stored, never the name
@@ -45316,7 +45331,7 @@ function wfSweepDead(){
   const byKid={}; dead.forEach(function(d){ (byKid[d.kid]=byKid[d.kid]||[]).push(d.entry); });
   const msg=Object.keys(byKid).map(function(kk){ return cap(kk)+": "+byKid[kk].join(", "); }).join("\n");
   if(!confirm("Remove "+dead.length+" dead name"+(dead.length===1?"":"s")+" from the workflow?\n\nThese match no subject and no card this week, so they rank nothing — removing them cannot change any schedule.\n\n"+msg)) return;
-  const r=JSON.parse(JSON.stringify(rulesData));
+  const r=JSON.parse(JSON.stringify(rulesData||{}));
   const subsAll=((currData||{}).subjects)||{};
   for(const kid in r.workflow||{}){
     if(!subsAll[kid]||!Object.keys(subsAll[kid]).length) continue;
@@ -45332,7 +45347,7 @@ function wfSweepDead(){
 
 
 function rulesUpdateDeviceQueue(device,val){
-  const r=JSON.parse(JSON.stringify(rulesData));
+  const r=JSON.parse(JSON.stringify(rulesData||{}));
   if(!r.devices) r.devices={};
   if(!r.devices.queue) r.devices.queue={};
   if(val==="") delete r.devices.queue[device];
@@ -45340,14 +45355,14 @@ function rulesUpdateDeviceQueue(device,val){
   saveRules(r);
 }
 function rulesUpdateSaturday(field,val){
-  const r=JSON.parse(JSON.stringify(rulesData));
+  const r=JSON.parse(JSON.stringify(rulesData||{}));
   if(!r.saturday) r.saturday={};
   if(val==="") delete r.saturday[field];
   else r.saturday[field]=parseInt(val);
   saveRules(r);
 }
 function rulesUpdateSatCutoff(val){
-  const r=JSON.parse(JSON.stringify(rulesData));
+  const r=JSON.parse(JSON.stringify(rulesData||{}));
   if(!r.saturday) r.saturday={};
   if(val==="") delete r.saturday.cutoff;
   else r.saturday.cutoff=to12h(val);
@@ -45451,36 +45466,18 @@ function wfMomWindowMin(){
 // rules, carry-over & Saturday, calendar pointer, audit checklist). Rendered under the Grid's ⚙ Rules
 // panel since 2026-08-17 — the ONE door for anything that decides where school work lands. Same
 // setters (rulesUpdate*), same config/rules data. Returns "" until rules are loaded.
-function rulesFamilyCardsHTML(){
-  const r=rulesData; if(!r) return '<div style="font-size:12px;color:var(--muted);padding:8px 0">Loading rules…</div>';
+// 📅 School Day Times (start / end / lunch + per-day overrides, devices). One card, two homes: the
+// Grid's ⚙ Rules (with every other scheduling rule) and Settings (her ask 2026-10-01: "put these back").
+function rulesSchoolDayCardHTML(r,openByDefault){
+  r=r||{};
   const sd=r.schoolDay||{};
   const wf=r.workflow||{};
   const dv=r.devices||{};
   const ov=r.overlap||{};
   const nd=r.nothingDropsOff||{};
   const sat=r.saturday||{};
-  const o=id=>rulesOpen[id]?" open":"";
-
+  const o=id=>(rulesOpen[id]||(openByDefault&&id==="school"&&rulesOpen[id]!==false))?" open":"";   // Settings: the one card there opens by itself
   let h='';
-  // 0. BABYSITTER NAME
-  h+='<div class="rules-card'+o("sitter")+'">';
-  h+='<div class="rules-card-hdr" onclick="rulesToggleCard(\'sitter\')">';
-  h+='<div class="rules-card-title"><span>&#128118;</span> Babysitter</div>';
-  h+='<div class="rules-card-arrow">&#9654;</div></div>';
-  h+='<div class="rules-card-body">';
-  h+='<div class="rules-row"><div class="rules-label">Name</div><input type="text" class="rules-time" style="width:140px;font-size:13px" value="'+SITTER_NAME+'" autocomplete="off" data-lpignore="true" onchange="rulesUpdateSitterName(this.value)"></div>';
-  h+='<div style="font-size:11px;color:var(--muted);padding:4px 0">This name appears everywhere — tab, schedule, blockouts. Set days &amp; times in Plan Next Week.</div>';
-  const ws=(r.withSitter||[]);
-  h+='<div class="rules-section-lbl" style="margin-top:10px">With '+SITTER_NAME+' (no school during window)</div>';
-  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;padding:6px 0">';
-  [...ROSTER].forEach(k=>{
-    const on=ws.includes(k);
-    h+='<div class="pnw-chip'+(on?" on":"")+'" onclick="rulesToggleWithSitter(\''+k+'\')">'+cap(k)+'</div>';
-  });
-  h+='</div>';
-  h+='<div style="font-size:11px;color:var(--muted);padding:2px 0">Kids checked here have zero school tasks during babysitter time. Applies to current + future weeks.</div>';
-  h+='</div></div>';
-
   // 1. SCHOOL DAY SETTINGS
   h+='<div class="rules-card'+o("school")+'">';
   h+='<div class="rules-card-hdr" onclick="rulesToggleCard(\'school\')">';
@@ -45583,6 +45580,40 @@ function rulesFamilyCardsHTML(){
   h+='<div class="rules-row"><div class="rules-label">Computers</div><input type="number" min="1" max="6" class="rules-time" style="width:64px;text-align:center" value="'+_dv.computer+'" onchange="rulesUpdateDevice(\'computer\',this.value)"></div>';
   h+='<div style="font-size:11px;color:var(--muted);padding:8px 0 0;line-height:1.5">The generator never schedules more kids on a kind of device than you have. iPad and phone are one shared screen pool (the same apps run on both), so 2 lets two kids do screen work at the same time; a 3rd waits.</div>';
   h+='</div></div>';
+
+  return h;
+}
+function rulesFamilyCardsHTML(){
+  const r=rulesData||(rulesLoaded?{}:null); if(!r) return '<div style="font-size:12px;color:var(--muted);padding:8px 0">Loading rules…</div>';   // a new family: no rules yet → defaults, editable
+  const sd=r.schoolDay||{};
+  const wf=r.workflow||{};
+  const dv=r.devices||{};
+  const ov=r.overlap||{};
+  const nd=r.nothingDropsOff||{};
+  const sat=r.saturday||{};
+  const o=id=>rulesOpen[id]?" open":"";
+
+  let h='';
+  // 0. BABYSITTER NAME
+  h+='<div class="rules-card'+o("sitter")+'">';
+  h+='<div class="rules-card-hdr" onclick="rulesToggleCard(\'sitter\')">';
+  h+='<div class="rules-card-title"><span>&#128118;</span> Babysitter</div>';
+  h+='<div class="rules-card-arrow">&#9654;</div></div>';
+  h+='<div class="rules-card-body">';
+  h+='<div class="rules-row"><div class="rules-label">Name</div><input type="text" class="rules-time" style="width:140px;font-size:13px" value="'+SITTER_NAME+'" autocomplete="off" data-lpignore="true" onchange="rulesUpdateSitterName(this.value)"></div>';
+  h+='<div style="font-size:11px;color:var(--muted);padding:4px 0">This name appears everywhere — tab, schedule, blockouts. Set days &amp; times in Plan Next Week.</div>';
+  const ws=(r.withSitter||[]);
+  h+='<div class="rules-section-lbl" style="margin-top:10px">With '+SITTER_NAME+' (no school during window)</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;padding:6px 0">';
+  [...ROSTER].forEach(k=>{
+    const on=ws.includes(k);
+    h+='<div class="pnw-chip'+(on?" on":"")+'" onclick="rulesToggleWithSitter(\''+k+'\')">'+cap(k)+'</div>';
+  });
+  h+='</div>';
+  h+='<div style="font-size:11px;color:var(--muted);padding:2px 0">Kids checked here have zero school tasks during babysitter time. Applies to current + future weeks.</div>';
+  h+='</div></div>';
+
+  h+=rulesSchoolDayCardHTML(r);   // 📅 School Day Times — shared with Settings (back there 2026-10-01, her ask)
 
   // 2. WORKFLOW ORDERS
   h+='<div class="rules-card'+o("wf")+'">';
@@ -45824,8 +45855,11 @@ function rulesFamilyCardsHTML(){
 function rulesGoGrid(){ try{ currInnerTab="grid"; cbRulesOpen=true; cbFamilyRulesOpen=true; }catch(e){} setAdminSub("curriculum"); }
 function renderRules(el,headerHtml){
   if(!el){el=document.getElementById("content");if(!el)return;}
-  // Scheduling rules live under the Grid's ⚙ Rules (2026-08-17); Settings shows nothing for them (her ask).
-  el.innerHTML=(headerHtml||'');
+  // Scheduling rules live under the Grid's ⚙ Rules (2026-08-17). School Day Times came back here
+  // 2026-10-01 (her ask) — same card, same data; everything else still lives on the Grid.
+  el.innerHTML=(headerHtml||'')+'<div class="rules-wrap"><div class="rules-hdr">School Day</div>'+
+    '<div class="rules-sub">When school starts and ends, and the lunch block. The rest of the scheduling rules are on the Grid under ⚙ Rules.</div>'+
+    ((rulesLoaded||rulesData)?rulesSchoolDayCardHTML(rulesData||{},true):'<div style="font-size:12px;color:var(--muted);padding:8px 0">Loading rules…</div>')+'</div>';
 }
 
 // 🔁⏩ Bonus % (Admin ▸ Adjust Slots ▸ Bonus points) — one targeted set under config/slot_config/bonus
