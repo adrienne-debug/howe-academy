@@ -43717,7 +43717,19 @@ function prMomOrder(k,cards){
   try{ if(typeof applyStickyOrder==="function") applyStickyOrder(out,t=>t.subjectKey||"",t=>((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[t.who]||{})[t.subjectKey]||null,t=>t.who); }catch(e){}
   return out;
 }
-function mlQueueLay(tasks){
+// 💻 her ask 2026-10-01: the last word in render. After the day has shifted and the Mom queue has laid today from now,
+// two kids can still sit on one computer at the same time — step the later one over with the write-time guard's lane
+// rule (display only: today, lane clashes only, never a re-pack, never a roll). A card at exactly "now" has not started.
+function _mlLanePass(list){
+  try{
+    if(typeof seGuardWeek!=="function"||typeof seGuardCtx!=="function"||!Array.isArray(list)||!list.length) return list;
+    const copy=list.map(function(t){ return Object.assign({},t); });
+    const _n=new Date(); const r=seGuardWeek(copy,seGuardCtx({displayOnly:true,nowMin:_n.getHours()*60+_n.getMinutes()-1}));
+    return (r&&r.retimed&&r.retimed.length)?copy:list;
+  }catch(e){ return list; }
+}
+function mlQueueLay(tasks){ return _mlLanePass(_mlQueueLayCore(tasks)); }
+function _mlQueueLayCore(tasks){
   try{
     if(!Array.isArray(tasks)||!tasks.length) return tasks;
     const _sc=_mlScan(); const order=_sc.order, n=order.length; if(!n) return tasks;
@@ -44113,6 +44125,15 @@ function dsRetime(tasks){
         if(_nbFix){ if(t.id===_nb.id) m=firstT; else if(_ahead[t.id]) m+=(_nb.dur||5); }
         t.time=fromMin(Math.max(0,m+delta)); });
     });
+    // 💻 her ask 2026-10-01: once days have shifted, two kids can sit on one computer at the same time. Step the later
+    // one over, on screen, with the same lane rule the write-time guard uses — lane clashes only, today only, never a
+    // re-pack and never a roll (the next real write / the 8 PM sweep lays it for keeps). A card at exactly "now" is
+    // still movable here (nowMin-1), it has not started.
+    try{ if(typeof seGuardWeek==="function"&&typeof seGuardCtx==="function"){
+      const copy=(out===tasks)?tasks.map(function(t){ return Object.assign({},t); }):out;
+      const _n=new Date(); const r=seGuardWeek(copy,seGuardCtx({displayOnly:true,nowMin:_n.getHours()*60+_n.getMinutes()-1}));
+      if(r&&r.retimed&&r.retimed.length) out=copy;
+    } }catch(e){}
     return out;
   }catch(e){ return tasks; }
 }
@@ -44251,7 +44272,10 @@ function auditSchedule(tasks,checkedMap){
 function runDisplacement(){
   const bos=Object.values(blockouts);
   if(!bos.length||!weekData.tasks.length){ displacedResult=null; return; }
-  if(!rulesData||!rulesData.workflow){ displacedResult=null; return; }
+  // A family with no Workflow Orders saved (a new family) must still get blockouts: the per-kid
+  // workflow is optional below (kidWf missing → weight 0). Was an early return → blockouts showed
+  // their banner but moved nothing (Dewalt rehearsal, 2026-10-01).
+  if(!rulesData){ displacedResult=null; return; }
   const r=rulesData;
   const sd=r.schoolDay||{};
   const sdOv=sd.overrides||{};
@@ -50800,10 +50824,19 @@ function seGuardWeek(tasks,o){
   const started=t=>dIx(t)===ti&&o.nowMin!=null&&tm(t.time)<=o.nowMin;
   const fixed=t=>!!(ck[t.id]||cl[t.id])||started(t)||!!(o.isClass&&o.isClass(t));
   const dur=t=>+t.dur||20;
+  // 💻 device lanes: intervals where OTHER kids' open cards on the same device already use every unit the family has
+  const laneOf=t=>{ try{ return o.lane?o.lane(t):null; }catch(e){ return null; } };
+  const laneCap=l=>{ try{ return Math.max(1,(o.laneCap?o.laneCap(l):1)|0); }catch(e){ return 1; } };
+  const laneBusy=(kid,di,lane)=>{ const cap=laneCap(lane); const ev=[];
+    tasks.forEach(x=>{ if(skip(x)||x.who===kid||dIx(x)!==di||ck[x.id]||laneOf(x)!==lane) return; const a=tm(x.time); ev.push([a,1]); ev.push([a+dur(x),-1]); });
+    ev.sort((p,q)=>p[0]-q[0]||p[1]-q[1]); const out=[]; let n=0, open=null;
+    ev.forEach(e=>{ n+=e[1]; if(n>=cap&&open===null) open=e[0]; else if(n<cap&&open!==null){ if(e[0]>open) out.push([open,e[0]]); open=null; } });
+    return out; };
   const setT=(t,day,min)=>{ const nt=fm(min); if(t.day!==day){ if(t.rolledFrom==null){ t.rolledFrom=t.day; out.upd[t.id+"/rolledFrom"]=t.day; } t.day=day; out.upd[t.id+"/day"]=day; } if(t.time!==nt){ t.time=nt; out.upd[t.id+"/time"]=nt; } };   // rolledFrom = "fell off that day" (early finish feeds it back)
   const kids=o.kids||Array.from(new Set(tasks.filter(t=>t&&t.who).map(t=>t.who)));
   const first=ti>=0?ti:0;
-  for(let di=first;di<DAYS.length;di++){
+  const lastDi=o.displayOnly?first:DAYS.length-1;   // 💻 display pass: today only
+  for(let di=first;di<=lastDi;di++){
     const day=DAYS[di], W=o.win?o.win(day):null; if(!W||!(W.end>W.start)) continue;
     kids.forEach(kid=>{
       if(o.kidOff&&o.kidOff(kid,day)) return;
@@ -50820,7 +50853,10 @@ function seGuardWeek(tasks,o){
         // 📓 live 9/24: the 8 PM sweep carried Lincoln's pulled Eggspress back to Thursday's first slot, AHEAD of his
         // Morning Notebook — a day with the notebook behind other open work is not fine either
         const _nb=mov.find(isMorn), nbBehind=!!_nb&&mov.some(t=>t!==_nb&&tm(t.time)<tm(_nb.time));
-        if(!stacked&&!late&&nbBehind){
+        // 💻 a card sitting on a device another kid is already using (to capacity) is not fine either
+        const _lb={}; const laneBusyC=l=>_lb[l]||(_lb[l]=laneBusy(kid,di,l));
+        const laneClash=mov.some(t=>{ const l=laneOf(t); if(!l) return false; const a=tm(t.time), b=a+dur(t); return laneBusyC(l).some(iv=>a<iv[1]&&iv[0]<b); });
+        if(!o.displayOnly&&!stacked&&!late&&!laneClash&&nbBehind){
           // only the notebook is out of place → a SWAP, never a re-pack (a re-pack can run a minute past the end and roll a
           // lesson off the week — dry-run on live 9/24 did exactly that). The notebook takes the first open card's slot, the
           // cards that were ahead of it slide back by its length; skipped if that would touch a class, a checked card or
@@ -50835,19 +50871,19 @@ function seGuardWeek(tasks,o){
           }
           return;
         }
-        if(!stacked&&!late) return;                                                  // a fine day is left alone
+        if(o.displayOnly?!laneClash:(!stacked&&!late&&!laneClash)) return;          // a fine day is left alone (display pass: lane clashes only)
         // re-lay this kid's open cards in their current order
         const busy=mine.filter(fixed).map(t=>[tm(t.time),tm(t.time)+dur(t)]);
         if(W.lunchEnd>W.lunchStart) busy.push([W.lunchStart,W.lunchEnd]);
         const momBusy=tasks.filter(t=>!skip(t)&&t.who!==kid&&dIx(t)===di&&t.mom==="required").map(t=>[tm(t.time),tm(t.time)+dur(t)]);
         const order=mov.map((t,i)=>({t,i})).sort((a,b)=>(isMorn(b.t)-isMorn(a.t))||(isClose(a.t)-isClose(b.t))||(tm(a.t.time)-tm(b.t.time))||(a.i-b.i)).map(x=>x.t);   // 📓 notebook first · Closing last
         const lay=list=>{ let at=S0; const plan=new Map(); let over=false;
-          list.forEach(t=>{ const d=dur(t); const B=(t.mom==="required")?busy.concat(momBusy):busy; let mv=true;
+          list.forEach(t=>{ const d=dur(t); let B=(t.mom==="required")?busy.concat(momBusy):busy; const _ln=laneOf(t); if(_ln) B=B.concat(laneBusyC(_ln)); let mv=true;
             while(mv){ mv=false; B.forEach(b=>{ if(at<b[1]&&at+d>b[0]){ at=b[1]; mv=true; } }); }
             plan.set(t,at); if(at+d>W.end) over=true; at+=d; });
           return {plan:plan,over:over,end:at}; };
         const L0=lay(order), plan=L0.plan, over=L0.over;
-        if(!over){ plan.forEach((m,t)=>{ if(tm(t.time)!==m){ setT(t,day,m); if(out.retimed.indexOf(t.id)<0) out.retimed.push(t.id); } }); return; }
+        if(!over||o.displayOnly){ plan.forEach((m,t)=>{ if(tm(t.time)!==m){ setT(t,day,m); if(out.retimed.indexOf(t.id)<0) out.retimed.push(t.id); } }); return; }   // display pass never rolls
         // still past the end → the lesson furthest ahead of pace rolls forward in sequence
         const cand=order.filter(t=>!isClose(t)&&o.isLesson&&o.isLesson(t));
         if(!cand.length){ plan.forEach((m,t)=>{ if(tm(t.time)!==m){ setT(t,day,m); if(out.retimed.indexOf(t.id)<0) out.retimed.push(t.id); } }); out.stuck.push(kid+"|"+day); return; }
@@ -50891,6 +50927,10 @@ function seGuardCtx(extra){
     isLesson:t=>{ try{ if(t.subjectKey==="morning_nb"||t.subjectKey==="closing_nb"||/notebook/i.test(t.title||"")) return false;
       if(typeof subjNoCarry==="function"&&subjNoCarry(t)) return false; return typeof planBacked==="function"&&!!planBacked(t.who,t.subjectKey); }catch(e){ return false; } },
     ahead:(kid,sk)=>{ try{ return (typeof planPace==="function")?(planPace(kid,sk).score||0):0; }catch(e){ return 0; } },   // vs the CURRENT plan
+    // 💻 shared-device lanes (her ask 2026-10-01): the day's re-lay steps a computer / tablet card over OTHER kids' cards on
+    // the same device, up to how many the family has (Settings ▸ Device Rules) — the same lanes the generator packs with.
+    lane:t=>{ try{ const l=(typeof _efLane==="function")?_efLane(t):null; return (l==="computer"||l==="screen"||l==="ipadLucy")?l:null; }catch(e){ return null; } },
+    laneCap:l=>{ try{ return (typeof _efLaneCap==="function")?_efLaneCap(l):1; }catch(e){ return 1; } },
     toMin:toMin, fromMin:fromMin
   },extra||{});
 }
