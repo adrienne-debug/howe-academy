@@ -10421,7 +10421,7 @@ function kitPlanText(iso){
 }
 
 // ── recipe view / editor plumbing ──────────────────────────────────
-function kitOpenRecipe(mid){ kitView=mid; kitEditId=null; mpGoto('meals'); }
+function kitOpenRecipe(mid){ kitView=mid; kitEditId=null; kitScale=1; mpGoto('meals'); }
 function kitCloseRecipe(){ kitView=null; const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
 // The device copy of the recipe box leaves pictures out — they stay in the family database. A few hundred imported
 // thumbnails would otherwise fill the browser's storage, the bug class that cost sign-ins in September.
@@ -11246,7 +11246,8 @@ function kitRotationsCardHTML(){
   const thisMon=kitRotMondayOf(today);
   let h='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
   h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#B45309;color:#fff;font-weight:800;font-size:13px"><span>📅</span> Rotations'
-    +'<button onclick="kitRotSaveToggle()" style="margin-left:auto;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">'+(kitRotSaveOpen?'✕ Close':'＋ Save current plan')+'</button></div>';
+    +'<button onclick="kitRotFromFavorites()" style="margin-left:auto;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">😍 From favorites</button>'
+    +'<button onclick="kitRotSaveToggle()" style="margin-left:6px;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">'+(kitRotSaveOpen?'✕ Close':'＋ Save current plan')+'</button></div>';
   h+='<div style="padding:10px 14px 12px">';
   if(kitRotSaveOpen){
     h+='<div style="padding:9px 10px;background:#fffbeb;border:1.5px dashed #B45309;border-radius:9px;margin-bottom:10px">'
@@ -11581,6 +11582,70 @@ function kitImportHTML(){
   }
   return h+'</div>';
 }
+// ── ⚖ scaling (phase 4, 2026-10-02): the amount at the START of an ingredient line, × the factor. Display only — the
+//    recipe itself is never rewritten. Whole numbers, decimals, fractions, mixed numbers, ½-style glyphs, ranges.
+let kitScale=1;
+function kitSetScale(f){ kitScale=f; const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
+const KIT_FRAC_GLYPH={"½":0.5,"¼":0.25,"¾":0.75,"⅓":1/3,"⅔":2/3,"⅛":0.125,"⅜":0.375,"⅝":0.625,"⅞":0.875};
+function kitQtyParse(t){ t=String(t).trim(); let v=0; const g=t.match(/[½¼¾⅓⅔⅛⅜⅝⅞]$/); if(g){ v+=KIT_FRAC_GLYPH[g[0]]; t=t.slice(0,-1).trim(); }
+  if(!t) return v; const mx=t.match(/^(\d+)\s+(\d+)\/(\d+)$/); if(mx) return v+(+mx[1])+(+mx[2])/(+mx[3]);
+  const fr=t.match(/^(\d+)\/(\d+)$/); if(fr) return v+(+fr[1])/(+fr[2]); const n=parseFloat(t); return isNaN(n)?null:v+n; }
+function kitQtyFmt(x){ if(x>=10) return String(Math.round(x)); const w=Math.floor(x+1e-9); let r=x-w;
+  const fr=[[0,""],[1/8,"⅛"],[1/4,"¼"],[1/3,"⅓"],[3/8,"⅜"],[1/2,"½"],[5/8,"⅝"],[2/3,"⅔"],[3/4,"¾"],[7/8,"⅞"],[1,""]];
+  let best=fr[0]; fr.forEach(f=>{ if(Math.abs(r-f[0])<Math.abs(r-best[0])) best=f; });
+  const whole=best[0]===1?w+1:w; return (whole?String(whole):"")+(best[1]?(whole?" ":"")+best[1]:"")||"0"; }
+function kitScaleLine(line,f){
+  if(!f||f===1) return line; const L=String(line);
+  const Q="(?:\\d+\\s+\\d+\\/\\d+|\\d+\\/\\d+|\\d+(?:\\.\\d+)?(?:\\s*[½¼¾⅓⅔⅛⅜⅝⅞])?|[½¼¾⅓⅔⅛⅜⅝⅞])";   // the glyph may follow a space; a bare trailing space is not part of the amount
+  const m=L.match(new RegExp("^("+Q+")(\\s*[-–]\\s*("+Q+"))?(?=\\s|$|[a-zA-Z])"));
+  if(!m) return L; const a=kitQtyParse(m[1]); if(a==null) return L;
+  let out=kitQtyFmt(a*f); if(m[3]){ const b=kitQtyParse(m[3]); if(b!=null) out+="–"+kitQtyFmt(b*f); }
+  return out+L.slice(m[0].length);
+}
+// ── 😍 a rotation from the family's favorites (phase 4): meals ranked by votes (love 2, like 1, won't-eat −3), laid on
+//    dinners Mon–Sun for N weeks, never the same dinner two nights running. Saved like any rotation; nothing is planned
+//    until Mom applies it.
+function kitFavRank(meals){ const sc={love:2,like:1,no:-3};
+  return Object.keys(meals||{}).map(id=>{ const r=(meals[id]||{}).ratings||{}; return {id:id,score:Object.values(r).reduce((n,v)=>n+(sc[v]||0),0),name:String((meals[id]||{}).name||"")}; })
+    .filter(x=>x.score>0).sort((a,b)=>b.score-a.score||a.name.localeCompare(b.name)).map(x=>x.id); }
+function kitFavWeeks(ids,nWeeks,nameOf){
+  const weeks=[]; let k=0, prev=null;
+  for(let w=0;w<nWeeks;w++){ const wk=[]; for(let d=0;d<7;d++){ let id=ids[k%ids.length]; if(ids.length>1&&id===prev){ k++; id=ids[k%ids.length]; } k++; prev=id; wk.push({d:nameOf(id),b:"",l:"",s:""}); } weeks.push(wk); }
+  return weeks; }
+function kitRotFromFavorites(){
+  const ids=kitFavRank(kitMeals);
+  if(ids.length<3){ if(typeof mwToast==='function') mwToast('Rate at least 3 meals 😍 or 🙂 first — tap the faces on each recipe'); return; }
+  const weeks=kitFavWeeks(ids,4,id=>String((kitMeals[id]||{}).name||""));
+  kitRotEnsure();
+  const id="r"+Date.now().toString(36)+"_fav";
+  const rot={name:"Favorites",emoji:"😍",weeks:weeks,ts:Date.now()};
+  kitRotations[id]=rot;
+  try{HA_LS.setItem('ha_kit_rotations',JSON.stringify(kitRotations));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('kitchen/rotations/'+id).set(rot);
+  kitRotOpen=id;
+  if(typeof mwToast==='function') mwToast('😍 Favorites rotation saved — '+Math.min(ids.length,7)+' dinners a week for 4 weeks. Pick a Monday to apply it.');
+  kitRotRender();
+}
+// ── 🧭 first-run card (phase 4): three steps a new family works through; it disappears once all three are done ──
+function kitStartHTML(){
+  const nMeals=Object.keys(kitMeals||{}).length; let planned=0; const t=_todayStr();
+  for(let i=0;i<7;i++){ const p=kitPlan[kitIsoPlus(t,i)]; if(p&&(p.mid||p.txt||p.b||p.l||p.s)) planned++; }
+  const nRot=Object.keys(kitRotAll()||{}).length;
+  const steps=[[nMeals>=3,'Add a few recipes','Type one, paste one, snap a photo of a recipe card, or import from Paprika. '+nMeals+' so far.','<button onclick="kitEditMeal()" style="padding:5px 11px;border-radius:999px;border:1.5px solid #6B4C93;background:#fff;color:#6B4C93;font-size:11.5px;font-weight:700;cursor:pointer">＋ New meal</button> <button onclick="kitImpToggle()" style="padding:5px 11px;border-radius:999px;border:1.5px solid #6B4C93;background:#fff;color:#6B4C93;font-size:11.5px;font-weight:700;cursor:pointer">📥 Import</button>'],
+    [planned>=3,'Plan this week','Tap a day under This week\u2019s dinners and pick a meal. '+planned+' of 7 days planned.',''],
+    [nRot>=1,'Keep a rotation','Save a planned week as a rotation, or build one from the meals everyone rated 😍.','<button onclick="kitRotFromFavorites()" style="padding:5px 11px;border-radius:999px;border:1.5px solid #B45309;background:#fff;color:#B45309;font-size:11.5px;font-weight:700;cursor:pointer">😍 From favorites</button>']];
+  if(steps.every(x=>x[0])) return "";
+  let h='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);padding:12px 14px">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700;margin-bottom:6px">🧭 Getting the kitchen going</div>';
+  steps.forEach((x,i)=>{ h+='<div style="display:flex;gap:9px;align-items:flex-start;padding:6px 0;border-top:'+(i?'1px solid #f3f4f6':'none')+(x[0]?';opacity:.6':'')+'"><span style="font-size:15px">'+(x[0]?'✅':'⬜')+'</span><span style="flex:1;min-width:0"><b style="font-size:13px">'+x[1]+'</b><div style="font-size:11.5px;color:var(--muted);margin:1px 0 4px">'+x[2]+'</div>'+(x[0]?'':x[3])+'</span></div>'; });
+  return h+'</div>';
+}
+// ── 🔎 library search + tag filter (phase 4): shows once the box holds 8+ recipes ──
+let kitLibQ="", kitLibTag="";
+function kitLibMatch(m){ if(kitLibTag&&!(Array.isArray(m.tags)&&m.tags.includes(kitLibTag))) return false;
+  const q=kitLibQ.trim().toLowerCase(); if(!q) return true; return (String(m.name||"")+" \n"+String(m.ing||"")).toLowerCase().includes(q); }
+function kitLibFilter(v){ kitLibQ=String(v||""); document.querySelectorAll('[data-kit-mid]').forEach(r=>{ const m=kitMeals[r.getAttribute('data-kit-mid')]||{}; r.style.display=kitLibMatch(m)?"":"none"; }); }
+function kitLibTagSet(t){ kitLibTag=(kitLibTag===t)?"":t; const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
 function kitRecipeExtrasEditorHTML(d){
   const tags=Array.isArray(d.tags)?d.tags:[];
   let h='<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:9px">';
@@ -11602,7 +11667,7 @@ function kitRecipeExtrasHTML(m){
 }
 function kitRecipeHTML(mid){
   const m=kitMeals[mid]||{};
-  const ing=String(m.ing||"").split("\n").map(s=>s.trim()).filter(Boolean);
+  const ing=String(m.ing||"").split("\n").map(s=>s.trim()).filter(Boolean).map(x=>kitScaleLine(x,kitScale));   // ⚖ scaled for display only
   const steps=String(m.steps||"").split("\n").map(s=>s.trim()).filter(Boolean);
   const prep=Array.isArray(m.prep)?m.prep:[];
   const today=_todayStr(); const days=[];
@@ -11622,7 +11687,8 @@ function kitRecipeHTML(mid){
     +'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:2px 0 5px">😋 Kid votes</div>'
     +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">'+kitRateChips('meal',mid)+'</div>'
     +'<div style="font-size:10px;color:var(--muted);margin-bottom:8px">tap a kid to cycle 😍 love · 🙂 like · 🚫 won\'t eat</div>'
-    +'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:2px 0 5px">🧾 Ingredients</div>';
+    +'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:2px 0 5px"><span style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560">🧾 Ingredients</span><span style="margin-left:auto;display:flex;gap:4px">'+[[0.5,'½'],[1,'1×'],[2,'2×'],[3,'3×']].map(x=>'<button onclick="kitSetScale('+x[0]+')" style="padding:2px 9px;border-radius:999px;font-size:11px;font-weight:800;cursor:pointer;border:1.5px solid '+(kitScale===x[0]?'#E07B39;background:#E07B39;color:#fff':'#fed7aa;background:#fff;color:#c2410c')+'">'+x[1]+'</button>').join('')+'</span></div>'
+    +(kitScale!==1?'<div style="font-size:10.5px;color:var(--muted);margin-bottom:4px">Amounts at the start of each line are '+(kitScale<1?'halved':'×'+kitScale)+'. Check any amount in the middle of a line.'+(m.yield?' Makes about '+esc(kitScaleLine(m.yield,kitScale))+'.':'')+'</div>':'');
   if(ing.length) ing.forEach(x=>{ h+='<div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:13px"><span style="color:#E07B39">•</span><span>'+esc(x)+'</span></div>'; });
   else h+='<div style="font-size:12px;color:var(--muted)">None written down yet — ✎ Edit to add them.</div>';
   h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:12px 0 5px">📖 Instructions</div>';
@@ -11648,6 +11714,7 @@ function renderKitchen(el){
   if(kitEditId){ h+=kitEditorHTML(); h+='</div></div>'; el.innerHTML=h; return; }
   if(kitView&&kitMeals[kitView]){ h+=kitRecipeHTML(kitView); h+='</div></div>'; el.innerHTML=h; return; }
 
+  h+=kitStartHTML();   // 🧭 disappears once recipes, a planned week and a rotation exist
   // ── 🗓 The week — tonight + the next six days, tap a day to plan it ──
   h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
   h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#E07B39;color:#fff;font-weight:800;font-size:13px"><span>🗓</span> This week\'s dinners'
@@ -11703,10 +11770,14 @@ function renderKitchen(el){
     +'<button onclick="kitEditMeal()" style="margin-left:6px;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">＋ New meal</button></div>';
   h+='<div style="padding:10px 14px 12px">';
   if(kitImp.open) h+=kitImportHTML();
+  if(sortedMids.length>=8){
+    h+='<input id="kit-lib-q" type="search" value="'+esc(kitLibQ)+'" oninput="kitLibFilter(this.value)" placeholder="🔎 Search recipes or ingredients" style="width:100%;box-sizing:border-box;padding:8px 11px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif;margin-bottom:6px">';
+    h+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">'+KIT_TAGS.map(t=>'<span onclick="kitLibTagSet(\''+t[0]+'\')" style="cursor:pointer;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1.5px solid '+(kitLibTag===t[0]?'#6B4C93;background:#6B4C93;color:#fff':'#ddd6fe;background:#fff;color:#5b21b6')+'">'+esc(t[1])+'</span>').join('')+'</div>';
+  }
   sortedMids.forEach(mid=>{
     const m=kitMeals[mid];
     const nPrep=Array.isArray(m.prep)?m.prep.length:0;
-    h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:#f8f7f4;border:1.5px solid #e8e4de;border-radius:9px;margin-bottom:6px">'
+    h+='<div data-kit-mid="'+mid+'" style="display:'+(kitLibMatch(m)?'flex':'none')+';align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:#f8f7f4;border:1.5px solid #e8e4de;border-radius:9px;margin-bottom:6px">'
       +(m.photo?'<img src="'+m.photo+'" alt="" onclick="kitOpenRecipe(\''+mid+'\')" style="width:34px;height:34px;object-fit:cover;border-radius:8px;cursor:pointer;flex:none">':'')
       +'<span onclick="kitOpenRecipe(\''+mid+'\')" style="cursor:pointer;flex:1;font-size:13px;font-weight:700">'+(m.emoji?esc(m.emoji)+' ':'')+esc(m.name)+'</span>'
       +kitRateChips('meal',mid)
