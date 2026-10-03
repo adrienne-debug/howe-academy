@@ -7730,6 +7730,7 @@ function mpCandidates(kid){
       const tpl=nx.tpl;
       const card={id:nx.id,who:kid,day:_todayDay,time:"",dur:(+s.minutes)||(tpl&&tpl.dur)||20,mom:s.mom||(tpl&&tpl.mom)||"none",subjectKey:sk,title:nx.title,lid:nx.lid,
         device:(tpl&&tpl.device)||s.device||"",detail:(tpl&&tpl.detail)||"",masterPull:true,gotAhead:"master",pulledFrom:"plan"};
+      if(typeof lessonDayStamp==="function") lessonDayStamp(card,s);   // 👩 Mom on set days
       out.push({card:card,sk:sk,behind:_efBehind(kid,sk),gate:bwGate(kid,card)});
     }catch(e){} });
     return out.sort(function(a,b){ return (b.behind-a.behind)||String(a.card.title||"").localeCompare(String(b.card.title||"")); });
@@ -19433,6 +19434,32 @@ function lessonExpandDays(lines,n){
   bases.forEach(function(x){ if(n===1){ out.push(x.b); return; } for(let i=Math.min(x.start,n);i<=n;i++) out.push(x.b+" · day "+i+" of "+n); });
   return out;
 }
+// 👩 MOM ON SET DAYS of a multi-day lesson (her ask 2026-10-02 — DeWalt IEW + AAS 4: "with Mom day 1",
+// the other days on her own). subject.momDays = the day numbers that need Mom ([1]); subject.momDayMin =
+// how long those days run (else the subject's minutes). Only a "· day k of N" sitting of a subject that
+// sets momDays is touched: a Mom day → mom "required", momDayMin long; any other day → mom "none",
+// minutes long. A subject without momDays (every subject before this) gets null and nothing changes.
+function lessonDayList(s){
+  if(!s||!s.momDays) return [];
+  return (Array.isArray(s.momDays)?s.momDays:Object.values(s.momDays)).map(Number).filter(function(n){ return n>0; });
+}
+function lessonDayFlags(s,text){
+  const days=lessonDayList(s); if(!days.length) return null;
+  const m=String(text==null?"":text).match(/·\s*day (\d+) of (\d+)\s*$/i); if(!m) return null;
+  const on=days.indexOf(parseInt(m[1],10))>=0, base=(+s.minutes)||20;
+  return {mom:on?"required":"none",dur:on?((+s.momDayMin)||base):base};
+}
+function lessonDayStamp(t,s){ const f=t?lessonDayFlags(s,t.title):null; if(f){ t.mom=f.mom; t.dur=f.dur; } return t; }
+// The most days any lesson of this subject spans (0 = no multi-day lessons → no Mom-day chips).
+function lessonDaySpan(s){
+  let n=0; ((s&&s.lessonSeq)||[]).forEach(function(x){ const m=String(x==null?"":x).match(/·\s*day \d+ of (\d+)\s*$/i); if(m) n=Math.max(n,parseInt(m[1],10)); });
+  return n;
+}
+function lsdToggleDay(kid,sk,k){
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s) return;
+  const cur=lessonDayList(s); const i=cur.indexOf(k); if(i>=0) cur.splice(i,1); else cur.push(k); cur.sort(function(a,b){ return a-b; });
+  rlSet(kid,sk,"momDays",cur.length?cur:null,false);
+}
 function ceConvDaysPerLesson(n){
   const ta=document.getElementById("ce-conv-lines"); if(!ta) return;
   const lines=ta.value.split("\n").map(l=>l.trim()).filter(Boolean);
@@ -29805,7 +29832,7 @@ function rlSet(kid,sk,field,val,relay){
   currData.lastEdit=new Date().toISOString(); db.ref("curriculum/lastEdit").set(currData.lastEdit);
   // 👩 Mom changed (her ask 2026-09-22): this week's cards follow at once — the week re-lay restamps
   // them and keeps Mom-required work off a co-op's no-Mom day. Before, only the setting saved.
-  if(field==="mom"&&typeof planBacked==="function"&&planBacked(kid,sk)&&typeof reprojectSubjectWeek==="function"){
+  if((field==="mom"||field==="momDays"||field==="momDayMin")&&typeof planBacked==="function"&&planBacked(kid,sk)&&typeof reprojectSubjectWeek==="function"){
     try{ reprojectSubjectWeek(kid,sk,"mom",{then:function(){ if(typeof renderAll==="function") renderAll(); }}); }catch(e){ if(typeof dbg==="function") dbg("mom relay skip "+kid+"/"+sk+": "+e); } }
   if(relay&&typeof planBacked==="function"&&planBacked(kid,sk)&&s.pacing&&s.pacing.mode&&typeof _gvRelaySubject==="function"){ const _k=cbKid,_s=cbSubjKey; cbKid=kid; cbSubjKey=sk; const ok=_gvRelaySubject(kid,sk,(s.display||sk)+" re-laid"); cbKid=_k; cbSubjKey=_s; if(ok) return; }
   renderAll();
@@ -29952,7 +29979,14 @@ function cbRenderRules(col){
     h+='<td style="padding:3px 6px;white-space:nowrap'+_lnDim+'><span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'tpw\','+(tpw-1)+',true)" style="'+_pill+'">−</span> <b>'+(tpw||"all")+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'tpw\','+(tpw+1)+',true)" style="'+_pill+'">+</span></td>';
     h+='<td style="padding:3px 6px;white-space:nowrap'+_lnDim+'>'+((true)?('<span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'cap\','+Math.max(1,_capN-1)+',true)" style="'+_pill+'">−</span> <b>'+_capN+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'cap\','+Math.min(4,_capN+1)+',true)" style="'+_pill+'">+</span>'):'<span style="color:var(--muted)">—</span>')+'</td>';
     h+='<td style="padding:3px 6px;white-space:nowrap"><span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'minutes\','+Math.max(5,(s.minutes||20)-5)+',true)" style="'+_pill+'">−</span> <b>'+(s.minutes||20)+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'minutes\','+Math.min(90,(s.minutes||20)+5)+',true)" style="'+_pill+'">+</span></td>';
-    h+='<td style="padding:3px 6px"><span '+_cyc(sk,"mom",["none","maybe","required"],s.mom||"none",false)+' style="'+_pill+'">'+({none:"None",maybe:"Maybe",required:"Required"}[s.mom||"none"])+'</span></td>';
+    { const _span=(typeof lessonDaySpan==="function")?lessonDaySpan(s):0, _md=_span>1?lessonDayList(s):[];
+      h+='<td style="padding:3px 6px">'+(_md.length?'<span style="'+_pill+';opacity:.45" title="Set by the Mom days below">'+({none:"None",maybe:"Maybe",required:"Required"}[s.mom||"none"])+'</span>':'<span '+_cyc(sk,"mom",["none","maybe","required"],s.mom||"none",false)+' style="'+_pill+'">'+({none:"None",maybe:"Maybe",required:"Required"}[s.mom||"none"])+'</span>');
+      // 👩 Mom on set days (her ask 2026-10-02): tick which day of each lesson needs Mom; the rest are on their own
+      if(_span>1){ h+='<div style="margin-top:3px;white-space:nowrap;font-size:9.5px;color:var(--muted)" title="Each lesson takes '+_span+' days. Tick the days that need Mom; the other days are on their own. Nothing ticked = the Mom setting above applies to every day.">👩 days: '
+        +Array.from({length:_span},function(_,i){ const k=i+1, on=_md.indexOf(k)>=0; return '<span onclick="lsdToggleDay(\''+kid+'\',\''+sk+'\','+k+')" style="'+_pill+(on?';background:'+col+';color:#fff;border-color:transparent':'')+'">'+k+'</span>'; }).join(' ');
+        if(_md.length){ const _mm=(+s.momDayMin)||(s.minutes||20); h+=' · <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'momDayMin\','+Math.max(5,_mm-5)+',false)" style="'+_pill+'">−</span> <b>'+_mm+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'momDayMin\','+Math.min(90,_mm+5)+',false)" style="'+_pill+'">+</span> min'; }
+        h+='</div>'; }
+      h+='</td>'; }
     h+='<td style="padding:3px 6px"><span '+_cyc(sk,"device",["paper","computer","ipad/phone","book","keyboard"],dev,false)+' style="'+_pill+'">'+(CURR_DEV_EMOJI[dev]||"")+' '+(CURR_DEV_LABEL[dev]||dev)+'</span></td>';
     h+='<td style="padding:3px 6px"><span '+_cyc(sk,"priority",["low","normal","high"],s.priority||"normal",true)+' style="'+_pill+'">'+(function(x){ x=String(x); return x.charAt(0).toUpperCase()+x.slice(1); })(s.priority||"normal")+'</span></td>';
     h+='<td style="padding:3px 6px;white-space:nowrap"><span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'rulesTok\',\'first\',false)" style="'+_pill+(fl==="first"?';background:'+col+';color:#fff;border-color:transparent':'')+'">First</span> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'rulesTok\',\'last\',false)" style="'+_pill+(fl==="last"?';background:'+col+';color:#fff;border-color:transparent':'')+'">Last</span></td>';
@@ -32462,6 +32496,10 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
     if(w.title&&w.title!==t.title&&!opts.checked[t.id]){ upd[t.id+"/title"]=w.title; if(w.detail!==undefined) upd[t.id+"/detail"]=w.detail||null; t.title=w.title; if(w.detail!==undefined) t.detail=w.detail; summary.retitled.push(t.id); }
     // 👩 the subject's Mom setting changed: an open card takes the new stamp (her ask 2026-09-22)
     if(w.mom!==undefined&&(w.mom||"none")!==(t.mom||"none")&&!opts.checked[t.id]){ upd[t.id+"/mom"]=w.mom; t.mom=w.mom; if(summary.retitled.indexOf(t.id)<0) summary.retitled.push(t.id); }
+    // 👩 Mom on set days: the card's flag and length follow the day it now holds (a Mom day can run longer)
+    if(opts.lsdSubj&&!opts.checked[t.id]&&typeof lessonDayFlags==="function"){ const _lf=lessonDayFlags(opts.lsdSubj,t.title);
+      if(_lf){ if((t.mom||"none")!==_lf.mom){ upd[t.id+"/mom"]=_lf.mom; t.mom=_lf.mom; } if((+t.dur||0)!==_lf.dur){ upd[t.id+"/dur"]=_lf.dur; t.dur=_lf.dur; }
+        if((upd[t.id+"/mom"]!==undefined||upd[t.id+"/dur"]!==undefined)&&summary.retitled.indexOf(t.id)<0) summary.retitled.push(t.id); } }
     if(w.day&&w.day!==t.day){ if(locked(t)) return; if(dayIx(w.day)>=0&&tIx>=0&&dayIx(w.day)<tIx) return; // never move into the past
       (freed[t.day]=freed[t.day]||[]).push(t.time); t.day=w.day; t.time=null; summary.moved.push(t.id); }
   });
@@ -32781,6 +32819,7 @@ function _rpPatternWant(kid,sk,o){
     const base=gen.find(function(t){ return lidOf(t.id)===a.lid; })||live.find(function(t){ return lidOf(t.id)===a.lid; })||template;
     const nt=Object.assign({},base);
     nt.id=String(template.id).replace(/_L\d+$/,"_"+a.lid); nt.lid=a.lid; nt.day=slots[i]; nt.title=titleFor(a.lid,text);
+    if(typeof lessonDayStamp==="function") lessonDayStamp(nt,subj);   // 👩 Mom on set days
     delete nt.catchup; delete nt.cascadedFrom; delete nt._eowOverflow; delete nt.pulledFrom;
     mine.push(nt);
   }
@@ -32828,7 +32867,7 @@ function reprojectSubjectWeek(kid,sk,why,opts){
       // ⏭ pattern-forward: the subject's days come from its plan, not the generator's balancer
       const _nowMin=nowD.getHours()*60+nowD.getMinutes();
       const _pw=_rpPatternWant(kid,sk,{wn,todayDay,nowMin:_nowMin,toMin,mode:_rpMode,dayCap:_rpCap,blockedDays:_blockedDays,liveTasks:weekData.tasks,genTasks:gen.result.tasks,checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{}});
-      const r=_reprojectPlan(kid,sk,weekData.tasks,_pw?_pw.desired:gen.result.tasks,{todayDay,nowMin:_nowMin,checked:checked||{},claimed:_pw?_pw.claimed:((typeof claimed!=="undefined"&&claimed)||{}),dayCtx,packAround,toMin,fromMin,dayCap:_rpCap,lidOrder:_subj.lessonIds||[],allowedDays:_rpDays,doneLids:_doneLids,dropUnwanted:!!(opts&&opts.dropUnwanted)||!!_pw,patternForward:!!_pw,freshToday:!!_pw&&_rpMode==="fresh",blockedDays:_blockedDays});
+      const r=_reprojectPlan(kid,sk,weekData.tasks,_pw?_pw.desired:gen.result.tasks,{todayDay,nowMin:_nowMin,checked:checked||{},claimed:_pw?_pw.claimed:((typeof claimed!=="undefined"&&claimed)||{}),dayCtx,packAround,toMin,fromMin,dayCap:_rpCap,lidOrder:_subj.lessonIds||[],lsdSubj:(typeof lessonDayList==="function"&&lessonDayList(_subj).length)?_subj:null,allowedDays:_rpDays,doneLids:_doneLids,dropUnwanted:!!(opts&&opts.dropUnwanted)||!!_pw,patternForward:!!_pw,freshToday:!!_pw&&_rpMode==="fresh",blockedDays:_blockedDays});
       try{ if(typeof seGuardWeek==="function"){ const _se=seGuardWeek(r.tasksAfter,seGuardCtx({kids:[kid],checked:checked||{}}));
         Object.keys(_se.upd).forEach(p=>{ if(_se.upd[p]===null){ Object.keys(r.upd).forEach(q=>{ if(q.indexOf(p+"/")===0) delete r.upd[q]; }); } r.upd[p]=_se.upd[p]; });
         r.summary.shifted=(r.summary.shifted||[]).concat(_se.retimed,_se.rolled); r.summary.removed=r.summary.removed.concat(_se.deferred); } }catch(eSE){ dbg&&dbg("school-end skip: "+eSE); }
@@ -50549,7 +50588,8 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
     // 6c: no-fri / mon-thu tokens retired — Days pins decide placement upstream (Builder /
     // projection / balancer); what the grid laid is read as-is here, never dropped.
     const id=prefix+(counter++);
-    items.push({id,who:kid,device:s.device||"paper",dur:s.minutes||20,mom:s.mom||"none"});
+    const _lsd=(typeof lessonDayFlags==="function")?lessonDayFlags(s,excelVal):null;   // 👩 Mom on set days
+    items.push({id,who:kid,device:s.device||"paper",dur:_lsd?_lsd.dur:(s.minutes||20),mom:_lsd?_lsd.mom:(s.mom||"none")});
     meta[id]={kid,key,excelVal,s};
   }
   function pushBucket(kid,bucket){ (bucket||[]).forEach(([key,val])=>pushItem(kid,key,val)); }
@@ -50651,10 +50691,10 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
       dropped.push({kid:mm.kid,day:dayName,key:mm.key,val:mm.excelVal,reason:"⚠️ RAN PAST SCHOOL-DAY CUTOFF — needs manual placement"});
       return;
     }
-    const s=mm.s;
-    tasks.push({id:it.id,who:mm.kid,day:dayName,time:it.time,dur:s.minutes||20,
+    const s=mm.s; const _lsd=(typeof lessonDayFlags==="function")?lessonDayFlags(s,mm.excelVal):null;   // 👩 Mom on set days
+    tasks.push({id:it.id,who:mm.kid,day:dayName,time:it.time,dur:_lsd?_lsd.dur:(s.minutes||20),
       title:gwTaskTitle(mm.kid,mm.key,mm.excelVal,dayName,isCarSchool,ellisHasIpad),
-      detail:gwSubjectDetail(mm.kid,mm.key),mom:s.mom||"none",cascade:true,device:s.device||"paper",subjectKey:mm.key});
+      detail:gwSubjectDetail(mm.kid,mm.key),mom:_lsd?_lsd.mom:(s.mom||"none"),cascade:true,device:s.device||"paper",subjectKey:mm.key});
   });
   tasks.sort((a,b)=>toMin(a.time)-toMin(b.time));
   return {tasks,counter,dropped};
@@ -52065,13 +52105,14 @@ function prExtraCore(tasks,o){
           if(x.behind<=0||!x.next.length) continue;
           if(x.days&&x.days.length&&x.days.indexOf(day)<0) continue;
           const count=tasks.filter(t=>t&&t.who===kid&&t.day===day&&t.subjectKey===x.sk&&!String(t.id||"").endsWith("_c")&&!/lunch/i.test(t.title||"")).length; if(count>=(x.cap||1)) continue;   // 🔁 9/28: a parked (_eowOverflow) card still holds its day's slot
-          let st=lastEnd; if(W.lunchEnd>W.lunchStart&&st<W.lunchEnd&&st+x.dur>W.lunchStart) st=W.lunchEnd;
-          if(x.mom==="required"&&momBusy.some(b=>st<b[1]&&st+x.dur>b[0])) continue;
-          if(st+x.dur+(close?dur(close):0)>W.end) continue;
+          const _lf=x.lsd?lessonDayFlags(x.lsd,(x.next[0]||{}).title):null, xd=_lf?_lf.dur:x.dur, xm=_lf?_lf.mom:x.mom;   // 👩 Mom on set days
+          let st=lastEnd; if(W.lunchEnd>W.lunchStart&&st<W.lunchEnd&&st+xd>W.lunchStart) st=W.lunchEnd;
+          if(xm==="required"&&momBusy.some(b=>st<b[1]&&st+xd>b[0])) continue;
+          if(st+xd+(close?dur(close):0)>W.end) continue;
           const ls=x.next.shift();
-          const card=Object.assign({},x.base||{},{id:ls.id,who:kid,day:day,time:fm(st),dur:x.dur,mom:x.mom||"none",subjectKey:x.sk,title:ls.title,lid:ls.lid,catchUp:true});
+          const card=Object.assign({},x.base||{},{id:ls.id,who:kid,day:day,time:fm(st),dur:xd,mom:xm||"none",subjectKey:x.sk,title:ls.title,lid:ls.lid,catchUp:true});
           tasks.push(card); have.add(card.id); out.added.push(card); out.upd[card.id]=card;
-          lastEnd=st+x.dur; x.behind--;
+          lastEnd=st+xd; x.behind--;
           if(close&&tm(close.time)<lastEnd){ const ct=fm(lastEnd); close.time=ct; out.upd[close.id+"/time"]=ct; }
           placed=true; break;
         }
@@ -52099,7 +52140,7 @@ function prExtraCtx(extra){
       const next=[]; for(let i=0;i<ids.length&&next.length<behind;i++){ const l=ids[i]; if(!l||done.has(l)||dealt.has(l)) continue;
         const text=String(seq[i]==null?"":seq[i]); next.push({lid:l,id:kid+"_"+planIdFor(kid,sk)+"_"+l,title:tpl?_seqFillTitle(tpl.title,text):((s.display||sk)+" — "+text)}); }
       const days=(s.allowedDays||[]).map(d=>DN[String(d).slice(0,3).toLowerCase()]).filter(Boolean);
-      out.push({sk:sk,behind:behind,cap:Math.max(1,parseInt(s.cap,10)||1),days:days,dur:+s.minutes||(tpl&&tpl.dur)||20,mom:s.mom||(tpl&&tpl.mom)||"none",next:next,
+      out.push({sk:sk,behind:behind,cap:Math.max(1,parseInt(s.cap,10)||1),days:days,dur:+s.minutes||(tpl&&tpl.dur)||20,mom:s.mom||(tpl&&tpl.mom)||"none",next:next,lsd:((typeof lessonDayList==="function")&&lessonDayList(s).length)?s:null,
         base:{device:(tpl&&tpl.device)||s.device||"",detail:(tpl&&tpl.detail)||"",cascade:true}});
     }catch(e){} });
     return out; }});
@@ -52253,6 +52294,7 @@ function seqFillNormalize(tasks,reason){
       if(t._eowOverflow){ const _ot=String(t.title||""), _oi=_ot.lastIndexOf(" — ");
         boxNotes.push(key+" "+(_oi>=0?_ot.slice(_oi+3):(a.from||"?"))+" → "+a.text+" (filed under "+String(t.day||"?")+")"); }
       t.lid=a.lid; t.title=_seqFillTitle(t.title,a.text);
+      if(typeof lessonDayStamp==="function") lessonDayStamp(t,subj);   // 👩 Mom on set days
       if(a.newId&&a.newId!==t.id&&!live.has(a.newId)){ live.delete(t.id); live.add(a.newId); t.id=a.newId; }
       changed++;
     });
