@@ -3740,6 +3740,7 @@ function initFb() {
       schedCascade(); // curriculum may be the LAST loader to answer — re-arm the debounced sweep
     });
     db.ref("config/helpers").on("value",s=>{ helpersOnValue(s.val()); });   // 🙋 helper profiles
+    try{ db.ref("helperDays").orderByKey().limitToLast(3).on("value",s=>{ helperDaysOnValue(s.val()); }); }catch(e){}   // 🙋 who is here today
     db.ref("worksheets").on("value",s=>{ wsOnValue(s.val()); });   // 📋 worksheets from Adrienne
     db.ref("config/rules").on("value",s=>{
       rulesData=s.val()||null; rulesLoaded=true;
@@ -6310,6 +6311,141 @@ function helpersCardHTML(){
   h+='</div></div>';
   return h;
 }
+// ── 🙋 Slice 2 (2026-10-03): "Is she here?" / "She left". A helper's session lives in its OWN node,
+// helperDays/<yyyy-mm-dd>/<helperId> = {arrived, left, took:{taskKey:true}}. While she is here, helperHolds(t)
+// says a card is hers: it leaves Mom's queue (the loop, the Mom-off sink, "send to Mom") and shows
+// "with Grandma". Nothing about the task is ever rewritten — tap "She left" (or the date turning over) and
+// helperHolds answers null again, so every unfinished card is Mom's exactly as before. A check-off made while
+// she has the card counts exactly like Mom's and its history entry carries helper:"Grandma".
+let helperDaysData={}, helpersPopId=null;
+function _hlpTodayISO(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function _hlpKey(id){ return String(id).replace(/[.$#\[\]\/%]/g,c=>"%"+c.charCodeAt(0).toString(16)); }   // Firebase-safe task key
+function helperDaysOnValue(v){
+  helperDaysData=(v&&typeof v==="object")?v:{};
+  const ae=(typeof document!=="undefined")&&document.activeElement;
+  if(!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))&&typeof renderAll==="function") renderAll();
+  if(helpersPopId) helpersPopRender();
+}
+function helperSessionsToday(){ return (helperDaysData&&helperDaysData[_hlpTodayISO()])||{}; }
+function helperIsHere(id){ const s=helperSessionsToday()[id]; return !!(s&&s.arrived&&!s.left&&helpersData[id]); }
+function _hlpApproved(p,t){ return !!(p&&p.help&&t&&p.help[t.who]&&p.help[t.who][t.subjectKey]); }
+function _hlpIsToday(t){ try{ return ((typeof _mlDayOf==="function")?_mlDayOf(t):t.day)===_todayDay; }catch(e){ return false; } }
+// The one question everything asks: is this card a helper's right now? → helper id, or null.
+function helperHolds(t){
+  try{
+    if(!t||!t.who||!t.subjectKey||!pageOn("helpers")) return null;
+    const ss=helperSessionsToday(); const ids=Object.keys(ss); if(!ids.length) return null;
+    if(String(t.id||"").endsWith("_c")||!_hlpIsToday(t)) return null;
+    for(let i=0;i<ids.length;i++){
+      const id=ids[i]; if(!helperIsHere(id)) continue;
+      const p=helpersData[id];
+      if(!_hlpApproved(p,t)) continue;
+      if(p.pick&&!(ss[id].took&&ss[id].took[_hlpKey(t.id)])) continue;
+      return id;
+    }
+  }catch(e){}
+  return null;
+}
+function helperName(id){ return ((helpersData&&helpersData[id])||{}).name||"Helper"; }
+function helperIcon(id){ return ((helpersData&&helpersData[id])||{}).icon||"🙋"; }
+// Today's cards this helper is approved for (done or not), in time order.
+function helperTasksToday(id){
+  const p=helpersData[id]; if(!p) return [];
+  let all=[]; try{ all=(typeof getActiveTasks==="function"?getActiveTasks():weekData.tasks)||[]; }catch(e){ all=[]; }
+  return all.filter(t=>t&&!String(t.id||"").endsWith("_c")&&!/lunch/i.test(t.title||"")&&_hlpIsToday(t)&&_hlpApproved(p,t))
+    .sort((a,b)=>(toMin(a.time)-toMin(b.time))||String(a.who).localeCompare(String(b.who)));
+}
+// Session writes: one leaf under helperDays/<today>/<id>, mirrored locally (and so in dry-run too).
+function _hlpDayWrite(id,path,val){
+  if(!_hlpIdOk(id)||!helpersData[id]) return false;
+  const iso=_hlpTodayISO();
+  const day=helperDaysData[iso]=helperDaysData[iso]||{};
+  let o=day[id]=day[id]||{}; const parts=path.split("/");
+  for(let i=0;i<parts.length-1;i++){ if(!o[parts[i]]||typeof o[parts[i]]!=="object") o[parts[i]]={}; o=o[parts[i]]; }
+  if(val===null) delete o[parts[parts.length-1]]; else o[parts[parts.length-1]]=val;
+  if(db&&!_dryRun()){ const r=db.ref("helperDays/"+iso+"/"+id+"/"+path); if(val===null) r.remove(); else r.set(val); }
+  return true;
+}
+// 🔒 Her rule 10/3: checking a helper in or out (and Dad's ticks) is behind Mom mode / the Mom PIN — the strip
+// itself shows to everyone so the kids can see who is here.
+function helperArrive(id){
+  if(!momHere()||!_hlpIdOk(id)||!helpersData[id]) return;
+  _hlpDayWrite(id,"arrived",Date.now()); _hlpDayWrite(id,"left",null);
+  helpersPopId=id; renderAll(); helpersPopRender();
+}
+function helperLeave(id){
+  if(!momHere()||!helperIsHere(id)) return;
+  const nm=helperName(id);
+  if(!confirm(nm+" left? Anything "+nm+" didn't finish goes back to Mom.")) return;
+  _hlpDayWrite(id,"left",Date.now());
+  helpersPopId=null; helpersPopRender(); renderAll();
+}
+function helperTake(id,taskId){
+  if(!momHere()||!helperIsHere(id)) return;
+  const k=_hlpKey(taskId), s=helperSessionsToday()[id]||{};
+  _hlpDayWrite(id,"took/"+k,(s.took&&s.took[k])?null:true);
+  renderAll(); helpersPopRender();
+}
+function helpersPopOpen(id){
+  if(!momHere()){ if(typeof kitPinGate==="function") kitPinGate(function(){ helpersPopOpen(id); },"Checking a helper in or out is for Mom."); return; }
+  helpersPopId=id; helpersPopRender();
+}
+function helpersPopClose(){ helpersPopId=null; helpersPopRender(); }
+function helpersPopRender(){
+  if(typeof document==="undefined") return;
+  let el=document.getElementById("hlp-pop");
+  if(!helpersPopId||!helpersData[helpersPopId]){ if(el) el.remove(); return; }
+  if(!el){ el=document.createElement("div"); el.id="hlp-pop"; document.body.appendChild(el); }
+  el.innerHTML=helpersPopHTML(helpersPopId);
+}
+function helpersPopHTML(id){
+  const p=helpersData[id]||{}, here=helperIsHere(id), s=helperSessionsToday()[id]||{};
+  const ts=helperTasksToday(id), nm=esc(helperName(id));
+  let h='<div onclick="if(event.target===this)helpersPopClose()" style="position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9000;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto">';
+  h+='<div style="background:#fff;border-radius:16px;max-width:460px;width:100%;padding:16px 16px 14px;box-shadow:0 20px 50px rgba(0,0,0,.25);font-family:\'DM Sans\',sans-serif">';
+  h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px"><span style="font-size:28px">'+esc(helperIcon(id))+'</span><div style="flex:1"><div style="font-size:17px;font-weight:800">'+nm+(here?' is here':'')+'</div>';
+  h+='<div style="font-size:12px;color:var(--muted)">'+(here?(p.pick?'Tap the ones '+nm+' will take — the rest stay with Mom.':'These are '+nm+'\'s today. Check them off as you go.'):'Not here right now.')+'</div></div>';
+  h+='<button onclick="helpersPopClose()" style="border:none;background:none;font-size:22px;cursor:pointer;color:#64748b">&times;</button></div>';
+  if(!ts.length) h+='<div style="padding:14px 4px;font-size:13px;color:var(--muted)">Nothing on today\'s schedule that '+nm+' helps with.</div>';
+  ts.forEach(t=>{
+    const done=!!(typeof checked!=="undefined"&&checked&&checked[t.id]);
+    const took=!p.pick||!!(s.took&&s.took[_hlpKey(t.id)]);
+    const mine=here&&took;
+    const col=(typeof KID_COLOR!=="undefined"&&KID_COLOR[t.who])||"#64748b";
+    h+='<div style="display:flex;align-items:center;gap:10px;padding:9px 6px;border-top:1px solid var(--border)">';
+    if(here&&p.pick&&!done) h+='<input type="checkbox" '+(took?'checked ':'')+'onchange="helperTake(\''+id+'\',\''+_hlpQ(t.id)+'\')" style="width:20px;height:20px;accent-color:#16a34a;flex-shrink:0">';
+    else h+='<span style="width:20px;text-align:center;flex-shrink:0;font-size:15px">'+(done?'&#9989;':(mine?'&#9675;':'&middot;'))+'</span>';
+    h+='<div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700'+(done?';text-decoration:line-through;color:#94a3b8':'')+'">'+esc(t.title)+'</div>';
+    h+='<div style="font-size:11px;color:var(--muted)"><span style="color:'+col+';font-weight:800">'+esc(cap(t.who))+'</span>'+(done?' · done':(here&&!took?' · stays with Mom':''))+'</div></div></div>';
+  });
+  h+='<div style="display:flex;gap:8px;margin-top:12px">';
+  if(here) h+='<button onclick="helperLeave(\''+id+'\')" style="flex:1;border:1.5px solid #fca5a5;background:#fff;color:#b91c1c;border-radius:10px;padding:9px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">'+nm+' left</button>';
+  else h+='<button onclick="helperArrive(\''+id+'\')" style="flex:1;border:none;background:#16a34a;color:#fff;border-radius:10px;padding:9px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">'+nm+' is here</button>';
+  h+='<button onclick="helpersPopClose()" style="flex:1;border:none;background:#111827;color:#fff;border-radius:10px;padding:9px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">Done</button></div>';
+  h+='</div></div>';
+  return h;
+}
+// The strip on today's schedule: one chip per helper — "Grandma here?" or "Grandma ✓ here · 3".
+function helpersStripHTML(){
+  try{
+    if(!pageOn("helpers")) return "";
+    const ids=Object.keys(helpersData||{}).filter(_hlpIdOk).sort((a,b)=>((helpersData[a].createdAt||0)-(helpersData[b].createdAt||0)));
+    if(!ids.length) return "";
+    let h='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 8px;padding:7px 10px;background:#f0fdf4;border-left:4px solid #16a34a;border-radius:0 10px 10px 0">';
+    h+='<span style="font-size:11.5px;font-weight:800;color:#166534">&#128587; Helpers</span>';
+    ids.forEach(id=>{
+      const here=helperIsHere(id), nm=esc(helperName(id)), ic=esc(helperIcon(id));
+      if(here){
+        const n=helperTasksToday(id).filter(t=>helperHolds(t)===id&&!(checked&&checked[t.id])).length;
+        h+='<button onclick="helpersPopOpen(\''+id+'\')" style="border:none;background:#16a34a;color:#fff;border-radius:20px;padding:4px 11px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">'+ic+' '+nm+' &#10003; here'+(n?' · '+n+' to do':'')+'</button>';
+      }else{
+        h+='<button onclick="helpersPopOpen(\''+id+'\')" style="border:1.5px dashed #86efac;background:#fff;color:#166534;border-radius:20px;padding:3px 11px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit">'+ic+' '+nm+' here?</button>';
+      }
+    });
+    h+='</div>';
+    return h;
+  }catch(e){ return ""; }
+}
 // ── HELPERS_END ──
 function renderMomHQ(el,ah){
   if(!el){el=document.getElementById("content");if(!el)return;}
@@ -7003,6 +7139,7 @@ function renderSchedule(el){
     '<div class="day-prog-bar"><div class="day-prog-fill" style="width:'+pct+'%"></div></div></div>';
   // 👩 the Mom loop — who has her right now. Mom-gated, today only, reports nothing on
   // another day's view where "ready" and "paused" have no meaning.
+  if(day===_todayDay){ try{ h+=helpersStripHTML(); }catch(e){} }   // 🙋 "Grandma here?"
   if(day===_todayDay){ try{ h+=mlStripHTML(); }catch(e){} }
   // Stage 2: the kid's own "Mom's ready for you" banner — their page only, today only.
   if(day===_todayDay&&kid!=="all"&&kid!=="mom"){ try{ h+=mlBannerHTML(kid); }catch(e){} }
@@ -7519,6 +7656,7 @@ function finalizeDone(id, doneTs, score){
     if(origDateStr){const yr=new Date().getFullYear();const od=new Date(origDateStr+", "+yr);const td=new Date();od.setHours(0,0,0,0);td.setHours(0,0,0,0);daysLate=Math.round((td-od)/864e5);}
     const entry={id:id,title:t.title,who:t.who,day:t.day,originalDay:origDay,checkedOnDay:effectiveDay(t),daysLate:daysLate,ts:doneTs,week:WK};
     if(score) entry.score=score;
+    try{ const _hp=(typeof helperHolds==="function")?helperHolds(t):null; if(_hp) entry.helper=helperName(_hp); }catch(e){}   // 🙋 "done with Grandma"
     if(t.lid){ entry.lid=t.lid; entry.pid=t.who+"__"+t.subjectKey; }   // frozen record is lid-resolvable without title parsing
     hist[id]=entry; histState[id]=entry; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+id).set(entry);
     try{ lidDoneWrite(t,doneTs,id); }catch(e){ dbg("lid done write skip: "+e); }
@@ -8290,7 +8428,13 @@ function taskCard(t, fromDay, readOnly, doneId){
   const bcls=t.mom==="required"?"req":t.mom==="maybe"?"maybe":"";
   const klbl=cap(t.who);
   let mb="";
-  if(kid==="mom"){
+  const _hlpId=(typeof helperHolds==="function")?helperHolds(t):null;   // 🙋
+  const _hlpDone=done&&histState&&histState[srcId]&&histState[srcId].helper;
+  if(_hlpId&&!done){
+    mb='<span class="mom-badge" style="background:#dcfce7;color:#166534">'+esc(helperIcon(_hlpId))+' with '+esc(helperName(_hlpId))+(kid==="mom"?" — "+klbl:"")+'</span>';
+  } else if(_hlpDone){
+    mb='<span class="mom-badge" style="background:#f0fdf4;color:#166534">done with '+esc(histState[srcId].helper)+'</span>';
+  } else if(kid==="mom"){
     const lbl=t.mom==="required"?"Mom Required — "+klbl:"May Need Mom — "+klbl;
     mb='<span class="mom-badge '+(t.mom==="required"?"req-badge":"maybe-badge")+'">'+lbl+'</span>';
   } else if(t.mom==="required"){
@@ -8842,7 +8986,7 @@ function tapTask(id){
     document.getElementById("dlg").style.display="flex"; return;
   }
   // Not done, not claimed — when this subject needs Mom's check and Mom isn't here, the tap becomes a claim
-  const verify=needsVerify(t)&&!momHere();
+  const verify=needsVerify(t)&&!momHere()&&!(typeof helperHolds==="function"&&helperHolds(t));   // 🙋 the helper checks it
   pendingClaimMode=verify;
   const _vref=taskLessonRef(t);
   document.getElementById("dlg-detail").textContent=verify?(t.detail+"  —  Leave your work open"+(_vref?" to "+_vref:"")+" for Mom to check; it counts once she approves."):t.detail;
@@ -10884,14 +11028,14 @@ function kitCloseRecipe(){ kitView=null; const el=document.getElementById('conte
 function kitMealsLSSave(){ try{ const o={}; Object.keys(kitMeals||{}).forEach(k=>{ const m=kitMeals[k]; if(m&&m.photo){ const c=Object.assign({},m); delete c.photo; o[k]=c; } else o[k]=m; }); HA_LS.setItem('ha_kit_meals',JSON.stringify(o)); }catch(e){} }
 // 🔒 Recipe changes need the Mom PIN (her ask 2026-10-02: kids shouldn't add recipes yet). Mom's Day itself stays
 //    open — kids still see the plan and vote. Once the PIN is in, it holds for the session (same as Blockout).
-function kitPinGate(then){
+function kitPinGate(then,why){
   if(typeof momHere==="function"&&momHere()){ then(); return; }
   window._kitPinThen=then;
   let w=document.getElementById("kit-pin-wrap"); if(!w){ w=document.createElement("div"); w.id="kit-pin-wrap"; document.body.appendChild(w); }
   w.innerHTML='<div onclick="if(event.target===this)kitPinClose()" style="position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.6);display:flex;align-items:center;justify-content:center;padding:20px">'
     +'<div style="background:#fff;border-radius:16px;padding:22px 20px;width:100%;max-width:300px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.35)">'
     +'<div style="font-size:34px">🔒</div><div style="font-weight:800;font-size:15px;margin:4px 0 2px">Mom PIN</div>'
-    +'<div style="font-size:12px;color:#64748b;margin-bottom:12px">Adding, changing or importing recipes is for Mom.</div>'
+    +'<div style="font-size:12px;color:#64748b;margin-bottom:12px">'+(why?esc(why):'Adding, changing or importing recipes is for Mom.')+'</div>'
     +'<input id="kit-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="PIN" autocomplete="off" oninput="kitPinCheck(this.value)" style="width:120px;text-align:center;padding:10px;border:1.5px solid #cbd5e1;border-radius:10px;font-size:18px;font-weight:700;letter-spacing:8px;font-family:\'DM Sans\',sans-serif">'
     +'<div id="kit-pin-err" style="font-size:11px;color:#b5394a;margin-top:6px;min-height:14px"></div>'
     +'<button onclick="kitPinClose()" style="margin-top:4px;border:none;background:none;color:#64748b;font-size:12px;cursor:pointer">Cancel</button></div></div>';
@@ -44783,6 +44927,7 @@ function mlRemaining(kid){
   try{
     return (getActiveTasks()||[]).filter(function(t){
       return t&&t.who===kid&&_mlDayOf(t)===_todayDay&&t.mom==="required"
+        &&!(typeof helperHolds==="function"&&helperHolds(t))   // 🙋 a helper has it
         &&!String(t.id||"").endsWith("_c")
         &&!(typeof checked!=="undefined"&&checked&&checked[t.id]);
     });
@@ -45067,6 +45212,7 @@ function mlQueueLay(tasks){ return _mlLanePass(_mlQueueLayCore(tasks)); }
 function _mlQueueLayCore(tasks){
   try{
     if(!Array.isArray(tasks)||!tasks.length) return tasks;
+    const _mr=function(t){ return !!t&&t.mom==="required"&&!(typeof helperHolds==="function"&&helperHolds(t)); };   // 🙋 Mom work = not a helper's
     const _sc=_mlScan(); const order=_sc.order, n=order.length; if(!n) return tasks;
     const cur=_sc.cur;
     const now=mlNow();
@@ -45080,7 +45226,7 @@ function _mlQueueLayCore(tasks){
     order.forEach(function(k){
       mine[k]=tasks.filter(function(t){ return movable(t)&&t.who===k; })
         .sort(function(a,b){ return toMin(a.time)-toMin(b.time); });
-      momQ[k]=mine[k].filter(function(t){ return t.mom==="required"; });
+      momQ[k]=mine[k].filter(function(t){ return _mr(t); });
       if(momQ[k].length>1) momQ[k]=prMomOrder(k,momQ[k]);   // 🎯 what's needed first, inside the kid's own Mom block
     });
     // Ring kids who still owe Mom work, in loop order from the cursor.
@@ -45165,15 +45311,15 @@ function _mlQueueLayCore(tasks){
     // Where a kid's BUFFER (their first unchecked card, when it is not Mom work) really lands:
     // the later of its slot and the kid's floor, stepped over lunch and checked cards. Her rule
     // "still notebook first": Mom's block for ANY kid starts after it, never on top of it.
-    const _bufLanding=function(k){ const f=mine[k][0]; if(!f||f.mom==="required"||_mlClose(f)) return null; const d0=f.dur||20; let s0=Math.max(_mlKidFloor(k),toMin(f.time)); const W=lunchOf(k).concat(fixedOf(k)); let mv=true; while(mv){ mv=false; W.forEach(function(iv){ if(s0<iv[1]&&s0+d0>iv[0]){ s0=iv[1]; mv=true; } }); } return {start:s0,end:s0+d0}; };
+    const _bufLanding=function(k){ const f=mine[k][0]; if(!f||_mr(f)||_mlClose(f)) return null; const d0=f.dur||20; let s0=Math.max(_mlKidFloor(k),toMin(f.time)); const W=lunchOf(k).concat(fixedOf(k)); let mv=true; while(mv){ mv=false; W.forEach(function(iv){ if(s0<iv[1]&&s0+d0>iv[0]){ s0=iv[1]; mv=true; } }); } return {start:s0,end:s0+d0}; };
     let t=0;
     if(seq.length){
       const k0=seq[0].kid, first0=mine[k0][0];
-      if((now&&now.held&&now.kid===k0)||!first0||first0.mom==="required") t=toMin((first0||seq[0].cards[0]).time);
+      if((now&&now.held&&now.kid===k0)||!first0||_mr(first0)) t=toMin((first0||seq[0].cards[0]).time);
       else t=toMin(first0.time)+(first0.dur||20);
       // 🌞 and never before NOW: the buffer card below lays from now too, so "right after the
       // buffer" is right after where the buffer really is.
-      if(first0&&first0.mom!=="required"&&(!(now&&now.held&&now.kid===k0)||_mlMorn(first0))){
+      if(first0&&!_mr(first0)&&(!(now&&now.held&&now.kid===k0)||_mlMorn(first0))){
         // …where the buffer REALLY lands (the per-kid lay below places it identically, so the
         // block sits right behind it).
         const bl=_bufLanding(k0); if(bl) t=bl.end;
@@ -45203,7 +45349,7 @@ function _mlQueueLayCore(tasks){
     // the buffer/chain and re-tuck to the TRUE end of the kid's re-laid day below.
     order.forEach(function(k){
       const Ls=lunchOf(k);
-      const closes=mine[k].filter(function(x){ return x.mom!=="required"&&_mlClose(x); })
+      const closes=mine[k].filter(function(x){ return !_mr(x)&&_mlClose(x); })
         .sort(function(a,b){ return toMin(a.time)-toMin(b.time); });
       const momIv=[]; let buf=null, others=[];
       if(momOffNow){
@@ -45214,7 +45360,7 @@ function _mlQueueLayCore(tasks){
         // right there the moment she is back (the next render lays them again from the time it
         // is). Once the day has started nothing sits before "now"; before it, the plan's times
         // hold (the queue starts at the first card's slot, not at 6 AM).
-        const own=mine[k].filter(function(x){ return x.mom!=="required"&&!_mlClose(x); });
+        const own=mine[k].filter(function(x){ return !_mr(x)&&!_mlClose(x); });
         const first=mine[k].find(function(x){ return !_mlClose(x); })||null;
         const fixed=fixedOf(k);
         const _kf=_mlKidFloor(k);
@@ -45222,7 +45368,7 @@ function _mlQueueLayCore(tasks){
         own.concat(momQ[k]).forEach(function(c){
           const d=c.dur||20; let moved=true;
           while(moved){ moved=false; Ls.concat(fixed).forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]){ s=iv[1]; moved=true; } }); }
-          newTimes[c.id]=s; if(c.mom==="required"){ momWait[c.id]=true; momIv.push([s,s+d]); } s+=d;
+          newTimes[c.id]=s; if(_mr(c)){ momWait[c.id]=true; momIv.push([s,s+d]); } s+=d;
         });
         others=own;
       }else{
@@ -45230,8 +45376,8 @@ function _mlQueueLayCore(tasks){
         const s=(newTimes[c.id]!==undefined)?newTimes[c.id]:toMin(c.time);
         momIv.push([s,s+(c.dur||20)]);
       });
-      buf=mine[k].find(function(x){ return x.mom!=="required"&&!_mlClose(x); })||null;
-      others=mine[k].filter(function(x){ return x.mom!=="required"&&x!==buf&&!_mlClose(x); });
+      buf=mine[k].find(function(x){ return !_mr(x)&&!_mlClose(x); })||null;
+      others=mine[k].filter(function(x){ return !_mr(x)&&x!==buf&&!_mlClose(x); });
       // Push-later-only: a card keeps the packer's slot (device lanes and gaps survive)
       // and steps later only to clear the kid's Mom block, lunch, or the card before it.
       // The buffer keeps its slot too — UNLESS the kid's own Mom block covers it (a held
@@ -45308,7 +45454,7 @@ function mlBannerHTML(kid){
       // "play, but tidy up after yourself and be ready for Mom when she calls you to start."
       const _rem=(getActiveTasks()||[]).filter(function(t){ return t&&t.who===kid&&_mlDayOf(t)===_todayDay&&!String(t.id||"").endsWith("_c")
         &&!(typeof checked!=="undefined"&&checked&&checked[t.id])&&!/lunch/i.test(t.title||"")&&!(t.subjectKey==="closing_nb"||/closing notebook/i.test(t.title||"")); });
-      const _allMom=_rem.length>0&&_rem.every(function(t){ return t.mom==="required"; });
+      const _allMom=_rem.length>0&&_rem.every(function(t){ return t.mom==="required"&&!(typeof helperHolds==="function"&&helperHolds(t)); });
       if(_allMom) return '<div style="background:#f5f3ff;border-left:4px solid #a78bfa;border-radius:0 10px 10px 0;padding:9px 12px;margin:0 0 8px;display:flex;align-items:center;gap:9px">'
         +'<span style="font-size:19px">&#127918;</span>'
         +'<div><div style="font-size:12.5px;font-weight:800;color:#5b21b6">Mom&rsquo;s busy right now</div>'
