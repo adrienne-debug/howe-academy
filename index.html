@@ -4234,10 +4234,11 @@ function dayPct(d){
 function renderKidFilter(){
   document.getElementById("kid-filter").innerHTML=
     ["all",...ROSTER,"mom"].map(k=>{
-      const isActive = k===kid || (k==="mom" && momModeActive);
+      const isActive = (k===kid&&!(k==="all"&&typeof helperViewActive==="function"&&helperViewActive())) || (k==="mom" && momModeActive);
       return '<button class="kid-btn'+(isActive?" active":"")+'" data-kid="'+k+'" onclick="selKid(\''+k+'\')">'+
         (k==="mom" && momModeActive ? "✓ Mom" : cap(k))+'</button>';
     }).join("")
+    + ((typeof helperChipsHTML==="function")?helperChipsHTML():"")   // 🙋 "👵 Grandma" while she's here
     // ⭐ Star balance rides beside the chips — only when ONE kid is picked (nothing on All/Mom).
     // Tapping it jumps straight to that kid's Stars (the Wins tab).
     + (ROSTER.indexOf(kid)>=0
@@ -4259,6 +4260,7 @@ function renderKidFilter(){
   }
 }
 function selKid(k){
+  try{ helperView=null; }catch(e){}   // 🙋 leave a helper's list
   if(k==="mom"){
     if(momModeActive){
       if(kid==="mom"){
@@ -6446,6 +6448,44 @@ function helpersStripHTML(){
     return h;
   }catch(e){ return ""; }
 }
+// ── 🙋 Her list (2026-10-03, her ask: "so she can see what she's doing and check it off"): while a helper is
+// checked in, a chip with her name joins All · kids · Mom at the top. It is the All schedule filtered to the cards
+// helperHolds() gives her — the same cards, so a check-off from her tablet or a kid's shows on both at once.
+// No PIN to look or to check off (kids check off without one too); checking her in/out stays behind Mom mode.
+var helperView=null;   // var, not let: renderKidFilter can run before this line on boot
+function helperViewActive(){
+  try{ if(helperView&&!(pageOn("helpers")&&helperIsHere(helperView))) helperView=null; }catch(e){ helperView=null; }
+  return !!helperView;
+}
+function selHelper(id){
+  if(!helperIsHere(id)) return;
+  helperView=id; kid="all";
+  try{ day=_todayDay; }catch(e){}
+  try{ schedShowAdmin=false; schedShowHistory=false; schedShowPace=false; schedShowBoard=false; schedShowPeek=false; }catch(e){}
+  if(typeof tab!=="undefined"&&tab!=="schedule"&&typeof showTab==="function") showTab("schedule"); else renderAll();
+  try{ window.scrollTo({top:0,behavior:"smooth"}); }catch(e){}
+}
+// Chips for the helpers who are here right now (none when nobody is).
+function helperChipsHTML(){
+  try{
+    if(!pageOn("helpers")) return "";
+    helperViewActive();
+    return Object.keys(helpersData||{}).filter(_hlpIdOk).filter(helperIsHere)
+      .sort((a,b)=>((helpersData[a].createdAt||0)-(helpersData[b].createdAt||0)))
+      .map(id=>'<button class="kid-btn'+(helperView===id?" active":"")+'" data-helper="'+id+'"'+(helperView===id?' style="background:#16a34a;color:#fff;border-color:#16a34a"':' style="border-color:#86efac;color:#166534"')+' onclick="selHelper(\''+id+'\')">'+esc(helperIcon(id))+' '+esc(helperName(id))+'</button>').join("");
+  }catch(e){ return ""; }
+}
+// The header on her list.
+function helperViewHeadHTML(day){
+  try{
+    if(!helperViewActive()||day!==_todayDay) return "";
+    const id=helperView, ts=helperTasksToday(id).filter(t=>helperHolds(t)===id);
+    const left=ts.filter(t=>!(checked&&checked[t.id])).length;
+    return '<div style="margin:0 0 8px;padding:10px 12px;background:#f0fdf4;border-left:4px solid #16a34a;border-radius:0 10px 10px 0">'
+      +'<div style="font-size:14px;font-weight:800;color:#166534">'+esc(helperIcon(id))+' '+esc(helperName(id))+'&rsquo;s list</div>'
+      +'<div style="font-size:11.5px;color:#15803d">'+(ts.length?(left?left+' to do · tap a card to check it off. When a kid checks one off, it shows here too.':'All done &mdash; thank you!'):'Nothing for '+esc(helperName(id))+' today.')+'</div></div>';
+  }catch(e){ return ""; }
+}
 // ── HELPERS_END ──
 function renderMomHQ(el,ah){
   if(!el){el=document.getElementById("content");if(!el)return;}
@@ -7097,6 +7137,7 @@ function renderSchedule(el){
   let allDay=activeTasks.filter(t=>effectiveDay(t)===day);
   if(kid==="mom") allDay=allDay.filter(t=>t.mom==="required"||t.mom==="maybe");
   else if(kid!=="all") allDay=allDay.filter(t=>t.who===kid);
+  else if(typeof helperViewActive==="function"&&helperViewActive()) allDay=allDay.filter(t=>helperHolds(t)===helperView);   // 🙋 her list
 
   // Within-week rolled-forward work (unfinished, effectiveDay===today) shows INLINE in the
   // day's list like normal work — no separate box. Only end-of-week overflow (over the
@@ -7140,6 +7181,7 @@ function renderSchedule(el){
   // 👩 the Mom loop — who has her right now. Mom-gated, today only, reports nothing on
   // another day's view where "ready" and "paused" have no meaning.
   if(day===_todayDay){ try{ h+=helpersStripHTML(); }catch(e){} }   // 🙋 "Grandma here?"
+  try{ h+=helperViewHeadHTML(day); }catch(e){}   // 🙋 "Grandma's list"
   if(day===_todayDay){ try{ h+=mlStripHTML(); }catch(e){} }
   // Stage 2: the kid's own "Mom's ready for you" banner — their page only, today only.
   if(day===_todayDay&&kid!=="all"&&kid!=="mom"){ try{ h+=mlBannerHTML(kid); }catch(e){} }
