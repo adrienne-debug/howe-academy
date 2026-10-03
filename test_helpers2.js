@@ -95,10 +95,11 @@ e=env({tasks:T,dry:true}); e.__set({g:G},{}); e.helperArrive("g"); ok(e.writes.l
 e=env({tasks:T,mom:false}); e.__set({g:G,d:D},{});
 e.helperArrive("g"); ok(e.writes.length===0&&e.helperHolds(T[0])===null,"not Mom: arrive blocked");
 e.helpersPopOpen("g"); ok(e.gated===1&&/for Mom/.test(e.gateWhy)&&e.__s().helpersPopId===null,"not Mom: opening asks for the Mom PIN");
-ok(e.helpersStripHTML().includes("Grandma here?"),"not Mom: kids still see the strip");
+ok(e.helpersStripHTML()==="","not Mom: the strip is hidden (Mom mode only)");
 e=env({tasks:T,mom:false}); e.__set({g:G,d:D},{[TODAY]:{g:{arrived:1},d:{arrived:1}}});
 e.helperLeave("g"); e.helperTake("d","a3"); ok(e.writes.length===0&&e.helperHolds(T[0])==="g"&&e.helperHolds(T[2])===null,"not Mom: leave + tick blocked");
-ok(e.helpersStripHTML().includes("Grandma &#10003; here"),"not Mom: kids see Grandma is here");
+ok(e.helpersStripHTML()==="","not Mom: strip hidden even while she's here");
+ok(e.helperChipsHTML().includes("Grandma"),"not Mom: her own list chip still shows");
 ok(src.includes("function kitPinGate(then,why){")&&src.includes("(why?esc(why):'Adding, changing or importing recipes is for Mom.')"),"PIN gate takes her words, old wording kept");
 // keys
 e=env({}); ok(e._hlpKey("a.b/c#d$e[f]g%")==="a%2eb%2fc%23d%24e%5bf%5dg%25","task key made Firebase-safe");

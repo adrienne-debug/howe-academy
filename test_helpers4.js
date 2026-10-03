@@ -41,7 +41,8 @@ ok(s.requested>0&&!s.arrived,"his tap = a request, not on yet");
 ok(e.writes.length===1&&e.writes[0][1]==="helperDays/"+TODAY+"/d/requested","request = one leaf write");
 ok(e.helperIsHere("d")===false&&e.helperRequested("d")===true,"requested, not here");
 ok(e.helperDadCardHTML().includes("Waiting for Mom"),"Dad's Day says waiting");
-ok(e.helpersStripHTML().includes("Dad wants to help")&&e.helpersStripHTML().includes("Approve"),"schedule strip: Dad wants to help · Approve");
+ok(e.helpersStripHTML()==="","not Mom mode: no strip at all");
+e.momHere=()=>true; ok(e.helpersStripHTML().includes("Dad wants to help")&&e.helpersStripHTML().includes("Approve"),"Mom mode: schedule strip shows Dad wants to help · Approve"); e.momHere=()=>false;
 // Dad can't approve himself
 e.helperApprove("d"); ok(e.gated===1&&!e.helperIsHere("d"),"Dad (not Mom) tapping Approve hits the Mom PIN");
 // Dad cancels
