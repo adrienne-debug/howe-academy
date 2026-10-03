@@ -16080,7 +16080,7 @@ function ceBuildCard(sk,s,kid){
       const kws=paceKeywords(kid,sk,_cps);
       const cur=(_cps.offset||0)+paceAutoCount(kid,kws,null,sk)+(_cps.paceAdjust||0);
       const tot=_cps.total||1;
-      const exp=currExpected(kid,sk,currWeekNum());
+      const exp=currExpectedToDate(kid,sk);   // 📅 planned before today (2026-10-03)
       const plan=paceKidPlan(kid);
       const wn=plan?planWeekNum(plan.start||"2026-04-20"):1;
       const tw=plan?planTotalWeeks(plan.start||"2026-04-20",plan.end||"2026-09-01"):40;
@@ -28889,6 +28889,34 @@ function currExpected(kid,subjectKey,weekNum){
   return best!==null?byWk[best]:null;
 }
 
+// PACE_TODATE_START — expected = the lessons planned BEFORE TODAY (her rule 2026-10-03). The week rule
+// (currExpected through the current week) counted a whole week as due from its first morning: a 5-a-week subject
+// read "5 behind" on Monday, and a new family read behind before its Week 1 had begun. Same per-day rules as
+// buildCurrPaceCum (calendar off days, Lesson Map removed/added slots, co-op blocks). A subject with no plan keeps
+// returning null (→ the old fallback); an undated plan keeps the week rule.
+function currExpectedToDate(kid,subjectKey){
+  const wkExp=currExpected(kid,subjectKey,currWeekNum());
+  if(wkExp===null||wkExp===undefined) return wkExp;
+  try{
+    const wdMap=(currData.weekDays||{})[kid]||{}, lessons=(currData.lessons||{})[kid]||{}, today=_todayStr();
+    let n=0;
+    for(const lbl of Object.keys(wdMap)){
+      if(!/Wk\s*\d+/i.test(lbl)) continue;
+      for(const d of (wdMap[lbl]||[])){
+        const l=lessons[d]; if(!l) continue;
+        const date=l.date||"";
+        if(!date) return wkExp;
+        if(date>=today) continue;   // today's lesson isn't owed until tomorrow
+        const off=smapIsKidOff(kid,date)||schedOvKidOff(kid,date);
+        const ovv=schedOv(date,kid)||{};
+        if(l[subjectKey]&&!off&&!(ovv.removed||{})[subjectKey]&&!coopBlocksBase(kid,date,subjectKey)) n++;
+        if(!off&&(ovv.added||{})[subjectKey]) n++;
+      }
+    }
+    return n;
+  }catch(e){ return wkExp; }
+}
+// PACE_TODATE_END
 // Same as currExpected but against the ORIGINAL Excel plan (no calendar/edits)
 function currExpectedBase(kid,subjectKey,weekNum){
   const byWk=(currPaceCumBase[kid]||{})[subjectKey];
@@ -36927,7 +36955,7 @@ function paceKidStatus(k){
   keys.forEach(sk=>{
     const s=kidSubjs[sk]; const kws=paceKeywords(k,sk,s);
     const cur=(s.offset||0)+paceAutoCount(k,kws,null,sk)+(s.paceAdjust||0);
-    const exp=currExpected(k,sk,cwn);
+    const exp=currExpectedToDate(k,sk);   // 📅 planned before today (2026-10-03)
     const st=paceHasPendingCascade(k,kws)?"behind":paceStatus(cur,s.total||0,s.startWeek||1,weekNum,totalWeeks,exp);
     if(st==="ahead")aheadN++; else if(st==="behind"){behindN++; behindSubs.push(s.label||sk);} else if(st!=="not-started")onN++;
   });
