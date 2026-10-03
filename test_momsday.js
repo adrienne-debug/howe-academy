@@ -45,7 +45,7 @@ global.DAYS_ALL = ["monday","tuesday","wednesday","thursday","friday","saturday"
 global.gwParseDate = iso => new Date(iso + "T12:00:00");
 global._todayStr = () => TODAY;
 global.HA_LS = { getItem: k => (k in lsStore ? lsStore[k] : null), setItem: (k,v) => { lsStore[k]=v; }, removeItem: k => { delete lsStore[k]; } };
-global.db = { ref: p => ({ set: v => dbWrites.push([p, v]), remove: () => dbRemoves.push(p) }) };
+global.db = { ref: p => ({ set: v => dbWrites.push([p, v]), update: v => dbWrites.push([p, v]), remove: () => dbRemoves.push(p) }) };   // update: the running to-do toggle (10/3)
 global.esc = s => String(s);
 global.cap = s => s ? s.charAt(0).toUpperCase()+s.slice(1) : s;
 global.SL_KIDS = ["julian","lincoln","ellis","lucy"];
@@ -315,7 +315,7 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   ok("todo renders with count 0/1", elStub.innerHTML.includes("Order chicken feed") && elStub.innerHTML.includes(">0/1<"), null);
   dbWrites.length = 0;
   M.momdayToggleTodo(tid);
-  ok("todo toggle writes done=true", dbWrites.length === 1 && dbWrites[0][0].endsWith("/todos/" + tid + "/done") && dbWrites[0][1] === true, dbWrites);
+  ok("todo toggle writes done=true + doneOn (running list, 10/3)", dbWrites.length === 1 && dbWrites[0][0].endsWith("/todos/" + tid) && dbWrites[0][1].done === true && typeof dbWrites[0][1].doneOn === "string", dbWrites);
   M.renderMomsDay(elStub);
   ok("todo count now 1/1", elStub.innerHTML.includes(">1/1<"), null);
   dbRemoves.length = 0;
@@ -564,7 +564,7 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   ok("typed plan renders in dinner card", elStub.innerHTML.includes("Pizza out") && elStub.innerHTML.includes("kitPlanText('2026-08-10')"), null);
   delete M.kitPlan["2026-08-10"];
   M.renderMomsDay(elStub);
-  ok("no plan → momday note fallback intact", elStub.innerHTML.includes("momdayEdit('dinner')"), null);
+  ok("no plan → tap saves to the meal plan, not a Mom's Day note (10/3)", elStub.innerHTML.includes("kitPlanText('2026-08-10')") && !elStub.innerHTML.includes("momdayEdit('dinner')"), null);
 })();
 
 // ── 🍽 KITCHEN · Meals subview: grid, picker, recipe view ────────────────────
