@@ -600,7 +600,7 @@ function lbPin(then){
 function lbPinTry(v){
   if(v.length<4)return;
   const pin=(typeof APP_PIN!=="undefined")?APP_PIN:"0000";
-  if(v===pin){window._plMomOk=true;const t=window._lbPinThen;window._lbPinThen=null;if(t)t();}
+  if((typeof pinOk==="function")?pinOk(v):v===pin){window._plMomOk=true;const t=window._lbPinThen;window._lbPinThen=null;if(t)t();}
   else{const e=document.getElementById("lb-pin-err"),i=document.getElementById("lb-pin");if(e)e.textContent="Incorrect code";if(i)i.value="";}
 }
 function lbAddTo(id,kid){

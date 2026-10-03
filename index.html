@@ -2545,6 +2545,16 @@ let APP_PIN=HA_LS.getItem("ha_app_pin")||"0329";
 // Default 0726 (her pick, 2026-08-15) so it works out of the box; settings/dadPin
 // overrides it and she can change or blank it in 🔒 PIN Settings at any time.
 let DAD_PIN=HA_LS.getItem("ha_dad_pin")||"0726";
+// 🔑 ADMIN CODE (her ask 2026-10-03): Adrienne's one code that opens EVERY PIN door in EVERY family's app —
+// Mom PIN, Dad code, Kitchen, Mastery, Notebook, Units, blockouts, points, attendance, library, School Room.
+// Its own path, settings/adminPin, kept apart from the family's settings/pin so a family changing their Mom
+// PIN never touches it. Set ONLY from the howe-families dashboard; never shown in the app. No code default on
+// purpose (the page source is public) — until settings/adminPin is set, the app behaves exactly as before.
+let ADMIN_PIN=HA_LS.getItem("ha_admin_pin")||"";
+function _pinStr(v){ return String(v==null?"":v).trim(); }
+function _adminPinOk(v){ v=_pinStr(v); return !!ADMIN_PIN&&v===_pinStr(ADMIN_PIN); }
+function pinOk(v){ v=_pinStr(v); return !!v&&(v===_pinStr(APP_PIN)||_adminPinOk(v)); }
+function dadPinOk(v){ v=_pinStr(v); return !!v&&((!!DAD_PIN&&v===_pinStr(DAD_PIN))||_adminPinOk(v)); }
 let dadUnlocked=false;
 function dadAwardOk(){ return dadUnlocked===true; }
 // ── BRAIN BREAK state — per-kid reset (feelings check → menu → timer). Synced at
@@ -3541,6 +3551,10 @@ function initFb() {
     db.ref("settings/pin").on("value",s=>{
       if(s.val()){ APP_PIN=s.val(); HA_LS.setItem("ha_app_pin",s.val()); }
     });
+    db.ref("settings/adminPin").on("value",s=>{   // 🔑 admin code — null clears it (so it can be turned off)
+      const v=s.val(); ADMIN_PIN=(v===null||v===undefined)?"":_pinStr(v);
+      try{ if(ADMIN_PIN) HA_LS.setItem("ha_admin_pin",ADMIN_PIN); else HA_LS.removeItem("ha_admin_pin"); }catch(e){}
+    });
     db.ref("settings/dadPin").on("value",s=>{
       const v=s.val();
       if(v===null||v===undefined) return;   // never set → keep the code default
@@ -3890,7 +3904,7 @@ function _checkoffHeldToast(){ if(typeof gwShowToast==="function") gwShowToast("
 function checkMomPin(val){
   if(val.length < 4) return;
   const err = document.getElementById("mom-pin-err");
-  if(val === APP_PIN){
+  if(pinOk(val)){
     momPinUnlocked = true;
     momModeActive = true;
     kid = "mom"; // land straight on Mom's agenda (not the all-kids view)
@@ -4861,7 +4875,7 @@ function promptPtsPin(){
 }
 function checkPtsPin(val){
   if(val.length<4)return;
-  if(val===APP_PIN){
+  if(pinOk(val)){
     ptsEditUnlocked=true; renderAll();
   } else {
     const err=document.getElementById("pts-pin-err");
@@ -5399,7 +5413,7 @@ function closeCelebration(){
 function checkAdminPin(val,errId){
   if(val.length<4) return;
   const err=document.getElementById(errId);
-  if(val===APP_PIN){
+  if(pinOk(val)){
     adminPinUnlocked=true;
     renderAll();
   } else {
@@ -5814,8 +5828,8 @@ function celebTestSession(){
 function dadPinTry(){
   const i=document.getElementById("dad-pin-input"), e=document.getElementById("dad-pin-err");
   if(!i) return;
-  if(!DAD_PIN){ if(e) e.textContent="Mom hasn't set a Dad code yet."; return; }
-  if(String(i.value).trim()===String(DAD_PIN)){
+  if(!DAD_PIN&&!ADMIN_PIN){ if(e) e.textContent="Mom hasn't set a Dad code yet."; return; }
+  if(dadPinOk(i.value)){
     dadUnlocked=true;
     const el=document.getElementById("content"); if(el) renderMomsPlan(el);
     return;
@@ -10820,7 +10834,7 @@ function kitPinGate(then){
 function kitPinClose(){ const w=document.getElementById("kit-pin-wrap"); if(w) w.innerHTML=""; window._kitPinThen=null; }
 function kitPinCheck(v){
   if(String(v).length<4) return;
-  if(v===APP_PIN){ adminPinUnlocked=true; const t=window._kitPinThen; kitPinClose(); if(typeof t==="function") t(); }
+  if(pinOk(v)){ adminPinUnlocked=true; const t=window._kitPinThen; kitPinClose(); if(typeof t==="function") t(); }
   else { const e=document.getElementById("kit-pin-err"), i=document.getElementById("kit-pin-input"); if(e) e.textContent="Incorrect PIN"; if(i){ i.value=""; } }
 }
 function kitEditMeal(id){ kitPinGate(function(){ _kitEditMealGo(id); }); }
@@ -14683,7 +14697,7 @@ function showAttPin(){
 }
 function checkAttPin(){
   const v=(document.getElementById('att-pin-input')||{}).value||'';
-  if(v===APP_PIN){
+  if(pinOk(v)){
     attEditUnlocked=true;
     _preserveUI(function(){ const el=document.getElementById("content"); if(el) renderHistory(el); });
   } else {
@@ -38856,7 +38870,7 @@ function mastAdminToggleTier(tier){
   _mastRe();
 }
 function mastAdminCheckPin(val){
-  if(val===APP_PIN){ mastAdminPinOk=true; _mastRe(); }
+  if(pinOk(val)){ mastAdminPinOk=true; _mastRe(); }
   else if(val.length>=4){ const el=document.getElementById("mast-admin-pin-err"); if(el) el.textContent="Wrong PIN"; }
 }
 const MAST_EMOJI_PAL={
@@ -39309,7 +39323,7 @@ function mastToggleExpand(id){ mastExpandedId=mastExpandedId===id?null:id; _mast
 
 function mastListEditCheck(val){
   mastListEditPin=val;
-  if(val===APP_PIN){ mastListEditMode=true; mastListEditPin=""; _mastRe(); }
+  if(pinOk(val)){ mastListEditMode=true; mastListEditPin=""; _mastRe(); }
   else if(val.length>=4){ mastListEditPin=""; const el=document.getElementById("mast-list-pin-err"); if(el) el.textContent="Wrong PIN"; }
 }
 function mastListEditClose(){ mastListEditMode=false; _mastRe(); }
@@ -46117,7 +46131,7 @@ function openBoDialog(d){
       '<div style="font-size:13px;color:var(--muted);margin-bottom:16px">Enter the Mom PIN to manage blockouts.</div>'+
       '<input id="bo-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="PIN" '+
       'style="width:120px;text-align:center;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:18px;font-weight:700;letter-spacing:8px;font-family:\'DM Sans\',sans-serif" '+
-      'oninput="if(this.value.length>=4){if(this.value===APP_PIN){adminPinUnlocked=true;closeBoDialog();openBoDialog(\''+( d||day)+'\');}else{document.getElementById(\'bo-pin-err\').textContent=\'Incorrect PIN\';this.value=\'\';this.style.borderColor=\'#b5394a\';var _t=this;setTimeout(function(){document.getElementById(\'bo-pin-err\').textContent=\'\';_t.style.borderColor=\'var(--border)\';},1500);}}" autofocus>'+
+      'oninput="if(this.value.length>=4){if(pinOk(this.value)){adminPinUnlocked=true;closeBoDialog();openBoDialog(\''+( d||day)+'\');}else{document.getElementById(\'bo-pin-err\').textContent=\'Incorrect PIN\';this.value=\'\';this.style.borderColor=\'#b5394a\';var _t=this;setTimeout(function(){document.getElementById(\'bo-pin-err\').textContent=\'\';_t.style.borderColor=\'var(--border)\';},1500);}}" autofocus>'+
       '<div id="bo-pin-err" style="font-size:11px;color:#b5394a;margin-top:6px;min-height:14px"></div>'+
       '</div></div>';
     w.style.display="block";
@@ -50078,7 +50092,7 @@ function renderPlanNextWeek(){
 
 function pnwCheckPin(val){
   if(val.length<4) return;
-  if(val===APP_PIN){
+  if(pinOk(val)){
     adminPinUnlocked=true;
     pnwStartWizard(pnwPendingWeek||null);
   } else {

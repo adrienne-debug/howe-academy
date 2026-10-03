@@ -1184,7 +1184,7 @@ function plMomPinSheet(){
 function plMomPinTry(val){
   if(val.length<4)return;
   var pin=(typeof APP_PIN!=="undefined")?APP_PIN:"0000";
-  if(val===pin){window._plMomOk=true;plCloseSheet();plSetMode("mom");}
+  if((typeof pinOk==="function")?pinOk(val):val===pin){window._plMomOk=true;plCloseSheet();plSetMode("mom");}
   else{var i=document.getElementById("pl-mom-pin"),e=document.getElementById("pl-mom-pin-err");
     if(e)e.textContent="Incorrect PIN";
     if(i){i.value="";i.style.borderColor="#b5394a";}
