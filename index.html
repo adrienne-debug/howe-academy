@@ -3742,6 +3742,7 @@ function initFb() {
     db.ref("config/helpers").on("value",s=>{ helpersOnValue(s.val()); });   // 🙋 helper profiles
     try{ db.ref("helperDays").orderByKey().limitToLast(3).on("value",s=>{ helperDaysOnValue(s.val()); }); }catch(e){}   // 🙋 who is here today
     db.ref("worksheets").on("value",s=>{ wsOnValue(s.val()); });   // 📋 worksheets from Adrienne
+    db.ref("messages").on("value",s=>{ msgOnValue(s.val()); });     // ✉ Mom's messages to Adrienne (text only — photos load on demand)
     db.ref("config/rules").on("value",s=>{
       rulesData=s.val()||null; rulesLoaded=true;
       runDisplacement();
@@ -6061,8 +6062,7 @@ function eicPanelOpen(kid){
 // a tap outside Mom mode asks for the Mom PIN first. Every pick / note saves at once as ONE leaf, so
 // closing loses nothing; Submit stamps status + submittedAt (Adrienne's dashboard and Claude watch that).
 // A sent worksheet stays on the list with a ✓ for 14 days, so she knows it's done.
-let wsData={}; let wsOpenKey="|";   // "|" = nothing open, nothing sent
-const WS_DONE_DAYS=14;
+let wsData={}; let wsOpenKey="|0|";   // = the key when nothing is open, sent or noted (no repaint for an empty answer)
 function wsOpenList(){
   return Object.entries(wsData||{})
     .filter(([id,w])=>w&&w.status==="open"&&w.kind!=="note"&&Array.isArray(w.questions)&&w.questions.length)
@@ -6075,10 +6075,9 @@ function wsAns(w,i){ return ((w&&w.answers)||{})[i]||{}; }
 function wsMultiList(pick){ return String(pick||"").split(", ").filter(Boolean); }
 function wsMultiToggle(opts,pick,o){ const cur=wsMultiList(pick), has=cur.indexOf(o)>=0;
   return opts.filter(x=>has?(x!==o&&cur.indexOf(x)>=0):(x===o||cur.indexOf(x)>=0)).join(", "); }
-function wsSentList(now){
-  const cut=(now||Date.now())-WS_DONE_DAYS*864e5;
+function wsSentList(){
   return Object.entries(wsData||{})
-    .filter(([id,w])=>w&&w.status==="submitted"&&(w.submittedAt||0)>=cut)
+    .filter(([id,w])=>w&&w.kind!=="note"&&(w.status==="submitted"||(w.status==="closed"&&w.submittedAt)))
     .sort((a,b)=>(b[1].submittedAt||0)-(a[1].submittedAt||0));
 }
 // 📝 A NOTE from Adrienne (kind:"note", her ask 10/3: "just write it out with a check box" — a worksheet-looking
@@ -6114,8 +6113,8 @@ function wsNoteRead(id){
   try{ renderAll(); }catch(e){}
 }
 function wsRowsHTML(now){
-  const open=wsOpenList(), sent=wsSentList(now), notes=wsNoteList();
-  if(!open.length&&!sent.length&&!notes.length) return "";
+  const open=wsOpenList(), notes=wsNoteList();
+  if(!open.length&&!notes.length) return "";
   let h="";
   notes.forEach(([id,w])=>{ h+=wsNoteHTML(id,w); });
   open.forEach(([id,w])=>{
@@ -6126,25 +6125,18 @@ function wsRowsHTML(now){
       '<div style="font-size:12px;color:#475569">'+n+' question'+(n===1?'':'s')+(done?' · '+done+' answered':'')+' — tap to answer</div></div>'+
       '<div style="font-size:12px;font-weight:800;color:#1d4ed8">Open ›</div></div>';
   });
-  sent.forEach(([id,w])=>{
-    const d=new Date(w.submittedAt).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
-    h+='<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:11px;border:1.5px solid #bbf7d0;background:#f0fdf4;margin-top:8px">'+
-      '<span style="width:20px;height:20px;border-radius:6px;background:#16a34a;color:#fff;font-size:13px;font-weight:900;display:flex;align-items:center;justify-content:center;flex:none">✓</span>'+
-      '<div style="flex:1"><div style="font-weight:700;font-size:14px;color:#166534;text-decoration:line-through;text-decoration-color:#86efac">'+esc(w.title||"Questions from Adrienne")+'</div>'+
-      '<div style="font-size:12px;color:#15803d">Sent to Adrienne · '+esc(d)+'</div></div></div>';
-  });
   return h;
 }
 // 🏡 Mom's Day: a "From Adrienne" task card, right under her own day.
 function wsTaskHTML(now){
-  const rows=wsRowsHTML(now); if(!rows) return "";
+  const rows=wsRowsHTML(now), btns=msgBtnsHTML(); if(!rows&&!btns) return "";
   return '<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);padding:11px 14px 13px">'+
-    '<div style="font-weight:800;font-size:13px;color:#1e3a8a">📋 From Adrienne</div>'+rows+'</div>';
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div style="font-weight:800;font-size:13px;color:#1e3a8a;flex:1">📋 From Adrienne</div>'+btns+'</div>'+rows+'</div>';
 }
 // 🏡 Mom HQ: the same rows on top of the map (Mom HQ is already behind the PIN).
 function wsBannerHTML(now){
-  const rows=wsRowsHTML(now); if(!rows) return "";
-  return '<div style="margin:0 0 12px">'+rows+'</div>';
+  const rows=wsRowsHTML(now), btns=msgBtnsHTML(); if(!rows&&!btns) return "";
+  return '<div style="margin:0 0 12px">'+(btns?'<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">'+btns+'</div>':'')+rows+'</div>';
 }
 // A tap outside Mom mode asks for the Mom PIN first (the recipe gate, with its own words).
 function wsTap(id){
@@ -6222,8 +6214,146 @@ function wsSubmit(id){
 // so the popup's text boxes keep focus).
 function wsOnValue(v){
   wsData=v||{};
-  const key=wsOpenList().map(([id])=>id).join(",")+"|"+wsSentList().map(([id])=>id).join(",")+"|"+wsNoteList().map(([id])=>id).join(",");
+  const key=wsOpenList().map(([id])=>id).join(",")+"|"+wsSentList().length+"|"+wsNoteList().map(([id])=>id).join(",");
   if(key!==wsOpenKey){ wsOpenKey=key; try{ renderAll(); }catch(e){} }
+}
+// ✉ SEND TO ADRIENNE (her ask 10/3): a family Mom writes a note and/or attaches up to 6 photos for app fixes.
+// messages/<id> = {text, photoCount, createdAt, status:"new"|"done", doneAt} — small, so every device can listen.
+// messagePhotos/<id> = [dataURL,…] — kept apart so photos load only when the Sent list or the dashboard opens
+// them (the database is the photo store: family projects have no Storage bucket; recipe photos work the same way).
+// ✉ Send shows on family apps only (not Howe). Everything she has sent — messages AND answered worksheets — lives
+// behind "Sent (n)", never as rows on Mom's Day (her ask: don't fill up her day or crowd the worksheets).
+// "✓ Fixed" = Adrienne tapped ✓ Done on the families dashboard.
+const MSG_MAX_PHOTOS=6;
+let msgData={}, msgKey="", msgDraft={text:"",photos:[]}, msgBusy=false;
+function msgList(){
+  return Object.entries(msgData||{}).filter(([id,m])=>m&&m.createdAt).sort((a,b)=>(b[1].createdAt||0)-(a[1].createdAt||0));
+}
+function msgSentCount(){ return msgList().length+wsSentList().length; }
+function msgBtnsHTML(){
+  const n=msgSentCount(); let h="";
+  if(n) h+='<button onclick="msgGate(msgSentOpen)" style="border:none;background:none;color:#1d4ed8;font-size:12px;font-weight:800;cursor:pointer;padding:4px 2px;font-family:\'DM Sans\',sans-serif">Sent ('+n+')</button>';
+  if(!(typeof HA_IS_HOWE!=="undefined"&&HA_IS_HOWE)) h+='<button onclick="msgGate(msgCompose)" style="border:1.5px solid #1d4ed8;background:#eff6ff;color:#1d4ed8;border-radius:9px;padding:5px 11px;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✉ Send to Adrienne</button>';
+  return h;
+}
+// Mom-only, like her worksheets: outside Mom mode the Mom PIN comes first.
+function msgGate(fn){
+  if(typeof momHere==="function"&&momHere()){ fn(); return; }
+  if(typeof kitPinGate!=="function") return;
+  kitPinGate(fn);
+  const w=document.getElementById("kit-pin-wrap");
+  if(w) w.innerHTML=w.innerHTML.replace("Adding, changing or importing recipes is for Mom.","Messages to Adrienne are for Mom.");
+}
+function msgPanel(){
+  let ov=document.getElementById("msg-panel"); if(ov) ov.remove();
+  ov=document.createElement("div"); ov.id="msg-panel";
+  ov.style.cssText="position:fixed;inset:0;z-index:10050;background:rgba(15,23,42,.45);overflow:auto;font-family:'DM Sans',sans-serif;padding:18px 12px";
+  ov.onclick=e=>{ if(e.target===ov) msgClose(); };
+  ov.innerHTML='<div id="msg-panel-in" style="max-width:640px;margin:0 auto;background:#fff;border-radius:16px;padding:16px 16px 20px;box-shadow:0 10px 40px rgba(0,0,0,.25)"></div>';
+  document.body.appendChild(ov);
+  return document.getElementById("msg-panel-in");
+}
+function msgClose(){ const ov=document.getElementById("msg-panel"); if(ov) ov.remove(); }
+function msgHead(t){
+  return '<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px"><div style="flex:1;font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:#0f172a">'+t+'</div>'+
+    '<button onclick="msgClose()" style="padding:6px 11px;border-radius:9px;border:1.5px solid #cbd5e1;background:#fff;font-weight:700;cursor:pointer">✕</button></div>';
+}
+function msgCompose(){ msgPanel(); msgRender(); }
+function msgRender(err){
+  const el=document.getElementById("msg-panel-in"); if(!el) return;
+  const ph=msgDraft.photos, room=MSG_MAX_PHOTOS-ph.length;
+  el.innerHTML=msgHead("✉ Send to Adrienne")+
+    '<div style="font-size:13px;color:#475569;line-height:1.5;margin-bottom:10px">Something to fix or change in the app? Write it here and add photos or screenshots if they help.</div>'+
+    '<textarea id="msg-text" oninput="msgDraft.text=this.value" placeholder="What\'s going on? What should change?" style="width:100%;box-sizing:border-box;min-height:120px;padding:10px 12px;border:1.5px solid #cbd5e1;border-radius:11px;font-size:14px;font-family:\'DM Sans\',sans-serif">'+esc(msgDraft.text)+'</textarea>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0">'+
+      ph.map((src,i)=>'<div style="position:relative;width:76px;height:76px;border-radius:10px;overflow:hidden;border:1.5px solid #e2e8f0"><img src="'+src+'" style="width:100%;height:100%;object-fit:cover">'+
+        '<button onclick="msgDropPhoto('+i+')" style="position:absolute;top:2px;right:2px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(15,23,42,.7);color:#fff;font-size:12px;cursor:pointer">✕</button></div>').join("")+
+      (room>0?'<label style="width:76px;height:76px;border-radius:10px;border:1.5px dashed #93c5fd;background:#eff6ff;color:#1d4ed8;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:11px;font-weight:800;text-align:center">📷<span>Add photo'+(room>1?'s':'')+'</span>'+
+        '<input type="file" accept="image/*" multiple onchange="msgAddPhotos(this)" style="display:none"></label>':'')+
+    '</div>'+
+    '<div style="font-size:11px;color:#64748b;margin-bottom:6px">'+ph.length+' of '+MSG_MAX_PHOTOS+' photos</div>'+
+    '<div id="msg-msg" style="font-size:12px;color:#b91c1c;min-height:16px;margin:4px 0">'+esc(err||"")+'</div>'+
+    '<button onclick="msgSend()" '+(msgBusy?'disabled ':'')+'style="width:100%;padding:12px;border-radius:12px;border:none;background:#1d4ed8;color:#fff;font-size:15px;font-weight:800;cursor:pointer;opacity:'+(msgBusy?'.6':'1')+'">'+(msgBusy?'Sending…':'Send to Adrienne')+'</button>';
+}
+// Photos are shrunk on the device before they're kept (screenshot-readable, a few hundred KB at most).
+async function msgShrink(f){
+  let out=await kitCapShrink(f,1600,0.78);
+  if(out.length>420000) out=await kitCapShrink(f,1280,0.65);
+  return out;
+}
+async function msgAddPhotos(input){
+  const files=[...(input.files||[])]; input.value="";
+  const room=MSG_MAX_PHOTOS-msgDraft.photos.length;
+  let err=files.length>room?("Only "+MSG_MAX_PHOTOS+" photos fit in one message — the first "+room+" were added."):"";
+  for(const f of files.slice(0,Math.max(0,room))){
+    try{ msgDraft.photos.push(await msgShrink(f)); }catch(e){ err="One photo couldn't be read — try a different one."; }
+  }
+  msgRender(err);
+}
+function msgDropPhoto(i){ msgDraft.photos.splice(i,1); msgRender(); }
+async function msgSend(){
+  if(msgBusy) return;
+  const t=document.getElementById("msg-text"); if(t) msgDraft.text=t.value;
+  const text=String(msgDraft.text||"").trim(), photos=msgDraft.photos.slice();
+  if(!text&&!photos.length){ msgRender("Write a note or add a photo first."); return; }
+  const id="m"+Date.now().toString(36), ts=Date.now();
+  const m={text:text,photoCount:photos.length,createdAt:ts,status:"new"};
+  msgBusy=true; msgRender();
+  try{
+    if(db&&!_dryRun()){
+      if(photos.length) await db.ref("messagePhotos/"+id).set(photos);   // photos first, so the dashboard never sees a message whose photos aren't there yet
+      await db.ref("messages/"+id).set(m);
+    }
+  }catch(e){ msgBusy=false; msgRender("Didn't send — check the internet and try again. Your note and photos are still here."); return; }
+  msgBusy=false; msgDraft={text:"",photos:[]};
+  if(!db||_dryRun()) msgData[id]=m;   // dry-run: show it locally only
+  const el=document.getElementById("msg-panel-in");
+  if(el) el.innerHTML='<div style="text-align:center;padding:28px 10px"><div style="font-size:40px">✅</div><div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:#0f172a;margin:8px 0 4px">Sent to Adrienne</div>'+
+    '<div style="font-size:13px;color:#475569;margin-bottom:16px">Thank you! You can find it any time under Sent.</div>'+
+    '<button onclick="msgClose()" style="padding:10px 22px;border-radius:11px;border:none;background:#1d4ed8;color:#fff;font-weight:800;cursor:pointer">Close</button></div>';
+  try{ renderAll(); }catch(e){}
+}
+function msgWhen(ts){ return new Date(ts).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}); }
+// Everything she has sent, newest first: her messages and her answered worksheets.
+function msgSentOpen(){
+  const el=msgPanel();
+  const items=msgList().map(([id,m])=>({ts:m.createdAt,html:
+      '<div style="border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;margin-bottom:9px">'+
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px"><span style="font-size:12px;font-weight:800;color:#1e3a8a">✉ Message · '+esc(msgWhen(m.createdAt))+'</span><span style="flex:1"></span>'+
+        (m.status==="done"?'<span style="font-size:11px;font-weight:800;color:#166534;background:#dcfce7;border-radius:8px;padding:2px 8px">✓ Fixed</span>':'<span style="font-size:11px;font-weight:700;color:#64748b">Sent</span>')+'</div>'+
+      (m.text?'<div style="font-size:13px;color:#0f172a;line-height:1.45;white-space:pre-wrap">'+esc(m.text)+'</div>':'')+
+      (m.photoCount?'<div id="msg-ph-'+esc(id)+'" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;font-size:11px;color:#64748b">Loading '+m.photoCount+' photo'+(m.photoCount===1?'':'s')+'…</div>':'')+
+      '</div>'}))
+    .concat(wsSentList().map(([id,w])=>({ts:w.submittedAt,html:
+      '<div style="border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;margin-bottom:9px;display:flex;gap:8px;align-items:center">'+
+      '<div style="flex:1"><div style="font-size:12px;font-weight:800;color:#1e3a8a">📋 Answered · '+esc(msgWhen(w.submittedAt))+'</div>'+
+      '<div style="font-size:13px;color:#0f172a">'+esc(w.title||"Questions from Adrienne")+'</div></div>'+
+      (w.status==="closed"?'<span style="font-size:11px;font-weight:800;color:#166534;background:#dcfce7;border-radius:8px;padding:2px 8px">✓ Done</span>':'')+'</div>'})))
+    .sort((a,b)=>(b.ts||0)-(a.ts||0));
+  el.innerHTML=msgHead("Sent to Adrienne")+(items.length?items.map(x=>x.html).join(""):'<div style="font-size:13px;color:#64748b">Nothing sent yet.</div>');
+  msgList().forEach(([id,m])=>{ if(m.photoCount) msgLoadPhotos(id); });
+}
+function msgLoadPhotos(id){
+  if(!db) return;
+  db.ref("messagePhotos/"+id).once("value").then(s=>{
+    const box=document.getElementById("msg-ph-"+id); if(!box) return;
+    const ph=(s.val()||[]).filter(Boolean);
+    box.innerHTML=ph.length?ph.map((src,i)=>'<img src="'+src+'" onclick="msgBig(\''+id+'\','+i+')" style="width:70px;height:70px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;cursor:pointer">').join(""):'Photos not found.';
+  }).catch(()=>{ const box=document.getElementById("msg-ph-"+id); if(box) box.textContent="Photos couldn't load right now."; });
+}
+function msgBig(id,i){
+  const im=document.querySelectorAll("#msg-ph-"+id+" img")[i]; if(!im) return;
+  const ov=document.createElement("div");
+  ov.style.cssText="position:fixed;inset:0;z-index:10060;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;padding:12px;cursor:pointer";
+  ov.onclick=()=>ov.remove();
+  ov.innerHTML='<img src="'+im.src+'" style="max-width:100%;max-height:100%;border-radius:8px">';
+  document.body.appendChild(ov);
+}
+// Repaint only when the count or a ✓ Fixed changes — never on the photo payloads (they aren't here).
+function msgOnValue(v){
+  msgData=v||{};
+  const key=msgList().map(([id,m])=>id+(m.status==="done"?"d":"")).join(",");
+  if(key!==msgKey){ msgKey=key; try{ renderAll(); }catch(e){} }
 }
 // ── WORKSHEETS_END ──
 // ── HELPERS_START ── 🙋 helpers: Grandma, Dad, a sitter — people who can take some of Mom's school tasks ──
