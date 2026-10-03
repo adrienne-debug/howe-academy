@@ -51789,7 +51789,8 @@ function seqFillSlots(input){
     if(!want){ drop.push({id:t.id,lid:t.lid||null,text:t.title||"",day:t.day,time:t.time}); continue; }
     const newId=(planId&&kid)?(kid+"_"+planId+"_"+want.lid):t.id;
     assign.push({oldId:t.id,newId:newId,lid:want.lid,text:want.text,day:t.day,time:t.time,
-                 from:t.lid||null,changed:(t.lid!==want.lid)});
+                 from:t.lid||null,changed:(t.lid!==want.lid),
+                 _eowOverflow:t._eowOverflow||undefined});   // 📦 a box slot still sorts LAST in the order check below (2026-10-02)
   }
 
   // Does the week actually read in order once filled? A locked card holding a lesson later than
@@ -51847,6 +51848,12 @@ function seqFillNormalize(tasks,reason){
   const locked=t=>{
     if(checked&&checked[t.id]) return true;
     if(typeof claimed!=="undefined"&&claimed&&claimed[t.id]) return true;
+    // 📦 A carry-over box card (_eowOverflow) is the unscheduled tail, not a sitting — the day it is
+    // parked on is never shown to the kid, so that day passing must not freeze it. Frozen, it kept a
+    // stale lesson: Ellis' MR box read pp. 17–20, 21–24, 49–52 (six lessons skipped) after the 10/1
+    // end-date rebuild renumbered his plan, and the pass logged "⚠ locked card out of sequence"
+    // (her ask 2026-10-02). Unchecked + unclaimed box cards stay slots and refill in order.
+    if(t._eowOverflow) return false;
     const iso=isoOf(t); if(!iso||!todayISO) return true;          // unknown date -> treat as fixed, never move it
     if(iso<todayISO) return true;
     if(iso===todayISO) return ((typeof toMin==="function")?toMin(t.time):0)<=nowMin;
@@ -51860,7 +51867,7 @@ function seqFillNormalize(tasks,reason){
     // 🧩 a merged page card HOLDS its lessons — not a slot to re-stamp, and its lessons are spoken for
     if(Array.isArray(t.lids)&&t.lids.length>1){ const k=t.who+"|"+t.subjectKey; (takenBy[k]=takenBy[k]||[]).push.apply(takenBy[k],t.lids); return; }
     (groups[t.who+"|"+t.subjectKey]=groups[t.who+"|"+t.subjectKey]||[]).push(t); });
-  let changed=0; const notes=[];
+  let changed=0; const notes=[]; const boxNotes=[];   // 📦 box watch (her ask 2026-10-02): one line per box refill
   Object.keys(groups).forEach(key=>{
     const kid=key.split("|")[0], sk=key.split("|")[1];
     let ids=null,doneSet=null,subj=null;
@@ -51874,6 +51881,8 @@ function seqFillNormalize(tasks,reason){
     res.assign.forEach(a=>{
       if(!a.changed) return;
       const t=byId[a.oldId]; if(!t) return;
+      if(t._eowOverflow){ const _ot=String(t.title||""), _oi=_ot.lastIndexOf(" — ");
+        boxNotes.push(key+" "+(_oi>=0?_ot.slice(_oi+3):(a.from||"?"))+" → "+a.text+" (filed under "+String(t.day||"?")+")"); }
       t.lid=a.lid; t.title=_seqFillTitle(t.title,a.text);
       if(a.newId&&a.newId!==t.id&&!live.has(a.newId)){ live.delete(t.id); live.add(a.newId); t.id=a.newId; }
       changed++;
@@ -51883,6 +51892,8 @@ function seqFillNormalize(tasks,reason){
     if(!res.ascending) notes.push(key+" ⚠ locked card out of sequence");
   });
   if(changed&&typeof dbg==="function") dbg("seqfill ("+(reason||"?")+"): re-stamped "+changed+" slot"+(changed!==1?"s":"")+" — "+notes.join(" | "));
+  // 📦 BOX WATCH — a separate, greppable line so the families dashboard can track the box fix for a week
+  if(boxNotes.length&&typeof dbg==="function") dbg("📦 box refill: "+boxNotes.join(" | "));
   return {changed:changed,notes:notes};
 }
 // SEQFILL_END
