@@ -1,0 +1,20 @@
+/* 🍎 The day banner's finish estimate pauses for the REAL lunch (her ask 2026-10-03). run: node test_proj_lunch.js */
+const fs=require("fs"),path=require("path"); const src=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
+const a=src.indexOf("  const _plSd="), b=src.indexOf("  const isToday = dayKey === _todayDay;",a);
+if(a<0||b<0) throw new Error("projection block not found");
+const block=src.slice(a,b);
+const toMin=t=>{ const m=String(t||"").trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i); if(!m) return NaN; let h=+m[1]; const ap=(m[3]||"").toUpperCase(); if(ap==="PM"&&h!==12)h+=12; if(ap==="AM"&&h===12)h=0; return h*60+(+m[2]); };
+const run=(sd,dayKey)=>new Function("toMin","rulesData","dayKey",block+"return projWithLunch;")(toMin,{schoolDay:sd},dayKey);
+let pass=0,fail=0; const ok=(n,c,x)=>{ if(c){pass++;console.log("  ok  - "+n);} else {fail++;console.log("  FAIL- "+n+(x!==undefined?"  ("+JSON.stringify(x)+")":""));} };
+const D=run({lunchStart:"12:00 PM",lunchEnd:"1:00 PM"},"monday");
+ok("DeWalt 12–1: 11:00 + 120 min of work → 2:00 PM (an hour of lunch inside)", D(660,120)===840, D(660,120));
+ok("DeWalt: work all before lunch → no pause", D(600,60)===660);
+ok("DeWalt: starting after lunch → no pause", D(780,60)===840);
+const H=run({lunchStart:"1:00 PM",lunchEnd:"2:00 PM"},"monday");
+ok("Howe 1–2 unchanged: 12:00 + 120 → 3:00 PM", H(720,120)===900, H(720,120));
+const O=run({lunchStart:"12:00 PM",lunchEnd:"1:00 PM",overrides:{wednesday:{lunchStart:"12:30 PM",lunchEnd:"1:30 PM"}}},"wednesday");
+ok("per-day override: Wed 12:30–1:30, 12:00 + 60 → 2:00 PM (30 before lunch, 30 after)", O(720,60)===840, O(720,60));
+ok("…and Tuesday keeps 12–1: 12:00 + 60 → 2:00 PM", run({lunchStart:"12:00 PM",lunchEnd:"1:00 PM",overrides:{wednesday:{lunchStart:"12:30 PM",lunchEnd:"1:30 PM"}}},"tuesday")(720,60)===840);
+ok("no settings → old 1–2 default", run({},"monday")(720,120)===900);
+ok("no real lunch window → no pause", run({lunchStart:"1:00 PM",lunchEnd:"1:00 PM"},"monday")(720,120)===840);
+console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
