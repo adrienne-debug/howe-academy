@@ -43,7 +43,30 @@ ok("locked list still renders when a meal group is open", /if\(!avail&&!dueIdx\.
 ok("meal settings sit with the routine times", /if\(typeof mealSettingsHTML==="function"\) h\+=mealSettingsHTML\(\);/.test(s));
 ok("meal names saved to their own node", /db\.ref\("config\/routineTimes\/meals"\)\.set\(m\)/.test(block));
 ok("Chore Plan row has the meal button", /cpSetMeal\('\+i\+',/.test(s));
-ok("seeding keeps the tag", /if\(s\.meal\) o\.meal=s\.meal;/.test(s));
+ok("seeding keeps the tag", /if\(s\.meal\)\{ o\.meal=s\.meal; if\(s\.since\) o\.since=s\.since; \}/.test(s));
+ok("tagging a meal job stamps since", /function cpSetMeal\(i,m\)\{[^}]*"since",routineDateISO\(_todayDay\)/.test(s));
+// her rule 2026-10-02: a missed meal job is never late and never carries to the next day
+{ const i = s.indexOf("function rtLateDays("); let d = 0, j = s.indexOf("{", i); for(; j < s.length; j++){ if(s[j] === "{") d++; else if(s[j] === "}"){ d--; if(!d) break; } }
+  const rtStepsFor = () => [{ label: "Set table", cad: "wk:0", meal: "lunch" }];
+  const rtLateDays = eval("(" + s.slice(i, j + 1) + ")");
+  ok("a Monday lunch job is not late on Tuesday", rtLateDays("afternoon", "caleb", 0) === 0); }
+// …but Mom and Dad still get the record: a passed day's undone meal job is filed as a miss
+{ const misses = [];
+  const ctx = { _todayDay: "wednesday", DAYS_ALL: ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"],
+    SL_KIDS: ["caleb"], RT_ABBR: { afternoon: "a", chores: "c", evening: "e" },
+    slState: { "week1_tuesday_caleb_astep0": { done: true } },
+    activeWk: () => "week1",
+    routineDateISO: dn => ({ monday: "2026-10-05", tuesday: "2026-10-06", wednesday: "2026-10-07", thursday: "2026-10-08" })[dn] || null,
+    rtStepsFor: (slot) => slot === "afternoon" ? [{ label: "Set table", cad: "wk:0,1,2,3", meal: "lunch", pts: 5 }, { label: "Shower", cad: "wk:0,1,2" }, { label: "Sweep", cad: "wk:0,1", meal: "lunch", since: "2026-10-06" }] : [],
+    stepWindowOk: () => true, cadDueOn: (cad, dn) => cad.slice(3).split(",").map(Number).indexOf(ctx.DAYS_ALL.indexOf(dn)) >= 0,
+    _rtLogMiss: (kid, slot, i, dn, label) => misses.push(kid + "/" + slot + "/" + i + "/" + dn + "/" + label) };
+  const sweep = s.slice(s.indexOf("let _mealMissAt=0;"), s.indexOf("// MEALS_END"));
+  const run = new Function(...Object.keys(ctx), "MEAL_SLOT", "mealOf", sweep + "; mealMissSweep();");
+  run(...Object.values(ctx), MEAL_SLOT, mealOf);
+  ok("Monday's undone lunch job is recorded", misses.indexOf("caleb/afternoon/0/monday/Set table") >= 0);
+  ok("a job added Tuesday is recorded for Tuesday but not Monday", misses.indexOf("caleb/afternoon/2/tuesday/Sweep") >= 0 && !misses.some(m => /\/2\/monday/.test(m)));
+ok("Tuesday's (done) is not, today's and future days are not, plain chores are not", misses.length === 2);
+  ok("renderSkylight runs the sweep", /if\(typeof mealMissSweep==="function"\)\{ try\{ mealMissSweep\(\); \}catch\(e\)\{\} \}/.test(s)); }
 
 global.Date = RealDate;
 console.log(pass + " passed, " + fail + " failed");

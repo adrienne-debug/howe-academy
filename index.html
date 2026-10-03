@@ -2079,6 +2079,29 @@ function mealSettingsHTML(){
      '<button onclick="mealSet(\'breakfastGate\','+(c.breakfastGate?'false':'true')+')" style="border:1.5px solid '+(c.breakfastGate?'transparent':'var(--border)')+';background:'+(c.breakfastGate?'#c2410c':'#fff')+';color:'+(c.breakfastGate?'#fff':'#1f2937')+';border-radius:7px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">'+(c.breakfastGate?'Yes':'No')+'</button></span>';
   return h+'</div>';
 }
+// A missed meal job never shows as late (her rule 2026-10-02) but Mom and Dad still get the record (same day):
+// once the day has passed, any meal job that was due and not checked is filed in the Click-off Log as
+// "— not done" under that day, exactly like a missed chore. Deterministic key → several devices agree.
+// Covers the days of the active week; runs at most every 10 minutes from renderSkylight. st.since (set when the
+// chore is tagged as a meal job) keeps days from BEFORE the job existed out of the record.
+let _mealMissAt=0;
+function mealMissSweep(){
+  if(Date.now()-_mealMissAt<600000) return; _mealMissAt=Date.now();
+  const wk=activeWk(), todayIso=routineDateISO(_todayDay); if(!wk||!todayIso) return;
+  SL_KIDS.forEach(kid=>{ ["morning","afternoon","evening"].forEach(slot=>{
+    const ab=slot==="morning"?"m":RT_ABBR[slot];
+    (rtStepsFor(slot,kid,false)||[]).forEach((st,i)=>{
+      if(!mealOf(slot,st)) return;
+      DAYS_ALL.forEach(dn=>{
+        const iso=routineDateISO(dn); if(!iso||iso>=todayIso) return;   // only days that have actually passed
+        if(st.since&&iso<st.since) return;                              // before this job existed
+        if(!stepWindowOk(st,dn)||!cadDueOn(st.cad||"daily",dn)) return;
+        const c=slState[wk+"_"+dn+"_"+kid+"_"+ab+"step"+i]; if(c&&c.done) return;
+        _rtLogMiss(kid,slot,i,dn,st.label,st.pts||0);
+      });
+    });
+  }); });
+}
 // MEALS_END
 // Open/closed is DERIVED: a finished list shows collapsed (its green header only) on every device and
 // after reloads; a tap on the header overrides for that day (2026-08-18, her ask — the old in-memory
@@ -2219,6 +2242,7 @@ function rtLateDays(slot,kid,i){
   const steps=rtStepsFor(slot,kid), st=steps[i]; if(!st) return 0;
   const cad=st.cad||"daily";
   if(cad==="daily") return 0;                       // a fresh one each day — "late" means nothing
+  if(st.meal) return 0;                             // 🍽 after-meal jobs belong to that meal only — never late, never carried (her rule 2026-10-02)
   const m=/^wk:(.+)$/.exec(cad); if(!m) return 0;
   const days=m[1].split(",").map(Number).filter(n=>!isNaN(n));
   if(!days.length) return 0;
@@ -3909,6 +3933,7 @@ function renderSkylight(){
   const alertEl=document.getElementById("sl-alert");
   const gridEl=document.getElementById("sl-grid");
   const indEl=document.getElementById("sl-individual");
+  if(typeof mealMissSweep==="function"){ try{ mealMissSweep(); }catch(e){} }
 
   // NOTE: no scheduleBreakToday() here on purpose — school stops for a holiday/vacation, life
   // does not. Teeth still get brushed, dogs still get fed, so the routines stay on break days.
@@ -21007,7 +21032,7 @@ function zoneSet(i,f,v){ if(!momHere())return; const z=zoneList().slice(); if(!z
 function zoneDel(i){ if(!momHere())return; const z=zoneList().slice(); if(!z[i])return;
   if(!confirm('Remove the "'+(z[i].name||"zone")+'" zone? Chores in it just lose their zone.')) return;
   z.splice(i,1); zones=z; _zoneSave(); renderAll(); }
-function cpSetMeal(i,m){ if(!momHere()) return; rtCfgSet(cpSlot,cpKid,i,"meal",m||""); renderAll(); }
+function cpSetMeal(i,m){ if(!momHere()) return; if(m) rtCfgSet(cpSlot,cpKid,i,"since",routineDateISO(_todayDay)||""); rtCfgSet(cpSlot,cpKid,i,"meal",m||""); renderAll(); }
 function cpSetField(i,f,v){
   if(!momHere()) return;
   if(cpSlot==="grabs"){ gbSet(i,f,v); return; }
@@ -46996,7 +47021,7 @@ function slotCfgSave(){
 }
 // ── Morning routine editor (config/morningRoutine) ──
 // ── Afternoon/Chores/Evening routine editor (config/routines) ──
-function rtCfgEnsure(slot,kid){ if(!routineCfg2[slot]) routineCfg2[slot]={}; if(!Array.isArray(routineCfg2[slot][kid])||!routineCfg2[slot][kid].length){ routineCfg2[slot][kid]=(rtStepsFor(slot,kid,true)||[]).map(s=>{ const o={label:s.label||"",emoji:s.emoji||"",pts:s.pts||0,cad:s.cad||"daily",time:s.time||"",from:s.from||"",to:s.to||""}; if(s.rot) o.rot=s.rot; if(s.meal) o.meal=s.meal; if(s.cycW){ o.cycW=s.cycW; o.cycN=s.cycN||4; o.cycStart=s.cycStart||""; } return o; }); } }
+function rtCfgEnsure(slot,kid){ if(!routineCfg2[slot]) routineCfg2[slot]={}; if(!Array.isArray(routineCfg2[slot][kid])||!routineCfg2[slot][kid].length){ routineCfg2[slot][kid]=(rtStepsFor(slot,kid,true)||[]).map(s=>{ const o={label:s.label||"",emoji:s.emoji||"",pts:s.pts||0,cad:s.cad||"daily",time:s.time||"",from:s.from||"",to:s.to||""}; if(s.rot) o.rot=s.rot; if(s.meal){ o.meal=s.meal; if(s.since) o.since=s.since; } if(s.cycW){ o.cycW=s.cycW; o.cycN=s.cycN||4; o.cycStart=s.cycStart||""; } return o; }); } }
 function rtCfgSave(){ if(db) db.ref("config/routines").set(routineCfg2); }
 function rtCfgSet(slot,kid,i,field,val){ rtCfgEnsure(slot,kid); if(!routineCfg2[slot][kid][i]) return; routineCfg2[slot][kid][i][field]=(field==="pts"?(parseInt(val,10)||0):val); rtCfgSave(); }
 function rtCfgAdd(slot,kid){ rtCfgEnsure(slot,kid); routineCfg2[slot][kid].push({label:"New step",emoji:"",pts:0}); rtCfgSave(); renderAll(); }
