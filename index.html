@@ -6065,7 +6065,7 @@ let wsData={}; let wsOpenKey="|";   // "|" = nothing open, nothing sent
 const WS_DONE_DAYS=14;
 function wsOpenList(){
   return Object.entries(wsData||{})
-    .filter(([id,w])=>w&&w.status==="open"&&Array.isArray(w.questions)&&w.questions.length)
+    .filter(([id,w])=>w&&w.status==="open"&&w.kind!=="note"&&Array.isArray(w.questions)&&w.questions.length)
     .sort((a,b)=>(a[1].createdAt||0)-(b[1].createdAt||0));
 }
 function wsAns(w,i){ return ((w&&w.answers)||{})[i]||{}; }
@@ -6081,10 +6081,43 @@ function wsSentList(now){
     .filter(([id,w])=>w&&w.status==="submitted"&&(w.submittedAt||0)>=cut)
     .sort((a,b)=>(b[1].submittedAt||0)-(a[1].submittedAt||0));
 }
+// 📝 A NOTE from Adrienne (kind:"note", her ask 10/3: "just write it out with a check box" — a worksheet-looking
+// popup reads as more work). Shown written out right on the card: title, intro, lines, one ☐ Got it. Ticking it
+// closes the note ({status:"closed", closedAt, readAt}) so it falls off at once; the dashboard shows it "done".
+function wsNoteList(){
+  return Object.entries(wsData||{})
+    .filter(([id,w])=>w&&w.status==="open"&&w.kind==="note")
+    .sort((a,b)=>(a[1].createdAt||0)-(b[1].createdAt||0));
+}
+function wsNoteHTML(id,w){
+  const lines=Array.isArray(w.info)?w.info:[];
+  return '<div style="padding:11px 13px;border-radius:11px;border:1.5px solid #bbf7d0;background:#f0fdf4;margin-top:8px">'+
+    '<div style="font-weight:800;font-size:14px;color:#166534">'+esc(w.title||"A note from Adrienne")+'</div>'+
+    (w.intro?'<div style="font-size:12.5px;color:#334155;line-height:1.45;margin-top:3px">'+esc(w.intro)+'</div>':'')+
+    (lines.length?'<ul style="margin:6px 0 0;padding-left:18px;font-size:12.5px;color:#334155;line-height:1.45">'+lines.map(l=>'<li style="margin-bottom:3px">'+esc(l)+'</li>').join("")+'</ul>':'')+
+    '<div onclick="wsNoteTap(\''+esc(id)+'\')" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;margin-top:8px;padding:6px 12px 6px 8px;border-radius:9px;border:1.5px solid #86efac;background:#fff">'+
+      '<span style="width:18px;height:18px;border-radius:5px;border:2px solid #16a34a;background:#fff;flex:none"></span>'+
+      '<span style="font-size:13px;font-weight:800;color:#166534">'+esc(w.ackLabel||"Got it")+'</span></div></div>';
+}
+function wsNoteTap(id){
+  if(typeof momHere==="function"&&momHere()){ wsNoteRead(id); return; }
+  if(typeof kitPinGate!=="function") return;
+  kitPinGate(()=>wsNoteRead(id));
+  const w=document.getElementById("kit-pin-wrap");
+  if(w) w.innerHTML=w.innerHTML.replace("Adding, changing or importing recipes is for Mom.","Notes from Adrienne are for Mom.");
+}
+function wsNoteRead(id){
+  const w=(wsData||{})[id]; if(!w) return;
+  const ts=Date.now();
+  w.status="closed"; w.closedAt=ts; w.readAt=ts;
+  if(db&&!_dryRun()) db.ref("worksheets/"+id).update({status:"closed",closedAt:ts,readAt:ts});
+  try{ renderAll(); }catch(e){}
+}
 function wsRowsHTML(now){
-  const open=wsOpenList(), sent=wsSentList(now);
-  if(!open.length&&!sent.length) return "";
+  const open=wsOpenList(), sent=wsSentList(now), notes=wsNoteList();
+  if(!open.length&&!sent.length&&!notes.length) return "";
   let h="";
+  notes.forEach(([id,w])=>{ h+=wsNoteHTML(id,w); });
   open.forEach(([id,w])=>{
     const n=w.questions.length, done=w.questions.filter((q,i)=>wsAns(w,i).pick).length;
     h+='<div onclick="wsTap(\''+esc(id)+'\')" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:11px;border:2px solid #93c5fd;background:#eff6ff;margin-top:8px">'+
@@ -6189,7 +6222,7 @@ function wsSubmit(id){
 // so the popup's text boxes keep focus).
 function wsOnValue(v){
   wsData=v||{};
-  const key=wsOpenList().map(([id])=>id).join(",")+"|"+wsSentList().map(([id])=>id).join(",");
+  const key=wsOpenList().map(([id])=>id).join(",")+"|"+wsSentList().map(([id])=>id).join(",")+"|"+wsNoteList().map(([id])=>id).join(",");
   if(key!==wsOpenKey){ wsOpenKey=key; try{ renderAll(); }catch(e){} }
 }
 // ── WORKSHEETS_END ──
