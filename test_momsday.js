@@ -1375,6 +1375,10 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   M.renderMomsDay(elStub);
   ok("Mom's Day card: recipe name + 🥗 sides line", elStub.innerHTML.includes("Turkey Curry") && elStub.innerHTML.includes("🥗 peas · rice"), null);
   delete M.kitPlan[TODAY]; delete M.kitPlan[M.kitIsoPlus(TODAY, 1)];
+  M.kitRotations["lunchT"] = { name: "Lunch", weeks: [[{ l: "PB&J · bananas" }, { l: "Pizza · apples" }]] };
+  M.kitRotToggle("lunchT"); M.renderKitchen(elStub);
+  ok("lunch-only rotation previews its lunches", elStub.innerHTML.includes("Mon</span> PB") && elStub.innerHTML.includes("bananas") && elStub.innerHTML.includes("Tue</span> Pizza · apples"), null);
+  M.kitRotToggle("lunchT"); delete M.kitRotations["lunchT"];
   M.kitAssign("2026-10-05", { mid: "mS" });
   ok("re-picking a dinner drops its sides, keeps lunch", !("sides" in M.kitPlan["2026-10-05"]) && M.kitPlan["2026-10-05"].l.txt === "PB&J", M.kitPlan["2026-10-05"]);
   Object.keys(M.kitPlan).forEach(k => { delete M.kitPlan[k]; });
