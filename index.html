@@ -3711,6 +3711,17 @@ function initFb() {
       Object.keys(v).forEach(k=>{ kitBuyLog[k]=v[k]; });
       try{HA_LS.setItem('ha_kit_buylog',JSON.stringify(kitBuyLog));}catch(e){}
     });
+    db.ref("kitchen/grocery").on("value",s=>{   // 🛒 grocery list (items · kid requests · in-cart ticks · learned sections)
+      const v=s.val()||{};
+      grData={items:v.items||{},requests:v.requests||{},vchk:v.vchk||{},learn:v.learn||{},kids:v.kids||{}};
+      grSave();
+      if(tab==="moms-plan"){
+        const ae=document.activeElement; if(ae&&/^(gr-|md-todo)/.test(ae.id||"")&&ae.value) return;   // don't wipe what someone is typing
+        const el=document.getElementById("content");if(el)renderMomsPlan(el);
+      } else if(document.getElementById("gr-kid-box")){   // a kid's day is open → their ask box shows Mom's answer
+        const ae=document.activeElement; if(!(ae&&/^gr-/.test(ae.id||"")&&ae.value)&&typeof renderAll==="function") renderAll();
+      }
+    });
     db.ref("pace").on("value",s=>{
       const v=s.val()||{}; paceData={subjects:v.subjects||{}, plans:v.plans||{}};
       try{HA_LS.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
@@ -9523,6 +9534,7 @@ function mpInit(){
   try{ const kg=HA_LS.getItem('ha_kit_settings'); if(kg) Object.assign(kitSettings,JSON.parse(kg)); }catch(e){}
   try{ const kn=HA_LS.getItem('ha_kit_pantry'); if(kn) Object.assign(kitPantry,JSON.parse(kn)); }catch(e){}
   try{ const kb=HA_LS.getItem('ha_kit_buylog'); if(kb) Object.assign(kitBuyLog,JSON.parse(kb)); }catch(e){}
+  try{ const gr=HA_LS.getItem('ha_grocery'); if(gr){ const v=JSON.parse(gr); grData={items:v.items||{},requests:v.requests||{},vchk:v.vchk||{},learn:v.learn||{},kids:v.kids||{}}; } }catch(e){}
   try{ const kr=HA_LS.getItem('ha_kit_rotations'); if(kr) Object.assign(kitRotations,JSON.parse(kr)); }catch(e){}
 }
 
@@ -9662,6 +9674,7 @@ function renderDadsDay(el){
     +'<button onclick="dcAdd()" style="padding:9px 16px;border-radius:9px;border:none;background:#2C5F8A;color:#fff;font-size:13px;font-weight:700;cursor:pointer">＋ Add</button></div>';
   h+='</div></div>';
   try{ h+=ddTodoCardHTML(iso); }catch(e){}   // 📝 his running to-do list, right under the checklist
+  try{ h+=grDadCardHTML(); }catch(e){}   // 🛒 he adds straight to the grocery list — no OK needed
 
   // ── the shared cards — same functions Mom's Day calls, same data ──
   h+='<div style="display:flex;flex-direction:column;gap:12px;padding:0 12px 28px">';
@@ -9701,6 +9714,8 @@ function renderMomsPlanView(el){
   mpInit();
   if(mpSubView==='prep'){ return renderMPPrep(el); }
   if(mpSubView==='weigh'){ return renderMPWeigh(el); }
+  if(mpSubView!=='grocery') grFromDad=(mpSubView==='dad'||mpSubView==='dadcal');   // 🛒 the list remembers which page opened it
+  if(mpSubView==='grocery'){ return renderGrocery(el); }
   if(mpSubView==='meals'){ return renderKitchen(el); }
   if(mpSubView==='cal'){ return renderMPCalendar(el); }
   if(mpSubView==='dad'){ return renderDadsDay(el); }
@@ -10211,7 +10226,7 @@ function momDayStripHTML(iso,today){
     +'<button onclick="momdayAddTodo()" style="padding:8px 12px;border-radius:9px;border:none;background:#3A7D44;color:#fff;font-size:12.5px;font-weight:700;cursor:pointer">＋</button></div>';
   // shopping sits under the to-dos, in the same column
   h+='<div style="margin-top:10px;padding-top:9px;border-top:1px dashed var(--border)">'+colHd('🛒','Shopping','')
-    +'<button onclick="mpGoto(\'meals\')" style="width:100%;padding:8px 10px;border-radius:9px;border:1.5px solid #cbd5e1;background:#fff;color:#2B7A78;font-size:12.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:left">🛒 Open the shopping list →</button>'
+    +grMdShopHTML()
     +(kitSettings.orderDay===today?'<div style="font-size:10.5px;color:#b45309;font-weight:700;margin-top:4px">📦 Today is order day</div>':'')
     +'</div>';
   h+='</div>';
@@ -11603,6 +11618,7 @@ function kitOrderCardHTML(compact){
     +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#3A7D44;color:#fff;font-weight:800;font-size:13px"><span>🛒</span> Build your order'
     +(o.count?'<span style="font-size:11px;font-weight:700;opacity:.85">· '+o.count+' item'+(o.count===1?'':'s')+'</span>':'')
     +'<button onclick="kitCopyOrder()" style="margin-left:auto;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">📋 Copy list</button>'
+    +'<button onclick="mpGoto(\'grocery\')" style="border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">🛒 Open list</button>'
     +(compact?'<button onclick="mpGoto(\'meals\')" style="border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">🍽 Manage →</button>':'')
     +'</div><div style="padding:10px 14px 12px">';
   if(out.length) h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#b91c1c;margin:2px 0 5px">❌ Out</div>'
@@ -11619,6 +11635,490 @@ function kitOrderCardHTML(compact){
   h+='</div></div>';
   return h;
 }
+
+// ── 🛒 GROCERY LIST (2026-10-03, her ask) ─────────────────────────
+// ONE saved list everything lands on — typed on the list or Mom's Day, Dad's Day, kid requests, and the
+// ❌/🟡 staples + standing usuals. Lives at kitchen/grocery/:
+//   items/{id}    = {name, qty?, unit?, extra?, note?, sec, src:[{k:mom|dad|kid|meal|todo, who?, lbl?}], by, done?, doneTs?, ts}
+//   requests/{id} = {name, qty?, unit?, kid, ts, st?:yes|no, dIso?}   a kid asks from THEIR day; Mom ✓ / ✕ (kept
+//                   until the next day so the kid sees the answer)
+//   kids/{id}     = true                         kids Mom lets ask (the box shows on their day only)
+//   vchk/{key}    = true                         in-cart ticks on staple/usual rows (st_<id> / us_<id>)
+//   learn/{slug}  = sec                          the section she moved an item to — wins over the word list
+// Staples and usuals are NOT copied in: they're read live from kitOrderList(), so a staple tapped back to
+// ✅ have drops off by itself. 🏁 Done: checked items → buyLog + pantry, checked staples → ✅ have.
+// GROCERY_LIST_START
+let grData={items:{},requests:{},vchk:{},learn:{},kids:{}};
+let grFromDad=false;   // opened from Dad's Day → the list page adds as Dad and goes back to his page
+const GR_SECS=[   // [id, label, pantry zone on 🏁 Done ("" = not food, stays out of the pantry)]
+  ["produce","🥬 Produce","produce"],["bakery","🍞 Bakery & bread","pantry"],["meat","🥩 Meat & seafood","fridge"],
+  ["deli","🥪 Deli","fridge"],["dairy","🥛 Dairy & eggs","fridge"],["frozen","❄️ Frozen","freezer"],
+  ["pantry","🥫 Pantry","pantry"],["baking","🧁 Baking & spices","pantry"],["snacks","🍿 Snacks","pantry"],
+  ["drinks","🧃 Drinks","pantry"],["household","🧻 Household",""],["personal","🧴 Health & personal",""],
+  ["baby","🍼 Baby",""],["pets","🐾 Pets",""],["other","🛒 Other","pantry"]];
+const GR_WORDS={
+  produce:"apple|banana|orange|lemon|lime|grape|strawberry|strawberries|blueberry|blueberries|raspberry|raspberries|blackberry|blackberries|berries|cherry|cherries|peach|peaches|pear|plum|mango|mangoes|pineapple|watermelon|cantaloupe|melon|kiwi|avocado|tomato|tomatoes|potato|potatoes|sweet potato|sweet potatoes|onion|garlic|ginger|carrot|celery|cucumber|lettuce|romaine|spinach|kale|arugula|cabbage|broccoli|cauliflower|zucchini|squash|pepper|bell pepper|jalapeno|mushroom|asparagus|green bean|corn|cilantro|parsley|basil|mint|rosemary|thyme|scallion|green onion|leek|beet|radish|radishes|brussels sprouts|salad|spring mix|greens|microgreens|pomegranate|grapefruit|clementine|cranberries|fresh herbs|produce|fruit|veggies|vegetables",
+  bakery:"bread|bagel|bun|roll|tortilla|corn tortilla|pita|naan|english muffin|muffin|croissant|sourdough|hamburger bun|hot dog bun|wrap|cake|pie|donut|biscuit",
+  meat:"chicken|chicken breast|chicken thigh|beef|ground beef|steak|roast|pork|pork chop|bacon|sausage|ham|turkey|ground turkey|lamb|salmon|shrimp|fish|cod|tilapia|meatball|rib|brisket|hot dog|bratwurst|chorizo|scallops|meat",
+  deli:"deli|deli meat|lunch meat|sliced turkey|salami|pepperoni|prosciutto|rotisserie|rotisserie chicken|hummus|guacamole",
+  dairy:"milk|almond milk|oat milk|coconut milk|cashew milk|egg|butter|cheese|yogurt|sour cream|cream cheese|cream|heavy cream|half and half|creamer|cottage cheese|kefir|string cheese|dairy",
+  frozen:"frozen|ice cream|ice|popsicle|frozen pizza|waffles|tater tots|fries|frozen fruit|frozen vegetables",
+  pantry:"rice|pasta|noodles|spaghetti|quinoa|oats|oatmeal|cereal|granola|beans|black beans|pinto beans|chickpeas|lentils|canned|soup|broth|stock|chicken broth|bone broth|tomato sauce|tomato paste|diced tomatoes|pasta sauce|marinara|salsa|peanut butter|almond butter|sunflower butter|jelly|jam|honey|maple syrup|syrup|olive oil|oil|avocado oil|coconut oil|vinegar|apple cider vinegar|soy sauce|coconut aminos|ketchup|mustard|mayo|mayonnaise|ranch|dressing|bbq sauce|hot sauce|pickles|olives|tuna|ghee|dates|raisins|dried fruit|pizza sauce|enchilada sauce|taco seasoning",
+  baking:"flour|almond flour|coconut flour|gf flour|sugar|brown sugar|coconut sugar|powdered sugar|baking soda|baking powder|yeast|vanilla|chocolate chips|cocoa|salt|black pepper|cinnamon|spice|seasoning|cumin|paprika|oregano|chili powder|garlic powder|onion powder|cornstarch|arrowroot|sprinkles|gelatin|collagen|nutmeg|turmeric",
+  snacks:"chips|tortilla chips|crackers|pretzels|popcorn|cookies|granola bar|bar|protein bar|nuts|almonds|cashews|pecans|walnuts|trail mix|fruit snacks|applesauce|candy|chocolate|rice cakes|jerky|seaweed|snack",
+  drinks:"water|sparkling water|juice|soda|coffee|tea|kombucha|lemonade|gatorade|electrolytes|coconut water|la croix",
+  household:"paper towel|paper towels|toilet paper|napkins|trash bags|garbage bags|foil|aluminum foil|plastic wrap|ziploc|zip bags|sandwich bags|dish soap|dishwasher|detergent|laundry|bleach|cleaner|sponge|batteries|light bulb|tissues|kleenex|paper plates|cups|parchment|wax paper|dryer sheets",
+  personal:"shampoo|conditioner|soap|body wash|toothpaste|toothbrush|floss|deodorant|lotion|sunscreen|razor|vitamins|cotton|q-tips|band-aids|bandaids|medicine|tylenol|ibuprofen|motrin|allergy|lip balm|feminine",
+  baby:"diapers|diaper|wipes|formula|baby food",
+  pets:"dog food|cat food|litter|dog treats|cat treats|pet"
+};
+let _grWordList=null;   // [[regex, sec, len]] longest first, so "peanut butter" beats "butter", "ice cream" beats "cream"
+function grWordList(){
+  if(_grWordList) return _grWordList;
+  const out=[];
+  Object.keys(GR_WORDS).forEach(sec=>GR_WORDS[sec].split("|").forEach(w=>{
+    const esc_=w.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    out.push([new RegExp("\\b"+esc_+"(s|es)?\\b","i"),sec,w.length]);
+  }));
+  out.sort((a,b)=>b[2]-a[2]);
+  return (_grWordList=out);
+}
+function grSecMeta(sec){ return GR_SECS.find(s=>s[0]===sec)||GR_SECS[GR_SECS.length-1]; }
+// Which section a name goes in: her own move first, then "frozen …" wins, then the longest word that matches.
+function grSecFor(name,learn){
+  const n=String(name||"").toLowerCase(), sl=kitSlug(n);
+  const L=learn||grData.learn||{};
+  if(sl&&L[sl]&&GR_SECS.some(s=>s[0]===L[sl])) return L[sl];
+  if(/\bfrozen\b/.test(n)) return "frozen";
+  const hit=grWordList().find(w=>w[0].test(n));
+  return hit?hit[1]:"other";
+}
+// Same-thing key for "already on the list": lowercase, letters/digits only, each word's plural s dropped.
+function grKey(name){
+  return String(name||"").toLowerCase().replace(/[^a-z0-9 ]+/g," ").split(/\s+/).filter(Boolean)
+    .map(w=>{
+      if(w.length<=3||!/s$/.test(w)||/ss$/.test(w)) return w;
+      if(/ies$/.test(w)) return w.slice(0,-3)+"y";          // berries → berry
+      if(/(ch|sh|x|o)es$/.test(w)) return w.slice(0,-2);     // tomatoes → tomato, boxes → box
+      return w.slice(0,-1);                                  // eggs → egg
+    }).join(" ");
+}
+// "2 lb ground beef" · "ground beef 2 lb" · "eggs x2" · "eggs ×2" · "3 avocados" → {name, qty?, unit?}
+const GR_UNITS="lb|lbs|pound|pounds|oz|ounce|ounces|pk|pack|packs|bag|bags|box|boxes|can|cans|jar|jars|bottle|bottles|gal|gallon|gallons|dozen|doz|ct|count|bunch|bunches|loaf|loaves|carton|cartons|tub|tubs|head|heads";
+function grParse(txt){
+  let s=String(txt||"").replace(/\s+/g," ").trim(); if(!s) return null;
+  let m=s.match(new RegExp("^(\\d+(?:\\.\\d+)?|½|¼|¾)\\s*("+GR_UNITS+")?\\.?\\s+(.+)$","i"));
+  const num=v=>({"½":0.5,"¼":0.25,"¾":0.75})[v]||parseFloat(v);
+  if(m) return grClean({name:m[3],qty:num(m[1]),unit:(m[2]||"").toLowerCase()});
+  m=s.match(new RegExp("^(.+?)\\s+(\\d+(?:\\.\\d+)?)\\s*("+GR_UNITS+")\\.?$","i"));
+  if(m) return grClean({name:m[1],qty:num(m[2]),unit:m[3].toLowerCase()});
+  m=s.match(/^(.+?)\s*[x×]\s*(\d+)$/i);
+  if(m) return grClean({name:m[1],qty:parseFloat(m[2]),unit:""});
+  return grClean({name:s});
+}
+function grClean(p){
+  p.name=String(p.name||"").replace(/^(of|x)\s+/i,"").trim();
+  if(!p.name) return null;
+  p.name=p.name.charAt(0).toUpperCase()+p.name.slice(1);
+  if(!(p.qty>0)) delete p.qty;
+  if(!p.unit) delete p.unit;
+  return p;
+}
+function grQtyTxt(it){
+  if(!it) return "";
+  let t="";
+  if(it.qty>0){ const q=Math.round(it.qty*100)/100; t=it.unit?(q+" "+it.unit):(q>1?"×"+q:""); }
+  else if(it.unit) t=it.unit;
+  if(it.extra) t=(t?t+" + ":"")+it.extra;
+  return t;
+}
+// Add an amount onto an item: same unit (or both plain counts) adds up; different units ride along as "+ 2 cups".
+function grMergeQty(it,add){
+  const out=Object.assign({},it);
+  const aq=(add&&add.qty>0)?add.qty:1, au=(add&&add.unit)||"";
+  const iq=(it.qty>0)?it.qty:1, iu=it.unit||"";
+  if(au===iu){ out.qty=iq+aq; }
+  else { const t=au?(aq+" "+au):("×"+aq); out.extra=out.extra?out.extra+" + "+t:t; if(!(it.qty>0)) out.qty=iq; }
+  return out;
+}
+function grKidName(id){ try{ const k=ROSTER_DEF.find(x=>x.id===id); return (k&&k.name)||String(id||""); }catch(e){ return String(id||""); } }
+function grSrcTxt(s){
+  if(!s) return "";
+  if(s.k==="mom") return "✍️ Mom";
+  if(s.k==="dad") return "👨 Dad";
+  if(s.k==="kid") return "🙋 "+grKidName(s.who);
+  if(s.k==="meal") return "🍽 "+(s.lbl||"meal");
+  if(s.k==="todo") return "📝 to-do";
+  return s.lbl||"";
+}
+// Staple + usual rows, read live (never stored on the list). key st_<id> / us_<id>.
+function grVirtualRows(){
+  const rows=[];
+  try{
+    const o=kitOrderList();
+    o.need.forEach(s=>rows.push({key:"st_"+s.id,name:s.name,sec:grSecFor(s.name),tag:s.state==="out"?"🧺 out":"🧺 low",virt:"staple",sid:s.id}));
+    Object.keys(o.usuals).forEach(c=>o.usuals[c].forEach(u=>rows.push({key:"us_"+u.id,name:u.name,qty:u.qty>1?u.qty:undefined,sec:grSecFor(u.name),tag:"🔁 usual",virt:"usual",sid:u.id})));
+  }catch(e){}
+  return rows;
+}
+// Is this already on the list? → {kind:"item",id,it} | {kind:"virt",row} | null
+function grFindDup(name){
+  const k=grKey(name); if(!k) return null;
+  const items=grData.items||{};
+  const id=Object.keys(items).find(i=>grKey((items[i]||{}).name)===k);
+  if(id) return {kind:"item",id:id,it:items[id]};
+  const row=grVirtualRows().find(r=>grKey(r.name)===k);
+  return row?{kind:"virt",row:row}:null;
+}
+function grSave(){ try{ HA_LS.setItem('ha_grocery',JSON.stringify(grData)); }catch(e){} }
+function grRepaint(){ try{
+  if(tab==="moms-plan"){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); }
+  else if(document.getElementById("gr-kid-box")&&typeof renderAll==="function") renderAll();   // a kid's day
+}catch(e){} }
+function grNewId(p){ return (p||"g")+Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
+function grPut(id,it){
+  grData.items[id]=it; grSave();
+  if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/items/'+id).set(it);
+}
+function grCreate(p,src){
+  const id=grNewId("g");
+  const it={name:p.name,sec:grSecFor(p.name),src:[src],by:src.k==="kid"?("kid:"+src.who):src.k,ts:Date.now()};
+  if(p.qty>0) it.qty=p.qty; if(p.unit) it.unit=p.unit; if(p.note) it.note=p.note;
+  grPut(id,it); return id;
+}
+// The one door everything adds through. by = "mom" | "dad" | a kid id. Kids make a request instead.
+function grAdd(text,by,extra){
+  const p=(typeof text==="object")?text:grParse(text); if(!p) return;
+  const isKid=by!=="mom"&&by!=="dad";
+  const dup=grFindDup(p.name);
+  if(isKid){
+    if(dup){ mwToast("✓ "+p.name+" is already on the list"); return "dup"; }
+    const k=grKey(p.name), req=grData.requests||{};
+    const ask=Object.keys(req).find(r=>!(req[r]||{}).st&&grKey((req[r]||{}).name)===k);
+    if(ask){ const w=req[ask].kid; mwToast("✓ "+(w===by?"You":grKidName(w))+" already asked for "+p.name); return "dup"; }
+    const rid=grNewId("r"), rec={name:p.name,kid:by,ts:Date.now()};
+    if(p.qty>0) rec.qty=p.qty; if(p.unit) rec.unit=p.unit;
+    grData.requests[rid]=rec; grSave();
+    if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/requests/'+rid).set(rec);
+    mwToast("🙋 Sent to Mom: "+p.name); grRepaint(); return "req";
+  }
+  const src=(extra&&extra.src)||{k:by};
+  if(dup){ grAskDup(dup,p,src); return "ask"; }
+  grCreate(p,src); mwToast("🛒 Added "+p.name); grRepaint(); return "add";
+}
+// ── the "already on the list" pop-up ──
+let _grPend=null;
+function grPop(html){
+  let w=document.getElementById("gr-pop"); if(!w){ w=document.createElement("div"); w.id="gr-pop"; document.body.appendChild(w); }
+  w.innerHTML=html?'<div onclick="if(event.target===this)grPopClose()" style="position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:18px">'
+    +'<div style="background:#fff;border-radius:16px;padding:20px 18px;width:100%;max-width:340px;box-shadow:0 20px 60px rgba(0,0,0,.35);font-family:\'DM Sans\',sans-serif">'+html+'</div></div>':"";
+}
+function grPopClose(){ grPop(""); _grPend=null; }
+const GR_BTN='width:100%;padding:11px;border-radius:11px;font-size:13.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-top:7px;';
+function grAskDup(dup,p,src){
+  _grPend={dup:dup,p:p,src:src};
+  let what;
+  if(dup.kind==="item"){
+    const it=dup.it||{}, q=grQtyTxt(it), who=(it.src||[]).map(grSrcTxt).filter(Boolean).join(", ");
+    what='<b>'+esc(it.name)+'</b> is already '+(it.done?'in the cart':'on the list')+(q?' · <b>'+esc(q)+'</b>':'')+(who?'<div style="font-size:12px;color:#64748b;margin-top:3px">Added by '+esc(who)+'</div>':'');
+  } else {
+    what='<b>'+esc(dup.row.name)+'</b> is already on the list · '+esc(dup.row.tag)+(dup.row.qty?' ×'+dup.row.qty:'');
+  }
+  let h='<div style="font-size:30px;text-align:center">🛒</div><div style="font-size:14px;text-align:center;line-height:1.45;margin:4px 0 10px">'+what+'</div>';
+  if(dup.kind==="item"){
+    h+='<button onclick="grDupMore()" style="'+GR_BTN+'border:none;background:#3A7D44;color:#fff">＋1 more</button>'
+      +'<div style="display:flex;gap:6px;margin-top:7px"><input id="gr-dup-qty" type="text" placeholder="Or a different amount…" value="'+esc(p.qty>0?(p.qty+(p.unit?" "+p.unit:"")):"")+'" onkeydown="if(event.key===\'Enter\')grDupAmt()" style="flex:1;min-width:0;padding:10px;border:1.5px solid #cbd5e1;border-radius:10px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
+      +'<button onclick="grDupAmt()" style="padding:0 14px;border-radius:10px;border:1.5px solid #3A7D44;background:#fff;color:#3A7D44;font-weight:800;cursor:pointer">Add</button></div>';
+  } else {
+    h+='<button onclick="grDupAnyway()" style="'+GR_BTN+'border:1.5px solid #3A7D44;background:#fff;color:#3A7D44">Add it anyway</button>';
+  }
+  h+='<button onclick="grPopClose();mwToast(\'👍 Left it as is\')" style="'+GR_BTN+'border:none;background:#f1f5f9;color:#334155">No need</button>';
+  grPop(h);
+}
+function grDupApply(add){
+  const P=_grPend; if(!P||P.dup.kind!=="item") return grPopClose();
+  const id=P.dup.id, cur=grData.items[id]; if(!cur) return grPopClose();
+  const it=grMergeQty(cur,add);
+  const src=(it.src||[]).slice(); if(!src.some(s=>s.k===P.src.k&&s.who===P.src.who&&s.lbl===P.src.lbl)) src.push(P.src); it.src=src;
+  if(it.done){ delete it.done; delete it.doneTs; }   // asked for more → back on the to-get list
+  grPut(id,it); grPopClose(); mwToast("🛒 "+it.name+" · "+grQtyTxt(it)); grRepaint();
+}
+function grDupMore(){ const P=_grPend; grDupApply({qty:1,unit:(P&&P.dup.it&&P.dup.it.unit)||""}); }
+function grDupAmt(){
+  const v=((document.getElementById("gr-dup-qty")||{}).value||"").trim();
+  const m=v.match(new RegExp("^(\\d+(?:\\.\\d+)?)\\s*("+GR_UNITS+")?","i"));
+  grDupApply(m?{qty:parseFloat(m[1]),unit:(m[2]||"").toLowerCase()}:{qty:1,unit:""});
+}
+function grDupAnyway(){ const P=_grPend; if(!P) return; grCreate(P.p,P.src); grPopClose(); mwToast("🛒 Added "+P.p.name); grRepaint(); }
+// ── typed adds: Mom's Day, the list page, Dad's Day, a kid's day ──
+// ctx "dad" adds as Dad (his page). A kid id adds as that kid → a request (their own day knows who they are).
+// Anything else is Mom: straight on when she's unlocked, otherwise her PIN once.
+function grAddFrom(inputId,ctx){
+  const el=document.getElementById(inputId); const v=el?el.value.trim():""; if(!v) return;
+  if(ctx==="dad"){ el.value=""; grAdd(v,"dad"); return; }
+  if(ctx&&ctx!=="md"&&ctx!=="list"){ if(!grKidOn(ctx)) return; el.value=""; grAdd(v,ctx); return; }
+  const go=()=>{ el.value=""; grAdd(v,"mom"); };
+  if(typeof momHere==="function"&&momHere()) go();
+  else kitPinGate(go,"Adding to the grocery list from here is for Mom. Kids ask from their own day.");
+}
+function grKidOn(k){ return !!(grData.kids&&grData.kids[k]); }
+function grKidAllow(k){ grGate(function(){
+  if(grData.kids[k]) delete grData.kids[k]; else grData.kids[k]=true;
+  grSave();
+  if(typeof db!=='undefined'&&db){ if(grData.kids[k]) db.ref('kitchen/grocery/kids/'+k).set(true); else db.ref('kitchen/grocery/kids/'+k).remove(); }
+  grRepaint();
+}); }
+// Mom (or Dad with his code) for the things that take items OFF or change them.
+function grGate(then){
+  if((typeof momHere==="function"&&momHere())||(typeof dadAwardOk==="function"&&dadAwardOk())){ then(); return; }
+  kitPinGate(then,"Changing or clearing the grocery list is for Mom.");
+}
+// ── check-offs ──
+function grToggle(id){
+  const it=grData.items[id]; if(!it) return;
+  if(it.done){ delete it.done; delete it.doneTs; } else { it.done=true; it.doneTs=Date.now(); }
+  grSave();
+  if(typeof db!=='undefined'&&db){
+    if(it.done) db.ref('kitchen/grocery/items/'+id).update({done:true,doneTs:it.doneTs});
+    else { db.ref('kitchen/grocery/items/'+id+'/done').remove(); db.ref('kitchen/grocery/items/'+id+'/doneTs').remove(); }
+  }
+  grRepaint();
+}
+function grVToggle(key){
+  if(grData.vchk[key]) delete grData.vchk[key]; else grData.vchk[key]=true;
+  grSave();
+  if(typeof db!=='undefined'&&db){ if(grData.vchk[key]) db.ref('kitchen/grocery/vchk/'+key).set(true); else db.ref('kitchen/grocery/vchk/'+key).remove(); }
+  grRepaint();
+}
+// ── requests ──
+// Answered requests stay (st yes/no + dIso) so the kid sees "✓ Mom added it" today; older answers are pruned
+// the next time Mom answers one.
+function grDecide(rid,st){
+  const r=grData.requests[rid]; if(!r) return null;
+  const today=_todayStr();
+  Object.keys(grData.requests).forEach(id=>{ const q=grData.requests[id];
+    if(q&&q.st&&q.dIso&&q.dIso<today){ delete grData.requests[id]; if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/requests/'+id).remove(); } });
+  r.st=st; r.dIso=today; grSave();
+  if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/requests/'+rid).update({st:st,dIso:today});
+  return r;
+}
+function grApprove(rid){ grGate(function(){
+  const r=grDecide(rid,"yes"); if(!r) return;
+  const p={name:r.name}; if(r.qty>0) p.qty=r.qty; if(r.unit) p.unit=r.unit;
+  grAdd(p,"mom",{src:{k:"kid",who:r.kid}});
+}); }
+function grDecline(rid){ grGate(function(){
+  const r=grDecide(rid,"no"); if(!r) return;
+  mwToast("✕ Not this time: "+r.name); grRepaint();
+}); }
+function grPendingIds(){ const R=grData.requests||{}; return Object.keys(R).filter(id=>R[id]&&!R[id].st).sort((a,b)=>(R[a].ts||0)-(R[b].ts||0)); }
+// ── edit / remove ──
+function grEdit(id){ grGate(function(){
+  const it=grData.items[id]; if(!it) return;
+  _grPend={edit:id};
+  const inp='width:100%;box-sizing:border-box;padding:10px;border:1.5px solid #cbd5e1;border-radius:10px;font-size:13.5px;font-family:\'DM Sans\',sans-serif;margin-top:4px';
+  const lbl=t=>'<div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.3px;margin-top:10px">'+t+'</div>';
+  let h='<div style="font-weight:800;font-size:15px">✎ '+esc(it.name)+'</div>'
+    +lbl('Name')+'<input id="gr-e-name" type="text" value="'+esc(it.name)+'" style="'+inp+'">'
+    +lbl('Amount')+'<input id="gr-e-qty" type="text" placeholder="e.g. 2 · 3 lb · 1 bag" value="'+esc((it.qty>0?Math.round(it.qty*100)/100:"")+(it.unit?" "+it.unit:""))+'" style="'+inp+'">'
+    +(it.extra?'<div style="font-size:11.5px;color:#64748b;margin-top:3px">Also: '+esc(it.extra)+' <button onclick="grEditClearExtra()" style="border:none;background:none;color:#b91c1c;font-size:11.5px;cursor:pointer">clear</button></div>':'')
+    +lbl('Note (brand, size…)')+'<input id="gr-e-note" type="text" placeholder="e.g. Simple Mills, the GF one" value="'+esc(it.note||"")+'" style="'+inp+'">'
+    +lbl('Section')+'<select id="gr-e-sec" style="'+inp+'">'+GR_SECS.map(s=>'<option value="'+s[0]+'"'+(it.sec===s[0]?' selected':'')+'>'+s[1]+'</option>').join('')+'</select>'
+    +'<button onclick="grEditSave()" style="'+GR_BTN+'border:none;background:#3A7D44;color:#fff;margin-top:14px">Save</button>'
+    +'<div style="display:flex;gap:6px"><button onclick="grRemove(\''+id+'\')" style="'+GR_BTN+'border:1.5px solid #fecaca;background:#fff;color:#b91c1c">✕ Remove</button>'
+    +'<button onclick="grPopClose()" style="'+GR_BTN+'border:none;background:#f1f5f9;color:#334155">Cancel</button></div>';
+  grPop(h);
+}); }
+function grEditClearExtra(){ const P=_grPend; if(!P||!P.edit) return; const it=grData.items[P.edit]; if(it){ delete it.extra; } grEdit(P.edit); }
+function grEditSave(){
+  const P=_grPend; if(!P||!P.edit) return grPopClose();
+  const id=P.edit, cur=grData.items[id]; if(!cur) return grPopClose();
+  const it=Object.assign({},cur);
+  const name=((document.getElementById("gr-e-name")||{}).value||"").trim(); if(name) it.name=name;
+  const qv=((document.getElementById("gr-e-qty")||{}).value||"").trim();
+  const m=qv.match(new RegExp("^(\\d+(?:\\.\\d+)?)\\s*("+GR_UNITS+")?\\.?$","i"));
+  delete it.qty; delete it.unit;
+  if(m){ it.qty=parseFloat(m[1]); if(m[2]) it.unit=m[2].toLowerCase(); } else if(qv) it.unit=qv;
+  const note=((document.getElementById("gr-e-note")||{}).value||"").trim(); if(note) it.note=note; else delete it.note;
+  const sec=(document.getElementById("gr-e-sec")||{}).value||it.sec;
+  if(sec!==it.sec){
+    it.sec=sec;
+    // remember her move for next time — only when it differs from what the word list would guess
+    const sl=kitSlug(it.name);
+    if(sl){
+      const guess=grSecFor(it.name,{});
+      if(sec!==guess){ grData.learn[sl]=sec; if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/learn/'+sl).set(sec); }
+      else if(grData.learn[sl]){ delete grData.learn[sl]; if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/learn/'+sl).remove(); }
+    }
+  }
+  grPut(id,it); grPopClose(); grRepaint();
+}
+function grRemove(id){ grGate(function(){
+  const it=grData.items[id]; if(!it) return;
+  delete grData.items[id]; grSave();
+  if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/items/'+id).remove();
+  grPopClose(); mwToast("✕ Removed "+(it.name||"")); grRepaint();
+}); }
+// ── 🏁 done shopping ──
+function grCartCount(){
+  const items=grData.items||{};
+  return Object.keys(items).filter(i=>items[i]&&items[i].done).length
+    +grVirtualRows().filter(r=>grData.vchk[r.key]).length;
+}
+function grDone(){ grGate(function(){
+  const n=grCartCount(); if(!n){ mwToast("Nothing in the cart yet"); return; }
+  if(!confirm("Finish the trip?\n\n"+n+" item"+(n===1?"":"s")+" in the cart come off the list, go into the pantry and the buy history, and staples go back to ✅ have.")) return;
+  const iso=_todayStr(), dayMap=Object.assign({},kitBuyLog[iso]);
+  const bought=(name,qty,sec)=>{
+    const sl=kitSlug(name); if(sl){ dayMap[sl]=(dayMap[sl]||0)+(qty>0?Math.ceil(qty):1); if(typeof db!=='undefined'&&db) db.ref('kitchen/buyLog/'+iso+'/'+sl).set(dayMap[sl]); }
+    const zone=grSecMeta(sec)[2]; if(zone) try{ panAdd(name,zone,qty>0?Math.ceil(qty):1,"receipt"); }catch(e){}
+  };
+  Object.keys(grData.items).forEach(id=>{
+    const it=grData.items[id]; if(!it||!it.done) return;
+    bought(it.name,(it.unit&&!/^(bag|box|can|jar|bottle|pk|pack|carton|tub|loaf|bunch|head|ct|count|dozen|doz)/.test(it.unit))?1:it.qty,it.sec);
+    delete grData.items[id];
+    if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/items/'+id).remove();
+  });
+  grVirtualRows().forEach(r=>{
+    if(!grData.vchk[r.key]) return;
+    bought(r.name,r.qty,r.sec);
+    if(r.virt==="staple"&&kitStaples[r.sid]){
+      kitStaples[r.sid].state="have"; kitStaples[r.sid].ts=Date.now();
+      if(typeof db!=='undefined'&&db) db.ref('kitchen/staples/'+r.sid).set(kitStaples[r.sid]);
+    }
+  });
+  try{ HA_LS.setItem('ha_kit_staples',JSON.stringify(kitStaples)); }catch(e){}
+  kitBuyLog[iso]=dayMap; try{ HA_LS.setItem('ha_kit_buylog',JSON.stringify(kitBuyLog)); }catch(e){}
+  grData.vchk={}; if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/vchk').remove();
+  grSave(); mwToast("🏁 Trip done — "+n+" item"+(n===1?"":"s")+" put away"); grRepaint();
+}); }
+// ── copy / send ──
+function grText(){
+  const lines=["🛒 Grocery list — "+_todayStr()];
+  const groups=grGroups();
+  GR_SECS.forEach(s=>{
+    const rows=(groups[s[0]]||[]).filter(r=>!r.done); if(!rows.length) return;
+    lines.push(s[1].replace(/^\S+\s/,"")+": "+rows.map(r=>r.name+(r.q?" ("+r.q+")":"")+(r.note?" — "+r.note:"")).join(", "));
+  });
+  return lines.length>1?lines.join("\n"):"🛒 The grocery list is empty.";
+}
+function grCopy(){
+  const txt=grText();
+  if(typeof navigator!=="undefined"&&navigator.clipboard&&navigator.clipboard.writeText)
+    navigator.clipboard.writeText(txt).then(()=>mwToast('🛒 List copied'),()=>prompt("Copy the list:",txt));
+  else prompt("Copy the list:",txt);
+}
+// Every row on the list, real + staple/usual, grouped by section → {sec:[row]}
+function grGroups(){
+  const g={}, items=grData.items||{};
+  const push=(sec,r)=>{ (g[sec]=g[sec]||[]).push(r); };
+  Object.keys(items).forEach(id=>{
+    const it=items[id]; if(!it||!it.name) return;
+    push(GR_SECS.some(s=>s[0]===it.sec)?it.sec:grSecFor(it.name),{id:id,name:it.name,q:grQtyTxt(it),note:it.note||"",tags:(it.src||[]).map(grSrcTxt).filter(Boolean),done:!!it.done,doneTs:it.doneTs||0});
+  });
+  grVirtualRows().forEach(r=>push(r.sec,{key:r.key,name:r.name,q:r.qty?"×"+r.qty:"",note:"",tags:[r.tag],done:!!grData.vchk[r.key],doneTs:0,virt:true}));
+  Object.keys(g).forEach(k=>g[k].sort((a,b)=>String(a.name).localeCompare(String(b.name))));
+  return g;
+}
+function grRowHTML(r){
+  const tap=r.virt?'grVToggle(\''+r.key+'\')':'grToggle(\''+r.id+'\')';
+  return '<div style="display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid #eef2f0">'
+    +'<div onclick="'+tap+'" role="button" aria-label="'+(r.done?'Take out of the cart':'Put in the cart')+'" style="cursor:pointer;width:24px;height:24px;flex:0 0 auto;border-radius:50%;border:2px solid '+(r.done?'#16a34a':'#3A7D44')+';background:'+(r.done?'#16a34a':'#fff')+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800">'+(r.done?'✓':'')+'</div>'
+    +'<div onclick="'+tap+'" style="cursor:pointer;flex:1;min-width:0">'
+      +'<div style="font-size:14px;font-weight:700;'+(r.done?'text-decoration:line-through;color:#94a3b8':'color:#1a1a1a')+'">'+esc(r.name)
+      +r.tags.map(t=>' <span style="font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:10px;background:#fdf3dc;color:#7c5a10;white-space:nowrap">'+esc(t)+'</span>').join('')+'</div>'
+      +(r.note?'<div style="font-size:12px;color:#64748b">'+esc(r.note)+'</div>':'')+'</div>'
+    +(r.q?'<div style="font-size:13px;font-weight:800;color:#3A7D44;white-space:nowrap">'+esc(r.q)+'</div>':'')
+    +(r.virt?'':'<button onclick="grEdit(\''+r.id+'\')" aria-label="Edit" style="border:none;background:none;color:#94a3b8;font-size:15px;cursor:pointer;padding:2px 4px">✎</button>')
+    +'</div>';
+}
+function grAddRowHTML(inputId,ctx,ph){
+  return '<div style="display:flex;gap:6px">'
+    +'<input type="text" id="'+inputId+'" placeholder="'+esc(ph||"Add to the grocery list…")+'" onkeydown="if(event.key===\'Enter\')grAddFrom(\''+inputId+'\',\''+ctx+'\')" style="flex:1;min-width:0;padding:10px 12px;border:1.5px solid #cbd5e1;border-radius:10px;font-size:14px;font-family:\'DM Sans\',sans-serif">'
+    +'<button onclick="grAddFrom(\''+inputId+'\',\''+ctx+'\')" aria-label="Add" style="padding:0 15px;border-radius:10px;border:none;background:#3A7D44;color:#fff;font-size:18px;font-weight:800;cursor:pointer">＋</button></div>';
+}
+function grToGetCount(){ const g=grGroups(); return Object.keys(g).reduce((n,k)=>n+g[k].filter(r=>!r.done).length,0); }
+function grReqCount(){ return grPendingIds().length; }
+// 🛒 the List tab
+function renderGrocery(el){
+  if(!el){ el=document.getElementById("content"); if(!el) return; }
+  const groups=grGroups(), toGet=grToGetCount(), cart=grCartCount();
+  let h='<div style="font-family:\'DM Sans\',sans-serif;padding-bottom:24px">';
+  h+=mwBanner('🛒 Grocery list — everything lands here');
+  if(grFromDad) h+='<div style="padding:8px 12px;background:#fff;border-bottom:2px solid #DEF2F1"><button onclick="grFromDad=false;mpGoto(\'dad\')" style="border:1.5px solid #2C5F8A;background:#fff;color:#2C5F8A;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">← Dad\'s Day</button></div>';
+  else h+=mpSubnav('grocery');
+  h+='<div style="padding:12px 12px 0;display:flex;flex-direction:column;gap:11px;max-width:720px;margin:0 auto">';
+  // 🙋 requests waiting for Mom
+  const rids=grPendingIds();
+  // 🙋 which kids get the ask box on their day — Mom's call
+  h+='<div style="background:#fff;border-radius:12px;padding:10px 14px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;box-shadow:0 4px 20px rgba(43,122,120,0.13)">'
+    +'<span style="font-size:12px;font-weight:800;color:#6b6560">🙋 Kids who can ask</span>'
+    +(ROSTER_DEF||[]).map(k=>{ const on=grKidOn(k.id); return '<button onclick="grKidAllow(\''+k.id+'\')" aria-pressed="'+on+'" style="padding:5px 11px;border-radius:16px;border:2px solid '+(k.color||'#cbd5e1')+';background:'+(on?(k.color||'#3A7D44'):'#fff')+';color:'+(on?'#fff':'#334155')+';font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(on?'✓ ':'')+esc(k.name)+'</button>'; }).join('')
+    +'<span style="font-size:11px;color:#94a3b8;flex-basis:100%">The ones you turn on get a “Need something from the store?” box on their day. Their asks wait here for your OK.</span></div>';
+  if(rids.length){
+    h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
+      +'<div style="padding:10px 14px;background:#e8a317;color:#fff;font-weight:800;font-size:13px">🙋 Requests · '+rids.length+' waiting for Mom</div><div style="padding:6px 14px 10px">';
+    rids.forEach(rid=>{ const r=grData.requests[rid];
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #eef2f0">'
+        +'<div style="flex:1;min-width:0;font-size:14px;font-weight:700">'+esc(r.name)+(grQtyTxt(r)?' <span style="color:#3A7D44">'+esc(grQtyTxt(r))+'</span>':'')
+        +'<div style="font-size:11.5px;color:#64748b;font-weight:600">'+esc(grKidName(r.kid))+' asked</div></div>'
+        +'<button onclick="grApprove(\''+rid+'\')" style="padding:7px 12px;border-radius:9px;border:none;background:#3A7D44;color:#fff;font-size:12.5px;font-weight:800;cursor:pointer">✓ Add</button>'
+        +'<button onclick="grDecline(\''+rid+'\')" style="padding:7px 10px;border-radius:9px;border:1.5px solid #e2e8f0;background:#fff;color:#64748b;font-size:12.5px;font-weight:800;cursor:pointer">✕ No</button></div>';
+    });
+    h+='</div></div>';
+  }
+  h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
+    +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#3A7D44;color:#fff;font-weight:800;font-size:13px">🛒 Grocery list'
+    +'<span style="font-size:11px;font-weight:700;opacity:.9">· '+toGet+' to get'+(cart?' · '+cart+' in cart':'')+'</span>'
+    +'<button onclick="grCopy()" style="margin-left:auto;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer">📋 Copy</button></div>'
+    +'<div style="padding:12px 14px 14px">'+grAddRowHTML("gr-add-list",grFromDad?"dad":"list","Add an item… (e.g. 2 lb ground beef)");
+  let any=false;
+  GR_SECS.forEach(s=>{
+    const rows=(groups[s[0]]||[]).filter(r=>!r.done); if(!rows.length) return; any=true;
+    h+='<div style="display:flex;justify-content:space-between;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#6b6560;margin:14px 0 2px"><span>'+s[1]+'</span><span>'+rows.length+'</span></div>'
+      +rows.map(grRowHTML).join('');
+  });
+  if(!any) h+='<div style="font-size:12.5px;color:#64748b;padding:14px 2px 4px;line-height:1.5">Nothing to get. Type an item above, or tap 🧺 staples 🟡 low / ❌ out on 🍽 Meals — they show up here on their own, with your 🔁 usuals.</div>';
+  const inCart=[]; Object.keys(groups).forEach(k=>groups[k].forEach(r=>{ if(r.done) inCart.push(r); }));
+  if(inCart.length){
+    inCart.sort((a,b)=>(b.doneTs||0)-(a.doneTs||0));
+    h+='<div style="display:flex;justify-content:space-between;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#16a34a;margin:16px 0 2px"><span>✓ In the cart</span><span>'+inCart.length+'</span></div>'
+      +inCart.map(grRowHTML).join('')
+      +'<button onclick="grDone()" style="width:100%;margin-top:12px;padding:12px;border-radius:12px;border:none;background:#1d2a22;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🏁 Done shopping · '+inCart.length+' in cart</button>';
+  }
+  h+='<div style="font-size:11px;color:#64748b;margin-top:12px;line-height:1.5">Tap the circle to put something in the cart. ✎ changes the amount, a brand note, or the section (it remembers). 🧺 staples and 🔁 usuals come from 🍽 Meals.</div>';
+  h+='</div></div></div></div>';
+  el.innerHTML=h;
+}
+// Mom's Day → under the to-dos
+function grMdShopHTML(){
+  const n=grToGetCount(), rq=grReqCount();
+  return grAddRowHTML("gr-add-md","md","Add to the grocery list…")
+    +'<button onclick="grFromDad=false;mpGoto(\'grocery\')" style="width:100%;margin-top:6px;padding:8px 10px;border-radius:9px;border:1.5px solid #cbd5e1;background:#fff;color:#2B7A78;font-size:12.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:left">🛒 Open the grocery list · '+n+' to get'+(rq?' · <span style="color:#b45309">🙋 '+rq+' request'+(rq===1?'':'s')+'</span>':'')+' →</button>';
+}
+// Dad's Day card — he adds straight on, no OK needed
+function grDadCardHTML(){
+  const n=grToGetCount();
+  return '<div style="margin:0 12px 10px;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
+    +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#3A7D44;color:#fff;font-weight:800;font-size:13px">🛒 Grocery list<span style="flex:1"></span><span style="font-size:11px;font-weight:700;opacity:.9">'+n+' to get</span></div>'
+    +'<div style="padding:10px 14px 12px">'+grAddRowHTML("gr-add-dad","dad","Add to the grocery list…")
+    +'<button onclick="grFromDad=true;mpGoto(\'grocery\')" style="width:100%;margin-top:6px;padding:8px 10px;border-radius:9px;border:1.5px solid #cbd5e1;background:#fff;color:#2B7A78;font-size:12.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:left">🛒 Open the list →</button></div></div>';
+}
+// 🙋 a kid's day — "Need something from the store?" (only kids Mom turned on). Shows today's asks + answers.
+function grKidBoxHTML(k){
+  if(!grKidOn(k)) return "";
+  const R=grData.requests||{}, today=_todayStr();
+  const mine=Object.keys(R).filter(id=>R[id]&&R[id].kid===k&&(!R[id].st||R[id].dIso===today)).sort((a,b)=>(R[a].ts||0)-(R[b].ts||0));
+  let h='<div id="gr-kid-box" style="padding:12px 12px 0"><div style="background:#fff;border-radius:14px;box-shadow:0 4px 20px rgba(43,122,120,0.13);padding:12px 14px">'
+    +'<div style="font-size:14px;font-weight:800;margin-bottom:8px">🛒 Need something from the store?</div>'
+    +grAddRowHTML("gr-add-kid-"+k,k,"Tell Mom what we need…");
+  mine.forEach(id=>{ const r=R[id];
+    const st=r.st==="yes"?'<span style="color:#16a34a">✓ Mom added it</span>':r.st==="no"?'<span style="color:#64748b">Not this time</span>':'<span style="color:#b45309">⏳ Waiting for Mom</span>';
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px solid #eef2f0;font-size:13px"><span style="flex:1;min-width:0;font-weight:700">'+esc(r.name)+'</span><span style="font-size:12px;font-weight:700">'+st+'</span></div>';
+  });
+  return h+'</div></div>';
+}
+// GROCERY_LIST_END
 
 // ── 🥫 pantry snapshot — loose, dated, fades honestly ──────────────
 // Zones carry a rough shelf-life in days. An item is fresh for the first 60%
@@ -13025,7 +13525,7 @@ function _calPageBody(){
 }
 function mpSubnav(active){
   const btn=(v,lbl)=>`<button onclick="mpGoto('${v}')" style="flex:1;padding:9px 6px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;border:none;border-radius:9px;cursor:pointer;color:${active===v?'#fff':'#9ca3af'};background:${active===v?'#2B7A78':'transparent'};transition:all .2s;white-space:nowrap">${lbl}</button>`;
-  return `<div style="display:flex;gap:4px;background:#fff;border-bottom:2px solid #DEF2F1;padding:8px 10px">${btn('plan','🏡 Today')}${btn('cal','🗓 Calendar')}${btn('meals','🍽 Meals')}${btn('prep','🧃 Prep')}${btn('weigh','⚖️ Weigh-In')}</div>`;
+  return `<div style="display:flex;gap:4px;background:#fff;border-bottom:2px solid #DEF2F1;padding:8px 10px">${btn('plan','🏡 Today')}${btn('cal','🗓 Calendar')}${btn('meals','🍽 Meals')}${btn('grocery','🛒 List')}${btn('prep','🧃 Prep')}${btn('weigh','⚖️ Weigh-In')}</div>`;
 }
 function mpGoto(v){ mpSubView=v; const el=document.getElementById('content'); if(el) renderMomsPlan(el); try{window.scrollTo(0,0);}catch(e){} }
 function mwBanner(sub){
@@ -23770,6 +24270,7 @@ function kcTodayHTML(k){
   let h=(typeof tgKidHTML==="function")?tgKidHTML(k):"";   // 🤝 Together — invites, live session, rating
   h+=kcPointsHTML(k);
   h+=kcSchoolHTML(k);
+  try{ h+=grKidBoxHTML(k); }catch(e){}   // 🛒 ask Mom to buy something (her pick of kids)
   try{ h+='<div style="padding:0 12px">'+calDaySheetHTML(iso,{breaks:true,coops:true,events:true,meals:true},_calDinnerOf,k,{noWork:true,noClose:true,flat:true,title:"Also today"})+'</div>'; }catch(e){}
   return h;
 }
