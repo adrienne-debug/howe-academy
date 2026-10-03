@@ -6715,6 +6715,24 @@ function helperDadCardHTML(){
       +btn("helperDadRequest()","I'm here &mdash; ready to help with school","#16a34a","#fff"));
   }catch(e){ return ""; }
 }
+// ── 🙋 Slice 3 (2026-10-03): the week build plans around a REGULAR helper. A helper with regular hours on this
+// weekday (and "hand them everything", not pick) gets the Mom-required cards she's approved for laid inside her
+// window on her own clock (packDay item.helper). On the day she's checked in they stay hers (helperHolds); if she
+// doesn't come, the living-day lay treats them as Mom's again — nothing to undo.
+function helperPlanWin(dayName,kid,key){
+  try{
+    if(!pageOn("helpers")||!dayName||!kid||!key) return null;
+    const ids=Object.keys(helpersData||{}).filter(_hlpIdOk).sort((a,b)=>((helpersData[a].createdAt||0)-(helpersData[b].createdAt||0)));
+    for(let i=0;i<ids.length;i++){
+      const p=helpersData[ids[i]]; if(!p||p.pick) continue;
+      const w=p.days&&p.days[dayName]; if(!w||!w.start||!w.end) continue;
+      if(!(p.help&&p.help[kid]&&p.help[kid][key])) continue;
+      const s=toMin(w.start), e=toMin(w.end); if(!(e>s)) continue;
+      return {id:ids[i],s:s,e:e};
+    }
+  }catch(e){}
+  return null;
+}
 // ── HELPERS_END ──
 function renderMomHQ(el,ah){
   if(!el){el=document.getElementById("content");if(!el)return;}
@@ -45998,6 +46016,7 @@ function auditSchedule(tasks,checkedMap){
     return isNaN(dt.getTime())?null:dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");
   };
   const byDay={};
+  const _hlpIn=(d,x)=>{ try{ if(typeof helperPlanWin!=="function") return null; const w=helperPlanWin(d,x.t.who,x.t.subjectKey); return (w&&x.s>=w.s&&x.e<=w.e)?w.id:null; }catch(e){ return null; } };   // 🙋
   tasks.forEach(t=>{ if(!t||!t.day||t.day==="carryover") return; if(String(t.id||"").endsWith("_c")) return; if(_ck[t.id]) return; (byDay[t.day]=byDay[t.day]||[]).push(t); });
   for(const day in byDay){
     const o=sdOv[day]||{};
@@ -46012,7 +46031,11 @@ function auditSchedule(tasks,checkedMap){
     for(let i=0;i<ts.length;i++)for(let j=i+1;j<ts.length;j++){
       const a=ts[i],b=ts[j]; if(!(a.s<b.e&&b.s<a.e)) continue;
       if(a.t.who===b.t.who){ v.push(lbl+": "+cap(a.t.who)+" double-booked at "+a.t.time); continue; }
-      if(neverSet.has("mom_required")&&a.t.mom==="required"&&b.t.mom==="required") v.push(lbl+": two Mom-Required at once");
+      if(neverSet.has("mom_required")&&a.t.mom==="required"&&b.t.mom==="required"){
+        const ha=_hlpIn(day,a), hb=_hlpIn(day,b);   // 🙋 a card in a regular helper's window is hers, not Mom's
+        if(ha&&hb&&ha===hb) v.push(lbl+": two of "+helperName(ha)+"'s cards at once");
+        else if(!ha&&!hb) v.push(lbl+": two Mom-Required at once");
+      }
     }
     // Device pools: computers (cap N) and the shared iPad+phone screen pool (cap M).
     // Flag only when more tasks overlap than there are devices. Lucy's iPad is her own
@@ -51000,6 +51023,8 @@ function gwSubjectDetail(kid,key){
 //           kidStart, laneStart, momStart,            // per-kid / per-lane / Mom earliest — seed past already-fixed (checked) work
 //           lanes,                                    // contending device lanes (default below)
 //           allowOvertime, overtimeMax }              // Saturday catch-up: stack past `end`
+//   item.helper = {id, s, e} (optional, 🙋 2026-10-03): a regular helper (Grandma Wed 9:30–12) takes this Mom card
+//     inside her window on her own clock; doesn't fit (or has a device lane) → the normal Mom path, unchanged.
 //   -> { byId:{id:startMin}, placed:[{id,start}], overflow:[item], dropped:[item] }
 //      overflow = couldn't fit and must be re-homed/carried (never silently lost);
 //      dropped  = couldn't fit AND flagged droppable (e.g. reflex).
@@ -51073,6 +51098,7 @@ function packDay(items, ctx){
   })();
   let momFree = Math.max(dayStart, ctx.momStart || 0);
   const kidFree = {};
+  const helperFree = {};   // 🙋 each regular helper's own clock
   const hardEnd = ctx.allowOvertime ? (ctx.end + (ctx.overtimeMax || 180)) : ctx.end;
   const placed = [], overflow = [], dropped = [], byId = {};
   for(const it of (items || [])){
@@ -51082,6 +51108,16 @@ function packDay(items, ctx){
     const lane = (it.lane && laneSet[it.lane]) ? it.lane : null;
     let from = dayStart;
     for(const k of kids) from = Math.max(from, kidFree[k] || 0, (ctx.kidStart && ctx.kidStart[k]) || 0);
+    const hw = it.helper;
+    if(hw && !lane && hw.e > hw.s){
+      const hs = _walk(_windows(kids, false), Math.max(from, hw.s, helperFree[hw.id] || 0), dur);
+      if(hs + dur <= hw.e && hs + dur <= hardEnd){
+        for(const k of kids) kidFree[k] = hs + dur;
+        helperFree[hw.id] = hs + dur;
+        placed.push({ id: it.id, start: hs }); byId[it.id] = hs;
+        continue;
+      }
+    }
     if(it.momRequired) from = Math.max(from, momFree);
     // Windows that apply whichever device is picked: lunch, this kid's classes, and Mom's.
     const shared = _windows(kids, it.momRequired);
@@ -51152,7 +51188,9 @@ function packAround(existing, newTasks, ctx){
     kidStart[t.who]=Math.max(kidStart[t.who]||dStart,end);
     if(t.mom==="required") momStart=Math.max(momStart,end);
   });
-  var items=newTasks.map(function(t){ return {id:t.id,who:t.who,lane:laneOf(t),durMin:t.dur||20,momRequired:t.mom==="required"}; });
+  var items=newTasks.map(function(t){ var it={id:t.id,who:t.who,lane:laneOf(t),durMin:t.dur||20,momRequired:t.mom==="required"};
+    if(ctx.helperFor&&it.momRequired){ try{ var hw=ctx.helperFor(t); if(hw) it.helper=hw; }catch(e){} }   // 🙋 regular helper
+    return it; });
   var packed=packDay(items,{start:dStart,end:ctx.end,lunchStart:ctx.lunchStart,lunchEnd:ctx.lunchEnd,
     busy:ctx.busy,momBusy:ctx.momBusy,laneBusy:ctx.laneBusy,
     kidStart:kidStart,laneStart:laneStart,momStart:momStart,allowOvertime:!!ctx.allowOvertime,overtimeMax:ctx.overtimeMax||180,lanes:ctx.lanes,
@@ -51342,7 +51380,8 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   // Place everything through the shared packer (no phone lane, to match the prior
   // generator; Mom deferred past the sitter return on babysitter days).
   const overflow=packAround([],toPack,{start:schoolStart,end:cutoff,lunchStart:r.lunchStart,lunchEnd:r.lunchEnd,
-    kidStart:kidStart,momStart:(isSitter?sitterEnd:0),busy:fxBusy,momBusy:fxMomBusy,laneBusy:fxLaneBusy,lanes:["computer","screen","ipadLucy","keyboard"],laneCap:gwDeviceCaps()});
+    kidStart:kidStart,momStart:(isSitter?sitterEnd:0),busy:fxBusy,momBusy:fxMomBusy,laneBusy:fxLaneBusy,lanes:["computer","screen","ipadLucy","keyboard"],laneCap:gwDeviceCaps(),
+    helperFor:(typeof helperPlanWin==="function")?function(it){ const mm=meta[it.id]; return mm?helperPlanWin(dayName,mm.kid,mm.key):null; }:null});   // 🙋 Grandma's regular window
   const overflowSet=new Set(overflow);
   items.forEach(it=>{
     const mm=meta[it.id];
