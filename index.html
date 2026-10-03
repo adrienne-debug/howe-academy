@@ -2360,9 +2360,9 @@ let SITTER_NAME=window.HA_FAMILY?(window.HA_FAMILY.sitterName||""):"Maggie";
 // 🧩 PAGES — per-family top-tab switches, settings/pages/<tab> = true|false (2026-10-01, for the Dewalt
 // start). Howe: everything on. Any other family starts on Schedule + Mom's Day + Kids' Corner + Admin, and Mom
 // turns the rest on in Settings ▸ Pages as the family is ready. Kiosk links (?kiosk=…) ignore this.
-const PAGE_KEYS=["notebook","mastery","units","play","moms-plan","kids","purchases","workbooks","eic"];   // purchases / workbooks / eic = Mom HQ rows, not top tabs
-const PAGE_LABEL={notebook:"Notebook",mastery:"Mastery",units:"Units",play:"School Room","moms-plan":"Mom's Day",kids:"Kids' Corner",purchases:"Purchases & ESA",workbooks:"Workbooks",eic:"Editor in Chief"};
-const PAGE_DEFAULT=(function(){ const howe=!(window.HA_FAMILY&&window.HA_FAMILY.familyId&&window.HA_FAMILY.familyId!=="howe"); const d={}; PAGE_KEYS.forEach(k=>{ d[k]=howe||k==="moms-plan"||k==="kids"; }); return d; })();
+const PAGE_KEYS=["notebook","mastery","units","play","moms-plan","kids","purchases","workbooks","eic","helpers"];   // purchases / workbooks / eic = Mom HQ rows, not top tabs
+const PAGE_LABEL={notebook:"Notebook",mastery:"Mastery",units:"Units",play:"School Room","moms-plan":"Mom's Day",kids:"Kids' Corner",purchases:"Purchases & ESA",workbooks:"Workbooks",eic:"Editor in Chief",helpers:"Helpers"};
+const PAGE_DEFAULT=(function(){ const howe=!(window.HA_FAMILY&&window.HA_FAMILY.familyId&&window.HA_FAMILY.familyId!=="howe"); const d={}; PAGE_KEYS.forEach(k=>{ d[k]=k!=="helpers"&&(howe||k==="moms-plan"||k==="kids"); }); return d; })();   // 🙋 helpers starts off everywhere
 let PAGES=(function(){ try{ const v=JSON.parse(HA_LS.getItem("ha_pages")||"null"); if(v&&typeof v==="object") return Object.assign({},PAGE_DEFAULT,v); }catch(e){} return Object.assign({},PAGE_DEFAULT); })();
 function pageOn(k){ return PAGE_KEYS.includes(k)?PAGES[k]!==false:true; }
 function pagesApply(v){
@@ -3725,6 +3725,7 @@ function initFb() {
       else if(!currData||!currData.subjects){ currData=Object.assign(currData||{},{subjects:{},lessons:{},weekDays:{}}); dbg("curriculum empty — blank skeleton so the Subjects tab can add the first subject"); renderAll(); }   // (the done-marks listener may already have made a {done:{}} stub — keep it)
       schedCascade(); // curriculum may be the LAST loader to answer — re-arm the debounced sweep
     });
+    db.ref("config/helpers").on("value",s=>{ helpersOnValue(s.val()); });   // 🙋 helper profiles
     db.ref("worksheets").on("value",s=>{ wsOnValue(s.val()); });   // 📋 worksheets from Adrienne
     db.ref("config/rules").on("value",s=>{
       rulesData=s.val()||null; rulesLoaded=true;
@@ -6175,6 +6176,127 @@ function wsOnValue(v){
   if(key!==wsOpenKey){ wsOpenKey=key; try{ renderAll(); }catch(e){} }
 }
 // ── WORKSHEETS_END ──
+// ── HELPERS_START ── 🙋 helpers: Grandma, Dad, a sitter — people who can take some of Mom's school tasks ──
+// Her ask 2026-10-03 (Dewalt: Grandma comes Wed 9:30–12 and does Andrew's phonics + the spelling tests).
+// Slice 1 = the PROFILES only: config/helpers/<id> = {name, icon, pick, help:{kid:{subjectKey:true}},
+// days:{<day>:{start,end}}, createdAt}. Nothing here touches a schedule — the "I'm here / Left" button and the
+// scheduler read these later, as an overlay (a task is never rewritten, so a helper leaving = Mom's again).
+// Every write is ONE leaf under its own helper's node, never the whole config/helpers node.
+let helpersData={}, helpersOpen={};
+const HELPER_ICONS=["👵","👴","👨","👩","🧑","🙋"];
+function helpersOnValue(v){
+  helpersData=(v&&typeof v==="object")?v:{};
+  const ae=(typeof document!=="undefined")&&document.activeElement;
+  if(!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))&&typeof renderAll==="function") renderAll();
+}
+function _hlpQ(s){ return String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+function _hlpIdOk(id){ return typeof id==="string"&&/^[A-Za-z0-9_-]+$/.test(id); }
+// One leaf write (or remove when val===null), mirrored locally so the card updates at once (and in dry-run).
+function _hlpWrite(id,path,val){
+  if(!momHere()||!_hlpIdOk(id)) return false;
+  const parts=path.split("/");
+  let o=helpersData[id]=helpersData[id]||{};
+  for(let i=0;i<parts.length-1;i++){ if(!o[parts[i]]||typeof o[parts[i]]!=="object") o[parts[i]]={}; o=o[parts[i]]; }
+  if(val===null) delete o[parts[parts.length-1]]; else o[parts[parts.length-1]]=val;
+  if(db&&!_dryRun()){ const r=db.ref("config/helpers/"+id+"/"+path); if(val===null) r.remove(); else r.set(val); }
+  return true;
+}
+function helpersAdd(){
+  if(!momHere()) return;
+  const nm=prompt("Helper's name (Grandma, Dad, a sitter…) — you can change it later:","");
+  if(nm===null) return;
+  const name=String(nm).trim()||"Helper";
+  const id="h"+Date.now().toString(36);
+  _hlpWrite(id,"name",name); _hlpWrite(id,"icon","🙋"); _hlpWrite(id,"pick",false); _hlpWrite(id,"createdAt",Date.now());
+  helpersOpen[id]=true; rulesOpen.helpers=true;
+  renderAll();
+}
+function helpersSetName(id,v){ const n=String(v||"").trim(); if(!n) { renderAll(); return; } _hlpWrite(id,"name",n); renderAll(); }
+function helpersSetIcon(id,ic){ if(HELPER_ICONS.indexOf(ic)<0) return; _hlpWrite(id,"icon",ic); renderAll(); }
+function helpersTogglePick(id){ const h=helpersData[id]||{}; _hlpWrite(id,"pick",!h.pick); renderAll(); }
+function helpersToggleHelp(id,kid,sk){
+  const h=helpersData[id]||{}; const on=!!(h.help&&h.help[kid]&&h.help[kid][sk]);
+  _hlpWrite(id,"help/"+kid+"/"+sk,on?null:true); renderAll();
+}
+function helpersToggleDay(id,d){
+  if(DAYS.indexOf(d)<0) return;
+  const h=helpersData[id]||{}; const on=!!(h.days&&h.days[d]);
+  _hlpWrite(id,"days/"+d,on?null:{start:"9:00 AM",end:"12:00 PM"}); renderAll();
+}
+function helpersSetTime(id,d,which,v){
+  if(DAYS.indexOf(d)<0||(which!=="start"&&which!=="end")||!v) return;
+  _hlpWrite(id,"days/"+d+"/"+which,to12h(v)); renderAll();
+}
+function helpersDelete(id){
+  if(!momHere()||!_hlpIdOk(id)||!helpersData[id]) return;
+  if(!confirm("Remove "+(helpersData[id].name||"this helper")+"? Their profile and what they can help with go away.")) return;
+  delete helpersData[id]; delete helpersOpen[id];
+  if(db&&!_dryRun()) db.ref("config/helpers/"+id).remove();
+  renderAll();
+}
+function helpersToggleOpen(id){ helpersOpen[id]=!helpersOpen[id]; renderAll(); }
+function _hlpSummary(h){
+  let n=0; Object.keys(h.help||{}).forEach(k=>{ n+=Object.keys(h.help[k]||{}).length; });
+  const ds=DAYS.filter(d=>h.days&&h.days[d]).map(d=>DAY_LBL[d].slice(0,3)+" "+(h.days[d].start||"")+"–"+(h.days[d].end||""));
+  return (n?n+" subject"+(n===1?"":"s"):"no subjects yet")+(ds.length?" · "+ds.join(", "):"");
+}
+function helpersCardHTML(){
+  const o=id=>rulesOpen[id]?" open":"";
+  let h='<div class="rules-card'+o("helpers")+'">';
+  h+='<div class="rules-card-hdr" onclick="rulesToggleCard(\'helpers\')">';
+  h+='<div class="rules-card-title"><span>&#128587;</span> Helpers</div>';
+  h+='<div class="rules-card-arrow">&#9654;</div></div>';
+  h+='<div class="rules-card-body">';
+  h+='<div style="font-size:11.5px;color:var(--muted);padding:2px 0 8px;line-height:1.45">People who can take some of Mom\'s school tasks — Grandma, Dad, a sitter. Set who they are and what they can help with. <i>Coming next: an "I\'m here" button that hands them those tasks while they\'re here.</i></div>';
+  const subs=(typeof currData!=="undefined"&&currData&&currData.subjects)||{};
+  const ids=Object.keys(helpersData||{}).filter(_hlpIdOk).sort((a,b)=>((helpersData[a].createdAt||0)-(helpersData[b].createdAt||0)));
+  if(!ids.length) h+='<div style="font-size:12px;color:var(--muted);padding:4px 0 8px">No helpers yet.</div>';
+  ids.forEach(id=>{
+    const p=helpersData[id]||{}, open=!!helpersOpen[id];
+    h+='<div style="border:1px solid var(--border);border-radius:10px;margin:0 0 8px;background:#fff">';
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:9px 11px;cursor:pointer" onclick="helpersToggleOpen(\''+id+'\')">';
+    h+='<span style="font-size:20px">'+esc(p.icon||"🙋")+'</span><div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13.5px">'+esc(p.name||"Helper")+'</div>';
+    h+='<div style="font-size:11px;color:var(--muted)">'+esc(_hlpSummary(p))+'</div></div><span style="color:var(--muted);font-size:11px">'+(open?"&#9660;":"&#9654;")+'</span></div>';
+    if(open){
+      h+='<div style="padding:4px 11px 11px;border-top:1px solid var(--border)">';
+      h+='<div class="rules-row"><div class="rules-label">Name</div><input type="text" class="rules-time" style="width:150px;font-size:13px" value="'+esc(p.name||"")+'" autocomplete="off" data-lpignore="true" onchange="helpersSetName(\''+id+'\',this.value)"></div>';
+      h+='<div style="display:flex;gap:6px;flex-wrap:wrap;padding:4px 0 8px">';
+      HELPER_ICONS.forEach(ic=>{ h+='<div class="pnw-chip'+((p.icon||"🙋")===ic?" on":"")+'" style="padding:4px 10px;font-size:16px" onclick="helpersSetIcon(\''+id+'\',\''+ic+'\')">'+ic+'</div>'; });
+      h+='</div>';
+      h+='<div class="rules-row"><div class="rules-label">Let them pick which tasks</div><div class="rules-toggle'+(p.pick?" on":"")+'" onclick="helpersTogglePick(\''+id+'\')"></div></div>';
+      h+='<div style="font-size:11px;color:var(--muted);padding:0 0 8px">'+(p.pick?'When they tap "I\'m here", they tick which of their tasks they\'ll take.':'When they tap "I\'m here", they get every task they\'re approved for.')+'</div>';
+      h+='<div class="rules-section-lbl" style="margin-top:4px">Can help with</div>';
+      const kids=[...ROSTER].filter(k=>Object.keys(subs[k]||{}).length);
+      if(!kids.length) h+='<div style="font-size:11px;color:var(--muted);padding:4px 0">No subjects yet — add subjects first.</div>';
+      kids.forEach(k=>{
+        h+='<div style="font-size:12px;font-weight:700;padding:6px 0 2px">'+esc(cap(k))+'</div><div style="display:flex;gap:6px;flex-wrap:wrap;padding:2px 0 4px">';
+        Object.keys(subs[k]).sort((a,b)=>String((subs[k][a]||{}).display||(subs[k][a]||{}).name||a).localeCompare(String((subs[k][b]||{}).display||(subs[k][b]||{}).name||b))).forEach(sk=>{
+          const s=subs[k][sk]||{}, on=!!(p.help&&p.help[k]&&p.help[k][sk]);
+          h+='<div class="pnw-chip'+(on?" on":"")+'" style="padding:5px 11px" onclick="helpersToggleHelp(\''+id+'\',\''+_hlpQ(k)+'\',\''+_hlpQ(sk)+'\')">'+esc(s.display||s.name||sk)+((s.mom||"none")==="required"?' <span title="Mom-required">&#128105;</span>':'')+'</div>';
+        });
+        h+='</div>';
+      });
+      h+='<div class="rules-section-lbl" style="margin-top:10px">Regular days <span style="font-weight:500;color:var(--muted)">(optional — leave off for drop-in help like Dad)</span></div>';
+      h+='<div style="display:flex;gap:6px;flex-wrap:wrap;padding:6px 0">';
+      DAYS.forEach(d=>{ h+='<div class="pnw-chip'+(p.days&&p.days[d]?" on":"")+'" style="padding:5px 11px" onclick="helpersToggleDay(\''+id+'\',\''+d+'\')">'+DAY_LBL[d].slice(0,3)+'</div>'; });
+      h+='</div>';
+      DAYS.filter(d=>p.days&&p.days[d]).forEach(d=>{
+        const w=p.days[d];
+        h+='<div class="rules-row"><div class="rules-label">'+DAY_LBL[d]+'</div><div style="display:flex;gap:6px;align-items:center">'+
+          '<input type="time" class="rules-time" value="'+ampmTo24(w.start||"")+'" onchange="helpersSetTime(\''+id+'\',\''+d+'\',\'start\',this.value)">'+
+          '<span style="color:var(--muted);font-size:12px">to</span>'+
+          '<input type="time" class="rules-time" value="'+ampmTo24(w.end||"")+'" onchange="helpersSetTime(\''+id+'\',\''+d+'\',\'end\',this.value)"></div></div>';
+      });
+      h+='<div style="padding-top:10px"><button onclick="helpersDelete(\''+id+'\')" style="background:none;border:1px solid #fecaca;color:#b91c1c;border-radius:8px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">Remove helper</button></div>';
+      h+='</div>';
+    }
+    h+='</div>';
+  });
+  h+='<button onclick="helpersAdd()" style="background:#111827;color:#fff;border:none;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">+ Add helper</button>';
+  h+='</div></div>';
+  return h;
+}
+// ── HELPERS_END ──
 function renderMomHQ(el,ah){
   if(!el){el=document.getElementById("content");if(!el)return;}
   let h=(ah||'')+'<div class="rules-wrap">';
@@ -46776,6 +46898,7 @@ function rulesFamilyCardsHTML(openSchool){
   h+='</div>';
   h+='<div style="font-size:11px;color:var(--muted);padding:2px 0">Kids checked here have zero school tasks during babysitter time. Applies to current + future weeks.</div>';
   h+='</div></div>';
+  if(pageOn("helpers")) h+=helpersCardHTML();   // 🙋 Helpers — profiles (switch in Settings ▸ Pages)
 
   h+=rulesSchoolDayCardHTML(r,!!openSchool);   // 📅 School Day Times — opens by itself in Settings
 
