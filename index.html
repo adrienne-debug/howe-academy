@@ -6051,6 +6051,12 @@ function wsOpenList(){
     .sort((a,b)=>(a[1].createdAt||0)-(b[1].createdAt||0));
 }
 function wsAns(w,i){ return ((w&&w.answers)||{})[i]||{}; }
+// ☑ "Check all that apply" (her ask 2026-10-03: "check which kid applies instead of asking multiple times per kid").
+// q.multi:true → checkboxes; the answer is still ONE string ("Taylor, Makenzie", in option order) so the families
+// dashboard and every reader of answers/<i>/pick keep working unchanged. Unchecking the last box clears the answer.
+function wsMultiList(pick){ return String(pick||"").split(", ").filter(Boolean); }
+function wsMultiToggle(opts,pick,o){ const cur=wsMultiList(pick), has=cur.indexOf(o)>=0;
+  return opts.filter(x=>has?(x!==o&&cur.indexOf(x)>=0):(x===o||cur.indexOf(x)>=0)).join(", "); }
 function wsSentList(now){
   const cut=(now||Date.now())-WS_DONE_DAYS*864e5;
   return Object.entries(wsData||{})
@@ -6121,12 +6127,12 @@ function wsRender(id){
   qs.forEach((q,i)=>{
     const a=wsAns(w,i), opts=Array.isArray(q.options)?q.options:[];
     h+='<div style="border:1px solid #e2e8f0;border-radius:12px;padding:11px 12px;margin-bottom:10px;background:'+(a.pick?'#f0fdf4':'#fff')+'">'+
-      '<div style="font-size:13.5px;font-weight:700;color:#0f172a;line-height:1.4;margin-bottom:'+(q.hint?'2':'8')+'px">'+(i+1)+'. '+esc(q.q)+'</div>'+
+      '<div style="font-size:13.5px;font-weight:700;color:#0f172a;line-height:1.4;margin-bottom:'+(q.hint?'2':'8')+'px">'+(i+1)+'. '+esc(q.q)+(q.multi?' <span style="font-weight:600;color:#64748b;font-size:12px">(check all that apply)</span>':'')+'</div>'+
       (q.hint?'<div style="font-size:12px;color:#64748b;line-height:1.4;margin-bottom:8px">'+esc(q.hint)+'</div>':'');
     opts.forEach((o,k)=>{
-      const on=a.pick===o;
+      const on=q.multi?wsMultiList(a.pick).indexOf(o)>=0:a.pick===o;
       h+='<div onclick="wsPick(\''+esc(id)+'\','+i+','+k+')" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:7px 9px;margin-bottom:5px;border-radius:9px;border:1.5px solid '+(on?'#16a34a':'#e2e8f0')+';background:'+(on?'#dcfce7':'#f8fafc')+'">'+
-        '<span style="width:16px;height:16px;border-radius:50%;border:2px solid '+(on?'#16a34a':'#94a3b8')+';background:'+(on?'#16a34a':'#fff')+';flex:none"></span>'+
+        '<span style="width:16px;height:16px;border-radius:'+(q.multi?'4px':'50%')+';border:2px solid '+(on?'#16a34a':'#94a3b8')+';background:'+(on?'#16a34a':'#fff')+';flex:none"></span>'+
         '<span style="font-size:13px;color:#0f172a">'+esc(o)+'</span></div>';
     });
     // onchange (not oninput): typing never re-renders, so the box keeps focus.
@@ -6146,7 +6152,8 @@ function wsPick(id,i,k){
   const o=((w.questions||[])[i]||{}).options||[]; if(o[k]==null) return;
   // keep whatever is typed in the notes boxes before re-rendering
   (w.questions||[]).forEach((q,j)=>{ const t=document.getElementById("ws-note-"+j); if(t&&t.value!==(wsAns(w,j).note||"")) wsSave(id,j,"note",t.value); });
-  wsSave(id,i,"pick",o[k]); wsRender(id);
+  const qq=(w.questions||[])[i]||{};
+  wsSave(id,i,"pick",qq.multi?wsMultiToggle(o,wsAns(w,i).pick,o[k]):o[k]); wsRender(id);
 }
 function wsNote(id,i,val){ wsSave(id,i,"note",String(val||"")); }
 function wsSubmit(id){
