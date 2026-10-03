@@ -1350,5 +1350,37 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   dbWrites.length = 0; dbRemoves.length = 0; toasts.length = 0;
 })();
 
+// ── 🥗 dinner sides (DeWalt 10/3): a linked recipe keeps its veggie + side ──
+(function(){
+  console.log("\n🥗 dinner sides");
+  M.kitMeals["mS"] = { name: "Turkey Curry" };
+  const rot = { name: "Fall", weeks: [[{ d: "Turkey Curry", sd: "peas · rice", l: "PB&J" }, { d: "Burgers · fries" }, {}, {}, {}, {}, {}]] };
+  M.kitPlan["2026-10-05"] = { sides: "old", l: { txt: "x" } };
+  const plan = M.kitRotPlanFor(rot, "2026-10-05");
+  ok("rotation: linked dinner + sides", plan["2026-10-05"].mid === "mS" && plan["2026-10-05"].sides === "peas · rice" && plan["2026-10-05"].l.txt === "PB&J", plan["2026-10-05"]);
+  ok("rotation: no sd → old sides cleared", !("sides" in plan["2026-10-06"]) && plan["2026-10-06"].txt === "Burgers · fries", plan["2026-10-06"]);
+  M.kitPlan["2026-10-06"] = { sides: "stale" };
+  ok("rotation: a new dinner drops stale sides", !("sides" in M.kitRotPlanFor(rot, "2026-10-05")["2026-10-06"]), null);
+  Object.assign(M.kitPlan, plan);
+  const pf = M.kitPlanFor("2026-10-05");
+  ok("kitPlanFor carries sides with the recipe", pf.mid === "mS" && pf.meal && pf.sides === "peas · rice", pf);
+  ok("kitPlanFor: no sides key when none", !("sides" in M.kitPlanFor("2026-10-06")), null);
+  const cap = M.kitRotCapture("2026-10-05", 1);
+  ok("capture: sides saved as sd", cap.weeks[0][0].sd === "peas · rice" && cap.weeks[0][0].d === "Turkey Curry" && !("sd" in cap.weeks[0][1]), cap.weeks[0].slice(0,2));
+  M.kitPlan[TODAY] = { mid: "mS", sides: "peas · rice" };
+  M.kitPlan[M.kitIsoPlus(TODAY, 1)] = { txt: "Burgers", sides: "carrot sticks · fries" };
+  M.renderKitchen(elStub);
+  ok("week list shows linked recipe + sides", elStub.innerHTML.includes("Turkey Curry</b> <span") && elStub.innerHTML.includes("· peas · rice"), null);
+  ok("week list shows typed dinner + sides", elStub.innerHTML.includes("Burgers</b>") && elStub.innerHTML.includes("· carrot sticks · fries"), null);
+  M.renderMomsDay(elStub);
+  ok("Mom's Day card: recipe name + 🥗 sides line", elStub.innerHTML.includes("Turkey Curry") && elStub.innerHTML.includes("🥗 peas · rice"), null);
+  delete M.kitPlan[TODAY]; delete M.kitPlan[M.kitIsoPlus(TODAY, 1)];
+  M.kitAssign("2026-10-05", { mid: "mS" });
+  ok("re-picking a dinner drops its sides, keeps lunch", !("sides" in M.kitPlan["2026-10-05"]) && M.kitPlan["2026-10-05"].l.txt === "PB&J", M.kitPlan["2026-10-05"]);
+  Object.keys(M.kitPlan).forEach(k => { delete M.kitPlan[k]; });
+  delete M.kitMeals["mS"];
+  dbWrites.length = 0; dbRemoves.length = 0;
+})();
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

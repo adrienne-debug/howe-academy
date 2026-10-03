@@ -10243,12 +10243,13 @@ function mdCardDinner(iso){
     const dSteps=kitPrepSteps(iso);
     h+='<div onclick="kitOpenRecipe(\''+dpl.mid+'\')" style="cursor:pointer;padding:12px 14px">'
       +'<div style="font-size:15px;font-weight:800">'+(dMeal.emoji?esc(dMeal.emoji)+' ':'')+esc(dMeal.name)+' <span style="font-size:11px;font-weight:700;color:#E07B39">📖 recipe →</span></div>'
+      +(kitSidesTxt(dpl)?'<div style="font-size:12px;font-weight:700;color:#6b6560;margin-top:2px">🥗 '+esc(kitSidesTxt(dpl))+'</div>':'')
       +'<div onclick="event.stopPropagation()" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px">'+kitRateChips('meal',dpl.mid)+'</div>'
       +(din?'<div style="font-size:12px;color:#6b6560;margin-top:3px">📝 '+esc(din)+'</div>':'')
       +(dSteps.length?'<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:7px">'+dSteps.map(s=>'<span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:9px;background:'+(s.done?'#f0fdf4':'#fff7ed')+';color:'+(s.done?'#166534':'#c2410c')+'">'+(s.done?'✓ ':'⏲ ')+kitWhenLabel(s.when)+' '+esc(s.label)+'</span>').join('')+'</div>':'')
       +'</div>';
   } else if(dpl&&dpl.txt){
-    h+='<div onclick="kitPlanText(\''+iso+'\')" style="cursor:pointer;padding:12px 14px;font-size:13px;font-weight:700">'+esc(dpl.txt)+' <span style="color:var(--muted);font-weight:600">✎</span></div>';
+    h+='<div onclick="kitPlanText(\''+iso+'\')" style="cursor:pointer;padding:12px 14px;font-size:13px;font-weight:700">'+esc(dpl.txt)+(kitSidesTxt(dpl)?' <span style="color:#6b6560">· '+esc(kitSidesTxt(dpl))+'</span>':'')+' <span style="color:var(--muted);font-weight:600">✎</span></div>';
   } else {
     h+='<div onclick="momdayEdit(\'dinner\')" style="cursor:pointer;padding:12px 14px;font-size:13px;font-weight:700">'+(din?esc(din):'<span style="color:var(--muted);font-weight:600">Tap to jot tonight\'s plan.</span>')+'</div>';
   }
@@ -10561,10 +10562,12 @@ function kitIsoPlus(iso,n){
 function kitNowMin(){ const d=new Date(); return d.getHours()*60+d.getMinutes(); }
 function kitPlanFor(iso){
   const p=kitPlan[iso]; if(!p) return null;
-  if(p.mid) return {mid:p.mid,meal:kitMeals[p.mid]||null};
-  if(p.txt) return {txt:p.txt};
+  const sd=p.sides?{sides:String(p.sides)}:{};   // 🥗 veggie + side riding with the dinner (her chart: "Peanut Chicken · peas · rice")
+  if(p.mid) return Object.assign({mid:p.mid,meal:kitMeals[p.mid]||null},sd);
+  if(p.txt) return Object.assign({txt:p.txt},sd);
   return null;
 }
+function kitSidesTxt(pl){ return (pl&&pl.sides)?String(pl.sides):""; }
 function kitWhenMin(w){
   if(w==="nb") return null;
   const m=/^(\d{1,2}):(\d{2})$/.exec(w||"");
@@ -10632,7 +10635,7 @@ function kitAssign(iso,val){ // val = {mid} | {txt} | null (clear the day)
   // Dinner changes keep the day's b/l/s slots; clearing drops the whole day.
   if(val){
     const cur=Object.assign({},kitPlan[iso]);
-    delete cur.mid; delete cur.txt;
+    delete cur.mid; delete cur.txt; delete cur.sides;   // a different dinner doesn't inherit the old sides
     kitPlan[iso]=Object.assign(cur,val);
   } else delete kitPlan[iso];
   kitPickIso=null;
@@ -11210,7 +11213,7 @@ function kitMarkSkipped(iso){
 const KIT_MOVE_NAMES={d:["dinner","dinners"],b:["breakfast","breakfasts"],l:["lunch","lunches"],s:["snack","snacks"]};
 function _kitMvGet(iso,slot){
   const p=kitPlan[iso]; if(!p) return null;
-  if(slot==="d") return p.mid?{mid:p.mid}:(p.txt?{txt:p.txt}:null);
+  if(slot==="d"){ const v=p.mid?{mid:p.mid}:(p.txt?{txt:p.txt}:null); if(v&&p.sides) v.sides=p.sides; return v; }
   const v=p[slot]; return (v&&(v.mid||v.txt))?v:null;
 }
 function _kitMvFixed(iso,slot){ const p=kitPlan[iso]; return slot==="d"&&!!p&&!!(p.eaten||p.skipped); }
@@ -11248,8 +11251,8 @@ function kitMoveForward(iso,slot){
   const put=(dIso,s,val)=>{
     const cur=Object.assign({},kitPlan[dIso]);
     if(s==="d"){
-      delete cur.mid; delete cur.txt; if(val) Object.assign(cur,val);
-      up["plan/"+dIso+"/mid"]=(val&&val.mid)||null; up["plan/"+dIso+"/txt"]=(val&&val.txt)||null;
+      delete cur.mid; delete cur.txt; delete cur.sides; if(val) Object.assign(cur,val);
+      up["plan/"+dIso+"/mid"]=(val&&val.mid)||null; up["plan/"+dIso+"/txt"]=(val&&val.txt)||null; up["plan/"+dIso+"/sides"]=(val&&val.sides)||null;
     } else {
       if(val) cur[s]=val; else delete cur[s];
       up["plan/"+dIso+"/"+s]=val||null;
@@ -11357,7 +11360,9 @@ function kitImportWeekApply(){
 }
 
 // ── 📅 ROTATIONS — a saved month of meals, re-applied with one tap ─────
-// kitchen/rotations/{id} = {name, emoji?, note?, weeks:[[{d,b,l,s}×7 Mon..Sun]×N], ts}.
+// kitchen/rotations/{id} = {name, emoji?, note?, weeks:[[{d,sd?,b,l,s}×7 Mon..Sun]×N], ts}.
+// sd = the dinner's veggie + side ("peas · rice") → kitchen/plan/{iso}.sides, so a dinner can
+// link her saved recipe AND keep what goes with it (DeWalt 10/3).
 // Slots hold meal NAMES, not ids, so a rotation survives recipe edits and
 // re-imports; Apply matches names to the library (like the paste import) and
 // types anything it can't match. The 🍂 Fall rotation ships in code
@@ -11402,7 +11407,7 @@ function kitRotPlanFor(rot,mondayIso){
       if(!day) return;
       const iso=kitIsoPlus(mondayIso,w*7+i);
       const cur=Object.assign({},kitPlan[iso]||{});
-      if(day.d){ delete cur.mid; delete cur.txt; Object.assign(cur,kitRotSlotVal(day.d)); }
+      if(day.d){ delete cur.mid; delete cur.txt; delete cur.sides; Object.assign(cur,kitRotSlotVal(day.d)); if(day.sd) cur.sides=String(day.sd); }
       [["b",day.b],["l",day.l],["s",day.s]].forEach(p=>{ if(p[1]) cur[p[0]]=kitRotSlotVal(p[1]); });
       if(Object.keys(cur).length) out[iso]=cur;
     });
@@ -11417,6 +11422,7 @@ function kitRotCapture(mondayIso,nWeeks){
     for(let i=0;i<7;i++){
       const iso=kitIsoPlus(mondayIso,w*7+i); const p=kitPlan[iso]||{};
       const day={d:kitRotSlotName(p.mid?{mid:p.mid}:(p.txt?{txt:p.txt}:null)),b:kitRotSlotName(p.b),l:kitRotSlotName(p.l),s:kitRotSlotName(p.s)};
+      if(day.d&&p.sides) day.sd=String(p.sides);
       if(day.d||day.b||day.l||day.s) filled++;
       wk.push(day);
     }
@@ -12057,9 +12063,9 @@ function renderKitchen(el){
     const dayLbl=(i===0?'Tonight':(i===1?'Tomorrow':d.toLocaleDateString("en-US",{weekday:"short"})))+' · '+(d.getMonth()+1)+'/'+d.getDate();
     const pl=kitPlanFor(iso);
     let what;
-    if(pl&&pl.meal) what='<b>'+(pl.meal.emoji?esc(pl.meal.emoji)+' ':'')+esc(pl.meal.name)+'</b>';
+    if(pl&&pl.meal) what='<b>'+(pl.meal.emoji?esc(pl.meal.emoji)+' ':'')+esc(pl.meal.name)+'</b>'+(kitSidesTxt(pl)?' <span style="font-size:11px;color:#6b6560">· '+esc(kitSidesTxt(pl))+'</span>':'');
     else if(pl&&pl.mid) what='<span style="color:#b91c1c;font-weight:700">(meal removed — tap to re-pick)</span>';
-    else if(pl&&pl.txt) what='<b>'+esc(pl.txt)+'</b> <span style="font-size:10px;color:var(--muted)">(typed)</span>';
+    else if(pl&&pl.txt) what='<b>'+esc(pl.txt)+'</b>'+(kitSidesTxt(pl)?' <span style="font-size:11px;color:#6b6560">· '+esc(kitSidesTxt(pl))+'</span>':'')+' <span style="font-size:10px;color:var(--muted)">(typed)</span>';
     else what='<span style="color:var(--muted)">tap to plan</span>';
     const nPrep=(pl&&pl.meal&&Array.isArray(pl.meal.prep))?pl.meal.prep.length:0;
     h+='<div onclick="kitPickDay(\''+iso+'\')" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 10px;background:'+(i===0?'#fff7ed':'#f8f7f4')+';border:1.5px solid '+(kitPickIso===iso?'#E07B39':(i===0?'#fed7aa':'#e8e4de'))+';border-radius:9px;margin-bottom:6px">'
@@ -22071,8 +22077,9 @@ function _calDinnerOf(iso){
   if(typeof kitPlanFor!=="function") return null;
   const pl=kitPlanFor(iso); if(!pl) return null;
   const raw=(typeof kitPlan!=="undefined"&&kitPlan[iso])||{};
-  const name=pl.meal?((pl.meal.emoji?pl.meal.emoji+" ":"")+(pl.meal.name||"")):(pl.txt?pl.txt:(pl.mid?"(meal removed)":""));
+  let name=pl.meal?((pl.meal.emoji?pl.meal.emoji+" ":"")+(pl.meal.name||"")):(pl.txt?pl.txt:(pl.mid?"(meal removed)":""));
   if(!name) return null;
+  if(pl.sides) name+=" · "+pl.sides;
   const st=raw.eaten?"ate":(raw.skipped?"skip":(iso<calToday()?"owed":"planned"));
   return {name:name,st:st,pl:pl};
 }

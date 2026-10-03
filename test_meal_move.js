@@ -78,7 +78,15 @@ console.log("\n── dinner: no gap → lands past the end of the plan; an empt
   ok("Wednesday's snack stayed put", P["2026-09-23"].s.txt === "apples");
   const up = w.ctx.updates[0][1];
   ok("mid↔txt swaps write both children so neither lingers", up["plan/2026-09-22/mid"] === "mA" && up["plan/2026-09-22/txt"] === null && up["plan/2026-09-23/txt"] === "Tacos" && up["plan/2026-09-23/mid"] === null);
-  ok("no eaten/skipped/other keys are touched", Object.keys(up).every(k => /\/(mid|txt)$/.test(k)), Object.keys(up));
+  ok("no eaten/skipped/other keys are touched", Object.keys(up).every(k => /\/(mid|txt|sides)$/.test(k)), Object.keys(up));
+}
+console.log("\n── dinner: 🥗 sides travel with their dinner ──");
+{
+  const w = world({ plan: { "2026-09-21": { mid: "mA", sides: "peas · rice" }, "2026-09-22": { txt: "Tacos" } } });
+  w.call("kitMoveForward('2026-09-21','d')");
+  const P = w.ctx.kitPlan, up = w.ctx.updates[0][1];
+  ok("A + its sides → Tue; Tacos (no sides) → Wed", P["2026-09-22"].mid === "mA" && P["2026-09-22"].sides === "peas · rice" && P["2026-09-23"].txt === "Tacos" && !("sides" in P["2026-09-23"]), P);
+  ok("sides written on the new day and cleared on the old", up["plan/2026-09-22/sides"] === "peas · rice" && up["plan/2026-09-23/sides"] === null, up);
 }
 console.log("\n── eaten / didn't-happen dinners never move ──");
 {
