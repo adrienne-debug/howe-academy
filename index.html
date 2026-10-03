@@ -6315,6 +6315,11 @@ function helpersCardHTML(){
       h+='</div>';
       h+='<div class="rules-row"><div class="rules-label">Let them pick which tasks</div><div class="rules-toggle'+(p.pick?" on":"")+'" onclick="helpersTogglePick(\''+id+'\')"></div></div>';
       h+='<div style="font-size:11px;color:var(--muted);padding:0 0 8px">'+(p.pick?'When they tap "I\'m here", they tick which of their tasks they\'ll take.':'When they tap "I\'m here", they get every task they\'re approved for.')+'</div>';
+      h+='<div class="rules-row"><div class="rules-label">Checks in from &#128104; Dad&rsquo;s Day</div><div class="rules-toggle'+(p.dadPage?" on":"")+'" onclick="helpersToggleDadPage(\''+id+'\')"></div></div>';
+      if(p.dadPage){
+        h+='<div class="rules-row"><div class="rules-label">Mom approves when he checks in</div><div class="rules-toggle'+(!p.selfIn?" on":"")+'" onclick="helpersToggleSelfIn(\''+id+'\')"></div></div>';
+        h+='<div style="font-size:11px;color:var(--muted);padding:0 0 8px">'+(!p.selfIn?'His "I\'m here" tap asks you first — you tap Approve on the schedule.':'His "I\'m here" tap switches him on right away.')+(helperDadId()!==id?' <b>Only the first helper with this on gets the Dad\'s Day button.</b>':'')+'</div>';
+      }
       h+='<div class="rules-section-lbl" style="margin-top:4px">Can help with</div>';
       const kids=[...ROSTER].filter(k=>Object.keys(subs[k]||{}).length);
       if(!kids.length) h+='<div style="font-size:11px;color:var(--muted);padding:4px 0">No subjects yet — add subjects first.</div>';
@@ -6409,20 +6414,20 @@ function helperArrive(id){
   helpersPopId=id; renderAll(); helpersPopRender();
 }
 function helperLeave(id){
-  if(!momHere()||!helperIsHere(id)) return;
+  if(!_hlpCanAct(id)||!helperIsHere(id)) return;
   const nm=helperName(id);
   if(!confirm(nm+" left? Anything "+nm+" didn't finish goes back to Mom.")) return;
   _hlpDayWrite(id,"left",Date.now());
   helpersPopId=null; helpersPopRender(); renderAll();
 }
 function helperTake(id,taskId){
-  if(!momHere()||!helperIsHere(id)) return;
+  if(!_hlpCanAct(id)||!helperIsHere(id)) return;
   const k=_hlpKey(taskId), s=helperSessionsToday()[id]||{};
   _hlpDayWrite(id,"took/"+k,(s.took&&s.took[k])?null:true);
   renderAll(); helpersPopRender();
 }
 function helpersPopOpen(id){
-  if(!momHere()){ if(typeof kitPinGate==="function") kitPinGate(function(){ helpersPopOpen(id); },"Checking a helper in or out is for Mom."); return; }
+  if(!_hlpCanAct(id)){ if(typeof kitPinGate==="function") kitPinGate(function(){ helpersPopOpen(id); },"Checking a helper in or out is for Mom."); return; }
   helpersPopId=id; helpersPopRender();
 }
 function helpersPopClose(){ helpersPopId=null; helpersPopRender(); }
@@ -6455,7 +6460,7 @@ function helpersPopHTML(id){
   });
   h+='<div style="display:flex;gap:8px;margin-top:12px">';
   if(here) h+='<button onclick="helperLeave(\''+id+'\')" style="flex:1;border:1.5px solid #fca5a5;background:#fff;color:#b91c1c;border-radius:10px;padding:9px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">'+nm+' left</button>';
-  else h+='<button onclick="helperArrive(\''+id+'\')" style="flex:1;border:none;background:#16a34a;color:#fff;border-radius:10px;padding:9px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">'+nm+' is here</button>';
+  else h+='<button onclick="'+((!momHere()&&id===helperDadId())?'helperDadRequest()':'helperArrive(\''+id+'\')')+'" style="flex:1;border:none;background:#16a34a;color:#fff;border-radius:10px;padding:9px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">'+nm+' is here</button>';
   h+='<button onclick="helpersPopClose()" style="flex:1;border:none;background:#111827;color:#fff;border-radius:10px;padding:9px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">Done</button></div>';
   h+='</div></div>';
   return h;
@@ -6473,6 +6478,10 @@ function helpersStripHTML(){
       if(here){
         const n=helperTasksToday(id).filter(t=>helperHolds(t)===id&&!(checked&&checked[t.id])).length;
         h+='<button onclick="helpersPopOpen(\''+id+'\')" style="border:none;background:#16a34a;color:#fff;border-radius:20px;padding:4px 11px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">'+ic+' '+nm+' &#10003; here'+(n?' · '+n+' to do':'')+'</button>';
+      }else if(typeof helperRequested==="function"&&helperRequested(id)){
+        h+='<span style="display:inline-flex;align-items:center;gap:5px;background:#fef9c3;border:1.5px solid #fde047;border-radius:20px;padding:2px 4px 2px 10px;font-size:11.5px;font-weight:800;color:#854d0e">'+ic+' '+nm+' wants to help'
+          +'<button onclick="helperApprove(\''+id+'\')" style="border:none;background:#16a34a;color:#fff;border-radius:14px;padding:2px 9px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit">Approve</button>'
+          +'<button onclick="helperDecline(\''+id+'\')" style="border:none;background:none;color:#854d0e;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Not now</button></span>';
       }else{
         h+='<button onclick="helpersPopOpen(\''+id+'\')" style="border:1.5px dashed #86efac;background:#fff;color:#166534;border-radius:20px;padding:3px 11px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit">'+ic+' '+nm+' here?</button>';
       }
@@ -6517,6 +6526,63 @@ function helperViewHeadHTML(day){
     return '<div style="margin:0 0 8px;padding:10px 12px;background:#f0fdf4;border-left:4px solid #16a34a;border-radius:0 10px 10px 0">'
       +'<div style="font-size:14px;font-weight:800;color:#166534">'+esc(helperIcon(id))+' '+esc(helperName(id))+'&rsquo;s list</div>'
       +'<div style="font-size:11.5px;color:#15803d">'+(ts.length?(left?left+' to do · tap a card to check it off. When a kid checks one off, it shows here too.':'All done &mdash; thank you!'):'Nothing for '+esc(helperName(id))+' today.')+'</div></div>';
+  }catch(e){ return ""; }
+}
+// ── 👨 Dad checks himself in (her ask 2026-10-03): one helper profile can be marked "checks in from 👨 Dad's Day".
+// He taps "I'm here — ready to help with school" on his page; by default that is a REQUEST (helperDays/<today>/<id>/
+// requested) and Mom's Approve turns him on — her setting per profile can let him switch himself on instead. Only
+// the Dad profile gets this (nobody else has their own page yet). He can pick his cards and say "I'm done helping"
+// himself; checking anyone else in or out stays behind Mom mode.
+function helperDadId(){
+  try{ return Object.keys(helpersData||{}).filter(_hlpIdOk).filter(id=>helpersData[id]&&helpersData[id].dadPage)
+    .sort((a,b)=>((helpersData[a].createdAt||0)-(helpersData[b].createdAt||0)))[0]||null; }catch(e){ return null; }
+}
+function helperDadCanAct(){ try{ return (typeof dadUnlocked!=="undefined"&&dadUnlocked===true)||(typeof _kioskD==="function"&&!!_kioskD()); }catch(e){ return false; } }
+// Who may act for this helper: Mom always; Dad for his own profile from his page.
+function _hlpCanAct(id){ return momHere()||(!!id&&id===helperDadId()&&helperDadCanAct()); }
+function helperRequested(id){ const s=helperSessionsToday()[id]; return !!(s&&s.requested&&!helperIsHere(id)); }
+function helpersToggleDadPage(id){ const h=helpersData[id]||{}; _hlpWrite(id,"dadPage",!h.dadPage); renderAll(); }
+function helpersToggleSelfIn(id){ const h=helpersData[id]||{}; _hlpWrite(id,"selfIn",!h.selfIn); renderAll(); }
+function helperDadRequest(){
+  const id=helperDadId(); if(!id||!helperDadCanAct()||helperIsHere(id)) return;
+  if(helpersData[id].selfIn){ _hlpDayWrite(id,"arrived",Date.now()); _hlpDayWrite(id,"left",null); _hlpDayWrite(id,"requested",null); }
+  else _hlpDayWrite(id,"requested",Date.now());
+  renderAll();
+}
+function helperDadCancel(){ const id=helperDadId(); if(!id||!helperDadCanAct()) return; _hlpDayWrite(id,"requested",null); renderAll(); }
+function helperApprove(id){
+  if(!momHere()){ if(typeof kitPinGate==="function") kitPinGate(function(){ helperApprove(id); },"Saying yes to a helper is for Mom."); return; }
+  if(!helperRequested(id)) return;
+  _hlpDayWrite(id,"arrived",Date.now()); _hlpDayWrite(id,"left",null); _hlpDayWrite(id,"requested",null);
+  renderAll();
+}
+function helperDecline(id){
+  if(!momHere()){ if(typeof kitPinGate==="function") kitPinGate(function(){ helperDecline(id); },"Saying no to a helper is for Mom."); return; }
+  _hlpDayWrite(id,"requested",null); renderAll();
+}
+// The card on 👨 Dad's Day.
+function helperDadCardHTML(){
+  try{
+    if(!pageOn("helpers")) return "";
+    const id=helperDadId(); if(!id) return "";
+    const here=helperIsHere(id), asked=helperRequested(id), p=helpersData[id]||{};
+    const box=(inner)=>'<div style="margin:10px 12px 0;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:11px 13px">'+inner+'</div>';
+    const btn=(on,label,bg,fg,bd)=>'<button onclick="'+on+'" style="border:'+(bd?'1.5px solid '+bd:'none')+';background:'+bg+';color:'+fg+';border-radius:10px;padding:8px 13px;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+label+'</button>';
+    if(here){
+      const mine=helperTasksToday(id).filter(t=>helperHolds(t)===id), left=mine.filter(t=>!(checked&&checked[t.id])).length;
+      return box('<div style="font-size:14px;font-weight:800;color:#166534">'+esc(helperIcon(id))+' You\'re helping with school</div>'
+        +'<div style="font-size:12px;color:#15803d;margin:2px 0 9px">'+(mine.length?(left?left+' to do':'All done &mdash; thank you!'):(p.pick?'Pick the cards you\'ll take.':'Nothing on today\'s list for you.'))+'</div>'
+        +'<div style="display:flex;gap:7px;flex-wrap:wrap">'
+        +btn("selHelper('"+id+"')","My list","#16a34a","#fff")
+        +(p.pick?btn("helpersPopOpen('"+id+"')","Pick my cards","#fff","#166534","#86efac"):'')
+        +btn("helperLeave('"+id+"')","I'm done helping","#fff","#b91c1c","#fca5a5")+'</div>');
+    }
+    if(asked) return box('<div style="font-size:14px;font-weight:800;color:#166534">&#9203; Waiting for Mom to say yes</div>'
+      +'<div style="font-size:12px;color:#15803d;margin:2px 0 9px">She\'ll see "'+esc(helperName(id))+' wants to help" on the schedule.</div>'
+      +btn("helperDadCancel()","Cancel","#fff","#64748b","#cbd5e1"));
+    return box('<div style="font-size:14px;font-weight:800;color:#166534">&#127979; Help with school</div>'
+      +'<div style="font-size:12px;color:#15803d;margin:2px 0 9px">'+(p.selfIn?'Tap when you\'re ready — your cards come off Mom\'s list.':'Tap when you\'re ready — Mom says yes, then your cards come off her list.')+'</div>'
+      +btn("helperDadRequest()","I'm here &mdash; ready to help with school","#16a34a","#fff"));
   }catch(e){ return ""; }
 }
 // ── HELPERS_END ──
@@ -9364,6 +9430,7 @@ function renderDadsDay(el){
     if(_dp.n) h+='<div style="margin:10px 12px 0;background:#fff;border-radius:12px;padding:10px 12px 4px;box-shadow:0 4px 20px rgba(43,122,120,0.13)">'
       +'<div style="font-size:11px;font-weight:800;color:#ea580c;letter-spacing:.04em;margin-bottom:6px">🔴 KITCHEN NOW</div>'+_dp.html+'</div>';
   }catch(e){}
+  try{ h+=helperDadCardHTML(); }catch(e){}   // 🙋 "I'm here — ready to help with school"
   // ── his checklist — the one card he owns outright ──
   h+='<div style="margin:10px 12px;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
     +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#2C5F8A;color:#fff;font-weight:800;font-size:13px"><span>✅</span> My checklist'
