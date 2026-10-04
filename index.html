@@ -35022,12 +35022,17 @@ function gvAuditFindings(kid){
     // "pp.224–227", so finished work silently reappears as unfinished.
     const marks={};
     cells.forEach(c=>{ (String(c.txt).match(/[-–—]/g)||[]).forEach(d=>marks[d]=(marks[d]||0)+1); });
+    // ➖ Plan-backed: its LIST is the truth and the cells only a cache, so the list's own lines count too and a
+    // list line with the other dash is offered for fixing (her ask 10/3: "make consistent also fixes its list").
+    const _gaList=(_pbA&&Array.isArray(s.lessonSeq))?s.lessonSeq.map(x=>String(x==null?"":x)):[];
+    _gaList.forEach(t=>{ (t.match(/[-–—]/g)||[]).forEach(d=>marks[d]=(marks[d]||0)+1); });
     const kinds=Object.keys(marks);
     if(kinds.length>1){
       const win=kinds.sort((a,b)=>marks[b]-marks[a])[0];
       const fwd=cells.filter(c=>c.date>=today&&new RegExp("[-–—]").test(c.txt)&&c.txt.indexOf(win)<0);
+      const _gaListOdd=_gaList.filter(t=>/[-–—]/.test(t.split(win).join(""))).length;
       found.push({type:"dash",sk:sk,disp:disp,win:win,kinds:kinds.join(" and "),
-        fwd:fwd.length,date:fwd.length?fwd[0].date:""});
+        fwd:fwd.length,lst:_gaListOdd,date:fwd.length?fwd[0].date:(_gaListOdd?today:"")});
     }
 
     // Sequence breaks, per prefix group, under whichever reading actually fits.
@@ -35083,7 +35088,7 @@ function gvAuditFindings(kid){
     // Split on today. A dash finding is only actionable while upcoming cells carry
     // the wrong one — past text stays exactly as it was written.
     found.forEach(f=>{
-      const live=(f.type==="dash")?(f.fwd>0):(f.date>=today);
+      const live=(f.type==="dash")?(f.fwd>0||f.lst>0):(f.date>=today);
       out[live?"now":"past"].push(f);
     });
   }
@@ -35111,14 +35116,23 @@ function gvAuditFixDash(kid,sk){
     undo[p]=v; patch[p]=nv; row[sk]=nv;
   }
   const n=Object.keys(patch).length;
-  if(!n){ gwShowToast("Nothing to change."); return; }
-  if(!confirm("Make the dash consistent on "+n+" upcoming "+((currData.subjects[kid]||{})[sk]||{}).display+" cell"+(n!==1?"s":"")+"?\n\nOnly the dash character changes, so check-offs stop silently failing to match. No lesson moves and no date changes. Past cells are left alone.")) return;
+  const _sub=(currData.subjects[kid]||{})[sk]||{}, _pb=(typeof planBacked==="function")&&planBacked(kid,sk);
+  const _oldSeq=(_pb&&Array.isArray(_sub.lessonSeq))?_sub.lessonSeq.map(x=>String(x==null?"":x)):null;
+  const _newSeq=_oldSeq?_oldSeq.map(x=>x.replace(/[-–—]/g,f.win)):null;
+  const m=_oldSeq?_newSeq.filter((x,i)=>x!==_oldSeq[i]).length:0;
+  if(!n&&!m){ gwShowToast("Nothing to change."); return; }
+  if(!confirm("Make the dash consistent on "+[n?(n+" upcoming "+_sub.display+" cell"+(n!==1?"s":"")):"",m?(m+" line"+(m!==1?"s":"")+" of the "+_sub.display+" lesson list"):""].filter(Boolean).join(" and ")+"?\n\nOnly the dash character changes, so check-offs stop silently failing to match. No lesson moves and no date changes. Past cells are left alone.")) return;
   const seqUndo=gvSyncSeqInto(patch,[sk],kid);
+  // ➖ Plan-backed: gvSyncSeqInto never rebuilds its list from cells (that once dropped real lessons) — so swap
+  // the SAME dash in the list's own lines. Every line keeps its place and its id: nothing added, dropped or moved.
+  if(m){ seqUndo[sk]={seq:_oldSeq,ids:lidsFor(kid,sk),next:_sub.nextLid||null};
+    setLessonSeq(kid,sk,_newSeq,{patch,restoreIds:lidsFor(kid,sk),restoreNext:_sub.nextLid||null});
+    delete patch["subjects/"+kid+"/"+sk+"/total"]; }
   patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
   db.ref("curriculum").update(patch);
   gvRecountTotal(kid,sk); buildCurrPaceCum();
   gvSelUndo={kid:kid,undo:undo,seqUndo:seqUndo,subs:[sk]};
-  gwShowToast("Fixed the dash on "+n+" cell"+(n!==1?"s":"")+" — tap Undo to restore");
+  gwShowToast("Fixed the dash on "+[n?(n+" cell"+(n!==1?"s":"")):"",m?(m+" list line"+(m!==1?"s":"")):""].filter(Boolean).join(" + ")+" — tap Undo to restore");
   gvGrabScroll(); renderAll();
 }
 
@@ -35331,7 +35345,7 @@ function gvAuditRender(kid,col){
       if(live) fix='<button onclick="gvAuditFixDup(\''+kid+'\',\''+f.sk+'\','+f.dn+','+JSON.stringify(f.txt).replace(/"/g,'&quot;')+')" style="border:1px solid #d97706;background:#fff;color:#b45309;'+BTN+'">Delete the 2nd</button>';
     } else if(f.type==="dash"){
       txt=live
-        ?'<b>'+esc(f.disp)+'</b> — mixed dashes ('+esc(f.kinds)+') on '+f.fwd+' upcoming cell'+(f.fwd!==1?'s':'')+'. Check-offs won’t match.'
+        ?'<b>'+esc(f.disp)+'</b> — mixed dashes ('+esc(f.kinds)+') on '+[f.fwd?(f.fwd+' upcoming cell'+(f.fwd!==1?'s':'')):'',f.lst?(f.lst+' line'+(f.lst!==1?'s':'')+' of the lesson list'):''].filter(Boolean).join(' and ')+'. Check-offs won’t match.'
         :'<b>'+esc(f.disp)+'</b> — mixed dashes ('+esc(f.kinds)+'), but only on cells already behind us. Nothing upcoming to change.';
       // No fix button when every odd cell is in the past — the text stays as written.
       if(live) fix='<button onclick="gvAuditFixDash(\''+kid+'\',\''+f.sk+'\')" style="border:1px solid #d97706;background:#fff;color:#b45309;'+BTN+'">Make consistent</button>';
