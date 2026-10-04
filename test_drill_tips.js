@@ -32,6 +32,28 @@ ctx.drillTipGotIt("log"); ctx.drillTipShow();
 ok("ⓘ brings both tips back", !("ha_tip_drill_start" in store) && !("ha_tip_drill_log" in store) && /How today's drill works/.test(ctx.drillTipHtml(false, 3)));
 ok("one card → singular", /— 1 card today/.test(ctx.drillTipHtml(true, 1)));
 
+console.log("\nper person (her ask 10/4: a helper sees every tip fresh under her own name)");
+{
+  const st = {}; let who = { dad: false, helper: null, search: "" };
+  const c2 = { console, String, JSON, RegExp, cap: s => s[0].toUpperCase() + s.slice(1),
+    HA_LS: { getItem: k => (k in st ? st[k] : null), setItem: (k, v) => { st[k] = String(v); }, removeItem: k => { delete st[k]; } },
+    document: { getElementById: () => ({}) }, renderMastery: () => {}, _kioskD: () => who.dad,
+    helperViewActive: () => !!who.helper, get helperView() { return who.helper; }, get location() { return { search: who.search }; } };
+  vm.createContext(c2); vm.runInContext(src.slice(a, b), c2);
+  c2.drillTipGotIt("start");
+  ok("Mom keeps the original key (Sarah's dismissals carry over)", st.ha_tip_drill_start === "1");
+  who.helper = "h_grandma";
+  ok("Grandma on her list (chip selected) still sees the tip on the same iPad", /How today's drill works/.test(c2.drillTipHtml(false, 5, "caleb")));
+  c2.drillTipGotIt("start");
+  ok("…and her Got it is hers", st["ha_tip_drill_start_h_h_grandma"] === "1");
+  who.helper = null; who.search = "?kiosk=helper&h=h_sitter";
+  ok("a helper on her own page (?kiosk=helper&h=…) gets her own", /How today's drill works/.test(c2.drillTipHtml(false, 5, "caleb")) && c2.tipWho() === "h:h_sitter");
+  who.search = ""; who.dad = true;
+  ok("Dad's page gets his own", c2.tipWho() === "dad" && /How today's drill works/.test(c2.drillTipHtml(false, 5, "caleb")));
+  who.dad = false;
+  ok("back to Mom → still dismissed for her", !/How today's drill works/.test(c2.drillTipHtml(false, 5, "caleb")));
+}
+
 console.log("\nwiring");
 ok("tip sits right under the Today's Drill header (only when cards are due)", /Print #'\+pn\+'<\/div><\/div>';\n\s*if\(due\.length&&typeof drillTipHtml==="function"\) h\+=drillTipHtml\(!!mastLogMode,due\.length,masteryKid\);/.test(src));
 ok("grey Save Results explains itself (how many to go)", /Save turns on when all '\+due\.length\+' cards are marked \('\+\(due\.length-scored\)\+' to go\)/.test(src));
