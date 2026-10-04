@@ -24662,8 +24662,46 @@ function famRowHTML(t,done,viewKid){
     txt=gave?('⭐ Stars sent'+(wait.length?' — waiting for '+wait.join(' & '):'')):('⭐ Up to '+mx+' ⭐ · when you’re done, tap to rate '+famSiblings(t).map(function(s){ return esc(cap(s.who)); }).join(' & '));
   }
   else txt=(mx>0?'⭐ Up to '+mx+' ⭐ · ':'')+'\u{1F469} Mom checks this off for everyone';
-  return (_ls?'<div style="margin-top:3px;font-size:12px;font-weight:800;color:#3b0764">\u{1F4DA} '+esc(_ls)+'</div>':'')+'<div style="margin-top:4px;font-size:11px;font-weight:700;color:#6d28d9">'+txt+'</div>';
+  return (_ls?'<div style="margin-top:3px;font-size:12px;font-weight:800;color:#3b0764">\u{1F4DA} '+esc(_ls)+'</div>':'')+'<div style="margin-top:4px;font-size:11px;font-weight:700;color:#6d28d9">'+txt+'</div>'+
+    ((!done&&typeof famDrillBtnHTML==="function")?famDrillBtnHTML(t,me):'');
 }
+// FAM_DRILLS_START — 🧠 a family-time item can open each kid's own drills (her ask 2026-10-04: "linked to their
+// shared time … with a button to point them to the right drills"). DeWalt's Fact Review block: Andrew + Kenzie
+// quiz each other — Andrew's card opens his ➕ fact study session, Kenzie's her ✖️ one. Per item, per kid:
+// items[i].study[kid] = "drill" (the whole Drills view) or "s:<sid>" (that study session). Mom sets it in
+// Settings ▸ Family time; kids just tap. A session that no longer exists falls back to Drills.
+function _fdJ(x){ return String(x).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }   // quote-safe for onclick args
+function famDrillPick(t){ const it=(typeof famItemOf==="function")?famItemOf(t):null; const v=it&&it.study&&it.study[t.who]; return (typeof v==="string"&&v)?v:""; }
+function famDrillSess(kid,v){ if(!v||v.indexOf("s:")!==0||typeof mstSessions!=="function") return null; const sid=v.slice(2); return mstSessions(kid).find(function(s){ return s&&s.sid===sid; })||null; }
+function famDrillBtnHTML(t,me){
+  const v=famDrillPick(t); if(!v) return "";
+  const s=famDrillSess(t.who,v);
+  const lbl=s?((s.emoji||"\u{1F4DA}")+" "+esc(s.name||"study cards")):(me?"my drills":esc(cap(t.who))+"\u2019s drills");
+  return '<button onclick="event.stopPropagation();famOpenDrills(\''+_fdJ(t.famBlock)+'\',\''+_fdJ(t.famItem)+'\',\''+_fdJ(t.who)+'\')" style="margin-top:6px;padding:6px 12px;border-radius:10px;border:none;background:#6d28d9;color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F9E0} Open '+lbl+'</button>';
+}
+function famOpenDrills(block,item,kid){
+  const v=famDrillPick({famBlock:block,famItem:item,who:kid}); if(!v||typeof retrSchedGo!=="function") return;
+  const s=famDrillSess(kid,v);
+  if(s) retrSchedGo(kid,"study",s.sid); else retrSchedGo(kid,"drill");
+}
+function famItemStudy(id,i,kid,val){
+  const its=famItems(id); if(!its[i]) return;
+  famWrite(id+"/items/"+i+"/study/"+kid,(val==="drill"||/^s:/.test(String(val||"")))?val:null);   // one leaf
+}
+function famDrillEditorHTML(id,it,i,ed,kidsOf){
+  if(!kidsOf.length) return "";
+  let h='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding-top:5px"><span style="font-size:10px;color:var(--muted);margin-right:2px">\u{1F9E0} Opens drills</span>';
+  kidsOf.forEach(function(k){
+    const cur=(it.study&&it.study[k])||"";
+    const ss=(typeof mstSessions==="function")?mstSessions(k):[];
+    if(!ed){ const s=famDrillSess(k,cur); h+='<span style="font-size:11px;font-weight:700">'+esc(cap(k))+': '+(cur?(s?esc((s.emoji||"")+" "+(s.name||"")):"Drills"):"—")+'</span>'; return; }
+    h+='<label style="font-size:11px;font-weight:700;color:#374151">'+esc(cap(k))+' <select onchange="famItemStudy(\''+_fdJ(id)+'\','+i+',\''+_fdJ(k)+'\',this.value)" style="padding:3px 6px;border:1.5px solid var(--border);border-radius:7px;font-size:11.5px;font-family:\'DM Sans\',sans-serif">'+
+      '<option value=""'+(cur?'':' selected')+'>— none</option><option value="drill"'+(cur==="drill"?' selected':'')+'>Drills (all decks)</option>'+
+      ss.map(function(s){ const v="s:"+s.sid; return '<option value="'+esc(v)+'"'+(cur===v?' selected':'')+'>'+esc((s.emoji||"\u{1F4DA}")+" "+(s.name||s.sid))+'</option>'; }).join('')+'</select></label>';
+  });
+  return h+'</div>';
+}
+// FAM_DRILLS_END
 
 // ── Settings ▸ Family rules ▸ 👨‍👩‍👧 Family time (Mom-only edits, targeted writes under config/rules/familyBlocks) ──
 const FAM_DAYS=["Mon","Tue","Wed","Thu","Fri","Sat"];
@@ -24793,6 +24831,7 @@ function famBlockEditorHTML(id,b){
     h+='<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding-top:5px"><span style="font-size:10px;color:var(--muted);margin-right:2px">\u2B50 Points</span>'+
       (ed?'<input type="number" min="0" max="500" step="5" value="'+(ipts||'')+'" placeholder="none" onchange="famItemSet(\''+J(id)+'\','+i+',\'pts\',this.value)" style="width:62px;padding:3px 6px;border:1.5px solid var(--border);border-radius:7px;font-size:12px">':'<b style="font-size:12px">'+(ipts||'none')+'</b>')+
       (ipts?'<span style="font-size:10px;color:var(--muted);margin:0 2px 0 6px">decided by</span>'+_famChip(!ieach,'\u{1F469} Mom',ed?"famItemSet('"+J(id)+"',"+i+",'rate','mom')":"",true)+(iks.length>1?_famChip(ieach,'Each other',ed?"famItemSet('"+J(id)+"',"+i+",'rate','each')":"",true):''):'')+'</div>';
+    try{ if(typeof famDrillEditorHTML==="function") h+=famDrillEditorHTML(id,it,i,ed,it.from?Object.keys(it.from):iks); }catch(e){}   // 🧠
     h+='<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding-top:5px"><span style="font-size:10px;color:var(--muted);margin-right:2px">'+(idays.length?'Only on':'Every family-time day · or only on')+'</span>'+
       FAM_DAYS.filter(function(d){ return !days.length||days.indexOf(d)>=0; }).map(function(d){ return _famChip(idays.indexOf(d)>=0,d,ed?"famItemDay('"+J(id)+"',"+i+",'"+d+"')":"",true); }).join('')+'</div>';
     h+='</div>';
