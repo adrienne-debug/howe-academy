@@ -8090,6 +8090,7 @@ function _efEligible(t,kid){
   if(/lunch/i.test(t.title||"")) return false;
   if(_efIsClose(t)||t.subjectKey==="morning_nb"||/Morning Notebook/i.test(t.title||"")) return false;
   if(typeof subjNoCarry==="function"&&subjNoCarry(t)) return false;
+  if(typeof ldPinnedTask==="function"&&ldPinnedTask(t)) return false;   // 📌 LESSONDAY: never pulled earlier
   if(typeof momMoves!=="undefined"&&momMoves&&momMoves[t.id]) return false;
   return true;
 }
@@ -8279,6 +8280,7 @@ function _bwEligible(t,kid){
   if(/lunch/i.test(t.title||"")) return false;
   if(_efIsClose(t)||t.subjectKey==="morning_nb"||/Morning Notebook/i.test(t.title||"")) return false;
   if(typeof subjNoCarry==="function"&&subjNoCarry(t)) return false;
+  if(typeof ldPinnedTask==="function"&&ldPinnedTask(t)) return false;   // 📌 LESSONDAY: never pulled earlier
   if(typeof momMoves!=="undefined"&&momMoves&&momMoves[t.id]) return false;
   return bwIs(t);
 }
@@ -16876,6 +16878,8 @@ function subjNoCarry(t){
   // and nowhere else, so a missed class is missed — carrying it to Thursday would put a
   // card for a class that isn't happening on a day it can't happen.
   if(s&&typeof fxIsClass==="function"&&fxIsClass(s)) return true;
+  // 📌 LESSONDAY: practice days never sweep forward; a missed NEW lesson may, when the subject says "next".
+  if(s&&typeof ldPin==="function"&&ldPin(s)) return !(ldMissMode(s)==="next"&&!!t.lid&&ldIsDayOne(t.title));
   return !!(s&&(s.noCarry||s.tracking==="daily"));
 }
 
@@ -21654,7 +21658,10 @@ function lidStamped(kid,sk){
 }
 function lidDoneSet(kid,sk){
   if(!lidStamped(kid,sk)) return null;
-  return new Set(Object.keys(((((currData||{}).done||{})[kid]||{})[sk])||{}));
+  const set=new Set(Object.keys(((((currData||{}).done||{})[kid]||{})[sk])||{}));
+  // 📌 LESSONDAY: practice days passed over by a newer lesson day are behind us, not owed.
+  try{ const s=currData.subjects[kid][sk]; if(typeof ldPin==="function"&&ldPin(s)) ldDroppedLids(lidsFor(kid,sk)||[],s.lessonSeq||[],set).forEach(l=>set.add(l)); }catch(e){}
+  return set;
 }
 // Indexes into lessonSeq that are finished (null unless stamped).
 function lidDoneIdx(kid,sk){
@@ -22078,6 +22085,54 @@ function lessonDaySpan(s){
   let n=0; ((s&&s.lessonSeq)||[]).forEach(function(x){ const m=String(x==null?"":x).match(/·\s*day \d+ of (\d+)\s*$/i); if(m) n=Math.max(n,parseInt(m[1],10)); });
   return n;
 }
+// LESSONDAY_START — 📌 LESSON DAY STAYS PUT (her ask 2026-10-04, DeWalt All About Spelling: "this one
+// absolutely 100% can only be on Wednesday"). A subject may name the weekday its NEW lesson happens on
+// (subject.lessonDay "Mon"…"Fri"). Then:
+//   · a new lesson (day 1 of a "· day k of N" lesson, or every sitting of a one-day lesson) only ever sits
+//     on that weekday — the slot fill below enforces it, so whatever laid the week, the grid can't drift;
+//   · practice days are day-bound: missed ones are not swept forward, and when the next lesson day comes
+//     the last lesson's leftover practice days are DROPPED (passed over, never counted as work done —
+//     no done record is written; ldDroppedLids derives them);
+//   · nothing pulls a lesson day earlier (Get ahead / early-finish pull skip pinned subjects);
+//   · if the lesson day itself is missed: lessonDayMissed "next" (default) = the next school slot that
+//     week takes it, then back on schedule; "wait" = it waits for the next lesson day.
+// Root cause it fixes: slots are filled with the NEXT undone sitting in order (seqFillSlots), so one
+// missed writing day pushed every later sitting — and the new lesson — a day later. allowedDays only
+// steered where the week first laid cards. Default (no lessonDay) = exactly the old behavior.
+const LD_DOW={Mon:"monday",Tue:"tuesday",Wed:"wednesday",Thu:"thursday",Fri:"friday"};
+function ldPin(s){ const v=s&&s.lessonDay; return (v&&LD_DOW[v])?v:null; }
+function ldMissMode(s){ return (s&&s.lessonDayMissed==="wait")?"wait":"next"; }
+// A new-lesson sitting: "… · day 1 of N", or a one-day lesson (no day suffix). Works on a title too.
+function ldIsDayOne(text){ const m=String(text==null?"":text).match(/·\s*day (\d+) of \d+\s*$/i); return !m||m[1]==="1"; }
+// Practice sittings passed over: every unfinished sitting BEFORE the latest finished new-lesson sitting.
+function ldDroppedLids(ids,seq,doneSet){
+  let last=-1; const out=[];
+  for(let i=0;i<(ids||[]).length;i++) if(doneSet.has(ids[i])&&ldIsDayOne(seq[i])) last=i;
+  for(let i=0;i<last;i++) if(!doneSet.has(ids[i])) out.push(ids[i]);
+  return out;
+}
+// The date (YYYY-MM-DD) the current lesson started: the latest finished new-lesson sitting, else the
+// plan's start date. "9999" = unknown → a lesson day is never treated as missed.
+function ldSince(s,ids,seq,doneRecs){
+  let since="";
+  for(let i=0;i<(ids||[]).length;i++){ const r=doneRecs&&doneRecs[ids[i]]; if(r&&r.day&&ldIsDayOne(seq[i])&&String(r.day)>since) since=String(r.day); }
+  if(!since) since=String((s&&s.pacing&&s.pacing.startDate)||(s&&s.planAnchor)||"9999");
+  return since;
+}
+// The last date with weekday dayName strictly before iso ("" if iso is unreadable).
+function ldPrevDate(iso,dayName){
+  const DN=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"], want=DN.indexOf(dayName);
+  const m=/^(\d{4})-(\d\d)-(\d\d)$/.exec(String(iso||"")); if(!m||want<0) return "";
+  const d=new Date(+m[1],+m[2]-1,+m[3]);
+  for(let k=1;k<=7;k++){ d.setDate(d.getDate()-1); if(d.getDay()===want) return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+  return "";
+}
+function ldPinnedTask(t){
+  if(!t||!t.who||!t.subjectKey) return false;
+  const s=(((typeof currData!=="undefined"&&currData)||{}).subjects||{})[t.who];
+  return !!ldPin(s&&s[t.subjectKey]);
+}
+// LESSONDAY_END
 function lsdToggleDay(kid,sk,k){
   const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s) return;
   const cur=lessonDayList(s); const i=cur.indexOf(k); if(i>=0) cur.splice(i,1); else cur.push(k); cur.sort(function(a,b){ return a-b; });
@@ -33280,7 +33335,7 @@ function rlSet(kid,sk,field,val,relay){
   currData.lastEdit=new Date().toISOString(); db.ref("curriculum/lastEdit").set(currData.lastEdit);
   // 👩 Mom changed (her ask 2026-09-22): this week's cards follow at once — the week re-lay restamps
   // them and keeps Mom-required work off a co-op's no-Mom day. Before, only the setting saved.
-  if((field==="mom"||field==="momDays"||field==="momDayMin")&&typeof planBacked==="function"&&planBacked(kid,sk)&&typeof reprojectSubjectWeek==="function"){
+  if((field==="mom"||field==="momDays"||field==="momDayMin"||field==="lessonDay"||field==="lessonDayMissed")&&typeof planBacked==="function"&&planBacked(kid,sk)&&typeof reprojectSubjectWeek==="function"){
     try{ reprojectSubjectWeek(kid,sk,"mom",{then:function(){ if(typeof renderAll==="function") renderAll(); }}); }catch(e){ if(typeof dbg==="function") dbg("mom relay skip "+kid+"/"+sk+": "+e); } }
   if(relay&&typeof planBacked==="function"&&planBacked(kid,sk)&&s.pacing&&s.pacing.mode&&typeof _gvRelaySubject==="function"){ const _k=cbKid,_s=cbSubjKey; cbKid=kid; cbSubjKey=sk; const ok=_gvRelaySubject(kid,sk,(s.display||sk)+" re-laid"); cbKid=_k; cbSubjKey=_s; if(ok) return; }
   renderAll();
@@ -33433,6 +33488,12 @@ function cbRenderRules(col){
       if(_span>1){ h+='<div style="margin-top:3px;white-space:nowrap;font-size:9.5px;color:var(--muted)" title="Each lesson takes '+_span+' days. Tick the days that need Mom; the other days are on their own. Nothing ticked = the Mom setting above applies to every day.">👩 days: '
         +Array.from({length:_span},function(_,i){ const k=i+1, on=_md.indexOf(k)>=0; return '<span onclick="lsdToggleDay(\''+kid+'\',\''+sk+'\','+k+')" style="'+_pill+(on?';background:'+col+';color:#fff;border-color:transparent':'')+'">'+k+'</span>'; }).join(' ');
         if(_md.length){ const _mm=(+s.momDayMin)||(s.minutes||20); h+=' · <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'momDayMin\','+Math.max(5,_mm-5)+',false)" style="'+_pill+'">−</span> <b>'+_mm+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'momDayMin\','+Math.min(90,_mm+5)+',false)" style="'+_pill+'">+</span> min'; }
+        h+='</div>'; }
+      // 📌 LESSONDAY (her ask 2026-10-04): the weekday every new lesson stays on; tap to cycle any → Mon … Fri
+      if(typeof ldPin==="function"){ const _ld=ldPin(s)||"", _o=["","Mon","Tue","Wed","Thu","Fri"], _nx=_o[(_o.indexOf(_ld)+1)%_o.length], _mm=ldMissMode(s);
+        h+='<div style="margin-top:3px;white-space:nowrap;font-size:9.5px;color:var(--muted)" title="Pick the day each NEW lesson happens on. It never moves off that day; missed practice days drop when the next lesson day comes, and nothing pulls the lesson earlier. Mom can still move a card by hand.">📌 new lesson: '
+          +'<span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'lessonDay\','+(_nx?'\''+_nx+'\'':'null')+',false)" style="'+_pill+(_ld?';background:'+col+';color:#fff;border-color:transparent':'')+'">'+(_ld||'any day')+'</span>';
+        if(_ld) h+=' · if missed: <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'lessonDayMissed\',\''+(_mm==="wait"?"next":"wait")+'\',false)" style="'+_pill+'">'+(_mm==="wait"?'waits for the next one':'next school day')+'</span>'+(_span>1?' · missed practice drops':'');
         h+='</div>'; }
       h+='</td>'; }
     h+='<td style="padding:3px 6px"><span '+_cyc(sk,"device",["paper","computer","ipad/phone","book","keyboard"],dev,false)+' style="'+_pill+'">'+(CURR_DEV_EMOJI[dev]||"")+' '+(CURR_DEV_LABEL[dev]||dev)+'</span></td>';
@@ -55977,8 +56038,21 @@ function seqFillSlots(input){
   }
 
   const assign=[], drop=[];
+  // 📌 LESSONDAY (input.pin = {day, mode, since, isoOf, prevLD}): a lesson-day slot skips the last lesson's
+  // leftover practice and takes the next new lesson; any other slot takes practice only — or a new lesson
+  // that is overdue (its lesson day passed, mode "next"). A slot with nothing it may hold is dropped.
+  const pin=input.pin||null, _d1=function(x){ const m=String(x==null?"":x).match(/·\s*day (\d+) of \d+\s*$/i); return !m||m[1]==="1"; };
+  let _p=0, _last=pin?String(pin.since||""):"";
   for(let k=0;k<slots.length;k++){
-    const t=slots[k], want=avail[k];
+    const t=slots[k];
+    let want=avail[k];
+    if(pin){
+      const iso=(pin.isoOf&&pin.isoOf(t))||"";
+      if(!t._eowOverflow&&t.day===pin.day){ while(_p<avail.length&&!_d1(avail[_p].text)) _p++; want=avail[_p]||null; }
+      else { want=avail[_p]||null;
+        if(want&&_d1(want.text)){ const D=(pin.mode==="next"&&iso&&pin.prevLD)?pin.prevLD(iso):""; if(!(D&&D>_last)) want=null; } }
+      if(want){ _p++; if(_d1(want.text)&&iso) _last=iso; }
+    }
     if(!want){ drop.push({id:t.id,lid:t.lid||null,text:t.title||"",day:t.day,time:t.time}); continue; }
     const newId=(planId&&kid)?(kid+"_"+planId+"_"+want.lid):t.id;
     assign.push({oldId:t.id,newId:newId,lid:want.lid,text:want.text,day:t.day,time:t.time,
@@ -56067,9 +56141,16 @@ function seqFillNormalize(tasks,reason){
     try{ ids=lidsFor(kid,sk); doneSet=lidDoneSet(kid,sk); subj=(((currData||{}).subjects||{})[kid]||{})[sk]; }catch(e){ return; }
     if(!ids||!ids.length||!doneSet||!subj) return;
     const taken=new Set(doneSet); (takenBy[key]||[]).forEach(l=>taken.add(l));   // 🧩 lessons held by a merged card
+    let _pin=null;   // 📌 LESSONDAY
+    if(typeof ldPin==="function"&&ldPin(subj)){ const _dn=LD_DOW[ldPin(subj)], _recs=((((currData||{}).done||{})[kid]||{})[sk])||{};
+      _pin={day:_dn,mode:ldMissMode(subj),since:ldSince(subj,ids,subj.lessonSeq||[],_recs),isoOf:isoOf,prevLD:function(iso){ return ldPrevDate(iso,_dn); }}; }
     const res=seqFillSlots({kid:kid,sk:sk,planId:subj.planId||"",lessonIds:ids,lessonSeq:subj.lessonSeq||[],
-      done:taken,cards:groups[key],isLocked:locked,toMin:(typeof toMin==="function")?toMin:null});
+      done:taken,cards:groups[key],isLocked:locked,toMin:(typeof toMin==="function")?toMin:null,pin:_pin});
     if(!res||!res.changed) return;
+    if(_pin&&res.drop.length){   // a pinned slot with nothing it may hold comes off the week (e.g. Monday after the last practice day)
+      const _rm=new Set(res.drop.map(d=>d.id));
+      for(let i=tasks.length-1;i>=0;i--){ const x=tasks[i]; if(x&&_rm.has(x.id)&&x.who===kid&&x.subjectKey===sk){ tasks.splice(i,1); changed++; } }
+      notes.push(key+": 📌 "+_rm.size+" slot"+(_rm.size!==1?"s":"")+" off (not a lesson day)"); }
     const byId={}; groups[key].forEach(t=>{ byId[t.id]=t; });
     res.assign.forEach(a=>{
       if(!a.changed) return;
