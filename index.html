@@ -17259,10 +17259,12 @@ function loadJson(){
 const CURR_DEV_EMOJI={paper:"\u{1F4C4}",computer:"\u{1F4BB}","ipad/phone":"\u{1F4F1}",ipad:"\u{1F4F1}",phone:"\u{1F4F1}",book:"\u{1F4D6}",keyboard:"\u{1F3B9}"};   /* KEYBOARD_LANE 2026-10-02 */
 const CURR_DEV_LABEL={paper:"Paper",computer:"Computer","ipad/phone":"iPad/Phone",ipad:"iPad/Phone",phone:"iPad/Phone",book:"Book",keyboard:"Keyboard"};
 const CURR_MOM_BADGE={required:"Mom Required",maybe:"May Need Mom",none:""};
+const RULE_LABEL={last:"last of day",lastOwn:"last of own work"};   // LAST_OWN: chip words (stored tokens stay last / lastOwn)
 const RULE_DESC={sequential:"Lessons advance in order (1→2→3)",sticky:"Always scheduled next to another subject",
 
 first:"First subject of the day (only one allowed)",
-last:"Last subject of the day (only one allowed)",priority:"Gets scheduled before lower-priority subjects"};
+last:"Last of the day — after everything, family time included (only one allowed)",
+lastOwn:"Last of their own work — right after their own lessons (family time doesn't count); a Mom-required one ends their Mom turn",priority:"Gets scheduled before lower-priority subjects"};
 
 function setCurrViewKid(k){ currViewKid=k; currViewWeek=null; renderAll(); }
 function setCurrViewWeek(w){ currViewWeek=currViewWeek===w?null:w; renderAll(); }
@@ -17271,6 +17273,7 @@ function setCurrViewWeek(w){ currViewWeek=currViewWeek===w?null:w; renderAll(); 
 // groups cards in the SAME order the day runs, using the Rules -> Workflow Orders labels.
 function ceWorkflowTier(kid,sk,s){
   const disp=(s.display||sk||""), rules=s.rules||"";
+  if(String(rules).split(/[,\s]+/).includes("lastOwn")) return {rank:1000,label:"End of own work"};   // LAST_OWN
   if(/closing notebook/i.test(disp)||rules.includes("last")) return {rank:1000,label:"End of day"};
   if(/morning notebook/i.test(disp)||rules.includes("first")) return {rank:-1,label:"Start of day"};
   const steps=((rulesData&&rulesData.workflow&&rulesData.workflow[kid])?fbArr(rulesData.workflow[kid].normal):null)||[];
@@ -22423,14 +22426,14 @@ function ceRenderAddSheet(){
   h+='<div class="ce-sheet-lbl">Scheduling Rules</div>';
   const rParts=(f.rules||"").split(",").map(x=>x.trim()).filter(Boolean);
   h+='<div class="ce-chips">';
-  ["sequential","sticky","first","last"].forEach(r=>{   // 6c: no-fri/mon-thu → Days pins; max1 → Cap
+  ["sequential","sticky","first","last","lastOwn"].forEach(r=>{   // 6c: no-fri/mon-thu → Days pins; max1 → Cap · LAST_OWN
     const sel=rParts.includes(r);
-    h+='<div class="ce-chip'+(sel?" sel":"")+'" onclick="ceAddToggleRule(\''+r+'\')">'+r+'</div>';
+    h+='<div class="ce-chip'+(sel?" sel":"")+'" onclick="ceAddToggleRule(\''+r+'\')">'+(RULE_LABEL[r]||r)+'</div>';
   });
   h+='</div>';
   if(rParts.length){
     h+='<div style="margin-top:6px">';
-    rParts.forEach(r=>{ h+='<div style="font-size:10px;color:var(--muted);margin-top:2px"><b>'+r+'</b> — '+(RULE_DESC[r]||"")+'</div>'; });
+    rParts.forEach(r=>{ h+='<div style="font-size:10px;color:var(--muted);margin-top:2px"><b>'+(RULE_LABEL[r]||r)+'</b> — '+(RULE_DESC[r]||"")+'</div>'; });
     h+='</div>';
   }
   if(rParts.includes("sticky")){
@@ -22601,15 +22604,18 @@ function ceAddToggleRule(r){
   let parts=(ceAddForm.rules||"").split(",").map(x=>x.trim()).filter(Boolean);
   if(parts.includes(r)){ parts=parts.filter(x=>x!==r); }
   else {
-    if(r==="first"||r==="last"){
-      const owner=ceFindRuleOwner(ceAddKid,r,null);
-      if(owner&&!confirm('"'+owner+'" already has the "'+r+'" rule. Only one subject can be '+r+' in the day. Replace it?')) return;
+    if(r==="first"||r==="last"||r==="lastOwn"){
+      const probe=(r==="lastOwn")?"last":r;   // LAST_OWN: "last of day" and "last of own work" are one slot
+      const _same=x=>probe==="last"?(x==="last"||x==="lastOwn"):x===r;
+      if(probe==="last") parts=parts.filter(x=>!_same(x));
+      const owner=ceFindRuleOwner(ceAddKid,probe,null);
+      if(owner&&!confirm('"'+owner+'" already has a "'+(RULE_LABEL[r]||r).replace(" of own work","").replace(" of day","")+'" rule. Only one subject can be '+(RULE_LABEL[r]||r)+' in the day. Replace it?')) return;
       if(owner){
         const subs=currData.subjects[ceAddKid];
         for(const k of Object.keys(subs)){
           if(subs[k].paused) continue;
-          if((subs[k].rules||"").includes(r)){
-            const oldParts=(subs[k].rules||"").split(",").map(x=>x.trim()).filter(Boolean).filter(x=>x!==r);
+          if((subs[k].rules||"").includes(probe)){
+            const oldParts=(subs[k].rules||"").split(",").map(x=>x.trim()).filter(Boolean).filter(x=>!_same(x));
             subs[k].rules=oldParts.join(", ");
             db.ref("curriculum/subjects/"+ceAddKid+"/"+k+"/rules").set(subs[k].rules);
           }
@@ -33084,7 +33090,7 @@ function rlSet(kid,sk,field,val,relay){
   const _dp=document.getElementById("cb-daypin-scroll"); if(_dp) cbDayPinScroll=_dp.scrollTop;
   if(field==="tpw"){ const v=Math.max(1,Math.min(7,parseInt(val,10)||1)); s.pacing=Object.assign({},s.pacing||{mode:"timesPerWeek"},{tpw:v}); s.timesPerWeek=v;
     db.ref("curriculum/subjects/"+kid+"/"+sk).update({"pacing/tpw":v,timesPerWeek:v}); }
-  else if(field==="rulesTok"){ const tok=String(val); const set=new Set(String(s.rules||"").split(/[,\s]+/).filter(Boolean)); if(set.has(tok)) set.delete(tok); else { if(tok==="first") set.delete("last"); if(tok==="last") set.delete("first"); set.add(tok); }
+  else if(field==="rulesTok"){ const tok=String(val); const set=new Set(String(s.rules||"").split(/[,\s]+/).filter(Boolean)); if(set.has(tok)) set.delete(tok); else { if(tok==="first"){ set.delete("last"); set.delete("lastOwn"); } if(tok==="last"||tok==="lastOwn"){ set.delete("first"); set.delete(tok==="last"?"lastOwn":"last"); } set.add(tok); }
     s.rules=[...set].join(","); db.ref("curriculum/subjects/"+kid+"/"+sk+"/rules").set(s.rules); }
   else { if(val===null||val===undefined) delete s[field]; else s[field]=val; db.ref("curriculum/subjects/"+kid+"/"+sk+"/"+field).set(val===undefined?null:val); }
   currData.lastEdit=new Date().toISOString(); db.ref("curriculum/lastEdit").set(currData.lastEdit);
@@ -33225,7 +33231,7 @@ function cbRenderRules(col){
   for(const [sk,s] of entries){
     const al=s.allowedDays||[]; const pb=(typeof planBacked==="function")&&planBacked(kid,sk); const seqd=s.tracking!=="daily";
     const tpw=(s.pacing&&s.pacing.tpw)||s.timesPerWeek||0; const _capN=(typeof capFor==="function")?capFor(kid,sk,DEFAULT_DAY_CAP):Math.max(1,parseInt(s.cap,10)||1);   // 6c-2: effective cap
-    const rules=String(s.rules||""); const fl=rules.includes("first")?"first":rules.includes("last")?"last":"—";
+    const rules=String(s.rules||""); const _rt=rules.split(/[,\s]+/); const fl=rules.includes("first")?"first":_rt.includes("lastOwn")?"lastOwn":rules.includes("last")?"last":"—";   // LAST_OWN
     const dev=(s.device==="ipad"||s.device==="phone")?"ipad/phone":(s.device||"paper");
     // 🛤 in a lane: say where it stands; a borrowed / shared rhythm makes Days · ×/wk · Cap
     // here read-only in effect (the lane's unit decides), so they are dimmed and say so.
@@ -33247,7 +33253,7 @@ function cbRenderRules(col){
       h+='</td>'; }
     h+='<td style="padding:3px 6px"><span '+_cyc(sk,"device",["paper","computer","ipad/phone","book","keyboard"],dev,false)+' style="'+_pill+'">'+(CURR_DEV_EMOJI[dev]||"")+' '+(CURR_DEV_LABEL[dev]||dev)+'</span></td>';
     h+='<td style="padding:3px 6px"><span '+_cyc(sk,"priority",["low","normal","high"],s.priority||"normal",true)+' style="'+_pill+'">'+(function(x){ x=String(x); return x.charAt(0).toUpperCase()+x.slice(1); })(s.priority||"normal")+'</span></td>';
-    h+='<td style="padding:3px 6px;white-space:nowrap"><span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'rulesTok\',\'first\',false)" style="'+_pill+(fl==="first"?';background:'+col+';color:#fff;border-color:transparent':'')+'">First</span> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'rulesTok\',\'last\',false)" style="'+_pill+(fl==="last"?';background:'+col+';color:#fff;border-color:transparent':'')+'">Last</span></td>';
+    h+='<td style="padding:3px 6px;white-space:nowrap"><span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'rulesTok\',\'first\',false)" style="'+_pill+(fl==="first"?';background:'+col+';color:#fff;border-color:transparent':'')+'">First</span> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'rulesTok\',\'last\',false)" title="after everything, family time included" style="'+_pill+(fl==="last"?';background:'+col+';color:#fff;border-color:transparent':'')+'">Last of day</span> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'rulesTok\',\'lastOwn\',false)" title="right after their own lessons — a Mom-required one ends their Mom turn" style="'+_pill+(fl==="lastOwn"?';background:'+col+';color:#fff;border-color:transparent':'')+'">Last of own work</span></td>';
     { let sel='<select onchange="rlSet(\''+kid+'\',\''+sk+'\',\'stickyWith\',this.value||null,false)" style="font-size:10px;max-width:120px">'+'<option value="">—</option>'; for(const [k2,s2] of entries){ if(k2===sk) continue; sel+='<option value="'+k2+'"'+(s.stickyWith===k2?' selected':'')+'>'+disp(k2)+'</option>'; } sel+='</select>';
       const ord=s.stickyOrder||"after"; if(s.stickyWith) sel+=' <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'stickyOrder\',\''+(ord==="after"?"before":"after")+'\',false)" style="'+_pill+'">'+ord+'</span>';
       h+='<td style="padding:3px 6px;white-space:nowrap">'+sel+'</td>'; }
@@ -53920,12 +53926,13 @@ function gwLoopPack(toPack,ctx,kids,infoOf){
   if(!Object.keys(loop).length) return packAround([],toPack,ctx);
   const inf=function(it){ return (infoOf&&infoOf(it))||{}; };
   const isLoop=function(it){ return it._participants?it._participants.some(function(k){ return loop[k]; }):!!loop[it.who]; };
-  const pre=[], mom=[], part=[], rest=[], last=[];
+  const pre=[], mom=[], part=[], rest=[], last=[], lastOwn=[];
   toPack.forEach(function(it){
     if(!isLoop(it)){ rest.push(it); return; }
     const r=String(inf(it).rules||"");
     if(it._participants){ (it.mom==="required"?pre:part).push(it); return; }
     if(r.indexOf("first")>=0) pre.push(it);
+    else if(r.split(/[,\s]+/).indexOf("lastOwn")>=0) lastOwn.push(it);   // LAST_OWN
     else if(r.indexOf("last")>=0) last.push(it);
     else if(it.mom==="required") mom.push(it);
     else rest.push(it);
@@ -53966,6 +53973,8 @@ function gwLoopPack(toPack,ctx,kids,infoOf){
   const order=((typeof mlOrder==="function")?mlOrder():[]).filter(function(k){ return loop[k]; });
   (kids||[]).forEach(function(k){ if(loop[k]&&order.indexOf(k)<0) order.push(k); });
   const q={}; order.forEach(function(k){ q[k]=mom.filter(function(it){ return it.who===k&&!it._lpHelper; }); });
+  // LAST_OWN: a Mom-required "last of own work" card closes the kid's Mom turn (re-checked after step 4)
+  lastOwn.forEach(function(it){ if(it.mom==="required"&&q[it.who]) q[it.who].push(it); });
   let momT=Math.max(ctx.start||0,ctx.momStart||0);
   const kidMomEnd={};
   for(let guard=0; guard<400; guard++){
@@ -53992,8 +54001,30 @@ function gwLoopPack(toPack,ctx,kids,infoOf){
     over=over.concat(packAround([],[it],c2)); placed.push(it);
     if(ok(it)&&!it._participants) lastEnd[key]=toMin(it.time)+(it.dur||20);
   });
-  // 5 — wrap-up cards after the kid's whole day
-  if(last.length) over=over.concat(packAround(placed.filter(ok),last,ctx));
+  // 5a — LAST_OWN "last of own work": after the kid's own cards (family time / shared cards don't count). Already
+  // sitting there (end of the Mom turn, nothing of theirs after it) → stays; otherwise moved right after their own work.
+  const _ownEnd=function(it){ let e=0; placed.forEach(function(x){ if(x!==it&&ok(x)&&!x._participants&&x.who===it.who&&lastOwn.indexOf(x)<0) e=Math.max(e,toMin(x.time)+(x.dur||20)); }); return e; };
+  lastOwn.forEach(function(it){
+    const e=_ownEnd(it);
+    if(ok(it)&&toMin(it.time)>=e) return;
+    const pi=placed.indexOf(it); if(pi>=0) placed.splice(pi,1);
+    over=over.filter(function(x){ return x!==it; });
+    delete it.time;
+    const c2=ctxAround(), ks=Object.assign({},c2.kidStart||{}); ks[it.who]=Math.max(ks[it.who]||0,e); c2.kidStart=ks;
+    let o=packAround([],[it],c2);
+    if(o.length||!it.time){ delete it.time; o=packAround([],[it],ctxAround()); }   // no room after → earliest hole, never dropped for this
+    over=over.concat(o); placed.push(it);
+  });
+  // 5b — "last of day": after EVERYTHING in the kid's day, family time included (was the earliest open slot — Caleb's
+  // Closing Notebook landed at 11:10, before lunch and family time). No room after → earliest hole (the old behaviour).
+  last.forEach(function(it){
+    const c2=ctxAround(); let e=0;
+    ((c2.busy||{})[it.who]||[]).forEach(function(w){ e=Math.max(e,w.e); });
+    const ks=Object.assign({},c2.kidStart||{}); ks[it.who]=Math.max(ks[it.who]||0,e); c2.kidStart=ks;
+    let o=packAround([],[it],c2);
+    if(o.length||!it.time){ delete it.time; o=packAround([],[it],ctxAround()); }
+    over=over.concat(o); placed.push(it);
+  });
   return over;
 }
 function gwWorkflowRank(kid, key, s, dayName, isSitterDay){
