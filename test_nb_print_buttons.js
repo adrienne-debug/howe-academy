@@ -24,6 +24,9 @@ ok(/haNbPdf\(\\''\+sel\+'\\',\\'parent\\'\)[^>]*>🖨 Print parent guide</.test(
 ok(/haNbOpen\(\\''\+sel\+'\\',\\'student\\'\)[^>]*>notebook</.test(tab) && /haNbOpen\(\\''\+sel\+'\\',\\'parent\\'\)[^>]*>parent guide</.test(tab), "tab: 👁 Look first links still open both page views");
 ok(tab.indexOf("📓 Notebook") < 0 && tab.indexOf("📄 PDF") < 0, "tab: old Notebook / PDF buttons gone");
 
+ok(/Printing from Look first only works in Chrome\. On Safari \(iPad, iPhone, Mac\), use 🖨 Print\./.test(tab), "tab: Look-first note says it only prints from Chrome (her ask 10/4)");
+ok(/printing from here only works in Chrome; on Safari use 🖨 Print/.test(picker), "picker: 👁 tooltip says the same");
+
 // haNbPdf already handles the parent guide (which==="parent" → out.parent, *_parent.pdf)
 const pdf = src.slice(src.indexOf("async function haNbPdf("), src.indexOf("async function haNbCombinedParent"));
 ok(/which==="parent"\)\?\(out\.parent\|\|out\.student\)/.test(pdf) && /"parent":"notebook"\)\+"\.pdf"/.test(pdf), "haNbPdf builds the parent guide PDF");
