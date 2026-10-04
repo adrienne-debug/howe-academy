@@ -153,6 +153,23 @@ function famDay(celeb) {
   ok("Fact Review (no celebration) finishing → no combined show", w.famCelebBlockCheck("fbFR", "monday") === false && w.shows.length === 0);
 }
 
+console.log("— Fact Review (no celebration) counts as OWN work (her 'a' 10/4) —");
+{
+  const defs = FT(SONG.url); defs.fbFR = { name: "Fact Review", kids: ["andrew", "makenzie"] };
+  const w = world({ defs, songs: [SONG] });
+  w.tasks = [card("a_own", "andrew", "10:00 AM"), card("a_fr", "andrew", "9:00 AM", { famBlock: "fbFR", famItem: "fr" }), ...famCards()];
+  w.checked.a_own = 1;
+  ok("Fact Review still open → no own-work confetti yet", w.famCelebOwnWork("andrew", "monday") === false && w.shows.length === 0);
+  ok("…own work not done while Fact Review open", w.rtSchoolworkDone("andrew", "monday", true) === false);
+  w.checked.a_fr = 1;
+  ok("Fact Review done → own-work confetti", w.famCelebOwnWork("andrew", "monday") === true && /Andrew's own work is done! 🏡 Family Time is next\./.test(w.shows[0].title));
+  defs.fbFR.celeb = "confetti";
+  const w2 = world({ defs, songs: [SONG] });
+  w2.tasks = [card("a_own", "andrew", "10:00 AM"), card("a_fr", "andrew", "9:00 AM", { famBlock: "fbFR", famItem: "fr" }), ...famCards()];
+  w2.checked.a_own = 1;
+  ok("a block WITH a celebration is family again → own work done without it", w2.rtSchoolworkDone("andrew", "monday", true) === true);
+}
+
 console.log("— rtSchoolworkDone unchanged without the new flag —");
 {
   const w = famDay(SONG.url);
@@ -175,7 +192,7 @@ console.log("— editor row —");
 
 console.log("— wiring —");
 ok("finalizeDone schedules the block check at 300 ms (before the 700 ms day show)", /setTimeout\(function\(\)\{ try\{ famCelebBlockCheck\(_fb,_todayDay\); \}catch\(e\)\{\} \},300\)/.test(src));
-ok("finalizeDone own-work check for own cards", /else if\(!t\.gotAhead\) setTimeout\(function\(\)\{ try\{ famCelebOwnWork\(t\.who,_todayDay\); \}catch\(e\)\{\} \},700\)/.test(src));
+ok("finalizeDone own-work check for own cards + non-celebrating block cards", /if\(!t\.gotAhead&&!\(t\.famBlock&&famCelebOf\(famDefs\(\)\[t\.famBlock\]\)\)\) setTimeout\(function\(\)\{ try\{ famCelebOwnWork\(t\.who,_todayDay\); \}catch\(e\)\{\} \},700\)/.test(src));
 ok("claim path own-work check", /!t\.famBlock&&typeof famCelebOwnWork==="function"\) setTimeout\(function\(\)\{ try\{ famCelebOwnWork\(t\.who,_todayDay\); \}catch\(e\)\{\} \},600\)/.test(src));
 ok("_showCelebration honours noSong", /const chosen=opts\.noSong\?null:/.test(src));
 ok("editor row wired into the block editor", /if\(typeof famCelebRowHTML==="function"\) h\+=famCelebRowHTML\(id,b,ed,J\);/.test(src));
