@@ -11,7 +11,7 @@ const mk=()=>{
   env.ls={};
   const glyph=src.match(/const KIT_FRAC_GLYPH=\{[^}]+\};/)[0];
   const body=glyph+fn("kitSlug")+fn("kitQtyParse")+fn("kitIsoPlus")+block+`
-    ;return {grParse,grKey,grSecFor,grQtyTxt,grMergeQty,grAdd,grFindDup,grToggle,grVToggle,grDone,grApprove,grDecline,grDupMore,grDupAnyway,grGroups,grText,grAddFrom,grKidAllow,grKidBoxHTML,grReqCount,grPickToggle,grPickSave,grActiveStores,grSetStore,grCurStore,grStoreField,grStoreRemove,grSecOrder,grAisleMove,grCfgDad,grToGetCount,grCartCount,grHomeFor,grDadCardHTML,grIngParse,grIngRows,grFromRecipe,grFromWeek,grImpAdd,grFromPantry,grFromTodo,get imp(){return _grImp;},grMem,grMemUpdate,grShelf,grShelfAdd,grSuggestNames,grClearedIds,grPutBack,grRemove,grSave,grEdit,grEditSave,
+    ;return {grParse,grKey,grSecFor,grQtyTxt,grMergeQty,grAdd,grFindDup,grToggle,grVToggle,grDone,grApprove,grDecline,grDupMore,grDupAnyway,grGroups,grText,grAddFrom,grKidAllow,grKidBoxHTML,grReqCount,grPickToggle,grPickSave,grActiveStores,grSetStore,grCurStore,grStoreField,grStoreRemove,grSecOrder,grAisleMove,grCfgDad,grToGetCount,grCartCount,grHomeFor,grDadCardHTML,grIngParse,grIngRows,grFromRecipe,grFromWeek,grImpAdd,grFromPantry,grFromTodo,get imp(){return _grImp;},grMem,grMemUpdate,grShelf,grShelfAdd,grSuggestNames,grClearedIds,grPutBack,grRemove,grSave,grEdit,grEditSave,grMoney,grPriceAdd,grUsual,grLowest,grSaleInfo,grBest,grTripEst,grTripHeadHTML,grPriceLineHTML,grSpent,grWeekStart,grRcptLoad,grRcptSave,grDoneRun,get rc(){return _grRc;},set rc(v){_grRc=v;},
       get data(){return grData;}, set data(v){grData=v;}, get pend(){return _grPend;}};`;
   const F=new Function("env","db","HA_LS","mwToast","kitOrderList","kitStaples","kitBuyLog","panAdd","_todayStr","momHere","dadAwardOk","kitPinGate","confirm","ROSTER_DEF","esc","tab","document","prompt","navigator","kitPantry","panStatus","kitMeals","kitPlan","gwParseDate","momdayData","momdayToggleTodo","kitCapKey",body);
   const kitOrderList=()=>{ const need=Object.keys(env.staples).filter(k=>env.staples[k].state!=="have").map(k=>Object.assign({id:k},env.staples[k]));
@@ -226,6 +226,64 @@ ok("pantry chips + Mom's Day to-dos have 🛒 buttons", /grFromPantry\(/.test(sr
   ok("cleared records never carry photos", !Object.values(L.data.cleared).some(c=>c.photo));
 }
 ok("add boxes carry suggestions (one shared list on <body>)", /list="gr-dl"/.test(src)&&/grDlSync\(\);/.test(src));
+// ── 💲 step 5: money ──
+{ const L=mk(); withPop(L); L.env.mom=true;
+  L.grPickToggle("costco"); L.grPickToggle("publix"); L.grPickSave();
+  ok("money reader: $8.98 / 8.98 / blank", L.grMoney("$8.98")===8.98&&L.grMoney("8.98")===8.98&&L.grMoney("")===null);
+  // history: regular prices + one sale
+  [["2026-08-01",8.48],["2026-09-01",8.98],["2026-09-20",8.98]].forEach(([iso,p])=>L.grPriceAdd("Almond flour","costco",p,{iso:iso}));
+  ok("price saved as one small path per entry", L.env.writes.filter(w=>/^kitchen\/grocery\/prices\/almondflour\/costco\/p/.test(w[1])).length===3);
+  ok("usual price = median of regular prices", L.grUsual("Almond flour","costco")===8.98);
+  const r=L.grPriceAdd("Almond flour","costco",6.99,{iso:"2026-10-03"});
+  ok("a price 20%+ under usual is tagged a sale (forgot the tick) and flagged as a good price", r.rec.sale===true&&r.rec.reg===8.98&&r.pct===22);
+  ok("a sale price never becomes the usual price", L.grUsual("Almond flour","costco")===8.98);
+  ok("lowest price seen remembers the sale", L.grLowest("Almond flour","costco").p===6.99);
+  L.grPriceAdd("Almond flour","publix",12.49,{iso:"2026-09-10"});
+  ok("cheapest store first", L.grBest("Almond flour").map(x=>x.sid).join()==="costco,publix");
+  L.grAdd("Almond flour","mom",{src:{k:"mom"},stores:["publix"]});
+  L.grSetStore("publix");
+  const row={id:Object.keys(L.data.items)[0],name:"Almond flour"};
+  const pl=L.grPriceLineHTML(row);
+  ok("in Publix: shows the price here + 💡 cheaper at Costco with a move button", /\$12\.49<\/b> here/.test(pl)&&/💡 \$3\.51 less at Costco · move/.test(pl));
+  ok("trip estimate for the store", L.grTripEst("publix",false).t===12.49);
+  // sales on a rhythm → "usually on sale around now"
+  [["2026-06-01",3.99,5.49],["2026-07-13",3.99,5.49],["2026-08-24",3.99,5.49]].forEach(([iso,p,reg])=>L.grPriceAdd("Coffee","publix",p,{iso:iso,sale:true,reg:reg}));
+  const si=L.grSaleInfo("Coffee","publix");
+  ok("sale rhythm: 3 sales about every 6 weeks, due now", si.count===3&&si.gap===42&&si.due===true);
+  L.grAdd("Coffee","mom",{src:{k:"mom"},stores:["publix"]});
+  ok("… shown as 'usually on sale around now — check'", /usually on sale around now/.test(L.grPriceLineHTML({id:"x",name:"Coffee"})));
+  ok("coffee usual = the regular price, not the sale", L.grUsual("Coffee","publix")===5.49);
+  // 🏁 Done with a receipt total → trip logged; budget
+  Object.keys(L.data.items).forEach(i=>L.grToggle(i)); L.grDoneRun("publix",17.98);
+  ok("🏁 Done logs the trip with the receipt total", Object.values(L.data.trips).some(t=>t.sid==="publix"&&t.total===17.98));
+  L.data.cfg.budget=300;
+  ok("header shows the week against the budget", /This week \$17\.98 of \$300\.00/.test(L.grTripHeadHTML("all")));
+}
+// ── 📸 receipt matching ──
+{ const L=mk(); withPop(L); L.env.mom=true;
+  L.grPickToggle("harristeeter"); L.grPickToggle("costco"); L.grPickSave();
+  L.grAdd("Almond milk","mom",{src:{k:"mom"},stores:["harristeeter"]}); // staple s1 is out → ask pop-up
+  L.grAdd("Ground beef","mom",{src:{k:"mom"},stores:["harristeeter"]});
+  L.grAdd("Bananas bread","mom"); // filler
+  L.grAdd("Paper towels","mom",{src:{k:"mom"},stores:["harristeeter"]});
+  L.rc={imgs:[]};
+  L.grRcptLoad({store:"HARRIS TEETER #123",date:"2026-10-03",total:24.5,items:[
+    {line:"HT ALMOND MILK UNSWT",name:"Almond milk",price:2.99,regular:3.79,sale:true},
+    {line:"GRND BEEF 85/15",name:"Ground beef",price:9.98,regular:null,sale:false},
+    {line:"KETTLE CHIPS",name:"Potato chips",price:3.49,regular:null,sale:false}]});
+  const R=L.rc;
+  ok("receipt store matched to Harris Teeter", R.sid==="harristeeter");
+  ok("lines matched: almond milk → the staple row, ground beef → the list item, chips → extra", R.rows[0].match.startsWith("v:st_")&&R.rows[1].match.startsWith("i:")&&R.rows[2].match==="x");
+  ok("sale read from the receipt (regular 3.79, paid 2.99)", R.rows[0].sale&&R.rows[0].reg===3.79);
+  L.grRcptSave();
+  ok("saving: prices recorded with sale + regular", L.grUsual("Almond milk","harristeeter")===3.79&&L.grLowest("Almond milk","harristeeter").p===2.99);
+  ok("matched items came off the list, paper towels (not on the receipt) stayed", !Object.values(L.data.items).some(i=>i.name==="Ground beef")&&Object.values(L.data.items).some(i=>i.name==="Paper towels"));
+  ok("the staple went back to ✅ have", L.env.staples.s1.state==="have");
+  ok("the extra (chips) still goes to the pantry + memory", L.env.pantry.some(p=>p[0]==="Potato chips")&&L.grMem("Potato chips"));
+  ok("receipt alias learned (HT ALMOND MILK UNSWT → almond milk)", L.data.alias.htalmondmilkunswt==="almondmilk");
+  ok("trip logged with the receipt total", Object.values(L.data.trips).some(t=>t.total===24.5));
+}
+ok("✎ pop-ups carry price + history; list page has 📸 Read a receipt", /\+grPriceEditHTML\(it\.name\)/.test(src)&&/\+grPriceEditHTML\(r\.name\)/.test(src)&&/grRcptOpen\(\)/.test(src));
 // ── wiring ──
 ok("Mom's Day Shopping spot opens the list (not Meals)", /\+grMdShopHTML\(\)/.test(src)&&!/Open the shopping list →/.test(src));
 ok("🛒 List tab in the Mom's Day tabs", /btn\('grocery','🛒 Grocery List'\)/.test(src)&&/if\(mpSubView==='grocery'\)\{ return renderGrocery\(el\); \}/.test(src));
