@@ -39,5 +39,9 @@ ok("closed <details> 'Speed rounds (optional)' opens before Up next…", /<detai
 ok("…and closes after Sprints", seg.indexOf("🏃 Sprints") > 0 && src.slice(r1, r1 + 60).includes("</details>"));
 ok("non-starter units unchanged (no details unless _calm)", /if\(_calm\) h\+='<details/.test(seg));
 
+console.log("\nno sprint nudges on starter paths (her ask 10/4: play only, nothing due)");
+ok("unitPlanNudges returns nothing for a starter path", /function unitPlanNudges\(u,kid\)\{\n  const out=\[\]; if\(!u\|\|!\(u\.enrolled\|\|\{\}\)\[kid\]\) return out;\n  if\(u\.starter\) return out;/.test(src));
+ok("the folded row says 'just for fun … nothing here is due'", /Speed rounds \(optional\) <span[^>]*>\\u00B7 just for fun if they want to play \\u2014 nothing here is due/.test(src));
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
