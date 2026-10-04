@@ -3713,7 +3713,7 @@ function initFb() {
     });
     db.ref("kitchen/grocery").on("value",s=>{   // 🛒 grocery list (items · kid requests · in-cart ticks · learned sections)
       const v=s.val()||{};
-      grData={items:v.items||{},requests:v.requests||{},vchk:v.vchk||{},learn:v.learn||{},kids:v.kids||{},stores:v.stores||{},home:v.home||{},cfg:v.cfg||{},mem:v.mem||{},cleared:v.cleared||{},prices:v.prices||{},trips:v.trips||{},alias:v.alias||{},vpaid:v.vpaid||{},skipneed:v.skipneed||{}};
+      grData={items:v.items||{},requests:v.requests||{},vchk:v.vchk||{},learn:v.learn||{},kids:v.kids||{},stores:v.stores||{},home:v.home||{},cfg:v.cfg||{},mem:v.mem||{},cleared:v.cleared||{},prices:v.prices||{},trips:v.trips||{},alias:v.alias||{},vpaid:v.vpaid||{},skipneed:v.skipneed||{},budgets:v.budgets||{}};
       grSave();
       if(tab==="moms-plan"){
         const ae=document.activeElement; if(ae&&/^(gr-|md-todo)/.test(ae.id||"")&&ae.value) return;   // don't wipe what someone is typing
@@ -9546,7 +9546,7 @@ function mpInit(){
   try{ const kg=HA_LS.getItem('ha_kit_settings'); if(kg) Object.assign(kitSettings,JSON.parse(kg)); }catch(e){}
   try{ const kn=HA_LS.getItem('ha_kit_pantry'); if(kn) Object.assign(kitPantry,JSON.parse(kn)); }catch(e){}
   try{ const kb=HA_LS.getItem('ha_kit_buylog'); if(kb) Object.assign(kitBuyLog,JSON.parse(kb)); }catch(e){}
-  try{ const gr=HA_LS.getItem('ha_grocery'); if(gr){ const v=JSON.parse(gr); grData={items:v.items||{},requests:v.requests||{},vchk:v.vchk||{},learn:v.learn||{},kids:v.kids||{},stores:v.stores||{},home:v.home||{},cfg:v.cfg||{},mem:v.mem||{},cleared:v.cleared||{},prices:v.prices||{},trips:v.trips||{},alias:v.alias||{},vpaid:v.vpaid||{},skipneed:v.skipneed||{}}; } }catch(e){}
+  try{ const gr=HA_LS.getItem('ha_grocery'); if(gr){ const v=JSON.parse(gr); grData={items:v.items||{},requests:v.requests||{},vchk:v.vchk||{},learn:v.learn||{},kids:v.kids||{},stores:v.stores||{},home:v.home||{},cfg:v.cfg||{},mem:v.mem||{},cleared:v.cleared||{},prices:v.prices||{},trips:v.trips||{},alias:v.alias||{},vpaid:v.vpaid||{},skipneed:v.skipneed||{},budgets:v.budgets||{}}; } }catch(e){}
   try{ const kr=HA_LS.getItem('ha_kit_rotations'); if(kr) Object.assign(kitRotations,JSON.parse(kr)); }catch(e){}
 }
 
@@ -11667,7 +11667,7 @@ function kitOrderCardHTML(compact){
 // Staples and usuals are NOT copied in: they're read live from kitOrderList(), so a staple tapped back to
 // ✅ have drops off by itself. 🏁 Done: checked items → buyLog + pantry, checked staples → ✅ have.
 // GROCERY_LIST_START
-let grData={items:{},requests:{},vchk:{},learn:{},kids:{},stores:{},home:{},cfg:{},mem:{},cleared:{},prices:{},trips:{},alias:{},vpaid:{},skipneed:{}};
+let grData={items:{},requests:{},vchk:{},learn:{},kids:{},stores:{},home:{},cfg:{},mem:{},cleared:{},prices:{},trips:{},alias:{},vpaid:{},skipneed:{},budgets:{}};
 let grFromDad=false;   // opened from Dad's Day → the list page adds as Dad and goes back to his page
 const GR_SECS=[   // [id, label, pantry zone on 🏁 Done ("" = not food, stays out of the pantry)]
   ["produce","🥬 Produce","produce"],["bakery","🍞 Bakery & bread","pantry"],["meat","🥩 Meat & seafood","fridge"],
@@ -12171,36 +12171,29 @@ function grCartCount(sid){
   return Object.keys(items).filter(i=>items[i]&&items[i].done&&grShowsAt(items[i].stores,sid)).length
     +grVirtualRows().filter(r=>grData.vchk[r.key]&&grShowsAt(r.stores,sid)).length;
 }
-function grDone(sid){ grGate(function(){
-  sid=sid||grCurStore();
-  const n=grCartCount(sid); if(!n){ mwToast("Nothing in the cart yet"); return; }
-  const where=sid==="all"?"":" at "+grStoreName(sid);
-  if(!confirm("Finish the trip"+where+"?\n\n"+n+" item"+(n===1?"":"s")+" in the cart come off the list, go into the pantry and the buy history, and staples go back to ✅ have."+(sid==="all"?"":"\n\nItems for other stores stay on the list."))) return;
-  const _ct=grCartTotal(sid);
-  const total=grMoney(prompt("Receipt total for this trip? (optional — leave blank)",_ct.nTyped?_ct.total.toFixed(2):""));
-  grDoneRun(sid,total);
-}); }
+function grDone(sid){ grCheckoutOpen(sid); }   // 🧾 the checkout screen (2026-10-03) — replaces the yes/no + receipt-total boxes
 // the finisher: in-cart items off the list → pantry, buy history, memory; staples → have; trip logged
-function grDoneRun(sid,total){
+function grDoneRun(sid,total,opts){
+  opts=opts||{}; const H=k=>!(opts.house&&opts.house[k]===false);   // 🏠 for the house (pantry, history, staples) — or not
   sid=sid||grCurStore(); const n=grCartCount(sid), where=sid==="all"?"":" at "+grStoreName(sid), est=grTripEst(sid,true);
   const iso=_todayStr(), dayMap=Object.assign({},kitBuyLog[iso]);
-  const bought=(name,qty,sec)=>{
+  const bought=(name,qty,sec,fz)=>{
     const sl=kitSlug(name); if(sl){ dayMap[sl]=(dayMap[sl]||0)+(qty>0?Math.ceil(qty):1); if(typeof db!=='undefined'&&db) db.ref('kitchen/buyLog/'+iso+'/'+sl).set(dayMap[sl]); }
-    const zone=grSecMeta(sec)[2]; if(zone) try{ panAdd(name,zone,qty>0?Math.ceil(qty):1,"receipt"); }catch(e){}
+    const zone=fz?"freezer":grSecMeta(sec)[2]; if(zone) try{ panAdd(name,zone,qty>0?Math.ceil(qty):1,"receipt"); }catch(e){}
   };
   Object.keys(grData.items).forEach(id=>{
     const it=grData.items[id]; if(!it||!it.done||!grShowsAt(it.stores,sid)) return;
-    bought(it.name,(it.unit&&!/^(bag|box|can|jar|bottle|pk|pack|carton|tub|loaf|bunch|head|ct|count|dozen|doz)/.test(it.unit))?1:it.qty,it.sec);
+    if(H("i:"+id)) bought(it.name,(it.unit&&!/^(bag|box|can|jar|bottle|pk|pack|carton|tub|loaf|bunch|head|ct|count|dozen|doz)/.test(it.unit))?1:it.qty,it.sec,opts.freeze&&opts.freeze["i:"+id]);
     if(it.paid){ const ps=grPaidStore({stores:it.stores}); if(ps) grPriceAdd(it.name,ps,it.paid,{src:"typed"}); }   // 💲 the price she typed in the store
-    grMemBought(it.name,it.sec); grClearedPush(id,it,"done");
+    if(H("i:"+id)) grMemBought(it.name,it.sec); grClearedPush(id,it,"done");
     delete grData.items[id];
     if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/items/'+id).remove();
   });
   grVirtualRows().forEach(r=>{
     if(!grData.vchk[r.key]||!grShowsAt(r.stores,sid)) return;
-    bought(r.name,r.qty,r.sec); grMemBought(r.name,r.sec);
+    if(H("v:"+r.key)){ bought(r.name,r.qty,r.sec,opts.freeze&&opts.freeze["v:"+r.key]); grMemBought(r.name,r.sec); }
     if(grData.vpaid[r.key]){ const ps=grPaidStore(r); if(ps) grPriceAdd(r.name,ps,grData.vpaid[r.key],{src:"typed"}); delete grData.vpaid[r.key]; if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/vpaid/'+r.key).remove(); }
-    if(r.virt==="staple"&&kitStaples[r.sid]){
+    if(r.virt==="staple"&&kitStaples[r.sid]&&H("v:"+r.key)){   // bought for someone else → still out at home
       kitStaples[r.sid].state="have"; kitStaples[r.sid].ts=Date.now();
       if(typeof db!=='undefined'&&db) db.ref('kitchen/staples/'+r.sid).set(kitStaples[r.sid]);
     }
@@ -12209,7 +12202,7 @@ function grDoneRun(sid,total){
   try{ HA_LS.setItem('ha_kit_staples',JSON.stringify(kitStaples)); }catch(e){}
   kitBuyLog[iso]=dayMap; try{ HA_LS.setItem('ha_kit_buylog',JSON.stringify(kitBuyLog)); }catch(e){}
   if(sid!=="all"&&grStores()[sid]) grStoreField(sid,"trips",(grStores()[sid].trips||0)+1);   // most-shopped sorts first
-  grTripLog(sid,est&&est.t,total,n);   // 💰 budget + spending
+  grTripLog(sid,est&&est.t,total,n,opts);   // 💰 budget + spending
   grSave(); mwToast("🏁 Trip done"+where+" — "+n+" item"+(n===1?"":"s")+" put away"+(total?" · "+grFmt$(total):"")); grRepaint();
 }
 // ── copy / send ──
@@ -12333,7 +12326,7 @@ function renderGrocery(el){
     const fold=grBig&&!grCartOpen;   // 🏃 store mode folds the cart away
     h+='<div onclick="'+(grBig?'grCartOpen=!grCartOpen;grRepaint()':'')+'" style="display:flex;justify-content:space-between;font-size:'+(grBig?13:11)+'px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#16a34a;margin:16px 0 2px;'+(grBig?'cursor:pointer':'')+'"><span>✓ In the cart'+(grBig?(fold?' ▸ show':' ▾ hide'):'')+'</span><span>'+inCart.length+'</span></div>'
       +(fold?'':inCart.map(r=>grRowHTML(r,sid==='all')).join(''))
-      +'<button onclick="grDone()" style="width:100%;margin-top:12px;padding:12px;border-radius:12px;border:none;background:#1d2a22;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🏁 Done '+(sid==='all'?'shopping':'at '+esc(grStoreName(sid)))+' · '+inCart.length+' in cart</button>';
+      +'<button onclick="grDone()" style="width:100%;margin-top:12px;padding:12px;border-radius:12px;border:none;background:#1d2a22;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🧾 Checkout'+(sid==='all'?'':' at '+esc(grStoreName(sid)))+' · '+inCart.length+' in cart</button>';
   }
   if(grClearedIds().length) h+='<button onclick="grClearedOpen()" style="margin-top:12px;border:none;background:none;color:#2B7A78;font-size:12.5px;font-weight:800;cursor:pointer;padding:0;font-family:\'DM Sans\',sans-serif">↩ Recently cleared ('+grClearedIds().length+')</button>';
   h+='<div style="font-size:11px;color:#64748b;margin-top:12px;line-height:1.5">Tap the circle to put something in the cart. ✎ changes the amount, a brand note, the section or the store (it remembers). 🧺 staples and 🔁 usuals come from 🍽 Meals.</div>';
@@ -12679,8 +12672,9 @@ function grTripEst(sid,cartOnly){
 }
 function grWeekStart(){ const d=gwParseDate(_todayStr()); const k=(d.getDay()+6)%7; d.setDate(d.getDate()-k); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
 function grSpent(fromIso,sid){ const T=grData.trips||{}; return Object.keys(T).map(k=>T[k]).filter(t=>t&&t.iso>=fromIso&&(!sid||t.sid===sid)).reduce((a,t)=>a+(t.total||t.est||0),0); }
-function grTripLog(sid,est,total,n){
-  const id="t"+Date.now().toString(36); const rec={iso:_todayStr(),sid:sid,n:n||0}; if(est>0) rec.est=est; if(total>0) rec.total=total;
+function grTripLog(sid,est,total,n,opts){
+  const id="t"+Date.now().toString(36)+Math.random().toString(36).slice(2,5); const rec={iso:_todayStr(),sid:sid,n:n||0}; if(est>0) rec.est=est; if(total>0) rec.total=total;
+  if(opts&&(opts.budget!==undefined||opts.other)){ rec.budget=opts.budget||"none"; if(opts.other) rec.other=true; }   // 💰 which budget ("none" = not counted)
   grData.trips[id]=rec; if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/trips/'+id).set(rec);
 }
 // the header: what this store's trip costs (from usual prices) + the week against her budget
@@ -12690,8 +12684,8 @@ function grTripHeadHTML(sid){
     const all=grTripEst(sid,false), cart=grTripEst(sid,true);
     if(all&&all.t>0) h+='<span style="font-size:11px;font-weight:700;opacity:.95">· about '+grFmt$(all.t)+(cart.t>0?' · in cart '+grFmt$(cart.t):'')+(all.miss?' · '+all.miss+' not priced':'')+'</span>';
   }
-  const b=grData.cfg&&grData.cfg.budget;
-  if(b>0){ const sp=grSpent(grWeekStart()); h+='<span style="font-size:11px;font-weight:800;padding:1px 8px;border-radius:10px;background:'+(sp>b?'#fecaca':'rgba(255,255,255,0.22)')+';color:'+(sp>b?'#7f1d1d':'#fff')+'">This week '+grFmt$(sp)+' of '+grFmt$(b)+'</span>'; }
+  const _b=grBudgets().find(x=>x.id===grBudgetDefault());
+  if(_b&&_b.amt>0){ const b=_b.amt, sp=grSpentBudget(_b.id,grPeriodStart(_b.per)); h+='<span style="font-size:11px;font-weight:800;padding:1px 8px;border-radius:10px;background:'+(sp>b?'#fecaca':'rgba(255,255,255,0.22)')+';color:'+(sp>b?'#7f1d1d':'#fff')+'">'+esc(_b.emoji||'💰')+' This '+(_b.per==="month"?'month':'week')+' '+grFmt$(sp)+' of '+grFmt$(b)+'</span>'; }
   return h;
 }
 // under a row: the price here, a cheaper store, a sale that's usually around now
@@ -12750,14 +12744,13 @@ function grPriceSaveFromPop(name){
 // ⚙️ manager: budget + spending
 function grCfgBudget(){ const v=grMoney((document.getElementById("gr-budget")||{}).value); if(v){ grData.cfg.budget=v; } else delete grData.cfg.budget; grSave(); if(typeof db!=='undefined'&&db){ if(v) db.ref('kitchen/grocery/cfg/budget').set(v); else db.ref('kitchen/grocery/cfg/budget').remove(); } grRepaint(); }
 function grMoneyMgrHTML(){
-  const b=grData.cfg&&grData.cfg.budget, ws=grWeekStart(), mIso=_todayStr().slice(0,8)+"01";
-  let h='<div style="font-size:13px;font-weight:800;margin:12px 0 6px">💰 Budget & spending</div>'
-    +'<div style="display:flex;gap:6px;align-items:center;font-size:12.5px;font-weight:700">Weekly grocery budget <input id="gr-budget" type="text" inputmode="decimal" value="'+(b?b:'')+'" placeholder="$ (optional)" onblur="grCfgBudget()" onkeydown="if(event.key===\'Enter\')this.blur()" style="width:100px;padding:7px 9px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif"></div>';
+  const ws=grWeekStart(), mIso=_todayStr().slice(0,8)+"01";
+  let h=grBudgetsMgrHTML()+'<div style="font-size:13px;font-weight:800;margin:12px 0 4px">🏬 Spending by store</div>';
   const ids=Object.keys(grStores());
   const line=(lbl,from)=>{ const per=ids.map(s=>[s,grSpent(from,s)]).filter(x=>x[1]>0); const tot=grSpent(from);
     return '<div style="font-size:12.5px;margin-top:5px"><b>'+lbl+' '+grFmt$(tot)+'</b>'+(per.length?' <span style="color:#64748b">· '+per.map(x=>esc(grStoreName(x[0]))+' '+grFmt$(x[1])).join(' · ')+'</span>':'')+'</div>'; };
   h+=line("This week",ws)+line("This month",mIso)
-    +'<div style="font-size:11px;color:#94a3b8;margin-top:3px">From 🏁 Done trips — the receipt total when you type it, otherwise the estimate from your prices.</div>';
+    +'<div style="font-size:11px;color:#94a3b8;margin-top:3px">From 🧾 Checkout — the receipt total when you type it, otherwise the estimate from your prices.</div>';
   return h;
 }
 // ── 📸 receipts: Claude reads the store, date, lines, prices + sales; you check the matches before anything saves ──
@@ -13325,6 +13318,105 @@ function grPantryAlertsHTML(){
   const need=grWeekNeeds().length;
   if(need){ n++; h+='<div onclick="grNeedsOpen()" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fff7ed;border-left:3px solid #ea580c;border-radius:8px;margin-bottom:6px"><span style="font-size:13px">🍽 This week\'s meals need <b>'+need+' thing'+(need===1?'':'s')+'</b> you don\'t have — tap to check</span></div>'; }
   return {n:n,html:h};
+}
+// ── 🧾 Checkout + multiple budgets (her asks 10/3 late) ──
+// One screen replaces the old yes/no + receipt-total boxes: the total (pre-filled from typed prices), "Where's this
+// going?" (🏠 our house — untick single items that aren't — or 🎁 someone else / a trip), ❄️ "going in the freezer?" on
+// meat/frozen, and which budget it counts toward (or none). Prices are saved either way; bought items leave the list.
+//   budgets/{bid} = {name, emoji, amt, per:"week"|"month", dflt?, ts}     trips/{id}.budget = bid · trips/{id}.other = true
+function grBudgets(){
+  const B=grData.budgets||{}; const ids=Object.keys(B).filter(k=>B[k]&&B[k].name);
+  if(!ids.length&&grData.cfg&&grData.cfg.budget>0) return [{id:"groceries",name:"Groceries",emoji:"🛒",amt:grData.cfg.budget,per:"week",dflt:true,legacy:true}];
+  return ids.map(k=>Object.assign({id:k},B[k])).sort((a,b)=>((b.dflt?1:0)-(a.dflt?1:0))||((a.ts||0)-(b.ts||0)));
+}
+function grBudgetDefault(){ const b=grBudgets(); return (b.find(x=>x.dflt)||b[0]||{}).id||null; }
+function grPeriodStart(per){ return per==="month"?_todayStr().slice(0,8)+"01":grWeekStart(); }
+// a trip counts toward its budget; trips from before budgets existed count toward the default one (unless "other")
+function grSpentBudget(bid,fromIso){ const T=grData.trips||{}, dflt=grBudgetDefault(); return Math.round(Object.keys(T).map(k=>T[k]).filter(t=>t&&t.iso>=fromIso&&!t.other&&t.budget!=="none"&&((t.budget||dflt)===bid)).reduce((a,t)=>a+(t.total||t.est||0),0)*100)/100; }
+function grSpentOther(fromIso){ const T=grData.trips||{}; return Math.round(Object.keys(T).map(k=>T[k]).filter(t=>t&&t.iso>=fromIso&&(t.other||t.budget==="none")).reduce((a,t)=>a+(t.total||t.est||0),0)*100)/100; }
+// 🧾 the checkout screen
+const GR_FREEZE_SECS=["meat","frozen","deli","bakery"];
+let _grCo=null;   // {sid, total, other, house:{key:false}, freeze:{key:true}, budget}
+function grCoRows(sid){
+  const out=[]; const items=grData.items||{};
+  Object.keys(items).forEach(id=>{ const it=items[id]; if(it&&it.done&&grShowsAt(it.stores,sid)) out.push({key:"i:"+id,name:it.name,sec:it.sec,q:grQtyTxt(it)}); });
+  grVirtualRows().forEach(r=>{ if(grData.vchk[r.key]&&grShowsAt(r.stores,sid)) out.push({key:"v:"+r.key,name:r.name,sec:r.sec,q:r.qty?"×"+r.qty:"",tag:r.tag}); });
+  return out;
+}
+function grCheckoutOpen(sid){ grGate(function(){
+  sid=sid||grCurStore();
+  if(!grCartCount(sid)){ mwToast("Nothing in the cart yet"); return; }
+  const ct=grCartTotal(sid);
+  _grCo={sid:sid,total:ct.total>0?ct.total.toFixed(2):"",guessed:ct.est>0,other:false,house:{},freeze:{},budget:grBudgetDefault()};
+  grCheckoutDraw();
+}); }
+function grCheckoutDraw(){
+  const C=_grCo; if(!C) return grPopClose();
+  const rows=grCoRows(C.sid), where=C.sid==="all"?"":" at "+grStoreName(C.sid), buds=grBudgets();
+  const chip=(on,lbl,click)=>'<button onclick="'+click+'" aria-pressed="'+on+'" style="flex:1;padding:10px 8px;border-radius:11px;border:2px solid '+(on?'#3A7D44':'#e2e8f0')+';background:'+(on?'#f0fdf4':'#fff')+';color:#1f2937;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
+  let h='<div style="font-weight:800;font-size:16px">🧾 Checkout'+esc(where)+'</div><div style="font-size:12px;color:#64748b;margin:2px 0 10px">'+rows.length+' item'+(rows.length===1?'':'s')+' in the cart</div>'
+    +'<div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.3px">Total</div>'
+    +'<input id="gr-co-total" type="text" inputmode="decimal" value="'+esc(C.total)+'" placeholder="$ from the receipt (optional)" oninput="_grCo.total=this.value" style="width:100%;box-sizing:border-box;margin-top:4px;padding:11px;border:1.5px solid #cbd5e1;border-radius:10px;font-size:20px;font-weight:800;font-family:\'DM Sans\',sans-serif">'
+    +(C.guessed?'<div style="font-size:11px;color:#94a3b8;margin-top:2px">Filled in from your typed prices + usual prices — fix it to match the register.</div>':'')
+    +'<div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.3px;margin-top:12px">Where\'s this going?</div>'
+    +'<div style="display:flex;gap:6px;margin-top:5px">'+chip(!C.other,'🏠 Our house','grCoSet(\'other\',false)')+chip(C.other,'🎁 Someone else / a trip','grCoSet(\'other\',true)')+'</div>';
+  if(!C.other){
+    h+='<div style="font-size:11.5px;color:#64748b;margin:8px 0 2px">Into the pantry. Untick anything that isn\'t for the house.</div><div style="max-height:34vh;overflow:auto;border-top:1px solid #eef2f0">';
+    rows.forEach(r=>{ const home=C.house[r.key]!==false, fz=GR_FREEZE_SECS.indexOf(r.sec)>=0||grSecMeta(r.sec)[2]==="fridge";
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid #eef2f0"><input type="checkbox" '+(home?'checked ':'')+'onchange="_grCo.house[\''+r.key+'\']=this.checked;grCheckoutDraw()" style="width:18px;height:18px;flex:0 0 auto">'
+        +'<span style="flex:1;min-width:0;font-size:13px;font-weight:700'+(home?'':';color:#94a3b8;text-decoration:line-through')+'">'+esc(r.name)+(r.q?' <span style="color:#3A7D44">'+esc(r.q)+'</span>':'')+'</span>'
+        +(home&&fz?'<label style="font-size:11.5px;font-weight:700;color:#1d4ed8;display:flex;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" '+(C.freeze[r.key]?'checked ':'')+'onchange="_grCo.freeze[\''+r.key+'\']=this.checked" style="width:15px;height:15px">❄️ freezer</label>':'')
+        +'</div>'; });
+    h+='</div>';
+  } else h+='<div style="font-size:11.5px;color:#64748b;margin:8px 0 0">Nothing goes into the pantry, and staples stay ❌ out — you still need them at home. Prices are still saved.</div>';
+  h+='<div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.3px;margin-top:12px">Count toward a budget?</div>'
+    +'<select onchange="_grCo.budget=this.value||null" style="width:100%;margin-top:5px;padding:10px;border:1.5px solid #cbd5e1;border-radius:10px;font-size:14px;font-family:\'DM Sans\',sans-serif">'
+    +buds.map(b=>'<option value="'+b.id+'"'+(C.budget===b.id?' selected':'')+'>'+esc((b.emoji||'💰')+' '+b.name)+' — '+grFmt$(grSpentBudget(b.id,grPeriodStart(b.per)))+' of '+grFmt$(b.amt||0)+' this '+(b.per==="month"?'month':'week')+'</option>').join('')
+    +'<option value=""'+(!C.budget?' selected':'')+'>Don\'t count it</option></select>'
+    +(buds.length?'':'<div style="font-size:11px;color:#94a3b8;margin-top:3px">Set up budgets in ⚙️ Stores → 💰 Budgets.</div>')
+    +'<button onclick="grCheckoutGo()" style="'+GR_BTN+'border:none;background:#1d2a22;color:#fff;margin-top:14px">🧾 Check out</button>'
+    +'<button onclick="_grCo=null;grPopClose()" style="'+GR_BTN+'border:none;background:#f1f5f9;color:#334155">Cancel</button>';
+  grPop(h);
+}
+function grCoSet(k,v){ if(!_grCo) return; _grCo[k]=v; if(k==="other") _grCo.budget=v?null:grBudgetDefault(); grCheckoutDraw(); }
+function grCheckoutGo(){
+  const C=_grCo; if(!C) return;
+  const total=grMoney(C.total);
+  const house={}; grCoRows(C.sid).forEach(r=>{ house[r.key]=!C.other&&C.house[r.key]!==false; });
+  _grCo=null; grPopClose();
+  grDoneRun(C.sid,total,{house:house,freeze:C.freeze,budget:C.budget||null,other:!!C.other});
+}
+// ⚙️ budgets editor (in ⚙️ Stores)
+function grBudgetSave(b){ const id=b.id; const rec=Object.assign({},b); delete rec.id; delete rec.legacy; grData.budgets[id]=rec; grSave(); if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/budgets/'+id).set(rec); }
+function grBudgetsMaterialize(){ grBudgets().forEach(b=>{ if(b.legacy) grBudgetSave(b); }); }   // the old single weekly budget becomes 🛒 Groceries
+function grBudgetAdd(){
+  grBudgetsMaterialize();
+  const name=((document.getElementById("gr-bud-name")||{}).value||"").trim(); const amt=grMoney((document.getElementById("gr-bud-amt")||{}).value);
+  const per=((document.getElementById("gr-bud-per")||{}).value)==="month"?"month":"week"; if(!name){ mwToast("Name the budget first"); return; }
+  const emo=(name.match(/^\p{Extended_Pictographic}/u)||[""])[0]; const id="b"+Date.now().toString(36);
+  grBudgetSave({id:id,name:emo?name.slice(emo.length).trim():name,emoji:emo||"💰",amt:amt||0,per:per,dflt:!grBudgets().length,ts:Date.now()}); grRepaint();
+}
+function grBudgetField(id,k,v){ grBudgetsMaterialize(); const b=(grData.budgets||{})[id]; if(!b) return;
+  if(k==="dflt"){ Object.keys(grData.budgets).forEach(x=>{ if(grData.budgets[x].dflt&&x!==id){ grData.budgets[x].dflt=false; if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/budgets/'+x+'/dflt').set(false); } }); }
+  if(k==="amt") v=grMoney(v)||0; b[k]=v; grSave(); if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/budgets/'+id+'/'+k).set(v); grRepaint(); }
+function grBudgetDel(id){ if(!confirm("Remove this budget? Past trips stay in your spending.")) return; grBudgetsMaterialize(); delete grData.budgets[id]; grSave(); if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/budgets/'+id).remove(); grRepaint(); }
+function grBudgetsMgrHTML(){
+  const buds=grBudgets(), inp='padding:7px 9px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif';
+  let h='<div style="font-size:13px;font-weight:800;margin:12px 0 6px">💰 Budgets</div>';
+  buds.forEach(b=>{ const sp=grSpentBudget(b.id,grPeriodStart(b.per)), over=b.amt>0&&sp>b.amt;
+    h+='<div style="border:1.5px solid #eef2f0;border-radius:10px;padding:8px 10px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+      +'<b style="font-size:13.5px">'+esc((b.emoji||'💰')+' '+b.name)+'</b>'
+      +'<input type="text" inputmode="decimal" value="'+(b.amt||'')+'" placeholder="$" onchange="grBudgetField(\''+b.id+'\',\'amt\',this.value)" aria-label="Amount" style="'+inp+';width:80px">'
+      +'<select onchange="grBudgetField(\''+b.id+'\',\'per\',this.value)" style="'+inp+'"><option value="week"'+(b.per!=="month"?' selected':'')+'>a week</option><option value="month"'+(b.per==="month"?' selected':'')+'>a month</option></select>'
+      +'<label style="font-size:12px;font-weight:700;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="radio" name="gr-bud-dflt" '+(b.dflt?'checked ':'')+'onchange="grBudgetField(\''+b.id+'\',\'dflt\',true)"> picked at checkout</label>'
+      +(b.legacy?'':'<button onclick="grBudgetDel(\''+b.id+'\')" aria-label="Remove" style="border:none;background:none;color:#b91c1c;font-size:14px;cursor:pointer">✕</button>')+'</div>'
+      +'<div style="font-size:12px;margin-top:4px;color:'+(over?'#b91c1c':'#475569')+';font-weight:700">This '+(b.per==="month"?'month':'week')+': '+grFmt$(sp)+(b.amt?' of '+grFmt$(b.amt)+(over?' — over by '+grFmt$(sp-b.amt):' · '+grFmt$(b.amt-sp)+' left'):'')+'</div></div>'; });
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><input id="gr-bud-name" type="text" placeholder="🎉 Parties & gifts" style="'+inp+';flex:1;min-width:130px"><input id="gr-bud-amt" type="text" inputmode="decimal" placeholder="$" style="'+inp+';width:70px">'
+    +'<select id="gr-bud-per" style="'+inp+'"><option value="week">a week</option><option value="month">a month</option></select>'
+    +'<button onclick="grBudgetAdd()" style="padding:7px 12px;border-radius:8px;border:none;background:#3A7D44;color:#fff;font-size:12.5px;font-weight:800;cursor:pointer">＋ Add</button></div>';
+  const ow=grSpentOther(grWeekStart()), om=grSpentOther(_todayStr().slice(0,8)+"01");
+  if(ow||om) h+='<div style="font-size:12px;color:#64748b;margin-top:6px">Not counted (someone else / trips): this week '+grFmt$(ow)+' · this month '+grFmt$(om)+'</div>';
+  return h;
 }
 // GROCERY_LIST_END
 
