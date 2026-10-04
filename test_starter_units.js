@@ -101,7 +101,8 @@ ok("fresh object per call (a family's copy can't alias the template)", api.START
 // ── 📚 list ──
 ok("Mom sees the starter + Add button", /Starter units/.test(api._starterUnitsHtml()) && /starterUnitAdd\('math_fluency_path'\)/.test(api._starterUnitsHtml()));
 ok("kids see nothing", load({ mom: false })._starterUnitsHtml() === "");
-ok("hidden once the family has it", load({ unitStudies: { math_fluency_path: { id: "math_fluency_path" } } })._starterUnitsHtml() === "");
+// (other starter units — e.g. the Letters Path, 10/4 — can still be listed; only THIS one's Add goes away)
+ok("hidden once the family has it", !/starterUnitAdd\('math_fluency_path'\)/.test(load({ unitStudies: { math_fluency_path: { id: "math_fluency_path" } } })._starterUnitsHtml()));
 
 // ── Add ──
 { const t = load({ dry: true, db: { ref() { throw new Error("db touched in dry run"); } } });

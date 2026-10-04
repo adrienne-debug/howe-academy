@@ -1352,7 +1352,7 @@
   // Short-vowel / hard-consonant picture words — used ONLY once a letter's sound is on (Letter Sounds deck).
   var CB_SOUND_WORDS = {
     a: ["apple", "🍎"], b: ["bucket", "🪣"], c: ["cat", "🐱"], d: ["dig", "⛏️"], e: ["egg", "🥚"],
-    f: ["fire truck", "🚒"], g: ["goat", "🐐"], h: ["hammer", "🔨"], i: ["igloo", "🧊"], j: ["jet", "✈️"],
+    f: ["fire truck", "🚒"], g: ["goat", "🐐"], h: ["hammer", "🔨"], i: ["insect", "🐛"], j: ["jet", "✈️"],
     k: ["kite", "🪁"], l: ["ladder", "🪜"], m: ["magnet", "🧲"], n: ["nut", "🔩"], o: ["octopus", "🐙"],
     p: ["pig", "🐷"], q: ["queen", "👑"], r: ["rock", "🪨"], s: ["saw", "🪚"], t: ["truck", "🚛"],
     u: ["umbrella", "☂️"], v: ["van", "🚐"], w: ["wheel", "🛞"], x: ["fox", "🦊"], y: ["yo-yo", "🪀"], z: ["zebra", "🦓"]
@@ -1408,6 +1408,9 @@
     var has = function (name) { return items.some(function (it) { return subj(it) === name; }); };
     var cur = juCurriculumFromMastery(mapped.length ? mapped : [{ subject: "-", prompt: "-" }]);
     if (!lowerItems.length) { cur.letters = CB_LOWER_DEFAULT.slice(); cur.flag.letters = {}; cur.flagScore.letters = {}; }
+    // The drills introduce only 2 little letters at a time (Letters Path); the notebook keeps one new letter a
+    // day running ahead of them — his drilled letters first, then the rest in handwriting order.
+    else CB_LOWER_DEFAULT.forEach(function (l) { if (cur.letters.indexOf(l) < 0) cur.letters.push(l); });
     if (!has("numbers")) cur.numbers = CB_NUMBERS_DEFAULT.slice();
     if (!has("shapes")) cur.shapes = CB_SHAPES_DEFAULT.slice();
     if (!has("colors")) cur.colors = CB_COLORS_DEFAULT.map(function (c) { return [c, JU_COLOR_HEX[c.toLowerCase()] || "#6b7280"]; });
@@ -1479,7 +1482,8 @@
     var badge = pick.anyReview ? "🔁 Let's practice again!" : (CB_DAY_BADGES[day] || "🚜 Great Job!");
     var sound = cur.sounds[l], sw = CB_SOUND_WORDS[l] || ["", ""];
     // Before his sounds stage: name + recognition only (Mrs. DeWalt 10/2). After: the sound and its picture word.
-    var cue = sound ? (l + ' says ' + sound + ' · ' + sw[0] + ' ' + sw[1]) : ('This is little ' + l + ' · big ' + U);
+    // A Letters Path sound card already carries its word ("/a/ — apple 🍎"); a bare "/a/" gets the built-in word.
+    var cue = sound ? (/—/.test(sound) ? (l + ' says ' + sound) : (l + ' says ' + sound + ' · ' + sw[0] + ' ' + sw[1])) : ('This is little ' + l + ' · big ' + U);
     var n = parseInt(number, 10); if (isNaN(n)) n = 1; n = Math.max(1, Math.min(n, 20));
     var letterLab = pick.letterReview ? "Practice Again 🔁" : "Letter of the Day";
     // Teens = "10 and some more" (K.NBT.1): one full frame + the rest — said in the card title.
@@ -1580,7 +1584,8 @@
       '          <div class="shape-cell"><div class="swatch" style="background:' + chex + ';"></div><div class="shape-cap">' + cname + '</div></div>\n        </div>\n      </div>\n    </div>\n  </div>\n\n' +
       '  <div class="path-wrap">\n' +
       '    <div style="font-size:10px;font-weight:800;color:var(--ju-deep);white-space:nowrap;">Drive to the job site!</div>\n' +
-      '    <span class="path-end">' + veh + '</span>\n' +
+      // Apple's vehicle emoji face LEFT; the road runs left → right, so flip it to face the job site (her note 10/4).
+      '    <span class="path-end" style="display:inline-block;transform:scaleX(-1);">' + veh + '</span>\n' +
       '    ' + juSvgPath(JU_PATH_SHAPES[idx % JU_PATH_SHAPES.length]) + '\n' +
       '    <span class="path-end">🏗️</span>\n  </div>\n\n' +
       '  <div class="divider"></div>\n\n' +
