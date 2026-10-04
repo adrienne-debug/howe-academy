@@ -8,15 +8,16 @@ const block=src.slice(a,b);
 const mk=()=>{
   const env={writes:[],toasts:[],staples:{s1:{name:"Almond milk",state:"out"},s2:{name:"Olive oil",state:"have"}},usuals:{u1:{name:"Bananas",cat:"breakfast",qty:2}},pantry:[],buy:{},mom:false,dad:false,confirm:true,pinAsked:0};
   const ref=p=>({set:v=>env.writes.push(["set",p,v]),update:v=>env.writes.push(["update",p,v]),remove:()=>env.writes.push(["remove",p])});
+  env.ls={};
   const glyph=src.match(/const KIT_FRAC_GLYPH=\{[^}]+\};/)[0];
   const body=glyph+fn("kitSlug")+fn("kitQtyParse")+fn("kitIsoPlus")+block+`
-    ;return {grParse,grKey,grSecFor,grQtyTxt,grMergeQty,grAdd,grFindDup,grToggle,grVToggle,grDone,grApprove,grDecline,grDupMore,grDupAnyway,grGroups,grText,grAddFrom,grKidAllow,grKidBoxHTML,grReqCount,grPickToggle,grPickSave,grActiveStores,grSetStore,grCurStore,grStoreField,grStoreRemove,grSecOrder,grAisleMove,grCfgDad,grToGetCount,grCartCount,grHomeFor,grDadCardHTML,grIngParse,grIngRows,grFromRecipe,grFromWeek,grImpAdd,grFromPantry,grFromTodo,get imp(){return _grImp;},
+    ;return {grParse,grKey,grSecFor,grQtyTxt,grMergeQty,grAdd,grFindDup,grToggle,grVToggle,grDone,grApprove,grDecline,grDupMore,grDupAnyway,grGroups,grText,grAddFrom,grKidAllow,grKidBoxHTML,grReqCount,grPickToggle,grPickSave,grActiveStores,grSetStore,grCurStore,grStoreField,grStoreRemove,grSecOrder,grAisleMove,grCfgDad,grToGetCount,grCartCount,grHomeFor,grDadCardHTML,grIngParse,grIngRows,grFromRecipe,grFromWeek,grImpAdd,grFromPantry,grFromTodo,get imp(){return _grImp;},grMem,grMemUpdate,grShelf,grShelfAdd,grSuggestNames,grClearedIds,grPutBack,grRemove,grSave,grEdit,grEditSave,
       get data(){return grData;}, set data(v){grData=v;}, get pend(){return _grPend;}};`;
   const F=new Function("env","db","HA_LS","mwToast","kitOrderList","kitStaples","kitBuyLog","panAdd","_todayStr","momHere","dadAwardOk","kitPinGate","confirm","ROSTER_DEF","esc","tab","document","prompt","navigator","kitPantry","panStatus","kitMeals","kitPlan","gwParseDate","momdayData","momdayToggleTodo","kitCapKey",body);
   const kitOrderList=()=>{ const need=Object.keys(env.staples).filter(k=>env.staples[k].state!=="have").map(k=>Object.assign({id:k},env.staples[k]));
     return {need:need,usuals:{breakfast:Object.keys(env.usuals).map(k=>Object.assign({id:k},env.usuals[k]))},count:0}; };
   const doc={getElementById:id=>env.els&&env.els[id]||null,createElement:()=>({}),body:{appendChild:()=>{}},activeElement:null};
-  const L=F(env,{ref:ref},{setItem:()=>{},getItem:()=>null},m=>env.toasts.push(m),kitOrderList,env.staples,env.buy,
+  const L=F(env,{ref:ref},{setItem:(k,v)=>{env.ls[k]=v;},getItem:()=>null},m=>env.toasts.push(m),kitOrderList,env.staples,env.buy,
     (n,z,q,m)=>{env.pantry.push([n,z,q,m]);return "p";},()=>"2026-10-03",()=>env.mom,()=>env.dad,(then)=>{env.pinAsked++; if(env.pinOk) then();},
     ()=>env.confirm,[{id:"lucy",name:"Lucy",color:"#f0f"},{id:"ellis",name:"Ellis",color:"#00f"}],
     s=>String(s||""),"schedule",doc,()=>null,{},env.pantryItems={},it=>it.gone?"gone":"fresh",env.meals={},env.plan={},iso=>new Date(iso+"T12:00:00"),env.md={},(id,iso)=>{ env.md[iso].todos[id].done=true; },()=>"");
@@ -194,6 +195,37 @@ ok("same-thing key: plurals + case", L.grKey("Eggs")===L.grKey("egg")&&L.grKey("
 ok("recipe card has the 🛒 Add ingredients button", /grFromRecipe\(/.test(src)&&/🛒 Add ingredients to the grocery list/.test(src));
 ok("Meals week header + list page have Shop-for-the-week", (src.match(/onclick="grFromWeek\(\)"/g)||[]).length===2);
 ok("pantry chips + Mom's Day to-dos have 🛒 buttons", /grFromPantry\(/.test(src)&&/grFromTodo\(/.test(src));
+// ── 🧠 step 4: a list that learns ──
+{ const L=mk(); withPop(L); L.env.mom=true;
+  L.grAdd("2 lb ground beef","mom"); L.grAdd("Almond milk","mom",{src:{k:"mom"}}); // almond milk = staple out → ask pop-up
+  L.grAdd("Avocados","mom");
+  Object.keys(L.data.items).forEach(i=>L.grToggle(i)); L.grDone();
+  ok("🏁 Done counts each bought item in the family memory (update, not set)", L.grMem("Ground beef").n===1&&L.grMem("Avocados").last==="2026-10-03"&&L.env.writes.some(w=>w[0]==="update"&&w[1]==="kitchen/grocery/mem/groundbeef"));
+  ok("bought items land in Recently cleared", L.grClearedIds().length===2);
+  ok("bought once → not on the Add-again shelf yet", !L.grShelf().some(m=>m.name==="Ground beef"));
+  L.grAdd("Ground beef","mom"); Object.keys(L.data.items).forEach(i=>L.grToggle(i)); L.grDone();
+  ok("bought twice → on the shelf (when not on the list)", L.grShelf().some(m=>m.name==="Ground beef"));
+  L.grAdd("Ground beef","mom");
+  ok("on the list → off the shelf", !L.grShelf().some(m=>m.name==="Ground beef"));
+  ok("suggestions: what we buy first, then the word list", L.grSuggestNames()[0]==="Ground beef"&&L.grSuggestNames().includes("Spinach"));
+  // brand note + photo + ⭐
+  const id=Object.keys(L.data.items).find(i=>L.data.items[i].name==="Ground beef");
+  L.grEdit(id); L.pend.photo="data:image/jpeg;base64,AAA"; L.env.els["gr-e-note"]={value:"grass-fed, 85/15"}; L.env.els["gr-e-fav"]={checked:true}; L.grEditSave();
+  ok("✎ note + photo + ⭐ are remembered", L.grMem("Ground beef").note==="grass-fed, 85/15"&&L.grMem("Ground beef").fav===true&&L.grMem("Ground beef").photo);
+  L.grRemove(id);
+  ok("✕ Remove → Recently cleared", L.grClearedIds().some(c=>L.data.cleared[c].how==="removed"));
+  L.grAdd("ground beef","dad");
+  const back=Object.values(L.data.items).find(i=>i.name==="Ground beef");
+  ok("next time it's added, the brand note and photo come back", back&&back.note==="grass-fed, 85/15"&&back.photo);
+  ok("⭐ favorite stays on the shelf logic (fav ranks first when off the list)", L.grMem("Ground beef").fav);
+  L.grSave(); const ls=JSON.parse(L.env.ls.ha_grocery);
+  ok("device copy never holds photos (localStorage quota)", !JSON.stringify(ls).includes("base64"));
+  const cid=L.grClearedIds().find(c=>L.data.cleared[c].name==="Avocados");
+  L.grPutBack(cid);
+  ok("↩ Put back → Avocados back on the list, gone from Recently cleared", Object.values(L.data.items).some(i=>i.name==="Avocados")&&!L.data.cleared[cid]);
+  ok("cleared records never carry photos", !Object.values(L.data.cleared).some(c=>c.photo));
+}
+ok("add boxes carry suggestions (one shared list on <body>)", /list="gr-dl"/.test(src)&&/grDlSync\(\);/.test(src));
 // ── wiring ──
 ok("Mom's Day Shopping spot opens the list (not Meals)", /\+grMdShopHTML\(\)/.test(src)&&!/Open the shopping list →/.test(src));
 ok("🛒 List tab in the Mom's Day tabs", /btn\('grocery','🛒 Grocery List'\)/.test(src)&&/if\(mpSubView==='grocery'\)\{ return renderGrocery\(el\); \}/.test(src));
