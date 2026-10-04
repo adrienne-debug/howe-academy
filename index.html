@@ -3713,7 +3713,7 @@ function initFb() {
     });
     db.ref("kitchen/grocery").on("value",s=>{   // 🛒 grocery list (items · kid requests · in-cart ticks · learned sections)
       const v=s.val()||{};
-      grData={items:v.items||{},requests:v.requests||{},vchk:v.vchk||{},learn:v.learn||{},kids:v.kids||{},stores:v.stores||{},home:v.home||{},cfg:v.cfg||{},mem:v.mem||{},cleared:v.cleared||{},prices:v.prices||{},trips:v.trips||{},alias:v.alias||{},vpaid:v.vpaid||{}};
+      grData={items:v.items||{},requests:v.requests||{},vchk:v.vchk||{},learn:v.learn||{},kids:v.kids||{},stores:v.stores||{},home:v.home||{},cfg:v.cfg||{},mem:v.mem||{},cleared:v.cleared||{},prices:v.prices||{},trips:v.trips||{},alias:v.alias||{},vpaid:v.vpaid||{},skipneed:v.skipneed||{}};
       grSave();
       if(tab==="moms-plan"){
         const ae=document.activeElement; if(ae&&/^(gr-|md-todo)/.test(ae.id||"")&&ae.value) return;   // don't wipe what someone is typing
@@ -9534,7 +9534,7 @@ function mpInit(){
   try{ const kg=HA_LS.getItem('ha_kit_settings'); if(kg) Object.assign(kitSettings,JSON.parse(kg)); }catch(e){}
   try{ const kn=HA_LS.getItem('ha_kit_pantry'); if(kn) Object.assign(kitPantry,JSON.parse(kn)); }catch(e){}
   try{ const kb=HA_LS.getItem('ha_kit_buylog'); if(kb) Object.assign(kitBuyLog,JSON.parse(kb)); }catch(e){}
-  try{ const gr=HA_LS.getItem('ha_grocery'); if(gr){ const v=JSON.parse(gr); grData={items:v.items||{},requests:v.requests||{},vchk:v.vchk||{},learn:v.learn||{},kids:v.kids||{},stores:v.stores||{},home:v.home||{},cfg:v.cfg||{},mem:v.mem||{},cleared:v.cleared||{},prices:v.prices||{},trips:v.trips||{},alias:v.alias||{},vpaid:v.vpaid||{}}; } }catch(e){}
+  try{ const gr=HA_LS.getItem('ha_grocery'); if(gr){ const v=JSON.parse(gr); grData={items:v.items||{},requests:v.requests||{},vchk:v.vchk||{},learn:v.learn||{},kids:v.kids||{},stores:v.stores||{},home:v.home||{},cfg:v.cfg||{},mem:v.mem||{},cleared:v.cleared||{},prices:v.prices||{},trips:v.trips||{},alias:v.alias||{},vpaid:v.vpaid||{},skipneed:v.skipneed||{}}; } }catch(e){}
   try{ const kr=HA_LS.getItem('ha_kit_rotations'); if(kr) Object.assign(kitRotations,JSON.parse(kr)); }catch(e){}
 }
 
@@ -11084,6 +11084,7 @@ function renderMomsDay(el){
     nowN+=_dp.n; h+=_dp.html;
   }catch(e){}
   try{ const _ro=grRanOutHTML(); if(_ro){ nowN++; h+=_ro; } }catch(e){}   // 🛒 ran out after a meal → on the list
+  try{ const _pa=grPantryAlertsHTML(); nowN+=_pa.n; h+=_pa.html; }catch(e){}   // 🥫 may be old · 🍽 this week's meals need
   if(morningWaiting.length){
     nowN++;
     h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fffbeb;border-left:3px solid #f59e0b;border-radius:8px;margin-bottom:6px">'
@@ -11654,7 +11655,7 @@ function kitOrderCardHTML(compact){
 // Staples and usuals are NOT copied in: they're read live from kitOrderList(), so a staple tapped back to
 // ✅ have drops off by itself. 🏁 Done: checked items → buyLog + pantry, checked staples → ✅ have.
 // GROCERY_LIST_START
-let grData={items:{},requests:{},vchk:{},learn:{},kids:{},stores:{},home:{},cfg:{},mem:{},cleared:{},prices:{},trips:{},alias:{},vpaid:{}};
+let grData={items:{},requests:{},vchk:{},learn:{},kids:{},stores:{},home:{},cfg:{},mem:{},cleared:{},prices:{},trips:{},alias:{},vpaid:{},skipneed:{}};
 let grFromDad=false;   // opened from Dad's Day → the list page adds as Dad and goes back to his page
 const GR_SECS=[   // [id, label, pantry zone on 🏁 Done ("" = not food, stays out of the pantry)]
   ["produce","🥬 Produce","produce"],["bakery","🍞 Bakery & bread","pantry"],["meat","🥩 Meat & seafood","fridge"],
@@ -12305,6 +12306,7 @@ function renderGrocery(el){
     +(grFromDad?'':'<button onclick="grFromWeek()" style="margin-top:7px;padding:7px 12px;border-radius:9px;border:1.5px solid #E07B39;background:#fff7ed;color:#c2410c;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🍽 Add this week\'s meals</button>')
     +(grFromDad?'':'<button onclick="grPhotoListOpen()" style="margin:7px 0 0 6px;padding:7px 12px;border-radius:9px;border:1.5px solid #0f766e;background:#f0fdfa;color:#0f766e;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">📸 List from a photo</button>')
     +(grFromDad?'':'<button onclick="grRcptOpen()" style="margin:7px 0 0 6px;padding:7px 12px;border-radius:9px;border:1.5px solid #6B4C93;background:#f5f3ff;color:#5b21b6;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">📸 Read a receipt</button>')
+    +((!grFromDad&&grWeekNeeds().length)?'<div><button onclick="grNeedsOpen()" style="margin-top:7px;padding:7px 12px;border-radius:9px;border:1.5px solid #ea580c;background:#fff7ed;color:#c2410c;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🍽 This week\'s meals need '+grWeekNeeds().length+' — check</button></div>':'')
     +grShelfHTML(grFromDad?"dad":"list");
   let any=false;
   order.forEach(sec=>{
@@ -12381,7 +12383,7 @@ function grKidBoxHTML(k){
 // ── 🍽 step 3: everything feeds in — a recipe, the week's meals, a pantry chip, a Mom's Day to-do ──
 // Recipe lines become list items through a tick-list first; nothing lands without her "Add".
 const GR_ING_UNITS="cups?|c\\.|tablespoons?|tbsps?|tbs|tbsp\\.|T|teaspoons?|tsps?|tsp\\.|t|pounds?|lbs?|lb\\.|ounces?|oz\\.?|grams?|g|kilograms?|kg|ml|milliliters?|liters?|l|quarts?|qts?|pints?|pts?|gallons?|gal|cans?|jars?|packages?|pkgs?|pkg\\.|packets?|bags?|box(?:es)?|bottles?|cartons?|containers?|cloves?|bunch(?:es)?|heads?|stalks?|sprigs?|slices?|sticks?|pinch(?:es)?|dash(?:es)?|handfuls?|pieces?|fillets?|breasts?|thighs?|links?|loaf|loaves|dozen|whole";
-const GR_ING_DROP=/\b(finely|roughly|coarsely|thinly|freshly|lightly|well|chopped|diced|minced|sliced|grated|shredded|peeled|seeded|cubed|crushed|julienned|halved|quartered|trimmed|rinsed|drained|softened|melted|divided|packed|heaping|level|room temperature|large|medium|small|extra[- ]large|fresh|organic|boneless|skinless|cooked|uncooked|raw|optional|to taste|for serving|for garnish|plus more|or more|about|approximately|of)\b/gi;
+const GR_ING_DROP=/\b(finely|roughly|coarsely|thinly|freshly|lightly|well|chopped|diced|minced|sliced|grated|shredded|peeled|seeded|cubed|crushed|julienned|halved|quartered|trimmed|rinsed|drained|softened|melted|divided|packed|heaping|level|room temperature|large|medium|small|extra[- ]large|fresh|organic|boneless|skinless|cooked|uncooked|raw|optional|to taste|for serving|to serve|squeeze of|squeeze|splash of|zest of|for garnish|plus more|or more|about|approximately|of)\b/gi;
 const GR_BASICS=["salt","sea salt","kosher salt","pepper","black pepper","salt and pepper","water","ice","oil","cooking spray","olive oil"];
 // "2 1/2 cups chopped yellow onion (about 1 large)" → {name:"Yellow onion", qty:2.5, unit:"cups"} · headers ("For the sauce:") → null
 function grIngParse(line){
@@ -13215,6 +13217,103 @@ function grSortV(key,sid){ grGate(function(){
   mwToast(sid&&sid!=="any"?"🏬 "+r.name+" → "+grStoreName(sid):"👍 "+r.name+" — any store"); grRepaint();
 }); }
 function grSortCount(){ return grSortIds().length+(grActiveStores().length?grSortVRows().length:0); }
+// ── 🥫 pantry check instead of a silent fade + 🍽 this week's meals need … (her asks 10/3 late) ──
+// Nothing leaves the pantry on its own any more: past its zone's shelf life an item shows ⚠️ and Mom's Day asks —
+// 🗑 Tossed · ✅ Still good · ❄️ Freezer · 🥫 Pantry. And the week's planned meals are checked against the pantry +
+// the list: anything missing → ✅ Bought / 🛒 Add to list / Skip.
+//   skipneed/{slug} = iso   "not needed" for this item until that date passes (a week)
+const PAN_ZONE_EMOJI={produce:"🥬",fridge:"🧊",freezer:"❄️",pantry:"🥫"};
+function grPanOldIds(){ return Object.keys(kitPantry||{}).filter(id=>kitPantry[id]&&kitPantry[id].name&&panStatus(kitPantry[id])==="gone"&&kitPantry[id].qty!==0); }
+function grPanSet(id,patch){
+  const it=kitPantry[id]; if(!it) return; Object.assign(it,patch); it.ts=Date.now();
+  try{HA_LS.setItem('ha_kit_pantry',JSON.stringify(kitPantry));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('kitchen/pantry/'+id).update(Object.assign({},patch,{ts:it.ts}));
+}
+function grPanZoneCycle(id){ const it=kitPantry[id]; if(!it) return; const z=["produce","fridge","freezer","pantry"]; const n=z[(z.indexOf(it.zone)+1)%z.length]; grPanSet(id,{zone:n}); mwToast(PAN_ZONE_EMOJI[n]+" "+it.name+" → "+n); grRepaint(); }
+let _grOld=null;   // {tossed:{id:name}}
+function grPanCheckOpen(){ grGate(function(){ _grOld={tossed:{}}; grPanCheckDraw(); }); }
+function grPanCheckDraw(){
+  const O=_grOld; if(!O) return grPopClose();
+  const ids=grPanOldIds();
+  const b='padding:6px 10px;border-radius:9px;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;';
+  let h='<div style="font-weight:800;font-size:15px">🥫 Still in the house?</div><div style="font-size:12px;color:#64748b;margin:2px 0 8px">These are past their usual shelf life. Nothing comes off until you say.</div><div style="max-height:56vh;overflow:auto">';
+  Object.keys(O.tossed).forEach(id=>{ const t=O.tossed[id];
+    h+='<div style="padding:8px 0;border-bottom:1px solid #eef2f0;font-size:13px"><b>'+esc(t.name)+'</b> — tossed'+(t.staple?' · ⭐ on the grocery list':(t.added?' · 🛒 on the list':' <button onclick="grPanTossAdd(\''+id+'\')" style="'+b+'border:1.5px solid #3A7D44;background:#fff;color:#3A7D44;margin-left:6px">＋ Add to the grocery list</button>'))+'</div>'; });
+  ids.forEach(id=>{ const it=kitPantry[id], z=panZoneMeta(it.zone);
+    const days=Math.round((gwParseDate(_todayStr())-gwParseDate(it.addedIso||_todayStr()))/86400000);
+    h+='<div style="padding:8px 0;border-bottom:1px solid #eef2f0"><div style="font-size:13.5px;font-weight:700">'+esc(it.name)+(typeof it.qty==="number"?' ×'+it.qty:'')+' <span style="font-size:11px;font-weight:600;color:#64748b">'+z[1]+' · '+days+' days</span></div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:5px">'
+      +'<button onclick="grPanToss(\''+id+'\')" style="'+b+'border:1.5px solid #fecaca;background:#fff;color:#b91c1c">🗑 Tossed</button>'
+      +'<button onclick="grPanKeep(\''+id+'\')" style="'+b+'border:1.5px solid #86efac;background:#f0fdf4;color:#166534">✅ Still good</button>'
+      +(it.zone!=="freezer"?'<button onclick="grPanMove(\''+id+'\',\'freezer\')" style="'+b+'border:1.5px solid #bfdbfe;background:#eff6ff;color:#1d4ed8">❄️ It\'s in the freezer</button>':'')
+      +(it.zone!=="pantry"?'<button onclick="grPanMove(\''+id+'\',\'pantry\')" style="'+b+'border:1.5px solid #e5e7eb;background:#fff;color:#57534e">🥫 Pantry shelf</button>':'')
+      +'</div></div>'; });
+  if(!ids.length&&!Object.keys(O.tossed).length) h+='<div style="font-size:13px;color:#64748b;padding:8px 0">All checked ✓</div>';
+  h+='</div>'+(ids.length>1?'<button onclick="grPanKeepAll()" style="'+GR_BTN+'border:1.5px solid #86efac;background:#f0fdf4;color:#166534;margin-top:12px">✅ Everything else here is still good ('+ids.length+')</button>':'')
+    +'<button onclick="_grOld=null;grPopClose();grRepaint()" style="'+GR_BTN+'border:none;background:#3A7D44;color:#fff;margin-top:8px">Done</button>';
+  grPop(h);
+}
+function grPanKeepAll(){ const t=_todayStr(); grPanOldIds().forEach(id=>grPanSet(id,{addedIso:t})); mwToast("✅ All marked still good"); grPanCheckDraw(); }
+function grPanKeep(id){ grPanSet(id,{addedIso:_todayStr()}); grPanCheckDraw(); }
+function grPanMove(id,zone){ const it=kitPantry[id]; if(!it) return; const patch={zone:zone}; if(panStatus(Object.assign({},it,{zone:zone}))==="gone") patch.addedIso=_todayStr(); grPanSet(id,patch); grPanCheckDraw(); }
+function grPanToss(id){
+  const it=kitPantry[id]; if(!it) return; const name=it.name;
+  delete kitPantry[id]; try{HA_LS.setItem('ha_kit_pantry',JSON.stringify(kitPantry));}catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('kitchen/pantry/'+id).remove();
+  const sid=grIsStapleName(name); let staple=false;
+  if(sid){ kitStaples[sid].state="out"; kitStaples[sid].ts=Date.now(); staple=true; try{HA_LS.setItem('ha_kit_staples',JSON.stringify(kitStaples));}catch(e){} if(typeof db!=='undefined'&&db) db.ref('kitchen/staples/'+sid).set(kitStaples[sid]); }
+  if(_grOld) _grOld.tossed[id]={name:name,staple:staple};
+  grPanCheckDraw();
+}
+function grPanTossAdd(id){ const t=_grOld&&_grOld.tossed[id]; if(!t) return; if(!grFindDup(t.name)) grCreate({name:t.name},{k:"mom"},null); t.added=true; grSave(); grPanCheckDraw(); }
+// 🍽 what this week's planned meals need that isn't in the house or on the list
+function grNeedSkip(name){ const v=(grData.skipneed||{})[kitSlug(name)]; return !!(v&&v>=_todayStr()); }
+function grWeekNeeds(){
+  const out=[], seen={}, from=_todayStr();
+  for(let i=0;i<7;i++){
+    const iso=kitIsoPlus(from,i), p=kitPlan[iso]; if(!p) continue;
+    const day=gwParseDate(iso).toLocaleDateString("en-US",{weekday:"short"});
+    const meals=[]; if(p.mid&&!p.eaten&&!p.skipped) meals.push(p.mid); ["b","l","s"].forEach(sl=>{ const v=p[sl]; if(v&&v.mid) meals.push(v.mid); });
+    meals.forEach(mid=>{ const m=kitMeals[mid]; if(!m) return;
+      const names=(Array.isArray(m.uses)&&m.uses.length)?m.uses.map(u=>u&&u.name).filter(Boolean)
+        :String(m.ing||"").split("\n").reduce((a,l)=>a.concat(l.split(/\s\+\s/)),[]).map(l=>grIngParse(l)).filter(x=>x&&!/^(tsps?|t|teaspoons?|tbsps?|tbs|tablespoons?|pinch|dash)$/i.test(x.unit||"")).map(x=>x.name);
+      names.forEach(n=>{
+        if(grIsBasic(n)||grNeedSkip(n)) return;
+        const f=grPanFind(n); const have=f&&!(kitPantry[f.pid]&&kitPantry[f.pid].qty===0);
+        if(have||grFindDup(n)) return;
+        const k=grKey(n); if(seen[k]){ if(seen[k].meals.indexOf(m.name+" ("+day+")")<0) seen[k].meals.push(m.name+" ("+day+")"); return; }
+        seen[k]={name:n,meals:[m.name+" ("+day+")"]}; out.push(seen[k]);
+      });
+    });
+  }
+  return out;
+}
+function grNeedsOpen(){ grNeedsDraw(); }
+function grNeedsDraw(){
+  const rows=grWeekNeeds();
+  const b='padding:6px 10px;border-radius:9px;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;';
+  let h='<div style="font-weight:800;font-size:15px">🍽 This week\'s meals need</div><div style="font-size:12px;color:#64748b;margin:2px 0 8px">Not in the pantry and not on the grocery list yet.</div><div style="max-height:56vh;overflow:auto">';
+  rows.forEach((r,i)=>{ h+='<div style="padding:8px 0;border-bottom:1px solid #eef2f0"><div style="font-size:13.5px;font-weight:700">'+esc(r.name)+'</div><div style="font-size:11px;color:#94a3b8">'+esc(r.meals.join(", "))+'</div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:5px">'
+      +'<button onclick="grNeedBought('+i+')" style="'+b+'border:1.5px solid #86efac;background:#f0fdf4;color:#166534">✅ Bought — it\'s here</button>'
+      +'<button onclick="grNeedList('+i+')" style="'+b+'border:1.5px solid #3A7D44;background:#fff;color:#3A7D44">🛒 Add to list</button>'
+      +'<button onclick="grNeedSkipTap('+i+')" style="'+b+'border:1.5px solid #e5e7eb;background:#fff;color:#64748b">Not needed</button></div></div>'; });
+  if(!rows.length) h+='<div style="font-size:13px;color:#64748b;padding:8px 0">Everything this week\'s meals need is in the house or on the list ✓</div>';
+  h+='</div><button onclick="grPopClose();grRepaint()" style="'+GR_BTN+'border:none;background:#3A7D44;color:#fff;margin-top:12px">Done</button>';
+  grPop(h);
+}
+function grNeedBought(i){ grGate(function(){ const r=grWeekNeeds()[i]; if(!r) return; try{ panAdd(r.name,grSecMeta(grSecFor(r.name))[2]||"pantry",1,"receipt"); }catch(e){} mwToast("✅ "+r.name+" — in the pantry"); grNeedsDraw(); }); }
+function grNeedList(i){ grGate(function(){ const r=grWeekNeeds()[i]; if(!r) return; if(!grFindDup(r.name)) grCreate({name:r.name},{k:"meal",lbl:r.meals.join(", ")},null); grSave(); mwToast("🛒 "+r.name+" — on the list"); grNeedsDraw(); }); }
+function grNeedSkipTap(i){ grGate(function(){ const r=grWeekNeeds()[i]; if(!r) return; const sl=kitSlug(r.name); const until=kitIsoPlus(_todayStr(),6); grData.skipneed[sl]=until; grSave(); if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/skipneed/'+sl).set(until); grNeedsDraw(); }); }
+// 🔴 Now lines on Mom's Day
+function grPantryAlertsHTML(){
+  let h='', n=0;
+  const old=grPanOldIds().length;
+  if(old){ n++; h+='<div onclick="grPanCheckOpen()" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fef2f2;border-left:3px solid #dc2626;border-radius:8px;margin-bottom:6px"><span style="font-size:13px">🥫 <b>'+old+' thing'+(old===1?'':'s')+'</b> in the pantry may be old — tap to check</span></div>'; }
+  const need=grWeekNeeds().length;
+  if(need){ n++; h+='<div onclick="grNeedsOpen()" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fff7ed;border-left:3px solid #ea580c;border-radius:8px;margin-bottom:6px"><span style="font-size:13px">🍽 This week\'s meals need <b>'+need+' thing'+(need===1?'':'s')+'</b> you don\'t have — tap to check</span></div>'; }
+  return {n:n,html:h};
+}
 // GROCERY_LIST_END
 
 // ── 🥫 pantry snapshot — loose, dated, fades honestly ──────────────
@@ -13343,11 +13442,12 @@ function panToggleRegular(id){
 }
 function panChip(id){
   const it=kitPantry[id]; const st=panStatus(it);
-  const c=st==="aging"?["#fefce8","#a16207","#fde68a"]:["#f0fdf4","#166534","#bbf7d0"];
+  const c=st==="gone"?["#fef2f2","#b91c1c","#fecaca"]:st==="aging"?["#fefce8","#a16207","#fde68a"]:["#f0fdf4","#166534","#bbf7d0"];
   return '<span'+(panManage?' onclick="panQtyEdit(\''+id+'\')"':'')+' style="'+(panManage?'cursor:pointer;':'')+'display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:4px 10px;border-radius:12px;border:1.5px solid '+c[2]+';background:'+c[0]+';color:'+c[1]+'">'
-    +(st==="aging"?'🕐 ':'')+esc(it.name)+(typeof it.qty==="number"?' <b>×'+it.qty+'</b>':'')
+    +(st==="gone"?'⚠️ ':st==="aging"?'🕐 ':'')+esc(it.name)+(typeof it.qty==="number"?' <b>×'+it.qty+'</b>':'')
     +'<span onclick="event.stopPropagation();panToggleRegular(\''+id+'\')" title="regular = on the staples check-list" style="cursor:pointer;font-size:13px">'+(panIsRegular(it.name)?'⭐':'☆')+'</span>'
     +'<span onclick="event.stopPropagation();grFromPantry(\''+id+'\')" title="Put it on the grocery list" style="cursor:pointer;font-size:12px">🛒</span>'
+    +(panManage?'<span onclick="event.stopPropagation();grPanZoneCycle(\''+id+'\')" title="Move it to another zone" style="cursor:pointer;font-size:12px">'+(PAN_ZONE_EMOJI[it.zone]||'🥫')+'⇄</span>':'')
     +(panManage?'<span onclick="event.stopPropagation();panDel(\''+id+'\')" style="cursor:pointer;color:#9ca3af;font-weight:800;padding:0 2px">✕</span>':'')
     +'</span>';
 }
@@ -14448,8 +14548,8 @@ function renderKitchen(el){
   h+='</div></div>';
 
   // ── 🥫 Pantry snapshot — what's probably in the house right now ──
-  const panIds=Object.keys(kitPantry).filter(id=>panStatus(kitPantry[id])!=="gone");
-  const panGoneN=Object.keys(kitPantry).length-panIds.length;
+  const panIds=Object.keys(kitPantry);   // old ones stay visible with ⚠️ until Mom checks them (her rule 2026-10-03 — frozen beef shouldn't vanish)
+  const panGoneN=panIds.filter(id=>panStatus(kitPantry[id])==="gone").length;
   h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
   h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#8a5a2c;color:#fff;font-weight:800;font-size:13px"><span>🥫</span> Pantry snapshot'
     +'<span style="margin-left:auto;display:flex;gap:6px">'

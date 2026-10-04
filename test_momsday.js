@@ -771,11 +771,11 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   dbRemoves.length = 0;
   M.panToggleRegular(idSpin);
   ok("re-tap ☆ removes the staple", M.panIsRegular("Spinach") === false && dbRemoves.some(p => /^kitchen\/staples\//.test(p)), dbRemoves);
-  // gone hides, clear removes only gone
+  // old items stay (⚠️), clear removes only old ones
   M.kitPantry.p_old = { name: "Ancient kale", zone: "produce", addedIso: "2026-07-01", ts: 1 };
   M.renderKitchen(elStub);
   let h = elStub.innerHTML;
-  ok("gone item hidden from zone chips", !h.includes("Ancient kale"), null);
+  ok("an old item stays visible with ⚠️ until Mom checks it (her rule 2026-10-03)", h.includes("⚠️ Ancient kale"), null);
   ok("clear-gone button counts it", h.includes("Clear 1 probably-gone"), null);
   dbRemoves.length = 0;
   M.panClearGone();

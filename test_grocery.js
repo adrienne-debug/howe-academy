@@ -11,16 +11,16 @@ const mk=()=>{
   env.ls={};
   const glyph=src.match(/const KIT_FRAC_GLYPH=\{[^}]+\};/)[0];
   const body=glyph+fn("kitSlug")+fn("kitQtyParse")+fn("kitIsoPlus")+block+`
-    ;return {grParse,grKey,grSecFor,grQtyTxt,grMergeQty,grAdd,grFindDup,grToggle,grVToggle,grDone,grApprove,grDecline,grDupMore,grDupAnyway,grGroups,grText,grAddFrom,grKidAllow,grKidBoxHTML,grReqCount,grPickToggle,grPickSave,grActiveStores,grSetStore,grCurStore,grStoreField,grStoreRemove,grSecOrder,grAisleMove,grCfgDad,grToGetCount,grCartCount,grHomeFor,grDadCardHTML,grIngParse,grIngRows,grFromRecipe,grFromWeek,grImpAdd,grFromPantry,grFromTodo,get imp(){return _grImp;},grMem,grMemUpdate,grShelf,grShelfAdd,grSuggestNames,grClearedIds,grPutBack,grRemove,grSave,grEdit,grEditSave,grMoney,grPriceAdd,grUsual,grLowest,grSaleInfo,grBest,grTripEst,grTripHeadHTML,grPriceLineHTML,grSpent,grWeekStart,grRcptLoad,grRcptSave,grDoneRun,get rc(){return _grRc;},set rc(v){_grRc=v;},grSortIds,grSortTo,grSortBoxHTML,grStoreFromText,grPlLoad,grPlAdd,grRowHTML,get pl(){return _grPl;},set pl(v){_grPl=v;},grStep,grQtyType,grQtySave,grStepperHTML,set fromDad(v){grFromDad=v;},grPaidSet,grPaidBoxHTML,grCartTotal,grStoreTotalBarHTML,set big(v){grBig=v;},grPanFind,grEatRows,kitMarkEaten,grEatApply,grEatUndo,grRanOutHTML,grSortV,grSortCount,get eat(){return _grEat;},
+    ;return {grParse,grKey,grSecFor,grQtyTxt,grMergeQty,grAdd,grFindDup,grToggle,grVToggle,grDone,grApprove,grDecline,grDupMore,grDupAnyway,grGroups,grText,grAddFrom,grKidAllow,grKidBoxHTML,grReqCount,grPickToggle,grPickSave,grActiveStores,grSetStore,grCurStore,grStoreField,grStoreRemove,grSecOrder,grAisleMove,grCfgDad,grToGetCount,grCartCount,grHomeFor,grDadCardHTML,grIngParse,grIngRows,grFromRecipe,grFromWeek,grImpAdd,grFromPantry,grFromTodo,get imp(){return _grImp;},grMem,grMemUpdate,grShelf,grShelfAdd,grSuggestNames,grClearedIds,grPutBack,grRemove,grSave,grEdit,grEditSave,grMoney,grPriceAdd,grUsual,grLowest,grSaleInfo,grBest,grTripEst,grTripHeadHTML,grPriceLineHTML,grSpent,grWeekStart,grRcptLoad,grRcptSave,grDoneRun,get rc(){return _grRc;},set rc(v){_grRc=v;},grSortIds,grSortTo,grSortBoxHTML,grStoreFromText,grPlLoad,grPlAdd,grRowHTML,get pl(){return _grPl;},set pl(v){_grPl=v;},grStep,grQtyType,grQtySave,grStepperHTML,set fromDad(v){grFromDad=v;},grPaidSet,grPaidBoxHTML,grCartTotal,grStoreTotalBarHTML,set big(v){grBig=v;},grPanFind,grEatRows,kitMarkEaten,grEatApply,grEatUndo,grRanOutHTML,grSortV,grSortCount,get eat(){return _grEat;},grPanOldIds,grPanCheckOpen,grPanToss,grPanKeep,grPanMove,grPanTossAdd,grPanKeepAll,grWeekNeeds,grNeedBought,grNeedList,grNeedSkipTap,grPantryAlertsHTML,
       get data(){return grData;}, set data(v){grData=v;}, get pend(){return _grPend;}};`;
-  const F=new Function("env","db","HA_LS","mwToast","kitOrderList","kitStaples","kitBuyLog","panAdd","_todayStr","momHere","dadAwardOk","kitPinGate","confirm","ROSTER_DEF","esc","tab","document","prompt","navigator","kitPantry","panStatus","kitMeals","kitPlan","gwParseDate","momdayData","momdayToggleTodo","kitCapKey","kitEatGate","kitMealsLSSave","_kitRefresh","kitRateChips",body);
+  const F=new Function("env","db","HA_LS","mwToast","kitOrderList","kitStaples","kitBuyLog","panAdd","_todayStr","momHere","dadAwardOk","kitPinGate","confirm","ROSTER_DEF","esc","tab","document","prompt","navigator","kitPantry","panStatus","kitMeals","kitPlan","gwParseDate","momdayData","momdayToggleTodo","kitCapKey","kitEatGate","kitMealsLSSave","_kitRefresh","kitRateChips","panZoneMeta",body);
   const kitOrderList=()=>{ const need=Object.keys(env.staples).filter(k=>env.staples[k].state!=="have").map(k=>Object.assign({id:k},env.staples[k]));
     return {need:need,usuals:{breakfast:Object.keys(env.usuals).map(k=>Object.assign({id:k},env.usuals[k]))},count:0}; };
   const doc={getElementById:id=>env.els&&env.els[id]||null,createElement:()=>({}),body:{appendChild:()=>{}},activeElement:null};
   const L=F(env,{ref:ref},{setItem:(k,v)=>{env.ls[k]=v;},getItem:()=>null},m=>env.toasts.push(m),kitOrderList,env.staples,env.buy,
     (n,z,q,m)=>{env.pantry.push([n,z,q,m]);return "p";},()=>"2026-10-03",()=>env.mom,()=>env.dad,(then)=>{env.pinAsked++; if(env.pinOk) then();},
     ()=>env.confirm,[{id:"lucy",name:"Lucy",color:"#f0f"},{id:"ellis",name:"Ellis",color:"#00f"}],
-    s=>String(s||""),"schedule",doc,()=>null,{},env.pantryItems={},it=>it.gone?"gone":"fresh",env.meals={},env.plan={},iso=>new Date(iso+"T12:00:00"),env.md={},(id,iso)=>{ env.md[iso].todos[id].done=true; },()=>"",()=>env.mom||env.dad,()=>{},()=>{},()=>"<chips>");
+    s=>String(s||""),"schedule",doc,()=>null,{},env.pantryItems={},it=>(it.gone||(it.addedIso&&it.addedIso<"2026-09-15"&&it.zone!=="freezer"))?"gone":"fresh",env.meals={},env.plan={},iso=>new Date(iso+"T12:00:00"),env.md={},(id,iso)=>{ env.md[iso].todos[id].done=true; },()=>"",()=>env.mom||env.dad,()=>{},()=>{},()=>"<chips>",z=>[z,{produce:"🥬 Produce",fridge:"🧊 Fridge",freezer:"❄️ Freezer",pantry:"🥫 Pantry"}[z]||"🥫 Pantry",14]);
   L.env=env; return L;
 };
 // grPop needs document.getElementById("gr-pop") — stub one in
@@ -375,6 +375,7 @@ ok("store mode shows the total bar + price boxes", /grStoreTotalBarHTML\(sid\)/.
   I("all-beef hot dogs","All-beef hot dogs"); I("1 can diced tomatoes","Diced tomatoes"); I("taco seasoning packet","Taco seasoning");
   I("— topping —",null); I("toppings: shredded cheddar","Cheddar"); I("1 onion + 1 bell pepper, chopped","Onion");
   I("1 box GF cornbread mix + eggs + almond milk","GF cornbread mix");
+  I("squeeze lemon","Lemon"); I("frozen broccoli to serve","Frozen broccoli");
   const rows=L.grIngRows([{lines:"1 onion + 1 bell pepper, chopped",lbl:"x"}]);
   ok("'a + b' becomes two items", rows.map(r=>r.p.name).join()==="Onion,Bell pepper");
   Object.assign(L.env.pantryItems,{p1:{name:"ground beef",qty:2},p2:{name:"Soft taco tortillas",qty:1},p3:{name:"Hot dogs",qty:1},p4:{name:"Salt",qty:1},p5:{name:"Cheddar",qty:3},p6:{name:"beef shank",qty:2,zone:"freezer"}});
@@ -425,6 +426,42 @@ ok("store mode shows the total bar + price boxes", /grStoreTotalBarHTML\(sid\)/.
 }
 ok("only ONE kitMarkEaten in the app (the check screen)", (src.match(/function kitMarkEaten\(/g)||[]).length===1);
 ok("Mom's Day 🔴 Now carries the ran-out line", /grRanOutHTML\(\)/.test(src));
+// ── 🥫 pantry check + 🍽 this week's meals need ──
+{ const L=mk(); withPop(L); L.env.mom=true;
+  Object.assign(L.env.pantryItems,{p1:{name:"ground beef",zone:"fridge",qty:1,addedIso:"2026-09-01"},p2:{name:"Olive oil",zone:"pantry",qty:1,addedIso:"2026-09-02"},p3:{name:"Cheddar",zone:"fridge",qty:2,addedIso:"2026-10-01"},p4:{name:"Old salsa",zone:"fridge",qty:1,addedIso:"2026-09-03"}});
+  L.env.staples.s2.state="have";   // Olive oil = ⭐ staple
+  ok("old items found (fresh cheddar isn't)", L.grPanOldIds().sort().join()==="p1,p2,p4");
+  ok("🔴 Now line: 3 things may be old", /3 things<\/b> in the pantry may be old/.test(L.grPantryAlertsHTML().html));
+  L.grPanCheckOpen();
+  L.grPanMove("p1","freezer");
+  ok("❄️ It's in the freezer → zone freezer, no longer old (frozen beef stays)", L.env.pantryItems.p1.zone==="freezer"&&L.grPanOldIds().indexOf("p1")<0);
+  L.grPanKeep("p4");
+  ok("✅ Still good → clock reset", L.env.pantryItems.p4.addedIso==="2026-10-03"&&L.grPanOldIds().indexOf("p4")<0);
+  L.grPanToss("p2");
+  ok("🗑 Tossed a ⭐ staple → off the pantry, ❌ out (on the list)", !L.env.pantryItems.p2&&L.env.staples.s2.state==="out");
+  ok("nothing old left", L.grPanOldIds().length===0);
+  Object.assign(L.env.pantryItems,{q1:{name:"Mustard",zone:"fridge",qty:1,addedIso:"2026-08-01"},q2:{name:"Relish",zone:"fridge",qty:1,addedIso:"2026-08-01"}});
+  L.grPanCheckOpen(); L.env.els["gr-pop"].innerHTML.includes("Everything else here is still good")&&0; 
+  L.grPanKeepAll();
+  ok("✅ Everything else is still good → all re-stamped in one tap", L.grPanOldIds().length===0&&L.env.pantryItems.q1.addedIso==="2026-10-03");
+}
+{ const L=mk(); withPop(L); L.env.mom=true;
+  Object.assign(L.env.pantryItems,{p1:{name:"ground beef",zone:"fridge",qty:1,addedIso:"2026-10-01"},p2:{name:"Taco seasoning",zone:"pantry",qty:0,addedIso:"2026-10-01"}});
+  L.env.meals.m1={name:"Taco Night",uses:[{name:"ground beef",qty:1},{name:"taco seasoning",qty:1},{name:"flour tortillas",qty:1},{name:"salt",qty:1}]};
+  L.env.meals.m2={name:"Chili",ing:"2 lb ground turkey\n1 can black beans\n1 tsp cumin"};
+  L.env.plan["2026-10-04"]={mid:"m1"}; L.env.plan["2026-10-06"]={mid:"m2"}; L.env.plan["2026-10-20"]={mid:"m2"};
+  L.grAdd("Black beans","mom");
+  const need=L.grWeekNeeds().map(r=>r.name);
+  ok("this week needs: taco seasoning (count 0), flour tortillas, ground turkey — not beef (have it), black beans (on the list), salt/cumin (basics/tsp), nor a meal 2 weeks out", need.join()==="taco seasoning,flour tortillas,Ground turkey");
+  ok("🔴 Now line on Mom's Day", /This week's meals need <b>3 things<\/b>/.test(L.grPantryAlertsHTML().html));
+  L.grNeedBought(0);
+  ok("✅ Bought → into the pantry, off the alert", L.env.pantry.some(p=>p[0]==="taco seasoning")&&L.grWeekNeeds().length>=0);
+  const idx=L.grWeekNeeds().findIndex(r=>r.name==="flour tortillas"); L.grNeedList(idx);
+  ok("🛒 Add to list → on the list with the meal as source", Object.values(L.data.items).some(i=>i.name==="flour tortillas"&&i.src[0].k==="meal"));
+  const t=L.grWeekNeeds().findIndex(r=>r.name==="Ground turkey"); L.grNeedSkipTap(t);
+  ok("Not needed → hidden for a week (one small path)", !L.grWeekNeeds().some(r=>r.name==="Ground turkey")&&L.env.writes.some(w=>w[1]==="kitchen/grocery/skipneed/groundturkey"));
+}
+ok("Mom's Day 🔴 Now carries the pantry alerts; old pantry items stay visible with ⚠️", /grPantryAlertsHTML\(\)/.test(src)&&/const panIds=Object\.keys\(kitPantry\);/.test(src));
 // ── wiring ──
 ok("Mom's Day Shopping spot opens the list (not Meals)", /\+grMdShopHTML\(\)/.test(src)&&!/Open the shopping list →/.test(src));
 ok("🛒 List tab in the Mom's Day tabs", /btn\('grocery','🛒 Grocery List'\)/.test(src)&&/if\(mpSubView==='grocery'\)\{ return renderGrocery\(el\); \}/.test(src));
