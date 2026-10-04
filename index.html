@@ -26546,7 +26546,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
   const sd=r.schoolDay||{};
   const mag=weekData.babysitter||{};
   const sitterKids=mag.withSitter||(rulesData&&rulesData.withSitter)||[];
-  const wf=(r.workflow)||{};
+  const wf=(typeof wfWithDefaults==="function")?wfWithDefaults(r.workflow):((r.workflow)||{});   // WF_DEFAULT
 
   // Workflow-aware sort weight — matches _wfWeight in runDisplacement
   function cascadeWeight(t,dn){
@@ -48584,7 +48584,7 @@ function runDisplacement(){
   const r=rulesData;
   const sd=r.schoolDay||{};
   const sdOv=sd.overrides||{};
-  const wf=r.workflow||{};
+  const wf=(typeof wfWithDefaults==="function")?wfWithDefaults(r.workflow):(r.workflow||{});   // WF_DEFAULT
   const dayOrder=["monday","tuesday","wednesday","thursday","friday","saturday"];
   const tasks=JSON.parse(JSON.stringify(weekData.tasks));
   const carryOver=[];
@@ -53763,12 +53763,25 @@ class GWScheduler{
 // Workflow Orders. Mirrors the displacement engine's _wfWeight but from curriculum
 // metadata. morning/first → very early; closing/last → very late; else by the kid's
 // workflow steps (subject match, then device/Mom tier), else neutral.
+// 🔄 WF_DEFAULT (2026-10-04): a kid with no Workflow Orders saved — every new family, since the editor can only
+// reorder steps that already exist — runs Mom-required FIRST, so Mom starts with someone at the bell and works
+// straight through. Was the category fallback, which put Mom-required LAST (DeWalt Week 1: Mom idle until 10).
+// Saved steps always win; Howe's kids all have them, so Howe is unchanged. Read by the generator, the cascade
+// sort and the displacement weight (each through a typeof guard, so node harnesses that slice one function run).
+function wfWithDefaults(wf){
+  const out=Object.assign({},wf||{});
+  ((typeof ROSTER!=="undefined"&&ROSTER)||[]).forEach(function(k){
+    const n=out[k]&&fbArr(out[k].normal);
+    if(!(n&&n.length)) out[k]=Object.assign({},out[k]||{},{normal:[{tier:"required"},{tier:"independent"},{tier:"maybe"},{tier:"computer"}]});
+  });
+  return out;
+}
 function gwWorkflowRank(kid, key, s, dayName, isSitterDay){
   const disp=(s.display||key||"");
   const rules=s.rules||"";
   if(/closing notebook/i.test(disp)||rules.includes("last")) return 1000;
   if(/morning notebook/i.test(disp)||rules.includes("first")) return -1;
-  const wf=(rulesData&&rulesData.workflow)||{};
+  const wf=(typeof wfWithDefaults==="function")?wfWithDefaults(rulesData&&rulesData.workflow):((rulesData&&rulesData.workflow)||{});   // WF_DEFAULT
   const kidWf=wf[kid]; if(!kidWf) return 500;
   const steps=fbArr(isSitterDay?kidWf.babysitter:kidWf.normal)||fbArr(kidWf.normal)||[];
   const tier=(s.device==="computer"||s.device==="ipad"||s.device==="phone")?"computer":(s.mom==="required"?"required":(s.mom==="maybe"?"maybe":"independent"));
