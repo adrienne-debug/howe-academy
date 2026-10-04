@@ -11884,6 +11884,7 @@ function grSrcTxt(s){
   if(s.k==="kid") return "🙋 "+grKidName(s.who);
   if(s.k==="meal") return "🍽 "+(s.lbl||"meal");
   if(s.k==="todo") return "📝 to-do";
+  if(s.k==="photo") return "📸 photo list";
   return s.lbl||"";
 }
 // Staple + usual rows, read live (never stored on the list). key st_<id> / us_<id>.
@@ -11926,7 +11927,7 @@ function grCreate(p,src,stores){
   // the store: picked now (the chip she's on) → else where it usually comes from. A first pick becomes its home.
   const home=grHomeFor(p.name);
   const st=(stores&&stores.length)?stores:home;
-  if(st.length) it.stores=st.slice();
+  if(st.length) it.stores=st.slice(); else if(grActiveStores().length) it.sort=true;   // 📥 no store yet → To sort
   if(stores&&stores.length&&!home.length) grSetHome(p.name,stores);
   grPut(id,it); return id;
 }
@@ -12130,7 +12131,7 @@ function grEditSave(){
   const fav=!!((document.getElementById("gr-e-fav")||{}).checked); if(P.photo) it.photo=P.photo;
   { const mp={note:note||null,fav:fav||null}; if(P.photo) mp.photo=P.photo; grMemUpdate(it.name,mp); }   // 🧠 the note, photo and ⭐ come back next time
   const sec=(document.getElementById("gr-e-sec")||{}).value||it.sec;
-  if(grActiveStores().length){ const ns=(P.stores||[]).slice(); if(ns.length) it.stores=ns; else delete it.stores; grSetHome(it.name,ns); }   // home store follows her pick
+  if(grActiveStores().length){ const ns=(P.stores||[]).slice(); if(ns.length) it.stores=ns; else delete it.stores; grSetHome(it.name,ns); } if(it.stores&&it.stores.length) delete it.sort;   // home store follows her pick; a store = sorted
   if(sec!==it.sec){
     it.sec=sec;
     // remember her move for next time — only when it differs from what the word list would guess
@@ -12223,7 +12224,7 @@ function grGroups(sid){
   const push=(sec,r)=>{ (g[sec]=g[sec]||[]).push(r); };
   Object.keys(items).forEach(id=>{
     const it=items[id]; if(!it||!it.name||!grShowsAt(it.stores,sid)) return;
-    push(GR_SECS.some(s=>s[0]===it.sec)?it.sec:grSecFor(it.name),{id:id,name:it.name,photo:it.photo||"",q:grQtyTxt(it),note:it.note||"",tags:(it.src||[]).map(grSrcTxt).filter(Boolean),done:!!it.done,doneTs:it.doneTs||0,stores:(it.stores||[]).filter(x=>grStores()[x])});
+    push(GR_SECS.some(s=>s[0]===it.sec)?it.sec:grSecFor(it.name),{id:id,name:it.name,photo:it.photo||"",q:grQtyTxt(it),note:it.note||"",tags:(it.src||[]).map(grSrcTxt).filter(Boolean),sort:!!it.sort&&!it.done,done:!!it.done,doneTs:it.doneTs||0,stores:(it.stores||[]).filter(x=>grStores()[x])});
   });
   grVirtualRows().forEach(r=>{ if(!grShowsAt(r.stores,sid)) return; push(r.sec,{key:r.key,name:r.name,q:r.qty?"×"+r.qty:"",note:"",tags:[r.tag],done:!!grData.vchk[r.key],doneTs:0,virt:true,stores:r.stores}); });
   Object.keys(g).forEach(k=>g[k].sort((a,b)=>String(a.name).localeCompare(String(b.name))));
@@ -12238,7 +12239,7 @@ function grRowHTML(r,showStores){
     +(r.photo?'<img src="'+r.photo+'" alt="" onclick="grPhotoView(\''+r.id+'\')" style="width:'+(big?48:30)+'px;height:'+(big?48:30)+'px;object-fit:cover;border-radius:8px;cursor:pointer;flex:0 0 auto">':'')
     +'<div onclick="'+tap+'" style="cursor:pointer;flex:1;min-width:0">'
       +'<div style="font-size:'+(big?18:14)+'px;font-weight:700;'+(r.done?'text-decoration:line-through;color:#94a3b8':'color:#1a1a1a')+'">'+esc(r.name)
-      +(big?'':r.tags.map(t=>' <span style="font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:10px;background:#fdf3dc;color:#7c5a10;white-space:nowrap">'+esc(t)+'</span>').join(''))+st+'</div>'
+      +(big?'':r.tags.map(t=>' <span style="font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:10px;background:#fdf3dc;color:#7c5a10;white-space:nowrap">'+esc(t)+'</span>').join(''))+st+(r.sort?(showStores?' <span style="font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:10px;background:#ccfbf1;color:#0f766e;white-space:nowrap">📥 to sort</span>':'<div style="font-size:11.5px;font-weight:800;color:#0f766e">📥 not sorted yet — Mom may get this somewhere else</div>'):'')+'</div>'
       +(r.note?'<div style="font-size:'+(big?14:12)+'px;color:#64748b">'+esc(r.note)+'</div>':'')+grPriceLineHTML(r)+'</div>'
     +(r.q?'<div style="font-size:'+(big?16:13)+'px;font-weight:800;color:#3A7D44;white-space:nowrap">'+esc(r.q)+'</div>':'')
     +(big?'':'<button onclick="'+(r.virt?'grEditV(\''+r.key+'\')':'grEdit(\''+r.id+'\')')+'" aria-label="Edit" style="border:none;background:none;color:#94a3b8;font-size:15px;cursor:pointer;padding:2px 4px">✎</button>')
@@ -12281,6 +12282,7 @@ function renderGrocery(el){
     });
     h+='</div></div>';
   }
+  h+=grSortBoxHTML();   // 📥 items waiting for a store
   // 🏬 first run: where do you shop?
   if(!Object.keys(grStores()).length) h+='<div style="background:#fff;border-radius:12px;padding:12px 14px;box-shadow:0 4px 20px rgba(43,122,120,0.13)">'+grPickerHTML(true)+'</div>';
   else if(grMgrOpen) h+='<div style="background:#fff;border-radius:12px;padding:12px 14px;box-shadow:0 4px 20px rgba(43,122,120,0.13)">'+grMgrHTML()+'<button onclick="grMgrToggle()" style="'+GR_BTN+'border:none;background:#f1f5f9;color:#334155">Done</button></div>';
@@ -12295,6 +12297,7 @@ function renderGrocery(el){
     +(stores.length?grChipsHTML(sid):'')
     +grAddRowHTML("gr-add-list",grFromDad?"dad":"list",sid==='all'?"Add an item… (e.g. 2 lb ground beef)":"Add to "+grStoreName(sid)+"…")
     +(grFromDad?'':'<button onclick="grFromWeek()" style="margin-top:7px;padding:7px 12px;border-radius:9px;border:1.5px solid #E07B39;background:#fff7ed;color:#c2410c;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🍽 Add this week\'s meals</button>')
+    +(grFromDad?'':'<button onclick="grPhotoListOpen()" style="margin:7px 0 0 6px;padding:7px 12px;border-radius:9px;border:1.5px solid #0f766e;background:#f0fdfa;color:#0f766e;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">📸 List from a photo</button>')
     +(grFromDad?'':'<button onclick="grRcptOpen()" style="margin:7px 0 0 6px;padding:7px 12px;border-radius:9px;border:1.5px solid #6B4C93;background:#f5f3ff;color:#5b21b6;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">📸 Read a receipt</button>')
     +grShelfHTML(grFromDad?"dad":"list");
   let any=false;
@@ -12329,7 +12332,7 @@ function grChipsHTML(sid){
 function grMdShopHTML(){
   const n=grToGetCount("all"), rq=grReqCount();
   return grAddRowHTML("gr-add-md","md","Add to the grocery list…")
-    +'<button onclick="grFromDad=false;mpGoto(\'grocery\')" style="width:100%;margin-top:6px;padding:8px 10px;border-radius:9px;border:1.5px solid #cbd5e1;background:#fff;color:#2B7A78;font-size:12.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:left">🛒 Open the grocery list · '+n+' to get'+(rq?' · <span style="color:#b45309">🙋 '+rq+' request'+(rq===1?'':'s')+'</span>':'')+' →</button>';
+    +'<button onclick="grFromDad=false;mpGoto(\'grocery\')" style="width:100%;margin-top:6px;padding:8px 10px;border-radius:9px;border:1.5px solid #cbd5e1;background:#fff;color:#2B7A78;font-size:12.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:left">🛒 Open the grocery list · '+n+' to get'+(grSortIds().length?' · <span style="color:#0f766e">📥 '+grSortIds().length+' to sort</span>':'')+(rq?' · <span style="color:#b45309">🙋 '+rq+' request'+(rq===1?'':'s')+'</span>':'')+' →</button>';
 }
 // Dad's Day card — he adds straight on, no OK needed
 function grDadCardHTML(){
@@ -12682,7 +12685,7 @@ function grPriceLineHTML(r){
   return bits.length?'<div style="font-size:11.5px;color:#64748b;margin-top:1px">'+bits.join(' · ')+'</div>':'';
 }
 function grMoveCheaper(id,sid){ grGate(function(){
-  const it=grData.items[id]; if(!it) return; it.stores=[sid]; grPut(id,it); grSetHome(it.name,[sid]);
+  const it=grData.items[id]; if(!it) return; it.stores=[sid]; delete it.sort; grPut(id,it); grSetHome(it.name,[sid]);
   mwToast("💡 "+it.name+" → "+grStoreName(sid)); grRepaint();
 }); }
 // ✎ pop-up: type a price + see its history
@@ -12841,6 +12844,114 @@ function grRcptSave(){
   const total=R.total||Math.round(R.rows.reduce((a,r)=>a+r.price,0)*100)/100;
   _grRc=null; grPopClose(); grSave();
   if(grCartCount(sid)) grDoneRun(sid,total); else { grTripLog(sid,null,total,0); mwToast("🧾 Prices saved"); grRepaint(); }
+}
+// ── 📥 To sort + 📸 list from a photo (her asks 10/3 night) ──
+// Anything that lands without a store (and has no remembered home store) is marked sort:true: Mom's quick adds on
+// "All" / Mom's Day, approved kid asks, Dad when he can't pick, recipe/photo lists. It still shows at every store
+// (her pick "A") with a clear tag — "not sorted yet, Mom may get this somewhere else" — and waits in 📥 To sort.
+function grSortIds(){ const I=grData.items||{}; return Object.keys(I).filter(id=>I[id]&&I[id].sort&&!I[id].done).sort((a,b)=>(I[a].ts||0)-(I[b].ts||0)); }
+function grSortTo(id,sid){ grGate(function(){
+  const it=grData.items[id]; if(!it) return;
+  delete it.sort;
+  if(sid&&sid!=="any"){ it.stores=[sid]; grSetHome(it.name,[sid]); } else delete it.stores;
+  grPut(id,it); mwToast(sid&&sid!=="any"?"🏬 "+it.name+" → "+grStoreName(sid):"👍 "+it.name+" — any store"); grRepaint();
+}); }
+function grSortBoxHTML(){
+  const ids=grSortIds(), stores=grActiveStores(); if(!ids.length||!stores.length) return "";
+  let h='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
+    +'<div style="padding:10px 14px;background:#0f766e;color:#fff;font-weight:800;font-size:13px">📥 To sort · '+ids.length+' <span style="font-weight:600;opacity:.9">— pick where to buy each one</span></div><div style="padding:4px 14px 10px">';
+  ids.forEach(id=>{ const it=grData.items[id], q=grQtyTxt(it), tags=(it.src||[]).map(grSrcTxt).filter(Boolean);
+    h+='<div style="padding:8px 0;border-bottom:1px solid #eef2f0"><div style="font-size:13.5px;font-weight:700">'+esc(it.name)+(q?' <span style="color:#3A7D44">'+esc(q)+'</span>':'')
+      +tags.map(t=>' <span style="font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:10px;background:#fdf3dc;color:#7c5a10">'+esc(t)+'</span>').join('')+'</div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:5px">'
+      +stores.map(s=>'<button onclick="grSortTo(\''+id+'\',\''+s+'\')" style="padding:5px 10px;border-radius:14px;border:2px solid '+grStoreColor(s)+';background:#fff;color:#1f2937;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+esc(grStoreName(s))+'</button>').join('')
+      +'<button onclick="grSortTo(\''+id+'\',\'any\')" style="padding:5px 10px;border-radius:14px;border:2px dashed #cbd5e1;background:#fff;color:#64748b;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Any store</button></div></div>'; });
+  return h+'</div></div>';
+}
+// 📸 a photo of a written list → items; a store in the title (or a section heading) parks them there, else 📥 To sort
+function grStoreFromText(t){
+  const n=String(t||"").toLowerCase().replace(/[^a-z0-9]/g,""); if(n.length<2) return null;
+  const S=grStores();
+  return grActiveStores().find(sid=>{ const k=String(S[sid].name||"").toLowerCase().replace(/[^a-z0-9]/g,""); const c=String(sid).toLowerCase();
+    return (k&&(n.indexOf(k)>=0||(n.length>=4&&k.indexOf(n)===0)))||(c.length>=3&&n.indexOf(c)>=0); })||null;
+}
+let _grPl=null;   // {imgs, busy, msg, rows:[{p, sid ("" = to sort), on}]}
+function grPhotoListOpen(){ grGate(function(){
+  if(!(typeof kitCapKey==="function"&&kitCapKey())){ mwToast("Reading a list needs the family Claude key — Admin ▸ Settings"); return; }
+  _grPl={imgs:[],busy:false,msg:""}; grPlDraw();
+}); }
+function grPlPick(input){
+  const files=[].slice.call((input&&input.files)||[]).slice(0,4); if(!files.length||!_grPl) return;
+  let left=files.length;
+  files.forEach(f=>{ const img=new Image(), url=URL.createObjectURL(f);
+    img.onload=function(){ try{ const max=1500, r=Math.min(1,max/Math.max(img.width,img.height)); const c=document.createElement('canvas'); c.width=Math.round(img.width*r); c.height=Math.round(img.height*r); c.getContext('2d').drawImage(img,0,0,c.width,c.height); _grPl.imgs.push(c.toDataURL('image/jpeg',0.8).split(",")[1]); }catch(e){} URL.revokeObjectURL(url); if(--left===0) grPlDraw(); };
+    img.onerror=function(){ URL.revokeObjectURL(url); if(--left===0) grPlDraw(); };
+    img.src=url; });
+}
+const GR_PL_PROMPT='This is a photo of a shopping list (handwritten, printed, or a screenshot of a note or text). Read every item. Reply with ONLY strict JSON, no prose:\n'
+  +'{"title":"the list title or heading at the top, or null","sections":[{"heading":"a section heading such as a store name, or null","items":[{"name":"the item","qty":number or null,"unit":"lb, bag, box… or null","note":"brand/size words written with it, or null"}]}]}\n'
+  +'Keep the order written. Leave out lines that are crossed off or checked off. Never invent items. If there are no headings, use one section with heading null.';
+async function grPlRead(){
+  const P=_grPl; if(!P||!P.imgs.length) return;
+  P.busy=true; P.msg=""; grPlDraw();
+  try{
+    const content=P.imgs.map(b=>({type:"image",source:{type:"base64",media_type:"image/jpeg",data:b}})).concat([{type:"text",text:GR_PL_PROMPT}]);
+    const txt=await kitCapAsk(content,null,{raw:true,maxTokens:4000});
+    const m=String(txt).match(/\{[\s\S]*\}/); if(!m) throw new Error("Claude couldn't find a list in that photo — try a clearer one");
+    grPlLoad(JSON.parse(m[0]));
+  }catch(e){ P.msg=String(e&&e.message||e); }
+  P.busy=false; grPlDraw();
+}
+function grPlLoad(d){
+  const P=_grPl, top=grStoreFromText(d&&d.title);
+  P.title=(d&&d.title)||""; P.rows=[];
+  ((d&&d.sections)||[]).forEach(sec=>{
+    const ss=grStoreFromText(sec&&sec.heading)||top;
+    ((sec&&sec.items)||[]).forEach(x=>{
+      const p=grParse(String((x&&x.name)||"").trim()); if(!p) return;
+      if(x.qty>0&&!(p.qty>0)) p.qty=x.qty; if(x.unit&&!p.unit) p.unit=String(x.unit).toLowerCase(); if(x.note) p.note=String(x.note).slice(0,80);
+      const home=grHomeFor(p.name)[0]||"";
+      P.rows.push({p:p,sid:ss||home||"",on:true,dup:!!grFindDup(p.name)});
+    });
+  });
+}
+function grPlDraw(){
+  const P=_grPl; if(!P) return grPopClose();
+  let h='<div style="font-weight:800;font-size:15px">📸 List from a photo</div>';
+  if(!P.rows){
+    h+='<div style="font-size:12px;color:#64748b;margin:3px 0 10px">A written list, the fridge list, or a screenshot of a note. If the top says a store (“Costco”), everything goes there; headings like “Publix:” split it up. No store → 📥 To sort.</div>'
+      +'<label style="display:block;text-align:center;padding:14px;border:2px dashed #cbd5e1;border-radius:12px;font-weight:800;color:#2B7A78;cursor:pointer"><input type="file" accept="image/*" multiple onchange="grPlPick(this)" style="display:none">📷 '+(P.imgs.length?P.imgs.length+' photo'+(P.imgs.length===1?'':'s')+' — add more':'Choose or take a photo')+'</label>'
+      +(P.msg?'<div style="font-size:12px;color:#b91c1c;margin-top:8px">'+esc(P.msg)+'</div>':'')
+      +'<button onclick="grPlRead()" '+(P.imgs.length&&!P.busy?'':'disabled ')+'style="'+GR_BTN+'border:none;background:'+(P.imgs.length&&!P.busy?'#3A7D44':'#94a3b8')+';color:#fff;margin-top:12px">'+(P.busy?'✨ Reading…':'✨ Read it')+'</button>'
+      +'<button onclick="_grPl=null;grPopClose()" style="'+GR_BTN+'border:none;background:#f1f5f9;color:#334155">Cancel</button>';
+    return grPop(h);
+  }
+  const stores=grActiveStores(), n=P.rows.filter(r=>r.on).length;
+  h+=(P.title?'<div style="font-size:12.5px;color:#64748b;margin:2px 0 6px">“'+esc(P.title)+'”</div>':'')
+    +'<div style="font-size:12px;color:#64748b;margin-bottom:6px">Untick anything you don\'t want. Change a store, or leave it on 📥 To sort.</div><div style="max-height:52vh;overflow:auto;border-top:1px solid #eef2f0">';
+  P.rows.forEach((r,i)=>{
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px solid #eef2f0">'
+      +'<input type="checkbox" '+(r.on?'checked ':'')+'onchange="_grPl.rows['+i+'].on=this.checked;grPlCount()" style="width:18px;height:18px;flex:0 0 auto">'
+      +'<span style="flex:1;min-width:0;font-size:13.5px;font-weight:700'+(r.on?'':';color:#94a3b8')+'">'+esc(r.p.name)+(grQtyTxt(r.p)?' <span style="color:#3A7D44">'+esc(grQtyTxt(r.p))+'</span>':'')
+      +(r.p.note?'<span style="display:block;font-size:11px;font-weight:400;color:#64748b">'+esc(r.p.note)+'</span>':'')+(r.dup?'<span style="display:block;font-size:10.5px;color:#b45309">already on the list — the amount adds on</span>':'')+'</span>'
+      +'<select onchange="_grPl.rows['+i+'].sid=this.value" style="max-width:130px;padding:5px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif"><option value=""'+(r.sid?'':' selected')+'>📥 To sort</option>'
+      +stores.map(s=>'<option value="'+s+'"'+(r.sid===s?' selected':'')+'>'+esc(grStoreName(s))+'</option>').join('')+'</select></div>';
+  });
+  h+='</div><button id="gr-pl-go" onclick="grPlAdd()" style="'+GR_BTN+'border:none;background:#3A7D44;color:#fff;margin-top:12px">Add '+n+' to the list</button>'
+    +'<button onclick="_grPl=null;grPopClose()" style="'+GR_BTN+'border:none;background:#f1f5f9;color:#334155">Cancel</button>';
+  grPop(h);
+}
+function grPlCount(){ const b=document.getElementById("gr-pl-go"); if(b&&_grPl) b.textContent="Add "+_grPl.rows.filter(r=>r.on).length+" to the list"; }
+function grPlAdd(){
+  const P=_grPl; if(!P||!P.rows) return;
+  let added=0, merged=0, toSort=0; const src={k:"photo"};
+  P.rows.forEach(r=>{ if(!r.on) return;
+    const dup=grFindDup(r.p.name);
+    if(dup&&dup.kind==="item"){ const it=grMergeQty(dup.it,r.p); const ss=(it.src||[]).slice(); if(!ss.some(s=>s.k==="photo")) ss.push(src); it.src=ss; if(it.done){ delete it.done; delete it.doneTs; } grPut(dup.id,it); merged++; return; }
+    const id=grCreate(r.p,src,r.sid?[r.sid]:null); added++; if(grData.items[id]&&grData.items[id].sort) toSort++;
+  });
+  _grPl=null; grPopClose();
+  mwToast("📸 "+added+" added"+(toSort?" · 📥 "+toSort+" to sort":"")+(merged?" · "+merged+" already on the list":"")); grRepaint();
 }
 // GROCERY_LIST_END
 

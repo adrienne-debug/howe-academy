@@ -11,7 +11,7 @@ const mk=()=>{
   env.ls={};
   const glyph=src.match(/const KIT_FRAC_GLYPH=\{[^}]+\};/)[0];
   const body=glyph+fn("kitSlug")+fn("kitQtyParse")+fn("kitIsoPlus")+block+`
-    ;return {grParse,grKey,grSecFor,grQtyTxt,grMergeQty,grAdd,grFindDup,grToggle,grVToggle,grDone,grApprove,grDecline,grDupMore,grDupAnyway,grGroups,grText,grAddFrom,grKidAllow,grKidBoxHTML,grReqCount,grPickToggle,grPickSave,grActiveStores,grSetStore,grCurStore,grStoreField,grStoreRemove,grSecOrder,grAisleMove,grCfgDad,grToGetCount,grCartCount,grHomeFor,grDadCardHTML,grIngParse,grIngRows,grFromRecipe,grFromWeek,grImpAdd,grFromPantry,grFromTodo,get imp(){return _grImp;},grMem,grMemUpdate,grShelf,grShelfAdd,grSuggestNames,grClearedIds,grPutBack,grRemove,grSave,grEdit,grEditSave,grMoney,grPriceAdd,grUsual,grLowest,grSaleInfo,grBest,grTripEst,grTripHeadHTML,grPriceLineHTML,grSpent,grWeekStart,grRcptLoad,grRcptSave,grDoneRun,get rc(){return _grRc;},set rc(v){_grRc=v;},
+    ;return {grParse,grKey,grSecFor,grQtyTxt,grMergeQty,grAdd,grFindDup,grToggle,grVToggle,grDone,grApprove,grDecline,grDupMore,grDupAnyway,grGroups,grText,grAddFrom,grKidAllow,grKidBoxHTML,grReqCount,grPickToggle,grPickSave,grActiveStores,grSetStore,grCurStore,grStoreField,grStoreRemove,grSecOrder,grAisleMove,grCfgDad,grToGetCount,grCartCount,grHomeFor,grDadCardHTML,grIngParse,grIngRows,grFromRecipe,grFromWeek,grImpAdd,grFromPantry,grFromTodo,get imp(){return _grImp;},grMem,grMemUpdate,grShelf,grShelfAdd,grSuggestNames,grClearedIds,grPutBack,grRemove,grSave,grEdit,grEditSave,grMoney,grPriceAdd,grUsual,grLowest,grSaleInfo,grBest,grTripEst,grTripHeadHTML,grPriceLineHTML,grSpent,grWeekStart,grRcptLoad,grRcptSave,grDoneRun,get rc(){return _grRc;},set rc(v){_grRc=v;},grSortIds,grSortTo,grSortBoxHTML,grStoreFromText,grPlLoad,grPlAdd,grRowHTML,get pl(){return _grPl;},set pl(v){_grPl=v;},
       get data(){return grData;}, set data(v){grData=v;}, get pend(){return _grPend;}};`;
   const F=new Function("env","db","HA_LS","mwToast","kitOrderList","kitStaples","kitBuyLog","panAdd","_todayStr","momHere","dadAwardOk","kitPinGate","confirm","ROSTER_DEF","esc","tab","document","prompt","navigator","kitPantry","panStatus","kitMeals","kitPlan","gwParseDate","momdayData","momdayToggleTodo","kitCapKey",body);
   const kitOrderList=()=>{ const need=Object.keys(env.staples).filter(k=>env.staples[k].state!=="have").map(k=>Object.assign({id:k},env.staples[k]));
@@ -284,6 +284,44 @@ ok("add boxes carry suggestions (one shared list on <body>)", /list="gr-dl"/.tes
   ok("trip logged with the receipt total", Object.values(L.data.trips).some(t=>t.total===24.5));
 }
 ok("✎ pop-ups carry price + history; list page has 📸 Read a receipt", /\+grPriceEditHTML\(it\.name\)/.test(src)&&/\+grPriceEditHTML\(r\.name\)/.test(src)&&/grRcptOpen\(\)/.test(src));
+// ── 📥 To sort + 📸 list from a photo ──
+{ const L=mk(); withPop(L); L.env.mom=true;
+  L.grAdd("Toothpaste","mom");
+  ok("no stores set up → nothing is 'to sort'", L.grSortIds().length===0);
+  L.grPickToggle("costco"); L.grPickToggle("publix"); L.grPickToggle("sams"); L.grPickSave();
+  L.grSetStore("all"); L.env.els["gr-add-list"]={value:"paper plates"}; L.grAddFrom("gr-add-list","list");
+  ok("Mom's quick add with no store → 📥 To sort", L.grSortIds().some(i=>L.data.items[i].name==="Paper plates"));
+  L.grSetStore("costco"); L.env.els["gr-add-list"]={value:"almond flour"}; L.grAddFrom("gr-add-list","list");
+  ok("added on a store button → that store, not To sort", !L.grSortIds().some(i=>L.data.items[i].name==="Almond flour"));
+  L.grSetStore("all"); L.grAdd("Almond flour","dad"); // merges (dup pop-up) — use a new name with a home instead
+  const afid=Object.keys(L.data.items).find(i=>L.data.items[i].name==="Almond flour"); L.grRemove(afid); L.grAdd("almond flour","dad");
+  ok("an item with a remembered home store skips To sort", !L.grSortIds().some(i=>L.data.items[i].name==="Almond flour"));
+  L.grAdd("Batteries","dad");
+  ok("Dad without a store choice → To sort", L.grSortIds().some(i=>L.data.items[i].name==="Batteries"));
+  L.grAdd("Ketchup","lucy"); L.grApprove(Object.keys(L.data.requests)[0]);
+  ok("an approved kid ask → To sort", L.grSortIds().some(i=>L.data.items[i].name==="Ketchup"));
+  const pp=L.grSortIds().find(i=>L.data.items[i].name==="Paper plates");
+  L.grSetStore("sams");
+  const g=L.grGroups("sams"); const row=[].concat(...Object.values(g)).find(r=>r.id===pp);
+  ok("waiting items still show at every store (her pick A)…", !!row);
+  ok("… clearly tagged 'not sorted yet — Mom may get this somewhere else'", /Mom may get this somewhere else/.test(L.grRowHTML(row,false))&&/📥 to sort/.test(L.grRowHTML(row,true)));
+  ok("📥 To sort box lists them with store buttons + Any store", /To sort · 3/.test(L.grSortBoxHTML())&&/Any store/.test(L.grSortBoxHTML()));
+  L.grSortTo(pp,"sams");
+  ok("tap a store → item goes there, leaves To sort, home remembered", L.data.items[pp].stores.join()==="sams"&&!L.data.items[pp].sort&&L.grHomeFor("paper plates").join()==="sams");
+  const bt=L.grSortIds().find(i=>L.data.items[i].name==="Batteries"); L.grSortTo(bt,"any");
+  ok("'Any store' → sorted, no store tag", !L.data.items[bt].sort&&!L.data.items[bt].stores);
+  // photo list
+  ok("store from a title: 'Costco run' → Costco, 'Sams' → Sam's Club, 'Groceries' → none", L.grStoreFromText("Costco run")==="costco"&&L.grStoreFromText("Sams")==="sams"&&L.grStoreFromText("Groceries")===null);
+  L.pl={imgs:[]};
+  L.grPlLoad({title:"Weekend list",sections:[{heading:"Publix:",items:[{name:"Bananas",qty:6},{name:"Greek yogurt",note:"Siggi's vanilla"}]},{heading:null,items:[{name:"2 lb ground beef"},{name:"Ketchup"}]}]});
+  const rows=L.pl.rows;
+  ok("a 'Publix:' heading parks its items at Publix", rows[0].sid==="publix"&&rows[1].sid==="publix"&&rows[1].p.note==="Siggi's vanilla");
+  ok("lines with no store heading → To sort (amount read from the line)", rows[2].sid===""&&rows[2].p.qty===2&&rows[2].p.unit==="lb");
+  ok("something already on the list is flagged", rows[3].dup===true);
+  L.grPlAdd();
+  ok("Add → Publix items tagged, ground beef waits in To sort with a 📸 source, ketchup amount merged", Object.values(L.data.items).some(i=>i.name==="Bananas"&&i.stores.join()==="publix"&&i.src[0].k==="photo")&&L.grSortIds().some(i=>L.data.items[i].name==="Ground beef"));
+}
+ok("list page has 📸 List from a photo + the 📥 To sort box", /grPhotoListOpen\(\)/.test(src)&&/h\+=grSortBoxHTML\(\)/.test(src));
 // ── wiring ──
 ok("Mom's Day Shopping spot opens the list (not Meals)", /\+grMdShopHTML\(\)/.test(src)&&!/Open the shopping list →/.test(src));
 ok("🛒 List tab in the Mom's Day tabs", /btn\('grocery','🛒 Grocery List'\)/.test(src)&&/if\(mpSubView==='grocery'\)\{ return renderGrocery\(el\); \}/.test(src));
