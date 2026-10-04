@@ -2232,9 +2232,25 @@ function rtDoneOnWk(wk,slot,kid,d,i){
 // Has this weekday of the ACTIVE week already been and gone? Compares real calendar dates, not
 // day indexes, so a week that has not started yet can never be "late". Unknown date -> false
 // (stay quiet) — same direction as every other bail-out in rtLateDays.
+// SUNDAY_FIRST_START — 🗓 a week's Sunday is the day BEFORE its Monday (her catch 2026-10-04).
+// week25_sunday = Sep 27 and week25's Monday = Sep 28 (the Sunday tab leads the week, de0946b), but
+// DAYS_ALL lists Sunday LAST. Ordering late chores by DAYS_ALL index read last Sunday's check-off as
+// "done since" Friday: on Sun Oct 4 Lucy's missed Fri + Sat chores (and Ellis's Fri vacuum) vanished
+// from her list and Kids' Corner because she'd done the same chores on Sep 27, and the cross-week
+// count added a week (Lincoln's missed Friday chore read "9 days late" instead of 2).
+// _rtPos = the real order in time: Sunday -1, Monday 0 … Saturday 5. _rtIdx turns it back.
+function _rtPos(d){ return d===6?-1:d; }
+function _rtIdx(p){ return p===-1?6:p; }
+// The week meta only dates Mon–Fri, so Sunday's date = the day before Monday's.
+function _rtSundayISO(){
+  const mon=routineDateISO("monday"); if(!mon) return null;
+  const d=new Date(mon+"T12:00:00"); d.setDate(d.getDate()-1);
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+// SUNDAY_FIRST_END
 function _rtDayPassed(dn){
   if(dn===_todayDay) return true;
-  const iso=routineDateISO(dn); if(!iso) return false;
+  const iso=routineDateISO(dn)||(dn==="sunday"?_rtSundayISO():null); if(!iso) return false;
   const today=routineDateISO(_todayDay); if(!today) return false;
   return iso<today;
 }
@@ -2243,8 +2259,9 @@ function _rtDayPassed(dn){
 // to each keep their own copy and the logger's had no date guard, so a chore that was late for a
 // real cross-week reason still got filed against a day of the new week that hadn't happened yet.
 function _rtLastDueIdx(days,ti){
-  let due=-1;
-  days.forEach(function(d){ if(d<ti&&d>due&&_rtDayPassed(DAYS_ALL[d])) due=d; });
+  // Compared in real time order (_rtPos), so on a Sunday no Mon–Sat day of the week counts as "earlier".
+  const tp=_rtPos(ti); let due=-1, dp=-2;
+  days.forEach(function(d){ const p=_rtPos(d); if(p<tp&&p>dp&&_rtDayPassed(DAYS_ALL[d])){ dp=p; due=d; } });
   return due;
 }
 function rtLateDays(slot,kid,i){
@@ -2264,10 +2281,10 @@ function rtLateDays(slot,kid,i){
   // that had not happened yet (92 such records across all 4 kids, week16–week23, cleared
   // 2026-09-15). An unknown date counts as NOT passed: attachWeekListeners deliberately clears
   // DAY_DT on a week switch so this guard holds until the new meta arrives.
-  const due=_rtLastDueIdx(days,ti);
+  const due=_rtLastDueIdx(days,ti), tp=_rtPos(ti);
   if(due>=0){
-    for(let j=due;j<=ti;j++){ if(rtDoneOnWk(wk,slot,kid,DAYS_ALL[j],i)) return 0; }
-    return ti-due;
+    for(let p=_rtPos(due);p<=tp;p++){ if(rtDoneOnWk(wk,slot,kid,DAYS_ALL[_rtIdx(p)],i)) return 0; }
+    return tp-_rtPos(due);
   }
   // Due TODAY and not yet due earlier this week — that is due, not overdue. Without this
   // the wrap below fired for e.g. a Monday chore viewed on Monday and called it 7 days late.
@@ -2276,11 +2293,13 @@ function rtLateDays(slot,kid,i){
   _loadPrevSl();
   const pw=_prevWkKey();
   if(!pw||!prevSlState) return 0;                   // can't verify it was missed → say nothing
-  let pdue=-1; days.forEach(function(d){ if(d>pdue) pdue=d; });
-  if(pdue<0) return 0;
-  for(let j=pdue;j<=6;j++){ if(rtDoneOnWk(pw,slot,kid,DAYS_ALL[j],i)) return 0; }
-  for(let j=0;j<=ti;j++){ if(rtDoneOnWk(wk,slot,kid,DAYS_ALL[j],i)) return 0; }
-  return (ti+7)-pdue;
+  // Last week runs its Sunday … Saturday; this week runs Sunday … today. Last week's Sunday came
+  // BEFORE its Friday, so it can never count as catching up a Friday or Saturday chore.
+  let pdue=-2; days.forEach(function(d){ const p=_rtPos(d); if(p>pdue) pdue=p; });
+  if(pdue<-1) return 0;
+  for(let p=pdue;p<=5;p++){ if(rtDoneOnWk(pw,slot,kid,DAYS_ALL[_rtIdx(p)],i)) return 0; }
+  for(let p=-1;p<=tp;p++){ if(rtDoneOnWk(wk,slot,kid,DAYS_ALL[_rtIdx(p)],i)) return 0; }
+  return (tp+7)-pdue;
 }
 // Record the miss once, filed under the day it was actually missed. The key is deterministic so
 // several devices noticing the same miss write the same entry instead of piling up duplicates.
