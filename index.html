@@ -3784,7 +3784,8 @@ function initFb() {
       else if(!currData||!currData.subjects){ currData=Object.assign(currData||{},{subjects:{},lessons:{},weekDays:{}}); dbg("curriculum empty — blank skeleton so the Subjects tab can add the first subject"); renderAll(); }   // (the done-marks listener may already have made a {done:{}} stub — keep it)
       schedCascade(); // curriculum may be the LAST loader to answer — re-arm the debounced sweep
     });
-    db.ref("config/helpers").on("value",s=>{ helpersOnValue(s.val()); });   // 🙋 helper profiles
+    db.ref("config/helpers").on("value",s=>{ helpersOnValue(s.val()); });
+    db.ref("famProgress").on("value",s=>{ if(typeof famProgOnValue==="function") famProgOnValue(s.val()); });   // 📚 family subjects' shared place-in-book   // 🙋 helper profiles
     try{ db.ref("helperDays").orderByKey().limitToLast(3).on("value",s=>{ helperDaysOnValue(s.val()); }); }catch(e){}   // 🙋 who is here today
     db.ref("worksheets").on("value",s=>{ wsOnValue(s.val()); });   // 📋 worksheets from Adrienne
     db.ref("messages").on("value",s=>{ msgOnValue(s.val()); });     // ✉ Mom's messages to Adrienne (text only — photos load on demand)
@@ -8018,6 +8019,7 @@ function bumpSkippedInTier(done){
 
 // Write a real (verified) completion + history entry. score optional.
 function finalizeDone(id, doneTs, score){
+  let _famPre=null; try{ const _ft=weekData.tasks.find(x=>x.id===id); if(_ft&&_ft.famBlock&&!checked[id]&&typeof famCheckPre==="function") _famPre=famCheckPre(_ft); }catch(e){}   // 📚 family lesson, read before the check
   // Sequential-order guard (stamped subjects, unless allowOutOfOrder): refuse rather than record.
   try{ const _tg=weekData.tasks.find(x=>x.id===id); const _why=(typeof lidOrderBlock==="function")?lidOrderBlock(_tg):null;
     if(_why){ if(typeof gwShowToast==="function") gwShowToast("⛔ Not yet — “"+_why+"” isn’t done. Lessons check off in order."); dbg("order guard blocked "+id+" ("+_why+")"); return false; } }catch(e){}
@@ -8037,9 +8039,11 @@ function finalizeDone(id, doneTs, score){
     if(origDateStr){const yr=new Date().getFullYear();const od=new Date(origDateStr+", "+yr);const td=new Date();od.setHours(0,0,0,0);td.setHours(0,0,0,0);daysLate=Math.round((td-od)/864e5);}
     const entry={id:id,title:t.title,who:t.who,day:t.day,originalDay:origDay,checkedOnDay:effectiveDay(t),daysLate:daysLate,ts:doneTs,week:WK};
     if(score) entry.score=score;
+    if(_famPre&&_famPre.label) entry.famLabel=_famPre.label;   // 📚 what the family actually did
     try{ const _hp=(typeof helperHolds==="function")?helperHolds(t):null; if(_hp) entry.helper=helperName(_hp); }catch(e){}   // 🙋 "done with Grandma"
     if(t.lid){ entry.lid=t.lid; entry.pid=t.who+"__"+t.subjectKey; }   // frozen record is lid-resolvable without title parsing
     hist[id]=entry; histState[id]=entry; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+id).set(entry);
+    try{ if(_famPre&&_famPre.first&&_famPre.seq&&typeof famProgBump==="function") famProgBump(_famPre.id,_famPre.key,1); }catch(e){}   // 📚 the group's place moves ONCE
     try{ lidDoneWrite(t,doneTs,id); }catch(e){ dbg("lid done write skip: "+e); }
     try{ if(Array.isArray(t.lids)) t.lids.forEach(function(l){ if(l&&l!==t.lid) lidDoneWrite(Object.assign({},t,{lid:l}),doneTs,id); }); }catch(e){ dbg("lid done write (merged) skip: "+e); }   // 🧩 a merged page card finishes every lesson it holds
     // A check-off may have finished a subject and/or met all session goals.
@@ -24600,6 +24604,8 @@ function famTryFinish(t){
 // Mom un-marks → the points come back off and the kids' ratings clear, for every copy.
 function famBeforeUncheck(id){
   const t=weekData.tasks.find(function(x){ return x.id===id; }); if(!famIsCard(t)) return;
+  try{ const _b=famDefs()[t.famBlock], _it=_b?famList(_b.items).find(function(x){ return x&&x.key===t.famItem; }):null;
+    if(typeof famTrack==="function"&&famTrack(_it)&&famTrack(_it).mode==="seq") famProgBump(t.famBlock,t.famItem,-1); }catch(e){}   // 📚 un-marked: the place moves back once
   const grp=famGroup(t), u={};
   grp.forEach(function(c){
     const sc=famScore(c);
@@ -24613,6 +24619,7 @@ function famBeforeUncheck(id){
 // The card's line: what this kid can earn / gave / earned.
 function famRowHTML(t,done,viewKid){
   const mx=famPtsMax(t), sc=done?famScore(t):null, me=(viewKid===t.who);
+  const _ls=(typeof famLessonFor==="function")?famLessonFor(t):"";   // 📚
   let txt;
   if(done&&sc&&sc.pts!=null&&sc.max) txt='⭐ '+(me?'You earned ':esc(cap(t.who))+' earned ')+sc.pts+' of '+sc.max+' ⭐ <span style="color:#b45309">'+famStars(sc.rating)+'</span>'+(sc.by?' <span style="font-weight:600;color:var(--muted)">from '+esc(sc.by)+'</span>':'');
   else if(done) txt='✓ Mom checked this off for everyone';
@@ -24622,7 +24629,7 @@ function famRowHTML(t,done,viewKid){
     txt=gave?('⭐ Stars sent'+(wait.length?' — waiting for '+wait.join(' & '):'')):('⭐ Up to '+mx+' ⭐ · when you’re done, tap to rate '+famSiblings(t).map(function(s){ return esc(cap(s.who)); }).join(' & '));
   }
   else txt=(mx>0?'⭐ Up to '+mx+' ⭐ · ':'')+'\u{1F469} Mom checks this off for everyone';
-  return '<div style="margin-top:4px;font-size:11px;font-weight:700;color:#6d28d9">'+txt+'</div>';
+  return (_ls?'<div style="margin-top:3px;font-size:12px;font-weight:800;color:#3b0764">\u{1F4DA} '+esc(_ls)+'</div>':'')+'<div style="margin-top:4px;font-size:11px;font-weight:700;color:#6d28d9">'+txt+'</div>';
 }
 
 // ── Settings ▸ Family rules ▸ 👨‍👩‍👧 Family time (Mom-only edits, targeted writes under config/rules/familyBlocks) ──
@@ -24748,6 +24755,7 @@ function famBlockEditorHTML(id,b){
     }
     if(kids.length>1&&!it.from) h+='<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding-top:5px"><span style="font-size:10px;color:var(--muted);margin-right:2px">'+(iks.length===kids.length?'Everyone · or just':'Just')+'</span>'+
       kids.map(function(k){ return _famChip(iks.indexOf(k)>=0,esc(cap(k)),ed?"famItemKid('"+J(id)+"',"+i+",'"+J(k)+"')":"",true); }).join('')+'</div>';
+    try{ if(typeof famLessonsEditorHTML==="function") h+=famLessonsEditorHTML(id,b,it,i,ed); }catch(e){}   // 📚
     const ipts=Math.max(0,parseInt(it.pts,10)||0), ieach=it.rate==="each";
     h+='<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding-top:5px"><span style="font-size:10px;color:var(--muted);margin-right:2px">\u2B50 Points</span>'+
       (ed?'<input type="number" min="0" max="500" step="5" value="'+(ipts||'')+'" placeholder="none" onchange="famItemSet(\''+J(id)+'\','+i+',\'pts\',this.value)" style="width:62px;padding:3px 6px;border:1.5px solid var(--border);border-radius:7px;font-size:12px">':'<b style="font-size:12px">'+(ipts||'none')+'</b>')+
@@ -25027,7 +25035,7 @@ function famGridHTML(){
       '<div style="font-size:11px;font-weight:800;color:var(--text)">'+(it.from?'\u{1F9E9} ':'')+esc(it.name||"")+'</div>'+
       '<div style="font-size:9px;font-weight:600;color:var(--muted)">'+esc(famDaysLabel(g.b,it))+' · '+(Math.max(5,parseInt(it.minutes,10)||30))+'m'+(pts?' · ⭐'+pts:'')+'</div>'+
       (ik.length<famList(g.b.kids).length?'<div style="font-size:9px;font-weight:700">'+who(ik,famList(g.b.kids).length)+'</div>':'')+
-      '<div style="font-size:9px;font-weight:700;color:'+g.col+'">ends — <span style="font-weight:600;color:var(--muted)">(add lessons)</span></div></th>'; }); });
+      (function(){ const _lm=(typeof famLessonMap==="function")?famLessonMap(g.b,g.id,it):null; return (_lm&&!_lm.none)?'<div style="font-size:9px;font-weight:700;color:'+g.col+'">'+(_lm.ends?'ends '+famFmtDate(_lm.ends):'ends \u2014')+(_lm.left!=null?' \u00B7 '+_lm.left+' left':'')+'</div>':'<div style="font-size:9px;font-weight:700;color:'+g.col+'">ends \u2014 <span style="font-weight:600;color:var(--muted)">(add lessons)</span></div>'; })()+'</th>'; }); });
   h+='</tr></thead><tbody>';
   const ncol=groups.reduce(function(a,g){ return a+g.items.length; },0);
   let lastWk=null;
@@ -25040,7 +25048,8 @@ function famGridHTML(){
       if(!c.runs) inner='';
       else if(!c.kids.length) inner='<span class="gv-badge" style="background:'+(c.why==="co-op"?'#e0f2fe;color:#0369a1':'#fecaca;color:#991b1b')+'">'+(c.why==="co-op"?'\u{1F3EB} co-op':'OFF')+'</span>';
       else { min+=c.min; const dn=famCellDone(g.b,g.id,it,r.date);
-        inner=(dn?'<span class="gv-chk" data-fam="1">✓</span>':'')+'<span class="'+(dn?'gv-done':'')+'" style="color:'+(dn?'':'#4b5563')+'">'+esc(it.name||"")+'</span>'+
+        const _lm=(typeof famLessonMap==="function")?famLessonMap(g.b,g.id,it):null, _lb=_lm&&_lm.byDate[r.date], _ls=_lm&&_lm.short&&_lm.short[r.date];
+        inner=(dn?'<span class="gv-chk" data-fam="1">✓</span>':'')+'<span class="'+(dn?'gv-done':'')+'"'+(_lb?' title="'+esc(_lb)+'"':'')+' style="color:'+(dn?'':(_lb?'var(--text)':'#4b5563'))+'">'+esc(_ls||_lb||it.name||"")+'</span>'+
           (c.out.length?'<span class="gv-away"> · no '+esc(c.out.map(cap).join(", "))+'</span>':''); }
       cells.push('<td style="background:'+g.col+'0a;'+edge(g,j)+'">'+inner+'</td>'); }); });
     h+='<tr class="'+[past?"gv-past":"",r.date===today?"gv-today":""].filter(Boolean).join(" ")+'"><td class="gv-fix"><b>'+["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()]+'</b> '+(d.getMonth()+1)+'/'+d.getDate()+'</td><td class="gv-min">'+(min||"")+'</td>'+cells.join('')+'</tr>';
@@ -25065,6 +25074,174 @@ function famSheetRender(){
   o.scrollTop=sc;
 }
 // FAMTOGETHER_END
+// FAMLESSONS_START ── 📚 LESSONS FOR FAMILY SUBJECTS (step 2, her yes 10/4 — DeWalt BiblioPlan + Space Science) ─────────
+// An item may carry track:
+//   {mode:"week", book, startDate:"YYYY-MM-DD", startWeek:7, total:34, days:{Mon:"Day 1",…,Fri:"Presidents"}, topics:{7:"…"}}
+//     BY THE CALENDAR (her pick for BiblioPlan): every school week that has this subject is the NEXT book week, starting at
+//     startWeek on startDate's week; each weekday has its role. A co-op Thursday simply has no card (Sarah: co-op weeks
+//     drop one map/presidents day). Nothing to count — the date decides.
+//   {mode:"seq", list:[{t:"Space Science L6 — Terrestrial Planets: Earth and Mars", n:3}, …]}
+//     IN ORDER: n sittings per lesson ("· day 1 of 3"). ONE shared place for the whole group at famProgress/<block>/<item>/done
+//     (sittings finished). Mom's ✓ moves it +1 ONCE per group (the first copy checked), Unmark moves it −1; from today on
+//     the cards and the Grid read the next sittings in order, so a missed day never skips one.
+// Labels are worked out when the screen draws (cards, Grid cells, header "ends"), so a week already laid needs no rebuild.
+// Each check records its label on the history entry (famLabel) — the record of what was actually done.
+let famProgress={};
+function famProgOnValue(v){ famProgress=v||{}; _famLmMemo={}; if(typeof renderAll==="function") renderAll(); }
+function famDoneN(id,key){ return Math.max(0,parseInt((((famProgress||{})[id]||{})[key]||{}).done,10)||0); }
+function famProgSet(id,key,n){
+  n=Math.max(0,n|0); if(!famProgress[id]) famProgress[id]={}; famProgress[id][key]={done:n}; _famLmMemo={};
+  if(db&&!_dryRun()) db.ref("famProgress/"+id+"/"+key+"/done").set(n);
+}
+function famProgBump(id,key,delta){
+  const n=Math.max(0,famDoneN(id,key)+delta); if(!famProgress[id]) famProgress[id]={}; famProgress[id][key]={done:n}; _famLmMemo={};
+  if(db&&!_dryRun()) db.ref("famProgress/"+id+"/"+key+"/done").transaction(function(c){ return Math.max(0,(c|0)+delta); });   // every tablet, never lost
+}
+function famTrack(it){ return (it&&it.track&&(it.track.mode==="week"||it.track.mode==="seq"))?it.track:null; }
+function famSittings(it){
+  const tr=famTrack(it); if(!tr||tr.mode!=="seq") return [];
+  const out=[]; famList(tr.list).forEach(function(l){ if(!l||!l.t) return; const n=Math.max(1,Math.min(10,parseInt(l.n,10)||1)); for(let k=1;k<=n;k++) out.push(n>1?(l.t+" · day "+k+" of "+n):l.t); });
+  return out;
+}
+// The Grid's short form of each sitting ("Space Science L6 · 1/3"), parallel to famSittings.
+function famSittingsShort(it){
+  const tr=famTrack(it); if(!tr||tr.mode!=="seq") return [];
+  const out=[]; famList(tr.list).forEach(function(l){ if(!l||!l.t) return; const n=Math.max(1,Math.min(10,parseInt(l.n,10)||1));
+    const base=(String(l.t).split(" \u2014 ")[0].split(" - ")[0]).slice(0,28); for(let k=1;k<=n;k++) out.push(n>1?(base+" \u00B7 "+k+"/"+n):base); });
+  return out;
+}
+function famMonISO(ds){ const d=gwParseDate(ds); d.setDate(d.getDate()-((d.getDay()+6)%7)); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+const FAM_ABBR=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+// The dates this subject really happens (any of its kids there), from the family's school calendar.
+function famRunDates(b,it){ return famGridDates().map(function(r){ return r.date; }).filter(function(d){ const c=famCellState(b,it,d); return c.runs&&c.kids.length; }); }
+// Cached for a moment: every card and Grid cell asks, and the answer only changes when the calendar or the block does.
+let _famRdCache={t:0,v:{}};
+function famRunDatesC(b,id,it){
+  const now=Date.now(); if(now-_famRdCache.t>1500) _famRdCache={t:now,v:{}};
+  const k=id+"|"+it.key+"|"+JSON.stringify([b.days,it.days,it.kids,b.kids,b.at,b.off,b.items&&famList(b.items).map(function(x){ return x&&[x.key,x.minutes]; })]);
+  if(!_famRdCache.v[k]) _famRdCache.v[k]=famRunDates(b,it);
+  return _famRdCache.v[k];
+}
+// What a checked copy recorded (any copy of the group on that date).
+function famRecorded(id,it,ds){
+  try{ const tasks=((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]);
+    for(const t of tasks){ if(t&&t.famBlock===id&&t.famItem===it.key&&routineDateISO(t.day)===ds&&checked[t.id]){ const h=histState&&histState[t.id]; if(h&&h.famLabel) return h.famLabel; } } }catch(e){}
+  return "";
+}
+let _famLmMemo={};
+// {byDate:{date:label}, ends:date|null, now:label, total, left} for one family subject.
+function famLessonMap(b,id,it){
+  const tr=famTrack(it); if(!tr) return {byDate:{},ends:null,now:"",none:true};
+  const today=(typeof cbTodayISO==="function")?cbTodayISO():new Date().toISOString().slice(0,10);
+  const dates=famRunDatesC(b,id,it);
+  const mk=[id,it.key,JSON.stringify(tr),famDoneN(id,it.key),today,dates.length,dates[0]||"",famCellDone(b,id,it,today)?1:0,JSON.stringify(b.days||[]),JSON.stringify(it.days||[])].join("|");
+  if(_famLmMemo[mk]) return _famLmMemo[mk];
+  const out={byDate:{},short:{},ends:null,now:""};
+  if(tr.mode==="week"){
+    const startMon=famMonISO(tr.startDate||today), total=parseInt(tr.total,10)||0, sw=parseInt(tr.startWeek,10)||1;
+    const weeks=[]; dates.forEach(function(d){ if(d<startMon) return; const m=famMonISO(d); if(weeks.indexOf(m)<0) weeks.push(m); });
+    dates.forEach(function(d){ if(d<startMon||(tr.startDate&&d<tr.startDate)) return;
+      const wn=sw+weeks.indexOf(famMonISO(d)); if(total&&wn>total) return;
+      const role=((tr.days||{})[FAM_ABBR[gwParseDate(d).getDay()]])||"";
+      const topic=(tr.topics||{})[wn]||"";
+      out.byDate[d]=(tr.book?tr.book+" ":"")+"Wk "+wn+(role?" · "+role:"")+(topic?" — "+topic:"");
+      out.short[d]="Wk "+wn+(role?" · "+role:"");
+      if(!total||wn<=total) out.ends=d; });
+    out.total=total; out.left=total?Math.max(0,total-sw+1-weeks.filter(function(m){ return m<famMonISO(today); }).length):null;
+  } else {
+    const sit=famSittings(it), sh=famSittingsShort(it); let idx=famDoneN(id,it.key);
+    dates.forEach(function(d){
+      const _sh=function(full){ const k=sit.indexOf(full); return k>=0?sh[k]:full; };
+      if(d<today){ const rec=famRecorded(id,it,d); if(rec){ out.byDate[d]=rec; out.short[d]=_sh(rec); } return; }
+      if(d===today&&famCellDone(b,id,it,today)){ out.byDate[d]=famRecorded(id,it,d)||sit[idx-1]||""; out.short[d]=_sh(out.byDate[d]); return; }
+      if(idx<sit.length){ out.byDate[d]=sit[idx]; out.short[d]=sh[idx]; out.ends=d; } else if(sit.length){ out.byDate[d]="\u2713 all done"; out.short[d]="\u2713 all done"; }
+      idx++; });
+    out.total=sit.length; out.left=Math.max(0,sit.length-famDoneN(id,it.key));
+  }
+  const nd=dates.find(function(d){ return d>=today&&out.byDate[d]; }); out.now=nd?out.byDate[nd]:"";
+  _famLmMemo[mk]=out; return out;
+}
+// The lesson on ONE card (what it says now; a checked card says what was recorded).
+function famLessonFor(t){
+  try{
+    const b=famDefs()[t.famBlock]; if(!b) return ""; const it=famList(b.items).find(function(x){ return x&&x.key===t.famItem; }); if(!famTrack(it)) return "";
+    if(checked[t.id]){ const h=histState&&histState[t.id]; if(h&&h.famLabel) return h.famLabel; }
+    const ds=routineDateISO(t.day); const m=famLessonMap(b,t.famBlock,it);
+    if(m.byDate[ds]) return m.byDate[ds];
+    if(famTrack(it).mode==="seq"){ const sit=famSittings(it); return sit[famDoneN(t.famBlock,it.key)]||""; }   // a late check of a missed day = the next sitting
+    return "";
+  }catch(e){ return ""; }
+}
+// Called by finalizeDone BEFORE it marks the card: the label to record, and whether this is the group's first copy (moves the place once).
+function famCheckPre(t){
+  const lbl=famLessonFor(t), sib=famSiblings(t), first=!sib.some(function(x){ return checked[x.id]; });
+  const b=famDefs()[t.famBlock], it=b?famList(b.items).find(function(x){ return x&&x.key===t.famItem; }):null;
+  return {label:lbl,first:first,seq:!!(famTrack(it)&&famTrack(it).mode==="seq"),id:t.famBlock,key:t.famItem};
+}
+function famFmtDate(ds){ const d=gwParseDate(ds); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()]+" "+d.getDate(); }
+// ── the 📚 Lessons section of a subject (inside the family-time editor) ──
+function famTrackStart(id,i,mode){
+  const its=famItems(id); if(!its[i]) return;
+  const nextMon=(function(){ const t=gwParseDate(cbTodayISO()); const d=new Date(t); d.setDate(t.getDate()+((8-t.getDay())%7||7)); if(t.getDay()===1) return cbTodayISO(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); })();
+  its[i].track=mode==="week"?{mode:"week",book:"",startDate:nextMon,startWeek:1,total:0,days:{Mon:"Day 1",Tue:"Day 2",Wed:"Day 3",Thu:"Day 4",Fri:"Day 5"},topics:{}}:{mode:"seq",list:[]};
+  famWrite(id+"/items",its);
+}
+function famTrackRemove(id,i){ const its=famItems(id); if(!its[i]||!confirm("Remove the lessons from “"+(its[i].name||"")+"”? The card goes back to just its name.")) return; delete its[i].track; famWrite(id+"/items",its); }
+const _famTv=function(id,i,f){ const e=document.getElementById("famtr-"+id+"-"+i+"-"+f); return e?e.value:""; };
+function famTrackSaveSeq(id,i){
+  const its=famItems(id); if(!its[i]) return;
+  const dflt=Math.max(1,parseInt(_famTv(id,i,"n"),10)||1);
+  const list=String(_famTv(id,i,"list")||"").split(/\n/).map(function(l){ return l.trim(); }).filter(Boolean).map(function(l){
+    const m=l.match(/^(.*?)\s*[×xX]\s*(\d{1,2})\s*$/); return m?{t:m[1].trim(),n:Math.max(1,Math.min(10,parseInt(m[2],10)))}:{t:l,n:dflt}; });
+  its[i].track={mode:"seq",list:list}; famWrite(id+"/items",its);
+}
+function famTrackEveryN(id,i,n){ const e=document.getElementById("famtr-"+id+"-"+i+"-list"); if(!e) return;
+  e.value=e.value.split(/\n/).map(function(l){ const t=l.replace(/\s*[×xX]\s*\d{1,2}\s*$/,"").trim(); return t?t+" ×"+n:""; }).filter(Boolean).join("\n"); }
+function famTrackSaveWeek(id,i){
+  const its=famItems(id); if(!its[i]) return;
+  const days={}; ["Mon","Tue","Wed","Thu","Fri","Sat"].forEach(function(d){ const v=String(_famTv(id,i,"d"+d)||"").trim(); if(v) days[d]=v; });
+  const topics={}; String(_famTv(id,i,"topics")||"").split(/\n/).forEach(function(l){ const m=l.match(/^\s*(?:wk|week)?\s*(\d{1,3})\s*[:.\-–]\s*(.+)$/i); if(m) topics[m[1]]=m[2].trim(); });
+  its[i].track={mode:"week",book:String(_famTv(id,i,"book")||"").trim(),startDate:_famTv(id,i,"start")||cbTodayISO(),
+    startWeek:Math.max(1,parseInt(_famTv(id,i,"sw"),10)||1),total:Math.max(0,parseInt(_famTv(id,i,"total"),10)||0),days:days,topics:topics};
+  famWrite(id+"/items",its);
+}
+function famSetWeAreOn(id,key,n){ if(!momHere()) return; famProgSet(id,key,parseInt(n,10)||0); if(typeof renderAll==="function") renderAll(); try{ if(famSheetId) famSheetRender(); }catch(e){} }
+function famLessonsEditorHTML(id,b,it,i,ed){
+  const tr=famTrack(it), J=function(s){ return String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }, P="famtr-"+id+"-"+i+"-";
+  const box=function(inner){ return '<div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:#fff;border:1px dashed #ddd6fe">'+inner+'</div>'; };
+  const inp='padding:4px 7px;border:1.5px solid var(--border);border-radius:7px;font-size:12px;font-family:\'DM Sans\',sans-serif';
+  const btn=function(lbl,fn,prim){ return '<button onclick="'+fn+'" style="padding:4px 11px;border-radius:8px;border:'+(prim?'none':'1.5px solid #c4b5fd')+';background:'+(prim?'#7c3aed':'#fff')+';color:'+(prim?'#fff':'#5b21b6')+';font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  if(!tr) return ed?box('<span style="font-size:10px;color:var(--muted);margin-right:6px">\u{1F4DA} Lessons</span>'+btn('＋ In order (a list)',"famTrackStart('"+J(id)+"',"+i+",'seq')")+' '+btn('＋ Week by week (like BiblioPlan)',"famTrackStart('"+J(id)+"',"+i+",'week')")):'';
+  const m=famLessonMap(b,id,it);
+  const status='<div style="font-size:11px;font-weight:700;color:#5b21b6;padding-bottom:4px">\u{1F4DA} '+(m.now?'Next: '+esc(m.now):'Nothing scheduled yet')+(m.ends?' · ends '+famFmtDate(m.ends):'')+'</div>';
+  if(!ed) return box(status);
+  let h=status;
+  if(tr.mode==="seq"){
+    const sit=famSittings(it), done=famDoneN(id,it.key);
+    h+='<div style="font-size:10px;color:var(--muted)">One lesson per line. End a line with ×3 for 3 days on it (“day 1 of 3”…). New books just go underneath.</div>';
+    h+='<textarea id="'+P+'list" rows="6" style="width:100%;box-sizing:border-box;margin-top:4px;'+inp+'">'+esc(famList(tr.list).map(function(l){ return l.t+((parseInt(l.n,10)||1)>1?" ×"+l.n:""); }).join("\n"))+'</textarea>';
+    h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding-top:4px"><span style="font-size:10px;color:var(--muted)">Every line ×</span>'+
+      [1,2,3,4,5].map(function(n){ return '<button onclick="famTrackEveryN(\''+J(id)+'\','+i+','+n+')" style="padding:2px 8px;border-radius:7px;border:1px solid var(--border);background:#fff;font-size:11px;cursor:pointer">'+n+'</button>'; }).join('')+
+      '<input id="'+P+'n" type="hidden" value="1"><span style="margin-left:auto"></span>'+btn('Save lessons',"famTrackSaveSeq('"+J(id)+"',"+i+")",true)+'</div>';
+    if(sit.length) h+='<div style="display:flex;gap:6px;align-items:center;padding-top:6px"><span style="font-size:11px;font-weight:700">We’re on</span><select onchange="famSetWeAreOn(\''+J(id)+'\',\''+J(it.key)+'\',this.value)" style="flex:1;min-width:0;'+inp+'">'+
+      sit.map(function(s,k){ return '<option value="'+k+'"'+(k===Math.min(done,sit.length)?' selected':'')+'>'+esc(s)+'</option>'; }).join('')+'<option value="'+sit.length+'"'+(done>=sit.length?' selected':'')+'>✓ all done</option></select></div>';
+  } else {
+    const dd=tr.days||{};
+    h+='<div style="display:grid;grid-template-columns:auto 1fr;gap:4px 8px;align-items:center;font-size:11px">'+
+      '<span>Book</span><input id="'+P+'book" value="'+esc(tr.book||"")+'" placeholder="e.g. BiblioPlan" style="'+inp+'">'+
+      '<span>Starts at week</span><span><input id="'+P+'sw" type="number" min="1" value="'+(parseInt(tr.startWeek,10)||1)+'" style="width:60px;'+inp+'"> on the week of <input id="'+P+'start" type="date" value="'+esc(tr.startDate||"")+'" style="'+inp+'"></span>'+
+      '<span>Weeks in the book</span><input id="'+P+'total" type="number" min="0" value="'+(parseInt(tr.total,10)||"")+'" placeholder="e.g. 34" style="width:70px;'+inp+'">'+
+      ["Mon","Tue","Wed","Thu","Fri"].map(function(d){ return '<span>'+d+'</span><input id="'+P+'d'+d+'" value="'+esc(dd[d]||"")+'" placeholder="e.g. Day 1 / Map work" style="'+inp+'">'; }).join('')+
+      '</div>';
+    h+='<div style="font-size:10px;color:var(--muted);padding-top:4px">Week topics (optional), one per line: <i>7: France versus Germany; Lady Liberty</i></div>';
+    h+='<textarea id="'+P+'topics" rows="4" style="width:100%;box-sizing:border-box;margin-top:2px;'+inp+'">'+esc(Object.keys(tr.topics||{}).sort(function(a,b){ return a-b; }).map(function(k){ return k+": "+tr.topics[k]; }).join("\n"))+'</textarea>';
+    h+='<div style="display:flex;justify-content:flex-end;padding-top:4px">'+btn('Save weeks',"famTrackSaveWeek('"+J(id)+"',"+i+")",true)+'</div>';
+  }
+  h+='<div style="text-align:right;padding-top:4px"><button onclick="famTrackRemove(\''+J(id)+'\','+i+')" style="border:none;background:none;color:#dc2626;font-size:10px;cursor:pointer">Remove lessons</button></div>';
+  return box(h);
+}
+// FAMLESSONS_END
+
 
 // ── WHEN THE DOOR IS OPEN ──
 // The class row is not useful all day: at 8am he'd tap into an empty classroom, and a
