@@ -2020,7 +2020,7 @@ function _rtSwTodayLay(){
     return _rtSwLay;
   }catch(e){ return null; }
 }
-function rtSchoolworkDone(kid,d){ const _lay=(d===_todayDay)?_rtSwTodayLay():null; const ts=(_lay||getActiveTasks()).filter(t=>t.who===kid&&effectiveDay(t)===d&&!t.id.endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title)&&!(t._offDay&&!checked[t.id])); return ts.length===0?true:ts.every(t=>!!checked[t.id]||!!(typeof claimed!=="undefined"&&claimed&&claimed[t.id])); }
+function rtSchoolworkDone(kid,d,skipFam){ const _lay=(d===_todayDay)?_rtSwTodayLay():null; const ts=(_lay||getActiveTasks()).filter(t=>t.who===kid&&effectiveDay(t)===d&&!t.id.endsWith("_c")&&!t._eowOverflow&&!(skipFam&&t.famBlock)&&!/lunch/i.test(t.title)&&!(t._offDay&&!checked[t.id])); return ts.length===0?true:ts.every(t=>!!checked[t.id]||!!(typeof claimed!=="undefined"&&claimed&&claimed[t.id])); }
 // Afternoon (2026-08-18, her rule): opens when schoolwork is done — or at the afternoon hour (default
 // 4:00 PM) regardless, so a slow school day never holds the chores hostage. Past days: always open.
 function rtAfternoonHour(){ const h=parseInt(routineTimes&&routineTimes.afternoonHour,10); return isNaN(h)?16:h; }
@@ -5264,6 +5264,7 @@ function markCelebrated(kid,d){
 }
 
 let celebSongName="";
+let _celebNpText=null;
 function celebrateDayComplete(kid,d0){
   const d=d0||day;
   if(hasCelebrated(kid,d)) return;
@@ -5304,11 +5305,12 @@ function _showCelebration(kid, titleText, opts){
     }
   }
   celebSongName="";
+  _celebNpText=opts.npText||null;   // 🎉 family time: the now-playing line names the moment, not one kid
 
   // A specific song (opts.song, e.g. this session's chosen track) overrides the random
   // per-kid/occasion pick; otherwise pick randomly from the kid's occasion songs.
   const kidSongs=getSongsForKid(kid,occasion);
-  const chosen=(opts.song&&opts.song.url)?opts.song:(kidSongs.length?kidSongs[Math.floor(Math.random()*kidSongs.length)]:null);
+  const chosen=opts.noSong?null:((opts.song&&opts.song.url)?opts.song:(kidSongs.length?kidSongs[Math.floor(Math.random()*kidSongs.length)]:null));   // noSong = confetti only
   if(chosen){
     celebSongName=chosen.name||"Celebration!";
     songEl.textContent=(!opts.song&&kidSongs.length>1)?("🎲 "+celebSongName+" (surprise!)"):celebSongName;
@@ -5447,7 +5449,7 @@ function dismissCelebOverlay(kid){
   if(celebAudio && !celebAudio.paused){
     const np=document.getElementById("celeb-np");
     document.getElementById("celeb-np-song").textContent="🎵 "+(celebSongName||"Celebrating!");
-    document.getElementById("celeb-np-kid").textContent=cap(kid||"")+" finished the day!";
+    document.getElementById("celeb-np-kid").textContent=_celebNpText||(cap(kid||"")+" finished the day!");
     np.classList.add("show");
   }
 }
@@ -8050,6 +8052,7 @@ function finalizeDone(id, doneTs, score){
     // ⏩ last open card of today checked → the next lesson follows (after the heal below has settled)
     try{ if(typeof efPullNext==="function"&&effectiveDay(t)===_todayDay) setTimeout(function(){ try{ if(efPullNext(t.who)&&typeof renderAll==="function") renderAll(); }catch(e){} },0); }catch(e){}
     try{ if(effectiveDay(t)===_todayDay&&!t.gotAhead&&rtSchoolworkDone(t.who,_todayDay)) setTimeout(function(){ try{ celebrateDayComplete(t.who,_todayDay); }catch(e){} },700); }catch(e){}   // 🎉 fire-once (celeb_used)
+    try{ if(effectiveDay(t)===_todayDay&&typeof famCelebBlockCheck==="function"){ if(t.famBlock){ const _fb=t.famBlock; setTimeout(function(){ try{ famCelebBlockCheck(_fb,_todayDay); }catch(e){} },300); } else if(!t.gotAhead) setTimeout(function(){ try{ famCelebOwnWork(t.who,_todayDay); }catch(e){} },700); } }catch(e){}   // 🎉 family-time moments
     // Where does the completed task belong NOW?
     //  - Completed on a DIFFERENT calendar day than scheduled (worked ahead on Thursday's
     //    task Tuesday night, or caught up late): relocate it to the day+time it was
@@ -9461,6 +9464,7 @@ document.getElementById("dlg-ok").onclick=()=>{
     if(typeof gwShowToast==="function") gwShowToast("Sent to Mom to check ✓");
     // 🎉 her rule 2026-09-23: the kid celebrates when the day is done — not later on Mom's phone when she approves
     try{ if(effectiveDay(t)===_todayDay&&rtSchoolworkDone(t.who,_todayDay)) setTimeout(function(){ celebrateDayComplete(t.who,_todayDay); },600); }catch(e){}
+    try{ if(effectiveDay(t)===_todayDay&&!t.famBlock&&typeof famCelebOwnWork==="function") setTimeout(function(){ try{ famCelebOwnWork(t.who,_todayDay); }catch(e){} },600); }catch(e){}   // 🎉 own work done, family time next
     return;
   }
   if(finalizeDone(id, ts, null)===false){
@@ -24721,6 +24725,7 @@ function famBlockEditorHTML(id,b){
   h+='</div>';
   h+='<div class="rules-row"><div class="rules-label">Mom</div>'+_famChip(famMomLeads(b),'\u{1F469} Mom leads it',ed?"famSet('"+J(id)+"','momLeads',"+(famMomLeads(b)?'false':'null')+")":"")+
     '<span style="font-size:11px;color:var(--muted);padding-left:6px">'+(famMomLeads(b)?'Her time is held too':'Kids do it on their own')+'</span></div>';
+  if(typeof famCelebRowHTML==="function") h+=famCelebRowHTML(id,b,ed,J);
   h+='<div class="rules-section-lbl">Subjects, in order</div>';
   const its=famList(b.items);
   its.forEach(function(it,i){
@@ -24768,6 +24773,78 @@ function famSettingsCardHTML(){
   return h+'</div>';
 }
 // FAMBLOCK_END
+// FAMCELEB_START ── 🎉 FAMILY-TIME CELEBRATIONS (her design 2026-10-04) ───────────────────────────────────────
+// "it can have a add celebratory song option when making the family block" · "when mom clicks it says it's celebrating
+// all the kids who are done … anyone who is left will get it again for them" · "a celebrate with just the confetti etc
+// for when individual work gets done before family is done" · a kid who is behind is never named.
+// config/rules/familyBlocks/<id>/celeb = "" off (nothing changes) · "confetti" · <song url from settings/celebration_songs>
+// Fire-once keys in WK/celeb_used (targeted leaves): "<kid>_<day>_own" · "fam_<block>_<day>"; the done kids also get the
+// normal "<kid>_<day>" mark so their own day-done show doesn't play on top.
+function famCelebOf(b){ return (b&&!b.off&&b.celeb)?String(b.celeb):""; }
+function famCelebSong(b){
+  const c=famCelebOf(b); if(!c||c==="confetti") return null;
+  const s=(typeof celebSongs!=="undefined"&&celebSongs||[]).find(function(x){ return x&&x.url===c; });
+  return {name:(s&&s.name)||"Celebration!",url:c};
+}
+function _famCelebHas(key){ const u=ld(WK+"_celeb_used")||{}; return !!u[key]; }
+function _famCelebMark(key){ const u=ld(WK+"_celeb_used")||{}; u[key]=true; sv(WK+"_celeb_used",u); if(db) db.ref(WK+"/celeb_used/"+key).set(true); }
+function _famCelebNames(list){ list=list.map(cap); return list.length>1?list.slice(0,-1).join(", ")+" & "+list[list.length-1]:(list[0]||""); }
+function _famCelebCards(d){ const lay=(d===_todayDay&&typeof _rtSwTodayLay==="function")?_rtSwTodayLay():null; return (lay||getActiveTasks()).filter(function(t){ return t&&t.famBlock&&effectiveDay(t)===d; }); }
+// 1️⃣ A kid's own work is done and a celebrating family time is still ahead → confetti (Day songs, if any are on).
+function famCelebOwnWork(kid,d){
+  if(d!==_todayDay||hasCelebrated(kid,d)||_famCelebHas(kid+"_"+d+"_own")) return false;
+  if(rtSchoolworkDone(kid,d)||!rtSchoolworkDone(kid,d,true)) return false;   // whole day done → the normal show · own work not done yet
+  const defs=famDefs();
+  const open=_famCelebCards(d).filter(function(t){ return t.who===kid&&!checked[t.id]&&famCelebOf(defs[t.famBlock]); })
+    .sort(function(a,b){ return toMin(a.time)-toMin(b.time); });
+  if(!open.length) return false;
+  const nm=(defs[open[0].famBlock]||{}).name||"Family time";
+  _famCelebMark(kid+"_"+d+"_own");
+  _showCelebration(kid, cap(kid)+"'s own work is done! "+FAM_ICON+" "+nm+" is next.", {occasion:"day",npText:cap(kid)+"'s own work is done!"});
+  return true;
+}
+// 2️⃣ The last card of a celebrating block is checked → ONE show with the block's song, naming every member whose
+// whole day is now done. Members with work left aren't named; they get their own show when they finish.
+function famCelebBlockCheck(id,d){
+  if(d!==_todayDay) return false;
+  const b=famDefs()[id]; if(!famCelebOf(b)) return false;
+  const key="fam_"+id+"_"+d; if(_famCelebHas(key)) return false;
+  const cards=_famCelebCards(d).filter(function(t){ return t.famBlock===id; });
+  if(!cards.length||cards.some(function(t){ return !checked[t.id]; })) return false;
+  _famCelebMark(key);
+  const kids=[...ROSTER].filter(function(k){ return cards.some(function(t){ return t.who===k; }); });
+  const done=kids.filter(function(k){ return rtSchoolworkDone(k,d); });
+  done.forEach(function(k){ if(!hasCelebrated(k,d)) markCelebrated(k,d); });
+  const nm=b.name||"Family time", names=_famCelebNames(done), song=famCelebSong(b);
+  const o={npText:nm+" done!"}; if(song) o.song=song; else o.noSong=true;
+  _showCelebration(done[0]||kids[0], "\u{1F389} "+nm+" done!"+(names?" "+names+" finished the day!":""), o);
+  return true;
+}
+function famCelebTest(id){
+  const b=famDefs()[id]; if(!b) return;
+  const song=famCelebSong(b), o={npText:(b.name||"Family time")+" done!"}; if(song) o.song=song; else o.noSong=true;
+  _showCelebration([...ROSTER][0], "\u{1F389} "+(b.name||"Family time")+" done! (test)", o);
+}
+function famCelebRowHTML(id,b,ed,J){
+  const cur=b.celeb?String(b.celeb):"", songs=(typeof celebSongs!=="undefined"&&celebSongs||[]).filter(function(s){ return s&&s.url; });
+  let h='<div class="rules-row"><div class="rules-label">\u{1F389} Done</div>';
+  if(ed){
+    h+='<select onchange="famSet(\''+J(id)+'\',\'celeb\',this.value||null)" style="flex:1;min-width:0;padding:5px 7px;border:1.5px solid var(--border);border-radius:8px;font-size:12px">'+
+      '<option value=""'+(!cur?' selected':'')+'>No family celebration</option>'+
+      '<option value="confetti"'+(cur==="confetti"?' selected':'')+'>\u{1F38A} Confetti, no song</option>'+
+      songs.map(function(s){ return '<option value="'+esc(s.url)+'"'+(cur===s.url?' selected':'')+'>\u{1F3B5} '+esc(s.name||"Song")+'</option>'; }).join('')+
+      (cur&&cur!=="confetti"&&!songs.some(function(s){ return s.url===cur; })?'<option value="'+esc(cur)+'" selected>\u{1F3B5} (song no longer in the list)</option>':'')+
+      '</select>';
+    if(cur) h+='<button onclick="famCelebTest(\''+J(id)+'\')" style="margin-left:6px;padding:5px 10px;border-radius:8px;border:none;background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u25B6 Try it</button>';
+  } else {
+    const s=famCelebSong(b);
+    h+='<span style="font-size:12px">'+(!cur?'No family celebration':(cur==="confetti"?'\u{1F38A} Confetti':'\u{1F3B5} '+esc((s&&s.name)||"Song")))+'</span>';
+  }
+  h+='</div>';
+  if(cur) h+='<div style="font-size:11px;color:var(--muted);padding:0 0 6px">When the last subject is checked off, everyone who has finished the day is celebrated together. Kids still working get their own when they finish, and a kid who finishes their own work first gets confetti then.</div>';
+  return h;
+}
+// FAMCELEB_END
 // FAMTOGETHER_START ── 🧩 DO TOGETHER · 🏡 TOGETHER STRIP · FAMILY GRID · family minutes in the estimates (her design 10/3) ──
 // "can we move their fact review and eventually if no longer doing together move back to own lane … so it's always seen
 // as ONE thing and not in multiple places" · "two puzzle pieces, one being each kid, in a split grid in the family grid" ·
