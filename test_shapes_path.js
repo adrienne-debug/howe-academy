@@ -34,6 +34,7 @@ ok("solids only in Stage 3", cards.filter(c => c.stage === 3).map(c => c.name).j
 const sidesSrc = /const MAST_SHAPE_SIDES=(\{[^}]*\});/.exec(src)[1];
 const SIDES = new Function("return " + sidesSrc)();
 ok("every count-the-sides shape is in the unit (her ask 10/4)", Object.keys(SIDES).every(n => names.includes(n)));
+ok("Julian's other shapes are in (her yes 10/4): parallelogram & kite, crescent, cross & arrow", ["Parallelogram", "Kite", "Crescent", "Cross", "Arrow"].every(n => cards.some(c => c.name === n && c.stage === 2)));
 ok("Julian's 7- and 9-gons are in, with the decagon, last in flat shapes", cards.filter(c => c.family === "Count the sides: 7, 9, 10").map(c => c.name).join(",") === "Heptagon,Nonagon,Decagon");
 ok("no duplicate names", new Set(names).size === names.length);
 

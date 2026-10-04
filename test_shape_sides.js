@@ -40,8 +40,9 @@ eval(fnBlock("mastShapeVis"));
 // mastShapeVis's tail references helpers only for the 2026-08-17 bank; not needed here.
 
 // ── 1. sides map ─────────────────────────────────────────────────────────────────────────
-const want = { Triangle: 3, Square: 4, Rectangle: 4, Diamond: 4, Pentagon: 5, Hexagon: 6, Octagon: 8, Decagon: 10 };
-ok(JSON.stringify(MAST_SHAPE_SIDES) === JSON.stringify(want), "sides map is exactly the eight straight-sided shapes", JSON.stringify(MAST_SHAPE_SIDES));
+// + Heptagon and Nonagon (her yes 2026-10-04) — they already had polygon geometry, now they get the drill too
+const want = { Triangle: 3, Square: 4, Rectangle: 4, Diamond: 4, Pentagon: 5, Hexagon: 6, Heptagon: 7, Octagon: 8, Nonagon: 9, Decagon: 10 };
+ok(JSON.stringify(MAST_SHAPE_SIDES) === JSON.stringify(want), "sides map is exactly the ten straight-sided shapes", JSON.stringify(MAST_SHAPE_SIDES));
 for (const [nm, n] of Object.entries(want)) {
   const p = mastShapePoly(nm, 210);
   ok(p && p.pts.length === n, nm + " polygon has " + n + " corners");

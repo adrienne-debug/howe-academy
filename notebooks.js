@@ -1334,7 +1334,7 @@
   // The Shapes Path's stages (index.html SP_STAGES, same order) — the notebook runs ahead through his current stage.
   var CB_SHAPE_STAGES = [
     ["Circle", "Square", "Triangle", "Rectangle"],
-    ["Hexagon", "Oval", "Diamond", "Star", "Heart", "Pentagon", "Octagon", "Trapezoid", "Semicircle", "Heptagon", "Nonagon", "Decagon"],
+    ["Hexagon", "Oval", "Diamond", "Star", "Heart", "Pentagon", "Octagon", "Trapezoid", "Semicircle", "Parallelogram", "Kite", "Crescent", "Cross", "Arrow", "Heptagon", "Nonagon", "Decagon"],
     ["Cube", "Sphere", "Cone", "Cylinder", "Pyramid"]];
   var CB_COLORS_DEFAULT = ["Red", "Blue", "Yellow", "Green", "Orange", "Purple", "Brown", "Black"];
 
