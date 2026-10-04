@@ -1412,6 +1412,24 @@
     // day running ahead of them — his drilled letters first, then the rest in handwriting order.
     else CB_LOWER_DEFAULT.forEach(function (l) { if (cur.letters.indexOf(l) < 0) cur.letters.push(l); });
     if (!has("numbers")) cur.numbers = CB_NUMBERS_DEFAULT.slice();
+    else {
+      // Numbers run ahead of his drills (her yes 10/4): the Math Fluency Path introduces 3 at a time, and
+      // rotating over just those printed 11, 12, 13 all week. The week starts at the number he's LEARNING
+      // and counts up to 20; a number he already knows comes back only when he's been missing it in drills
+      // (🔁). Knows all of them → plain review rotation, like Julian's.
+      var numIt = items.filter(function (it) { return subj(it) === "numbers"; });
+      var nval = function (it) { return parseInt(String(it.prompt || ""), 10); };
+      var learning = numIt.filter(function (it) { return it.status === "introduction" && !isNaN(nval(it)); }).map(nval);
+      var known = numIt.filter(function (it) { return it.status !== "introduction" && !isNaN(nval(it)); }).map(nval);
+      var front = learning.length ? Math.min.apply(null, learning) : (known.length ? Math.max.apply(null, known) + 1 : 11);
+      if (front <= 20) {
+        var list = [];
+        for (var nn = front; nn <= 20; nn++) list.push(String(nn));
+        Object.keys(cur.flag.numbers || {}).forEach(function (p) { if (list.indexOf(p) < 0) list.push(p); });   // missed ones, for 🔁 review
+        cur.numbers = list;
+        cur.numbersFromFront = true;
+      }
+    }
     if (!has("shapes")) cur.shapes = CB_SHAPES_DEFAULT.slice();
     if (!has("colors")) cur.colors = CB_COLORS_DEFAULT.map(function (c) { return [c, JU_COLOR_HEX[c.toLowerCase()] || "#6b7280"]; });
     var caps = items.filter(function (it) { return subj(it) === "letters"; }).map(function (it) { return String(it.prompt || "").trim().toUpperCase(); }).filter(Boolean);
@@ -1548,8 +1566,10 @@
       '          <div class="slabel" style="margin:0;">' + letterLab + '</div>\n' +
       '          <div class="cue">' + cue + '</div>\n        </div>\n' +
       '        <div style="display:flex;align-items:baseline;gap:9px;margin-top:2px;">\n' +
+      // Capital + little letter at the SAME size on one baseline, so they keep their real proportions (her note
+      // 10/4: a smaller capital read as "a slightly bigger lowercase" — c/C, o/O, s/S are the same shape).
+      '          <span class="nt-disp" style="font-size:50px;color:var(--muted);">' + U + '</span>\n' +
       '          <span class="nt-disp" style="font-size:50px;color:var(--ju-deep);">' + l + '</span>\n' +
-      '          <span class="nt-disp" style="font-size:30px;color:var(--muted);">' + U + '</span>\n' +
       '          <div style="font-size:10px;font-weight:700;color:var(--muted);">Trace the little ' + l + ' ➜</div>\n        </div>\n' +
       '        ' + juTrace(l.repeat(3), 54, null, "0.12em") + '\n' +
       '        <div style="font-size:8.5px;font-weight:700;color:var(--ju-deep);margin-top:2px;line-height:1.35;">🖍 ' + l + ' — ' + (CB_LOWER_STROKES[l] || "start at the top, trace slowly") + '</div>\n' +
@@ -1683,7 +1703,15 @@
     var lc = ctx.letterCursor || null;
     var fromWk = (lc && parseInt(lc.from, 10) > 0) ? Math.min(parseInt(lc.from, 10), wkInt || 1) : (wkInt || 1);
     var letterStart = lc ? juLetterStart(lc, wkInt || 1, cur.letters.length) : 0;
-    var picks = juWeekPicks(Math.max(1, (wkInt || 1) - fromWk + 1), cur, days.length, reviewCap, ctx.juPicks, letterStart);
+    var relWk = Math.max(1, (wkInt || 1) - fromWk + 1);
+    if (cur.numbersFromFront) {
+      // juWeekPicks starts numbers at ((week-1)*5) % n — turn the list so that spot holds the number he's
+      // learning, so every week opens on it and counts up from there.
+      var nl = cur.numbers, nn2 = nl.length, p0 = ((relWk - 1) * 5) % nn2, rot = [];
+      for (var ri = 0; ri < nn2; ri++) rot.push(nl[(ri - p0 + nn2) % nn2]);
+      cur.numbers = rot;
+    }
+    var picks = juWeekPicks(relWk, cur, days.length, reviewCap, ctx.juPicks, letterStart);
 
     var parts = [juHtmlHead(weekNum, "Caleb's Notebook", CB_CSS, CB_FONTS)];
     parts.push(cbPageCover(weekNum, weekDates, cur, picks));

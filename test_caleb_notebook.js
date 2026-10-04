@@ -33,11 +33,28 @@ ok(/Circle every c/.test(o.student) && /Circle big c/.test(o.student), "find-it 
 // and no inline style on his pages uses it.
 ok(!/fonts\.googleapis[^"]*Fredoka/.test(o.student) && !/Fredoka/.test(o.student.replace(/<style[\s\S]*?<\/style>/g, "")) && /family=Bungee&family=Staatliches/.test(o.student), "no Fredoka — construction fonts (her ask 10/2)");
 ok(/🚜/.test(o.student) && !/🦕|🦖|Julian/.test(o.student.replace(/<style>[\s\S]*?<\/style>/g, "")), "construction theme, no dinosaur / Julian text");
-o = NB.generate("caleb", base({ countEmoji: "🚗", masteryItems: [{ subject: "Numbers", prompt: "14" }] }));
-ok((o.student.match(/tf-cell on[^>]*>🚗/g) || []).length === 70 && /14 <span[^>]*>= 10 and 4</.test(o.student), "his counting picture fills the frames; teens say '= 10 and 4'");
+o = NB.generate("caleb", base({ countEmoji: "🚗", masteryItems: [{ subject: "Numbers", prompt: "14", status: "introduction" }] }));
+ok((o.student.match(/tf-cell on[^>]*>🚗/g) || []).length === 14 + 15 + 16 + 17 + 18 && /14 <span[^>]*>= 10 and 4</.test(o.student), "his counting picture fills the frames (14…18 this week); teens say '= 10 and 4'");
 o = NB.generate("caleb", base({ masteryItems: [{ subject: "Shapes", prompt: "Blob" }] }));
 ok((o.warnings || []).some(w => /Blob/.test(w)), "unknown shape still warns Mom (same as Julian)");
 ok(/ha-safari-print/.test(o.student) && /ha-safari-print/.test(o.parent), "Safari print fit on notebook + parent guide");
+// Numbers run ahead of his drills (her yes 10/4) — the Math Fluency Path introduces only 3 at a time.
+const numItems = (known, learning, extra) => known.map(n => Object.assign({ subject: "Numbers", prompt: String(n), status: "active", tier: "weekly" }, (extra || {})[n] || {}))
+  .concat(learning.map(n => ({ subject: "Numbers", prompt: String(n), status: "introduction", tier: "daily" })));
+const nums = (o) => [...o.student.matchAll(/recap-chip">🔢 (\d+)/g)].map(m => m[1]).join(" ");
+const k10 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+o = NB.generate("caleb", base({ masteryItems: numItems(k10, [11, 12, 13]) }));
+ok(nums(o) === "11 12 13 14 15", "learning 11–13 → the week runs 11 12 13 14 15 (not 11 12 13 11 12)", nums(o));
+o = NB.generate("caleb", base({ weekNum: "week27", letterCursor: { week: 26, idx: 0, adv: 5, from: 26 }, masteryItems: numItems(k10.concat([11, 12, 13]), [14, 15, 16]) }));
+ok(nums(o) === "14 15 16 17 18", "a later week opens on the number he's learning now (14)", nums(o));
+o = NB.generate("caleb", base({ masteryItems: numItems(k10, [11, 12, 13], { 7: { recentMiss: 2 } }) }));
+ok(nums(o) === "7 11 12 13 14" && /Practice Again 🔁 · 7/.test(o.student), "a known number he's been missing comes back once with 🔁", nums(o));
+o = NB.generate("caleb", base({ masteryItems: numItems(k10.concat([11, 12, 13, 14, 15, 16, 17]), [18, 19, 20]) }));
+ok(nums(o) === "18 19 20 18 19", "near the top it wraps inside 18–20", nums(o));
+o = NB.generate("caleb", base({ masteryItems: numItems(Array.from({ length: 20 }, (_, i) => i + 1), []) }));
+ok(nums(o) === "1 2 3 4 5", "knows 1–20 → plain review rotation", nums(o));
+ok(nums(NB.generate("caleb", base())) === "11 12 13 14 15", "no Numbers deck yet → 11–20 as before");
+
 const j = NB.generate("julian", base());
 ok(/JULIAN/.test(j.student.replace(/#/g, "")) && /Fredoka/.test(j.student) && !/Bungee|🚜/.test(j.student), "Julian's notebook unchanged (dino theme, Fredoka, JULIAN)");
 
