@@ -29976,7 +29976,7 @@ function _ustApply(u,kid,stageN,knows,subject,mapId){
     if(c.def!=null) base.answer=String(c.def);   // Numbers/Counting: no back — the kid says it
     if(fi<=kIdx){  // already known → review on the ladder
       const wk=(_ustFamNum(c)||0)>=wFrom;
-      items.push(Object.assign(base,{status:"active",tier:wk?"weekly":"bi_weekly",tally_dots:5,next_due:2+(wk?(nW++%7):(nB++%14))}));
+      items.push(Object.assign(base,{status:"active",placed:true,tier:wk?"weekly":"bi_weekly",tally_dots:5,next_due:2+(wk?(nW++%7):(nB++%14))}));
       haveItem.add(pk(dk,c.name));
     } else if(started[dk]<(d.introCap||3)&&(upto==null||ch==null||ch<=upto)){
       items.push(Object.assign(base,{status:"introduction",tier:"daily",tally_dots:0}));
@@ -30439,6 +30439,7 @@ function unitSprintBest(kid,logLabel){
 }
 // Deep link: Units tab → Mastery tab Sprint view with this round pre-selected.
 function unitGoSprint(kid,unitId,key){
+  if(typeof unitNudgePanelKid!=="undefined") unitNudgePanelKid=null;   // NUDGE_ROLLUP
   masteryKid=kid; mastView="sprint"; mastLogMode=false; mastScoreItemId=null;
   sprintSource="unit"; sprintUnitId=unitId; sprintUnitKey=key;
   showTab("mastery");
@@ -30489,14 +30490,80 @@ function unitPlanNudges(u,kid){
     if(doneLog[act.key]||queued.indexOf(act.key)>=0) return;
     if(_unitPlanFired(u,kid,p.when)) out.push({kind:"activity",key:_unitSafeKey(p.key),unitId:u.id,act,note:p.note||""});
   });
-  unitSprintRounds(u,kid).forEach(r=>{
-    const k=_unitSafeKey("sprint|"+r.key);
-    if(!r.unlocked||dis[k]) return;
-    if(unitSprintBest(kid,r.logLabel)!=null) return;
-    out.push({kind:"sprint",key:k,unitId:u.id,round:r});
+  _unitSprintRollup(u,kid).forEach(g=>{   // NUDGE_ROLLUP: one sprint nudge per deck
+    out.push({kind:"sprint",key:g.keys[0],keys:g.keys,unitId:u.id,round:g.pick,deckKey:g.deckKey,more:g.more,placed:_unitRoundPlaced(u,kid,g.pick)});
   });
   return out;
 }
+// NUDGE_ROLLUP_START (her "all 3", 2026-10-04). Per deck: the live (unlocked, never run, not
+// dismissed) rounds. The whole-deck round wins and its groups fold into it; once it has been run or
+// dismissed, its groups are covered too. Without it, the newest unlocked group shows with "+N more".
+// keys = every dismiss key the nudge stands for (✕ clears them all).
+function _unitSprintRollup(u,kid){
+  const dis=((u.planDismiss||{})[kid])||{}; const by={}, order=[];
+  unitSprintRounds(u,kid).forEach(r=>{ if(!by[r.deckKey]){ by[r.deckKey]=[]; order.push(r.deckKey); } by[r.deckKey].push(r); });
+  const out=[];
+  order.forEach(dk=>{
+    const all=by[dk], kOf=r=>_unitSafeKey("sprint|"+r.key), ran=r=>unitSprintBest(kid,r.logLabel)!=null;
+    const whole=all.find(r=>r.whole), covered=!!(whole&&(dis[kOf(whole)]||ran(whole)));
+    const live=all.filter(r=>r.unlocked&&!dis[kOf(r)]&&!ran(r)&&!(covered&&!r.whole));
+    if(!live.length) return;
+    const w=live.find(r=>r.whole), pick=w||live[live.length-1];
+    out.push({deckKey:dk,pick,more:w?0:live.length-1,keys:[kOf(pick)].concat(live.filter(r=>r!==pick).map(kOf))});
+  });
+  return out;
+}
+// A round the kid came in already knowing: every card was placed at enroll (placed:true), or — in a
+// staged unit — is on the ladder with no drill history at all (cards placed before the tag existed).
+function _unitRoundPlaced(u,kid,r){
+  let items=masteryData[kid]; if(!Array.isArray(items)) items=Object.values(items||{});
+  const by={}; items.forEach(i=>{ if(i) by[i.subject+"|"+i.prompt]=i; });
+  const kh=((masteryData.history||{})[kid])||{}, seen=new Set();
+  Object.keys(kh).forEach(d=>{ const e=kh[d]; let its=e&&e.items; if(!Array.isArray(its)) its=its?Object.values(its):[]; its.forEach(x=>{ if(x&&x.id) seen.add(x.id); }); });
+  const names=r.names||[]; if(!names.length) return false;
+  return names.every(n=>{ const it=by[r.deckKey+"|"+n]; if(!it) return false;
+    return it.placed===true||(!!u.stages&&it.status!=="introduction"&&it.status!=="parked"&&!seen.has(it.id)); });
+}
+// Nudge wording: a group says its deck ("Numbers 1–5" vs "Counting 1–5"); placed rounds ask for a baseline.
+function _unitSprintNudgeLbl(n){
+  const r=n.round, nm=r.whole?r.label:(r.deckKey+" "+r.label), more=n.more?' <span style="font-weight:600;opacity:.75">(+'+n.more+' more)</span>':'';
+  const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  return n.placed?'📏 Get a baseline: '+esc(nm)+more:'🏃 '+esc(nm)+more+' is ready to sprint!';
+}
+function unitDismissSprintNudge(unitId,kid,deckKey){
+  if(!momHere()) return; const u=unitStudies[unitId]; if(!u) return;
+  const g=_unitSprintRollup(u,kid).find(x=>x.deckKey===deckKey); if(!g) return;
+  _unitDismissKeys(u,kid,g.keys); renderAll();
+}
+function unitDismissAllSprints(kid){
+  if(!momHere()) return;
+  haKidUnits(kid).forEach(u=>{ const ks=[]; _unitSprintRollup(u,kid).forEach(g=>{ ks.push.apply(ks,g.keys); }); if(ks.length) _unitDismissKeys(u,kid,ks); });
+  unitNudgePanelKid=null; renderAll();
+}
+function _unitDismissKeys(u,kid,keys){
+  if(!u.planDismiss) u.planDismiss={}; if(!u.planDismiss[kid]) u.planDismiss[kid]={};
+  const upd={}; keys.forEach(k=>{ u.planDismiss[kid][k]=true; upd[k]=true; });
+  if(db) db.ref("unitStudies/"+u.id+"/planDismiss/"+kid).update(upd);
+}
+// Schedule panel: one kid's nudges grouped by unit, full actions.
+let unitNudgePanelKid=null;
+function unitNudgePanelOpen(kid){ unitNudgePanelKid=kid; renderAll(); }
+function unitNudgePanelClose(){ unitNudgePanelKid=null; renderAll(); }
+function _unitNudgePanelHtml(kid){
+  const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  let body="", nS=0;
+  haKidUnits(kid).forEach(u=>{ const nd=unitPlanNudges(u,kid); if(!nd.length) return; nS+=nd.filter(n=>n.kind==="sprint").length;
+    body+='<div style="font-size:12px;font-weight:800;color:#1f2937;margin:12px 0 6px">'+(u.emoji||"📘")+' '+esc(u.title||u.id)+'</div>'+_unitNudgeChipsFor(kid,nd,true); });
+  if(!body) return "";
+  return '<div onclick="if(event.target===this)unitNudgePanelClose()" style="position:fixed;inset:0;background:rgba(17,24,39,.45);z-index:10040;display:flex;align-items:flex-start;justify-content:center;padding:60px 14px 20px;overflow-y:auto">'+
+    '<div style="background:#fff;border-radius:16px;padding:16px 16px 14px;width:100%;max-width:460px;font-family:\'DM Sans\',sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.2)">'+
+    '<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-family:\'Fraunces\',serif;font-size:18px;font-weight:700">🎓 '+esc(cap(kid))+' — up next</div>'+
+    '<button onclick="unitNudgePanelClose()" style="padding:6px 14px;border-radius:9px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Done</button></div>'+
+    '<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin-top:4px">📏 = things '+esc(cap(kid))+' already knew — one timed run gives a starting score. 🏃 = a group just learned.</div>'+
+    body+(nS&&momHere()?'<div style="text-align:right;margin-top:12px"><button onclick="unitDismissAllSprints(\''+esc(kid)+'\')" style="padding:6px 12px;border-radius:9px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✕ Clear all sprints</button></div>':'')+
+    '</div></div>';
+}
+// NUDGE_ROLLUP_END
 function unitAllNudges(kid){ let out=[]; haKidUnits(kid).forEach(u=>{ out=out.concat(unitPlanNudges(u,kid)); }); return out; }
 function unitDismissNudge(unitId,kid,key){
   if(!momHere()) return; // skipping a planned step is Mom's call
@@ -30518,9 +30585,9 @@ function _unitNudgeChipsFor(kid,nudges,full){
     const uid=esc(n.unitId), k=esc(n.key).replace(/'/g,"\\'");
     if(n.kind==="sprint"){
       h+='<div style="display:flex;align-items:center;gap:7px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:6px 10px;flex-wrap:wrap">';
-      h+='<span style="font-size:11px;font-weight:700;color:#15803d;flex:1;min-width:140px;cursor:pointer" onclick="unitGoSprint(\''+esc(kid)+'\',\''+uid+'\',\''+esc(n.round.key).replace(/'/g,"\\'")+'\')">🏃 '+esc(n.round.label)+' is ready to sprint!</span>';
+      h+='<span style="font-size:11px;font-weight:700;color:#15803d;flex:1;min-width:140px;cursor:pointer" onclick="unitGoSprint(\''+esc(kid)+'\',\''+uid+'\',\''+esc(n.round.key).replace(/'/g,"\\'")+'\')">'+_unitSprintNudgeLbl(n)+'</span>';
       if(full){ h+='<button onclick="unitGoSprint(\''+esc(kid)+'\',\''+uid+'\',\''+esc(n.round.key).replace(/'/g,"\\'")+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#15803d;color:#fff;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">▶ Sprint</button>';
-        if(_mom) h+='<button onclick="unitDismissNudge(\''+uid+'\',\''+esc(kid)+'\',\''+k+'\')" title="Dismiss" style="padding:4px 7px;border-radius:8px;border:none;background:none;color:#9ca3af;font-size:11px;font-weight:700;cursor:pointer">✕</button>'; }
+        if(_mom) h+='<button onclick="unitDismissSprintNudge(\''+uid+'\',\''+esc(kid)+'\',\''+esc(n.deckKey).replace(/'/g,"\\'")+'\')" title="Dismiss" style="padding:4px 7px;border-radius:8px;border:none;background:none;color:#9ca3af;font-size:11px;font-weight:700;cursor:pointer">✕</button>'; }
       h+='</div>';
     } else {
       h+='<div style="display:flex;align-items:center;gap:7px;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:10px;padding:6px 10px;flex-wrap:wrap">';
@@ -30538,7 +30605,12 @@ function _unitNudgeChipsFor(kid,nudges,full){
 function unitScheduleNudges(kidFilter){
   const roster=(typeof ROSTER!=="undefined")?ROSTER:["lincoln","ellis","lucy","julian"];
   const kids=(kidFilter&&kidFilter!=="all"&&kidFilter!=="mom")?[kidFilter]:roster;
-  let inner=""; kids.forEach(k=>{ const c=unitNudgeChips(k,false); if(c) inner+='<div style="margin-top:6px"><div style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:3px">'+cap(k)+'</div>'+c+'</div>'; });
+  let inner=""; kids.forEach(k=>{ const nd=unitAllNudges(k); if(!nd.length) return;   // NUDGE_ROLLUP: one line per kid → panel
+    const nS=nd.filter(n=>n.kind==="sprint").length, nA=nd.length-nS, bits=[];
+    if(nS) bits.push('🏃 '+nS+' sprint'+(nS>1?'s':'')+' ready'); if(nA) bits.push('📌 '+nA+' activit'+(nA>1?'ies':'y'));
+    inner+='<div onclick="unitNudgePanelOpen(\''+k+'\')" style="display:flex;align-items:center;gap:8px;margin-top:6px;padding:7px 10px;border-radius:10px;background:#f0fdf4;border:1.5px solid #86efac;cursor:pointer">'+
+      '<span style="font-size:11.5px;font-weight:800;color:#1f2937">'+cap(k)+'</span><span style="flex:1;font-size:11px;font-weight:700;color:#15803d">'+bits.join(' · ')+'</span><span style="font-size:14px;font-weight:800;color:#15803d">›</span></div>'; });
+  if(unitNudgePanelKid&&kids.indexOf(unitNudgePanelKid)>=0) inner+=_unitNudgePanelHtml(unitNudgePanelKid);
   if(!inner) return "";
   return '<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:10px 12px;margin:10px 0">'+
     '<div style="font-size:11px;font-weight:800;color:#1f2937">🎓 Unit Study — up next</div>'+inner+'</div>';
