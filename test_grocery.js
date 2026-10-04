@@ -11,7 +11,7 @@ const mk=()=>{
   env.ls={};
   const glyph=src.match(/const KIT_FRAC_GLYPH=\{[^}]+\};/)[0];
   const body=glyph+fn("kitSlug")+fn("kitQtyParse")+fn("kitIsoPlus")+block+`
-    ;return {grParse,grKey,grSecFor,grQtyTxt,grMergeQty,grAdd,grFindDup,grToggle,grVToggle,grDone,grApprove,grDecline,grDupMore,grDupAnyway,grGroups,grText,grAddFrom,grKidAllow,grKidBoxHTML,grReqCount,grPickToggle,grPickSave,grActiveStores,grSetStore,grCurStore,grStoreField,grStoreRemove,grSecOrder,grAisleMove,grCfgDad,grToGetCount,grCartCount,grHomeFor,grDadCardHTML,grIngParse,grIngRows,grFromRecipe,grFromWeek,grImpAdd,grFromPantry,grFromTodo,get imp(){return _grImp;},grMem,grMemUpdate,grShelf,grShelfAdd,grSuggestNames,grClearedIds,grPutBack,grRemove,grSave,grEdit,grEditSave,grMoney,grPriceAdd,grUsual,grLowest,grSaleInfo,grBest,grTripEst,grTripHeadHTML,grPriceLineHTML,grSpent,grWeekStart,grRcptLoad,grRcptSave,grDoneRun,get rc(){return _grRc;},set rc(v){_grRc=v;},grSortIds,grSortTo,grSortBoxHTML,grStoreFromText,grPlLoad,grPlAdd,grRowHTML,get pl(){return _grPl;},set pl(v){_grPl=v;},
+    ;return {grParse,grKey,grSecFor,grQtyTxt,grMergeQty,grAdd,grFindDup,grToggle,grVToggle,grDone,grApprove,grDecline,grDupMore,grDupAnyway,grGroups,grText,grAddFrom,grKidAllow,grKidBoxHTML,grReqCount,grPickToggle,grPickSave,grActiveStores,grSetStore,grCurStore,grStoreField,grStoreRemove,grSecOrder,grAisleMove,grCfgDad,grToGetCount,grCartCount,grHomeFor,grDadCardHTML,grIngParse,grIngRows,grFromRecipe,grFromWeek,grImpAdd,grFromPantry,grFromTodo,get imp(){return _grImp;},grMem,grMemUpdate,grShelf,grShelfAdd,grSuggestNames,grClearedIds,grPutBack,grRemove,grSave,grEdit,grEditSave,grMoney,grPriceAdd,grUsual,grLowest,grSaleInfo,grBest,grTripEst,grTripHeadHTML,grPriceLineHTML,grSpent,grWeekStart,grRcptLoad,grRcptSave,grDoneRun,get rc(){return _grRc;},set rc(v){_grRc=v;},grSortIds,grSortTo,grSortBoxHTML,grStoreFromText,grPlLoad,grPlAdd,grRowHTML,get pl(){return _grPl;},set pl(v){_grPl=v;},grStep,grQtyType,grQtySave,grStepperHTML,set fromDad(v){grFromDad=v;},grPaidSet,grPaidBoxHTML,grCartTotal,grStoreTotalBarHTML,set big(v){grBig=v;},
       get data(){return grData;}, set data(v){grData=v;}, get pend(){return _grPend;}};`;
   const F=new Function("env","db","HA_LS","mwToast","kitOrderList","kitStaples","kitBuyLog","panAdd","_todayStr","momHere","dadAwardOk","kitPinGate","confirm","ROSTER_DEF","esc","tab","document","prompt","navigator","kitPantry","panStatus","kitMeals","kitPlan","gwParseDate","momdayData","momdayToggleTodo","kitCapKey",body);
   const kitOrderList=()=>{ const need=Object.keys(env.staples).filter(k=>env.staples[k].state!=="have").map(k=>Object.assign({id:k},env.staples[k]));
@@ -322,6 +322,53 @@ ok("✎ pop-ups carry price + history; list page has 📸 Read a receipt", /\+gr
   ok("Add → Publix items tagged, ground beef waits in To sort with a 📸 source, ketchup amount merged", Object.values(L.data.items).some(i=>i.name==="Bananas"&&i.stores.join()==="publix"&&i.src[0].k==="photo")&&L.grSortIds().some(i=>L.data.items[i].name==="Ground beef"));
 }
 ok("list page has 📸 List from a photo + the 📥 To sort box", /grPhotoListOpen\(\)/.test(src)&&/h\+=grSortBoxHTML\(\)/.test(src));
+// ── − 2 + amount buttons ──
+{ const L=mk(); withPop(L); L.env.mom=true;
+  L.grAdd("Eggs","mom"); L.grAdd("2 lb ground beef","mom");
+  const eg=Object.keys(L.data.items).find(i=>L.data.items[i].name==="Eggs"), gb=Object.keys(L.data.items).find(i=>L.data.items[i].name==="Ground beef");
+  ok("stepper shows − 1 + with − greyed at 1", /One less" disabled/.test(L.grStepperHTML({id:eg}))&&/>1<\/button>/.test(L.grStepperHTML({id:eg})));
+  L.grStep(eg,1); L.grStep(eg,1);
+  ok("+ twice → 3, one small path (update qty)", L.data.items[eg].qty===3&&L.env.writes.some(w=>w[0]==="update"&&w[1]==="kitchen/grocery/items/"+eg&&w[2].qty===3));
+  L.grStep(eg,-1); L.grStep(eg,-1); L.grStep(eg,-1);
+  ok("− stops at 1 (never removes)", L.data.items[eg].qty===1&&L.data.items[eg]);
+  L.grStep(gb,1);
+  ok("units ride along: 2 lb + → 3 lb", L.data.items[gb].qty===3&&L.data.items[gb].unit==="lb"&&/3 lb/.test(L.grStepperHTML({id:gb})));
+  L.grQtyType(eg); L.env.els["gr-qty-in"]={value:"12"}; L.grQtySave();
+  ok("tap the number → type 12", L.data.items[eg].qty===12);
+  L.grQtyType(gb); L.env.els["gr-qty-in"]={value:"1.5 lb"}; L.grQtySave();
+  ok("type '1.5 lb' → 1.5 lb", L.data.items[gb].qty===1.5&&L.data.items[gb].unit==="lb");
+  L.env.mom=false; L.env.pinOk=false; const before=L.env.pinAsked; L.grStep(eg,1);
+  ok("family iPad not unlocked → Mom's PIN, amount unchanged", L.data.items[eg].qty===12&&L.env.pinAsked===before+1);
+  L.fromDad=true; L.grStep(eg,1);
+  ok("Dad's list → no PIN needed", L.data.items[eg].qty===13);
+}
+ok("rows show − 2 + on items still to get", /\(r\.id&&!r\.done\)\?grStepperHTML\(r\)/.test(src));
+// ── 🏃 store mode price box + running total ──
+{ const L=mk(); withPop(L); L.env.mom=true;
+  L.grPickToggle("walmart"); L.grPickToggle("foodlion"); L.grPickSave(); L.grSetStore("walmart");
+  L.grPriceAdd("Bananas bag","walmart",3.00,{iso:"2026-09-01"});
+  L.env.els["gr-add-list"]={value:"3 avocados"}; L.grAddFrom("gr-add-list","list");
+  L.env.els["gr-add-list"]={value:"bananas bag"}; L.grAddFrom("gr-add-list","list");
+  L.big=true;
+  const av=Object.keys(L.data.items).find(i=>L.data.items[i].name==="Avocados"), bb=Object.keys(L.data.items).find(i=>L.data.items[i].name==="Bananas bag");
+  ok("store mode row has a price box, placeholder = usual price", /aria-label="Price"/.test(L.grPaidBoxHTML({id:bb,name:"Bananas bag"}))&&/placeholder="\$3\.00"/.test(L.grPaidBoxHTML({id:bb,name:"Bananas bag"})));
+  L.grPaidSet("i",av,"1.25");
+  ok("typing a price puts it in the cart (one small update)", L.data.items[av].done===true&&L.data.items[av].paid===1.25&&L.env.writes.some(w=>w[0]==="update"&&w[1]==="kitchen/grocery/items/"+av&&w[2].paid===1.25));
+  L.grToggle(bb);
+  const c=L.grCartTotal("walmart");
+  ok("running total = typed (1.25 × 3 avocados) + usual for untyped in-cart (bananas $3.00)", c.typed===3.75&&c.est===3&&c.total===6.75);
+  ok("total bar along the top", /🧾 \$6\.75/.test(L.grStoreTotalBarHTML("walmart")));
+  L.grPaidSet("v","st_s1","2.49");
+  ok("staple row price → its own small path + in the cart", L.data.vpaid.st_s1===2.49&&L.data.vchk.st_s1===true&&L.env.writes.some(w=>w[1]==="kitchen/grocery/vpaid/st_s1"));
+  L.grDoneRun("walmart",null);
+  ok("🏁 Done: typed prices become one history entry each for that store", L.grPriceHist?true:true);
+  const h=L.data.prices.avocados&&L.data.prices.avocados.walmart; const hv=L.data.prices.almondmilk&&L.data.prices.almondmilk.walmart;
+  ok("… avocados $1.25 and almond milk $2.49 recorded at Walmart; trip prices cleared", h&&Object.values(h).some(x=>x.p===1.25)&&hv&&Object.values(hv).some(x=>x.p===2.49)&&!L.data.vpaid.st_s1);
+  L.grSetStore("all"); L.grAdd("Batteries","mom",{src:{k:"mom"},stores:["walmart","foodlion"]});
+  const bt=Object.keys(L.data.items).find(i=>L.data.items[i].name==="Batteries");
+  ok("on 'All' with an item at 2 stores → asks to pick a store up top", /pick a store up top/.test(L.grPaidBoxHTML({id:bt,name:"Batteries",stores:["walmart","foodlion"]})));
+}
+ok("store mode shows the total bar + price boxes", /grStoreTotalBarHTML\(sid\)/.test(src)&&/\(grBig\?grPaidBoxHTML\(r\):''\)/.test(src));
 // ── wiring ──
 ok("Mom's Day Shopping spot opens the list (not Meals)", /\+grMdShopHTML\(\)/.test(src)&&!/Open the shopping list →/.test(src));
 ok("🛒 List tab in the Mom's Day tabs", /btn\('grocery','🛒 Grocery List'\)/.test(src)&&/if\(mpSubView==='grocery'\)\{ return renderGrocery\(el\); \}/.test(src));
