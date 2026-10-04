@@ -791,7 +791,7 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   M.kitPantry.p_soup = { name: "Leftover soup", zone: "fridge", addedIso: "2026-07-30", ts: 1 };
   M.renderKitchen(elStub);
   let h = elStub.innerHTML;
-  ok("zone sections render w/ chips", h.includes("🥬 Produce") && h.includes("Spinach") && h.includes("❄️ Freezer") && h.includes("chicken thighs"), null);
+  ok("place sections render w/ chips (old produce items show under 🧊 Fridge / 🍌 Counter — 2026-10-04)", h.includes("🧊 Fridge") && h.includes("Spinach") && h.includes("❄️ Freezer") && h.includes("chicken thighs"), null);
   ok("aging chip carries 🕐", h.includes("🕐 peppers"), null);
   ok("every chip offers the ⭐ regular toggle", h.includes("panToggleRegular(") && h.includes("☆"), null);
   ok("manage mode hidden by default", !h.includes("panDel("), null);

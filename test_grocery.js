@@ -11,14 +11,14 @@ const mk=()=>{
   env.ls={};
   const glyph=src.match(/const KIT_FRAC_GLYPH=\{[^}]+\};/)[0];
   const body=glyph+fn("kitSlug")+fn("kitQtyParse")+fn("kitIsoPlus")+block+`
-    ;return {grParse,grKey,grSecFor,grQtyTxt,grMergeQty,grAdd,grFindDup,grToggle,grVToggle,grDone,grApprove,grDecline,grDupMore,grDupAnyway,grGroups,grText,grAddFrom,grKidAllow,grKidBoxHTML,grReqCount,grPickToggle,grPickSave,grActiveStores,grSetStore,grCurStore,grStoreField,grStoreRemove,grSecOrder,grAisleMove,grCfgDad,grToGetCount,grCartCount,grHomeFor,grDadCardHTML,grIngParse,grIngRows,grFromRecipe,grFromWeek,grImpAdd,grFromPantry,grFromTodo,get imp(){return _grImp;},grMem,grMemUpdate,grShelf,grShelfAdd,grSuggestNames,grClearedIds,grPutBack,grRemove,grSave,grEdit,grEditSave,grMoney,grPriceAdd,grUsual,grLowest,grSaleInfo,grBest,grTripEst,grTripHeadHTML,grPriceLineHTML,grSpent,grWeekStart,grRcptLoad,grRcptSave,grDoneRun,get rc(){return _grRc;},set rc(v){_grRc=v;},grSortIds,grSortTo,grSortBoxHTML,grStoreFromText,grPlLoad,grPlAdd,grRowHTML,get pl(){return _grPl;},set pl(v){_grPl=v;},grStep,grQtyType,grQtySave,grStepperHTML,set fromDad(v){grFromDad=v;},grPaidSet,grPaidBoxHTML,grCartTotal,grStoreTotalBarHTML,set big(v){grBig=v;},grPanFind,grEatRows,kitMarkEaten,grEatApply,grEatUndo,grRanOutHTML,grSortV,grSortCount,get eat(){return _grEat;},grPanOldIds,grPanCheckOpen,grPanToss,grPanKeep,grPanMove,grPanTossAdd,grPanKeepAll,grWeekNeeds,grCheckoutOpen,grCheckoutGo,grBudgets,grBudgetDefault,grBudgetAdd,grBudgetField,grSpentBudget,grSpentOther,get co(){return _grCo;},grNeedBought,grNeedList,grNeedSkipTap,grPantryAlertsHTML,
+    ;return {grParse,grKey,grSecFor,grQtyTxt,grMergeQty,grAdd,grFindDup,grToggle,grVToggle,grDone,grApprove,grDecline,grDupMore,grDupAnyway,grGroups,grText,grAddFrom,grKidAllow,grKidBoxHTML,grReqCount,grPickToggle,grPickSave,grActiveStores,grSetStore,grCurStore,grStoreField,grStoreRemove,grSecOrder,grAisleMove,grCfgDad,grToGetCount,grCartCount,grHomeFor,grDadCardHTML,grIngParse,grIngRows,grFromRecipe,grFromWeek,grImpAdd,grFromPantry,grFromTodo,get imp(){return _grImp;},grMem,grMemUpdate,grShelf,grShelfAdd,grSuggestNames,grClearedIds,grPutBack,grRemove,grSave,grEdit,grEditSave,grMoney,grPriceAdd,grUsual,grLowest,grSaleInfo,grBest,grTripEst,grTripHeadHTML,grPriceLineHTML,grSpent,grWeekStart,grRcptLoad,grRcptSave,grDoneRun,get rc(){return _grRc;},set rc(v){_grRc=v;},grSortIds,grSortTo,grSortBoxHTML,grStoreFromText,grPlLoad,grPlAdd,grRowHTML,get pl(){return _grPl;},set pl(v){_grPl=v;},grStep,grQtyType,grQtySave,grStepperHTML,set fromDad(v){grFromDad=v;},grPaidSet,grPaidBoxHTML,grCartTotal,grStoreTotalBarHTML,set big(v){grBig=v;},grPanFind,grEatRows,kitMarkEaten,grEatApply,grEatUndo,grRanOutHTML,grSortV,grSortCount,get eat(){return _grEat;},grPanOldIds,grPanCheckOpen,grPanToss,grPanKeep,grPanMove,grPanTossAdd,grPanKeepAll,grWeekNeeds,grCheckoutOpen,grCheckoutGo,grBudgets,grBudgetDefault,grBudgetAdd,grBudgetField,grSpentBudget,grSpentOther,get co(){return _grCo;},grPlaceOf,grPlaceGuess,grPutIds,grPutSet,grPutDate,grPutDone,grUseSoonIds,grUseFroze,grUseOk,grPutAlertHTML,grUseSoonHTML,grNeedBought,grNeedList,grNeedSkipTap,grPantryAlertsHTML,
       get data(){return grData;}, set data(v){grData=v;}, get pend(){return _grPend;}};`;
   const F=new Function("env","db","HA_LS","mwToast","kitOrderList","kitStaples","kitBuyLog","panAdd","_todayStr","momHere","dadAwardOk","kitPinGate","confirm","ROSTER_DEF","esc","tab","document","prompt","navigator","kitPantry","panStatus","kitMeals","kitPlan","gwParseDate","momdayData","momdayToggleTodo","kitCapKey","kitEatGate","kitMealsLSSave","_kitRefresh","kitRateChips","panZoneMeta",body);
   const kitOrderList=()=>{ const need=Object.keys(env.staples).filter(k=>env.staples[k].state!=="have").map(k=>Object.assign({id:k},env.staples[k]));
     return {need:need,usuals:{breakfast:Object.keys(env.usuals).map(k=>Object.assign({id:k},env.usuals[k]))},count:0}; };
   const doc={getElementById:id=>env.els&&env.els[id]||null,createElement:()=>({}),body:{appendChild:()=>{}},activeElement:null};
   const L=F(env,{ref:ref},{setItem:(k,v)=>{env.ls[k]=v;},getItem:()=>null},m=>env.toasts.push(m),kitOrderList,env.staples,env.buy,
-    (n,z,q,m)=>{env.pantry.push([n,z,q,m]);return "p";},()=>"2026-10-03",()=>env.mom,()=>env.dad,(then)=>{env.pinAsked++; if(env.pinOk) then();},
+    (n,z,q,m)=>{env.pantry.push([n,z,q,m]); const id="pa"+env.pantry.length; env.pantryItems[id]={name:n,zone:z,qty:q,addedIso:"2026-10-03"}; return id;},()=>"2026-10-03",()=>env.mom,()=>env.dad,(then)=>{env.pinAsked++; if(env.pinOk) then();},
     ()=>env.confirm,[{id:"lucy",name:"Lucy",color:"#f0f"},{id:"ellis",name:"Ellis",color:"#00f"}],
     s=>String(s||""),"schedule",doc,()=>null,{},env.pantryItems={},it=>(it.gone||(it.addedIso&&it.addedIso<"2026-09-15"&&it.zone!=="freezer"))?"gone":"fresh",env.meals={},env.plan={},iso=>new Date(iso+"T12:00:00"),env.md={},(id,iso)=>{ env.md[iso].todos[id].done=true; },()=>"",()=>env.mom||env.dad,()=>{},()=>{},()=>"<chips>",z=>[z,{produce:"🥬 Produce",fridge:"🧊 Fridge",freezer:"❄️ Freezer",pantry:"🥫 Pantry"}[z]||"🥫 Pantry",14]);
   L.env=env; return L;
@@ -492,6 +492,33 @@ ok("Mom's Day 🔴 Now carries the pantry alerts; old pantry items stay visible 
   ok("trip saved with budget 'none' (Firebase drops nulls)", Object.values(L.data.trips).some(t=>t.other===true&&t.budget==="none"));
 }
 ok("the button says 🧾 Checkout", /🧾 Checkout'\+\(sid==='all'/.test(src));
+// ── 🧺 Put away + 📅 use/freeze-by ──
+{ const L=mk(); withPop(L); L.env.mom=true;
+  ok("best-guess spot: frozen peas → freezer, ground beef → fridge, bananas → counter, rice → pantry", L.grPlaceGuess("Frozen peas")==="freezer"&&L.grPlaceGuess("Ground beef")==="fridge"&&L.grPlaceGuess("Bananas")==="counter"&&L.grPlaceGuess("Rice")==="pantry");
+  ok("old 🥬 produce items show under Counter or Fridge", L.grPlaceOf({name:"Avocados",zone:"produce"})==="counter"&&L.grPlaceOf({name:"Spinach",zone:"produce"})==="fridge");
+  L.grPickToggle("walmart"); L.grPickSave(); L.grSetStore("walmart");
+  L.grAdd("2 lb ground beef","mom",{src:{k:"mom"},stores:["walmart"]}); L.grAdd("Avocados","mom",{src:{k:"mom"},stores:["walmart"]});
+  Object.keys(L.data.items).forEach(i=>L.grToggle(i)); L.grDone(); L.grCheckoutGo();
+  const ids=L.grPutIds();
+  ok("checkout → both waiting in 🧺 Put away, already counted in the pantry at their guessed spot", ids.length===2&&L.env.pantryItems[ids[0]]&&L.env.pantry.some(p=>p[0]==="Avocados"&&p[1]==="counter"));
+  const gb=ids.find(i=>L.env.pantryItems[i].name==="Ground beef");
+  ok("🔴 Now: '2 things to put away'", /2 things<\/b> to put away/.test(L.grPutAlertHTML().html));
+  L.grPutSet(gb,"freezer"); L.grPutDone();
+  ok("✅ Put it all away → ground beef in the freezer, list cleared, spot remembered", L.env.pantryItems[gb].zone==="freezer"&&!L.grPutIds().length&&L.grMem("Ground beef").zone==="freezer");
+  ok("next time ground beef is pre-picked ❄️ Freezer", L.grPlaceGuess("Ground beef")==="freezer");
+  // 📅 use/freeze-by
+  L.env.pantryItems.c1={name:"Chicken thighs",zone:"fridge",qty:1,addedIso:"2026-10-03"};
+  L.grPutDate("c1","2026-10-05");
+  ok("a package date is saved on the pantry item", L.env.pantryItems.c1.useBy==="2026-10-05");
+  ok("2 days before → 🔴 Now 'use or freeze by'", L.grUseSoonIds().indexOf("c1")>=0&&/Chicken thighs<\/b> — use or freeze by/.test(L.grUseSoonHTML().html));
+  L.grUseFroze("c1");
+  ok("❄️ Froze it → freezer, date cleared, reminder gone", L.env.pantryItems.c1.zone==="freezer"&&!L.env.pantryItems.c1.useBy&&L.grUseSoonIds().indexOf("c1")<0);
+  L.env.pantryItems.c2={name:"Salmon",zone:"fridge",qty:1,addedIso:"2026-10-03",useBy:"2026-10-04"};
+  L.grUseOk("c2");
+  ok("🍽 Using it → the reminder stops", L.grUseSoonIds().indexOf("c2")<0);
+}
+ok("Checkout no longer has the ❄️ tick (Put away chooses the spot)", !/❄️ freezer<\/label>/.test(src)&&/setTimeout\(grPutDraw,400\)/.test(src));
+ok("panStatus: a package date beats the guess; fruit/veg keep the short clock in the fridge or on the counter", /it\.useBy&&/.test(src)&&/life=6;   \/\/ fresh fruit\/veg/.test(src));
 // ── wiring ──
 ok("Mom's Day Shopping spot opens the list (not Meals)", /\+grMdShopHTML\(\)/.test(src)&&!/Open the shopping list →/.test(src));
 ok("🛒 List tab in the Mom's Day tabs", /btn\('grocery','🛒 Grocery List'\)/.test(src)&&/if\(mpSubView==='grocery'\)\{ return renderGrocery\(el\); \}/.test(src));
