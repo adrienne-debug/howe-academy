@@ -190,6 +190,37 @@ console.log("— editor row —");
   ok("kid view (not Mom) → read-only text", !/<select/.test(w.famCelebRowHTML("fbFT", w.defs.fbFT, false, J)));
 }
 
+console.log("— Song List: family-time-only songs (her yes 10/4) —");
+{
+  const names = ["celebSongToggleOcc", "getSongsForKid", "celebSongUsedBy", "celebSongRemove"];
+  const code2 = names.map(extractFn).join("\n");
+  const env = { celebSongs: [], saves: 0, deleted: [], confirms: [], confirmAns: true, defs: {} };
+  const ctx = Object.assign(env, {
+    celebSongsSave: () => env.saves++, renderAll: () => {}, famDefs: () => env.defs,
+    confirm: (m) => { env.confirms.push(m); return env.confirmAns; },
+    firebase: { storage: () => ({ refFromURL: (u) => ({ delete: () => { env.deleted.push(u); return { catch: () => {} }; } }) }) },
+  });
+  new Function("ctx", "with(ctx){" + code2 + "; Object.assign(ctx,{" + names.join(",") + "});}")(ctx);
+  const A = { name: "School Work Party", url: "https://firebasestorage.x/party.mp3", occ: { day: true, session: false } };
+  const B = { name: "Other", url: "https://firebasestorage.x/other.mp3" };
+  env.celebSongs.push(A, B);
+  ctx.celebSongToggleOcc(0, "day");
+  ok("turning off the last 'Plays on' keeps BOTH off (was: flipped back to both)", A.occ && A.occ.day === false && A.occ.session === false, A.occ);
+  ok("family-only song never plays on Day", !ctx.getSongsForKid("caleb", "day").includes(A));
+  ok("…nor on Session", !ctx.getSongsForKid("caleb", "session").includes(A));
+  ok("a song with no setting still plays on both", ctx.getSongsForKid("caleb", "day").includes(B) && ctx.getSongsForKid("caleb", "session").includes(B));
+  ctx.celebSongToggleOcc(0, "session");
+  ok("turning one back on works", A.occ.session === true && ctx.getSongsForKid("caleb", "session").includes(A));
+  env.defs = { fbFT: { name: "Family Time", celeb: A.url }, fbFR: { name: "Fact Review" } };
+  ok("knows which blocks use a song", JSON.stringify(ctx.celebSongUsedBy(A.url)) === '["Family Time"]' && ctx.celebSongUsedBy(B.url).length === 0);
+  env.confirmAns = false; ctx.celebSongRemove(0);
+  ok("✕ on a block's song asks first; No → nothing removed", env.celebSongs.length === 2 && env.confirms.length === 1 && /Family Time will keep playing it/.test(env.confirms[0]));
+  env.confirmAns = true; ctx.celebSongRemove(0);
+  ok("Yes → off the list, but the music FILE is kept", env.celebSongs.length === 1 && env.celebSongs[0] === B && env.deleted.length === 0);
+  ctx.celebSongRemove(0);
+  ok("a song no block uses deletes as before (file too, no question)", env.celebSongs.length === 0 && env.deleted[0] === B.url && env.confirms.length === 2);
+}
+
 console.log("— wiring —");
 ok("finalizeDone schedules the block check at 300 ms (before the 700 ms day show)", /setTimeout\(function\(\)\{ try\{ famCelebBlockCheck\(_fb,_todayDay\); \}catch\(e\)\{\} \},300\)/.test(src));
 ok("finalizeDone own-work check for own cards + non-celebrating block cards", /if\(!t\.gotAhead&&!\(t\.famBlock&&famCelebOf\(famDefs\(\)\[t\.famBlock\]\)\)\) setTimeout\(function\(\)\{ try\{ famCelebOwnWork\(t\.who,_todayDay\); \}catch\(e\)\{\} \},700\)/.test(src));

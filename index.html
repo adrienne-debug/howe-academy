@@ -5706,11 +5706,12 @@ function renderSettings(el,ah){
     celebSongs.forEach((s,i)=>{
       const songKids=s.kids||{};
       const hasAnyKid=Object.values(songKids).some(v=>v);
+      const _famOnly=!!(s.occ&&!s.occ.day&&!s.occ.session), _usedBy=celebSongUsedBy(s.url);   // 🏡
       pinHtml+='<div style="margin-bottom:8px;padding:10px;background:var(--bg);border:1.5px solid var(--border);border-radius:10px">';
       pinHtml+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">';
       pinHtml+='<div style="flex:1;min-width:0">';
       pinHtml+='<div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(s.name||"Untitled")+'</div>';
-      pinHtml+='<div style="font-size:10px;color:var(--muted)">'+(hasAnyKid?'Selected for specific kids':'All kids (tap names to assign)')+'</div>';
+      pinHtml+='<div style="font-size:10px;color:var(--muted)">'+(hasAnyKid?'Selected for specific kids':'All kids (tap names to assign)')+(_usedBy.length?' \u00B7 <b style="color:#6d28d9">\u{1F3E1} '+esc(_usedBy.join(", "))+'</b>':'')+'</div>';
       pinHtml+='</div>';
       pinHtml+='<button onclick="celebSongPreview('+i+')" style="padding:4px 8px;border-radius:8px;background:var(--header);color:#fff;border:none;font-size:11px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">▶</button>';
       pinHtml+='<button onclick="celebSongRemove('+i+')" style="padding:4px 8px;border-radius:8px;background:#ef4444;color:#fff;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✕</button>';
@@ -5726,6 +5727,7 @@ function renderSettings(el,ah){
       const _occ=s.occ||{day:true,session:true};
       pinHtml+='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px;align-items:center">';
       pinHtml+='<span style="font-size:10px;color:var(--muted);margin-right:2px">Plays on:</span>';
+      if(_famOnly) pinHtml+='<span style="font-size:10px;font-weight:700;color:#6d28d9;order:9;margin-left:4px">\u{1F3E1} family time only'+(_usedBy.length?'':' \u2014 pick it in Settings \u25B8 Family time')+'</span>';
       [["day","📅 Day"],["session","🎉 Session"]].forEach(([occ,lbl])=>{
         const on=!!_occ[occ];
         pinHtml+='<button onclick="celebSongToggleOcc('+i+',\''+occ+'\')" style="padding:3px 10px;border-radius:16px;border:1.5px solid '+(on?'#8b5cf6':'var(--border)')+';background:'+(on?'#8b5cf6':'transparent')+';color:'+(on?'#fff':'var(--muted)')+';font-size:11px;font-weight:'+(on?'700':'500')+';cursor:pointer;font-family:\'DM Sans\',sans-serif;transition:all 0.15s">'+lbl+'</button>';
@@ -5841,9 +5843,14 @@ function celebSongUpload(input){
     }
   );
 }
+function celebSongUsedBy(url){ try{ return (typeof famDefs==="function")?Object.values(famDefs()).filter(function(b){ return b&&url&&b.celeb===url; }).map(function(b){ return b.name||"Family time"; }):[]; }catch(e){ return []; } }
 function celebSongRemove(i){
   const song=celebSongs[i];
-  if(song&&song.url&&song.url.includes("firebasestorage")){
+  const _used=celebSongUsedBy(song&&song.url);
+  if(_used.length){
+    // 🏡 a family block plays this song — take it off the list only; the file stays so the block keeps playing it
+    if(!confirm("\u201C"+(song.name||"This song")+"\u201D is the celebration song for "+_used.join(", ")+". Take it off the list? "+_used.join(", ")+" will keep playing it.")) return;
+  } else if(song&&song.url&&song.url.includes("firebasestorage")){
     try{ firebase.storage().refFromURL(song.url).delete().catch(()=>{}); }catch(e){}
   }
   celebSongs.splice(i,1);
@@ -5869,7 +5876,8 @@ function celebSongToggleOcc(songIdx,occ){
   const s=celebSongs[songIdx]; if(!s) return;
   if(!s.occ) s.occ={day:true,session:true};
   s.occ[occ]=!s.occ[occ];
-  if(!s.occ.day&&!s.occ.session) delete s.occ; // both off → back to default (plays on both)
+  // both off = 🏡 family time only (her ask 2026-10-04): kept as {day:false,session:false} — getSongsForKid skips it for
+  // Day and Session; a family block's 🎉 Done can still pick it.
   celebSongsSave();
   renderAll();
 }
