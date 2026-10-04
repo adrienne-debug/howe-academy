@@ -8,17 +8,18 @@ const block=src.slice(a,b);
 const mk=()=>{
   const env={writes:[],toasts:[],staples:{s1:{name:"Almond milk",state:"out"},s2:{name:"Olive oil",state:"have"}},usuals:{u1:{name:"Bananas",cat:"breakfast",qty:2}},pantry:[],buy:{},mom:false,dad:false,confirm:true,pinAsked:0};
   const ref=p=>({set:v=>env.writes.push(["set",p,v]),update:v=>env.writes.push(["update",p,v]),remove:()=>env.writes.push(["remove",p])});
-  const body=fn("kitSlug")+block+`
-    ;return {grParse,grKey,grSecFor,grQtyTxt,grMergeQty,grAdd,grFindDup,grToggle,grVToggle,grDone,grApprove,grDecline,grDupMore,grDupAnyway,grGroups,grText,grAddFrom,grKidAllow,grKidBoxHTML,grReqCount,grPickToggle,grPickSave,grActiveStores,grSetStore,grCurStore,grStoreField,grStoreRemove,grSecOrder,grAisleMove,grCfgDad,grToGetCount,grCartCount,grHomeFor,grDadCardHTML,
+  const glyph=src.match(/const KIT_FRAC_GLYPH=\{[^}]+\};/)[0];
+  const body=glyph+fn("kitSlug")+fn("kitQtyParse")+fn("kitIsoPlus")+block+`
+    ;return {grParse,grKey,grSecFor,grQtyTxt,grMergeQty,grAdd,grFindDup,grToggle,grVToggle,grDone,grApprove,grDecline,grDupMore,grDupAnyway,grGroups,grText,grAddFrom,grKidAllow,grKidBoxHTML,grReqCount,grPickToggle,grPickSave,grActiveStores,grSetStore,grCurStore,grStoreField,grStoreRemove,grSecOrder,grAisleMove,grCfgDad,grToGetCount,grCartCount,grHomeFor,grDadCardHTML,grIngParse,grIngRows,grFromRecipe,grFromWeek,grImpAdd,grFromPantry,grFromTodo,get imp(){return _grImp;},
       get data(){return grData;}, set data(v){grData=v;}, get pend(){return _grPend;}};`;
-  const F=new Function("env","db","HA_LS","mwToast","kitOrderList","kitStaples","kitBuyLog","panAdd","_todayStr","momHere","dadAwardOk","kitPinGate","confirm","ROSTER_DEF","esc","tab","document","prompt","navigator",body);
+  const F=new Function("env","db","HA_LS","mwToast","kitOrderList","kitStaples","kitBuyLog","panAdd","_todayStr","momHere","dadAwardOk","kitPinGate","confirm","ROSTER_DEF","esc","tab","document","prompt","navigator","kitPantry","panStatus","kitMeals","kitPlan","gwParseDate","momdayData","momdayToggleTodo","kitCapKey",body);
   const kitOrderList=()=>{ const need=Object.keys(env.staples).filter(k=>env.staples[k].state!=="have").map(k=>Object.assign({id:k},env.staples[k]));
     return {need:need,usuals:{breakfast:Object.keys(env.usuals).map(k=>Object.assign({id:k},env.usuals[k]))},count:0}; };
   const doc={getElementById:id=>env.els&&env.els[id]||null,createElement:()=>({}),body:{appendChild:()=>{}},activeElement:null};
   const L=F(env,{ref:ref},{setItem:()=>{},getItem:()=>null},m=>env.toasts.push(m),kitOrderList,env.staples,env.buy,
     (n,z,q,m)=>{env.pantry.push([n,z,q,m]);return "p";},()=>"2026-10-03",()=>env.mom,()=>env.dad,(then)=>{env.pinAsked++; if(env.pinOk) then();},
     ()=>env.confirm,[{id:"lucy",name:"Lucy",color:"#f0f"},{id:"ellis",name:"Ellis",color:"#00f"}],
-    s=>String(s||""),"schedule",doc,()=>null,{});
+    s=>String(s||""),"schedule",doc,()=>null,{},env.pantryItems={},it=>it.gone?"gone":"fresh",env.meals={},env.plan={},iso=>new Date(iso+"T12:00:00"),env.md={},(id,iso)=>{ env.md[iso].todos[id].done=true; },()=>"");
   L.env=env; return L;
 };
 // grPop needs document.getElementById("gr-pop") — stub one in
@@ -148,6 +149,51 @@ ok("same-thing key: plurals + case", L.grKey("Eggs")===L.grKey("egg")&&L.grKey("
   L.grSetStore("all");
   const t=L.grText(); ok("copy text on All is grouped by store", /Costco:|Any store:/.test(t));
 }
+// ── 🍽 step 3: recipes, the week, pantry, to-dos ──
+{ const L=mk(); withPop(L);
+  const I=(t,w)=>{ const r=L.grIngParse(t); ok("ingredient: "+JSON.stringify(t)+" → "+JSON.stringify(r), JSON.stringify(r)===JSON.stringify(w)); };
+  I("2 1/2 cups chopped yellow onion (about 1 large)",{name:"Yellow onion",qty:2.5,unit:"cups"});
+  I("1 lb ground beef",{name:"Ground beef",qty:1,unit:"lb"});
+  I("3 cloves garlic, minced",{name:"Garlic",qty:3,unit:"cloves"});
+  I("1 lemon, juiced",{name:"Lemon",qty:1});
+  I("½ tsp sea salt",{name:"Sea salt",qty:0.5,unit:"tsp"});
+  I("2 large eggs",{name:"Eggs",qty:2});
+  I("For the sauce:",null);
+  I("- 1 (14 oz) can coconut milk",{name:"Coconut milk",qty:1,unit:"can"});
+  I("Fresh cilantro, for garnish",{name:"Cilantro"});
+  I("1-2 jalapeños",{name:"Jalapeños",qty:1});
+  L.env.meals.m1={name:"Taco night",ing:"1 lb ground beef\n1 onion\n2 cloves garlic\n1 tsp salt\n8 corn tortillas"};
+  L.env.meals.m2={name:"Chili",ing:"2 lb ground beef\n2 onions\n1 can black beans"};
+  L.env.pantryItems.p1={name:"Garlic",zone:"produce"}; L.env.staples.s3={name:"Corn tortillas",state:"have"};
+  L.grAdd("Black beans","mom");
+  const rows=L.grIngRows([{lines:L.env.meals.m1.ing,lbl:"Taco night"},{lines:L.env.meals.m2.ing,lbl:"Chili"}]);
+  const R=n=>rows.find(r=>r.p.name===n);
+  ok("same food from two meals combines: beef 1 lb + 2 lb = 3 lb", R("Ground beef")&&R("Ground beef").p.qty===3&&R("Ground beef").meals.join()==="Taco night,Chili");
+  ok("onion + onions combine → 3", R("Onion")&&R("Onion").p.qty===3);
+  ok("in the pantry → unticked", R("Garlic")&&!R("Garlic").on&&/pantry/.test(R("Garlic").why));
+  ok("a ✅ have staple → unticked", R("Corn tortillas")&&!R("Corn tortillas").on);
+  ok("salt is a basic → unticked", R("Salt")&&!R("Salt").on);
+  ok("already on the list → unticked and says so", R("Black beans")&&!R("Black beans").on&&/on list/.test(R("Black beans").why));
+  ok("new things start ticked", R("Ground beef").on&&R("Onion").on);
+  L.env.mom=true; L.grFromRecipe("m2");
+  ok("recipe → tick-list pop-up (nothing added yet)", L.imp&&L.imp.rows.length===3&&Object.values(L.data.items).length===1);
+  L.imp.rows.forEach(r=>r.on=true); L.grImpAdd();
+  const beans=Object.values(L.data.items).filter(i=>i.name==="Black beans");
+  ok("Add → new items land with the meal as source; a ticked duplicate adds to the existing line", Object.values(L.data.items).some(i=>i.name==="Ground beef"&&i.src[0].k==="meal"&&i.src[0].lbl==="Chili")&&beans.length===1&&beans[0].extra==="1 can");
+  L.env.plan["2026-10-03"]={mid:"m1",sides:"peas · rice"}; L.env.plan["2026-10-05"]={mid:"m2",eaten:true,l:{mid:"m2"}}; L.env.plan["2026-10-20"]={mid:"m2"};
+  L.grFromWeek();
+  const names=L.imp.rows.map(r=>r.p.name);
+  ok("week: dinners + sides + planned lunches in the next 7 days; eaten dinners and later weeks left out", names.includes("Peas")&&names.includes("Rice")&&names.includes("Corn tortillas")&&names.includes("Black beans")&&L.imp.many);
+  L.env.pantryItems.p2={name:"Avocados",zone:"produce"}; L.grFromPantry("p2");
+  ok("🛒 on a pantry chip → on the list", Object.values(L.data.items).some(i=>i.name==="Avocados"));
+  L.env.md["2026-10-03"]={todos:{t1:{text:"buy batteries",ts:1}}}; L.grFromTodo("t1","2026-10-03");
+  ok("→🛒 on a to-do: 'buy batteries' → Batteries on the list, to-do checked off", Object.values(L.data.items).some(i=>i.name==="Batteries"&&i.src[0].k==="todo")&&L.env.md["2026-10-03"].todos.t1.done===true);
+}
+{ const L=mk(); withPop(L); L.env.meals.m1={name:"Tacos",ing:"1 lb beef"}; L.env.pinOk=false; L.grFromRecipe("m1"); L.grImpAdd();
+  ok("adding from a recipe needs Mom's PIN when not unlocked", !Object.keys(L.data.items).length&&L.env.pinAsked===1); }
+ok("recipe card has the 🛒 Add ingredients button", /grFromRecipe\(/.test(src)&&/🛒 Add ingredients to the grocery list/.test(src));
+ok("Meals week header + list page have Shop-for-the-week", (src.match(/onclick="grFromWeek\(\)"/g)||[]).length===2);
+ok("pantry chips + Mom's Day to-dos have 🛒 buttons", /grFromPantry\(/.test(src)&&/grFromTodo\(/.test(src));
 // ── wiring ──
 ok("Mom's Day Shopping spot opens the list (not Meals)", /\+grMdShopHTML\(\)/.test(src)&&!/Open the shopping list →/.test(src));
 ok("🛒 List tab in the Mom's Day tabs", /btn\('grocery','🛒 Grocery List'\)/.test(src)&&/if\(mpSubView==='grocery'\)\{ return renderGrocery\(el\); \}/.test(src));

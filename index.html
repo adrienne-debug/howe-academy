@@ -10219,6 +10219,7 @@ function momDayStripHTML(iso,today){
     h+='<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;background:'+(t.done?'#f0fdf4':'#f8f7f4')+';border:1.5px solid '+(t.done?'#86efac':'#e8e4de')+';border-radius:9px;margin-bottom:5px">'
       +'<div onclick="momdayToggleTodo(\''+id+'\',\''+tIso[id]+'\')" style="cursor:pointer;width:19px;height:19px;border-radius:50%;border:2px solid '+(t.done?'#16a34a':'#2B7A78')+';background:'+(t.done?'#16a34a':'#fff')+';color:'+(t.done?'#fff':'transparent')+';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;font-weight:700">'+(t.done?'✓':'')+'</div>'
       +'<div onclick="momdayToggleTodo(\''+id+'\',\''+tIso[id]+'\')" style="cursor:pointer;flex:1;min-width:0;font-size:12.5px;font-weight:600;color:'+(t.done?'#6b6560':'#1a1a1a')+';'+(t.done?'text-decoration:line-through':'')+'">'+esc(t.text)+'</div>'
+      +(t.done?'':'<button onclick="grFromTodo(\''+id+'\',\''+tIso[id]+'\')" title="Move it to the grocery list" style="border:none;background:none;font-size:13px;cursor:pointer;padding:1px 3px">→🛒</button>')
       +'<button onclick="momdayDelTodo(\''+id+'\',\''+tIso[id]+'\')" style="border:none;background:none;color:#9ca3af;font-size:13px;cursor:pointer;padding:1px 3px">✕</button></div>';
   });
   h+='<div style="display:flex;gap:5px;margin-top:'+(tids.length?'6':'0')+'px">'
@@ -12268,7 +12269,8 @@ function renderGrocery(el){
     +(Object.keys(grStores()).length?'<button onclick="grMgrToggle()" style="border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer">⚙️ Stores</button>':'')+'</span></div>'
     +'<div style="padding:12px 14px 14px">'
     +(stores.length?grChipsHTML(sid):'')
-    +grAddRowHTML("gr-add-list",grFromDad?"dad":"list",sid==='all'?"Add an item… (e.g. 2 lb ground beef)":"Add to "+grStoreName(sid)+"…");
+    +grAddRowHTML("gr-add-list",grFromDad?"dad":"list",sid==='all'?"Add an item… (e.g. 2 lb ground beef)":"Add to "+grStoreName(sid)+"…")
+    +(grFromDad?'':'<button onclick="grFromWeek()" style="margin-top:7px;padding:7px 12px;border-radius:9px;border:1.5px solid #E07B39;background:#fff7ed;color:#c2410c;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🍽 Add this week\'s meals</button>');
   let any=false;
   order.forEach(sec=>{
     const rows=(groups[sec]||[]).filter(r=>!r.done); if(!rows.length) return; any=true;
@@ -12339,6 +12341,138 @@ function grKidBoxHTML(k){
     h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px solid #eef2f0;font-size:13px"><span style="flex:1;min-width:0;font-weight:700">'+esc(r.name)+'</span><span style="font-size:12px;font-weight:700">'+st+'</span></div>';
   });
   return h+'</div></div>';
+}
+// ── 🍽 step 3: everything feeds in — a recipe, the week's meals, a pantry chip, a Mom's Day to-do ──
+// Recipe lines become list items through a tick-list first; nothing lands without her "Add".
+const GR_ING_UNITS="cups?|c\\.|tablespoons?|tbsps?|tbs|tbsp\\.|T|teaspoons?|tsps?|tsp\\.|t|pounds?|lbs?|lb\\.|ounces?|oz\\.?|grams?|g|kilograms?|kg|ml|milliliters?|liters?|l|quarts?|qts?|pints?|pts?|gallons?|gal|cans?|jars?|packages?|pkgs?|pkg\\.|packets?|bags?|boxes?|bottles?|cartons?|containers?|cloves?|bunch(?:es)?|heads?|stalks?|sprigs?|slices?|sticks?|pinch(?:es)?|dash(?:es)?|handfuls?|pieces?|fillets?|breasts?|thighs?|links?|loaf|loaves|dozen|whole";
+const GR_ING_DROP=/\b(finely|roughly|coarsely|thinly|freshly|lightly|well|chopped|diced|minced|sliced|grated|shredded|peeled|seeded|cubed|crushed|julienned|halved|quartered|trimmed|rinsed|drained|softened|melted|divided|packed|heaping|level|room temperature|cold|warm|hot|large|medium|small|extra[- ]large|fresh|organic|boneless|skinless|cooked|uncooked|raw|optional|to taste|for serving|for garnish|plus more|or more|about|approximately|of)\b/gi;
+const GR_BASICS=["salt","sea salt","kosher salt","pepper","black pepper","salt and pepper","water","ice","oil","cooking spray","olive oil"];
+// "2 1/2 cups chopped yellow onion (about 1 large)" → {name:"Yellow onion", qty:2.5, unit:"cups"} · headers ("For the sauce:") → null
+function grIngParse(line){
+  let s=String(line||"").replace(/^[\s•\-–*·]+/,"").replace(/\([^)]*\)/g," ").replace(/\s+/g," ").trim();
+  if(!s||/:$/.test(s)) return null;
+  let qty=null, unit="";
+  const am=s.match(/^((?:\d+\s+)?\d+\/\d+|\d+(?:\.\d+)?(?:\s*[½¼¾⅓⅔⅛])?|[½¼¾⅓⅔⅛])(?:\s*(?:-|–|to)\s*(?:\d+(?:\/\d+)?(?:\.\d+)?))?\s*/);
+  if(am){ qty=kitQtyParse(am[1].trim()); s=s.slice(am[0].length); }
+  const um=s.match(new RegExp("^("+GR_ING_UNITS+")(?=\\s|$)\\.?\\s*","i"));
+  if(um&&(qty!=null||/^(pinch|dash|handful)/i.test(um[1]))){ unit=um[1].toLowerCase().replace(/\.$/,""); s=s.slice(um[0].length); }
+  s=s.split(/,| - | – /)[0];   // "1 lemon, juiced" → lemon
+  s=s.replace(GR_ING_DROP," ").replace(/\s+/g," ").replace(/^(and|or)\s+/i,"").trim();
+  if(!s) return null;
+  const p={name:s.charAt(0).toUpperCase()+s.slice(1)};
+  if(qty>0) p.qty=Math.round(qty*100)/100;
+  if(unit) p.unit=unit;
+  return p;
+}
+function grIsBasic(name){ const k=grKey(name); return GR_BASICS.some(b=>grKey(b)===k); }
+// Do we already have it? pantry (not gone) or a ✅ have staple → starts unticked
+function grHaveIt(name){
+  const k=grKey(name);
+  try{ if(Object.keys(kitPantry||{}).some(id=>{ const it=kitPantry[id]; return it&&grKey(it.name)===k&&panStatus(it)!=="gone"; })) return "🥫 in pantry"; }catch(e){}
+  try{ if(Object.keys(kitStaples||{}).some(id=>{ const s=kitStaples[id]; return s&&s.state==="have"&&grKey(s.name)===k; })) return "🧺 have"; }catch(e){}
+  return "";
+}
+// Ingredient rows from [{lines, lbl}] — same food from different meals combines (amounts add; mismatched units ride along)
+function grIngRows(sources){
+  const by={}, order=[];
+  sources.forEach(src=>String(src.lines||"").split("\n").forEach(line=>{
+    const p=grIngParse(line); if(!p) return;
+    const k=grKey(p.name); if(!k) return;
+    if(!by[k]){ by[k]={p:p,meals:[src.lbl]}; order.push(k); }
+    else { by[k].p=grMergeQty(by[k].p,p); if(by[k].meals.indexOf(src.lbl)<0) by[k].meals.push(src.lbl); }
+  }));
+  return order.map(k=>{
+    const r=by[k], dup=grFindDup(r.p.name), have=grHaveIt(r.p.name), basic=grIsBasic(r.p.name);
+    const why=dup?("on list"+(dup.kind==="item"&&grQtyTxt(dup.it)?" "+grQtyTxt(dup.it):"")):(have||(basic?"🧂 basic":""));
+    return {p:r.p,meals:r.meals,why:why,on:!why};
+  });
+}
+let _grImp=null;   // {title, rows:[{p,meals,why,on}]}
+function grImpOpen(title,rows,empty,many){
+  if(!rows.length){ mwToast(empty||"No ingredients to add"); return; }
+  _grImp={title:title,rows:rows,many:!!many}; grImpDraw();
+}
+function grImpDraw(){
+  const I=_grImp; if(!I) return;
+  const n=I.rows.filter(r=>r.on).length, key=(typeof kitCapKey==="function")&&kitCapKey();
+  let h='<div style="font-weight:800;font-size:15px">🛒 '+esc(I.title)+'</div>'
+    +'<div style="font-size:12px;color:#64748b;margin:2px 0 8px">Untick what you don\'t need. Things you already have start unticked.</div>'
+    +'<div style="max-height:52vh;overflow:auto;border-top:1px solid #eef2f0">';
+  I.rows.forEach((r,i)=>{
+    h+='<label style="display:flex;align-items:flex-start;gap:9px;padding:8px 2px;border-bottom:1px solid #eef2f0;cursor:pointer">'
+      +'<input type="checkbox" '+(r.on?'checked ':'')+'onchange="_grImp.rows['+i+'].on=this.checked;grImpCount()" style="width:18px;height:18px;margin-top:2px;flex:0 0 auto">'
+      +'<span style="flex:1;min-width:0"><span style="font-size:13.5px;font-weight:700'+(r.on?'':';color:#94a3b8')+'">'+esc(r.p.name)+'</span>'
+      +(grQtyTxt(r.p)?' <span style="font-size:12px;font-weight:800;color:#3A7D44">'+esc(grQtyTxt(r.p))+'</span>':'')
+      +(r.why?' <span style="font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:10px;background:#f1f5f9;color:#475569">'+esc(r.why)+'</span>':'')
+      +(r.meals.length>1||I.many?'<span style="display:block;font-size:11px;color:#94a3b8">'+esc(r.meals.join(", "))+'</span>':'')+'</span></label>';
+  });
+  h+='</div><button id="gr-imp-go" onclick="grImpAdd()" style="'+GR_BTN+'border:none;background:#3A7D44;color:#fff;margin-top:12px">Add '+n+' to the list</button>'
+    +(key?'<button id="gr-imp-tidy" onclick="grImpTidy()" style="'+GR_BTN+'border:1.5px solid #6B4C93;background:#fff;color:#6B4C93">✨ Tidy the names with Claude</button>':'')
+    +'<button onclick="_grImp=null;grPopClose()" style="'+GR_BTN+'border:none;background:#f1f5f9;color:#334155">Cancel</button>';
+  grPop(h);
+}
+function grImpCount(){ const b=document.getElementById("gr-imp-go"); if(b&&_grImp) b.textContent="Add "+_grImp.rows.filter(r=>r.on).length+" to the list"; }
+function grImpAdd(){
+  const I=_grImp; if(!I) return grPopClose();
+  const go=()=>{
+    let added=0, merged=0;
+    I.rows.forEach(r=>{ if(!r.on) return;
+      const src={k:"meal",lbl:r.meals.join(", ")};
+      const dup=grFindDup(r.p.name);
+      if(dup&&dup.kind==="item"){   // already on the list → add the amount, keep both sources (no pop-up per row)
+        const it=grMergeQty(dup.it,r.p); const ss=(it.src||[]).slice(); if(!ss.some(s=>s.k==="meal"&&s.lbl===src.lbl)) ss.push(src); it.src=ss;
+        if(it.done){ delete it.done; delete it.doneTs; } grPut(dup.id,it); merged++;
+      } else { grCreate(r.p,src,null); added++; }
+    });
+    _grImp=null; grPopClose(); mwToast("🛒 "+added+" added"+(merged?" · "+merged+" already on the list, amounts added":"")); grRepaint();
+  };
+  if(typeof momHere==="function"&&momHere()) go(); else kitPinGate(go,"Adding to the grocery list from a recipe is for Mom.");
+}
+// ✨ optional: Claude cleans up the names/amounts (one call on the family key; never automatic)
+async function grImpTidy(){
+  const I=_grImp; if(!I) return;
+  const b=document.getElementById("gr-imp-tidy"); if(b){ b.disabled=true; b.textContent="✨ Tidying…"; }
+  try{
+    const list=I.rows.map((r,i)=>i+": "+r.p.name+(grQtyTxt(r.p)?" | "+grQtyTxt(r.p):"")).join("\n");
+    const txt=await kitCapAsk([{type:"text",text:"These are grocery-list rows made from recipe ingredients. For each row, give the plain grocery name a shopper would look for (e.g. \"Yellow onion\", \"Chicken thighs\", \"Coconut aminos\") and keep the amount. Never add or drop rows; never invent items. Reply with ONLY strict JSON: [{\"i\":0,\"name\":\"…\"}]\n\n"+list}],null,{raw:true,maxTokens:2000});
+    const m=String(txt).match(/\[[\s\S]*\]/); const arr=m?JSON.parse(m[0]):[];
+    arr.forEach(o=>{ const r=I.rows[o.i]; if(r&&o.name&&typeof o.name==="string") r.p.name=o.name.trim().slice(0,60); });
+    grImpDraw(); mwToast("✨ Tidied");
+  }catch(e){ mwToast(String(e&&e.message||e).slice(0,90)); if(b){ b.disabled=false; b.textContent="✨ Tidy the names with Claude"; } }
+}
+// 🍽 one recipe
+function grFromRecipe(mid){
+  const m=kitMeals[mid]; if(!m) return;
+  grImpOpen("Add ingredients — "+(m.name||"recipe"),grIngRows([{lines:m.ing,lbl:m.name||"recipe"}]),"This recipe has no ingredients yet — ✎ Edit to add them");
+}
+// 🗓 the next 7 days of the plan (dinners + any planned breakfast/lunch/snack recipes, plus dinner sides)
+function grWeekSources(fromIso,days){
+  const out=[];
+  for(let i=0;i<(days||7);i++){
+    const iso=kitIsoPlus(fromIso,i), p=kitPlan[iso]; if(!p) continue;
+    const day=gwParseDate(iso).toLocaleDateString("en-US",{weekday:"short"});
+    if(!p.eaten&&!p.skipped){
+      if(p.mid&&kitMeals[p.mid]) out.push({lines:kitMeals[p.mid].ing,lbl:(kitMeals[p.mid].name||"dinner")+" ("+day+")"});
+      if(p.sides) out.push({lines:String(p.sides).split(/\s*(?:·|,|\+|&|\band\b)\s*/i).join("\n"),lbl:"sides ("+day+")"});
+    }
+    ["b","l","s"].forEach(sl=>{ const v=p[sl]; if(v&&v.mid&&kitMeals[v.mid]) out.push({lines:kitMeals[v.mid].ing,lbl:(kitMeals[v.mid].name||"meal")+" ("+day+")"}); });
+  }
+  return out;
+}
+function grFromWeek(){
+  const src=grWeekSources(_todayStr(),7);
+  grImpOpen("Shop for this week's meals",grIngRows(src),"Nothing planned with a recipe in the next 7 days — plan dinners on 🍽 Meals",true);
+}
+// 🥫 a pantry chip / 📝 a Mom's Day to-do → the list (Mom's, like the Mom's Day box)
+function grMomAdd(text,src,after){
+  const go=()=>{ const r=grAdd(text,"mom",{src:src}); if(after&&r!=="ask") after(); };
+  if(typeof momHere==="function"&&momHere()) go(); else kitPinGate(go,"Adding to the grocery list from here is for Mom. Kids ask from their own day.");
+}
+function grFromPantry(id){ const it=kitPantry[id]; if(it) grMomAdd(it.name,{k:"mom"}); }
+function grFromTodo(id,iso){
+  const t=(((momdayData[iso]||{}).todos)||{})[id]; if(!t) return;
+  const txt=String(t.text||"").replace(/^\s*(buy|get|pick up|grab|order|need)\s+/i,"").trim(); if(!txt) return;
+  grMomAdd(txt,{k:"todo"},()=>{ if(!t.done) momdayToggleTodo(id,iso); });   // the to-do checks itself off once it's on the list
 }
 // GROCERY_LIST_END
 
@@ -12471,6 +12605,7 @@ function panChip(id){
   return '<span'+(panManage?' onclick="panQtyEdit(\''+id+'\')"':'')+' style="'+(panManage?'cursor:pointer;':'')+'display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:4px 10px;border-radius:12px;border:1.5px solid '+c[2]+';background:'+c[0]+';color:'+c[1]+'">'
     +(st==="aging"?'🕐 ':'')+esc(it.name)+(typeof it.qty==="number"?' <b>×'+it.qty+'</b>':'')
     +'<span onclick="event.stopPropagation();panToggleRegular(\''+id+'\')" title="regular = on the staples check-list" style="cursor:pointer;font-size:13px">'+(panIsRegular(it.name)?'⭐':'☆')+'</span>'
+    +'<span onclick="event.stopPropagation();grFromPantry(\''+id+'\')" title="Put it on the grocery list" style="cursor:pointer;font-size:12px">🛒</span>'
     +(panManage?'<span onclick="event.stopPropagation();panDel(\''+id+'\')" style="cursor:pointer;color:#9ca3af;font-weight:800;padding:0 2px">✕</span>':'')
     +'</span>';
 }
@@ -13443,6 +13578,7 @@ function kitRecipeHTML(mid){
     +'<div style="display:flex;align-items:center;gap:8px;padding:12px 14px;background:#E07B39;color:#fff"><span style="font-size:22px">'+(m.emoji?esc(m.emoji):'🍽')+'</span><span style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700">'+esc(m.name||"")+'</span></div>'
     +'<div style="padding:12px 14px">'
     +kitRecipeExtrasHTML(m)
+    +(String(m.ing||'').trim()?'<button onclick="grFromRecipe(\''+mid+'\')" style="padding:8px 12px;border-radius:9px;border:none;background:#3A7D44;color:#fff;font-size:12.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-bottom:10px">🛒 Add ingredients to the grocery list</button>':'')
     +(days.length?'<div style="font-size:11px;font-weight:800;color:#c2410c;margin-bottom:8px">🗓 Planned: '+esc(days.join(", "))+'</div>':'')
     +(Array.isArray(m.uses)&&m.uses.length?'<div style="font-size:11px;color:var(--muted);margin-bottom:8px">🧮 On ✓ eaten: '+m.uses.map(u=>esc(u.name)+' ×'+u.qty).join(' · ')+'</div>':'')
     +'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:2px 0 5px">😋 Kid votes</div>'
@@ -13479,7 +13615,8 @@ function renderKitchen(el){
   // ── 🗓 The week — tonight + the next six days, tap a day to plan it ──
   h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
   h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#E07B39;color:#fff;font-weight:800;font-size:13px"><span>🗓</span> This week\'s dinners'
-    +'<button onclick="kitWkImportToggle()" style="margin-left:auto;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">'+(kitWkImportOpen?'✕ Close':'📥 Import week')+'</button></div>';
+    +'<button onclick="grFromWeek()" style="margin-left:auto;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">🛒 Shop for the week</button>'
+    +'<button onclick="kitWkImportToggle()" style="margin-left:6px;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">'+(kitWkImportOpen?'✕ Close':'📥 Import week')+'</button></div>';
   h+='<div style="padding:8px 14px 12px">';
   if(kitWkImportOpen){
     h+='<textarea id="kit-week-import" rows="8" placeholder="meal: Taco night | 🌮&#10;ingredients:&#10;1 lb ground beef&#10;instructions:&#10;Brown the beef…&#10;prep: nb | thaw the beef&#10;plan:&#10;tue: Taco night&#10;wed: Leftovers" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12px;font-family:\'DM Sans\',sans-serif"></textarea>'
