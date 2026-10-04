@@ -53776,6 +53776,100 @@ function wfWithDefaults(wf){
   });
   return out;
 }
+// 🔁 LOOP_PACK (2026-10-04, her design): a kid with NO saved Workflow Orders gets their day laid the way the Mom loop
+// runs it, instead of one ranked list per kid (which left Kenzie/Andrew idle while Mom took Taylor — DeWalt Week 1):
+//   1. family time Mom leads ("scheduler picks" blocks with Mom) + first-of-day cards
+//   2. Mom-required cards in MOM-LOOP order (mlOrder — the order she sets on the loop panel), one block per kid;
+//      a kid who is busy when their turn comes lends Mom to the next free kid for one card, like the live loop's
+//      borrowed turn — so Mom never waits
+//   3. family time the kids do together WITHOUT Mom (Kenzie + Andrew's Fact Review), at the first slot all are free
+//   4. every other card packed TIGHT: each takes the earliest hole in its kid's day it fits (device lanes respected,
+//      a subject's later lesson never lands ahead of its earlier one)
+//   5. last-of-day cards after everything
+// Howe's kids all have saved orders → this returns the old single pack untouched.
+function gwLoopPack(toPack,ctx,kids,infoOf){
+  const wf=(typeof rulesData!=="undefined"&&rulesData&&rulesData.workflow)||{};
+  const loop={};
+  (kids||[]).forEach(function(k){ const n=fbArr((wf[k]||{}).normal); if(!(n&&n.length)) loop[k]=1; });
+  if(!Object.keys(loop).length) return packAround([],toPack,ctx);
+  const inf=function(it){ return (infoOf&&infoOf(it))||{}; };
+  const isLoop=function(it){ return it._participants?it._participants.some(function(k){ return loop[k]; }):!!loop[it.who]; };
+  const pre=[], mom=[], part=[], rest=[], last=[];
+  toPack.forEach(function(it){
+    if(!isLoop(it)){ rest.push(it); return; }
+    const r=String(inf(it).rules||"");
+    if(it._participants){ (it.mom==="required"?pre:part).push(it); return; }
+    if(r.indexOf("first")>=0) pre.push(it);
+    else if(r.indexOf("last")>=0) last.push(it);
+    else if(it.mom==="required") mom.push(it);
+    else rest.push(it);
+  });
+  let over=[];
+  const placed=[];   // everything laid so far, in order
+  const ok=function(it){ return it.time&&over.indexOf(it)<0; };
+  // the windows already taken, as busy time for the next pass
+  const ctxAround=function(){
+    const busy={}, momBusy=(ctx.momBusy||[]).slice(), laneBusy={};
+    Object.keys(ctx.busy||{}).forEach(function(k){ busy[k]=(ctx.busy[k]||[]).slice(); });
+    Object.keys(ctx.laneBusy||{}).forEach(function(l){ laneBusy[l]=(ctx.laneBusy[l]||[]).slice(); });
+    placed.forEach(function(it){
+      if(!ok(it)) return;
+      const s0=toMin(it.time), w={s:s0,e:s0+(it.dur||20)};
+      (it._participants||[it.who]).forEach(function(k){ (busy[k]=busy[k]||[]).push(w); });
+      if(it.mom==="required"&&!it._lpHelper) momBusy.push(w);   // Grandma's cards don't hold Mom
+      const dv=it.device||"paper", ln=(dv==="ipad"&&it.who==="lucy")?"ipadLucy":((dv==="ipad"||dv==="phone"||dv==="ipad/phone")?"screen":dv);   // = fxLaneOf
+      if(ln&&ln!=="paper") (laneBusy[ln]=laneBusy[ln]||[]).push(w);
+    });
+    return Object.assign({},ctx,{busy:busy,momBusy:momBusy,laneBusy:laneBusy,helperFor:ctx.helperFor});
+  };
+  // 1
+  if(pre.length){ over=over.concat(packAround([],pre,ctx)); pre.forEach(function(it){ placed.push(it); }); }
+  // 2a — a regular helper's cards first (Grandma Wed 9:30–12), on her own clock: they hold the kid, not Mom
+  const hwOf=function(it){ try{ return ctx.helperFor?ctx.helperFor(it):null; }catch(e){ return null; } };
+  const hcards=mom.filter(function(it){ return !!hwOf(it); });
+  if(hcards.length){
+    packAround([],hcards,ctxAround());
+    hcards.forEach(function(it){
+      const hw=hwOf(it), s0=it.time?toMin(it.time):-1;
+      if(hw&&s0>=hw.s&&s0+(it.dur||20)<=hw.e){ it._lpHelper=true; placed.push(it); }
+      else delete it.time;   // didn't fit her window → Mom's queue below
+    });
+  }
+  // 2b — Mom's sequence: each step, the kid who can start soonest; ties go to loop order (her turn order).
+  // Each card is placed exactly where the probe found room (lunch, family time, devices, the kid's other cards).
+  const order=((typeof mlOrder==="function")?mlOrder():[]).filter(function(k){ return loop[k]; });
+  (kids||[]).forEach(function(k){ if(loop[k]&&order.indexOf(k)<0) order.push(k); });
+  const q={}; order.forEach(function(k){ q[k]=mom.filter(function(it){ return it.who===k&&!it._lpHelper; }); });
+  let momT=Math.max(ctx.start||0,ctx.momStart||0);
+  const kidMomEnd={};
+  for(let guard=0; guard<400; guard++){
+    let best=null, bestS=Infinity;
+    const c2=ctxAround(); c2.helperFor=null; c2.momStart=momT;
+    order.forEach(function(k){
+      if(!q[k].length) return;
+      const c=q[k][0], probe={id:"__lp",who:c.who,dur:c.dur,mom:c.mom,device:c.device};
+      const ks=Object.assign({},c2.kidStart||{}); ks[k]=Math.max(ks[k]||0,kidMomEnd[k]||0);
+      const o=packAround([],[probe],Object.assign({},c2,{kidStart:ks}));
+      const st=(o.length||!probe.time)?Infinity:toMin(probe.time);
+      if(st<bestS){ bestS=st; best=k; }
+    });
+    if(!best){ order.forEach(function(k){ while(q[k].length) over.push(q[k].shift()); }); break; }   // nothing fits today → overflow (rolls on)
+    const c=q[best].shift(); c.time=fromMin(bestS); placed.push(c);
+    momT=bestS+(c.dur||20); kidMomEnd[best]=momT;
+  }
+  // 3 + 4 — one card at a time into the earliest hole that fits
+  const lastEnd={};   // kid|subject → end of that subject's previous card today
+  part.concat(rest).forEach(function(it){
+    const key=it.who+"|"+(inf(it).key||it.id);
+    const c2=ctxAround();
+    if(!it._participants&&lastEnd[key]){ const ks=Object.assign({},c2.kidStart||{}); ks[it.who]=Math.max(ks[it.who]||0,lastEnd[key]); c2.kidStart=ks; }
+    over=over.concat(packAround([],[it],c2)); placed.push(it);
+    if(ok(it)&&!it._participants) lastEnd[key]=toMin(it.time)+(it.dur||20);
+  });
+  // 5 — wrap-up cards after the kid's whole day
+  if(last.length) over=over.concat(packAround(placed.filter(ok),last,ctx));
+  return over;
+}
 function gwWorkflowRank(kid, key, s, dayName, isSitterDay){
   const disp=(s.display||key||"");
   const rules=s.rules||"";
@@ -53802,7 +53896,10 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   const dayName=dayConfig.dayName;
   const isFriday=dayName==="friday";
   const r=gwRules();
-  const cutoff=(theater&&dayName!=="friday"&&dayName!=="saturday")?r.schoolEnd:Math.max(r.schoolEnd,17*60);
+  // ⏰ SCHOOL_END_CAP (2026-10-04, her rule): a weekday never runs past school end. What doesn't fit rolls on
+  // (book lessons: next day → Saturday → next week, via the cursor) or is skipped (dailies are day-bound). Was
+  // 5 PM unless Theater Week (DeWalt's co-op Thursday ran to 4:50). Saturday keeps its catch-up allowance.
+  const cutoff=(dayName!=="saturday")?r.schoolEnd:Math.max(r.schoolEnd,17*60);
 
   // Notebooks and drills are now managed as regular curriculum subjects — no hardcoded injection needed
 
@@ -53934,9 +54031,12 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
 
   // Place everything through the shared packer (no phone lane, to match the prior
   // generator; Mom deferred past the sitter return on babysitter days).
-  const overflow=packAround([],toPack,{start:schoolStart,end:cutoff,lunchStart:r.lunchStart,lunchEnd:r.lunchEnd,
+  const _packCtx={start:schoolStart,end:cutoff,lunchStart:r.lunchStart,lunchEnd:r.lunchEnd,
     kidStart:kidStart,momStart:(isSitter?sitterEnd:0),busy:fxBusy,momBusy:fxMomBusy,laneBusy:fxLaneBusy,lanes:["computer","screen","ipadLucy","keyboard"],laneCap:gwDeviceCaps(),
-    helperFor:(typeof helperPlanWin==="function")?function(it){ const mm=meta[it.id]; return mm?helperPlanWin(dayName,mm.kid,mm.key):null; }:null});   // 🙋 Grandma's regular window
+    helperFor:(typeof helperPlanWin==="function")?function(it){ const mm=meta[it.id]; return mm?helperPlanWin(dayName,mm.kid,mm.key):null; }:null};   // 🙋 Grandma's regular window
+  // 🔁 LOOP_PACK: kids with no saved Workflow Orders lay the way the Mom loop runs the day; everyone else exactly as before
+  const overflow=(typeof gwLoopPack==="function")?gwLoopPack(toPack,_packCtx,KIDS,function(it){ const mm=meta[it.id]; return mm?{rules:(mm.s&&mm.s.rules)||"",key:mm.key}:{}; })
+    :packAround([],toPack,_packCtx);
   const overflowSet=new Set(overflow);
   items.forEach(it=>{
     const mm=meta[it.id];
