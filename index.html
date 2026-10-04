@@ -8879,7 +8879,9 @@ function taskCard(t, fromDay, readOnly, doneId){
   const _dlSub=(_dlv==="study"&&typeof gwGetSubjects==="function")?(((gwGetSubjects(t.who)||{})[t.subjectKey])||null):null;
   const _go=(_dlv==="sprint")?("retrOpenSprint('"+t.who+"')"):(_dlv==="study"&&_dlSub)?("retrSchedGo('"+t.who+"','study','"+_dlSub.study+"')"):("retrSchedGo('"+t.who+"','"+_dlv+"')");
   let linkRow=_dlv?'<div style="margin-top:5px"><span onclick="event.stopPropagation();'+_go+'" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#5b3a8c;cursor:pointer;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4C2} Open '+cap(t.who)+'’s '+taskDeepLinkLabel(_dlv)+' →</span></div>':"";
-  if(_dlSub&&_dlSub.study&&typeof mstPile==="function"){
+  const _ckLine=(_dlSub&&_dlSub.study&&typeof ckCardLine==="function")?ckCardLine(t.who,_dlSub.study):null;   // 🩺 CHECKUP
+  if(_ckLine) linkRow+='<div style="margin-top:4px;font-size:11px;color:#0f766e;font-weight:700">'+_ckLine+'</div>';
+  else if(_dlSub&&_dlSub.study&&typeof mstPile==="function"){
     try{
       const _sp=mstPile(t.who,_dlSub.study,mastGetPrintNum(),(typeof mstLogGet==="function")?mstLogGet(t.who,_dlSub.study):null);
       const _n=(_sp.newNames||[]).length,_d=(_sp.reviews||[]).length,_l=(_sp.learning||[]).length;
@@ -30444,10 +30446,10 @@ function _ustDone(unitId,kid,rec){
 }
 let unitStageForm=null;   // {unitId,kid,stage,knows,subject,map} — the open "+ Kid" form
 function unitStageFormOpen(unitId,kid){ if(!momHere()) return; const u=unitStudies[unitId]; if(!u) return;
-  const s=_ustStagesWithCards(u)[0]; unitStageForm={unitId,kid,stage:s?s.n:null,knows:"",subject:"",map:""};
+  const s=_ustStagesWithCards(u)[0]; unitStageForm={unitId,kid,stage:s?s.n:null,knows:"",subject:"",map:"",how:"knows",perDay:10,untested:"spot"};
   const el=document.getElementById("content"); if(el) renderUnits(el); }
 function unitStageFormSet(field,val){ if(!unitStageForm) return;
-  unitStageForm[field]=(field==="stage")?Number(val):val; if(field==="stage"){ unitStageForm.knows=""; unitStageForm.map=""; }
+  unitStageForm[field]=(field==="stage"||field==="perDay")?Number(val):val; if(field==="stage"){ unitStageForm.knows=""; unitStageForm.map=""; }
   const el=document.getElementById("content"); if(el) renderUnits(el); }
 function unitStageFormClose(){ unitStageForm=null; const el=document.getElementById("content"); if(el) renderUnits(el); }
 function unitStageEnroll(){
@@ -30498,11 +30500,18 @@ function _unitStageRowsHtml(u,roster){
         MAST_COUNT_PICS.forEach(p=>{ const on=p[0]===ce; h+='<button title="'+p[1]+'" onclick="mastSetCountEmoji(\''+esc(k)+'\',\''+p[0]+'\')" style="width:28px;height:28px;padding:0;border-radius:8px;border:1.5px solid '+(on?'#2d6a4f':'transparent')+';background:'+(on?'#f2faf5':'transparent')+';font-size:16px;cursor:pointer;line-height:1">'+p[0]+'</button>'; });
         h+='</div>'; }
       h+='<div style="font-size:10.5px;color:var(--muted);margin-top:3px">'+(ks.subject&&ks.map?'📘 '+esc(subjName(k,ks.subject))+' · '+esc((UNIT_BOOK_MAPS[ks.map]||{}).label||ks.map)+' map — new families open at their lesson':'No book link — the next family opens when the last one is learned')+'</div>';
+      if(ks.checkup&&typeof ckUnitRowHtml==="function") h+=ckUnitRowHtml(u,k,ks);   // 🩺 CHECKUP
     } else if(unitStageForm&&unitStageForm.unitId===u.id&&unitStageForm.kid===k){
       const f=unitStageForm;
       h+='<div style="font-size:12.5px;font-weight:800;color:#1f2937;margin-bottom:6px">Start '+esc(cap(k))+'</div>';
       h+='<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;font-size:11px;color:#374151;font-weight:700">';
       h+='<span>Stage</span><select style="'+sel+'" onchange="unitStageFormSet(\'stage\',this.value)">'+_ustStagesWithCards(u).map(s=>'<option value="'+s.n+'"'+(s.n===f.stage?' selected':'')+'>'+s.n+'. '+esc(s.label)+'</option>').join('')+'</select>';
+      h+='<span>How to start</span><select style="'+sel+'" onchange="unitStageFormSet(\'how\',this.value)"><option value="knows"'+(f.how!=="checkup"?' selected':'')+'>I\u2019ll pick what they already know</option><option value="checkup"'+(f.how==="checkup"?' selected':'')+'>\u{1FA7A} Check-up first (Mom checks)</option></select>';
+      if(f.how==="checkup"&&typeof ckFormRowsHtml==="function"){   // 🩺 CHECKUP
+        h+=ckFormRowsHtml(u,f,sel,esc); h+='</div>';
+        h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin:7px 0">A Mom check-up card instead of loading every card: the hardest few per family first; all right \u2192 known, any miss \u2192 the rest of that family is checked. \u2713 graduates \u00B7 \u3030 monthly \u00B7 \u2717 learning.</div>';
+        h+='<div style="display:flex;gap:6px"><button onclick="unitStageCheckup()" style="'+btn("#0f766e","#fff","#0f766e")+'">\u{1FA7A} Start check-up for '+esc(cap(k))+'</button><button onclick="unitStageFormClose()" style="'+btn("#fff","var(--muted)","var(--border)")+'">Cancel</button></div>';
+      } else {
       h+='<span>Already knows</span><select style="'+sel+'" onchange="unitStageFormSet(\'knows\',this.value)"><option value="">Nothing yet — start at the beginning</option>'+_ustFamilies(u,f.stage).map(fm=>'<option value="'+esc(fm)+'"'+(fm===f.knows?' selected':'')+'>through the '+esc(fm)+'</option>').join('')+'</select>';
       const subs=Object.keys((((currData||{}).subjects||{})[k])||{});
       h+='<span>Math book</span><select style="'+sel+'" onchange="unitStageFormSet(\'subject\',this.value)"><option value="">No book link</option>'+subs.map(sk=>'<option value="'+esc(sk)+'"'+(sk===f.subject?' selected':'')+'>'+esc(subjName(k,sk))+'</option>').join('')+'</select>';
@@ -30512,6 +30521,7 @@ function _unitStageRowsHtml(u,roster){
       const fams=_ustFamilies(u,f.stage), ki=f.knows?fams.indexOf(f.knows):-1, nxt=fams[ki+1];
       h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin:7px 0">'+(ki>=0?'Through the '+esc(f.knows)+' go straight to review. ':'')+(nxt?'Starts learning the '+esc(nxt)+'.':'Everything in this stage is review.')+'</div>';
       h+='<div style="display:flex;gap:6px"><button onclick="unitStageEnroll()" style="'+btn("#2d6a4f","#fff","#2d6a4f")+'">Start '+esc(cap(k))+'</button><button onclick="unitStageFormClose()" style="'+btn("#fff","var(--muted)","var(--border)")+'">Cancel</button></div>';
+      }
     } else {
       h+='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:12.5px;font-weight:800;color:#9ca3af;min-width:64px">'+esc(cap(k))+'</span><button onclick="unitStageFormOpen(\''+esc(u.id)+'\',\''+esc(k)+'\')" style="'+btn("#fff","#1f2937","var(--border)")+'">+ '+esc(cap(k))+'</button></div>';
     }
@@ -43979,7 +43989,8 @@ function mstSessions(kid) {
       focusDecks: rec.focusDecks != null ? rec.focusDecks : MST_SESSION_DEFAULTS.focusDecks,
       skipDecks: rec.skipDecks || [],
       pattern: mstPatternClean(rec.pattern),
-      bothWays: !!rec.bothWays
+      bothWays: !!rec.bothWays,
+      unit: rec.unit, stage: rec.stage, perDay: rec.perDay, quick: rec.quick, untested: rec.untested   // 🩺 CHECKUP
     });
   });
   // Second pass — the 📚 Daily Study catch-all (kind "all") owns every deck that no NAMED deck
@@ -44019,7 +44030,7 @@ function mstTierIdx(tier, ladder) {
 // 3. Does `session` own `item`?
 function mstOwns(session, item, ladder) {
   if (!session || !item) return false;
-  if (session.kind === "mix") return false;
+  if (session.kind === "mix" || session.kind === "checkup") return false;   // 🩺 CHECKUP owns nothing
   if (!session.decks || session.decks.indexOf(item.subject) === -1) return false;
   if (mastIsParked(item)) return false;
   if (mastIsNeverDrill(item)) return false;
@@ -44043,7 +44054,7 @@ function mstMixOwns(sessions, item, ladder) {
     const s = sessions[i];
     // Every session that owns decks feeds the mix — hand-picked ones AND the Daily Study
     // catch-all. (Only the mix itself is skipped; it owns no decks of its own.)
-    if (s.kind === "mix") continue;
+    if (s.kind === "mix" || s.kind === "checkup") continue;
     if (!s.decks || s.decks.indexOf(item.subject) === -1) continue;
     const mixInIdx = mstTierIdx(s.mixInAt, ladder);
     const handOffIdx = mstTierIdx(s.handOffAt, ladder);
@@ -44100,6 +44111,7 @@ function mstPile(kid, sid, pn, todayLog) {
   const sessions = mstSessions(kid);
   const session = sessions.find(s => s.sid === sid);
   if (!session) return empty;
+  if (session.kind === "checkup") return empty;   // 🩺 CHECKUP: its own queue (ckPlan)
 
   let items = masteryData[kid];
   if (!items) items = [];
@@ -44389,6 +44401,259 @@ function mstTypedOk(typed, answer) {
   return !!t && t === mstNormAns(answer);
 }
 // ── MST_ENGINE_END ──
+// CHECKUP_START — 🩺 Check-up: a Mom-graded study session (her design 2026-10-04, built for Taylor's
+// × ÷ facts; the AAS words plug into the same engine later, lessons as the sets). Instead of loading
+// every card onto the ladder, Mom checks the kid: per family (a times table, a spelling lesson) the
+// hardest few first — "Quick check" — all right → the family is known; any ✗ → the rest of that family
+// is checked too. ✓ Got it → GRADUATED · 〰 Took a moment (right, not instant — her word 10/4, not "slow") → MONTHLY · ✗ Missed → LEARNING
+// (Daily Study / the drill teach it). Facts in a family that passed but were never asked follow the
+// session's `untested` rule — Sarah's pick (worksheet taylor_facts_checkup): "known" graduated,
+// "spot" one monthly look first, "all" = no shortcut, every card is asked.
+// It is a study session (kind "checkup", who "mom"), so it goes on the schedule the usual way —
+// Add Subject → Daily → 📚 Study session — as a Mom-required card. It OWNS no cards (mstOwns/
+// mstMixOwns/mstPile skip it). State: mastery/<kid>_checkup/<sid> = {f:{<fam>:{m,a:{<card>:{r,d,t}}}},
+// day:{YYYYMMDD:n}} — written per tap, so stopping anywhere loses nothing.
+const CK_DEFAULTS={perDay:10,quick:5,untested:"spot"};
+const CK_UNTESTED=[["known","Count them as known"],["spot","One monthly check, then known"],["all","Check every one"]];
+function ckSlug(s){ return String(s==null?"":s).replace(/\+/g,"p").replace(/-/g,"m").replace(/×/g,"x").replace(/÷/g,"d").replace(/[^a-z0-9]/gi,"_"); }
+// "7×8" → {op:"x",a:7,b:8} · "56÷7" → {op:"d",a:8,b:7} (quotient, divisor) · anything else → null
+function ckFactors(name){
+  const m=/^\s*(\d+)\s*([×x÷\/])\s*(\d+)\s*$/.exec(String(name==null?"":name)); if(!m) return null;
+  const a=+m[1], b=+m[3];
+  return (m[2]==="÷"||m[2]==="/")?{op:"d",a:b?a/b:0,b:b}:{op:"x",a:a,b:b};
+}
+// How hard a fact is to recall: 0s, 1s, 2s, 10s are near-free, 5s and 11s easy, the rest by size.
+function ckHard(name){
+  const f=ckFactors(name); if(!f) return 0;
+  const w=n=>(n===0||n===1)?0:(n===2||n===10)?1:(n===5||n===11)?2:n;
+  return w(f.a)+w(f.b);
+}
+// The Quick-check picks for one family: the hardest first, at least 2 division facts when the
+// family has them (division is usually the weaker half). Non-fact cards (words): first q in order.
+function ckQuickPicks(cards,q){
+  q=Math.max(1,q|0);
+  const facts=cards.filter(c=>ckFactors(c.name));
+  if(!facts.length) return cards.slice(0,q);
+  const by=(a,b)=>(ckHard(b.name)-ckHard(a.name))||((a.order||0)-(b.order||0));
+  const xs=facts.filter(c=>ckFactors(c.name).op==="x").sort(by);
+  const ds=facts.filter(c=>ckFactors(c.name).op==="d").sort(by);
+  let nd=Math.min(ds.length,q>=4?2:Math.floor(q/2)); let nx=Math.min(xs.length,q-nd);
+  nd=Math.min(ds.length,q-nx);
+  return xs.slice(0,nx).concat(ds.slice(0,nd));
+}
+// Group the stage's cards by family (in card order).
+function ckFamilies(cards){
+  const out=[], at={};
+  cards.forEach(c=>{ const k=c.family||"All"; if(at[k]==null){ at[k]=out.length; out.push({fam:k,slug:ckSlug(k),cards:[]}); } out[at[k]].cards.push(c); });
+  return out;
+}
+function ckFamState(st,session,slug){
+  const f=((st&&st.f)||{})[slug];
+  return f?{m:f.m,a:Object.assign({},f.a||{})}:{m:(session.untested==="all"?"full":"quick"),a:{}};
+}
+// Everything still to ask, in order, plus progress. Pure.
+function ckPlan(cards,session,st){
+  const q=session.quick||CK_DEFAULTS.quick;
+  const fams=ckFamilies(cards); let checked=0, practice=0; const queue=[];
+  fams.forEach(F=>{
+    const fs=ckFamState(st,session,F.slug);
+    Object.keys(fs.a).forEach(k=>{ if(fs.a[k]&&fs.a[k].r==="m") practice++; });
+    if(fs.m==="pass"||fs.m==="done"){ checked++; return; }
+    const target=fs.m==="quick"?ckQuickPicks(F.cards,q):F.cards;
+    target.forEach(c=>{ if(!fs.a[ckSlug(c.name)]) queue.push({card:c,fam:F.fam,slug:F.slug}); });
+  });
+  return {queue,checked,families:fams.length,practice,complete:!queue.length};
+}
+// Today's share: the daily size minus what was already checked today (Mom can tap "keep going").
+function ckTodayLeft(session,st,dayKey,extra){
+  const done=((st&&st.day)||{})[dayKey]||0;
+  return Math.max(0,(session.perDay||CK_DEFAULTS.perDay)+(extra||0)-done);
+}
+// One tap. Mutates st; returns what the cards become: [{card,res}] with res c|s|m for the asked card
+// and k (known) / spot for a passed family's never-asked cards.
+function ckGrade(st,session,cards,card,r,dayKey,secs){
+  st.f=st.f||{}; st.day=st.day||{};
+  const F=ckFamilies(cards).find(x=>x.cards.some(c=>c.name===card.name)); if(!F) return [];
+  const fs=ckFamState(st,session,F.slug);
+  fs.a[ckSlug(card.name)]={r:r,d:dayKey}; if(secs!=null) fs.a[ckSlug(card.name)].t=secs;
+  const out=[{card:card,res:r}];
+  if(fs.m==="quick"&&r==="m") fs.m="full";
+  const target=fs.m==="quick"?ckQuickPicks(F.cards,session.quick||CK_DEFAULTS.quick):F.cards;
+  if(target.every(c=>fs.a[ckSlug(c.name)])){
+    if(fs.m==="quick"){
+      fs.m="pass";
+      const rule=session.untested==="known"?"k":"spot";
+      F.cards.forEach(c=>{ if(!fs.a[ckSlug(c.name)]) out.push({card:c,res:rule}); });
+    } else fs.m="done";
+  }
+  st.f[F.slug]=fs; st.day[dayKey]=(st.day[dayKey]||0)+1;
+  return out;
+}
+// What a result does to the kid's card.
+function ckResultTier(res){
+  if(res==="c"||res==="k") return {status:"active",tier:"graduated"};
+  if(res==="s"||res==="spot") return {status:"active",tier:"monthly"};
+  return {status:"introduction",tier:"daily"};
+}
+// ── App side (DOM + writes) ──────────────────────────────────────────────────
+let ckRun=null;     // {kid,sid,ts,extra} — a sitting in progress (answers are already saved)
+let ckTimerIv=null;
+function ckDayKey(){ return (typeof mstTodayKey==="function")?mstTodayKey():new Date().toISOString().slice(0,10).replace(/-/g,""); }
+function ckSession(kid,sid){ try{ return (mstSessions(kid)||[]).find(s=>s.sid===sid&&s.kind==="checkup")||null; }catch(e){ return null; } }
+function ckCards(session){
+  const u=(typeof unitStudies!=="undefined"&&unitStudies)?unitStudies[session.unit]:null;
+  return (u&&typeof _ustCards==="function")?_ustCards(u,session.stage):[];
+}
+function ckState(kid,sid){ return (((masteryData||{})[kid+"_checkup"])||{})[sid]||{f:{},day:{}}; }
+// The schedule card's line under the study link.
+function ckCardLine(kid,sid){
+  const s=ckSession(kid,sid); if(!s) return null;
+  const cards=ckCards(s); if(!cards.length) return null;
+  const st=ckState(kid,sid), p=ckPlan(cards,s,st);
+  if(p.complete) return "\u{1FA7A} check-up complete ✓";
+  const left=Math.min(p.queue.length,ckTodayLeft(s,st,ckDayKey(),0));
+  return left?("\u{1FA7A} "+left+" to check today"):"\u{1FA7A} ✓ done today";
+}
+function ckEsc(v){ return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function ckProgressText(p){ return p.checked+" of "+p.families+" families checked · "+p.practice+" in practice"; }
+function ckRenderHtml(kid,session){
+  if(ckTimerIv){ clearInterval(ckTimerIv); ckTimerIv=null; }
+  const box='background:#f0fdfa;border:2px solid #99f6e4;border-radius:20px;padding:20px;margin-bottom:16px;font-family:\'DM Sans\',sans-serif';
+  if(!(typeof momHere==="function"&&momHere()))   // her rule 2026-10-04: a check-up is never run on a kid's own screen
+    return '<div style="'+box+';text-align:center"><div style="font-size:34px">\u{1FA7A}</div><div style="font-size:16px;font-weight:800;color:#0f766e;margin-top:6px">This is a check-up with Mom.</div><div style="font-size:13px;color:var(--muted);margin-top:4px">Ask Mom when she’s ready.</div></div>';
+  const cards=ckCards(session);
+  if(!cards.length) return '<div style="'+box+'">This check-up’s unit isn’t in your family yet.</div>';
+  const st=ckState(kid,session.sid), p=ckPlan(cards,session,st), dk=ckDayKey();
+  const running=ckRun&&ckRun.kid===kid&&ckRun.sid===session.sid;
+  const left=Math.min(p.queue.length,ckTodayLeft(session,st,dk,running?ckRun.extra:0));
+  let h='<div style="'+box+'"><div style="font-size:22px;font-weight:800;color:#0f766e">\u{1FA7A} '+ckEsc(session.name||"Check-up")+'</div>';
+  h+='<div style="font-size:13px;color:var(--muted);font-weight:700;margin-top:4px">'+ckProgressText(p)+'</div>';
+  h+='<div style="font-size:12px;color:var(--muted);margin-top:2px">'+(session.perDay||CK_DEFAULTS.perDay)+' a day · '+(session.untested==="all"?"every card asked":"quick check: the "+(session.quick||CK_DEFAULTS.quick)+" hardest per family first")+'</div></div>';
+  const bt=(c,bg)=>'flex:1;min-height:60px;border-radius:16px;border:2px solid '+c+';background:'+bg+';color:'+c+';font-size:17px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  if(running&&left>0){
+    const it=p.queue[0], c=it.card;
+    const ans=(c.def!=null)?String(c.def):"";
+    h+='<div style="text-align:center;font-size:12px;color:#0f766e;font-weight:800;text-transform:uppercase;letter-spacing:.05em">'+ckEsc(it.fam)+'</div>';
+    // Her catch 2026-10-04: the answer must never sit on screen while the kid answers — it's on the
+    // flip, like the study cards: Mom taps the fact to see it, and it hides again for the next fact.
+    h+='<div onclick="ckFlip()" style="cursor:pointer;text-align:center;font-size:64px;font-weight:800;color:#111827;margin:12px 0 4px;font-family:\'DM Sans\',sans-serif">'+ckEsc(String(c.name).replace(/([×÷+\-])/g," $1 "))+'</div>';
+    if(ans) h+=(ckRun.show
+      ?'<div onclick="ckFlip()" style="cursor:pointer;text-align:center;font-size:15px;color:#0f766e;font-weight:800">= '+ckEsc(ans)+'</div>'
+      :'<div onclick="ckFlip()" style="cursor:pointer;text-align:center;font-size:12px;color:#99a3ad;font-weight:700">tap the fact to check the answer</div>');
+    h+='<div id="ck-timer" style="text-align:center;font-size:12px;color:var(--muted);margin-top:4px">⏱ 0 s · over 3 seconds = took a moment</div>';
+    h+='<div style="display:flex;gap:10px;margin-top:16px">';
+    h+='<button onclick="ckTap(\'c\')" style="'+bt("#16a34a","#f0fdf4")+'">✓ Got it</button>';
+    h+='<button onclick="ckTap(\'s\')" style="'+bt("#d97706","#fffbeb")+'">〰 Took a moment</button>';
+    h+='<button onclick="ckTap(\'m\')" style="'+bt("#dc2626","#fef2f2")+'">✗ Missed</button></div>';
+    h+='<div style="text-align:center;margin-top:12px;font-size:12px;color:var(--muted)">'+left+' left today</div>';
+    h+='<div style="text-align:center;margin-top:14px"><a href="javascript:void(0)" onclick="ckStop()" style="font-size:13px;color:var(--muted);text-decoration:underline">Stop for today</a></div>';
+    ckTimerIv=setInterval(()=>{ const el=document.getElementById("ck-timer"); if(!el||!ckRun){ clearInterval(ckTimerIv); ckTimerIv=null; return; }
+      const s=Math.floor((Date.now()-ckRun.ts)/1000); el.textContent="⏱ "+s+" s · over 3 seconds = took a moment"; el.style.color=s>3?"#d97706":""; },500);
+    return h;
+  }
+  if(p.complete) return h+'<div style="text-align:center;padding:24px;color:#16a34a;font-weight:800;font-size:16px">✓ Check-up complete — every family is checked.</div>';
+  const go='min-height:56px;padding:0 34px;border-radius:16px;border:none;background:#0f766e;color:#fff;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  if(left>0) h+='<div style="text-align:center"><button onclick="ckStart(\''+ckEsc(kid)+'\',\''+ckEsc(session.sid)+'\',0)" style="'+go+'">Start · '+left+' today</button></div>';
+  else h+='<div style="text-align:center;color:#16a34a;font-weight:800;font-size:15px;margin-bottom:12px">Today’s check-up is done ✓</div><div style="text-align:center"><button onclick="ckStart(\''+ckEsc(kid)+'\',\''+ckEsc(session.sid)+'\',5)" style="'+go.replace("#0f766e","#fff").replace("color:#fff","color:#0f766e;border:2px solid #0f766e")+'">Keep going · 5 more</button></div>';
+  return h;
+}
+function ckRe(){ if(typeof _mastRe==="function") _mastRe(); }
+function ckStart(kid,sid,extra){
+  if(!(typeof momHere==="function"&&momHere())) return;
+  const prev=(ckRun&&ckRun.kid===kid&&ckRun.sid===sid)?ckRun.extra:0;
+  ckRun={kid:kid,sid:sid,ts:Date.now(),extra:prev+(extra||0)}; ckRe();
+}
+function ckFlip(){ if(!ckRun) return; ckRun.show=!ckRun.show; ckRe(); }
+function ckStop(){ ckRun=null; if(ckTimerIv){ clearInterval(ckTimerIv); ckTimerIv=null; } ckRe(); }
+function ckTap(r){
+  if(!ckRun||!(typeof momHere==="function"&&momHere())) return;
+  const kid=ckRun.kid, sid=ckRun.sid, s=ckSession(kid,sid); if(!s) return;
+  const cards=ckCards(s), dk=ckDayKey();
+  const st=JSON.parse(JSON.stringify(ckState(kid,sid)));
+  const p=ckPlan(cards,s,st); if(!p.queue.length){ ckStop(); return; }
+  const it=p.queue[0]; const secs=Math.round((Date.now()-ckRun.ts)/100)/10;
+  const prevM=ckFamState(st,s,it.slug).m;
+  const out=ckGrade(st,s,cards,it.card,r,dk,secs);
+  // Cards: update the kid's existing card or mint it (same shape the unit enroll mints).
+  let items=masteryData[kid]; if(!Array.isArray(items)) items=masteryData[kid]=(items?Object.values(items):[]);
+  let bank=masteryData[kid+"_custom_items"]; if(!Array.isArray(bank)) bank=masteryData[kid+"_custom_items"]=(bank?Object.values(bank):[]);
+  const sets=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={}); sets.definitions=sets.definitions||{};
+  const pn=(typeof mastGetPrintNum==="function")?mastGetPrintNum():1;
+  const iu={}, bu={}, du={}; const ids=new Set(items.map(i=>i&&i.id));
+  out.forEach(o=>{
+    const c=o.card, dk2=c._dk||"Math Facts", tt=ckResultTier(o.res);
+    let idx=items.findIndex(i=>i&&i.subject===dk2&&i.prompt===c.name);
+    if(idx<0){ let b=kid.slice(0,3)+"_"+ckSlug(c.name), id=b, n=2; while(ids.has(id)) id=b+"_"+(n++); ids.add(id);
+      const it2={id:id,subject:dk2,type:String(dk2).toLowerCase(),prompt:c.name,review_mode:"flash",drop_count:0,consecutive_correct:0,cycle:1,ckFrom:sid};
+      if(c.def!=null) it2.answer=String(c.def);
+      items.push(it2); idx=items.length-1; }
+    const item=items[idx]; item.status=tt.status; item.tier=tt.tier;
+    if(tt.status==="introduction"){ item.tally_dots=0; delete item.next_due; delete item.placed; }
+    else { item.tally_dots=Math.max(5,item.tally_dots||0); item.placed=true;
+      if(tt.tier==="monthly"&&typeof mastStampNextDue==="function") mastStampNextDue(item,items,"monthly",pn); else delete item.next_due; }
+    item.ckLast={r:o.res,d:dk};
+    iu[idx]=item;
+    if(!bank.some(b=>b&&b.cat===dk2&&b.name===c.name)){ bank.push({cat:dk2,name:c.name}); bu[bank.length-1]=bank[bank.length-1]; }
+    if(c.def!=null&&(typeof mastDefKeyOk!=="function"||mastDefKeyOk(c.name))&&sets.definitions[c.name]==null){ sets.definitions[c.name]=String(c.def); du[c.name]=String(c.def); }
+  });
+  masteryData[kid+"_checkup"]=masteryData[kid+"_checkup"]||{}; masteryData[kid+"_checkup"][sid]=st;
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){
+    db.ref("mastery/"+kid).update(iu);
+    if(Object.keys(bu).length) db.ref("mastery/"+kid+"_custom_items").update(bu);
+    if(Object.keys(du).length) db.ref("mastery/"+kid+"_settings/definitions").update(du);
+    db.ref("mastery/"+kid+"_checkup/"+sid+"/f/"+it.slug).set(st.f[it.slug]);
+    db.ref("mastery/"+kid+"_checkup/"+sid+"/day/"+dk).set(st.day[dk]);
+  }
+  try{ HA_LS.setItem("ha_mastery",JSON.stringify(masteryData)); }catch(e){}
+  const fs=st.f[it.slug];
+  if(typeof gwShowToast==="function"){
+    if(fs.m==="pass") gwShowToast(it.fam+": passed ✓");
+    else if(fs.m==="done") gwShowToast(it.fam+": all checked");
+    else if(prevM==="quick"&&fs.m==="full") gwShowToast(it.fam+": a miss — checking the rest of this family");
+  }
+  ckRun.ts=Date.now(); ckRun.show=false;
+  const p2=ckPlan(cards,s,st);
+  if(!p2.queue.length||!ckTodayLeft(s,st,dk,ckRun.extra)){ ckRun=null; }
+  ckRe();
+}
+// Units page: the start form's check-up rows, and the enrolled kid's check-up line.
+function ckFormRowsHtml(u,f,sel,esc){
+  let h='<span>Checks a day</span><select style="'+sel+'" onchange="unitStageFormSet(\'perDay\',this.value)">'+[5,10,15,20].map(n=>'<option value="'+n+'"'+(n===(+f.perDay||10)?' selected':'')+'>'+n+'</option>').join('')+'</select>';
+  h+='<span>Rest of a passed family</span><select style="'+sel+'" onchange="unitStageFormSet(\'untested\',this.value)">'+CK_UNTESTED.map(o=>'<option value="'+o[0]+'"'+(o[0]===(f.untested||"spot")?' selected':'')+'>'+esc(o[1])+'</option>').join('')+'</select>';
+  return h;
+}
+function ckUnitRowHtml(u,kid,ks){
+  const s=ckSession(kid,ks.checkup); if(!s) return '';
+  const p=ckPlan(ckCards(s),s,ckState(kid,s.sid));
+  const linked=Object.keys((((currData||{}).subjects||{})[kid])||{}).some(k=>((currData.subjects[kid]||{})[k]||{}).study===s.sid);
+  let h='<div style="font-size:10.5px;color:#0f766e;font-weight:700;margin-top:4px">\u{1FA7A} '+(p.complete?'Check-up complete ✓':'Check-up: '+ckProgressText(p))+'</div>';
+  if(!linked&&!p.complete) h+='<div style="font-size:10.5px;color:#b45309;margin-top:2px">Put it on the schedule: + Add Subject → Daily → Study session \u{1FA7A} → Mom required.</div>';
+  return h;
+}
+function unitStageCheckup(){
+  if(!(typeof momHere==="function"&&momHere())||!unitStageForm) return;
+  const f=unitStageForm, u=unitStudies[f.unitId], kid=f.kid;
+  if(!u||(u.enrolled||{})[kid]) return;
+  const cards=_ustCards(u,f.stage); if(!cards.length) return;
+  const sd=_ustStageDef(u,f.stage)||{};
+  const sid="checkup_"+ckSlug(f.unitId)+"_"+f.stage;
+  const rec={name:"Check-up: "+(sd.label||u.title||"cards"),emoji:"\u{1FA7A}",kind:"checkup",who:"mom",unit:f.unitId,stage:f.stage,
+    perDay:(+f.perDay||CK_DEFAULTS.perDay),quick:CK_DEFAULTS.quick,untested:(f.untested||CK_DEFAULTS.untested)};
+  const st=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={}); st.cat_modes=st.cat_modes||{}; st.cat_intro_max=st.cat_intro_max||{};
+  const modes={}, intro={};
+  (u.decks||[]).forEach(d=>{ if(d&&cards.some(c=>c._dk===d.key)){ st.cat_modes[d.key]=modes[d.key]=d.mode||"flash"; st.cat_intro_max[d.key]=intro[d.key]=d.introCap||3; } });
+  if(!masteryData[kid+"_sessions"]||Array.isArray(masteryData[kid+"_sessions"])) masteryData[kid+"_sessions"]=Object.assign({},masteryData[kid+"_sessions"]||{});
+  masteryData[kid+"_sessions"][sid]=rec;
+  const ks={stage:f.stage,knows:"",subject:"",map:"",ts:Date.now(),checkup:sid};
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){
+    db.ref("mastery/"+kid+"_sessions/"+sid).set(rec);
+    if(Object.keys(modes).length){ db.ref("mastery/"+kid+"_settings/cat_modes").update(modes); db.ref("mastery/"+kid+"_settings/cat_intro_max").update(intro); }
+    db.ref("unitStudies/"+f.unitId+"/kidStage/"+kid).set(ks);
+    db.ref("unitStudies/"+f.unitId+"/enrolled/"+kid).set(true);
+  }
+  _ustDone(f.unitId,kid,ks);
+}
+// CHECKUP_END
 // ── MST_UI_START ──
 // 📚 Study screen (kid-facing) — Anki-style sitting over mstSessions/mstPile/mstSittingInit
 // etc. (pure engine globals, provided elsewhere). This block owns UI state + rendering +
@@ -44548,6 +44813,7 @@ function renderMastStudy(){
     });
     h+='</div>';
   }
+  if(session.kind==="checkup"&&typeof ckRenderHtml==="function") return h+ckRenderHtml(kid,session);   // 🩺 CHECKUP
   const pn=mastGetPrintNum();
   const todayLog=mstLogGet(kid,session.sid);
   let pile={reviews:[],learning:[],newNames:[]};
@@ -44613,6 +44879,7 @@ function mstStart(){
   if(mstSid==null||!sessions.some(s=>s.sid===mstSid)) mstSid=sessions[0].sid;
   const session=sessions.find(s=>s.sid===mstSid);
   if(!session) return;
+  if(session.kind==="checkup") return;   // 🩺 CHECKUP runs through ckStart
   if(mstRestoreSitting(mstSid)){
     mstDone=null;
     let cur=null; try{ cur=mstCurrent(mstState); }catch(e){}
@@ -45607,7 +45874,8 @@ function _mhqRenderSessions(kid) {
       : '<div style="font-size:11px;color:var(--muted);margin-top:4px;font-style:italic">not on the schedule yet</div>';
 
     h += '<div style="display:flex;gap:8px;margin-top:10px">';
-    h += '<button onclick="mhqSessOpen(\'' + mhqArgEsc(r.sid) + '\')" style="' + btn + 'border:1.5px solid var(--border);background:var(--card);color:var(--text)">Edit</button>';
+    if (r.kind === "checkup") h += '<span style="font-size:11px;color:var(--muted);align-self:center">\u{1FA7A} set up from Units</span>';   // 🩺 CHECKUP
+    else h += '<button onclick="mhqSessOpen(\'' + mhqArgEsc(r.sid) + '\')" style="' + btn + 'border:1.5px solid var(--border);background:var(--card);color:var(--text)">Edit</button>';
     h += '<button onclick="mhqSessDelete(\'' + mhqArgEsc(r.sid) + '\')" style="' + btn + 'border:1.5px solid #fecaca;background:#fef2f2;color:#dc2626">Delete</button>';
     h += '</div>';
     if (mhqSessEdit === r.sid) h += _mhqRenderSessForm(kid);
