@@ -127,7 +127,7 @@ global.renderAll = () => { renderAllCalls++; };
 global.schedShowBoard = false; global.schedShowAdmin = true; global.schedShowHistory = false;
 global.schedShowPace = false; global.schedShowPeek = false;
 
-const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlotCounts,renderMomsDay,renderMomsPlan,mpInit,mdOpenBoard,mdBack,mwBPCat,mwBPChip,mwSaveBP,mwBPSlotNow,momdayAddTodo,momdayToggleTodo,momdayDelTodo,mwToggleSym,mwAllSyms,mwAddSymType,mwDelSymType,billDueInfo,billState,billMarkPaid,billAdd,billDel,laundryAdd,laundryAdvance,laundryDel,laundryData,renderKitchen,kitIsoPlus,kitWhenMin,kitWhenLabel,kitPlanFor,kitPrepSteps,kitDuePrep,kitMarkPrep,kitAssign,kitPickDay,kitPlanText,kitOpenRecipe,kitCloseRecipe,kitEditMeal,kitAddPrepRow,kitDelPrepRow,kitSaveMeal,kitCancelEdit,kitDelMeal,kitMeals,kitPlan,kitPrepDone,kitStapleCycle,kitStapleAdd,kitStapleDel,kitStapleToggleManage,kitUsualAdd,kitUsualDel,kitSetOrderDay,kitOrderList,kitOrderText,kitCopyOrder,kitStaples,kitUsuals,kitSettings,kitPantry,panStatus,panAdd,panAddManual,panDel,panImportToggle,panImportApply,panClearGone,panToggleRegular,panIsRegular,panToggleManage,kitSweepDue,kitUsualQty,kitSlug,kitBuyLog,kitRate,kitRateChips,kitParseWeek,kitWkIso,kitWkImportToggle,kitImportWeekApply,kitPlanSlot,kitSlotText,panQtyEdit,kitMarkEaten,momChoresData,mcAll,mcAdd,mcDel,mcToggle,mcDoneOn,mcSetCad,mcCadToggleDay,mcDueToday,mcToggleManage,momChoresCardHTML,kitRotations,kitRotAll,kitRotEnsure,kitRotPlanFor,kitRotCapture,kitRotApply,kitRotSave,kitRotDel,kitRotToggle,kitRotSaveToggle,kitRotMondayOf,kitRotationsCardHTML,KIT_ROT_DEFAULT};`)();
+const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlotCounts,renderMomsDay,renderMomsPlan,mpInit,mdOpenBoard,mdBack,mwBPCat,mwBPChip,mwSaveBP,mwBPSlotNow,momdayAddTodo,momdayToggleTodo,momdayDelTodo,mwToggleSym,mwAllSyms,mwAddSymType,mwDelSymType,billDueInfo,billState,billMarkPaid,billAdd,billDel,laundryAdd,laundryAdvance,laundryDel,laundryData,renderKitchen,kitIsoPlus,kitWhenMin,kitWhenLabel,kitPlanFor,kitPrepSteps,kitDuePrep,kitMarkPrep,kitAssign,kitPickDay,kitPlanText,kitOpenRecipe,kitCloseRecipe,kitEditMeal,kitAddPrepRow,kitDelPrepRow,kitSaveMeal,kitCancelEdit,kitDelMeal,kitMeals,kitPlan,kitPrepDone,kitStapleCycle,kitStapleAdd,kitStapleDel,kitStapleToggleManage,kitUsualAdd,kitUsualDel,kitSetOrderDay,kitOrderList,kitOrderText,kitCopyOrder,kitStaples,kitUsuals,kitSettings,kitPantry,panStatus,panAdd,panAddManual,panDel,panImportToggle,panImportApply,panClearGone,panToggleRegular,panIsRegular,panToggleManage,kitSweepDue,kitUsualQty,kitSlug,kitBuyLog,kitRate,kitRateChips,kitParseWeek,kitWkIso,kitWkImportToggle,kitImportWeekApply,kitPlanSlot,kitSlotText,panQtyEdit,kitMarkEaten,grEatApply,momChoresData,mcAll,mcAdd,mcDel,mcToggle,mcDoneOn,mcSetCad,mcCadToggleDay,mcDueToday,mcToggleManage,momChoresCardHTML,kitRotations,kitRotAll,kitRotEnsure,kitRotPlanFor,kitRotCapture,kitRotApply,kitRotSave,kitRotDel,kitRotToggle,kitRotSaveToggle,kitRotMondayOf,kitRotationsCardHTML,KIT_ROT_DEFAULT};`)();
 
 // ── mdTodayName: weekday from the DATE ───────────────────────────────────────
 (() => {
@@ -1126,9 +1126,10 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   ok("card offers ✓ We ate it", elStub.innerHTML.includes("kitMarkEaten('2026-08-10')"), null);
   CONFIRM = false;
   M.kitMarkEaten("2026-08-10");
-  ok("declined confirm deducts nothing", !M.kitPlan["2026-08-10"].eaten && M.kitPantry.p_ct.qty === 3, null);
+  ok("opening the check screen deducts nothing until Take them out", !M.kitPlan["2026-08-10"].eaten && M.kitPantry.p_ct.qty === 3, null);
   CONFIRM = true; dbWrites.length = 0;
   M.kitMarkEaten("2026-08-10");
+  M.grEatApply(false);   // ✓ We ate it now opens a check screen — "Take them out" (2026-10-03)
   ok("eaten stamps the day", M.kitPlan["2026-08-10"].eaten && dbWrites.some(w => w[0] === "kitchen/plan/2026-08-10/eaten"), null);
   ok("uses deduct case-insensitively", M.kitPantry.p_ct.qty === 1, M.kitPantry.p_ct.qty);
   ok("uncounted + ghost items untouched", !("qty" in M.kitPantry.p_tc), null);
@@ -1139,10 +1140,12 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   // zero flips the ⭐ staple to ❌ out
   M.kitPlan["2026-08-12"] = { mid: "mtaco" };
   M.kitMarkEaten("2026-08-12");
+  M.grEatApply(false);
   ok("hitting zero floors and flips the staple out", M.kitPantry.p_ct.qty === 0 && M.kitStaples.s_ct.state === "out", { qty: M.kitPantry.p_ct.qty, st: M.kitStaples.s_ct.state });
   // txt dinner: stamp only
   M.kitPlan["2026-08-13"] = { txt: "Pizza out" };
   M.kitMarkEaten("2026-08-13");
+  M.grEatApply(false);
   ok("typed dinner stamps without deduction", M.kitPlan["2026-08-13"].eaten && M.kitPantry.p_ct.qty === 0, null);
   ["2026-08-10", "2026-08-12", "2026-08-13"].forEach(iso => delete M.kitPlan[iso]);
   delete M.kitPantry.p_ct; delete M.kitPantry.p_tc; delete M.kitStaples.s_ct;
