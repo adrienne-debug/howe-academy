@@ -9,7 +9,7 @@ const mk=()=>{
   const env={writes:[],toasts:[],staples:{s1:{name:"Almond milk",state:"out"},s2:{name:"Olive oil",state:"have"}},usuals:{u1:{name:"Bananas",cat:"breakfast",qty:2}},pantry:[],buy:{},mom:false,dad:false,confirm:true,pinAsked:0};
   const ref=p=>({set:v=>env.writes.push(["set",p,v]),update:v=>env.writes.push(["update",p,v]),remove:()=>env.writes.push(["remove",p])});
   const body=fn("kitSlug")+block+`
-    ;return {grParse,grKey,grSecFor,grQtyTxt,grMergeQty,grAdd,grFindDup,grToggle,grVToggle,grDone,grApprove,grDecline,grDupMore,grDupAnyway,grGroups,grText,grAddFrom,grKidAllow,grKidBoxHTML,grReqCount,
+    ;return {grParse,grKey,grSecFor,grQtyTxt,grMergeQty,grAdd,grFindDup,grToggle,grVToggle,grDone,grApprove,grDecline,grDupMore,grDupAnyway,grGroups,grText,grAddFrom,grKidAllow,grKidBoxHTML,grReqCount,grPickToggle,grPickSave,grActiveStores,grSetStore,grCurStore,grStoreField,grStoreRemove,grSecOrder,grAisleMove,grCfgDad,grToGetCount,grCartCount,grHomeFor,grDadCardHTML,
       get data(){return grData;}, set data(v){grData=v;}, get pend(){return _grPend;}};`;
   const F=new Function("env","db","HA_LS","mwToast","kitOrderList","kitStaples","kitBuyLog","panAdd","_todayStr","momHere","dadAwardOk","kitPinGate","confirm","ROSTER_DEF","esc","tab","document","prompt","navigator",body);
   const kitOrderList=()=>{ const need=Object.keys(env.staples).filter(k=>env.staples[k].state!=="have").map(k=>Object.assign({id:k},env.staples[k]));
@@ -103,7 +103,7 @@ ok("same-thing key: plurals + case", L.grKey("Eggs")===L.grKey("egg")&&L.grKey("
   ok("staple bought → ✅ have", L.env.staples.s1.state==="have"&&L.env.writes.some(w=>w[1]==="kitchen/staples/s1"));
   ok("buy history: beef counted once (weight), almond milk counted", L.env.buy["2026-10-03"].groundbeef===1&&L.env.buy["2026-10-03"].almondmilk===1);
   ok("pantry: beef → fridge, almond milk → fridge, paper towels stay out", JSON.stringify(L.env.pantry.map(p=>[p[0],p[1]]))===JSON.stringify([["Ground beef","fridge"],["Almond milk","fridge"]]));
-  ok("in-cart ticks cleared", !Object.keys(L.data.vchk).length&&L.env.writes.some(w=>w[0]==="remove"&&w[1]==="kitchen/grocery/vchk"));
+  ok("in-cart ticks cleared", !Object.keys(L.data.vchk).length&&L.env.writes.some(w=>w[0]==="remove"&&w[1]==="kitchen/grocery/vchk/st_s1"));
   ok("no whole-node writes to kitchen/grocery", !L.env.writes.some(w=>w[1]==="kitchen/grocery"||w[1]==="kitchen/grocery/items"&&w[0]==="set"));
 }
 { const L=mk(); withPop(L); L.env.mom=false; L.env.pinOk=false; L.grAdd("x","dad"); L.grToggle(Object.keys(L.data.items)[0]); L.grDone();
@@ -111,9 +111,46 @@ ok("same-thing key: plurals + case", L.grKey("Eggs")===L.grKey("egg")&&L.grKey("
 // ── copy text ──
 { const L=mk(); withPop(L); L.grAdd("2 lb ground beef","mom");
   const t=L.grText(); ok("copy text groups by section, includes staples + usuals", /Meat & seafood: Ground beef \(2 lb\)/.test(t)&&/Almond milk/.test(t)&&/Bananas \(×2\)/.test(t)); }
+// ── 🏬 stores ──
+{ const L=mk(); withPop(L); L.env.mom=true;
+  ok("no stores yet → none active", L.grActiveStores().length===0);
+  L.grPickToggle("walmart"); L.grPickToggle("costco"); L.grPickToggle("publix"); L.env.els["gr-store-own"]={value:"Farmers market"}; L.grPickSave();
+  const ids=L.grActiveStores();
+  ok("picked 3 chains + her own → 4 stores, each one small path", ids.length===4&&L.env.writes.filter(w=>w[0]==="set"&&/^kitchen\/grocery\/stores\/[^/]+$/.test(w[1])).length===4);
+  L.grStoreField("costco","trips",5); L.grStoreField("publix","pin",true);
+  ok("chips: 📌 pinned first, then most trips", L.grActiveStores().slice(0,2).join()==="publix,costco");
+  L.grStoreField("walmart","hidden",true);
+  ok("a hidden store drops off the chips but keeps its record", L.grActiveStores().indexOf("walmart")<0&&L.data.stores.walmart);
+  L.grStoreField("walmart","hidden",false);
+  L.grSetStore("costco"); L.env.els["gr-add-list"]={value:"almond flour"}; L.grAddFrom("gr-add-list","list");
+  const af=Object.values(L.data.items).find(i=>i.name==="Almond flour");
+  ok("added on the Costco chip → tagged Costco and Costco becomes its home", af&&af.stores.join()==="costco"&&L.grHomeFor("almond flour").join()==="costco");
+  L.grSetStore("all"); L.env.els["gr-add-list"]={value:"bananas bread"}; L.grAddFrom("gr-add-list","list");
+  L.grStoreRemove; // exists
+  // next time almond flour comes back on "All" it goes to Costco by itself
+  const afid=Object.keys(L.data.items).find(i=>L.data.items[i].name==="Almond flour"); delete L.data.items[afid];
+  L.grAdd("Almond flour","dad");
+  ok("its home store is remembered next time", Object.values(L.data.items).find(i=>i.name==="Almond flour").stores.join()==="costco");
+  ok("Costco shows its items + untagged; Publix doesn't show Costco-only items", L.grToGetCount("costco")>L.grToGetCount("publix")||L.grToGetCount("costco")===L.grToGetCount("publix")+1);
+  L.grAisleMove("costco","baking",-1);
+  ok("aisle order per store moves a section earlier", L.grSecOrder("costco").indexOf("baking")===L.grSecOrder("walmart").indexOf("baking")-1);
+  // done at Costco: only Costco + untagged in-cart items
+  L.grAdd("Paper towels","mom",{src:{k:"mom"},stores:["walmart"]});
+  Object.keys(L.data.items).forEach(i=>L.grToggle(i));
+  L.grSetStore("costco"); L.grDone();
+  ok("🏁 Done at Costco keeps Walmart-only items on the list", Object.values(L.data.items).some(i=>i.name==="Paper towels")&&!Object.values(L.data.items).some(i=>i.name==="Almond flour"));
+  ok("… and counts a Costco trip", L.data.stores.costco.trips===6);
+  L.grToggle(Object.keys(L.data.items).find(i=>L.data.items[i].name==="Paper towels"));   // back to to-get
+  ok("Dad's card shows where to buy (store buttons)", /Walmart/.test(L.grDadCardHTML()));
+  ok("Dad picks a store only when Mom allows it", !/gr-add-dad-store/.test(L.grDadCardHTML())&&(L.grCfgDad(),/gr-add-dad-store/.test(L.grDadCardHTML())));
+  L.grStoreRemove("walmart");
+  ok("removing a store untags its items (they go to any store)", !Object.values(L.data.items).find(i=>i.name==="Paper towels").stores);
+  L.grSetStore("all");
+  const t=L.grText(); ok("copy text on All is grouped by store", /Costco:|Any store:/.test(t));
+}
 // ── wiring ──
 ok("Mom's Day Shopping spot opens the list (not Meals)", /\+grMdShopHTML\(\)/.test(src)&&!/Open the shopping list →/.test(src));
-ok("🛒 List tab in the Mom's Day tabs", /btn\('grocery','🛒 List'\)/.test(src)&&/if\(mpSubView==='grocery'\)\{ return renderGrocery\(el\); \}/.test(src));
+ok("🛒 List tab in the Mom's Day tabs", /btn\('grocery','🛒 Grocery List'\)/.test(src)&&/if\(mpSubView==='grocery'\)\{ return renderGrocery\(el\); \}/.test(src));
 ok("Dad's Day has the grocery card", /h\+=grDadCardHTML\(\)/.test(src));
 ok("kid's day page carries the ask box", /h\+=grKidBoxHTML\(k\)/.test(src));
 ok("live listener on kitchen/grocery", /db\.ref\("kitchen\/grocery"\)\.on\("value"/.test(src));
