@@ -36764,6 +36764,43 @@ function _rpPatternWant(kid,sk,o){
   return {desired:desired,claimed:claimed,slots:slots,lessons:mine.map(function(t){ return t.day+" "+t.lid; })};
 }
 // RPPAT_END
+// RPMERGE_START — fold one targeted-update map into another without ever sending a path AND a path under it
+// (Firebase rejects the whole update: live 2026-10-04, DeWalt Kenzie's AAS 4 re-lay — "values argument contains a
+// path /makenzie_makenzie__aas_4_L0141 that is ancestor of another path …/time" — so her week kept stale cards).
+//   · src sets "a/b" and dst holds "a" as a whole card → the value goes INSIDE that card;
+//   · dst holds "a" = null (card removed) → a child change is dropped, never resurrecting it;
+//   · src sets "a" (whole or null) → dst's own "a/…" children give way to it.
+function _rpMergeUpd(dst,src){
+  Object.keys(src||{}).forEach(function(p){
+    const v=src[p];
+    Object.keys(dst).forEach(function(q){ if(q.indexOf(p+"/")===0) delete dst[q]; });
+    let anc=null; Object.keys(dst).forEach(function(q){ if(p.indexOf(q+"/")===0&&(!anc||q.length>anc.length)) anc=q; });
+    if(anc!==null){
+      if(dst[anc]===null||typeof dst[anc]!=="object") return;
+      const rest=p.slice(anc.length+1).split("/"); const top=Object.assign({},dst[anc]); let o=top;
+      for(let i=0;i<rest.length-1;i++){ o[rest[i]]=Object.assign({},(o[rest[i]]&&typeof o[rest[i]]==="object")?o[rest[i]]:{}); o=o[rest[i]]; }
+      if(v===null) delete o[rest[rest.length-1]]; else o[rest[rest.length-1]]=v;
+      dst[anc]=top; return;
+    }
+    dst[p]=v;
+  });
+  return dst;
+}
+// F — drop "<id>/…" writes whose card is not a real card on the server (live 2026-10-04: a lone L0141/dur
+// recreated a deleted card as a ghost {dur:20} and blanked DeWalt's app). serverTasks = the week's tasks node.
+// Returns the list of dropped keys.
+function _rpDropOrphanFieldWrites(upd,serverTasks){
+  const have=serverTasks||{}, dropped=[];
+  Object.keys(upd).forEach(function(k){
+    const i=k.indexOf("/"); if(i<0) return;                      // whole-card add / remove: always fine
+    const id=k.slice(0,i);
+    if(Object.prototype.hasOwnProperty.call(upd,id)) return;      // this same save writes the whole card
+    const c=have[id]; if(c&&typeof c==="object"&&c.id) return;    // a real card is there
+    delete upd[k]; dropped.push(k);
+  });
+  return dropped;
+}
+// RPMERGE_END
 function reprojectSubjectWeek(kid,sk,why,opts){
   // opts.then(summary|null) — called exactly ONCE when this re-lay is over (done, skipped, or the
   // lock refused). The scheduler lock is async, so a caller that must re-lay a PARTNER after this
@@ -36780,6 +36817,7 @@ function reprojectSubjectWeek(kid,sk,why,opts){
   const _rpMode=(opts&&opts.relayFrom)||_rpRelayMode();   // ⏭ asked once, before the lock
   let out=null;
   haClaimSchedLock("reproject",function(release){
+    let _rpAsync=false;   // E+F: the server read owns release()/then once it starts
     if(!release){ if(typeof gwShowToast==="function") gwShowToast("Another device is updating the schedule — this week's cards catch up on the next regenerate."); _then(null); return; }
     try{
       const cfg={weekNum:String(wn),babysitter:{},withSitter:[],skipDays:[],lateStart:{},carSchool:{},theater:false,saturday:gwSatPlanned(wn),redistribute:[],autoAdvance:true};
@@ -36806,16 +36844,34 @@ function reprojectSubjectWeek(kid,sk,why,opts){
       const _pw=_rpPatternWant(kid,sk,{wn,todayDay,nowMin:_nowMin,toMin,mode:_rpMode,dayCap:_rpCap,blockedDays:_blockedDays,liveTasks:weekData.tasks,genTasks:gen.result.tasks,checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{}});
       const r=_reprojectPlan(kid,sk,weekData.tasks,_pw?_pw.desired:gen.result.tasks,{todayDay,nowMin:_nowMin,checked:checked||{},claimed:_pw?_pw.claimed:((typeof claimed!=="undefined"&&claimed)||{}),dayCtx,packAround,toMin,fromMin,dayCap:_rpCap,lidOrder:_subj.lessonIds||[],lsdSubj:(typeof lessonDayList==="function"&&lessonDayList(_subj).length)?_subj:null,allowedDays:_rpDays,doneLids:_doneLids,dropUnwanted:!!(opts&&opts.dropUnwanted)||!!_pw,patternForward:!!_pw,freshToday:!!_pw&&_rpMode==="fresh",blockedDays:_blockedDays});
       try{ if(typeof seGuardWeek==="function"){ const _se=seGuardWeek(r.tasksAfter,seGuardCtx({kids:[kid],checked:checked||{}}));
-        Object.keys(_se.upd).forEach(p=>{ if(_se.upd[p]===null){ Object.keys(r.upd).forEach(q=>{ if(q.indexOf(p+"/")===0) delete r.upd[q]; }); } r.upd[p]=_se.upd[p]; });
+        _rpMergeUpd(r.upd,_se.upd);   // RPMERGE: never a path beside its own child (Firebase rejects the whole save)
         r.summary.shifted=(r.summary.shifted||[]).concat(_se.retimed,_se.rolled); r.summary.removed=r.summary.removed.concat(_se.deferred); } }catch(eSE){ dbg&&dbg("school-end skip: "+eSE); }
       const n=r.summary.added.length+r.summary.moved.length+r.summary.removed.length+r.summary.retitled.length+((r.summary.closing||[]).length)+((r.summary.shifted||[]).length);
       out=r.summary;
       if(!n) return;
-      weekData.tasks=r.tasksAfter; sv(WK+"_tasks",weekData.tasks);
-      if(db&&!_dryRun()) db.ref(WK+"/tasks").update(r.upd);
+      // E + F (2026-10-04 👻): read what the server really holds, drop field writes for cards that aren't there,
+      // write, and only THEN let this device's week follow — a rejected save must leave memory = database.
+      const _commit=function(){ weekData.tasks=r.tasksAfter; sv(WK+"_tasks",weekData.tasks); };
+      const _tref=(db&&!_dryRun())?db.ref(WK+"/tasks"):null;
+      if(_tref&&typeof _tref.once==="function"){
+        _rpAsync=true;
+        _tref.once("value").then(function(snap){
+          try{
+            const _drop=_rpDropOrphanFieldWrites(r.upd,(snap&&typeof snap.val==="function")?snap.val():null);
+            if(_drop.length&&dbg) dbg("reproject "+kid+"/"+sk+": 👻 dropped "+_drop.length+" field write"+(_drop.length!==1?"s":"")+" for cards not on the server — "+_drop.join(" "));
+            if(Object.keys(r.upd).length) _tref.update(r.upd);    // throws synchronously on a malformed save → no commit
+            _commit();
+            dbg&&dbg("reproject "+kid+"/"+sk+" ("+(why||"")+"): +"+r.summary.added.length+" ↔"+r.summary.moved.length+" −"+r.summary.removed.length+" ✎"+r.summary.retitled.length+" (server-checked)");
+          }catch(e2){ dbg&&dbg("reproject skip: "+e2); out=null; }
+          finally{ release(); _then(out); }
+        }).catch(function(e3){ dbg&&dbg("reproject skip (read): "+e3); out=null; release(); _then(out); });
+        return;
+      }
+      if(_tref) _tref.update(r.upd);                              // (no read available) still write before committing
+      _commit();
       dbg&&dbg("reproject "+kid+"/"+sk+" ("+(why||"")+"): +"+r.summary.added.length+" ↔"+r.summary.moved.length+" −"+r.summary.removed.length+" ✎"+r.summary.retitled.length+" 🌙"+((r.summary.closing||[]).length)+" ⤵"+((r.summary.shifted||[]).length)+" ➡"+((r.summary.pushed||[]).length)+" 🔁"+((r.summary.carried||[]).length)+" 🔢"+((r.summary.resequenced||[]).length)+" ⏭"+((r.summary.deferred||[]).length));
     }catch(e){ dbg&&dbg("reproject skip: "+e); }
-    finally{ release(); _then(out); }
+    finally{ if(!_rpAsync){ release(); _then(out); } }
   });
   return out;
 }
