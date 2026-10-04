@@ -5562,6 +5562,7 @@ function renderSettings(el,ah){
   const o=id=>rulesOpen[id]?" open":"";
   let pinHtml=(ah||'');
   pinHtml+=renderFamilyCard();
+  pinHtml+=renderMomLoopCard();   // 👩 MOM_LOOP_SETTINGS (2026-10-04)
   // 🧩 Page switches are set from Adrienne's families dashboard (writes settings/pages/<k>), not in-app — her call
   // 2026-10-01: other families should not be able to turn pages on and off themselves. renderPagesCard() stays for the record.
   pinHtml+=renderFamilyRulesWrap();   // 🏠 all family-wide rules, one home (2026-10-02)
@@ -47663,6 +47664,7 @@ function mlCursor(){
   // Her tap today ("Start the loop on X") is still the override lever; otherwise whoever
   // was cut off at yesterday's end-of-day mark starts today (derived, nothing stored).
   if(momLoop&&momLoop.cursorSetOn===_mlDayStamp()) return stored;
+  if(momLoop&&momLoop.startMode==="first") return 0;   // MOM_LOOP_SETTINGS: "first kid in the order, every day"
   const ovn=mlOvernightStart();
   return (ovn>=0)?ovn:stored;
 }
@@ -47929,6 +47931,42 @@ function _mlScan(){
   const order=base.slice().sort(function(x,y){ const px=(b[x]||{}).pct||0, py=(b[y]||{}).pct||0; return (py-px)||(base.indexOf(x)-base.indexOf(y)); });
   return {order:order,cur:0,behind:true};
 }
+// MOM_LOOP_SETTINGS — "Each morning start with": carry (default) | first
+function mlSetStartMode(v){
+  if(!momHere()&&!adminPinUnlocked) return;
+  if(v!=="first"&&v!=="carry") return;
+  momLoop=Object.assign({},momLoop,{startMode:v});
+  if(db&&!_dryRun()) db.ref("config/momLoop/startMode").set(v);
+  renderAll();
+}
+function renderMomLoopCard(){
+  const o=function(id){ return rulesOpen[id]?" open":""; };
+  const order=mlOrder(), mode=(momLoop&&momLoop.startMode==="first")?"first":"carry";
+  const chip=function(on){ return 'padding:7px 12px;border-radius:9px;border:1.5px solid '+(on?'#7c3aed':'var(--border)')+';background:'+(on?'#7c3aed':'#fff')+';color:'+(on?'#fff':'#374151')+';font-size:12.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:left;line-height:1.35'; };
+  let h='<div class="rules-wrap">';
+  h+='<div class="rules-hdr">Mom\'s loop</div>';
+  h+='<div class="rules-sub">The order Mom takes the kids for their Mom-required lessons. It\'s one setting for the whole family — every school day uses it, and the week planner lays each day this way.</div>';
+  h+='<div class="rules-card'+o("momloop")+'">';
+  h+='<div class="rules-card-hdr" onclick="rulesToggleCard(\'momloop\')"><div class="rules-card-title"><span>\u{1F469}</span> '+order.map(cap).join(' \u2192 ')+'</div><div class="rules-card-arrow">▶</div></div>';
+  h+='<div class="rules-card-body">';
+  h+='<div style="font-size:12px;font-weight:800;color:#374151;margin-bottom:6px">Order</div>';
+  order.forEach(function(k,i){
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">';
+    h+='<span style="width:22px;text-align:right;font-size:13px;font-weight:800;color:#7c3aed">'+(i+1)+'.</span>';
+    h+='<span style="flex:1;font-size:14px;font-weight:700;color:#1f2937">'+((typeof MAST_KID_EMOJI!=="undefined"&&MAST_KID_EMOJI[k])||"")+' '+esc(cap(k))+'</span>';
+    h+='<button onclick="mlMove(\''+k+'\',-1)" title="move up"'+(i===0?' disabled style="opacity:.25;padding:5px 11px;border-radius:8px;border:1.5px solid var(--border);background:#fff;cursor:default"':' style="padding:5px 11px;border-radius:8px;border:1.5px solid var(--border);background:#fff;cursor:pointer;font-size:13px"')+'>\u25B2</button>';
+    h+='<button onclick="mlMove(\''+k+'\',1)" title="move down"'+(i===order.length-1?' disabled style="opacity:.25;padding:5px 11px;border-radius:8px;border:1.5px solid var(--border);background:#fff;cursor:default"':' style="padding:5px 11px;border-radius:8px;border:1.5px solid var(--border);background:#fff;cursor:pointer;font-size:13px"')+'>\u25BC</button>';
+    h+='</div>';
+  });
+  h+='<div style="font-size:12px;font-weight:800;color:#374151;margin:12px 0 6px">Each morning start with</div>';
+  h+='<div style="display:flex;flex-direction:column;gap:6px">';
+  h+='<button onclick="mlSetStartMode(\'carry\')" style="'+chip(mode==="carry")+'">\u{1F501} Whoever the loop stopped on yesterday<br><span style="font-weight:500;font-size:11px;opacity:.85">keeps rotating — a kid who didn\'t get their Mom time goes first next morning</span></button>';
+  h+='<button onclick="mlSetStartMode(\'first\')" style="'+chip(mode==="first")+'">1\uFE0F\u20E3 '+esc(cap(order[0]||"the first kid"))+' first, every day<br><span style="font-weight:500;font-size:11px;opacity:.85">always starts at the top of this order</span></button>';
+  h+='</div>';
+  h+='<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-top:10px">To put one kid first <b>just for today</b>, use “Start the loop on” on the Mom loop strip (Mom mode). Changing the order here takes effect on the next regenerate or re-lay; regenerate the week to lay it out now.</div>';
+  h+='</div></div></div>';
+  return h;
+}
 function mlSetBehindScope(v){
   if(!momHere()&&!adminPinUnlocked) return;
   if(ML_BEHIND_SCOPES.indexOf(v)<0) return;
@@ -48042,12 +48080,8 @@ function mlStripHTML(){
     mlOrder().forEach(function(k){
       h+='<button onclick="mlSetCursor(\''+k+'\')" style="border:1px solid #ddd6fe;background:#fff;color:#5b21b6;border-radius:8px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cap(k)+'</button>';
     });
-    h+='<span style="font-size:10.5px;color:#6d28d9;margin-left:6px">Order:</span>';
-    mlOrder().forEach(function(k,i){
-      h+='<span style="font-size:10.5px;color:#5b21b6">'+cap(k)+'</span>';
-      h+='<button onclick="mlMove(\''+k+'\',-1)"'+(i===0?' disabled style="opacity:.25;border:none;background:none;cursor:default"':' style="border:none;background:none;cursor:pointer;color:#7c3aed"')+'>&#9664;</button>';
-      h+='<button onclick="mlMove(\''+k+'\',1)"'+(i===mlOrder().length-1?' disabled style="opacity:.25;border:none;background:none;cursor:default"':' style="border:none;background:none;cursor:pointer;color:#7c3aed"')+'>&#9654;</button>';
-    });
+    // MOM_LOOP_SETTINGS: the order is set in Admin ▸ Settings ▸ Mom's loop (the ◀ ▶ here were easy to mix up with "Start the loop on")
+    h+='<span style="font-size:10.5px;color:#6d28d9;margin-left:6px">Order: <b>'+mlOrder().map(cap).join(' \u2192 ')+'</b> · change in Admin \u25B8 Settings</span>';
     h+='</div>';
     // the behind marker's scope (her 2026-09-03 setting): which subjects' owed lessons count
     {

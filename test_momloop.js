@@ -160,14 +160,16 @@ console.log("\n── it decides, it does not reschedule ──");
   // evening sweep has run (any device), so the fleet sweeps once. Still never a card.
   // 2026-09-22 (her rule "still on the same kid"): a Mom-card check re-points the SAME hold at the
   // kid's next Mom card (one more WK/momHold set site, same stored fact). Still never a card.
-  ok("it writes only the order, the cursor + its tap-day stamp, the hold, the behind scope, the two switches, and the sweep marker",
-    (BLOCK.match(/db\.ref\(/g) || []).length === 11 && /eveningSweep/.test(BLOCK)
+  // 2026-10-04 (MOM_LOOP_SETTINGS, her ask): config/momLoop/startMode = "first" | "carry" — how each morning starts,
+  // one Mom-gated tap in Admin ▸ Settings ▸ Mom's loop. Still never a card.
+  ok("it writes only the order, the cursor + its tap-day stamp, the hold, the behind scope, the start mode, the two switches, and the sweep marker",
+    (BLOCK.match(/db\.ref\(/g) || []).length === 12 && /eveningSweep/.test(BLOCK) && /config\/momLoop\/startMode/.test(BLOCK)
       && /config\/momLoop\/order/.test(BLOCK) && /config\/momLoop\/cursor/.test(BLOCK)
       && /config\/momLoop\/cursorSetOn/.test(BLOCK) && /config\/momLoop\/behindScope/.test(BLOCK)
       && (BLOCK.match(/config\/momLoop\/off\//g) || []).length === 1
       && (BLOCK.match(/config\/momLoop\/momOff/g) || []).length === 1
       && (BLOCK.match(/WK\+"\/momHold"/g) || []).length === 4);
-  ok("the setters are Mom-gated", (BLOCK.match(/if\(!momHere\(\)&&!adminPinUnlocked\) return;/g) || []).length === 6);
+  ok("the setters are Mom-gated", (BLOCK.match(/if\(!momHere\(\)&&!adminPinUnlocked\) return;/g) || []).length === 7);   // + mlSetStartMode (10/4)
   // the ONE deliberately un-gated lever: the kid's "I'm ready" tap, and it can only turn ON
   ok("the kid's ready tap is un-gated and one-directional", /function mlKidReady\(kid\)\{ if\(mlOff\(kid\)\) _mlWriteOff\(kid,false\); \}/.test(BLOCK));
   const R = src.indexOf("function mlStripHTML"), R2 = src.indexOf("// MOMLOOP_END");
