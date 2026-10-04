@@ -2264,6 +2264,12 @@ function _rtLastDueIdx(days,ti){
   days.forEach(function(d){ const p=_rtPos(d); if(p<tp&&p>dp&&_rtDayPassed(DAYS_ALL[d])){ dp=p; due=d; } });
   return due;
 }
+// The last day a wk:-pinned step came due in LAST week (its latest day in real time order), as a DAYS_ALL
+// index, or -1. rtLateDays and _rtLogLateMiss share it so the late count and the miss record always agree.
+function _rtPrevDueIdx(days){
+  let pd=-1, pp=-2; days.forEach(function(d){ const p=_rtPos(d); if(p>pp){ pp=p; pd=d; } });
+  return pd;
+}
 function rtLateDays(slot,kid,i){
   const steps=rtStepsFor(slot,kid), st=steps[i]; if(!st) return 0;
   const cad=st.cad||"daily";
@@ -2299,22 +2305,33 @@ function rtLateDays(slot,kid,i){
   if(!pw||!prevSlState) return 0;                   // can't verify it was missed → say nothing
   // Last week runs its Sunday … Saturday; this week runs Sunday … today. Last week's Sunday came
   // BEFORE its Friday, so it can never count as catching up a Friday or Saturday chore.
-  let pdue=-2; days.forEach(function(d){ const p=_rtPos(d); if(p>pdue) pdue=p; });
-  if(pdue<-1) return 0;
+  const pd=_rtPrevDueIdx(days); if(pd<0) return 0;
+  const pdue=_rtPos(pd);
   for(let p=pdue;p<=5;p++){ if(rtDoneOnWk(pw,slot,kid,DAYS_ALL[_rtIdx(p)],i)) return 0; }
   for(let p=-1;p<=tp;p++){ if(rtDoneOnWk(wk,slot,kid,DAYS_ALL[_rtIdx(p)],i)) return 0; }
   return (tp+7)-pdue;
 }
 // Record the miss once, filed under the day it was actually missed. The key is deterministic so
 // several devices noticing the same miss write the same entry instead of piling up duplicates.
-function _rtLogMiss(kid,slot,i,dueDay,label,pts){
-  const wk=activeWk(), key="miss_"+slot+"_"+i;
+function _rtLogMiss(kid,slot,i,dueDay,label,pts,wkIn){
+  const wk=wkIn||activeWk(), key="miss_"+slot+"_"+i;
   routineLog[kid]=routineLog[kid]||{}; routineLog[kid][wk]=routineLog[kid][wk]||{};
   routineLog[kid][wk][dueDay]=routineLog[kid][wk][dueDay]||{};
   if(routineLog[kid][wk][dueDay][key]) return;      // already recorded
   const rec={label:(label||"Chore")+" — not done",slot:slot,act:"miss",ts:nowTs(),at:Date.now(),pts:pts||0,missed:true};
   routineLog[kid][wk][dueDay][key]=rec;
   if(db){ try{ db.ref("routineLog/"+kid+"/"+wk+"/"+dueDay+"/"+key).set(rec); }catch(e){} }
+}
+// LATE_XWEEK (her ask 2026-10-04): file a late chore's miss under the day it was missed. A miss from LAST
+// week (e.g. Friday's chore, still undone on Sunday) used to be skipped — only same-week misses were logged,
+// so a chore skipped Fri + Sat never reached the Click-off Log. It is filed under last week's key and day.
+function _rtLogLateMiss(slot,kid,i,cad,label,pts){
+  const _m=/^wk:(.+)$/.exec(cad||""), ds=_m?_m[1].split(",").map(Number).filter(n=>!isNaN(n)):[];
+  if(!ds.length) return;
+  const due=_rtLastDueIdx(ds,DAYS_ALL.indexOf(_todayDay));
+  if(due>=0){ _rtLogMiss(kid,slot,i,DAYS_ALL[due],label,pts); return; }
+  const pd=_rtPrevDueIdx(ds), pw=_prevWkKey();
+  if(pd>=0&&pw) _rtLogMiss(kid,slot,i,DAYS_ALL[pd],label,pts,pw);
 }
 function rtSlotHTML(slot,kid){
   const steps=rtStepsFor(slot,kid,false,day), label=SL_SLBL[slot];
@@ -2361,9 +2378,7 @@ function rtSlotHTML(slot,kid){
       if(_ml&&!_mHd){ _mHd=true; h+=mealHeadHTML(_ml,day); }
       const _lateN=(day===_todayDay)?rtLateDays(slot,kid,i):0;
       if(_lateN>0&&!sd){
-        const _m=/^wk:(.+)$/.exec(cad), _ds=_m?_m[1].split(",").map(Number).filter(n=>!isNaN(n)):[];
-        const _due=_rtLastDueIdx(_ds,DAYS_ALL.indexOf(_todayDay));
-        if(_due>=0) _rtLogMiss(kid,slot,i,DAYS_ALL[_due],st.label,pts);
+        _rtLogLateMiss(slot,kid,i,cad,st.label,pts);
       }
       const _lateTag=(_lateN>0&&!sd)?('<span class="rt-late">'+_lateN+' day'+(_lateN>1?'s':'')+' late</span>'):'';
       const cadTag=cad!=="daily"?' <span class="cadtag">'+cadLabel(cad)+'</span>':'';

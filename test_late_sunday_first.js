@@ -10,7 +10,7 @@ function slice(name){ const sig="function "+name+"("; const i=src.indexOf(sig); 
   let d=0; for(let k=src.indexOf("{",i);k<src.length;k++){ if(src[k]==="{")d++; else if(src[k]==="}"){ d--; if(d===0) return src.slice(i,k+1);} } throw new Error("unbalanced: "+name); }
 const a=src.indexOf("// SUNDAY_FIRST_START"), b=src.indexOf("// SUNDAY_FIRST_END");
 if(a<0||b<0) throw new Error("SUNDAY_FIRST markers missing");
-const CODE=src.slice(a,b)+"\n"+["_rtDayPassed","_rtLastDueIdx","rtLateDays","rtDoneOnWk","_prevWkKey"].map(slice).join("\n");
+const CODE=src.slice(a,b)+"\n"+["_rtDayPassed","_rtLastDueIdx","rtLateDays","rtDoneOnWk","_prevWkKey"].concat(src.indexOf("function _rtPrevDueIdx(")>=0?["_rtPrevDueIdx"]:[]).map(slice).join("\n");
 
 let pass=0, fail=0;
 function ok(c,m){ if(c){pass++;console.log("  ok  - "+m);} else {fail++;console.log("  FAIL- "+m);} }
