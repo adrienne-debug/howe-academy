@@ -221,6 +221,11 @@
       { key: "abc",         label: "ABC Practice",   emoji: "🔤" },
       { key: "daysSeasons", label: "Days & Seasons", emoji: "🍂" },
       { key: "thisMonth",   label: "This Month",     emoji: "🔎" }
+    ],
+    caleb: [   // same pages as Julian (CALEB block)
+      { key: "abc",         label: "ABC Practice",   emoji: "🔤" },
+      { key: "daysSeasons", label: "Days & Seasons", emoji: "🍂" },
+      { key: "thisMonth",   label: "This Month",     emoji: "🔎" }
     ]
   };
   function xpConf(ctx, key) { var c = ((ctx && ctx.extraPages) || {})[key] || {}; return { on: c.on !== false, days: c.days || {} }; }
@@ -595,19 +600,19 @@
 "    .page-label { display:none; }\n" +
 "  }\n";
 
-  function juHtmlHead(weekNum, titleWho) {
+  function juHtmlHead(weekNum, titleWho, css, fontQ) {
     titleWho = titleWho || "Julian's Notebook";
     return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n' +
       '<title>' + titleWho + ' — Week ' + weekNum + '</title>\n' +
       '<link href="https://fonts.googleapis.com/css2?' +
-      'family=Fredoka+One&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">\n' +
-      '<style>\n' + fontFacesCss() + '\n' + JU_CSS + '</style>\n</head>\n<body>\n';
+      (fontQ || 'family=Fredoka+One&family=Nunito:wght@400;600;700;800') + '&display=swap" rel="stylesheet">\n' +
+      '<style>\n' + fontFacesCss() + '\n' + (css || JU_CSS) + '</style>\n</head>\n<body>\n';
   }
 
-  function juFooter(left, right) {
+  function juFooter(left, right, emoji) {
     return '<div class="footer">' +
       '<div class="footer-txt">' + left + '</div>' +
-      '<div style="font-size:14px;">🦕</div>' +
+      '<div style="font-size:14px;">' + (emoji || "🦕") + '</div>' +
       '<div class="footer-txt">' + right + '</div></div>';
   }
 
@@ -938,7 +943,11 @@
       juFooter("Howe Academy · Julian Howe · Pre-K", weekDates) + '\n</div>';
   }
 
-  function juPageAbc(weekNum, weekDates, cur) {
+  // Who an extra page is for. Julian's values are the defaults, so his pages print exactly as
+  // before; Caleb (K, construction 🚜 — CALEB block below) passes his own.
+  var JU_P = { eyebrow: "Howe Academy · Pre-K", footer: "Howe Academy · Julian Howe · Pre-K", emoji: "🦕", abcTitle: "🦕 Sing your ABCs!", lowerFirst: false };
+  function juPageAbc(weekNum, weekDates, cur, P) {
+    P = P || JU_P;
     var active = {};
     (cur.letters || []).forEach(function (l) { active[String(l).toUpperCase()] = 1; });
     var schemes = [
@@ -956,24 +965,27 @@
         var ch = letters[ci];
         var on = active[ch] ? " on" : "";
         var star = active[ch] ? '<span class="abc-star">⭐</span>' : "";
+        // lowerFirst (Caleb is learning lowercase): the little letter is the big one on the card
         cells += '<div class="abc-cell' + on + '" style="background:' + bg + ';border-color:' + bd + ';">' +
-          star + '<span class="abc-up" style="color:' + up + ';">' + ch + '</span>' +
-          '<span class="abc-lo">' + ch.toLowerCase() + '</span></div>';
+          star + (P.lowerFirst
+            ? '<span class="abc-up" style="color:' + up + ';">' + ch.toLowerCase() + '</span><span class="abc-lo">' + ch + '</span>'
+            : '<span class="abc-up" style="color:' + up + ';">' + ch + '</span><span class="abc-lo">' + ch.toLowerCase() + '</span>') + '</div>';
       }
       rowsHtml += '<div class="abc-row">' + cells + '</div>\n';
     }
     var note = Object.keys(active).length ? "⭐ = letters I'm working on" : "point to each letter as you sing";
     return '<div class="page-label">ABC Sing-Along — Week ' + weekNum + '</div>\n<div class="page">\n' +
-      juHeader("Howe Academy · Pre-K", "My ABC Song", "point to each letter and sing along!", "Week " + weekNum, weekDates, "🎵 Sing!") +
+      juHeader(P.eyebrow, "My ABC Song", "point to each letter and sing along!", "Week " + weekNum, weekDates, "🎵 Sing!") +
       '\n<div class="body">\n  <div class="abc-intro">\n' +
-      '    <div class="abc-intro-title">🦕 Sing your ABCs!</div>\n' +
+      '    <div class="abc-intro-title">' + P.abcTitle + '</div>\n' +
       '    <div class="abc-intro-sub">' + note + '</div>\n  </div>\n' +
       '  <div class="abc-grid">\n    ' + rowsHtml + '\n  </div>\n' +
       '  <div class="abc-close">🎵 …now I know my ABCs! 🎵</div>\n</div>\n' +
-      juFooter("Howe Academy · Julian Howe · Pre-K", weekDates) + '\n</div>';
+      juFooter(P.footer, weekDates, P.emoji) + '\n</div>';
   }
 
-  function juPageDaysSeasons(weekNum, weekDates, cur) {
+  function juPageDaysSeasons(weekNum, weekDates, cur, P) {
+    P = P || JU_P;
     var days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     var dayCells = "";
     for (var i = 0; i < days.length; i++) {
@@ -1009,7 +1021,7 @@
       return '<div class="wx-chip"><span class="e">' + w[0] + '</span><span class="l">' + w[1] + '</span></div>';
     }).join("");
     return '<div class="page-label">Calendar — Week ' + weekNum + '</div>\n<div class="page">\n' +
-      juHeader("Howe Academy · Pre-K", "My Calendar", "sing the days · name the seasons · spot the weather", "Week " + weekNum, weekDates, "📅 Calendar") +
+      juHeader(P.eyebrow, "My Calendar", "sing the days · name the seasons · spot the weather", "Week " + weekNum, weekDates, "📅 Calendar") +
       '\n<div class="body" style="gap:9px;">\n  <div class="abc-intro">\n' +
       '    <div class="abc-intro-title">🎵 Days of the Week!</div>\n' +
       '    <div class="abc-intro-sub">point &amp; sing — "Sunday, Monday, Tuesday…"</div>\n  </div>\n' +
@@ -1022,16 +1034,17 @@
       '  <div style="flex:0.85;display:flex;flex-direction:column;gap:6px;justify-content:center;min-height:0;">\n' +
       '    <div class="slabel">☁️ Weather Words — point to today\'s sky</div>\n' +
       '    <div class="wx-ref">' + wxChips + '</div>\n  </div>\n</div>\n' +
-      juFooter("Howe Academy · Julian Howe · Pre-K", weekDates) + '\n</div>';
+      juFooter(P.footer, weekDates, P.emoji) + '\n</div>';
   }
 
   // "This Month" — a real month grid used as a NUMBER HUNT (find today, count up to it, X it).
   // Pre-K-sized: no "how many days / what week" questions — those are Lucy's page.
-  function juPageMonth(weekNum, weekDates, dates, year) {
+  function juPageMonth(weekNum, weekDates, dates, year, P) {
+    P = P || JU_P;
     var info = monthGridInfo(dates, year); if (!info) return "";
     var seas = seasonOfMonth(info.month), semoji = seas[1] || "";
     return '<div class="page-label">This Month — Week ' + weekNum + '</div>\n<div class="page">\n' +
-      juHeader("Howe Academy · Pre-K", "This Month", "find today · count up to it · X it off", "Week " + weekNum, weekDates, "🔎 Find the Day") +
+      juHeader(P.eyebrow, "This Month", "find today · count up to it · X it off", "Week " + weekNum, weekDates, "🔎 Find the Day") +
       '\n<div class="body" style="gap:9px;">\n' +
       '  <div class="abc-intro" style="padding:8px 14px;">\n    <div><div class="jm-title">' + semoji + ' ' + info.month + '</div>' +
       '<div class="jm-sub">' + info.month + ' has ' + info.daysIn + ' days · this week is the green row</div></div>\n' +
@@ -1041,7 +1054,7 @@
       '    <div class="jm-step"><span class="n">1</span>Point to today\'s number</div>\n' +
       '    <div class="jm-step"><span class="n">2</span>Count up to it from 1 — touch each box</div>\n' +
       '    <div class="jm-step"><span class="n">3</span>Put an X on today ✏️</div>\n  </div>\n</div>\n' +
-      juFooter("Howe Academy · Julian Howe · Pre-K", weekDates) + '\n</div>';
+      juFooter(P.footer, weekDates, P.emoji) + '\n</div>';
   }
 
   function juPageDaily(weekNum, day, dateStr, idx, cur, pick, extraStrip) {
@@ -1293,6 +1306,400 @@
     if (wkInt > 0 && picks._letters) out.letterCursor = { week: wkInt, idx: picks._letters.start, adv: picks._letters.adv };
     return out;
   }
+
+  /* ============================================================================
+   *  CALEB  (Kindergarten, DeWalt family — construction theme 🚜)
+   *  CALEB_START — Adrienne 2026-10-02: "use julians setup as a base to build off of".
+   *  Same engine and page layout as Julian (juCurriculumFromMastery / juWeekPicks /
+   *  juLetterStart / juSvgShape / juTrace and his extra pages), changed only where
+   *  kindergarten differs:
+   *   • Letters: Mrs. DeWalt's order (10/2) — letter NAMES + RECOGNITION first, sounds later,
+   *     no phonics book yet. The Letter of the Day is a LOWERCASE letter (his "Lowercase"
+   *     deck, bank order; none yet = Handwriting Without Tears lowercase order), traced, named,
+   *     matched to its capital, and found in a row. Capitals are review only.
+   *   • Sounds show ONLY for letters in his "Letter Sounds" deck — that deck starts when Mom
+   *     moves him up (≈20 of 26 lowercase known, her yes 10/2), so nothing prints a sound
+   *     before then.
+   *   • Name = "Caleb" (capital C + lowercase, how K writes a name), not all capitals.
+   *   • Numbers: the teens as "10 and some more" (two ten-frames) — his Numbers deck from
+   *     the Math Fluency Path; none yet = 11–20.
+   *   • Counting picture = his Mastery counting picture (ctx.countEmoji), default 🚜.
+   * ========================================================================== */
+
+  // HWT lowercase teaching order (c o s v w t → magic-c a d g → u i e → l k y j → divers p r n m h b → f q x z).
+  // Keeps b and d weeks apart. Used only until his Lowercase deck exists.
+  var CB_LOWER_DEFAULT = "c,o,s,v,w,t,a,d,g,u,i,e,l,k,y,j,p,r,n,m,h,b,f,q,x,z".split(",");
+  var CB_NUMBERS_DEFAULT = ["11", "12", "13", "14", "15", "16", "17", "18", "19", "20"];
+  var CB_SHAPES_DEFAULT = ["Circle", "Square", "Triangle", "Rectangle"];
+  var CB_COLORS_DEFAULT = ["Red", "Blue", "Yellow", "Green", "Orange", "Purple", "Brown", "Black"];
+
+  // Lowercase formation, own words in the HWT vocabulary (magic c, little line, start at the top).
+  var CB_LOWER_STROKES = {
+    a: "magic c · up to the top · back down", b: "big line down · bounce up · curve around",
+    c: "magic c — start at the top, curve around", d: "magic c · up high · back down",
+    e: "little line across the middle · curve up and around", f: "little curve at the top · big line down · little line across",
+    g: "magic c · up · down below the line and turn", h: "big line down · climb back up · hump over and down",
+    i: "little line down · dot on top", j: "little line down below the line · turn · dot on top",
+    k: "big line down · little line slides in · little line kicks out", l: "big line down — start at the top",
+    m: "little line down · up and hump · up and hump", n: "little line down · up and hump over",
+    o: "magic c · keep going — close it up", p: "line down below the line · back up · little curve around",
+    q: "magic c · up · down below the line · little kick", r: "little line down · back up · curve over",
+    s: "a little magic c · then curve back the other way", t: "big line down · little line across",
+    u: "down · turn · up · back down", v: "slide down · slide up",
+    w: "slide down, slide up, slide down, slide up", x: "slide down · jump · slide down the other way",
+    y: "little line slides in · big line slides down below the line", z: "little line across · slide down · little line across"
+  };
+  // Short-vowel / hard-consonant picture words — used ONLY once a letter's sound is on (Letter Sounds deck).
+  var CB_SOUND_WORDS = {
+    a: ["apple", "🍎"], b: ["bucket", "🪣"], c: ["cat", "🐱"], d: ["dig", "⛏️"], e: ["egg", "🥚"],
+    f: ["fire truck", "🚒"], g: ["goat", "🐐"], h: ["hammer", "🔨"], i: ["igloo", "🧊"], j: ["jet", "✈️"],
+    k: ["kite", "🪁"], l: ["ladder", "🪜"], m: ["magnet", "🧲"], n: ["nut", "🔩"], o: ["octopus", "🐙"],
+    p: ["pig", "🐷"], q: ["queen", "👑"], r: ["rock", "🪨"], s: ["saw", "🪚"], t: ["truck", "🚛"],
+    u: ["umbrella", "☂️"], v: ["van", "🚐"], w: ["wheel", "🛞"], x: ["fox", "🦊"], y: ["yo-yo", "🪀"], z: ["zebra", "🦓"]
+  };
+  var CB_DAY_BADGES = {
+    monday: "🚧 Hard Hats On!", tuesday: "🚜 Dig Dig Dig!",
+    wednesday: "🏗️ Halfway Built!", thursday: "🧱 Almost Done!",
+    friday: "⭐ Job Well Done!"
+  };
+  var CB_VEHICLES = ["🚜", "🚛", "🚚", "🛻", "🚒"];
+  var CB_FONTS = "family=Bungee&family=Staatliches&family=Nunito:wght@400;600;700;800";
+  var CB_P = { eyebrow: "Kindergarten", footer: "Caleb · Kindergarten", emoji: "🚜", abcTitle: "🚜 Sing your ABCs!", lowerFirst: true };
+
+  // Construction colours over Julian's sheet: charcoal header, safety yellow, cone orange,
+  // and a yellow/black hazard stripe for the accent bar. Same class names, so every
+  // Julian layout rule (and its measured page fit) carries over untouched.
+  var CB_CSS = JU_CSS +
+"  :root {\n" +
+"    --ju-dark:  #27272a; --ju-deep:  #b45309; --ju-mid:   #f59e0b; --ju-light: #fde68a;\n" +
+"    --ju-pale:  #fffbeb; --ju-gold:  #ea580c; --ju-gpale2:#fff7ed;\n" +
+"    --ink:      #1c1917; --muted: #78716c; --border: #e7dcc4;\n" +
+"  }\n" +
+"  @media print { :root { --ju-dark: #27272a; --ju-light: #fcd979; --ju-pale: #fdf3d6; --ju-gpale2: #fdeedd; } }\n" +
+"  .accent-bar { background:repeating-linear-gradient(135deg, #facc15 0 12px, #27272a 12px 24px); }\n" +
+  // Her note 10/2: Julian's bubbly Fredoka "feels weird and not construction" — block sign
+  // lettering instead: Bungee for the big titles, condensed Staatliches for the rest.
+  // (His letters/tracing stay in the HWT NoTears font, her ask.)
+"  .header-name, .cover-title { font-family:'Bungee',cursive; letter-spacing:0.01em; }\n" +
+"  .header-name { font-size:23px; }\n  .cover-title { font-size:38px; }\n" +
+"  .header-week, .bookend-title, .day-now, .day-big-name, .season-name, .abc-intro-title, .jm-hd, .jm-cell, .jm-title,\n" +
+"  .jm-step .n, .abc-close, .learn-val, .cover-draw-cap { font-family:'Staatliches','Nunito',sans-serif; letter-spacing:0.03em; }\n" +
+"  .learn-val-nt { font-family:'NoTears','Nunito',sans-serif; letter-spacing:0; }\n" +
+"  .dino-badge { background:rgba(245,158,11,0.3); border-color:rgba(253,230,138,0.5); }\n" +
+"  .find-row { display:flex; gap:5px; justify-content:space-between; margin-top:3px; }\n" +
+"  .find-cell { flex:1; text-align:center; font-family:'NoTears','Nunito',sans-serif; font-weight:700; font-size:22px; line-height:30px;\n" +
+"               color:var(--ink); background:white; border:1.5px solid var(--ju-light); border-radius:50%; aspect-ratio:1/1; max-width:32px; }\n" +
+"  .match-row { display:flex; gap:7px; align-items:center; margin-top:3px; }\n" +
+"  .match-cell { width:30px; height:30px; display:flex; align-items:center; justify-content:center; font-family:'NoTears','Nunito',sans-serif;\n" +
+"                font-weight:700; font-size:21px; color:var(--ju-dark); background:white; border:1.5px solid var(--ju-light); border-radius:8px; }\n";
+
+  // A stable per-letter shuffle (no Math.random — reprints must match).
+  function cbSeeded(str, n) { var h = 7; for (var i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 9973; return (h + n * 37) % 9973; }
+  function cbFirstLetter(v) { var m = /[a-z]/i.exec(String(v || "")); return m ? m[0].toLowerCase() : ""; }
+
+  // His curriculum. The Lowercase deck plays the part Julian's Letters deck plays (same
+  // review flags + letter cursor); his Letters deck (capitals) is review only.
+  function cbCurriculum(items, letterSounds) {
+    items = items || [];
+    var subj = function (it) { return String((it && it.subject) || "").trim().toLowerCase(); };
+    var lowerItems = items.filter(function (it) { return subj(it) === "lowercase"; });
+    var mapped = items.filter(function (it) { var s = subj(it); return s !== "letters" && s !== "lowercase"; })
+      .concat(lowerItems.map(function (it) { return Object.assign({}, it, { subject: "Letters", prompt: String(it.prompt || "").trim().toLowerCase() }); }));
+    var has = function (name) { return items.some(function (it) { return subj(it) === name; }); };
+    var cur = juCurriculumFromMastery(mapped.length ? mapped : [{ subject: "-", prompt: "-" }]);
+    if (!lowerItems.length) { cur.letters = CB_LOWER_DEFAULT.slice(); cur.flag.letters = {}; cur.flagScore.letters = {}; }
+    if (!has("numbers")) cur.numbers = CB_NUMBERS_DEFAULT.slice();
+    if (!has("shapes")) cur.shapes = CB_SHAPES_DEFAULT.slice();
+    if (!has("colors")) cur.colors = CB_COLORS_DEFAULT.map(function (c) { return [c, JU_COLOR_HEX[c.toLowerCase()] || "#6b7280"]; });
+    var caps = items.filter(function (it) { return subj(it) === "letters"; }).map(function (it) { return String(it.prompt || "").trim().toUpperCase(); }).filter(Boolean);
+    cur.capitals = caps.length ? caps : "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+    // Sounds: only letters whose card is in his Letter Sounds deck. Mom's card text (the
+    // deck's definitions, passed as ctx.letterSounds) wins; otherwise "/a/".
+    var ls = letterSounds || {};
+    cur.sounds = {};
+    items.filter(function (it) { return subj(it) === "letter sounds"; }).forEach(function (it) {
+      var l = cbFirstLetter(it.prompt); if (!l) return;
+      cur.sounds[l] = String(ls[it.prompt] || ("/" + l + "/"));
+    });
+    return cur;
+  }
+
+  // Recognition rows for the day's letter: "circle every a" (target ×3 among his other
+  // letters) and "which big letter matches?" (its capital + 3 others).
+  function cbFindRow(l, pool) {
+    var others = pool.filter(function (x) { return x !== l; });
+    if (!others.length) others = CB_LOWER_DEFAULT.filter(function (x) { return x !== l; });
+    var cells = [];
+    for (var i = 0; i < 5; i++) cells.push(others[cbSeeded(l, i) % others.length]);
+    [1, 4, 6].forEach(function (pos) { cells.splice(pos, 0, l); });
+    return cells.slice(0, 8);
+  }
+  function cbMatchRow(l, caps) {
+    var U = l.toUpperCase(), pool = caps.filter(function (x) { return x !== U; });
+    if (pool.length < 3) pool = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").filter(function (x) { return x !== U; });
+    var picks = [];
+    for (var i = 0; picks.length < 3 && i < 40; i++) { var c = pool[cbSeeded(l, i + 9) % pool.length]; if (picks.indexOf(c) < 0) picks.push(c); }
+    picks.splice(cbSeeded(l, 3) % 4, 0, U);
+    return picks;
+  }
+
+  function cbPageCover(weekNum, weekDates, cur, picks) {
+    var wkLetters = (picks.letters || []).map(function (s) { return cur.letters[s.idx]; }).join(" · ");
+    var wkNumbers = (picks.numbers || []).map(function (s) { return cur.numbers[s.idx]; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join(" · ");
+    var colorsx = cur.colors.concat(cur.colors);
+    var shapes = cur.shapes.map(function (s, i) { return juSvgShape(s, { dashed: false, stroke: (colorsx[i] || ["", ""])[1], size: 22 }); }).join(" ");
+    var colorSwatches = cur.colors.map(function (pair) {
+      return '<span class="swatch" style="background:' + pair[1] + ';width:20px;height:20px;display:inline-block;margin-right:3px;border-radius:6px;"></span>';
+    }).join("");
+    return '<div class="page-label">Cover — Week ' + weekNum + '</div>\n<div class="page">\n' +
+      juHeader("Kindergarten", "Caleb's Notebook", "trace · count · build · color", "Week " + weekNum, weekDates, "🚧 Let's Build!") +
+      '\n<div class="cover-body">\n  <div class="cover-hero">\n' +
+      '    <div class="cover-title">Hi, Caleb! 🚜</div>\n' +
+      '    <div class="cover-sub">This is my Kindergarten notebook · ' + weekDates + '</div>\n' +
+      '    <div class="cover-dinos">🚜 🏗️ 🚧 🚛 👷</div>\n  </div>\n' +
+      '  <div class="cover-learn">\n    <div class="slabel">This week I am learning…</div>\n' +
+      '    <div class="learn-grid">\n' +
+      '      <div class="learn-card card-peach"><div class="learn-ico">🔤</div><div><div class="learn-lab">Little letters</div><div class="learn-val learn-val-nt">' + wkLetters + '</div></div></div>\n' +
+      '      <div class="learn-card card-green"><div class="learn-ico">🔢</div><div><div class="learn-lab">Numbers</div><div class="learn-val">' + wkNumbers + '</div></div></div>\n' +
+      '      <div class="learn-card card-blue"><div class="learn-ico">⭐</div><div><div class="learn-lab">Shapes</div><div class="learn-val" style="display:flex;gap:5px;align-items:center;">' + shapes + '</div></div></div>\n' +
+      '      <div class="learn-card card-gold"><div class="learn-ico">🎨</div><div><div class="learn-lab">Colors</div><div class="learn-val" style="display:flex;align-items:center;">' + colorSwatches + '</div></div></div>\n' +
+      '    </div>\n' +
+      '    <div class="learn-card card-peach" style="margin-top:9px;"><div class="learn-ico">🦺</div><div><div class="learn-lab">I know my BIG letters!</div><div class="learn-val learn-val-nt" style="font-size:15px;letter-spacing:1px;">A B C D E F G H I J K L M N O P Q R S T U V W X Y Z</div></div></div>\n' +
+      '  </div>\n  <div class="cover-draw">\n' +
+      '    <div class="cover-draw-cap">✏️ Draw YOU driving a big machine!</div>\n' +
+      '    <div class="cover-draw-hint">✏️ write your name here: Caleb</div>\n  </div>\n</div>\n' +
+      juFooter(CB_P.footer, weekDates, CB_P.emoji) + '\n</div>';
+  }
+
+  function cbPageDaily(weekNum, day, dateStr, idx, cur, pick, extraStrip, countEmoji) {
+    var l = String(pick.letter).toLowerCase(), U = l.toUpperCase();
+    var number = pick.number, shape = pick.shape;
+    var cname = pick.colorPair[0], chex = pick.colorPair[1];
+    var cpic = countEmoji || "🚜";
+    var badge = pick.anyReview ? "🔁 Let's practice again!" : (CB_DAY_BADGES[day] || "🚜 Great Job!");
+    var sound = cur.sounds[l], sw = CB_SOUND_WORDS[l] || ["", ""];
+    // Before his sounds stage: name + recognition only (Mrs. DeWalt 10/2). After: the sound and its picture word.
+    var cue = sound ? (l + ' says ' + sound + ' · ' + sw[0] + ' ' + sw[1]) : ('This is little ' + l + ' · big ' + U);
+    var n = parseInt(number, 10); if (isNaN(n)) n = 1; n = Math.max(1, Math.min(n, 20));
+    var letterLab = pick.letterReview ? "Practice Again 🔁" : "Letter of the Day";
+    // Teens = "10 and some more" (K.NBT.1): one full frame + the rest — said in the card title.
+    var numberLab = (pick.numberReview ? "Practice Again 🔁 · " : "Number of the Day · ") + number + (n > 10 ? ' <span style="color:var(--ju-green);">= 10 and ' + (n - 10) + '</span>' : '');
+    var shapeColorLab = (pick.shapeReview || pick.colorReview) ? "Shape &amp; Color 🔁" : "Shape &amp; Color";
+
+    var frames = n > 10 ? 2 : 1, cellPx = frames > 1 ? 28 : 36, aniPx = frames > 1 ? 18 : 24;
+    var countAni = "";
+    for (var fi = 0; fi < frames; fi++) {
+      var cells = "";
+      for (var ci = 0; ci < 10; ci++) {
+        var filled = (fi * 10 + ci) < n;
+        cells += '<div class="tf-cell' + (filled ? ' on' : '') + '" style="width:' + cellPx + 'px;height:' + cellPx + 'px;font-size:' + aniPx + 'px;">' + (filled ? cpic : '') + '</div>';
+      }
+      countAni += '<div class="ten-frame">' + cells + '</div>';
+    }
+
+    var tidx = dowIndex(day);
+    var ar = aroundDay(day), yest = ar[0], tod = ar[1], tom = ar[2];
+    var month = monthFromDate(dateStr);
+    var seas = seasonOfMonth(month), sname = seas[0], semoji = seas[1];
+    var dowChips = "";
+    for (var i = 0; i < DOW_ABBR.length; i++) {
+      var cls = (i === tidx) ? "dow-chip on" : ((i === 0 || i === 6) ? "dow-chip wk" : "dow-chip");
+      dowChips += '<div class="' + cls + '">' + DOW_ABBR[i] + '</div>';
+    }
+    var dnum = (String(dateStr).match(/\d+/) || [""])[0];
+    var mAbbr = month ? (MONTHS_ABBR[monthIndex(month) - 1] || month.slice(0, 3)) : "";
+    var dateTile = (month && dnum) ? '<span class="date-tile"><span class="dt-m">' + mAbbr + '</span><span class="dt-d">' + dnum + '</span></span>' : "";
+    var msHtml = (month ? dateTile + month : "") + (sname ? " · " + semoji + " " + sname : "");
+    var weatherHtml = ["☀️", "⛅", "☁️", "🌧️", "❄️", "🌬️"].map(function (e) { return '<span class="wx">' + e + '</span>'; }).join("");
+    var findHtml = cbFindRow(l, cur.letters).map(function (c) { return '<div class="find-cell">' + c + '</div>'; }).join("");
+    var matchHtml = cbMatchRow(l, cur.capitals).map(function (c) { return '<div class="match-cell">' + c + '</div>'; }).join("");
+    var veh = CB_VEHICLES[idx % CB_VEHICLES.length];
+
+    return '<div class="page-label">Daily Page — ' + cap(day) + '</div>\n<div class="page">\n' +
+      juHeader("Kindergarten · Daily Notebook", "Caleb's Day", "a grown-up reads · Caleb traces, counts &amp; builds", cap(day), dateStr, badge) +
+      '\n<div class="body">\n\n' +
+      '  <div class="bookend bookend-start">\n' +
+      '    <div class="bookend-icon">🌅</div>\n' +
+      '    <div class="bookend-title">Start Here! · Morning Notebook</div>\n' +
+      '    <div class="bookend-badge">Start</div>\n  </div>\n\n' +
+      (extraStrip || "") +
+      '  <div class="cal-card">\n    <div class="dow-strip">' + dowChips + '</div>\n' +
+      '    <div class="cal-sub">\n' +
+      '      <div class="ytt">Yesterday <b>' + yest + '</b> · Today <b>' + tod + '</b> · Tomorrow <b>' + tom + '</b></div>\n' +
+      '      <div class="cal-ms">' + msHtml + '</div>\n    </div>\n  </div>\n\n' +
+      '  <div class="wf-row">\n    <div class="wf-group">\n' +
+      '      <span class="wf-label">☁️ Weather?</span>\n      ' + weatherHtml + '\n    </div>\n' +
+      '    <div class="wf-group" style="flex:0 0 auto;">\n      <span class="wf-label">👷 I feel?</span>\n' +
+      '      <div class="mood-circle sm">😴</div>\n      <div class="mood-circle sm">😐</div>\n' +
+      '      <div class="mood-circle sm">🙂</div>\n      <div class="mood-circle sm">🤩</div>\n    </div>\n  </div>\n\n' +
+      '  <div class="todo">\n' +
+      '    <div class="todo-chip"><div class="todo-box"></div><span class="todo-ico">✏️</span><span class="todo-txt">Trace<br>letter</span></div>\n' +
+      '    <div class="todo-chip"><div class="todo-box"></div><span class="todo-ico">🔍</span><span class="todo-txt">Find<br>it</span></div>\n' +
+      '    <div class="todo-chip"><div class="todo-box"></div><span class="todo-ico">🔢</span><span class="todo-txt">Count<br>number</span></div>\n' +
+      '    <div class="todo-chip"><div class="todo-box"></div><span class="todo-ico">⭐</span><span class="todo-txt">Shape &amp;<br>color</span></div>\n' +
+      '    <div class="todo-chip"><div class="todo-box"></div><span class="todo-ico">🦺</span><span class="todo-txt">My<br>name</span></div>\n  </div>\n\n' +
+      '  <div class="grid2" style="flex:1.75;">\n    <div class="col">\n' +
+      '      <div class="card card-peach" style="flex:1;display:flex;flex-direction:column;">\n' +
+      '        <div style="display:flex;align-items:center;justify-content:space-between;">\n' +
+      '          <div class="slabel" style="margin:0;">' + letterLab + '</div>\n' +
+      '          <div class="cue">' + cue + '</div>\n        </div>\n' +
+      '        <div style="display:flex;align-items:baseline;gap:9px;margin-top:2px;">\n' +
+      '          <span class="nt-disp" style="font-size:50px;color:var(--ju-deep);">' + l + '</span>\n' +
+      '          <span class="nt-disp" style="font-size:30px;color:var(--muted);">' + U + '</span>\n' +
+      '          <div style="font-size:10px;font-weight:700;color:var(--muted);">Trace the little ' + l + ' ➜</div>\n        </div>\n' +
+      '        ' + juTrace(l.repeat(3), 54, null, "0.12em") + '\n' +
+      '        <div style="font-size:8.5px;font-weight:700;color:var(--ju-deep);margin-top:2px;line-height:1.35;">🖍 ' + l + ' — ' + (CB_LOWER_STROKES[l] || "start at the top, trace slowly") + '</div>\n' +
+      // Her ask 10/2: a "Now you try" line — he writes it himself, not only traces.
+      '        <div style="font-size:9.5px;font-weight:800;color:var(--ju-mid);margin-top:3px;">Now you try! ✏️</div>\n' +
+      '        <div class="hwt-line" style="flex-shrink:0;margin-top:4px;"></div>\n' +
+      '        <div style="font-size:9.5px;font-weight:800;color:var(--ju-deep);margin-top:4px;">🔍 Circle every ' + l + '</div>\n' +
+      '        <div class="find-row">' + findHtml + '</div>\n' +
+      '        <div style="font-size:9.5px;font-weight:800;color:var(--ju-deep);margin-top:5px;display:flex;align-items:center;gap:8px;">🔗 Circle big ' + l + ': <div class="match-row" style="margin:0;">' + matchHtml + '</div></div>\n' +
+      '      </div>\n' +
+      '      <div class="card card-gold" style="flex-shrink:0;">\n' +
+      '        <div class="slabel">Trace My Name</div>\n        ' + juTrace("Caleb", 52, null, "0.06em") + '\n      </div>\n    </div>\n\n' +
+      '    <div class="col">\n' +
+      '      <div class="card card-green" style="flex:1;display:flex;flex-direction:column;">\n' +
+      '        <div class="slabel">' + numberLab + '</div>\n' +
+      '        <div class="count-row" style="align-items:center;gap:12px;margin:2px 0 0;flex-wrap:nowrap;">\n' +
+      '          <span class="nt-disp" style="font-size:42px;color:var(--ju-green);' + (String(number).length > 1 ? 'letter-spacing:-0.05em;' : '') + '">' + number + '</span>\n' +
+      '          ' + countAni + '\n' +
+      '          <span class="lab" style="font-size:11px;font-weight:800;color:var(--ink);flex:1;min-width:0;">How many? Count, then trace ➜</span>\n        </div>\n' +
+      '        ' + (String(number).length > 1
+        ? juTrace(Array(3).fill(String(number)).join(" "), 46, null, "-0.05em")
+        : juTrace(String(number).repeat(3), 58)) + '\n' +
+      '        <div style="font-size:9.5px;font-weight:800;color:var(--ju-green);margin-top:7px;">Now you try! ✏️</div>\n' +
+      '        <div class="hwt-line" style="flex-shrink:0;"></div>\n      </div>\n' +
+      '      <div class="card card-blue" style="flex-shrink:0;">\n' +
+      '        <div style="display:flex;align-items:center;justify-content:space-between;">\n' +
+      '          <div class="slabel" style="margin:0;">' + shapeColorLab + '</div>\n' +
+      '          <div style="font-size:10px;font-weight:800;color:var(--ju-dark);">' + shape + ' · color it <span style="color:' + chex + ';">' + cname + '</span></div>\n        </div>\n' +
+      '        <div class="shape-row">\n' +
+      '          <div class="shape-cell">' + juSvgShape(shape, { dashed: true }) + '<div class="shape-cap">Trace</div></div>\n' +
+      '          <div class="shape-cell">' + juSvgShape(shape, { fill: "none", stroke: "#57534e", dashed: false }) + '<div class="shape-cap">Color it ' + cname + '</div></div>\n' +
+      '          <div class="shape-cell"><div class="swatch" style="background:' + chex + ';"></div><div class="shape-cap">' + cname + '</div></div>\n        </div>\n      </div>\n    </div>\n  </div>\n\n' +
+      '  <div class="path-wrap">\n' +
+      '    <div style="font-size:10px;font-weight:800;color:var(--ju-deep);white-space:nowrap;">Drive to the job site!</div>\n' +
+      '    <span class="path-end">' + veh + '</span>\n' +
+      '    ' + juSvgPath(JU_PATH_SHAPES[idx % JU_PATH_SHAPES.length]) + '\n' +
+      '    <span class="path-end">🏗️</span>\n  </div>\n\n' +
+      '  <div class="divider"></div>\n\n' +
+      '  <div class="bookend bookend-close">\n' +
+      '    <div class="bookend-icon">🌙</div>\n' +
+      '    <div class="bookend-title">All Done! · Closing Notebook</div>\n' +
+      '    <div class="bookend-badge">Last</div>\n  </div>\n\n' +
+      '  <div class="grid2" style="flex:0.82;">\n' +
+      '    <div class="card card-peach" style="display:flex;flex-direction:column;">\n' +
+      '      <div class="slabel">How was today? · now that I finished, circle one</div>\n' +
+      '      <div class="rate-faces">\n' +
+      '        <div class="rate-opt"><div class="rate-circ">😟</div><div class="rate-word">Tricky</div></div>\n' +
+      '        <div class="rate-opt"><div class="rate-circ">😐</div><div class="rate-word">Okay</div></div>\n' +
+      '        <div class="rate-opt"><div class="rate-circ">😊</div><div class="rate-word">Good</div></div>\n' +
+      '        <div class="rate-opt"><div class="rate-circ">👷</div><div class="rate-word">Awesome!</div></div>\n      </div>\n' +
+      '      <div class="recap">\n        <div class="recap-lab">Look what I learned today! ⭐</div>\n' +
+      '        <div class="recap-chips">\n' +
+      '          <span class="recap-chip">🔤 ' + l + '</span>\n' +
+      '          <span class="recap-chip">🔢 ' + number + '</span>\n' +
+      '          <span class="recap-chip">⭐ ' + shape + '</span>\n' +
+      '          <span class="recap-chip">🎨 ' + cname + '</span>\n        </div>\n      </div>\n' +
+      '      <div style="margin-top:auto;font-size:10.5px;font-weight:700;color:var(--muted);text-align:center;">\n' +
+      '        Did I do my best? Give me a 🖐️ high five!\n      </div>\n    </div>\n' +
+      '    <div class="card card-plain" style="display:flex;flex-direction:column;">\n' +
+      '      <div class="slabel">My favorite part today</div>\n' +
+      '      <div class="draw-box">\n        <div class="star-spot">⭐ I did it!</div>\n' +
+      '        <div class="draw-hint">✏️ draw what you liked best</div>\n      </div>\n    </div>\n  </div>\n\n</div>\n' +
+      juFooter(CB_P.footer, cap(day) + " · " + dateStr, CB_P.emoji) + '\n</div>';
+  }
+
+  function cbPageParent(weekNum, weekDates, cur, picks, teachNotes) {
+    var wkLetters = (picks.letters || []).map(function (s) { return cur.letters[s.idx]; }).join(" · ");
+    var wkNumbers = (picks.numbers || []).map(function (s) { return cur.numbers[s.idx]; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join(" · ");
+    var shapes = cur.shapes.join(", ");
+    var colors = cur.colors.map(function (c) { return c[0]; }).join(", ");
+    var soundsOn = Object.keys(cur.sounds).length;
+    var extra = teachNotes ? '<div class="p-banner" style="background:var(--ju-bpale);border-color:#cde7f7;color:#0c3a52;"><strong>This week:</strong> ' + teachNotes + '</div>' : "";
+    var revBits = [];
+    ["letters", "numbers", "shapes", "colors"].forEach(function (sub) {
+      var fs = (cur.flag && cur.flag[sub]) || {}, sc = (cur.flagScore && cur.flagScore[sub]) || {};
+      var names = Object.keys(fs).sort(function (a, b) { return (sc[b] || 0) - (sc[a] || 0); });
+      if (names.length) revBits.push((sub === "letters" ? "Little letters" : cap(sub)) + ": " + names.join(", "));
+    });
+    var reviewNote = revBits.length
+      ? '<div class="p-banner" style="background:#fff4e6;border-color:#f6cfa0;color:#7a3d0c;"><strong>🔁 Review focus this week:</strong> ' + revBits.join(" · ") + '. He\'s stumbled on these in drills, so they come back in the daily pages (look for 🔁) for a friendly second look.</div>'
+      : "";
+    var letterRow = soundsOn
+      ? '<span class="p-name">Letter of the Day</span> — A lowercase letter. Say its name, then its sound when the card shows one ("a says /a/ — apple"). Sounds are on for: <strong>' + Object.keys(cur.sounds).sort().join(" ") + '</strong>. Trace together, read the stroke words aloud, then he circles every one in the row and finds its big letter.'
+      : '<span class="p-name">Letter of the Day</span> — A lowercase letter, <strong>name only</strong> for now ("This is little a"). Trace it together, read the stroke words aloud, then he circles every one in the row and finds its BIG letter. Sounds come later, when he knows most of his little letters — the app will say when he\'s ready.';
+    return '<div class="page-label">Parent Guide — Week ' + weekNum + '</div>\n<div class="page">\n' +
+      juHeader("Kindergarten", "Caleb's Grown-Up Guide", "how to do the notebook with a kindergartner", "Week " + weekNum, weekDates, "💛 For Mom") +
+      '\n<div class="body" style="gap:9px;">\n\n' +
+      '  <div class="p-banner">\n' +
+      '    <strong>10–15 minutes, side-by-side.</strong> You read each prompt aloud; Caleb traces, finds, counts and colors.\n' +
+      '    Kindergarten is the year letters move from "I know that one" to "I can name it fast and write it myself" — so the pages ask him to\n' +
+      '    <em>find</em> and <em>match</em>, not just look. Short and happy beats long and tired: stop while he still likes it.\n  </div>\n' +
+      '  ' + extra + '\n' +
+      '  ' + reviewNote + '\n\n' +
+      '  <div>\n    <div class="slabel">This week\'s targets <span class="parent-badge">from Caleb\'s drills</span></div>\n' +
+      '    <div class="p-targets">\n' +
+      '      <div class="p-tcard"><div class="p-tlab">🔤 Little letters</div><div class="p-tval">' + wkLetters + '</div></div>\n' +
+      '      <div class="p-tcard"><div class="p-tlab">🦺 Big letters</div><div class="p-tval">review — matched every day</div></div>\n' +
+      '      <div class="p-tcard"><div class="p-tlab">🔢 Numbers</div><div class="p-tval">' + wkNumbers + '</div></div>\n' +
+      '      <div class="p-tcard"><div class="p-tlab">⭐ Shapes</div><div class="p-tval">' + shapes + '</div></div>\n' +
+      '      <div class="p-tcard"><div class="p-tlab">🎨 Colors</div><div class="p-tval">' + colors + '</div></div>\n    </div>\n  </div>\n\n' +
+      '  <div class="p-sec">\n    <div class="p-sec-h">What each part is — and how to help</div>\n    <div class="p-sec-b">\n' +
+      '      <div class="p-row"><div class="p-ico">🌅</div><div><span class="p-name">Morning Notebook</span> — Start here. "What day is it? How do you feel?" Point to the 5 to-do pictures so he knows the plan.</div></div>\n' +
+      '      <div class="p-row"><div class="p-ico">✏️</div><div>' + letterRow + '</div></div>\n' +
+      '      <div class="p-row"><div class="p-ico">🦺</div><div><span class="p-name">Trace My Name</span> — Written the kindergarten way: a capital C, then lowercase — <strong>Caleb</strong>. Spell it as he traces: "C-a-l-e-b." When tracing is easy, have him write it on his own under the dots.</div></div>\n' +
+      '      <div class="p-row"><div class="p-ico">🔢</div><div><span class="p-name">Number of the Day</span> — Touch and count each picture. For the teens, count the full frame first: "10… and 4 more makes 14." That "ten and some more" idea is the big kindergarten number step. Then trace.</div></div>\n' +
+      '      <div class="p-row"><div class="p-ico">⭐</div><div><span class="p-name">Shape &amp; Color</span> — Trace the dashed shape and name it; count its sides and corners together; color the plain one in today\'s color.</div></div>\n' +
+      '      <div class="p-row"><div class="p-ico">〰️</div><div><span class="p-name">Drive to the Job Site</span> — Pencil-control warm-up: drive the machine along the dotted road.</div></div>\n' +
+      '      <div class="p-row"><div class="p-ico">🌙</div><div><span class="p-name">Closing Notebook</span> — Do this LAST: he rates the day, then draws his favorite part. High five. 🖐️</div></div>\n    </div>\n  </div>\n\n' +
+      '  <div class="p-banner" style="background:var(--ju-gpale);border-color:#d6ebb0;color:#33450f;">\n' +
+      '    <strong>Little letters come in handwriting order</strong> (c o s v w t, then a d g…) — the easy ones first, and b and d weeks apart so\n' +
+      '    they don\'t get mixed up. Big letters keep getting a quick look every day so they stay solid. 🚜\n  </div>\n\n</div>\n' +
+      juFooter("Caleb's Grown-Up Guide", weekDates, CB_P.emoji) + '\n</div>';
+  }
+
+  function generateCaleb(ctx) {
+    ctx = ctx || {};
+    var weekData = ctx.weekData || {};
+    if (Array.isArray(weekData)) weekData = weekData[0] || {};
+    var weekNum = ctx.weekNum;
+    if (typeof weekNum === "string") { var digits = weekNum.replace(/\D/g, ""); weekNum = digits ? parseInt(digits, 10) : weekNum; }
+    var weekDates = ctx.weekDates || "";
+    var cur = cbCurriculum(ctx.masteryItems, ctx.letterSounds);
+    var dates = weekData.dates || {};
+    var days = DAY_ORDER.filter(function (d) { return dates.hasOwnProperty(d) && dates[d]; });
+    if (!days.length) days = DAY_ORDER.slice();
+    var reviewCap = (ctx.reviewCap == null) ? JU_REVIEW_CAP : Math.max(0, Math.min(5, parseInt(ctx.reviewCap, 10) || 0));
+    var wkInt = parseInt(weekNum, 10) || 0;
+    // His rotation counts from HIS first notebook week (cursor.from), not the school-year week
+    // number Julian's uses — so week one starts at the top of every list (c, 11, Circle).
+    var lc = ctx.letterCursor || null;
+    var fromWk = (lc && parseInt(lc.from, 10) > 0) ? Math.min(parseInt(lc.from, 10), wkInt || 1) : (wkInt || 1);
+    var letterStart = lc ? juLetterStart(lc, wkInt || 1, cur.letters.length) : 0;
+    var picks = juWeekPicks(Math.max(1, (wkInt || 1) - fromWk + 1), cur, days.length, reviewCap, ctx.juPicks, letterStart);
+
+    var parts = [juHtmlHead(weekNum, "Caleb's Notebook", CB_CSS, CB_FONTS)];
+    parts.push(cbPageCover(weekNum, weekDates, cur, picks));
+    if (xpOn(ctx, "abc")) parts.push(juPageAbc(weekNum, weekDates, { letters: (picks.letters || []).map(function (s) { return cur.letters[s.idx]; }) }, CB_P));
+    if (xpOn(ctx, "daysSeasons")) parts.push(juPageDaysSeasons(weekNum, weekDates, cur, CB_P));
+    if (xpOn(ctx, "thisMonth")) { var _cym = /\b(\d{4})\b/.exec(weekDates || ""); var _cmp = juPageMonth(weekNum, weekDates, dates, _cym ? _cym[1] : "", CB_P); if (_cmp) parts.push(_cmp); }
+    for (var i = 0; i < days.length; i++) {
+      parts.push(cbPageDaily(weekNum, days[i], dates[days[i]] || "", i, cur, juDayPick(cur, picks, i),
+        xpStrip(pagesForDay(ctx, "caleb", days[i]), "#ea580c", "#fff7ed", "#9a3412"), ctx.countEmoji));
+    }
+    (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, weekNum, UNIT_INSERT_THEMES.caleb).forEach(function (p) { parts.push(p); }); });
+    parts.push("</body>\n</html>");
+    var out = {
+      student: parts.join("\n"),
+      parent: juHtmlHead(weekNum, "Caleb's Parent Guide", CB_CSS, CB_FONTS) + "\n" + cbPageParent(weekNum, weekDates, cur, picks, ctx.teachNotes || "") + "\n</body>\n</html>"
+    };
+    // Same cursor idea as Julian's letters — the app stores it at notebookSettings/caleb/letterCursor.
+    if (wkInt > 0 && picks._letters) out.letterCursor = { week: wkInt, idx: picks._letters.start, adv: picks._letters.adv, from: fromWk };
+    return out;
+  }
+  // CALEB_END
 
   /* ============================================================================
    *  LINCOLN  (5th grade — snakes 🐍)
@@ -2671,7 +3078,8 @@ ${extraStrip || ""}
     lincoln: { GD:"#1a3a2a", GM:"#2d6a4f", GL:"#b7e4c7", GP:"#f2faf5", GOLD:"#c9a84c", GOLDD:"#9a7d2e", CREAM:"#fdf8ee", EXTRA:"#6d28d9" },
     ellis:   { GD:"#142038", GM:"#c41e1e", GL:"#cddbec", GP:"#eef3f9", GOLD:"#f5c200", GOLDD:"#b58a00", CREAM:"#fffbe8", EXTRA:"#c41e1e" },
     lucy:    { GD:"#2d1b69", GM:"#7c3aed", GL:"#ddd6fe", GP:"#f5f3ff", GOLD:"#be185d", GOLDD:"#9d174d", CREAM:"#fdf2f8", EXTRA:"#be185d" },
-    julian:  { GD:"#7c2d12", GM:"#ea580c", GL:"#fed7aa", GP:"#fff7ed", GOLD:"#d97706", GOLDD:"#b45309", CREAM:"#fffbeb", EXTRA:"#4d7c0f" }
+    julian:  { GD:"#7c2d12", GM:"#ea580c", GL:"#fed7aa", GP:"#fff7ed", GOLD:"#d97706", GOLDD:"#b45309", CREAM:"#fffbeb", EXTRA:"#4d7c0f" },
+    caleb:   { GD:"#27272a", GM:"#f59e0b", GL:"#fde68a", GP:"#fffbeb", GOLD:"#ea580c", GOLDD:"#b45309", CREAM:"#fff7ed", EXTRA:"#4d7c0f" }
   };
   function unitInsertPages(ins, weekNum, theme) {
     if (!ins || !((ins.learning && ins.learning.length) || (ins.learned && ins.learned.length) || (ins.next && ins.next.length))) return [];
@@ -4390,7 +4798,8 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     lincoln: { label: "Lincoln (5th 🐍)", build: generateLincoln },
     ellis: { label: "Ellis (4th 🤖)", build: generateEllis },
     lucy: { label: "Lucy (1st 🦄)", build: generateLucy },
-    julian: { label: "Julian (Pre-K 🦕)", build: generateJulian }
+    julian: { label: "Julian (Pre-K 🦕)", build: generateJulian },
+    caleb: { label: "Caleb (K 🚜)", build: generateCaleb }   // DeWalt family (CALEB block); the app lists only kids on the family's roster
   };
 
   // ── ½" prong/binding margin (Notebook tab toggle → notebookSettings/bindingMargin) ──
@@ -4438,14 +4847,14 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
   function generate(kid, ctx) {
     var g = GENERATORS[kid];
     if (!g) throw new Error("No notebook generator for '" + kid + "' yet.");
-    if (kid === "julian") juResetUnknownShapes();   // count only THIS build's unknown shapes
+    if (kid === "julian" || kid === "caleb") juResetUnknownShapes();   // count only THIS build's unknown shapes
     var out = g.build(ctx);
     if (ctx && ctx.bindingMargin && out) {
       out = Object.assign({}, out, { student: applyBindingMargin(out.student), parent: applyBindingMargin(out.parent) });
     }
     if (out) out = Object.assign({}, out, { student: applySafariPrintFit(out.student), parent: applySafariPrintFit(out.parent) });
     if (out) out = Object.assign({}, out, { student: emojiToImages(out.student), parent: emojiToImages(out.parent) });   // Chrome print-preview emoji bug (see emojiToImages)
-    if (out && kid === "julian") { var unk = juUnknownShapes(); if (unk.length) out.warnings = (out.warnings || []).concat(["No drawing for shape" + (unk.length > 1 ? "s" : "") + ": " + unk.join(", ") + " — it prints as a dashed “NO DRAWING” box. Add the drawing in notebooks.js (juSvgShape) or rename the shape."]); juResetUnknownShapes(); }
+    if (out && (kid === "julian" || kid === "caleb")) { var unk = juUnknownShapes(); if (unk.length) out.warnings = (out.warnings || []).concat(["No drawing for shape" + (unk.length > 1 ? "s" : "") + ": " + unk.join(", ") + " — it prints as a dashed “NO DRAWING” box. Add the drawing in notebooks.js (juSvgShape) or rename the shape."]); juResetUnknownShapes(); }
     return out;
   }
 
@@ -4800,6 +5209,6 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     dgStart: dgStart,                   // Daily Grams: first Day of a week from the stored cursor (Notebook tab card + prefetch)
 
     // exposed for testing
-    _internal: { juCurriculumFromMastery: juCurriculumFromMastery, generateJulian: generateJulian, dgWeekPlan: dgWeekPlan }
+    _internal: { juCurriculumFromMastery: juCurriculumFromMastery, generateJulian: generateJulian, generateCaleb: generateCaleb, cbCurriculum: cbCurriculum, dgWeekPlan: dgWeekPlan }
   };
 })();
