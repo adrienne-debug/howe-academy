@@ -3020,7 +3020,7 @@ function attachWeekListeners(wk){
     if(!s.val()) return;
     // Suppress echo from our own cascade writes (prevents runaway cascade chains)
     if(Date.now()-lastTasksWrite<3000){ dbg("skip:tasks echo"); return; }
-    const incoming=Object.values(s.val());
+    const incoming=_haRealCards(Object.values(s.val()));   // GHOSTCARD
     // Track high-water mark to prevent accidental wipes
     if(incoming.length>fbTasksHighWater) fbTasksHighWater=incoming.length;
     const firstLoad=!fbTasksLoaded;
@@ -3499,7 +3499,7 @@ function initFb() {
       if(fbWk && fbWk!==WK){
         dbg("ha_active_wk changed FB="+fbWk+" local="+WK);
         WK=fbWk; HA_LS.setItem("ha_active_wk",WK); weekData.week=WK;
-        const t=ld(WK+"_tasks"); if(t) weekData.tasks=t;
+        const t=ld(WK+"_tasks"); if(t) weekData.tasks=_haRealCards(t);   // GHOSTCARD
         const meta=ld(WK+"_meta"); if(meta) applyWeekMeta(meta);
         checked=ld(WK+"_checked")||{}; slState=ld(WK+"_sl")||{}; claimed=ld(WK+"_claimed")||{};
         momMoves=ld(WK+"_momMoves")||{};
@@ -3864,9 +3864,13 @@ function initFb() {
 const sv=(k,v)=>{ try{HA_LS.setItem(k,JSON.stringify(v));}catch(e){} };
 const ld=k=>{ try{return JSON.parse(HA_LS.getItem(k));}catch(e){return null;} };
 
+// GHOSTCARD (2026-10-04): a card with no id (e.g. DeWalt week1 'makenzie_makenzie__aas_4_L0141' = {dur:20} — a late field
+// write landed on a card that had already been deleted) crashed every schedule render (t.id.endsWith) → blank page.
+// Week cards are only taken in when they're real cards; a ghost is skipped and drops out on the next whole-week save.
+function _haRealCards(a){ return Array.isArray(a)?a.filter(function(t){ return t&&typeof t.id==="string"; }):a; }
 function boot() {
   const sn=ld("ha_sitter_name"); if(sn) SITTER_NAME=sn;
-  const t=ld(WK+"_tasks"); if(t) weekData.tasks=t;
+  const t=ld(WK+"_tasks"); if(t) weekData.tasks=_haRealCards(t);   // GHOSTCARD
   weekData.week=WK;
   const m=ld(WK+"_babysitter")||ld(WK+"_maggie"); if(m) weekData.babysitter=m;
   const meta=ld(WK+"_meta"); if(meta) applyWeekMeta(meta);
