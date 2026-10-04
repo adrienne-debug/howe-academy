@@ -2002,7 +2002,7 @@ function rtDoneOn(slot,kid,d,i){ const s=slState[activeWk()+"_"+d+"_"+kid+"_"+RT
 // A step counts toward "complete" if it's due today OR carried over late (a missed chore keeps showing on the
 // list, so it must keep the list open too — 2026-08-18: Julian's grid dot said ✓ while his list said 0/1).
 // rtLateDays is bound to the viewed day, so the late clause only applies when d is that day.
-function rtDueOrLate(slot,kid,d,i,st){ if(typeof stepWindowOk==="function"&&!stepWindowOk(st,d)) return false; return cadDueOn((st&&st.cad)||"daily",d)||(d===day&&rtLateDays(slot,kid,i)>0); }
+function rtDueOrLate(slot,kid,d,i,st){ if(typeof stepWindowOk==="function"&&!stepWindowOk(st,d)) return false; return cadDueOn((st&&st.cad)||"daily",d)||(d===_todayDay&&rtLateDays(slot,kid,i)>0); }
 function rtComplete(slot,kid,d){ const steps=rtStepsFor(slot,kid); if(!steps.length){ const s=slState[activeWk()+"_"+d+"_"+kid+"_"+slot]; return !!(s&&s.done); } return steps.every((st,i)=>!rtDueOrLate(slot,kid,d,i,st)||rtDoneOn(slot,kid,d,i)); }
 function rtEveningHour(){ const h=parseInt(routineTimes&&routineTimes.eveningHour,10); return isNaN(h)?18:h; }
 function rtFmtHour(h){ const ap=h>=12?"PM":"AM"; let hh=h%12; if(hh===0)hh=12; return hh+":00 "+ap; }
@@ -2272,7 +2272,11 @@ function rtLateDays(slot,kid,i){
   const m=/^wk:(.+)$/.exec(cad); if(!m) return 0;
   const days=m[1].split(",").map(Number).filter(n=>!isNaN(n));
   if(!days.length) return 0;
-  const ti=DAYS_ALL.indexOf(day); if(ti<0) return 0;
+  // LATE_TODAY (her ask 2026-10-04): late is measured from TODAY, never from the tab on screen. It used the
+  // viewed tab: opening tomorrow's tab made today's not-yet-done chores "1 day late" and filed a permanent
+  // "— not done" in the Click-off Log mid-day (6 false records 9/23–10/1, every one done later that day),
+  // and Kids' Corner (which asks about today) got an answer for whatever tab that device had open.
+  const ti=DAYS_ALL.indexOf(_todayDay); if(ti<0) return 0;
   const wk=activeWk();
   // Most recent due day earlier in THIS week — but only days that have ACTUALLY HAPPENED.
   // The active week flips on the weekend, so on a Sunday (index 6) every weekday Mon–Sat of the
@@ -2324,7 +2328,7 @@ function rtSlotHTML(slot,kid){
   const avail=rtAvailable(slot,kid,day);
   // Due today OR carried over from a day it was missed — a skipped chore must not just vanish.
   // stepWindowOk is an AND, not an OR: a course that has ended must not come back as "late".
-  const dueIdx=steps.map((st,i)=>i).filter(i=>stepWindowOk(steps[i],day)&&(cadDueOn(steps[i].cad||"daily",day)||rtLateDays(slot,kid,i)>0));
+  const dueIdx=steps.map((st,i)=>i).filter(i=>stepWindowOk(steps[i],day)&&(cadDueOn(steps[i].cad||"daily",day)||(day===_todayDay&&rtLateDays(slot,kid,i)>0)));   // carry-overs only on today's tab
   const total=dueIdx.length;
   // ✋ as-needed rows: shown, tappable, paid — but never part of total/allDone.
   const optIdx=steps.map((st,i)=>i).filter(i=>(steps[i].cad==="asneeded")&&stepWindowOk(steps[i],day)&&dueIdx.indexOf(i)<0);
@@ -2355,10 +2359,10 @@ function rtSlotHTML(slot,kid){
     dueIdx.filter(i=>!mealOf(slot,steps[i])).concat(dueIdx.filter(i=>mealOf(slot,steps[i]))).forEach(i=>{ const st=steps[i], sd=rtDoneOn(slot,kid,day,i), pts=st.pts||0, cad=st.cad||"daily";
       const _ml=mealOf(slot,st), _ok=rtStepAvail(slot,kid,day,st);
       if(_ml&&!_mHd){ _mHd=true; h+=mealHeadHTML(_ml,day); }
-      const _lateN=rtLateDays(slot,kid,i);
+      const _lateN=(day===_todayDay)?rtLateDays(slot,kid,i):0;
       if(_lateN>0&&!sd){
         const _m=/^wk:(.+)$/.exec(cad), _ds=_m?_m[1].split(",").map(Number).filter(n=>!isNaN(n)):[];
-        const _due=_rtLastDueIdx(_ds,DAYS_ALL.indexOf(day));
+        const _due=_rtLastDueIdx(_ds,DAYS_ALL.indexOf(_todayDay));
         if(_due>=0) _rtLogMiss(kid,slot,i,DAYS_ALL[_due],st.label,pts);
       }
       const _lateTag=(_lateN>0&&!sd)?('<span class="rt-late">'+_lateN+' day'+(_lateN>1?'s':'')+' late</span>'):'';
