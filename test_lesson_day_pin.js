@@ -152,6 +152,48 @@ console.log("\n── no lesson day set = exactly the old fill ──");
   ok("and it is the plain in-order fill", lessonOf(a, "monday") === "L18d2" && lessonOf(a, "wednesday") === "L18d4");
 }
 
+console.log("\n── practice: \"push the lesson up to 2 days\" (Sarah, DeWalt) ──");
+{
+  const P = (since, onTime, missedIds) => Object.assign(pinFor("next", since), { push: true, sinceOnTime: onTime, isMissed: t => (missedIds || []).indexOf(t.id) >= 0 });
+  // Lesson 19 started on time (Wed Sep 30). Monday's day 4 was missed; today is Tuesday.
+  {
+    const done = new Set(["L18d1","L18d2","L18d3","L18d4","L18d5","L19d1","L19d2","L19d3"]);
+    const cards = [card("mon","monday","L19d4"), card("tue","tuesday"), card("wed","wednesday"), card("thu","thursday"), card("fri","friday")];
+    const r = fill({ done, isLocked: t => t.id === "mon", cards, pin: P("2026-09-30", true, ["mon"]) });
+    ok("the missed day 4 comes back Tuesday", lessonOf(r, "tuesday") === "L19d4", r.assign);
+    ok("Wednesday finishes practice (day 5) instead of the test", lessonOf(r, "wednesday") === "L19d5");
+    ok("the test + new lesson move to Thursday (1 day late)", lessonOf(r, "thursday") === "L20d1");
+    ok("Friday carries on with the new lesson", lessonOf(r, "friday") === "L20d2");
+  }
+  // Started on time but Thu–Tue all missed: Wednesday d2, Thursday d3, Friday (2nd day late) = test anyway.
+  {
+    const done = new Set(["L18d1","L18d2","L18d3","L18d4","L18d5","L19d1"]);
+    const cards = [card("wed","wednesday"), card("thu","thursday"), card("fri","friday")];
+    const r = fill({ done, cards, pin: P("2026-09-30", true, []) });
+    ok("pushing: Wednesday = day 2, Thursday = day 3", lessonOf(r, "wednesday") === "L19d2" && lessonOf(r, "thursday") === "L19d3", r.assign);
+    ok("capped: on the 2nd day late the test + new lesson happen anyway", lessonOf(r, "friday") === "L20d1");
+  }
+  // No chain: Lesson 20 started LATE (pushed to Friday). Its short week never pushes — next lesson back on Wednesday.
+  {
+    const done = new Set(["L18d1","L18d2","L18d3","L18d4","L18d5","L19d1","L19d2","L19d3","L19d4","L19d5","L20d1"]);
+    const cards = [card("mon","monday"), card("tue","tuesday"), card("wed","wednesday")];
+    const r = fill({ done, cards, pin: P("2026-10-02", false, []) });
+    ok("Mon/Tue practice", lessonOf(r, "monday") === "L20d2" && lessonOf(r, "tuesday") === "L20d3");
+    ok("Wednesday = the next lesson (no second push)", lessonOf(r, "wednesday") === "L21d1", r.assign);
+  }
+  // Practice all done → push mode changes nothing.
+  {
+    const done = new Set(["L18d1","L18d2","L18d3"]);
+    const cards = ["monday","tuesday","wednesday"].map((d,i) => card("c"+i, d));
+    const a = fill({ done, cards, pin: P("2026-09-30", true, []) }), b = fill({ done, cards, pin: pinFor("next", "2026-09-30") });
+    ok("a normal week is identical in push and drop modes", JSON.stringify(a.assign) === JSON.stringify(b.assign));
+  }
+}
+{
+  const ctx = { console, JSON, Object, Array, String, Number, Math, Set, RegExp, Date }; vm.createContext(ctx); vm.runInContext(LD, ctx);
+  ok("practice mode defaults to drop", ctx.ldPracticeMode({}) === "drop" && ctx.ldPracticeMode({ lessonDayPractice: "push" }) === "push");
+}
+
 console.log("\n── the movers: carry / pull rules ──");
 {
   const subj = { andrew: { aas: { lessonDay: "Wed", lessonSeq: TXT, lessonIds: IDS }, math: {}, aasw: { lessonDay: "Wed", lessonDayMissed: "wait" } } };

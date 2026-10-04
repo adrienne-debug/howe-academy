@@ -22102,6 +22102,11 @@ function lessonDaySpan(s){
 const LD_DOW={Mon:"monday",Tue:"tuesday",Wed:"wednesday",Thu:"thursday",Fri:"friday"};
 function ldPin(s){ const v=s&&s.lessonDay; return (v&&LD_DOW[v])?v:null; }
 function ldMissMode(s){ return (s&&s.lessonDayMissed==="wait")?"wait":"next"; }
+// Missed PRACTICE days (Sarah, DeWalt 2026-10-04: "push the test a day or two so they get their practice first"):
+// "drop" (default) = the lesson day holds, leftovers drop · "push" = the missed practice comes back first and the
+// test + new lesson wait up to 2 school days; on the 2nd day it happens anyway (leftovers drop). Only a lesson that
+// STARTED on its lesson day can push — one that started late never pushes, so it can't chain week to week.
+function ldPracticeMode(s){ return (s&&s.lessonDayPractice==="push")?"push":"drop"; }
 // A new-lesson sitting: "… · day 1 of N", or a one-day lesson (no day suffix). Works on a title too.
 function ldIsDayOne(text){ const m=String(text==null?"":text).match(/·\s*day (\d+) of \d+\s*$/i); return !m||m[1]==="1"; }
 // Practice sittings passed over: every unfinished sitting BEFORE the latest finished new-lesson sitting.
@@ -33335,7 +33340,7 @@ function rlSet(kid,sk,field,val,relay){
   currData.lastEdit=new Date().toISOString(); db.ref("curriculum/lastEdit").set(currData.lastEdit);
   // 👩 Mom changed (her ask 2026-09-22): this week's cards follow at once — the week re-lay restamps
   // them and keeps Mom-required work off a co-op's no-Mom day. Before, only the setting saved.
-  if((field==="mom"||field==="momDays"||field==="momDayMin"||field==="lessonDay"||field==="lessonDayMissed")&&typeof planBacked==="function"&&planBacked(kid,sk)&&typeof reprojectSubjectWeek==="function"){
+  if((field==="mom"||field==="momDays"||field==="momDayMin"||field==="lessonDay"||field==="lessonDayMissed"||field==="lessonDayPractice")&&typeof planBacked==="function"&&planBacked(kid,sk)&&typeof reprojectSubjectWeek==="function"){
     try{ reprojectSubjectWeek(kid,sk,"mom",{then:function(){ if(typeof renderAll==="function") renderAll(); }}); }catch(e){ if(typeof dbg==="function") dbg("mom relay skip "+kid+"/"+sk+": "+e); } }
   if(relay&&typeof planBacked==="function"&&planBacked(kid,sk)&&s.pacing&&s.pacing.mode&&typeof _gvRelaySubject==="function"){ const _k=cbKid,_s=cbSubjKey; cbKid=kid; cbSubjKey=sk; const ok=_gvRelaySubject(kid,sk,(s.display||sk)+" re-laid"); cbKid=_k; cbSubjKey=_s; if(ok) return; }
   renderAll();
@@ -33493,7 +33498,8 @@ function cbRenderRules(col){
       if(typeof ldPin==="function"){ const _ld=ldPin(s)||"", _o=["","Mon","Tue","Wed","Thu","Fri"], _nx=_o[(_o.indexOf(_ld)+1)%_o.length], _mm=ldMissMode(s);
         h+='<div style="margin-top:3px;white-space:nowrap;font-size:9.5px;color:var(--muted)" title="Pick the day each NEW lesson happens on. It never moves off that day; missed practice days drop when the next lesson day comes, and nothing pulls the lesson earlier. Mom can still move a card by hand.">📌 new lesson: '
           +'<span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'lessonDay\','+(_nx?'\''+_nx+'\'':'null')+',false)" style="'+_pill+(_ld?';background:'+col+';color:#fff;border-color:transparent':'')+'">'+(_ld||'any day')+'</span>';
-        if(_ld) h+=' · if missed: <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'lessonDayMissed\',\''+(_mm==="wait"?"next":"wait")+'\',false)" style="'+_pill+'">'+(_mm==="wait"?'waits for the next one':'next school day')+'</span>'+(_span>1?' · missed practice drops':'');
+        if(_ld) h+=' · if missed: <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'lessonDayMissed\',\''+(_mm==="wait"?"next":"wait")+'\',false)" style="'+_pill+'">'+(_mm==="wait"?'waits for the next one':'next school day')+'</span>'+(_span>1?(function(){ const _pm=(typeof ldPracticeMode==="function")?ldPracticeMode(s):"drop";
+          return ' · missed practice: <span title="drops = the lesson day holds, missed practice days drop · push = missed practice comes first; the test + new lesson wait up to 2 school days, then happen anyway" onclick="rlSet(\''+kid+'\',\''+sk+'\',\'lessonDayPractice\',\''+(_pm==="push"?"drop":"push")+'\',false)" style="'+_pill+'">'+(_pm==="push"?'push the lesson up to 2 days':'drops')+'</span>'; })():'');
         h+='</div>'; }
       h+='</td>'; }
     h+='<td style="padding:3px 6px"><span '+_cyc(sk,"device",["paper","computer","ipad/phone","book","keyboard"],dev,false)+' style="'+_pill+'">'+(CURR_DEV_EMOJI[dev]||"")+' '+(CURR_DEV_LABEL[dev]||dev)+'</span></td>';
@@ -56037,7 +56043,11 @@ function seqFillSlots(input){
   cards.forEach(function(t){ (isLocked(t)?locked:slots).push(t); });
 
   // Lessons already spoken for by a locked card never get handed to a slot as well.
-  const spoken={}; locked.forEach(function(t){ if(t.lid) spoken[t.lid]=1; });
+  const _pinIn=input.pin||null, _seqTxt={}; if(_pinIn&&_pinIn.push) ids.forEach(function(l,i){ _seqTxt[l]=String(seq[i]==null?"":seq[i]); });
+  const _isPractice=function(l){ const m=String(_seqTxt[l]||"").match(/·\s*day (\d+) of \d+\s*$/i); return !!m&&m[1]!=="1"; };
+  const spoken={}; locked.forEach(function(t){ if(!t.lid) return;
+    if(_pinIn&&_pinIn.push&&_pinIn.isMissed&&_pinIn.isMissed(t)&&_isPractice(t.lid)) return;   // 📌 push: missed practice is owed again
+    spoken[t.lid]=1; });
   const avail=[];
   for(let i=0;i<ids.length;i++){
     const lid=ids[i];
@@ -56052,15 +56062,22 @@ function seqFillSlots(input){
   // that is overdue (its lesson day passed, mode "next"). A slot with nothing it may hold is dropped.
   const pin=input.pin||null, _d1=function(x){ const m=String(x==null?"":x).match(/·\s*day (\d+) of \d+\s*$/i); return !m||m[1]==="1"; };
   let _p=0, _last=pin?String(pin.since||""):"";
+  let _onTime=!!(pin&&pin.sinceOnTime), _push=-1;   // 📌 push: did the current lesson start on its day · slots since the push began
   for(let k=0;k<slots.length;k++){
     const t=slots[k];
     let want=avail[k];
     if(pin){
       const iso=(pin.isoOf&&pin.isoOf(t))||"";
-      if(!t._eowOverflow&&t.day===pin.day){ while(_p<avail.length&&!_d1(avail[_p].text)) _p++; want=avail[_p]||null; }
+      const isLD=!t._eowOverflow&&t.day===pin.day;
+      let late=false;
+      if(isLD&&pin.push&&_onTime&&avail[_p]&&!_d1(avail[_p].text)){ _push=0; want=avail[_p]; }   // practice still owed → push
+      else if(isLD){ _push=-1; while(_p<avail.length&&!_d1(avail[_p].text)) _p++; want=avail[_p]||null; }
+      else if(_push>=0){ _push++;
+        if(_push>=2) while(_p<avail.length&&!_d1(avail[_p].text)) _p++;                        // 2nd day late: test anyway
+        want=avail[_p]||null; late=true; }
       else { want=avail[_p]||null;
-        if(want&&_d1(want.text)){ const D=(pin.mode==="next"&&iso&&pin.prevLD)?pin.prevLD(iso):""; if(!(D&&D>_last)) want=null; } }
-      if(want){ _p++; if(_d1(want.text)&&iso) _last=iso; }
+        if(want&&_d1(want.text)){ const D=(pin.mode==="next"&&iso&&pin.prevLD)?pin.prevLD(iso):""; if(!(D&&D>_last)) want=null; else late=true; } }
+      if(want){ _p++; if(_d1(want.text)){ if(iso) _last=iso; _onTime=!late; _push=-1; } }
     }
     if(!want){ drop.push({id:t.id,lid:t.lid||null,text:t.title||"",day:t.day,time:t.time}); continue; }
     const newId=(planId&&kid)?(kid+"_"+planId+"_"+want.lid):t.id;
@@ -56152,7 +56169,12 @@ function seqFillNormalize(tasks,reason){
     const taken=new Set(doneSet); (takenBy[key]||[]).forEach(l=>taken.add(l));   // 🧩 lessons held by a merged card
     let _pin=null;   // 📌 LESSONDAY
     if(typeof ldPin==="function"&&ldPin(subj)){ const _dn=LD_DOW[ldPin(subj)], _recs=((((currData||{}).done||{})[kid]||{})[sk])||{};
-      _pin={day:_dn,mode:ldMissMode(subj),since:ldSince(subj,ids,subj.lessonSeq||[],_recs),isoOf:isoOf,prevLD:function(iso){ return ldPrevDate(iso,_dn); }}; }
+      _pin={day:_dn,mode:ldMissMode(subj),since:ldSince(subj,ids,subj.lessonSeq||[],_recs),isoOf:isoOf,prevLD:function(iso){ return ldPrevDate(iso,_dn); }};
+      _pin.push=(typeof ldPracticeMode==="function")&&ldPracticeMode(subj)==="push";
+      _pin.sinceOnTime=(function(d){ const m=/^(\d{4})-(\d\d)-(\d\d)$/.exec(d||""); if(!m) return false;
+        return ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][new Date(+m[1],+m[2]-1,+m[3]).getDay()]===_dn; })(_pin.since);
+      _pin.isMissed=function(t){ if(checked&&checked[t.id]) return false; if(typeof claimed!=="undefined"&&claimed&&claimed[t.id]) return false;
+        const iso=isoOf(t); return !!(iso&&todayISO&&iso<todayISO); }; }
     const res=seqFillSlots({kid:kid,sk:sk,planId:subj.planId||"",lessonIds:ids,lessonSeq:subj.lessonSeq||[],
       done:taken,cards:groups[key],isLocked:locked,toMin:(typeof toMin==="function")?toMin:null,pin:_pin});
     if(!res||!res.changed) return;
