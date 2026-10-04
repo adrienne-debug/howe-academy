@@ -54,7 +54,7 @@ const tally = (arr, f) => arr.reduce((m, x) => (m[f(x)] = (m[f(x)] || 0) + 1, m)
   const st = w.unitStageStatus(w.u, "taylor");
   ok("Taylor: status = ready, next = Stage 8", st.ready && st.on === 313 && st.next && st.next.n === 8);
   ok("Taylor: kidStage + enrolled written", w.G.writes.some(x => x[1] === "unitStudies/math_fluency_path/kidStage/taylor" && x[2].stage === 7) && w.G.writes.some(x => x[1] === "unitStudies/math_fluency_path/enrolled/taylor" && x[2] === true));
-  ok("writes are targeted (index updates / leaf sets only)", w.G.writes.every(x => x[0] === "update" ? /^mastery\/taylor(_custom_items|_settings\/(cat_modes|cat_intro_max|definitions))?$/.test(x[1]) : /^(unitStudies\/math_fluency_path\/(kidStage|enrolled)\/taylor|mastery\/taylor_settings\/cat_gate\/Math Facts)$/.test(x[1])));
+  ok("writes are targeted (index updates / leaf sets only)", w.G.writes.every(x => x[0] === "update" ? /^mastery\/taylor(_custom_items|_settings\/(cat_modes|cat_intro_max|definitions|cat_instructions|cat_instructions_kid))?$/.test(x[1]) : /^(unitStudies\/math_fluency_path\/(kidStage|enrolled)\/taylor|mastery\/taylor_settings\/cat_gate\/Math Facts)$/.test(x[1])));
   ok("items update keyed by new indices 0..312", (() => { const u = w.G.writes.find(x => x[1] === "mastery/taylor"); return u && Object.keys(u[2]).length === 313 && u[2]["0"]; })());
   const h = w._unitStageRowsHtml(w.u, ["taylor"]);
   ok("row: Taylor shows Stage 7 + ready + ➡ Start Stage 8", /Stage 7/.test(h) && /ready to move up/.test(h) && /Start Stage 8: Fractions, decimals &amp; beyond/.test(h));

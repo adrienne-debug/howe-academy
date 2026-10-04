@@ -1331,6 +1331,11 @@
   var CB_LOWER_DEFAULT = "c,o,s,v,w,t,a,d,g,u,i,e,l,k,y,j,p,r,n,m,h,b,f,q,x,z".split(",");
   var CB_NUMBERS_DEFAULT = ["11", "12", "13", "14", "15", "16", "17", "18", "19", "20"];
   var CB_SHAPES_DEFAULT = ["Circle", "Square", "Triangle", "Rectangle"];
+  // The Shapes Path's stages (index.html SP_STAGES, same order) — the notebook runs ahead through his current stage.
+  var CB_SHAPE_STAGES = [
+    ["Circle", "Square", "Triangle", "Rectangle"],
+    ["Hexagon", "Oval", "Diamond", "Star", "Heart", "Pentagon", "Octagon", "Trapezoid", "Semicircle", "Heptagon", "Nonagon", "Decagon"],
+    ["Cube", "Sphere", "Cone", "Cylinder", "Pyramid"]];
   var CB_COLORS_DEFAULT = ["Red", "Blue", "Yellow", "Green", "Orange", "Purple", "Brown", "Black"];
 
   // Lowercase formation, own words in the HWT vocabulary (magic c, little line, start at the top).
@@ -1431,6 +1436,14 @@
       }
     }
     if (!has("shapes")) cur.shapes = CB_SHAPES_DEFAULT.slice();
+    else {
+      // Shapes run ahead of his drills (step 3, 10/4): the Shapes Path introduces 2 at a time, so the notebook
+      // lists his drilled shapes, then the rest of the stage he's on (and any earlier stage) — never a stage he
+      // hasn't started.
+      var stg = 0;
+      cur.shapes.forEach(function (nm) { CB_SHAPE_STAGES.forEach(function (st, si) { if (st.indexOf(nm) >= 0 && si > stg) stg = si; }); });
+      for (var si2 = 0; si2 <= stg; si2++) CB_SHAPE_STAGES[si2].forEach(function (nm) { if (cur.shapes.indexOf(nm) < 0) cur.shapes.push(nm); });
+    }
     if (!has("colors")) cur.colors = CB_COLORS_DEFAULT.map(function (c) { return [c, JU_COLOR_HEX[c.toLowerCase()] || "#6b7280"]; });
     var caps = items.filter(function (it) { return subj(it) === "letters"; }).map(function (it) { return String(it.prompt || "").trim().toUpperCase(); }).filter(Boolean);
     cur.capitals = caps.length ? caps : "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");

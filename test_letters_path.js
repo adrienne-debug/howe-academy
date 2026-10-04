@@ -74,7 +74,7 @@ ok("Stage 3: 'c sound' and 'o sound' start learning", snd.map(i => i.prompt).joi
 ok("sound text saved under the sound card's name only", md.caleb_settings.definitions["c sound"] === "/k/ — cat 🐱" && md.caleb_settings.definitions.c == null);
 ok("Letter Sounds deck is flip (front: letter, back: sound)", md.caleb_settings.cat_modes["Letter Sounds"] === "flip" && md.caleb_settings.cat_modes.Lowercase === "flash");
 ok("unfinished little letters keep going (the 6 left still in the bank)", md.caleb_custom_items.filter(c => c.cat === "Lowercase").length === 26);
-ok("writes are targeted paths only", w.G.writes.every(x => /^(mastery\/caleb(_custom_items|_settings\/(cat_modes|cat_intro_max|definitions))?|unitStudies\/letters_path\/(kidStage|enrolled)\/caleb)$/.test(x[1])));
+ok("writes are targeted paths only", w.G.writes.every(x => /^(mastery\/caleb(_custom_items|_settings\/(cat_modes|cat_intro_max|definitions|cat_instructions|cat_instructions_kid))?|unitStudies\/letters_path\/(kidStage|enrolled)\/caleb)$/.test(x[1])));
 
 // ── the drill card ──
 const v1 = w.mastLetterVis("a", "Lowercase"), v2 = w.mastLetterVis("g sound", "Letter Sounds");
