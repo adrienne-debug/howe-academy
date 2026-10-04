@@ -6465,13 +6465,18 @@ function helpersCardHTML(){
         h+='<div style="font-size:11px;color:var(--muted);padding:0 0 8px">'+(!p.selfIn?'His "I\'m here" tap asks you first — you tap Approve on the schedule.':'His "I\'m here" tap switches him on right away.')+(helperDadId()!==id?' <b>Only the first helper with this on gets the Dad\'s Day button.</b>':'')+'</div>';
       }
       h+='<div class="rules-section-lbl" style="margin-top:4px">Can help with</div>';
-      const kids=[...ROSTER].filter(k=>Object.keys(subs[k]||{}).length);
-      if(!kids.length) h+='<div style="font-size:11px;color:var(--muted);padding:4px 0">No subjects yet — add subjects first.</div>';
+      const _onH=(k,sk)=>!!(p.help&&p.help[k]&&p.help[k][sk]);
+      const kids=[...ROSTER].filter(k=>Object.keys(subs[k]||{}).some(sk=>_hlpSubjEligible(subs[k][sk])||_onH(k,sk)));
+      h+='<div style="font-size:11px;color:var(--muted);padding:0 0 4px">Only lessons that need Mom are listed &mdash; the kids do the rest on their own.</div>';
+      if(!kids.length) h+='<div style="font-size:11px;color:var(--muted);padding:4px 0">No Mom-required or May-need-Mom subjects yet.</div>';
       kids.forEach(k=>{
         h+='<div style="font-size:12px;font-weight:700;padding:6px 0 2px">'+esc(cap(k))+'</div><div style="display:flex;gap:6px;flex-wrap:wrap;padding:2px 0 4px">';
         Object.keys(subs[k]).sort((a,b)=>String((subs[k][a]||{}).display||(subs[k][a]||{}).name||a).localeCompare(String((subs[k][b]||{}).display||(subs[k][b]||{}).name||b))).forEach(sk=>{
-          const s=subs[k][sk]||{}, on=!!(p.help&&p.help[k]&&p.help[k][sk]);
-          h+='<div class="pnw-chip'+(on?" on":"")+'" style="padding:5px 11px" onclick="helpersToggleHelp(\''+id+'\',\''+_hlpQ(k)+'\',\''+_hlpQ(sk)+'\')">'+esc(s.display||s.name||sk)+((s.mom||"none")==="required"?' <span title="Mom-required">&#128105;</span>':'')+'</div>';
+          const s=subs[k][sk]||{}, on=_onH(k,sk), elig=_hlpSubjEligible(s);
+          if(!elig&&!on) return;   // 🙋 independent work never goes to a helper
+          if(!elig){ h+='<div class="pnw-chip" style="padding:5px 11px;opacity:.55;text-decoration:line-through" title="The kids do this on their own — tap to remove" onclick="helpersToggleHelp(\''+id+'\',\''+_hlpQ(k)+'\',\''+_hlpQ(sk)+'\')">'+esc(s.display||s.name||sk)+' &times;</div>'; return; }
+          const _mk=(s.mom||"none")==="required"?' <span title="Mom-required">&#128105;</span>':(s.mom==="maybe"?' <span title="May need Mom" style="font-size:10px;font-weight:700;color:#854d0e">may</span>':' <span title="Needs Mom on set days" style="font-size:10px;font-weight:700;color:#6b21a8">set days</span>');
+          h+='<div class="pnw-chip'+(on?" on":"")+'" style="padding:5px 11px" onclick="helpersToggleHelp(\''+id+'\',\''+_hlpQ(k)+'\',\''+_hlpQ(sk)+'\')">'+esc(s.display||s.name||sk)+_mk+'</div>';
         });
         h+='</div>';
       });
@@ -6518,6 +6523,7 @@ function _hlpIsToday(t){ try{ return ((typeof _mlDayOf==="function")?_mlDayOf(t)
 function helperHolds(t){
   try{
     if(!t||!t.who||!t.subjectKey||!pageOn("helpers")) return null;
+    if(t.mom!=="required"&&t.mom!=="maybe") return null;   // 🙋 her rule 10/3: kids do independent work alone
     const ss=helperSessionsToday(); const ids=Object.keys(ss); if(!ids.length) return null;
     if(String(t.id||"").endsWith("_c")||!_hlpIsToday(t)) return null;
     for(let i=0;i<ids.length;i++){
@@ -6536,7 +6542,7 @@ function helperIcon(id){ return ((helpersData&&helpersData[id])||{}).icon||"🙋
 function helperTasksToday(id){
   const p=helpersData[id]; if(!p) return [];
   let all=[]; try{ all=(typeof getActiveTasks==="function"?getActiveTasks():weekData.tasks)||[]; }catch(e){ all=[]; }
-  return all.filter(t=>t&&!String(t.id||"").endsWith("_c")&&!/lunch/i.test(t.title||"")&&_hlpIsToday(t)&&_hlpApproved(p,t))
+  return all.filter(t=>t&&!String(t.id||"").endsWith("_c")&&!/lunch/i.test(t.title||"")&&(t.mom==="required"||t.mom==="maybe")&&_hlpIsToday(t)&&_hlpApproved(p,t))
     .sort((a,b)=>(toMin(a.time)-toMin(b.time))||String(a.who).localeCompare(String(b.who)));
 }
 // Session writes: one leaf under helperDays/<today>/<id>, mirrored locally (and so in dry-run too).
@@ -6746,6 +6752,12 @@ function helperPlanWin(dayName,kid,key){
     }
   }catch(e){}
   return null;
+}
+// A subject can go to a helper only if it can need Mom: Mom-required, May-need-Mom, or Mom on set days.
+function _hlpSubjEligible(s){
+  if(!s) return false;
+  if(s.mom==="required"||s.mom==="maybe") return true;
+  try{ return typeof lessonDayList==="function"&&lessonDayList(s).length>0; }catch(e){ return false; }
 }
 // ── HELPERS_END ──
 function renderMomHQ(el,ah){

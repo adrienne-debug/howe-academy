@@ -28,7 +28,7 @@ function env(o){
 }
 const DAD=()=>({name:"Dad",icon:"👨",pick:true,dadPage:true,createdAt:2,help:{andrew:{math:true}}});
 const G=()=>({name:"Grandma",icon:"👵",pick:false,createdAt:1,help:{andrew:{spelling:true}}});
-const T=[{id:"m1",who:"andrew",subjectKey:"math",day:"wednesday",time:"10:00 AM",title:"Math 4.2"}];
+const T=[{id:"m1",who:"andrew",subjectKey:"math",day:"wednesday",time:"10:00 AM",mom:"required",title:"Math 4.2"}];
 
 // default: his tap asks Mom
 let e=env({dad:true,tasks:T}); e.__set({g:G(),d:DAD()},{});

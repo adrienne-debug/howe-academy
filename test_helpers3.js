@@ -28,9 +28,9 @@ function env(o){
 }
 const G={name:"Grandma",icon:"👵",pick:false,createdAt:1,help:{andrew:{spelling:true}}};
 const D={name:"Dad",icon:"👨",pick:true,createdAt:2,help:{andrew:{math:true}}};
-const T=[{id:"s1",who:"andrew",subjectKey:"spelling",day:"wednesday",time:"10:00 AM",title:"Spelling test"},
-         {id:"s2",who:"andrew",subjectKey:"spelling",day:"wednesday",time:"11:00 AM",title:"Spelling 2"},
-         {id:"m1",who:"andrew",subjectKey:"math",day:"wednesday",time:"10:30 AM",title:"Math"}];
+const T=[{id:"s1",who:"andrew",subjectKey:"spelling",day:"wednesday",time:"10:00 AM",mom:"required",title:"Spelling test"},
+         {id:"s2",who:"andrew",subjectKey:"spelling",day:"wednesday",time:"11:00 AM",mom:"required",title:"Spelling 2"},
+         {id:"m1",who:"andrew",subjectKey:"math",day:"wednesday",time:"10:30 AM",mom:"required",title:"Math"}];
 let e=env({tasks:T}); e.__set({g:G,d:D},{});
 ok(e.helperChipsHTML()==="","nobody here → no chips");
 e.__set({g:G,d:D},{[TODAY]:{g:{arrived:1},d:{arrived:1}}});
