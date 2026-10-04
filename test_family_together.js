@@ -18,11 +18,12 @@ function env(E){
     function _dryRun(){ return !!E.dry; } function momHere(){ return E.mom!==false; } function renderAll(){ E.renders=(E.renders||0)+1; } function dbg(){}
     function gwParseDate(s){ const p=s.split("-"); return new Date(+p[0],+p[1]-1,+p[2]); }
     function smapIsKidOff(k,ds){ return !!(E.off&&E.off[k+"|"+ds]); } function coopTimedEndMin(k,ds){ return (E.coop&&E.coop[k+"|"+ds])||0; }
-    function planBacked(){ return false; } function cbTodayISO(){ return "2026-10-03"; } function alert(m){ E.alerts.push(m); } function confirm(){ return E.confirm!==false; }
+    function planBacked(){ return false; } function cbTodayISO(){ return E.today||"2026-10-03"; } function routineDateISO(d){ return (E.dayISO||{})[d]||""; } var gvShowPast=false; function alert(m){ E.alerts.push(m); } function confirm(){ return E.confirm!==false; }
     const FX_DOW={monday:"Mon",tuesday:"Tue",wednesday:"Wed",thursday:"Thu",friday:"Fri",saturday:"Sat",sunday:"Sun"};
     ${FAM}
     ${TG}
-    return {famMinOn,famDoTogether,famMoveBack,famItemDel,famDelBlock,famSubjMovedTo,famGridStripHTML,famGridHTML,famDayCards,famAutoUnits,famDayOfISO,rd:()=>rulesData,cd:()=>currData};
+    weekData.tasks=E.tasks||[]; Object.assign(checked,E.checked||{});
+    return {famGridHTML,famCellState,famGridDates,famColorOf,famSheetOpen,famMinOn,famDoTogether,famMoveBack,famItemDel,famDelBlock,famSubjMovedTo,famGridStripHTML,famGridHTML,famDayCards,famAutoUnits,famDayOfISO,rd:()=>rulesData,cd:()=>currData};
   `)(toMin,fromMin,E);
 }
 const FT={name:"Family Time",kids:["taylor","makenzie","andrew","caleb"],days:["Mon","Tue","Wed","Thu","Fri"],at:"lunch",
@@ -63,9 +64,7 @@ console.log("2. 🧩 Do together → ONE subject; their own subjects step aside"
   ok("Andrew's 🏡 Together strip: Fact Review with Makenzie, was Fact Review with Kenzie (10m alone)", /Fact Review scheduler picks · 15m · with Makenzie · was Fact Review with Kenzie \(10m alone\)/.test(strip), strip);
   ok("…and his History at 1:00 with the others", /History 1:00 PM · 30m · with Taylor & Makenzie & Caleb/.test(strip), strip);
   ok("Taylor's strip has no Fact Review", !/Fact Review/.test(E.famGridStripHTML("taylor")));
-  const fg=E.famGridHTML();
-  ok("Family grid: a 🧩 piece in Andrew's and Makenzie's cells, labelled with THEIR subject", /Fact Review with Kenzie/.test(fg)&&/Fact Review with Andrew/.test(fg)&&/10m alone → 15m together/.test(fg));
-  ok("Family grid: History row has 4 pieces", ((fg.split("History")[1]||"").split("</tr>")[0].match(/🧩|\\u\{1F9E9\}/g)||[]).length>=4 || (fg.match(/\u{1F9E9}/gu)||[]).length>=6);
+  // (the Family Grid table itself is tested in section 4)
   ok("needs two kids", E.famDoTogether("fr",{andrew:"arithmetic_2"},"x","10")===false&&IN.alerts.length===1);
   // move back
   writes.length=0;
@@ -94,4 +93,30 @@ console.log("3. wiring in the Grid / estimates (source checks)");
   ok("over-cap check, Builder room and Mom-load lines add family minutes",
     /famMinOn\(kid,famDayOfISO\(l\.date\),l\.date\);   \/\/ 🏡 family time\n    if\(mins>cap\) n\+\+;/.test(src)&&/usedMin\+=famMinOn\(kid,famDayOfISO\(l\.date\),l\.date\)/.test(src)&&/out\.required\.wk\+=m; out\.independent\.wk\+=k;/.test(src));
 }
+console.log("4. the 🏡 Family Grid looks like a kid's Grid, each family time boxed (her ask 10/4)");
+{ const lessons={andrew:{1:{date:"2026-10-05",week:"Wk 1"},2:{date:"2026-10-06",week:"Wk 1"},3:{date:"2026-10-08",week:"Wk 1"},4:{date:"2026-10-09",week:"Wk 1"},5:{date:"2026-10-12",week:"Wk 2"}},
+    taylor:{1:{date:"2026-10-05",week:"Wk 1"},9:{date:"2026-10-07",week:"Wk 1"}}};
+  const FR2=JSON.parse(JSON.stringify(FR)); FR2.items=[{key:"fr",name:"Fact Review",minutes:15,kids:["andrew","makenzie"],from:{andrew:"fact_review_with_kenzie",makenzie:"fact_review_with_andrew"},pts:35,rate:"each"}];
+  const coop={}; ["taylor","makenzie","andrew","caleb"].forEach(k=>coop[k+"|2026-10-08"]=900);
+  const tasks=[{id:"h1",who:"andrew",day:"monday",famBlock:"ft",famItem:"h"},{id:"h2",who:"taylor",day:"monday",famBlock:"ft",famItem:"h"}];
+  const E=env({rulesData:{schoolDay:SD,familyBlocks:{ft:FT,fr:FR2}},currData:{subjects:SUBS(),lessons},alerts:[],coop,today:"2026-10-05",dayISO:{monday:"2026-10-05"},tasks,checked:{h1:"1:40 PM"}});
+  ok("school days = every dated row on any kid's map, sorted, no repeats", E.famGridDates().map(r=>r.date).join()==="2026-10-05,2026-10-06,2026-10-07,2026-10-08,2026-10-09,2026-10-12");
+  const g=E.famGridHTML(), txt=g.replace(/<[^>]+>/g,"|");
+  ok("it's the Grid table (class gv, Day + Min columns, week bands)", /<table class="gv">/.test(g)&&/>Day<\/th>/.test(g)&&/>Min<\/th>/.test(g)&&/gv-wkband/.test(g)&&/Wk 2/.test(txt));
+  const c0=E.famColorOf("ft"), c1=E.famColorOf("fr");
+  ok("two family times = two coloured bands, each spanning its own columns", c0!==c1&&/colspan="3"[^>]*border-top:3px solid #7c3aed/.test(g)&&/colspan="1"[^>]*border-top:3px solid #0d9488/.test(g));
+  ok("each group boxed: bold left border on its first column, right border on its last", (g.match(/border-left:3px solid #7c3aed/g)||[]).length>=6&&(g.match(/border-right:3px solid #0d9488/g)||[]).length>=6);
+  ok("band says when / who / Mom leads", /after lunch · All 4 · .*Mom leads/.test(txt)&&/scheduler picks · .*Andrew.*Makenzie.* · kids on their own/.test(txt));
+  ok("column headers: subject, days · minutes · ⭐, ends line", /History\|.*Mon\/Tue\/Wed\/Thu\/Fri · 30m · ⭐20/.test(txt)&&/ends —/.test(txt));
+  ok("band + headers open the family-time sheet", /onclick="famSheetOpen\('ft'\)"/.test(g)&&/onclick="famSheetOpen\('ft',0\)"/.test(g)&&/onclick="famSheetOpen\('fr',0\)"/.test(g));
+  const thu=g.split("<b>Thu</b> 10/8")[1].split("</tr>")[0];
+  ok("co-op Thursday: family time shows 🏫 co-op, Fact Review still runs (after co-op)", (thu.match(/co-op/g)||[]).length===3&&/Fact Review/.test(thu), thu.replace(/<[^>]+>/g," "));
+  const mon=g.split("<b>Mon</b> 10/5")[1].split("</tr>")[0];
+  ok("Mon Min = 30+30+20+15 = 95", /class="gv-min">95</.test(mon));
+  ok("this week's checked History shows ✓", /gv-chk" data-fam="1">✓<\/span><span class="gv-done"[^>]*>History/.test(mon));
+  ok("rows before this week hidden unless Show past", E.famGridDates().length===6 && !/9\/2/.test(txt));
+  const E0=env({rulesData:{schoolDay:SD,familyBlocks:{}},currData:{subjects:SUBS(),lessons:{}},alerts:[]});
+  ok("no family time yet → an Add button, no table", /Add family time/.test(E0.famGridHTML())&&!/<table/.test(E0.famGridHTML()));
+}
+
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

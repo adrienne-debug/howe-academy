@@ -24609,6 +24609,7 @@ function famWrite(path,val){
   if(val===null) delete o[parts[parts.length-1]]; else o[parts[parts.length-1]]=val;
   if(db&&!_dryRun()) db.ref("config/rules/familyBlocks/"+path).set(val);   // targeted — never the whole rules node
   if(typeof renderAll==="function") renderAll();
+  try{ if(typeof famSheetRender==="function"&&famSheetId) famSheetRender(); }catch(e){}   // 🏡 the Family Grid's sheet follows
   return true;
 }
 function famAddBlock(){
@@ -24859,31 +24860,104 @@ function famGridStripHTML(kid){
     '<span style="font-size:11px;color:#5b21b6;font-weight:700">'+FAM_ICON+' Together — family time, done with siblings: </span>'+chips.join('')+
     '<span style="font-size:10px;color:#7c3aed;display:block;margin-top:2px">Set up in Settings ▸ Family time. Their minutes count in the Min column below.</span></div>';
 }
-// 🏡 Family view of the Grid: a split grid — one row per family subject, a column per kid, a 🧩 piece in each kid's cell.
+// 🏡 Family Grid (her ask 10/4: "I was expecting it to look like the grid for each kid… click at the top… when it's going to
+// end"; "some kind of blocking around each family group… bold line or a color"): the SAME table as a kid's Grid — a row per
+// school day with week bands, a Min column, a column per family subject — and each family time BOXED as one group: a
+// coloured band across its columns (name · when · who · Mom leads) and a bold border in its colour around them. The band
+// opens that family time's settings; a column header opens it too (lessons per subject come next, step 2).
+const FAM_COLORS=["#7c3aed","#0d9488","#db2777","#2563eb","#ea580c","#65a30d"];
+function famColorOf(id){ const ids=Object.keys(famDefs()); const i=Math.max(0,ids.indexOf(id)); return FAM_COLORS[i%FAM_COLORS.length]; }
+// The family's school days = every dated row on any kid's lesson map (their Grids already carry breaks, co-ops, off days).
+function famGridDates(){
+  const seen={}, L=((typeof currData!=="undefined"&&currData)||{}).lessons||{};
+  ROSTER.forEach(function(k){ const m=L[k]||{}; Object.keys(m).forEach(function(dn){ const l=m[dn]; if(!l||!l.date) return;
+    if(!seen[l.date]) seen[l.date]={date:l.date,week:l.week||""}; else if(!seen[l.date].week&&l.week) seen[l.date].week=l.week; }); });
+  return Object.keys(seen).sort().map(function(d){ return seen[d]; });
+}
+// Who is there for this subject on this date, and if nobody, why (co-op / off).
+function famCellState(b,it,ds){
+  const dn=famDayOfISO(ds);
+  if(b.off||!famRunsOn(b.days,dn)||!famRunsOn(it.days,dn)) return {runs:false};
+  const L=famIsAuto(b)?null:famLayout(b,dn), x=L?L.find(function(v){ return v.it.key===it.key; }):null;
+  const st=x?x.s:Infinity, ik=famItemKids(b,it);
+  const inK=ik.filter(function(k){ return famKidIn(k,ds,st,null); });
+  if(inK.length) return {runs:true,kids:inK,out:ik.filter(function(k){ return inK.indexOf(k)<0; }),min:Math.max(5,parseInt(it.minutes,10)||30),at:x?x.s:null};
+  const coop=ik.some(function(k){ try{ return (coopTimedEndMin(k,ds)||0)>0; }catch(e){ return false; } });
+  return {runs:true,kids:[],why:coop?"co-op":"off"};
+}
+// Done ✓ for this week's dates (the cards the week holds).
+function famCellDone(b,id,it,ds){
+  try{
+    const tasks=((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]);
+    return tasks.some(function(t){ return t&&t.famBlock===id&&t.famItem===it.key&&typeof routineDateISO==="function"&&routineDateISO(t.day)===ds&&checked[t.id]; });
+  }catch(e){ return false; }
+}
 function famGridHTML(){
-  const defs=famDefs(), ids=Object.keys(defs), kids=[...ROSTER];
-  let h='';
-  if(!ids.length) return '<div style="padding:30px;text-align:center;color:var(--muted);font-size:13px">No family time yet. '+(momHere()?'<button onclick="famGoEdit()" style="margin-left:6px;padding:5px 12px;border-radius:9px;border:none;background:#7c3aed;color:#fff;font-weight:700;cursor:pointer">＋ Set it up</button>':'Mom mode to set it up.')+'</div>';
-  ids.forEach(function(id){ const b=defs[id]; if(!b) return; const bk=famList(b.kids);
-    h+='<div style="background:#fff;border:1.5px solid #e9d5ff;border-radius:12px;margin:0 0 12px;overflow:hidden'+(b.off?';opacity:.6':'')+'">';
-    h+='<div onclick="famGoEdit()" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:9px 12px;background:#f5f3ff;font-weight:800;color:#5b21b6">'+FAM_ICON+' '+esc(b.name||"Family time")+
-      '<span style="font-weight:600;font-size:11px;color:#7c3aed">'+(famIsAuto(b)?'scheduler picks the time':(String(b.at||"lunch")==="lunch"?'right after lunch':esc(b.at)))+(famMomLeads(b)?' · \u{1F469} Mom leads':' · kids on their own')+(b.off?' · off':'')+'</span><span style="margin-left:auto;font-size:11px;color:#7c3aed">✎</span></div>';
-    h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><tr><th style="text-align:left;padding:6px 10px;color:var(--muted);font-size:10px;text-transform:uppercase">Subject</th>'+
-      kids.map(function(k){ return '<th style="padding:6px 6px;color:'+((typeof KID_COLOR!=="undefined"&&KID_COLOR[k])||"#333")+';font-size:11px">'+esc(cap(k))+'</th>'; }).join('')+'</tr>';
-    famList(b.items).forEach(function(it){ if(!it) return; const ik=famItemKids(b,it);
-      const pts=Math.max(0,parseInt(it.pts,10)||0);
-      h+='<tr style="border-top:1px solid #f3e8ff"><td style="padding:7px 10px;white-space:nowrap"><b>'+(it.from?'\u{1F9E9} ':'')+esc(it.name||"")+'</b><div style="font-size:10px;color:var(--muted)">'+esc(famWhenLabel(b,it))+' · '+(Math.max(5,parseInt(it.minutes,10)||30))+' min · '+esc(famDaysLabel(b,it))+(pts?' · ⭐ '+pts+(it.rate==="each"?' each other':' Mom'):'')+'</div></td>';
-      kids.forEach(function(k){
-        const inIt=bk.indexOf(k)>=0&&ik.indexOf(k)>=0, col=(typeof KID_COLOR!=="undefined"&&KID_COLOR[k])||"#7c3aed";
-        if(!inIt){ h+='<td style="padding:6px;text-align:center;color:#d6d3d1">·</td>'; return; }
-        const was=(it.from&&it.from[k])?((((currData||{}).subjects||{})[k]||{})[it.from[k]]||{}):null;
-        h+='<td style="padding:5px 4px"><div style="position:relative;background:'+col+'1f;border:2px solid '+col+';border-radius:9px;padding:5px 7px;text-align:center;font-weight:700;color:#3b0764">'+
-          '\u{1F9E9}<div style="font-size:10px;font-weight:700;line-height:1.25">'+esc(was?(was.display||it.name):(it.name||""))+'</div>'+
-          (was?'<div style="font-size:9px;font-weight:600;color:var(--muted)">'+(+was.minutes||20)+'m alone → '+(Math.max(5,parseInt(it.minutes,10)||30))+'m together</div>':'')+'</div></td>';
-      });
-      h+='</tr>'; });
-    h+='</table></div></div>'; });
-  return h+'<div style="font-size:10px;color:var(--muted);padding:0 2px 10px">Each \u{1F9E9} is one kid’s piece of the same subject — done together, at one time, checked once. Tap a block to edit it.</div>';
+  const defs=famDefs(), ids=Object.keys(defs).filter(function(id){ return defs[id]; });
+  if(!ids.length) return '<div style="padding:30px;text-align:center;color:var(--muted);font-size:13px">No family time yet. '+(momHere()?'<button onclick="famSheetNew()" style="margin-left:6px;padding:5px 12px;border-radius:9px;border:none;background:#7c3aed;color:#fff;font-weight:700;cursor:pointer">＋ Add family time</button>':'Mom mode to set it up.')+'</div>';
+  const groups=ids.map(function(id){ return {id:id,b:defs[id],col:famColorOf(id),items:famList(defs[id].items).filter(Boolean)}; }).filter(function(g){ return g.items.length; });
+  const today=(typeof cbTodayISO==="function")?cbTodayISO():new Date().toISOString().slice(0,10);
+  const t0=gwParseDate(today); const mon=new Date(t0); mon.setDate(t0.getDate()-((t0.getDay()+6)%7));
+  const monISO=mon.getFullYear()+"-"+String(mon.getMonth()+1).padStart(2,"0")+"-"+String(mon.getDate()).padStart(2,"0");
+  const showPast=(typeof gvShowPast!=="undefined")&&gvShowPast;
+  const rows=famGridDates().filter(function(r){ return showPast||r.date>=monISO; });
+  const who=function(ks,all){ return ks.length===all?'All '+ks.length:ks.map(function(k){ return '<span style="color:'+((typeof KID_COLOR!=="undefined"&&KID_COLOR[k])||"#333")+'">'+esc(cap(k))+'</span>'; }).join(' + '); };
+  let h='<div style="display:flex;align-items:center;gap:8px;margin:0 0 8px;flex-wrap:wrap"><span style="font-size:11px;color:var(--muted)">'+groups.length+' family time'+(groups.length===1?'':'s')+' · tap a band or a column to edit it</span>'+
+    (momHere()?'<button onclick="famSheetNew()" style="margin-left:auto;padding:5px 14px;border-radius:20px;border:1.5px dashed #c4b5fd;background:#fff;color:#5b21b6;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">＋ Add family time</button>':'')+'</div>';
+  if(!groups.length) return h+'<div style="padding:20px;text-align:center;color:var(--muted);font-size:12px">Add a subject to a family time to see it here.</div>';
+  const edge=function(g,j){ return (j===0?'border-left:3px solid '+g.col+';':'')+(j===g.items.length-1?'border-right:3px solid '+g.col+';':''); };
+  h+='<div class="gv-wrap"><table class="gv"><thead>';
+  // band row: one boxed band per family time
+  h+='<tr class="gv-bandrow"><th class="gv-fix" style="height:36px"></th><th class="gv-min" style="height:36px"></th>';
+  groups.forEach(function(g){ const b=g.b;
+    const when=famIsAuto(b)?'scheduler picks':(String(b.at||"lunch")==="lunch"?'after lunch':esc(b.at));
+    h+='<th colspan="'+g.items.length+'" onclick="famSheetOpen(\''+g.id+'\')" title="Open '+esc(b.name||"Family time")+'" style="cursor:pointer;height:36px;padding:3px 8px;background:'+g.col+'1f;border-top:3px solid '+g.col+';border-left:3px solid '+g.col+';border-right:3px solid '+g.col+';color:'+g.col+';text-transform:none;letter-spacing:0;white-space:nowrap'+(b.off?';opacity:.55':'')+'">'+
+      '<div style="font-size:11px;font-weight:800">'+(famList(b.items).some(function(x){ return x&&x.from; })?'\u{1F9E9} ':FAM_ICON+' ')+esc(b.name||"Family time")+(b.off?' · off':'')+'</div>'+
+      '<div style="font-size:9px;font-weight:700;opacity:.9">'+when+' · '+who(famList(b.kids),ROSTER.length)+' · '+(famMomLeads(b)?'\u{1F469} Mom leads':'kids on their own')+'</div></th>'; });
+  h+='</tr>';
+  // column headers
+  h+='<tr class="gv-subrow"><th class="gv-fix" style="top:36px">Day</th><th class="gv-min" style="top:36px">Min</th>';
+  groups.forEach(function(g){ g.items.forEach(function(it,j){ const ik=famItemKids(g.b,it), pts=Math.max(0,parseInt(it.pts,10)||0);
+    h+='<th onclick="famSheetOpen(\''+g.id+'\','+famList(g.b.items).indexOf(it)+')" title="Open this subject" style="top:36px;background:'+g.col+'12;'+edge(g,j)+'text-transform:none;letter-spacing:0">'+
+      '<div style="font-size:11px;font-weight:800;color:var(--text)">'+(it.from?'\u{1F9E9} ':'')+esc(it.name||"")+'</div>'+
+      '<div style="font-size:9px;font-weight:600;color:var(--muted)">'+esc(famDaysLabel(g.b,it))+' · '+(Math.max(5,parseInt(it.minutes,10)||30))+'m'+(pts?' · ⭐'+pts:'')+'</div>'+
+      (ik.length<famList(g.b.kids).length?'<div style="font-size:9px;font-weight:700">'+who(ik,famList(g.b.kids).length)+'</div>':'')+
+      '<div style="font-size:9px;font-weight:700;color:'+g.col+'">ends — <span style="font-weight:600;color:var(--muted)">(add lessons)</span></div></th>'; }); });
+  h+='</tr></thead><tbody>';
+  const ncol=groups.reduce(function(a,g){ return a+g.items.length; },0);
+  let lastWk=null;
+  rows.forEach(function(r){
+    if(r.week!==lastWk){ lastWk=r.week; h+='<tr class="gv-wkband"><td colspan="'+(2+ncol)+'">'+esc(r.week||"")+'</td></tr>'; }
+    const d=gwParseDate(r.date), past=r.date<today;
+    let min=0; const cells=[];
+    groups.forEach(function(g){ g.items.forEach(function(it,j){ const c=famCellState(g.b,it,r.date);
+      let inner='';
+      if(!c.runs) inner='';
+      else if(!c.kids.length) inner='<span class="gv-badge" style="background:'+(c.why==="co-op"?'#e0f2fe;color:#0369a1':'#fecaca;color:#991b1b')+'">'+(c.why==="co-op"?'\u{1F3EB} co-op':'OFF')+'</span>';
+      else { min+=c.min; const dn=famCellDone(g.b,g.id,it,r.date);
+        inner=(dn?'<span class="gv-chk" data-fam="1">✓</span>':'')+'<span class="'+(dn?'gv-done':'')+'" style="color:'+(dn?'':'#4b5563')+'">'+esc(it.name||"")+'</span>'+
+          (c.out.length?'<span class="gv-away"> · no '+esc(c.out.map(cap).join(", "))+'</span>':''); }
+      cells.push('<td style="background:'+g.col+'0a;'+edge(g,j)+'">'+inner+'</td>'); }); });
+    h+='<tr class="'+[past?"gv-past":"",r.date===today?"gv-today":""].filter(Boolean).join(" ")+'"><td class="gv-fix"><b>'+["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()]+'</b> '+(d.getMonth()+1)+'/'+d.getDate()+'</td><td class="gv-min">'+(min||"")+'</td>'+cells.join('')+'</tr>';
+  });
+  h+='</tbody></table></div>';
+  return h+'<div style="font-size:10px;color:var(--muted);padding:0 2px 10px">Each coloured box is one family time — done together, at one time, checked once. Min = minutes of family time that day.</div>';
+}
+// The family-time sheet (opened from the Family Grid): that family time's full editor, right here.
+let famSheetId=null;
+function famSheetOpen(id){ famSheetId=id; famSheetRender(); }
+function famSheetNew(){ if(!momHere()) return; const before=Object.keys(famDefs()); famAddBlock(); const nid=Object.keys(famDefs()).find(function(k){ return before.indexOf(k)<0; }); if(nid) famSheetOpen(nid); }
+function famSheetClose(){ famSheetId=null; const o=document.getElementById("fam-sheet-ov"); if(o) o.remove(); }
+function famSheetRender(){
+  if(!famSheetId) return; const b=famDefs()[famSheetId]; if(!b){ famSheetClose(); return; }
+  let o=document.getElementById("fam-sheet-ov");
+  if(!o){ o=document.createElement("div"); o.id="fam-sheet-ov"; o.style.cssText="position:fixed;inset:0;z-index:8500;background:rgba(15,23,42,.45);display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow:auto"; o.onclick=function(e){ if(e.target===o) famSheetClose(); }; document.body.appendChild(o); }
+  const sc=o.scrollTop;
+  o.innerHTML='<div style="background:var(--bg);border-radius:16px;max-width:560px;width:100%;padding:12px 12px 6px;box-shadow:0 20px 50px rgba(0,0,0,.25);border-top:6px solid '+famColorOf(famSheetId)+'">'+
+    '<div style="display:flex;align-items:center;gap:8px;padding:2px 4px 8px"><div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:800">'+FAM_ICON+' '+esc(b.name||"Family time")+'</div>'+
+    '<button onclick="famSheetClose()" style="margin-left:auto;padding:6px 14px;border-radius:9px;border:none;background:#16a34a;color:#fff;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Done</button></div>'+
+    famBlockEditorHTML(famSheetId,b)+'</div>';
+  o.scrollTop=sc;
 }
 // FAMTOGETHER_END
 
