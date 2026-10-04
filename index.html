@@ -2681,6 +2681,12 @@ function _kioskR(){ try{ return /[?&]kiosk=(routines|general)/.test(location.sea
 // 👨 Dad kiosk (?kiosk=dad): a link for his phone that opens ONLY Dad's Day — no nav, no
 // tabs, no way to wander into the schedule or admin. Same app and same live data; the
 // param just decides what this device is allowed to show.
+// QA_BATCH3 (10/4): "📄 Drills — Drills" → "📄 Drills" on screen. Display only — t.title itself is never changed.
+function taskTitleShow(t){
+  const s=String((t&&t.title)||"");
+  const m=/^(\S+\s)?(.+?) \u2014 (.+)$/.exec(s);
+  return (m&&m[2].trim()===m[3].trim())?((m[1]||"")+m[2]):s;
+}
 function _kioskD(){ try{ return /[?&]kiosk=dad/.test(location.search)||HA_LS.getItem("ha_kiosk")==="dad"; }catch(e){ return false; } }
 // 🧒 Kids' Corner link (?kiosk=corner): only the Corner — a tablet the kids share.
 function _kioskK(){ try{ return /[?&]kiosk=corner/.test(location.search)||HA_LS.getItem("ha_kiosk")==="corner"; }catch(e){ return false; } }
@@ -4038,7 +4044,7 @@ function renderSkylight(){
     // INDIVIDUAL VIEW
     gridEl.style.display="none"; indEl.style.display="block";
     const col=SL_KCOL[kid]||"#666";
-    let h2='<div class="sl-ind-title" style="color:'+col+'">'+SL_KLBL[kid]+"'s Day</div>"+calEventBanner(day,kid)+calUpcomingHTML(kid)+techBanner(kid);
+    let h2='<div class="sl-ind-title" style="color:'+col+'">'+SL_KLBL[kid]+"'s Day</div>"+(typeof schedTipHtml==="function"?schedTipHtml(kid):"")+calEventBanner(day,kid)+calUpcomingHTML(kid)+techBanner(kid);   // 💡 FIRST_TIPS
     activeSlots().forEach(slot=>{
       if(slot==="morning"){ h2+=mrIndividualHTML(kid); return; }
       h2+=rtSlotHTML(slot,kid);
@@ -7654,7 +7660,10 @@ function renderSchedule(el){
     if(_singleKid&&!_slotDone&&_prevEnd>0&&_ss-_prevEnd>=15&&!(_prevEnd<14*60&&_ss>13*60)){
       h+='<div class="time-row"><div class="time-pill" style="color:#16a34a">'+fromMin(_prevEnd)+'</div>'+
          '<div class="slot-tasks"><div style="background:#f0fdf4;border:1px dashed #86efac;border-radius:10px;padding:8px 12px;font-size:12px;color:#15803d;font-weight:600">'+
-         '\u{1F33F} Break · '+(_ss-_prevEnd)+' min <span style="font-weight:400;color:#4d7c53">— Mom’s with a sibling, take a breather</span></div></div></div>';
+         ((_ss-_prevEnd>=60)
+           ? (function(){ const _lu=(typeof _haLunchMin==="function")?_haLunchMin():12*60; const _to=(_prevEnd<_lu&&_ss>_lu)?_lu:_ss;   // QA_BATCH3 (10/4)
+               return '\u{1F33F} Free time until '+fromMin(_to)+' <span style="font-weight:400;color:#4d7c53">— nothing on the list until then</span>'; })()
+           : '\u{1F33F} Break · '+(_ss-_prevEnd)+' min <span style="font-weight:400;color:#4d7c53">— Mom’s with a sibling, take a breather</span>')+'</div></div></div>';
     }
     if(!lunchDone&&_ss>=_haLunchMin()){ h+=lunchBlock(); lunchDone=true; }
     h+='<div class="time-row"><div class="time-pill">'+t+'</div><div class="slot-tasks">';
@@ -8927,7 +8936,7 @@ function taskCard(t, fromDay, readOnly, doneId){
       '<div class="task-cb" style="border-color:#d1d5db;color:#9ca3af;background:#f3f4f6;cursor:default">&times;</div>'+
       '<div class="card-body">'+
       '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
-      '<div class="task-title" style="color:#6b7280">'+missedLabel+t.title+'</div>'+mb+'</div>'+
+      '<div class="task-title" style="color:#6b7280">'+missedLabel+taskTitleShow(t)+'</div>'+mb+'</div>'+
       '<div class="task-detail" style="color:#9ca3af">'+cleanDetail+'</div>'+
       '</div></div></div>';
   }
@@ -8936,7 +8945,7 @@ function taskCard(t, fromDay, readOnly, doneId){
     '<div class="task-cb'+(done?" checked":"")+(readOnly?" readonly":"")+'"'+(claimedHere?' style="border-color:#f59e0b;color:#f59e0b;background:#fffbeb"':'')+(readOnly?"":' onclick="tapTask(\''+t.id+'\')"')+'>'+(done?"✓":claimedHere?"⏳":"")+'</div>'+
     '<div class="card-body">'+
     '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
-    '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+pushLabel+(_eicL?eicCardTitle(t):t.title)+'</div>'+mb+'</div>'+
+    '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+pushLabel+(_eicL?eicCardTitle(t):taskTitleShow(t))+'</div>'+mb+'</div>'+
     '<div class="task-detail">'+cleanDetail+'</div>'+famRow+dr+spinBtn+classRow+linkRow+wbRow+eicRow+rvRow+msRow+llRow+
     '</div></div></div>';
 }
@@ -31489,10 +31498,11 @@ function renderNotebook(el){
         '<div style="font-size:13px;font-weight:700;color:#9a3412">— '+wkLabel+'</div>'+
         '<span style="margin-left:auto">'+_nbMomLockHtml()+'</span>'+
       '</div>'+
-      '<div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:14px">Pick a kid, then generate. Print from the new tab (Cmd/Ctrl+P, “Background graphics” ON).</div>'+
+      '<div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:14px">Pick a kid, then tap 🖨 Print — it makes a letter-size PDF that prints from any browser, iPad or iPhone.</div>'+   // QA_BATCH1 (10/4): was the old Cmd/Ctrl+P instructions
+      (typeof notebookTipHtml==="function"?notebookTipHtml():"")+   // 💡 FIRST_TIPS
       wkPickHtml+
       '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px">'+chips+'</div>'+
-      '<button onclick="haNbCombinedParent()" style="width:100%;padding:11px;border-radius:11px;border:1.5px solid #c7d2fe;background:#eef2ff;color:#3730a3;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-bottom:16px">📚 Combined Parent Guide — all 4 kids in one packet</button>'+
+      (HA_IS_HOWE?'<button onclick="haNbCombinedParent()" style="width:100%;padding:11px;border-radius:11px;border:1.5px solid #c7d2fe;background:#eef2ff;color:#3730a3;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-bottom:16px">📚 Combined Parent Guide — all 4 kids in one packet</button>':'')+   // QA_BATCH1 (10/4): Howe only — it builds the four Howe kids' guides
       bindHtml+
       '<div style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:16px">'+
         '<div style="font-size:15px;font-weight:800;color:#1f2937;margin-bottom:10px">'+meta.label+'</div>'+
@@ -40876,6 +40886,9 @@ function mastTraceOpen(glyph){
     try{
       const g=String(glyph||"").trim();
       const m=(window.HoweNotebooks&&window.HoweNotebooks.letterStrokes)||null;
+      // QA_BATCH1 (10/4): a lowercase letter gets the LOWERCASE stroke words (was the capital's — "a" read "big line slides down")
+      const lo=(window.HoweNotebooks&&window.HoweNotebooks.lowerStrokes)||null;
+      if(g.length===1&&/[a-z]/.test(g)&&lo&&lo[g]){ tip.textContent="\u{1F58D} "+g+" \u{2014} "+lo[g]; return; }
       const s=(m&&g.length===1)?m[g.toUpperCase()]:null;
       tip.textContent=s?("\u{1F58D} "+g.toUpperCase()+" \u{2014} start at the top: "+s):"";
     }catch(e){}
@@ -45589,6 +45602,38 @@ function drillTipHtml(logging,n,kid){
   return h;
 }
 // DRILL_TIPS_END
+// FIRST_TIPS_START — 💡 first-time help on the schedule + Notebook tab (her ask 2026-10-04), per person (tipKey).
+function firstTipSeen(n){ try{ return HA_LS.getItem(tipKey("first_"+n))==="1"; }catch(e){ return false; } }
+function firstTipGotIt(n){ try{ HA_LS.setItem(tipKey("first_"+n),"1"); }catch(e){} if(typeof renderAll==="function") renderAll(); }
+function firstTipShow(n){ try{ HA_LS.removeItem(tipKey("first_"+n)); }catch(e){} if(typeof renderAll==="function") renderAll(); }
+function firstTipBox(n,title,lines){
+  const linkBtn='border:none;background:none;color:#b45309;font-size:11.5px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif';
+  if(firstTipSeen(n)) return '<div style="margin:2px 0 6px;text-align:right"><button onclick="firstTipShow(\''+n+'\')" style="'+linkBtn+'">ⓘ '+title+'</button></div>';
+  let h='<div style="margin:6px 0 10px;padding:11px 14px;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:12px;font-size:12.5px;line-height:1.55;color:#78350f">';
+  h+='<div style="font-size:13.5px;font-weight:800;margin-bottom:5px">\u{1F44B} '+title+'</div>';
+  lines.forEach(function(l,i){ h+='<div><b>'+(i+1)+'.</b> '+l+'</div>'; });
+  h+='<div style="margin-top:8px;text-align:right"><button onclick="firstTipGotIt(\''+n+'\')" style="padding:5px 14px;border-radius:9px;border:none;background:#b45309;color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Got it</button></div></div>';
+  return h;
+}
+function schedTipHtml(kid){
+  const nm=(typeof cap==="function"&&kid)?cap(kid):"your child";
+  return firstTipBox("schedule","How "+nm+"’s school day works",[
+    "Each morning "+nm+" checks off the <b>Morning</b> routine at the top — that unlocks the school list.",
+    "Cards go in order through the day. <b>Tap a card</b> when it’s done to check it off.",
+    "\u{1F469} <b>Mom Required</b> cards wait for Mom — Mom takes the kids in loop order (Mom’s Day shows who’s next).",
+    "Some cards open what you need: the <b>Drills</b> card has “\u{1F4C2} Open drills”, a notebook card is the printed page for that day.",
+    "When the list is done, afternoon chores come next."]);
+}
+function notebookTipHtml(){
+  return firstTipBox("notebook","How notebooks work",[
+    "Each kid gets a printed notebook for the week — one page a day, plus a cover and a few extra pages.",
+    "Tap <b>\u{1F5A8} Print notebook</b>. It makes a PDF; on an iPad it lands in <b>Files</b> — open it, tap <b>Share → Print</b>.",
+    "<b>\u{1F5A8} Print parent guide</b> is one page for you: this week’s targets and how to help with each part.",
+    "Print before Monday. The pages follow the drills, so what they practice shows up on paper too.",
+    "<b>\u{1F441} Look first</b> is just a quick peek on screen (printing from it only works in Chrome)."]);
+}
+// FIRST_TIPS_END
+
 function deckInstrStripHtml(kid,deck){
   const t=deckInstrText(kid,deck); if(!t) return "";
   const col=deckInstrCollapsed();
@@ -47422,7 +47467,11 @@ function _renderMasteryInner(el){
       }
       if(!_smDone){
         c+='<div class="mast-slide-img">'+bigVis+'</div>';
-        if(cat!=="Counting") c+='<div class="mast-slide-name">'+it.prompt+'</div>';
+        // QA_BATCH3 (10/4): a REVIEW picture card doesn't print its answer — the name waits behind "👁 name" for Mom.
+        // New cards keep it (three-period lesson: "this is a hexagon"); letters/numbers show the same symbol anyway.
+        const _picDeck=cat==="Shapes"||cat==="Colors"||cat==="Animals"||cat==="Dinosaurs";
+        if(cat!=="Counting"&&_picDeck&&!isIntro) c+='<div class="mast-slide-name" style="visibility:hidden;margin-bottom:0">'+it.prompt+'</div><button onclick="event.stopPropagation();var n=this.previousElementSibling;n.style.visibility=\'visible\';this.remove();" title="Mom: show the name to check" style="margin:-4px 0 6px;padding:3px 12px;border-radius:999px;border:1.5px solid var(--border);background:#fff;color:#6b7280;font-size:11.5px;font-weight:700;cursor:pointer;position:relative;z-index:3">\u{1F441} name</button>';
+        else if(cat!=="Counting") c+='<div class="mast-slide-name">'+it.prompt+'</div>';
       }
       // OG multisensory: letters / numbers / short phonograms get a Trace button —
       // see it, say it, TRACE it (digital sandpaper letters).

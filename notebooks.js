@@ -1443,6 +1443,8 @@
       var stg = 0;
       cur.shapes.forEach(function (nm) { CB_SHAPE_STAGES.forEach(function (st, si) { if (st.indexOf(nm) >= 0 && si > stg) stg = si; }); });
       for (var si2 = 0; si2 <= stg; si2++) CB_SHAPE_STAGES[si2].forEach(function (nm) { if (cur.shapes.indexOf(nm) < 0) cur.shapes.push(nm); });
+      // QA_BATCH2 (10/4): the shapes he's LEARNING open the week (Oval never showed — the plain rotation started at Circle)
+      cur.shapesLearning = items.filter(function (it) { return subj(it) === "shapes" && it.status === "introduction"; }).map(function (it) { return String(it.prompt || "").trim(); }).filter(function (nm) { return cur.shapes.indexOf(nm) >= 0; });
     }
     if (!has("colors")) cur.colors = CB_COLORS_DEFAULT.map(function (c) { return [c, JU_COLOR_HEX[c.toLowerCase()] || "#6b7280"]; });
     var caps = items.filter(function (it) { return subj(it) === "letters"; }).map(function (it) { return String(it.prompt || "").trim().toUpperCase(); }).filter(Boolean);
@@ -1650,10 +1652,11 @@
   }
 
   function cbPageParent(weekNum, weekDates, cur, picks, teachNotes) {
+    var _wk = function (sub, list, f) { var seen = []; (picks[sub] || []).forEach(function (sl) { var v = list[sl.idx]; v = f ? f(v) : v; if (v != null && seen.indexOf(v) < 0) seen.push(v); }); return seen; };   // QA_BATCH2: this week's picks
     var wkLetters = (picks.letters || []).map(function (s) { return cur.letters[s.idx]; }).join(" · ");
     var wkNumbers = (picks.numbers || []).map(function (s) { return cur.numbers[s.idx]; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join(" · ");
-    var shapes = cur.shapes.join(", ");
-    var colors = cur.colors.map(function (c) { return c[0]; }).join(", ");
+    var shapes = _wk("shapes", cur.shapes).join(", ");   // QA_BATCH2 (10/4): was every shape he has (18)
+    var colors = _wk("colors", cur.colors, function (c) { return c && c[0]; }).join(", ");
     var soundsOn = Object.keys(cur.sounds).length;
     var extra = teachNotes ? '<div class="p-banner" style="background:var(--ju-bpale);border-color:#cde7f7;color:#0c3a52;"><strong>This week:</strong> ' + teachNotes + '</div>' : "";
     var revBits = [];
@@ -1717,6 +1720,18 @@
     var fromWk = (lc && parseInt(lc.from, 10) > 0) ? Math.min(parseInt(lc.from, 10), wkInt || 1) : (wkInt || 1);
     var letterStart = lc ? juLetterStart(lc, wkInt || 1, cur.letters.length) : 0;
     var relWk = Math.max(1, (wkInt || 1) - fromWk + 1);
+    // QA_BATCH2 (10/4): no page on a day he has no school cards at all (co-op Thursday) — only when the week has cards for him
+    var _wkT = (weekData.tasks || []).filter(function (t) { return t && t.who === "caleb"; });
+    if (_wkT.length) { var _withCards = days.filter(function (d) { return _wkT.some(function (t) { return t.day === d; }); }); if (_withCards.length) days = _withCards; }
+    // QA_BATCH2 (10/4): learning shapes first, the rest rotating weekly — then turned so juWeekPicks' start spot opens on them
+    if (cur.shapesLearning && cur.shapesLearning.length) {
+      var _sl = cur.shapesLearning.slice(0, Math.max(1, days.length - 1));
+      var _so = cur.shapes.filter(function (nm) { return _sl.indexOf(nm) < 0; });
+      var _k = _so.length ? (((relWk - 1) * Math.max(1, days.length - _sl.length)) % _so.length) : 0;
+      var _ord = _sl.concat(_so.slice(_k), _so.slice(0, _k)), _n3 = _ord.length, _p3 = ((relWk - 1) * 5) % _n3, _rot3 = [];
+      for (var _r3 = 0; _r3 < _n3; _r3++) _rot3.push(_ord[(_r3 - _p3 + _n3) % _n3]);
+      cur.shapes = _rot3;
+    }
     if (cur.numbersFromFront) {
       // juWeekPicks starts numbers at ((week-1)*5) % n — turn the list so that spot holds the number he's
       // learning, so every week opens on it and counts up from there.
@@ -5246,6 +5261,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     juSvgShape: juSvgShape,
     weekDatesRange: weekDatesRange,
     letterStrokes: JU_LETTER_STROKES,   // HWT-style capital formation scripts — the drill Trace overlay shows them
+    lowerStrokes: CB_LOWER_STROKES,     // QA_BATCH1 (10/4): lowercase scripts (Caleb's notebook) — the Trace overlay uses them for a–z
     juPlanPreview: juPlanPreview,       // Julian's week planner: engine picks + struggled-with flags
     lincolnBuiltinQ3: function (wk, i) { return lnPick(LINCOLN_DATA.banks.conventions, wk, i); },   // the day's built-in conventions item (Mom's answer check)
     convBankPlan: lnConvBankPlan,       // Lincoln's conventions bank: same, for the Q3 slot
