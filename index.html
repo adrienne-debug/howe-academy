@@ -2149,6 +2149,7 @@ function toggleRtStep(slot,kid,i){
     }
     slState[sk]={done:now,ts:now?nowTs():"",pts:now?_paid:null,bid:now?(_bid||null):null};
     rlogAppend(kid,slot,_st?_st.label:("Step "+(i+1)),now?"on":"off",_p);
+    try{ if(typeof laundryKidHook==="function") laundryKidHook(kid,_st,sk,now); }catch(e){}   // 🧺 KIDLAUNDRY
   }
   const allDone=rtComplete(slot,kid,day), _prevSlot=slState[wk+"_"+day+"_"+kid+"_"+slot];
   slState[wk+"_"+day+"_"+kid+"_"+slot]={done:allDone,ts:allDone?nowTs():""};
@@ -10366,6 +10367,43 @@ function laundryAdvanceLabel(stage){
 function laundrySince(ts){
   try{ return new Date(ts).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}); }catch(e){ return ""; }
 }
+// KIDLAUNDRY_START — a kid starting a load tells Mom (her ask 2026-10-04, Taylor's "Start a load of laundry").
+// Checking off a chore that STARTS a load drops "Taylor started laundry" onto Mom's 🧺 card in the washer, timed
+// from the check — the same 90-min "move it" nudge Mom gets for her own loads. The kid taps nothing extra.
+// Step field `laundry`: true = on, false = off, unset = guess from the wording. The guess is strict on purpose
+// (a start word + a load word; never dishes / bring / fold / put away / sheets-on-bed) so it isn't obnoxious.
+function laundryStartGuess(label){
+  const s=String(label||"").toLowerCase();
+  if(!s||/dish|fold|put (it |them )?away|bring|carry|take|sort|hang|pick up|dryer|switch|change/.test(s)) return false;
+  if(!/\b(laundry|loads?|washer|washing machine|clothes|towels|sheets|whites|darks|colou?rs)\b/.test(s)) return false;
+  return /\b(start|starts|begin|run|wash|load)\b/.test(s)||/\b(put|throw|toss)\b.*\b(in|into)\b/.test(s);
+}
+function laundryLooseWord(label){ const s=String(label||"").toLowerCase(); return !/dish/.test(s)&&/laund|washer|washing|clothes|towel|sheets|\bloads?\b/.test(s); }
+function laundryStarts(st){ if(!st) return false; if(st.laundry===true) return true; if(st.laundry===false) return false; return laundryStartGuess(st.label); }
+function laundryKidId(sk){ return "lk_"+String(sk).replace(/[.#$\[\]\/]/g,"_"); }
+function laundryKidHook(kid,st,sk,now){
+  if(!laundryStarts(st)) return;
+  if(typeof _todayDay==="string"&&day!==_todayDay) return;   // back-filling another day's chore isn't a load in the washer now
+  const id=laundryKidId(sk), cur=laundryData[id];
+  if(now){
+    if(cur) return;                                           // already on her card — keep whatever stage Mom moved it to
+    laundryData[id]={label:(KID_NAME[kid]||cap(kid))+" started laundry",stage:"washer",ts:Date.now(),by:kid};
+    if(typeof db!=='undefined'&&db) db.ref('laundry/'+id).set(laundryData[id]);
+  } else {
+    if(!cur||cur.stage!=="washer") return;                    // Mom already moved it on — a stray uncheck doesn't erase it
+    delete laundryData[id];
+    if(typeof db!=='undefined'&&db) db.ref('laundry/'+id).remove();
+  }
+  try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
+}
+// Chore Plan row button — only on rows that mention laundry-ish words, or that Mom already set either way.
+function cpLaundryBtnHTML(st,i){
+  if(!st||!(st.laundry===true||st.laundry===false||laundryLooseWord(st.label))) return "";
+  const on=laundryStarts(st);
+  return '<button onclick="cpSetLaundry('+i+','+(on?'false':'true')+')" title="'+(on?'Checking this off puts a load on Mom\u2019s Laundry card \u2014 tap to stop':'Tap if checking this off means a load is in the washer')+'" style="margin-top:3px;margin-right:4px;border:1.5px solid '+(on?"#2563eb":"var(--border)")+';background:'+(on?"#eff6ff":"#fff")+';color:'+(on?"#1d4ed8":"var(--muted)")+';border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F9FA} '+(on?'Tells Mom':'Tell Mom?')+'</button>';
+}
+function cpSetLaundry(i,v){ if(!momHere()) return; rtCfgSet(cpSlot,cpKid,i,"laundry",!!v); renderAll(); }
+// KIDLAUNDRY_END
 
 // ── 💳 Bills — recurring due dates that surface as they approach ──────
 // "✓ Paid" stamps paidThrough with the current cycle key, which rolls the bill
@@ -23806,6 +23844,7 @@ function renderChorePlan(el,headerHtml){
        (!isGrabs?('<div><button onclick="rtRotToggle(\''+cpSlot+'\',\''+cpKid+'\','+i+')" title="Swap this chore between kids day by day" style="margin-top:3px;border:1.5px solid '+(st.rot?"#fb923c":"var(--border)")+';background:'+(st.rot?"#fff7ed":"#fff")+';color:'+(st.rot?"#c2410c":"var(--muted)")+';border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔄 '+(st.rot?esc(rtRotChipLabel(cpSlot,st.rot)):"Rotate")+'</button>'+
        (Object.keys(MEAL_SLOT).filter(function(m){ return MEAL_SLOT[m]===cpSlot; }).map(function(m){ const on=(st.meal===m);
          return '<button onclick="cpSetMeal('+i+',\''+(on?'':m)+'\')" title="Show under After '+esc(mealCfg()[m])+'" style="margin-top:3px;margin-right:4px;border:1.5px solid '+(on?"#fb923c":"var(--border)")+';background:'+(on?"#fff7ed":"#fff")+';color:'+(on?"#c2410c":"var(--muted)")+';border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+MEAL_EMOJI[m]+' '+(on?'After '+esc(mealCfg()[m]):'Meal job?')+'</button>'; }).join(''))+
+       ((typeof cpLaundryBtnHTML==="function")?cpLaundryBtnHTML(st,i):'')+
        '<button onclick="rtCadToggle(\''+_ck+'\')" title="Cadence, time of day, and run window" style="margin-top:3px;margin-left:4px;border:1.5px solid '+((cad!=="daily"||st.time||st.from||st.to||st.cycW)?"var(--header)":"var(--border)")+';background:#fff;color:var(--muted);border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔁 '+esc(cadLabel(cad))+(st.time?(" · ⏰ "+esc(st.time)):"")+((st.from||st.to||st.cycW)?(" · 📅 "+esc(stepWindowLabel(st))):"")+' '+(_co?"▾":"▸")+'</button></div>'):'')+'</td>';
     if(exotic){
       h+='<td colspan="8" style="text-align:center"><button onclick="rtCadToggle(\''+_ck+'\')" style="border:1.5px dashed var(--header);background:var(--bg);color:var(--text);border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔁 '+esc(cadLabel(cad))+' — tap to change</button></td>';
@@ -50427,7 +50466,7 @@ function slotCfgSave(){
 }
 // ── Morning routine editor (config/morningRoutine) ──
 // ── Afternoon/Chores/Evening routine editor (config/routines) ──
-function rtCfgEnsure(slot,kid){ if(!routineCfg2[slot]) routineCfg2[slot]={}; if(!Array.isArray(routineCfg2[slot][kid])||!routineCfg2[slot][kid].length){ routineCfg2[slot][kid]=(rtStepsFor(slot,kid,true)||[]).map(s=>{ const o={label:s.label||"",emoji:s.emoji||"",pts:s.pts||0,cad:s.cad||"daily",time:s.time||"",from:s.from||"",to:s.to||""}; if(s.rot) o.rot=s.rot; if(s.meal){ o.meal=s.meal; if(s.since) o.since=s.since; } if(s.cycW){ o.cycW=s.cycW; o.cycN=s.cycN||4; o.cycStart=s.cycStart||""; } return o; }); } }
+function rtCfgEnsure(slot,kid){ if(!routineCfg2[slot]) routineCfg2[slot]={}; if(!Array.isArray(routineCfg2[slot][kid])||!routineCfg2[slot][kid].length){ routineCfg2[slot][kid]=(rtStepsFor(slot,kid,true)||[]).map(s=>{ const o={label:s.label||"",emoji:s.emoji||"",pts:s.pts||0,cad:s.cad||"daily",time:s.time||"",from:s.from||"",to:s.to||""}; if(s.rot) o.rot=s.rot; if(s.meal){ o.meal=s.meal; if(s.since) o.since=s.since; } if(s.laundry===true||s.laundry===false) o.laundry=s.laundry; if(s.cycW){ o.cycW=s.cycW; o.cycN=s.cycN||4; o.cycStart=s.cycStart||""; } return o; }); } }
 function rtCfgSave(){ if(db) db.ref("config/routines").set(routineCfg2); }
 function rtCfgSet(slot,kid,i,field,val){ rtCfgEnsure(slot,kid); if(!routineCfg2[slot][kid][i]) return; routineCfg2[slot][kid][i][field]=(field==="pts"?(parseInt(val,10)||0):val); rtCfgSave(); }
 function rtCfgAdd(slot,kid){ rtCfgEnsure(slot,kid); routineCfg2[slot][kid].push({label:"New step",emoji:"",pts:0}); rtCfgSave(); renderAll(); }

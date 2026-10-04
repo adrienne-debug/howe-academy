@@ -1,0 +1,18 @@
+const fs=require('fs');const src=fs.readFileSync(process.argv[2]||require("path").join(__dirname,"index.html"),'utf8');
+const blk=src.slice(src.indexOf('// KIDLAUNDRY_START'),src.indexOf('// KIDLAUNDRY_END'));
+let writes=[];const ctx={laundryData:{},db:{ref:p=>({set:v=>writes.push(['set',p,v]),remove:()=>writes.push(['rm',p])})},HA_LS:{setItem(){}},KID_NAME:{taylor:'Taylor'},cap:s=>s,day:'monday',_todayDay:'monday',momHere:()=>true};
+const f=new Function(...Object.keys(ctx),blk+';return {laundryStartGuess,laundryStarts,laundryKidHook,cpLaundryBtnHTML,laundryKidId,setDay:d=>{day=d}}');
+const L=f(...Object.values(ctx));let fail=0;const eq=(a,b,m)=>{if(JSON.stringify(a)!==JSON.stringify(b)){fail++;console.log('FAIL',m,a,b)}};
+const yes=["Start a load of laundry","Start laundry","Run the washer","Wash towels","Put a load in the washer","Load the washer","Start a load","Wash whites"];
+const no=["Bring laundry to the laundry room","Dishwasher","Load the dishwasher","Make bed with new sheets","Take sheets off beds","Make king size bed with new sheets (after Lucy strips them)","Put clothes on","Get clothes on","Change Gregs paper towel and clean up any poop","Fold laundry","Put away clothes","Laundry","Move laundry to the dryer","Mouthwash","Wash hands","Wash the car"];
+yes.forEach(s=>eq(L.laundryStartGuess(s),true,s));no.forEach(s=>eq(L.laundryStartGuess(s),false,s));
+eq(L.laundryStarts({label:"Laundry",laundry:true}),true,'force on');eq(L.laundryStarts({label:"Start a load of laundry",laundry:false}),false,'force off');
+const sk='week1_monday_taylor_mstep9',st={label:"Start a load of laundry"},id=L.laundryKidId(sk);
+L.laundryKidHook('taylor',st,sk,true);eq(ctx.laundryData[id]&&ctx.laundryData[id].label,'Taylor started laundry','add');eq(writes.length,1,'1 write');
+L.laundryKidHook('taylor',st,sk,true);eq(writes.length,1,'no dup');
+L.laundryKidHook('taylor',st,sk,false);eq(ctx.laundryData[id],undefined,'undo');
+L.laundryKidHook('taylor',st,sk,true);ctx.laundryData[id].stage='dryer';L.laundryKidHook('taylor',st,sk,false);eq(ctx.laundryData[id].stage,'dryer','keep moved load');
+const n=writes.length;L.laundryKidHook('taylor',{label:"Dishwasher"},'x',true);eq(writes.length,n,'dishwasher no write');
+L.setDay('sunday');L.laundryKidHook('taylor',st,'week1_sunday_taylor_mstep9',true);eq(writes.length,n,'other day no write');
+eq(L.cpLaundryBtnHTML({label:"Make bed"},0),"",'no button');eq(/Tells Mom/.test(L.cpLaundryBtnHTML(st,0)),true,'on button');eq(/Tell Mom\?/.test(L.cpLaundryBtnHTML({label:"Bring laundry to the laundry room"},0)),true,'offer button');
+console.log(fail?fail+' FAILED':'all pass');process.exit(fail?1:0);
