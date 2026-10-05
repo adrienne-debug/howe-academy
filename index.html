@@ -6322,18 +6322,24 @@ function msgList(){
 // A message with a reply Mom hasn't "✓ Got it"-ed leaves Sent and sits on the 📋 From Adrienne card. ✓ Got it writes
 // ONE leaf, messages/<id>/replySeenAt (so every device in the house clears), and it goes back to Sent with the
 // reply under it. A newer reply (at > replySeenAt) brings it back onto the card.
+// ↩ WRITE BACK (her ask 10/4 "where she can reply back to me"): Mom's answer rides the same thread,
+// replies/<pushId> = {text, at, from:"mom"} (no `from` = Adrienne). Writing back also counts as ✓ Got it.
 function msgReplies(m){ return Object.values((m&&m.replies)||{}).filter(r=>r&&r.text).sort((a,b)=>(a.at||0)-(b.at||0)); }
-function msgUnread(m){ const r=msgReplies(m); return !!r.length&&(r[r.length-1].at||0)>((m&&m.replySeenAt)||0); }
+function msgAdrReplies(m){ return msgReplies(m).filter(r=>r.from!=="mom"); }
+function msgUnread(m){ const r=msgAdrReplies(m); return !!r.length&&(r[r.length-1].at||0)>((m&&m.replySeenAt)||0); }
 function msgSentList(){ return msgList().filter(([id,m])=>!msgUnread(m)); }
 function msgReplyList(){ return msgList().filter(([id,m])=>msgUnread(m)); }
 function msgRepliesHTML(m){
-  return msgReplies(m).map(r=>'<div style="margin-top:8px;padding:8px 10px;border-radius:10px;background:#fffbeb;border:1px solid #fde68a">'+
+  return msgReplies(m).map(r=>r.from==="mom"?'<div style="margin-top:8px;padding:8px 10px;border-radius:10px;background:#eff6ff;border:1px solid #bfdbfe">'+
+    '<div style="font-size:11px;font-weight:800;color:#1e3a8a;margin-bottom:2px">↩ You · '+esc(msgWhen(r.at))+'</div>'+
+    '<div style="font-size:13px;color:#0f172a;line-height:1.45;white-space:pre-wrap">'+esc(r.text)+'</div></div>':
+    '<div style="margin-top:8px;padding:8px 10px;border-radius:10px;background:#fffbeb;border:1px solid #fde68a">'+
     '<div style="font-size:11px;font-weight:800;color:#92400e;margin-bottom:2px">💬 Adrienne · '+esc(msgWhen(r.at))+'</div>'+
     '<div style="font-size:13px;color:#0f172a;line-height:1.45;white-space:pre-wrap">'+esc(r.text)+'</div></div>').join("");
 }
 function msgReplyRowsHTML(){
   return msgReplyList().map(([id,m])=>{
-    const r=msgReplies(m), last=String(r[r.length-1].text||"");
+    const r=msgAdrReplies(m), last=String(r[r.length-1].text||"");
     return '<div onclick="msgReplyTap(\''+esc(id)+'\')" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:11px;border:2px solid #fcd34d;background:#fffbeb;margin-top:8px">'+
       '<span style="font-size:18px;flex:none">💬</span>'+
       '<div style="flex:1;min-width:0"><div style="font-weight:800;font-size:14px;color:#92400e">Adrienne replied</div>'+
@@ -6344,14 +6350,17 @@ function msgReplyRowsHTML(){
 function msgReplyTap(id){ msgGate(()=>msgReplyOpen(id)); }
 function msgReplyOpen(id){
   const m=(msgData||{})[id]; if(!m) return;
-  const el=msgPanel();
-  el.innerHTML=msgHead("💬 Adrienne replied")+
+  const el=msgPanel(), unread=msgUnread(m);
+  el.innerHTML=msgHead(unread?"💬 Adrienne replied":"✉ Your message")+
     '<div style="border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;margin-bottom:12px">'+
     '<div style="font-size:12px;font-weight:800;color:#1e3a8a;margin-bottom:4px">✉ You sent · '+esc(msgWhen(m.createdAt))+'</div>'+
     (m.text?'<div style="font-size:13px;color:#0f172a;line-height:1.45;white-space:pre-wrap">'+esc(m.text)+'</div>':'')+
     (m.photoCount?'<div id="msg-ph-'+esc(id)+'" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;font-size:11px;color:#64748b">Loading '+m.photoCount+' photo'+(m.photoCount===1?'':'s')+'…</div>':'')+
     msgRepliesHTML(m)+'</div>'+
-    '<button onclick="msgGotIt(\''+esc(id)+'\')" style="width:100%;padding:12px;border-radius:12px;border:none;background:#16a34a;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Got it</button>';
+    '<textarea id="msg-back" placeholder="Write back to Adrienne (optional)" style="width:100%;box-sizing:border-box;min-height:64px;padding:9px 10px;border:1.5px solid #cbd5e1;border-radius:11px;font-size:14px;font-family:\'DM Sans\',sans-serif"></textarea>'+
+    '<div id="msg-back-err" style="font-size:12px;color:#b91c1c;min-height:14px;margin:2px 0 4px"></div>'+
+    '<button onclick="msgWriteBack(\''+esc(id)+'\')" style="width:100%;padding:12px;border-radius:12px;border:1.5px solid #1d4ed8;background:#eff6ff;color:#1d4ed8;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-bottom:8px">↩ Send to Adrienne</button>'+
+    (unread?'<button onclick="msgGotIt(\''+esc(id)+'\')" style="width:100%;padding:12px;border-radius:12px;border:none;background:#16a34a;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Got it</button>':'');
   if(m.photoCount) msgLoadPhotos(id);
 }
 function msgGotIt(id){
@@ -6360,6 +6369,20 @@ function msgGotIt(id){
   const ts=Date.now(); m.replySeenAt=ts;
   if(db&&!_dryRun()) db.ref("messages/"+id+"/replySeenAt").set(ts);
   msgClose(); msgOnValue(msgData);
+}
+function msgWriteBack(id){
+  if(typeof momHere==="function"&&!momHere()) return;
+  const m=(msgData||{})[id]; if(!m) return;
+  const t=document.getElementById("msg-back"), text=String((t&&t.value)||"").trim();
+  if(!text){ const e=document.getElementById("msg-back-err"); if(e) e.textContent="Write something first."; return; }
+  const ts=Date.now(), r={text:text,at:ts,from:"mom"};
+  let key="local"+ts;
+  if(db&&!_dryRun()){ const ref=db.ref("messages/"+id+"/replies").push(); key=ref.key||key; ref.set(r); db.ref("messages/"+id+"/replySeenAt").set(ts); }
+  m.replies=Object.assign({},m.replies||{},{[key]:r}); m.replySeenAt=ts;
+  const el=document.getElementById("msg-panel-in");
+  if(el) el.innerHTML='<div style="text-align:center;padding:28px 10px"><div style="font-size:40px">✅</div><div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:#0f172a;margin:8px 0 4px">Sent to Adrienne</div>'+
+    '<div style="font-size:13px;color:#475569;margin-bottom:16px">It\'s in your Sent list with the rest of this conversation.</div><button onclick="msgClose()" style="padding:10px 22px;border-radius:11px;border:none;background:#1d4ed8;color:#fff;font-weight:800;cursor:pointer">Done</button></div>';
+  msgOnValue(msgData);
 }
 function msgSentCount(){ return msgSentList().length+wsSentList().length; }
 function msgBtnsHTML(){
@@ -6455,7 +6478,8 @@ function msgSentOpen(){
         (m.status==="done"?'<span style="font-size:11px;font-weight:800;color:#166534;background:#dcfce7;border-radius:8px;padding:2px 8px">✓ Fixed</span>':'<span style="font-size:11px;font-weight:700;color:#64748b">Sent</span>')+'</div>'+
       (m.text?'<div style="font-size:13px;color:#0f172a;line-height:1.45;white-space:pre-wrap">'+esc(m.text)+'</div>':'')+
       (m.photoCount?'<div id="msg-ph-'+esc(id)+'" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;font-size:11px;color:#64748b">Loading '+m.photoCount+' photo'+(m.photoCount===1?'':'s')+'…</div>':'')+
-      msgRepliesHTML(m)+'</div>'}))
+      msgRepliesHTML(m)+
+      (msgReplies(m).length?'<button onclick="msgReplyOpen(\''+esc(id)+'\')" style="margin-top:8px;border:none;background:none;color:#1d4ed8;font-size:12px;font-weight:800;cursor:pointer;padding:2px 0;font-family:\'DM Sans\',sans-serif">↩ Write back</button>':'')+'</div>'}))
     .concat(wsSentList().map(([id,w])=>({ts:w.submittedAt,html:
       '<div style="border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;margin-bottom:9px;display:flex;gap:8px;align-items:center">'+
       '<div style="flex:1"><div style="font-size:12px;font-weight:800;color:#1e3a8a">📋 Answered · '+esc(msgWhen(w.submittedAt))+'</div>'+
