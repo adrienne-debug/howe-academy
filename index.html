@@ -25637,9 +25637,32 @@ function coopToggleMomDay(ds){
 function coopBlocksBase(kid,ds,sk){
   if(!ds||!sk) return false;
   const s=(((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[kid]||{})[sk];
-  if(!s||s.mom!=="required") return false;
+  if(!s) return false;
+  if(typeof coopDaySkips==="function"&&coopDaySkips(kid,ds,s)) return true;   // 🏫 COOPDAY: this subject skips co-op days
+  if(s.mom!=="required") return false;
   return !!coopNoMomBaseFor(kid,ds);
 }
+// COOPDAY_START — 🏫 per-subject "On co-op days: keep · shorten to __ min · skip" (her yes 2026-10-04, from Sarah's
+// co-op Thursday worksheet: DeWalt is home from co-op at 3:00 with ~55–60 min left, and Penmanship / Handwriting /
+// Typing / Fix-It stacked past the school-day end). subject.coopDay: missing = keep · "skip" = no slot on a date the
+// kid is at a timed co-op · N = that day's card runs N min. Only a TIMED co-op the kid is in counts — the "No
+// Mom-required" box and Mom's one-date flip don't change it (this rule is about time, not Mom). Skip rides
+// coopBlocksBase, so generation, the balancer, re-lays, pace and the grids all agree; shorten trims the card in
+// gwBuildDayTasks.
+function coopTimedNameFor(kid,ds){
+  if(!ds) return null; const m=coopsMap();
+  for(const id in m){ const c=m[id]; if(c&&(c.mode||"timed")==="timed"&&(c.kids||[]).indexOf(kid)>=0&&_coopHasDate(c,ds)) return c.name||"Co-op"; }
+  return null;
+}
+function coopDayRule(s){ if(!s||s.coopDay==null) return null; if(s.coopDay==="skip") return "skip"; const n=parseInt(s.coopDay,10); return n>0?n:null; }
+function coopDaySkips(kid,ds,s){ return coopDayRule(s)==="skip"&&!!coopTimedNameFor(kid,ds); }
+function coopDayMinutes(kid,ds,s,dur){ const r=coopDayRule(s); if(typeof r!=="number"||!coopTimedNameFor(kid,ds)) return dur; return Math.min(dur,r); }
+// The label a blocked slot shows: the co-op's name, for either reason (no-Mom day or this subject skips co-op days).
+function coopBlockName(kid,ds,sk){
+  const s=(((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[kid]||{})[sk];
+  return (s&&s.mom==="required"&&coopNoMomBaseFor(kid,ds))||(coopDaySkips(kid,ds,s)?coopTimedNameFor(kid,ds):null);
+}
+// COOPDAY_END
 function _coop24(t12){ const mn=toMin(t12); if(isNaN(mn)) return ""; const hh=Math.floor(mn/60), mm=mn%60; return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0"); }
 let coopScanStatus="";
 function coopStartAdd(){ coopEditId="__new__"; coopForm={name:"",color:COOP_COLORS[0],kids:[...ROSTER],mode:"timed",start:"09:00",end:"12:00",dates:[],noMomBase:true}; coopScanStatus=""; renderAll(); }
@@ -33990,8 +34013,10 @@ function cbRenderRules(col){
   h+='<div class="ce-sheet-lbl">Per-subject placement rules — the scheduler reads these; the grid follows</div>';
   const _cyc=(sk,field,opts,cur,relay)=>{ const i=Math.max(0,opts.indexOf(cur)); const nx=opts[(i+1)%opts.length]; return 'onclick="rlSet(\''+kid+'\',\''+sk+'\',\''+field+'\',\''+nx+'\','+(relay?'true':'false')+')"'; };
   const _pill='display:inline-block;padding:2px 7px;border-radius:9px;border:1px solid var(--border);background:#fff;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap';
+  // 🏫 COOPDAY: the column shows only for a kid in a timed co-op
+  const _coopCol=(function(){ try{ const m=coopsMap(); for(const id in m){ const c=m[id]; if(c&&(c.mode||"timed")==="timed"&&(c.kids||[]).indexOf(kid)>=0) return true; } }catch(e){} return false; })();
   h+='<div id="cb-daypin-scroll" style="max-height:340px;overflow:auto;border:1px solid var(--border);border-radius:8px">';
-  h+='<table style="border-collapse:collapse;font-size:10.5px;min-width:100%"><thead><tr style="background:var(--bg)">'+["Subject","Days","×/wk","Cap","Min","Mom","Device","Priority","First/last","Sticky","No-carry","Rules"].map(x=>'<th style="text-align:left;padding:5px 6px;white-space:nowrap;font-size:10px;color:var(--muted)">'+x+'</th>').join("")+'</tr></thead><tbody>';
+  h+='<table style="border-collapse:collapse;font-size:10.5px;min-width:100%"><thead><tr style="background:var(--bg)">'+["Subject","Days","×/wk","Cap","Min"].concat(_coopCol?["Co-op day"]:[]).concat(["Mom","Device","Priority","First/last","Sticky","No-carry","Rules"]).map(x=>'<th style="text-align:left;padding:5px 6px;white-space:nowrap;font-size:10px;color:var(--muted)">'+x+'</th>').join("")+'</tr></thead><tbody>';
   for(const [sk,s] of entries){
     const al=s.allowedDays||[]; const pb=(typeof planBacked==="function")&&planBacked(kid,sk); const seqd=s.tracking!=="daily";
     const tpw=(s.pacing&&s.pacing.tpw)||s.timesPerWeek||0; const _capN=(typeof capFor==="function")?capFor(kid,sk,DEFAULT_DAY_CAP):Math.max(1,parseInt(s.cap,10)||1);   // 6c-2: effective cap
@@ -34007,6 +34032,10 @@ function cbRenderRules(col){
     h+='<td style="padding:3px 6px;white-space:nowrap'+_lnDim+'><span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'tpw\','+(tpw-1)+',true)" style="'+_pill+'">−</span> <b>'+(tpw||"all")+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'tpw\','+(tpw+1)+',true)" style="'+_pill+'">+</span></td>';
     h+='<td style="padding:3px 6px;white-space:nowrap'+_lnDim+'>'+((true)?('<span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'cap\','+Math.max(1,_capN-1)+',true)" style="'+_pill+'">−</span> <b>'+_capN+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'cap\','+Math.min(4,_capN+1)+',true)" style="'+_pill+'">+</span>'):'<span style="color:var(--muted)">—</span>')+'</td>';
     h+='<td style="padding:3px 6px;white-space:nowrap"><span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'minutes\','+Math.max(5,(s.minutes||20)-5)+',true)" style="'+_pill+'">−</span> <b>'+(s.minutes||20)+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'minutes\','+Math.min(90,(s.minutes||20)+5)+',true)" style="'+_pill+'">+</span></td>';
+    if(_coopCol){ const _cr=coopDayRule(s), _full=s.minutes||20, _sh=(typeof _cr==="number")?_cr:Math.max(5,Math.round(_full/2/5)*5);   // 🏫 COOPDAY
+      const _nx=_cr==null?_sh:(_cr==="skip"?null:"skip");
+      h+='<td style="padding:3px 6px;white-space:nowrap" title="On a day this kid is at co-op: keep the full card, shorten it, or skip it that day. Other days are unchanged."><span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'coopDay\','+(_nx==null?'null':(_nx==="skip"?'\'skip\'':_nx))+',true)" style="'+_pill+(_cr!=null?';background:'+col+';color:#fff;border-color:transparent':'')+'">'+(_cr==null?'keep':(_cr==="skip"?'skip':'shorten'))+'</span>'
+        +((typeof _cr==="number")?' <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'coopDay\','+Math.max(5,_cr-5)+',true)" style="'+_pill+'">−</span> <b>'+_cr+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'coopDay\','+Math.min(_full,_cr+5)+',true)" style="'+_pill+'">+</span>':'')+'</td>'; }
     { const _span=(typeof lessonDaySpan==="function")?lessonDaySpan(s):0, _md=_span>1?lessonDayList(s):[];
       h+='<td style="padding:3px 6px">'+(_md.length?'<span style="'+_pill+';opacity:.45" title="Set by the Mom days below">'+({none:"None",maybe:"Maybe",required:"Required"}[s.mom||"none"])+'</span>':'<span '+_cyc(sk,"mom",["none","maybe","required"],s.mom||"none",false)+' style="'+_pill+'">'+({none:"None",maybe:"Maybe",required:"Required"}[s.mom||"none"])+'</span>');
       // 👩 Mom on set days (her ask 2026-10-02): tick which day of each lesson needs Mom; the rest are on their own
@@ -38163,7 +38192,7 @@ function renderCurrGrid(el){
       } else {
         let cell="";
         const _isDone=!!_doneAt[dn+"|"+sk];
-        const _coopBlk=(!past&&!_isDone&&coopBlocksBase(gvKid,l.date,sk))?coopNoMomBaseFor(gvKid,l.date):null;
+        const _coopBlk=(!past&&!_isDone&&coopBlocksBase(gvKid,l.date,sk))?(typeof coopBlockName==="function"?coopBlockName(gvKid,l.date,sk):coopNoMomBaseFor(gvKid,l.date)):null;
         const _coopTag=_coopBlk?'<span class="gv-badge" title="'+esc(_coopBlk)+' \u2014 no Mom-required lessons this day" style="background:#f5f3ff;color:#6d28d9">\u{1F3EB} co-op</span>':'';
         if(gvFilled(v)) cell=removed?'<s style="color:var(--muted)">'+esc(v)+'</s><span class="gv-badge" style="background:#e0e7ff;color:#3730a3">moved</span>'
           :(_coopBlk&&!_derCol)?'<s style="color:var(--muted)">'+esc(v)+'</s>'+_coopTag
@@ -39278,7 +39307,7 @@ function lmRenderSubjectView(k,subjects,weekLabels,weekDays,lessons,col){
       const isAdd=!!(ov.added&&ov.added[sk]);
       if(!hasExcel&&!isAdd) return;
       const isRm=hasExcel&&!!(ov.removed&&ov.removed[sk]);
-      const coopBlk=(hasExcel&&!isRm&&coopBlocksBase(k,date,sk))?coopNoMomBaseFor(k,date):null;
+      const coopBlk=(hasExcel&&!isRm&&coopBlocksBase(k,date,sk))?(typeof coopBlockName==="function"?coopBlockName(k,date,sk):coopNoMomBaseFor(k,date)):null;
       const offWhy=smapIsKidOff(k,date)||(ov.dayOff?"Day off":null)||(coopBlk?"\u{1F3EB} "+coopBlk+" \u00b7 no Mom-required":null);
       const idx=dm[d];
       const done=hasExcel&&!isRm&&idx!==undefined&&idx<cursor;
@@ -39429,7 +39458,7 @@ function lmRenderSubjectGrid(k,subjects,weekLabels,weekDays,lessons,col){
       const hasExcel=!!(l&&l[sk]&&l[sk]!=="—"&&l[sk]!=="nan");
       const isAdd=!!(ov.added&&ov.added[sk]);
       const isRm=hasExcel&&!!(ov.removed&&ov.removed[sk]);
-      const coopBlk=(hasExcel&&!isRm&&coopBlocksBase(k,ds,sk))?coopNoMomBaseFor(k,ds):null;
+      const coopBlk=(hasExcel&&!isRm&&coopBlocksBase(k,ds,sk))?(typeof coopBlockName==="function"?coopBlockName(k,ds,sk):coopNoMomBaseFor(k,ds)):null;
       const runs=(hasExcel&&!isRm&&!coopBlk)||isAdd;
       if(runs){
         const showBase=hasExcel&&!isRm;
@@ -55278,10 +55307,11 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
     // projection / balancer); what the grid laid is read as-is here, never dropped.
     const id=prefix+(counter++);
     const _lsd=(typeof lessonDayFlags==="function")?lessonDayFlags(s,excelVal):null;   // 👩 Mom on set days
-    items.push({id,who:kid,device:s.device||"paper",dur:_lsd?_lsd.dur:(s.minutes||20),mom:_lsd?_lsd.mom:(s.mom||"none")});
+    items.push({id,who:kid,device:s.device||"paper",dur:_coopMin(kid,s,_lsd?_lsd.dur:(s.minutes||20)),mom:_lsd?_lsd.mom:(s.mom||"none")});
     meta[id]={kid,key,excelVal,s};
   }
   function pushBucket(kid,bucket){ (bucket||[]).forEach(([key,val])=>pushItem(kid,key,val)); }
+  function _coopMin(kid,s,d){ return (dayConfig.dateStr&&typeof coopDayMinutes==="function")?coopDayMinutes(kid,dayConfig.dateStr,s,d):d; }   // 🏫 COOPDAY
 
   // Buckets per ROSTER kid — was hardcoded to the four Howe names, which threw
   // "Cannot read properties of undefined (reading 'first')" for any other family (Dewalt, 2026-10-02).
@@ -55404,7 +55434,7 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
       return;
     }
     const s=mm.s; const _lsd=(typeof lessonDayFlags==="function")?lessonDayFlags(s,mm.excelVal):null;   // 👩 Mom on set days
-    tasks.push({id:it.id,who:mm.kid,day:dayName,time:it.time,dur:_lsd?_lsd.dur:(s.minutes||20),
+    tasks.push({id:it.id,who:mm.kid,day:dayName,time:it.time,dur:_coopMin(mm.kid,s,_lsd?_lsd.dur:(s.minutes||20)),
       title:gwTaskTitle(mm.kid,mm.key,mm.excelVal,dayName,isCarSchool,ellisHasIpad),
       detail:gwSubjectDetail(mm.kid,mm.key),mom:_lsd?_lsd.mom:(s.mom||"none"),cascade:true,device:s.device||"paper",subjectKey:mm.key});
   });
