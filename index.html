@@ -5293,7 +5293,8 @@ function celebrateDayComplete(kid,d0){
   const d=d0||day;
   if(hasCelebrated(kid,d)) return;
   markCelebrated(kid,d);
-  _showCelebration(kid, cap(kid)+" finished the day!", {occasion:"day"});
+  const _fs=(typeof famCelebAfterSong==="function")?famCelebAfterSong(kid,d):null;   // 🏡 finished after family time → its song
+  _showCelebration(kid, cap(kid)+" finished the day!", _fs?{occasion:"day",song:_fs}:{occasion:"day"});
 }
 // Confetti + song overlay, reused by day-complete and session-complete. The caller owns
 // the fire-once gating; this just runs the show with a given title.
@@ -24872,7 +24873,7 @@ function _famCelebHas(key){ const u=ld(WK+"_celeb_used")||{}; return !!u[key]; }
 function _famCelebMark(key){ const u=ld(WK+"_celeb_used")||{}; u[key]=true; sv(WK+"_celeb_used",u); if(db) db.ref(WK+"/celeb_used/"+key).set(true); }
 function _famCelebNames(list){ list=list.map(cap); return list.length>1?list.slice(0,-1).join(", ")+" & "+list[list.length-1]:(list[0]||""); }
 function _famCelebCards(d){ const lay=(d===_todayDay&&typeof _rtSwTodayLay==="function")?_rtSwTodayLay():null; return (lay||getActiveTasks()).filter(function(t){ return t&&t.famBlock&&effectiveDay(t)===d; }); }
-// 1️⃣ A kid's own work is done and a celebrating family time is still ahead → confetti (Day songs, if any are on).
+// 1️⃣ A kid's own work is done and a celebrating family time is still ahead → confetti, never a song (her rule 10/4).
 function famCelebOwnWork(kid,d){
   if(d!==_todayDay||hasCelebrated(kid,d)||_famCelebHas(kid+"_"+d+"_own")) return false;
   if(rtSchoolworkDone(kid,d)||!rtSchoolworkDone(kid,d,true)) return false;   // whole day done → the normal show · own work not done yet
@@ -24882,7 +24883,7 @@ function famCelebOwnWork(kid,d){
   if(!open.length) return false;
   const nm=(defs[open[0].famBlock]||{}).name||"Family time";
   _famCelebMark(kid+"_"+d+"_own");
-  _showCelebration(kid, cap(kid)+"'s own work is done! "+FAM_ICON+" "+nm+" is next.", {occasion:"day",npText:cap(kid)+"'s own work is done!"});
+  _showCelebration(kid, cap(kid)+"'s own work is done! "+FAM_ICON+" "+nm+" is next.", {noSong:true,npText:cap(kid)+"'s own work is done!"});   // always confetti only (her rule 10/4)
   return true;
 }
 // 2️⃣ The last card of a celebrating block is checked → ONE show with the block's song, naming every member whose
@@ -24901,6 +24902,17 @@ function famCelebBlockCheck(id,d){
   const o={npText:nm+" done!"}; if(song) o.song=song; else o.noSong=true;
   _showCelebration(done[0]||kids[0], "\u{1F389} "+nm+" done!"+(names?" "+names+" finished the day!":""), o);
   return true;
+}
+// 3️⃣ Finished AFTER family time: the kid was in a block that already had its show today → play that block's song
+// (her ask 10/4). Confetti-only blocks and days without one → the normal Day songs.
+function famCelebAfterSong(kid,d){
+  const defs=famDefs(), seen={};
+  const cards=_famCelebCards(d).filter(function(t){ return t.who===kid; });
+  for(let i=0;i<cards.length;i++){
+    const id=cards[i].famBlock; if(seen[id]) continue; seen[id]=1;
+    if(_famCelebHas("fam_"+id+"_"+d)){ const s=famCelebSong(defs[id]); if(s) return s; }
+  }
+  return null;
 }
 function famCelebTest(id){
   const b=famDefs()[id]; if(!b) return;

@@ -21,7 +21,7 @@ function extractFn(name) {
 let pass = 0, fail = 0;
 function ok(n, c, x) { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  (" + JSON.stringify(x) + ")" : "")); } }
 
-const fns = ["rtSchoolworkDone", "hasCelebrated", "markCelebrated", "celebrateDayComplete", "famCelebOf", "famCelebSong",
+const fns = ["famCelebAfterSong", "rtSchoolworkDone", "hasCelebrated", "markCelebrated", "celebrateDayComplete", "famCelebOf", "famCelebSong",
   "_famCelebHas", "_famCelebMark", "_famCelebNames", "_famCelebCards", "famCelebOwnWork", "famCelebBlockCheck", "famCelebRowHTML"];
 const code = fns.map(extractFn).join("\n");
 
@@ -62,7 +62,7 @@ console.log("— own work done before Family Time —");
   w.checked.c_close = 1;
   ok("own work done, family time ahead → confetti show", w.famCelebOwnWork("caleb", "monday") === true && w.shows.length === 1);
   ok("title names Caleb + the block", /Caleb's own work is done! 🏡 Family Time is next\./.test(w.shows[0].title), w.shows[0].title);
-  ok("uses the kid's Day songs (occasion day), not the block song", w.shows[0].o.occasion === "day" && !w.shows[0].o.song);
+  ok("confetti only — never a song (her rule 10/4)", w.shows[0].o.noSong === true && !w.shows[0].o.song);
   ok("fires once", w.famCelebOwnWork("caleb", "monday") === false && w.shows.length === 1);
   ok("targeted leaf write", w.writes.some(x => x[0] === "week30/celeb_used/caleb_monday_own" && x[1] === true));
   ok("not marked as day-celebrated (still gets named at family time)", !w.hasCelebrated("caleb", "monday"));
@@ -116,7 +116,8 @@ function famDay(celeb) {
   ok("…and the per-kid day shows that follow are suppressed", w.shows.length === before);
   ok("fires once per block per day", w.famCelebBlockCheck("fbFT", "monday") === false && w.shows.length === before);
   w.checked.m_late = 1; w.celebrateDayComplete("makenzie", "monday");
-  ok("Makenzie finishes later → her own normal show", w.shows.length === before + 1 && w.shows[before].title === "Makenzie finished the day!");
+  ok("Makenzie finishes later → her own show", w.shows.length === before + 1 && w.shows[before].title === "Makenzie finished the day!");
+  ok("…and it plays the Family Time song (finished after family time)", w.shows[before].o.song && w.shows[before].o.song.url === SONG.url && w.shows[before].o.occasion === "day");
 }
 {
   const w = famDay(SONG.url);
@@ -137,6 +138,7 @@ function famDay(celeb) {
   ok("no celebration on the block → no combined show, kids keep their normal shows", w.famCelebBlockCheck("fbFT", "monday") === false && w.shows.length === 0);
   w.celebrateDayComplete("caleb", "monday");
   ok("…Caleb's normal day show still plays", w.shows.length === 1 && w.shows[0].title === "Caleb finished the day!");
+  ok("…with the normal Day songs (no block song)", !w.shows[0].o.song);
 }
 {
   const w = famDay("https://x/songs/deleted.mp3");
@@ -151,6 +153,27 @@ function famDay(celeb) {
   w.tasks = [card("a_fr", "andrew", "9:00 AM", { famBlock: "fbFR", famItem: "fr" }), card("m_fr", "makenzie", "9:00 AM", { famBlock: "fbFR", famItem: "fr" }), ...famCards()];
   w.checked.a_fr = 1; w.checked.m_fr = 1;
   ok("Fact Review (no celebration) finishing → no combined show", w.famCelebBlockCheck("fbFR", "monday") === false && w.shows.length === 0);
+}
+
+console.log("— finishing after family time —");
+{
+  const w = famDay("confetti");
+  w.tasks.forEach(t => { if (t.famBlock) w.checked[t.id] = 1; });
+  w.famCelebBlockCheck("fbFT", "monday"); w.checked.m_late = 1; w.celebrateDayComplete("makenzie", "monday");
+  ok("confetti-only block → straggler gets the normal Day songs", w.shows.length === 2 && !w.shows[1].o.song);
+}
+{
+  const w = famDay(SONG.url);
+  w.checked.m_late = 1; w.celebrateDayComplete("makenzie", "monday");
+  ok("finished BEFORE family time was celebrated → normal Day songs", w.shows.length === 1 && !w.shows[0].o.song);
+}
+{
+  const defs = FT(SONG.url); defs.fbFT.kids = ["taylor", "andrew", "caleb"];
+  const w = world({ defs, songs: [SONG] });
+  w.tasks = [card("m_late", "makenzie", "3:00 PM"), ...famCards().filter(t => t.who !== "makenzie")];
+  w.tasks.forEach(t => { if (t.famBlock) w.checked[t.id] = 1; });
+  w.famCelebBlockCheck("fbFT", "monday"); w.checked.m_late = 1; w.celebrateDayComplete("makenzie", "monday");
+  ok("a kid NOT in the block → normal Day songs", !w.shows[w.shows.length - 1].o.song);
 }
 
 console.log("— Fact Review (no celebration) counts as OWN work (her 'a' 10/4) —");
