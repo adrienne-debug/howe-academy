@@ -45491,12 +45491,22 @@ const PR_IDEAS_DEFAULT=["Write each word 3 times","Rainbow write: write each wor
 function prIdeas(u){ const a=(u&&Array.isArray(u.practiceIdeas))?u.practiceIdeas.map(s=>String(s||"").trim()).filter(Boolean):[]; return a.length?a:PR_IDEAS_DEFAULT; }
 function prIdeaFor(u,iso){ const L=prIdeas(u); const d=new Date(String(iso||"")+"T12:00:00"); const n=isNaN(d)?0:Math.floor(d.getTime()/864e5); return L[((n%L.length)+L.length)%L.length]; }
 // The lesson a kid was LAST taught in their AAS subject (the latest finished new-lesson sitting).
-function prLastTaught(kid,sk){
+function prLastTaught(kid,sk,uptoDay,ks){
   try{
+    const DAYS=["monday","tuesday","wednesday","thursday","friday","saturday"];
+    // 1. this week's lesson-day cards for the subject, on or before this card's day (Wednesday → the new lesson's words)
+    if(uptoDay&&typeof weekData!=="undefined"&&weekData&&Array.isArray(weekData.tasks)){
+      const di=DAYS.indexOf(uptoDay); let best=null, bi=-1;
+      weekData.tasks.forEach(t=>{ if(!t||t.who!==kid||t.subjectKey!==sk||String(t.id||"").endsWith("_c")) return; const ti=DAYS.indexOf(t.day); if(ti<0||ti>di||ti<bi) return;
+        const txt=String(t.title||"").split(" — ").pop(); if(!stIsLessonDay(txt)) return; const p=stParseLesson(txt); if(p){ best=p; bi=ti; } });
+      if(best) return best;
+    }
     const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s) return null;
-    const seq=s.lessonSeq||[], done=(typeof lidDoneIdx==="function")?lidDoneIdx(kid,sk):null; if(!done||!done.size) return null;
-    let best=-1; done.forEach(i=>{ if(i>best&&typeof stIsLessonDay==="function"&&stIsLessonDay(seq[i])) best=i; });
-    return best>=0?stParseLesson(seq[best]):null;
+    // 2. the latest finished lesson (done records)
+    const seq=s.lessonSeq||[], done=(typeof lidDoneIdx==="function")?lidDoneIdx(kid,sk):null;
+    if(done&&done.size){ let best=-1; done.forEach(i=>{ if(i>best&&typeof stIsLessonDay==="function"&&stIsLessonDay(seq[i])) best=i; }); if(best>=0) return stParseLesson(seq[best]); }
+    // 3. what Mom said at enroll: "knows through Lesson N" (a kid whose last lesson predates the app)
+    const m=/(\d+)\s*$/.exec(String((ks&&ks.knows)||"")); return m?{level:null,lesson:+m[1]}:null;
   }catch(e){ return null; }
 }
 function prCardInfo(t){
@@ -45504,7 +45514,7 @@ function prCardInfo(t){
   const en=stEnroll(t.who); if(!en) return null; const ks=en.ks;
   const txt=String(t.title||"").split(" — ").pop();
   let p=null;
-  if(ks.practice&&t.subjectKey===ks.practice) p=prLastTaught(t.who,ks.subject);
+  if(ks.practice&&t.subjectKey===ks.practice) p=prLastTaught(t.who,ks.subject,t.day,ks);
   else if(!ks.practice&&t.subjectKey===ks.subject){ if(stIsLessonDay(txt)) return null; p=stParseLesson(txt); }
   if(!p) return null;
   const level=p.level||ks.stage||1, words=stWords(en.u,level,p.lesson); if(!words.length) return null;
@@ -45632,7 +45642,7 @@ function nbSpellCtx(kid,tasks,dates){
         const ld=(tasks||[]).filter(t=>t&&t.who===kid&&t.subjectKey===ks.subject).map(t=>({t,txt:String(t.title||"").split(" — ").pop()}))
           .filter(x=>stIsLessonDay(x.txt)).sort((a,b)=>NBS_DAYS.indexOf(a.t.day)-NBS_DAYS.indexOf(b.t.day))[0];
         const words=(lv,ls)=>stWords(en.u,lv,ls).map(c=>c.name);
-        const last=(typeof prLastTaught==="function")?prLastTaught(kid,ks.subject):null;
+        const last=(typeof prLastTaught==="function")?prLastTaught(kid,ks.subject,null,ks):null;
         if(ld){ const p=stParseLesson(ld.txt)||{}; const lv=p.level||ks.stage||1, di=days.indexOf(ld.t.day);
           const before=days.slice(0,Math.max(0,di)), from=days.slice(Math.max(0,di));
           if(path==="week"&&before.length){ const prevL=(last&&last.lesson!==p.lesson)?last:{level:lv,lesson:p.lesson-1};
