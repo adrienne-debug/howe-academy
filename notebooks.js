@@ -1294,6 +1294,7 @@
         xpStrip(pagesForDay(ctx, "julian", days[i]), "#d97706", "#fffbeb", "#92400e")));
     }
     (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, weekNum, UNIT_INSERT_THEMES.julian).forEach(function (p) { parts.push(p); }); });
+    spellNbPages(ctx, UNIT_INSERT_THEMES.julian).forEach(function (p) { parts.push(p); });   // 📝 SPELLPAGE
     parts.push("</body>\n</html>");
     var student = parts.join("\n");
 
@@ -1751,6 +1752,7 @@
         xpStrip(pagesForDay(ctx, "caleb", days[i]), "#ea580c", "#fff7ed", "#9a3412"), ctx.countEmoji));
     }
     (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, weekNum, UNIT_INSERT_THEMES.caleb).forEach(function (p) { parts.push(p); }); });
+    spellNbPages(ctx, UNIT_INSERT_THEMES.caleb).forEach(function (p) { parts.push(p); });   // 📝 SPELLPAGE
     parts.push("</body>\n</html>");
     var out = {
       student: parts.join("\n"),
@@ -3140,8 +3142,43 @@ ${extraStrip || ""}
     ellis:   { GD:"#142038", GM:"#c41e1e", GL:"#cddbec", GP:"#eef3f9", GOLD:"#f5c200", GOLDD:"#b58a00", CREAM:"#fffbe8", EXTRA:"#c41e1e" },
     lucy:    { GD:"#2d1b69", GM:"#7c3aed", GL:"#ddd6fe", GP:"#f5f3ff", GOLD:"#be185d", GOLDD:"#9d174d", CREAM:"#fdf2f8", EXTRA:"#be185d" },
     julian:  { GD:"#7c2d12", GM:"#ea580c", GL:"#fed7aa", GP:"#fff7ed", GOLD:"#d97706", GOLDD:"#b45309", CREAM:"#fffbeb", EXTRA:"#4d7c0f" },
-    caleb:   { GD:"#27272a", GM:"#f59e0b", GL:"#fde68a", GP:"#fffbeb", GOLD:"#ea580c", GOLDD:"#b45309", CREAM:"#fff7ed", EXTRA:"#4d7c0f" }
+    caleb:   { GD:"#27272a", GM:"#f59e0b", GL:"#fde68a", GP:"#fffbeb", GOLD:"#ea580c", GOLDD:"#b45309", CREAM:"#fff7ed", EXTRA:"#4d7c0f" },
+    generic: { GD:"#1e293b", GM:"#0f766e", GL:"#cbd5e1", GP:"#f8fafc", GOLD:"#0d9488", GOLDD:"#115e59", CREAM:"#f8fafc", EXTRA:"#475569" }   // 📓 starter notebook
   };
+  // SPELLPAGE_START — 📝 the weekly Spelling page (her ask 2026-10-04: "the list of their words that they will be learning
+  // that week starting on their learning day … and the spelling checkup section"). Built by the app (ctx.spelling, see
+  // nbSpellCtx in index.html); every kid's notebook adds it right after the unit pages. One page: "This Week's Words"
+  // by day range (each word with three lines to write it) and "Practice Words" (only when there are any). Word lists
+  // are capped (10 per section, 12 practice) so the fixed 8.5×11 page never clips.
+  function spellNbPages(ctx, theme) {
+    var sp = ctx && ctx.spelling; if (!sp || !((sp.sections && sp.sections.length) || (sp.practice && sp.practice.length))) return [];
+    var esc = function (v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
+    var T = theme || UNIT_INSERT_THEMES.lincoln, GD = T.GD, GM = T.GM, GL = T.GL, GP = T.GP, GOLD = T.GOLD;
+    var line = '<div style="border-bottom:1.5px solid ' + GL + ';height:17px"></div>';
+    var sec = '';
+    (sp.sections || []).forEach(function (s) {
+      var ws = (s.words || []).slice(0, 10);
+      sec += '<div style="margin-bottom:10px"><div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700;color:' + GD + ';margin-bottom:5px">' + esc(s.label) +
+        (s.lesson != null ? ' <span style="font-size:11px;font-weight:600;color:' + GM + '">· Lesson ' + esc(s.lesson) + '</span>' : '') + '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px 14px">' + ws.map(function (w) {
+          return '<div style="border:1.5px solid ' + GL + ';border-radius:8px;padding:4px 8px;background:#fff"><div style="font-size:14px;font-weight:700;color:#1c1c1e;margin-bottom:1px">' + esc(String(w).replace(/․/g, ".")) + '</div>' + line + line + line + '</div>';
+        }).join('') + '</div></div>';
+    });
+    var pr = (sp.practice || []).slice(0, 12);
+    var prH = pr.length ? '<div style="margin-top:4px;border:2px dashed ' + GOLD + ';border-radius:10px;padding:8px 12px;background:' + GP + '">' +
+      '<div style="font-family:\'Fraunces\',serif;font-size:14px;font-weight:700;color:' + GD + ';margin-bottom:5px">🩺 Practice Words — write each one twice, then spell it out loud</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 14px">' + pr.map(function (w) {
+        return '<div style="font-size:13px;font-weight:700;color:#1c1c1e;border-bottom:1.5px solid ' + GL + ';padding:3px 0 9px">' + esc(String(w).replace(/․/g, ".")) + '</div>';
+      }).join('') + '</div></div>' : '';
+    var hdr = '<div style="background:' + GD + ';padding:14px 40px;display:flex;justify-content:space-between;align-items:flex-end;flex-shrink:0">' +
+      '<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:#fff;line-height:1">📝 ' + esc(sp.title || "Spelling") + '</div>' +
+      '<div style="font-family:\'Fraunces\',serif;font-size:14px;font-weight:600;color:' + GOLD + '">Week ' + esc(ctx.weekNum || "") + '</div></div>' +
+      '<div style="height:5px;flex-shrink:0;background:' + GM + '"></div>';
+    var intro = (sp.sections && sp.sections.length) ? '<div style="font-size:11.5px;color:#4b5563;margin-bottom:8px">Write each word three times on its lines. Say the sounds as you write.</div>' : '';
+    return ['<div class="page-label">Spelling — Week ' + esc(ctx.weekNum || "") + '</div>\n<div class="page">\n' + hdr +
+      '<div style="padding:14px 40px;flex:1;display:flex;flex-direction:column;overflow:hidden">' + intro + sec + prH + '</div>\n</div>'];
+  }
+  // SPELLPAGE_END
   function unitInsertPages(ins, weekNum, theme) {
     if (!ins || !((ins.learning && ins.learning.length) || (ins.learned && ins.learned.length) || (ins.next && ins.next.length))) return [];
     var esc = function (v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
@@ -3323,6 +3360,7 @@ ${extraStrip || ""}
     if (xpOn(ctx, "wilderness")) parts.push(enPageWilderness(T, wn));
     if (xpOn(ctx, "memoryCivics")) parts.push(enPageMemoryCivics(T, wn));
     (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn, UNIT_INSERT_THEMES.lincoln).forEach(function (p) { parts.push(p); }); });
+    spellNbPages(ctx, UNIT_INSERT_THEMES.lincoln).forEach(function (p) { parts.push(p); });   // 📝 SPELLPAGE
     dailyPages.forEach(function (dp, i) {
       parts.push(dp);
       var dgd = dgPlan && dgPlan.byDay[schoolDays[i]];
@@ -3945,6 +3983,7 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
     if (xpOn(ctx, "memoryCivics")) pages.push(enPageMemoryCivics(T, wn));
     if (xpOn(ctx, "notes")) pages.push(enPageNotes(T));
     (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn, UNIT_INSERT_THEMES.ellis).forEach(function (p) { pages.push(p); }); });
+    spellNbPages(ctx, UNIT_INSERT_THEMES.ellis).forEach(function (p) { pages.push(p); });   // 📝 SPELLPAGE
 
     var dayAssignments = [];
     var dgPlan = dgWeekPlan(ctx.dailyGrams, wn, orderedDays, datesMap), dgTitle = (ctx.dailyGrams && ctx.dailyGrams.title) || "Daily Grams";
@@ -4821,6 +4860,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     if (xpOn(ctx, "thisMonth")) { var _lmp = luPageMonth(wn, weekDates, dates, year, days); if (_lmp) parts.push(_lmp); }
     if (xpOn(ctx, "allAboutMe")) parts.push(luPageAllAboutMe(wn, weekDates, ctx.personal || null)); // personal info from the Notebook tab (or blank)
     (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn, UNIT_INSERT_THEMES.lucy).forEach(function (p) { parts.push(p); }); });
+    spellNbPages(ctx, UNIT_INSERT_THEMES.lucy).forEach(function (p) { parts.push(p); });   // 📝 SPELLPAGE
     days.forEach(function (day, i) {
       var dateStr = dates[day] || "";
       var blend = (i < blends.length) ? blends[i] : blends[blends.length - 1];
@@ -4855,6 +4895,25 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
    *  PUBLIC API
    * ========================================================================== */
 
+  // GENERICNB_START — 📓 a starter notebook for a kid with no custom notebook yet (her ask 2026-10-04, DeWalt: "so the things
+  // you're adding have a place to rest till their notebooks are ready … a generic color palette for now"). It holds only the
+  // add-on pages — unit-study inserts and the 📝 Spelling page — in a neutral slate/teal palette; with nothing turned on it
+  // prints one page that says where to turn things on. When a custom notebook is built, these pages move into it.
+  function generateGeneric(ctx) {
+    ctx = ctx || {};
+    var esc = function (v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
+    var name = ctx.nbKidName || "Student", wn = ctx.weekNum || "", T = UNIT_INSERT_THEMES.generic, parts = [];
+    (ctx.units || []).forEach(function (ins) { unitInsertPages(ins, wn, T).forEach(function (p) { parts.push(p); }); });
+    spellNbPages(ctx, T).forEach(function (p) { parts.push(p); });
+    var hdr = function (t) { return '<div style="background:' + T.GD + ';padding:14px 40px;display:flex;justify-content:space-between;align-items:flex-end">' +
+      '<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:#fff">' + esc(t) + '</div><div style="font-family:\'Fraunces\',serif;font-size:14px;color:' + T.GOLD + '">Week ' + esc(wn) + '</div></div><div style="height:5px;background:' + T.GM + '"></div>'; };
+    if (!parts.length) parts.push('<div class="page-label">' + esc(name) + ' — Week ' + esc(wn) + '</div>\n<div class="page">\n' + hdr("📓 " + name + "’s Notebook") +
+      '<div style="padding:30px 40px;font-size:14px;line-height:1.6;color:#334155">Nothing to print yet this week.<br><br>Pages land here as they’re turned on — for example <b>📝 Spelling</b> (Units ▸ All About Spelling ▸ ' + esc(name) + ' ▸ 📓 Notebook). When ' + esc(name) + '’s own notebook is built, these pages move into it.</div>\n</div>');
+    var guide = '<div class="page-label">Parent guide — Week ' + esc(wn) + '</div>\n<div class="page">\n' + hdr("📓 " + name + " — this week’s pages") +
+      '<div style="padding:24px 40px;font-size:13px;line-height:1.6;color:#334155">' + (ctx.spelling ? 'Spelling: ' + (ctx.spelling.sections || []).map(function (s) { return esc(s.label) + (s.lesson != null ? " (Lesson " + esc(s.lesson) + ")" : ""); }).join(" · ") + ((ctx.spelling.practice || []).length ? " · " + ctx.spelling.practice.length + " practice words" : "") : "No add-on pages this week.") + '</div>\n</div>';
+    return { student: lnFullHtml(name + "'s Notebook — Week " + wn, parts.join("\n\n\n")), parent: lnFullHtml(name + "'s Parent Guide — Week " + wn, guide) };
+  }
+  // GENERICNB_END
   var GENERATORS = {
     lincoln: { label: "Lincoln (5th 🐍)", build: generateLincoln },
     ellis: { label: "Ellis (4th 🤖)", build: generateEllis },
@@ -4906,8 +4965,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     return i >= 0 ? html.slice(0, i) + SAFARI_PRINT_FIT + html.slice(i) : html;
   }
   function generate(kid, ctx) {
-    var g = GENERATORS[kid];
-    if (!g) throw new Error("No notebook generator for '" + kid + "' yet.");
+    var g = GENERATORS[kid] || { build: generateGeneric };   // 📓 GENERICNB: any kid without a custom notebook gets the starter one
     if (kid === "julian" || kid === "caleb") juResetUnknownShapes();   // count only THIS build's unknown shapes
     var out = g.build(ctx);
     if (ctx && ctx.bindingMargin && out) {
@@ -5271,6 +5329,6 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     dgStart: dgStart,                   // Daily Grams: first Day of a week from the stored cursor (Notebook tab card + prefetch)
 
     // exposed for testing
-    _internal: { juCurriculumFromMastery: juCurriculumFromMastery, generateJulian: generateJulian, generateCaleb: generateCaleb, cbCurriculum: cbCurriculum, dgWeekPlan: dgWeekPlan }
+    _internal: { generateGeneric: generateGeneric, spellNbPages: spellNbPages, juCurriculumFromMastery: juCurriculumFromMastery, generateJulian: generateJulian, generateCaleb: generateCaleb, cbCurriculum: cbCurriculum, dgWeekPlan: dgWeekPlan }
   };
 })();
