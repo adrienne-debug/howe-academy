@@ -21,5 +21,5 @@ run("_grRc.rows[1].match='i:b'; grRcptDraw()"); S=sels();
 ok("matching Bread to line 2 removes Bread from line 3's list too — it keeps shrinking", S[2].indexOf("i:b")<0&&S[2].indexOf("i:a")<0&&S[1].indexOf("i:b")>=0, S);
 ok("…while every list still offers '➕ not on the list'", S.every(o=>o[0]==="x"));
 run("_grRc.rows[1].match='x'; grRcptDraw()"); S=sels(); ok("un-matching puts Bread back in the lists", S[2].indexOf("i:b")>=0);
-ok("in-cart items (✓) come first, then the rest", /<option value="i:b"[^>]*>✓ Bread<\/option><option value="i:z"[^>]*>✓ Zucchini<\/option><option value="i:c"[^>]*>Cereal<\/option>/.test(pop.innerHTML.split('<select')[4]||""), (pop.innerHTML.split('<select')[4]||"").slice(0,400));
+ok("plain A–Z (her ask: alphabetical order completely)", /<option value="i:b"[^>]*>✓ Bread<\/option><option value="i:c"[^>]*>Cereal<\/option><option value="i:z"[^>]*>✓ Zucchini<\/option>/.test(pop.innerHTML.split('<select')[4]||""), (pop.innerHTML.split('<select')[4]||"").slice(0,400));
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

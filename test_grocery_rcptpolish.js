@@ -28,8 +28,8 @@ const RC={store:"FOOD LION",date:"2026-10-06",total:20,items:[{line:"BOUNTY",nam
   ok("extras say to pick where each goes (old 'pantry still gets them' wording gone)", /Pick where each one goes — or 🚫 Not for the house/.test(h)&&!/Prices \+ the pantry still get them/.test(h));
   ok("extras offer 🧻 Household", (h.match(/🧻 Household/g)||[]).length>=2);
   ok("paper towels (a household item) default to 🧻 Household", T.run("grRcptXDefault({name:'Paper towels'})")==="household");
-  ok("a long not-on-receipt list folds to one line (5 checked off, all counted as bought)", /5 checked off, but not on this receipt<\/b> — all counted as bought ✓/.test(h)&&/>Review</.test(h)&&!/Didn't get it/.test(h));
-  T.run("grRcptNo('i:c0','back'); grRcptDraw()"); ok("…the line keeps count of what's going back", /4 counted as bought, 1 going back on the list/.test(T.pop.innerHTML));
+  ok("a long not-on-receipt list folds to one line (5 checked off, not bought — back on the list)", /5 checked off, but not on this receipt<\/b> — not bought — they go back on your list/.test(h)&&/>Review</.test(h)&&!/Didn't get it/.test(h));
+  T.run("grRcptNo('i:c0','kept'); grRcptDraw()"); ok("…the line keeps count of what she says she still bought", /1 still bought, 4 going back on the list/.test(T.pop.innerHTML));
   T.run("_grRc.noOpen=true; grRcptDraw()"); ok("Review opens the full list with its buttons", /Checked off, but not on this receipt \(5\)/.test(T.pop.innerHTML)&&/Didn't get it/.test(T.pop.innerHTML));
   ok("the lines-vs-total check shows (13.98 of 20 — well under: a line may be missing or it's tax)", /Lines add up to <b>\$13\.98<\/b> · receipt total <b>\$20\.00<\/b> — well under the total/.test(T.pop.innerHTML));
   T.run("grRcptSave()"); ok("saving puts paper towels in 🧻 Household; balloons (Other) still default to the pantry", T.pantry.some(p=>p[0]==="Paper towels"&&p[1]==="household")&&T.pantry.some(p=>p[0]==="Balloons"&&p[1]==="pantry"));

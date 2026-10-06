@@ -13130,7 +13130,7 @@ function grRcptPick(input){
     img.src=url; });
 }
 const GR_RCPT_PROMPT='Read this grocery receipt (one or more photos of the same receipt, or a PDF of it). Reply with ONLY strict JSON, no prose:\n'
-  +'{"store":"store name as printed","date":"YYYY-MM-DD or null","total":number or null,"items":[{"line":"the item text exactly as printed","name":"plain grocery name a shopper would say","qty":number or null,"price":number,"regular":number or null,"sale":true or false}]}\n'
+  +'{"store":"store name as printed","date":"YYYY-MM-DD or null","total":number or null,"items":[{"line":"the item text exactly as printed","name":"plain grocery name a shopper would say","qty":number or null,"price":number,"regular":number or null,"sale":true or false,"list":"exact name from her shopping list, or null"}]}\n'
   +'price = what was actually paid for that line after any discount — always the LINE total. Items sold by weight print a weight and a per-pound price (e.g. "APPLES 3.00 lb @ 1.35 /lb  4.05"): price is 4.05 and qty is 3, never 1.35. A line like "2 @ 1.25  2.50" has price 2.50 and qty 2. regular = the price before the discount when the receipt shows one. sale = true when the receipt shows a discount, savings, member price, VIC/MVP/club price, "you saved", rollback or markdown for that item. '
   +'When there are several photos they are ONE receipt, in order from the top to the bottom, and neighbouring photos usually overlap: the last few lines of one photo show again at the top of the next. List each overlapping line ONCE — match the overlap by the lines around it (item text, price and order) and carry on with the first new line after it. Keep an item twice only when the receipt itself prints it twice (two separate lines in the same photo, or a separate quantity line). '
   +'Never invent lines or prices. Skip tax, subtotal, total, bag fees, coupons that are not tied to an item, payment and change lines.';
@@ -13138,7 +13138,7 @@ async function grRcptRead(){
   const R=_grRc; if(!R||!(R.imgs.length||(R.pdfs||[]).length)) return;
   R.busy=true; R.msg=""; grRcptDraw();
   try{
-    const content=R.imgs.reduce((a,b,i)=>a.concat(R.imgs.length>1?[{type:"text",text:"Photo "+(i+1)+" of "+R.imgs.length+(i===0?" (top of the receipt)":i===R.imgs.length-1?" (bottom of the receipt)":"")}]:[],[{type:"image",source:{type:"base64",media_type:"image/jpeg",data:b}}]),[]).concat((R.pdfs||[]).reduce((a,b,i,arr)=>a.concat([{type:"text",text:"PDF of the receipt"+(arr.length>1?" ("+(i+1)+" of "+arr.length+")":"")},{type:"document",source:{type:"base64",media_type:"application/pdf",data:b}}]),[])).concat([{type:"text",text:GR_RCPT_PROMPT}]);   // GR_RCPT6: photos labelled in order
+    const content=R.imgs.reduce((a,b,i)=>a.concat(R.imgs.length>1?[{type:"text",text:"Photo "+(i+1)+" of "+R.imgs.length+(i===0?" (top of the receipt)":i===R.imgs.length-1?" (bottom of the receipt)":"")}]:[],[{type:"image",source:{type:"base64",media_type:"image/jpeg",data:b}}]),[]).concat((R.pdfs||[]).reduce((a,b,i,arr)=>a.concat([{type:"text",text:"PDF of the receipt"+(arr.length>1?" ("+(i+1)+" of "+arr.length+")":"")},{type:"document",source:{type:"base64",media_type:"application/pdf",data:b}}]),[])).concat([{type:"text",text:GR_RCPT_PROMPT+grRcptListHint()}]);   // GR_RCPT6: photos labelled in order
     const txt=await kitCapAsk(content,null,{raw:true,maxTokens:6000});
     const m=String(txt).match(/\{[\s\S]*\}/); if(!m) throw new Error("Claude didn't send back a receipt — try a clearer photo");
     grRcptLoad(JSON.parse(m[0]));
@@ -13165,7 +13165,47 @@ function grRcptLoad(d){   // GR_COFLOW: from the checkout screen, the receipt is
   const R=_grRc; R.data=d; R.sid=(R.coSid&&R.coSid!=="all"&&grStores()[R.coSid])?R.coSid:grRcptStore(d.store); R.iso=(/^\d{4}-\d{2}-\d{2}$/.test(d.date||"")?d.date:_todayStr()); R.total=grMoney(d.total);
   grRcptMatch();
 }
+// 🧠 GR_SMARTMATCH: Claude names the list item for each receipt line (it sees her list); then a scored match — learned receipt
+// aliases, the same item, then words in common (receipt shorthand expanded: GRND → ground, CHKN → chicken, BNLS → boneless…, plurals and
+// partial words count) — and the BEST pairs are matched first, so an early line can't take a later line's better match. In-cart items get a
+// small nudge. Anything left unmatched is "➕ not on the list".
+const GR_ABBR={grnd:"ground",grd:"ground",chkn:"chicken",chk:"chicken",ckn:"chicken",chix:"chicken",brst:"breast",bnls:"boneless",bnl:"boneless",sknls:"skinless",
+  org:"organic",orgnc:"organic",wht:"white",whl:"whole",brd:"bread",chs:"cheese",chse:"cheese",shrd:"shredded",mozz:"mozzarella",parm:"parmesan",tom:"tomato",
+  pot:"potato",bnna:"banana",strwb:"strawberry",strw:"strawberry",grn:"green",yel:"yellow",lrg:"large",crm:"cream",bttr:"butter",btr:"butter",mlk:"milk",
+  yog:"yogurt",ygrt:"yogurt",lttc:"lettuce",ltc:"lettuce",onin:"onion",ppr:"pepper",sce:"sauce",pnut:"peanut",crkr:"cracker",ckie:"cookie",frz:"frozen",
+  frzn:"frozen",veg:"vegetable",vgtbl:"vegetable",bf:"beef",trky:"turkey",bcn:"bacon",saus:"sausage",dz:"dozen",doz:"dozen",appl:"apple",aple:"apple",
+  crt:"carrot",crrt:"carrot",bby:"baby",brcl:"broccoli",spnch:"spinach",cuke:"cucumber",avo:"avocado",jce:"juice",ff:"",gv:"",fl:"",oz:"",lb:"",lbs:"",ea:"",ct:"",pk:""};
+function grRcptToks(s){
+  const ex=String(s||"").toLowerCase().replace(/[^a-z0-9 ]+/g," ").split(/\s+/).map(function(w){ return Object.prototype.hasOwnProperty.call(GR_ABBR,w)?GR_ABBR[w]:w; }).join(" ");
+  return grKey(ex).split(" ").filter(function(w){ return w.length>2&&!/^\d+$/.test(w); });
+}
+function grRcptScore(row,c){
+  const cn=String((c&&c.name)||""), ck=grKey(cn); if(!ck) return 0;
+  if(row.list&&grKey(row.list)===ck) return 100;   // Claude matched it to her list by name
+  const al=(grData.alias||{})[kitSlug(row.line)]; if(al&&kitSlug(cn)===al) return 95;   // she matched this receipt text before
+  if(grKey(row.name)===ck) return 90;
+  const ct=grRcptToks(cn); if(!ct.length) return 0;
+  const rt=grRcptToks(row.name+" "+row.line); if(!rt.length) return 0;
+  let hit=0; ct.forEach(function(w){ if(rt.indexOf(w)>=0) hit+=1; else if(rt.some(function(x){ return x.length>=3&&(x.indexOf(w)===0||w.indexOf(x)===0); })) hit+=0.6; });
+  if(!hit) return 0;
+  const nt=grRcptToks(row.name);
+  return Math.round(70*hit/ct.length+10*Math.min(1,hit/Math.max(1,nt.length||rt.length))+(c.done?5:0));
+}
+function grRcptListHint(){
+  try{ const names=[], seen={}; const add=function(n){ const k=String(n||"").trim(); if(k&&!seen[k.toLowerCase()]){ seen[k.toLowerCase()]=1; names.push(k); } };
+    Object.keys(grData.items||{}).forEach(function(id){ add((grData.items[id]||{}).name); }); grVirtualRows().forEach(function(r){ add(r.name); });
+    if(!names.length) return "";
+    return '\nHer shopping list (use these EXACT names): '+JSON.stringify(names.slice(0,200))+'\nFor each receipt item set "list" to the exact name from her list that it is — receipts abbreviate (GRND BF = Ground beef, BNLS CHKN BRST = Chicken breast) — or null when it is not on her list. Use one list name for two lines only when she clearly bought it twice.';
+  }catch(e){ return ""; }
+}
 function grRcptMatch(){
+  const R=_grRc, cands=grRcptCands(R.sid);
+  R.rows=((R.data&&R.data.items)||[]).filter(x=>x&&grMoney(x.price)).map(x=>({line:String(x.line||x.name||""),name:String(x.name||x.line||"").slice(0,60),price:grMoney(x.price),reg:grMoney(x.regular),sale:!!x.sale||!!(grMoney(x.regular)&&grMoney(x.regular)>grMoney(x.price)),qty:x.qty>0?x.qty:null,list:x.list?String(x.list).slice(0,80):"",match:"x",auto:"x"}));
+  const pairs=[]; R.rows.forEach(function(r,i){ cands.forEach(function(c){ const sc=grRcptScore(r,c); if(sc>=45) pairs.push([sc,i,grRcptKey(c)]); }); });
+  pairs.sort(function(a,b){ return (b[0]-a[0])||(a[1]-b[1]); });
+  const uR={}, uC={}; pairs.forEach(function(p){ if(uR[p[1]]||uC[p[2]]) return; uR[p[1]]=1; uC[p[2]]=1; R.rows[p[1]].match=p[2]; R.rows[p[1]].auto=p[2]; });
+}
+function grRcptMatchOld(){
   const R=_grRc, cands=grRcptCands(R.sid); const used={};
   R.rows=((R.data&&R.data.items)||[]).filter(x=>x&&grMoney(x.price)).map(x=>{
     const g=grRcptGuess(x.line||x.name,x.name||x.line,cands.filter(c=>!used[grRcptKey(c)]));
@@ -13219,7 +13259,7 @@ function grRcptDraw(){
     +'<span>'+esc(R.iso)+'</span>'+(R.total?'<span>· total '+grFmt$(R.total)+'</span>':'')+'</div>'
     +'<div style="font-size:11.5px;color:#64748b;margin:-2px 0 6px">✏️ A price that doesn\'t match the paper? Tap it and type what the receipt says.</div>';   // GR_RCPTFIX
   const _used={}; R.rows.forEach(function(x){ if(x&&x.match&&x.match!=="x") _used[x.match]=(_used[x.match]||0)+1; });   // GR_RCPTSHRINK: what's already matched
-  const _ord=cands.slice().sort(function(p,q){ return ((q.done?1:0)-(p.done?1:0))||String(p.name).localeCompare(String(q.name)); });
+  const _ord=cands.slice().sort(function(p,q){ return String(p.name).localeCompare(String(q.name),undefined,{sensitivity:"base"}); });   // GR_SMARTMATCH: plain A–Z
   const opt=(r,i)=>'<select onchange="_grRc.rows['+i+'].match=this.value;grRcptDraw()" style="max-width:150px;padding:4px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:11.5px;font-family:\'DM Sans\',sans-serif"><option value="x"'+(r.match==="x"?' selected':'')+'>➕ not on the list</option>'
     +_ord.filter(c=>{ const k=grRcptKey(c); return k===r.match||!_used[k]; }).map(c=>'<option value="'+grRcptKey(c)+'"'+(r.match===grRcptKey(c)?' selected':'')+'>'+(c.done?'✓ ':'')+esc(c.name)+'</option>').join('')+'</select>';
   const row=(r,i)=>'<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid #eef2f0"><div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:700">'+esc(r.name)+'</div><div style="font-size:10.5px;color:#94a3b8;font-family:monospace">'+esc(r.line)+'</div></div>'
@@ -13230,11 +13270,11 @@ function grRcptDraw(){
     if(R.total) h+='<div style="font-size:11.5px;color:'+(_sum>R.total+0.01||R.total-_sum>R.total*0.15?'#b45309':'#64748b')+';margin:4px 0 2px">Lines add up to <b>'+grFmt$(_sum)+'</b> · receipt total <b>'+grFmt$(R.total)+'</b>'+(_sum>R.total+0.01?' — more than the total: a line may have been read twice':R.total-_sum>R.total*0.15?' — well under the total: a line may be missing (or it\'s mostly tax)':' — the difference is usually tax')+'</div>'; }
   h+='<div style="font-size:11px;font-weight:800;color:#2B7A78;text-transform:uppercase;margin-top:10px">➕ Extras — not on the list ('+extras.length+')</div><div style="font-size:11px;color:#94a3b8">Pick where each one goes — or 🚫 Not for the house. Its price is saved either way.</div>'+R.rows.map((r,i)=>r.match==="x"?row(r,i):'').join('');
   const notOn=cands.filter(c=>!matched[grRcptKey(c)]&&c.done); R.no=R.no||{};   // GR_COFLOW: checked off, but not on the receipt
-  const _noBack=notOn.filter(c=>R.no[grRcptKey(c)]==="back").length;   // GR_RCPT6: a long list folds to one line until she opens it
-  if(notOn.length>3&&!R.noOpen) h+='<div style="margin-top:10px;padding:8px 10px;background:#fffbeb;border-radius:10px;display:flex;align-items:center;gap:8px"><span style="flex:1;font-size:12px;color:#78350f"><b>❓ '+notOn.length+' checked off, but not on this receipt</b> — '+(_noBack?(notOn.length-_noBack)+' counted as bought, '+_noBack+' going back on the list':'all counted as bought ✓')+'</span>'
+  const _noBack=notOn.filter(c=>(R.no[grRcptKey(c)]||"back")==="back").length;   // GR_RCPT6: a long list folds to one line until she opens it
+  if(notOn.length>3&&!R.noOpen) h+='<div style="margin-top:10px;padding:8px 10px;background:#fffbeb;border-radius:10px;display:flex;align-items:center;gap:8px"><span style="flex:1;font-size:12px;color:#78350f"><b>❓ '+notOn.length+' checked off, but not on this receipt</b> — '+(_noBack===notOn.length?'not bought — they go back on your list':(notOn.length-_noBack)+' still bought, '+_noBack+' going back on the list')+'</span>'
     +grRcptChip(false,"Review","_grRc.noOpen=true;grRcptDraw()")+'</div>';
   else if(notOn.length) h+='<div style="font-size:11px;font-weight:800;color:#b45309;text-transform:uppercase;margin-top:10px">❓ Checked off, but not on this receipt ('+notOn.length+')</div>'
-    +notOn.map(c=>{ const k=grRcptKey(c), v=R.no[k]||"kept";
+    +notOn.map(c=>{ const k=grRcptKey(c), v=R.no[k]||"back";
       return '<div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid #eef2f0"><span style="flex:1;font-size:12.5px;font-weight:700">'+esc(c.name)+'</span>'
         +grRcptChip(v==="kept","Still bought","grRcptNo('"+k+"','kept')")+grRcptChip(v==="back","Didn't get it","grRcptNo('"+k+"','back')")+'</div>'; }).join('');
   if(still.length) h+='<div style="font-size:11px;font-weight:800;color:#b45309;text-transform:uppercase;margin-top:10px">⚠ Still need — not on this receipt ('+still.length+')</div><div style="font-size:12px;color:#64748b">'+still.map(c=>esc(c.name)).join(', ')+' — they stay on the list.</div>';
@@ -13267,7 +13307,7 @@ function grRcptSave(){
       grMemBought(nm,sec);
     }
   });
-  Object.keys(R.no||{}).forEach(k=>{ if(R.no[k]!=="back") return; const c=byKey[k]; if(!c) return;   // GR_COFLOW: didn't get it → back on the list
+  (function(){ const _m={}; R.rows.forEach(function(r){ if(r.match&&r.match!=="x") _m[r.match]=1; }); return cands.filter(function(c){ return c.done&&!_m[grRcptKey(c)]; }).map(grRcptKey); })().forEach(k=>{ if(((R.no||{})[k]||"back")!=="back") return; const c=byKey[k]; if(!c) return;   // GR_COFLOW: didn't get it → back on the list
     if(c.id){ const it=grData.items[c.id]; if(it&&it.done){ it.done=false; delete it.doneTs; grPut(c.id,it); } }
     else if(c.key&&grData.vchk[c.key]){ delete grData.vchk[c.key]; if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/vchk/'+c.key).remove(); } });
   kitBuyLog[iso]=dayMap; try{ HA_LS.setItem('ha_kit_buylog',JSON.stringify(kitBuyLog)); }catch(e){}
