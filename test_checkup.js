@@ -21,7 +21,9 @@ function mastFullBank(kid){ const out={}; (Object.values(masteryData[kid+"_custo
 function mastGetPrintNum(){ return 40; } function mstTodayKey(){ return DAYKEY; } var DAYKEY="20261005";
 function mastStampNextDue(it,items,tier,pn){ it.next_due=pn+28; }
 function mastDefKeyOk(n){ return !/[.#$\\[\\]\\/]/.test(n); }
-var MOM=true; function momHere(){ return MOM; } function _dryRun(){ return false; }
+var MOM=true; var adminPinUnlocked=false; function momHere(){ return MOM||adminPinUnlocked; } function _dryRun(){ return false; }
+var PINGATE=[]; var RENDERS=0; function renderAll(){ RENDERS++; }
+function kitPinGate(then,why){ if(momHere()){ then(); return; } PINGATE.push(why); adminPinUnlocked=true; then(); }   // a correct PIN, instantly
 var WRITES=[]; var db={ref:p=>({update:v=>WRITES.push(["update",p,v]),set:v=>WRITES.push(["set",p,v])})};
 var HA_LS={setItem(){},getItem(){return null;},removeItem(){}};
 var TOASTS=[]; function gwShowToast(t){ TOASTS.push(t); } function _mastRe(){}
@@ -42,9 +44,9 @@ function stage7() {
   return cards;
 }
 const run = new Function(stubs + engine + ck + `
-return {ckSlug,ckFactors,ckHard,ckQuickPicks,ckFamilies,ckPlan,ckTodayLeft,ckGrade,ckResultTier,ckCardLine,ckRenderHtml,ckTap,ckStart,ckFlip,unitStageCheckup,
+return {ckSlug,ckFactors,ckHard,ckQuickPicks,ckFamilies,ckPlan,ckTodayLeft,ckGrade,ckResultTier,ckCardLine,ckRenderHtml,ckTap,ckStart,ckFlip,ckStop,ckMomStart,unitStageCheckup,
   mstSessions,mstOwns,mstOwnedIds,mstPile,
-  get:()=>({masteryData,WRITES,TOASTS,unitStudies}), set:(k,v)=>{ if(k==="MOM") MOM=v; if(k==="DAYKEY") DAYKEY=v; if(k==="unitStageForm") unitStageForm=v; if(k==="unitStudies") unitStudies=v; if(k==="masteryData") masteryData=v; },
+  get:()=>({masteryData,WRITES,TOASTS,unitStudies,adminPinUnlocked,PINGATE,RENDERS}), set:(k,v)=>{ if(k==="MOM") MOM=v; if(k==="DAYKEY") DAYKEY=v; if(k==="unitStageForm") unitStageForm=v; if(k==="unitStudies") unitStudies=v; if(k==="masteryData") masteryData=v; },
   clearWrites:()=>{ WRITES.length=0; TOASTS.length=0; } };`)();
 
 // ── factors + hardness ────────────────────────────────────────────
@@ -181,5 +183,21 @@ ok(z.length === 12, "0s: 5 asked + 7 untested minted (12 cards): " + z.length);
 ok(z.filter(i => i.tier === "monthly" && i.next_due === 68).length === 7, "7 untested → monthly with next_due");
 ok(G.TOASTS.some(t => /passed/.test(t)), "toast: passed");
 
+// ── 🔒 Mom's code on the kid's screen (her ask 2026-10-05) ───────
+run.ckStop(); run.set("MOM", false);
+ok(/ckMomStart\('taylor','checkup_math_fluency_path_7'\)/.test(run.ckRenderHtml("taylor", sess)) && /Mom: start the check-up/.test(run.ckRenderHtml("taylor", sess)), "kid view has a Start button for Mom");
+ok(!/×/.test(run.ckRenderHtml("taylor", sess).replace(/× and ÷ facts/g, "")), "…and still no facts on it");
+run.ckMomStart("taylor", sid);
+ok(run.get().PINGATE.length === 1 && /code/.test(run.get().PINGATE[0]), "the button asks for Mom's code");
+ok(run.get().adminPinUnlocked === true && /✓ Got it/.test(run.ckRenderHtml("taylor", sess)), "a correct PIN starts the sitting on this screen");
+const rBefore = run.get().RENDERS;
+run.ckStop();
+ok(run.get().adminPinUnlocked === false && run.get().RENDERS === rBefore + 1, "Stop for today locks the screen again (and redraws)");
+ok(/Mom: start the check-up/.test(run.ckRenderHtml("taylor", sess)), "…kid view is back to the Start button");
+run.set("MOM", true); run.ckMomStart("taylor", sid);
+ok(run.get().PINGATE.length === 1, "Mom's own view: no PIN asked");
+run.ckStop();
+ok(run.get().RENDERS === rBefore + 1, "…and Stop does not touch the lock when Mom was already here");
+run.set("MOM", false);
 console.log(pass + " passed, " + fail + " failed");
 if (fail) process.exit(1);

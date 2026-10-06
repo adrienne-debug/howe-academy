@@ -44906,8 +44906,15 @@ function ckProgressText(p){ return p.checked+" of "+p.families+" families checke
 function ckRenderHtml(kid,session){
   if(ckTimerIv){ clearInterval(ckTimerIv); ckTimerIv=null; }
   const box='background:#f0fdfa;border:2px solid #99f6e4;border-radius:20px;padding:20px;margin-bottom:16px;font-family:\'DM Sans\',sans-serif';
-  if(!(typeof momHere==="function"&&momHere()))   // her rule 2026-10-04: a check-up is never run on a kid's own screen
-    return '<div style="'+box+';text-align:center"><div style="font-size:34px">\u{1FA7A}</div><div style="font-size:16px;font-weight:800;color:#0f766e;margin-top:6px">This is a check-up with Mom.</div><div style="font-size:13px;color:var(--muted);margin-top:4px">Ask Mom when she’s ready.</div></div>';
+  if(!(typeof momHere==="function"&&momHere())){   // her rule 2026-10-04: a check-up is never run on a kid's own screen…
+    // …but Mom can run it HERE (her ask 2026-10-05): a Start button asks for her code; the screen locks again when the sitting ends.
+    const kc=ckCards(session); let kdone=false;
+    if(kc.length){ const kst=ckState(kid,session.sid), kp=ckPlan(kc,session,kst); kdone=kp.complete||!Math.min(kp.queue.length,ckTodayLeft(session,kst,ckDayKey(),0)); }
+    return '<div style="'+box+';text-align:center"><div style="font-size:34px">\u{1FA7A}</div><div style="font-size:16px;font-weight:800;color:#0f766e;margin-top:6px">This is a check-up with Mom.</div>'
+      +(kdone?'<div style="font-size:13px;color:#16a34a;font-weight:800;margin-top:6px">Today’s check-up is done ✓</div>'
+        :'<div style="font-size:13px;color:var(--muted);margin-top:4px">Ask Mom when she’s ready.</div><div style="margin-top:14px"><button onclick="ckMomStart(\''+ckEsc(kid)+'\',\''+ckEsc(session.sid)+'\')" style="min-height:52px;padding:0 28px;border-radius:16px;border:none;background:#0f766e;color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔒 Mom: start the check-up</button></div>')
+      +'</div>';
+  }
   const cards=ckCards(session);
   if(!cards.length) return '<div style="'+box+'">This check-up’s unit isn’t in your family yet.</div>';
   const st=ckState(kid,session.sid), p=ckPlan(cards,session,st), dk=ckDayKey();
@@ -44950,8 +44957,18 @@ function ckStart(kid,sid,extra){
   const prev=(ckRun&&ckRun.kid===kid&&ckRun.sid===sid)?ckRun.extra:0;
   ckRun={kid:kid,sid:sid,ts:Date.now(),extra:prev+(extra||0)}; ckRe();
 }
+// 🔒 Mom's code on the kid's screen (her ask 2026-10-05): the kid's view shows a Start button; Mom types her PIN in the
+// usual dialog, the sitting runs, and the moment it ends (Stop for today / today's share done) the screen locks again —
+// only when the unlock came through this door (Mom's own view stays as it was).
+let ckKidUnlock=false;
+function ckMomStart(kid,sid){
+  const was=(typeof momHere==="function"&&momHere());
+  const go=function(){ ckKidUnlock=!was; ckStart(kid,sid,0); };
+  if(typeof kitPinGate==="function") kitPinGate(go,"Mom types her code to run the check-up on this screen."); else go();
+}
+function ckRelock(){ if(!ckKidUnlock) return; ckKidUnlock=false; if(typeof adminPinUnlocked!=="undefined") adminPinUnlocked=false; if(typeof renderAll==="function") renderAll(); }
 function ckFlip(){ if(!ckRun) return; ckRun.show=!ckRun.show; ckRe(); }
-function ckStop(){ ckRun=null; if(ckTimerIv){ clearInterval(ckTimerIv); ckTimerIv=null; } ckRe(); }
+function ckStop(){ ckRun=null; if(ckTimerIv){ clearInterval(ckTimerIv); ckTimerIv=null; } ckRe(); ckRelock(); }
 function ckTap(r){
   if(!ckRun||!(typeof momHere==="function"&&momHere())) return;
   const kid=ckRun.kid, sid=ckRun.sid, s=ckSession(kid,sid); if(!s) return;
@@ -45000,7 +45017,7 @@ function ckTap(r){
   }
   ckRun.ts=Date.now(); ckRun.show=false;
   const p2=ckPlan(cards,s,st);
-  if(!p2.queue.length||!ckTodayLeft(s,st,dk,ckRun.extra)){ ckRun=null; }
+  if(!p2.queue.length||!ckTodayLeft(s,st,dk,ckRun.extra)){ ckRun=null; ckRelock(); }
   ckRe();
 }
 // Units page: the start form's check-up rows, and the enrolled kid's check-up line.
