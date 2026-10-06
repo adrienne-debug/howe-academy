@@ -5044,10 +5044,12 @@ function spinSlots(){
     var _gaT=slotPendingTaskId?(weekData.tasks||[]).find(function(x){ return x.id===slotPendingTaskId; }):null;
     var _gaOn=!!(_gaT&&_gaT.gotAhead&&outcome.pts>0), _gaTot=_gaOn?(outcome.pts+Math.round(outcome.pts*((typeof gaBonusPctFor==="function"?gaBonusPctFor(_gaT):50)/100))):0, _gaBid=null;
     if(_gaOn){ try{ _gaBid=bankDirect(k,_gaTot,"⏩ Got ahead — "+((typeof taskLessonRef==="function"&&taskLessonRef(_gaT))||_gaT.title||"")+" (spin "+outcome.pts+" + "+(_gaTot-outcome.pts)+")"); }catch(e){ _gaOn=false; } }
+    var _srOld=slotPendingTaskId?((ld(WK+"_spin_results")||{})[slotPendingTaskId]||null):null;   // 🎰 this card already spun once (e.g. day bonus after an un-tick/re-tick)
+    var _srGuard=slotPendingTaskId?(WK+"/spin_results/"+slotPendingTaskId+(_srOld?"/parts/"+spinRecParts(_srOld).length:"")):null;   // 📮 a 2nd spin's points replay unless THIS part reached the server
     if(outcome.pts>0){
       resEl.textContent=_gaOn?("+"+_gaTot+" points — straight to your bank!"):("+"+outcome.pts+" points!");
       resEl.className="slot-result show";
-      if(!_gaOn) addKidPoints(k,outcome.pts,d,slotPendingTaskId?(WK+"/spin_results/"+slotPendingTaskId):null);
+      if(!_gaOn) addKidPoints(k,outcome.pts,d,_srGuard);
       const todayPts=getKidDayPoints(k,d);
       const weekPts=getKidPoints(k);
       document.getElementById("slot-pts-display").textContent="Today ⭐"+todayPts+" · Week ⭐"+weekPts;
@@ -5063,6 +5065,7 @@ function spinSlots(){
       // Track per-task spin result for admin panel
       var _srRec={pts:outcome.pts,kid:k,day:d,ts:Date.now()};
       if(_gaOn){ _srRec.gaBank=_gaTot; _srRec.gaBonus=_gaTot-outcome.pts; if(_gaBid) _srRec.gaBid=_gaBid; msgEl.textContent=outcome.msg+"  ⏩ Got ahead: spin "+outcome.pts+" + "+(_gaTot-outcome.pts)+" bonus = "+_gaTot+" in your bank!"; }
+      if(_srOld) _srRec=spinMergeRec(_srOld,_srRec);   // 🎰 keep the earlier spin — never overwrite it
       var sr=ld(WK+"_spin_results")||{};
       var _sw=sr[slotPendingTaskId]; sr[slotPendingTaskId]=_srRec;
       sv(WK+"_spin_results",sr);
@@ -5072,6 +5075,19 @@ function spinSlots(){
   },totalTime);
 }
 function getSpinResult(taskId){ var sr=ld(WK+"_spin_results")||{}; return sr[taskId]||null; }
+// SPINMERGE_START 🎰 One card can earn TWO spins: its own, then the day bonus when an un-tick/re-tick makes it the
+// day's last card (DeWalt 10/5, Kenzie AAS 4 L3: 25 then 5). The 2nd used to OVERWRITE the 1st record — points paid
+// were right, but Mom's Spin & Points Manager showed 5 and Reset took back 5 instead of 30. Now both live in ONE
+// record: pts = the sum, parts = each spin (its own got-ahead bank id). A one-spin record has no parts, as before.
+function spinRecParts(rec){ if(!rec) return []; return (rec.parts&&rec.parts.length)?rec.parts:[rec]; }
+function spinMergeRec(old,rec){
+  var _cp=function(r){ var o={}; ["pts","kid","day","ts","gaBank","gaBonus","gaBid"].forEach(function(f){ if(r[f]!==undefined&&r[f]!==null) o[f]=r[f]; }); return o; };   // Firebase rejects undefined
+  var parts=spinRecParts(old).map(_cp).concat([_cp(rec)]);
+  var m=_cp(rec); delete m.gaBank; delete m.gaBonus; delete m.gaBid;
+  m.pts=parts.reduce(function(s,x){ return s+(x.pts||0); },0); m.parts=parts;
+  return m;
+}
+// SPINMERGE_END
 
 // ── SPIN & POINTS ADMIN (Mom View) ──────────────────────────────
 function renderSpinAdmin(d){
@@ -5191,12 +5207,14 @@ function spinAdminResetSpin(taskId,kid,d){
   // Remove from spin_results and subtract pts
   const sr=ld(WK+"_spin_results")||{};
   if(sr[taskId]){
-    const pts=sr[taskId].pts||0;
-    if(sr[taskId].gaBid&&typeof bankDirectRemove==="function"){ try{ bankDirectRemove(kid,sr[taskId].gaBid); }catch(e){} }   // ⏩ got-ahead: it was banked, not pooled
-    else if(pts>0){
-      const all=ld(WK+"_slot_points")||{};
-      if(all[kid]&&all[kid][d]){ all[kid][d]=Math.max(0,all[kid][d]-pts); sv(WK+"_slot_points",all); if(db) db.ref(WK+"/slot_points/"+kid+"/"+d).transaction(c=>Math.max(0,(c||0)-pts)); }
-    }
+    spinRecParts(sr[taskId]).forEach(p=>{   // 🎰 every spin on the card comes off (its own + a day bonus)
+      const pts=p.pts||0;
+      if(p.gaBid&&typeof bankDirectRemove==="function"){ try{ bankDirectRemove(kid,p.gaBid); }catch(e){} }   // ⏩ got-ahead: it was banked, not pooled
+      else if(pts>0){
+        const all=ld(WK+"_slot_points")||{};
+        if(all[kid]&&all[kid][d]){ all[kid][d]=Math.max(0,all[kid][d]-pts); sv(WK+"_slot_points",all); if(db) db.ref(WK+"/slot_points/"+kid+"/"+d).transaction(c=>Math.max(0,(c||0)-pts)); }
+      }
+    });
     delete sr[taskId];
     sv(WK+"_spin_results",sr); if(db) db.ref(WK+"/spin_results/"+taskId).remove(); // targeted
   }
@@ -9628,7 +9646,7 @@ document.getElementById("dlg-uncheck").onclick=()=>{
   if(db) db.ref(WK+"/history/"+id).remove();
   try{ lidDoneRemove(weekData.tasks.find(x=>x.id===id),id); }catch(e){ dbg("lid done remove skip: "+e); }
   try{ const _mt=weekData.tasks.find(x=>x.id===id); if(_mt&&Array.isArray(_mt.lids)) _mt.lids.forEach(function(l){ if(l&&l!==_mt.lid) lidDoneRemove(Object.assign({},_mt,{lid:l}),id); }); }catch(e){}   // 🧩 un-checking a merged card un-does every lesson on it
-  try{ const _sr=(ld(WK+"_spin_results")||{})[id]; if(_sr&&_sr.gaBid&&typeof bankDirectRemove==="function") bankDirectRemove(_sr.kid,_sr.gaBid); }catch(e){}   // ⏩ sent back → the got-ahead bonus comes off
+  try{ const _sr=(ld(WK+"_spin_results")||{})[id]; spinRecParts(_sr).forEach(function(p){ if(p.gaBid&&typeof bankDirectRemove==="function") bankDirectRemove(p.kid||_sr.kid,p.gaBid); }); }catch(e){}   // ⏩ sent back → the got-ahead bonus comes off
   try{ const _ft=weekData.tasks.find(x=>x.id===id); if(_ft&&_ft.famBlock&&typeof famUncheckSiblings==="function") famUncheckSiblings(_ft); }catch(e){ dbg("family uncheck: "+e); }   // 👨‍👩‍👧
   closeDlg(); schedCascade(); renderAll();
 };
