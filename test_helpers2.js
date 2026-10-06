@@ -110,7 +110,7 @@ ok(e.helpersPopHTML("g").includes("&#9989;"),"done card shows ✅ in her list");
 // ── Part A2: hooks are wired ───────────────────────────────────────────────
 ok(src.includes('db.ref("helperDays").orderByKey().limitToLast(3).on("value"'),"session listener wired");
 ok(src.includes('h+=helpersStripHTML();'),"strip on today's schedule");
-ok(/const verify=needsVerify\(t\)&&!momHere\(\)&&!\(typeof helperHolds==="function"&&helperHolds\(t\)\)/.test(src),"helper card is a plain check-off, not 'send to Mom'");
+ok(/const verify=needsVerify\(t\)&&!momHereCards\(\)&&!\(typeof helperHolds==="function"&&helperHolds\(t\)\)/.test(src),"helper card is a plain check-off, not 'send to Mom'");
 ok(src.includes('if(_hp) entry.helper=helperName(_hp);'),"history remembers the helper");
 ok(src.includes("' with '+esc(helperName(_hlpId))")&&src.includes("done with '+esc(histState[srcId].helper)"),"card badge: with / done with");
 

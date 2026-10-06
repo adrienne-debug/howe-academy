@@ -8,7 +8,7 @@ let pass=0, fail=0; const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n)
 const pz=src.match(/const PAN_ZONES=\[[^\n]*\];/)[0], gp=src.match(/const GR_PLACES=\[[^\n]*\];/)[0];
 ok("🧻 Household is a place in the house inventory (never goes old)", /\["household","🧻 Household",3650\]/.test(pz));
 ok("…and a put-away choice", /\["household","🧻 Household"\]/.test(gp));
-ok("photos: up to 6 in all", /slice\(0,Math\.max\(0,6-\(\(_grRc&&_grRc\.imgs\)\|\|\[\]\)\.length\)\)/.test(src));
+ok("photos: up to 6 in all (PDFs count toward the 6 too)", /slice\(0,Math\.max\(0,6-\(\(_grRc&&_grRc\.imgs\)\|\|\[\]\)\.length/.test(src));
 ok("the prompt reads several photos as ONE receipt and lists overlapping lines once", /ONE receipt, in order from the top to the bottom/.test(src)&&/List each overlapping line ONCE/.test(src));
 function mk(){
   const pantry=[], pop={innerHTML:""}; let asked=null;

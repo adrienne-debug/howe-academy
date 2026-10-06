@@ -13,7 +13,7 @@ const fd=fn("finalizeDone"); ok(!/nbChkOpen\(t\.who,WK,t\.day\)/.test(html.slice
 console.log("The card button");
 const tc=fn("taskCard");
 ok(tc.indexOf("// NBANS_START")>0&&tc.indexOf("// NBANS_END")>tc.indexOf("// NBANS_START"),"marked block inside taskCard");
-ok(/const nbAnsRow=\(!readOnly&&momHere\(\)&&typeof NB_WB_KIDS!=="undefined"&&NB_WB_KIDS\[t\.who\]&&\/Morning Notebook\/\.test\(t\.title\|\|""\)/.test(tc),"button gated on Mom mode + bank kid + Morning Notebook");
+ok(/const nbAnsRow=\(!readOnly&&momHereCards\(\)&&typeof NB_WB_KIDS!=="undefined"&&NB_WB_KIDS\[t\.who\]&&\/Morning Notebook\/\.test\(t\.title\|\|""\)/.test(tc),"button gated on Mom mode + bank kid + Morning Notebook");
 ok(/\+prRow\+nbAnsRow\+/.test(tc),"button row is in the card");
 ok(/nbChkOpen\(\\''\+t\.who\+'\\',WK,\\''\+\(t\.day\|\|""\)\+'\\'\)/.test(tc),"button opens the sheet for that kid and day");
 

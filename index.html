@@ -3812,6 +3812,9 @@ function initFb() {
       schedCascade(); // curriculum may be the LAST loader to answer — re-arm the debounced sweep
     });
     db.ref("config/helpers").on("value",s=>{ helpersOnValue(s.val()); });
+    db.ref("settings/laundryTimes").on("value",s=>{ if(typeof laundryTimesOnValue==="function") laundryTimesOnValue(s.val()); });   // 🧺 LAUNDRYTIMES
+    db.ref("settings/momTips").on("value",s=>{ if(typeof momTipsOnValue==="function") momTipsOnValue(s.val()); });   // 👋 Mom how-to banners she has closed
+    db.ref("settings/whatsNewSeen").on("value",s=>{ if(typeof whatsNewOnValue==="function") whatsNewOnValue(s.val()); });   // ✨ the What's new she has read
     db.ref("famProgress").on("value",s=>{ if(typeof famProgOnValue==="function") famProgOnValue(s.val()); });   // 📚 family subjects' shared place-in-book   // 🙋 helper profiles
     try{ db.ref("helperDays").orderByKey().limitToLast(3).on("value",s=>{ helperDaysOnValue(s.val()); }); }catch(e){}   // 🙋 who is here today
     db.ref("worksheets").on("value",s=>{ wsOnValue(s.val()); });   // 📋 worksheets from Adrienne
@@ -6252,13 +6255,13 @@ function wsRowsHTML(now){
 }
 // 🏡 Mom's Day: a "From Adrienne" task card, right under her own day.
 function wsTaskHTML(now){
-  const rows=wsRowsHTML(now), btns=msgBtnsHTML(); if(!rows&&!btns) return "";
+  const rows=(typeof wnRowHTML==="function"?wnRowHTML():"")+wsRowsHTML(now), btns=msgBtnsHTML(); if(!rows&&!btns) return "";
   return '<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);padding:11px 14px 13px">'+
     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div style="font-weight:800;font-size:13px;color:#1e3a8a;flex:1">📋 From Adrienne</div>'+btns+'</div>'+rows+'</div>';
 }
 // 🏡 Mom HQ: the same rows on top of the map (Mom HQ is already behind the PIN).
 function wsBannerHTML(now){
-  const rows=wsRowsHTML(now), btns=msgBtnsHTML(); if(!rows&&!btns) return "";
+  const rows=(typeof wnRowHTML==="function"?wnRowHTML():"")+wsRowsHTML(now), btns=msgBtnsHTML(); if(!rows&&!btns) return "";
   return '<div style="margin:0 0 12px">'+(btns?'<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">'+btns+'</div>':'')+rows+'</div>';
 }
 // A tap outside Mom mode asks for the Mom PIN first (the recipe gate, with its own words).
@@ -7653,6 +7656,7 @@ function renderSchedule(el){
   // another day's view where "ready" and "paused" have no meaning.
   if(day===_todayDay){ try{ h+=helpersStripHTML(); }catch(e){} }   // 🙋 "Grandma here?"
   try{ h+=helperViewHeadHTML(day); }catch(e){}   // 🙋 "Grandma's list"
+  if(day===_todayDay){ try{ if(typeof momTipsScheduleHTML==="function") h+=momTipsScheduleHTML(!!mlStripHTML()); }catch(e){} }   // MOMNEWS: 👋 Mom banners above the strip
   if(day===_todayDay){ try{ h+=mlStripHTML(); }catch(e){} }
   // Stage 2: the kid's own "Mom's ready for you" banner — their page only, today only.
   if(day===_todayDay&&kid!=="all"&&kid!=="mom"){ try{ h+=mlBannerHTML(kid); }catch(e){} }
@@ -8014,6 +8018,9 @@ function notebookBlock(){
 
 // ── MOM CHECK (verify) + SCORES ──────────────────────────────────
 function momHere(){ return momModeActive||adminPinUnlocked; }
+// 🧒 KIDCARDS (her yes 2026-10-06): on Kids' Corner the schedule cards, the tap and the check-off dialog are always the kid's — even
+// with Mom mode left on that tablet. Everywhere else they follow Mom mode as before.
+function momHereCards(){ return momHere()&&!(typeof tab!=="undefined"&&tab==="kids"); }
 // The "Carried Over" mirror box is HIDDEN from a kid's own view by DEFAULT (a big pile
 // overwhelms). An explicit false in rulesData.hideCarryoverKids re-shows it for that kid.
 function carryHidden(who){
@@ -8969,10 +8976,10 @@ function taskCard(t, fromDay, readOnly, doneId){
   const _he=histState[srcId];
   const scoreChip=(done&&_he&&_he.score)?' <span style="display:inline-block;margin-left:6px;font-size:10px;font-weight:700;color:#3730a3;background:#e0e7ff;padding:1px 7px;border-radius:8px">📊 '+scoreLabel(_he.score)+'</span>':"";
   const rvChip=(done&&_he&&_he.review)?' <span style="display:inline-block;margin-left:6px;font-size:10px;font-weight:700;color:#5b21b6;background:#ede9fe;padding:1px 7px;border-radius:8px">📅 review '+(_he.review.minutes||"")+'m</span>':"";   // 📅
-  const rvDoneBtn=(done&&momHere()&&!readOnly&&!t.review&&!(_he&&_he.review))?' <button onclick="event.stopPropagation();rvOpen(\''+srcId+'\')" title="Book a review with Mom" style="margin-left:6px;padding:1px 7px;border-radius:8px;border:1px solid #7c3aed;background:#fff;color:#7c3aed;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">📅</button>':"";
+  const rvDoneBtn=(done&&momHereCards()&&!readOnly&&!t.review&&!(_he&&_he.review))?' <button onclick="event.stopPropagation();rvOpen(\''+srcId+'\')" title="Book a review with Mom" style="margin-left:6px;padding:1px 7px;border-radius:8px;border:1px solid #7c3aed;background:#fff;color:#7c3aed;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">📅</button>':"";
   let dr=done?'<div class="done-row">✓ '+checked[srcId]+scoreChip+rvChip+rvDoneBtn+'</div>':"";
   if(claimedHere){
-    if(momHere()&&!readOnly){
+    if(momHereCards()&&!readOnly){
       dr='<div class="done-row" style="background:#fffbeb;color:#b45309;display:flex;align-items:center;gap:6px;flex-wrap:wrap">⏳ Claimed '+claimed[srcId]+
         '<button onclick="event.stopPropagation();momApprove(\''+srcId+'\')" style="padding:3px 10px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Approve</button>'+
         rvBtn(srcId)+   // 📅 Review with Mom
@@ -9016,10 +9023,10 @@ function taskCard(t, fromDay, readOnly, doneId){
   const prRow=(!readOnly&&!done&&typeof prCardRow==="function")?prCardRow(t,done):"";   // ✏️ PRACTICE: this lesson's words + today's activity   // 📝 SPELLTEST: Mom's test button on the lesson-day card
   // NBANS_START — 📓 Answers: Mom-mode button on a bank kid's Morning Notebook card (her ask 2026-10-05: "not come up on his device,
   // just a button I can click to pull up the answers in Mom mode"). Opens the day's sheet: Daily Grams key page + the three bank answers.
-  const nbAnsRow=(!readOnly&&momHere()&&typeof NB_WB_KIDS!=="undefined"&&NB_WB_KIDS[t.who]&&/Morning Notebook/.test(t.title||"")&&typeof nbChkOpen==="function")
+  const nbAnsRow=(!readOnly&&momHereCards()&&typeof NB_WB_KIDS!=="undefined"&&NB_WB_KIDS[t.who]&&/Morning Notebook/.test(t.title||"")&&typeof nbChkOpen==="function")
     ?'<div style="margin-top:5px"><span onclick="event.stopPropagation();nbChkOpen(\''+t.who+'\',WK,\''+(t.day||"")+'\')" title="This day\u2019s notebook answers (Daily Grams key + the three test-prep items)" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#166534;cursor:pointer;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4D3} Answers \u2192</span></div>':"";
   // NBANS_END
-  const rvRow=(t.review&&momHere()&&!readOnly&&!done)?'<div style="margin-top:5px"><span onclick="event.stopPropagation();rvRemove(\''+t.id+'\')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#7c3aed;cursor:pointer;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">✕ Remove review</span></div>':"";   // 📅
+  const rvRow=(t.review&&momHereCards()&&!readOnly&&!done)?'<div style="margin-top:5px"><span onclick="event.stopPropagation();rvRemove(\''+t.id+'\')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#7c3aed;cursor:pointer;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">✕ Remove review</span></div>':"";   // 📅
   // WB_ANS_AFTER_DONE — ✅ Check answers only once the card is done or waiting for Mom (her ask 2026-10-06: "after only").
   const wbRow=(_wbl&&!_eicL)?'<div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap"><span onclick="event.stopPropagation();wbOpenFor(\''+_wbl.bookId+'\',\''+t.who+'\','+_wbl.page+','+esc(JSON.stringify(wbAssignFor(t)))+')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4D5} Open '+esc(taskLessonRef(t)||_wbl.name)+' →</span>'
     +(_wbl.ans&&(done||claimedHere)?'<span onclick="event.stopPropagation();wbOpenCheck(\''+_wbl.bookId+'\',\''+t.who+'\','+_wbl.page+','+_wbl.ans+','+esc(JSON.stringify(wbAssignFor(t)))+')" title="his page and the answer key side by side" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#065f46;cursor:pointer;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">&#9989; Check answers</span>':'')
@@ -9073,7 +9080,7 @@ function taskCard(t, fromDay, readOnly, doneId){
     const _dttl=_forGood?"Mom skipped this lesson for good — the next lesson moves up":"Mom dismissed this for the day — it comes back next week";
     return '<div class="task-card" style="opacity:0.6;border-left:3px solid #cbd5e1;background:#f9fafb">'+
       '<div class="card-inner">'+
-      '<div class="task-cb" style="border-color:#d1d5db;color:#9ca3af;background:#f3f4f6;cursor:'+(momHere()?"pointer":"default")+'"'+(momHere()?' onclick="tapTask(\''+t.id+'\')"':'')+'>&#128683;</div>'+
+      '<div class="task-cb" style="border-color:#d1d5db;color:#9ca3af;background:#f3f4f6;cursor:'+(momHereCards()?"pointer":"default")+'"'+(momHereCards()?' onclick="tapTask(\''+t.id+'\')"':'')+'>&#128683;</div>'+
       '<div class="card-body">'+
       '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
       '<div class="task-title" style="color:#6b7280"><div style="font-size:10px;font-weight:700;color:#4b5563;background:#e5e7eb;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px" title="'+_dttl+'">&#128683; '+_dlbl+'</div><br>'+t.title+'</div>'+mb+'</div>'+
@@ -9501,7 +9508,7 @@ function tapTask(id){
   const t=weekData.tasks.find(x=>x.id===id); if(!t)return;
   if(checkoffHeld()){ _checkoffHeldToast(); return; }
   // 👨‍👩‍👧 Family time: Mom checks it off once for everyone (her rule 2026-10-03) — a kid's tap only says so.
-  if(t.famBlock&&!momHere()){
+  if(t.famBlock&&!momHereCards()){
     // ⭐ "rate each other" (step C): the kid's tap opens THEIR rating of the others — that is their check-off
     if(!checked[id]&&typeof famKidsRate==="function"&&famKidsRate(t)){
       if(t.famGave&&Object.keys(t.famGave).length){ if(typeof gwShowToast==="function") gwShowToast("\u2B50 Your stars are in \u2014 waiting for the others to rate you"); }
@@ -9510,7 +9517,7 @@ function tapTask(id){
     }
     if(typeof gwShowToast==="function") gwShowToast(checked[id]?"\u2713 Mom checked off family time":"\u{1F3E1} Family time \u2014 Mom checks this off for everyone"); return; }
   // ⭐ points (step C): Mom's ✓ on a family card that pays opens her one screen — every kid at full stars
-  if(t.famBlock&&momHere()&&!checked[id]&&typeof famPtsMax==="function"&&famPtsMax(t)>0){ famRateOpen(id); return; }
+  if(t.famBlock&&momHereCards()&&!checked[id]&&typeof famPtsMax==="function"&&famPtsMax(t)>0){ famRateOpen(id); return; }
   const isDone=!!checked[id];
   const isClaimed=!isDone&&!!claimed[id];
   const future=DAYS.indexOf(t.day)>DAYS.indexOf(day);
@@ -9536,7 +9543,7 @@ function tapTask(id){
     document.getElementById("dlg").style.display="flex"; return;
   }
   // Not done, not claimed — when this subject needs Mom's check and Mom isn't here, the tap becomes a claim
-  const verify=needsVerify(t)&&!momHere()&&!(typeof helperHolds==="function"&&helperHolds(t));   // 🙋 the helper checks it
+  const verify=needsVerify(t)&&!momHereCards()&&!(typeof helperHolds==="function"&&helperHolds(t));   // 🙋 the helper checks it
   pendingClaimMode=verify;
   const _vref=taskLessonRef(t);
   document.getElementById("dlg-detail").textContent=verify?(t.detail+"  —  Leave your work open"+(_vref?" to "+_vref:"")+" for Mom to check; it counts once she approves."):t.detail;
@@ -9548,7 +9555,7 @@ function tapTask(id){
     document.getElementById("dlg-detail").textContent="\u{1F3E1} Checks this off for everyone: "+_fw+".";
     btn.textContent="\u2713 Done \u2014 everyone";
   }
-  if(momHere()&&!t.id.endsWith("_c")&&!t.famBlock){
+  if(momHereCards()&&!t.id.endsWith("_c")&&!t.famBlock){
     const p=momMoves[id];
     if(p){
       // Already moved — the only thing left to offer is putting it back.
@@ -9620,7 +9627,7 @@ document.getElementById("dlg-ok").onclick=()=>{
     // prompt, and no "write checked" line in the log claiming otherwise. Mom gets the
     // approve-through offer; a kid just sees the guard's own toast.
     closeDlg(); renderAll();
-    if(momHere()) openOrderBlockDialog(id, ts, null);
+    if(momHereCards()) openOrderBlockDialog(id, ts, null);
     return;
   }
   try{ if(t.famBlock&&typeof famSiblings==="function") famSiblings(t).forEach(function(x){ if(!checked[x.id]) finalizeDone(x.id, ts, null); }); }catch(e){ dbg("family fan-out: "+e); }   // 👨‍👩‍👧 one tap, every kid
@@ -9635,8 +9642,8 @@ document.getElementById("dlg-ok").onclick=()=>{
   // Trace skips: a reported "second same-subject task never asked for its score"
   // couldn't be reproduced — this logs WHICH guard failed when it happens live.
   // (t comes from a find() at tap time; a mid-tap regen re-key makes it undefined.)
-  if(momHere()&&t&&scoredType(t)) openScoreDialog(id, ts, "edit");
-  else if(momHere()) dbg("score skip: id="+id+" t="+(t?"found":"MISSING")+" scored="+(t?(scoredType(t)||"no"):"n/a"));
+  if(momHereCards()&&t&&scoredType(t)) openScoreDialog(id, ts, "edit");
+  else if(momHereCards()) dbg("score skip: id="+id+" t="+(t?"found":"MISSING")+" scored="+(t?(scoredType(t)||"no"):"n/a"));
 };
 document.getElementById("dlg-uncheck").onclick=()=>{
   if(!pendingId)return;
@@ -10510,7 +10517,35 @@ function momChoresCardHTML(iso,today){
 // ── 🧺 Laundry — loads move washer → dryer → fold → put away (gone) ────
 const LAUNDRY_STAGES=["washer","dryer","fold"];
 const LAUNDRY_STAGE_META={washer:["🫧","In the washer"],dryer:["🌀","In the dryer"],fold:["🧺","Fold pile"]};
-const LAUNDRY_STALE_MIN=90; // washer-sitting threshold before the NOW nudge (mildew guard)
+const LAUNDRY_STALE_MIN=90; // washer-sitting threshold before the NOW nudge (mildew guard) — now = washer minutes + reminder (60 + 30 by default)
+// 🧺 LAUNDRYTIMES (her ask 2026-10-06): Mom sets how long the washer and dryer take and how long after a cycle ends to remind her.
+// settings/laundryTimes {wash,dry,grace} minutes, one per family (defaults 60 / 60 / 30 — the old 90-minute washer nudge exactly).
+let laundryTimes={}, laundryEditOpen=false;
+try{ laundryTimes=JSON.parse(HA_LS.getItem('ha_laundry_times')||"{}")||{}; }catch(e){}
+function laundryTimesOnValue(v){ laundryTimes=v||{}; try{ HA_LS.setItem('ha_laundry_times',JSON.stringify(laundryTimes)); }catch(e){} }
+function laundryT(k){ const d={wash:60,dry:60,grace:30}[k]; const v=parseInt((laundryTimes||{})[k],10); return (v>0&&v<=600)?v:d; }
+function laundryDoneAt(l){ const m=(l&&l.stage==="washer")?laundryT("wash"):(l&&l.stage==="dryer")?laundryT("dry"):0; return m?(l.ts||0)+m*60000:0; }
+function laundryDoneTxt(l){ const d=laundryDoneAt(l); if(!d) return ""; const t=laundrySince(d); return Date.now()>=d?' · <b style="color:#16a34a">done at '+t+'</b>':' · done ~'+t; }
+function laundryEditToggle(){ const go=function(){ laundryEditOpen=!laundryEditOpen; const el=document.getElementById('content'); if(el) renderMomsPlan(el); };
+  if(typeof momHere==="function"&&momHere()) go(); else if(typeof kitPinGate==="function") kitPinGate(go,"Laundry times are for Mom."); }
+function laundryTimesSave(){
+  const rd=function(id,d){ const v=parseInt(((document.getElementById(id)||{}).value||""),10); return (v>0&&v<=600)?v:d; };
+  laundryTimes={wash:rd('laundry-t-wash',laundryT('wash')),dry:rd('laundry-t-dry',laundryT('dry')),grace:rd('laundry-t-grace',laundryT('grace'))};
+  try{ HA_LS.setItem('ha_laundry_times',JSON.stringify(laundryTimes)); }catch(e){}
+  if(typeof db!=='undefined'&&db) db.ref('settings/laundryTimes').set(laundryTimes);
+  laundryEditOpen=false; if(typeof mwToast==='function') mwToast('🧺 Laundry times saved'); const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function laundryTimesEditorHTML(){
+  if(!laundryEditOpen) return "";
+  const inp='width:64px;padding:7px 8px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:14px;font-family:\'DM Sans\',sans-serif;text-align:center';
+  const row=function(id,lbl,v,hint){ return '<label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px;font-weight:700;color:#1e3a8a"><span style="flex:1">'+lbl+(hint?'<div style="font-size:11px;font-weight:600;color:#64748b">'+hint+'</div>':'')+'</span><input id="'+id+'" type="number" inputmode="numeric" min="1" max="600" value="'+v+'" style="'+inp+'"> min</label>'; };
+  return '<div style="padding:10px 14px;background:#eff6ff;border-bottom:1px solid #dbeafe">'
+    +row('laundry-t-wash','🫧 The washer takes',laundryT('wash'))
+    +row('laundry-t-dry','🌀 The dryer takes',laundryT('dry'))
+    +row('laundry-t-grace','⏰ Remind me after it\'s done for',laundryT('grace'),'Then it shows on Mom\'s Day so nothing sits and sours')
+    +'<div style="display:flex;gap:8px;margin-top:8px"><button onclick="laundryTimesSave()" style="flex:1;padding:9px;border-radius:9px;border:none;background:#2563eb;color:#fff;font-size:13px;font-weight:800;cursor:pointer">Save</button>'
+    +'<button onclick="laundryEditToggle()" style="padding:9px 14px;border-radius:9px;border:1.5px solid #cbd5e1;background:#fff;color:#475569;font-size:13px;font-weight:700;cursor:pointer">Cancel</button></div></div>';
+}
 function laundryAdd(){
   const inp=document.getElementById('laundry-label'); const label=((inp&&inp.value)||"").trim();
   if(!label) return;
@@ -10814,7 +10849,7 @@ function mdCardLaundry(){
   try{
     const lids=Object.keys(laundryData).sort((a,b2)=>(laundryData[a].ts||0)-(laundryData[b2].ts||0));
     h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
-      +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#2563eb;color:#fff;font-weight:800;font-size:13px"><span>🧺</span> Laundry</div>'
+      +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#2563eb;color:#fff;font-weight:800;font-size:13px"><span>🧺</span> Laundry<span style="flex:1"></span><button onclick="laundryEditToggle()" style="border:none;background:rgba(255,255,255,0.22);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:800;cursor:pointer">✎ Times</button></div>'+laundryTimesEditorHTML()+(typeof momTipLaundryHTML==="function"?momTipLaundryHTML():"")
       +'<div style="padding:10px 14px 12px">';
     lids.forEach(id=>{
       const l=laundryData[id]; const meta=LAUNDRY_STAGE_META[l.stage]||["🧺",l.stage];
@@ -10824,7 +10859,7 @@ function mdCardLaundry(){
       }).join('');
       h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#f8fafc;border-left:3px solid #2563eb;border-radius:8px;margin-bottom:6px;flex-wrap:wrap">'
         +'<span style="font-size:13px;font-weight:700">'+esc(l.label)+'</span>'+trail
-        +'<span style="font-size:10px;color:var(--muted)">'+meta[1]+' since '+laundrySince(l.ts)+'</span>'
+        +'<span style="font-size:10px;color:var(--muted)">'+meta[1]+' since '+laundrySince(l.ts)+laundryDoneTxt(l)+'</span>'
         +'<span style="flex:1"></span>'
         +'<button onclick="laundryAdvance(\''+id+'\')" style="padding:4px 12px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+laundryAdvanceLabel(l.stage)+'</button>'
         +'<button onclick="laundryDel(\''+id+'\')" style="border:none;background:none;color:#9ca3af;font-size:14px;cursor:pointer;padding:2px 4px">✕</button></div>';
@@ -11367,13 +11402,13 @@ function renderMomsDay(el){
   try{
     Object.keys(laundryData).forEach(id=>{
       const l=laundryData[id];
-      if(!l||l.stage!=="washer") return;
+      if(!l||(l.stage!=="washer"&&l.stage!=="dryer")) return;
       const mins=Math.round((Date.now()-(l.ts||0))/60000);
-      if(mins<LAUNDRY_STALE_MIN) return;
+      if(mins<(l.stage==="dryer"?laundryT("dry"):laundryT("wash"))+laundryT("grace")) return;
       nowN++;
       h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#eff6ff;border-left:3px solid #2563eb;border-radius:8px;margin-bottom:6px">'
-        +'<span style="flex:1;font-size:13px">🫧 <b>'+esc(l.label)+'</b> has been in the washer since '+laundrySince(l.ts)+' — move it before it sours</span>'
-        +'<button onclick="laundryAdvance(\''+id+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">→ Dryer</button></div>';
+        +(l.stage==="dryer"?'<span style="flex:1;font-size:13px">🌀 <b>'+esc(l.label)+'</b> has been in the dryer since '+laundrySince(l.ts)+' — time to fold it</span>':'<span style="flex:1;font-size:13px">🫧 <b>'+esc(l.label)+'</b> has been in the washer since '+laundrySince(l.ts)+' — move it before it sours</span>')
+        +'<button onclick="laundryAdvance(\''+id+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+laundryAdvanceLabel(l.stage)+'</button></div>';
     });
   }catch(e){}
   // Bills that can't wait — overdue or due today — with one-tap ✓ Paid.
@@ -12239,7 +12274,7 @@ let _grPend=null;
 function grPop(html){
   let w=document.getElementById("gr-pop"); if(!w){ w=document.createElement("div"); w.id="gr-pop"; document.body.appendChild(w); }
   w.innerHTML=html?'<div onclick="if(event.target===this)grPopClose()" style="position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:18px">'
-    +'<div style="background:#fff;border-radius:16px;padding:20px 18px;width:100%;max-width:340px;box-shadow:0 20px 60px rgba(0,0,0,.35);font-family:\'DM Sans\',sans-serif">'+html+'</div></div>':"";
+    +'<style>#gr-pop .gr-pop-box [style*="overflow:auto"]{max-height:none!important;overflow:visible!important}</style><div class="gr-pop-box" style="background:#fff;border-radius:16px;padding:20px 18px;width:100%;max-width:340px;box-shadow:0 20px 60px rgba(0,0,0,.35);font-family:\'DM Sans\',sans-serif;max-height:calc(100vh - 36px);max-height:calc(100dvh - 36px);overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;box-sizing:border-box">'+html+'</div></div>':"";   // GR_SCROLLPDF: the whole pop-up is ONE scroll (inner scroll boxes off — a finger anywhere scrolls it)
 }
 function grPopClose(){ grPop(""); _grPend=null; }
 const GR_BTN='width:100%;padding:11px;border-radius:11px;font-size:13.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-top:7px;';
@@ -12452,7 +12487,7 @@ function grDoneRun(sid,total,opts){
   Object.keys(grData.items).forEach(id=>{
     const it=grData.items[id]; if(!it||!it.done||!grShowsAt(it.stores,sid)) return;
     if(H("i:"+id)) bought(it.name,(it.unit&&!/^(bag|box|can|jar|bottle|pk|pack|carton|tub|loaf|bunch|head|ct|count|dozen|doz)/.test(it.unit))?1:it.qty,it.sec,opts.freeze&&opts.freeze["i:"+id]);
-    if(it.paid){ const ps=grPaidStore({stores:it.stores})||grEstStore({name:it.name,stores:it.stores},"all"); if(ps) grPriceAdd(it.name,ps,it.paid,{src:"typed"}); }   // GR_ESTSTORE   // 💲 the price she typed in the store
+    if(it.paid){ const ps=grPaidStore({stores:it.stores})||grEstStore({name:it.name,stores:it.stores},"all"); if(ps){ const _q=grQtyN(it), _per=(_q!==1&&(it.paidPer==="unit"||it.paidPer==="all"))?grUnitWord(it.unit):null; grPriceAdd(it.name,ps,_per&&it.paidPer==="all"?Math.round(it.paid/_q*100)/100:it.paid,_per?{src:"typed",per:_per}:{src:"typed"}); } }   // GR_ESTSTORE   // 💲 the price she typed in the store
     if(H("i:"+id)) grMemBought(it.name,it.sec); grClearedPush(id,it,"done");
     delete grData.items[id];
     if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/items/'+id).remove();
@@ -12550,7 +12585,7 @@ function grRowHTML(r,showStores){
       +'<div style="font-size:'+(big?18:14)+'px;font-weight:700;'+(r.done?'text-decoration:line-through;color:#94a3b8':'color:#1a1a1a')+'">'+esc(r.name)
       +(big?'':grTagsHTML(r))+st+(r.sort?(showStores?' <span style="font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:10px;background:#ccfbf1;color:#0f766e;white-space:nowrap">📥 to sort</span>':'<div style="font-size:11.5px;font-weight:800;color:#0f766e">📥 not sorted yet — Mom may get this somewhere else</div>'):'')+'</div>'
       +((showStores&&r.sort&&!qsOn)?grQsChipsHTML(r):'')   // 🏬 one tap sorts it right here on All
-      +(r.note?'<div style="font-size:'+(big?14:12)+'px;color:#64748b">'+esc(r.note)+'</div>':'')+grPriceLineHTML(r)+'</div>'
+      +(r.note?'<div style="font-size:'+(big?14:12)+'px;color:#64748b">'+esc(r.note)+'</div>':'')+grPriceLineHTML(r)+grPaidMathHTML(r)+'</div>'
     +((r.id&&!r.done)?grStepperHTML(r):(r.q?'<div style="font-size:'+(big?16:13)+'px;font-weight:800;color:#3A7D44;white-space:nowrap">'+esc(r.q)+'</div>':''))
     +(grBig?grPaidBoxHTML(r):'')   // − 2 + on items still to get · 🏃 store mode: the price box
     +(big?'':'<button onclick="'+(r.virt?'grEditV(\''+r.key+'\')':'grEdit(\''+r.id+'\')')+'" aria-label="Edit" style="border:none;background:none;color:#94a3b8;font-size:15px;cursor:pointer;padding:2px 4px">✎</button>')
@@ -12574,6 +12609,7 @@ function renderGrocery(el){
   if(grFromDad) h+='<div style="padding:8px 12px;background:#fff;border-bottom:2px solid #DEF2F1"><button onclick="grFromDad=false;mpGoto(\'dad\')" style="border:1.5px solid #2C5F8A;background:#fff;color:#2C5F8A;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">← Dad\'s Day</button></div>';
   else h+=mpSubnav('grocery');
   h+='<div style="padding:12px 12px 0;display:flex;flex-direction:column;gap:11px;max-width:720px;margin:0 auto">';
+  try{ h+=momTipsGroceryHTML(); }catch(e){}   // MOMNEWS: 👋 how the list / store mode works
   // 🙋 requests waiting for Mom
   const rids=grPendingIds();
   // 🙋 which kids get the ask box on their day — Mom's call
@@ -12936,7 +12972,7 @@ function grFmt$(n){ return "$"+(Math.round(n*100)/100).toFixed(2); }
 function grPriceAdd(name,sid,paid,opt){
   opt=opt||{}; const sl=kitSlug(name); paid=grMoney(paid); if(!sl||!sid||!paid) return null;
   const before=grUsual(name,sid);
-  const rec={p:paid,iso:opt.iso||_todayStr(),src:opt.src||"typed"};
+  const rec={p:paid,iso:opt.iso||_todayStr(),src:opt.src||"typed"}; if(opt.per) rec.per=opt.per;
   const reg=grMoney(opt.reg); if(reg&&reg>paid) rec.reg=reg;
   let sale=!!opt.sale||!!rec.reg;
   // a price well under her usual is a sale even if she forgot the tick
@@ -12978,7 +13014,7 @@ function grEstStore(r,sid){
     if(best===null||iso>bi||(iso===bi&&k>bk)){ best=st; bi=iso; bk=k; } }); });
   return best;
 }
-function grRowPrice(r,sid){ const _ps=grEstStore(r,sid); if(!_ps) return null; const u=grUsual(r.name,_ps); if(!u) return null; const it=r.id?grData.items[r.id]:null; return u*grMult(it?it.qty:(r.q&&/^×(\d+)/.test(r.q)?+r.q.slice(1):0),it?it.unit:""); }
+function grRowPrice(r,sid){ const _ps=grEstStore(r,sid); if(!_ps) return null; const u=grUsual(r.name,_ps); if(!u) return null; const it=r.id?grData.items[r.id]:null; return u*grEstMult(r,_ps); }
 function grTripEst(sid,cartOnly){   // GR_ESTSTORE: All is priced too
   sid=sid||"all"; const g=grGroups(sid); let t=0, n=0, miss=0;
   Object.keys(g).forEach(k=>g[k].forEach(r=>{ if(cartOnly&&!r.done) return; n++; const p=grRowPrice(r,sid); if(p) t+=p; else miss++; }));
@@ -13075,23 +13111,31 @@ function grRcptOpen(){ grGate(function(){
   _grRc={imgs:[],busy:false,msg:""}; grRcptDraw();
 }); }
 function grRcptPick(input){
-  const files=[].slice.call((input&&input.files)||[]).slice(0,Math.max(0,6-((_grRc&&_grRc.imgs)||[]).length)); if(!files.length||!_grRc) return;
+  const files=[].slice.call((input&&input.files)||[]).slice(0,Math.max(0,6-((_grRc&&_grRc.imgs)||[]).length-((_grRc&&_grRc.pdfs)||[]).length)); if(!files.length||!_grRc) return;
   let left=files.length;
-  files.forEach(f=>{ const img=new Image(), url=URL.createObjectURL(f);
+  files.forEach(f=>{
+    if(/pdf/i.test(f.type||"")||/\.pdf$/i.test(f.name||"")){   // GR_SCROLLPDF: 📄 a PDF receipt goes to Claude as-is
+      if(f.size>15*1024*1024){ _grRc.msg="That PDF is too big (over 15 MB)."; if(--left===0) grRcptDraw(); return; }
+      const rd=new FileReader();
+      rd.onload=function(){ const b=String(rd.result||"").split(",")[1]; if(b){ _grRc.pdfs=_grRc.pdfs||[]; _grRc.pdfs.push(b); } if(--left===0) grRcptDraw(); };
+      rd.onerror=function(){ _grRc.msg="Couldn't open that PDF."; if(--left===0) grRcptDraw(); };
+      rd.readAsDataURL(f); return;
+    }
+    const img=new Image(), url=URL.createObjectURL(f);
     img.onload=function(){ try{ const max=1500, r=Math.min(1,max/Math.max(img.width,img.height)); const c=document.createElement('canvas'); c.width=Math.round(img.width*r); c.height=Math.round(img.height*r); c.getContext('2d').drawImage(img,0,0,c.width,c.height); _grRc.imgs.push(c.toDataURL('image/jpeg',0.8).split(",")[1]); }catch(e){} URL.revokeObjectURL(url); if(--left===0) grRcptDraw(); };
     img.onerror=function(){ URL.revokeObjectURL(url); if(--left===0) grRcptDraw(); };
     img.src=url; });
 }
-const GR_RCPT_PROMPT='Read this grocery receipt (one or more photos of the same receipt). Reply with ONLY strict JSON, no prose:\n'
+const GR_RCPT_PROMPT='Read this grocery receipt (one or more photos of the same receipt, or a PDF of it). Reply with ONLY strict JSON, no prose:\n'
   +'{"store":"store name as printed","date":"YYYY-MM-DD or null","total":number or null,"items":[{"line":"the item text exactly as printed","name":"plain grocery name a shopper would say","qty":number or null,"price":number,"regular":number or null,"sale":true or false}]}\n'
   +'price = what was actually paid for that line after any discount. regular = the price before the discount when the receipt shows one. sale = true when the receipt shows a discount, savings, member price, VIC/MVP/club price, "you saved", rollback or markdown for that item. '
   +'When there are several photos they are ONE receipt, in order from the top to the bottom, and neighbouring photos usually overlap: the last few lines of one photo show again at the top of the next. List each overlapping line ONCE — match the overlap by the lines around it (item text, price and order) and carry on with the first new line after it. Keep an item twice only when the receipt itself prints it twice (two separate lines in the same photo, or a separate quantity line). '
   +'Never invent lines or prices. Skip tax, subtotal, total, bag fees, coupons that are not tied to an item, payment and change lines.';
 async function grRcptRead(){
-  const R=_grRc; if(!R||!R.imgs.length) return;
+  const R=_grRc; if(!R||!(R.imgs.length||(R.pdfs||[]).length)) return;
   R.busy=true; R.msg=""; grRcptDraw();
   try{
-    const content=R.imgs.reduce((a,b,i)=>a.concat(R.imgs.length>1?[{type:"text",text:"Photo "+(i+1)+" of "+R.imgs.length+(i===0?" (top of the receipt)":i===R.imgs.length-1?" (bottom of the receipt)":"")}]:[],[{type:"image",source:{type:"base64",media_type:"image/jpeg",data:b}}]),[]).concat([{type:"text",text:GR_RCPT_PROMPT}]);   // GR_RCPT6: photos labelled in order
+    const content=R.imgs.reduce((a,b,i)=>a.concat(R.imgs.length>1?[{type:"text",text:"Photo "+(i+1)+" of "+R.imgs.length+(i===0?" (top of the receipt)":i===R.imgs.length-1?" (bottom of the receipt)":"")}]:[],[{type:"image",source:{type:"base64",media_type:"image/jpeg",data:b}}]),[]).concat((R.pdfs||[]).reduce((a,b,i,arr)=>a.concat([{type:"text",text:"PDF of the receipt"+(arr.length>1?" ("+(i+1)+" of "+arr.length+")":"")},{type:"document",source:{type:"base64",media_type:"application/pdf",data:b}}]),[])).concat([{type:"text",text:GR_RCPT_PROMPT}]);   // GR_RCPT6: photos labelled in order
     const txt=await kitCapAsk(content,null,{raw:true,maxTokens:6000});
     const m=String(txt).match(/\{[\s\S]*\}/); if(!m) throw new Error("Claude didn't send back a receipt — try a clearer photo");
     grRcptLoad(JSON.parse(m[0]));
@@ -13132,7 +13176,7 @@ function grRcptMatch(){
 // asks "still bought?" (default yes).
 const GR_XZONES=[["produce","🥬 Produce"],["pantry","🥫 Pantry"],["fridge","🧊 Fridge"],["freezer","❄️ Freezer"],["household","🧻 Household"],["none","🚫 Not for the house"]];
 function grRcptChip(on,lbl,click){ return '<button onclick="'+click+'" style="padding:4px 8px;border-radius:9px;border:1.5px solid '+(on?'#3A7D44':'#e2e8f0')+';background:'+(on?'#f0fdf4':'#fff')+';color:#1f2937;font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+lbl+'</button>'; }
-function grRcptTyped(c){ if(!c) return null; return c.id?((grData.items[c.id]||{}).paid||null):((grData.vpaid||{})[c.key]||null); }
+function grRcptTyped(c){ if(!c) return null; return c.id?(grPerTotal(grData.items[c.id]||{})||null):((grData.vpaid||{})[c.key]||null); }
 function grRcptListQty(c){ if(!c) return null; if(c.id){ const it=grData.items[c.id]||{}; if(it.unit&&!/^(bag|box|can|jar|bottle|pk|pack|carton|tub|loaf|bunch|head|ct|count)/.test(it.unit)) return null; return it.qty>0?it.qty:1; } return (c.q&&/^×(\d+)/.test(c.q))?+c.q.slice(1):1; }
 function grRcptXDefault(r){ const sec=grSecFor(r.name), z=grSecMeta(sec)[2]; if(!z) return "household"; try{ if(typeof grPlaceGuess==="function"){ const g=grPlaceGuess(r.name,sec); if(g) return g; } }catch(e){} return z; }
 function grRcptChecksHTML(r,i,cands){
@@ -13155,10 +13199,10 @@ function grRcptDraw(){
   const R=_grRc; if(!R) return grPopClose();
   let h='<div style="font-weight:800;font-size:15px">📸 Read a receipt</div>';
   if(!R.rows){
-    h+='<div style="font-size:12px;color:#64748b;margin:3px 0 10px">Snap the whole receipt. A long one: up to 6 photos, top to bottom — let each photo overlap the one before by a line or two. Claude reads it with the family key — one read per receipt.</div>'
-      +'<label style="display:block;text-align:center;padding:14px;border:2px dashed #cbd5e1;border-radius:12px;font-weight:800;color:#2B7A78;cursor:pointer"><input type="file" accept="image/*" multiple onchange="grRcptPick(this)" style="display:none">📷 '+(R.imgs.length?R.imgs.length+' photo'+(R.imgs.length===1?'':'s')+' — add more':'Choose or take photos')+'</label>'
+    h+='<div style="font-size:12px;color:#64748b;margin:3px 0 10px">Snap the whole receipt. A long one: up to 6 photos, top to bottom — let each photo overlap the one before by a line or two. An emailed or online receipt? Pick the 📄 PDF instead. Claude reads it with the family key — one read per receipt.</div>'
+      +'<label style="display:block;text-align:center;padding:14px;border:2px dashed #cbd5e1;border-radius:12px;font-weight:800;color:#2B7A78;cursor:pointer"><input type="file" accept="image/*,application/pdf,.pdf" multiple onchange="grRcptPick(this)" style="display:none">'+(function(){ const ni=R.imgs.length, np=(R.pdfs||[]).length; if(!ni&&!np) return '📷 Choose photos or a 📄 PDF'; return '📷 '+[ni?ni+' photo'+(ni===1?'':'s'):'',np?np+' PDF'+(np===1?'':'s'):''].filter(Boolean).join(' + ')+' — add more'; })()+'</label>'
       +(R.msg?'<div style="font-size:12px;color:#b91c1c;margin-top:8px">'+esc(R.msg)+'</div>':'')
-      +'<button onclick="grRcptRead()" '+(R.imgs.length&&!R.busy?'':'disabled ')+'style="'+GR_BTN+'border:none;background:'+(R.imgs.length&&!R.busy?'#3A7D44':'#94a3b8')+';color:#fff;margin-top:12px">'+(R.busy?'✨ Reading…':'✨ Read it')+'</button>'
+      +'<button onclick="grRcptRead()" '+((R.imgs.length||(R.pdfs||[]).length)&&!R.busy?'':'disabled ')+'style="'+GR_BTN+'border:none;background:'+((R.imgs.length||(R.pdfs||[]).length)&&!R.busy?'#3A7D44':'#94a3b8')+';color:#fff;margin-top:12px">'+(R.busy?'✨ Reading…':'✨ Read it')+'</button>'
       +'<button onclick="grRcptCancel()" style="'+GR_BTN+'border:none;background:#f1f5f9;color:#334155">Cancel</button>';
     return grPop(h);
   }
@@ -13414,19 +13458,55 @@ function grStepperHTML(r){
 // pre-fills the receipt total, and clears the trip's prices.
 function grPaidStore(r){ const sid=grCurStore(); if(sid!=="all") return sid; const st=(r.stores||[]).filter(x=>grStores()[x]); return st.length===1?st[0]:null; }
 function grPaidOf(r){ return r.id?((grData.items[r.id]||{}).paid||null):((grData.vpaid||{})[r.key]||null); }
-function grPaidMult(r){ if(r.id){ const it=grData.items[r.id]||{}; return grMult(it.qty,it.unit); } return (r.q&&/^×(\d+)/.test(r.q))?+r.q.slice(1):1; }
+function grPaidMult(r){ if(r.id){ const it=grData.items[r.id]||{}; if(it.paidPer==="unit") return grQtyN(it); if(it.paidPer==="all") return 1; return grMult(it.qty,it.unit); } return (r.q&&/^×(\d+)/.test(r.q))?+r.q.slice(1):1; }
+// 💲 GR_PERUNIT (her ask 2026-10-06): a price typed for anything that isn't exactly 1 (3 lb apples, 2 bags, 6 cans, 0.5 lb tomatoes…)
+// asks once: is it per lb / per bag / each — or for all of it? The answer is kept on the item (paidPer "unit"|"all") and remembered for
+// that item's name (grMem.per), so next time it just applies; the row shows the math and a tap flips it. Checkout saves the PER-UNIT
+// price (with per:"lb"…) so the usual price and next week's estimate multiply by the amount.
+function grUnitWord(u){ u=String(u||"").toLowerCase().trim();
+  const M=[[/^(lb|lbs|pound)/,"lb"],[/^(oz|ounce)/,"oz"],[/^gal/,"gallon"],[/^(pk|pack)/,"pack"],[/^bag/,"bag"],[/^box/,"box"],[/^can/,"can"],[/^jar/,"jar"],[/^bottle/,"bottle"],[/^(dozen|doz)/,"dozen"],[/^(ct|count|each|ea)$/,"each"],[/^bunch/,"bunch"],[/^loa/,"loaf"],[/^carton/,"carton"],[/^tube/,"tube"],[/^tub/,"tub"],[/^head/,"head"]];
+  for(const m of M){ if(m[0].test(u)) return m[1]; } return u?u.replace(/(es|s)$/,""):"each"; }
+function grPerWord(it){ const w=grUnitWord(it&&it.unit); return w==="each"?"each":"per "+w; }
+function grQtyN(it){ return (it&&it.qty>0)?it.qty:1; }
+function grAmtTxt(it){ const q=grQtyN(it), w=grUnitWord(it&&it.unit); return w==="each"?String(q):(q+" "+((it&&it.unit)||w)); }
+function grPerNeeds(it){ return !!(it&&it.paid&&grQtyN(it)!==1&&it.paidPer!=="unit"&&it.paidPer!=="all"); }
+function grPerTotal(it){ return (it&&it.paid)?(it.paidPer==="unit"?Math.round(it.paid*grQtyN(it)*100)/100:it.paid):null; }
+function grPerAsk(id){
+  const it=grData.items[id]; if(!it||!it.paid) return;
+  const per=grPerWord(it), all=Math.round(it.paid*grQtyN(it)*100)/100, amt=esc(grAmtTxt(it));
+  grPop('<div style="font-weight:800;font-size:15px">💲 '+esc(it.name)+' · '+amt+'</div><div style="font-size:12.5px;color:#64748b;margin-top:3px">Is '+grFmt$(it.paid)+' '+per+', or for all '+amt+'?</div>'
+    +'<button onclick="grPerSet(\''+id+'\',\'unit\')" style="'+GR_BTN+'border:none;background:#3A7D44;color:#fff">'+grFmt$(it.paid)+' '+per+' → '+grFmt$(all)+' total</button>'
+    +'<button onclick="grPerSet(\''+id+'\',\'all\')" style="'+GR_BTN+'border:1.5px solid #cbd5e1;background:#fff;color:#1f2937">'+grFmt$(it.paid)+' for all '+amt+'</button>'
+    +'<div style="font-size:11px;color:#94a3b8;margin-top:6px">It remembers for next time — tap the price line on the row to switch.</div>');
+}
+function grPerSet(id,v){ const it=grData.items[id]; if(!it) return; it.paidPer=v; grSave(); if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/items/'+id+'/paidPer').set(v); try{ grMemUpdate(it.name,{per:v}); }catch(e){} grPopClose(); grRepaint(); }
+function grPerFlip(id){ const it=grData.items[id]; if(!it) return; grPerSet(id, it.paidPer==="unit"?"all":"unit"); }
+function grPaidMathHTML(r){
+  if(!r||!r.id) return ""; const it=grData.items[r.id]; if(!it||!it.paid||grQtyN(it)===1) return "";
+  const per=grPerWord(it), amt=esc(grAmtTxt(it));
+  if(it.paidPer!=="unit"&&it.paidPer!=="all") return '<div onclick="event.stopPropagation();grPerAsk(\''+r.id+'\')" role="button" style="font-size:11.5px;font-weight:800;color:#b45309;cursor:pointer;margin-top:1px">💲 '+grFmt$(it.paid)+' — '+per+' or for all '+amt+'? Tap to say</div>';
+  return '<div onclick="event.stopPropagation();grPerFlip(\''+r.id+'\')" role="button" aria-label="Switch per-unit / for all" style="font-size:11.5px;color:#3A7D44;font-weight:700;cursor:pointer;margin-top:1px">'
+    +(it.paidPer==="unit"?grFmt$(it.paid)+' '+per+' × '+esc(String(grQtyN(it)))+' = <b>'+grFmt$(grPerTotal(it))+'</b>':'<b>'+grFmt$(it.paid)+'</b> for all '+amt)+' <span style="color:#94a3b8;font-weight:600">⇄</span></div>';
+}
+function grPricePer(name,sid){ const h=grPriceHist(name,sid); return h.length?(h[h.length-1].per||null):null; }
+function grEstMult(r,sid){
+  const it=r&&r.id?grData.items[r.id]:null, vq=(r&&r.q&&/^×(\d+)/.test(r.q))?+r.q.slice(1):0;
+  if(sid&&grPricePer(r.name,sid)) return it?grQtyN(it):(vq||1);   // saved per lb / per bag → × the amount
+  return grMult(it?it.qty:vq,it?it.unit:"");
+}
 function grPaidSet(kind,k,v){
   const p=grMoney(v);
   if(kind==="i"){
     const it=grData.items[k]; if(!it) return;
-    if(p){ it.paid=p; if(!it.done){ it.done=true; it.doneTs=Date.now(); } } else delete it.paid;
-    grSave(); if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/items/'+k).update({paid:p||null,done:it.done||null,doneTs:it.doneTs||null});
+    if(p){ it.paid=p; if(!it.done){ it.done=true; it.doneTs=Date.now(); } if(it.paidPer!=="unit"&&it.paidPer!=="all"&&grQtyN(it)!==1){ const _m=grMem(it.name); if(_m&&(_m.per==="unit"||_m.per==="all")) it.paidPer=_m.per; } } else delete it.paid;
+    grSave(); if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/items/'+k).update({paid:p||null,done:it.done||null,doneTs:it.doneTs||null,paidPer:it.paidPer||null});
     if(p){ const sid=grPaidStore({stores:it.stores}); const u=sid&&grUsual(it.name,sid); if(u&&p<=u*0.8) mwToast("🏷 Good price — "+Math.round((1-p/u)*100)+"% under usual. Stock up?"); }
   } else {
     if(p){ grData.vpaid[k]=p; grData.vchk[k]=true; } else delete grData.vpaid[k];
     grSave(); if(typeof db!=='undefined'&&db){ db.ref('kitchen/grocery/vpaid/'+k).set(p||null); if(p) db.ref('kitchen/grocery/vchk/'+k).set(true); }
   }
   grRepaint();
+  if(kind==="i"&&grPerNeeds(grData.items[k])) grPerAsk(k);   // GR_PERUNIT: per lb, or for all of it?
 }
 function grPaidBoxHTML(r){
   const p=grPaidOf(r), sid=grPaidStore(r)||grEstStore(r,"all");   // GR_ESTSTORE
@@ -13440,7 +13520,7 @@ function grCartTotal(sid){
   const g=grGroups(sid||"all"); let typed=0, est=0, nTyped=0, nMiss=0, n=0;
   Object.keys(g).forEach(k=>g[k].forEach(r=>{ if(!r.done) return; n++;
     const p=grPaidOf(r), m=grPaidMult(r);
-    if(p){ typed+=p*m; nTyped++; } else { const ps=grEstStore(r,sid||"all"), u=ps&&grUsual(r.name,ps); if(u) est+=u*m; else nMiss++; } }));   // GR_ESTSTORE
+    if(p){ typed+=p*m; nTyped++; } else { const ps=grEstStore(r,sid||"all"), u=ps&&grUsual(r.name,ps); if(u) est+=u*grEstMult(r,ps); else nMiss++; } }));   // GR_ESTSTORE
   return {typed:Math.round(typed*100)/100,est:Math.round(est*100)/100,total:Math.round((typed+est)*100)/100,n:n,nTyped:nTyped,nMiss:nMiss};
 }
 function grStoreTotalBarHTML(sid){
@@ -13863,7 +13943,7 @@ function grCheckoutDraw(){
   const C=_grCo; if(!C) return grPopClose();
   const rows=grCoRows(C.sid), where=C.sid==="all"?"":" at "+grStoreName(C.sid), buds=grBudgets();
   const chip=(on,lbl,click)=>'<button onclick="'+click+'" aria-pressed="'+on+'" style="flex:1;padding:10px 8px;border-radius:11px;border:2px solid '+(on?'#3A7D44':'#e2e8f0')+';background:'+(on?'#f0fdf4':'#fff')+';color:#1f2937;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
-  let h='<div style="font-weight:800;font-size:16px">🧾 Checkout'+esc(where)+'</div><div style="font-size:12px;color:#64748b;margin:2px 0 10px">'+rows.length+' item'+(rows.length===1?'':'s')+' in the cart</div>'
+  let h=(typeof momTipCheckoutHTML==="function"?momTipCheckoutHTML():"")+'<div style="font-weight:800;font-size:16px">🧾 Checkout'+esc(where)+'</div><div style="font-size:12px;color:#64748b;margin:2px 0 10px">'+rows.length+' item'+(rows.length===1?'':'s')+' in the cart</div>'
     +'<div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.3px">Total</div>'
     +'<input id="gr-co-total" type="text" inputmode="decimal" value="'+esc(C.total)+'" placeholder="$ from the receipt (optional)" oninput="_grCo.total=this.value" style="width:100%;box-sizing:border-box;margin-top:4px;padding:11px;border:1.5px solid #cbd5e1;border-radius:10px;font-size:20px;font-weight:800;font-family:\'DM Sans\',sans-serif">'
     +(C.guessed&&!C.rcpt?'<div style="font-size:11px;color:#94a3b8;margin-top:2px">Filled in from your typed prices + usual prices — fix it to match the register.</div>':'')
@@ -15381,9 +15461,10 @@ function _calPageBody(){
   }
   return h;
 }
+// 📱 PHONEWIDTH (her yes 2026-10-06): the tab row wraps on a phone instead of widening the whole page (pop-ups ran off the right edge).
 function mpSubnav(active){
-  const btn=(v,lbl)=>`<button onclick="mpGoto('${v}')" style="flex:1;padding:9px 6px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;border:none;border-radius:9px;cursor:pointer;color:${active===v?'#fff':'#9ca3af'};background:${active===v?'#2B7A78':'transparent'};transition:all .2s;white-space:nowrap">${lbl}</button>`;
-  return `<div style="display:flex;gap:4px;background:#fff;border-bottom:2px solid #DEF2F1;padding:8px 10px">${btn('plan','🏡 Today')}${btn('cal','🗓 Calendar')}${btn('meals','🍽 Meals')}${btn('grocery','🛒 Grocery List')}${btn('prep','🧃 Prep')}${btn('weigh','⚖️ Weigh-In')}</div>`;
+  const btn=(v,lbl)=>`<button onclick="mpGoto('${v}')" style="flex:1 1 auto;white-space:nowrap;padding:9px 6px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;border:none;border-radius:9px;cursor:pointer;color:${active===v?'#fff':'#9ca3af'};background:${active===v?'#2B7A78':'transparent'};transition:all .2s;white-space:nowrap">${lbl}</button>`;
+  return `<div style="display:flex;flex-wrap:wrap;gap:4px;background:#fff;border-bottom:2px solid #DEF2F1;padding:8px 10px">${btn('plan','🏡 Today')}${btn('cal','🗓 Calendar')}${btn('meals','🍽 Meals')}${btn('grocery','🛒 Grocery List')}${btn('prep','🧃 Prep')}${btn('weigh','⚖️ Weigh-In')}</div>`;
 }
 function mpGoto(v){ mpSubView=v; const el=document.getElementById('content'); if(el) renderMomsPlan(el); try{window.scrollTo(0,0);}catch(e){} }
 function mwBanner(sub){
@@ -47811,6 +47892,108 @@ function deckInstrSave(deck){
   const st=document.getElementById("deckinstr-status"); if(st) st.textContent=ok?"✓ Saved":"Only Mom can change this";
 }
 // DECKINSTR_END
+// MOMNEWS_START — ✨ What's new + 👋 how-to banners, for MOM only (her ask 2026-10-06: "just mom for these and yes once checked it
+// can be cleared for this because its only intended for mom"). Both clear on EVERY device in the family the moment Mom taps it
+// (settings/momTips/<key> = true · settings/whatsNewSeen = <id>), so she never sees one twice. Kids, Dad and helpers never see them.
+// The notes ship with each update (WHATS_NEW) — nothing is written for them ahead of time. Family apps only (Howe's own app skips it).
+let momTipsSeen={}, whatsNewSeen="";
+function momTipsOnValue(v){ momTipsSeen=v||{}; }
+function whatsNewOnValue(v){ whatsNewSeen=v||""; }
+function momTipMine(){ return (typeof momHere==="function"&&momHere())&&(typeof tipWho!=="function"||tipWho()==="mom"); }
+function momTipSeen(k){ if(momTipsSeen&&momTipsSeen[k]) return true; try{ return HA_LS.getItem("ha_momtip_"+k)==="1"; }catch(e){ return false; } }
+function momTipRedraw(r){ try{ if(r==="co"&&typeof grCheckoutDraw==="function"&&typeof _grCo!=="undefined"&&_grCo) grCheckoutDraw(); else if(typeof renderAll==="function") renderAll(); }catch(e){} }
+function momTipGotIt(k,r){ momTipsSeen[k]=true; try{ HA_LS.setItem("ha_momtip_"+k,"1"); }catch(e){} if(typeof db!=='undefined'&&db) db.ref('settings/momTips/'+k).set(true); momTipRedraw(r); }
+function momTipBox(k,title,lines,r){
+  if(!momTipMine()||momTipSeen(k)) return "";
+  let h='<div style="margin:6px 0 10px;padding:11px 14px;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:12px;font-size:12.5px;line-height:1.55;color:#78350f;text-align:left">';
+  h+='<div style="font-size:13.5px;font-weight:800;margin-bottom:5px">\u{1F44B} '+title+'</div>';
+  lines.forEach(function(l){ h+='<div style="margin:2px 0">• '+l+'</div>'; });
+  h+='<div style="margin-top:8px;text-align:right"><button onclick="event.stopPropagation();momTipGotIt(\''+k+'\',\''+(r||'')+'\')" style="padding:5px 14px;border-radius:9px;border:none;background:#b45309;color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Got it</button></div></div>';
+  return h;
+}
+function momTipsScheduleHTML(hasStrip){
+  let h="";
+  if(typeof momModeActive!=="undefined"&&momModeActive) h+=momTipBox("mommode","Mom mode is on for this device",[
+    "Everything that's just for you — Admin, Notebook, Units, Mastery, the grocery list — is open on this device without typing your code again.",
+    "<b>✓ Mom</b> on the kid bar means it's on. It stays on, even if the app is closed.",
+    "To turn it off, tap <b>Mom</b> twice: the first tap opens your agenda, the second turns Mom mode off.",
+    "Typed your code on a kid's tablet? Turn it off before you walk away."]);
+  h+=momTipBox("dayflow","How the day moves now",[
+    "A card starts when the one before it is checked off — finish early and the next one moves up; run long and the rest slide down.",
+    "A card they're still working on stays put (it won't jump below lunch). Once it runs past its time it slides along with the clock.",
+    "Family time the app picks (like Fact Review) moves with the day, and everyone's copy moves together.",
+    "A practice card set to stick after a Mom lesson waits until that kid's whole time with you is done.",
+    "What the kids see: <b>🟢 Mom's ready for you</b> = their Mom card is next · <b>🟠 Not with Mom yet</b> = keep going, tap I'm ready when you are · <b>🟣 Mom's not available / Mom's busy</b> = keep working (or go play) until you call them."]);
+  if(hasStrip) h+=momTipBox("momloop","How your Mom loop works",[
+    "<b>Mom loop — now with …</b> shows who you're with and which card. The chips show who's waiting and how many Mom cards each has left.",
+    "<b>👩 Mom ✓ available</b> — tap it to <b>not available</b> when you step away. The kids keep going on their own cards; their Mom cards wait.",
+    "<b>Ready for Mom</b> — flip a kid off if they're not ready yet. They keep their turn; the others move ahead.",
+    "<b>Start the loop on</b> picks who you start with. <b>Behind counts</b> picks which subjects decide who's behind — behind kids go first.",
+    "<b>🙋 Grandma here? / Dad here?</b> — tap when a helper is taking some of the Mom cards."]);
+  return h;
+}
+function momTipsGroceryHTML(){
+  let h=momTipBox("grlist","How the grocery list works",[
+    "Tap the <b>circle</b> to put something in the cart. Tap the <b>name</b> to move it to a store — it remembers for next time.",
+    "<b>📥 To sort</b> holds anything without a store yet — one tap on a store button sorts it.",
+    "Tap a <b>🍽 recipe tag</b> to see that recipe right over the list.",
+    "Priced something by the pound (or 2 bags, 6 cans)? It asks <b>per lb or for all</b> once, then does the math — tap the price line to switch.",
+    "The bar at the top is the whole list priced on <b>All</b>; tap a store to see just that store's total."]);
+  if(typeof grBig!=="undefined"&&grBig) h+=momTipBox("grstore","Shopping in the store",[
+    "Prices you type and the checkout all go to the store you picked. The add box at the top adds to that store too.",
+    "Type what you paid in the box on each row — the dark 🧾 bar keeps the running total.",
+    "Store mode stays on until you check out. Need to stop? It'll ask: check out, keep shopping, or leave and keep your cart.",
+    "<b>🧾 Checkout</b> is at the bottom of the cart."]);
+  return h;
+}
+function momTipCheckoutHTML(){
+  return momTipBox("grcheckout","Checking out",[
+    "<b>📸 Add the receipt</b> — photos (a long one can be up to 6, top to bottom, overlapping a little) or a <b>📄 PDF</b> of an emailed receipt.",
+    "The app checks the receipt against what you entered and asks about anything that doesn't match — the receipt is picked unless you say otherwise.",
+    "Extras on the receipt: pick where each goes — 🥫 Pantry, 🧊 Fridge, ❄️ Freezer, 🥬 Produce, 🧻 Household — or 🚫 Not for the house.",
+    "<b>Not checked off</b>: they stay on the list, or remove them, or move them to another store right here."],"co");
+}
+function momTipLaundryHTML(){
+  const t=momTipBox("laundry","Laundry times",[
+    "Tap <b>✎ Times</b> to set how long your washer and dryer take, and how long after a load is done to remind you.",
+    "Each load shows when it'll be done. Mom's Day reminds you to move the washer and to fold the dryer."]);
+  return t?'<div style="padding:8px 14px 0">'+t+'</div>':"";
+}
+// ✨ What's new — the newest notes sit on the 📋 From Adrienne card until Mom reads them and taps ✓ Got it.
+const WHATS_NEW=[{id:"2026-10-06",title:"New in the app",date:"Oct 6",sections:[
+  ["🗓 The schedule follows your real day",["The next card starts when the one before it is checked off — not at its printed time.","A card someone's still working on stays put instead of jumping below lunch.","Andrew and Kenzie's Fact Review moves with the day, together."]],
+  ["👩 Mom mode works everywhere",["Type your code anywhere and Mom mode turns on everywhere on that device (✓ Mom on the kid bar).","It stays on for that device. Tap Mom twice on the Schedule to turn it off.","Kids' Corner always stays the kids' version — your Mom options never show on their schedule there."]],
+  ["🛒 Grocery list",["Circle = in the cart · tap the name = move it to a store (remembered).","📥 To sort holds anything without a store. Recipe tags open the recipe.","Price something like 3 lb of apples and it asks: per lb, or for all of it? Then it does the math (and remembers).","Typing .86 works now, and the All view counts the whole list."]],
+  ["🏃 Store mode + 🧾 checkout",["Store mode asks which store you're in, stays on until checkout, and you can add things while you shop.","Add the receipt right at checkout — photos (up to 6, overlapping) or a 📄 PDF. The app checks it against what you entered and asks about anything off.","Extras go where you pick — including 🧻 Household. Anything you didn't get: keep, remove or move to another store.","Every pop-up scrolls now, and they fit on a phone."]],
+  ["🧺 Laundry",["Tap ✎ Times on the Laundry card to set how long your washer and dryer take.","Each load shows when it'll be done, and Mom's Day reminds you about the washer and the dryer."]]
+],foot:"Little 👋 tips will show up in each spot the first time you get there — tap Got it and they're gone on every device."}];
+function wnCurrent(){ const w=WHATS_NEW[0]; if(!w||(typeof HA_IS_HOWE!=="undefined"&&HA_IS_HOWE)) return null; if(whatsNewSeen===w.id) return null; try{ if(HA_LS.getItem("ha_wn_seen")===w.id) return null; }catch(e){} return w; }
+function wnRowHTML(){
+  const w=wnCurrent(); if(!w) return "";
+  return '<div onclick="wnTap()" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:11px;border:2px solid #fcd34d;background:#fffbeb;margin-top:8px">'+
+    '<span style="font-size:20px;flex:none">✨</span>'+
+    '<div style="flex:1"><div style="font-weight:800;font-size:14px;color:#78350f">'+esc(w.title)+' — '+esc(w.date)+'</div>'+
+    '<div style="font-size:12px;color:#92400e">What changed and how to use it — tap to read</div></div>'+
+    '<div style="font-size:12px;font-weight:800;color:#b45309">Open ›</div></div>';
+}
+function wnTap(){ if(typeof momHere==="function"&&momHere()){ wnOpen(); return; } if(typeof kitPinGate==="function") kitPinGate(wnOpen,"What's new is for Mom."); }
+function wnOpen(){
+  const w=wnCurrent()||WHATS_NEW[0]; if(!w) return;
+  let ov=document.getElementById("wn-panel"); if(ov) ov.remove();
+  ov=document.createElement("div"); ov.id="wn-panel";
+  ov.style.cssText="position:fixed;inset:0;z-index:10050;background:rgba(15,23,42,.45);overflow:auto;font-family:'DM Sans',sans-serif;padding:18px 12px";
+  let h='<div style="max-width:640px;margin:0 auto;background:#fff;border-radius:16px;padding:16px 16px 20px;box-shadow:0 10px 40px rgba(0,0,0,.25)">'+
+    '<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:6px"><div style="flex:1;font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:#0f172a">✨ '+esc(w.title)+' <span style="font-size:13px;color:#64748b;font-family:\'DM Sans\',sans-serif">'+esc(w.date)+'</span></div>'+
+    '<button onclick="wnClose()" aria-label="Close" style="border:none;background:#f1f5f9;color:#475569;border-radius:9px;padding:5px 10px;font-size:13px;font-weight:800;cursor:pointer">✕</button></div>';
+  w.sections.forEach(function(sec){ h+='<div style="margin-top:12px"><div style="font-weight:800;font-size:14px;color:#1e293b">'+sec[0]+'</div>'+sec[1].map(function(l){ return '<div style="font-size:13px;color:#334155;margin:3px 0 0 4px">• '+l+'</div>'; }).join('')+'</div>'; });
+  if(w.foot) h+='<div style="margin-top:14px;padding:9px 12px;background:#fffbeb;border-radius:10px;font-size:12.5px;color:#78350f">'+w.foot+'</div>';
+  h+='<button onclick="wnGotIt()" style="width:100%;margin-top:14px;padding:12px;border-radius:12px;border:none;background:#3A7D44;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Got it</button></div>';
+  ov.innerHTML=h; ov.onclick=function(e){ if(e.target===ov) wnClose(); };
+  document.body.appendChild(ov);
+}
+function wnClose(){ const ov=document.getElementById("wn-panel"); if(ov) ov.remove(); }
+function wnGotIt(){ const w=WHATS_NEW[0]; if(!w) return; whatsNewSeen=w.id; try{ HA_LS.setItem("ha_wn_seen",w.id); }catch(e){} if(typeof db!=='undefined'&&db) db.ref('settings/whatsNewSeen').set(w.id); wnClose(); try{ renderAll(); }catch(e){} }
+// MOMNEWS_END
 // ── S7_START ──
 // 📥 Import — turn a pasted list or a text-export file (Anki "Notes in Plain
 // Text", Quizlet export, CSV/TSV) into cards in a kid's Mastery deck. Adds
