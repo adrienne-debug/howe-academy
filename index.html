@@ -2004,6 +2004,13 @@ function rtDoneOn(slot,kid,d,i){ const s=slState[activeWk()+"_"+d+"_"+kid+"_"+RT
 // rtLateDays is bound to the viewed day, so the late clause only applies when d is that day.
 function rtDueOrLate(slot,kid,d,i,st){ if(typeof stepWindowOk==="function"&&!stepWindowOk(st,d)) return false; return cadDueOn((st&&st.cad)||"daily",d)||(d===_todayDay&&rtLateDays(slot,kid,i)>0); }
 function rtComplete(slot,kid,d){ const steps=rtStepsFor(slot,kid); if(!steps.length){ const s=slState[activeWk()+"_"+d+"_"+kid+"_"+slot]; return !!(s&&s.done); } return steps.every((st,i)=>!rtDueOrLate(slot,kid,d,i,st)||rtDoneOn(slot,kid,d,i)); }
+// ✅ CHORESEMPTY (her rule 2026-10-06: "if no chores then it's considered done"): a list counts as done when it was checked off — or
+// when nothing in it is due (or late) for that kid that day. Before, "done" was only written when the last item was ticked, so a kid with
+// nothing to tick (Taylor, 10/6) stayed locked out of claiming her points.
+function rtSlotDone(kid,slot,d){
+  d=d||day; const s=slState[activeWk()+"_"+d+"_"+kid+"_"+slot]; if(s&&s.done) return true;
+  try{ const steps=rtStepsFor(slot,kid); if(!steps.length) return true; return steps.every(function(st,i){ return !rtDueOrLate(slot,kid,d,i,st); }); }catch(e){ return false; }
+}
 function rtEveningHour(){ const h=parseInt(routineTimes&&routineTimes.eveningHour,10); return isNaN(h)?18:h; }
 function rtFmtHour(h){ const ap=h>=12?"PM":"AM"; let hh=h%12; if(hh===0)hh=12; return hh+":00 "+ap; }
 // ✅ Her rule 2026-09-23: the day ENDS when every card is done or sent to Mom for her check — afternoon chores open and the
@@ -7946,8 +7953,8 @@ function renderSchedule(el){
     }
     if(kidDayTasks.length && kidDayDone+kidDaySent===kidDayTasks.length) h+=gaRender(kid);   // ⏩ get ahead — only once the day is done
     if(kidDayTasks.length && kidDayDone===kidDayTasks.length){
-      const aftDone=getSlot(kid,"afternoon").done;
-      const choresDone=getSlot(kid,"chores").done;
+      const aftDone=rtSlotDone(kid,"afternoon",day);   // CHORESEMPTY: nothing due counts as done
+      const choresDone=rtSlotDone(kid,"chores",day);
       const dayPts=getKidDayPoints(kid,day);
       const _song=(!hasCelebrated(kid,day)?'<button onclick="kidReplayCeleb(\''+kid+'\')" style="padding:8px 20px;border-radius:12px;background:linear-gradient(135deg,#8b5cf6,#ec4899);color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-top:8px">🎉 Play My Song!</button>':'');
       if(!aftDone||!choresDone){
@@ -19040,7 +19047,7 @@ function _troShelfHTML(troph,kid){
 // ── END-OF-DAY POINTS ECONOMY ─────────────────────────────────────
 // Afternoon + chores gate claiming the day's points. Kid claims → Mom approves (cashed →
 // banked) or rejects (recoverable same day). Claim: pointClaims[kid][WK][day].
-function choresGateDone(kid,d){ return !!(getSlot(kid,"afternoon").done && getSlot(kid,"chores").done); }
+function choresGateDone(kid,d){ return !!(rtSlotDone(kid,"afternoon",d) && rtSlotDone(kid,"chores",d)); }   // CHORESEMPTY
 // Her rule 2026-09-05: spins keep HOLDING until ALL school work is done. The claim tile only
 // ever rendered after the last card, but the claim function itself trusted the tile — now
 // the gate checks the cards too, so no path (kiosk, Corner, a stale screen) can claim early.
@@ -26743,7 +26750,7 @@ function kcPointsHTML(k){
     const gateOk=(typeof spinClaimGateDone==="function")&&spinClaimGateDone(k,dn);
     // what stands between them and claiming: cards left + the two lists the gate needs
     const leftBits=[]; const cardsLeft=cards.length-cardsDone; if(cardsLeft>0) leftBits.push(cardsLeft+" card"+(cardsLeft===1?"":"s"));
-    try{ if(!getSlot(k,"afternoon").done) leftBits.push("Afternoon"); if(!getSlot(k,"chores").done) leftBits.push("Chores"); }catch(e){}
+    try{ if(!rtSlotDone(k,"afternoon",dn)) leftBits.push("Afternoon"); if(!rtSlotDone(k,"chores",dn)) leftBits.push("Chores"); }catch(e){}
     const spinNote=!spun?'':(claim&&claim.status==="cashed")?'banked \u2713':(claim&&claim.status==="claimed")?'claimed \u2014 waiting for Mom':(gateOk?'ready to claim!':(leftBits.length?(leftBits.join(", ")+" to go"):'holding until school, Afternoon and Chores are done'));
     const canClaim=spun>0&&gateOk&&!(claim&&(claim.status==="claimed"||claim.status==="cashed"));
     const big=kcLittle(k);
