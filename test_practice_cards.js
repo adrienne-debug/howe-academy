@@ -18,10 +18,10 @@ function world(o) {
     db: { ref: p => ({ set: v => writes.push(["set", p, v]), remove: () => writes.push(["remove", p]) }) },
     currData: { subjects: { taylor: { all_about_spelling_4: { display: "All About Spelling 4", lessonSeq: ["Lesson 8", "Lesson 9", "Lesson 10"] }, spelling_words: { display: "Spelling Words" } },
       andrew: { all_about_spelling_1: { display: "AAS 1", lessonSeq: [] } } } },
-    lidDoneIdx: (k, sk) => new Set(o.done || [0]), weekData: { tasks: o.tasks || [] } };
+    lidDoneIdx: (k, sk) => new Set(o.done || [0]) };
   vm.createContext(ctx); vm.runInContext(CODE, ctx);
   ctx.unitStudies = { all_about_spelling: { id: "all_about_spelling", cardLessons: true, decks: ctx._aasDecks(), practiceIdeas: o.ideas,
-    kidStage: { andrew: { stage: 1, subject: "all_about_spelling_1" }, taylor: { stage: 4, subject: "all_about_spelling_4", practice: o.taylorPractice, knows: o.knows } } } };
+    kidStage: { andrew: { stage: 1, subject: "all_about_spelling_1" }, taylor: { stage: 4, subject: "all_about_spelling_4", practice: o.taylorPractice } } } };
   return { ctx, writes, els };
 }
 const card = (who, sk, title) => ({ who, subjectKey: sk, title: "📄 x — " + title, day: "thursday" });
@@ -42,15 +42,6 @@ console.log("── which card shows practice, and which words ──");
   ok("…and her AAS lesson card shows no practice row", c.prCardInfo(card("taylor", "all_about_spelling_4", "Lesson 9")) === null);
   const c2 = world({ taylorPractice: "spelling_words", done: [0, 1] }).ctx;
   ok("after Lesson 9 is taught, the practice card moves to Lesson 9's words", c2.prCardInfo(card("taylor", "spelling_words", "Spelling Words")).lesson === 9);
-  // Taylor's real first week: NO done records yet (Lesson 8 predates the app) — "knows through Lesson 8" carries it
-  const c3 = world({ taylorPractice: "spelling_words", done: [], knows: "Lesson 8" }).ctx;
-  ok("no done records yet → 'knows through Lesson 8' → Lesson 8 words on Mon/Tue", c3.prCardInfo(card("taylor", "spelling_words", "Spelling Words")).lesson === 8);
-  // Wednesday: the AAS lesson-day card (Lesson 9) is on the same day → the NEW words (Sarah: "she writes the new words that day too")
-  const wk = [{ who: "taylor", subjectKey: "all_about_spelling_4", day: "wednesday", title: "📖 AAS 4 — Lesson 9" }];
-  const c4 = world({ taylorPractice: "spelling_words", done: [], knows: "Lesson 8", tasks: wk }).ctx;
-  ok("Wednesday's Spelling Words card → Lesson 9 (the lesson taught that day), no check-off needed", c4.prCardInfo(Object.assign(card("taylor", "spelling_words", "Spelling Words"), { day: "wednesday" })).lesson === 9);
-  ok("…Thursday too (the week's latest lesson day on or before)", c4.prCardInfo(Object.assign(card("taylor", "spelling_words", "Spelling Words"), { day: "thursday" })).lesson === 9);
-  ok("…but Monday (before the lesson day) still Lesson 8", c4.prCardInfo(Object.assign(card("taylor", "spelling_words", "Spelling Words"), { day: "monday" })).lesson === 8);
 }
 console.log("\n── activities ──");
 {

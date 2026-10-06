@@ -160,10 +160,10 @@ console.log("\n── what never moves ──");
   // 🌞 2026-09-14: the queue never lays on top of a checked card — the block steps past the done card.
   // 👩 2026-09-22 (her rule): a checked card is OVER at its check time — done 10:45, so Mom's next card
   // hits 10:45, not the card's printed 10:50 end.
-  ok("the real mom card still laid (after the buffer, which starts at the 10:45 check)", r.at(m1.id) === "11:05 AM", r.at(m1.id));   // 🕰 2026-10-06: the card in hand holds at its slot until something is checked; only the cards behind it lay from now
+  ok("the real mom card still laid (right after the checked card it can no longer sit on)", r.at(m1.id) === "10:45 AM", r.at(m1.id));
   const checked2 = {}; checked2[done.id] = true;   // an old-style check with no timestamp: the printed end still holds
   const r2 = run({ tasks: [buf, m1, done, twin, carry], checked: checked2, momLoop: { cursor: 1, order: ["julian", "lucy", "lincoln", "ellis"] } });
-  ok("…and with no check time the checked card's printed end (10:50) starts the buffer; Mom's card follows it", r2.at(m1.id) === "11:10 AM", r2.at(m1.id));
+  ok("…and with no check time the printed end of the checked card still holds", r2.at(m1.id) === "10:50 AM", r2.at(m1.id));
 }
 {
   const i1 = card("lucy", "10:00 AM", 20, "none"), i2 = card("lucy", "10:30 AM", 20, "none");
@@ -205,15 +205,15 @@ console.log("\n── 🌞 LIVING DAY: the queue re-flows from NOW (her rule 202
   const buf = card("lucy", "10:00 AM", 20, "none", "notebook");
   const m1 = card("lucy", "10:20 AM", 15, "required"), m2 = card("lucy", "10:35 AM", 20, "required");
   const r = run({ tasks: [buf, m1, m2], nowMin: 11 * 60, momLoop: { cursor: 1, order: ["julian", "lucy", "lincoln", "ellis"] } });
-  ok("past 11:00 the buffer (in hand, nothing checked, 20 min) slides to end at now (10:40)", r.at(buf.id) === "10:40 AM", r.at(buf.id));   // 🕰 2026-10-06: the card in hand holds at its slot until something is checked; only the cards behind it lay from now
-  ok("Mom's block lays from now (behind the card in hand)", r.at(m1.id) === "11:00 AM" && r.at(m2.id) === "11:15 AM", [r.at(m1.id), r.at(m2.id)]);
+  ok("past 11:00 nothing sits before 11:00 — the buffer is at 11:00", r.at(buf.id) === "11:00 AM", r.at(buf.id));
+  ok("Mom's block chains right after the buffer's REAL slot", r.at(m1.id) === "11:20 AM" && r.at(m2.id) === "11:35 AM", [r.at(m1.id), r.at(m2.id)]);
 }
 {
   // no Mom work anywhere: the day still moves (the empty ring used to return the plan untouched)
   const a = card("lincoln", "10:00 AM", 20, "none"), b = card("lincoln", "10:30 AM", 30, "none"), c = card("lincoln", "12:30 PM", 20, "maybe");
   const r = run({ tasks: [a, b, c], nowMin: 11 * 60, momLoop: { cursor: 0, order: ["julian", "lucy", "lincoln", "ellis"] } });
-  ok("no Mom cards at all: the first card (20 min) slides to end at now (10:40)", r.at(a.id) === "10:40 AM", r.at(a.id));   // 🕰 2026-10-06: the card in hand holds at its slot until something is checked; only the cards behind it lay from now
-  ok("…the next lays from now (its passed slot collapses)", r.at(b.id) === "11:00 AM", r.at(b.id));
+  ok("no Mom cards at all: first card at now", r.at(a.id) === "11:00 AM", r.at(a.id));
+  ok("…the next follows in order (its passed slot collapses)", r.at(b.id) === "11:20 AM", r.at(b.id));
   ok("…a printed gap still AHEAD of the clock is kept (12:30 stays 12:30)", r.at(c.id) === "12:30 PM", r.at(c.id));
 }
 {
@@ -237,7 +237,7 @@ console.log("\n── 🌞 LIVING DAY: the queue re-flows from NOW (her rule 202
   ok("lunch never moves", r.at(L.id) === "12:00 PM");
   // 🍎 2026-09-22: the Settings lunch window (1:00–2:00 PM) is fixed too — the Mom card that would
   // run 12:50–1:15 now lands at 2:00 PM, not on top of lunch.
-  ok("the card in hand ends at now (11:30); Mom's card behind it steps over the lunch card (12:30)", r.at(nb.id) === "11:30 AM" && r.at(m.id) === "12:30 PM", [r.at(nb.id), r.at(m.id)]);   // 🕰 2026-10-06: the card in hand holds at its slot until something is checked; only the cards behind it lay from now
+  ok("a card that would cross lunch lands after it", r.at(nb.id) === "12:30 PM" && r.at(m.id) === "2:00 PM", [r.at(nb.id), r.at(m.id)]);
 }
 
 console.log("\n── 🌙 END-OF-DAY CUT: laid past the Settings school end → off the bottom, still checkable ──");
@@ -246,7 +246,7 @@ console.log("\n── 🌙 END-OF-DAY CUT: laid past the Settings school end →
         b = card("lincoln", "11:20 AM", 60, "required", "AAS"), cl = card("lincoln", "3:00 PM", 5, "none", "Closing Notebook", { subjectKey: "closing_nb" });
   const r = run({ tasks: [nb, a, b, cl], nowMin: 15 * 60 + 30, momLoop: { cursor: 2, order: ["julian", "lucy", "lincoln", "ellis"] } });
   const f = id => !!r.laid.find(t => t.id === id)._offDay;
-  ok("3:30 PM, nothing checked: the notebook slides to end at now (3:10) and is still on today", r.at(nb.id) === "3:10 PM" && !f(nb.id), [r.at(nb.id), f(nb.id)]);   // 🕰 2026-10-06: the card in hand holds at its slot until something is checked; only the cards behind it lay from now
+  ok("3:30 PM start: the notebook (ends 3:50) is still on today", r.at(nb.id) === "3:30 PM" && !f(nb.id), [r.at(nb.id), f(nb.id)]);
   ok("MR5 would end at 4:50 — past 4:15 → fell off the bottom", f(a.id), [r.at(a.id), f(a.id)]);
   ok("AAS behind it fell off too", f(b.id));
   ok("the closing notebook never falls off", !f(cl.id));
@@ -277,14 +277,14 @@ console.log("\n── 🏫 a co-op kid's queue never starts before they are home
   ok("10:30 AM, lincoln at co-op: his first card lays at 2:00 PM, not 10:30", r.at(ln1.id) === "2:00 PM", r.at(ln1.id));
   ok("…his Mom card waits until he is home and follows the notebook (notebook first)", r.at(lm.id) === "2:20 PM", r.at(lm.id));
   ok("…and the rest of his own work steps in behind the block", r.at(ln2.id) === "2:40 PM", r.at(ln2.id));
-  ok("ellis (not in the co-op): his card in hand slides to end at now (10:10)", r.at(e1.id) === "10:10 AM", r.at(e1.id));   // 🕰 2026-10-06: the card in hand holds at its slot until something is checked; only the cards behind it lay from now
+  ok("ellis (not in the co-op) lays from now as usual", r.at(e1.id) === "10:30 AM", r.at(e1.id));
   ok("Mom's chain for ellis is not held hostage by lincoln's co-op", toMinLocal(r.at(em.id)) < 14 * 60, r.at(em.id));
 }
 {
   const O = ["julian", "lucy", "lincoln", "ellis"];
   const ln1 = card("lincoln", "10:00 AM", 20, "none", "notebook"), lm = card("lincoln", "11:00 AM", 20, "required", "AAS");
   const r = run({ tasks: [ln1, lm], nowMin: 14 * 60 + 40, coopEnd: { lincoln: 14 * 60 }, momLoop: { cursor: 2, order: O } });
-  ok("home late (2:40), nothing checked: the first card (20 min) ends at now (2:20)", r.at(ln1.id) === "2:20 PM", r.at(ln1.id));   // 🕰 2026-10-06: the card in hand holds at its slot until something is checked; only the cards behind it lay from now
+  ok("home late (2:40): now wins over the co-op end", r.at(ln1.id) === "2:40 PM", r.at(ln1.id));
 }
 {
   const O = ["julian", "lucy", "lincoln", "ellis"];
@@ -297,7 +297,7 @@ console.log("\n── 🏫 a co-op kid's queue never starts before they are home
   const O = ["julian", "lucy", "lincoln", "ellis"];
   const ln1 = card("lincoln", "10:00 AM", 20, "none", "notebook");
   const r = run({ tasks: [ln1], nowMin: 10 * 60 + 30, momLoop: { cursor: 2, order: O } });
-  ok("no co-op today → unchanged (slides to end at now, 10:10)", r.at(ln1.id) === "10:10 AM");
+  ok("no co-op today → unchanged (from now)", r.at(ln1.id) === "10:30 AM");
 }
 
 console.log("\n── her rule 2026-09-22: still on the same kid → their next Mom card hits the time Mom is free ──");
@@ -319,14 +319,14 @@ console.log("\n── her rule 2026-09-22: still on the same kid → their next 
   // Same without the hold (a Mom card done for a kid who is NOT the loop's kid): the old lay holds — buffer first.
   const r0 = run({ tasks: [nb, egg, spr, aas, drl, ldm], checked, nowMin: 11 * 60 + 37,
     momLoop: { cursor: 0, order: ["lincoln", "lucy", "julian", "ellis"] } });
-  ok("not started with Mom → notebook-first still applies (block after the buffer, which starts at the 11:36 check)", r0.at(aas.id) === "12:01 PM", r0.at(aas.id));
+  ok("not started with Mom → notebook-first still applies (block after the buffer)", r0.at(aas.id) === "12:02 PM", r0.at(aas.id));
   // A kid AHEAD of their printed day: last checked card ended 11:20, next printed slot 12:30, now 11:37 → 11:37.
   const nb2 = card("lucy", "11:00 AM", 20, "none", "Notebook"), m2 = card("lucy", "12:30 PM", 20, "required", "LOE"), i2 = card("lucy", "12:50 PM", 20, "none", "Reading Eggs");
   const ck2 = {}; ck2[nb2.id] = "11:20 AM Sep 22";
   const r2 = run({ tasks: [nb2, m2, i2], checked: ck2, nowMin: 11 * 60 + 37,
     momLoop: { cursor: 1, order: ["julian", "lucy", "lincoln", "ellis"] }, momHold: { kid: "lucy", id: m2.id, day: "thursday" } });
   ok("ahead of the printed day → the held card lays at now, not at its printed slot", r2.at(m2.id) === "11:37 AM", r2.at(m2.id));
-  ok("her independent card follows the block straight away (11:57, its printed gap collapses once the day has started)", r2.at(i2.id) === "11:57 AM", r2.at(i2.id));
+  ok("her independent card follows the block — and steps over the 1:00–2:00 lunch window", r2.at(i2.id) === "2:00 PM", r2.at(i2.id));
 }
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

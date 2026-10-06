@@ -286,16 +286,15 @@ console.log("── a full day of flips: after every event, nothing is dropped �
     const unch = k => d.laid.filter(x => x.who === k && !st.checked[x.id] && !/lunch/i.test(x.title));
     ORDER.forEach(k => {
       const u = unch(k);
-      const _ih = u.slice().sort((p, q) => toMinLocal(p.time) - toMinLocal(q.time))[0];   // 🕰 2026-10-06: the card in hand holds at its slot until something is checked; only the cards behind it lay from now
-      ok(k + ": nothing unchecked (but the card in hand) sits before now (12:30) while Mom is off", u.filter(x => x !== _ih).every(x => toMinLocal(x.time) >= 12 * 60 + 30), u.map(x => x.title + "@" + x.time));
+      ok(k + ": nothing unchecked sits before now (12:30) while Mom is off", u.every(x => toMinLocal(x.time) >= 12 * 60 + 30), u.map(x => x.title + "@" + x.time));
       const nonMom = u.filter(x => x.mom !== "required" && x.subjectKey !== "closing_nb"), mom = u.filter(x => x.mom === "required");
       if (nonMom.length && mom.length) ok(k + ": every Mom card comes after every independent card", Math.min(...mom.map(x => toMinLocal(x.time))) >= Math.max(...nonMom.map(x => toMinLocal(x.time) + (x.dur || 20))), u.map(x => x.title + "@" + x.time));
       ok(k + ": every unchecked Mom card is flagged waiting (greyed)", mom.every(x => x._momWait === true), mom.map(x => x.id));
       ok(k + ": no independent card is flagged", nonMom.every(x => !x._momWait));
     });
-    ok("lincoln's first unchecked independent card (MR5, 30 min) slides to end at now and steps past the lunch card (12:30)", at(byTitle("lincoln", "MR5").id) === "12:30 PM", at(byTitle("lincoln", "MR5").id));   // 🕰 2026-10-06: the card in hand holds at its slot until something is checked; only the cards behind it lay from now
+    ok("lincoln's first unchecked independent card (MR5) moved up to now (12:30) — nothing left behind a gap", at(byTitle("lincoln", "MR5").id) === "12:30 PM", at(byTitle("lincoln", "MR5").id));
     // 🍎 2026-09-22: 1:00–2:00 PM is the Settings lunch window — Eggspress steps over it to 2:00 PM.
-    ok("…and Eggspress follows it after the lunch window (2:00), before his greyed Mom cards", at(byTitle("lincoln", "Eggspress").id) === "2:00 PM" && toMinLocal(at(byTitle("lincoln", "Spelling You See").id)) >= 14 * 60 + 20, [at(byTitle("lincoln", "Eggspress").id), at(byTitle("lincoln", "Spelling You See").id)]);
+    ok("…and Eggspress follows it (after the lunch window), before his greyed Mom cards", at(byTitle("lincoln", "Eggspress").id) === "2:00 PM" && toMinLocal(at(byTitle("lincoln", "Spelling You See").id)) >= 14 * 60 + 30, [at(byTitle("lincoln", "Eggspress").id), at(byTitle("lincoln", "Spelling You See").id)]);
     ok("lincoln (has his own work) gets the keep-going banner", /Keep going on your own work/.test(d.call("mlBannerHTML('lincoln')")));
     ok("julian finished all his Mom work earlier → no banner at all", d.call("mlBannerHTML('julian')") === "");
     {
@@ -307,7 +306,7 @@ console.log("── a full day of flips: after every event, nothing is dropped �
       ok("fresh day, Mom off: julian (whole day is Mom work) gets the play-and-tidy-up banner", /Go play/.test(fd.call("mlBannerHTML('julian')")) && /listen for Mom/.test(fd.call("mlBannerHTML('julian')")), fd.call("mlBannerHTML('julian')"));
       ok("fresh day, Mom off: julian's cards are all greyed, from now (10:05) on", fd.laid.filter(x => x.who === "julian" && x.mom === "required").every(x => x._momWait && toMinLocal(x.time) >= 10 * 60 + 5), fd.laid.filter(x => x.who === "julian").map(x => x.title + "@" + x.time));
       ok("fresh day, Mom off: lucy (has Reading Eggs + HWT) gets the keep-going banner", /Keep going/.test(fd.call("mlBannerHTML('lucy')")));
-      ok("fresh day, Mom off: lucy's Notebook, Reading Eggs, HWT come first from now, Read-Aloud + Dimensions greyed after", (() => { const L = fd.laid.filter(x => x.who === "lucy"); const t = n => toMinLocal(L.find(x => x.title === n).time); return t("Notebook") === 10 * 60 && t("Reading Eggs") === 10 * 60 + 20 && t("HWT") === 10 * 60 + 35 && t("Read-Aloud") >= 10 * 60 + 50 && t("Dimensions") > t("Read-Aloud"); })(), fd.laid.filter(x => x.who === "lucy").map(x => x.title + "@" + x.time));
+      ok("fresh day, Mom off: lucy's Notebook, Reading Eggs, HWT come first from now, Read-Aloud + Dimensions greyed after", (() => { const L = fd.laid.filter(x => x.who === "lucy"); const t = n => toMinLocal(L.find(x => x.title === n).time); return t("Notebook") === 10 * 60 + 5 && t("Reading Eggs") === 10 * 60 + 25 && t("HWT") === 10 * 60 + 40 && t("Read-Aloud") >= 10 * 60 + 55 && t("Dimensions") > t("Read-Aloud"); })(), fd.laid.filter(x => x.who === "lucy").map(x => x.title + "@" + x.time));
     }
     ok("the waiting flag never reaches the stored cards", tasks.every(x => x._momWait === undefined));
     // a kid checks independent work while Mom is off → no hold is started
@@ -358,7 +357,7 @@ console.log("\n── the buffer vs the kid's OWN Mom block (pre-existing, her f
   const d2 = derive(tasks2, st2); invariants("non-leader kid", tasks2, st2, d2);
   const at2 = id => d2.laid.find(t => t.id === id).time;
   ok("her block lands behind the borrower's card", at2(ura.id) === "10:45 AM" && at2(udm.id) === "11:05 AM", [at2(ura.id), at2(udm.id)]);
-  ok("her buffer starts at her last check (10:20) and sits ahead of her block — she is not idle while Mom is with the borrower", at2(ure.id) === "10:20 AM", at2(ure.id));   // 🕰 2026-10-06: the card in hand holds at its slot until something is checked; only the cards behind it lay from now
+  ok("her buffer, now covered, walks to the end of her block", at2(ure.id) === "11:30 AM", at2(ure.id));
   // (C) an UNCOVERED buffer still never moves (the chain leader's block starts after it)
   const st3 = { checked: {}, ready: {}, paused: {}, momLoop: { order: ORDER, cursor: 1 }, momHold: {} };
   const b3 = card("lucy", "10:00 AM", 20, "none", "Notebook"), m3 = card("lucy", "12:30 PM", 20, "required", "Read-Aloud");
