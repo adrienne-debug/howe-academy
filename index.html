@@ -12273,8 +12273,11 @@ function grAdd(text,by,extra){
 let _grPend=null;
 function grPop(html){
   let w=document.getElementById("gr-pop"); if(!w){ w=document.createElement("div"); w.id="gr-pop"; document.body.appendChild(w); }
+  // 📜 GR_KEEPSCROLL: redrawing the SAME pop-up (a tap on an option) keeps her place; a different pop-up starts at the top
+  const _hs=html?String(html):"", _ix=_hs.indexOf('</div>'), _key=_hs?_hs.slice(0,_ix>0?Math.min(_ix+6,240):90):"", _ob=(w.querySelector&&w.querySelector('.gr-pop-box'))||null, _keep=!!(_ob&&_key&&w.getAttribute&&w.getAttribute('data-popk')===_key), _st=_ob?_ob.scrollTop:0;
   w.innerHTML=html?'<div onclick="if(event.target===this)grPopClose()" style="position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:18px">'
     +'<style>#gr-pop .gr-pop-box [style*="overflow:auto"]{max-height:none!important;overflow:visible!important}</style><div class="gr-pop-box" style="background:#fff;border-radius:16px;padding:20px 18px;width:100%;max-width:340px;box-shadow:0 20px 60px rgba(0,0,0,.35);font-family:\'DM Sans\',sans-serif;max-height:calc(100vh - 36px);max-height:calc(100dvh - 36px);overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;box-sizing:border-box">'+html+'</div></div>':"";   // GR_SCROLLPDF: the whole pop-up is ONE scroll (inner scroll boxes off — a finger anywhere scrolls it)
+  try{ if(w.setAttribute) w.setAttribute('data-popk',_key); if(_keep){ const _nb=w.querySelector('.gr-pop-box'); if(_nb) _nb.scrollTop=_st; } }catch(e){}
 }
 function grPopClose(){ grPop(""); _grPend=null; }
 const GR_BTN='width:100%;padding:11px;border-radius:11px;font-size:13.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-top:7px;';
@@ -13128,7 +13131,7 @@ function grRcptPick(input){
 }
 const GR_RCPT_PROMPT='Read this grocery receipt (one or more photos of the same receipt, or a PDF of it). Reply with ONLY strict JSON, no prose:\n'
   +'{"store":"store name as printed","date":"YYYY-MM-DD or null","total":number or null,"items":[{"line":"the item text exactly as printed","name":"plain grocery name a shopper would say","qty":number or null,"price":number,"regular":number or null,"sale":true or false}]}\n'
-  +'price = what was actually paid for that line after any discount. regular = the price before the discount when the receipt shows one. sale = true when the receipt shows a discount, savings, member price, VIC/MVP/club price, "you saved", rollback or markdown for that item. '
+  +'price = what was actually paid for that line after any discount — always the LINE total. Items sold by weight print a weight and a per-pound price (e.g. "APPLES 3.00 lb @ 1.35 /lb  4.05"): price is 4.05 and qty is 3, never 1.35. A line like "2 @ 1.25  2.50" has price 2.50 and qty 2. regular = the price before the discount when the receipt shows one. sale = true when the receipt shows a discount, savings, member price, VIC/MVP/club price, "you saved", rollback or markdown for that item. '
   +'When there are several photos they are ONE receipt, in order from the top to the bottom, and neighbouring photos usually overlap: the last few lines of one photo show again at the top of the next. List each overlapping line ONCE — match the overlap by the lines around it (item text, price and order) and carry on with the first new line after it. Keep an item twice only when the receipt itself prints it twice (two separate lines in the same photo, or a separate quantity line). '
   +'Never invent lines or prices. Skip tax, subtotal, total, bag fees, coupons that are not tied to an item, payment and change lines.';
 async function grRcptRead(){
@@ -13194,6 +13197,9 @@ function grRcptChecksHTML(r,i,cands){
 }
 function grRcptSet(i,k,v){ if(!_grRc||!_grRc.rows||!_grRc.rows[i]) return; _grRc.rows[i][k]=v; grRcptDraw(); }
 function grRcptNo(k,v){ if(!_grRc) return; _grRc.no=_grRc.no||{}; _grRc.no[k]=v; grRcptDraw(); }
+// ✏️ GR_RCPTFIX: her fix wins over Claude's read; a regular price at or under the fixed price is no longer a "sale"
+function grRcptPrice(i,v){ const R=_grRc; if(!R||!R.rows||!R.rows[i]) return; const p=grMoney(v); if(!p){ grRcptDraw(); return; }
+  const r=R.rows[i]; r.price=p; r.fixed=true; if(r.reg&&r.reg<=p){ r.reg=null; r.sale=false; } grRcptDraw(); }
 function grRcptSetStore(sid){ if(!_grRc) return; _grRc.sid=sid; grRcptMatch(); grRcptDraw(); }
 function grRcptDraw(){
   const R=_grRc; if(!R) return grPopClose();
@@ -13210,11 +13216,12 @@ function grRcptDraw(){
   const matched={}; bought.forEach(r=>{ matched[r.match]=1; });
   const still=cands.filter(c=>!matched[grRcptKey(c)]&&!c.done);
   h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:6px 0 8px;font-size:12.5px;font-weight:700"><select onchange="grRcptSetStore(this.value)" style="padding:7px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'+grActiveStores().map(s=>'<option value="'+s+'"'+(s===R.sid?' selected':'')+'>'+esc(grStoreName(s))+'</option>').join('')+'</select>'
-    +'<span>'+esc(R.iso)+'</span>'+(R.total?'<span>· total '+grFmt$(R.total)+'</span>':'')+'</div>';
+    +'<span>'+esc(R.iso)+'</span>'+(R.total?'<span>· total '+grFmt$(R.total)+'</span>':'')+'</div>'
+    +'<div style="font-size:11.5px;color:#64748b;margin:-2px 0 6px">✏️ A price that doesn\'t match the paper? Tap it and type what the receipt says.</div>';   // GR_RCPTFIX
   const opt=(r,i)=>'<select onchange="_grRc.rows['+i+'].match=this.value;grRcptDraw()" style="max-width:150px;padding:4px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:11.5px;font-family:\'DM Sans\',sans-serif"><option value="x"'+(r.match==="x"?' selected':'')+'>➕ not on the list</option>'
     +cands.map(c=>'<option value="'+grRcptKey(c)+'"'+(r.match===grRcptKey(c)?' selected':'')+'>'+esc(c.name)+'</option>').join('')+'</select>';
   const row=(r,i)=>'<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid #eef2f0"><div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:700">'+esc(r.name)+'</div><div style="font-size:10.5px;color:#94a3b8;font-family:monospace">'+esc(r.line)+'</div></div>'
-    +'<div style="text-align:right;font-size:12px;white-space:nowrap">'+(r.sale&&r.reg?'<s style="color:#94a3b8">'+grFmt$(r.reg)+'</s> ':'')+'<b>'+grFmt$(r.price)+'</b>'+(r.sale?' 🏷':'')+'</div>'+opt(r,i)+'</div>'+grRcptChecksHTML(r,i,cands);   // GR_COFLOW
+    +'<div style="text-align:right;font-size:12px;white-space:nowrap">'+(r.sale&&r.reg?'<s style="color:#94a3b8">'+grFmt$(r.reg)+'</s> ':'')+'<input type="text" inputmode="decimal" aria-label="Price on the receipt" value="'+(r.price||0).toFixed(2)+'" onchange="grRcptPrice('+i+',this.value)" onclick="event.stopPropagation()" style="width:60px;padding:3px 5px;border:1.5px solid '+(r.fixed?'#16a34a':'#cbd5e1')+';border-radius:7px;font-size:12px;font-weight:800;text-align:right;font-family:inherit">'+(r.sale?' 🏷':'')+'</div>'+opt(r,i)+'</div>'+grRcptChecksHTML(r,i,cands);   // GR_COFLOW
   h+='<div style="max-height:50vh;overflow:auto">';
   h+='<div style="font-size:11px;font-weight:800;color:#16a34a;text-transform:uppercase;margin-top:4px">✓ Bought — on your list ('+bought.length+')</div>'+R.rows.map((r,i)=>r.match!=="x"?row(r,i):'').join('');
   { const _sum=Math.round(R.rows.reduce((a,r)=>a+(r.price||0),0)*100)/100;   // GR_RCPT6: do the lines add up?
