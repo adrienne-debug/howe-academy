@@ -55,10 +55,10 @@ ok("⏩ Get ahead shows only once the day is done",/if\(kidDayTasks\.length && k
 ok("early finish feeds in ONLY work that fell off today",/\.filter\(function\(p\)\{ return \(p\.card\.rolledFrom===today\|\|p\.card\.cascadedFrom===today\); \}\)/.test(src));
 console.log("⭐ the bonus");
 ok("checked before its day → flagged gotAhead by the check-off heal (moves only when checked)",/if\(_ga\)\{ t\.gotAhead=t\.day; if\(hist\[id\]\) hist\[id\]\.gotAhead=t\.day; \}/.test(src)&&/_mu\[id\+"\/gotAhead"\]=t\.gotAhead/.test(src));
-ok("the WHOLE amount — spin + half of it (20 → 30) — goes straight to the bank, not the day pool; no cap",/var _gaOn=!!\(_gaT&&_gaT\.gotAhead&&outcome\.pts>0\), _gaTot=_gaOn\?\(outcome\.pts\+Math\.round\(outcome\.pts\*\(\(typeof gaBonusPctFor==="function"\?gaBonusPctFor\(_gaT\):50\)\/100\)\)\):0/.test(src)&&/_gaBid=bankDirect\(k,_gaTot,/.test(src)&&/if\(!_gaOn\) addKidPoints\(k,outcome\.pts,d(,slotPendingTaskId\?\(WK\+\"\/spin_results\/\"\+slotPendingTaskId\):null)?\);/.test(src)&&!/gaCap|GA_CAP/.test(src));
+ok("the WHOLE amount — spin + half of it (20 → 30) — goes straight to the bank, not the day pool; no cap",/var _gaOn=!!\(_gaT&&_gaT\.gotAhead&&outcome\.pts>0\), _gaTot=_gaOn\?\(outcome\.pts\+Math\.round\(outcome\.pts\*\(\(typeof gaBonusPctFor==="function"\?gaBonusPctFor\(_gaT\):50\)\/100\)\)\):0/.test(src)&&/_gaBid=bankDirect\(k,_gaTot,/.test(src)&&/if\(!_gaOn\) addKidPoints\(k,outcome\.pts,d(,_srGuard)?\);/.test(src)&&!/gaCap|GA_CAP/.test(src));
 { const tot=p=>p+Math.round(p*0.5); ok("spin 20 → 30 banked; spin 25 → 38; spin 0 → nothing",tot(20)===30&&tot(25)===38); }
-ok("Mom's reset-spin takes a got-ahead spin back out of the bank, not the pool",/if\(sr\[taskId\]\.gaBid&&typeof bankDirectRemove==="function"\)\{ try\{ bankDirectRemove\(kid,sr\[taskId\]\.gaBid\); \}catch\(e\)\{\} \}/.test(src));
-ok("un-checking takes the bonus back",/if\(_sr&&_sr\.gaBid&&typeof bankDirectRemove==="function"\) bankDirectRemove\(_sr\.kid,_sr\.gaBid\);/.test(src));
+ok("Mom's reset-spin takes a got-ahead spin back out of the bank, not the pool",/spinRecParts\(sr\[taskId\]\)\.forEach\(p=>\{[\s\S]{0,120}if\(p\.gaBid&&typeof bankDirectRemove==="function"\)\{ try\{ bankDirectRemove\(kid,p\.gaBid\); \}catch\(e\)\{\} \}/.test(src));
+ok("un-checking takes the bonus back",/spinRecParts\(_sr\)\.forEach\(function\(p\)\{ if\(p\.gaBid&&typeof bankDirectRemove==="function"\) bankDirectRemove\(p\.kid\|\|_sr\.kid,p\.gaBid\); \}\);/.test(src));
 console.log("↩ the school-end rule marks what fell off");
 { const a=src.indexOf("function seGuardWeek("); let i=src.indexOf("{",a), d=0, j=i; for(;j<src.length;j++){ if(src[j]==="{")d++; else if(src[j]==="}"){ d--; if(!d) break; } }
   const G=new Function(src.slice(a,j+1)+"\nreturn seGuardWeek;")();

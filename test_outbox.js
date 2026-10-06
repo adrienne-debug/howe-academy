@@ -230,7 +230,7 @@ ok("both routine toggles note their step keys", (src.match(/obNoteSl\(wk,db\.ref
 ok("Mom-check claims: set with the checked guard", /obSet\(WK\+"\/claimed\/"\+id,ts,_cw0,\{u:WK\+"\/checked\/"\+id\}\)/.test(src));
 ok("no raw claimed writes left", !/db\.ref\(WK\+"\/claimed\/"/.test(src));
 ok("point claims + grab claims through the outbox", /obSet\("pointClaims\//.test(src) && /obSet\("grabClaims\/"\+k,rec,_gw\)/.test(src));
-ok("spin points are guarded by their spin record", /addKidPoints\(k,outcome\.pts,d,slotPendingTaskId\?\(WK\+"\/spin_results\/"\+slotPendingTaskId\):null\)/.test(src) && /obInc\(WK\+"\/slot_points\/"/.test(src));
+ok("spin points are guarded by their spin record", /addKidPoints\(k,outcome\.pts,d,_srGuard\)/.test(src) && /_srGuard=slotPendingTaskId\?\(WK\+"\/spin_results\/"\+slotPendingTaskId\+/.test(src) && /obInc\(WK\+"\/slot_points\/"/.test(src));
 ok("replay runs when the device comes back online", /if\(on\) setTimeout\(function\(\)\{ try\{ obReplay\(\); \}catch\(e\)\{\} \},4000\)/.test(src));
 ok("…and after the checked list loads", /try\{ obReplay\(\); \}catch\(e\)\{\}\s+\/\/ 📮/.test(src));
 ok("each check-off is noted before it's written", /ckNotePending\(id,doneTs\); const _w=db\.ref\(WK\+"\/checked\/"\+id\)\.set\(doneTs\)/.test(src));
