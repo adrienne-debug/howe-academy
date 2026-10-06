@@ -12,7 +12,7 @@ ok("ADMIN_PIN has NO code default (page source is public)", /let ADMIN_PIN=HA_LS
 ok("listens on its OWN path settings/adminPin (not settings/pin)", /db\.ref\("settings\/adminPin"\)\.on\("value"/.test(src));
 ok("ADMIN_PIN is never rendered into the page", !/'\s*\+\s*ADMIN_PIN|ADMIN_PIN\s*\+\s*'/.test(src));
 ok("library.js + play.js doors also accept it", /pinOk\(v\)/.test(libSrc)&&/pinOk\(val\)/.test(playSrc));
-ok("blockout dialog door uses pinOk", /if\(pinOk\(this\.value\)\)\{adminPinUnlocked=true;closeBoDialog\(\);/.test(src));
+ok("blockout dialog door uses pinOk (→ one Mom-mode switch, 2026-10-06)", /if\(pinOk\(this\.value\)\)\{haMomOn\(\);closeBoDialog\(\);/.test(src));
 
 // ── behaviour: run the real door functions in a sandbox
 function sandbox(st){
@@ -25,7 +25,7 @@ function sandbox(st){
     mastListEditMode:false, mastListEditPin:"", ptsEditUnlocked:false, attEditUnlocked:false, els };
   ctx.window=ctx;
   vm.createContext(ctx);
-  const names=["_pinStr","_adminPinOk","pinOk","dadPinOk","checkMomPin","checkAdminPin","kitPinCheck","mastAdminCheckPin","mastListEditCheck","checkPtsPin","checkAttPin","pnwCheckPin","dadPinTry"];
+  const names=["haMomOn","haMomOff","_pinStr","_adminPinOk","pinOk","dadPinOk","checkMomPin","checkAdminPin","kitPinCheck","mastAdminCheckPin","mastListEditCheck","checkPtsPin","checkAttPin","pnwCheckPin","dadPinTry"];
   vm.runInContext(names.map(fn).join("\n")+"\n"+fnIn(libSrc,"lbPinTry")+"\n"+fnIn(playSrc,"plMomPinTry"),ctx);
   return ctx;
 }

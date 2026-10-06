@@ -2668,6 +2668,14 @@ let pnwPendingWeek=null;
 let currViewKid=FIRST_KID;
 let currViewWeek=null;
 let adminPinUnlocked=false;
+// 👩 UNIMOM (her rules 2026-10-05/06: "mom mode should be universal for wherever it is turned on and can be turned off with clicking mom
+// mode on schedule" · "and stays on that device"): ONE switch behind every Mom door. Any code typed (Mom button, Admin, Notebook, Units,
+// Mastery, Blockouts, Plan next week, the kitchen/grocery prompts) turns it on; the Mom button lights; it is remembered on THIS device
+// (never synced) until Mom taps it off on the Schedule or uses a 🔒 lock. The check-up's kid-screen door still re-locks when the sitting
+// ends (her 10/5 rule for that door).
+function haMomOn(){ momModeActive=true; momPinUnlocked=true; adminPinUnlocked=true; mastAdminPinOk=true; try{ HA_LS.setItem('ha_mom_on','1'); }catch(e){} }
+function haMomOff(){ momModeActive=false; momPinUnlocked=false; adminPinUnlocked=false; mastAdminPinOk=false; try{ HA_LS.setItem('ha_mom_on','0'); }catch(e){} }
+try{ if(HA_LS.getItem('ha_mom_on')==="1"){ momModeActive=true; momPinUnlocked=true; adminPinUnlocked=true; mastAdminPinOk=true; } }catch(e){}
 let blockouts={};
 let boForm={type:"fullDay",kids:[],start:"",end:"",momReturn:"",day:""};
 
@@ -3976,8 +3984,7 @@ function checkMomPin(val){
   if(val.length < 4) return;
   const err = document.getElementById("mom-pin-err");
   if(pinOk(val)){
-    momPinUnlocked = true;
-    momModeActive = true;
+    haMomOn();   // UNIMOM
     kid = "mom"; // land straight on Mom's agenda (not the all-kids view)
     renderAll();
   } else {
@@ -4336,7 +4343,7 @@ function selKid(k){
     if(momModeActive){
       if(kid==="mom"){
         // Already on the agenda → tapping Mom again exits Mom mode.
-        momModeActive=false; momPinUnlocked=false; kid="all"; schedShowAdmin=false; renderAll();
+        haMomOff(); kid="all"; schedShowAdmin=false; renderAll();
       } else {
         // In Mom mode but peeking at a kid → tapping Mom returns to the agenda (stays unlocked/red).
         kid="mom"; schedShowAdmin=false; renderAll();
@@ -5519,7 +5526,7 @@ function checkAdminPin(val,errId){
   if(val.length<4) return;
   const err=document.getElementById(errId);
   if(pinOk(val)){
-    adminPinUnlocked=true;
+    haMomOn();   // UNIMOM
     renderAll();
   } else {
     if(err) err.textContent="Incorrect PIN";
@@ -7543,7 +7550,7 @@ function renderSchedule(el){
   if(schedShowBoard){ renderMomBoard(el); return; }
   if(schedShowHistory){ renderHistory(el); return; }
   if(schedShowAdmin){
-    if(!adminPinUnlocked){
+    if(!momHere()){
       el.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center">'+
         '<div style="font-size:48px;margin-bottom:12px">&#128274;</div>'+
         '<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:700;margin-bottom:4px">Admin Locked</div>'+
@@ -11654,7 +11661,7 @@ function kitPinGate(then,why){
 function kitPinClose(){ const w=document.getElementById("kit-pin-wrap"); if(w) w.innerHTML=""; window._kitPinThen=null; }
 function kitPinCheck(v){
   if(String(v).length<4) return;
-  if(pinOk(v)){ adminPinUnlocked=true; const t=window._kitPinThen; kitPinClose(); if(typeof t==="function") t(); }
+  if(pinOk(v)){ haMomOn(); const t=window._kitPinThen; kitPinClose(); if(typeof t==="function") t(); }
   else { const e=document.getElementById("kit-pin-err"), i=document.getElementById("kit-pin-input"); if(e) e.textContent="Incorrect PIN"; if(i){ i.value=""; } }
 }
 function kitEditMeal(id){ kitPinGate(function(){ _kitEditMealGo(id); }); }
@@ -12116,7 +12123,32 @@ function grMgrHTML(){
   return h;
 }
 // 🏃 store mode: big rows, screen stays awake, the cart folds away
+// 🏃 GR_COFLOW (her rule 2026-10-06: "that list doesn't come out of shop mode until checked out"): leaving store mode with something in
+// the cart asks first — check out, keep shopping, or leave and keep the cart for later. A checkout ends store mode on its own.
+let _grBigForce=false;
+// 🏃 GR_SORT7 (her yes 2026-10-06): starting store mode from All asks where she is — then every price typed, the checkout, the receipt
+// and the leftovers all know the store. One store → straight in. "More than one" keeps All.
+let _grBigAll=false;
+function grBigPick(){
+  const S=grActiveStores(); if(S.length===1){ grBigStart(S[0]); return; }
+  grPop('<div style="font-weight:800;font-size:15px">🏃 Which store are you at?</div><div style="font-size:12.5px;color:#64748b;margin-top:3px">Prices you type, the checkout and the receipt all go to this store.</div>'
+    +S.map(x=>'<button onclick="grBigStart(\''+x+'\')" style="'+GR_BTN+'text-align:left;padding:12px 14px;border:2.5px solid '+grStoreColor(x)+';background:#fff;color:#1f2937">'+esc(grStoreName(x))+'</button>').join('')
+    +'<button onclick="grBigStart(\'all\')" style="'+GR_BTN+'border:1.5px solid #cbd5e1;background:#fff;color:#475569">🛒 More than one store — shop the whole list</button>'
+    +'<button onclick="grPopClose()" style="'+GR_BTN+'border:none;background:#f1f5f9;color:#475569">Cancel</button>');
+}
+function grBigStart(sid){ grPopClose(); if(sid&&sid!=="all"&&grStores()[sid]){ grStore=sid; try{ HA_LS.setItem('ha_gr_store',sid); }catch(e){} } _grBigAll=true; try{ if(!grBig) grBigToggle(); }finally{ _grBigAll=false; } }
+function grBigAsk(){
+  const n=grCartCount(grCurStore());
+  grPop('<div style="font-weight:800;font-size:15px">🛒 You\'re still shopping</div><div style="font-size:12.5px;color:#64748b;margin-top:3px">'+n+' in the cart. Check out to finish the trip.</div>'
+    +'<button onclick="grPopClose();grDone()" style="'+GR_BTN+'border:none;background:#1d2a22;color:#fff;margin-top:12px">🧾 Check out</button>'
+    +'<button onclick="grPopClose()" style="'+GR_BTN+'border:none;background:#3A7D44;color:#fff">Keep shopping</button>'
+    +'<button onclick="grBigLeave()" style="'+GR_BTN+'border:1.5px solid #cbd5e1;background:#fff;color:#475569">Leave store mode — keep my cart for later</button>');
+}
+function grBigLeave(){ grPopClose(); _grBigForce=true; try{ if(grBig) grBigToggle(); }finally{ _grBigForce=false; } }
+function grBigAfterCheckout(){ if(grBig&&!grCartCount(grCurStore())) grBigLeave(); }
 function grBigToggle(){
+  if(grBig&&!_grBigForce&&grCartCount(grCurStore())>0){ grBigAsk(); return; }
+  if(!grBig&&!_grBigForce&&!_grBigAll&&grCurStore()==="all"&&grActiveStores().length){ grBigPick(); return; }   // GR_SORT7: which store are you at?   // GR_COFLOW: store mode stays on until checkout
   grBig=!grBig; try{ HA_LS.setItem('ha_gr_big',grBig?"1":"0"); }catch(e){}
   try{
     if(grBig&&navigator.wakeLock&&navigator.wakeLock.request) navigator.wakeLock.request("screen").then(l=>{ _grWake=l; }).catch(()=>{});
@@ -12176,7 +12208,7 @@ function grCreate(p,src,stores){
   // the store: picked now (the chip she's on) → else where it usually comes from. A first pick becomes its home.
   const home=grHomeFor(p.name);
   const st=(stores&&stores.length)?stores:home;
-  if(st.length) it.stores=st.slice(); else if(grActiveStores().length) it.sort=true;   // 📥 no store yet → To sort
+  if(st.length) it.stores=st.slice(); else if((grData.home||{})[kitSlug(p.name)]==="any") it.any=true; else if(grActiveStores().length) it.sort=true;   // GR_SORT7: remembered "Any store"   // 📥 no store yet → To sort
   if(stores&&stores.length&&!home.length) grSetHome(p.name,stores);
   grPut(id,it); return id;
 }
@@ -12380,7 +12412,7 @@ function grEditSave(){
   const fav=!!((document.getElementById("gr-e-fav")||{}).checked); if(P.photo) it.photo=P.photo;
   { const mp={note:note||null,fav:fav||null}; if(P.photo) mp.photo=P.photo; grMemUpdate(it.name,mp); }   // 🧠 the note, photo and ⭐ come back next time
   const sec=(document.getElementById("gr-e-sec")||{}).value||it.sec;
-  if(grActiveStores().length){ const ns=(P.stores||[]).slice(); if(ns.length) it.stores=ns; else delete it.stores; grSetHome(it.name,ns); } if(it.stores&&it.stores.length) delete it.sort;   // home store follows her pick; a store = sorted
+  if(grActiveStores().length){ const ns=(P.stores||[]).slice(), _had=!!(it.stores&&it.stores.length); if(ns.length){ it.stores=ns; delete it.any; } else { delete it.stores; if(_had) it.any=true; } grSetHome(it.name,ns); if(!ns.length&&it.any) grSetAnyHome(it.name); } if(it.stores&&it.stores.length) delete it.sort;   // home store follows her pick; a store = sorted
   if(sec!==it.sec){
     it.sec=sec;
     // remember her move for next time — only when it differs from what the word list would guess
@@ -12420,7 +12452,7 @@ function grDoneRun(sid,total,opts){
   Object.keys(grData.items).forEach(id=>{
     const it=grData.items[id]; if(!it||!it.done||!grShowsAt(it.stores,sid)) return;
     if(H("i:"+id)) bought(it.name,(it.unit&&!/^(bag|box|can|jar|bottle|pk|pack|carton|tub|loaf|bunch|head|ct|count|dozen|doz)/.test(it.unit))?1:it.qty,it.sec,opts.freeze&&opts.freeze["i:"+id]);
-    if(it.paid){ const ps=grPaidStore({stores:it.stores}); if(ps) grPriceAdd(it.name,ps,it.paid,{src:"typed"}); }   // 💲 the price she typed in the store
+    if(it.paid){ const ps=grPaidStore({stores:it.stores})||grEstStore({name:it.name,stores:it.stores},"all"); if(ps) grPriceAdd(it.name,ps,it.paid,{src:"typed"}); }   // GR_ESTSTORE   // 💲 the price she typed in the store
     if(H("i:"+id)) grMemBought(it.name,it.sec); grClearedPush(id,it,"done");
     delete grData.items[id];
     if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/items/'+id).remove();
@@ -12428,7 +12460,7 @@ function grDoneRun(sid,total,opts){
   grVirtualRows().forEach(r=>{
     if(!grData.vchk[r.key]||!grShowsAt(r.stores,sid)) return;
     if(H("v:"+r.key)){ bought(r.name,r.qty,r.sec,opts.freeze&&opts.freeze["v:"+r.key]); grMemBought(r.name,r.sec); }
-    if(grData.vpaid[r.key]){ const ps=grPaidStore(r); if(ps) grPriceAdd(r.name,ps,grData.vpaid[r.key],{src:"typed"}); delete grData.vpaid[r.key]; if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/vpaid/'+r.key).remove(); }
+    if(grData.vpaid[r.key]){ const ps=grPaidStore(r)||grEstStore(r,"all"); if(ps) grPriceAdd(r.name,ps,grData.vpaid[r.key],{src:"typed"}); delete grData.vpaid[r.key]; if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/vpaid/'+r.key).remove(); }
     if(r.virt==="staple"&&kitStaples[r.sid]&&H("v:"+r.key)){   // bought for someone else → still out at home
       kitStaples[r.sid].state="have"; kitStaples[r.sid].ts=Date.now();
       if(typeof db!=='undefined'&&db) db.ref('kitchen/staples/'+r.sid).set(kitStaples[r.sid]);
@@ -12471,11 +12503,39 @@ function grGroups(sid){
   const push=(sec,r)=>{ (g[sec]=g[sec]||[]).push(r); };
   Object.keys(items).forEach(id=>{
     const it=items[id]; if(!it||!it.name||!grShowsAt(it.stores,sid)) return;
-    push(GR_SECS.some(s=>s[0]===it.sec)?it.sec:grSecFor(it.name),{id:id,name:it.name,photo:it.photo||"",q:grQtyTxt(it),note:it.note||"",tags:(it.src||[]).map(grSrcTxt).filter(Boolean),sort:!!it.sort&&!it.done,done:!!it.done,doneTs:it.doneTs||0,stores:(it.stores||[]).filter(x=>grStores()[x])});
+    push(GR_SECS.some(s=>s[0]===it.sec)?it.sec:grSecFor(it.name),{id:id,name:it.name,photo:it.photo||"",q:grQtyTxt(it),note:it.note||"",tags:(it.src||[]).map(grSrcTxt).filter(Boolean),srcs:it.src||[],sort:grIsUnsorted(it)&&!it.done,done:!!it.done,doneTs:it.doneTs||0,stores:(it.stores||[]).filter(x=>grStores()[x])});
   });
   grVirtualRows().forEach(r=>{ if(!grShowsAt(r.stores,sid)) return; push(r.sec,{key:r.key,name:r.name,q:r.qty?"×"+r.qty:"",note:"",tags:[r.tag],done:!!grData.vchk[r.key],doneTs:0,virt:true,stores:r.stores,sort:!!r.sort&&!grData.vchk[r.key]}); });
   Object.keys(g).forEach(k=>g[k].sort((a,b)=>String(a.name).localeCompare(String(b.name))));
   return g;
+}
+// 🍽 GR_MEALCHIP (her ask 2026-10-06): a meal tag is one chip per recipe ("Burgers (Wed), Crockpot Steak Burrito Bowls (Fri)" → two
+// chips). A chip whose recipe is in the kitchen opens it over the list; one that isn't stays a plain tag. Other tags are unchanged.
+const _GR_TAG='font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:10px;background:#fdf3dc;color:#7c5a10;white-space:nowrap';
+function grMealFind(name){ const n=String(name||"").trim().toLowerCase(); if(!n||typeof kitMeals==="undefined") return null; const M=kitMeals||{}; const id=Object.keys(M).find(k=>M[k]&&String(M[k].name||"").trim().toLowerCase()===n); return id||null; }
+function grMealParts(lbl){ const out=[], re=/\s*(.+?) \(([A-Z][a-z]{2})\)\s*(?:,|$)/g; let m, last=0; const L=String(lbl||"");
+  while((m=re.exec(L))){ out.push({name:m[1].trim(),day:m[2]}); last=re.lastIndex; }
+  if(!out.length&&L.trim()) out.push({name:L.trim(),day:""}); else if(last<L.length&&L.slice(last).trim()) out.push({name:L.slice(last).replace(/^,\s*/,"").trim(),day:""});
+  return out; }
+function grTagsHTML(r){
+  if(!r.srcs||!r.srcs.length) return (r.tags||[]).map(t=>' <span style="'+_GR_TAG+'">'+esc(t)+'</span>').join('');
+  return r.srcs.map(function(s){
+    if(s&&s.k==="meal") return grMealParts(s.lbl).map(function(p){ const mid=grMealFind(p.name), txt='🍽 '+esc(p.name)+(p.day?' ('+esc(p.day)+')':'');
+      return mid?' <span onclick="event.stopPropagation();grMealPop(\''+mid+'\')" role="button" aria-label="Open the recipe" style="'+_GR_TAG+';cursor:pointer;text-decoration:underline dotted">'+txt+'</span>'
+        :' <span style="'+_GR_TAG+'">'+txt+'</span>'; }).join('');
+    const t=grSrcTxt(s); return t?' <span style="'+_GR_TAG+'">'+esc(t)+'</span>':'';
+  }).join('');
+}
+function grMealPop(mid){
+  const m=(typeof kitMeals!=="undefined"&&kitMeals||{})[mid]; if(!m) return;
+  const lines=String(m.ing||"").split("\n").map(x=>x.trim()).filter(Boolean), steps=String(m.steps||"").split("\n").map(x=>x.trim()).filter(Boolean);
+  let h='<div style="font-weight:800;font-size:16px">'+(m.emoji?esc(m.emoji)+' ':'🍽 ')+esc(m.name||"Recipe")+'</div><div style="max-height:58vh;overflow:auto;margin-top:6px">';
+  if(lines.length) h+='<div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.3px;margin-top:6px">Ingredients</div>'+lines.map(l=>'<div style="font-size:13px;padding:2px 0">• '+esc(l)+'</div>').join('');
+  if(steps.length) h+='<div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.3px;margin-top:10px">Steps</div>'+steps.map((l,i)=>'<div style="font-size:13px;padding:2px 0">'+(i+1)+'. '+esc(l)+'</div>').join('');
+  if(!lines.length&&!steps.length) h+='<div style="font-size:12.5px;color:#64748b">No ingredients or steps saved yet.</div>';
+  h+='</div><button onclick="grPopClose();kitOpenRecipe(\''+mid+'\')" style="'+GR_BTN+'border:none;background:#3A7D44;color:#fff">Open the full recipe</button>'
+    +'<button onclick="grPopClose()" style="'+GR_BTN+'border:none;background:#f1f5f9;color:#475569">Close</button>';
+  grPop(h);
 }
 function grRowHTML(r,showStores){
   const qsOn=grQs&&showStores&&r.sort, qk=r.virt?"v:"+r.key:"i:"+r.id, qSel=qsOn&&!!grQsSel[qk];   // ☐ Sort several
@@ -12486,9 +12546,9 @@ function grRowHTML(r,showStores){
     +(qsOn?'<div onclick="'+tap+'" role="checkbox" aria-checked="'+qSel+'" aria-label="Pick for sorting" style="cursor:pointer;width:'+cs+'px;height:'+cs+'px;flex:0 0 auto;border-radius:7px;border:2px solid #0f766e;background:'+(qSel?'#0f766e':'#fff')+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:'+(big?18:13)+'px;font-weight:800">'+(qSel?'✓':'')+'</div>'
     :'<div onclick="'+tap+'" role="button" aria-label="'+(r.done?'Take out of the cart':'Put in the cart')+'" style="cursor:pointer;width:'+cs+'px;height:'+cs+'px;flex:0 0 auto;border-radius:50%;border:2px solid '+(r.done?'#16a34a':'#3A7D44')+';background:'+(r.done?'#16a34a':'#fff')+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:'+(big?18:13)+'px;font-weight:800">'+(r.done?'✓':'')+'</div>')
     +(r.photo?'<img src="'+r.photo+'" alt="" onclick="grPhotoView(\''+r.id+'\')" style="width:'+(big?48:30)+'px;height:'+(big?48:30)+'px;object-fit:cover;border-radius:8px;cursor:pointer;flex:0 0 auto">':'')
-    +'<div onclick="'+tap+'" style="cursor:pointer;flex:1;min-width:0">'
+    +'<div onclick="'+(r.virt?'grQuickMove(\'v\',\''+r.key+'\')':'grQuickMove(\'i\',\''+r.id+'\')')+'" role="button" aria-label="Move to a different store" style="cursor:pointer;flex:1;min-width:0">'
       +'<div style="font-size:'+(big?18:14)+'px;font-weight:700;'+(r.done?'text-decoration:line-through;color:#94a3b8':'color:#1a1a1a')+'">'+esc(r.name)
-      +(big?'':r.tags.map(t=>' <span style="font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:10px;background:#fdf3dc;color:#7c5a10;white-space:nowrap">'+esc(t)+'</span>').join(''))+st+(r.sort?(showStores?' <span style="font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:10px;background:#ccfbf1;color:#0f766e;white-space:nowrap">📥 to sort</span>':'<div style="font-size:11.5px;font-weight:800;color:#0f766e">📥 not sorted yet — Mom may get this somewhere else</div>'):'')+'</div>'
+      +(big?'':grTagsHTML(r))+st+(r.sort?(showStores?' <span style="font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:10px;background:#ccfbf1;color:#0f766e;white-space:nowrap">📥 to sort</span>':'<div style="font-size:11.5px;font-weight:800;color:#0f766e">📥 not sorted yet — Mom may get this somewhere else</div>'):'')+'</div>'
       +((showStores&&r.sort&&!qsOn)?grQsChipsHTML(r):'')   // 🏬 one tap sorts it right here on All
       +(r.note?'<div style="font-size:'+(big?14:12)+'px;color:#64748b">'+esc(r.note)+'</div>':'')+grPriceLineHTML(r)+'</div>'
     +((r.id&&!r.done)?grStepperHTML(r):(r.q?'<div style="font-size:'+(big?16:13)+'px;font-weight:800;color:#3A7D44;white-space:nowrap">'+esc(r.q)+'</div>':''))
@@ -12567,7 +12627,8 @@ function renderGrocery(el){
     const fold=grBig&&!grCartOpen;   // 🏃 store mode folds the cart away
     h+='<div onclick="'+(grBig?'grCartOpen=!grCartOpen;grRepaint()':'')+'" style="display:flex;justify-content:space-between;font-size:'+(grBig?13:11)+'px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#16a34a;margin:16px 0 2px;'+(grBig?'cursor:pointer':'')+'"><span>✓ In the cart'+(grBig?(fold?' ▸ show':' ▾ hide'):'')+'</span><span>'+inCart.length+'</span></div>'
       +(fold?'':inCart.map(r=>grRowHTML(r,sid==='all')).join(''))
-      +'<button onclick="grDone()" style="width:100%;margin-top:12px;padding:12px;border-radius:12px;border:none;background:#1d2a22;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🧾 Checkout'+(sid==='all'?'':' at '+esc(grStoreName(sid)))+' · '+inCart.length+' in cart</button>';
+      +(grBig?'<button onclick="grDone()" style="width:100%;margin-top:12px;padding:12px;border-radius:12px;border:none;background:#1d2a22;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🧾 Checkout'+(sid==='all'?'':' at '+esc(grStoreName(sid)))+' · '+inCart.length+' in cart</button>'
+        :'<div style="font-size:11.5px;color:#64748b;margin-top:8px;text-align:center">🧾 Checkout is in 🏃 Store mode</div>');   // GR_CO_BIGONLY
   }
   if(sid==='all'&&grQs) h+=grQsBarHTML();   // ☐ Send N to: …
   if(grClearedIds().length) h+='<button onclick="grClearedOpen()" style="margin-top:12px;border:none;background:none;color:#2B7A78;font-size:12.5px;font-weight:800;cursor:pointer;padding:0;font-family:\'DM Sans\',sans-serif">↩ Recently cleared ('+grClearedIds().length+')</button>';
@@ -12906,9 +12967,20 @@ function grSaleInfo(name,sid){
 function grBest(name){ return grActiveStores().map(sid=>({sid:sid,p:grUsual(name,sid)})).filter(x=>x.p).sort((a,b)=>a.p-b.p); }
 // how many of the priced thing: plain counts multiply, weights/volumes count once (her price is per package)
 function grMult(qty,unit){ return (qty>0&&(!unit||/^(bag|box|can|jar|bottle|pk|pack|carton|tub|loaf|bunch|head|ct|count)/.test(unit)))?qty:1; }
-function grRowPrice(r,sid){ if(!sid||sid==="all") return null; const u=grUsual(r.name,sid); if(!u) return null; const it=r.id?grData.items[r.id]:null; return u*grMult(it?it.qty:(r.q&&/^×(\d+)/.test(r.q)?+r.q.slice(1):0),it?it.unit:""); }
-function grTripEst(sid,cartOnly){
-  if(!sid||sid==="all") return null; const g=grGroups(sid); let t=0, n=0, miss=0;
+// 💲 GR_ESTSTORE (her rule 2026-10-06: "if I'm shopping in the All mode it should price all the things, if I'm shopping in Food Lion it
+// should just be doing that — it should match the view I'm in"): the store whose price counts for a row. A store chip → that store.
+// All → the item's one store, else the store it was last priced at (latest date, then latest record), else none.
+function grEstStore(r,sid){
+  if(sid&&sid!=="all") return sid;
+  const S=grStores(), own=((r&&r.stores)||[]).filter(x=>S[x]); if(own.length===1) return own[0];
+  const h=(((grData.prices||{})[kitSlug((r&&r.name)||"")])||{}); let best=null, bi="", bk="";
+  Object.keys(h).forEach(function(st){ if(!S[st]) return; const recs=h[st]||{}; Object.keys(recs).forEach(function(k){ const x=recs[k]; if(!x||!(x.p>0)) return; const iso=String(x.iso||"");
+    if(best===null||iso>bi||(iso===bi&&k>bk)){ best=st; bi=iso; bk=k; } }); });
+  return best;
+}
+function grRowPrice(r,sid){ const _ps=grEstStore(r,sid); if(!_ps) return null; const u=grUsual(r.name,_ps); if(!u) return null; const it=r.id?grData.items[r.id]:null; return u*grMult(it?it.qty:(r.q&&/^×(\d+)/.test(r.q)?+r.q.slice(1):0),it?it.unit:""); }
+function grTripEst(sid,cartOnly){   // GR_ESTSTORE: All is priced too
+  sid=sid||"all"; const g=grGroups(sid); let t=0, n=0, miss=0;
   Object.keys(g).forEach(k=>g[k].forEach(r=>{ if(cartOnly&&!r.done) return; n++; const p=grRowPrice(r,sid); if(p) t+=p; else miss++; }));
   return {t:Math.round(t*100)/100,n:n,miss:miss};
 }
@@ -12922,7 +12994,7 @@ function grTripLog(sid,est,total,n,opts){
 // the header: what this store's trip costs (from usual prices) + the week against her budget
 function grTripHeadHTML(sid){
   let h='';
-  if(sid&&sid!=="all"){
+  if(sid){   // GR_ESTSTORE: the All view gets its estimate too
     const all=grTripEst(sid,false), cart=grTripEst(sid,true);
     if(all&&all.t>0) h+='<span style="font-size:11px;font-weight:700;opacity:.95">· about '+grFmt$(all.t)+(cart.t>0?' · in cart '+grFmt$(cart.t):'')+(all.miss?' · '+all.miss+' not priced':'')+'</span>';
   }
@@ -12947,7 +13019,7 @@ function grPriceLineHTML(r){
   return bits.length?'<div style="font-size:11.5px;color:#64748b;margin-top:1px">'+bits.join(' · ')+'</div>':'';
 }
 function grMoveCheaper(id,sid){ grGate(function(){
-  const it=grData.items[id]; if(!it) return; it.stores=[sid]; delete it.sort; grPut(id,it); grSetHome(it.name,[sid]);
+  const it=grData.items[id]; if(!it) return; it.stores=[sid]; delete it.sort; delete it.any; grPut(id,it); grSetHome(it.name,[sid]);
   mwToast("💡 "+it.name+" → "+grStoreName(sid)); grRepaint();
 }); }
 // ✎ pop-up: type a price + see its history
@@ -13003,7 +13075,7 @@ function grRcptOpen(){ grGate(function(){
   _grRc={imgs:[],busy:false,msg:""}; grRcptDraw();
 }); }
 function grRcptPick(input){
-  const files=[].slice.call((input&&input.files)||[]).slice(0,4); if(!files.length||!_grRc) return;
+  const files=[].slice.call((input&&input.files)||[]).slice(0,Math.max(0,6-((_grRc&&_grRc.imgs)||[]).length)); if(!files.length||!_grRc) return;
   let left=files.length;
   files.forEach(f=>{ const img=new Image(), url=URL.createObjectURL(f);
     img.onload=function(){ try{ const max=1500, r=Math.min(1,max/Math.max(img.width,img.height)); const c=document.createElement('canvas'); c.width=Math.round(img.width*r); c.height=Math.round(img.height*r); c.getContext('2d').drawImage(img,0,0,c.width,c.height); _grRc.imgs.push(c.toDataURL('image/jpeg',0.8).split(",")[1]); }catch(e){} URL.revokeObjectURL(url); if(--left===0) grRcptDraw(); };
@@ -13013,12 +13085,13 @@ function grRcptPick(input){
 const GR_RCPT_PROMPT='Read this grocery receipt (one or more photos of the same receipt). Reply with ONLY strict JSON, no prose:\n'
   +'{"store":"store name as printed","date":"YYYY-MM-DD or null","total":number or null,"items":[{"line":"the item text exactly as printed","name":"plain grocery name a shopper would say","qty":number or null,"price":number,"regular":number or null,"sale":true or false}]}\n'
   +'price = what was actually paid for that line after any discount. regular = the price before the discount when the receipt shows one. sale = true when the receipt shows a discount, savings, member price, VIC/MVP/club price, "you saved", rollback or markdown for that item. '
+  +'When there are several photos they are ONE receipt, in order from the top to the bottom, and neighbouring photos usually overlap: the last few lines of one photo show again at the top of the next. List each overlapping line ONCE — match the overlap by the lines around it (item text, price and order) and carry on with the first new line after it. Keep an item twice only when the receipt itself prints it twice (two separate lines in the same photo, or a separate quantity line). '
   +'Never invent lines or prices. Skip tax, subtotal, total, bag fees, coupons that are not tied to an item, payment and change lines.';
 async function grRcptRead(){
   const R=_grRc; if(!R||!R.imgs.length) return;
   R.busy=true; R.msg=""; grRcptDraw();
   try{
-    const content=R.imgs.map(b=>({type:"image",source:{type:"base64",media_type:"image/jpeg",data:b}})).concat([{type:"text",text:GR_RCPT_PROMPT}]);
+    const content=R.imgs.reduce((a,b,i)=>a.concat(R.imgs.length>1?[{type:"text",text:"Photo "+(i+1)+" of "+R.imgs.length+(i===0?" (top of the receipt)":i===R.imgs.length-1?" (bottom of the receipt)":"")}]:[],[{type:"image",source:{type:"base64",media_type:"image/jpeg",data:b}}]),[]).concat([{type:"text",text:GR_RCPT_PROMPT}]);   // GR_RCPT6: photos labelled in order
     const txt=await kitCapAsk(content,null,{raw:true,maxTokens:6000});
     const m=String(txt).match(/\{[\s\S]*\}/); if(!m) throw new Error("Claude didn't send back a receipt — try a clearer photo");
     grRcptLoad(JSON.parse(m[0]));
@@ -13041,8 +13114,8 @@ function grRcptGuess(line,name,cands){
     ||cands.find(r=>{ const rk=grKey(r.name).split(" "); return w.length&&w.every(x=>rk.indexOf(x)>=0); })||null;
 }
 function grRcptKey(r){ return r?(r.id?"i:"+r.id:"v:"+r.key):"x"; }
-function grRcptLoad(d){
-  const R=_grRc; R.data=d; R.sid=grRcptStore(d.store); R.iso=(/^\d{4}-\d{2}-\d{2}$/.test(d.date||"")?d.date:_todayStr()); R.total=grMoney(d.total);
+function grRcptLoad(d){   // GR_COFLOW: from the checkout screen, the receipt is that store's
+  const R=_grRc; R.data=d; R.sid=(R.coSid&&R.coSid!=="all"&&grStores()[R.coSid])?R.coSid:grRcptStore(d.store); R.iso=(/^\d{4}-\d{2}-\d{2}$/.test(d.date||"")?d.date:_todayStr()); R.total=grMoney(d.total);
   grRcptMatch();
 }
 function grRcptMatch(){
@@ -13053,16 +13126,40 @@ function grRcptMatch(){
     return {line:String(x.line||x.name||""),name:String(x.name||x.line||"").slice(0,60),price:grMoney(x.price),reg:grMoney(x.regular),sale:!!x.sale||!!(grMoney(x.regular)&&grMoney(x.regular)>grMoney(x.price)),qty:x.qty>0?x.qty:null,match:key,auto:key};
   });
 }
+// ✅ GR_COFLOW (her ask 2026-10-06: compare the receipt with what she entered, ask if the differences are right, and ask about extras):
+// a matched line whose typed price or amount differs asks which is right (receipt is the default); an extra asks where it goes in the
+// house (its section's zone is the default, "Not for the house" keeps it out of the pantry); a checked-off item missing from the receipt
+// asks "still bought?" (default yes).
+const GR_XZONES=[["produce","🥬 Produce"],["pantry","🥫 Pantry"],["fridge","🧊 Fridge"],["freezer","❄️ Freezer"],["household","🧻 Household"],["none","🚫 Not for the house"]];
+function grRcptChip(on,lbl,click){ return '<button onclick="'+click+'" style="padding:4px 8px;border-radius:9px;border:1.5px solid '+(on?'#3A7D44':'#e2e8f0')+';background:'+(on?'#f0fdf4':'#fff')+';color:#1f2937;font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+lbl+'</button>'; }
+function grRcptTyped(c){ if(!c) return null; return c.id?((grData.items[c.id]||{}).paid||null):((grData.vpaid||{})[c.key]||null); }
+function grRcptListQty(c){ if(!c) return null; if(c.id){ const it=grData.items[c.id]||{}; if(it.unit&&!/^(bag|box|can|jar|bottle|pk|pack|carton|tub|loaf|bunch|head|ct|count)/.test(it.unit)) return null; return it.qty>0?it.qty:1; } return (c.q&&/^×(\d+)/.test(c.q))?+c.q.slice(1):1; }
+function grRcptXDefault(r){ const sec=grSecFor(r.name), z=grSecMeta(sec)[2]; if(!z) return "household"; try{ if(typeof grPlaceGuess==="function"){ const g=grPlaceGuess(r.name,sec); if(g) return g; } }catch(e){} return z; }
+function grRcptChecksHTML(r,i,cands){
+  const box='margin:0 0 6px 4px;padding:6px 8px;background:#fffbeb;border-radius:9px;font-size:11.5px;color:#78350f;display:flex;align-items:center;gap:6px;flex-wrap:wrap';
+  if(r.match==="x"){ const z=r.xz||grRcptXDefault(r);
+    return '<div style="'+box.replace('#fffbeb','#f0fdfa').replace('#78350f','#134e4a')+'"><span>Where does it go?</span>'+GR_XZONES.map(x=>grRcptChip(z===x[0],x[1],"grRcptSet("+i+",'xz','"+x[0]+"')")).join('')+'</div>'; }
+  const c=(cands||[]).find(x=>grRcptKey(x)===r.match); if(!c) return "";
+  let h=""; const t=grRcptTyped(c);
+  if(t&&Math.abs(t-r.price)>=0.005){ const pu=r.pu||"rcpt";
+    h+='<div style="'+box+'"><span>You typed <b>'+grFmt$(t)+'</b> · receipt says <b>'+grFmt$(r.price)+'</b></span>'+grRcptChip(pu==="rcpt","Use "+grFmt$(r.price),"grRcptSet("+i+",'pu','rcpt')")+grRcptChip(pu==="mine","Keep "+grFmt$(t),"grRcptSet("+i+",'pu','mine')")+'</div>'; }
+  const lq=grRcptListQty(c);
+  if(lq&&r.qty>0&&lq!==r.qty&&c.id){ const qu=r.qu||"rcpt";
+    h+='<div style="'+box+'"><span>List said <b>×'+lq+'</b> · receipt says <b>×'+r.qty+'</b></span>'+grRcptChip(qu==="rcpt","×"+r.qty,"grRcptSet("+i+",'qu','rcpt')")+grRcptChip(qu==="list","×"+lq,"grRcptSet("+i+",'qu','list')")+'</div>'; }
+  return h;
+}
+function grRcptSet(i,k,v){ if(!_grRc||!_grRc.rows||!_grRc.rows[i]) return; _grRc.rows[i][k]=v; grRcptDraw(); }
+function grRcptNo(k,v){ if(!_grRc) return; _grRc.no=_grRc.no||{}; _grRc.no[k]=v; grRcptDraw(); }
 function grRcptSetStore(sid){ if(!_grRc) return; _grRc.sid=sid; grRcptMatch(); grRcptDraw(); }
 function grRcptDraw(){
   const R=_grRc; if(!R) return grPopClose();
   let h='<div style="font-weight:800;font-size:15px">📸 Read a receipt</div>';
   if(!R.rows){
-    h+='<div style="font-size:12px;color:#64748b;margin:3px 0 10px">Snap the whole receipt (long ones in 2–4 photos, top to bottom). Claude reads it with the family key — one read per receipt.</div>'
+    h+='<div style="font-size:12px;color:#64748b;margin:3px 0 10px">Snap the whole receipt. A long one: up to 6 photos, top to bottom — let each photo overlap the one before by a line or two. Claude reads it with the family key — one read per receipt.</div>'
       +'<label style="display:block;text-align:center;padding:14px;border:2px dashed #cbd5e1;border-radius:12px;font-weight:800;color:#2B7A78;cursor:pointer"><input type="file" accept="image/*" multiple onchange="grRcptPick(this)" style="display:none">📷 '+(R.imgs.length?R.imgs.length+' photo'+(R.imgs.length===1?'':'s')+' — add more':'Choose or take photos')+'</label>'
       +(R.msg?'<div style="font-size:12px;color:#b91c1c;margin-top:8px">'+esc(R.msg)+'</div>':'')
       +'<button onclick="grRcptRead()" '+(R.imgs.length&&!R.busy?'':'disabled ')+'style="'+GR_BTN+'border:none;background:'+(R.imgs.length&&!R.busy?'#3A7D44':'#94a3b8')+';color:#fff;margin-top:12px">'+(R.busy?'✨ Reading…':'✨ Read it')+'</button>'
-      +'<button onclick="_grRc=null;grPopClose()" style="'+GR_BTN+'border:none;background:#f1f5f9;color:#334155">Cancel</button>';
+      +'<button onclick="grRcptCancel()" style="'+GR_BTN+'border:none;background:#f1f5f9;color:#334155">Cancel</button>';
     return grPop(h);
   }
   const cands=grRcptCands(R.sid), bought=R.rows.filter(r=>r.match!=="x"), extras=R.rows.filter(r=>r.match==="x");
@@ -13073,13 +13170,23 @@ function grRcptDraw(){
   const opt=(r,i)=>'<select onchange="_grRc.rows['+i+'].match=this.value;grRcptDraw()" style="max-width:150px;padding:4px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:11.5px;font-family:\'DM Sans\',sans-serif"><option value="x"'+(r.match==="x"?' selected':'')+'>➕ not on the list</option>'
     +cands.map(c=>'<option value="'+grRcptKey(c)+'"'+(r.match===grRcptKey(c)?' selected':'')+'>'+esc(c.name)+'</option>').join('')+'</select>';
   const row=(r,i)=>'<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid #eef2f0"><div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:700">'+esc(r.name)+'</div><div style="font-size:10.5px;color:#94a3b8;font-family:monospace">'+esc(r.line)+'</div></div>'
-    +'<div style="text-align:right;font-size:12px;white-space:nowrap">'+(r.sale&&r.reg?'<s style="color:#94a3b8">'+grFmt$(r.reg)+'</s> ':'')+'<b>'+grFmt$(r.price)+'</b>'+(r.sale?' 🏷':'')+'</div>'+opt(r,i)+'</div>';
+    +'<div style="text-align:right;font-size:12px;white-space:nowrap">'+(r.sale&&r.reg?'<s style="color:#94a3b8">'+grFmt$(r.reg)+'</s> ':'')+'<b>'+grFmt$(r.price)+'</b>'+(r.sale?' 🏷':'')+'</div>'+opt(r,i)+'</div>'+grRcptChecksHTML(r,i,cands);   // GR_COFLOW
   h+='<div style="max-height:50vh;overflow:auto">';
   h+='<div style="font-size:11px;font-weight:800;color:#16a34a;text-transform:uppercase;margin-top:4px">✓ Bought — on your list ('+bought.length+')</div>'+R.rows.map((r,i)=>r.match!=="x"?row(r,i):'').join('');
-  h+='<div style="font-size:11px;font-weight:800;color:#2B7A78;text-transform:uppercase;margin-top:10px">➕ Extras — not on the list ('+extras.length+')</div><div style="font-size:11px;color:#94a3b8">Prices + the pantry still get them.</div>'+R.rows.map((r,i)=>r.match==="x"?row(r,i):'').join('');
+  { const _sum=Math.round(R.rows.reduce((a,r)=>a+(r.price||0),0)*100)/100;   // GR_RCPT6: do the lines add up?
+    if(R.total) h+='<div style="font-size:11.5px;color:'+(_sum>R.total+0.01||R.total-_sum>R.total*0.15?'#b45309':'#64748b')+';margin:4px 0 2px">Lines add up to <b>'+grFmt$(_sum)+'</b> · receipt total <b>'+grFmt$(R.total)+'</b>'+(_sum>R.total+0.01?' — more than the total: a line may have been read twice':R.total-_sum>R.total*0.15?' — well under the total: a line may be missing (or it\'s mostly tax)':' — the difference is usually tax')+'</div>'; }
+  h+='<div style="font-size:11px;font-weight:800;color:#2B7A78;text-transform:uppercase;margin-top:10px">➕ Extras — not on the list ('+extras.length+')</div><div style="font-size:11px;color:#94a3b8">Pick where each one goes — or 🚫 Not for the house. Its price is saved either way.</div>'+R.rows.map((r,i)=>r.match==="x"?row(r,i):'').join('');
+  const notOn=cands.filter(c=>!matched[grRcptKey(c)]&&c.done); R.no=R.no||{};   // GR_COFLOW: checked off, but not on the receipt
+  const _noBack=notOn.filter(c=>R.no[grRcptKey(c)]==="back").length;   // GR_RCPT6: a long list folds to one line until she opens it
+  if(notOn.length>3&&!R.noOpen) h+='<div style="margin-top:10px;padding:8px 10px;background:#fffbeb;border-radius:10px;display:flex;align-items:center;gap:8px"><span style="flex:1;font-size:12px;color:#78350f"><b>❓ '+notOn.length+' checked off, but not on this receipt</b> — '+(_noBack?(notOn.length-_noBack)+' counted as bought, '+_noBack+' going back on the list':'all counted as bought ✓')+'</span>'
+    +grRcptChip(false,"Review","_grRc.noOpen=true;grRcptDraw()")+'</div>';
+  else if(notOn.length) h+='<div style="font-size:11px;font-weight:800;color:#b45309;text-transform:uppercase;margin-top:10px">❓ Checked off, but not on this receipt ('+notOn.length+')</div>'
+    +notOn.map(c=>{ const k=grRcptKey(c), v=R.no[k]||"kept";
+      return '<div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid #eef2f0"><span style="flex:1;font-size:12.5px;font-weight:700">'+esc(c.name)+'</span>'
+        +grRcptChip(v==="kept","Still bought","grRcptNo('"+k+"','kept')")+grRcptChip(v==="back","Didn't get it","grRcptNo('"+k+"','back')")+'</div>'; }).join('');
   if(still.length) h+='<div style="font-size:11px;font-weight:800;color:#b45309;text-transform:uppercase;margin-top:10px">⚠ Still need — not on this receipt ('+still.length+')</div><div style="font-size:12px;color:#64748b">'+still.map(c=>esc(c.name)).join(', ')+' — they stay on the list.</div>';
   h+='</div><button onclick="grRcptSave()" style="'+GR_BTN+'border:none;background:#3A7D44;color:#fff;margin-top:12px">Save this trip</button>'
-    +'<button onclick="_grRc=null;grPopClose()" style="'+GR_BTN+'border:none;background:#f1f5f9;color:#334155">Cancel</button>';
+    +'<button onclick="grRcptCancel()" style="'+GR_BTN+'border:none;background:#f1f5f9;color:#334155">Cancel</button>';
   grPop(h);
 }
 function grRcptSave(){
@@ -13088,39 +13195,78 @@ function grRcptSave(){
   const iso=_todayStr(), dayMap=Object.assign({},kitBuyLog[iso]);
   R.rows.forEach(r=>{
     const c=byKey[r.match]||null, nm=c?c.name:r.name;
-    grPriceAdd(nm,sid,r.price,{reg:r.reg,sale:r.sale,src:"receipt",iso:R.iso});
+    const _t=c?grRcptTyped(c):null, _mine=!!(c&&_t&&r.pu==="mine");   // GR_COFLOW: the price she said is right
+    grPriceAdd(nm,sid,_mine?_t:r.price,_mine?{src:"typed",iso:R.iso}:{reg:r.reg,sale:r.sale,src:"receipt",iso:R.iso});
     if(c){
       if(r.match!==r.auto||!(grData.alias||{})[kitSlug(r.line)]){ const a=kitSlug(r.line), b=kitSlug(c.name); if(a&&b&&a!==b){ grData.alias[a]=b; if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/alias/'+a).set(b); } }
-      if(c.id){ const it=grData.items[c.id]; if(it&&!it.done){ it.done=true; it.doneTs=Date.now(); grPut(c.id,it); } }
+      if(c.id){ const it=grData.items[c.id]; if(it){ let ch=false; if(!it.done){ it.done=true; it.doneTs=Date.now(); ch=true; }
+          if(it.paid){ delete it.paid; ch=true; }   // GR_COFLOW: the price is saved here — checkout won't save it twice
+          const lq=grRcptListQty(c); if(lq&&r.qty>0&&lq!==r.qty&&(r.qu||"rcpt")==="rcpt"){ it.qty=r.qty; ch=true; }
+          if(ch) grPut(c.id,it); } }
+      if(c.key&&(grData.vpaid||{})[c.key]){ delete grData.vpaid[c.key]; if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/vpaid/'+c.key).remove(); }
       else if(c.key&&!grData.vchk[c.key]){ grData.vchk[c.key]=true; if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/vchk/'+c.key).set(true); }
     } else {
-      // extra: still a purchase — buy history, pantry, family memory
-      const sec=grSecFor(nm), sl=kitSlug(nm);
+      // extra: still a purchase — buy history, pantry, family memory (GR_COFLOW: only when she says it's for the house)
+      const sec=grSecFor(nm), sl=kitSlug(nm), _xz=r.xz||grRcptXDefault(r);
+      if(_xz==="none") return;
       if(sl){ dayMap[sl]=(dayMap[sl]||0)+(r.qty>0?Math.ceil(r.qty):1); if(typeof db!=='undefined'&&db) db.ref('kitchen/buyLog/'+iso+'/'+sl).set(dayMap[sl]); }
-      const zone=grSecMeta(sec)[2]; if(zone) try{ panAdd(nm,zone,r.qty>0?Math.ceil(r.qty):1,"receipt"); }catch(e){}
+      const zone=_xz; if(zone) try{ panAdd(nm,zone,r.qty>0?Math.ceil(r.qty):1,"receipt"); }catch(e){}
       grMemBought(nm,sec);
     }
   });
+  Object.keys(R.no||{}).forEach(k=>{ if(R.no[k]!=="back") return; const c=byKey[k]; if(!c) return;   // GR_COFLOW: didn't get it → back on the list
+    if(c.id){ const it=grData.items[c.id]; if(it&&it.done){ it.done=false; delete it.doneTs; grPut(c.id,it); } }
+    else if(c.key&&grData.vchk[c.key]){ delete grData.vchk[c.key]; if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/vchk/'+c.key).remove(); } });
   kitBuyLog[iso]=dayMap; try{ HA_LS.setItem('ha_kit_buylog',JSON.stringify(kitBuyLog)); }catch(e){}
   const total=R.total||Math.round(R.rows.reduce((a,r)=>a+r.price,0)*100)/100;
   _grRc=null; grPopClose(); grSave();
-  if(grCartCount(sid)) grDoneRun(sid,total); else { grTripLog(sid,null,total,0); mwToast("🧾 Prices saved"); grRepaint(); }
+  if(grCartCount(sid)) grCoFromReceipt(sid,total); else { _grCoHold=null; grTripLog(sid,null,total,0); mwToast("🧾 Prices saved"); grRepaint(); }   // GR_COFLOW: on to the checkout screen
 }
 // ── 📥 To sort + 📸 list from a photo (her asks 10/3 night) ──
 // Anything that lands without a store (and has no remembered home store) is marked sort:true: Mom's quick adds on
 // "All" / Mom's Day, approved kid asks, Dad when he can't pick, recipe/photo lists. It still shows at every store
 // (her pick "A") with a clear tag — "not sorted yet, Mom may get this somewhere else" — and waits in 📥 To sort.
-function grSortIds(){ const I=grData.items||{}; return Object.keys(I).filter(id=>I[id]&&I[id].sort&&!I[id].done).sort((a,b)=>(I[a].ts||0)-(I[b].ts||0)); }
+// 📥 GR_SORT7 (her yes 2026-10-06): no store and never deliberately "Any store" = still to sort, once she has stores. Items from before she
+// picked stores (Sarah's meal-plan list) land in 📥 To sort instead of quietly showing at every store as if she'd chosen "Any store".
+function grIsUnsorted(it){ return !!it&&(!!it.sort||(!((it.stores||[]).filter(x=>grStores()[x]).length)&&!it.any&&grActiveStores().length>0)); }
+function grSetAnyHome(name){ const sl=kitSlug(name); if(!sl) return; grData.home[sl]="any"; if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/home/'+sl).set("any"); }
+function grSortIds(){ const I=grData.items||{}; return Object.keys(I).filter(id=>I[id]&&grIsUnsorted(I[id])&&!I[id].done).sort((a,b)=>(I[a].ts||0)-(I[b].ts||0)); }
 function grSortItem(id,sid){
   const it=grData.items[id]; if(!it) return "";
   delete it.sort;
-  if(sid&&sid!=="any"){ it.stores=[sid]; grSetHome(it.name,[sid]); } else delete it.stores;
+  if(sid&&sid!=="any"){ it.stores=[sid]; delete it.any; grSetHome(it.name,[sid]); } else { delete it.stores; it.any=true; grSetAnyHome(it.name); }   // GR_SORT7
   grPut(id,it); return it.name;
 }
 function grSortTo(id,sid){ grGate(function(){
   const nm=grSortItem(id,sid); if(!nm) return;
   mwToast(sid&&sid!=="any"?"🏬 "+nm+" → "+grStoreName(sid):"👍 "+nm+" — any store"); grRepaint();
 }); }
+// 🏬 GR_QUICKMOVE (her ask 2026-10-06: "it shouldn't click something off unless the circle is actually touched … if the blank part of
+// the line is touched an easy way to move it to the common stores shows up"): her stores as big buttons, plus Any store and To sort.
+// A store pick is remembered as the item's home (grSortTo / grSortV), so next time it lands there on its own.
+function grQuickMove(kind,k){ grGate(function(){
+  const it=kind==="i"?grData.items[k]:null, vr=kind==="v"?grVirtualRows().find(x=>x.key===k):null;
+  const name=it?it.name:(vr?vr.name:""); if(!name) return;
+  const stores=grActiveStores();
+  if(!stores.length){ if(it) grEdit(k); else grEditV(k); return; }   // no stores yet → the full edit, as before
+  const cur=it?(it.stores||[]).filter(x=>grStores()[x]):grHomeFor(name), isSort=it?grIsUnsorted(it):!!(vr&&vr.sort);
+  const anyNow=it?(!cur.length&&!isSort&&!!it.any):((grData.home||{})[kitSlug(name)]==="any");
+  const btn=(on,label,col,sel)=>'<button onclick="'+on+'" style="'+GR_BTN+'display:flex;justify-content:space-between;align-items:center;text-align:left;padding:12px 14px;border:2.5px solid '+col+';background:'+(sel?col:'#fff')+';color:'+(sel?'#fff':'#1f2937')+'"><span>'+label+'</span>'+(sel?'<span style="font-size:11px;font-weight:800">now</span>':'')+'</button>';
+  let h='<div style="font-weight:800;font-size:15px">🏬 '+esc(name)+'</div><div style="font-size:12px;color:#64748b;margin-top:2px">Where should this come from? It goes there next time too.</div>';
+  stores.forEach(s=>{ h+=btn("grQmTo('"+kind+"','"+k+"','"+s+"')",esc(grStoreName(s)),grStoreColor(s),cur.length===1&&cur[0]===s); });
+  h+=btn("grQmTo('"+kind+"','"+k+"','any')","👍 Any store","#94a3b8",anyNow);
+  h+=btn("grQmTo('"+kind+"','"+k+"','sort')","📥 To sort — decide later","#0f766e",isSort);
+  h+='<button onclick="grPopClose()" style="'+GR_BTN+'border:none;background:#f1f5f9;color:#475569">Cancel</button>';
+  grPop(h);
+}); }
+function grQmTo(kind,k,sid){
+  grPopClose();
+  if(sid==="sort"){ grGate(function(){
+    if(kind==="i"){ const it=grData.items[k]; if(!it) return; delete it.stores; delete it.any; it.sort=true; grSetHome(it.name,[]); grPut(k,it); mwToast("📥 "+it.name+" — to sort"); }
+    else { const r=grVirtualRows().find(x=>x.key===k); if(!r) return; grSetHome(r.name,[]); grSave(); mwToast("📥 "+r.name+" — to sort"); }
+    grRepaint(); }); return; }
+  if(kind==="i") grSortTo(k,sid); else grSortV(k,sid);
+}
 function grSortBoxHTML(){
   const ids=grSortIds(), vr=grSortVRows(), stores=grActiveStores(); if((!ids.length&&!vr.length)||!stores.length) return "";
   const chips=(on,arg)=>stores.map(s=>'<button onclick="'+on+'(\''+arg+'\',\''+s+'\')" style="padding:5px 10px;border-radius:14px;border:2px solid '+grStoreColor(s)+';background:#fff;color:#1f2937;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+esc(grStoreName(s))+'</button>').join('')
@@ -13283,7 +13429,7 @@ function grPaidSet(kind,k,v){
   grRepaint();
 }
 function grPaidBoxHTML(r){
-  const p=grPaidOf(r), sid=grPaidStore(r);
+  const p=grPaidOf(r), sid=grPaidStore(r)||grEstStore(r,"all");   // GR_ESTSTORE
   const kind=r.id?"i":"v", k=r.id||r.key;
   if(!sid&&!p) return '<span style="font-size:10.5px;color:#94a3b8;width:62px;text-align:center;flex:0 0 auto">pick a store up top</span>';
   const u=sid?grUsual(r.name,sid):null;
@@ -13294,11 +13440,11 @@ function grCartTotal(sid){
   const g=grGroups(sid||"all"); let typed=0, est=0, nTyped=0, nMiss=0, n=0;
   Object.keys(g).forEach(k=>g[k].forEach(r=>{ if(!r.done) return; n++;
     const p=grPaidOf(r), m=grPaidMult(r);
-    if(p){ typed+=p*m; nTyped++; } else { const ps=grPaidStore(r), u=ps&&grUsual(r.name,ps); if(u) est+=u*m; else nMiss++; } }));
+    if(p){ typed+=p*m; nTyped++; } else { const ps=grEstStore(r,sid||"all"), u=ps&&grUsual(r.name,ps); if(u) est+=u*m; else nMiss++; } }));   // GR_ESTSTORE
   return {typed:Math.round(typed*100)/100,est:Math.round(est*100)/100,total:Math.round((typed+est)*100)/100,n:n,nTyped:nTyped,nMiss:nMiss};
 }
 function grStoreTotalBarHTML(sid){
-  const c=grCartTotal(sid), all=sid!=="all"?grTripEst(sid,false):null;
+  const c=grCartTotal(sid), all=grTripEst(sid||"all",false);   // GR_ESTSTORE
   return '<div style="position:sticky;top:0;z-index:5;background:#1d2a22;color:#fff;border-radius:12px;padding:10px 14px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">'
     +'<span style="font-size:24px;font-weight:800;font-variant-numeric:tabular-nums">🧾 '+grFmt$(c.total)+'</span>'
     +'<span style="font-size:12.5px;font-weight:700;opacity:.85">in the cart · '+c.n+' item'+(c.n===1?'':'s')+(c.est>0?' · '+grFmt$(c.est)+' guessed from usual prices':'')+(c.nMiss?' · '+c.nMiss+' with no price':'')+'</span>'
@@ -13454,7 +13600,7 @@ function grRanOutHTML(){
   const lines=Object.keys(R).map(k=>R[k]).filter(Boolean).map(r=>{
     const still=(r.names||[]).filter(n=>{ const d=grFindDup(n); return d&&!(d.kind==="item"&&d.it.done)&&!(d.kind==="virt"&&grData.vchk[d.row.key]); });
     if(!still.length) return "";
-    const ns=still.filter(n=>{ const d=grFindDup(n); return d&&((d.kind==="item"&&d.it.sort)||(d.kind==="virt"&&d.row.sort)); }).length;
+    const ns=still.filter(n=>{ const d=grFindDup(n); return d&&((d.kind==="item"&&grIsUnsorted(d.it))||(d.kind==="virt"&&d.row.sort)); }).length;
     return '<div onclick="grFromDad=false;mpGoto(\'grocery\')" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:7px 10px;background:#f0fdfa;border-left:3px solid #0f766e;border-radius:8px;margin-bottom:6px"><span style="font-size:13px">🛒 Ran out after '+esc(r.meal)+': <b>'+esc(still.join(", "))+'</b> · on the grocery list'+(ns?' (📥 '+ns+' to sort)':'')+'</span></div>';
   }).filter(Boolean);
   return lines.join("");
@@ -13543,7 +13689,7 @@ function grPanSet(id,patch){
   try{HA_LS.setItem('ha_kit_pantry',JSON.stringify(kitPantry));}catch(e){}
   if(typeof db!=='undefined'&&db) db.ref('kitchen/pantry/'+id).update(Object.assign({},patch,{ts:it.ts}));
 }
-function grPanZoneCycle(id){ const it=kitPantry[id]; if(!it) return; const z=["pantry","fridge","freezer","counter"]; const n=z[(z.indexOf(grPlaceOf(it))+1)%z.length]; grMemUpdate(it.name,{zone:n}); grPanSet(id,{zone:n}); mwToast(PAN_ZONE_EMOJI[n]+" "+it.name+" → "+n); grRepaint(); }
+function grPanZoneCycle(id){ const it=kitPantry[id]; if(!it) return; const z=["pantry","fridge","freezer","counter","household"]; const n=z[(z.indexOf(grPlaceOf(it))+1)%z.length]; grMemUpdate(it.name,{zone:n}); grPanSet(id,{zone:n}); mwToast(PAN_ZONE_EMOJI[n]+" "+it.name+" → "+n); grRepaint(); }
 let _grOld=null;   // {tossed:{id:name}}
 function grPanCheckOpen(){ grGate(function(){ _grOld={tossed:{}}; grPanCheckDraw(); }); }
 function grPanCheckDraw(){
@@ -13652,11 +13798,65 @@ function grCoRows(sid){
   grVirtualRows().forEach(r=>{ if(grData.vchk[r.key]&&grShowsAt(r.stores,sid)) out.push({key:"v:"+r.key,name:r.name,sec:r.sec,q:r.qty?"×"+r.qty:"",tag:r.tag}); });
   return out;
 }
+// 📝 GR_COFLOW leftovers (her ask 2026-10-06): anything at this store NOT checked off → Keep on the list (default) / Remove / Move to
+// another store (remembered as its home) / Any store / To sort. One select per row, plus "All of them" for a quick sort.
+let _grCoHold=null;   // the checkout screen, held while the receipt is read
+function grCoLeftRows(sid){ const out=[], g=grGroups(sid||"all"); Object.keys(g).forEach(k=>g[k].forEach(r=>{ if(!r.done) out.push({key:r.id?"i:"+r.id:"v:"+r.key,id:r.id||null,vkey:r.virt?r.key:null,name:r.name}); })); return out; }
+function grCoLeftOpts(C,r,cur){
+  const S=grActiveStores().filter(x=>x!==C.sid);
+  return '<option value="keep"'+(cur==="keep"?' selected':'')+'>Keep on the list</option>'+(r.id?'<option value="remove"'+(cur==="remove"?' selected':'')+'>Remove — don\'t need it</option>':'')
+    +S.map(x=>'<option value="'+x+'"'+(cur===x?' selected':'')+'>Move to '+esc(grStoreName(x))+'</option>').join('')
+    +'<option value="any"'+(cur==="any"?' selected':'')+'>Any store</option><option value="sort"'+(cur==="sort"?' selected':'')+'>To sort — decide later</option>';
+}
+function grCoLeftHTML(C){
+  const L=grCoLeftRows(C.sid); if(!L.length) return "";
+  const sel='padding:6px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif;max-width:170px';
+  let h='<div style="font-size:11px;font-weight:800;color:#b45309;text-transform:uppercase;letter-spacing:.3px;margin-top:12px">📝 Not checked off ('+L.length+')</div>'
+    +'<div style="display:flex;align-items:center;gap:6px;margin:4px 0 2px;font-size:12px;color:#64748b"><span style="flex:1">They stay on the list unless you change them.</span>'
+    +'<select onchange="grCoLeftAll(this.value)" style="'+sel+'"><option value="">All of them…</option>'+grCoLeftOpts(C,{id:1},"").replace(/ selected/g,"")+'</select></div>'
+    +'<div style="max-height:26vh;overflow:auto;border-top:1px solid #eef2f0">';
+  L.forEach(r=>{ const v=(C.left||{})[r.key]||"keep";
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px solid #eef2f0"><span style="flex:1;min-width:0;font-size:13px;font-weight:700">'+esc(r.name)+'</span>'
+      +'<select onchange="grCoLeftSet(\''+r.key+'\',this.value)" style="'+sel+'">'+grCoLeftOpts(C,r,v)+'</select></div>'; });
+  return h+'</div>';
+}
+function grCoLeftSet(k,v){ if(!_grCo) return; _grCo.left=_grCo.left||{}; _grCo.left[k]=v; }
+function grCoLeftAll(v){ if(!_grCo||!v) return; _grCo.left={}; grCoLeftRows(_grCo.sid).forEach(r=>{ _grCo.left[r.key]=(v==="remove"&&!r.id)?"keep":v; }); grCheckoutDraw(); }
+function grCoLeftApply(list){
+  let n=0;
+  (list||[]).forEach(function(x){ const r=x.r, v=x.v; if(!v||v==="keep") return;
+    if(r.id){ const it=grData.items[r.id]; if(!it) return;
+      if(v==="remove"){ grClearedPush(r.id,it,"removed"); delete grData.items[r.id]; if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/items/'+r.id).remove(); n++; return; }
+      if(v==="sort"){ delete it.stores; delete it.any; it.sort=true; grSetHome(it.name,[]); }
+      else { delete it.sort; if(v==="any"){ delete it.stores; it.any=true; grSetAnyHome(it.name); } else { it.stores=[v]; delete it.any; grSetHome(it.name,[v]); } }
+      grPut(r.id,it); n++;
+    } else if(r.vkey){ const sl=kitSlug(r.name); if(!sl) return;
+      if(v==="sort") grSetHome(r.name,[]); else if(v==="any"){ grData.home[sl]="any"; if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/home/'+sl).set("any"); } else grSetHome(r.name,[v]);
+      n++; }
+  });
+  if(n){ grSave(); mwToast("📝 "+n+" leftover"+(n===1?"":"s")+" sorted"); grRepaint(); }
+}
+// 📸 the receipt, from the checkout screen: hold the screen, read the receipt, come back with its total
+function grCoReceipt(){
+  const C=_grCo; if(!C) return;
+  _grCoHold=C; _grCo=null; grPopClose(); grRcptOpen();
+  if(_grRc){ _grRc.fromCo=true; _grRc.coSid=C.sid; } else { _grCo=_grCoHold; _grCoHold=null; grCheckoutDraw(); }   // no key / no stores → back to checkout
+}
+function grCoBack(){ if(_grCoHold){ _grCo=_grCoHold; _grCoHold=null; grCheckoutDraw(); return true; } return false; }
+function grRcptCancel(){ _grRc=null; grPopClose(); grCoBack(); }
+// after a receipt is saved: the checkout screen, total from the receipt, earlier choices kept
+function grCoFromReceipt(sid,total){ grGate(function(){
+  const held=_grCoHold; _grCoHold=null;
+  if(!grCartCount(sid)){ mwToast("🧾 Prices saved"); grRepaint(); return; }
+  const ct=grCartTotal(sid);
+  _grCo=Object.assign({sid:sid,other:false,house:{},freeze:{},budget:grBudgetDefault(),left:{}},held||{},{sid:sid,total:(total||ct.total||0)>0?(total||ct.total).toFixed(2):"",guessed:false,rcpt:true});
+  grCheckoutDraw();
+}); }
 function grCheckoutOpen(sid){ grGate(function(){
   sid=sid||grCurStore();
   if(!grCartCount(sid)){ mwToast("Nothing in the cart yet"); return; }
   const ct=grCartTotal(sid);
-  _grCo={sid:sid,total:ct.total>0?ct.total.toFixed(2):"",guessed:ct.est>0,other:false,house:{},freeze:{},budget:grBudgetDefault()};
+  _grCo={sid:sid,total:ct.total>0?ct.total.toFixed(2):"",guessed:ct.est>0,other:false,house:{},freeze:{},budget:grBudgetDefault(),left:{}};   // GR_COFLOW: left = leftovers' choices
   grCheckoutDraw();
 }); }
 function grCheckoutDraw(){
@@ -13666,7 +13866,9 @@ function grCheckoutDraw(){
   let h='<div style="font-weight:800;font-size:16px">🧾 Checkout'+esc(where)+'</div><div style="font-size:12px;color:#64748b;margin:2px 0 10px">'+rows.length+' item'+(rows.length===1?'':'s')+' in the cart</div>'
     +'<div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.3px">Total</div>'
     +'<input id="gr-co-total" type="text" inputmode="decimal" value="'+esc(C.total)+'" placeholder="$ from the receipt (optional)" oninput="_grCo.total=this.value" style="width:100%;box-sizing:border-box;margin-top:4px;padding:11px;border:1.5px solid #cbd5e1;border-radius:10px;font-size:20px;font-weight:800;font-family:\'DM Sans\',sans-serif">'
-    +(C.guessed?'<div style="font-size:11px;color:#94a3b8;margin-top:2px">Filled in from your typed prices + usual prices — fix it to match the register.</div>':'')
+    +(C.guessed&&!C.rcpt?'<div style="font-size:11px;color:#94a3b8;margin-top:2px">Filled in from your typed prices + usual prices — fix it to match the register.</div>':'')
+    +(C.rcpt?'<div style="font-size:11.5px;color:#16a34a;font-weight:800;margin-top:4px">📸 From the receipt ✓</div>'
+      :'<button onclick="grCoReceipt()" style="'+GR_BTN+'border:1.5px dashed #6B4C93;background:#f5f3ff;color:#5b21b6">📸 Add the receipt — check it against what you entered</button>')   // GR_COFLOW
     +'<div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.3px;margin-top:12px">Where\'s this going?</div>'
     +'<div style="display:flex;gap:6px;margin-top:5px">'+chip(!C.other,'🏠 Our house','grCoSet(\'other\',false)')+chip(C.other,'🎁 Someone else / a trip','grCoSet(\'other\',true)')+'</div>';
   if(!C.other){
@@ -13678,6 +13880,7 @@ function grCheckoutDraw(){
         +'</div>'; });
     h+='</div>';
   } else h+='<div style="font-size:11.5px;color:#64748b;margin:8px 0 0">Nothing goes into the pantry, and staples stay ❌ out — you still need them at home. Prices are still saved.</div>';
+  h+=grCoLeftHTML(C);   // GR_COFLOW: what wasn't checked off
   h+='<div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.3px;margin-top:12px">Count toward a budget?</div>'
     +'<select onchange="_grCo.budget=this.value||null" style="width:100%;margin-top:5px;padding:10px;border:1.5px solid #cbd5e1;border-radius:10px;font-size:14px;font-family:\'DM Sans\',sans-serif">'
     +buds.map(b=>'<option value="'+b.id+'"'+(C.budget===b.id?' selected':'')+'>'+esc((b.emoji||'💰')+' '+b.name)+' — '+grFmt$(grSpentBudget(b.id,grPeriodStart(b.per)))+' of '+grFmt$(b.amt||0)+' this '+(b.per==="month"?'month':'week')+'</option>').join('')
@@ -13692,9 +13895,12 @@ function grCheckoutGo(){
   const C=_grCo; if(!C) return;
   const total=grMoney(C.total);
   const house={}; grCoRows(C.sid).forEach(r=>{ house[r.key]=!C.other&&C.house[r.key]!==false; });
-  _grCo=null; grPopClose();
+  const left=grCoLeftRows(C.sid).map(r=>({r:r,v:(C.left||{})[r.key]||"keep"}));   // GR_COFLOW: read before the cart clears
+  _grCo=null; _grCoHold=null; grPopClose();
   grDoneRun(C.sid,total,{house:house,freeze:C.freeze,budget:C.budget||null,other:!!C.other});
+  grCoLeftApply(left);
   if(grPutIds().length) setTimeout(grPutDraw,400);   // 🧺 straight on to Put away
+  grBigAfterCheckout();
 }
 // ⚙️ budgets editor (in ⚙️ Stores)
 function grBudgetSave(b){ const id=b.id; const rec=Object.assign({},b); delete rec.id; delete rec.legacy; grData.budgets[id]=rec; grSave(); if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/budgets/'+id).set(rec); }
@@ -13735,7 +13941,7 @@ function grBudgetsMgrHTML(){
 //   putaway/{pantryId} = true      waiting to be put away
 //   pantry/{id}.useBy = iso        from the package — beats the guessed shelf life; 2 days before → 🔴 Now
 //   pantry/{id}.useOk = true       she said she's using it / it's fine (stops the reminder)
-const GR_PLACES=[["pantry","🥫 Pantry"],["fridge","🧊 Fridge"],["freezer","❄️ Freezer"],["counter","🍌 Counter"]];
+const GR_PLACES=[["pantry","🥫 Pantry"],["fridge","🧊 Fridge"],["freezer","❄️ Freezer"],["counter","🍌 Counter"],["household","🧻 Household"]];   // GR_RCPT6
 const GR_COUNTER_WORDS=/\b(bananas?|avocados?|tomato(es)?|onions?|potato(es)?|sweet potato(es)?|garlic|bread|bagels?|buns?|rolls?|tortillas?|lemons?|limes?|mangos?|mangoes|peach(es)?|pears?|pineapples?|squash|melons?|watermelons?|cantaloupes?|plantains?)\b/i;
 // where an item lives on screen: old "produce" items show under Counter or Fridge (nothing is rewritten until she moves one)
 function grPlaceOf(it){ const z=it&&it.zone; if(z==="produce") return GR_COUNTER_WORDS.test(it.name||"")?"counter":"fridge"; return GR_PLACES.some(p=>p[0]===z)?z:"pantry"; }
@@ -13756,7 +13962,7 @@ function grPutDraw(){
   const ids=grPutIds(); if(!ids.length) return grPopClose();
   const b='flex:1;min-width:66px;padding:8px 4px;border-radius:10px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;';
   let h='<div style="font-weight:800;font-size:16px">🧺 Put away</div><div style="font-size:12px;color:#64748b;margin:2px 0 8px">Where did it go? Each item remembers its spot for next time.</div><div style="max-height:56vh;overflow:auto">';
-  ids.forEach(id=>{ const it=kitPantry[id], pl=grPlaceOf(it), dated=pl!=="pantry";
+  ids.forEach(id=>{ const it=kitPantry[id], pl=grPlaceOf(it), dated=pl!=="pantry"&&pl!=="household";
     h+='<div style="padding:8px 0;border-bottom:1px solid #eef2f0"><div style="font-size:13.5px;font-weight:700">'+esc(it.name)+(typeof it.qty==="number"?' <span style="color:#64748b;font-weight:600">×'+it.qty+'</span>':'')+'</div>'
       +'<div style="display:flex;gap:5px;margin-top:5px;flex-wrap:wrap">'+GR_PLACES.map(p=>'<button onclick="grPutSet(\''+id+'\',\''+p[0]+'\')" aria-pressed="'+(pl===p[0])+'" style="'+b+'border:2px solid '+(pl===p[0]?'#3A7D44':'#e2e8f0')+';background:'+(pl===p[0]?'#f0fdf4':'#fff')+';color:#1f2937">'+p[1]+'</button>').join('')+'</div>'
       +(dated?'<label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;font-weight:700;color:#475569">📅 '+(pl==="freezer"?'Use by':'Use or freeze by')+' <input type="date" value="'+esc(it.useBy||"")+'" onchange="grPutDate(\''+id+'\',this.value)" style="padding:5px 7px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif"> <span style="font-weight:400;color:#94a3b8">optional</span></label>':'')
@@ -13799,7 +14005,7 @@ function grPutAlertHTML(){
 // Zones carry a rough shelf-life in days. An item is fresh for the first 60%
 // of it, "aging" for the rest, and "probably gone" after — gone items hide
 // from every view (no auto-delete sweep; 🧹 Clear removes them on HER tap).
-const PAN_ZONES=[["produce","🥬 Produce",6],["fridge","🧊 Fridge",14],["freezer","❄️ Freezer",90],["pantry","🥫 Pantry",180],["counter","🍌 Counter",7]];
+const PAN_ZONES=[["produce","🥬 Produce",6],["fridge","🧊 Fridge",14],["freezer","❄️ Freezer",90],["pantry","🥫 Pantry",180],["counter","🍌 Counter",7],["household","🧻 Household",3650]];   // GR_RCPT6: 🧻 household supplies never go old
 function panZoneMeta(z){ return PAN_ZONES.find(p=>p[0]===z)||PAN_ZONES[3]; }
 function panStatus(it,todayIso){
   if(!todayIso) todayIso=_todayStr();
@@ -17865,7 +18071,7 @@ function planBarHTML(kid){
 }
 // SCORES_END
 function renderCurriculumView(el,headerHtml){
-  if(!adminPinUnlocked){
+  if(!momHere()){
     el.innerHTML=(headerHtml||'')+'<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center">'+
       '<div style="font-size:48px;margin-bottom:12px">&#128274;</div>'+
       '<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:700;margin-bottom:4px">Curriculum Locked</div>'+
@@ -23165,7 +23371,7 @@ function currParseDynamic(rows,format){
 
 function uploadCurriculum(){
   const msg=document.getElementById("admin-msg");
-  if(!adminPinUnlocked){msg.textContent="Enter Mom PIN first (Rules tab).";return;}
+  if(!momHere()){msg.textContent="Enter Mom PIN first (Rules tab).";return;}
   const f=document.getElementById("xlsx-input").files[0];
   if(!f){msg.textContent="No .xlsx file selected.";return;}
   if(!db){msg.textContent="Not connected to Firebase.";return;}
@@ -28834,7 +29040,7 @@ function nbPinToggle(){
   const el=document.getElementById("content"); if(el&&tab==="notebook") renderNotebook(el);
   if(nbPinOpen) setTimeout(()=>{ const i=document.getElementById("nb-pin-inp"); if(i) i.focus(); },50);
 }
-function nbPinLock(){ adminPinUnlocked=false; momModeActive=false; momPinUnlocked=false; nbPinOpen=false; renderAll(); }
+function nbPinLock(){ haMomOff(); nbPinOpen=false; renderAll(); }   // UNIMOM
 // Review-folding cap (struggled-with drill items folded back into the week), per kid. Default 2, clamped 0–5.
 function nbReviewCap(kid){ const v=notebookSettings&&notebookSettings[kid]&&notebookSettings[kid].reviewCap; const n=parseInt(v,10); return isNaN(n)?2:Math.max(0,Math.min(5,n)); }
 // Extra-pages config (Notebook tab) — per-page {on, days:{monday:true,…}}, synced like reviewCap.
@@ -30475,7 +30681,7 @@ function unitPinToggle(){
   if(unitPinOpen) setTimeout(()=>{ const i=document.getElementById("unit-pin-inp"); if(i) i.focus(); },50);
 }
 function unitPinLock(){
-  adminPinUnlocked=false; momModeActive=false; momPinUnlocked=false; unitPinOpen=false;
+  haMomOff(); unitPinOpen=false;   // UNIMOM
   renderAll();
 }
 // ── UNIT STUDIES tab: shared library any kid can pull into their drills/notebook ──
@@ -43146,7 +43352,7 @@ function mastAdminToggleTier(tier){
   _mastRe();
 }
 function mastAdminCheckPin(val){
-  if(pinOk(val)){ mastAdminPinOk=true; _mastRe(); }
+  if(pinOk(val)){ haMomOn(); _mastRe(); }
   else if(val.length>=4){ const el=document.getElementById("mast-admin-pin-err"); if(el) el.textContent="Wrong PIN"; }
 }
 const MAST_EMOJI_PAL={
@@ -45074,7 +45280,7 @@ function ckMomStart(kid,sid){
   const go=function(){ ckKidUnlock=!was; ckStart(kid,sid,0); };
   if(typeof kitPinGate==="function") kitPinGate(go,"Mom types her code to run the check-up on this screen."); else go();
 }
-function ckRelock(){ if(!ckKidUnlock) return; ckKidUnlock=false; if(typeof adminPinUnlocked!=="undefined") adminPinUnlocked=false; if(typeof renderAll==="function") renderAll(); }
+function ckRelock(){ if(!ckKidUnlock) return; ckKidUnlock=false; if(typeof haMomOff==="function") haMomOff(); else if(typeof adminPinUnlocked!=="undefined") adminPinUnlocked=false; if(typeof renderAll==="function") renderAll(); }
 function ckFlip(){ if(!ckRun) return; ckRun.show=!ckRun.show; ckRe(); }
 function ckStop(){ ckRun=null; if(ckTimerIv){ clearInterval(ckTimerIv); ckTimerIv=null; } ckRe(); ckRelock(); }
 function ckTap(r){
@@ -48574,7 +48780,7 @@ function _renderMasteryInner(el){
 
   // ── ADMIN VIEW (Julian only) ──
   if(mastView==="admin"){
-    if(!mastAdminPinOk){
+    if(!mastAdminPinOk&&!momHere()){
       h+='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center">';
       h+='<div style="font-size:48px;margin-bottom:12px">&#128274;</div>';
       h+='<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:700;margin-bottom:4px">Admin Locked</div>';
@@ -51648,7 +51854,7 @@ function runDisplacement(){
 
 // ── BLOCKOUT SYSTEM ──────────────────────────────────────────────
 function openBoManager(){
-  if(!adminPinUnlocked){
+  if(!momHere()){
     openBoDialog(); // reuse PIN gate
     return;
   }
@@ -51687,7 +51893,7 @@ function openBoManager(){
 }
 
 function openBoDialog(d){
-  if(!adminPinUnlocked){
+  if(!momHere()){
     const w=document.getElementById("bo-dlg-wrap");
     w.innerHTML='<div class="bo-dlg" onclick="if(event.target===this)closeBoDialog()"><div class="bo-dlg-box" style="text-align:center;padding:32px 16px">'+
       '<div style="font-size:48px;margin-bottom:8px">&#128274;</div>'+
@@ -51695,7 +51901,7 @@ function openBoDialog(d){
       '<div style="font-size:13px;color:var(--muted);margin-bottom:16px">Enter the Mom PIN to manage blockouts.</div>'+
       '<input id="bo-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="PIN" '+
       'style="width:120px;text-align:center;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:18px;font-weight:700;letter-spacing:8px;font-family:\'DM Sans\',sans-serif" '+
-      'oninput="if(this.value.length>=4){if(pinOk(this.value)){adminPinUnlocked=true;closeBoDialog();openBoDialog(\''+( d||day)+'\');}else{document.getElementById(\'bo-pin-err\').textContent=\'Incorrect PIN\';this.value=\'\';this.style.borderColor=\'#b5394a\';var _t=this;setTimeout(function(){document.getElementById(\'bo-pin-err\').textContent=\'\';_t.style.borderColor=\'var(--border)\';},1500);}}" autofocus>'+
+      'oninput="if(this.value.length>=4){if(pinOk(this.value)){haMomOn();closeBoDialog();openBoDialog(\''+( d||day)+'\');}else{document.getElementById(\'bo-pin-err\').textContent=\'Incorrect PIN\';this.value=\'\';this.style.borderColor=\'#b5394a\';var _t=this;setTimeout(function(){document.getElementById(\'bo-pin-err\').textContent=\'\';_t.style.borderColor=\'var(--border)\';},1500);}}" autofocus>'+
       '<div id="bo-pin-err" style="font-size:11px;color:#b5394a;margin-top:6px;min-height:14px"></div>'+
       '</div></div>';
     w.style.display="block";
@@ -55236,7 +55442,7 @@ function sprintLiveEnd(sheet){
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function openPlanNextWeek(weekNum){
-  if(!adminPinUnlocked){
+  if(!momHere()){
     pnwPendingWeek=weekNum||null;
     pnwOpen='pin';
     renderPlanNextWeek();
@@ -55663,7 +55869,7 @@ function renderPlanNextWeek(){
 function pnwCheckPin(val){
   if(val.length<4) return;
   if(pinOk(val)){
-    adminPinUnlocked=true;
+    haMomOn();   // UNIMOM
     pnwStartWizard(pnwPendingWeek||null);
   } else {
     const err=document.getElementById("pnw-pin-err");

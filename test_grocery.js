@@ -276,6 +276,8 @@ ok("add boxes carry suggestions (one shared list on <body>)", /list="gr-dl"/.tes
   ok("lines matched: almond milk → the staple row, ground beef → the list item, chips → extra", R.rows[0].match.startsWith("v:st_")&&R.rows[1].match.startsWith("i:")&&R.rows[2].match==="x");
   ok("sale read from the receipt (regular 3.79, paid 2.99)", R.rows[0].sale&&R.rows[0].reg===3.79);
   L.grRcptSave();
+  { const pop=L.env.els&&L.env.els["gr-pop"]; ok("saving a receipt opens the checkout screen with the receipt total (2026-10-06 flow)", !!pop&&/🧾 Checkout/.test(pop.innerHTML)&&/value="24\.50"/.test(pop.innerHTML)&&/From the receipt/.test(pop.innerHTML)); }
+  L.grCheckoutGo();   // 🧾 the trip finishes on Check out
   ok("saving: prices recorded with sale + regular", L.grUsual("Almond milk","harristeeter")===3.79&&L.grLowest("Almond milk","harristeeter").p===2.99);
   ok("matched items came off the list, paper towels (not on the receipt) stayed", !Object.values(L.data.items).some(i=>i.name==="Ground beef")&&Object.values(L.data.items).some(i=>i.name==="Paper towels"));
   ok("the staple went back to ✅ have", L.env.staples.s1.state==="have");
@@ -305,7 +307,7 @@ ok("✎ pop-ups carry price + history; list page has 📸 Read a receipt", /\+gr
   const g=L.grGroups("sams"); const row=[].concat(...Object.values(g)).find(r=>r.id===pp);
   ok("waiting items still show at every store (her pick A)…", !!row);
   ok("… clearly tagged 'not sorted yet — Mom may get this somewhere else'", /Mom may get this somewhere else/.test(L.grRowHTML(row,false))&&/📥 to sort/.test(L.grRowHTML(row,true)));
-  ok("📥 To sort box lists them with store buttons + Any store", /To sort · 5/.test(L.grSortBoxHTML())&&/Any store/.test(L.grSortBoxHTML()));
+  ok("📥 To sort box lists them with store buttons + Any store (2026-10-06: Toothpaste, added before stores existed, counts too → 6)", /To sort · 6/.test(L.grSortBoxHTML())&&/Any store/.test(L.grSortBoxHTML()));
   L.grSortTo(pp,"sams");
   ok("tap a store → item goes there, leaves To sort, home remembered", L.data.items[pp].stores.join()==="sams"&&!L.data.items[pp].sort&&L.grHomeFor("paper plates").join()==="sams");
   const bt=L.grSortIds().find(i=>L.data.items[i].name==="Batteries"); L.grSortTo(bt,"any");

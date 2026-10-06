@@ -35,6 +35,6 @@ const r2={name:"Green Smoothie",ingredients:"spinach\nbanana",directions:"Blend"
   ok("device copy of the recipe box drops pictures", /delete c\.photo/.test(fn("kitMealsLSSave"))&&!/HA_LS\.setItem\('ha_kit_meals',JSON\.stringify\(kitMeals\)\)/.test(src));
   ok("link door uses Claude web fetch and continues a paused turn", /web_fetch_20260209/.test(fn("kitCapRunLink"))&&/pause_turn/.test(fn("kitCapAsk")));
   ok("recipe changes need the Mom PIN: New/Edit, Delete and Import all go through kitPinGate", /function kitEditMeal\(id\)\{ kitPinGate\(/.test(src)&&/function kitDelMeal\(id\)\{ kitPinGate\(/.test(src)&&/kitPinGate\(kitImpToggle\)/.test(src));
-  ok("the gate opens only on the family PIN and remembers it for the session", /if\(pinOk\(v\)\)\{ adminPinUnlocked=true;/.test(src));
+  ok("the gate opens only on the family PIN and remembers it for the session", /if\(pinOk\(v\)\)\{ haMomOn\(\);/.test(src));
   console.log(pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
 })();
