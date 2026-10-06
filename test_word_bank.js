@@ -19,7 +19,7 @@ return {get S(){return notebookSettings;}, set mom(v){_mom=v;}, set wk(v){_wk=v;
  draft(v){ if(v!==undefined) nbWbDraft=v; return nbWbDraft; }, paste(v){ nbWbPaste=v; }, msg(){return nbWbMsg;} };`))(w.HoweNotebooks,writes);
 let pass=0,fail=0;const ok=(c,m)=>{c?pass++:(fail++,console.log("FAIL",m));};
 // empty
-ok(api.nbWbCtx("lincoln")===null,"empty bank → null ctx");ok(api.nbWbCtx("ellis")===null,"other kid null");ok(api.nbBankLowAlertHTML()==="","no alert when empty");
+ok(api.nbWbCtx("lincoln")===null,"empty bank → null ctx");ok(api.nbWbCtx("lucy")===null,"other kid null");   // ELLISBANKS 10/5: Ellis is a bank kid now — Lucy is the "other kid"ok(api.nbBankLowAlertHTML()==="","no alert when empty");
 ok(/Empty — the built-in words print/.test(api.nbWbCardHTML("lincoln","Week 23")),"empty card text");
 // load 125 like the seed will
 const bank=JSON.parse(fs.readFileSync("lincoln_word_bank.json","utf8"));
@@ -31,7 +31,7 @@ ok(api.nbWbLeft("lincoln")===125&&api.nbBankLowAlertHTML()==="","not low");
 // print → cursor persists once
 writes.length=0;api.nbWbPersistCursor("lincoln",{wordBankCursor:{week:23,day:1,adv:5}});api.nbWbPersistCursor("lincoln",{wordBankCursor:{week:23,day:1,adv:5}});
 ok(writes.length===1&&writes[0][1]==="notebookSettings/lincoln/wordBank/cursor","cursor written once, targeted");ok(api.nbWbLeft("lincoln")===120,"left 120");
-api.nbWbPersistCursor("ellis",{wordBankCursor:{week:23,day:1,adv:5}});ok(writes.length===1,"other kid never written");
+api.nbWbPersistCursor("lucy",{wordBankCursor:{week:23,day:1,adv:5}});ok(writes.length===1,"other kid never written");
 // next week view
 api.wk=24;ok(/Week 24 prints: <span[^>]*>colossal/.test(api.nbWbCardHTML("lincoln","Week 24")),"wk24 continues");
 // mom gate

@@ -30,7 +30,7 @@ ok(api.nbCqList("lincoln").length===125&&writes.every(x=>/^notebookSettings\/lin
 ok(api.nbWbList("lincoln").length===0,"word bank untouched");
 let card=api.nbCqCardHTML("lincoln","Week 23");
 ok(/Week 23 prints: <span[^>]*>Analogy · Sentence · Belongs with · Analogy · Sentence/.test(card)&&/120 unused questions after this week \(about 24 weeks\)/.test(card),"card shows this week + what is left");
-writes.length=0;api.nbCqPersistCursor("lincoln",{cogatBankCursor:{week:23,day:1,adv:5}});api.nbCqPersistCursor("lincoln",{cogatBankCursor:{week:23,day:1,adv:5}});api.nbCqPersistCursor("ellis",{cogatBankCursor:{week:23,day:1,adv:5}});
+writes.length=0;api.nbCqPersistCursor("lincoln",{cogatBankCursor:{week:23,day:1,adv:5}});api.nbCqPersistCursor("lincoln",{cogatBankCursor:{week:23,day:1,adv:5}});api.nbCqPersistCursor("lucy",{cogatBankCursor:{week:23,day:1,adv:5}});   // ELLISBANKS 10/5: Ellis is a bank kid now — Lucy is the "other kid"
 ok(writes.length===1&&writes[0][1]==="notebookSettings/lincoln/cogatBank/cursor","cursor written once, targeted, Lincoln only");
 api.mom=false;writes.length=0;ok(api.nbCqCardHTML("lincoln","x")==="","hidden without Mom");api.nbCqSetStart("lincoln",9);api.nbCqOpenForm("lincoln","");api.nbCqDelete("lincoln","q001");api.nbCqDelete("lincoln","q001");ok(writes.length===0&&api.draft()===null&&api.nbCqList("lincoln").length===125,"no writes without Mom");api.mom=true;
 api.nbCqSetStart("lincoln",118);ok(api.nbCqLeft("lincoln")===3&&/CogAT Verbal bank <span[^>]*>· 3 unused questions left/.test(api.nbBankLowAlertHTML())&&!/Word of the Day/.test(api.nbBankLowAlertHTML()),"alert names the CogAT bank only");

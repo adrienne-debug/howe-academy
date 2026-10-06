@@ -1921,7 +1921,8 @@
     orderedDays.forEach(function (d, i) {
       var e = list[(((start - 1 + i) % n) + n) % n] || {};
       words.push({ bank: true, label: wb.label || "", word: lnEsc(e.word), pos: lnEsc(e.pos), def: lnEsc(e.def), syn: lnEsc(e.syn),
-        ex1: e.ex1 ? lnBoldWord(e.ex1, e.word) : "", ex2: e.ex2 ? lnBoldWord(e.ex2, e.word) : "" });
+        ex1: e.ex1 ? lnBoldWord(e.ex1, e.word) : "", ex2: e.ex2 ? lnBoldWord(e.ex2, e.word) : "",
+        root: lnEsc(e.root || ""), family: (Array.isArray(e.family) ? e.family : []).map(lnEsc) });   // root + family: Ellis's parent page prints them (ELLISBANKS 2026-10-05); Lincoln's cards ignore them
     });
     return { start: start, from: st.from, total: n, words: words, cursor: { week: parseInt(String(wk).replace(/\D/g, ""), 10) || 1, day: start, adv: orderedDays.length, from: st.from } };
   }
@@ -1973,7 +1974,8 @@
   // ── Conventions bank (Mom's list, Notebook tab) — the Q3 box, in the Iowa format. Same shape and cursor rule as the others ──
   // ctx.convBank = { cursor, items:[{type:"SP"|"US", text, c:[4 + "No mistake"], ans, rule},…] }.
   // SP = which word is spelled wrong (four words + No mistake) · US = which line has a mistake (three lines + No mistake).
-  var LN_CV = { SP: { tag: "✏️ Spelling", check: "Check: say each word slowly — does every sound have its letters?" }, US: { tag: "✏️ Usage", check: "Check: read the whole sentence aloud — does it sound like a book?" } };
+  var LN_CV = { SP: { tag: "✏️ Spelling", check: "Check: say each word slowly — does every sound have its letters?" }, US: { tag: "✏️ Usage", check: "Check: read the whole sentence aloud — does it sound like a book?" },
+    CP: { tag: "🔠 Capital letters", check: "Check: a capital for names, places, days, titles and the word I — and NOT for seasons, school subjects or job words." } };   // CP = Ellis's capitals items (ELLISBANKS 2026-10-05); an item may carry a student-visible `hint` (its rule family)
   function lnConvBankPlan(cb, wk, orderedDays) {
     var list = (cb && cb.items) || [];
     if (!list.length) return null;
@@ -1983,7 +1985,7 @@
     orderedDays.forEach(function (d, i) {
       var e = list[(((start - 1 + i) % n) + n) % n] || {}, type = LN_CV[e.type] ? e.type : "SP";
       var ch = (Array.isArray(e.c) ? e.c : Object.keys(e.c || {}).sort().map(function (k) { return e.c[k]; })).filter(function (x) { return x != null && x !== ""; }).slice(0, 5);
-      items.push({ bank: true, ctype: type, tag: LN_CV[type].tag, check: LN_CV[type].check, text: lnEsc(e.text), rule: lnEsc(e.rule || ""),
+      items.push({ bank: true, ctype: type, tag: LN_CV[type].tag, check: LN_CV[type].check, text: lnEsc(e.text), rule: lnEsc(e.rule || ""), hint: lnEsc(e.hint || ""),
         choices: ch.map(function (t, k) { return { l: "ABCDE".charAt(k), t: lnEsc(t) }; }), ans: String(e.ans || "").toUpperCase().charAt(0) });
     });
     return { start: start, from: st.from, total: n, items: items, cursor: { week: parseInt(String(wk).replace(/\D/g, ""), 10) || 1, day: start, adv: orderedDays.length, from: st.from } };
@@ -3390,7 +3392,9 @@ ${extraStrip || ""}
    *  (_css(), includes <style>) + brain-break (word-search/scramble/riddle/WYR)
    *  + daily page + 2 parent pages. Reuses the enrichment pages (ellis theme)
    *  + a Notes page. Logo (../Transformer/11.svg) → 🤖 (won't resolve in-app).
-   *  Header still reads "3rd Grade" — faithful to the Python source string.
+   *  Header reads "4th Grade" and the Iowa tables show his Aug-2026 scores (her "lets start" on the
+   *  Ellis notebook rework, 2026-10-05 — the 3rd-grade label and the 2025 grade-2 scores had carried
+   *  over from the Python source).
    * ========================================================================== */
 
   var ELLIS_CSS = "\n<style>\n@page { size: letter portrait; margin: 0; }\n:root {\n  --tf-dark:      #0A1628;\n  --tf-navy:      #142038;\n  --tf-mid:       #1C3256;\n  --tf-red:       #C41E1E;\n  --tf-red-lt:    #E03030;\n  --tf-yellow:    #F5C200;\n  --tf-silver:    #8EA5C4;\n  --tf-silver-lt: #B8CDDF;\n  --tf-light:     #EBF0F7;\n  --tf-white:     #F9FBFD;\n  --acc-read:     #1A3A6E;\n  --acc-lang:     #5A1A1A;\n  --acc-math:     #0D4A2A;\n}\n/* PRINT-TUNED PALETTE \u2014 applies only when printing; screen stays vivid.\n   Clean the near-black navies (less muddy on inkjet) and deepen the yellow (weakest ink). */\n@media print {\n  :root {\n    --tf-dark:   #16273f;\n    --tf-navy:   #1c2e49;\n    --tf-mid:    #25416b;\n    --tf-yellow: #e0a800;\n  }\n}\n* { box-sizing:border-box; margin:0; padding:0; }\n@media print {\n  body { -webkit-print-color-adjust:exact; print-color-adjust:exact; background:white !important; }\n  .page { page-break-after:always; margin:0 !important; }\n  .page:last-of-type { page-break-after:avoid; }\n  .page-label { display:none; }\n}\nbody { background:#3a3a3a; font-family:'Nunito',sans-serif; font-size:10.5px; color:#1a1a2e; }\n.page { width:8.5in; height:11in; background:var(--tf-white); margin:0 auto 24px;\n        display:flex; flex-direction:column; overflow:hidden; }\n\n/* \u2500\u2500 header \u2500\u2500 */\n.page-header { height:68px; flex-shrink:0; background:var(--tf-dark);\n  background-image:linear-gradient(rgba(255,255,255,0.025) 1px,transparent 1px);\n  background-size:100% 16px; display:flex; align-items:center; gap:14px;\n  padding:0 22px; position:relative; }\n.page-header::before { content:''; position:absolute; top:0; left:0; right:0; height:4px;\n  background:linear-gradient(90deg,var(--tf-red) 0%,var(--tf-yellow) 40%,var(--tf-red) 100%); }\n.page-header::after  { content:''; position:absolute; bottom:0; left:0; right:0; height:2px;\n  background:linear-gradient(90deg,transparent,var(--tf-red) 20%,var(--tf-yellow) 50%,var(--tf-red) 80%,transparent);\n  opacity:0.55; }\n.logo-slot { width:48px; height:52px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }\n.logo-slot img { width:48px; height:52px; object-fit:contain; }\n.hdr-divider { width:1px; height:40px; background:rgba(245,194,0,0.25); flex-shrink:0; }\n.header-titles { flex:1; }\n.header-academy { font-family:'Orbitron',sans-serif; font-size:8px; font-weight:600;\n  color:var(--tf-silver); letter-spacing:0.22em; text-transform:uppercase; margin-bottom:3px; }\n.header-main { font-family:'Orbitron',sans-serif; font-size:19px; font-weight:900;\n  color:#fff; letter-spacing:0.04em; text-transform:uppercase; line-height:1; }\n.header-main .hl { color:var(--tf-yellow); }\n.hdr-chevron { color:var(--tf-red); font-size:22px; flex-shrink:0; opacity:0.7; }\n.header-info { flex-shrink:0; text-align:right; }\n.header-tag { font-family:'Orbitron',sans-serif; font-size:7px; color:var(--tf-silver);\n  letter-spacing:0.2em; text-transform:uppercase; display:block; margin-bottom:3px; }\n.header-week-badge { background:var(--tf-red); color:#fff; font-family:'Orbitron',sans-serif;\n  font-size:13px; font-weight:700; letter-spacing:0.1em; padding:3px 10px;\n  border-radius:2px; display:inline-block; }\n.header-sub-info { font-family:'Orbitron',sans-serif; font-size:7px; color:var(--tf-silver);\n  letter-spacing:0.12em; margin-top:3px; }\n\n/* \u2500\u2500 body \u2500\u2500 */\n.page-body { flex:1; overflow:hidden; padding:6px 20px 5px;\n  display:flex; flex-direction:column; gap:2px; }\n\n/* \u2500\u2500 section labels \u2500\u2500 */\n.sec-label { font-family:'Orbitron',sans-serif; font-size:7.5px; font-weight:700;\n  letter-spacing:0.18em; text-transform:uppercase; padding:1px 8px 1px 5px;\n  border-radius:2px; display:inline-flex; align-items:center; gap:5px;\n  margin-bottom:1px; flex-shrink:0; }\n.sec-label::before { content:'\u25b6'; font-size:5.5px; opacity:0.8; }\n.sec-red   { background:var(--tf-red);    color:#fff; }\n.sec-navy  { background:var(--tf-dark);   color:var(--tf-silver-lt); }\n.sec-gold  { background:var(--tf-yellow); color:var(--tf-dark); }\n.sec-green { background:#0D4A2A;          color:#a8e6c0; }\n.sec-lang  { background:var(--acc-lang);  color:#ffcccc; }\n\n/* \u2500\u2500 cards \u2500\u2500 */\n.card { border-radius:3px; padding:4px 9px; }\n.card-read { background:#ddeeff; border-left:3px solid var(--acc-read); }\n.card-lang { background:#ffe8e8; border-left:3px solid var(--tf-red); }\n.card-math { background:#daf0e6; border-left:3px solid var(--acc-math); }\n.card-word { background:#fff3c0; border-left:3px solid var(--tf-yellow); }\n.card-sub  { background:#eef0fb; border-left:3px solid #3344aa; }\n\n/* \u2500\u2500 beginning / closing bookends \u2014 make the Morning & Closing Notebook obvious \u2500\u2500 */\n.bookend { display:flex; align-items:center; gap:10px; border-radius:3px; padding:3px 12px;\n  flex-shrink:0; border:2px solid var(--tf-dark); margin-bottom:1px; }\n.bookend-start { background:linear-gradient(135deg,#fff3c0,#fffaf0); border-color:var(--tf-yellow); }\n.bookend-close { background:linear-gradient(135deg,#dde7f5,#eef4fb); border-color:var(--tf-mid); }\n.bookend-icon { font-size:18px; line-height:1; flex-shrink:0; }\n.bookend-title { font-family:'Orbitron',sans-serif; font-size:12px; font-weight:900; color:var(--tf-dark);\n  letter-spacing:0.04em; text-transform:uppercase; line-height:1.1; }\n.bookend-sub { font-family:'Orbitron',sans-serif; font-size:7px; font-weight:600; color:var(--tf-mid);\n  letter-spacing:0.1em; text-transform:uppercase; margin-top:2px; }\n.bookend-badge { margin-left:auto; font-family:'Orbitron',sans-serif; font-size:8px; font-weight:700;\n  letter-spacing:0.08em; text-transform:uppercase; color:#fff; background:var(--tf-red);\n  padding:3px 9px; border-radius:2px; flex-shrink:0; }\n.bookend-start .bookend-badge { background:var(--tf-yellow); color:var(--tf-dark); }\n\n/* \u2500\u2500 questions \u2500\u2500 */\n.q-tag { display:inline-flex; align-items:center; justify-content:center;\n  width:18px; height:18px; background:var(--tf-red); color:#fff;\n  border-radius:50%; font-family:'Orbitron',sans-serif; font-size:8px;\n  font-weight:700; flex-shrink:0; }\n.q-row  { display:flex; gap:6px; align-items:flex-start; margin-bottom:3px; }\n.q-text { font-size:9.5px; line-height:1.25; flex:1; }\n.choices { display:flex; flex-direction:column; gap:2px; margin-top:2px; margin-left:24px; }\n.choice-row { display:flex; align-items:center; gap:5px; font-size:9px; line-height:1.18; }\n.choice-letter { display:inline-flex; align-items:center; justify-content:center;\n  width:15px; height:15px; border:1.5px solid; border-radius:50%;\n  font-size:8px; font-weight:700; font-family:'Orbitron',sans-serif; flex-shrink:0; }\n.choice-letter.correct { background:var(--tf-red); color:#fff; border-color:var(--tf-red); }\n.choice-letter.plain   { border-color:#aaa; color:#555; }\n.passage-block { background:white; border:1px solid #c8d8ec; border-radius:3px;\n  padding:4px 7px; font-size:9px; line-height:1.28; margin-bottom:3px; }\n.passage-title { font-family:'Orbitron',sans-serif; font-size:7px; font-weight:700;\n  color:var(--acc-read); letter-spacing:0.1em; margin-bottom:3px; }\n.skill-note { background:rgba(28,50,86,0.07); border-left:2px solid var(--tf-silver);\n  padding:2px 6px; font-size:8.5px; color:#445; font-style:italic; margin-top:4px;\n  border-radius:0 2px 2px 0; }\n\n/* \u2500\u2500 write lines \u2500\u2500 */\n/* \u2500\u2500 2-col skill check \u2500\u2500 */\n.sc-grid { display:grid; grid-template-columns:1fr 1fr; gap:1px 6px; }\n.sc-item { display:flex; align-items:center; gap:4px; padding:2px 3px;\n  border-bottom:1px solid rgba(14,32,56,0.06); min-width:0; }\n.sc-subj { flex:1; font-size:8px; color:var(--tf-dark); font-weight:600;\n  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }\n.sc-bubbles { display:flex; gap:4px; flex-shrink:0; }\n\n.grat-item { display:flex; align-items:center; gap:7px; margin-bottom:2px; }\n.grat-num  { font-family:'Orbitron',sans-serif; font-size:10px; font-weight:700;\n  color:var(--tf-yellow); background:var(--tf-dark); width:18px; height:18px;\n  border-radius:50%; display:flex; align-items:center; justify-content:center;\n  flex-shrink:0; }\n.grat-line { flex:1; border-bottom:1.5px solid rgba(196,30,30,0.18); height:15px; }\n.write-line { height:22px; border-bottom:1px solid rgba(196,30,30,0.12);\n  background:linear-gradient(transparent 20px,rgba(245,194,0,0.07) 20px); margin-bottom:1px; }\n\n/* \u2500\u2500 mood \u2500\u2500 */\n.mood-row  { display:flex; gap:10px; align-items:center; }\n.mood-item { display:flex; flex-direction:column; align-items:center; }\n.mood-circle { width:24px; height:24px; border:2px solid var(--tf-red); border-radius:50%;\n  display:flex; align-items:center; justify-content:center; font-size:16px;\n  background:white; flex-shrink:0; }\n.mood-label { font-family:'Orbitron',sans-serif; font-size:5.5px; color:var(--tf-silver);\n  text-align:center; margin-top:2px; letter-spacing:0.05em; }\n\n/* \u2500\u2500 subjects checklist \u2500\u2500 */\n.sub-grid { display:grid; grid-template-columns:1fr 1fr; gap:3px 10px; }\n.sub-item { display:flex; align-items:center; gap:6px; font-size:9.5px; height:22px; }\n.sub-box  { width:14px; height:14px; border:2px solid var(--tf-red); border-radius:2px;\n  background:white; flex-shrink:0; }\n.sub-note { font-size:8px; color:#888; margin-left:auto; font-style:italic; }\n\n/* \u2500\u2500 word of day \u2500\u2500 */\n.word-big { font-family:'Orbitron',sans-serif; font-size:14px; font-weight:700;\n  color:var(--tf-dark); letter-spacing:0.05em; }\n.word-pos  { font-family:'Orbitron',sans-serif; font-size:6.5px; background:var(--tf-yellow);\n  color:var(--tf-dark); padding:1px 5px; border-radius:2px; margin-left:5px; letter-spacing:0.1em; }\n.word-def  { font-size:9.5px; color:#444; line-height:1.2; margin:2px 0 1px; }\n.word-ex   { font-size:9px; color:#555; font-style:italic; line-height:1.2; }\n.word-ex strong { font-style:normal; color:var(--tf-dark); font-weight:800; }\n\n/* \u2500\u2500 Iowa scores table \u2500\u2500 */\n.iowa-table { width:100%; border-collapse:collapse; }\n.iowa-table tr { border-bottom:1px solid rgba(14,32,56,0.08); }\n.iowa-table td { padding:2.5px 5px; font-size:9.5px; }\n.iowa-table .subj { font-weight:700; color:var(--tf-dark); }\n.iowa-table .stat { text-align:center; font-family:'Orbitron',sans-serif; font-size:8px; }\n.iowa-badge { display:inline-block; padding:1px 5px; border-radius:2px;\n  font-family:'Orbitron',sans-serif; font-size:6.5px; font-weight:700; letter-spacing:0.05em; }\n.badge-focus   { background:#C41E1E; color:#fff; }\n.badge-growing { background:#F5C200; color:#111; }\n.badge-strong  { background:#1a5c2e; color:#fff; }\n.badge-elite   { background:#0A1628; color:var(--tf-yellow); }\n\n/* \u2500\u2500 stat boxes \u2500\u2500 */\n.stat-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:8px; }\n.stat-box  { background:var(--tf-dark); border-radius:3px; padding:5px 6px;\n  text-align:center; border-top:2px solid var(--tf-red); }\n.stat-num  { font-family:'Orbitron',sans-serif; font-size:18px; font-weight:900;\n  color:#fff; line-height:1; }\n.stat-label { font-family:'Orbitron',sans-serif; font-size:6px; color:var(--tf-silver);\n  letter-spacing:0.15em; text-transform:uppercase; margin-top:2px; }\n\n/* \u2500\u2500 pacing \u2500\u2500 */\n.pace-item  { margin-bottom:2px; }\n.pace-label { font-family:'Orbitron',sans-serif; font-size:7px; color:var(--tf-dark);\n  letter-spacing:0.08em; display:flex; justify-content:space-between;\n  align-items:center; margin-bottom:2px; }\n.pace-track { height:10px; background:rgba(14,32,56,0.1); border-radius:2px; overflow:hidden; }\n.pace-fill  { height:100%; border-radius:2px; }\n\n/* \u2500\u2500 weekly schedule \u2500\u2500 */\n.sched-grid { display:grid; gap:4px; }\n.sched-day-col { border-radius:3px; overflow:hidden; border:1px solid rgba(14,32,56,0.12); }\n.sched-day-head { background:var(--tf-mid); color:#fff; padding:4px 8px;\n  font-family:'Orbitron',sans-serif; font-size:8px; font-weight:700;\n  letter-spacing:0.1em; display:flex; justify-content:space-between; align-items:baseline; }\n.sched-date { font-size:6.5px; opacity:0.6; font-weight:400; letter-spacing:0.05em; }\n.sched-tasks { background:white; padding:3px 6px; }\n.sched-task-row { font-size:8.5px; color:#1a1a2e; padding:1px 0;\n  border-bottom:1px solid #f0f0f0; line-height:1.3; }\n.sched-task-row:last-child { border-bottom:none; }\n.sched-mom-req   { color:#7a1a1a; }\n.sched-mom-maybe { color:#5a3a00; }\n\n/* \u2500\u2500 brain break \u2500\u2500 */\n.ws-table { border-collapse:collapse; }\n.ws-cell  { width:20px; height:20px; text-align:center; vertical-align:middle;\n  font-family:'Orbitron',sans-serif; font-size:9.5px; font-weight:600;\n  color:var(--tf-dark); border:0.5px solid rgba(14,32,56,0.1); }\n.bb-riddle-q    { font-size:9.5px; font-weight:700; color:var(--tf-dark); line-height:1.35; }\n.bb-riddle-line { height:18px; border-bottom:1px solid rgba(196,30,30,0.15); margin-top:3px; }\n.bb-riddle-ans  { font-size:7.5px; color:#bbb; font-style:italic; margin-top:1px; }\n.bb-scrambled   { font-family:'Orbitron',sans-serif; font-size:11px; font-weight:700;\n  color:var(--tf-red); letter-spacing:0.15em; }\n.bb-blank       { flex:1; border-bottom:1.5px solid rgba(14,32,56,0.25); height:18px; }\n.draw-box   { border:2px dashed rgba(196,30,30,0.35); border-radius:4px;\n  position:relative; flex:1; min-height:80px; }\n.draw-label { position:absolute; top:6px; left:10px; font-family:'Orbitron',sans-serif;\n  font-size:7px; color:rgba(196,30,30,0.35); letter-spacing:0.2em; text-transform:uppercase; }\n.wyr-card { background:var(--tf-light); border:1.5px solid var(--tf-silver);\n  border-radius:3px; padding:6px 8px; margin-bottom:5px; }\n.wyr-q    { font-size:9.5px; font-weight:700; color:var(--tf-dark); line-height:1.35; margin-bottom:4px; }\n.wyr-line { height:18px; border-bottom:1px solid rgba(196,30,30,0.15); }\n\n/* \u2500\u2500 daily skill status check \u2500\u2500 */\n.skill-check { width:100%; border-collapse:collapse; margin-top:5px;\n  border-top:1px solid rgba(196,30,30,0.18); padding-top:4px; }\n.skill-check thead tr th { font-family:'Orbitron',sans-serif; font-size:6px; font-weight:700;\n  color:var(--tf-silver); text-transform:uppercase; letter-spacing:0.07em;\n  padding:3px 3px 2px; text-align:center; border-bottom:1px solid rgba(196,30,30,0.2); }\n.skill-check thead tr th:first-child { text-align:left; min-width:80px; }\n.skill-check tbody tr td { padding:2px 3px; font-size:8.5px; color:var(--tf-dark); line-height:1.4; }\n.skill-check tbody tr td:not(:first-child) { text-align:center; }\n.skill-check tbody tr:not(:last-child) td { border-bottom:1px solid rgba(14,32,56,0.06); }\n.sk-bubble { width:13px; height:13px; border:1.5px solid rgba(196,30,30,0.45);\n  border-radius:50%; display:inline-block; vertical-align:middle; }\n\n/* \u2500\u2500 parent companion \u2500\u2500 */\n.companion-accent { height:3px; flex-shrink:0;\n  background:linear-gradient(90deg,var(--tf-red),var(--tf-yellow),var(--tf-red)); }\n.parent-badge { display:inline-block; font-family:'Orbitron',sans-serif; font-size:7px;\n  font-weight:700; letter-spacing:0.12em; color:var(--tf-dark); background:var(--tf-yellow);\n  padding:2px 8px; border-radius:2px; margin-left:8px; vertical-align:middle; }\n.constraint-banner { background:rgba(245,194,0,0.15); border:1.5px solid rgba(245,194,0,0.4);\n  border-radius:4px; padding:6px 10px; font-size:9px; color:var(--tf-dark);\n  margin-bottom:6px; flex-shrink:0; }\n.key-day  { font-family:'Orbitron',sans-serif; font-size:11px; font-weight:700; color:var(--tf-dark); }\n.key-date { font-family:'Orbitron',sans-serif; font-size:7px; color:var(--tf-silver);\n  letter-spacing:0.08em; margin-left:6px; }\n.key-row  { display:flex; align-items:baseline; gap:8px; padding:3px 0;\n  border-bottom:1px solid rgba(14,32,56,0.08); font-size:9.5px; }\n.key-row:last-child { border-bottom:none; }\n.key-label { font-family:'Orbitron',sans-serif; font-size:7px; color:var(--tf-silver);\n  text-transform:uppercase; letter-spacing:0.08em; min-width:52px; flex-shrink:0; }\n.key-ans  { font-weight:700; color:var(--tf-dark); }\n.key-sub  { color:#888; font-size:9px; }\n.record-box  { border:1.5px solid rgba(14,32,56,0.15); border-radius:4px; padding:7px 10px; }\n.record-day  { font-family:'Orbitron',sans-serif; font-size:9px; font-weight:700;\n  color:var(--tf-red); margin-bottom:5px; }\n.record-line { height:18px; border-bottom:1px solid rgba(14,32,56,0.12); margin-bottom:1px; }\n.carry-box   { border:2px dashed rgba(14,32,56,0.2); border-radius:4px; padding:8px 12px; }\n.carry-title { font-family:'Orbitron',sans-serif; font-size:8px; font-weight:700;\n  color:var(--tf-red); letter-spacing:0.1em; margin-bottom:6px; }\n\n/* \u2500\u2500 footer \u2500\u2500 */\n.page-footer { background:var(--tf-dark); height:18px; display:flex; align-items:center;\n  justify-content:space-between; padding:0 22px; flex-shrink:0;\n  border-top:1px solid var(--tf-red); }\n.footer-text { font-family:'Orbitron',sans-serif; font-size:6.5px; color:var(--tf-silver);\n  letter-spacing:0.2em; text-transform:uppercase; }\n</style>\n";              // full _css(), already wrapped in <style>
@@ -3565,7 +3569,7 @@ ${ellFooter("Howe Academy · Training Simulation · Week " + weekNum + " · Chal
     var schedStyled = sched.replace('<div class="sched-grid">', '<div class="sched-grid" style="grid-template-columns:repeat(' + nDays + ',1fr);">');
     return `<!-- PAGE 1: MISSION BRIEFING (Weekly) -->
 <div class="page">
-${ellHeader("Howe Academy · 3rd Grade · Samuel Ellis Howe", "MISSION", "BRIEFING", "Week", ellPad2(weekNum), weekDates)}
+${ellHeader("Howe Academy · 4th Grade · Samuel Ellis Howe", "MISSION", "BRIEFING", "Week", ellPad2(weekNum), weekDates)}
 
   <div class="page-body" style="flex-direction:row;gap:14px;">
 
@@ -3573,15 +3577,16 @@ ${ellHeader("Howe Academy · 3rd Grade · Samuel Ellis Howe", "MISSION", "BRIEFI
       <div class="sec-label sec-red">Last Mission Report — Week ${prevWeekNum}</div>
       ${stats}
 
-      <div class="sec-label sec-navy">Field Intel — Iowa Scores</div>
+      <div class="sec-label sec-navy">Field Intel — Iowa · Aug 2026</div>
       <table class="iowa-table">
-        <tr><td class="subj">Word Analysis</td><td class="stat">GE 1.4</td><td class="stat">21st</td><td><span class="iowa-badge badge-focus">FOCUS</span></td></tr>
-        <tr><td class="subj">Reading</td>       <td class="stat">GE 1.6</td><td class="stat">22nd</td><td><span class="iowa-badge badge-focus">FOCUS</span></td></tr>
-        <tr><td class="subj">Language</td>      <td class="stat">GE 1.9</td><td class="stat">34th</td><td><span class="iowa-badge badge-growing">GROWING</span></td></tr>
-        <tr><td class="subj">Vocabulary</td>    <td class="stat">GE 1.8</td><td class="stat">35th</td><td><span class="iowa-badge badge-growing">GROWING</span></td></tr>
-        <tr><td class="subj">Mathematics</td>   <td class="stat">GE 3.2</td><td class="stat">90th</td><td><span class="iowa-badge badge-strong">STRONG</span></td></tr>
-        <tr><td class="subj">Science</td>       <td class="stat">GE 3.8</td><td class="stat">93rd</td><td><span class="iowa-badge badge-elite">ELITE</span></td></tr>
-        <tr><td class="subj">Social Studies</td><td class="stat">GE 3.9</td><td class="stat">95th</td><td><span class="iowa-badge badge-elite">ELITE</span></td></tr>
+        <tr><td class="subj">Conventions</td>   <td class="stat">GE 2.9</td><td class="stat">40th</td><td><span class="iowa-badge badge-focus">FOCUS</span></td></tr>
+        <tr><td class="subj">Vocabulary</td>    <td class="stat">GE 3.8</td><td class="stat">68th</td><td><span class="iowa-badge badge-growing">GROWING</span></td></tr>
+        <tr><td class="subj">Reading</td>       <td class="stat">GE 4.5</td><td class="stat">82nd</td><td><span class="iowa-badge badge-strong">STRONG</span></td></tr>
+        <tr><td class="subj">Social Studies</td><td class="stat">GE 4.6</td><td class="stat">83rd</td><td><span class="iowa-badge badge-strong">STRONG</span></td></tr>
+        <tr><td class="subj">Written Expr.</td> <td class="stat">GE 5.0</td><td class="stat">86th</td><td><span class="iowa-badge badge-strong">STRONG</span></td></tr>
+        <tr><td class="subj">Computation</td>   <td class="stat">GE 4.5</td><td class="stat">94th</td><td><span class="iowa-badge badge-elite">ELITE</span></td></tr>
+        <tr><td class="subj">Mathematics</td>   <td class="stat">GE 6.5</td><td class="stat">99th</td><td><span class="iowa-badge badge-elite">ELITE</span></td></tr>
+        <tr><td class="subj">Science</td>       <td class="stat">GE 8.0</td><td class="stat">99th</td><td><span class="iowa-badge badge-elite">ELITE</span></td></tr>
       </table>
 
       <div style="flex:1;min-height:50px;border:2px dashed rgba(196,30,30,0.25);border-radius:4px;position:relative;
@@ -3617,14 +3622,120 @@ ${ellFooter("Howe Academy · Mission Briefing · Week " + weekNum)}
 </div>`;
   }
 
-  function ellDailyPage(dayName, dateStr, weekNum, dayTasks, passage, lang, mathQ, word, extraStrip) {
+  // ── ELLISBANKS_START — Ellis's four daily boxes print from Mom's banks when they hold entries (her yes 2026-10-05).
+  // Same bank shapes, planners and cursor rule as Lincoln's (lnWordBankPlan / lnCogatBankPlan / lnConvBankPlan /
+  // lnQuantBankPlan): notebookSettings/ellis/{wordBank,cogatBank,convBank,quantBank}. Each box falls back to its
+  // built-in content ON ITS OWN when that bank is empty or the week is before the bank's start week — so a deploy
+  // changes nothing until a bank is loaded. Weekday layout lives in the data (CogAT Mon A · Tue S · Wed C · Thu S ·
+  // Fri A; conventions Mon/Wed/Fri spelling, Tue/Thu capitals; numbers Mon series · Tue/Thu analogies · Wed/Fri puzzles).
+  // Placement 10/5 shaped the self-check lines (he reads fast and skips the clue) and the capitals rule hint
+  // (he can't spot an error for a rule nobody has stated).
+  var ELL_CQ = { A: { label: "Word Analogy", check: "Check: do your two words go together the SAME way as the first two?" },
+                 S: { label: "Sentence Completion", check: "Read the whole sentence first — which word is the clue?" },
+                 C: { label: "Belongs With", check: "Check: say what the three words have in common — does your word fit that too?" } };
+  function ellBankPlans(ctx, wn, orderedDays) {
+    var p = {};
+    try { p.word = ctx.wordBank ? lnWordBankPlan(ctx.wordBank, wn, orderedDays) : null; } catch (e) { p.word = null; }
+    try { p.cogat = ctx.cogatBank ? lnCogatBankPlan(ctx.cogatBank, wn, orderedDays) : null; } catch (e) { p.cogat = null; }
+    try { p.conv = ctx.convBank ? lnConvBankPlan(ctx.convBank, wn, orderedDays) : null; } catch (e) { p.conv = null; }
+    try { p.quant = ctx.quantBank ? lnQuantBankPlan(ctx.quantBank, wn, orderedDays) : null; } catch (e) { p.quant = null; }
+    return p;
+  }
+  function ellBankFor(p, i) {
+    var live = function (plan, key) { return (plan && !plan.before && plan[key] && plan[key][i]) ? plan[key][i] : null; };
+    var b = { word: live(p.word, "words"), cogat: live(p.cogat, "items"), conv: live(p.conv, "items"), quant: live(p.quant, "items") };
+    return (b.word || b.cogat || b.conv || b.quant) ? b : null;
+  }
+  function ellAnsText(q) { var c = (q.choices || []).filter(function (x) { return x.l === q.ans; })[0]; return c ? c.t : ""; }
+  // choices in Ellis's own style (letter circle + text); five choices sit 3-across, spelling words 5-across
+  function ellChoiceGrid(choices, cols) {
+    var rows = (choices || []).map(function (c) { return '<div class="choice-row"><div class="choice-letter plain">' + c.l + '</div><span>' + c.t + '</span></div>'; }).join("\n");
+    var style = cols === 5 ? 'display:grid;grid-template-columns:repeat(5,auto);justify-content:start;gap:2px 14px;' : 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:2px 8px;';
+    return '<div class="choices" style="' + style + '">' + rows + '</div>';
+  }
+  function ellCogatBox(q) {
+    var m = ELL_CQ[q.type] || ELL_CQ.A;
+    return '    <div class="sec-label sec-red">🧠 CogAT — ' + m.label + '</div>\n    <div class="card card-read">\n' +
+      '      <div class="q-row">\n        <div class="q-tag">1</div>\n        <div class="q-text" style="font-size:10.5px;line-height:1.35;">' + q.text + '</div>\n      </div>\n' +
+      '      ' + ellChoiceGrid(q.choices, 3) + '\n      <div class="skill-note">' + m.check + '</div>\n    </div>';
+  }
+  function ellConvBox(q) {
+    var cp = q.ctype === "CP", sp = q.ctype === "SP";
+    var head = cp ? "🔠 Capital Letters — Which line has a mistake?" : (sp ? "✏️ Spelling — Which word is spelled wrong?" : "✏️ Usage — Which line has a mistake?");
+    var rows = sp ? ellChoiceGrid(q.choices, 5) : '<div class="choices" style="margin-left:0;">' + q.choices.map(function (c) { return '<div class="choice-row" style="font-size:9.5px;"><div class="choice-letter plain">' + c.l + '</div><span>' + c.t + '</span></div>'; }).join("\n") + '</div>';
+    return '    <div class="sec-label sec-lang">' + head + '</div>\n    <div class="card card-lang">\n' +
+      '      <div class="q-row">\n        <div class="q-tag" style="background:var(--acc-lang);">2</div>\n        <div class="q-text">' + q.text + '</div>\n      </div>\n' +
+      '      ' + rows + '\n' +
+      (cp && q.hint ? '      <div style="font-size:8.5px;font-weight:700;color:#7a1a1a;margin-top:3px;">💡 Rule to remember: ' + q.hint + '</div>\n' : '') +
+      '      <div class="skill-note">' + q.check + '</div>\n    </div>';
+  }
+  function ellQuantBox(q) {
+    var body = q.qtype === "NP"
+      ? '<div class="q-text" style="font-size:11px;line-height:1.5;">' + q.text.split(" / ").map(function (l) { return '<div>' + l.replace("?", '<span style="display:inline-block;min-width:16px;text-align:center;border:1.5px solid var(--tf-dark);border-radius:3px;padding:0 3px;background:#fff;">?</span>') + '</div>'; }).join("") + '</div>'
+      : '<div class="q-text" style="font-size:11.5px;letter-spacing:0.02em;">' + q.text.replace(/\s{2}/g, '<span style="display:inline-block;width:8px;"></span>') + '</div>';
+    return '    <div class="sec-label sec-green">' + q.tag + '</div>\n    <div class="card card-math">\n' +
+      '      <div class="q-row">\n        <div class="q-tag" style="background:var(--acc-math);">3</div>\n        ' + body + '\n      </div>\n' +
+      '      ' + ellChoiceGrid(q.choices, 3) + '\n' + (q.check ? '      <div class="skill-note">' + q.check + '</div>\n' : '') + '    </div>';
+  }
+  // a bank word in the shape the built-in boxes and keys already use (word, pos, def, ex, root, word_family) + syn + label
+  function ellBankWord(w) {
+    return { word: w.word, pos: w.pos, def: w.def, ex: w.ex1 || "", ex2: w.ex2 || "", syn: w.syn || "", root: w.root || "", word_family: w.family || [], label: w.label || "" };
+  }
+  // ── ELLISBANKS_END
+
+  function ellDailyPage(dayName, dateStr, weekNum, dayTasks, passage, lang, mathQ, word, extraStrip, bank) {
     var dayCap = cap(dayName);
     var skillCheckHtml = ellSkillCheck(dayTasks);
     function choiceRows(choices) { return (choices || []).map(function (ch) { return '<div class="choice-row"><div class="choice-letter plain">' + ch[0] + '</div><span>' + ch[1] + '</span></div>\n'; }).join(""); }
     var pChoices = choiceRows(passage.q1_choices), lChoices = choiceRows(lang.choices), mChoices = choiceRows(mathQ.choices);
+    bank = bank || {};   // ELLISBANKS: a bank box replaces its built-in box; a missing bank leaves the built-in markup exactly as it was
+    var secRead = bank.cogat ? ellCogatBox(bank.cogat) : `    <div class="sec-label sec-red">🎯 Iowa Reading — Test Prep</div>
+    <div class="card card-read">
+      <div class="passage-block">
+        <div class="passage-title">${passage.title}</div>
+        ${passage.passage}
+      </div>
+      <div class="q-row">
+        <div class="q-tag">1</div>
+        <div class="q-text">${passage.q1_text}</div>
+      </div>
+      <div class="choices">${pChoices}</div>
+      <div class="skill-note">⚙️ Skill: ${passage.q1_skill}</div>
+    </div>`;
+    var secLang = bank.conv ? ellConvBox(bank.conv) : `    <div class="sec-label sec-lang">✏️ Language — Fix It Up</div>
+    <div class="card card-lang">
+      <div style="font-size:10px;font-weight:700;color:#7a1a1a;margin-bottom:4px;">Fix the sentence. Circle errors, then rewrite correctly.</div>
+      <div style="background:white;border:1px solid #e8b8b8;border-radius:3px;padding:5px 8px;font-size:10px;font-style:italic;margin-bottom:4px;">${lang.bad}</div>
+      <div class="q-row">
+        <div class="q-tag" style="background:var(--acc-lang);">2</div>
+        <div class="q-text">${lang.q_text}</div>
+      </div>
+      <div class="choices">${lChoices}</div>
+    </div>`;
+    var secMath = bank.quant ? ellQuantBox(bank.quant) : `    <div class="sec-label sec-green">🔢 Iowa Math — Problem Solving</div>
+    <div class="card card-math">
+      <div class="q-row">
+        <div class="q-tag" style="background:var(--acc-math);">3</div>
+        <div class="q-text">${mathQ.q}</div>
+      </div>
+      <div class="choices">${mChoices}</div>
+    </div>`;
+    var wordLabel = word.label || "Word of the Day";
+    var synLine = word.syn ? '\n      <div class="word-def" style="margin-top:1px;"><strong style="font-weight:800;color:var(--tf-dark);">Synonyms:</strong> ' + word.syn + '</div>' : "";
+    var secWord = `    <div class="sec-label sec-gold" style="color:var(--tf-dark);">⚡ ${wordLabel}</div>
+    <div class="card card-word">
+      <div style="display:flex;align-items:baseline;gap:4px;margin-bottom:3px;">
+        <div class="word-big">${word.word}</div>
+        <span class="word-pos">${word.pos}</span>
+      </div>
+      <div class="word-def">${word.def}</div>${synLine}
+      <div class="word-ex">${word.ex}</div>
+      <div class="write-line" style="margin-top:4px;"></div>
+      <div style="font-size:8px;color:#888;margin-top:2px;">Write your own sentence ↑</div>
+    </div>`;
     return `<!-- DAILY PAGE: ${dayCap.toUpperCase()} -->
 <div class="page">
-${ellHeader("Daily Operations · Week " + weekNum, "<span class='hl'>" + dayCap.toUpperCase() + "</span> —", "" + dateStr, "Year", "2026", "3RD GRADE")}
+${ellHeader("Daily Operations · Week " + weekNum, "<span class='hl'>" + dayCap.toUpperCase() + "</span> —", "" + dateStr, "Year", "2026", "4TH GRADE")}
 
   <div class="page-body">
 
@@ -3646,51 +3757,13 @@ ${extraStrip || ""}
       <div class="mood-item"><div class="mood-circle">🤩</div><div class="mood-label">MAX POWER</div></div>
     </div>
 
-    <div class="sec-label sec-red">🎯 Iowa Reading — Test Prep</div>
-    <div class="card card-read">
-      <div class="passage-block">
-        <div class="passage-title">${passage.title}</div>
-        ${passage.passage}
-      </div>
-      <div class="q-row">
-        <div class="q-tag">1</div>
-        <div class="q-text">${passage.q1_text}</div>
-      </div>
-      <div class="choices">${pChoices}</div>
-      <div class="skill-note">⚙️ Skill: ${passage.q1_skill}</div>
-    </div>
+${secRead}
 
-    <div class="sec-label sec-lang">✏️ Language — Fix It Up</div>
-    <div class="card card-lang">
-      <div style="font-size:10px;font-weight:700;color:#7a1a1a;margin-bottom:4px;">Fix the sentence. Circle errors, then rewrite correctly.</div>
-      <div style="background:white;border:1px solid #e8b8b8;border-radius:3px;padding:5px 8px;font-size:10px;font-style:italic;margin-bottom:4px;">${lang.bad}</div>
-      <div class="q-row">
-        <div class="q-tag" style="background:var(--acc-lang);">2</div>
-        <div class="q-text">${lang.q_text}</div>
-      </div>
-      <div class="choices">${lChoices}</div>
-    </div>
+${secLang}
 
-    <div class="sec-label sec-green">🔢 Iowa Math — Problem Solving</div>
-    <div class="card card-math">
-      <div class="q-row">
-        <div class="q-tag" style="background:var(--acc-math);">3</div>
-        <div class="q-text">${mathQ.q}</div>
-      </div>
-      <div class="choices">${mChoices}</div>
-    </div>
+${secMath}
 
-    <div class="sec-label sec-gold" style="color:var(--tf-dark);">⚡ Word of the Day</div>
-    <div class="card card-word">
-      <div style="display:flex;align-items:baseline;gap:4px;margin-bottom:3px;">
-        <div class="word-big">${word.word}</div>
-        <span class="word-pos">${word.pos}</span>
-      </div>
-      <div class="word-def">${word.def}</div>
-      <div class="word-ex">${word.ex}</div>
-      <div class="write-line" style="margin-top:4px;"></div>
-      <div style="font-size:8px;color:#888;margin-top:2px;">Write your own sentence ↑</div>
-    </div>
+${secWord}
 
     <div class="bookend bookend-close">
       <div class="bookend-icon">🔋</div>
@@ -3832,24 +3905,29 @@ ${ellFooter("Howe Academy · Creative Launch · Week " + weekNum, "Mission Compl
     var constraintHtml = "";
     if (weekNotes && weekNotes.length) constraintHtml = '<div class="constraint-banner"><strong>THIS WEEK:</strong>  ' + weekNotes.join("  ·  ") + '</div>';
     var dayCards = (dayAssignments || []).map(function (da) {
-      var passage = da.passage, lang = da.lang, mathQ = da.math_q, word = da.word;
+      var passage = da.passage, lang = da.lang, mathQ = da.math_q, word = da.word, b = da.bank || {};
       var q1l = passage.q1_ans || "?", q1t = ellGetAnsText(passage.q1_choices || [], q1l);
       var lal = lang.answer || "?", lat = ellGetAnsText(lang.choices || [], lal);
       var mal = mathQ.answer || "?", mat = ellGetAnsText(mathQ.choices || [], mal);
       var wordDef = word.def || "", wordShort = wordDef.slice(0, 55).replace(/\s+$/, "") + (wordDef.length > 55 ? "…" : "");
+      // ELLISBANKS: a bank box's key row shows the answer letter, the answer and (for conventions / numbers) the rule
+      var row1 = b.cogat ? '<div class="key-row"><div class="key-label">CogAT</div><div><span class="key-ans">(' + b.cogat.ans + ')</span><span class="key-sub"> ' + ellAnsText(b.cogat).slice(0, 40) + ' — ' + (ELL_CQ[b.cogat.type] || ELL_CQ.A).label + '</span></div></div>'
+        : '<div class="key-row"><div class="key-label">Iowa R</div><div><span class="key-ans">(' + q1l + ')</span><span class="key-sub"> ' + q1t.slice(0, 55) + ' — ' + (passage.q1_skill || "") + '</span></div></div>';
+      var row2 = b.conv ? '<div class="key-row"><div class="key-label">' + (b.conv.ctype === "CP" ? "Capitals" : (b.conv.ctype === "SP" ? "Spelling" : "Usage")) + '</div><div><span class="key-ans">(' + b.conv.ans + ')</span><span class="key-sub"> ' + ellAnsText(b.conv).slice(0, 40) + (b.conv.rule ? ' — ' + b.conv.rule.slice(0, 70) : '') + '</span></div></div>'
+        : '<div class="key-row"><div class="key-label">Language</div><div><span class="key-ans">(' + lal + ')</span><span class="key-sub"> ' + lat.slice(0, 60) + '</span></div></div>';
+      var row3 = b.quant ? '<div class="key-row"><div class="key-label">Number</div><div><span class="key-ans">(' + b.quant.ans + ') ' + ellAnsText(b.quant) + '</span><span class="key-sub">' + (b.quant.rule ? ' — ' + b.quant.rule.slice(0, 80) : '') + '</span></div></div>'
+        : '<div class="key-row"><div class="key-label">Math</div><div><span class="key-ans">(' + mal + ')</span><span class="key-sub"> ' + mat.slice(0, 55) + ' — ' + (mathQ.skill || "") + '</span></div></div>';
       return '<div class="card card-plain" style="padding:7px 11px;">' +
         '<div style="margin-bottom:5px;"><span class="key-day">' + cap(da.day) + '</span><span class="key-date">' + da.date + '</span></div>' +
         '<div class="key-row"><div class="key-label">Word</div><div><span class="key-ans">' + word.word + '</span><span class="key-sub"> — ' + wordShort + '</span></div></div>' +
-        '<div class="key-row"><div class="key-label">Iowa R</div><div><span class="key-ans">(' + q1l + ')</span><span class="key-sub"> ' + q1t.slice(0, 55) + ' — ' + (passage.q1_skill || "") + '</span></div></div>' +
-        '<div class="key-row"><div class="key-label">Language</div><div><span class="key-ans">(' + lal + ')</span><span class="key-sub"> ' + lat.slice(0, 60) + '</span></div></div>' +
-        '<div class="key-row"><div class="key-label">Math</div><div><span class="key-ans">(' + mal + ')</span><span class="key-sub"> ' + mat.slice(0, 55) + ' — ' + (mathQ.skill || "") + '</span></div></div>' +
+        row1 + row2 + row3 +
         '</div>\n';
     }).join("");
     var wordCards = (dayAssignments || []).map(function (da) {
       var word = da.word, wFamily = (word.word_family || []).join(", "), wUsage = ellStripTags(word.ex || word.usage || "");
       return '<div class="card card-word" style="border:1.5px solid #d4a820;background:#f5f0e8;padding:7px 10px;">' +
         '<div style="margin-bottom:4px;"><span class="key-day" style="color:var(--tf-red);">' + word.word + '</span><span class="key-date">' + cap(da.day) + ' · ' + da.date + '</span></div>' +
-        '<div class="key-row"><div class="key-label">Meaning</div><div style="font-size:9px;color:#333;">' + (word.def || "") + '</div></div>' +
+        '<div class="key-row"><div class="key-label">Meaning</div><div style="font-size:9px;color:#333;">' + (word.def || "") + (word.syn ? ' <span style="color:#555;">· Synonyms: ' + word.syn + '</span>' : '') + '</div></div>' +
         '<div class="key-row"><div class="key-label">Root</div><div style="font-size:8.5px;color:#555;">' + (word.root || "") + '</div></div>' +
         '<div class="key-row"><div class="key-label">Usage</div><div style="font-size:8.5px;color:#555;font-style:italic;">' + wUsage + '</div></div>' +
         '<div class="key-row"><div class="key-label">Family</div><div style="font-size:8.5px;color:#555;">' + wFamily + '</div></div>' +
@@ -3865,7 +3943,7 @@ ${ellHeader("TEACHING COMPANION · PARENT REFERENCE", "ANSWER", "KEYS", "WEEK", 
 
     ${constraintHtml}
 
-    <div class="sec-label sec-red">📋 Daily Answer Keys — Word · Iowa Reading · Language · Math</div>
+    <div class="sec-label sec-red">📋 Daily Answer Keys — ${(dayAssignments || []).some(function (da) { return da.bank; }) ? "Word · CogAT · Conventions · Number Reasoning" : "Word · Iowa Reading · Language · Math"}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
       ${dayCards}
     </div>
@@ -3885,26 +3963,45 @@ ${ellFooter("Howe Academy · Parent Guide · Answer Keys · Week " + weekNum)}
 
   function ellParentPage2(weekNum, weekDates, dayAssignments) {
     var fullKeys = (dayAssignments || []).map(function (da) {
-      var passage = da.passage, lang = da.lang, mathQ = da.math_q;
+      var passage = da.passage, lang = da.lang, mathQ = da.math_q, b = da.bank || {};
       var q1Rows = ellChoiceRows(passage.q1_choices || [], passage.q1_ans || "");
       var laRows = ellChoiceRows(lang.choices || [], lang.answer || "");
       var maRows = ellChoiceRows(mathQ.choices || [], mathQ.answer || "");
+      // ELLISBANKS: the full key for a bank box = the item as printed, the choices on one line with the answer marked, the rule underneath
+      // (inline, not one row per choice — five choices × three items per day would clip inside the day's box)
+      var bankRows = function (q) {
+        var lines = (q.choices || []).length > 0 && q.ctype === "CP";   // capitals: the three lines stack, the answer line is marked
+        if (lines) return '<div style="font-size:7px;color:#444;line-height:1.3;">' + q.choices.map(function (c) { return c.l === q.ans ? '<div style="color:#1a5c2e;font-weight:700;">✔ ' + c.l + ' ' + c.t + '</div>' : '<div>' + c.l + ' ' + c.t + '</div>'; }).join("") + '</div>';
+        return '<div style="font-size:7px;color:#444;line-height:1.35;">' + (q.choices || []).map(function (c) { return c.l === q.ans ? '<b style="color:#1a5c2e;">✔ ' + c.l + ' ' + c.t + '</b>' : c.l + ' ' + c.t; }).join(' &nbsp;·&nbsp; ') + '</div>';
+      };
+      var k1 = b.cogat
+        ? '<div style="font-size:7.5px;font-weight:700;color:var(--tf-dark);margin:2px 0 1px;">🧠 CogAT · ' + (ELL_CQ[b.cogat.type] || ELL_CQ.A).label + '</div>' +
+          '<div style="font-size:7.5px;color:#444;margin-bottom:1px;">' + b.cogat.text + '</div>' + bankRows(b.cogat)
+        : '<div style="font-size:7.5px;font-weight:700;color:var(--tf-dark);margin:2px 0 1px;">📡 ' + ellStripTags(passage.title || "") + '</div>' +
+          '<div style="font-size:7.5px;color:#444;margin-bottom:1px;">' + (passage.q1_text || "") + '</div>' + q1Rows;
+      var k2 = b.conv
+        ? '<div style="font-size:7.5px;font-weight:700;color:#8b0000;margin:3px 0 1px;">' + (b.conv.ctype === "CP" ? "🔠 Capitals" : (b.conv.ctype === "SP" ? "✏️ Spelling" : "✏️ Usage")) + '</div>' +
+          '<div style="font-size:7.5px;color:#444;margin-bottom:1px;">' + b.conv.text + '</div>' + bankRows(b.conv) +
+          (b.conv.rule ? '<div style="font-size:6.5px;color:#777;margin:1px 0 2px;">Rule: ' + b.conv.rule + '</div>' : '')
+        : '<div style="font-size:7.5px;font-weight:700;color:#8b0000;margin:3px 0 1px;">✏️ Language</div>' +
+          '<div style="font-size:7px;font-style:italic;color:#8b0000;margin-bottom:1px;">' + ellStripTags(lang.bad || "") + '</div>' + laRows +
+          '<div style="font-size:6.5px;color:#777;margin:1px 0 2px;">Errors: ' + (lang.errors || "") + '</div>';
+      var k3 = b.quant
+        ? '<div style="font-size:7.5px;font-weight:700;color:var(--tf-dark);margin:2px 0 1px;">' + b.quant.tag + '</div>' +
+          '<div style="font-size:7.5px;color:#444;margin-bottom:1px;">' + b.quant.text.replace(/ \/ /g, " &nbsp;·&nbsp; ") + '</div>' + bankRows(b.quant) +
+          (b.quant.rule ? '<div style="font-size:6.5px;color:#777;margin:1px 0 2px;">Rule: ' + b.quant.rule + '</div>' : '')
+        : '<div style="font-size:7.5px;font-weight:700;color:var(--tf-dark);margin:2px 0 1px;">🔢 Math</div>' +
+          '<div style="font-size:7.5px;color:#444;margin-bottom:1px;">' + ellStripTags(mathQ.q || "") + '</div>' + maRows;
       return '<div style="border:1.5px solid rgba(14,32,56,0.12);border-radius:4px;padding:5px 8px;font-size:8px;overflow:hidden;">' +
         '<div style="font-family:\'Orbitron\',sans-serif;font-size:8.5px;font-weight:700;color:var(--tf-red);margin-bottom:3px;border-bottom:1px solid rgba(196,30,30,0.2);padding-bottom:3px;">' + cap(da.day).toUpperCase() + '<span style="font-size:6.5px;color:var(--tf-silver);font-weight:400;margin-left:6px;">' + da.date + '</span></div>' +
-        '<div style="font-size:7.5px;font-weight:700;color:var(--tf-dark);margin:2px 0 1px;">📡 ' + ellStripTags(passage.title || "") + '</div>' +
-        '<div style="font-size:7.5px;color:#444;margin-bottom:1px;">' + (passage.q1_text || "") + '</div>' + q1Rows +
-        '<div style="font-size:7.5px;font-weight:700;color:#8b0000;margin:3px 0 1px;">✏️ Language</div>' +
-        '<div style="font-size:7px;font-style:italic;color:#8b0000;margin-bottom:1px;">' + ellStripTags(lang.bad || "") + '</div>' + laRows +
-        '<div style="font-size:6.5px;color:#777;margin:1px 0 2px;">Errors: ' + (lang.errors || "") + '</div>' +
-        '<div style="font-size:7.5px;font-weight:700;color:var(--tf-dark);margin:2px 0 1px;">🔢 Math</div>' +
-        '<div style="font-size:7.5px;color:#444;margin-bottom:1px;">' + ellStripTags(mathQ.q || "") + '</div>' + maRows +
+        k1 + k2 + k3 +
         '</div>\n';
     }).join("");
     var iowaFocus = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">' +
-      '<div style="background:rgba(196,30,30,0.08);border-radius:3px;padding:5px 7px;"><div style="font-family:\'Orbitron\',sans-serif;font-size:6.5px;color:var(--tf-red);font-weight:700;margin-bottom:2px;">WORD ANALYSIS · 21st %ile · GE 1.4</div><div style="font-size:7.5px;color:#333;">Phonics, blends, syllable types. Sound it out before guessing.</div></div>' +
-      '<div style="background:rgba(196,30,30,0.08);border-radius:3px;padding:5px 7px;"><div style="font-family:\'Orbitron\',sans-serif;font-size:6.5px;color:var(--tf-red);font-weight:700;margin-bottom:2px;">READING · 22nd %ile · GE 1.6</div><div style="font-size:7.5px;color:#333;">Main idea, inference, vocabulary in context. Ask "what did you picture?"</div></div>' +
-      '<div style="background:rgba(20,50,90,0.07);border-radius:3px;padding:5px 7px;"><div style="font-family:\'Orbitron\',sans-serif;font-size:6.5px;color:var(--tf-dark);font-weight:700;margin-bottom:2px;">LANGUAGE · 34th %ile · GE 1.9</div><div style="font-size:7.5px;color:#333;">Capitalization, punctuation, usage. Fix-It sentences build error detection.</div></div>' +
-      '<div style="background:rgba(20,50,90,0.07);border-radius:3px;padding:5px 7px;"><div style="font-family:\'Orbitron\',sans-serif;font-size:6.5px;color:var(--tf-dark);font-weight:700;margin-bottom:2px;">VOCAB · 35th %ile · GE 1.8</div><div style="font-size:7.5px;color:#333;">Context clues, synonyms, antonyms. Word of the Day builds this directly.</div></div>' +
+      '<div style="background:rgba(196,30,30,0.08);border-radius:3px;padding:5px 7px;"><div style="font-family:\'Orbitron\',sans-serif;font-size:6.5px;color:var(--tf-red);font-weight:700;margin-bottom:2px;">CONVENTIONS · 40th %ile · GE 2.9</div><div style="font-size:7.5px;color:#333;">Spelling 38% · capital letters 25%. Find-the-error practice: Fix-It box, Daily Grams, All About Spelling.</div></div>' +
+      '<div style="background:rgba(196,30,30,0.08);border-radius:3px;padding:5px 7px;"><div style="font-family:\'Orbitron\',sans-serif;font-size:6.5px;color:var(--tf-red);font-weight:700;margin-bottom:2px;">VOCABULARY · 68th %ile · GE 3.8</div><div style="font-size:7.5px;color:#333;">Closest meaning of a word in a phrase. Word of the Day builds this directly.</div></div>' +
+      '<div style="background:rgba(20,50,90,0.07);border-radius:3px;padding:5px 7px;"><div style="font-family:\'Orbitron\',sans-serif;font-size:6.5px;color:var(--tf-dark);font-weight:700;margin-bottom:2px;">COGAT VERBAL · 62nd %ile</div><div style="font-size:7.5px;color:#333;">Reasoning is strong; reading the item for its clue is the gap. "Read the whole sentence first."</div></div>' +
+      '<div style="background:rgba(20,50,90,0.07);border-radius:3px;padding:5px 7px;"><div style="font-family:\'Orbitron\',sans-serif;font-size:6.5px;color:var(--tf-dark);font-weight:700;margin-bottom:2px;">READING · 82nd %ile · GE 4.5</div><div style="font-size:7.5px;color:#333;">Implicit meaning 100%. Keep the reading volume up — speed under a clock is the lever.</div></div>' +
       '</div>';
     var record = (dayAssignments || []).map(function (da) {
       return '<div class="record-box"><div class="record-day">' + cap(da.day) + '<span class="key-date"> ' + da.date + '</span></div><div class="record-line"></div><div class="record-line"></div><div class="record-line"></div></div>\n';
@@ -3987,6 +4084,7 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
 
     var dayAssignments = [];
     var dgPlan = dgWeekPlan(ctx.dailyGrams, wn, orderedDays, datesMap), dgTitle = (ctx.dailyGrams && ctx.dailyGrams.title) || "Daily Grams";
+    var bankPlans = ellBankPlans(ctx, wn, orderedDays);   // ELLISBANKS: Mom's banks for this week (each may be null / before its start)
     orderedDays.forEach(function (day, i) {
       var dateStr = datesMap[day] || "";
       var dayTasks = nbByTime(ellisTasks.filter(function (t) { return t.day === day; }));
@@ -3994,9 +4092,11 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
       var lang = ellPick(ELLIS_DATA.banks.lang, wn, i);
       var mathQ = ellPick(ELLIS_DATA.banks.math, wn, i);
       var word = ellPick(ELLIS_DATA.banks.words, wn, i);
+      var bank = ellBankFor(bankPlans, i);
+      if (bank && bank.word) word = ellBankWord(bank.word);
       pages.push(ellDailyPage(day, dateStr, wn, dayTasks, passage, lang, mathQ, word,
-        xpStrip(pagesForDay(ctx, "ellis", day), "#c41e1e", "#fdf2f2", "#0e2038")));
-      dayAssignments.push({ day: day, date: dateStr, day_tasks: dayTasks, passage: passage, lang: lang, math_q: mathQ, word: word });
+        xpStrip(pagesForDay(ctx, "ellis", day), "#c41e1e", "#fdf2f2", "#0e2038"), bank));
+      dayAssignments.push({ day: day, date: dateStr, day_tasks: dayTasks, passage: passage, lang: lang, math_q: mathQ, word: word, bank: bank });
       var dgd = dgPlan && dgPlan.byDay[day];
       if (dgd) pages.push(dgStudentPage("ellis", dgd, wn, dgTitle));   // the day's Daily Grams page rides right behind the daily page
       pages.push(i < orderedDays.length - 1 ? ellBrainBreakPage(i + 1, wn) : ellCreativePage(wn, weekDates));
@@ -4007,6 +4107,11 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
     var dgAns = dgAnswerPagesHtml("ellis", dgPlan, wn, dgTitle);
     var out = { student: ellShell(pages.join("\n\n")), parent: ellShell(cp1 + "\n\n" + cp2 + (dgAns ? "\n\n" + dgAns : "")) };
     if (dgPlan) { out.dailyGramsCursor = dgPlan.cursor; if (dgPlan.warnings.length) out.warnings = dgPlan.warnings.slice(); }
+    // ELLISBANKS: where each bank landed this week, so the app stores it and next week continues (nothing before a bank's start week)
+    if (bankPlans.word && bankPlans.word.cursor) out.wordBankCursor = bankPlans.word.cursor;
+    if (bankPlans.cogat && bankPlans.cogat.cursor) out.cogatBankCursor = bankPlans.cogat.cursor;
+    if (bankPlans.conv && bankPlans.conv.cursor) out.convBankCursor = bankPlans.conv.cursor;
+    if (bankPlans.quant && bankPlans.quant.cursor) out.quantBankCursor = bankPlans.quant.cursor;
     return out;
   }
 
