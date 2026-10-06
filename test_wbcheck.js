@@ -7,6 +7,7 @@
  *   · a kid's device never learns the answer page — the link carries it only for Mom,
  *     and the viewer drops it again on open
  *   · the card shows "Check answers" only when the link carries an answer page
+ *   · …and only once the card is done or waiting for Mom (her ask 2026-10-06: "after only")
  *
  *   run:  node test_wbcheck.js
  */
@@ -75,8 +76,24 @@ console.log("\n── the card ──");
 {
   const i = src.indexOf("const wbRow=");
   const row = src.slice(i, src.indexOf("\n", src.indexOf("wbOpenCheck", i)));
-  ok("Check answers chip is rendered only when the link carries an answer page", /\(_wbl\.ans\?'<span onclick="event\.stopPropagation\(\);wbOpenCheck\(/.test(row));
+  ok("Check answers chip needs an answer page AND a done / waiting-for-Mom card", /\(_wbl\.ans&&\(done\|\|claimedHere\)\?'<span onclick="event\.stopPropagation\(\);wbOpenCheck\(/.test(row));
   ok("the plain Open chip is still there for the kid", /wbOpenFor\(/.test(row));
+  const tc = src.indexOf("function taskCard(");
+  ok("done and claimedHere are defined in taskCard before the row is built",
+    src.indexOf("const done=!!checked[srcId]", tc) < i && src.indexOf("const claimedHere=", tc) < i && src.indexOf("const claimedHere=", tc) > tc);
+  // Render the row for real in each state (her ask 2026-10-06: answers button "after only")
+  const stmt = src.slice(i, src.indexOf("+'</div>':\"\";", i) + "+'</div>':\"\";".length);
+  function render(state) {
+    const ctx = { esc: x => String(x), wbAssignFor: () => null, taskLessonRef: () => "pp. 45–48",
+      t: { who: "lucy" }, _eicL: false, done: state === "done", claimedHere: state === "waiting",
+      _wbl: { bookId: "muw7gsbo232", name: "MR B", page: 54, ans: state === "kid" ? null : 329 } };
+    if (state === "kid") ctx.done = true;
+    vm.createContext(ctx); vm.runInContext(stmt.replace(/^const wbRow=/, "var wbRow=") , ctx); return ctx.wbRow;
+  }
+  ok("open card (Mom): Open chip, NO Check answers", /Open pp\. 45/.test(render("open")) && !/Check answers/.test(render("open")));
+  ok("done card (Mom): Check answers → key page 329", /wbOpenCheck\('muw7gsbo232','lucy',54,329/.test(render("done")));
+  ok("waiting-for-Mom card: Check answers shows", /Check answers/.test(render("waiting")));
+  ok("kid device, done card (no answer page in the link): no Check answers", !/Check answers/.test(render("kid")) && /Open pp\. 45/.test(render("kid")));
 }
 console.log("\n── 👆 finger drawing (2026-09-22): the canvas only yields the gesture to the browser in Pencil-only mode ──");
 {
