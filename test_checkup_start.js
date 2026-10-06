@@ -51,6 +51,13 @@ console.log("\n── starting one for an enrolled kid ──");
   const sess = c.masteryData.taylor_sessions["checkup_all_about_spelling_3"];
   ok("'Every word' + 'Every card' → no shortcut, phonograms and rules included", sess && sess.untested === "all" && !sess.decks && c.ckCards(sess).some(x => x._dk === "Phonograms"));
 }
+{
+  // mstSessions() hands every session decks: [] when none were saved — an EMPTY list must mean "no deck filter"
+  // (2026-10-05: Taylor's facts check-up resolved to 0 cards and showed "unit isn't in your family yet").
+  const c = world().ctx, sess = { kind: "checkup", unit: "all_about_spelling", stage: 3, decks: [] };
+  const n = c._ustCards(c.unitStudies.all_about_spelling, 3).length;
+  ok("a session with an EMPTY decks list (the mstSessions default) still covers every card of its level", n > 0 && c.ckCards(sess).length === n, [n, c.ckCards(sess).length]);
+}
 console.log("\n── Rule Breakers first ──");
 {
   const c = world().ctx, u = c.unitStudies.all_about_spelling;
