@@ -29,8 +29,13 @@ function aasTexts(){
 }
 module.exports={aasTexts};
 
+// The database needs a sign-in since 2026-09-13 (rules auth != null). Without it every read came back as an error
+// object, no deck words were listed, and nothing new was baked for a month (her report 2026-10-07: Lucy's words
+// silent on the LG, which has no voices and plays only these files). Same 1-hour token the other Mac tools use.
+const AUTH=(()=>{ try{ return require("child_process").execSync("node "+require("os").homedir()+"/.howe/fbtoken.js").toString().trim(); }catch(e){ return ""; } })();
+if(!AUTH) console.warn("⚠ no Firebase token (~/.howe/fbtoken.js) — deck words can't be read; only AAS cards will be listed");
 function get(p){ return new Promise((res,rej)=>{
-  https.get("https://howeacademy-default-rtdb.firebaseio.com"+p,r=>{
+  https.get("https://howeacademy-default-rtdb.firebaseio.com"+p+(AUTH?"?auth="+AUTH:""),r=>{
     let d=""; r.on("data",c=>d+=c); r.on("end",()=>{ try{res(JSON.parse(d));}catch(e){rej(e);} });
   }).on("error",rej);
 });}
@@ -39,7 +44,8 @@ if(require.main===module) (async()=>{
   const kids=["julian","lucy","ellis","lincoln"];
   const texts=new Set(aasTexts());
   for(const kid of kids){
-    const items=Object.values(await get("/mastery/"+kid+".json")||{}).filter(Boolean);
+    const _m=await get("/mastery/"+kid+".json"); if(_m&&_m.error) throw new Error("Firebase refused the read ("+_m.error+") — sign-in token missing or expired");
+    const items=Object.values(_m||{}).filter(Boolean);
     const defs=(await get("/mastery/"+kid+"_settings/definitions.json"))||{};
     items.forEach(it=>{
       if(!it.prompt) return;
