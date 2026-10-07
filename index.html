@@ -42664,7 +42664,9 @@ function mastRecUI(){
 // the definitions map. When such an entry is pulled, the item becomes a recite card whose
 // `answer` holds the rule, so it flips to the rule with no definitions-map entry needed.
 function mastCustomDef(kid,cat,name){
-  const cust=masteryData[kid+"_custom_items"]; if(!Array.isArray(cust)) return "";
+  // DRILLSWEEP 3: Firebase hands a sparse list back as an object (mastFullBank already reads both) — the
+  // array-only check dropped every bank rule, so a rule card pulled then had "no rule yet" on its back.
+  let cust=masteryData[kid+"_custom_items"]; if(cust&&!Array.isArray(cust)) cust=Object.values(cust); if(!Array.isArray(cust)) return "";
   const e=cust.find(c=>c&&c.cat===cat&&c.name===name); return (e&&e.def)||"";
 }
 // ── RS4K_GATE_START ── chapter-gated decks ─────────────────────────────────────────────
@@ -42675,7 +42677,7 @@ function mastCustomDef(kid,cat,name){
 // a surprise can never silently starve a deck. Mom's explicit pull (mastPullItem) is NOT gated.
 // The ladder is untouched: this only narrows which bank names the existing mint paths may pick.
 function mastCustomCh(kid,cat,name){
-  const cust=masteryData[kid+"_custom_items"]; if(!Array.isArray(cust)) return null;
+  let cust=masteryData[kid+"_custom_items"]; if(cust&&!Array.isArray(cust)) cust=Object.values(cust); if(!Array.isArray(cust)) return null;   // DRILLSWEEP 3
   const e=cust.find(c=>c&&c.cat===cat&&c.name===name);
   return (e&&e.ch!=null&&e.ch!=="")?Number(e.ch):null;
 }
@@ -42713,7 +42715,38 @@ function mastBankEligible(kid,cat){
 }
 // ── RS4K_GATE_END ──
 let mastFlipped=false;
-function mastFlip(){ mastFlipped=!mastFlipped; _mastRe(); }
+function mastFlip(){ mastFlipped=!mastFlipped; mastFlipKey=mastSlideKeyNow; _mastRe(); }
+// DRILLSWEEP_START — Mastery drill card sweep (her ask 2026-10-07: "cards that can show the answer to the
+// kid … buttons that act on the wrong card … cards that can't be finished").
+// 1 · A flip belongs to ONE card. mastFlipped was a bare true/false, reset only by the arrows and the score
+//     buttons — so a card flipped in practice opened card 1 of the Log already flipped (answer showing), and
+//     switching kids opened the other kid's card on its answer side. The flip now remembers which card it was
+//     (kid · practice/log · position · card id); any other card on screen opens on its front.
+let mastFlipKey="", mastSlideKeyNow="";
+function mastSlideKey(kid,logMode,idx,it){ return String(kid)+"|"+(logMode?"log":"look")+"|"+idx+"|"+((it&&it.id)||""); }
+function mastFlipSync(key){ mastSlideKeyNow=key; if(mastFlipped&&mastFlipKey!==key) mastFlipped=false; return mastFlipped; }
+// 2 · "Show me" pick-3: the two wrong tiles. A deck with exactly two other picture cards picked the SAME card
+//     twice (the fallback index wrapped back onto the first pick), and two cards with the same name (a 🇬🇧→🇩🇪
+//     twin) drew identical tiles. Distractors are now two different cards with two different names; the
+//     choice stays seeded from card + print number, so it doesn't reshuffle on a re-render.
+//     Returns the three tiles in their seeded order, or null when the deck can't make a fair pick-3.
+function mastShowMeTiles(it,items,pn){
+  const seen={}; seen[it.prompt]=1;
+  const pool=(items||[]).filter(x=>x&&x.id!==it.id&&x.subject===it.subject&&!seen[x.prompt]&&_smTileVis(x)&&(seen[x.prompt]=1));
+  if(pool.length<2) return null;
+  const seed=_smHash(it.id+"|"+pn);
+  const i1=seed%pool.length, d1=pool[i1];
+  let d2=pool[(seed+1+(seed%7))%pool.length];
+  if(d2.id===d1.id) d2=pool[(seed+2)%pool.length];
+  if(d2.id===d1.id) d2=pool[(i1+1)%pool.length];
+  const tiles=[it,d1,d2], rot=seed%3;
+  return tiles.slice(rot).concat(tiles.slice(0,rot));
+}
+// 5 · Save Results counted every score in the session, including a card that left the drill mid-session
+//     (deleted or parked on another device) — "6 / 5 scored" and Save never turned on. Only the cards
+//     actually in today's drill count.
+function mastLogScoredCount(due,scores){ return (due||[]).filter(i=>i&&scores&&scores[i.id]).length; }
+// DRILLSWEEP_END
 function mastBankStatus(kidArg){
   const kid=kidArg||masteryKid||"julian";
   let items=masteryData[kid]||[];
@@ -46724,9 +46757,14 @@ function mstRestoreSitting(sid){
 function mstClearPersist(sid){ sid=sid||mstSid; if(!sid) return; try{ HA_LS.removeItem(mstStorageKey(masteryKid,sid)); }catch(e){} }
 // The card's direction for THIS showing. Say/type need the meaning to show on the front —
 // a card with no definition falls back to the normal German-first card.
+function mstCardDef(card){
+  if(!card) return "";
+  const name=card.name||"";
+  return ((!card.id&&card.deck&&typeof mastCustomDef==="function")?mastCustomDef(masteryKid,card.deck,name):"")||mastGetDef(masteryKid,name)||mstItemAnswer(card.id);
+}
 function mstCardMode(card){
   const m=(card&&card.mode)||"rec"; if(m==="rec") return m;
-  try{ const def=mastGetDef(masteryKid,card.name||"")||mstItemAnswer(card.id); return def?m:"rec"; }catch(e){ return "rec"; }
+  try{ const def=mstCardDef(card); return def?m:"rec"; }catch(e){ return "rec"; }
 }
 // Language-arts RULE cards (Capitalization, Punctuation, Articles, Grammar, and every recite card
 // whose answer is a rule — Nouns, Plurals, Verb Tenses, Subject-Verb, Spelling Rules): the same set
@@ -46767,7 +46805,10 @@ function mstFlipBtn(session,rec){
 }
 function mstCardHtml(session,card){
   const name=card.name||"";
-  const def=mastGetDef(masteryKid,name)||mstItemAnswer(card.id);
+  // DRILLSWEEP 4: a NEW card (straight from the bank, no id yet) carries its rule/answer in the bank entry's
+  // def — the same text mastMintFromBank gives the card when it's saved. Without it a new Capitalization /
+  // Punctuation card showed "no rule yet" on its back the first day.
+  const def=mstCardDef(card);
   const mode=mstCardMode(card);
   const _lrn=(card.kind==="new"||card.kind==="learning")?' <span style="font-size:9px;color:#9a3412;font-weight:600">\u{2B50} Learning</span>':"";
   if(mstIsRuleCard(card)){
@@ -50013,6 +50054,7 @@ function _renderMasteryInner(el){
     if(slideItems.length){
     if(mastSlideIdx<0) mastSlideIdx=0;
     if(mastSlideIdx>=slideList.length) mastSlideIdx=slideList.length-1;
+    mastFlipSync(mastSlideKey(masteryKid,mastLogMode,mastSlideIdx,slideList[mastSlideIdx]));   // DRILLSWEEP 1: a flip never carries onto another card
 
     // One card's full HTML. Factored out so ALL cards can be built and measured invisibly
     // up front (mastLockSlideHeight) — the slideshow locks to the tallest card BEFORE the
@@ -50152,19 +50194,14 @@ function _renderMasteryInner(el){
       if(_smElig){
         const _smKey=it.id+"|"+pn;
         const _smState=mastShowMe[_smKey];
-        const _pool=items.filter(x=>x&&x.id!==it.id&&x.subject===it.subject&&x.prompt!==it.prompt&&_smTileVis(x));
+        const _smTiles=mastShowMeTiles(it,items,pn);   // DRILLSWEEP 2: two different wrong tiles
         if(_smState==="ok"){
           c+='<div class="mast-slide-img">'+bigVis+'</div>';
           c+='<div class="mast-slide-name">'+it.prompt+' \u{1F389}</div>';
           c+='<div style="font-size:12px;font-weight:700;color:#16a34a;margin-bottom:4px">You found it! Say it out loud.</div>';
           _smDone=true;
-        } else if(_pool.length>=2){
-          const _seed=_smHash(it.id+"|"+pn);
-          const _d1=_pool[_seed%_pool.length];
-          let _d2=_pool[(_seed+1+(_seed%7))%_pool.length];
-          if(_d2.id===_d1.id) _d2=_pool[(_seed+2)%_pool.length];
-          let _tiles=[it,_d1,_d2];
-          const _rot=_seed%3; _tiles=_tiles.slice(_rot).concat(_tiles.slice(0,_rot));
+        } else if(_smTiles){
+          const _tiles=_smTiles;
           const _kEsc=(it.id+"|"+pn).replace(/'/g,"\\'");
           const _cue=mastShowMeCueHtml(it,mastShowMeCue(masteryKid,cat),_smKey,_smState);   // SHOWME_CUE: spoken / look away / shown
           c+=_cue.html;
@@ -50313,7 +50350,7 @@ function _renderMasteryInner(el){
 
     // ── BOTTOM BAR ──
     if(mastLogMode){
-      const scored=Object.keys(mastLogScores).length;
+      const scored=mastLogScoredCount(due,mastLogScores);   // DRILLSWEEP 5: only cards still in today's drill
       const allScored=scored===due.length;
       h+='<div class="mast-save-bar"><span class="mast-save-count">'+scored+' / '+due.length+' scored</span>';
       h+='<button class="mast-save-btn" onclick="mastSaveResults()"'+(allScored?'':' disabled')+'>Save Results</button></div>';
