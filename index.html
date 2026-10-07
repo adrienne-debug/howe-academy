@@ -1567,6 +1567,35 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
 
 <script src="family-config.js"></script>
 <script>
+// FAMCFG_GUARD_START — a family's site never boots as the Howe family (2026-10-06: Taylor's kid display on the DeWalt
+// app showed Lincoln, Ellis, Lucy & Julian with Howe's built-in chores until a reload). On a shaky connection the
+// offline copy of index.html loaded but family-config.js did not → window.HA_FAMILY was missing → every default fell
+// back to Howe's (roster, chore lists, kid looks, Firebase project). Now: no HA_FAMILY anywhere but Howe's own site →
+// no boot, no database; a "Loading your family…" screen that retries on its own when the connection comes back.
+// sw.js now also keeps an offline copy of family-config.js, so this screen should be rare.
+(function(){
+  if(window.HA_FAMILY) return;
+  var L=window.location||{}, path=String(L.pathname||"");
+  if(/^\/howe-academy(\/(index\.html)?)?$/.test(path)) return;   // Howe's own site: the built-in defaults ARE this family
+  window.HA_NO_FAMILY=true;
+  function show(){
+    if(document.getElementById("ha-nofam")) return;
+    var o=document.createElement("div"); o.id="ha-nofam";
+    o.style.cssText="position:fixed;inset:0;z-index:2147483000;background:#f8fafc;display:flex;align-items:center;justify-content:center;padding:20px;font-family:'DM Sans',system-ui,sans-serif;text-align:center";
+    o.innerHTML='<div style="max-width:340px"><div style="font-size:40px">📶</div>'+
+      '<div style="font-weight:800;font-size:18px;margin:8px 0 4px;color:#111827">Loading your family…</div>'+
+      '<div style="font-size:13px;color:#64748b;line-height:1.5;margin-bottom:16px">The connection dropped before everything arrived. This page will try again by itself.</div>'+
+      '<button onclick="location.reload()" style="font:inherit;font-weight:800;font-size:15px;padding:12px 26px;border:none;border-radius:12px;background:#111827;color:#fff;cursor:pointer">↻ Try again</button></div>';
+    (document.body||document.documentElement).appendChild(o);
+  }
+  show(); document.addEventListener("DOMContentLoaded",show);
+  var again=function(){ try{ location.reload(); }catch(e){} };
+  window.addEventListener("online",again);
+  setInterval(function(){ if(navigator.onLine!==false) again(); },20000);
+})();
+// FAMCFG_GUARD_END
+</script>
+<script>
 // 🏷 Family name under the emblem (2026-10-04): family-config.js familyName "Dewalt Family" → "The Dewalt Family".
 // Howe's config says "Howe Academy" (no "Family"), so the Howe app (familyId howe / none) reads "The Howe Family".
 (function(){ try{ var n=(window.HA_FAMILY&&window.HA_FAMILY.familyName)||"", m=String(n).trim().match(/^(?:the\s+)?(.+?)\s+family$/i), el=document.getElementById("hdr-family");
@@ -3140,6 +3169,7 @@ function attachWeekListeners(wk){
 // If it is refused, the sign-in card appears; after sign-in, boot continues. Nothing else changes.
 let _haAuthOk=false, _haAuthUser=null, _haAuthProbe=null, _haAuthStarted=false;
 function haAuthGate(){
+  if(window.HA_NO_FAMILY) return;   // FAMCFG_GUARD
   if(_haAuthStarted) return;   // one gate per page load, however many times boot asks
   _haAuthStarted=true;
   // Keep the sign-in in localStorage, on EVERY device. The auth SDK writes the session to
@@ -3396,6 +3426,7 @@ function haCvReturnRestore(){
 var _haMastReady=false, _haMastSkips=0;   // MASTGATE — see initFb
 function initFb() {
   if(!_haAuthOk){ haAuthGate(); return; }   // 🔒 sign-in first (inert while the rules are open)
+  if(window.HA_NO_FAMILY) return;   // FAMCFG_GUARD: no family file → never connect (it would be Howe's database)
   try {
     // The LG StanbyME (webOS) reaches Firebase's REST fine but its live WEBSOCKET hangs
     // instead of failing, so the SDK's automatic long-polling fallback never triggers and

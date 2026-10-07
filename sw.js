@@ -6,6 +6,7 @@
 // fallback. Everything else (Firebase, etc.) passes straight through — we never cache it.
 const CACHE = 'ha-shell-v1';
 const FALLBACK = 'ha-index-fallback';
+const CFG_FALLBACK = 'ha-family-config-fallback';   // FAMCFG_GUARD
 
 self.addEventListener('install', (e) => {
   // Take over as soon as installed — don't wait for old tabs to close.
@@ -24,6 +25,22 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   // Only take responsibility for the top-level document (the app HTML). Network-first.
   const isDoc = req.mode === 'navigate' || (req.method === 'GET' && req.destination === 'document');
+  // FAMCFG_GUARD (2026-10-06): family-config.js says WHICH family this site is. Offline, the page came from this cache but
+  // the config did not → the app fell back to the Howe family. Keep an offline copy of it too (network-first, same as the page).
+  const isCfg = req.method === 'GET' && /\/family-config\.js$/.test(new URL(req.url).pathname);
+  if (isCfg) {
+    e.respondWith((async () => {
+      try {
+        const fresh = await fetch(req, { cache: 'no-store' });
+        if (fresh && fresh.ok) { const cache = await caches.open(CACHE); cache.put(CFG_FALLBACK, fresh.clone()); }
+        return fresh;
+      } catch (err) {
+        const cached = await caches.open(CACHE).then(c => c.match(CFG_FALLBACK));
+        return cached || Response.error();
+      }
+    })());
+    return;
+  }
   if (!isDoc) return; // everything else: let the browser handle it normally (no caching)
   e.respondWith((async () => {
     try {
