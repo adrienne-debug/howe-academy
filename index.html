@@ -13178,14 +13178,32 @@ const GR_RCPT_PROMPT='Read this grocery receipt (one or more photos of the same 
   +'price = what was actually paid for that line after any discount — always the LINE total. Items sold by weight print a weight and a per-pound price (e.g. "APPLES 3.00 lb @ 1.35 /lb  4.05"): price is 4.05 and qty is 3, never 1.35. A line like "2 @ 1.25  2.50" has price 2.50 and qty 2. regular = the price before the discount when the receipt shows one. sale = true when the receipt shows a discount, savings, member price, VIC/MVP/club price, "you saved", rollback or markdown for that item. '
   +'When there are several photos they are ONE receipt, in order from the top to the bottom, and neighbouring photos usually overlap: the last few lines of one photo show again at the top of the next. List each overlapping line ONCE — match the overlap by the lines around it (item text, price and order) and carry on with the first new line after it. Keep an item twice only when the receipt itself prints it twice (two separate lines in the same photo, or a separate quantity line). '
   +'Never invent lines or prices. Skip tax, subtotal, total, bag fees, coupons that are not tied to an item, payment and change lines.';
+// GR_RCPTLONG_START — a PDF receipt that read fine in the morning failed later with "JSON Parse error: Expected ']'" (2026-10-07):
+// since the prompt sends her shopping list and asks for a "list" name on every line, long receipts ran out of room and Claude's
+// answer was cut off mid-array. Now: a bigger answer, a cut-off answer says so plainly, the JSON is pulled out as the FIRST complete
+// {…} (not first-{ to last-}), and an answer that still won't parse is kept on this device (gr_rcpt_last_bad, last one only) to look at.
+function grRcptJson(txt){   // the first complete top-level {…} in the text, or null — braces inside "strings" don't count
+  const t=String(txt==null?"":txt), i=t.indexOf("{"); if(i<0) return null;
+  let depth=0, inStr=false, bs=false;
+  for(let j=i;j<t.length;j++){ const c=t[j];
+    if(inStr){ if(bs) bs=false; else if(c==="\\") bs=true; else if(c==='"') inStr=false; continue; }
+    if(c==='"') inStr=true; else if(c==="{") depth++; else if(c==="}"){ depth--; if(depth===0) return t.slice(i,j+1); }
+  }
+  return null;   // the object never closed — the answer was cut off
+}
+function grRcptSaveBad(txt){ try{ HA_LS.setItem("gr_rcpt_last_bad",JSON.stringify({at:new Date().toISOString(),text:String(txt==null?"":txt)})); }catch(e){} }
+// GR_RCPTLONG_END
 async function grRcptRead(){
   const R=_grRc; if(!R||!(R.imgs.length||(R.pdfs||[]).length)) return;
   R.busy=true; R.msg=""; grRcptDraw();
   try{
     const content=R.imgs.reduce((a,b,i)=>a.concat(R.imgs.length>1?[{type:"text",text:"Photo "+(i+1)+" of "+R.imgs.length+(i===0?" (top of the receipt)":i===R.imgs.length-1?" (bottom of the receipt)":"")}]:[],[{type:"image",source:{type:"base64",media_type:"image/jpeg",data:b}}]),[]).concat((R.pdfs||[]).reduce((a,b,i,arr)=>a.concat([{type:"text",text:"PDF of the receipt"+(arr.length>1?" ("+(i+1)+" of "+arr.length+")":"")},{type:"document",source:{type:"base64",media_type:"application/pdf",data:b}}]),[])).concat([{type:"text",text:GR_RCPT_PROMPT+grRcptListHint()}]);   // GR_RCPT6: photos labelled in order
-    const txt=await kitCapAsk(content,null,{raw:true,maxTokens:6000});
-    const m=String(txt).match(/\{[\s\S]*\}/); if(!m) throw new Error("Claude didn't send back a receipt — try a clearer photo");
-    grRcptLoad(JSON.parse(m[0]));
+    const ans=await kitCapAsk(content,null,{raw:true,withStop:true,maxTokens:16000});   // GR_RCPTLONG: room for the "list" field on every line
+    const txt=(ans&&typeof ans==="object")?ans.text:ans, stop=(ans&&typeof ans==="object")?ans.stop:null;
+    if(stop==="max_tokens"){ grRcptSaveBad(txt); throw new Error("That receipt came back incomplete — try again, or read it in two parts"); }
+    const js=grRcptJson(txt); if(js==null){ grRcptSaveBad(txt); throw new Error("Claude didn't send back a receipt — try a clearer photo"); }
+    let d; try{ d=JSON.parse(js); }catch(pe){ grRcptSaveBad(txt); throw new Error("Claude's answer for that receipt didn't come out readable — try again"); }
+    grRcptLoad(d);
   }catch(e){ R.msg=String(e&&e.message||e); }
   R.busy=false; grRcptDraw();
 }
@@ -14895,6 +14913,7 @@ async function kitCapAsk(content,tools,opt){
   }
   if(data&&data.stop_reason==="refusal") throw new Error("Claude declined that one — try 📋 Pasted text.");
   const txt=((data&&data.content)||[]).filter(x=>x&&x.type==="text").map(x=>x.text||"").join("");
+  if(opt&&opt.raw&&opt.withStop) return {text:txt,stop:(data&&data.stop_reason)||null};   // GR_RCPTLONG: the caller can tell a cut-off answer
   return (opt&&opt.raw)?txt:kitCapParse(txt);
 }
 async function kitCapRunLink(){
