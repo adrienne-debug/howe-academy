@@ -30,7 +30,8 @@ console.log("🔔 the chime reuses the unlocked context");
   ok("a closed context is replaced, so the chime never silently dies",made.length===2,made.length);
 }
 console.log("wiring");
-ok("Math Sprint's Start unlocks audio inside the tap",/function msTimerStart\(\)\{\n  msTimerReset\(\); msTimerLeft=60; try\{ if\(typeof bbAudioUnlock==="function"\) bbAudioUnlock\(\); \}catch\(e\)\{\}/.test(src));
-ok("…and rings bbChime when the minute ends",/if\(msTimerLeft<=0\)\{ clearInterval\(msTimer\); msTimer=null; msTimerDone=true; try\{ bbChime\(\); \}catch\(e\)\{\}/.test(src));
+// MSBUZZ (2026-10-07): the end of the minute now rings msBuzz (a sharp buzzer) instead of bbChime — see test_sprint_buzz.js
+ok("Math Sprint's Start unlocks audio inside the tap",/function msTimerStart\(\)\{\n[^\n]*\n  msTimerReset\(\); try\{ if\(typeof bbAudioUnlock==="function"\) bbAudioUnlock\(\); \}catch\(e\)\{\}/.test(src));
+ok("…and rings the buzzer when the minute ends",/function msTimerEnd\(\)\{[\s\S]{0,300}try\{ msBuzz\(\); \}catch\(e\)\{\}/.test(src));
 ok("bbChime reuses bbAlarmCtx and resumes it",/function bbChime\(\)\{\n  try\{\n(?:\s*\/\/[^\n]*\n)*\s*if\(!bbAlarmCtx\|\|bbAlarmCtx\.state==="closed"\) bbAlarmCtx=new \(window\.AudioContext\|\|window\.webkitAudioContext\)\(\);\n\s*const ctx=bbAlarmCtx;\n\s*if\(ctx\.state==="suspended"\)\{ try\{ ctx\.resume\(\)\.catch\(function\(\)\{\}\); \}catch\(e\)\{\} \}/.test(src));
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

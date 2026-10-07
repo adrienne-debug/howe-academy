@@ -54717,7 +54717,7 @@ function msSetPosition(kid,book,cur,why){
 // one run: records the sheet + result; a met sheet passes the sprint and moves the kid on; the 4th run of the day
 // checks off today's Math Sprints card
 function msRecordRun(kid,met){
-  if(!momHere()) return null; const st=msState(kid); if(!st||!st.cur) return null;
+  if(!momHere()) return null; if(typeof msMarkLocked==="function"&&msMarkLocked()) return null; /* ⏱ MSBUZZ: a tap at 0:00 can't mark */ const st=msState(kid); if(!st||!st.cur) return null;
   const n=st.cur, sheet=msNextSheet(kid,n); if(!sheet) return null;
   const runs=msRuns(kid,n); const run={d:msTodayISO(),ts:nowTs(),sheet:sheet.k,met:!!met};
   st.log=st.log||{}; st.log[n]=st.log[n]||{}; const arr=runs.concat([run]); st.log[n].runs=arr;
@@ -54746,13 +54746,73 @@ function msIsCard(t){ return !!(t&&(t.subjectKey==="math_sprints"||/math sprints
 function msEnabled(kid){ return !!(msState(kid)||momHere()); }
 function msOpenFor(kid){ masteryKid=kid; mastView="sprint"; sprintSource="book"; mastLogMode=false; mastScoreItemId=null; showTab('mastery'); }
 // ── the 60-second timer ──
-function msTimerReset(){ if(msTimer){ clearInterval(msTimer); msTimer=null; } msTimerLeft=0; msTimerDone=false; }
+// MSBUZZ_START — ⏱ the end of the minute is EXACT and the buzzer is instant (her report 2026-10-07: "the end-of-time
+// sound is slow to start, which gives the kid an extra second"). Three causes, three fixes:
+//  1. the count was 60 × setInterval(1000), which drifts late → it now counts to a fixed end time and ends on ONE
+//     setTimeout aimed at that moment, so 0:00, the buzzer and the lock land together;
+//  2. the end sound was bbChime — three soft sine notes, the first one fading in, ~1 s long → msBuzz is one short,
+//     loud square-wave buzz (two notes a third apart: sharp, not scary) at full volume from its first millisecond;
+//  3. a speaker that has been silent for 60 s takes a moment to wake (tablets, Bluetooth) → an inaudible keep-alive
+//     tone runs on the same unlocked context for the whole minute, so the output is already awake at 0:00.
+// Input LOCKS the moment time ends: Start can't be re-tapped mid-run or after 0:00 (a re-tap used to restart the
+// clock), the screen says "Pencils down", and a tap that lands in the first moment after 0:00 can't hit Met / Not.
+let msTimerEndAt=0, msTimerEndedAt=0, msTimerEndTo=null, msKeepAlive=null;
+const MS_RUN_MS=60000, MS_LOCK_MS=900;
+function msNow(){ try{ if(typeof performance!=="undefined"&&performance&&typeof performance.now==="function") return performance.now(); }catch(e){} return Date.now(); }
+function msLeftSec(){ return msTimerEndAt?Math.max(0,Math.ceil((msTimerEndAt-msNow())/1000)):0; }
+function msFmt(sec){ return Math.floor(sec/60)+":"+String(sec%60).padStart(2,"0"); }
+function msKeepAliveStart(){
+  msKeepAliveStop();
+  try{
+    const ctx=bbAlarmCtx; if(!ctx) return;
+    const o=ctx.createOscillator(), g=ctx.createGain();
+    o.frequency.value=40; g.gain.value=0.0001;   // far below hearing — it only keeps the output path open
+    o.connect(g); g.connect(ctx.destination); o.start();
+    msKeepAlive={o:o,g:g};
+  }catch(e){ msKeepAlive=null; }
+}
+function msKeepAliveStop(){ if(msKeepAlive){ try{ msKeepAlive.o.stop(); }catch(e){} try{ msKeepAlive.o.disconnect(); msKeepAlive.g.disconnect(); }catch(e){} msKeepAlive=null; } }
+function msBuzz(){
+  try{
+    if(!bbAlarmCtx||bbAlarmCtx.state==="closed") bbAlarmCtx=new (window.AudioContext||window.webkitAudioContext)();
+    const ctx=bbAlarmCtx;
+    if(ctx.state==="suspended"){ try{ ctx.resume().catch(function(){}); }catch(e){} }
+    const t0=ctx.currentTime, dur=0.55;
+    const g=ctx.createGain(); g.connect(ctx.destination);
+    g.gain.setValueAtTime(0.5,t0);                          // full volume at once — no fade-in
+    g.gain.setValueAtTime(0.5,t0+dur-0.015);
+    g.gain.linearRampToValueAtTime(0.0001,t0+dur);          // a hard stop (15 ms, just enough to avoid a click)
+    [523,659].forEach(function(f){ const o=ctx.createOscillator(); o.type="square"; o.frequency.value=f; o.connect(g); o.start(t0); o.stop(t0+dur+0.02); });
+  }catch(e){}
+}
+function msPaint(){
+  const left=msTimerDone?0:msLeftSec();
+  const el=document.getElementById("ms-timer"); if(el){ el.textContent=msFmt(left); if(el.style) el.style.color=msTimerDone?"#dc2626":"#1c1917"; }
+  const bar=document.getElementById("ms-timer-bar"); if(bar) bar.style.width=Math.round(100*(60-left)/60)+"%";
+}
+function msTimerEnd(){
+  if(!msTimer&&!msTimerEndAt) return;
+  if(msTimer){ clearInterval(msTimer); msTimer=null; } if(msTimerEndTo){ clearTimeout(msTimerEndTo); msTimerEndTo=null; }
+  msTimerDone=true; msTimerLeft=0; msTimerEndedAt=msNow();
+  try{ msBuzz(); }catch(e){}
+  msKeepAliveStop();
+  msPaint();
+  const b=document.getElementById("ms-start"); if(b){ b.disabled=true; b.style.display="none"; }
+  const p=document.getElementById("ms-pencils"); if(p) p.style.display="block";
+  const m=document.getElementById("ms-mark"); if(m) m.style.display="flex";
+}
+function msMarkLocked(){ return !!(msTimerEndedAt&&msNow()-msTimerEndedAt<MS_LOCK_MS); }
+// MSBUZZ_END
+function msTimerReset(){ if(msTimer){ clearInterval(msTimer); msTimer=null; } if(msTimerEndTo){ clearTimeout(msTimerEndTo); msTimerEndTo=null; } msKeepAliveStop(); msTimerLeft=0; msTimerDone=false; msTimerEndAt=0; msTimerEndedAt=0; }
 function msTimerStart(){
-  msTimerReset(); msTimerLeft=60; try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}
-  const paint=()=>{ const el=document.getElementById("ms-timer"); if(el) el.textContent=(msTimerLeft>0?("0:"+String(msTimerLeft).padStart(2,"0")):"0:00"); const bar=document.getElementById("ms-timer-bar"); if(bar) bar.style.width=Math.round(100*(60-msTimerLeft)/60)+"%"; };
-  paint();
-  msTimer=setInterval(()=>{ msTimerLeft--; paint(); if(msTimerLeft<=0){ clearInterval(msTimer); msTimer=null; msTimerDone=true; try{ bbChime(); }catch(e){} const m=document.getElementById("ms-mark"); if(m) m.style.display="flex"; const b=document.getElementById("ms-start"); if(b) b.style.display="none"; } },1000);
-  const m=document.getElementById("ms-mark"); if(m) m.style.display="none"; const b=document.getElementById("ms-start"); if(b) b.textContent="⏱ Running…";
+  if(msTimer||msTimerDone) return;   // ⏱ MSBUZZ: locked mid-run and after 0:00 — a re-tap no longer restarts the clock
+  msTimerReset(); try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}
+  msKeepAliveStart();
+  msTimerEndAt=msNow()+MS_RUN_MS; msTimerLeft=60;
+  msPaint();
+  msTimer=setInterval(()=>{ msTimerLeft=msLeftSec(); if(msTimerLeft<=0) msTimerEnd(); else msPaint(); },200);
+  msTimerEndTo=setTimeout(msTimerEnd,MS_RUN_MS);   // the exact end — 0:00, buzzer and lock in one moment
+  const m=document.getElementById("ms-mark"); if(m) m.style.display="none"; const b=document.getElementById("ms-start"); if(b){ b.textContent="⏱ Running…"; b.disabled=true; }
 }
 // ── book editor: count + titles, saved to the library list everyone reads ──
 function msBookEditOpen(bookId){ if(!momHere()) return; msEditBook=bookId; if(typeof _mastRe==="function") _mastRe(); }
@@ -54825,9 +54885,10 @@ function buildSprintBookHtml(color){
   else if(sheet){
     h+='<div style="display:inline-block;padding:4px 12px;border-radius:12px;background:#eef2ff;color:#3730a3;font-size:13px;font-weight:800;margin-bottom:6px">Sheet '+esc_(sheet.l)+'</div>';
     h+='<div style="font-size:11.5px;color:#78716c;margin-bottom:12px">Goal — '+esc_(sheet.goal)+'</div>';
-    h+='<div style="font-family:\'Fraunces\',serif;font-size:56px;font-weight:800;color:#1c1917" id="ms-timer">'+(msTimer?("0:"+String(msTimerLeft).padStart(2,"0")):(msTimerDone?"0:00":"1:00"))+'</div>';
-    h+='<div style="height:8px;border-radius:4px;background:#eee;overflow:hidden;margin:8px auto 12px;max-width:320px"><div id="ms-timer-bar" style="height:100%;width:'+(msTimer||msTimerDone?Math.round(100*(60-msTimerLeft)/60):0)+'%;background:'+color+';transition:width 1s linear"></div></div>';
-    h+='<button id="ms-start" onclick="msTimerStart()" style="'+(msTimerDone?'display:none;':'')+'padding:14px 28px;border-radius:14px;border:none;background:'+color+';color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(msTimer?"⏱ Running…":"▶ Start 60 seconds")+'</button>';
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:56px;font-weight:800;color:'+(msTimerDone?'#dc2626':'#1c1917')+'" id="ms-timer">'+(msTimer?msFmt(msLeftSec()):(msTimerDone?"0:00":"1:00"))+'</div>';
+    h+='<div id="ms-pencils" style="display:'+(msTimerDone?'block':'none')+';font-size:18px;font-weight:800;color:#dc2626;margin:-2px 0 6px">✋ Time! Pencils down.</div>';
+    h+='<div style="height:8px;border-radius:4px;background:#eee;overflow:hidden;margin:8px auto 12px;max-width:320px"><div id="ms-timer-bar" style="height:100%;width:'+(msTimer||msTimerDone?Math.round(100*(60-(msTimerDone?0:msLeftSec()))/60):0)+'%;background:'+color+';transition:width 1s linear"></div></div>';
+    h+='<button id="ms-start" onclick="msTimerStart()"'+(msTimer||msTimerDone?' disabled':'')+' style="'+(msTimerDone?'display:none;':'')+'padding:14px 28px;border-radius:14px;border:none;background:'+color+';color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(msTimer?"⏱ Running…":"▶ Start 60 seconds")+'</button>';
     h+='<div id="ms-mark" style="display:'+(msTimerDone?'flex':'none')+';gap:10px;justify-content:center;margin-top:6px">'+
       (mom?'<button onclick="msRecordRun(\''+kid+'\',true)" style="flex:1;max-width:180px;padding:14px;border-radius:14px;border:none;background:#16a34a;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Met ✓</button><button onclick="msRecordRun(\''+kid+'\',false)" style="flex:1;max-width:180px;padding:14px;border-radius:14px;border:2px solid #ef4444;background:#fff;color:#ef4444;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Not ✗</button>':'<span style="font-size:12px;color:#78716c">Mom marks met / not</span>')+'</div>';
     if(!mom) h+='<div style="font-size:11px;color:#78716c;margin-top:8px">Mom marks met / not after the timer.</div>';
