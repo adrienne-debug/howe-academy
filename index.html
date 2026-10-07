@@ -27742,9 +27742,18 @@ function cascadeIntraWeek(sweepTodayElapsed){
       // Snap-back self-heal: a pre-guard sweep (or a flag clicked after one) left this
       // displaced — put the unchecked copy back on its own day, missed as it should be.
       if(t.cascadedFrom&&t.cascadedFrom!==t.day){
+        // 📌 SNAPGUARD (live 2026-10-07, DeWalt): a 📌 lesson-day sitting is day-bound only because of its pin — WHICH
+        // day each sitting sits on is the lesson sequence's job (seqfill / the 📌 rule), not a stale "came from" note.
+        // Snapping it back put Andrew's + Kenzie's Wednesday spelling lessons on Monday, then their day-2 cards on
+        // Tuesday — days already over. For those, drop the stale note and leave the card where it is.
+        if(typeof ldPinnedTask==="function"&&ldPinnedTask(t)){
+          dbg("noCarry snap-back skipped (📌 lesson day): "+t.id+" stays "+t.day+" (note said "+t.cascadedFrom+")");
+          delete t.cascadedFrom; _healMoved=true; _healUpd[t.id+"/cascadedFrom"]=null;
+        } else {
         dbg("noCarry snap-back: "+t.id+" "+t.day+" → "+t.cascadedFrom);
         t.day=t.cascadedFrom; delete t.cascadedFrom; _healMoved=true;
         _healUpd[t.id+"/day"]=t.day; _healUpd[t.id+"/cascadedFrom"]=null;
+        }
       }
       // A day-bound task can never "carry to next week" — clear (and persist clearing)
       // any parked flag an older sweep left on it (week14: Sprints in the Mom box).
@@ -28429,7 +28438,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
       occ.forEach(t=>{ if(_isNote(t)) return; const k=t.who+"|"+taskSubject(t); subjCount[k]=(subjCount[k]||0)+1; });
       const laneIv=lane=>occ.filter(t=>_laneOf(t)===lane).map(t=>[toMin(t.time),toMin(t.time)+(t.dur||20),t]);
       const kidIv=who=>occ.filter(t=>t.who===who).map(t=>[toMin(t.time),toMin(t.time)+(t.dur||20),t]);
-      occ.filter(t=>!checked[t.id]&&!_isNote(t)&&t.mom!=="required"&&subjCount[t.who+"|"+taskSubject(t)]===1)
+      occ.filter(t=>!checked[t.id]&&!_isNote(t)&&t.mom!=="required"&&!t.famBlock&&subjCount[t.who+"|"+taskSubject(t)]===1)   // 👨‍👩‍👧 family time is pinned at its block time — never floated kid by kid
         .sort((a,b)=>toMin(a.time)-toMin(b.time))
         .forEach(t=>{
           const d=t.dur||20, lane=_laneOf(t), cur=toMin(t.time);
@@ -59518,6 +59527,22 @@ function wkHandoverTo(wn,tasksObj,meta){
   try{ gwCommit(); dbg("handed over to week"+wn+" (was already built)"); }
   finally{ _wkHandingOver=false; }
 }
+// 📅 REGENTS (live 2026-10-07): a check-off time is stored like "09:13 AM Oct 5" — no year. Safari can't read that
+// (NaN → the 7-day cutoff never fired), but Chrome-based browsers (the LG StanbyME, Android, Chrome) read it as the
+// year 2001, so a regenerate from one of them dropped every check made this week and laid the cards again unchecked.
+// Read it as this year (last year if that lands more than a day in the future — a December check seen in January).
+function gwCheckTsMs(ts){
+  const s=String(ts==null?"":ts), MON=["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
+  const md=/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2})\b/i.exec(s);
+  const yr=/\b(19|20)\d\d\b/.exec(s);
+  if(!md||yr){ const t=new Date(s).getTime(); return isNaN(t)?NaN:t; }   // full dates / ISO keep the browser's own reading
+  const tm=/(\d{1,2}):(\d{2})\s*(AM|PM)?/i.exec(s); let h=tm?parseInt(tm[1],10):0; const mi=tm?parseInt(tm[2],10):0;
+  if(tm&&tm[3]){ const pm=tm[3].toUpperCase()==="PM"; if(pm&&h!==12) h+=12; if(!pm&&h===12) h=0; }
+  const now=new Date(), mo=MON.indexOf(md[1].slice(0,3).toLowerCase()), d=parseInt(md[2],10);
+  let t=new Date(now.getFullYear(),mo,d,h,mi).getTime();
+  if(t>now.getTime()+864e5) t=new Date(now.getFullYear()-1,mo,d,h,mi).getTime();
+  return t;
+}
 function gwCommit(){
   if(!gwResult) return;
   // Build a fake file-load event to reuse loadJson's write logic
@@ -59564,7 +59589,7 @@ function gwCommit(){
       const key=(t.title||"")+"|"+(t.who||"")+"|"+(t.day||"");
       if(!snapChecked[t.id]) return;
       const ts=snapChecked[t.id];
-      const tsMs=(typeof ts==="number")?ts:new Date(ts).getTime();
+      const tsMs=(typeof ts==="number")?ts:gwCheckTsMs(ts);   // 📅 REGENTS: "09:13 AM Oct 5" has no year — Chrome/webOS read it as 2001
       if(tsMs<weekCutoff) return;
       const rec={ts:ts,oldId:t.id};
       oldLookup[key]=rec;
