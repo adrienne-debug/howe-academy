@@ -241,7 +241,7 @@ console.log("── one speak path, app-wide ──");
   ok("no screen builds its own SpeechSynthesisUtterance", !/new SpeechSynthesisUtterance/.test(outside));
   ok("no screen calls speechSynthesis.speak directly", !/speechSynthesis\.speak\(/.test(outside));
   ok("spelling test 🔊 uses mastSpeak", /function stSpeak\(\)\{[^\n]*mastSpeak\(/.test(src));
-  ok("Word Workout 🔊 uses mastSpeak", /function wwSay\(\)\{[^\n]*mastSpeak\(wwWord\(it\),\{rate:0\.8\}\)/.test(src));
+  ok("Word Workout 🔊 uses mastSpeak (a spelling word: the spelling rate)", /function wwSay\(\)\{[^\n]*mastSpeak\(wwWord\(it\),\{spell:true\}\)/.test(src));
   ok("no 🔀 emoji added", src.indexOf("\u{1F500}") < 0);
 }
 
