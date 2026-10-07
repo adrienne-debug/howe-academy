@@ -55128,7 +55128,7 @@ function sprintDrillGridPillsHtml(color,poolLen){
 // that sprint starts over at A 1st next time (repeat until met). Mom marks (Mom-required); the kid sees the
 // sheet and the timer. Sprint titles come from the library lists (library/scans/<book>, editable here: count +
 // titles). Data: mathSprints/<kid> = {book, cur, moves[], log{<n>:{runs[], passed}}}. Targeted writes; dry-run inert.
-let mathSprints={}, lbScansMS={}, msTimer=null, msTimerLeft=0, msTimerDone=false, msEditBook=null;
+let mathSprints={}, lbScansMS={}, msTimer=null, msTimerLeft=0, msTimerDone=false, msEditBook=null, msPosEdit=false;
 const MS_BOOKS=[{id:"sm-sprints-1",label:"Sprints 1",base:100},{id:"sm-sprints-2",label:"Sprints 2",base:200},{id:"sm-sprints-3",label:"Sprints 3",base:300},
   {id:"sm-sprints-4",label:"Sprints 4",base:400},{id:"sm-sprints-5",label:"Sprints 5",base:500},{id:"math-sprints-6",label:"Math Sprints 6",base:600}];
 const MS_SHEETS=[{k:"a1",l:"A · 1st half",goal:"Standard: at least half the problems done in 60 s, 80% of those right"},
@@ -55157,6 +55157,7 @@ function msSetPosition(kid,book,cur,why){
   st.book=book; st.cur=cur; st.moves=st.moves||[]; const mv={at:Date.now(),ts:nowTs(),from:from,to:{book:book,cur:cur},why:why||"set by Mom"}; st.moves.push(mv);
   if(db&&!_dryRun()){ const u={}; u["book"]=book; u["cur"]=cur; u["moves/"+(st.moves.length-1)]=mv; db.ref("mathSprints/"+kid).update(u); }
   dbg("🔢 sprint position "+kid+" → "+book+" #"+cur+" ("+(why||"set")+")");
+  msPosEdit=false;   // ✎ MSEDIT: the edit toggle closes after a move
   if(typeof _mastRe==="function") _mastRe();
 }
 // one run: records the sheet + result; a met sheet passes the sprint and moves the kid on; the 4th run of the day
@@ -55164,7 +55165,7 @@ function msSetPosition(kid,book,cur,why){
 function msRecordRun(kid,met){
   if(!momHere()) return null; if(typeof msMarkLocked==="function"&&msMarkLocked()) return null; /* ⏱ MSBUZZ: a tap at 0:00 can't mark */ const st=msState(kid); if(!st||!st.cur) return null;
   const n=st.cur, sheet=msNextSheet(kid,n); if(!sheet) return null;
-  const runs=msRuns(kid,n); const run={d:msTodayISO(),ts:nowTs(),sheet:sheet.k,met:!!met};
+  const runs=msRuns(kid,n); const run={d:msTodayISO(),ts:nowTs(),at:Date.now(),sheet:sheet.k,met:!!met};
   st.log=st.log||{}; st.log[n]=st.log[n]||{}; const arr=runs.concat([run]); st.log[n].runs=arr;
   const u={}; u["log/"+n+"/runs/"+(arr.length-1)]=run;
   let advanced=null;
@@ -55172,10 +55173,55 @@ function msRecordRun(kid,met){
   if(db&&!_dryRun()) db.ref("mathSprints/"+kid).update(u);
   dbg("🔢 sprint run "+kid+" #"+n+" "+sheet.k+" "+(met?"MET":"miss")+(advanced?" → #"+advanced:""));
   msTimerReset();
-  if(msTodayRuns(kid)>=4){ try{ msCheckCard(kid); }catch(e){} if(typeof gwShowToast==="function") gwShowToast("🔢 Sprint session done — 4 runs"); }
+  const todayN=msTodayRuns(kid);
+  if(todayN>=4){ try{ msCheckCard(kid); }catch(e){} if(todayN===4&&typeof gwShowToast==="function") gwShowToast("🔢 Sprint session done — 4 runs"); }   // ✅ MSEDIT: extra runs don't re-announce
   if(typeof _mastRe==="function") _mastRe();
   return {n:n,sheet:sheet.k,met:!!met,advanced:advanced};
 }
+// MSEDIT_START — ✎ fix a wrong Met / Not tap (her ask 2026-10-07: "Mom can edit or undo a run recorded today").
+// Only the LATEST run recorded today can be changed or undone — undo again to step back through today's runs one at
+// a time. An earlier run can't be flipped in place: each run is a result for the sheet the kid really did, so
+// changing an early one can't re-sort the later ones. Changing / undoing puts the sprint, its passed state and the
+// position back exactly as the corrected tap would have left them, and the next sheet keeps following the run
+// history (run 2 still starts where yesterday left off). Targeted writes to mathSprints/<kid>; dry-run inert.
+// The Math Sprints card is NOT un-checked by an undo (that is schedule data — Mom unchecks it herself if she wants).
+function msLastTodayRun(kid){
+  const st=msState(kid); if(!st||!st.log) return null; const d=msTodayISO(); let best=null;
+  Object.keys(st.log).forEach(k=>{ const n=+k, runs=msRuns(kid,n), r=runs[runs.length-1];
+    if(r&&r.d===d){ const key=[r.at||0,n]; if(!best||key[0]>best.key[0]||(key[0]===best.key[0]&&n>best.n)) best={n:n,i:runs.length-1,run:r,key:key}; } });
+  return best?{n:best.n,i:best.i,run:best.run}:null;
+}
+// put sprint n's pass + the position back to what a run with result `met` leaves (the run is already in the log)
+function _msApplyResult(kid,n,met,ts,u){
+  const st=msState(kid); st.log[n]=st.log[n]||{};
+  if(met){ st.log[n].passed=ts; u["log/"+n+"/passed"]=ts; const nx=msNextSprintN(kid,n); if(nx){ st.cur=nx; u["cur"]=nx; } else { st.cur=n; u["cur"]=n; st.done=true; u["done"]=true; } }
+  else { delete st.log[n].passed; u["log/"+n+"/passed"]=null; st.cur=n; u["cur"]=n; if(st.done){ delete st.done; u["done"]=null; } }
+}
+function msEditRun(kid,met){
+  if(!momHere()) return null; const L=msLastTodayRun(kid); if(!L) return null; met=!!met;
+  if(!!L.run.met===met) return {n:L.n,sheet:L.run.sheet,met:met,changed:false};
+  const st=msState(kid); const r=Object.assign({},L.run,{met:met,editedTs:nowTs()});
+  const runs=msRuns(kid,L.n).slice(); runs[L.i]=r; st.log[L.n].runs=runs;
+  const u={}; u["log/"+L.n+"/runs/"+L.i+"/met"]=met; u["log/"+L.n+"/runs/"+L.i+"/editedTs"]=r.editedTs;
+  _msApplyResult(kid,L.n,met,r.ts,u);
+  if(db&&!_dryRun()) db.ref("mathSprints/"+kid).update(u);
+  dbg("🔢 sprint run EDITED "+kid+" #"+L.n+" "+r.sheet+" → "+(met?"MET":"miss"));
+  if(typeof _mastRe==="function") _mastRe();
+  return {n:L.n,sheet:r.sheet,met:met,changed:true,cur:st.cur};
+}
+function msUndoRun(kid){
+  if(!momHere()) return null; const L=msLastTodayRun(kid); if(!L) return null;
+  const st=msState(kid); const runs=msRuns(kid,L.n).slice(0,L.i); st.log[L.n].runs=runs;
+  const u={}; u["log/"+L.n+"/runs/"+L.i]=null;
+  if(L.run.met) _msApplyResult(kid,L.n,false,null,u);   // the run that passed it is gone → not passed, back on that sprint
+  if(db&&!_dryRun()) db.ref("mathSprints/"+kid).update(u);
+  dbg("🔢 sprint run UNDONE "+kid+" #"+L.n+" "+L.run.sheet+" "+(L.run.met?"MET":"miss"));
+  msTimerReset();
+  if(typeof _mastRe==="function") _mastRe();
+  return {n:L.n,sheet:L.run.sheet,met:!!L.run.met,cur:st.cur};
+}
+function msPosEditToggle(){ if(!momHere()) return; msPosEdit=!msPosEdit; if(typeof _mastRe==="function") _mastRe(); }
+// MSEDIT_END
 // today's open Math Sprints card for the kid checks itself off (same as EIC)
 function msCheckCard(kid){
   try{
@@ -55298,14 +55344,17 @@ function buildSprintBookHtml(color){
     const meta=msBookMeta(st.book)||{label:st.book}; const L=msBookList(st.book); const cur=L.find(x=>x.n===st.cur);
     h+='<div style="font-size:12px;color:#78716c;margin-bottom:10px">'+esc_(meta.label)+' · on <b>Sprint '+st.cur+'</b>'+(cur&&cur.title?' · '+esc_(cur.title):'')+' · '+L.filter(x=>msPassed(kid,x.n)).length+' of '+L.length+' passed</div>';
   }
-  if(mom){
+  if(mom&&st&&!msPosEdit) h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px"><button onclick="msPosEditToggle()" style="padding:7px 11px;border-radius:9px;border:1.5px solid #e2ddd6;background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✎ Edit</button><span style="font-size:11px;color:#78716c">change the book or sprint</span></div>';   // ✎ MSEDIT: no accidental bumps
+  if(mom&&(!st||msPosEdit)){
     const book=(st&&st.book)||"sm-sprints-4"; const L=msBookList(book);
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">';
     h+='<select id="ms-pos-book" onchange="msSetPosFromForm(\''+kid+'\')" style="padding:7px 9px;border:1.5px solid #e2ddd6;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'+MS_BOOKS.map(b=>'<option value="'+b.id+'"'+(b.id===book?' selected':'')+'>'+b.label+' ('+msBookList(b.id).length+')</option>').join("")+'</select>';
     h+='<select id="ms-pos-cur" onchange="msSetPosFromForm(\''+kid+'\')" style="padding:7px 9px;border:1.5px solid #e2ddd6;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif;max-width:260px">'+(L.length?L.map(x=>'<option value="'+x.n+'"'+(st&&st.cur===x.n?' selected':'')+'>'+x.n+(x.title?' · '+esc_(x.title.slice(0,40)):'')+(msPassed(kid,x.n)?' ✓':'')+'</option>').join(""):'<option value="">— no list yet —</option>')+'</select>';
     if(!st) h+='<button onclick="msSetPosFromForm(\''+kid+'\')" style="padding:8px 14px;border-radius:9px;border:none;background:'+color+';color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Set</button>';
     h+='<button onclick="msBookEditOpen(\''+book+'\')" style="padding:7px 11px;border-radius:9px;border:1.5px solid #e2ddd6;background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✎ Edit book</button>';
+    if(st) h+='<button onclick="msPosEditToggle()" style="padding:7px 11px;border-radius:9px;border:none;background:#f3f4f6;color:#374151;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Done</button>';
     h+='</div>';
+    if(st) h+='<div style="font-size:11px;color:#78716c;margin-bottom:4px">Pick a book or sprint above, or tap a sprint in the list below.</div>';
     if(st&&st.moves&&st.moves.length) h+='<div style="font-size:10.5px;color:#78716c;margin-bottom:4px">Moves: '+st.moves.slice(-4).map(m=>esc_((m.to&&(msBookMeta(m.to.book)||{}).label)||"")+' #'+(m.to&&m.to.cur)+' · '+esc_(m.ts||"")).join(" → ")+'</div>';
   }
   h+='</div>';
@@ -55324,7 +55373,8 @@ function buildSprintBookHtml(color){
   // ── today's run ──
   const L=msBookList(st.book), cur=L.find(x=>x.n===st.cur), sheet=msNextSheet(kid,st.cur), today=msTodayRuns(kid), runs=msRuns(kid,st.cur);
   h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:16px;margin-bottom:14px;text-align:center">';
-  h+='<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#78716c">Run '+Math.min(today+1,4)+' of 4 today'+(today>=4?' · session done':'')+'</div>';
+  if(today>=4) h+='<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:8px 10px;font-size:14px;font-weight:800;color:#15803d;margin-bottom:6px">✅ Today\'s 4 are done — run more?</div><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#78716c">Extra run '+(today-3)+'</div>';   // ✅ MSEDIT
+  else h+='<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#78716c">Run '+(today+1)+' of 4 today</div>';
   h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800;color:'+color+';margin:6px 0 2px">Sprint '+st.cur+'</div>';
   if(cur&&cur.title) h+='<div style="font-size:14px;font-weight:600;color:#1c1917;margin-bottom:8px">'+esc_(cur.title)+'</div>';
   if(st.done) h+='<div style="font-size:13px;color:#16a34a;font-weight:700">🏁 Book finished — pick the next book above.</div>';
@@ -55340,13 +55390,18 @@ function buildSprintBookHtml(color){
     if(!mom) h+='<div style="font-size:11px;color:#78716c;margin-top:8px">Mom marks met / not after the timer.</div>';
   }
   if(runs.length) h+='<div style="font-size:11.5px;color:#78716c;margin-top:12px">This sprint: '+runs.map(r=>'<span style="color:'+(r.met?"#16a34a":"#b91c1c")+';font-weight:700">'+esc_(r.sheet.toUpperCase())+(r.met?" ✓":" ✗")+'</span>').join(" · ")+(msPassed(kid,st.cur)?' — PASSED':'')+'</div>';
+  const lastR=mom?msLastTodayRun(kid):null;   // ✎ MSEDIT: fix the latest tap
+  if(lastR){ const r=lastR.run;
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:center;margin-top:10px;padding-top:10px;border-top:1px dashed #e2ddd6;font-size:12px;color:#57534e">Last run: Sprint '+lastR.n+' · '+esc_(String(r.sheet||"").toUpperCase())+' <b style="color:'+(r.met?"#16a34a":"#b91c1c")+'">'+(r.met?"Met ✓":"Not ✗")+'</b>'+
+      '<button onclick="msEditRun(\''+kid+'\','+(!r.met)+')" style="padding:5px 10px;border-radius:8px;border:1.5px solid #e2ddd6;background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✎ Change to '+(r.met?"Not ✗":"Met ✓")+'</button>'+
+      '<button onclick="if(confirm(\'Undo the last run (Sprint '+lastR.n+' · '+esc_(String(r.sheet||"").toUpperCase())+')?\'))msUndoRun(\''+kid+'\')" style="padding:5px 10px;border-radius:8px;border:1.5px solid #e2ddd6;background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">↶ Undo</button></div>'; }
   h+='</div>';
   // ── the book ──
   h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:12px 14px;margin-bottom:14px">';
   h+='<div style="font-family:\'Fraunces\',serif;font-size:14px;font-weight:700;margin-bottom:6px">'+esc_((msBookMeta(st.book)||{label:st.book}).label)+'</div>';
   if(!L.length) h+='<div style="font-size:12px;color:#78716c">No sprint list for this book yet — ✎ Edit book to type it in.</div>';
   L.forEach(x=>{ const p=msPassed(kid,x.n), isCur=x.n===st.cur, r=msRuns(kid,x.n);
-    h+='<div '+(mom?'onclick="msSetPosition(\''+kid+'\',\''+st.book+'\','+x.n+',\'tapped in list\')" style="cursor:pointer;"':'style="')+'display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:8px;background:'+(isCur?'#eef2ff':'transparent')+'">'+
+    h+='<div '+(mom&&msPosEdit?'onclick="msSetPosition(\''+kid+'\',\''+st.book+'\','+x.n+',\'tapped in list\')" style="cursor:pointer;"':'style="')+'display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:8px;background:'+(isCur?'#eef2ff':'transparent')+'">'+
       '<span style="width:20px;text-align:center;font-weight:800;color:'+(p?"#16a34a":isCur?color:"#c4c0b8")+'">'+(p?"✓":isCur?"▶":"·")+'</span>'+
       '<span style="flex:1;min-width:0;font-size:12.5px;'+(isCur?'font-weight:800;':'')+'color:'+(p||isCur?"#1c1917":"#78716c")+'">'+x.n+(x.title?' · '+esc_(x.title):'')+'</span>'+
       (r.length?'<span style="font-size:10.5px;color:#78716c">'+r.map(q=>q.sheet.toUpperCase()+(q.met?"✓":"✗")).join(" ")+'</span>':'')+
