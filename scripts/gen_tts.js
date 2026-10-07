@@ -15,6 +15,19 @@ function slice(startMark,endMark){
 eval(slice("function _ttsFileUrl(text)","return \"tts/\"+h.toString(16)+\".m4a\"; }"));
 eval(slice("const MAST_VOCAB_DEFS=","};").replace("const MAST_VOCAB_DEFS=","globalThis.MAST_VOCAB_DEFS="));
 eval(slice("const MAST_MATH_ANS={","};").replace("const MAST_MATH_ANS={","globalThis.MAST_MATH_ANS={"));
+eval(slice("const AAS_DATA={","]]};").replace("const AAS_DATA={","globalThis.AAS_DATA={"));
+
+// Every All About Spelling card, whether or not it's in a kid's live deck yet (her report 2026-10-07: AAS
+// words land in the drill from a spelling test / check-up AFTER the last bake, so an engine-less TV had no
+// file for them and stayed silent). Words are said (🔊 spell) — plus the spelling test's "word. sentence";
+// phonogram / rule / sound-spelling cards say their name on the front and their back on the back.
+function aasTexts(){
+  const out=[];
+  (AAS_DATA.w||[]).forEach(r=>{ out.push(String(r[2])); if(r[3]) out.push(String(r[2])+". "+String(r[3])); });
+  ["p","r","s"].forEach(k=>(AAS_DATA[k]||[]).forEach(r=>{ out.push(String(r[2])); if(r[3]) out.push(String(r[3])); }));
+  return out;
+}
+module.exports={aasTexts};
 
 function get(p){ return new Promise((res,rej)=>{
   https.get("https://howeacademy-default-rtdb.firebaseio.com"+p,r=>{
@@ -22,9 +35,9 @@ function get(p){ return new Promise((res,rej)=>{
   }).on("error",rej);
 });}
 
-(async()=>{
+if(require.main===module) (async()=>{
   const kids=["julian","lucy","ellis","lincoln"];
-  const texts=new Set();
+  const texts=new Set(aasTexts());
   for(const kid of kids){
     const items=Object.values(await get("/mastery/"+kid+".json")||{}).filter(Boolean);
     const defs=(await get("/mastery/"+kid+"_settings/definitions.json"))||{};
