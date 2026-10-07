@@ -53811,8 +53811,10 @@ function retrTodayQueue(kid){
         const u=(unitStudies||{})[track.unitId]; if(!u) return;
         const rounds=unitSprintRounds(u,kid).filter(r=>r.unlocked);
         const never=rounds.filter(r=>unitSprintBest(kid,r.logLabel)==null);
-        if(never.length) out.push({pri:3,kind:"unit",track,label:track.icon+" "+never[0].label+" round — never run",go:"units"});
-        else if(rounds.length) out.push({pri:4,kind:"treat",track,label:track.icon+" beat a "+track.label.replace(/ rounds$/,"")+" PB",go:"units"});
+        // RETRUNITRUN: carry the round + enrollment so the queue row can launch it (see retrPlanCardHtml)
+        const enr=!!((u.enrolled||{})[kid]);
+        if(never.length) out.push({pri:3,kind:"unit",track,round:never[0],enrolled:enr,label:track.icon+" "+never[0].label+" round — never run",go:"units"});
+        else if(rounds.length) out.push({pri:4,kind:"treat",track,enrolled:enr,label:track.icon+" beat a "+track.label.replace(/ rounds$/,"")+" PB",go:"units"});
       }catch(e){}
       return;
     }
@@ -54159,7 +54161,17 @@ function retrPlanCardHtml(color){
       h+='<div style="display:flex;align-items:center;gap:7px;padding:2px 0">';
       h+='<span style="font-size:10px;font-weight:800;color:#a8a29e;width:12px">'+(i+1)+'</span>';
       h+='<span style="font-size:11.5px;font-weight:'+(i===0?'800':'600')+';color:'+(it.pri===1?'#b45309':'#1f2937')+';flex:1">'+esc(it.label)+'</span>';
-      if(it.go==="units") h+='<span style="font-size:10px;color:var(--muted)">Units tab →</span>';
+      // RETRUNITRUN_START — a unit round in Today's queue gets a real ▶ Run (live 2026-10-07: Lincoln's Sprint Plan
+      // said "👑 Normandy round — never run" with only a plain "Units tab →" label, so nothing on the page could start it).
+      // Same deep link as the Units tab's 🏃 chip (unitGoSprint): Sprint view, Unit source, that round loaded. A PB-chase
+      // row opens the unit's round picker. Not enrolled → no Unit source to land on, so the old label stays. No writes.
+      if(it.go==="units"){
+        if(it.enrolled&&it.track&&it.track.unitId){
+          const _rk=(it.round&&it.round.key)?esc(it.round.key).replace(/'/g,"\\'"):"";
+          h+='<button onclick="unitGoSprint(\''+kid+'\',\''+esc(it.track.unitId)+'\','+(_rk?'\''+_rk+'\'':'null')+')" style="padding:3px 10px;border-radius:8px;border:1.5px solid '+color+';background:#fff;color:'+color+';font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">▶ Run</button>';
+        } else h+='<span style="font-size:10px;color:var(--muted)">Units tab →</span>';
+      }
+      // RETRUNITRUN_END
       else if(it.go==="match") h+='<button onclick="mastSetView(\'match\')" style="padding:3px 10px;border-radius:8px;border:1.5px solid '+color+';background:#fff;color:'+color+';font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">▶ Play</button>';
       else if(it.kind==="recheck") h+='<button onclick="retrApplyRecheck(\''+kid+'\',\''+it.track.key+'\',\''+esc(it.stage.key).replace(/'/g,"\\'")+'\')" style="padding:3px 10px;border-radius:8px;border:none;background:#b45309;color:#fff;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">▶ Run</button>';
       else if(it.kind==="focus"){
