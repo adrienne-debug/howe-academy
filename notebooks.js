@@ -5062,6 +5062,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     '  .page.pg-front { transform: scale(0.94118); transform-origin: top right; }\n' +
     '  .page.pg-back  { transform: scale(0.94118); transform-origin: top left; }\n' +
     '</style>';
+  var BIND_W_IN = 8;   // the page content's printed width with the margin on (0.94118 = 8 / 8.5 above); the 📄 PDF places pages at this width
   function applyBindingMargin(html) {
     if (!html) return html;
     var n = 0;
@@ -5185,13 +5186,22 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       function next() {
         if (i >= pages.length) return;
         var pg = pages[i];
+        // BINDPDF_START — the ½" prong margin in the 📄 PDF (2026-10-07: margin on, Ellis's printed pages had NO margin and
+        // the hole punch went through words). The margin is a CSS scale on each .page (BINDING_CSS); html2canvas captures
+        // the SCALED box (8in wide) and addImage below stretched it back to 8.5in — so the gap vanished. Instead: capture
+        // the page unscaled, then place it 8in wide on the sheet — fronts ½" in from the left, backs flush left (gap right),
+        // top-anchored — the same spot the browser's own print puts it.
+        var bind = /\bpg-(front|back)\b/.exec(pg.className || ""), bx = 0, bw = 8.5, bh = 11;
+        if (bind) { bw = BIND_W_IN; bh = 11 * BIND_W_IN / 8.5; bx = bind[1] === "front" ? 8.5 - bw : 0; pg.style.transform = "none"; }
+        // BINDPDF_END
         return h2c(pg, { scale: scale, useCORS: true, allowTaint: false, backgroundColor: "#ffffff", logging: false, windowWidth: 900, windowHeight: 1200,
             // the clone document must have its fonts ready too (same origin → font cache, but async)
             onclone: function (cd) { return (cd && cd.fonts && cd.fonts.ready) ? cd.fonts.ready.then(function () { return new Promise(function (r) { setTimeout(r, 120); }); }).catch(function () {}) : null; } })
           .then(function (canvas) {
+            if (bind) pg.style.transform = "";   // BINDPDF: back to the scaled page
             var data = canvas.toDataURL("image/jpeg", 0.92);
             if (i > 0) pdf.addPage("letter", "portrait");
-            pdf.addImage(data, "JPEG", 0, 0, 8.5, 11, undefined, "FAST");
+            pdf.addImage(data, "JPEG", bx, 0, bw, bh, undefined, "FAST");
             i++; onP(i, pages.length);
             return next();
           });
