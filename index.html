@@ -3927,6 +3927,7 @@ function initFb() {
     db.ref("settings/whatsNewSeen").on("value",s=>{ if(typeof whatsNewOnValue==="function") whatsNewOnValue(s.val()); });   // ✨ the What's new she has read
     db.ref("famProgress").on("value",s=>{ if(typeof famProgOnValue==="function") famProgOnValue(s.val()); });   // 📚 family subjects' shared place-in-book   // 🙋 helper profiles
     try{ db.ref("helperDays").orderByKey().limitToLast(3).on("value",s=>{ helperDaysOnValue(s.val()); }); }catch(e){}   // 🙋 who is here today
+    try{ db.ref("helpRequests").orderByKey().limitToLast(60).on("value",s=>{ hrOnValue(s.val()); }); }catch(e){}   // 🙋 NEEDMOM: kids asking for Mom
     db.ref("worksheets").on("value",s=>{ wsOnValue(s.val()); });   // 📋 worksheets from Adrienne
     db.ref("messages").on("value",s=>{ msgOnValue(s.val()); });     // ✉ Mom's messages to Adrienne (text only — photos load on demand)
     db.ref("config/rules").on("value",s=>{
@@ -6660,6 +6661,133 @@ function msgOnValue(v){
   if(key!==msgKey){ msgKey=key; try{ renderAll(); }catch(e){} }
 }
 // ── WORKSHEETS_END ──
+// ── NEEDMOM_START ── 🙋 "I need Mom" — a kid asks for help from their own schedule (ask 2026-10-07) ──────────
+// Her ask 10/7: a "🙋 I need Mom" button on a kid's own schedule view (kid device). Tapping it asks
+// "What do you need help with?" (optional short note + which card), saves a request, and shows it on Mom's side —
+// Mom's Day and the Mom-mode schedule — as an item she marks "✓ Helped". The kid's schedule keeps going: nothing
+// pauses, nothing re-lays, no card is touched. Works for every family (roster names/colours, no familyId gate).
+// Data (each family's own DB): helpRequests/<id> = {kid, at, cardId?, cardTitle?, note?, status:"open"|"helped", helpedAt?}
+//   id = "hr_<ms>_<rand>" so keys sort by time; the listener keeps the newest 60 (old ones simply fall out of view).
+//   Asking = ONE new record (set at its own id); ✓ Helped = ONE update of {status, helpedAt} on that record.
+// Shows on Mom's side for 12 hours (a request left from yesterday isn't "now"); the kid sees their own open asks.
+const HR_MAX_NOTE=140, HR_SHOW_MS=12*3600*1000;
+let hrData={}, hrKey="";
+function hrOpenList(kidId,now){
+  now=now||Date.now();
+  return Object.entries(hrData||{})
+    .filter(([id,r])=>r&&r.status==="open"&&r.kid&&(now-(r.at||0))<HR_SHOW_MS&&(!kidId||r.kid===kidId))
+    .sort((a,b)=>(a[1].at||0)-(b[1].at||0));
+}
+function hrTime(ms){ try{ return new Date(ms).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}); }catch(e){ return ""; } }
+function hrKidName(k){ return (typeof KID_NAME!=="undefined"&&KID_NAME&&KID_NAME[k])||cap(k); }
+// The kid's button shows on their OWN view: Kids' Corner / the kiosk's My Day, or a kid's Schedule page when Mom
+// isn't here (momHereCards = Mom mode outside Kids' Corner, i.e. Mom looking at a kid's page — she doesn't ask herself).
+function hrKidCanAsk(k){
+  if(!k||k==="all"||k==="mom"||(typeof ROSTER!=="undefined"&&ROSTER.indexOf(k)<0)) return false;
+  return !(typeof momHereCards==="function"&&momHereCards());
+}
+function hrKidButtonHTML(k){
+  if(!hrKidCanAsk(k)) return "";
+  const col=(typeof KID_COLOR!=="undefined"&&KID_COLOR[k])||"#2B7A78";
+  const mine=hrOpenList(k);
+  let h='<div style="margin:0 0 10px">'+
+    '<button onclick="hrAskOpen(\''+esc(k)+'\')" style="width:100%;padding:11px 14px;border-radius:12px;border:2px solid '+col+';background:#fff;color:'+col+';font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🙋 I need Mom</button>';
+  mine.forEach(([id,r])=>{
+    h+='<div style="margin-top:6px;padding:7px 11px;border-radius:10px;background:#fffbeb;border:1px solid #fde68a;font-size:12.5px;font-weight:700;color:#92400e">⏳ You asked Mom at '+esc(hrTime(r.at))+
+      (r.cardTitle?' — '+esc(r.cardTitle):'')+'. Keep going with your next card!</div>';
+  });
+  return h+'</div>';
+}
+// Today's cards still to do, for "which card?" (the same lay the kid's page shows).
+function hrKidCards(k){
+  let cards=[]; try{ cards=_kcTodayCards(k); }catch(e){}
+  const ck=(typeof checked!=="undefined"&&checked)||{};
+  return cards.filter(t=>t&&t.id&&!ck[t.id]&&!/^(break|brain break)$/i.test(t.title||""));
+}
+function hrAskOpen(k){
+  if(!hrKidCanAsk(k)) return;
+  let ov=document.getElementById("hr-panel"); if(ov) ov.remove();
+  ov=document.createElement("div"); ov.id="hr-panel"; ov.dataset.kid=k;
+  ov.style.cssText="position:fixed;inset:0;z-index:10050;background:rgba(15,23,42,.45);overflow:auto;font-family:'DM Sans',sans-serif;padding:18px 12px";
+  ov.onclick=function(e){ if(e.target===ov) hrAskClose(); };
+  const cards=hrKidCards(k);
+  ov.innerHTML='<div style="max-width:440px;margin:40px auto 0;background:#fff;border-radius:16px;padding:18px 16px 18px;box-shadow:0 10px 40px rgba(0,0,0,.25)">'+
+    '<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:#0f172a;margin-bottom:4px">🙋 What do you need help with?</div>'+
+    '<div style="font-size:12.5px;color:#64748b;margin-bottom:12px">Mom will see it. You can keep going with another card while you wait.</div>'+
+    '<label style="display:block;font-size:12px;font-weight:800;color:#334155;margin-bottom:4px">Which card? (optional)</label>'+
+    '<select id="hr-card" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1.5px solid #cbd5e1;border-radius:10px;font-size:14px;font-family:\'DM Sans\',sans-serif;margin-bottom:10px;background:#fff">'+
+      '<option value="">Something else</option>'+
+      cards.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.title||"Card")+'</option>').join("")+
+    '</select>'+
+    '<label style="display:block;font-size:12px;font-weight:800;color:#334155;margin-bottom:4px">Tell Mom (optional)</label>'+
+    '<textarea id="hr-note" maxlength="'+HR_MAX_NOTE+'" placeholder="A few words, like &quot;stuck on number 4&quot;" style="width:100%;box-sizing:border-box;min-height:58px;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:10px;font-size:14px;font-family:\'DM Sans\',sans-serif"></textarea>'+
+    '<div style="display:flex;gap:8px;margin-top:12px">'+
+      '<button onclick="hrAskClose()" style="flex:1;padding:11px;border-radius:11px;border:1.5px solid #cbd5e1;background:#fff;font-weight:800;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancel</button>'+
+      '<button onclick="hrAskSend()" style="flex:2;padding:11px;border-radius:11px;border:none;background:#2B7A78;color:#fff;font-weight:800;font-size:15px;cursor:pointer;font-family:\'DM Sans\',sans-serif">Send to Mom</button>'+
+    '</div></div>';
+  document.body.appendChild(ov);
+}
+function hrAskClose(){ const ov=document.getElementById("hr-panel"); if(ov) ov.remove(); }
+function hrBuild(k,cardId,note,now){
+  now=now||Date.now();
+  const r={kid:k,at:now,status:"open"};
+  const n=String(note||"").trim().slice(0,HR_MAX_NOTE); if(n) r.note=n;
+  if(cardId){ const t=hrKidCards(k).find(x=>x.id===cardId); if(t){ r.cardId=t.id; r.cardTitle=String(t.title||"").slice(0,80); } }
+  return r;
+}
+function hrAskSend(){
+  const ov=document.getElementById("hr-panel"); if(!ov) return;
+  const k=ov.dataset.kid; if(!hrKidCanAsk(k)) { hrAskClose(); return; }
+  const r=hrBuild(k,(document.getElementById("hr-card")||{}).value||"",(document.getElementById("hr-note")||{}).value||"");
+  const id="hr_"+r.at+"_"+Math.random().toString(36).slice(2,7);
+  hrData=Object.assign({},hrData,{[id]:r});
+  if(db&&!_dryRun()) db.ref("helpRequests/"+id).set(r);
+  hrAskClose();
+  try{ renderAll(); }catch(e){}
+  if(typeof gwShowToast==="function") gwShowToast("🙋 Mom knows! Keep going with your next card.");
+}
+// 🏡 Mom's side — Mom's Day card and the Mom-mode schedule: oldest ask first, one ✓ Helped each.
+function hrMomRowsHTML(kidId){
+  return hrOpenList(kidId).map(([id,r])=>{
+    const col=(typeof KID_COLOR!=="undefined"&&KID_COLOR[r.kid])||"#64748b";
+    return '<div style="display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:11px;border:1.5px solid #fcd34d;background:#fffbeb;margin-top:8px">'+
+      '<span style="width:10px;height:10px;border-radius:50%;background:'+col+';flex:none"></span>'+
+      '<div style="flex:1;min-width:0"><div style="font-weight:800;font-size:14px;color:#0f172a">'+esc(hrKidName(r.kid))+
+        ' <span style="font-weight:600;font-size:12px;color:#64748b">· '+esc(hrTime(r.at))+'</span></div>'+
+        (r.cardTitle?'<div style="font-size:12.5px;color:#334155;font-weight:700">'+esc(r.cardTitle)+'</div>':'')+
+        (r.note?'<div style="font-size:12.5px;color:#475569">“'+esc(r.note)+'”</div>':'')+
+        (!r.cardTitle&&!r.note?'<div style="font-size:12.5px;color:#475569">Needs you</div>':'')+'</div>'+
+      '<button onclick="hrHelpedTap(\''+esc(id)+'\')" style="flex:none;padding:7px 12px;border-radius:9px;border:none;background:#16a34a;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Helped</button></div>';
+  }).join("");
+}
+function hrMomCardHTML(kidId){
+  const rows=hrMomRowsHTML(kidId); if(!rows) return "";
+  return '<div id="hr-mom-card" style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);padding:11px 14px 13px;border-left:4px solid #f59e0b">'+
+    '<div style="font-weight:800;font-size:13px;color:#92400e">🙋 '+(hrOpenList(kidId).length===1?'A kid needs you':'Kids need you')+'</div>'+rows+'</div>';
+}
+// ✓ Helped is Mom's: outside Mom mode it asks for the Mom PIN first (the recipe gate, with its own words).
+function hrHelpedTap(id){
+  if(typeof momHere==="function"&&momHere()){ hrHelped(id); return; }
+  if(typeof kitPinGate!=="function") return;
+  kitPinGate(()=>hrHelped(id),"Marking a help request done is for Mom.");
+}
+function hrHelped(id){
+  const r=(hrData||{})[id]; if(!r) return;
+  const ts=Date.now();
+  hrData=Object.assign({},hrData,{[id]:Object.assign({},r,{status:"helped",helpedAt:ts})});
+  if(db&&!_dryRun()) db.ref("helpRequests/"+id).update({status:"helped",helpedAt:ts});
+  try{ renderAll(); }catch(e){}
+}
+// Listener: repaint only when the set of open asks changes, and never while a box is being typed in
+// (the kid's own ask popup lives outside the page, so a repaint can't eat it).
+function hrOnValue(v){
+  hrData=(v&&typeof v==="object")?v:{};
+  const key=hrOpenList().map(([id])=>id).join(",");
+  if(key===hrKey) return; hrKey=key;
+  const ae=(typeof document!=="undefined")&&document.activeElement;
+  if(!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))&&typeof renderAll==="function"){ try{ renderAll(); }catch(e){} }
+}
+// ── NEEDMOM_END ──
 // ── HELPERS_START ── 🙋 helpers: Grandma, Dad, a sitter — people who can take some of Mom's school tasks ──
 // Her ask 2026-10-03 (Dewalt: Grandma comes Wed 9:30–12 and does Andrew's phonics + the spelling tests).
 // Slice 1 = the PROFILES only: config/helpers/<id> = {name, icon, pick, help:{kid:{subjectKey:true}},
@@ -7771,6 +7899,8 @@ function renderSchedule(el){
   if(day===_todayDay){ try{ h+=mlStripHTML(); }catch(e){} }
   // Stage 2: the kid's own "Mom's ready for you" banner — their page only, today only.
   if(day===_todayDay&&kid!=="all"&&kid!=="mom"){ try{ h+=mlBannerHTML(kid); }catch(e){} }
+  if(day===_todayDay&&kid!=="all"&&kid!=="mom"){ try{ h+=hrKidButtonHTML(kid); }catch(e){} }   // 🙋 NEEDMOM: the kid's own page (hidden when Mom is here)
+  if(day===_todayDay&&momHere()){ try{ const _hr=hrMomCardHTML((kid!=="all"&&kid!=="mom")?kid:null); if(_hr) h+='<div style="margin:0 0 10px">'+_hr+'</div>'; }catch(e){} }   // 🙋 NEEDMOM: who asked for Mom → ✓ Helped
   if(momHere()&&schedDayOffOpen) h+=schedRenderDayOffPicker(day);
 
   if(CONSTRAINT[day]){
@@ -11462,6 +11592,7 @@ function renderMomsDay(el){
   // FIRST on the page: this is the one card that is hers rather than about the kids,
   // and it was ninth — below Now, Order day, Today, Star Bank, her schedule, the
   // weigh-in, Win of the day and Use soon. Her own day should not need scrolling to.
+  try{ h+=hrMomCardHTML(); }catch(e){}   // 🙋 NEEDMOM: a kid asked for Mom → ✓ Helped (first: it's happening now)
   try{ h+=momDayStripHTML(iso,today); }catch(e){}
   try{ h+=wsTaskHTML(); }catch(e){}   // 📋 From Adrienne — tap to answer, ✓ once sent
   try{ if(typeof stPendingHTML==="function") h+=stPendingHTML(); }catch(e){}   // 📝 spelling tests waiting to be graded
@@ -26946,6 +27077,7 @@ function kcSchoolHTML(k){
     const times=Object.keys(tmap).sort(function(a,b){ return toMin(a)-toMin(b); });
     let h='<div style="padding:12px 12px 0">';
     try{ h+=mlBannerHTML(k); }catch(e){}
+    try{ h+=hrKidButtonHTML(k); }catch(e){}   // 🙋 NEEDMOM: ask Mom for help — nothing pauses
     const _noDayWork=!mine.length;   // 📭 no school cards today — no lock, no Brain Break (same rule as the Schedule tab, 2026-10-03)
     try{ if(!_noDayWork||bbActive(k)||(bbMomDraft&&bbMomDraft.kid===k)) h+=bbBlock(k); }catch(e){}
     const _lookAhead=!_noDayWork&&gateLookAhead(k,dn);
