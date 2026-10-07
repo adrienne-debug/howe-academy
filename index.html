@@ -1967,12 +1967,17 @@ const GRAB_DEFAULT=[
   {emoji:"🪟",label:"Clean glass doors in school room inside and out til no smudges",pts:25,cad:"daily"},
   {emoji:"🪟",label:"Clean glass front door inside and out till no smudgs",pts:15,cad:"daily"}
 ];
-let grabs=[];        // config/grabs (falls back to GRAB_DEFAULT)
+// GRAB_FAMILY_START — GRAB_DEFAULT is the Howe house itself (bunny room door, Bella's chair, the
+// school room glass), so only Howe falls back to it. Any other family with no config/grabs gets an
+// empty pool and the Up for Grabs page asks Mom to add her first job (DeWalt start, 2026-10-07).
+function gbDefault(){ return (typeof HA_IS_HOWE!=="undefined"&&HA_IS_HOWE)?GRAB_DEFAULT:[]; }
+// GRAB_FAMILY_END
+let grabs=[];        // config/grabs (falls back to gbDefault(): GRAB_DEFAULT for Howe, empty for anyone else)
 let grabClaims={};   // grabClaims/{week_day_idx} = {by:kid, done:bool, ts}
 let storeEditOpen=false;   // Mom's stocking editor (collapsed by default)
 let pointRequests={};      // pointRequests/{kid}/{id} = {amount,reason,ts,status}
 let prFormOpen=false;      // the kid's "ask Mom" form
-function gbList(){ return (Array.isArray(grabs)&&grabs.length)?grabs:GRAB_DEFAULT.slice(); }
+function gbList(){ return (Array.isArray(grabs)&&grabs.length)?grabs:gbDefault().slice(); }
 let techGrace={};                   // techGrace/{kid}/{wk}/{day} = true (waived for that day)
 function rtIsMulti(slot){ return RT_ABBR[slot]!==undefined; }
 function rtStepsFor(slot,kid,raw,dayName){
@@ -19375,7 +19380,7 @@ function rwCatDel(i){ if(!momHere())return; _rwEnsure(); rewardCatalog.splice(i,
 function rwCatMove(i,d){ if(!momHere())return; _rwEnsure(); var j=i+d; if(j<0||j>=rewardCatalog.length)return; var t=rewardCatalog[i]; rewardCatalog[i]=rewardCatalog[j]; rewardCatalog[j]=t; _rwSave(); renderAll(); }
 function storeSetThreshold(v){ _storeCfgSave({threshold:parseInt(v,10)||0}); }
 function _cadDows(cad){ if(!cad||cad==="daily") return [0,1,2,3,4,5,6]; var m=/^wk:(.+)$/.exec(cad); return m?m[1].split(",").map(Number):[]; }
-function _gbEnsure(){ if(!(Array.isArray(grabs)&&grabs.length)) grabs=GRAB_DEFAULT.map(x=>Object.assign({},x)); }
+function _gbEnsure(){ if(!(Array.isArray(grabs)&&grabs.length)) grabs=gbDefault().map(x=>Object.assign({},x)); }
 function _gbSave(){ if(db) db.ref("config/grabs").set(grabs); }
 function gbSet(i,f,v){ if(!momHere())return; _gbEnsure(); if(!grabs[i])return; grabs[i][f]=(f==="pts")?(parseInt(v,10)||0):v; _gbSave(); renderAll(); }
 function gbAdd(){ if(!momHere())return; _gbEnsure(); grabs.push({emoji:"🎁",label:"New grab chore",pts:20,cad:"daily"}); _gbSave(); renderAll(); }
@@ -19512,6 +19517,10 @@ function gbPool(kid,momView){
 function _grabsHTML(kid,momView){
   const gbDue=gbPool(kid,momView);
   let h='<div class="grab-sec"><div class="grab-hd">🙌 Up for Grabs <span>extra stars · yours once you grab it · resets each week</span></div>';
+  // GRAB_EMPTY_START — a family with no grab list at all (not Howe, nothing saved yet): say so, and give
+  // Mom the existing add button right here. Kids see the line only. (2026-10-07)
+  if(!gbList().length) return h+'<div style="font-size:13px;color:var(--muted);padding:10px 2px">No jobs yet — Mom, add your first one.</div>'+((typeof momHere==="function"&&momHere())?'<button class="se-add" onclick="gbAdd()">+ Add grab chore</button>':'')+'</div>';
+  // GRAB_EMPTY_END
   if(!gbDue.length) return h+'<div style="font-size:12px;color:var(--muted);padding:8px 2px">Nothing up for grabs right now — check back when the next one comes round.</div></div>';
   h+='<div class="grab-grid">';
   gbDue.forEach(({g,i})=>{
