@@ -2831,6 +2831,69 @@ function safeWriteTasks(reason,opts){
   dbg("wrote tasks ("+reason+"): "+count);
 }
 function dbg(msg){ console.log("[HA]",msg); try{if(db)db.ref("_debug").push({msg,wk:WK,t:Date.now()});}catch(e){} }
+// CONNDIARY_START — 📶 connection diary (her yes 2026-10-06, #14 "the LG was offline a lot… they had to keep reloading").
+// RECORD ONLY — nothing about how the app connects or behaves changes. Each device keeps today's diary in its own
+// storage: page loads (and which were deploy reloads), every time the Live dot went Offline and how long until it came
+// back (an outage that spans a reload keeps counting until the next connect — "had to keep reloading"), the longest,
+// and how long each page load took to first connect. On each reconnect it saves a one-row summary at
+// connDiary/<day>/<deviceId> (label "LG StanbyME" / "iPad" / …, transport longpoll|websocket, build) and, for an
+// outage of 10 s or more, one _debug line. Blips under 5 s are ignored (normal on long-polling).
+const CD_KEY="ha_conn_diary", CD_MIN_MS=5000, CD_LOG_MS=10000;
+let _cdBootAt=Date.now(), _cdEverOn=false, _cdOffAt=null, _cdOffHidden=false;
+function cdToday(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function cdDevId(){ try{ let id=HA_LS.getItem("ha_devid"); if(!id){ id="d"+Math.random().toString(36).slice(2,10); HA_LS.setItem("ha_devid",id); } return id; }catch(e){ return "dnone"; } }
+function cdLabel(ua,touch){
+  ua=String(ua||"");
+  if(/Web0S|webOS|SmartTV|NetCast/i.test(ua)) return "LG StanbyME";
+  if(/iPad/.test(ua)||(/Macintosh/.test(ua)&&touch>1)) return "iPad";
+  if(/iPhone/.test(ua)) return "iPhone";
+  if(/Android/.test(ua)) return /Mobile/.test(ua)?"Android phone":"Android tablet";
+  if(/CrOS/.test(ua)) return "Chromebook";
+  if(/Macintosh/.test(ua)) return "Mac";
+  if(/Windows/.test(ua)) return "Windows PC";
+  return "Other";
+}
+function cdTransport(){ try{ return (/Web0S|SmartTV|NetCast/i.test(navigator.userAgent)||localStorage.getItem("ha_lp")==="1")?"longpoll":"websocket"; }catch(e){ return "?"; } }
+function cdLoad(){
+  let d=null; try{ d=JSON.parse(HA_LS.getItem(CD_KEY)||"null"); }catch(e){}
+  if(!d||d.day!==cdToday()) d={day:cdToday(),loads:0,deployLoads:0,outages:0,totalMs:0,longestMs:0,firstConnSec:[],openOff:null,last:[]};
+  return d;
+}
+function cdSave(d){ try{ HA_LS.setItem(CD_KEY,JSON.stringify(d)); }catch(e){} }
+function cdHM(t){ const d=new Date(t); return d.getHours()+":"+String(d.getMinutes()).padStart(2,"0"); }
+function cdBoot(){
+  const d=cdLoad(); d.loads++;
+  try{ if(sessionStorage.getItem("ha_cv_reload")===String(CODE_VERSION)) d.deployLoads++; }catch(e){}
+  if(d.openOff&&cdToday()===d.day){ _cdOffAt=d.openOff; _cdOffHidden=!!d.openHidden; }   // still offline from before the reload
+  cdSave(d);
+}
+function cdOnConn(on){
+  const now=Date.now(), d=cdLoad();
+  if(!on){
+    if(!_cdEverOn&&!_cdOffAt) return;              // the first "false" while the page is still connecting
+    if(!_cdOffAt){ _cdOffAt=now; _cdOffHidden=!!(typeof document!=="undefined"&&document.hidden); d.openOff=now; d.openHidden=_cdOffHidden; cdSave(d); }
+    return;
+  }
+  let ended=null;
+  if(!_cdEverOn){ _cdEverOn=true; d.firstConnSec.push(Math.round((now-_cdBootAt)/100)/10); if(d.firstConnSec.length>20) d.firstConnSec=d.firstConnSec.slice(-20); }
+  if(_cdOffAt){
+    const ms=now-_cdOffAt;
+    if(ms>=CD_MIN_MS){
+      d.outages++; d.totalMs+=ms; if(ms>d.longestMs) d.longestMs=ms;
+      ended={at:cdHM(_cdOffAt),min:Math.round(ms/6000)/10,hidden:_cdOffHidden};
+      d.last.push(ended); if(d.last.length>15) d.last=d.last.slice(-15);
+    }
+    _cdOffAt=null; _cdOffHidden=false;
+  }
+  d.openOff=null; d.openHidden=false; cdSave(d);
+  const ua=(typeof navigator!=="undefined"&&navigator.userAgent)||"", label=cdLabel(ua,(typeof navigator!=="undefined"&&navigator.maxTouchPoints)||0);
+  try{ if(db) db.ref("connDiary/"+d.day+"/"+cdDevId()).set({label:label,ua:String(ua).slice(0,180),transport:cdTransport(),build:String(CODE_VERSION),
+    loads:d.loads,deployLoads:d.deployLoads,outages:d.outages,totalMin:Math.round(d.totalMs/6000)/10,longestMin:Math.round(d.longestMs/6000)/10,
+    firstConnSec:d.firstConnSec,last:d.last,updated:now}); }catch(e){}
+  if(ended&&ended.min*60000>=CD_LOG_MS) dbg("📶 "+label+": back online after "+ended.min+" min"+(ended.hidden?" (screen was hidden)":"")+" — today "+d.outages+" outage"+(d.outages===1?"":"s")+", "+(Math.round(d.totalMs/6000)/10)+" min, longest "+(Math.round(d.longestMs/6000)/10)+" min, "+d.loads+" page loads ("+d.deployLoads+" deploy)");
+}
+try{ cdBoot(); }catch(e){}
+// CONNDIARY_END
 
 // OUTBOX_START — 📮 taps made offline survive a reload (her yes 2026-09-23, "yes also chores and claims")
 // Live 9/23 11:41: a console that had been offline came back holding 53 check-offs, the server had 51,
@@ -3517,6 +3580,7 @@ function initFb() {
 
     db.ref(".info/connected").on("value",s=>{
       const on=s.val()===true;
+      try{ cdOnConn(on); }catch(eCD){}   // 📶 CONNDIARY: record only
       document.getElementById("fb-dot").className="fb-dot"+(on?"":" off");
       document.getElementById("fb-lbl").textContent=on?"Live":"Offline";
       // When connected, publish our code version so stale devices auto-reload
