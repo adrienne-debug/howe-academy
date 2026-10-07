@@ -92,6 +92,32 @@
     for (var i = 0; i < MONTHS.length; i++) if (MONTHS[i].toLowerCase() === n) return i + 1;
     return null;
   }
+  // NBDAYORDER_START — the week's days in true CALENDAR order, from the day the week really starts (2026-10-07:
+  // Ellis's notebook printed Thu, Fri, Mon, Tue, Wed and a Tuesday-start week opened on Monday). A week can start any
+  // weekday — Mom picked Tuesday, so the week is Tue Oct 6 … Mon Oct 12 — but the generators sorted the day KEYS by a
+  // fixed Mon→Fri list (so next Monday printed first), and the week-at-a-glance grids followed task order. Order by each
+  // day's DATE instead ("October 6"); a week crossing New Year (Dec 29 … Jan 2) sorts Dec before Jan. Days with no date
+  // (or a date that won't read) keep the old Mon→Sat order after the dated ones; if any dated day won't read, the whole
+  // week falls back to Mon→Sat, exactly as before. keys = the day keys to order (default: every key in dates).
+  var NB_WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+  function nbCalendarDays(dates, keys) {
+    dates = dates || {};
+    keys = (keys || Object.keys(dates)).slice();
+    var wd = function (k) { var i = NB_WEEKDAYS.indexOf(k); return i < 0 ? 99 : i; };
+    var md = function (k) {
+      var v = String(dates[k] == null ? "" : dates[k]).trim(); if (!v) return null;
+      var m = monthIndex(monthFromDate(v)), d = parseInt((v.match(/\b(\d{1,2})\b/) || [])[1], 10);
+      return (m && d) ? { m: m, d: d } : false;
+    };
+    var rows = keys.map(function (k, i) { return { k: k, p: md(k), w: wd(k), i: i }; });
+    var byWeekday = function (a, b) { return (a.w - b.w) || (a.i - b.i); };
+    if (rows.some(function (r) { return r.p === false; })) return rows.sort(byWeekday).map(function (r) { return r.k; });
+    var ms = rows.filter(function (r) { return r.p; }).map(function (r) { return r.p.m; });
+    var wrap = ms.length && (Math.max.apply(null, ms) - Math.min.apply(null, ms) > 6);   // Dec … Jan: January is next year
+    var rank = function (r) { return r.p ? ((r.p.m + (wrap && r.p.m <= 6 ? 12 : 0)) * 100 + r.p.d) : 1e6; };
+    return rows.sort(function (a, b) { return (rank(a) - rank(b)) || byWeekday(a, b); }).map(function (r) { return r.k; });
+  }
+  // NBDAYORDER_END
   function seasonOfMonth(monthName) {
     var idx = monthIndex(monthName);
     return (idx && SEASON_BY_MONTH[idx]) || ["", ""];
@@ -101,7 +127,7 @@
   function weekDatesRange(dates, year) {
     dates = dates || {};
     var order = ["monday", "tuesday", "wednesday", "thursday", "friday"];
-    var active = order.filter(function (d) { return dates[d]; });
+    var active = nbCalendarDays(dates, order.filter(function (d) { return dates[d]; }));   // NBDAYORDER: first = the real start day
     if (!active.length) return "";
     var first = String(dates[active[0]]);
     var last = String(dates[active[active.length - 1]]);
@@ -118,7 +144,8 @@
     dates = dates || {};
     var order = ["monday", "tuesday", "wednesday", "thursday", "friday"];
     var first = "";
-    for (var i = 0; i < order.length; i++) if (dates[order[i]]) { first = String(dates[order[i]]); break; }
+    var _cal = nbCalendarDays(dates, order.filter(function (d) { return dates[d]; }));   // NBDAYORDER: the week's real first day
+    if (_cal.length) first = String(dates[_cal[0]]);
     var month = monthFromDate(first); var mi = monthIndex(month) - 1;
     var dnum = parseInt((first.match(/\d+/) || ["0"])[0], 10);
     if (!month || mi < 0 || !dnum) return null;
@@ -1276,7 +1303,7 @@
     var cur = ctx.curriculum || juCurriculumFromMastery(ctx.masteryItems);
 
     var dates = weekData.dates || {};
-    var days = DAY_ORDER.filter(function (d) { return dates.hasOwnProperty(d) && dates[d]; });
+    var days = nbCalendarDays(dates, DAY_ORDER.filter(function (d) { return dates.hasOwnProperty(d) && dates[d]; }));   // NBDAYORDER
     if (!days.length) days = DAY_ORDER.slice();
 
     var parts = [juHtmlHead(weekNum)];
@@ -1711,7 +1738,7 @@
     var weekDates = ctx.weekDates || "";
     var cur = cbCurriculum(ctx.masteryItems, ctx.letterSounds);
     var dates = weekData.dates || {};
-    var days = DAY_ORDER.filter(function (d) { return dates.hasOwnProperty(d) && dates[d]; });
+    var days = nbCalendarDays(dates, DAY_ORDER.filter(function (d) { return dates.hasOwnProperty(d) && dates[d]; }));   // NBDAYORDER
     if (!days.length) days = DAY_ORDER.slice();
     var reviewCap = (ctx.reviewCap == null) ? JU_REVIEW_CAP : Math.max(0, Math.min(5, parseInt(ctx.reviewCap, 10) || 0));
     var wkInt = parseInt(weekNum, 10) || 0;
@@ -2097,6 +2124,7 @@
     // This is the WEEK-AT-A-GLANCE grid — the page most likely to be read as "the day" — and
     // the first pass at this fix patched the daily pages and missed all three week grids.
     Object.keys(byDay).forEach(function (d) { byDay[d] = nbByTime(byDay[d]); });
+    order = nbCalendarDays(dm, order);   // NBDAYORDER: columns in calendar order, not first-task order
     if (!order.length) return "";
     var cols = "";
     order.forEach(function (day) {
@@ -3310,10 +3338,7 @@ ${extraStrip || ""}
     var cfg = LINCOLN_CONFIG, student = cfg.student;
     var tasks = weekData.tasks || [];
     var datesMap = weekData.dates || {};
-    var schoolDays = Object.keys(datesMap).sort(function (a, b) {
-      var ia = DAY_ORDER.indexOf(a), ib = DAY_ORDER.indexOf(b);
-      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
-    });
+    var schoolDays = nbCalendarDays(datesMap);   // NBDAYORDER: calendar order from the week's real start day
     var skillSubjects = lnSkillSubjects(tasks, student, 6);
     var paceRows = (ctx.pace && ctx.pace.length) ? ctx.pace.map(function (p) { return [p.subject, p.pct, p.status]; }) : lnPaceRows(tasks, student);
     var scores = LINCOLN_DATA.iowa_default;
@@ -3421,6 +3446,7 @@ ${extraStrip || ""}
     var order = [], byDay = {};
     tasks.forEach(function (t) { var d = t.day || "unknown"; if (!byDay[d]) { byDay[d] = []; order.push(d); } byDay[d].push(t); });
     Object.keys(byDay).forEach(function (d) { byDay[d] = nbByTime(byDay[d]); });   // clock order, not generation order
+    order = nbCalendarDays(dm, order);   // NBDAYORDER: columns in calendar order, not first-task order
 
     var cols = "";
     order.forEach(function (day) {
@@ -4059,10 +4085,7 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
     if (typeof weekNum === "string") { var dd = weekNum.replace(/\D/g, ""); weekNum = dd ? parseInt(dd, 10) : weekNum; }
     var wn = parseInt(weekNum, 10) || 1;
     var datesMap = weekData.dates || {};
-    var orderedDays = Object.keys(datesMap).sort(function (a, b) {
-      var ia = DAY_ORDER.indexOf(a), ib = DAY_ORDER.indexOf(b);
-      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
-    });
+    var orderedDays = nbCalendarDays(datesMap);   // NBDAYORDER: calendar order from the week's real start day
     var ellisTasks = (weekData.tasks || []).filter(function (t) { return t.who === "ellis"; });
     var year = new Date().getFullYear();
     var dateVals = orderedDays.map(function (d) { return datesMap[d]; });
@@ -4951,7 +4974,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     var weekDates = ctx.weekDates || "";
     var tasks = weekData.tasks || [], dates = weekData.dates || {};
     var DAY_ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday"];
-    var days = DAY_ORDER.filter(function (d) { return dates.hasOwnProperty(d); });
+    var days = nbCalendarDays(dates, DAY_ORDER.filter(function (d) { return dates.hasOwnProperty(d); }));   // NBDAYORDER
     var blends = LUCY_DATA.blends, focus = LUCY_DATA.focus, pace = (ctx.pace && ctx.pace.length) ? ctx.pace : LUCY_DATA.pace;
     var subtraction = luSubWeek(wn, days.length);
     var prevStats = ctx.prevStats || {};   // dashes until the shared history wiring
@@ -5039,6 +5062,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     '  .page.pg-front { transform: scale(0.94118); transform-origin: top right; }\n' +
     '  .page.pg-back  { transform: scale(0.94118); transform-origin: top left; }\n' +
     '</style>';
+  var BIND_W_IN = 8;   // the page content's printed width with the margin on (0.94118 = 8 / 8.5 above); the 📄 PDF places pages at this width
   function applyBindingMargin(html) {
     if (!html) return html;
     var n = 0;
@@ -5162,13 +5186,22 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       function next() {
         if (i >= pages.length) return;
         var pg = pages[i];
+        // BINDPDF_START — the ½" prong margin in the 📄 PDF (2026-10-07: margin on, Ellis's printed pages had NO margin and
+        // the hole punch went through words). The margin is a CSS scale on each .page (BINDING_CSS); html2canvas captures
+        // the SCALED box (8in wide) and addImage below stretched it back to 8.5in — so the gap vanished. Instead: capture
+        // the page unscaled, then place it 8in wide on the sheet — fronts ½" in from the left, backs flush left (gap right),
+        // top-anchored — the same spot the browser's own print puts it.
+        var bind = /\bpg-(front|back)\b/.exec(pg.className || ""), bx = 0, bw = 8.5, bh = 11;
+        if (bind) { bw = BIND_W_IN; bh = 11 * BIND_W_IN / 8.5; bx = bind[1] === "front" ? 8.5 - bw : 0; pg.style.transform = "none"; }
+        // BINDPDF_END
         return h2c(pg, { scale: scale, useCORS: true, allowTaint: false, backgroundColor: "#ffffff", logging: false, windowWidth: 900, windowHeight: 1200,
             // the clone document must have its fonts ready too (same origin → font cache, but async)
             onclone: function (cd) { return (cd && cd.fonts && cd.fonts.ready) ? cd.fonts.ready.then(function () { return new Promise(function (r) { setTimeout(r, 120); }); }).catch(function () {}) : null; } })
           .then(function (canvas) {
+            if (bind) pg.style.transform = "";   // BINDPDF: back to the scaled page
             var data = canvas.toDataURL("image/jpeg", 0.92);
             if (i > 0) pdf.addPage("letter", "portrait");
-            pdf.addImage(data, "JPEG", 0, 0, 8.5, 11, undefined, "FAST");
+            pdf.addImage(data, "JPEG", bx, 0, bw, bh, undefined, "FAST");
             i++; onP(i, pages.length);
             return next();
           });
@@ -5434,6 +5467,6 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     dgStart: dgStart,                   // Daily Grams: first Day of a week from the stored cursor (Notebook tab card + prefetch)
 
     // exposed for testing
-    _internal: { generateGeneric: generateGeneric, spellNbPages: spellNbPages, juCurriculumFromMastery: juCurriculumFromMastery, generateJulian: generateJulian, generateCaleb: generateCaleb, cbCurriculum: cbCurriculum, dgWeekPlan: dgWeekPlan }
+    _internal: { generateGeneric: generateGeneric, spellNbPages: spellNbPages, juCurriculumFromMastery: juCurriculumFromMastery, generateJulian: generateJulian, generateCaleb: generateCaleb, cbCurriculum: cbCurriculum, dgWeekPlan: dgWeekPlan, nbCalendarDays: nbCalendarDays }
   };
 })();
