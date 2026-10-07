@@ -179,7 +179,7 @@ function study(card, o) {
     mstItemAnswer: () => o.answer || "", mstCardMode: () => o.mode || "rec",
     mstIsRuleCard: () => false, mstIsSpellCard: () => !!o.spell });
   c.mastGetDef = () => o.def || "";
-  vm.runInContext(slice("mstFlipBtn") + "\n" + slice("mstAudioBtn") + "\n" + slice("mstCardHtml"), c);
+  vm.runInContext(slice("mstCardDef") + "\n" + slice("mstFlipBtn") + "\n" + slice("mstAudioBtn") + "\n" + slice("mstCardHtml"), c);   // mstCardDef: DRILLSWEEP 4
   return c.mstCardHtml({ name: "Vocab", audio: o.audio }, card);
 }
 {
