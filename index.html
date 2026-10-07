@@ -3812,6 +3812,7 @@ function initFb() {
       Object.keys(v).forEach(k=>{ laundryData[k]=v[k]; });
       try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
       if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+      else if(tab==="schedule"&&kid==="mom") renderAll();   // MOMSCHED_LAUNDRY
     });
     db.ref("momChores").on("value",s=>{
       const v=s.val()||{};
@@ -7350,10 +7351,12 @@ function momAgendaHtml(dayTasks){
   const _mReq=t=>t.mom==="required"||(typeof famIsMomCard==="function"&&famIsMomCard(t));   // 🏡 family time she leads = Mom Needed
   const req=dayTasks.filter(_mReq);
   const may=dayTasks.filter(t=>t.mom==="maybe");
-  if(!req.length&&!may.length)
+  const _lau=(typeof momSchedLaundry==="function")?momSchedLaundry(day):[];   // 🧺 MOMSCHED_LAUNDRY
+  if(!req.length&&!may.length&&!_lau.length)
     return '<div style="padding:28px 16px;text-align:center;color:var(--muted);font-size:13px">No Mom-needed work scheduled this day. 🎉</div>';
   const byTime={};
-  dayTasks.forEach(t=>{ const m=toMin(t.time); if(m==null)return; if(!byTime[m])byTime[m]={req:[],may:[]}; (_mReq(t)?byTime[m].req:byTime[m].may).push(t); });
+  dayTasks.forEach(t=>{ const m=toMin(t.time); if(m==null)return; if(!byTime[m])byTime[m]={req:[],may:[],lau:[]}; (_mReq(t)?byTime[m].req:byTime[m].may).push(t); });
+  _lau.forEach(x=>{ if(!byTime[x.m])byTime[x.m]={req:[],may:[],lau:[]}; byTime[x.m].lau.push(x); });
   const mins=Object.keys(byTime).map(Number).sort((a,b)=>a-b);
   let h='<div class="mom-agenda">';
   h+='<div class="mom-agenda-row mom-agenda-head"><div></div><div class="mom-h req">🔴 Mom Needed</div><div class="mom-h may">🟡 May Need Mom</div></div>';
@@ -7364,7 +7367,7 @@ function momAgendaHtml(dayTasks){
     const c=byTime[m];
     const _tp=fromMin(m).split(' ');
     h+='<div class="mom-agenda-row"><div class="time-pill">'+_tp[0]+'<span class="ampm">'+(_tp[1]||'')+'</span></div>';
-    h+='<div class="mom-col">'+(c.req.length?c.req.map(tk=>taskCard(tk)).join(''):'<div class="mom-empty">—</div>')+'</div>';
+    h+='<div class="mom-col">'+((c.req.length||c.lau.length)?c.lau.map(x=>momSchedLaundryCard(x.id,x.l)).join('')+c.req.map(tk=>taskCard(tk)).join(''):'<div class="mom-empty">—</div>')+'</div>';
     h+='<div class="mom-col">'+(c.may.length?c.may.map(tk=>taskCard(tk)).join(''):'<div class="mom-empty">—</div>')+'</div>';
     h+='</div>';
   });
@@ -10679,6 +10682,7 @@ function laundryAdvance(id){
     if(typeof db!=='undefined'&&db) db.ref('laundry/'+id).set(l);
   }
   try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
+  if(typeof tab!=='undefined'&&tab==="schedule"&&typeof renderAll==='function'){ renderAll(); return; }   // MOMSCHED_LAUNDRY: tapped on the schedule
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
 function laundryDel(id){
@@ -10695,6 +10699,30 @@ function laundryAdvanceLabel(stage){
 function laundrySince(ts){
   try{ return new Date(ts).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}); }catch(e){ return ""; }
 }
+// MOMSCHED_LAUNDRY_START — a load in the washer/dryer shows on the Mom-mode schedule too (her ask 2026-10-07: it showed on
+// Mom's Day at the right time but never in Mom's schedule — the agenda was built only from the week's cards, and loads live
+// in laundry/). Same moment as the Mom's Day "Now" nudge — started + washer/dryer minutes + reminder (✎ Times) — same
+// words, same → Dryer / → Fold button (laundryAdvance). Today's view only; a load left from an earlier day sits at now.
+function laundryNudgeAt(l){ const d=laundryDoneAt(l); return d?d+laundryT("grace")*60000:0; }
+function momSchedLaundry(dayName){
+  if(typeof _todayDay!=="string"||dayName!==_todayDay) return [];
+  const now=new Date(), mid=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime(), out=[];
+  Object.keys(laundryData||{}).forEach(id=>{
+    const l=laundryData[id]; if(!l||(l.stage!=="washer"&&l.stage!=="dryer")) return;
+    const at=laundryNudgeAt(l); if(!at) return;
+    let m=Math.floor((at-mid)/60000);
+    if(m<0) m=now.getHours()*60+now.getMinutes();   // from an earlier day: it needs her now
+    if(m>=24*60) return;                            // comes due tomorrow — not today's schedule
+    out.push({id,l,m});
+  });
+  return out.sort((a,b)=>a.m-b.m);
+}
+function momSchedLaundryCard(id,l){
+  return '<div class="ml-laundry" style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#eff6ff;border-left:3px solid #2563eb;border-radius:8px">'
+    +(l.stage==="dryer"?'<span style="flex:1;font-size:13px">🌀 <b>'+esc(l.label)+'</b> has been in the dryer since '+laundrySince(l.ts)+' — time to fold it</span>':'<span style="flex:1;font-size:13px">🫧 <b>'+esc(l.label)+'</b> has been in the washer since '+laundrySince(l.ts)+' — move it before it sours</span>')
+    +'<button onclick="laundryAdvance(\''+id+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+laundryAdvanceLabel(l.stage)+'</button></div>';
+}
+// MOMSCHED_LAUNDRY_END
 // KIDLAUNDRY_START — a kid starting a load tells Mom (her ask 2026-10-04, Taylor's "Start a load of laundry").
 // Checking off a chore that STARTS a load drops "Taylor started laundry" onto Mom's 🧺 card in the washer, timed
 // from the check — the same 90-min "move it" nudge Mom gets for her own loads. The kid taps nothing extra.
