@@ -55183,6 +55183,7 @@ function buildSprintBookHtml(color){
     h+='</div>';
   }
   if(!st) return h;
+  if(typeof msKidSummaryHtml==="function") h+=msKidSummaryHtml(kid);   // 📊 MSSTATS — read-only summary
   // ── today's run ──
   const L=msBookList(st.book), cur=L.find(x=>x.n===st.cur), sheet=msNextSheet(kid,st.cur), today=msTodayRuns(kid), runs=msRuns(kid,st.cur);
   h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:16px;margin-bottom:14px;text-align:center">';
@@ -55211,11 +55212,118 @@ function buildSprintBookHtml(color){
     h+='<div '+(mom?'onclick="msSetPosition(\''+kid+'\',\''+st.book+'\','+x.n+',\'tapped in list\')" style="cursor:pointer;"':'style="')+'display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:8px;background:'+(isCur?'#eef2ff':'transparent')+'">'+
       '<span style="width:20px;text-align:center;font-weight:800;color:'+(p?"#16a34a":isCur?color:"#c4c0b8")+'">'+(p?"✓":isCur?"▶":"·")+'</span>'+
       '<span style="flex:1;min-width:0;font-size:12.5px;'+(isCur?'font-weight:800;':'')+'color:'+(p||isCur?"#1c1917":"#78716c")+'">'+x.n+(x.title?' · '+esc_(x.title):'')+'</span>'+
-      (r.length?'<span style="font-size:10.5px;color:#78716c">'+r.map(q=>q.sheet.toUpperCase()+(q.met?"✓":"✗")).join(" ")+'</span>':'')+'</div>'; });
+      (r.length?'<span style="font-size:10.5px;color:#78716c">'+r.map(q=>q.sheet.toUpperCase()+(q.met?"✓":"✗")).join(" ")+'</span>':'')+
+      (r.length?'<span onclick="event.stopPropagation();msStatsOpen(\''+kid+'\','+x.n+')" title="details" style="cursor:pointer;font-size:13px;padding:1px 5px;border-radius:6px;border:1px solid #e2ddd6;background:#fff">📊</span>':'')+'</div>'; });
   h+='</div>';
   return h;
 }
 // MSPRINT_END
+// MSSTATS_START — 📊 Book Sprints data view, READ-ONLY (asked 2026-10-07: "tapping a sprint opens a pop-up for that kid
+// and sprint" — total attempts, attempts per sheet, first/latest attempt, days to pass, pass date, met/not streak, a
+// small attempts-over-time chart; plus a per-kid summary: sprints passed, average attempts to pass, current sprint,
+// runs this week). Reads mathSprints/<kid>/log/<n>/runs[] = {d, ts, sheet, met} + passed + cur (see msRecordRun).
+// No writes of any kind. Works for any kid on any device. The 📊 chip on a list row opens it — the row itself stays
+// Mom's "move the kid here" tap.
+function msIsoDate(s){ return /^\d{4}-\d{2}-\d{2}$/.test(String(s||""))?String(s):null; }
+function msDayNum(iso){ const p=String(iso).split("-").map(Number); return Math.round(Date.UTC(p[0],p[1]-1,p[2])/86400000); }
+function msShortDate(iso){ if(!msIsoDate(iso)) return String(iso||""); const p=iso.split("-").map(Number); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][p[1]-1]+" "+p[2]; }
+// Monday of the week holding iso (school weeks run Mon–Fri; Sunday belongs to the week just ending)
+function msWeekStartISO(iso){ const dn=msDayNum(iso), dow=(new Date(dn*86400000).getUTCDay()+6)%7; return new Date((dn-dow)*86400000).toISOString().slice(0,10); }
+// one sprint, every number the pop-up shows; null when the kid isn't set up
+function msSprintStats(kid,n){
+  if(!msState(kid)) return null;
+  n=+n; const runs=msRuns(kid,n), passed=msPassed(kid,n);
+  const perSheet={}; MS_SHEETS.forEach(s=>{ perSheet[s.k]={runs:0,met:0}; });
+  runs.forEach(r=>{ const k=perSheet[r.sheet]?r.sheet:"other"; perSheet[k]=perSheet[k]||{runs:0,met:0}; perSheet[k].runs++; if(r.met) perSheet[k].met++; });
+  const dates=runs.map(r=>msIsoDate(r.d)).filter(Boolean);
+  const first=dates.length?dates.reduce((a,b)=>a<b?a:b):null, latest=dates.length?dates.reduce((a,b)=>a>b?a:b):null;
+  const byDayM={}; runs.forEach(r=>{ const d=msIsoDate(r.d); if(!d) return; const e=byDayM[d]=byDayM[d]||{d:d,met:0,not:0}; if(r.met) e.met++; else e.not++; });
+  const byDay=Object.keys(byDayM).sort().map(d=>byDayM[d]);
+  // pass date = the day of the met run (the stored "passed" is a time stamp with no year); falls back to that stamp
+  let passDate=null, passLabel=null;
+  if(passed){ const m=runs.filter(r=>r.met).pop(); passDate=m&&msIsoDate(m.d)||null; const e=msState(kid).log[n]; passLabel=passDate?msShortDate(passDate):String(e.passed===true?"":e.passed||""); }
+  const daysToPass=(passDate&&first)?msDayNum(passDate)-msDayNum(first)+1:null;   // calendar days, first try counts as day 1
+  const practiceDays=passDate?byDay.filter(x=>x.d<=passDate).length:byDay.length;
+  // the streak the sprint ends on right now (✓ or ✗ in a row) and the longest run of misses
+  let streak=null, longestNot=0, cur=0;
+  runs.forEach(r=>{ if(!r.met){ cur++; if(cur>longestNot) longestNot=cur; } else cur=0; });
+  if(runs.length){ const last=!!runs[runs.length-1].met; let k=0; for(let i=runs.length-1;i>=0&&!!runs[i].met===last;i--) k++; streak={met:last,len:k}; }
+  return {n:n,total:runs.length,met:runs.filter(r=>r.met).length,perSheet:perSheet,first:first,latest:latest,passed:passed,passDate:passDate,passLabel:passLabel,
+    daysToPass:daysToPass,practiceDays:practiceDays,streak:streak,longestNot:longestNot,seq:runs.map(r=>({sheet:r.sheet,met:!!r.met,d:r.d})),byDay:byDay};
+}
+// the kid at a glance; null when not set up
+function msKidSummary(kid){
+  const st=msState(kid); if(!st) return null;
+  const today=msTodayISO(), wk=msWeekStartISO(today);
+  let passedN=0, toPass=0, week=0, total=0;
+  Object.keys(st.log||{}).forEach(n=>{
+    const runs=msRuns(kid,n); total+=runs.length;
+    runs.forEach(r=>{ const d=msIsoDate(r.d); if(d&&d>=wk&&d<=today) week++; });
+    if(msPassed(kid,n)){ passedN++; toPass+=runs.length; }
+  });
+  const cur=msBookList(st.book).find(x=>x.n===st.cur);
+  return {passed:passedN,avgToPass:passedN?Math.round(10*toPass/passedN)/10:null,cur:st.cur||null,curTitle:(cur&&cur.title)||"",done:!!st.done,weekRuns:week,weekStart:wk,totalRuns:total};
+}
+// small stacked bars, one per practice day: green = met, red = not
+function msStatsChartSvg(byDay){
+  if(!byDay||!byDay.length) return "";
+  const W=300, H=90, padB=16, padT=6, max=Math.max(1,...byDay.map(x=>x.met+x.not)), n=byDay.length;
+  const slot=W/n, bw=Math.max(3,Math.min(26,slot*0.7)), unit=(H-padB-padT)/max;
+  let s='<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="max-width:340px;display:block;margin:4px auto 0" role="img" aria-label="attempts per day">';
+  s+='<line x1="0" y1="'+(H-padB)+'" x2="'+W+'" y2="'+(H-padB)+'" stroke="#e2ddd6" stroke-width="1"/>';
+  byDay.forEach((x,i)=>{
+    const cx=slot*i+slot/2, x0=(cx-bw/2).toFixed(1), hn=x.not*unit, hm=x.met*unit, base=H-padB;
+    if(x.not) s+='<rect x="'+x0+'" y="'+(base-hn).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+hn.toFixed(1)+'" fill="#ef4444" rx="2"><title>'+msShortDate(x.d)+': '+x.not+' not</title></rect>';
+    if(x.met) s+='<rect x="'+x0+'" y="'+(base-hn-hm).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+hm.toFixed(1)+'" fill="#16a34a" rx="2"><title>'+msShortDate(x.d)+': '+x.met+' met</title></rect>';
+  });
+  s+='<text x="0" y="'+(H-3)+'" font-size="9" fill="#78716c">'+msShortDate(byDay[0].d)+'</text>';
+  if(n>1) s+='<text x="'+W+'" y="'+(H-3)+'" font-size="9" fill="#78716c" text-anchor="end">'+msShortDate(byDay[n-1].d)+'</text>';
+  s+='<text x="'+W+'" y="10" font-size="9" fill="#78716c" text-anchor="end">max '+max+'/day</text>';
+  return s+'</svg>';
+}
+function msStatRow(label,val){ return '<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px solid #f3efe9;font-size:12.5px"><span style="color:#78716c">'+label+'</span><span style="font-weight:700;color:#1c1917;text-align:right">'+val+'</span></div>'; }
+function msStatsHtml(kid,n){
+  const esc_=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;");
+  const S=msSprintStats(kid,n); if(!S) return "";
+  const st=msState(kid), L=msBookList(st.book), x=L.find(y=>y.n===S.n);
+  let h='<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#78716c">📊 '+esc_(SL_KLBL[kid]||kid)+'</div>';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:#1c1917;margin:2px 0">Sprint '+S.n+'</div>';
+  if(x&&x.title) h+='<div style="font-size:13px;font-weight:600;color:#44403c;margin-bottom:6px">'+esc_(x.title)+'</div>';
+  h+='<div style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:11.5px;font-weight:800;margin-bottom:8px;'+(S.passed?'background:#dcfce7;color:#15803d">✓ Passed':(S.n===st.cur?'background:#eef2ff;color:#3730a3">▶ Working on it':'background:#f5f5f4;color:#78716c">Not passed'))+'</div>';
+  if(!S.total) return h+'<div style="font-size:12.5px;color:#78716c;margin:8px 0">No attempts yet.</div>';
+  h+='<div style="text-align:left">';
+  h+=msStatRow("Total attempts",S.total+' <span style="font-weight:600;color:#78716c">('+S.met+' met · '+(S.total-S.met)+' not)</span>');
+  h+=msStatRow("Per sheet",MS_SHEETS.map(s=>{ const p=S.perSheet[s.k]; return s.k.toUpperCase()+' '+p.runs+(p.met?' <span style="color:#16a34a">✓</span>':''); }).join(" · ")+(S.perSheet.other?' · other '+S.perSheet.other.runs:''));
+  h+=msStatRow("First attempt",esc_(msShortDate(S.first)));
+  h+=msStatRow("Latest attempt",esc_(msShortDate(S.latest)));
+  h+=msStatRow("Pass date",S.passed?esc_(S.passLabel||"passed"):"—");
+  h+=msStatRow("Days to pass",S.daysToPass!=null?S.daysToPass+' day'+(S.daysToPass!==1?'s':'')+' <span style="font-weight:600;color:#78716c">('+S.practiceDays+' practice day'+(S.practiceDays!==1?'s':'')+')</span>':(S.passed?"—":"not yet"));
+  h+=msStatRow("Streak now",S.streak?'<span style="color:'+(S.streak.met?'#16a34a':'#b91c1c')+'">'+(S.streak.met?'met ✓':'not ✗')+' ×'+S.streak.len+'</span>'+(S.longestNot>1?' <span style="font-weight:600;color:#78716c">(longest miss run ×'+S.longestNot+')</span>':''):"—");
+  h+='</div>';
+  h+='<div style="font-size:11px;color:#78716c;margin-top:8px;line-height:1.6">'+S.seq.map(r=>'<span style="color:'+(r.met?'#16a34a':'#b91c1c')+';font-weight:700">'+esc_(String(r.sheet||"").toUpperCase())+(r.met?'✓':'✗')+'</span>').join(" ")+'</div>';
+  h+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#78716c;margin-top:10px">Attempts per day</div>';
+  return h+msStatsChartSvg(S.byDay);
+}
+function msStatsOpen(kid,n){
+  if(!kid||!msState(kid)) return;
+  let ov=document.getElementById("ms-stats-pop"); if(ov) ov.remove();
+  ov=document.createElement("div"); ov.id="ms-stats-pop"; ov.className="dlg-overlay"; ov.style.display="flex"; ov.style.zIndex="9999";
+  ov.onclick=function(e){ if(e&&e.target===ov) msStatsClose(); };
+  ov.innerHTML='<div class="dlg-box" style="max-width:380px;text-align:center;max-height:86vh;overflow-y:auto">'+msStatsHtml(kid,n)+
+    '<div><button onclick="msStatsClose()" style="margin-top:12px;padding:8px 20px;border-radius:10px;border:none;background:#1d4ed8;color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">close</button></div></div>';
+  document.body.appendChild(ov);
+}
+function msStatsClose(){ const ov=document.getElementById("ms-stats-pop"); if(ov) ov.remove(); }
+function msKidSummaryHtml(kid){
+  const S=msKidSummary(kid); if(!S) return "";
+  const cell=(v,l)=>'<div style="flex:1;min-width:70px;text-align:center"><div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:800;color:#1c1917">'+v+'</div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#78716c">'+l+'</div></div>';
+  let h='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:10px 12px;margin-bottom:14px">';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start">';
+  h+=cell(S.passed,"passed")+cell(S.avgToPass!=null?S.avgToPass:"—","avg tries to pass")+cell(S.done?"🏁":(S.cur!=null?'<span onclick="msStatsOpen(\''+kid+'\','+S.cur+')" style="cursor:pointer;text-decoration:underline dotted">'+S.cur+'</span>':"—"),"current")+cell(S.weekRuns,"runs this week");
+  h+='</div><div style="font-size:10.5px;color:#78716c;margin-top:4px;text-align:center">📊 Tap a sprint’s 📊 in the list for its details.</div></div>';
+  return h;
+}
+// MSSTATS_END
 function buildSprintSourceToggle(color){
   const opt=(v,l)=>{
     const act=sprintSource===v;
