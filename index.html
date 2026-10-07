@@ -41722,9 +41722,20 @@ function mastPlayDefAudio(src){
   if(!url) return;
   try{ new Audio(url).play(); }catch(e){}
 }
-// TTS fallback: when a flip card has no Mom recording, the browser reads the definition
-// aloud (speechSynthesis is free, offline-capable, and works on iPad behind a tap).
-// Recordings stay the premium voice — this only renders when there's no clip.
+// TTS_START — 🔊 ONE shared speak path for every card (her report 2026-10-07, LG StanbyME: a 🗣 button
+// read the FRONT of a card that was flipped to its BACK, and an All About Spelling word in Lincoln's daily
+// drill said nothing even with the button pressed while other cards in the same drill spoke). The rules:
+//   · every spoken word goes through mastSpeak(text) — no screen builds its own SpeechSynthesisUtterance;
+//   · a flip card's speak button reads the side that's SHOWING at tap time: ttsFlipSay(btn) looks at the
+//     card's flip state and the per-side text the card carries (ttsFlipAttrs), never a word baked into
+//     the button (the study card's back button said the front word);
+//   · the voice list must be loaded before speaking: Chromium / Android / webOS fill getVoices()
+//     asynchronously ("voiceschanged"), and an utterance spoken against an empty list can be dropped —
+//     worse, the old +700 ms check then flagged the device engine-less FOR GOOD (ha_tts_dead), so every
+//     word went to the pre-baked files, and words added after the last bake (the AAS unit, 2026-10-04)
+//     had no file → silence. Voices showing up now clears that flag.
+// Browser speech (speechSynthesis) is free, offline-capable, and works on iPad behind a tap. Mom's
+// recordings stay the premium voice — mastPlayDefAudio plays those; this renders when there's no clip.
 // iPad Safari needs babying: speak() in the same tick as cancel() gets swallowed, an
 // unreferenced utterance gets GC'd mid-speech, and after a tab switch / screen lock the
 // synth wakes up stuck "paused" and queues everything silently until resume() is called.
@@ -41739,7 +41750,7 @@ function _ttsFileUrl(text){ let h=5381; const s=String(text); for(let i=0;i<s.le
 function _ttsFilePlay(text){
   try{
     const a=window._ttsAudio||(window._ttsAudio=new Audio());
-    a.onerror=function(){ try{ dbg("tts file media error code="+(a.error&&a.error.code)+" src="+a.src.slice(-16)); }catch(e){} };
+    a.onerror=function(){ try{ dbg("tts file media error code="+(a.error&&a.error.code)+" src="+a.src.slice(-16)+" text="+String(text).slice(0,30)); }catch(e){} };
     a.src=_ttsFileUrl(text);
     const p=a.play();
     if(p&&p.catch) p.catch(function(e){ try{ dbg("tts file play blocked: "+(e&&e.name)+" "+(e&&e.message||"").slice(0,60)); }catch(e2){} });
@@ -41749,11 +41760,64 @@ function _ttsFilePlay(text){
 // plays synchronously inside the gesture (autoplay-safe) from the first word on.
 try{ if(HA_LS.getItem("ha_tts_dead")==="1") window._ttsDead=true; }catch(e){}
 let mastUtter=null;   // module-level ref so Safari can't GC the utterance while it plays
-function mastSpeak(text){
-  if(!text||!window.speechSynthesis) return;
+// ── Voice list ───────────────────────────────────────────────────────────────
+const TTS_VOICE_WAIT_MS=1500;   // longest a tap waits for the voice list before speaking anyway
+let _ttsVoice=null, _ttsWaiters=[], _ttsSeq=0;
+function _ttsVoices(){ try{ return (window.speechSynthesis&&speechSynthesis.getVoices())||[]; }catch(e){ return []; } }
+// An English voice: the device default if it's English, else US English, else any English, else the default.
+function _ttsPickVoice(vs){
+  const en=vs.filter(function(v){ return v&&/^en([-_]|$)/i.test(v.lang||""); });
+  return en.find(function(v){ return v.default; })||en.find(function(v){ return /^en[-_]US/i.test(v.lang); })||en[0]||vs.find(function(v){ return v&&v.default; })||vs[0]||null;
+}
+function _ttsVoicesLoaded(){
+  const vs=_ttsVoices(); if(!vs.length) return false;
+  if(!_ttsVoice||vs.indexOf(_ttsVoice)<0) _ttsVoice=_ttsPickVoice(vs);
+  // Voices listed = this browser HAS an engine. A file-mode flag from an earlier empty-list
+  // moment was a false alarm — clear it so the engine speaks every word, baked or not.
+  if(window._ttsDead){ window._ttsDead=false; try{ HA_LS.removeItem("ha_tts_dead"); }catch(e){} try{ dbg("tts: voices="+vs.length+" — engine found, pre-gen fallback OFF"); }catch(e){} }
+  return true;
+}
+function _ttsFlush(){ const w=_ttsWaiters; _ttsWaiters=[]; w.forEach(function(f){ try{ f(); }catch(e){} }); }
+// Run fn once the voice list is loaded — synchronously when it already is (keeps the tap's
+// gesture), else on "voiceschanged" / a 250 ms re-check, or at TTS_VOICE_WAIT_MS regardless.
+function _ttsWhenVoices(fn){
+  if(_ttsVoicesLoaded()){ fn(); return; }
+  let done=false, iv=null;
+  const run=function(){ if(done) return; done=true; if(iv) clearInterval(iv); fn(); };
+  _ttsWaiters.push(run);
+  iv=setInterval(function(){ if(_ttsVoicesLoaded()) run(); },250);   // some webOS builds never fire voiceschanged
+  setTimeout(run,TTS_VOICE_WAIT_MS);
+}
+// Prime at load, so the list is usually ready before the first tap.
+try{ if(window.speechSynthesis){
+  _ttsVoicesLoaded();
+  const _onV=function(){ if(_ttsVoicesLoaded()) _ttsFlush(); };
+  if(speechSynthesis.addEventListener) speechSynthesis.addEventListener("voiceschanged",_onV); else speechSynthesis.onvoiceschanged=_onV;
+} }catch(e){}
+// What the engine reads: no markup (rule cards carry <u>/<span>), the AAS one-dot leader read as a period.
+function _ttsClean(text){ return String(text).replace(/<[^>]*>/g," ").replace(/․/g,".").replace(/\s+/g," ").trim(); }
+// ── THE speak function ───────────────────────────────────────────────────────
+// opts.rate (default 0.85). The pre-baked file is keyed on the RAW text (as gen_tts.js hashes it).
+function mastSpeak(text,opts){
+  if(!text) return;
+  text=String(text);
+  const rate=(opts&&opts.rate)||0.85;
   // One-time per session: leave a breadcrumb of this device's speech engine in _debug,
   // so a silent TV can be diagnosed from the log instead of guessed at.
-  try{ if(!window._ttsProbed){ window._ttsProbed=1; dbg("tts probe: voices="+speechSynthesis.getVoices().length+" ua=…"+navigator.userAgent.slice(-70)); } }catch(e){}
+  try{ if(!window._ttsProbed){ window._ttsProbed=1; dbg("tts probe: voices="+_ttsVoices().length+" ua=…"+navigator.userAgent.slice(-70)); } }catch(e){}
+  if(!window.speechSynthesis){ _ttsFilePlay(text); return; }   // no engine API at all: the baked file is the only voice
+  // Proven engine-less and still no voices: the file plays inside the tap (autoplay-safe).
+  if(window._ttsDead&&!_ttsVoicesLoaded()){ _ttsFilePlay(text); return; }
+  const my=++_ttsSeq;   // a newer tap while the list loads wins — never two words at once
+  _ttsWhenVoices(function(){ if(my===_ttsSeq) _ttsSpeakNow(text,rate); });
+}
+function _ttsUtter(text,rate){
+  const u=new SpeechSynthesisUtterance(_ttsClean(text));
+  u.rate=rate; u.lang=(_ttsVoice&&_ttsVoice.lang)||"en-US";
+  if(_ttsVoice) u.voice=_ttsVoice;
+  mastUtter=u; return u;
+}
+function _ttsSpeakNow(text,rate){
   // The Safari babying below (unconditional resume(), deferred speak after cancel) is
   // for WebKit's engine quirks — but it went SILENT on the LG StanbyME's webOS browser
   // (Chromium), where the simple cancel-then-speak path was proven on the device
@@ -41761,24 +41825,46 @@ function mastSpeak(text){
   // every Chromium engine gets the old proven path.
   const _safari=/safari/i.test(navigator.userAgent)&&!/chrome|chromium|crios|android|web0s|webos/i.test(navigator.userAgent);
   if(!_safari){
-    if(window._ttsDead){ _ttsFilePlay(text); return; }
-    try{ speechSynthesis.cancel(); mastUtter=new SpeechSynthesisUtterance(String(text)); mastUtter.rate=0.85; speechSynthesis.speak(mastUtter); }catch(e){}
-    // Engine-dead detection: if nothing is speaking shortly after speak() AND the voice
-    // list is still empty, this browser has NO speech engine (the LG StanbyME reports
-    // voices=0 forever — LG's own devs confirm webOS TV has none). Flip the session to
+    const hadVoices=_ttsVoices().length>0;
+    try{ speechSynthesis.cancel(); speechSynthesis.speak(_ttsUtter(text,rate)); }catch(e){}
+    // Engine-dead detection — only after the voice list had its full chance to load and
+    // didn't: if nothing is speaking shortly after speak() AND the list is STILL empty,
+    // this browser has NO speech engine (LG's own devs confirm webOS TV has none). Flip to
     // the pre-generated Samantha files — including THIS word, a beat late but heard.
-    // A working engine can't false-trip: either it's speaking at +700ms or its voice
-    // list has populated by then.
-    setTimeout(function(){ try{ if(!speechSynthesis.speaking&&!speechSynthesis.getVoices().length){ if(!window._ttsDead){ window._ttsDead=true; try{HA_LS.setItem("ha_tts_dead","1");}catch(e2){} dbg("tts: no engine — pre-gen audio fallback ON (persisted)"); } _ttsFilePlay(text); } }catch(e){} },700);
+    if(!hadVoices) setTimeout(function(){ try{ if(!speechSynthesis.speaking&&!_ttsVoices().length){ if(!window._ttsDead){ window._ttsDead=true; try{HA_LS.setItem("ha_tts_dead","1");}catch(e2){} dbg("tts: no engine — pre-gen audio fallback ON (persisted)"); } _ttsFilePlay(text); } }catch(e){} },700);
     return;
   }
   try{
     const synth=speechSynthesis, busy=synth.speaking||synth.pending;
     if(busy) synth.cancel();
     synth.resume();
-    mastUtter=new SpeechSynthesisUtterance(String(text)); mastUtter.rate=0.85;
-    if(busy) setTimeout(()=>{ try{ synth.resume(); synth.speak(mastUtter); }catch(e){} },80);
-    else synth.speak(mastUtter);
+    const u=_ttsUtter(text,rate);
+    if(busy) setTimeout(()=>{ try{ synth.resume(); synth.speak(u); }catch(e){} },80);
+    else synth.speak(u);
+  }catch(e){}
+}
+// ── Flip cards: read the side that's SHOWING ─────────────────────────────────
+// The card's .mast-flip-wrap carries what each side says (data-say-front / data-say-back) and,
+// where Mom's recording belongs to a side, its key (data-rec-front / data-rec-back). Every flip
+// card's speak button calls ttsFlipSay(this): the flip state at tap time picks the side.
+function _ttsAttr(s){ return String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function ttsFlipAttrs(o){
+  let a=""; o=o||{};
+  [["front","say-front"],["back","say-back"],["recFront","rec-front"],["recBack","rec-back"]].forEach(function(p){ if(o[p[0]]) a+=' data-'+p[1]+'="'+_ttsAttr(o[p[0]])+'"'; });
+  return a;
+}
+function ttsFlipSide(el){
+  const wrap=el&&el.closest?el.closest(".mast-flip-wrap"):null;
+  if(!wrap) return null;
+  return wrap.classList.contains("flipped")?"back":"front";
+}
+function ttsFlipSay(el){
+  try{
+    const side=ttsFlipSide(el); if(!side) return;
+    const wrap=el.closest(".mast-flip-wrap");
+    const rec=wrap.getAttribute("data-rec-"+side), say=wrap.getAttribute("data-say-"+side);
+    if(rec&&mastGetDefAudio(masteryKid,rec)) mastPlayDefAudio(rec);
+    else if(say) mastSpeak(say);
   }catch(e){}
 }
 // 🔊 Spell decks (AAS · Spelling You See · Spelling): the word is SAID, never shown —
@@ -41791,12 +41877,16 @@ function mastSpellSay(id){
   if(it&&it.prompt) mastSpeak(String(it.prompt));
 }
 function mastSpellPeekToggle(id){ mastSpellPeek=mastSpellPeek===id?null:id; _mastRe(); }
+// What a card's definition side says aloud (mirrored by scripts/gen_tts.js for the baked files).
+function mastItemSpeakText(it,prompt){
+  return mastGetDef(masteryKid,prompt)||(it&&it.answer&&it.answer!==it.prompt?it.answer:"")||(it&&it.definition)||"";
+}
 function mastSpeakItem(prompt){
   let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
   const it=items.find(x=>x&&x.prompt===prompt);
-  const txt=mastGetDef(masteryKid,prompt)||(it&&it.answer&&it.answer!==it.prompt?it.answer:"")||(it&&it.definition)||"";
-  mastSpeak(txt);
+  mastSpeak(mastItemSpeakText(it,prompt));
 }
+// TTS_END
 
 // ── "Show me" recognition step (Montessori three-period lesson, period 2) ────────
 // A ⭐ Learning FLASH card that's been shown at least once renders as recognition: the
@@ -45610,7 +45700,7 @@ function stStep(d){ if(!stUI) return; stUI.i=Math.max(0,Math.min(stUI.words.leng
 function stToGrade(){ if(stUI){ stUI.view="grade"; stRender(); } }
 function stSet(i,r){ if(!stUI) return; stUI.grades[i]=(stUI.grades[i]===r)?undefined:r; if(stUI.grades[i]===undefined) delete stUI.grades[i]; stRender(); }
 function stSetAll(r){ if(!stUI) return; stUI.words.forEach((w,i)=>{ stUI.grades[i]=r; }); stRender(); }
-function stSpeak(){ try{ if(!stUI) return; const w=stUI.words[stUI.i]; const u=new SpeechSynthesisUtterance(w.name.replace(/․/g,".")+(w.sentence?". "+w.sentence:"")); u.rate=0.85; speechSynthesis.cancel(); speechSynthesis.speak(u); }catch(e){} }
+function stSpeak(){ try{ if(!stUI) return; const w=stUI.words[stUI.i]; mastSpeak(w.name+(w.sentence?". "+w.sentence:"")); }catch(e){} }   // 🔊 TTS: the one shared speak path
 function stRender(){
   if(!stUI){ stClose(); return; }
   let ov=document.getElementById("st-panel");
@@ -46210,7 +46300,7 @@ let wwUI=null;   // {kid,i,mode:"hear"|"gaps",tries,msg,done:{}}
 function wwOpen(kid){ const L=wwList(kid); if(!L.length) return; wwUI={kid,i:0,mode:"hear",tries:0,msg:"",done:{}}; wwRender(); }
 function wwClose(){ wwUI=null; const ov=document.getElementById("ww-panel"); if(ov) ov.remove(); try{ if(typeof _mastRe==="function") _mastRe(); }catch(e){} }
 function wwWord(it){ return String(it.answer||it.prompt||"").replace(/․/g,"."); }
-function wwSay(){ try{ if(!wwUI) return; const it=wwList(wwUI.kid)[wwUI.i]; if(!it) return; const u=new SpeechSynthesisUtterance(wwWord(it)); u.rate=0.8; speechSynthesis.cancel(); speechSynthesis.speak(u); }catch(e){} }
+function wwSay(){ try{ if(!wwUI) return; const it=wwList(wwUI.kid)[wwUI.i]; if(!it) return; mastSpeak(wwWord(it),{rate:0.8}); }catch(e){} }   // 🔊 TTS: the one shared speak path
 // "together" → "t_g_th_r": vowels become blanks (y stays) — the kid writes the WHOLE word, never just the gaps.
 function wwGaps(w){ return String(w).replace(/[aeiou]/gi,"_"); }
 function wwCheck(){
@@ -46398,6 +46488,13 @@ function mstAudioBtn(name,session){
   if(mastGetDefAudio(masteryKid,name)) return '<button onclick="event.stopPropagation();mastPlayDefAudio(\''+esc+'\')" style="margin-top:10px;padding:9px 20px;border-radius:999px;border:2px solid #7c3aed;background:#f5f3ff;color:#7c3aed;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F50A} Hear it</button>';
   return '<button onclick="event.stopPropagation();mastSpeak(\''+esc+'\')" style="margin-top:10px;padding:7px 16px;border-radius:999px;border:1.5px solid #c4b5fd;background:#fff;color:#7c3aed;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F5E3} Read it</button>';
 }
+// 🔊 TTS: a flip card's speak button — ttsFlipSay reads whichever side is showing when it's tapped.
+// rec = Mom's recording belongs to this side (purple "Hear it"); else the browser reads it ("Read it").
+function mstFlipBtn(session,rec){
+  if(session&&session.audio==="off") return "";
+  if(rec) return '<button onclick="event.stopPropagation();ttsFlipSay(this)" style="margin-top:10px;padding:9px 20px;border-radius:999px;border:2px solid #7c3aed;background:#f5f3ff;color:#7c3aed;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F50A} Hear it</button>';
+  return '<button onclick="event.stopPropagation();ttsFlipSay(this)" style="margin-top:10px;padding:7px 16px;border-radius:999px;border:1.5px solid #c4b5fd;background:#fff;color:#7c3aed;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F5E3} Read it</button>';
+}
 function mstCardHtml(session,card){
   const name=card.name||"";
   const def=mastGetDef(masteryKid,name)||mstItemAnswer(card.id);
@@ -46422,8 +46519,8 @@ function mstCardHtml(session,card){
   }
   if(mstIsSpellCard(card)){
     // 🔊 Spell deck: hear it, spell it out loud, flip to check — the word only on the back.
-    const _say=(big)=>'<button onclick="event.stopPropagation();mastSpeak(\''+mstEscJs(name)+'\')" style="'+(big?'margin:18px 0 6px;padding:18px 34px;border:2.5px solid #4f46e5;font-size:30px':'margin-top:10px;padding:8px 18px;border:2px solid #4f46e5;font-size:15px')+';border-radius:999px;background:#eef2ff;color:#4f46e5;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;position:relative;z-index:3">\u{1F50A} Hear it</button>';
-    let s='<div class="mast-slide"><div class="mast-flip-wrap'+(mstFlipped?" flipped":"")+'" onclick="mstFlip()"><div class="mast-flip-inner">';
+    const _say=(big)=>'<button onclick="event.stopPropagation();ttsFlipSay(this)" style="'+(big?'margin:18px 0 6px;padding:18px 34px;border:2.5px solid #4f46e5;font-size:30px':'margin-top:10px;padding:8px 18px;border:2px solid #4f46e5;font-size:15px')+';border-radius:999px;background:#eef2ff;color:#4f46e5;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;position:relative;z-index:3">\u{1F50A} Hear it</button>';
+    let s='<div class="mast-slide"><div class="mast-flip-wrap'+(mstFlipped?" flipped":"")+'"'+ttsFlipAttrs({front:name,back:name})+' onclick="mstFlip()"><div class="mast-flip-inner">';
     s+='<div class="mast-flip-front"><div class="mast-slide-cat">'+mstEsc(card.deck||session.name||"")+_lrn+'</div>';
     s+=_say(true);
     s+='<div style="font-size:14px;color:#4f46e5;font-weight:700">\u{1F3A4} spell it out loud, letter by letter</div>';
@@ -46450,21 +46547,24 @@ function mstCardHtml(session,card){
     return t+'</div></div></div></div>';
   }
   if(mode==="say"){
-    let y='<div class="mast-slide"><div class="mast-flip-wrap'+(mstFlipped?" flipped":"")+'" onclick="mstFlip()"><div class="mast-flip-inner">';
+    let y='<div class="mast-slide"><div class="mast-flip-wrap'+(mstFlipped?" flipped":"")+'"'+ttsFlipAttrs({back:name,recBack:name})+' onclick="mstFlip()"><div class="mast-flip-inner">';
     y+='<div class="mast-flip-front"><div class="mast-slide-cat">'+mstEsc(card.deck||session.name||"")+_lrn+'</div>'+_chip("say");
     y+='<div class="mast-flip-def">'+mstEsc(def)+'</div>';
     y+='<div class="mast-flip-hint">\u{1F4A1} say it, then tap to check</div></div>';
-    y+='<div class="mast-flip-back"><div class="mast-slide-name">'+mstEsc(name)+'</div>'+mstAudioBtn(name,session);
+    y+='<div class="mast-flip-back"><div class="mast-slide-name">'+mstEsc(name)+'</div>'+mstFlipBtn(session,!!mastGetDefAudio(masteryKid,name));
     y+='<div class="mast-flip-hint">\u{1F4A1} did you say it right?</div></div>';
     return y+'</div></div></div>';
   }
-  let c='<div class="mast-slide"><div class="mast-flip-wrap'+(mstFlipped?" flipped":"")+'" onclick="mstFlip()"><div class="mast-flip-inner">';
+  // 🔊 TTS (her report 2026-10-07): the front reads the word, the back reads the definition (or plays
+  // Mom's recording of it) — the back button used to say the FRONT word.
+  const _rec=!!mastGetDefAudio(masteryKid,name);
+  let c='<div class="mast-slide"><div class="mast-flip-wrap'+(mstFlipped?" flipped":"")+'"'+ttsFlipAttrs({front:name,back:def,recBack:name})+' onclick="mstFlip()"><div class="mast-flip-inner">';
   c+='<div class="mast-flip-front">';
   c+='<div class="mast-slide-cat">'+mstEsc(card.deck||session.name||"")+((card.kind==="new"||card.kind==="learning")?' <span style="font-size:9px;color:#9a3412;font-weight:600">\u{2B50} Learning</span>':"")+'</div>';
-  c+='<div class="mast-slide-name">'+mstEsc(name)+'</div>'+mstAudioBtn(name,session);
+  c+='<div class="mast-slide-name">'+mstEsc(name)+'</div>'+mstFlipBtn(session,false);
   c+='<div class="mast-flip-hint">\u{1F4A1} tap to flip</div></div>';
   c+='<div class="mast-flip-back">';
-  c+='<div class="mast-flip-def">'+(def?mstEsc(def):'<span style="color:#a78bfa;font-size:16px">no definition yet</span>')+'</div>'+mstAudioBtn(name,session);
+  c+='<div class="mast-flip-def">'+(def?mstEsc(def):'<span style="color:#a78bfa;font-size:16px">no definition yet</span>')+'</div>'+((def||_rec)?mstFlipBtn(session,_rec):"");
   c+='<div class="mast-flip-hint">\u{1F4A1} tap to flip back</div></div>';
   return c+'</div></div></div>';
 }
@@ -49698,7 +49798,7 @@ function _renderMasteryInner(el){
     const _learnFlip=isIntro&&_catMode==="quiz"&&!!_vocabDef;
     // 🔊 Spell: the front only SAYS the word (hear it, spell it out loud); flip to check.
     const _isSpell=_catMode==="spell";
-    const _spBtn='<button onclick="event.stopPropagation();mastSpellSay(\''+String(it.id).replace(/'/g,"\\'")+'\')" style="padding:18px 34px;border-radius:999px;border:2.5px solid #4f46e5;background:#eef2ff;color:#4f46e5;font-size:30px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;position:relative;z-index:3">\u{1F50A} Hear it</button>';
+    const _spBtn='<button onclick="event.stopPropagation();ttsFlipSay(this)" style="padding:18px 34px;border-radius:999px;border:2.5px solid #4f46e5;background:#eef2ff;color:#4f46e5;font-size:30px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;position:relative;z-index:3">\u{1F50A} Hear it</button>';
     if(_catMode==="flip"||_isRule||_learnFlip||_isSpell){
       // Reversed deck (Admin → Restart reversed): definition on the FRONT, word on the
       // back — the second pass of a mastered flip deck. The word's visual moves to the
@@ -49707,16 +49807,23 @@ function _renderMasteryInner(el){
       // Voice of the definition — rides whichever side SHOWS the definition
       // (stopPropagation so the tap plays instead of flipping). Mom's recording wins;
       // with no clip, the browser reads it aloud (🗣 TTS fallback).
+      // 🔊 TTS (her report 2026-10-07): the button calls ttsFlipSay, which reads the side SHOWING at tap
+      // time from the card's per-side text (_ttsSide below) — a 🇬🇧→🇩🇪 card's back used to read the
+      // English definition from the front instead of the German word it shows.
+      const _hasRec=!!mastGetDefAudio(masteryKid,it.prompt), _sayDef=mastItemSpeakText(it,it.prompt);
+      const _ttsSide=_isSpell?{front:it.prompt,back:it.prompt}
+        :_faceRev?{front:_sayDef,recFront:(it.dir!=="prod"?it.prompt:""),back:it.prompt,recBack:(it.dir==="prod"?it.prompt:"")}
+        :_faceName?{back:it.prompt}   // "guess the name": the back shows only the name
+        :{front:it.prompt,back:_sayDef,recBack:it.prompt};
       let _audBtn='';
       {
-        const _apEsc=it.prompt.replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
-        if(mastGetDefAudio(masteryKid,it.prompt)){
-          _audBtn='<button onclick="event.stopPropagation();mastPlayDefAudio(\''+_apEsc+'\')" style="margin-top:10px;padding:9px 20px;border-radius:999px;border:2px solid #7c3aed;background:#f5f3ff;color:#7c3aed;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;position:relative;z-index:3">\u{1F50A} Hear it</button>';
+        if(_hasRec&&!_faceName){
+          _audBtn='<button onclick="event.stopPropagation();ttsFlipSay(this)" style="margin-top:10px;padding:9px 20px;border-radius:999px;border:2px solid #7c3aed;background:#f5f3ff;color:#7c3aed;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;position:relative;z-index:3">\u{1F50A} Hear it</button>';
         } else if(_backText){
-          _audBtn='<button onclick="event.stopPropagation();mastSpeakItem(\''+_apEsc+'\')" style="margin-top:10px;padding:7px 16px;border-radius:999px;border:1.5px solid #c4b5fd;background:#fff;color:#7c3aed;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;position:relative;z-index:3">\u{1F5E3} Read it</button>';
+          _audBtn='<button onclick="event.stopPropagation();ttsFlipSay(this)" style="margin-top:10px;padding:7px 16px;border-radius:999px;border:1.5px solid #c4b5fd;background:#fff;color:#7c3aed;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;position:relative;z-index:3">\u{1F5E3} Read it</button>';
         }
       }
-      c+='<div class="mast-flip-wrap'+(mastFlipped?" flipped":"")+'" onclick="mastFlip()">';
+      c+='<div class="mast-flip-wrap'+(mastFlipped?" flipped":"")+'"'+ttsFlipAttrs(_ttsSide)+' onclick="mastFlip()">';
       c+='<div class="mast-flip-inner">';
       c+='<div class="mast-flip-front">';
       if(_isSpell){
