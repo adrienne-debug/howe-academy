@@ -5693,6 +5693,7 @@ function renderSettings(el,ah){
   // 2026-10-01: other families should not be able to turn pages on and off themselves. renderPagesCard() stays for the record.
   pinHtml+=renderFamilyRulesWrap();   // 🏠 all family-wide rules, one home (2026-10-02)
   pinHtml+=renderAIKeyCard();   // ✨ the family's Claude key (recipes from a paste or a photo, book scans, stories)
+  pinHtml+=renderTtsVoiceCard();   // 🔊 this device's spelling voice (2026-10-07)
   pinHtml+='<div class="rules-wrap">';
   pinHtml+='<div class="rules-hdr">Change PIN</div>';
   pinHtml+='<div class="rules-sub">This PIN is used for Mom mode, Admin, Blockouts, Points, and all locked areas.</div>';
@@ -41778,11 +41779,14 @@ function mastPlayDefAudio(src){
 function _ttsFileUrl(text){ let h=5381; const s=String(text); for(let i=0;i<s.length;i++){ h=(Math.imul(h,33)^s.charCodeAt(i))>>>0; } return "tts/"+h.toString(16)+".m4a"; }
 // One reused element (TV autoplay policies treat a gesture-primed element more kindly)
 // + loud failure breadcrumbs — a silent .catch() cost us a device-trip to learn nothing.
-function _ttsFilePlay(text){
+// rate: the baked files are at normal speed, so a spelling word plays a touch slower (pitch kept).
+function _ttsFilePlay(text,rate){
   try{
     const a=window._ttsAudio||(window._ttsAudio=new Audio());
     a.onerror=function(){ try{ dbg("tts file media error code="+(a.error&&a.error.code)+" src="+a.src.slice(-16)+" text="+String(text).slice(0,30)); }catch(e){} };
     a.src=_ttsFileUrl(text);
+    const pr=(rate&&rate<TTS_RATE)?Math.round(rate/TTS_RATE*100)/100:1;
+    try{ a.preservesPitch=true; a.defaultPlaybackRate=pr; a.playbackRate=pr; }catch(e){}
     const p=a.play();
     if(p&&p.catch) p.catch(function(e){ try{ dbg("tts file play blocked: "+(e&&e.name)+" "+(e&&e.message||"").slice(0,60)); }catch(e2){} });
   }catch(e){ try{ dbg("tts file play threw: "+e); }catch(e2){} }
@@ -41795,11 +41799,48 @@ let mastUtter=null;   // module-level ref so Safari can't GC the utterance while
 const TTS_VOICE_WAIT_MS=1500;   // longest a tap waits for the voice list before speaking anyway
 let _ttsVoice=null, _ttsWaiters=[], _ttsSeq=0;
 function _ttsVoices(){ try{ return (window.speechSynthesis&&speechSynthesis.getVoices())||[]; }catch(e){ return []; } }
-// An English voice: the device default if it's English, else US English, else any English, else the default.
-function _ttsPickVoice(vs){
-  const en=vs.filter(function(v){ return v&&/^en([-_]|$)/i.test(v.lang||""); });
-  return en.find(function(v){ return v.default; })||en.find(function(v){ return /^en[-_]US/i.test(v.lang); })||en[0]||vs.find(function(v){ return v&&v.default; })||vs[0]||null;
+// TTS_VOICE_START — the CLEAREST natural US-English voice on each device (her report 2026-10-07: the spelling
+// word "grasp" came out sounding like "grass"). The old pick took the device's default English voice, which on
+// a Mac / iPad can be a compact or novelty voice and on Chrome a UK one. Now: Mom's choice for THIS device
+// (Settings ▸ 🔊 Spelling voice, kept in this device's storage — voices differ per device, so it is never
+// synced), else the best-ranked voice below, else any US English, else any English, else the default.
+// Ranked best first; matched on the voice's name.
+const TTS_VOICE_RANK=[
+  /^(Ava|Zoe|Evan|Nathan|Samantha|Allison|Joelle|Noelle|Susan|Tom)\b.*\(Premium\)/i,      // Apple downloadable (iPad/Mac): best
+  /^(Ava|Zoe|Evan|Nathan|Samantha|Allison|Joelle|Noelle|Susan|Tom)\b.*\(Enhanced\)/i,     // Apple downloadable: very good
+  /^Microsoft (Aria|Jenny|Ava|Emma|Andrew|Brian|Guy|Michelle)\b.*Natural/i,                 // Edge / Windows neural
+  /^Google US English$/i,                                                                    // Chrome on a computer
+  /^(Samantha|Ava|Allison|Zoe|Evan|Nathan|Susan|Tom|Nicky|Aaron|Joelle|Noelle)\b/i,         // Apple built-in
+  /^en-us-x-\w+-network$/i,                                                                 // Android / LG (Google speech, online)
+  /^en-us-x-\w+-local$/i,                                                                   // Android / LG (Google speech, offline)
+  /^Microsoft (Zira|David|Mark)\b/i                                                         // Windows classic
+];
+// Apple's joke and robotic voices — never picked on their own (Mom can still choose one).
+const TTS_VOICE_NOVELTY=/^(Albert|Bad News|Bahh|Bells|Boing|Bubbles|Cellos|Deranged|Eddy|Flo|Fred|Good News|Grandma|Grandpa|Hysterical|Jester|Junior|Kathy|Organ|Pipe Organ|Ralph|Reed|Rocko|Sandy|Shelley|Superstar|Trinoids|Whisper|Wobble|Zarvox)\b/i;
+const TTS_VOICE_KEY="ha_tts_voice";   // this device's chosen voice (voiceURI), HA_LS only
+function _ttsIsEn(v){ return !!(v&&/^en([-_]|$)/i.test(v.lang||"")); }
+function _ttsScore(v){
+  const lang=String(v.lang||"").replace("_","-");
+  const name=String(v.name||"");
+  let s=/^en-US$/i.test(lang)?1000:(/^en$/i.test(lang)?500:0);
+  if(TTS_VOICE_NOVELTY.test(name)) s-=1500;
+  const r=TTS_VOICE_RANK.findIndex(function(re){ return re.test(name); });
+  if(r>=0) s+=(TTS_VOICE_RANK.length-r)*10;
+  if(v.default) s+=1;
+  return s;
 }
+// English voices, clearest first (the order Mom's picker lists them).
+function _ttsRanked(vs){
+  return vs.filter(_ttsIsEn).map(function(v,i){ return {v:v,s:_ttsScore(v),i:i}; })
+    .sort(function(a,b){ return b.s-a.s||a.i-b.i; }).map(function(x){ return x.v; });
+}
+function _ttsChosen(){ try{ return HA_LS.getItem(TTS_VOICE_KEY)||""; }catch(e){ return ""; } }
+function _ttsPickVoice(vs){
+  const want=_ttsChosen();
+  if(want){ const m=vs.find(function(v){ return v&&(v.voiceURI===want||v.name===want); }); if(m) return m; }
+  return _ttsRanked(vs)[0]||vs.find(function(v){ return v&&v.default; })||vs[0]||null;
+}
+// TTS_VOICE_END
 function _ttsVoicesLoaded(){
   const vs=_ttsVoices(); if(!vs.length) return false;
   if(!_ttsVoice||vs.indexOf(_ttsVoice)<0) _ttsVoice=_ttsPickVoice(vs);
@@ -41822,23 +41863,26 @@ function _ttsWhenVoices(fn){
 // Prime at load, so the list is usually ready before the first tap.
 try{ if(window.speechSynthesis){
   _ttsVoicesLoaded();
-  const _onV=function(){ if(_ttsVoicesLoaded()) _ttsFlush(); };
+  const _onV=function(){ if(_ttsVoicesLoaded()){ _ttsFlush(); try{ if(typeof ttsVoiceCardRefresh==="function") ttsVoiceCardRefresh(); }catch(e){} } };
   if(speechSynthesis.addEventListener) speechSynthesis.addEventListener("voiceschanged",_onV); else speechSynthesis.onvoiceschanged=_onV;
 } }catch(e){}
 // What the engine reads: no markup (rule cards carry <u>/<span>), the AAS one-dot leader read as a period.
 function _ttsClean(text){ return String(text).replace(/<[^>]*>/g," ").replace(/․/g,".").replace(/\s+/g," ").trim(); }
 // ── THE speak function ───────────────────────────────────────────────────────
-// opts.rate (default 0.85). The pre-baked file is keyed on the RAW text (as gen_tts.js hashes it).
+// opts.rate (default TTS_RATE); opts.spell = a spelling word, read a little slower (TTS_SPELL_RATE —
+// her ask 2026-10-07, every letter sound has to come through). The pre-baked file is keyed on the RAW
+// text (as gen_tts.js hashes it).
+const TTS_RATE=0.85, TTS_SPELL_RATE=0.75;
 function mastSpeak(text,opts){
   if(!text) return;
   text=String(text);
-  const rate=(opts&&opts.rate)||0.85;
+  const rate=(opts&&opts.rate)||(opts&&opts.spell?TTS_SPELL_RATE:TTS_RATE);
   // One-time per session: leave a breadcrumb of this device's speech engine in _debug,
   // so a silent TV can be diagnosed from the log instead of guessed at.
   try{ if(!window._ttsProbed){ window._ttsProbed=1; dbg("tts probe: voices="+_ttsVoices().length+" ua=…"+navigator.userAgent.slice(-70)); } }catch(e){}
-  if(!window.speechSynthesis){ _ttsFilePlay(text); return; }   // no engine API at all: the baked file is the only voice
+  if(!window.speechSynthesis){ _ttsFilePlay(text,rate); return; }   // no engine API at all: the baked file is the only voice
   // Proven engine-less and still no voices: the file plays inside the tap (autoplay-safe).
-  if(window._ttsDead&&!_ttsVoicesLoaded()){ _ttsFilePlay(text); return; }
+  if(window._ttsDead&&!_ttsVoicesLoaded()){ _ttsFilePlay(text,rate); return; }
   const my=++_ttsSeq;   // a newer tap while the list loads wins — never two words at once
   _ttsWhenVoices(function(){ if(my===_ttsSeq) _ttsSpeakNow(text,rate); });
 }
@@ -41862,7 +41906,7 @@ function _ttsSpeakNow(text,rate){
     // didn't: if nothing is speaking shortly after speak() AND the list is STILL empty,
     // this browser has NO speech engine (LG's own devs confirm webOS TV has none). Flip to
     // the pre-generated Samantha files — including THIS word, a beat late but heard.
-    if(!hadVoices) setTimeout(function(){ try{ if(!speechSynthesis.speaking&&!_ttsVoices().length){ if(!window._ttsDead){ window._ttsDead=true; try{HA_LS.setItem("ha_tts_dead","1");}catch(e2){} dbg("tts: no engine — pre-gen audio fallback ON (persisted)"); } _ttsFilePlay(text); } }catch(e){} },700);
+    if(!hadVoices) setTimeout(function(){ try{ if(!speechSynthesis.speaking&&!_ttsVoices().length){ if(!window._ttsDead){ window._ttsDead=true; try{HA_LS.setItem("ha_tts_dead","1");}catch(e2){} dbg("tts: no engine — pre-gen audio fallback ON (persisted)"); } _ttsFilePlay(text,rate); } }catch(e){} },700);
     return;
   }
   try{
@@ -41881,7 +41925,7 @@ function _ttsSpeakNow(text,rate){
 function _ttsAttr(s){ return String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function ttsFlipAttrs(o){
   let a=""; o=o||{};
-  [["front","say-front"],["back","say-back"],["recFront","rec-front"],["recBack","rec-back"]].forEach(function(p){ if(o[p[0]]) a+=' data-'+p[1]+'="'+_ttsAttr(o[p[0]])+'"'; });
+  [["front","say-front"],["back","say-back"],["recFront","rec-front"],["recBack","rec-back"],["spell","tts-spell"]].forEach(function(p){ if(o[p[0]]) a+=' data-'+p[1]+'="'+_ttsAttr(o[p[0]])+'"'; });
   return a;
 }
 function ttsFlipSide(el){
@@ -41895,7 +41939,7 @@ function ttsFlipSay(el){
     const wrap=el.closest(".mast-flip-wrap");
     const rec=wrap.getAttribute("data-rec-"+side), say=wrap.getAttribute("data-say-"+side);
     if(rec&&mastGetDefAudio(masteryKid,rec)) mastPlayDefAudio(rec);
-    else if(say) mastSpeak(say);
+    else if(say) mastSpeak(say,{spell:wrap.getAttribute("data-tts-spell")==="1"});
   }catch(e){}
 }
 // 🔊 Spell decks (AAS · Spelling You See · Spelling): the word is SAID, never shown —
@@ -41905,7 +41949,7 @@ let mastSpellPeek=null;
 function mastSpellSay(id){
   let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
   const it=items.find(x=>x&&x.id===id);
-  if(it&&it.prompt) mastSpeak(String(it.prompt));
+  if(it&&it.prompt) mastSpeak(String(it.prompt),{spell:true});
 }
 function mastSpellPeekToggle(id){ mastSpellPeek=mastSpellPeek===id?null:id; _mastRe(); }
 // What a card's definition side says aloud (mirrored by scripts/gen_tts.js for the baked files).
@@ -41918,6 +41962,42 @@ function mastSpeakItem(prompt){
   mastSpeak(mastItemSpeakText(it,prompt));
 }
 // TTS_END
+
+// TTS_VOICE_CARD_START — 🔊 Settings ▸ Spelling voice (her ask 2026-10-07, after "grasp" sounded like "grass"):
+// Mom picks or previews the voice THIS device uses for every spoken word. Saved in this device's own storage
+// only (HA_LS "ha_tts_voice") — each iPad / TV / computer has its own voices — so nothing is written to Firebase.
+// "Automatic" = the ranked pick (TTS_VOICE_RANK). The preview says the reported pair at spelling speed.
+const TTS_PREVIEW_TEXT="grasp. grass. Your word is grasp.";
+function _ttsVoiceCardBody(){
+  const _e=function(x){ return String(x).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); };
+  if(!window.speechSynthesis) return '<div style="font-size:12px;color:var(--muted);padding:6px 0">This device has no speech voices — it plays the recorded Samantha files instead (spelling words a little slower).</div>';
+  const vs=_ttsVoices(), ranked=_ttsRanked(vs);
+  if(!ranked.length) return '<div style="font-size:12px;color:var(--muted);padding:6px 0">Loading this device\'s voices… <button onclick="ttsVoiceCardRefresh()" style="margin-left:6px;padding:4px 10px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Check again</button></div>';
+  const want=_ttsChosen(), auto=_ttsRanked(vs)[0];
+  const has=!!(want&&ranked.some(function(v){ return (v.voiceURI||v.name)===want||v.name===want; }));
+  let h='<div class="rules-row"><div class="rules-label">Voice on this device</div><select id="tts-voice-sel" onchange="ttsVoiceSet(this.value)" style="flex:1;min-width:0;max-width:100%;padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif">';
+  h+='<option value=""'+(has?'':' selected')+'>Automatic — clearest available ('+_e(auto.name)+')</option>';
+  ranked.forEach(function(v){ const id=v.voiceURI||v.name; h+='<option value="'+_e(id)+'"'+(has&&(id===want||v.name===want)?' selected':'')+'>'+_e(v.name)+' · '+_e(v.lang)+(v.localService===false?' · online':'')+'</option>'; });
+  h+='</select></div>';
+  h+='<div class="rules-row"><div class="rules-label"></div><button onclick="ttsVoicePreview()" style="padding:7px 14px;border-radius:9px;border:none;background:#4f46e5;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔊 Preview</button><span id="tts-voice-msg" style="font-size:12px;margin-left:10px;color:#16a34a"></span></div>';
+  h+='<div style="font-size:11px;color:var(--muted);padding:6px 0 0;line-height:1.45">Each device keeps its own choice. On an iPad or Mac, clearer voices (marked Enhanced or Premium) can be downloaded in Settings ▸ Accessibility ▸ Spoken Content ▸ Voices ▸ English; then pick one here.</div>';
+  return h;
+}
+function renderTtsVoiceCard(){
+  return '<div class="rules-wrap"><div class="rules-hdr">🔊 Spelling voice</div>'+
+    '<div class="rules-sub">The voice that reads spelling words and every 🔊 button. Spelling words are read a little slower.</div>'+
+    '<div class="rules-card open"><div class="rules-card-body" id="tts-voice-body">'+_ttsVoiceCardBody()+'</div></div></div>';
+}
+function ttsVoiceCardRefresh(){ try{ const el=document.getElementById("tts-voice-body"); if(el) el.innerHTML=_ttsVoiceCardBody(); }catch(e){} }
+function ttsVoiceSet(id){
+  if(!momHere()) return;
+  try{ if(id) HA_LS.setItem(TTS_VOICE_KEY,String(id)); else HA_LS.removeItem(TTS_VOICE_KEY); }catch(e){}
+  _ttsVoice=null; _ttsVoicesLoaded();   // re-pick now
+  const m=document.getElementById("tts-voice-msg"); if(m) m.textContent="✓ Saved for this device";
+  ttsVoicePreview();
+}
+function ttsVoicePreview(){ mastSpeak(TTS_PREVIEW_TEXT,{spell:true}); }
+// TTS_VOICE_CARD_END
 
 // ── "Show me" recognition step (Montessori three-period lesson, period 2) ────────
 // A ⭐ Learning FLASH card that's been shown at least once renders as recognition: the
@@ -45731,7 +45811,7 @@ function stStep(d){ if(!stUI) return; stUI.i=Math.max(0,Math.min(stUI.words.leng
 function stToGrade(){ if(stUI){ stUI.view="grade"; stRender(); } }
 function stSet(i,r){ if(!stUI) return; stUI.grades[i]=(stUI.grades[i]===r)?undefined:r; if(stUI.grades[i]===undefined) delete stUI.grades[i]; stRender(); }
 function stSetAll(r){ if(!stUI) return; stUI.words.forEach((w,i)=>{ stUI.grades[i]=r; }); stRender(); }
-function stSpeak(){ try{ if(!stUI) return; const w=stUI.words[stUI.i]; mastSpeak(w.name+(w.sentence?". "+w.sentence:"")); }catch(e){} }   // 🔊 TTS: the one shared speak path
+function stSpeak(){ try{ if(!stUI) return; const w=stUI.words[stUI.i]; mastSpeak(w.name+(w.sentence?". "+w.sentence:""),{spell:true}); }catch(e){} }   // 🔊 TTS: the one shared speak path
 function stRender(){
   if(!stUI){ stClose(); return; }
   let ov=document.getElementById("st-panel");
@@ -46331,7 +46411,7 @@ let wwUI=null;   // {kid,i,mode:"hear"|"gaps",tries,msg,done:{}}
 function wwOpen(kid){ const L=wwList(kid); if(!L.length) return; wwUI={kid,i:0,mode:"hear",tries:0,msg:"",done:{}}; wwRender(); }
 function wwClose(){ wwUI=null; const ov=document.getElementById("ww-panel"); if(ov) ov.remove(); try{ if(typeof _mastRe==="function") _mastRe(); }catch(e){} }
 function wwWord(it){ return String(it.answer||it.prompt||"").replace(/․/g,"."); }
-function wwSay(){ try{ if(!wwUI) return; const it=wwList(wwUI.kid)[wwUI.i]; if(!it) return; mastSpeak(wwWord(it),{rate:0.8}); }catch(e){} }   // 🔊 TTS: the one shared speak path
+function wwSay(){ try{ if(!wwUI) return; const it=wwList(wwUI.kid)[wwUI.i]; if(!it) return; mastSpeak(wwWord(it),{spell:true}); }catch(e){} }   // 🔊 TTS: the one shared speak path
 // "together" → "t_g_th_r": vowels become blanks (y stays) — the kid writes the WHOLE word, never just the gaps.
 function wwGaps(w){ return String(w).replace(/[aeiou]/gi,"_"); }
 function wwCheck(){
@@ -46505,7 +46585,7 @@ function mstIsSpellCard(card){ return !!(card&&card.deck&&mastGetCatMode(mastery
 function mstAutoPlayCurrent(session){
   if(!session||session.audio==="off"||!mstState) return;
   try{ const card=mstCurrent(mstState);
-    if(mstIsSpellCard(card)){ if(card.name) mastSpeak(card.name); return; }
+    if(mstIsSpellCard(card)){ if(card.name) mastSpeak(card.name,{spell:true}); return; }
     if(mstIsRuleCard(card)) return;   // language-arts rule cards: no sound   // 🔊 Spell: say the word itself (TTS — recordings are definitions)
     if(card&&mstCardMode(card)!=="rec") return;   // playing the German first would give away a say/type answer
     if(card&&card.name){ if(mastGetDefAudio(masteryKid,card.name)) mastPlayDefAudio(card.name); else mastSpeak(card.name); }
@@ -46551,7 +46631,7 @@ function mstCardHtml(session,card){
   if(mstIsSpellCard(card)){
     // 🔊 Spell deck: hear it, spell it out loud, flip to check — the word only on the back.
     const _say=(big)=>'<button onclick="event.stopPropagation();ttsFlipSay(this)" style="'+(big?'margin:18px 0 6px;padding:18px 34px;border:2.5px solid #4f46e5;font-size:30px':'margin-top:10px;padding:8px 18px;border:2px solid #4f46e5;font-size:15px')+';border-radius:999px;background:#eef2ff;color:#4f46e5;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;position:relative;z-index:3">\u{1F50A} Hear it</button>';
-    let s='<div class="mast-slide"><div class="mast-flip-wrap'+(mstFlipped?" flipped":"")+'"'+ttsFlipAttrs({front:name,back:name})+' onclick="mstFlip()"><div class="mast-flip-inner">';
+    let s='<div class="mast-slide"><div class="mast-flip-wrap'+(mstFlipped?" flipped":"")+'"'+ttsFlipAttrs({front:name,back:name,spell:1})+' onclick="mstFlip()"><div class="mast-flip-inner">';
     s+='<div class="mast-flip-front"><div class="mast-slide-cat">'+mstEsc(card.deck||session.name||"")+_lrn+'</div>';
     s+=_say(true);
     s+='<div style="font-size:14px;color:#4f46e5;font-weight:700">\u{1F3A4} spell it out loud, letter by letter</div>';
@@ -49842,7 +49922,7 @@ function _renderMasteryInner(el){
       // time from the card's per-side text (_ttsSide below) — a 🇬🇧→🇩🇪 card's back used to read the
       // English definition from the front instead of the German word it shows.
       const _hasRec=!!mastGetDefAudio(masteryKid,it.prompt), _sayDef=mastItemSpeakText(it,it.prompt);
-      const _ttsSide=_isSpell?{front:it.prompt,back:it.prompt}
+      const _ttsSide=_isSpell?{front:it.prompt,back:it.prompt,spell:1}
         :_faceRev?{front:_sayDef,recFront:(it.dir!=="prod"?it.prompt:""),back:it.prompt,recBack:(it.dir==="prod"?it.prompt:"")}
         :_faceName?{back:it.prompt}   // "guess the name": the back shows only the name
         :{front:it.prompt,back:_sayDef,recBack:it.prompt};
