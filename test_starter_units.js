@@ -59,7 +59,13 @@ const s6 = cards.filter(c => c.stage === 6), s7 = cards.filter(c => c.stage === 
 ok("724 cards = 200 (+ −) + 313 (× ÷: 0s + 1s–12s) + 211 (stage 8)", cards.length === 724 && s6.length === 200 && s7.length === 313 && s8.length === 211);
 ok("0s first: 0×0…0×12 then 1×0…12×0, all = 0, no ÷0", (() => { const f = cards.filter(c => c.family === "× ÷ · 0s"); return f.length === 25 && f[0].name === "0\u00d70" && f[13].name === "1\u00d70" && f.every(c => c.def === "0") && !cards.some(c => /\u00f70$/.test(c.name)) && s7[0].family === "× ÷ · 0s"; })());
 const ANDREW = "0+0 0-0 0+1 1+0 1-0 1-1 0+2 1+1 2+0 2-0 2-1 2-2 0+3 1+2 2+1 3+0 3-0 3-1 3-2 3-3 0+4 1+3 2+2 3+1 4+0 4-0 4-1 4-2 4-3 4-4 0+5 1+4 2+3 3+2 4+1 5+0 5-0 5-1 5-2 5-3 5-4 5-5 0+6 1+5 2+4 3+3 4+2 5+1 6+0 6-0 6-1 6-2 6-3 6-4 6-5 6-6 0+7 1+6 2+5 3+4 4+3 5+2 6+1 7+0 7-0 7-1 7-2 7-3 7-4 7-5 7-6 7-7 0+8 1+7 2+6 3+5 4+4 5+3 6+2 7+1 8+0 8-0 8-1 8-2 8-3 8-4 8-5 8-6 8-7 8-8 1+8 8+1 9-8 9-1 2+7 7+2 9-7 9-2 3+6 6+3 9-6 9-3 4+5 5+4 9-5 9-4 0+9 9+0 9-0 9-9 1+9 2+8 3+7 4+6 5+5 6+4 7+3 8+2 9+1 10-1 10-2 10-3 10-4 10-5 10-6 10-7 10-8 10-9 2+9 3+8 4+7 5+6 6+5 7+4 8+3 9+2 11-2 11-3 11-4 11-5 11-6 11-7 11-8 11-9 3+9 4+8 5+7 6+6 7+5 8+4 9+3 12-3 12-4 12-5 12-6 12-7 12-8 12-9 4+9 5+8 6+7 7+6 8+5 9+4 13-4 13-5 13-6 13-7 13-8 13-9 5+9 6+8 7+7 8+6 9+5 14-5 14-6 14-7 14-8 14-9 6+9 7+8 8+7 9+6 15-6 15-7 15-8 15-9 7+9 8+8 9+7 16-7 16-8 16-9 8+9 9+8 17-8 17-9 9+9 18-9".split(" ");
-ok("+ − stage == Andrew's live DeWalt bank, same names, same order", JSON.stringify(s6.map(c => c.name)) === JSON.stringify(ANDREW));
+ok("+ − stage == Andrew's live DeWalt bank, same 200 names", s6.length === ANDREW.length && JSON.stringify(s6.map(c => c.name).sort()) === JSON.stringify(ANDREW.slice().sort()));
+ok("fact-family order (her rule 10/7): each family a+b, b+a, n−b, n−a, doubles a+a, n−a, zero family last", (() => {
+  const fam = n => s6.filter(c => c.family === "+ − · " + n + " family").map(c => c.name).join(" ");
+  return fam(9) === "1+8 8+1 9-8 9-1 2+7 7+2 9-7 9-2 3+6 6+3 9-6 9-3 4+5 5+4 9-5 9-4 0+9 9+0 9-0 9-9" &&
+    fam(10) === "1+9 9+1 10-9 10-1 2+8 8+2 10-8 10-2 3+7 7+3 10-7 10-3 4+6 6+4 10-6 10-4 5+5 10-5" &&
+    fam(18) === "9+9 18-9" && fam(2) === "1+1 2-1 0+2 2+0 2-0 2-2" && fam(0) === "0+0 0-0"; })());
+ok("families still run 0 → 18 in order", (() => { const n = s6.map(c => +/(\d+) family/.exec(c.family)[1]); return n.every((x, i) => i === 0 || x >= n[i - 1]); })());
 const evalCard = n => { const m = /^(\d+)([+\-×÷])(\d+)$/.exec(n); if (!m) return NaN; const x = +m[1], y = +m[3];
   return m[2] === "+" ? x + y : m[2] === "-" ? x - y : m[2] === "×" ? x * y : x / y; };
 ok("every + − × ÷ card's answer is right", s6.concat(s7).every(c => String(evalCard(c.name)) === c.def));

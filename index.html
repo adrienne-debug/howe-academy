@@ -31527,14 +31527,17 @@ function _mfpCards(){
   const cards=[]; let order=0;
   const add=(name,ans,family,stage)=>cards.push({name,def:String(ans),family,stage,order:++order});
   // Stage 6 — + and −, Abeka families: adding by the SUM, subtracting by the STARTING number, zeros in.
+  // FACT-FAMILY ORDER (her rule 2026-10-04/07: "1+8=9 9-1=8 9-8=1" — a fact family is three numbers):
+  // inside every family the cards come one fact family at a time — a+b, b+a, n−b, n−a (a double has two:
+  // a+a, n−a) — smallest first, the zero family (0+n, n+0, n−0, n−n) last. 10–18: single-digit facts only.
+  // Same 200 cards as before, new order only (it is the order new cards are introduced in).
   for(let n=0;n<=18;n++){
     const fam="+ − · "+n+" family";
-    if(n===9){  // the 9 family in true fact-family order (a+b, b+a, 9−b, 9−a), zeros last
-      for(let a=1;a<=4;a++){ add(a+"+"+(9-a),9,fam,6); add((9-a)+"+"+a,9,fam,6); add("9-"+(9-a),a,fam,6); add("9-"+a,9-a,fam,6); }
-      add("0+9",9,fam,6); add("9+0",9,fam,6); add("9-0",9,fam,6); add("9-9",0,fam,6); continue; }
-    const lo=n<=9?0:n-9, hi=n<=9?n:9;   // 10–18: single-digit facts only
-    for(let a=lo;a<=hi;a++) add(a+"+"+(n-a),n,fam,6);
-    for(let k=lo;k<=hi;k++) add(n+"-"+k,n-k,fam,6);
+    for(let a=Math.max(1,n-9);a<=Math.floor(n/2);a++){ const b=n-a;
+      if(a===b){ add(a+"+"+b,n,fam,6); add(n+"-"+a,a,fam,6); continue; }
+      add(a+"+"+b,n,fam,6); add(b+"+"+a,n,fam,6); add(n+"-"+b,a,fam,6); add(n+"-"+a,b,fam,6); }
+    if(n===0){ add("0+0",0,fam,6); add("0-0",0,fam,6); }
+    else if(n<=9){ add("0+"+n,n,fam,6); add(n+"+0",n,fam,6); add(n+"-0",n,fam,6); add(n+"-"+n,0,fam,6); }
   }
   // Stage 7 — × and ÷ through the 12s, one table at a time (6×1…6×12, then 6÷6…72÷6), together as
   // fact families — research: division is learned as multiplication with a missing factor (her call
@@ -45881,7 +45884,8 @@ function mstSessions(kid) {
       skipDecks: rec.skipDecks || [],
       pattern: mstPatternClean(rec.pattern),
       bothWays: !!rec.bothWays,
-      unit: rec.unit, stage: rec.stage, perDay: rec.perDay, quick: rec.quick, untested: rec.untested   // 🩺 CHECKUP
+      unit: rec.unit, stage: rec.stage, perDay: rec.perDay, quick: rec.quick, untested: rec.untested,   // 🩺 CHECKUP
+      howto: (typeof mstHowtoClean === "function") ? mstHowtoClean(rec.howto) : ""   // 📋 MST_HOWTO
     });
   });
   // Second pass — the 📚 Daily Study catch-all (kind "all") owns every deck that no NAMED deck
@@ -46156,6 +46160,30 @@ function mstPile(kid, sid, pn, todayLog) {
 }
 
 // 7. Sitting state machine.
+// MST_HOWTO_START — 📋 "How it works" on a study session (her ask 2026-10-04, DeWalt: "instructions for tomorrow …
+// that tells the kids they get to be the teacher and quiz each other … in kid appropriate language"). Mom writes it
+// in the session editor (mastery/<kid>_sessions/<sid>/howto, saved with the session); the kid sees it at the top of
+// the session, one tap folds it away (remembered per device per session). Nothing is invented by the app: no text,
+// no box. Order, cards and the ladder are untouched.
+const MST_HOWTO_MAX = 700;
+function mstHowtoClean(t) { return String(t == null ? "" : t).replace(/\r/g, "").replace(/[ \t]+\n/g, "\n").trim().slice(0, MST_HOWTO_MAX); }
+function _mstHowtoKey(kid, sid) { return "ha_mst_howto_" + kid + "_" + sid; }
+function mstHowtoFolded(kid, sid) { try { return HA_LS.getItem(_mstHowtoKey(kid, sid)) === "1"; } catch (e) { return false; } }
+function mstHowtoToggle(kid, sid) {
+  try { if (mstHowtoFolded(kid, sid)) HA_LS.removeItem(_mstHowtoKey(kid, sid)); else HA_LS.setItem(_mstHowtoKey(kid, sid), "1"); } catch (e) {}
+  if (typeof renderAll === "function") renderAll();
+}
+function mstHowtoHtml(kid, session) {
+  const t = session && mstHowtoClean(session.howto); if (!t) return "";
+  const E = v => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const J = v => String(v).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const folded = mstHowtoFolded(kid, session.sid);
+  let h = '<div style="background:#fefce8;border:2px solid #fde68a;border-radius:16px;padding:12px 16px;margin-bottom:16px;font-family:\'DM Sans\',sans-serif">';
+  h += '<div onclick="mstHowtoToggle(\'' + J(kid) + '\',\'' + J(session.sid) + '\')" style="display:flex;align-items:center;gap:8px;cursor:pointer"><span style="font-size:16px;font-weight:800;color:#a16207;flex:1">\u{1F4CB} How it works</span><span style="font-size:12px;font-weight:700;color:#a16207">' + (folded ? "show \u25BE" : "hide \u25B4") + '</span></div>';
+  if (!folded) h += '<div style="margin-top:8px;font-size:15px;line-height:1.55;color:#3f3f46;white-space:pre-line">' + E(t) + '</div>';
+  return h + '</div>';
+}
+// MST_HOWTO_END
 function mstSittingInit(pile, session, opts) {
   const cards = {};
   const _pat = session && mstPatternClean(session.pattern);
@@ -46183,6 +46211,18 @@ function mstSittingInit(pile, session, opts) {
     queue.push(key);
     counts.new++;
   });
+  // MST_MIXALL_START — Order: shuffle mixes the WHOLE sitting (her ask 2026-10-04, Andrew's facts: "when new
+  // ones are added they are mixed in in random order"). Before, the queue was always reviews → learning → new
+  // (new last, in bank order), so a fact family's four new cards came back to back (1+8, 8+1, 9−1, 9−8) and could
+  // be answered by pattern. Order only — every card keeps its own dots/tier, so progress is tracked exactly as
+  // before. Seeded by the day + the pile, so it's stable for the day and different tomorrow. No session used
+  // "shuffle" when this landed (checked all 8 kids), so no one's sitting changed unless Mom picks it.
+  if (session && session.order === "shuffle" && queue.length > 1) {
+    const _day = (opts && opts.day) || new Date().toDateString();
+    const _mixed = _mstShuffle(queue, _mstMulberry32(_mstHashStr(_day + "|" + queue.join("|"))));
+    queue.length = 0; _mixed.forEach(k => queue.push(k));
+  }
+  // MST_MIXALL_END
   const passes = (session && session.passes != null) ? session.passes : MST_SESSION_DEFAULTS.passes;
   return { cards, queue, passes, counts };
 }
@@ -47560,6 +47600,7 @@ function renderMastStudy(){
     : ((pile.newNames||[]).length+' new · '+(pile.reviews||[]).length+' due · '+(pile.learning||[]).length+' learning'))+'</div>';
   if(todayLog) h+='<div style="margin-top:8px;font-size:13px;color:#16a34a;font-weight:700">Done today: '+(todayLog.total||0)+' cards'+(todayLog.miss?', '+todayLog.miss+' again':'')+'</div>';
   h+='</div>';
+  if(typeof mstHowtoHtml==="function") h+=mstHowtoHtml(kid,session);   // 📋 MST_HOWTO
   const running=mstState&&mstSid===session.sid;
   if(running){
     let prog={done:0,total:0,remaining:0,againCount:0};
@@ -48447,6 +48488,7 @@ function mhqSessSave() {
     rec.focusDecks = mhqSessForm.focusDecks || 0;
     const _pat = mstPatternClean(mhqSessForm.pattern); if (_pat) rec.pattern = _pat;
   }
+  { const _ht = (typeof mstHowtoClean === "function") ? mstHowtoClean(mhqSessForm.howto) : ""; if (_ht) rec.howto = _ht; }   // 📋 MST_HOWTO
   if (!masteryData[kid + "_sessions"]) masteryData[kid + "_sessions"] = {};
   masteryData[kid + "_sessions"][sid] = rec;
   if (typeof db !== "undefined" && db) db.ref("mastery/" + kid + "_sessions/" + sid).set(rec);
@@ -48559,6 +48601,10 @@ function _mhqRenderSessForm(kid) {
   h += '<div style="' + lbl + '">Audio</div><div style="display:flex;gap:6px">';
   ["front", "back", "off"].forEach(function (a) { h += _mhqPill(a, f.audio === a, "mhqSessSet('audio','" + a + "')"); });
   h += '</div>';
+  if (typeof mstHowtoClean === "function") {   // 📋 MST_HOWTO
+    h += '<div style="' + lbl + '">How it works <span style="font-weight:600;color:var(--muted)">(kids see this at the top of the session · optional)</span></div>';
+    h += '<textarea id="mhq-sess-howto" rows="6" maxlength="' + MST_HOWTO_MAX + '" onchange="mhqSessSet(\'howto\',this.value)" placeholder="e.g. You get to be the teacher! …" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid var(--border);border-radius:10px;font-size:13px;font-family:\'DM Sans\',sans-serif;line-height:1.45">' + mhqEsc(f.howto || "") + '</textarea>';
+  }
   if (!isMix) {
     h += '<div style="' + lbl + '">Order</div><div style="display:flex;gap:6px">';
     ["bank", "shuffle"].forEach(function (o) { h += _mhqPill(o, f.order === o, "mhqSessSet('order','" + o + "')"); });

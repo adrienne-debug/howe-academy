@@ -102,7 +102,7 @@ function andrewMastery(u) {
   ok("map: gate written as a leaf", w.G.writes.some(x => x[0] === "set" && x[1] === "mastery/caleb_settings/cat_gate/Math Facts" && x[2].subject === "arithmetic_2"));
   ok("shared unit cards untouched (no ch leaked)", w.u.decks.every(d => d.cards.every(c => c.ch == null)));
   const w2 = world({ curr, gateCh: 36 }); enroll(w2, "caleb", 6, "+ − · 9 family", "arithmetic_2", "abeka_arith_2");
-  ok("map: at L36 the 10s start (3 cards)", JSON.stringify(items(w2, "caleb").filter(i => i.status === "introduction").map(i => i.prompt)) === JSON.stringify(["1+9", "2+8", "3+7"])); }
+  ok("map: at L36 the 10s start, one fact family at a time", JSON.stringify(items(w2, "caleb").filter(i => i.status === "introduction").map(i => i.prompt)) === JSON.stringify(["1+9", "9+1", "10-9"])); }
 { const w = world(); enroll(w, "caleb", 6, "", "", "");
   ok("no book: starts at 0+0, 0-0, 0+1; no gate", JSON.stringify(items(w, "caleb").map(i => i.prompt)) === JSON.stringify(["0+0", "0-0", "0+1"]) && !w.G.masteryData.caleb_settings.cat_gate); }
 { const w = world({ curr: { subjects: { taylor: { saxon: { display: "Saxon 8/7" } } } } }); enroll(w, "taylor", 7, "× ÷ · 12s", "saxon", "abeka_arith_2");
