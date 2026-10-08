@@ -3927,6 +3927,7 @@ function initFb() {
     db.ref("settings/whatsNewSeen").on("value",s=>{ if(typeof whatsNewOnValue==="function") whatsNewOnValue(s.val()); });   // ✨ the What's new she has read
     db.ref("famProgress").on("value",s=>{ if(typeof famProgOnValue==="function") famProgOnValue(s.val()); });   // 📚 family subjects' shared place-in-book   // 🙋 helper profiles
     try{ db.ref("helperDays").orderByKey().limitToLast(3).on("value",s=>{ helperDaysOnValue(s.val()); }); }catch(e){}   // 🙋 who is here today
+    try{ db.ref("helpRequests").orderByKey().limitToLast(60).on("value",s=>{ hrOnValue(s.val()); }); }catch(e){}   // 🙋 NEEDMOM: kids asking for Mom
     db.ref("worksheets").on("value",s=>{ wsOnValue(s.val()); });   // 📋 worksheets from Adrienne
     db.ref("messages").on("value",s=>{ msgOnValue(s.val()); });     // ✉ Mom's messages to Adrienne (text only — photos load on demand)
     db.ref("config/rules").on("value",s=>{
@@ -6660,6 +6661,247 @@ function msgOnValue(v){
   if(key!==msgKey){ msgKey=key; try{ renderAll(); }catch(e){} }
 }
 // ── WORKSHEETS_END ──
+// ── NEEDMOM_START ── 🙋 "I need Mom" — a kid asks for help from their own schedule (ask 2026-10-07) ──────────
+// Her ask 10/7: a "🙋 I need Mom" button on a kid's own schedule view (kid device). Tapping it asks
+// "What do you need help with?" (optional short note + which card), saves a request, and shows it on Mom's side —
+// Mom's Day and the Mom-mode schedule — as an item she marks "✓ Helped". The kid's schedule keeps going: nothing
+// pauses, no card is touched. Works for every family (roster names/colours, no family gate).
+// v2 (her ask 10/7, same evening): "it needs to have a pop up so they see it and ask to help now or schedule next
+// (if working with another kid)". A new ask pops up on Mom's side — every Mom-mode device, and any device with
+// Mom's Day open — with 🙋 Help now / ⏭ Help next. Her picks: "next" goes INTO THE MOM LOOP; pop-up on Mom mode +
+// Mom's Day.
+//   · Help now  → the loop shows Mom helping that kid right now. A started session with another kid keeps its
+//                 hold (her rule 9/01 "once checked, who has it has it") — it resumes after ✓ Helped.
+//   · Help next → the kid is next in the loop: if Mom is mid-session with another kid (the loop's hold), the
+//                 help turn starts when that Mom card is checked (the hold is NOT re-pointed at that kid's next
+//                 Mom card); with no session running it starts now.
+//   · ✓ Helped  → the help turn ends; the loop carries on exactly where it was (the cursor never moves — a help
+//                 turn, like a borrowed turn, costs nobody their place).
+// The help turn is a LAYER over the loop's decision (mlNow), never inside it: mlNow also drives the day's lay
+// (_mlQueueLayCore puts now.kid's Mom block first), and a kid asking about a non-Mom card must not drag their
+// Mom block forward. So cards never move because of an ask; the strip, the kid banners, early-finish's "is Mom
+// free" and the hold hand-off read hrLoopTurn().
+// Data (each family's own DB): helpRequests/<id> =
+//   {kid, at, cardId?, cardTitle?, note?, status:"open"|"now"|"next"|"helped", decidedAt?, helpedAt?}
+//   id = "hr_<ms>_<rand>" so keys sort by time; the listener keeps the newest 60.
+//   Asking = ONE new record (set at its own id); Help now/next = ONE update {status, decidedAt}; ✓ Helped = ONE
+//   update {status:"helped", helpedAt}. Asks older than 12 h drop off Mom's side.
+const HR_MAX_NOTE=140, HR_SHOW_MS=12*3600*1000;
+let hrData={}, hrKey="", hrPopSeen={};   // hrPopSeen: asks this device's pop-up was closed on ("Later") — per device, not stored
+function hrOpenList(kidId,now){
+  now=now||Date.now();
+  return Object.entries(hrData||{})
+    .filter(([id,r])=>r&&(r.status==="open"||r.status==="now"||r.status==="next")&&r.kid&&(now-(r.at||0))<HR_SHOW_MS&&(!kidId||r.kid===kidId))
+    .sort((a,b)=>(a[1].at||0)-(b[1].at||0));
+}
+function hrTime(ms){ try{ return new Date(ms).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}); }catch(e){ return ""; } }
+function hrKidName(k){ return (typeof KID_NAME!=="undefined"&&KID_NAME&&KID_NAME[k])||cap(k); }
+// ── the loop layer ──
+// → {id, kid, mode:"now"|"next", active, after?} for the help turn, or null. "now" asks go first (oldest decision
+// first); then "next" asks, which wait (active:false) while Mom's started session with ANOTHER kid is still held.
+function hrLoopTurn(){
+  try{
+    const by=(x,y)=>((x[1].decidedAt||0)-(y[1].decidedAt||0))||((x[1].at||0)-(y[1].at||0));
+    const live=hrOpenList().filter(([id,r])=>r.status==="now"||r.status==="next");
+    if(!live.length) return null;
+    const nowQ=live.filter(([id,r])=>r.status==="now").sort(by);
+    if(nowQ.length) return {id:nowQ[0][0],kid:nowQ[0][1].kid,mode:"now",active:true};
+    const nx=live.sort(by)[0];
+    const n=(typeof mlNow==="function")?mlNow():null;
+    if(n&&n.held&&n.kid&&n.kid!==nx[1].kid) return {id:nx[0],kid:nx[1].kid,mode:"next",active:false,after:n.kid};
+    return {id:nx[0],kid:nx[1].kid,mode:"next",active:true};
+  }catch(e){ return null; }
+}
+// Mom said help now/next to a DIFFERENT kid → don't lock (or re-point) a session on this one: the loop hands her over.
+function hrBlocksHold(kid){
+  return hrOpenList().some(([id,r])=>(r.status==="now"||r.status==="next")&&r.kid!==kid);
+}
+// The Mom loop strip's help line (MOMLOOP mlStripHTML).
+function hrStripLineHTML(){
+  const t=hrLoopTurn(); if(!t) return "";
+  const r=(hrData||{})[t.id]||{};
+  const what=r.cardTitle?(' — '+esc(r.cardTitle)):'';
+  return '<div style="font-size:12px;font-weight:800;color:#92400e;background:#fffbeb;border-radius:8px;padding:4px 8px;margin:0 0 6px">🙋 '+
+    (t.active?('Helping <span style="color:#b45309">'+esc(hrKidName(t.kid))+'</span>'+what+(t.mode==="now"?' (help now)':' (help next)'))
+      :('Next: <span style="color:#b45309">'+esc(hrKidName(t.kid))+'</span>'+what+' — after this card with '+esc(hrKidName(t.after))))+
+    ' <button onclick="hrHelpedTap(\''+esc(t.id)+'\')" style="margin-left:4px;border:none;background:#16a34a;color:#fff;border-radius:7px;padding:2px 8px;font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Helped</button></div>';
+}
+// The kid who has Mom in the loop, while she is off helping someone else (MOMLOOP mlBannerHTML).
+function hrAwayBannerHTML(t){
+  return '<div style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:0 10px 10px 0;padding:10px 12px;margin:0 0 8px;display:flex;align-items:center;gap:9px">'+
+    '<span style="font-size:19px">🙋</span><div><div style="font-size:12.5px;font-weight:800;color:#92400e">Mom is helping '+esc(hrKidName(t.kid))+' for a minute</div>'+
+    '<div style="font-size:10.5px;color:#b45309">Keep going on your own work — she\'ll be right back.</div></div></div>';
+}
+// ── the kid's side ──
+// The kid's button shows on their OWN view: Kids' Corner / the kiosk's My Day, or a kid's Schedule page when Mom
+// isn't here (momHereCards = Mom mode outside Kids' Corner, i.e. Mom looking at a kid's page — she doesn't ask herself).
+function hrKidCanAsk(k){
+  if(!k||k==="all"||k==="mom"||(typeof ROSTER!=="undefined"&&ROSTER.indexOf(k)<0)) return false;
+  return !(typeof momHereCards==="function"&&momHereCards());
+}
+function hrKidButtonHTML(k){
+  if(!hrKidCanAsk(k)) return "";
+  const col=(typeof KID_COLOR!=="undefined"&&KID_COLOR[k])||"#2B7A78";
+  const mine=hrOpenList(k), turn=hrLoopTurn();
+  let h='<div style="margin:0 0 10px">'+
+    '<button onclick="hrAskOpen(\''+esc(k)+'\')" style="width:100%;padding:11px 14px;border-radius:12px;border:2px solid '+col+';background:#fff;color:'+col+';font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🙋 I need Mom</button>';
+  mine.forEach(([id,r])=>{
+    const what=r.cardTitle?' — '+esc(r.cardTitle):'';
+    let msg;
+    if(r.status==="now"&&turn&&turn.id===id) msg='🙋 Mom is coming to help you now!';
+    else if(r.status==="now"||r.status==="next") msg='⏭ Mom will help you next'+what+'. Keep going with another card until she comes.';
+    else msg='⏳ You asked Mom at '+esc(hrTime(r.at))+what+'. Keep going with your next card!';
+    h+='<div style="margin-top:6px;padding:7px 11px;border-radius:10px;background:#fffbeb;border:1px solid #fde68a;font-size:12.5px;font-weight:700;color:#92400e">'+msg+'</div>';
+  });
+  return h+'</div>';
+}
+// Today's cards still to do, for "which card?" (the same lay the kid's page shows).
+function hrKidCards(k){
+  let cards=[]; try{ cards=_kcTodayCards(k); }catch(e){}
+  const ck=(typeof checked!=="undefined"&&checked)||{};
+  return cards.filter(t=>t&&t.id&&!ck[t.id]&&!/^(break|brain break)$/i.test(t.title||""));
+}
+function hrAskOpen(k){
+  if(!hrKidCanAsk(k)) return;
+  let ov=document.getElementById("hr-panel"); if(ov) ov.remove();
+  ov=document.createElement("div"); ov.id="hr-panel"; ov.dataset.kid=k;
+  ov.style.cssText="position:fixed;inset:0;z-index:10050;background:rgba(15,23,42,.45);overflow:auto;font-family:'DM Sans',sans-serif;padding:18px 12px";
+  ov.onclick=function(e){ if(e.target===ov) hrAskClose(); };
+  const cards=hrKidCards(k);
+  ov.innerHTML='<div style="max-width:440px;margin:40px auto 0;background:#fff;border-radius:16px;padding:18px 16px 18px;box-shadow:0 10px 40px rgba(0,0,0,.25)">'+
+    '<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:#0f172a;margin-bottom:4px">🙋 What do you need help with?</div>'+
+    '<div style="font-size:12.5px;color:#64748b;margin-bottom:12px">Mom will see it. You can keep going with another card while you wait.</div>'+
+    '<label style="display:block;font-size:12px;font-weight:800;color:#334155;margin-bottom:4px">Which card? (optional)</label>'+
+    '<select id="hr-card" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1.5px solid #cbd5e1;border-radius:10px;font-size:14px;font-family:\'DM Sans\',sans-serif;margin-bottom:10px;background:#fff">'+
+      '<option value="">Something else</option>'+
+      cards.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.title||"Card")+'</option>').join("")+
+    '</select>'+
+    '<label style="display:block;font-size:12px;font-weight:800;color:#334155;margin-bottom:4px">Tell Mom (optional)</label>'+
+    '<textarea id="hr-note" maxlength="'+HR_MAX_NOTE+'" placeholder="A few words, like &quot;stuck on number 4&quot;" style="width:100%;box-sizing:border-box;min-height:58px;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:10px;font-size:14px;font-family:\'DM Sans\',sans-serif"></textarea>'+
+    '<div style="display:flex;gap:8px;margin-top:12px">'+
+      '<button onclick="hrAskClose()" style="flex:1;padding:11px;border-radius:11px;border:1.5px solid #cbd5e1;background:#fff;font-weight:800;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancel</button>'+
+      '<button onclick="hrAskSend()" style="flex:2;padding:11px;border-radius:11px;border:none;background:#2B7A78;color:#fff;font-weight:800;font-size:15px;cursor:pointer;font-family:\'DM Sans\',sans-serif">Send to Mom</button>'+
+    '</div></div>';
+  document.body.appendChild(ov);
+}
+function hrAskClose(){ const ov=document.getElementById("hr-panel"); if(ov) ov.remove(); }
+function hrBuild(k,cardId,note,now){
+  now=now||Date.now();
+  const r={kid:k,at:now,status:"open"};
+  const n=String(note||"").trim().slice(0,HR_MAX_NOTE); if(n) r.note=n;
+  if(cardId){ const t=hrKidCards(k).find(x=>x.id===cardId); if(t){ r.cardId=t.id; r.cardTitle=String(t.title||"").slice(0,80); } }
+  return r;
+}
+function hrAskSend(){
+  const ov=document.getElementById("hr-panel"); if(!ov) return;
+  const k=ov.dataset.kid; if(!hrKidCanAsk(k)) { hrAskClose(); return; }
+  const r=hrBuild(k,(document.getElementById("hr-card")||{}).value||"",(document.getElementById("hr-note")||{}).value||"");
+  const id="hr_"+r.at+"_"+Math.random().toString(36).slice(2,7);
+  hrData=Object.assign({},hrData,{[id]:r});
+  hrPopSeen[id]=1;   // the asking device is the kid's — never pop it back at them
+  if(db&&!_dryRun()) db.ref("helpRequests/"+id).set(r);
+  hrAskClose();
+  try{ renderAll(); }catch(e){}
+  if(typeof gwShowToast==="function") gwShowToast("🙋 Mom knows! Keep going with your next card.");
+}
+// ── Mom's side — Mom's Day card and the Mom-mode schedule: oldest ask first ──
+function _hrBtn(fn,id,label,bg){ return '<button onclick="'+fn+'(\''+esc(id)+'\')" style="flex:none;padding:7px 11px;border-radius:9px;border:none;background:'+bg+';color:#fff;font-size:12.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+label+'</button>'; }
+function hrMomRowsHTML(kidId){
+  const turn=hrLoopTurn();
+  return hrOpenList(kidId).map(([id,r])=>{
+    const col=(typeof KID_COLOR!=="undefined"&&KID_COLOR[r.kid])||"#64748b";
+    const tag=(turn&&turn.id===id)?(turn.active?' <span style="font-size:11px;font-weight:800;color:#16a34a">· helping now</span>':' <span style="font-size:11px;font-weight:800;color:#7c3aed">· next</span>')
+      :(r.status==="now"||r.status==="next")?' <span style="font-size:11px;font-weight:800;color:#7c3aed">· waiting</span>':'';
+    const btns=(r.status==="open"?_hrBtn("hrNowTap",id,"🙋 Help now","#2B7A78")+_hrBtn("hrNextTap",id,"⏭ Help next","#7c3aed"):"")+_hrBtn("hrHelpedTap",id,"✓ Helped","#16a34a");
+    return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 11px;border-radius:11px;border:1.5px solid #fcd34d;background:#fffbeb;margin-top:8px">'+
+      '<span style="width:10px;height:10px;border-radius:50%;background:'+col+';flex:none"></span>'+
+      '<div style="flex:1;min-width:140px"><div style="font-weight:800;font-size:14px;color:#0f172a">'+esc(hrKidName(r.kid))+
+        ' <span style="font-weight:600;font-size:12px;color:#64748b">· '+esc(hrTime(r.at))+'</span>'+tag+'</div>'+
+        (r.cardTitle?'<div style="font-size:12.5px;color:#334155;font-weight:700">'+esc(r.cardTitle)+'</div>':'')+
+        (r.note?'<div style="font-size:12.5px;color:#475569">“'+esc(r.note)+'”</div>':'')+
+        (!r.cardTitle&&!r.note?'<div style="font-size:12.5px;color:#475569">Needs you</div>':'')+'</div>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">'+btns+'</div></div>';
+  }).join("");
+}
+// where:"md" = Mom's Day — leaves a marker so the pop-up knows Mom's Day is open on this device.
+function hrMomCardHTML(kidId,where){
+  const mark=(where==="md")?'<span id="hr-md-mark" style="display:none"></span>':'';
+  try{ setTimeout(hrPopMaybe,0); }catch(e){}   // after the page paints (Mom's Day marker in place)
+  const rows=hrMomRowsHTML(kidId); if(!rows) return mark;
+  return mark+'<div id="hr-mom-card" style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);padding:11px 14px 13px;border-left:4px solid #f59e0b">'+
+    '<div style="font-weight:800;font-size:13px;color:#92400e">🙋 '+(hrOpenList(kidId).length===1?'A kid needs you':'Kids need you')+'</div>'+rows+'</div>';
+}
+// ── the pop-up (v2): a new ask nobody has answered yet, on Mom-mode devices and any device showing Mom's Day ──
+function hrPopWhere(){ return (typeof momHere==="function"&&momHere())||!!(typeof document!=="undefined"&&document.getElementById("hr-md-mark")); }
+function hrPopNext(){ return hrOpenList().find(([id,r])=>r.status==="open"&&!hrPopSeen[id])||null; }
+function hrPopMaybe(){
+  if(typeof document==="undefined") return;
+  const cur=document.getElementById("hr-pop");
+  const nx=hrPopWhere()?hrPopNext():null;
+  if(!nx){ if(cur) cur.remove(); return; }
+  if(cur&&cur.dataset.id===nx[0]) return;   // already showing this one
+  if(cur) cur.remove();
+  const [id,r]=nx;
+  const n=(typeof mlNow==="function")?mlNow():null;
+  const busy=(n&&n.kid&&n.kid!==r.kid)?n.kid:null;
+  const ov=document.createElement("div"); ov.id="hr-pop"; ov.dataset.id=id;
+  ov.style.cssText="position:fixed;inset:0;z-index:10060;background:rgba(15,23,42,.45);overflow:auto;font-family:'DM Sans',sans-serif;padding:18px 12px";
+  ov.innerHTML='<div style="max-width:420px;margin:60px auto 0;background:#fff;border-radius:16px;padding:18px 16px;box-shadow:0 10px 40px rgba(0,0,0,.3);border-top:6px solid #f59e0b">'+
+    '<div style="font-family:\'Fraunces\',serif;font-size:21px;font-weight:800;color:#0f172a">🙋 '+esc(hrKidName(r.kid))+' needs you</div>'+
+    '<div style="font-size:12px;color:#64748b;margin:2px 0 10px">Asked at '+esc(hrTime(r.at))+'</div>'+
+    (r.cardTitle?'<div style="font-size:14px;font-weight:800;color:#334155">'+esc(r.cardTitle)+'</div>':'')+
+    (r.note?'<div style="font-size:14px;color:#475569;margin-top:2px">“'+esc(r.note)+'”</div>':'')+
+    (busy?'<div style="font-size:12px;color:#7c3aed;font-weight:700;margin-top:10px">You\'re with '+esc(hrKidName(busy))+' right now.</div>':'')+
+    '<div style="display:flex;gap:8px;margin-top:14px">'+
+      '<button onclick="hrNowTap(\''+esc(id)+'\')" style="flex:1;padding:12px;border-radius:11px;border:none;background:#2B7A78;color:#fff;font-weight:800;font-size:15px;cursor:pointer;font-family:\'DM Sans\',sans-serif">🙋 Help now</button>'+
+      '<button onclick="hrNextTap(\''+esc(id)+'\')" style="flex:1;padding:12px;border-radius:11px;border:none;background:#7c3aed;color:#fff;font-weight:800;font-size:15px;cursor:pointer;font-family:\'DM Sans\',sans-serif">⏭ Help next'+(busy?'<div style="font-size:11px;font-weight:700;opacity:.9">after '+esc(hrKidName(busy))+'\'s card</div>':'')+'</button>'+
+    '</div>'+
+    '<button onclick="hrPopLater(\''+esc(id)+'\')" style="display:block;margin:10px auto 0;border:none;background:none;color:#64748b;font-size:12.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Later — keep it on my list</button></div>';
+  document.body.appendChild(ov);
+}
+function hrPopLater(id){ hrPopSeen[id]=1; const p=document.getElementById("hr-pop"); if(p) p.remove(); hrPopMaybe(); }
+// Help now / next / ✓ Helped are Mom's: outside Mom mode they ask for the Mom PIN first (the recipe gate, own words).
+function _hrMomGate(fn){
+  if(typeof momHere==="function"&&momHere()){ fn(); return; }
+  if(typeof kitPinGate!=="function") return;
+  kitPinGate(fn,"Answering a help request is for Mom.");
+}
+function hrNowTap(id){ _hrMomGate(()=>hrDecide(id,"now")); }
+function hrNextTap(id){ _hrMomGate(()=>hrDecide(id,"next")); }
+function hrHelpedTap(id){ _hrMomGate(()=>hrHelped(id)); }
+function hrDecide(id,mode){
+  const r=(hrData||{})[id]; if(!r||(mode!=="now"&&mode!=="next")) return;
+  const ts=Date.now();
+  hrData=Object.assign({},hrData,{[id]:Object.assign({},r,{status:mode,decidedAt:ts})});
+  hrPopSeen[id]=1;
+  if(db&&!_dryRun()) db.ref("helpRequests/"+id).update({status:mode,decidedAt:ts});
+  const p=document.getElementById("hr-pop"); if(p) p.remove();
+  try{ renderAll(); }catch(e){}
+  hrPopMaybe();
+}
+function hrHelped(id){
+  const r=(hrData||{})[id]; if(!r) return;
+  const ts=Date.now();
+  hrData=Object.assign({},hrData,{[id]:Object.assign({},r,{status:"helped",helpedAt:ts})});
+  hrPopSeen[id]=1;
+  if(db&&!_dryRun()) db.ref("helpRequests/"+id).update({status:"helped",helpedAt:ts});
+  const p=document.getElementById("hr-pop"); if(p&&p.dataset.id===id) p.remove();
+  try{ renderAll(); }catch(e){}
+  hrPopMaybe();
+}
+// Listener: repaint only when an ask arrives, is answered or is done, and never while a box is being typed in
+// (the kid's own ask popup lives outside the page, so a repaint can't eat it). Then the pop-up check.
+function hrOnValue(v){
+  hrData=(v&&typeof v==="object")?v:{};
+  const key=hrOpenList().map(([id,r])=>id+":"+r.status).join(",");
+  if(key!==hrKey){
+    hrKey=key;
+    const ae=(typeof document!=="undefined")&&document.activeElement;
+    if(!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))&&typeof renderAll==="function"){ try{ renderAll(); }catch(e){} }
+  }
+  hrPopMaybe();
+}
+// ── NEEDMOM_END ──
 // ── HELPERS_START ── 🙋 helpers: Grandma, Dad, a sitter — people who can take some of Mom's school tasks ──
 // Her ask 2026-10-03 (Dewalt: Grandma comes Wed 9:30–12 and does Andrew's phonics + the spelling tests).
 // Slice 1 = the PROFILES only: config/helpers/<id> = {name, icon, pick, help:{kid:{subjectKey:true}},
@@ -7771,6 +8013,8 @@ function renderSchedule(el){
   if(day===_todayDay){ try{ h+=mlStripHTML(); }catch(e){} }
   // Stage 2: the kid's own "Mom's ready for you" banner — their page only, today only.
   if(day===_todayDay&&kid!=="all"&&kid!=="mom"){ try{ h+=mlBannerHTML(kid); }catch(e){} }
+  if(day===_todayDay&&kid!=="all"&&kid!=="mom"){ try{ h+=hrKidButtonHTML(kid); }catch(e){} }   // 🙋 NEEDMOM: the kid's own page (hidden when Mom is here)
+  if(day===_todayDay&&momHere()){ try{ const _hr=hrMomCardHTML((kid!=="all"&&kid!=="mom")?kid:null); if(_hr) h+='<div style="margin:0 0 10px">'+_hr+'</div>'; }catch(e){} }   // 🙋 NEEDMOM: who asked for Mom → ✓ Helped
   if(momHere()&&schedDayOffOpen) h+=schedRenderDayOffPicker(day);
 
   if(CONSTRAINT[day]){
@@ -8367,6 +8611,7 @@ function _efMomFree(kid){
   try{
     if(typeof mlMomOff==="function"&&mlMomOff()) return false;
     const now=(typeof mlNow==="function")?mlNow():null;
+    { const _hr=(typeof hrLoopTurn==="function")?hrLoopTurn():null; if(_hr&&_hr.active&&_hr.kid!==kid) return false; }   // 🙋 NEEDMOM: Mom is helping another kid
     return !now||!now.kid||now.kid===kid;
   }catch(e){ return false; }
 }
@@ -11462,6 +11707,7 @@ function renderMomsDay(el){
   // FIRST on the page: this is the one card that is hers rather than about the kids,
   // and it was ninth — below Now, Order day, Today, Star Bank, her schedule, the
   // weigh-in, Win of the day and Use soon. Her own day should not need scrolling to.
+  try{ h+=hrMomCardHTML(null,"md"); }catch(e){}   // 🙋 NEEDMOM: a kid asked for Mom → ✓ Helped (first: it's happening now)
   try{ h+=momDayStripHTML(iso,today); }catch(e){}
   try{ h+=wsTaskHTML(); }catch(e){}   // 📋 From Adrienne — tap to answer, ✓ once sent
   try{ if(typeof stPendingHTML==="function") h+=stPendingHTML(); }catch(e){}   // 📝 spelling tests waiting to be graded
@@ -26980,6 +27226,7 @@ function kcSchoolHTML(k){
     const times=Object.keys(tmap).sort(function(a,b){ return toMin(a)-toMin(b); });
     let h='<div style="padding:12px 12px 0">';
     try{ h+=mlBannerHTML(k); }catch(e){}
+    try{ h+=hrKidButtonHTML(k); }catch(e){}   // 🙋 NEEDMOM: ask Mom for help — nothing pauses
     const _noDayWork=!mine.length;   // 📭 no school cards today — no lock, no Brain Break (same rule as the Schedule tab, 2026-10-03)
     try{ if(!_noDayWork||bbActive(k)||(bbMomDraft&&bbMomDraft.kid===k)) h+=bbBlock(k); }catch(e){}
     const _lookAhead=!_noDayWork&&gateLookAhead(k,dn);
@@ -51285,6 +51532,7 @@ function mlStripHTML(){
       +(now.kid?('now with <span style="color:#16a34a">'+cap(now.kid)+'</span>'+(function(){ var nc=mlNextCard(now.kid); return nc?(' <span style="font-weight:700;color:#0f766e">&rarr; '+esc(nc.title)+'</span>'):""; })()
         +(now.borrowed?' <span style="font-weight:600;color:#7c3aed">('+esc(now.why)+')</span>':(now.held?' <span style="font-weight:600;color:#16a34a">(started)</span>':'')))
         :('<span style="color:#b45309">'+esc(now.why)+'</span>'))+'</div>';
+    try{ if(typeof hrStripLineHTML==="function") h+=hrStripLineHTML(); }catch(e){}   // 🙋 NEEDMOM: Mom helping a kid / who's next
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
     st.forEach(function(x,i){
       const c=CH[x.state]||CH.waiting;
@@ -51717,6 +51965,7 @@ function mlBannerHTML(kid){
         +'<div style="font-size:10.5px;color:#6d28d9">Keep going on your own work &mdash; your Mom cards are waiting at the end of your day.</div></div></div>';
     }
     const now=mlNow(); if(!now||now.kid!==kid) return "";
+    { const _hr=(typeof hrLoopTurn==="function")?hrLoopTurn():null; if(_hr&&_hr.active&&_hr.kid!==kid) return hrAwayBannerHTML(_hr); }   // 🙋 NEEDMOM: Mom is off helping another kid
     const nxt=mlNextCard(kid); if(!nxt) return "";
     return '<div style="background:#ecfdf5;border-left:4px solid #16a34a;border-radius:0 10px 10px 0;padding:10px 12px;margin:0 0 8px;display:flex;align-items:center;gap:9px">'
       +'<span style="font-size:19px">&#128105;</span>'
@@ -51743,6 +51992,7 @@ function _mlStayWith(t){
   try{
     if(!t||!t.who||_mlDayOf(t)!==_todayDay) return;
     if(mlDone(t.who)||mlPaused(t.who)||mlOff(t.who)) return;
+    if(typeof hrBlocksHold==="function"&&hrBlocksHold(t.who)) return;   // 🙋 NEEDMOM: Mom said "help next" to another kid — they go after this card
     const now=mlNow(); if(!now||now.kid!==t.who||now.held) return;
     const nxt=mlNextCard(t.who); if(!nxt||nxt.id===t.id) return;
     momHold={kid:t.who,id:nxt.id,day:_todayDay};
@@ -51765,6 +52015,7 @@ function mlOnCheck(t){
         &&!(typeof checked!=="undefined"&&checked&&checked[x.id]);
     });
     if(mineLeft.some(function(x){ return toMin(x.time)<toMin(t.time); })) return;  // not the buffer
+    if(typeof hrBlocksHold==="function"&&hrBlocksHold(t.who)) return;   // 🙋 NEEDMOM: Mom is helping / helping next another kid — no new session lock
     momHold={kid:t.who,id:nxt.id,day:_todayDay};
     if(db) db.ref(WK+"/momHold").set(momHold);
   }catch(e){}
