@@ -3812,6 +3812,7 @@ function initFb() {
       Object.keys(v).forEach(k=>{ laundryData[k]=v[k]; });
       try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
       if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+      else if(tab==="schedule"&&kid==="mom") renderAll();   // MOMSCHED_LAUNDRY
     });
     db.ref("momChores").on("value",s=>{
       const v=s.val()||{};
@@ -3923,6 +3924,8 @@ function initFb() {
     });
     db.ref("config/helpers").on("value",s=>{ helpersOnValue(s.val()); });
     db.ref("settings/laundryTimes").on("value",s=>{ if(typeof laundryTimesOnValue==="function") laundryTimesOnValue(s.val()); });   // 🧺 LAUNDRYTIMES
+    db.ref("settings/laundryBlockMins").on("value",s=>{ if(typeof laundryBlockMinsOnValue==="function") laundryBlockMinsOnValue(s.val()); });   // 🧺 MOMSCHED_LAUNDRY
+    db.ref("momBlocks/"+mwTodayIso()).on("value",s=>{ if(typeof momBlocksOnValue==="function") momBlocksOnValue(s.val()); if(tab==="schedule") renderAll(); });   // 🧺 MOMSCHED_LAUNDRY: everyone's Mom cards lay around her block
     db.ref("settings/momTips").on("value",s=>{ if(typeof momTipsOnValue==="function") momTipsOnValue(s.val()); });   // 👋 Mom how-to banners she has closed
     db.ref("settings/whatsNewSeen").on("value",s=>{ if(typeof whatsNewOnValue==="function") whatsNewOnValue(s.val()); });   // ✨ the What's new she has read
     db.ref("famProgress").on("value",s=>{ if(typeof famProgOnValue==="function") famProgOnValue(s.val()); });   // 📚 family subjects' shared place-in-book   // 🙋 helper profiles
@@ -7592,10 +7595,12 @@ function momAgendaHtml(dayTasks){
   const _mReq=t=>t.mom==="required"||(typeof famIsMomCard==="function"&&famIsMomCard(t));   // 🏡 family time she leads = Mom Needed
   const req=dayTasks.filter(_mReq);
   const may=dayTasks.filter(t=>t.mom==="maybe");
-  if(!req.length&&!may.length)
+  const _lau=(typeof momSchedLaundry==="function")?momSchedLaundry(day,dayTasks):[];   // 🧺 MOMSCHED_LAUNDRY
+  if(!req.length&&!may.length&&!_lau.length)
     return '<div style="padding:28px 16px;text-align:center;color:var(--muted);font-size:13px">No Mom-needed work scheduled this day. 🎉</div>';
   const byTime={};
-  dayTasks.forEach(t=>{ const m=toMin(t.time); if(m==null)return; if(!byTime[m])byTime[m]={req:[],may:[]}; (_mReq(t)?byTime[m].req:byTime[m].may).push(t); });
+  dayTasks.forEach(t=>{ const m=toMin(t.time); if(m==null)return; if(!byTime[m])byTime[m]={req:[],may:[],lau:[]}; (_mReq(t)?byTime[m].req:byTime[m].may).push(t); });
+  _lau.forEach(x=>{ if(!byTime[x.m])byTime[x.m]={req:[],may:[],lau:[]}; byTime[x.m].lau.push(x); });
   const mins=Object.keys(byTime).map(Number).sort((a,b)=>a-b);
   let h='<div class="mom-agenda">';
   h+='<div class="mom-agenda-row mom-agenda-head"><div></div><div class="mom-h req">🔴 Mom Needed</div><div class="mom-h may">🟡 May Need Mom</div></div>';
@@ -7606,7 +7611,7 @@ function momAgendaHtml(dayTasks){
     const c=byTime[m];
     const _tp=fromMin(m).split(' ');
     h+='<div class="mom-agenda-row"><div class="time-pill">'+_tp[0]+'<span class="ampm">'+(_tp[1]||'')+'</span></div>';
-    h+='<div class="mom-col">'+(c.req.length?c.req.map(tk=>taskCard(tk)).join(''):'<div class="mom-empty">—</div>')+'</div>';
+    h+='<div class="mom-col">'+((c.req.length||c.lau.length)?c.lau.map(x=>x.html).join('')+c.req.map(tk=>taskCard(tk)).join(''):'<div class="mom-empty">—</div>')+'</div>';
     h+='<div class="mom-col">'+(c.may.length?c.may.map(tk=>taskCard(tk)).join(''):'<div class="mom-empty">—</div>')+'</div>';
     h+='</div>';
   });
@@ -10914,6 +10919,7 @@ function laundryAdd(){
 }
 function laundryAdvance(id){
   const l=laundryData[id]; if(!l) return;
+  try{ if(typeof laundryBlockDone==="function") laundryBlockDone(id,l.stage); }catch(e){}   // MOMSCHED_LAUNDRY: ends that stage's block
   const i=LAUNDRY_STAGES.indexOf(l.stage);
   if(i<0||i===LAUNDRY_STAGES.length-1){
     delete laundryData[id]; // put away — load complete
@@ -10924,6 +10930,7 @@ function laundryAdvance(id){
     if(typeof db!=='undefined'&&db) db.ref('laundry/'+id).set(l);
   }
   try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
+  if(typeof tab!=='undefined'&&tab==="schedule"&&typeof renderAll==='function'){ renderAll(); return; }   // MOMSCHED_LAUNDRY: tapped on the schedule
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
 function laundryDel(id){
@@ -10940,6 +10947,112 @@ function laundryAdvanceLabel(stage){
 function laundrySince(ts){
   try{ return new Date(ts).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}); }catch(e){ return ""; }
 }
+// MOMSCHED_LAUNDRY_START — laundry on the Mom-mode schedule (her ask 2026-10-07; "b real block" + "allow her to put how long
+// she needs" + "if the next open kid comes up and she ignores it change the after lucys math to it and dont hold up anything till
+// she decides", all 2026-10-07). Loads live in laundry/ and only Mom's Day read them, so the schedule never showed one.
+//   · 🫧 started marker at the time the load went into the washer / dryer (information only)
+//   · ✅ done marker when it finishes (✎ Times) asking: block out time to move it / fold it? How long (her minutes, remembered
+//     per step) · [Now] [After <the first unchecked Mom card on her list — re-read every render>] [Not now]
+//   · unanswered holds NOTHING. Once she picks, the block is REAL: _mlQueueLayCore lays her Mom cards around it (they step over
+//     it like lunch) while the kids keep doing their own work. → Dryer / → Fold (from the block or Mom's Day) ends it.
+// Stored per day: momBlocks/<iso>/<load>_<stage> {iso,load,stage,label,mins,at:"now"|"after"|"skip",startMin,afterId,done,doneMin}
+let momBlocks={}, laundryBlockMins={}, _mlBlkLaid={};
+try{ const _mb=JSON.parse(HA_LS.getItem('ha_momblocks')||"null"); if(_mb&&_mb.iso===mwTodayIso()) momBlocks=_mb.v||{}; }catch(e){}
+try{ laundryBlockMins=JSON.parse(HA_LS.getItem('ha_laundry_block_mins')||"{}")||{}; }catch(e){}
+function _lbWrite(){ return typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
+function momBlocksOnValue(v){ momBlocks=v||{}; try{ HA_LS.setItem('ha_momblocks',JSON.stringify({iso:mwTodayIso(),v:momBlocks})); }catch(e){} }
+function laundryBlockMinsOnValue(v){ laundryBlockMins=v||{}; try{ HA_LS.setItem('ha_laundry_block_mins',JSON.stringify(laundryBlockMins)); }catch(e){} }
+function laundryBlockStep(stage){ return stage==="dryer"?"fold":"move"; }
+function laundryBlockDefault(stage){ const k=laundryBlockStep(stage), v=parseInt((laundryBlockMins||{})[k],10); return (v>0&&v<=240)?v:(k==="fold"?15:5); }
+function momBlockKey(id,stage){ return String(id).replace(/[.#$\[\]\/]/g,"_")+"_"+stage; }
+function momBlockFor(id,stage){ const b=(momBlocks||{})[momBlockKey(id,stage)]; return (b&&b.iso===mwTodayIso())?b:null; }
+// The blocks that hold Mom's time right now: picked (Now/After), not done, and the load still in that machine.
+function momBlockOpen(){
+  const out=[];
+  Object.keys(momBlocks||{}).forEach(function(k){
+    const b=momBlocks[k]; if(!b||b.iso!==mwTodayIso()||b.done||(b.at!=="now"&&b.at!=="after")) return;
+    const l=laundryData[b.load]; if(!l||l.stage!==b.stage) return;
+    const m=parseInt(b.mins,10); if(!(m>0)) return;
+    out.push({key:k,at:b.at,startMin:+b.startMin||0,afterId:b.afterId||"",mins:m});
+  });
+  return out;
+}
+function _lbMin(ts){ const mid=new Date(); mid.setHours(0,0,0,0); return Math.floor((ts-mid.getTime())/60000); }
+function _lbNowMin(){ return (typeof _mlNowMin==="function")?_mlNowMin():_lbMin(Date.now()); }
+function _lbQ(v){ return String(v).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }
+// "After Lucy's Math" — the first unchecked Mom-needed card on her laid list (she is probably in the middle of it).
+function momSchedNextMom(dayTasks){
+  const ck=(typeof checked!=="undefined"&&checked)||{};
+  const open=(dayTasks||[]).filter(function(t){ return t&&t.mom==="required"&&!ck[t.id]&&toMin(t.time)!=null; })
+    .sort(function(a,b){ return toMin(a.time)-toMin(b.time); });
+  return open[0]||null;
+}
+function _lbCardName(t){ const who=(typeof KID_NAME!=="undefined"&&KID_NAME[t.who])||cap(t.who||""); return who+"'s "+String(t.title||"card").split(" — ")[0]; }
+function laundryBlockSet(id,stage,at,afterId){
+  if(typeof momHere==="function"&&!momHere()) return;
+  const l=laundryData[id]; if(!l||l.stage!==stage) return;
+  const key=momBlockKey(id,stage);
+  let mins=laundryBlockDefault(stage);
+  try{ const inp=document.getElementById('lb-min-'+key); const v=parseInt(inp&&inp.value,10); if(v>0&&v<=240) mins=v; }catch(e){}
+  const rec={iso:mwTodayIso(),load:id,stage:stage,label:l.label||"",mins:mins,at:at,startMin:_lbNowMin(),ts:Date.now()};
+  if(at==="after"&&afterId) rec.afterId=afterId;
+  momBlocks[key]=rec; momBlocksOnValue(momBlocks);
+  if(_lbWrite()) db.ref('momBlocks/'+rec.iso+'/'+key).set(rec);
+  if(at!=="skip"){ laundryBlockMins[laundryBlockStep(stage)]=mins; laundryBlockMinsOnValue(laundryBlockMins); if(_lbWrite()) db.ref('settings/laundryBlockMins/'+laundryBlockStep(stage)).set(mins); }
+  if(typeof renderAll==="function") renderAll();
+}
+function laundryBlockMinsEdit(key,v){
+  if(typeof momHere==="function"&&!momHere()) return;
+  const b=(momBlocks||{})[key]; const m=parseInt(v,10); if(!b||!(m>0&&m<=240)) return;
+  b.mins=m; momBlocksOnValue(momBlocks);
+  if(_lbWrite()) db.ref('momBlocks/'+b.iso+'/'+key).update({mins:m});
+  laundryBlockMins[laundryBlockStep(b.stage)]=m; laundryBlockMinsOnValue(laundryBlockMins); if(_lbWrite()) db.ref('settings/laundryBlockMins/'+laundryBlockStep(b.stage)).set(m);
+  if(typeof renderAll==="function") renderAll();
+}
+// → Dryer / → Fold ends that stage's block (Mom's Day or the schedule).
+function laundryBlockDone(id,stage){
+  const key=momBlockKey(id,stage), b=momBlockFor(id,stage); if(!b||b.done||b.at==="skip") return;
+  b.done=true; b.doneMin=_lbNowMin(); momBlocksOnValue(momBlocks);
+  if(_lbWrite()) db.ref('momBlocks/'+b.iso+'/'+key).update({done:true,doneMin:b.doneMin});
+}
+function _lbBox(bg,bd,inner){ return '<div class="ml-laundry" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:'+bg+';border-left:3px solid '+bd+';border-radius:8px">'+inner+'</div>'; }
+function _lbBtn(id,stage){ return '<button onclick="laundryAdvance(\''+_lbQ(id)+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+laundryAdvanceLabel(stage)+'</button>'; }
+function _lbQBtn(label,on,solid){ return '<button onclick="'+on+'" style="padding:5px 11px;border-radius:8px;border:'+(solid?'none':'1.5px solid #93c5fd')+';background:'+(solid?'#2563eb':'#fff')+';color:'+(solid?'#fff':'#1d4ed8')+';font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap">'+label+'</button>'; }
+// Today's laundry rows for the Mom agenda: [{m, html}] in minute order (started → done/question → block).
+function momSchedLaundry(dayName,dayTasks){
+  if(typeof _todayDay!=="string"||dayName!==_todayDay) return [];
+  const nowM=_lbNowMin(), out=[];
+  const place=function(m,ord,html){ if(m<0) m=nowM; if(m>=24*60) return; out.push({m:m,o:ord,html:html}); };   // from an earlier day → now; tomorrow → not today's
+  const next=momSchedNextMom(dayTasks);
+  Object.keys(laundryData||{}).forEach(function(id){
+    const l=laundryData[id]; if(!l||(l.stage!=="washer"&&l.stage!=="dryer")) return;
+    const dry=l.stage==="dryer", key=momBlockKey(id,l.stage), lbl='<b>'+esc(l.label||"Load")+'</b>';
+    const sm=_lbMin(l.ts||0);
+    if(sm>=0) place(sm,0,_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#475569">'+(dry?'🌀 ':'🫧 ')+lbl+' — '+(dry?'in the dryer':'in the washer')+' · started '+laundrySince(l.ts)+'</span>'));
+    const da=laundryDoneAt(l); if(!da) return;
+    const b=momBlockFor(id,l.stage), doneTxt='✅ '+lbl+' is done in the '+(dry?'dryer':'washer');
+    if(!b){
+      place(_lbMin(da),1,_lbBox('#ecfdf5','#16a34a',
+        '<span style="flex:1 1 100%;font-size:13px">'+doneTxt+'. Block out time to '+(dry?'fold it':'move it to the dryer')+'?</span>'
+        +'<label style="font-size:12px;color:#334155;font-weight:700">How long? <input id="lb-min-'+key+'" type="number" min="1" max="240" value="'+laundryBlockDefault(l.stage)+'" style="width:54px;padding:4px 6px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px"> min</label>'
+        +_lbQBtn('Now',"laundryBlockSet('"+_lbQ(id)+"','"+l.stage+"','now')",true)
+        +(next?_lbQBtn('After '+esc(_lbCardName(next)),"laundryBlockSet('"+_lbQ(id)+"','"+l.stage+"','after','"+_lbQ(next.id)+"')",false):'')
+        +_lbQBtn('Not now',"laundryBlockSet('"+_lbQ(id)+"','"+l.stage+"','skip')",false)));
+      return;
+    }
+    if(b.at==="skip"){ place(_lbMin(da),1,_lbBox('#ecfdf5','#16a34a','<span style="flex:1;font-size:13px">'+doneTxt+'</span>'+_lbBtn(id,l.stage))); return; }
+    place(_lbMin(da),1,_lbBox('#ecfdf5','#16a34a','<span style="flex:1;font-size:13px">'+doneTxt+'</span>'));
+    const bm=(_mlBlkLaid&&_mlBlkLaid[key]!==undefined)?_mlBlkLaid[key]:(+b.startMin||nowM);
+    place(bm,2,_lbBox('#eff6ff','#2563eb','<span style="flex:1;font-size:13px">🧺 '+(dry?'Fold: ':'Move to the dryer: ')+lbl
+      +' · <input type="number" min="1" max="240" value="'+(parseInt(b.mins,10)||laundryBlockDefault(l.stage))+'" onchange="laundryBlockMinsEdit(\''+key+'\',this.value)" style="width:48px;padding:2px 5px;border:1.5px solid #bfdbfe;border-radius:6px;font-size:12px"> min</span>'+_lbBtn(id,l.stage)));
+  });
+  Object.keys(momBlocks||{}).forEach(function(k){   // finished blocks stay on today's timeline where they ended
+    const b=momBlocks[k]; if(!b||b.iso!==mwTodayIso()||!b.done||b.at==="skip") return;
+    place(+b.doneMin||0,3,_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ '+(b.stage==="dryer"?'Folded: ':'Moved to the dryer: ')+'<b>'+esc(b.label||"Load")+'</b></span>'));
+  });
+  return out.sort(function(a,b2){ return (a.m-b2.m)||(a.o-b2.o); });
+}
+// MOMSCHED_LAUNDRY_END
 // KIDLAUNDRY_START — a kid starting a load tells Mom (her ask 2026-10-04, Taylor's "Start a load of laundry").
 // Checking off a chore that STARTS a load drops "Taylor started laundry" onto Mom's 🧺 card in the washer, timed
 // from the check — the same 90-min "move it" nudge Mom gets for her own loads. The kid taps nothing extra.
@@ -51650,6 +51763,7 @@ function _mlLanePass(list){
 }
 function mlQueueLay(tasks){ return _mlLanePass(_mlQueueLayCore(tasks)); }
 function _mlQueueLayCore(tasks){
+  _mlBlkLaid={};   // 🧺 MOMSCHED_LAUNDRY: where this lay put her blocks
   try{
     if(!Array.isArray(tasks)||!tasks.length) return tasks;
     const _mr=function(t){ return !!t&&t.mom==="required"&&!(typeof helperHolds==="function"&&helperHolds(t)); };   // 🙋 Mom work = not a helper's
@@ -51808,16 +51922,28 @@ function _mlQueueLayCore(tasks){
       if(now&&now.held&&now.kid===k0&&fixedOf(k0).length){ let _le=0; fixedOf(k0).forEach(function(iv){ if(iv[1]>_le) _le=iv[1]; }); t=Math.max(_mlKidFloor(k0),_le); }
       if(_mlMorn(first0)){ const _nb=_bufLanding(k0); if(_nb) t=Math.max(t,_nb.end); }   // 📓 the held session still waits for the notebook
     }
+    // 🧺 MOMSCHED_LAUNDRY (her "b real block" 2026-10-07): Mom is at the machines for the minutes she picked — her Mom cards
+    // step over that window like lunch, the kids' own work keeps going. "Now" = from her tap; "After <card>" = laid right
+    // behind that card in the chain below (from its check-off once it is done; from her tap if it left the day). A question
+    // she hasn't answered is not in momBlockOpen() — it holds nothing.
+    const _blkIv=[], _blkAfter={};
+    try{ if(typeof momBlockOpen==="function") momBlockOpen().forEach(function(b){
+      const x=(b.at==="after"&&b.afterId)?tasks.find(function(y){ return y&&y.id===b.afterId; }):null;
+      if(x&&seq.some(function(e){ return e.cards.some(function(c){ return c.id===x.id; }); })){ (_blkAfter[x.id]=_blkAfter[x.id]||[]).push(b); return; }
+      let st=b.startMin; if(x&&typeof checked!=="undefined"&&checked&&checked[x.id]){ const c=_mlCkAt(x); st=(c!==null)?c:_ckEnd(x); }
+      _blkIv.push([st,st+b.mins]); _mlBlkLaid[b.key]=st;
+    }); }catch(e){}
     const newTimes={}; const momWait={};
     Object.keys(_famLay).forEach(function(id){ newTimes[id]=_famLay[id]; });   // LIVINGDAY_FAM
     seq.forEach(function(e){
-      const Ls=lunchOf(e.kid).concat(fixedOf(e.kid));
+      const Ls=lunchOf(e.kid).concat(fixedOf(e.kid)).concat(_blkIv);   // 🧺 MOMSCHED_LAUNDRY
       t=Math.max(t,_mlKidFloor(e.kid));   // 🏫 a co-op kid's block waits until they are home
       if(!(now&&now.held&&now.kid===e.kid)||_mlMorn(mine[e.kid][0])){ const bl=_bufLanding(e.kid); if(bl&&t<bl.end&&t+((e.cards[0]||{}).dur||20)>bl.start) t=bl.end; }   // 📓 notebook first: never lay the block ON the buffer (a held kid's too, when it is the Morning Notebook)
       e.cards.forEach(function(c){
         const d=c.dur||20; let moved=true;
         while(moved){ moved=false; Ls.forEach(function(iv){ if(t<iv[1]&&t+d>iv[0]){ t=iv[1]; moved=true; } }); }
         newTimes[c.id]=t; t+=d;
+        if(_blkAfter[c.id]) _blkAfter[c.id].forEach(function(b){ _mlBlkLaid[b.key]=t; _blkIv.push([t,t+b.mins]); t+=b.mins; });   // 🧺 MOMSCHED_LAUNDRY
       });
     });
     // Each kid's OTHER movable cards re-pack around their Mom block: the in-flight buffer
