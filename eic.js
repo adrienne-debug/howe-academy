@@ -507,11 +507,15 @@ function openNext(k){
   load().then(()=>{
     const n=eicNextSitting(TK(),logs,decs,mom(),iowaLogs);
     if(n&&n.iowa){ iowaStart(n.iowa,{timed:true}); return; }
-    if(n&&eicWorkbook(books(),n.book)){ rememberToday(kid,n.book,n.page); openPage(n.book,n.page); return; }
+    if(n&&eicWorkbook(books(),n.book)){ rememberToday(kid,n.book,n.page); cardPage(n.book,n.page); return; }
     panel(kid);
     toast(n?"That book's PDF isn't linked yet.":"Nothing waiting right now — every page built so far is done.");
   });
 }
+// 🔑 The schedule card's doorway (her yes 2026-10-07): on Mom's device "Open today's page" and "Back to today's page"
+// open his page with the ANSWER KEY beside it + 📊 Score — the same view as the ✅ chip in the panel. A kid's device is
+// unchanged (his page with the rule sheet). A page with no tagged key page opens for Mom as before.
+function cardPage(bk,printed){ if(mom()&&eicKeyPage(TK(),bk,printed)) checkPage(bk,printed); else openPage(bk,printed); }
 // ↩ today's page, so a checked card can reopen it (her ask 2026-09-23)
 function localDate(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
 function rememberToday(k,bk,printed){ try{ if(typeof db!=="undefined"&&db&&!dry()) db.ref("eic/"+k+"/today").set({date:localDate(),book:bk,page:+printed,ts:Date.now()}); }catch(e){} }
@@ -520,7 +524,7 @@ function reopenToday(k){
   if(typeof db==="undefined"||!db){ toast("Editor in Chief isn't loaded yet."); return; }
   load().then(()=>db.ref("eic/"+kid+"/today").once("value")).then(s=>{
     const t=s&&s.val();
-    if(t&&t.date===localDate()&&t.book&&t.page){ openPage(t.book,t.page); return; }
+    if(t&&t.date===localDate()&&t.book&&t.page){ cardPage(t.book,t.page); return; }
     toast("No Editor in Chief page was opened today."); panel(kid);
   }).catch(()=>toast("Couldn't reach Editor in Chief — try again."));
 }

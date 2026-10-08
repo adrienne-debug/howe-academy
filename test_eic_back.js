@@ -106,7 +106,7 @@ const d = new Date(), today = d.getFullYear() + "-" + String(d.getMonth() + 1).p
   w.W.eicReopenToday("ellis"); for (let i = 0; i < 6; i++) await flush();
   ok("yesterday's page is never reopened as today's", w.opened.length === 0 && /No Editor in Chief page was opened today/.test(w.toasts.join("|")), w.toasts);
 }
-ok("the doorway remembers the page it opens", /rememberToday\(kid,n\.book,n\.page\); openPage\(n\.book,n\.page\);/.test(fs.readFileSync(path.join(__dirname, "eic.js"), "utf8")));
+ok("the doorway remembers the page it opens", /rememberToday\(kid,n\.book,n\.page\); cardPage\(n\.book,n\.page\);/.test(fs.readFileSync(path.join(__dirname, "eic.js"), "utf8")));
 ok("a checked EIC card of TODAY shows ↩ Back to today's page", /:\(_eicL&&done&&effectiveDay\(t\)===_todayDay\)\?'<div style="margin-top:5px"><span onclick="event\.stopPropagation\(\);eicReopenTodayFor\(/.test(src));
 ok("an open card still shows Open today's page", /const eicRow=\(_eicL&&!done\)\?/.test(src));
 
