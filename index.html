@@ -7513,6 +7513,7 @@ function renderMomHQ(el,ah){
   h+='<div class="rules-sub">Every Mom tool, one map. Tap a row to jump — everything still lives where it always has.</div>';
   h+=wsBannerHTML();   // 📋 worksheets from Adrienne (tap to open — nothing pops up)
   try{ if(typeof stPendingHTML==="function") h+=stPendingHTML(); }catch(e){}   // 📝 spelling tests waiting to be graded
+  try{ if(typeof cbNudgeHTML==="function") h+=cbNudgeHTML(); }catch(e){}   // 🔁 graduated words came back
   h+=_hqGroup("🏫","School",[
     // RETIREMENT Stage 2 (2026-08-11): the Subjects & Builder rows are hidden — the
     // Grid is the whole curriculum now (cards pop from column titles, 🧱 pacing
@@ -12037,6 +12038,7 @@ function renderMomsDay(el){
   try{ h+=momDayStripHTML(iso,today); }catch(e){}
   try{ h+=wsTaskHTML(); }catch(e){}   // 📋 From Adrienne — tap to answer, ✓ once sent
   try{ if(typeof stPendingHTML==="function") h+=stPendingHTML(); }catch(e){}   // 📝 spelling tests waiting to be graded
+  try{ if(typeof cbNudgeHTML==="function") h+=cbNudgeHTML(); }catch(e){}   // 🔁 graduated words came back
   // The full chores card becomes the EDITOR (cadence + time of day); it only appears
   // while editing, because the strip above now carries the day-to-day list.
   if(mcManage){ try{ h+=mcPopHTML(iso,today); }catch(e){} }
@@ -31945,7 +31947,7 @@ function _ustApply(u,kid,stageN,knows,subject,mapId){
     const base={id:mkId(c.name),subject:dk,type:dk.toLowerCase(),prompt:c.name,review_mode:"flash",drop_count:0,consecutive_correct:0,cycle:1};
     if(c.def!=null) base.answer=String(c.def);   // Numbers/Counting: no back — the kid says it
     if(fi<=kIdx){  // already known → review on the ladder
-      const wk=(_ustFamNum(c)||0)>=wFrom;
+      const wk=!u.cardLessons&&(_ustFamNum(c)||0)>=wFrom;   // 📘 AAS: known cards start bi-weekly
       items.push(Object.assign(base,{status:"active",placed:true,tier:wk?"weekly":"bi_weekly",tally_dots:5,next_due:2+(wk?(nW++%7):(nB++%14))}));
       haveItem.add(pk(dk,c.name));
     } else if(started[dk]<(d.introCap||3)&&(upto==null||ch==null||ch<=upto)){
@@ -42957,7 +42959,7 @@ function _matchPairHtml(it){
 // ↔ Small 🇬🇧→🇩🇪 tag for a production twin wherever a card's name is listed by id.
 function mastDirTag(id){
   try{ let its=masteryData[masteryKid]||[]; if(!Array.isArray(its)) its=Object.values(its);
-    const it=its.find(i=>i&&i.id===id); return (it&&it.dir==="prod")?' <span style="font-size:10px;color:#6d28d9;font-weight:800">\u{1F1EC}\u{1F1E7}\u2192\u{1F1E9}\u{1F1EA}</span>':""; }catch(e){ return ""; }
+    const it=its.find(i=>i&&i.id===id); return ((typeof mastProblemTag==="function")?mastProblemTag(it):"")+(it&&it.dir==="prod"?' <span style="font-size:10px;color:#6d28d9;font-weight:800">\u{1F1EC}\u{1F1E7}\u2192\u{1F1E9}\u{1F1EA}</span>':""); }catch(e){ return ""; }   // 🚩 PWFLAG: problem / came-back badge (Mom's view)
 }
 function _matchEligible(it){ if(it&&it.dir==="prod") return false; return matchPairMode==="same"?!!_smTileVis(it):!!_matchPairHtml(it); }
 function mastMatchDecks(){
@@ -46621,6 +46623,7 @@ function ckTap(r){
     else { item.tally_dots=Math.max(5,item.tally_dots||0); item.placed=true;
       if(tt.tier==="monthly"&&typeof mastStampNextDue==="function") mastStampNextDue(item,items,"monthly",pn); else delete item.next_due; }
     item.ckLast={r:o.res,d:dk};
+    if(o.res==="m"&&o.card===it.card&&typeof wwNote==="function") wwNote(item,"miss");   // 🏋️ a check-up miss counts toward Word Workout
     iu[idx]=item;
     if(!bank.some(b=>b&&b.cat===dk2&&b.name===c.name)){ bank.push({cat:dk2,name:c.name}); bu[bank.length-1]=bank[bank.length-1]; }
     if(c.def!=null&&(typeof mastDefKeyOk!=="function"||mastDefKeyOk(c.name))&&sets.definitions[c.name]==null){ sets.definitions[c.name]=String(c.def); du[c.name]=String(c.def); }
@@ -46836,6 +46839,7 @@ function stApplyResults(kid,words,res,key){
     let idx=items.findIndex(x=>x&&x.subject===ST_DECK&&x.prompt===name);
     if(idx<0){ let b=kid.slice(0,3)+"_"+String(name).replace(/[^a-z0-9]/gi,"_").toLowerCase(), id=b, k=2; while(ids.has(id)) id=b+"_"+(k++); ids.add(id);
       items.push({id:id,subject:ST_DECK,type:"aas words",prompt:name,answer:name,review_mode:"flash",drop_count:0,consecutive_correct:0,cycle:1}); idx=items.length-1; }
+    if(r==="m"&&items[idx].tier==="graduated"&&typeof cbLog==="function") cbLog(kid,{name:name,deck:ST_DECK,from:"graduated",ts:Date.now(),src:"spelling test"});   // 🔁 PWFLAG: a graduated word missed on a test came back
     const it=items[idx]; it.status=tt.status; it.tier=tt.tier;
     if(tt.status==="introduction"){ it.tally_dots=0; delete it.next_due; delete it.placed; }
     else { it.tally_dots=Math.max(5,it.tally_dots||0); it.placed=true;
@@ -46974,7 +46978,7 @@ function pwSplit(text){
 function pwLookup(kid,word){
   const items=Array.isArray((masteryData||{})[kid])?masteryData[kid]:Object.values((masteryData||{})[kid]||{});
   const n=pwNorm(word);
-  const hits=items.map((it,idx)=>({it,idx})).filter(x=>x.it&&pwNorm(x.it.prompt)===n);
+  const hits=items.map((it,idx)=>({it,idx})).filter(x=>x.it&&PW_DECK_PREF.indexOf(x.it.subject)>=0&&pwNorm(x.it.prompt)===n);   // spelling decks only
   if(hits.length){
     hits.sort((a,b)=>{ const pa=PW_DECK_PREF.indexOf(a.it.subject), pb=PW_DECK_PREF.indexOf(b.it.subject); return (pa<0?99:pa)-(pb<0?99:pb); });
     const h=hits[0]; return {kind:"existing",idx:h.idx,id:h.it.id,deck:h.it.subject,status:h.it.status,tier:h.it.tier||"",dupes:hits.length-1};
@@ -47100,7 +47104,9 @@ function pwRender(){
   h+='<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-family:\'Fraunces\',serif;font-size:19px;font-weight:800;color:#0f172a">🚩 Problem words — '+pwEsc(nm)+'</div><button onclick="pwClose()" style="'+b("#fff","#475569","#cbd5e1")+';padding:5px 10px">✕</button></div>';
   h+='<div style="font-size:12px;color:#64748b;margin:3px 0 12px">Just the things they keep missing. Each one is looked up first, so a card they already have comes back instead of being made twice.</div>';
   if(U.msg) h+='<div style="font-size:12px;color:#b45309;background:#fffbeb;border-radius:9px;padding:7px 10px;margin-bottom:10px">'+pwEsc(U.msg)+'</div>';
-  if(U.step==="input"){
+  if(U.step==="list"){ h+=(typeof pwListHtml==="function")?pwListHtml(U):""; }   // 🚩 PWFLAG: only the problem words
+  else if(U.step==="input"){
+    if(typeof pwListLinkHtml==="function") h+=pwListLinkHtml(U);
     h+='<textarea id="pw-text" placeholder="Type or paste words — one per line, or separated by commas" style="width:100%;box-sizing:border-box;min-height:110px;padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:11px;font-size:14px;font-family:\'DM Sans\',sans-serif">'+pwEsc(U.text)+'</textarea>';
     h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center">'
       +'<label style="'+b("#fff","#0f172a","#cbd5e1")+';display:inline-flex;align-items:center;gap:6px">📸 Photo of a graded page<input type="file" accept="image/*" onchange="pwUI&&(pwUI.photo=true);pwPhoto(this)" style="display:none"></label>'
@@ -47491,6 +47497,91 @@ function ckStartHtml(u,kid,ks){
   return h;
 }
 // CKSTART_END
+// PWFLAG_START — 🚩 badge + Problem-words list + 🔁 "graduated words came back" nudge (her asks 2026-10-04: "a 🚩 badge and
+// filter on drill cards. do" · "the graduated words came back nudge").
+//   · Badge: every drill card / score row label (mastDirTag) shows 🚩 on a problem word, "🔁 came back" on one that came
+//     back — Mom's view only (a kid drilling alone never sees a red flag on their words).
+//   · List: the 🚩 Problem words panel has "📋 My problem words" — only those cards, filterable: All · Learning now ·
+//     In Word Workout · Back on the ladder.
+//   · Nudge: when 3+ GRADUATED words from one deck came back within 30 days (a 🚩 problem word, or ✗ on a spelling
+//     test — logged to mastery/<kid>_comebacks), Mom HQ + Mom's Day say so, with 🩺 Check-up (AAS: opens the unit's
+//     check-up form for that kid) and Dismiss (quiet for 30 days: mastery/<kid>_settings/cbDismiss/<deck>).
+const CB_MIN=3, CB_DAYS=30;
+function mastProblemTag(it){
+  if(!it||!(typeof momHere==="function"&&momHere())) return "";
+  let t="";
+  if(it.problem) t+=' <span title="Problem word" style="font-size:11px">🚩</span>';
+  if(it.cameBack) t+=' <span title="Came back'+(it.cameBack.from?" from "+it.cameBack.from:"")+'" style="font-size:9.5px;font-weight:800;color:#b91c1c;background:#fef2f2;border-radius:6px;padding:1px 5px">🔁 came back</span>';
+  return t;
+}
+// ── the list ──
+function pwProblemItems(kid){
+  const items=Array.isArray((masteryData||{})[kid])?masteryData[kid]:Object.values((masteryData||{})[kid]||{});
+  return items.filter(i=>i&&(i.problem||i.cameBack)).slice().sort((a,b)=>(((b.problem||{}).ts||(b.cameBack||{}).ts||0)-((a.problem||{}).ts||(a.cameBack||{}).ts||0)));
+}
+function pwStateOf(i){
+  if(i.ww&&i.ww.on) return "workout";
+  if(i.status==="introduction"||i.status==="parked") return "learning";
+  return "ladder";
+}
+function pwListLinkHtml(U){
+  const n=pwProblemItems(U.kid).length; if(!n) return "";
+  return '<div style="text-align:right;margin:-4px 0 8px"><span onclick="pwUI.step=\'list\';pwUI.filter=\'all\';pwRender()" style="cursor:pointer;font-size:12px;font-weight:800;color:#b91c1c">📋 My problem words ('+n+') ›</span></div>';
+}
+function pwListHtml(U){
+  const L=pwProblemItems(U.kid), f=U.filter||"all", e=(typeof pwEsc==="function")?pwEsc:(s=>String(s));
+  const lbl={learning:"Learning now",workout:"In Word Workout",ladder:"Back on the ladder"};
+  const cnt=k=>L.filter(i=>pwStateOf(i)===k).length;
+  let h='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">'+[["all","All ("+L.length+")"],["learning",lbl.learning+" ("+cnt("learning")+")"],["workout",lbl.workout+" ("+cnt("workout")+")"],["ladder",lbl.ladder+" ("+cnt("ladder")+")"]]
+    .map(c=>'<span onclick="pwUI.filter=\''+c[0]+'\';pwRender()" style="cursor:pointer;padding:4px 10px;border-radius:10px;border:1.5px solid '+(f===c[0]?'#b91c1c':'#e2e8f0')+';background:'+(f===c[0]?'#fef2f2':'#fff')+';color:#7f1d1d;font-size:12px;font-weight:800">'+c[1]+'</span>').join('')+'</div>';
+  const shown=L.filter(i=>f==="all"||pwStateOf(i)===f);
+  if(!shown.length) h+='<div style="font-size:13px;color:#64748b;padding:10px 2px">None here.</div>';
+  shown.forEach(i=>{ const d=(i.problem&&i.problem.d)||(i.cameBack&&new Date(i.cameBack.ts||0).toISOString().slice(0,10))||"";
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px solid #f1f5f9"><span style="flex:1;font-size:15px;font-weight:800;color:#0f172a">'+e(String(i.prompt||"").replace(/․/g,"."))+'</span>'
+      +'<span style="font-size:11px;color:#64748b">'+e(i.subject||"")+'</span>'
+      +'<span style="font-size:11px;font-weight:800;color:'+(pwStateOf(i)==="ladder"?'#15803d':'#b45309')+'">'+lbl[pwStateOf(i)]+(pwStateOf(i)==="ladder"&&i.tier?' · '+e(i.tier.replace(/_/g," ")):'')+'</span>'
+      +(i.cameBack&&i.cameBack.from==="graduated"?'<span style="font-size:10px;font-weight:800;color:#b91c1c">🔁</span>':'')
+      +(d?'<span style="font-size:10.5px;color:#94a3b8">'+e(d)+'</span>':'')+'</div>'; });
+  h+='<div style="margin-top:10px"><button onclick="pwUI.step=\'input\';pwRender()" style="padding:7px 12px;border-radius:10px;border:1.5px solid #cbd5e1;background:#fff;color:#334155;font-size:12.5px;font-weight:800;cursor:pointer">‹ Add problem words</button></div>';
+  return h;
+}
+// ── comebacks: log + nudge ──
+function cbLog(kid,rec){
+  if(!kid||!rec) return;
+  const k=kid+"_comebacks"; masteryData[k]=masteryData[k]||{}; const id="c"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  masteryData[k][id]=rec;
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("mastery/"+k+"/"+id).set(rec);
+}
+function cbNudges(kid,now){
+  now=now||Date.now(); const since=now-CB_DAYS*864e5;
+  const log=Object.values(((masteryData||{})[kid+"_comebacks"])||{}).filter(r=>r&&r.from==="graduated"&&(r.ts||0)>=since);
+  const dis=(((masteryData||{})[kid+"_settings"]||{}).cbDismiss)||{};
+  const by={}; log.forEach(r=>{ const d=r.deck||"Cards"; (by[d]=by[d]||new Set()).add(String(r.name||"")); });
+  return Object.keys(by).filter(d=>by[d].size>=CB_MIN&&!((dis[d.replace(/[.#$\[\]\/]/g,"_")]||0)>=since)).map(d=>({kid,deck:d,n:by[d].size,words:[...by[d]].slice(0,6)}));
+}
+function cbDismiss(kid,deck){
+  if(!(typeof momHere==="function"&&momHere())) return; const key=String(deck).replace(/[.#$\[\]\/]/g,"_");
+  const st=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={}); st.cbDismiss=st.cbDismiss||{}; st.cbDismiss[key]=Date.now();
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("mastery/"+kid+"_settings/cbDismiss/"+key).set(st.cbDismiss[key]);
+  try{ renderAll(); }catch(e){}
+}
+function cbCheckup(kid){
+  const en=(typeof stEnroll==="function")?stEnroll(kid):null;
+  try{ if(typeof showTab==="function") showTab("units"); }catch(e){}
+  if(en&&typeof ckStartOpen==="function") setTimeout(()=>ckStartOpen(en.unitId,kid),50);
+}
+function cbNudgeHTML(){
+  if(!(typeof momHere==="function"&&momHere())) return "";
+  const roster=(typeof ROSTER!=="undefined")?[...ROSTER]:[]; let out=[];
+  roster.forEach(k=>{ out=out.concat(cbNudges(k)); }); if(!out.length) return "";
+  const e=(typeof stEsc==="function")?stEsc:(s=>String(s)), cp=s=>String(s).charAt(0).toUpperCase()+String(s).slice(1);
+  return '<div style="margin:0 0 12px;display:flex;flex-direction:column;gap:6px">'+out.map(n=>'<div style="display:flex;align-items:center;gap:10px;background:#fef2f2;border:1.5px solid #fecaca;border-radius:12px;padding:10px 13px">'
+    +'<div style="font-size:18px">🔁</div><div style="flex:1"><div style="font-size:13px;font-weight:800;color:#7f1d1d">'+n.n+' graduated '+e(n.deck)+' came back for '+e(cp(n.kid))+' this month</div>'
+    +'<div style="font-size:11.5px;color:#991b1b">'+e(n.words.join(", "))+(n.n>n.words.length?"…":"")+' — a check-up of graduated words might be worth it.</div></div>'
+    +'<button onclick="cbCheckup(\''+e(n.kid)+'\')" style="padding:6px 10px;border-radius:9px;border:none;background:#0f766e;color:#fff;font-size:12px;font-weight:800;cursor:pointer">🩺 Check-up</button>'
+    +'<button onclick="cbDismiss(\''+e(n.kid)+'\',\''+e(n.deck)+'\')" style="padding:6px 10px;border-radius:9px;border:1.5px solid #fecaca;background:#fff;color:#991b1b;font-size:12px;font-weight:700;cursor:pointer">Dismiss</button></div>').join('')+'</div>';
+}
+// PWFLAG_END
 // ── MST_UI_START ──
 // 📚 Study screen (kid-facing) — Anki-style sitting over mstSessions/mstPile/mstSittingInit
 // etc. (pure engine globals, provided elsewhere). This block owns UI state + rendering +
