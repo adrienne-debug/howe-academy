@@ -39,7 +39,7 @@ function braceSlice(name) {
   for (let k = j; k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}") { d--; if (d === 0) return src.slice(i, k + 1); } }
   throw new Error("unbalanced: " + name);
 }
-const fns = ["_mdKey", "_mdText", "_paceManualTitles", "ceMarkLessonDone", "gvMenuDone", "ceUnmarkLessonDone"].map(extractFn).concat([braceSlice("_ceMarkDoneUI")]).join("\n");
+const fns = ["_mdKey", "_mdText", "_paceManualTitles", "ceMarkLessonDone", "_ceMarkDoneAsk", "_ceMarkDoneApply", "gvMenuDone", "ceUnmarkLessonDone"].map(extractFn).concat([braceSlice("_ceMarkDoneUI")]).join("\n");
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {
