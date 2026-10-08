@@ -21,9 +21,18 @@ const lesson=(n,day,time,x)=>Object.assign({id:"ellis_mr_L"+String(n).padStart(4
   title:"Math — Lesson "+n,lid:"L"+String(n).padStart(4,"0")},x||{});
 const other=(id,day,time,dur,x)=>Object.assign({id,who:"ellis",subjectKey:id.split("_")[0],day,time,dur:dur||30,mom:"none",title:id},x||{});
 
+// 🕰 Frozen clock: the code under test reads `new Date()` (seGuardCtx's "now", seGuardWeek's started cards), so the wall
+// clock is pinned per world — o.wall in minutes, default 10:40 AM on Wed 2026-10-07. Found 2026-10-08: unfrozen, three
+// checks failed whenever the test ran in the evening (8:36 PM on her Mac).
+function frozenDate(wallMin){
+  const R=Date, fixed=new R(2026,9,7,Math.floor(wallMin/60),wallMin%60,0,0).getTime();
+  class FD extends R{ constructor(...a){ if(a.length) super(...a); else super(fixed); } static now(){ return fixed; } }
+  return FD;
+}
 function world(o){
   o=o||{};
   const writes=[], toasts=[];
+  const Date=frozenDate(o.wall==null?(o.now==null?10*60+40:o.now):o.wall);
   const ctx={console,weekData:{tasks:o.tasks},checked:o.checked||{},claimed:{},momMoves:o.momMoves||{},_todayDay:"wednesday",
     WK:"week26",lastTasksWrite:0,DAY_DT:{},rulesData:{schoolDay:{defaultStart:"10:00 AM",defaultEnd:"4:15 PM"}},
     currData:{subjects:{ellis:{mr:{display:"Math",lessonSeq:seq,lessonIds:ids}}}},
@@ -77,6 +86,41 @@ console.log("moves a later-day lesson to today, after the current card and after
   ok("tasks written as one targeted multi-path update", up.length===1&&up[0][1]==="week26/tasks"&&up[0][2]["ellis_mr_L0004/day"]==="wednesday"&&up[0][2]["read_1/time"]==="12:00 PM", up[0]&&up[0][2]);
   ok("no whole-node set of tasks", !w.writes.some(x=>x[0]==="set"&&x[1]==="week26/tasks"));
   ok("toast", /Moved to today at 11:30 AM/.test(w.toasts[0]||""), w.toasts);
+}
+
+console.log("the re-lay works whatever the wall clock says (it uses the app's clock, the same one the placement uses)");
+{
+  [7*60, 10*60+40, 16*60+30, 20*60+36, 23*60+59].forEach(function(wall){
+    const w=world({tasks:wed(),checked:{morning_nb:"x"},wall:wall});
+    w.ctx.momMoveToToday("ellis_mr_L0004");
+    const lbl=Math.floor(wall/60)+":"+String(wall%60).padStart(2,"0");
+    const up=w.writes.filter(x=>x[0]==="update")[0];
+    ok("wall "+lbl+": moved to 11:30, Reading slid to 12:00, nothing overlaps",
+      w.T("ellis_mr_L0004").time==="11:30 AM"&&w.T("read_1").time==="12:00 PM"&&overlaps(w.ctx.weekData.tasks,"wednesday")===null,
+      [w.T("ellis_mr_L0004").time,w.T("read_1").time,overlaps(w.ctx.weekData.tasks,"wednesday")]);
+    ok("wall "+lbl+": the slide rides the same targeted update", up&&up[2]["read_1/time"]==="12:00 PM", up&&up[2]);
+  });
+}
+
+console.log("after school ends (the app's clock past 4:15 PM): refused, nothing moves, nothing stacks");
+{
+  [16*60+15, 20*60+36].forEach(function(now){
+    const w=world({tasks:wed(),checked:{morning_nb:"x"},now:now});
+    const before=JSON.stringify(w.ctx.weekData.tasks);
+    w.ctx.momMoveToToday("ellis_mr_L0004");
+    const lbl=Math.floor(now/60)+":"+String(now%60).padStart(2,"0");
+    ok("now "+lbl+": refused with the school-end reason", /No room left today/.test(w.toasts[0]||""), w.toasts);
+    ok("now "+lbl+": schedule untouched, nothing written, no record", JSON.stringify(w.ctx.weekData.tasks)===before&&w.writes.length===0&&!w.ctx.momMoves["ellis_mr_L0004"]);
+    ok("now "+lbl+": the dialog would not offer it", w.ctx.mvtPlan("ellis_mr_L0004").ok===false);
+  });
+  // moved during school, undone in the evening: it goes home, and today is not re-laid around a card that left
+  const w=world({tasks:wed(),checked:{morning_nb:"x"}});
+  w.ctx.momMoveToToday("ellis_mr_L0004");
+  w.ctx._mlNowMin=()=>20*60+36;
+  w.ctx.undoMomMove("ellis_mr_L0004");
+  ok("undo at 8:36 PM: back on Friday 10:30", w.T("ellis_mr_L0004").day==="friday"&&w.T("ellis_mr_L0004").time==="10:30 AM");
+  ok("undo at 8:36 PM: today's cards stay where they were (nothing stacked)", overlaps(w.ctx.weekData.tasks,"wednesday")===null&&w.T("read_1").time==="12:00 PM", [w.T("read_1").time,overlaps(w.ctx.weekData.tasks,"wednesday")]);
+  ok("undo at 8:36 PM: Friday doesn't stack either", overlaps(w.ctx.weekData.tasks,"friday")===null, overlaps(w.ctx.weekData.tasks,"friday"));
 }
 
 console.log("lands after the card in progress when no earlier lesson is on today");
@@ -163,6 +207,7 @@ console.log("wiring");
   ok("dialog offers it only when mvtPlan says it can", /mvtPlan\(id\)\.ok\)\{ mtBtn\.style\.display="block"; mtBtn\.onclick=\(\)=>momMoveToToday\(id\)/.test(src));
   ok("the re-lay context holds the moved card", /isClass:t=>\{ try\{ return !!\(t&&t\.famBlock\)\|\|\(typeof mvtHeldToday==="function"&&mvtHeldToday\(t\)\)/.test(src));
   ok("undo label names the day it goes back to", src.includes('("↩ Undo move (back to "+cap(p.pulledFrom)+")")'));
+  ok("both re-lays run on the app's clock, not the wall clock", (src.match(/seGuardCtx\(\{kids:\[t\.who\],nowMin:_mlNowMin\(\)\}\)/g)||[]).length===2);
   ok("card label says where it came from", src.includes("&#128197; Moved from '+cap(_pf.pulledFrom)"));
 }
 
