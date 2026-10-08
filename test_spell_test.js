@@ -59,8 +59,11 @@ console.log("\n── the lesson card's button ──");
 {
   const card = (title, sk) => ({ id: "x", who: "andrew", subjectKey: sk || "all_about_spelling_1", day: "wednesday", title: "📄 All About Spelling 1 — " + title });
   const w = world();
-  const row = w.ctx.stCardRow(card("L19 NG · day 1 of 5"));
-  ok("Mom sees 'Spelling test: Lesson 18 (10 words)' on the lesson-day card", /Spelling test: Lesson 18 \(10 words\)/.test(row), row);
+  // STTESTCARD (2026-10-08): the button moved to the test's own card (test_spell_test_card.js); the lesson card has none
+  const tcard = { id: "andrew_st_L1-18", stTest: true, stFor: "x", stKey: "L1-18", stLevel: 1, stLesson: 18, who: "andrew", subjectKey: "spelltest", day: "wednesday", title: "📝 Spelling test: Lesson 18" };
+  const row = w.ctx.stCardRow(tcard);
+  ok("Mom sees 'Spelling test: Lesson 18 (10 words)' on the test card", /Spelling test: Lesson 18 \(10 words\)/.test(row), row);
+  ok("…and no button on the lesson-day card itself", w.ctx.stCardRow(card("L19 NG · day 1 of 5")) === "");
   ok("not on a practice-day card", w.ctx.stCardRow(card("L19 NG · day 2 of 5")) === "");
   ok("not on another subject's card", w.ctx.stCardRow(card("L19 NG · day 1 of 5", "arithmetic_2")) === "");
   const kidView = world({ mom: false });
@@ -89,7 +92,7 @@ console.log("\n── giving and grading it ──");
   const rec = c.masteryData.andrew_spelltests["L1-18"];
   ok("the test record is saved as graded, with each word's result", rec.state === "graded" && rec.res[0] === "c" && rec.res[9] === "m" && rec.words.length === 10);
   ok("writes are targeted (cards by index, the record by key)", w.writes.some(x => x[1] === "mastery/andrew" && x[0] === "update") && w.writes.some(x => x[1] === "mastery/andrew_spelltests/L1-18" && x[0] === "set"));
-  ok("the card now says how it went", /✓ Spelling test, Lesson 18: 7 of 10/.test(c.stCardRow({ who: "andrew", subjectKey: "all_about_spelling_1", day: "wednesday", title: "x — L19 NG · day 1 of 5" })));
+  ok("the test card now says how it went", /✓ Spelling test, Lesson 18: 7 of 10/.test(c.stCardRow({ id: "andrew_st_L1-18", stTest: true, stKey: "L1-18", stLevel: 1, stLesson: 18, who: "andrew", subjectKey: "spelltest", day: "wednesday", title: "📝 Spelling test: Lesson 18" })));
 }
 {
   const w = world({ mastery: { andrew: [{ id: "and_black", subject: "AAS Words", prompt: "black", answer: "black", status: "active", tier: "monthly" }], andrew_custom_items: [] } }), c = w.ctx;

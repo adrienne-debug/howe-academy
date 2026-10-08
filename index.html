@@ -2900,6 +2900,7 @@ function safeWriteTasks(reason,opts){
   // lesson — whatever laid it. Idempotent, and only unlocked plan-backed cards can move.
   try{ if(typeof seqFillNormalize==="function") seqFillNormalize(weekData.tasks,reason); }catch(eSF){ dbg("seqfill skip: "+eSF); }
   try{ if(!(opts&&opts.echo)&&typeof prExtraCore==="function"){ const _px=prExtraCore(weekData.tasks,prExtraCtx()); if(_px.added.length){ dbg("🎯 catch-up ("+reason+"): +"+_px.added.length+" extra sitting(s) — "+_px.added.map(t=>t.who+" "+t.subjectKey+" "+t.day).join(", ")); if(typeof seqFillNormalize==="function") seqFillNormalize(weekData.tasks,reason+"+catchup"); } } }catch(ePX){ dbg("catch-up skip: "+ePX); }
+  try{ if(typeof stSyncWeek==="function"){ const _st=stSyncWeek(weekData.tasks,stSyncCtx()); if(_st.added.length||_st.removed.length||_st.moved.length){ sv(WK+"_tasks",weekData.tasks); dbg("📝 spelling test cards ("+reason+"): +"+_st.added.length+" −"+_st.removed.length+" ↕"+_st.moved.length); } } }catch(eST){ dbg("spelltest sync skip: "+eST); }   // 📝 STTESTCARD: before the school-end guard, so it lays the pair
   try{ if(typeof seGuardWeek==="function"){ const _se=seGuardWeek(weekData.tasks,seGuardCtx()); if(_se.retimed.length||_se.rolled.length||_se.deferred.length||_se.dropped.length) dbg("⏰ school end ("+reason+"): re-laid "+_se.retimed.length+", rolled "+_se.rolled.length+", deferred "+_se.deferred.length+(_se.dropped.length?", dropped for the day "+_se.dropped.join(" "):"")+(_se.stuck.length?", daily-only overflow "+_se.stuck.join(" "):"")); } }catch(eSE){ dbg("school-end skip: "+eSE); }
   const obj={};
   weekData.tasks.forEach(t=>obj[t.id]=t);
@@ -7088,18 +7089,21 @@ function helpersCardHTML(){
       }
       h+='<div class="rules-section-lbl" style="margin-top:4px">Can help with</div>';
       const _onH=(k,sk)=>!!(p.help&&p.help[k]&&p.help[k][sk]);
-      const kids=[...ROSTER].filter(k=>Object.keys(subs[k]||{}).some(sk=>_hlpSubjEligible(subs[k][sk])||_onH(k,sk)));
+      const _stK=k=>{ try{ return typeof stEnroll==="function"&&!!stEnroll(k); }catch(e){ return false; } };   // 📝 STTESTCARD
+      const kids=[...ROSTER].filter(k=>Object.keys(subs[k]||{}).some(sk=>_hlpSubjEligible(subs[k][sk])||_onH(k,sk))||_stK(k)||_onH(k,"spelltest"));
       h+='<div style="font-size:11px;color:var(--muted);padding:0 0 4px">Only lessons that need Mom are listed &mdash; the kids do the rest on their own.</div>';
       if(!kids.length) h+='<div style="font-size:11px;color:var(--muted);padding:4px 0">No Mom-required or May-need-Mom subjects yet.</div>';
       kids.forEach(k=>{
         h+='<div style="font-size:12px;font-weight:700;padding:6px 0 2px">'+esc(cap(k))+'</div><div style="display:flex;gap:6px;flex-wrap:wrap;padding:2px 0 4px">';
-        Object.keys(subs[k]).sort((a,b)=>String((subs[k][a]||{}).display||(subs[k][a]||{}).name||a).localeCompare(String((subs[k][b]||{}).display||(subs[k][b]||{}).name||b))).forEach(sk=>{
+        Object.keys(subs[k]||{}).sort((a,b)=>String((subs[k][a]||{}).display||(subs[k][a]||{}).name||a).localeCompare(String((subs[k][b]||{}).display||(subs[k][b]||{}).name||b))).forEach(sk=>{
           const s=subs[k][sk]||{}, on=_onH(k,sk), elig=_hlpSubjEligible(s);
           if(!elig&&!on) return;   // 🙋 independent work never goes to a helper
           if(!elig){ h+='<div class="pnw-chip" style="padding:5px 11px;opacity:.55;text-decoration:line-through" title="The kids do this on their own — tap to remove" onclick="helpersToggleHelp(\''+id+'\',\''+_hlpQ(k)+'\',\''+_hlpQ(sk)+'\')">'+esc(s.display||s.name||sk)+' &times;</div>'; return; }
           const _mk=(s.mom||"none")==="required"?' <span title="Mom-required">&#128105;</span>':(s.mom==="maybe"?' <span title="May need Mom" style="font-size:10px;font-weight:700;color:#854d0e">may</span>':' <span title="Needs Mom on set days" style="font-size:10px;font-weight:700;color:#6b21a8">set days</span>');
           h+='<div class="pnw-chip'+(on?" on":"")+'" style="padding:5px 11px" onclick="helpersToggleHelp(\''+id+'\',\''+_hlpQ(k)+'\',\''+_hlpQ(sk)+'\')">'+esc(s.display||s.name||sk)+_mk+'</div>';
         });
+        // 📝 STTESTCARD (2026-10-08): the spelling test on its own — on, the test card goes to this helper and the lesson stays with Mom
+        if(_stK(k)||_onH(k,"spelltest")) h+='<div class="pnw-chip'+(_onH(k,"spelltest")?" on":"")+'" style="padding:5px 11px" title="Just the test — the lesson stays with Mom" onclick="helpersToggleHelp(\''+id+'\',\''+_hlpQ(k)+'\',\'spelltest\')">&#128221; Spelling test</div>';
         h+='</div>';
       });
       h+='<div class="rules-section-lbl" style="margin-top:10px">Regular days <span style="font-weight:500;color:var(--muted)">(optional — leave off for drop-in help like Dad)</span></div>';
@@ -7139,7 +7143,7 @@ function helperDaysOnValue(v){
 }
 function helperSessionsToday(){ return (helperDaysData&&helperDaysData[_hlpTodayISO()])||{}; }
 function helperIsHere(id){ const s=helperSessionsToday()[id]; return !!(s&&s.arrived&&!s.left&&helpersData[id]); }
-function _hlpApproved(p,t){ return !!(p&&p.help&&t&&p.help[t.who]&&p.help[t.who][t.subjectKey]); }
+function _hlpApproved(p,t){ const h=p&&p.help&&t&&p.help[t.who]; return !!(h&&(h[t.subjectKey]||(t.stTest&&t.origSubjectKey&&h[t.origSubjectKey]))); }   // 📝 a helper on the AAS lesson takes its test too
 function _hlpIsToday(t){ try{ return ((typeof _mlDayOf==="function")?_mlDayOf(t):t.day)===_todayDay; }catch(e){ return false; } }
 // The one question everything asks: is this card a helper's right now? → helper id, or null.
 function helperHolds(t){
@@ -8751,6 +8755,8 @@ function finalizeDone(id, doneTs, score){
   // Sequential-order guard (stamped subjects, unless allowOutOfOrder): refuse rather than record.
   try{ const _tg=weekData.tasks.find(x=>x.id===id); const _why=(typeof lidOrderBlock==="function")?lidOrderBlock(_tg):null;
     if(_why){ if(typeof gwShowToast==="function") gwShowToast("⛔ Not yet — “"+_why+"” isn’t done. Lessons check off in order."); dbg("order guard blocked "+id+" ("+_why+")"); return false; } }catch(e){}
+  // 📝 STTESTCARD: the lesson card unlocks when its spelling test is checked or graded
+  try{ const _tg=weekData.tasks.find(x=>x.id===id); if(_tg&&typeof stLessonLock==="function"&&stLessonLock(_tg)){ if(typeof gwShowToast==="function") gwShowToast("📝 Spelling test first — then this lesson"); dbg("spelling test lock "+id); return false; } }catch(e){}
   checked[id]=doneTs; sv(WK+"_checked",checked); lastCheckedWrite=Date.now();
   manualUnchecks.delete(id);   // ✅ re-checked → cancel this session's earlier uncheck, else every FB snapshot strips it again (Makenzie AAS 4, DeWalt 2026-10-06)
   // Targeted child write — a whole-map set() here let a device with stale local state
@@ -8781,6 +8787,7 @@ function finalizeDone(id, doneTs, score){
     try{ checkBookComplete(t.who, t.subjectKey); }catch(e){}
     try{ checkSessionComplete(t.who); }catch(e){}
     try{ rlOnCheckoff(t); }catch(e){}   // 📚 reading-log subjects: page prompt / pending chip
+    try{ if(t.stTest&&typeof stOnTestChecked==="function") stOnTestChecked(t); }catch(e){}   // 📝 STTESTCARD: a helper's paper test → Mom's Grade item
     try{ if(typeof mlOnCheck==="function"&&!t.famBlock) mlOnCheck(t); }catch(e){}   // 👩 Mom loop: buffer check starts a hold, Mom-card check releases it
     // ⏩ last open card of today checked → the next lesson follows (after the heal below has settled)
     try{ if(typeof efPullNext==="function"&&effectiveDay(t)===_todayDay) setTimeout(function(){ try{ if(efPullNext(t.who)&&typeof renderAll==="function") renderAll(); }catch(e){} },0); }catch(e){}
@@ -10097,6 +10104,7 @@ function bbMomCardHtml(k){
 function tapTask(id){
   const t=weekData.tasks.find(x=>x.id===id); if(!t)return;
   if(checkoffHeld()){ _checkoffHeldToast(); return; }
+  if(typeof stTapGate==="function"&&stTapGate(t)) return;   // 📝 STTESTCARD: Mom opens the test · the lesson waits for it
   // 👨‍👩‍👧 Family time: Mom checks it off once for everyone (her rule 2026-10-03) — a kid's tap only says so.
   if(t.famBlock&&!momHereCards()){
     // ⭐ "rate each other" (step C): the kid's tap opens THEIR rating of the others — that is their check-off
@@ -46711,7 +46719,7 @@ function unitStageCheckup(){
 // CHECKUP_END
 // SPELLTEST_START — 📝 Spelling test (her design 2026-10-04, step 2 of the All About Spelling plan; her "yes build").
 // ONE test per lesson, given by Mom (or whoever she hands it to — Mom-required, so a helper can pull it), never seen
-// by a kid: the button lives only in Mom's view of the lesson card. Per kid, the AAS unit row picks the path:
+// by a kid: the button lives only in Mom's view of the test's own card (STTESTCARD, 2026-10-08). Per kid, the AAS unit row picks the path:
 //   · Practice Week (DeWalt) — the lesson-day card tests LAST lesson's words (they practised them all week);
 //   · Test First (Howe)      — the lesson-day card tests THIS lesson's words, right after teaching.
 // The screen shows one word at a time, hidden until Mom taps (word + the card's sentence), then she grades each:
@@ -46764,15 +46772,19 @@ function stRecs(kid){ return ((typeof masteryData!=="undefined"&&masteryData&&ma
 function stScore(rec){ const r=rec&&rec.res||{}; const v=Object.keys(r).map(k=>r[k]); return {c:v.filter(x=>x==="c").length,s:v.filter(x=>x==="s").length,m:v.filter(x=>x==="m").length,n:(rec&&rec.words||[]).length}; }
 function stEsc(v){ return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }
 function stCap(s){ s=String(s||""); return s.charAt(0).toUpperCase()+s.slice(1); }
-// ── the lesson card's row (Mom only) ──
+// ── the card's row ──
+// STTESTCARD (2026-10-08): the test is its OWN card now (see STTESTCARD below). The test card carries Mom's button
+// (the same labels the lesson card used to show); the lesson card only says it is waiting for the test.
 function stCardRow(t,done){
   try{
-    if(!(typeof momHere==="function"&&momHere())) return "";
     if(!t||!t.who) return "";
-    const en=stEnroll(t.who); if(!en||t.subjectKey!==en.ks.subject) return "";
-    const txt=String(t.title||"").split(" — ").pop();
-    if(!stIsLessonDay(txt)) return "";
-    const tg=stTarget(en.u,en.ks,txt); if(!tg) return "";
+    if(!t.stTest){
+      if(done||!stLessonLock(t)) return "";
+      return '<div style="margin-top:5px;font-size:11px;font-weight:700;color:#9a3412">🔒 After the spelling test</div>';
+    }
+    if(!(typeof momHere==="function"&&momHere())) return "";
+    const en=stEnroll(t.who); if(!en) return "";
+    const tg={level:t.stLevel,lesson:t.stLesson,key:t.stKey,words:stWords(en.u,t.stLevel,t.stLesson)}; if(!tg.words.length) return "";
     const rec=stRecs(t.who)[tg.key];
     let label;
     if(rec&&rec.state==="graded"){ const sc=stScore(rec); label="✓ Spelling test, Lesson "+tg.lesson+": "+sc.c+" of "+sc.n+" · open"; }
@@ -46885,6 +46897,7 @@ function stSave(){
   stApplyResults(S.kid,S.words.map(w=>w.name),res,S.key);
   const rec=_stRec(S,"graded"); rec.res=res; rec.gradedTs=Date.now(); _stWrite(S.kid,S.key,rec);
   const sc=stScore(rec); if(typeof gwShowToast==="function") gwShowToast("📝 Saved — "+sc.c+" ✓ · "+sc.s+" 〰 · "+sc.m+" ✗");
+  stCheckCard(S.kid,S.key);   // 📝 STTESTCARD: graded → the test card is done
   stClose();
 }
 function stNoTime(){
@@ -46892,7 +46905,8 @@ function stNoTime(){
   const res={}; S.words.forEach((w,i)=>{ res[i]="m"; });
   stApplyResults(S.kid,S.words.map(w=>w.name),res,S.key);
   const rec=_stRec(S,"learning"); rec.res=res; rec.gradedTs=Date.now(); _stWrite(S.kid,S.key,rec);
-  if(typeof gwShowToast==="function") gwShowToast("📝 All "+S.words.length+" words added to learning — you can still grade it later from the lesson card");
+  if(typeof gwShowToast==="function") gwShowToast("📝 All "+S.words.length+" words added to learning — you can still grade it later from the test card");
+  stCheckCard(S.kid,S.key);   // 📝 STTESTCARD
   stClose();
 }
 function stPaper(){
@@ -46900,6 +46914,7 @@ function stPaper(){
   const prev=stRecs(S.kid)[S.key]; if(prev&&prev.state==="graded"){ stClose(); return; }
   _stWrite(S.kid,S.key,_stRec(S,"pending"));
   if(typeof gwShowToast==="function") gwShowToast("📝 On your list until it’s graded");
+  stCheckCard(S.kid,S.key);   // 📝 STTESTCARD: given on paper → the test card is done; grading waits on Mom's list
   stClose();
 }
 // ── Mom's list: tests waiting to be graded (due today or earlier) ──
@@ -46969,6 +46984,161 @@ function stUnitRowHtml(u,kid,ks){
     +pill("week","Practice Week","The lesson-day card tests LAST lesson's words — they practised them all week.")
     +pill("first","Test First","The lesson-day card tests THIS lesson's words, right after you teach it.")+'</div>';
 }
+// STTESTCARD_START — 📝 the spelling test is its OWN card (her ask 2026-10-08: "make it its own card instead").
+// On a kid's AAS lesson day a "📝 Spelling test: Lesson N" card sits right before the lesson card — the same lesson
+// stTarget picks (Practice Week: the lesson before, none when that lesson had no words; Test First: this lesson).
+//   · Mom does both → they stay together: the test first (stored just before the lesson; prMomOrder keeps the pair
+//     side by side in her block) and the lesson card stays locked until the test is checked or graded.
+//   · A helper takes the test (her help list has "📝 Spelling test", or she ticks it for the day in pick mode) → the
+//     test card is hers alone; with regular hours that day it is laid inside her window and the lesson stays with Mom,
+//     after it. A helper approved for the AAS lesson itself takes both together, as before.
+//   · Tapping the test card in Mom mode opens the test screen (stOpen). Save / "Didn't have time" / "Paper — grade
+//     later" check the card off; a paper test keeps its "Grade the spelling test" item until graded. A helper's own
+//     check-off (no Mom screen) leaves the same Grade item for Mom. A kid can't check it off. Grading stays Mom-only.
+// The card is a real stored card (like 🔁 Review with Mom: subjectKey "spelltest", no lid, so no book's pace or order
+// moves): id <kid>_st_L<level>-<lesson>, stTest:true, stFor = the lesson card's id. stSyncWeek keeps it in step with
+// its lesson on every week write (safeWriteTasks, Regenerate) — added, moved with the lesson, or removed when the
+// lesson no longer has a test. A checked test card is never moved or removed. Works for every family (any kid with an
+// AAS kidStage).
+const ST_TEST_KEY="spelltest", ST_TEST_DUR=10;
+function stTestId(kid,key){ return kid+"_st_"+key; }
+// A lesson card that carries a test → {en,tg}, else null.
+function stLessonTest(L){
+  try{
+    if(!L||!L.who||L.stTest||String(L.id||"").endsWith("_c")||L._eowOverflow) return null;
+    const en=stEnroll(L.who); if(!en||L.subjectKey!==en.ks.subject) return null;
+    const txt=String(L.title||"").split(" — ").pop(); if(!stIsLessonDay(txt)) return null;
+    const tg=stTarget(en.u,en.ks,txt); return tg?{en,tg}:null;
+  }catch(e){ return null; }
+}
+function _stTasks(){ return ((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]); }
+function _stCk(){ return (typeof checked!=="undefined"&&checked)||{}; }
+// The test card is done: checked off, or graded (✓ results or "Didn't have time").
+function stTestDone(T){
+  if(!T) return true;
+  if(_stCk()[T.id]) return true;
+  const r=stRecs(T.who)[T.stKey]; return !!(r&&(r.state==="graded"||r.state==="learning"));
+}
+// The lesson card waits for its test → that test card, else null.
+function stLessonLock(L,tasks){
+  try{
+    if(!L||L.stTest||_stCk()[L.id]) return null;
+    const T=(tasks||_stTasks()).find(x=>x&&x.stTest&&x.stFor===L.id);
+    return (T&&!stTestDone(T))?T:null;
+  }catch(e){ return null; }
+}
+// Mom's block for one kid: each test card goes right before its lesson.
+function stPairOrder(list){
+  try{
+    if(!Array.isArray(list)||list.length<2) return list;
+    const ids=new Set(list.map(x=>x&&x.id)), paired=list.filter(x=>x&&x.stTest&&ids.has(x.stFor));
+    if(!paired.length) return list;
+    const out=[];
+    list.forEach(x=>{ if(paired.indexOf(x)>=0) return; paired.forEach(T=>{ if(T.stFor===x.id) out.push(T); }); out.push(x); });
+    return out;
+  }catch(e){ return list; }
+}
+// Keep the week's test cards in step with their lessons. Mutates `tasks` in place (the caller writes the week).
+// o = {checked, claimed, toMin, fromMin, win(day)→{start,lunchStart,lunchEnd}|null, helperWin(day,kid)→{s,e}|null,
+//      dayOf(L)→day (Mom's push), dismissed(L)→bool}. → {added:[id], removed:[id], moved:[id]}
+function stSyncWeek(tasks,o){
+  const out={added:[],removed:[],moved:[]};
+  try{
+    o=o||{}; if(!Array.isArray(tasks)||!o.toMin||!o.fromMin) return out;
+    const ck=o.checked||{}, cl=o.claimed||{}, tm=o.toMin, fm=o.fromMin, dur=ST_TEST_DUR;
+    const kept=id=>!!(ck[id]||cl[id]);
+    const want={};
+    tasks.forEach(L=>{ if(!L||L.stTest) return; if(o.dismissed&&o.dismissed(L)) return;
+      const q=stLessonTest(L); if(!q) return; const id=stTestId(L.who,q.tg.key); if(!want[id]) want[id]={L:L,tg:q.tg,ks:q.en.ks}; });
+    // stale or duplicate test cards go (never a checked / claimed one)
+    const seen={};
+    for(let i=tasks.length-1;i>=0;i--){ const T=tasks[i]; if(!T||!T.stTest) continue;
+      const w=want[T.id], dup=seen[T.id]; seen[T.id]=true;
+      if(kept(T.id)) continue;
+      if(dup||!w||kept(w.L.id)){ tasks.splice(i,1); out.removed.push(T.id); } }
+    Object.keys(want).forEach(id=>{
+      const w=want[id], L=w.L, tg=w.tg;
+      let T=tasks.find(x=>x&&x.stTest&&x.id===id);
+      if(!T){ if(kept(L.id)) return;   // the lesson is already done — no test card after the fact
+        T={id:id,who:L.who,mom:"required",device:"paper",subjectKey:ST_TEST_KEY,stTest:true}; tasks.push(T); out.added.push(id); }
+      T.title="📝 Spelling test: Lesson "+tg.lesson; T.dur=dur;
+      T.detail="All About Spelling · Level "+tg.level+" · Lesson "+tg.lesson+" · "+tg.words.length+" words — a grown-up reads each word, you write it";
+      T.stFor=L.id; T.stKey=tg.key; T.stLevel=tg.level; T.stLesson=tg.lesson; T.origSubjectKey=L.subjectKey;
+      if(kept(T.id)||kept(L.id)) return;   // done work never moves
+      const day=(o.dayOf&&o.dayOf(L))||L.day, before={d:T.day,t:T.time,l:L.time};
+      T.day=day;
+      // where can a 10-minute card go for this kid that day?
+      const W=(o.win&&o.win(day))||null, busy=[];
+      tasks.forEach(x=>{ if(!x||x===T||x.who!==L.who||((o.dayOf&&!x.stTest&&o.dayOf(x))||x.day)!==day||String(x.id||"").endsWith("_c")||x._eowOverflow) return;
+        const a=tm(x.time); if(a==null||isNaN(a)) return; busy.push([a,a+(+x.dur||20),x]); });
+      if(W&&W.lunchEnd>W.lunchStart) busy.push([W.lunchStart,W.lunchEnd,null]);
+      const free=(s,skip)=>!busy.some(b=>b[2]!==skip&&s<b[1]&&s+dur>b[0]);
+      const Lt=tm(L.time); let placed=false;
+      // 🙋 a regular helper takes the test inside her window (unless the lesson is hers too — then they stay together)
+      const hw=o.helperWin?o.helperWin(day,L.who):null;
+      if(hw&&!(Lt>=hw.s&&Lt<hw.e)){
+        for(let s=hw.s;s+dur<=hw.e;s+=5){ if(!free(s)) continue;
+          T.time=fm(s); placed=true;
+          if(Lt<s+dur){ L.time=fm(s+dur); }   // the lesson stays with Mom, after the test
+          break; }
+      }
+      if(!placed){
+        const s=Lt-dur, start=W?W.start:0;
+        if(s>=start&&free(s)) T.time=fm(s);
+        else { T.time=L.time; L.time=fm(Lt+dur); }   // no room before it → the test takes the lesson's slot, the lesson follows
+      }
+      // the pair sits together in the week's list too: the test right before its lesson
+      const ti=tasks.indexOf(T); tasks.splice(ti,1); tasks.splice(tasks.indexOf(L),0,T);
+      if(before.d!==T.day||before.t!==T.time||before.l!==L.time) out.moved.push(id);
+    });
+  }catch(e){}
+  return out;
+}
+// The app's context for stSyncWeek.
+function stSyncCtx(extra){
+  const _sd=((typeof rulesData!=="undefined"&&rulesData)||{}).schoolDay||{};
+  const _r=(typeof gwRules==="function")?gwRules():{lunchStart:toMin("1:00 PM"),lunchEnd:toMin("2:00 PM")};
+  const mv=(typeof momMoves!=="undefined"&&momMoves)||{};
+  return Object.assign({
+    checked:_stCk(), claimed:(typeof claimed!=="undefined"&&claimed)||{}, toMin:toMin, fromMin:fromMin,
+    win:day=>{ const ov=(_sd.overrides||{})[day]||{}; return {start:toMin(ov.start||_sd.defaultStart||"10:00 AM"),lunchStart:_r.lunchStart,lunchEnd:_r.lunchEnd}; },
+    helperWin:(day,kid)=>{ try{ return (typeof helperPlanWin==="function")?helperPlanWin(day,kid,ST_TEST_KEY):null; }catch(e){ return null; } },
+    dayOf:L=>{ const m=mv[L.id]; return (m&&m.mode==="push"&&m.toDay)||L.day; },
+    dismissed:L=>{ const m=mv[L.id]; return !!(m&&(m.mode==="skip"||m.mode==="drop")); }
+  },extra||{});
+}
+// A tap on a test card or a locked lesson card (tapTask) → true when handled here.
+function stTapGate(t){
+  try{
+    if(!t||_stCk()[t.id]) return false;
+    if(t.stTest){
+      if(typeof momHere==="function"&&momHere()){ stOpen(t.who,t.stLevel,t.stLesson,t.day||null); return true; }
+      if(typeof helperHolds==="function"&&helperHolds(t)) return false;   // 🙋 the helper gives it and checks it off
+      if(typeof gwShowToast==="function") gwShowToast("📝 Mom gives the spelling test");
+      return true;
+    }
+    const T=stLessonLock(t);
+    if(T){ if(typeof gwShowToast==="function") gwShowToast("📝 Spelling test first — then this lesson"); return true; }
+  }catch(e){}
+  return false;
+}
+// A test card was checked off. Given without the Mom screen (a helper's paper test) → it goes on Mom's list to grade.
+function stOnTestChecked(t){
+  try{
+    if(!t||!t.stTest||stRecs(t.who)[t.stKey]) return;
+    const en=stEnroll(t.who); if(!en) return; const w=stWords(en.u,t.stLevel,t.stLesson); if(!w.length) return;
+    const d=new Date(), due=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+    _stWrite(t.who,t.stKey,{unit:en.unitId,level:t.stLevel,lesson:t.stLesson,state:"pending",words:w.map(c=>c.name),ts:Date.now(),due:due});
+  }catch(e){}
+}
+// Mom graded (or gave on paper) from the screen → this week's test card for it is checked off.
+function stCheckCard(kid,key){
+  try{
+    const T=_stTasks().find(x=>x&&x.stTest&&x.who===kid&&x.stKey===key&&!_stCk()[x.id]);
+    if(T&&typeof finalizeDone==="function") finalizeDone(T.id,(typeof nowTs==="function")?nowTs():Date.now(),null);
+  }catch(e){}
+}
+// STTESTCARD_END
 // SPELLTEST_END
 // PROBLEMWORDS_START — 🚩 Problem Words (step 3 of the AAS plan; her ask 2026-10-04: "make that really user friendly
 // for mom to quickly add … she takes a picture and AI pulls those things out … then she could click settings on those
@@ -52420,7 +52590,7 @@ function prMomOrder(k,cards){
   const rank=t=>t.id===held?0:isM(t)?1:isC(t)?3:2;
   const out=cards.map((t,i)=>({t:t,i:i})).sort((a,b)=>(rank(a.t)-rank(b.t))||(need[b.t.id]-need[a.t.id])||(toMin(a.t.time)-toMin(b.t.time))||(a.i-b.i)).map(x=>x.t);
   try{ if(typeof applyStickyOrder==="function") applyStickyOrder(out,t=>t.subjectKey||"",t=>((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[t.who]||{})[t.subjectKey]||null,t=>t.who); }catch(e){}
-  return out;
+  return (typeof stPairOrder==="function")?stPairOrder(out):out;   // 📝 STTESTCARD: the spelling test right before its lesson
 }
 // 💻 her ask 2026-10-01: the last word in render. After the day has shifted and the Mom queue has laid today from now,
 // two kids can still sit on one computer at the same time — step the later one over with the write-time guard's lane
@@ -60930,6 +61100,7 @@ function gwCommit(){
     sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
     try{ if(typeof rbLog==="function") rbLog("regenerate","all",0,d.week||""); }catch(e){}   // ↻ for the daily-miss tracker
     try{ if(typeof prExtraCore==="function"){ const _px=prExtraCore(d.tasks,prExtraCtx({checked:snapChecked})); if(_px.added.length){ dbg("🎯 catch-up (regenerate): +"+_px.added.length+" extra sitting(s)"); if(typeof seqFillNormalize==="function") seqFillNormalize(d.tasks,"regenerate+catchup"); sv(WK+"_tasks",d.tasks); } } }catch(ePX){ dbg("catch-up skip: "+ePX); }
+    try{ if(typeof stSyncWeek==="function"){ const _st=stSyncWeek(d.tasks,stSyncCtx({checked:snapChecked,claimed:{}})); if(_st.added.length||_st.removed.length||_st.moved.length){ sv(WK+"_tasks",d.tasks); dbg("📝 spelling test cards (regenerate): +"+_st.added.length+" −"+_st.removed.length+" ↕"+_st.moved.length); } } }catch(eST){ dbg("spelltest sync skip: "+eST); }   // 📝 STTESTCARD
     try{ if(typeof seGuardWeek==="function"){ const _se=seGuardWeek(d.tasks,seGuardCtx({checked:snapChecked})); if(_se.retimed.length||_se.rolled.length||_se.deferred.length||_se.dropped.length){ sv(WK+"_tasks",d.tasks); dbg("⏰ school end (regenerate): re-laid "+_se.retimed.length+", rolled "+_se.rolled.length+", deferred "+_se.deferred.length+(_se.dropped.length?", dropped for the day "+_se.dropped.join(" "):"")+(_se.stuck.length?", daily-only overflow "+_se.stuck.join(" "):"")); } } }catch(eSE){ dbg("school-end skip: "+eSE); }
     if(db){
       const obj={};d.tasks.forEach(t=>obj[t.id]=t);
