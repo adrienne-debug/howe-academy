@@ -9579,7 +9579,7 @@ function taskCard(t, fromDay, readOnly, doneId){
   if(_ckLine) linkRow+='<div style="margin-top:4px;font-size:11px;color:#0f766e;font-weight:700">'+_ckLine+'</div>';
   else if(_dlSub&&_dlSub.study&&typeof mstPile==="function"){
     try{
-      const _sp=mstPile(t.who,_dlSub.study,mastGetPrintNum(),(typeof mstLogGet==="function")?mstLogGet(t.who,_dlSub.study):null);
+      const _sp=mstPile(t.who,_dlSub.study,mastGetPrintNum(t.who),(typeof mstLogGet==="function")?mstLogGet(t.who,_dlSub.study):null);
       const _n=(_sp.newNames||[]).length,_d=(_sp.reviews||[]).length,_l=(_sp.learning||[]).length;
       const _txt=(_n+_d+_l)?(_n+' new · '+_d+' due · '+_l+' learning'):((typeof mstLogGet==="function"&&mstLogGet(t.who,_dlSub.study))?'\u2713 done today':'nothing due');
       linkRow+='<div style="margin-top:4px;font-size:11px;color:var(--muted);font-weight:600">\u{1F4DA} '+_txt+'</div>';
@@ -31946,7 +31946,7 @@ function _ustApply(u,kid,stageN,knows,subject,mapId){
     if(c.def!=null) base.answer=String(c.def);   // Numbers/Counting: no back — the kid says it
     if(fi<=kIdx){  // already known → review on the ladder
       const wk=(_ustFamNum(c)||0)>=wFrom;
-      items.push(Object.assign(base,{status:"active",placed:true,tier:wk?"weekly":"bi_weekly",tally_dots:5,next_due:2+(wk?(nW++%7):(nB++%14))}));
+      items.push(Object.assign(base,{status:"active",placed:true,tier:wk?"weekly":"bi_weekly",tally_dots:5,next_due:((typeof mastGetPrintNum==="function")?mastGetPrintNum(kid):1)+1+(wk?(nW++%7):(nB++%14))}));
       haveItem.add(pk(dk,c.name));
     } else if(started[dk]<(d.introCap||3)&&(upto==null||ch==null||ch<=upto)){
       items.push(Object.assign(base,{status:"introduction",tier:"daily",tally_dots:0}));
@@ -42490,7 +42490,7 @@ function mastDrillSettings(){
   const kid=masteryKid||"julian";
   const s=masteryData[kid+"_settings"]||{};
   const defaultLadder=["every_other_day","weekly","bi_weekly","monthly","graduated"];
-  return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,max_learn_per_drill:s.max_learn_per_drill??0,auto_pull:s.auto_pull!==false,ladder:s.ladder||defaultLadder,cat_caps:s.cat_caps||{},cat_intro_dots:s.cat_intro_dots||{},cat_intro_max:s.cat_intro_max||{},miss_drop:s.miss_drop||"reset",close_behavior:s.close_behavior||"stay",drop_threshold:s.drop_threshold??0,tier_streaks:s.tier_streaks||{},gate_tier:s.gate_tier||"weekly",sprint_default:s.sprint_default===true,cat_sprint:s.cat_sprint||{},dynamic_decks:s.dynamic_decks===true,dynamic_cap:s.dynamic_cap??24,show_me:s.show_me!==false,match_speak:s.match_speak===true};
+  return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,max_learn_per_drill:s.max_learn_per_drill??0,max_overdue_per_drill:s.max_overdue_per_drill??0,auto_pull:s.auto_pull!==false,ladder:s.ladder||defaultLadder,cat_caps:s.cat_caps||{},cat_intro_dots:s.cat_intro_dots||{},cat_intro_max:s.cat_intro_max||{},miss_drop:s.miss_drop||"reset",close_behavior:s.close_behavior||"stay",drop_threshold:s.drop_threshold??0,tier_streaks:s.tier_streaks||{},gate_tier:s.gate_tier||"weekly",sprint_default:s.sprint_default===true,cat_sprint:s.cat_sprint||{},dynamic_decks:s.dynamic_decks===true,dynamic_cap:s.dynamic_cap??24,show_me:s.show_me!==false,match_speak:s.match_speak===true};
 }
 // How many introduction dots a card in `cat` needs before it enters the ladder.
 // Mirrors cat_caps: a per-category override, else the global intro_dots default.
@@ -43512,17 +43512,43 @@ function mastPrintLogAppend(dt,pn){
     return arr;
   });
 }
-function mastGetPrintNum(){
-  const today=new Date().toISOString().slice(0,10);
-  let pl=masteryData.printLog||[];
-  if(!Array.isArray(pl)) pl=Object.values(pl);
-  const existing=pl.find(x=>x.date===today);
-  if(existing) return existing.num;
-  return pl.reduce((m,x)=>Math.max(m,x.num||0),0)+1;
+// ── Drill clock = this kid's SCHOOL-DAY number (Adrienne, 2026-10-05) ───────────────────
+// One tick per school day for THIS kid: the days of the week their pace plan schools on
+// (Mon–Fri when the plan doesn't say), skipping family-calendar holidays, vacations and the
+// kid's own day-off overrides — counted from a fixed epoch so every device agrees. It
+// replaces the family-wide print counter, which ticked once per DATE on which ANY kid logged
+// a drill: Ellis drilling moved Lucy's cards, and with sparse drilling "bi-weekly" ran ~7
+// calendar weeks (64 of Ellis's cards sat in bi-weekly, none ever came due). Now a MISSED
+// school day still ticks — the reviews stack up and wait, the honest pressure — while a
+// vacation freezes the clock (nothing comes due while away). Same units everywhere a
+// next_due is read: ladder slots, study-session piles, the retrieval re-check clock.
+// printLog is still appended (a plain log of drill dates) but no longer drives anything.
+const MAST_CLOCK_EPOCH="2026-01-01";
+let _mastClockMemo={};
+function mastKidSchoolDows(kid,dateStr){
+  const plans=(typeof paceData!=="undefined"&&paceData&&paceData.plans)||{};
+  const p=Object.values(plans).find(x=>x&&Array.isArray(x.kids)&&x.kids.includes(kid)&&x.start&&x.end&&x.start<=dateStr&&dateStr<=x.end&&Array.isArray(x.schoolDays)&&x.schoolDays.length);
+  return p?p.schoolDays:["Mon","Tue","Wed","Thu","Fri"];
 }
+function mastSchoolDayNum(kid,dateStr){
+  kid=kid||masteryKid||"julian";
+  dateStr=dateStr||((typeof calToday==="function")?calToday():new Date().toISOString().slice(0,10));
+  if(dateStr<MAST_CLOCK_EPOCH) return 0;
+  const cal=(typeof calendarData!=="undefined"&&calendarData)||{};
+  const sig=JSON.stringify([cal.holidays||{},cal.vacations||{},(cal.kidOverrides||{})[kid]||{}]).length;
+  const key=kid+"|"+dateStr+"|"+sig;
+  if(_mastClockMemo[key]!=null) return _mastClockMemo[key];
+  let n;
+  if(typeof getSchoolDays==="function") n=getSchoolDays(MAST_CLOCK_EPOCH,dateStr,mastKidSchoolDows(kid,dateStr),kid).school;
+  else n=Math.floor((Date.parse(dateStr)-Date.parse(MAST_CLOCK_EPOCH))/86400000);
+  if(Object.keys(_mastClockMemo).length>400) _mastClockMemo={};
+  _mastClockMemo[key]=n;
+  return n;
+}
+function mastGetPrintNum(kid){ return mastSchoolDayNum(kid||masteryKid||"julian"); }
 
 // ── Ladder slot scheduling ─────────────────────────────────────────────────────
-// A card entering a tier gets a concrete next_due print number: a FULL interval out
+// A card entering a tier gets a concrete next_due school-day number: a FULL interval out
 // (a card that just climbed to weekly waits a whole week — the old parity math could
 // surface it the very next drill), placed on the least-loaded slot of that window so
 // reviews spread across the tier's days instead of bunching. After each quiz the card
@@ -43566,8 +43592,21 @@ function mastDueItems(kid,pn){
   const due=items.filter(i=>mastIsDue(i,pn)&&!mastIsNeverDrill(i)&&!mastIsParked(i)&&!(_owned&&_owned.has(i.id)));  // R5: never-drill items never assemble; parked issue-words are held out
   due.sort((a,b)=>MAST_TIER_ORDER.indexOf(a.tier||"daily")-MAST_TIER_ORDER.indexOf(b.tier||"daily"));
   const _mk=masteryKid; masteryKid=kid; const settings=mastDrillSettings(); masteryKid=_mk;
+  // Return-day softener (max_overdue_per_drill, 0 = off — Adrienne 2026-10-05): after a run of
+  // missed school days every slot that came due meanwhile stacks onto the first drill back
+  // (~3× a normal day). Cap how many PAST-DUE reviews ride per drill, oldest slot first; the
+  // rest keep their slot and come the next drill. Reviews due TODAY always ride, and nothing
+  // leaves the ladder — a held card is still overdue tomorrow and is first in line then.
+  const _lateDrop=new Set();
+  const overdueCap=settings.max_overdue_per_drill;
+  if(overdueCap>0){
+    const late=due.filter(i=>i.status!=="introduction"&&i.next_due!=null&&i.next_due<pn)
+      .sort((a,b)=>(a.next_due-b.next_due)||String(a.id).localeCompare(String(b.id)));
+    late.slice(overdueCap).forEach(i=>_lateDrop.add(i.id));
+  }
   const byCat={};
   due.forEach(item=>{
+    if(_lateDrop.has(item.id)) return;   // held for a later drill (softener above)
     const cat=item.subject||"Other";
     if(!byCat[cat]) byCat[cat]={active:[],intro:[]};
     if(item.status==="introduction") byCat[cat].intro.push(item);
@@ -43681,7 +43720,7 @@ function mastSaveManualScore(){
   let pl=masteryData.printLog||[];
   if(!Array.isArray(pl)) pl=Object.values(pl);
   const existing=pl.find(e=>e.date===dt);
-  const pn=existing?existing.num:(pl.reduce((m,x)=>Math.max(m,x.num||0),0)+1);
+  const pn=mastSchoolDayNum(masteryKid,dt);   // that date's school-day number on this kid's clock
   if(!existing){ pl.push({date:dt,num:pn}); masteryData.printLog=pl; mastPrintLogAppend(dt,pn); }
 
   const entry={
@@ -44361,6 +44400,7 @@ function mastAdminAdj(field,delta){
   else if(field==='close_behavior'){ const opts=["stay","count","drop"]; const ci=opts.indexOf(mastAdminLocal.close_behavior||"stay"); mastAdminLocal.close_behavior=opts[(ci+1)%opts.length]; }
   else if(field==='drop_threshold'){ mastAdminLocal.drop_threshold=Math.max(0,(mastAdminLocal.drop_threshold||0)+delta); }
   else if(field==='max_learn_per_drill'){ mastAdminLocal.max_learn_per_drill=Math.max(0,(mastAdminLocal.max_learn_per_drill||0)+delta); }  // 0 = cap off
+  else if(field==='max_overdue_per_drill'){ mastAdminLocal.max_overdue_per_drill=Math.max(0,(mastAdminLocal.max_overdue_per_drill||0)+delta); }  // 0 = cap off
   else { mastAdminLocal[field]=Math.max(1,(mastAdminLocal[field]||0)+delta); }
   mastAdminDirty=true;
   _mastRe();
@@ -45682,7 +45722,7 @@ function mastRescueStaleLog(s){
   // Print number for that date — reuse its printLog entry if a sheet was printed, else next.
   let pl=masteryData.printLog||[]; if(!Array.isArray(pl)) pl=Object.values(pl);
   const _ex=pl.find(e=>e&&e.date===s.date);
-  const pn=_ex?_ex.num:(pl.reduce((m,x)=>Math.max(m,x.num||0),0)+1);
+  const pn=mastSchoolDayNum(masteryKid,s.date);   // that date's school-day number (the rescued log is masteryKid's)
   if(!_ex){ pl.push({date:s.date,num:pn}); masteryData.printLog=pl; mastPrintLogAppend(s.date,pn); }
   const key=s.date.replace(/-/g,"");
   const prev=(masteryData.history&&masteryData.history[masteryKid]&&masteryData.history[masteryKid][key])||null;
@@ -45858,7 +45898,7 @@ function mastAddItems(){ if(!momHere()&&!mastAdminPinOk) return;
 // quiz and flip cards balance on separate load maps so each day gets a steady share of BOTH.
 // Tightest interval first (least flexibility). Targeted next_due-only write, concurrency-safe.
 function mastRebalanceKid(kid){
-  const pn=mastGetPrintNum();
+  const pn=mastGetPrintNum(kid);
   let items=masteryData[kid]; if(items&&!Array.isArray(items)) items=Object.values(items);
   if(!items||!items.length) return {changed:0,cards:0};
   const idxOf=new Map(); items.forEach((it,i)=>{ if(it) idxOf.set(it,i); });
@@ -46607,7 +46647,7 @@ function ckTap(r){
   let items=masteryData[kid]; if(!Array.isArray(items)) items=masteryData[kid]=(items?Object.values(items):[]);
   let bank=masteryData[kid+"_custom_items"]; if(!Array.isArray(bank)) bank=masteryData[kid+"_custom_items"]=(bank?Object.values(bank):[]);
   const sets=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={}); sets.definitions=sets.definitions||{};
-  const pn=(typeof mastGetPrintNum==="function")?mastGetPrintNum():1;
+  const pn=mastGetPrintNum(kid);
   const iu={}, bu={}, du={}; const ids=new Set(items.map(i=>i&&i.id));
   out.forEach(o=>{
     const c=o.card, dk2=c._dk||"Math Facts", tt=ckResultTier(o.res);
@@ -46830,7 +46870,7 @@ function _stRec(S,state){ const prev=stRecs(S.kid)[S.key]||{};
 function stApplyResults(kid,words,res,key){
   let items=masteryData[kid]; if(!Array.isArray(items)) items=masteryData[kid]=(items?Object.values(items):[]);
   let bank=masteryData[kid+"_custom_items"]; if(!Array.isArray(bank)) bank=masteryData[kid+"_custom_items"]=(bank?Object.values(bank):[]);
-  const pn=(typeof mastGetPrintNum==="function")?mastGetPrintNum():1;
+  const pn=mastGetPrintNum(kid);
   const iu={}, bu={}, ids=new Set(items.map(i=>i&&i.id)), today=new Date().toISOString().slice(0,10);
   words.forEach((name,i)=>{ const r=res[i]; if(!r) return; const tt=stTier(r);
     let idx=items.findIndex(x=>x&&x.subject===ST_DECK&&x.prompt===name);
@@ -47049,7 +47089,7 @@ function pwApply(){
   let items=masteryData[kid]; if(!Array.isArray(items)) items=masteryData[kid]=(items?Object.values(items):[]);
   let bank=masteryData[kid+"_custom_items"]; if(!Array.isArray(bank)) bank=masteryData[kid+"_custom_items"]=(bank?Object.values(bank):[]);
   const st=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
-  const pn=(typeof mastGetPrintNum==="function")?mastGetPrintNum():1, now=Date.now(), today=new Date().toISOString().slice(0,10);
+  const pn=mastGetPrintNum(kid), now=Date.now(), today=new Date().toISOString().slice(0,10);
   const iu={}, bu={}, comebacks=[], modes={}; const ids=new Set(items.map(i=>i&&i.id)); const sum={back:0,aas:0,fresh:0,parked:0};
   const learnCount=deck=>items.filter(i=>i&&i.subject===deck&&i.status==="introduction").length;
   const capFor=deck=>(typeof mastIntroMaxFor==="function")?mastIntroMaxFor(deck,(typeof mastDrillSettings==="function")?mastDrillSettings():undefined):3;
@@ -47669,7 +47709,7 @@ function renderMastStudy(){
     h+='</div>';
   }
   if(session.kind==="checkup"&&typeof ckRenderHtml==="function") return h+ckRenderHtml(kid,session);   // 🩺 CHECKUP
-  const pn=mastGetPrintNum();
+  const pn=mastGetPrintNum(kid);
   const todayLog=mstLogGet(kid,session.sid);
   let pile={reviews:[],learning:[],newNames:[]};
   try{ pile=mstPile(kid,session.sid,pn,todayLog)||pile; }catch(e){}
@@ -47744,7 +47784,7 @@ function mstStart(){
     _mastRe(); mstAutoPlayCurrent(session);
     return;
   }
-  const pn=mastGetPrintNum();
+  const pn=mastGetPrintNum(kid);
   const todayLog=mstLogGet(kid,mstSid);
   let pile; try{ pile=mstPile(kid,mstSid,pn,todayLog); }catch(e){ pile=null; }
   if(!pile) return;
@@ -47812,7 +47852,7 @@ function mstMakeTwin(base,items,tier,pn){
 function _mstSaveInner(){
   const kid=masteryKid, sid=mstSid;
   if(!mstState||!sid) throw new Error("no sitting to save (state "+(mstState?"ok":"missing")+", session "+(sid||"missing")+")");
-  const pn=mastGetPrintNum();
+  const pn=mastGetPrintNum(kid);
   let items=masteryData[kid]; if(!items) items=[]; if(!Array.isArray(items)) items=Object.values(items);
 
   let outcomes; try{ outcomes=mstOutcomes(mstState); }catch(e){ outcomes={scores:{},shownIds:[],shownNew:[]}; }
@@ -48146,7 +48186,7 @@ function renderMasteryHQ(el,ah){
   // deck page wrote to whichever kid the Mastery tab was last on (Lucy's Spell tap landed on Lincoln).
   // Same switch as the Mastery tab's own kid pills; a half-done drill log resumes from its per-kid save.
   if(masteryKid!==mhqKid) mastSetKid(mhqKid,true);
-  const pn=mastGetPrintNum();
+  const pn=mastGetPrintNum(mhqKid);
   const kidName=(typeof cap==="function")?cap(mhqKid):mhqKid;
 
   let h='<div style="padding:12px 12px 60px">';
@@ -48357,7 +48397,7 @@ function mhqDeckOwner(kid, deck) {
 }
 // One row per session, with linked schedule subjects and summed card counts.
 function mhqSessionRows(kid, pn) {
-  if (pn == null) pn = mastGetPrintNum();
+  if (pn == null) pn = mastGetPrintNum(kid);
   const sessions = mstSessions(kid);
   const byDeck = {};
   mhqDeckStats(kid, pn).forEach(function (r) { byDeck[r.deck] = r; });
@@ -48385,7 +48425,7 @@ function mhqSessionRows(kid, pn) {
 // "What changes if I turn on the Daily Study catch-all right now" — read-only, writes
 // nothing. Restores masteryData[kid+"_sessions"] exactly, even if mstOwnedIds throws.
 function mhqMigrationPreview(kid, pn) {
-  if (pn == null) pn = mastGetPrintNum();
+  if (pn == null) pn = mastGetPrintNum(kid);
   const allItems = mhqItems(kid).filter(function (i) { return !mastIsParked(i) && !mastIsNeverDrill(i); });
   const ownedNow = mstOwnedIds(kid);
   const momNow = allItems.filter(function (i) { return !ownedNow.has(i.id); }).length;
@@ -48604,7 +48644,7 @@ function _mhqStepper(val, field, min) {
 function _mhqRenderSessForm(kid) {
   if (!mhqSessForm) return "";
   const f = mhqSessForm, isMix = f.kind === "mix", isAll = f.kind === "all";
-  const pn = mastGetPrintNum();
+  const pn = mastGetPrintNum(kid);
   const _mk = masteryKid; masteryKid = kid; const settings = mastDrillSettings(); masteryKid = _mk;
   const ladder = (settings.ladder || []).filter(function (t) { return t !== "graduated"; });
   const lbl = 'font-size:11px;font-weight:700;color:var(--muted);margin:8px 0 4px';
@@ -48699,7 +48739,7 @@ function _mhqRenderSessForm(kid) {
 }
 
 function _mhqRenderSessions(kid) {
-  const rows = mhqSessionRows(kid, mastGetPrintNum());
+  const rows = mhqSessionRows(kid, mastGetPrintNum(kid));
   const btn = 'min-height:40px;padding:8px 14px;border-radius:10px;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif';
   let h = '<div style="display:flex;flex-direction:column;gap:10px">';
   if (!rows.length) h += '<div style="padding:16px 8px;text-align:center;color:var(--muted)">No study sessions yet.</div>';
@@ -48750,7 +48790,7 @@ function _mhqRenderSessions(kid) {
   if (!hasAll) h += '<button onclick="mhqSessOpen(\'__new_all\')" style="' + btn + 'border:1.5px solid var(--header);background:var(--card);color:var(--header)">+ Add 📚 Daily Study</button>';
   h += '</div>';
   if (!hasAll) {
-    const preview = mhqMigrationPreview(kid, mastGetPrintNum());
+    const preview = mhqMigrationPreview(kid, mastGetPrintNum(kid));
     const sentence = _mhqMigrationSentence(kid, preview);
     if (sentence) h += '<div style="font-size:11px;color:var(--muted);margin-top:4px">' + sentence + '</div>';
   }
@@ -48784,7 +48824,7 @@ function _mhqEffCell(f,fmt){
 }
 
 function _mhqRenderPanel(kid) {
-  const pn = mastGetPrintNum();
+  const pn = mastGetPrintNum(kid);
   const rows = mhqDeckStats(kid, pn);
   const sessions = mstSessions(kid);
   let h = '<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Tap a deck to change its settings. Legend: <b>kid</b> = kid-level default · <b>session</b> = this deck\'s study session · <b>deck</b> = a per-deck override.</div>';
@@ -49476,7 +49516,7 @@ function _mhqImportPill() {
 }
 
 function _mhqRenderImport(kid) {
-  const pn = (typeof mastGetPrintNum === "function") ? mastGetPrintNum() : 0;
+  const pn = mastGetPrintNum(kid);
   const rows = (typeof mhqDeckStats === "function") ? mhqDeckStats(kid, pn) : [];
   const deck = (mhqImpNewDeck || "").trim() || mhqImpDeck;
   const plan = mhqImpText ? mhqImpPlan(kid, deck, mhqImpText) : null;
@@ -49563,7 +49603,8 @@ function mastAdminRulesHtml(){
     {key:"ladder_streak",label:"Ladder Streak",desc:"Default consecutive correct to advance (per-tier overrides below)",min:1,max:10},
     {key:"max_per_cat",label:"Max Items / Category / Day",desc:"Cap on items per category in the daily drill (learning cards only — reviews always ride)",min:1,max:20},
     {key:"max_intro_per_cat",label:"Max New / Category",desc:"Max introduction items allowed per category at once",min:1,max:10},
-    {key:"max_learn_per_drill",label:"Max Learning Cards / Drill",desc:"Daily cap on \u{2B50} learning cards across ALL categories — booked reviews are never cut; skipped cards come the next day (0 = no cap)",min:0,max:40}
+    {key:"max_learn_per_drill",label:"Max Learning Cards / Drill",desc:"Daily cap on \u{2B50} learning cards across ALL categories — booked reviews are never cut; skipped cards come the next day (0 = no cap)",min:0,max:40},
+    {key:"max_overdue_per_drill",label:"Max Overdue Reviews / Drill",desc:"After missed school days, how many past-due reviews ride in one drill (oldest slot first) \u2014 the rest keep their slot and come the next drill. Reviews due today always ride (0 = everything rides)",min:0,max:60},
   ];
   rules.forEach(r=>{
     const val=r.min===0?(s[r.key]||0):(s[r.key]||1);  // 0 is a real value for cap-off fields
@@ -50502,7 +50543,7 @@ function _renderMasteryInner(el){
 
         h+='<div class="mast-score-card">';
         h+='<div style="display:flex;align-items:center;justify-content:space-between">';
-        h+='<div><div class="mast-score-date">'+dateLbl+' \u{00B7} Print #'+e.printNum+'</div>';
+        h+='<div><div class="mast-score-date">'+dateLbl+' \u{00B7} Day #'+e.printNum+'</div>';
         // Learning-only session (everything still introduction, nothing scored on the ladder yet):
         // a 0% reads like a failing grade, so show a calm "Learning" label instead — the % only
         // appears once items graduate onto the ladder and are actually scored.
@@ -50818,7 +50859,7 @@ function _renderMasteryInner(el){
   h+='<div class="mast-drill-hdr" style="border-bottom:1.5px solid '+color+'">';
   h+='<div><div class="mast-drill-title" style="color:'+color+'">'+emoji+' Today\'s Drill</div>';
   h+='<div class="mast-drill-date">'+dateStr+'</div></div>';
-  h+='<div class="mast-drill-pnum">Print #'+pn+'</div></div>';
+  h+='<div class="mast-drill-pnum">Day #'+pn+'</div></div>';
   if(due.length&&typeof drillTipHtml==="function") h+=drillTipHtml(!!mastLogMode,due.length,masteryKid);   // 💡 DRILL_TIPS
 
   if(!due.length) h+='<div class="mast-none">Nothing due today \u{1F389}</div>';
@@ -51288,7 +51329,7 @@ function _renderMasteryInner(el){
         // Booked review slot — visible so the schedule can be checked at a glance.
         if(i.next_due!=null&&(MAST_TIER_INT[i.tier]||0)>1){
           const _dd=i.next_due-pn;
-          h+='<span style="font-size:8px;font-weight:700;color:'+(_dd<=0?'#16a34a':'#6b7280')+';background:'+(_dd<=0?'#f0fdf4':'#f3f1ee')+';border-radius:6px;padding:2px 5px;flex-shrink:0" title="review slot: print #'+i.next_due+'">\u{1F4C5} #'+i.next_due+(_dd<=0?' \u{00B7} due':' \u{00B7} in '+_dd)+'</span>';
+          h+='<span style="font-size:8px;font-weight:700;color:'+(_dd<=0?'#16a34a':'#6b7280')+';background:'+(_dd<=0?'#f0fdf4':'#f3f1ee')+';border-radius:6px;padding:2px 5px;flex-shrink:0" title="review slot: day #'+i.next_due+'">\u{1F4C5} #'+i.next_due+(_dd<=0?' \u{00B7} due':' \u{00B7} in '+_dd)+'</span>';
         }
         h+='<span style="font-size:8px;color:var(--muted);flex-shrink:0">'+(catE3[i.subject]||"")+' '+(i.subject||"")+'</span>';
         h+='</div>';
@@ -51335,7 +51376,7 @@ function _renderMasteryInner(el){
         if((MAST_TIER_INT[it.tier]||0)>1&&it.status!=="introduction"){
           const _pnE=mastGetPrintNum();
           const _nd=(it.next_due!=null)?it.next_due:null;
-          const _ndTxt=_nd!=null?('print #'+_nd+' ('+((_nd-_pnE)<=0?'due now':'in '+(_nd-_pnE)+' drill'+((_nd-_pnE)!==1?'s':''))+')'):'auto (legacy rotation \u{2014} books on next score)';
+          const _ndTxt=_nd!=null?('day #'+_nd+' ('+((_nd-_pnE)<=0?'due now':'in '+(_nd-_pnE)+' school day'+((_nd-_pnE)!==1?'s':''))+')'):'auto (legacy rotation \u{2014} books on next score)';
           h+='<div style="font-size:10px;font-weight:700;color:#4338ca;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Review Slot</div>';
           h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">';
           h+='<button onclick="event.stopPropagation();mastListEditSlot(\''+it.id+'\',-1);_mastRe()" style="width:32px;height:32px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;font-size:16px;cursor:pointer;font-weight:700">\u{2212}</button>';
@@ -54926,22 +54967,16 @@ function retrStageMatch(track,st,e){
   if(track.src==="editor") return e.src==="editor"&&retrEditorBaseDeck(e.deck)===st.deck&&(e.diff||"intro")===st.diff;
   return false;
 }
-// P2 drill-day clock: re-check intervals count PRINTED DRILL DAYS via printLog (the
-// same vacation-proof trick as the drill ladder's next_due) — over a break nothing
-// comes due. A session on a non-drill date borrows the nearest earlier drill day.
-// No printLog at all → calendar days (same units, epoch-day numbers).
+// P2 clock: re-check intervals count the kid's SCHOOL DAYS (mastSchoolDayNum — the same
+// clock as the drill ladder's next_due, 2026-10-05) — over a vacation nothing comes due,
+// a missed school day still counts. A session on a non-school date carries the number
+// of the last school day before it.
 function retrPrintLog(){
   let pl=masteryData.printLog||[]; if(!Array.isArray(pl)) pl=Object.values(pl);
   return pl.filter(Boolean).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
 }
-function retrPnForDate(dateStr){
-  const pl=retrPrintLog();
-  if(!pl.length) return Math.floor((Date.parse(dateStr)||0)/86400000);
-  let num=null;
-  for(const e of pl){ if(e.date<=dateStr) num=e.num; else break; }
-  return num==null?pl[0].num:num;
-}
-function retrTodayPn(){ return retrPnForDate(new Date().toISOString().slice(0,10)); }
+function retrPnForDate(dateStr,kid){ return mastSchoolDayNum(kid||masteryKid,dateStr); }
+function retrTodayPn(kid){ return retrPnForDate((typeof calToday==="function")?calToday():new Date().toISOString().slice(0,10),kid); }
 // The gate, per stage. Passing: gate_streak straight sessions at/above gate_pct (an
 // untimed session — no % — breaks the run; no proof). Under recheck_fail "review" a
 // stage keeps its pass once EVER earned; under "focus" only the trailing window counts.
@@ -54954,7 +54989,7 @@ function retrEvalTrack(kid,track){
   const entries=retrEntries(kid);
   const ladder=(Array.isArray(s.recheck_ladder)&&s.recheck_ladder.length)?s.recheck_ladder:[7,14,28];
   const rpass=(s.recheck_pass_pct!=null)?s.recheck_pass_pct:s.gate_pct;
-  const todayPn=retrTodayPn();
+  const todayPn=retrTodayPn(kid);
   const stages=(track.stages||[]).map(st=>{
     const sess=entries.filter(e=>retrStageMatch(track,st,e)).map(e=>({pct:retrPct(e,s.gate_metric),date:e.date}));
     const pcts=sess.map(x=>x.pct);
@@ -54984,7 +55019,7 @@ function retrEvalTrack(kid,track){
         else { r=0; lastFailed=true; }
       }
       const iv=ladder[Math.min(r,ladder.length-1)];
-      const basePn=retrPnForDate(lastHealthy.date);
+      const basePn=retrPnForDate(lastHealthy.date,kid);
       const duePn=(basePn!=null&&todayPn!=null)?basePn+iv:null;
       rc={r,iv,lastFailed,duePn,
         dueNow:lastFailed||(duePn!=null&&todayPn>=duePn),
