@@ -2064,7 +2064,7 @@ function _rtSwTodayLay(){
     return _rtSwLay;
   }catch(e){ return null; }
 }
-function rtSchoolworkDone(kid,d,skipFam){ const _lay=(d===_todayDay)?_rtSwTodayLay():null; const ts=(_lay||getActiveTasks()).filter(t=>t.who===kid&&effectiveDay(t)===d&&!t.id.endsWith("_c")&&!t._eowOverflow&&!(skipFam&&t.famBlock&&typeof famCelebOf==="function"&&famCelebOf(famDefs()[t.famBlock]))&&!/lunch/i.test(t.title)&&!(t._offDay&&!checked[t.id])); return ts.length===0?true:ts.every(t=>!!checked[t.id]||!!(typeof claimed!=="undefined"&&claimed&&claimed[t.id])); }
+function rtSchoolworkDone(kid,d,skipFam){ const _lay=(d===_todayDay)?_rtSwTodayLay():null; const ts=(_lay||getActiveTasks()).filter(t=>t.who===kid&&effectiveDay(t)===d&&!t.id.endsWith("_c")&&!t._eowOverflow&&!(skipFam&&t.famBlock&&typeof famCelebOf==="function"&&famCelebOf(famDefs()[t.famBlock]))&&!/lunch/i.test(t.title)&&!((t._offDay||t._dayDrop)&&!checked[t.id])); return ts.length===0?true:ts.every(t=>!!checked[t.id]||!!(typeof claimed!=="undefined"&&claimed&&claimed[t.id])); }
 // Afternoon (2026-08-18, her rule): opens when schoolwork is done — or at the afternoon hour (default
 // 4:00 PM) regardless, so a slow school day never holds the chores hostage. Past days: always open.
 function rtAfternoonHour(){ const h=parseInt(routineTimes&&routineTimes.afternoonHour,10); return isNaN(h)?16:h; }
@@ -2900,7 +2900,7 @@ function safeWriteTasks(reason,opts){
   // lesson — whatever laid it. Idempotent, and only unlocked plan-backed cards can move.
   try{ if(typeof seqFillNormalize==="function") seqFillNormalize(weekData.tasks,reason); }catch(eSF){ dbg("seqfill skip: "+eSF); }
   try{ if(!(opts&&opts.echo)&&typeof prExtraCore==="function"){ const _px=prExtraCore(weekData.tasks,prExtraCtx()); if(_px.added.length){ dbg("🎯 catch-up ("+reason+"): +"+_px.added.length+" extra sitting(s) — "+_px.added.map(t=>t.who+" "+t.subjectKey+" "+t.day).join(", ")); if(typeof seqFillNormalize==="function") seqFillNormalize(weekData.tasks,reason+"+catchup"); } } }catch(ePX){ dbg("catch-up skip: "+ePX); }
-  try{ if(typeof seGuardWeek==="function"){ const _se=seGuardWeek(weekData.tasks,seGuardCtx()); if(_se.retimed.length||_se.rolled.length||_se.deferred.length) dbg("⏰ school end ("+reason+"): re-laid "+_se.retimed.length+", rolled "+_se.rolled.length+", deferred "+_se.deferred.length+(_se.stuck.length?", daily-only overflow "+_se.stuck.join(" "):"")); } }catch(eSE){ dbg("school-end skip: "+eSE); }
+  try{ if(typeof seGuardWeek==="function"){ const _se=seGuardWeek(weekData.tasks,seGuardCtx()); if(_se.retimed.length||_se.rolled.length||_se.deferred.length||_se.dropped.length) dbg("⏰ school end ("+reason+"): re-laid "+_se.retimed.length+", rolled "+_se.rolled.length+", deferred "+_se.deferred.length+(_se.dropped.length?", dropped for the day "+_se.dropped.join(" "):"")+(_se.stuck.length?", daily-only overflow "+_se.stuck.join(" "):"")); } }catch(eSE){ dbg("school-end skip: "+eSE); }
   const obj={};
   weekData.tasks.forEach(t=>obj[t.id]=t);
   lastTasksWrite=Date.now();
@@ -8206,8 +8206,9 @@ function renderSchedule(el){
   // school end) leave the timeline for the "didn't fit today" list below — still checkable there
   // until the 8 PM sweep (or Mom's ⏩) moves them into the rest of the week. Same per-kid
   // visibility switch as the Carried Over box (her call: she customises who sees a pile).
-  let offToday=(day===_todayDay)?tasks.filter(t=>t._offDay&&!checked[t.id]):[];
-  if(offToday.length){ tasks=tasks.filter(t=>!(t._offDay&&!checked[t.id])); if(!momHere()) offToday=offToday.filter(t=>!carryHidden(t.who)); }
+  // DAYDROP (her pick 2026-10-08): a daily the school-end guard dropped (`_dayDrop`, stored) sits in its own day's box.
+  let offToday=tasks.filter(t=>((day===_todayDay&&t._offDay)||t._dayDrop)&&!checked[t.id]);
+  if(offToday.length){ tasks=tasks.filter(t=>!((t._offDay||t._dayDrop)&&!checked[t.id])); if(!momHere()) offToday=offToday.filter(t=>!carryHidden(t.who)); }
   // Per-kid overwhelm guard: the "Carried Over" mirror box is HIDDEN from a kid's own view
   // (and the shared all-kids view) by DEFAULT — a big carried-over pile can shut a kid down.
   // Mom still sees it whenever she's viewing (momHere). The day-header button re-shows it for
@@ -28378,6 +28379,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
     // for work that isn't being shown. Dismissed work is pinned for good; a push owns its day
     // until the landing day arrives, after which normal rules resume.
     if(_dismissed(t)) return;
+    if(t._dayDrop) return;   // DAYDROP (2026-10-08): a daily dropped for its day stays there — day-bound, never carried
     if(momMoves[t.id]&&momMoves[t.id].mode==="push"&&dayOrder.indexOf(momMoves[t.id].toDay)>todayIdx) return;
     if(subjNoCarry(t)){ // day-bound (notebooks, reflex, card noCarry): a missed day is just missed
       // Snap-back self-heal: a pre-guard sweep (or a flag clicked after one) left this
@@ -38405,7 +38407,7 @@ function reprojectSubjectWeek(kid,sk,why,opts){
       const r=_reprojectPlan(kid,sk,weekData.tasks,_pw?_pw.desired:gen.result.tasks,{todayDay,nowMin:_nowMin,checked:checked||{},claimed:_pw?_pw.claimed:((typeof claimed!=="undefined"&&claimed)||{}),dayCtx,packAround,toMin,fromMin,dayCap:_rpCap,lidOrder:_subj.lessonIds||[],lsdSubj:(typeof lessonDayList==="function"&&lessonDayList(_subj).length)?_subj:null,allowedDays:_rpDays,doneLids:_doneLids,dropUnwanted:!!(opts&&opts.dropUnwanted)||!!_pw,patternForward:!!_pw,freshToday:!!_pw&&_rpMode==="fresh",blockedDays:_blockedDays});
       try{ if(typeof seGuardWeek==="function"){ const _se=seGuardWeek(r.tasksAfter,seGuardCtx({kids:[kid],checked:checked||{}}));
         _rpMergeUpd(r.upd,_se.upd);   // RPMERGE: never a path beside its own child (Firebase rejects the whole save)
-        r.summary.shifted=(r.summary.shifted||[]).concat(_se.retimed,_se.rolled); r.summary.removed=r.summary.removed.concat(_se.deferred); } }catch(eSE){ dbg&&dbg("school-end skip: "+eSE); }
+        r.summary.shifted=(r.summary.shifted||[]).concat(_se.retimed,_se.rolled,_se.dropped||[]); r.summary.removed=r.summary.removed.concat(_se.deferred); } }catch(eSE){ dbg&&dbg("school-end skip: "+eSE); }
       const n=r.summary.added.length+r.summary.moved.length+r.summary.removed.length+r.summary.retitled.length+((r.summary.closing||[]).length)+((r.summary.shifted||[]).length);
       out=r.summary;
       if(!n) return;
@@ -52444,7 +52446,7 @@ function _mlQueueLayCore(tasks){
     const now=mlNow();
     const isToday=function(t){ return t&&_mlDayOf(t)===_todayDay; };
     const movable=function(t){
-      return isToday(t)&&!String(t.id||"").endsWith("_c")&&!t._eowOverflow
+      return isToday(t)&&!String(t.id||"").endsWith("_c")&&!t._eowOverflow&&!t._dayDrop   // DAYDROP: in the "didn't fit" box, not on the timeline
         &&!/lunch/i.test(t.title||"")&&!t.famBlock   // 👨‍👩‍👧 family time is held like lunch
         &&!(typeof checked!=="undefined"&&checked&&checked[t.id]);
     };
@@ -60145,14 +60147,14 @@ function gwStampLids(allTasks,served){
 // writes. o = {days, todayDay, nowMin, checked, claimed, kids?, win(day)→{start,end,lunchStart,lunchEnd}|null,
 // kidOff(kid,day), isClass(t), isLesson(t), ahead(kid,sk), toMin, fromMin}.
 function seGuardWeek(tasks,o){
-  const out={upd:{},retimed:[],rolled:[],deferred:[],stuck:[]};
+  const out={upd:{},retimed:[],rolled:[],deferred:[],stuck:[],dropped:[]};
   if(!Array.isArray(tasks)||!tasks.length||!o||!Array.isArray(o.days)) return out;
   const DAYS=o.days, tm=o.toMin, fm=o.fromMin, ck=o.checked||{}, cl=o.claimed||{};
   const ti=DAYS.indexOf(o.todayDay);
   const dIx=t=>DAYS.indexOf(String(t.day||"").toLowerCase());
   const isClose=t=>t.subjectKey==="closing_nb"||/closing notebook/i.test(t.title||"");
   const isMorn=t=>t.subjectKey==="morning_nb"||/morning notebook/i.test(t.title||"");   // 📓 her rule: the notebook opens the day
-  const skip=t=>!t||!t.who||String(t.id||"").endsWith("_c")||!!t._eowOverflow||/lunch/i.test(t.title||"")||tm(t.time)==null;
+  const skip=t=>!t||!t.who||String(t.id||"").endsWith("_c")||!!t._eowOverflow||!!t._dayDrop||/lunch/i.test(t.title||"")||tm(t.time)==null;   // DAYDROP: off the day
   const started=t=>dIx(t)===ti&&o.nowMin!=null&&tm(t.time)<=o.nowMin;
   const fixed=t=>!!(ck[t.id]||cl[t.id])||started(t)||!!(o.isClass&&o.isClass(t));
   const dur=t=>+t.dur||20;
@@ -60218,7 +60220,22 @@ function seGuardWeek(tasks,o){
         if(!over||o.displayOnly){ plan.forEach((m,t)=>{ if(tm(t.time)!==m){ setT(t,day,m); if(out.retimed.indexOf(t.id)<0) out.retimed.push(t.id); } }); return; }   // display pass never rolls
         // still past the end → the lesson furthest ahead of pace rolls forward in sequence
         const cand=order.filter(t=>!isClose(t)&&o.isLesson&&o.isLesson(t));
-        if(!cand.length){ plan.forEach((m,t)=>{ if(tm(t.time)!==m){ setT(t,day,m); if(out.retimed.indexOf(t.id)<0) out.retimed.push(t.id); } }); out.stuck.push(kid+"|"+day); return; }
+        if(!cand.length){
+          // DAYDROP_START — a daily that doesn't fit before school end DROPS for that day (dailies are day-bound), never
+          // runs past the end (her rule 2026-10-08; live: DeWalt co-op Thursday, co-op 9:45–2:00, school end 4:00 — a
+          // regenerate laid Makenzie's Reading 4:15–4:45, logged "daily-only overflow makenzie|thursday"). The card laid
+          // latest goes first (notebooks never), one per pass, then the day re-lays. Only days that haven't started yet —
+          // today's running day keeps its "didn't fit" list (living day / 8 PM sweep).
+          // Her pick (b) 2026-10-08: never deleted — the card stays on its day, flagged `_dayDrop` (stored), and sits in
+          // that day's "Didn't fit today" box so Mom sees it. Flagged cards are off the timeline: this guard, the Mom-loop
+          // lay and the day-done check skip them, and the 8 PM sweep never carries one to another day.
+          if(di>ti||(di===ti&&(o.nowMin==null||o.nowMin<W.start))){
+            const dc=order.filter(t=>!isClose(t)&&!isMorn(t)).sort((a,b)=>(plan.get(b)-plan.get(a))||(order.indexOf(b)-order.indexOf(a)));
+            const dg=dc.find(c=>{ const Lc=lay(order.filter(x=>x!==c)); return !Lc.over||Lc.end<L0.end; });
+            if(dg){ dg._dayDrop=true; out.upd[dg.id+"/_dayDrop"]=true; out.dropped.push(dg.id); continue; }
+          }
+          // DAYDROP_END
+          plan.forEach((m,t)=>{ if(tm(t.time)!==m){ setT(t,day,m); if(out.retimed.indexOf(t.id)<0) out.retimed.push(t.id); } }); out.stuck.push(kid+"|"+day); return; }
         const ah=t=>{ try{ return +o.ahead(kid,t.subjectKey)||0; }catch(e){ return 0; } };
         // furthest ahead first — but the one that actually makes the day fit (live 9/23: Friday ran 6 min over because an
         // afternoon Mom card waited for another kid's; rolling the morning's most-ahead lessons freed nothing after lunch,
@@ -60910,7 +60927,7 @@ function gwCommit(){
     sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
     try{ if(typeof rbLog==="function") rbLog("regenerate","all",0,d.week||""); }catch(e){}   // ↻ for the daily-miss tracker
     try{ if(typeof prExtraCore==="function"){ const _px=prExtraCore(d.tasks,prExtraCtx({checked:snapChecked})); if(_px.added.length){ dbg("🎯 catch-up (regenerate): +"+_px.added.length+" extra sitting(s)"); if(typeof seqFillNormalize==="function") seqFillNormalize(d.tasks,"regenerate+catchup"); sv(WK+"_tasks",d.tasks); } } }catch(ePX){ dbg("catch-up skip: "+ePX); }
-    try{ if(typeof seGuardWeek==="function"){ const _se=seGuardWeek(d.tasks,seGuardCtx({checked:snapChecked})); if(_se.retimed.length||_se.rolled.length||_se.deferred.length){ sv(WK+"_tasks",d.tasks); dbg("⏰ school end (regenerate): re-laid "+_se.retimed.length+", rolled "+_se.rolled.length+", deferred "+_se.deferred.length); } } }catch(eSE){ dbg("school-end skip: "+eSE); }
+    try{ if(typeof seGuardWeek==="function"){ const _se=seGuardWeek(d.tasks,seGuardCtx({checked:snapChecked})); if(_se.retimed.length||_se.rolled.length||_se.deferred.length||_se.dropped.length){ sv(WK+"_tasks",d.tasks); dbg("⏰ school end (regenerate): re-laid "+_se.retimed.length+", rolled "+_se.rolled.length+", deferred "+_se.deferred.length+(_se.dropped.length?", dropped for the day "+_se.dropped.join(" "):"")+(_se.stuck.length?", daily-only overflow "+_se.stuck.join(" "):"")); } } }catch(eSE){ dbg("school-end skip: "+eSE); }
     if(db){
       const obj={};d.tasks.forEach(t=>obj[t.id]=t);
       db.ref(WK+"/tasks").set(obj);

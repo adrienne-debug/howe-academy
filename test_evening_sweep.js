@@ -144,7 +144,7 @@ console.log("\n── wiring in the page (source checks) ──");
   ok("the marker is subscribed with the week (like dayStart)", /db\.ref\(wk\+"\/eveningSweep"\)/.test(src) && /eveningSweeps=s\.val\(\)\|\|\{\};/.test(src));
   ok("the ⏩ button is Mom-only and today-only", /momHere\(\)&&day===_todayDay\?'<button class="bo-btn" onclick="mlSweepEarly\(\)"/.test(src));
   ok("the didn't-fit list is gated by the same per-kid Carryover switch", /offToday=offToday\.filter\(t=>!carryHidden\(t\.who\)\)/.test(src));
-  ok("fallen cards leave the timeline only on TODAY's view", /let offToday=\(day===_todayDay\)\?tasks\.filter\(t=>t\._offDay&&!checked\[t\.id\]\):\[\];/.test(src));
+  ok("fallen cards leave the timeline only on TODAY's view (a guard-dropped daily, _dayDrop, sits in its own day's box — DAYDROP 2026-10-08)", /let offToday=tasks\.filter\(t=>\(\(day===_todayDay&&t\._offDay\)\|\|t\._dayDrop\)&&!checked\[t\.id\]\);/.test(src));
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");
