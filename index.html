@@ -1554,6 +1554,7 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
     </div>
     <div class="dlg-actions" style="margin-top:8px">
       <button id="dlg-push" style="display:none;flex:1;padding:11px;border-radius:10px;font-weight:700;font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif;border:1px solid #fdba74;background:#fff7ed;color:#9a3412"></button>
+      <button id="dlg-movetoday" style="display:none;flex:1;padding:11px;border-radius:10px;font-weight:700;font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif;border:1px solid #93c5fd;background:#eff6ff;color:#1d4ed8">&#128197; Move to today</button>
       <button id="dlg-dismiss" style="display:none;flex:1;padding:11px;border-radius:10px;font-weight:700;font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif;border:1px solid #d1d5db;background:#f9fafb;color:#4b5563">&#128683; Dismiss today</button>
     </div>
     <div id="dlg-dismiss-choice" style="display:none;margin-top:8px;padding:10px;border-radius:10px;background:#f9fafb;border:1px solid #e5e7eb">
@@ -9568,7 +9569,8 @@ function taskCard(t, fromDay, readOnly, doneId){
   const cascLabel=t.cascadedFrom?'<div style="font-size:10px;font-weight:700;color:#b45309;background:#fef3c7;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px">↩ From '+cap(t.cascadedFrom)+'</div><br>':'';
   const catchupLabel=t.catchup?'<div style="font-size:10px;font-weight:700;color:#0f766e;background:#ccfbf1;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px" title="Extra session to catch up on this subject">↻ Catch-up</div><br>':'';
   const _pf=momMoves[srcId];
-  const pushLabel=(_pf&&_pf.mode==="push")?'<div style="font-size:10px;font-weight:700;color:#9a3412;background:#ffedd5;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px" title="Mom moved this forward — it still counts as unfinished on '+cap(_pf.fromDays[0])+'">&#10145;&#65039; Pushed from '+cap(_pf.fromDays[0])+'</div><br>':'';
+  const pushLabel=(_pf&&_pf.mode==="push"&&_pf.pulledFrom)?'<div style="font-size:10px;font-weight:700;color:#1d4ed8;background:#dbeafe;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px" title="Mom moved this to today">&#128197; Moved from '+cap(_pf.pulledFrom)+'</div><br>'
+    :(_pf&&_pf.mode==="push")?'<div style="font-size:10px;font-weight:700;color:#9a3412;background:#ffedd5;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px" title="Mom moved this forward — it still counts as unfinished on '+cap(_pf.fromDays[0])+'">&#10145;&#65039; Pushed from '+cap(_pf.fromDays[0])+'</div><br>':'';
   const missedLabel=missed?'<div style="font-size:10px;font-weight:700;color:#6b7280;background:#e5e7eb;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px" title="This was day-specific and can\'t be done now">Incomplete</div><br>':'';
   // Mom dismissed this one. Grayed and uncheckable like a missed task, but it says so plainly —
   // a silently-vanished subject is how you lose track of what didn't get taught. Mom (and only
@@ -10029,7 +10031,8 @@ function tapTask(id){
   const disChoice=document.getElementById("dlg-dismiss-choice");
   // Mom-only, and only on work that's still outstanding — moving something already done or
   // waiting on Mom's approval means nothing, so the early returns below leave these hidden.
-  pushBtn.style.display="none"; disBtn.style.display="none"; disChoice.style.display="none";
+  const mtBtn=document.getElementById("dlg-movetoday");
+  pushBtn.style.display="none"; disBtn.style.display="none"; disChoice.style.display="none"; mtBtn.style.display="none";
   document.getElementById("dlg-title").textContent=t.title;
   if(isDone){
     document.getElementById("dlg-detail").textContent="Completed: "+checked[id];
@@ -10060,7 +10063,8 @@ function tapTask(id){
     if(p){
       // Already moved — the only thing left to offer is putting it back.
       pushBtn.style.display="block";
-      pushBtn.textContent=(p.mode==="push")?("↩ Un-push (back to "+cap(p.fromDays[0])+")")
+      pushBtn.textContent=(p.mode==="push"&&p.pulledFrom)?("↩ Undo move (back to "+cap(p.pulledFrom)+")")
+        :(p.mode==="push")?("↩ Un-push (back to "+cap(p.fromDays[0])+")")
         :(p.mode==="drop")?"↩ Un-dismiss (and put the lesson back)":"↩ Un-dismiss";
       pushBtn.onclick=()=>undoMomMove(id);
     } else {
@@ -10071,6 +10075,8 @@ function tapTask(id){
         pushBtn.textContent="➡️ Push to "+cap(to);
         pushBtn.onclick=()=>pushTaskForward(id);
       }
+      // 📅 MOVETODAY: a lesson from a later day this week can come to today (shown only when it can)
+      if(typeof mvtPlan==="function"&&mvtPlan(id).ok){ mtBtn.style.display="block"; mtBtn.onclick=()=>momMoveToToday(id); }
       disBtn.style.display="block";
       disBtn.onclick=()=>{ disChoice.style.display=disChoice.style.display==="none"?"block":"none"; };
       const nowBtn=document.getElementById("dlg-skip-now");
@@ -39824,11 +39830,99 @@ function undoMomMove(id){
     const ps=((paceData.subjects||{})[(weekData.tasks.find(x=>x.id===id)||{}).who]||{})[rec.adjusted.subjectKey];
     if(ps) savePaceSubject((weekData.tasks.find(x=>x.id===id)||{}).who,rec.adjusted.subjectKey,{...ps,adjust:((ps.adjust|0)-(rec.adjusted.by|0))});
   }
+  if(rec&&rec.pulledFrom&&typeof mvtUndo==="function") mvtUndo(id,rec);   // 📅 MOVETODAY: back to its own day
   delete momMoves[id]; sv(WK+"_momMoves",momMoves);
   if(db) db.ref(WK+"/momMoves/"+id).remove();
   dbg("undo mom move id="+id);
   closeDlg(); schedCascade(); renderAll();
 }
+// MOVETODAY_START — 📅 Move to today (Mom-only, 2026-10-08). Mom taps an open lesson card that sits on a LATER day
+// this week and brings it to today, right after the card the kid is on now. Recorded in momMoves like her push
+// ({mode:"push", toDay:today}) so effectiveDay, the sweep and the early-finish pulls all treat today as its day and
+// nothing carries it back; `pulledFrom`/`fromTime` say where it came from (the label, and ↩ undo puts it back).
+// fromDays stays EMPTY: the later day never had it, so no day's % counts it as unfinished work (dayPct/_pushedFrom).
+// The card's own day/time are written too (targeted paths), because the school-end re-lay reads t.day; that re-lay
+// (seGuardWeek) then slides today's other open cards so nothing overlaps, holding the moved card in place (it is
+// treated as fixed for today, so the re-lay never rolls it back to its old day). Lesson order: refused unless every
+// earlier lesson of the subject still open this week is already on today (and the card lands after them) — moving
+// Thursday's L5 ahead of Wednesday's L4 would break the book's order, so Mom gets told which to move first.
+function _mvtDays(){ return ["monday","tuesday","wednesday","thursday","friday","saturday"]; }
+function _mvtOpen(x){ return !(checked&&checked[x.id])&&!(typeof claimed!=="undefined"&&claimed&&claimed[x.id]); }
+// The card Mom moved onto today stays where she put it while today lasts (seGuardCtx reads this).
+function mvtHeldToday(t){
+  const m=t&&(typeof momMoves!=="undefined")&&momMoves?momMoves[t.id]:null;
+  return !!(m&&m.mode==="push"&&m.pulledFrom&&m.toDay===_todayDay&&t.day===_todayDay);
+}
+// → {ok:true, from, startMin} or {ok:false, why}. Pure read of the week; writes nothing.
+function mvtPlan(id){
+  const D=_mvtDays(), ti=D.indexOf(_todayDay);
+  if(ti<0) return {ok:false,why:"No school today."};
+  const t=((weekData&&weekData.tasks)||[]).find(x=>x&&x.id===id); if(!t) return {ok:false,why:"Schedule just updated — tap it again."};
+  if(String(t.id).endsWith("_c")||t._eowOverflow||t.famBlock||t.masterPull) return {ok:false,why:"This card can't be moved."};
+  if(!_mvtOpen(t)||(momMoves&&momMoves[t.id])) return {ok:false,why:"This card can't be moved."};
+  if(/lunch/i.test(t.title||"")||t.subjectKey==="morning_nb"||t.subjectKey==="closing_nb"||/notebook/i.test(t.title||"")) return {ok:false,why:"Notebooks stay on their own day."};
+  if((typeof subjNoCarry==="function"&&subjNoCarry(t))||(typeof ldPinnedTask==="function"&&ldPinnedTask(t))) return {ok:false,why:"This one belongs to its own day."};
+  try{ const s=(((currData||{}).subjects||{})[t.who]||{})[t.subjectKey]; if(typeof fxIsClass==="function"&&fxIsClass(s)) return {ok:false,why:"A class keeps its own time."}; }catch(e){}
+  const from=effectiveDay(t), fi=D.indexOf(from);
+  if(fi<=ti) return {ok:false,why:"It's already on today."};
+  try{ const ds=_pushDateStr(_todayDay); if(ds&&((typeof schedOvKidOff==="function"&&schedOvKidOff(t.who,ds))||smapIsKidOff(t.who,ds))) return {ok:false,why:cap(t.who)+" is off today."}; }catch(e){}
+  const mine=weekData.tasks.filter(x=>x&&x.who===t.who&&x.id!==t.id&&!String(x.id).endsWith("_c")&&!x._eowOverflow&&!/lunch/i.test(x.title||"")&&effectiveDay(x)===_todayDay);
+  const nowMin=_mlNowMin(), dur=t.dur||20;
+  // after the card the kid is on: the latest open card of today that has already started
+  let s=nowMin;
+  mine.forEach(x=>{ if(!_mvtOpen(x)||x.subjectKey==="closing_nb"||/closing notebook/i.test(x.title||"")) return; const a=toMin(x.time); if(a<=nowMin&&a+(x.dur||20)>s) s=a+(x.dur||20); });
+  // 📚 lesson order — every earlier open lesson of the subject must already be on today, and this one lands after them
+  const pos=_lessonPos(t);
+  const sub=(((currData||{}).subjects||{})[t.who]||{})[t.subjectKey]||{};
+  const sequenced=((sub.lessonIds||[]).length||(sub.lessonSeq||[]).length);
+  if(t.subjectKey&&sequenced){
+    if(pos<0) return {ok:false,why:"Can't tell where this lesson sits in the book — move it on the grid instead."};
+    for(const x of weekData.tasks){
+      if(!x||x.id===t.id||x.who!==t.who||x.subjectKey!==t.subjectKey||String(x.id).endsWith("_c")||!_mvtOpen(x)||_dismissed(x)) continue;
+      const xp=_lessonPos(x); if(xp<0) continue;
+      const xd=x._eowOverflow?"carryover":effectiveDay(x);
+      if(xp<pos){
+        if(xd!==_todayDay) return {ok:false,why:"Move "+(taskLessonRef(x)||"the earlier lesson")+" first — lessons stay in order."};
+        s=Math.max(s,toMin(x.time)+(x.dur||20));
+      } else if(xd===_todayDay&&toMin(x.time)<s){
+        return {ok:false,why:"A later lesson ("+(taskLessonRef(x)||"?")+") is already on today ahead of it."};
+      }
+    }
+  }
+  const lw=_mlLunchWin(); if(lw&&s<lw[1]&&s+dur>lw[0]) s=lw[1];
+  if(s+dur>_mlDayEndMin()) return {ok:false,why:"No room left today before school ends."};
+  return {ok:true,from:from,startMin:s};
+}
+function momMoveToToday(id){
+  if(!momHere()) return;
+  const p=mvtPlan(id);
+  if(!p.ok){ if(typeof gwShowToast==="function") gwShowToast(p.why); return; }
+  const t=weekData.tasks.find(x=>x.id===id);
+  const rec={mode:"push",toDay:_todayDay,fromDays:[],pulledFrom:p.from,fromTime:t.time||null,ts:nowTs()};
+  momMoves[id]=rec; sv(WK+"_momMoves",momMoves);
+  const upd={};
+  t.day=_todayDay; t.time=fromMin(p.startMin); upd[id+"/day"]=t.day; upd[id+"/time"]=t.time;
+  // the existing re-lay: today's other open cards slide so nothing overlaps (the moved card is held — mvtHeldToday)
+  try{ if(typeof seGuardWeek==="function"){ const se=seGuardWeek(weekData.tasks,seGuardCtx({kids:[t.who]})); Object.assign(upd,se.upd); } }catch(e){ dbg("move-to-today re-lay skip: "+e); }
+  sv(WK+"_tasks",weekData.tasks); lastTasksWrite=Date.now();
+  if(db&&!_dryRun()){
+    db.ref(WK+"/momMoves/"+id).set(rec);                 // targeted per-id, like _saveMomMove
+    db.ref(WK+"/tasks").update(upd);                      // targeted multi-path — never the whole node
+  }
+  dbg("📅 move to today: "+id+" "+p.from+" → "+_todayDay+" "+t.time+" ("+Object.keys(upd).length+" paths)");
+  closeDlg(); renderAll();
+  if(typeof gwShowToast==="function") gwShowToast("📅 Moved to today at "+t.time+" ✓");
+}
+// ↩ undo: back to the day (and time) it came from; the school-end re-lay settles that day.
+function mvtUndo(id,rec){
+  const t=weekData.tasks.find(x=>x.id===id); if(!t||!rec||!rec.pulledFrom) return;
+  const upd={}; t.day=rec.pulledFrom; upd[id+"/day"]=t.day;
+  if(rec.fromTime){ t.time=rec.fromTime; upd[id+"/time"]=t.time; }
+  try{ if(typeof seGuardWeek==="function"){ const se=seGuardWeek(weekData.tasks,seGuardCtx({kids:[t.who]})); Object.assign(upd,se.upd); } }catch(e){}
+  sv(WK+"_tasks",weekData.tasks); lastTasksWrite=Date.now();
+  if(db&&!_dryRun()) db.ref(WK+"/tasks").update(upd);
+}
+// MOVETODAY_END
 
 // ── SCHEDULE OVERRIDES: manual Lesson Map edits (per date, per kid) ──────────
 function schedOv(dateStr,kid){ return ((scheduleOverrides||{})[dateStr]||{})[kid]||null; }
@@ -59805,7 +59899,8 @@ function seGuardCtx(extra){
     checked:(typeof checked!=="undefined"&&checked)||{}, claimed:(typeof claimed!=="undefined"&&claimed)||{},
     win:day=>{ const ov=(_sd.overrides||{})[day]||{}; return {start:toMin(ov.start||_sd.defaultStart||"10:00 AM"),end:toMin(ov.end||_sd.defaultEnd||"4:15 PM"),lunchStart:_r.lunchStart,lunchEnd:_r.lunchEnd}; },
     kidOff:(kid,day)=>{ try{ const ds=iso(day); return !!(ds&&typeof smapIsKidOff==="function"&&smapIsKidOff(kid,ds)); }catch(e){ return false; } },
-    isClass:t=>{ try{ return !!(t&&t.famBlock)||(typeof fxIsClass==="function"&&fxIsClass(subj(t))); }catch(e){ return false; } },   // 👨‍👩‍👧 family time too
+    isClass:t=>{ try{ return !!(t&&t.famBlock)||(typeof mvtHeldToday==="function"&&mvtHeldToday(t))||   // 📅 MOVETODAY: held where Mom put it today
+      (typeof fxIsClass==="function"&&fxIsClass(subj(t))); }catch(e){ return false; } },   // 👨‍👩‍👧 family time too
     isLesson:t=>{ try{ if(t.subjectKey==="morning_nb"||t.subjectKey==="closing_nb"||/notebook/i.test(t.title||"")) return false;
       if(typeof subjNoCarry==="function"&&subjNoCarry(t)) return false; return typeof planBacked==="function"&&!!planBacked(t.who,t.subjectKey); }catch(e){ return false; } },
     ahead:(kid,sk)=>{ try{ return (typeof planPace==="function")?(planPace(kid,sk).score||0):0; }catch(e){ return 0; } },   // vs the CURRENT plan
