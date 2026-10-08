@@ -52541,6 +52541,12 @@ function _mlQueueLayCore(tasks){
     const _mlStartOf=function(k,f){ const lc=_mlLastCk(k); const st=(lc!==null)?Math.max(lc,_mlFloorNoNow(k)):Math.max(toMin(f.time),_mlFloorNoNow(k)); return Math.max(st,nowMin-(f.dur||20)); };   // ⏳ her yes 2026-10-06: once the clock passes its end the card in hand slides so it ends at now (still being worked on)
     const _mlBufStart=function(k,f){ const ih=_mlInHand(k); return (ih&&ih.id===f.id)?_mlStartOf(k,f):Math.max(toMin(f.time),_mlKidFloor(k)); };   // in hand → its start; behind something → never before now
     const _mlStepIn=function(s,W){ let mv=true,g=0; while(mv&&g++<60){ mv=false; W.forEach(function(iv){ if(s>=iv[0]&&s<iv[1]){ s=iv[1]; mv=true; } }); } return s; };
+    // 🍎 LUNCHGRACE (her rule 2026-10-08; Lucy's Reading Eggs sat 12:54–1:14 across lunch on 10/6): a card that can't finish
+    // before lunch moves after lunch. The card in hand gets ~5 minutes of grace — it may run up to 5 min into lunch and stay
+    // there to be checked off; once it would end later than that it bumps to after lunch. Other windows (checked cards,
+    // classes) keep the start-only step for the card in hand.
+    const _mlLunchGrace=5;
+    const _mlHandStep=function(s,d,W,L){ let mv=true,g=0; while(mv&&g++<60){ mv=false; const s1=_mlStepIn(s,W); if(s1!==s){ s=s1; mv=true; } (L||[]).forEach(function(iv){ if(s<iv[0]&&s+d>iv[0]+_mlLunchGrace){ s=iv[1]; mv=true; } }); } return s; };
     // 🏡 LIVINGDAY_FAM (her report 2026-10-05: Andrew + Kenzie's Fact Review sat at 9:00 while every other card moved): family
     // time the SCHEDULER picked lays like any card for each of its kids — in hand → that kid's start; behind their current card →
     // after it and never before now — and all copies take the LATEST member's answer, so it never splits; it then holds like
@@ -52559,7 +52565,8 @@ function _mlQueueLayCore(tasks){
           W=W.concat(fixedOf(k));
         });
         if(tgt===null) return;
-        let s=tgt; if(allHand) s=_mlStepIn(s,W); else { const d=_grp[g][0].dur||20; let mv=true,gd=0; while(mv&&gd++<60){ mv=false; W.forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]){ s=iv[1]; mv=true; } }); } }
+        let s=tgt; if(allHand) s=_mlHandStep(s,_grp[g][0].dur||20,W,_lw?[_lw]:[]); else {   // LUNCHGRACE
+         const d=_grp[g][0].dur||20; let mv=true,gd=0; while(mv&&gd++<60){ mv=false; W.forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]){ s=iv[1]; mv=true; } }); } }
         if(s===own) return;
         _grp[g].forEach(function(t){ _famLay[t.id]=s; });
       });
@@ -52573,7 +52580,8 @@ function _mlQueueLayCore(tasks){
     // the later of its slot and the kid's floor, stepped over lunch and checked cards. Her rule
     // "still notebook first": Mom's block for ANY kid starts after it, never on top of it.
     const _bufLanding=function(k){ const f=mine[k][0]; if(!f||_mr(f)||_mlClose(f)) return null; const d0=f.dur||20; const W=lunchOf(k).concat(fixedOf(k)); const _ih=_mlInHand(k), _inHand=!!(_ih&&_ih.id===f.id); let s0=_mlBufStart(k,f);   // LIVINGDAY_START
-      if(_inHand) s0=_mlStepIn(s0,W); else { let mv=true; while(mv){ mv=false; W.forEach(function(iv){ if(s0<iv[1]&&s0+d0>iv[0]){ s0=iv[1]; mv=true; } }); } } return {start:s0,end:s0+d0}; };
+      if(_inHand) s0=_mlHandStep(s0,d0,W,lunchOf(k)); else {   // LUNCHGRACE
+        let mv=true; while(mv){ mv=false; W.forEach(function(iv){ if(s0<iv[1]&&s0+d0>iv[0]){ s0=iv[1]; mv=true; } }); } } return {start:s0,end:s0+d0}; };
     let t=0;
     if(seq.length){
       const k0=seq[0].kid, first0=mine[k0][0];
@@ -52682,7 +52690,8 @@ function _mlQueueLayCore(tasks){
           const d=c.dur||20; let moved=true;
           if(_i){ s=Math.max(s,_kf); while(moved){ moved=false; Ls.concat(fixed).forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]){ s=iv[1]; moved=true; } }); } }
           else if(_mr(c)){ while(moved){ moved=false; Ls.concat(fixed).forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]){ s=iv[1]; moved=true; } }); } }
-          else { s=_mlStepIn(s,Ls.concat(fixed)); let _gm=true; while(_gm){ _gm=false; (_gvIv[k]||[]).forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]){ s=iv[1]; _gm=true; } }); } }   // 🙋 HELPERGIVE_LAY: never on a helper's slot
+          else { const _ihC=_mlInHand(k); if(_ihC&&_ihC.id===c.id) s=_mlHandStep(s,d,Ls.concat(fixed),Ls); else { while(moved){ moved=false; Ls.concat(fixed).forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]){ s=iv[1]; moved=true; } }); } }   // LUNCHGRACE
+           let _gm=true; while(_gm){ _gm=false; (_gvIv[k]||[]).forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]){ s=iv[1]; _gm=true; } }); } }   // 🙋 HELPERGIVE_LAY: never on a helper's slot
           newTimes[c.id]=s; if(_mr(c)){ momWait[c.id]=true; momIv.push([s,s+d]); } s+=d;
         });
         others=_ownAll;
@@ -52708,7 +52717,8 @@ function _mlQueueLayCore(tasks){
       if(buf){
         const d0=buf.dur||20; const _ih=_mlInHand(k), _inHand=!!(_ih&&_ih.id===buf.id); let s0=Math.max(_mlBufStart(k,buf),_stkFloor(buf)); let mv0=true;   // LIVINGDAY_START + STICKY
         while(mv0){ mv0=false; momIv.forEach(function(iv){ if(s0<iv[1]&&s0+d0>iv[0]){ s0=iv[1]; mv0=true; } });
-          Ls.concat(_fx).forEach(function(iv){ if(_inHand?(s0>=iv[0]&&s0<iv[1]):(s0<iv[1]&&s0+d0>iv[0])){ s0=iv[1]; mv0=true; } }); }
+          Ls.forEach(function(iv){ if(_inHand?((s0>=iv[0]&&s0<iv[1])||(s0<iv[0]&&s0+d0>iv[0]+_mlLunchGrace)):(s0<iv[1]&&s0+d0>iv[0])){ s0=iv[1]; mv0=true; } });   // LUNCHGRACE
+          _fx.forEach(function(iv){ if(_inHand?(s0>=iv[0]&&s0<iv[1]):(s0<iv[1]&&s0+d0>iv[0])){ s0=iv[1]; mv0=true; } }); }
         if(s0!==toMin(buf.time)) newTimes[buf.id]=s0;
         p=s0+d0;
       }
