@@ -7512,6 +7512,7 @@ function renderMomHQ(el,ah){
   h+='<div class="rules-hdr">🏡 Mom HQ</div>';
   h+='<div class="rules-sub">Every Mom tool, one map. Tap a row to jump — everything still lives where it always has.</div>';
   h+=wsBannerHTML();   // 📋 worksheets from Adrienne (tap to open — nothing pops up)
+  try{ h+=mstAlertsHQHTML(); }catch(e){}   // 🚩 study sessions that need a look
   try{ if(typeof stPendingHTML==="function") h+=stPendingHTML(); }catch(e){}   // 📝 spelling tests waiting to be graded
   try{ if(typeof cbNudgeHTML==="function") h+=cbNudgeHTML(); }catch(e){}   // 🔁 graduated words came back
   h+=_hqGroup("🏫","School",[
@@ -9584,6 +9585,7 @@ function taskCard(t, fromDay, readOnly, doneId){
       const _n=(_sp.newNames||[]).length,_d=(_sp.reviews||[]).length,_l=(_sp.learning||[]).length;
       const _txt=(_n+_d+_l)?(_n+' new · '+_d+' due · '+_l+' learning'):((typeof mstLogGet==="function"&&mstLogGet(t.who,_dlSub.study))?'\u2713 done today':'nothing due');
       linkRow+='<div style="margin-top:4px;font-size:11px;color:var(--muted);font-weight:600">\u{1F4DA} '+_txt+'</div>';
+      if(typeof mstSentBackPending==="function"&&mstSentBackPending(t.who,_dlSub.study)) linkRow+='<div style="margin-top:3px;font-size:11px;color:#b45309;font-weight:800">\u21A9\uFE0F Mom sent this back \u2014 redo it</div>';   // ↩ MSTALERT
     }catch(e){}
   }
   // 📕 Workbook: a subject linked to an uploaded workbook opens the viewer on THIS lesson's
@@ -12084,6 +12086,7 @@ function renderMomsDay(el){
   // Book finishes, star-store asks, extra-job requests and unit-activity claims —
   // the same buttons that live on their own cards, gathered where she already looks.
   try{ const _ap=_momApprovalsHTML(); nowN+=_ap.n; h+=_ap.html; }catch(e){}
+  try{ const _sa=mstAlertsNowHTML(); nowN+=_sa.n; h+=_sa.html; }catch(e){}   // 🚩 study sessions rushed / missed / not done / stuck cards
   // Load sitting in the washer too long — the nudge that saves a re-wash.
   try{
     Object.keys(laundryData).forEach(id=>{
@@ -47769,6 +47772,7 @@ function renderMastStudy(){
   h+='<div style="font-size:14px;color:var(--muted);font-weight:600">'+((session.kind==="mix")
     ? ((pile.reviews||[]).length+' due')
     : ((pile.newNames||[]).length+' new · '+(pile.reviews||[]).length+' due · '+(pile.learning||[]).length+' learning'))+'</div>';
+  if(typeof mstSentBackPending==="function"&&mstSentBackPending(kid,session.sid)) h+='<div style="margin-top:10px;padding:10px 12px;background:#fffbeb;border:2px solid #f59e0b;border-radius:12px;font-size:14px;font-weight:800;color:#b45309">\u21A9\uFE0F Mom sent this back. Do it again \u2014 slowly. Read every card before you flip it.</div>';   // ↩ MSTALERT
   if(todayLog) h+='<div style="margin-top:8px;font-size:13px;color:#16a34a;font-weight:700">Done today: '+(todayLog.total||0)+' cards'+(todayLog.miss?', '+todayLog.miss+' again':'')+'</div>';
   h+='</div>';
   if(typeof mstHowtoHtml==="function") h+=mstHowtoHtml(kid,session);   // 📋 MST_HOWTO
@@ -47921,6 +47925,9 @@ function _mstSaveInner(){
   minted.forEach(it=>{ scores[it.id]="shown"; });
 
   const due=Object.keys(scores).map(id=>({id}));
+  // ↩ MSTALERT Send back: each card as it stood BEFORE this sitting, so Mom can undo a rushed one.
+  const _mintedIds=new Set(minted.map(m=>m.id)), _before=[];
+  due.forEach(d=>{ const it=items.find(i=>i&&i.id===d.id); if(it&&typeof mstBeforeSnap==="function") _before.push(mstBeforeSnap(it,_mintedIds.has(it.id))); });
   const settings=mastDrillSettings();
   const _wasLearning=new Set(items.filter(i=>i&&i.status==="introduction").map(i=>i.id));
   let r; try{ r=mastApplyScores(items,due,scores,pn,settings,{prevShown:prevShownIds,autoPull:false,chain:false}); }catch(e){ r={touched:[],minted:[],changes:0}; }
@@ -47955,13 +47962,15 @@ function _mstSaveInner(){
     else { if(sc==="c") correct++; else if(sc==="m") miss++; logItems.push({id:id,name:nm,deck:dk,result:sc}); }
   });
   const total=logItems.length;
-  let entry={date:todayKey,printNum:pn,total:total,correct:correct,miss:miss,shown:shown,secs:secs,items:logItems};
+  let entry={date:todayKey,printNum:pn,total:total,correct:correct,miss:miss,shown:shown,secs:secs,items:logItems,sits:[{secs:secs,total:total}],before:_before};   // 🚩 MSTALERT: per-sitting time
   if(prevLog){
     entry={ date:todayKey,printNum:pn,
       total:(prevLog.total||0)+total, correct:(prevLog.correct||0)+correct,
       miss:(prevLog.miss||0)+miss, shown:(prevLog.shown||0)+shown,
       secs:secs!=null?secs:(prevLog.secs??null),
-      items:(prevLog.items||[]).concat(logItems) };
+      items:(prevLog.items||[]).concat(logItems),
+      sits:(Array.isArray(prevLog.sits)?prevLog.sits:[{secs:prevLog.secs??null,total:prevLog.total||0}]).concat([{secs:secs,total:total}]),
+      before:(typeof mstBeforeMerge==="function")?mstBeforeMerge(prevLog.before,_before):_before };   // 🚩 MSTALERT
   }
 
   // Print log — dashed date, dedup by date; append is idempotent, mirrored locally too so
@@ -47987,6 +47996,7 @@ function _mstSaveInner(){
     mintedAll.forEach(it=>{ const ix=items.indexOf(it); if(ix>=0) upd[ix]=JSON.parse(JSON.stringify(it)); });  // strips undefined fields Firebase would refuse
     if(Object.keys(upd).length) db.ref("mastery/"+kid).update(upd);
     try{ db.ref("mastery/studyLog/"+kid+"/"+sid+"/"+todayKey).set(entry); }catch(e){}
+    try{ const _sb=((masteryData.studyBack||{})[kid]||{})[sid]; if(_sb&&_sb.ts&&!_sb.redoneTs){ const _rd={redoneTs:Date.now(),redoSecs:secs,redoTotal:total}; db.ref("mastery/studyBack/"+kid+"/"+sid).update(_rd); Object.assign(_sb,_rd); } }catch(e){}   // ↩ MSTALERT: the redo
   }
 
   masteryData[kid]=items;
@@ -48001,6 +48011,186 @@ function _mstSaveInner(){
   mstClearPersist(sid);
   _mastRe();
 }
+// MSTALERT_START
+// 🚩 Study-session alerts for Mom (her ask 2026-10-06: Lincoln's Daily Study went 18 cards in 10 seconds
+// and nothing told her). The checks only READ — today's study logs, today's schedule and the cards:
+//   ⚡ too fast  — one sitting of 5+ cards at under 3 seconds a card
+//   ❌ misses    — 5+ graded cards today and under 60% right
+//   ⏰ not done  — school has ended and a study session on today's schedule has no sitting logged
+//   🔁 stuck     — a card that has dropped back 3+ times and was missed again in the last 7 days
+// Shown in 🔴 Now — needs you (Mom's Day) and as a banner at the top of Mom HQ; Open ↗ goes to the session.
+// ↩ SEND BACK (step 2, her ask the same night): a ⚡/❌ row carries ↩ Send back. Every sitting now saves each
+// card's state from BEFORE it (log entry `before`, first sitting of the day wins), so Send back puts those
+// cards back exactly, removes today's log (the session opens again with a full sitting) and leaves a record
+// at mastery/studyBack/<kid>/<sid>. Until he saves a new sitting the session and his schedule card say
+// "Mom sent this back"; the redo stamps redoneTs and the row turns into ✅ redone. A sitting saved before
+// this shipped has no `before` — Send back then reopens it but can't take back what it moved (Mom is told).
+const MST_ALERT_FAST_SECS=3, MST_ALERT_MIN_CARDS=5, MST_ALERT_PCT=60, MST_ALERT_DROPS=3, MST_ALERT_STUCK_DAYS=7;
+const MST_ALERT_ICON={fast:"⚡",miss:"❌",notdone:"⏰",stuck:"\u{1F501}",sentback:"↩️",redone:"✅"};
+const MST_BACK_FIELDS=["tier","consecutive_correct","cycle","drop_count","status","tally_dots","next_due","dynamic","dynSource","dynFromTier","dynAddedAt"];
+let _mstAlertList=[];
+function mstAlertKids(){
+  return Object.keys(masteryData||{}).filter(k=>/_sessions$/.test(k)&&masteryData[k]&&typeof masteryData[k]==="object"&&Object.keys(masteryData[k]).length).map(k=>k.replace(/_sessions$/,""));
+}
+function _mstAlertPlain(p){ return String(p==null?"":p).replace(/<[^>]*>/g,"").replace(/\s+/g," ").trim(); }
+function _mstLocalKey(ts){ const d=new Date(ts); return d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0"); }
+function _mstDur(secs){ secs=secs||0; return secs<90?(secs+" sec"):(Math.round(secs/60)+" min"); }
+// Study logs are keyed by the UTC date (mstTodayKey) — after 8 PM Eastern that is already tomorrow — so
+// today's sitting is looked up under the local date first, then the UTC key. Returns the key or null.
+function _mstTodayLogKey(kid,sid){
+  const b=(((masteryData.studyLog||{})[kid])||{})[sid]||{};
+  const lk=_todayStr().replace(/-/g,""), uk=mstTodayKey();
+  return b[lk]?lk:(b[uk]?uk:null);
+}
+function mstSentBackPending(kid,sid){ const b=(((masteryData.studyBack||{})[kid])||{})[sid]; return !!(b&&b.ts&&!b.redoneTs); }
+function mstAlertsFor(kid,nowMin){
+  const out=[];
+  const localKey=_todayStr().replace(/-/g,"");
+  const logs=((masteryData.studyLog||{})[kid])||{};
+  const back=((masteryData.studyBack||{})[kid])||{};
+  const todayLog=sid=>{ const k=_mstTodayLogKey(kid,sid); return k?logs[sid][k]:null; };
+  let sessions=[]; try{ sessions=mstSessions(kid)||[]; }catch(e){}
+  const label=s=>((s.emoji||"\u{1F4DA}")+" "+(s.name||s.sid));
+  const labelOf=sid=>{ const s=sessions.find(x=>x.sid===sid); return s?label(s):"\u{1F4DA} "+sid; };
+  sessions.forEach(s=>{
+    if(s.kind==="checkup") return;            // 🩺 Mom runs and grades those herself
+    const e=todayLog(s.sid);
+    if(!e) return;
+    const sits=(Array.isArray(e.sits)&&e.sits.length)?e.sits:[{secs:e.secs,total:e.total}];
+    const fast=sits.find(x=>x&&x.secs!=null&&(x.total||0)>=MST_ALERT_MIN_CARDS&&x.secs/x.total<MST_ALERT_FAST_SECS);
+    if(fast) out.push({kind:"fast",sid:s.sid,back:true,text:label(s)+": "+fast.total+" cards in "+fast.secs+" sec — too fast"});
+    const c=e.correct||0, m=e.miss||0;
+    if(c+m>=MST_ALERT_MIN_CARDS&&c*100<MST_ALERT_PCT*(c+m)) out.push({kind:"miss",sid:s.sid,back:!fast,text:label(s)+": "+c+" of "+(c+m)+" right ("+Math.round(c*100/(c+m))+"%)"});
+  });
+  // ↩ sent back: waiting for his redo, or ✅ redone today.
+  Object.keys(back).forEach(sid=>{
+    const b=back[sid]; if(!b||!b.ts) return;
+    if(!b.redoneTs) out.push({kind:"sentback",sid,text:labelOf(sid)+": sent back — waiting for his redo"});
+    else if(_mstLocalKey(b.redoneTs)===localKey) out.push({kind:"redone",sid,text:labelOf(sid)+": redone"+(b.redoTotal?" — "+b.redoTotal+" cards in "+_mstDur(b.redoSecs):"")});
+  });
+  // ⏰ After school ends: a study session on today's schedule that was never opened.
+  try{
+    const r=(typeof gwRules==="function")?gwRules():{};
+    let brk=null; try{ brk=scheduleBreakToday(); }catch(e){}
+    const td=mdTodayName();
+    if(!brk&&DAYS.indexOf(td)>=0&&r.schoolEnd!=null&&nowMin>=r.schoolEnd){
+      let tasks=getActiveTasks()||[]; if(!Array.isArray(tasks)) tasks=Object.values(tasks);
+      const subs=gwGetSubjects(kid)||{}, seen=new Set();
+      tasks.forEach(t=>{
+        if(!t||t.who!==kid||t.day!==td) return;
+        const sub=subs[t.subjectKey];
+        if(!sub||!sub.study||seen.has(sub.study)) return;
+        seen.add(sub.study);
+        if(todayLog(sub.study)||mstSentBackPending(kid,sub.study)) return;
+        const s=sessions.find(x=>x.sid===sub.study);
+        if(s&&s.kind==="checkup") return;
+        out.push({kind:"notdone",sid:sub.study,text:labelOf(sub.study)+": not done today"});
+      });
+    }
+  }catch(e){}
+  // 🔁 Cards that keep falling back AND were missed again this past week (Mom's drill or any session).
+  try{
+    let items=masteryData[kid]; if(!Array.isArray(items)) items=Object.values(items||{});
+    const byId={}; items.forEach(i=>{ if(i&&i.id) byId[i.id]=i; });
+    const d0=gwParseDate(_todayStr()); d0.setDate(d0.getDate()-MST_ALERT_STUCK_DAYS);
+    const sinceKey=d0.getFullYear()+String(d0.getMonth()+1).padStart(2,"0")+String(d0.getDate()).padStart(2,"0");
+    const missed=new Set();
+    const take=list=>(list||[]).forEach(x=>{ if(x&&x.result==="m"&&x.id) missed.add(x.id); });
+    Object.values(((masteryData.history||{})[kid])||{}).forEach(h=>{ if(h&&String(h.date||"").replace(/-/g,"")>=sinceKey) take(h.items); });
+    Object.values(logs).forEach(bySid=>Object.keys(bySid||{}).forEach(k=>{ if(k>=sinceKey) take((bySid[k]||{}).items); }));
+    const stuck=[...missed].map(id=>byId[id]).filter(i=>i&&!mastIsParked(i)&&(i.drop_count||0)>=MST_ALERT_DROPS)
+      .sort((a,b)=>(b.drop_count||0)-(a.drop_count||0));
+    if(stuck.length) out.push({kind:"stuck",text:"Keeps missing: "+stuck.slice(0,6).map(i=>_mstAlertPlain(i.prompt)+" ("+i.drop_count+"×)").join(", ")+(stuck.length>6?" +"+(stuck.length-6)+" more":"")});
+  }catch(e){}
+  return out;
+}
+function mstAlertsAll(){
+  const n=new Date(), nowMin=n.getHours()*60+n.getMinutes(), out=[];
+  mstAlertKids().forEach(k=>{ try{ mstAlertsFor(k,nowMin).forEach(a=>out.push(Object.assign({kid:k},a))); }catch(e){} });
+  _mstAlertList=out;
+  return out;
+}
+function mstAlertOpen(i){ const a=_mstAlertList[i]; if(a&&a.sid&&typeof retrSchedGo==="function") retrSchedGo(a.kid,"study",a.sid); }
+function mstAlertRowHTML(a,i){
+  const btn=(fn,txt,bg)=>'<button onclick="'+fn+'('+i+')" style="padding:4px 10px;border-radius:8px;border:none;background:'+bg+';color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+txt+'</button>';
+  const tone=a.kind==="redone"?["#f0fdf4","#16a34a"]:a.kind==="sentback"?["#fffbeb","#f59e0b"]:["#fef2f2","#dc2626"];
+  return '<div style="display:flex;align-items:center;gap:6px;padding:7px 10px;background:'+tone[0]+';border-left:3px solid '+tone[1]+';border-radius:8px;margin-bottom:6px;flex-wrap:wrap">'
+    +'<span style="flex:1;min-width:180px;font-size:13px">'+(MST_ALERT_ICON[a.kind]||"\u{1F6A9}")+' <b>'+esc(cap(a.kid))+'</b> — '+esc(a.text)+'</span>'
+    +(a.back?btn("mstSendBack","↩ Send back","#b45309"):"")
+    +(a.sid?btn("mstAlertOpen","Open ↗",tone[1]):"")+'</div>';
+}
+function mstAlertsNowHTML(){
+  const al=mstAlertsAll(); if(!al.length) return {n:0,html:""};
+  return {n:al.filter(a=>a.kind!=="redone").length,html:'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:10px 0 6px">\u{1F6A9} Study sessions — needs a look</div>'+al.map(mstAlertRowHTML).join("")};
+}
+function mstAlertsHQHTML(){
+  const al=mstAlertsAll(); if(!al.length) return "";
+  return '<div style="background:#fff;border:1.5px solid #dc2626;border-radius:12px;padding:10px 12px;margin:0 0 12px">'
+    +'<div style="font-weight:800;font-size:13px;color:#b91c1c;margin-bottom:6px">\u{1F6A9} Study sessions — needs a look</div>'+al.map(mstAlertRowHTML).join("")+'</div>';
+}
+// ── ↩ Send back ──
+// A card's fields as they stood before a sitting touched it. A card minted IN the sitting is `fresh`.
+function mstBeforeSnap(it,fresh){
+  if(fresh) return {id:it.id,fresh:true};
+  const st={}; MST_BACK_FIELDS.forEach(f=>{ if(it[f]!=null) st[f]=it[f]; });
+  return {id:it.id,st:st};
+}
+// Merge a later sitting's snapshot into the day's: a card's FIRST snapshot of the day wins, so Send back
+// always returns to the state before the first sitting.
+function mstBeforeMerge(prev,now){
+  const a=Array.isArray(prev)?prev.slice():Object.values(prev||{});
+  const have=new Set(a.map(b=>b&&b.id));
+  (now||[]).forEach(b=>{ if(b&&!have.has(b.id)){ a.push(b); have.add(b.id); } });
+  return a;
+}
+// Puts the snapshot back onto `items` (in place) and returns the targeted Firebase patch for mastery/<kid>.
+// A fresh card goes back to a brand-new learning card (no dots) — it stays in his pile, it isn't deleted.
+function mstSendBackPatch(items,before){
+  const upd={};
+  const list=Array.isArray(before)?before:Object.values(before||{});
+  list.forEach(b=>{
+    if(!b||!b.id) return;
+    const ix=items.findIndex(i=>i&&i.id===b.id); if(ix<0) return;
+    const it=items[ix];
+    const st=b.fresh?{status:"introduction",tier:"daily",tally_dots:0,consecutive_correct:0,cycle:1,drop_count:0}:(b.st||{});
+    MST_BACK_FIELDS.forEach(f=>{ const v=(st[f]!=null)?st[f]:null; upd[ix+"/"+f]=v; if(v==null) delete it[f]; else it[f]=v; });
+  });
+  return upd;
+}
+function mstSendBack(i){
+  const a=_mstAlertList[i]; if(!a||!a.sid) return;
+  const go=()=>mstSendBackDo(a.kid,a.sid);
+  if(typeof momHere==="function"&&momHere()) go(); else if(typeof kitPinGate==="function") kitPinGate(go);
+}
+function mstSendBackDo(kid,sid){
+  const key=_mstTodayLogKey(kid,sid);
+  if(!key){ alert("There's no sitting from today to send back."); return; }
+  const e=masteryData.studyLog[kid][sid][key];
+  let ses=null; try{ ses=(mstSessions(kid)||[]).find(s=>s.sid===sid); }catch(_){}
+  const nm=(ses&&ses.name)||sid, who=cap(kid);
+  const before=e.before?(Array.isArray(e.before)?e.before:Object.values(e.before)):null;
+  const msg=before
+    ?("Send "+nm+" back to "+who+"?\n\nThe "+before.length+" cards it moved today go back to where they were, and "+nm+" opens again for "+who+" to redo.")
+    :("Send "+nm+" back to "+who+"?\n\nThis sitting was saved before Send back existed, so the progress it gave his cards can't be taken back. "+nm+" will open again for "+who+" to redo.");
+  if(!confirm(msg)) return;
+  let items=masteryData[kid]; if(!Array.isArray(items)) items=Object.values(items||{});
+  const upd=before?mstSendBackPatch(items,before):{};
+  const rec={ts:Date.now(),date:key,total:e.total||0,secs:e.secs??null,correct:e.correct||0,miss:e.miss||0,undone:before?before.length:0};
+  if(typeof db!=="undefined"&&db){
+    if(Object.keys(upd).length) db.ref("mastery/"+kid).update(upd);
+    db.ref("mastery/studyLog/"+kid+"/"+sid+"/"+key).remove();
+    db.ref("mastery/studyBack/"+kid+"/"+sid).set(rec);
+  }
+  masteryData[kid]=items;
+  delete masteryData.studyLog[kid][sid][key];
+  if(!masteryData.studyBack) masteryData.studyBack={};
+  if(!masteryData.studyBack[kid]) masteryData.studyBack[kid]={};
+  masteryData.studyBack[kid][sid]=rec;
+  try{ HA_LS.setItem("ha_mastery",JSON.stringify(masteryData)); }catch(_){}
+  if(typeof gwShowToast==="function") gwShowToast("↩ "+nm+" sent back to "+who);
+  try{ if(typeof renderAll==="function") renderAll(); }catch(_){}
+}
+// MSTALERT_END
 // ── MST_UI_END ──
 // ── MHQ_START ──
 // ── Mastery HQ — Mom-facing, READ-ONLY Anki-style deck browser over the existing
