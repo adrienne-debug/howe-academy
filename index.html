@@ -19331,7 +19331,7 @@ function storeClosedReason(kid){
   if((m==="time"||m==="both")&&(new Date().getHours())<((c.hour!=null?c.hour:16))) return "⏰ Opens at "+_storeFmtHour(c.hour!=null?c.hour:16);
   return "";
 }
-function _storeCfgSave(patch){ if(!momHere()) return; storeCfg=Object.assign({threshold:100,open:true,mode:"always",hour:16,closedFor:{}},storeCfg,patch); if(db) db.ref("config/storeCfg").update(patch); renderAll(); }
+function _storeCfgSave(patch){ if(!storeEditCan()) return; storeCfg=Object.assign({threshold:100,open:true,mode:"always",hour:16,closedFor:{}},storeCfg,patch); if(db) db.ref("config/storeCfg").update(patch); renderAll(); }
 function storeToggleOpen(){ _storeCfgSave({open: storeCfg.open===false}); }        // flip global sign
 function storeToggleKid(kid){ var cf=Object.assign({},storeCfg.closedFor||{}); cf[kid]=!cf[kid]; _storeCfgSave({closedFor:cf}); }
 function storeSetMode(m){ _storeCfgSave({mode:m}); }
@@ -19459,13 +19459,45 @@ function gbClaim(kid,i){ var s=gbCur(i); if(s&&s.by&&s.by!==kid) return;
   _gbWrite(i,{by:kid,done:false,ts:nowTs()}); renderAll(); }
 function gbMarkDone(kid,i){ var s=gbCur(i); if(!s||s.by!==kid||s.done) return; _gbWrite(i,{by:kid,done:true,ts:nowTs()}); _gbStampDone(i,kid); _gbEarn(i,kid); renderAll(); if(typeof gwShowToast==="function") gwShowToast("Done! +"+((gbList()[i]||{}).pts||0)+" ⭐"); }
 function gbLetGo(kid,i){ var s=gbCur(i); if(!s||s.by!==kid||s.done) return; _gbWrite(i,null); renderAll(); }
+// STORELOCK_START — 🔒 Star Store edits need the Mom PIN EVERY time (her ask 2026-10-07: Kenzie set a reward to "$5 for 1 star"
+// on a tablet where Mom mode had been left on — UNIMOM keeps Mom mode on a device, so momHere() alone let her in). Adding,
+// renaming, re-pricing, deleting or moving a reward, the Ask-Mom threshold, and the store settings (open/closed, opens when/at)
+// now wait for the PIN typed into THIS pop-up; it holds until the pop-up closes. Kids' Corner never shows the editor or
+// settings at all, even with Mom mode on (same idea as KIDCARDS 10/6). Viewing and buying are unchanged.
+let storeEditPinOk=false;
+function storeKidPage(){ return typeof tab!=="undefined"&&tab==="kids"; }
+function storeMomView(momView){ return !!momView&&!storeKidPage(); }
+function storeEditCan(){ return storeEditPinOk&&!storeKidPage(); }
+function storeEditLock(){ storeEditPinOk=false; storeEditOpen=false; }
+function storePinGate(then){
+  if(storeEditCan()){ then(); return; }
+  if(storeKidPage()) return;
+  window._storePinThen=then;
+  let w=document.getElementById("store-pin-wrap"); if(!w){ w=document.createElement("div"); w.id="store-pin-wrap"; document.body.appendChild(w); }
+  w.innerHTML='<div onclick="if(event.target===this)storePinClose()" style="position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.6);display:flex;align-items:center;justify-content:center;padding:20px">'
+    +'<div style="background:#fff;border-radius:16px;padding:22px 20px;width:100%;max-width:300px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.35)">'
+    +'<div style="font-size:34px">🔒</div><div style="font-weight:800;font-size:15px;margin:4px 0 2px">Mom PIN</div>'
+    +'<div style="font-size:12px;color:#64748b;margin-bottom:12px">Changing the Star Store is for Mom.</div>'
+    +'<input id="store-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="PIN" autocomplete="off" oninput="storePinCheck(this.value)" style="width:120px;text-align:center;padding:10px;border:1.5px solid #cbd5e1;border-radius:10px;font-size:18px;font-weight:700;letter-spacing:8px;font-family:\'DM Sans\',sans-serif">'
+    +'<div id="store-pin-err" style="font-size:11px;color:#b5394a;margin-top:6px;min-height:14px"></div>'
+    +'<button onclick="storePinClose()" style="margin-top:4px;border:none;background:none;color:#64748b;font-size:12px;cursor:pointer">Cancel</button></div></div>';
+  setTimeout(()=>{ const i=document.getElementById("store-pin-input"); if(i) i.focus(); },50);
+}
+function storePinClose(){ const w=document.getElementById("store-pin-wrap"); if(w) w.innerHTML=""; window._storePinThen=null; }
+function storePinCheck(v){
+  if(String(v).length<4) return;
+  if(pinOk(v)){ storeEditPinOk=true; const t=window._storePinThen; storePinClose(); if(typeof t==="function") t(); }
+  else { const e=document.getElementById("store-pin-err"), i=document.getElementById("store-pin-input"); if(e) e.textContent="Incorrect PIN"; if(i){ i.value=""; } }
+}
+function storeUnlockEdit(){ storePinGate(function(){ renderAll(); }); }
+// STORELOCK_END
 // ── Mom's stocking editor — materialize defaults into the config on first edit, then persist ──
 function _rwEnsure(){ if(!(Array.isArray(rewardCatalog)&&rewardCatalog.length)) rewardCatalog=RW_DEFAULT.map(x=>Object.assign({},x)); }
 function _rwSave(){ if(db) db.ref("config/rewards").set(rewardCatalog); }
-function rwCatSet(i,f,v){ if(!momHere())return; _rwEnsure(); if(!rewardCatalog[i])return; rewardCatalog[i][f]=(f==="cost")?(parseInt(v,10)||0):v; _rwSave(); renderAll(); }
-function rwCatAdd(){ if(!momHere())return; _rwEnsure(); rewardCatalog.push({emoji:"🎁",label:"New reward",cost:25}); _rwSave(); renderAll(); }
-function rwCatDel(i){ if(!momHere())return; _rwEnsure(); rewardCatalog.splice(i,1); _rwSave(); renderAll(); }
-function rwCatMove(i,d){ if(!momHere())return; _rwEnsure(); var j=i+d; if(j<0||j>=rewardCatalog.length)return; var t=rewardCatalog[i]; rewardCatalog[i]=rewardCatalog[j]; rewardCatalog[j]=t; _rwSave(); renderAll(); }
+function rwCatSet(i,f,v){ if(!storeEditCan())return; _rwEnsure(); if(!rewardCatalog[i])return; rewardCatalog[i][f]=(f==="cost")?(parseInt(v,10)||0):v; _rwSave(); renderAll(); }
+function rwCatAdd(){ if(!storeEditCan())return; _rwEnsure(); rewardCatalog.push({emoji:"🎁",label:"New reward",cost:25}); _rwSave(); renderAll(); }
+function rwCatDel(i){ if(!storeEditCan())return; _rwEnsure(); rewardCatalog.splice(i,1); _rwSave(); renderAll(); }
+function rwCatMove(i,d){ if(!storeEditCan())return; _rwEnsure(); var j=i+d; if(j<0||j>=rewardCatalog.length)return; var t=rewardCatalog[i]; rewardCatalog[i]=rewardCatalog[j]; rewardCatalog[j]=t; _rwSave(); renderAll(); }
 function storeSetThreshold(v){ _storeCfgSave({threshold:parseInt(v,10)||0}); }
 function _cadDows(cad){ if(!cad||cad==="daily") return [0,1,2,3,4,5,6]; var m=/^wk:(.+)$/.exec(cad); return m?m[1].split(",").map(Number):[]; }
 function _gbEnsure(){ if(!(Array.isArray(grabs)&&grabs.length)) grabs=gbDefault().map(x=>Object.assign({},x)); }
@@ -19474,7 +19506,7 @@ function gbSet(i,f,v){ if(!momHere())return; _gbEnsure(); if(!grabs[i])return; g
 function gbAdd(){ if(!momHere())return; _gbEnsure(); grabs.push({emoji:"🎁",label:"New grab chore",pts:20,cad:"daily"}); _gbSave(); renderAll(); }
 function gbDel(i){ if(!momHere())return; _gbEnsure(); grabs.splice(i,1); _gbSave(); renderAll(); }
 function gbCadToggle(i,dow){ if(!momHere())return; _gbEnsure(); var g=grabs[i]; if(!g)return; var d=_cadDows(g.cad||"daily"); var k=d.indexOf(dow); if(k>=0)d.splice(k,1); else d.push(dow); d.sort((a,b)=>a-b); g.cad=(d.length>=7?"daily":(d.length?("wk:"+d.join(",")):"daily")); _gbSave(); renderAll(); }
-function storeToggleEdit(){ if(!momHere())return; storeEditOpen=!storeEditOpen; renderAll(); }
+function storeToggleEdit(){ if(!storeEditCan()){ storePinGate(storeToggleEdit); return; } storeEditOpen=!storeEditOpen; renderAll(); }
 function _storeEditorHTML(){
   var DOW=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
   var h='<div class="store-ed">';
@@ -19634,12 +19666,12 @@ function _grabsHTML(kid,momView){
 // renderAll — which repaints an open pop-up (see the hook in renderAll), so nothing
 // goes stale behind the overlay.
 let popView=null, popKid=null, popSlot=null;   // popView: "store" | "grabs" | "list" (+popSlot)
-function popOpen(kid,view){ popKid=kid; popView=view; _popPaint(); }
+function popOpen(kid,view){ if(typeof storeEditLock==="function") storeEditLock(); popKid=kid; popView=view; _popPaint(); }
 // 📋 One routine list as a pop-up (her ask 2026-09-05): the SAME list the Chores panel and the
 // Schedule day render — gates (afternoon after school / 4 PM, evening hour) and check-offs
 // included — so a tap on "Morning 3 of 6" on their Today card lets them finish it right there.
 function kcOpenList(kid,slot){ popSlot=slot; try{ day=_todayDay; }catch(e){} popOpen(kid,"list"); }
-function popClose(){ popView=null; popKid=null; const o=document.getElementById("kid-pop"); if(o) o.remove(); }
+function popClose(){ if(typeof storeEditLock==="function") storeEditLock(); popView=null; popKid=null; const o=document.getElementById("kid-pop"); if(o) o.remove(); }
 function _popPaint(){
   if(!popView||!popKid) return;
   const momView=momModeActive;
@@ -19649,7 +19681,7 @@ function _popPaint(){
   try{
     if(popView==="list") body='<div id="sl-individual" style="display:block;padding:0">'+((popSlot==="morning"&&typeof mrIndividualHTML==="function")?mrIndividualHTML(popKid):rtSlotHTML(popSlot,popKid))+'</div>';
     else if(popView==="bank") body=_bankCardHTML(popKid,momView);
-    else body=(popView==="grabs")?_grabsHTML(popKid,momView):_storeCardHTML(popKid,momView);
+    else body=(popView==="grabs")?_grabsHTML(popKid,momView):_storeCardHTML(popKid,storeMomView(momView));
   }catch(e){ body='<div style="padding:20px">Could not open that just now.</div>'; }
   o.innerHTML='<div class="dlg-box" style="max-width:620px;width:94%;max-height:86vh;overflow-y:auto;text-align:left">'+
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
@@ -19694,7 +19726,9 @@ function _storeCardHTML(kid,momView){
     h+='<div class="si-buy">'+(!afford?((it.cost-bal)+' more ⭐'):(!isOpen?'closed':(ask?'Ask Mom':'Tap to buy')))+'</div></div>';
   });
   h+='</div>'; // close .store-shelf
-  if(momView){
+  if(momView&&!storeEditCan()){
+    h+='<div style="text-align:center;margin-top:10px"><button class="se-toggle" onclick="storeUnlockEdit()">🔒 Change the store (Mom PIN)</button></div>';
+  } else if(momView){
     const c=storeCfg||{}, closedKid=!!(c.closedFor&&c.closedFor[kid]), mode=c.mode||"always", hour=(c.hour!=null?c.hour:16);
     h+='<div class="store-set"><div class="ss-hd">⚙️ Store settings (Mom)</div>';
     h+='<div class="ss-row"><span class="ss-lbl">Store</span>'+
