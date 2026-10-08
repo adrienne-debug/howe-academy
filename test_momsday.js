@@ -127,7 +127,7 @@ global.renderAll = () => { renderAllCalls++; };
 global.schedShowBoard = false; global.schedShowAdmin = true; global.schedShowHistory = false;
 global.schedShowPace = false; global.schedShowPeek = false;
 
-const M = new Function(block + `; return {kbToggle,mdTodayName,momdayGet,momdayEdit,mdSlotCounts,renderMomsDay,renderMomsPlan,mpInit,mdOpenBoard,mdBack,mwBPCat,mwBPChip,mwSaveBP,mwBPSlotNow,momdayAddTodo,momdayToggleTodo,momdayDelTodo,mwToggleSym,mwAllSyms,mwAddSymType,mwDelSymType,billDueInfo,billState,billMarkPaid,billAdd,billDel,laundryAdd,laundryAdvance,laundryDel,laundryData,renderKitchen,kitIsoPlus,kitWhenMin,kitWhenLabel,kitPlanFor,kitPrepSteps,kitDuePrep,kitMarkPrep,kitAssign,kitPickDay,kitPlanText,kitOpenRecipe,kitCloseRecipe,kitEditMeal,kitAddPrepRow,kitDelPrepRow,kitSaveMeal,kitCancelEdit,kitDelMeal,kitMeals,kitPlan,kitPrepDone,kitStapleCycle,kitStapleAdd,kitStapleDel,kitStapleToggleManage,kitUsualAdd,kitUsualDel,kitSetOrderDay,kitOrderList,kitOrderText,kitCopyOrder,kitStaples,kitUsuals,kitSettings,kitPantry,panStatus,panAdd,panAddManual,panDel,panImportToggle,panImportApply,panClearGone,panToggleRegular,panIsRegular,panToggleManage,kitSweepDue,kitUsualQty,kitSlug,kitBuyLog,kitRate,kitRateChips,kitParseWeek,kitWkIso,kitWkImportToggle,kitImportWeekApply,kitPlanSlot,kitSlotText,panQtyEdit,kitMarkEaten,grEatApply,momChoresData,mcAll,mcAdd,mcDel,mcToggle,mcDoneOn,mcSetCad,mcCadToggleDay,mcDueToday,mcToggleManage,momChoresCardHTML,kitRotations,kitRotAll,kitRotEnsure,kitRotPlanFor,kitRotCapture,kitRotApply,kitRotSave,kitRotDel,kitRotToggle,kitRotSaveToggle,kitRotMondayOf,kitRotationsCardHTML,KIT_ROT_DEFAULT};`)();
+const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlotCounts,renderMomsDay,renderMomsPlan,mpInit,mdOpenBoard,mdBack,mwBPCat,mwBPChip,mwSaveBP,mwBPSlotNow,momdayAddTodo,momdayToggleTodo,momdayDelTodo,mwToggleSym,mwAllSyms,mwAddSymType,mwDelSymType,billDueInfo,billState,billMarkPaid,billAdd,billDel,laundryAdd,laundryAdvance,laundryDel,laundryData,renderKitchen,kitIsoPlus,kitWhenMin,kitWhenLabel,kitPlanFor,kitPrepSteps,kitDuePrep,kitMarkPrep,kitAssign,kitPickDay,kitPlanText,kitOpenRecipe,kitCloseRecipe,kitEditMeal,kitAddPrepRow,kitDelPrepRow,kitSaveMeal,kitCancelEdit,kitDelMeal,kitMeals,kitPlan,kitPrepDone,kitStapleCycle,kitStapleAdd,kitStapleDel,kitStapleToggleManage,kitUsualAdd,kitUsualDel,kitSetOrderDay,kitOrderList,kitOrderText,kitCopyOrder,kitStaples,kitUsuals,kitSettings,kitPantry,panStatus,panAdd,panAddManual,panDel,panImportToggle,panImportApply,panClearGone,panToggleRegular,panIsRegular,panToggleManage,kitSweepDue,kitUsualQty,kitSlug,kitBuyLog,kitRate,kitRateChips,kitParseWeek,kitWkIso,kitWkImportToggle,kitImportWeekApply,kitPlanSlot,kitSlotText,panQtyEdit,kitMarkEaten,grEatApply,momChoresData,mcAll,mcAdd,mcDel,mcToggle,mcDoneOn,mcSetCad,mcCadToggleDay,mcDueToday,mcToggleManage,momChoresCardHTML,kitRotations,kitRotAll,kitRotEnsure,kitRotPlanFor,kitRotCapture,kitRotApply,kitRotSave,kitRotDel,kitRotToggle,kitRotSaveToggle,kitRotMondayOf,kitRotationsCardHTML,KIT_ROT_DEFAULT};`)();
 
 // ── mdTodayName: weekday from the DATE ───────────────────────────────────────
 (() => {
@@ -151,17 +151,13 @@ const M = new Function(block + `; return {kbToggle,mdTodayName,momdayGet,momdayE
   ok("cascade mirror excluded", !h.includes("Cascade mirror"), null);
   ok("non-mom task excluded", !h.includes("Solo math"), null);
   ok("morning waiting lists Lincoln, Lucy", h.includes("Morning routine not done") && h.includes("Lincoln, Lucy"), null);
-  // 🧒 KIDBAR (2026-10-08): one status bar per kid; the Kids-today pills + Star Bank row open on a tap.
-  ok("one kid bar per kid", (h.match(/class="kb-row"/g) || []).length === 4, null);
-  ok("bars closed by default (pills folded away)", !h.includes('class="kb-det"') && !h.includes("2 behind: Math, LA"), null);
-  const hk = ["lincoln", "ellis", "lucy", "julian"].map(k => { M.kbToggle(k); M.renderMomsDay(elStub); return elStub.innerHTML; });
-  M.kbToggle("julian"); M.renderMomsDay(elStub);   // close again for the checks below
-  ok("behind chip: 2 behind + subjects", hk[0].includes("2 behind: Math, LA"), null);
-  ok("ahead chip", hk[1].includes("On track · 1 ahead"), null);
-  ok("plain on-track chip", hk[2].includes(">On track<"), null);
-  ok("pace throw → no chip, kid still renders", hk[3].includes("Julian") && !/kb-det[\s\S]*On track/.test(hk[3]), null);
-  ok("school seg shows 2/5", hk[0].includes("📅 2/5"), null);
-  ok("stars seg", hk[0].includes("⭐ 7"), null);
+  ok("behind chip: 2 behind + subjects", h.includes("2 behind: Math, LA"), null);
+  ok("ahead chip", h.includes("On track · 1 ahead"), null);
+  ok("plain on-track chip", h.includes(">On track<"), null);
+  ok("pace throw → no chip, kid still renders", h.includes("Julian"), null);
+  ok("school seg shows 2/5", h.includes("📅 2/5"), null);
+  ok("stars row (🧒 KIDBAR: ⭐ today under the rooms + − [5] + box)", h.includes("⭐ +7 ") && h.includes('id="mpbank-lincoln"'), null);
+  ok("one Star Bank give/dock box per kid (separate ⭐ card folded in)", (h.match(/id="mpbank-(?!note")\w+"/g) || []).length === 4, null);
   ok("claims/board/calendar/subnav embedded", ["claims","evbanner","upcoming","subnav"].every(id => h.includes('id="'+id+'"')), null);
   ok("win placeholder when empty", h.includes("Tap to write today's win"), null);
   ok("dinner placeholder when empty", h.includes("Tap to jot tonight's plan"), null);
