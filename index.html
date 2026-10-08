@@ -3930,6 +3930,7 @@ function initFb() {
     db.ref("settings/whatsNewSeen").on("value",s=>{ if(typeof whatsNewOnValue==="function") whatsNewOnValue(s.val()); });   // ✨ the What's new she has read
     db.ref("famProgress").on("value",s=>{ if(typeof famProgOnValue==="function") famProgOnValue(s.val()); });   // 📚 family subjects' shared place-in-book   // 🙋 helper profiles
     try{ db.ref("helperDays").orderByKey().limitToLast(3).on("value",s=>{ helperDaysOnValue(s.val()); }); }catch(e){}   // 🙋 who is here today
+    try{ db.ref("helperGive").orderByKey().limitToLast(3).on("value",s=>{ helperGiveOnValue(s.val()); }); }catch(e){}   // 🙋 HELPERGIVE: cards Mom handed a helper today
     try{ db.ref("helpRequests").orderByKey().limitToLast(60).on("value",s=>{ hrOnValue(s.val()); }); }catch(e){}   // 🙋 NEEDMOM: kids asking for Mom
     db.ref("worksheets").on("value",s=>{ wsOnValue(s.val()); });   // 📋 worksheets from Adrienne
     db.ref("messages").on("value",s=>{ msgOnValue(s.val()); });     // ✉ Mom's messages to Adrienne (text only — photos load on demand)
@@ -7057,8 +7058,10 @@ function _hlpIsToday(t){ try{ return ((typeof _mlDayOf==="function")?_mlDayOf(t)
 // The one question everything asks: is this card a helper's right now? → helper id, or null.
 function helperHolds(t){
   try{
-    if(!t||!t.who||!t.subjectKey||!pageOn("helpers")) return null;
+    if(!t||!t.who||!pageOn("helpers")) return null;
     if(t.mom!=="required"&&t.mom!=="maybe") return null;   // 🙋 her rule 10/3: kids do independent work alone
+    { const g=(typeof helperGivenTo==="function")?helperGivenTo(t):null; if(g) return g; }   // 🙋 HELPERGIVE: Mom handed it over for today
+    if(!t.subjectKey) return null;
     const ss=helperSessionsToday(); const ids=Object.keys(ss); if(!ids.length) return null;
     if(String(t.id||"").endsWith("_c")||!_hlpIsToday(t)) return null;
     for(let i=0;i<ids.length;i++){
@@ -7077,7 +7080,7 @@ function helperIcon(id){ return ((helpersData&&helpersData[id])||{}).icon||"🙋
 function helperTasksToday(id){
   const p=helpersData[id]; if(!p) return [];
   let all=[]; try{ all=(typeof getActiveTasks==="function"?getActiveTasks():weekData.tasks)||[]; }catch(e){ all=[]; }
-  return all.filter(t=>t&&!String(t.id||"").endsWith("_c")&&!/lunch/i.test(t.title||"")&&(t.mom==="required"||t.mom==="maybe")&&_hlpIsToday(t)&&_hlpApproved(p,t))
+  return all.filter(t=>t&&!String(t.id||"").endsWith("_c")&&!/lunch/i.test(t.title||"")&&(t.mom==="required"||t.mom==="maybe")&&_hlpIsToday(t)&&(_hlpApproved(p,t)||(typeof helperGivenTo==="function"&&helperGivenTo(t)===id)))   // 🙋 + what Mom gave her today
     .sort((a,b)=>(toMin(a.time)-toMin(b.time))||String(a.who).localeCompare(String(b.who)));
 }
 // Session writes: one leaf under helperDays/<today>/<id>, mirrored locally (and so in dry-run too).
@@ -7294,6 +7297,140 @@ function _hlpSubjEligible(s){
   if(s.mom==="required"||s.mom==="maybe") return true;
   try{ return typeof lessonDayList==="function"&&lessonDayList(s).length>0; }catch(e){ return false; }
 }
+// HELPERGIVE_START — 🙋 "Give Grandma more today" (her ask 2026-10-08): on a day a helper comes (she has regular hours on
+// this weekday), Mom can hand her MORE of today's Mom-required cards than her regular help list — any kid, any time.
+// helperGive/<yyyy-mm-dd>/<helperId>/<taskKey> = {at, who, sk}. TODAY ONLY: the date key turning over ends it, and the
+// regular help list (config/helpers/<id>/help) is never touched. A handed card is hers (helperHolds answers her id), so
+// it comes off Mom's loop and shows "👵 with Grandma" like her regular cards; the living-day lay (MOMLOOP, helperGivenWin)
+// lays it inside her window on her own clock, stepping over the kid's other cards. A kid's cards of one subject today
+// go (and come back) together, so lessons stay in order. ↩ Undo = Mom's again. If the helper is checked out ("left"),
+// whatever she didn't finish is Mom's again, exactly like her regular cards. Every write is one multi-path update
+// under helperGive/<today>, mirrored locally (and so in dry-run too).
+let helperGiveData={}, helperGivePopId=null;
+function helperGiveOnValue(v){
+  helperGiveData=(v&&typeof v==="object")?v:{};
+  const ae=(typeof document!=="undefined")&&document.activeElement;
+  if(!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))&&typeof renderAll==="function") renderAll();
+  if(helperGivePopId) helperGivePopRender();
+}
+function helperGiveToday(){ return (helperGiveData&&helperGiveData[_hlpTodayISO()])||{}; }
+function _hlpByAge(a,b){ return (((helpersData[a]||{}).createdAt||0)-((helpersData[b]||{}).createdAt||0)); }
+// Her regular hours today → {id, s, e} (minutes), or null when she doesn't come today.
+function helperWinToday(id){
+  try{
+    const p=helpersData&&helpersData[id], w=p&&p.days&&p.days[_todayDay];
+    if(!w||!w.start||!w.end) return null;
+    const s=toMin(w.start), e=toMin(w.end);
+    return (e>s)?{id:id,s:s,e:e}:null;
+  }catch(e){ return null; }
+}
+// Which helper Mom handed this card to today → helper id, or null.
+function helperGivenTo(t){
+  try{
+    if(!t||!t.id||!pageOn("helpers")||t.mom!=="required") return null;
+    if(String(t.id).endsWith("_c")||!_hlpIsToday(t)) return null;
+    const g=helperGiveToday(), k=_hlpKey(t.id), ss=helperSessionsToday();
+    const ids=Object.keys(g).filter(_hlpIdOk).filter(id=>helpersData[id]).sort(_hlpByAge);
+    for(let i=0;i<ids.length;i++){
+      const id=ids[i];
+      if(!g[id]||!g[id][k]||!helperWinToday(id)) continue;
+      if(ss[id]&&ss[id].left) continue;   // she left → Mom's again
+      return id;
+    }
+  }catch(e){}
+  return null;
+}
+// The window the living-day lay puts a handed card in → {id, s, e}, or null.
+function helperGivenWin(t){ const id=helperGivenTo(t); return id?helperWinToday(id):null; }
+// Every unchecked Mom-required card on today's schedule, any kid, in time order.
+function helperGiveCands(){
+  let all=[]; try{ all=(typeof getActiveTasks==="function"?getActiveTasks():weekData.tasks)||[]; }catch(e){ all=[]; }
+  return all.filter(t=>t&&t.id&&t.who&&t.mom==="required"&&!String(t.id).endsWith("_c")&&!t._eowOverflow&&!t.famBlock
+      &&!/lunch/i.test(t.title||"")&&_hlpIsToday(t)&&!(typeof checked!=="undefined"&&checked&&checked[t.id]))
+    .sort((a,b)=>(toMin(a.time)-toMin(b.time))||String(a.who).localeCompare(String(b.who)));
+}
+// A kid's cards of one subject today move together (lessons stay in order).
+function _hlpGiveGroup(t,list){ return list.filter(x=>x.who===t.who&&(t.subjectKey?x.subjectKey===t.subjectKey:x.id===t.id)); }
+// Tick = hand it (and its subject-mates) to this helper for today; untick / ↩ Undo = Mom's again.
+function helperGiveToggle(id,taskId){
+  if(!momHere()){ if(typeof kitPinGate==="function") kitPinGate(function(){ helperGiveToggle(id,taskId); },"Handing cards to a helper is for Mom."); return; }
+  if(!_hlpIdOk(id)||!helpersData[id]||!helperWinToday(id)) return;
+  const iso=_hlpTodayISO(), mine=helperGiveToday()[id]||{}, on=!!mine[_hlpKey(taskId)];
+  const list=helperGiveCands(), t=list.find(x=>x.id===taskId);
+  const grp=t?_hlpGiveGroup(t,list):[{id:taskId}];
+  const upd={}, others=Object.keys(helperGiveToday()).filter(o=>o!==id&&_hlpIdOk(o));
+  grp.forEach(x=>{
+    const k=_hlpKey(x.id);
+    if(on) upd[id+"/"+k]=null;
+    else { upd[id+"/"+k]={at:Date.now(),who:x.who||"",sk:x.subjectKey||""}; others.forEach(o=>{ if((helperGiveToday()[o]||{})[k]) upd[o+"/"+k]=null; }); }   // one helper per card
+  });
+  const day=helperGiveData[iso]=helperGiveData[iso]||{};
+  Object.keys(upd).forEach(pth=>{ const ps=pth.split("/"); if(upd[pth]===null){ if(day[ps[0]]) delete day[ps[0]][ps[1]]; } else { (day[ps[0]]=day[ps[0]]||{})[ps[1]]=upd[pth]; } });
+  if(db&&!_dryRun()) db.ref("helperGive/"+iso).update(upd);
+  if(typeof renderAll==="function") renderAll();
+  helperGivePopRender();
+}
+function helperGivePopOpen(id){
+  if(!momHere()){ if(typeof kitPinGate==="function") kitPinGate(function(){ helperGivePopOpen(id); },"Handing cards to a helper is for Mom."); return; }
+  if(!helperWinToday(id)) return;
+  helperGivePopId=id; helperGivePopRender();
+}
+function helperGivePopClose(){ helperGivePopId=null; helperGivePopRender(); }
+function helperGivePopRender(){
+  if(typeof document==="undefined") return;
+  let el=document.getElementById("hlp-give-pop");
+  if(!helperGivePopId||!helpersData[helperGivePopId]||!momHere()){ if(el) el.remove(); return; }
+  if(!el){ el=document.createElement("div"); el.id="hlp-give-pop"; document.body.appendChild(el); }
+  el.innerHTML=helperGivePopHTML(helperGivePopId);
+}
+function _hlpUndoBtn(id,t){ return '<button onclick="event.stopPropagation();helperGiveToggle(\''+id+'\',\''+_hlpQ(t.id)+'\')" style="border:1.5px solid #86efac;background:#fff;color:#166534;border-radius:14px;padding:2px 9px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;flex-shrink:0">&#8617; Undo</button>'; }
+function helperGivePopHTML(id){
+  const p=helpersData[id]||{}, w=(p.days||{})[_todayDay]||{}, nm=esc(helperName(id)), list=helperGiveCands();
+  let h='<div onclick="if(event.target===this)helperGivePopClose()" style="position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9000;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto">';
+  h+='<div style="background:#fff;border-radius:16px;max-width:460px;width:100%;padding:16px 16px 14px;box-shadow:0 20px 50px rgba(0,0,0,.25);font-family:\'DM Sans\',sans-serif">';
+  h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px"><span style="font-size:28px">'+esc(helperIcon(id))+'</span><div style="flex:1"><div style="font-size:17px;font-weight:800">Give '+nm+' more today</div>';
+  h+='<div style="font-size:12px;color:var(--muted)">Tick the cards '+nm+' will do today ('+esc(w.start||"")+'&ndash;'+esc(w.end||"")+'). They move into '+nm+'&rsquo;s time and come off your loop. Just for today.</div></div>';
+  h+='<button onclick="helperGivePopClose()" style="border:none;background:none;font-size:22px;cursor:pointer;color:#64748b">&times;</button></div>';
+  if(!list.length) h+='<div style="padding:14px 4px;font-size:13px;color:var(--muted)">No Mom cards left on today&rsquo;s schedule.</div>';
+  list.forEach(t=>{
+    const g=helperGivenTo(t), mine=g===id, other=g&&!mine;
+    const reg=!g&&(typeof helperHolds==="function")?helperHolds(t):null;
+    const col=(typeof KID_COLOR!=="undefined"&&KID_COLOR[t.who])||"#64748b";
+    const n=_hlpGiveGroup(t,list).length;
+    h+='<div style="display:flex;align-items:center;gap:10px;padding:9px 6px;border-top:1px solid var(--border)">';
+    h+='<input type="checkbox" '+(mine?'checked ':'')+'onchange="helperGiveToggle(\''+id+'\',\''+_hlpQ(t.id)+'\')" style="width:20px;height:20px;accent-color:#16a34a;flex-shrink:0">';
+    h+='<div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700">'+esc(t.title)+'</div>';
+    h+='<div style="font-size:11px;color:var(--muted)"><span style="color:'+col+';font-weight:800">'+esc(cap(t.who))+'</span> · '+esc(t.time||"")
+      +(mine?' · '+esc(helperIcon(id))+' '+nm:(other?' · with '+esc(helperName(g)):(reg?' · with '+esc(helperName(reg)):'')))
+      +(n>1?' · '+n+' of this subject go together':'')+'</div></div>';
+    if(mine) h+=_hlpUndoBtn(id,t);
+    h+='</div>';
+  });
+  h+='<div style="display:flex;gap:8px;margin-top:12px"><button onclick="helperGivePopClose()" style="flex:1;border:none;background:#111827;color:#fff;border-radius:10px;padding:9px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">Done</button></div>';
+  h+='</div></div>';
+  return h;
+}
+// The button (Mom's Day + the Mom-mode schedule): one per helper who comes today, with what she's been given and ↩ Undo.
+function helperGiveBtnsHTML(){
+  try{
+    if(!pageOn("helpers")||!momHere()) return "";
+    const ids=Object.keys(helpersData||{}).filter(_hlpIdOk).filter(id=>helperWinToday(id)).sort(_hlpByAge);
+    if(!ids.length) return "";
+    const list=helperGiveCands();
+    let h='';
+    ids.forEach(id=>{
+      const nm=esc(helperName(id)), ic=esc(helperIcon(id)), given=list.filter(t=>helperGivenTo(t)===id);
+      h+='<div style="margin:0 0 8px;padding:8px 10px;background:#f0fdf4;border-left:4px solid #16a34a;border-radius:0 10px 10px 0">';
+      h+='<button onclick="helperGivePopOpen(\''+id+'\')" style="border:none;background:#16a34a;color:#fff;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">&#128587; Give '+nm+' more today</button>';
+      given.forEach(t=>{
+        h+='<div style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:12px;color:#166534"><span style="flex:1;min-width:0">'+ic+' '+esc(cap(t.who))+' · '+esc(t.title)+'</span>'+_hlpUndoBtn(id,t)+'</div>';
+      });
+      h+='</div>';
+    });
+    return h;
+  }catch(e){ return ""; }
+}
+// HELPERGIVE_END
 // ── HELPERS_END ──
 function renderMomHQ(el,ah){
   if(!el){el=document.getElementById("content");if(!el)return;}
@@ -8013,6 +8150,7 @@ function renderSchedule(el){
   // 👩 the Mom loop — who has her right now. Mom-gated, today only, reports nothing on
   // another day's view where "ready" and "paused" have no meaning.
   if(day===_todayDay){ try{ h+=helpersStripHTML(); }catch(e){} }   // 🙋 "Grandma here?"
+  if(day===_todayDay){ try{ h+=helperGiveBtnsHTML(); }catch(e){} }   // 🙋 HELPERGIVE: "Give Grandma more today" (Mom mode only)
   try{ h+=helperViewHeadHTML(day); }catch(e){}   // 🙋 "Grandma's list"
   if(day===_todayDay){ try{ if(typeof momTipsScheduleHTML==="function") h+=momTipsScheduleHTML(!!mlStripHTML()); }catch(e){} }   // MOMNEWS: 👋 Mom banners above the strip
   if(day===_todayDay){ try{ h+=mlStripHTML(); }catch(e){} }
@@ -11821,6 +11959,7 @@ function renderMomsDay(el){
   // and it was ninth — below Now, Order day, Today, Star Bank, her schedule, the
   // weigh-in, Win of the day and Use soon. Her own day should not need scrolling to.
   try{ h+=hrMomCardHTML(null,"md"); }catch(e){}   // 🙋 NEEDMOM: a kid asked for Mom → ✓ Helped (first: it's happening now)
+  try{ h+=helperGiveBtnsHTML(); }catch(e){}   // 🙋 HELPERGIVE: "Give Grandma more today"
   try{ h+=momDayStripHTML(iso,today); }catch(e){}
   try{ h+=wsTaskHTML(); }catch(e){}   // 📋 From Adrienne — tap to answer, ✓ once sent
   try{ if(typeof stPendingHTML==="function") h+=stPendingHTML(); }catch(e){}   // 📝 spelling tests waiting to be graded
@@ -51767,6 +51906,7 @@ function _mlQueueLayCore(tasks){
   try{
     if(!Array.isArray(tasks)||!tasks.length) return tasks;
     const _mr=function(t){ return !!t&&t.mom==="required"&&!(typeof helperHolds==="function"&&helperHolds(t)); };   // 🙋 Mom work = not a helper's
+    const _gvW=function(t){ try{ return (typeof helperGivenWin==="function")?helperGivenWin(t):null; }catch(e){ return null; } };   // 🙋 HELPERGIVE: handed to a helper today → her window
     const _sc=_mlScan(); const order=_sc.order, n=order.length; if(!n) return tasks;
     const cur=_sc.cur;
     const now=mlNow();
@@ -51778,7 +51918,7 @@ function _mlQueueLayCore(tasks){
     };
     const mine={}, momQ={};
     order.forEach(function(k){
-      mine[k]=tasks.filter(function(t){ return movable(t)&&t.who===k; })
+      mine[k]=tasks.filter(function(t){ return movable(t)&&t.who===k&&!_gvW(t); })   // 🙋 HELPERGIVE cards lay in the helper's window below
         .sort(function(a,b){ return toMin(a.time)-toMin(b.time); });
       momQ[k]=mine[k].filter(function(t){ return _mr(t); });
       if(momQ[k].length>1) momQ[k]=prMomOrder(k,momQ[k]);   // 🎯 what's needed first, inside the kid's own Mom block
@@ -51865,7 +52005,7 @@ function _mlQueueLayCore(tasks){
     const _mlCkAt=function(x){ try{ const v=checked[x.id]; const h=(typeof histState!=="undefined"&&histState&&histState[x.id])||null; const ts=(typeof v==="string"&&v)||(h&&h.ts)||""; const mm=String(ts).match(/^\s*(\d{1,2}:\d{2}\s*[AP]M)/i); if(mm){ const c=toMin(mm[1]); if(c>0) return c; } }catch(e){} return null; };
     const _mlLastCk=function(k){ let at=null; tasks.forEach(function(x){ if(!x||!isToday(x)||x.who!==k||/lunch/i.test(x.title||"")) return; if(!(typeof checked!=="undefined"&&checked&&checked[x.id])) return; let c=_mlCkAt(x); if(c===null) c=_ckEnd(x); if(c!==null&&!isNaN(c)&&(at===null||c>at)) at=c; }); return at; };   // no readable check time → the card's own end
     const _mlFloorNoNow=function(k){ try{ let ce=0; if(typeof coopTimedEndMin==="function"&&typeof routineDateISO==="function"){ const ds=routineDateISO(_todayDay); ce=ds?(coopTimedEndMin(k,ds)||0):0; } return Math.max(_mlSchoolMin,ce); }catch(e){ return _mlSchoolMin; } };
-    const _mlOpenOf=function(k){ return tasks.filter(function(x){ return x&&isToday(x)&&x.who===k&&x.time&&!String(x.id||"").endsWith("_c")&&!x._eowOverflow&&!/lunch/i.test(x.title||"")&&!_mr(x)&&!(typeof checked!=="undefined"&&checked&&checked[x.id]); }).sort(function(a,b){ return toMin(a.time)-toMin(b.time); }); };
+    const _mlOpenOf=function(k){ return tasks.filter(function(x){ return x&&isToday(x)&&x.who===k&&x.time&&!String(x.id||"").endsWith("_c")&&!x._eowOverflow&&!/lunch/i.test(x.title||"")&&!_mr(x)&&!_gvW(x)&&!(typeof checked!=="undefined"&&checked&&checked[x.id]); }).sort(function(a,b){ return toMin(a.time)-toMin(b.time); }); };
     const _mlInHand=function(k){ const o=_mlOpenOf(k); return o.length?o[0]:null; };   // the kid's first open card today (family time included, Mom work not)
     const _mlStartOf=function(k,f){ const lc=_mlLastCk(k); const st=(lc!==null)?Math.max(lc,_mlFloorNoNow(k)):Math.max(toMin(f.time),_mlFloorNoNow(k)); return Math.max(st,nowMin-(f.dur||20)); };   // ⏳ her yes 2026-10-06: once the clock passes its end the card in hand slides so it ends at now (still being worked on)
     const _mlBufStart=function(k,f){ const ih=_mlInHand(k); return (ih&&ih.id===f.id)?_mlStartOf(k,f):Math.max(toMin(f.time),_mlKidFloor(k)); };   // in hand → its start; behind something → never before now
@@ -51946,16 +52086,38 @@ function _mlQueueLayCore(tasks){
         if(_blkAfter[c.id]) _blkAfter[c.id].forEach(function(b){ _mlBlkLaid[b.key]=t; _blkIv.push([t,t+b.mins]); t+=b.mins; });   // 🧺 MOMSCHED_LAUNDRY
       });
     });
+    // 🙋 HELPERGIVE_LAY (her ask 2026-10-08, "Give Grandma more today"): a card Mom handed a helper for today lays INSIDE
+    // that helper's regular window on her own clock — in time order, one after another, so lessons keep their order — never
+    // before the kid's floor (now, school start, co-op), never on the kid's Morning Notebook or a card already in hand, and
+    // stepping over the kid's lunch, checked cards, Mom block and the helper's regular cards. Each kid's own cards then step
+    // over these slots exactly as they step over a Mom block. A card that can't fit by her end still lays (no card is lost).
+    const _gvIv={};
+    try{
+      const _gv=tasks.filter(function(t){ return movable(t)&&_gvW(t); }).sort(function(a,b){ return toMin(a.time)-toMin(b.time); });
+      const _hT={}, _hBusy={};
+      _gv.forEach(function(c){
+        const w=_gvW(c), k=c.who, d=c.dur||20;
+        if(!_hBusy[w.id]) _hBusy[w.id]=tasks.filter(function(x){ return x&&isToday(x)&&!_gvW(x)&&typeof helperHolds==="function"&&helperHolds(x)===w.id&&!(typeof checked!=="undefined"&&checked&&checked[x.id]); })
+          .map(function(x){ return [toMin(x.time),toMin(x.time)+(x.dur||20)]; });
+        let s=Math.max(w.s,_hT[w.id]||0,_mlKidFloor(k));
+        const f=(mine[k]||[])[0];
+        if(f&&!_mr(f)&&!_mlClose(f)){ const bl=_bufLanding(k); if(bl&&(_mlMorn(f)||bl.start<=nowMin)) s=Math.max(s,bl.end); }   // notebook first; the card in hand keeps its place
+        const W=lunchOf(k).concat(fixedOf(k)).concat(_hBusy[w.id]).concat(_gvIv[k]||[])
+          .concat((momQ[k]||[]).map(function(m){ const ms=(newTimes[m.id]!==undefined)?newTimes[m.id]:toMin(m.time); return [ms,ms+(m.dur||20)]; }));
+        let mv=true, g=0; while(mv&&g++<80){ mv=false; W.forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]){ s=iv[1]; mv=true; } }); }
+        newTimes[c.id]=s; _hT[w.id]=s+d; (_gvIv[k]=_gvIv[k]||[]).push([s,s+d]);
+      });
+    }catch(e){}
     // Each kid's OTHER movable cards re-pack around their Mom block: the in-flight buffer
     // (earliest unchecked non-Mom card) keeps its slot; the rest follow in the order the
     // packer laid them, stepping over the kid's Mom intervals and lunch.
     // 📓 Closing notebooks are the day's wrap-up, not just another card: they sit out of
     // the buffer/chain and re-tuck to the TRUE end of the kid's re-laid day below.
     order.forEach(function(k){
-      const Ls=lunchOf(k);
+      const Ls=lunchOf(k).concat(_gvIv[k]||[]);   // 🙋 HELPERGIVE_LAY: the helper's slots hold like lunch
       const closes=mine[k].filter(function(x){ return !_mr(x)&&_mlClose(x); })
         .sort(function(a,b){ return toMin(a.time)-toMin(b.time); });
-      const momIv=[]; let buf=null, others=[];
+      const momIv=(_gvIv[k]||[]).slice(); let buf=null, others=[];   // 🙋 HELPERGIVE_LAY: the closing notebook tucks after them too
       // 🔗 LIVINGDAY_STICKY (her rule 2026-10-06): a sticky "after" card slides WITH its partner. When the partner is Mom
       // work it lays at the END of this kid's whole Mom block — Mom finishes everything with the kid, then the kid does
       // the practice while Mom moves on; otherwise right after the partner's laid slot. Lunch, a blockout or family time
@@ -51989,7 +52151,7 @@ function _mlQueueLayCore(tasks){
           const d=c.dur||20; let moved=true;
           if(_i){ s=Math.max(s,_kf); while(moved){ moved=false; Ls.concat(fixed).forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]){ s=iv[1]; moved=true; } }); } }
           else if(_mr(c)){ while(moved){ moved=false; Ls.concat(fixed).forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]){ s=iv[1]; moved=true; } }); } }
-          else s=_mlStepIn(s,Ls.concat(fixed));
+          else { s=_mlStepIn(s,Ls.concat(fixed)); let _gm=true; while(_gm){ _gm=false; (_gvIv[k]||[]).forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]){ s=iv[1]; _gm=true; } }); } }   // 🙋 HELPERGIVE_LAY: never on a helper's slot
           newTimes[c.id]=s; if(_mr(c)){ momWait[c.id]=true; momIv.push([s,s+d]); } s+=d;
         });
         others=_ownAll;
@@ -52053,6 +52215,7 @@ function _mlQueueLayCore(tasks){
     // schedule lists it under "didn't fit today", still checkable, until the 8 PM sweep. The
     // closing notebook is the wrap-up and never falls off.
     const endMin=_mlDayEndMin(); const offDay={};
+    tasks.forEach(function(c){ if(c&&newTimes[c.id]!==undefined&&movable(c)&&_gvW(c)&&newTimes[c.id]+(c.dur||20)>endMin) offDay[c.id]=true; });   // 🙋 HELPERGIVE_LAY
     order.forEach(function(k){ mine[k].forEach(function(c){ if(_mlClose(c)) return; const s=(newTimes[c.id]!==undefined)?newTimes[c.id]:toMin(c.time); if(s+(c.dur||20)>endMin) offDay[c.id]=true; }); });
     if(!Object.keys(newTimes).length&&!Object.keys(momWait).length&&!Object.keys(offDay).length) return tasks;
     return tasks.map(function(x){
