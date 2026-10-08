@@ -84,7 +84,7 @@ console.log("\n── 📓 the Morning Notebook comes first when the day starts 
   ok("a notebook already first: a plain shift, as before", o2[0].time === "3:34 PM" && o2[1].time === "3:39 PM");
 }
 console.log("\n── the wiring ──");
-ok("today uses the rendered lay; open didn't-fit cards are left out", /const _lay=\(d===_todayDay\)\?_rtSwTodayLay\(\):null;/.test(src) && /!\(t\._offDay&&!checked\[t\.id\]\)\);/.test(src));
+ok("today uses the rendered lay; open didn't-fit cards are left out", /const _lay=\(d===_todayDay\)\?_rtSwTodayLay\(\):null;/.test(src) && /!\(\(t\._offDay\|\|t\._dayDrop\)&&!checked\[t\.id\]\)\); return ts\.length===0/.test(src));   // DAYDROP 2026-10-08: dropped dailies too
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

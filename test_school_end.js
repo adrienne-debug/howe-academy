@@ -120,7 +120,7 @@ console.log("Mom, lunch, days off");
 console.log("dailies only");
 { const T=["a","b","c","d","e","f","g","h","i","j","k","l"].map((sk,k)=>c("julian","friday",fromMin(toMin("3:00 PM")+k*10),10,"daily_"+sk));
   const r=G(T,ctx()); ok("no lesson to roll → nothing rolls or defers (a daily never leaves its day)",!r.deferred.length&&!r.rolled.length);
-  ok("…the dailies past the end DROP for the day instead (her rule 2026-10-08; see test_daily_drop.js)",r.dropped.length>0&&T.every(t=>end(t)<=toMin("4:15 PM")),T.map(t=>t.time)); }
+  ok("…the dailies past the end DROP to the day\u2019s \u201cDidn\u2019t fit today\u201d box instead, never deleted (her rule 2026-10-08; see test_daily_drop.js)",r.dropped.length>0&&T.length===12&&T.filter(t=>!t._dayDrop).every(t=>end(t)<=toMin("4:15 PM"))&&T.filter(t=>t._dayDrop).length===r.dropped.length,T.map(t=>t.time)); }
 
 console.log("wiring");
 ok("safeWriteTasks runs it (cascade + Mom push)",/const _se=seGuardWeek\(weekData\.tasks,seGuardCtx\(\)\)/.test(src));
