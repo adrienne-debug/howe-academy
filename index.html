@@ -1982,6 +1982,7 @@ let pointRequests={};      // pointRequests/{kid}/{id} = {amount,reason,ts,statu
 let prFormOpen=false;      // the kid's "ask Mom" form
 function gbList(){ return (Array.isArray(grabs)&&grabs.length)?grabs:gbDefault().slice(); }
 let techGrace={};                   // techGrace/{kid}/{wk}/{day} = true (waived for that day)
+let techOff={};                     // techOff/{kid}/{wk}/{day} = true (📱 TECHSWITCH: Mom took tech away by hand that day)
 function rtIsMulti(slot){ return RT_ABBR[slot]!==undefined; }
 function rtStepsFor(slot,kid,raw,dayName){
   const c=routineCfg2[slot]&&routineCfg2[slot][kid];
@@ -4044,6 +4045,7 @@ function initFb() {
     db.ref("pointRequests").on("value",s=>{ pointRequests=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
     db.ref("grabClaims").on("value",s=>{ grabClaims=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
     db.ref("techGrace").on("value",s=>{ techGrace=s.val()||{}; });
+    db.ref("techOff").on("value",s=>{ techOff=s.val()||{}; if(typeof renderAll==="function") renderAll(); });   // 📱 TECHSWITCH
     db.ref("unitStudies").on("value",s=>{ unitStudies=s.val()||{}; if(tab==="units"){const el=document.getElementById("content");if(el)renderUnits(el);} else if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);} });
     db.ref("att_overrides").on("value",s=>{
       if(s.val()) attOverrides=s.val();
@@ -11938,12 +11940,15 @@ function mdCardKidsToday(today,isSchoolDay,bank){   // bank=true: Mom's Day row 
       +'</div>';
     if(chores.length) h+='<div style="margin-top:3px;font-size:11px;color:#6b6560">🧹 '+esc(chores.join(" · "))+'</div>';
     // 🧒 KIDBAR: stars under the rooms — today's ⭐ (tap → what earned them), 🏦 balance, and the Star Bank's − [5] + box.
-    if(bank) h+='</div><div style="display:flex;align-items:center;gap:6px;margin-top:2px;flex:0 0 auto;margin-left:auto;flex-wrap:wrap">'
+    if(bank) h+='</div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;margin-top:2px;flex:0 0 auto;margin-left:auto;max-width:100%"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">'
       +'<span onclick="boardStatPop(\''+kid+'\',\'stars\',\''+_kd+'\')" style="cursor:pointer;font-size:13px;font-weight:800;color:#b45309">⭐ +'+pts+' <span style="font-size:11px;font-weight:700;color:#78716c">today</span></span>'
       +'<span style="font-size:13px;font-weight:800;color:#b45309;margin-right:6px">🏦 '+Number(bal).toLocaleString()+'</span>'
       +'<button onclick="mpBankAdj(\''+kid+'\',-1)" style="padding:4px 11px;border-radius:9px;border:1.5px solid #fca5a5;background:#fff;color:#b91c1c;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">−</button>'
       +'<input id="mpbank-'+kid+'" type="number" inputmode="numeric" min="1" value="5" style="width:54px;padding:4px;border:1.5px solid var(--border);border-radius:9px;text-align:center;font-size:13px;font-weight:800;font-family:\'DM Sans\',sans-serif">'
       +'<button onclick="mpBankAdj(\''+kid+'\',1)" style="padding:4px 11px;border-radius:9px;border:none;background:#16a34a;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">+</button>'
+      // 📱 TECHSWITCH: tech on/off for this day, right under the stars. Tap flips it (techToggle).
+      +'</div>'
+      +'<button onclick="techToggle(\''+kid+'\',\''+_kd+'\')" title="'+(lost?'Tap to give tech back':'Tap to take tech away for the day')+'" style="padding:4px 12px;border-radius:9px;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;border:1.5px solid '+(lost?'#fca5a5':'#bbf7d0')+';background:'+(lost?'#fef2f2':'#f0fdf4')+';color:'+(lost?'#b91c1c':'#166534')+'">'+(lost?'🚫 No tech — give back':'📱 Tech on — take away')+'</button>'
       +'</div></div>';
     h+='</div>';
   });
@@ -55104,7 +55109,24 @@ function rlogFlag(kid,wk,d,key){
 // ── Accountability: "Morning not done by <hour> -> lose tech" house rule ──
 function loseTechHour(){ const h=parseInt(routineRules.loseTechHour,10); return isNaN(h)?10:h; }
 function techGraced(kid,d){ const wk=activeWk(); return !!(techGrace[kid]&&techGrace[kid][wk]&&techGrace[kid][wk][d]); }
+// 📱 TECHSWITCH (her ask 2026-10-08): Mom can take tech away by hand for a day, any kid, any reason — on top of
+// the automatic Morning-by-10 rule. One tap on Mom's Day flips it; giving it back clears her flag AND, if the
+// Morning rule had also taken it, grants that day's grace (the same grace as 🙏 Grant grace).
+function techTaken(kid,d){ const wk=activeWk(); return !!(techOff[kid]&&techOff[kid][wk]&&techOff[kid][wk][d]); }
+function techToggle(kid,d){
+  if(!momHere()){ if(typeof gwShowToast==="function") gwShowToast("Unlock Mom mode to change tech"); return; }
+  const wk=activeWk();
+  if(techLost(kid,d)){
+    if(techTaken(kid,d)){ try{ delete techOff[kid][wk][d]; }catch(e){} if(db) db.ref("techOff/"+kid+"/"+wk+"/"+d).remove(); }
+    if(techLost(kid,d)){ techGrace[kid]=techGrace[kid]||{}; techGrace[kid][wk]=techGrace[kid][wk]||{}; techGrace[kid][wk][d]=true; if(db) db.ref("techGrace/"+kid+"/"+wk+"/"+d).set(true); }
+  } else {
+    techOff[kid]=techOff[kid]||{}; techOff[kid][wk]=techOff[kid][wk]||{}; techOff[kid][wk][d]=true;
+    if(db) db.ref("techOff/"+kid+"/"+wk+"/"+d).set(true);
+  }
+  renderAll();
+}
 function techLost(kid,d){
+  if(techTaken(kid,d)) return true;                    // 📱 TECHSWITCH: Mom's call wins, rule on or off
   if(!routineRules.loseTechEnabled) return false;      // flag only when the rule is ON
   // Scope: Mom decides whether the deadline applies on weekends and on breaks. Both default ON,
   // so turning the feature on doesn't quietly change behaviour for anyone.
@@ -55118,6 +55140,7 @@ function techLost(kid,d){
 }
 function techBanner(kid){
   if(!techLost(kid,day)) return "";
+  if(techTaken(kid,day)) return '<div style="background:#fef2f2;border:1.5px solid #fca5a5;color:#b91c1c;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-weight:800;font-size:13px">🚫 No tech today — Mom\'s call.</div>';   // 📱 TECHSWITCH
   return '<div style="background:#fef2f2;border:1.5px solid #fca5a5;color:#b91c1c;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-weight:800;font-size:13px">🚫 No tech today — Morning wasn\'t finished by '+rtFmtHour(loseTechHour())+'.</div>';
 }
 function techGrantGrace(kid){
@@ -55125,6 +55148,7 @@ function techGrantGrace(kid){
   const wk=activeWk();
   techGrace[kid]=techGrace[kid]||{}; techGrace[kid][wk]=techGrace[kid][wk]||{}; techGrace[kid][wk][day]=true;
   if(db) db.ref("techGrace/"+kid+"/"+wk+"/"+day).set(true);
+  if(techTaken(kid,day)){ try{ delete techOff[kid][wk][day]; }catch(e){} if(db) db.ref("techOff/"+kid+"/"+wk+"/"+day).remove(); }   // 📱 TECHSWITCH: grace gives it all back
   renderAll();
 }
 function techRuleScope(k,v){ var p={}; p[k]=!!v; routineRules=Object.assign({},routineRules,p); if(db) db.ref("config/routineRules").update(p); renderAll(); }
