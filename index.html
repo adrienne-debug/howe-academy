@@ -52431,6 +52431,7 @@ function _mlLanePass(list){
     return (r&&r.retimed&&r.retimed.length)?copy:list;
   }catch(e){ return list; }
 }
+var _mlOffLogged={};   // OFFDAYLOG: day|card id → already written to _debug from this device
 function mlQueueLay(tasks){ return _mlLanePass(_mlQueueLayCore(tasks)); }
 function _mlQueueLayCore(tasks){
   _mlBlkLaid={};   // 🧺 MOMSCHED_LAUNDRY: where this lay put her blocks
@@ -52758,6 +52759,20 @@ function _mlQueueLayCore(tasks){
     const endMin=_mlDayEndMin(); const offDay={};
     tasks.forEach(function(c){ if(c&&newTimes[c.id]!==undefined&&movable(c)&&_gvW(c)&&newTimes[c.id]+(c.dur||20)>endMin) offDay[c.id]=true; });   // 🙋 HELPERGIVE_LAY
     order.forEach(function(k){ mine[k].forEach(function(c){ if(_mlClose(c)) return; const s=(newTimes[c.id]!==undefined)?newTimes[c.id]:toMin(c.time); if(s+(c.dur||20)>endMin) offDay[c.id]=true; }); });
+    // 🔎 OFFDAYLOG (her yes 2026-10-08; #3 Ellis's MR + Reflex went to "didn't fit" while he waited on Mom 10/6 and nothing
+    // recorded why): the first time a card falls off today before 3 PM, write ONE _debug line with what the lay saw — where it
+    // landed, the clock, the kid's card in hand + last check-off, who Mom is on, the ring and this kid's Mom cards. Once per card
+    // per day per device. Logging only: the lay and the display are unchanged.
+    try{ if(nowMin<15*60&&typeof dbg==="function"){ Object.keys(offDay).forEach(function(id){
+      const key=_todayDay+"|"+id; if(_mlOffLogged[key]) return; _mlOffLogged[key]=1;
+      const c=tasks.find(function(x){ return x&&x.id===id; }); if(!c) return; const k=c.who;
+      const at=function(x){ return fromMin((newTimes[x.id]!==undefined)?newTimes[x.id]:toMin(x.time)); };
+      const ih=_mlInHand(k), lc=_mlLastCk(k);
+      dbg("🌙 didn't fit (before 3 PM): "+k+" \""+String(c.title||"").slice(0,40)+"\" ["+id+"] mom="+(c.mom||"none")+" laid "+at(c)+" "+(c.dur||20)+"m, day ends "+fromMin(endMin)+
+        " · now "+fromMin(nowMin)+" · in hand "+(ih?("\""+String(ih.title||"").slice(0,30)+"\" "+at(ih)):"none")+" · last ✓ "+(lc!==null?fromMin(lc):"none")+
+        " · Mom on "+((now&&now.kid)||"nobody")+(now&&now.held?" (held)":"")+(momOffNow?" · Mom OFF":"")+" · ring "+ring.join(">")+
+        " · "+k+"'s Mom cards "+((momQ[k]||[]).map(at).join(",")||"none"));
+    }); } }catch(e){}
     if(!Object.keys(newTimes).length&&!Object.keys(momWait).length&&!Object.keys(offDay).length) return tasks;
     return tasks.map(function(x){
       const nt=!!(x&&newTimes[x.id]!==undefined&&toMin(x.time)!==newTimes[x.id]);
