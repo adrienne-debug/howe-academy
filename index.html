@@ -2756,8 +2756,82 @@ function _kioskR(){ try{ return /[?&]kiosk=(routines|general)/.test(location.sea
 function taskTitleShow(t){
   const s=String((t&&t.title)||"");
   const m=/^(\S+\s)?(.+?) \u2014 (.+)$/.exec(s);
-  return (m&&m[2].trim()===m[3].trim())?((m[1]||"")+m[2]):s;
+  const base=(m&&m[2].trim()===m[3].trim())?((m[1]||"")+m[2]):s;
+  const pl=(typeof practiceCardLabel==="function")?practiceCardLabel(t):null;   // 📝 PRACTICEFOR
+  return pl?(base+" \u2014 "+pl):base;
 }
+// PRACTICEFOR_START — a daily practice card names the lesson it practices (DeWalt ask 2026-10-08: Taylor's
+// "Fix-It Practice" ×3 Tue–Fri just said "Fix-It Practice"; the weekly Fix-It Grammar lesson "Week 17" is Monday,
+// Mom teaches + Day 1). A setting on the DAILY subject — subject.practiceFor = <lesson subject key>, and
+// subject.practiceDayFrom = the first practice day's number (default 2) — makes each of its cards this week read
+// "Fix-It Practice — Week 17, Day 2", then Day 3, Day 4 in the order the week's practice cards fall. Generic: any
+// daily subject can point at any lesson subject of the same kid. DISPLAY ONLY — t.title, the generator, ids and
+// check-offs are untouched, so it applies to the week already on screen and needs no regenerate. No lesson card
+// of that subject in this week (finished, paused, none dealt) → the card keeps its plain title.
+function practiceForOf(kid,sk){
+  try{
+    const subs=((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[kid]||{};
+    const s=subs[sk];
+    if(!s||s.tracking!=="daily"||!s.practiceFor||s.practiceFor===sk) return null;
+    const ls=subs[s.practiceFor];
+    if(!ls||ls.tracking==="daily") return null;
+    const from=parseInt(s.practiceDayFrom,10);
+    return {lesson:s.practiceFor, from:(from>0?from:2)};
+  }catch(e){ return null; }
+}
+function _pfDayIdx(x){ const d=(typeof effectiveDay==="function")?effectiveDay(x):x.day; const i=DAYS_ALL.indexOf(d); return i<0?99:i; }
+function practiceCardLabel(t){
+  if(!t||!t.who||!t.subjectKey||!t.id) return null;
+  const pf=practiceForOf(t.who,t.subjectKey); if(!pf) return null;
+  try{
+    const all=(typeof weekData!=="undefined"&&weekData&&Array.isArray(weekData.tasks))?weekData.tasks:[];
+    const src=String(t.id).replace(/_c$/,"");   // a carry copy keeps its source card's number
+    const ord=function(a,b){ return (_pfDayIdx(a)-_pfDayIdx(b))||(DAYS_ALL.indexOf(a.day)-DAYS_ALL.indexOf(b.day))||String(a.id).localeCompare(String(b.id)); };
+    const mine=all.filter(function(x){ return x&&x.who===t.who&&x.subjectKey===t.subjectKey&&x.id&&!String(x.id).endsWith("_c"); }).sort(ord);
+    const idx=mine.findIndex(function(x){ return x.id===src; });
+    if(idx<0) return null;
+    const lessons=all.filter(function(x){ return x&&x.who===t.who&&x.subjectKey===pf.lesson&&x.id&&!String(x.id).endsWith("_c"); }).sort(ord);
+    if(!lessons.length) return null;
+    // the week's lesson: the latest one on or before this practice day (a second lesson card later in the
+    // week — a catch-up — only speaks for the practice cards after it); none before → the week's first.
+    const pd=_pfDayIdx(mine[idx]);
+    let les=lessons[0];
+    lessons.forEach(function(x){ if(_pfDayIdx(x)<=pd) les=x; });
+    const ref=String(((typeof taskLessonRef==="function")?taskLessonRef(les):"")||"").trim();
+    if(!ref) return null;
+    return ref+", Day "+(pf.from+idx);
+  }catch(e){ return null; }
+}
+// Mom's setting, from the daily subject's edit sheet. Targeted writes only.
+function cePracticeSet(field,val){
+  if(!momHere()||!currData||!ceEditKid||!ceEditKey) return;
+  if(field!=="practiceFor"&&field!=="practiceDayFrom") return;
+  const s=(currData.subjects[ceEditKid]||{})[ceEditKey]; if(!s) return;
+  if(field==="practiceDayFrom"){ const n=parseInt(val,10); val=isNaN(n)?2:Math.max(1,Math.min(9,n)); }
+  if(val===null||val===""){ delete s[field]; val=null; } else s[field]=val;
+  currData.lastEdit=new Date().toISOString();
+  if(db&&!_dryRun()){ const u={}; u["subjects/"+ceEditKid+"/"+ceEditKey+"/"+field]=val; u["lastEdit"]=currData.lastEdit; db.ref("curriculum").update(u); }
+  ceRenderEditSheet(); renderAll();
+}
+function cePracticeSectionHTML(kid,sk,s){
+  if(!s||s.tracking!=="daily") return "";
+  const subs=(currData.subjects||{})[kid]||{};
+  const opts=Object.keys(subs).filter(function(k){ return k!==sk&&subs[k]&&subs[k].tracking!=="daily"&&!subs[k].paused; });
+  if(!opts.length&&!s.practiceFor) return "";
+  const from=(parseInt(s.practiceDayFrom,10)>0)?parseInt(s.practiceDayFrom,10):2;
+  let h='<div class="ce-sheet-lbl">\u{1F4DD} Practice for <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— the weekly lesson this daily card practices</span></div><div class="ce-chips">';
+  h+='<div class="ce-chip'+(!s.practiceFor?" sel":"")+'" onclick="cePracticeSet(\'practiceFor\',null)">None</div>';
+  opts.forEach(function(k){ h+='<div class="ce-chip'+(s.practiceFor===k?" sel":"")+'" onclick="cePracticeSet(\'practiceFor\',\''+esc(k)+'\')">'+esc(subs[k].display||k)+'</div>'; });
+  h+='</div>';
+  if(s.practiceFor){
+    h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:6px">';
+    h+='<span>Practice days start at <b style="color:var(--text)">Day</b></span>';
+    h+='<span style="display:inline-flex;align-items:center;gap:4px"><button onclick="cePracticeSet(\'practiceDayFrom\','+(from-1)+')" style="border:1px solid var(--border);background:#fff;border-radius:6px;width:22px;height:22px;cursor:pointer">\u2212</button><b style="min-width:14px;text-align:center;color:var(--text)">'+from+'</b><button onclick="cePracticeSet(\'practiceDayFrom\','+(from+1)+')" style="border:1px solid var(--border);background:#fff;border-radius:6px;width:22px;height:22px;cursor:pointer">+</button></span>';
+    h+='</div><div style="font-size:10px;color:var(--muted);margin-top:4px">Each card shows the week\u2019s lesson and its day, e.g. \u201c'+esc(s.display||sk)+' \u2014 Week 17, Day '+from+'\u201d, then Day '+(from+1)+', Day '+(from+2)+'\u2026 in the order the cards fall. Display only \u2014 nothing is rescheduled.</div>';
+  }
+  return h;
+}
+// PRACTICEFOR_END
 function _kioskD(){ try{ return /[?&]kiosk=dad/.test(location.search)||HA_LS.getItem("ha_kiosk")==="dad"; }catch(e){ return false; } }
 // 🧒 Kids' Corner link (?kiosk=corner): only the Corner — a tablet the kids share.
 function _kioskK(){ try{ return /[?&]kiosk=corner/.test(location.search)||HA_LS.getItem("ha_kiosk")==="corner"; }catch(e){ return false; } }
@@ -21919,6 +21993,7 @@ function ceRenderEditSheet(){
   h+='<div class="ce-chip'+(trk==="daily"?" sel":"")+'" onclick="ceSetTracking(\'daily\')">Daily (no lesson #)</div>';
   h+='</div>';
   h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">'+(trk==="daily"?"Shows up each scheduled day without tracking lesson numbers (like notebooks &amp; drills)":"Lessons advance in order and track progress with a cursor")+'</div>';
+  if(trk==="daily"&&typeof cePracticeSectionHTML==="function") h+=cePracticeSectionHTML(ceEditKid,ceEditKey,s);   // 📝 PRACTICEFOR
 
   // 📚 Study session link (memory curriculum): the card opens this study sitting.
   {
