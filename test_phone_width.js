@@ -5,5 +5,5 @@ let pass=0, fail=0; const ok=(n,c)=>{ if(c){ pass++; console.log("  ok  - "+n); 
 const i=src.indexOf("function mpSubnav("), f=src.slice(i, src.indexOf("\n}",i)+2);
 ok("the tab row may wrap to a second line", /display:flex;flex-wrap:wrap;gap:4px;background:#fff;border-bottom:2px solid #DEF2F1/.test(f));
 ok("tabs keep their own width and never break mid-word", /style="flex:1 1 auto;white-space:nowrap;padding:9px 6px;/.test(f));
-ok("all six tabs still there", ["🏡 Today","🗓 Calendar","🍽 Meals","🛒 Grocery List","🧃 Prep"].every(t=>f.indexOf(t)>=0)&&/Weigh-In/.test(f));
+ok("all six tabs still there", ["🏡 Home Base","🗓 Schedule","🍽 Meals","🛒 Grocery List","🧃 Prep"].every(t=>f.indexOf(t)>=0)&&/Weigh-In/.test(f));
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

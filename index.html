@@ -7775,8 +7775,8 @@ function _agLunchRow(dayName,span){
       '<div style="grid-column:'+(span==="all"?"2/-1":"2/4")+';background:#fef9c3;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;color:#854d0e">\u{1F34E} Lunch \u00B7 '+lbl+'</div></div>'};
   }catch(e){ return null; }
 }
-function allAgendaHtml(dayTasks){
-  const kids=[...SL_KIDS];
+function allAgendaHtml(dayTasks,onlyKids){
+  const kids=(Array.isArray(onlyKids)&&onlyKids.length)?onlyKids.slice():[...SL_KIDS];   // 🗓 MOMSCHED_TAB: one kid → one column
   if(!kids.length||!dayTasks.length)
     return '<div style="padding:28px 16px;text-align:center;color:var(--muted);font-size:13px">Nothing scheduled for '+cap(day)+'. 🎉</div>';
   const byTime={}, noTime={};
@@ -16272,12 +16272,97 @@ function mpCalGet(){ if(mpCalMode) return mpCalMode; try{ const v=HA_LS.getItem(
 function mpCalSet(v){ mpCalMode=(v==="today")?"today":"month"; try{ HA_LS.setItem("ha_mp_calmode",mpCalMode); }catch(e){} calDaySel=null; renderAll(); }
 function mpCalWhoSet(w){ mpCalWho=(ROSTER.indexOf(w)>=0)?w:"family"; calDaySel=null; kcAddIso=null; renderAll(); }
 function renderMPCalendar(el){
-  const mode=mpCalGet();
-  let h='<div style="font-family:\'DM Sans\',sans-serif;padding-bottom:28px">'+mwBanner(mode==="today"?'Today \u2014 the family, or one kid\u2019s day':'Breaks, co-ops, events and dinners \u2014 tap a day')+mpSubnav('cal');
-  h+=_calPageBody();
+  // 🗓 MOMSCHED_TAB (her ask 2026-10-08): Mom's Day ▸ Calendar became ▸ Schedule — Today · Week · Month.
+  const mode=mpSchModeGet();
+  let h='<div style="font-family:\'DM Sans\',sans-serif;padding-bottom:28px">'+mwBanner(mode==="month"?'Breaks, co-ops, events and dinners \u2014 tap a day':(mode==="week"?'The week at a glance \u2014 tap a day to open it':'The day, laid out like the Schedule'))+mpSubnav('cal');
+  h+=mpSchBody();
   h+='</div>';
   el.innerHTML=h;
 }
+// 🗓 MOMSCHED_TAB_START — Mom's Day ▸ 🗓 Schedule (her design 2026-10-08, replaces ▸ Calendar):
+//   📆 Today · 🗓 Week · 🗓 Month, and who: 👩 Mom (first) · 👨‍👩‍👧‍👦 All · each kid.
+//   Today = the SAME agendas the Schedule tab draws (momAgendaHtml: 🔴 Mom Needed | 🟡 May Need Mom; allAgendaHtml: every
+//   kid side by side, or one kid's column) built from the same taskCards, so a check-off here is a check-off everywhere.
+//   Today's own lay is the LIVE one (mlQueueLay + dsDoneAtTime), exactly as the 🏡 Home Base card already shows it.
+//   Week = this week's cards per weekday for that view; tap a day → Today. Month = the calendar that was here.
+//   Display + navigation only: view choices are page variables (mode remembered per device), no Firebase writes.
+let mpSchMode=null, mpSchWho="mom", mpSchDay=null;
+function mpSchModeGet(){ if(mpSchMode) return mpSchMode; try{ const v=HA_LS.getItem("ha_mp_schmode"); mpSchMode=(v==="week"||v==="month")?v:"today"; }catch(e){ mpSchMode="today"; } return mpSchMode; }
+function _mpSchRender(){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); }
+function mpSchSet(v){ mpSchMode=(v==="week"||v==="month")?v:"today"; try{ HA_LS.setItem("ha_mp_schmode",mpSchMode); }catch(e){} calDaySel=null; _mpSchRender(); }
+function mpSchWhoSet(w){ mpSchWho=(w==="all"||ROSTER.indexOf(w)>=0)?w:"mom"; calDaySel=null; _mpSchRender(); }
+function mpSchDayNow(){ return mpSchDay||mdTodayName(); }
+function mpSchDaySet(d){ mpSchDay=(DAYS_ALL.indexOf(d)<0||d===mdTodayName())?null:d; mpSchMode="today"; _mpSchRender(); }
+function mpSchDayStep(n){ const i=DAYS_ALL.indexOf(mpSchDayNow())+n; if(i>=0&&i<DAYS_ALL.length) mpSchDaySet(DAYS_ALL[i]); }
+// The cards one view shows on weekday d — the Schedule tab's own filters; today uses the live lay.
+function mpSchTasks(who,d){
+  let src=getActiveTasks();
+  if(d===mdTodayName()&&typeof mlQueueLay==="function"&&typeof dsDoneAtTime==="function"){
+    try{ src=dsDoneAtTime(mlQueueLay(src)).filter(t=>t&&!(t._offDay&&!checked[t.id])); }catch(e){ src=getActiveTasks(); }
+  }
+  const base=t=>t&&effectiveDay(t)===d&&!String(t.id).endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title||"");
+  if(who==="mom") return (typeof famMomView==="function"?famMomView:function(x){ return x; })(src)
+    .filter(t=>base(t)&&(t.mom==="required"||t.mom==="maybe"||(typeof famIsMomCard==="function"&&famIsMomCard(t))));
+  if(who==="all") return src.filter(base);
+  return src.filter(t=>base(t)&&t.who===who);
+}
+function mpSchAgendaHTML(who,d){
+  const ts=mpSchTasks(who,d), _pk=kid, _pd=day;
+  try{ kid=who; day=d; return who==="mom"?momAgendaHtml(ts):allAgendaHtml(ts,who==="all"?null:[who]); }
+  finally{ kid=_pk; day=_pd; }
+}
+function mpSchWeekHTML(who){
+  const today=mdTodayName();
+  const days=DAYS_ALL.filter(d=>(d!=="saturday"&&d!=="sunday")||mpSchTasks(who,d).length);
+  let h='<div style="overflow-x:auto;padding:12px 10px 0"><div style="display:grid;grid-template-columns:repeat('+days.length+',minmax(120px,1fr));gap:6px;min-width:'+(days.length*124)+'px">';
+  days.forEach(d=>{
+    const isT=d===today;
+    h+='<div onclick="mpSchDaySet(\''+d+'\')" style="cursor:pointer;text-align:center;font-size:12px;font-weight:800;padding:6px 0;border-radius:9px;background:'+(isT?'#2B7A78':'#f3f4f6')+';color:'+(isT?'#fff':'#374151')+'">'+cap(d).slice(0,3)+(isT?' •':'')+'</div>';
+  });
+  days.forEach(d=>{
+    const ts=mpSchTasks(who,d).slice().sort((a,b)=>(toMin(a.time)==null?9999:toMin(a.time))-(toMin(b.time)==null?9999:toMin(b.time)));
+    h+='<div onclick="mpSchDaySet(\''+d+'\')" style="cursor:pointer;display:flex;flex-direction:column;gap:4px;min-width:0">';
+    if(!ts.length) h+='<div style="color:var(--muted);font-size:11px;text-align:center;padding:8px 0">—</div>';
+    ts.forEach(t=>{
+      const col=SL_KCOL[t.who]||"#6B4C93", done=!!checked[t.id], m=toMin(t.time);
+      const flag=(who==="mom")?(t.mom==="maybe"?'🟡 ':'🔴 '):'';
+      h+='<div title="'+esc(taskTitleShow(t))+'" style="border:1px solid #eef0f2;border-left:4px solid '+col+';border-radius:8px;padding:4px 6px;font-size:11px;line-height:1.25;background:#fff;'+(done?'opacity:.5':'')+'">'
+        +'<div style="font-weight:700;color:#6b7280;font-size:10px">'+(m==null?'any time':fromMin(m))+(who==="all"||who==="mom"?' · <span style="color:'+col+'">'+esc(cap(t.who||""))+'</span>':'')+(done?' ✓':'')+'</div>'
+        +'<div style="font-weight:700;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+flag+esc(taskTitleShow(t))+'</div></div>';
+    });
+    h+='</div>';
+  });
+  return h+'</div></div>';
+}
+function mpSchBody(){
+  const mode=mpSchModeGet(), who=mpSchWho;
+  let h='';
+  const tb=(v,lbl)=>'<button onclick="mpSchSet(\''+v+'\')" style="flex:1;padding:8px 10px;border-radius:20px;border:2px solid #2B7A78;background:'+(mode===v?'#2B7A78':'#fff')+';color:'+(mode===v?'#fff':'#2B7A78')+';font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
+  h+='<div style="display:flex;gap:8px;padding:12px 12px 0;max-width:520px;margin:0 auto">'+tb('today','\u{1F4C6} Today')+tb('week','\u{1F5D3} Week')+tb('month','\u{1F5D3} Month')+'</div>';
+  const wb=(w,lbl,col)=>'<button onclick="mpSchWhoSet(\''+w+'\')" style="padding:5px 12px;border-radius:20px;border:1.5px solid '+col+';background:'+(who===w?col:'#fff')+';color:'+(who===w?'#fff':col)+';font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;padding:10px 12px 0">'+wb('mom','\u{1F469} Mom','#b5394a')+wb('all','\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466} All','#2B7A78')
+    +ROSTER.map(function(k){ return wb(k,kcEmoji(k)+' '+esc(KID_NAME[k]||cap(k)),SL_KCOL[k]||'#64748b'); }).join('')+'</div>';
+  if(mode==="month"){
+    const kidWho=(ROSTER.indexOf(who)>=0)?who:null;
+    h+='<div style="padding:12px 12px 0">';
+    if(calAddMode==="event") h+=calRenderEventForm();
+    h+=calRenderMonthPreview(kidWho?{who:kidWho}:undefined);
+    h+='</div>';
+    return h;
+  }
+  if(mode==="week"){ h+=mpSchWeekHTML(who); return h; }
+  // 📆 Today — step through this week's days; the agenda is the Schedule tab's own.
+  const d=mpSchDayNow(), isT=(d===mdTodayName()), i=DAYS_ALL.indexOf(d);
+  const arrow=(n,ch,on)=>'<button '+(on?'onclick="mpSchDayStep('+n+')"':'disabled')+' style="width:34px;height:34px;border-radius:50%;border:1.5px solid var(--border);background:#fff;font-size:16px;font-weight:800;cursor:'+(on?'pointer':'default')+';opacity:'+(on?1:.35)+'">'+ch+'</button>';
+  h+='<div style="display:flex;align-items:center;gap:10px;justify-content:center;padding:12px 12px 0">'+arrow(-1,'\u2039',i>0)
+    +'<div style="text-align:center;min-width:150px"><div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700">'+(isT?'Today':cap(d))+'</div>'
+    +(isT?'':'<button onclick="mpSchDaySet(\''+mdTodayName()+'\')" style="border:none;background:none;color:#2B7A78;font-size:11px;font-weight:800;cursor:pointer;padding:0">\u21A9 back to today</button>')+'</div>'
+    +arrow(1,'\u203A',i<DAYS_ALL.length-1)+'</div>';
+  let ag=''; try{ ag=mpSchAgendaHTML(who,d); }catch(e){ ag='<div style="padding:20px;text-align:center;color:var(--muted)">Couldn\u2019t draw this day.</div>'; }
+  h+='<div style="padding:8px 8px 0">'+ag+'</div>';
+  return h;
+}
+// 🗓 MOMSCHED_TAB_END
 // 👨 Dad's own calendar (her ask 2026-09-05: "make his own tab so it works on his phone") — the
 // same lens, toggles and Family/kid row, under HIS header with a way back to Dad's Day. On
 // ?kiosk=dad it keeps him on his side of the app instead of landing in Mom HQ.
@@ -16319,7 +16404,7 @@ function _calPageBody(){
 // 📱 PHONEWIDTH (her yes 2026-10-06): the tab row wraps on a phone instead of widening the whole page (pop-ups ran off the right edge).
 function mpSubnav(active){
   const btn=(v,lbl)=>`<button onclick="mpGoto('${v}')" style="flex:1 1 auto;white-space:nowrap;padding:9px 6px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;border:none;border-radius:9px;cursor:pointer;color:${active===v?'#fff':'#9ca3af'};background:${active===v?'#2B7A78':'transparent'};transition:all .2s;white-space:nowrap">${lbl}</button>`;
-  return `<div style="display:flex;flex-wrap:wrap;gap:4px;background:#fff;border-bottom:2px solid #DEF2F1;padding:8px 10px">${btn('plan','🏡 Today')}${btn('cal','🗓 Calendar')}${btn('meals','🍽 Meals')}${btn('grocery','🛒 Grocery List')}${btn('prep','🧃 Prep')}${btn('weigh','⚖️ Weigh-In')}</div>`;
+  return `<div style="display:flex;flex-wrap:wrap;gap:4px;background:#fff;border-bottom:2px solid #DEF2F1;padding:8px 10px">${btn('plan','🏡 Home Base')}${btn('cal','🗓 Schedule')}${btn('meals','🍽 Meals')}${btn('grocery','🛒 Grocery List')}${btn('prep','🧃 Prep')}${btn('weigh','⚖️ Weigh-In')}</div>`;
 }
 function mpGoto(v){ mpSubView=v; const el=document.getElementById('content'); if(el) renderMomsPlan(el); try{window.scrollTo(0,0);}catch(e){} }
 function mwBanner(sub){
