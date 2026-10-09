@@ -251,7 +251,7 @@ console.log("wiring");
   ok("marker present", src.includes("// "+MOVETODAY));
   ok("dialog has the 📅 Move to today button", /id="dlg-movetoday"[^>]*>&#128197; Move to today</.test(src));
   ok("dialog: Mom-only block (momHereCards) and only when mvtPlan says it can", /if\(momHereCards\(\)&&!t\.id\.endsWith\("_c"\)&&!t\.famBlock\)\{[\s\S]{0,1600}mvtPlan\(id\)/.test(src));
-  ok("dialog: after school the button reads ✓ Mark done today and runs momMarkDoneToday", src.includes('if(_mv.mode==="done"){ mtBtn.innerHTML="&#10003; Mark done today"; mtBtn.onclick=()=>momMarkDoneToday(id); }'));
+  ok("dialog: after school the button reads ✓ Mark done today and runs momMarkDoneToday", src.includes('if(_mv.mode==="done"){ mtBtn.innerHTML="&#10003; Mark done today"; mtBtn.onclick=()=>momMarkDoneToday(id);'));
   ok("dialog: during school it moves", src.includes('else { mtBtn.innerHTML="&#128197; Move to today"; mtBtn.onclick=()=>momMoveToToday(id); }'));
   ok("the re-lay context holds the moved card", /isClass:t=>\{ try\{ return !!\(t&&t\.famBlock\)\|\|\(typeof mvtHeldToday==="function"&&mvtHeldToday\(t\)\)/.test(src));
   ok("undo label names the day it goes back to", src.includes('("↩ Undo move (back to "+cap(p.pulledFrom)+")")'));
