@@ -2714,7 +2714,8 @@ let pnwPendingWeek=null;
 let currViewKid=FIRST_KID;
 let currViewWeek=null;
 let adminPinUnlocked=false;
-var momSchedView=false, _msvPrevKid=null;   // 👩 MSV: Mom's Day ▸ Schedule is showing the Schedule page (declared early: showTab/renderSchedule read it)
+var momSchedView=false, _msvPrevKid=null;
+var momDayIn=false;   // 🔒 MOMGATE (her rule 2026-10-08): true only while Mom is INSIDE Mom's Day (code entered at its door this visit)   // 👩 MSV: Mom's Day ▸ Schedule is showing the Schedule page (declared early: showTab/renderSchedule read it)
 // 👩 UNIMOM (her rules 2026-10-05/06: "mom mode should be universal for wherever it is turned on and can be turned off with clicking mom
 // mode on schedule" · "and stays on that device"): ONE switch behind every Mom door. Any code typed (Mom button, Admin, Notebook, Units,
 // Mastery, Blockouts, Plan next week, the kitchen/grocery prompts) turns it on; the Mom button lights; it is remembered on THIS device
@@ -4288,6 +4289,9 @@ function renderSkylight(){
 // ── TAB ROUTING ───────────────────────────────────────────────────
 function showTab(t,keepMsv){
   if(!keepMsv&&typeof msvExit==="function") msvExit();   // 👩 MSV: tapping any tab leaves Mom's Day ▸ Schedule
+  // 🔒 MOMGATE (her rule 2026-10-08): leaving Mom's Day turns Mom mode off; coming back asks for the code. Moving between
+  // Mom's Day's own tabs (incl. ▸ 🗓 Schedule, which is keepMsv) never counts as leaving. Dad's side never trips this.
+  if(!keepMsv&&t!=="moms-plan"&&momDayIn){ momDayIn=false; if(typeof haMomOff==="function") haMomOff(); }
   if(_kiosk()&&t!=="play") return;   // kiosk console is locked to Play
   if(_kioskR()&&t!=="schedule") return;  // 🧭 General tablet is locked to its own views (routines / points / store / Mom+Dad lanes)
   if(_kioskD()&&t!=="moms-plan") return; // 👨 Dad's link is locked to his page
@@ -4368,6 +4372,9 @@ function renderAll(){
 }
 function _renderAllInner(){
   try{ if(tab==="schedule"&&!momSchedView){ _momSuspend(); if(kid==="mom") kid="all"; } else _momResume(); }catch(e){}   // 🧒 KIDSLENS
+  // 👩 MSV: Mom mode went off somewhere else (a Notebook/Units lock, a check-up relock) while Mom's Day ▸ Schedule was open →
+  // back to the Mom's Day door, never the code box on the schedule.
+  try{ if(momSchedView&&tab==="schedule"&&!momHereReal()){ momDayIn=false; msvExit(); tab="moms-plan"; mpSubView="cal"; document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",b.dataset.tab==="moms-plan")); ["sched-subtabs","day-tabs","kid-filter","week-strip","msv-bar"].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display="none"; }); } }catch(e){}
   const stb=document.getElementById("sitter-tab-btn"); if(stb){ if(SITTER_NAME){stb.textContent=SITTER_NAME;stb.style.display="";} else {stb.style.display="none";} }
   PAGE_KEYS.forEach(k=>{ const b=document.querySelector('.nav-tab[data-tab="'+k+'"]'); if(b) b.style.display=pageOn(k)?"":"none"; });   // 🧩 pages that are off leave the tab bar
   renderSchedSubtabs(); renderDayTabs(); renderKidFilter(); renderSkylight(); renderWeekStrip(); renderKioskKids(); renderKioskTabs(); renderKioskView(); renderKioskPerson();
@@ -4543,6 +4550,9 @@ function renderKidFilter(){
 }
 function selKid(k){
   try{ helperView=null; }catch(e){}   // 🙋 leave a helper's list
+  // 👩 MSV (her rule 2026-10-08): inside Mom's Day Mom mode is ALWAYS on — the 👩 Mom chip only shows Mom's view; it never
+  // turns Mom mode off and never asks for the code (the code is asked at the Mom's Day door).
+  if(k==="mom"&&typeof momSchedView!=="undefined"&&momSchedView){ kid="mom"; schedShowAdmin=false; renderAll(); window.scrollTo({top:0,behavior:'smooth'}); return; }
   if(k==="mom"){
     if(momModeActive){
       if(kid==="mom"){
@@ -10548,7 +10558,7 @@ function renderMomsPlan(el){
 // opened, the ?kiosk=dad link) keeps its own way in and is never stopped here; nor is reading a recipe someone tapped
 // from tonight's dinner (editing a meal keeps its own kitPinGate).
 function momGateOpen(){
-  if(typeof momHere==="function"&&momHere()) return true;
+  if(momDayIn&&typeof momHere==="function"&&momHere()) return true;   // already inside this visit
   if(typeof _kioskD==="function"&&_kioskD()) return true;
   if(mpSubView==='dad'||mpSubView==='dadcal') return true;
   if(grFromDad&&(mpSubView==='grocery'||mpSubView==='meals')) return true;    // Dad's Day → his list / meals
@@ -10568,7 +10578,7 @@ function momGateHTML(err){
 }
 function momGateTry(inp,final){
   const v=String((inp&&inp.value)||"");
-  if(v.length>=4&&pinOk(v)){ haMomOn(); renderAll(); return; }
+  if(v.length>=4&&pinOk(v)){ haMomOn(); momDayIn=true; renderAll(); return; }
   if(final){ const e=document.getElementById("mg-err"); if(e) e.textContent="That code didn\u2019t match"; if(inp){ inp.value=""; inp.focus(); } }
 }
 function renderMomsPlanView(el){
@@ -16300,7 +16310,7 @@ function mpCalWhoSet(w){ mpCalWho=(ROSTER.indexOf(w)>=0)?w:"family"; calDaySel=n
 // 👩 Mom first in the kid row, and the 🙋 I-need-Mom card left on 🏡 Home Base. The kid picked before is handed back on exit.
 function msvEnter(){
   if(momSchedView&&tab==="schedule"){ renderAll(); return; }
-  if(typeof momGateOpen==="function"&&!momGateOpen()&&!momHereReal()){ mpSubView="cal"; showTab("moms-plan"); return; }   // 🔒 only through Mom's Day's door
+  if(!momDayIn){ mpSubView="cal"; showTab("moms-plan"); return; }   // 🔒 only through Mom's Day's door (code this visit)
   momSchedView=true; _msvPrevKid=kid;
   try{ helperView=null; }catch(e){}
   kid="mom";

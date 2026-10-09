@@ -27,11 +27,11 @@ function world(o) {
     HA_LS: { getItem: () => o.mode || null, setItem() {} }, momModeActive: !!o.momOn, momHere: () => !!o.momOn,
     cap: s => s.charAt(0).toUpperCase() + s.slice(1), helperChipsHTML: () => "<i>helper</i>", bankBalance: () => 0, helperViewActive: () => false,
     mpSubnav: a => "<nav>" + a + "</nav>", helperGiveBtnsHTML: () => o.give || "",
-    _mpSchRender: () => log.mp++, _todayDay: "thursday", momHereReal: () => true, renderAllOut: null,
+    _mpSchRender: () => log.mp++, _todayDay: "thursday", momHereReal: () => true, renderAllOut: null, haMomOff: () => { log.off = (log.off || 0) + 1; },
   };
   const keys = Object.keys(env);
-  const body = "var _msvWantAdmin=false,momSchedView=false,_msvPrevKid=null,kid=" + JSON.stringify(o.kid || "ava") + ",tab='moms-plan',helperView=null,mastAddMode,mastLogMode,mastLogScores,schedShowAdmin=false,schedShowHistory=false,schedShowPace=false,schedShowBoard=false,schedShowPeek=false,mpDay=null,day='thursday',mpSchMode=null,calDaySel=null,mpSubView='cal';\n" + FNS +
-    "\nreturn {msvEnter,msvExit,msvBarHTML,showTab,renderKidFilter,renderSchedSubtabs,mpSchSet,mpGoto,st:()=>({msv:momSchedView,kid,tab,prev:_msvPrevKid,mpSubView})};";
+  const body = "var momDayIn=" + (o.out ? "false" : "true") + ",_msvWantAdmin=false,momSchedView=false,_msvPrevKid=null,kid=" + JSON.stringify(o.kid || "ava") + ",tab='moms-plan',helperView=null,mastAddMode,mastLogMode,mastLogScores,schedShowAdmin=false,schedShowHistory=false,schedShowPace=false,schedShowBoard=false,schedShowPeek=false,mpDay=null,day='thursday',mpSchMode=null,calDaySel=null,mpSubView='cal';\n" + FNS +
+    "\nreturn {msvEnter,msvExit,msvBarHTML,showTab,renderKidFilter,renderSchedSubtabs,mpSchSet,mpGoto,st:()=>({msv:momSchedView,kid,tab,prev:_msvPrevKid,mpSubView,inside:momDayIn})};";
   const api = new Function(...keys, body)(...keys.map(k => env[k]));
   return { api, log, els, navBtns };
 }
@@ -89,18 +89,19 @@ console.log("\n── 🔒 Mom's Day asks for the code once; inside, Mom mode is
     const env = { momHere: () => !!o.mom, _kioskD: () => !!o.dadKiosk, pinOk: v => v === "1234", haMomOn: () => log.on++, renderAll: () => log.renders++,
       document: { getElementById: id => els[id] || null }, esc: s => String(s) };
     const keys = Object.keys(env);
-    const api = new Function(...keys, "var mpSubView=" + JSON.stringify(o.sub || "plan") + ",grFromDad=" + !!o.fromDad + ",kitView=" + JSON.stringify(o.kitView || null) + ",kitEditId=" + JSON.stringify(o.kitEditId || null) + ";\n" + G + "\nreturn {momGateOpen,momGateHTML,momGateTry};")(...keys.map(k => env[k]));
+    const api = new Function(...keys, "var momDayIn=" + !!o.inside + ",mpSubView=" + JSON.stringify(o.sub || "plan") + ",grFromDad=" + !!o.fromDad + ",kitView=" + JSON.stringify(o.kitView || null) + ",kitEditId=" + JSON.stringify(o.kitEditId || null) + ";\n" + G + "\nreturn {momGateOpen,momGateHTML,momGateTry,inside:()=>momDayIn};")(...keys.map(k => env[k]));
     return { api, log, els };
   }
   ok("not in Mom mode → Mom's Day is closed", !gw().api.momGateOpen());
   ok("…every Mom's Day page (Schedule, Meals, Grocery, Prep, Weigh-In)", ["cal", "meals", "grocery", "prep", "weigh"].every(v => !gw({ sub: v }).api.momGateOpen()));
-  ok("Mom mode on → open, no code inside", gw({ mom: true }).api.momGateOpen());
+  ok("Mom mode on but coming in from outside → still asks (her rule: the code at the door every visit)", !gw({ mom: true }).api.momGateOpen());
+  ok("already inside this visit → open, no code", gw({ mom: true, inside: true }).api.momGateOpen());
   ok("Dad's Day + his calendar never stopped", gw({ sub: "dad" }).api.momGateOpen() && gw({ sub: "dadcal" }).api.momGateOpen());
   ok("Dad's grocery list / meals from Dad's Day never stopped", gw({ sub: "grocery", fromDad: true }).api.momGateOpen() && gw({ sub: "meals", fromDad: true }).api.momGateOpen());
   ok("?kiosk=dad link never stopped", gw({ dadKiosk: true }).api.momGateOpen());
   ok("reading a recipe tapped from tonight's dinner is open; editing one is not", gw({ sub: "meals", kitView: "m1" }).api.momGateOpen() && !gw({ sub: "meals", kitView: "m1", kitEditId: "m1" }).api.momGateOpen());
   const w = gw(); w.api.momGateTry({ value: "1234" }, false);
-  ok("right code → Mom mode on (haMomOn, same as every Mom door) and the page opens", w.log.on === 1 && w.log.renders === 1);
+  ok("right code → Mom mode on (haMomOn, same as every Mom door), inside this visit, page opens", w.log.on === 1 && w.log.renders === 1 && w.api.inside() === true);
   const w2 = gw(); const inp = { value: "9999", focus() {} }; w2.api.momGateTry(inp, false);
   ok("wrong code while typing → nothing yet", w2.log.on === 0 && w2.els["mg-err"].textContent === "");
   w2.api.momGateTry(inp, true);
@@ -131,10 +132,36 @@ console.log("\n── 🧒 step 3: the kids' Schedule is never in Mom mode ─�
   ok("kids' Schedule kid row: All + each kid, no 👩 Mom chip", kf.indexOf("selKid('all')") >= 0 && kf.indexOf("selKid('mom')") < 0);
   w.api.renderSchedSubtabs();
   ok("kids' Schedule ▸ Admin opens Mom's Day (code if needed) at Admin", /onclick="msvOpenAdmin\(\)">Admin/.test(w.els["sched-subtabs"].innerHTML));
-  w.api.msvEnter(); w.api.renderSchedSubtabs();
-  ok("…inside Mom's Day ▸ Schedule, Admin works as always", /onclick="toggleSchedAdmin\(\)">Admin/.test(w.els["sched-subtabs"].innerHTML));
-  ok("Mom's Day ▸ Schedule only opens through Mom's Day's door", /if\(typeof momGateOpen==="function"&&!momGateOpen\(\)&&!momHereReal\(\)\)\{ mpSubView="cal"; showTab\("moms-plan"\); return; \}/.test(slice("msvEnter")));
+  const wIn = world({ momOn: true }); wIn.api.msvEnter(); wIn.api.renderSchedSubtabs();
+  ok("…inside Mom's Day ▸ Schedule, Admin works as always", /onclick="toggleSchedAdmin\(\)">Admin/.test(wIn.els["sched-subtabs"].innerHTML));
+  ok("Mom's Day ▸ Schedule only opens through Mom's Day's door", /if\(!momDayIn\)\{ mpSubView="cal"; showTab\("moms-plan"\); return; \}/.test(slice("msvEnter")));
   ok("review healing still runs on Mom's device while the kids' Schedule is open", /momHereReal\(\)/.test(slice("rvHeal")));
+}
+console.log("\n── 👩 inside Mom's Day, Mom mode is always on ──");
+{
+  const log = { off: 0, renders: 0 };
+  const api = new Function("haMomOff", "renderAll", "window",
+    "var momSchedView=true,momModeActive=true,momPinUnlocked=true,kid='mom',schedShowAdmin=false,helperView=null;\n" + slice("selKid") +
+    "\nreturn {selKid,st:()=>({kid,mm:momModeActive})};")(() => { log.off++; }, () => log.renders++, { scrollTo() {} });
+  api.selKid("mom"); api.selKid("mom");
+  ok("tapping 👩 Mom (even twice) never turns Mom mode off", log.off === 0 && api.st().mm === true && api.st().kid === "mom");
+  api.selKid("ava"); api.selKid("mom");
+  ok("kid → back to Mom's view, still on", log.off === 0 && api.st().kid === "mom");
+  const r = slice("_renderAllInner");
+  ok("if Mom mode goes off elsewhere while here → back to the Mom's Day door (not the code box)", /if\(momSchedView&&tab==="schedule"&&!momHereReal\(\)\)\{ momDayIn=false; msvExit\(\); tab="moms-plan"; mpSubView="cal";/.test(r));
+}
+console.log("\n── 🔒 leaving Mom's Day turns Mom mode off ──");
+{
+  const w = world({ momOn: true }); w.api.msvEnter(); w.api.mpGoto("meals"); w.api.mpSchSet("today");
+  ok("moving between Mom's Day's own tabs (Schedule ⇄ Meals ⇄ Schedule) never locks", !w.log.off && w.api.st().inside === true && w.api.st().msv);
+  w.api.showTab("kids");
+  ok("going to any other tab → Mom mode off, visit over", w.log.off === 1 && w.api.st().inside === false);
+  w.api.showTab("schedule");
+  ok("…only once (already out)", w.log.off === 1);
+  const w2 = world({ out: true }); w2.api.msvEnter();
+  ok("Mom's Day ▸ Schedule can't be opened from outside without the code (goes to the door)", !w2.api.st().msv && w2.api.st().tab === "moms-plan");
+  const w3 = world({ out: true }); w3.api.showTab("moms-plan"); w3.api.showTab("kids");
+  ok("Dad's side / anyone not inside never trips the lock", !w3.log.off);
 }
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

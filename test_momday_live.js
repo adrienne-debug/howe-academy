@@ -103,7 +103,8 @@ lsStore["wellness_weighins"] = JSON.stringify([{ iso: "2026-08-07", lb: 151.8, n
 
 const showTabCalls = [];
 global.tab = "moms-plan";
-global.momHere = () => true;   // Mom's Day is Mom's page — meal marking/editing is gated on her (2026-09-05)
+global.momHere = () => true;
+global.momDayIn = true;   // 🔒 MOMGATE: Mom is inside Mom's Day this visit   // Mom's Day is Mom's page — meal marking/editing is gated on her (2026-09-05)
 global.showTab = t => { showTabCalls.push(t); global.tab = t; };
 let renderAllCalls = 0;
 global.renderAll = () => { renderAllCalls++; };
