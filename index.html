@@ -37950,7 +37950,8 @@ function fbMomLoad(){
       if(!t||!t.who||t.mom!=="required") return;
       if(String(t.id||"").endsWith("_c")) return;
       if(!out[t.who]) out[t.who]={min:0,cards:0};
-      out[t.who].min+=(t.dur||20); out[t.who].cards++;
+      const _mp=(typeof mlMomPartOf==="function")?mlMomPartOf(t):null;   // 👩 MOMPART3: only the Mom part is her load
+      out[t.who].min+=(_mp?_mp.n:(t.dur||20)); out[t.who].cards++;
     });
   }catch(e){}
   return out;
@@ -53725,6 +53726,20 @@ function mlMomPartOf(t){
     return {n:n,start:sub.momPartStart===true};
   }catch(e){ return null; }
 }
+// 👩 MOMPART3 (#23 part 3, 2026-10-09): the weekly builder packs by the minutes Mom is ACTUALLY busy. mlMomSpan = this
+// card's Mom window when it starts at s: the Mom part (at the START → [s, s+n]; at the END → [e-n, e]), else the whole
+// card [s, s+d] exactly as before. mlMomStepWins = other Mom windows [a,b] re-expressed on this card's own [start,
+// start+d], so a walk that steps the whole card over them keeps only its Mom part off them (no setting → same array).
+function mlMomSpan(t,s,d){
+  if(d==null) d=(t&&t.dur)||20;
+  const p=mlMomPartOf(t); if(!p) return [s,s+d];
+  return p.start?[s,s+p.n]:[s+d-p.n,s+d];
+}
+function mlMomStepWins(t,d,wins){
+  const p=mlMomPartOf(t); if(!p) return wins;
+  const off=p.start?0:d-p.n, rest=d-p.n;
+  return wins.map(function(b){ return [b[0]-off+rest,b[1]-off]; });
+}
 function mlQueueLay(tasks){ return _mlLanePass(_mlQueueLayCore(tasks)); }
 function _mlQueueLayCore(tasks){
   _mlBlkLaid={};   // 🧺 MOMSCHED_LAUNDRY: where this lay put her blocks
@@ -59715,6 +59730,8 @@ function gwSubjectDetail(kid,key){
 //           kidStart, laneStart, momStart,            // per-kid / per-lane / Mom earliest — seed past already-fixed (checked) work
 //           lanes,                                    // contending device lanes (default below)
 //           allowOvertime, overtimeMax }              // Saturday catch-up: stack past `end`
+//   item.momPart = {n, start} (optional, 👩 MOMPART3): Mom is busy only n min of the card — the first n (start) or the
+//     last n — so only that part waits on momFree / steps over momBusy / the sitter window. Absent = whole card, as before.
 //   item.helper = {id, s, e} (optional, 🙋 2026-10-03): a regular helper (Grandma Wed 9:30–12) takes this Mom card
 //     inside her window on her own clock; doesn't fit (or has a device lane) → the normal Mom path, unchanged.
 //   -> { byId:{id:startMin}, placed:[{id,start}], overflow:[item], dropped:[item] }
@@ -59798,6 +59815,9 @@ function packDay(items, ctx){
     const kids = (it.participants && it.participants.length) ? it.participants : [it.who];
     const dur = it.durMin || 20;
     const lane = (it.lane && laneSet[it.lane]) ? it.lane : null;
+    // 👩 MOMPART3: where Mom's minutes sit inside this card (offset, length) — no Mom part → 0, dur (the whole card)
+    const mp = (it.momRequired && it.momPart && it.momPart.n > 0 && it.momPart.n < dur) ? it.momPart : null;
+    const mOff = mp ? (mp.start ? 0 : dur - mp.n) : 0, mLen = mp ? mp.n : dur;
     let from = dayStart;
     for(const k of kids) from = Math.max(from, kidFree[k] || 0, (ctx.kidStart && ctx.kidStart[k]) || 0);
     const hw = it.helper;
@@ -59810,9 +59830,11 @@ function packDay(items, ctx){
         continue;
       }
     }
-    if(it.momRequired) from = Math.max(from, momFree);
+    if(it.momRequired) from = Math.max(from, momFree - mOff);   // 👩 MOMPART3: the Mom part waits for Mom, not the card
     // Windows that apply whichever device is picked: lunch, this kid's classes, and Mom's.
-    const shared = _windows(kids, it.momRequired);
+    // 👩 MOMPART3: with a Mom part, Mom's windows are shifted onto the card so only her minutes step over them
+    const shared = mp ? _windows(kids, false).concat(momBusyList.filter(b => b && b.e > b.s).map(b => ({s: b.s - mOff + (dur - mLen), e: b.e - mOff}))).sort((a, b) => a.s - b.s)
+                      : _windows(kids, it.momRequired);
     let lanePick = -1, start;
     if(lane){
       const pool = res[lane], lb = laneBusy[lane] || [];
@@ -59830,15 +59852,15 @@ function packDay(items, ctx){
       start = _walk(shared, from, dur);
     }
     // A Mom-required task can't run during the babysitter window — defer to mom's return.
-    if(it.momRequired && ctx.sitterEnd > ctx.sitterStart && start < ctx.sitterEnd && start + dur > ctx.sitterStart){
+    if(it.momRequired && ctx.sitterEnd > ctx.sitterStart && start + mOff < ctx.sitterEnd && start + mOff + mLen > ctx.sitterStart){   // 👩 MOMPART3: her part only
       const own = (lane && lanePick >= 0 && laneBusy[lane]) ? (laneBusy[lane][lanePick] || []) : [];
-      start = _walk(own.length ? shared.concat(own).sort((a, b) => a.s - b.s) : shared, ctx.sitterEnd, dur);
+      start = _walk(own.length ? shared.concat(own).sort((a, b) => a.s - b.s) : shared, ctx.sitterEnd - mOff, dur);
     }
     if(start + dur > hardEnd){ (it.droppable ? dropped : overflow).push(it); continue; }
     const end = start + dur;
     for(const k of kids) kidFree[k] = end;   // every participant is busy for the block…
     if(lane) res[lane][lanePick] = end;       // …the chosen device in the pool advances…
-    if(it.momRequired) momFree = end;         // …and Mom advances ONCE
+    if(it.momRequired) momFree = start + mOff + mLen;   // …and Mom advances ONCE (👩 MOMPART3: to the end of her part)
     placed.push({ id: it.id, start }); byId[it.id] = start;
   }
   return { byId, placed, overflow, dropped };
@@ -59868,6 +59890,7 @@ function packAround(existing, newTasks, ctx){
   function laneOf(t){ var dv=t.device||taskDevice(t); if(dv==="ipad"&&t.who==="lucy") return "ipadLucy"; if(dv==="ipad"||dv==="phone"||dv==="ipad/phone") return "screen"; return dv; }
   var dStart=ctx.start;
   var laneStart={}, momStart=Math.max(dStart, ctx.momStart||0), kidStart={};
+  var _mpOf=function(t){ return t._momPart||((typeof mlMomPartOf==="function")?mlMomPartOf(t):null); };   // 👩 MOMPART3
   if(ctx.kidStart){ for(var k in ctx.kidStart) kidStart[k]=Math.max(dStart, ctx.kidStart[k]||0); }
   (existing||[]).forEach(function(t){
     // A closing notebook is a day-END bookend (re-timed after all work by the closing-last
@@ -59878,10 +59901,11 @@ function packAround(existing, newTasks, ctx){
     var end=toMin(t.time)+(t.dur||20), lane=laneOf(t);
     if(lane&&lane!=="paper") laneStart[lane]=Math.max(laneStart[lane]||dStart,end);
     kidStart[t.who]=Math.max(kidStart[t.who]||dStart,end);
-    if(t.mom==="required") momStart=Math.max(momStart,end);
+    if(t.mom==="required"){ var _mp=_mpOf(t); momStart=Math.max(momStart,(_mp&&_mp.start)?toMin(t.time)+_mp.n:end); }   // 👩 MOMPART3: Mom at the start is free after her part
   });
   var items=newTasks.map(function(t){ var it={id:t.id,who:t.who,lane:laneOf(t),durMin:t.dur||20,momRequired:t.mom==="required"};
     if(ctx.helperFor&&it.momRequired){ try{ var hw=ctx.helperFor(t); if(hw) it.helper=hw; }catch(e){} }   // 🙋 regular helper
+    if(it.momRequired&&!t._participants){ var _mp=_mpOf(t); if(_mp) it.momPart=_mp; }   // 👩 MOMPART3: Mom holds only her part
     if(t._participants) it.participants=t._participants;   // 🏡 "scheduler picks" family time: one slot for every member
     return it; });
   var packed=packDay(items,{start:dStart,end:ctx.end,lunchStart:ctx.lunchStart,lunchEnd:ctx.lunchEnd,
@@ -59987,7 +60011,10 @@ function gwLoopPack(toPack,ctx,kids,infoOf){
       if(!ok(it)) return;
       const s0=toMin(it.time), w={s:s0,e:s0+(it.dur||20)};
       (it._participants||[it.who]).forEach(function(k){ (busy[k]=busy[k]||[]).push(w); });
-      if(it.mom==="required"&&!it._lpHelper) momBusy.push(w);   // Grandma's cards don't hold Mom
+      if(it.mom==="required"&&!it._lpHelper){   // Grandma's cards don't hold Mom
+        const _ms=(typeof mlMomSpan==="function")?mlMomSpan(it,s0,it.dur||20):[w.s,w.e];   // 👩 MOMPART3: only her part
+        momBusy.push((_ms[0]===w.s&&_ms[1]===w.e)?w:{s:_ms[0],e:_ms[1]});
+      }
       const dv=it.device||"paper", ln=(dv==="ipad"&&it.who==="lucy")?"ipadLucy":((dv==="ipad"||dv==="phone"||dv==="ipad/phone")?"screen":dv);   // = fxLaneOf
       if(ln&&ln!=="paper") (laneBusy[ln]=laneBusy[ln]||[]).push(w);
     });
@@ -60021,6 +60048,7 @@ function gwLoopPack(toPack,ctx,kids,infoOf){
     order.forEach(function(k){
       if(!q[k].length) return;
       const c=q[k][0], probe={id:"__lp",who:c.who,dur:c.dur,mom:c.mom,device:c.device};
+      const _cmp=(typeof mlMomPartOf==="function")?mlMomPartOf(c):null; if(_cmp) probe._momPart=_cmp;   // 👩 MOMPART3
       const ks=Object.assign({},c2.kidStart||{}); ks[k]=Math.max(ks[k]||0,kidMomEnd[k]||0);
       const o=packAround([],[probe],Object.assign({},c2,{kidStart:ks}));
       const st=(o.length||!probe.time)?Infinity:toMin(probe.time);
@@ -60028,7 +60056,8 @@ function gwLoopPack(toPack,ctx,kids,infoOf){
     });
     if(!best){ order.forEach(function(k){ while(q[k].length) over.push(q[k].shift()); }); break; }   // nothing fits today → overflow (rolls on)
     const c=q[best].shift(); c.time=fromMin(bestS); placed.push(c);
-    momT=bestS+(c.dur||20); kidMomEnd[best]=momT;
+    const _bmp=(typeof mlMomPartOf==="function")?mlMomPartOf(c):null;   // 👩 MOMPART3: Mom at the start is free after her part
+    momT=(_bmp&&_bmp.start)?bestS+_bmp.n:bestS+(c.dur||20); kidMomEnd[best]=bestS+(c.dur||20);
   }
   // 3 + 4 — one card at a time into the earliest hole that fits
   const lastEnd={};   // kid|subject → end of that subject's previous card today
@@ -61579,8 +61608,10 @@ function seGuardWeek(tasks,o){
           // another kid's Mom-required card.
           const d0=dur(_nb), ahead=mov.filter(t=>t!==_nb&&tm(t.time)<tm(_nb.time)), s0=Math.min.apply(null,ahead.map(t=>tm(t.time)));
           const hits=(a,b,x)=>a<tm(x.time)+dur(x)&&tm(x.time)<b;
+          const _ms=(c,s,d)=>(typeof mlMomSpan==="function")?mlMomSpan(c,s,d):[s,s+d];   // 👩 MOMPART3: Mom parts only
+          const momHits=(t,a,x)=>{ const p=_ms(t,a,dur(t)), q=_ms(x,tm(x.time),dur(x)); return p[0]<q[1]&&q[0]<p[1]; };
           const clash=ahead.some(t=>{ const a=tm(t.time)+d0, b=a+dur(t);
-            return mine.some(x=>fixed(x)&&hits(a,b,x))||(t.mom==="required"&&tasks.some(x=>!skip(x)&&x.who!==kid&&dIx(x)===di&&x.mom==="required"&&hits(a,b,x))); });
+            return mine.some(x=>fixed(x)&&hits(a,b,x))||(t.mom==="required"&&tasks.some(x=>!skip(x)&&x.who!==kid&&dIx(x)===di&&x.mom==="required"&&momHits(t,a,x))); });
           if(!clash){
             setT(_nb,day,s0); if(out.retimed.indexOf(_nb.id)<0) out.retimed.push(_nb.id);
             ahead.forEach(t=>{ setT(t,day,tm(t.time)+d0); if(out.retimed.indexOf(t.id)<0) out.retimed.push(t.id); });
@@ -61591,10 +61622,10 @@ function seGuardWeek(tasks,o){
         // re-lay this kid's open cards in their current order
         const busy=mine.filter(fixed).map(t=>[tm(t.time),tm(t.time)+dur(t)]);
         if(W.lunchEnd>W.lunchStart) busy.push([W.lunchStart,W.lunchEnd]);
-        const momBusy=tasks.filter(t=>!skip(t)&&t.who!==kid&&dIx(t)===di&&t.mom==="required").map(t=>[tm(t.time),tm(t.time)+dur(t)]);
+        const momBusy=tasks.filter(t=>!skip(t)&&t.who!==kid&&dIx(t)===di&&t.mom==="required").map(t=>(typeof mlMomSpan==="function")?mlMomSpan(t,tm(t.time),dur(t)):[tm(t.time),tm(t.time)+dur(t)]);   // 👩 MOMPART3
         const order=mov.map((t,i)=>({t,i})).sort((a,b)=>(isMorn(b.t)-isMorn(a.t))||(isClose(a.t)-isClose(b.t))||(tm(a.t.time)-tm(b.t.time))||(a.i-b.i)).map(x=>x.t);   // 📓 notebook first · Closing last
         const lay=list=>{ let at=S0; const plan=new Map(); let over=false;
-          list.forEach(t=>{ const d=dur(t); let B=(t.mom==="required")?busy.concat(momBusy):busy; const _ln=laneOf(t); if(_ln) B=B.concat(laneBusyC(_ln)); let mv=true;
+          list.forEach(t=>{ const d=dur(t); let B=(t.mom==="required")?busy.concat((typeof mlMomStepWins==="function")?mlMomStepWins(t,d,momBusy):momBusy):busy;   /* 👩 MOMPART3 */ const _ln=laneOf(t); if(_ln) B=B.concat(laneBusyC(_ln)); let mv=true;
             while(mv){ mv=false; B.forEach(b=>{ if(at<b[1]&&at+d>b[0]){ at=b[1]; mv=true; } }); }
             plan.set(t,at); if(at+d>W.end) over=true; at+=d; });
           return {plan:plan,over:over,end:at}; };
@@ -61696,7 +61727,7 @@ function prExtraCore(tasks,o){
       const mine=tasks.filter(t=>!skip(t)&&t.who===kid&&t.day===day); if(!mine.length) continue;   // no school for him that day
       const close=mine.filter(isClose)[0]||null;
       let lastEnd=Math.max.apply(null,mine.filter(t=>!isClose(t)).map(t=>tm(t.time)+dur(t)).concat([W.start]));
-      const momBusy=tasks.filter(t=>!skip(t)&&t.who!==kid&&t.day===day&&t.mom==="required").map(t=>[tm(t.time),tm(t.time)+dur(t)]);
+      const momBusy=tasks.filter(t=>!skip(t)&&t.who!==kid&&t.day===day&&t.mom==="required").map(t=>(typeof mlMomSpan==="function")?mlMomSpan(t,tm(t.time),dur(t)):[tm(t.time),tm(t.time)+dur(t)]);   // 👩 MOMPART3
       let placed=true;
       while(placed){
         placed=false;
@@ -61707,7 +61738,8 @@ function prExtraCore(tasks,o){
           const count=tasks.filter(t=>t&&t.who===kid&&t.day===day&&t.subjectKey===x.sk&&!String(t.id||"").endsWith("_c")&&!/lunch/i.test(t.title||"")).length; if(count>=(x.cap||1)) continue;   // 🔁 9/28: a parked (_eowOverflow) card still holds its day's slot
           const _lf=x.lsd?lessonDayFlags(x.lsd,(x.next[0]||{}).title):null, xd=_lf?_lf.dur:x.dur, xm=_lf?_lf.mom:x.mom;   // 👩 Mom on set days
           let st=lastEnd; if(W.lunchEnd>W.lunchStart&&st<W.lunchEnd&&st+xd>W.lunchStart) st=W.lunchEnd;
-          if(xm==="required"&&momBusy.some(b=>st<b[1]&&st+xd>b[0])) continue;
+          if(xm==="required"){ const _cs=(typeof mlMomSpan==="function")?mlMomSpan({who:kid,subjectKey:x.sk,mom:xm,dur:xd},st,xd):[st,st+xd];   // 👩 MOMPART3
+            if(momBusy.some(b=>_cs[0]<b[1]&&_cs[1]>b[0])) continue; }
           if(st+xd+(close?dur(close):0)>W.end) continue;
           const ls=x.next.shift();
           const card=Object.assign({},x.base||{},{id:ls.id,who:kid,day:day,time:fm(st),dur:xd,mom:xm||"none",subjectKey:x.sk,title:ls.title,lid:ls.lid,catchUp:true});
@@ -62060,7 +62092,7 @@ function gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear
             const t1=t0+dur;
             if(R.lunchStart!=null&&ov(t0,t1,R.lunchStart,R.lunchEnd)) continue;
             if(kidCards.some(x=>ov(t0,t1,toMin(x.time),toMin(x.time)+(x.dur||20)))) continue;
-            if(momCards.some(x=>ov(t0,t1,toMin(x.time),toMin(x.time)+(x.dur||20)))) continue;
+            if(momCards.some(x=>{ const _ms=(typeof mlMomSpan==="function")?mlMomSpan(x,toMin(x.time),x.dur||20):[toMin(x.time),toMin(x.time)+(x.dur||20)]; return ov(t0,t1,_ms[0],_ms[1]); })) continue;   // 👩 MOMPART3: their Mom part only
             slot.time=fromMin(t0); placed=true; break;
           }
           if(placed){
