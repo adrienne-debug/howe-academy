@@ -2847,6 +2847,43 @@ function cePracticeSectionHTML(kid,sk,s){
   return h;
 }
 // PRACTICEFOR_END
+// 👩 MOMPART2 (#23 slice 2, her answers 2026-10-08 Q3): "Mom's part" — chosen ONCE here, never asked each time. A Mom-required
+// subject can say Mom is needed for only N of its minutes: at the END by default (the kid starts alone, Mom joins for the
+// last N min), or at the BEGINNING when the box is ticked (Mom does the first N min, then the kid finishes alone). Her Mom
+// loop lays the card that way and the Grid/Builder Mom load counts only those N minutes. "Whole lesson" clears it.
+// Targeted single-field writes: curriculum/subjects/<kid>/<sk>/momPartMins (number|null) and …/momPartStart (true|null).
+function ceMomPartSet(field,val){
+  if(!momHere()||!currData||!ceEditKid||!ceEditKey) return;
+  if(field!=="momPartMins"&&field!=="momPartStart") return;
+  const s=(currData.subjects[ceEditKid]||{})[ceEditKey]; if(!s) return;
+  if(field==="momPartMins"&&val!==null){ const m=+s.minutes||0, n=parseInt(val,10); val=(isNaN(n)||n<=0||n>=m)?null:n; }
+  if(field==="momPartStart") val=val?true:null;
+  if(val===null||val===""){ delete s[field]; val=null; } else s[field]=val;
+  currData.lastEdit=new Date().toISOString();
+  if(db&&!_dryRun()){ const u={}; u["subjects/"+ceEditKid+"/"+ceEditKey+"/"+field]=val; u["lastEdit"]=currData.lastEdit; db.ref("curriculum").update(u); }
+  ceRenderEditSheet(); renderAll();
+}
+function ceMomPartSectionHTML(kid,sk,s){
+  if(!s) return "";
+  const m=+s.minutes||0, n=parseInt(s.momPartMins,10)>0?parseInt(s.momPartMins,10):0;
+  if(s.mom!=="required"&&!n) return "";
+  if(m<10&&!n) return "";
+  const on=n>0&&n<m, st=s.momPartStart===true;
+  const btn='border:1px solid var(--border);background:#fff;border-radius:6px;width:22px;height:22px;cursor:pointer';
+  let h='<div class="ce-sheet-lbl">\u{1F469} Mom\u2019s part <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">\u2014 how much of the '+m+' min needs you</span></div><div class="ce-chips">';
+  h+='<div class="ce-chip'+(!on?" sel":"")+'" onclick="ceMomPartSet(\'momPartMins\',null)">Whole lesson</div>';
+  h+='<div class="ce-chip'+(on?" sel":"")+'" onclick="ceMomPartSet(\'momPartMins\','+(on?n:Math.max(5,Math.min(10,m-5)))+')">Part of it</div>';
+  h+='</div>';
+  if(on){
+    h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:6px">';
+    h+='<span><b style="color:var(--text)">With Mom</b></span>';
+    h+='<span style="display:inline-flex;align-items:center;gap:4px"><button onclick="ceMomPartSet(\'momPartMins\','+Math.max(5,n-5)+')" style="'+btn+'">\u2212</button><b style="min-width:20px;text-align:center;color:var(--text)">'+n+'</b><button onclick="ceMomPartSet(\'momPartMins\','+Math.min(m-5,n+5)+')" style="'+btn+'">+</button></span>';
+    h+='<span>min, then on their own for '+(m-n)+' min</span></div>';
+    h+='<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin-top:6px;cursor:pointer"><input type="checkbox" '+(st?"checked":"")+' onchange="ceMomPartSet(\'momPartStart\',this.checked)"> Mom at the beginning <span style="font-size:10px">(off = the kid starts alone and Mom joins for the last '+n+' min)</span></label>';
+    h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">'+(st?'Mom does the first '+n+' min, then moves on to the next kid while '+esc(cap(kid))+' finishes.':esc(cap(kid))+' starts alone; Mom joins for the last '+n+' min.')+' Your Mom load counts only the '+n+' min. \u201c\u2713 Mom part done\u201d on the day still works.</div>';
+  }
+  return h;
+}
 function _kioskD(){ try{ return /[?&]kiosk=dad/.test(location.search)||HA_LS.getItem("ha_kiosk")==="dad"; }catch(e){ return false; } }
 // 🧒 Kids' Corner link (?kiosk=corner): only the Corner — a tablet the kids share.
 function _kioskK(){ try{ return /[?&]kiosk=corner/.test(location.search)||HA_LS.getItem("ha_kiosk")==="corner"; }catch(e){ return false; } }
@@ -22636,6 +22673,7 @@ function ceRenderEditSheet(){
   h+='</div>';
   h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">'+(trk==="daily"?"Shows up each scheduled day without tracking lesson numbers (like notebooks &amp; drills)":"Lessons advance in order and track progress with a cursor")+'</div>';
   if(trk==="daily"&&typeof cePracticeSectionHTML==="function") h+=cePracticeSectionHTML(ceEditKid,ceEditKey,s);   // 📝 PRACTICEFOR
+  if(typeof ceMomPartSectionHTML==="function") h+=ceMomPartSectionHTML(ceEditKid,ceEditKey,s);   // 👩 MOMPART2
 
   // 📚 Study session link (memory curriculum): the card opens this study sitting.
   {
@@ -28600,7 +28638,7 @@ function printScheduleByKid(){
     }
     const nCards=weekData.tasks.filter(t=>t.who===kid&&!String(t.id||"").endsWith("_c")).length;
     const momMin=weekData.tasks.filter(t=>t.who===kid&&t.mom==="required"&&!String(t.id||"").endsWith("_c"))
-      .reduce((a,t)=>a+(t.dur||20),0);
+      .reduce((a,t)=>{ const _mp=(typeof mlMomPartOf==="function")?mlMomPartOf(t):null; return a+(_mp?_mp.n:(t.dur||20)); },0);   // 👩 MOMPART2: only the Mom part
     pages+='<div style="width:100%;page-break-after:always;padding:8px 10px 4px">'
       +'<div style="background:#1a1a1a;color:#fff;font-size:11pt;font-weight:bold;padding:5px 10px;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center">'
       +'<span>'+(names[kid]||kid)+' — '+String(WK||"").replace("week","Week ")+'</span>'
@@ -53465,6 +53503,20 @@ function _mlLanePass(list){
   }catch(e){ return list; }
 }
 var _mlOffLogged={};   // OFFDAYLOG: day|card id → already written to _debug from this device
+// 👩 MOMPART2 (#23 slice 2, her answers 2026-10-08 Q3/Q4): a subject's "Mom's part" setting — set ONCE in the subject's
+// edit sheet: momPartMins = how many minutes of the card need Mom, momPartStart = true when Mom is at the BEGINNING
+// (default = Mom at the END). Only for a Mom-required card whose Mom part has not been tapped done, and only when the
+// part is shorter than the card. Returns {n, start} or null (null = today's whole-card Mom work, exactly as before).
+function mlMomPartOf(t){
+  try{
+    if(!t||t.mom!=="required"||t.momPartDone||!t.subjectKey) return null;
+    const cd=(typeof currData!=="undefined"&&currData)?currData:null; if(!cd||!cd.subjects) return null;
+    const sub=(cd.subjects[t.who]||{})[t.subjectKey]; if(!sub) return null;
+    const n=parseInt(sub.momPartMins,10), d=t.dur||20;
+    if(!(n>0)||n>=d) return null;
+    return {n:n,start:sub.momPartStart===true};
+  }catch(e){ return null; }
+}
 function mlQueueLay(tasks){ return _mlLanePass(_mlQueueLayCore(tasks)); }
 function _mlQueueLayCore(tasks){
   _mlBlkLaid={};   // 🧺 MOMSCHED_LAUNDRY: where this lay put her blocks
@@ -53658,11 +53710,22 @@ function _mlQueueLayCore(tasks){
     seq.forEach(function(e){
       const Ls=lunchOf(e.kid).concat(fixedOf(e.kid)).concat(_blkIv);   // 🧺 MOMSCHED_LAUNDRY
       t=Math.max(t,_mlKidFloor(e.kid));   // 🏫 a co-op kid's block waits until they are home
+      const _bl2=(!(now&&now.held&&now.kid===e.kid)||_mlMorn(mine[e.kid][0]))?_bufLanding(e.kid):null;   // 👩 MOMPART2: same buffer test, kept for the split cards below
       if(!(now&&now.held&&now.kid===e.kid)||_mlMorn(mine[e.kid][0])){ const bl=_bufLanding(e.kid); if(bl&&t<bl.end&&t+((e.cards[0]||{}).dur||20)>bl.start) t=bl.end; }   // 📓 notebook first: never lay the block ON the buffer (a held kid's too, when it is the Morning Notebook)
-      e.cards.forEach(function(c){
-        const d=c.dur||20; let moved=true;
-        while(moved){ moved=false; Ls.forEach(function(iv){ if(t<iv[1]&&t+d>iv[0]){ t=iv[1]; moved=true; } }); }
-        newTimes[c.id]=t; t+=d;
+      // 👩 MOMPART2: a card with a Mom-part setting holds Mom only for its Mom minutes. Mom-at-the-END cards lead the kid's
+      // block (the kid starts alone, Mom joins for the last N min — the card may begin before Mom is free); Mom-at-the-START
+      // cards close it (Mom does the first N min, then moves on while the kid finishes). Two clocks: t = Mom free, tk = kid free.
+      // No setting on any card → the same order, tk never binds, and every time is what it was.
+      let _cs=e.cards;
+      if(_cs.some(function(c){ return mlMomPartOf(c); })){ const _e=[],_m=[],_s=[]; _cs.forEach(function(c){ const mp=mlMomPartOf(c); (mp?(mp.start?_s:_e):_m).push(c); }); _cs=_e.concat(_m,_s); }
+      let tk=-1; const _kf2=_mlKidFloor(e.kid), _lc2=_mlLastCk(e.kid);
+      _cs.forEach(function(c){
+        const d=c.dur||20; let moved=true; const mp=mlMomPartOf(c);   // 👩 MOMPART2
+        let s=Math.max(t,tk);
+        if(mp&&!mp.start){ s=Math.max(tk,t-(d-mp.n),_kf2,(_lc2!==null)?_lc2:0); if(_bl2&&s<_bl2.end&&s+d>_bl2.start) s=_bl2.end; }
+        while(moved){ moved=false; Ls.forEach(function(iv){ if(s<iv[1]&&s+d>iv[0]){ s=iv[1]; moved=true; } }); }
+        newTimes[c.id]=s;
+        if(mp&&mp.start){ t=s+mp.n; tk=s+d; } else { t=Math.max(t,s+d); tk=s+d; }
         if(_blkAfter[c.id]) _blkAfter[c.id].forEach(function(b){ _mlBlkLaid[b.key]=t; _blkIv.push([t,t+b.mins]); t+=b.mins; });   // 🧺 MOMSCHED_LAUNDRY
       });
     });
@@ -55422,7 +55485,10 @@ function wfKidTierTimes(kid){
   const out={required:{wk:0,n:0},maybe:{wk:0,n:0},computer:{wk:0,n:0},independent:{wk:0,n:0}};
   const subs=(currData&&currData.subjects&&currData.subjects[kid])||{};
   for(const sk in subs){ const v=subs[sk]; if(!v||v.paused) continue;
-    const t=wfTierOf(v); out[t].wk+=(+v.minutes||0)*wfSubjFreq(v); out[t].n++; }
+    const t=wfTierOf(v); out[t].wk+=(+v.minutes||0)*wfSubjFreq(v); out[t].n++;
+    // 👩 MOMPART2 (her Q4 2026-10-08: count only the Mom part): a Mom-required subject with a Mom-part setting is Mom time
+    // for its Mom minutes only; the rest of each sitting is the kid's own (independent) time.
+    if(t==="required"){ const _mp=parseInt(v.momPartMins,10), _m=+v.minutes||0; if(_mp>0&&_mp<_m){ const _f=wfSubjFreq(v); out.required.wk-=(_m-_mp)*_f; out.independent.wk+=(_m-_mp)*_f; } } }
   // 🏡 family time: Mom-led blocks are Mom-required time, kids-on-their-own blocks are independent (Mon–Fri pattern)
   try{ if(typeof famMinOn==="function") ["monday","tuesday","wednesday","thursday","friday"].forEach(function(dn){
     const m=famMinOn(kid,dn,null,true), k=famMinOn(kid,dn,null,false); out.required.wk+=m; out.independent.wk+=k; }); }catch(e){}
