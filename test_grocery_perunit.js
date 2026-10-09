@@ -22,6 +22,8 @@ console.log("── her apples: 3 lb, $1.35 ──");
 { const T=mk(); T.run("grPaidSet('i','ap','1.35')");
   ok("typing $1.35 for 3 lb asks: per lb, or for all 3 lb?", /Apples · 3 lb/.test(T.pop.innerHTML)&&/Is \$1\.35 per lb, or for all 3 lb\?/.test(T.pop.innerHTML)&&/\$1\.35 per lb → \$4\.05 total/.test(T.pop.innerHTML)&&/\$1\.35 for all 3 lb/.test(T.pop.innerHTML));
   T.run("grPerSet('ap','unit')");
+  ok("typing the price left it off the cart (GR_PRICE_STAYS)", !T.run("grData.items.ap.done"));
+  T.run("grToggle('ap')");   // her tap on the circle
   ok("per lb → the cart counts $4.05", T.run("grCartTotal('walmart')").typed===4.05, T.run("grCartTotal('walmart')"));
   ok("the row shows the math", /\$1\.35 per lb × 3 = <b>\$4\.05<\/b>/.test(T.run("grPaidMathHTML({id:'ap'})")));
   ok("the answer is saved on the item and remembered for 'Apples'", T.writes.some(w=>w[1]==="kitchen/grocery/items/ap/paidPer"&&w[2]==="unit")&&T.run("grMem('Apples').per")==="unit");

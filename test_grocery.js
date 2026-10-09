@@ -355,13 +355,15 @@ ok("rows show − 2 + on items still to get", /\(r\.id&&!r\.done\)\?grStepperHTM
   const av=Object.keys(L.data.items).find(i=>L.data.items[i].name==="Avocados"), bb=Object.keys(L.data.items).find(i=>L.data.items[i].name==="Bananas bag");
   ok("store mode row has a price box, placeholder = usual price", /aria-label="Price"/.test(L.grPaidBoxHTML({id:bb,name:"Bananas bag"}))&&/placeholder="\$3\.00"/.test(L.grPaidBoxHTML({id:bb,name:"Bananas bag"})));
   L.grPaidSet("i",av,"1.25");
-  ok("typing a price puts it in the cart (one small update)", L.data.items[av].done===true&&L.data.items[av].paid===1.25&&L.env.writes.some(w=>w[0]==="update"&&w[1]==="kitchen/grocery/items/"+av&&w[2].paid===1.25));
-  L.grToggle(bb);
+  ok("typing a price keeps the row where it is — NOT in the cart (GR_PRICE_STAYS, her ask 2026-10-07); one small update, no done", !L.data.items[av].done&&L.data.items[av].paid===1.25&&L.env.writes.some(w=>w[0]==="update"&&w[1]==="kitchen/grocery/items/"+av&&w[2].paid===1.25&&!("done" in w[2])));
+  ok("… priced but not in the cart → not in the cart total yet", L.grCartTotal("walmart").n===0);
+  L.grToggle(av); L.grToggle(bb);   // her tap on the circle
   const c=L.grCartTotal("walmart");
   ok("running total = typed (1.25 × 3 avocados) + usual for untyped in-cart (bananas $3.00)", c.typed===3.75&&c.est===3&&c.total===6.75);
   ok("total bar along the top", /🧾 \$6\.75/.test(L.grStoreTotalBarHTML("walmart")));
   L.grPaidSet("v","st_s1","2.49");
-  ok("staple row price → its own small path + in the cart", L.data.vpaid.st_s1===2.49&&L.data.vchk.st_s1===true&&L.env.writes.some(w=>w[1]==="kitchen/grocery/vpaid/st_s1"));
+  ok("staple row price → its own small path, stays off the cart", L.data.vpaid.st_s1===2.49&&!L.data.vchk.st_s1&&L.env.writes.some(w=>w[1]==="kitchen/grocery/vpaid/st_s1")&&!L.env.writes.some(w=>w[1]==="kitchen/grocery/vchk/st_s1"));
+  L.grVToggle("st_s1");   // her tap on the circle
   L.grDoneRun("walmart",null);
   ok("🏁 Done: typed prices become one history entry each for that store", L.grPriceHist?true:true);
   const h=L.data.prices.avocados&&L.data.prices.avocados.walmart; const hv=L.data.prices.almondmilk&&L.data.prices.almondmilk.walmart;
