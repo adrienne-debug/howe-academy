@@ -80,5 +80,33 @@ console.log("\n── wiring ──");
   ok("declared early (no use-before-declare at boot)", src.indexOf("var momSchedView=false") >= 0 && src.indexOf("var momSchedView=false") < src.indexOf("function showTab("));
   ok("the MSV pieces write nothing to Firebase", !/db\.ref/.test(slice("msvEnter") + slice("msvExit") + slice("msvBarHTML")));
 }
+console.log("\n── 🔒 Mom's Day asks for the code once; inside, Mom mode is on ──");
+{
+  const G = ["momGateOpen", "momGateHTML", "momGateTry"].map(slice).join("\n");
+  function gw(o) {
+    o = o || {};
+    const log = { on: 0, renders: 0 }; const els = { "mg-err": { textContent: "" } };
+    const env = { momHere: () => !!o.mom, _kioskD: () => !!o.dadKiosk, pinOk: v => v === "1234", haMomOn: () => log.on++, renderAll: () => log.renders++,
+      document: { getElementById: id => els[id] || null }, esc: s => String(s) };
+    const keys = Object.keys(env);
+    const api = new Function(...keys, "var mpSubView=" + JSON.stringify(o.sub || "plan") + ",grFromDad=" + !!o.fromDad + ",kitView=" + JSON.stringify(o.kitView || null) + ",kitEditId=" + JSON.stringify(o.kitEditId || null) + ";\n" + G + "\nreturn {momGateOpen,momGateHTML,momGateTry};")(...keys.map(k => env[k]));
+    return { api, log, els };
+  }
+  ok("not in Mom mode → Mom's Day is closed", !gw().api.momGateOpen());
+  ok("…every Mom's Day page (Schedule, Meals, Grocery, Prep, Weigh-In)", ["cal", "meals", "grocery", "prep", "weigh"].every(v => !gw({ sub: v }).api.momGateOpen()));
+  ok("Mom mode on → open, no code inside", gw({ mom: true }).api.momGateOpen());
+  ok("Dad's Day + his calendar never stopped", gw({ sub: "dad" }).api.momGateOpen() && gw({ sub: "dadcal" }).api.momGateOpen());
+  ok("Dad's grocery list / meals from Dad's Day never stopped", gw({ sub: "grocery", fromDad: true }).api.momGateOpen() && gw({ sub: "meals", fromDad: true }).api.momGateOpen());
+  ok("?kiosk=dad link never stopped", gw({ dadKiosk: true }).api.momGateOpen());
+  ok("reading a recipe tapped from tonight's dinner is open; editing one is not", gw({ sub: "meals", kitView: "m1" }).api.momGateOpen() && !gw({ sub: "meals", kitView: "m1", kitEditId: "m1" }).api.momGateOpen());
+  const w = gw(); w.api.momGateTry({ value: "1234" }, false);
+  ok("right code → Mom mode on (haMomOn, same as every Mom door) and the page opens", w.log.on === 1 && w.log.renders === 1);
+  const w2 = gw(); const inp = { value: "9999", focus() {} }; w2.api.momGateTry(inp, false);
+  ok("wrong code while typing → nothing yet", w2.log.on === 0 && w2.els["mg-err"].textContent === "");
+  w2.api.momGateTry(inp, true);
+  ok("wrong code on Open → 'didn't match', box cleared", w2.log.on === 0 && /match/.test(w2.els["mg-err"].textContent) && inp.value === "");
+  ok("the screen has the code box + Open", /id="mg-pin"/.test(gw().api.momGateHTML()) && /momGateTry/.test(gw().api.momGateHTML()));
+  ok("Mom's Day draws the gate before anything else", /if\(!momGateOpen\(\)\)\{ el\.innerHTML=momGateHTML\(\)/.test(slice("renderMomsPlanView")));
+}
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
