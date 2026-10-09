@@ -16389,9 +16389,12 @@ function mpSchAgendaHTML(who,d){
   finally{ kid=_pk; day=_pd; }
 }
 function mpSchWeekHTML(who){
+  // 🗓 MPSCHWK_NAV: ‹ › to last / next week; another week draws read-only from its own Firebase copy.
+  const nav=(typeof mpSchWkNavHTML==="function")?mpSchWkNavHTML():'';
+  if(typeof mpSchWkIsOther==="function"&&mpSchWkIsOther()) return nav+mpSchWkOtherHTML(who);
   const today=mdTodayName();
   const days=DAYS_ALL.filter(d=>(d!=="saturday"&&d!=="sunday")||mpSchTasks(who,d).length);
-  let h='<div style="overflow-x:auto;padding:12px 10px 0"><div style="display:grid;grid-template-columns:repeat('+days.length+',minmax(120px,1fr));gap:6px;min-width:'+(days.length*124)+'px">';
+  let h=nav+'<div style="overflow-x:auto;padding:12px 10px 0"><div style="display:grid;grid-template-columns:repeat('+days.length+',minmax(120px,1fr));gap:6px;min-width:'+(days.length*124)+'px">';
   days.forEach(d=>{
     const isT=d===today;
     h+='<div onclick="mpSchDaySet(\''+d+'\')" style="cursor:pointer;text-align:center;font-size:12px;font-weight:800;padding:6px 0;border-radius:9px;background:'+(isT?'#2B7A78':'#f3f4f6')+';color:'+(isT?'#fff':'#374151')+'">'+cap(d).slice(0,3)+(isT?' •':'')+'</div>';
@@ -16440,6 +16443,128 @@ function mpSchBody(){
   return h;
 }
 // 🗓 MOMSCHED_TAB_END
+// 🗓 MPSCHWK_NAV_START — Mom's Day ▸ 🗓 Schedule ▸ Week steps ‹ › to last / next week (her ask 2026-10-09: the Week
+//   view only showed this week). Another week is READ-ONLY: its cards come straight from Firebase weekN/tasks
+//   (+ weekN/checked, weekN/meta) with once() reads, kept in a page cache — weekData / checked / WK are never
+//   touched, so the live week can't be disturbed. Past weeks show done ✓ / not done; future weeks show the plan.
+//   Tap a day of another week → a read-only list of that day. Writes nothing, ever (no set/update/remove here).
+//   No db (signed out / tests) → the closed-week archive copy, else this device's local copy.
+let mpSchWkOff=0, mpSchWkDay=null;
+const mpSchWkCache={};   // "weekN" → {wn, tasks:[], checked:{}, dates:{}, loading, failed}
+function _mpSchWkCurNum(){
+  const w=(typeof activeWk==="function"?activeWk():WK)||"";
+  const m=/(\d+)/.exec(w); return m?parseInt(m[1],10):1;
+}
+function mpSchWkNum(){ return _mpSchWkCurNum()+mpSchWkOff; }
+function mpSchWkIsOther(){ return !!mpSchWkOff; }
+function mpSchWkStep(n){
+  const to=mpSchWkOff+(n<0?-1:1);
+  if(_mpSchWkCurNum()+to<1) return;
+  mpSchWkOff=to; mpSchWkDay=null;
+  if(mpSchWkOff) mpSchWkLoad(mpSchWkNum());
+  _mpSchRender();
+}
+function mpSchWkBack(){ mpSchWkOff=0; mpSchWkDay=null; _mpSchRender(); }
+function mpSchWkDaySet(d){ mpSchWkDay=(DAYS_ALL.indexOf(d)>=0)?d:null; _mpSchRender(); }
+function _mpSchWkArr(o){ return Array.isArray(o)?o.filter(Boolean):Object.keys(o||{}).map(k=>o[k]).filter(t=>t&&typeof t==="object"); }
+// Read-only load of week wn. Firebase first (once() — no listener left behind); the archive's closed-week copy
+// fills in completions (the week-close snapshot), and a signed-out device falls back to what it has locally.
+function mpSchWkLoad(wn){
+  const k="week"+wn;
+  if(mpSchWkCache[k]&&(mpSchWkCache[k].loading||mpSchWkCache[k].tasks.length)) return mpSchWkCache[k];
+  const arch=(typeof archive==="object"&&archive&&archive[k])||null;
+  const local=()=>{
+    const ls=(typeof ld==="function"?ld(k+"_tasks"):null), lc=(typeof ld==="function"?ld(k+"_checked"):null), lm=(typeof ld==="function"?ld(k+"_meta"):null);
+    const tasks=_mpSchWkArr(ls&&ls.length?ls:(arch&&arch.tasks));
+    return {wn:wn,tasks:tasks,checked:Object.assign({},(arch&&arch.checked)||{},lc||{}),dates:(lm&&lm.dates)||(arch&&arch.dates)||{},loading:false,failed:false};
+  };
+  if(!db){ mpSchWkCache[k]=local(); return mpSchWkCache[k]; }
+  const c=mpSchWkCache[k]={wn:wn,tasks:[],checked:{},dates:{},loading:true,failed:false};
+  const done=()=>{ c.loading=false; if(mpSchWkNum()===wn) _mpSchRender(); };
+  const fail=()=>{ const l=local(); Object.assign(c,l,{failed:!l.tasks.length}); done(); };
+  try{
+    db.ref(k+"/tasks").once("value",function(s){
+      c.tasks=_mpSchWkArr(s.val());
+      if(!c.tasks.length&&arch&&arch.tasks) c.tasks=_mpSchWkArr(arch.tasks);
+      db.ref(k+"/checked").once("value",function(cs){
+        c.checked=Object.assign({},(arch&&arch.checked)||{},cs.val()||{});
+        db.ref(k+"/meta").once("value",function(ms){ c.dates=((ms.val()||{}).dates)||(arch&&arch.dates)||{}; done(); },function(){ c.dates=(arch&&arch.dates)||{}; done(); });
+      },fail);
+    },fail);
+  }catch(e){ fail(); }
+  return c;
+}
+// The cards one view shows on weekday d of another week — the Week view's own filters, but by each card's planned
+// day (moves / check-off days live with the current week only).
+function mpSchWkTasks(c,who,d){
+  const src=(c&&c.tasks)||[];
+  const base=t=>t&&t.day===d&&!String(t.id).endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title||"");
+  let ts;
+  if(who==="mom") ts=(typeof famMomView==="function"?famMomView:function(x){ return x; })(src)
+    .filter(t=>base(t)&&(t.mom==="required"||t.mom==="maybe"||(typeof famIsMomCard==="function"&&famIsMomCard(t))));
+  else if(who==="all") ts=src.filter(base);
+  else ts=src.filter(t=>base(t)&&t.who===who);
+  return ts.slice().sort((a,b)=>(toMin(a.time)==null?9999:toMin(a.time))-(toMin(b.time)==null?9999:toMin(b.time)));
+}
+function mpSchWkNavHTML(){
+  const wn=mpSchWkNum(), off=mpSchWkOff;
+  const lbl=off===0?'This week':(off===-1?'Last week':(off===1?'Next week':(off<0?(-off)+' weeks ago':'In '+off+' weeks')));
+  const arrow=(n,ch,on)=>'<button '+(on?'onclick="mpSchWkStep('+n+')"':'disabled')+' aria-label="'+(n<0?'Previous':'Next')+' week" style="width:34px;height:34px;border-radius:50%;border:1.5px solid var(--border);background:#fff;font-size:16px;font-weight:800;cursor:'+(on?'pointer':'default')+';opacity:'+(on?1:.35)+'">'+ch+'</button>';
+  return '<div style="display:flex;align-items:center;gap:10px;justify-content:center;padding:12px 12px 0">'+arrow(-1,'‹',wn>1)
+    +'<div style="text-align:center;min-width:150px"><div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:700">'+lbl+'</div>'
+    +'<div style="font-size:11px;color:var(--muted);font-weight:700">Week '+wn+(off?' · read-only':'')+'</div>'
+    +(off?'<button onclick="mpSchWkBack()" style="border:none;background:none;color:#2B7A78;font-size:11px;font-weight:800;cursor:pointer;padding:0">↩ back to this week</button>':'')+'</div>'
+    +arrow(1,'›',true)+'</div>';
+}
+function _mpSchWkMark(c,t,past){
+  if(!past) return {done:false,txt:''};
+  const done=!!(c.checked&&c.checked[t.id]);
+  return {done:done,txt:done?' ✓':' · not done'};
+}
+function mpSchWkOtherHTML(who){
+  const wn=mpSchWkNum(), c=mpSchWkLoad(wn), past=mpSchWkOff<0;
+  const msg=s=>'<div style="padding:24px 16px;text-align:center;color:var(--muted);font-size:13px">'+s+'</div>';
+  if(c.loading) return msg('Loading Week '+wn+'…');
+  if(!c.tasks.length) return msg(c.failed?'Couldn’t load Week '+wn+'.':(past?'Nothing saved for Week '+wn+'.':'Week '+wn+' hasn’t been built yet.'));
+  const dl=d=>(c.dates&&c.dates[d])?' <span style="font-weight:600;opacity:.8">'+esc(String(c.dates[d]))+'</span>':'';
+  if(mpSchWkDay){
+    const d=mpSchWkDay, ts=mpSchWkTasks(c,who,d);
+    let h='<div style="max-width:560px;margin:0 auto;padding:12px 12px 0">'
+      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><button onclick="mpSchWkDaySet(null)" style="border:1.5px solid var(--border);background:#fff;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:800;cursor:pointer">‹ Week '+wn+'</button>'
+      +'<div style="font-family:\'Fraunces\',serif;font-size:17px;font-weight:700">'+cap(d)+dl(d)+'</div></div>';
+    if(!ts.length) h+=msg('Nothing that day.');
+    ts.forEach(t=>{
+      const col=SL_KCOL[t.who]||"#6B4C93", m=toMin(t.time), mk=_mpSchWkMark(c,t,past);
+      const flag=(who==="mom")?(t.mom==="maybe"?'🟡 ':'🔴 '):'';
+      h+='<div style="display:flex;align-items:center;gap:10px;border:1px solid #eef0f2;border-left:4px solid '+col+';border-radius:10px;padding:8px 10px;margin-bottom:6px;background:#fff;font-size:13px">'
+        +'<div style="width:62px;font-size:11px;font-weight:700;color:#6b7280">'+(m==null?'any time':fromMin(m))+'</div>'
+        +'<div style="flex:1;min-width:0"><div style="font-weight:700;color:#111827">'+flag+esc(taskTitleShow(t))+'</div>'
+        +'<div style="font-size:11px;color:'+col+';font-weight:700">'+esc(cap(t.who||""))+'</div></div>'
+        +(past?'<div style="font-size:11.5px;font-weight:800;color:'+(mk.done?'#15803d':'#b45309')+'">'+(mk.done?'✓ done':'not done')+'</div>':'')+'</div>';
+    });
+    return h+'</div>';
+  }
+  const days=DAYS_ALL.filter(d=>(d!=="saturday"&&d!=="sunday")||mpSchWkTasks(c,who,d).length);
+  let h='<div style="overflow-x:auto;padding:12px 10px 0"><div style="display:grid;grid-template-columns:repeat('+days.length+',minmax(120px,1fr));gap:6px;min-width:'+(days.length*124)+'px">';
+  days.forEach(d=>{
+    h+='<div onclick="mpSchWkDaySet(\''+d+'\')" style="cursor:pointer;text-align:center;font-size:12px;font-weight:800;padding:6px 0;border-radius:9px;background:#f3f4f6;color:#374151">'+cap(d).slice(0,3)+dl(d)+'</div>';
+  });
+  days.forEach(d=>{
+    const ts=mpSchWkTasks(c,who,d);
+    h+='<div onclick="mpSchWkDaySet(\''+d+'\')" style="cursor:pointer;display:flex;flex-direction:column;gap:4px;min-width:0">';
+    if(!ts.length) h+='<div style="color:var(--muted);font-size:11px;text-align:center;padding:8px 0">—</div>';
+    ts.forEach(t=>{
+      const col=SL_KCOL[t.who]||"#6B4C93", m=toMin(t.time), mk=_mpSchWkMark(c,t,past);
+      const flag=(who==="mom")?(t.mom==="maybe"?'🟡 ':'🔴 '):'';
+      h+='<div title="'+esc(taskTitleShow(t))+'" style="border:1px solid #eef0f2;border-left:4px solid '+col+';border-radius:8px;padding:4px 6px;font-size:11px;line-height:1.25;background:#fff;'+(mk.done?'opacity:.5':'')+'">'
+        +'<div style="font-weight:700;color:'+(past&&!mk.done?'#b45309':'#6b7280')+';font-size:10px">'+(m==null?'any time':fromMin(m))+(who==="all"||who==="mom"?' · <span style="color:'+col+'">'+esc(cap(t.who||""))+'</span>':'')+mk.txt+'</div>'
+        +'<div style="font-weight:700;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+flag+esc(taskTitleShow(t))+'</div></div>';
+    });
+    h+='</div>';
+  });
+  return h+'</div></div>';
+}
+// 🗓 MPSCHWK_NAV_END
 // 👨 Dad's own calendar (her ask 2026-09-05: "make his own tab so it works on his phone") — the
 // same lens, toggles and Family/kid row, under HIS header with a way back to Dad's Day. On
 // ?kiosk=dad it keeps him on his side of the app instead of landing in Mom HQ.
