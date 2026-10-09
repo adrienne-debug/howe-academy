@@ -59327,7 +59327,7 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
 }
 // GWGEN_END
 
-function gwAutoBalance(dayData,lateStart,skipDays){
+function gwAutoBalance(dayData,lateStart,skipDays,todayISO){
   // 📅 BALANCE_DAYMAP (BUG #90): keyed by Date.getDay() (0=Sun). The old map started at 0=Monday, so every date
   // was labelled one weekday late — Monday read as "Tue" — and the allowedDays guard let a Tue–Fri subject
   // (DeWalt Taylor Fix-It Practice, regen 2026-10-07) be evened onto Monday. Sat/Sun still map to nothing.
@@ -59363,6 +59363,10 @@ function gwAutoBalance(dayData,lateStart,skipDays){
       // Ellis marked off Mon–Wed for testing, marks verified in the DB, three regens dealt
       // those days anyway. Every reader honored the marks; the balancer un-honored them.
       try{ if(smapIsKidOff(kid,dk)||schedOvKidOff(kid,dk)) continue; }catch(e){}
+      // ⚖️ BALANCE_NOPAST (her rule 2026-10-08): a day already over can neither receive nor donate either. On a
+      // mid-week Regenerate the past days are the lightest (their done work is gone), so the balancer dealt open
+      // lessons onto Monday/Tuesday on a Wednesday regen — then the cascade swept them back out as carry-overs.
+      if(todayISO&&dk<todayISO) continue;
       const kidTasks=(dayData[dk]||{})[kid]||{};
       dayTotals[dk]=Object.keys(kidTasks).reduce((sum,k)=>sum+(durMap[k]||20)*(Array.isArray(kidTasks[k])?kidTasks[k].length:1),0); // array = a doubled-up day, count each copy
       dayDates.push([dk,dn]);
@@ -60274,7 +60278,7 @@ function generateWeek(config){
   let balanced=JSON.parse(JSON.stringify(dayData));
 
   // Auto-balance
-  balanced=gwAutoBalance(balanced,config.lateStart||{},config.skipDays||[]);
+  balanced=gwAutoBalance(balanced,config.lateStart||{},config.skipDays||[],(typeof _todayStr==="function")?_todayStr():null);
 
   // Inject daily curriculum subjects (notebooks, drills) into every school day — reads from curriculum data
   const _WDAY_ABBR2={0:"Sun",1:"Mon",2:"Tue",3:"Wed",4:"Thu",5:"Fri",6:"Sat"};
