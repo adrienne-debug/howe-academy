@@ -28592,6 +28592,10 @@ function cascadeIntraWeek(sweepTodayElapsed){
   const _mpDissolve=[];   // 📘 MASTERPULL: untouched master-pull cards this pass removes (see the pooling loop)
   const _todayOpen=(function(){ try{ const _s=((rulesData||{}).schoolDay)||{}; return _nowMin<=toMin((((_s.overrides||{})[today])||{}).start||_s.defaultStart||"10:00 AM"); }catch(e){ return true; } })();
   // DAYGOAL_END (see the two DAYGOAL lines in the subject-spread and the receiving-day loop below)
+  // 🌙 SWEEPKEEP (her rule 2026-10-08): once today's school day is over (the 8 PM sweep, a Regenerate after school),
+  // today's day-bound cards keep the times they were laid at. The re-time-to-now below is for a MID-DAY Regenerate
+  // only; at 8:06 PM it dragged every open daily + the Closing Notebook to 8:06–8:51 PM.
+  const _todaySchoolOver=(function(){ try{ const _s=((rulesData||{}).schoolDay)||{}; return _nowMin>=toMin((((_s.overrides||{})[today])||{}).end||_s.defaultEnd||"4:15 PM"); }catch(e){ return false; } })();
   // 😷 Is this kid marked off TODAY by Mom's own per-kid override? (memoised per sweep)
   const _offTodayMemo={};
   const _kidOffToday=function(who){
@@ -28645,7 +28649,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
       // 10:00 morning notebook at a 1 PM restart is still today's to do). Chained per
       // kid so two day-bound tasks don't stack on the same minute. Closings sit out —
       // the closing-last pass below re-times them after each kid's final task.
-      if(sweepTodayElapsed&&t.day===today&&!_isClose(t)&&toMin(t.time)<_nowMin){
+      if(sweepTodayElapsed&&!_todaySchoolOver&&t.day===today&&!_isClose(t)&&toMin(t.time)<_nowMin){
         const _st=Math.max(_nowMin,_dbCursor[t.who]||0);
         t.time=fromMin(_st); _dbCursor[t.who]=_st+(t.dur||20); _healMoved=true;
         _healUpd[t.id+"/time"]=t.time;
@@ -28723,8 +28727,8 @@ function cascadeIntraWeek(sweepTodayElapsed){
   if(!pastTasks.length&&!pastNotes.length){
     // Nothing to sweep — but a regen may still have re-timed today's day-bound tasks
     // above, and the closing-last pass below won't run. Pull today's closings out of
-    // elapsed time here (push-later only; never drags a fine closing earlier).
-    if(sweepTodayElapsed){
+    // elapsed time here (push-later only; never drags a fine closing earlier). SWEEPKEEP: not once school is over.
+    if(sweepTodayElapsed&&!_todaySchoolOver){
       const _ck={};
       weekData.tasks.forEach(t=>{ if(t.day===today&&!t.id.endsWith("_c")&&!checked[t.id]) (_ck[t.who]=_ck[t.who]||[]).push(t); });
       Object.keys(_ck).forEach(function(who){
@@ -29142,6 +29146,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
   // after the wrap-up (a stacked closing sits right behind the day's own).
   for(let di=todayIdx; di<dayOrder.length; di++){
     const dn=dayOrder[di]; const byKid={};
+    if(dn===today&&_todaySchoolOver) continue;   // 🌙 SWEEPKEEP: today's day is over — its bookends stay where they were laid
     const _sdOv=(sd.overrides||{})[dn]||{};
     const _dStart=toMin(_sdOv.start||sd.defaultStart||"10:00 AM");
     weekData.tasks.forEach(t=>{ if(t.day===dn&&!t.id.endsWith("_c")&&!checked[t.id]){ (byKid[t.who]=byKid[t.who]||[]).push(t); } });
@@ -29346,6 +29351,8 @@ function cascadeIntraWeek(sweepTodayElapsed){
           if(best!=null&&best<cur) t.time=fromMin(best);
         });
       // Re-tuck each kid's closing notebook right after their (possibly now-earlier) last task.
+      // 🌙 SWEEPKEEP: not on today once school is over — the day is done, its Closing Notebook keeps its time.
+      if(dn===today&&_todaySchoolOver) continue;
       const byKid={};
       weekData.tasks.forEach(t=>{ if(t.day===dn&&!t.id.endsWith("_c")&&!checked[t.id]) (byKid[t.who]=byKid[t.who]||[]).push(t); });
       Object.keys(byKid).forEach(function(who){
