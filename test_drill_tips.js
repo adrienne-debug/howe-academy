@@ -55,7 +55,7 @@ console.log("\nper person (her ask 10/4: a helper sees every tip fresh under her
 }
 
 console.log("\nwiring");
-ok("tip sits right under the Today's Drill header (only when cards are due)", /Print #'\+pn\+'<\/div><\/div>';\n\s*if\(due\.length&&typeof drillTipHtml==="function"\) h\+=drillTipHtml\(!!mastLogMode,due\.length,masteryKid\);/.test(src));
+ok("tip sits right under the Today's Drill header (only when cards are due)", /(?:Print|Day) #'\+pn\+'<\/div><\/div>';\n\s*if\(due\.length&&typeof drillTipHtml==="function"\) h\+=drillTipHtml\(!!mastLogMode,due\.length,masteryKid\);/.test(src));
 ok("grey Save Results explains itself (how many to go)", /Save turns on when all '\+due\.length\+' cards are marked \('\+\(due\.length-scored\)\+' to go\)/.test(src));
 ok("📝 Log button has a tooltip", /title="Start today\\'s drill — mark each card, then Save Results"/.test(src));
 ok("no data writes in the block", !/db\.ref\(/.test(src.slice(a, b)));
