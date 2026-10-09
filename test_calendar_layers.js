@@ -25,7 +25,7 @@ let pass = 0, fail = 0;
 function ok(n, c, x) { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  (" + JSON.stringify(x) + ")" : "")); } }
 
 const CODE = [
-  line("let calDaySel="), line("const CAL_LAYERS="), line("let calLayers="),
+  line("let calDaySel="), line("const CAL_LAYERS="), line("const CAL_OPTIN="), line("let calLayers="),
   line("function _calLayersLoad()"), line("function calLayerOn("), line("function calLayerToggle("),
   slice("calBreaksOn"), slice("kitEatGate"), slice("kitMarkEaten"), slice("_kitRefresh"), slice("kitMarkSkipped"), slice("calDayClick"),
 ].join("\n");

@@ -136,7 +136,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .gcal-month-day.lay .gmd-num{margin-bottom:3px}
 .gcal-month-day.sel{outline:2px solid #E07B39;outline-offset:-1px}
 .gmd-line{display:block;font-size:11px;line-height:1.3;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700}
-.gmd-brk{color:#92400e}.gmd-coop{color:#1d4ed8}.gmd-ev{color:#9d174d}.gmd-ev.pend{color:#b45309;opacity:.85}.gmd-les{color:#0f766e}.gmd-chore{color:#6d28d9}.gmd-dad{color:#2C5F8A}
+.gmd-brk{color:#92400e}.gmd-coop{color:#1d4ed8}.gmd-ev{color:#9d174d}.gmd-ev.pend{color:#b45309;opacity:.85}.gmd-les{color:#0f766e}.gmd-chore{color:#6d28d9}.gmd-dad{color:#2C5F8A}.gmd-hab{color:#15803d;letter-spacing:2px}
 .gmd-meal{color:#9a3412}.gmd-meal.ate{color:#15803d}.gmd-meal.skip{color:#9ca3af;text-decoration:line-through}.gmd-meal.owed::before{content:"\25CF ";color:#f97316}
 .gcal-month-day.lay .gmd-more{display:block;font-size:10px;color:var(--muted);font-weight:800;margin:0}
 /* narrow screens: a phone cell is ~50px wide, so a text line is one letter — show one coloured
@@ -2570,11 +2570,13 @@ let calPreviewMonth=null; // YYYY-MM for calendar preview (null = current)
 // day sheet acts through the same functions the other screens use (kitMarkEaten etc.), so
 // nothing here is a second copy that could drift.
 let calDaySel=null;                       // ISO of the open day sheet (null = closed)
-const CAL_LAYERS=[["breaks","\u{1F3D6} Breaks"],["coops","\u{1F3EB} Co-ops"],["events","\u{1F389} Events"],["meals","\u{1F37D} Meals"],["dad","\u{1F468} Dad"]];
+const CAL_LAYERS=[["breaks","\u{1F3D6} Breaks"],["coops","\u{1F3EB} Co-ops"],["events","\u{1F389} Events"],["meals","\u{1F37D} Meals"],["dad","\u{1F468} Dad"],["habits","\u2705 Habits"]];
+const CAL_OPTIN=["habits"];   // layers that start off (the rest start on)
 let calLayers=null;
 function _calLayersLoad(){ if(calLayers) return; try{ calLayers=JSON.parse((typeof HA_LS!=="undefined"?HA_LS:localStorage).getItem("ha_cal_layers")||"null"); }catch(e){} if(!calLayers||typeof calLayers!=="object") calLayers={}; }
 function calLayerOn(k){ _calLayersLoad(); return calLayers[k]!==false; }
-function calLayerToggle(k){ _calLayersLoad(); calLayers[k]=!calLayerOn(k); try{ (typeof HA_LS!=="undefined"?HA_LS:localStorage).setItem("ha_cal_layers",JSON.stringify(calLayers)); }catch(e){} renderAll(); }
+function calLayerOptIn(k){ _calLayersLoad(); return calLayers[k]===true; }   // opt-in layers start OFF until a chip turns them on
+function calLayerToggle(k){ _calLayersLoad(); calLayers[k]=(CAL_OPTIN.indexOf(k)>=0)?!calLayerOptIn(k):!calLayerOn(k); try{ (typeof HA_LS!=="undefined"?HA_LS:localStorage).setItem("ha_cal_layers",JSON.stringify(calLayers)); }catch(e){} renderAll(); }
 // Breaks on a date: the holiday / vacation records whose range covers it.
 function calBreaksOn(iso){
   const out=[]; const scan=(m,kind)=>{ Object.keys(m||{}).forEach(id=>{ const r=m[id]; if(!r||!r.start) return; const e=r.end||r.start; if(r.start<=iso&&iso<=e) out.push({id:id,kind:kind,name:r.name||(kind==="holiday"?"Holiday":"Vacation")}); }); };
@@ -26430,8 +26432,8 @@ function calRenderMonthPreview(opts){
   const firstDay=new Date(year,month,1).getDay();
   const daysInMonth=new Date(year,month+1,0).getDate();
   const todayIso=calToday();
-  const L=kidMode?{breaks:true,coops:true,events:true,meals:true,dad:false}
-             :{breaks:calLayerOn("breaks"),coops:calLayerOn("coops"),events:calLayerOn("events"),meals:calLayerOn("meals"),dad:!who&&calLayerOn("dad")};
+  const L=kidMode?{breaks:true,coops:true,events:true,meals:true,dad:false,habits:false}
+             :{breaks:calLayerOn("breaks"),coops:calLayerOn("coops"),events:calLayerOn("events"),meals:calLayerOn("meals"),dad:!who&&calLayerOn("dad"),habits:calLayerOptIn("habits")};
   const holidays=calendarData.holidays||{}, vacations=calendarData.vacations||{};
   const offDates=new Set();
   Object.values(holidays).forEach(h2=>{
@@ -26490,6 +26492,10 @@ function calRenderMonthPreview(opts){
     if(L.breaks) calBreaksOn(iso).forEach(b=>items.push({c:"gmd-brk",t:(b.kind==="holiday"?"\u{1F389} ":"\u{1F3D6} ")+b.name}));
     _coops.forEach(c=>items.push({c:"gmd-coop",t:"\u{1F3EB} "+(c.name||"Co-op")+(c.mode==="fullDay"?"":(c.start?" "+c.start:""))}));
     if(L.dad){ const _dc=_calDadChoresFor(iso); if(_dc.length){ const dn=_dc.filter(x=>x.done).length; items.push({c:"gmd-dad",t:"\u{1F468} "+_dc.length+" chore"+(_dc.length===1?"":"s")+(dn?(" \u00b7 "+dn+" \u2713"):"")}); } }
+    if(L.habits){   // HABITS_CAL — a dot per kid who finished everything that day (past days with data only)
+      const _hk=(who?[who]:ROSTER).filter(function(k){ return _calHabitsDone(k,iso)===true; });
+      if(_hk.length) items.push({c:"gmd-hab",t:"\u2705 "+_hk.map(cap).join(", "),h:_hk.map(function(k){ return '<span style="color:'+(KID_COLOR[k]||"#16a34a")+'">\u25cf</span>'; }).join("")});
+    }
     if(who){
       const _ls=_calLessonsFor(who,iso); if(_ls.length) items.push({c:"gmd-les",t:"\u{1F4DA} "+(_ls.length===1?_ls[0].name:(_ls.length+" lessons"))});
       // the cell counts the CHORES list only — routine steps (teeth, vitamins) are every day and would drown it
@@ -26507,7 +26513,7 @@ function calRenderMonthPreview(opts){
     const tip=items.map(x=>x.t+(x.c.indexOf("owed")>=0?" (not marked)":x.c.indexOf("ate")>=0?" (eaten)":x.c.indexOf("skip")>=0?" (didn't happen)":"")).join(" · ");
     h+='<div class="'+cls+'" onclick="calDayClick(\''+iso+'\')" title="'+esc(tip||"Tap for the day")+'">'+
        '<span class="gmd-num">'+d+'</span>'+
-       shown.map(x=>'<span class="gmd-line '+x.c+'">'+esc(x.t)+'</span>').join("")+
+       shown.map(x=>'<span class="gmd-line '+x.c+'">'+(x.h||esc(x.t))+'</span>').join("")+
        (more>0?'<span class="gmd-more">+'+more+' more</span>':'')+
        '</div>';
   }
@@ -26567,13 +26573,40 @@ function _calChoresFor(kid,iso){
         if(st.from&&iso<st.from) return; if(st.to&&iso>st.to) return;
         if(typeof stepCycleOk==="function"&&!stepCycleOk(st,iso)) return;
         if(!_calCadDueOn(st.cad||"daily",dn,iso)) return;
-        out.push({slot:slot,label:st.label||"Chore",emoji:st.emoji||"",pts:st.pts||0,
+        out.push({i:i,slot:slot,label:st.label||"Chore",emoji:st.emoji||"",pts:st.pts||0,
           done:isToday&&(slot==="morning"?(typeof mStepDoneOn==="function"&&mStepDoneOn(kid,dn,i)):(typeof rtDoneOn==="function"&&rtDoneOn(slot,kid,dn,i)))});
       });
     });
     return out;
   }catch(e){ return []; }
 }
+// HABITS_CAL_START — her ask 2026-10-09 (#37): an opt-in "✅ Habits" month layer. A past day gets a dot
+// per kid who finished ALL of that day's chores and routine slots. Only the active week and the
+// week before it have check-off data in memory (slState / prevSlState); any other day, today, the
+// future, or a day with nothing due answers null = no data = no dot (never a false "missed").
+function _calHabitsDone(kid,iso){
+  try{
+    if(!kid||!iso||iso>=calToday()) return null;
+    let map=null, wk=null, dn=null;
+    for(let i=0;i<DAYS_ALL.length;i++){
+      const di=routineDateISO(DAYS_ALL[i]); if(!di) continue;
+      if(di===iso){ map=slState; wk=activeWk(); dn=DAYS_ALL[i]; break; }
+      const pd=new Date(di+"T12:00:00"); pd.setDate(pd.getDate()-7);
+      const pi=pd.getFullYear()+"-"+String(pd.getMonth()+1).padStart(2,"0")+"-"+String(pd.getDate()).padStart(2,"0");
+      if(pi===iso){ map=prevSlState; wk=_prevWkKey(); dn=DAYS_ALL[i]; break; }
+    }
+    if(!map||!wk) return null;
+    const due=_calChoresFor(kid,iso); if(!due.length) return null;
+    let any=false;
+    for(let j=0;j<due.length;j++){
+      const c=due[j], key=wk+"_"+dn+"_"+kid+"_"+(c.slot==="morning"?"mstep":RT_ABBR[c.slot]+"step")+c.i;
+      const st=map[key]; if(st) any=true;
+      if(!(st&&st.done)) return (any||Object.keys(map).some(function(k){ return k.indexOf(wk+"_"+dn+"_"+kid+"_")===0; }))?false:null;
+    }
+    return true;
+  }catch(e){ return null; }
+}
+// HABITS_CAL_END
 // 👨 Dad's own chores on a date (the last item on her 2026-09-05 list): dadChores by the same
 // date-aware cadence the kids' layer uses; done stamps from dadday/{iso}. Mom/Dad lens only.
 function _calDadChoresFor(iso){
@@ -26636,6 +26669,8 @@ function calDaySheetHTML(iso,L,dinnerOf,who,opts){
       }
     });
   }
+  if(L.habits&&!kidMode){ (who?[who]:ROSTER).forEach(function(k){ const r=_calHabitsDone(k,iso); if(r===null) return; rows++;
+    h+='<div class="row"><span class="lbl">Habits</span><span style="flex:1;color:'+(r?'#15803d':'#6b7280')+'"><span style="color:'+(KID_COLOR[k]||"#16a34a")+'">\u25cf</span> '+esc(cap(k))+(r?' \u2014 finished every chore and routine \u2705':' \u2014 not everything checked off')+'</span></div>'; }); }
   if(L.events){ calEventsOn(iso,who||"all",true).forEach(function(e){ rows++;
     h+='<div class="row"><span class="lbl">Event</span><span style="flex:1">'+esc(e.emoji||"\u{1F389}")+' <b>'+esc(e.title||"Event")+'</b>'+(e.time?' <span style="color:#6b7280">· '+esc(e.time)+'</span>':'')+(e.who&&e.who!=="family"?' <span style="color:#6b7280">· '+esc(cap(e.who))+'</span>':'')
       +(e.addedBy?' <span style="font-size:10px;color:#6b7280">· added by '+esc(cap(e.addedBy))+'</span>':'')
