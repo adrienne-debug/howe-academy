@@ -61498,7 +61498,9 @@ function seqFillNormalize(tasks,reason){
     // only when a slot was re-stamped — so the next flag says which two lessons, on which days. Logged once per page load
     // per subject + pair (this pass runs on every load). Read-only: it writes nothing but the _debug line.
     try{ if(res&&!res.ascending&&res.violations&&res.violations.length) seqWarnLog(kid,sk,subj,res.violations,groups[key]); }catch(eSW){}
-    if(!res||!res.changed) return;
+    // 🏷 SEQTAGS: a slot whose id names a different lesson than it holds is worth a pass even when no lid changes
+    const _idOff=!!(res&&res.assign.some(a=>a.newId&&a.newId!==a.oldId));
+    if(!res||(!res.changed&&!_idOff)) return;
     if(_pin&&res.drop.length){   // a pinned slot with nothing it may hold comes off the week (e.g. Monday after the last practice day)
       const _rm=new Set(res.drop.map(d=>d.id));
       for(let i=tasks.length-1;i>=0;i--){ const x=tasks[i]; if(x&&_rm.has(x.id)&&x.who===kid&&x.subjectKey===sk){ tasks.splice(i,1); changed++; } }
@@ -61511,9 +61513,30 @@ function seqFillNormalize(tasks,reason){
         boxNotes.push(key+" "+(_oi>=0?_ot.slice(_oi+3):(a.from||"?"))+" → "+a.text+" (filed under "+String(t.day||"?")+")"); }
       t.lid=a.lid; t.title=_seqFillTitle(t.title,a.text);
       if(typeof lessonDayStamp==="function") lessonDayStamp(t,subj);   // 👩 Mom on set days
-      if(a.newId&&a.newId!==t.id&&!live.has(a.newId)){ live.delete(t.id); live.add(a.newId); t.id=a.newId; }
       changed++;
     });
+    // 🏷 SEQTAGS (her yes 2026-10-09, out-of-sequence step 2): keep each card's tag matched to its lesson, so a
+    // check-off never lands on the wrong lesson. Check-offs (weekN/checked) are keyed by card ID; curriculum/done and the
+    // order check by LID. The old rule — "take the new id only if nobody holds it" — ran card by card, so two open slots
+    // that traded lessons each found the other still holding its id and both kept the old one (live 10/7: Wednesday's
+    // pulled card held …_L0020 but Sitting 3 = L0019; Lincoln's check went under …_L0020, and a Regenerate then handed
+    // that check to whichever card was minted …_L0020 — Sitting 4, a lesson he hadn't done).
+    // Now every OPEN slot of the subject whose id ≠ <kid>_<planId>_<lid> moves together: the ids they vacate are free to
+    // each other (a swap or a rotation resolves). A slot keeps its old id only when its target is held by a card that is
+    // NOT moving (a checked/claimed/started card — those are never re-keyed here) or has a check/claim entry of its own
+    // (a stale check must never be adopted by an open card). Locked cards are not slots, so their ids, and the
+    // check-offs keyed by them, are never touched by this pass — only gwCommit's SEQTAGS re-key may move a check.
+    { const _held=id=>!!((checked&&checked[id])||(typeof claimed!=="undefined"&&claimed&&claimed[id]));
+      const _mv=res.assign.filter(a=>a.newId&&byId[a.oldId]&&a.newId!==byId[a.oldId].id);
+      const _go=new Set(_mv.map(a=>a.oldId));
+      let _again=true;
+      while(_again){ _again=false;
+        _mv.forEach(a=>{ if(!_go.has(a.oldId)) return;
+          if(_held(a.newId)||(live.has(a.newId)&&!_go.has(a.newId))){ _go.delete(a.oldId); _again=true; } }); }
+      const _idMoves=_mv.filter(a=>_go.has(a.oldId));
+      _idMoves.forEach(a=>{ live.delete(a.oldId); });
+      _idMoves.forEach(a=>{ const t=byId[a.oldId]; live.add(a.newId); t.id=a.newId; if(!a.changed) changed++; });
+      if(_idMoves.length) notes.push(key+" 🏷 ids follow lessons: "+_idMoves.map(a=>String(a.oldId).slice(-5)+"→"+String(a.newId).slice(-5)).join(" ")); }
     if(res.assign.some(a=>a.changed))
       notes.push(key+": "+res.assign.filter(a=>a.changed).map(a=>(a.from||"?")+"→"+a.lid).join(" "));
     if(!res.ascending) notes.push(key+" ⚠ locked card out of sequence (see the ⚠ out-of-sequence line)");
@@ -61775,6 +61798,50 @@ function gwCommit(){
       const lid=t.lid||((typeof lidForTask==="function")?lidForTask(t):null);
       if(lid&&!String(t.id||"").endsWith("_c")) oldByLid[(t.who||"")+"|"+(t.subjectKey||"")+"|"+lid]=rec;
     });
+    // 🏷 SEQTAGS (her yes 2026-10-09, out-of-sequence step 2): a CHECKED plan card whose id names a different lesson than
+    // its lid — the seqfill drift (live week26 10/7: Lincoln's Wednesday card id …_L0020 holds L0019 'Sitting 3', checked;
+    // Ellis' Wednesday …_L0028 holds L0027 'Ex. 47–48', checked). Which is the lesson actually done? The LID: the done
+    // record was written under it when the kid checked (curriculum/done/…/L0019, taskId …_L0020), and the title the kid
+    // saw and worked from follows the lid. The id is only the stale tag. Left alone, the regenerated card minted …_L0020
+    // (Sitting 4, not done) found a check under its own id and was born checked, while Sitting 3's card vanished.
+    // So, BEFORE pass 0, each such check is MOVED (never dropped) from the stale id to <kid>_<planId>_<lid> — the id of
+    // the lesson it was done as — with its history entry. If the new week serves that lesson the check lands on that card;
+    // if not, the old card is kept under the corrected id (as the keep-pass would have kept it). All stale keys are lifted
+    // together first, so a rotation (Ellis: three cards) resolves. A move whose true id is already checked by another
+    // card, or held by a new card for a different lesson, does not happen at all — the check stays exactly where it was.
+    // This runs only here, where the regenerate rewrites weekN/checked + history wholesale anyway (the normal save path).
+    const _stMoved=new Set();
+    (function(){
+      const newBy={}; d.tasks.forEach(t=>{ if(t&&t.id) newBy[t.id]=t; });
+      const stash=[];
+      (weekData.tasks||[]).forEach(o=>{
+        if(!o||!o.id||!o.lid||!o.who||!o.subjectKey||!snapChecked[o.id]) return;
+        const id=String(o.id); if(id.endsWith("_c")||id.indexOf(o.who+"_")!==0||!/^L\d+$/.test(String(o.lid))) return;
+        const m=id.match(/^(.+_)(L\d+)$/); if(!m||m[2]===o.lid) return;
+        const rec=oldByLid[o.who+"|"+o.subjectKey+"|"+o.lid]; if(!rec||rec.oldId!==o.id) return;   // only this week's checks (the cutoff above)
+        stash.push({o:o,T:m[1]+o.lid,ts:snapChecked[o.id],h:snapHist[o.id],rec:rec});
+      });
+      if(!stash.length) return;
+      const go=new Set(stash.map(s=>s.o.id)); let again=true;
+      while(again){ again=false;
+        stash.forEach(s=>{ if(!go.has(s.o.id)) return;
+          const nt=newBy[s.T];
+          const homeTaken=(snapChecked[s.T]&&!go.has(s.T))||(nt&&(nt.who!==s.o.who||nt.subjectKey!==s.o.subjectKey||(nt.lid&&nt.lid!==s.o.lid)))
+            ||stash.some(x=>x!==s&&go.has(x.o.id)&&x.T===s.T);
+          if(homeTaken){ go.delete(s.o.id); again=true; } }); }
+      const moves=stash.filter(s=>go.has(s.o.id));
+      moves.forEach(s=>{ delete snapChecked[s.o.id]; delete snapHist[s.o.id]; });
+      moves.forEach(s=>{
+        snapChecked[s.T]=s.ts; if(s.h) snapHist[s.T]=Object.assign({},s.h,{id:s.T});
+        if(!newBy[s.T]){ const c=Object.assign({},s.o,{id:s.T}); d.tasks.push(c); newBy[s.T]=c; }
+        s.rec.used=true; _stMoved.add(s.o.id);
+      });
+      if(typeof dbg==="function"){
+        if(moves.length) dbg("🏷 seqtags (regenerate): check moved to its lesson's id — "+moves.map(s=>s.o.who+" "+s.o.subjectKey+" "+String(s.o.id).slice(-5)+"→"+String(s.T).slice(-5)).join(", "));
+        const stay=stash.filter(s=>!go.has(s.o.id));
+        if(stay.length) dbg("🏷 seqtags (regenerate): left in place, true id taken — "+stay.map(s=>s.o.who+" "+s.o.subjectKey+" "+s.o.id+" (lesson "+s.o.lid+")").join(", "));
+      }
+    })();
     // Pass 0 (Stage 3c): re-attach by LESSON ID first — a done lesson keeps its check no
     // matter which day the regen lands it on, and a same-titled card for a different
     // lesson can never take it. Falls through to the title passes for cards without ids.
@@ -61849,7 +61916,7 @@ function gwCommit(){
       const _moved=new Set();
       Object.values(oldLookup).forEach(v=>{ if(v.used) _moved.add(v.oldId); });
       (weekData.tasks||[]).forEach(t=>{
-        if(t.id.endsWith("_c")||_kIds.has(t.id)||_moved.has(t.id)) return;
+        if(t.id.endsWith("_c")||_kIds.has(t.id)||_moved.has(t.id)||_stMoved.has(t.id)) return;   // 🏷 SEQTAGS: re-keyed above
         if(!(snapChecked[t.id]||(typeof claimed!=="undefined"&&claimed&&claimed[t.id])
              ||(typeof _gwConsumedCard==="function"&&_gwConsumedCard(t.id,d&&d.week)))) return;
         d.tasks.push(t); _kIds.add(t.id);
