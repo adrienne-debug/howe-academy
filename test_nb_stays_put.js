@@ -153,5 +153,15 @@ ok("the card carries a Mom-mode ↩ Not done / ✓ Assume done toggle on today's
 ok("it writes one targeted field (tasks/<id>/nbRedo), never in dry-run", /if\(db&&!_dryRun\(\)\)\{ lastTasksWrite=Date\.now\(\); db\.ref\(WK\+"\/tasks\/"\+id\+"\/nbRedo"\)\.set\(on\?true:null\); \}/.test(src));
 ok("Mom-only", /function nbMornNotDone\(id,on\)\{\n  if\(!momHereCards\(\)\) return;/.test(src));
 
+console.log("\n📓 a notebook laid AFTER an earlier card isn't assumed done before its slot (main-session review 2026-10-09)");
+{
+  // Lincoln's real Friday: a 10:00 class first, his Morning Notebook laid at 10:30.
+  const cls = card("lincoln", "10:00 AM", 30, "none", "💻 Outschool Voice Lessons"), mn = card("lincoln", "10:30 AM", 5, "none", "📖 Morning Notebook", { subjectKey: "morning_nb" });
+  const nx = card("lincoln", "10:35 AM", 25, "none", "📖 Science");
+  const L = lay({ tasks: [cls, mn, nx], nowMin: H(10, 15) });
+  ok("at 10:15 the 10:00 class stays at 10:00 (the 10:30 notebook isn't 'done' yet)", L.at(cls.id) === "10:00 AM", L.at(cls.id));
+  const L2 = lay({ tasks: [cls, mn, nx], nowMin: H(10, 50) });
+  ok("once 10:30 has come, the notebook holds its 10:30 slot", L2.at(mn.id) === "10:30 AM", L2.at(mn.id));
+}
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
