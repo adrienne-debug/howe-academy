@@ -26,7 +26,7 @@ ok("shows the card ids (where a tag and its lesson drifted)", /card id …_L0019
 api("lincoln", "conventions", subj, [{ after: "L0020", before: "L0019" }], cards);
 ok("same pair again on this page load → not repeated", lines.length === 1);
 const sfn = slice("seqFillNormalize");
-ok("seqFillNormalize calls it whenever the check fails — before the 'nothing changed' return", sfn.indexOf("seqWarnLog(") > 0 && sfn.indexOf("seqWarnLog(") < sfn.indexOf("if(!res||!res.changed) return;"));
+ok("seqFillNormalize calls it whenever the check fails — before the 'nothing changed' return", sfn.indexOf("seqWarnLog(") > 0 && sfn.indexOf("seqWarnLog(") < sfn.indexOf("if(!res||(!res.changed&&!_idOff)) return;")   /* 🏷 SEQTAGS: the early return also waits for id realignment */);
 ok("no Firebase writes of its own", !/db\.ref|\.set\(|\.update\(/.test(slice("seqWarnLog")));
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
