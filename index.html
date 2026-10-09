@@ -61494,6 +61494,10 @@ function seqFillNormalize(tasks,reason){
         const iso=isoOf(t); return !!(iso&&todayISO&&iso<todayISO); }; }
     const res=seqFillSlots({kid:kid,sk:sk,planId:subj.planId||"",lessonIds:ids,lessonSeq:subj.lessonSeq||[],
       done:taken,cards:groups[key],isLocked:locked,toMin:(typeof toMin==="function")?toMin:null,pin:_pin});
+    // ⚠ SEQWARN (her yes 2026-10-09, out-of-sequence step 1): name the exact cards whenever the order check fails — not
+    // only when a slot was re-stamped — so the next flag says which two lessons, on which days. Logged once per page load
+    // per subject + pair (this pass runs on every load). Read-only: it writes nothing but the _debug line.
+    try{ if(res&&!res.ascending&&res.violations&&res.violations.length) seqWarnLog(kid,sk,subj,res.violations,groups[key]); }catch(eSW){}
     if(!res||!res.changed) return;
     if(_pin&&res.drop.length){   // a pinned slot with nothing it may hold comes off the week (e.g. Monday after the last practice day)
       const _rm=new Set(res.drop.map(d=>d.id));
@@ -61512,12 +61516,26 @@ function seqFillNormalize(tasks,reason){
     });
     if(res.assign.some(a=>a.changed))
       notes.push(key+": "+res.assign.filter(a=>a.changed).map(a=>(a.from||"?")+"→"+a.lid).join(" "));
-    if(!res.ascending) notes.push(key+" ⚠ locked card out of sequence");
+    if(!res.ascending) notes.push(key+" ⚠ locked card out of sequence (see the ⚠ out-of-sequence line)");
   });
   if(changed&&typeof dbg==="function") dbg("seqfill ("+(reason||"?")+"): re-stamped "+changed+" slot"+(changed!==1?"s":"")+" — "+notes.join(" | "));
   // 📦 BOX WATCH — a separate, greppable line so the families dashboard can track the box fix for a week
   if(boxNotes.length&&typeof dbg==="function") dbg("📦 box refill: "+boxNotes.join(" | "));
   return {changed:changed,notes:notes};
+}
+// ⚠ SEQWARN — one readable _debug line per out-of-order pair: "lincoln conventions ⚠ out of sequence: L0020 'Sitting 3' (wed
+// 10:30 AM, ✓ checked, card id …_L0019) sits before L0019 'Sitting 2' (fri 11:56 AM, open, card id …_L0020)".
+const _seqWarned={};
+function seqWarnLog(kid,sk,subj,violations,cards){
+  const ids=(subj&&subj.lessonIds)||[], seq=(subj&&subj.lessonSeq)||[];
+  const txt=function(l){ const i=ids.indexOf(l); return i>=0?String(seq[i]||""):""; };
+  const cardOf=function(l){ return (cards||[]).find(function(t){ return t&&(t.lid===l||t.id===l); })||null; };
+  const desc=function(l){ const c=cardOf(l); const done=c&&((typeof checked!=="undefined"&&checked&&checked[c.id])||(typeof claimed!=="undefined"&&claimed&&claimed[c.id]));
+    return l+" '"+txt(l).slice(0,40)+"' ("+(c?(String(c.day||"?").slice(0,3)+" "+(c.time||"?")+", "+(done?"✓ checked":"open")+", card id …"+String(c.id).slice(-6)):"no card")+")"; };
+  violations.forEach(function(v){
+    const sig=kid+"|"+sk+"|"+v.after+"|"+v.before; if(_seqWarned[sig]) return; _seqWarned[sig]=true;
+    if(typeof dbg==="function") dbg("⚠ out of sequence — "+kid+" "+sk+": "+desc(v.after)+" sits before "+desc(v.before));
+  });
 }
 // SEQFILL_END
 // LID_ID_START — Stage 3c: deterministic ids for plan-backed cards.
