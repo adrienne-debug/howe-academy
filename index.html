@@ -1454,7 +1454,7 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
   <button class="nav-tab" onclick="showTab('mastery')" data-tab="mastery">Mastery</button>
   <button class="nav-tab" onclick="showTab('units')" data-tab="units">Units</button>
   <button class="nav-tab" onclick="showTab('play')" data-tab="play">School Room</button>
-  <button class="nav-tab" onclick="showTab('moms-plan')" data-tab="moms-plan">Mom's Day</button>
+  <button class="nav-tab" onclick="showTab('moms-plan')" data-tab="moms-plan" style="position:relative">Mom's Day<span id="hb-badge" style="display:none;position:absolute;top:2px;right:2px;min-width:16px;height:16px;line-height:16px;padding:0 4px;box-sizing:border-box;border-radius:8px;background:#dc2626;color:#fff;font-size:10px;font-weight:800;text-align:center"></span></button>
   <button class="nav-tab" onclick="showTab('kids')" data-tab="kids">Kids' Corner</button>
   <button class="nav-tab" onclick="showTab('babysitter')" data-tab="babysitter" id="sitter-tab-btn">Maggie</button>
 </div>
@@ -4369,6 +4369,7 @@ function renderAll(){
   // Same for an open 🏪/🙌 pop-up: buying, grabbing and approving all end in renderAll,
   // so the overlay has to rebuild or it shows the balance from before the tap.
   try{ if(popView&&popKid&&document.getElementById("kid-pop")) _popPaint(); }catch(e){}
+  try{ hbAlertsSoon(); }catch(e){}   // 🔴 HBALERT: the Mom's Day tab's red number + the person-waiting ding
 }
 function _renderAllInner(){
   try{ if(tab==="schedule"&&!momSchedView){ _momSuspend(); if(kid==="mom") kid="all"; } else _momResume(); }catch(e){}   // 🧒 KIDSLENS
@@ -12135,6 +12136,144 @@ function mdCardDinner(iso){
   return h;
 }
 
+// HBALERT_START — 🔴 Home Base alerts (her ask 2026-10-09). Three levels:
+//   🔔 ding + red number — a PERSON is waiting: a kid tapped 🙋 I need Mom, a new message (Adrienne's reply, a note or
+//      questions from her), a card sent to Mom for checking. The ding plays only on a Mom device (Mom mode on here).
+//   🔴 red number only — close-out items (a finished book, a star ask, the Star Store, unit activity, study-session
+//      flags, spelling tests to grade) and reminders (bills due, laundry sitting, kitchen prep, roadmap this week).
+//   neither — everything else on Home Base just waits there.
+// The red number on the "Mom's Day" tab = alerts NEW since Mom last opened 🏡 Home Base on this device; opening Home
+// Base clears it. Every alert is a stable key (kind:id), so "new" = a key this device hasn't had on Home Base yet.
+// A one-time banner on Home Base explains the levels; "Got it" is remembered on this device.
+// All per device (HA_LS) — nothing is written to the database:
+//   ha_hb_seen = [keys] that were on Home Base when it was open here · ha_hb_dinged = [keys] already dinged (a reload
+//   never re-dings) · ha_hb_tip = "1" after Got it.
+const HB_DING_KINDS={need:1,msg:1,check:1}, HB_KEEP=400;
+let hbTickT=null, hbDingAt=0;
+function hbLoad(k){ try{ const v=JSON.parse(HA_LS.getItem(k)||"[]"); return Array.isArray(v)?v:[]; }catch(e){ return []; } }
+function hbSave(k,arr){ try{ HA_LS.setItem(k,JSON.stringify(arr.slice(-HB_KEEP))); }catch(e){} }
+function hbMap(arr){ const m={}; arr.forEach(x=>{ m[x]=1; }); return m; }
+// Cards claimed done and not yet checked — the same cards as Home Base's ⏳ Waiting for your check (cheap: no re-time).
+function hbClaimedWaiting(){
+  const src=(typeof displacedResult!=="undefined"&&displacedResult&&displacedResult.tasks)||((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]);
+  const live={}; (src||[]).forEach(t=>{ if(t&&t.id) live[t.id]=1; });
+  const cl=(typeof claimed!=="undefined"&&claimed)||{}, ck=(typeof checked!=="undefined"&&checked)||{};
+  return Object.keys(cl).filter(id=>cl[id]&&!ck[id]&&live[id]&&!String(id).endsWith("_c"));
+}
+// → [{kind:"need"|"msg"|"check"|"close"|"remind", key}] — everything Home Base would put in front of her right now.
+function hbAlertItems(){
+  const out=[], add=(kind,id)=>out.push({kind:kind,key:kind+":"+id});
+  const kids=(typeof SL_KIDS!=="undefined"&&SL_KIDS)||(typeof ROSTER!=="undefined"&&ROSTER)||[];
+  // 🔔 a person is waiting
+  try{ hrOpenList().forEach(([id])=>add("need",id)); }catch(e){}
+  try{ msgReplyList().forEach(([id,m])=>{ const r=msgAdrReplies(m); add("msg",id+"@"+((r[r.length-1]||{}).at||0)); }); }catch(e){}
+  try{ wsNoteList().concat(wsOpenList()).forEach(([id])=>add("msg","ws_"+id)); }catch(e){}
+  try{ hbClaimedWaiting().forEach(id=>add("check",id+"@"+claimed[id])); }catch(e){}
+  // 🔴 close-out — the yes/no rows in 🔴 Now, study flags, spelling tests to grade
+  kids.forEach(k=>{
+    try{ rlBooks(k).forEach(b=>{ if(b&&b.finishClaim&&b.status!=="done") add("close","book_"+k+"_"+b.id); }); }catch(e){}
+    try{ prPending(k).forEach(r=>add("close","stars_"+k+"_"+r.id)); }catch(e){}
+    try{ _rwWds(k).forEach(w=>{ if(w&&(w.status==="pending"||w.status==="owed")) add("close","store_"+k+"_"+w.id+"_"+w.status); }); }catch(e){}
+  });
+  try{
+    if(typeof unitStudies!=="undefined"&&unitStudies) for(const uid in unitStudies){
+      const u=unitStudies[uid]; if(!u||!u.activityClaims) continue;
+      for(const k in u.activityClaims) for(const ak in (u.activityClaims[k]||{})){
+        if(((u.activityLog||{})[k]||{})[ak]) continue;
+        if(!_unitActs(u).find(a=>a&&a.key===ak)) continue;
+        add("close","unit_"+uid+"_"+k+"_"+ak);
+      }
+    }
+  }catch(e){}
+  try{ const keep=_mstAlertList; try{ mstAlertsAll().filter(a=>a.kind!=="redone").forEach(a=>add("close","study_"+a.kid+"_"+a.kind+"_"+(a.sid||a.text))); } finally { _mstAlertList=keep; } }catch(e){}   // mstAlertsAll re-sets the row list its buttons index into
+  try{ stPendingList().forEach(s=>add("close","spell_"+s.kid+"_"+s.key)); }catch(e){}
+  // 🔴 reminders
+  try{
+    const iso=_todayStr();
+    Object.keys(billsData||{}).forEach(id=>{ const st=billState(billsData[id],iso); if(st.state==="overdue"||st.state==="due") add("remind","bill_"+id+"_"+st.due); });
+  }catch(e){}
+  try{
+    Object.keys(laundryData||{}).forEach(id=>{
+      const l=laundryData[id]; if(!l||(l.stage!=="washer"&&l.stage!=="dryer")) return;
+      const mins=Math.round((Date.now()-(l.ts||0))/60000);
+      if(mins>=(l.stage==="dryer"?laundryT("dry"):laundryT("wash"))+laundryT("grace")) add("remind","wash_"+id+"_"+l.stage+"_"+(l.ts||0));
+    });
+  }catch(e){}
+  try{ kitDuePrep().forEach(s=>add("remind","prep_"+s.iso+"_"+s.mid+"_"+s.idx)); }catch(e){}
+  try{ const iso=_todayStr(); kids.forEach(k=>rmList(k).forEach(r=>{ const st=rmState(r,iso); if(st==="over"||st==="week") add("remind","road_"+k+"_"+r.id); })); }catch(e){}
+  return out;
+}
+function hbNotMomDevice(){
+  return ["_kiosk","_kioskR","_kioskD","_kioskK"].some(f=>{ try{ return typeof window!=="undefined"&&typeof window[f]==="function"&&window[f](); }catch(e){ return false; } });
+}
+// The ding: Mom mode really on here (not set aside by the kids' Schedule), never on a kiosk or Dad's link.
+function hbDingHere(){ return !hbNotMomDevice()&&typeof momHereReal==="function"&&momHereReal(); }
+function hbBadgePaint(n){
+  if(typeof document==="undefined") return;
+  const b=document.getElementById("hb-badge"); if(!b) return;
+  const show=n>0&&!hbNotMomDevice();
+  b.textContent=show?(n>99?"99+":String(n)):"";
+  b.style.display=show?"inline-block":"none";
+}
+// A soft two-note ding on the context any tap already unlocked (bbAudioUnlock) — never more than once in 4 s.
+function hbDing(){
+  const now=Date.now(); if(now-hbDingAt<4000) return; hbDingAt=now;
+  try{
+    if(!bbAlarmCtx||bbAlarmCtx.state==="closed") bbAlarmCtx=new (window.AudioContext||window.webkitAudioContext)();
+    const ctx=bbAlarmCtx;
+    if(ctx.state==="suspended"){ try{ ctx.resume().catch(function(){}); }catch(e){} }
+    [988,1319].forEach((f,i)=>{
+      const o=ctx.createOscillator(),g=ctx.createGain();
+      o.type="sine"; o.connect(g); g.connect(ctx.destination); o.frequency.value=f;
+      const t0=ctx.currentTime+i*0.18;
+      g.gain.setValueAtTime(0.001,t0);
+      g.gain.exponentialRampToValueAtTime(0.25,t0+0.02);
+      g.gain.exponentialRampToValueAtTime(0.001,t0+0.6);
+      o.start(t0); o.stop(t0+0.62);
+    });
+  }catch(e){}
+}
+// After every repaint (debounced): the badge = keys not seen on Home Base here; a ding for a NEW person-waiting key.
+// A person-waiting key is remembered as handled the first time this device sees it, Mom device or not — so the ding
+// is the moment it arrives, never later when Mom mode comes on.
+function hbAlertsTick(){
+  hbTickT=null;
+  const items=hbAlertItems(), seen=hbMap(hbLoad("ha_hb_seen"));
+  hbBadgePaint(items.filter(x=>!seen[x.key]).length);
+  const dinged=hbLoad("ha_hb_dinged"), dm=hbMap(dinged);
+  const nu=items.filter(x=>HB_DING_KINDS[x.kind]&&!dm[x.key]);
+  if(!nu.length) return;
+  hbSave("ha_hb_dinged",dinged.concat(nu.map(x=>x.key)));
+  if(hbDingHere()) hbDing();
+}
+function hbAlertsSoon(){ if(hbTickT) return; try{ hbTickT=setTimeout(hbAlertsTick,250); }catch(e){ hbTickT=null; } }
+// 🏡 Home Base painted → everything on it now counts as seen on this device; the badge clears.
+function hbAlertsSeen(){
+  if(hbNotMomDevice()) return;
+  const prev=hbLoad("ha_hb_seen"), pm=hbMap(prev);
+  const add=hbAlertItems().map(x=>x.key).filter(k=>!pm[k]);
+  if(add.length) hbSave("ha_hb_seen",prev.concat(add));
+  hbBadgePaint(0);
+}
+// (c) the one-time banner
+function hbTipHTML(){
+  try{ if(HA_LS.getItem("ha_hb_tip")==="1") return ""; }catch(e){}
+  const row=(ic,hd,tx)=>'<div style="display:flex;gap:9px;align-items:flex-start;margin-top:7px"><span style="font-size:16px;flex:none;width:22px;text-align:center">'+ic+'</span>'+
+    '<div style="font-size:12.5px;color:#334155;line-height:1.45"><b style="color:#0f172a">'+hd+'</b> — '+tx+'</div></div>';
+  return '<div id="hb-tip" style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);padding:12px 14px 13px;border-left:4px solid #b5394a">'+
+    '<div style="font-weight:800;font-size:13px;color:#0f172a">🔔 How Home Base gets your attention</div>'+
+    row('🔔','Ding + red number','someone is waiting on you: a kid tapped “I need Mom”, a new message, or a card sent to you for checking. The ding plays only on a device in Mom mode.')+
+    row('<span style="display:inline-block;min-width:16px;height:16px;line-height:16px;border-radius:8px;background:#dc2626;color:#fff;font-size:10px;font-weight:800">1</span>','Red number only','things to close out (a finished book, a star ask, the Star Store, study flags, spelling tests to grade) and reminders (bills, laundry, kitchen prep, the roadmap).')+
+    row('·','Neither','everything else just waits here on Home Base.')+
+    '<div style="font-size:12px;color:#64748b;margin-top:8px">The red number on the Mom\'s Day tab counts what\'s new since you last opened Home Base. Opening Home Base clears it.</div>'+
+    '<button onclick="hbTipGotIt()" style="margin-top:10px;padding:8px 20px;border-radius:10px;border:none;background:#2B7A78;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Got it</button></div>';
+}
+function hbTipGotIt(){
+  try{ HA_LS.setItem("ha_hb_tip","1"); }catch(e){}
+  try{ const el=document.getElementById("hb-tip"); if(el) el.remove(); }catch(e){}
+}
+// HBALERT_END
+
 function renderMomsDay(el){
   if(!el){el=document.getElementById("content");if(!el)return;}
   const today=mdTodayName();
@@ -12159,6 +12298,7 @@ function renderMomsDay(el){
     +'</div></div>';
   h+=mpSubnav('plan');
   h+='<div style="padding:12px 12px 0;display:flex;flex-direction:column;gap:11px">';
+  try{ h+=hbTipHTML(); }catch(e){}   // 🔴 HBALERT: the one-time "how alerts work" banner
 
   // today's calendar banner (family events / co-ops happening today)
   try{ const eb=calEventBanner(today,"all"); if(eb) h+=eb; }catch(e){}
@@ -12343,6 +12483,7 @@ function renderMomsDay(el){
 
   h+='</div></div>';
   el.innerHTML=h;
+  try{ hbAlertsSeen(); }catch(e){}   // 🔴 HBALERT: Home Base is open → the tab's red number clears
 }
 
 
