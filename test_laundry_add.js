@@ -18,10 +18,10 @@ ok("Dad's Day card unchanged: start box still there", /id="laundry-label"/.test(
 ok("Mom's Day card: no start box of its own", !/id="laundry-label"/.test(card(one, true)) && /Towels/.test(card(one, true)));
 ok("Mom's Day card hides when nothing is running", card({}, true) === "");
 const strip = slice("momDayStripHTML");
-const iTodo = strip.indexOf('id="md-todo-new"'), iLaun = strip.indexOf('id="laundry-label"'), iShop = strip.indexOf("colHd('🛒','Shopping'");
+const iTodo = strip.indexOf('id="\'+P.todoInp+\'"'), iLaun = strip.indexOf('id="laundry-label"'), iShop = strip.indexOf("colHd('🛒','Shopping'");
 ok("Home Base: Start a load sits right under the to-do box, before Shopping", iTodo > 0 && iLaun > iTodo && iShop > iLaun);
 ok("…same start action (laundryAdd)", /onclick="laundryAdd\(\)"/.test(strip.slice(iLaun - 400, iLaun + 900)));
 ok("Mom's Day draws the card in running-loads mode", /h\+=mdCardLaundry\(true\);/.test(slice("renderMomsDay")));
-ok("Dad's Day still draws the full card", /h\+=mdCardLaundry\(\);/.test(slice("renderDadsDay")));
+ok("Dad's Day (👨 DADMYDAY): Start a load lives in his 🏡 My day, card in running-loads mode", /h\+=mdCardLaundry\(true\);/.test(slice("renderDadsDay")) && /momDayStripHTML\(iso,dn,"dad"\)/.test(slice("renderDadsDay")));
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
