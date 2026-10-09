@@ -129,36 +129,15 @@ global.mlQueueLay = ts => ts.map(t => t.id === "a2" ? Object.assign({}, t, { tim
 global.dsDoneAtTime = ts => ts.map(t => t.id === "a4" ? Object.assign({}, t, { time:"9:40 AM" }) : t);
 TODAY = "2026-08-10"; BREAK = null;
 
+// 👩 MSV (her ask 2026-10-08): the Mom / All schedule card left 🏡 Home Base — Mom's Day ▸ 🗓 Schedule ▸ Today is now the
+// real Schedule page (its own live lay + tests). This file keeps guarding that Home Base doesn't grow a second copy.
 (() => {
   M.mpSetSched("mom"); agendaArgs = null;
   M.renderMomsDay(elStub);
-  const by = Object.fromEntries((agendaArgs || []).map(t => [t.id, t]));
-  ok("Mine: schedule section still on the page", elStub.innerHTML.includes("school schedule") && elStub.innerHTML.includes('id="agenda"'));
-  ok("Mine: re-laid card shows its LIVE time (10:00 → 11:30)", by.a2 && by.a2.time === "11:30 AM", by.a2);
-  ok("Mine: ✓ card sits at the time it was really done", by.a4 && by.a4.time === "9:40 AM", by.a4);
-  ok("Mine: an open card that no longer fits today leaves the timeline", !by.a3, Object.keys(by));
-  ok("Mine: still only Mom cards", !by.a5 && !!by.a1);
-})();
-(() => {
+  ok("🏡 Home Base has no schedule card (it's the real Schedule under Mom's Day ▸ 🗓 Schedule now)", !elStub.innerHTML.includes("school schedule") && agendaArgs === null);
   M.mpSetSched("all"); agendaArgs = null;
   M.renderMomsDay(elStub);
-  const by = Object.fromEntries((agendaArgs || []).map(t => [t.id, t]));
-  ok("All: live times too", by.a2 && by.a2.time === "11:30 AM" && by.a4 && by.a4.time === "9:40 AM", agendaArgs);
-  ok("All: kid-only card included, off-day card not", !!by.a5 && !by.a3, Object.keys(by));
-})();
-(() => {
-  global.checked = { a4: "9:40 AM Aug 10", a3: "12:55 PM Aug 10" };   // a fell-off card that IS done stays
-  M.mpSetSched("mom"); agendaArgs = null;
-  M.renderMomsDay(elStub);
-  ok("a ✓ card past school end stays on the timeline", (agendaArgs || []).some(t => t.id === "a3"));
-})();
-(() => {
-  const keep = [global.mlQueueLay, global.dsDoneAtTime];
-  delete global.mlQueueLay; delete global.dsDoneAtTime;
-  M.mpSetSched("mom"); agendaArgs = null;
-  M.renderMomsDay(elStub);
-  ok("no loop helpers (older page) → falls back to the planned list, section still drawn", (agendaArgs || []).some(t => t.id === "a2" && t.time === "10:00 AM") && elStub.innerHTML.includes('id="agenda"'));
-  [global.mlQueueLay, global.dsDoneAtTime] = keep;
+  ok("…for All too", !elStub.innerHTML.includes("Everyone's schedule") && agendaArgs === null);
 })();
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

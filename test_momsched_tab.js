@@ -40,6 +40,7 @@ function world(o) {
     toMin: t => { const m = /(\d+):(\d+) (AM|PM)/.exec(t || ""); if (!m) return null; let h = +m[1] % 12; if (m[3] === "PM") h += 12; return h * 60 + +m[2]; },
     fromMin: m => m + "m", taskTitleShow: t => t.title,
     db: { ref: p => ({ set: v => log.writes.push(p), update: v => log.writes.push(p) }) },
+    momSchedView: false, tab: "moms-plan", showTab: t => log.calls.push("showTab:" + t), msvEnter: () => log.calls.push("msvEnter"),
   };
   let api_state = () => null;
   const keys = Object.keys(env);

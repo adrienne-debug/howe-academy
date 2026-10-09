@@ -97,7 +97,7 @@ ok(e.helperGivenTo(T[3])==="g"&&!e.__writes.length,"dry run / no db: works on sc
 
 // The wiring.
 ok(/db\.ref\("helperGive"\)\.orderByKey\(\)\.limitToLast\(3\)\.on\("value"/.test(src),"helperGive listener (last 3 days only)");
-ok(/helperGiveBtnsHTML\(\)[^\n]*HELPERGIVE[^\n]*\n/.test(src.slice(src.indexOf("function renderMomsDay"),src.indexOf("function renderMomsDay")+8000)),"button on Mom's Day");
+ok(/give=helperGiveBtnsHTML\(\)/.test(src.slice(src.indexOf("function msvBarHTML"),src.indexOf("function msvBarHTML")+2000)),"button on Mom's Day ▸ 🗓 Schedule (moved from 🏡 Home Base, 👩 MSV)");
 ok(/if\(day===_todayDay\)\{ try\{ h\+=helperGiveBtnsHTML\(\); \}/.test(src),"button on today's schedule (Mom mode only, inside the function)");
 ok(!/db\.ref\("helperGive"\)\.set\(/.test(src),"never a whole-node set of helperGive");
 

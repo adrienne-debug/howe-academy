@@ -1459,6 +1459,7 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
   <button class="nav-tab" onclick="showTab('babysitter')" data-tab="babysitter" id="sitter-tab-btn">Maggie</button>
 </div>
 
+<div id="msv-bar" style="display:none"></div>
 <div id="sched-subtabs" style="display:none"></div>
 <div id="day-tabs"></div>
 <div id="kid-filter"></div>
@@ -2713,6 +2714,7 @@ let pnwPendingWeek=null;
 let currViewKid=FIRST_KID;
 let currViewWeek=null;
 let adminPinUnlocked=false;
+var momSchedView=false, _msvPrevKid=null;   // 👩 MSV: Mom's Day ▸ Schedule is showing the Schedule page (declared early: showTab/renderSchedule read it)
 // 👩 UNIMOM (her rules 2026-10-05/06: "mom mode should be universal for wherever it is turned on and can be turned off with clicking mom
 // mode on schedule" · "and stays on that device"): ONE switch behind every Mom door. Any code typed (Mom button, Admin, Notebook, Units,
 // Mastery, Blockouts, Plan next week, the kitchen/grocery prompts) turns it on; the Mom button lights; it is remembered on THIS device
@@ -4276,14 +4278,15 @@ function renderSkylight(){
 }
 
 // ── TAB ROUTING ───────────────────────────────────────────────────
-function showTab(t){
+function showTab(t,keepMsv){
+  if(!keepMsv&&typeof msvExit==="function") msvExit();   // 👩 MSV: tapping any tab leaves Mom's Day ▸ Schedule
   if(_kiosk()&&t!=="play") return;   // kiosk console is locked to Play
   if(_kioskR()&&t!=="schedule") return;  // 🧭 General tablet is locked to its own views (routines / points / store / Mom+Dad lanes)
   if(_kioskD()&&t!=="moms-plan") return; // 👨 Dad's link is locked to his page
   if(_kioskK()&&t!=="kids") return;      // 🧒 Kids' Corner link is locked to the Corner
   tab=t;
   mastAddMode=false; mastLogMode=false; mastLogScores={};
-  document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===t||(t==="supplies"&&b.dataset.tab==="schedule")));
+  document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",(momSchedView&&t==="schedule")?b.dataset.tab==="moms-plan":(b.dataset.tab===t||(t==="supplies"&&b.dataset.tab==="schedule"))));
   if(t!=="schedule"){ schedShowAdmin=false; schedShowHistory=false; schedShowPace=false; schedShowBoard=false; schedShowPeek=false; }
   if(t!=="moms-plan") mpDay=null;   // 🧒 Kids always reopens on TODAY — a stale peek-ahead day is the bug class that bit routine check-offs
   if(t==="kids"){ try{ day=_todayDay; }catch(e){} }   // 🧒 Corner lists are today's — never a day Mom left the schedule on
@@ -4295,6 +4298,7 @@ function showTab(t){
 }
 
 function renderSchedSubtabs(){
+  try{ const mb=document.getElementById("msv-bar"); if(mb){ const on=(momSchedView&&tab==="schedule"); mb.style.display=on?"block":"none"; mb.innerHTML=on?msvBarHTML():""; } }catch(e){}   // 👩 MSV
   const el=document.getElementById("sched-subtabs");
   if(tab!=="schedule"){el.style.display="none";return;}
   el.style.display="flex";
@@ -4502,7 +4506,7 @@ function dayPct(d){
 // ── KID FILTER ────────────────────────────────────────────────────
 function renderKidFilter(){
   document.getElementById("kid-filter").innerHTML=
-    ["all",...ROSTER,"mom"].map(k=>{
+    ((typeof momSchedView!=="undefined"&&momSchedView)?["mom","all",...ROSTER]:["all",...ROSTER,"mom"]).map(k=>{   // 👩 MSV: Mom first on Mom's Day
       const isActive = (k===kid&&!(k==="all"&&typeof helperViewActive==="function"&&helperViewActive())) || (k==="mom" && momModeActive);
       return '<button class="kid-btn'+(isActive?" active":"")+'" data-kid="'+k+'" onclick="selKid(\''+k+'\')">'+
         (k==="mom" && momModeActive ? "✓ Mom" : cap(k))+'</button>';
@@ -8248,7 +8252,7 @@ function renderSchedule(el){
   // Stage 2: the kid's own "Mom's ready for you" banner — their page only, today only.
   if(day===_todayDay&&kid!=="all"&&kid!=="mom"){ try{ h+=mlBannerHTML(kid); }catch(e){} }
   if(day===_todayDay&&kid!=="all"&&kid!=="mom"){ try{ h+=hrKidButtonHTML(kid); }catch(e){} }   // 🙋 NEEDMOM: the kid's own page (hidden when Mom is here)
-  if(day===_todayDay&&momHere()){ try{ const _hr=hrMomCardHTML((kid!=="all"&&kid!=="mom")?kid:null); if(_hr) h+='<div style="margin:0 0 10px">'+_hr+'</div>'; }catch(e){} }   // 🙋 NEEDMOM: who asked for Mom → ✓ Helped
+  if(day===_todayDay&&momHere()&&!momSchedView){ try{ const _hr=hrMomCardHTML((kid!=="all"&&kid!=="mom")?kid:null); if(_hr) h+='<div style="margin:0 0 10px">'+_hr+'</div>'; }catch(e){} }   // 🙋 NEEDMOM: who asked for Mom → ✓ Helped
   if(momHere()&&schedDayOffOpen) h+=schedRenderDayOffPicker(day);
 
   if(CONSTRAINT[day]){
@@ -10536,7 +10540,14 @@ function renderMomsPlanView(el){
   if(mpSubView!=='grocery') grFromDad=(mpSubView==='dad'||mpSubView==='dadcal');   // 🛒 the list remembers which page opened it
   if(mpSubView==='grocery'){ return renderGrocery(el); }
   if(mpSubView==='meals'){ return renderKitchen(el); }
-  if(mpSubView==='cal'){ return renderMPCalendar(el); }
+  if(mpSubView==='cal'){
+    if(mpSchModeGet()==="today"){   // 👩 MSV: Today is the Schedule page itself
+      el.innerHTML='<div style="padding:30px;text-align:center;color:var(--muted);font-family:\'DM Sans\',sans-serif">Opening the schedule…</div>';
+      setTimeout(function(){ if(tab==="moms-plan"&&mpSubView==="cal"&&mpSchModeGet()==="today") msvEnter(); },0);
+      return;
+    }
+    return renderMPCalendar(el);
+  }
   if(mpSubView==='dad'){ return renderDadsDay(el); }
   if(mpSubView==='dadcal'){ return renderDadCalendar(el); }
   renderMomsDay(el);
@@ -12121,7 +12132,7 @@ function renderMomsDay(el){
   // and it was ninth — below Now, Order day, Today, Star Bank, her schedule, the
   // weigh-in, Win of the day and Use soon. Her own day should not need scrolling to.
   try{ h+=hrMomCardHTML(null,"md"); }catch(e){}   // 🙋 NEEDMOM: a kid asked for Mom → ✓ Helped (first: it's happening now)
-  try{ h+=helperGiveBtnsHTML(); }catch(e){}   // 🙋 HELPERGIVE: "Give Grandma more today"
+  // 🙋 HELPERGIVE "Give Grandma more today" moved to Mom's Day ▸ 🗓 Schedule (her design 2026-10-08) — it's a Mom tool.
   try{ h+=momDayStripHTML(iso,today); }catch(e){}
   try{ h+=wsTaskHTML(); }catch(e){}   // 📋 From Adrienne — tap to answer, ✓ once sent
   try{ if(typeof stPendingHTML==="function") h+=stPendingHTML(); }catch(e){}   // 📝 spelling tests waiting to be graded
@@ -12219,35 +12230,7 @@ function renderMomsDay(el){
   // a check-off there (and on every device) — one `checked` map, two mirrors.
   // kid/day are pinned only for the synchronous agenda build, then restored,
   // so the Schedule tab's own view state is untouched.
-  if(isSchoolDay){
-    try{
-      // Both views are the REAL schedule — same taskCards, so a check-off here is a
-      // check-off on the Schedule tab and on every other device. kid/day are pinned only
-      // for the synchronous build, exactly as the Mom agenda already did.
-      const _isAll=(mpSched==="all");
-      // 🔁 The LIVE day, exactly as Schedule lays it (her ask 2026-10-07: "reflect actual schedule", not the day it
-      // started with): the Mom loop re-packs around where she is, ✓ cards sit at their real time, and open cards
-      // that fell off the bottom of today (_offDay) leave the timeline, same as Schedule's "didn't fit today".
-      const _live=(typeof mlQueueLay==="function"&&typeof dsDoneAtTime==="function")
-        ? dsDoneAtTime(mlQueueLay(getActiveTasks())).filter(t=>t&&!(t._offDay&&!checked[t.id]))
-        : getActiveTasks();
-      const agTasks=_isAll
-        ? _live.filter(t=>t&&effectiveDay(t)===today&&!String(t.id).endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title||""))
-        : (typeof famMomView==="function"?famMomView:function(x){ return x; })(_live).filter(t=>t&&(t.mom==="required"||t.mom==="maybe"||(typeof famIsMomCard==="function"&&famIsMomCard(t)))
-            &&effectiveDay(t)===today&&!String(t.id).endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title||""));
-      const _pk=kid,_pd=day; let agHtml="";
-      try{
-        kid=_isAll?"all":"mom"; day=today;
-        agHtml=_isAll?allAgendaHtml(agTasks):momAgendaHtml(agTasks);
-      } finally { kid=_pk; day=_pd; }
-      const _tab=(v,lab)=>'<span onclick="mpSetSched(\''+v+'\')" style="cursor:pointer;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:'+(mpSched===v?'800':'600')+';background:'+(mpSched===v?'rgba(255,255,255,0.28)':'rgba(255,255,255,0.10)')+';color:#fff">'+lab+'</span>';
-      h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
-      h+='<div style="display:flex;align-items:center;gap:6px;padding:11px 14px;background:#6B4C93;color:#fff;font-weight:800;font-size:13px;flex-wrap:wrap">'
-        +'<span>📖</span> '+(_isAll?'Everyone\'s schedule':'Mom\'s school schedule')
-        +'<span style="flex:1"></span>'+_tab("mom","📖 Mine")+_tab("all","👨‍👩‍👧‍👦 All")+'</div>';
-      h+='<div style="padding:6px 8px 10px">'+agHtml+'</div></div>';
-    }catch(e){}
-  }
+  // 📖 The Mom / All schedule card left 🏡 Home Base (her design 2026-10-08): Mom's Day ▸ 🗓 Schedule IS the Schedule now.
 
   // ── ⚖️ Quick weigh-in — same input ids + save path as the Weigh-In
   // subview (mwSaveWeighin reads #wi-date/#wi-lb; #wi-note absent → '').
@@ -16271,6 +16254,31 @@ let mpCalMode=null, mpCalWho="family";
 function mpCalGet(){ if(mpCalMode) return mpCalMode; try{ const v=HA_LS.getItem("ha_mp_calmode"); mpCalMode=(v==="today")?"today":"month"; }catch(e){ mpCalMode="month"; } return mpCalMode; }
 function mpCalSet(v){ mpCalMode=(v==="today")?"today":"month"; try{ HA_LS.setItem("ha_mp_calmode",mpCalMode); }catch(e){} calDaySel=null; renderAll(); }
 function mpCalWhoSet(w){ mpCalWho=(ROSTER.indexOf(w)>=0)?w:"family"; calDaySel=null; kcAddIso=null; renderAll(); }
+// 👩 MSV — Mom's Day ▸ 🗓 Schedule ▸ Today IS the Schedule page (her ask 2026-10-08 after step 1 went live: "i really want it
+// to look just like the before deploy on the main page but mom mode first then all then kids and helper ... all the mom tools
+// and totals ... exactly the same but mom mode on minus notifications which go to homebase"). Entering switches the page to
+// the real Schedule (day tabs, kid row, lights, week strip, cards, every Mom-mode tool) with the Mom's Day tabs on top,
+// 👩 Mom first in the kid row, and the 🙋 I-need-Mom card left on 🏡 Home Base. The kid picked before is handed back on exit.
+function msvEnter(){
+  if(momSchedView&&tab==="schedule"){ renderAll(); return; }
+  momSchedView=true; _msvPrevKid=kid;
+  try{ helperView=null; }catch(e){}
+  kid="mom";
+  showTab("schedule",true);
+  try{ window.scrollTo(0,0); }catch(e){}
+}
+function msvExit(){
+  if(!momSchedView) return;
+  momSchedView=false;
+  if(_msvPrevKid!=null){ kid=_msvPrevKid; _msvPrevKid=null; }
+}
+function msvBarHTML(){
+  const mode=mpSchModeGet();
+  const tb=(v,lbl)=>'<button onclick="mpSchSet(\''+v+'\')" style="flex:1;padding:7px 10px;border-radius:20px;border:2px solid #2B7A78;background:'+(mode===v?'#2B7A78':'#fff')+';color:'+(mode===v?'#fff':'#2B7A78')+';font-size:12.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
+  let give=''; try{ give=helperGiveBtnsHTML(); }catch(e){}   // 🙋 HELPERGIVE moved here from 🏡 Home Base — it's a Mom tool
+  return mpSubnav('cal')+'<div style="display:flex;gap:8px;padding:8px 12px;max-width:520px;margin:0 auto">'+tb('today','\u{1F4C6} Today')+tb('week','\u{1F5D3} Week')+tb('month','\u{1F5D3} Month')+'</div>'
+    +(give?'<div style="padding:0 12px 8px">'+give+'</div>':'');
+}
 function renderMPCalendar(el){
   // 🗓 MOMSCHED_TAB (her ask 2026-10-08): Mom's Day ▸ Calendar became ▸ Schedule — Today · Week · Month.
   const mode=mpSchModeGet();
@@ -16289,7 +16297,11 @@ function renderMPCalendar(el){
 let mpSchMode=null, mpSchWho="mom", mpSchDay=null;
 function mpSchModeGet(){ if(mpSchMode) return mpSchMode; try{ const v=HA_LS.getItem("ha_mp_schmode"); mpSchMode=(v==="week"||v==="month")?v:"today"; }catch(e){ mpSchMode="today"; } return mpSchMode; }
 function _mpSchRender(){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); }
-function mpSchSet(v){ mpSchMode=(v==="week"||v==="month")?v:"today"; try{ HA_LS.setItem("ha_mp_schmode",mpSchMode); }catch(e){} calDaySel=null; _mpSchRender(); }
+function mpSchSet(v){ mpSchMode=(v==="week"||v==="month")?v:"today"; try{ HA_LS.setItem("ha_mp_schmode",mpSchMode); }catch(e){} calDaySel=null;
+  mpSubView="cal";
+  if(mpSchMode==="today"){ msvEnter(); return; }          // 👩 MSV
+  if(momSchedView||tab!=="moms-plan"){ showTab("moms-plan"); return; }
+  _mpSchRender(); }
 function mpSchWhoSet(w){ mpSchWho=(w==="all"||ROSTER.indexOf(w)>=0)?w:"mom"; calDaySel=null; _mpSchRender(); }
 function mpSchDayNow(){ return mpSchDay||mdTodayName(); }
 function mpSchDaySet(d){ mpSchDay=(DAYS_ALL.indexOf(d)<0||d===mdTodayName())?null:d; mpSchMode="today"; _mpSchRender(); }
@@ -16406,7 +16418,8 @@ function mpSubnav(active){
   const btn=(v,lbl)=>`<button onclick="mpGoto('${v}')" style="flex:1 1 auto;white-space:nowrap;padding:9px 6px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;border:none;border-radius:9px;cursor:pointer;color:${active===v?'#fff':'#9ca3af'};background:${active===v?'#2B7A78':'transparent'};transition:all .2s;white-space:nowrap">${lbl}</button>`;
   return `<div style="display:flex;flex-wrap:wrap;gap:4px;background:#fff;border-bottom:2px solid #DEF2F1;padding:8px 10px">${btn('plan','🏡 Home Base')}${btn('cal','🗓 Schedule')}${btn('meals','🍽 Meals')}${btn('grocery','🛒 Grocery List')}${btn('prep','🧃 Prep')}${btn('weigh','⚖️ Weigh-In')}</div>`;
 }
-function mpGoto(v){ mpSubView=v; const el=document.getElementById('content'); if(el) renderMomsPlan(el); try{window.scrollTo(0,0);}catch(e){} }
+function mpGoto(v){ mpSubView=v; if(momSchedView||tab!=="moms-plan"){ showTab("moms-plan"); try{window.scrollTo(0,0);}catch(e){} return; }   // 👩 MSV: leave the Schedule view
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el); try{window.scrollTo(0,0);}catch(e){} }
 function mwBanner(sub){
   return `<div style="background:linear-gradient(135deg,#2B7A78,#3AAFA9);color:#fff;padding:18px 14px 14px;position:relative;overflow:hidden">
     <div style="position:absolute;top:-25px;right:-25px;width:100px;height:100px;border-radius:50%;background:rgba(255,255,255,0.08)"></div>

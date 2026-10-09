@@ -112,7 +112,7 @@ const kcs = src.slice(src.indexOf("function kcSchoolHTML("), src.indexOf("functi
 ok("Kids' Corner / My Day school view has the button", kcs.includes("hrKidButtonHTML(k)"));
 const rs = src.slice(src.indexOf("function renderSchedule(el){"), src.indexOf("function renderSchedule(el){") + 20000);
 ok("Schedule tab: kid's page button (today only)", rs.includes('if(day===_todayDay&&kid!=="all"&&kid!=="mom"){ try{ h+=hrKidButtonHTML(kid); }catch(e){} }'));
-ok("Schedule tab: Mom-mode card (today only)", rs.includes("if(day===_todayDay&&momHere()){ try{ const _hr=hrMomCardHTML("));
+ok("Schedule tab: Mom-mode card (today only) — not in Mom's Day ▸ Schedule, where notifications stay on 🏡 Home Base (👩 MSV)", rs.includes("if(day===_todayDay&&momHere()&&!momSchedView){ try{ const _hr=hrMomCardHTML("));
 const md = src.slice(src.indexOf("function renderMomsDay(el){"), src.indexOf("function renderMomsDay(el){") + 8000);
 ok("Mom's Day shows the card (with its pop-up marker)", md.includes('h+=hrMomCardHTML(null,"md");'));
 ok("every family: no familyId / Howe gate in the block", !/HA_IS_HOWE|familyId|pageOn\(/.test(block.split("\n").filter(l => !/^\s*\/\//.test(l)).join("\n")));

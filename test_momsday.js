@@ -145,7 +145,7 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   // School blocks that need Mom are deliberately NOT repeated in "Now — needs you";
   // 📖 Mom's school schedule (momAgendaHtml, stubbed here) is the one place they live.
   ok("Now card does not repeat the school blocks", !h.includes("Read-aloud: Narnia") && !h.includes("Phonics with Mom") && !h.includes("tapTask('t1')"), null);
-  ok("📖 Mom's school schedule section is on the page", h.includes("school schedule") && h.includes('id="agenda"'), null);
+  ok("📖 the Mom/All schedule card left 🏡 Home Base (it's Mom's Day ▸ 🗓 Schedule now — 👩 MSV)", !h.includes("school schedule") && !h.includes('id="agenda"'), null);
   ok("checked-off mom block excluded", !h.includes("Already done with Mom"), null);
   ok("lunch excluded", !h.includes("Lunch break"), null);
   ok("cascade mirror excluded", !h.includes("Cascade mirror"), null);
@@ -241,11 +241,7 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   agendaArgs = null; agendaSeen = null;
   M.renderMomsDay(elStub);
   const h = elStub.innerHTML;
-  ok("agenda card embedded on school day", h.includes('id="agenda"'), null);
-  ok("agenda gets required + maybe tasks", !!agendaArgs && agendaArgs.some(t => t.id === "t8") && agendaArgs.some(t => t.id === "t1"), agendaArgs && agendaArgs.map(t => t.id));
-  ok("agenda keeps checked task (full mirror shows done)", !!agendaArgs && agendaArgs.some(t => t.id === "t4"), null);
-  ok("agenda excludes lunch/_c/non-mom", !!agendaArgs && !agendaArgs.some(t => ["t5","t6_c","t7"].includes(t.id)), null);
-  ok("kid/day pinned to mom/today during build", !!agendaSeen && agendaSeen.kid === "mom" && agendaSeen.day === "monday", agendaSeen);
+  ok("no schedule card on 🏡 Home Base (👩 MSV: Mom's Day ▸ 🗓 Schedule is the real Schedule page)", !h.includes('id="agenda"') && agendaArgs === null, null);
   ok("kid/day restored after build", global.kid === "all" && global.day === "friday", null);
   ok("weigh card: today's date + lb input", h.includes('id="wi-date" value="2026-08-10"') && h.includes('id="wi-lb"'), null);
   ok("weigh card: save wired to mwSaveWeighin", h.includes("mwSaveWeighin()"), null);
