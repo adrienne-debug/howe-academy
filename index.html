@@ -2485,6 +2485,8 @@ let momPinUnlocked=false;
 let momModeActive=false;
 let checked={}, slState={}, supplies={}, histState={};
 let claimed={};            // {taskId: ts} — kid says done, awaiting Mom's verify (doesn't count until approved)
+let coSentBack={};         // ✅ CLOSEOUT {taskId:{mode,at,kid,n}} — Mom sent it back; the kid sees "↩ Do this again"
+let coDiscuss={};          // ✅ CLOSEOUT {taskId:{at,kid,day,note,booked}} — Mom's private "let's discuss" note
 // Mom taking a subject off its day so the day can finish. {taskId:{mode, toDay, fromDays[], ts}}:
 //   mode "push" — move it to toDay (the next school day). Rides on effectiveDay.
 //   mode "skip" — dismissed, comes back: it stays pinned to its own day reading "Dismissed",
@@ -3218,6 +3220,13 @@ function attachWeekListeners(wk){
     renderAll();
   });
   fbWeekRefs.push(r16);
+  // ✅ CLOSEOUT: Mom's send-back marker (the kid's "↩ Do this again") + her private "let's discuss" notes
+  const r16b=db.ref(wk+"/sentBack");
+  r16b.on("value",s=>{ coSentBack=s.val()||{}; sv(wk+"_sentBack",coSentBack); renderAll(); });
+  fbWeekRefs.push(r16b);
+  const r16c=db.ref(wk+"/discuss");
+  r16c.on("value",s=>{ coDiscuss=s.val()||{}; sv(wk+"_discuss",coDiscuss); renderAll(); });
+  fbWeekRefs.push(r16c);
 
   const r18=db.ref(wk+"/momMoves");
   r18.on("value",s=>{
@@ -3746,7 +3755,7 @@ function initFb() {
         WK=fbWk; HA_LS.setItem("ha_active_wk",WK); weekData.week=WK;
         const t=ld(WK+"_tasks"); if(t) weekData.tasks=_haRealCards(t);   // GHOSTCARD
         const meta=ld(WK+"_meta"); if(meta) applyWeekMeta(meta);
-        checked=ld(WK+"_checked")||{}; slState=ld(WK+"_sl")||{}; claimed=ld(WK+"_claimed")||{};
+        checked=ld(WK+"_checked")||{}; slState=ld(WK+"_sl")||{}; claimed=ld(WK+"_claimed")||{}; coSentBack=ld(WK+"_sentBack")||{}; coDiscuss=ld(WK+"_discuss")||{};
         momMoves=ld(WK+"_momMoves")||{};
         attachWeekListeners(WK);
         renderAll();
@@ -4130,7 +4139,7 @@ function boot() {
   const m=ld(WK+"_babysitter")||ld(WK+"_maggie"); if(m) weekData.babysitter=m;
   const meta=ld(WK+"_meta"); if(meta) applyWeekMeta(meta);
   checked=ld(WK+"_checked")||{};
-  claimed=ld(WK+"_claimed")||{};
+  claimed=ld(WK+"_claimed")||{}; coSentBack=ld(WK+"_sentBack")||{}; coDiscuss=ld(WK+"_discuss")||{};
   momMoves=ld(WK+"_momMoves")||{};
   slState=ld(WK+"_sl")||{};
   _loadPrevSl();          // last week's routine state, for cross-week chore lateness
@@ -5006,7 +5015,8 @@ function dayTimeReadout(dayTasks, dayKey, kidSel){
 
 let paceToastTimer=null;
 let slotKid=null;
-function showPaceToast(taskId, doneMinOverride){
+function showPaceToast(taskId, doneMinOverride, opts){
+  const _asClaim=!!(opts&&opts.claim);   // ✅ CLOSEOUT: spin-on-send — sent-to-Mom cards count as done for the day bonus
   const DEFAULT_DUR=20;
   const t=weekData.tasks.find(x=>x.id===taskId); if(!t) return;
   // Use displaced time if available (blockout shifts the real schedule)
@@ -5024,7 +5034,7 @@ function showPaceToast(taskId, doneMinOverride){
   const taskDay=momMoves[taskId]?effectiveDay(t):(dt?dt.day:effectiveDay(t));
   const kidDaySource=dsRetime(displacedResult?displacedResult.tasks:weekData.tasks);
   const kidDayTasks=kidDaySource.filter(x=>x.who===t.who && _dayOf(x)===taskDay && !x.title.toLowerCase().includes("lunch") && !_dismissed(x));
-  const kidDayDone=kidDayTasks.filter(x=>!!checked[x.id]).length;
+  const kidDayDone=kidDayTasks.filter(x=>!!checked[x.id]||(_asClaim&&!!claimed[x.id])).length;
   const isLastTask=kidDayDone===kidDayTasks.length;
 
   // Only use real-time pace comparison when checking off on today's actual day.
@@ -5068,6 +5078,7 @@ function showPaceToast(taskId, doneMinOverride){
     renderAll();
     return;
   }
+  if(_asClaim) return;   // ✅ CLOSEOUT: no pace toast on a send — "Sent to Mom" stays up
   el.className="pace-toast "+cls;
   el.textContent=msg;
   el.classList.add("show");
@@ -5317,14 +5328,17 @@ function spinSlots(){
     // ⏩ her rule 2026-09-23: a got-ahead card's spin + half of it ALL goes straight to the bank (spin 20 → 30 banked),
     // not into the day pool / claim. No cap. Mom-checked subjects spin on her approval, so this follows it.
     var _gaT=slotPendingTaskId?(weekData.tasks||[]).find(function(x){ return x.id===slotPendingTaskId; }):null;
+    var _coHold=!!(_gaT&&!(checked&&checked[slotPendingTaskId]));   // ✅ CLOSEOUT: card not checked yet (sent to Mom / sent back) → the points wait for her check
     var _gaOn=!!(_gaT&&_gaT.gotAhead&&outcome.pts>0), _gaTot=_gaOn?(outcome.pts+Math.round(outcome.pts*((typeof gaBonusPctFor==="function"?gaBonusPctFor(_gaT):50)/100))):0, _gaBid=null;
+    if(_coHold){ _gaOn=false; _gaTot=0; }   // ✅ CLOSEOUT: a held spin pays at release (got-ahead bonus included then)
     if(_gaOn){ try{ _gaBid=bankDirect(k,_gaTot,"⏩ Got ahead — "+((typeof taskLessonRef==="function"&&taskLessonRef(_gaT))||_gaT.title||"")+" (spin "+outcome.pts+" + "+(_gaTot-outcome.pts)+")"); }catch(e){ _gaOn=false; } }
     var _srOld=slotPendingTaskId?((ld(WK+"_spin_results")||{})[slotPendingTaskId]||null):null;   // 🎰 this card already spun once (e.g. day bonus after an un-tick/re-tick)
     var _srGuard=slotPendingTaskId?(WK+"/spin_results/"+slotPendingTaskId+(_srOld?"/parts/"+spinRecParts(_srOld).length:"")):null;   // 📮 a 2nd spin's points replay unless THIS part reached the server
     if(outcome.pts>0){
-      resEl.textContent=_gaOn?("+"+_gaTot+" points — straight to your bank!"):("+"+outcome.pts+" points!");
+      resEl.textContent=_gaOn?("+"+_gaTot+" points — straight to your bank!"):_coHold?("+"+outcome.pts+" points — saved until Mom checks it!"):("+"+outcome.pts+" points!");
       resEl.className="slot-result show";
-      if(!_gaOn) addKidPoints(k,outcome.pts,d,_srGuard);
+      if(_coHold){}   // ✅ CLOSEOUT: held — nothing to the tally until Mom's check
+      else if(!_gaOn) addKidPoints(k,outcome.pts,d,_srGuard);
       const todayPts=getKidDayPoints(k,d);
       const weekPts=getKidPoints(k);
       document.getElementById("slot-pts-display").textContent="Today ⭐"+todayPts+" · Week ⭐"+weekPts;
@@ -5339,6 +5353,7 @@ function spinSlots(){
     if(slotPendingTaskId){
       // Track per-task spin result for admin panel
       var _srRec={pts:outcome.pts,kid:k,day:d,ts:Date.now()};
+      if(_coHold) _srRec.held=true;   // ✅ CLOSEOUT: released (paid) by finalizeDone when Mom checks it
       if(_gaOn){ _srRec.gaBank=_gaTot; _srRec.gaBonus=_gaTot-outcome.pts; if(_gaBid) _srRec.gaBid=_gaBid; msgEl.textContent=outcome.msg+"  ⏩ Got ahead: spin "+outcome.pts+" + "+(_gaTot-outcome.pts)+" bonus = "+_gaTot+" in your bank!"; }
       if(_srOld) _srRec=spinMergeRec(_srOld,_srRec);   // 🎰 keep the earlier spin — never overwrite it
       var sr=ld(WK+"_spin_results")||{};
@@ -5356,9 +5371,9 @@ function getSpinResult(taskId){ var sr=ld(WK+"_spin_results")||{}; return sr[tas
 // record: pts = the sum, parts = each spin (its own got-ahead bank id). A one-spin record has no parts, as before.
 function spinRecParts(rec){ if(!rec) return []; return (rec.parts&&rec.parts.length)?rec.parts:[rec]; }
 function spinMergeRec(old,rec){
-  var _cp=function(r){ var o={}; ["pts","kid","day","ts","gaBank","gaBonus","gaBid"].forEach(function(f){ if(r[f]!==undefined&&r[f]!==null) o[f]=r[f]; }); return o; };   // Firebase rejects undefined
+  var _cp=function(r){ var o={}; ["pts","kid","day","ts","gaBank","gaBonus","gaBid","held"].forEach(function(f){ if(r[f]!==undefined&&r[f]!==null) o[f]=r[f]; }); return o; };   // Firebase rejects undefined
   var parts=spinRecParts(old).map(_cp).concat([_cp(rec)]);
-  var m=_cp(rec); delete m.gaBank; delete m.gaBonus; delete m.gaBid;
+  var m=_cp(rec); delete m.gaBank; delete m.gaBonus; delete m.gaBid; delete m.held;
   m.pts=parts.reduce(function(s,x){ return s+(x.pts||0); },0); m.parts=parts;
   return m;
 }
@@ -5420,7 +5435,7 @@ function renderSpinAdmin(d){
         const pts=sr?sr.pts:null;
         let statusIcon, statusColor, statusText;
         if(isPending){ statusIcon='🎰'; statusColor='#fbbf24'; statusText='Pending'; }
-        else if(sr!==null&&sr!==undefined){ statusIcon=pts>0?'⭐':'❌'; statusColor=pts>0?'#fbbf24':'#6b7280'; statusText=pts>0?'+'+pts+' pts':'0 pts'; }
+        else if(sr!==null&&sr!==undefined){ statusIcon=pts>0?'⭐':'❌'; statusColor=pts>0?'#fbbf24':'#6b7280'; statusText=pts>0?'+'+pts+' pts':'0 pts'; const _hp=(typeof coHeldPts==="function")?coHeldPts(t.id):0; if(_hp>0){ statusIcon='⏳'; statusText+=' ('+_hp+' held)'; } }
         else if(spun){ statusIcon='✅'; statusColor='#86efac'; statusText='Spun'; }
         else if(done){ statusIcon='—'; statusColor='rgba(255,255,255,0.3)'; statusText='No spin'; }
         else { statusIcon='⏳'; statusColor='rgba(255,255,255,0.3)'; statusText='Not done'; }
@@ -5485,7 +5500,7 @@ function spinAdminResetSpin(taskId,kid,d){
     spinRecParts(sr[taskId]).forEach(p=>{   // 🎰 every spin on the card comes off (its own + a day bonus)
       const pts=p.pts||0;
       if(p.gaBid&&typeof bankDirectRemove==="function"){ try{ bankDirectRemove(kid,p.gaBid); }catch(e){} }   // ⏩ got-ahead: it was banked, not pooled
-      else if(pts>0){
+      else if(pts>0&&!p.held){   // ✅ CLOSEOUT: a held spin never reached the pool
         const all=ld(WK+"_slot_points")||{};
         if(all[kid]&&all[kid][d]){ all[kid][d]=Math.max(0,all[kid][d]-pts); sv(WK+"_slot_points",all); if(db) db.ref(WK+"/slot_points/"+kid+"/"+d).transaction(c=>Math.max(0,(c||0)-pts)); }
       }
@@ -8893,6 +8908,7 @@ function finalizeDone(id, doneTs, score){
       }
     }catch(e){ dbg("bump/heal error: "+e); }
   }
+  try{ if(typeof coOnDone=="function") coOnDone(id); }catch(e){ dbg("closeout on-done: "+e); }   // ✅ CLOSEOUT: markers off + the held spin pays
   return true;   // callers gate the spin on this — the order guard returns false above
 }
 // EFPULL_START — ⏩ an early finish pulls the next lesson forward (her rule 2026-09-22)
@@ -9441,12 +9457,193 @@ function orderBlockApproveThrough(){
       : "✓ Approved "+(list.length+1)+" lessons — back in order.");
   }
 }
-function momReject(id){
+function momReject(id,mode){
   if(!momHere()) return;
   if(claimed[id]!=null){ const _cw=claimed[id]; delete claimed[id]; sv(WK+"_claimed",claimed); obRemove(WK+"/claimed/"+id,_cw); }
+  try{ if(typeof coMarkSentBack==="function") coMarkSentBack(id,mode||"now"); }catch(e){ dbg("closeout sent-back: "+e); }   // ✅ CLOSEOUT: the kid sees "↩ Do this again"
   renderAll();
-  if(typeof gwShowToast==="function") gwShowToast("Sent back — not done yet.");
+  if(typeof gwShowToast==="function") gwShowToast(mode==="later"?"↩ Sent back — later today":mode==="tomorrow"?"↩ Sent back — tomorrow":"↩ Sent back — do it again now");
 }
+// ✅ CLOSEOUT_START — #30 part 2 (her answers 2026-10-08): the CLOSE-OUT checklist + spin-on-send.
+// Part 1 (LIVE) lets a kid's day keep moving once a card is sent to Mom. Part 2:
+//  • Every card waiting on Mom carries three taps wherever she sees it (🏡 Home Base, a Mom-mode card):
+//      ✓ Approve (the existing momApprove) · ↩ Send back → she picks Now / Later today / Tomorrow (Q1 d)
+//      · 💬 Let's discuss → a private note now (Q2 c, Q3 b: the kid never sees it); if the card is still
+//      unchecked at the end of that school day, a 10-min "🔁 Review with Mom" card is booked (the existing
+//      rvBook) for the next school time.
+//  • Home Base lists them any time something is waiting; after the Settings school end the list becomes
+//    "✅ Close out the day" (Q4). It is only a checklist — nothing on it holds up Mom's day or the kids'.
+//  • The kid sees only "↩ Do this again" on a sent-back card (Q3 b).
+//  • Spin (Q5, her new rule): the kid spins the moment they send it — but the points are HELD (spin record
+//    `held:true`, nothing added to the day pool) until Mom's check. A send-back keeps the result on hold;
+//    the redo's approval releases it — no second spin (spins_used stays set). Release happens in
+//    finalizeDone (any approve path) and is a transaction on the spin record, so exactly one device pays.
+// Stored (targeted writes only, none in dry-run): WK/sentBack/<id> {mode,at,kid,n} · WK/discuss/<id>
+// {at,kid,day,note,booked} · WK/spin_results/<id>.held (+ .released) · the "Later today" card's WK/tasks/<id>/time.
+let _coReleasing={}, _coBooking={};
+function coTask(id){ return ((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]).find(function(x){ return x&&x.id===id; })||null; }
+function coNowMin(){ try{ return _mlNowMin(); }catch(e){ const d=new Date(); return d.getHours()*60+d.getMinutes(); } }
+function coSchoolEnd(){ try{ return _mlDayEndMin(); }catch(e){ return 16*60+15; } }
+function coAfterSchool(){ try{ return coNowMin()>=coSchoolEnd(); }catch(e){ return false; } }
+function coDry(){ return !db||(typeof _dryRun==="function"&&_dryRun()); }
+// ── 🎰 held spins ──
+function coHeldParts(rec){ return spinRecParts(rec).filter(function(p){ return p&&p.held; }); }
+function coHeldPts(id){ return coHeldParts((ld(WK+"_spin_results")||{})[id]).reduce(function(s,p){ return s+(p.pts||0); },0); }
+function coClearHeld(rec){ const r=JSON.parse(JSON.stringify(rec)); delete r.held; if(Array.isArray(r.parts)) r.parts.forEach(function(p){ if(p) delete p.held; }); r.released=nowTs(); return r; }
+// Pay what was held — the same places a spin pays today: a got-ahead card → bank (spin + bonus, her 9/23 rule);
+// a day whose points were already claimed / cashed / forfeited → straight to the bank (the pool is closed);
+// otherwise the spin's own day pool, exactly like an approve-time spin.
+function coPayHeld(id,rec){
+  const t=coTask(id), parts=spinRecParts(rec), multi=!!(rec&&rec.parts&&rec.parts.length); let paid=0;
+  parts.forEach(function(p,i){
+    if(!p||!p.held||!(p.pts>0)) return;
+    const k=p.kid||rec.kid, d=p.day||rec.day; let bid=null;
+    const lbl=(t&&((typeof taskLessonRef==="function"&&taskLessonRef(t))||t.title))||"";
+    if(t&&t.gotAhead){ const tot=p.pts+Math.round(p.pts*((typeof gaBonusPctFor==="function"?gaBonusPctFor(t):50)/100)); bid=bankDirect(k,tot,"⏩ Got ahead — "+lbl+" (spin "+p.pts+" + "+(tot-p.pts)+")"); }
+    else if(typeof getPointClaim==="function"&&getPointClaim(k,d)) bid=bankDirect(k,p.pts,"🎰 Spin — "+lbl+" (Mom checked it)");
+    else addKidPoints(k,p.pts,d,null);
+    paid+=p.pts;
+    if(bid){   // banked → Reset / an un-check take it back off the bank, like a got-ahead part
+      const sr=ld(WK+"_spin_results")||{}; const cur=sr[id];
+      if(cur){ const tgt=multi?(cur.parts&&cur.parts[i]):cur; if(tgt){ tgt.gaBid=bid; sv(WK+"_spin_results",sr); } }
+      if(!coDry()) db.ref(WK+"/spin_results/"+id+(multi?"/parts/"+i:"")+"/gaBid").set(bid);
+    }
+  });
+  dbg("✅ closeout: released held spin "+id+" +"+paid);
+  return paid;
+}
+// Release a card's held spin once it is checked. Transaction = one payer across devices (a record already
+// cleared aborts it). The spin_results listener keeps this device's copy, so the transaction starts from real data.
+function coReleaseHeld(id){
+  const sr=ld(WK+"_spin_results")||{}, rec=sr[id];
+  if(!coHeldParts(rec).length||_coReleasing[id]) return false;
+  _coReleasing[id]=1;
+  if(coDry()){ sr[id]=coClearHeld(rec); sv(WK+"_spin_results",sr); coPayHeld(id,rec); return true; }   // dry-run: this screen only
+  let won=null;
+  const p=db.ref(WK+"/spin_results/"+id).transaction(function(cur){ if(!cur||!coHeldParts(cur).length){ won=null; return; } won=cur; return coClearHeld(cur); });
+  Promise.resolve(p).then(function(r){
+    if(r&&r.committed&&won){ const s2=ld(WK+"_spin_results")||{}; s2[id]=coClearHeld(won); sv(WK+"_spin_results",s2); coPayHeld(id,won); if(typeof renderAll==="function") renderAll(); }
+    else delete _coReleasing[id];
+  },function(){ delete _coReleasing[id]; });
+  return true;
+}
+// A spin recorded as held on a tablet that had not yet seen Mom's check → released on her next Home Base look.
+function coHealHeld(){
+  try{ const sr=ld(WK+"_spin_results")||{}; Object.keys(sr).forEach(function(id){ if(checked&&checked[id]&&coHeldParts(sr[id]).length) coReleaseHeld(id); }); }catch(e){ dbg("closeout heal: "+e); }
+}
+// The kid sends a Mom-checked card → the spin is earned right now (judged off this moment, like the claim time
+// Mom's approval used), the day bonus counting sent cards as done. No pace toast — "Sent to Mom" stays up.
+function coSpinOnClaim(id){ if(typeof showPaceToast==="function") showPaceToast(id,null,{claim:true}); }
+// finalizeDone (every approve / check path) → the markers go and the held spin pays.
+function coOnDone(id){
+  if(coSentBack[id]){ delete coSentBack[id]; sv(WK+"_sentBack",coSentBack); if(!coDry()) db.ref(WK+"/sentBack/"+id).remove(); }
+  if(coDiscuss[id]){ delete coDiscuss[id]; sv(WK+"_discuss",coDiscuss); if(!coDry()) db.ref(WK+"/discuss/"+id).remove(); }
+  coReleaseHeld(id);
+}
+// ── ↩ Send back: Now / Later today / Tomorrow ──
+function coMarkSentBack(id,mode){
+  const t=coTask(id), prev=coSentBack[id];
+  const rec={mode:mode||"now",at:nowTs(),kid:(t&&t.who)||"",n:((prev&&prev.n)||0)+1};
+  coSentBack[id]=rec; sv(WK+"_sentBack",coSentBack);
+  if(!coDry()) db.ref(WK+"/sentBack/"+id).set(rec);
+  return rec;
+}
+function coCanLater(t){ try{ return !!t&&effectiveDay(t)===_todayDay&&coNowMin()<coSchoolEnd(); }catch(e){ return false; } }
+// "Later today" = after everything the kid has on today (the Closing Notebook stays last), stepping over lunch —
+// the same placement the master pull uses. Past school end it lands in 🌙 Didn't fit like any other card.
+function coLaterTime(t){
+  const now=coNowMin(); let lastEnd=0;
+  ((weekData&&weekData.tasks)||[]).forEach(function(x){ if(!x||x.id===t.id||x.who!==t.who||effectiveDay(x)!==_todayDay||String(x.id||"").endsWith("_c")||x._eowOverflow||/lunch/i.test(x.title||"")||(typeof _efIsClose==="function"&&_efIsClose(x))) return; const e=toMin(x.time)+(x.dur||20); if(e>lastEnd) lastEnd=e; });
+  let st=Math.max(now,lastEnd); const lw=(typeof _mlLunchWin==="function")?_mlLunchWin():null; const d=t.dur||20; if(lw&&st<lw[1]&&st+d>lw[0]) st=lw[1];
+  return fromMin(st);
+}
+function coSendBack(id,mode){
+  if(!momHere()) return; const t=coTask(id); if(!t) return;
+  coSendBackClose();
+  if(mode==="later"&&!coCanLater(t)) mode="now";
+  momReject(id,mode);   // the claim comes off + the "↩ Do this again" marker; the held spin stays held
+  if(mode==="later"){
+    const at=coLaterTime(t);
+    if(at&&at!==t.time){ t.time=at; sv(WK+"_tasks",weekData.tasks); lastTasksWrite=Date.now(); if(!coDry()){ const u={}; u[id+"/time"]=at; db.ref(WK+"/tasks").update(u); } dbg("✅ closeout: "+id+" later today → "+at); }
+  } else if(mode==="tomorrow"&&typeof pushTaskForward==="function") pushTaskForward(id);   // the existing ➡️ push to the next school day
+  if(typeof renderAll==="function") renderAll();
+}
+function coSendBackClose(){ const ov=document.getElementById("co-sb-dlg"); if(ov) ov.remove(); }
+function coSendBackOpen(id){
+  if(!momHere()) return; const t=coTask(id); if(!t) return;
+  coSendBackClose();
+  const held=coHeldPts(id), later=coCanLater(t);
+  const b=function(mode,lbl,sub,bg,fg){ return '<button onclick="coSendBack(\''+id+'\',\''+mode+'\')" style="display:block;width:100%;text-align:left;margin-bottom:8px;padding:11px 14px;border-radius:10px;border:1.5px solid '+bg+';background:'+(fg?bg:"#fff")+';color:'+(fg||bg)+';font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'<div style="font-size:11px;font-weight:600;opacity:.85;margin-top:2px">'+sub+'</div></button>'; };
+  const ov=document.createElement("div"); ov.id="co-sb-dlg"; ov.className="dlg-overlay"; ov.style.display="flex"; ov.style.zIndex="9999";
+  ov.innerHTML='<div class="dlg-box" style="max-width:360px"><div class="dlg-title">↩ Send back — do it again</div>'+
+    '<div class="dlg-detail" style="margin-bottom:12px">'+esc(cap(t.who))+' · '+esc(taskSubject(t))+(taskLessonRef(t)?' '+esc(taskLessonRef(t)):'')+'</div>'+
+    b("now","Now","Back in "+esc(cap(t.who))+"’s hands — redo it next","#c2410c","#fff")+
+    (later?b("later","Later today","After what "+esc(cap(t.who))+" has left today","#c2410c"):"")+
+    b("tomorrow","Tomorrow","Moves to the next school day","#c2410c")+
+    (held>0?'<div style="font-size:11px;color:#6b6560;margin:2px 0 10px">🎰 Their spin (+'+held+' ⭐) stays on hold until the redo is checked.</div>':'')+
+    '<button onclick="coSendBackClose()" style="width:100%;padding:11px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;border:none;background:#f3f4f6;color:#374151">Cancel</button></div>';
+  document.body.appendChild(ov);
+}
+// ── 💬 Let's discuss (private to Mom) ──
+function coDiscussToggle(id){
+  if(!momHere()) return; const t=coTask(id); if(!t) return;
+  if(coDiscuss[id]){
+    delete coDiscuss[id]; sv(WK+"_discuss",coDiscuss); if(!coDry()) db.ref(WK+"/discuss/"+id).remove();
+    if(typeof gwShowToast==="function") gwShowToast("💬 Discuss note removed");
+  } else {
+    let v=""; try{ v=prompt("💬 What do you want to talk about? (optional — only you see this)",""); }catch(e){ v=""; }
+    if(v===null) return;   // Cancel
+    const rec={at:nowTs(),kid:t.who,day:_todayDay,note:String(v||"").trim().slice(0,200)};
+    coDiscuss[id]=rec; sv(WK+"_discuss",coDiscuss); if(!coDry()) db.ref(WK+"/discuss/"+id).set(rec);
+    if(typeof gwShowToast==="function") gwShowToast("💬 Noted — still unchecked at the end of the day, it becomes a talk card");
+  }
+  if(typeof renderAll==="function") renderAll();
+}
+// End of that school day and still unchecked → book ONE 10-min "🔁 Review with Mom" card (the existing review
+// card). The `booked` leaf is claimed by transaction first, so two Mom devices never both book it.
+function coDiscussSweep(){
+  if(coDry()||!momHere()) return 0; let n=0;
+  Object.keys(coDiscuss||{}).forEach(function(id){
+    const r=coDiscuss[id]; if(!r||r.booked||_coBooking[id]) return;
+    if(checked&&checked[id]) return;
+    const t=coTask(id); if(!t) return;
+    if(r.day===_todayDay&&!coAfterSchool()) return;   // not the end of that school day yet
+    _coBooking[id]=1; n++;
+    let won=false;
+    const p=db.ref(WK+"/discuss/"+id+"/booked").transaction(function(cur){ if(cur){ won=false; return; } won=true; return "booking"; });
+    Promise.resolve(p).then(function(res){
+      if(!(res&&res.committed&&won)) return;
+      const when=(r.day!==_todayDay&&!coAfterSchool()&&typeof rvCanToday==="function"&&rvCanToday(t.who,10))?"today":"next";
+      const rec=(typeof rvBook==="function")?rvBook(t.who,id,{minutes:10,when:when,note:"💬 "+(r.note||"Talk about this together")}):null;
+      const v=rec?rec.id:null;
+      db.ref(WK+"/discuss/"+id+"/booked").set(v);
+      if(coDiscuss[id]) coDiscuss[id].booked=v;
+      dbg("✅ closeout: discuss "+id+" → "+(v||"NOT booked"));
+    },function(){});
+  });
+  return n;
+}
+// ── what Mom sees on a waiting card ──
+const _coChip=function(txt,bg,fg){ return '<span style="font-size:10px;font-weight:800;padding:1px 7px;border-radius:8px;background:'+bg+';color:'+fg+';white-space:nowrap">'+txt+'</span>'; };
+function coChipsHTML(id){
+  let h=""; const sb=coSentBack[id], dis=coDiscuss[id], held=coHeldPts(id);
+  if(sb) h+=_coChip("↩ redo"+(sb.n>1?" ×"+sb.n:""),"#ffedd5","#c2410c");
+  if(dis) h+=_coChip("💬 to discuss"+(dis.note?": "+esc(dis.note):"")+(dis.booked?" · 📅 booked":""),"#ede9fe","#5b21b6");
+  if(held>0) h+=_coChip("🎰 +"+held+" on hold","#fef3c7","#b45309");
+  return h;
+}
+function coActionsHTML(id){
+  const dis=!!coDiscuss[id];
+  return coChipsHTML(id)+
+    '<button onclick="event.stopPropagation();momApprove(\''+id+'\')" style="padding:3px 10px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Approve</button>'+
+    '<button onclick="event.stopPropagation();coSendBackOpen(\''+id+'\')" style="padding:3px 10px;border-radius:8px;border:1px solid #c2410c;background:#fff;color:#c2410c;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">↩ Send back</button>'+
+    '<button onclick="event.stopPropagation();coDiscussToggle(\''+id+'\')" title="'+(dis?"Remove the discuss note":"Let’s discuss — a private note; a talk card if it’s still unchecked at the end of the day")+'" style="padding:3px 10px;border-radius:8px;border:1px solid #7c3aed;background:'+(dis?"#7c3aed":"#fff")+';color:'+(dis?"#fff":"#7c3aed")+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">💬'+(dis?" ✓":" Discuss")+'</button>'+
+    rvBtn(id);   // 📅 Review with Mom
+}
+// What the KID sees: only the send-back (Q3 b) and their held spin.
+function coKidHeldLine(id){ const held=coHeldPts(id); return held>0?'<div style="font-size:11px;font-weight:700;margin-top:3px;color:#b45309">🎰 Your spin (+'+held+' ⭐) is saved — it counts when Mom checks this</div>':""; }
+function coKidSentBackRow(id){ return '<div class="done-row" style="background:#fff7ed;color:#c2410c">↩ Do this again — Mom sent it back'+coKidHeldLine(id)+'</div>'; }
+// ✅ CLOSEOUT_END
 // Mom-mode roundup of everything kids have claimed but Mom hasn't approved yet,
 // so she can clear them from one place instead of scrolling the day for ⏳ cards.
 // Week-wide; narrows to the viewed kid when a single kid is selected.
@@ -9498,7 +9695,7 @@ function renderClaimQueue(){
       h+='<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">'+esc(taskSubject(o.t))+(_qref?' <b style="color:#b45309">📖 '+esc(_qref)+'</b>':'')+' <span style="color:var(--muted);font-size:10px">'+claimed[o.id]+'</span></span>';
       h+='<button onclick="momApprove(\''+o.id+'\')" style="flex-shrink:0;padding:4px 12px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Approve</button>';
       h+=rvBtn(o.id);   // 📅 Review with Mom
-      h+='<button onclick="momReject(\''+o.id+'\')" style="flex-shrink:0;padding:4px 10px;border-radius:8px;border:1px solid #ef4444;background:#fff;color:#ef4444;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✗</button>';
+      h+='<button onclick="'+(typeof coSendBackOpen==="function"?"coSendBackOpen":"momReject")+'(\''+o.id+'\')" title="Send back — Now / Later today / Tomorrow" style="flex-shrink:0;padding:4px 10px;border-radius:8px;border:1px solid #ef4444;background:#fff;color:#ef4444;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✗</button>';
       h+='</div>';
     });
     h+='</div>';
@@ -9631,7 +9828,8 @@ function taskCard(t, fromDay, readOnly, doneId){
     mb='<span class="mom-badge maybe-badge">May Need Mom</span>';
   }
   if(t.famBlock) mb='<span class="mom-badge req-badge" style="background:#ede9fe;color:#5b21b6;border-color:#c4b5fd">\u{1F3E1} Family time'+(kid==="mom"?' \u2014 '+(typeof famGroup==="function"?famGroup(t).map(function(x){ return cap(x.who); }).join(", "):klbl):'')+'</span>';
-  const hasPending=!readOnly&&done&&!!pendingSpins[t.id];
+  const _coSb=!done&&!claimedHere&&!readOnly&&typeof coSentBack!=="undefined"&&!!coSentBack[srcId];   // ✅ CLOSEOUT
+  const hasPending=!readOnly&&(done||claimedHere||_coSb)&&!!pendingSpins[t.id];   // ✅ CLOSEOUT: the spin comes the moment it is sent to Mom
   const _he=histState[srcId];
   const scoreChip=(done&&_he&&_he.score)?' <span style="display:inline-block;margin-left:6px;font-size:10px;font-weight:700;color:#3730a3;background:#e0e7ff;padding:1px 7px;border-radius:8px">📊 '+scoreLabel(_he.score)+'</span>':"";
   const rvChip=(done&&_he&&_he.review)?' <span style="display:inline-block;margin-left:6px;font-size:10px;font-weight:700;color:#5b21b6;background:#ede9fe;padding:1px 7px;border-radius:8px">📅 review '+(_he.review.minutes||"")+'m</span>':"";   // 📅
@@ -9640,15 +9838,14 @@ function taskCard(t, fromDay, readOnly, doneId){
   if(claimedHere){
     if(momHereCards()&&!readOnly){
       dr='<div class="done-row" style="background:#fffbeb;color:#b45309;display:flex;align-items:center;gap:6px;flex-wrap:wrap">⏳ Claimed '+claimed[srcId]+
-        '<button onclick="event.stopPropagation();momApprove(\''+srcId+'\')" style="padding:3px 10px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✓ Approve</button>'+
-        rvBtn(srcId)+   // 📅 Review with Mom
-        '<button onclick="event.stopPropagation();momReject(\''+srcId+'\')" style="padding:3px 10px;border-radius:8px;border:1px solid #ef4444;background:#fff;color:#ef4444;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✗ Not yet</button></div>';
+        coActionsHTML(srcId)+'</div>';   // ✅ CLOSEOUT: ✓ Approve · ↩ Send back (Now / Later today / Tomorrow) · 💬 Discuss · 📅
     } else {
       const _ref=taskLessonRef(t);
       dr='<div class="done-row" style="background:#fffbeb;color:#b45309">⏳ Waiting for Mom — '+claimed[srcId]+
-        '<div style="font-size:11px;font-weight:600;margin-top:3px">📖 Leave your work open'+(_ref?' to <b>'+esc(_ref)+'</b>':'')+' for Mom to check</div></div>';
+        '<div style="font-size:11px;font-weight:600;margin-top:3px">📖 Leave your work open'+(_ref?' to <b>'+esc(_ref)+'</b>':'')+' for Mom to check</div>'+coKidHeldLine(srcId)+'</div>';   // ✅ CLOSEOUT: their held spin
     }
   }
+  if(_coSb) dr=coKidSentBackRow(srcId);   // ✅ CLOSEOUT: "↩ Do this again" (the only outcome the kid sees)
   const spinBtn=hasPending?'<div style="margin-top:4px"><button onclick="event.stopPropagation();openSlotMachine(\''+t.id+'\')" style="padding:4px 12px;border-radius:10px;background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;animation:spinPulse 2s ease-in-out infinite">🎰 Spin!</button></div>':"";
   // Deep link: a drill/retrieval task jumps straight to that kid's Mastery page. stopPropagation
   // so tapping the link never toggles the checkbox; retrSchedGo sets the kid + view + tab.
@@ -10299,6 +10496,7 @@ document.getElementById("dlg-ok").onclick=()=>{
     // 🎉 her rule 2026-09-23: the kid celebrates when the day is done — not later on Mom's phone when she approves
     try{ if(effectiveDay(t)===_todayDay&&rtSchoolworkDone(t.who,_todayDay)) setTimeout(function(){ celebrateDayComplete(t.who,_todayDay); },600); }catch(e){}
     try{ if(effectiveDay(t)===_todayDay&&!t.famBlock&&typeof famCelebOwnWork==="function") setTimeout(function(){ try{ famCelebOwnWork(t.who,_todayDay); }catch(e){} },600); }catch(e){}   // 🎉 own work done, family time next
+    try{ if(typeof coSpinOnClaim==="function") coSpinOnClaim(id); }catch(e){ dbg("closeout spin-on-send: "+e); }   // ✅ CLOSEOUT: spin now, points held until Mom's check
     return;
   }
   if(finalizeDone(id, ts, null)===false){
@@ -12497,9 +12695,10 @@ function renderMomsDay(el){
   // Kid work sent to Mom for checking (claimed, not yet approved) — rendered
   // with the real taskCard (kid/day pinned like the agenda) so the Approve /
   // Not-yet buttons work right here. Any lingering claim shows, not just today's.
-  let waitHtml="";
+  let waitHtml="", _waitN=0;
   try{
     const waiting=getActiveTasks().filter(t=>t&&claimed[t.id]&&!checked[t.id]&&!String(t.id).endsWith("_c"));
+    _waitN=waiting.length;
     if(waiting.length){
       const _pk2=kid,_pd2=day;
       try{ kid="mom"; day=today; waitHtml=waiting.map(t=>taskCard(t)).join(''); } finally { kid=_pk2; day=_pd2; }
@@ -12507,9 +12706,14 @@ function renderMomsDay(el){
   }catch(e){}
   if(waitHtml){
     nowN++;
-    h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:10px 0 6px">⏳ Waiting for your check</div>';
+    // ✅ CLOSEOUT (#30, her Q4): any time something is waiting; after the Settings school end it reads as the close-out checklist.
+    const _coEnd=(typeof coAfterSchool==="function")&&coAfterSchool();
+    h+=_coEnd
+      ?'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#166534;margin:10px 0 2px">✅ Close out the day · '+_waitN+' to check</div><div style="font-size:11px;color:#6b6560;margin:0 0 6px">✓ Approve · ↩ Send back · 💬 Discuss — a checklist, nothing here holds up your day.</div>'
+      :'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:10px 0 6px">⏳ Waiting for your check · '+_waitN+'</div>';
     h+=waitHtml;
   }
+  try{ if(typeof coDiscussSweep==="function") setTimeout(function(){ try{ coDiscussSweep(); coHealHeld(); }catch(e){} },0); }catch(e){}   // ✅ CLOSEOUT: end-of-day talk cards · held spins whose card got checked
   // Book finishes, star-store asks, extra-job requests and unit-activity claims —
   // the same buttons that live on their own cards, gathered where she already looks.
   try{ const _ap=_momApprovalsHTML(); nowN+=_ap.n; h+=_ap.html; }catch(e){}
