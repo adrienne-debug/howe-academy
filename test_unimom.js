@@ -6,7 +6,8 @@ const fn=name=>{ const i=src.indexOf("function "+name+"("); if(i<0) throw new Er
 const line=re=>{ const m=src.match(re); return m?m[0]:""; };
 console.log("── one switch ──");
 ok("haMomOn / haMomOff defined once", src.split("function haMomOn(").length===2&&src.split("function haMomOff(").length===2);
-const strip=src.replace(/function haMomOn\(\)\{[^\n]*\n/,"").replace(/function haMomOff\(\)\{[^\n]*\n/,"").replace(/try\{ if\(HA_LS\.getItem\('ha_mom_on'\)==="1"\)\{[^\n]*\n/,"");
+const strip=src.replace(/function _momSuspend\(\)\{[^\n]*\n/,"")   // 🧒 KIDSLENS sets Mom mode ASIDE for the kids' Schedule (restored by _momResume) — not an "off"
+  .replace(/function haMomOn\(\)\{[^\n]*\n/,"").replace(/function haMomOff\(\)\{[^\n]*\n/,"").replace(/try\{ if\(HA_LS\.getItem\('ha_mom_on'\)==="1"\)\{[^\n]*\n/,"");
 ok("no door sets a flag on its own any more (adminPinUnlocked / momModeActive / momPinUnlocked / mastAdminPinOk = true)", !/(adminPinUnlocked|momModeActive|momPinUnlocked|mastAdminPinOk)\s*=\s*true/.test(strip), (strip.match(/(adminPinUnlocked|momModeActive|momPinUnlocked|mastAdminPinOk)\s*=\s*true[^;]*/g)||[]));
 ok("no off sets flags one by one (only haMomOff clears them)", !/(momModeActive|momPinUnlocked)\s*=\s*false/.test(strip.replace(/let (momModeActive|momPinUnlocked)=false;/g,"").replace("if(!momModeActive) momPinUnlocked=false;","")), (strip.replace(/let (momModeActive|momPinUnlocked)=false;/g,"").replace("if(!momModeActive) momPinUnlocked=false;","").match(/(momModeActive|momPinUnlocked)\s*=\s*false[^;]*/g)||[]));
 ok("every single-flag door now reads momHere()", !/if\(!adminPinUnlocked\)\{/.test(src)&&(src.match(/if\(!momHere\(\)\)\{/g)||[]).length>=6);

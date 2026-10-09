@@ -27,10 +27,10 @@ function world(o) {
     HA_LS: { getItem: () => o.mode || null, setItem() {} }, momModeActive: !!o.momOn, momHere: () => !!o.momOn,
     cap: s => s.charAt(0).toUpperCase() + s.slice(1), helperChipsHTML: () => "<i>helper</i>", bankBalance: () => 0, helperViewActive: () => false,
     mpSubnav: a => "<nav>" + a + "</nav>", helperGiveBtnsHTML: () => o.give || "",
-    _mpSchRender: () => log.mp++, _todayDay: "thursday",
+    _mpSchRender: () => log.mp++, _todayDay: "thursday", momHereReal: () => true, renderAllOut: null,
   };
   const keys = Object.keys(env);
-  const body = "var momSchedView=false,_msvPrevKid=null,kid=" + JSON.stringify(o.kid || "ava") + ",tab='moms-plan',helperView=null,mastAddMode,mastLogMode,mastLogScores,schedShowAdmin=false,schedShowHistory=false,schedShowPace=false,schedShowBoard=false,schedShowPeek=false,mpDay=null,day='thursday',mpSchMode=null,calDaySel=null,mpSubView='cal';\n" + FNS +
+  const body = "var _msvWantAdmin=false,momSchedView=false,_msvPrevKid=null,kid=" + JSON.stringify(o.kid || "ava") + ",tab='moms-plan',helperView=null,mastAddMode,mastLogMode,mastLogScores,schedShowAdmin=false,schedShowHistory=false,schedShowPace=false,schedShowBoard=false,schedShowPeek=false,mpDay=null,day='thursday',mpSchMode=null,calDaySel=null,mpSubView='cal';\n" + FNS +
     "\nreturn {msvEnter,msvExit,msvBarHTML,showTab,renderKidFilter,renderSchedSubtabs,mpSchSet,mpGoto,st:()=>({msv:momSchedView,kid,tab,prev:_msvPrevKid,mpSubView})};";
   const api = new Function(...keys, body)(...keys.map(k => env[k]));
   return { api, log, els, navBtns };
@@ -62,7 +62,7 @@ console.log("\n── the page itself ──");
   ok("kid row: 👩 Mom first, then All, then each kid, helpers last", ix("mom") >= 0 && ix("mom") < ix("all") && ix("all") < ix("ava") && ix("ava") < ix("ben") && kf.indexOf("<i>helper</i>") > ix("ben"));
   w.api.showTab("schedule"); w.api.renderKidFilter();
   const kf2 = w.els["kid-filter"].innerHTML;
-  ok("the kids' Schedule keeps its own order (All … Mom last) — step 3 will take Mom off it", kf2.indexOf("selKid('all')") < kf2.indexOf("selKid('mom')"));
+  ok("the kids' Schedule kid row has no 👩 Mom chip (step 3)", kf2.indexOf("selKid('all')") >= 0 && kf2.indexOf("selKid('mom')") < 0);
 }
 {
   const w = world({ give: "<b>Give Grandma</b>" }); w.api.msvEnter(); w.api.renderSchedSubtabs();
@@ -107,6 +107,34 @@ console.log("\n── 🔒 Mom's Day asks for the code once; inside, Mom mode is
   ok("wrong code on Open → 'didn't match', box cleared", w2.log.on === 0 && /match/.test(w2.els["mg-err"].textContent) && inp.value === "");
   ok("the screen has the code box + Open", /id="mg-pin"/.test(gw().api.momGateHTML()) && /momGateTry/.test(gw().api.momGateHTML()));
   ok("Mom's Day draws the gate before anything else", /if\(!momGateOpen\(\)\)\{ el\.innerHTML=momGateHTML\(\)/.test(slice("renderMomsPlanView")));
+}
+console.log("\n── 🧒 step 3: the kids' Schedule is never in Mom mode ──");
+{
+  const L = ["_momSuspend", "_momResume", "momHereReal", "haMomOn", "haMomOff"].map(slice).join("\n");
+  const ls = [];
+  const api = new Function("HA_LS", "var _momSusp=null,momModeActive=true,momPinUnlocked=true,adminPinUnlocked=true,mastAdminPinOk=true;\n" + L +
+    "\nreturn {_momSuspend,_momResume,momHereReal,haMomOn,haMomOff,f:()=>[momModeActive,momPinUnlocked,adminPinUnlocked,mastAdminPinOk].join()};")({ setItem: (k, v) => ls.push([k, v]) });
+  api._momSuspend();
+  ok("on the kids' Schedule every Mom flag is off (buttons, banners and taps act as a kid's)", api.f() === "false,false,false,false");
+  ok("…but background jobs still see the device's real Mom state", api.momHereReal() === true);
+  ok("…and the device's remembered switch is untouched", ls.length === 0);
+  api._momSuspend(); api._momResume();
+  ok("any other tab / Mom's Day brings it straight back", api.f() === "true,true,true,true" && api.momHereReal() === true);
+  api._momSuspend(); api.haMomOff(); api._momResume();
+  ok("🔒 Lock while set aside really locks (nothing comes back)", api.f() === "false,false,false,false" && JSON.stringify(ls) === '[["ha_mom_on","0"]]');
+  const r = slice("_renderAllInner");
+  ok("every render: kids' Schedule → set aside (+ Mom view → All); anything else → back", /if\(tab==="schedule"&&!momSchedView\)\{ _momSuspend\(\); if\(kid==="mom"\) kid="all"; \} else _momResume\(\);/.test(r));
+}
+{
+  const w = world({ momOn: true }); w.api.showTab("schedule"); w.api.renderKidFilter();
+  const kf = w.els["kid-filter"].innerHTML;
+  ok("kids' Schedule kid row: All + each kid, no 👩 Mom chip", kf.indexOf("selKid('all')") >= 0 && kf.indexOf("selKid('mom')") < 0);
+  w.api.renderSchedSubtabs();
+  ok("kids' Schedule ▸ Admin opens Mom's Day (code if needed) at Admin", /onclick="msvOpenAdmin\(\)">Admin/.test(w.els["sched-subtabs"].innerHTML));
+  w.api.msvEnter(); w.api.renderSchedSubtabs();
+  ok("…inside Mom's Day ▸ Schedule, Admin works as always", /onclick="toggleSchedAdmin\(\)">Admin/.test(w.els["sched-subtabs"].innerHTML));
+  ok("Mom's Day ▸ Schedule only opens through Mom's Day's door", /if\(typeof momGateOpen==="function"&&!momGateOpen\(\)&&!momHereReal\(\)\)\{ mpSubView="cal"; showTab\("moms-plan"\); return; \}/.test(slice("msvEnter")));
+  ok("review healing still runs on Mom's device while the kids' Schedule is open", /momHereReal\(\)/.test(slice("rvHeal")));
 }
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

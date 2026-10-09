@@ -2720,8 +2720,16 @@ var momSchedView=false, _msvPrevKid=null;   // 👩 MSV: Mom's Day ▸ Schedule 
 // Mastery, Blockouts, Plan next week, the kitchen/grocery prompts) turns it on; the Mom button lights; it is remembered on THIS device
 // (never synced) until Mom taps it off on the Schedule or uses a 🔒 lock. The check-up's kid-screen door still re-locks when the sitting
 // ends (her 10/5 rule for that door).
-function haMomOn(){ momModeActive=true; momPinUnlocked=true; adminPinUnlocked=true; mastAdminPinOk=true; try{ HA_LS.setItem('ha_mom_on','1'); }catch(e){} }
-function haMomOff(){ momModeActive=false; momPinUnlocked=false; adminPinUnlocked=false; mastAdminPinOk=false; try{ HA_LS.setItem('ha_mom_on','0'); }catch(e){} }
+// 🧒 KIDSLENS (her rule 2026-10-08, step 3): the kids' Schedule is exactly the Schedule outside Mom mode — "nothing looks
+// different for kids but no ability to be in mom mode". While the kids' Schedule tab is showing, Mom mode is SET ASIDE in
+// memory (every flag false, so every Mom button, banner and Mom tap behaves as a kid's); it comes straight back on any other
+// tab or in Mom's Day ▸ Schedule. The device's remembered switch (ha_mom_on, UNIMOM) is never touched by this.
+var _momSusp=null;
+function _momSuspend(){ if(_momSusp) return; _momSusp={m:momModeActive,p:momPinUnlocked,a:adminPinUnlocked,x:mastAdminPinOk}; momModeActive=false; momPinUnlocked=false; adminPinUnlocked=false; mastAdminPinOk=false; }
+function _momResume(){ if(!_momSusp) return; const o=_momSusp; _momSusp=null; momModeActive=o.m; momPinUnlocked=o.p; adminPinUnlocked=o.a; mastAdminPinOk=o.x; }
+function momHereReal(){ return _momSusp?!!(_momSusp.m||_momSusp.a):(momModeActive||adminPinUnlocked); }   // background jobs: the device's real Mom state
+function haMomOn(){ _momSusp=null; momModeActive=true; momPinUnlocked=true; adminPinUnlocked=true; mastAdminPinOk=true; try{ HA_LS.setItem('ha_mom_on','1'); }catch(e){} }
+function haMomOff(){ _momSusp=null; momModeActive=false; momPinUnlocked=false; adminPinUnlocked=false; mastAdminPinOk=false; try{ HA_LS.setItem('ha_mom_on','0'); }catch(e){} }
 try{ if(HA_LS.getItem('ha_mom_on')==="1"){ momModeActive=true; momPinUnlocked=true; adminPinUnlocked=true; mastAdminPinOk=true; } }catch(e){}
 let blockouts={};
 let boForm={type:"fullDay",kids:[],start:"",end:"",momReturn:"",day:""};
@@ -4309,7 +4317,7 @@ function renderSchedSubtabs(){
     '<button class="sched-sub'+(schedShowHistory?" active":"")+'" onclick="toggleSchedHistory()">History</button>'/* 🗂 Board retired 2026-08-13 — 🧒 Kids on Mom's Plan carries all of it now.
        To bring the tab back, restore this button:
        +(momHere()?'<button class="sched-sub'+(schedShowBoard?" active":"")+'" onclick="toggleSchedBoard()">🗂 Board</button>':'') */+
-    '<button class="sched-sub'+(schedShowAdmin?" active":"")+'" onclick="toggleSchedAdmin()">Admin</button>';
+    '<button class="sched-sub'+(schedShowAdmin?" active":"")+'" onclick="'+(momSchedView?'toggleSchedAdmin()':'msvOpenAdmin()')+'">Admin</button>';   // 🧒 KIDSLENS: kids' Admin → Mom's Day
 }
 // ── In-place re-render guard ──────────────────────────────────────
 // A rebuild used to "blip": the page jumped to the top and any text typed into an
@@ -4359,6 +4367,7 @@ function renderAll(){
   try{ if(popView&&popKid&&document.getElementById("kid-pop")) _popPaint(); }catch(e){}
 }
 function _renderAllInner(){
+  try{ if(tab==="schedule"&&!momSchedView){ _momSuspend(); if(kid==="mom") kid="all"; } else _momResume(); }catch(e){}   // 🧒 KIDSLENS
   const stb=document.getElementById("sitter-tab-btn"); if(stb){ if(SITTER_NAME){stb.textContent=SITTER_NAME;stb.style.display="";} else {stb.style.display="none";} }
   PAGE_KEYS.forEach(k=>{ const b=document.querySelector('.nav-tab[data-tab="'+k+'"]'); if(b) b.style.display=pageOn(k)?"":"none"; });   // 🧩 pages that are off leave the tab bar
   renderSchedSubtabs(); renderDayTabs(); renderKidFilter(); renderSkylight(); renderWeekStrip(); renderKioskKids(); renderKioskTabs(); renderKioskView(); renderKioskPerson();
@@ -4506,7 +4515,7 @@ function dayPct(d){
 // ── KID FILTER ────────────────────────────────────────────────────
 function renderKidFilter(){
   document.getElementById("kid-filter").innerHTML=
-    ((typeof momSchedView!=="undefined"&&momSchedView)?["mom","all",...ROSTER]:["all",...ROSTER,"mom"]).map(k=>{   // 👩 MSV: Mom first on Mom's Day
+    ((typeof momSchedView!=="undefined"&&momSchedView)?["mom","all",...ROSTER]:["all",...ROSTER]).map(k=>{   // 👩 MSV: Mom first on Mom's Day · 🧒 KIDSLENS: no Mom chip on the kids' Schedule
       const isActive = (k===kid&&!(k==="all"&&typeof helperViewActive==="function"&&helperViewActive())) || (k==="mom" && momModeActive);
       return '<button class="kid-btn'+(isActive?" active":"")+'" data-kid="'+k+'" onclick="selKid(\''+k+'\')">'+
         (k==="mom" && momModeActive ? "✓ Mom" : cap(k))+'</button>';
@@ -9243,7 +9252,7 @@ function rvRemove(id){
 // a pending one is placed once a school day exists. Once per id per page load — never a loop.
 function rvHeal(){
   try{
-    if(!db||_dryRun()||!momHere()) return;
+    if(!db||_dryRun()||!(typeof momHereReal==="function"?momHereReal():momHere())) return;   // 🧒 KIDSLENS: not paused by the kids' Schedule
     const ids=new Set(((weekData&&weekData.tasks)||[]).map(t=>t&&t.id));
     Object.keys(reviews||{}).forEach(kid=>{ Object.keys(reviews[kid]||{}).forEach(id=>{
       const rec=reviews[kid][id]; if(!rec||_rvHealed[id]) return;
@@ -16291,12 +16300,18 @@ function mpCalWhoSet(w){ mpCalWho=(ROSTER.indexOf(w)>=0)?w:"family"; calDaySel=n
 // 👩 Mom first in the kid row, and the 🙋 I-need-Mom card left on 🏡 Home Base. The kid picked before is handed back on exit.
 function msvEnter(){
   if(momSchedView&&tab==="schedule"){ renderAll(); return; }
+  if(typeof momGateOpen==="function"&&!momGateOpen()&&!momHereReal()){ mpSubView="cal"; showTab("moms-plan"); return; }   // 🔒 only through Mom's Day's door
   momSchedView=true; _msvPrevKid=kid;
   try{ helperView=null; }catch(e){}
   kid="mom";
+  if(_msvWantAdmin){ _msvWantAdmin=false; schedShowAdmin=true; schedShowHistory=false; schedShowPace=false; schedShowBoard=false; schedShowPeek=false; showTab("schedule",true); schedShowAdmin=true; renderAll(); return; }
   showTab("schedule",true);
   try{ window.scrollTo(0,0); }catch(e){}
 }
+// Kids' Schedule ▸ Admin (her pick 2026-10-08: "keep it, sends to Mom's Day") — through the Mom's Day door (code if needed),
+// landing on Mom's Day ▸ Schedule with Admin open.
+var _msvWantAdmin=false;
+function msvOpenAdmin(){ _msvWantAdmin=true; mpSubView="cal"; mpSchMode="today"; showTab("moms-plan"); }
 function msvExit(){
   if(!momSchedView) return;
   momSchedView=false;
