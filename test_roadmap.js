@@ -109,7 +109,7 @@ console.log("\n# insertion points in index.html");
 {
   ok("global roadmapData + plans listener", /let roadmapData=\{\}/.test(src) && /db\.ref\("plans"\)\.on\("value"/.test(src));
   ok("curriculum GRID page draws the plan bar (which holds the roadmap strip)", /planBarHTML\(\(typeof gvKid/.test(src) && /h\+=rmStripHTML\(kid\)/.test(src));
-  ok("My Day draws the week card after the day strip", src.indexOf("h+=rmWeekHTML(iso);") > src.indexOf("h+=momDayStripHTML(iso,today);") && src.indexOf("h+=rmWeekHTML(iso);") < src.indexOf("Now — needs you</div>"));
+  ok("My Day draws the week card after the day strip (🔴 NOWTOP: the Now card now sits above My day)", src.indexOf("h+=rmWeekHTML(iso);") > src.indexOf("h+=momDayStripHTML(iso,today);") && src.indexOf("Now — needs you</div>") < src.indexOf("h+=momDayStripHTML(iso,today);"));
   const ds = src.indexOf("function calDaySheetHTML(");
   ok("day sheet lists roadmap items after the lessons", src.indexOf("_calRoadmapFor(who,iso).forEach", ds) > src.indexOf("_calLessonsFor(who,iso)", ds));
   ok("no bare column-0 brace inside the block (test slicer safety)", !/\n\}\n(?!function|const|let|\/\/|$)/.test(block));
