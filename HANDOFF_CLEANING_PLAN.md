@@ -70,6 +70,16 @@ a rabbit, a reptile ("Sunny"). House ~3,000 sq ft; downstairs mapped, upstairs N
 Rules: Mom's project time is after 4:15 PM or during kids' independent work, 20 min at a time, blocked in Mom's Day. Big projects are weekend jobs. No new big project until the previous is closed in the app.
 
 ### 2.2 Laundry system
+**Getting out of the pile-up first (ten loads, kids can't find clothes). This comes before anything else in the plan.**
+- Two afternoons, right after school ends (4:15 PM), everyone in the school room, the loads dumped on the table. About an hour each.
+- Sort first, by person, into six piles: Lincoln, Ellis, Lucy, Julian, Mom and Dad, towels and sheets. Julian and Lucy do the sorting; matching a shirt to its owner is their speed.
+- Then each kid folds their own pile. Lincoln and Ellis fold alone. Lucy folds with Mom beside her. Julian matches socks and carries finished stacks upstairs.
+- Mom and Dad fold their own pile and the towels and sheets.
+- Each kid puts their own stack away the same afternoon, so the pile does not move from the table to a bedroom floor.
+- Day one gets the kids' piles (they need clothes tomorrow). Day two gets the grown-ups and linens.
+- Nothing new starts, no project and no new baskets, until this is done. The hampers must start empty or the new system inherits the mountain.
+- The pile exists because loads were batched. The daily rhythm below is what stops it coming back.
+
 - One load a day on school days, kids fold their own. Mon Lincoln, Tue Ellis, Wed Lucy+Julian, Thu Mom+Dad, Fri towels/sheets (hot) + the downstairs kitchen-and-dog load (hot, its own load). Sunday off. Missed day rolls forward, never stacks to a weekend.
 - The app already supports it: a kid chore that starts a load tells Mom's laundry card (KIDLAUNDRY_START ~11759); Mom's Day can block fold time (MOMSCHED_LAUNDRY_START ~11569, 90-min "move it" nudge).
 - Today: ONE shared basket in the parents' upstairs bathroom + ONE downstairs in front of the downstairs bathroom (by the laundry room). Kids are used to those two spots. Transition keeps both spots and changes what's there:
