@@ -48,7 +48,7 @@ function world(o) {
 console.log("── layers: a per-device view preference ──");
 {
   const w = world();
-  ok("every layer is on by default", w.call("CAL_LAYERS.every(c=>calLayerOn(c[0]))"));
+  ok("every layer is on by default (📚 School is the one opt-in layer — off until tapped)", w.call("CAL_LAYERS.filter(c=>c[0]!=='school').every(c=>calLayerOn(c[0]))") && w.call("calLayerOn('school')===false"));
   w.call("calLayerToggle('meals')");
   ok("toggling turns a layer off and re-renders", w.call("calLayerOn('meals')") === false && w.ctx.renders === 1);
   ok("…and remembers it on this device", /"meals":false/.test(w.store.ha_cal_layers || ""), w.store);
