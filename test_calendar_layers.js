@@ -25,7 +25,7 @@ let pass = 0, fail = 0;
 function ok(n, c, x) { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  (" + JSON.stringify(x) + ")" : "")); } }
 
 const CODE = [
-  line("let calDaySel="), line("const CAL_LAYERS="), line("let calLayers="),
+  line("let calDaySel="), line("const CAL_LAYERS="), line("const CAL_OPTIN="), line("let calLayers="),
   line("function _calLayersLoad()"), line("function calLayerOn("), line("function calLayerToggle("),
   slice("calBreaksOn"), slice("kitEatGate"), slice("kitMarkEaten"), slice("_kitRefresh"), slice("kitMarkSkipped"), slice("calDayClick"),
 ].join("\n");
@@ -48,7 +48,7 @@ function world(o) {
 console.log("── layers: a per-device view preference ──");
 {
   const w = world();
-  ok("every layer is on by default (📚 School is the one opt-in layer — off until tapped)", w.call("CAL_LAYERS.filter(c=>c[0]!=='school').every(c=>calLayerOn(c[0]))") && w.call("calLayerOn('school')===false"));
+  ok("every layer is on by default, except the opt-in ones (📚 School, ✅ Habits — off until tapped)", w.call("CAL_LAYERS.filter(c=>CAL_OPTIN.indexOf(c[0])<0).every(c=>calLayerOn(c[0]))") && w.call("CAL_OPTIN.every(k=>calLayerOn(k)===false)"));
   w.call("calLayerToggle('meals')");
   ok("toggling turns a layer off and re-renders", w.call("calLayerOn('meals')") === false && w.ctx.renders === 1);
   ok("…and remembers it on this device", /"meals":false/.test(w.store.ha_cal_layers || ""), w.store);
