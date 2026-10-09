@@ -117,7 +117,7 @@ console.log("\n── remove, heal, dry-run, kid ──");
 console.log("\n── the wiring ──");
 ok("the score dialog carries the review row", /rvRowHtml\(t\.who,"rv"\)/.test(src));
 ok("approve with a score books it; approve without a score books it; a later edit books it", /if\(_rv&&_rt\) setTimeout\(function\(\)\{ rvBook\(_rt\.who,sp\.id,_rv\); \},0\);/.test(src) && /const _rv=\(sp&&sp\.mode==="approve"\)\?rvReadRow\("rv"\):null;/.test(src) && /if\(_rv&&_rt\) rvBook\(_rt\.who,sp\.id,_rv\);/.test(src));
-ok("📅 beside Approve in the ⏳ list and on the card", /h\+=rvBtn\(o\.id\);/.test(src) && /rvBtn\(srcId\)\+/.test(src));
+ok("📅 beside Approve in the ⏳ list and on the card", /h\+=rvBtn\(o\.id\);/.test(src) && (/rvBtn\(srcId\)\+/.test(src) || (/coActionsHTML\(srcId\)/.test(src) && /rvBtn\(id\);   \/\/ 📅/.test(src))));   // ✅ CLOSEOUT: the card's actions moved into coActionsHTML
 ok("done cards show the chip and a 📅; a review card gets Mom's ✕", /const rvChip=/.test(src) && /const rvDoneBtn=/.test(src) && /wbRow\+eicRow\+rvRow\+/.test(src));
 ok("History shows the chip and a 📅", /e\.review\?' <span[^']*📅 review/.test(src) && /rvOpen\(\\''\+e\.id\+'\\'\)/.test(src));
 ok("reviews are listened to and healed after the week's cards load", /db\.ref\("reviews"\)\.on\("value"/.test(src) && /if\(firstLoad \|\| inFP!==curFP\)\{ try\{ rvHeal\(\); \}catch\(e\)\{\} \}/.test(src));
