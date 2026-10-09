@@ -9648,6 +9648,11 @@ function taskCard(t, fromDay, readOnly, doneId){
   // "↩ Not done" brings it back as the card in hand (a second tap puts it back to assumed-done).
   const nbRedoRow=(!readOnly&&!done&&momHereCards()&&t.mom!=="required"&&/Morning Notebook/i.test(t.title||"")&&typeof effectiveDay==="function"&&effectiveDay(t)===_todayDay&&!(typeof claimed!=="undefined"&&claimed&&claimed[t.id]))
     ?'<div style="margin-top:5px"><span onclick="event.stopPropagation();nbMornNotDone(\''+t.id+'\','+(t.nbRedo?'false':'true')+')" title="'+(t.nbRedo?'Back to assumed done \u2014 the day lays from the notebook\u2019s own slot':'Not done yet \u2014 it becomes the card in hand again')+'" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#b45309;cursor:pointer;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">'+(t.nbRedo?'\u2713 Assume done':'\u21A9 Not done')+'</span></div>':"";
+  // 👩 #23 MOMPART: Mom-mode "✓ Mom part done" on today's open Mom-required card; once tapped the kid sees "keep going".
+  const _mpdOn=(!readOnly&&!done&&t.mom==="required"&&typeof effectiveDay==="function"&&effectiveDay(t)===_todayDay&&!(typeof claimed!=="undefined"&&claimed&&claimed[t.id]));
+  const mpdRow=!_mpdOn?"":(momHereCards()
+    ?'<div style="margin-top:5px"><span onclick="event.stopPropagation();mlMomPartDone(\''+t.id+'\','+(t.momPartDone?'false':'true')+')" title="'+(t.momPartDone?'Put it back in your Mom work':'Your part is done \u2014 the kid keeps working on it until they check it off')+'" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:'+(t.momPartDone?'#b45309':'#166534')+';cursor:pointer;background:'+(t.momPartDone?'#fffbeb':'#f0fdf4')+';border:1px solid '+(t.momPartDone?'#fde68a':'#86efac')+';border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">'+(t.momPartDone?'\u21A9 Mom still needed':'\u2713 Mom part done')+'</span></div>'
+    :(t.momPartDone?'<div style="margin-top:5px;font-size:11px;font-weight:700;color:#166534">\u{1F469} Mom\u2019s part is done \u2014 keep going until you check it off</div>':""));
   const rvRow=(t.review&&momHereCards()&&!readOnly&&!done)?'<div style="margin-top:5px"><span onclick="event.stopPropagation();rvRemove(\''+t.id+'\')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#7c3aed;cursor:pointer;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">✕ Remove review</span></div>':"";   // 📅
   // WB_ANS_AFTER_DONE — ✅ Check answers only once the card is done or waiting for Mom (her ask 2026-10-06: "after only").
   const wbRow=(_wbl&&!_eicL)?'<div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap"><span onclick="event.stopPropagation();wbOpenFor(\''+_wbl.bookId+'\',\''+t.who+'\','+_wbl.page+','+esc(JSON.stringify(wbAssignFor(t)))+')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4D5} Open '+esc(taskLessonRef(t)||_wbl.name)+' →</span>'
@@ -9726,7 +9731,7 @@ function taskCard(t, fromDay, readOnly, doneId){
     '<div class="card-body">'+
     '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
     '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+pushLabel+(_eicL?eicCardTitle(t):taskTitleShow(t))+'</div>'+mb+'</div>'+
-    '<div class="task-detail">'+cleanDetail+'</div>'+famRow+dr+spinBtn+classRow+linkRow+wbRow+eicRow+rvRow+msRow+llRow+stRow+prRow+nbAnsRow+nbRedoRow+
+    '<div class="task-detail">'+cleanDetail+'</div>'+famRow+dr+spinBtn+classRow+linkRow+wbRow+eicRow+rvRow+msRow+llRow+stRow+prRow+nbAnsRow+nbRedoRow+mpdRow+
     '</div></div></div>';
 }
 
@@ -52372,6 +52377,7 @@ function mlHold(){
     if(h.day!==_todayDay) return null;                    // yesterday's hold means nothing
     if(mlOrder().indexOf(h.kid)<0) return null;
     if(_mlFinished(h.id)) return null;   // finished on any device (or sent to Mom to check — #30)
+    if((getActiveTasks()||[]).some(function(t){ return t&&t.id===h.id&&t.momPartDone; })) return null;   // 👩 #23 Mom's part done
     if(!(getActiveTasks()||[]).some(function(t){ return t&&t.id===h.id&&t.who===h.kid; })) return null;
     return h;
   }catch(e){ return null; }
@@ -52576,6 +52582,7 @@ function mlRemaining(kid){
     return (getActiveTasks()||[]).filter(function(t){
       return t&&t.who===kid&&_mlDayOf(t)===_todayDay&&t.mom==="required"
         &&!(typeof helperHolds==="function"&&helperHolds(t))   // 🙋 a helper has it
+        &&!t.momPartDone   // 👩 #23 Mom's part is done — the rest is the kid's own
         &&!String(t.id||"").endsWith("_c")
         &&!_mlFinished(t.id,t);
     });
@@ -52770,7 +52777,8 @@ function mlStripHTML(){
               off:["#fecaca","#991b1b","not ready"],done:["#d1fae5","#065f46","done"]};
     let h='<div style="background:#f5f3ff;border-left:4px solid #7c3aed;border-radius:0 10px 10px 0;padding:9px 12px;margin:0 0 8px">';
     h+='<div style="font-size:12px;font-weight:800;color:#5b21b6;margin-bottom:6px">&#128105; Mom loop — '
-      +(now.kid?('now with <span style="color:#16a34a">'+cap(now.kid)+'</span>'+(function(){ var nc=mlNextCard(now.kid); return nc?(' <span style="font-weight:700;color:#0f766e">&rarr; '+esc(nc.title)+'</span>'):""; })()
+      +(now.kid?('now with <span style="color:#16a34a">'+cap(now.kid)+'</span>'+(function(){ var nc=mlNextCard(now.kid); return nc?(' <span style="font-weight:700;color:#0f766e">&rarr; '+esc(nc.title)+'</span>'
+          +' <button onclick="event.stopPropagation();mlMomPartDone(\''+nc.id+'\',true)" title="Your part is done — '+esc(cap(now.kid))+' keeps working on it until they check it off" style="margin-left:4px;border:1px solid #86efac;background:#f0fdf4;color:#166534;border-radius:8px;padding:1px 8px;font-size:10.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u2713 Mom part done</button>'):""; })()   // 👩 #23 MOMPART
         +(now.borrowed?' <span style="font-weight:600;color:#7c3aed">('+esc(now.why)+')</span>':(now.held?' <span style="font-weight:600;color:#16a34a">(started)</span>':'')))
         :('<span style="color:#b45309">'+esc(now.why)+'</span>'))+'</div>';
     try{ if(typeof hrStripLineHTML==="function") h+=hrStripLineHTML(); }catch(e){}   // 🙋 NEEDMOM: Mom helping a kid / who's next
@@ -52895,7 +52903,7 @@ function _mlQueueLayCore(tasks){
   _mlBlkLaid={};   // 🧺 MOMSCHED_LAUNDRY: where this lay put her blocks
   try{
     if(!Array.isArray(tasks)||!tasks.length) return tasks;
-    const _mr=function(t){ return !!t&&t.mom==="required"&&!(typeof helperHolds==="function"&&helperHolds(t)); };   // 🙋 Mom work = not a helper's
+    const _mr=function(t){ return !!t&&t.mom==="required"&&!t.momPartDone&&!(typeof helperHolds==="function"&&helperHolds(t)); };   // 🙋 Mom work = not a helper's · 👩 #23 nor one whose Mom part is done
     const _gvW=function(t){ try{ return (typeof helperGivenWin==="function")?helperGivenWin(t):null; }catch(e){ return null; } };   // 🙋 HELPERGIVE: handed to a helper today → her window
     const _sc=_mlScan(); const order=_sc.order, n=order.length; if(!n) return tasks;
     const cur=_sc.cur;
@@ -53313,6 +53321,7 @@ function mlOnCheck(t){
     if(!t||!t.who) return;
     const h=momHold;
     if(h&&h.id===t.id){ momHold={}; if(db) db.ref(WK+"/momHold").remove(); _mlStayWith(t); return; }
+    if(t.momPartDone) return;   // 👩 #23 Mom's part was already handed off at her tap — the kid's own check-off locks nothing
     if(t.mom==="required"){ _mlStayWith(t); return; }   // out of band (not the loop's kid) locks nothing — _mlStayWith checks
     if(_mlDayOf(t)!==_todayDay) return;
     const now=mlNow(); if(!now||now.kid!==t.who||now.held) return;
@@ -53330,6 +53339,23 @@ function mlOnCheck(t){
   }catch(e){}
 }
 // MOMLOOP_END
+// 👩 #23 MOMPART (her answers 2026-10-08, Option C — the on-the-day tap first; the per-subject Mom-at-start/end setting
+// comes next): Mom taps "✓ Mom part done" on a Mom-required card (Mom mode card, or the loop strip's now-card). The card
+// stays the kid's — they keep working until THEY check it off (no minutes shown) — while it stops being Mom work: her loop
+// moves on exactly as if she had checked it (mlOnCheck), and the lay treats it as the kid's own card. One targeted field
+// write (kept OUTSIDE the MOMLOOP block — the loop itself never writes a card); "↩ Mom still needed" undoes it. The kid's check-off closes it as usual; Mom can still check it.
+function mlMomPartDone(id,on){
+  try{
+    if(!(typeof momHereCards==="function"?momHereCards():momHere())) return;
+    const t=(weekData&&weekData.tasks||[]).find(function(x){ return x&&x.id===id; }); if(!t||t.mom!=="required") return;
+    if(on) t.momPartDone=(typeof nowTs==="function")?nowTs():String(Date.now()); else delete t.momPartDone;
+    if(typeof sv==="function") sv(WK+"_tasks",weekData.tasks);
+    if(db&&!(typeof _dryRun==="function"&&_dryRun())){ lastTasksWrite=Date.now(); db.ref(WK+"/tasks/"+id+"/momPartDone").set(on?t.momPartDone:null); }
+    if(typeof dbg==="function") dbg("\u{1F469} Mom part "+(on?"done":"undone")+": "+id+" ("+t.who+")");
+    if(on){ if(momHold&&momHold.id===t.id){ momHold={}; if(db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref(WK+"/momHold").remove(); } _mlStayWith(t); }   // her loop moves on as if she'd checked it
+    if(typeof renderAll==="function") renderAll();
+  }catch(e){}
+}
 
 // DAYSTART_START ── the school day starts when the kid is actually ready ────────────────
 // Measured 2026-08-30 from routineLog: the schedule is written to start at 10:00, and the
