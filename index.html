@@ -3935,6 +3935,7 @@ function initFb() {
       Object.keys(v).forEach(k=>{ kitPrepDone[k]=v[k]; });
       try{HA_LS.setItem('ha_kit_prepdone',JSON.stringify(kitPrepDone));}catch(e){}
       if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
+      else if(tab==="schedule"&&kid==="mom") renderAll();   // 🍳 MEALPREP_BLOCK: done on another device ends the block here
     });
     db.ref("kitchen/staples").on("value",s=>{
       const v=s.val()||{};
@@ -7845,7 +7846,7 @@ function momAgendaHtml(dayTasks){
   const _mReq=t=>t.mom==="required"||(typeof famIsMomCard==="function"&&famIsMomCard(t));   // 🏡 family time she leads = Mom Needed
   const req=dayTasks.filter(_mReq);
   const may=dayTasks.filter(t=>t.mom==="maybe");
-  const _lau=(typeof momSchedLaundry==="function")?momSchedLaundry(day,dayTasks):[];   // 🧺 MOMSCHED_LAUNDRY
+  const _lau=((typeof momSchedLaundry==="function")?momSchedLaundry(day,dayTasks):[]).concat((typeof momSchedPrep==="function")?momSchedPrep(day):[]);   // 🧺 MOMSCHED_LAUNDRY · 🍳 MEALPREP_BLOCK
   if(!req.length&&!may.length&&!_lau.length)
     return '<div style="padding:28px 16px;text-align:center;color:var(--muted);font-size:13px">No Mom-needed work scheduled this day. 🎉</div>';
   const byTime={};
@@ -11384,6 +11385,90 @@ function momSchedLaundry(dayName,dayTasks){
   return out.sort(function(a,b2){ return (a.m-b2.m)||(a.o-b2.o); });
 }
 // MOMSCHED_LAUNDRY_END
+// MEALPREP_BLOCK_START — meal prep steps work like the laundry block (her ask 2026-10-08). Each prep step (a time, or "nb" =
+// night before) has "how long" (minutes, 10 when the meal never said). On the Mom-mode schedule (🔴 Mom Needed) it is a REAL
+// block at its time — her Mom-required cards lay around it the same way they step over a laundry block — with a ⏱ countdown and
+// ✓ Done (kitMarkPrep) · ⏰ 10 min later · Not now. Unlike laundry there is no question first: the time is in the recipe.
+//   · today's timed steps sit at their time; tomorrow's night-before steps sit at KIT_NB_HOUR (when 🔴 NOW starts them)
+//   · ⏰ 10 min later moves the block (from now, or from its start if that is later) and hides it from 🏡 Home Base till then
+//   · Not now lets go of the time (nothing held) but the step stays listed with ✓ Done; ✓ Done ends the block
+// 🏡 Home Base lists due prep in 🔴 NOW (kitDuePrepHTML) during school and after — a list, never a sound.
+// Stored with today's laundry blocks: momBlocks/<today iso>/kp_<meal iso>_<mid>_<idx> {iso,kind:"prep",at:"later"|"skip",startMin}
+function kitPrepBlockKey(s){ return "kp_"+String(s.iso+"_"+s.mid+"_"+s.idx).replace(/[.#$\[\]\/]/g,"_"); }
+function kitPrepBlockRec(s){ const b=(momBlocks||{})[kitPrepBlockKey(s)]; return (b&&b.iso===mwTodayIso()&&b.kind==="prep")?b:null; }
+// Today's prep steps that live on today's schedule, each with its time on it: {s, at} (at = minutes from midnight).
+function kitPrepTodaySteps(){
+  const out=[], today=mwTodayIso();
+  try{ kitPrepSteps(today).forEach(function(s){ if(s.when==="nb") return; const m=kitWhenMin(s.when); if(m!=null) out.push({s:s,at:m}); }); }catch(e){}
+  try{ kitPrepSteps(kitIsoPlus(today,1)).forEach(function(s){ if(s.when==="nb") out.push({s:s,at:KIT_NB_HOUR*60}); }); }catch(e){}
+  return out;
+}
+function kitPrepStartMin(s,at){ const b=kitPrepBlockRec(s); return (b&&b.at==="later"&&b.startMin!=null)?(+b.startMin):at; }
+// The prep blocks that hold Mom's time: not done, not "Not now".
+function kitPrepBlocksOpen(){
+  const out=[];
+  kitPrepTodaySteps().forEach(function(x){
+    const s=x.s; if(s.done) return; const b=kitPrepBlockRec(s); if(b&&b.at==="skip") return;
+    out.push({key:kitPrepBlockKey(s),startMin:kitPrepStartMin(s,x.at),mins:kitPrepMins(s)});
+  });
+  return out;
+}
+// ⏰ 10 min later → off 🏡 Home Base until its new time comes.
+function kitPrepPutOff(s,nowMin){ const b=kitPrepBlockRec(s); return !!(b&&b.at==="later"&&+b.startMin>nowMin); }
+function kitPrepCdText(st,en,now){
+  if(now<st) return '⏱ in '+(st-now)+' min';
+  if(now<en) return '⏱ '+(en-now)+' min left';
+  return '⏱ '+(now-en)+' min over';
+}
+function _kpCd(st,en){ return ' <span class="kp-cd" data-s="'+st+'" data-e="'+en+'" style="font-size:11.5px;font-weight:800;color:#c2410c;white-space:nowrap">'+kitPrepCdText(st,en,_lbNowMin())+'</span>'; }
+function _kpBtn(label,on,solid){ return '<button onclick="'+on+'" style="padding:4px 10px;border-radius:8px;border:'+(solid?'none':'1.5px solid #fdba74')+';background:'+(solid?'#ea580c':'#fff')+';color:'+(solid?'#fff':'#c2410c')+';font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+label+'</button>'; }
+function _kpLaterBtns(s){ const k=_lbQ(kitPrepBlockKey(s)); return _kpBtn('⏰ 10 min later',"kitPrepLater('"+k+"')",false)+_kpBtn('Not now',"kitPrepNotNow('"+k+"')",false); }
+// The extras on a 🏡 Home Base / Dad's Day 🔴 NOW row: ⏱ + the two buttons (gone once she said Not now).
+function kitPrepRowExtras(s){
+  const x=kitPrepTodaySteps().find(function(y){ return kitPrepBlockKey(y.s)===kitPrepBlockKey(s); }); if(!x) return {cd:'',btns:''};
+  const b=kitPrepBlockRec(s); if(b&&b.at==="skip") return {cd:'',btns:''};
+  const st=kitPrepStartMin(s,x.at);
+  return {cd:_kpCd(st,st+kitPrepMins(s)),btns:_kpLaterBtns(s)};
+}
+function _kpFind(key){ return kitPrepTodaySteps().find(function(y){ return kitPrepBlockKey(y.s)===key; })||null; }
+function _kpSave(key,rec){
+  momBlocks[key]=rec; momBlocksOnValue(momBlocks);
+  if(_lbWrite()) db.ref('momBlocks/'+rec.iso+'/'+key).set(rec);
+  if(typeof tab!=='undefined'&&tab==="schedule"&&typeof renderAll==="function"){ renderAll(); return; }
+  try{ const el=document.getElementById('content'); if(el&&typeof renderMomsPlan==="function") renderMomsPlan(el); }catch(e){}
+}
+function kitPrepLater(key){
+  const x=_kpFind(key); if(!x||x.s.done) return;
+  const st=Math.max(_lbNowMin(),kitPrepStartMin(x.s,x.at))+10;
+  _kpSave(key,{iso:mwTodayIso(),kind:"prep",label:x.s.label||"",at:"later",startMin:st,ts:Date.now()});
+}
+function kitPrepNotNow(key){
+  const x=_kpFind(key); if(!x||x.s.done) return;
+  _kpSave(key,{iso:mwTodayIso(),kind:"prep",label:x.s.label||"",at:"skip",startMin:x.at,ts:Date.now()});
+}
+// Today's prep rows for the Mom agenda: [{m, html}] — same shape as momSchedLaundry.
+function momSchedPrep(dayName){
+  if(typeof _todayDay!=="string"||dayName!==_todayDay) return [];
+  const out=[];
+  kitPrepTodaySteps().forEach(function(x){
+    const s=x.s, nb=s.when==="nb", lbl='<b>'+esc(s.label)+'</b> <span style="color:#6b6560">· '+esc(s.mealName)+(nb?' (tomorrow)':'')+'</span>';
+    const doneBtn=_kpBtn('✓ Done',"kitMarkPrep('"+_lbQ(s.iso)+"','"+_lbQ(s.mid+"_"+s.idx)+"')",true);
+    if(s.done){
+      const ts=((kitPrepDone[s.iso]||{})[s.mid+"_"+s.idx]), dm=(typeof ts==="number")?_lbMin(ts):x.at;
+      out.push({m:(dm>=0&&dm<24*60)?dm:x.at,o:3,html:_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ '+(nb?'🌙 ':'🍳 ')+lbl+'</span>')});
+      return;
+    }
+    const b=kitPrepBlockRec(s);
+    if(b&&b.at==="skip"){ out.push({m:x.at,o:1,html:_lbBox('#fff7ed','#fdba74','<span style="flex:1;font-size:13px">'+(nb?'🌙 ':'⏲ ')+lbl+'</span>'+doneBtn)}); return; }
+    const st=kitPrepStartMin(s,x.at), mins=kitPrepMins(s);
+    out.push({m:st,o:2,html:_lbBox('#fff7ed','#ea580c','<span style="flex:1;font-size:13px">'+(nb?'🌙 ':'🍳 ')+lbl+' · '+mins+' min'+_kpCd(st,st+mins)+'</span>'+doneBtn+_kpLaterBtns(s))});
+  });
+  return out.sort(function(a,b2){ return (a.m-b2.m)||(a.o-b2.o); });
+}
+// ⏱ keeps counting without a repaint.
+function kitPrepCdTick(){ try{ const now=_lbNowMin(); document.querySelectorAll('.kp-cd').forEach(function(el){ el.textContent=kitPrepCdText(+el.getAttribute('data-s'),+el.getAttribute('data-e'),now); }); }catch(e){} }
+try{ if(typeof setInterval==="function"&&typeof document!=="undefined"&&document.querySelectorAll) setInterval(kitPrepCdTick,30000); }catch(e){}
+// MEALPREP_BLOCK_END
 // KIDLAUNDRY_START — a kid starting a load tells Mom (her ask 2026-10-04, Taylor's "Start a load of laundry").
 // Checking off a chore that STARTS a load drops "Taylor started laundry" onto Mom's 🧺 card in the washer, timed
 // from the check — the same 90-min "move it" nudge Mom gets for her own loads. The kid taps nothing extra.
@@ -12415,12 +12500,14 @@ function kitWhenLabel(w){
   let h=Math.floor(min/60); const mm=min%60, ap=h>=12?"PM":"AM"; h=h%12||12;
   return h+":"+String(mm).padStart(2,"0")+" "+ap;
 }
+// 🍳 MEALPREP_BLOCK: "how long" for a prep step (her ask 2026-10-08) — optional, 10 min when the meal never said.
+function kitPrepMins(s){ const v=parseInt(s&&s.mins,10); return (v>0&&v<=240)?v:10; }
 // Every prep step for the meal planned on `iso`, with its done flag.
 function kitPrepSteps(iso){
   const pl=kitPlanFor(iso);
   if(!pl||!pl.meal||!Array.isArray(pl.meal.prep)) return [];
   const done=kitPrepDone[iso]||{};
-  return pl.meal.prep.map((s,i)=>({iso:iso,mid:pl.mid,idx:i,when:s.when,label:s.label||"",
+  return pl.meal.prep.map((s,i)=>({iso:iso,mid:pl.mid,idx:i,when:s.when,label:s.label||"",mins:kitPrepMins(s),
     mealName:pl.meal.name||"",done:!!done[pl.mid+"_"+i]}));
 }
 // Steps due RIGHT NOW: today's timed steps whose time has arrived, plus
@@ -12433,14 +12520,15 @@ function kitDuePrepHTML(){
   kitDuePrep().forEach(s=>{
     n++;
     const nb=s.when==="nb";
-    html+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fff7ed;border-left:3px solid #ea580c;border-radius:8px;margin-bottom:6px">'
-      +'<span style="flex:1;font-size:13px">'+(nb?'🌙':'⏲')+' <b>'+esc(s.label)+'</b> <span style="color:#6b6560">· '+esc(s.mealName)+(nb?' (tomorrow)':' · '+kitWhenLabel(s.when))+'</span></span>'
-      +'<button onclick="kitMarkPrep(\''+s.iso+'\',\''+s.mid+'_'+s.idx+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#ea580c;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Done</button></div>';
+    const _kb=(typeof kitPrepRowExtras==="function")?kitPrepRowExtras(s):{cd:'',btns:''};   // 🍳 MEALPREP_BLOCK: ⏱ + ⏰ 10 min later / Not now
+    html+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:#fff7ed;border-left:3px solid #ea580c;border-radius:8px;margin-bottom:6px">'
+      +'<span style="flex:1;font-size:13px">'+(nb?'🌙':'⏲')+' <b>'+esc(s.label)+'</b> <span style="color:#6b6560">· '+esc(s.mealName)+(nb?' (tomorrow)':' · '+kitWhenLabel(s.when))+'</span>'+_kb.cd+'</span>'
+      +'<button onclick="kitMarkPrep(\''+s.iso+'\',\''+s.mid+'_'+s.idx+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#ea580c;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Done</button>'+_kb.btns+'</div>';
   });
   return {html:html,n:n};
 }
 function kitDuePrep(nowMin){
-  if(nowMin==null) nowMin=kitNowMin();
+  if(nowMin==null) nowMin=(typeof _mlNowMin==="function")?_mlNowMin():kitNowMin();
   const out=[], today=_todayStr();
   kitPrepSteps(today).forEach(s=>{
     if(s.done||s.when==="nb") return;
@@ -12450,6 +12538,7 @@ function kitDuePrep(nowMin){
   if(Math.floor(nowMin/60)>=KIT_NB_HOUR){
     kitPrepSteps(kitIsoPlus(today,1)).forEach(s=>{ if(!s.done&&s.when==="nb") out.push(s); });
   }
+  if(typeof kitPrepPutOff==="function") return out.filter(s=>!kitPrepPutOff(s,nowMin));   // 🍳 MEALPREP_BLOCK: ⏰ 10 min later → back when it's up
   return out;
 }
 function kitMarkPrep(iso,key){
@@ -12461,6 +12550,7 @@ function kitMarkPrep(iso,key){
     if(dayMap[key]) db.ref('kitchen/prepDone/'+iso+'/'+key).set(dayMap[key]);
     else db.ref('kitchen/prepDone/'+iso+'/'+key).remove();
   }
+  if(typeof tab!=='undefined'&&tab==="schedule"&&typeof renderAll==='function'){ renderAll(); return; }   // 🍳 MEALPREP_BLOCK: tapped on the schedule
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
 
@@ -12522,7 +12612,7 @@ function kitEditMeal(id){ kitPinGate(function(){ _kitEditMealGo(id); }); }
 function _kitEditMealGo(id){
   kitEditId=id||"new"; kitView=null;
   const m=(id&&kitMeals[id])||{};
-  kitEditPrep=(m.prep||[]).map(s=>({when:s.when,label:s.label}));
+  kitEditPrep=(m.prep||[]).map(s=>({when:s.when,label:s.label,mins:kitPrepMins(s)}));   // 🍳 MEALPREP_BLOCK: how long
   kitEditDraft={name:m.name||"",emoji:m.emoji||"",ing:m.ing||"",steps:m.steps||"",photo:m.photo||"",url:m.url||"",yield:m.yield||"",tags:Array.isArray(m.tags)?m.tags.slice():[]};
   kitCap={mode:null,busy:false,msg:"",photos:[]};   // a fresh photo tray for each recipe
   mpGoto('meals');
@@ -12536,11 +12626,12 @@ function kitAddPrepRow(){
   const mode=((document.getElementById('kit-prep-mode')||{}).value)||"t";
   const time=((document.getElementById('kit-prep-time')||{}).value)||"";
   const label=(((document.getElementById('kit-prep-label')||{}).value)||"").trim();
+  const mins=kitPrepMins({mins:((document.getElementById('kit-prep-mins')||{}).value)});   // 🍳 MEALPREP_BLOCK: blank → 10
   if(!label){ alert("Give the step a few words (\u201Cstart the Instant Pot\u201D)."); return; }
   const when=(mode==="nb")?"nb":time;
   if(when!=="nb"&&kitWhenMin(when)==null){ alert("Pick a time for the step (or switch it to night-before)."); return; }
   _kitStash();
-  kitEditPrep.push({when:when,label:label});
+  kitEditPrep.push({when:when,label:label,mins:mins});
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
 function kitDelPrepRow(i){
@@ -12554,7 +12645,7 @@ function kitSaveMeal(){
   if(!(d.name||"").trim()){ alert("The meal needs a name."); return; }
   const id=(kitEditId&&kitEditId!=="new")?kitEditId:"m"+Date.now().toString(36);
   const m={name:d.name.trim(),ing:d.ing||"",steps:d.steps||"",
-    prep:kitEditPrep.map(s=>({when:s.when,label:s.label})),
+    prep:kitEditPrep.map(s=>({when:s.when,label:s.label,mins:kitPrepMins(s)})),   // 🍳 MEALPREP_BLOCK
     ts:(kitMeals[id]&&kitMeals[id].ts)||Date.now()};
   if((d.emoji||"").trim()) m.emoji=d.emoji.trim();
   // 🍽 recipe fields (2026-10-01): a small picture (data URI ≤ ~60 KB, works on the free Firebase plan), where it came from, tags, how much it makes
@@ -15610,13 +15701,14 @@ function kitEditorHTML(){
   kitEditPrep.forEach((s,i)=>{
     h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:9px;margin-bottom:5px">'
       +'<span style="font-size:11px;font-weight:800;color:#c2410c;white-space:nowrap">'+(s.when==="nb"?'🌙 night before':'⏲ '+kitWhenLabel(s.when))+'</span>'
-      +'<span style="flex:1;font-size:13px;font-weight:600">'+esc(s.label)+'</span>'
+      +'<span style="flex:1;font-size:13px;font-weight:600">'+esc(s.label)+' <span style="font-size:11px;font-weight:700;color:#9a3412">· '+kitPrepMins(s)+' min</span></span>'
       +'<button onclick="kitDelPrepRow('+i+')" style="border:none;background:none;color:#9ca3af;font-size:14px;cursor:pointer;padding:2px 4px">✕</button></div>';
   });
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'
     +'<select id="kit-prep-mode" onchange="var t=document.getElementById(\'kit-prep-time\');if(t)t.style.display=(this.value===\'nb\'?\'none\':\'\')" style="padding:9px 8px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif"><option value="t">At a time</option><option value="nb">Night before</option></select>'
     +'<input type="time" id="kit-prep-time" style="padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
     +'<input type="text" id="kit-prep-label" placeholder="Start the Instant Pot…" onkeydown="if(event.key===\'Enter\')kitAddPrepRow()" style="flex:1;min-width:140px;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
+    +'<label style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:700;color:#334155">How long? <input type="number" id="kit-prep-mins" min="1" max="240" value="10" style="width:56px;padding:8px 6px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif"> min</label>'   // 🍳 MEALPREP_BLOCK
     +'<button onclick="kitAddPrepRow()" style="padding:9px 14px;border-radius:9px;border:1.5px solid #E07B39;background:#fff;color:#c2410c;font-size:13px;font-weight:700;cursor:pointer">＋ Step</button></div>'
     +'<button onclick="kitSaveMeal()" style="margin-top:12px;width:100%;padding:12px;border-radius:10px;border:none;background:#2B7A78;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">💾 Save meal</button>'
     +'</div></div>';
@@ -53026,6 +53118,7 @@ function _mlQueueLayCore(tasks){
       let st=b.startMin; if(x&&typeof checked!=="undefined"&&checked&&checked[x.id]){ const c=_mlCkAt(x); st=(c!==null)?c:_ckEnd(x); }
       _blkIv.push([st,st+b.mins]); _mlBlkLaid[b.key]=st;
     }); }catch(e){}
+    try{ if(typeof kitPrepBlocksOpen==="function") kitPrepBlocksOpen().forEach(function(b){ _blkIv.push([b.startMin,b.startMin+b.mins]); _mlBlkLaid[b.key]=b.startMin; }); }catch(e){}   // 🍳 MEALPREP_BLOCK: at its time
     const newTimes={}; const momWait={};
     Object.keys(_famLay).forEach(function(id){ newTimes[id]=_famLay[id]; });   // LIVINGDAY_FAM
     seq.forEach(function(e){
