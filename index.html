@@ -11536,10 +11536,10 @@ function hhRowHTML(id,job){
     +_hhChip('8 wk '+st.done8+'/'+st.due8+' ('+hhPct(st.done8,st.due8)+')','#f3f4f6','#1f2937')
     +(st.late8?_hhChip('late '+st.late8,'#fef3c7','#92400e'):'')+(st.miss8?_hhChip('missed '+st.miss8,'#fee2e2','#991b1b'):'')+(st.last?_hhChip('last '+st.last.slice(5),'#f3f4f6','#64748b'):'')+'</div>';
   h+='<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:6px">'
-    +_hhBtn("hhCycle('"+id+"','area')",a[0]+' '+a[1],false,'#2B7A78')+((job.area==="cleaning"||job.area==="pickup")?_hhBtn("hhCycle('"+id+"','floor')",'🏠 '+fl,false,'#2B7A78'):'')
+    +_hhBtn("hhPickToggle('"+id+"','area')",a[0]+' '+a[1],false,'#2B7A78')+((job.area==="cleaning"||job.area==="pickup")?_hhBtn("hhPickToggle('"+id+"','floor')",'🏠 '+fl,false,'#2B7A78'):'')
     +'<span style="flex:1"></span>';
   Object.keys(HH_VERDICTS).forEach(function(k){ const V=HH_VERDICTS[k]; h+=_hhBtn("hhSet('"+id+"','verdict','"+k+"')",V[0]+' '+V[1],v===k,V[2]); });
-  h+='</div><input type="text" value="'+esc(job.note||'')+'" placeholder="Note (move to Tue, give to Lucy, …)" onchange="hhNote(\''+id+'\',this)" style="width:100%;box-sizing:border-box;margin-top:6px;padding:6px 8px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif">';
+  h+='</div>'+(typeof hhPickHTML==="function"?hhPickHTML(id,"area")+hhPickHTML(id,"floor"):'')+'<input type="text" value="'+esc(job.note||'')+'" placeholder="Note (move to Tue, give to Lucy, …)" onchange="hhNote(\''+id+'\',this)" style="width:100%;box-sizing:border-box;margin-top:6px;padding:6px 8px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif">';
   return h+'</div>';
 }
 function hhReviewHTML(){
@@ -11669,6 +11669,24 @@ function hhGuessRoom(j){
   return "any";
 }
 function hhRoomOf(j){ return (j&&j.room&&HH_ROOMS.some(function(r){ return r[0]===j.room; }))?j.room:hhGuessRoom(j); }
+// HH_PICKERS (her report 2026-10-09: "i clicked the thing in livingroom and it disappeared"): a tap on area / floor / room /
+// level used to jump the row to the NEXT value, which moved it out of the card she was looking at. Now a tap opens a row of
+// choices under the row; nothing changes until she picks one.
+let hhPick="";   // "<id>|<field>" of the open picker
+function hhPickToggle(id,field){ hhPick=(hhPick===id+"|"+field)?"":id+"|"+field; hhRender(); }
+function hhPickSet(id,field,val){ hhPick=""; hhSet(id,field,val); }
+function hhPickHTML(id,field){
+  if(hhPick!==id+"|"+field) return "";
+  const j=hhJobs()[id]||{}; let opts=[], cur="";
+  if(field==="area"){ opts=Object.keys(HH_AREAS).map(function(k){ return [k,HH_AREAS[k][0]+" "+HH_AREAS[k][1]]; }); cur=j.area||"cleaning"; }
+  else if(field==="floor"){ opts=Object.keys(HH_FLOORS).map(function(k){ return [k,HH_FLOORS[k]]; }); cur=j.floor||"ask"; }
+  else if(field==="room"){ opts=HH_ROOMS.map(function(r){ return [r[0],(r[2]==="up"?"⬆️ ":r[2]==="down"?"⬇️ ":"")+r[1]]; }); cur=hhRoomOf(j); }
+  else if(field==="level"){ opts=[[1,"Level 1"],[2,"Level 2"],[3,"Level 3"]]; cur=hhLevelOf(j); }
+  else return "";
+  let h='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;padding:6px 8px;background:#f8fafc;border-radius:9px">';
+  opts.forEach(function(o){ const on=String(o[0])===String(cur); h+='<button onclick="hhPickSet(\''+id+'\',\''+field+'\','+(typeof o[0]==="number"?o[0]:"'"+o[0]+"'")+')" style="padding:4px 9px;border-radius:8px;border:1.5px solid '+(on?'#2B7A78':'#e5e7eb')+';background:'+(on?'#2B7A78':'#fff')+';color:'+(on?'#fff':'#334155')+';font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+esc(o[1])+'</button>'; });
+  return h+_hhBtn("hhPickToggle('"+id+"','"+field+"')",'✕',false,'#94a3b8')+'</div>';
+}
 function hhRoomName(id){ const r=HH_ROOMS.find(function(x){ return x[0]===id; }); return r?r[1]:id; }
 function hhLayerOf(j){
   if(j.who==="grab") return "grab"; if(j.layer==="project") return "project";
@@ -11742,7 +11760,7 @@ function hhRoomHTML(){
     const weeklyOwned=mine.some(function(id){ return /^(wk:|sat|sun)/.test(hhPlanCad(jobs[id])); });
     h+='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);margin-bottom:10px;overflow:hidden"><div onclick="hhOpenRoom=(hhOpenRoom===\''+rid+'\')?\'\':\''+rid+'\';hhRender()" style="display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer"><span style="font-size:14px;font-weight:800">'+esc(r[1])+'</span><span style="font-size:11px;color:var(--muted)">'+mine.length+' jobs</span>'+((rid!=="any"&&!weeklyOwned)?_hhChip('no weekly job owns this room','#fee2e2','#991b1b'):'')+'<span style="flex:1"></span><span style="font-size:12px;color:var(--muted)">'+(hhOpenRoom===rid?'▾':'▸')+'</span></div>';
     if(hhOpenRoom===rid){ mine.sort(function(x,y){ const cx=hhPlanCad(jobs[x]), cy=hhPlanCad(jobs[y]); return (cx==="daily"?0:1)-(cy==="daily"?0:1)||HH_WHO.indexOf(jobs[x].who)-HH_WHO.indexOf(jobs[y].who); }).forEach(function(id){ const j=jobs[id];
-        h+='<div style="padding:7px 12px;border-top:1px solid #eef2f0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px;font-weight:700"><span>'+(j.emoji||'☐')+'</span><span style="flex:1;min-width:100px">'+esc(j.label)+'</span>'+_hhChip(esc(hhWhoName(j.who)),'#f3f4f6','#475569')+_hhChip(esc(cadLabel(hhPlanCad(j))),'#f3f4f6','#475569')+_hhBtn("hhRoomCycle('"+id+"')",'🚪 '+esc(hhRoomName(hhRoomOf(j))),false,'#2B7A78')+'</div>'; }); }
+        h+='<div style="padding:7px 12px;border-top:1px solid #eef2f0"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px;font-weight:700"><span>'+(j.emoji||'☐')+'</span><span style="flex:1;min-width:100px">'+esc(j.label)+'</span>'+_hhChip(esc(hhWhoName(j.who)),'#f3f4f6','#475569')+_hhChip(esc(cadLabel(hhPlanCad(j))),'#f3f4f6','#475569')+_hhBtn("hhPickToggle('"+id+"','room')",'🚪 '+esc(hhRoomName(hhRoomOf(j))),false,'#2B7A78')+'</div>'+hhPickHTML(id,"room")+'</div>'; }); }
     h+='</div>'; });
   return h;
 }
@@ -11767,7 +11785,7 @@ function hhLevelsHTML(){
   [1,2,3].forEach(function(L){ const mine=ids.filter(function(id){ const j=jobs[id]; return j.status!=="retired"&&(j.area==="cleaning"||j.area==="pickup")&&hhLevelOf(j)===L; });
     h+='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);margin-bottom:10px;overflow:hidden"><div style="padding:9px 12px;font-size:13px;font-weight:800;'+(L>cur?'color:#9ca3af':'')+'">Level '+L+' · '+mine.length+' jobs'+(L>cur?' · not on yet':'')+'</div>';
     mine.sort(function(x,y){ return HH_WHO.indexOf(jobs[x].who)-HH_WHO.indexOf(jobs[y].who)||((jobs[x].order||0)-(jobs[y].order||0)); }).forEach(function(id){ const j=jobs[id];
-      h+='<div style="padding:6px 12px;border-top:1px solid #eef2f0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px;font-weight:700"><span>'+(j.emoji||'☐')+'</span><span style="flex:1;min-width:100px">'+esc(j.label)+'</span>'+_hhChip(esc(hhWhoName(j.who)),'#f3f4f6','#475569')+_hhBtn("hhLevelCycle('"+id+"')",'🪜 L'+hhLevelOf(j),false,'#2B7A78')+'</div>'; });
+      h+='<div style="padding:6px 12px;border-top:1px solid #eef2f0"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px;font-weight:700"><span>'+(j.emoji||'☐')+'</span><span style="flex:1;min-width:100px">'+esc(j.label)+'</span>'+_hhChip(esc(hhWhoName(j.who)),'#f3f4f6','#475569')+_hhBtn("hhPickToggle('"+id+"','level')",'🪜 L'+hhLevelOf(j),false,'#2B7A78')+'</div>'+hhPickHTML(id,"level")+'</div>'; });
     h+='</div>'; });
   return h;
 }
