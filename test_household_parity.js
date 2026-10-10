@@ -107,6 +107,17 @@ console.log("Better: a moved weekday from the grid becomes the day at Take over"
   ok("a retired row leaves the list the way ✕ does", (()=>{ d.hhSet("rt_chores_lucy_take_sheets_off_beds","verdict","retire"); return d.rtStepsFor("chores","lucy",true).length===1&&d.rtStepsFor("chores","lucy",true)[0].label==="wipe down tables by couches and under tv"; })());
   ok("a second import under Take over adds nothing (ids come from the steps)", d.hhImport()===0);
 }
+console.log("Level gate: house rows above the current level stay off the lists; health and animals always go");
+{ const g=mk(); g.hhImport(); g.hhTakeover(true); const n0=g.rtStepsFor("chores","lucy",true).length;
+  g.hhSet("rt_chores_lucy_take_sheets_off_beds","level",3);
+  ok("a level-3 house row leaves the list while the level is 1 (not retired)", g.rtStepsFor("chores","lucy",true).length===n0-1&&g.hhJobs().rt_chores_lucy_take_sheets_off_beds.status==="active");
+  g.hhSet("rt_morning_ellis_brush_teeth","level",3); ok("a level-3 HEALTH row stays on the list", g.rtStepsFor("morning","ellis",true)[0].label==="Brush Teeth");
+  g.hhLevelSet(3); ok("moving up to 3 puts it back, same position", g.rtStepsFor("chores","lucy",true).length===n0&&g.rtStepsFor("chores","lucy",true)[0].label==="Take sheets off beds");
+  g.hhLevelSet(1); g.writes.length=0; g.rtCfgSet("chores","lucy",0,"pts",15);
+  ok("the editor saving while a row is gated off does not retire it", g.hhJobs().rt_chores_lucy_take_sheets_off_beds.status==="active"&&!Object.values(g.writes[0]?g.writes[0][2]:{}).includes("retired"));
+  g.hhSet("mc_mc_sheets","level",2); g.hhSet("mc_mc_sheets","area","cleaning"); ok("Mom's level-2 cleaning row is off her strip at level 1", !g.mcAll().mc_sheets);
+  g.hhLevelSet(2); ok("…and back at level 2", !!g.mcAll().mc_sheets);
+}
 console.log("9. flip back: exactly the lists from before");
 { const e=mk(); const b0=snapshot(e); e.hhImport(); e.hhTakeover(true); e.rtCfgSet("chores","lucy",0,"pts",99); e.mcDel("mc_sheets");
   ok("edits under Take over changed the derived lists", e.rtStepsFor("chores","lucy",true)[0].pts===99&&!e.mcAll().mc_sheets);

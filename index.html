@@ -11765,7 +11765,7 @@ function hhRoomHTML(){
   return h;
 }
 // ── Levels ──
-function hhLevelSet(v){ if(typeof momHere==="function"&&!momHere()) return; v=parseInt(v,10); if(!(v>=1&&v<=3)) return; householdData.levels=householdData.levels||{}; householdData.levels.cleaning=Object.assign({},householdData.levels.cleaning,{current:v,at:Date.now()}); householdOnValue(householdData); if(_hhWrite()) db.ref("household/levels/cleaning/current").set(v); hhRender(); }
+function hhLevelSet(v){ if(typeof momHere==="function"&&!momHere()) return; v=parseInt(v,10); if(!(v>=1&&v<=3)) return; householdData.levels=householdData.levels||{}; householdData.levels.cleaning=Object.assign({},householdData.levels.cleaning,{current:v,at:Date.now()}); householdOnValue(householdData); if(_hhWrite()) db.ref("household/levels/cleaning/current").set(v); if(typeof renderAll==="function") renderAll(); else hhRender(); }   // HH_LEVEL_GATE: lists follow the level
 function hhLevelCycle(id){ const j=hhJobs()[id]; if(!j) return; hhSet(id,"level",(hhLevelOf(j)%3)+1); }
 // The last three full Mon–Sun weeks: due vs done over the house rows at or below the current level.
 function hhReady(level){
@@ -11779,7 +11779,7 @@ function hhLevelsHTML(){
   const cur=hhLevelCur(), R=hhReady(cur); let h='';
   h+='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:12px;margin-bottom:10px">'
     +'<div style="display:flex;align-items:center;gap:8px"><span style="font-size:14px;font-weight:800">🪜 Cleaning is at Level '+cur+'</span><span style="flex:1"></span>'+_hhBtn("hhLevelSet("+(cur-1)+")",'▾ down',false,'#64748b')+_hhBtn("hhLevelSet("+(cur+1)+")",'▴ up',cur<3,'#2B7A78')+'</div>'
-    +'<div style="font-size:11px;color:var(--muted);margin:6px 0">Level 1 = dailies + one main chore a day. Level 2 = the room-a-day jobs. Level 3 = the monthly rotation and a room each for the older kids. Moving up is your tap, never automatic. Until Take over this is a readout only.</div>'
+    +'<div style="font-size:11px;color:var(--muted);margin:6px 0">Level 1 = dailies + one main chore a day. Level 2 = the room-a-day jobs. Level 3 = the monthly rotation and a room each for the older kids. Moving up is your tap, never automatic. '+((typeof hhTakeoverOn==="function"&&hhTakeoverOn())?'House rows above the current level stay off the lists until you move up; health and animals always go out.':'Until Take over this is a readout only.')+'</div>'
     +'<div style="font-size:12px;font-weight:700;margin-top:6px">Ready for the next level? '+(R.ready?'<span style="color:#15803d">Yes — three weeks at 80%+</span>':'<span style="color:#b45309">Not yet</span>')+' <span style="font-weight:600;color:var(--muted)">('+R.rows+' house rows at level ≤ '+cur+')</span></div>'
     +'<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">'+R.weeks.map(function(w){ return _hhChip('wk of '+w.mon.slice(5)+': '+w.done+'/'+w.due+' ('+hhPct(w.done,w.due)+')',w.due&&w.rate>=.8?'#dcfce7':'#f3f4f6',w.due&&w.rate>=.8?'#166534':'#475569'); }).join('')+'</div></div>';
   [1,2,3].forEach(function(L){ const mine=ids.filter(function(id){ const j=jobs[id]; return j.status!=="retired"&&(j.area==="cleaning"||j.area==="pickup")&&hhLevelOf(j)===L; });
@@ -11806,9 +11806,12 @@ const HH_STEP_KEYS=["emoji","label","pts","cad","time","from","to","rot","zone",
 function _hhPickStep(st){ const o={}; HH_STEP_KEYS.forEach(function(k){ const v=st&&st[k]; if(v!==undefined&&v!==null&&v!=="") o[k]=v; }); if(o.pts===undefined) o.pts=0; else o.pts=parseInt(o.pts,10)||0; if(!o.cad) o.cad="daily"; return o; }
 function _hhIsKidJob(j){ return j&&ROSTER.indexOf(j.who)>=0&&(!j.src||j.src.kind==="routine"||j.src.kind==="new"); }
 function hhStepOf(job,id){ const o=_hhPickStep(job); Object.defineProperty(o,"_hh",{value:id,enumerable:false,writable:true}); return o; }
-function hhKidJobIds(slot,kid){ const jobs=hhJobs(); return Object.keys(jobs).filter(function(id){ const j=jobs[id]; return _hhIsKidJob(j)&&j.who===kid&&j.slot===slot&&j.status!=="retired"; }).sort(function(a,b){ return ((jobs[a].order||0)-(jobs[b].order||0))||(a<b?-1:1); }); }
+// HH_LEVEL_GATE (the plan's rule, her yes 2026-10-09): a house row (pickup / cleaning) goes on a list only when its level is at
+// or below the current Cleaning level; health and animal rows always go. Moving up or down is her tap on 🪜 Levels.
+function hhLevelOut(j){ return !(j.area==="cleaning"||j.area==="pickup")||hhLevelOf(j)<=hhLevelCur(); }
+function hhKidJobIds(slot,kid){ const jobs=hhJobs(); return Object.keys(jobs).filter(function(id){ const j=jobs[id]; return _hhIsKidJob(j)&&j.who===kid&&j.slot===slot&&j.status!=="retired"&&hhLevelOut(j); }).sort(function(a,b){ return ((jobs[a].order||0)-(jobs[b].order||0))||(a<b?-1:1); }); }
 function hhDeriveKids(){ const jobs=hhJobs(), out={}; SL_SLOTS.forEach(function(slot){ out[slot]={}; ROSTER.forEach(function(kid){ const ids=hhKidJobIds(slot,kid); if(ids.length) out[slot][kid]=ids.map(function(id){ return hhStepOf(jobs[id],id); }); }); }); return out; }
-function hhDerivePerson(who){ const jobs=hhJobs(), out={_seeded:true}; Object.keys(jobs).filter(function(id){ const j=jobs[id]; return j.who===who&&j.status!=="retired"; }).sort(function(a,b){ return ((jobs[a].order||0)-(jobs[b].order||0))||(a<b?-1:1); }).forEach(function(id){ const j=jobs[id], key=(j.src&&j.src.id)||id, c={label:j.label||"",cad:j.cad||"daily",ts:(j.srcTs!==undefined?j.srcTs:(j.ts||0))}; if(j.slot) c.slot=j.slot; out[key]=c; }); return out; }
+function hhDerivePerson(who){ const jobs=hhJobs(), out={_seeded:true}; Object.keys(jobs).filter(function(id){ const j=jobs[id]; return j.who===who&&j.status!=="retired"&&hhLevelOut(j); }).sort(function(a,b){ return ((jobs[a].order||0)-(jobs[b].order||0))||(a<b?-1:1); }).forEach(function(id){ const j=jobs[id], key=(j.src&&j.src.id)||id, c={label:j.label||"",cad:j.cad||"daily",ts:(j.srcTs!==undefined?j.srcTs:(j.ts||0))}; if(j.slot) c.slot=j.slot; out[key]=c; }); return out; }
 function _hhRefill(target,v){ Object.keys(target).forEach(function(k){ delete target[k]; }); Object.keys(v||{}).forEach(function(k){ target[k]=v[k]; }); }
 function hhMaterialize(){
   if(hhTakeoverOn()){ _hhWasOn=true; routineCfg2=hhDeriveKids(); morningRoutineCfg={}; _hhRefill(momChoresData,hhDerivePerson("mom")); _hhRefill(dadChoresData,hhDerivePerson("dad")); }
@@ -11834,7 +11837,7 @@ function hhSyncKids(){
         if(j.status!=="active"){ upd["household/jobs/"+id+"/status"]="active"; j.status="active"; }
       }
       seen[id]=1; }); }); });
-  Object.keys(jobs).forEach(function(id){ const j=jobs[id]; if(_hhIsKidJob(j)&&j.status!=="retired"&&!seen[id]){ upd["household/jobs/"+id+"/status"]="retired"; upd["household/jobs/"+id+"/verdict"]="retire"; j.status="retired"; j.verdict="retire"; } });
+  Object.keys(jobs).forEach(function(id){ const j=jobs[id]; if(_hhIsKidJob(j)&&j.status!=="retired"&&hhLevelOut(j)&&!seen[id]){ upd["household/jobs/"+id+"/status"]="retired"; upd["household/jobs/"+id+"/verdict"]="retire"; j.status="retired"; j.verdict="retire"; } });   // HH_LEVEL_GATE: a gated-off row is not a deleted row
   if(Object.keys(upd).length&&_hhWrite()) db.ref().update(upd);
   householdOnValue(householdData);
 }
