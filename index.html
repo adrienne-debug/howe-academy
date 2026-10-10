@@ -11427,7 +11427,9 @@ function momDayStripHTML(iso,today,who){
     h+='<div style="margin-top:10px;padding-top:9px;border-top:1px dashed var(--border)">'+colHd('🧺','Laundry',_ln?'<span style="margin-left:auto;color:#2563eb">'+_ln+' running</span>':'')
       +'<div style="display:flex;gap:5px">'
       +'<input type="text" id="laundry-label" placeholder="Start a load (Towels…)" onkeydown="if(event.key===\'Enter\')laundryAdd()" style="flex:1;min-width:0;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12.5px;font-family:\'DM Sans\',sans-serif">'
-      +'<button onclick="laundryAdd()" style="padding:8px 12px;border-radius:9px;border:none;background:#2563eb;color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap">🫧 Start</button></div></div>'; }
+      +'<button onclick="laundryAdd()" style="padding:8px 12px;border-radius:9px;border:none;background:#2563eb;color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap">🫧 Start</button></div>'
+      +((typeof wtRowHTML==="function")?wtRowHTML(who):"")   // 💦 WASHTODAY
+      +'</div>'; }
   // shopping sits under the to-dos, in the same column
   h+='<div style="margin-top:10px;padding-top:9px;border-top:1px dashed var(--border)">'+colHd('🛒','Shopping','')
     +P.shop()
@@ -11497,7 +11499,8 @@ function momChoresCardHTML(iso,today){
 
 // ── 🧺 Laundry — loads move washer → dryer → fold → put away (gone) ────
 const LAUNDRY_STAGES=["washer","dryer","fold"];
-const LAUNDRY_STAGE_META={washer:["🫧","In the washer"],dryer:["🌀","In the dryer"],fold:["🧺","Fold pile"]};
+const LAUNDRY_STAGE_META={washer:["🫧","In the washer"],dryer:["🌀","In the dryer"],fold:["🧺","Fold pile"],bin:["🪣","Wash today"],prewash:["🫧","Prewash"]};   // bin, prewash = 💦 WASHTODAY
+const LAUNDRY_WET_STAGES=["prewash","washer","dryer","fold"];   // 💦 WASHTODAY: wet things are washed twice (they stink otherwise — her rule 2026-10-09)
 const LAUNDRY_STALE_MIN=90; // washer-sitting threshold before the NOW nudge (mildew guard) — now = washer minutes + reminder (60 + 30 by default)
 // 🧺 LAUNDRYTIMES (her ask 2026-10-06): Mom sets how long the washer and dryer take and how long after a cycle ends to remind her.
 // settings/laundryTimes {wash,dry,grace} minutes, one per family (defaults 60 / 60 / 30 — the old 90-minute washer nudge exactly).
@@ -11505,7 +11508,7 @@ let laundryTimes={}, laundryEditOpen=false;
 try{ laundryTimes=JSON.parse(HA_LS.getItem('ha_laundry_times')||"{}")||{}; }catch(e){}
 function laundryTimesOnValue(v){ laundryTimes=v||{}; try{ HA_LS.setItem('ha_laundry_times',JSON.stringify(laundryTimes)); }catch(e){} }
 function laundryT(k){ const d={wash:60,dry:60,grace:30}[k]; const v=parseInt((laundryTimes||{})[k],10); return (v>0&&v<=600)?v:d; }
-function laundryDoneAt(l){ const m=(l&&l.stage==="washer")?laundryT("wash"):(l&&l.stage==="dryer")?laundryT("dry"):0; return m?(l.ts||0)+m*60000:0; }
+function laundryDoneAt(l){ const m=(l&&(l.stage==="washer"||l.stage==="prewash"))?laundryT("wash"):(l&&l.stage==="dryer")?laundryT("dry"):0; return m?(l.ts||0)+m*60000:0; }   // prewash = 💦 WASHTODAY
 function laundryDoneTxt(l){ const d=laundryDoneAt(l); if(!d) return ""; const t=laundrySince(d); return Date.now()>=d?' · <b style="color:#16a34a">done at '+t+'</b>':' · done ~'+t; }
 function laundryEditToggle(){ const go=function(){ laundryEditOpen=!laundryEditOpen; const el=document.getElementById('content'); if(el) renderMomsPlan(el); };
   if(typeof momHere==="function"&&momHere()) go(); else if(typeof kitPinGate==="function") kitPinGate(go,"Laundry times are for Mom."); }
@@ -11540,7 +11543,10 @@ function laundryAdvance(id){
   const l=laundryData[id]; if(!l) return;
   try{ if(typeof laundryBlockDone==="function") laundryBlockDone(id,l.stage); }catch(e){}   // MOMSCHED_LAUNDRY: ends that stage's block
   const i=LAUNDRY_STAGES.indexOf(l.stage);
-  if(i<0||i===LAUNDRY_STAGES.length-1){
+  if(l.stage==="bin"||l.stage==="prewash"){   // 💦 WASHTODAY: bin → prewash → (second) wash; each wash starts the washer clock
+    l.stage=(l.stage==="bin")?"prewash":"washer"; l.ts=Date.now();
+    if(typeof db!=='undefined'&&db) db.ref('laundry/'+id).set(l);
+  } else if(i<0||i===LAUNDRY_STAGES.length-1){
     delete laundryData[id]; // put away — load complete
     if(typeof db!=='undefined'&&db) db.ref('laundry/'+id).remove();
     if(typeof mwToast==='function') mwToast('🧺 '+(l.label||'Load')+' put away!');
@@ -11561,7 +11567,7 @@ function laundryDel(id){
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
 function laundryAdvanceLabel(stage){
-  return stage==="washer"?"→ Dryer":stage==="dryer"?"→ Fold":"✓ Put away";
+  return stage==="bin"?"🫧 Start prewash":stage==="prewash"?"🫧 Second wash":stage==="washer"?"→ Dryer":stage==="dryer"?"→ Fold":"✓ Put away";   // bin, prewash = 💦 WASHTODAY
 }
 function laundrySince(ts){
   try{ return new Date(ts).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}); }catch(e){ return ""; }
@@ -11644,15 +11650,15 @@ function momSchedLaundry(dayName,dayTasks){
   const place=function(m,ord,html){ if(m<0) m=nowM; if(m>=24*60) return; out.push({m:m,o:ord,html:html}); };   // from an earlier day → now; tomorrow → not today's
   const next=momSchedNextMom(dayTasks);
   Object.keys(laundryData||{}).forEach(function(id){
-    const l=laundryData[id]; if(!l||(l.stage!=="washer"&&l.stage!=="dryer")) return;
-    const dry=l.stage==="dryer", key=momBlockKey(id,l.stage), lbl='<b>'+esc(l.label||"Load")+'</b>';
+    const l=laundryData[id]; if(!l||(l.stage!=="washer"&&l.stage!=="dryer"&&l.stage!=="prewash")) return;   // prewash = 💦 WASHTODAY
+    const dry=l.stage==="dryer", pre=l.stage==="prewash", key=momBlockKey(id,l.stage), lbl='<b>'+esc(l.label||"Load")+'</b>';
     const sm=_lbMin(l.ts||0);
-    if(sm>=0) place(sm,0,_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#475569">'+(dry?'🌀 ':'🫧 ')+lbl+' — '+(dry?'in the dryer':'in the washer')+' · started '+laundrySince(l.ts)+'</span>'));
+    if(sm>=0) place(sm,0,_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#475569">'+(dry?'🌀 ':'🫧 ')+lbl+' — '+(dry?'in the dryer':pre?'in the washer (prewash)':'in the washer')+' · started '+laundrySince(l.ts)+'</span>'));
     const da=laundryDoneAt(l); if(!da) return;
-    const b=momBlockFor(id,l.stage), doneTxt='✅ '+lbl+' is done in the '+(dry?'dryer':'washer');
+    const b=momBlockFor(id,l.stage), doneTxt='✅ '+lbl+(pre?' — prewash done':' is done in the '+(dry?'dryer':'washer'));
     if(!b){
       place(_lbMin(da),1,_lbBox('#ecfdf5','#16a34a',
-        '<span style="flex:1 1 100%;font-size:13px">'+doneTxt+'. Block out time to '+(dry?'fold it':'move it to the dryer')+'?</span>'
+        '<span style="flex:1 1 100%;font-size:13px">'+doneTxt+'. Block out time to '+(dry?'fold it':pre?'start the second wash':'move it to the dryer')+'?</span>'
         +'<label style="font-size:12px;color:#334155;font-weight:700">How long? <input id="lb-min-'+key+'" type="number" min="1" max="240" value="'+laundryBlockDefault(l.stage)+'" style="width:54px;padding:4px 6px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px"> min</label>'
         +_lbQBtn('Now',"laundryBlockSet('"+_lbQ(id)+"','"+l.stage+"','now')",true)
         +(next?_lbQBtn('After '+esc(_lbCardName(next)),"laundryBlockSet('"+_lbQ(id)+"','"+l.stage+"','after','"+_lbQ(next.id)+"')",false):'')
@@ -11662,12 +11668,12 @@ function momSchedLaundry(dayName,dayTasks){
     if(b.at==="skip"){ place(_lbMin(da),1,_lbBox('#ecfdf5','#16a34a','<span style="flex:1;font-size:13px">'+doneTxt+'</span>'+_lbBtn(id,l.stage))); return; }
     place(_lbMin(da),1,_lbBox('#ecfdf5','#16a34a','<span style="flex:1;font-size:13px">'+doneTxt+'</span>'));
     const bm=(_mlBlkLaid&&_mlBlkLaid[key]!==undefined)?_mlBlkLaid[key]:(+b.startMin||nowM);
-    place(bm,2,_lbBox('#eff6ff','#2563eb','<span style="flex:1;font-size:13px">🧺 '+(dry?'Fold: ':'Move to the dryer: ')+lbl
+    place(bm,2,_lbBox('#eff6ff','#2563eb','<span style="flex:1;font-size:13px">🧺 '+(dry?'Fold: ':pre?'Second wash: ':'Move to the dryer: ')+lbl
       +' · <input type="number" min="1" max="240" value="'+(parseInt(b.mins,10)||laundryBlockDefault(l.stage))+'" onchange="laundryBlockMinsEdit(\''+key+'\',this.value)" style="width:48px;padding:2px 5px;border:1.5px solid #bfdbfe;border-radius:6px;font-size:12px"> min</span>'+_lbBtn(id,l.stage)));
   });
   Object.keys(momBlocks||{}).forEach(function(k){   // finished blocks stay on today's timeline where they ended
     const b=momBlocks[k]; if(!b||b.iso!==mwTodayIso()||!b.done||b.at==="skip") return;
-    place(+b.doneMin||0,3,_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ '+(b.stage==="dryer"?'Folded: ':'Moved to the dryer: ')+'<b>'+esc(b.label||"Load")+'</b></span>'));
+    place(+b.doneMin||0,3,_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ '+(b.stage==="dryer"?'Folded: ':b.stage==="prewash"?'Second wash started: ':'Moved to the dryer: ')+'<b>'+esc(b.label||"Load")+'</b></span>'));
   });
   return out.sort(function(a,b2){ return (a.m-b2.m)||(a.o-b2.o); });
 }
@@ -11793,6 +11799,60 @@ function cpLaundryBtnHTML(st,i){
 }
 function cpSetLaundry(i,v){ if(!momHere()) return; rtCfgSet(cpSlot,cpKid,i,"laundry",!!v); renderAll(); }
 // KIDLAUNDRY_END
+// WASHTODAY_START — 💦 "Wet or soiled" (her laundry system 2026-10-09; PR 1 of the Household plan; her "yes" 2026-10-09 after
+// the talk-through). Anything WET — accident sheets, a soaked towel, a wet dog blanket — goes in the lidded wash-today bin by
+// the washer, never in a hamper, and runs that night or next morning as an extra load, WASHED TWICE ("prewash for all,
+// they stink if not washed twice"). Mom-and-Dad-only: the kids neither carry it nor report it (her words), so nothing lands
+// on a kid's page, list or log. One row under Start a load on Mom's Day and Dad's Day: Towels · Sheets (king) · queen · Dog stuff.
+//   (a) one line on the 🧺 Laundry card: "💦 Sheets (king) · 7:40 AM", stage "bin" = Wash today (no clock). 🫧 Start prewash →
+//       🫧 Second wash → Dryer → Fold; each wash runs the washer clock, so the schedule's done-marker ("block out time to start
+//       the second wash?") fires after the prewash too. The NOW-card mildew nudge starts with the second wash, as today
+//       (renderMomsDay is left byte-for-byte as it was).
+//   (b) Sheets: "🛏 Put the spare sheets on the king/queen" on Mom's to-do (Dad's if tapped from his Day). Everyone sleeps in
+//       Mom and Dad's room — Julian (the accidents) in the king — so wet sheets are the king's unless she says queen.
+// Writes, all targeted: laundry/<id> · momday/<iso>/todos/<id> or dadday/<iso>/todos/<id>. Dry run writes nothing.
+const WT_KINDS={towels:["🧻","Towels"],sheets:["🛏","Sheets"],dog:["🐕","Dog stuff"]};
+function _wtWrite(){ return typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
+function _wtTime(){ try{ return new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}); }catch(e){ return ""; } }
+function _wtIso(){ return (typeof _todayStr==="function")?_todayStr():mwTodayIso(); }
+function wtReport(who,what,bed){
+  const k=WT_KINDS[what]; if(!k) return;
+  who=(who==="dad")?"dad":"mom";
+  bed=(what==="sheets")?((bed==="queen")?"queen":"king"):"";
+  const iso=_wtIso(), id="wt"+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+  // (a) the Laundry card line, in the wash-today bin
+  const rec={label:"💦 "+k[1]+(bed?" ("+bed+")":"")+" · "+_wtTime()+(who==="dad"?" · started by Dad":""),stage:"bin",ts:Date.now(),by:who,what:what,wet:true};   // her ask 2026-10-09: Dad's Day says started by Dad
+  if(bed) rec.bed=bed;
+  laundryData[id]=rec; try{ HA_LS.setItem('ha_laundry',JSON.stringify(laundryData)); }catch(e){}
+  if(_wtWrite()) db.ref('laundry/'+id).set(rec);
+  // (b) sheets → the spare set goes on that bed today, on the to-do of whoever tapped
+  if(what==="sheets"){
+    const td={text:"🛏 Put the spare sheets on the "+bed,done:false,ts:Date.now(),src:"washtoday"};
+    if(who==="dad"){
+      try{ const cur=Object.assign({},daddayData[iso]); const todos=Object.assign({},cur.todos); todos[id]=td; cur.todos=todos; daddayData[iso]=cur; HA_LS.setItem('ha_dadday',JSON.stringify(daddayData)); }catch(e){}
+      if(_wtWrite()) db.ref('dadday/'+iso+'/todos/'+id).set(td);
+    } else {
+      try{ const cur=Object.assign({},momdayData[iso]); const todos=Object.assign({},cur.todos); todos[id]=td; cur.todos=todos; momdayData[iso]=cur; HA_LS.setItem('momday_data',JSON.stringify(momdayData)); }catch(e){}
+      if(_wtWrite()) db.ref('momday/'+iso+'/todos/'+id).set(td);
+    }
+  }
+  if(typeof mwToast==='function') try{ mwToast('💦 '+k[1]+(bed?' ('+bed+')':'')+' — in the wash-today bin'); }catch(e){}
+  const el=(typeof document!=="undefined")?document.getElementById('content'):null; if(el&&typeof renderMomsPlan==="function") renderMomsPlan(el);
+}
+function _wtBtn(on,txt,small){
+  return '<button onclick="'+on+'" style="padding:'+(small?'5px 8px':'6px 11px')+';border-radius:9px;border:1.5px solid #93c5fd;background:#eff6ff;color:#1d4ed8;font-size:'+(small?'11px':'12px')+';font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">'+txt+'</button>';
+}
+// Mom's / Dad's 🏡 My day strip, under Start a load: one compact row.
+function wtRowHTML(who){
+  who=(who==="dad")?"dad":"mom";
+  return '<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:7px"><span style="font-size:11px;font-weight:800;color:#1d4ed8">💦 Wet or soiled:</span>'
+    +_wtBtn("wtReport('"+who+"','towels')","🧻 Towels")
+    +_wtBtn("wtReport('"+who+"','sheets','king')","🛏 Sheets (king)")
+    +_wtBtn("wtReport('"+who+"','sheets','queen')","queen",true)
+    +_wtBtn("wtReport('"+who+"','dog')","🐕 Dog stuff")
+    +'</div>';
+}
+// WASHTODAY_END
 
 // ── 💳 Bills — recurring due dates that surface as they approach ──────
 // "✓ Paid" stamps paidThrough with the current cycle key, which rolls the bill
@@ -12027,8 +12087,9 @@ function mdCardLaundry(noAdd){   // 🧺 LAUNDRYADD: noAdd = Mom's Day, where "S
       +'<div style="padding:10px 14px 12px">';
     lids.forEach(id=>{
       const l=laundryData[id]; const meta=LAUNDRY_STAGE_META[l.stage]||["🧺",l.stage];
-      const trail=LAUNDRY_STAGES.map(s=>{
-        const on=LAUNDRY_STAGES.indexOf(s)<=LAUNDRY_STAGES.indexOf(l.stage);
+      const STG=(l.wet||l.stage==="prewash")?LAUNDRY_WET_STAGES:LAUNDRY_STAGES;   // 💦 WASHTODAY: wet = washed twice
+      const trail=(l.stage==="bin")?'<span style="font-size:10px;font-weight:800;padding:1px 7px;border-radius:8px;background:#fef3c7;color:#92400e">🪣 wash today</span>':STG.map(s=>{
+        const on=STG.indexOf(s)<=STG.indexOf(l.stage);
         return '<span style="font-size:10px;font-weight:800;padding:1px 7px;border-radius:8px;background:'+(s===l.stage?'#dbeafe':(on?'#f0fdf4':'#f3f4f6'))+';color:'+(s===l.stage?'#1d4ed8':(on?'#166534':'#9ca3af'))+'">'+(LAUNDRY_STAGE_META[s][0])+' '+s+'</span>';
       }).join('');
       h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#f8fafc;border-left:3px solid #2563eb;border-radius:8px;margin-bottom:6px;flex-wrap:wrap">'
