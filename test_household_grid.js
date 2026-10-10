@@ -104,6 +104,14 @@ console.log("🪜 Levels: the ready meter from the last three full weeks");
   const el={}; c.hhGo("levels"); c.renderHousehold(el);
   ok("levels view: current level, ready line, week chips, L1/L2/L3 groups", /Cleaning is at Level 2/.test(el.innerHTML)&&/Ready for the next level\?/.test(el.innerHTML)&&/Level 3 · 0 jobs · not on yet/.test(el.innerHTML)&&/🪜 L1/.test(el.innerHTML));
 }
+console.log("Pickers (her report: a tap moved the row out of the card)");
+{ const c=mk(); const el={}; c.hhGo("room"); vm.runInContext("hhOpenRoom='ours'",c); c.renderHousehold(el);
+  ok("room button opens a picker, no write", (()=>{ c.writes.length=0; c.hhPickToggle(LUCY_MON,"room"); c.renderHousehold(el); return c.writes.length===0&&/hhPickSet\('rt_chores_lucy_take_sheets_off_beds','room','living'\)/.test(el.innerHTML)&&/⬆️ Playroom/.test(el.innerHTML); })());
+  ok("the row is still in its card while the picker is open", /Take sheets off beds/.test(el.innerHTML));
+  ok("picking writes once and closes", (()=>{ c.writes.length=0; c.hhPickSet(LUCY_MON,"room","living"); c.renderHousehold(el); return c.writes.length===1&&c.writes[0][1].endsWith("/room")&&c.writes[0][2]==="living"&&!/hhPickSet\(/.test(el.innerHTML); })());
+  ok("✕ closes without a write", (()=>{ c.hhPickToggle(LUCY_MON,"room"); c.writes.length=0; c.hhPickToggle(LUCY_MON,"room"); c.renderHousehold(el); return c.writes.length===0&&!/hhPickSet\(/.test(el.innerHTML); })());
+  ok("Review area/floor and Levels use pickers too; no cycle buttons left in the views", !/onclick="hhCycle\(/.test(src.slice(src.indexOf("function hhRowHTML"),src.indexOf("// HOUSEHOLD_GRID_END")))&&!/onclick="hhRoomCycle\(/.test(src)&&!/onclick="hhLevelCycle\(/.test(src)&&/hhPickToggle\('"\+id\+"','area'\)/.test(src)&&/hhPickToggle\('"\+id\+"','level'\)/.test(src));
+}
 console.log("Wiring");
 { ok("seven chips on the tab", /chip\('week','📆 Week'\)\+chip\('area','🗂 Area'\)\+chip\('room','🚪 Room'\)\+chip\('levels','🪜 Levels'\)/.test(src));
   ok("hhSet accepts the plan fields", /\["area","floor","verdict","note","status","minutes","room","level","planCad"\]/.test(src));
