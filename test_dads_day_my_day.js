@@ -104,7 +104,9 @@ else {
     ok("🧒 plain Kids today (no bank): same bytes", world(old, MOM).api.mdCardKidsToday("monday", sd) === world(src, MOM).api.mdCardKidsToday("monday", sd));
   });
   ok("renderMomsDay source untouched", sliceFrom(old, "renderMomsDay") === sliceFrom(src, "renderMomsDay"));
-  ok("Mom's starter seeds / editor / add untouched", ["mcSeedSlot", "mcAdd", "mcToggle", "momChoresCardHTML", "mcPopHTML", "grMdShopHTML"].every(n => sliceFrom(old, n) === sliceFrom(src, n)));
+  // 🏡 HOUSEHOLD_TAKEOVER (PR 3, 2026-10-09) routes Mom's list writes through _mcDb; that one line is normalized away here so the guard keeps asking "nothing ELSE changed".
+  const unroute = s => String(s).replace(/_mcDb\('mom',id,null,momChoresData\[id\]\);\s*\/\/ 🏡 HOUSEHOLD_TAKEOVER/g, "if(typeof db!=='undefined'&&db) db.ref('momChores/'+id).set(momChoresData[id]);");
+  ok("Mom's starter seeds / editor / add untouched", ["mcSeedSlot", "mcAdd", "mcToggle", "momChoresCardHTML", "mcPopHTML", "grMdShopHTML"].every(n => unroute(sliceFrom(old, n)) === unroute(sliceFrom(src, n))));
 }
 
 console.log("\n── Dad's 🏡 My day: his chores by slot, his done stamps ──");
