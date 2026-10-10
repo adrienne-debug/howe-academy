@@ -3924,7 +3924,7 @@ function initFb() {
       if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
     });
     db.ref("dadChores").on("value",s=>{
-      const v=s.val()||{};
+      hhLive.dadChores=s.val()||{}; const v=hhTakeoverOn()?hhDerivePerson("dad"):hhLive.dadChores;   // 🏡 HOUSEHOLD_TAKEOVER
       Object.keys(dadChoresData).forEach(k=>{ delete dadChoresData[k]; });
       Object.keys(v).forEach(k=>{ dadChoresData[k]=v[k]; });
       try{HA_LS.setItem('ha_dadchores',JSON.stringify(dadChoresData));}catch(e){}
@@ -3952,7 +3952,7 @@ function initFb() {
     });
     db.ref("household").on("value",s=>{ householdOnValue(s.val()||{}); if(tab==="moms-plan"&&mpSubView==="house"){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); } });   // 🏡 HOUSEHOLD
     db.ref("momChores").on("value",s=>{
-      const v=s.val()||{};
+      hhLive.momChores=s.val()||{}; const v=hhTakeoverOn()?hhDerivePerson("mom"):hhLive.momChores;   // 🏡 HOUSEHOLD_TAKEOVER
       Object.keys(momChoresData).forEach(k=>{ delete momChoresData[k]; });
       Object.keys(v).forEach(k=>{ momChoresData[k]=v[k]; });
       try{HA_LS.setItem('ha_momchores',JSON.stringify(momChoresData));}catch(e){}
@@ -4090,8 +4090,8 @@ function initFb() {
     db.ref("config/anthropic_key").once("value",s=>{ if(s.val()) mastAIKey=s.val(); });
     db.ref("config/slot_config").on("value",s=>{ slotConfig=s.val()||{}; });
     db.ref("config/spin_gate").on("value",s=>{ spinGate=s.val()||{}; });
-    db.ref("config/morningRoutine").on("value",s=>{ morningRoutineCfg=s.val()||{}; });
-    db.ref("config/routines").on("value",s=>{ routineCfg2=s.val()||{}; });
+    db.ref("config/morningRoutine").on("value",s=>{ hhLive.morningRoutine=s.val()||{}; if(!hhTakeoverOn()) morningRoutineCfg=hhLive.morningRoutine; });   // 🏡 HOUSEHOLD_TAKEOVER
+    db.ref("config/routines").on("value",s=>{ hhLive.routines=s.val()||{}; if(!hhTakeoverOn()) routineCfg2=hhLive.routines; });                          // 🏡 HOUSEHOLD_TAKEOVER
     db.ref("config/routineTimes").on("value",s=>{ routineTimes=Object.assign({eveningHour:18}, s.val()||{}); });
     db.ref("routineLog").on("value",s=>{ routineLog=s.val()||{}; });
     db.ref("config/routineRules").on("value",s=>{ routineRules=Object.assign({loseTechEnabled:false,loseTechHour:10}, s.val()||{}); });
@@ -11129,7 +11129,7 @@ function dcAdd(){
   const id="dc"+Date.now().toString(36);
   dadChoresData[id]={label:label,cad:cad,slot:slot,ts:Date.now()};
   try{HA_LS.setItem('ha_dadchores',JSON.stringify(dadChoresData));}catch(e){}
-  if(typeof db!=='undefined'&&db) db.ref('dadChores/'+id).set(dadChoresData[id]);
+  _mcDb('dad',id,null,dadChoresData[id]);   // 🏡 HOUSEHOLD_TAKEOVER
   inp.value=""; dcRepaint();
 }
 function dcDel(id){
@@ -11137,21 +11137,21 @@ function dcDel(id){
   if(!confirm('Remove "'+c.label+'" from the list?')) return;
   delete dadChoresData[id];
   try{HA_LS.setItem('ha_dadchores',JSON.stringify(dadChoresData));}catch(e){}
-  if(typeof db!=='undefined'&&db) db.ref('dadChores/'+id).remove();
+  _mcDb('dad',id,null,null);   // 🏡 HOUSEHOLD_TAKEOVER
   dcRepaint();
 }
 function dcSetCad(id,cad){
   const c=dadChoresData[id]; if(!c) return;
   c.cad=cad;
   try{HA_LS.setItem('ha_dadchores',JSON.stringify(dadChoresData));}catch(e){}
-  if(typeof db!=='undefined'&&db) db.ref('dadChores/'+id+'/cad').set(cad);
+  _mcDb('dad',id,'cad',cad);   // 🏡 HOUSEHOLD_TAKEOVER
   dcRepaint();
 }
 function dcSetSlot(id,slot){
   const c=dadChoresData[id]; if(!c) return;
   c.slot=slot;
   try{HA_LS.setItem('ha_dadchores',JSON.stringify(dadChoresData));}catch(e){}
-  if(typeof db!=='undefined'&&db) db.ref('dadChores/'+id+'/slot').set(slot);
+  _mcDb('dad',id,'slot',slot);   // 🏡 HOUSEHOLD_TAKEOVER
   dcRepaint();
 }
 
@@ -11192,6 +11192,7 @@ function mcAll(){
 // momday/{iso}/chores and work fine against code defaults, same as slState
 // works against RT_DEFAULT.
 function mcEnsure(){
+  if(typeof hhTakeoverOn==="function"&&hhTakeoverOn()) return;   // 🏡 HOUSEHOLD_TAKEOVER: nothing to seed, the table is the list
   if(momChoresData._seeded) return;
   let n=0; Object.keys(momChoresData).forEach(function(k){ if(k.charAt(0)!=="_") n++; });
   if(n) return;
@@ -11218,7 +11219,7 @@ function mcAdd(){
   const id="mc"+Date.now().toString(36);
   momChoresData[id]={label:label,cad:cad,ts:Date.now()};
   try{HA_LS.setItem('ha_momchores',JSON.stringify(momChoresData));}catch(e){}
-  if(typeof db!=='undefined'&&db) db.ref('momChores/'+id).set(momChoresData[id]);
+  _mcDb('mom',id,null,momChoresData[id]);   // 🏡 HOUSEHOLD_TAKEOVER
   inp.value="";
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
@@ -11228,7 +11229,7 @@ function mcDel(id){
   if(!confirm('Remove "'+c.label+'" from your chore list?')) return;
   delete momChoresData[id];
   try{HA_LS.setItem('ha_momchores',JSON.stringify(momChoresData));}catch(e){}
-  if(typeof db!=='undefined'&&db) db.ref('momChores/'+id).remove();
+  _mcDb('mom',id,null,null);   // 🏡 HOUSEHOLD_TAKEOVER
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
 function mcDoneOn(iso,id){ return !!((((momdayData[iso]||{}).chores)||{})[id]); }
@@ -11254,7 +11255,7 @@ function mcSetCad(id,cad){
   const c=momChoresData[id]; if(!c) return;
   c.cad=cad;
   try{HA_LS.setItem('ha_momchores',JSON.stringify(momChoresData));}catch(e){}
-  if(typeof db!=='undefined'&&db) db.ref('momChores/'+id+'/cad').set(cad);
+  _mcDb('mom',id,'cad',cad);   // 🏡 HOUSEHOLD_TAKEOVER
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
 // Weekday letters build sorted "wk:" lists; clearing every letter falls back
@@ -11285,7 +11286,7 @@ function mcSetSlot(id,slot){
   const c=mcAll()[id]; if(!c) return;
   const next=(mcSlotOf(c)===slot)?"":slot;          // tapping the current slot clears it
   c.slot=next;
-  if(db) db.ref("momChores/"+id+"/slot").set(next||null);
+  _mcDb('mom',id,'slot',next||null);   // 🏡 HOUSEHOLD_TAKEOVER
   try{HA_LS.setItem('ha_momchores',JSON.stringify(momChoresData));}catch(e){}
   const el=document.getElementById("content"); if(el) renderMomsPlan(el);
 }
@@ -11312,7 +11313,7 @@ function mcSeedSlot(slot){
   add.forEach((label,i)=>{
     const id="mc"+(base+i).toString(36);
     momChoresData[id]={label:label,cad:"daily",slot:slot,ts:base+i};
-    if(typeof db!=='undefined'&&db) db.ref('momChores/'+id).set(momChoresData[id]);
+    _mcDb('mom',id,null,momChoresData[id]);   // 🏡 HOUSEHOLD_TAKEOVER
   });
   try{HA_LS.setItem('ha_momchores',JSON.stringify(momChoresData));}catch(e){}
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
@@ -11386,7 +11387,7 @@ let householdData={};            // household/{jobs:{id:{…}}, meta:{imported,i
 try{ householdData=JSON.parse(HA_LS.getItem('ha_household')||"{}")||{}; }catch(e){}
 let hhView="review";             // "review" | "habits" | "week" | "area" | "room" | "levels" | "today"
 let hhOpenWho="";                // Review: which person's group is expanded ("" = all collapsed to counts)
-function householdOnValue(v){ householdData=v||{}; try{ HA_LS.setItem('ha_household',JSON.stringify(householdData)); }catch(e){} }
+function householdOnValue(v){ householdData=v||{}; try{ HA_LS.setItem('ha_household',JSON.stringify(householdData)); }catch(e){} if(typeof hhMaterialize==="function") hhMaterialize(); }   // 🏡 HOUSEHOLD_TAKEOVER
 function _hhWrite(){ return typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
 function hhJobs(){ return (householdData&&householdData.jobs)||{}; }
 const HH_AREAS={health:["🧼","Health"],animals:["🐾","Animals"],pickup:["🧹","Pickup"],cleaning:["🧽","Cleaning"]};
@@ -11420,12 +11421,12 @@ function hhLiveRows(){
   SL_SLOTS.forEach(function(slot){ ROSTER.forEach(function(kid){
     const steps=rtStepsFor(slot,kid,true)||[]; const source=sourceOf(slot,kid);
     steps.forEach(function(st,i){ if(!st||!st.label) return; const f=pick(st); f.slot=slot;
-      rows.push({id:"rt_"+slot+"_"+kid+"_"+hhSlug(st.label),who:kid,fields:f,src:{kind:"routine",slot:slot,kid:kid,i:i},source:source}); });
+      rows.push({id:st._hh||("rt_"+slot+"_"+kid+"_"+hhSlug(st.label)),who:kid,fields:f,src:{kind:"routine",slot:slot,kid:kid,i:i},source:source}); });   // _hh = 🏡 HOUSEHOLD_TAKEOVER
   }); });
   const mc=(typeof mcAll==="function")?mcAll():{}; Object.keys(mc).forEach(function(id){ const c=mc[id]; if(!c||!c.label) return;
-    rows.push({id:"mc_"+hhSlug(id),who:"mom",fields:{label:c.label,cad:c.cad||"daily",slot:c.slot||"",pts:0},src:{kind:"momChore",id:id},source:"momChores"}); });
+    rows.push({id:"mc_"+hhSlug(id),who:"mom",fields:{label:c.label,cad:c.cad||"daily",slot:c.slot||"",pts:0,ts:c.ts||0},src:{kind:"momChore",id:id},source:"momChores"}); });
   const dc=(typeof dcAll==="function")?dcAll():{}; Object.keys(dc).forEach(function(id){ const c=dc[id]; if(!c||!c.label) return;
-    rows.push({id:"dc_"+hhSlug(id),who:"dad",fields:{label:c.label,cad:c.cad||"daily",slot:c.slot||"",pts:0},src:{kind:"dadChore",id:id},source:"dadChores"}); });
+    rows.push({id:"dc_"+hhSlug(id),who:"dad",fields:{label:c.label,cad:c.cad||"daily",slot:c.slot||"",pts:0,ts:c.ts||0},src:{kind:"dadChore",id:id},source:"dadChores"}); });
   const gb=(typeof gbList==="function")?gbList():[]; gb.forEach(function(g,i){ if(!g||!g.label) return;
     rows.push({id:"gb_"+hhSlug(g.label),who:"grab",fields:{label:g.label,emoji:g.emoji||"",pts:g.pts||0,cad:g.cad||"daily"},src:{kind:"grab",i:i},source:"Up for Grabs"}); });
   return _hhUniq(rows);
@@ -11555,6 +11556,7 @@ function hhReviewHTML(){
   }
   h+='</div>';
   if(!ids.length) return h;
+  if(typeof hhTakeoverCardHTML==="function") h+=hhTakeoverCardHTML(missing);   // 🏡 HOUSEHOLD_TAKEOVER
   const tally={}; Object.keys(HH_VERDICTS).forEach(function(k){ tally[k]=0; }); ids.forEach(function(id){ const v=jobs[id].verdict; if(tally[v]!==undefined) tally[v]++; });
   h+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px">'+Object.keys(HH_VERDICTS).map(function(k){ const V=HH_VERDICTS[k]; return _hhChip(V[0]+' '+V[1]+' '+tally[k],'#fff',V[2]); }).join('')+_hhChip('no call yet '+(ids.length-tally.keep-tally.change-tally.retire),'#fff','#64748b')+'</div>';
   HH_WHO.forEach(function(w){
@@ -11770,6 +11772,107 @@ function hhLevelsHTML(){
   return h;
 }
 // HOUSEHOLD_GRID_END
+// HOUSEHOLD_TAKEOVER_START — the table becomes the lists (PR 3; her decision 2026-10-09: "I want the old one to move all its data and
+// all come over but everything has to work exactly the same or better"; her "lets just doit" 2026-10-09). Option B, a full move:
+// while household/meta/takeover is set, the in-memory lists every reader uses — routineCfg2 (the kids' four lists), momChoresData,
+// dadChoresData — are DERIVED from household/jobs (hhMaterialize), and every existing editor keeps working: the Chores & Stars
+// editor's rtCfgSave() syncs its arrays back to the table (hhSyncKids), Mom's and Dad's add / ✕ / days / time-of-day go through
+// _mcDb → hhSyncPerson. Nothing reads config/routines, momChores or dadChores while it is on; nothing writes them either. The
+// live copies (hhLive.*) are kept so turning it off puts the lists back exactly as they were (household/snapshot keeps a record).
+// Check-off keys are index-based, so a derived list keeps each step's position: order = the job's `order`, new steps append,
+// a retired or ✕'d step leaves the list the way ✕ always has. Up for Grabs stays on config/grabs (unchanged by this PR).
+let hhLive={routines:null,morningRoutine:null,momChores:null,dadChores:null};   // what Firebase says the lists are
+let _hhWasOn=false;
+function hhTakeoverOn(){ return !!(householdData&&householdData.meta&&householdData.meta.takeover); }
+const HH_STEP_KEYS=["emoji","label","pts","cad","time","from","to","rot","zone","laundry","meal","free","cycW","cycN","cycStart","since"];
+function _hhPickStep(st){ const o={}; HH_STEP_KEYS.forEach(function(k){ const v=st&&st[k]; if(v!==undefined&&v!==null&&v!=="") o[k]=v; }); if(o.pts===undefined) o.pts=0; else o.pts=parseInt(o.pts,10)||0; if(!o.cad) o.cad="daily"; return o; }
+function _hhIsKidJob(j){ return j&&ROSTER.indexOf(j.who)>=0&&(!j.src||j.src.kind==="routine"||j.src.kind==="new"); }
+function hhStepOf(job,id){ const o=_hhPickStep(job); Object.defineProperty(o,"_hh",{value:id,enumerable:false,writable:true}); return o; }
+function hhKidJobIds(slot,kid){ const jobs=hhJobs(); return Object.keys(jobs).filter(function(id){ const j=jobs[id]; return _hhIsKidJob(j)&&j.who===kid&&j.slot===slot&&j.status!=="retired"; }).sort(function(a,b){ return ((jobs[a].order||0)-(jobs[b].order||0))||(a<b?-1:1); }); }
+function hhDeriveKids(){ const jobs=hhJobs(), out={}; SL_SLOTS.forEach(function(slot){ out[slot]={}; ROSTER.forEach(function(kid){ const ids=hhKidJobIds(slot,kid); if(ids.length) out[slot][kid]=ids.map(function(id){ return hhStepOf(jobs[id],id); }); }); }); return out; }
+function hhDerivePerson(who){ const jobs=hhJobs(), out={_seeded:true}; Object.keys(jobs).filter(function(id){ const j=jobs[id]; return j.who===who&&j.status!=="retired"; }).sort(function(a,b){ return ((jobs[a].order||0)-(jobs[b].order||0))||(a<b?-1:1); }).forEach(function(id){ const j=jobs[id], key=(j.src&&j.src.id)||id, c={label:j.label||"",cad:j.cad||"daily",ts:(j.srcTs!==undefined?j.srcTs:(j.ts||0))}; if(j.slot) c.slot=j.slot; out[key]=c; }); return out; }
+function _hhRefill(target,v){ Object.keys(target).forEach(function(k){ delete target[k]; }); Object.keys(v||{}).forEach(function(k){ target[k]=v[k]; }); }
+function hhMaterialize(){
+  if(hhTakeoverOn()){ _hhWasOn=true; routineCfg2=hhDeriveKids(); morningRoutineCfg={}; _hhRefill(momChoresData,hhDerivePerson("mom")); _hhRefill(dadChoresData,hhDerivePerson("dad")); }
+  else if(_hhWasOn){ _hhWasOn=false; hhUnmaterialize(); }
+}
+function hhUnmaterialize(){ routineCfg2=hhLive.routines||{}; morningRoutineCfg=hhLive.morningRoutine||{}; _hhRefill(momChoresData,hhLive.momChores||{}); _hhRefill(dadChoresData,hhLive.dadChores||{}); }
+// The Chores & Stars editor saved: make the table say what its arrays say. Matched by the step's own id; new steps become new
+// rows; steps that are gone are retired. One multi-path update, every key under household/.
+function hhSyncKids(){
+  if(typeof momHere==="function"&&!momHere()) return;
+  const jobs=hhJobs(), upd={}, seen={}, now=Date.now();
+  SL_SLOTS.forEach(function(slot){ ROSTER.forEach(function(kid){ const arr=(routineCfg2[slot]||{})[kid]||[];
+    arr.forEach(function(st,i){ if(!st) return; let id=st._hh; const f=_hhPickStep(st);
+      if(!id||!jobs[id]){
+        id="hh"+now.toString(36)+Math.random().toString(36).slice(2,6); const area=hhGuessArea(f.label,slot,f.rot);
+        const job=Object.assign({},f,{slot:slot,who:kid,src:{kind:"new"},source:"Household tab",area:area,floor:(area==="cleaning"||area==="pickup")?hhGuessFloor(f.label,f.zone):"",status:"active",verdict:"",note:"",order:i,ts:now});
+        upd["household/jobs/"+id]=job; jobs[id]=job; Object.defineProperty(st,"_hh",{value:id,enumerable:false,writable:true});
+      } else {
+        const j=jobs[id];
+        HH_STEP_KEYS.forEach(function(k){ const nv=(f[k]===undefined)?null:f[k], ov=(j[k]===undefined||j[k]===""||j[k]===null)?null:j[k]; if(JSON.stringify(nv)!==JSON.stringify(ov)){ upd["household/jobs/"+id+"/"+k]=nv; if(nv===null) delete j[k]; else j[k]=nv; } });
+        if(j.who!==kid){ upd["household/jobs/"+id+"/who"]=kid; j.who=kid; } if(j.slot!==slot){ upd["household/jobs/"+id+"/slot"]=slot; j.slot=slot; }
+        if((j.order||0)!==i){ upd["household/jobs/"+id+"/order"]=i; j.order=i; }
+        if(j.status!=="active"){ upd["household/jobs/"+id+"/status"]="active"; j.status="active"; }
+      }
+      seen[id]=1; }); }); });
+  Object.keys(jobs).forEach(function(id){ const j=jobs[id]; if(_hhIsKidJob(j)&&j.status!=="retired"&&!seen[id]){ upd["household/jobs/"+id+"/status"]="retired"; upd["household/jobs/"+id+"/verdict"]="retire"; j.status="retired"; j.verdict="retire"; } });
+  if(Object.keys(upd).length&&_hhWrite()) db.ref().update(upd);
+  householdOnValue(householdData);
+}
+// Mom's / Dad's list writers: off Take over they write momChores/ dadChores as always; on, they write the table.
+function _mcDb(who,id,field,val){
+  const node=(who==="dad")?"dadChores":"momChores";
+  if(typeof hhTakeoverOn==="function"&&hhTakeoverOn()){ hhSyncPerson(who,id,field,val); return; }
+  if(typeof db==='undefined'||!db) return;
+  if(field) db.ref(node+'/'+id+'/'+field).set(val); else if(val===null) db.ref(node+'/'+id).remove(); else db.ref(node+'/'+id).set(val);
+}
+function hhSyncPerson(who,id,field,val){
+  const jobs=hhJobs(); let jid=Object.keys(jobs).find(function(k){ const j=jobs[k]; return j.who===who&&j.src&&j.src.id===id; });
+  const upd={};
+  if(!field&&val===null){ if(jid){ upd["household/jobs/"+jid+"/status"]="retired"; upd["household/jobs/"+jid+"/verdict"]="retire"; jobs[jid].status="retired"; jobs[jid].verdict="retire"; } }
+  else if(!jid){ const c=(field?{}:val)||{}; const label=c.label||"", area=hhGuessArea(label,c.slot||"",""); let order=0; Object.keys(jobs).forEach(function(k){ if(jobs[k].who===who) order=Math.max(order,(jobs[k].order||0)+1); });
+    jid=(who==="dad"?"dc_":"mc_")+hhSlug(id); const job={label:label,cad:c.cad||"daily",slot:c.slot||"",pts:0,who:who,src:{kind:(who==="dad"?"dadChore":"momChore"),id:id},source:"Household tab",area:area,floor:(area==="cleaning"||area==="pickup")?hhGuessFloor(label,""):"",status:"active",verdict:"",note:"",order:order,ts:Date.now()};
+    if(field) job[field]=(val===null?"":val); upd["household/jobs/"+jid]=job; jobs[jid]=job; }
+  else if(field){ const v=(val===null)?"":val; upd["household/jobs/"+jid+"/"+field]=v; jobs[jid][field]=v; }
+  else { ["label","cad","slot"].forEach(function(k){ if(val[k]!==undefined&&val[k]!==jobs[jid][k]){ upd["household/jobs/"+jid+"/"+k]=val[k]; jobs[jid][k]=val[k]; } }); }
+  if(Object.keys(upd).length&&_hhWrite()) db.ref().update(upd);
+  householdOnValue(householdData);
+}
+// Take over on / off.
+function hhTakeover(on){
+  if(typeof momHere==="function"&&!momHere()) return false;
+  if(on){
+    const jobs=hhJobs(); if(!Object.keys(jobs).length){ if(typeof mwToast==="function") try{ mwToast("Bring in every chore first"); }catch(e){} return false; }
+    const missing=hhLiveRows().filter(function(r){ return !jobs[r.id]; }).length; if(missing){ if(typeof mwToast==="function") try{ mwToast("Bring in the "+missing+" new chore"+(missing===1?"":"s")+" first"); }catch(e){} return false; }
+    const upd={};
+    if(!(householdData.snapshot&&householdData.snapshot.at)){ const snap={routines:hhLive.routines||routineCfg2||{},morningRoutine:hhLive.morningRoutine||morningRoutineCfg||{},momChores:hhLive.momChores||momChoresData||{},dadChores:hhLive.dadChores||dadChoresData||{},grabs:(typeof grabs!=="undefined"&&grabs)||[],at:Date.now()}; upd["household/snapshot"]=JSON.parse(JSON.stringify(snap)); householdData.snapshot=upd["household/snapshot"]; }
+    Object.keys(jobs).forEach(function(id){ const j=jobs[id]; if(j.planCad){ upd["household/jobs/"+id+"/cad"]=j.planCad; upd["household/jobs/"+id+"/planCad"]=null; j.cad=j.planCad; delete j.planCad; } });   // the moved weekdays become the days
+    // positions become each list's own 0..n (the import numbered rows across all lists), so the editor's later syncs are quiet
+    SL_SLOTS.forEach(function(slot){ ROSTER.forEach(function(kid){ hhKidJobIds(slot,kid).forEach(function(id,i){ if((jobs[id].order||0)!==i){ upd["household/jobs/"+id+"/order"]=i; jobs[id].order=i; } }); }); });
+    [["mom",hhLive.momChores||momChoresData||{}],["dad",hhLive.dadChores||dadChoresData||{}]].forEach(function(p){ const who=p[0], live=p[1]; Object.keys(jobs).forEach(function(id){ const j=jobs[id]; if(j.who!==who||!j.src||!j.src.id) return; const rec=live[j.src.id]; const t=(rec&&rec.ts!==undefined)?rec.ts:(j.ts||0); if(j.srcTs!==t){ upd["household/jobs/"+id+"/srcTs"]=t; j.srcTs=t; } }); });   // her records' own timestamps ride along
+    const ts=Date.now(); upd["household/meta/takeover"]=ts; householdData.meta=Object.assign({},householdData.meta,{takeover:ts});
+    if(hhLive.routines===null) hhLive.routines=routineCfg2; if(hhLive.morningRoutine===null) hhLive.morningRoutine=morningRoutineCfg; if(hhLive.momChores===null) hhLive.momChores=Object.assign({},momChoresData); if(hhLive.dadChores===null) hhLive.dadChores=Object.assign({},dadChoresData);
+    if(_hhWrite()) db.ref().update(upd);
+  } else {
+    if(householdData.meta) delete householdData.meta.takeover;
+    if(_hhWrite()) db.ref("household/meta/takeover").remove();
+  }
+  householdOnValue(householdData);   // materializes or restores
+  if(typeof renderAll==="function") renderAll();
+  return true;
+}
+function hhTakeoverCardHTML(missing){
+  const on=hhTakeoverOn(), snap=householdData&&householdData.snapshot;
+  let h='<div style="background:'+(on?'#ecfdf5':'#fff')+';border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:10px 12px;margin-bottom:10px">';
+  h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:13px;font-weight:800">'+(on?'🏡 The lists come from this table':'📋 The lists still come from the old places')+'</span><span style="flex:1"></span>'
+    +(on?_hhBtn("if(confirm('Turn Take over off? The lists go back to how they were before Take over. The table keeps everything.')) hhTakeover(false)",'Turn off',false,'#64748b'):_hhBtn("if(confirm('Take over? From now on the kids’ lists, yours and Dad’s come from this table. Every list stays exactly as it is today; retiring a row here removes it from the list. You can turn it off any time.')) hhTakeover(true)",'🏡 Take over',true,'#2B7A78'))+'</div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin-top:4px">'+(on
+    ?'Every editor still works (Chores &amp; Stars, your ✎ Edit, Dad’s) and saves here. Retire = off the list. Turned on '+(new Date(householdData.meta.takeover).toLocaleDateString("en-US",{month:"short",day:"numeric"}))+'.'
+    :(missing?'Bring in the '+missing+' new first.':'Ready when you are: the table matches the lists one for one.'))+(snap&&snap.at?' Snapshot of the old lists kept from '+(new Date(snap.at).toLocaleDateString("en-US",{month:"short",day:"numeric"}))+'.':'')+'</div></div>';
+  return h;
+}
+// HOUSEHOLD_TAKEOVER_END
 function momDayStripHTML(iso,today,who){
   const P=mdMine(who);   // 👨 DADMYDAY
   const list=P.list;
@@ -26652,6 +26755,7 @@ function renderChorePlan(el,headerHtml){
   const steps=isGrabs?(gbList()||[]):(rtStepsFor(cpSlot,cpKid,true)||[]); // raw/BASE steps — this grid EDITS; rotation is display-only on kid views/board
   let h=(headerHtml||'')+'<div style="padding:12px 12px 80px">';
   h+='<div class="cp-hd">🧹 Chores &amp; Stars</div>';
+  if(typeof hhTakeoverOn==="function"&&hhTakeoverOn()) h+='<div style="margin:0 0 10px;padding:8px 12px;border-radius:10px;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:700">🏡 The lists live on Mom\'s Day ▸ Household now. Edits here are saved there.</div>';   // 🏡 HOUSEHOLD_TAKEOVER
   h+=_cpSetupStripHTML()+_cpTabsHTML();
   if(cpTab==="store"){ h+=_cpStoreTabHTML(); el.innerHTML=h+'</div>'; return; }
   if(cpTab==="points"){ h+=_cpPointsTabHTML(); el.innerHTML=h+'</div>'; return; }
@@ -56731,7 +56835,7 @@ function slotCfgSave(){
 // ── Morning routine editor (config/morningRoutine) ──
 // ── Afternoon/Chores/Evening routine editor (config/routines) ──
 function rtCfgEnsure(slot,kid){ if(!routineCfg2[slot]) routineCfg2[slot]={}; if(!Array.isArray(routineCfg2[slot][kid])||!routineCfg2[slot][kid].length){ routineCfg2[slot][kid]=(rtStepsFor(slot,kid,true)||[]).map(s=>{ const o={label:s.label||"",emoji:s.emoji||"",pts:s.pts||0,cad:s.cad||"daily",time:s.time||"",from:s.from||"",to:s.to||""}; if(s.rot) o.rot=s.rot; if(s.meal){ o.meal=s.meal; if(s.since) o.since=s.since; } if(s.laundry===true||s.laundry===false) o.laundry=s.laundry; if(s.cycW){ o.cycW=s.cycW; o.cycN=s.cycN||4; o.cycStart=s.cycStart||""; } return o; }); } }
-function rtCfgSave(){ if(db) db.ref("config/routines").set(routineCfg2); }
+function rtCfgSave(){ if(typeof hhTakeoverOn==="function"&&hhTakeoverOn()){ hhSyncKids(); return; } if(db) db.ref("config/routines").set(routineCfg2); }   // 🏡 HOUSEHOLD_TAKEOVER: the table is the truth
 function rtCfgSet(slot,kid,i,field,val){ rtCfgEnsure(slot,kid); if(!routineCfg2[slot][kid][i]) return; routineCfg2[slot][kid][i][field]=(field==="pts"?(parseInt(val,10)||0):val); rtCfgSave(); }
 function rtCfgAdd(slot,kid){ rtCfgEnsure(slot,kid); routineCfg2[slot][kid].push({label:"New step",emoji:"",pts:0}); rtCfgSave(); renderAll(); }
 function rtCfgRemove(slot,kid,i){ rtCfgEnsure(slot,kid); routineCfg2[slot][kid].splice(i,1); rtCfgSave(); renderAll(); }
