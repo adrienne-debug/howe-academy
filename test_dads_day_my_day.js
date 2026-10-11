@@ -104,7 +104,9 @@ else {
     ok("🧒 plain Kids today (no bank): same bytes", world(old, MOM).api.mdCardKidsToday("monday", sd) === world(src, MOM).api.mdCardKidsToday("monday", sd));
   });
   const unroute = s => String(s).replace(/_mcDb\('mom',id,null,momChoresData\[id\]\);\s*\/\/ 🏡 HOUSEHOLD_TAKEOVER/g, "if(typeof db!=='undefined'&&db) db.ref('momChores/'+id).set(momChoresData[id]);")
-    .replace(/\n\s*try\{ const _lr=hhLevelReadyNowHTML\(\); nowN\+=_lr\.n; h\+=_lr\.html; \}catch\(e\)\{\}[^\n]*/g, "");   // 🪜 LEVELREADY (2026-10-10): one Now line, normalized away so the guard still asks "nothing ELSE changed"
+    .replace(/\n\s*try\{ const _lr=hhLevelReadyNowHTML\(\); nowN\+=_lr\.n; h\+=_lr\.html; \}catch\(e\)\{\}[^\n]*/g, "")
+    .replace(/\n\s*try\{ h\+=hhCleanHomeHTML\(iso,today\); \}catch\(e\)\{\}[^\n]*/g, "")   // 🧽 CLEANINGDAY (2026-10-11): one Home Base line, normalized away
+    .replace(/\n\s*try\{ if\(typeof hhCleanOn==="function"&&hhCleanOn\(iso\)\) h\+=[^\n]*/g, "");   // 🧽 CLEANINGDAY: one Dad's Day line   // 🪜 LEVELREADY (2026-10-10): one Now line, normalized away so the guard still asks "nothing ELSE changed"
   ok("renderMomsDay source untouched", unroute(sliceFrom(old, "renderMomsDay")) === unroute(sliceFrom(src, "renderMomsDay")));
   // 🏡 HOUSEHOLD_TAKEOVER (PR 3, 2026-10-09) routes Mom's list writes through _mcDb; that one line is normalized away here so the guard keeps asking "nothing ELSE changed".
   ok("Mom's starter seeds / editor / add untouched", ["mcSeedSlot", "mcAdd", "mcToggle", "momChoresCardHTML", "mcPopHTML", "grMdShopHTML"].every(n => unroute(sliceFrom(old, n)) === unroute(sliceFrom(src, n))));
