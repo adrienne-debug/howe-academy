@@ -1211,6 +1211,7 @@ body.kioskr #kiosk-kids::-webkit-scrollbar{display:none}
 .gcal-month-day.school{background:#f0fdf4;color:#15803d}
 .gcal-month-day.off{background:#fef2f2;color:#991b1b}
 .gcal-month-day.holiday{background:#fef3c7;color:#92400e}
+.gcal-month-day.cleanday{background:#ecfdf5;color:#166534}   /* 🧽 CLEANINGDAY */
 .gcal-month-day.today{border:1.5px solid var(--header);font-weight:700}
 .gcal-month-day.outside{color:#d1d5db}
 .gcal-month-label{font-family:'Fraunces',serif;font-size:14px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between}
@@ -2138,7 +2139,7 @@ function rtSetAlwaysOpenDay(d){
   if(db) db.ref("config/routineTimes").set(routineTimes);
   renderAll();
 }
-function rtAvailable(slot,kid,d){ if(slot==="afternoon") return rtAlwaysOpen(d)||rtSchoolworkDone(kid,d)||(d!==_todayDay)||(new Date().getHours()>=rtAfternoonHour()); if(slot==="evening") return (d!==_todayDay)||(new Date().getHours()>=rtEveningHour()); return true; }
+function rtAvailable(slot,kid,d){ if(slot==="afternoon") return rtAlwaysOpen(d)||(d===_todayDay&&typeof hhCleanOn==="function"&&hhCleanOn(_todayStr()))||rtSchoolworkDone(kid,d)||(d!==_todayDay)||(new Date().getHours()>=rtAfternoonHour()); if(slot==="evening") return (d!==_todayDay)||(new Date().getHours()>=rtEveningHour()); return true; }
 // MEALS_START — after-meal jobs (her ask 2026-10-02, DeWalt table-jobs chart: set/clear/wipe table, sweep,
 // dishwasher after every meal). A step tagged st.meal sits in its meal's list under its own heading:
 // breakfast → Morning, lunch → Afternoon, supper → Evening. Lunch and Supper open at their OWN hour
@@ -2697,6 +2698,7 @@ function calBreaksOn(iso){
   const out=[]; const scan=(m,kind)=>{ Object.keys(m||{}).forEach(id=>{ const r=m[id]; if(!r||!r.start) return; const e=r.end||r.start; if(r.start<=iso&&iso<=e) out.push({id:id,kind:kind,name:r.name||(kind==="holiday"?"Holiday":"Vacation")}); }); };
   scan((typeof calendarData!=="undefined"&&calendarData.holidays)||{},"holiday");
   scan((typeof calendarData!=="undefined"&&calendarData.vacations)||{},"vacation");
+  if(typeof calendarData!=="undefined"&&calendarData&&calendarData.cleaningDays&&calendarData.cleaningDays[iso]) out.push({id:iso,kind:"cleaning",name:"Cleaning day"});   // 🧽 CLEANINGDAY (display only; never an off-day)
   return out;
 }
 let histTab="log"; // "log" | "attendance" | "trends" | "report"
@@ -4403,6 +4405,7 @@ function renderSkylight(){
     gridEl.style.display="none"; indEl.style.display="block";
     const col=SL_KCOL[kid]||"#666";
     let h2='<div class="sl-ind-title" style="color:'+col+'">'+SL_KLBL[kid]+"'s Day</div>"+(typeof schedTipHtml==="function"?schedTipHtml(kid):"")+calEventBanner(day,kid)+calUpcomingHTML(kid)+techBanner(kid);   // 💡 FIRST_TIPS
+    if(day===_todayDay&&typeof hhCleanOn==="function"&&hhCleanOn(_todayStr())){ try{ h2+=hhCleanPanelHTML(kid,_todayStr(),day); }catch(e){} }   // 🧽 CLEANINGDAY
     activeSlots().forEach(slot=>{
       if(slot==="morning"){ h2+=mrIndividualHTML(kid); return; }
       h2+=rtSlotHTML(slot,kid);
@@ -7739,7 +7742,8 @@ function scheduleBreakToday(){
     return null;
   };
   // Holidays take precedence over vacations (same order smapIsOff uses).
-  return scan(calendarData.holidays,"holiday")||scan(calendarData.vacations,"vacation");
+  return scan(calendarData.holidays,"holiday")||scan(calendarData.vacations,"vacation")
+    ||((typeof hhCleanDay==="function"&&hhCleanDay(ds))?{name:"Cleaning day",type:"cleaning",start:ds,end:ds,pause:"school"}:null);   // 🧽 CLEANINGDAY: pauses like a vacation
 }
 // First weekday strictly after today that isn't a calendar off-day and sits in a
 // real plan week — i.e. the day school actually picks back up. Capped so a
@@ -8325,7 +8329,7 @@ function renderSchedule(el){
   // On a holiday/vacation, replace the (often stale last-week) tasks with a
   // friendly "no school" card. Top nav stays, so Admin/Pace are still reachable.
   const _brk=scheduleBreakToday();
-  if(_brk){ el.innerHTML=renderScheduleBreakCard(_brk); return; }
+  if(_brk){ el.innerHTML=(_brk.type==="cleaning"&&typeof hhCleanCardHTML==="function")?hhCleanCardHTML():renderScheduleBreakCard(_brk); return; }   // 🧽 CLEANINGDAY
   function _dayDate(d){
     if(DAY_DT[d]) return DAY_DT[d];
     // ☀️ SUNDAY_DISPLAY (2026-10-04, her ask): the week stores Mon–Fri dates only, so Sunday showed no date. Sunday is
@@ -8384,6 +8388,7 @@ function renderSchedule(el){
     '<div class="day-banner-inner">'+
     '<div><div class="day-name">'+(DAY_LBL[day]||day)+(momHere()?'<button class="bo-btn" onclick="openBoDialog(\''+day+'\')">+ Blockout</button>':'')+
     (momHere()?'<button class="bo-btn" onclick="schedDayOffToggleOpen()">😷 Kid Off</button>':'')+
+    (typeof hhCleanDayBtnHTML==="function"?hhCleanDayBtnHTML(day):'')+   // 🧽 CLEANINGDAY
     (momHere()?'<button class="bo-btn" onclick="schedRegenerateNow()">🔄 Regenerate</button>':'')+
     (function(){ try{ if(!momHere()||typeof coopTimedOn!=="function"||typeof calDateForWeekDay!=="function") return ''; const _ds=calDateForWeekDay(day); const _co=_ds?coopTimedOn(_ds):[]; if(!_co.length) return ''; const _on=coopMomDay(_ds);
       return '<button class="bo-btn" onclick="coopToggleMomDay(\''+_ds+'\')" title="'+esc(_co.map(c=>c.name).join(", "))+' — '+(_on?'Mom is available today: Mom-required lessons land here. Tap to go back to the co-op rule.':'Co-op rule: no Mom-required lessons today. Tap if Mom is available after all.')+'" style="'+(_on?'background:#ecfdf5;color:#065f46;border-color:#6ee7b7':'')+'">'+(_on?'👩 Mom\'s here today ✓':'🏫 Co-op · tap if Mom\'s available')+'</button>'; }catch(e){ return ''; } })()+
@@ -8405,6 +8410,7 @@ function renderSchedule(el){
   if(day===_todayDay&&kid!=="all"&&kid!=="mom"){ try{ h+=hrKidButtonHTML(kid); }catch(e){} }   // 🙋 NEEDMOM: the kid's own page (hidden when Mom is here)
   if(day===_todayDay&&momHere()&&!momSchedView){ try{ const _hr=hrMomCardHTML((kid!=="all"&&kid!=="mom")?kid:null); if(_hr) h+='<div style="margin:0 0 10px">'+_hr+'</div>'; }catch(e){} }   // 🙋 NEEDMOM: who asked for Mom → ✓ Helped
   if(momHere()&&schedDayOffOpen) h+=schedRenderDayOffPicker(day);
+  if(day===_todayDay&&kid!=="all"&&kid!=="mom"&&typeof hhCleanOn==="function"&&hhCleanOn(_todayStr())){ try{ h+=hhCleanPanelHTML(kid,_todayStr(),day); }catch(e){} }   // 🧽 CLEANINGDAY: Go clean on a normal day
 
   if(CONSTRAINT[day]){
     h+='<div class="constraint-alert" style="display:flex;align-items:center;gap:8px">'+
@@ -10805,6 +10811,7 @@ function renderDadsDay(el){
       +'<div style="font-size:11px;font-weight:800;color:#ea580c;letter-spacing:.04em;margin-bottom:6px">🔴 KITCHEN NOW</div>'+_dp.html+'</div>';
   }catch(e){}
   try{ h+=helperDadCardHTML(); }catch(e){}   // 🙋 "I'm here — ready to help with school"
+  try{ if(typeof hhCleanOn==="function"&&hhCleanOn(iso)) h+='<div style="margin:10px 12px 0">'+hhCleanPanelHTML("dad",iso,dn)+'</div>'; }catch(e){}   // 🧽 CLEANINGDAY
   // ── 👨 DADMYDAY: 🏡 My day — Mom's card, fed by HIS checklist (dadChores + dadday stamps), his to-do, the
   // Start-a-load box and his grocery add. ✎ Edit opens his full list (time of day · days · ✕) as a pop-up.
   try{ h+='<div style="margin:10px 12px">'+momDayStripHTML(iso,dn,"dad")+'</div>'; }catch(e){}
@@ -12197,6 +12204,103 @@ function hhRotationsHTML(){
   return h;
 }
 // HH_ROTATE_END
+// CLEANINGDAY_START — 🧽 Cleaning day (PR 4 of the Household plan; her "go" 2026-10-11, normal stars). Two switches, both Mom's:
+// • calendar/cleaningDays/<iso> = {at,by} — the day-banner button beside Kid Off. School pauses exactly the way a vacation with
+//   pause "school" does: scheduleBreakToday returns it, so the Schedule shows a day card, the day tabs hide and the routine
+//   lists stay (activeSlots = all four). The generator never sees it (smapIsOff untouched): the day's cards sit, and the 8 PM
+//   sweep carries them on, as on any vacation called the same morning.
+// • household/today/<iso>/goClean = ts — "Go clean" on Home Base: the same panel on every Day page, no pause ("okay everyone go do").
+// The panel = that person's house rows due today (pickup + cleaning at their level, late ones too) by room in walking order,
+// with minutes and a running total. A check is the normal chore check-off (toggleRtStep / mcToggle / dcToggle): same stars,
+// same log, nothing pays twice. While either switch is on, the afternoon list opens (rtAvailable) so the morning is usable.
+function hhCleanDay(iso){ const m=(typeof calendarData!=="undefined"&&calendarData&&calendarData.cleaningDays)||{}; const r=m[iso]; return (r&&typeof r==="object")?r:null; }
+function hhGoClean(iso){ const t=(typeof householdData!=="undefined"&&householdData&&householdData.today)||{}; return !!(t[iso]&&t[iso].goClean); }
+function hhCleanOn(iso){ return !!(hhCleanDay(iso)||hhGoClean(iso)); }
+function _hhIsoOk(iso){ return /^\d{4}-\d{2}-\d{2}$/.test(String(iso||"")); }
+function hhCleanDayToggle(iso){
+  if(typeof momHere==="function"&&!momHere()) return null; if(!_hhIsoOk(iso)) return null;
+  const on=!hhCleanDay(iso); calendarData.cleaningDays=Object.assign({},calendarData.cleaningDays);
+  if(on) calendarData.cleaningDays[iso]={at:Date.now(),by:"mom"}; else delete calendarData.cleaningDays[iso];
+  try{ HA_LS.setItem("ha_calendar",JSON.stringify(calendarData)); }catch(e){}
+  if(_hhWrite()){ if(on) db.ref("calendar/cleaningDays/"+iso).set(calendarData.cleaningDays[iso]); else db.ref("calendar/cleaningDays/"+iso).remove(); }   // one targeted write
+  if(typeof mwToast==="function") try{ mwToast(on?"🧽 Cleaning day — school is paused":"Back to a normal day"); }catch(e){}
+  if(typeof renderAll==="function") renderAll(); return on;
+}
+function hhGoCleanToggle(iso){
+  if(typeof momHere==="function"&&!momHere()) return null; if(!_hhIsoOk(iso)) return null;
+  const on=!hhGoClean(iso); householdData.today=Object.assign({},householdData.today); householdData.today[iso]=Object.assign({},householdData.today[iso]);
+  if(on) householdData.today[iso].goClean=Date.now(); else delete householdData.today[iso].goClean;
+  householdOnValue(householdData);
+  if(_hhWrite()){ if(on) db.ref("household/today/"+iso+"/goClean").set(householdData.today[iso].goClean); else db.ref("household/today/"+iso+"/goClean").remove(); }
+  if(typeof mwToast==="function") try{ mwToast(on?"🧽 Go clean — the house list is on every page":"Go clean is off"); }catch(e){}
+  if(typeof renderAll==="function") renderAll(); return on;
+}
+// That person's house rows for the day: [{id,job,label,emoji,pts,mins,done,late,on}] — on = the onclick that checks it.
+function hhCleanRows(who,iso,dn){
+  const jobs=hhJobs(), out=[]; const kid=hhIsKid(who); const today=(typeof _todayDay!=="undefined")?_todayDay:dn;
+  const raws={}, disps={};
+  Object.keys(jobs).forEach(function(id){ const j=jobs[id]; if(j.who!==who||j.status==="retired"||!hhIsHouse(j)||!hhLevelOut(j)) return;
+    if(kid){ const slot=j.slot; if(SL_SLOTS.indexOf(slot)<0) return;
+      if(!raws[slot]){ raws[slot]=rtStepsFor(slot,who,true)||[]; disps[slot]=rtStepsFor(slot,who,false,dn)||[]; }
+      const idx=raws[slot].findIndex(function(st){ return st&&st._hh===id; }); if(idx<0) return; const st=disps[slot][idx]; if(!st||st.cad==="none") return;   // a placeholder turn today
+      if(typeof rtWaved==="function"&&rtWaved(slot,who,dn,idx)) return;
+      const due=(typeof stepWindowOk!=="function"||stepWindowOk(st,dn))&&cadDueOn(st.cad||"daily",dn); const late=(dn===today&&typeof rtLateDays==="function")?(rtLateDays(slot,who,idx)>0):false;
+      if(!due&&!late) return;
+      out.push({id:id,job:j,label:st.label||j.label,emoji:st.emoji||j.emoji||"",pts:st.pts||0,mins:hhMinutesOf(j),done:(typeof rtDoneOn==="function")?rtDoneOn(slot,who,dn,idx):false,late:late&&!due,on:"toggleRtStep('"+slot+"','"+who+"',"+idx+")"});
+    } else { const key=(j.src&&j.src.id)||id; const list=(who==="dad")?((typeof dcAll==="function")?dcAll():{}):((typeof mcAll==="function")?mcAll():{}); if(!list[key]) return;
+      if(!cadDueOn(j.cad||"daily",dn)) return; const doneOn=(who==="dad")?(typeof dcDoneOn==="function"?dcDoneOn:null):(typeof mcDoneOn==="function"?mcDoneOn:null);
+      out.push({id:id,job:j,label:j.label,emoji:j.emoji||"",pts:0,mins:hhMinutesOf(j),done:doneOn?doneOn(iso,key):false,late:false,on:(who==="dad"?"dcToggle('":"mcToggle('")+key+"')"}); }
+  });
+  const order=HH_ROOMS.map(function(r){ return r[0]; });
+  out.sort(function(a,b){ return (order.indexOf(hhRoomOf(a.job))-order.indexOf(hhRoomOf(b.job)))||((a.job.order||0)-(b.job.order||0)); });
+  return out;
+}
+function hhCleanPanelHTML(who,iso,dn){
+  const rows=hhCleanRows(who,iso,dn), cd=!!hhCleanDay(iso); const col=(typeof KID_COLOR!=="undefined"&&KID_COLOR[who])||(who==="mom"?"#6B4C93":who==="dad"?"#2C5F8A":"#2B7A78");
+  const total=rows.reduce(function(a,r){ return a+r.mins; },0), doneM=rows.filter(function(r){ return r.done; }).reduce(function(a,r){ return a+r.mins; },0), nDone=rows.filter(function(r){ return r.done; }).length, all=rows.length>0&&nDone===rows.length;
+  let h='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden;margin-bottom:10px;border-left:4px solid '+col+'">';
+  h+='<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#ecfdf5"><span style="font-size:14px;font-weight:800;color:#166534">🧽 '+(cd?'Cleaning day':'Go clean')+' · '+esc(hhWhoName(who))+'</span><span style="flex:1"></span>'
+    +'<span style="font-size:11px;font-weight:800;color:#166534">'+nDone+'/'+rows.length+' · '+doneM+' of '+total+' min</span></div>';
+  if(!rows.length) h+='<div style="padding:10px 12px;font-size:12px;color:var(--muted)">Nothing on your house list today.</div>';
+  let room=null;
+  rows.forEach(function(r){ const rm=hhRoomOf(r.job); if(rm!==room){ room=rm; h+='<div style="padding:7px 12px 2px;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560">🚪 '+esc(hhRoomName(rm))+'</div>'; }
+    h+='<div class="sl-check-row'+(r.done?' done':'')+'" onclick="'+r.on+'" style="padding:7px 12px"><div class="sl-checkbox'+(r.done?' done':'')+'">'+(r.done?'✓':'')+'</div>'
+      +'<div style="flex:1;display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span>'+r.emoji+'</span><span style="font-weight:700;'+(r.done?'text-decoration:line-through;color:#6b6560':'')+'">'+esc(r.label)+'</span>'
+      +'<span style="font-size:10.5px;font-weight:800;padding:1px 6px;border-radius:7px;background:#f3f4f6;color:#475569">⏱ '+r.mins+' min</span>'+(r.pts?'<span style="font-size:10.5px;font-weight:800;padding:1px 6px;border-radius:7px;background:#fef3c7;color:#92400e">'+r.pts+' ⭐</span>':'')+(r.late?'<span style="font-size:10.5px;font-weight:800;padding:1px 6px;border-radius:7px;background:#fee2e2;color:#991b1b">late</span>':'')+'</div></div>'; });
+  if(all) h+='<div style="padding:10px 12px;font-size:13px;font-weight:800;color:#166534;text-align:center">All done — the house thanks you 🎉</div>';
+  return h+'</div>';
+}
+// The banner button (a normal day) and the day card (a cleaning day).
+function hhCleanDayBtnHTML(dayName){ if(typeof momHere==="function"&&!momHere()) return ""; const iso=(typeof calDateForWeekDay==="function")?calDateForWeekDay(dayName):null; if(!iso) return ""; return '<button class="bo-btn" onclick="hhCleanDayToggle(\''+iso+'\')" title="Pause school today and put the house list on every page">🧽 Cleaning day</button>'; }
+function hhCleanCardHTML(){
+  const iso=_todayStr(), dn=(typeof mdTodayName==="function")?mdTodayName():_todayDay; const mom=(typeof momHere==="function")&&momHere(); const k=(typeof kcKid!=="undefined"&&kcKid&&ROSTER.indexOf(kcKid)>=0)?kcKid:"";
+  let h='<div style="padding:28px 16px 8px;text-align:center"><div style="font-size:56px;line-height:1;margin-bottom:10px">🧽</div><div style="font-family:\'Fraunces\',serif;font-size:26px;font-weight:700">Cleaning day</div>'
+    +'<div style="font-size:13px;font-weight:800;color:#166534;text-transform:uppercase;letter-spacing:.6px;margin:4px 0 10px">School is paused today</div>'
+    +'<div style="font-size:13px;color:var(--muted);max-width:320px;margin:0 auto 12px">'+(k?'Your house list is below — tap each job when it’s done.':'Each kid’s list is on their own page and in Kids’ Corner; yours is on Home Base.')+'</div>'
+    +(mom?'<button class="bo-btn" onclick="hhCleanDayToggle(\''+iso+'\')">Not a cleaning day after all</button>':'')+'</div>';
+  if(k) h+='<div style="padding:0 12px 20px">'+hhCleanPanelHTML(k,iso,dn)+'</div>';
+  return h;
+}
+// Home Base: the Go clean switch (and, while either switch is on, Mom's own panel).
+function hhCleanHomeHTML(iso,dn){
+  if(typeof momHere==="function"&&!momHere()) return ""; const cd=!!hhCleanDay(iso), go=hhGoClean(iso);
+  let h='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px;padding:8px 12px;border-radius:10px;background:'+((cd||go)?'#ecfdf5':'#fff')+';box-shadow:0 2px 10px rgba(43,122,120,0.10)">'
+    +'<span style="font-size:12px;font-weight:800;color:#166534">🧽 '+(cd?'Cleaning day — school is paused':go?'Go clean is on — the house list is on every page':'Everyone go clean?')+'</span><span style="flex:1"></span>'
+    +(cd?'':'<button onclick="hhGoCleanToggle(\''+iso+'\')" style="padding:5px 10px;border-radius:8px;border:1.5px solid #16a34a;background:'+(go?'#16a34a':'#fff')+';color:'+(go?'#fff':'#16a34a')+';font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(go?'✓ Go clean · turn off':'🧽 Go clean')+'</button>')
+    +'<button onclick="hhCleanDayToggle(\''+iso+'\')" style="padding:5px 10px;border-radius:8px;border:1.5px solid #64748b;background:'+(cd?'#64748b':'#fff')+';color:'+(cd?'#fff':'#64748b')+';font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(cd?'✓ Cleaning day · back to normal':'Cleaning day (pause school)')+'</button></div>';
+  if(cd||go) h+=hhCleanPanelHTML("mom",iso,dn);
+  return h;
+}
+// Admin ▸ Calendar: the cleaning days, upcoming first, add by date.
+function hhCleanDaysEditorHTML(){
+  const m=(calendarData&&calendarData.cleaningDays)||{}, today=(typeof calToday==="function")?calToday():_todayStr(); const days=Object.keys(m).sort();
+  let h='<div class="gcal-section"><div class="gcal-hdr"><span>🧽 Cleaning days</span><span style="font-size:11px;font-weight:400;color:var(--muted)">'+days.length+' set · school pauses, chores stay</span></div>';
+  if(days.length){ h+='<div class="gcal-card">'; days.forEach(function(iso){ const past=iso<today; h+='<div class="gcal-row" style="'+(past?'opacity:0.5':'')+'"><div><div class="gcal-row-name">Cleaning day</div><div class="gcal-row-dates">'+esc(iso)+'</div></div><div class="gcal-row-actions"><button onclick="hhCleanDayToggle(\''+iso+'\')" title="Remove">&#128465;</button></div></div>'; }); h+='</div>'; }
+  else h+='<div class="gcal-empty">No cleaning days set</div>';
+  h+='<div style="display:flex;gap:6px;align-items:center;margin-top:6px"><input type="date" id="hh-cd-date" value="'+today+'" style="padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif"><button class="gcal-add-btn" style="margin:0" onclick="var e=document.getElementById(\'hh-cd-date\'); if(e&&e.value) hhCleanDayToggle(e.value)">+ Add cleaning day</button></div></div>';
+  return h;
+}
+// CLEANINGDAY_END
 function momDayStripHTML(iso,today,who){
   const P=mdMine(who);   // 👨 DADMYDAY
   const list=P.list;
@@ -13676,6 +13780,7 @@ function renderMomsDay(el){
   h+=_boardClaimsHTML();
   h+='</div></div>';
   // 🙋 HELPERGIVE "Give Grandma more today" moved to Mom's Day ▸ 🗓 Schedule (her design 2026-10-08) — it's a Mom tool.
+  try{ h+=hhCleanHomeHTML(iso,today); }catch(e){}   // 🧽 CLEANINGDAY: Go clean / Cleaning day switches, Mom's own panel
   try{ h+=momDayStripHTML(iso,today); }catch(e){}
   try{ h+=wsTaskHTML(); }catch(e){}   // 📋 From Adrienne — tap to answer, ✓ once sent
   try{ if(typeof stPendingHTML==="function") h+=stPendingHTML(); }catch(e){}   // 📝 spelling tests waiting to be graded
@@ -27308,6 +27413,7 @@ function renderCalendarView(el, headerHtml){
   if(calAddMode==="vacation") h+=calRenderAddForm("vacation");
   else h+='<button class="gcal-add-btn" onclick="calStartAdd(\'vacation\')">+ Add Vacation</button>';
   h+='</div>';
+  if(typeof hhCleanDaysEditorHTML==="function") h+=hhCleanDaysEditorHTML();   // 🧽 CLEANINGDAY
 
   // ── Family events (birthday parties, appointments, outings) ──
   h+='<div class="gcal-section">';
@@ -29047,6 +29153,7 @@ function calRenderMonthPreview(opts){
     if(isToday) cls+=" today";
     if(iso===calDaySel) cls+=" sel";
     if(isHol) cls+=" holiday";
+    else if(L.breaks&&calendarData.cleaningDays&&calendarData.cleaningDays[iso]) cls+=" cleanday";   // 🧽 CLEANINGDAY
     else if(isVac) cls+=" off";
     else if(isWeekend) cls+=" outside";
     else cls+=" school";
@@ -29057,7 +29164,7 @@ function calRenderMonthPreview(opts){
     // One line per thing, in the order the day happens: breaks, co-ops, events, dinner.
     // Three fit the cell (sized like the curriculum calendar); the rest fold into "+N".
     const items=[];
-    if(L.breaks) calBreaksOn(iso).forEach(b=>items.push({c:"gmd-brk",t:(b.kind==="holiday"?"\u{1F389} ":"\u{1F3D6} ")+b.name}));
+    if(L.breaks) calBreaksOn(iso).forEach(b=>items.push({c:"gmd-brk",t:(b.kind==="holiday"?"\u{1F389} ":b.kind==="cleaning"?"\u{1F9FD} ":"\u{1F3D6} ")+b.name}));
     _coops.forEach(c=>items.push({c:"gmd-coop",t:"\u{1F3EB} "+(c.name||"Co-op")+(c.mode==="fullDay"?"":(c.start?" "+c.start:""))}));
     if(L.dad){ const _dc=_calDadChoresFor(iso); if(_dc.length){ const dn=_dc.filter(x=>x.done).length; items.push({c:"gmd-dad",t:"\u{1F468} "+_dc.length+" chore"+(_dc.length===1?"":"s")+(dn?(" \u00b7 "+dn+" \u2713"):"")}); } }
     // 📚 CALSCHOOL (her ask 2026-10-08: "month at a glance on moms page needs the option of adding the school schedule"):
@@ -29220,7 +29327,7 @@ function calDaySheetHTML(iso,L,dinnerOf,who,opts){
   let h='<div class="cal-sheet"'+(opts.flat?' style="margin:0 0 12px;border-color:'+(KID_COLOR[who]||"#E07B39")+'"':'')+'><h4><span style="flex:1">'+esc(opts.title||lbl)+(iso===todayIso&&!opts.title?' <span style="font-size:10px;font-weight:800;color:#E07B39">TODAY</span>':'')+'</span>'
     +(opts.noClose?'':'<button class="act" style="background:#f1f5f9;color:#475569" onclick="calDayClick(\''+iso+'\')">✕</button>')+'</h4>';
   let rows=0;
-  if(L.breaks){ calBreaksOn(iso).forEach(function(b){ rows++; h+='<div class="row"><span class="lbl">Break</span><span style="flex:1">'+(b.kind==="holiday"?"\u{1F389} ":"\u{1F3D6} ")+esc(b.name)+'</span></div>'; }); }
+  if(L.breaks){ calBreaksOn(iso).forEach(function(b){ rows++; h+='<div class="row"><span class="lbl">Break</span><span style="flex:1">'+(b.kind==="holiday"?"\u{1F389} ":b.kind==="cleaning"?"\u{1F9FD} ":"\u{1F3D6} ")+esc(b.name)+'</span></div>'; }); }
   if(L.coops&&typeof coopsOnDate==="function"){ _calCoopsFor(iso,who).forEach(function(c){ rows++;
     const kids=(Array.isArray(c.kids)&&c.kids.length)?c.kids.map(function(k){ return cap(k); }).join(", "):"everyone";
     h+='<div class="row"><span class="lbl">Co-op</span><span style="flex:1">\u{1F3EB} <b>'+esc(c.name||"Co-op")+'</b> <span style="color:#6b7280">· '+(c.mode==="fullDay"?"all day":("out "+esc(c.start||"?")+" – back "+esc(c.end||"?")))+' · '+esc(kids)+'</span></span></div>'; }); }
@@ -29468,6 +29575,7 @@ function kcBankHTML(k){
 function kcChoresHTML(k){
   try{
     let h='<div style="padding:12px 12px 0" onclick="if(event.target.closest(\'[onclick]\')) setTimeout(renderAll,30)">';
+    if(typeof hhCleanOn==="function"&&hhCleanOn(_todayStr())){ try{ h+=hhCleanPanelHTML(k,_todayStr(),_todayDay); }catch(e){} }   // 🧽 CLEANINGDAY
     activeSlots().forEach(function(slot){
       if(slot==="morning"&&typeof mrIndividualHTML==="function"){ h+=mrIndividualHTML(k); return; }
       h+=rtSlotHTML(slot,k);
