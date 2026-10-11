@@ -11988,6 +11988,31 @@ function hhTakeoverCardHTML(missing){
   return h;
 }
 // HOUSEHOLD_TAKEOVER_END
+// LEVELREADY_START — "Lincoln is ready for Level 2" in 🔴 Now (her ask 2026-10-10: "will it send me an alert when a person hits
+// the 80%"). A person whose own meter reads three full weeks at 80%+ at their current level gets one line in Now, with
+// ▴ Move up (their dial, one tap) and Not now (hides it for that level: household/levels/<who>/readySeen). It rides the same
+// reminder list as bills and laundry, so the badge and the ding reach her phone. Nothing moves on its own.
+function hhLevelReadyList(){
+  const out=[]; if(typeof hhReady!=="function"||!hhJobs||!Object.keys(hhJobs()).length) return out;
+  HH_WHO.forEach(function(who){ if(who==="grab") return; const lv=hhLevelCurFor(who); if(lv>=3) return;
+    const seen=parseInt(householdData&&householdData.levels&&householdData.levels[who]&&householdData.levels[who].readySeen,10)||0; if(seen>=lv+1) return;
+    let R=null; try{ R=hhReady(lv,who); }catch(e){} if(!R||!R.ready) return;
+    out.push({who:who,level:lv,next:lv+1,weeks:R.weeks}); });
+  return out;
+}
+function hhLevelReadySeen(who,next){ if(typeof momHere==="function"&&!momHere()) return; next=parseInt(next,10); if(!(next>=2&&next<=3)) return;
+  householdData.levels=householdData.levels||{}; householdData.levels[who]=Object.assign({},householdData.levels[who],{readySeen:next}); householdOnValue(householdData);
+  if(_hhWrite()) db.ref("household/levels/"+who+"/readySeen").set(next); if(typeof renderAll==="function") renderAll(); }
+function hhLevelReadyNowHTML(){
+  const list=hhLevelReadyList(); if(!list.length) return {n:0,html:""};
+  let h='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:10px 0 6px">🪜 Ready to move up</div>';
+  list.forEach(function(it){ h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:#ecfdf5;border-left:3px solid #16a34a;border-radius:8px;margin-bottom:6px">'
+    +'<span style="flex:1;font-size:13px"><b>'+hhWhoName(it.who)+'</b> is ready for Level '+it.next+' — three weeks at 80%+ <span style="color:#6b6560;font-size:11px">('+it.weeks.map(function(w){ return hhPct(w.done,w.due); }).join(" · ")+')</span></span>'
+    +'<button onclick="hhLevelSetFor(\''+it.who+'\','+it.next+')" style="padding:4px 10px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap">▴ Move up</button>'
+    +'<button onclick="hhLevelReadySeen(\''+it.who+'\','+it.next+')" style="padding:4px 10px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;color:#475569;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap">Not now</button></div>'; });
+  return {n:list.length,html:h};
+}
+// LEVELREADY_END
 function momDayStripHTML(iso,today,who){
   const P=mdMine(who);   // 👨 DADMYDAY
   const list=P.list;
@@ -13255,6 +13280,7 @@ function hbAlertItems(){
     });
   }catch(e){}
   try{ kitDuePrep().forEach(s=>add("remind","prep_"+s.iso+"_"+s.mid+"_"+s.idx)); }catch(e){}
+  try{ hhLevelReadyList().forEach(it=>add("remind","level_"+it.who+"_"+it.next)); }catch(e){}   // 🪜 LEVELREADY
   try{ const iso=_todayStr(); kids.forEach(k=>rmList(k).forEach(r=>{ const st=rmState(r,iso); if(st==="over"||st==="week") add("remind","road_"+k+"_"+r.id); })); }catch(e){}
   return out;
 }
@@ -13432,6 +13458,7 @@ function renderMomsDay(el){
   // the same buttons that live on their own cards, gathered where she already looks.
   try{ const _ap=_momApprovalsHTML(); nowN+=_ap.n; h+=_ap.html; }catch(e){}
   try{ const _sa=mstAlertsNowHTML(); nowN+=_sa.n; h+=_sa.html; }catch(e){}   // 🚩 study sessions rushed / missed / not done / stuck cards
+  try{ const _lr=hhLevelReadyNowHTML(); nowN+=_lr.n; h+=_lr.html; }catch(e){}   // 🪜 LEVELREADY: a person's meter says move up
   // Load sitting in the washer too long — the nudge that saves a re-wash.
   try{
     Object.keys(laundryData).forEach(id=>{
