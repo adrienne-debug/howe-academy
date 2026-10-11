@@ -81,5 +81,16 @@ console.log("On screen");
   ok("opening Give to… closes the add form", c.get("hhAddOpen")===false);
   const d=mk({noMom:true}); ok("a kid's device sees neither button", d.hhAddHTML()===""&&d.hhGiveBtn(LINC)==="");
 }
+console.log("HH_ADD_FORM: emoji row and the Area pick");
+{ const c=mk(); c.hhAddToggle(); c.dom["hh-add-label"]={value:"Wipe the kids table"}; c.dom["hh-add-pts"]={value:"10"};
+  c.hhAddSet("emoji","🧽"); ok("tapping an emoji fills it in and keeps the words and stars she typed", c.get("hhAdd.emoji")==="🧽"&&c.get("hhAdd.label")==="Wipe the kids table"&&c.get("hhAdd.pts")==="10");
+  const el={}; c.renderHousehold(el); ok("the row of emoji is there, the tapped one marked; the box shows it", /hhAddSet\('emoji','🧹'\)/.test(el.innerHTML)&&/#e6f4f3[^>]*>🧽</.test(el.innerHTML)&&/id="hh-add-emoji" value="🧽"/.test(el.innerHTML));
+  ok("the Area pick shows the guess from her words (Cleaning) and says which areas wait", /hhAddSet\('area',''\)[^>]*>Guess from the words \(Cleaning\)</.test(el.innerHTML)&&/Cleaning · waits for the level/.test(el.innerHTML)&&/Health · always on/.test(el.innerHTML));
+  c.dom["hh-add-emoji"]={value:"🧽"}; c.hhAddSet("area","health"); const id=c.hhAddSave(); const j=c.hhJobs()[id];
+  ok("her pick beats the guess: Health, so no gate (on the list at any level), no floor", j.area==="health"&&j.emoji==="🧽"&&j.floor===""&&c.rtStepsFor("chores","lincoln",true).some(s=>s.label==="Wipe the kids table"));
+  ok("the pick resets after Save", c.get("hhAdd.area")===""&&c.get("hhAdd.emoji")==="");
+  c.hhAddSet("level",3); c.dom["hh-add-label"]={value:"Wipe the kids table"}; const id2=c.hhAddSave(); ok("left on Guess: Cleaning, and a Level 3 row waits for the gate", c.hhJobs()[id2].area==="cleaning"&&!c.rtStepsFor("chores","lincoln",true).some(s=>s._hh===id2));
+  ok("no duplicate emoji in the row", c.get("new Set(HH_EMOJI).size===HH_EMOJI.length")===true);
+}
 ok("no 🔀", src.indexOf("🔀")<0);
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
