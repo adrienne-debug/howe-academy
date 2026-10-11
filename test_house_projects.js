@@ -41,7 +41,7 @@ console.log("1. Just once");
   ok("a once-job sits on the kid's list like any step", c.rtStepsFor("chores","lincoln",true).map(s=>s.label).indexOf("Return the library books")>=0);
   ok("nothing checked yet → the sweep writes nothing", c.hhOnceSweep().length===0&&c.writes.length===0);
   c.hhAddToggle(); c.hhAddSet("who","lucy"); c.hhAddSet("kind","once"); c.dom["hh-add-label"]={value:"Take the boxes to the curb"}; const id=c.hhAddSave(); const j=c.hhJobs()[id];
-  ok("the add form, Kind = Once: cad once, from today, on Lucy's list, the Days row hidden", j.cad==="once"&&j.from===TODAY&&c.rtStepsFor("chores","lucy",true).some(s=>s.label==="Take the boxes to the curb")&&(c.hhAddToggle(),c.hhAddSet("kind","once"),!/hhAddSet\('cad','wk:0'\)/.test(c.hhAddHTML())&&/checked one time/.test(c.hhAddHTML())));
+  ok("the add form, Kind = Once: cad once, from today, in the pile (off her list until sent), the Days row hidden", j.cad==="once"&&j.from===TODAY&&j.hold===true&&!c.rtStepsFor("chores","lucy",true).some(s=>s.label==="Take the boxes to the curb")&&(c.hhAddToggle(),c.hhAddSet("kind","once"),!/hhAddSet\('cad','wk:0'\)/.test(c.hhAddHTML())&&/checked one time/.test(c.hhAddHTML())));   // HH_ONCEPILE
 }
 { const c=mk(); const swept=c.hhOnceSweep();
   ok("Lincoln tapped the books yesterday → the sweep retires that row with the date, one multi-path update; the gate latch stays", swept.length===1&&swept[0]===BOOKS&&c.hhJobs()[BOOKS].status==="retired"&&c.hhJobs()[BOOKS].done===YDAY&&c.hhJobs()[GATE].status==="active"&&c.writes.length===1&&c.writes[0][0]==="update"&&c.writes[0][2]["household/jobs/"+BOOKS+"/done"]===YDAY, c.writes);
