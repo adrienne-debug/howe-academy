@@ -2078,6 +2078,17 @@ function rtWave(slot,kid,d,i){
 function rtWavedRowHTML(st){ return '<div class="mr-step" style="opacity:.5"><div class="sl-checkbox" style="width:20px;height:20px;font-size:12px;border-style:dashed">–</div><div class="sl-slot-name" style="flex:1;text-decoration:line-through">'+(st.emoji?st.emoji+" ":"")+esc(st.label)+'</div><span class="cadtag" style="color:#6b7280;border-color:#d1d5db">🙋 Mom waved this today</span></div>'; }
 // Kids today ▸ 📋 lists: every list for that day with ✓ state and ✕ today / undo.
 function mpKidListsToggle(kid){ mpKidOpen=(mpKidOpen===kid)?"":kid; const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
+// KIDTICK (her ask 2026-10-11: "on the mom's day kids today list make it where i can check off things but don't make anything
+// bigger"): the ☐ on a row is the kid's own check-off — same stars, same log, same late ledger — made with the day set to that
+// row's day, and with Mom's tap allowed past the afternoon/evening hour lock (the kid's own lock is untouched). ✅ taps undo.
+let _rtMomTick=false;
+function mdKidTick(slot,kid,d,i){
+  if(typeof momHere==="function"&&!momHere()) return false; if(ROSTER.indexOf(kid)<0||SL_SLOTS.indexOf(slot)<0) return false; i=parseInt(i,10); if(!(i>=0)) return false;
+  const _pd=(typeof day!=="undefined")?day:null; try{ day=d; _rtMomTick=true; if(slot==="morning"){ if(typeof toggleMorningStep==="function") toggleMorningStep(kid,i); } else if(typeof toggleRtStep==="function") toggleRtStep(slot,kid,i); }
+  finally{ _rtMomTick=false; if(_pd!==null) day=_pd; }
+  try{ const el=document.getElementById('content'); if(el&&typeof renderMomsPlan==="function") renderMomsPlan(el); }catch(e){}
+  return true;
+}
 function mdKidListsHTML(kid,d){
   let h='<div style="margin-top:6px;padding:8px 10px;background:#f8fafc;border-radius:10px">';
   SL_SLOTS.forEach(function(slot){
@@ -2085,7 +2096,7 @@ function mdKidListsHTML(kid,d){
     steps.forEach(function(st,i){ if(!st) return; const wv=rtWaved(slot,kid,d,i);
       const due=wv||(slot==="morning"?(stepWindowOk(st,d)&&cadDueOn(st.cad||"daily",d)):rtDueOrLate(slot,kid,d,i,st)); if(!due) return;
       const done=(slot==="morning")?mStepDoneOn(kid,d,i):rtDoneOn(slot,kid,d,i);
-      rows+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #eef2f0;font-size:12px;font-weight:600;'+(wv?'opacity:.55;':'')+'"><span>'+(done?'✅':wv?'–':'☐')+'</span><span style="flex:1;'+(wv?'text-decoration:line-through':'')+'">'+(st.emoji?st.emoji+' ':'')+esc(st.label)+'</span>'+((st.pts||0)>0&&!wv?'<span style="font-size:10.5px;color:#b45309;font-weight:800">+'+st.pts+' ⭐</span>':'')
+      rows+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #eef2f0;font-size:12px;font-weight:600;'+(wv?'opacity:.55;':'')+'"><span'+((!wv&&typeof mdKidTick==="function")?' onclick="event.stopPropagation();mdKidTick(\''+slot+'\',\''+kid+'\',\''+d+'\','+i+')" style="cursor:pointer;padding:2px 4px;margin:-2px -4px"':'')+'>'+(done?'✅':wv?'–':'☐')+'</span><span style="flex:1;'+(wv?'text-decoration:line-through':'')+'">'+(st.emoji?st.emoji+' ':'')+esc(st.label)+'</span>'+((st.pts||0)>0&&!wv?'<span style="font-size:10.5px;color:#b45309;font-weight:800">+'+st.pts+' ⭐</span>':'')
         +(done?'':'<button onclick="event.stopPropagation();rtWave(\''+slot+'\',\''+kid+'\',\''+d+'\','+i+')" style="padding:2px 8px;border-radius:7px;border:1.5px solid '+(wv?'#2B7A78':'#d1d5db')+';background:#fff;color:'+(wv?'#2B7A78':'#6b7280')+';font-size:10.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(wv?'undo':'✕ today')+'</button>')+'</div>'; });
     if(rows) h+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:6px 0 2px">'+esc(SL_SLBL[slot]||slot)+'</div>'+rows;
   });
@@ -2215,7 +2226,7 @@ function rtOpenKey(slot,kid){ return slot+"_"+kid+"_"+day; }
 function rtIsOpen(slot,kid,allDone){ const v=rtOpen[rtOpenKey(slot,kid)]; return (v===true||v===false)?v:!allDone; }
 function toggleRtOpen(slot,kid,nowOpen){ rtOpen[rtOpenKey(slot,kid)]=!nowOpen; renderSkylight(); }
 function toggleRtStep(slot,kid,i){
-  if(!((typeof rtStepAvail==="function")?rtStepAvail(slot,kid,day,rtStepsFor(slot,kid)[i]):rtAvailable(slot,kid,day))){
+  if(!(typeof _rtMomTick!=="undefined"&&_rtMomTick)&&!((typeof rtStepAvail==="function")?rtStepAvail(slot,kid,day,rtStepsFor(slot,kid)[i]):rtAvailable(slot,kid,day))){   // KIDTICK: Mom's tap passes the lock
     const _ml=(typeof mealOf==="function")?mealOf(slot,rtStepsFor(slot,kid)[i]):"";
     if(_ml&&typeof gwShowToast==="function"){ gwShowToast("After "+mealCfg()[_ml]+" opens at "+rtFmtHour(mealHour(_ml))); return; }
     if(typeof gwShowToast==="function"){
