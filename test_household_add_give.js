@@ -54,6 +54,14 @@ console.log("+ Add a chore");
   c.hhLevelSetFor("lucy",2); ok("…and arrives when she moves up", c.rtStepsFor("chores","lucy",true).length===2);
   const d=mk({noMom:true}); d.dom["hh-add-label"]={value:"X"}; ok("not Mom → no row, no write", d.hhAddSave()===null&&d.writes.length===0);
 }
+console.log("HH_SYNC_BYID: a strip save finds a row that has no src.id");
+{ const c=mk(); c.get('householdData.jobs.hh_mom_x={label:"Kitchen close-down",cad:"daily",slot:"night",pts:0,who:"mom",source:"walk-through",area:"cleaning",status:"active",verdict:"",note:"",order:9,ts:1}; householdOnValue(householdData);');
+  ok("the payload row is on her strip under its own id", !!c.mcAll().hh_mom_x);
+  c.writes.length=0; c._mcDb("mom","hh_mom_x","cad","wk:1");
+  ok("her ✎ edit lands on that row — no mc_hh_mom_x duplicate", c.hhJobs().hh_mom_x.cad==="wk:1"&&!c.hhJobs().mc_hh_mom_x&&c.writes.length===1&&Object.keys(c.writes[0][2]).join()==="household/jobs/hh_mom_x/cad", c.writes);
+  c.get('householdData.jobs.hh_mom_x.status="retired"; householdOnValue(householdData);'); c.writes.length=0; c._mcDb("mom","hh_mom_y",null,{label:"New one",cad:"daily",ts:2});
+  ok("a retired row is never matched; a truly new one still makes a row", !!c.hhJobs().mc_hh_mom_y&&c.hhJobs().hh_mom_x.status==="retired");
+}
 console.log("Give to…");
 { const c=mk(); const upd=c.hhGiveTo(LINC,"lucy");
   ok("one multi-path update on that row only: who, order (end of Lucy's list), from = today", c.writes.length===1&&c.writes[0][0]==="update"&&Object.keys(upd).every(k=>k.indexOf("household/jobs/"+LINC+"/")===0)&&upd["household/jobs/"+LINC+"/who"]==="lucy"&&upd["household/jobs/"+LINC+"/order"]===1&&upd["household/jobs/"+LINC+"/from"]===TODAY, upd);
