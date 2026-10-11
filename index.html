@@ -7506,27 +7506,58 @@ function helperDecline(id){
   if(!momHere()){ if(typeof kitPinGate==="function") kitPinGate(function(){ helperDecline(id); },"Saying no to a helper is for Mom."); return; }
   _hlpDayWrite(id,"requested",null); renderAll();
 }
+// 👨 DADFIX (her report 2026-10-11: "pick my cards works but … doesn't show up on his day" · "I did send to dad … doesn't
+// show on dads page at all … nowhere on his page can he click it off"). The cards that are HIS right now — helperHolds(t)
+// answers his id: the ones he picked / is approved for while checked in, plus anything Mom sent him (HELPERGIVE, his even
+// before he taps "I'm here") — are listed on Dad's Day itself, each with a check-off. The check-off is tapTask, the very
+// tap Mom's schedule card makes, so it writes the same check (and helperHolds makes it count like Mom's, "done with Dad").
+// "My list" (selHelper) jumps to the Schedule tab, which his ?kiosk=dad link can never open — so on his link it's hidden.
+function helperDadMine(id){ try{ return helperTasksToday(id).filter(t=>helperHolds(t)===id); }catch(e){ return []; } }
+function helperDadRowsHTML(id,list){
+  return list.map(t=>{
+    const done=!!(typeof checked!=="undefined"&&checked&&checked[t.id]);
+    const sent=(typeof helperGivenTo==="function"&&helperGivenTo(t)===id);
+    const col=(typeof KID_COLOR!=="undefined"&&KID_COLOR[t.who])||"#64748b";
+    const ttl=(typeof taskTitleShow==="function")?taskTitleShow(t):(t.title||"");
+    return '<div data-dadcard="'+esc(t.id)+'" style="display:flex;align-items:center;gap:10px;padding:8px 2px;border-top:1px solid #bbf7d0">'
+      +'<button onclick="tapTask(\''+_hlpQ(t.id)+'\')" title="'+(done?'Done — tap to undo':'Tap when it\'s done')+'" style="width:30px;height:30px;border-radius:8px;border:2px solid #16a34a;background:'+(done?'#16a34a':'#fff')+';color:#fff;font-size:16px;font-weight:800;cursor:pointer;flex-shrink:0;font-family:\'DM Sans\',sans-serif">'+(done?'&#10003;':'')+'</button>'
+      +'<div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700;'+(done?'text-decoration:line-through;color:#94a3b8':'color:#111827')+'">'+esc(ttl)+'</div>'
+      +'<div style="font-size:11px;color:#15803d"><span style="color:'+col+';font-weight:800">'+esc(cap(t.who))+'</span>'+(t.time?' · '+esc(t.time):'')
+      +(sent?' · <b>&#128232; Mom sent you this</b>':'')+(done?' · done':'')+'</div></div></div>';
+  }).join("");
+}
+// Not checked in, but Mom sent him cards → "📨 Mom sent you" with the same rows.
+function helperDadSentHTML(id){
+  const ts=helperDadMine(id).filter(t=>typeof helperGivenTo==="function"&&helperGivenTo(t)===id); if(!ts.length) return "";
+  const left=ts.filter(t=>!(checked&&checked[t.id])).length;
+  return '<div style="margin:10px 12px 0;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:11px 13px">'
+    +'<div style="font-size:14px;font-weight:800;color:#166534">&#128232; Mom sent you '+ts.length+' card'+(ts.length===1?'':'s')+'</div>'
+    +'<div style="font-size:12px;color:#15803d;margin:2px 0 6px">'+(left?left+' to do · tap the box when one is done.':'All done &mdash; thank you!')+'</div>'
+    +helperDadRowsHTML(id,ts)+'</div>';
+}
 // The card on 👨 Dad's Day.
 function helperDadCardHTML(){
   try{
     if(!pageOn("helpers")) return "";
     const id=helperDadId(); if(!id) return "";
     const here=helperIsHere(id), asked=helperRequested(id), p=helpersData[id]||{};
+    const _sent=here?'':helperDadSentHTML(id);   // 👨 DADFIX: what Mom sent him shows before he checks in too
     const box=(inner)=>'<div style="margin:10px 12px 0;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:11px 13px">'+inner+'</div>';
     const btn=(on,label,bg,fg,bd)=>'<button onclick="'+on+'" style="border:'+(bd?'1.5px solid '+bd:'none')+';background:'+bg+';color:'+fg+';border-radius:10px;padding:8px 13px;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+label+'</button>';
     if(here){
-      const mine=helperTasksToday(id).filter(t=>helperHolds(t)===id), left=mine.filter(t=>!(checked&&checked[t.id])).length;
+      const mine=helperDadMine(id), left=mine.filter(t=>!(checked&&checked[t.id])).length;   // 👨 DADFIX
       return box('<div style="font-size:14px;font-weight:800;color:#166534">'+esc(helperIcon(id))+' You\'re helping with school</div>'
-        +'<div style="font-size:12px;color:#15803d;margin:2px 0 9px">'+(mine.length?(left?left+' to do':'All done &mdash; thank you!'):(p.pick?'Pick the cards you\'ll take.':'Nothing on today\'s list for you.'))+'</div>'
+        +'<div style="font-size:12px;color:#15803d;margin:2px 0 9px">'+(mine.length?(left?left+' to do · tap the box when one is done.':'All done &mdash; thank you!'):(p.pick?'Pick the cards you\'ll take.':'Nothing on today\'s list for you.'))+'</div>'
+        +(mine.length?'<div style="margin:0 0 10px">'+helperDadRowsHTML(id,mine)+'</div>':'')   // 👨 DADFIX: his cards, right here
         +'<div style="display:flex;gap:7px;flex-wrap:wrap">'
-        +btn("selHelper('"+id+"')","My list","#16a34a","#fff")
+        +((typeof _kioskD==="function"&&_kioskD())?'':btn("selHelper('"+id+"')","My list","#16a34a","#fff"))   // 👨 DADFIX: his link can't open the Schedule tab
         +(p.pick?btn("helpersPopOpen('"+id+"')","Pick my cards","#fff","#166534","#86efac"):'')
         +btn("helperLeave('"+id+"')","I'm done helping","#fff","#b91c1c","#fca5a5")+'</div>');
     }
-    if(asked) return box('<div style="font-size:14px;font-weight:800;color:#166534">&#9203; Waiting for Mom to say yes</div>'
+    if(asked) return _sent+box('<div style="font-size:14px;font-weight:800;color:#166534">&#9203; Waiting for Mom to say yes</div>'
       +'<div style="font-size:12px;color:#15803d;margin:2px 0 9px">She\'ll see "'+esc(helperName(id))+' wants to help" on the schedule.</div>'
       +btn("helperDadCancel()","Cancel","#fff","#64748b","#cbd5e1"));
-    return box('<div style="font-size:14px;font-weight:800;color:#166534">&#127979; Help with school</div>'
+    return _sent+box('<div style="font-size:14px;font-weight:800;color:#166534">&#127979; Help with school</div>'
       +'<div style="font-size:12px;color:#15803d;margin:2px 0 9px">'+(p.selfIn?'Tap when you\'re ready — your cards come off Mom\'s list.':'Tap when you\'re ready — Mom says yes, then your cards come off her list.')+'</div>'
       +btn("helperDadRequest()","I'm here &mdash; ready to help with school","#16a34a","#fff"));
   }catch(e){ return ""; }
@@ -7946,7 +7977,7 @@ function _agLunchRow(dayName,span){
       '<div style="grid-column:'+(span==="all"?"2/-1":"2/4")+';background:#fef9c3;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;color:#854d0e">\u{1F34E} Lunch \u00B7 '+lbl+'</div></div>'};
   }catch(e){ return null; }
 }
-function allAgendaHtml(dayTasks,onlyKids){
+function allAgendaHtml(dayTasks,onlyKids,ro){   // 👨 DADFIX: ro = look-only cards (Dad's Day ▸ All)
   const kids=(Array.isArray(onlyKids)&&onlyKids.length)?onlyKids.slice():[...SL_KIDS];   // 🗓 MOMSCHED_TAB: one kid → one column
   if(!kids.length||!dayTasks.length)
     return '<div style="padding:28px 16px;text-align:center;color:var(--muted);font-size:13px">Nothing scheduled for '+cap(day)+'. 🎉</div>';
@@ -7964,14 +7995,14 @@ function allAgendaHtml(dayTasks,onlyKids){
   const lookAhead={};
   kids.forEach(k=>{ try{ lookAhead[k]=gateLookAhead(k,day); locked[k]=!isScheduleUnlocked(k,day)&&!lookAhead[k]; }catch(e){ locked[k]=false; } });
   const cell=(bag,k)=>{
-    const inner=(bag[k]&&bag[k].length)?bag[k].map(tk=>taskCard(tk)).join(''):'<div class="all-empty">·</div>';
+    const inner=(bag[k]&&bag[k].length)?bag[k].map(tk=>ro?taskCard(tk,undefined,true):taskCard(tk)).join(''):'<div class="all-empty">·</div>';
     return '<div class="all-col">'+(locked[k]?'<div class="sched-blur">'+inner+'</div>':inner)+'</div>';
   };
   let h='<div class="all-agenda"><div class="all-agenda-in" style="--allk:'+kids.length+'">';
   h+='<div class="all-agenda-row all-agenda-head"><div></div>'+
     kids.map(k=>{
       const L=locked[k];
-      return '<div class="all-h" style="color:'+(SL_KCOL[k]||"#666")+(L?';cursor:pointer':'')+'"'+(L?' onclick="scrollToSkylight()"':'')+'>'+cap(k)+
+      return '<div class="all-h" style="color:'+(SL_KCOL[k]||"#666")+(L&&!ro?';cursor:pointer':'')+'"'+(L&&!ro?' onclick="scrollToSkylight()"':'')+'>'+cap(k)+
         (L?'<div style="font-size:9px;font-weight:700;color:#b5394a;text-transform:none;letter-spacing:0">'+((gateClockHeld(day)&&morningComplete(k,day))?'🔒 opens '+fromMin(gateStartMin(day)):'🔒 morning first')+'</div>':'')+
         (lookAhead[k]?'<div style="font-size:9px;font-weight:700;color:#b45309;text-transform:none;letter-spacing:0">👀 checks at '+fromMin(gateStartMin(day))+'</div>':'')+'</div>';
     }).join('')+'</div>';
@@ -10813,6 +10844,7 @@ function renderDadsDay(el){
   let h='<div style="padding:14px 14px 4px;display:flex;align-items:center;gap:10px">'+
     '<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:#2C5F8A">👨 Dad\'s Day</div>'+
     '<button onclick="mpGoto(\'dadcal\')" style="border:1.5px solid #2C5F8A;background:#fff;color:#2C5F8A;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F5D3} Calendar</button>'+
+    '<button onclick="mpSubView=\'dadall\';renderMomsPlan(document.getElementById(\'content\'))" style="border:1.5px solid #2B7A78;background:#fff;color:#2B7A78;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466} All</button>'+   // 👨 DADFIX
     '<span style="flex:1"></span>'+
     // On his own ?kiosk=dad link there is nowhere to go back TO — hide it there only.
     (_kioskD()?'':'<button onclick="mpSubView=null;renderMomsPlan(document.getElementById(\'content\'))" style="border:1.5px solid var(--border);background:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">← Mom\'s Day</button>')+'</div>';
@@ -10873,7 +10905,7 @@ function renderMomsPlan(el){
 function momGateOpen(){
   if(momDayIn&&typeof momHere==="function"&&momHere()) return true;   // already inside this visit
   if(typeof _kioskD==="function"&&_kioskD()) return true;
-  if(mpSubView==='dad'||mpSubView==='dadcal') return true;
+  if(mpSubView==='dad'||mpSubView==='dadcal'||mpSubView==='dadall') return true;   // 👨 DADFIX: ▸ All is Dad's side
   if(grFromDad&&(mpSubView==='grocery'||mpSubView==='meals')) return true;    // Dad's Day → his list / meals
   if(mpSubView==='meals'&&kitView&&!kitEditId) return true;                    // tonight's dinner → just reading the recipe
   return false;
@@ -10900,7 +10932,7 @@ function renderMomsPlanView(el){
   if(mpSubView==='prep'){ return renderMPPrep(el); }
   if(mpSubView==='house'){ return renderHousehold(el); }   // 🏡 HOUSEHOLD
   if(mpSubView==='weigh'){ return renderMPWeigh(el); }
-  if(mpSubView!=='grocery') grFromDad=(mpSubView==='dad'||mpSubView==='dadcal');   // 🛒 the list remembers which page opened it
+  if(mpSubView!=='grocery') grFromDad=(mpSubView==='dad'||mpSubView==='dadcal'||mpSubView==='dadall');   // 👨 DADFIX   // 🛒 the list remembers which page opened it
   if(mpSubView==='grocery'){ return renderGrocery(el); }
   if(mpSubView==='meals'){ return renderKitchen(el); }
   if(mpSubView==='cal'){
@@ -10913,6 +10945,7 @@ function renderMomsPlanView(el){
   }
   if(mpSubView==='dad'){ return renderDadsDay(el); }
   if(mpSubView==='dadcal'){ return renderDadCalendar(el); }
+  if(mpSubView==='dadall'){ return renderDadAll(el); }   // 👨 DADFIX
   renderMomsDay(el);
 }
 
@@ -18522,6 +18555,25 @@ function mpSchWkOtherHTML(who){
 // 👨 Dad's own calendar (her ask 2026-09-05: "make his own tab so it works on his phone") — the
 // same lens, toggles and Family/kid row, under HIS header with a way back to Dad's Day. On
 // ?kiosk=dad it keeps him on his side of the app instead of landing in Mom HQ.
+// 👨 DADFIX (her ask 2026-10-11: "an all button where he can see what all kids are doing"): Dad's Day ▸ All — the Schedule's
+// own All agenda (allAgendaHtml: every kid side by side on today's clock, the live lay via mpSchTasks), LOOK-ONLY: the cards
+// are drawn read-only, so nothing here checks off, moves or opens anything. Cards that are his say "👨 with Dad".
+function renderDadAll(el){
+  const d=mdTodayName();
+  let h='<div style="font-family:\'DM Sans\',sans-serif;padding-bottom:28px">';
+  h+='<div style="padding:14px 14px 4px;display:flex;align-items:center;gap:10px">'
+    +'<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:#2C5F8A">\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466} Everyone today</div>'
+    +'<span style="flex:1"></span>'
+    +'<button onclick="mpSubView=\'dad\';renderMomsPlan(document.getElementById(\'content\'))" style="border:1.5px solid #2C5F8A;background:#fff;color:#2C5F8A;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u2190 Dad\u2019s Day</button></div>';
+  h+='<div style="padding:0 14px 6px;font-size:12px;color:var(--muted)">What each kid is on, by the clock. Just a look \u2014 your own cards and check-offs are on Dad\u2019s Day.</div>';
+  let ag='';
+  const _pk=kid, _pd=day;
+  try{ kid="all"; day=d; ag=allAgendaHtml(mpSchTasks("all",d),null,true); }
+  catch(e){ ag='<div style="padding:20px;text-align:center;color:var(--muted)">Couldn\u2019t draw today.</div>'; }
+  finally{ kid=_pk; day=_pd; }
+  h+='<div style="padding:4px 4px 0">'+ag+'</div></div>';
+  el.innerHTML=h;
+}
 function renderDadCalendar(el){
   let h='<div style="font-family:\'DM Sans\',sans-serif;padding-bottom:28px">';
   h+='<div style="padding:14px 14px 4px;display:flex;align-items:center;gap:10px">'
