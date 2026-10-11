@@ -114,6 +114,6 @@ console.log("Pickers (her report: a tap moved the row out of the card)");
 }
 console.log("Wiring");
 { ok("seven chips on the tab", /chip\('week','📆 Week'\)\+chip\('area','🗂 Area'\)\+chip\('room','🚪 Room'\)\+chip\('levels','🪜 Levels'\)/.test(src));
-  ok("hhSet accepts the plan fields", /\["area","floor","verdict","note","status","minutes","room","level","planCad"\]/.test(src));
+  ok("hhSet accepts the plan fields", /\["area","floor","verdict","note","status","minutes","room","level","planCad"(,"can")?\]/.test(src));
   ok("no 🔀 in index.html", src.indexOf("🔀")<0); }
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
