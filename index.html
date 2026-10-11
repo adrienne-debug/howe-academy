@@ -12433,14 +12433,14 @@ function hhCanOf(j){ const owner=j&&j.who; let c=Array.isArray(j&&j.can)?j.can.s
 function hhCanToggle(id,who){ const j=hhJobs()[id]; if(!j||who===j.who) return; let c=hhCanOf(j); if(c.indexOf(who)>=0) c=c.filter(function(w){ return w!==who; }); else c.push(who); hhSet(id,"can",c); }
 function hhCanLabel(j){ const c=hhCanOf(j); return c.length>1?'👥 '+c.map(hhWhoName).join(", "):'👥 '+hhWhoName(j.who)+' only'; }
 // ── The need meter ──
-function hhInterval(j){ const cad=hhPlanCad(j); if(j&&j.cycW) return 28; if(!cad||cad==="daily") return 1; if(cad==="asneeded"||cad==="none") return null; if(cad==="sat"||cad==="sun") return 7; if(cad==="2w") return 14;
+function hhInterval(j){ const cad=hhPlanCad(j); if(j&&j.cycW) return 28; if(j&&j.who==="grab"&&(!cad||cad==="daily")) return 7; if(!cad||cad==="daily") return 1; /* a grab's "daily" means always available, not owed daily: measure it as a weekly */ if(cad==="asneeded"||cad==="none") return null; if(cad==="sat"||cad==="sun") return 7; if(cad==="2w") return 14;
   if(/^\d+d$/.test(cad)) return Math.max(1,parseInt(cad,10)); if(/^wk:/.test(cad)){ const n=cad.slice(3).split(",").filter(function(x){ return x!==""; }).length||1; return Math.round(7/n); } return 7; }
 function hhNeed(j){
   const iv=hhInterval(j); if(!iv) return null; const st=hhStats(j); const today=_hhDayNum(_hhIsoLocal(Date.now()));
   let last=st.last; if(j.lastDone&&/^\d{4}-\d{2}-\d{2}$/.test(j.lastDone)&&(!last||j.lastDone>last)) last=j.lastDone;   // 🧽 HH_CLEANPLAN: done on a cleaning day, maybe by someone else
-  if(!last) return {pct:Infinity,days:null,interval:iv,last:null,never:true,label:"never in 8 wk"};
-  const days=today-_hhDayNum(last), pct=Math.round(100*days/iv);
-  return {pct:pct,days:days,interval:iv,last:last,never:false,label:pct+"% · "+days+" d / "+iv};
+  let since=null; if(!last){ const added=j.from||(j.ts?_hhIsoLocal(j.ts):null); if(!added||!/^\d{4}-\d{2}-\d{2}$/.test(added)) return {pct:Infinity,days:null,interval:iv,last:null,never:true,label:"never in 8 wk"}; last=added; since="added"; }   // HH_CLEANPLAN (her theory run): never done = measured from the day the row was added, so a new 6-week job does not outrank an overdue weekly one
+  const days=Math.max(0,today-_hhDayNum(last)), pct=Math.round(100*days/iv);
+  return {pct:pct,days:days,interval:iv,last:last,never:false,since:since,label:pct+"% · "+(since?"since added ":"")+days+" d / "+iv};
 }
 function hhNeedPct(j){ const n=hhNeed(j); return n?n.pct:-1; }
 function hhNeedChip(j){ const n=hhNeed(j); if(!n) return ""; const bg=n.never||n.pct>=200?'#fee2e2':n.pct>=100?'#fef3c7':'#dcfce7', fg=n.never||n.pct>=200?'#991b1b':n.pct>=100?'#92400e':'#166534'; return _hhChip('⏳ '+n.label,bg,fg); }
@@ -12549,7 +12549,8 @@ function hhPlanCandidates(iso){
   const jobs=hhJobs(), out=[], dn=_HH_DN[new Date(iso+"T12:00:00Z").getUTCDay()];
   Object.keys(jobs).forEach(function(id){ const j=jobs[id]; if(j.status==="retired"||j.free) return; const proj=hhIsProject(j), grab=j.who==="grab";
     if(!proj&&!grab&&!hhIsHouse(j)) return; const cad=j.cad||"daily";
-    if(cad==="daily"||cad==="none") return; if(cad==="asneeded"&&!proj) return; if(j.from&&iso<j.from) return;
+    if(!proj&&!grab&&hhLayerOf(j)==="laundry") return;                                    // the laundry chain keeps its days
+    if(!grab&&(cad==="daily"||cad==="none")) return; if(cad==="asneeded"&&!proj&&!grab) return; if(j.from&&iso<j.from) return;   // the pool is always in
     if(grab){ const i=j.src&&j.src.i; const cur=(typeof gbCur==="function"&&i!=null)?gbCur(i):null; if(cur&&cur.done) return; }
     const n=proj?null:hhNeed(j), pct=proj?-1:(n?(n.never?1e9:n.pct):0);
     out.push({id:id,job:j,proj:proj,grab:grab,pct:pct,due:proj?false:cadDueOn(cad,dn),mins:proj?Math.max(10,Math.min(parseInt(j.expect,10)||20,60)):hhMinutesOf(j),pts:j.pts||0,can:hhPlanCanDo(j)}); });
@@ -12566,7 +12567,8 @@ function hhPlanOrder(plan){
 function hhPlanBuild(iso,skip){
   const R=hhCleanRules(), left=hhPlanBudget(R), plan={}, over=[]; skip=skip||{};
   hhPlanCandidates(iso).forEach(function(c){ if(skip[c.id]) return; let who=null, best=-1;
-    c.can.forEach(function(w){ const rem=left[w]; if(rem===undefined) return; const need=c.proj?10:c.mins; if(rem>=need&&(rem>best||(rem===best&&w===c.job.who))){ best=rem; who=w; } });
+    const need=c.proj?10:c.mins; if(!c.grab&&left[c.job.who]!==undefined&&left[c.job.who]>=need) who=c.job.who;   // the owner first while they have the minutes (her rule: nobody else's unless it has to be)
+    if(!who) c.can.forEach(function(w){ const rem=left[w]; if(rem===undefined) return; if(rem>=need&&rem>best){ best=rem; who=w; } });   // else whoever can, with the most minutes free
     if(!who){ over.push(c.id); return; }
     const m=c.proj?Math.min(c.mins,left[who]):c.mins; plan[c.id]={who:who,mins:m}; left[who]-=m; });
   return {plan:hhPlanOrder(plan),left:over,budget:left};

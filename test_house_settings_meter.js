@@ -36,7 +36,8 @@ function mk(o){
     cap:s=>s.charAt(0).toUpperCase()+s.slice(1), esc:s=>String(s==null?"":s), mwBanner:s=>"", mpSubnav:v=>"", mwToast:()=>{}, renderAll:()=>{}, renderMomsPlan:()=>{}, document:{getElementById:id=>dom[id]||null}, dom, writes};
   vm.createContext(ctx); vm.runInContext(fn("toMin")+"\n"+fn("to12h")+"\n"+fn("ampmTo24")+"\n"+CAD+"\n"+ROT+"\n"+fn("rtStepsFor")+"\n"+fn("mcAll")+"\n"+fn("dcAll")+"\n"+BLOCK, ctx);
   ctx.get=e=>vm.runInContext(e,ctx);
-  ctx.hhImport(); ctx.hhTakeover(true); ctx.writes.length=0; return ctx;
+  ctx.hhImport(); ctx.hhTakeover(true); ctx.get('Object.keys(hhJobs()).forEach(function(id){ hhJobs()[id].ts=Date.now()-28*864e5; });');   // every row was added four weeks ago
+  ctx.writes.length=0; return ctx;
 }
 const VAC="rt_chores_lincoln_vacuum_kitchen", WIPE="rt_chores_lincoln_wipe_table", DUST="rt_chores_lincoln_dust_shelves", SUNNY="rt_chores_lincoln_sunny_cage";
 console.log("1. Settings ▸ Cleaning Day");
@@ -71,14 +72,15 @@ console.log("3. The need meter");
 { const c=mk(); const J=c.hhJobs();
   const v=c.hhNeed(J[VAC]); ok("Vacuum (weekly) last done 10 days ago → 143%", v&&v.pct===143&&v.days===10&&v.interval===7&&!v.never, v);
   const w=c.hhNeed(J[WIPE]); ok("Wipe table (daily) done yesterday → 100%", w&&w.pct===100&&w.days===1&&w.interval===1, w);
-  const d=c.hhNeed(J[DUST]); ok("Dust (every 2 weeks) never in 8 weeks → never, top of the sort", d&&d.never&&d.pct===Infinity&&d.interval===14, d);
+  const d=c.hhNeed(J[DUST]); ok("Dust (every 2 weeks) never checked → measured from the day it was added (28 d ago) → 200%, top of the sort", d&&!d.never&&d.pct===200&&d.since==="added"&&d.interval===14&&/since added 28 d \/ 14/.test(d.label), d);
+  ok("a row with no from and no ts reads never", c.hhNeed({cad:"2w",label:"x"}).never===true);
   ok("as needed has no meter", c.hhNeed(J[SUNNY])===null&&c.hhNeedPct(J[SUNNY])===-1);
   ok("intervals: Mon+Thu → 4 days, Sat → 7, every 28 days → 28, a 4-week cycle → 28", c.hhInterval({cad:"wk:0,3"})===4&&c.hhInterval({cad:"sat"})===7&&c.hhInterval({cad:"28d"})===28&&c.hhInterval({cad:"wk:5",cycW:1})===28);
-  ok("chips: red for never / 200%+, amber for 100%+, green under", /#fee2e2/.test(c.hhNeedChip(J[DUST]))&&/#fef3c7/.test(c.hhNeedChip(J[VAC]))&&/⏳ 143% · 10 d \/ 7/.test(c.hhNeedChip(J[VAC]))&&/⏳ never in 8 wk/.test(c.hhNeedChip(J[DUST])));
+  ok("chips: red for never / 200%+, amber for 100%+, green under", /#fee2e2/.test(c.hhNeedChip(J[DUST]))&&/#fef3c7/.test(c.hhNeedChip(J[VAC]))&&/⏳ 143% · 10 d \/ 7/.test(c.hhNeedChip(J[VAC]))&&/⏳ 200% · since added 28 d \/ 14/.test(c.hhNeedChip(J[DUST])));
   const el={}; c.hhToggleWho("lincoln"); c.renderHousehold(el); const order=h=>[VAC,WIPE,DUST].map(id=>h.indexOf("hhPickToggle('"+id+"','area')")).join(",");
   const o1=order(el.innerHTML); c.hhSortToggle(); c.renderHousehold(el); const o2=order(el.innerHTML);
   const pos=o2.split(",").map(Number); ok("the sort chip: list order by default; most behind first puts Dust, then Vacuum, then Wipe", /list order/.test(el.innerHTML)&&pos[2]<pos[0]&&pos[0]<pos[1]&&o1!==o2, [o1,o2]);
-  c.hhGo("room"); c.get('hhOpenRoom=hhRoomOf(hhJobs()["'+DUST+'"])'); c.renderHousehold(el); ok("the Room view sorts the same way and shows the chips", /⏳ never in 8 wk/.test(el.innerHTML)&&/hhSortToggle/.test(el.innerHTML));
+  c.hhGo("room"); c.get('hhOpenRoom=hhRoomOf(hhJobs()["'+DUST+'"])'); c.renderHousehold(el); ok("the Room view sorts the same way and shows the chips", /⏳ 200% · since added/.test(el.innerHTML)&&/hhSortToggle/.test(el.innerHTML));
 }
 ok("no 🔀", src.indexOf("🔀")<0);
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
