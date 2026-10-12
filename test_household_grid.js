@@ -48,7 +48,7 @@ function mk(o){
   vm.createContext(ctx);
   vm.runInContext(CAD+"\n"+ROT+"\n"+fn("rtStepsFor")+"\n"+BLOCK, ctx);
   ctx.hhImport();
-  try{ vm.runInContext('Object.keys(hhJobs()).forEach(function(id){ const j=hhJobs()[id]; hhOpenPerson["room|"+hhRoomOf(j)+"|"+j.who]=true; hhOpenPerson["area|"+(j.area||"cleaning")+"|"+j.who]=true; });',ctx); }catch(e){}   // HH_PERSONFOLD: open everyone for these checks
+  try{ vm.runInContext('Object.keys(hhJobs()).forEach(function(id){ const j=hhJobs()[id]; hhOpenPerson["room|"+hhRoomOf(j)+"|"+j.who]=true; hhOpenPerson["area|"+(j.area||"cleaning")+"|"+j.who]=true; const sl=hhSlotsFor(j.who), s=(sl.indexOf(j.slot||"")>=0?(j.slot||""):sl[0]); hhOpenPerson["room|"+hhRoomOf(j)+"|"+j.who+"|"+s]=true; hhOpenPerson["area|"+(j.area||"cleaning")+"|"+j.who+"|"+s]=true; });',ctx); }catch(e){}   // HH_PERSONFOLD: open everyone for these checks
   ctx.writes.length=0; return ctx;
 }
 const LUCY_MON="rt_chores_lucy_take_sheets_off_beds", LUCY_WED="rt_chores_lucy_dust_dining_area", LUCY_PK="rt_afternoon_lucy_pickup_kitchen", LINC_TUE="rt_chores_lincoln_vacuum_stairs_upstairs_hallway";
@@ -92,7 +92,7 @@ console.log("🚪 Room guesses and 🗂 Area layers");
   const el={}; c.hhGo("room"); c.renderHousehold(el);
   ok("rooms in order, floors labelled, a room with no weekly owner is flagged", el.innerHTML.indexOf("Living room")<el.innerHTML.indexOf("Boys")&&/⬆️ Upstairs/.test(el.innerHTML)&&/no weekly job owns this room/.test(el.innerHTML));
   c.hhGo("area"); vm.runInContext("hhOpenArea='cleaning'",c); c.renderHousehold(el);
-  ok("area view: four cards, cleaning split into layers (per person since HH_EDITOR: the layer counts add up to 4)", /🧽 Cleaning/.test(el.innerHTML)&&(el.innerHTML.match(/One main chore a day · (\d+)/g)||[]).reduce((a,m)=>a+parseInt(m.split("· ")[1],10),0)===4&&/Laundry · 1/.test(el.innerHTML)&&/Up for Grabs · 1/.test(el.innerHTML), (el.innerHTML.match(/[A-Za-z ]+ · \d+<\/div>/g)||[]).slice(0,8));
+  ok("area view: four cards; inside Cleaning, a heading per person and, within each, a folded time-of-day group (HH_PERSONFOLD / HH_SLOTFOLD)", /🧽 Cleaning/.test(el.innerHTML)&&/hhPersonToggle\('area','cleaning','lincoln'\)/.test(el.innerHTML)&&/hhPersonToggle\('area','cleaning','lincoln\|chores'\)/.test(el.innerHTML)&&/Chores<\/span>/.test(el.innerHTML), (el.innerHTML.match(/hhPersonToggle\('area','cleaning','[a-z|]+'\)/g)||[]).slice(0,8));
 }
 console.log("🪜 Levels: the ready meter from the last three full weeks");
 { const c=mk(); ok("current level defaults to 1", c.hhLevelCur()===1);
