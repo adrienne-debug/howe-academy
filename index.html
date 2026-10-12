@@ -63467,6 +63467,7 @@ function seGuardCtx(extra){
   const now=new Date();
   return Object.assign({
     days:DAYS, todayDay:(typeof _todayDay!=="undefined")?_todayDay:null, nowMin:now.getHours()*60+now.getMinutes(),
+    dayISO:iso,   // 🗓 WEEKEND (2026-10-11): lets the catch-up tell a finished week from the coming one
     checked:(typeof checked!=="undefined"&&checked)||{}, claimed:(typeof claimed!=="undefined"&&claimed)||{},
     win:day=>{ const ov=(_sd.overrides||{})[day]||{}; return {start:toMin(ov.start||_sd.defaultStart||"10:00 AM"),end:toMin(ov.end||_sd.defaultEnd||"4:15 PM"),lunchStart:_r.lunchStart,lunchEnd:_r.lunchEnd}; },
     kidOff:(kid,day)=>{ try{ const ds=iso(day); return !!(ds&&typeof smapIsKidOff==="function"&&smapIsKidOff(kid,ds)); }catch(e){ return false; } },
@@ -63491,6 +63492,11 @@ function prExtraCore(tasks,o){
   const out={added:[],upd:{}};
   if(!Array.isArray(tasks)||!o||!Array.isArray(o.days)) return out;
   const DAYS=o.days, tm=o.toMin, fm=o.fromMin, ti=DAYS.indexOf(o.todayDay);
+  // 🗓 WEEKEND (2026-10-11): a week that is already behind us gets no extra sittings. Live Sat 10/10 8:00 PM: "saturday"
+  // is not one of the week's days, so ti was -1 and the pass dealt from MONDAY — 16 extra sittings (+7 at 11 PM) landed on
+  // Mon/Wed/Fri of the week that had just ended, every one a ⚠ out-of-sequence line, then parked in the box. A Sunday
+  // regenerate of the COMING week is not over (its Friday is ahead) and still deals from Monday, as before.
+  if(o.weekOver) return out;
   const firstDi=ti<0?0:(o.beforeSchool?ti:ti+1);
   const dur=t=>+t.dur||20; const isClose=t=>t.subjectKey==="closing_nb"||/closing notebook/i.test(t.title||"");
   const skip=t=>!t||!t.who||String(t.id||"").endsWith("_c")||!!t._eowOverflow||/lunch/i.test(t.title||"")||tm(t.time)==null;
@@ -63543,7 +63549,11 @@ function prExtraCtx(extra){
   const DN={mon:"monday",tue:"tuesday",wed:"wednesday",thu:"thursday",fri:"friday",sat:"saturday",sun:"sunday"};
   const before=(typeof cbBeforeSchoolToday==="function")?!!cbBeforeSchoolToday():false;
   const tasksNow=((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]);
-  return Object.assign(base,{beforeSchool:before,subjects:kid=>{
+  // 🗓 WEEKEND (2026-10-11): the week is over once its last school day is before today (DAY_DT is the week being laid —
+  // applyWeekMeta runs before the regenerate call, so a Sunday build of next week reads its own Friday, still ahead).
+  let weekOver=false; try{ const _n=new Date(), _t=_n.getFullYear()+"-"+String(_n.getMonth()+1).padStart(2,"0")+"-"+String(_n.getDate()).padStart(2,"0");
+    const _li=(typeof base.dayISO==="function")?base.dayISO(base.days[base.days.length-1]):null; weekOver=!!(_li&&_li<_t); }catch(eWO){ weekOver=false; }
+  return Object.assign(base,{beforeSchool:before,weekOver:weekOver,subjects:kid=>{
     const subs=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid])||{}, out=[];
     Object.keys(subs).forEach(sk=>{ try{
       const s=subs[sk]; if(!s||s.paused||!(typeof planBacked==="function"&&planBacked(kid,sk))) return;
