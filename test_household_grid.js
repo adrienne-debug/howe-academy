@@ -90,7 +90,7 @@ console.log("🚪 Room guesses and 🗂 Area layers");
   const el={}; c.hhGo("room"); c.renderHousehold(el);
   ok("rooms in order, floors labelled, a room with no weekly owner is flagged", el.innerHTML.indexOf("Living room")<el.innerHTML.indexOf("Boys")&&/⬆️ Upstairs/.test(el.innerHTML)&&/no weekly job owns this room/.test(el.innerHTML));
   c.hhGo("area"); vm.runInContext("hhOpenArea='cleaning'",c); c.renderHousehold(el);
-  ok("area view: four cards, cleaning split into layers", /🧽 Cleaning/.test(el.innerHTML)&&/One main chore a day · 4/.test(el.innerHTML)&&/Laundry · 1/.test(el.innerHTML)&&/Up for Grabs · 1/.test(el.innerHTML), (el.innerHTML.match(/[A-Za-z ]+ · \d+<\/div>/g)||[]).slice(0,8));
+  ok("area view: four cards, cleaning split into layers (per person since HH_EDITOR: the layer counts add up to 4)", /🧽 Cleaning/.test(el.innerHTML)&&(el.innerHTML.match(/One main chore a day · (\d+)/g)||[]).reduce((a,m)=>a+parseInt(m.split("· ")[1],10),0)===4&&/Laundry · 1/.test(el.innerHTML)&&/Up for Grabs · 1/.test(el.innerHTML), (el.innerHTML.match(/[A-Za-z ]+ · \d+<\/div>/g)||[]).slice(0,8));
 }
 console.log("🪜 Levels: the ready meter from the last three full weeks");
 { const c=mk(); ok("current level defaults to 1", c.hhLevelCur()===1);
