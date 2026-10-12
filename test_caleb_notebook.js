@@ -50,9 +50,9 @@ ok(nums(o) === "14 15 16 17 18", "a later week opens on the number he's learning
 o = NB.generate("caleb", base({ masteryItems: numItems(k10, [11, 12, 13], { 7: { recentMiss: 2 } }) }));
 ok(nums(o) === "7 11 12 13 14" && /Practice Again 🔁 · 7/.test(o.student), "a known number he's been missing comes back once with 🔁", nums(o));
 o = NB.generate("caleb", base({ masteryItems: numItems(k10.concat([11, 12, 13, 14, 15, 16, 17]), [18, 19, 20]) }));
-ok(nums(o) === "18 19 20 18 19", "near the top it wraps inside 18–20", nums(o));
+ok(nums(o) === "18 19 20 21 22", "near the top it keeps going: 18 19 20 21 22 (her ask 10/12, no repeating)", nums(o));
 o = NB.generate("caleb", base({ masteryItems: numItems(Array.from({ length: 20 }, (_, i) => i + 1), []) }));
-ok(nums(o) === "1 2 3 4 5", "knows 1–20 → plain review rotation", nums(o));
+ok(nums(o) === "21 22 23 24 25", "knows 1–20 → on to 21 22 23 24 25 (a new number a day to 100)", nums(o));
 ok(nums(NB.generate("caleb", base())) === "11 12 13 14 15", "no Numbers deck yet → 11–20 as before");
 
 const j = NB.generate("julian", base());
