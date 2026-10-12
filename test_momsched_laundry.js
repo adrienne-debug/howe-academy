@@ -53,7 +53,7 @@ console.log("── the markers ──");
   ok("🫧 started marker at 9:00 (in the washer · started)", /9:00<span class="ampm">AM<\/span><\/div><div class="mom-col"><div class="ml-laundry"[^>]*><span[^>]*>🫧 <b>Towels<\/b> — in the washer · started 9:00/.test(A), A.slice(0,600));
   ok("✅ done marker at 10:00 — when the washer finishes (✎ Times), asking to block out time to move it", /10:00<span class="ampm">AM<\/span><\/div><div class="mom-col"><div class="ml-laundry"[^>]*><span[^>]*>✅ <b>Towels<\/b> is done in the washer\. Block out time to move it to the dryer\?/.test(A));
   ok("'How long?' box — her minutes, 5 to move it the first time", /How long\? <input id="lb-min-a_washer" type="number"[^>]*value="5"/.test(A));
-  ok("[Now] [After Lucy's Math] [Not now]", /laundryBlockSet\('a','washer','now'\)[^>]*>Now</.test(A)&&new RegExp("laundryBlockSet\\('a','washer','after','"+m1.id+"'\\)[^>]*>After Lucy's Math<").test(A)&&/laundryBlockSet\('a','washer','skip'\)[^>]*>Not now</.test(A));
+  ok("[Now] [After Lucy's Math] [Not now]", /laundryBlockSet\('a','washer','now'\)[^>]*>Now</.test(A)&&new RegExp("laundryBlockSet\\('a','washer','after','"+m1.id+"'\\)[^>]*>After Lucy's Math<").test(A)&&/laundryWhenToggle\('a_washer'\)[^>]*>Not now</.test(A));   // ⏰ LAUNDRY_WHEN: Not now asks when
 }
 console.log("── she hasn't answered: nothing is held, and 'After …' follows the next open card ──");
 { const base=mk({tasks:TASKS,laundry:{}}); base.lay(); const B={m1:base.at(m1.id),m2:base.at(m2.id),e1:base.at(e1.id),own:base.at(own.id)};
@@ -101,6 +101,26 @@ console.log("── dryer, which days ──");
   ok("dryer: 'fold it', 15 min the first time", /Block out time to fold it\?/.test(A)&&/id="lb-min-b_dryer"[^>]*value="15"/.test(A));
   ok("only on today's schedule", T.run("momSchedLaundry('friday',[])").length===0);
   T.ctx.laundryData.b.ts=at(H(23,30)); ok("a load that finishes tomorrow shows only its started marker", T.run("momSchedLaundry('thursday',[])").length===1);
+}
+console.log("── ⏰ Not now asks when (her ask 2026-10-11) ──");
+{ const T=mk({tasks:TASKS,laundry:towels()}); let A=T.agenda();
+  ok("Not now no longer skips or moves the load", !/laundryBlockSet\('a','washer','skip'\)[^>]*>Not now</.test(A)&&!/laundryAdvance\('a'\)/.test(A));
+  T.run("laundryWhenToggle('a_washer')"); A=T.agenda();
+  ok("tapping it opens When? — 30 min · 1 hr · after school · a time · Don't schedule it", /⏰ When\?/.test(A)&&/'later',null,630\)[^>]*>In 30 min</.test(A)&&/'later',null,660\)[^>]*>In 1 hr</.test(A)&&/After school \(4:15 PM\)/.test(A)&&/id="lb-when-a_washer" type="time" value="11:30"/.test(A)&&/'skip'\)"[^>]*>Don't schedule it</.test(A));
+  ok("the load is still in the washer (nothing moved)", T.ctx.laundryData.a.stage==="washer");
+  T.run("laundryBlockSet('a','washer','later',null,"+H(11)+")"); T.lay(); A=T.agenda();
+  ok("her pick is a real block at that time", T.run("momBlockOpen()").some(b=>b.at==="later"&&b.startMin===H(11))&&T.run("_mlBlkLaid['a_washer']")===H(11));
+  ok("the agenda shows ⏰ Move to the dryer at her time, and the question is gone", /⏰ 🧺 Move to the dryer: <b>Towels<\/b>/.test(A)&&!/Block out time/.test(A)&&!/When\?/.test(A));
+  ok("Lucy's Math is untouched (block is later)", T.at(m1.id)==="10:00 AM");
+}
+{ const T=mk({tasks:TASKS,laundry:towels()}); T.agenda();
+  T.ctx.inputs["lb-when-a_washer"]={value:"10:00"}; T.run("laundryWhenTyped('a','washer','a_washer')"); T.lay();
+  ok("a typed time works and her Mom cards step over it", T.run("momBlockOpen()").some(b=>b.startMin===H(10))&&T.at(m1.id)!=="10:00 AM");
+  T.run("laundryBlockSet('a','washer','later',null,null)");
+  ok("later without a time is ignored", T.run("momBlocks['a_washer'].startMin")===H(10));
+}
+{ const T=mk({tasks:TASKS,laundry:towels()}); T.agenda(); T.run("laundryWhenToggle('a_washer')"); T.run("laundryBlockSet('a','washer','skip')"); const A=T.agenda();
+  ok("Don't schedule it = the old skip (holds nothing, → Dryer stays on the done marker)", !T.run("momBlockOpen()").length&&/laundryAdvance\('a'\)/.test(A));
 }
 console.log("── wiring ──");
 ok("the agenda gets the laundry rows with its cards", /momSchedLaundry\(day,dayTasks\)/.test(src)&&/c\.lau\.map\(x=>x\.html\)/.test(src));

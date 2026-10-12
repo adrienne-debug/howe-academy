@@ -12947,7 +12947,7 @@ function momBlockFor(id,stage){ const b=(momBlocks||{})[momBlockKey(id,stage)]; 
 function momBlockOpen(){
   const out=[];
   Object.keys(momBlocks||{}).forEach(function(k){
-    const b=momBlocks[k]; if(!b||b.iso!==mwTodayIso()||b.done||(b.at!=="now"&&b.at!=="after")) return;
+    const b=momBlocks[k]; if(!b||b.iso!==mwTodayIso()||b.done||(b.at!=="now"&&b.at!=="after"&&b.at!=="later")) return;   // ⏰ LAUNDRY_WHEN: "later" = the time she picked
     const l=laundryData[b.load]; if(!l||l.stage!==b.stage) return;
     const m=parseInt(b.mins,10); if(!(m>0)) return;
     out.push({key:k,at:b.at,startMin:+b.startMin||0,afterId:b.afterId||"",mins:m});
@@ -12965,14 +12965,16 @@ function momSchedNextMom(dayTasks){
   return open[0]||null;
 }
 function _lbCardName(t){ const who=(typeof KID_NAME!=="undefined"&&KID_NAME[t.who])||cap(t.who||""); return who+"'s "+String(t.title||"card").split(" — ")[0]; }
-function laundryBlockSet(id,stage,at,afterId){
+function laundryBlockSet(id,stage,at,afterId,atMin){
   if(typeof momHere==="function"&&!momHere()) return;
+  if(at==="later"&&!(typeof atMin==="number"&&atMin>=0&&atMin<24*60)) return;   // ⏰ LAUNDRY_WHEN: "later" always carries the time she picked
   const l=laundryData[id]; if(!l||l.stage!==stage) return;
   const key=momBlockKey(id,stage);
   let mins=laundryBlockDefault(stage);
   try{ const inp=document.getElementById('lb-min-'+key); const v=parseInt(inp&&inp.value,10); if(v>0&&v<=240) mins=v; }catch(e){}
-  const rec={iso:mwTodayIso(),load:id,stage:stage,label:l.label||"",mins:mins,at:at,startMin:_lbNowMin(),ts:Date.now()};
+  const rec={iso:mwTodayIso(),load:id,stage:stage,label:l.label||"",mins:mins,at:at,startMin:(at==="later")?Math.round(atMin):_lbNowMin(),ts:Date.now()};
   if(at==="after"&&afterId) rec.afterId=afterId;
+  if(_lbWhenOpen) delete _lbWhenOpen[key];
   momBlocks[key]=rec; momBlocksOnValue(momBlocks);
   if(_lbWrite()) db.ref('momBlocks/'+rec.iso+'/'+key).set(rec);
   if(at!=="skip"){ laundryBlockMins[laundryBlockStep(stage)]=mins; laundryBlockMinsOnValue(laundryBlockMins); if(_lbWrite()) db.ref('settings/laundryBlockMins/'+laundryBlockStep(stage)).set(mins); }
@@ -12995,6 +12997,28 @@ function laundryBlockDone(id,stage){
 function _lbBox(bg,bd,inner){ return '<div class="ml-laundry" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:'+bg+';border-left:3px solid '+bd+';border-radius:8px">'+inner+'</div>'; }
 function _lbBtn(id,stage){ return '<button onclick="laundryAdvance(\''+_lbQ(id)+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+laundryAdvanceLabel(stage)+'</button>'; }
 function _lbQBtn(label,on,solid){ return '<button onclick="'+on+'" style="padding:5px 11px;border-radius:8px;border:'+(solid?'none':'1.5px solid #93c5fd')+';background:'+(solid?'#2563eb':'#fff')+';color:'+(solid?'#fff':'#1d4ed8')+';font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap">'+label+'</button>'; }
+// ⏰ LAUNDRY_WHEN (her ask 2026-10-11: "Not now on laundry just moves it to dryer it should say when to add in schedule"):
+// Not now no longer drops the question — it opens "When?" (in 30 min · in 1 hr · after school · a time she types). Her pick is
+// a real block at that time (at:"later", startMin) that her Mom cards step over, same as Now. "Don't schedule it" is the old skip.
+let _lbWhenOpen={};
+function laundryWhenToggle(key){ _lbWhenOpen[key]=!_lbWhenOpen[key]; if(typeof renderAll==="function") renderAll(); }
+function laundryWhenTyped(id,stage,key){
+  let v=""; try{ const el=document.getElementById('lb-when-'+key); v=el&&el.value; }catch(e){}
+  const m=/^(\d{1,2}):(\d{2})$/.exec(String(v||"")); if(!m) return;
+  laundryBlockSet(id,stage,'later',null,(+m[1])*60+(+m[2]));
+}
+function _lbWhenHTML(id,stage,key){
+  const nowM=_lbNowMin(), end=(typeof coSchoolEnd==="function")?coSchoolEnd():16*60+15, q="'"+_lbQ(id)+"','"+stage+"','later',null,";
+  let h='<div style="flex:1 1 100%;display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 8px;background:#fff;border:1.5px dashed #93c5fd;border-radius:8px">'
+    +'<span style="font-size:12px;font-weight:800;color:#1d4ed8">⏰ When?</span>'
+    +_lbQBtn('In 30 min',"laundryBlockSet("+q+(nowM+30)+")",false)+_lbQBtn('In 1 hr',"laundryBlockSet("+q+(nowM+60)+")",false);
+  if(end>nowM) h+=_lbQBtn('After school ('+fromMin(end)+')',"laundryBlockSet("+q+end+")",false);
+  const pre=Math.min(23*60+59,nowM+90), hh=String(Math.floor(pre/60)).padStart(2,"0"), mm=String(pre%60).padStart(2,"0");
+  h+='<input id="lb-when-'+key+'" type="time" value="'+hh+':'+mm+'" style="padding:3px 6px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px">'
+    +_lbQBtn('Set',"laundryWhenTyped('"+_lbQ(id)+"','"+stage+"','"+key+"')",true)
+    +'<button onclick="laundryBlockSet(\''+_lbQ(id)+'\',\''+stage+'\',\'skip\')" style="border:none;background:none;color:#64748b;font-size:11px;font-weight:700;cursor:pointer;text-decoration:underline">Don\'t schedule it</button></div>';
+  return h;
+}
 // Today's laundry rows for the Mom agenda: [{m, html}] in minute order (started → done/question → block).
 function momSchedLaundry(dayName,dayTasks){
   if(typeof _todayDay!=="string"||dayName!==_todayDay) return [];
@@ -13014,13 +13038,14 @@ function momSchedLaundry(dayName,dayTasks){
         +'<label style="font-size:12px;color:#334155;font-weight:700">How long? <input id="lb-min-'+key+'" type="number" min="1" max="240" value="'+laundryBlockDefault(l.stage)+'" style="width:54px;padding:4px 6px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px"> min</label>'
         +_lbQBtn('Now',"laundryBlockSet('"+_lbQ(id)+"','"+l.stage+"','now')",true)
         +(next?_lbQBtn('After '+esc(_lbCardName(next)),"laundryBlockSet('"+_lbQ(id)+"','"+l.stage+"','after','"+_lbQ(next.id)+"')",false):'')
-        +_lbQBtn('Not now',"laundryBlockSet('"+_lbQ(id)+"','"+l.stage+"','skip')",false)));
+        +_lbQBtn(_lbWhenOpen[key]?'Not now ▴':'Not now',"laundryWhenToggle('"+_lbQ(key)+"')",false)   // ⏰ LAUNDRY_WHEN: asks when
+        +(_lbWhenOpen[key]?_lbWhenHTML(id,l.stage,key):'')));
       return;
     }
     if(b.at==="skip"){ place(_lbMin(da),1,_lbBox('#ecfdf5','#16a34a','<span style="flex:1;font-size:13px">'+doneTxt+'</span>'+_lbBtn(id,l.stage))); return; }
     place(_lbMin(da),1,_lbBox('#ecfdf5','#16a34a','<span style="flex:1;font-size:13px">'+doneTxt+'</span>'));
     const bm=(_mlBlkLaid&&_mlBlkLaid[key]!==undefined)?_mlBlkLaid[key]:(+b.startMin||nowM);
-    place(bm,2,_lbBox('#eff6ff','#2563eb','<span style="flex:1;font-size:13px">🧺 '+(dry?'Fold: ':pre?'Second wash: ':'Move to the dryer: ')+lbl
+    place(bm,2,_lbBox('#eff6ff','#2563eb','<span style="flex:1;font-size:13px">'+(b.at==="later"?'⏰ ':'')+'🧺 '+(dry?'Fold: ':pre?'Second wash: ':'Move to the dryer: ')+lbl
       +' · <input type="number" min="1" max="240" value="'+(parseInt(b.mins,10)||laundryBlockDefault(l.stage))+'" onchange="laundryBlockMinsEdit(\''+key+'\',this.value)" style="width:48px;padding:2px 5px;border:1.5px solid #bfdbfe;border-radius:6px;font-size:12px"> min</span>'+_lbBtn(id,l.stage)));
   });
   Object.keys(momBlocks||{}).forEach(function(k){   // finished blocks stay on today's timeline where they ended
