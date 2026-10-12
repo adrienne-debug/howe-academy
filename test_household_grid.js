@@ -47,7 +47,9 @@ function mk(o){
     document:{getElementById:()=>({})}, renderMomsPlan:()=>renders.push(1), writes, renders, ls};
   vm.createContext(ctx);
   vm.runInContext(CAD+"\n"+ROT+"\n"+fn("rtStepsFor")+"\n"+BLOCK, ctx);
-  ctx.hhImport(); ctx.writes.length=0; return ctx;
+  ctx.hhImport();
+  try{ vm.runInContext('Object.keys(hhJobs()).forEach(function(id){ const j=hhJobs()[id]; hhOpenPerson["room|"+hhRoomOf(j)+"|"+j.who]=true; hhOpenPerson["area|"+(j.area||"cleaning")+"|"+j.who]=true; });',ctx); }catch(e){}   // HH_PERSONFOLD: open everyone for these checks
+  ctx.writes.length=0; return ctx;
 }
 const LUCY_MON="rt_chores_lucy_take_sheets_off_beds", LUCY_WED="rt_chores_lucy_dust_dining_area", LUCY_PK="rt_afternoon_lucy_pickup_kitchen", LINC_TUE="rt_chores_lincoln_vacuum_stairs_upstairs_hallway";
 

@@ -60,9 +60,15 @@ console.log("2. On screen");
   const k=mk({noMom:true}); ok("a kid's device: no ✎, no editor", k.hhEditBtn(VAC)===""&&!/hhEditToggle/.test(k.hhRowHTML(VAC,k.hhJobs()[VAC])));
 }
 console.log("3. Area and Room by person");
-{ const c=mk(); const el={}; c.hhGo("area"); c.get('hhOpenArea="cleaning"'); c.renderHousehold(el); const h=el.innerHTML;
-  const li=h.indexOf(">Lincoln · 2 · "), lu=h.indexOf(">Lucy · 1 · "); ok("the Cleaning card has a subsection per person with count and minutes, Lincoln before Lucy, the layer labels inside", li>0&&lu>li&&h.indexOf("One main chore a day",li)>li);
-  c.hhGo("room"); c.get('hhOpenRoom="any"'); c.renderHousehold(el); const r=el.innerHTML; ok("the Room card groups by person too, with ✎ on each row", /Lincoln · \d+ · \d+ min/.test(r)&&/hhEditToggle\('/.test(r));
+{ const c=mk(); const el={}; c.hhGo("area"); c.get('hhOpenArea="cleaning"'); c.renderHousehold(el); let h=el.innerHTML;
+  ok("the Cleaning card has a heading per person with count and minutes, Lincoln before Lucy — folded by default, no rows showing", /hhPersonToggle\('area','cleaning','lincoln'\)/.test(h)&&/Lincoln<\/span><span[^>]*>2 · \d+ min/.test(h)&&h.indexOf("Lincoln<")<h.indexOf("Lucy<")&&!/hhEditToggle\('/.test(h)&&!/One main chore a day/.test(h));
+  c.hhPersonToggle("area","cleaning","lincoln"); c.renderHousehold(el); h=el.innerHTML;
+  ok("tap Lincoln: his rows and layer labels open (one main chore, one daily), Lucy's stay folded", /One main chore a day · 1/.test(h)&&/Daily · 1/.test(h)&&/hhEditToggle\('rt_chores_lincoln_vacuum_kitchen'\)/.test(h)&&!/hhEditToggle\('rt_chores_lucy_dust_dining_area'\)/.test(h));
+  const RV=c.get('hhRoomOf(hhJobs()["'+VAC+'"])'), RD=c.get('hhRoomOf(hhJobs()["rt_chores_lucy_dust_dining_area"])');
+  c.hhGo("room"); c.get('hhOpenRoom="'+RV+'"'); c.renderHousehold(el); let r=el.innerHTML; ok("the Room card: a folded heading per person, no rows", new RegExp("hhPersonToggle\\('room','"+RV+"','lincoln'\\)").test(r)&&!/hhEditToggle\('/.test(r));
+  c.hhPersonToggle("room",RV,"lincoln"); c.renderHousehold(el); r=el.innerHTML; ok("tap Lincoln in that room: his row with ✎ opens", /hhEditToggle\('rt_chores_lincoln_vacuum_kitchen'\)/.test(r));
+  c.get('hhOpenRoom="'+RD+'"'); c.renderHousehold(el); r=el.innerHTML; ok("another room: Lucy folded there until tapped", !/hhEditToggle\('rt_chores_lucy_dust_dining_area'\)/.test(r)&&(c.hhPersonToggle("room",RD,"lucy"),c.renderHousehold(el),/hhEditToggle\('rt_chores_lucy_dust_dining_area'\)/.test(el.innerHTML)));
+  c.get('hhOpenRoom="'+RV+'"'); c.hhSortToggle(); c.renderHousehold(el); ok("sorted most-behind-first: no person headings, every row shows", !/hhPersonToggle\(/.test(el.innerHTML)&&/hhEditToggle\('rt_chores_lincoln_vacuum_kitchen'\)/.test(el.innerHTML));
 }
 ok("no 🔀", src.indexOf("🔀")<0);
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
