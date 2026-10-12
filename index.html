@@ -8983,10 +8983,12 @@ function finalizeDone(id, doneTs, score){
     const entry={id:id,title:t.title,who:t.who,day:t.day,originalDay:origDay,checkedOnDay:effectiveDay(t),daysLate:daysLate,ts:doneTs,week:WK};
     if(score) entry.score=score;
     if(_famPre&&_famPre.label) entry.famLabel=_famPre.label;   // 📚 what the family actually did
+    if(_famPre&&_famPre.madeUp) entry.famMadeUp=_famPre.madeUp;   // 📚 FAMMAKEUP: the missed day this check made up
     try{ const _hp=(typeof helperHolds==="function")?helperHolds(t):null; if(_hp) entry.helper=helperName(_hp); else if(typeof dadTapCtx!=="undefined"&&dadTapCtx) entry.helper=dadTapName(); }catch(e){}   // 🙋 "done with Grandma" · 👨 DADFIX: Dad's tap → "done with Dad"
     if(t.lid){ entry.lid=t.lid; entry.pid=t.who+"__"+t.subjectKey; }   // frozen record is lid-resolvable without title parsing
     hist[id]=entry; histState[id]=entry; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+id).set(entry);
     try{ if(_famPre&&_famPre.first&&_famPre.seq&&typeof famProgBump==="function") famProgBump(_famPre.id,_famPre.key,1); }catch(e){}   // 📚 the group's place moves ONCE
+    try{ if(_famPre&&_famPre.first&&_famPre.seq&&_famPre.madeUp&&typeof famProgBump==="function") famProgBump(_famPre.id,_famPre.key,1); }catch(e){}   // 📚 FAMMAKEUP: a make-up day = two sittings
     try{ lidDoneWrite(t,doneTs,id); }catch(e){ dbg("lid done write skip: "+e); }
     try{ if(Array.isArray(t.lids)) t.lids.forEach(function(l){ if(l&&l!==t.lid) lidDoneWrite(Object.assign({},t,{lid:l}),doneTs,id); }); }catch(e){ dbg("lid done write (merged) skip: "+e); }   // 🧩 a merged page card finishes every lesson it holds
     // A check-off may have finished a subject and/or met all session goals.
@@ -28456,7 +28458,8 @@ function famTryFinish(t){
 function famBeforeUncheck(id){
   const t=weekData.tasks.find(function(x){ return x.id===id; }); if(!famIsCard(t)) return;
   try{ const _b=famDefs()[t.famBlock], _it=_b?famList(_b.items).find(function(x){ return x&&x.key===t.famItem; }):null;
-    if(typeof famTrack==="function"&&famTrack(_it)&&famTrack(_it).mode==="seq") famProgBump(t.famBlock,t.famItem,-1); }catch(e){}   // 📚 un-marked: the place moves back once
+    if(typeof famTrack==="function"&&famTrack(_it)&&famTrack(_it).mode==="seq"){ famProgBump(t.famBlock,t.famItem,-1);
+      const _h=(typeof histState!=="undefined"&&histState)?histState[id]:null; if(_h&&_h.famMadeUp) famProgBump(t.famBlock,t.famItem,-1); } }catch(e){}   // 📚 un-marked: the place moves back once (twice for a make-up day — FAMMAKEUP)
   const grp=famGroup(t), u={};
   grp.forEach(function(c){
     const sc=famScore(c);
@@ -29000,6 +29003,13 @@ function famSheetRender(){
 //     the cards and the Grid read the next sittings in order, so a missed day never skips one.
 // Labels are worked out when the screen draws (cards, Grid cells, header "ends"), so a week already laid needs no rebuild.
 // Each check records its label on the history entry (famLabel) — the record of what was actually done.
+// FAMMAKEUP (her ask 2026-10-11, DeWalt's Friday Oct 9 block skipped): track.missed = "skip" (default — today's behaviour,
+//   the date decides) | "next" (the owed lesson doubles onto the next day the subject runs) | "same" (week mode only: it waits
+//   for the next day with the same weekday role — a missed Presidents Friday doubles onto the next Friday). track.missedFrom =
+//   the first date that counts. A past run day (kids there, not a co-op/off day) with no checked copy and nothing made up for it
+//   is OWED; owed days land one per day ("Wk 7 · Presidents + Wk 8 · Presidents", never more than 2 lessons on a card — her cap)
+//   on the card, the Grid cell and "Next:". Mom's one check records both (famLabel) and which day it made up (famMadeUp);
+//   in-order subjects move the shared place by 2 that day. Records are read from this week and the archive — no new data.
 let famProgress={};
 function famProgOnValue(v){ famProgress=v||{}; _famLmMemo={}; if(typeof renderAll==="function") renderAll(); }
 function famDoneN(id,key){ return Math.max(0,parseInt((((famProgress||{})[id]||{})[key]||{}).done,10)||0); }
@@ -29036,21 +29046,53 @@ function famRunDatesC(b,id,it){
   if(!_famRdCache.v[k]) _famRdCache.v[k]=famRunDates(b,it);
   return _famRdCache.v[k];
 }
-// What a checked copy recorded (any copy of the group on that date).
-function famRecorded(id,it,ds){
+// FAMMAKEUP_START ── what was recorded on a date (this week or an archived one), and the days still owed ──
+// An archived week keeps dates as "Oct 9" (DAY_DT) — parsed with the asked-for date's year.
+function famArchDayISO(s,ds){ try{ const d=new Date(String(s)+", "+String(ds).slice(0,4)); if(isNaN(d.getTime())) return ""; return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }catch(e){ return ""; } }
+// The record of this subject on ONE date: {label, madeUp} from any checked copy, or null if nothing was checked.
+function famRecordAt(id,key,ds){
   try{ const tasks=((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]);
-    for(const t of tasks){ if(t&&t.famBlock===id&&t.famItem===it.key&&routineDateISO(t.day)===ds&&checked[t.id]){ const h=histState&&histState[t.id]; if(h&&h.famLabel) return h.famLabel; } } }catch(e){}
-  return "";
+    for(const t of tasks){ if(t&&t.famBlock===id&&t.famItem===key&&routineDateISO(t.day)===ds&&checked[t.id]){ const h=(histState&&histState[t.id])||{}; return {label:h.famLabel||"",madeUp:h.famMadeUp||""}; } } }catch(e){}
+  try{ const A=(typeof archive!=="undefined"&&archive)||{};
+    for(const wk of Object.keys(A)){ const e=A[wk]; if(!e||!e.tasks) continue; const dts=e.dates||{}; const dns=Object.keys(dts).filter(function(dn){ return famArchDayISO(dts[dn],ds)===ds; }); if(!dns.length) continue;
+      const ck=e.checked||{}, hs=e.history||{};
+      for(const t of famList(e.tasks)){ if(t&&t.famBlock===id&&t.famItem===key&&dns.indexOf(t.day)>=0&&ck[t.id]){ const h=hs[t.id]||{}; return {label:h.famLabel||"",madeUp:h.famMadeUp||""}; } } } }catch(e){}
+  return null;
 }
+function famRecorded(id,it,ds){ const r=famRecordAt(id,it.key,ds); return (r&&r.label)||""; }
+// Every missed day already made up for this subject (this week + the archive) → {date:true}.
+function famMadeUpSet(id,key){
+  const out={};
+  try{ const tasks=((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]);
+    tasks.forEach(function(t){ if(t&&t.famBlock===id&&t.famItem===key&&checked[t.id]){ const h=histState&&histState[t.id]; if(h&&h.famMadeUp) out[h.famMadeUp]=true; } }); }catch(e){}
+  try{ const A=(typeof archive!=="undefined"&&archive)||{};
+    Object.keys(A).forEach(function(wk){ const e=A[wk]; if(!e||!e.tasks) return; const ck=e.checked||{}, hs=e.history||{};
+      famList(e.tasks).forEach(function(t){ if(t&&t.famBlock===id&&t.famItem===key&&ck[t.id]){ const h=hs[t.id]; if(h&&h.famMadeUp) out[h.famMadeUp]=true; } }); }); }catch(e){}
+  return out;
+}
+function famMissedMode(tr){ const m=tr&&tr.missed; if(m==="next") return "next"; if(m==="same"&&tr.mode==="week") return "same"; return "skip"; }
+// The owed days, oldest first: run days from missedFrom up to yesterday that had a lesson, no checked copy, and no make-up yet.
+function famOwedList(id,it,dates,today,hasLesson){
+  const tr=famTrack(it); if(!tr||famMissedMode(tr)==="skip") return [];
+  const from=String(tr.missedFrom||""); if(!/^\d{4}-\d{2}-\d{2}$/.test(from)) return [];
+  const made=famMadeUpSet(id,it.key);
+  return dates.filter(function(d){ return d>=from&&d<today&&hasLesson(d)&&!made[d]&&!famRecordAt(id,it.key,d); });
+}
+// Does the owed day land here? "next" = the first open day; "same" = the first open day with the same weekday.
+function famMakeupLands(tr,missed,d){ return famMissedMode(tr)==="same"?(gwParseDate(missed).getDay()===gwParseDate(d).getDay()):true; }
+// A cheap signature of the records the map depends on (checked copies this week + archive size) for the memo key.
+function famRecSig(id,key){ let n=0; try{ ((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]).forEach(function(t){ if(t&&t.famBlock===id&&t.famItem===key&&checked[t.id]) n++; }); }catch(e){} try{ n+=1000*Object.keys((typeof archive!=="undefined"&&archive)||{}).length; }catch(e){} return n; }
+// FAMMAKEUP_END
 let _famLmMemo={};
 // {byDate:{date:label}, ends:date|null, now:label, total, left} for one family subject.
 function famLessonMap(b,id,it){
   const tr=famTrack(it); if(!tr) return {byDate:{},ends:null,now:"",none:true};
   const today=(typeof cbTodayISO==="function")?cbTodayISO():new Date().toISOString().slice(0,10);
   const dates=famRunDatesC(b,id,it);
-  const mk=[id,it.key,JSON.stringify(tr),famDoneN(id,it.key),today,dates.length,dates[0]||"",famCellDone(b,id,it,today)?1:0,JSON.stringify(b.days||[]),JSON.stringify(it.days||[])].join("|");
+  const mk=[id,it.key,JSON.stringify(tr),famDoneN(id,it.key),today,dates.length,dates[0]||"",famCellDone(b,id,it,today)?1:0,JSON.stringify(b.days||[]),JSON.stringify(it.days||[]),famRecSig(id,it.key)].join("|");
   if(_famLmMemo[mk]) return _famLmMemo[mk];
-  const out={byDate:{},short:{},ends:null,now:""};
+  const out={byDate:{},short:{},ends:null,now:"",madeUp:{},owed:[]};
+  const openDay=function(d){ return d>=today&&!(d===today&&famCellDone(b,id,it,today)); };   // FAMMAKEUP: a day a make-up can still land on
   if(tr.mode==="week"){
     const startMon=famMonISO(tr.startDate||today), total=parseInt(tr.total,10)||0, sw=parseInt(tr.startWeek,10)||1;
     const weeks=[]; dates.forEach(function(d){ if(d<startMon) return; const m=famMonISO(d); if(weeks.indexOf(m)<0) weeks.push(m); });
@@ -29062,13 +29104,29 @@ function famLessonMap(b,id,it){
       out.short[d]="Wk "+wn+(role?" · "+role:"");
       if(!total||wn<=total) out.ends=d; });
     out.total=total; out.left=total?Math.max(0,total-sw+1-weeks.filter(function(m){ return m<famMonISO(today); }).length):null;
+    // FAMMAKEUP: owed days double onto the next open day ("next") or the next same weekday ("same"), one per day.
+    out.owed=famOwedList(id,it,dates,today,function(d){ return !!out.byDate[d]; });
+    const rem=out.owed.slice();
+    dates.forEach(function(d){
+      if(!out.byDate[d]) return;
+      if(!openDay(d)){ const r=famRecordAt(id,it.key,d); if(r&&r.label){ out.byDate[d]=r.label; if(r.madeUp){ out.madeUp[d]=r.madeUp; const ms=out.short[r.madeUp]; if(ms) out.short[d]+=" + "+ms; } } return; }   // a checked day says what it recorded
+      const k=rem.findIndex(function(m){ return famMakeupLands(tr,m,d); }); if(k<0) return;
+      const m=rem.splice(k,1)[0], ms=out.short[m]||out.byDate[m];
+      out.byDate[d]+=" + "+ms+" (missed "+famFmtDate(m)+")"; out.short[d]+=" + "+ms; out.madeUp[d]=m; });
   } else {
     const sit=famSittings(it), sh=famSittingsShort(it); let idx=famDoneN(id,it.key);
+    // FAMMAKEUP: an owed sitting doubles onto the next open day — two sittings in order that day, the place moves by 2.
+    out.owed=famOwedList(id,it,dates,today,function(d){ return true; });
+    const rem=out.owed.slice();
     dates.forEach(function(d){
       const _sh=function(full){ const k=sit.indexOf(full); return k>=0?sh[k]:full; };
-      if(d<today){ const rec=famRecorded(id,it,d); if(rec){ out.byDate[d]=rec; out.short[d]=_sh(rec); } return; }
-      if(d===today&&famCellDone(b,id,it,today)){ out.byDate[d]=famRecorded(id,it,d)||sit[idx-1]||""; out.short[d]=_sh(out.byDate[d]); return; }
-      if(idx<sit.length){ out.byDate[d]=sit[idx]; out.short[d]=sh[idx]; out.ends=d; } else if(sit.length){ out.byDate[d]="\u2713 all done"; out.short[d]="\u2713 all done"; }
+      const _shC=function(full){ return String(full).split(" + ").map(_sh).join(" + "); };
+      if(d<today){ const r=famRecordAt(id,it.key,d); if(r&&r.label){ out.byDate[d]=r.label; out.short[d]=_shC(r.label); if(r.madeUp) out.madeUp[d]=r.madeUp; } return; }
+      if(d===today&&famCellDone(b,id,it,today)){ const r=famRecordAt(id,it.key,d); out.byDate[d]=(r&&r.label)||sit[idx-1]||""; out.short[d]=_shC(out.byDate[d]); if(r&&r.madeUp) out.madeUp[d]=r.madeUp; return; }
+      if(idx<sit.length){ out.byDate[d]=sit[idx]; out.short[d]=sh[idx]; out.ends=d;
+        const k=idx+1<sit.length?rem.findIndex(function(m){ return famMakeupLands(tr,m,d); }):-1;
+        if(k>=0){ const m=rem.splice(k,1)[0]; out.byDate[d]+=" + "+sit[idx+1]; out.short[d]+=" + "+sh[idx+1]; out.madeUp[d]=m; idx++; } }
+      else if(sit.length){ out.byDate[d]="\u2713 all done"; out.short[d]="\u2713 all done"; }
       idx++; });
     out.total=sit.length; out.left=Math.max(0,sit.length-famDoneN(id,it.key));
   }
@@ -29090,7 +29148,8 @@ function famLessonFor(t){
 function famCheckPre(t){
   const lbl=famLessonFor(t), sib=famSiblings(t), first=!sib.some(function(x){ return checked[x.id]; });
   const b=famDefs()[t.famBlock], it=b?famList(b.items).find(function(x){ return x&&x.key===t.famItem; }):null;
-  return {label:lbl,first:first,seq:!!(famTrack(it)&&famTrack(it).mode==="seq"),id:t.famBlock,key:t.famItem};
+  let mu=""; try{ if(famTrack(it)) mu=(famLessonMap(b,t.famBlock,it).madeUp||{})[routineDateISO(t.day)]||""; }catch(e){}   // FAMMAKEUP: the missed day this check makes up
+  return {label:lbl,first:first,seq:!!(famTrack(it)&&famTrack(it).mode==="seq"),id:t.famBlock,key:t.famItem,madeUp:mu};
 }
 function famFmtDate(ds){ const d=gwParseDate(ds); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()]+" "+d.getDate(); }
 // ── the 📚 Lessons section of a subject (inside the family-time editor) ──
@@ -29107,7 +29166,7 @@ function famTrackSaveSeq(id,i){
   const dflt=Math.max(1,parseInt(_famTv(id,i,"n"),10)||1);
   const list=String(_famTv(id,i,"list")||"").split(/\n/).map(function(l){ return l.trim(); }).filter(Boolean).map(function(l){
     const m=l.match(/^(.*?)\s*[×xX]\s*(\d{1,2})\s*$/); return m?{t:m[1].trim(),n:Math.max(1,Math.min(10,parseInt(m[2],10)))}:{t:l,n:dflt}; });
-  its[i].track={mode:"seq",list:list}; famWrite(id+"/items",its);
+  its[i].track=famKeepMissed(its[i].track,{mode:"seq",list:list}); famWrite(id+"/items",its);
 }
 function famTrackEveryN(id,i,n){ const e=document.getElementById("famtr-"+id+"-"+i+"-list"); if(!e) return;
   e.value=e.value.split(/\n/).map(function(l){ const t=l.replace(/\s*[×xX]\s*\d{1,2}\s*$/,"").trim(); return t?t+" ×"+n:""; }).filter(Boolean).join("\n"); }
@@ -29115,9 +29174,20 @@ function famTrackSaveWeek(id,i){
   const its=famItems(id); if(!its[i]) return;
   const days={}; ["Mon","Tue","Wed","Thu","Fri","Sat"].forEach(function(d){ const v=String(_famTv(id,i,"d"+d)||"").trim(); if(v) days[d]=v; });
   const topics={}; String(_famTv(id,i,"topics")||"").split(/\n/).forEach(function(l){ const m=l.match(/^\s*(?:wk|week)?\s*(\d{1,3})\s*[:.\-–]\s*(.+)$/i); if(m) topics[m[1]]=m[2].trim(); });
-  its[i].track={mode:"week",book:String(_famTv(id,i,"book")||"").trim(),startDate:_famTv(id,i,"start")||cbTodayISO(),
-    startWeek:Math.max(1,parseInt(_famTv(id,i,"sw"),10)||1),total:Math.max(0,parseInt(_famTv(id,i,"total"),10)||0),days:days,topics:topics};
+  its[i].track=famKeepMissed(its[i].track,{mode:"week",book:String(_famTv(id,i,"book")||"").trim(),startDate:_famTv(id,i,"start")||cbTodayISO(),
+    startWeek:Math.max(1,parseInt(_famTv(id,i,"sw"),10)||1),total:Math.max(0,parseInt(_famTv(id,i,"total"),10)||0),days:days,topics:topics});
   famWrite(id+"/items",its);
+}
+// FAMMAKEUP: the "If a day is missed" setting rides along when the lessons are re-saved; its own control saves at once.
+function famKeepMissed(oldTr,newTr){ if(oldTr&&oldTr.missed){ newTr.missed=oldTr.missed; if(oldTr.missedFrom) newTr.missedFrom=oldTr.missedFrom; } return newTr; }
+function famTrackSetMissed(id,i,field,val){
+  const its=famItems(id); if(!its[i]||!its[i].track) return;
+  const tr=its[i].track;
+  if(field==="missed"){ if(["skip","next","same"].indexOf(val)<0||(val==="same"&&tr.mode!=="week")) return;   // "same weekday" only means something week by week
+    if(val==="skip"){ delete tr.missed; delete tr.missedFrom; } else { tr.missed=val; if(!tr.missedFrom) tr.missedFrom=cbTodayISO(); } }
+  else if(field==="missedFrom"){ if(!/^\d{4}-\d{2}-\d{2}$/.test(String(val||""))) return; tr.missedFrom=val; }
+  else return;
+  _famLmMemo={}; famWrite(id+"/items",its);
 }
 function famSetWeAreOn(id,key,n){ if(!momHere()) return; famProgSet(id,key,parseInt(n,10)||0); if(typeof renderAll==="function") renderAll(); try{ if(famSheetId) famSheetRender(); }catch(e){} }
 function famLessonsEditorHTML(id,b,it,i,ed){
@@ -29127,7 +29197,7 @@ function famLessonsEditorHTML(id,b,it,i,ed){
   const btn=function(lbl,fn,prim){ return '<button onclick="'+fn+'" style="padding:4px 11px;border-radius:8px;border:'+(prim?'none':'1.5px solid #c4b5fd')+';background:'+(prim?'#7c3aed':'#fff')+';color:'+(prim?'#fff':'#5b21b6')+';font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
   if(!tr) return ed?box('<span style="font-size:10px;color:var(--muted);margin-right:6px">\u{1F4DA} Lessons</span>'+btn('＋ In order (a list)',"famTrackStart('"+J(id)+"',"+i+",'seq')")+' '+btn('＋ Week by week (like BiblioPlan)',"famTrackStart('"+J(id)+"',"+i+",'week')")):'';
   const m=famLessonMap(b,id,it);
-  const status='<div style="font-size:11px;font-weight:700;color:#5b21b6;padding-bottom:4px">\u{1F4DA} '+(m.now?'Next: '+esc(m.now):'Nothing scheduled yet')+(m.ends?' · ends '+famFmtDate(m.ends):'')+'</div>';
+  const status='<div style="font-size:11px;font-weight:700;color:#5b21b6;padding-bottom:4px">\u{1F4DA} '+(m.now?'Next: '+esc(m.now):'Nothing scheduled yet')+(m.ends?' · ends '+famFmtDate(m.ends):'')+((m.owed&&m.owed.length)?' · <span style="color:#b45309">'+m.owed.length+' to make up</span>':'')+'</div>';
   if(!ed) return box(status);
   let h=status;
   if(tr.mode==="seq"){
@@ -29151,6 +29221,12 @@ function famLessonsEditorHTML(id,b,it,i,ed){
     h+='<textarea id="'+P+'topics" rows="4" style="width:100%;box-sizing:border-box;margin-top:2px;'+inp+'">'+esc(Object.keys(tr.topics||{}).sort(function(a,b){ return a-b; }).map(function(k){ return k+": "+tr.topics[k]; }).join("\n"))+'</textarea>';
     h+='<div style="display:flex;justify-content:flex-end;padding-top:4px">'+btn('Save weeks',"famTrackSaveWeek('"+J(id)+"',"+i+")",true)+'</div>';
   }
+  // FAMMAKEUP — "If a day is missed" (her ask 2026-10-11): per subject, saved with the block, so each family picks its own.
+  { const ms=famMissedMode(tr), mf=tr.missedFrom||"", S=function(v,l){ return '<option value="'+v+'"'+(ms===v?' selected':'')+'>'+l+'</option>'; };
+    h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px;padding-top:6px;border-top:1px dashed #e9d5ff;font-size:11px"><span style="font-weight:700">If a day is missed</span>'+
+      '<select onchange="famTrackSetMissed(\''+J(id)+'\','+i+',\'missed\',this.value)" style="flex:1;min-width:0;'+inp+'">'+S("skip","Skip it — the date decides")+S("next","Make it up the next day it runs (2 lessons that day)")+(tr.mode==="week"?S("same","Make it up on the next same weekday (2 lessons that day)"):'')+'</select>'+
+      (ms!=="skip"?'<span>counting from</span><input type="date" value="'+esc(mf)+'" onchange="famTrackSetMissed(\''+J(id)+'\','+i+',\'missedFrom\',this.value)" style="'+inp+'">':'')+'</div>';
+    if(ms!=="skip") h+='<div style="font-size:10px;color:var(--muted);padding-top:3px">Never more than 2 lessons on one day — anything else waits for the next day. A day only counts as missed if the subject really ran (co-op days and days off don’t).</div>'; }
   h+='<div style="text-align:right;padding-top:4px"><button onclick="famTrackRemove(\''+J(id)+'\','+i+')" style="border:none;background:none;color:#dc2626;font-size:10px;cursor:pointer">Remove lessons</button></div>';
   return box(h);
 }
