@@ -2395,6 +2395,17 @@ function _rtBeforeFrom(st,dayName,prevWeek){
   const iso=_rtDueIso(dayName,prevWeek);
   return !iso||iso<st.from;
 }
+// LATE_CYCLE_START — her report 2026-10-12 (DeWalt, Taylor): a 4-week-cycle chore can only be late for a day it was ON cycle.
+// Mon Oct 12 was kitchen week (cycle wk 2); her Tue/Wed/Thu kitchen chores showed "5 days late" and filed "— not done"
+// under LAST week — living-room week, when they were never due — and the open list blocked her chores from counting done.
+// rtLateDays looked back by weekday only; this asks stepCycleOk about the real date of the day it would call missed.
+function _rtOffCycle(st,dayName,prevWeek){
+  if(!st||!st.cycW||typeof stepCycleOk!=="function") return false;
+  let iso=(typeof routineDateISO==="function")?routineDateISO(dayName):null; if(!iso) return false;
+  if(prevWeek){ const d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()-7); iso=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+  return !stepCycleOk(st,iso);
+}
+// LATE_CYCLE_END
 function rtLateDays(slot,kid,i){
   const steps=rtStepsFor(slot,kid), st=steps[i]; if(!st) return 0;
   const cad=st.cad||"daily";
@@ -2418,6 +2429,7 @@ function rtLateDays(slot,kid,i){
   // DAY_DT on a week switch so this guard holds until the new meta arrives.
   const due=_rtLastDueIdx(days,ti), tp=_rtPos(ti);
   if(due>=0){
+    if(typeof _rtOffCycle==="function"&&_rtOffCycle(st,DAYS_ALL[due],false)) return 0;   // LATE_CYCLE: that day was an off week for this chore
     if(typeof _rtBeforeFrom==="function"&&_rtBeforeFrom(st,DAYS_ALL[due],false)) return 0;   // LATE_FROM: it had not started yet on that day
     if(typeof rtWaved==="function"&&rtWaved(slot,kid,DAYS_ALL[due],i,wk)) return 0;   // WAVE: Mom waved it that day
     for(let p=_rtPos(due);p<=tp;p++){ if(rtDoneOnWk(wk,slot,kid,DAYS_ALL[_rtIdx(p)],i)) return 0; }
@@ -2433,6 +2445,7 @@ function rtLateDays(slot,kid,i){
   // Last week runs its Sunday … Saturday; this week runs Sunday … today. Last week's Sunday came
   // BEFORE its Friday, so it can never count as catching up a Friday or Saturday chore.
   const pd=_rtPrevDueIdx(days); if(pd<0) return 0;
+  if(typeof _rtOffCycle==="function"&&_rtOffCycle(st,DAYS_ALL[pd],true)) return 0;   // LATE_CYCLE: last week was an off week for this chore
   if(typeof _rtBeforeFrom==="function"&&_rtBeforeFrom(st,DAYS_ALL[pd],true)) return 0;   // LATE_FROM: last week's due day was before it began
   if(typeof rtWaved==="function"&&rtWaved(slot,kid,DAYS_ALL[pd],i,pw)) return 0;   // WAVE
   const pdue=_rtPos(pd);
