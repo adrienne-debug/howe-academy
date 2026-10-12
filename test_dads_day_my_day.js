@@ -123,7 +123,7 @@ console.log("\n── Dad's 🏡 My day: his chores by slot, his done stamps ─
   ok("🧹 Ongoing = his unslotted chores due today (Mow is Saturday → hidden)", /🧹 Ongoing/.test(h) && /Check tire pressure/.test(h) && !/>Mow</.test(h));
   ok("his add-row keeps time of day + days (dcAdd)", /id="dc-new"/.test(h) && /id="dc-slot"/.test(h) && /id="dc-cad"/.test(h) && /onclick="dcAdd\(\)"/.test(h) && !/id="mc-new"/.test(h));
   ok("📝 his to-do (dadday), toggles via ddTodoToggle", /Fix the gate/.test(h) && /ddTodoToggle\('x1','2026-10-12'\)/.test(h) && /id="dd-todo-new"/.test(h) && !/momdayToggleTodo|md-todo-new/.test(h));
-  ok("🧺 Start a load box + 🛒 his grocery add inside the card", /id="laundry-label"/.test(h) && /onclick="laundryAdd\(\)"/.test(h) && /<!--DADSHOP-->/.test(h) && !/MOMSHOP/.test(h));
+  ok("🧺 Start a load box + 🛒 his grocery add inside the card", /id="laundry-label"/.test(h) && /onclick="laundryAdd\('dad'\)"/.test(h) && /<!--DADSHOP-->/.test(h) && !/MOMSHOP/.test(h));
   ok("no Mom data leaks in (her chores/todos absent)", !/Coffee|dentist/.test(h));
   const n = world(src, Object.assign({}, DAD, { slot: "afternoon" })).api.momDayStripHTML("2026-10-12", "monday", "dad");
   ok("empty slot: a plain hint, no ✨ Mom starter seeds", /Nothing set for afternoon yet/.test(n) && !/mcSeedSlot/.test(n));
