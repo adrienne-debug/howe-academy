@@ -97,23 +97,23 @@ console.log("\n── ST_NOWORDS (her report 10/13, DeWalt Kenzie): a lesson wit
 console.log("\n── ST_REVIEW (her design 10/13): a lesson with no new words reviews 10 a day from the last 5 lessons that had words ──");
 {
   const c = world().ctx;   // Taylor is Level 4; L4 Lessons 4 and 5 have no word cards, Lessons 3 and 2 do, Lesson 1 doesn't
-  const d = n => c.prCardInfo(card("taylor", "all_about_spelling_4", "Lesson 4 · day " + n + " of 4"));
-  const I1 = d(1), I2 = d(2);
-  ok("the empty lesson's day 1 (lesson day) gets a review set too — the test is its own card", I1 && I1.review && I1.review.words.length === 10, I1);
+  const on = (day, title) => Object.assign(card("taylor", "all_about_spelling_4", title || "Lesson 4 · day 2 of 4"), { day });
+  const I1 = c.prCardInfo(on("monday", "Lesson 4 · day 1 of 4")), I2 = c.prCardInfo(on("tuesday"));
+  ok("the empty lesson's lesson day gets a review set too — the test is its own card", I1 && I1.review && I1.review.words.length === 10, I1);
   ok("pool = the last 5 lessons WITH words, walking back into Level 3 (3, 2, L3-29, L3-28, L3-26; L3-27 is empty)", I1.review.label === "Lessons 3, 2, L3-29, L3-28, L3-26", I1.review.label);
   const pool = new Set(I1.review.lists.reduce((a, l) => a.concat(l.words), []));
   ok("50 words in the pool, every review word comes from it", pool.size === 50 && I1.review.words.every(w => pool.has(w)));
-  ok("day 2 is a different 10 (walks forward, no repeats until the pool wraps)", I2.review.words.length === 10 && !I2.review.words.some(w => I1.review.words.includes(w)));
-  const all = [1, 2, 3, 4, 5].map(n => c.prCardInfo(card("taylor", "all_about_spelling_4", "Lesson 4 · day " + n + " of 5")).review.words);
-  ok("five days cover all 50 once", new Set(all.flat()).size === 50);
-  const I6 = c.prCardInfo(card("taylor", "all_about_spelling_4", "Lesson 4 · day 6 of 6")).review.words;
-  ok("day 6 wraps around (repeats are fine)", I6.join() === all[0].join());
-  ok("same kid + lesson + day → the same 10 every time (every device and the print agree)", d(2).review.words.join() === I2.review.words.join());
-  ok("shuffled: day 1 is not just the first 10 of Lesson 3 in deck order", I1.review.words.join() !== I1.review.lists[0].words.join());
+  ok("Tuesday is a different 10 from Monday (her note: 'different each day')", I2.review.words.length === 10 && !I2.review.words.some(w => I1.review.words.includes(w)));
+  const week = ["monday", "tuesday", "wednesday", "thursday", "friday"].map(d => c.prCardInfo(on(d)).review.words);
+  ok("Mon–Fri cover all 50 once", new Set(week.flat()).size === 50);
+  ok("the day index comes from the DAY, not the title's 'day N of M' (DeWalt's cards don't carry it)", c.prCardInfo(on("tuesday", "Lesson 4")).review.words.join() === I2.review.words.join());
+  ok("same kid + lesson + day → the same 10 every time (every device and the print agree)", c.prCardInfo(on("tuesday")).review.words.join() === I2.review.words.join());
+  ok("shuffled: Monday is not just the first 10 of Lesson 3 in deck order", I1.review.words.join() !== I1.review.lists[0].words.join());
   ok("a lesson WITH words is unchanged: day 1 → no practice row, day 2 → its own words", c.prCardInfo(card("taylor", "all_about_spelling_4", "Lesson 3 · day 1 of 4")) === null && c.prCardInfo(card("taylor", "all_about_spelling_4", "Lesson 3 · day 2 of 4")).words.length === 10);
-  const row = c.prCardRow(card("taylor", "all_about_spelling_4", "Lesson 4 · day 3 of 4"));
-  ok("the ✏️ row reads 'Review words (10)' and opens the pop-up with the day", /— Review words \(10\)/.test(row) && /prOpen\('taylor',4,4,3\)/.test(row), row);
+  const row = c.prCardRow(on("wednesday"));
+  ok("the ✏️ row reads 'Review words (10)' and opens the pop-up with that day's index", /— Review words \(10\)/.test(row) && /prOpen\('taylor',4,4,3\)/.test(row), row);
   ok("no pool at all (Level 1, Lesson 5) → still the 'no new word cards' note", /no new word cards/.test(c.prCardRow(card("andrew", "all_about_spelling_1", "L5 x · day 2 of 5"))));
+  ok("with a real date the index is the calendar day, so next week keeps moving instead of restarting", (() => { const a = c.stReviewDayIdx("monday", "2026-10-12"), b = c.stReviewDayIdx("monday", "2026-10-19"); return b - a === 7; })());
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");

@@ -50445,8 +50445,13 @@ function stReviewWords(kid,u,level,lesson,dayIdx){
   const label="Lessons "+P.lists.map(l=>(l.level!==level?"L"+l.level+"-":"")+l.lesson).join(", ");
   return {words:out,lists:P.lists,label,day:d};
 }
-// "· day N of M" → N (1 when the card isn't a multi-day card)
-function stDayIdx(text){ const m=String(text==null?"":text).match(/·\s*day (\d+) of \d+\s*$/i); return m?+m[1]:1; }
+// ST_REVIEW day index: the CALENDAR day (days since epoch), so each day of the week takes the next 10 and the card,
+// the pop-up and the printed page agree; a day with no date falls back to its weekday position (Mon=1 … Sat=6).
+// (Her note 2026-10-13: "I want them different each day" — the card title's "day N of M" isn't on every family's cards.)
+function stReviewDayIdx(day,dateText){
+  try{ const dt=String(dateText||"").trim(); if(dt){ const t=Date.parse(dt+(/\d{4}/.test(dt)?"":" "+new Date().getFullYear())+" 12:00:00"); if(!isNaN(t)) return Math.floor(t/864e5); } }catch(e){}
+  const i=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"].indexOf(String(day||"").toLowerCase()); return i>=0?i+1:1;
+}
 function prCardInfo(t,allowEmpty){
   if(!t||!t.who||typeof stEnroll!=="function") return null;
   const en=stEnroll(t.who); if(!en) return null; const ks=en.ks;
@@ -50459,7 +50464,8 @@ function prCardInfo(t,allowEmpty){
   if(!p) return null;
   const level=p.level||ks.stage||1, words=stWords(en.u,level,p.lesson);
   if(!words.length){
-    const rv=stReviewWords(t.who,en.u,level,p.lesson,stDayIdx(txt));   // ST_REVIEW
+    let _iso=null; try{ _iso=(typeof routineDateISO==="function"&&t.day)?routineDateISO(t.day):null; }catch(e){}
+    const rv=stReviewWords(t.who,en.u,level,p.lesson,stReviewDayIdx(t.day,_iso));   // ST_REVIEW: a new 10 each calendar day
     if(rv) return {kid:t.who,unitId:en.unitId,u:en.u,level,lesson:p.lesson,words:[],review:rv,noWords:false};
     if(!allowEmpty) return null;
   }
@@ -50491,7 +50497,7 @@ function prRender(){
   let ov=document.getElementById("pr-panel");
   if(!ov){ ov=document.createElement("div"); ov.id="pr-panel"; ov.style.cssText="position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px"; document.body.appendChild(ov); }
   let h='<div style="background:#fff;border-radius:16px;max-width:560px;width:100%;padding:16px 18px 18px;box-shadow:0 10px 40px rgba(0,0,0,.25)">';
-  h+='<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-family:\'Fraunces\',serif;font-size:19px;font-weight:800;color:#14532d">✏️ '+(rv?'Review — Lesson '+prUI.lesson+' day '+rv.day:'Practice — Lesson '+prUI.lesson)+'</div><button onclick="prClose()" style="padding:5px 10px;border-radius:10px;border:1.5px solid #cbd5e1;background:#fff;font-weight:800;cursor:pointer">✕</button></div>';
+  h+='<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-family:\'Fraunces\',serif;font-size:19px;font-weight:800;color:#14532d">✏️ '+(rv?'Review — Lesson '+prUI.lesson:'Practice — Lesson '+prUI.lesson)+'</div><button onclick="prClose()" style="padding:5px 10px;border-radius:10px;border:1.5px solid #cbd5e1;background:#fff;font-weight:800;cursor:pointer">✕</button></div>';
   h+='<div style="font-size:15px;font-weight:800;color:#166534;background:#f0fdf4;border-radius:11px;padding:9px 12px;margin:10px 0">Today: '+stEsc(idea)+'</div>';
   if(rv) h+='<div style="font-size:12px;font-weight:700;color:#64748b;margin:-4px 0 10px">No new word cards in Lesson '+prUI.lesson+' — 10 review words from '+stEsc(rv.label)+'</div>';   // ST_REVIEW
   h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">'+words.map(w=>'<div style="border:1.5px solid #e2e8f0;border-radius:11px;padding:10px 12px;font-size:22px;font-weight:800;color:#0f172a;text-align:center">'+stEsc(w.name)+'</div>').join('')+'</div>';
@@ -50596,16 +50602,16 @@ function nbSpellCtx(kid,tasks,dates){
         const last=(typeof prLastTaught==="function")?prLastTaught(kid,ks.subject,null,ks):null;
         if(ld){ const p=stParseLesson(ld.txt)||{}; const lv=p.level||ks.stage||1, di=days.indexOf(ld.t.day);
           const before=days.slice(0,Math.max(0,di)), from=days.slice(Math.max(0,di));
-          const span=(String(ld.txt).match(/·\s*day \d+ of (\d+)\s*$/i)||[])[1]|0;   // ST_REVIEW: lesson length, for the day index
-          // ST_REVIEW: an empty lesson prints one review set per day (same 10 the ✏️ row shows); no pool → the ST_NOWORDS note
-          const review=(L,ds,firstIdx,lbl)=>{ let any=false; ds.forEach((dy,i)=>{ const rv=stReviewWords(kid,en.u,L.level||lv,L.lesson,firstIdx+i); if(!rv) return; any=true;
+          // ST_REVIEW: an empty lesson prints one review set per day — the same 10 the ✏️ row shows that calendar day;
+          // no pool → the ST_NOWORDS note
+          const review=(L,ds,lbl)=>{ let any=false; ds.forEach(dy=>{ const rv=stReviewWords(kid,en.u,L.level||lv,L.lesson,stReviewDayIdx(dy,(dates||{})[dy])); if(!rv) return; any=true;
               out.sections.push({label:_nbsDayLbl(dy)+" · Review",lesson:L.lesson,words:rv.words,review:true}); });
             if(!any) out.sections.push({label:lbl,lesson:L.lesson,words:[],note:ST_NOWORDS_NOTE}); };
           if(path==="week"&&before.length){ const prevL=(last&&last.lesson!==p.lesson)?last:{level:lv,lesson:p.lesson-1};
             const w=words(prevL.level||lv,prevL.lesson), bl=_nbsDayLbl(before[0])+(before.length>1?" – "+_nbsDayLbl(before[before.length-1]):"");
-            if(w.length) out.sections.push({label:bl,lesson:prevL.lesson,words:w}); else review(prevL,before,Math.max(1,(span||before.length)-before.length+1),bl); }
+            if(w.length) out.sections.push({label:bl,lesson:prevL.lesson,words:w}); else review(prevL,before,bl); }
           const w2=words(lv,p.lesson), fl=(from.length?_nbsDayLbl(from[0])+(from.length>1?" – "+_nbsDayLbl(from[from.length-1]):""):"This week");
-          if(w2.length) out.sections.push({label:fl,lesson:p.lesson,words:w2}); else review({level:lv,lesson:p.lesson},from.length?from:[days[0]||"monday"],1,fl);
+          if(w2.length) out.sections.push({label:fl,lesson:p.lesson,words:w2}); else review({level:lv,lesson:p.lesson},from.length?from:[days[0]||"monday"],fl);
         } else if(last){ const w=words(last.level||ks.stage||1,last.lesson); if(w.length) out.sections.push({label:"This week",lesson:last.lesson,words:w}); }
       }
     }

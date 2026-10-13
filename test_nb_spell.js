@@ -18,12 +18,13 @@ function world(o) {
     momHere: () => o.mom !== false, _dryRun: () => false, renderUnits: () => {}, db: { ref: p => ({ set: v => writes.push([p, v]) }) },
     masteryData: o.mastery || { andrew: [] },
     currData: { subjects: { andrew: { aas: { lessonSeq: ["L18 CK · day 1 of 5", "L18 CK · day 2 of 5", "L19 NG · day 1 of 5"] } } } },
-    lidDoneIdx: () => new Set(o.done || [0, 1]), ROSTER: new Set(["andrew"]), nbWeekOverride: null, weekData: { tasks: o.tasks || [] }, DAY_DT: o.dates || {} };
+    lidDoneIdx: () => new Set(o.done || [0, 1]), ROSTER: new Set(["andrew"]), nbWeekOverride: null, weekData: { tasks: o.tasks || [] }, DAY_DT: o.dates || {},
+    routineDateISO: d => ({ monday: "2026-10-05", tuesday: "2026-10-06", wednesday: "2026-10-07", thursday: "2026-10-08", friday: "2026-10-09" })[d] || null };   // ST_REVIEW: the card's day → this week's date, like the app
   vm.createContext(ctx); vm.runInContext(CODE, ctx);
   ctx.unitStudies = { all_about_spelling: { id: "all_about_spelling", cardLessons: true, decks: ctx._aasDecks(), kidStage: { andrew: Object.assign({ stage: 1, subject: "aas" }, o.ks || {}) } } };
   return { ctx, writes };
 }
-const DATES = { monday: "October 5", tuesday: "October 6", wednesday: "October 7", thursday: "October 8", friday: "October 9" };
+const DATES = { monday: "October 5, 2026", tuesday: "October 6, 2026", wednesday: "October 7, 2026", thursday: "October 8, 2026", friday: "October 9, 2026" };
 const WK = [{ who: "andrew", subjectKey: "aas", day: "monday", title: "x — L18 CK · day 4 of 5" }, { who: "andrew", subjectKey: "aas", day: "wednesday", title: "x — L19 NG · day 1 of 5" }];
 console.log("── off until Mom picks ──");
 ok("nothing turned on → no spelling page", world({ tasks: WK }).ctx.nbSpellCtx("andrew", WK, DATES) === null);
@@ -64,6 +65,7 @@ console.log("\n── ST_REVIEW (her design 10/13): the page prints each day's 1
   ok("five sections, one per day, each 'Day · Review' with 10 words", sp && sp.sections.length === 5 && sp.sections.every(s => s.review && s.words.length === 10 && / · Review$/.test(s.label)), sp && sp.sections.map(s => s.label + ":" + s.words.length));
   ok("Mon – Tue review Lesson 4 (its days 3 and 4), Wed – Fri review Lesson 5 (days 1–3)", sp.sections.map(s => s.lesson).join() === "4,4,5,5,5" && sp.sections[0].label === "Mon · Review" && sp.sections[2].label === "Wed · Review");
   ok("Mon and Tue are different sets", sp.sections[0].words.join() !== sp.sections[1].words.join());
+  ok("all five days are different sets (her note: 'different each day')", new Set(sp.sections.map(s => s.words.join())).size === 5);
   ok("the ✏️ row and the page agree on Wednesday's 10", (() => { const I = w.ctx.prCardInfo(W[1]); return I && I.review && I.review.words.join() === sp.sections[2].words.join(); })());
   global.window = global; require(path.join(__dirname, "notebooks.js")); const N = global.HoweNotebooks;
   const pg = N._internal.spellNbPages({ weekNum: 3, spelling: { title: "Spelling", sections: sp.sections, practice: [] } }, null);
