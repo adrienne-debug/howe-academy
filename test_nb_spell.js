@@ -42,6 +42,18 @@ console.log("\n── This Week's Words (Practice Week) ──");
   const sp = world({ ks: { nbWords: "missed" }, mastery: m }).ctx.nbSpellCtx("andrew", WK, DATES);
   ok("'just the missed ones' → only words they're learning now", sp.sections.length === 1 && sp.sections[0].words.join() === "snack");
 }
+console.log("\n── ST_NOWORDS (her report 10/13, DeWalt Kenzie): empty lessons say so on the page ──");
+{
+  const W5 = [{ who: "andrew", subjectKey: "aas", day: "monday", title: "x — L4 x · day 4 of 5" }, { who: "andrew", subjectKey: "aas", day: "wednesday", title: "x — L5 x · day 1 of 5" }];
+  const w = world({ ks: { nbWords: "all" }, tasks: W5 });
+  w.ctx.currData.subjects.andrew.aas.lessonSeq = ["L4 x · day 1 of 5", "L4 x · day 2 of 5", "L5 x · day 1 of 5"];
+  const sp = w.ctx.nbSpellCtx("andrew", W5, DATES);
+  ok("Lessons 4 and 5 (no word cards) → two sections with the note, not a dropped page", sp && sp.sections.length === 2 && sp.sections.every(s => s.words.length === 0 && s.note === "No new word cards in this lesson") && sp.sections[1].lesson === 5, sp && sp.sections);
+  global.window = global; require(path.join(__dirname, "notebooks.js")); const N = global.HoweNotebooks;
+  const pg = N._internal.spellNbPages({ weekNum: 3, spelling: { title: "Spelling", sections: sp.sections, practice: [] } }, null);
+  ok("the page prints the note under each lesson and skips the 'write each word' intro", pg.length === 1 && (pg[0].match(/No new word cards in this lesson/g) || []).length === 2 && !/Write each word three times/.test(pg[0]));
+}
+
 console.log("\n── Practice Words ──");
 {
   const m = { andrew: [{ subject: "AAS Words", prompt: "snack", status: "introduction", stLast: { r: "m" } }, { subject: "Spelling", prompt: "been", status: "parked", problem: { ts: 1 } },

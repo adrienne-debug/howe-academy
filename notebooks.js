@@ -3273,13 +3273,16 @@ ${extraStrip || ""}
     var T = theme || UNIT_INSERT_THEMES.lincoln, GD = T.GD, GM = T.GM, GL = T.GL, GP = T.GP, GOLD = T.GOLD;
     var line = '<div style="border-bottom:1.5px solid ' + GL + ';height:17px"></div>';
     var sec = '';
+    var anyWords = (sp.sections || []).some(function (s) { return (s.words || []).length; });
     (sp.sections || []).forEach(function (s) {
       var ws = (s.words || []).slice(0, 10);
       sec += '<div style="margin-bottom:10px"><div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700;color:' + GD + ';margin-bottom:5px">' + esc(s.label) +
         (s.lesson != null ? ' <span style="font-size:11px;font-weight:600;color:' + GM + '">· Lesson ' + esc(s.lesson) + '</span>' : '') + '</div>' +
+        // ST_NOWORDS (her report 2026-10-13, DeWalt Kenzie): a lesson with no new word cards says so instead of vanishing
+        (!ws.length && s.note ? '<div style="font-size:12px;font-style:italic;color:#6b7280;padding:2px 0 4px">' + esc(s.note) + '</div></div>' :
         '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px 14px">' + ws.map(function (w) {
           return '<div style="border:1.5px solid ' + GL + ';border-radius:8px;padding:4px 8px;background:#fff"><div style="font-size:14px;font-weight:700;color:#1c1c1e;margin-bottom:1px">' + esc(String(w).replace(/․/g, ".")) + '</div>' + line + line + line + '</div>';
-        }).join('') + '</div></div>';
+        }).join('') + '</div></div>');
     });
     var pr = (sp.practice || []).slice(0, 12);
     var prH = pr.length ? '<div style="margin-top:4px;border:2px dashed ' + GOLD + ';border-radius:10px;padding:8px 12px;background:' + GP + '">' +
@@ -3291,7 +3294,7 @@ ${extraStrip || ""}
       '<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:#fff;line-height:1">📝 ' + esc(sp.title || "Spelling") + '</div>' +
       '<div style="font-family:\'Fraunces\',serif;font-size:14px;font-weight:600;color:' + GOLD + '">Week ' + esc(ctx.weekNum || "") + '</div></div>' +
       '<div style="height:5px;flex-shrink:0;background:' + GM + '"></div>';
-    var intro = (sp.sections && sp.sections.length) ? '<div style="font-size:11.5px;color:#4b5563;margin-bottom:8px">Write each word three times on its lines. Say the sounds as you write.</div>' : '';
+    var intro = anyWords ? '<div style="font-size:11.5px;color:#4b5563;margin-bottom:8px">Write each word three times on its lines. Say the sounds as you write.</div>' : '';
     return ['<div class="page-label">Spelling — Week ' + esc(ctx.weekNum || "") + '</div>\n<div class="page">\n' + hdr +
       '<div style="padding:14px 40px;flex:1;display:flex;flex-direction:column;overflow:hidden">' + intro + sec + prH + '</div>\n</div>'];
   }

@@ -83,5 +83,16 @@ console.log("\n── Mom's setup ──");
 console.log("\n── wiring ──");
 ok("the card joins prRow after the test row; never on done cards", /stRow\+prRow\+/.test(src) && /const prRow=\(!readOnly&&!done&&typeof prCardRow==="function"\)/.test(src));
 ok("the unit carries the setup + per-kid practice choice", /h=prSetupHtml\(u\)\+h/.test(src) && /h\+=prKidRowHtml\(u,k,ks\)/.test(src));
+console.log("\n── ST_NOWORDS (her report 10/13, DeWalt Kenzie): a lesson with no new word cards says so ──");
+{
+  const c = world().ctx;   // Andrew is Level 1; L1 Lessons 1–6 bring no new word cards in the deck
+  ok("prCardInfo alone still returns null for an empty lesson (test rule + other callers unchanged)", c.prCardInfo(card("andrew", "all_about_spelling_1", "L5 x · day 2 of 5")) === null);
+  const I = c.prCardInfo(card("andrew", "all_about_spelling_1", "L5 x · day 2 of 5"), true);
+  ok("…but with allowEmpty it reports the lesson with noWords", I && I.lesson === 5 && I.noWords === true && I.words.length === 0);
+  const row = c.prCardRow(card("andrew", "all_about_spelling_1", "L5 x · day 2 of 5"));
+  ok("the card row says 'Lesson 5 — no new word cards' instead of nothing", /✏️ Lesson 5 — no new word cards in this lesson/.test(row) && !/prOpen\(/.test(row), row);
+  ok("a lesson WITH words still shows the normal ✏️ row", /prOpen\(/.test(c.prCardRow(card("andrew", "all_about_spelling_1", "L19 NG · day 3 of 5"))));
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
