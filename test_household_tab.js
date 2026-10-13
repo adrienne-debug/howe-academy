@@ -32,8 +32,10 @@ function mk(o){
   const g=["Pickup school room","Pickup living room","Pickup kitchen"]; const lucyRoomOn=d=>g[(2+dayNum(d))%3];
   const Y1=isoOf(END), Y2=isoOf(END-1), Y3=isoOf(END-2);
   const dayKey=s=>DN[new Date(s+"T12:00:00Z").getUTCDay()];
-  const jl={}; [[Y1,"p"],[Y2,"q"]].forEach(([d,k])=>{ jl[dayKey(d)]=jl[dayKey(d)]||{}; jl[dayKey(d)][k]={label:"Brush Teeth",slot:"morning",act:"on",ts:"",at:atOf(d),pts:0}; });
-  const log={julian:{week12:jl},lucy:{week9:{tuesday:{a:{label:"Take sheets off beds",slot:"chores",act:"on",ts:"",at:atOf(TUE_ISO),pts:15},
+  // each tap under its own Sunday-based week key (the app's weeks run Sun→Sat); one key for both broke on Mondays, when yesterday and the day before straddle the week
+  const wkOf=s=>"week"+(12+Math.floor((dayNum(s)-new Date(s+"T12:00:00Z").getUTCDay()-dayNum(Y2))/7));
+  const jl={}; [[Y1,"p"],[Y2,"q"]].forEach(([d,k])=>{ const w=wkOf(d); jl[w]=jl[w]||{}; jl[w][dayKey(d)]=jl[w][dayKey(d)]||{}; jl[w][dayKey(d)][k]={label:"Brush Teeth",slot:"morning",act:"on",ts:"",at:atOf(d),pts:0}; });
+  const log={julian:jl,lucy:{week9:{tuesday:{a:{label:"Take sheets off beds",slot:"chores",act:"on",ts:"",at:atOf(TUE_ISO),pts:15},
                                      b:{label:lucyRoomOn(TUE_ISO),slot:"afternoon",act:"on",ts:"",at:atOf(TUE_ISO),pts:20}},
                            monday:{miss_chores_0:{label:"Take sheets off beds — not done",slot:"chores",act:"miss",ts:"",at:atOf(MON_ISO),pts:15,missed:true}},
                            wednesday:{c:{label:g[(2+dayNum(WED_ISO)+1)%3],slot:"afternoon",act:"on",ts:"",at:atOf(WED_ISO),pts:20},
