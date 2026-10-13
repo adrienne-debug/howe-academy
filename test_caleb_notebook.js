@@ -66,5 +66,20 @@ ok(/letterCursor:\(\(\(\(notebookSettings\|\|\{\}\)\[kid\]\)\|\|\{\}\)\.letterCu
 ok((src.match(/\(kid==="julian"\|\|kid==="caleb"\)&&out&&out\.letterCursor\)[^\n]*db\.ref\("notebookSettings\/"\+kid\+"\/letterCursor"\)/g) || []).length === 2, "both Open and PDF save the letter place per kid");
 ok(!/db\.ref\("notebookSettings\/julian\/letterCursor"\)/.test(src), "no Julian-only cursor write left");
 
+console.log("CB_COVER_WEEK (her report 10/13: cover colors cut off)");
+{ // a stage-2 Shapes deck runs ahead to 21 shapes; the cover must show only this week's picks, in wrapping rows
+  const C8 = ["Red", "Blue", "Yellow", "Green", "Orange", "Purple", "Pink", "Brown"];
+  const items = ["Circle", "Square", "Triangle", "Rectangle", "Oval"].map(p => ({ subject: "Shapes", prompt: p, status: "active" }))
+    .concat(C8.map(p => ({ subject: "Colors", prompt: p, status: "active" })));
+  const html = NB.generate("caleb", base({ weekNum: "week27", masteryItems: items })).student;
+  const cover = html.slice(0, html.indexOf('class="page-label"', html.indexOf('class="page-label"') + 10));
+  const shapes = (cover.match(/class="learn-card card-blue"[\s\S]*?<\/div><\/div><\/div>/) || [""])[0];
+  const nSvg = (shapes.match(/<svg/g) || []).length;
+  const nSw = (cover.match(/class="swatch"/g) || []).length;
+  ok(nSvg >= 1 && nSvg <= 5, "cover Shapes row shows only this week's shapes (" + nSvg + ", not all 21)", nSvg);
+  ok(nSw >= 1 && nSw <= 5, "cover Colors row shows only this week's colors (" + nSw + ", not all 8)", nSw);
+  ok(/Shapes<\/div><div class="learn-val" style="[^"]*flex-wrap:wrap/.test(cover) && /Colors<\/div><div class="learn-val" style="[^"]*flex-wrap:wrap/.test(cover), "both rows wrap as a backstop");
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

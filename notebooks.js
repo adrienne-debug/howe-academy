@@ -1600,9 +1600,17 @@
   function cbPageCover(weekNum, weekDates, cur, picks) {
     var wkLetters = (picks.letters || []).map(function (s) { return cur.letters[s.idx]; }).join(" · ");
     var wkNumbers = (picks.numbers || []).map(function (s) { return cur.numbers[s.idx]; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join(" · ");
-    var colorsx = cur.colors.concat(cur.colors);
-    var shapes = cur.shapes.map(function (s, i) { return juSvgShape(s, { dashed: false, stroke: (colorsx[i] || ["", ""])[1], size: 22 }); }).join(" ");
-    var colorSwatches = cur.colors.map(function (pair) {
+    // CB_COVER_WEEK (her report 2026-10-13, DeWalt: "the first page is falling off in some of the areas, colors
+    // specifically"): the Shapes row drew EVERY shape in his list — 21 once the Shapes Path run-ahead (10/4) reached
+    // stage 2 — in one non-wrapping row, so the grid grew past the page edge and overflow:hidden cut off the right
+    // column (Numbers + Colors). Now the cover shows only THIS WEEK's shapes and colors, like Letters and Numbers
+    // already do, and both rows wrap as a backstop so a long list can never widen the grid again.
+    var _uniq = function (v, i, a) { return a.indexOf(v) === i; };
+    var wkShapes = (picks.shapes || []).map(function (s) { return cur.shapes[s.idx]; }).filter(function (v) { return v != null; }).filter(_uniq);
+    var wkColors = (picks.colors || []).map(function (s) { return cur.colors[s.idx]; }).filter(function (v) { return v != null; }).filter(_uniq);
+    var colorsx = wkColors.concat(wkColors);
+    var shapes = wkShapes.map(function (s, i) { return juSvgShape(s, { dashed: false, stroke: (colorsx[i] || ["", ""])[1], size: 22 }); }).join(" ");
+    var colorSwatches = wkColors.map(function (pair) {
       return '<span class="swatch" style="background:' + pair[1] + ';width:20px;height:20px;display:inline-block;margin-right:3px;border-radius:6px;"></span>';
     }).join("");
     return '<div class="page-label">Cover — Week ' + weekNum + '</div>\n<div class="page">\n' +
@@ -1615,8 +1623,8 @@
       '    <div class="learn-grid">\n' +
       '      <div class="learn-card card-peach"><div class="learn-ico">🔤</div><div><div class="learn-lab">Little letters</div><div class="learn-val learn-val-nt">' + wkLetters + '</div></div></div>\n' +
       '      <div class="learn-card card-green"><div class="learn-ico">🔢</div><div><div class="learn-lab">Numbers</div><div class="learn-val">' + wkNumbers + '</div></div></div>\n' +
-      '      <div class="learn-card card-blue"><div class="learn-ico">⭐</div><div><div class="learn-lab">Shapes</div><div class="learn-val" style="display:flex;gap:5px;align-items:center;">' + shapes + '</div></div></div>\n' +
-      '      <div class="learn-card card-gold"><div class="learn-ico">🎨</div><div><div class="learn-lab">Colors</div><div class="learn-val" style="display:flex;align-items:center;">' + colorSwatches + '</div></div></div>\n' +
+      '      <div class="learn-card card-blue"><div class="learn-ico">⭐</div><div><div class="learn-lab">Shapes</div><div class="learn-val" style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;">' + shapes + '</div></div></div>\n' +
+      '      <div class="learn-card card-gold"><div class="learn-ico">🎨</div><div><div class="learn-lab">Colors</div><div class="learn-val" style="display:flex;align-items:center;flex-wrap:wrap;">' + colorSwatches + '</div></div></div>\n' +
       '    </div>\n' +
       '    <div class="learn-card card-peach" style="margin-top:9px;"><div class="learn-ico">🦺</div><div><div class="learn-lab">I know my BIG letters!</div><div class="learn-val learn-val-nt" style="font-size:15px;letter-spacing:1px;">A B C D E F G H I J K L M N O P Q R S T U V W X Y Z</div></div></div>\n' +
       '  </div>\n  <div class="cover-draw">\n' +
