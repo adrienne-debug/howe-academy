@@ -135,7 +135,7 @@ console.log("Views and wiring");
   ok("groups per person with counts", /Lucy<\/span><span[^>]*>4 chores/.test(el.innerHTML)&&/Mom<\/span><span[^>]*>2 chores/.test(el.innerHTML)&&/Up for Grabs/.test(el.innerHTML));
   ok("tally chips", /Keep 0/.test(el.innerHTML)&&/no call yet 11/.test(el.innerHTML));
   c.hhToggleWho("lucy"); c.renderHousehold(el);
-  ok("open group shows rows with numbers, slot headers, verdict buttons, note box", /Take sheets off beds/.test(el.innerHTML)&&/4 wk 1\/4/.test(el.innerHTML)&&/Chores<\/div>/.test(el.innerHTML)&&/hhSet\('rt_chores_lucy_take_sheets_off_beds','verdict','retire'\)/.test(el.innerHTML)&&/hhNote\(/.test(el.innerHTML));
+  ok("open group shows rows with numbers, verdict buttons, note box (this harness has no fold helpers → flat; folds are test_household_review_fold.js)", /Take sheets off beds/.test(el.innerHTML)&&/4 wk 1\/4/.test(el.innerHTML)&&/hhSet\('rt_chores_lucy_take_sheets_off_beds','verdict','retire'\)/.test(el.innerHTML)&&/hhNote\(/.test(el.innerHTML));   // HH_REVIEW_SLOTFOLD
   c.hhGo("today"); c.renderHousehold(el);
   ok("Today: morning ticks come from the morning key (Julian's Brush Teeth ✅)", /Julian[\s\S]*✅<\/span><span>🦷<\/span><span style="flex:1">Brush Teeth/.test(el.innerHTML));
   ok("Today: Lucy's Monday list with the done tick and Mom's due chores", /Let Chloe out/.test(el.innerHTML)&&/✅/.test(el.innerHTML)&&/Take sheets off beds/.test(el.innerHTML)&&/Wash the sheets/.test(el.innerHTML)&&!/shower/.test(el.innerHTML.split("Lucy")[1].split("Julian")[0]), el.innerHTML.slice(0,200));
