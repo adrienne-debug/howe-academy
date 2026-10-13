@@ -76,5 +76,12 @@ const w2 = shapesWeek(["Circle", "Square", "Triangle", "Rectangle"].map(n => sh(
 ok("notebook, Stage 2: flat shapes appear, no solids yet", !/Cube|Sphere|Cone|Cylinder|Pyramid/.test(NB.generate("caleb", { weekNum: "week26", weekDates: "x", weekData: { dates, tasks: [] }, masteryItems: ["Circle", "Square", "Triangle", "Rectangle"].map(n => sh(n, "active")).concat([sh("Hexagon"), sh("Oval")]) }).student.replace(/<style[\s\S]*?<\/style>/g, "")) && w2.length > 0);
 ok("notebook, no Shapes deck yet: the basic 4 as before", shapesWeek([]) === "Circle,Square,Triangle,Rectangle,Circle");
 
+// SP_SIDES_TAG (her report 10/13, DeWalt Caleb): the unit page tags every drill shape "count the sides", by name.
+{ const i = src.indexOf("// SP_SIDES_TAG"); const blk = i < 0 ? "" : src.slice(i, i + 1400);
+  ok("unit page: a 🔢 count-the-sides tag is derived from MAST_SHAPE_SIDES[c.name] on the Shapes deck", /d\.key==="Shapes"&&typeof MAST_SHAPE_SIDES!=="undefined"&&MAST_SHAPE_SIDES\[c\.name\]\)\?'<div[^']*count the sides<\/div>':''/.test(blk));
+  ok("the tag sits right after the card name, before the kid dots", /esc\(c\.name\)\+'<\/div>'\+_sides\+\(_dots\?/.test(blk));
+  ok("Hexagon and Octagon are both drill shapes, so both get the tag", (() => { const m = /const MAST_SHAPE_SIDES=(\{[^}]*\});/.exec(src); const o = eval("(" + m[1] + ")"); return o.Hexagon === 6 && o.Octagon === 8; })());
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
