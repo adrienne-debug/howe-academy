@@ -216,15 +216,48 @@ function loopWorld(o) {
     w.call("checked['lucy_1']=true"); w.call("mlOnCheck(getActiveTasks()[1])");
     ok("control (no ask): hold re-pointed at Lucy's next Mom card (her 9/22 rule)", w.call("momHold").id === "lucy_2", w.call("momHold"));
   }
-  // No session running: help next starts now; a buffer check-off by the loop kid locks no session.
+  // An OLD ask (no anchor) with no session running: help next starts now; a buffer check-off by the loop kid locks no session.
   { const w = loopWorld({ tasks: mk(), asks: ask("next") });
-    ok("no session held → help next is active at once", w.call("hrLoopTurn()").active === true);
+    ok("no session held, no anchor (older ask) → help next is active at once", w.call("hrLoopTurn()").active === true);
     w.call("checked['lucy_0']=true"); w.call("mlOnCheck(getActiveTasks()[0])");
     ok("buffer check while Mom helps Ellis → no session lock", !w.holdWrites.some(x => x[0] === "set"), w.holdWrites);
     const c = loopWorld({ tasks: mk() }); c.call("checked['lucy_0']=true"); c.call("mlOnCheck(getActiveTasks()[0])");
     ok("control (no ask): the same buffer check locks Lucy's session", c.holdWrites.some(x => x[0] === "set"), c.holdWrites);
   }
   ok("cursor never written by a help turn", !/config\/momLoop/.test(JSON.stringify(loopWorld({ tasks: mk(), asks: ask("now") }).holdWrites)));
+
+  // ══ HELPAFTER (her report 2026-10-13, DeWalt): Taylor asked, Mom was with Andrew but his session wasn't locked yet;
+  // "Help next — after Andrew's card" started Taylor's help turn at once. Now Help next remembers the card.
+  { const w = loopWorld({ tasks: mk(), asks: { hr_x: { kid: "ellis", at: NOW - 60000, status: "open", cardTitle: "ellis math" } } });
+    ok("setup: Mom is with Lucy (loop kid) with NO hold", w.call("mlNow()").kid === "lucy" && !w.call("mlNow()").held);
+    w.call("hrNextTap('hr_x')");
+    const up = w.holdWrites.find(x => x[0] === "update" && x[1] === "helpRequests/hr_x");
+    ok("Help next writes the anchor: afterKid lucy, afterId her Mom card lucy_1 (one update, same path)", up && up[2].status === "next" && up[2].afterKid === "lucy" && up[2].afterId === "lucy_1", up);
+    const t = w.call("hrLoopTurn()");
+    ok("no hold, but an anchor → the help turn WAITS, after Lucy", t && t.mode === "next" && t.active === false && t.after === "lucy", t);
+    ok("strip: Next: Ellis — after this card with Lucy", w.call("mlStripHTML()").includes("Next: <span") && w.call("mlStripHTML()").includes("after this card with Lucy"));
+    ok("Lucy's banner unchanged while the help waits (same as with no ask, no hold)", w.call("mlBannerHTML('lucy')") === loopWorld({ tasks: mk() }).call("mlBannerHTML('lucy')"));
+    w.call("checked['lucy_1']=true"); w.call("mlOnCheck(getActiveTasks()[1])");
+    ok("Lucy's anchor card checked → the help turn for Ellis is active", w.call("hrLoopTurn()").active === true);
+    ok("…and no session was locked on Lucy's next Mom card (the ask has her)", !w.holdWrites.some(x => x[0] === "set"), w.holdWrites);
+  }
+  { const w = loopWorld({ tasks: mk(), momHold: hold, asks: { hr_x: { kid: "ellis", at: NOW - 60000, status: "open" } } });
+    w.call("hrNextTap('hr_x')");
+    const up = w.holdWrites.find(x => x[0] === "update" && x[1] === "helpRequests/hr_x");
+    ok("with a held session the anchor is the HELD card", up && up[2].afterKid === "lucy" && up[2].afterId === "lucy_1", up);
+  }
+  { const w = loopWorld({ tasks: mk(), asks: { hr_x: { kid: "ellis", at: NOW - 60000, status: "next", decidedAt: NOW, afterKid: "lucy", afterId: "lucy_1" } } });
+    w.call("getActiveTasks()[1].momPartDone=1");
+    ok("anchor card with Mom's part done → nothing to wait for, help turn active", w.call("hrLoopTurn()").active === true);
+  }
+  { const w = loopWorld({ tasks: mk(), asks: { hr_x: { kid: "lucy", at: NOW - 60000, status: "open" } } });
+    w.call("hrNextTap('hr_x')");
+    const up = w.holdWrites.find(x => x[0] === "update" && x[1] === "helpRequests/hr_x");
+    ok("the loop kid asks for herself → no anchor, active at once", up && !up[2].afterKid && w.call("hrLoopTurn()").active === true, up);
+  }
+  { const w = loopWorld({ tasks: mk(), asks: { hr_x: { kid: "ellis", at: NOW - 60000, status: "now", decidedAt: NOW - 1000 }, hr_y: { kid: "lincoln", at: NOW - 50000, status: "next", decidedAt: NOW, afterKid: "lucy", afterId: "lucy_1" } } });
+    ok("a 'now' ask still wins over a waiting 'next' ask", w.call("hrLoopTurn()").kid === "ellis" && w.call("hrLoopTurn()").active === true);
+  }
 }
 const efSrc = src.slice(src.indexOf("function _efMomFree("), src.indexOf("function _efMomFree(") + 600);
 ok("early-finish's 'is Mom free' reads the help turn", efSrc.includes("hrLoopTurn"));

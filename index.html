@@ -6947,9 +6947,11 @@ function msgOnValue(v){
 // Mom's Day.
 //   · Help now  → the loop shows Mom helping that kid right now. A started session with another kid keeps its
 //                 hold (her rule 9/01 "once checked, who has it has it") — it resumes after ✓ Helped.
-//   · Help next → the kid is next in the loop: if Mom is mid-session with another kid (the loop's hold), the
-//                 help turn starts when that Mom card is checked (the hold is NOT re-pointed at that kid's next
-//                 Mom card); with no session running it starts now.
+//   · Help next → the kid is next in the loop: the ask remembers the kid Mom is with and the card she is on with
+//                 them (afterKid/afterId — HELPAFTER, her report 2026-10-13, DeWalt: Taylor's "after Andrew" ask
+//                 showed Mom with Taylor at once because Andrew's session wasn't locked yet). The help turn starts
+//                 when THAT card is finished (the hold is NOT re-pointed at that kid's next Mom card); with Mom
+//                 idle, or no card to wait for, it starts now.
 //   · ✓ Helped  → the help turn ends; the loop carries on exactly where it was (the cursor never moves — a help
 //                 turn, like a borrowed turn, costs nobody their place).
 // The help turn is a LAYER over the loop's decision (mlNow), never inside it: mlNow also drives the day's lay
@@ -6957,7 +6959,7 @@ function msgOnValue(v){
 // Mom block forward. So cards never move because of an ask; the strip, the kid banners, early-finish's "is Mom
 // free" and the hold hand-off read hrLoopTurn().
 // Data (each family's own DB): helpRequests/<id> =
-//   {kid, at, cardId?, cardTitle?, note?, status:"open"|"now"|"next"|"helped", decidedAt?, helpedAt?}
+//   {kid, at, cardId?, cardTitle?, note?, status:"open"|"now"|"next"|"helped", decidedAt?, helpedAt?, afterKid?, afterId?}
 //   id = "hr_<ms>_<rand>" so keys sort by time; the listener keeps the newest 60.
 //   Asking = ONE new record (set at its own id); Help now/next = ONE update {status, decidedAt}; ✓ Helped = ONE
 //   update {status:"helped", helpedAt}. Asks older than 12 h drop off Mom's side.
@@ -6981,11 +6983,22 @@ function hrLoopTurn(){
     if(!live.length) return null;
     const nowQ=live.filter(([id,r])=>r.status==="now").sort(by);
     if(nowQ.length) return {id:nowQ[0][0],kid:nowQ[0][1].kid,mode:"now",active:true};
-    const nx=live.sort(by)[0];
+    const nx=live.sort(by)[0], ar=nx[1];
+    // HELPAFTER: the ask's own anchor — wait while the card Mom was on with that kid is still open (held or not)
+    if(ar.afterKid&&ar.afterId&&ar.afterKid!==ar.kid&&_hrAfterOpen(ar.afterKid,ar.afterId)) return {id:nx[0],kid:ar.kid,mode:"next",active:false,after:ar.afterKid};
     const n=(typeof mlNow==="function")?mlNow():null;
-    if(n&&n.held&&n.kid&&n.kid!==nx[1].kid) return {id:nx[0],kid:nx[1].kid,mode:"next",active:false,after:n.kid};
+    if(n&&n.held&&n.kid&&n.kid!==nx[1].kid) return {id:nx[0],kid:nx[1].kid,mode:"next",active:false,after:n.kid};   // older asks (no anchor)
     return {id:nx[0],kid:nx[1].kid,mode:"next",active:true};
   }catch(e){ return null; }
+}
+// HELPAFTER: is the anchor card still Mom's work with that kid? (unfinished, Mom's part not done, kid not paused/off/done)
+function _hrAfterOpen(kid,id){
+  try{
+    const t=(getActiveTasks()||[]).find(x=>x&&x.id===id); if(!t||t.momPartDone) return false;
+    if(typeof _mlFinished==="function"&&_mlFinished(id,t)) return false;
+    if((typeof mlPaused==="function"&&mlPaused(kid))||(typeof mlOff==="function"&&mlOff(kid))||(typeof mlDone==="function"&&mlDone(kid))) return false;
+    return true;
+  }catch(e){ return false; }
 }
 // Mom said help now/next to a DIFFERENT kid → don't lock (or re-point) a session on this one: the loop hands her over.
 function hrBlocksHold(kid){
@@ -7146,10 +7159,15 @@ function hrNextTap(id){ _hrMomGate(()=>hrDecide(id,"next")); }
 function hrHelpedTap(id){ _hrMomGate(()=>hrHelped(id)); }
 function hrDecide(id,mode){
   const r=(hrData||{})[id]; if(!r||(mode!=="now"&&mode!=="next")) return;
-  const ts=Date.now();
-  hrData=Object.assign({},hrData,{[id]:Object.assign({},r,{status:mode,decidedAt:ts})});
+  const ts=Date.now(), up={status:mode,decidedAt:ts};
+  if(mode==="next"){   // HELPAFTER: remember who Mom is with and the card she's on with them — the ask waits for THAT card
+    try{ const n=(typeof mlNow==="function")?mlNow():null;
+      if(n&&n.kid&&n.kid!==r.kid){ const aid=(n.held&&typeof momHold!=="undefined"&&momHold&&momHold.id)?momHold.id:(((typeof mlNextCard==="function"&&mlNextCard(n.kid))||{}).id);
+        if(aid){ up.afterKid=n.kid; up.afterId=aid; } } }catch(e){}
+  }
+  hrData=Object.assign({},hrData,{[id]:Object.assign({},r,up)});
   hrPopSeen[id]=1;
-  if(db&&!_dryRun()) db.ref("helpRequests/"+id).update({status:mode,decidedAt:ts});
+  if(db&&!_dryRun()) db.ref("helpRequests/"+id).update(up);
   const p=document.getElementById("hr-pop"); if(p) p.remove();
   try{ renderAll(); }catch(e){}
   hrPopMaybe();
