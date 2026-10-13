@@ -54,6 +54,22 @@ console.log("\n── ST_NOWORDS (her report 10/13, DeWalt Kenzie): empty lesson
   ok("the page prints the note under each lesson and skips the 'write each word' intro", pg.length === 1 && (pg[0].match(/No new word cards in this lesson/g) || []).length === 2 && !/Write each word three times/.test(pg[0]));
 }
 
+console.log("\n── ST_REVIEW (her design 10/13): the page prints each day's 10 review words for an empty lesson ──");
+{
+  // a Level-4 kid: Mon = Lesson 4 day 4 of 4 (empty), Wed = Lesson 5 day 1 of 4 (empty) → 2 + 3 review sections
+  const W = [{ who: "andrew", subjectKey: "aas", day: "monday", title: "x — L4 x · day 4 of 4" }, { who: "andrew", subjectKey: "aas", day: "wednesday", title: "x — L5 x · day 1 of 4" }];
+  const w = world({ ks: { stage: 4, nbWords: "all" }, tasks: W });
+  w.ctx.currData.subjects.andrew.aas.lessonSeq = ["L4 x · day 1 of 4", "L4 x · day 2 of 4", "L5 x · day 1 of 4"];
+  const sp = w.ctx.nbSpellCtx("andrew", W, DATES);
+  ok("five sections, one per day, each 'Day · Review' with 10 words", sp && sp.sections.length === 5 && sp.sections.every(s => s.review && s.words.length === 10 && / · Review$/.test(s.label)), sp && sp.sections.map(s => s.label + ":" + s.words.length));
+  ok("Mon – Tue review Lesson 4 (its days 3 and 4), Wed – Fri review Lesson 5 (days 1–3)", sp.sections.map(s => s.lesson).join() === "4,4,5,5,5" && sp.sections[0].label === "Mon · Review" && sp.sections[2].label === "Wed · Review");
+  ok("Mon and Tue are different sets", sp.sections[0].words.join() !== sp.sections[1].words.join());
+  ok("the ✏️ row and the page agree on Wednesday's 10", (() => { const I = w.ctx.prCardInfo(W[1]); return I && I.review && I.review.words.join() === sp.sections[2].words.join(); })());
+  global.window = global; require(path.join(__dirname, "notebooks.js")); const N = global.HoweNotebooks;
+  const pg = N._internal.spellNbPages({ weekNum: 3, spelling: { title: "Spelling", sections: sp.sections, practice: [] } }, null);
+  ok("one page, 50 compact review chips (no writing lines), the review hint instead of the 'write each word' intro", pg.length === 1 && (pg[0].match(/border-radius:7px;padding:3px 9px;background:#fff/g) || []).length === 50 && !/border-radius:8px;padding:4px 8px;background:#fff/.test(pg[0]) && /read each word, cover it/.test(pg[0]) && !/Write each word three times/.test(pg[0]));
+}
+
 console.log("\n── Practice Words ──");
 {
   const m = { andrew: [{ subject: "AAS Words", prompt: "snack", status: "introduction", stLast: { r: "m" } }, { subject: "Spelling", prompt: "been", status: "parked", problem: { ts: 1 } },
