@@ -76,15 +76,15 @@ const w2 = shapesWeek(["Circle", "Square", "Triangle", "Rectangle"].map(n => sh(
 ok("notebook, Stage 2: flat shapes appear, no solids yet", !/Cube|Sphere|Cone|Cylinder|Pyramid/.test(NB.generate("caleb", { weekNum: "week26", weekDates: "x", weekData: { dates, tasks: [] }, masteryItems: ["Circle", "Square", "Triangle", "Rectangle"].map(n => sh(n, "active")).concat([sh("Hexagon"), sh("Oval")]) }).student.replace(/<style[\s\S]*?<\/style>/g, "")) && w2.length > 0);
 ok("notebook, no Shapes deck yet: the basic 4 as before", shapesWeek([]) === "Circle,Square,Triangle,Rectangle,Circle");
 
-// SP_SIDES_TAG (her report 10/13, DeWalt Caleb): the unit page tags the count-the-sides shapes, by name — pentagon up
-// (her rule 10/13: "just the ones we can actually touch the sides and count them, 5 6 7 8 9 10 sides").
+// SP_SIDES_TAG (her report 10/13, DeWalt Caleb): the unit page tags every shape the drill can count, by name
+// (her 10/13: "triangle and square rectangle work for count the sides … and the actual counting ability").
 { const i = src.indexOf("// SP_SIDES_TAG"); const blk = i < 0 ? "" : src.slice(i, i + 1600);
-  ok("unit page: the 🔢 tag shows when MAST_SHAPE_SIDES[c.name] is 5 or more, on the Shapes deck", /d\.key==="Shapes"&&typeof MAST_SHAPE_SIDES!=="undefined"&&MAST_SHAPE_SIDES\[c\.name\]>=5\)\?'<div[^']*count the sides<\/div>':''/.test(blk));
+  ok("unit page: the 🔢 tag shows for any shape in MAST_SHAPE_SIDES (3+ sides), on the Shapes deck", /d\.key==="Shapes"&&typeof MAST_SHAPE_SIDES!=="undefined"&&MAST_SHAPE_SIDES\[c\.name\]>=3\)\?'<div[^']*count the sides<\/div>':''/.test(blk));
   ok("the tag sits right after the card name, before the kid dots", /esc\(c\.name\)\+'<\/div>'\+_sides\+\(_dots\?/.test(blk));
   const sidesOf = (() => { const m = /const MAST_SHAPE_SIDES=(\{[^}]*\});/.exec(src); return eval("(" + m[1] + ")"); })();
-  const tagged = Object.keys(sidesOf).filter(n => sidesOf[n] >= 5).sort().join(",");
-  ok("tagged: Pentagon, Hexagon, Heptagon, Octagon, Nonagon, Decagon", tagged === "Decagon,Heptagon,Hexagon,Nonagon,Octagon,Pentagon", tagged);
-  ok("not tagged: Triangle, Square, Rectangle, Diamond (3–4 sides)", ["Triangle", "Square", "Rectangle", "Diamond"].every(n => sidesOf[n] < 5));
+  const tagged = Object.keys(sidesOf).filter(n => sidesOf[n] >= 3).sort().join(",");
+  ok("tagged: all ten drill shapes, triangle through decagon", tagged === "Decagon,Diamond,Heptagon,Hexagon,Nonagon,Octagon,Pentagon,Rectangle,Square,Triangle", tagged);
+  ok("the counting drill runs for every tagged shape (slideshow wiring)", /if\(!bigVis&&cat==="Shapes"\) bigVis=MAST_SHAPE_SIDES\[it\.prompt\]\?mastShapeSidesVis\(/.test(src));
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");
