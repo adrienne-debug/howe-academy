@@ -249,5 +249,28 @@ console.log("plan._wkUsed — a week already holding sittings gets only the diff
   ok("the plan carries the week charge", /_wkUsed:_dealtWk/.test(pm));
 }
 
+
+// ── 🏫 COOPWEEKDAYS (Sarah's ask 2026-10-13): plan.daysByWeek = {mondayISO: days[]} — that week's day set ──
+// (noCoopDays in a week with no co-op). A week not in the map, or no map, reads allowedDays exactly as before.
+console.log("per-week day sets (plan.daysByWeek)");
+{
+  const C = cal("2026-10-05", 2);                       // Mon 10/5 .. Fri 10/16
+  const MTWF = ["Mon", "Tue", "Wed", "Fri"], MTWT = ["Mon", "Tue", "Wed", "Thu"];
+  const mk = extra => Object.assign({ pid: "k__m", kid: "k", sk: "m", lessons: L(8), tpw: 4, allowedDays: MTWF.slice() }, extra || {});
+  const d0 = flat(P({ todayISO: "2026-10-05", calendar: { k: C }, plans: [mk()] }), "k").map(x => x.d);
+  ok("no map: 4×/wk on Mon/Tue/Wed/Fri both weeks", eq(d0, ["2026-10-05", "2026-10-06", "2026-10-07", "2026-10-09", "2026-10-12", "2026-10-13", "2026-10-14", "2026-10-16"]), d0);
+  const d1 = flat(P({ todayISO: "2026-10-05", calendar: { k: C }, plans: [mk({ daysByWeek: { "2026-10-05": MTWF, "2026-10-12": MTWT } })] }), "k").map(x => x.d);
+  ok("map: WK1 (co-op week) Fri, WK2 (no co-op) Thu — Friday lighter without a hand move", eq(d1, ["2026-10-05", "2026-10-06", "2026-10-07", "2026-10-09", "2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15"]), d1);
+  const d2 = flat(P({ todayISO: "2026-10-05", calendar: { k: C }, plans: [mk({ daysByWeek: { "2026-10-12": MTWT } })] }), "k").map(x => x.d);
+  ok("a week missing from the map falls back to allowedDays", eq(d2, d1), d2);
+  const d3 = flat(P({ todayISO: "2026-10-05", calendar: { k: C }, plans: [mk({ daysByWeek: { "2026-10-12": [] } })] }), "k").map(x => x.d);
+  ok("an empty set for a week = any school day that week (spread 4 over 5 → Mon/Tue/Thu/Fri)", eq(d3.slice(4), ["2026-10-12", "2026-10-13", "2026-10-15", "2026-10-16"]), d3);
+  const pr = env._pjPatternRows({ allowedDays: MTWF.slice(), daysByWeek: { "2026-10-12": MTWT }, offDates: {}, _blocked: {} }, C, 3).map(r => r.date);
+  ok("the spread rule is untouched: 3×/wk on Mon/Tue/Wed/Thu → Mon · Wed · Thu", eq(pr.slice(3), ["2026-10-12", "2026-10-14", "2026-10-15"]), pr);
+  const o = P({ todayISO: "2026-10-16", calendar: { k: C }, plans: [mk({ daysByWeek: { "2026-10-05": MTWF, "2026-10-12": MTWT }, anchor: "2026-10-05", doneSince: 6, cap: 1 })] });
+  ok("owed counts pattern days on the same per-week sets (8 before 10/16, 6 done → owed 2)", o.plans["k__m"].owed === 2, o.plans["k__m"]);
+  ok("deterministic with a map too", eq(P({ todayISO: "2026-10-05", calendar: { k: C }, plans: [mk({ daysByWeek: { "2026-10-12": MTWT } })] }), P({ todayISO: "2026-10-05", calendar: { k: C }, plans: [mk({ daysByWeek: { "2026-10-12": MTWT } })] })));
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
