@@ -44,7 +44,7 @@ function stage7() {
   return cards;
 }
 const run = new Function(stubs + engine + ck + `
-return {ckSlug,ckFactors,ckHard,ckQuickPicks,ckFamilies,ckPlan,ckTodayLeft,ckGrade,ckResultTier,ckCardLine,ckRenderHtml,ckTap,ckStart,ckFlip,ckStop,ckMomStart,unitStageCheckup,
+return {ckSlug,ckFactors,ckHard,ckQuickPicks,ckFamilies,ckPlan,ckTodayLeft,ckGrade,ckResultTier,ckCardLine,ckRenderHtml,ckTap,ckStart,ckFlip,ckStop,ckMomStart,unitStageCheckup,ckIsSpelling,ckFmtGet,ckFmtSet,ckState,
   mstSessions,mstOwns,mstOwnedIds,mstPile,
   get:()=>({masteryData,WRITES,TOASTS,unitStudies,adminPinUnlocked,PINGATE,RENDERS}), set:(k,v)=>{ if(k==="MOM") MOM=v; if(k==="DAYKEY") DAYKEY=v; if(k==="unitStageForm") unitStageForm=v; if(k==="unitStudies") unitStudies=v; if(k==="masteryData") masteryData=v; },
   clearWrites:()=>{ WRITES.length=0; TOASTS.length=0; } };`)();
@@ -199,5 +199,35 @@ ok(run.get().PINGATE.length === 1, "Mom's own view: no PIN asked");
 run.ckStop();
 ok(run.get().RENDERS === rBefore + 1, "…and Stop does not touch the lock when Mom was already here");
 run.set("MOM", false);
+// ── CKWRITTEN (her ask 10/14): a spelling check-up explains the turned screen and offers a written format ──
+{
+  const words = (L, names) => names.map((n, i) => ({ family: "Lesson " + L, name: n, stage: 1, lesson: L, order: L * 100 + i }));
+  const aas = { id: "all_about_spelling", title: "All About Spelling", cardLessons: true, stages: [{ n: 1, label: "Level 1" }],
+    decks: [{ key: "AAS Words", mode: "flash", bankOnly: true, cards: words(7, ["at", "man", "sat", "am", "an"]).concat(words(8, ["in", "big", "hit", "pig", "him"])) }], enrolled: { taylor: true }, kidStage: { taylor: { stage: 1 } } };
+  const us = run.get().unitStudies; us.all_about_spelling = aas;
+  run.set("masteryData", { taylor: [], taylor_custom_items: [], taylor_settings: {}, taylor_sessions: { ck_sp: { name: "Check-up: Level 1 · words", kind: "checkup", who: "mom", unit: "all_about_spelling", stage: 1, perDay: 10, quick: 3, untested: "spot", decks: ["AAS Words"] } } });
+  const S = run.mstSessions("taylor").find(x => x.sid === "ck_sp");
+  ok(run.ckIsSpelling(S) && !run.ckIsSpelling({ unit: "math_fluency_path", decks: [] }), "a spelling check-up is told apart from a math one");
+  run.set("MOM", false);
+  ok(/Spelling check-up: Mom reads each word/.test(run.ckRenderHtml("taylor", S)), "the kid's screen says Mom reads each word, they write or spell it");
+  run.clearWrites(); run.ckMomStart("taylor", "ck_sp");
+  ok(/Turn the screen away from the kid/.test(run.get().PINGATE[run.get().PINGATE.length - 1] || ""), "the PIN box carries the turned-screen instructions for a spelling check-up");
+  run.set("MOM", true); run.ckStart("taylor", "ck_sp", 0);
+  let h = run.ckRenderHtml("taylor", S);
+  ok(/Verbal · one at a time/.test(h) && /Written · all of today’s words/.test(h) && run.ckFmtGet() === "verbal", "the run screen offers Verbal / Written, verbal by default");
+  ok(/tap the fact to check the answer|✓ Got it<\/button>/.test(h) && !/>1\.<\/span>/.test(h), "verbal = the one-at-a-time card as before");
+  run.ckFmtSet("written"); h = run.ckRenderHtml("taylor", S);
+  const listed = (h.match(/ckTap\('c','[^']+'\)/g) || []).map(x => x.replace(/.*'c','([^']+)'.*/, "$1"));
+  ok(listed.length === 6 && listed.join() === "at,man,sat,in,big,hit", "written = today's share listed at once (quick 3 per lesson × 2 lessons), ✓ 〰 ✗ per word", listed);
+  ok(!/ck-timer/.test(h) && /a miss adds the rest of that lesson/.test(h), "no clock on the written list");
+  run.clearWrites(); run.ckTap("m", "sat");
+  const st = run.ckState("taylor", "ck_sp");
+  ok(st.f && st.f[run.ckSlug("Lesson 7")] && st.f[run.ckSlug("Lesson 7")].a[run.ckSlug("sat")].r === "m", "marking a named row grades THAT word, not the front card", st);
+  h = run.ckRenderHtml("taylor", S);
+  const after = (h.match(/ckTap\('c','[^']+'\)/g) || []).map(x => x.replace(/.*'c','([^']+)'.*/, "$1"));
+  ok(after.indexOf("sat") < 0 && after.indexOf("am") >= 0 && after.indexOf("an") >= 0, "…the miss pulls the rest of Lesson 7 into the list and the graded word drops out", after);
+  ok(run.get().WRITES.some(w => /mastery\/taylor_checkup\/ck_sp\/f\//.test(w[1])), "the same targeted check-up writes as a verbal tap");
+  run.ckFmtSet("verbal"); run.ckStop();
+}
 console.log(pass + " passed, " + fail + " failed");
 if (fail) process.exit(1);

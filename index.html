@@ -49867,7 +49867,7 @@ function ckRenderHtml(kid,session){
     if(kc.length){ const kst=ckState(kid,session.sid), kp=ckPlan(kc,session,kst); kdone=kp.complete||!Math.min(kp.queue.length,ckTodayLeft(session,kst,ckDayKey(),0)); }
     return '<div style="'+box+';text-align:center"><div style="font-size:34px">\u{1FA7A}</div><div style="font-size:16px;font-weight:800;color:#0f766e;margin-top:6px">This is a check-up with Mom.</div>'
       +(kdone?'<div style="font-size:13px;color:#16a34a;font-weight:800;margin-top:6px">Today’s check-up is done ✓</div>'
-        :'<div style="font-size:13px;color:var(--muted);margin-top:4px">Ask Mom or Dad when they’re ready.</div><div style="margin-top:14px"><button onclick="ckMomStart(\''+ckEsc(kid)+'\',\''+ckEsc(session.sid)+'\')" style="min-height:52px;padding:0 28px;border-radius:16px;border:none;background:#0f766e;color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔒 Mom or Dad: start the check-up</button></div>')
+        :'<div style="font-size:13px;color:var(--muted);margin-top:4px">Ask Mom or Dad when they’re ready.</div>'+(ckIsSpelling(session)?'<div style="font-size:12px;color:#0f766e;font-weight:700;margin-top:6px">📝 Spelling check-up: Mom reads each word — you write it down or spell it out loud.</div>':'')+'<div style="margin-top:14px"><button onclick="ckMomStart(\''+ckEsc(kid)+'\',\''+ckEsc(session.sid)+'\')" style="min-height:52px;padding:0 28px;border-radius:16px;border:none;background:#0f766e;color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔒 Mom or Dad: start the check-up</button></div>')
       +'</div>';
   }
   const cards=ckCards(session);
@@ -49879,6 +49879,25 @@ function ckRenderHtml(kid,session){
   h+='<div style="font-size:13px;color:var(--muted);font-weight:700;margin-top:4px">'+ckProgressText(p)+'</div>';
   h+='<div style="font-size:12px;color:var(--muted);margin-top:2px">'+(session.perDay||CK_DEFAULTS.perDay)+' a day · '+(session.untested==="all"?"every card asked":"quick check: the "+(session.quick||CK_DEFAULTS.quick)+" hardest per family first")+'</div></div>';
   const bt=(c,bg)=>'flex:1;min-height:60px;border-radius:16px;border:2px solid '+c+';background:'+bg+';color:'+c+';font-size:17px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  const spell=ckIsSpelling(session), fmt=spell?ckFmtGet():"verbal";
+  if(running&&left>0&&spell){   // CKWRITTEN: the format row, then either the written list or the one-at-a-time card
+    const pill=(v,lbl)=>'<button onclick="ckFmtSet(\''+v+'\')" style="flex:1;padding:7px 8px;border-radius:999px;border:2px solid #0f766e;background:'+(fmt===v?'#0f766e':'#fff')+';color:'+(fmt===v?'#fff':'#0f766e')+';font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
+    h+='<div style="display:flex;gap:8px;margin-bottom:10px">'+pill("verbal","\u{1F5E3} Verbal \u00b7 one at a time")+pill("written","\u{1F4DD} Written \u00b7 all of today\u2019s words")+'</div>';
+    h+='<div style="font-size:12px;color:#0f766e;font-weight:700;margin-bottom:10px">'+CK_SPELL_HOWTO+'</div>';
+  }
+  if(running&&left>0&&spell&&fmt==="written"){
+    const rows=p.queue.slice(0,left);
+    const sb=(c,bg,r,name,lbl)=>'<button onclick="ckTap(\''+r+'\',\''+ckEsc(name)+'\')" title="'+lbl+'" style="min-width:44px;min-height:40px;border-radius:12px;border:2px solid '+c+';background:'+bg+';color:'+c+';font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl.charAt(0)+'</button>';
+    rows.forEach((q,i)=>{ const nm=String(q.card.name);
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #ccfbf1">'
+        +'<span style="width:22px;font-size:12px;color:#94a3b8;font-weight:700">'+(i+1)+'.</span>'
+        +'<span style="flex:1;font-size:22px;font-weight:800;color:#111827">'+ckEsc(nm)+'</span>'
+        +'<span style="font-size:10.5px;color:#64748b;font-weight:700;margin-right:4px">'+ckEsc(q.fam)+'</span>'
+        +sb("#16a34a","#f0fdf4","c",nm,"\u2713 Got it")+sb("#d97706","#fffbeb","s",nm,"\u3030 Took a moment")+sb("#dc2626","#fef2f2","m",nm,"\u2717 Missed")+'</div>'; });
+    h+='<div style="text-align:center;margin-top:12px;font-size:12px;color:var(--muted)">'+left+' left today \u00b7 a miss adds the rest of that lesson</div>';
+    h+='<div style="text-align:center;margin-top:14px"><a href="javascript:void(0)" onclick="ckStop()" style="font-size:13px;color:var(--muted);text-decoration:underline">Stop for today</a></div>';
+    return h;
+  }
   if(running&&left>0){
     const it=p.queue[0], c=it.card;
     const ans=(c.def!=null)?String(c.def):"";
@@ -49912,6 +49931,15 @@ function ckStart(kid,sid,extra){
   const prev=(ckRun&&ckRun.kid===kid&&ckRun.sid===sid)?ckRun.extra:0;
   ckRun={kid:kid,sid:sid,ts:Date.now(),extra:prev+(extra||0)}; ckRe();
 }
+// CKWRITTEN (her ask 2026-10-14): a SPELLING check-up (the AAS unit) needs the screen turned away — the word shows on it.
+// Two formats, picked on the run screen and remembered per device: 🗣 Verbal = one word at a time (as before); 📝 Written =
+// all of today's words listed at once so the kid writes them (Mom checks after) or spells them back, then ✓ 〰 ✗ per word.
+// Math-facts check-ups are unchanged. Nothing new is written: each mark goes through ckTap → ckGrade exactly as before.
+function ckIsSpelling(session){ try{ const u=(typeof unitStudies!=="undefined"&&unitStudies)?unitStudies[session.unit]:null; return !!(u&&u.cardLessons)||(Array.isArray(session&&session.decks)&&session.decks.indexOf("AAS Words")>=0); }catch(e){ return false; } }
+let ckFmt=null;
+function ckFmtGet(){ if(ckFmt) return ckFmt; try{ ckFmt=(HA_LS.getItem("ha_ck_fmt")==="written")?"written":"verbal"; }catch(e){ ckFmt="verbal"; } return ckFmt; }
+function ckFmtSet(v){ ckFmt=(v==="written")?"written":"verbal"; try{ HA_LS.setItem("ha_ck_fmt",ckFmt); }catch(e){} ckRe(); }
+const CK_SPELL_HOWTO="Turn the screen away from the kid \u2014 the words show on it. Read each word; they write it down (you check after) or spell it back out loud.";
 // 🔒 Mom's code on the kid's screen (her ask 2026-10-05): the kid's view shows a Start button; Mom types her PIN in the
 // usual dialog, the sitting runs, and the moment it ends (Stop for today / today's share done) the screen locks again —
 // only when the unlock came through this door (Mom's own view stays as it was).
@@ -49919,18 +49947,20 @@ let ckKidUnlock=false;
 function ckMomStart(kid,sid){
   const was=(typeof momHere==="function"&&momHere());
   const go=function(){ ckKidUnlock=!was; ckStart(kid,sid,0); };
-  if(typeof kitPinGate==="function") kitPinGate(go,"Mom or Dad types their code to run the check-up on this screen.",{dad:true}); else go();   // DADPIN
+  const spell=(typeof ckIsSpelling==="function")&&ckIsSpelling(ckSession(kid,sid));   // CKWRITTEN: the spelling door says how to run it
+  if(typeof kitPinGate==="function") kitPinGate(go,"Mom or Dad types their code to run the check-up on this screen."+(spell?" "+CK_SPELL_HOWTO:""),{dad:true}); else go();   // DADPIN
 }
 function ckRelock(){ if(!ckKidUnlock) return; ckKidUnlock=false; if(typeof haMomOff==="function") haMomOff(); else if(typeof adminPinUnlocked!=="undefined") adminPinUnlocked=false; if(typeof renderAll==="function") renderAll(); }
 function ckFlip(){ if(!ckRun) return; ckRun.show=!ckRun.show; ckRe(); }
 function ckStop(){ ckRun=null; if(ckTimerIv){ clearInterval(ckTimerIv); ckTimerIv=null; } ckRe(); ckRelock(); }
-function ckTap(r){
+function ckTap(r,name){
   if(!ckRun||!(typeof momHere==="function"&&momHere())) return;
   const kid=ckRun.kid, sid=ckRun.sid, s=ckSession(kid,sid); if(!s) return;
   const cards=ckCards(s), dk=ckDayKey();
   const st=JSON.parse(JSON.stringify(ckState(kid,sid)));
   const p=ckPlan(cards,s,st); if(!p.queue.length){ ckStop(); return; }
-  const it=p.queue[0]; const secs=Math.round((Date.now()-ckRun.ts)/100)/10;
+  const it=name?p.queue.find(x=>x&&String(x.card.name)===String(name)):p.queue[0]; if(!it) return;   // CKWRITTEN: a named row, else the front card
+  const secs=name?null:Math.round((Date.now()-ckRun.ts)/100)/10;   // the written list has no clock
   const prevM=ckFamState(st,s,it.slug).m;
   const out=ckGrade(st,s,cards,it.card,r,dk,secs);
   // Cards: update the kid's existing card or mint it (same shape the unit enroll mints).

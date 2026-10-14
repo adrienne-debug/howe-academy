@@ -41,7 +41,7 @@ console.log("\n── every other door stays Mom-only ──");
   ok("Mom's code opens it", ran === 1);
 }
 console.log("\n── wiring ──");
-ok("the check-up's start button opens the door with {dad:true}", /kitPinGate\(go,"Mom or Dad types their code to run the check-up on this screen\.",\{dad:true\}\)/.test(src));
+ok("the check-up's start button opens the door with {dad:true}", /kitPinGate\(go,"Mom or Dad types their code to run the check-up on this screen\."\+\(spell\?" "\+CK_SPELL_HOWTO:""\),\{dad:true\}\)/.test(src));
 ok("the kid's screen says Mom or Dad", /🔒 Mom or Dad: start the check-up/.test(src) && /Ask Mom or Dad when they’re ready\./.test(src));
 ok("the check-up still relocks after the sitting (ckRelock → haMomOff)", /function ckRelock\(\)\{ if\(!ckKidUnlock\) return; ckKidUnlock=false; if\(typeof haMomOff==="function"\) haMomOff\(\);/.test(src));
 console.log("\n" + pass + " passed, " + fail + " failed");
