@@ -92,6 +92,10 @@ function study() {
     calls };
   vm.createContext(ctx);
   vm.runInContext(["mastGetDef", "mstEsc", "mstEscJs", "mstItemAnswer", "mstCardDef", "mstCardMode", "mstIsRuleCard", "mstIsSpellCard", "mstFlipBtn", "mstAudioBtn", "mstCardHtml", "mstTap"].map(slice).join("\n") + BLOCK, ctx);
+  // MST_NAV (PR #47) adds a tap lock + undo snapshot inside mstTap; load that block too when it is in the tree,
+  // with a clock that never locks, so this test passes before and after the two PRs meet.
+  const navA = src.indexOf("// MST_NAV_START"), navB = src.indexOf("// MST_NAV_END");
+  if (navA >= 0 && navB > navA) vm.runInContext(src.slice(navA, navB) + "\nmstNow=function(){ return 1e12; };\nif(typeof mstSerialize!==\"function\") mstSerialize=function(s){ return JSON.parse(JSON.stringify(s)); };", ctx);
   return ctx;
 }
 const CARD = { key: "r:lin_67", kind: "review", id: "lin_67", deck: "Math Facts", name: "6×7" };
