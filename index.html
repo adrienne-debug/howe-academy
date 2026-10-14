@@ -50925,7 +50925,7 @@ function mstItemAnswer(id){
 // ── Persistence (resumable sitting, same-day only) ──────────────────────────
 function mstPersist(){
   if(!mstSid||!mstState) return;
-  try{ HA_LS.setItem(mstStorageKey(masteryKid,mstSid),JSON.stringify({date:mstTodayKey(),sid:mstSid,state:mstSerialize(mstState),startTs:mstStartTs})); }catch(e){}
+  try{ HA_LS.setItem(mstStorageKey(masteryKid,mstSid),JSON.stringify({date:mstTodayKey(),sid:mstSid,state:mstSerialize(mstState),startTs:mstStartTs,hist:mstHist,redo:mstRedo})); }catch(e){}   // MST_NAV: Back/Forward ride the saved sitting
 }
 function mstHasPersisted(sid){
   try{ const raw=HA_LS.getItem(mstStorageKey(masteryKid,sid)); if(!raw) return false;
@@ -50937,6 +50937,7 @@ function mstRestoreSitting(sid){
     const raw=HA_LS.getItem(mstStorageKey(masteryKid,sid)); if(!raw) return false;
     const obj=JSON.parse(raw); if(!obj||obj.date!==mstTodayKey()) return false;
     mstState=mstRestore(obj.state); mstSid=obj.sid||sid; mstStartTs=obj.startTs||Date.now(); mstFlipped=false;
+    mstHist=Array.isArray(obj.hist)?obj.hist:[]; mstRedo=Array.isArray(obj.redo)?obj.redo:[];   // MST_NAV
     return true;
   }catch(e){ return false; }
 }
@@ -51103,7 +51104,7 @@ function mstCardHtml(session,card){
 }
 function renderMastStudy(){
   const kid=masteryKid;
-  if(mstKid!==kid){ mstKid=kid; mstSid=null; mstState=null; mstFlipped=false; mstDone=null; mstStartTs=null; mstTyped=""; mstChecked=null; }  // a sitting never leaks across kids
+  if(mstKid!==kid){ mstKid=kid; mstSid=null; mstState=null; mstFlipped=false; mstDone=null; mstStartTs=null; mstTyped=""; mstChecked=null; mstNavReset(); }  // a sitting never leaks across kids (MST_NAV: nor its Back/Forward)
   let sessions=[]; try{ sessions=mstSessions(kid)||[]; }catch(e){ sessions=[]; }
   if(!sessions.length) return '<div style="text-align:center;padding:60px 20px;color:var(--muted);font-family:\'DM Sans\',sans-serif"><div style="font-size:40px;margin-bottom:10px">\u{1F4DA}</div><div style="font-size:16px;font-weight:700">No study sessions yet.</div></div>';
   if(mstSid==null||!sessions.some(s=>s.sid===mstSid)) mstSid=sessions[0].sid;
@@ -51138,23 +51139,26 @@ function renderMastStudy(){
     h+='<div style="font-size:13px;color:var(--muted);font-weight:700;margin-bottom:10px;text-align:center">'+prog.done+'/'+prog.total+' · '+prog.againCount+' again</div>';
     let card=null; try{ card=mstCurrent(mstState); }catch(e){}
     if(card){
+      mstLockArm();   // MST_NAV: taps in the first 350 ms after this draw are swallowed
       h+=mstCardHtml(session,card);
       if(mstCardMode(card)==="type"){
         // Check / Next live inside the card — no self-grading on a typed answer.
       } else if(mstFlipped){
         h+='<div style="display:flex;gap:12px;margin-top:16px">';
-        h+='<button onclick="mstTap(\'again\')" style="flex:1;min-height:56px;border-radius:16px;border:2px solid #dc2626;background:#fef2f2;color:#dc2626;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Again</button>';
-        h+='<button onclick="mstTap(\'good\')" style="flex:1;min-height:56px;border-radius:16px;border:2px solid #16a34a;background:#f0fdf4;color:#16a34a;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Good</button></div>';
+        // MST_NAV: ✗ / ✓ instead of the words "Again" / "Good" — same buttons, same taps (her ask 2026-10-13)
+        h+='<button onclick="mstTap(\'again\')" aria-label="Again" style="flex:1;min-height:56px;border-radius:16px;border:2px solid #dc2626;background:#fef2f2;color:#dc2626;font-size:28px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u2717</button>';
+        h+='<button onclick="mstTap(\'good\')" aria-label="Good" style="flex:1;min-height:56px;border-radius:16px;border:2px solid #16a34a;background:#f0fdf4;color:#16a34a;font-size:28px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u2713</button></div>';
       } else {
         h+='<div style="text-align:center;margin-top:14px;font-size:12px;color:#a78bfa;font-weight:700;text-transform:uppercase;letter-spacing:.05em">tap the card to flip</div>';
       }
+      h+=mstNavBtns();   // MST_NAV: ← Back / Forward →
       h+='<div style="text-align:center;margin-top:18px"><a href="javascript:void(0)" onclick="mstQuit()" style="font-size:13px;color:var(--muted);text-decoration:underline;cursor:pointer">Quit for now</a></div>';
     } else {
-      // Shouldn't normally happen — mstTap auto-saves the instant the queue empties — but a
-      // restored sitting could land here; give an explicit, non-destructive way out.
+      // MST_NAV: the last grade lands here on purpose (it used to save on its own) — ← Back beside Save
+      // lets a too-fast last tap be fixed before anything is written. A restored sitting can land here too.
       h+='<div style="text-align:center;padding:20px;color:var(--muted);font-weight:700">No cards left.</div>';
       if(mstSaveErr) h+='<div style="margin:0 auto;max-width:420px;background:#fef2f2;border:1.5px solid #fca5a5;border-radius:12px;padding:10px 14px;color:#b91c1c;font-size:13px;font-weight:700;text-align:center">Couldn\u2019t save: '+mstEsc(mstSaveErr)+'</div>';
-      h+='<div style="text-align:center;margin-top:10px"><button onclick="mstSave()" style="min-height:48px;padding:0 28px;border-radius:14px;border:none;background:#7c3aed;color:#fff;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save</button></div>';
+      h+='<div style="display:flex;gap:12px;justify-content:center;align-items:center;margin-top:10px">'+mstNavBtn("back")+'<button onclick="mstSave()" style="min-height:48px;padding:0 28px;border-radius:14px;border:none;background:#7c3aed;color:#fff;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save</button></div>';
     }
   } else if(mstDone){
     h+='<div style="background:#fff7ed;border:2px solid #fed7aa;border-radius:20px;padding:24px;text-align:center;font-family:\'DM Sans\',sans-serif">';
@@ -51175,7 +51179,7 @@ function renderMastStudy(){
 // ── Actions ───────────────────────────────────────────────────────────────
 function mstPick(sid){
   if(sid===mstSid) return;
-  mstSid=sid; mstState=null; mstFlipped=false; mstDone=null; mstStartTs=null; mstTyped=""; mstChecked=null;
+  mstSid=sid; mstState=null; mstFlipped=false; mstDone=null; mstStartTs=null; mstTyped=""; mstChecked=null; mstNavReset();   // MST_NAV
   _mastRe();
 }
 function mstStart(){
@@ -51189,7 +51193,7 @@ function mstStart(){
   if(mstRestoreSitting(mstSid)){
     mstDone=null;
     let cur=null; try{ cur=mstCurrent(mstState); }catch(e){}
-    if(!cur){ mstSave(); return; }
+    if(!cur&&!mstHist.length){ mstSave(); return; }   // MST_NAV: with grades to undo, show "No cards left" + Back instead
     mstTyped=""; mstChecked=null;
     _mastRe(); mstAutoPlayCurrent(session);
     return;
@@ -51199,10 +51203,10 @@ function mstStart(){
   let pile; try{ pile=mstPile(kid,mstSid,pn,todayLog); }catch(e){ pile=null; }
   if(!pile) return;
   let state; try{ const _ds=mastDrillSettings(); state=mstSittingInit(pile,session,{dotsNeeded:d=>mastIntroDotsFor(d,_ds)}); }catch(e){ return; }
-  mstState=state; mstStartTs=Date.now(); mstFlipped=false; mstDone=null;
+  mstState=state; mstStartTs=Date.now(); mstFlipped=false; mstDone=null; mstNavReset();   // MST_NAV: a fresh sitting has nothing to go back to
   mstPersist(); _mastRe(); mstAutoPlayCurrent(session);
 }
-function mstFlip(){ mstFlipped=!mstFlipped; _mastRe(); }
+function mstFlip(){ if(mstLocked()) return; mstFlipped=!mstFlipped; _mastRe(); }   // MST_NAV: tap lock
 function mstCheckTyped(){
   if(!mstState) return;
   let cur=null; try{ cur=mstCurrent(mstState); }catch(e){}
@@ -51216,24 +51220,65 @@ function mstCheckTyped(){
     if(ses&&ses.audio!=="off"){ if(mastGetDefAudio(masteryKid,cur.name)) mastPlayDefAudio(cur.name); else mastSpeak(cur.name); } }catch(e){}
 }
 function mstTap(ans){
+  if(mstLocked()) return;   // MST_NAV: a second tap inside 350 ms of the draw is swallowed
   mstTyped=""; mstChecked=null;
   if(!mstState) return;
   let cur=null; try{ cur=mstCurrent(mstState); }catch(e){}
   if(!cur) return;
+  mstHist.push(mstSerialize(mstState)); mstRedo=[];   // MST_NAV: snapshot before the grade so ← Back can undo it
   try{ mstAnswer(mstState,cur.key,ans); }catch(e){}
   mstFlipped=false; mstPersist();
   let next=null; try{ next=mstCurrent(mstState); }catch(e){}
-  if(!next){ mstSave(); return; }
+  if(!next){ _mastRe(); return; }   // MST_NAV: no auto-save — land on "No cards left" with ← Back beside Save
   _mastRe();
   let sessions=[]; try{ sessions=mstSessions(masteryKid)||[]; }catch(e){}
   mstAutoPlayCurrent((sessions||[]).find(s=>s.sid===mstSid));
 }
-function mstQuit(){ if(mstState) mstPersist(); mstState=null; mstFlipped=false; mstTyped=""; mstChecked=null; _mastRe(); }
+function mstQuit(){ if(mstState) mstPersist(); mstState=null; mstFlipped=false; mstTyped=""; mstChecked=null; mstNavReset(); _mastRe(); }   // MST_NAV: stacks ride the saved sitting
 function mstDiscard(){
   if(!confirm("Discard this study sitting? Progress won't be saved.")) return;
-  mstClearPersist(mstSid); mstState=null; mstFlipped=false; mstStartTs=null;
+  mstClearPersist(mstSid); mstState=null; mstFlipped=false; mstStartTs=null; mstNavReset();   // MST_NAV
   _mastRe();
 }
+
+// MST_NAV_START — ✓/✗ grading, ← Back / → Forward, and a tap lock in the 📚 Study session.
+// Her ask 2026-10-13 (the DeWalt family's math-facts sittings): "they're clicking it too fast for each
+// other and it's causing issues." So: the grade buttons read ✗ (again) and ✓ (good) like Today's Drill;
+// every grade can be undone with ← Back (→ Forward re-does it) — the card comes back face-up so it can be
+// re-graded; a tap inside 350 ms of the screen drawing is ignored; and the LAST grade no longer saves on
+// its own — the sitting lands on "No cards left" with ← Back beside Save, so a wrong tap is fixed on the
+// device before anything is written. Nothing new is written: Save is the same mstSave as before.
+let mstHist=[], mstRedo=[];        // mstSerialize snapshots: before each grade / grades undone with Back
+const MST_TAP_LOCK_MS=350;
+let mstLockTs=0;
+function mstNow(){ return Date.now(); }
+function mstNavReset(){ mstHist=[]; mstRedo=[]; }
+function mstLockArm(){ mstLockTs=mstNow(); }
+function mstLocked(){ return (mstNow()-mstLockTs)<MST_TAP_LOCK_MS; }
+function mstBack(){
+  if(!mstState||!mstHist.length) return;
+  mstRedo.push(mstSerialize(mstState));
+  mstState=mstRestore(mstHist.pop());
+  mstFlipped=true;                   // the card he just graded, face-up, with its ✗ / ✓ ready for a re-grade
+  mstTyped=""; mstChecked=null;
+  mstPersist(); _mastRe();
+}
+function mstFwd(){
+  if(!mstState||!mstRedo.length) return;
+  mstHist.push(mstSerialize(mstState));
+  mstState=mstRestore(mstRedo.pop());
+  mstFlipped=false;                  // the grade is back on; the next card starts face-down as it did
+  mstTyped=""; mstChecked=null;
+  mstPersist(); _mastRe();
+}
+function mstNavBtn(which){
+  const back=which==="back", off=back?!mstHist.length:!mstRedo.length;
+  return '<button onclick="'+(back?"mstBack()":"mstFwd()")+'"'+(off?' disabled':'')+' style="min-height:44px;padding:0 18px;border-radius:999px;border:1.5px solid var(--border);background:#fff;color:#555;font-size:14px;font-weight:700;cursor:'+(off?"not-allowed":"pointer")+';opacity:'+(off?".3":"1")+';font-family:\'DM Sans\',sans-serif">'+(back?"\u2190 Back":"Forward \u2192")+'</button>';
+}
+function mstNavBtns(){
+  return '<div style="display:flex;justify-content:space-between;gap:12px;margin-top:14px">'+mstNavBtn("back")+mstNavBtn("fwd")+'</div>';
+}
+// MST_NAV_END
 
 // ── Save — writes touched/minted cards field-by-field (mirrors mastSaveResults), merges
 // today's session log, updates local state. All remote writes guarded by db.
@@ -51362,7 +51407,7 @@ function _mstSaveInner(){
   try{ HA_LS.setItem("ha_mastery",JSON.stringify(masteryData)); }catch(e){}
 
   mstDone={correct:correct,miss:miss,shown:shown,total:total,secs:secs};
-  mstState=null; mstFlipped=false; mstStartTs=null;
+  mstState=null; mstFlipped=false; mstStartTs=null; mstNavReset();   // MST_NAV: nothing to go back to once it's saved
   mstClearPersist(sid);
   _mastRe();
 }
@@ -59139,7 +59184,7 @@ function retrSchedGo(kid,view,sid){
   masteryKid=kid; mastView=view||"drill";
   mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastSessionKey=""; mastSlideIdx=0; mastScoreItemId=null; mastAdminLocal=null;
   // 📚 Study deep link: land on that session with no stale sitting from another kid/session.
-  if(view==="study"&&typeof mstKid!=="undefined"){ mstKid=kid; mstSid=sid||null; mstState=null; mstFlipped=false; mstDone=null; }
+  if(view==="study"&&typeof mstKid!=="undefined"){ mstKid=kid; mstSid=sid||null; mstState=null; mstFlipped=false; mstDone=null; if(typeof mstNavReset==="function") mstNavReset(); }   // MST_NAV: Back/Forward never cross kids
   try{ const cats=Object.keys((typeof MAST_BANK_MAP!=="undefined"&&MAST_BANK_MAP[kid])||{}); mastAddCat=cats[0]||""; }catch(e){}
   showTab('mastery');
 }
