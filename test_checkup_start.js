@@ -73,5 +73,40 @@ console.log("\n── wiring ──");
 ok("ckCards honors a session's lesson range / decks", /return \(typeof ckSessionFilter==="function"\)\?ckSessionFilter\(session,all\):all;/.test(src));
 ok("the unit row carries 'Start a check-up'", /h\+=ckStartHtml\(u,k,ks\)/.test(src));
 ok("Settings ▸ Family has a Grade box on each kid", /famSet\('\+i\+',\\'grade\\',this\.value\)/.test(src));
+console.log("\n── CKSPAN (her ask 10/13): one check-up through several levels ──");
+{
+  const w = world({ grade: "7" }), c = w.ctx, u = c.unitStudies.all_about_spelling;
+  c.ckStartOpen("all_about_spelling", "taylor");
+  ok("the form has a 'through' level pick that follows the level until Mom changes it", c.ckStartForm.levelTo === c.ckStartForm.level && /through <select/.test(c.ckStartHtml(u, "taylor", u.kidStage.taylor)));
+  c.ckStartSet("level", 1); c.ckStartSet("levelTo", 3); c.ckStartSet("from", "7"); c.ckStartSet("to", "5");
+  ok("'to' lists the LAST level's lessons", /Lesson 5<\/option>/.test(c.ckStartHtml(u, "taylor", u.kidStage.taylor)));
+  c.ckStartCreate();
+  const sess = c.masteryData.taylor_sessions["checkup_all_about_spelling_1-3_7-5_w"];
+  ok("session saved as Levels 1–3 · Lessons 7–5 · words, with stageTo", sess && sess.stage === 1 && sess.stageTo === 3 && sess.lessonFrom === 7 && sess.lessonTo === 5 && /Levels 1–3 · Lessons 7–5 · words/.test(sess.name), sess);
+  const cards = c.ckCards(sess);
+  const lv = n => cards.filter(x => x.stage === n);
+  ok("cards come from all three levels, in order", lv(1).length > 0 && lv(2).length > 0 && lv(3).length > 0 && cards.findIndex(x => x.stage === 3) > cards.findIndex(x => x.stage === 2));
+  ok("'from 7' trims only Level 1, 'to 5' trims only Level 3, Level 2 is whole", lv(1).every(x => x.lesson >= 7) && lv(3).every(x => x.lesson <= 5) && lv(2).length === c._ustCards(u, 2).filter(x => x._dk === "AAS Words").length);
+  ok("families carry their level so Lesson 7 of Level 1 and of Level 2 stay apart", c.ckFamilies(cards).some(F => F.fam === "L1 · Lesson 7") && c.ckFamilies(cards).some(F => F.fam === "L2 · Lesson 7"));
+  const one = { kind: "checkup", unit: "all_about_spelling", stage: 3, decks: [] };
+  ok("a one-level session is exactly as before (no level prefix)", c.ckCards(one).length === c._ustCards(u, 3).length && c.ckFamilies(c.ckCards(one)).every(F => !/^L\d/.test(F.fam)));
+  ok("mstSessions carries stageTo through", /stageTo: rec\.stageTo,/.test(src));
+}
+console.log("\n── CKDAYS (her ask 10/13): about how many days a check-up takes ──");
+{
+  const w = world({ grade: "7" }), c = w.ctx, u = c.unitStudies.all_about_spelling;
+  c.ckStartOpen("all_about_spelling", "taylor"); c.ckStartSet("level", 1); c.ckStartSet("from", "7"); c.ckStartSet("to", "12");
+  const S = c.ckFormSession(c.ckStartForm, u), cards = c.ckSessionFilter(S, c.ckSpanCards(u, S)), E = c.ckEstimate(S, cards);
+  ok("60 words, Quick 3, 10 a day → least 18 (6 lessons × 3) = 2 days, most 60 = 6 days", E.least === 18 && E.most === 60 && E.daysLeast === 2 && E.daysMost === 6, E);
+  ok("the form says so before Mom starts it", /about 2–6 days<\/b> at 10 a day · 60 cards/.test(c.ckStartHtml(u, "taylor", u.kidStage.taylor)));
+  c.ckStartSet("mode", "all");
+  ok("'Every word' → a single number (60 cards = 6 days)", /about 6 days<\/b>/.test(c.ckStartHtml(u, "taylor", u.kidStage.taylor)));
+  c.ckStartSet("mode", "q3"); c.ckStartCreate();
+  const sess = c.masteryData.taylor_sessions["checkup_all_about_spelling_1_7-12_w"]; u.kidStage.taylor.checkup = sess.sid;
+  c.masteryData.taylor_checkup = {}; c.currData = { subjects: { taylor: {} } };
+  c.mstSessions = kid => Object.keys(c.masteryData[kid + "_sessions"] || {}).map(sid => Object.assign({ sid }, c.masteryData[kid + "_sessions"][sid]));   // the app's session list, stubbed
+  ok("the unit row shows days left for a running check-up (18 queued at 10 a day = 2)", /about 2 days left/.test(c.ckUnitRowHtml(u, "taylor", u.kidStage.taylor)));
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

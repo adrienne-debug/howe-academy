@@ -49065,7 +49065,7 @@ function mstSessions(kid) {
       pattern: mstPatternClean(rec.pattern),
       bothWays: !!rec.bothWays,
       typeAnswer: !!rec.typeAnswer,   // ⌨️ MST_TYPEANS
-      unit: rec.unit, stage: rec.stage, perDay: rec.perDay, quick: rec.quick, untested: rec.untested,   // 🩺 CHECKUP
+      unit: rec.unit, stage: rec.stage, stageTo: rec.stageTo, perDay: rec.perDay, quick: rec.quick, untested: rec.untested,   // 🩺 CHECKUP (+stageTo: CKSPAN)
       howto: (typeof mstHowtoClean === "function") ? mstHowtoClean(rec.howto) : ""   // 📋 MST_HOWTO
     });
   });
@@ -49612,9 +49612,19 @@ let ckRun=null;     // {kid,sid,ts,extra} — a sitting in progress (answers are
 let ckTimerIv=null;
 function ckDayKey(){ return (typeof mstTodayKey==="function")?mstTodayKey():new Date().toISOString().slice(0,10).replace(/-/g,""); }
 function ckSession(kid,sid){ try{ return (mstSessions(kid)||[]).find(s=>s.sid===sid&&s.kind==="checkup")||null; }catch(e){ return null; } }
+// CKSPAN (her ask 2026-10-13: "could I make where the checkup continues through more than one level?"): a session may
+// carry stageTo; its cards are every level from stage to stageTo in order, and each lesson's family carries its level
+// ("L1 · Lesson 7") so Level 1 Lesson 7 and Level 2 Lesson 7 stay apart in the progress state. One level = as before.
+function ckSpanCards(u,session){
+  if(!u||typeof _ustCards!=="function") return [];
+  const a=+session.stage||0, b=Math.max(a,+session.stageTo||a);
+  if(b<=a) return _ustCards(u,a);
+  const out=[]; for(let st=a;st<=b;st++) _ustCards(u,st).forEach(c=>out.push(Object.assign({},c,{family:"L"+st+" \u00b7 "+(c.family||"All")})));
+  return out;
+}
 function ckCards(session){
   const u=(typeof unitStudies!=="undefined"&&unitStudies)?unitStudies[session.unit]:null;
-  const all=(u&&typeof _ustCards==="function")?_ustCards(u,session.stage):[];
+  const all=(u&&typeof _ustCards==="function")?ckSpanCards(u,session):[];   // CKSPAN
   return (typeof ckSessionFilter==="function")?ckSessionFilter(session,all):all;   // 🩺 CKSTART: a lesson range / words-only check-up
 }
 function ckState(kid,sid){ return (((masteryData||{})[kid+"_checkup"])||{})[sid]||{f:{},day:{}}; }
@@ -49757,7 +49767,8 @@ function ckUnitRowHtml(u,kid,ks){
   const s=ckSession(kid,ks.checkup); if(!s) return '';
   const p=ckPlan(ckCards(s),s,ckState(kid,s.sid));
   const linked=Object.keys((((currData||{}).subjects||{})[kid])||{}).some(k=>((currData.subjects[kid]||{})[k]||{}).study===s.sid);
-  let h='<div style="font-size:10.5px;color:#0f766e;font-weight:700;margin-top:4px">\u{1FA7A} '+(p.complete?'Check-up complete ✓':'Check-up: '+ckProgressText(p))+'</div>';
+  const _left=p.complete?0:Math.ceil(p.queue.length/Math.max(1,s.perDay||CK_DEFAULTS.perDay));   // CKDAYS: what's queued now, at perDay a day (a miss can add a lesson's rest)
+  let h='<div style="font-size:10.5px;color:#0f766e;font-weight:700;margin-top:4px">\u{1FA7A} '+(p.complete?'Check-up complete ✓':'Check-up: '+ckProgressText(p)+' \u00b7 \u23f1 about '+_left+' day'+(_left===1?'':'s')+' left')+'</div>';
   if(!linked&&!p.complete) h+='<div style="font-size:10.5px;color:#b45309;margin-top:2px">Put it on the schedule: + Add Subject → Daily → Study session \u{1FA7A} → Mom required.</div>';
   return h;
 }
@@ -50768,26 +50779,46 @@ let ckStartForm=null;   // {unitId,kid,level,from,to,what,mode,perDay}
 function ckStartOpen(unitId,kid){
   if(!(typeof momHere==="function"&&momHere())) return; const u=(unitStudies||{})[unitId]; const ks=u&&(u.kidStage||{})[kid]; if(!ks) return;
   const lv=_ustStagesWithCards(u).map(s=>s.n); const def=lv.indexOf((ks.stage||1)-1)>=0?(ks.stage-1):(ks.stage||lv[0]);
-  ckStartForm={unitId,kid,level:def,from:"",to:"",what:"words",mode:"q3",perDay:ckSuggest(kid)||10};
+  ckStartForm={unitId,kid,level:def,levelTo:def,from:"",to:"",what:"words",mode:"q3",perDay:ckSuggest(kid)||10};   // CKSPAN: levelTo
   const el=document.getElementById("content"); if(el&&typeof renderUnits==="function") renderUnits(el);
 }
-function ckStartSet(f,v){ if(!ckStartForm) return; ckStartForm[f]=(f==="level"||f==="perDay")?Number(v):v; if(f==="level"){ ckStartForm.from=""; ckStartForm.to=""; }
+function ckStartSet(f,v){ if(!ckStartForm) return; ckStartForm[f]=(f==="level"||f==="levelTo"||f==="perDay")?Number(v):v;
+  if(f==="level"){ ckStartForm.from=""; ckStartForm.to=""; ckStartForm.levelTo=ckStartForm.level; }   // CKSPAN: "through" follows the level until Mom picks one
+  if(f==="levelTo"){ ckStartForm.to=""; if(ckStartForm.levelTo<ckStartForm.level) ckStartForm.levelTo=ckStartForm.level; }
   const el=document.getElementById("content"); if(el&&typeof renderUnits==="function") renderUnits(el); }
 function ckStartClose(){ ckStartForm=null; const el=document.getElementById("content"); if(el&&typeof renderUnits==="function") renderUnits(el); }
 // The cards a check-up covers (also used by ckCards for sessions that carry a range or a deck list).
 function ckSessionFilter(session,cards){
   const from=+session.lessonFrom||0, to=+session.lessonTo||0, decks=(Array.isArray(session.decks)&&session.decks.length)?session.decks:null;   // an empty list (mstSessions' default) = no deck filter (Taylor's facts check-up went blank 2026-10-05)
-  return cards.filter(c=>(!decks||decks.indexOf(c._dk)>=0)&&(!(from||to)||(c.lesson!=null&&c.lesson>=(from||0)&&c.lesson<=(to||9999))));
+  const _a=+session.stage||0, _b=+session.stageTo||0, _span=_b>_a;   // CKSPAN: "from" is the first level's start, "to" the last level's end
+  return cards.filter(c=>(!decks||decks.indexOf(c._dk)>=0)&&(!(from||to)||(c.lesson!=null&&(_span
+    ?((c.stage!==_a||c.lesson>=(from||0))&&(c.stage!==_b||c.lesson<=(to||9999)))
+    :(c.lesson>=(from||0)&&c.lesson<=(to||9999))))));
 }
+// The session a form describes (shared by the estimate on the form and by Start) — CKSPAN
+function ckFormSession(F,u){
+  const from=+F.from||0, to=+F.to||0;
+  const sess={kind:"checkup",who:"mom",unit:F.unitId,stage:F.level,perDay:+F.perDay||10,quick:F.mode==="q5"?5:3,untested:F.mode==="all"?"all":"spot"};
+  if(+F.levelTo>+F.level) sess.stageTo=+F.levelTo;
+  if(from) sess.lessonFrom=from; if(to) sess.lessonTo=to; if(F.what==="words"&&u&&u.cardLessons) sess.decks=["AAS Words"];
+  return sess;
+}
+// CKDAYS (her ask 2026-10-13: "approx how many days till this checkup is done"): the least a check-up can take is every
+// quick check passing (q per lesson); the most is every lesson needing the full check (every card) — both at perDay a day.
+function ckEstimate(session,cards){
+  const q=session.quick||CK_DEFAULTS.quick, per=Math.max(1,session.perDay||CK_DEFAULTS.perDay), fams=ckFamilies(cards);
+  const most=cards.length, least=session.untested==="all"?most:fams.reduce((n,F)=>n+Math.min(q,F.cards.length),0);
+  return {least,most,perDay:per,daysLeast:Math.ceil(least/per),daysMost:Math.ceil(most/per)};
+}
+function ckEstimateText(E){ const d=n=>n+" day"+(n===1?"":"s"); return E.daysLeast===E.daysMost?("about "+d(E.daysMost)):("about "+E.daysLeast+"\u2013"+E.daysMost+" days"); }
 function ckStartCreate(){
   if(!(typeof momHere==="function"&&momHere())||!ckStartForm) return; const F=ckStartForm, u=(unitStudies||{})[F.unitId]; if(!u) return;
   const kid=F.kid, from=+F.from||0, to=+F.to||0;
-  const sess={kind:"checkup",who:"mom",unit:F.unitId,stage:F.level,perDay:+F.perDay||10,quick:F.mode==="q5"?5:3,untested:F.mode==="all"?"all":"spot"};
-  if(from) sess.lessonFrom=from; if(to) sess.lessonTo=to; if(F.what==="words"&&u.cardLessons) sess.decks=["AAS Words"];
-  const cards=ckSessionFilter(sess,_ustCards(u,F.level)); if(!cards.length){ if(typeof gwShowToast==="function") gwShowToast("No cards in that range"); return; }
-  const sd=_ustStageDef(u,F.level)||{};
-  const sid="checkup_"+ckSlug(F.unitId)+"_"+F.level+(from||to?"_"+(from||1)+"-"+(to||"end"):"")+(sess.decks?"_w":"");
-  sess.name="Check-up: "+(sd.label||("Level "+F.level))+(from||to?" · Lessons "+(from||1)+"–"+(to||"end"):"")+(sess.decks?" · words":"");
+  const sess=ckFormSession(F,u);
+  const cards=ckSessionFilter(sess,ckSpanCards(u,sess)); if(!cards.length){ if(typeof gwShowToast==="function") gwShowToast("No cards in that range"); return; }
+  const sd=_ustStageDef(u,F.level)||{}, span=sess.stageTo>sess.stage;
+  const sid="checkup_"+ckSlug(F.unitId)+"_"+F.level+(span?"-"+sess.stageTo:"")+(from||to?"_"+(from||1)+"-"+(to||"end"):"")+(sess.decks?"_w":"");
+  sess.name="Check-up: "+(span?"Levels "+F.level+"–"+sess.stageTo:(sd.label||("Level "+F.level)))+(from||to?" · Lessons "+(from||1)+"–"+(to||"end"):"")+(sess.decks?" · words":"");
   sess.emoji="\u{1FA7A}";
   const st=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={}); st.cat_modes=st.cat_modes||{}; st.cat_intro_max=st.cat_intro_max||{};
   const modes={}, intro={};
@@ -50809,18 +50840,22 @@ function ckStartHtml(u,kid,ks){
   if(!ckStartForm||ckStartForm.unitId!==u.id||ckStartForm.kid!==kid)
     return '<div style="margin-top:4px"><span onclick="ckStartOpen(\''+e(u.id)+'\',\''+e(kid)+'\')" style="cursor:pointer;font-size:10.5px;font-weight:800;color:#0f766e">🩺 Start a check-up…</span></div>';
   const F=ckStartForm, sel='font-size:11px;padding:3px 6px;border-radius:7px;border:1px solid #cbd5e1;background:#fff';
-  const levels=_ustStagesWithCards(u), lessons=[...new Set(_ustCards(u,F.level).map(c=>c.lesson).filter(n=>n!=null))].sort((a,b)=>a-b);
-  const lopt=(cur,blank)=>'<option value="">'+blank+'</option>'+lessons.map(n=>'<option value="'+n+'"'+(String(cur)===String(n)?' selected':'')+'>Lesson '+n+'</option>').join('');
+  const levels=_ustStagesWithCards(u), _lessonsOf=lv=>[...new Set(_ustCards(u,lv).map(c=>c.lesson).filter(n=>n!=null))].sort((a,b)=>a-b);
+  const lessons=_lessonsOf(F.level), lessonsTo=_lessonsOf((F.levelTo>F.level)?F.levelTo:F.level);   // CKSPAN: "to" lists the last level's lessons
+  const lopt=(cur,blank,L)=>'<option value="">'+blank+'</option>'+(L||lessons).map(n=>'<option value="'+n+'"'+(String(cur)===String(n)?' selected':'')+'>Lesson '+n+'</option>').join('');
   const g=ckGradeOf(kid), sug=ckSuggest(kid);
   let h='<div style="margin-top:6px;border:1.5px solid #99f6e4;border-radius:11px;padding:9px 11px;background:#f0fdfa;font-size:11px;color:#134e4a;font-weight:700">';
   h+='<div style="font-size:12px;font-weight:800;margin-bottom:6px">🩺 New check-up for '+e(kid.charAt(0).toUpperCase()+kid.slice(1))+'</div>';
   h+='<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center">';
-  h+='<span>Level</span><select style="'+sel+'" onchange="ckStartSet(\'level\',this.value)">'+levels.map(s=>'<option value="'+s.n+'"'+(s.n===F.level?' selected':'')+'>'+e(s.label)+'</option>').join('')+'</select>';
-  h+='<span>Lessons</span><span><select style="'+sel+'" onchange="ckStartSet(\'from\',this.value)">'+lopt(F.from,"from the start")+'</select> to <select style="'+sel+'" onchange="ckStartSet(\'to\',this.value)">'+lopt(F.to,"the end")+'</select></span>';
+  h+='<span>Level</span><span><select style="'+sel+'" onchange="ckStartSet(\'level\',this.value)">'+levels.map(s=>'<option value="'+s.n+'"'+(s.n===F.level?' selected':'')+'>'+e(s.label)+'</option>').join('')+'</select>'
+    +' through <select style="'+sel+'" onchange="ckStartSet(\'levelTo\',this.value)">'+levels.filter(s=>s.n>=F.level).map(s=>'<option value="'+s.n+'"'+(s.n===(F.levelTo||F.level)?' selected':'')+'>'+e(s.label)+'</option>').join('')+'</select></span>';   // CKSPAN
+  h+='<span>Lessons</span><span><select style="'+sel+'" onchange="ckStartSet(\'from\',this.value)">'+lopt(F.from,"from the start")+'</select> to <select style="'+sel+'" onchange="ckStartSet(\'to\',this.value)">'+lopt(F.to,"the end",lessonsTo)+'</select></span>';
   if(u.cardLessons) h+='<span>Check</span><select style="'+sel+'" onchange="ckStartSet(\'what\',this.value)"><option value="words"'+(F.what==="words"?' selected':'')+'>The words</option><option value="all"'+(F.what==="all"?' selected':'')+'>Every card (phonograms and rules too)</option></select>';
   h+='<span>How deep</span><select style="'+sel+'" onchange="ckStartSet(\'mode\',this.value)"><option value="q3"'+(F.mode==="q3"?' selected':'')+'>Quick check: 3 per lesson (a miss checks the rest)</option><option value="q5"'+(F.mode==="q5"?' selected':'')+'>Quick check: 5 per lesson</option><option value="all"'+(F.mode==="all"?' selected':'')+'>Every word</option></select>';
   h+='<span>A day</span><span><select style="'+sel+'" onchange="ckStartSet(\'perDay\',this.value)">'+[3,5,8,10,15,20].map(n=>'<option value="'+n+'"'+(n===F.perDay?' selected':'')+'>'+n+'</option>').join('')+'</select> '
     +(sug?'<span style="font-weight:600;color:#0f766e">Recommended for '+e(ckGradeLabel(g))+': '+sug+'</span>':'<span style="font-weight:600;color:var(--muted)">Add a grade in Settings ▸ Family for a suggestion</span>')+'</span>';
+  try{ const _ps=ckFormSession(F,u), _pc=ckSessionFilter(_ps,ckSpanCards(u,_ps)), E=ckEstimate(_ps,_pc);   // CKDAYS
+    h+='<span>\u23f1 How long</span><span>'+(_pc.length?('<b>'+ckEstimateText(E)+'</b> at '+E.perDay+' a day \u00b7 '+_pc.length+' cards'+(E.daysLeast!==E.daysMost?' <span style="font-weight:600;color:#475569">(least if every quick check passes, most if every lesson needs the full check)</span>':'')):'<span style="color:#b45309">No cards in that range</span>')+'</span>'; }catch(e){}
   h+='</div><div style="display:flex;gap:8px;margin-top:8px"><button onclick="ckStartCreate()" style="padding:6px 12px;border-radius:9px;border:none;background:#0f766e;color:#fff;font-size:12px;font-weight:800;cursor:pointer">Start check-up</button><button onclick="ckStartClose()" style="padding:6px 12px;border-radius:9px;border:1.5px solid #cbd5e1;background:#fff;color:#475569;font-size:12px;font-weight:700;cursor:pointer">Cancel</button></div>';
   h+='<div style="font-size:10.5px;font-weight:600;color:#475569;margin-top:6px">Then put it on the schedule: + Add Subject → Daily → Study session 🩺 → Mom required.</div></div>';
   return h;
