@@ -14677,23 +14677,28 @@ function kitCloseRecipe(){ kitView=null; const el=document.getElementById('conte
 function kitMealsLSSave(){ try{ const o={}; Object.keys(kitMeals||{}).forEach(k=>{ const m=kitMeals[k]; if(m&&m.photo){ const c=Object.assign({},m); delete c.photo; o[k]=c; } else o[k]=m; }); HA_LS.setItem('ha_kit_meals',JSON.stringify(o)); }catch(e){} }
 // 🔒 Recipe changes need the Mom PIN (her ask 2026-10-02: kids shouldn't add recipes yet). Mom's Day itself stays
 //    open — kids still see the plan and vote. Once the PIN is in, it holds for the session (same as Blockout).
-function kitPinGate(then,why){
+// DADPIN (her ask 2026-10-13: "dad could do these different study sessions that need pin — let's make his pin work for
+// these as well"): a door opened with {dad:true} also takes Dad's code (settings/dadPin, default 0726). The check-up's
+// start button is the one such door; it runs the sitting in Mom mode on that screen and relocks itself (ckRelock) at
+// Stop / when the day's share is done, exactly as it does for Mom's code. Every other door stays Mom-only.
+function kitPinGate(then,why,opts){
   if(typeof momHere==="function"&&momHere()){ then(); return; }
-  window._kitPinThen=then;
+  window._kitPinThen=then; window._kitPinDad=!!(opts&&opts.dad);
   let w=document.getElementById("kit-pin-wrap"); if(!w){ w=document.createElement("div"); w.id="kit-pin-wrap"; document.body.appendChild(w); }
   w.innerHTML='<div onclick="if(event.target===this)kitPinClose()" style="position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.6);display:flex;align-items:center;justify-content:center;padding:20px">'
     +'<div style="background:#fff;border-radius:16px;padding:22px 20px;width:100%;max-width:300px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.35)">'
-    +'<div style="font-size:34px">🔒</div><div style="font-weight:800;font-size:15px;margin:4px 0 2px">Mom PIN</div>'
+    +'<div style="font-size:34px">🔒</div><div style="font-weight:800;font-size:15px;margin:4px 0 2px">'+(window._kitPinDad?'Mom or Dad PIN':'Mom PIN')+'</div>'
     +'<div style="font-size:12px;color:#64748b;margin-bottom:12px">'+(why?esc(why):'Adding, changing or importing recipes is for Mom.')+'</div>'
     +'<input id="kit-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="PIN" autocomplete="off" oninput="kitPinCheck(this.value)" style="width:120px;text-align:center;padding:10px;border:1.5px solid #cbd5e1;border-radius:10px;font-size:18px;font-weight:700;letter-spacing:8px;font-family:\'DM Sans\',sans-serif">'
     +'<div id="kit-pin-err" style="font-size:11px;color:#b5394a;margin-top:6px;min-height:14px"></div>'
     +'<button onclick="kitPinClose()" style="margin-top:4px;border:none;background:none;color:#64748b;font-size:12px;cursor:pointer">Cancel</button></div></div>';
   setTimeout(()=>{ const i=document.getElementById("kit-pin-input"); if(i) i.focus(); },50);
 }
-function kitPinClose(){ const w=document.getElementById("kit-pin-wrap"); if(w) w.innerHTML=""; window._kitPinThen=null; }
+function kitPinClose(){ const w=document.getElementById("kit-pin-wrap"); if(w) w.innerHTML=""; window._kitPinThen=null; window._kitPinDad=false; }
 function kitPinCheck(v){
   if(String(v).length<4) return;
-  if(pinOk(v)){ haMomOn(); const t=window._kitPinThen; kitPinClose(); if(typeof t==="function") t(); }
+  const dadOk=!!window._kitPinDad&&typeof dadPinOk==="function"&&dadPinOk(v);   // DADPIN: only on a door opened with {dad:true}
+  if(pinOk(v)||dadOk){ haMomOn(); const t=window._kitPinThen; kitPinClose(); if(typeof t==="function") t(); }
   else { const e=document.getElementById("kit-pin-err"), i=document.getElementById("kit-pin-input"); if(e) e.textContent="Incorrect PIN"; if(i){ i.value=""; } }
 }
 function kitEditMeal(id){ kitPinGate(function(){ _kitEditMealGo(id); }); }
@@ -49706,7 +49711,7 @@ function ckRenderHtml(kid,session){
     if(kc.length){ const kst=ckState(kid,session.sid), kp=ckPlan(kc,session,kst); kdone=kp.complete||!Math.min(kp.queue.length,ckTodayLeft(session,kst,ckDayKey(),0)); }
     return '<div style="'+box+';text-align:center"><div style="font-size:34px">\u{1FA7A}</div><div style="font-size:16px;font-weight:800;color:#0f766e;margin-top:6px">This is a check-up with Mom.</div>'
       +(kdone?'<div style="font-size:13px;color:#16a34a;font-weight:800;margin-top:6px">Today’s check-up is done ✓</div>'
-        :'<div style="font-size:13px;color:var(--muted);margin-top:4px">Ask Mom when she’s ready.</div><div style="margin-top:14px"><button onclick="ckMomStart(\''+ckEsc(kid)+'\',\''+ckEsc(session.sid)+'\')" style="min-height:52px;padding:0 28px;border-radius:16px;border:none;background:#0f766e;color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔒 Mom: start the check-up</button></div>')
+        :'<div style="font-size:13px;color:var(--muted);margin-top:4px">Ask Mom or Dad when they’re ready.</div><div style="margin-top:14px"><button onclick="ckMomStart(\''+ckEsc(kid)+'\',\''+ckEsc(session.sid)+'\')" style="min-height:52px;padding:0 28px;border-radius:16px;border:none;background:#0f766e;color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔒 Mom or Dad: start the check-up</button></div>')
       +'</div>';
   }
   const cards=ckCards(session);
@@ -49758,7 +49763,7 @@ let ckKidUnlock=false;
 function ckMomStart(kid,sid){
   const was=(typeof momHere==="function"&&momHere());
   const go=function(){ ckKidUnlock=!was; ckStart(kid,sid,0); };
-  if(typeof kitPinGate==="function") kitPinGate(go,"Mom types her code to run the check-up on this screen."); else go();
+  if(typeof kitPinGate==="function") kitPinGate(go,"Mom or Dad types their code to run the check-up on this screen.",{dad:true}); else go();   // DADPIN
 }
 function ckRelock(){ if(!ckKidUnlock) return; ckKidUnlock=false; if(typeof haMomOff==="function") haMomOff(); else if(typeof adminPinUnlocked!=="undefined") adminPinUnlocked=false; if(typeof renderAll==="function") renderAll(); }
 function ckFlip(){ if(!ckRun) return; ckRun.show=!ckRun.show; ckRe(); }

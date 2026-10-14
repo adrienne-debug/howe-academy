@@ -185,7 +185,7 @@ ok(G.TOASTS.some(t => /passed/.test(t)), "toast: passed");
 
 // ── 🔒 Mom's code on the kid's screen (her ask 2026-10-05) ───────
 run.ckStop(); run.set("MOM", false);
-ok(/ckMomStart\('taylor','checkup_math_fluency_path_7'\)/.test(run.ckRenderHtml("taylor", sess)) && /Mom: start the check-up/.test(run.ckRenderHtml("taylor", sess)), "kid view has a Start button for Mom");
+ok(/ckMomStart\('taylor','checkup_math_fluency_path_7'\)/.test(run.ckRenderHtml("taylor", sess)) && /Mom or Dad: start the check-up/.test(run.ckRenderHtml("taylor", sess)), "kid view has a Start button for Mom (or Dad — DADPIN)");
 ok(!/×/.test(run.ckRenderHtml("taylor", sess).replace(/× and ÷ facts/g, "")), "…and still no facts on it");
 run.ckMomStart("taylor", sid);
 ok(run.get().PINGATE.length === 1 && /code/.test(run.get().PINGATE[0]), "the button asks for Mom's code");
@@ -193,7 +193,7 @@ ok(run.get().adminPinUnlocked === true && /✓ Got it/.test(run.ckRenderHtml("ta
 const rBefore = run.get().RENDERS;
 run.ckStop();
 ok(run.get().adminPinUnlocked === false && run.get().RENDERS === rBefore + 1, "Stop for today locks the screen again (and redraws)");
-ok(/Mom: start the check-up/.test(run.ckRenderHtml("taylor", sess)), "…kid view is back to the Start button");
+ok(/Mom or Dad: start the check-up/.test(run.ckRenderHtml("taylor", sess)), "…kid view is back to the Start button");
 run.set("MOM", true); run.ckMomStart("taylor", sid);
 ok(run.get().PINGATE.length === 1, "Mom's own view: no PIN asked");
 run.ckStop();

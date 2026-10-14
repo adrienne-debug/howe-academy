@@ -34,7 +34,7 @@ function boot(stored){
 console.log("── every door ──");
 ok("Mom button code → haMomOn (and lands on Mom's agenda)", /function checkMomPin[\s\S]{0,260}haMomOn\(\);[\s\S]{0,40}kid = "mom"/.test(src));
 ok("Admin code → haMomOn", /function checkAdminPin[\s\S]{0,160}haMomOn\(\)/.test(src));
-ok("kitchen/grocery/helper prompts (kitPinGate) → haMomOn", /if\(pinOk\(v\)\)\{ haMomOn\(\); const t=window\._kitPinThen;/.test(src));
+ok("kitchen/grocery/helper prompts (kitPinGate) → haMomOn", /if\(pinOk\(v\)\|\|dadOk\)\{ haMomOn\(\); const t=window\._kitPinThen;/.test(src));
 ok("Mastery Database code → haMomOn", /if\(pinOk\(val\)\)\{ haMomOn\(\); _mastRe\(\); \}/.test(src));
 ok("Blockout code → haMomOn", /if\(pinOk\(this\.value\)\)\{haMomOn\(\);closeBoDialog\(\);/.test(src));
 ok("Plan next week code → haMomOn", /function pnwCheckPin[\s\S]{0,120}haMomOn\(\)/.test(src));
