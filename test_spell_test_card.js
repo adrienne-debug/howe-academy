@@ -295,6 +295,52 @@ console.log("\n── STPAPERCARD: a test on paper, not yet graded, never loses 
 ok("the app context wires both (stSyncCtx: past by the week's dates, given by the record)", /past:day=>/.test(slice("stSyncCtx")) && /given:\(kid,key\)=>/.test(slice("stSyncCtx")));
 ok("Regenerate passes the regenerated week's own dates", src.indexOf("stSyncCtx({checked:snapChecked,claimed:{},dates:d.dates||{}})") > 0);
 
+console.log("\n── STHEAL: the week's cards load on Mom's device → the sync runs and writes only what it changed ──");
+function healWorld(o) {
+  const w = world(Object.assign({ mom: true }, o || {}));
+  const now = new Date(), todayTxt = ["January","February","March","April","May","June","July","August","September","October","November","December"][now.getMonth()] + " " + now.getDate();
+  Object.assign(w.ctx, { WK: "week2", sv: () => {}, dbg: m => w.toasts.push("dbg:" + m), lastTasksWrite: 0,
+    DAY_DT: { wednesday: todayTxt },   // the app's STPASTGUARD reads the week's dates — this week's "wednesday" is today
+    fbCheckedLoaded: o && o.checkedLoaded === false ? false : true, _haMastReady: o && o.mastReady === false ? false : true });
+  if (o && o.dry) w.ctx._dryRun = () => true;
+  return w;
+}
+const updates = w => w.writes.filter(x => x[0] === "update" && x[1] === "week2/tasks").map(x => x[2]);
+{
+  const NB = other("NB", "10:00 AM", 30, { subjectKey: "morning_nb", title: "📓 Morning Notebook" }), L = lesson("L1", "10:30 AM");
+  const w = healWorld({ tasks: [NB, L] });
+  w.ctx.masteryData.andrew_spelltests = { "L1-18": { state: "pending", level: 1, lesson: 18, words: [] } };   // Andrew's case: on paper, no card
+  w.ctx.stHeal();
+  const U = updates(w), u = U[0] || {}, T = w.ctx.weekData.tasks.find(x => x.stTest);
+  ok("one targeted multi-path update (never the whole node)", U.length === 1 && !w.writes.some(x => x[0] === "set" && x[1] === "week2/tasks"), w.writes.map(x => x[0] + " " + x[1]));
+  ok("it carries the new Grade card in full", u["andrew_st_L1-18"] && u["andrew_st_L1-18"].stTest && u["andrew_st_L1-18"].title === "📝 Grade the spelling test: Lesson 18" && u["andrew_st_L1-18"].time === "10:30 AM" && u["andrew_st_L1-18"].day === "wednesday");
+  ok("…and the lesson's new time (the test took its slot), as day + time paths only", u["L1/time"] === "10:40 AM" && u["L1/day"] === "wednesday" && Object.keys(u).length === 3, Object.keys(u));
+  ok("the Morning Notebook (unmoved) is not in the write", !("NB/time" in u) && !("NB" in u));
+  ok("local week + echo guard + a log line", T && w.ctx.lastTasksWrite > 0 && w.toasts.some(m => /dbg:📝 spelling test cards \(heal\): \+1 −0/.test(m)));
+  w.ctx.stHeal();
+  ok("a second pass writes nothing (idempotent — the listener echo can't loop it)", updates(w).length === 1);
+}
+{
+  const L = lesson("L1", "11:00 AM");
+  for (const [label, o] of [["a kid's device (not Mom mode)", { mom: false }], ["dry-run", { dry: true }], ["before the checked list arrives", { checkedLoaded: false }], ["before the mastery records arrive (given/paper rules read them)", { mastReady: false }]]) {
+    const w = healWorld(Object.assign({ tasks: [L] }, o)); w.ctx.stHeal();
+    ok("no write " + label, !updates(w).length && !w.ctx.weekData.tasks.some(x => x.stTest));
+  }
+}
+{
+  const L = lesson("L1", "11:00 AM"), w = healWorld({ tasks: [L] });
+  w.ctx.stHeal();
+  ok("a plain lesson day gets its give-the-test card the same way", updates(w).length === 1 && updates(w)[0]["andrew_st_L1-18"].title === "📝 Spelling test: Lesson 18");
+}
+{
+  const L = lesson("L1", "11:00 AM", "L19 NG · day 2 of 5", { id: "L1" }), stale = { id: "andrew_st_L1-18", who: "andrew", day: "wednesday", time: "10:50 AM", dur: 10, mom: "required", subjectKey: "spelltest", stTest: true, stFor: "L1", stKey: "L1-18", stLevel: 1, stLesson: 18, title: "📝 Spelling test: Lesson 18" };
+  const w = healWorld({ tasks: [stale, L] }); w.ctx.stHeal();
+  const u = updates(w)[0] || {};
+  ok("a stale test card (its lesson is a practice day now) is removed by path (null), nothing else written", updates(w).length === 1 && u["andrew_st_L1-18"] === null && Object.keys(u).length === 1, u);
+}
+ok("the week's cards listener runs it right after rvHeal (first load or a changed task set)", /try\{ rvHeal\(\); \}catch\(e\)\{\} \}[^\n]*\n\s*if\(firstLoad \|\| inFP!==curFP\)\{ try\{ if\(typeof stHeal==="function"\) stHeal\(\); \}catch\(e\)\{\} \}/.test(src));
+ok("Mom's device only, never in dry-run, waits for checked + mastery", /if\(!db\|\|_dryRun\(\)\) return;/.test(slice("stHeal")) && /momHereReal/.test(slice("stHeal")) && /fbCheckedLoaded\) return;/.test(slice("stHeal")) && /_haMastReady\) return;/.test(slice("stHeal")));
+
 console.log("\n── wiring ──");
 ok("tapTask asks the gate first (Mom opens the test · the lesson waits)", /if\(typeof stTapGate==="function"&&stTapGate\(t\)\) return;/.test(slice("tapTask")));
 ok("finalizeDone refuses a locked lesson (every check path: Mom, approve, replays)", /stLessonLock\(_tg\)\)\{[^\n]*return false;/.test(slice("finalizeDone")));

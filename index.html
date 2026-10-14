@@ -3397,6 +3397,7 @@ function attachWeekListeners(wk){
     // Schedule cascade on first load OR when another device changed the task set
     if(firstLoad || inFP!==curFP) schedCascade();
     if(firstLoad || inFP!==curFP){ try{ rvHeal(); }catch(e){} }   // 📅 a booked review whose card a rebuild dropped comes back
+    if(firstLoad || inFP!==curFP){ try{ if(typeof stHeal==="function") stHeal(); }catch(e){} }   // 📝 STHEAL: the spelling test cards too (Mom's device, targeted write)
   });
   fbWeekRefs.push(r5);
 
@@ -50702,6 +50703,35 @@ function stOnTestChecked(t){
     const d=new Date(), due=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
     _stWrite(t.who,t.stKey,{unit:en.unitId,level:t.stLevel,lesson:t.stLesson,state:"pending",words:w.map(c=>c.name),ts:Date.now(),due:due});
   }catch(e){}
+}
+// STHEAL (her yes 2026-10-14 "ok try it", after "i need that to never disappear"): stSyncWeek lived only inside
+// safeWriteTasks, and the everyday cascade exits before that ("Nothing to sweep" return in cascadeIntraWeek) — on the
+// DeWalt database the last cascade week-save was Oct 7, so Andrew's L19 Grade card never came back on a reload, an
+// uncheck or a re-check. Like rvHeal: after the week's cards load (or change) on Mom's device, run the sync and persist
+// ONLY what it changed — one targeted multi-path update (a new card, a moved day/time, a stale card removed), never
+// the whole node. Idempotent (a second pass writes nothing), so the listener's own echo can't loop it. Waits for the
+// checked list and the mastery records (the given/paper rules read them), and does nothing off Mom mode or in dry-run.
+function stHeal(){
+  try{
+    if(!db||_dryRun()) return;
+    if(!(typeof momHereReal==="function"?momHereReal():momHere())) return;
+    if(typeof fbCheckedLoaded!=="undefined"&&!fbCheckedLoaded) return;
+    if(typeof _haMastReady!=="undefined"&&!_haMastReady) return;
+    const tasks=(weekData&&weekData.tasks)||[]; if(!tasks.length) return;
+    const snap={}; tasks.forEach(t=>{ if(t&&t.id) snap[t.id]=t.day+"|"+t.time; });
+    const r=stSyncWeek(tasks,stSyncCtx());
+    if(!r.added.length&&!r.removed.length&&!r.moved.length) return;
+    const upd={}, ids=new Set(tasks.map(t=>t&&t.id));
+    r.added.forEach(id=>{ const T=tasks.find(t=>t&&t.id===id); if(T) upd[id]=T; });
+    r.removed.forEach(id=>{ if(!ids.has(id)) upd[id]=null; });
+    tasks.forEach(t=>{ if(!t||!t.id||upd[t.id]!==undefined) return; const was=snap[t.id]; if(was==null) return;
+      if(was!==t.day+"|"+t.time){ upd[t.id+"/day"]=t.day; upd[t.id+"/time"]=t.time; } });
+    if(!Object.keys(upd).length) return;
+    sv(WK+"_tasks",tasks); lastTasksWrite=Date.now();
+    db.ref(WK+"/tasks").update(upd);
+    dbg("📝 spelling test cards (heal): +"+r.added.length+" −"+r.removed.length+" ↕"+r.moved.length+" · "+Object.keys(upd).length+" paths (targeted)");
+    if(typeof renderAll==="function") renderAll();
+  }catch(e){ try{ dbg("spelltest heal error: "+e); }catch(e2){} }
 }
 // Mom graded (or gave on paper) from the screen → this week's test card for it is checked off.
 function stCheckCard(kid,key){
