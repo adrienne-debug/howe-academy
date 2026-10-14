@@ -55573,19 +55573,25 @@ function mlPaused(kid){ try{ return !!bbActive(kid); }catch(e){ return false; } 
 // holds so they lose no place, their schedule stays open for independent work, and a started
 // session (the hold) is suspended like a break and resumes when they are back ON.
 // Stored per kid as the day stamp it was switched off on, so it clears itself overnight.
-function mlOff(kid){ try{ return !!(momLoop&&momLoop.off&&momLoop.off[kid]===_mlDayStamp()); }catch(e){ return false; } }
-function _mlWriteOff(kid,off){
+// MOMNEXT: an OFF that was set "until they tick off this card" (offFor) ends by itself once that card is finished — derived, so
+// a check, a claim, or another device's write brings the kid back without a flip.
+function mlOff(kid){ try{ return !!(momLoop&&momLoop.off&&momLoop.off[kid]===_mlDayStamp())&&!_mlOffForDone(kid); }catch(e){ return false; } }
+function _mlWriteOff(kid,off,forId){
   const o=Object.assign({},(momLoop&&momLoop.off)||{});
   if(off) o[kid]=_mlDayStamp(); else delete o[kid];
-  momLoop=Object.assign({},momLoop,{off:o});
+  // MOMNEXT: forId = "off until this card is finished"; a plain flip (hers or the kid's) ends any such pause too
+  const f=Object.assign({},(momLoop&&momLoop.offFor)||{}); const hadFor=!!f[kid];
+  if(off&&forId) f[kid]={id:forId,day:_mlDayStamp()}; else delete f[kid];
+  momLoop=Object.assign({},momLoop,{off:o,offFor:f});
   if(db){ const r=db.ref("config/momLoop/off/"+kid); if(off) r.set(_mlDayStamp()); else r.remove(); }
+  if(db){ const rf=db.ref("config/momLoop/offFor/"+kid); if(off&&forId) rf.set(f[kid]); else if(hadFor) rf.remove(); }
   renderAll();
 }
-// Mom's lever on the strip: switch a kid off (not ready yet) or back on.
-function mlSetOff(kid,off){
+// Mom's lever on the strip: switch a kid off (not ready yet) or back on. forId (MOMNEXT): off only until that card is finished.
+function mlSetOff(kid,off,forId){
   if(!momHere()&&!adminPinUnlocked) return;
   if(mlOrder().indexOf(kid)<0) return;
-  _mlWriteOff(kid,!!off);
+  _mlWriteOff(kid,!!off,forId||null);
 }
 // The kid's lever, deliberately NOT Mom-gated — "until they say they are ready": their own
 // banner carries the button. It can only turn a kid ON, never off.
@@ -55814,6 +55820,7 @@ function mlStripHTML(){
           +' <button onclick="event.stopPropagation();mlMomPartDone(\''+nc.id+'\',true)" title="Your part is done — '+esc(cap(now.kid))+' keeps working on it until they check it off" style="margin-left:4px;border:1px solid #86efac;background:#f0fdf4;color:#166534;border-radius:8px;padding:1px 8px;font-size:10.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u2713 Mom part done</button>'):""; })()   // 👩 #23 MOMPART
         +(now.borrowed?' <span style="font-weight:600;color:#7c3aed">('+esc(now.why)+')</span>':(now.held?' <span style="font-weight:600;color:#16a34a">(started)</span>':'')))
         :('<span style="color:#b45309">'+esc(now.why)+'</span>'))+'</div>';
+    try{ if(typeof mnChoiceHTML==="function") h+=mnChoiceHTML(); }catch(e){}   // 👩 MOMNEXT: after "✓ Mom part done" — stay, or go to the next kid
     try{ if(typeof hrStripLineHTML==="function") h+=hrStripLineHTML(); }catch(e){}   // 🙋 NEEDMOM: Mom helping a kid / who's next
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
     st.forEach(function(x,i){
@@ -56437,6 +56444,52 @@ function mlOnCheck(t){
     if(db) db.ref(WK+"/momHold").set(momHold);
   }catch(e){}
 }
+// MOMNEXT_START — "after ✓ Mom part done, an OPTION to go to the next kid" (her ask 2026-10-13, DeWalt: after the tap Mom
+// stayed on the same kid and "just sat there idle" — _mlStayWith re-points the hold at that kid's NEXT Mom card and the
+// cursor never moves by itself). Never automatic: the strip offers the choice (the UI lives in MOMNEXT_UI next to MOMPART);
+// these helpers only READ the loop and say who could take her. "Next with work" pauses the kid with the ready switch
+// (mlSetOff + offFor) until THAT card is ticked off; "next in rotation" is the existing "Start the loop on" lever.
+// A kid qualifies to take Mom: not done, ready (routine done, not off), not on a break, a Mom card to do, and not sitting
+// in a timed co-op before its end time.
+function _mlOnTimedCoop(kid){
+  try{
+    if(typeof coopTimedEndMin!=="function"||typeof routineDateISO!=="function") return false;
+    const e=coopTimedEndMin(kid,routineDateISO(_todayDay)); return e>0&&_mlNowMin()<e;
+  }catch(e){ return false; }
+}
+function _mlCanTakeMom(kid){
+  try{ return !mlDone(kid)&&mlReady(kid)&&!mlPaused(kid)&&!mlOff(kid)&&!!mlNextCard(kid)&&!_mlOnTimedCoop(kid); }catch(e){ return false; }
+}
+// The next kid in loop order (the scan's order — behind kids first when the marker is on) after `excludeKid` who can take Mom.
+function mlNextWithWork(excludeKid){
+  try{
+    const sc=_mlScan(), order=sc.order, n=order.length; if(!n) return null;
+    let i=order.indexOf(excludeKid); if(i<0) i=((sc.cur%n)+n)%n;
+    for(let s=1;s<=n;s++){ const k=order[(i+s)%n]; if(k===excludeKid) continue; if(_mlCanTakeMom(k)) return k; }
+    return null;
+  }catch(e){ return null; }
+}
+// The single next kid in the RING (the stored order) after `excludeKid` — only if they can take Mom, else null.
+function mlNextInRotation(excludeKid){
+  try{
+    const ring=mlOrder(), n=ring.length; if(n<2) return null;
+    const i=ring.indexOf(excludeKid); if(i<0) return null;
+    const k=ring[(i+1)%n]; if(k===excludeKid) return null;
+    return _mlCanTakeMom(k)?k:null;
+  }catch(e){ return null; }
+}
+// Is the kid's "off until this card" pause over? True when the offFor card (today's) is finished on any device — checked,
+// or sent to Mom to check (#30) — or is no longer on their day at all (nothing left to wait for). A stale offFor from
+// another day never counts.
+function _mlOffForDone(kid){
+  try{
+    const f=momLoop&&momLoop.offFor&&momLoop.offFor[kid]; if(!f||!f.id||f.day!==_mlDayStamp()) return false;
+    const t=(getActiveTasks()||[]).find(function(x){ return x&&x.id===f.id&&x.who===kid; });
+    if(!t||_mlDayOf(t)!==_todayDay) return true;
+    return !!_mlFinished(f.id,t);
+  }catch(e){ return false; }
+}
+// MOMNEXT_END
 // MOMLOOP_END
 // 👩 #23 MOMPART (her answers 2026-10-08, Option C — the on-the-day tap first; the per-subject Mom-at-start/end setting
 // comes next): Mom taps "✓ Mom part done" on a Mom-required card (Mom mode card, or the loop strip's now-card). The card
@@ -56452,9 +56505,88 @@ function mlMomPartDone(id,on){
     if(db&&!(typeof _dryRun==="function"&&_dryRun())){ lastTasksWrite=Date.now(); db.ref(WK+"/tasks/"+id+"/momPartDone").set(on?t.momPartDone:null); }
     if(typeof dbg==="function") dbg("\u{1F469} Mom part "+(on?"done":"undone")+": "+id+" ("+t.who+")");
     if(on){ if(momHold&&momHold.id===t.id){ momHold={}; if(db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref(WK+"/momHold").remove(); } _mlStayWith(t); }   // her loop moves on as if she'd checked it
+    if(on){ if(typeof mnOffer==="function") mnOffer(t); } else { if(typeof mnUndo==="function") mnUndo(t); }   // 👩 MOMNEXT: offer the next kid / "↩ Mom still needed" ends the pause
     if(typeof renderAll==="function") renderAll();
   }catch(e){}
 }
+// MOMNEXT_UI_START — the choice on the strip after "✓ Mom part done" (her ask 2026-10-13, DeWalt; the read-only helpers
+// are MOMNEXT inside MOMLOOP). Never automatic: Mom taps. The offer is a transient per-device flag (like _mlSweepArmed) that
+// lasts 60 s; kiosk browsers have no confirm()/alert(), so it is inline buttons on the strip.
+//   · Stay with <Kid>            — today's behaviour; no write.
+//   · Next with work: <Kid2>     — mlSetOff(kid,true,id): config/momLoop/off/<kid> (day-stamped, the existing switch) +
+//                                  config/momLoop/offFor/<kid> = {id,day}; the kid is paused UNTIL they tick off that card
+//                                  (derived in mlOff — a claim or another device clears it too). Their hold is kept.
+//   · Next in rotation: <Kid2>   — only when a different kid from the above: mlSetCursor(kid2) (the existing "Start the loop
+//                                  on" lever: cursor + cursorSetOn, WK/momHold removed) — "<Kid> loses their place".
+// Nobody qualifies → a toast, no buttons. Mom off, a help ask active, or the loop already on someone else → no offer.
+let _mnArm=null;   // {kid,id,until} — this device only, never stored
+function mnOffer(t){
+  try{
+    _mnArm=null;
+    if(!t||!t.who||!t.id) return;
+    if(mlMomOff()) return;
+    const now=mlNow(); if(!now||now.kid!==t.who) return;   // the loop already moved on (no other Mom card today) — nothing to choose
+    if(typeof hrLoopTurn==="function"){ const ht=hrLoopTurn(); if(ht&&ht.active) return; }   // 🙋 Mom is helping someone — the ask comes first
+    const w=mlNextWithWork(t.who), r=mlNextInRotation(t.who);
+    if(!w&&!r){ if(typeof gwShowToast==="function") gwShowToast("Nobody else is ready \u2014 staying with "+cap(t.who)); return; }
+    const arm={kid:t.who,id:t.id,until:Date.now()+60000}; _mnArm=arm;
+    if(typeof setTimeout==="function") setTimeout(function(){ if(_mnArm===arm){ _mnArm=null; if(typeof renderAll==="function") renderAll(); } },60000);
+  }catch(e){}
+}
+// Kid2's card in hand when it is not the Mom card itself — the label says "after <that card>".
+function _mnMidCard(kid){
+  try{
+    const nc=mlNextCard(kid); const mine=(getActiveTasks()||[]).filter(function(x){
+      return x&&x.who===kid&&_mlDayOf(x)===_todayDay&&!String(x.id||"").endsWith("_c")&&!x._eowOverflow
+        &&!/lunch/i.test(x.title||"")&&!_mlFinished(x.id,x);
+    }).sort(function(a,b){ return toMin(a.time)-toMin(b.time); });
+    const ih=mine[0]; if(!ih||(nc&&ih.id===nc.id)) return null;
+    return ih;
+  }catch(e){ return null; }
+}
+function mnChoiceHTML(){
+  try{
+    const a=_mnArm; if(!a) return "";
+    if(Date.now()>a.until){ _mnArm=null; return ""; }
+    const now=mlNow(); if(!now||now.kid!==a.kid){ _mnArm=null; return ""; }   // moved on already (a check, another device)
+    const w=mlNextWithWork(a.kid), r=mlNextInRotation(a.kid);
+    if(!w&&!r){ _mnArm=null; return ""; }
+    const B='border-radius:8px;padding:2px 9px;font-size:10.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin:2px 4px 2px 0';
+    let h='<div style="font-size:11.5px;font-weight:700;color:#5b21b6;background:#ede9fe;border-radius:8px;padding:5px 8px;margin:0 0 6px">';
+    h+='Your part with '+esc(cap(a.kid))+' is done \u2014 stay, or move on? ';
+    h+='<button onclick="event.stopPropagation();mnStay()" style="border:1px solid #c4b5fd;background:#fff;color:#5b21b6;'+B+'">Stay with '+esc(cap(a.kid))+'</button>';
+    if(w){ const mid=_mnMidCard(w);
+      h+='<button onclick="event.stopPropagation();mnNextWithWork()" title="'+esc(cap(a.kid))+' is paused until they check off that card; they keep their place in the loop" style="border:1px solid #86efac;background:#f0fdf4;color:#166534;'+B+'">Next with work: '+esc(cap(w))+(mid?' <span style="font-weight:600">(after '+esc(mid.title||"their card")+')</span>':'')+'</button>'; }
+    if(r&&r!==w) h+='<button onclick="event.stopPropagation();mnNextInRotation()" style="border:1px solid #ddd6fe;background:#fff;color:#5b21b6;'+B+'">Next in rotation: '+esc(cap(r))+' <span style="font-weight:600">('+esc(cap(a.kid))+' loses their place)</span></button>';
+    return h+'</div>';
+  }catch(e){ return ""; }
+}
+function mnStay(){ _mnArm=null; if(typeof renderAll==="function") renderAll(); }
+function mnNextWithWork(){
+  try{
+    const a=_mnArm; _mnArm=null; if(!a) return;
+    if(!momHere()&&!adminPinUnlocked) return;
+    if(!mlNextWithWork(a.kid)){ if(typeof gwShowToast==="function") gwShowToast("Nobody else is ready \u2014 staying with "+cap(a.kid)); if(typeof renderAll==="function") renderAll(); return; }
+    mlSetOff(a.kid,true,a.id);   // off/<kid> + offFor/<kid> — back on by itself when that card is finished
+  }catch(e){}
+}
+function mnNextInRotation(){
+  try{
+    const a=_mnArm; _mnArm=null; if(!a) return;
+    if(!momHere()&&!adminPinUnlocked) return;
+    const r=mlNextInRotation(a.kid); if(!r){ if(typeof renderAll==="function") renderAll(); return; }
+    mlSetCursor(r);   // cursor + cursorSetOn, hold removed — the existing lever
+  }catch(e){}
+}
+// "↩ Mom still needed" on the part-done card: the "until this card" pause for that kid ends with it.
+function mnUndo(t){
+  try{
+    if(_mnArm&&t&&_mnArm.id===t.id) _mnArm=null;
+    const f=t&&t.who&&momLoop&&momLoop.offFor&&momLoop.offFor[t.who];
+    if(f&&f.id===t.id&&momLoop.off&&momLoop.off[t.who]===_mlDayStamp()) mlSetOff(t.who,false);   // off/<kid> + offFor/<kid> removed
+  }catch(e){}
+}
+// MOMNEXT_UI_END
 
 // DAYSTART_START ── the school day starts when the kid is actually ready ────────────────
 // Measured 2026-08-30 from routineLog: the schedule is written to start at 10:00, and the
