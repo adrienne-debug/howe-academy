@@ -82,7 +82,7 @@ console.log("\n── CKSPAN (her ask 10/13): one check-up through several level
   ok("'to' lists the LAST level's lessons", /Lesson 5<\/option>/.test(c.ckStartHtml(u, "taylor", u.kidStage.taylor)));
   c.ckStartCreate();
   const sess = c.masteryData.taylor_sessions["checkup_all_about_spelling_1-3_7-5_w"];
-  ok("session saved as Levels 1–3 · Lessons 7–5 · words, with stageTo", sess && sess.stage === 1 && sess.stageTo === 3 && sess.lessonFrom === 7 && sess.lessonTo === 5 && /Levels 1–3 · Lessons 7–5 · words/.test(sess.name), sess);
+  ok("session saved as 'Levels 1–3 · from L1 Lesson 7 · through L3 Lesson 5 · words', with stageTo", sess && sess.stage === 1 && sess.stageTo === 3 && sess.lessonFrom === 7 && sess.lessonTo === 5 && /Levels 1–3 · from L1 Lesson 7 · through L3 Lesson 5 · words/.test(sess.name), sess && sess.name);
   const cards = c.ckCards(sess);
   const lv = n => cards.filter(x => x.stage === n);
   ok("cards come from all three levels, in order", lv(1).length > 0 && lv(2).length > 0 && lv(3).length > 0 && cards.findIndex(x => x.stage === 3) > cards.findIndex(x => x.stage === 2));
