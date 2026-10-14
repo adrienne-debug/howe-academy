@@ -76,11 +76,15 @@ const w2 = shapesWeek(["Circle", "Square", "Triangle", "Rectangle"].map(n => sh(
 ok("notebook, Stage 2: flat shapes appear, no solids yet", !/Cube|Sphere|Cone|Cylinder|Pyramid/.test(NB.generate("caleb", { weekNum: "week26", weekDates: "x", weekData: { dates, tasks: [] }, masteryItems: ["Circle", "Square", "Triangle", "Rectangle"].map(n => sh(n, "active")).concat([sh("Hexagon"), sh("Oval")]) }).student.replace(/<style[\s\S]*?<\/style>/g, "")) && w2.length > 0);
 ok("notebook, no Shapes deck yet: the basic 4 as before", shapesWeek([]) === "Circle,Square,Triangle,Rectangle,Circle");
 
-// SP_SIDES_TAG (her report 10/13, DeWalt Caleb): the unit page tags every drill shape "count the sides", by name.
-{ const i = src.indexOf("// SP_SIDES_TAG"); const blk = i < 0 ? "" : src.slice(i, i + 1400);
-  ok("unit page: a 🔢 count-the-sides tag is derived from MAST_SHAPE_SIDES[c.name] on the Shapes deck", /d\.key==="Shapes"&&typeof MAST_SHAPE_SIDES!=="undefined"&&MAST_SHAPE_SIDES\[c\.name\]\)\?'<div[^']*count the sides<\/div>':''/.test(blk));
+// SP_SIDES_TAG (her report 10/13, DeWalt Caleb): the unit page tags the count-the-sides shapes, by name — pentagon up
+// (her rule 10/13: "just the ones we can actually touch the sides and count them, 5 6 7 8 9 10 sides").
+{ const i = src.indexOf("// SP_SIDES_TAG"); const blk = i < 0 ? "" : src.slice(i, i + 1600);
+  ok("unit page: the 🔢 tag shows when MAST_SHAPE_SIDES[c.name] is 5 or more, on the Shapes deck", /d\.key==="Shapes"&&typeof MAST_SHAPE_SIDES!=="undefined"&&MAST_SHAPE_SIDES\[c\.name\]>=5\)\?'<div[^']*count the sides<\/div>':''/.test(blk));
   ok("the tag sits right after the card name, before the kid dots", /esc\(c\.name\)\+'<\/div>'\+_sides\+\(_dots\?/.test(blk));
-  ok("Hexagon and Octagon are both drill shapes, so both get the tag", (() => { const m = /const MAST_SHAPE_SIDES=(\{[^}]*\});/.exec(src); const o = eval("(" + m[1] + ")"); return o.Hexagon === 6 && o.Octagon === 8; })());
+  const sidesOf = (() => { const m = /const MAST_SHAPE_SIDES=(\{[^}]*\});/.exec(src); return eval("(" + m[1] + ")"); })();
+  const tagged = Object.keys(sidesOf).filter(n => sidesOf[n] >= 5).sort().join(",");
+  ok("tagged: Pentagon, Hexagon, Heptagon, Octagon, Nonagon, Decagon", tagged === "Decagon,Heptagon,Hexagon,Nonagon,Octagon,Pentagon", tagged);
+  ok("not tagged: Triangle, Square, Rectangle, Diamond (3–4 sides)", ["Triangle", "Square", "Rectangle", "Diamond"].every(n => sidesOf[n] < 5));
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");
