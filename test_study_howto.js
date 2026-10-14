@@ -10,7 +10,7 @@ const a = src.indexOf("// MST_HOWTO_START"), b = src.indexOf("// MST_HOWTO_END")
 ok("MST_HOWTO block present", a > 0 && b > a);
 const ls = {};
 const api = new Function("ls", `const HA_LS={ getItem:k=>ls[k]||null, setItem:(k,v)=>{ls[k]=v;}, removeItem:k=>{delete ls[k];} }; let renders=0; function renderAll(){ renders++; }
-  ${src.slice(a, b)}; return { mstHowtoClean, mstHowtoHtml, mstHowtoToggle, mstHowtoFolded, MST_HOWTO_MAX, get renders(){ return renders; } };`)(ls);
+  ${src.slice(a, b)}; return { mstHowtoClean, mstHowtoHtml, mstHowtoToggle, mstHowtoFolded, mstControlsHtml, MST_HOWTO_MAX, get renders(){ return renders; } };`)(ls);
 const T = "🍎 Teacher time! Kenzie, you're Andrew's teacher.\n1. Show him the card.\n2. <b>Good</b> if he knew it fast.";
 const sess = { sid: "fact_study", howto: T };
 const h = api.mstHowtoHtml("andrew", sess);
@@ -27,5 +27,10 @@ ok("toggle args are quote-safe", /mstHowtoToggle\('o\\'kid','s\\'1'\)/.test(api.
 ok("mstSessions carries howto", /howto: \(typeof mstHowtoClean === "function"\) \? mstHowtoClean\(rec\.howto\) : ""/.test(src));
 ok("save keeps howto (whole-record set)", /const _ht = \(typeof mstHowtoClean === "function"\) \? mstHowtoClean\(mhqSessForm\.howto\) : ""; if \(_ht\) rec\.howto = _ht;/.test(src));
 ok("editor has the box, with an id and the max length", /<textarea id="mhq-sess-howto" rows="6" maxlength="' \+ MST_HOWTO_MAX \+ '" onchange="mhqSessSet\(\\'howto\\',this\.value\)"/.test(src));
+// MST_HOWTO_CTL (her ask 10/13): the buttons line reflects ✓/✗, Back/Forward and the Type the answer switch
+ok("controls line, switch off: tap to see the answer, ✓ / ✗, Back / Forward", /Tap the card to see the answer/.test(api.mstControlsHtml({ sid: "x" })) && /✓ got it · ✗ not yet/.test(api.mstControlsHtml({ sid: "x" })) && /← Back undoes a tap, Forward →/.test(api.mstControlsHtml({ sid: "x" })));
+ok("controls line, Type the answer on: type, Check, Next, Back", /⌨️ Type the answer and tap Check/.test(api.mstControlsHtml({ sid: "x", typeAnswer: true })) && /Next moves on and marks it for you/.test(api.mstControlsHtml({ sid: "x", typeAnswer: true })) && !/✓ got it/.test(api.mstControlsHtml({ sid: "x", typeAnswer: true })));
+ok("it draws even when Mom wrote no How it works (no box, just the line)", api.mstHowtoHtml("andrew", { sid: "x" }) === "" && api.mstControlsHtml({ sid: "x" }).length > 0);
+ok("study screen draws it right under How it works", /h\+=mstHowtoHtml\(kid,session\);[^\n]*\n  if\(typeof mstControlsHtml==="function"\) h\+=mstControlsHtml\(session\);/.test(src));
 ok("study screen shows it under the header", /h\+='<\/div>';\n  if\(typeof mstHowtoHtml==="function"\) h\+=mstHowtoHtml\(kid,session\);/.test(src));
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
