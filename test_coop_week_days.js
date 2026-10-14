@@ -212,6 +212,10 @@ console.log("\nwiring — every day picker asks the helper; the field rides rlSe
   ok("make-up suggester + make-up appender ask per week", /subjDaysFor\(k,s,dy\.date\):al/.test(fn("lmComputeSuggestions")) && /subjDaysFor\(kid,s,range\.start\)/.test(src));
   ok("placement-rules table: a second pill row + the one-tap link, only for a kid in a co-op", /_coopAny\?\(function\(\)\{ const _nc=/.test(src) && /onclick="cwdPinDay\(\\''\+sk\+'\\',\\''\+d\+'\\'\)"/.test(src) && /onclick="cwdUseMonThu\(\\''\+kid\+'\\'\)"/.test(src) && /if\(_coopAny\) h\+=/.test(src));
   ok("rlSet's generic branch writes curriculum/subjects/<kid>/<sk>/<field> — noCoopDays rides it (null removes)", /db\.ref\("curriculum\/subjects\/"\+kid\+"\/"\+sk\+"\/"\+field\)\.set\(val===undefined\?null:val\)/.test(fn("rlSet")));
+  // live 2026-10-14: Makenzie's rules + day cap came up blank. cbRenderRules has a local `cap`
+  // (the kid's minutes), so the two co-op lines must reach the global name helper via window.cap.
+  { const _r = fn("cbRenderRules");
+    ok("cbRenderRules never calls its local minutes `cap` as a function (the co-op lines use window.cap)", !/[^.\w]cap\(kid\)/.test(_r) && (_r.match(/window\.cap\(kid\)/g) || []).length === 2); }
   ok("no 🔀 anywhere", src.indexOf("\u{1F500}") < 0);
 }
 
