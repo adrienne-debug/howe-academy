@@ -85,7 +85,7 @@ console.log("\n── giving and grading it ──");
   c.stSave();
   const items = c.masteryData.andrew;
   const tierOf = n => { const it = items.find(i => i.prompt === n); return it && (it.status + "/" + it.tier); };
-  ok("✓ → graduated", tierOf("black") === "active/graduated");
+  ok("✓ → monthly by default (STRIGHT), with a next check booked", tierOf("black") === "active/monthly" && items.find(i => i.prompt === "black").next_due === 99);
   ok("〰 → monthly, with a next check booked", tierOf("desk") === "active/monthly" && items.find(i => i.prompt === "desk").next_due === 99);
   ok("✗ → learning (daily)", tierOf("snack") === "introduction/daily");
   ok("every word is an AAS Words card with its spelling as the answer", items.length === 10 && items.every(i => i.subject === "AAS Words" && i.answer === i.prompt));
@@ -119,7 +119,7 @@ console.log("\n── paper, 'didn't have time', and Mom's list ──");
   ok("'Didn't have time' → every word to learning, test marked 'learning'", c.masteryData.andrew.length === 10 && c.masteryData.andrew.every(i => i.status === "introduction") && c.masteryData.andrew_spelltests["L1-18"].state === "learning");
   ok("…and it leaves Mom's list", c.stPendingList().length === 0);
   c.stOpen("andrew", 1, 18); c.stSetAll("c"); c.stSave();
-  ok("it can still be graded properly later — the words move to where they belong", c.masteryData.andrew.every(i => i.tier === "graduated") && c.masteryData.andrew_spelltests["L1-18"].state === "graded");
+  ok("it can still be graded properly later — the words move to where they belong (✓ → monthly by default)", c.masteryData.andrew.every(i => i.tier === "monthly") && c.masteryData.andrew_spelltests["L1-18"].state === "graded");
   const kid = world({ mom: false });
   ok("a kid's device never shows the list", kid.ctx.stPendingHTML() === "");
 }
@@ -157,6 +157,27 @@ console.log("\n── wiring ──");
 ok("the lesson card renders the button (taskCard joins stRow)", /rvRow\+msRow\+llRow\+stRow\+/.test(src) && /const stRow=\(!readOnly&&typeof stCardRow==="function"\)\?stCardRow\(t,done\)/.test(src));
 ok("Mom HQ and Mom's Day show tests waiting to be graded", (src.match(/h\+=stPendingHTML\(\)/g) || []).length === 2);
 ok("the unit row carries the path pill and the print-this-week button", /h\+=stUnitRowHtml\(u,k,ks\)/.test(src) && /onclick="stPrintWeek\(\)"/.test(src));
+
+console.log("\n── STRIGHT (her ask 10/13): where a ✓ word lands is per kid ──");
+{
+  const w = world(), c = w.ctx;
+  ok("unset → monthly", c.stRightTier("andrew") === "monthly" && c.stTier("c", "andrew").tier === "monthly");
+  c.unitStudies.all_about_spelling.kidStage.andrew.testRight = "graduated";
+  ok("Andrew set to graduated → ✓ goes to graduated", c.stTier("c", "andrew").tier === "graduated");
+  c.unitStudies.all_about_spelling.kidStage.andrew.testRight = "bi_weekly";
+  ok("…or any rung (bi_weekly)", c.stTier("c", "andrew").tier === "bi_weekly" && c.stTier("c", "andrew").status === "active");
+  ok("〰 and ✗ are unchanged", c.stTier("s", "andrew").tier === "monthly" && c.stTier("m", "andrew").status === "introduction");
+  c.masteryData.andrew = []; c.masteryData.andrew_custom_items = [];
+  c.stApplyResults("andrew", ["black", "desk"], ["c", "m"], "L1-18");
+  const b = c.masteryData.andrew.find(i => i.prompt === "black");
+  ok("the test books the next look for a non-graduated landing (bi_weekly, next_due set)", b.tier === "bi_weekly" && b.status === "active" && b.next_due === 99, b);
+  c.unitStudies.all_about_spelling.kidStage.andrew.testRight = "graduated";
+  c.stApplyResults("andrew", ["black"], ["c"], "L1-18");
+  ok("…and clears it for graduated", c.masteryData.andrew.find(i => i.prompt === "black").tier === "graduated" && c.masteryData.andrew.find(i => i.prompt === "black").next_due === undefined);
+  const row = (() => { try { return c.stUnitRowHtml(c.unitStudies.all_about_spelling, "andrew", c.unitStudies.all_about_spelling.kidStage.andrew); } catch (e) { return String(e); } })();
+  ok("the unit row has a '✓ goes to' pick saved per kid through nbsSet(…,'testRight',…)", /✓ goes to <select/.test(row) && /nbsSet\('all_about_spelling','andrew','testRight',this\.value\)/.test(row) && /Monthly \(default\)/.test(row) && /Graduated/.test(row), row);
+  ok("the check-up routes an AAS ✓ through the kid's setting (math facts untouched)", /dk2===ST_DECK&&\(o\.res==="c"\|\|o\.res==="k"\)&&typeof stTier==="function"\)\?stTier\("c",kid\):ckResultTier\(o\.res\)/.test(src));
+}
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

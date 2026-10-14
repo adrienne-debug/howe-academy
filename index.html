@@ -49779,7 +49779,8 @@ function ckTap(r){
   const pn=mastGetPrintNum(kid);
   const iu={}, bu={}, du={}; const ids=new Set(items.map(i=>i&&i.id));
   out.forEach(o=>{
-    const c=o.card, dk2=c._dk||"Math Facts", tt=ckResultTier(o.res);
+    const c=o.card, dk2=c._dk||"Math Facts";
+    const tt=(typeof ST_DECK!=="undefined"&&dk2===ST_DECK&&(o.res==="c"||o.res==="k")&&typeof stTier==="function")?stTier("c",kid):ckResultTier(o.res);   // STRIGHT: a ✓ spelling word lands where the kid's setting says
     let idx=items.findIndex(i=>i&&i.subject===dk2&&i.prompt===c.name);
     if(idx<0){ let b=kid.slice(0,3)+"_"+ckSlug(c.name), id=b, n=2; while(ids.has(id)) id=b+"_"+(n++); ids.add(id);
       const it2={id:id,subject:dk2,type:String(dk2).toLowerCase(),prompt:c.name,review_mode:"flash",drop_count:0,consecutive_correct:0,cycle:1,ckFrom:sid};
@@ -49788,7 +49789,7 @@ function ckTap(r){
     const item=items[idx]; item.status=tt.status; item.tier=tt.tier;
     if(tt.status==="introduction"){ item.tally_dots=0; delete item.next_due; delete item.placed; }
     else { item.tally_dots=Math.max(5,item.tally_dots||0); item.placed=true;
-      if(tt.tier==="monthly"&&typeof mastStampNextDue==="function") mastStampNextDue(item,items,"monthly",pn); else delete item.next_due; }
+      if(tt.tier!=="graduated"&&typeof mastStampNextDue==="function") mastStampNextDue(item,items,tt.tier,pn); else delete item.next_due; }   // STRIGHT
     item.ckLast={r:o.res,d:dk};
     if(o.res==="m"&&o.card===it.card&&typeof wwNote==="function") wwNote(item,"miss");   // 🏋️ a check-up miss counts toward Word Workout
     iu[idx]=item;
@@ -49871,9 +49872,18 @@ function unitStageCheckup(){
 //   words:[…], res:{<i>:"c"|"s"|"m"}, due, ts, gradedTs} — the start of each word's history.
 const ST_DECK="AAS Words";
 const ST_GRADES=[["c","✓","Got it","#15803d","#f0fdf4"],["s","〰","Took a moment","#a16207","#fefce8"],["m","✗","Missed","#b91c1c","#fef2f2"]];
-function stTier(r){
+// STRIGHT (her ask 2026-10-13: "set their spelling words when they get them correct not to go to graduated but to go to
+// monthly … it needs to be per kid"): where a ✓ spelling word lands is a PER-KID setting on the AAS unit row,
+// unitStudies/<unit>/kidStage/<kid>/testRight = a tier key (monthly, graduated, or a rung of the kid's ladder); unset =
+// monthly. The spelling test and the check-up (AAS words only — math facts keep ✓ → graduated) both read it.
+const ST_RIGHT_DEFAULT="monthly";
+function stRightTier(kid){ try{ const en=kid?stEnroll(kid):null; const v=en&&en.ks&&en.ks.testRight; return v||ST_RIGHT_DEFAULT; }catch(e){ return ST_RIGHT_DEFAULT; } }
+const ST_TIER_LBL={daily:"Daily",every_other_day:"Every Other Day",every_third_day:"Every 3rd Day",weekly:"Weekly",bi_weekly:"Bi-Weekly",monthly:"Monthly",learned:"Learned",graduated:"Graduated"};
+function stRightLabel(t){ try{ return (typeof MAST_TIER_LBL!=="undefined"&&MAST_TIER_LBL[t])||ST_TIER_LBL[t]||String(t||""); }catch(e){ return String(t||""); } }
+function stTier(r,kid){
+  if(r==="c") return {status:"active",tier:stRightTier(kid)};   // STRIGHT
   if(typeof ckResultTier==="function") return ckResultTier(r);
-  return r==="c"?{status:"active",tier:"graduated"}:r==="s"?{status:"active",tier:"monthly"}:{status:"introduction",tier:"daily"};
+  return r==="s"?{status:"active",tier:"monthly"}:{status:"introduction",tier:"daily"};
 }
 // The kid's lesson-carrying unit (AAS) and their enroll record.
 function stEnroll(kid){
@@ -49981,7 +49991,7 @@ function stRender(){
       h+='<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid #f1f5f9"><span style="width:22px;font-size:11px;color:#94a3b8;font-weight:700">'+(i+1)+'.</span><span style="flex:1;font-size:15px;font-weight:700;color:#0f172a">'+stEsc(w.name)+'</span>'
         +ST_GRADES.map(x=>'<button title="'+x[2]+'" onclick="stSet('+i+',\''+x[0]+'\')" style="min-width:40px;padding:5px 8px;border-radius:9px;border:1.5px solid '+(g===x[0]?x[3]:'#e2e8f0')+';background:'+(g===x[0]?x[4]:'#fff')+';color:'+x[3]+';font-size:14px;font-weight:800;cursor:pointer">'+x[1]+'</button>').join('')+'</div>'; });
     const left=n-Object.keys(S.grades).length;
-    h+='<div style="font-size:11px;color:#64748b;margin:8px 0">✓ Got it → graduated · 〰 Took a moment → monthly check · ✗ Missed → learning</div>';
+    h+='<div style="font-size:11px;color:#64748b;margin:8px 0">✓ Got it → '+stEsc(stRightLabel(stRightTier(S.kid)).toLowerCase())+' · 〰 Took a moment → monthly check · ✗ Missed → learning</div>';   // STRIGHT
     h+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button onclick="stSetAll(\'c\')" style="'+b("#fff","#15803d","#bbf7d0")+';font-size:12px">All ✓</button><div style="flex:1"></div>'
       +'<button onclick="stSave()" '+(left?'disabled ':'')+'style="'+b(left?"#e2e8f0":"#15803d",left?"#94a3b8":"#fff",left?"#e2e8f0":"#15803d")+'">'+(left?left+' left to mark':'Save results')+'</button></div>';
     h+='<div style="margin-top:12px;padding-top:10px;border-top:1px solid #f1f5f9;display:flex;gap:8px;flex-wrap:wrap">'
@@ -50007,7 +50017,7 @@ function stApplyResults(kid,words,res,key){
   let bank=masteryData[kid+"_custom_items"]; if(!Array.isArray(bank)) bank=masteryData[kid+"_custom_items"]=(bank?Object.values(bank):[]);
   const pn=mastGetPrintNum(kid);
   const iu={}, bu={}, ids=new Set(items.map(i=>i&&i.id)), today=new Date().toISOString().slice(0,10);
-  words.forEach((name,i)=>{ const r=res[i]; if(!r) return; const tt=stTier(r);
+  words.forEach((name,i)=>{ const r=res[i]; if(!r) return; const tt=stTier(r,kid);   // STRIGHT: ✓ lands where this kid's setting says
     let idx=items.findIndex(x=>x&&x.subject===ST_DECK&&x.prompt===name);
     if(idx<0){ let b=kid.slice(0,3)+"_"+String(name).replace(/[^a-z0-9]/gi,"_").toLowerCase(), id=b, k=2; while(ids.has(id)) id=b+"_"+(k++); ids.add(id);
       items.push({id:id,subject:ST_DECK,type:"aas words",prompt:name,answer:name,review_mode:"flash",drop_count:0,consecutive_correct:0,cycle:1}); idx=items.length-1; }
@@ -50015,7 +50025,7 @@ function stApplyResults(kid,words,res,key){
     const it=items[idx]; it.status=tt.status; it.tier=tt.tier;
     if(tt.status==="introduction"){ it.tally_dots=0; delete it.next_due; delete it.placed; }
     else { it.tally_dots=Math.max(5,it.tally_dots||0); it.placed=true;
-      if(tt.tier==="monthly"&&typeof mastStampNextDue==="function") mastStampNextDue(it,items,"monthly",pn); else delete it.next_due; }
+      if(tt.tier!=="graduated"&&typeof mastStampNextDue==="function") mastStampNextDue(it,items,tt.tier,pn); else delete it.next_due; }   // STRIGHT: book the next look for any review tier
     it.stLast={r:r,d:today,t:key};
     if(typeof wwNote==="function") wwNote(it,r==="m"?"miss":(r==="c"?"right":null));   // 🏋️ WORDWORKOUT
     iu[idx]=it;
@@ -50119,7 +50129,18 @@ function stUnitRowHtml(u,kid,ks){
   const p=stPath(ks), pill=(v,l,tip)=>'<span title="'+tip+'" onclick="stSetPath(\''+stEsc(u.id)+'\',\''+stEsc(kid)+'\',\''+v+'\')" style="display:inline-block;padding:2px 8px;border-radius:9px;border:1px solid '+(p===v?'#7c2d12':'#e2e8f0')+';background:'+(p===v?'#7c2d12':'#fff')+';color:'+(p===v?'#fff':'#7c2d12')+';font-size:10.5px;font-weight:800;cursor:pointer">'+l+'</span>';
   return '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:5px;font-size:10.5px;color:var(--muted);font-weight:700">📝 Spelling test: '
     +pill("week","Practice Week","The lesson-day card tests LAST lesson's words — they practised them all week.")
-    +pill("first","Test First","The lesson-day card tests THIS lesson's words, right after you teach it.")+'</div>';
+    +pill("first","Test First","The lesson-day card tests THIS lesson's words, right after you teach it.")
+    +stRightPickHtml(u,kid,ks)+'</div>';
+}
+// STRIGHT: "✓ goes to" — monthly (default), graduated, or any rung of this kid's ladder. Saved per kid by nbsSet.
+function stRightPickHtml(u,kid,ks){
+  try{
+    const cur=(ks&&ks.testRight)||ST_RIGHT_DEFAULT;
+    const lad=(typeof _unitKidLadderCfg==="function")?(_unitKidLadderCfg(kid).ladder||[]):["every_other_day","weekly","bi_weekly","monthly","graduated"];
+    const opts=[]; lad.concat(["monthly","graduated"]).forEach(t=>{ if(t&&opts.indexOf(t)<0) opts.push(t); });
+    return '<span style="margin-left:6px">· ✓ goes to <select title="Where a spelling word lands when they get it right on the test or a check-up — this kid only" onchange="nbsSet(\''+stEsc(u.id)+'\',\''+stEsc(kid)+'\',\'testRight\',this.value)" style="font-size:10.5px;padding:2px 5px;border-radius:7px;border:1px solid #cbd5e1;background:#fff">'
+      +opts.map(t=>'<option value="'+t+'"'+(t===cur?' selected':'')+'>'+stEsc(stRightLabel(t))+(t===ST_RIGHT_DEFAULT?' (default)':'')+'</option>').join('')+'</select></span>';
+  }catch(e){ return ""; }
 }
 // STTESTCARD_START — 📝 the spelling test is its OWN card (her ask 2026-10-08: "make it its own card instead").
 // On a kid's AAS lesson day a "📝 Spelling test: Lesson N" card sits right before the lesson card — the same lesson
