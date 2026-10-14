@@ -54,16 +54,16 @@ console.log("# URLs");
 { const a = load();
   ok("summary URL: title → underscores, encoded", a._unitPicsSummaryUrl("Pallas's cat") === "https://en.wikipedia.org/api/rest_v1/page/summary/Pallas's_cat".replace("'", "'") && a._unitPicsSummaryUrl("Trencher (machine)") === "https://en.wikipedia.org/api/rest_v1/page/summary/Trencher_(machine)" && a._unitPicsSummaryUrl("Tower crane") === "https://en.wikipedia.org/api/rest_v1/page/summary/Tower_crane");
   ok("search URL: action API with origin=* (CORS) and the query encoded", /^https:\/\/en\.wikipedia\.org\/w\/api\.php\?action=query&list=search&format=json&origin=\*&srlimit=1&srsearch=Leopardus%20tilcayo$/.test(a._unitPicsSearchUrl("Leopardus tilcayo")));
-  ok("thumbnail upsized to 480px", a._unitPicsBigger(thumb("Lion.jpg").source) === "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Lion.jpg/480px-Lion.jpg" && a._unitPicsBigger("https://x/y.jpg") === "https://x/y.jpg");
+  ok("thumbnail link kept exactly as Wikipedia hands it back (UNIT_PICS_FIX: thumb.wikimedia.org answers 400 to a rewritten width)", a._unitPicsBigger(thumb("Lion.jpg").source) === thumb("Lion.jpg").source && a._unitPicsBigger("https://x/y.jpg") === "https://x/y.jpg");
 }
 
 console.log("# lookup");
 { const a = load(); const f = fakeWiki({ "Lion": { title: "Lion", thumbnail: thumb("Lion.jpg") }, "Leopardus tilcayo": { title: "Leopardus tilcayo" }, "Oncilla": { title: "Oncilla", thumbnail: thumb("Oncilla.jpg") } }, { "Leopardus tilcayo": "Oncilla", "Nowhere cat": null });
   (async () => {
     let r = await a._unitPicsLookup(f, "Lion", "Lion");
-    ok("direct hit: url + credit", r && r.url.endsWith("480px-Lion.jpg") && r.credit === "Wikipedia · Lion" && f.calls.length === 1);
+    ok("direct hit: url + credit", r && /Lion\.jpg$/.test(r.url) && r.credit === "Wikipedia · Lion" && f.calls.length === 1);
     r = await a._unitPicsLookup(f, "Leopardus tilcayo", "Tilcayo tiger cat");
-    ok("page without a thumbnail → search → the hit's summary", r && r.url.endsWith("480px-Oncilla.jpg") && r.credit === "Wikipedia · Oncilla" && f.calls.slice(1).length === 3 && /srsearch=Leopardus%20tilcayo/.test(f.calls[2]));
+    ok("page without a thumbnail → search → the hit's summary", r && /Oncilla\.jpg$/.test(r.url) && r.credit === "Wikipedia · Oncilla" && f.calls.slice(1).length === 3 && /srsearch=Leopardus%20tilcayo/.test(f.calls[2]));
     r = await a._unitPicsLookup(f, "Nowhere cat", "Nowhere cat");
     ok("404 + empty search → null, no throw", r === null);
     const boom = async () => { throw new Error("offline"); };
@@ -91,7 +91,7 @@ async function part2() {
     await a.unitFindPictures("construction_machines");
     const p = a.pics;
     ok("20 found (19 machines + Blade via the Bulldozer page), 9 parts not, done", p && !p.busy && p.found.length === 20 && p.miss.length === 9 && p.done === 29 && p.total === 29 && p.found.some(x => x.name === "Blade"));
-    ok("found entries: key, name, 480px url, credit, on", p.found.every(x => /^(Construction Machines|Machine Parts)_/.test(x.key) && x.on && /480px-/.test(x.url) && /^Wikipedia · /.test(x.credit)));
+    ok("found entries: key, name, the API's own url, credit, on", p.found.every(x => /^(Construction Machines|Machine Parts)_/.test(x.key) && x.on && /px-/.test(x.url) && /^Wikipedia · /.test(x.credit)));
     ok("the overlay lists what was found and the misses", /20 found · 9 not found/.test(a.G.lastOverlay.innerHTML) && /No picture found:<\/b> Bucket, /.test(a.G.lastOverlay.innerHTML) && /Save 20 pictures/.test(a.G.lastOverlay.innerHTML));
     ok("each miss cost a summary + a search (no throw)", f.calls.filter(x => /srsearch/.test(x)).length === 9);
     const idx = p.found.findIndex(x => x.name === "Grader"); a.unitPicsToggle(idx);
