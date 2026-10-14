@@ -49058,6 +49058,7 @@ function mstSessions(kid) {
       skipDecks: rec.skipDecks || [],
       pattern: mstPatternClean(rec.pattern),
       bothWays: !!rec.bothWays,
+      typeAnswer: !!rec.typeAnswer,   // ⌨️ MST_TYPEANS
       unit: rec.unit, stage: rec.stage, perDay: rec.perDay, quick: rec.quick, untested: rec.untested,   // 🩺 CHECKUP
       howto: (typeof mstHowtoClean === "function") ? mstHowtoClean(rec.howto) : ""   // 📋 MST_HOWTO
     });
@@ -51063,6 +51064,7 @@ function mstCardHtml(session,card){
     s+='<div class="mast-flip-hint">\u{1F4A1} did you spell it right?</div></div>';
     return s+'</div></div></div>';
   }
+  if(typeof mstTypeAnsOn==="function"&&mstTypeAnsOn(session,card,def)) return mstTypeAnsHtml(session,card,def,_lrn);   // ⌨️ MST_TYPEANS (guarded for engine-only harnesses)
   const _chip=m=>'<div style="display:inline-block;margin-top:2px;padding:3px 10px;border-radius:999px;background:#ede9fe;color:#6d28d9;font-size:11px;font-weight:800">'+(m==="say"?"\u{1F5E3} Say it in German \u2014 out loud":"\u2328\uFE0F Type it in German")+'</div>';
   if(mode==="type"){
     let t='<div class="mast-slide"><div class="mast-flip-wrap"><div class="mast-flip-inner"><div class="mast-flip-front">';
@@ -51102,6 +51104,78 @@ function mstCardHtml(session,card){
   c+='<div class="mast-flip-hint">\u{1F4A1} tap to flip back</div></div>';
   return c+'</div></div></div>';
 }
+// MST_TYPEANS_START — ⌨️ "Type the answer" (her ask 2026-10-13, DeWalt family, math-facts study sessions):
+// a switch Mom flips in the Mastery HQ session form (Mom mode), default OFF. On, the kid TYPES the answer
+// to the fact instead of saying it and grading himself: the fact (card.name) on the face, a box, Check,
+// then "✓ Right!" / "✗ Not quite — <answer>" and Next, which grades good/again for him. The existing ⌨️
+// "type" pattern mode types the card's NAME from its definition (built for German vocab) — the wrong
+// direction for math — so this is its own face, checked against mstCardDef(card) (MAST_MATH_ANS / Mom's
+// definitions / item.answer). A card with no answer falls back to the normal flip. Stored as
+// typeAnswer:true on mastery/<kid>_sessions/<sid> (absent = off); written only by mhqSessSave.
+// On for a session when the card has an answer. Picture, rule and spell cards keep their own faces
+// (their "answer" is a rule or the word itself) — renderMastStudy and mstCardHtml both ask this, so the
+// grade buttons and the card face always agree.
+function mstTypeAnsOn(session,card,def){
+  if(!session||!session.typeAnswer||!card) return false;
+  if(mstIsRuleCard(card)||mstIsSpellCard(card)) return false;
+  if(typeof mstCardPic==="function"&&mstCardPic(card)) return false;
+  const d=(def!=null)?def:mstCardDef(card);
+  return !!String(d||"").trim();
+}
+// Number-aware normaliser: − – — and - are the same minus, × ⋅ * and x the same times, ÷ ⁄ and / the
+// same divide, ½ is 1/2 (and 1½ is 1 1/2), "..." is …, 1,000 is 1000; spaces around + − / = and around
+// an x between digits don't count; case doesn't count. Words (a vocab answer) are left as words.
+const MST_TYPEANS_FRAC={"½":"1/2","⅓":"1/3","⅔":"2/3","¼":"1/4","¾":"3/4","⅕":"1/5","⅖":"2/5","⅗":"3/5","⅘":"4/5","⅙":"1/6","⅚":"5/6","⅛":"1/8","⅜":"3/8","⅝":"5/8","⅞":"7/8"};
+function mstNormMath(s){
+  return String(s==null?"":s).normalize("NFC").toLowerCase()
+    .replace(/(\d)?([½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞])/g,function(m,d,c){ return (d?d+" ":"")+MST_TYPEANS_FRAC[c]; })
+    .replace(/[−–—]/g,"-")
+    .replace(/[×⋅·*]/g,"x")
+    .replace(/[÷⁄]/g,"/")
+    .replace(/…|\.{3,}/g,"…")
+    .replace(/(\d),(?=\d{3}(?!\d))/g,"$1")
+    .replace(/\s+/g," ").trim()
+    .replace(/^=+\s*/,"")
+    .replace(/\s*([+\-\/=])\s*/g,"$1")
+    .replace(/(\d)\s*x\s*(\d)/g,"$1x$2");
+}
+function mstTypeAnsOk(typed,answer){
+  const t=mstNormMath(typed), a=mstNormMath(answer);
+  if(!t||!a) return false;
+  if(t===a) return true;
+  const num=/^[-+]?(\d+\.?\d*|\.\d+)$/;   // "4.0" and "04" are 4 — but "" and "1/2" are not numbers
+  return num.test(t)&&num.test(a)&&Number(t)===Number(a);
+}
+// The card face: the fact, a box, Check; after Check the verdict and Next. Check/Next live inside the
+// card — no Again/Good buttons (renderMastStudy hides them when mstTypeAnsOn). Reuses mstTyped/mstChecked.
+function mstTypeAnsHtml(session,card,def,lrn){
+  const name=card.name||"";
+  let t='<div class="mast-slide"><div class="mast-flip-wrap"><div class="mast-flip-inner"><div class="mast-flip-front">';
+  t+='<div class="mast-slide-cat">'+mstEsc(card.deck||session.name||"")+(lrn||"")+'</div>';
+  t+='<div style="display:inline-block;margin-top:2px;padding:3px 10px;border-radius:999px;background:#ede9fe;color:#6d28d9;font-size:11px;font-weight:800">⌨️ Type the answer</div>';
+  t+='<div class="mast-slide-name">'+mstEsc(name)+'</div>';
+  if(!mstChecked){
+    t+='<input id="mst-typeans-in" type="text" value="'+mstEsc(mstTyped)+'" oninput="mstTyped=this.value" onkeydown="if(event.key===\'Enter\'){event.preventDefault();mstCheckTypeAns();}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="your answer" style="margin-top:12px;width:100%;max-width:320px;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:2px solid #c4b5fd;font-size:22px;text-align:center;font-family:\'DM Sans\',sans-serif">';
+    t+='<button onclick="mstCheckTypeAns()" style="margin-top:12px;min-height:48px;padding:0 32px;border-radius:14px;border:none;background:#7c3aed;color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Check</button>';
+  } else {
+    const ok=mstChecked.ok;
+    t+='<div style="margin-top:12px;font-size:20px;font-weight:800;color:'+(ok?"#16a34a":"#dc2626")+'">'+(ok?"✓ Right!":"✗ Not quite — "+mstEsc(def))+'</div>';
+    if(!ok) t+='<div style="margin-top:6px;font-size:13px;color:var(--muted);font-weight:600">You typed: <span style="text-decoration:line-through">'+mstEsc(mstChecked.typed)+'</span></div>';
+    t+='<button onclick="mstTap(\''+(ok?"good":"again")+'\')" style="margin-top:14px;min-height:52px;padding:0 36px;border-radius:14px;border:none;background:'+(ok?"#16a34a":"#dc2626")+';color:#fff;font-size:17px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Next →</button>';
+  }
+  return t+'</div></div></div></div>';
+}
+function mstCheckTypeAns(){
+  if(!mstState) return;
+  let cur=null; try{ cur=mstCurrent(mstState); }catch(e){}
+  let ses=null; try{ ses=(mstSessions(masteryKid)||[]).find(s=>s.sid===mstSid)||null; }catch(e){}
+  if(!cur||!mstTypeAnsOn(ses,cur)) return;
+  const el=document.getElementById("mst-typeans-in"); if(el) mstTyped=el.value;
+  if(!String(mstTyped||"").trim()) return;
+  mstChecked={ok:mstTypeAnsOk(mstTyped,mstCardDef(cur)),typed:String(mstTyped)};
+  _mastRe();
+}
+// MST_TYPEANS_END
 function renderMastStudy(){
   const kid=masteryKid;
   if(mstKid!==kid){ mstKid=kid; mstSid=null; mstState=null; mstFlipped=false; mstDone=null; mstStartTs=null; mstTyped=""; mstChecked=null; mstNavReset(); }  // a sitting never leaks across kids (MST_NAV: nor its Back/Forward)
@@ -51141,7 +51215,7 @@ function renderMastStudy(){
     if(card){
       mstLockArm();   // MST_NAV: taps in the first 350 ms after this draw are swallowed
       h+=mstCardHtml(session,card);
-      if(mstCardMode(card)==="type"){
+      if(mstCardMode(card)==="type"||(typeof mstTypeAnsOn==="function"&&mstTypeAnsOn(session,card))){   // ⌨️ MST_TYPEANS
         // Check / Next live inside the card — no self-grading on a typed answer.
       } else if(mstFlipped){
         h+='<div style="display:flex;gap:12px;margin-top:16px">';
@@ -52250,6 +52324,7 @@ function mhqSessSave() {
     const _pat = mstPatternClean(mhqSessForm.pattern); if (_pat) rec.pattern = _pat;
   }
   { const _ht = (typeof mstHowtoClean === "function") ? mstHowtoClean(mhqSessForm.howto) : ""; if (_ht) rec.howto = _ht; }   // 📋 MST_HOWTO
+  if (mhqSessForm.typeAnswer) rec.typeAnswer = true;   // ⌨️ MST_TYPEANS — every kind; absent = off
   if (!masteryData[kid + "_sessions"]) masteryData[kid + "_sessions"] = {};
   masteryData[kid + "_sessions"][sid] = rec;
   if (typeof db !== "undefined" && db) db.ref("mastery/" + kid + "_sessions/" + sid).set(rec);
@@ -52362,6 +52437,11 @@ function _mhqRenderSessForm(kid) {
   h += '<div style="' + lbl + '">Audio</div><div style="display:flex;gap:6px">';
   ["front", "back", "off"].forEach(function (a) { h += _mhqPill(a, f.audio === a, "mhqSessSet('audio','" + a + "')"); });
   h += '</div>';
+  {   // ⌨️ MST_TYPEANS: Mom's switch — the kid types the answer instead of saying it. Default Off.
+    h += '<div style="' + lbl + '">Type the answer</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
+    h += _mhqPill("Off", !f.typeAnswer, "mhqSessSet(\'typeAnswer\',false)") + _mhqPill("On", !!f.typeAnswer, "mhqSessSet(\'typeAnswer\',true)");
+    h += '</div><div style="font-size:11px;color:var(--muted);margin-top:4px">On: the kid types the answer to each fact and the app checks it. Off: say it, flip, grade yourself.</div>';
+  }
   if (typeof mstHowtoClean === "function") {   // 📋 MST_HOWTO
     h += '<div style="' + lbl + '">How it works <span style="font-weight:600;color:var(--muted)">(kids see this at the top of the session · optional)</span></div>';
     h += '<textarea id="mhq-sess-howto" rows="6" maxlength="' + MST_HOWTO_MAX + '" onchange="mhqSessSet(\'howto\',this.value)" placeholder="e.g. You get to be the teacher! …" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid var(--border);border-radius:10px;font-size:13px;font-family:\'DM Sans\',sans-serif;line-height:1.45">' + mhqEsc(f.howto || "") + '</textarea>';
