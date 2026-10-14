@@ -53821,6 +53821,28 @@ function mastLockSlideHeight(el){
   }
   if(mastSlideMaxH) sl.style.minHeight=mastSlideMaxH+"px";
 }
+// HM_LEARNING_START — Heat Map health counts only cards ON the ladder (her yes 2026-10-13, after DeWalt Caleb's
+// decks read red "Needs Work" one week in: every card was still in learning mode, and a learning card sat at tier
+// "daily" = weight 0, so an all-learning deck scored 0 health). Learning / parked cards are left out of the health
+// score, the tier bar and the "● N daily" count (the "⭐N intro" chip already shows them); a deck with nothing on
+// the ladder yet reads "⭐ Learning" in a calm colour instead of a failing grade.
+function mastHmHealth(sitems){
+  const tc={daily:0,every_other_day:0,every_third_day:0,weekly:0,bi_weekly:0,monthly:0,learned:0,graduated:0};
+  let introCount=0, onLadder=0, score=0;
+  const weights={daily:0,every_other_day:1,every_third_day:1.5,weekly:2,bi_weekly:3,monthly:4,learned:5,graduated:5};
+  (sitems||[]).forEach(i=>{
+    if(!i) return;
+    if(i.status==="introduction"){ introCount++; return; }
+    if(i.status==="parked") return;
+    const t=i.tier||"daily"; tc[t]=(tc[t]||0)+1; onLadder++; score+=(weights[t]||0);
+  });
+  const health=onLadder?score/(onLadder*5):0;
+  if(!onLadder) return {tc,introCount,onLadder,health,barCol:"#6366f1",healthLbl:"\u{2B50} Learning"};
+  const barCol=health>=0.5?"#16a34a":health>=0.25?"#d97706":"#dc2626";
+  const healthLbl=health>=0.5?"Climbing":health>=0.25?"Mixed":"Needs Work";
+  return {tc,introCount,onLadder,health,barCol,healthLbl};
+}
+// HM_LEARNING_END
 function renderMastery(el){
   try{ _renderMasteryInner(el); mastLockSlideHeight(el); }catch(e){ console.error("Mastery render error:",e); el.innerHTML='<div style="padding:40px;text-align:center;color:#dc2626"><b>Mastery tab error</b><br><span style="font-size:11px;color:#666">'+e.message+'</span></div>'; }
 }
@@ -54233,22 +54255,7 @@ function _renderMasteryInner(el){
       h+='<div class="mast-hm-grid">';
       Object.entries(bySubj).forEach(([subj,sitems])=>{
         const total=sitems.length;
-        // Count per tier
-        const tc={daily:0,every_other_day:0,every_third_day:0,weekly:0,bi_weekly:0,monthly:0,learned:0,graduated:0};
-        let introCount=0;
-        sitems.forEach(i=>{
-          if(i.status==="introduction") introCount++;
-          const t=i.tier||"daily";
-          tc[t]=(tc[t]||0)+1;
-        });
-
-        // Health score: items at higher tiers = healthier
-        const weights={daily:0,every_other_day:1,every_third_day:1.5,weekly:2,bi_weekly:3,monthly:4,learned:5,graduated:5};
-        const maxScore=total*5;
-        const score=sitems.reduce((s,i)=>s+(weights[i.tier||"daily"]||0),0);
-        const health=maxScore?score/maxScore:0;
-        const barCol=health>=0.5?"#16a34a":health>=0.25?"#d97706":"#dc2626";
-        const healthLbl=health>=0.5?"Climbing":health>=0.25?"Mixed":"Needs Work";
+        const {tc,introCount,onLadder,barCol,healthLbl}=mastHmHealth(sitems);   // HM_LEARNING
 
         h+='<div class="mast-hm-card">';
         h+='<div class="mast-hm-card-bar" style="background:'+barCol+'"></div>';
@@ -54261,12 +54268,12 @@ function _renderMasteryInner(el){
         const _dm=mastDeckMastery(sitems);
         if(_dm.total) h+='<div style="font-size:10px;font-weight:700;color:#0d9488;margin-top:3px">\u{1F393} '+_dm.pct+'% mastered <span style="color:var(--muted);font-weight:500">('+_dm.mastered+'/'+_dm.total+' at monthly+)</span></div>';
 
-        // Tier bar
+        // Tier bar (ladder cards only — HM_LEARNING)
         h+='<div class="mast-hm-tiers">';
         const tierCols={daily:"#dc2626",every_other_day:"#ea580c",every_third_day:"#d97706",weekly:"#ca8a04",bi_weekly:"#65a30d",monthly:"#0d9488",learned:"#2563eb",graduated:"#7c3aed"};
         MAST_TIER_ORDER.forEach(t=>{
-          if(!tc[t]) return;
-          const pct=Math.round(tc[t]/total*100);
+          if(!tc[t]||!onLadder) return;
+          const pct=Math.round(tc[t]/onLadder*100);
           h+='<div class="mast-hm-tier-seg" style="width:'+pct+'%;background:'+tierCols[t]+'"></div>';
         });
         h+='</div>';
