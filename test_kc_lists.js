@@ -17,7 +17,8 @@ ok("no db.ref( inside the block", block.indexOf("db.ref(")<0);
 ok("no .set( / .update( / .remove( / .push( inside the block", !/\.(set|update|remove|push)\(/.test(block));
 ok("the block only stores the mode in localStorage through HA_LS (ha_kc_mode)", /HA_LS\.setItem\("ha_kc_mode"/.test(block)&&!/localStorage/.test(block));
 ok("the lists are the existing kcChoresHTML rows (not rebuilt)", /h\+=kcChoresHTML\(k\);/.test(block)&&!/rtSlotHTML\(|mrIndividualHTML\(/.test(block));
-ok("kcChoresHTML itself is untouched and still draws hhCleanPanelHTML, mrIndividualHTML and rtSlotHTML", (()=>{ const c=fn("kcChoresHTML"); return /hhCleanPanelHTML\(k,_todayStr\(\),_todayDay\)/.test(c)&&/mrIndividualHTML\(k\)/.test(c)&&/rtSlotHTML\(slot,k\)/.test(c)&&/setTimeout\(renderAll,30\)/.test(c); })());
+// (the 🧽 Cleaning Day panel is a Howe-only feature so far — a family copy without CLEANINGDAY has no hhCleanPanelHTML to draw)
+ok("kcChoresHTML itself is untouched and still draws hhCleanPanelHTML (where the feature exists), mrIndividualHTML and rtSlotHTML", (()=>{ const c=fn("kcChoresHTML"); const hasClean=/function hhCleanPanelHTML\(/.test(src); return (!hasClean||/hhCleanPanelHTML\(k,_todayStr\(\),_todayDay\)/.test(c))&&/mrIndividualHTML\(k\)/.test(c)&&/rtSlotHTML\(slot,k\)/.test(c)&&/setTimeout\(renderAll,30\)/.test(c); })());
 
 function mk(o){
   o=o||{}; const store=Object.assign({},o.store||{}), calls=[];
