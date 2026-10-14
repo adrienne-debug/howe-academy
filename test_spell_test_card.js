@@ -248,12 +248,44 @@ console.log("\n── STPASTGUARD: no new test card for a past lesson day, or fo
   const r2 = w.ctx.stSyncWeek(T, sctx(w, { past: () => false }));
   ok("…the same lesson today or later still gets its card", r2.added.length === 1);
 }
-for (const st of ["graded", "learning", "pending"]) {
+// the app's own given/paper rules (stSyncCtx), on the test world's records
+const appGuards = w => ({ given: (k, key) => { const x = w.ctx.stRecs(k)[key]; return !!(x && /graded|learning/.test(x.state)); },
+  paper: (k, key) => { const x = w.ctx.stRecs(k)[key]; return !!(x && x.state === "pending"); } });
+for (const st of ["graded", "learning"]) {
   const L = lesson("L1", "11:00 AM"), w = world({ tasks: [L] }), T = w.ctx.weekData.tasks;
   w.ctx.masteryData.andrew_spelltests = { "L1-18": { state: st, level: 1, lesson: 18 } };
-  const r = w.ctx.stSyncWeek(T, sctx(w, { given: (k, key) => { const x = w.ctx.stRecs(k)[key]; return !!(x && /graded|learning|pending/.test(x.state)); } }));
-  ok("the test was already given (" + st + ") from the lesson card → no new test card", !r.added.length && !T.some(x => x.stTest), r);
+  const r = w.ctx.stSyncWeek(T, sctx(w, appGuards(w)));
+  ok("the test was already finished (" + st + ") from the lesson card → no new test card", !r.added.length && !T.some(x => x.stTest), r);
 }
+console.log("\n── STPAPERCARD: a test on paper, not yet graded, never loses its card (her rule 2026-10-14) ──");
+{
+  // replay 2026-10-13 DeWalt: L19's test marked paper (pending) at 9:26 PM while L20 day 1 sat on Thursday; the week was
+  // regenerated at 11 PM (fresh cards) and L20 day 1 landed on Wednesday → the old code made no card, Andrew had no test.
+  const w = world({ tasks: [] });
+  w.ctx.masteryData.andrew_spelltests = { "L1-18": { state: "pending", level: 1, lesson: 18, due: "2026-10-15", words: [] } };
+  const L = lesson("L1", "11:00 AM"), T = [L];   // the regenerated week: the lesson alone, on a new day
+  const r = w.ctx.stSyncWeek(T, sctx(w, appGuards(w)));
+  const t = T.find(x => x.stTest);
+  ok("the regenerated week gets the test card back (pending is not 'given')", r.added.length === 1 && t && t.id === "andrew_st_L1-18", r);
+  ok("its instruction is Grade (given on paper), not give the test", t && t.title === "📝 Grade the spelling test: Lesson 18" && /given on paper/.test(t.detail) && !/reads each word/.test(t.detail));
+  ok("it sits right before the lesson, which stays locked until it is graded", t && t.time === "10:50 AM" && T.indexOf(t) === T.indexOf(L) - 1 && w.ctx.stLessonLock(L, T) === t);
+  ok("the card shows nothing that a child must produce", !/black|clock|milk|snack/.test(t.title + t.detail));
+  const again = w.ctx.stSyncWeek(T, sctx(w, appGuards(w)));
+  ok("…and a second pass changes nothing", !again.added.length && !again.removed.length && !again.moved.length);
+}
+{
+  // a plain card flips to Grade the moment the test goes on paper (print ahead), and back to a test card is never needed
+  const L = lesson("L1", "11:00 AM"), w = world({ tasks: [L], mom: true }), T = w.ctx.weekData.tasks;
+  w.ctx.stSyncWeek(T, sctx(w, appGuards(w))); const t = T.find(x => x.stTest);
+  ok("before printing: a give-the-test card", t && t.title === "📝 Spelling test: Lesson 18");
+  w.ctx.masteryData.andrew_spelltests = { "L1-18": { state: "pending", level: 1, lesson: 18, words: [] } };
+  const r = w.ctx.stSyncWeek(T, sctx(w, appGuards(w)));
+  ok("after printing ahead: the SAME card now reads Grade (not removed, not re-added)", !r.added.length && !r.removed.length && T.find(x => x.stTest) === t && t.title === "📝 Grade the spelling test: Lesson 18", r);
+  ok("Mom's row on it says Grade too", /Grade the spelling test \(Lesson 18\)/.test(w.ctx.stCardRow(t, false)));
+}
+{ const sc = slice("stSyncCtx");
+  ok("the app's given = graded or learning only (pending is on paper, not given)", /given:\(kid,key\)=>\{[^\n]*r\.state==="graded"\|\|r\.state==="learning"\)\)/.test(sc) && !/given:\(kid,key\)=>[^\n]*"pending"/.test(sc));
+  ok("…and paper = pending", /paper:\(kid,key\)=>\{[^\n]*r\.state==="pending"\)/.test(sc)); }
 {
   const L = lesson("L1", "11:00 AM"), w = world({ tasks: [L] }), T = w.ctx.weekData.tasks;
   w.ctx.stSyncWeek(T, sctx(w)); const t = T.find(x => x.stTest);
