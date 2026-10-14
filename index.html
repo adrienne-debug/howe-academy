@@ -162,6 +162,16 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .kc-little .cal-sheet h4{font-size:19px}
 .kc-little .cal-sheet .row{font-size:15px;padding:10px 0}
 .kc-little .cal-sheet .act{font-size:14px;padding:10px 16px;border-radius:12px}
+/* KC_LISTS — ✅ My Lists only (.kc-big): the same list rows, big enough for a little kid to tick. The Schedule tab and the list pop-up are untouched. */
+.kc-big .sl-check-row{padding:14px;gap:14px;border-radius:12px}
+.kc-big .sl-checkbox{width:38px!important;height:38px!important;font-size:20px!important;border-radius:9px}
+.kc-big .mr-steps{margin-left:0;gap:8px}
+.kc-big .mr-step{padding:16px 14px;min-height:60px;box-sizing:border-box;gap:14px;border-radius:12px}
+.kc-big .sl-slot-name{font-size:19px;font-weight:700}
+.kc-big .sl-slot-sub{font-size:13px}
+.kc-big .mr-pts{font-size:14px;padding:4px 10px}
+.kc-big .cadtag{display:none}
+.kc-big .rt-late{font-size:12px}
 .kc-quick{display:flex;flex-direction:column;align-items:center;gap:4px;width:84px;padding:10px 6px!important;font-size:12px!important}
 .kc-quick-e{font-size:30px;line-height:1}
 @media (max-width:640px){.kc-little .gcal-month-day.lay{min-height:64px} .kc-little .gcal-month-day.lay .gmd-line{width:11px;height:11px}}
@@ -4771,7 +4781,7 @@ function renderKioskView(){
       // day's sheet; Month behind the toggle. Same functions, a kid is looking (no Mom buttons).
       kcKid=kid; try{ day=_todayDay; }catch(e){}
       el.innerHTML='<div class="'+(kcLittle(kid)?'kc-little':'')+'" style="font-family:\'DM Sans\',sans-serif;padding-bottom:28px">'+kcCalToggleHTML(kid)
-        +(kcCalGet()==="month"?('<div style="padding:12px 12px 0">'+calRenderMonthPreview({who:kid,little:kcLittle(kid)})+'</div>'):kcTodayHTML(kid))+'</div>';
+        +kcModeBodyHTML(kid)+'</div>';   // KC_LISTS: Today | My Lists | Month, the same three pages as Kids' Corner
     } else {
       el.innerHTML=(kkTab==="points")?_bankCardHTML(kid,false):(kkTab==="grabs")?_grabsHTML(kid,false):_storeCardHTML(kid,false);
     }
@@ -30359,18 +30369,67 @@ function calDaySheetHTML(iso,L,dinnerOf,who,opts){
 // their colour, their mascot, the same fonts and cards as Mom's and Dad's pages.
 let kcKid=null, kcAddIso=null, kcConfirmDel=null, kcView="cal";   // "cal" | "bank" | "chores"  (school lives under cal ▸ Today)
 // Her call 2026-09-05: everything lives on the daily page now — the Chores and Bank tabs are
-// gone; any old view name lands on Today. (kcSubnav / kcBankHTML / kcChoresHTML kept, unused.)
+// gone; any old view name lands on Today. (kcSubnav / kcBankHTML kept, unused; kcChoresHTML is the ✅ My Lists page since 2026-10-13, KC_LISTS.)
 function kcGo(v){ if(v==="school"||v==="chores"||v==="bank"){ kcView="cal"; kcCalSet("today"); return; } kcView="cal"; kcAddIso=null; kcConfirmDel=null; renderAll(); try{window.scrollTo(0,0);}catch(e){} }
 // 📆 Today | 🗓 Month — her ask 2026-09-05: "a monthly toggle with their big calendar and a
 // daily tab with their schedule and the things that apply to today". Remembered per device.
-let kcCalMode=null;
-function kcCalGet(){ if(kcCalMode) return kcCalMode; try{ const v=HA_LS.getItem("ha_kc_calmode"); kcCalMode=(v==="month")?"month":"today"; }catch(e){ kcCalMode="today"; } return kcCalMode; }
-function kcCalSet(v){ kcCalMode=(v==="month")?"month":"today"; try{ HA_LS.setItem("ha_kc_calmode",kcCalMode); }catch(e){} kcAddIso=null; kcConfirmDel=null; renderAll(); try{window.scrollTo(0,0);}catch(e){} }
-function kcCalToggleHTML(k){
-  const col=KID_COLOR[k]||"#2B7A78", m=kcCalGet();
-  const b=(v,lbl)=>'<button onclick="kcCalSet(\''+v+'\')" style="flex:1;padding:8px 10px;border-radius:20px;border:2px solid '+col+';background:'+(m===v?col:'#fff')+';color:'+(m===v?'#fff':col)+';font-size:'+(kcLittle(k)?'15px':'13px')+';font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
-  return '<div style="display:flex;gap:8px;padding:12px 12px 0;max-width:420px;margin:0 auto">'+b('today','\u{1F4C6} Today')+b('month','\u{1F5D3} Month')+'</div>';
+// KC_LISTS_START — ✅ My Lists (her ask 2026-10-13, DeWalt family): "a switch so a kid can keep the page as it is, or flip
+// into a little-kid view that shows ALL of today's checklists on one page, bigger and easier to tick — like the Schedule
+// page's lists, but no digging." Three modes now: 📆 Today | ✅ My Lists | 🗓 Month. The mode is remembered PER KID PER
+// DEVICE in the ha_kc_mode JSON map (the ha_co_kids pattern) so Taylor's tablet can sit on My Lists while a big kid's
+// stays on Today; the old per-device ha_kc_calmode is still read as the fallback so a tablet already on Month stays there.
+// A little kid (schoolAge:false, kcLittle) lands on My Lists the first time. The lists themselves are kcChoresHTML(k) —
+// the very same hhCleanPanelHTML / mrIndividualHTML / rtSlotHTML rows the Schedule tab draws, so a tap here IS the real
+// tick (toggleMorningStep / toggleRtStep / toggleSlot, the same writes). This block writes nothing of its own.
+let kcModeMap=null;
+const KC_MODES=["today","lists","month"];
+function _kcModeMap(){ if(kcModeMap) return kcModeMap; try{ kcModeMap=JSON.parse(HA_LS.getItem("ha_kc_mode")||"{}")||{}; }catch(e){ kcModeMap={}; } if(!kcModeMap||typeof kcModeMap!=="object"||Array.isArray(kcModeMap)) kcModeMap={}; return kcModeMap; }
+function kcCalGet(k){
+  k=k||kcKid||"";
+  const m=_kcModeMap();
+  if(KC_MODES.indexOf(m[k])>=0) return m[k];
+  if(kcLittle(k)) return "lists";   // a little kid's first time on this device: the big lists
+  try{ return (HA_LS.getItem("ha_kc_calmode")==="month")?"month":"today"; }catch(e){ return "today"; }
 }
+function kcCalSet(v,k){
+  k=k||kcKid||""; v=(KC_MODES.indexOf(v)>=0)?v:"today";
+  const m=_kcModeMap(); if(k) m[k]=v;
+  try{ HA_LS.setItem("ha_kc_mode",JSON.stringify(m)); }catch(e){}
+  kcAddIso=null; kcConfirmDel=null; renderAll(); try{window.scrollTo(0,0);}catch(e){}
+}
+function kcCalToggleHTML(k){
+  const col=KID_COLOR[k]||"#2B7A78", m=kcCalGet(k);
+  const b=(v,lbl)=>'<button onclick="kcCalSet(\''+v+'\',\''+k+'\')" style="flex:1;padding:8px 6px;border-radius:20px;border:2px solid '+col+';background:'+(m===v?col:'#fff')+';color:'+(m===v?'#fff':col)+';font-size:'+(kcLittle(k)?'15px':'13px')+';font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+lbl+'</button>';
+  return '<div style="display:flex;gap:8px;padding:12px 12px 0;max-width:420px;margin:0 auto">'+b('today','\u{1F4C6} Today')+b('lists','\u2705 My Lists')+b('month','\u{1F5D3} Month')+'</div>';
+}
+// ✅ My Lists = a slim strip (stars + "N of M lists done"), then every list for today, big (.kc-big), then one way back
+// to the school cards. The list rows read the global `day`, so it is set to today first — exactly what kcOpenList does.
+function kcListsHTML(k){
+  try{
+    try{ day=_todayDay; }catch(e){}
+    const dn=_todayDay, col=KID_COLOR[k]||"#2B7A78";
+    const bal=(typeof bankBalance==="function")?bankBalance(k):0;
+    const slots=(typeof activeSlots==="function")?activeSlots():[];
+    const doneN=slots.filter(function(s){ try{ return s==="morning"?morningComplete(k,dn):rtSlotDone(k,s,dn); }catch(e){ return false; } }).length;
+    const allDone=slots.length>0&&doneN===slots.length;
+    let h='<div class="kc-big">';
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 12px 0;padding:10px 14px;border-radius:12px;background:'+_kcTint(col,0.85)+';border:1.5px solid '+col+'">'
+      +'<div style="font-size:18px;font-weight:800;color:'+col+'">\u2B50 '+bal+'</div>'
+      +'<div style="font-size:15px;font-weight:800;color:#374151">'+doneN+' of '+slots.length+' lists done</div></div>';
+    if(allDone) h+='<div style="margin:12px 12px 0;padding:16px;border-radius:12px;background:#f0fdf4;border:1.5px solid #86efac;text-align:center;font-size:22px;font-weight:800;color:#15803d">All done! \u{1F389}</div>';
+    h+=kcChoresHTML(k);
+    h+='<div style="padding:12px 12px 0"><button onclick="kcCalSet(\'today\',\''+k+'\')" style="width:100%;padding:16px 14px;border-radius:14px;border:2px solid '+col+';background:#fff;color:'+col+';font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F4D6} My school cards \u203A</button></div>';
+    return h+'</div>';
+  }catch(e){ return '<div style="padding:20px;color:var(--muted)">Couldn\u2019t load your lists \u2014 try again</div>'; }
+}
+// The page under the toggle, one place for Kids' Corner and the General tablet's My Day.
+function kcModeBodyHTML(k){
+  const m=kcCalGet(k);
+  if(m==="month") return '<div style="padding:12px 12px 0">'+calRenderMonthPreview({who:k,little:kcLittle(k)})+'</div>';
+  if(m==="lists") return kcListsHTML(k);
+  return kcTodayHTML(k);
+}
+// KC_LISTS_END
 // ⭐ What today is worth — her ask: "you completed this chore area, how many points they have,
 // and how many they will get if they finish". Lists pay fixed stars (steps + list bonus + day
 // bonus), so those are counted. School pays SPINS, not a number — so school shows progress
@@ -30570,13 +30629,12 @@ function renderKidsCorner(el){
       +'<div style="position:relative;z-index:1;display:flex;align-items:center;gap:12px">'
       +'<div style="width:54px;height:54px;border-radius:16px;background:rgba(255,255,255,0.22);display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0">'+kcEmoji(k)+'</div>'
       +'<div style="flex:1;min-width:0"><div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;margin-bottom:2px">'+esc(name)+'\u2019s Corner</div>'
-      +'<div style="font-size:12px;opacity:0.9;font-weight:600">'+((kcCalGet()==="today")?'Your day, your stars, your school.':(kcLittle(k)?'Tap a day!':'Tap a day to see what\u2019s up \u2014 and add your own things.'))+'</div></div>'
+      +'<div style="font-size:12px;opacity:0.9;font-weight:600">'+((kcCalGet(k)==="today")?'Your day, your stars, your school.':(kcCalGet(k)==="lists")?'Your lists for today \u2014 tap to tick.':(kcLittle(k)?'Tap a day!':'Tap a day to see what\u2019s up \u2014 and add your own things.'))+'</div></div>'
       +'<button onclick="kcPick(\'\')" style="border:1.5px solid rgba(255,255,255,0.6);background:rgba(255,255,255,0.15);color:#fff;border-radius:20px;padding:6px 12px;font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">Not '+esc(name)+'?</button>'
       +'</div></div>';
     {
       h+=kcCalToggleHTML(k);
-      if(kcCalGet()==="month") h+='<div style="padding:12px 12px 0">'+calRenderMonthPreview({who:k,little:kcLittle(k)})+'</div>';
-      else h+=kcTodayHTML(k);
+      h+=kcModeBodyHTML(k);   // KC_LISTS: Today | My Lists | Month
     }
   }
   h+='</div>';
