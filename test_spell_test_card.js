@@ -339,6 +339,9 @@ const updates = w => w.writes.filter(x => x[0] === "update" && x[1] === "week2/t
   ok("a stale test card (its lesson is a practice day now) is removed by path (null), nothing else written", updates(w).length === 1 && u["andrew_st_L1-18"] === null && Object.keys(u).length === 1, u);
 }
 ok("the week's cards listener runs it right after rvHeal (first load or a changed task set)", /try\{ rvHeal\(\); \}catch\(e\)\{\} \}[^\n]*\n\s*if\(firstLoad \|\| inFP!==curFP\)\{ try\{ if\(typeof stHeal==="function"\) stHeal\(\); \}catch\(e\)\{\} \}/.test(src));
+ok("…and again when the mastery records first arrive and when the checked list lands (live 2026-10-14: the cards came first, the heal waited, nothing re-ran it)",
+  /if\(_mastFirst\)\{ try\{ renderAll\(\); \}catch\(e\)\{\} try\{ if\(typeof stHeal==="function"\) stHeal\(\); \}catch\(e\)\{\} \}/.test(src)
+  && /fbCheckedLoaded=true;\n\s*schedCascade\(\);\n\s*renderAll\(\);\n\s*try\{ ckReplayPending\(\); \}catch\(e\)\{\}[^\n]*\n\s*try\{ if\(typeof stHeal==="function"\) stHeal\(\); \}catch\(e\)\{\}/.test(src));
 ok("Mom's device only, never in dry-run, waits for checked + mastery", /if\(!db\|\|_dryRun\(\)\) return;/.test(slice("stHeal")) && /momHereReal/.test(slice("stHeal")) && /fbCheckedLoaded\) return;/.test(slice("stHeal")) && /_haMastReady\) return;/.test(slice("stHeal")));
 
 console.log("\n── wiring ──");
