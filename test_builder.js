@@ -253,5 +253,25 @@ console.log("errors");
   ok("missing target date errors cleanly", !!res.error);
 }
 
+
+// ── 🏫 COOPWEEKDAYS (Sarah's ask 2026-10-13): cfg.daysByWeek = {mondayISO: days[]} — that week's day set ──
+console.log("per-week day sets (cfg.daysByWeek)");
+{
+  const MTWF = ["Mon", "Tue", "Wed", "Fri"], MTWT = ["Mon", "Tue", "Wed", "Thu"];
+  const rows = mkRows(MON, 2, 1, 1);                     // 8/3 (week 1) and 8/10 (week 2)
+  const base = { sk: "m", minutes: 20, mode: "timesPerWeek", tpw: 4, allowedDays: MTWF.slice(), content: texts(8), rows, dayCapMin: 0 };
+  const r0 = cbMaterialize(base);
+  ok("no map: Mon/Tue/Wed/Fri both weeks", JSON.stringify(dows(r0)) === JSON.stringify(["Mon", "Tue", "Wed", "Fri", "Mon", "Tue", "Wed", "Fri"]), dows(r0));
+  const r1 = cbMaterialize(Object.assign({}, base, { daysByWeek: { "2026-08-03": MTWF, "2026-08-10": MTWT } }));
+  ok("map: week 1 Fri, week 2 Thu", JSON.stringify(dates(r1)) === JSON.stringify(["2026-08-03", "2026-08-04", "2026-08-05", "2026-08-07", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13"]), dates(r1));
+  const r2 = cbMaterialize(Object.assign({}, base, { daysByWeek: { "2026-08-10": MTWT } }));
+  ok("a week missing from the map reads allowedDays", JSON.stringify(dates(r2)) === JSON.stringify(dates(r1)), dates(r2));
+  const r3 = cbMaterialize(Object.assign({}, base, { rows: mkRows(MON, 1, 1, 1), daysByWeek: { "2026-08-03": MTWF, "2026-08-10": MTWT },
+    extend: { lastDayNum: 5, lastDate: "2026-08-07", lastWeekNum: 1, lastWeekLabel: "Wk 1", isOff: () => false } }));
+  ok("the extension honours the map too (week 2 minted on Mon/Tue/Wed/Thu)", JSON.stringify(r3.assignments.filter(a => a.isNew).map(a => a.date)) === JSON.stringify(["2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13"]), dates(r3));
+  const r4 = cbMaterialize(Object.assign({}, base, { tpw: 3, daysByWeek: { "2026-08-10": MTWT }, content: texts(6) }));
+  ok("the spread rule is untouched: 3×/wk on Mon/Tue/Wed/Thu → Mon · Wed · Thu", JSON.stringify(dows(r4).slice(3)) === JSON.stringify(["Mon", "Wed", "Thu"]), dows(r4));
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

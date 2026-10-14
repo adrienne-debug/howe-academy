@@ -209,5 +209,22 @@ console.log("\nregen never trusts the calendar mirror");
   ok("and leaves a breadcrumb", _rg.indexOf("regen: calendar refreshed") > 0);
 }
 
+
+// ── 🏫 COOPWEEKDAYS (Sarah's ask 2026-10-13): the plan the generator reads carries per-week day sets ──
+console.log("\n── per-week day sets reach the projection ──");
+{
+  const p = src.indexOf("function planMaterialize(");
+  const pm = src.slice(p, src.indexOf("\nfunction planPace", p) > 0 ? src.indexOf("\nfunction planPace", p) : p + 20000);
+  ok("planMaterialize builds plan.daysByWeek from the subject's noCoopDays over past + future rows",
+    /subjDaysByWeek\(kid,\{allowedDays:plan\.allowedDays,noCoopDays:_nc\},_lo,_hi\)/.test(pm) && /if\(_m\) plan\.daysByWeek=_m;/.test(pm));
+  ok("…a borrowed lane rhythm brings its source's field, a multiple card none", /const _nc=\(_lnRh&&!_lnRh\.own\)\?\(_lnRh\.noCoopDays\|\|null\):s\.noCoopDays;/.test(pm) && /if\(!_lnOff&&typeof subjDaysByWeek==="function"\)/.test(pm));
+  ok("…guarded: no helper, no field → no map → the projection reads allowedDays as before", /try\{ if\(!_lnOff&&typeof subjDaysByWeek==="function"\)/.test(pm));
+  const pr = src.slice(src.indexOf("function _pjPatternRows("), src.indexOf("function projectPlans("));
+  ok("_pjPatternRows reads the map per row week (_pjWeekKey) and falls back to allowedDays", /const al=\(_dbw&&_dbw\[_pjWeekKey\(r\.date\)\]\)\|\|allowed; return !al\.length\|\|al\.includes\(r\.dow\);/.test(pr));
+  const rw = src.slice(src.indexOf("function resolveWeekSlots("), src.indexOf("function gwCatchupExtraDates("));
+  ok("resolveWeekSlots (the generator's slot walker) asks subjDaysFor for the week", /_alWk=subjDaysFor\(kid,\{allowedDays:allowed,noCoopDays:_lnRh\?_lnRh\.noCoopDays:s\.noCoopDays\},_wd\)/.test(rw));
+  ok("…and the quota (_tpwWk) in gwReadWeekAutoAdvance is untouched — only the DAYS change", /let _tpwWk=parseInt\(\(_sub\.pacing&&_sub\.pacing\.tpw\)\|\|_sub\.timesPerWeek,10\)\|\|0;/.test(src));
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

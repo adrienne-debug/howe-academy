@@ -27183,7 +27183,7 @@ function uploadCurriculum(){
       // their whole curriculum; subjects absent from the file (in-app: Drills,
       // Builder-made) survive; matching subjects keep in-app-only settings.
       if(currData&&currData.subjects){
-        const CARRY=["pacing","paused","momVerify","allowedDays","timesPerWeek","priority","carryoverCap","stickyWith","stickyOrder","lessonSeq","lessonIds","nextLid","tracking"];
+        const CARRY=["pacing","paused","momVerify","allowedDays","noCoopDays","timesPerWeek","priority","carryoverCap","stickyWith","stickyOrder","lessonSeq","lessonIds","nextLid","tracking"];   // noCoopDays: 🏫 COOPWEEKDAYS
         for(const kid of Object.keys(currData.subjects)){
           if(!curriculum.subjects[kid]){
             curriculum.subjects[kid]=currData.subjects[kid];
@@ -29871,6 +29871,80 @@ function coopBlockName(kid,ds,sk){
   return (s&&s.mom==="required"&&coopNoMomBaseFor(kid,ds))||(coopDaySkips(kid,ds,s)?coopTimedNameFor(kid,ds):null);
 }
 // COOPDAY_END
+// COOPWEEKDAYS_START — 🏫 "Weeks without co-op" day set (Sarah's ask 2026-10-13: "Kenzie's math is 4 days a week on Mon,
+// Tue, Wed and Fri. On co-op weeks (co-op is Thursday) it has to be that way. But on weeks we DON'T have co-op I'd like
+// all the 4-day-a-week subjects on Mon, Tue, Wed, Thu so Friday is lighter. Is there a way to set that, without moving
+// each lesson by hand?"). A STANDING RULE, never a hand move: subject.noCoopDays = the days the subject may land on in
+// a week with NO co-op for this kid; allowedDays stays the co-op-week set. Field missing = allowedDays every week
+// (exactly today's behaviour). A week "has a co-op" when any Mon–Fri date of it is in a co-op (timed or full-day) whose
+// kids include this kid. The week is the app's Mon–Sun week (gwWeekDateRange / _pjWeekKey = its Monday). Every day
+// picker — projection (_pjPatternRows via plan.daysByWeek), builder (cbMaterialize via cfg.daysByWeek), slot walker,
+// balancer, catch-up, week re-lay, grid views — asks subjDaysFor / subjDaysByWeek; the spread rule (_cbSpread) is
+// unchanged. Writes: curriculum/subjects/<kid>/<sk>/noCoopDays (targeted) + the existing re-lay writes.
+const _CWD_DAYS=["Mon","Tue","Wed","Thu","Fri"];
+function noCoopDaysOf(s){ const a=s&&s.noCoopDays; if(!Array.isArray(a)) return null; const out=a.map(String).filter(function(d){ return _CWD_DAYS.indexOf(d)>=0; }); return out.length?out:null; }
+function _cwdWeekDates(iso){ const mon=_pjWeekKey(iso); const t=Date.UTC(+mon.slice(0,4),+mon.slice(5,7)-1,+mon.slice(8,10)); const out=[]; for(let i=0;i<5;i++) out.push(new Date(t+i*86400000).toISOString().slice(0,10)); return out; }
+// Does the week holding `iso` have a co-op (any mode) for this kid?
+function coopWeekHas(kid,iso){
+  if(!kid||!iso) return false; const m=coopsMap(); const days=_cwdWeekDates(iso);
+  for(const id in m){ const c=m[id]; if(!c||(c.kids||[]).indexOf(kid)<0) continue; for(let i=0;i<days.length;i++){ if(_coopHasDate(c,days[i])) return true; } }
+  return false;
+}
+// The subject's day set for the week holding `iso` (pure): allowedDays in a co-op week or when the field is unset,
+// noCoopDays otherwise. `s` is the subject record (or any {allowedDays,noCoopDays}).
+function subjDaysFor(kid,s,iso){ const al=((s&&s.allowedDays)||[]).map(String); const nc=noCoopDaysOf(s); if(!nc||!iso) return al; return coopWeekHas(kid,iso)?al:nc; }
+// {mondayISO: days[]} for every week from fromISO's to toISO's — or null when the subject has no noCoopDays, so a
+// caller takes the one allowedDays path it always did.
+function subjDaysByWeek(kid,s,fromISO,toISO){
+  const nc=noCoopDaysOf(s); if(!nc||!fromISO) return null;
+  const out={}; let k=_pjWeekKey(fromISO); const last=_pjWeekKey(toISO&&toISO>fromISO?toISO:fromISO); let g=0;
+  while(k<=last&&g++<600){ out[k]=subjDaysFor(kid,s,k); k=new Date(Date.UTC(+k.slice(0,4),+k.slice(5,7)-1,+k.slice(8,10))+7*86400000).toISOString().slice(0,10); }
+  return out;
+}
+// Editor — the second row of day pills under Days in the placement-rules table: writes subject.noCoopDays through
+// rlSet (re-lay on), so a plan-backed subject re-lays at once. No pill lit = field gone = allowedDays every week.
+function cwdPinDay(sk,d){
+  const kid=(typeof cbKid!=="undefined")?cbKid:null; const s=kid&&((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid]||{})[sk]; if(!s) return;
+  const arr=(noCoopDaysOf(s)||[]).slice(); const i=arr.indexOf(d); if(i>=0) arr.splice(i,1); else arr.push(d);
+  arr.sort(function(a,b){ return _CWD_DAYS.indexOf(a)-_CWD_DAYS.indexOf(b); });
+  rlSet(kid,sk,"noCoopDays",arr.length?arr:null,true);
+}
+// One tap for Sarah's rule: every 4×/wk subject of this kid takes Mon–Thu in weeks without co-op. ONE multi-path
+// update on curriculum/subjects/<kid> whose paths are each subject's noCoopDays (never a whole node), then each
+// plan-backed one re-lays the way a Days pill does. Paused subjects and subjects already set are left alone.
+function cwdUseMonThu(kid){
+  if(typeof momHere==="function"&&!momHere()) return null;
+  const subs=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid])||{}; const up={}; const hit=[];
+  const MT=["Mon","Tue","Wed","Thu"];
+  Object.keys(subs).forEach(function(sk){ const s=subs[sk]||{}; if(s.paused) return;
+    const tpw=parseInt((s.pacing&&s.pacing.tpw)||s.timesPerWeek,10)||0; if(tpw!==4) return;
+    if((noCoopDaysOf(s)||[]).join()===MT.join()) return;
+    s.noCoopDays=MT.slice(); up[sk+"/noCoopDays"]=MT.slice(); hit.push(sk); });
+  if(!hit.length){ if(typeof gwShowToast==="function") gwShowToast("Every 4×/wk subject already has Mon–Thu for weeks without co-op — nothing written."); return {kid:kid,set:[],relaid:[]}; }
+  if(typeof db!=="undefined"&&db&&!_dryRun()){ db.ref("curriculum/subjects/"+kid).update(up); currData.lastEdit=new Date().toISOString(); db.ref("curriculum/lastEdit").set(currData.lastEdit); }
+  const relaid=[];
+  hit.forEach(function(sk){ const s=subs[sk]||{};
+    if(typeof planBacked==="function"&&planBacked(kid,sk)&&s.pacing&&s.pacing.mode&&typeof _gvRelaySubject==="function"){ const _k=cbKid,_s=cbSubjKey; cbKid=kid; cbSubjKey=sk; try{ if(_gvRelaySubject(kid,sk,(s.display||sk)+" re-laid")) relaid.push(sk); }catch(e){} cbKid=_k; cbSubjKey=_s; } });
+  if(typeof gwShowToast==="function") gwShowToast("🏫 Weeks without co-op: Mon–Thu set on "+hit.length+" subject"+(hit.length!==1?"s":"")+(relaid.length?" — "+relaid.length+" re-laid":""));
+  if(typeof renderAll==="function") renderAll();
+  return {kid:kid,set:hit,relaid:relaid};
+}
+// Adding / removing a co-op DATE (or a kid) changes which weeks "have a co-op": re-lay the active week for every
+// plan-backed subject of those kids that carries noCoopDays — the way coopToggleMomDay does. Future weeks need no
+// re-lay: generation reads the field.
+function cwdRelayKids(kids,why){
+  const relaid=[];
+  (kids||[]).forEach(function(kid){
+    const subs=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid])||{};
+    Object.keys(subs).forEach(function(sk){ const sub=subs[sk]||{};
+      if(sub.paused||!noCoopDaysOf(sub)) return;
+      if(typeof planBacked!=="function"||!planBacked(kid,sk)) return;
+      try{ if(typeof reprojectSubjectWeek==="function"){ reprojectSubjectWeek(kid,sk,why||"coop-dates"); relaid.push(kid+"/"+sk); } }catch(e){ if(typeof dbg==="function") dbg("coop-dates relay skip "+kid+"/"+sk+": "+e); }
+    });
+  });
+  return relaid;
+}
+// COOPWEEKDAYS_END
 function _coop24(t12){ const mn=toMin(t12); if(isNaN(mn)) return ""; const hh=Math.floor(mn/60), mm=mn%60; return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0"); }
 let coopScanStatus="";
 function coopStartAdd(){ coopEditId="__new__"; coopForm={name:"",color:COOP_COLORS[0],kids:[...ROSTER],mode:"timed",start:"09:00",end:"12:00",dates:[],noMomBase:true}; coopScanStatus=""; renderAll(); }
@@ -29939,8 +30013,12 @@ function coopSave(){
   const obj={name:coopForm.name.trim(),color:coopForm.color,kids:coopForm.kids.slice(),mode:coopForm.mode,dates:(coopForm.dates||[]).slice().sort(),created:wasNew?Date.now():(prevCreated||Date.now())};
   if(coopForm.mode==="timed"){ obj.start=to12h(coopForm.start); obj.end=to12h(coopForm.end); }
   obj.noMomBase=coopForm.noMomBase!==false;   // stored explicitly: false is the only way to turn the natural default off
+  const _prev=coopsMap()[coopEditId]||null;   // 🏫 COOPWEEKDAYS: what the dates / kids were before this save
   db.ref("calendar/coops/"+id).set(obj);
   calendarData.coops=calendarData.coops||{}; calendarData.coops[id]=obj;   // optimistic local
+  // 🏫 COOPWEEKDAYS: a changed date list or kid list changes which weeks have a co-op → re-lay noCoopDays subjects
+  try{ const _pd=((_prev&&_prev.dates)||[]).slice().sort().join(), _pk=((_prev&&_prev.kids)||[]).slice().sort().join();
+    if(_pd!==obj.dates.join()||_pk!==obj.kids.slice().sort().join()){ const _ks=obj.kids.slice(); ((_prev&&_prev.kids)||[]).forEach(function(k){ if(_ks.indexOf(k)<0) _ks.push(k); }); cwdRelayKids(_ks,"coop-dates"); } }catch(e){}
   coopEditId=null; coopForm=null;
   if(typeof gwShowToast==="function") gwShowToast("Saved "+obj.name+" — regenerate a week to reflow around it");
   renderAll();
@@ -29961,6 +30039,7 @@ function coopDelete(id){
   if(!confirm("Delete "+((c&&c.name)||"this co-op")+"?")) return;
   db.ref("calendar/coops/"+id).remove();
   if(calendarData.coops) delete calendarData.coops[id];
+  try{ cwdRelayKids((c&&c.kids)||[],"coop-dates"); }catch(e){}   // 🏫 COOPWEEKDAYS: those weeks no longer have a co-op
   renderAll();
 }
 function renderCoopSection(){
@@ -37122,8 +37201,11 @@ function cbMaterialize(cfg){
   const cap=cfg.dayCapMin||0;
   const myMin=cfg.minutes||20;
   const allowed=cfg.allowedDays||[];
+  // 🏫 COOPWEEKDAYS: cfg.daysByWeek = {mondayISO: days[]} — that week's day set; absent = allowedDays as before
+  const _dbw=cfg.daysByWeek||null;
+  const _dowOk=r=>{ const al=(_dbw&&_dbw[_cbMonday(_cbParseDate(r.date))])||allowed; return !al.length||al.includes(r.dow); };
   const blocked={};(cfg.blockedDates||[]).forEach(d=>{blocked[d]=1;});
-  const dayFits=r=>!r.off&&!blocked[r.date]&&(!allowed.length||allowed.includes(r.dow));
+  const dayFits=r=>!r.off&&!blocked[r.date]&&_dowOk(r);
   const dayOk=r=>dayFits(r)&&(!cap||r.usedMin+myMin<=cap);
   const capSkipped=rows.filter(r=>dayFits(r)&&!(r.usedMin+myMin<=cap)&&cap).length;
 
@@ -37243,7 +37325,7 @@ function cbMaterialize(cfg){
     let weekBuf=[], bufMon=null, bufLabel=null, firstExtDate="";
     const flush=()=>{
       if(!weekBuf.length) return;
-      const elig=weekBuf.filter(r=>!r.off&&!r.exists&&!blocked[r.date]&&(!allowed.length||allowed.includes(r.dow))&&(!cap||myMin<=cap));
+      const elig=weekBuf.filter(r=>!r.off&&!r.exists&&!blocked[r.date]&&_dowOk(r)&&(!cap||myMin<=cap));
       const chosen=new Set(_cbSpread(elig,Math.min(tpw,elig.length)));
       let used=false;
       for(const r of weekBuf){
@@ -37465,7 +37547,11 @@ function _pjPatternRows(plan,rows,tpw,overflowWanted){
   // plan.onlyDates (a fixed-time class's real meeting dates) is an ALLOWLIST: no date
   // outside it is ever eligible, so a Wednesday class skips the Wednesdays it doesn't meet.
   const _only=plan.onlyDates||null;
-  const elig=rows.filter(r=>r&&!r.off&&!(plan.offDates||{})[r.date]&&!(plan._blocked||{})[r.date]&&(!_only||_only[r.date])&&(!allowed.length||allowed.includes(r.dow)));
+  // 🏫 COOPWEEKDAYS: plan.daysByWeek = {mondayISO: days[]} — that week's day set (noCoopDays in a week with no co-op);
+  // a week not in the map, or no map at all, reads allowedDays exactly as before.
+  const _dbw=plan.daysByWeek||null;
+  const _dowOk=r=>{ const al=(_dbw&&_dbw[_pjWeekKey(r.date)])||allowed; return !al.length||al.includes(r.dow); };
+  const elig=rows.filter(r=>r&&!r.off&&!(plan.offDates||{})[r.date]&&!(plan._blocked||{})[r.date]&&(!_only||_only[r.date])&&_dowOk(r));
   let out;
   if(!tpw||tpw<=0) out=elig;
   else{
@@ -37821,6 +37907,9 @@ function planMaterialize(kid,sk,form,opts){
     if(_fl){ _fxOnly={}; _fl.forEach(function(d){ _fxOnly[d]=true; }); }
   }
   const plan={pid:planIdFor(kid,sk),kid,sk,priority:s.priority||0,minutes:min,lessons,allowedDays:_lnOff?[]:(f.allowedDays||[]).slice(),cap:_absorb?cap:1,anchor:_absorb?anchor:null,doneSince,offDates:_lnOff||{},onlyDates:_fxOnly,overflow:_absorb&&(s.overflowExtras!==false),_wkUsed:_dealtWk};
+  // 🏫 COOPWEEKDAYS: a week with no co-op for this kid takes noCoopDays (a borrowed lane rhythm brings its source's)
+  try{ if(!_lnOff&&typeof subjDaysByWeek==="function"){ const _nc=(_lnRh&&!_lnRh.own)?(_lnRh.noCoopDays||null):s.noCoopDays; let _lo=null,_hi=null; pastRows.concat(allRows).forEach(function(r){ if(!_lo||r.date<_lo) _lo=r.date; if(!_hi||r.date>_hi) _hi=r.date; });
+    const _m=_lo?subjDaysByWeek(kid,{allowedDays:plan.allowedDays,noCoopDays:_nc},_lo,_hi):null; if(_m) plan.daysByWeek=_m; } }catch(e){}
   if(_lnOff) plan.tpw=0;   // 🛤 every day not off is one of mine — the pattern already chose them
   else if(f.mode==="targetDate") plan.targetDate=f.targetDate||""; else plan.tpw=parseInt(f.tpw,10)||0;
   const out=projectPlans({plans:[plan],calendar:{[kid]:pastRows.concat(allRows)},dayCapMin:{[kid]:capMin||0},blocked:{[kid]:{[sk]:blocked}},added:{[kid]:{[sk]:_addedIn}},todayISO:today});
@@ -37875,6 +37964,7 @@ function planPace(kid,sk){
         rows.push({date:l.date,dow:DOW[_cbParseDate(l.date).getDay()],off:!!(smapIsKidOff(kid,l.date)||schedOvKidOff(kid,l.date)||((schedOv(l.date,kid)||{}).removed||{})[sk]||coopBlocksBase(kid,l.date,sk))}); });
       rows.sort((a,b)=>a.date<b.date?-1:1);
       const plan={allowedDays:(f.allowedDays||[]).slice(),offDates:{},_blocked:{}};
+      try{ if(rows.length&&typeof subjDaysByWeek==="function"){ const _m=subjDaysByWeek(kid,{allowedDays:plan.allowedDays,noCoopDays:s.noCoopDays},rows[0].date,rows[rows.length-1].date); if(_m) plan.daysByWeek=_m; } }catch(e){}   // 🏫 COOPWEEKDAYS
       const tpw=f.mode==="targetDate"?0:(parseInt(f.tpw,10)||0);
       const pat=_pjPatternRows(plan,rows,tpw)||[];
       const before=pat.filter(r=>r&&r.date<today).length, through=pat.length;
@@ -37897,6 +37987,7 @@ function planOwed(kid,sk){
     rows.push({date:l.date,dow:DOW[_cbParseDate(l.date).getDay()],off:!!(smapIsKidOff(kid,l.date)||schedOvKidOff(kid,l.date)||((schedOv(l.date,kid)||{}).removed||{})[sk]||coopBlocksBase(kid,l.date,sk))}); });
   rows.sort((a,b)=>a.date<b.date?-1:1);
   const plan={allowedDays:(f.allowedDays||[]).slice(),offDates:{},_blocked:{}};
+  try{ if(rows.length&&typeof subjDaysByWeek==="function"){ const _m=subjDaysByWeek(kid,{allowedDays:plan.allowedDays,noCoopDays:s.noCoopDays},rows[0].date,rows[rows.length-1].date); if(_m) plan.daysByWeek=_m; } }catch(e){}   // 🏫 COOPWEEKDAYS
   const tpw=f.mode==="targetDate"?0:(parseInt(f.tpw,10)||0);
   const past=_pjPatternRows(plan,rows,tpw).length;
   const doneNode=((((currData||{}).done||{})[kid]||{})[sk])||{}; let doneSince=0; Object.values(doneNode).forEach(r=>{ if(r&&r.day&&String(r.day)>=anchor) doneSince++; });
@@ -37967,7 +38058,7 @@ function lnRhythm(kid,id,idx){
   if(u.subs){ rh={mode:"timesPerWeek",tpw:parseInt(u.timesPerWeek,10)||0,targetDate:"",allowedDays:_lnList(u.allowedDays).map(String),cap:Math.max(1,parseInt(u.cap,10)||1)}; }
   else{
     const f=(typeof cbDefaultForm==="function")?cbDefaultForm(kid,u.sk):{}; const s=(((currData||{}).subjects||{})[kid]||{})[u.sk]||{};
-    rh={mode:f.mode||"timesPerWeek",tpw:parseInt(f.tpw,10)||0,targetDate:f.targetDate||"",allowedDays:(f.allowedDays||[]).slice(),cap:Math.max(1,parseInt(s.cap,10)||1)};
+    rh={mode:f.mode||"timesPerWeek",tpw:parseInt(f.tpw,10)||0,targetDate:f.targetDate||"",allowedDays:(f.allowedDays||[]).slice(),cap:Math.max(1,parseInt(s.cap,10)||1),noCoopDays:(typeof noCoopDaysOf==="function")?noCoopDaysOf(s):null};   // 🏫 COOPWEEKDAYS rides the borrowed rhythm
   }
   rh.own=(i===idx&&!us[idx].subs); rh.fromIdx=i; return rh;
 }
@@ -38649,6 +38740,9 @@ function cbRenderRules(col){
   const _pill='display:inline-block;padding:2px 7px;border-radius:9px;border:1px solid var(--border);background:#fff;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap';
   // 🏫 COOPDAY: the column shows only for a kid in a timed co-op
   const _coopCol=(function(){ try{ const m=coopsMap(); for(const id in m){ const c=m[id]; if(c&&(c.mode||"timed")==="timed"&&(c.kids||[]).indexOf(kid)>=0) return true; } }catch(e){} return false; })();
+  // 🏫 COOPWEEKDAYS: the "weeks without co-op" row shows for a kid in ANY co-op (timed or full-day)
+  const _coopAny=(function(){ try{ const m=coopsMap(); for(const id in m){ const c=m[id]; if(c&&(c.kids||[]).indexOf(kid)>=0) return true; } }catch(e){} return false; })();
+  if(_coopAny) h+='<div style="font-size:10px;color:var(--muted);margin:2px 0 6px">🏫 <b>Weeks without co-op:</b> each subject has a second row of days under <b>Days</b> for weeks when '+cap(kid)+' has no co-op (none lit = same days every week). <span onclick="cwdUseMonThu(\''+kid+'\')" style="text-decoration:underline;cursor:pointer;font-weight:700">Use Mon–Thu for every 4×/wk subject</span></div>';
   h+='<div id="cb-daypin-scroll" style="max-height:340px;overflow:auto;border:1px solid var(--border);border-radius:8px">';
   h+='<table style="border-collapse:collapse;font-size:10.5px;min-width:100%"><thead><tr style="background:var(--bg)">'+["Subject","Days","×/wk","Cap","Min"].concat(_coopCol?["Co-op day"]:[]).concat(["Mom","Device","Priority","First/last","Sticky","No-carry","Rules"]).map(x=>'<th style="text-align:left;padding:5px 6px;white-space:nowrap;font-size:10px;color:var(--muted)">'+x+'</th>').join("")+'</tr></thead><tbody>';
   for(const [sk,s] of entries){
@@ -38662,7 +38756,10 @@ function cbRenderRules(col){
     const _lnDim=(_lm&&(_lm.prior||_lm.multi))?';opacity:.4" title="'+(_lm.multi?'the multiple card’s rhythm applies':'same as the unit before it in lane '+esc(_lm.name))+'':'"';
     h+='<tr style="border-top:1px dashed #eef0f3">';
     h+='<td style="padding:4px 6px;font-weight:700;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis" title="'+disp(sk)+'">'+(pb?'🧭 ':'')+disp(sk)+(_lm?'<div style="font-size:9px;font-weight:600;color:'+(_lm.state==="up"?col:'var(--muted)')+'">🛤 '+esc(_lm.name)+' · '+_lm.pos+' of '+_lm.n+' · '+(_lm.state==="up"?"up now":_lm.state==="done"?"done":"waiting")+(_lm.prior?' · ↑ same as before':'')+'</div>':'')+'</td>';
-    h+='<td style="padding:3px 6px;white-space:nowrap'+_lnDim+'>'+["Mon","Tue","Wed","Thu","Fri"].map(d=>{ const on=al.includes(d); return '<span onclick="cbPinDay(\''+sk+'\',\''+d+'\')" style="display:inline-block;padding:2px 6px;border-radius:9px;border:1px solid '+(on?'transparent':'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:9.5px;font-weight:700;cursor:pointer;margin-right:2px">'+d[0]+'</span>'; }).join("")+'</td>';
+    h+='<td style="padding:3px 6px;white-space:nowrap'+_lnDim+'>'+["Mon","Tue","Wed","Thu","Fri"].map(d=>{ const on=al.includes(d); return '<span onclick="cbPinDay(\''+sk+'\',\''+d+'\')" style="display:inline-block;padding:2px 6px;border-radius:9px;border:1px solid '+(on?'transparent':'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:9.5px;font-weight:700;cursor:pointer;margin-right:2px">'+d[0]+'</span>'; }).join("")
+      // 🏫 COOPWEEKDAYS: second row — the days for a week with NO co-op (subject.noCoopDays); none lit = same as above
+      +(_coopAny?(function(){ const _nc=(typeof noCoopDaysOf==="function"&&noCoopDaysOf(s))||[]; return '<div style="margin-top:3px;font-size:9.5px;color:var(--muted)" title="Days this subject may land on in a week when '+cap(kid)+' has NO co-op. The row above is for co-op weeks. Nothing lit = the same days every week.">🏫 no co-op wk: '+["Mon","Tue","Wed","Thu","Fri"].map(d=>{ const on=_nc.indexOf(d)>=0; return '<span onclick="cwdPinDay(\''+sk+'\',\''+d+'\')" style="display:inline-block;padding:1px 5px;border-radius:9px;border:1px solid '+(on?'transparent':'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:9px;font-weight:700;cursor:pointer;margin-right:2px">'+d[0]+'</span>'; }).join("")+'</div>'; })():'')
+      +'</td>';
     h+='<td style="padding:3px 6px;white-space:nowrap'+_lnDim+'><span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'tpw\','+(tpw-1)+',true)" style="'+_pill+'">−</span> <b>'+(tpw||"all")+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'tpw\','+(tpw+1)+',true)" style="'+_pill+'">+</span></td>';
     h+='<td style="padding:3px 6px;white-space:nowrap'+_lnDim+'>'+((true)?('<span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'cap\','+Math.max(1,_capN-1)+',true)" style="'+_pill+'">−</span> <b>'+_capN+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'cap\','+Math.min(4,_capN+1)+',true)" style="'+_pill+'">+</span>'):'<span style="color:var(--muted)">—</span>')+'</td>';
     h+='<td style="padding:3px 6px;white-space:nowrap"><span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'minutes\','+Math.max(5,(s.minutes||20)-5)+',true)" style="'+_pill+'">−</span> <b>'+(s.minutes||20)+'</b> <span onclick="rlSet(\''+kid+'\',\''+sk+'\',\'minutes\','+Math.min(90,(s.minutes||20)+5)+',true)" style="'+_pill+'">+</span></td>';
@@ -38754,6 +38851,9 @@ function cbBuildCfg(){
   const s=currData.subjects[kid][sk];
   const cfg={sk,minutes:s.minutes||20,mode:f.mode,allowedDays:f.allowedDays.slice(),
     rows:cbFutureRows(kid,sk,f.startDate),dayCapMin:cbDayCap(kid),extend:cbExtendInfo(kid,f.startDate)};
+  // 🏫 COOPWEEKDAYS: per-week day sets over the rows + the extension's reach (800 days, cbMaterialize's own limit)
+  try{ if(typeof subjDaysByWeek==="function"){ const _lo=(cfg.rows[0]||{}).date||(cfg.extend&&cfg.extend.lastDate)||cbTodayISO(); const _hiD=_cbParseDate((cfg.extend&&cfg.extend.lastDate)||(cfg.rows[cfg.rows.length-1]||{}).date||_lo); _hiD.setDate(_hiD.getDate()+800);
+    const _m=subjDaysByWeek(kid,{allowedDays:cfg.allowedDays,noCoopDays:s.noCoopDays},_lo,_cbISO(_hiD)); if(_m) cfg.daysByWeek=_m; } }catch(e){}
   if(f.mode==="targetDate") cfg.targetDate=f.targetDate;
   if(f.mode==="window"){ cfg.windowEnd=f.windowEnd; cfg.tpw=f.tpw; }
   if(f.mode==="timesPerWeek") cfg.tpw=f.tpw;
@@ -39569,6 +39669,8 @@ function cbRenderForm(col,embedded){
     h+='<div class="ce-chip'+(f.allowedDays.includes(d)?" sel":"")+'" onclick="cbToggleDay(\''+d+'\')">'+d+'</div>';
   });
   h+='</div>';
+  // 🏫 COOPWEEKDAYS: say so when weeks without co-op use a different set (set in the placement-rules table; the preview below follows it)
+  try{ const _nc=(typeof noCoopDaysOf==="function")?noCoopDaysOf(currData.subjects[kid][sk]):null; if(_nc) h+='<div style="font-size:11px;color:var(--muted);margin:-4px 0 6px">🏫 Weeks without co-op land on <b>'+_nc.join(" ")+'</b> (placement rules) — the preview follows it.</div>'; }catch(e){}
 
   const tpwStepper='<div class="ce-stepper"><button onclick="cbStepTpw(-1)">&minus;</button><span>'+f.tpw+'</span><button onclick="cbStepTpw(1)">+</button></div>';
   const contentLine=(f.mode!=="pages"&&f.mode!=="minutes")?
@@ -41614,7 +41716,10 @@ function reprojectSubjectWeek(kid,sk,why,opts){
       const _subj=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid]||{})[sk]||{};
       // 🛤 a lane member on a borrowed / shared rhythm is judged by THAT rhythm's days and cap
       let _rpDays=_subj.allowedDays||[], _rpCap=_subj.cap||1;
-      try{ if(typeof lnOf==="function"){ const _l=lnOf(kid,sk); if(_l){ const _rh=lnRhythm(kid,_l.id,_l.unitIdx); if(_rh&&!_rh.own){ _rpDays=_rh.allowedDays||[]; _rpCap=_rh.cap||1; } } } }catch(e){}
+      let _rpNc=_subj.noCoopDays;   // 🏫 COOPWEEKDAYS: the field that goes with those days (a borrowed rhythm brings its source's)
+      try{ if(typeof lnOf==="function"){ const _l=lnOf(kid,sk); if(_l){ const _rh=lnRhythm(kid,_l.id,_l.unitIdx); if(_rh&&!_rh.own){ _rpDays=_rh.allowedDays||[]; _rpCap=_rh.cap||1; } if(_rh&&!_rh.own) _rpNc=_rh.noCoopDays; } } }catch(e){}
+      // 🏫 COOPWEEKDAYS: this week's day set — noCoopDays in a week with no co-op for this kid
+      try{ if(typeof subjDaysFor==="function"&&typeof calDateForWeekDay==="function"){ const _wISO=calDateForWeekDay("monday",wn); if(_wISO) _rpDays=subjDaysFor(kid,{allowedDays:_rpDays,noCoopDays:_rpNc},_wISO); } }catch(e){}
       // 🏫 days this subject may not land on this week (co-op no-Mom rule, or ✕'d off for it)
       const _blockedDays=[]; try{ if(typeof calDateForWeekDay==="function"&&typeof _ovRmX==="function"){ _RP_DAYS.forEach(function(d){ const ds=calDateForWeekDay(d,wn); if(ds&&_ovRmX(kid,ds,sk,false)) _blockedDays.push(d); }); } }catch(e){}
       // ⏭ pattern-forward: the subject's days come from its plan, not the generator's balancer
@@ -42773,7 +42878,8 @@ function renderCurrGrid(el){
     dayNums.forEach(function(dn2){ const l2=lessons[dn2]; if(!l2||!l2.date||!l2.week||l2.date<today) return;
       const dow2=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][gwParseDate(l2.date).getDay()];
       _allSks.forEach(function(sk2){ const s2=subs[sk2]||{}; if(s2.paused||s2.mom!=="required") return;
-        const runs=(s2.allowedDays&&s2.allowedDays.length)?s2.allowedDays.indexOf(dow2)>=0:gvFilled(l2[sk2]);
+        const _al2=(typeof subjDaysFor==="function")?subjDaysFor(gvKid,s2,l2.date):(s2.allowedDays||[]);   // 🏫 COOPWEEKDAYS
+        const runs=_al2.length?_al2.indexOf(dow2)>=0:gvFilled(l2[sk2]);
         if(!runs||!coopBlocksBase(gvKid,l2.date,sk2)) return;
         const w=_wkLost[l2.week]||(_wkLost[l2.week]={}); (w[sk2]||(w[sk2]=[])).push(l2.date); }); });
   } }catch(e){}
@@ -42836,7 +42942,7 @@ function renderCurrGrid(el){
     if(!offReason&&!mapOff){ const _abbr=DOWS[d.getDay()];
       for(const sk of Object.keys(subs)){ const s=subs[sk]; if(!s||s.paused||gvFilled(l[sk])) continue;
         const _isDaily=s.tracking==="daily"||(s.rules||"").includes("first")||(s.rules||"").includes("last"); if(!_isDaily) continue;
-        const _ad=s.allowedDays||[]; if(_ad.length&&_abbr&&_ad.indexOf(_abbr)<0) continue;
+        const _ad=(typeof subjDaysFor==="function")?subjDaysFor(gvKid,s,l.date):(s.allowedDays||[]); if(_ad.length&&_abbr&&_ad.indexOf(_abbr)<0) continue;   // 🏫 COOPWEEKDAYS
         dailyMins+=s.minutes||20; } }
     // Retrieval slots (🎯 Daily Drill / 🏃 Sprint / 🎯 Match) — generation adds one ~15-min
     // Mom-required slot per template day; it's not a grid subject, so add it to the load too.
@@ -44430,7 +44536,8 @@ function lmComputeSuggestions(k,weekLabel){
         if(need<=0) break;
         if(dy.off) continue;
         const abbr=WD[gwParseDate(dy.date).getDay()];
-        if(al.length&&abbr&&!al.includes(abbr)) continue;   // 6c: pins are the one "which days"
+        const _al=(typeof subjDaysFor==="function")?subjDaysFor(k,s,dy.date):al;   // 🏫 COOPWEEKDAYS: this week's day set
+        if(_al.length&&abbr&&!_al.includes(abbr)) continue;   // 6c: pins are the one "which days"
         if(!allowSecond&&dy.present[sk]) continue;
         if(allowSecond&&(!dy.present[sk]||(dy.ov.added||{})[sk])) continue;
         let mins=0;
@@ -45084,8 +45191,8 @@ function flExtendSubject(kid,sk){
     if(l&&l.date&&l[sk]&&l[sk]!=="—"&&l[sk]!=="nan"){ const wd=gwParseDate(l.date).getDay(); wdCounts[wd]=(wdCounts[wd]||0)+1; }
   }
   let wds=Object.keys(wdCounts).map(Number).sort((a,b)=>a-b);
+  const M={Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6,Sun:0}; const _fromPins=!wds.length;
   if(!wds.length){
-    const M={Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6,Sun:0};
     const al=s.allowedDays||[];
     wds=al.length?al.map(a=>M[a]).filter(x=>x!=null):[1,2,3,4,5];
   }
@@ -45102,7 +45209,9 @@ function flExtendSubject(kid,sk){
     const range=gwWeekDateRange(wk);
     if(!range) break;
     const mon=gwParseDate(range.start);
-    for(const wd of wds){
+    // 🏫 COOPWEEKDAYS: pins are read per week (noCoopDays in a week with no co-op); grid history stays as is
+    let _wds=wds; try{ if(_fromPins&&typeof subjDaysFor==="function"){ const _a=subjDaysFor(kid,s,range.start); if(_a.length) _wds=_a.map(a=>M[a]).filter(x=>x!=null); } }catch(e){}
+    for(const wd of _wds){
       if(need<=0) break;
       const dt=new Date(mon); dt.setDate(dt.getDate()+((wd+6)%7));
       const f=dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");
@@ -63158,7 +63267,8 @@ function gwAutoBalance(dayData,lateStart,skipDays,todayISO){
             const rules=subjectRules[key]||"";
             if(rules.includes("sticky")) continue;
             if(stickyTargets.has(key)) continue;
-            const allowed=subjects[key]&&subjects[key].allowedDays||[];   // 6c: pins are the one "which days"
+            let allowed=subjects[key]&&subjects[key].allowedDays||[];   // 6c: pins are the one "which days"
+            try{ if(typeof subjDaysFor==="function") allowed=subjDaysFor(kid,subjects[key],dk); }catch(e){}   // 🏫 COOPWEEKDAYS: this week's day set
             const dayAbbr={monday:"Mon",tuesday:"Tue",wednesday:"Wed",thursday:"Thu",friday:"Fri",saturday:"Sat"}[dayName];
             if(allowed.length&&dayAbbr&&!allowed.includes(dayAbbr)) continue;
             // A co-op day with "no Mom-required lessons" cannot RECEIVE a Mom-required subject:
@@ -63351,13 +63461,15 @@ function resolveWeekSlots(weekNum,ignoreAuto){
       let _lnRh=null;
       if(typeof lnOf==="function"){ const _l=lnOf(kid,sk); if(_l){ if(!lnIsUp(kid,_l.id,_l.unitIdx)) continue; _lnRh=lnRhythm(kid,_l.id,_l.unitIdx); if(_lnRh&&_lnRh.own) _lnRh=null; } }
       const allowed=(_lnRh?_lnRh.allowedDays:s.allowedDays)||[];
+      // 🏫 COOPWEEKDAYS: a week with no co-op for this kid takes the subject's noCoopDays (else exactly `allowed`)
+      let _alWk=allowed; try{ if(typeof subjDaysFor==="function"){ const _wd=sortedDates.find(d=>{ const g=gwParseDate(d).getDay(); return g>=1&&g<=5; })||sortedDates[0]; if(_wd) _alWk=subjDaysFor(kid,{allowedDays:allowed,noCoopDays:_lnRh?_lnRh.noCoopDays:s.noCoopDays},_wd); } }catch(e){}
       const matchDates=sortedDates.filter(d=>{
         if(smapIsKidOff(kid,d)||_ovOffX(kid,d,ignoreAuto)) return false;
         if(_ovRmX(kid,d,sk,ignoreAuto)) return false;
-        if(!allowed.length) return true;
+        if(!_alWk.length) return true;
         const dObj=gwParseDate(d);
         const abbr=WDAY_ABBR[dObj.getDay()];
-        return abbr&&allowed.includes(abbr);
+        return abbr&&_alWk.includes(abbr);
       });
       if(!matchDates.length) continue;
       // timesPerWeek caps how many of the allowed days this in-app subject actually
@@ -63436,7 +63548,8 @@ function gwCatchupExtraDates(kid,sk,s,existingDates,want,dayData){
     if(!kidDay) continue;                          // kid off / nothing scheduled that day
     const abbr=WD[gwParseDate(date).getDay()];
     if(abbr==="Sat"||abbr==="Sun") continue;
-    if(al.length&&abbr&&!al.includes(abbr)) continue;   // 6c: pins are the one "which days"
+    const _al=(typeof subjDaysFor==="function")?subjDaysFor(kid,s,date):al;   // 🏫 COOPWEEKDAYS: this week's day set
+    if(_al.length&&abbr&&!_al.includes(abbr)) continue;   // 6c: pins are the one "which days"
     let load=0;
     for(const psk of Object.keys(kidDay)) load+=(subs[psk]&&subs[psk].minutes)||20;
     days.push({date,load,have:cnt[date]||0});
