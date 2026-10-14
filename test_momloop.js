@@ -162,8 +162,11 @@ console.log("\n── it decides, it does not reschedule ──");
   // kid's next Mom card (one more WK/momHold set site, same stored fact). Still never a card.
   // 2026-10-04 (MOM_LOOP_SETTINGS, her ask): config/momLoop/startMode = "first" | "carry" — how each morning starts,
   // one Mom-gated tap in Admin ▸ Settings ▸ Mom's loop. Still never a card.
-  ok("it writes only the order, the cursor + its tap-day stamp, the hold, the behind scope, the start mode, the two switches, and the sweep marker",
-    (BLOCK.match(/db\.ref\(/g) || []).length === 12 && /eveningSweep/.test(BLOCK) && /config\/momLoop\/startMode/.test(BLOCK)
+  // 2026-10-13 (MOMNEXT, her ask): config/momLoop/offFor/<kid> = {id,day} — the ready switch "until they tick off this card",
+  // set/removed at the SAME write site as off/<kid> (one more db.ref in _mlWriteOff). Still never a card.
+  ok("it writes only the order, the cursor + its tap-day stamp, the hold, the behind scope, the start mode, the two switches (+ offFor), and the sweep marker",
+    (BLOCK.match(/db\.ref\(/g) || []).length === 13 && /eveningSweep/.test(BLOCK) && /config\/momLoop\/startMode/.test(BLOCK)
+      && (BLOCK.match(/config\/momLoop\/offFor\//g) || []).length === 1
       && /config\/momLoop\/order/.test(BLOCK) && /config\/momLoop\/cursor/.test(BLOCK)
       && /config\/momLoop\/cursorSetOn/.test(BLOCK) && /config\/momLoop\/behindScope/.test(BLOCK)
       && (BLOCK.match(/config\/momLoop\/off\//g) || []).length === 1
