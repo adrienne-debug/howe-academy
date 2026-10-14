@@ -343,5 +343,20 @@ const it = (id, result) => ({ id, prompt: id, result });
   ok("empty: detectors handle missing everything", D.digestDetect({}).length === 0);
 })();
 
+// ── REPORT_LEARNING (her yes 2026-10-13): learning-only drill days don't drag the weekly average to 0% ──
+(() => {
+  const d = base();
+  d.masteryHistory = { lincoln: {
+    "20260914": { date: "2026-09-14", pct: 0, scored: 0, shown: 6 },        // learning-only day (Caleb's whole first week looked like this)
+    "20260915": { date: "2026-09-15", pct: 75, scored: 4, correct: 3, miss: 1 },
+    "20260916": { date: "2026-09-16", pct: 0, scored: 0, shown: 5 } } };
+  const L = D.digestBuildWeekReport(d).kids.lincoln.mastery;
+  ok("report: the average counts only days with something scored (75, not 25)", L.avgPct === 75 && L.sessions === 3, L);
+  const e = base();
+  e.masteryHistory = { lincoln: { "20260914": { date: "2026-09-14", pct: 0, scored: 0, shown: 6 }, "20260915": { date: "2026-09-15", pct: 0, scored: 0, shown: 6 } } };
+  const M = D.digestBuildWeekReport(e).kids.lincoln.mastery;
+  ok("report: an all-learning week has sessions but NO % avg", M.sessions === 2 && M.avgPct === null, M);
+})();
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
