@@ -322,10 +322,14 @@ const updates = w => w.writes.filter(x => x[0] === "update" && x[1] === "week2/t
 }
 {
   const L = lesson("L1", "11:00 AM");
-  for (const [label, o] of [["a kid's device (not Mom mode)", { mom: false }], ["dry-run", { dry: true }], ["before the checked list arrives", { checkedLoaded: false }], ["before the mastery records arrive (given/paper rules read them)", { mastReady: false }]]) {
+  for (const [label, o] of [["dry-run", { dry: true }], ["before the checked list arrives", { checkedLoaded: false }], ["before the mastery records arrive (given/paper rules read them)", { mastReady: false }]]) {
     const w = healWorld(Object.assign({ tasks: [L] }, o)); w.ctx.stHeal();
     ok("no write " + label, !updates(w).length && !w.ctx.weekData.tasks.some(x => x.stTest));
   }
+  // live 2026-10-14 10:16 PM: her reload on a device without Mom on wrote nothing — the cascade that runs this same sync
+  // is not Mom-gated, so neither is the heal (idempotent, targeted: two devices compute the same result).
+  const k = healWorld({ tasks: [lesson("L1", "11:00 AM")], mom: false }); k.ctx.stHeal();
+  ok("a device without Mom on heals too (like the cascade)", updates(k).length === 1 && !!updates(k)[0]["andrew_st_L1-18"]);
 }
 {
   const L = lesson("L1", "11:00 AM"), w = healWorld({ tasks: [L] });
@@ -342,7 +346,7 @@ ok("the week's cards listener runs it right after rvHeal (first load or a change
 ok("…and again when the mastery records first arrive and when the checked list lands (live 2026-10-14: the cards came first, the heal waited, nothing re-ran it)",
   /if\(_mastFirst\)\{ try\{ renderAll\(\); \}catch\(e\)\{\} try\{ if\(typeof stHeal==="function"\) stHeal\(\); \}catch\(e\)\{\} \}/.test(src)
   && /fbCheckedLoaded=true;\n\s*schedCascade\(\);\n\s*renderAll\(\);\n\s*try\{ ckReplayPending\(\); \}catch\(e\)\{\}[^\n]*\n\s*try\{ if\(typeof stHeal==="function"\) stHeal\(\); \}catch\(e\)\{\}/.test(src));
-ok("Mom's device only, never in dry-run, waits for checked + mastery", /if\(!db\|\|_dryRun\(\)\) return;/.test(slice("stHeal")) && /momHereReal/.test(slice("stHeal")) && /fbCheckedLoaded\) return;/.test(slice("stHeal")) && /_haMastReady\) return;/.test(slice("stHeal")));
+ok("never in dry-run, waits for checked + mastery, no Mom gate (the cascade has none)", /if\(!db\|\|_dryRun\(\)\) return;/.test(slice("stHeal")) && !/momHere/.test(slice("stHeal")) && /fbCheckedLoaded\) return;/.test(slice("stHeal")) && /_haMastReady\) return;/.test(slice("stHeal")));
 
 console.log("\n── wiring ──");
 ok("tapTask asks the gate first (Mom opens the test · the lesson waits)", /if\(typeof stTapGate==="function"&&stTapGate\(t\)\) return;/.test(slice("tapTask")));
