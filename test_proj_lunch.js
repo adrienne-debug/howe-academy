@@ -4,7 +4,7 @@ const a=src.indexOf("  const _plSd="), b=src.indexOf("  const isToday = dayKey =
 if(a<0||b<0) throw new Error("projection block not found");
 const block=src.slice(a,b);
 const toMin=t=>{ const m=String(t||"").trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i); if(!m) return NaN; let h=+m[1]; const ap=(m[3]||"").toUpperCase(); if(ap==="PM"&&h!==12)h+=12; if(ap==="AM"&&h===12)h=0; return h*60+(+m[2]); };
-const run=(sd,dayKey)=>new Function("toMin","rulesData","dayKey",block+"return projWithLunch;")(toMin,{schoolDay:sd},dayKey);
+const run=(sd,dayKey)=>new Function("toMin","rulesData","dayKey","kids","countable","checked","DEFAULT_DUR","remainMin","nowMin",block+"return projWithLunch;")(toMin,{schoolDay:sd},dayKey,[],[],{},0,0,0);
 let pass=0,fail=0; const ok=(n,c,x)=>{ if(c){pass++;console.log("  ok  - "+n);} else {fail++;console.log("  FAIL- "+n+(x!==undefined?"  ("+JSON.stringify(x)+")":""));} };
 const D=run({lunchStart:"12:00 PM",lunchEnd:"1:00 PM"},"monday");
 ok("DeWalt 12–1: 11:00 + 120 min of work → 2:00 PM (an hour of lunch inside)", D(660,120)===840, D(660,120));
