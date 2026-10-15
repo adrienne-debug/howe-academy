@@ -116,7 +116,8 @@ function mkEnv(o) {
   const grid = src.slice(g0, g1);
   ok("renderCurrGrid exists", g0 > 0 && grid.length > 1000);
   ok("the subject column header carries the line after the name and chips", /esc\(\(subs\[sk\]\|\|\{\}\)\.display\|\|sk\)\+owedChip\+_pzChip\+\(typeof gvEndLine==="function"\?gvEndLine\(gvKid,sk\):''\)\+'<\/th>'/.test(grid));
-  ok("the lane header carries the line for the book that is up", /'\+_act\+_oc\+\(typeof gvEndLine==="function"\?gvEndLine\(gvKid,_upSk\):''\)\+_q\+'<\/th>'/.test(grid));
+  // live 2026-10-15: the header read only the book that was up — an alternating lane showed one member's end.
+  ok("the lane header carries the line for the lane's LAST-ending book (gvLaneEndSk over every member)", /'\+_act\+_oc\+\(typeof gvEndLine==="function"\?gvEndLine\(gvKid,\(typeof gvLaneEndSk==="function"\?gvLaneEndSk\(gvKid,_lc\.members,_upSk\):_upSk\)\):''\)\+_q\+'<\/th>'/.test(grid));
   ok("columns are re-ordered only when Mom's toggle is on, in memory", /const cols=\(typeof gvEndSortOn==="function"&&gvEndSortOn\(\)\)\?gvEndSortCols\(gvKid,_lnFold\.cols,_lnCols\):_lnFold\.cols;/.test(grid));
   ok("the toolbar toggle is Mom-only and sits with the other Grid tools, not in the header", /if\(\(momModeActive\|\|adminPinUnlocked\)&&typeof gvEndSortToggle==="function"\) h\+='<button onclick="gvEndSortToggle\(\)"[^\n]*Sort by end date<\/button>'/.test(grid) && grid.indexOf("gvEndSortToggle()") < grid.indexOf('<div class="gv-wrap">'));
   ok("the line has its own small style and does not inherit the header's uppercase", /\.gv-end\{display:block;font-size:9px;font-weight:700;text-transform:none;letter-spacing:0;white-space:nowrap;margin-top:1px\}/.test(src));
