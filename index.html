@@ -41351,7 +41351,7 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
   const wantBy={}; want.forEach(t=>{ wantBy[t.id]=t; });
   const liveBy={}; live.forEach(t=>{ liveBy[t.id]=t; });
   const orig0={}; live.forEach(t=>{ orig0[t.id]={day:t.day,time:t.time}; });   // where each card started (objects are edited in place)
-  const upd={}; const summary={added:[],moved:[],removed:[],retitled:[],kept:[]};
+  const upd={}; const summary={added:[],moved:[],removed:[],retitled:[],kept:[],unboxed:[]};
   const after=(liveTasks||[]).slice();
   const freed={};   // day → [time] slots this subject just vacated (removed / moved away) — the next lesson takes the finished one's slot
   // Firebase multi-path forbids a path that is a prefix of another: drop any `<id>/field`
@@ -41387,6 +41387,15 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
     if(opts.lsdSubj&&!opts.checked[t.id]&&typeof lessonDayFlags==="function"){ const _lf=lessonDayFlags(opts.lsdSubj,t.title);
       if(_lf){ if((t.mom||"none")!==_lf.mom){ upd[t.id+"/mom"]=_lf.mom; t.mom=_lf.mom; } if((+t.dur||0)!==_lf.dur){ upd[t.id+"/dur"]=_lf.dur; t.dur=_lf.dur; }
         if((upd[t.id+"/mom"]!==undefined||upd[t.id+"/dur"]!==undefined)&&summary.retitled.indexOf(t.id)<0) summary.retitled.push(t.id); } }
+    // RPUNBOX_START — a card the pattern wants this week IS a sitting: it leaves the end-of-week carries box (her report
+    // 2026-10-15, Lincoln's Social Studies: lesson 6 sat in the box, lesson 5 was walked back mid-week — the walk-back's
+    // re-lay moved 6 to Friday but left `_eowOverflow` on it, so 6 still showed in the box and the school-end guard, which
+    // skips boxed cards, found no next sitting to roll 5 into when Mom's Thursday was full: 5 was deferred off the week
+    // while 6 "stayed in this one"). Unlocked cards only (checked / claimed / started never change); one targeted
+    // <id>/_eowOverflow: null write, counted so the save happens even when nothing else moved. A card the cascade boxed
+    // on the very day the plan wants is covered too (the box keeps a card's day).
+    if(t._eowOverflow&&!locked(t)){ delete t._eowOverflow; upd[t.id+"/_eowOverflow"]=null; summary.unboxed.push(t.id); }
+    // RPUNBOX_END
     if(w.day&&w.day!==t.day){ if(locked(t)) return; if(dayIx(w.day)>=0&&tIx>=0&&dayIx(w.day)<tIx) return; // never move into the past
       (freed[t.day]=freed[t.day]||[]).push(t.time); t.day=w.day; t.time=null; summary.moved.push(t.id); }
   });
@@ -41799,7 +41808,7 @@ function reprojectSubjectWeek(kid,sk,why,opts){
       try{ if(typeof seGuardWeek==="function"){ const _se=seGuardWeek(r.tasksAfter,seGuardCtx({kids:[kid],checked:checked||{}}));
         _rpMergeUpd(r.upd,_se.upd);   // RPMERGE: never a path beside its own child (Firebase rejects the whole save)
         r.summary.shifted=(r.summary.shifted||[]).concat(_se.retimed,_se.rolled,_se.dropped||[]); r.summary.removed=r.summary.removed.concat(_se.deferred); } }catch(eSE){ dbg&&dbg("school-end skip: "+eSE); }
-      const n=r.summary.added.length+r.summary.moved.length+r.summary.removed.length+r.summary.retitled.length+((r.summary.closing||[]).length)+((r.summary.shifted||[]).length);
+      const n=r.summary.added.length+r.summary.moved.length+r.summary.removed.length+r.summary.retitled.length+((r.summary.closing||[]).length)+((r.summary.shifted||[]).length)+((r.summary.unboxed||[]).length);   // RPUNBOX: a card leaving the carries box is a write
       out=r.summary;
       if(!n) return;
       // E + F (2026-10-04 👻): read what the server really holds, drop field writes for cards that aren't there,
