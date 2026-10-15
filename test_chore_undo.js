@@ -134,6 +134,6 @@ ok("both check-offs route the uncheck through cuUnpay and tag the log line", (sr
 ok("rlogAppend takes the extra fields", /function rlogAppend\(kid,slot,label,act,pts,extra\)/.test(src));
 ok("the ledger sits under Kids today on Mom's Day only (bank row, no Dad control); renderMomsDay untouched", /if\(bank&&dadCtl===undefined&&typeof mdCardChoreLedger==="function"\)\{ try\{ h\+=mdCardChoreLedger\(\); \}catch\(e\)\{\} \}/.test(slice("mdCardKidsToday"))&&(src.match(/h\+=mdCardChoreLedger\(\)/g)||[]).length===1&&!/mdCardChoreLedger/.test(slice("renderMomsDay"))&&!/mdCardChoreLedger/.test(slice("renderDadsDay")));
 ok("Laundry card: a ↶ before the forward button; ✓ Put away remembers the load", /laundryBackBtnHTML\(id,l\)/.test(src)&&/laundryAwayRemember\(id,l\)/.test(slice("laundryAdvance")));
-ok("laundryDel untouched (audit hole 10 left for its own PR)", !/momBlocks/.test(slice("laundryDel")));
+ok("laundryDel also drops the load's block (audit hole 10, 2026-10-15; see test_laundry_tiny.js)", /_cuDropBlock\(id,l\.stage\)/.test(slice("laundryDel")));
 ok("no 🔀", src.indexOf("🔀")<0);
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
