@@ -68,7 +68,7 @@ function world(o) {
     ceRenderSessions: () => "", ceConvUndoBanner: () => "", fbRender: () => "", gvAuditRender: () => "", alignPlanPreview: () => null,
     pacePhantomKeys: () => [], lidUnassigned: () => [], lidImportPending: () => [], lidOutOfOrderAll: () => [], skiplogLeftovers: () => [], dayTokenLeftovers: () => [],
     capLeftovers: () => ({ items: [], orphans: [], node: null }), planPending: () => [], gvNoSeqSubjects: () => [], gvMissingDays: () => [], gvSelFilledCount: () => 0, gvSelSingleSubject: () => null,
-    retrDayKinds: () => [], retrSlotMinutes: () => 15,
+    retrDayKinds: () => [], retrSlotMinutes: () => 15, momHere: () => true,
     gvFilled: v => !!(v && v !== "—" && v !== "nan" && String(v).trim()),
     cbDoneCellSet: (k, sk, cells) => { const di = ctx.lidDoneIdx(k, sk); if (!di) return null; const seq = subjects[sk].lessonSeq; const out = new Set(); cells.forEach((c, i) => { const idx = seq.indexOf(c.text); if (idx >= 0 && di.has(idx)) out.add(i); }); return out; },
     _lidNorm: s => String(s == null ? "" : s).replace(/[–—−]/g, "-").replace(/\s+/g, " ").trim().toLowerCase(),
@@ -85,7 +85,7 @@ function world(o) {
     braceSlice("gvSubjectCols"), braceSlice("cbHasGridCells"), braceSlice("cbCardOnlySubjects"), braceSlice("cbOtherSubjects"),
     block("// PROJ_START", "// PROJ_END"), block("// PLANDROP_START", "// PLANDROP_END"),
     block("function planMaterialize", "// Owed only (for chips)"), block("function planOwed", "// PLANMAT_END"),
-    block("// LANE_START", "// LANE_END"), block("// GVDER_START", "// GVDER_END"),
+    block("// LANE_START", "// LANE_END"), block("// GVDER_START", "// GVDER_END"), block("// GRIDEND_START", "// GRIDEND_END"),
     braceSlice("renderCurrGrid"),
   ].join("\n");
   vm.createContext(ctx);
@@ -320,6 +320,53 @@ console.log("\n── paused ──");
   ok("…it is not listed twice", (h.match(/ceOpenEdit\('kid','s3b'\)"[^>]*>Singapore 3B</g) || []).length === 1);
   c.currData.subjects.kid.s3b.paused = false;
   ok("resumed: strip gone", !/gv-paused-strip/.test(render(c)));
+}
+
+// ── 📅 GRIDEND: a lane header shows the lane's LAST end, not the first member's ──
+// live 2026-10-15: Lincoln's Grammar lane read "ends Dec 20" while Editor in Chief and the purple
+// book still ran in it. Her rule (GRIDEND): a lane column ends when its LAST book ends.
+console.log("\n── 📅 lane header end date ──");
+{
+  const head = h => h.slice(h.indexOf('<tr class="gv-subrow">'), h.indexOf("</thead>"));
+  const laneTh = (h, sk) => { const hd = head(h); const i = hd.indexOf("ceOpenEdit('kid','" + sk + "')"); const a = hd.lastIndexOf("<th", i), b = hd.indexOf("</th>", i); return i < 0 ? "" : hd.slice(a, b); };
+  // two-member alternating lane (Geo+Sci, AB): the FIRST member ends earlier
+  const c = world();
+  c.currData.subjects.kid.geo.pacing.builtThrough = "2026-12-20";
+  c.currData.subjects.kid.sci.pacing.builtThrough = "2027-03-05";
+  let h = ""; try { h = render(c); } catch (e) { ok("renders with end dates", false, String(e && e.stack).slice(0, 400)); }
+  const th = laneTh(h, "geo");
+  ok("both alternating members are up in the header", /ceOpenEdit\('kid','geo'\)/.test(th) && /ceOpenEdit\('kid','sci'\)/.test(th), th);
+  ok("THE FIX: the alternating lane's header shows the LATER end (Mar 5), not the first member's (Dec 20)", /class="gv-end"[^>]*>ends Mar 5</.test(th) && !/Dec 20/.test(th), th);
+  ok("…exactly one end line in that header", (th.match(/class="gv-end"/g) || []).length === 1, th);
+  // order does not matter: the later end wins wherever it sits
+  const c2 = world();
+  c2.currData.subjects.kid.geo.pacing.builtThrough = "2027-03-05";
+  c2.currData.subjects.kid.sci.pacing.builtThrough = "2026-12-20";
+  const th2 = laneTh(render(c2), "geo");
+  ok("the later end wins when it is the FIRST member's too", /ends Mar 5</.test(th2) && !/Dec 20/.test(th2), th2);
+  // one member has no plan date → the other's end still shows
+  const c3 = world();
+  c3.currData.subjects.kid.sci.pacing.builtThrough = "2027-03-05";
+  ok("a member with no plan date never blanks the lane's end", /ends Mar 5</.test(laneTh(render(c3), "geo")));
+  // behind/ahead colour rides with the member whose end is shown
+  const c4 = world();
+  c4.currData.subjects.kid.geo.pacing.builtThrough = "2026-12-20";
+  c4.currData.subjects.kid.sci.pacing.builtThrough = "2027-03-05";
+  c4.planPace = (k, sk) => sk === "sci" ? { behind: 3 } : { ahead: 2 };
+  const th4 = laneTh(render(c4), "geo");
+  ok("…and its behind/ahead note is the LATER member's (Sci · 3 behind)", /ends Mar 5 · 3 behind</.test(th4) && !/ahead/.test(th4), th4);
+  // a stack lane: the queued book's later end is the lane's end
+  const c5 = world();
+  c5.currData.subjects.kid.s3b.pacing.builtThrough = "2026-09-16";
+  c5.currData.subjects.kid.s4a.pacing.builtThrough = "2026-10-30";
+  ok("a stack lane reads its queued book's later end (Oct 30)", /ends Oct 30</.test(laneTh(render(c5), "s3b")));
+  // no lanes: each plain column still reads its own end, unchanged
+  const c6 = world({ lanes: null });
+  c6.currData.subjects.kid.geo.pacing.builtThrough = "2026-12-20";
+  c6.currData.subjects.kid.sci.pacing.builtThrough = "2027-03-05";
+  const h6 = head(render(c6));
+  ok("no lanes → each column keeps its own end (Geo Dec 20, Sci Mar 5)", /Daily Geo[^]*?ends Dec 20</.test(h6) && /Daily Sci[^]*?ends Mar 5</.test(h6));
+  ok("the header and the end-date sort share one rule (gvLaneEndSk sits in GRIDEND, read-only)", /gvLaneEndSk\(gvKid,_lc\.members,_upSk\)/.test(src) && !/db\.ref|\.set\(|\.update\(/.test(block("// GRIDEND_START", "// GRIDEND_END").replace(/HA_LS\.setItem/g, "")));
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");
