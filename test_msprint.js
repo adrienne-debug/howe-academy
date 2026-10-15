@@ -76,7 +76,7 @@ console.log("\n── a session: A1 → B1 → A2 → B2, met passes the sprint 
 }
 {
   const w = world({ state: { lincoln: { book: "sm-sprints-4", cur: 401 } }, who: "kid" });
-  ok("a kid can't mark a run", w.call("msRecordRun('lincoln',true)") === null && w.writes.length === 0);
+  ok("Mom off: a run still marks and writes (MSMARK, her rule 2026-10-15)", w.call("msRecordRun('lincoln',true)") !== null && w.writes.length === 1 && w.writes[0][0] === "mathSprints/lincoln");
   const d = world({ state: { lincoln: { book: "sm-sprints-4", cur: 401 } }, dry: true }); d.call("msRecordRun('lincoln',true)");
   ok("dry-run writes nothing", d.writes.length === 0);
 }

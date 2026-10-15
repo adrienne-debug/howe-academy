@@ -128,7 +128,7 @@ console.log("\n── guards ──");
 {
   const w = world({ state: fresh() }); w.call("msRecordRun('lincoln',true)");
   const k = world({ state: w.st() ? { lincoln: w.st() } : {}, who: "kid" });
-  ok("a kid can't change or undo", k.call("msEditRun('lincoln',false)") === null && k.call("msUndoRun('lincoln')") === null && k.writes.length === 0);
+  ok("Mom off: change and undo of the last run still work (MSMARK)", k.call("msEditRun('lincoln',false)").changed === true && k.call("msUndoRun('lincoln')") !== null && k.writes.length === 2);
   const d = world({ state: { lincoln: w.st() }, dry: true });
   d.call("msEditRun('lincoln',false)"); d.call("msUndoRun('lincoln')");
   ok("dry-run writes nothing (but local state still corrects)", d.writes.length === 0 && d.st().cur === 401 && d.call("msRuns('lincoln',401)").length === 0);
@@ -153,7 +153,7 @@ console.log("\n── the panel: Change / Undo + ✎ Edit toggle ──");
   ok("not set up yet: pickers show without the toggle", /id="ms-pos-book"/.test(s.call("buildSprintBookHtml('#4f46e5')")));
   const k = world({ state: fresh(), who: "kid" }); k.ctx.momHere = () => true; k.call("msRecordRun('lincoln',false)"); k.ctx.momHere = () => false;
   const kh = k.call("buildSprintBookHtml('#4f46e5')");
-  ok("a kid sees no Change / Undo / Edit", !/msEditRun|msUndoRun|msPosEditToggle/.test(kh));
+  ok("Mom off: Change / Undo show, ✎ Edit (position) does not", /msEditRun/.test(kh) && /msUndoRun/.test(kh) && !/msPosEditToggle/.test(kh));
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");

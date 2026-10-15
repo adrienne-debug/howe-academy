@@ -60631,8 +60631,13 @@ function sprintDrillGridPillsHtml(color,poolLen){
 // kid runs their own level. A session = 4 timed 60-second runs. Each run is ONE sheet of the current sprint, in
 // the order A 1st → B 1st → A 2nd → B 2nd: met → the sprint is PASSED and the next run is the next sprint's
 // A 1st (a flying kid can pass 4 sprints in a session); not met → the same sprint's next sheet; four misses →
-// that sprint starts over at A 1st next time (repeat until met). Mom marks (Mom-required); the kid sees the
-// sheet and the timer. Sprint titles come from the library lists (library/scans/<book>, editable here: count +
+// that sprint starts over at A 1st next time (repeat until met). Whoever is on the sprint screen marks; the kid
+// sees the sheet and the timer.
+// MSMARK — marking needs no Mom mode (her rule 2026-10-15: "maybe to open the sprint but once open no mom mode
+// needed"). Live 2026-10-08 → 10-15: the Mom's Day gate (MOMGATE, 254eff8) turns Mom mode off when ▶ on the card
+// leaves Mom's Day for this screen, so at 0:00 the panel showed only "Mom marks met / not" and nothing was
+// recorded for a week (Lincoln's log stops Oct 7 while his cards were checked). Met / Not, ✎ Change and ↶ Undo
+// of the last run work with Mom off; the position (✎ Edit) and the book list stay Mom-only. Sprint titles come from the library lists (library/scans/<book>, editable here: count +
 // titles). Data: mathSprints/<kid> = {book, cur, moves[], log{<n>:{runs[], passed}}}. Targeted writes; dry-run inert.
 let mathSprints={}, lbScansMS={}, msTimer=null, msTimerLeft=0, msTimerDone=false, msEditBook=null, msPosEdit=false;
 const MS_BOOKS=[{id:"sm-sprints-1",label:"Sprints 1",base:100},{id:"sm-sprints-2",label:"Sprints 2",base:200},{id:"sm-sprints-3",label:"Sprints 3",base:300},
@@ -60669,7 +60674,7 @@ function msSetPosition(kid,book,cur,why){
 // one run: records the sheet + result; a met sheet passes the sprint and moves the kid on; the 4th run of the day
 // checks off today's Math Sprints card
 function msRecordRun(kid,met){
-  if(!momHere()) return null; if(typeof msMarkLocked==="function"&&msMarkLocked()) return null; /* ⏱ MSBUZZ: a tap at 0:00 can't mark */ const st=msState(kid); if(!st||!st.cur) return null;
+  if(typeof msMarkLocked==="function"&&msMarkLocked()) return null; /* ⏱ MSBUZZ: a tap at 0:00 can't mark */ const st=msState(kid);   // MSMARK: no Mom check if(!st||!st.cur) return null;
   const n=st.cur, sheet=msNextSheet(kid,n); if(!sheet) return null;
   const runs=msRuns(kid,n); const run={d:msTodayISO(),ts:nowTs(),at:Date.now(),sheet:sheet.k,met:!!met};
   st.log=st.log||{}; st.log[n]=st.log[n]||{}; const arr=runs.concat([run]); st.log[n].runs=arr;
@@ -60704,7 +60709,7 @@ function _msApplyResult(kid,n,met,ts,u){
   else { delete st.log[n].passed; u["log/"+n+"/passed"]=null; st.cur=n; u["cur"]=n; if(st.done){ delete st.done; u["done"]=null; } }
 }
 function msEditRun(kid,met){
-  if(!momHere()) return null; const L=msLastTodayRun(kid); if(!L) return null; met=!!met;
+  const L=msLastTodayRun(kid); if(!L) return null; met=!!met;   // MSMARK: no Mom check
   if(!!L.run.met===met) return {n:L.n,sheet:L.run.sheet,met:met,changed:false};
   const st=msState(kid); const r=Object.assign({},L.run,{met:met,editedTs:nowTs()});
   const runs=msRuns(kid,L.n).slice(); runs[L.i]=r; st.log[L.n].runs=runs;
@@ -60716,7 +60721,7 @@ function msEditRun(kid,met){
   return {n:L.n,sheet:r.sheet,met:met,changed:true,cur:st.cur};
 }
 function msUndoRun(kid){
-  if(!momHere()) return null; const L=msLastTodayRun(kid); if(!L) return null;
+  const L=msLastTodayRun(kid); if(!L) return null;   // MSMARK: no Mom check
   const st=msState(kid); const runs=msRuns(kid,L.n).slice(0,L.i); st.log[L.n].runs=runs;
   const u={}; u["log/"+L.n+"/runs/"+L.i]=null;
   if(L.run.met) _msApplyResult(kid,L.n,false,null,u);   // the run that passed it is gone → not passed, back on that sprint
@@ -60892,11 +60897,10 @@ function buildSprintBookHtml(color){
     h+='<div style="height:8px;border-radius:4px;background:#eee;overflow:hidden;margin:8px auto 12px;max-width:320px"><div id="ms-timer-bar" style="height:100%;width:'+(msTimer||msTimerDone?Math.round(100*(60-(msTimerDone?0:msLeftSec()))/60):0)+'%;background:'+color+';transition:width 1s linear"></div></div>';
     h+='<button id="ms-start" onclick="msTimerStart()"'+(msTimer||msTimerDone?' disabled':'')+' style="'+(msTimerDone?'display:none;':'')+'padding:14px 28px;border-radius:14px;border:none;background:'+color+';color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(msTimer?"⏱ Running…":"▶ Start 60 seconds")+'</button>';
     h+='<div id="ms-mark" style="display:'+(msTimerDone?'flex':'none')+';gap:10px;justify-content:center;margin-top:6px">'+
-      (mom?'<button onclick="msRecordRun(\''+kid+'\',true)" style="flex:1;max-width:180px;padding:14px;border-radius:14px;border:none;background:#16a34a;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Met ✓</button><button onclick="msRecordRun(\''+kid+'\',false)" style="flex:1;max-width:180px;padding:14px;border-radius:14px;border:2px solid #ef4444;background:#fff;color:#ef4444;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Not ✗</button>':'<span style="font-size:12px;color:#78716c">Mom marks met / not</span>')+'</div>';
-    if(!mom) h+='<div style="font-size:11px;color:#78716c;margin-top:8px">Mom marks met / not after the timer.</div>';
+      ('<button onclick="msRecordRun(\''+kid+'\',true)" style="flex:1;max-width:180px;padding:14px;border-radius:14px;border:none;background:#16a34a;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Met ✓</button><button onclick="msRecordRun(\''+kid+'\',false)" style="flex:1;max-width:180px;padding:14px;border-radius:14px;border:2px solid #ef4444;background:#fff;color:#ef4444;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Not ✗</button>')+'</div>';   // MSMARK: Met / Not for whoever is here
   }
   if(runs.length) h+='<div style="font-size:11.5px;color:#78716c;margin-top:12px">This sprint: '+runs.map(r=>'<span style="color:'+(r.met?"#16a34a":"#b91c1c")+';font-weight:700">'+esc_(r.sheet.toUpperCase())+(r.met?" ✓":" ✗")+'</span>').join(" · ")+(msPassed(kid,st.cur)?' — PASSED':'')+'</div>';
-  const lastR=mom?msLastTodayRun(kid):null;   // ✎ MSEDIT: fix the latest tap
+  const lastR=msLastTodayRun(kid);   // ✎ MSEDIT: fix the latest tap — MSMARK: Mom off too
   if(lastR){ const r=lastR.run;
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:center;margin-top:10px;padding-top:10px;border-top:1px dashed #e2ddd6;font-size:12px;color:#57534e">Last run: Sprint '+lastR.n+' · '+esc_(String(r.sheet||"").toUpperCase())+' <b style="color:'+(r.met?"#16a34a":"#b91c1c")+'">'+(r.met?"Met ✓":"Not ✗")+'</b>'+
       '<button onclick="msEditRun(\''+kid+'\','+(!r.met)+')" style="padding:5px 10px;border-radius:8px;border:1.5px solid #e2ddd6;background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✎ Change to '+(r.met?"Not ✗":"Met ✓")+'</button>'+
