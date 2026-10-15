@@ -60756,7 +60756,39 @@ function msState(kid){ const st=(mathSprints||{})[kid]; return (st&&st.book)?st:
 function msRuns(kid,n){ const st=msState(kid); const e=st&&st.log&&st.log[n]; const r=e&&e.runs; return Array.isArray(r)?r.filter(Boolean):(r?Object.values(r).filter(Boolean):[]); }
 function msPassed(kid,n){ const st=msState(kid); const e=st&&st.log&&st.log[n]; return !!(e&&e.passed); }
 // the next sheet for sprint n: runs since the last pass, cycling A1→B1→A2→B2; null when the sprint is passed
-function msNextSheet(kid,n){ if(msPassed(kid,n)) return null; return MS_SHEETS[msRuns(kid,n).length%4]; }
+function msNextSheet(kid,n){ if(msPassed(kid,n)) return null; return MS_SHEETS[msSheetIdx(kid,n)]; }
+// MSSTART_START — ✎ Start here (her ask 2026-10-15: "an adjust button to adjust each time, so I can say no, I'm starting
+// here, I'm starting on this"). On any run, Mom on or off (same rule as marking, MSMARK), pick the sprint + the sheet
+// THIS run is: logged as a move (moves/<i>, why "start here", the sheet in `to`) and remembered on that sprint's log as
+// from = {sheet, at: runs so far}. The next run is that sheet; the ones after follow on (A2 → B2), and after B2 the
+// sprint wraps to A1 as it always has, so "four misses start over at A 1st" still holds. An undo back past the mark
+// drops the mark's effect (the plain cycle returns). Choosing a sprint already passed reopens it (passed cleared,
+// its old runs kept) so the run can happen. Targeted writes to mathSprints/<kid>; dry-run inert.
+let msStartOpen=false;
+function msSheetIdx(kid,n){
+  const st=msState(kid), f=st&&st.log&&st.log[n]&&st.log[n].from, len=msRuns(kid,n).length;
+  if(f&&f.sheet&&typeof f.at==="number"&&len>=f.at){ const si=Math.max(0,MS_SHEETS.findIndex(x=>x.k===f.sheet)); const k=len-f.at; return k<4-si?si+k:(k-(4-si))%4; }
+  return len%4;
+}
+function msStartToggle(){ if(msTimer||msTimerDone) return; msStartOpen=!msStartOpen; if(typeof _mastRe==="function") _mastRe(); }
+function msStartHere(kid,cur,sheetK,why){
+  if(!kid||msTimer||msTimerDone) return null; const st=msState(kid); if(!st) return null;
+  const L=msBookList(st.book); cur=parseInt(cur,10); if(!L.some(x=>x.n===cur)) return null;
+  const sheet=MS_SHEETS.find(x=>x.k===sheetK); if(!sheet) return null;
+  const from={book:st.book,cur:st.cur||null}; const u={};
+  st.cur=cur; u["cur"]=cur;
+  st.log=st.log||{}; st.log[cur]=st.log[cur]||{}; const mark={sheet:sheet.k,at:msRuns(kid,cur).length}; st.log[cur].from=mark; u["log/"+cur+"/from"]=mark;
+  if(st.log[cur].passed){ delete st.log[cur].passed; u["log/"+cur+"/passed"]=null; }
+  if(st.done){ delete st.done; u["done"]=null; }
+  st.moves=st.moves||[]; const mv={at:Date.now(),ts:nowTs(),from:from,to:{book:st.book,cur:cur,sheet:sheet.k},why:why||"start here"}; st.moves.push(mv); u["moves/"+(st.moves.length-1)]=mv;
+  if(db&&!_dryRun()) db.ref("mathSprints/"+kid).update(u);
+  dbg("🔢 sprint start here "+kid+" → #"+cur+" "+sheet.k);
+  msStartOpen=false; msTimerReset();
+  if(typeof _mastRe==="function") _mastRe();
+  return {cur:cur,sheet:sheet.k,move:mv};
+}
+function msStartFromForm(kid){ const c=document.getElementById("ms-sh-cur"), sh=document.getElementById("ms-sh-sheet"); if(!c||!sh) return; msStartHere(kid,c.value,sh.value,"start here"); }
+// MSSTART_END
 function msTodayRuns(kid){ const st=msState(kid); if(!st||!st.log) return 0; const d=msTodayISO(); let c=0; Object.keys(st.log).forEach(n=>{ msRuns(kid,n).forEach(r=>{ if(r&&r.d===d) c++; }); }); return c; }
 function msNextSprintN(kid,n){ const st=msState(kid); const L=msBookList(st.book); const i=L.findIndex(x=>x.n===n); return (i>=0&&i+1<L.length)?L[i+1].n:null; }
 function msSetPosition(kid,book,cur,why){
@@ -60984,6 +61016,20 @@ function buildSprintBookHtml(color){
   h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:16px;margin-bottom:14px;text-align:center">';
   if(today>=4) h+='<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:8px 10px;font-size:14px;font-weight:800;color:#15803d;margin-bottom:6px">✅ Today\'s 4 are done — run more?</div><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#78716c">Extra run '+(today-3)+'</div>';   // ✅ MSEDIT
   else h+='<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#78716c">Run '+(today+1)+' of 4 today</div>';
+  if(!st.done&&!msTimer&&!msTimerDone){   // ✎ MSSTART: pick this run's sprint + sheet (any run, Mom on or off)
+    if(!msStartOpen) h+='<div style="margin-top:4px"><span onclick="msStartToggle()" style="cursor:pointer;font-size:11.5px;font-weight:700;color:#4f46e5;text-decoration:underline dotted">✎ Start here</span></div>';
+    else {
+      const nxt=msNextSheet(kid,st.cur), pickSheet=nxt?nxt.k:"a1";
+      h+='<div style="background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:10px;padding:8px 10px;margin:8px auto;max-width:420px;text-align:left">';
+      h+='<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#3730a3;margin-bottom:6px">✎ Start here — this run is</div>';
+      h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
+      h+='<select id="ms-sh-cur" style="padding:7px 9px;border:1.5px solid #c7d2fe;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif;max-width:240px">'+L.map(x=>'<option value="'+x.n+'"'+(x.n===st.cur?' selected':'')+'>'+x.n+(x.title?' · '+esc_(x.title.slice(0,32)):'')+(msPassed(kid,x.n)?' ✓':'')+'</option>').join("")+'</select>';
+      h+='<select id="ms-sh-sheet" style="padding:7px 9px;border:1.5px solid #c7d2fe;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'+MS_SHEETS.map(x=>'<option value="'+x.k+'"'+(x.k===pickSheet?' selected':'')+'>'+esc_(x.l)+'</option>').join("")+'</select>';
+      h+='<button onclick="msStartFromForm(\''+kid+'\')" style="padding:8px 14px;border-radius:9px;border:none;background:'+color+';color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Start</button>';
+      h+='<button onclick="msStartToggle()" style="padding:7px 11px;border-radius:9px;border:none;background:#f3f4f6;color:#374151;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancel</button>';
+      h+='</div><div style="font-size:10.5px;color:#57534e;margin-top:5px">A sprint with ✓ was passed already — picking it opens it again. Logged as a move.</div></div>';
+    }
+  }
   h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800;color:'+color+';margin:6px 0 2px">Sprint '+st.cur+'</div>';
   if(cur&&cur.title) h+='<div style="font-size:14px;font-weight:600;color:#1c1917;margin-bottom:8px">'+esc_(cur.title)+'</div>';
   if(st.done) h+='<div style="font-size:13px;color:#16a34a;font-weight:700">🏁 Book finished — pick the next book above.</div>';
