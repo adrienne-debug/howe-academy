@@ -299,7 +299,7 @@ console.log("\n── STHEAL: the week's cards load on Mom's device → the sync
 function healWorld(o) {
   const w = world(Object.assign({ mom: true }, o || {}));
   const now = new Date(), todayTxt = ["January","February","March","April","May","June","July","August","September","October","November","December"][now.getMonth()] + " " + now.getDate();
-  Object.assign(w.ctx, { WK: "week2", sv: () => {}, dbg: m => w.toasts.push("dbg:" + m), lastTasksWrite: 0,
+  Object.assign(w.ctx, { WK: "week2", sv: () => {}, dbg: m => w.toasts.push("dbg:" + m), lastTasksWrite: 0, _haUnitsReady: true, fbTasksLoaded: o && o.tasksLoaded === false ? false : true,
     DAY_DT: { wednesday: todayTxt },   // the app's STPASTGUARD reads the week's dates — this week's "wednesday" is today
     fbCheckedLoaded: o && o.checkedLoaded === false ? false : true, _haMastReady: o && o.mastReady === false ? false : true });
   if (o && o.dry) w.ctx._dryRun = () => true;
@@ -322,10 +322,12 @@ const updates = w => w.writes.filter(x => x[0] === "update" && x[1] === "week2/t
 }
 {
   const L = lesson("L1", "11:00 AM");
-  for (const [label, o] of [["dry-run", { dry: true }], ["before the checked list arrives", { checkedLoaded: false }], ["before the mastery records arrive (given/paper rules read them)", { mastReady: false }]]) {
+  for (const [label, o] of [["dry-run", { dry: true }], ["before the checked list arrives", { checkedLoaded: false }], ["before the mastery records arrive (given/paper rules read them)", { mastReady: false }], ["before the week's cards arrive (never heal the cached week — audit 2026-10-14)", { tasksLoaded: false }]]) {
     const w = healWorld(Object.assign({ tasks: [L] }, o)); w.ctx.stHeal();
     ok("no write " + label, !updates(w).length && !w.ctx.weekData.tasks.some(x => x.stTest));
   }
+  { const w = healWorld({ tasks: [L] }); w.ctx.DAY_DT = {}; w.ctx.stHeal();
+    ok("no write before the week's dates arrive (the past-day guard needs them — audit 2026-10-14)", !updates(w).length && !w.ctx.weekData.tasks.some(x => x.stTest)); }
   // live 2026-10-14 10:16 PM: her reload on a device without Mom on wrote nothing — the cascade that runs this same sync
   // is not Mom-gated, so neither is the heal (idempotent, targeted: two devices compute the same result).
   const k = healWorld({ tasks: [lesson("L1", "11:00 AM")], mom: false }); k.ctx.stHeal();
@@ -341,6 +343,22 @@ const updates = w => w.writes.filter(x => x[0] === "update" && x[1] === "week2/t
   const w = healWorld({ tasks: [stale, L] }); w.ctx.stHeal();
   const u = updates(w)[0] || {};
   ok("a stale test card (its lesson is a practice day now) is removed by path (null), nothing else written", updates(w).length === 1 && u["andrew_st_L1-18"] === null && Object.keys(u).length === 1, u);
+}
+{
+  // live 2026-10-14 10:29 PM: on a fresh load the heal ran before unitStudies arrived → stEnroll null for every kid →
+  // every test card looked stale → "+0 −1": Andrew's card was REMOVED. Two guards now.
+  const T = { id: "andrew_st_L1-18", who: "andrew", day: "wednesday", time: "10:50 AM", dur: 10, mom: "required", subjectKey: "spelltest", stTest: true, stFor: "L1", stKey: "L1-18", stLevel: 1, stLesson: 18, title: "📝 Spelling test: Lesson 18" };
+  const L = lesson("L1", "11:00 AM");
+  const w = healWorld({ tasks: [T, L] }); w.ctx._haUnitsReady = false;
+  w.ctx.stHeal();
+  ok("the heal does nothing before the units arrive (no removal, no write)", !updates(w).length && w.ctx.weekData.tasks.indexOf(T) >= 0);
+  const w2 = healWorld({ tasks: [T, L] }); w2.ctx._haUnitsReady = true; w2.ctx.unitStudies = {};   // units loaded, but no AAS unit at all
+  const r = w2.ctx.stSyncWeek(w2.ctx.weekData.tasks, sctx(w2, appGuards(w2)));
+  ok("the sync never removes a test card for a kid with no unit in hand (it only looks stale)", !r.removed.length && w2.ctx.weekData.tasks.indexOf(T) >= 0, r);
+  const w3 = healWorld({ tasks: [T, lesson("L1", "11:00 AM", "L19 NG · day 2 of 5")] }); w3.ctx._haUnitsReady = true;
+  w3.ctx.stHeal();
+  ok("…but with the unit loaded a really stale card (practice day now) still goes", updates(w3).length === 1 && updates(w3)[0]["andrew_st_L1-18"] === null);
+  ok("the units listener marks them ready and runs the heal once on first arrival", /unitStudies=s\.val\(\)\|\|\{\}; const _uFirst=!_haUnitsReady; _haUnitsReady=true;/.test(src) && /if\(_uFirst\)\{ try\{ if\(typeof stHeal==="function"\) stHeal\(\); \}catch\(e\)\{\} \}/.test(src) && /if\(!_haUnitsReady\) return;/.test(slice("stHeal")));
 }
 ok("the week's cards listener runs it right after rvHeal (first load or a changed task set)", /try\{ rvHeal\(\); \}catch\(e\)\{\} \}[^\n]*\n\s*if\(firstLoad \|\| inFP!==curFP\)\{ try\{ if\(typeof stHeal==="function"\) stHeal\(\); \}catch\(e\)\{\} \}/.test(src));
 ok("…and again when the mastery records first arrive and when the checked list lands (live 2026-10-14: the cards came first, the heal waited, nothing re-ran it)",

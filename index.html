@@ -4224,7 +4224,8 @@ function initFb() {
     db.ref("grabClaims").on("value",s=>{ grabClaims=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
     db.ref("techGrace").on("value",s=>{ techGrace=s.val()||{}; });
     db.ref("techOff").on("value",s=>{ techOff=s.val()||{}; if(typeof renderAll==="function") renderAll(); });   // 📱 TECHSWITCH
-    db.ref("unitStudies").on("value",s=>{ unitStudies=s.val()||{}; if(tab==="units"){const el=document.getElementById("content");if(el)renderUnits(el);} else if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);} });
+    db.ref("unitStudies").on("value",s=>{ unitStudies=s.val()||{}; const _uFirst=!_haUnitsReady; _haUnitsReady=true; if(tab==="units"){const el=document.getElementById("content");if(el)renderUnits(el);} else if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);}
+      if(_uFirst){ try{ if(typeof stHeal==="function") stHeal(); }catch(e){} } });   // 📝 STHEAL waits for the units (live 2026-10-14 10:29 PM: it ran before they arrived, every test card looked stale, Andrew's was removed)
     db.ref("att_overrides").on("value",s=>{
       if(s.val()) attOverrides=s.val();
       try{HA_LS.setItem("ha_att_overrides",JSON.stringify(attOverrides));}catch(e){}
@@ -50608,12 +50609,14 @@ function stSyncWeek(tasks,o){
     const want={};
     tasks.forEach(L=>{ if(!L||L.stTest) return; if(o.dismissed&&o.dismissed(L)) return;
       const q=stLessonTest(L); if(!q) return; const id=stTestId(L.who,q.tg.key); if(!want[id]) want[id]={L:L,tg:q.tg,ks:q.en.ks}; });
-    // stale or duplicate test cards go (never a checked / claimed one)
+    // stale or duplicate test cards go (never a checked / claimed one). STHEAL guard (live 2026-10-14 10:29 PM): a kid
+    // with no unit in hand (unitStudies not loaded yet, or the unit gone) makes EVERY card look stale — leave those alone.
     const seen={};
     for(let i=tasks.length-1;i>=0;i--){ const T=tasks[i]; if(!T||!T.stTest) continue;
       const w=want[T.id], dup=seen[T.id]; seen[T.id]=true;
       if(kept(T.id)) continue;
       if(dup||!w||kept(w.L.id)){ tasks.splice(i,1); out.removed.push(T.id); } }
+      if(!dup&&!w&&!stEnroll(T.who)) continue;
     Object.keys(want).forEach(id=>{
       const w=want[id], L=w.L, tg=w.tg;
       let T=tasks.find(x=>x&&x.stTest&&x.id===id);
@@ -50715,13 +50718,17 @@ function stOnTestChecked(t){
 // it (live 2026-10-14 10:16 PM: her reload in Mom's Day on a device without Mom on wrote nothing) — the cascade that
 // already runs this same sync (safeWriteTasks) is not Mom-gated either, and two devices healing at once compute the
 // same idempotent result.
-function stHeal(){
+var _haUnitsReady=false;   // STHEAL: unitStudies has arrived at least once (the units listener sets it)
   try{
+function stHeal(){
     if(!db||_dryRun()) return;
     if(typeof fbCheckedLoaded!=="undefined"&&!fbCheckedLoaded) return;
     if(typeof _haMastReady!=="undefined"&&!_haMastReady) return;
-    const tasks=(weekData&&weekData.tasks)||[]; if(!tasks.length) return;
+    if(!_haUnitsReady) return;   // live 2026-10-14 10:29 PM: without the units every test card looks stale → Andrew's was removed
     const snap={}; tasks.forEach(t=>{ if(t&&t.id) snap[t.id]=t.day+"|"+t.time; });
+    if(typeof fbTasksLoaded!=="undefined"&&!fbTasksLoaded) return;   // audit 2026-10-14: never heal the CACHED week (the checked list can land first) — stale times would be written back
+    if(typeof DAY_DT!=="object"||!DAY_DT||!Object.keys(DAY_DT).length) return;   // audit 2026-10-14: the past-day guard reads the week's dates; without them a past lesson could get a card
+    const tasks=(weekData&&weekData.tasks)||[]; if(!tasks.length) return;
     const r=stSyncWeek(tasks,stSyncCtx());
     if(!r.added.length&&!r.removed.length&&!r.moved.length) return;
     const upd={}, ids=new Set(tasks.map(t=>t&&t.id));
