@@ -200,7 +200,7 @@ console.log("\n── the movers: carry / pull rules ──");
   const ctx = { console, JSON, Object, Array, String, Number, Math, Set, RegExp, Date, currData: { subjects: subj, done: {} },
     checked: {}, claimed: {}, momMoves: {}, bwIs: () => true };
   vm.createContext(ctx);
-  vm.runInContext(LD + "\n" + slice("subjNoCarry") + "\n" + slice("_efIsClose") + "\n" + slice("_efEligible") + "\n" + slice("_bwEligible"), ctx);
+  vm.runInContext(LD + "\n" + slice("subjNoCarry") + "\n" + slice("_efIsClose") + "\n" + slice("_efDone") + "\n" + slice("_efEligible") + "\n" + slice("_bwEligible"), ctx);
   const T = (sk, lid, title) => ({ id: "x", who: "andrew", subjectKey: sk, lid, title: "📄 AAS — " + title });
   ok("a practice card is day-bound (never swept forward)", ctx.subjNoCarry(T("aas", "L18d3", "Lesson 18 · day 3 of 5")) === true);
   ok("a new-lesson card may move on when missed (\"next school day\")", ctx.subjNoCarry(T("aas", "L19d1", "Lesson 19 · day 1 of 5")) === false);
