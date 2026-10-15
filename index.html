@@ -326,6 +326,8 @@ body.kioskr #kiosk-view .store-card,body.kioskr #kiosk-view .bank-card{margin:0 
 .kk-confirm-no{width:100%;padding:14px;border:2px solid var(--border);border-radius:14px;font-size:16px;font-weight:800;background:#fff;color:var(--muted);cursor:pointer;font-family:'DM Sans',sans-serif}
 /* ── 👨 DAD KIOSK (?kiosk=dad) — his page and nothing else ── */
 body.kioskd #app-header,body.kioskd #nav-tabs,body.kioskd #sched-subtabs,body.kioskd #day-tabs,body.kioskd #kid-filter,body.kioskd #mom-pin-bar,body.kioskd #week-strip,body.kioskd #skylight-panel,body.kioskd #admin-btn,body.kioskd #scroll-top,body.kioskd #hq-back,body.kioskd #md-back,body.kioskd #kiosk-kids,body.kioskd #kiosk-mom{display:none!important}
+/* ── 🧒📚 KC_MASTERY — a kid's study cards inside Kids' Corner: no app menus, only the ← Kids' Corner bar ── */
+body.kc-study #app-header,body.kc-study #nav-tabs,body.kc-study #sched-subtabs,body.kc-study #day-tabs,body.kc-study #kid-filter,body.kc-study #mom-pin-bar,body.kc-study #week-strip,body.kc-study #skylight-panel,body.kc-study #admin-btn,body.kc-study #hq-back,body.kc-study #md-back,body.kc-study #msv-bar{display:none!important}
 /* 🔢 Build fingerprint. pointer-events:none so it can never eat a tap on a wall tablet. */
 #build-fp{display:none;position:fixed;right:6px;bottom:5px;font-size:9px;letter-spacing:.1em;font-family:ui-monospace,Menlo,monospace;color:var(--muted);opacity:.5;z-index:200;pointer-events:none}
 .bfp{font-size:9px;letter-spacing:.1em;font-family:ui-monospace,Menlo,monospace;opacity:.6;margin-left:3px}
@@ -4466,6 +4468,7 @@ function showTab(t,keepMsv){
   if(_kioskD()&&t!=="moms-plan") return; // 👨 Dad's link is locked to his page
   if(_kioskK()&&t!=="kids") return;      // 🧒 Kids' Corner link is locked to the Corner
   tab=t;
+  if(typeof kcStudyKid!=="undefined") kcStudyKid=null;   // 🧒📚 KC_MASTERY: a tab tap always lands on the page itself
   mastAddMode=false; mastLogMode=false; mastLogScores={};
   document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",(momSchedView&&t==="schedule")?b.dataset.tab==="moms-plan":(b.dataset.tab===t||(t==="supplies"&&b.dataset.tab==="schedule"))));
   if(t!=="schedule"){ schedShowAdmin=false; schedShowHistory=false; schedShowPace=false; schedShowBoard=false; schedShowPeek=false; }
@@ -4547,6 +4550,7 @@ function _renderAllInner(){
   try{ if(momSchedView&&tab==="schedule"&&!momHereReal()){ momDayIn=false; msvExit(); tab="moms-plan"; mpSubView="cal"; document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",b.dataset.tab==="moms-plan")); ["sched-subtabs","day-tabs","kid-filter","week-strip","msv-bar"].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display="none"; }); } }catch(e){}
   const stb=document.getElementById("sitter-tab-btn"); if(stb){ if(SITTER_NAME){stb.textContent=SITTER_NAME;stb.style.display="";} else {stb.style.display="none";} }
   PAGE_KEYS.forEach(k=>{ const b=document.querySelector('.nav-tab[data-tab="'+k+'"]'); if(b) b.style.display=pageOn(k)?"":"none"; });   // 🧩 pages that are off leave the tab bar
+  try{ document.body.classList.toggle("kc-study",typeof kcStudyOn==="function"&&kcStudyOn()); }catch(e){}   // 🧒📚 KC_MASTERY: no app menus over a kid's study
   renderSchedSubtabs(); renderDayTabs(); renderKidFilter(); renderSkylight(); renderWeekStrip(); renderKioskKids(); renderKioskTabs(); renderKioskView(); renderKioskPerson();
   if(tab==="schedule") document.getElementById("day-tabs").style.display=(schedShowHistory||schedShowPace||schedShowAdmin)?"none":"flex";
   const showKidFilter=(tab==="schedule"&&!schedShowAdmin&&!schedShowBoard)||(tab==="history")||(tab==="pace");
@@ -30517,6 +30521,59 @@ function kcModeBodyHTML(k){
   return kcTodayHTML(k);
 }
 // KC_LISTS_END
+// KC_MASTERY_START — 📚 a kid's study cards from Kids' Corner (her ask 2026-10-15, DeWalt family, Taylor): "In her Kids'
+// Corner she wants to click to go to her study lessons and it will not allow her to … We do not need the top stuff — the
+// menus. Kids' Corner can still be at the top, like a 'go back to Kids' Corner' bar in her color, saying whatever kid, and
+// below that all her studies for her to work through in Mastery. That is the only thing they do independently without Mom."
+// The refusal: a school card's "📂 Open …'s study cards →" link (and Family time's 🧠 button) call retrSchedGo → showTab('mastery'),
+// and a Kids' Corner link (?kiosk=corner) is locked to the Corner, so the tap did nothing. Now, ON THE KIDS' CORNER TAB, for
+// the picked kid (kcKid), with Mom mode off, a study link opens that kid's 📚 Study view INSIDE the Corner (tab stays "kids"):
+// a sticky "← Kids' Corner · <Kid>" bar in her colour, then renderMastStudy for that kid alone — no app header or tabs
+// (body.kc-study), no kid switcher, no Drills/Sprint/Match/Scores/Admin, no Problem words / + / Editor in Chief, and no 🩺
+// check-ups (Mom runs those — their links keep the old path). Match is "not yet". Mom mode, Mom's pages, the General tablet's
+// My Day and every other link are untouched. This block writes nothing to Firebase; the sitting writes exactly what a
+// Mastery-tab sitting writes (mstSave): mastery/<kid>/<i> card fields, mastery/studyLog/<kid>/<sid>/<day>, mastery/printLog
+// (once a day), mastery/studyBack/<kid>/<sid> redo stamp (only after Mom's ↩ send-back); the paused sitting stays on the device.
+var kcStudyKid=null;   // set = the Corner is showing this kid’s 📚 Study (var, not let: showTab and renderAll read it from earlier in the file)
+function kcStudyOn(){
+  try{ return typeof tab!=="undefined"&&tab==="kids"&&!!kcStudyKid&&kcStudyKid===kcKid&&!momHere(); }catch(e){ return false; }
+}
+// Does a study link tapped right now open in the Corner? Only the Corner tab, only the picked kid's own, only with Mom mode off,
+// never a check-up.
+function kcStudyIntercept(kid,sid){
+  try{
+    if(typeof tab==="undefined"||tab!=="kids"||momHere()) return false;
+    _kcLoadKid(); if(!kcKid||kid!==kcKid) return false;
+    if(sid){ const s=(mstSessions(kid)||[]).find(function(x){ return x&&x.sid===sid; }); if(s&&s.kind==="checkup") return false; }
+    return true;
+  }catch(e){ return false; }
+}
+function kcStudyOpen(kid,sid){
+  if(!kcStudyIntercept(kid,sid)) return;
+  masteryKid=kid; mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastScoreItemId=null;
+  mstKid=kid; mstSid=sid||null; mstState=null; mstFlipped=false; mstDone=null; mstStartTs=null; mstTyped=""; mstChecked=null; mstNavReset();   // a fresh landing, never another kid's sitting
+  kcStudyKid=kid;
+  renderAll(); try{ window.scrollTo(0,0); }catch(e){}
+}
+// ← Kids' Corner: a sitting in progress is kept on the device (what "Quit for now" does), so Start reads Resume next time.
+function kcStudyClose(){
+  try{ if(mstState) mstPersist(); }catch(e){}
+  mstState=null; mstFlipped=false; mstTyped=""; mstChecked=null; try{ mstNavReset(); }catch(e){}
+  kcStudyKid=null;
+  renderAll(); try{ window.scrollTo(0,0); }catch(e){}
+}
+function kcStudyHTML(k){
+  const col=KID_COLOR[k]||"#2B7A78", name=KID_NAME[k]||cap(k);
+  masteryKid=k;   // the study view reads masteryKid — always this kid while the Corner shows it
+  let h='<div style="font-family:\'DM Sans\',sans-serif">';
+  h+='<div class="kc-study-bar" style="position:sticky;top:0;z-index:97;background:'+col+';padding:10px 12px;box-shadow:0 2px 8px rgba(0,0,0,.12)">'
+    +'<button onclick="kcStudyClose()" style="width:100%;text-align:left;border:none;background:transparent;color:#fff;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;padding:6px 2px">\u2190 Kids\u2019 Corner \u00b7 '+esc(name)+'</button></div>';
+  let body='';
+  try{ body=renderMastStudy({noCheckup:true}); }catch(e){ body='<div style="padding:20px;color:var(--muted)">Couldn\u2019t load your study cards \u2014 try again</div>'; }
+  h+='<div style="padding:12px 12px 80px">'+body+'</div>';
+  return h+'</div>';
+}
+// KC_MASTERY_END
 // ⭐ What today is worth — her ask: "you completed this chore area, how many points they have,
 // and how many they will get if they finish". Lists pay fixed stars (steps + list bonus + day
 // bonus), so those are counted. School pays SPINS, not a number — so school shows progress
@@ -30697,6 +30754,7 @@ function _kcTint(hex,amt){
 }
 function renderKidsCorner(el){
   _kcLoadKid();
+  if(typeof kcStudyKid!=="undefined"&&kcStudyKid){ if(kcStudyOn()){ el.innerHTML=kcStudyHTML(kcKid); return; } kcStudyKid=null; }   // 🧒📚 KC_MASTERY
   let h='<div class="'+(kcLittle(kcKid)?'kc-little':'')+'" style="font-family:\'DM Sans\',sans-serif;padding-bottom:28px">';
   if(!kcKid){
     h+='<div style="background:linear-gradient(135deg,#2B7A78,#3AAFA9);color:#fff;padding:18px 14px 14px;position:relative;overflow:hidden">'
@@ -34200,7 +34258,8 @@ function wbGoAns(d){
 }
 function wbClose(){
   clearTimeout(_wbAutoT); _wbAutoT=null;   // 💾 the close saves it now
-  const go=()=>{ try{ if(_wbRO) _wbRO.disconnect(); }catch(e){} _wbRO=null; const ov=document.getElementById("wb-view"); if(ov) ov.remove(); wbView=null; };
+  const backKid=(wbView&&wbView.eic&&wbView.eic.back)?wbView.kid:null;   // ↩ EIC_PANELBACK: opened from the Editor in Chief menu → ✕ returns to it (her ask 2026-10-15)
+  const go=()=>{ try{ if(_wbRO) _wbRO.disconnect(); }catch(e){} _wbRO=null; const ov=document.getElementById("wb-view"); if(ov) ov.remove(); wbView=null; if(backKid&&window.eicPanel){ try{ window.eicPanel(backKid); }catch(e){} } };
   if(wbView&&wbView.dirty){ wbSave().then(go).catch(go); } else go();
 }
 function wbBarRender(){
@@ -41163,6 +41222,14 @@ function gvEndInfo(kid,sk){
 function gvEndLine(kid,sk){ const r=gvEndInfo(kid,sk); return r.text?'<span class="gv-end" style="color:'+r.color+'">'+esc(r.text)+'</span>':''; }
 // Earliest-ending column first; columns with no plan date keep their current order at the end.
 // A 🛤 lane column ends when its LAST book ends, so its key is the latest end among its members.
+// The lane HEADER's line follows the same rule (live 2026-10-15: Lincoln's Grammar lane read "ends
+// Dec 20" while Editor in Chief and the purple book still ran in it — the header read only the first
+// member that was up). Returns the member whose end is latest; `fallback` when none has a plan date.
+function gvLaneEndSk(kid,members,fallback){
+  let best=fallback, k="";
+  (members||[]).forEach(function(m){ const i=gvEndInfo(kid,m).iso; if(i&&i>k){ k=i; best=m; } });
+  return best;
+}
 function gvEndSortCols(kid,cols,lanes){
   const key=function(ck){ const _lc=(lanes||{})[ck]; const ms=_lc?(_lc.members||[]):[ck]; let k="";
     ms.forEach(function(m){ const i=gvEndInfo(kid,m).iso; if(i&&i>k) k=i; }); return k; };
@@ -42821,7 +42888,7 @@ function renderCurrGrid(el){
         _q+='<span class="gv-lnq" onclick="'+_open(x)+'" title="'+esc(((subs[x]||{}).display||x)+" — waiting its turn; tap to open its card")+'">▸ '+_nm(x)+'</span>';
       });
       if(!_st.up.length&&!_q) _q='<span class="gv-lnq" style="cursor:default">all done</span>';
-      h+='<th title="'+esc(_tip)+'" style="cursor:default">'+_act+_oc+(typeof gvEndLine==="function"?gvEndLine(gvKid,_upSk):'')+_q+'</th>';
+      h+='<th title="'+esc(_tip)+'" style="cursor:default">'+_act+_oc+(typeof gvEndLine==="function"?gvEndLine(gvKid,(typeof gvLaneEndSk==="function"?gvLaneEndSk(gvKid,_lc.members,_upSk):_upSk)):'')+_q+'</th>';
       continue;
     }
     const sk=ck;
@@ -51799,10 +51866,11 @@ function mstCheckTypeAns(){
   _mastRe();
 }
 // MST_TYPEANS_END
-function renderMastStudy(){
+function renderMastStudy(opts){
   const kid=masteryKid;
   if(mstKid!==kid){ mstKid=kid; mstSid=null; mstState=null; mstFlipped=false; mstDone=null; mstStartTs=null; mstTyped=""; mstChecked=null; mstNavReset(); }  // a sitting never leaks across kids (MST_NAV: nor its Back/Forward)
   let sessions=[]; try{ sessions=mstSessions(kid)||[]; }catch(e){ sessions=[]; }
+  if(opts&&opts.noCheckup) sessions=sessions.filter(s=>s&&s.kind!=="checkup");   // 🧒📚 KC_MASTERY: a check-up is run by Mom, never from the Corner
   if(!sessions.length) return '<div style="text-align:center;padding:60px 20px;color:var(--muted);font-family:\'DM Sans\',sans-serif"><div style="font-size:40px;margin-bottom:10px">\u{1F4DA}</div><div style="font-size:16px;font-weight:700">No study sessions yet.</div></div>';
   if(mstSid==null||!sessions.some(s=>s.sid===mstSid)) mstSid=sessions[0].sid;
   const session=sessions.find(s=>s.sid===mstSid)||sessions[0];
@@ -60030,6 +60098,7 @@ function retrAdminHtml(){
 // the sprint chip, a logged Match game checks Match. Tap a chip → Mastery tab, right
 // kid, right view. Today-only (derived state means nothing for other days).
 function retrSchedGo(kid,view,sid){
+  if(view==="study"&&typeof kcStudyIntercept==="function"&&kcStudyIntercept(kid,sid)){ kcStudyOpen(kid,sid); return; }   // 🧒📚 KC_MASTERY: from Kids' Corner, the kid's own study opens IN the Corner
   // Mirror mastSetKid's per-kid state resets so a jump from the schedule can't carry a
   // previous kid's log/slide/add-category state, then land on the requested view.
   masteryKid=kid; mastView=view||"drill";
