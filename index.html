@@ -25734,6 +25734,39 @@ function lidsFor(kid,sk){
   if(!s||!Array.isArray(s.lessonIds)||!Array.isArray(s.lessonSeq)||s.lessonIds.length!==s.lessonSeq.length) return null;
   return s.lessonIds;
 }
+// EGGQUIZ_START — a Reading Eggs quiz is its own lesson (her ask 2026-10-15: "Reading Eggs, Ellis —
+// when he has a quiz it needs to be its own lesson. He's malfunctioning when he has a quiz and a
+// lesson … just have his quiz as that day's Reading Eggs"). His list carried "Map 21 L5 + Quiz" as
+// ONE line, so one card asked for Lesson 5 and the quiz in one sitting. On save, an UNFINISHED line
+// "<lesson> + Quiz" in a Reading Eggs / Reading Eggspress subject becomes two lines in a row:
+// "<lesson>" (keeps the line's id) then "<map> Quiz" (a fresh id). Finished lines are never touched —
+// renaming one would orphan its ✓ and re-serve it. Only Reading Eggs subjects (matched on the
+// subject's name / pace label / keyword), nothing else.
+const EGGQUIZ_RE=/^(.*\S)\s*\+\s*quiz\s*$/i;
+function eqIsEggs(kid,sk,s){
+  const ps=(((typeof paceData!=="undefined"&&paceData&&paceData.subjects)||{})[kid]||{})[sk]||{};
+  const df=(typeof PACE_DEFAULT_SUBJECTS!=="undefined"&&PACE_DEFAULT_SUBJECTS[kid]&&PACE_DEFAULT_SUBJECTS[kid][sk])||{};
+  return [s&&s.display,s&&s.name,ps.label,ps.keyword,df.label,df.keyword].some(t=>/\breading\s*eggs/i.test(String(t||"")));
+}
+// "Map 22 L5" → "Map 22 Quiz"; a label with no trailing lesson token just gains " Quiz".
+function eqQuizLabel(pre){ const m=String(pre).replace(/\s*\bL\d+\s*$/i,""); return (m&&m!==pre?m:pre)+" Quiz"; }
+// Pure. seq = lines; ids = parallel ids (or null: plain text, e.g. a brand-new list); done = Set of
+// finished ids (or null); next = next id number. Returns {seq,ids,nextLid,n}, n = lines split.
+function eqSplit(seq,ids,done,next){
+  const out=[], oid=ids?[]:null; let n=0;
+  next=Math.max(1,parseInt(next,10)||1);
+  (seq||[]).forEach((t,i)=>{
+    const m=EGGQUIZ_RE.exec(String(t));
+    if(!m||(ids&&done&&done.has(ids[i]))){ out.push(t); if(oid) oid.push(ids[i]); return; }
+    const pre=m[1].trim(), q=eqQuizLabel(pre);
+    out.push(pre); if(oid) oid.push(ids[i]);
+    // Already followed by its own quiz line (typed both) → just drop the "+ Quiz".
+    if(_lidNorm(seq[i+1])===_lidNorm(q)) { n++; return; }
+    out.push(q); if(oid) oid.push(_lidMake(next++)); n++;
+  });
+  return {seq:out,ids:oid,nextLid:next,n};
+}
+// EGGQUIZ_END
 // THE one writer. Updates the in-memory subject and folds
 // subjects/<kid>/<sk>/{lessonSeq,lessonIds,total,nextLid} into opts.patch (caller
 // sends the multi-path update). newSeq null → clears the list AND the ids.
@@ -25750,7 +25783,16 @@ function setLessonSeq(kid,sk,newSeq,opts){
   const seq=(newSeq||[]).map(x=>String(x==null?"":x));
   let ids=null, next=s.nextLid;
   if(Array.isArray(opts.restoreIds)&&opts.restoreIds.length===seq.length){ ids=opts.restoreIds.slice(); next=opts.restoreNext||Math.max(parseInt(next,10)||1,_lidNextFrom(ids)); }
-  else{ const r=_lidAlign(s.lessonSeq,s.lessonIds,seq,s.nextLid,opts.hint,!!opts.mint); ids=r.ids; next=r.nextLid; }
+  else{ const r=_lidAlign(s.lessonSeq,s.lessonIds,seq,s.nextLid,opts.hint,!!opts.mint); ids=r.ids; next=r.nextLid;
+    // EGGQUIZ: plan-backed only — there the LIST is the truth and `done` (by id) says what's finished.
+    // A list copied from grid cells must mirror the cells exactly, so it is left alone. Undo/restore
+    // (restoreIds) never reaches here, and the ids-only mint (gvAssignLids) only runs on unstamped,
+    // so never plan-backed, subjects.
+    if(ids&&typeof planBacked==="function"&&planBacked(kid,sk)&&eqIsEggs(kid,sk,s)){
+      const sp=eqSplit(seq,ids,lidDoneSet(kid,sk),next);
+      if(sp.n){ seq.length=0; sp.seq.forEach(x=>seq.push(x)); ids=sp.ids; next=sp.nextLid; }
+    }
+  }
   s.lessonSeq=seq; s.total=seq.length;
   patch[base+"lessonSeq"]=seq; patch[base+"total"]=seq.length;
   if(ids){ s.lessonIds=ids; s.nextLid=next; patch[base+"lessonIds"]=ids; patch[base+"nextLid"]=next; }
@@ -27128,6 +27170,8 @@ function ceAddSave(){
     }
     if((parseInt(f.daysPerLesson,10)||1)>1) lessonSeq=lessonExpandDays(lessonSeq,f.daysPerLesson);
     if(!lessonSeq.length){ alert("Add at least one lesson."); return; }
+    // EGGQUIZ: a brand-new list has nothing finished — every "+ Quiz" line becomes lesson, then quiz.
+    if(typeof eqSplit==="function"&&eqIsEggs(ceAddKid,null,{display:name})) lessonSeq=eqSplit(lessonSeq,null,null,1).seq;
     subj={display:name,device:f.device,mom:f.mom,minutes:f.minutes,days:f.days,allowedDays:dayArr,rules:f.rules,total:lessonSeq.length,priority:f.priority,carryoverCap:f.carryoverCap,lessonSeq:lessonSeq,timesPerWeek:f.timesPerWeek||5};
     { const _r=_lidAlign(null,null,lessonSeq,1,null,true); subj.lessonIds=_r.ids; subj.nextLid=_r.nextLid; }   // born with ids — no other device can hold a competing set
   }
@@ -38867,6 +38911,8 @@ function cbCopyTo(toKid){
   const seq=(buildSubjectLessons(kid,sk)||[]).map(x=>x.lesson);
   if(src.lessonSeq&&src.lessonSeq.length) copy.lessonSeq=src.lessonSeq.slice();
   else if(seq.length) copy.lessonSeq=seq;
+  // EGGQUIZ: the new kid has finished none of it — every "+ Quiz" line becomes lesson, then quiz.
+  if(copy.lessonSeq&&typeof eqSplit==="function"&&eqIsEggs(kid,sk,src)) copy.lessonSeq=eqSplit(copy.lessonSeq,null,null,1).seq;
   if(copy.lessonSeq){ const _r=_lidAlign(null,null,copy.lessonSeq,1,null,true); copy.lessonIds=_r.ids; copy.nextLid=_r.nextLid; }   // fresh ids for the new kid's copy
   if(!currData.subjects[toKid]) currData.subjects[toKid]={};
   currData.subjects[toKid][sk]=copy;
