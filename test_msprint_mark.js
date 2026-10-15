@@ -102,5 +102,15 @@ console.log("\n── Mom on: unchanged ──");
   w.call("msTimerStart()"); w.advanceTo(w.now() + 61500);
   ok("a run records as before", w.call("msRecordRun('lincoln',true)").met === true && w.writes.length === 1);
 }
+console.log("\n── no sprint state: the recorder returns null, never throws (hub review 2026-10-15: the guard had been swallowed into a comment) ──");
+{
+  const w = world({ mom: false });
+  let r = "threw", threw = null; try { r = w.call("msRecordRun('ellis',true)"); } catch (e) { threw = e.message; }
+  ok("a kid with no sprint state → null, no throw", r === null && !threw, threw);
+  ok("… and nothing written", w.writes.length === 0);
+  w.call("mathSprints.lincoln.cur=null");
+  let r2 = "threw", threw2 = null; try { r2 = w.call("msRecordRun('lincoln',true)"); } catch (e) { threw2 = e.message; }
+  ok("a kid whose state has no cur → null, no throw", r2 === null && !threw2, threw2);
+}
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
