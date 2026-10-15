@@ -27,7 +27,7 @@ function ok(n, c, x) { if (c) { pass++; console.log("  ok  - " + n); } else { fa
 const CODE = [
   line("let calDaySel="), line("const CAL_LAYERS="), line("const CAL_OPTIN="), line("let calLayers="),
   line("function _calLayersLoad()"), line("function calLayerOn("), line("function calLayerToggle("),
-  slice("calBreaksOn"), slice("kitEatGate"), slice("kitMarkEaten"), slice("_kitRefresh"), slice("kitMarkSkipped"), slice("calDayClick"),
+  slice("calBreaksOn"), slice("kitEatGate"), slice("kitMarkEaten"), slice("grEatRows"), line("let _grEat="), line("let _grEatUndo="), slice("grEatApply"), slice("_kitRefresh"), slice("kitMarkSkipped"), slice("calDayClick"),
 ].join("\n");
 
 function world(o) {
@@ -39,6 +39,8 @@ function world(o) {
     renderAll: function () { ctx.renders++; }, confirm: () => true, mwToast: () => {},
     db: { ref: p => ({ set: v => ctx.writes.push([p, v]), remove: () => ctx.removes.push(p) }) },
     obSet: (p, v) => ctx.db && ctx.db.ref(p).set(v), obRemove: p => ctx.db && ctx.db.ref(p).remove(),   // 📮 outbox stubs (2026-09-23)
+    // eaten is now two taps: kitMarkEaten opens the pantry sheet (grEatDraw), its "Mark eaten" button runs grEatApply(false)
+    grEatDraw: () => { ctx.eatSheets = (ctx.eatSheets || 0) + 1; }, grPopClose: () => {}, grSave: () => {}, grData: {}, kitMealsLSSave: () => {},
     kitPlan: {}, kitMeals: {}, kitPantry: {}, kitStaples: {}, calendarData: {}, document: { getElementById: () => null },
   };
   vm.createContext(ctx); vm.runInContext(CODE, ctx);
@@ -74,6 +76,8 @@ console.log("\n── didn't happen / eaten ──");
   ok("the pantry is untouched", w.ctx.writes.every(x => !/pantry|staples/.test(x[0])));
   ok("skipping twice is a no-op", (w.call("kitMarkSkipped('2026-08-13')"), w.ctx.writes.length === 1));
   w.call("kitMarkEaten('2026-08-13')");
+  ok("marking eaten opens the pantry sheet first and stamps nothing yet", w.ctx.eatSheets === 1 && !w.call("kitPlan['2026-08-13'].eaten"));
+  w.call("grEatApply(false)");   // the sheet's "Mark eaten" button (no meal → no pantry rows)
   ok("eaten later clears the skip", !w.call("kitPlan['2026-08-13'].skipped") && w.call("kitPlan['2026-08-13'].eaten>0") && w.ctx.removes.indexOf("kitchen/plan/2026-08-13/skipped") >= 0);
   ok("an eaten day cannot be skipped", (w.call("kitMarkSkipped('2026-08-13')"), !w.call("kitPlan['2026-08-13'].skipped")));
   ok("both actions redraw whatever screen is up (renderAll), not Mom's Day specifically", w.ctx.renders >= 2 && !/renderMomsPlan\(el\);\n\}/.test(slice("kitMarkEaten")));
@@ -81,7 +85,7 @@ console.log("\n── didn't happen / eaten ──");
   // shared screen can neither see the buttons nor call the functions
   const k = world({ kid: true });
   k.call("kitPlan={'2026-08-12':{txt:'Kielbasa'}}");
-  k.call("kitMarkEaten('2026-08-12'); kitMarkSkipped('2026-08-12');");
+  k.call("kitMarkEaten('2026-08-12'); grEatApply(false); kitMarkSkipped('2026-08-12');");
   ok("a kid device cannot mark eaten or skipped (toast, nothing written)", !k.call("kitPlan['2026-08-12'].eaten") && !k.call("kitPlan['2026-08-12'].skipped") && k.ctx.writes.length === 0 && k.ctx.toasts.length === 1);
   ok("the dinner card and the sheet hide the buttons behind the same gate", /\(dpl&&kitEatGate\(\)\)\?'<button onclick="kitMarkEaten/.test(src) && /if\(!kitEatGate\(\)\)\{ \/\* a kid on a shared screen/.test(slice("calDaySheetHTML")));
   ok("meal pencils and Plan-it are gated too", /\(who\|\|!kitEatGate\(\)\)\?'':'<button class="act" style="background:#fff7ed;color:#c2410c" onclick="kitSlotText/.test(src) && /tab==="moms-plan"&&kitEatGate\(\)\)/.test(src));
@@ -94,7 +98,7 @@ console.log("\n── one lens, two doors ──");
   ok("Admin ▸ Calendar renders the same function", /calRenderMonthPreview\(\)/.test(adm));
   ok("the event form is the existing one", /calRenderEventForm\(\)/.test(mp));
   ok("the sheet's eaten button is the kitchen's own function", /onclick="kitMarkEaten\(/.test(slice("calDaySheetHTML")));
-  ok("the subnav has the Calendar entry", /btn\('cal','🗓 Calendar'\)/.test(slice("mpSubnav")));
+  ok("the subnav has the Calendar entry", /btn\('cal','🗓 Schedule'\)/.test(slice("mpSubnav")));
 }
 console.log("\n── 🧒 Kids' Corner gates (her rule 2026-09-05: think on what should be available to them) ──");
 {
@@ -200,7 +204,7 @@ console.log("\n── 🎰 spins hold until ALL school work is done (her rule 20
   function gw(o) {
     const ctx = { console, renders: 0, toasts: [], WK: "week21", db: null, pointClaims: {}, obSet: () => null, obRemove: () => null,
       renderAll: function () { ctx.renders++; }, gwShowToast: m => ctx.toasts.push(m), nowTs: () => "4:00 PM",
-      getSlot: (k, slot) => ({ done: (o.slots || {})[slot] !== false }),
+      rtSlotDone: (k, slot, d) => (o.slots || {})[slot] !== false,   // the gate now asks rtSlotDone (list done, flag or every due item ticked)
       getKidDayPoints: () => 40, effectiveDay: t => t.day, _dismissed: t => !!t.dismissed, checked: o.checked || {},
       weekData: { tasks: o.tasks || [] } };
     vm.createContext(ctx); vm.runInContext(G, ctx);
@@ -232,7 +236,7 @@ console.log("\n── 📋 list pop-ups from the Today card; Store + Grabs on th
   ok("every list row on the stars card opens its list", /onclick="event\.stopPropagation\(\);kcOpenList\(\\''\+k\+'\\',\\''\+l\.slot\+'\\'\)"/.test(pc));
   ok("the pop-up repaints on every renderAll, so a check-off inside it shows at once", /if\(popView&&popKid&&document\.getElementById\("kid-pop"\)\) _popPaint\(\);/.test(src));
   ok("(the old Bank tab renderer is kept but no longer wired)", !/kcBankHTML\(k\)/.test(slice("renderKidsCorner")));
-  ok("general tablet: a 📆 My Day tab renders the Corner page for the picked kid (kid mode)", /\["myday","\\uD83D\\uDCC6 My Day"\]/.test(slice("renderKioskTabs")) && /kkTab==="myday"/.test(slice("renderKioskView")) && /kcTodayHTML\(kid\)/.test(slice("renderKioskView")) && /calRenderMonthPreview\(\{who:kid,little:kcLittle\(kid\)\}\)/.test(slice("renderKioskView")));
+  ok("general tablet: a 📆 My Day tab renders the Corner page for the picked kid (kid mode)", /\["myday","\\uD83D\\uDCC6 My Day"\]/.test(slice("renderKioskTabs")) && /kkTab==="myday"/.test(slice("renderKioskView")) && /kcModeBodyHTML\(kid\)/.test(slice("renderKioskView")) && /calRenderMonthPreview\(\{who:k,little:kcLittle\(k\)\}\)/.test(slice("kcModeBodyHTML")));   // KC_LISTS: the page under the toggle moved into kcModeBodyHTML (Today | My Lists | Month)
   ok("tapping a name always lands on My Day; the tab row is gone; idle still resets to Everyone/Routines", /if\(_kioskR\(\)\) kkTab=\(k==="all"\)\?"routines":"myday";/.test(slice("kkSel")) && /el\.style\.display="none"; el\.innerHTML=""; return;/.test(slice("renderKioskTabs")) && /kkTab="routines"; renderAll\(\); \}/.test(src));
   ok("the Chores and Bank tabs are gone; the Corner renders no subnav; old view names route to Today", !/h\+=kcSubnav\(k\)/.test(slice("renderKidsCorner")) && /v==="chores"\|\|v==="bank"/.test(slice("kcGo")));
   ok("the daily page: balance opens the Star Bank register; Bank · Store · Grabs buttons on that line", /popOpen\(\\''\+k\+'\\',\\'bank\\'\)/.test(slice("kcPointsHTML")) && /pb\('store'/.test(slice("kcPointsHTML")) && /pb\('grabs'/.test(slice("kcPointsHTML")) && /popView==="bank"\) body=_bankCardHTML\(popKid,momView\)/.test(slice("_popPaint")));
@@ -249,11 +253,13 @@ console.log("\n── 👨 Dad's chores as a layer ──");
   ok("Wednesday: daily + wk:2 due, in Dad's order; Saturday-only is not", JSON.stringify(c("_calDadChoresFor('2026-09-09').map(x=>x.label)")) === '["Water plants","Trash out"]');
   ok("done stamps ride along from dadday/{iso}", c("_calDadChoresFor('2026-09-09')").find(x => x.label === "Water plants").done === true && c("_calDadChoresFor('2026-09-10')").find(x => x.label === "Water plants").done === false);
   ok("Saturday: the Saturday chore appears", JSON.stringify(c("_calDadChoresFor('2026-09-12').map(x=>x.label)")) === '["Water plants","Bills"]');
-  ok("the layer is a chip on the Mom/Dad lens and never on a kid's", /\["dad","\\u\{1F468\} Dad"\]/.test(line("const CAL_LAYERS=")) && /dad:!who&&calLayerOn\("dad"\)/.test(src) && /meals:true,dad:false\}/.test(src));
+  ok("the layer is a chip on the Mom/Dad lens and never on a kid's", /\["dad","\\u\{1F468\} Dad"\]/.test(line("const CAL_LAYERS=")) && /dad:!who&&calLayerOn\("dad"\)/.test(src) && /meals:true,dad:false,habits:false\}/.test(src));
   ok("cell line + sheet rows exist", /gmd-dad/.test(slice("calRenderMonthPreview")) && /_calDadChoresFor\(iso\)\.forEach/.test(slice("calDaySheetHTML")));
   // Dad's own calendar page: same body as Mom's, his header, a way back, reachable on ?kiosk=dad
   ok("Dad's Day button opens HIS calendar sub-view, not Mom HQ's", /mpGoto\(\\'dadcal\\'\)/.test(slice("renderDadsDay")) && /if\(mpSubView==='dadcal'\)\{ return renderDadCalendar\(el\); \}/.test(src));
-  ok("Mom's and Dad's calendar pages render the SAME body", /h\+=_calPageBody\(\);/.test(slice("renderMPCalendar")) && /h\+=_calPageBody\(\);/.test(slice("renderDadCalendar")));
+  // MOMSCHED_TAB (2026-10-08): Mom's Day ▸ Calendar became ▸ Schedule (Today · Week · Month) via mpSchBody; Dad's page still shows _calPageBody.
+  // The rule that survives is "one master": both pages put the SAME month lens on screen, through calRenderMonthPreview.
+  ok("Mom's Schedule (Month) and Dad's calendar page render the SAME month lens", /h\+=mpSchBody\(\);/.test(slice("renderMPCalendar")) && /h\+=_calPageBody\(\);/.test(slice("renderDadCalendar")) && /calRenderMonthPreview\(/.test(slice("mpSchBody")) && /calRenderMonthPreview\(/.test(slice("_calPageBody")));
   ok("his page carries a way back to Dad's Day and no Mom subnav", /\\u2190 Dad\\u2019s Day/.test(slice("renderDadCalendar")) && !/mpSubnav\(/.test(slice("renderDadCalendar")));
 }
 
