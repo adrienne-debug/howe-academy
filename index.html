@@ -13168,8 +13168,8 @@ try{ laundryBlockMins=JSON.parse(HA_LS.getItem('ha_laundry_block_mins')||"{}")||
 function _lbWrite(){ return typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
 function momBlocksOnValue(v){ momBlocks=v||{}; try{ HA_LS.setItem('ha_momblocks',JSON.stringify({iso:mwTodayIso(),v:momBlocks})); }catch(e){} }
 function laundryBlockMinsOnValue(v){ laundryBlockMins=v||{}; try{ HA_LS.setItem('ha_laundry_block_mins',JSON.stringify(laundryBlockMins)); }catch(e){} }
-function laundryBlockStep(stage){ return stage==="dryer"?"fold":"move"; }
-function laundryBlockDefault(stage){ const k=laundryBlockStep(stage), v=parseInt((laundryBlockMins||{})[k],10); return (v>0&&v<=240)?v:(k==="fold"?15:5); }
+function laundryBlockStep(stage){ return stage==="dryer"?"fold":stage==="fold"?"putaway":"move"; }   // LAUNDRY_FOLD: the fold pile's block is the put-away
+function laundryBlockDefault(stage){ const k=laundryBlockStep(stage), v=parseInt((laundryBlockMins||{})[k],10); return (v>0&&v<=240)?v:(k==="fold"?15:k==="putaway"?10:5); }
 function momBlockKey(id,stage){ return String(id).replace(/[.#$\[\]\/]/g,"_")+"_"+stage; }
 function momBlockFor(id,stage){ const b=(momBlocks||{})[momBlockKey(id,stage)]; return (b&&b.iso===mwTodayIso())?b:null; }
 // The blocks that hold Mom's time right now: picked (Now/After), not done, and the load still in that machine.
@@ -13255,19 +13255,25 @@ function momSchedLaundry(dayName,dayTasks){
   const place=function(m,ord,html){ if(m<0) m=nowM; if(m>=24*60) return; out.push({m:m,o:ord,html:html}); };   // from an earlier day → now; tomorrow → not today's
   const next=momSchedNextMom(dayTasks);
   Object.keys(laundryData||{}).forEach(function(id){
-    const l=laundryData[id]; if(!l||(l.stage!=="washer"&&l.stage!=="dryer"&&l.stage!=="prewash")) return;   // prewash = 💦 WASHTODAY
-    const dry=l.stage==="dryer", pre=l.stage==="prewash", key=momBlockKey(id,l.stage), lbl='<b>'+esc(l.label||"Load")+'</b>';
+    const l=laundryData[id]; if(!l||(l.stage!=="washer"&&l.stage!=="dryer"&&l.stage!=="prewash"&&l.stage!=="fold")) return;   // prewash = 💦 WASHTODAY · fold = LAUNDRY_FOLD
+    const dry=l.stage==="dryer", pre=l.stage==="prewash", fold=l.stage==="fold", key=momBlockKey(id,l.stage), lbl='<b>'+esc(l.label||"Load")+'</b>';
     const sm=_lbMin(l.ts||0);
-    if(sm>=0) place(sm,0,_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#475569">'+(dry?'🌀 ':'🫧 ')+lbl+' — '+(dry?'in the dryer':pre?'in the washer (prewash)':'in the washer')+' · started '+laundrySince(l.ts)+'</span>'));
-    const da=laundryDoneAt(l); if(!da) return;
-    const b=momBlockFor(id,l.stage), doneTxt='✅ '+lbl+(pre?' — prewash done':' is done in the '+(dry?'dryer':'washer'));
+    // LAUNDRY_FOLD (her report 2026-10-15, DeWalt, Taylor's Wed 10/14 load): the schedule drew the washer and the dryer, then the load
+    // vanished the moment it reached the fold pile — this loop skipped stage "fold", so fold and put away had no row, no question, no
+    // block, and ✓ Put away lived only on Mom's Day. The fold pile has no machine clock: it is "done" the minute it is there (l.ts),
+    // so that one row is both the marker and the question — "🧺 <load> is in the fold pile. Block out time to put it away?" — with
+    // the same How long · Now · After · Not now, a real block (step "putaway", 10 min the first time, remembered like the others)
+    // her Mom cards step over, ✓ Put away on the block, and "✓ Put away: <load>" kept on the timeline where it ended.
+    if(sm>=0&&!fold) place(sm,0,_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#475569">'+(dry?'🌀 ':'🫧 ')+lbl+' — '+(dry?'in the dryer':pre?'in the washer (prewash)':'in the washer')+' · started '+laundrySince(l.ts)+'</span>'));
+    const da=fold?(l.ts||0):laundryDoneAt(l); if(!da) return;   // LAUNDRY_FOLD: the pile is ready when it lands
+    const b=momBlockFor(id,l.stage), doneTxt=fold?'🧺 '+lbl+' is in the fold pile':'✅ '+lbl+(pre?' — prewash done':' is done in the '+(dry?'dryer':'washer'));
     // LAUNDRY_NOTYET (her report 2026-10-12, DeWalt): the "done — block out time?" question drew the moment a load went IN, sitting at
     // its future done time (Mine in at 10:15, wash 50 → "done in the washer" showed at 10:16 under 11:05). Sarah tapped Now and the
     // block landed at 10:16, before the washer had finished. Until the cycle is really over this row only says when — no question.
     if(!b&&_lbMin(da)>_lbNowMin()){ place(_lbMin(da),1,_lbBox('#f8fafc','#cbd5e1','<span style="flex:1;font-size:13px;color:#64748b">⏳ '+lbl+' — done ~'+laundrySince(da)+'</span>')); return; }
     if(!b){
       place(_lbMin(da),1,_lbBox('#ecfdf5','#16a34a',
-        '<span style="flex:1 1 100%;font-size:13px">'+doneTxt+'. Block out time to '+(dry?'fold it':pre?'start the second wash':'move it to the dryer')+'?</span>'
+        '<span style="flex:1 1 100%;font-size:13px">'+doneTxt+'. Block out time to '+(fold?'put it away':dry?'fold it':pre?'start the second wash':'move it to the dryer')+'?</span>'
         +'<label style="font-size:12px;color:#334155;font-weight:700">How long? <input id="lb-min-'+key+'" type="number" min="1" max="240" value="'+laundryBlockDefault(l.stage)+'" style="width:54px;padding:4px 6px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px"> min</label>'
         +_lbQBtn('Now',"laundryBlockSet('"+_lbQ(id)+"','"+l.stage+"','now')",true)
         +(next?_lbQBtn('After '+esc(_lbCardName(next)),"laundryBlockSet('"+_lbQ(id)+"','"+l.stage+"','after','"+_lbQ(next.id)+"')",false):'')
@@ -13278,12 +13284,12 @@ function momSchedLaundry(dayName,dayTasks){
     if(b.at==="skip"){ place(_lbMin(da),1,_lbBox('#ecfdf5','#16a34a','<span style="flex:1;font-size:13px">'+doneTxt+'</span>'+_lbBtn(id,l.stage))); return; }
     place(_lbMin(da),1,_lbBox('#ecfdf5','#16a34a','<span style="flex:1;font-size:13px">'+doneTxt+'</span>'));
     const bm=(_mlBlkLaid&&_mlBlkLaid[key]!==undefined)?_mlBlkLaid[key]:(+b.startMin||nowM);
-    place(bm,2,_lbBox('#eff6ff','#2563eb','<span style="flex:1;font-size:13px">'+(b.at==="later"?'⏰ ':'')+'🧺 '+(dry?'Fold: ':pre?'Second wash: ':'Move to the dryer: ')+lbl
+    place(bm,2,_lbBox('#eff6ff','#2563eb','<span style="flex:1;font-size:13px">'+(b.at==="later"?'⏰ ':'')+'🧺 '+(fold?'Put away: ':dry?'Fold: ':pre?'Second wash: ':'Move to the dryer: ')+lbl
       +' · <input type="number" min="1" max="240" value="'+(parseInt(b.mins,10)||laundryBlockDefault(l.stage))+'" onchange="laundryBlockMinsEdit(\''+key+'\',this.value)" style="width:48px;padding:2px 5px;border:1.5px solid #bfdbfe;border-radius:6px;font-size:12px"> min</span>'+_lbBtn(id,l.stage)));
   });
   Object.keys(momBlocks||{}).forEach(function(k){   // finished blocks stay on today's timeline where they ended
     const b=momBlocks[k]; if(!b||b.iso!==mwTodayIso()||!b.done||b.at==="skip") return;
-    place(+b.doneMin||0,3,_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ '+(b.stage==="dryer"?'Folded: ':b.stage==="prewash"?'Second wash started: ':'Moved to the dryer: ')+'<b>'+esc(b.label||"Load")+'</b></span>'));
+    place(+b.doneMin||0,3,_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ '+(b.stage==="fold"?'Put away: ':b.stage==="dryer"?'Folded: ':b.stage==="prewash"?'Second wash started: ':'Moved to the dryer: ')+'<b>'+esc(b.label||"Load")+'</b></span>'));
   });
   return out.sort(function(a,b2){ return (a.m-b2.m)||(a.o-b2.o); });
 }
