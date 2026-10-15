@@ -88,7 +88,7 @@ function eicWorld(o) {
     db: { ref: p => ({ once: () => Promise.resolve({ val: () => get(p) }), set: v => { writes.push([p, v]); return Promise.resolve(); }, push: () => ({ key: "x", set: () => Promise.resolve() }) }) },
     _dryRun: () => false, gwShowToast: m => toasts.push(m), wbMomEyes: () => !!o.mom,
     wbList: () => [{ id: "w1", name: "Editor in Chief Beginning 1", pages: 120 }],
-    wbOpen: (id, kid, pg, opts) => opened.push([id, kid]),
+    wbOpen: (id, kid, pg, opts) => opened.push([id, kid, opts]),
     document: { getElementById: () => null, createElement: () => ({ style: {} }), body: { appendChild: () => {} } } };
   sb.window.window = sb.window; vm.createContext(sb);
   vm.runInContext("var window=this.window;" + fs.readFileSync(path.join(__dirname, "eic.js"), "utf8"), sb);
@@ -109,6 +109,46 @@ const d = new Date(), today = d.getFullYear() + "-" + String(d.getMonth() + 1).p
 ok("the doorway remembers the page it opens", /rememberToday\(kid,n\.book,n\.page\); cardPage\(n\.book,n\.page\);/.test(fs.readFileSync(path.join(__dirname, "eic.js"), "utf8")));
 ok("a checked EIC card of TODAY shows ↩ Back to today's page", /:\(_eicL&&done&&effectiveDay\(t\)===_todayDay\)\?'<div style="margin-top:5px"><span onclick="event\.stopPropagation\(\);eicReopenTodayFor\(/.test(src));
 ok("an open card still shows Open today's page", /const eicRow=\(_eicL&&!done\)\?/.test(src));
+
+// ── ↩ EIC_PANELBACK: back from a page returns to the Editor in Chief menu (her ask 2026-10-15) ──
+console.log("\n── ↩ back goes to the Editor in Chief menu ──");
+const eicSrc = fs.readFileSync(path.join(__dirname, "eic.js"), "utf8");
+ok("the panel's chips open pages tagged eic.back", /window\.eicOpen=function\(bk,printed\)\{ openPage\(bk,printed,true\); \}/.test(eicSrc) && /window\.eicCheck=function\(bk,printed\)\{ checkPage\(bk,printed,true\); \}/.test(eicSrc));
+ok("openPage and checkPage tag the view only when asked", /eic:\{book:bk,back:!!fromPanel\}/.test(eicSrc) && (eicSrc.match(/back:!!fromPanel/g) || []).length === 2);
+ok("cardPage (the schedule card's doorway) passes no flag", /function cardPage\(bk,printed\)\{ if\(mom\(\)&&eicKeyPage\(TK\(\),bk,printed\)\) checkPage\(bk,printed\); else openPage\(bk,printed\); \}/.test(eicSrc));
+{
+  const w = eicWorld({ tree: { eic: { ellis: { today: { date: today, book: "editor-in-chief-beginning-1", page: 12 } } } } });
+  w.W.eicReopenToday("ellis"); for (let i = 0; i < 6; i++) await flush();
+  ok("the card's doorway opens a page with NO back-to-menu flag", w.opened.length === 1 && !w.opened[0][2].eic.back, w.opened);
+}
+{
+  const w = eicWorld(); // no eic tags → skill-less page still opens from the panel chip
+  w.W.eicOpen("editor-in-chief-beginning-1", 12); for (let i = 0; i < 6; i++) await flush();
+  ok("a page opened from the panel carries back:true and the same kid", w.opened.length === 1 && w.opened[0][2].eic.back === true && w.opened[0][2].eic.book === "editor-in-chief-beginning-1", w.opened);
+}
+// wbClose: slice it out of index.html and run it
+{
+  const i = src.indexOf("function wbClose(){"), j = src.indexOf("function wbBarRender", i);
+  const WC = src.slice(i, j);
+  const run = (view) => {
+    const panels = [], removed = [];
+    const c = { wbView: view, _wbAutoT: null, _wbRO: null, clearTimeout: () => {}, wbSave: () => Promise.resolve(),
+      document: { getElementById: id => ({ remove: () => removed.push(id) }) },
+      window: { eicPanel: k => panels.push(k) } };
+    vm.createContext(c); vm.runInContext(WC, c); vm.runInContext("wbClose()", c);
+    return { panels, removed, c };
+  };
+  let r = run({ kid: "ellis", dirty: false, eic: { book: "b", back: true } });
+  ok("✕ on a page opened from the menu re-opens the menu for the same kid", r.panels.length === 1 && r.panels[0] === "ellis" && r.removed.includes("wb-view") && r.c.wbView === null, r.panels);
+  r = run({ kid: "lucy", dirty: false, eic: { book: "b" } });
+  ok("✕ on a page opened from the schedule card goes where it always did (no menu)", r.panels.length === 0 && r.removed.includes("wb-view"));
+  r = run({ kid: "lincoln", dirty: false, eic: null });
+  ok("✕ on an ordinary workbook is untouched", r.panels.length === 0);
+  r = run({ kid: "ellis", dirty: true, eic: { book: "b", back: true } });
+  await flush(); await flush();
+  ok("a page with unsaved writing saves first, then returns to the menu", r.panels.length === 1 && r.panels[0] === "ellis", r.panels);
+}
+ok("the panel's own ✕ is still the only thing that closes it", /chip\("✕","eicClose\(\)"\)/.test(eicSrc));
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
