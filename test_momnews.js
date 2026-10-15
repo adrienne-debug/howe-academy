@@ -41,17 +41,19 @@ console.log("── 👋 banners: Mom only, one tap clears them everywhere ─�
 }
 console.log("── ✨ What's new ──");
 { const F=mk(); const row=F.run("wnRowHTML()");
-  ok("family app: the ✨ row shows on the From Adrienne card", /✨|✨/.test(row)&&/New in the app — Oct 13/.test(row)&&/tap to read/.test(row));
+  ok("family app: the ✨ row shows on the From Adrienne card", /✨|✨/.test(row)&&/New in the app — Oct 14/.test(row)&&/tap to read/.test(row));
   ok("Howe's own app: no row", mk({howe:true}).run("wnRowHTML()")==="");
   F.run("wnGotIt()");
-  ok("✓ Got it writes settings/whatsNewSeen = this update's id", F.writes.some(w=>w[0]==="set"&&w[1]==="settings/whatsNewSeen"&&w[2]==="2026-10-13b"));
+  ok("✓ Got it writes settings/whatsNewSeen = this update's id", F.writes.some(w=>w[0]==="set"&&w[1]==="settings/whatsNewSeen"&&w[2]==="2026-10-14"));
   ok("…and the row is gone", F.run("wnRowHTML()")==="");
-  const F2=mk(); F2.run("whatsNewOnValue('2026-10-13b')"); ok("…gone on her other devices too", F2.run("wnRowHTML()")==="");
-  const F3=mk(); F3.run("whatsNewOnValue('2026-10-06')"); ok("…but a device that only saw the Oct 6 note shows the Oct 13 one", /Oct 13/.test(F3.run("wnRowHTML()")));
-  const F4=mk(); F4.run("whatsNewOnValue('2026-10-13')"); ok("resent (her ask 10/14): a family that ✓ Got it-ed the first Oct 13 id sees it again under the new id", /Oct 13/.test(F4.run("wnRowHTML()")));
+  const F2=mk(); F2.run("whatsNewOnValue('2026-10-14')"); ok("…gone on her other devices too", F2.run("wnRowHTML()")==="");
+  const F3=mk(); F3.run("whatsNewOnValue('2026-10-06')"); ok("…but a device that only saw the Oct 6 note shows the Oct 14 one", /Oct 14/.test(F3.run("wnRowHTML()")));
+  const F4=mk(); F4.run("whatsNewOnValue('2026-10-13b')"); ok("a family that ✓ Got it-ed the Oct 13 note sees the Oct 14 one", /Oct 14/.test(F4.run("wnRowHTML()")));
+  ok("the Oct 14 note (her ask 10/14: 'how to add the score for the test and say it was fixed') says it was fixed, how to grade, where the Tests list is, and Given — grade later", F.run("WHATS_NEW[0].id")==="2026-10-14"&&F.run("WHATS_NEW[0].sections.map(s=>s[0]).join('|')").split("|").length===3&&/fixed/.test(F.run("JSON.stringify(WHATS_NEW[0])"))&&/Save results/.test(F.run("JSON.stringify(WHATS_NEW[0])"))&&/📝 Tests/.test(F.run("JSON.stringify(WHATS_NEW[0])"))&&/Given — grade later/.test(F.run("JSON.stringify(WHATS_NEW[0])")));
+  ok("…and names no spelling word (nothing a child must produce)", !/\b(king|long|sing|thing|bring|sang|stung|rang|wing|swing)\b/i.test(F.run("JSON.stringify(WHATS_NEW[0])")));
   const K=mk({mom:false}); K.run("wnTap()"); ok("opening it outside Mom mode asks for Mom's code", K.pinAsked.length===1&&/for Mom/.test(K.pinAsked[0]));
   ok("the Oct 6 notes cover schedule, Mom mode, grocery list, store mode + checkout, laundry", F.run("WHATS_NEW.find(w=>w.id==='2026-10-06').sections.map(s=>s[0]).join('|')").split("|").length===5);
-  ok("the Oct 13 notes (her ask 10/13) cover Fact Review, the check-ups, spelling words, Need Mom/part done, My Lists, Caleb", F.run("WHATS_NEW[0].id")==="2026-10-13b"&&F.run("WHATS_NEW[0].sections.map(s=>s[0]).join('|')").split("|").length===8&&/no co-op wk/.test(F.run("JSON.stringify(WHATS_NEW[0])"))&&/Find pictures/.test(F.run("JSON.stringify(WHATS_NEW[0])"))&&/Type the answer is ON/.test(F.run("JSON.stringify(WHATS_NEW[0])"))&&/Mom or Dad: start the check-up/.test(F.run("JSON.stringify(WHATS_NEW[0])")));
+  ok("the Oct 13 notes (her ask 10/13) cover Fact Review, the check-ups, spelling words, Need Mom/part done, My Lists, Caleb", F.run("WHATS_NEW[1].id")==="2026-10-13b"&&F.run("WHATS_NEW[1].sections.map(s=>s[0]).join('|')").split("|").length===8&&/no co-op wk/.test(F.run("JSON.stringify(WHATS_NEW[1])"))&&/Find pictures/.test(F.run("JSON.stringify(WHATS_NEW[1])"))&&/Type the answer is ON/.test(F.run("JSON.stringify(WHATS_NEW[1])"))&&/Mom or Dad: start the check-up/.test(F.run("JSON.stringify(WHATS_NEW[1])")));
   ok("…including this afternoon's: PDF receipts, per-lb prices, Kids' Corner, laundry times", /PDF/.test(F.run("JSON.stringify(WHATS_NEW)"))&&/per lb/.test(F.run("JSON.stringify(WHATS_NEW)"))&&/Kids' Corner/.test(F.run("JSON.stringify(WHATS_NEW)"))&&/✎ Times/.test(F.run("JSON.stringify(WHATS_NEW)")));
   ok("a laundry how-to banner exists for Mom", /Laundry times/.test(mk().run("momTipLaundryHTML()"))&&mk({mom:false}).run("momTipLaundryHTML()")==="");
 }
