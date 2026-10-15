@@ -50395,7 +50395,13 @@ function stRender(){
     h+='<div style="font-size:11px;color:#64748b;margin:8px 0">✓ Got it → '+stEsc(stRightLabel(stRightTier(S.kid)).toLowerCase())+' · 〰 Took a moment → monthly check · ✗ Missed → learning</div>';   // STRIGHT
     h+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button onclick="stSetAll(\'c\')" style="'+b("#fff","#15803d","#bbf7d0")+';font-size:12px">All ✓</button><div style="flex:1"></div>'
       +'<button onclick="stSave()" '+(left?'disabled ':'')+'style="'+b(left?"#e2e8f0":"#15803d",left?"#94a3b8":"#fff",left?"#e2e8f0":"#15803d")+'">'+(left?left+' left to mark':'Save results')+'</button></div>';
+    // STGIVEN (her yes 2026-10-14, after "i don't know the test scores but i do know he completed today"): a test that was
+    // given but whose marks Mom doesn't have yet → the card is done NOW (the lesson behind it unlocks) and the record stays
+    // on paper, so "Grade <kid>'s spelling test" waits on Mom's list for the real scores. Same write as 📄 Paper (stPaper).
+    // Hidden once the test is graded (nothing left to do). Never invents a score — "All ✓" and "add all to learning" stay separate.
+    const _rec=stRecs(S.kid)[S.key], _given=!(_rec&&_rec.state==="graded");
     h+='<div style="margin-top:12px;padding-top:10px;border-top:1px solid #f1f5f9;display:flex;gap:8px;flex-wrap:wrap">'
+      +(_given?'<button onclick="stPaper()" style="'+b("#f0fdf4","#15803d","#bbf7d0")+';font-size:12px">✓ Given — grade later</button>':'')
       +'<button onclick="stNoTime()" style="'+b("#fff","#b91c1c","#fecaca")+';font-size:12px">Didn’t have time to grade — add all to learning</button>'
       +'<button onclick="stPrintOne()" style="'+b("#fff","#334155","#cbd5e1")+';font-size:12px">🖨 Print</button>'
       +'<button onclick="stUI.view=\'give\';stUI.i=0;stUI.show=false;stRender()" style="'+b("#fff","#334155","#cbd5e1")+';font-size:12px">‹ Give it on screen</button></div>';
@@ -50531,8 +50537,57 @@ function stUnitRowHtml(u,kid,ks){
   return '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:5px;font-size:10.5px;color:var(--muted);font-weight:700">📝 Spelling test: '
     +pill("week","Practice Week","The lesson-day card tests LAST lesson's words — they practised them all week.")
     +pill("first","Test First","The lesson-day card tests THIS lesson's words, right after you teach it.")
-    +stRightPickHtml(u,kid,ks)+'</div>';
+    +stRightPickHtml(u,kid,ks)
+    +((typeof momHere==="function"&&momHere())?'<span onclick="stListOpen(\''+stEsc(kid)+'\')" title="Every spelling test this kid has had — scores, dates; tap one to see or change its marks" style="margin-left:6px;display:inline-block;padding:2px 8px;border-radius:9px;border:1px solid #fed7aa;background:#fff7ed;color:#7c2d12;cursor:pointer">📝 Tests</span>':'')   // STLIST
+    +'</div>';
 }
+// STLIST_START — 📝 the kid's spelling tests, all in one place (her ask 2026-10-14: "a place that keeps all the scores and
+// she can go and adjust scores etc"). Mom only. Reads mastery/<kid>_spelltests (the record every test already writes);
+// newest lesson first; each row = Level · Lesson, the date, and the score (c ✓ · s 〰 · m ✗) or the state (on paper —
+// waiting · all to learning). Tapping a row opens that test on the grading screen (stOpen) with its saved marks, so a
+// mark can be changed and saved again — stSave re-applies the words exactly as a first grade does. No new data shape.
+function stListRows(kid){
+  const recs=stRecs(kid), rows=[];
+  Object.keys(recs).forEach(key=>{ const r=recs[key]; if(!r) return;
+    const sc=stScore(r), ts=r.gradedTs||r.ts||0, d=ts?new Date(ts):null;
+    const date=d?((d.getMonth()+1)+"/"+d.getDate()+"/"+String(d.getFullYear()).slice(2)):(r.due||"");
+    let state=r.state||"", score="";
+    if(state==="graded") score=sc.c+" ✓ · "+sc.s+" 〰 · "+sc.m+" ✗";
+    else if(state==="learning") score="all "+sc.n+" to learning"+(sc.c||sc.s?" (re-graded: "+sc.c+" ✓ · "+sc.s+" 〰 · "+sc.m+" ✗)":"");
+    else if(state==="pending") score="on paper — waiting for marks";
+    rows.push({key,level:+r.level||0,lesson:+r.lesson||0,date,state,score,n:sc.n,c:sc.c});
+  });
+  rows.sort((a,b)=>(b.level-a.level)||(b.lesson-a.lesson));
+  return rows;
+}
+function stListHtml(kid){
+  if(!(typeof momHere==="function"&&momHere())) return "";
+  const rows=stListRows(kid), b=(bg,fg,bd)=>'padding:9px 14px;border-radius:11px;border:1.5px solid '+bd+';background:'+bg+';color:'+fg+';font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  let h='<div style="background:#fff;border-radius:16px;max-width:560px;width:100%;padding:16px 18px 18px;box-shadow:0 10px 40px rgba(0,0,0,.25)">';
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><div style="flex:1;font-family:\'Fraunces\',serif;font-size:19px;font-weight:800;color:#0f172a">📝 '+stEsc(stCap(kid))+'’s spelling tests</div><button onclick="stListClose()" style="'+b("#fff","#475569","#cbd5e1")+';padding:6px 11px">✕</button></div>';
+  h+='<div style="font-size:12px;color:#64748b;margin-bottom:12px">All About Spelling · '+rows.length+' test'+(rows.length===1?'':'s')+' · tap one to see or change its marks</div>';
+  if(!rows.length) h+='<div style="font-size:13px;color:#94a3b8;padding:14px 0">No spelling tests yet.</div>';
+  rows.forEach(r=>{ const col=r.state==="graded"?"#15803d":(r.state==="pending"?"#a16207":"#b91c1c");
+    h+='<div onclick="stListOpenTest(\''+stEsc(kid)+'\','+r.level+','+r.lesson+')" style="display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid #f1f5f9;cursor:pointer">'
+      +'<div style="min-width:118px;font-size:14px;font-weight:800;color:#0f172a">Level '+r.level+' · Lesson '+r.lesson+'</div>'
+      +'<div style="flex:1;font-size:13px;font-weight:700;color:'+col+'">'+stEsc(r.score)+'</div>'
+      +'<div style="font-size:11.5px;color:#94a3b8">'+stEsc(r.date)+'</div><div style="font-size:12px;color:#94a3b8">›</div></div>'; });
+  return h+'</div>';
+}
+function stListOpen(kid){
+  if(!(typeof momHere==="function"&&momHere())||!kid) return;
+  let ov=document.getElementById("st-list");
+  if(!ov){ ov=document.createElement("div"); ov.id="st-list"; ov.style.cssText="position:fixed;inset:0;z-index:9998;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px"; document.body.appendChild(ov); }
+  ov.innerHTML=stListHtml(kid);
+}
+function stListClose(){ const ov=document.getElementById("st-list"); if(ov) ov.remove(); }
+// A row → that test on the grading screen (stOpen opens view "grade" for any recorded test). Words no longer in the deck → a note.
+function stListOpenTest(kid,level,lesson){
+  stListClose();
+  const en=stEnroll(kid); if(!en||!stWords(en.u,level,lesson).length){ if(typeof gwShowToast==="function") gwShowToast("📝 That lesson’s words aren’t in the deck any more"); return; }
+  stOpen(kid,level,lesson,null);
+}
+// STLIST_END
 // STRIGHT: "✓ goes to" — monthly (default), graduated, or any rung of this kid's ladder. Saved per kid by nbsSet.
 function stRightPickHtml(u,kid,ks){
   try{
