@@ -9106,6 +9106,7 @@ function finalizeDone(id, doneTs, score){
 // Reflex, notebooks, fixed classes), never a twin or overflow, never a card Mom pushed or
 // dismissed, never past the Settings school end, never over the subject's per-day cap.
 // Targeted per-id writes only, exactly like the check-off heal.
+// MOMPEND (her report 2026-10-15): a card SENT TO MOM to check (claimed) counts as finished here — see _efDone below.
 const EF_DAYS=["monday","tuesday","wednesday","thursday","friday","saturday"];
 function _efDayIdx(d){ return EF_DAYS.indexOf(d); }
 function _efMomFree(kid){
@@ -9117,10 +9118,25 @@ function _efMomFree(kid){
   }catch(e){ return false; }
 }
 function _efIsClose(t){ return !!t&&(t.subjectKey==="closing_nb"||/Closing Notebook/i.test(t.title||"")); }
+// MOMPEND_START — "done or sent to Mom" is the one test for the fill-in (her report 2026-10-15: "Still holding up the
+// schedule when waiting for things to get checked off. It's messing with the algorithm of letting things fill in the
+// blanks. It shouldn't be. It should just go to Mom for her to check, and she can send it back to the kids later or the
+// next day"). The day's end (rtSchoolworkDone), the living-day lay (_mlFinished), the school-end rule and the catch-up
+// list already count a claimed card as finished; this block tested `checked` only, so one card waiting on Mom kept
+// "still has open work today" true and nothing filled the blanks. A claimed card is never pulled or slid either.
+// Mom's ↩ Send back (momReject) takes the claim off and the card is open again, exactly as before.
+function _efDone(id){
+  try{
+    if(typeof checked!=="undefined"&&checked&&checked[id]) return true;
+    if(typeof claimed!=="undefined"&&claimed&&claimed[id]) return true;
+  }catch(e){}
+  return false;
+}
+// MOMPEND_END
 function _efEligible(t,kid){
   if(!t||t.who!==kid) return false;
   if(String(t.id||"").endsWith("_c")||t._eowOverflow) return false;
-  if(typeof checked!=="undefined"&&checked&&checked[t.id]) return false;
+  if(_efDone(t.id)) return false;   // MOMPEND: done or sent to Mom
   if(/lunch/i.test(t.title||"")) return false;
   if(_efIsClose(t)||t.subjectKey==="morning_nb"||/Morning Notebook/i.test(t.title||"")) return false;
   if(typeof subjNoCarry==="function"&&subjNoCarry(t)) return false;
@@ -9148,7 +9164,7 @@ function efPullNext(kid){
     const dayOf=function(t){ try{ return (typeof _mlDayOf==="function")?_mlDayOf(t):t.day; }catch(e){ return t.day; } };
     const mine=tasks.filter(function(t){ return t&&t.who===kid&&dayOf(t)===today&&!String(t.id||"").endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title||""); });
     if(!mine.length) return null;                                                          // no school today for this kid
-    if(mine.some(function(t){ return !_efIsClose(t)&&!(checked&&checked[t.id]); })) return null;   // still has open work today
+    if(mine.some(function(t){ return !_efIsClose(t)&&!_efDone(t.id); })) return null;   // still has open work today (MOMPEND: a card with Mom is not open)
     const nowMin=(typeof _mlNowMin==="function")?_mlNowMin():(function(){ const d=new Date(); return d.getHours()*60+d.getMinutes(); })();
     const endMin=(typeof _mlDayEndMin==="function")?_mlDayEndMin():toMin("4:15 PM");
     // 🔁 Rules "comes back on its own": when nothing fell off today, behind-work (BEHIND block) returns automatically
@@ -10676,6 +10692,9 @@ document.getElementById("dlg-ok").onclick=()=>{
     obSet(WK+"/claimed/"+id,ts,_cw0,{u:WK+"/checked/"+id});   // 📮 replayed only while the card is still unchecked
     dbg("write claim id="+id);
     closeDlg(); renderAll();
+    // ⏩ MOMPEND (her report 2026-10-15): sending the last open card to Mom finishes the kid's day for the fill-in too — the
+    // same pull a check-off makes (finalizeDone), so work that fell off today comes back now instead of waiting on her check.
+    try{ if(typeof efPullNext==="function"&&effectiveDay(t)===_todayDay) setTimeout(function(){ try{ if(efPullNext(t.who)&&typeof renderAll==="function") renderAll(); }catch(e){} },0); }catch(e){}
     if(typeof gwShowToast==="function") gwShowToast("Sent to Mom to check ✓");
     // 🎉 her rule 2026-09-23: the kid celebrates when the day is done — not later on Mom's phone when she approves
     try{ if(effectiveDay(t)===_todayDay&&rtSchoolworkDone(t.who,_todayDay)) setTimeout(function(){ celebrateDayComplete(t.who,_todayDay); },600); }catch(e){}
@@ -32181,6 +32200,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
       const laneIv=lane=>occ.filter(t=>_laneOf(t)===lane).map(t=>[toMin(t.time),toMin(t.time)+(t.dur||20),t]);
       const kidIv=who=>occ.filter(t=>t.who===who).map(t=>[toMin(t.time),toMin(t.time)+(t.dur||20),t]);
       occ.filter(t=>!checked[t.id]&&!_isNote(t)&&t.mom!=="required"&&!t.famBlock&&subjCount[t.who+"|"+taskSubject(t)]===1&&!_gbFx(t))   // 👨‍👩‍👧 family time is pinned at its block time — never floated kid by kid; 🕙 nor is a fixed-time class (GAPFX)
+        .filter(t=>!(typeof claimed!=="undefined"&&claimed&&claimed[t.id]))   // MOMPEND 2026-10-15: a card sent to Mom is finished (like a checked one) — never floated into a blank
         .sort((a,b)=>toMin(a.time)-toMin(b.time))
         .forEach(t=>{
           const d=t.dur||20, lane=_laneOf(t), cur=toMin(t.time);
@@ -32204,7 +32224,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
       // 🌙 SWEEPKEEP: not on today once school is over — the day is done, its Closing Notebook keeps its time.
       if(dn===today&&_todaySchoolOver) continue;
       const byKid={};
-      weekData.tasks.forEach(t=>{ if(t.day===dn&&!t.id.endsWith("_c")&&!checked[t.id]) (byKid[t.who]=byKid[t.who]||[]).push(t); });
+      weekData.tasks.forEach(t=>{ if(t.day===dn&&!t.id.endsWith("_c")&&!checked[t.id]&&!(typeof claimed!=="undefined"&&claimed&&claimed[t.id])) (byKid[t.who]=byKid[t.who]||[]).push(t); });   // MOMPEND: a card with Mom is not open work the wrap-up waits behind
       Object.keys(byKid).forEach(function(who){
         const mine=byKid[who], closes=mine.filter(_isClose), others=mine.filter(t=>!_isClose(t));
         if(!closes.length||!others.length) return;
