@@ -41,4 +41,47 @@ console.log("── hole 10: ✕ on a load takes its open block with it ──")
   ok("?dryrun=1: the block remove is inert (no momBlocks write)", !T.writes.some(w=>/^momBlocks/.test(w[1])), T.writes);
 }
 
+console.log("\n── hole 11: '✕ not a load' on the schedule's ✅ row, kid loads only, Mom mode only ──");
+const cut=(a,b)=>{ const i=src.indexOf(a), j=src.indexOf(b,i); if(i<0||j<0) throw new Error("missing "+a); return src.slice(i,j); };
+const MIDNIGHT=(()=>{ const d=new Date(); d.setHours(0,0,0,0); return d.getTime(); })();
+function mkSched(o){
+  const writes=[], renders=[], ls={};
+  const ctx={console,Object,Array,String,Number,parseInt,isNaN,Math,JSON,RegExp,HA_LS:{getItem:k=>ls[k]||null,setItem:(k,v)=>{ ls[k]=v; }},writes,renders,
+    esc:s=>String(s==null?"":s).replace(/</g,"&lt;"),cap:s=>String(s||""),KID_NAME:{},LAUNDRY_STAGES:["washer","dryer","fold"],
+    laundryData:o.laundry,momHere:()=>o.mom!==false,checked:{},confirm:()=>true,tab:"schedule",renderAll:()=>renders.push("all"),
+    document:{getElementById:()=>({})},_dryRun:()=>false,laundryTimes:{wash:50,dry:60,grace:5},laundryBlockMins:{}};
+  class FD extends Date { constructor(...a){ if(a.length) super(...a); else super(FD.now()); } static now(){ return MIDNIGHT+o.nowMin*60000; } }
+  ctx.Date=FD; Object.defineProperty(ctx,"_todayDay",{get:()=>"wednesday"});
+  ctx.db={ref:p=>({set:()=>writes.push(["set",p]),update:()=>writes.push(["update",p]),remove:()=>writes.push(["rm",p])})};
+  vm.createContext(ctx);
+  vm.runInContext(fn("toMin")+"\n"+fn("fromMin")+"\n"+fn("mwTodayIso")+"\n"+fn("laundrySince")+"\n"+fn("_lbWrite")+"\n"+fn("_cuDropBlock")+"\n"+fn("laundryDel")+"\n"+fn("laundryAdvanceLabel")+"\n"
+    +cut("// 🧺 LAUNDRYTIMES (her ask","function laundryTimesEditorHTML(")+"\n"+cut("// MOMSCHED_LAUNDRY_START","// MOMSCHED_LAUNDRY_END")+"\n"+cut("// KIDLAUNDRY_START","// KIDLAUNDRY_END"),ctx);
+  return {ctx,writes,renders,html:()=>vm.runInContext("momSchedLaundry('wednesday',[]).map(r=>r.html).join('')",ctx),run:e=>vm.runInContext(e,ctx)};
+}
+const NOT="laundryDel\\('([^']+)'\\)[^>]*>✕ not a load<";
+const kid=()=>({KL:{label:"Taylor started laundry",stage:"washer",ts:MIDNIGHT+9*3600000,by:"taylor"}});
+const mom=()=>({ML:{label:"Sheets",stage:"washer",ts:MIDNIGHT+9*3600000}});
+{
+  const T=mkSched({laundry:kid(),nowMin:12*60}), h=T.html();
+  ok("kid load, Mom mode: the ✅ question row carries '✕ not a load' → laundryDel('KL')", /Block out time to move it to the dryer/.test(h)&&new RegExp(NOT).exec(h)&&new RegExp(NOT).exec(h)[1]==="KL", h);
+  T.run("laundryDel('KL')");
+  ok("tapping it runs laundryDel: laundry/KL removed, schedule repainted, nothing else written", T.writes.length===1&&T.writes[0][0]==="rm"&&T.writes[0][1]==="laundry/KL"&&T.renders.includes("all"), [T.writes,T.renders]);
+  ok("…and the row is gone", !/Taylor started laundry/.test(T.html()));
+}
+{
+  const h=mkSched({laundry:kid(),nowMin:12*60,mom:false}).html();
+  ok("kid load, NOT Mom mode: the ✅ row draws but without ✕ not a load", /Block out time/.test(h)&&!/not a load/.test(h), h);
+}
+{
+  const h=mkSched({laundry:mom(),nowMin:12*60}).html();
+  ok("a Mom-started load (no by:): ✅ row draws without ✕ not a load", /Block out time/.test(h)&&!/not a load/.test(h), h);
+}
+{
+  const T=mkSched({laundry:kid(),nowMin:12*60}); 
+  T.run("momBlocks['KL_washer']={iso:mwTodayIso(),load:'KL',stage:'washer',label:'Taylor started laundry',at:'skip',mins:5}");
+  ok("answered 'Don't schedule it' (skip) row also has the ✕", new RegExp(NOT).test(T.html()));
+  T.run("momBlocks['KL_washer'].at='now'; momBlocks['KL_washer'].startMin=720");
+  ok("answered Now: the ✅ marker row has the ✕ too", new RegExp(NOT).test(T.html()));
+}
+
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
