@@ -4260,10 +4260,10 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
   function luStdHeader(eyebrow, name, sub, weekLabel, dateLabel, badge) {
     return '<div class="header">\n  <div>\n    <div class="header-eyebrow">' + eyebrow + '</div>\n    <div class="header-name">' + name + '</div>\n    <div class="header-sub">' + sub + '</div>\n  </div>\n  <div class="header-right">\n    <div class="header-week">' + weekLabel + '</div>\n    <div class="header-date">' + dateLabel + '</div>\n    <div class="unicorn-badge">' + badge + '</div>\n  </div>\n</div>\n<div class="accent-bar"></div>';
   }
-  function luShell(pagesHtml, title) {
+  function luShell(pagesHtml, title, extraCss) {
     return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n<title>' + title + '</title>\n' +
       '<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,600;0,700;1,500&family=DM+Sans:wght@400;500;600;700&family=Fredoka+One&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">\n' +
-      '<style>\n' + fontFacesCss() + '\n' + LUCY_CSS + '\n</style>\n</head>\n<body>\n' + pagesHtml + '\n</body>\n</html>';
+      '<style>\n' + fontFacesCss() + '\n' + LUCY_CSS + (extraCss || "") + '\n</style>\n</head>\n<body>\n' + pagesHtml + '\n</body>\n</html>';
   }
   function luPractice(texts, nWrite, traceSize) {
     nWrite = nWrite || 1; traceSize = traceSize || 32;
@@ -4503,8 +4503,18 @@ ${luFooter("Howe Academy · Lucy Howe · Keep this private 🔒", weekDates)}
     var rows = dayTasks.map(function (t) { return '<tr><td>' + luSubjectName(t.title) + '</td><td><span class="bubble"></span></td><td><span class="bubble"></span></td><td><span class="bubble"></span></td></tr>\n'; }).join("");
     var subHtml = (subProblems || []).map(function (ab) { return '<div class="sub-problem"><span class="sub-num">' + ab[0] + '</span><span class="sub-op">−</span><span class="sub-num">' + ab[1] + '</span><span class="sub-eq">=</span><span class="sub-blank"></span></div>\n'; }).join("");
     var bl = blend, wordsHtml = (bl.words || []).map(function (w) { return '<span class="bword">' + w + '</span>'; }).join("");
+    // LU_PHONO: a book phonogram carries sounds/lesson/review and may sit mid-word (pre + pg + part2); the static
+    // list has none of these and prints exactly as before.
+    var phOn = bl.lesson != null;
+    var phLabel = phOn
+      ? 'Phonogram · ' + bl.digraph + ' <span class="ph-sounds">says ' + bl.sounds + '</span><span class="ph-lesson">LOE B · Lesson ' + bl.lesson + '</span>'
+      : 'Blend of the day · ' + bl.digraph;
+    var phParts = [bl.pre, bl.digraph, bl.part2].filter(function (s) { return s; }).map(function (s) { return '<span class="blend-part">' + s + '</span>'; }).join('\n        <span class="blend-plus">+</span>\n        ');
+    var phReview = (phOn && bl.review && bl.review.length)
+      ? '\n      <div class="ph-review">Review: ' + bl.review.map(function (r) { return '<span class="ph-chip">' + r + '</span>'; }).join("") + '</div>'
+      : '';
     var writeBlock = FONTS_OK
-      ? '<div class="write-prompt">Trace it, then write it yourself:</div><div class="nt-trace" style="font-size:31px;">' + dotted(bl.word) + '</div>'
+      ? '<div class="write-prompt">Trace it, then write it yourself:</div><div class="nt-trace" style="font-size:' + (blend.lesson != null ? 26 : 31) + 'px;">' + dotted(bl.word) + '</div>'
       : '<div class="write-prompt">Write your favorite ' + bl.digraph + ' word:</div>';
     var tidx = dowIndex(day), ar = aroundDay(day), tod = ar[1];
     var cmonth = monthFromDate(dateStr), seas = seasonOfMonth(cmonth), sname = seas[0], semoji = seas[1];
@@ -4559,12 +4569,10 @@ ${extraStrip || ""}
         <div>${pills}</div>
       </div>
     </div>
-    <div class="blend-card" style="display:flex;flex-direction:column;">
-      <div class="slabel">Blend of the day · ${bl.digraph}</div>
+    <div class="blend-card${phOn ? " ph" : ""}" style="display:flex;flex-direction:column;">
+      <div class="slabel${phOn ? " ph" : ""}">${phLabel}</div>
       <div class="blend-display">
-        <span class="blend-part">${bl.digraph}</span>
-        <span class="blend-plus">+</span>
-        <span class="blend-part">${bl.part2}</span>
+        ${phParts}
         <span class="blend-arrow">→</span>
         <span class="blend-word">${bl.word}</span>
       </div>
@@ -4573,8 +4581,8 @@ ${extraStrip || ""}
       <div class="blend-write-area">
         ${writeBlock}
         <div class="write-line"></div>
-      </div>
-      <div class="blend-draw-box" style="flex:1;"><div class="blend-draw-hint">✏️ draw a picture of the word!</div></div>
+      </div>${phReview}
+      ${phOn ? '' : '<div class="blend-draw-box" style="flex:1;"><div class="blend-draw-hint">✏️ draw a picture of the word!</div></div>'}
     </div>
   </div>
 
@@ -4953,8 +4961,9 @@ ${luFooter("Howe Academy · Lucy Howe · End of Week", "Week " + weekNum + " · 
       "wh": 'In American speech, "wh" sounds like "w." The key skill is visual recognition — she should see "wh" and know it starts question words: what, when, where, which, why.'
     };
     var blendTipRows = blends.map(function (bl) {
-      var dg = bl.digraph, tip = tips[dg] || ('Practice "' + dg + '" words from today\'s blend card. Read them aloud together first.');
-      return '<div class="key-row"><div class="key-label" style="min-width:28px;">' + dg + '</div><div style="font-size:11px;color:var(--ink);line-height:1.5;">' + tip + '</div></div>\n';
+      var dg = bl.digraph, tip = (bl.lesson != null && luPhonoTip(dg)) || tips[dg] || ('Practice "' + dg + '" words from today\'s blend card. Read them aloud together first.');   // LU_PHONO: the ladder's tip when the book is driving
+      var lsn = bl.lesson != null ? '<div style="font-size:8.5px;font-weight:800;color:var(--muted);margin-top:2px;">LOE B · Lesson ' + bl.lesson + (bl.newest ? ' · new this week' : ' · review') + '</div>' : '';
+      return '<div class="key-row"><div class="key-label" style="min-width:28px;">' + dg + '</div><div style="font-size:11px;color:var(--ink);line-height:1.5;">' + tip + lsn + '</div></div>\n';
     }).join("");
     var allApps = {}, appOrder = [];
     (days || []).forEach(function (day) {
@@ -5061,6 +5070,70 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     return out;
   }
 
+  // LU_PHONO_START — 📖 phonogram of the day follows LOE Foundations B (her "go" 2026-10-14, step 1 of
+  // PLAN_lucy_notebook_2026-10-14.md). The card used to print the same five digraphs every week (sh ch th wh sh)
+  // while Lucy's book had moved on (Lesson 51: ck, igh, ee taught; er new). Now the Notebook tab passes
+  // ctx.loe = loeTaught(kid) — the phonograms the book has taught so far, in ladder order (index.html LOELINK) —
+  // and the week is: the newest phonogram on Mon and Thu, the three before it once each; fewer taught = wrap.
+  // Entries keep the blend-card shape (digraph · part2 · word · words), so the daily page, the end-of-week page and
+  // the companion render them unchanged; `pre` lets a phonogram sit in the middle of its word (n + igh + t).
+  // No LOE link (ctx.loe missing or empty) = today's static list, byte for byte.
+  var LU_PHONO = {
+    sh:   { post: "ip", word: "ship",  words: ["shop", "shell", "shed", "fish", "wish"],      tip: '"sh" is one sound — like shushing someone: <em>shhh</em>. It\'s not separate s + h. Model: "Listen — <strong>ship</strong>. Do you hear the sh at the start?"' },
+    th:   { post: "is", word: "this",  words: ["that", "them", "with", "bath", "think"],      tip: 'Two sounds — voiced (<em>this, that, them</em>) and unvoiced (<em>think, bath</em>). She doesn\'t need the rule — practice both. Tongue tip peeks out between the teeth.' },
+    ck:   { pre: "du", word: "duck",   words: ["back", "sock", "kick", "neck", "rock"],       tip: 'Two letters, one sound /k/. It only comes right after a short vowel at the END of a word (du-ck, ba-ck) — never at the start. Have her tap the short vowel, then ck.' },
+    igh:  { pre: "n", post: "t", word: "night", words: ["light", "high", "sigh", "bright", "fight"], tip: 'Three letters say /ī/ together. Have her underline igh in each word so she sees it as one piece, then read the word.' },
+    ch:   { post: "op", word: "chop",  words: ["chip", "chin", "much", "such", "rich"],       tip: 'Like a train: <em>ch-ch-ch</em>. Common mix-up with sh. Exaggerate the mouth shape — ch pushes forward more. Have her put her hand in front of her mouth and feel the air.' },
+    ee:   { pre: "s", word: "see",     words: ["tree", "feet", "seed", "keep", "green"],      tip: 'Two e\'s say /ē/. Put <em>bed</em> next to <em>feed</em> so she hears short e against long e — the double letter is the clue.' },
+    er:   { pre: "h", word: "her",     words: ["fern", "herd", "perch", "sister", "under"],   tip: 'Her first "bossy r": the r changes the vowel, so e + r is one sound /er/. Compare <em>he</em> and <em>her</em> — the e is not /ĕ/ once r is behind it.' },
+    wh:   { post: "en", word: "when",  words: ["what", "where", "which", "whip", "while"],    tip: 'In American speech "wh" sounds like "w." The key skill is seeing wh and knowing it starts question words: what, when, where, which, why.' },
+    oi:   { pre: "c", post: "n", word: "coin", words: ["oil", "boil", "join", "point", "soil"], tip: '/oi/ as in <em>coin</em>. oi lives in the MIDDLE of a word; its twin oy takes the end (boy) — English words don\'t end in i.' },
+    oy:   { pre: "b", word: "boy",     words: ["toy", "joy", "enjoy", "royal", "annoy"],      tip: 'Same sound as oi, /oi/, but oy is the spelling at the END of a word (boy, toy). Ask her: "Is it at the end? Then it\'s oy."' },
+    ai:   { pre: "r", post: "n", word: "rain", words: ["tail", "mail", "paint", "train", "chain"], tip: '/ā/ in the middle of a word (r-ai-n). Its twin ay takes the end (play). Two vowels together — the first one talks.' },
+    ay:   { pre: "pl", word: "play",   words: ["day", "say", "stay", "tray", "away"],         tip: '/ā/ at the END of a word (play, day). If she tries to write "plai", ask where the sound is — at the end it\'s ay.' },
+    ng:   { pre: "ri", word: "ring",   words: ["sing", "long", "king", "song", "bring"],      tip: 'One sound, made in the back of the throat. Have her hold the end of <em>ring</em> and feel the hum — it is not n then g.' },
+    ar:   { pre: "c", word: "car",     words: ["farm", "star", "park", "barn", "dark"],       tip: 'Bossy r again: /ar/ as in <em>car</em>. She may want to read the a as /ă/ — the r right after it is the clue. Say it as a pirate: <em>arrr</em>.' },
+    or:   { pre: "f", post: "k", word: "fork", words: ["corn", "horn", "short", "storm", "north"], tip: '/or/ as in <em>fork</em>. Put an ar word and an or word side by side (barn · horn) so she hears the two bossy-r sounds apart.' },
+    tch:  { pre: "ca", word: "catch",  words: ["match", "patch", "witch", "fetch", "pitch"],  tip: 'Three letters, one sound /ch/, right after a short vowel (ca-tch, wi-tch). After a long vowel or a consonant it is plain ch (reach, bench).' },
+    ou:   { post: "t", word: "out",    words: ["cloud", "found", "shout", "round", "mouth"],  tip: 'Four sounds — /ow/ as in <em>out</em> comes first. Teach the habit: try the first sound; if the word doesn\'t make sense, try the next one.' },
+    ough: { pre: "d", word: "dough",   words: ["tough", "rough", "cough", "bought", "though"], tip: 'The six-sound phonogram. Don\'t drill the list — read each word as a whole, then name which sound ough took in it. Knowing it is ONE piece is the win.' },
+    ea:   { post: "t", word: "eat",    words: ["read", "team", "bread", "great", "leaf"],     tip: 'Three sounds: /ē/ (eat), /ĕ/ (bread), /ā/ (great). Try /ē/ first — it is the most common — then the others if the word doesn\'t make sense.' },
+    oa:   { pre: "b", post: "t", word: "boat", words: ["coat", "road", "soap", "goat", "toast"], tip: '/ō/ as in <em>boat</em>. The o does the talking and the a is silent — "two vowels, the first one talks" works for oa every time.' }
+  };
+  var LU_PHONO_CSS = "\n  .slabel.ph { display:flex; align-items:center; white-space:nowrap; }\n" +
+    "  .ph-sounds { font-family:'Nunito',sans-serif; font-size:11px; font-weight:800; color:var(--lu-mid); margin-left:6px; text-transform:none; letter-spacing:0; min-width:0; overflow:hidden; text-overflow:ellipsis; }\n" +
+    "  .ph-lesson { font-size:8.5px; font-weight:800; color:var(--muted); margin-left:auto; padding-left:6px; flex-shrink:0; }\n" +
+    "  .ph-review { display:flex; align-items:center; gap:4px; flex-wrap:wrap; font-size:11px; font-weight:700; color:var(--ink); margin-top:4px; }\n" +
+    "  .ph-chip { font-size:10px; font-weight:700; color:var(--lu-dark); background:white; border:1.5px solid var(--lu-light); border-radius:6px; padding:0 6px; }\n" +
+    // the card has the same 229px it always had and the review row is new, so the book-driven card runs compact:
+    // smaller display + words, a 26px trace, a 24px writing line, and no draw box (it was already collapsing to 0–4px
+    // on task-heavy days — see the 2026-08-30 note on the closing block).
+    "  .blend-card.ph .blend-part { font-size:24px; padding:3px 10px; }\n" +
+    "  .blend-card.ph .blend-word { font-size:24px; }\n" +
+    "  .blend-card.ph .blend-display { margin:3px 0 4px; }\n" +
+    "  .blend-card.ph .blend-words-label { margin-bottom:4px; }\n" +
+    "  .blend-card.ph .bword { font-size:13px; padding:3px 8px; }\n" +
+    "  .blend-card.ph .blend-words { margin-bottom:4px; gap:5px; }\n" +
+    "  .blend-card.ph .write-prompt { margin-bottom:3px; }\n" +
+    "  .blend-card.ph .write-line { height:24px; }\n";
+  // Pure. loe = [{pg, sounds, lesson}, …] (what the book has taught, any order); dayCount = this week's school days.
+  // Returns blend-shaped entries for each day, or null when there is nothing to plan from (→ the static list).
+  function luPhonoWeek(loe, dayCount) {
+    var taught = (Array.isArray(loe) ? loe : []).filter(function (p) { return p && LU_PHONO[p.pg]; })
+      .sort(function (a, b) { return (a.lesson || 0) - (b.lesson || 0); });
+    var n = taught.length; if (!n) return null;
+    var order = [0, 1, 2, 0, 3], out = [];   // steps back from the newest: Mon newest · Tue · Wed · Thu newest · Fri
+    for (var d = 0; d < (dayCount || 5); d++) {
+      var p = taught[n - 1 - (order[d % order.length] % n)], e = LU_PHONO[p.pg];
+      var others = taught.filter(function (q) { return q.pg !== p.pg; }).map(function (q) { return q.pg; }).slice(-6);
+      out.push({ digraph: p.pg, pre: e.pre || "", part2: e.post || "", word: e.word, words: e.words.slice(),
+                 sounds: p.sounds || "", lesson: p.lesson, newest: p.pg === taught[n - 1].pg, review: others });
+    }
+    return out;
+  }
+  function luPhonoTip(pg) { var e = LU_PHONO[pg]; return e ? e.tip : ""; }
+  // LU_PHONO_END
+
   function generateLucy(ctx) {
     ctx = ctx || {};
     var weekData = ctx.weekData || {};
@@ -5072,7 +5145,8 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     var tasks = weekData.tasks || [], dates = weekData.dates || {};
     var DAY_ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday"];
     var days = nbCalendarDays(dates, DAY_ORDER.filter(function (d) { return dates.hasOwnProperty(d); }));   // NBDAYORDER
-    var blends = LUCY_DATA.blends, focus = LUCY_DATA.focus, pace = (ctx.pace && ctx.pace.length) ? ctx.pace : LUCY_DATA.pace;
+    var phono = luPhonoWeek(ctx.loe, days.length);   // LU_PHONO: the book's phonograms, or null → the static list
+    var blends = phono || LUCY_DATA.blends, focus = LUCY_DATA.focus, pace = (ctx.pace && ctx.pace.length) ? ctx.pace : LUCY_DATA.pace;
     var subtraction = luSubWeek(wn, days.length);
     var prevStats = ctx.prevStats || {};   // dashes until the shared history wiring
     var category = LUCY_DATA.category_order[((wn - 1) % LUCY_DATA.category_order.length + LUCY_DATA.category_order.length) % LUCY_DATA.category_order.length];
@@ -5110,9 +5184,9 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       if (dolls.outfit) { parts.push(luPageDoll(dolls.outfit, "Outfit — cut me out!")); parts.push(luBlankPage()); }
     }
 
-    var student = luShell(parts.join("\n"), "Lucy's Notebook — Week " + wn);
+    var student = luShell(parts.join("\n"), "Lucy's Notebook — Week " + wn, phono ? LU_PHONO_CSS : "");
     var companion = luPageTeachingCompanion(wn, weekDates, days, tasks, blends, subtraction, ctx.teachNotes || "");
-    var parent = luShell(companion, "Lucy's Parent Companion — Week " + wn);
+    var parent = luShell(companion, "Lucy's Parent Companion — Week " + wn, phono ? LU_PHONO_CSS : "");
     return { student: student, parent: parent };
   }
 
@@ -5564,6 +5638,6 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     dgStart: dgStart,                   // Daily Grams: first Day of a week from the stored cursor (Notebook tab card + prefetch)
 
     // exposed for testing
-    _internal: { generateGeneric: generateGeneric, spellNbPages: spellNbPages, juCurriculumFromMastery: juCurriculumFromMastery, generateJulian: generateJulian, generateCaleb: generateCaleb, cbCurriculum: cbCurriculum, dgWeekPlan: dgWeekPlan, nbCalendarDays: nbCalendarDays }
+    _internal: { generateGeneric: generateGeneric, spellNbPages: spellNbPages, juCurriculumFromMastery: juCurriculumFromMastery, generateJulian: generateJulian, generateCaleb: generateCaleb, cbCurriculum: cbCurriculum, dgWeekPlan: dgWeekPlan, nbCalendarDays: nbCalendarDays, generateLucy: generateLucy, luPhonoWeek: luPhonoWeek, LU_PHONO: LU_PHONO }
   };
 })();
