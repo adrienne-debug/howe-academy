@@ -68,7 +68,7 @@ console.log("── an answered block is unchanged, whatever the clock says ─�
   T.run("_mlNowOverride="+H(11,21)); const A=T.agenda();
   ok("answered: ✅ done row + the 🧺 block row, no ⏳, no question", /✅ <b>Mine<\/b> is done in the washer<\/span>/.test(A)&&/🧺 Move to the dryer: <b>Mine<\/b>/.test(A)&&!/⏳/.test(A)&&!/Block out time/.test(A), A);
 }
-console.log("── the old behaviour for an unknown done time is untouched ──");
+console.log("── a load with no machine clock: the fold pile is a row now (LAUNDRY_FOLD, 2026-10-15 — replayed in test_laundry_fold.js) ──");
 { const T=mk({tasks:TASKS,laundry:{f:{label:"Folded",stage:"fold",ts:at(H(9))}},times:DW,nowMin:H(10)}); const A=T.agenda();
-  ok("a folded load draws nothing on the schedule", !/Folded/.test(A), A); }
+  ok("a fold-pile load draws its row the minute it lands — no ⏳ wait, no 'done in the' text", /🧺 <b>Folded<\/b> is in the fold pile\. Block out time to put it away\?/.test(A)&&!/⏳/.test(A)&&!/is done in the/.test(A), A); }
 console.log(pass+" passed, "+fail+" failed"); if(fail) process.exit(1);
