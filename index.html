@@ -7958,7 +7958,10 @@ function schedRegenerateNow(){
           try{ HA_LS.setItem("ha_calendar",JSON.stringify(calendarData)); }catch(e2){}
           dbg("regen: calendar refreshed — kidOverride kids="+Object.keys(calendarData.kidOverrides).join(",")+" coops="+Object.keys(calendarData.coops).length); 
         }catch(e){ dbg("regen: calendar refresh FAILED: "+e); }
-        db.ref("weekConfig/"+wn).once("value",s=>_done(s.val()));
+        // WBREGEN: the walk-back snapshots, when this device hasn't loaded them yet (the walk-back sheet was never opened
+        // here) — gwCommit's guard needs them to tell a walked-back check from a real re-check. A read only.
+        const _wbGo=()=>db.ref("weekConfig/"+wn).once("value",s=>_done(s.val()));
+        if(typeof walkbackData!=="undefined"&&walkbackData===null) db.ref("walkbacks").once("value").then(s=>{ walkbackData=s.val()||{}; _wbGo(); },()=>_wbGo()); else _wbGo();
       });
     }
     else _done(null);
@@ -65978,6 +65981,38 @@ function gwCommit(){
     const memChecked=checked||{};
     const snapChecked={...lsChecked,...memChecked};
     const snapHist=ld(activeWK+"_history")||{};
+    // WBREGEN_START — a walked-back check-off never rides a Regenerate back onto the week (live 2026-10-14, Lincoln's
+    // Discover! Social Studies: Adrienne walked back Monday's lesson 5 at 12:04 PM — snapshot wb_1791993846397,
+    // walkback_excl/<id> set, the check-off + history removed by targeted writes — and tapped Regenerate 30 s later. The
+    // check came back with its ORIGINAL done-time (02:34 PM Oct 12) and she had to walk it back again at 12:06. Cause:
+    // snapChecked above is the UNION of this device's two local copies (localStorage + memory), and one still held the
+    // old key; the generator served lesson 5 fresh under the same id, so the new card was born checked, and the
+    // cascade's ts heal then moved it to Monday ("cascade heal(ts): …_L0005 friday → monday"). The server's copy was
+    // right — the walk-back's targeted null had landed; it was this device's stale map that re-wrote it.
+    // Rule: a check whose id is in walkback_excl AND whose done-time is the very one a walk-back snapshot recorded for
+    // this week is that walked-back check — drop it (and its history entry) here, before the re-attach passes, so the
+    // whole-week save below and the heal never see it. A genuinely new check-off on the re-served card has a new
+    // done-time and is kept (the kid did it again — live 12:09 PM, same day). No write of its own: this only keeps
+    // the already-removed key out of the maps the existing save writes. Test: test_walkback_regen.js.
+    (function(){
+      try{
+        const _wbx=(typeof walkbackExcl==="object"&&walkbackExcl)||{};
+        const _wbd=(typeof walkbackData==="object"&&walkbackData)||{};
+        const _bid=id=>String(id||"").replace(/(_c)+$/,"");
+        const _wbTs={};   // id → done-times a walk-back of THIS week removed
+        Object.keys(_wbd).forEach(k=>{ Object.keys(_wbd[k]||{}).forEach(wid=>{ (((_wbd[k]||{})[wid]||{}).items||[]).forEach(it=>{
+          if(!it||!it.id||it.wk!==activeWK||!it.checkedTs||!_wbx[_bid(it.id)]) return;
+          (_wbTs[it.id]=_wbTs[it.id]||[]).push(String(it.checkedTs)); }); }); });
+        const gone=[];
+        Object.keys(snapChecked).forEach(id=>{
+          if(!_wbx[_bid(id)]) return;
+          const L=_wbTs[id]||[]; if(L.indexOf(String(snapChecked[id]))<0) return;   // a NEW done-time = a real re-check: keep
+          delete snapChecked[id]; if(snapHist[id]) delete snapHist[id]; gone.push(id);
+        });
+        if(gone.length&&typeof dbg==="function") dbg("↩ walk-back (regenerate): dropped "+gone.length+" walked-back check(s) a local copy still held — "+gone.join(" "));
+      }catch(eWB){ try{ dbg("walk-back regen guard skip: "+eWB); }catch(e2){} }
+    })();
+    // WBREGEN_END
     // GWC_MATCH_START — re-attach this week's checks to the regenerated cards (test_regen_idempotent.js)
     // Build lookup of old checks by title+who+day for matching after regeneration.
     // Only carry checks from this week (within 7 days) to prevent stale cross-week bleed.
