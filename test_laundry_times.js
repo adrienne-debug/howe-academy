@@ -8,7 +8,7 @@ const block=src.slice(a, src.indexOf("\n}\n",b)+3);
 function mk(stored){
   const ls={}; if(stored) ls.ha_laundry_times=JSON.stringify(stored); const writes=[], content={};
   const ctx={console,JSON,Date,Math,parseInt,String,HA_LS:{getItem:k=>ls[k]||null,setItem:(k,v)=>{ ls[k]=v; }},db:{ref:p=>({set:v=>writes.push([p,v])})},
-    momHere:()=>true,kitPinGate:()=>{},mwToast:()=>{},renderMomsPlan:()=>{},document:{getElementById:id=>id==="content"?content:(ctx.inputs&&ctx.inputs[id])||null},inputs:{}};
+    momHere:()=>true,_lbWrite:()=>true,kitPinGate:()=>{},mwToast:()=>{},renderMomsPlan:()=>{},document:{getElementById:id=>id==="content"?content:(ctx.inputs&&ctx.inputs[id])||null},inputs:{}};
   vm.createContext(ctx); vm.runInContext(fn("laundrySince")+"\n"+block,ctx);
   return {run:e=>vm.runInContext(e,ctx),ctx,writes,ls};
 }

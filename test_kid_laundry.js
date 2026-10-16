@@ -1,6 +1,6 @@
 const fs=require('fs');const src=fs.readFileSync(process.argv[2]||require("path").join(__dirname,"index.html"),'utf8');
 const blk=src.slice(src.indexOf('// KIDLAUNDRY_START'),src.indexOf('// KIDLAUNDRY_END'));
-let writes=[];const ctx={laundryData:{},db:{ref:p=>({set:v=>writes.push(['set',p,v]),remove:()=>writes.push(['rm',p])})},HA_LS:{setItem(){}},KID_NAME:{taylor:'Taylor'},cap:s=>s,day:'monday',_todayDay:'monday',momHere:()=>true};
+let writes=[];const ctx={laundryData:{},db:{ref:p=>({set:v=>writes.push(['set',p,v]),remove:()=>writes.push(['rm',p])})},HA_LS:{setItem(){}},KID_NAME:{taylor:'Taylor'},cap:s=>s,day:'monday',_todayDay:'monday',momHere:()=>true,_lbWrite:()=>true};
 const f=new Function(...Object.keys(ctx),blk+';return {laundryStartGuess,laundryStarts,laundryKidHook,cpLaundryBtnHTML,laundryKidId,setDay:d=>{day=d}}');
 const L=f(...Object.values(ctx));let fail=0;const eq=(a,b,m)=>{if(JSON.stringify(a)!==JSON.stringify(b)){fail++;console.log('FAIL',m,a,b)}};
 const yes=["Start a load of laundry","Start laundry","Run the washer","Wash towels","Put a load in the washer","Load the washer","Start a load","Wash whites"];

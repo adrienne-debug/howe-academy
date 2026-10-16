@@ -173,7 +173,7 @@ ok("🗓 My schedule today draws time headers in order, ANY TIME last", sched.in
 ok("empty day → a plain hint", helpers({}).dadSchedHTML("wednesday").includes("Nothing on the clock yet"));
 ok("Dad's Day draws it under the helper card", /helperDadCardHTML\(\); \}catch\(e\)\{\}[^\n]*\n\s*try\{ h\+=dadSchedHTML\(dn\); \}/.test(sliceFrom(src, "renderDadsDay")));
 { // laundryAdd: his loads are his; Mom's write is unchanged
-  const run = (text, by) => { const data = {}, w = []; const f = new Function("laundryData", "document", "HA_LS", "db", "renderMomsPlan", sliceFrom(text, "laundryAdd") + "; return laundryAdd;")(data, { getElementById: id => id === "laundry-label" ? { value: "Towels" } : null }, { setItem: () => {} }, { ref: p => ({ set: v => w.push([p, v]) }) }, () => {}); f(by); return w[0] && w[0][1]; };
+  const run = (text, by) => { const data = {}, w = []; const f = new Function("laundryData", "document", "HA_LS", "db", "renderMomsPlan", "_lbWrite", sliceFrom(text, "laundryAdd") + "; return laundryAdd;")(data, { getElementById: id => id === "laundry-label" ? { value: "Towels" } : null }, { setItem: () => {} }, { ref: p => ({ set: v => w.push([p, v]) }) }, () => {}, () => true); f(by); return w[0] && w[0][1]; };
   ok("Start a load from his Day writes by:\"dad\"", run(src, "dad").by === "dad");
   ok("Mom's Start a load writes exactly what origin/main wrote (no by)", !("by" in run(src)) && (!old || JSON.stringify(Object.keys(run(src))) === JSON.stringify(Object.keys(run(old)))));
 }
