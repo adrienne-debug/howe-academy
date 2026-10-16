@@ -148,6 +148,28 @@ console.log("── a stage change drops that load's Mom blocks (no stale questi
   ok("stage + Started at together: {stage:fold, ts:10:50}", JSON.stringify(T.writes.filter(w=>w[1]==="laundry/"+LID)[0][2])===JSON.stringify({stage:"fold",ts:at(H(10,50))}), T.writes);
 }
 
+console.log("── (2) hole 2: the dryer block's button reads Folded ✓ (text only) ──");
+{ const kD=LID+"_dryer";
+  const T=mk({laundry:{[LID]:{label:"Lucy started laundry",stage:"dryer",ts:at(H(9,0)),by:"lucy"}},blocks:{[kD]:{iso:ISO,load:LID,stage:"dryer",label:"Lucy started laundry",mins:15,at:"now",startMin:H(10,5)}},nowMin:H(10,10)});
+  const S=T.sched();
+  ok("the dryer block: '🧺 Fold: Lucy started laundry · [15] min' [Folded ✓]", /🧺 Fold: <b>Lucy started laundry<\/b>/.test(S)&&new RegExp("laundryAdvance\\('"+LID+"'\\)[^>]*>Folded ✓</button>").test(S)&&!/→ Fold/.test(S), S);
+  ok("no default-minutes change: fold 15, move 5, put away 10", T.run("laundryBlockDefault('dryer')")===15&&T.run("laundryBlockDefault('washer')")===5&&T.run("laundryBlockDefault('fold')")===10);
+  T.ctx._nowM=H(10,22); T.run("laundryAdvance('"+LID+"')");
+  ok("Folded ✓ is the same tap: the block ends at 10:22, the load goes to the fold pile", T.run("momBlocks['"+kD+"'].done")===true&&T.run("momBlocks['"+kD+"'].doneMin")===H(10,22)&&T.ctx.laundryData[LID].stage==="fold");
+  ok("'✓ Folded: Lucy started laundry' kept at 10:22", /✓ Folded: <b>Lucy started laundry<\/b>/.test(T.sched()));
+}
+{ const T=mk({laundry:{a:{label:"Towels",stage:"washer",ts:at(H(9,0))},b:{label:"Sheets",stage:"fold",ts:at(H(9,0))}},
+    blocks:{a_washer:{iso:ISO,load:"a",stage:"washer",mins:5,at:"now",startMin:H(10,0)},b_fold:{iso:ISO,load:"b",stage:"fold",mins:10,at:"now",startMin:H(10,0)}},nowMin:H(10,5)});
+  const S=T.sched();
+  ok("the other blocks keep their buttons: → Dryer, ✓ Put away", /laundryAdvance\('a'\)[^>]*>→ Dryer</.test(S)&&/laundryAdvance\('b'\)[^>]*>✓ Put away</.test(S), S);
+}
+{ const T=mk({laundry:{d:{label:"Towels",stage:"dryer",ts:at(H(9,0))}}});
+  ok("Mom's Day Laundry card keeps → Fold (only the block and the nudge changed)", /laundryAdvance\('d'\)[^>]*>→ Fold</.test(T.card()));
+}
+ok("the NOW nudge's dryer button reads Folded ✓ (and the washer's stays → Dryer)", (()=>{ const i=src.indexOf("has been in the dryer since '+laundrySince(l.ts)+' — time to fold it"); const seg=src.slice(i,src.indexOf("});",i));
+  return i>0&&/\(l\.stage==="dryer"&&typeof LAUNDRY_FOLDED_BTN!=="undefined"\)\?LAUNDRY_FOLDED_BTN:laundryAdvanceLabel\(l\.stage\)/.test(seg); })());
+ok("LAUNDRY_FOLDED_BTN = 'Folded ✓'", /const LAUNDRY_FOLDED_BTN="Folded ✓";/.test(src));
+
 console.log("── laundry edit writes stay on laundry/<id> and momBlocks/<iso>/<key> ──");
 ok("LAUNDRYEDIT writes only through _lbWrite()", (LE.match(/db\.ref\(/g)||[]).length===1&&/if\(_lbWrite\(\)\) db\.ref\('laundry\/'\+id\)\.update\(up\)/.test(LE));
 ok("LAUNDRYEDIT never set()s a whole node", !/\.set\(/.test(LE));

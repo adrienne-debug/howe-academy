@@ -34,6 +34,6 @@ console.log("── wiring ──");
 ok("✎ Times button on the Laundry card header, editor right under it", /Laundry<span style="flex:1"><\/span><button onclick="laundryEditToggle\(\)"[^>]*>✎ Times<\/button><\/div>'\+laundryTimesEditorHTML\(\)\+\(typeof momTipLaundryHTML==="function"\?momTipLaundryHTML\(\):""\)/.test(src));
 ok("each load shows when it'll be done", /' since '\+laundrySince\(l\.ts\)\+laundryDoneTxt\(l\)\+'/.test(src));
 ok("Mom's Day reminder covers the washer AND the dryer, at its minutes + the reminder", /if\(!l\|\|\(l\.stage!=="washer"&&l\.stage!=="dryer"\)\) return;/.test(src)&&/if\(mins<\(l\.stage==="dryer"\?laundryT\("dry"\):laundryT\("wash"\)\)\+laundryT\("grace"\)\) return;/.test(src));
-ok("the dryer reminder says fold it, with the right button", /has been in the dryer since '\+laundrySince\(l\.ts\)\+' — time to fold it/.test(src)&&/white-space:nowrap">'\+laundryAdvanceLabel\(l\.stage\)\+'<\/button><\/div>';/.test(src));
+ok("the dryer reminder says fold it, with the right button", /has been in the dryer since '\+laundrySince\(l\.ts\)\+' — time to fold it/.test(src)&&/white-space:nowrap">'\+\(\(l\.stage==="dryer"&&typeof LAUNDRY_FOLDED_BTN!=="undefined"\)\?LAUNDRY_FOLDED_BTN:laundryAdvanceLabel\(l\.stage\)\)\+'<\/button><\/div>';/.test(src));   // LAUNDRY_FOLDED: the dryer's button reads Folded ✓
 ok("listens for settings/laundryTimes", /db\.ref\("settings\/laundryTimes"\)\.on\("value"/.test(src));
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
