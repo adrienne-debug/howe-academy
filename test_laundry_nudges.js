@@ -18,7 +18,7 @@ function mk(stored){
     document:{getElementById:id=>(ctx.inputs&&ctx.inputs[id])||null},inputs:{},
     laundryAdvance:id=>advanced.push(id)};
   vm.createContext(ctx);
-  vm.runInContext(fn("laundrySince")+"\n"+fn("laundryAdvanceLabel")+"\n"+times+"\n"+nudge+"\n"+fn("hbAlertItems"),ctx);
+  vm.runInContext("function _lbWrite(){ return false; }   /* PR 60 stand-in: no writes in this harness */\nconst LAUNDRY_FOLDED_BTN=\"Folded ✓\";   /* PR 62 */\n"+fn("laundrySince")+"\n"+fn("laundryAdvanceLabel")+"\n"+times+"\n"+nudge+"\n"+fn("hbAlertItems"),ctx);
   return {run:e=>vm.runInContext(e,ctx),ctx,writes,advanced};
 }
 const T0=new Date(2026,9,15,9,0,0).getTime(), MIN=60000;   // Thursday 9:00 AM
@@ -44,7 +44,7 @@ console.log("── washer and dryer unchanged ──");
   ok("90 min: both (washer + dryer)", kinds(T,T0+90*MIN)==="w:washer,d:dryer");
   const rows=T.run("laundryNudgeList("+(T0+90*MIN)+").map(laundryNudgeRowHTML).join('')");
   ok("washer row: move it before it sours [→ Dryer]", /Towels<\/b> has been in the washer since 9:00 AM — move it before it sours/.test(rows)&&/laundryAdvance\('w'\)"[^>]*>→ Dryer</.test(rows), rows);
-  ok("dryer row: time to fold it [→ Fold]", /Darks<\/b> has been in the dryer since 9:00 AM — time to fold it/.test(rows)&&/laundryAdvance\('d'\)"[^>]*>→ Fold</.test(rows), rows);
+  ok("dryer row: time to fold it [Folded ✓] (LAUNDRY_FOLDED, PR 62 merged)", /Darks<\/b> has been in the dryer since 9:00 AM — time to fold it/.test(rows)&&/laundryAdvance\('d'\)"[^>]*>Folded ✓</.test(rows), rows);
 }
 console.log("── (b) the fold pile gets its own nudge ──");
 { const T=mk();
