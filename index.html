@@ -1467,7 +1467,7 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
   <button class="nav-tab" onclick="showTab('mastery')" data-tab="mastery">Mastery</button>
   <button class="nav-tab" onclick="showTab('units')" data-tab="units">Units</button>
   <button class="nav-tab" onclick="showTab('play')" data-tab="play">School Room</button>
-  <button class="nav-tab" onclick="showTab('moms-plan')" data-tab="moms-plan" style="position:relative">Mom's Day<span id="hb-badge" style="display:none;position:absolute;top:2px;right:2px;min-width:16px;height:16px;line-height:16px;padding:0 4px;box-sizing:border-box;border-radius:8px;background:#dc2626;color:#fff;font-size:10px;font-weight:800;text-align:center"></span></button>
+  <button class="nav-tab" onclick="showTab('moms-plan')" data-tab="moms-plan" style="position:relative">Mom's Day<span id="hb-badge" onclick="hbListTap(event)" style="display:none;cursor:pointer;position:absolute;top:2px;right:2px;min-width:16px;height:16px;line-height:16px;padding:0 4px;box-sizing:border-box;border-radius:8px;background:#dc2626;color:#fff;font-size:10px;font-weight:800;text-align:center"></span></button>
   <button class="nav-tab" onclick="showTab('kids')" data-tab="kids">Kids' Corner</button>
   <button class="nav-tab" onclick="showTab('babysitter')" data-tab="babysitter" id="sitter-tab-btn">Maggie</button>
 </div>
@@ -6665,7 +6665,7 @@ function wsRowsHTML(now){
 // 🏡 Mom's Day: a "From Adrienne" task card, right under her own day.
 function wsTaskHTML(now){
   const rows=(typeof wnRowHTML==="function"?wnRowHTML():"")+wsRowsHTML(now), btns=msgBtnsHTML(); if(!rows&&!btns) return "";
-  return '<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);padding:11px 14px 13px">'+
+  return '<div id="ws-task-card" style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);padding:11px 14px 13px">'+
     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div style="font-weight:800;font-size:13px;color:#1e3a8a;flex:1">📋 From Adrienne</div>'+btns+'</div>'+rows+'</div>';
 }
 // 🏡 Mom HQ: the same rows on top of the map (Mom HQ is already behind the PIN).
@@ -14869,44 +14869,57 @@ function hbClaimedWaiting(){
   const cl=(typeof claimed!=="undefined"&&claimed)||{}, ck=(typeof checked!=="undefined"&&checked)||{};
   return Object.keys(cl).filter(id=>cl[id]&&!ck[id]&&live[id]&&!String(id).endsWith("_c"));
 }
-// → [{kind:"need"|"msg"|"check"|"close"|"remind", key}] — everything Home Base would put in front of her right now.
+// → [{kind:"need"|"msg"|"check"|"close"|"remind", key, label, sec}] — everything Home Base would put in front of her right
+// now. 📋 HBLIST (her ask 2026-10-15): each item also carries a plain-words label (kid + the thing, built only from what
+// its source already knows) and sec = the id of the Mom's Day section it lives in, for the badge's "Waiting for you" list.
 function hbAlertItems(){
-  const out=[], add=(kind,id)=>out.push({kind:kind,key:kind+":"+id});
+  const out=[], add=(kind,id,label,sec)=>out.push({kind:kind,key:kind+":"+id,label:String(label||""),sec:sec||"hb-now"});
   const kids=(typeof SL_KIDS!=="undefined"&&SL_KIDS)||(typeof ROSTER!=="undefined"&&ROSTER)||[];
+  const nm=k=>{ try{ return (typeof KID_NAME!=="undefined"&&KID_NAME&&KID_NAME[k])||(typeof cap==="function"?cap(k):String(k)); }catch(e){ return String(k); } };
   // 🔔 a person is waiting
-  try{ hrOpenList().forEach(([id])=>add("need",id)); }catch(e){}
-  try{ msgReplyList().forEach(([id,m])=>{ const r=msgAdrReplies(m); add("msg",id+"@"+((r[r.length-1]||{}).at||0)); }); }catch(e){}
-  try{ wsNoteList().concat(wsOpenList()).forEach(([id])=>add("msg","ws_"+id)); }catch(e){}
-  try{ hbClaimedWaiting().forEach(id=>add("check",id+"@"+claimed[id])); }catch(e){}
+  try{ hrOpenList().forEach(([id,r])=>add("need",id,nm((r||{}).kid)+" needs you"+((r&&r.cardTitle)?" — "+r.cardTitle:""),"hr-mom-card")); }catch(e){}
+  try{ msgReplyList().forEach(([id,m])=>{ const r=msgAdrReplies(m); add("msg",id+"@"+((r[r.length-1]||{}).at||0),"Adrienne replied to your message","ws-task-card"); }); }catch(e){}
+  try{ wsNoteList().forEach(([id,w])=>add("msg","ws_"+id,"A note from Adrienne"+((w&&w.title)?": "+w.title:""),"ws-task-card")); }catch(e){}
+  try{ wsOpenList().forEach(([id,w])=>add("msg","ws_"+id,"Questions from Adrienne"+((w&&w.title)?": "+w.title:""),"ws-task-card")); }catch(e){}
+  try{
+    const src=(typeof displacedResult!=="undefined"&&displacedResult&&displacedResult.tasks)||((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]);
+    const byId={}; (src||[]).forEach(t=>{ if(t&&t.id) byId[t.id]=t; });
+    hbClaimedWaiting().forEach(id=>{ const t=byId[id]||{}; add("check",id+"@"+claimed[id],(t.who?nm(t.who)+" — ":"")+(t.title||"a card"),"hb-now"); });
+  }catch(e){}
   // 🔴 close-out — the yes/no rows in 🔴 Now, study flags, spelling tests to grade
   kids.forEach(k=>{
-    try{ rlBooks(k).forEach(b=>{ if(b&&b.finishClaim&&b.status!=="done") add("close","book_"+k+"_"+b.id); }); }catch(e){}
-    try{ prPending(k).forEach(r=>add("close","stars_"+k+"_"+r.id)); }catch(e){}
-    try{ _rwWds(k).forEach(w=>{ if(w&&(w.status==="pending"||w.status==="owed")) add("close","store_"+k+"_"+w.id+"_"+w.status); }); }catch(e){}
+    try{ rlBooks(k).forEach(b=>{ if(b&&b.finishClaim&&b.status!=="done") add("close","book_"+k+"_"+b.id,nm(k)+" finished "+(b.title||"a book")); }); }catch(e){}
+    try{ prPending(k).forEach(r=>add("close","stars_"+k+"_"+r.id,nm(k)+" asks for "+(r.amount||0)+" ⭐ — "+(r.reason||"Extra job"))); }catch(e){}
+    try{ _rwWds(k).forEach(w=>{ if(w&&(w.status==="pending"||w.status==="owed")) add("close","store_"+k+"_"+w.id+"_"+w.status,
+      w.status==="owed"?"Owed to "+nm(k)+": "+(w.note||"a Star Store prize"):nm(k)+" wants "+(w.note||"a Star Store prize")); }); }catch(e){}
   });
   try{
     if(typeof unitStudies!=="undefined"&&unitStudies) for(const uid in unitStudies){
       const u=unitStudies[uid]; if(!u||!u.activityClaims) continue;
       for(const k in u.activityClaims) for(const ak in (u.activityClaims[k]||{})){
         if(((u.activityLog||{})[k]||{})[ak]) continue;
-        if(!_unitActs(u).find(a=>a&&a.key===ak)) continue;
-        add("close","unit_"+uid+"_"+k+"_"+ak);
+        const act=_unitActs(u).find(a=>a&&a.key===ak); if(!act) continue;
+        add("close","unit_"+uid+"_"+k+"_"+ak,nm(k)+" did a unit activity: "+(act.title||ak));
       }
     }
   }catch(e){}
-  try{ const keep=_mstAlertList; try{ mstAlertsAll().filter(a=>a.kind!=="redone").forEach(a=>add("close","study_"+a.kid+"_"+a.kind+"_"+(a.sid||a.text))); } finally { _mstAlertList=keep; } }catch(e){}   // mstAlertsAll re-sets the row list its buttons index into
-  try{ stPendingList().forEach(s=>add("close","spell_"+s.kid+"_"+s.key)); }catch(e){}
+  try{ const keep=_mstAlertList; try{ mstAlertsAll().filter(a=>a.kind!=="redone").forEach(a=>add("close","study_"+a.kid+"_"+a.kind+"_"+(a.sid||a.text),nm(a.kid)+" — "+(a.text||"study session needs a look"))); } finally { _mstAlertList=keep; } }catch(e){}   // mstAlertsAll re-sets the row list its buttons index into
+  try{ stPendingList().forEach(s=>add("close","spell_"+s.kid+"_"+s.key,"Grade "+nm(s.kid)+"’s spelling test","st-pending")); }catch(e){}
   // 🔴 reminders
   try{
     const iso=_todayStr();
-    Object.keys(billsData||{}).forEach(id=>{ const st=billState(billsData[id],iso); if(st.state==="overdue"||st.state==="due") add("remind","bill_"+id+"_"+st.due); });
+    Object.keys(billsData||{}).forEach(id=>{ const st=billState(billsData[id],iso); if(st.state==="overdue"||st.state==="due") add("remind","bill_"+id+"_"+st.due,
+      "Bill: "+((billsData[id]||{}).name||"a bill")+" — "+(st.state==="overdue"?"overdue":"due today")); });
   }catch(e){}
   try{
-    laundryNudgeList(Date.now()).forEach(x=>add("remind","wash_"+x.id+"_"+x.l.stage+"_"+(x.l.ts||0)));   // LAUNDRY_NUDGE: same list as 🔴 NOW
+    const WHERE={bin:"is still in the wash-today bin",washer:"is in the washer",dryer:"is in the dryer",fold:"is in the fold pile"};
+    laundryNudgeList(Date.now()).forEach(x=>add("remind","wash_"+x.id+"_"+x.l.stage+"_"+(x.l.ts||0),   // LAUNDRY_NUDGE: same list as 🔴 NOW
+      "Laundry: "+String(x.l.label||"Load").replace(/^💦\s*/,"")+" "+(WHERE[x.kind]||WHERE.washer)));
   }catch(e){}
-  try{ kitDuePrep().forEach(s=>add("remind","prep_"+s.iso+"_"+s.mid+"_"+s.idx)); }catch(e){}
-  try{ hhLevelReadyList().forEach(it=>add("remind","level_"+it.who+"_"+it.next)); }catch(e){}   // 🪜 LEVELREADY
-  try{ const iso=_todayStr(); kids.forEach(k=>rmList(k).forEach(r=>{ const st=rmState(r,iso); if(st==="over"||st==="week") add("remind","road_"+k+"_"+r.id); })); }catch(e){}
+  try{ kitDuePrep().forEach(s=>add("remind","prep_"+s.iso+"_"+s.mid+"_"+s.idx,"Meal prep: "+(s.label||"a step")+(s.mealName?" ("+s.mealName+")":""))); }catch(e){}
+  try{ hhLevelReadyList().forEach(it=>add("remind","level_"+it.who+"_"+it.next,(typeof hhWhoName==="function"?hhWhoName(it.who):nm(it.who))+" is ready for chores Level "+it.next)); }catch(e){}   // 🪜 LEVELREADY
+  try{ const iso=_todayStr(); kids.forEach(k=>rmList(k).forEach(r=>{ const st=rmState(r,iso); if(st==="over"||st==="week") add("remind","road_"+k+"_"+r.id,
+    nm(k)+" roadmap: "+(r.text||"")+" — "+(st==="over"?"overdue":"due this week"),"rm-week-card"); })); }catch(e){}
   return out;
 }
 function hbNotMomDevice(){
@@ -14978,6 +14991,72 @@ function hbTipGotIt(){
   try{ HA_LS.setItem("ha_hb_tip","1"); }catch(e){}
   try{ const el=document.getElementById("hb-tip"); if(el) el.remove(); }catch(e){}
 }
+// HBLIST_START — 📋 the red number shows what it is (her ask 2026-10-15: "make where the alerts that we have at the top
+// on Mom's Day — its red circle number — actually shows what those are"). Tapping the badge (not the tab) opens a small
+// Mom-only pop-down under it, "Waiting for you": exactly the items the number counts (not yet seen on Home Base here),
+// grouped 🔔 Someone's waiting · ⏳ To check (one line, the count) · 🔴 To close out · ⏰ Reminders. Each line taps through
+// to its section on Mom's Day. Opening the list marks NOTHING seen — Home Base painting still clears the number, as before.
+// Never on a kiosk, the kids' or General tablet, or Dad's link (hbNotMomDevice). Outside Mom mode → Mom's PIN first.
+// No writes, not even to this device's storage.
+const HB_LIST_GROUPS=[["need","🔔 Someone's waiting"],["check","⏳ To check"],["close","🔴 To close out"],["remind","⏰ Reminders"]];
+function hbEsc(s){ return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+// The unseen items (the very ones the number counts), in their four groups. need + msg share 🔔.
+function hbListGroups(){
+  const seen=hbMap(hbLoad("ha_hb_seen"));
+  const items=hbAlertItems().filter(x=>!seen[x.key]);
+  return HB_LIST_GROUPS.map(([g,title])=>({g:g,title:title,items:items.filter(x=>g==="need"?(x.kind==="need"||x.kind==="msg"):x.kind===g)}))
+    .filter(G=>G.items.length);
+}
+function hbListHTML(){
+  const groups=hbListGroups();
+  const line=(sec,txt)=>'<div onclick="hbListGo(\''+hbEsc(sec)+'\')" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:9px;background:#f8fafc;margin-top:5px">'+
+    '<span style="flex:1;font-size:12.5px;color:#0f172a;line-height:1.35">'+hbEsc(txt)+'</span><span style="font-size:12px;font-weight:800;color:#2B7A78">›</span></div>';
+  let h='<div style="font-weight:800;font-size:14px;color:#0f172a;display:flex;align-items:center">Waiting for you'+
+    '<button onclick="hbListClose()" style="margin-left:auto;border:none;background:none;color:#64748b;font-size:16px;cursor:pointer;padding:0 2px">✕</button></div>';
+  if(!groups.length) return h+'<div style="font-size:12.5px;color:#64748b;margin-top:6px">Nothing new — it\'s all on Mom\'s Day.</div>';
+  groups.forEach(G=>{
+    h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:10px 0 0">'+hbEsc(G.title)+'</div>';
+    if(G.g==="check"){ const n=G.items.length; h+=line(G.items[0].sec,n+" card"+(n===1?"":"s")+" sent to you to check"); }
+    else G.items.forEach(x=>{ h+=line(x.sec,x.label); });
+  });
+  return h;
+}
+function hbListClose(){ if(typeof document==="undefined") return; const w=document.getElementById("hb-list-wrap"); if(w) w.innerHTML=""; }
+function hbListOpen(){
+  if(typeof document==="undefined"||hbNotMomDevice()) return;
+  let w=document.getElementById("hb-list-wrap"); if(!w){ w=document.createElement("div"); w.id="hb-list-wrap"; document.body.appendChild(w); }
+  let top=46, right=8;
+  try{ const b=document.getElementById("hb-badge"), r=b&&b.getBoundingClientRect&&b.getBoundingClientRect();
+    if(r&&r.bottom){ top=Math.round(r.bottom+6); right=Math.max(8,Math.round(window.innerWidth-r.right-12)); } }catch(e){}
+  w.innerHTML='<div onclick="if(event.target===this)hbListClose()" style="position:fixed;inset:0;z-index:99990">'+
+    '<div id="hb-list-pop" style="position:fixed;top:'+top+'px;right:'+right+'px;width:300px;max-width:calc(100vw - 16px);max-height:70vh;overflow:auto;box-sizing:border-box;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(15,23,42,.28);border-top:4px solid #dc2626;padding:11px 12px 12px;font-family:\'DM Sans\',sans-serif">'+
+    hbListHTML()+'</div></div>';
+}
+// The badge's own tap: never also switches the tab. Tapping again closes it.
+function hbListTap(ev){
+  try{ if(ev&&ev.stopPropagation) ev.stopPropagation(); }catch(e){}
+  if(hbNotMomDevice()) return;
+  if(typeof document!=="undefined"&&document.getElementById("hb-list-pop")){ hbListClose(); return; }
+  if(typeof momHere==="function"&&momHere()){ hbListOpen(); return; }
+  if(typeof kitPinGate==="function") kitPinGate(hbListOpen,"The alerts list is for Mom.");
+}
+// The section on the page. "hb-now" = the 🔴 Now card, which has no id of its own (renderMomsDay stays as it is): it is
+// the card right after the 🙋 marker (#hr-md-mark), skipping the 🙋 card when one is showing. A section that has
+// gone (handled on another device) falls back to the Now card.
+function hbSecEl(sec){
+  if(typeof document==="undefined") return null;
+  if(sec!=="hb-now"){ const el=document.getElementById(sec); if(el) return el; }
+  let el=document.getElementById("hr-md-mark"); el=el&&el.nextElementSibling;
+  if(el&&el.id==="hr-mom-card") el=el.nextElementSibling;
+  return el||null;
+}
+// A line → Mom's Day ▸ 🏡 Home Base, scrolled to that section (Home Base painting clears the number, as always).
+function hbListGo(sec){
+  hbListClose();
+  try{ mpGoto("plan"); }catch(e){}
+  try{ setTimeout(function(){ try{ const el=hbSecEl(sec); if(el&&el.scrollIntoView) el.scrollIntoView({behavior:"smooth",block:"start"}); }catch(e){} },60); }catch(e){}
+}
+// HBLIST_END
 // HBALERT_END
 
 function renderMomsDay(el){
@@ -22224,7 +22303,7 @@ function rmWeekHTML(iso){
   const kids=(typeof ROSTER!=="undefined"&&ROSTER)?ROSTER:["lincoln","ellis","lucy","julian"];
   let rows=[]; kids.forEach(function(kid){ rmList(kid).forEach(function(r){ const st=rmState(r,iso); if(st==="over"||st==="week") rows.push({kid:kid,r:r}); }); });
   if(!rows.length) return "";
-  let h='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden;margin-bottom:12px">';
+  let h='<div id="rm-week-card" style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden;margin-bottom:12px">';
   h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#7c3aed;color:#fff;font-weight:800;font-size:13px"><span>\u{1F4C5}</span> Curriculum roadmap · this week <span style="margin-left:auto;font-weight:600;font-size:11.5px;opacity:.9">'+rows.length+' item'+(rows.length===1?'':'s')+'</span></div>';
   h+='<div style="padding:6px 14px 10px">';
   kids.forEach(function(kid){ const mine=rows.filter(function(x){ return x.kid===kid; }); if(!mine.length) return;
@@ -51278,7 +51357,7 @@ function stPendingList(){
 function stPendingHTML(){
   if(!(typeof momHere==="function"&&momHere())) return "";
   const L=stPendingList(); if(!L.length) return "";
-  return '<div style="margin:0 0 12px;display:flex;flex-direction:column;gap:6px">'+L.map(p=>'<div onclick="stOpen(\''+stEsc(p.kid)+'\','+p.level+','+p.lesson+')" style="cursor:pointer;display:flex;align-items:center;gap:10px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;padding:10px 13px">'
+  return '<div id="st-pending" style="margin:0 0 12px;display:flex;flex-direction:column;gap:6px">'+L.map(p=>'<div onclick="stOpen(\''+stEsc(p.kid)+'\','+p.level+','+p.lesson+')" style="cursor:pointer;display:flex;align-items:center;gap:10px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;padding:10px 13px">'
     +'<div style="font-size:18px">📝</div><div style="flex:1"><div style="font-size:13px;font-weight:800;color:#7c2d12">Grade '+stEsc(stCap(p.kid))+'’s spelling test</div><div style="font-size:11.5px;color:#9a3412">All About Spelling · Level '+p.level+' · Lesson '+p.lesson+(p.days?' · waiting '+p.days+' day'+(p.days!==1?'s':''):'')+'</div></div><div style="font-size:12px;font-weight:800;color:#7c2d12">Grade ›</div></div>').join('')+'</div>';
 }
 // ── print: a Mom sheet (words, sentences, ✓ 〰 ✗) + a kid sheet (blank numbered lines), per test ──

@@ -49,6 +49,6 @@ console.log("Who is ready");
 }
 console.log("Wiring");
 ok("Now section draws it", /try\{ const _lr=hhLevelReadyNowHTML\(\); nowN\+=_lr\.n; h\+=_lr\.html; \}catch\(e\)\{\}/.test(src));
-ok("it rides the reminder list (badge + ding)", /hhLevelReadyList\(\)\.forEach\(it=>add\("remind","level_"\+it\.who\+"_"\+it\.next\)\)/.test(src));
+ok("it rides the reminder list (badge + ding)", /hhLevelReadyList\(\)\.forEach\(it=>add\("remind","level_"\+it\.who\+"_"\+it\.next[,)]/.test(src));
 ok("no 🔀", src.indexOf("🔀")<0);
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

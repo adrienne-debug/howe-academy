@@ -69,7 +69,7 @@ console.log("── badge counts ──");
   T.ctx.laundryData={a:{label:"A",stage:"washer",ts:old},b:{label:"B",stage:"prewash",ts:old},c:{label:"C",stage:"dryer",ts:old},d:{label:"D",stage:"fold",ts:old},e:{label:"E",stage:"fold",ts:fresh},f:{label:"F",stage:"washer",ts:fresh}};
   const b=badge(T).split(",");
   ok("one badge key per nudging load (washer, prewash, dryer, fold) — fresh ones don't count", b.length===4&&["a_washer","b_prewash","c_dryer","d_fold"].every((k,i)=>b[i]==="remind:wash_"+k+"_"+old), b);
-  ok("the badge and 🔴 NOW use the same list", /laundryNudgeList\(Date\.now\(\)\)\.forEach\(x=>add\("remind","wash_"\+x\.id\+"_"\+x\.l\.stage\+"_"\+\(x\.l\.ts\|\|0\)\)\)/.test(src)&&/laundryNudgeList\(Date\.now\(\)\)\.forEach\(x=>\{ nowN\+\+; h\+=laundryNudgeRowHTML\(x\); \}\)/.test(src));
+  ok("the badge and 🔴 NOW use the same list", /laundryNudgeList\(Date\.now\(\)\)\.forEach\(x=>add\("remind","wash_"\+x\.id\+"_"\+x\.l\.stage\+"_"\+\(x\.l\.ts\|\|0\)[,)]/.test(src)&&/laundryNudgeList\(Date\.now\(\)\)\.forEach\(x=>\{ nowN\+\+; h\+=laundryNudgeRowHTML\(x\); \}\)/.test(src));
 }
 console.log("── the setting ──");
 { const T=mk();
