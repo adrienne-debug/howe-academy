@@ -13474,9 +13474,10 @@ function laundryStartGuess(label){
   return /\b(start|starts|begin|run|wash|load)\b/.test(s)||/\b(put|throw|toss)\b.*\b(in|into)\b/.test(s);
 }
 function laundryLooseWord(label){ const s=String(label||"").toLowerCase(); return !/dish/.test(s)&&/laund|washer|washing|clothes|towel|sheets|\bloads?\b/.test(s); }
-function laundryStarts(st){ if(!st) return false; if(st.laundry===true) return true; if(st.laundry===false) return false; return laundryStartGuess(st.label); }
+function laundryStarts(st){ if(!st) return false; if(st.laundry===true) return true; if(st.laundry===false) return false; if(typeof st.laundry==="string"&&st.laundry) return false; return laundryStartGuess(st.label); }   // a stage string MOVES a load (LAUNDRY_KIDMOVE), never starts one
 function laundryKidId(sk){ return "lk_"+String(sk).replace(/[.#$\[\]\/]/g,"_"); }
 function laundryKidHook(kid,st,sk,now){
+  if(st&&typeof st.laundry==="string"&&st.laundry){ if(now&&typeof laundryKidMove==="function") laundryKidMove(kid,st.laundry); return; }   // LAUNDRY_KIDMOVE: uncheck leaves the load alone
   if(!laundryStarts(st)) return;
   if(typeof _todayDay==="string"&&day!==_todayDay) return;   // back-filling another day's chore isn't a load in the washer now
   const id=laundryKidId(sk), cur=laundryData[id];
@@ -13484,6 +13485,7 @@ function laundryKidHook(kid,st,sk,now){
     if(cur) return;                                           // already on her card — keep whatever stage Mom moved it to
     laundryData[id]={label:(KID_NAME[kid]||cap(kid))+" started laundry",stage:"washer",ts:Date.now(),by:kid};
     if(_lbWrite()) db.ref('laundry/'+id).set(laundryData[id]);
+    try{ if(typeof laundryStartAsk==="function"&&!(typeof _rtMomTick!=="undefined"&&_rtMomTick)) laundryStartAsk(id); }catch(e){}   // LAUNDRY_STARTAT: "In the washer now?" (not on Mom's own tick)
   } else {
     if(!cur||cur.stage!=="washer") return;                    // Mom already moved it on — a stray uncheck doesn't erase it
     delete laundryData[id];
@@ -13497,8 +13499,107 @@ function cpLaundryBtnHTML(st,i){
   const on=laundryStarts(st);
   return '<button onclick="cpSetLaundry('+i+','+(on?'false':'true')+')" title="'+(on?'Checking this off puts a load on Mom\u2019s Laundry card \u2014 tap to stop':'Tap if checking this off means a load is in the washer')+'" style="margin-top:3px;margin-right:4px;border:1.5px solid '+(on?"#2563eb":"var(--border)")+';background:'+(on?"#eff6ff":"#fff")+';color:'+(on?"#1d4ed8":"var(--muted)")+';border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F9FA} '+(on?'Tells Mom':'Tell Mom?')+'</button>';
 }
-function cpSetLaundry(i,v){ if(!momHere()) return; rtCfgSet(cpSlot,cpKid,i,"laundry",!!v); renderAll(); }
+function cpSetLaundry(i,v){ if(!momHere()) return; rtCfgSet(cpSlot,cpKid,i,"laundry",(typeof v==="string")?(LAUNDRY_KIDMOVE_FROM[v]?v:null):!!v); renderAll(); }   // LAUNDRY_KIDMOVE: "dryer"/"fold"/"putaway", "" = back to the guess
 // KIDLAUNDRY_END
+// LAUNDRY_KIDMOVE_START — a kid can MOVE a load, not only start one (AUDIT_laundry_2026-10-15 hole 6; her ask 2026-10-16). DeWalt's
+// "Fold and put away a load of laundry" grab got done and Mom's pile still said "in the fold pile" (and kept asking her to block time
+// for it); a chore like "Move the laundry to the dryer" could only start a NEW load, never advance the one that was there.
+// The step's `laundry` field widens: true | false | "dryer" | "fold" | "putaway" (the 🧺 picker on the Chore Plan row, Mom only;
+// on an Up for Grabs row the picker offers the three moves). Checking such a step off (or ✓ on such a grab) takes the NEWEST load
+// sitting at the stage before it — washer → "dryer", dryer → "fold", fold pile → "putaway" — and moves it one stage, ending that
+// stage's Mom block the way laundryAdvance does. No load at that stage → the check-off just banks as usual. Uncheck does nothing to
+// the load (Mom may have moved on). Another day's back-filled check moves nothing (same guard as KIDLAUNDRY).
+// Writes, targeted, dry-run inert (_lbWrite): laundry/<id> update {stage,ts} (label and `by` kept) or laundry/<id> remove (put away),
+// momBlocks/<iso>/<load>_<stage> update {done,doneMin} via laundryBlockDone.
+const LAUNDRY_KIDMOVE_FROM={dryer:"washer",fold:"dryer",putaway:"fold"};
+const LAUNDRY_KIDMOVE_OPTS=[["","—"],["dryer","→ moves a load to the dryer"],["fold","→ moves a load to the fold pile"],["putaway","✓ puts a folded load away"]];
+function laundryKidMovePick(to){
+  const from=LAUNDRY_KIDMOVE_FROM[to], L=(typeof laundryData!=="undefined"&&laundryData)||{}; if(!from) return null;
+  const ids=Object.keys(L).filter(function(id){ return L[id]&&L[id].stage===from; });
+  ids.sort(function(a,b){ return ((L[b].ts||0)-(L[a].ts||0))||(a<b?1:a>b?-1:0); });
+  return ids[0]||null;
+}
+function laundryKidMove(kid,to){
+  const from=LAUNDRY_KIDMOVE_FROM[to]; if(!from) return null;
+  if(typeof _todayDay==="string"&&typeof day!=="undefined"&&day!==_todayDay) return null;   // back-filling another day moves nothing today
+  const id=laundryKidMovePick(to); if(!id) return null;
+  const l=laundryData[id];
+  try{ if(typeof laundryBlockDone==="function") laundryBlockDone(id,from); }catch(e){}   // ends that stage's block, as laundryAdvance does
+  if(to==="putaway"){
+    try{ if(typeof laundryAwayRemember==="function") laundryAwayRemember(id,l); }catch(e){}   // ↶ CHOREUNDO, as laundryAdvance does
+    delete laundryData[id];
+    if(_lbWrite()) db.ref('laundry/'+id).remove();
+  } else {
+    l.stage=to; l.ts=Date.now();
+    if(_lbWrite()) db.ref('laundry/'+id).update({stage:l.stage,ts:l.ts});
+  }
+  try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
+  return id;
+}
+function _lkmSelectHTML(cur,on){
+  return '<select onchange="'+on+'" title="Checking this off moves Mom\u2019s newest load along" style="margin-top:3px;margin-right:4px;border:1.5px solid '+(cur?"#2563eb":"var(--border)")+';background:'+(cur?"#eff6ff":"#fff")+';color:'+(cur?"#1d4ed8":"var(--muted)")+';border-radius:7px;padding:1px 4px;font-size:10.5px;font-weight:700;font-family:\'DM Sans\',sans-serif">'
+    +LAUNDRY_KIDMOVE_OPTS.map(function(o){ return '<option value="'+o[0]+'"'+(o[0]===cur?' selected':'')+'>\u{1F9FA} '+o[1]+'</option>'; }).join('')+'</select>';
+}
+// Chore Plan list row: the stage picker beside 🧺 Tell Mom? (same rows). Mom only — cpSetLaundry checks momHere().
+function cpLaundryMoveHTML(st,i){
+  if(!st||!((typeof st.laundry==="string"&&st.laundry)||st.laundry===true||st.laundry===false||laundryLooseWord(st.label))) return "";
+  const cur=(typeof st.laundry==="string"&&LAUNDRY_KIDMOVE_FROM[st.laundry])?st.laundry:"";
+  return _lkmSelectHTML(cur,"cpSetLaundry("+i+",this.value)");
+}
+// Up for Grabs row: the same three moves (gbSet checks momHere()).
+function cpGrabLaundryHTML(g,i){
+  if(!g||!((typeof g.laundry==="string"&&g.laundry)||laundryLooseWord(g.label))) return "";
+  const cur=(typeof g.laundry==="string"&&LAUNDRY_KIDMOVE_FROM[g.laundry])?g.laundry:"";
+  return '<div>'+_lkmSelectHTML(cur,"gbSet("+i+",\'laundry\',this.value)")+'</div>';
+}
+function gbLaundryMove(kid,i){ const g=(typeof gbList==="function")?gbList()[i]:null; if(g&&typeof g.laundry==="string"&&LAUNDRY_KIDMOVE_FROM[g.laundry]) return laundryKidMove(kid,g.laundry); return null; }
+// LAUNDRY_KIDMOVE_END
+// LAUNDRY_STARTAT_START — a kid-started load's clock starts when it really went in (AUDIT_laundry_2026-10-15 hole 7; her "ok"
+// 2026-10-15). Taylor's Monday 10/12 log had seven morning steps checked inside four seconds at 9:39 — a batch check at the end
+// of the morning — so the load's ts (the check time) put "done ~10:29" an hour late and the "started 9:39" marker was a fiction.
+// Now, when a kid's check-off starts a load (KIDLAUNDRY), one question pops up, once: "In the washer now?" [Yes] [Earlier…].
+// Yes = the clock starts now; Earlier… opens a time picker (today, never later than now). One extra tap, only on laundry-start
+// steps; nothing else in the kids' flow changes, and Mom's own tick from her Day doesn't ask. If Mom has already moved the load on
+// by the time the answer comes, the answer is dropped.
+// Writes: laundry/<id>/ts (the existing field; targeted, dry-run inert via _lbWrite).
+let _lsaId=null, _lsaEarly=false;
+function laundryStartAsk(id){ _lsaId=id; _lsaEarly=false; _lsaPaint(); }
+function _lsaHHMM(t){ const d=new Date(t); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
+function laundryStartAskHTML(earlier,now){
+  const big='padding:14px 22px;border-radius:12px;font-size:17px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;';
+  const body=earlier
+    ?'<div style="font-weight:800;font-size:18px;margin:4px 0 12px">What time did it go in?</div>'
+      +'<input id="lsa-time" type="time" value="'+_lsaHHMM(now||Date.now())+'" style="font-size:20px;padding:10px;border:1.5px solid #cbd5e1;border-radius:10px;font-family:\'DM Sans\',sans-serif">'
+      +'<div style="display:flex;gap:10px;justify-content:center;margin-top:14px">'
+      +'<button onclick="laundryStartAnswer((document.getElementById(\'lsa-time\')||{}).value||null)" style="'+big+'border:none;background:#2563eb;color:#fff">Save</button>'
+      +'<button onclick="laundryStartEarlier(false)" style="'+big+'border:1.5px solid #cbd5e1;background:#fff;color:#475569">Back</button></div>'
+    :'<div style="font-weight:800;font-size:20px;margin:4px 0 14px">In the washer now?</div>'
+      +'<div style="display:flex;gap:10px;justify-content:center">'
+      +'<button onclick="laundryStartAnswer(null)" style="'+big+'border:none;background:#2563eb;color:#fff">Yes</button>'
+      +'<button onclick="laundryStartEarlier(true)" style="'+big+'border:1.5px solid #93c5fd;background:#fff;color:#1d4ed8">Earlier…</button></div>';
+  return '<div style="position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px">'
+    +'<div style="background:#fff;border-radius:16px;padding:22px 20px;width:100%;max-width:320px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.35)">'
+    +'<div style="font-size:40px">\u{1F9FA}</div>'+body+'</div></div>';
+}
+function _lsaPaint(){
+  if(typeof document==="undefined"||!document.body) return;
+  let w=document.getElementById("lsa-wrap"); if(!w){ w=document.createElement("div"); w.id="lsa-wrap"; document.body.appendChild(w); }
+  w.innerHTML=_lsaId?laundryStartAskHTML(_lsaEarly):"";
+}
+function laundryStartEarlier(on){ if(!_lsaId) return; _lsaEarly=!!on; _lsaPaint(); }
+// hhmm null = Yes (now); "HH:MM" = earlier today (a time still to come counts as now).
+function laundryStartAnswer(hhmm,nowMs){
+  const id=_lsaId; _lsaId=null; _lsaEarly=false; _lsaPaint();
+  const l=id&&laundryData[id]; if(!l||l.stage!=="washer") return null;   // Mom already moved it on, or it was unchecked
+  const now=nowMs||Date.now(); let ts=now;
+  const m=/^(\d{1,2}):(\d{2})$/.exec(String(hhmm||""));
+  if(m){ const d=new Date(now); d.setHours(+m[1],+m[2],0,0); if(d.getTime()<now) ts=d.getTime(); }
+  l.ts=ts;
+  if(_lbWrite()) db.ref('laundry/'+id+'/ts').set(ts);
+  try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
+  return ts;
+}
+// LAUNDRY_STARTAT_END
 // WASHTODAY_START — 💦 "Wet or soiled" (her laundry system 2026-10-09; PR 1 of the Household plan; her "yes" 2026-10-09 after
 // the talk-through). Anything WET — accident sheets, a soaked towel, a wet dog blanket — goes in the lidded wash-today bin by
 // the washer, never in a hamper, and runs that night or next morning as an extra load, WASHED TWICE ("prewash for all,
@@ -23124,11 +23225,11 @@ function _gbEarn(i,kid){ var g=gbList()[i]; if(!g) return;
   if(_paid>0 && typeof bankDirect==="function") bankDirect(kid, _paid, (g.emoji?g.emoji+" ":"")+(g.label||"grab")+(_bonus?" (zone bonus +"+_bonus+")":""));
   if(typeof rlogAppend==="function") rlogAppend(kid,"grab",(g.emoji?g.emoji+" ":"")+(g.label||"grab")+(_bonus?" (zone bonus +"+_bonus+")":""),"on",_paid); }
 function gbPayout(i){ var g=gbList()[i]||{}; return (g.pts||0)+zoneBonusFor(g.zone,g.pts||0); }
-function gbInstant(kid,i){ var s=gbCur(i); if(s&&s.done) return; _gbWrite(i,{by:kid,done:true,ts:nowTs()}); _gbStampDone(i,kid); _gbEarn(i,kid); renderAll(); if(typeof gwShowToast==="function") gwShowToast("Nice! +"+((gbList()[i]||{}).pts||0)+" ⭐"); }
+function gbInstant(kid,i){ var s=gbCur(i); if(s&&s.done) return; _gbWrite(i,{by:kid,done:true,ts:nowTs()}); _gbStampDone(i,kid); _gbEarn(i,kid); try{ if(typeof gbLaundryMove==="function") gbLaundryMove(kid,i); }catch(e){} renderAll(); if(typeof gwShowToast==="function") gwShowToast("Nice! +"+((gbList()[i]||{}).pts||0)+" ⭐"); }
 function gbClaim(kid,i){ var s=gbCur(i); if(s&&s.by&&s.by!==kid) return;
   if(gbHasActive(kid)){ if(typeof gwShowToast==="function") gwShowToast("One at a time — finish your grabbed chore first!"); return; }
   _gbWrite(i,{by:kid,done:false,ts:nowTs()}); renderAll(); }
-function gbMarkDone(kid,i){ var s=gbCur(i); if(!s||s.by!==kid||s.done) return; _gbWrite(i,{by:kid,done:true,ts:nowTs()}); _gbStampDone(i,kid); _gbEarn(i,kid); renderAll(); if(typeof gwShowToast==="function") gwShowToast("Done! +"+((gbList()[i]||{}).pts||0)+" ⭐"); }
+function gbMarkDone(kid,i){ var s=gbCur(i); if(!s||s.by!==kid||s.done) return; _gbWrite(i,{by:kid,done:true,ts:nowTs()}); _gbStampDone(i,kid); _gbEarn(i,kid); try{ if(typeof gbLaundryMove==="function") gbLaundryMove(kid,i); }catch(e){} renderAll(); if(typeof gwShowToast==="function") gwShowToast("Done! +"+((gbList()[i]||{}).pts||0)+" ⭐"); }
 function gbLetGo(kid,i){ var s=gbCur(i); if(!s||s.by!==kid||s.done) return; _gbWrite(i,null); renderAll(); }
 // STORELOCK_START — 🔒 Star Store edits need the Mom PIN EVERY time (her ask 2026-10-07: Kenzie set a reward to "$5 for 1 star"
 // on a tablet where Mom mode had been left on — UNIMOM keeps Mom mode on a device, so momHere() alone let her in). Adding,
@@ -28463,8 +28564,8 @@ function renderChorePlan(el,headerHtml){
        (!isGrabs?('<div><button onclick="rtRotToggle(\''+cpSlot+'\',\''+cpKid+'\','+i+')" title="Swap this chore between kids day by day" style="margin-top:3px;border:1.5px solid '+(st.rot?"#fb923c":"var(--border)")+';background:'+(st.rot?"#fff7ed":"#fff")+';color:'+(st.rot?"#c2410c":"var(--muted)")+';border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔄 '+(st.rot?esc(rtRotChipLabel(cpSlot,st.rot)):"Rotate")+'</button>'+
        (Object.keys(MEAL_SLOT).filter(function(m){ return MEAL_SLOT[m]===cpSlot; }).map(function(m){ const on=(st.meal===m);
          return '<button onclick="cpSetMeal('+i+',\''+(on?'':m)+'\')" title="Show under After '+esc(mealCfg()[m])+'" style="margin-top:3px;margin-right:4px;border:1.5px solid '+(on?"#fb923c":"var(--border)")+';background:'+(on?"#fff7ed":"#fff")+';color:'+(on?"#c2410c":"var(--muted)")+';border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+MEAL_EMOJI[m]+' '+(on?'After '+esc(mealCfg()[m]):'Meal job?')+'</button>'; }).join(''))+
-       ((typeof cpLaundryBtnHTML==="function")?cpLaundryBtnHTML(st,i):'')+
-       '<button onclick="rtCadToggle(\''+_ck+'\')" title="Cadence, time of day, and run window" style="margin-top:3px;margin-left:4px;border:1.5px solid '+((cad!=="daily"||st.time||st.from||st.to||st.cycW)?"var(--header)":"var(--border)")+';background:#fff;color:var(--muted);border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔁 '+esc(cadLabel(cad))+(st.time?(" · ⏰ "+esc(st.time)):"")+((st.from||st.to||st.cycW)?(" · 📅 "+esc(stepWindowLabel(st))):"")+' '+(_co?"▾":"▸")+'</button></div>'):'')+'</td>';
+       ((typeof cpLaundryBtnHTML==="function")?cpLaundryBtnHTML(st,i):'')+((typeof cpLaundryMoveHTML==="function")?cpLaundryMoveHTML(st,i):'')+
+       '<button onclick="rtCadToggle(\''+_ck+'\')" title="Cadence, time of day, and run window" style="margin-top:3px;margin-left:4px;border:1.5px solid '+((cad!=="daily"||st.time||st.from||st.to||st.cycW)?"var(--header)":"var(--border)")+';background:#fff;color:var(--muted);border-radius:7px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔁 '+esc(cadLabel(cad))+(st.time?(" · ⏰ "+esc(st.time)):"")+((st.from||st.to||st.cycW)?(" · 📅 "+esc(stepWindowLabel(st))):"")+' '+(_co?"▾":"▸")+'</button></div>'):((typeof cpGrabLaundryHTML==="function")?cpGrabLaundryHTML(st,i):''))+'</td>';   // LAUNDRY_KIDMOVE: grab rows
     if(exotic){
       h+='<td colspan="8" style="text-align:center"><button onclick="rtCadToggle(\''+_ck+'\')" style="border:1.5px dashed var(--header);background:var(--bg);color:var(--text);border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔁 '+esc(cadLabel(cad))+' — tap to change</button></td>';
     } else {
