@@ -10,7 +10,8 @@
  * goes through ↩ Unmark; ✓ only records; (4) escalation +1 per ✗ (cap 5) with the type kept, −1 per clean day (floor 2, types
  * cleared); (5) the record; (6) Mom gate — nothing drawn, written or rendered off Mom mode; (7) wiring;
  * (8) ⚙ what the draw picks from (her ask 2026-10-15: "I want the draw to only include school cards if that option is picked, so
- * option settings would be great") — settings/spotCheck/types, missing = all on.
+ * option settings would be great") — settings/spotCheck/types, missing = all on; (9) −pts if not done (her ask: "the option to
+ * take off -100 because it's the rules if not done") — settings/spotCheck/penalty {on,pts}, missing = off.
  *                                                                                                 run: node test_spot_check.js
  */
 const fs=require("fs"), path=require("path"), vm=require("vm");
@@ -30,7 +31,7 @@ function mk(o){
     afternoon:{lucy:[],julian:[]},evening:{lucy:[],julian:[]}};
   const ref=p=>({set:v=>{ writes.push(["set",p,JSON.parse(JSON.stringify(v))]); },update:v=>{ writes.push(["update",p,JSON.parse(JSON.stringify(v))]); },remove:()=>{ writes.push(["rm",p]); },push:()=>({key:"rl"+writes.length}),
     transaction:fn=>{ const cur=(o.server||{})[p]||null; const v=fn(cur); tx.push([p,v===undefined?"abort":JSON.parse(JSON.stringify(v))]); if(v!==undefined) writes.push(["tx",p,JSON.parse(JSON.stringify(v))]); }});
-  const unmark={onclick:null};
+  const unmark={onclick:null}, confirms=[];
   const ctx={console,Object,Array,String,Number,parseInt,isNaN,Math,JSON,Date,RegExp,Error,
     HA_LS:{getItem:k=>(k in ls)?ls[k]:null,setItem:(k,v)=>{ ls[k]=v; }}, db:o.nodb?null:{ref:ref}, _dryRun:()=>!!o.dry,
     obSet:(p,v)=>{ writes.push(["set",p,JSON.parse(JSON.stringify(v))]); }, obRemove:p=>{ writes.push(["rm",p]); }, obNoteSl:()=>{},
@@ -41,11 +42,11 @@ function mk(o){
     stepWindowOk:()=>true, cadDueOn:()=>true, rtLateDays:()=>0, routineEditable:()=>true, rtStepAvail:()=>true, rtAvailable:()=>true, _rtBlockedToast:()=>{},
     zoneBonusFor:()=>0, choreVerifyOn:()=>false, rtBonusSettle:()=>{}, rtDayBonusSettle:()=>{}, sv:()=>{}, renderSkylight:()=>{},
     nowTs:()=>"2:10 PM Oct 15", mwTodayIso:()=>o.iso||ISO, _lbNowMin:()=>14*60+10, laundryData:{}, momBlocks:{}, laundryTimes:{wash:50,dry:60,grace:5},
-    momHere:()=>!o.notMom&&!o.kidTick, _kioskD:()=>!!o.dad, tab:o.tab||"moms-plan", renderMomsPlan:()=>{}, renderAll:()=>{}, mwToast:t=>toasts.push(t), gwShowToast:t=>toasts.push(t), confirm:()=>o.confirm!==false, dbg:()=>{},
+    momHere:()=>!o.notMom&&!o.kidTick, _kioskD:()=>!!o.dad, tab:o.tab||"moms-plan", renderMomsPlan:()=>{}, renderAll:()=>{}, mwToast:t=>toasts.push(t), gwShowToast:t=>toasts.push(t), confirm:t=>{ confirms.push(t); return o.confirm!==false; }, dbg:()=>{},
     document:{getElementById:id=>id==="dlg-uncheck"?unmark:({})}, unmark,
     weekData:{tasks:o.tasks||[]}, checked:o.checked||{}, histState:o.hist||{}, effectiveDay:t=>t.day, _ckLogTodayTs:()=>true, needsVerify:t=>!!t.verify,
     pendingId:null, pendingClaimMode:false, rvSchoolEndMin:()=>o.endMin!=null?o.endMin:0, fromMin:m=>Math.floor(m/60)+":"+String(m%60).padStart(2,"0"),
-    writes, toasts, tx, ls};
+    writes, toasts, tx, ls, confirms};
   vm.createContext(ctx);
   vm.runInContext(LCONST+"\n"+WAVE+"\n"+NAMES.map(slice).join("\n")+"\n"+CU+"\n"+SP, ctx);
   if(o.spot) vm.runInContext("spotData="+JSON.stringify(o.spot),ctx);
@@ -201,5 +202,38 @@ console.log("(8) ⚙ What the draw picks from — settings/spotCheck/types");
   const k=mk({notMom:true}); ok("off Mom mode: the switch does nothing", k.spSetType("chore")===false&&k.writes.length===0&&k.spTypes().chore);
   const dr=mk({dry:true}); dr.spSetType("chore"); ok("?dryrun=1: switch flips locally, nothing written", dr.spTypes().chore===false&&dr.writes.length===0);
   ok("listener on settings/spotCheck feeds spotSetOnValue", /db\.ref\("settings\/spotCheck"\)\.on\("value",s=>\{ if\(typeof spotSetOnValue==="function"\) spotSetOnValue\(s\.val\(\)\);/.test(src));
+}
+console.log("(9) −pts if not done — settings/spotCheck/penalty, off unless she turns it on");
+{ const PICK="spotData={lucy:{'"+ISO+"':{n:2,picks:[{k:'s:chores:1',kind:'step',slot:'chores',i:1,d:'thursday',label:'Unload the dishwasher',type:'chore',pts:15}]}}}";
+  const c=mk(); kidTick(c,"chores",1); vm.runInContext(PICK,c);
+  ok("off by default (nothing saved): spPenalty().on false, shown amount 100", c.spPenalty().on===false&&c.spPenalty().pts===100);
+  c.spResolve("lucy",0,"no");
+  ok("off: ✗ takes back only the item's own 15 ⭐ — no penalty entry, no pen on the result", bal(c,"lucy")===0&&!adj(c,"lucy").some(a=>/Spot check: not done/.test(a.note))&&!c.spDay("lucy",ISO).results[0].pen, adj(c,"lucy"));
+  ok("off: the confirm says nothing about a penalty", c.confirms.length===1&&!/rule/.test(c.confirms[0]), c.confirms);
+  const o=mk({set:{penalty:{on:true,pts:100}}}); kidTick(o,"chores",1); vm.runInContext(PICK,o); o.writes.length=0;
+  ok("on: ✗ resolves", o.spResolve("lucy",0,"no")===true);
+  ok("on: the item's own 15 ⭐ come back off ('↶ Mom undid')", adj(o,"lucy").some(a=>a.amount===-15&&/↶ Mom undid: Unload the dishwasher/.test(a.note)));
+  ok("on: AND −100 banked as '🔎 Spot check: not done — Unload the dishwasher'", adj(o,"lucy").some(a=>a.amount===-100&&a.note==="🔎 Spot check: not done — Unload the dishwasher")&&bal(o,"lucy")===-100, adj(o,"lucy"));
+  ok("on: the −100 is a targeted bank/lucy/adjustments/<id> write", o.writes.some(w=>w[0]==="set"&&/^bank\/lucy\/adjustments\/bd/.test(w[1])&&w[2].amount===-100), o.writes);
+  ok("on: the confirm names both amounts", /its 15 ⭐ come back off/.test(o.confirms[0])&&/−100 ⭐ more for not doing it/.test(o.confirms[0]), o.confirms);
+  ok("on: the result carries pen:100", o.writes.some(w=>w[1]==="spotChecks/lucy/"+ISO+"/results/0"&&w[2].pen===100));
+  o.spRecToggle("lucy"); const R=o.spRecord("lucy");
+  ok("📜 record shows the penalty", R[0].pen===100&&/✗ not done · −100 ⭐/.test(o.mdCardSpotCheck()));
+  const k=mk({set:{penalty:{on:true,pts:100}}}); kidTick(k,"chores",1); vm.runInContext(PICK,k); k.spResolve("lucy",0,"ok");
+  ok("on: ✓ Really done takes nothing off", bal(k,"lucy")===15&&!adj(k,"lucy").some(a=>a.amount<0));
+  const x=mk({confirm:false,set:{penalty:{on:true,pts:100}}}); kidTick(x,"chores",1); vm.runInContext(PICK,x);
+  ok("on, cancelled at the confirm: nothing taken off", x.spResolve("lucy",0,"no")===false&&bal(x,"lucy")===15);
+  const a=mk({set:{penalty:{on:true,pts:50}}}); kidTick(a,"chores",1); vm.runInContext(PICK,a); a.spResolve("lucy",0,"no");
+  ok("her amount is used (50)", adj(a,"lucy").some(e=>e.amount===-50)&&/−50 ⭐ more/.test(a.confirms[0]));
+  const w=mk(); w.writes.length=0; w.spSetPenOn();
+  ok("the switch writes settings/spotCheck/penalty/on = true and the shown 100 as pts", w.spPenalty().on&&w.writes.some(e=>e[1]==="settings/spotCheck/penalty/on"&&e[2]===true)&&w.writes.some(e=>e[1]==="settings/spotCheck/penalty/pts"&&e[2]===100), w.writes);
+  w.writes.length=0; w.spSetPenPts("75");
+  ok("the amount box writes settings/spotCheck/penalty/pts = 75 only", w.spPenalty().pts===75&&w.writes.length===1&&w.writes[0][1]==="settings/spotCheck/penalty/pts"&&w.writes[0][2]===75, w.writes);
+  w.writes.length=0; ok("a bad amount writes nothing", w.spSetPenPts("abc")===false&&w.spSetPenPts("-5")===false&&w.writes.length===0);
+  w.spSetPenOn(); ok("off again: on = false", !w.spPenalty().on&&w.writes.some(e=>e[1]==="settings/spotCheck/penalty/on"&&e[2]===false));
+  w.spSetToggle(); const S=w.mdCardSpotCheck();
+  ok("the sheet: '✗ Not done also takes off [75] ⭐' with its switch", /spSetPenOn\(\)/.test(S)&&/✗ Not done also takes off/.test(S)&&/value="75"/.test(S)&&/spSetPenPts\(this\.value\)/.test(S), S);
+  const n=mk({notMom:true}); ok("off Mom mode: the switch and the box do nothing", n.spSetPenOn()===false&&n.spSetPenPts(20)===false&&n.writes.length===0);
+  const d=mk({dry:true}); d.spSetPenOn(); ok("?dryrun=1: the switch flips locally, nothing written", d.spPenalty().on&&d.writes.length===0);
 }
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
