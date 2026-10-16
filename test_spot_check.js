@@ -8,7 +8,9 @@
  * family cards left out; (2) the daily draw — n picks, random, fixed once drawn (a transaction keeps the first device's), drawn at
  * school end or on 🎲 Draw now, dry run writes nothing; (3) ✗ runs CHOREUNDO's undo and reverses the item's own stars, a school card
  * goes through ↩ Unmark; ✓ only records; (4) escalation +1 per ✗ (cap 5) with the type kept, −1 per clean day (floor 2, types
- * cleared); (5) the record; (6) Mom gate — nothing drawn, written or rendered off Mom mode; (7) wiring.
+ * cleared); (5) the record; (6) Mom gate — nothing drawn, written or rendered off Mom mode; (7) wiring;
+ * (8) ⚙ what the draw picks from (her ask 2026-10-15: "I want the draw to only include school cards if that option is picked, so
+ * option settings would be great") — settings/spotCheck/types, missing = all on.
  *                                                                                                 run: node test_spot_check.js
  */
 const fs=require("fs"), path=require("path"), vm=require("vm");
@@ -47,6 +49,7 @@ function mk(o){
   vm.createContext(ctx);
   vm.runInContext(LCONST+"\n"+WAVE+"\n"+NAMES.map(slice).join("\n")+"\n"+CU+"\n"+SP, ctx);
   if(o.spot) vm.runInContext("spotData="+JSON.stringify(o.spot),ctx);
+  if(o.set) vm.runInContext("spotSet="+JSON.stringify(o.set),ctx);
   return ctx;
 }
 const adj=(c,kid)=>Object.values((c.bank[kid]||{}).adjustments||{});
@@ -176,4 +179,27 @@ ok("both step check-offs stamp by when Mom / Dad ticks", (src.match(/if\(now&&ty
 ok("listener on spotChecks, re-render only on Mom's Day in Mom mode", /db\.ref\("spotChecks"\)\.on\("value",s=>\{ spotOnValue\(s\.val\(\)\|\|\{\}\); if\(tab==="moms-plan"&&momHere\(\)\) renderAll\(\); \}\);/.test(src));
 ok("writes are targeted: no set() on spotChecks or spotChecks/<kid> as a whole", !/ref\("spotChecks"\)\.set|ref\("spotChecks\/"\+kid\)\.set/.test(SP));
 ok("no 🔀", src.indexOf("🔀")<0);
+console.log("(8) ⚙ What the draw picks from — settings/spotCheck/types");
+{ const all=c=>{ kidTick(c,"chores",0); kidTick(c,"chores",1); kidTick(c,"morning",1); return c; };
+  const c=all(mk({tasks:TASKS,checked:CK,hist:HIST}));
+  ok("default (nothing saved): all on — chores, laundry and school in the pool", (()=>{ const t=c.spTypes(), ty=[...new Set(c.spPool("lucy","thursday").map(p=>p.type))].sort().join(); return t.chore&&t.laundry&&t.school&&ty==="chore,laundry,school"; })(), c.spPool("lucy","thursday"));
+  const s=all(mk({tasks:TASKS,checked:CK,hist:HIST,set:{types:{chore:false,laundry:false}}}));
+  ok("school only: the pool is just the school card", s.spPool("lucy","thursday").map(p=>p.k).join()==="t:t1", s.spPool("lucy","thursday"));
+  ok("school only: every draw is school", (()=>{ for(let k=0;k<50;k++){ const pool=c.spPool("lucy","thursday"); if(s.spDraw(pool,3,{}).some(p=>p.type!=="school")) return false; } return true; })());
+  const r=all(mk({tasks:TASKS,checked:CK,hist:HIST,set:{types:{chore:false}},spot:{lucy:{level:{n:4,types:{chore:true}}}}}));
+  ok("a raised kid with 'chore' kept but Chores off: never a chore, even from a pool that has one", (()=>{ const pool=c.spPool("lucy","thursday"); for(let k=0;k<50;k++){ if(r.spDraw(pool,4,{chore:true}).some(p=>p.type==="chore")) return false; } return true; })());
+  ok("…and the real draw for that kid picks only laundry + school", (()=>{ const d=r.spEnsureDraw("lucy",true); return d&&d.picks.length===2&&d.picks.every(p=>p.type!=="chore"); })(), r.spDay("lucy",ISO));
+  const m=all(mk({tasks:TASKS,checked:CK,hist:HIST})); const d0=m.spEnsureDraw("lucy",true), k0=d0.picks.map(p=>p.k).join(); m.writes.length=0;
+  ok("⚙ tap writes that one switch: settings/spotCheck/types/school = false", m.spSetType("school")===true&&m.writes.length===1&&m.writes[0][0]==="set"&&m.writes[0][1]==="settings/spotCheck/types/school"&&m.writes[0][2]===false, m.writes);
+  ok("a mid-day switch leaves today's picks as drawn", m.spEnsureDraw("lucy",true).picks.map(p=>p.k).join()===k0&&m.spDay("lucy",ISO).picks.map(p=>p.k).join()===k0);
+  ok("…and the card still lists them", (()=>{ const H=m.mdCardSpotCheck(); return d0.picks.every(p=>H.indexOf(p.label.replace(/</g,"&lt;"))>=0); })());
+  m.spSetType("school"); ok("tapped again → back on (true written)", m.writes[1][1]==="settings/spotCheck/types/school"&&m.writes[1][2]===true&&m.spTypes().school);
+  const z=all(mk({tasks:TASKS,checked:CK,hist:HIST,set:{types:{chore:false,laundry:false,school:false}}}));
+  ok("all off: no draw, nothing written", z.spOn()===false&&z.spEnsureDraw("lucy",true)===null&&z.spEnsureDraw("lucy",false)===null&&z.tx.length===0);
+  ok("all off: the card says it's paused (no 🎲 Draw now)", (()=>{ const H=z.mdCardSpotCheck(); return /Spot check is paused — ⚙ to pick what it checks\./.test(H)&&!/spDrawNow/.test(H); })());
+  ok("the card has a ⚙ in its header; the sheet opens with three switches", (()=>{ const H=c.mdCardSpotCheck(); c.spSetToggle(); const S=c.mdCardSpotCheck(); return /onclick="spSetToggle\(\)"[^>]*>⚙<\/button>/.test(H)&&!/spSetType/.test(H)&&/spSetType\('chore'\)/.test(S)&&/spSetType\('laundry'\)/.test(S)&&/spSetType\('school'\)/.test(S)&&/Chores/.test(S)&&/Laundry/.test(S)&&/School cards/.test(S); })());
+  const k=mk({notMom:true}); ok("off Mom mode: the switch does nothing", k.spSetType("chore")===false&&k.writes.length===0&&k.spTypes().chore);
+  const dr=mk({dry:true}); dr.spSetType("chore"); ok("?dryrun=1: switch flips locally, nothing written", dr.spTypes().chore===false&&dr.writes.length===0);
+  ok("listener on settings/spotCheck feeds spotSetOnValue", /db\.ref\("settings\/spotCheck"\)\.on\("value",s=>\{ if\(typeof spotSetOnValue==="function"\) spotSetOnValue\(s\.val\(\)\);/.test(src));
+}
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
