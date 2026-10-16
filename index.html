@@ -1848,6 +1848,7 @@ function toggleMorningStep(kid,i){
       else { bankDirect(kid,-_paid,"↩ unchecked: "+(_st?_st.label:("Step "+(i+1)))); }
     }
     slState[sk]={done:now,ts:now?nowTs():"",pts:now?_paid:null,bid:now?(_bid||null):null};
+    if(now&&typeof _spBy==="function"&&_spBy()) slState[sk].by=_spBy();   // 🔎 SPOTCHECK: Mom's / Dad's tick isn't the kid's own
     rlogAppend(kid,"morning",_st?_st.label:("Step "+(i+1)),now?"on":"off",_paid,(!now&&typeof _cuMom!=="undefined"&&_cuMom)?{undo:"mom"}:null); }
   // Derive the Morning slot from the steps so every existing consumer (grid, alert, gate) stays correct.
   const allDone=morningComplete(kid,day), _prevSlot=slState[wk+"_"+day+"_"+kid+"_morning"];
@@ -2271,6 +2272,7 @@ function toggleRtStep(slot,kid,i){
       else { bankDirect(kid,-_p,"↩ unchecked: "+(_st?_st.label:("Step "+(i+1)))); }
     }
     slState[sk]={done:now,ts:now?nowTs():"",pts:now?_paid:null,bid:now?(_bid||null):null};
+    if(now&&typeof _spBy==="function"&&_spBy()) slState[sk].by=_spBy();   // 🔎 SPOTCHECK: Mom's / Dad's tick isn't the kid's own
     rlogAppend(kid,slot,_st?_st.label:("Step "+(i+1)),now?"on":"off",_p,(!now&&typeof _cuMom!=="undefined"&&_cuMom)?{undo:"mom"}:null);   // ↶ CHOREUNDO: the line says Mom undid it
     try{ if(typeof laundryKidHook==="function") laundryKidHook(kid,_st,sk,now); }catch(e){}   // 🧺 KIDLAUNDRY
   }
@@ -4213,6 +4215,7 @@ function initFb() {
     db.ref("config/routineTimes").on("value",s=>{ routineTimes=Object.assign({eveningHour:18}, s.val()||{}); });
     db.ref("routineLog").on("value",s=>{ routineLog=s.val()||{}; });
     db.ref("waved").on("value",s=>{ wavedOnValue(s.val()||{}); if(tab==="moms-plan"||tab==="kids"||tab==="schedule") renderAll(); });   // WAVE
+    db.ref("spotChecks").on("value",s=>{ spotOnValue(s.val()||{}); if(tab==="moms-plan"&&momHere()) renderAll(); });   // 🔎 SPOTCHECK
     db.ref("config/routineRules").on("value",s=>{ routineRules=Object.assign({loseTechEnabled:false,loseTechHour:10}, s.val()||{}); });
     db.ref("config/rewards").on("value",s=>{ rewardCatalog=s.val()||[]; if(typeof renderAll==="function") renderAll(); });
     db.ref("config/storeCfg").on("value",s=>{ storeCfg=Object.assign({threshold:100,open:true,mode:"always",hour:16,closedFor:{}}, s.val()||{}); if(typeof renderAll==="function") renderAll(); });
@@ -9036,6 +9039,7 @@ function finalizeDone(id, doneTs, score){
     if(score) entry.score=score;
     if(_famPre&&_famPre.label) entry.famLabel=_famPre.label;   // 📚 what the family actually did
     if(_famPre&&_famPre.madeUp) entry.famMadeUp=_famPre.madeUp;   // 📚 FAMMAKEUP: the missed day this check made up
+    try{ const _sb=(typeof _spBy==="function")?_spBy():null; if(_sb) entry.by=_sb; }catch(e){}   // 🔎 SPOTCHECK: Mom's / Dad's check isn't the kid's own
     try{ const _hp=(typeof helperHolds==="function")?helperHolds(t):null; if(_hp) entry.helper=helperName(_hp); else if(typeof dadTapCtx!=="undefined"&&dadTapCtx) entry.helper=dadTapName(); }catch(e){}   // 🙋 "done with Grandma" · 👨 DADFIX: Dad's tap → "done with Dad"
     if(t.lid){ entry.lid=t.lid; entry.pid=t.who+"__"+t.subjectKey; }   // frozen record is lid-resolvable without title parsing
     hist[id]=entry; histState[id]=entry; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+id).set(entry);
@@ -13690,6 +13694,163 @@ function mdCardChoreLedger(){
   return h+'</div></div>';
 }
 // CHOREUNDO_END
+// SPOTCHECK_START — 🔎 Spot check (her ask 2026-10-15: "All the things the kids do each day, a rotation or a random pick of a few
+// things handed to Mom to check each day, and keep a record. If things are checked and not actually done, they become something
+// that gets checked more — we are having an issue with lying and checking off things, and this is not acceptable. If a kid has
+// things not done, more things get checked the next time." Her answers: SILENT on the kid's side; a "not done" costs only the
+// item's own points). Mom only (momHere()), one card on Mom's Day under 🧒 Kids today; never on Dad's Day, never on a kid's page.
+//   Pool: that day's SELF-checked items per kid — list chores, laundry steps, and school cards the kid checked themselves.
+//   Out: anything Mom (or Dad's link) checked — the check-off now carries by:"mom"/"dad" on the step (<wk>/sl) and on the school
+//   card's history entry — a helper's card, a Mom-verified subject, a family card, and waved chores (WAVE).
+//   Count: 2 per kid to start. Drawn at random once the school day ends (Settings, default 4:15 PM) or when Mom taps 🎲 Draw now,
+//   then FIXED for the day: spotChecks/<kid>/<iso> is written by a transaction that keeps whichever device drew first.
+//   ✓ Really done → recorded. ✗ Not done → CHOREUNDO's undo for that item (back to not done, its own stars reversed as
+//   "↶ Mom undid"; a school card goes back through the card's own ↩ Unmark) + recorded.
+//   Escalation: each ✗ raises that kid's count +1 (cap 5) and keeps that item's TYPE (chore / laundry / school) in the draw while
+//   raised; each clean day (every pick checked, none ✗) lowers it −1 (floor 2; back at 2 the kept types clear). A day Mom didn't
+//   finish checking changes nothing.
+// Writes, all targeted, dry-run inert: spotChecks/<kid>/<iso> (transaction, the draw) · spotChecks/<kid>/<iso>/results/<n> set ·
+// spotChecks/<kid>/level set {n,types,settled}.
+const SP_MIN=2, SP_MAX=5;
+let spotData={}, spRecOpen="", _spDrawn={};
+try{ spotData=JSON.parse(HA_LS.getItem('ha_spot')||"{}")||{}; }catch(e){}
+function spotOnValue(v){ spotData=v||{}; try{ HA_LS.setItem('ha_spot',JSON.stringify(spotData)); }catch(e){} }
+function _spWrite(){ return typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
+function _spMomOk(){ return typeof momHere==="function"&&momHere(); }
+// Who is ticking right now, when it isn't the kid: stamped on the check-off so the pool can leave it out.
+function _spBy(){ try{ if(typeof momHere==="function"&&momHere()) return "mom"; if(typeof _kioskD==="function"&&_kioskD()) return "dad"; }catch(e){} return null; }
+function _spIso(){ return (typeof mwTodayIso==="function")?mwTodayIso():""; }
+function _spTs(ts){ return String(ts||"").replace(/\s+[A-Z][a-z]{2}\s+\d+$/,""); }
+function spLevel(kid){ const l=((spotData[kid]||{}).level)||{}; const n=Math.max(SP_MIN,Math.min(SP_MAX,parseInt(l.n,10)||SP_MIN)); return {n:n,types:Object.assign({},l.types||{}),settled:l.settled||""}; }
+function _spSetLevel(kid,l){
+  spotData[kid]=spotData[kid]||{}; spotData[kid].level=l; spotOnValue(spotData);
+  if(_spWrite()) db.ref("spotChecks/"+kid+"/level").set(l);
+}
+function spStepType(st){ const lb=(st&&st.label)||""; return ((typeof laundryLooseWord==="function"&&laundryLooseWord(lb))||(typeof laundryStarts==="function"&&laundryStarts(st)))?"laundry":"chore"; }
+const SP_TYPE={chore:"🧹 chore",laundry:"🧺 laundry",school:"📚 school"};
+// → [{k,kind,slot,i,id,label,emoji,type,ts,pts}] — today's self-checked items for one kid.
+function spPool(kid,d){
+  const out=[], wk=activeWk();
+  SL_SLOTS.forEach(function(slot){
+    const steps=(slot==="morning"&&typeof morningStepsFor==="function")?morningStepsFor(kid):(rtStepsFor(slot,kid,false,d)||[]);
+    steps.forEach(function(st,i){ if(!st) return;
+      if(typeof rtWaved==="function"&&rtWaved(slot,kid,d,i)) return;   // WAVE: waved, not checked
+      const s=slState[wk+"_"+d+"_"+kid+"_"+(slot==="morning"?"m":RT_ABBR[slot])+"step"+i];
+      if(!s||!s.done||s.by) return;   // not done, or Mom / Dad ticked it
+      out.push({k:"s:"+slot+":"+i,kind:"step",slot:slot,i:i,d:d,label:st.label||"",emoji:st.emoji||"",type:spStepType(st),ts:_spTs(s.ts),pts:s.pts||0}); });
+  });
+  try{
+    ((weekData&&weekData.tasks)||[]).forEach(function(t){
+      if(!t||t.who!==kid||!t.id||!checked[t.id]||String(t.id).endsWith("_c")||t.famBlock) return;
+      if(effectiveDay(t)!==d||(typeof _ckLogTodayTs==="function"&&!_ckLogTodayTs(checked[t.id]))) return;
+      const h=(histState&&histState[t.id])||null; if(!h||h.by||h.helper) return;   // Mom / Dad / a helper checked it
+      if(typeof needsVerify==="function"&&needsVerify(t)) return;                    // Mom already checks this subject
+      out.push({k:"t:"+t.id,kind:"task",id:t.id,d:d,label:t.title||"",emoji:"",type:"school",ts:_spTs(checked[t.id]),pts:0});
+    });
+  }catch(e){}
+  return out;
+}
+// Random draw of n, the kept types first (one each, while the pool has one).
+function spDraw(pool,n,types,rnd){
+  rnd=rnd||Math.random; const left=pool.slice(), out=[];
+  const take=function(arr){ const x=arr[Math.floor(rnd()*arr.length)]; left.splice(left.indexOf(x),1); out.push(x); };
+  Object.keys(types||{}).forEach(function(ty){ if(out.length>=n) return; const c=left.filter(function(p){ return p.type===ty; }); if(c.length) take(c); });
+  while(out.length<n&&left.length) take(left);
+  return out;
+}
+// Clean days since the last settle lower the count, one per day.
+function spSettle(kid,iso){
+  const all=spotData[kid]||{}, l=spLevel(kid);
+  const days=Object.keys(all).filter(function(k){ return /^\d{4}-\d{2}-\d{2}$/.test(k)&&k<iso&&k>l.settled; }).sort();
+  if(!days.length) return l;
+  days.forEach(function(k){ const r=all[k]||{}, p=r.picks||[], res=r.results||{};
+    const any=p.some(function(x,j){ return res[j]&&res[j].r==="no"; }), every=p.length&&p.every(function(x,j){ return res[j]&&res[j].r; });
+    if(every&&!any){ l.n=Math.max(SP_MIN,l.n-1); if(l.n===SP_MIN) l.types={}; } });
+  l.settled=days[days.length-1]; _spSetLevel(kid,l); return l;
+}
+function spDue(){ try{ const n=new Date(), m=n.getHours()*60+n.getMinutes(); return m>=((typeof rvSchoolEndMin==="function")?rvSchoolEndMin():16*60+15); }catch(e){ return false; } }
+function spDay(kid,iso){ return ((spotData[kid]||{})[iso||_spIso()])||null; }
+function spEnsureDraw(kid,force){
+  if(!_spMomOk()||typeof _todayDay!=="string") return null;
+  const iso=_spIso(), cur=spDay(kid,iso); if(cur&&cur.picks) return cur;
+  if(!force&&!spDue()) return null;
+  if(_spDrawn[kid+"|"+iso]) return null;
+  const l=spSettle(kid,iso), pool=spPool(kid,_todayDay); if(!pool.length) return null;
+  const picks=spDraw(pool,l.n,l.types).map(function(p){ const o={}; Object.keys(p).forEach(function(k){ if(p[k]!==undefined) o[k]=p[k]; }); return o; });
+  const rec={n:l.n,at:Date.now(),picks:picks};
+  _spDrawn[kid+"|"+iso]=1; spotData[kid]=spotData[kid]||{}; spotData[kid][iso]=rec; spotOnValue(spotData);
+  if(_spWrite()) db.ref("spotChecks/"+kid+"/"+iso).transaction(function(c){ return (c&&c.picks)?undefined:rec; });   // first device's draw stands
+  return rec;
+}
+function spDrawNow(kid){ spEnsureDraw(kid,true); if(typeof _cuRe==="function") _cuRe(); }
+// ✓ / ✗ for one pick. ✗ runs CHOREUNDO's undo (or the school card's ↩ Unmark) and raises the count.
+function spResolve(kid,j,r){
+  if(!_spMomOk()||(r!=="ok"&&r!=="no")) return false;
+  const iso=_spIso(), rec=spDay(kid,iso); if(!rec||!rec.picks||!rec.picks[j]) return false;
+  if(rec.results&&rec.results[j]) return false;
+  const p=rec.picks[j];
+  if(r==="no"){
+    if(typeof confirm==="function"&&!confirm("Not done?\n\n“"+(p.label||"")+"” goes back to not done for "+((typeof KID_NAME!=="undefined"&&KID_NAME[kid])||cap(kid))+(p.pts>0?", and its "+p.pts+" ⭐ come back off":"")+".")) return false;
+    if(p.kind==="step"){
+      let i=p.i; const steps=(p.slot==="morning"&&typeof morningStepsFor==="function")?morningStepsFor(kid):(rtStepsFor(p.slot,kid,false,p.d)||[]);
+      if(!steps[i]||(steps[i].label||"")!==p.label){ const f=steps.findIndex(function(s){ return s&&(s.label||"")===p.label; }); if(f>=0) i=f; }   // the list was edited since the draw
+      if(typeof choreUndo==="function"&&_cuDone(p.slot,kid,p.d,i)) choreUndo(p.slot,kid,p.d,i);
+    } else if(p.kind==="task"&&checked[p.id]){
+      try{ const b=document.getElementById("dlg-uncheck"); if(b&&typeof b.onclick==="function"){ pendingId=p.id; pendingClaimMode=false; b.onclick(); } }catch(e){ dbg("spot check unmark: "+e); }
+    }
+  }
+  const l=spLevel(kid), res={r:r,at:Date.now(),ts:(typeof nowTs==="function")?nowTs():"",n:rec.n||l.n};
+  rec.results=rec.results||{}; rec.results[j]=res; spotOnValue(spotData);
+  if(_spWrite()) db.ref("spotChecks/"+kid+"/"+iso+"/results/"+j).set(res);
+  if(r==="no"){ l.n=Math.min(SP_MAX,l.n+1); l.types[p.type||"chore"]=true; _spSetLevel(kid,l); }
+  if(typeof _cuRe==="function") _cuRe();
+  return true;
+}
+function spRecToggle(kid){ spRecOpen=(spRecOpen===kid)?"":kid; if(typeof _cuRe==="function") _cuRe(); }
+// → [{iso,label,type,r,n}] newest first
+function spRecord(kid){
+  const all=spotData[kid]||{}, out=[];
+  Object.keys(all).filter(function(k){ return /^\d{4}-\d{2}-\d{2}$/.test(k); }).sort().reverse().forEach(function(k){ const r=all[k]||{}, res=r.results||{};
+    (r.picks||[]).forEach(function(p,j){ out.push({iso:k,label:p.label||"",emoji:p.emoji||"",type:p.type||"",ts:p.ts||"",r:(res[j]&&res[j].r)||"",n:(res[j]&&res[j].n)||r.n||SP_MIN}); }); });
+  return out;
+}
+function _spEndLbl(){ try{ return fromMin((typeof rvSchoolEndMin==="function")?rvSchoolEndMin():16*60+15); }catch(e){ return "4:15 PM"; } }
+function mdCardSpotCheck(){
+  if(!_spMomOk()||typeof _todayDay!=="string") return "";
+  const iso=_spIso(), d=_todayDay, _pd=day; let rows=[];
+  try{ day=d; rows=ROSTER.map(function(k){ spEnsureDraw(k,false); return {kid:k,rec:spDay(k,iso),lvl:spLevel(k),pool:spPool(k,d).length}; }); } finally { day=_pd; }
+  let todo=0; rows.forEach(function(x){ const p=(x.rec&&x.rec.picks)||[], res=(x.rec&&x.rec.results)||{}; p.forEach(function(q,j){ if(!res[j]) todo++; }); });
+  let h='<div style="margin:10px 12px;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
+  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#1e3a8a;color:#fff;font-weight:800;font-size:13px"><span>🔎</span> Spot check'+(todo?' · '+todo+' to check':'')+'</div>';
+  h+='<div style="padding:6px 14px 10px">';
+  rows.forEach(function(x){
+    const kid=x.kid, nm=esc((typeof KID_NAME!=="undefined"&&KID_NAME[kid])||cap(kid)), p=(x.rec&&x.rec.picks)||[], res=(x.rec&&x.rec.results)||{};
+    h+='<div style="display:flex;align-items:center;gap:6px;margin:8px 0 2px"><span style="font-size:11px;font-weight:800;color:'+((typeof PACE_KCOL!=="undefined"&&PACE_KCOL[kid])||"#111827")+'">'+nm+'</span>'
+      +'<span style="font-size:10.5px;font-weight:700;color:'+(x.lvl.n>SP_MIN?'#b91c1c':'var(--muted)')+'">'+x.lvl.n+' a day'+(x.lvl.n>SP_MIN?' ▲':'')+'</span>'
+      +'<span style="margin-left:auto">'+_cuBtn("spRecToggle('"+kid+"')",(spRecOpen===kid?'▲ ':'')+"📜 record","#1e3a8a","Every spot check for "+nm)+'</span></div>';
+    if(!p.length){
+      h+='<div style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);padding:2px 0 4px"><span style="flex:1">'+(x.pool?'Picks are drawn at '+esc(_spEndLbl())+' from '+x.pool+' thing'+(x.pool===1?'':'s')+' '+nm+' checked off.':'Nothing '+nm+' checked off themselves yet today.')+'</span>'
+        +(x.pool?_cuBtn("spDrawNow('"+kid+"')","🎲 Draw now","#1e3a8a","Pick today's spot checks now"):'')+'</div>';
+    }
+    p.forEach(function(q,j){ const r=res[j];
+      h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:12px;font-weight:600;flex-wrap:wrap">'
+        +'<span style="flex:1;min-width:0">'+(q.emoji?q.emoji+' ':'')+esc(q.label)+' <span style="font-size:10px;color:var(--muted);font-weight:700">'+esc(SP_TYPE[q.type]||q.type||"")+(q.ts?' · ticked '+esc(q.ts):'')+'</span></span>'
+        +(r?(r.r==="no"?'<span style="font-size:11px;font-weight:800;color:#b91c1c">✗ Not done</span>':'<span style="font-size:11px;font-weight:800;color:#16a34a">✓ Really done</span>')
+           :_cuBtn("spResolve('"+kid+"',"+j+",'ok')","✓ Really done","#16a34a","I looked — it was done")+_cuBtn("spResolve('"+kid+"',"+j+",'no')","✗ Not done","#b91c1c","Not done — back to not done, its own stars back off"))+'</div>';
+    });
+    if(spRecOpen===kid){
+      const rec=spRecord(kid);
+      h+='<div style="margin:4px 0 6px;padding:6px 8px;background:#f8fafc;border-radius:8px;font-size:11px">';
+      if(!rec.length) h+='<div style="color:var(--muted)">No spot checks yet.</div>';
+      rec.forEach(function(e){ h+='<div style="display:flex;gap:6px;padding:2px 0;border-bottom:1px solid #eef2f0"><span style="flex:0 0 74px;color:var(--muted)">'+esc(e.iso)+'</span><span style="flex:1;min-width:0">'+(e.emoji?e.emoji+' ':'')+esc(e.label)+'</span>'
+        +'<span style="font-weight:800;color:'+(e.r==="no"?'#b91c1c':e.r==="ok"?'#16a34a':'#9ca3af')+'">'+(e.r==="no"?'✗ not done':e.r==="ok"?'✓ done':'— not checked')+'</span><span style="flex:0 0 34px;text-align:right;color:var(--muted)">'+e.n+'/day</span></div>'; });
+      h+='</div>';
+    }
+  });
+  h+='<div style="font-size:10.5px;color:var(--muted);margin-top:8px">Only what a kid checked off themselves is picked. ✗ Not done puts it back to not done and takes its own stars back off; each ✗ adds one more check a day for that kid (up to '+SP_MAX+'), and every clean day takes one away (down to '+SP_MIN+'). The kids never see this.</div>';
+  return h+'</div></div>';
+}
+// SPOTCHECK_END
 
 // ── 💳 Bills — recurring due dates that surface as they approach ──────
 // "✓ Paid" stamps paidThrough with the current cycle key, which rolls the bill
@@ -14399,6 +14560,7 @@ function mdCardKidsToday(today,isSchoolDay,bank,dadCtl){   // bank=true: Mom's D
   });
   h+='</div></div>';
   if(bank&&dadCtl===undefined&&typeof mdCardChoreLedger==="function"){ try{ h+=mdCardChoreLedger(); }catch(e){} }   // ↶ CHOREUNDO: today's ledger under Kids today (Mom's Day only)
+  if(bank&&dadCtl===undefined&&typeof mdCardSpotCheck==="function"){ try{ h+=mdCardSpotCheck(); }catch(e){} }   // 🔎 SPOTCHECK: Mom's Day only
 
   return h;
 }
