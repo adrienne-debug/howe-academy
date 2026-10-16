@@ -2640,6 +2640,7 @@ function dayRollCheck(){
   const wasOnToday=(day===_dayRollSeen);
   _dayRollSeen=now;
   if(wasOnToday) day=now;
+  try{ if(typeof momBlocksListen==="function") momBlocksListen(); }catch(e){}   // MOMBLOCKS_DAYROLL: Mom's blocks are per day — listen to the new day's path
   if(typeof renderAll==="function") renderAll();
   return true;
 }
@@ -4180,7 +4181,7 @@ function initFb() {
     db.ref("config/helpers").on("value",s=>{ helpersOnValue(s.val()); });
     db.ref("settings/laundryTimes").on("value",s=>{ if(typeof laundryTimesOnValue==="function") laundryTimesOnValue(s.val()); });   // 🧺 LAUNDRYTIMES
     db.ref("settings/laundryBlockMins").on("value",s=>{ if(typeof laundryBlockMinsOnValue==="function") laundryBlockMinsOnValue(s.val()); });   // 🧺 MOMSCHED_LAUNDRY
-    db.ref("momBlocks/"+mwTodayIso()).on("value",s=>{ if(typeof momBlocksOnValue==="function") momBlocksOnValue(s.val()); if(tab==="schedule") renderAll(); });   // 🧺 MOMSCHED_LAUNDRY: everyone's Mom cards lay around her block
+    momBlocksListen();   // 🧺 MOMSCHED_LAUNDRY: everyone's Mom cards lay around her block · MOMBLOCKS_DAYROLL: follows the day (dayRollCheck re-binds it after midnight)
     db.ref("settings/momTips").on("value",s=>{ if(typeof momTipsOnValue==="function") momTipsOnValue(s.val()); });   // 👋 Mom how-to banners she has closed
     db.ref("settings/whatsNewSeen").on("value",s=>{ if(typeof whatsNewOnValue==="function") whatsNewOnValue(s.val()); });   // ✨ the What's new she has read
     db.ref("famProgress").on("value",s=>{ if(typeof famProgOnValue==="function") famProgOnValue(s.val()); });   // 📚 family subjects' shared place-in-book   // 🙋 helper profiles
@@ -13218,6 +13219,26 @@ try{ const _mb=JSON.parse(HA_LS.getItem('ha_momblocks')||"null"); if(_mb&&_mb.is
 try{ laundryBlockMins=JSON.parse(HA_LS.getItem('ha_laundry_block_mins')||"{}")||{}; }catch(e){}
 function _lbWrite(){ return typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
 function momBlocksOnValue(v){ momBlocks=v||{}; try{ HA_LS.setItem('ha_momblocks',JSON.stringify({iso:mwTodayIso(),v:momBlocks})); }catch(e){} }
+// MOMBLOCKS_DAYROLL_START — hole 4 of AUDIT_laundry_2026-10-15: momBlocks/<today> was bound ONCE at boot, and the kiosks outlive
+// the day they booted on (see todayDay). A tablet open since Tuesday kept listening to Tuesday's path, so a block Mom set on
+// Wednesday from her phone never reached it: its Mom loop laid her cards without the block and its Mom-mode schedule showed
+// none (its own taps still worked — local write + local state — which is why it looked random). The listener now follows the
+// day: initFb binds it through momBlocksListen(), and dayRollCheck calls it again after midnight, which off()s the old day's
+// path, on()s the new day's, and drops the stale ha_momblocks cache (readers already filter by iso). Writes: none.
+let _mbIso=null, _mbCb=null;
+function momBlocksListen(){
+  if(typeof db==="undefined"||!db) return false;
+  const iso=mwTodayIso(); if(_mbIso===iso) return false;
+  if(_mbIso){
+    try{ db.ref("momBlocks/"+_mbIso).off("value",_mbCb); }catch(e){}
+    momBlocks={}; try{ HA_LS.removeItem('ha_momblocks'); }catch(e){}   // yesterday's blocks are not today's
+  }
+  _mbIso=iso;
+  _mbCb=function(s){ if(_mbIso!==iso) return; if(typeof momBlocksOnValue==="function") momBlocksOnValue(s.val()); if(typeof tab!=="undefined"&&tab==="schedule"&&typeof renderAll==="function") renderAll(); };   // a late event from a day already left is ignored
+  db.ref("momBlocks/"+mwTodayIso()).on("value",_mbCb);
+  return true;
+}
+// MOMBLOCKS_DAYROLL_END
 function laundryBlockMinsOnValue(v){ laundryBlockMins=v||{}; try{ HA_LS.setItem('ha_laundry_block_mins',JSON.stringify(laundryBlockMins)); }catch(e){} }
 function laundryBlockStep(stage){ return stage==="dryer"?"fold":stage==="fold"?"putaway":"move"; }   // LAUNDRY_FOLD: the fold pile's block is the put-away
 function laundryBlockDefault(stage){ const k=laundryBlockStep(stage), v=parseInt((laundryBlockMins||{})[k],10); return (v>0&&v<=240)?v:(k==="fold"?15:k==="putaway"?10:5); }
