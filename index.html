@@ -13088,13 +13088,16 @@ let laundryTimes={}, laundryEditOpen=false;
 try{ laundryTimes=JSON.parse(HA_LS.getItem('ha_laundry_times')||"{}")||{}; }catch(e){}
 function laundryTimesOnValue(v){ laundryTimes=v||{}; try{ HA_LS.setItem('ha_laundry_times',JSON.stringify(laundryTimes)); }catch(e){} }
 function laundryT(k){ const d={wash:60,dry:60,grace:30}[k]; const v=parseInt((laundryTimes||{})[k],10); return (v>0&&v<=600)?v:d; }
+// LAUNDRY_NUDGE (audit 2026-10-15 hole 3): settings/laundryTimes/foldHrs = hours a fold pile sits before 🔴 NOW asks to put it away (default 3, 1–72).
+function laundryFoldHrs(){ const v=parseInt((laundryTimes||{}).foldHrs,10); return (v>0&&v<=72)?v:3; }
 function laundryDoneAt(l){ const m=(l&&(l.stage==="washer"||l.stage==="prewash"))?laundryT("wash"):(l&&l.stage==="dryer")?laundryT("dry"):0; return m?(l.ts||0)+m*60000:0; }   // prewash = 💦 WASHTODAY
 function laundryDoneTxt(l){ const d=laundryDoneAt(l); if(!d) return ""; const t=laundrySince(d); return Date.now()>=d?' · <b style="color:#16a34a">done at '+t+'</b>':' · done ~'+t; }
 function laundryEditToggle(){ const go=function(){ laundryEditOpen=!laundryEditOpen; const el=document.getElementById('content'); if(el) renderMomsPlan(el); };
   if(typeof momHere==="function"&&momHere()) go(); else if(typeof kitPinGate==="function") kitPinGate(go,"Laundry times are for Mom."); }
 function laundryTimesSave(){
   const rd=function(id,d){ const v=parseInt(((document.getElementById(id)||{}).value||""),10); return (v>0&&v<=600)?v:d; };
-  laundryTimes={wash:rd('laundry-t-wash',laundryT('wash')),dry:rd('laundry-t-dry',laundryT('dry')),grace:rd('laundry-t-grace',laundryT('grace'))};
+  const rh=function(id,d){ const v=parseInt(((document.getElementById(id)||{}).value||""),10); return (v>0&&v<=72)?v:d; };   // LAUNDRY_NUDGE: fold-pile hours
+  laundryTimes={wash:rd('laundry-t-wash',laundryT('wash')),dry:rd('laundry-t-dry',laundryT('dry')),grace:rd('laundry-t-grace',laundryT('grace')),foldHrs:rh('laundry-t-foldhrs',laundryFoldHrs())};
   try{ HA_LS.setItem('ha_laundry_times',JSON.stringify(laundryTimes)); }catch(e){}
   if(typeof db!=='undefined'&&db) db.ref('settings/laundryTimes').set(laundryTimes);
   laundryEditOpen=false; if(typeof mwToast==='function') mwToast('🧺 Laundry times saved'); const el=document.getElementById('content'); if(el) renderMomsPlan(el);
@@ -13102,11 +13105,12 @@ function laundryTimesSave(){
 function laundryTimesEditorHTML(){
   if(!laundryEditOpen) return "";
   const inp='width:64px;padding:7px 8px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:14px;font-family:\'DM Sans\',sans-serif;text-align:center';
-  const row=function(id,lbl,v,hint){ return '<label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px;font-weight:700;color:#1e3a8a"><span style="flex:1">'+lbl+(hint?'<div style="font-size:11px;font-weight:600;color:#64748b">'+hint+'</div>':'')+'</span><input id="'+id+'" type="number" inputmode="numeric" min="1" max="600" value="'+v+'" style="'+inp+'"> min</label>'; };
+  const row=function(id,lbl,v,hint,unit,max){ return '<label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px;font-weight:700;color:#1e3a8a"><span style="flex:1">'+lbl+(hint?'<div style="font-size:11px;font-weight:600;color:#64748b">'+hint+'</div>':'')+'</span><input id="'+id+'" type="number" inputmode="numeric" min="1" max="'+(max||600)+'" value="'+v+'" style="'+inp+'"> '+(unit||'min')+'</label>'; };
   return '<div style="padding:10px 14px;background:#eff6ff;border-bottom:1px solid #dbeafe">'
     +row('laundry-t-wash','🫧 The washer takes',laundryT('wash'))
     +row('laundry-t-dry','🌀 The dryer takes',laundryT('dry'))
     +row('laundry-t-grace','⏰ Remind me after it\'s done for',laundryT('grace'),'Then it shows on Mom\'s Day so nothing sits and sours')
+    +row('laundry-t-foldhrs','🧺 Remind me to put away a fold pile after',laundryFoldHrs(),'',laundryFoldHrs()===1?'hr':'hrs',72)   // LAUNDRY_NUDGE
     +'<div style="display:flex;gap:8px;margin-top:8px"><button onclick="laundryTimesSave()" style="flex:1;padding:9px;border-radius:9px;border:none;background:#2563eb;color:#fff;font-size:13px;font-weight:800;cursor:pointer">Save</button>'
     +'<button onclick="laundryEditToggle()" style="padding:9px 14px;border-radius:9px;border:1.5px solid #cbd5e1;background:#fff;color:#475569;font-size:13px;font-weight:700;cursor:pointer">Cancel</button></div></div>';
 }
@@ -13151,6 +13155,37 @@ function laundryDel(id){
 function laundryAdvanceLabel(stage){
   return stage==="bin"?"🫧 Start prewash":stage==="prewash"?"🫧 Second wash":stage==="washer"?"→ Dryer":stage==="dryer"?"→ Fold":"✓ Put away";   // bin, prewash = 💦 WASHTODAY
 }
+// LAUNDRY_NUDGE_START — the 🔴 NOW laundry nudges + the Home Base badge, one list (laundry audit 2026-10-15 hole 3, her pick:
+// "a prewash load joins the washer nudge … a fold pile gets its own nudge after N hours"). Before, both tested
+// stage==="washer"||"dryer" only: a 💦 load in its prewash is in the washer on the same clock but never nudged (the very
+// sour-load case the nudge was built for), and a fold pile could sit for days with nothing in NOW.
+//   washer / prewash: laundryT("wash")+grace minutes → "move it before it sours" [→ Dryer / 🫧 Second wash]
+//   dryer:            laundryT("dry")+grace minutes  → "time to fold it" [→ Fold]
+//   fold:             laundryFoldHrs() hours          → "put it away" [✓ Put away]
+// Every button is laundryAdvance — no new write path.
+function laundryNudgeKind(l,now){
+  if(!l||!l.stage) return "";
+  const mins=Math.round(((now||Date.now())-(l.ts||0))/60000);
+  if(l.stage==="washer"||l.stage==="prewash") return mins>=laundryT("wash")+laundryT("grace")?"washer":"";
+  if(l.stage==="dryer") return mins>=laundryT("dry")+laundryT("grace")?"dryer":"";
+  if(l.stage==="fold") return mins>=laundryFoldHrs()*60?"fold":"";
+  return "";
+}
+function laundryNudgeList(now,only){
+  const L=(typeof laundryData!=="undefined"&&laundryData)||{}, out=[];
+  Object.keys(L).forEach(function(id){ const k=laundryNudgeKind(L[id],now); if(k&&(!only||only.indexOf(k)>=0)) out.push({id:id,l:L[id],kind:k}); });
+  return out;
+}
+function laundryNudgeRowHTML(x){
+  const l=x.l, lbl='<b>'+esc(l.label||"Load")+'</b>', since=laundrySince(l.ts);
+  const txt=x.kind==="dryer"?'🌀 '+lbl+' has been in the dryer since '+since+' — time to fold it'
+    :x.kind==="fold"?'🧺 '+lbl+' has been in the fold pile since '+since+' — put it away'
+    :'🫧 '+lbl+' has been in the washer since '+since+' — move it before it sours';
+  return '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#eff6ff;border-left:3px solid #2563eb;border-radius:8px;margin-bottom:6px">'
+    +'<span style="flex:1;font-size:13px">'+txt+'</span>'
+    +'<button onclick="laundryAdvance(\''+x.id+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+laundryAdvanceLabel(l.stage)+'</button></div>';
+}
+// LAUNDRY_NUDGE_END
 function laundrySince(ts){
   try{ return new Date(ts).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}); }catch(e){ return ""; }
 }
@@ -14385,11 +14420,7 @@ function hbAlertItems(){
     Object.keys(billsData||{}).forEach(id=>{ const st=billState(billsData[id],iso); if(st.state==="overdue"||st.state==="due") add("remind","bill_"+id+"_"+st.due); });
   }catch(e){}
   try{
-    Object.keys(laundryData||{}).forEach(id=>{
-      const l=laundryData[id]; if(!l||(l.stage!=="washer"&&l.stage!=="dryer")) return;
-      const mins=Math.round((Date.now()-(l.ts||0))/60000);
-      if(mins>=(l.stage==="dryer"?laundryT("dry"):laundryT("wash"))+laundryT("grace")) add("remind","wash_"+id+"_"+l.stage+"_"+(l.ts||0));
-    });
+    laundryNudgeList(Date.now()).forEach(x=>add("remind","wash_"+x.id+"_"+x.l.stage+"_"+(x.l.ts||0)));   // LAUNDRY_NUDGE: same list as 🔴 NOW
   }catch(e){}
   try{ kitDuePrep().forEach(s=>add("remind","prep_"+s.iso+"_"+s.mid+"_"+s.idx)); }catch(e){}
   try{ hhLevelReadyList().forEach(it=>add("remind","level_"+it.who+"_"+it.next)); }catch(e){}   // 🪜 LEVELREADY
@@ -14571,19 +14602,8 @@ function renderMomsDay(el){
   try{ const _ap=_momApprovalsHTML(); nowN+=_ap.n; h+=_ap.html; }catch(e){}
   try{ const _sa=mstAlertsNowHTML(); nowN+=_sa.n; h+=_sa.html; }catch(e){}   // 🚩 study sessions rushed / missed / not done / stuck cards
   try{ const _lr=hhLevelReadyNowHTML(); nowN+=_lr.n; h+=_lr.html; }catch(e){}   // 🪜 LEVELREADY: a person's meter says move up
-  // Load sitting in the washer too long — the nudge that saves a re-wash.
-  try{
-    Object.keys(laundryData).forEach(id=>{
-      const l=laundryData[id];
-      if(!l||(l.stage!=="washer"&&l.stage!=="dryer")) return;
-      const mins=Math.round((Date.now()-(l.ts||0))/60000);
-      if(mins<(l.stage==="dryer"?laundryT("dry"):laundryT("wash"))+laundryT("grace")) return;
-      nowN++;
-      h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#eff6ff;border-left:3px solid #2563eb;border-radius:8px;margin-bottom:6px">'
-        +(l.stage==="dryer"?'<span style="flex:1;font-size:13px">🌀 <b>'+esc(l.label)+'</b> has been in the dryer since '+laundrySince(l.ts)+' — time to fold it</span>':'<span style="flex:1;font-size:13px">🫧 <b>'+esc(l.label)+'</b> has been in the washer since '+laundrySince(l.ts)+' — move it before it sours</span>')
-        +'<button onclick="laundryAdvance(\''+id+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+laundryAdvanceLabel(l.stage)+'</button></div>';
-    });
-  }catch(e){}
+  // Load sitting in the washer / dryer / fold pile too long — the nudge that saves a re-wash (LAUNDRY_NUDGE).
+  try{ laundryNudgeList(Date.now()).forEach(x=>{ nowN++; h+=laundryNudgeRowHTML(x); }); }catch(e){}
   // Bills that can't wait — overdue or due today — with one-tap ✓ Paid.
   try{
     const hot=Object.keys(billsData).map(id=>({id,b:billsData[id],st:billState(billsData[id],iso)}))
