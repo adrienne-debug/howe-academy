@@ -35,6 +35,6 @@ ok("✎ Times button on the Laundry card header, editor right under it", /Laundr
 ok("each load shows when it'll be done", /' since '\+laundrySince\(l\.ts\)\+laundryDoneTxt\(l\)\+'/.test(src));
 // LAUNDRY_NUDGE (2026-10-15) moved the reminder into laundryNudgeKind / laundryNudgeRowHTML — test_laundry_nudges.js replays it by the minute.
 ok("Mom's Day reminder covers the washer AND the dryer, at its minutes + the reminder", /if\(l\.stage==="washer"\|\|l\.stage==="prewash"\) return mins>=laundryT\("wash"\)\+laundryT\("grace"\)/.test(src)&&/if\(l\.stage==="dryer"\) return mins>=laundryT\("dry"\)\+laundryT\("grace"\)/.test(src));
-ok("the dryer reminder says fold it, with the right button", /has been in the dryer since '\+since\+' — time to fold it/.test(src)&&/white-space:nowrap">'\+laundryAdvanceLabel\(l\.stage\)\+'<\/button><\/div>';/.test(src));
+ok("the dryer reminder says fold it, with the Folded ✓ button (LAUNDRY_FOLDED merged into LAUNDRY_NUDGE)", /has been in the dryer since '\+since\+' — time to fold it/.test(src)&&/\(x\.kind==="dryer"&&typeof LAUNDRY_FOLDED_BTN!=="undefined"\)\?LAUNDRY_FOLDED_BTN:laundryAdvanceLabel\(l\.stage\)/.test(src));
 ok("listens for settings/laundryTimes", /db\.ref\("settings\/laundryTimes"\)\.on\("value"/.test(src));
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

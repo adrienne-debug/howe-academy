@@ -7,7 +7,7 @@ let pass=0, fail=0; const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n)
 function fn(name){ const i=src.indexOf("function "+name+"("); if(i<0) throw new Error("missing "+name); let d=0; for(let k=src.indexOf("{",i);k<src.length;k++){ if(src[k]==="{") d++; else if(src[k]==="}"&&--d===0) return src.slice(i,k+1); } }
 const FIVE=["laundryAdd","laundryAdvance","laundryDel","laundryKidHook","laundryTimesSave"];
 const stages=src.slice(src.indexOf("const LAUNDRY_STAGES"), src.indexOf("\n", src.indexOf("const LAUNDRY_STAGES")));
-const code=[stages,fn("_dryRun"),fn("_lbWrite"),fn("laundryT"),fn("laundryStartGuess"),fn("laundryStarts"),fn("laundryKidId")].concat(FIVE.map(fn)).join("\n");
+const code=[stages,"function _cuDropBlock(){ return null; }   /* PR 59: laundryDel drops the load's block — stand-in, not under test here */",fn("_dryRun"),fn("_lbWrite"),fn("laundryT"),fn("laundryStartGuess"),fn("laundryStarts"),fn("laundryKidId")].concat(FIVE.map(fn)).join("\n");
 
 function mk(dry){
   const writes=[], ls={}, inputs={};
