@@ -4216,6 +4216,7 @@ function initFb() {
     db.ref("routineLog").on("value",s=>{ routineLog=s.val()||{}; });
     db.ref("waved").on("value",s=>{ wavedOnValue(s.val()||{}); if(tab==="moms-plan"||tab==="kids"||tab==="schedule") renderAll(); });   // WAVE
     db.ref("spotChecks").on("value",s=>{ spotOnValue(s.val()||{}); if(tab==="moms-plan"&&momHere()) renderAll(); });   // 🔎 SPOTCHECK
+    db.ref("settings/spotCheck").on("value",s=>{ if(typeof spotSetOnValue==="function") spotSetOnValue(s.val()); if(tab==="moms-plan"&&momHere()) renderAll(); });   // 🔎 SPOTCHECK ⚙
     db.ref("config/routineRules").on("value",s=>{ routineRules=Object.assign({loseTechEnabled:false,loseTechHour:10}, s.val()||{}); });
     db.ref("config/rewards").on("value",s=>{ rewardCatalog=s.val()||[]; if(typeof renderAll==="function") renderAll(); });
     db.ref("config/storeCfg").on("value",s=>{ storeCfg=Object.assign({threshold:100,open:true,mode:"always",hour:16,closedFor:{}}, s.val()||{}); if(typeof renderAll==="function") renderAll(); });
@@ -12964,6 +12965,7 @@ function momDayStripHTML(iso,today,who){
   const list=P.list;
   const dueIn=function(sl){ return P.due(today).filter(id=>mcSlotOf(list[id])===sl); };
   const slotNow=mpSlotNow();
+  let spR=null; if(!P.dad){ try{ spR=(typeof spMomRow==="function")?spMomRow():null; }catch(e){} }   // 🔎 SPOTCHECK: her derived Afternoon row (never in momChores)
   const colHd=(ic,nm,extra)=>'<div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:#6b6560;margin:0 0 7px">'+ic+' '+nm+(extra||'')+'</div>';
   let h='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
   h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:'+P.hd+';color:#fff;font-weight:800;font-size:13px"><span>🏡</span> My day'
@@ -12974,15 +12976,17 @@ function momDayStripHTML(iso,today,who){
   h+='<div>';
   h+='<div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap">';
   MC_SLOT_ORDER.forEach(sl=>{
-    const S=MC_SLOTS[sl], ids=dueIn(sl), dn=ids.filter(id=>P.doneOn(iso,id)).length, on=slotNow===sl;
-    const all=ids.length&&dn===ids.length;
+    const S=MC_SLOTS[sl], ids=dueIn(sl), on=slotNow===sl, sp=(sl==="afternoon"&&spR)?1:0;
+    const dn=ids.filter(id=>P.doneOn(iso,id)).length+(sp&&spR.done?1:0), tot=ids.length+sp;
+    const all=tot&&dn===tot;
     h+='<span onclick="mpSetSlot(\''+sl+'\')" style="cursor:pointer;flex:1;text-align:center;padding:5px 6px;border-radius:10px;border:1.5px solid '+(on?'#2B7A78':'var(--border)')+';background:'+(on?'#e6f4f3':'#fff')+';font-size:11px;font-weight:'+(on?'800':'600')+';color:'+(on?'#2B7A78':'#6b7280')+'">'+S.ic+' '+S.nm
-      +'<div style="font-size:10px;font-weight:800;color:'+(all?'#16a34a':(on?'#2B7A78':'#9ca3af'))+'">'+dn+'/'+ids.length+'</div></span>';
+      +'<div style="font-size:10px;font-weight:800;color:'+(all?'#16a34a':(on?'#2B7A78':'#9ca3af'))+'">'+dn+'/'+tot+'</div></span>';
   });
   h+='</div>';
   const cur=dueIn(slotNow);
   h+=cur.length?cur.map(id=>_mcRow(id,list[id],iso,P.dad?P:undefined)).join('')
     :P.emptySlot(slotNow);
+  if(slotNow==="afternoon"&&spR&&typeof spMomRowHTML==="function") h+=spMomRowHTML(spR);   // 🔎 SPOTCHECK
   h+='</div>';
 
   // ── column 2: everything with no particular time
@@ -13815,10 +13819,30 @@ function mdCardChoreLedger(){
 //   finish checking changes nothing.
 // Writes, all targeted, dry-run inert: spotChecks/<kid>/<iso> (transaction, the draw) · spotChecks/<kid>/<iso>/results/<n> set ·
 // spotChecks/<kid>/level set {n,types,settled}.
+//   ⚙ What the draw picks from (her ask 2026-10-15: "I want the draw to only include school cards if that option is picked, so
+//   option settings would be great"): a ⚙ on the card opens a small sheet — Chores · Laundry · School cards, at
+//   settings/spotCheck/types = {chore,laundry,school}; a missing switch is ON (all on = the old behavior). spPool and spDraw's
+//   kept-type rule both honor it — a type that is off is never picked, even for a raised kid. Today's picks never change when a
+//   switch flips (they were fixed at the draw); it applies from the next draw. All off → no draw, the card says it's paused.
+//   Writes: settings/spotCheck/types/<type> set (one switch per tap).
+//   −100 if not done (her ask 2026-10-15: "the option to take off -100 because it's the rules if not done"): the same sheet has
+//   "✗ Not done also takes off [100] ⭐" with an on/off switch, at settings/spotCheck/penalty = {on,pts}. Missing = OFF (DeWalt
+//   shares this code; Adrienne turns it on for Howe). When on, ✗ Not done does the undo above (the item's own stars back) AND
+//   bankDirect(kid,−pts,"🔎 Spot check: not done — <item>"); the confirm names both amounts; the result and 📜 record carry pen.
+//   Writes: settings/spotCheck/penalty/on · settings/spotCheck/penalty/pts set; bank/<kid>/adjustments/<id> (bankDirect).
+//   🔎 on Mom's afternoon checklist (her ask 2026-10-15: "make the spot check go to Mom's afternoon checklist and say spot
+//   check"): a DERIVED row in the ☀️/🌤/🌙 strip of her 🏡 My day, Afternoon group — never stored in momChores, so nothing to
+//   delete or manage (and it is not in the ✎ Edit list). School days only (Mom's Day's own test: a DAYS day, no break), and only
+//   while the draw is on. Before the draw: "🔎 Spot check — tap to draw" (tap = 🎲 Draw now for every kid, then scroll to the
+//   card). After: "🔎 Spot check — N to check" (tap scrolls). Done (✓, counted in her Afternoon n/total) when every pick today is
+//   resolved. No write of its own. Not on the General tablet's Mom lane: that is a shared wall tablet the kids use, and spot
+//   check is silent on the kid's side.
 const SP_MIN=2, SP_MAX=5;
-let spotData={}, spRecOpen="", _spDrawn={};
+let spotData={}, spRecOpen="", _spDrawn={}, spotSet={}, spSetOpen=false;
 try{ spotData=JSON.parse(HA_LS.getItem('ha_spot')||"{}")||{}; }catch(e){}
+try{ spotSet=JSON.parse(HA_LS.getItem('ha_spot_set')||"{}")||{}; }catch(e){}
 function spotOnValue(v){ spotData=v||{}; try{ HA_LS.setItem('ha_spot',JSON.stringify(spotData)); }catch(e){} }
+function spotSetOnValue(v){ spotSet=(v&&typeof v==="object")?v:{}; try{ HA_LS.setItem('ha_spot_set',JSON.stringify(spotSet)); }catch(e){} }
 function _spWrite(){ return typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
 function _spMomOk(){ return typeof momHere==="function"&&momHere(); }
 // Who is ticking right now, when it isn't the kid: stamped on the check-off so the pool can leave it out.
@@ -13832,18 +13856,46 @@ function _spSetLevel(kid,l){
 }
 function spStepType(st){ const lb=(st&&st.label)||""; return ((typeof laundryLooseWord==="function"&&laundryLooseWord(lb))||(typeof laundryStarts==="function"&&laundryStarts(st)))?"laundry":"chore"; }
 const SP_TYPE={chore:"🧹 chore",laundry:"🧺 laundry",school:"📚 school"};
+// ⚙ which types the draw may pick — a missing switch is on.
+function spTypes(){ const t=(spotSet&&spotSet.types)||{}; return {chore:t.chore!==false,laundry:t.laundry!==false,school:t.school!==false}; }
+function spOn(){ const t=spTypes(); return t.chore||t.laundry||t.school; }
+function spSetType(ty){
+  if(!_spMomOk()||!SP_TYPE[ty]) return false;
+  const v=!spTypes()[ty]; spotSet=Object.assign({},spotSet); spotSet.types=Object.assign({},spotSet.types||{}); spotSet.types[ty]=v; spotSetOnValue(spotSet);
+  if(_spWrite()) db.ref("settings/spotCheck/types/"+ty).set(v);
+  if(typeof _cuRe==="function") _cuRe(); return true;
+}
+// −pts on ✗ Not done — off unless she turned it on.
+function spPenalty(){ const p=(spotSet&&spotSet.penalty)||{}; const n=parseInt(p.pts,10); return {on:p.on===true,pts:(n>0?Math.min(n,10000):100)}; }
+function _spSetPen(k,v){
+  spotSet=Object.assign({},spotSet); spotSet.penalty=Object.assign({},spotSet.penalty||{}); spotSet.penalty[k]=v; spotSetOnValue(spotSet);
+  if(_spWrite()) db.ref("settings/spotCheck/penalty/"+k).set(v);
+}
+function spSetPenOn(){
+  if(!_spMomOk()) return false;
+  const P=spPenalty(); _spSetPen("on",!P.on);
+  if(!P.on&&!((spotSet.penalty||{}).pts>0)) _spSetPen("pts",P.pts);   // first time on: the amount shown is the amount saved
+  if(typeof _cuRe==="function") _cuRe(); return true;
+}
+function spSetPenPts(v){
+  if(!_spMomOk()) return false;
+  const n=parseInt(v,10); if(!(n>0)) { if(typeof _cuRe==="function") _cuRe(); return false; }
+  _spSetPen("pts",Math.min(n,10000)); if(typeof _cuRe==="function") _cuRe(); return true;
+}
+function spSetToggle(){ spSetOpen=!spSetOpen; if(typeof _cuRe==="function") _cuRe(); }
 // → [{k,kind,slot,i,id,label,emoji,type,ts,pts}] — today's self-checked items for one kid.
 function spPool(kid,d){
-  const out=[], wk=activeWk();
+  const out=[], wk=activeWk(), T=spTypes();
   SL_SLOTS.forEach(function(slot){
     const steps=(slot==="morning"&&typeof morningStepsFor==="function")?morningStepsFor(kid):(rtStepsFor(slot,kid,false,d)||[]);
     steps.forEach(function(st,i){ if(!st) return;
       if(typeof rtWaved==="function"&&rtWaved(slot,kid,d,i)) return;   // WAVE: waved, not checked
       const s=slState[wk+"_"+d+"_"+kid+"_"+(slot==="morning"?"m":RT_ABBR[slot])+"step"+i];
       if(!s||!s.done||s.by) return;   // not done, or Mom / Dad ticked it
+      if(!T[spStepType(st)]) return;   // ⚙ that type is switched off
       out.push({k:"s:"+slot+":"+i,kind:"step",slot:slot,i:i,d:d,label:st.label||"",emoji:st.emoji||"",type:spStepType(st),ts:_spTs(s.ts),pts:s.pts||0}); });
   });
-  try{
+  if(T.school) try{
     ((weekData&&weekData.tasks)||[]).forEach(function(t){
       if(!t||t.who!==kid||!t.id||!checked[t.id]||String(t.id).endsWith("_c")||t.famBlock) return;
       if(effectiveDay(t)!==d||(typeof _ckLogTodayTs==="function"&&!_ckLogTodayTs(checked[t.id]))) return;
@@ -13856,9 +13908,9 @@ function spPool(kid,d){
 }
 // Random draw of n, the kept types first (one each, while the pool has one).
 function spDraw(pool,n,types,rnd){
-  rnd=rnd||Math.random; const left=pool.slice(), out=[];
+  rnd=rnd||Math.random; const T=spTypes(), left=pool.filter(function(p){ return T[p.type]!==false; }), out=[];   // ⚙ an off type is never picked
   const take=function(arr){ const x=arr[Math.floor(rnd()*arr.length)]; left.splice(left.indexOf(x),1); out.push(x); };
-  Object.keys(types||{}).forEach(function(ty){ if(out.length>=n) return; const c=left.filter(function(p){ return p.type===ty; }); if(c.length) take(c); });
+  Object.keys(types||{}).forEach(function(ty){ if(out.length>=n||!T[ty]) return; const c=left.filter(function(p){ return p.type===ty; }); if(c.length) take(c); });
   while(out.length<n&&left.length) take(left);
   return out;
 }
@@ -13878,6 +13930,7 @@ function spEnsureDraw(kid,force){
   if(!_spMomOk()||typeof _todayDay!=="string") return null;
   const iso=_spIso(), cur=spDay(kid,iso); if(cur&&cur.picks) return cur;
   if(!force&&!spDue()) return null;
+  if(!spOn()) return null;   // ⚙ all switched off: paused
   if(_spDrawn[kid+"|"+iso]) return null;
   const l=spSettle(kid,iso), pool=spPool(kid,_todayDay); if(!pool.length) return null;
   const picks=spDraw(pool,l.n,l.types).map(function(p){ const o={}; Object.keys(p).forEach(function(k){ if(p[k]!==undefined) o[k]=p[k]; }); return o; });
@@ -13892,9 +13945,10 @@ function spResolve(kid,j,r){
   if(!_spMomOk()||(r!=="ok"&&r!=="no")) return false;
   const iso=_spIso(), rec=spDay(kid,iso); if(!rec||!rec.picks||!rec.picks[j]) return false;
   if(rec.results&&rec.results[j]) return false;
-  const p=rec.picks[j];
+  const p=rec.picks[j], pen=spPenalty();
   if(r==="no"){
-    if(typeof confirm==="function"&&!confirm("Not done?\n\n“"+(p.label||"")+"” goes back to not done for "+((typeof KID_NAME!=="undefined"&&KID_NAME[kid])||cap(kid))+(p.pts>0?", and its "+p.pts+" ⭐ come back off":"")+".")) return false;
+    if(typeof confirm==="function"&&!confirm("Not done?\n\n“"+(p.label||"")+"” goes back to not done for "+((typeof KID_NAME!=="undefined"&&KID_NAME[kid])||cap(kid))+(p.pts>0?", and its "+p.pts+" ⭐ come back off":"")+"."
+      +(pen.on?"\n\nThe rule: −"+pen.pts+" ⭐ more for not doing it.":""))) return false;
     if(p.kind==="step"){
       let i=p.i; const steps=(p.slot==="morning"&&typeof morningStepsFor==="function")?morningStepsFor(kid):(rtStepsFor(p.slot,kid,false,p.d)||[]);
       if(!steps[i]||(steps[i].label||"")!==p.label){ const f=steps.findIndex(function(s){ return s&&(s.label||"")===p.label; }); if(f>=0) i=f; }   // the list was edited since the draw
@@ -13902,21 +13956,59 @@ function spResolve(kid,j,r){
     } else if(p.kind==="task"&&checked[p.id]){
       try{ const b=document.getElementById("dlg-uncheck"); if(b&&typeof b.onclick==="function"){ pendingId=p.id; pendingClaimMode=false; b.onclick(); } }catch(e){ dbg("spot check unmark: "+e); }
     }
+    if(pen.on&&typeof bankDirect==="function") bankDirect(kid,-pen.pts,"🔎 Spot check: not done — "+(p.label||""));   // the rule, her switch
   }
   const l=spLevel(kid), res={r:r,at:Date.now(),ts:(typeof nowTs==="function")?nowTs():"",n:rec.n||l.n};
+  if(r==="no"&&pen.on) res.pen=pen.pts;
   rec.results=rec.results||{}; rec.results[j]=res; spotOnValue(spotData);
   if(_spWrite()) db.ref("spotChecks/"+kid+"/"+iso+"/results/"+j).set(res);
   if(r==="no"){ l.n=Math.min(SP_MAX,l.n+1); l.types[p.type||"chore"]=true; _spSetLevel(kid,l); }
   if(typeof _cuRe==="function") _cuRe();
   return true;
 }
+// 🔎 the derived afternoon row → null (no row) or {drawn,todo,done}
+function _spSchoolDay(){ try{ const t=(typeof mdTodayName==="function")?mdTodayName():_todayDay; if(typeof DAYS==="undefined"||DAYS.indexOf(t)<0) return false; return !(typeof scheduleBreakToday==="function"&&scheduleBreakToday()); }catch(e){ return false; } }
+function spMomRow(){
+  if(!_spMomOk()||typeof _todayDay!=="string"||!spOn()||!_spSchoolDay()) return null;
+  const iso=_spIso(); let drawn=false, todo=0;
+  ROSTER.forEach(function(k){ const r=spDay(k,iso), p=(r&&r.picks)||[], res=(r&&r.results)||{}; if(p.length) drawn=true; p.forEach(function(q,j){ if(!res[j]) todo++; }); });
+  return {drawn:drawn,todo:todo,done:drawn&&!todo};
+}
+function _spScroll(){ try{ setTimeout(function(){ const el=document.getElementById("sp-card"); if(el&&el.scrollIntoView) el.scrollIntoView({behavior:"smooth",block:"start"}); },60); }catch(e){} }
+function spMomRowTap(){
+  const r=spMomRow(); if(!r) return false;
+  if(!r.drawn){ const _pd=day; try{ day=_todayDay; ROSTER.forEach(function(k){ spEnsureDraw(k,true); }); } finally { day=_pd; } }   // = 🎲 Draw now
+  if(typeof _cuRe==="function") _cuRe();
+  _spScroll(); return true;
+}
+function spMomRowHTML(r){
+  if(!r) return "";
+  const done=r.done, lbl=!r.drawn?"🔎 Spot check — tap to draw":done?"🔎 Spot check — all checked":"🔎 Spot check — "+r.todo+" to check";
+  return '<div onclick="spMomRowTap()" style="cursor:pointer;display:flex;align-items:center;gap:9px;padding:7px 9px;background:'+(done?'#f0fdf4':'#eff6ff')+';border:1.5px solid '+(done?'#86efac':'#bfdbfe')+';border-radius:9px;margin-bottom:5px">'
+    +'<div style="width:19px;height:19px;border-radius:50%;border:2px solid '+(done?'#16a34a':'#1e3a8a')+';background:'+(done?'#16a34a':'#fff')+';color:'+(done?'#fff':'transparent')+';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;font-weight:700">'+(done?'✓':'')+'</div>'
+    +'<div style="flex:1;min-width:0;font-size:12.5px;font-weight:600;color:'+(done?'#6b6560':'#1e3a8a')+';'+(done?'text-decoration:line-through':'')+'">'+lbl+'</div></div>';
+}
 function spRecToggle(kid){ spRecOpen=(spRecOpen===kid)?"":kid; if(typeof _cuRe==="function") _cuRe(); }
 // → [{iso,label,type,r,n}] newest first
 function spRecord(kid){
   const all=spotData[kid]||{}, out=[];
   Object.keys(all).filter(function(k){ return /^\d{4}-\d{2}-\d{2}$/.test(k); }).sort().reverse().forEach(function(k){ const r=all[k]||{}, res=r.results||{};
-    (r.picks||[]).forEach(function(p,j){ out.push({iso:k,label:p.label||"",emoji:p.emoji||"",type:p.type||"",ts:p.ts||"",r:(res[j]&&res[j].r)||"",n:(res[j]&&res[j].n)||r.n||SP_MIN}); }); });
+    (r.picks||[]).forEach(function(p,j){ out.push({iso:k,label:p.label||"",emoji:p.emoji||"",type:p.type||"",ts:p.ts||"",r:(res[j]&&res[j].r)||"",n:(res[j]&&res[j].n)||r.n||SP_MIN,pen:(res[j]&&res[j].pen)||0}); }); });
   return out;
+}
+function _spSwitch(on,click,lbl){ return '<span onclick="'+click+'" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#1f2937"><span style="width:34px;height:20px;border-radius:10px;background:'+(on?'#16a34a':'#cbd5e1')+';position:relative;flex-shrink:0"><span style="position:absolute;top:2px;left:'+(on?'16':'2')+'px;width:16px;height:16px;border-radius:50%;background:#fff"></span></span>'+lbl+'</span>'; }
+// ⚙ the sheet: what the draw picks from. Each tap writes that one switch.
+function spSetSheetHTML(){
+  const T=spTypes();
+  let h='<div style="padding:10px 14px;background:#eff6ff;border-bottom:1px solid #dbeafe">';
+  h+='<div style="font-size:11px;font-weight:800;color:#1e3a8a;text-transform:uppercase;letter-spacing:.3px;margin-bottom:6px">What spot check picks from</div>';
+  h+='<div style="display:flex;gap:14px;flex-wrap:wrap">'+[["chore","🧹 Chores"],["laundry","🧺 Laundry"],["school","📚 School cards"]].map(function(c){ return _spSwitch(T[c[0]],"spSetType('"+c[0]+"')",c[1]); }).join('')+'</div>';
+  const P=spPenalty();
+  h+='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:9px;padding-top:8px;border-top:1px solid #dbeafe;font-size:12px;font-weight:700;color:#1f2937">'
+    +_spSwitch(P.on,"spSetPenOn()","")+'<span>✗ Not done also takes off</span>'
+    +'<input type="number" min="1" max="10000" value="'+P.pts+'" onchange="spSetPenPts(this.value)" style="width:64px;padding:3px 6px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px;font-weight:700;font-family:\'DM Sans\',sans-serif"><span>⭐</span></div>';
+  h+='<div style="font-size:10.5px;color:var(--muted);margin-top:6px">Today\'s picks stay as they are — a change counts from the next draw.</div>';
+  return h+'</div>';
 }
 function _spEndLbl(){ try{ return fromMin((typeof rvSchoolEndMin==="function")?rvSchoolEndMin():16*60+15); }catch(e){ return "4:15 PM"; } }
 function mdCardSpotCheck(){
@@ -13924,15 +14016,19 @@ function mdCardSpotCheck(){
   const iso=_spIso(), d=_todayDay, _pd=day; let rows=[];
   try{ day=d; rows=ROSTER.map(function(k){ spEnsureDraw(k,false); return {kid:k,rec:spDay(k,iso),lvl:spLevel(k),pool:spPool(k,d).length}; }); } finally { day=_pd; }
   let todo=0; rows.forEach(function(x){ const p=(x.rec&&x.rec.picks)||[], res=(x.rec&&x.rec.results)||{}; p.forEach(function(q,j){ if(!res[j]) todo++; }); });
-  let h='<div style="margin:10px 12px;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
-  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#1e3a8a;color:#fff;font-weight:800;font-size:13px"><span>🔎</span> Spot check'+(todo?' · '+todo+' to check':'')+'</div>';
+  let h='<div id="sp-card" style="margin:10px 12px;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
+  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#1e3a8a;color:#fff;font-weight:800;font-size:13px"><span>🔎</span> Spot check'+(todo?' · '+todo+' to check':'')
+    +'<button onclick="spSetToggle()" title="What spot check picks from" style="margin-left:auto;border:none;background:rgba(255,255,255,'+(spSetOpen?'0.45':'0.2')+');color:#fff;border-radius:8px;padding:3px 10px;font-size:12px;font-weight:700;cursor:pointer">⚙</button></div>';
+  if(spSetOpen) h+=spSetSheetHTML();
   h+='<div style="padding:6px 14px 10px">';
+  const _paused=!spOn();
+  if(_paused) h+='<div style="font-size:12px;font-weight:700;color:#1e3a8a;padding:6px 0">Spot check is paused — ⚙ to pick what it checks.</div>';
   rows.forEach(function(x){
     const kid=x.kid, nm=esc((typeof KID_NAME!=="undefined"&&KID_NAME[kid])||cap(kid)), p=(x.rec&&x.rec.picks)||[], res=(x.rec&&x.rec.results)||{};
     h+='<div style="display:flex;align-items:center;gap:6px;margin:8px 0 2px"><span style="font-size:11px;font-weight:800;color:'+((typeof PACE_KCOL!=="undefined"&&PACE_KCOL[kid])||"#111827")+'">'+nm+'</span>'
       +'<span style="font-size:10.5px;font-weight:700;color:'+(x.lvl.n>SP_MIN?'#b91c1c':'var(--muted)')+'">'+x.lvl.n+' a day'+(x.lvl.n>SP_MIN?' ▲':'')+'</span>'
       +'<span style="margin-left:auto">'+_cuBtn("spRecToggle('"+kid+"')",(spRecOpen===kid?'▲ ':'')+"📜 record","#1e3a8a","Every spot check for "+nm)+'</span></div>';
-    if(!p.length){
+    if(!p.length&&!_paused){
       h+='<div style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);padding:2px 0 4px"><span style="flex:1">'+(x.pool?'Picks are drawn at '+esc(_spEndLbl())+' from '+x.pool+' thing'+(x.pool===1?'':'s')+' '+nm+' checked off.':'Nothing '+nm+' checked off themselves yet today.')+'</span>'
         +(x.pool?_cuBtn("spDrawNow('"+kid+"')","🎲 Draw now","#1e3a8a","Pick today's spot checks now"):'')+'</div>';
     }
@@ -13947,11 +14043,11 @@ function mdCardSpotCheck(){
       h+='<div style="margin:4px 0 6px;padding:6px 8px;background:#f8fafc;border-radius:8px;font-size:11px">';
       if(!rec.length) h+='<div style="color:var(--muted)">No spot checks yet.</div>';
       rec.forEach(function(e){ h+='<div style="display:flex;gap:6px;padding:2px 0;border-bottom:1px solid #eef2f0"><span style="flex:0 0 74px;color:var(--muted)">'+esc(e.iso)+'</span><span style="flex:1;min-width:0">'+(e.emoji?e.emoji+' ':'')+esc(e.label)+'</span>'
-        +'<span style="font-weight:800;color:'+(e.r==="no"?'#b91c1c':e.r==="ok"?'#16a34a':'#9ca3af')+'">'+(e.r==="no"?'✗ not done':e.r==="ok"?'✓ done':'— not checked')+'</span><span style="flex:0 0 34px;text-align:right;color:var(--muted)">'+e.n+'/day</span></div>'; });
+        +'<span style="font-weight:800;color:'+(e.r==="no"?'#b91c1c':e.r==="ok"?'#16a34a':'#9ca3af')+'">'+(e.r==="no"?'✗ not done':e.r==="ok"?'✓ done':'— not checked')+(e.pen?' · −'+e.pen+' ⭐':'')+'</span><span style="flex:0 0 34px;text-align:right;color:var(--muted)">'+e.n+'/day</span></div>'; });
       h+='</div>';
     }
   });
-  h+='<div style="font-size:10.5px;color:var(--muted);margin-top:8px">Only what a kid checked off themselves is picked. ✗ Not done puts it back to not done and takes its own stars back off; each ✗ adds one more check a day for that kid (up to '+SP_MAX+'), and every clean day takes one away (down to '+SP_MIN+'). The kids never see this.</div>';
+  h+='<div style="font-size:10.5px;color:var(--muted);margin-top:8px">Only what a kid checked off themselves is picked. ✗ Not done puts it back to not done and takes its own stars back off'+(spPenalty().on?', plus '+spPenalty().pts+' ⭐ for not doing it':'')+'; each ✗ adds one more check a day for that kid (up to '+SP_MAX+'), and every clean day takes one away (down to '+SP_MIN+'). The kids never see this.</div>';
   return h+'</div></div>';
 }
 // SPOTCHECK_END
