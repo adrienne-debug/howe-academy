@@ -53,7 +53,7 @@ ok("laundryAdvance 💦 bin → prewash sets laundry/wt1", lw["laundryAdvance bi
 ok("laundryDel removes laundry/wt1", JSON.stringify(lw["laundryDel"])===JSON.stringify([["remove","laundry/wt1"]]));
 ok("laundryKidHook check sets laundry/lk_<step>", lw["laundryKidHook check"].length===1&&lw["laundryKidHook check"][0][1]==="laundry/lk_week1_monday_taylor_mstep9"&&lw["laundryKidHook check"][0][2].by==="taylor");
 ok("laundryKidHook uncheck removes laundry/lk_<step>", JSON.stringify(lw["laundryKidHook uncheck"])===JSON.stringify([["remove","laundry/lk_week1_monday_taylor_mstep9"]]));
-ok("laundryTimesSave sets settings/laundryTimes {wash,dry,grace}", JSON.stringify(lw["laundryTimesSave"])===JSON.stringify([["set","settings/laundryTimes",{wash:45,dry:75,grace:15}]]));
+ok("laundryTimesSave sets settings/laundryTimes {wash,dry,grace}", JSON.stringify(lw["laundryTimesSave"])===JSON.stringify([["set","settings/laundryTimes",{wash:45,dry:75,grace:15,foldHrs:3}]]));   // foldHrs: PR 61 (default 3, no input in this harness)
 
 console.log("── ?dryrun=1: nothing written, the screen still moves ──");
 dry.log.forEach(([name,w])=>ok(name+" writes nothing in dry run", w.length===0, w));

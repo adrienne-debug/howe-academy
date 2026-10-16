@@ -167,7 +167,6 @@ console.log("── (2) hole 2: the dryer block's button reads Folded ✓ (text 
   ok("Mom's Day Laundry card keeps → Fold (only the block and the nudge changed)", /laundryAdvance\('d'\)[^>]*>→ Fold</.test(T.card()));
 }
 ok("the NOW nudge's dryer button reads Folded ✓ (and the washer's stays → Dryer) — in laundryNudgeRowHTML (PR 61 merged)", /\(x\.kind==="dryer"&&typeof LAUNDRY_FOLDED_BTN!=="undefined"\)\?LAUNDRY_FOLDED_BTN:laundryAdvanceLabel\(l\.stage\)/.test(src));
-  return i>0&&/\(l\.stage==="dryer"&&typeof LAUNDRY_FOLDED_BTN!=="undefined"\)\?LAUNDRY_FOLDED_BTN:laundryAdvanceLabel\(l\.stage\)/.test(seg); })());
 ok("LAUNDRY_FOLDED_BTN = 'Folded ✓'", /const LAUNDRY_FOLDED_BTN="Folded ✓";/.test(src));
 
 console.log("── (3) hole 8: Dad's load on Mom's schedule is information only ──");

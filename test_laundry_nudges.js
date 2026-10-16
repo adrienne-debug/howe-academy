@@ -18,7 +18,7 @@ function mk(stored){
     document:{getElementById:id=>(ctx.inputs&&ctx.inputs[id])||null},inputs:{},
     laundryAdvance:id=>advanced.push(id)};
   vm.createContext(ctx);
-  vm.runInContext("function _lbWrite(){ return false; }   /* PR 60 stand-in: no writes in this harness */\nconst LAUNDRY_FOLDED_BTN=\"Folded ✓\";   /* PR 62 */\n"+fn("laundrySince")+"\n"+fn("laundryAdvanceLabel")+"\n"+times+"\n"+nudge+"\n"+fn("hbAlertItems"),ctx);
+  vm.runInContext("function _lbWrite(){ return typeof db!==\"undefined\"&&!!db; }   /* PR 60 stand-in: writes when the harness has a db */\nconst LAUNDRY_FOLDED_BTN=\"Folded ✓\";   /* PR 62 */\n"+fn("laundrySince")+"\n"+fn("laundryAdvanceLabel")+"\n"+times+"\n"+nudge+"\n"+fn("hbAlertItems"),ctx);
   return {run:e=>vm.runInContext(e,ctx),ctx,writes,advanced};
 }
 const T0=new Date(2026,9,15,9,0,0).getTime(), MIN=60000;   // Thursday 9:00 AM
