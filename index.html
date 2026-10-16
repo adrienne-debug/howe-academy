@@ -13485,6 +13485,7 @@ function laundryKidHook(kid,st,sk,now){
     if(cur) return;                                           // already on her card — keep whatever stage Mom moved it to
     laundryData[id]={label:(KID_NAME[kid]||cap(kid))+" started laundry",stage:"washer",ts:Date.now(),by:kid};
     if(_lbWrite()) db.ref('laundry/'+id).set(laundryData[id]);
+    try{ if(typeof laundryStartAsk==="function"&&!(typeof _rtMomTick!=="undefined"&&_rtMomTick)) laundryStartAsk(id); }catch(e){}   // LAUNDRY_STARTAT: "In the washer now?" (not on Mom's own tick)
   } else {
     if(!cur||cur.stage!=="washer") return;                    // Mom already moved it on — a stray uncheck doesn't erase it
     delete laundryData[id];
@@ -13553,6 +13554,52 @@ function cpGrabLaundryHTML(g,i){
 }
 function gbLaundryMove(kid,i){ const g=(typeof gbList==="function")?gbList()[i]:null; if(g&&typeof g.laundry==="string"&&LAUNDRY_KIDMOVE_FROM[g.laundry]) return laundryKidMove(kid,g.laundry); return null; }
 // LAUNDRY_KIDMOVE_END
+// LAUNDRY_STARTAT_START — a kid-started load's clock starts when it really went in (AUDIT_laundry_2026-10-15 hole 7; her "ok"
+// 2026-10-15). Taylor's Monday 10/12 log had seven morning steps checked inside four seconds at 9:39 — a batch check at the end
+// of the morning — so the load's ts (the check time) put "done ~10:29" an hour late and the "started 9:39" marker was a fiction.
+// Now, when a kid's check-off starts a load (KIDLAUNDRY), one question pops up, once: "In the washer now?" [Yes] [Earlier…].
+// Yes = the clock starts now; Earlier… opens a time picker (today, never later than now). One extra tap, only on laundry-start
+// steps; nothing else in the kids' flow changes, and Mom's own tick from her Day doesn't ask. If Mom has already moved the load on
+// by the time the answer comes, the answer is dropped.
+// Writes: laundry/<id>/ts (the existing field; targeted, dry-run inert via _lbWrite).
+let _lsaId=null, _lsaEarly=false;
+function laundryStartAsk(id){ _lsaId=id; _lsaEarly=false; _lsaPaint(); }
+function _lsaHHMM(t){ const d=new Date(t); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
+function laundryStartAskHTML(earlier,now){
+  const big='padding:14px 22px;border-radius:12px;font-size:17px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;';
+  const body=earlier
+    ?'<div style="font-weight:800;font-size:18px;margin:4px 0 12px">What time did it go in?</div>'
+      +'<input id="lsa-time" type="time" value="'+_lsaHHMM(now||Date.now())+'" style="font-size:20px;padding:10px;border:1.5px solid #cbd5e1;border-radius:10px;font-family:\'DM Sans\',sans-serif">'
+      +'<div style="display:flex;gap:10px;justify-content:center;margin-top:14px">'
+      +'<button onclick="laundryStartAnswer((document.getElementById(\'lsa-time\')||{}).value||null)" style="'+big+'border:none;background:#2563eb;color:#fff">Save</button>'
+      +'<button onclick="laundryStartEarlier(false)" style="'+big+'border:1.5px solid #cbd5e1;background:#fff;color:#475569">Back</button></div>'
+    :'<div style="font-weight:800;font-size:20px;margin:4px 0 14px">In the washer now?</div>'
+      +'<div style="display:flex;gap:10px;justify-content:center">'
+      +'<button onclick="laundryStartAnswer(null)" style="'+big+'border:none;background:#2563eb;color:#fff">Yes</button>'
+      +'<button onclick="laundryStartEarlier(true)" style="'+big+'border:1.5px solid #93c5fd;background:#fff;color:#1d4ed8">Earlier…</button></div>';
+  return '<div style="position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px">'
+    +'<div style="background:#fff;border-radius:16px;padding:22px 20px;width:100%;max-width:320px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.35)">'
+    +'<div style="font-size:40px">\u{1F9FA}</div>'+body+'</div></div>';
+}
+function _lsaPaint(){
+  if(typeof document==="undefined"||!document.body) return;
+  let w=document.getElementById("lsa-wrap"); if(!w){ w=document.createElement("div"); w.id="lsa-wrap"; document.body.appendChild(w); }
+  w.innerHTML=_lsaId?laundryStartAskHTML(_lsaEarly):"";
+}
+function laundryStartEarlier(on){ if(!_lsaId) return; _lsaEarly=!!on; _lsaPaint(); }
+// hhmm null = Yes (now); "HH:MM" = earlier today (a time still to come counts as now).
+function laundryStartAnswer(hhmm,nowMs){
+  const id=_lsaId; _lsaId=null; _lsaEarly=false; _lsaPaint();
+  const l=id&&laundryData[id]; if(!l||l.stage!=="washer") return null;   // Mom already moved it on, or it was unchecked
+  const now=nowMs||Date.now(); let ts=now;
+  const m=/^(\d{1,2}):(\d{2})$/.exec(String(hhmm||""));
+  if(m){ const d=new Date(now); d.setHours(+m[1],+m[2],0,0); if(d.getTime()<now) ts=d.getTime(); }
+  l.ts=ts;
+  if(_lbWrite()) db.ref('laundry/'+id+'/ts').set(ts);
+  try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
+  return ts;
+}
+// LAUNDRY_STARTAT_END
 // WASHTODAY_START — 💦 "Wet or soiled" (her laundry system 2026-10-09; PR 1 of the Household plan; her "yes" 2026-10-09 after
 // the talk-through). Anything WET — accident sheets, a soaked towel, a wet dog blanket — goes in the lidded wash-today bin by
 // the washer, never in a hamper, and runs that night or next morning as an extra load, WASHED TWICE ("prewash for all,

@@ -1,4 +1,5 @@
-// test_laundry_kidmove.js — AUDIT_laundry_2026-10-15 hole 6 (LAUNDRY_KIDMOVE): a kid's check-off can MOVE a load.
+// test_laundry_kidmove.js — AUDIT_laundry_2026-10-15 hole 6 (LAUNDRY_KIDMOVE): a kid's check-off can MOVE a load;
+// hole 7 (LAUNDRY_STARTAT): a kid-started load asks "In the washer now?" once, and its clock follows the answer.
 const fs=require('fs');const src=fs.readFileSync(process.argv[2]||require("path").join(__dirname,"index.html"),'utf8');
 let fail=0;const eq=(a,b,m)=>{if(JSON.stringify(a)!==JSON.stringify(b)){fail++;console.log('FAIL',m,JSON.stringify(a),JSON.stringify(b))}else console.log('ok',m)};
 const blk=(n)=>{const a=src.indexOf('// '+n+'_START'),b=src.indexOf('// '+n+'_END');if(a<0||b<0)throw new Error('no block '+n);return src.slice(a,b);};
@@ -9,14 +10,14 @@ function mk(opts){
   opts=opts||{};
   const ctx={writes:[],laundryData:{},momBlocks:{},cfg:[],gbl:opts.grabs||[]};
   const db={ref:p=>({set:v=>ctx.writes.push(['set',p,v]),update:v=>ctx.writes.push(['update',p,v]),remove:()=>ctx.writes.push(['rm',p])})};
-  const code=blk('KIDLAUNDRY')+blk('LAUNDRY_KIDMOVE')+[fn('momBlockKey'),fn('momBlockFor'),fn('laundryBlockDone')].join('\n')
+  const code=blk('KIDLAUNDRY')+blk('LAUNDRY_KIDMOVE')+(opts.startAt?blk('LAUNDRY_STARTAT'):'')+[fn('momBlockKey'),fn('momBlockFor'),fn('laundryBlockDone')].join('\n')
     +';function momBlocksOnValue(v){momBlocks=v||{};}'
     +';return {laundryKidHook,laundryStarts,laundryKidMove,laundryKidMovePick,cpSetLaundry,cpLaundryMoveHTML,cpGrabLaundryHTML,cpLaundryBtnHTML,gbLaundryMove,'
-    +'setL:v=>{laundryData=v},getL:()=>laundryData,setB:v=>{momBlocks=v},getB:()=>momBlocks,setDay:d=>{day=d},setMom:v=>{mom=v},setDry:v=>{dry=v}}';
+    +'setL:v=>{laundryData=v},getL:()=>laundryData,setB:v=>{momBlocks=v},getB:()=>momBlocks,setDay:d=>{day=d},setMomTick:v=>{_rtMomTick=v}'+(opts.startAt?',laundryStartAsk,laundryStartAnswer,laundryStartEarlier,laundryStartAskHTML,askId:()=>_lsaId':'')+'}';
   let mom=true,dry=false;
   const env={db,HA_LS:{setItem(){}},KID_NAME:{taylor:'Taylor'},cap:s=>s,day:'friday',_todayDay:'friday',momHere:()=>L.__mom(),_lbWrite:()=>!L.__dry(),
     mwTodayIso:()=>ISO,_lbNowMin:()=>600,laundryAwayRemember:(id,l)=>{ctx.away=(ctx.away||[]).concat(id)},
-    rtCfgSet:(slot,kid,i,f,v)=>ctx.cfg.push([i,f,v]),cpSlot:'chores',cpKid:'taylor',renderAll:()=>{},gbList:()=>ctx.gbl,laundryData:{},momBlocks:{}};
+    rtCfgSet:(slot,kid,i,f,v)=>ctx.cfg.push([i,f,v]),_rtMomTick:false,document:opts.doc,cpSlot:'chores',cpKid:'taylor',renderAll:()=>{},gbList:()=>ctx.gbl,laundryData:{},momBlocks:{}};
   const L=new Function(...Object.keys(env),code)(...Object.values(env));
   L.__mom=()=>mom;L.__dry=()=>dry;L.setMomFlag=v=>{mom=v};L.setDryFlag=v=>{dry=v};
   return {L,ctx};
@@ -97,5 +98,46 @@ eq(src.indexOf("cpLaundryMoveHTML(st,i)")>0&&src.indexOf("cpGrabLaundryHTML(st,i
   eq(L.gbLaundryMove('lucy',1),'fNew','grab putaway → newest fold load'); eq(L.getL().fNew,undefined,'…put away'); }
 eq(/function gbInstant\([^\n]*gbLaundryMove\(kid,i\)/.test(src)&&/function gbMarkDone\([^\n]*gbLaundryMove\(kid,i\)/.test(src),true,'gbInstant + gbMarkDone call gbLaundryMove');
 eq(/function gbLetGo\([^\n]*gbLaundryMove/.test(src),false,'let go moves nothing');
+
+
+// ── hole 7: "In the washer now?" ──
+function fakeDoc(){ const els={}; return {els,body:{appendChild:e=>{els[e.id]=e;}},createElement:()=>({id:'',innerHTML:''}),getElementById:id=>els[id]||null}; }
+const START={label:'Start a load of laundry',laundry:true}, SK='week2_friday_taylor_mstep8', LID='lk_'+SK;
+{ const doc=fakeDoc(); const {L,ctx}=mk({startAt:true,doc}); L.setL({});
+  L.laundryKidHook('taylor',START,SK,true);
+  eq(L.askId(),LID,'start step asks about the new load');
+  const h=doc.els['lsa-wrap'].innerHTML; eq(/In the washer now\?/.test(h),true,'asks "In the washer now?"');
+  eq(/>Yes</.test(h)&&/>Earlier…</.test(h),true,'[Yes] [Earlier…]');
+  eq(/answer|spell/i.test(h.replace(/laundryStartAnswer/g,'')),false,'kid-safe text');
+  const n=ctx.writes.length; const t=L.laundryStartAnswer(null);
+  eq(L.getL()[LID].ts,t,'Yes: ts = the answer time'); eq(ctx.writes.slice(n).map(w=>w[0]+' '+w[1]),['set laundry/'+LID+'/ts'],'Yes: one targeted ts write');
+  eq(doc.els['lsa-wrap'].innerHTML,'','prompt closes'); eq(L.askId(),null,'asked once');
+  eq(L.laundryStartAnswer(null),null,'a second answer does nothing'); }
+// Earlier… opens a time picker; the ts is set from it
+{ const doc=fakeDoc(); const {L,ctx}=mk({startAt:true,doc}); L.setL({});
+  L.laundryKidHook('taylor',START,SK,true); L.laundryStartEarlier(true);
+  const h=doc.els['lsa-wrap'].innerHTML; eq(/type="time"/.test(h)&&/What time did it go in\?/.test(h),true,'Earlier… opens a time picker');
+  const now=Date.parse('2026-10-16T09:39:00'); const n=ctx.writes.length;
+  const t=L.laundryStartAnswer('08:45',now); eq(t,Date.parse('2026-10-16T08:45:00'),'Earlier: ts = 8:45 today');
+  eq(L.getL()[LID].ts,t,'Earlier: load clock moved'); eq(ctx.writes.slice(n),[['set','laundry/'+LID+'/ts',t]],'Earlier: laundry/<id>/ts only'); }
+// a time still to come counts as now
+{ const doc=fakeDoc(); const {L}=mk({startAt:true,doc}); L.setL({}); L.laundryKidHook('taylor',START,SK,true);
+  const now=Date.parse('2026-10-16T09:39:00'); eq(L.laundryStartAnswer('11:00',now),now,'future time → now'); }
+// Mom moved it on before the answer → answer dropped
+{ const doc=fakeDoc(); const {L,ctx}=mk({startAt:true,doc}); L.setL({}); L.laundryKidHook('taylor',START,SK,true); L.getL()[LID].stage='dryer';
+  const n=ctx.writes.length; eq(L.laundryStartAnswer('08:45'),null,'moved-on load: answer dropped'); eq(ctx.writes.length,n,'…no write'); }
+// dry run: local only
+{ const doc=fakeDoc(); const {L,ctx}=mk({startAt:true,doc}); L.setL({}); L.setDryFlag(true); L.laundryKidHook('taylor',START,SK,true); L.laundryStartAnswer('08:45',Date.parse('2026-10-16T09:39:00')); eq(ctx.writes,[],'dry run: no write'); }
+// only laundry-start steps ask: not a stage move, not a plain chore, not a re-check of a load already there, not Mom's own tick, not another day
+{ const doc=fakeDoc(); const {L}=mk({startAt:true,doc}); L.setL(clone(pile()));
+  L.laundryKidHook('taylor',{label:'Move laundry',laundry:'dryer'},'k1',true); eq(L.askId(),null,'stage move: no question');
+  L.laundryKidHook('taylor',{label:'Make bed'},'k2',true); eq(L.askId(),null,'plain chore: no question');
+  L.laundryKidHook('taylor',START,'k3',false); eq(L.askId(),null,'uncheck: no question');
+  L.setMomTick(true); L.laundryKidHook('taylor',START,'k4',true); eq(L.askId(),null,"Mom's tick: no question"); L.setMomTick(false);
+  L.setDay('thursday'); L.laundryKidHook('taylor',START,'k5',true); eq(L.askId(),null,'other day: no question'); L.setDay('friday');
+  L.laundryKidHook('taylor',START,'k6',true); eq(L.askId(),'lk_k6','new start: question'); L.laundryStartAnswer(null);
+  L.laundryKidHook('taylor',START,'k6',true); eq(L.askId(),null,'load already there: no second question'); }
+// the hook calls the prompt only from KIDLAUNDRY's new-load branch
+eq(/laundryData\[id\]=\{label:[^\n]*\n[^\n]*\n[^\n]*laundryStartAsk\(id\)/.test(blk('KIDLAUNDRY')),true,'prompt sits right after the new-load write');
 
 console.log(fail?fail+' FAILED':'all pass');process.exit(fail?1:0);
