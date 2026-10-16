@@ -44,6 +44,7 @@ console.log("── wiring ──");
   ok("the same block clears `_dayDrop` on an unlocked card the pattern re-lays", /t\._dayDrop&&!locked\(t\)/.test(src.slice(ua, ub)) && /upd\[t\.id\+"\/_dayDrop"\]=null/.test(src.slice(ua, ub)));
   ok("…and counts it as a write through the same summary.unboxed", /_dayDrop[^\n]*summary\.unboxed\.push\(t\.id\)/.test(src.slice(ua, ub)));
   ok("the control lacks that too", CODE_OLD.indexOf("_dayDrop\"]=null") < 0);
+  ok("a desired card cloned from a live template is born in neither box (_rpPatternWant strips _dayDrop beside _eowOverflow)", /delete nt\._eowOverflow; delete nt\._dayDrop;/.test(src));
   ok("ceWalkApply still re-lays each walked-back subject (the 2026-08-16 rule)", /_wbSubs\.forEach\(sk=>[\s\S]*_gvRelaySubject\(ceEditKid,sk/.test(slice("ceWalkApply")));
 }
 
