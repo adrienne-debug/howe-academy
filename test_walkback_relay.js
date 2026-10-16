@@ -40,6 +40,10 @@ console.log("── wiring ──");
   ok("only an unlocked card (checked / claimed / started never change)", /t\._eowOverflow&&!locked\(t\)/.test(src.slice(ua, ub)));
   ok("reprojectSubjectWeek counts an unboxed card as a change to save", /\(\(r\.summary\.unboxed\|\|\[\]\)\.length\)/.test(slice("reprojectSubjectWeek")));
   ok("the control code really lacks the fix", CODE_OLD.indexOf("RPUNBOX") < 0 && CODE_OLD.indexOf("summary.unboxed.push") < 0 && CODE_OLD.indexOf("unboxed||[]") < 0);
+  // `_dayDrop` (the "Didn't fit today" box) is the sibling flag — same block, same shape (2026-10-15)
+  ok("the same block clears `_dayDrop` on an unlocked card the pattern re-lays", /t\._dayDrop&&!locked\(t\)/.test(src.slice(ua, ub)) && /upd\[t\.id\+"\/_dayDrop"\]=null/.test(src.slice(ua, ub)));
+  ok("…and counts it as a write through the same summary.unboxed", /_dayDrop[^\n]*summary\.unboxed\.push\(t\.id\)/.test(src.slice(ua, ub)));
+  ok("the control lacks that too", CODE_OLD.indexOf("_dayDrop\"]=null") < 0);
   ok("ceWalkApply still re-lays each walked-back subject (the 2026-08-16 rule)", /_wbSubs\.forEach\(sk=>[\s\S]*_gvRelaySubject\(ceEditKid,sk/.test(slice("ceWalkApply")));
 }
 
@@ -97,8 +101,9 @@ function world(o) {
   if (o.six === "box-saturday") tasks.push(ss(6, "saturday", "10:00 AM", { _eowOverflow: true }));
   else if (o.six === "box-friday") tasks.push(ss(6, "friday", "3:55 PM", { _eowOverflow: true }));   // the cap rule keeps a card's day
   else if (o.six === "friday") tasks.push(ss(6, "friday", "2:25 PM"));
+  else if (o.six === "drop-friday") tasks.push(ss(6, "friday", "2:25 PM", { _dayDrop: true }));   // the school-end guard dropped it for Friday (DAYDROP); 2:25 so the new 5, laid at the subject's slot, fits Thursday
   const checked = { [L(5)]: "02:34 PM Oct 12" };
-  if (o.six === "box-friday" && o.sixChecked) checked[L(6)] = "03:55 PM Oct 16";
+  if ((o.six === "box-friday" || o.six === "drop-friday") && o.sixChecked) checked[L(6)] = "03:55 PM Oct 16";
   const history = { [L(5)]: { id: L(5), lid: "L0005", day: "monday", ts: "02:34 PM Oct 12", week: WK, who: KID } };
   const done = { L0001: { day: "2026-09-15", src: "check", taskId: "2026d256_4196", ts: "03:33 PM Sep 15" }, L0004: { day: "2026-10-05", src: "check", taskId: L(4), ts: "11:29 AM Oct 5" }, L0005: { day: "2026-10-12", src: "check", taskId: L(5), ts: "02:34 PM Oct 12" } };
   const tree = { [WK]: { tasks: Object.fromEntries(tasks.map(t => [t.id, JSON.parse(JSON.stringify(t))])), checked: Object.assign({}, checked), history: JSON.parse(JSON.stringify(history)) },
@@ -231,6 +236,44 @@ console.log("\n── locked cards never change: a CHECKED boxed card keeps its 
   const tu = writesTo(w, WK + "/tasks")[0];
   ok("no write names 6", !tu || !Object.keys(tu.map).some(k => k.indexOf(L(6)) === 0), tu && Object.keys(tu.map));
   ok("5 still re-laid this week", card(w, 5) && card(w, 5).day === "thursday");
+}
+
+console.log("\n── the sibling flag: a `_dayDrop` card (the day's \"Didn't fit today\" box) the pattern wants is un-dropped the same way ──");
+{
+  const w = world({ six: "drop-friday" });
+  const out = await walkBack(w);
+  ok("6 keeps Friday and leaves the didn't-fit box (no _dayDrop)", card(w, 6) && card(w, 6).day === "friday" && !card(w, 6)._dayDrop, card(w, 6));
+  ok("5 lands Thursday ahead of it", card(w, 5) && card(w, 5).day === "thursday");
+  const tu = writesTo(w, WK + "/tasks")[0];
+  ok("the targeted write carries <id>/_dayDrop: null (and no day write — it never moved)", tu && tu.map[L(6) + "/_dayDrop"] === null && tu.map[L(6) + "/day"] === undefined, tu && Object.keys(tu.map));
+  ok("the server copy of 6 lost the flag", srv(w, 6) && !srv(w, 6)._dayDrop && srv(w, 6).day === "friday", srv(w, 6));
+  ok("summary.unboxed names it (once)", out && out.unboxed.filter(id => id === L(6)).length === 1, out && out.unboxed);
+  ok("6 carries neither flag, in memory and on the server", !card(w, 6)._eowOverflow && !srv(w, 6)._eowOverflow && !srv(w, 6)._dayDrop);
+  // (not asserted: the NEW 5 — with this harness's empty generator, _rpPatternWant clones it from live card 6 and that
+  //  clone strips `_eowOverflow` but not `_dayDrop` (RPPAT, index.html "delete nt._eowOverflow"); found 2026-10-15, left alone)
+  // the old code: moved / kept with the flag still on = the same ghost `_eowOverflow` had
+  const o = world({ six: "drop-friday", old: true });
+  const oo = await walkBack(o);
+  ok("old code: 6 keeps `_dayDrop` (ghost in the didn't-fit box) and nothing reports it", card(o, 6) && card(o, 6)._dayDrop === true && (!oo || !oo.unboxed || oo.unboxed.length === 0), [card(o, 6), oo && oo.unboxed]);
+}
+{
+  // locked never changes: a CHECKED `_dayDrop` card keeps its flag and is not written
+  const w = world({ six: "drop-friday", sixChecked: true });
+  await walkBack(w);
+  ok("checked `_dayDrop` 6 untouched (still flagged, still Friday)", card(w, 6) && card(w, 6)._dayDrop === true && card(w, 6).day === "friday", card(w, 6));
+  const tu = writesTo(w, WK + "/tasks")[0];
+  ok("no write names 6", !tu || !Object.keys(tu.map).some(k => k.indexOf(L(6)) === 0), tu && Object.keys(tu.map));
+  ok("5 still re-laid this week", card(w, 5) && card(w, 5).day === "thursday");
+}
+{
+  // un-drop only → the save still happens (the count term)
+  const w = world({ six: "drop-friday" });
+  const five = ss(5, "thursday", "10:55 AM"); w.env.weekData.tasks = w.env.weekData.tasks.filter(t => t.id !== L(5)).concat([five]); w.db.tree[WK].tasks[L(5)] = JSON.parse(JSON.stringify(five));
+  delete w.env.checked[L(5)]; delete w.db.tree[WK].checked[L(5)]; delete w.env.currData.done[KID][SK].L0005;
+  let out = null; w.env.reprojectSubjectWeek(KID, SK, "relay", { then: v => { out = v; } }); await new Promise(r => setTimeout(r, 5));
+  const tu = writesTo(w, WK + "/tasks");
+  ok("un-drop-only re-lay: one update, containing the flag write", tu.length === 1 && tu[0].map[L(6) + "/_dayDrop"] === null, tu.map(e => Object.keys(e.map)));
+  ok("summary counts it (added 0, moved 0, unboxed 1)", out && out.added.length === 0 && out.moved.length === 0 && out.unboxed.length === 1, out);
 }
 
 console.log("\n── ghost rule F: an unbox write for a card not on the server is dropped, never recreating it ──");
