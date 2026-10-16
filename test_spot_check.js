@@ -21,7 +21,7 @@ let pass=0, fail=0; const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n)
 function slice(name){ const sig="function "+name+"("; const i=src.indexOf(sig); if(i<0) throw new Error("not found: "+name); let d=0; for(let k=src.indexOf("{",i);k<src.length;k++){ if(src[k]==="{")d++; else if(src[k]==="}"){ d--; if(d===0) return src.slice(i,k+1);} } throw new Error("unbalanced: "+name); }
 const cut=(a,b)=>{ const i=src.indexOf(a), j=src.indexOf(b,i); if(i<0||j<0) throw new Error("missing "+a); return src.slice(i,j); };
 const SP=cut("// SPOTCHECK_START","// SPOTCHECK_END"), CU=cut("// CHOREUNDO_START","// CHOREUNDO_END"), WAVE=cut("// WAVE_START","// WAVE_END"), LCONST=cut("const LAUNDRY_STAGES=","const LAUNDRY_STALE_MIN");
-const NAMES=["toggleRtStep","toggleMorningStep","rlogAppend","bankDirect","bankDirectRemove","laundryAdvance","laundryAdvanceLabel","laundrySince","laundryT",
+const NAMES=["toggleRtStep","toggleMorningStep","slBefore","slSaveChanged","rlogAppend","bankDirect","bankDirectRemove","laundryAdvance","laundryAdvanceLabel","laundrySince","laundryT",
   "momBlockKey","momBlockFor","momBlocksOnValue","_lbWrite","_lbQ","laundryBlockDone","laundryKidHook","laundryStarts","laundryStartGuess","laundryKidId","laundryLooseWord","mStepDoneOn","rtDoneOn","rtDueOrLate","rtComplete"];
 const ISO="2026-10-15";
 
