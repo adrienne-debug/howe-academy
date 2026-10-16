@@ -38670,7 +38670,7 @@ function planMaterialize(kid,sk,form,opts){
   // predicted it exactly) — plan-backed placement reads done BY LID and cannot.
   // A pages subject with no tpw has no cadence to project; it stays on cbMaterialize.
   if(!(f.mode==="timesPerWeek"||f.mode==="targetDate"||(f.mode==="pages"&&parseInt(f.tpw,10)>0))) return null;
-  const rows=cbFutureRows(kid,sk,f.startDate); const ex=cbExtendInfo(kid,f.startDate);   // 🗓 Start on
+  const rows=cbFutureRows(kid,sk,f.startDate); const ex=cbExtendInfo(kid,f.startDate,sk);   // COOPEXT: sk   // 🗓 Start on
   const blocked={};   // alternation groups retired 2026-09-11 — a 🛤 multiple card is how two subjects share a rhythm now
   const capMin=cbDayCap(kid); const today=(typeof cbPlanTodayISO=='function')?cbPlanTodayISO():cbTodayISO(); const min=s.minutes||20;   // 🌅
   // Content: what cbRemainingContent says is left (list minus done, today-cell rule), mapped
@@ -39049,7 +39049,11 @@ function cbFutureRows(kid,sk,startISO){
 }
 
 // Extension anchor: the grid's last row + last week number, for growing past the end.
-function cbExtendInfo(kid,startISO){
+// COOPEXT (her ask 2026-10-15, the Builder co-op quirk): `sk` lets the extension's off-check ask the same
+// co-op question cbFutureRows asks of existing rows (coopBlocksBase) — without it a kid's FIRST build, and
+// any rebuild that grew past the grid's end, laid Mom-required lessons on co-op days (Taylor's Saxon, 10/2).
+function cbExtendInfo(kid,startISO,sk){
+  const _coopOff=ds=>!!(sk&&typeof coopBlocksBase==="function"&&coopBlocksBase(kid,ds,sk));   // COOPEXT
   const lessons=((currData||{}).lessons||{})[kid]||{};
   let lastDayNum=0,lastDate="",lastWeekLabel="";
   for(const dnStr of Object.keys(lessons)){
@@ -39064,14 +39068,14 @@ function cbExtendInfo(kid,startISO){
     const st=(startISO&&/^\d{4}-\d{2}-\d{2}$/.test(startISO))?startISO:((typeof cbPlanTodayISO=="function")?cbPlanTodayISO():cbTodayISO());
     const d0=_cbParseDate(st); const monday=d0.getDay()===1; d0.setDate(d0.getDate()-1);
     return {lastDayNum:0,lastDate:_cbISO(d0),lastWeekNum:monday?0:1,lastWeekLabel:monday?"":"Wk 1",synthetic:true,
-      isOff:ds=>!!(ds<st||smapIsKidOff(kid,ds)||schedOvKidOff(kid,ds))};
+      isOff:ds=>!!(ds<st||smapIsKidOff(kid,ds)||schedOvKidOff(kid,ds)||_coopOff(ds))};
   }
   let lastWeekNum=0;
   for(const wk of Object.keys(((currData||{}).weekDays||{})[kid]||{})){
     const m=wk.match(/Wk\s*(\d+)/i); if(m) lastWeekNum=Math.max(lastWeekNum,parseInt(m[1]));
   }
   return {lastDayNum,lastDate,lastWeekNum,lastWeekLabel,
-    isOff:ds=>!!((startISO&&ds<startISO)||smapIsKidOff(kid,ds)||schedOvKidOff(kid,ds))};   // 🗓 days before Start on are off for this build
+    isOff:ds=>!!((startISO&&ds<startISO)||smapIsKidOff(kid,ds)||schedOvKidOff(kid,ds)||_coopOff(ds))};   // 🗓 days before Start on are off for this build
 }
 
 // Snapshot of a subject's cells vs the kid's real position, for rebuild hygiene.
@@ -39704,7 +39708,7 @@ function cbBuildCfg(){
   const kid=cbKid, sk=cbSubjKey, f=cbForm;
   const s=currData.subjects[kid][sk];
   const cfg={sk,minutes:s.minutes||20,mode:f.mode,allowedDays:f.allowedDays.slice(),
-    rows:cbFutureRows(kid,sk,f.startDate),dayCapMin:cbDayCap(kid),extend:cbExtendInfo(kid,f.startDate)};
+    rows:cbFutureRows(kid,sk,f.startDate),dayCapMin:cbDayCap(kid),extend:cbExtendInfo(kid,f.startDate,sk)};   // COOPEXT: sk
   // 🏫 COOPWEEKDAYS: per-week day sets over the rows + the extension's reach (800 days, cbMaterialize's own limit)
   try{ if(typeof subjDaysByWeek==="function"){ const _lo=(cfg.rows[0]||{}).date||(cfg.extend&&cfg.extend.lastDate)||cbTodayISO(); const _hiD=_cbParseDate((cfg.extend&&cfg.extend.lastDate)||(cfg.rows[cfg.rows.length-1]||{}).date||_lo); _hiD.setDate(_hiD.getDate()+800);
     const _m=subjDaysByWeek(kid,{allowedDays:cfg.allowedDays,noCoopDays:s.noCoopDays},_lo,_cbISO(_hiD)); if(_m) cfg.daysByWeek=_m; } }catch(e){}
