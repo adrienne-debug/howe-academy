@@ -92,7 +92,7 @@ console.log("Dry run / no db / wiring");
   ok("strip shows the row under Start a load", /wtRowHTML\(who\)/.test(fn("momDayStripHTML")));
   ok("no kid pieces: Kids' Corner, step lists, routine log untouched", !/wtBoxHTML/.test(src)&&!/wtOneoffSteps/.test(src)&&!/oneoff/.test(src)&&!/routineLog/.test(BLOCK));
   ok("Laundry card draws the bin chip and the wet trail", /wash today/.test(fn("mdCardLaundry"))&&/LAUNDRY_WET_STAGES/.test(fn("mdCardLaundry")));
-  ok("the schedule rows know a prewash; the NOW-card nudges are untouched (renderMomsDay byte-guarded elsewhere)", (src.match(/l\.stage!=="washer"&&l\.stage!=="dryer"&&l\.stage!=="prewash"/g)||[]).length===1&&(src.match(/if\(!l\|\|\(l\.stage!=="washer"&&l\.stage!=="dryer"\)\) return;/g)||[]).length===2);
+  ok("the schedule rows know a prewash; the NOW nudge + badge do too (LAUNDRY_NUDGE 2026-10-15, test_laundry_nudges.js)", (src.match(/l\.stage!=="washer"&&l\.stage!=="dryer"&&l\.stage!=="prewash"/g)||[]).length===1&&/if\(l\.stage==="washer"\|\|l\.stage==="prewash"\) return mins>=laundryT\("wash"\)/.test(src)&&!/if\(!l\|\|\(l\.stage!=="washer"&&l\.stage!=="dryer"\)\) return;/.test(src));
   ok("no 🔀 in index.html", src.indexOf("🔀")<0);
 }
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

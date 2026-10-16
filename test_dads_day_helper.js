@@ -177,7 +177,9 @@ ok("Dad's Day draws it under the helper card", /helperDadCardHTML\(\); \}catch\(
   ok("Start a load from his Day writes by:\"dad\"", run(src, "dad").by === "dad");
   ok("Mom's Start a load writes exactly what origin/main wrote (no by)", !("by" in run(src)) && (!old || JSON.stringify(Object.keys(run(src))) === JSON.stringify(Object.keys(run(old)))));
 }
-if (old) ok("Mom's lane is byte-identical: momAgendaHtml · momSchedPrep · momSchedHouse · renderMomsDay (momSchedLaundry has its own test — LAUNDRY_WHEN changes it on purpose)", ["momAgendaHtml", "momSchedPrep", "momSchedHouse", "renderMomsDay", "mpSchTasks", "mpSchAgendaHTML"].every(n => sliceFrom(src, n) === sliceFrom(old, n)));
+// LAUNDRY_NUDGE (2026-10-15, hole 3) rewrites renderMomsDay's 🔴 NOW laundry rows on purpose — test_laundry_nudges.js covers them.
+const unnudge = s => String(s).replace(/  \/\/ Load sitting in the washer[\s\S]*?(?=  \/\/ Bills that can't wait)/, "  /*laundry nudge*/\n");
+if (old) ok("Mom's lane is byte-identical: momAgendaHtml · momSchedPrep · momSchedHouse · renderMomsDay (momSchedLaundry has its own test — LAUNDRY_WHEN changes it on purpose)", ["momAgendaHtml", "momSchedPrep", "momSchedHouse", "renderMomsDay", "mpSchTasks", "mpSchAgendaHTML"].every(n => unnudge(sliceFrom(src, n)) === unnudge(sliceFrom(old, n))));
 
 console.log("D — a card Mom sent him");
 H = helpers({}, { l_math: { at: 1, who: "lucy", sk: "math" } });
