@@ -1,6 +1,7 @@
 /* 🧺 LAUNDRY_NUDGE — the 🔴 NOW laundry nudges + Home Base badge (laundry audit 2026-10-15, hole 3).
  * A 💦 load in its prewash nudges like the washer; a fold pile nudges after N hours (settings/laundryTimes/foldHrs,
- * default 3). Each button is laundryAdvance.   run: node test_laundry_nudges.js */
+ * default 3). Hole 9: a load in the 💦 wash-today bin nudges from ts + 14 h on Mom's AND Dad's Day.
+ * Each button is laundryAdvance.   run: node test_laundry_nudges.js */
 const fs=require("fs"), path=require("path"), vm=require("vm");
 const src=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
 let pass=0, fail=0; const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  ("+JSON.stringify(x)+")":"")); } };
@@ -82,6 +83,29 @@ console.log("── the setting ──");
   T.ctx.inputs["laundry-t-foldhrs"]={value:"abc"}; T.run("laundryTimesSave()");
   ok("nonsense keeps the last good hours", T.run("laundryFoldHrs()")===4);
 }
+console.log("── hole 9: the 💦 wash-today bin nags from ts + 14 h ──");
+{ const T=mk();
+  const B=new Date(2026,9,14,19,40,0).getTime();   // Wed 7:40 PM: 💦 Wet or soiled → bin
+  T.ctx.laundryData={s:{label:"💦 Sheets (king) · 7:40 AM",stage:"bin",ts:B,by:"mom",wet:true}};
+  ok("the same evening and overnight: no nudge (13 h 59 = Thu 9:39 AM)", kinds(T,B+60*MIN)===""&&kinds(T,B+839*MIN)==="");
+  ok("Thu 9:40 AM (14 h): 💦 bin nudge", kinds(T,B+840*MIN)==="s:bin");
+  ok("two days later it still nags", kinds(T,B+48*60*MIN)==="s:bin");
+  const row=T.run("laundryNudgeRowHTML(laundryNudgeList("+(B+840*MIN)+")[0])");
+  ok("'💦 <load> is still in the wash-today bin — start the prewash?' (no doubled 💦)", /💦 <b>Sheets \(king\) · 7:40 AM<\/b> is still in the wash-today bin — start the prewash\?/.test(row)&&!/💦 <b>💦/.test(row), row);
+  ok("[🫧 Start prewash] calls laundryAdvance (bin → prewash, the existing path)", /onclick="laundryAdvance\('s'\)"[^>]*>🫧 Start prewash<\/button>/.test(row), row);
+  ok("Mom's Day 🔴 NOW and the badge take it (same list)", T.run("laundryNudgeList("+(B+840*MIN)+").length")===1&&badge(T)==="remind:wash_s_bin_"+B);
+  // Dad's Day: the bin one only
+  T.ctx.laundryData.f={label:"Towels",stage:"fold",ts:B};
+  T.ctx.laundryData.w={label:"Darks",stage:"washer",ts:B};
+  ok("Mom's list at Thu 9:40 has bin + fold + washer", kinds(T,B+840*MIN)==="s:bin,f:fold,w:washer");
+  const dad=T.run("laundryBinNowHTML("+(B+840*MIN)+")");
+  ok("Dad's Day box: 🔴 LAUNDRY NOW with the bin row only", /🔴 LAUNDRY NOW/.test(dad)&&/still in the wash-today bin/.test(dad)&&!/fold pile|before it sours/.test(dad), dad);
+  ok("…and its button is laundryAdvance too", /onclick="laundryAdvance\('s'\)"/.test(dad));
+  ok("Dad's Day box is empty before 14 h", T.run("laundryBinNowHTML("+(B+839*MIN)+")")==="");
+  T.ctx.laundryData.s.stage="prewash"; T.ctx.laundryData.s.ts=B+840*MIN;
+  ok("once the prewash starts the bin nudge is gone (and the washer clock takes over)", T.run("laundryBinNowHTML("+(B+841*MIN)+")")===""&&!/s:bin/.test(kinds(T,B+841*MIN)));
+}
+ok("renderDadsDay draws the bin box near the top, beside 🔴 KITCHEN NOW", /function renderDadsDay\(el\)\{[\s\S]*?🔴 KITCHEN NOW[\s\S]*?try\{ h\+=laundryBinNowHTML\(\); \}catch\(e\)\{\}[\s\S]*?try\{ h\+=helperDadCardHTML\(\); \}/.test(src));
 console.log("── no new write paths ──");
 ok("the nudge block writes nothing (no db, no set/update/remove)", !/db\.|\.set\(|\.update\(|\.remove\(/.test(nudge));
 ok("renderMomsDay's old washer||dryer-only filter is gone", !/l\.stage!=="washer"&&l\.stage!=="dryer"\)\) return;/.test(src));
