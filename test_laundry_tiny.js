@@ -8,7 +8,10 @@
 const fs=require("fs"), path=require("path"), vm=require("vm");
 const src=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
 let pass=0, fail=0; const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  ("+JSON.stringify(x).slice(0,500)+")":"")); } };
-const fn=name=>{ const i=src.indexOf("function "+name+"("); if(i<0) throw new Error("missing "+name); return src.slice(i,src.indexOf("\n}",i)+2); };
+const fn=name=>{ const i=src.indexOf("function "+name+"("); if(i<0) throw new Error("missing "+name);
+  const line=src.slice(i,src.indexOf("\n",i)); let d=0; for(const ch of line){ if(ch==="{") d++; else if(ch==="}") d--; }
+  if(d===0&&/\}\s*(\/\/.*)?$/.test(line)) return line;   // a one-line function ends on its own line (after MOMBLOCKS_DAYROLL a `let` follows _lbWrite / momBlocksOnValue — never over-read into it)
+  return src.slice(i,src.indexOf("\n}",i)+2); };
 const ISO=(()=>{ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
 
 function mkDel(o){
