@@ -12965,6 +12965,7 @@ function momDayStripHTML(iso,today,who){
   const list=P.list;
   const dueIn=function(sl){ return P.due(today).filter(id=>mcSlotOf(list[id])===sl); };
   const slotNow=mpSlotNow();
+  let spR=null; if(!P.dad){ try{ spR=(typeof spMomRow==="function")?spMomRow():null; }catch(e){} }   // 🔎 SPOTCHECK: her derived Afternoon row (never in momChores)
   const colHd=(ic,nm,extra)=>'<div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:#6b6560;margin:0 0 7px">'+ic+' '+nm+(extra||'')+'</div>';
   let h='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
   h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:'+P.hd+';color:#fff;font-weight:800;font-size:13px"><span>🏡</span> My day'
@@ -12975,15 +12976,17 @@ function momDayStripHTML(iso,today,who){
   h+='<div>';
   h+='<div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap">';
   MC_SLOT_ORDER.forEach(sl=>{
-    const S=MC_SLOTS[sl], ids=dueIn(sl), dn=ids.filter(id=>P.doneOn(iso,id)).length, on=slotNow===sl;
-    const all=ids.length&&dn===ids.length;
+    const S=MC_SLOTS[sl], ids=dueIn(sl), on=slotNow===sl, sp=(sl==="afternoon"&&spR)?1:0;
+    const dn=ids.filter(id=>P.doneOn(iso,id)).length+(sp&&spR.done?1:0), tot=ids.length+sp;
+    const all=tot&&dn===tot;
     h+='<span onclick="mpSetSlot(\''+sl+'\')" style="cursor:pointer;flex:1;text-align:center;padding:5px 6px;border-radius:10px;border:1.5px solid '+(on?'#2B7A78':'var(--border)')+';background:'+(on?'#e6f4f3':'#fff')+';font-size:11px;font-weight:'+(on?'800':'600')+';color:'+(on?'#2B7A78':'#6b7280')+'">'+S.ic+' '+S.nm
-      +'<div style="font-size:10px;font-weight:800;color:'+(all?'#16a34a':(on?'#2B7A78':'#9ca3af'))+'">'+dn+'/'+ids.length+'</div></span>';
+      +'<div style="font-size:10px;font-weight:800;color:'+(all?'#16a34a':(on?'#2B7A78':'#9ca3af'))+'">'+dn+'/'+tot+'</div></span>';
   });
   h+='</div>';
   const cur=dueIn(slotNow);
   h+=cur.length?cur.map(id=>_mcRow(id,list[id],iso,P.dad?P:undefined)).join('')
     :P.emptySlot(slotNow);
+  if(slotNow==="afternoon"&&spR&&typeof spMomRowHTML==="function") h+=spMomRowHTML(spR);   // 🔎 SPOTCHECK
   h+='</div>';
 
   // ── column 2: everything with no particular time
@@ -13827,6 +13830,13 @@ function mdCardChoreLedger(){
 //   shares this code; Adrienne turns it on for Howe). When on, ✗ Not done does the undo above (the item's own stars back) AND
 //   bankDirect(kid,−pts,"🔎 Spot check: not done — <item>"); the confirm names both amounts; the result and 📜 record carry pen.
 //   Writes: settings/spotCheck/penalty/on · settings/spotCheck/penalty/pts set; bank/<kid>/adjustments/<id> (bankDirect).
+//   🔎 on Mom's afternoon checklist (her ask 2026-10-15: "make the spot check go to Mom's afternoon checklist and say spot
+//   check"): a DERIVED row in the ☀️/🌤/🌙 strip of her 🏡 My day, Afternoon group — never stored in momChores, so nothing to
+//   delete or manage (and it is not in the ✎ Edit list). School days only (Mom's Day's own test: a DAYS day, no break), and only
+//   while the draw is on. Before the draw: "🔎 Spot check — tap to draw" (tap = 🎲 Draw now for every kid, then scroll to the
+//   card). After: "🔎 Spot check — N to check" (tap scrolls). Done (✓, counted in her Afternoon n/total) when every pick today is
+//   resolved. No write of its own. Not on the General tablet's Mom lane: that is a shared wall tablet the kids use, and spot
+//   check is silent on the kid's side.
 const SP_MIN=2, SP_MAX=5;
 let spotData={}, spRecOpen="", _spDrawn={}, spotSet={}, spSetOpen=false;
 try{ spotData=JSON.parse(HA_LS.getItem('ha_spot')||"{}")||{}; }catch(e){}
@@ -13955,6 +13965,28 @@ function spResolve(kid,j,r){
   if(r==="no"){ l.n=Math.min(SP_MAX,l.n+1); l.types[p.type||"chore"]=true; _spSetLevel(kid,l); }
   if(typeof _cuRe==="function") _cuRe();
   return true;
+}
+// 🔎 the derived afternoon row → null (no row) or {drawn,todo,done}
+function _spSchoolDay(){ try{ const t=(typeof mdTodayName==="function")?mdTodayName():_todayDay; if(typeof DAYS==="undefined"||DAYS.indexOf(t)<0) return false; return !(typeof scheduleBreakToday==="function"&&scheduleBreakToday()); }catch(e){ return false; } }
+function spMomRow(){
+  if(!_spMomOk()||typeof _todayDay!=="string"||!spOn()||!_spSchoolDay()) return null;
+  const iso=_spIso(); let drawn=false, todo=0;
+  ROSTER.forEach(function(k){ const r=spDay(k,iso), p=(r&&r.picks)||[], res=(r&&r.results)||{}; if(p.length) drawn=true; p.forEach(function(q,j){ if(!res[j]) todo++; }); });
+  return {drawn:drawn,todo:todo,done:drawn&&!todo};
+}
+function _spScroll(){ try{ setTimeout(function(){ const el=document.getElementById("sp-card"); if(el&&el.scrollIntoView) el.scrollIntoView({behavior:"smooth",block:"start"}); },60); }catch(e){} }
+function spMomRowTap(){
+  const r=spMomRow(); if(!r) return false;
+  if(!r.drawn){ const _pd=day; try{ day=_todayDay; ROSTER.forEach(function(k){ spEnsureDraw(k,true); }); } finally { day=_pd; } }   // = 🎲 Draw now
+  if(typeof _cuRe==="function") _cuRe();
+  _spScroll(); return true;
+}
+function spMomRowHTML(r){
+  if(!r) return "";
+  const done=r.done, lbl=!r.drawn?"🔎 Spot check — tap to draw":done?"🔎 Spot check — all checked":"🔎 Spot check — "+r.todo+" to check";
+  return '<div onclick="spMomRowTap()" style="cursor:pointer;display:flex;align-items:center;gap:9px;padding:7px 9px;background:'+(done?'#f0fdf4':'#eff6ff')+';border:1.5px solid '+(done?'#86efac':'#bfdbfe')+';border-radius:9px;margin-bottom:5px">'
+    +'<div style="width:19px;height:19px;border-radius:50%;border:2px solid '+(done?'#16a34a':'#1e3a8a')+';background:'+(done?'#16a34a':'#fff')+';color:'+(done?'#fff':'transparent')+';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;font-weight:700">'+(done?'✓':'')+'</div>'
+    +'<div style="flex:1;min-width:0;font-size:12.5px;font-weight:600;color:'+(done?'#6b6560':'#1e3a8a')+';'+(done?'text-decoration:line-through':'')+'">'+lbl+'</div></div>';
 }
 function spRecToggle(kid){ spRecOpen=(spRecOpen===kid)?"":kid; if(typeof _cuRe==="function") _cuRe(); }
 // → [{iso,label,type,r,n}] newest first

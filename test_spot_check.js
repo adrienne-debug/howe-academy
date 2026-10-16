@@ -11,7 +11,8 @@
  * cleared); (5) the record; (6) Mom gate — nothing drawn, written or rendered off Mom mode; (7) wiring;
  * (8) ⚙ what the draw picks from (her ask 2026-10-15: "I want the draw to only include school cards if that option is picked, so
  * option settings would be great") — settings/spotCheck/types, missing = all on; (9) −pts if not done (her ask: "the option to
- * take off -100 because it's the rules if not done") — settings/spotCheck/penalty {on,pts}, missing = off.
+ * take off -100 because it's the rules if not done") — settings/spotCheck/penalty {on,pts}, missing = off; (10) 🔎 on Mom's
+ * afternoon checklist (her ask: "make the spot check go to Mom's afternoon checklist and say spot check") — a derived row.
  *                                                                                                 run: node test_spot_check.js
  */
 const fs=require("fs"), path=require("path"), vm=require("vm");
@@ -45,6 +46,7 @@ function mk(o){
     momHere:()=>!o.notMom&&!o.kidTick, _kioskD:()=>!!o.dad, tab:o.tab||"moms-plan", renderMomsPlan:()=>{}, renderAll:()=>{}, mwToast:t=>toasts.push(t), gwShowToast:t=>toasts.push(t), confirm:t=>{ confirms.push(t); return o.confirm!==false; }, dbg:()=>{},
     document:{getElementById:id=>id==="dlg-uncheck"?unmark:({})}, unmark,
     weekData:{tasks:o.tasks||[]}, checked:o.checked||{}, histState:o.hist||{}, effectiveDay:t=>t.day, _ckLogTodayTs:()=>true, needsVerify:t=>!!t.verify,
+    DAYS:["monday","tuesday","wednesday","thursday","friday","saturday"], mdTodayName:()=>o.dn||"thursday", scheduleBreakToday:()=>o.brk||null, setTimeout:f=>f(),
     pendingId:null, pendingClaimMode:false, rvSchoolEndMin:()=>o.endMin!=null?o.endMin:0, fromMin:m=>Math.floor(m/60)+":"+String(m%60).padStart(2,"0"),
     writes, toasts, tx, ls, confirms};
   vm.createContext(ctx);
@@ -235,5 +237,51 @@ console.log("(9) −pts if not done — settings/spotCheck/penalty, off unless s
   ok("the sheet: '✗ Not done also takes off [75] ⭐' with its switch", /spSetPenOn\(\)/.test(S)&&/✗ Not done also takes off/.test(S)&&/value="75"/.test(S)&&/spSetPenPts\(this\.value\)/.test(S), S);
   const n=mk({notMom:true}); ok("off Mom mode: the switch and the box do nothing", n.spSetPenOn()===false&&n.spSetPenPts(20)===false&&n.writes.length===0);
   const d=mk({dry:true}); d.spSetPenOn(); ok("?dryrun=1: the switch flips locally, nothing written", d.spPenalty().on&&d.writes.length===0);
+}
+console.log("(10) 🔎 Spot check on Mom's afternoon checklist — derived, never in momChores");
+{ const PICKS="spotData={lucy:{'"+ISO+"':{n:2,picks:[{k:'a',label:'A',type:'chore'},{k:'b',label:'B',type:'chore'}]}}}";
+  ok("off school days: no row (Sunday; a break day)", mk({dn:"sunday"}).spMomRow()===null&&mk({brk:{name:"Fall break"}}).spMomRow()===null);
+  ok("draw off (all switches off): no row", mk({set:{types:{chore:false,laundry:false,school:false}}}).spMomRow()===null);
+  ok("off Mom mode: no row", mk({notMom:true}).spMomRow()===null);
+  const b=mk(); kidTick(b,"chores",1);
+  const r0=b.spMomRow();
+  ok("before the draw: '🔎 Spot check — tap to draw', not done", r0&&!r0.drawn&&!r0.done&&/🔎 Spot check — tap to draw/.test(b.spMomRowHTML(r0))&&/onclick="spMomRowTap\(\)"/.test(b.spMomRowHTML(r0)), r0);
+  let scrolled=0; b.document.getElementById=id=>id==="sp-card"?{scrollIntoView:()=>{ scrolled++; }}:(id==="dlg-uncheck"?b.unmark:{});
+  b.writes.length=0;
+  ok("tap before the draw = 🎲 Draw now, then scrolls to the card", b.spMomRowTap()===true&&b.spDay("lucy",ISO)&&b.spDay("lucy",ISO).picks.length===1&&b.tx.length===1&&scrolled===1, b.tx);
+  ok("…its only write is the draw's own transaction (nothing to momChores)", b.writes.every(w=>w[0]==="tx"&&/^spotChecks\//.test(w[1])), b.writes);
+  const r1=b.spMomRow();
+  ok("after the draw: '🔎 Spot check — 1 to check'", r1.drawn&&r1.todo===1&&!r1.done&&/🔎 Spot check — 1 to check/.test(b.spMomRowHTML(r1)));
+  b.writes.length=0; b.tx.length=0; scrolled=0;
+  ok("tap after the draw only scrolls — no write, no redraw", b.spMomRowTap()===true&&scrolled===1&&b.writes.length===0&&b.tx.length===0);
+  const c=mk(); vm.runInContext(PICKS,c);
+  ok("two picks, none resolved: 2 to check", c.spMomRow().todo===2&&/2 to check/.test(c.spMomRowHTML(c.spMomRow())));
+  c.spResolve("lucy",0,"ok");
+  ok("one resolved: 1 to check, not done", c.spMomRow().todo===1&&!c.spMomRow().done);
+  c.spResolve("lucy",1,"no");
+  ok("every pick resolved (✓ or ✗): done ✓", (()=>{ const r=c.spMomRow(), H=c.spMomRowHTML(r); return r.done&&/✓/.test(H)&&/line-through/.test(H)&&/all checked/.test(H); })());
+  ok("the mid-day switch never removes the row while one type is on", mk({set:{types:{chore:false,laundry:false}}}).spMomRow()!==null);
+  // the real strip, with her own lists stubbed
+  const STRIP=slice("momDayStripHTML")+"\n"+slice("mcSlotOf");
+  const strip=(o,slot,mine)=>{ const x=mk(o); if(o.picks) vm.runInContext(o.picks,x);
+    Object.assign(x,{MC_SLOTS:{morning:{ic:"☀️",nm:"Morning"},afternoon:{ic:"🌤",nm:"Afternoon"},night:{ic:"🌙",nm:"Night"}},MC_SLOT_ORDER:["morning","afternoon","night"],mpSlotNow:()=>slot,
+      mdMine:who=>({dad:who==="dad",list:mine,doneOn:(i,id)=>!!mine[id].done,due:()=>Object.keys(mine),hd:"#000",manage:false,manageFn:"m",todoData:{},todoTog:"t",todoDel:"d",todoInp:"i",todoAdd:"a",emptySlot:()=>"EMPTY",addRow:()=>"",shop:()=>""}),
+      _mcRow:(id,c)=>"<row>"+c.label+"</row>",tdRunning:()=>[],laundryData:{},kitSettings:{},wtRowHTML:()=>""});
+    vm.runInContext(STRIP,x); return x; };
+  const MINE={w:{label:"Wipe counters",slot:"afternoon",done:true},m:{label:"Coffee",slot:"morning"}};
+  const s1=strip({picks:PICKS},"afternoon",MINE), H1=s1.momDayStripHTML(ISO,"thursday");
+  ok("strip, Afternoon: her own row + '🔎 Spot check — 2 to check'; tab counts it (1/2)", /<row>Wipe counters<\/row>/.test(H1)&&/🔎 Spot check — 2 to check/.test(H1)&&/🌤 Afternoon<div[^>]*>1\/2</.test(H1), H1.slice(0,3000));
+  vm.runInContext("spotData.lucy['"+ISO+"'].results={0:{r:'ok'},1:{r:'no'}}",s1); const H2=s1.momDayStripHTML(ISO,"thursday");
+  ok("all resolved: the tab reads 2/2 (done counts)", /🌤 Afternoon<div[^>]*>2\/2</.test(H2)&&/all checked/.test(H2));
+  const s2=strip({picks:PICKS},"morning",MINE), H3=s2.momDayStripHTML(ISO,"thursday");
+  ok("Morning showing: the row isn't in the list, but the Afternoon tab still counts it", !/🔎 Spot check —/.test(H3)&&/🌤 Afternoon<div[^>]*>1\/2</.test(H3)&&/☀️ Morning<div[^>]*>0\/1</.test(H3));
+  const s3=strip({dn:"sunday",picks:PICKS},"afternoon",MINE), H4=s3.momDayStripHTML(ISO,"sunday");
+  ok("not a school day: no row, the tab is her own 1/1", !/Spot check/.test(H4)&&/🌤 Afternoon<div[^>]*>1\/1</.test(H4));
+  const s4=strip({picks:PICKS},"afternoon",MINE), H5=s4.momDayStripHTML(ISO,"thursday","dad");
+  ok("Dad's My day: never", !/Spot check/.test(H5));
+  const s5=strip({picks:PICKS},"afternoon",{}), H6=s5.momDayStripHTML(ISO,"thursday");
+  ok("no afternoon chores of hers: her 'nothing set' prompt stays, the row sits under it", /EMPTY/.test(H6)&&/🔎 Spot check — 2 to check/.test(H6));
+  ok("never stored: the block writes nothing to momChores, and the row functions don't touch her lists", !/ref\(['"]momChores|ref\(['"]momday|mcAll\(|mcToggle|momdayData|momChoresData/.test(SP));
+  ok("not in the ✎ Edit list (momChoresCardHTML) nor the General tablet lane", !/spMomRow/.test(slice("momChoresCardHTML"))&&!/spMomRow|spotData/.test(slice("renderKioskPerson")));
 }
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
