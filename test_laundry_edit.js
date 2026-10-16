@@ -170,6 +170,32 @@ ok("the NOW nudge's dryer button reads Folded ✓ (and the washer's stays → Dr
   return i>0&&/\(l\.stage==="dryer"&&typeof LAUNDRY_FOLDED_BTN!=="undefined"\)\?LAUNDRY_FOLDED_BTN:laundryAdvanceLabel\(l\.stage\)/.test(seg); })());
 ok("LAUNDRY_FOLDED_BTN = 'Folded ✓'", /const LAUNDRY_FOLDED_BTN="Folded ✓";/.test(src));
 
+console.log("── (3) hole 8: Dad's load on Mom's schedule is information only ──");
+{ const T=mk({laundry:{dl:{label:"Towels",stage:"washer",ts:at(H(9,0)),by:"dad"}},nowMin:H(9,20)});
+  let S=T.sched();
+  ok("in the washer: the 🫧 started marker and ⏳ done ~9:50 (as before)", /🫧 <b>Towels<\/b> — in the washer · started 9:00 AM/.test(S)&&/⏳ <b>Towels<\/b> — done ~9:50 AM/.test(S), S);
+  T.ctx._nowM=H(10,0); S=T.sched();
+  ok("done: '✅ Towels is done in the washer · Dad's' — no question", /✅ <b>Towels<\/b> is done in the washer · Dad's/.test(S)&&!/Block out time/.test(S), S);
+  ok("…no How long, no Now / After / Not now, no button at all", !/lb-min-/.test(S)&&!/<button/.test(S)&&!/laundryBlockSet|laundryWhenToggle|laundryAdvance/.test(S), S);
+  ok("…and it holds none of her time", T.run("momBlockOpen()").length===0);
+  T.ctx.laundryData.dl.stage="dryer"; T.ctx.laundryData.dl.ts=at(H(10,0)); T.ctx._nowM=H(11,5); S=T.sched();
+  ok("the dryer: '✅ Towels is done in the dryer · Dad's', no button", /done in the dryer · Dad's/.test(S)&&!/<button/.test(S), S);
+  T.ctx.laundryData.dl.stage="fold"; T.ctx.laundryData.dl.ts=at(H(11,0)); S=T.sched();
+  ok("the fold pile: '🧺 Towels is in the fold pile · Dad's', no button", /🧺 <b>Towels<\/b> is in the fold pile · Dad's/.test(S)&&!/<button/.test(S), S);
+  ok("Mom's Day Laundry card keeps its buttons for Dad's load (✓ Put away, ↶, ✎, ✕)", /laundryAdvance\('dl'\)[^>]*>✓ Put away</.test(T.card())&&/laundryBack\('dl'\)/.test(T.card())&&/laundryEditLoad\('dl'\)/.test(T.card())&&/laundryDel\('dl'\)/.test(T.card()), T.card());
+}
+{ const T=mk({laundry:{ml:{label:"Sheets",stage:"washer",ts:at(H(9,0))},kl:{label:"Lucy started laundry",stage:"washer",ts:at(H(9,0)),by:"lucy"}},nowMin:H(10,0)});
+  const S=T.sched();
+  ok("Mom's own load and a kid's load still ask (Block out time? · Now)", (S.match(/Block out time to move it to the dryer\?/g)||[]).length===2&&/laundryBlockSet\('ml','washer','now'\)/.test(S)&&/laundryBlockSet\('kl','washer','now'\)/.test(S), S);
+}
+{ const T=mk({laundry:{dl:{label:"Towels",stage:"washer",ts:at(H(9,0)),by:"dad"}},blocks:{dl_washer:{iso:ISO,load:"dl",stage:"washer",label:"Towels",mins:5,at:"now",startMin:H(10,0)}},nowMin:H(10,2)});
+  const S=T.sched();
+  ok("a block she already picked for Dad's load is still drawn (it holds her time, so it is never hidden)", /🧺 Move to the dryer: <b>Towels<\/b>/.test(S)&&/laundryAdvance\('dl'\)/.test(S), S);
+}
+{ const T=mk({laundry:{dl:{label:"Towels",stage:"washer",ts:at(H(9,0))}},nowMin:H(10,0)}); T.run("laundryEditLoad('dl')"); T.fill("dl",{by:"dad"}); T.run("laundryEditSave('dl')");
+  ok("✎ Whose → Dad turns the question into information on her schedule", /done in the washer · Dad's/.test(T.sched())&&!/Block out time/.test(T.sched()), T.sched());
+}
+
 console.log("── laundry edit writes stay on laundry/<id> and momBlocks/<iso>/<key> ──");
 ok("LAUNDRYEDIT writes only through _lbWrite()", (LE.match(/db\.ref\(/g)||[]).length===1&&/if\(_lbWrite\(\)\) db\.ref\('laundry\/'\+id\)\.update\(up\)/.test(LE));
 ok("LAUNDRYEDIT never set()s a whole node", !/\.set\(/.test(LE));
