@@ -26,7 +26,7 @@ console.log("The tap");
   const k=mk({noMom:true}); ok("not Mom → nothing runs", k.mdKidTick("afternoon","lucy","saturday",0)===false&&k.calls.length===0);
 }
 console.log("The lock");
-{ const T=fn("toggleRtStep"); const toasts=[];
+{ const T=fn("toggleRtStep")+"\n"+fn("slBefore")+"\n"+fn("slSaveChanged"); /* SLTARGET helpers ride along */ const toasts=[];
   const run=(flag,avail)=>{ const ctx={console,Object,Array,String,Number,parseInt,isNaN,Math,JSON,Date,RegExp,Error,_rtMomTick:flag,rtStepAvail:()=>avail,rtAvailable:()=>avail,rtStepsFor:()=>[{label:"Pickup kitchen",pts:20,cad:"daily"}],mealOf:()=>"",gwShowToast:m=>toasts.push(m),rtFmtHour:h=>h+":00",rtAfternoonHour:()=>16,rtEveningHour:()=>18,routineEditable:()=>true,_rtBlockedToast:()=>{},activeWk:()=>"week26",day:"saturday",RT_ABBR:{afternoon:"a",chores:"c",evening:"e"},slState:{},zoneBonusFor:()=>0,choreVerifyOn:()=>false,bankDirect:()=>"bid1",bankDirectRemove:()=>{},nowTs:()=>"9:00 AM",rlogAppend:()=>{},laundryKidHook:()=>{},rtComplete:()=>false,rtBonusSettle:()=>{},rtDayBonusSettle:()=>{},rtOpen:{},rtOpenKey:()=>"k",rtDueOrLate:()=>true,sv:()=>{},db:null,obNoteSl:()=>{},renderAll:()=>{},mealCfg:()=>({}),mealHour:()=>12,renderSkylight:()=>{},tab:"moms-plan",document:{getElementById:()=>null},renderSchedule:()=>{}};
     vm.createContext(ctx); vm.runInContext(T,ctx); vm.runInContext('toggleRtStep("afternoon","lucy",0)',ctx); return ctx.slState["week26_saturday_lucy_astep0"]; };
   ok("a kid's tap before the afternoon opens: held (toast, no check)", run(false,false)===undefined&&/Afternoon unlocks/.test(toasts[0]));

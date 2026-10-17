@@ -1834,7 +1834,7 @@ function morningComplete(kid,d){
 function toggleMrOpen(kid){ mrOpen[kid]=(mrOpen[kid]!==false)?false:true; renderSkylight(); }
 function toggleMorningStep(kid,i){
   if(!routineEditable()){ _rtBlockedToast(); return; }
-  const wk=activeWk();
+  const wk=activeWk(), _slB=slBefore();   // SLTARGET
   const sk=wk+"_"+day+"_"+kid+"_mstep"+i, cur=slState[sk], now=!(cur&&cur.done);
   const _obPrev={}; _obPrev[sk]=cur||null; _obPrev[wk+"_"+day+"_"+kid+"_morning"]=slState[wk+"_"+day+"_"+kid+"_morning"]||null;   // 📮
   { const _st=morningStepsFor(kid)[i], _b0=_st?(_st.pts||0):0;
@@ -1861,8 +1861,7 @@ function toggleMorningStep(kid,i){
   rtBonusSettle("morning",kid,wk,day,_prevSlot,allDone,morningDueIdx(kid,day).length);
   if(typeof rtDayBonusSettle==="function") rtDayBonusSettle(kid,wk,day);
   if(allDone) mrOpen[kid]=false;   // auto-collapse when finished
-  sv(wk+"_sl",slState);
-  if(db) obNoteSl(wk,db.ref(wk+"/sl").set(slState),_obPrev);
+  slSaveChanged(wk,_slB);   // SLTARGET: only this tap's keys
   renderSkylight();
   if(tab==="schedule"){ const c=document.getElementById("content"); if(c) renderSchedule(c); }
 }
@@ -2252,7 +2251,7 @@ function toggleRtStep(slot,kid,i){
     return;
   }
   if(!routineEditable()){ _rtBlockedToast(); return; }  // stars ride this path too — a stray tap paid the wrong day
-  const wk=activeWk(), sk=wk+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i, cur=slState[sk], now=!(cur&&cur.done);
+  const wk=activeWk(), sk=wk+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i, cur=slState[sk], now=!(cur&&cur.done), _slB=slBefore();   // SLTARGET
   const _obPrev={}; _obPrev[sk]=cur||null; _obPrev[wk+"_"+day+"_"+kid+"_"+slot]=slState[wk+"_"+day+"_"+kid+"_"+slot]||null;   // 📮
   { const _st0=rtStepsFor(slot,kid)[i], _b0=_st0?(_st0.pts||0):0;
     // Pay base + any focus-zone bonus, and RECORD the total on the check-off. Unchecking reverses
@@ -2281,8 +2280,7 @@ function toggleRtStep(slot,kid,i){
   rtBonusSettle(slot,kid,wk,day,_prevSlot,allDone,rtStepsFor(slot,kid).filter((st,i)=>rtDueOrLate(slot,kid,day,i,st)).length);
   if(typeof rtDayBonusSettle==="function") rtDayBonusSettle(kid,wk,day);
   delete rtOpen[rtOpenKey(slot,kid)];      // a check-off resets any manual open/close → the list follows completion again
-  sv(wk+"_sl",slState);
-  if(db) obNoteSl(wk,db.ref(wk+"/sl").set(slState),_obPrev);
+  slSaveChanged(wk,_slB);   // SLTARGET: only this tap's keys
   renderSkylight();
   if(tab==="schedule"){ const c=document.getElementById("content"); if(c) renderSchedule(c); }
 }
@@ -3187,7 +3185,25 @@ function obNote(path,op,val,was,p,extra){
 function obSet(path,val,was,extra){ if(!db) return null; let p=null; try{ p=db.ref(path).set(val); }catch(e){} obNote(path,"set",val,was,p,extra); return p; }
 function obRemove(path,was,extra){ if(!db) return null; let p=null; try{ p=db.ref(path).remove(); }catch(e){} obNote(path,"remove",null,was,p,extra); return p; }
 function obInc(path,n,extra){ if(!db) return null; let p=null; try{ p=db.ref(path).transaction(function(c){ return (c||0)+n; }); }catch(e){} obNote(path,"inc",n,null,p,extra); return p; }
-// A routine step is saved inside the whole-map sl write — note just the keys this tap changed, tied to that write.
+// SLTARGET_START — her yes 2026-10-16 ("audit for any mistakes or issues first"). A routine tap used to save the
+// WHOLE check-mark map — db.ref(wk+"/sl").set(slState) — from this device's own copy, so a device that hadn't heard
+// another kid's newer ticks erased them, and a device still holding old ✓s wrote them back. Live 10/15: Ellis's
+// Evening (8:01 PM) and Julian's Afternoon (8:01 PM) ✓s were wiped by Lincoln's 8:10 PM tap on another device; their
+// stars stayed paid, so a re-tick would pay twice. Now a tap writes ONLY the keys it changed (the step, its list
+// record, the 🏁 list / 🏆 day bonus records) and the 📮 outbox notes every one of them.
+function slBefore(){ const o={}; Object.keys(slState).forEach(function(k){ o[k]=JSON.stringify(slState[k]); }); return o; }
+function slSaveChanged(wk,before){
+  const upd={}, prev={}, clean=function(v){ return v===undefined?null:JSON.parse(JSON.stringify(v)); };   // Firebase refuses undefined
+  Object.keys(slState).forEach(function(k){ if(JSON.stringify(slState[k])!==before[k]){ upd[k]=clean(slState[k]); prev[k]=before[k]===undefined?null:JSON.parse(before[k]); } });
+  Object.keys(before).forEach(function(k){ if(!(k in slState)){ upd[k]=null; prev[k]=JSON.parse(before[k]); } });
+  sv(wk+"_sl",slState);
+  if(!db||(typeof _dryRun==="function"&&_dryRun())||!Object.keys(upd).length) return null;
+  let p=null; try{ p=db.ref(wk+"/sl").update(upd); }catch(e){}
+  obNoteSl(wk,p,prev);
+  return p;
+}
+// SLTARGET_END
+// A routine step's keys are written by slSaveChanged — note each changed key, tied to that write.
 function obNoteSl(wk,p,prev){ try{ Object.keys(prev||{}).forEach(function(k){ obNote(wk+"/sl/"+k,"set",slState[k]===undefined?null:slState[k],prev[k],p); }); }catch(e){} }
 function _obRead(path,f){ try{ db.ref(path).once("value",function(s){ f(s.val()); },function(){ f(undefined); }); }catch(e){ f(undefined); } }
 // cb(true)=written now · cb(false)=nothing to do, forget it · cb(null)=couldn't tell, keep it for next time
@@ -4394,11 +4410,10 @@ function getSlot(who,slot){ return slState[slKey(who,slot)]||{done:false,ts:""};
 function toggleSlot(who,slot){
   if(!routineEditable()){ _rtBlockedToast(); return; }
   const k=slKey(who,slot), cur=getSlot(who,slot);
-  const ts=cur.done?"":nowTs();
+  const ts=cur.done?"":nowTs(), _slB=slBefore();   // SLTARGET
   slState[k]={done:!cur.done,ts};
   const wk=activeWk();
-  sv(wk+"_sl",slState);
-  if(db) db.ref(wk+"/sl").set(slState);
+  slSaveChanged(wk,_slB);   // SLTARGET: only this key
   renderSkylight();
   if(tab==="schedule"){ const c=document.getElementById("content"); if(c) renderSchedule(c); }
 }

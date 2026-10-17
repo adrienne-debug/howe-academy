@@ -24,7 +24,9 @@ const FNS = ["routineEditable", "toggleMorningStep", "toggleSlot", "slKey", "get
              // a blocked tap now explains itself (toast) — the helper and its `cap` come along
              "_rtBlockedToast", "cap",
              // morningComplete now masks by run-window, so its helpers come along
-             "morningDueIdx", "stepWindowOk", "routineDateISO"].map(slice).join("\n");
+             "morningDueIdx", "stepWindowOk", "routineDateISO",
+             // SLTARGET (2026-10-16): taps save only their changed keys through these two
+             "slBefore", "slSaveChanged"].map(slice).join("\n");
 
 let pass = 0, fail = 0;
 const ok = (n, c, x) => c ? (pass++, console.log("  ok  - " + n))
