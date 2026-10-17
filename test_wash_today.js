@@ -88,6 +88,8 @@ console.log("Dry run / no db / wiring");
   const c2=mk({nodb:true}); c2.wtReport("dad","towels"); ok("db null → no throw, no writes", c2.writes.length===0);
   const c3=mk(); const row=c3.wtRowHTML("mom");
   ok("row has Towels · Sheets (king) · queen · Dog stuff", /Towels/.test(row)&&/Sheets \(king\)/.test(row)&&/'sheets','queen'/.test(row)&&/Dog stuff/.test(row));
+  ok("…and 🛌 Blanket (her ask 2026-10-16)", /wtReport\('mom','blanket'\)"[^>]*>🛌 Blanket/.test(row));
+  { const b=mk(); b.wtReport("mom","blanket"); ok("a blanket: one laundry write, wet, in the bin, no to-do", b.writes.length===1&&/^laundry\//.test(b.writes[0][1])&&b.writes[0][2].stage==="bin"&&b.writes[0][2].wet===true&&/^💦 Blanket · /.test(b.writes[0][2].label), b.writes); }
   ok("Dad's row reports as dad", /wtReport\('dad','sheets','king'\)/.test(c3.wtRowHTML("dad")));
   ok("strip shows the row under Start a load", /wtRowHTML\(who\)/.test(fn("momDayStripHTML")));
   ok("no kid pieces: Kids' Corner, step lists, routine log untouched", !/wtBoxHTML/.test(src)&&!/wtOneoffSteps/.test(src)&&!/oneoff/.test(src)&&!/routineLog/.test(BLOCK));

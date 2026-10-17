@@ -36,7 +36,7 @@ console.log("2. The view");
 { const c=mk({machines:{l1:{label:"Towels",stage:"dryer",ts:1}}}); c.hhGo("laundry"); const el={}; c.renderHousehold(el); const h=el.innerHTML;
   ok("the 🧺 Laundry chip and the machines card: Towels in the dryer since 9:05", /hhGo\('laundry'\)/.test(h)&&/🌀 Towels <span[^>]*>· dryer · since 9:05 AM/.test(h));
   ok("the grid: Lincoln's Mon start + fold, Lucy's Mon strip, Mom's Wed load and Fri towels", /hhLaundryCellPick\('lincoln',0\)[^>]*>(?:(?!<\/td>).)*Start your laundry load(?:(?!<\/td>).)*Fold \+ put away/.test(h)&&/hhLaundryCellPick\('lucy',0\)[^>]*>(?:(?!<\/td>).)*Strip the king/.test(h)&&/hhLaundryCellPick\('mom',2\)[^>]*>(?:(?!<\/td>).)*Lucy \+ Julian/.test(h)&&/hhLaundryCellPick\('mom',4\)[^>]*>(?:(?!<\/td>).)*Towels load/.test(h));
-  ok("Monday's header counts three loads; Ellis has no row at all", /Mon<div[^>]*>3</.test(h)&&!/>Ellis</.test(h));
+  ok("Monday's header counts three loads; Ellis has no row at all", /Mon<div[^>]*>3</.test(h)&&!/border-left:4px solid[^>]*>Ellis</.test(h));
   c.hhLaundryCellPick("mom",2); c.renderHousehold(el); ok("tap Mom · Wed: her load row opens below with ✎ Edit", /Mom · Wed/.test(el.innerHTML)&&/hhEditToggle\('mc_mc_a'\)/.test(el.innerHTML));
   ok("every few weeks: the mats (every 2 weeks, with its need) and the curtains dated Jan 26 (greyed, 'from 01-26')", /🗓 Every few weeks/.test(h)&&/Wash the shower mats/.test(h)&&/Wash the boys' curtains/.test(h)&&/from 01-26/.test(h)&&/hhEditToggle\('mc_mc_c'\)/.test(h));
   ok("the once pile: the boys' beds with Send to Mom", /☑️ Once · 1 in the pile/.test(h)&&/hhOnceSend\('hh_mom_beds','mom'\)/.test(h));
