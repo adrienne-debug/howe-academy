@@ -4199,6 +4199,7 @@ function initFb() {
     });
     db.ref("config/helpers").on("value",s=>{ helpersOnValue(s.val()); });
     db.ref("settings/laundryTimes").on("value",s=>{ if(typeof laundryTimesOnValue==="function") laundryTimesOnValue(s.val()); });   // 🧺 LAUNDRYTIMES
+    db.ref("settings/quickLoads").on("value",s=>{ if(typeof quickLoadsOnValue==="function") quickLoadsOnValue(s.val()); if(tab==="moms-plan"){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); } });   // ⚡ QUICKLOADS
     db.ref("settings/laundryBlockMins").on("value",s=>{ if(typeof laundryBlockMinsOnValue==="function") laundryBlockMinsOnValue(s.val()); });   // 🧺 MOMSCHED_LAUNDRY
     momBlocksListen();   // 🧺 MOMSCHED_LAUNDRY: everyone's Mom cards lay around her block · MOMBLOCKS_DAYROLL: follows the day (dayRollCheck re-binds it after midnight)
     db.ref("settings/momTips").on("value",s=>{ if(typeof momTipsOnValue==="function") momTipsOnValue(s.val()); });   // 👋 Mom how-to banners she has closed
@@ -8687,7 +8688,8 @@ function renderSchedule(el){
   });
   if(!lunchDone&&times.length&&toMin(times[times.length-1])<_haLunchMin()) h+=lunchBlock();
   if(_singleKid&&typeof hhHouseCardHTML==="function"){ try{ h+=hhHouseCardHTML(kid,day,tasks); }catch(e){} }   // 🏡 HOUSECARDS: derived, never in week*/tasks
-  if(_singleKid&&typeof llKidCardHTML==="function"){ try{ h+=llKidCardHTML(kid,day); }catch(e){} }   // 🧺 LAUNDRYLINE step 6: derived too, never in week*/tasks
+  if(_singleKid&&typeof llKidCardHTML==="function"){ try{ h+=llKidCardHTML(kid,day); }catch(e){} }
+  if(_singleKid&&typeof qlKidRowHTML==="function"){ try{ h+=qlKidRowHTML(kid,day); }catch(e){} }   // ⚡ QUICKLOADS: the buttons Mom gave this kid   // 🧺 LAUNDRYLINE step 6: derived too, never in week*/tasks
 
   if(!unlocked){
     // Close the blurred inner wrapper, then add the overlay
@@ -13194,6 +13196,7 @@ function llExtrasHTML(mom,today){
 }
 // 👨 Dad's Day: the line, his way — today's loads (who, where they are, 🫧 Start as his), the question, 🤒, the week grid. No settings.
 function llLoadStage(id,iso){ const e=laundryLine&&laundryLine.log&&laundryLine.log[iso]&&laundryLine.log[iso][id]; if(!e) return ""; const l=(typeof laundryData!=="undefined"&&laundryData&&e.load)?laundryData[e.load]:null;
+  const cm=(l&&typeof lcMeta==="function")?lcMeta(l):null; if(cm) return cm[0]+" "+cm[1];   // LAUNDRY_CYCLE
   return !l?"✓ put away":l.stage==="dryer"?"🌀 in the dryer":l.stage==="fold"?"🧺 to fold":"🫧 in the washer"; }
 function llDadCardHTML(){ if(!laundryLine||!Object.keys(laundryLine).length) return ""; const t=llToday(), r=llProjectNow(1)[0], A=llAll();
   let h='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);margin-bottom:10px;padding:10px 12px"><div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span style="font-size:13px;font-weight:800;flex:1">🧺 The laundry line</span>'+llMomSickBtn()+'</div>'+llCoverAskHTML();
@@ -13271,9 +13274,10 @@ function hhLaundryHTML(){
   const jobs=hhJobs(), ids=hhLaundryRows(), DL=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], today=_hhIsoLocal(Date.now()), mom=(typeof momHere==="function")?momHere():false, who=HH_WHO.filter(function(w){ return w!=="grab"; });
   let h='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">The same rows as everywhere else, read as laundry: who has a load which day, what comes every few weeks, and what is waiting in the once pile. Tap a cell to edit its rows.</div>';
   try{ h+=llCardHTML(); }catch(e){}   // 🧺 LAUNDRYLINE
+  try{ if(typeof qlCardHTML==="function") h+=qlCardHTML(); }catch(e){}   // ⚡ QUICKLOADS: her quick buttons, edited here
   // machines now
-  const L=(typeof laundryData!=="undefined"&&laundryData)||{}; const inM=Object.keys(L).filter(function(k){ const l=L[k]; return l&&(l.stage==="washer"||l.stage==="prewash"||l.stage==="dryer"||l.stage==="fold"); });
-  h+='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:9px 12px;margin-bottom:10px"><div style="font-size:12px;font-weight:800">🧺 In the machines now</div>'+(inM.length?inM.map(function(k){ const l=L[k]; return '<div style="font-size:12px;padding:3px 0">'+(l.stage==="dryer"?'🌀 ':l.stage==="fold"?'🧺 ':'🫧 ')+esc(l.label||"Load")+' <span style="color:var(--muted)">· '+(l.stage==="prewash"?"washer (prewash)":l.stage)+(l.ts?' · since '+esc((typeof laundrySince==="function")?laundrySince(l.ts):""):'')+'</span></div>'; }).join(''):'<div style="font-size:12px;color:var(--muted);padding:3px 0">Nothing running. Start a load from Home Base.</div>')+'</div>';
+  const L=(typeof laundryData!=="undefined"&&laundryData)||{}; const inM=Object.keys(L).filter(function(k){ const l=L[k]; return l&&(l.stage==="washer"||l.stage==="prewash"||l.stage==="dryer"||l.stage==="fold"||l.stage==="airdry"||l.stage==="custom"); });   // airdry, custom = LAUNDRY_CYCLE
+  h+='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:9px 12px;margin-bottom:10px"><div style="font-size:12px;font-weight:800">🧺 In the machines now</div>'+(inM.length?inM.map(function(k){ const l=L[k]; return '<div style="font-size:12px;padding:3px 0">'+((typeof lcMeta==="function"&&lcMeta(l))?lcMeta(l)[0]+' ':l.stage==="dryer"?'🌀 ':l.stage==="fold"?'🧺 ':'🫧 ')+esc(l.label||"Load")+' <span style="color:var(--muted)">· '+((typeof lcMeta==="function"&&lcMeta(l))?esc(lcMeta(l)[1]):l.stage==="prewash"?"washer (prewash)":l.stage)+(l.ts?' · since '+esc((typeof laundrySince==="function")?laundrySince(l.ts):""):'')+'</span></div>'; }).join(''):'<div style="font-size:12px;color:var(--muted);padding:3px 0">Nothing running. Start a load from Home Base.</div>')+'</div>';
   // the week grid
   const cell={}; const later={}; ids.forEach(function(id){ const j=jobs[id], d=hhLaundryDows(j); if(!d) return; d.forEach(function(x){ const k=j.who+"|"+x; (cell[k]=cell[k]||[]).push(id); }); });
   const dayN=function(x){ let n=0; who.forEach(function(w){ n+=(cell[w+"|"+x]||[]).length; }); return n; };
@@ -13427,8 +13431,42 @@ function momChoresCardHTML(iso,today){
 
 // ── 🧺 Laundry — loads move washer → dryer → fold → put away (gone) ────
 const LAUNDRY_STAGES=["washer","dryer","fold"];
-const LAUNDRY_STAGE_META={washer:["🫧","In the washer"],dryer:["🌀","In the dryer"],fold:["🧺","Fold pile"],bin:["🪣","Wash today"],prewash:["🫧","Prewash"]};   // bin, prewash = 💦 WASHTODAY
+const LAUNDRY_STAGE_META={washer:["🫧","In the washer"],dryer:["🌀","In the dryer"],fold:["🧺","Fold pile"],bin:["🪣","Wash today"],prewash:["🫧","Prewash"],airdry:["🌬","Air drying"],custom:["⏳","In progress"]};   // bin, prewash = 💦 WASHTODAY · airdry, custom = LAUNDRY_CYCLE
 const LAUNDRY_WET_STAGES=["prewash","washer","dryer","fold"];   // 💦 WASHTODAY: wet things are washed twice (they stink otherwise — her rule 2026-10-09)
+// LAUNDRY_CYCLE_START — custom wash cycles, part 1: the engine (her ask 2026-10-16: "a custom wash cycle where u can make certain quick
+// buttons and can put in things like pre wash, wash, dry, air dry, or a custom and then time for each"; her picks 2026-10-17: air dry →
+// "remind me, then fold pile"). A load may carry cycle:[{k,m,n}] — k = prewash|wash|dry|airdry|custom, m = minutes, n = a custom step's
+// name — and step:<index>. Its stage stays one the app already reads — prewash / washer / dryer — or one of two new ones, airdry and
+// custom, so blocks, nudges, Mom's Day, Dad's Day, ↶ undo and ✎ edit keep working; a load with no cycle is exactly as before. After the
+// last step: the fold pile, then put away, as always. bin:true = it started in the wash-today bin. Nothing makes a cycle load yet
+// (part 2: her quick buttons).
+const LC_KINDS={prewash:["🫧","Prewash"],wash:["🫧","Wash"],dry:["🌀","Dry"],airdry:["🌬","Air dry"],custom:["⏳","Custom"]};
+function lcSteps(l){ const c=l&&l.cycle; const a=Array.isArray(c)?c:(c&&typeof c==="object")?Object.keys(c).sort(function(x,y){ return x-y; }).map(function(k){ return c[k]; }):[]; return a.filter(function(x){ return x&&LC_KINDS[x.k]; }); }
+function lcHas(l){ return lcSteps(l).length>0; }
+function lcStep(l){ const n=lcSteps(l).length, i=parseInt(l&&l.step,10); return (l&&l.stage!=="bin"&&l.stage!=="fold"&&i>=0&&i<n)?i:-1; }   // -1 = not in a step (the bin, the fold pile)
+// A wash with another wash after it is the "prewash" stage (the washer clock, "second wash" next) — so two washes never share a block key.
+function lcStageOf(S,i){ const x=S[i]; if(!x) return "fold"; if(x.k==="wash"){ for(let j=i+1;j<S.length;j++){ if(S[j].k==="wash") return "prewash"; } return "washer"; }
+  return x.k==="prewash"?"prewash":x.k==="dry"?"dryer":x.k==="airdry"?"airdry":"custom"; }
+function lcDefMins(k){ return (k==="wash"||k==="prewash")?laundryT("wash"):k==="dry"?laundryT("dry"):k==="airdry"?360:30; }
+function lcMins(x){ const v=parseInt(x&&x.m,10); return (v>0&&v<=24*60)?v:lcDefMins(x&&x.k); }
+function lcStepName(x){ return x?((x.k==="custom"&&x.n)?String(x.n):LC_KINDS[x.k][1]):""; }
+// Where a cycle load is: [emoji, words]. Not a cycle load, or in the bin / fold pile → null (the caller keeps LAUNDRY_STAGE_META).
+function lcMeta(l){ const i=lcStep(l); if(i<0) return null; const S=lcSteps(l); return [LC_KINDS[S[i].k][0],lcStepName(S[i])+" ("+(i+1)+" of "+S.length+")"]; }
+function laundryMeta(l){ return lcMeta(l)||LAUNDRY_STAGE_META[l&&l.stage]||["🧺",String((l&&l.stage)||"")]; }
+// The next button's words: "▶ Start: Prewash" from the bin, "→ <next step>", then "→ Fold". Null → the stage's usual words.
+function lcNextLabel(l){ if(!lcHas(l)) return null; const S=lcSteps(l); if(l.stage==="bin") return "▶ Start: "+lcStepName(S[0]); const i=lcStep(l); if(i<0) return null; return i<S.length-1?"→ "+lcStepName(S[i+1]):"→ Fold"; }
+function lcNextIsFold(l){ const i=lcStep(l); return i>=0&&i===lcSteps(l).length-1; }
+// One step on (mutates l). true = handled; false = the usual path (the fold pile → put away; a load with no cycle).
+function lcAdvance(l){ if(!lcHas(l)||l.stage==="fold") return false; const S=lcSteps(l);
+  if(l.stage==="bin"){ l.step=0; l.stage=lcStageOf(S,0); return true; }
+  const i=lcStep(l); if(i<0) return false;
+  if(i<S.length-1){ l.step=i+1; l.stage=lcStageOf(S,i+1); } else { l.step=S.length; l.stage="fold"; }
+  return true; }
+// One step back (↶): {stage, step} — the last step from the fold pile, the step before, or the bin it started in. null = nowhere to go.
+function lcBack(l){ if(!lcHas(l)) return null; const S=lcSteps(l);
+  if(l.stage==="fold") return {stage:lcStageOf(S,S.length-1),step:S.length-1};
+  const i=lcStep(l); if(i>0) return {stage:lcStageOf(S,i-1),step:i-1}; if(i===0&&(l.bin||l.wet)) return {stage:"bin",step:null}; return null; }
+// LAUNDRY_CYCLE_END
 const LAUNDRY_STALE_MIN=90; // washer-sitting threshold before the NOW nudge (mildew guard) — now = washer minutes + reminder (60 + 30 by default)
 // 🧺 LAUNDRYTIMES (her ask 2026-10-06): Mom sets how long the washer and dryer take and how long after a cycle ends to remind her.
 // settings/laundryTimes {wash,dry,grace} minutes, one per family (defaults 60 / 60 / 30 — the old 90-minute washer nudge exactly).
@@ -13438,7 +13476,8 @@ function laundryTimesOnValue(v){ laundryTimes=v||{}; try{ HA_LS.setItem('ha_laun
 function laundryT(k){ const d={wash:60,dry:60,grace:30}[k]; const v=parseInt((laundryTimes||{})[k],10); return (v>0&&v<=600)?v:d; }
 // LAUNDRY_NUDGE (audit 2026-10-15 hole 3): settings/laundryTimes/foldHrs = hours a fold pile sits before 🔴 NOW asks to put it away (default 3, 1–72).
 function laundryFoldHrs(){ const v=parseInt((laundryTimes||{}).foldHrs,10); return (v>0&&v<=72)?v:3; }
-function laundryDoneAt(l){ const m=(l&&(l.stage==="washer"||l.stage==="prewash"))?laundryT("wash"):(l&&l.stage==="dryer")?laundryT("dry"):0; return m?(l.ts||0)+m*60000:0; }   // prewash = 💦 WASHTODAY
+function laundryDoneAt(l){ if(typeof lcHas==="function"&&lcHas(l)){ const i=lcStep(l); return i>=0?(l.ts||0)+lcMins(lcSteps(l)[i])*60000:0; }   // LAUNDRY_CYCLE: this step's own minutes
+  const m=(l&&(l.stage==="washer"||l.stage==="prewash"))?laundryT("wash"):(l&&l.stage==="dryer")?laundryT("dry"):0; return m?(l.ts||0)+m*60000:0; }   // prewash = 💦 WASHTODAY
 function laundryDoneTxt(l){ const d=laundryDoneAt(l); if(!d) return ""; const t=laundrySince(d); return Date.now()>=d?' · <b style="color:#16a34a">done at '+t+'</b>':' · done ~'+t; }
 function laundryEditToggle(){ const go=function(){ laundryEditOpen=!laundryEditOpen; const el=document.getElementById('content'); if(el) renderMomsPlan(el); };
   if(typeof momHere==="function"&&momHere()) go(); else if(typeof kitPinGate==="function") kitPinGate(go,"Laundry times are for Mom."); }
@@ -13476,7 +13515,10 @@ function laundryAdvance(id){
   const l=laundryData[id]; if(!l) return;
   try{ if(typeof laundryBlockDone==="function") laundryBlockDone(id,l.stage); }catch(e){}   // MOMSCHED_LAUNDRY: ends that stage's block
   const i=LAUNDRY_STAGES.indexOf(l.stage);
-  if(l.stage==="bin"||l.stage==="prewash"){   // 💦 WASHTODAY: bin → prewash → (second) wash; each wash starts the washer clock
+  if(typeof lcAdvance==="function"&&lcAdvance(l)){   // LAUNDRY_CYCLE: the load's own next step (or the fold pile after its last)
+    l.ts=Date.now();
+    if(_lbWrite()) db.ref('laundry/'+id).set(l);
+  } else if(l.stage==="bin"||l.stage==="prewash"){   // 💦 WASHTODAY: bin → prewash → (second) wash; each wash starts the washer clock
     l.stage=(l.stage==="bin")?"prewash":"washer"; l.ts=Date.now();
     if(_lbWrite()) db.ref('laundry/'+id).set(l);
   } else if(i<0||i===LAUNDRY_STAGES.length-1){
@@ -13503,7 +13545,8 @@ function laundryDel(id){
   if(typeof tab!=='undefined'&&tab==="schedule"&&typeof renderAll==='function'){ renderAll(); return; }   // LAUNDRY_TINY hole 11 (2026-10-15): removed from the schedule's ✕ row
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
-function laundryAdvanceLabel(stage){
+function laundryAdvanceLabel(stage,l){
+  if(l&&typeof lcNextLabel==="function"){ const t=lcNextLabel(l); if(t) return t; }   // LAUNDRY_CYCLE
   return stage==="bin"?"🫧 Start prewash":stage==="prewash"?"🫧 Second wash":stage==="washer"?"→ Dryer":stage==="dryer"?"→ Fold":"✓ Put away";   // bin, prewash = 💦 WASHTODAY
 }
 // LAUNDRY_NUDGE_START — the 🔴 NOW laundry nudges + the Home Base badge, one list (laundry audit 2026-10-15 hole 3, her pick:
@@ -13521,6 +13564,8 @@ const LAUNDRY_BIN_NAG_HRS=14;
 function laundryNudgeKind(l,now){
   if(!l||!l.stage) return "";
   const mins=Math.round(((now||Date.now())-(l.ts||0))/60000);
+  if(typeof lcStep==="function"&&lcStep(l)>=0){ const x=lcSteps(l)[lcStep(l)]; if(mins<lcMins(x)+laundryT("grace")) return "";   // LAUNDRY_CYCLE: this step's own minutes
+    return l.stage==="dryer"?"dryer":l.stage==="airdry"?"airdry":l.stage==="custom"?"custom":"washer"; }
   if(l.stage==="washer"||l.stage==="prewash") return mins>=laundryT("wash")+laundryT("grace")?"washer":"";
   if(l.stage==="dryer") return mins>=laundryT("dry")+laundryT("grace")?"dryer":"";
   if(l.stage==="fold") return mins>=laundryFoldHrs()*60?"fold":"";
@@ -13537,10 +13582,12 @@ function laundryNudgeRowHTML(x){
   const txt=x.kind==="bin"?'💦 <b>'+esc(String(l.label||"Load").replace(/^💦\s*/,""))+'</b> is still in the wash-today bin — start the prewash?'
     :x.kind==="dryer"?'🌀 '+lbl+' has been in the dryer since '+since+' — time to fold it'
     :x.kind==="fold"?'🧺 '+lbl+' has been in the fold pile since '+since+' — put it away'
+    :x.kind==="airdry"?'🌬 '+lbl+' has been air drying since '+since+' — it should be dry; fold it'   // LAUNDRY_CYCLE (her pick: remind me, then fold pile)
+    :x.kind==="custom"?'⏳ '+lbl+' — '+esc(lcStepName(lcSteps(l)[lcStep(l)]))+' since '+since+' — time for the next step'
     :'🫧 '+lbl+' has been in the washer since '+since+' — move it before it sours';
   return '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#eff6ff;border-left:3px solid #2563eb;border-radius:8px;margin-bottom:6px">'
     +'<span style="flex:1;font-size:13px">'+txt+'</span>'
-    +'<button onclick="laundryAdvance(\''+x.id+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+((x.kind==="dryer"&&typeof LAUNDRY_FOLDED_BTN!=="undefined")?LAUNDRY_FOLDED_BTN:laundryAdvanceLabel(l.stage))+'</button></div>';   // LAUNDRY_FOLDED: the dryer nudge's button matches the block (merge of PR 61 + 62)
+    +'<button onclick="laundryAdvance(\''+x.id+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+((x.kind==="dryer"&&typeof LAUNDRY_FOLDED_BTN!=="undefined"&&(typeof lcHas!=="function"||!lcHas(l)||lcNextIsFold(l)))?LAUNDRY_FOLDED_BTN:laundryAdvanceLabel(l.stage,l))+'</button></div>';   // LAUNDRY_FOLDED: the dryer nudge's button matches the block (merge of PR 61 + 62)
 }
 // Dad's Day: the bin nudge only (his own NOW box, styled like 🔴 KITCHEN NOW).
 function laundryBinNowHTML(now){
@@ -13587,7 +13634,7 @@ function momBlocksListen(){
 }
 // MOMBLOCKS_DAYROLL_END
 function laundryBlockMinsOnValue(v){ laundryBlockMins=v||{}; try{ HA_LS.setItem('ha_laundry_block_mins',JSON.stringify(laundryBlockMins)); }catch(e){} }
-function laundryBlockStep(stage){ return stage==="dryer"?"fold":stage==="fold"?"putaway":"move"; }   // LAUNDRY_FOLD: the fold pile's block is the put-away
+function laundryBlockStep(stage){ return (stage==="dryer"||stage==="airdry")?"fold":stage==="fold"?"putaway":"move"; }   // LAUNDRY_FOLD: the fold pile's block is the put-away
 function laundryBlockDefault(stage){ const k=laundryBlockStep(stage), v=parseInt((laundryBlockMins||{})[k],10); return (v>0&&v<=240)?v:(k==="fold"?15:k==="putaway"?10:5); }
 function momBlockKey(id,stage){ return String(id).replace(/[.#$\[\]\/]/g,"_")+"_"+stage; }
 function momBlockFor(id,stage){ const b=(momBlocks||{})[momBlockKey(id,stage)]; return (b&&b.iso===mwTodayIso())?b:null; }
@@ -13646,7 +13693,7 @@ function _lbBox(bg,bd,inner){ return '<div class="ml-laundry" style="display:fle
 // LAUNDRY_TINY hole 11 (audit_laundry 2026-10-15): a kid-started load (by:<kid>) that was never a real load redrew its ✅ question at the
 // top of every day with no way off the schedule. Mom mode only → laundryDel (the existing laundry/<id> remove).
 function _lbNotLoadBtn(id,l){ return (l&&l.by&&(typeof momHere!=="function"||momHere()))?'<button onclick="laundryDel(\''+_lbQ(id)+'\')" style="border:none;background:none;color:#9ca3af;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">✕ not a load</button>':''; }
-function _lbBtn(id,stage,label){ return '<button onclick="laundryAdvance(\''+_lbQ(id)+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+(label||laundryAdvanceLabel(stage))+'</button>'; }
+function _lbBtn(id,stage,label){ return '<button onclick="laundryAdvance(\''+_lbQ(id)+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+(label||laundryAdvanceLabel(stage,(typeof laundryData!=="undefined"&&laundryData)?laundryData[id]:null))+'</button>'; }
 // LAUNDRY_FOLDED (AUDIT_laundry_2026-10-15 hole 2, her pick (b), text only): the dryer block's button said "→ Fold", so a tap as she
 // STARTED folding ended her fold time at once. It reads "Folded ✓" — tapped when folding is done. Same tap (laundryAdvance), same
 // minutes; the NOW nudge's dryer button matches.
@@ -13681,8 +13728,9 @@ function momSchedLaundry(dayName,dayTasks){
   const place=function(m,ord,html){ if(m<0) m=nowM; if(m>=24*60) return; out.push({m:m,o:ord,html:html}); };   // from an earlier day → now; tomorrow → not today's
   const next=momSchedNextMom(dayTasks);
   Object.keys(laundryData||{}).forEach(function(id){
-    const l=laundryData[id]; if(!l||(l.stage!=="washer"&&l.stage!=="dryer"&&l.stage!=="prewash"&&l.stage!=="fold")) return;   // prewash = 💦 WASHTODAY · fold = LAUNDRY_FOLD
-    const dry=l.stage==="dryer", pre=l.stage==="prewash", fold=l.stage==="fold", key=momBlockKey(id,l.stage), lbl='<b>'+esc(l.label||"Load")+'</b>';
+    const l=laundryData[id]; if(!l||(l.stage!=="washer"&&l.stage!=="dryer"&&l.stage!=="prewash"&&l.stage!=="fold"&&l.stage!=="airdry"&&l.stage!=="custom")) return;   // prewash = 💦 WASHTODAY · fold = LAUNDRY_FOLD · airdry, custom = LAUNDRY_CYCLE
+    const dry=l.stage==="dryer"||l.stage==="airdry", pre=l.stage==="prewash", fold=l.stage==="fold", key=momBlockKey(id,l.stage), lbl='<b>'+esc(l.label||"Load")+'</b>';
+    const cm=(typeof lcMeta==="function")?lcMeta(l):null, cNext=cm?(lcNextIsFold(l)?"":lcStepName(lcSteps(l)[lcStep(l)+1])):"";   // LAUNDRY_CYCLE: a cycle load says its own steps
     const sm=_lbMin(l.ts||0);
     // LAUNDRY_FOLD (her report 2026-10-15, DeWalt, Taylor's Wed 10/14 load): the schedule drew the washer and the dryer, then the load
     // vanished the moment it reached the fold pile — this loop skipped stage "fold", so fold and put away had no row, no question, no
@@ -13690,9 +13738,9 @@ function momSchedLaundry(dayName,dayTasks){
     // so that one row is both the marker and the question — "🧺 <load> is in the fold pile. Block out time to put it away?" — with
     // the same How long · Now · After · Not now, a real block (step "putaway", 10 min the first time, remembered like the others)
     // her Mom cards step over, ✓ Put away on the block, and "✓ Put away: <load>" kept on the timeline where it ended.
-    if(sm>=0&&!fold) place(sm,0,_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#475569">'+(dry?'🌀 ':'🫧 ')+lbl+' — '+(dry?'in the dryer':pre?'in the washer (prewash)':'in the washer')+' · started '+laundrySince(l.ts)+'</span>'));
+    if(sm>=0&&!fold) place(sm,0,_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#475569">'+(cm?cm[0]+' ':dry?'🌀 ':'🫧 ')+lbl+' — '+(cm?esc(cm[1]):dry?'in the dryer':pre?'in the washer (prewash)':'in the washer')+' · started '+laundrySince(l.ts)+'</span>'));
     const da=fold?(l.ts||0):laundryDoneAt(l); if(!da) return;   // LAUNDRY_FOLD: the pile is ready when it lands
-    const b=momBlockFor(id,l.stage), doneTxt=fold?'🧺 '+lbl+' is in the fold pile':'✅ '+lbl+(pre?' — prewash done':' is done in the '+(dry?'dryer':'washer'));
+    const b=momBlockFor(id,l.stage), doneTxt=fold?'🧺 '+lbl+' is in the fold pile':cm?'✅ '+lbl+' — '+esc(lcStepName(lcSteps(l)[lcStep(l)]))+' done':'✅ '+lbl+(pre?' — prewash done':' is done in the '+(dry?'dryer':'washer'));
     // LAUNDRY_NOTYET (her report 2026-10-12, DeWalt): the "done — block out time?" question drew the moment a load went IN, sitting at
     // its future done time (Mine in at 10:15, wash 50 → "done in the washer" showed at 10:16 under 11:05). Sarah tapped Now and the
     // block landed at 10:16, before the washer had finished. Until the cycle is really over this row only says when — no question.
@@ -13704,7 +13752,7 @@ function momSchedLaundry(dayName,dayTasks){
     if(!b&&l.by==="dad"){ place(_lbMin(da),1,_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:13px;color:#475569">'+doneTxt+' · Dad\'s</span>')); return; }
     if(!b){
       place(_lbMin(da),1,_lbBox('#ecfdf5','#16a34a',
-        '<span style="flex:1 1 100%;font-size:13px">'+doneTxt+'. Block out time to '+(fold?'put it away':dry?'fold it':pre?'start the second wash':'move it to the dryer')+'?</span>'
+        '<span style="flex:1 1 100%;font-size:13px">'+doneTxt+'. Block out time to '+(fold?'put it away':cm?(cNext?'start '+esc(cNext.toLowerCase()):'fold it'):dry?'fold it':pre?'start the second wash':'move it to the dryer')+'?</span>'
         +'<label style="font-size:12px;color:#334155;font-weight:700">How long? <input id="lb-min-'+key+'" type="number" min="1" max="240" value="'+laundryBlockDefault(l.stage)+'" style="width:54px;padding:4px 6px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px"> min</label>'
         +_lbQBtn('Now',"laundryBlockSet('"+_lbQ(id)+"','"+l.stage+"','now')",true)
         +(next?_lbQBtn('After '+esc(_lbCardName(next)),"laundryBlockSet('"+_lbQ(id)+"','"+l.stage+"','after','"+_lbQ(next.id)+"')",false):'')
@@ -13715,12 +13763,12 @@ function momSchedLaundry(dayName,dayTasks){
     if(b.at==="skip"){ place(_lbMin(da),1,_lbBox('#ecfdf5','#16a34a','<span style="flex:1;font-size:13px">'+doneTxt+'</span>'+_lbBtn(id,l.stage)+_lbNotLoadBtn(id,l))); return; }
     place(_lbMin(da),1,_lbBox('#ecfdf5','#16a34a','<span style="flex:1;font-size:13px">'+doneTxt+'</span>'+_lbNotLoadBtn(id,l)));
     const bm=(_mlBlkLaid&&_mlBlkLaid[key]!==undefined)?_mlBlkLaid[key]:(+b.startMin||nowM);
-    place(bm,2,_lbBox('#eff6ff','#2563eb','<span style="flex:1;font-size:13px">'+(b.at==="later"?'⏰ ':'')+'🧺 '+(fold?'Put away: ':dry?'Fold: ':pre?'Second wash: ':'Move to the dryer: ')+lbl
-      +' · <input type="number" min="1" max="240" value="'+(parseInt(b.mins,10)||laundryBlockDefault(l.stage))+'" onchange="laundryBlockMinsEdit(\''+key+'\',this.value)" style="width:48px;padding:2px 5px;border:1.5px solid #bfdbfe;border-radius:6px;font-size:12px"> min</span>'+_lbBtn(id,l.stage,dry?LAUNDRY_FOLDED_BTN:"")));   // LAUNDRY_FOLDED
+    place(bm,2,_lbBox('#eff6ff','#2563eb','<span style="flex:1;font-size:13px">'+(b.at==="later"?'⏰ ':'')+'🧺 '+(fold?'Put away: ':cm?(cNext?esc(cNext)+': ':'Fold: '):dry?'Fold: ':pre?'Second wash: ':'Move to the dryer: ')+lbl
+      +' · <input type="number" min="1" max="240" value="'+(parseInt(b.mins,10)||laundryBlockDefault(l.stage))+'" onchange="laundryBlockMinsEdit(\''+key+'\',this.value)" style="width:48px;padding:2px 5px;border:1.5px solid #bfdbfe;border-radius:6px;font-size:12px"> min</span>'+_lbBtn(id,l.stage,(dry&&!cNext)?LAUNDRY_FOLDED_BTN:"")));   // LAUNDRY_FOLDED (a cycle load folds after its last step only)
   });
   Object.keys(momBlocks||{}).forEach(function(k){   // finished blocks stay on today's timeline where they ended
     const b=momBlocks[k]; if(!b||b.iso!==mwTodayIso()||!b.done||b.at==="skip") return;
-    place(+b.doneMin||0,3,_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ '+(b.stage==="fold"?'Put away: ':b.stage==="dryer"?'Folded: ':b.stage==="prewash"?'Second wash started: ':'Moved to the dryer: ')+'<b>'+esc(b.label||"Load")+'</b></span>'));
+    place(+b.doneMin||0,3,_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ '+(b.stage==="fold"?'Put away: ':(b.stage==="dryer"||b.stage==="airdry")?'Folded: ':b.stage==="prewash"?'Second wash started: ':b.stage==="custom"?'Moved on: ':'Moved to the dryer: ')+'<b>'+esc(b.label||"Load")+'</b></span>'));
   });
   return out.sort(function(a,b2){ return (a.m-b2.m)||(a.o-b2.o); });
 }
@@ -13862,7 +13910,7 @@ const LAUNDRY_KIDMOVE_FROM={dryer:"washer",fold:"dryer",putaway:"fold"};
 const LAUNDRY_KIDMOVE_OPTS=[["","—"],["dryer","→ moves a load to the dryer"],["fold","→ moves a load to the fold pile"],["putaway","✓ puts a folded load away"]];
 function laundryKidMovePick(to){
   const from=LAUNDRY_KIDMOVE_FROM[to], L=(typeof laundryData!=="undefined"&&laundryData)||{}; if(!from) return null;
-  const ids=Object.keys(L).filter(function(id){ return L[id]&&L[id].stage===from; });
+  const ids=Object.keys(L).filter(function(id){ return L[id]&&(L[id].stage===from||(from==="dryer"&&L[id].stage==="airdry")); });   // LAUNDRY_CYCLE: an air-dry load is ready to fold too
   ids.sort(function(a,b){ return ((L[b].ts||0)-(L[a].ts||0))||(a<b?1:a>b?-1:0); });
   return ids[0]||null;
 }
@@ -13877,8 +13925,10 @@ function laundryKidMove(kid,to){
     delete laundryData[id];
     if(_lbWrite()) db.ref('laundry/'+id).remove();
   } else {
-    l.stage=to; l.ts=Date.now();
-    if(_lbWrite()) db.ref('laundry/'+id).update({stage:l.stage,ts:l.ts});
+    if(!(typeof lcAdvance==="function"&&lcAdvance(l))) l.stage=to;   // LAUNDRY_CYCLE: a cycle load goes to its own next step
+    l.ts=Date.now();
+    const _u={stage:l.stage,ts:l.ts}; if(l.step!=null) _u.step=l.step;
+    if(_lbWrite()) db.ref('laundry/'+id).update(_u);
   }
   try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
   return id;
@@ -13995,6 +14045,7 @@ function _wtBtn(on,txt,small){
 // Mom's / Dad's 🏡 My day strip, under Start a load: one compact row.
 function wtRowHTML(who){
   who=(who==="dad")?"dad":"mom";
+  if(typeof qlRowHTML==="function") return qlRowHTML(who);   // ⚡ QUICKLOADS: her own buttons replace the fixed row (Howe's five are its defaults)
   return '<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:7px"><span style="font-size:11px;font-weight:800;color:#1d4ed8">💦 Wet or soiled:</span>'
     +_wtBtn("wtReport('"+who+"','towels')","🧻 Towels")
     +_wtBtn("wtReport('"+who+"','sheets','king')","🛏 Sheets (king)")
@@ -14004,6 +14055,119 @@ function wtRowHTML(who){
     +'</div>';
 }
 // WASHTODAY_END
+// QUICKLOADS_START — ⚡ quick buttons, custom wash cycles part 2 (her ask 2026-10-17: "a custom wash cycle where u can make certain quick
+// buttons … pre wash, wash, dry, air dry, or a custom and then time for each"; "typically mom and dad but make it part of the
+// customization"; "on dewalt u erase my custom buttons and then on mine please make where i can edit custom button area on the laundry
+// tab but they show up on whoevers page"). The fixed 💦 Wet or soiled row becomes her own buttons, one family each:
+// settings/quickLoads/<id> = {emoji,label,steps:[{k,m,n}],who:{mom,dad,<kid>:true},slot,bin,todo,order} + _set:true once she has saved.
+// Never saved: Howe gets the five she had (Towels · Sheets king · queen · Dog stuff · Blanket — Prewash → Wash → Dry, wash-today bin,
+// a slot on the line, the spare-sheets to-do), every other family gets none (the row hides). A tap makes the same laundry/<id> load
+// as before, now carrying the button's steps (LAUNDRY_CYCLE) — in the bin first if "starts in the wash-today bin", else straight into
+// its first step — a 💦 jump-in slot on the line if "uses a slot", and the to-do on Mom's list (Dad's if he tapped). Edits: Mom only,
+// on Household ▸ 🧺 Laundry. Writes targeted (settings/quickLoads/<id>), dry-run inert.
+const QL_STEPK=["prewash","wash","dry","airdry","custom"];
+function qlHoweDefaults(){ const st=function(){ return [{k:"prewash"},{k:"wash"},{k:"dry"}]; }, w=function(){ return {mom:true,dad:true}; };
+  return {towels:{emoji:"🧻",label:"Towels",steps:st(),who:w(),slot:true,bin:true,todo:"",order:0},
+    sheets_king:{emoji:"🛏",label:"Sheets (king)",steps:st(),who:w(),slot:true,bin:true,todo:"🛏 Put the spare sheets on the king",order:1},
+    sheets_queen:{emoji:"🛏",label:"Sheets (queen)",steps:st(),who:w(),slot:true,bin:true,todo:"🛏 Put the spare sheets on the queen",order:2},
+    dog:{emoji:"🐕",label:"Dog stuff",steps:st(),who:w(),slot:true,bin:true,todo:"",order:3},
+    blanket:{emoji:"🛌",label:"Blanket",steps:st(),who:w(),slot:true,bin:true,todo:"",order:4}}; }
+let qlData=null; try{ qlData=JSON.parse(HA_LS.getItem('ha_quick_loads')||"null"); }catch(e){}
+function quickLoadsOnValue(v){ qlData=v||null; try{ HA_LS.setItem('ha_quick_loads',JSON.stringify(qlData)); }catch(e){} }
+function qlSaved(){ return !!(qlData&&qlData._set); }
+function qlAll(){ const src=qlSaved()?qlData:((typeof HA_IS_HOWE!=="undefined"&&HA_IS_HOWE)?qlHoweDefaults():{}), out={};
+  Object.keys(src||{}).forEach(function(k){ const q=src[k]; if(k!=="_set"&&q&&q.label) out[k]=q; }); return out; }
+function qlIds(){ const A=qlAll(); return Object.keys(A).sort(function(a,b){ return ((A[a].order||0)-(A[b].order||0))||(a<b?-1:1); }); }
+function qlSteps(q){ const a=Array.isArray(q&&q.steps)?q.steps:(q&&q.steps&&typeof q.steps==="object")?Object.keys(q.steps).sort(function(x,y){ return x-y; }).map(function(k){ return q.steps[k]; }):[];
+  return a.filter(function(x){ return x&&QL_STEPK.indexOf(x.k)>=0; }); }
+function qlPeople(){ const R=(typeof ROSTER!=="undefined"&&ROSTER)||[]; return ["mom","dad"].concat(R); }
+function qlWhoName(w){ return w==="mom"?"Mom":w==="dad"?"Dad":((typeof KID_NAME!=="undefined"&&KID_NAME[w])||cap(w)); }
+function qlFor(person){ const A=qlAll(); return qlIds().filter(function(id){ return A[id].who&&A[id].who[person]&&qlSteps(A[id]).length; }); }
+function _qlWrite(){ return typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
+function _qlTime(){ try{ return new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}); }catch(e){ return ""; } }
+// ── a tap ──
+function qlTap(id,person){ const q=qlAll()[id]; if(!q) return null; const S=qlSteps(q); if(!S.length) return null;
+  person=qlPeople().indexOf(person)>=0?person:"mom"; if(!(q.who&&q.who[person])) return null;
+  const iso=(typeof _wtIso==="function")?_wtIso():mwTodayIso(), lid="ql"+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+  const rec={label:(q.bin?"💦 ":"")+q.label+" · "+_qlTime()+(person==="dad"?" · started by Dad":person!=="mom"?" · "+qlWhoName(person):""),ts:Date.now(),by:person,quick:id,cycle:S.map(function(x){ const o={k:x.k}; if(parseInt(x.m,10)>0) o.m=parseInt(x.m,10); if(x.k==="custom"&&x.n) o.n=String(x.n); return o; })};
+  if(q.bin){ rec.stage="bin"; rec.bin=true; rec.wet=true; } else { rec.stage=lcStageOf(rec.cycle,0); rec.step=0; }
+  if(q.slot) rec.jumpDay=iso;
+  laundryData[lid]=rec; try{ HA_LS.setItem('ha_laundry',JSON.stringify(laundryData)); }catch(e){}
+  if(_qlWrite()) db.ref('laundry/'+lid).set(rec);
+  let slid=""; if(q.slot){ try{ if(typeof llJumpAdd==="function") slid=llJumpAdd(lid,q.label); }catch(e){} }   // 🧺 LAUNDRYLINE: holds a slot today
+  const td=String(q.todo||"").trim();
+  if(td){ const t={text:td,done:false,ts:Date.now(),src:"quickload"};
+    if(person==="dad"){ try{ const cur=Object.assign({},daddayData[iso]); const T=Object.assign({},cur.todos); T[lid]=t; cur.todos=T; daddayData[iso]=cur; HA_LS.setItem('ha_dadday',JSON.stringify(daddayData)); }catch(e){} if(_qlWrite()) db.ref('dadday/'+iso+'/todos/'+lid).set(t); }
+    else { try{ const cur=Object.assign({},momdayData[iso]); const T=Object.assign({},cur.todos); T[lid]=t; cur.todos=T; momdayData[iso]=cur; HA_LS.setItem('momday_data',JSON.stringify(momdayData)); }catch(e){} if(_qlWrite()) db.ref('momday/'+iso+'/todos/'+lid).set(t); } }
+  if(typeof mwToast==='function') try{ mwToast((q.emoji||'🧺')+' '+q.label+(q.bin?' — in the wash-today bin':' — '+lcStepName(S[0]).toLowerCase()+' started')+slid); }catch(e){}
+  if(typeof llRerender==="function") llRerender(); else { const el=(typeof document!=="undefined")?document.getElementById('content'):null; if(el&&typeof renderMomsPlan==="function") renderMomsPlan(el); }
+  return lid; }
+// ── the rows ──
+function _qlBtn(on,txt){ return '<button onclick="'+on+'" style="padding:6px 11px;border-radius:9px;border:1.5px solid #93c5fd;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">'+txt+'</button>'; }
+function qlRowHTML(person){ const ids=qlFor(person), A=qlAll(); if(!ids.length) return "";
+  return '<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:7px"><span style="font-size:11px;font-weight:800;color:#1d4ed8">⚡ Quick loads:</span>'
+    +ids.map(function(id){ return _qlBtn("qlTap('"+id+"','"+person+"')",esc(A[id].emoji||'🧺')+' '+esc(A[id].label)); }).join('')+'</div>'; }
+// A kid's Day page, today only (after 🧺 Your laundry): the buttons Mom gave this kid.
+function qlKidRowHTML(kid,dayName){ if(typeof _todayDay==="string"&&dayName&&dayName!==_todayDay) return ""; const r=qlRowHTML(kid); if(!r) return "";
+  return '<div class="time-row"><div class="time-pill">⚡</div><div class="slot-tasks"><div style="padding:4px 2px">'+r+'</div></div></div>'; }
+// ── the editor (Household ▸ 🧺 Laundry, Mom) ──
+let qlEdit=null, qlDraft=null;   // the id open (or "new"), and its working copy
+function qlMomGo(go){ if(typeof momHere==="function"&&momHere()) go(); else if(typeof kitPinGate==="function") kitPinGate(go,"Quick buttons are Mom's to set up."); }
+function _qlRe(){ if(typeof hhRender==="function") hhRender(); }
+function qlOpen(id){ qlMomGo(function(){ if(qlEdit===id){ qlEdit=null; qlDraft=null; _qlRe(); return; }
+  const q=id==="new"?{emoji:"🧺",label:"",steps:[{k:"wash"},{k:"dry"}],who:{mom:true,dad:true},slot:true,bin:false,todo:""}:qlAll()[id]; if(!q) return;
+  qlEdit=id; qlDraft=JSON.parse(JSON.stringify(q)); qlDraft.steps=qlSteps(q).map(function(x){ return Object.assign({},x); }); qlDraft.who=Object.assign({},q.who||{}); _qlRe(); }); }
+function qlSet(f,v){ if(!qlDraft) return; if(f==="slot"||f==="bin") qlDraft[f]=!!v; else qlDraft[f]=String(v); }
+function qlWho(w){ if(!qlDraft) return; qlDraft.who=qlDraft.who||{}; if(qlDraft.who[w]) delete qlDraft.who[w]; else qlDraft.who[w]=true; _qlRe(); }
+function qlStepSet(i,f,v){ const x=qlDraft&&qlDraft.steps[i]; if(!x) return; if(f==="m"){ const n=parseInt(v,10); if(n>0&&n<=24*60) x.m=n; else delete x.m; } else if(f==="k"){ x.k=QL_STEPK.indexOf(v)>=0?v:"wash"; _qlRe(); } else x[f]=String(v); }
+function qlStepAdd(){ if(!qlDraft) return; qlDraft.steps.push({k:"wash"}); _qlRe(); }
+function qlStepDel(i){ if(!qlDraft) return; qlDraft.steps.splice(i,1); _qlRe(); }
+function qlStepMove(i,d){ const S=qlDraft&&qlDraft.steps, j=i+d; if(!S||j<0||j>=S.length) return; S.splice(j,0,S.splice(i,1)[0]); _qlRe(); }
+// The first save on a family still on the code defaults writes them all (one path each) + _set, so a later delete sticks.
+function _qlEnsure(upd){ if(qlSaved()) return; const d=qlAll(); Object.keys(d).forEach(function(k){ upd[k]=d[k]; }); upd._set=true; qlData=Object.assign({},d,{_set:true}); }
+function qlSave(){ qlMomGo(function(){ const q=qlDraft; if(!q) return; const label=String(q.label||"").trim(); if(!label){ if(typeof mwToast==="function") mwToast("⚡ Give it a name"); return; }
+  const steps=(q.steps||[]).filter(function(x){ return QL_STEPK.indexOf(x.k)>=0; }).map(function(x){ const o={k:x.k}; if(x.m) o.m=x.m; if(x.k==="custom"&&String(x.n||"").trim()) o.n=String(x.n).trim(); return o; });
+  if(!steps.length){ if(typeof mwToast==="function") mwToast("⚡ Add at least one step"); return; }
+  const upd={}; _qlEnsure(upd); let id=qlEdit;
+  if(id==="new"){ id="q_"+label.toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"").slice(0,24); while(qlData[id]) id+="_2"; }
+  const rec={emoji:String(q.emoji||"🧺").trim().slice(0,4)||"🧺",label:label,steps:steps,who:q.who||{},slot:!!q.slot,bin:!!q.bin,todo:String(q.todo||"").trim(),order:(qlData[id]&&qlData[id].order!=null)?qlData[id].order:qlIds().length};
+  qlData[id]=rec; upd[id]=rec; quickLoadsOnValue(qlData); if(_qlWrite()) db.ref("settings/quickLoads").update(upd);
+  qlEdit=null; qlDraft=null; if(typeof mwToast==="function") mwToast("⚡ "+label+" saved"); _qlRe(); }); }
+function qlDel(id){ qlMomGo(function(){ const q=qlAll()[id]; if(!q) return; if(typeof confirm==="function"&&!confirm('Delete the "'+q.label+'" button?')) return;
+  const upd={}; _qlEnsure(upd); delete qlData[id]; upd[id]=null; quickLoadsOnValue(qlData); if(_qlWrite()) db.ref("settings/quickLoads").update(upd); qlEdit=null; qlDraft=null; _qlRe(); }); }
+function qlMove(id,d){ qlMomGo(function(){ const o=qlIds(), i=o.indexOf(id), j=i+d; if(i<0||j<0||j>=o.length) return; const upd={}; _qlEnsure(upd);
+  o.splice(j,0,o.splice(i,1)[0]); o.forEach(function(x,n){ if(qlData[x].order!==n){ qlData[x].order=n; if(!upd[x]) upd[x+"/order"]=n; } }); quickLoadsOnValue(qlData); if(_qlWrite()) db.ref("settings/quickLoads").update(upd); _qlRe(); }); }
+function qlStepsTxt(q){ return qlSteps(q).map(function(x){ return lcStepName(x)+" "+lcMins(x)+"m"; }).join(" → "); }
+function qlCardHTML(){ const mom=(typeof momHere==="function")?momHere():false, A=qlAll(), ids=qlIds();
+  const sb=function(on,t,dis){ return '<button onclick="'+on+'"'+(dis?' disabled':'')+' style="padding:2px 8px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;font-size:11px;font-weight:700;cursor:pointer;'+(dis?'opacity:.35':'')+'">'+t+'</button>'; };
+  let h='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);margin-bottom:10px;overflow:hidden"><div style="display:flex;align-items:center;gap:6px;padding:9px 12px 2px"><span style="font-size:13px;font-weight:800;flex:1">⚡ Quick buttons</span>'+(mom?sb("qlOpen('new')",qlEdit==="new"?"Cancel":"＋ New"):'')+'</div>'
+    +'<div style="padding:0 12px 6px;font-size:11px;color:var(--muted)">One tap starts a load with its own steps and times. Each button shows on the pages you pick.</div>';
+  if(!ids.length&&qlEdit!=="new") h+='<div style="padding:0 12px 10px;font-size:12px;color:#6b6560">No quick buttons yet.</div>';
+  ids.forEach(function(id,n){ const q=A[id], who=qlPeople().filter(function(w){ return q.who&&q.who[w]; }).map(qlWhoName).join(", ");
+    h+='<div style="padding:6px 12px;border-top:1px solid #eef2f0"><div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px;font-size:12.5px"><span>'+esc(q.emoji||'🧺')+'</span><span style="flex:1;min-width:140px;font-weight:700">'+esc(q.label)
+      +'<div style="font-weight:400;font-size:10.5px;color:#6b6560">'+esc(qlStepsTxt(q))+' · '+(who?esc(who):'nobody')+(q.bin?' · bin first':'')+(q.slot?' · uses a slot':'')+(q.todo?' · to-do':'')+'</div></span>'
+      +(mom?'<span style="display:flex;gap:4px;margin-left:auto">'+sb("qlMove('"+id+"',-1)","↑",n===0)+sb("qlMove('"+id+"',1)","↓",n===ids.length-1)+sb("qlOpen('"+id+"')",qlEdit===id?"Cancel":"✎")+sb("qlDel('"+id+"')","✕")+'</span>':'')+'</div>'
+      +(qlEdit===id&&mom?qlEditorHTML():'')+'</div>'; });
+  if(qlEdit==="new"&&mom) h+='<div style="padding:6px 12px;border-top:1px solid #eef2f0">'+qlEditorHTML()+'</div>';
+  return h+'</div>'; }
+function qlEditorHTML(){ const q=qlDraft; if(!q) return ""; const inp='padding:5px 7px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px';
+  let h='<div style="margin-top:6px;padding:8px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:9px;font-size:12px">'
+    +'<div style="display:flex;gap:6px;margin-bottom:6px"><input value="'+esc(q.emoji||"")+'" oninput="qlSet(\'emoji\',this.value)" style="width:46px;text-align:center;'+inp+'"><input id="ql-label" value="'+esc(q.label||"")+'" placeholder="Name (e.g. Rugs)" oninput="qlSet(\'label\',this.value)" style="flex:1;min-width:0;'+inp+'"></div>'
+    +'<div style="font-weight:800;margin:4px 0">Steps</div>';
+  q.steps.forEach(function(x,i){ h+='<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:4px"><span style="width:14px;color:#6b6560">'+(i+1)+'</span>'
+    +'<select onchange="qlStepSet('+i+',\'k\',this.value)" style="'+inp+'">'+QL_STEPK.map(function(k){ return '<option value="'+k+'"'+(k===x.k?' selected':'')+'>'+LC_KINDS[k][0]+' '+LC_KINDS[k][1]+'</option>'; }).join('')+'</select>'
+    +(x.k==="custom"?'<input value="'+esc(x.n||"")+'" placeholder="Name it (Soak)" oninput="qlStepSet('+i+',\'n\',this.value)" style="width:110px;'+inp+'">':'')
+    +'<input type="number" min="1" max="1440" value="'+(x.m||"")+'" placeholder="'+lcDefMins(x.k)+'" oninput="qlStepSet('+i+',\'m\',this.value)" style="width:58px;'+inp+'"><span>min</span>'
+    +'<button onclick="qlStepMove('+i+',-1)" style="border:none;background:none;cursor:pointer">↑</button><button onclick="qlStepDel('+i+')" style="border:none;background:none;color:#9ca3af;cursor:pointer">✕</button></div>'; });
+  h+='<button onclick="qlStepAdd()" style="padding:3px 9px;border-radius:7px;border:1.5px dashed #93c5fd;background:#fff;color:#1d4ed8;font-size:11.5px;font-weight:700;cursor:pointer">＋ Step</button>'
+    +'<div style="font-weight:800;margin:8px 0 4px">Shows on</div><div style="display:flex;gap:4px;flex-wrap:wrap">'
+    +qlPeople().map(function(w){ const on=q.who&&q.who[w]; return '<button onclick="qlWho(\''+w+'\')" style="padding:3px 9px;border-radius:8px;border:1.5px solid '+(on?'#2563eb':'#cbd5e1')+';background:'+(on?'#2563eb':'#fff')+';color:'+(on?'#fff':'#475569')+';font-size:11.5px;font-weight:700;cursor:pointer">'+esc(qlWhoName(w))+'</button>'; }).join('')+'</div>'
+    +'<label style="display:flex;gap:6px;align-items:center;margin-top:8px"><input type="checkbox"'+(q.bin?' checked':'')+' onchange="qlSet(\'bin\',this.checked)"> Starts in the wash-today bin (tap now, start it later)</label>'
+    +'<label style="display:flex;gap:6px;align-items:center;margin-top:4px"><input type="checkbox"'+(q.slot?' checked':'')+' onchange="qlSet(\'slot\',this.checked)"> Uses a slot on the laundry line</label>'
+    +'<div style="display:flex;gap:6px;align-items:center;margin-top:6px"><span>To-do</span><input value="'+esc(q.todo||"")+'" placeholder="(optional) e.g. Put the spare sheets on" oninput="qlSet(\'todo\',this.value)" style="flex:1;min-width:0;'+inp+'"></div>'
+    +'<div style="display:flex;gap:6px;margin-top:8px"><button onclick="qlSave()" style="flex:1;padding:7px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:12.5px;font-weight:800;cursor:pointer">Save</button><button onclick="qlOpen(qlEdit)" style="padding:7px 12px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;color:#475569;font-size:12.5px;font-weight:700;cursor:pointer">Cancel</button></div></div>';
+  return h; }
+// QUICKLOADS_END
 // CHOREUNDO_START — ↶ Undo and today's ledger (her ask 2026-10-15: "For the laundry check-off I need an undo button. The kids
 // checked off that they did it and I'd be like, no, it didn't. Or if I clicked the wrong one. I need a way to adjust and go back —
 // no, this didn't actually get done; yes, this is actually done … open everything and say okay, this isn't right, this was done,
@@ -14051,6 +14215,7 @@ function choreUndoBtnHTML(slot,kid,d,i){ return _cuMomOk()?_cuBtn("choreUndo('"+
 // ── laundry: back a stage ──
 function laundryBackStage(l){
   if(!l||!l.stage||l.stage==="bin") return null;
+  if(typeof lcBack==="function"&&lcHas(l)){ const p=lcBack(l); return p?p.stage:null; }   // LAUNDRY_CYCLE
   const STG=(l.wet||l.stage==="prewash")?["bin"].concat(LAUNDRY_WET_STAGES):LAUNDRY_STAGES; const i=STG.indexOf(l.stage);
   return i>0?STG[i-1]:null;
 }
@@ -14070,9 +14235,11 @@ function laundryBack(id){
   if(!_cuMomOk()) return null;
   const l=laundryData[id], prev=laundryBackStage(l); if(!prev) return null;
   const from=l.stage; _cuDropBlock(id,from); _cuDropBlock(id,prev);
-  l.stage=prev; l.ts=Date.now()-_cuCycleMin(prev)*60000;   // back in that machine, finished now
+  const _cb=(typeof lcBack==="function"&&lcHas(l))?lcBack(l):null;   // LAUNDRY_CYCLE: back one of its own steps
+  if(_cb){ l.stage=_cb.stage; if(_cb.step==null) delete l.step; else l.step=_cb.step; l.ts=Date.now()-(_cb.step==null?0:lcMins(lcSteps(l)[_cb.step]))*60000; }
+  else { l.stage=prev; l.ts=Date.now()-_cuCycleMin(prev)*60000; }   // back in that machine, finished now
   try{ HA_LS.setItem('ha_laundry',JSON.stringify(laundryData)); }catch(e){}
-  if(_lbWrite()) db.ref('laundry/'+id).update({stage:l.stage,ts:l.ts});
+  if(_lbWrite()) db.ref('laundry/'+id).update(_cb?{stage:l.stage,step:(_cb.step==null?null:_cb.step),ts:l.ts}:{stage:l.stage,ts:l.ts});
   _cuRe(); return {from:from,to:prev};
 }
 function laundryBackBtnHTML(id,l){ const p=laundryBackStage(l); return (p&&_cuMomOk())?_cuBtn("laundryBack('"+_lbQ(id)+"')","↶","#64748b","Back to "+_cuStageName(p)):""; }
@@ -14132,7 +14299,7 @@ function mdCardChoreLedger(){
     h+='<div style="font-size:11px;font-weight:800;color:#1d4ed8;margin:10px 0 2px">🧺 Laundry</div>';
     lids.forEach(function(id){ const l=laundryData[id], p=laundryBackStage(l);
       h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:12px;font-weight:600;flex-wrap:wrap"><span style="flex:1;min-width:0">'+esc(l.label||'Load')+' <span style="font-size:10.5px;color:#1d4ed8;font-weight:800">'+esc(_cuStageName(l.stage))+'</span></span>'
-        +(p?_cuBtn("laundryBack('"+_lbQ(id)+"')","↶ "+esc(_cuStageName(p)),"#64748b","Move it back a stage"):'')+_cuBtn("laundryAdvance('"+_lbQ(id)+"')",laundryAdvanceLabel(l.stage),"#2563eb","")+'</div>'; });
+        +(p?_cuBtn("laundryBack('"+_lbQ(id)+"')","↶ "+esc(_cuStageName(p)),"#64748b","Move it back a stage"):'')+_cuBtn("laundryAdvance('"+_lbQ(id)+"')",laundryAdvanceLabel(l.stage,l),"#2563eb","")+'</div>'; });
     away.forEach(function(a){
       h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:12px;font-weight:600;color:#64748b"><span style="flex:1;min-width:0">✓ Put away '+esc(laundrySince(a.at))+': '+esc(a.load.label||'Load')+'</span>'
         +_cuBtn("laundryUnputaway('"+_lbQ(a.id)+"')","↶ "+esc(_cuStageName("fold")),"#64748b","Not put away — back to the fold pile")+'</div>'; });
@@ -14638,6 +14805,10 @@ function laundryEditBtnHTML(id){
   if(!(typeof momHere==="function"&&momHere())) return "";
   return '<button onclick="laundryEditLoad(\''+_lbQ(id)+'\')" title="Edit this load" style="border:none;background:none;color:#2563eb;font-size:13px;font-weight:800;cursor:pointer;padding:2px 4px">✎</button>';
 }
+// LAUNDRY_CYCLE: a cycle load's Stage list is its own steps (value s<j>), plus the bin it may have started in and the fold pile.
+function _leCycleTok(l){ return l.stage==="bin"?"bin":l.stage==="fold"?"fold":"s"+lcStep(l); }
+function _leCycleOpts(l,opt){ const S=lcSteps(l), t=_leCycleTok(l); return ((l.bin||l.wet||l.stage==="bin")?opt("bin","🪣 Wash today",t==="bin"):"")
+  +S.map(function(x,j){ return opt("s"+j,LC_KINDS[x.k][0]+' '+esc(lcStepName(x))+' ('+(j+1)+' of '+S.length+')',t==="s"+j); }).join("")+opt("fold","🧺 Fold pile",t==="fold"); }
 function laundryEditSheetHTML(id){
   if(laundryEditId!==id||!(typeof momHere==="function"&&momHere())) return "";
   const l=laundryData[id]; if(!l) return "";
@@ -14651,7 +14822,7 @@ function laundryEditSheetHTML(id){
   if(by!=="mom"&&by!=="dad"&&ro.indexOf(by)<0) who+=opt(esc(by),esc(cap(by)),true);
   return '<div class="laundry-edit" style="flex:1 1 100%;padding:8px 10px;margin-top:4px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px">'
     +row('Name','<input id="le-name-'+k+'" type="text" value="'+esc(l.label||"")+'" style="flex:1;'+inp+'">')
-    +row('Stage','<select id="le-stage-'+k+'" style="'+inp+'">'+LAUNDRY_EDIT_STAGES.map(function(s){ const m=LAUNDRY_STAGE_META[s]; return opt(s,m[0]+' '+m[1],s===l.stage); }).join("")+'</select>')
+    +row('Stage','<select id="le-stage-'+k+'" style="'+inp+'">'+((typeof lcHas==="function"&&lcHas(l))?_leCycleOpts(l,opt):LAUNDRY_EDIT_STAGES.map(function(s){ const m=LAUNDRY_STAGE_META[s]; return opt(s,m[0]+' '+m[1],s===l.stage); }).join(""))+'</select>')
     +row('Started at','<input id="le-ts-'+k+'" type="time" value="'+_leHM(l.ts)+'" style="'+inp+'">')
     +row('Whose','<select id="le-by-'+k+'" style="'+inp+'">'+who+'</select>')
     +row('💦 Wet','<input id="le-wet-'+k+'" type="checkbox"'+(l.wet?' checked':'')+'> <span style="font-weight:600;color:#475569">Wet or soiled (washed twice)</span>')
@@ -14665,13 +14836,16 @@ function laundryEditSave(id){
   const nameEl=g('name'), stEl=g('stage'), tsEl=g('ts'), byEl=g('by'), wetEl=g('wet');
   const up={};
   const name=String((nameEl&&nameEl.value)||"").trim(); if(name&&name!==(l.label||"")) up.label=name;
-  const st=stEl&&stEl.value; if(st&&LAUNDRY_EDIT_STAGES.indexOf(st)>=0&&st!==l.stage) up.stage=st;
+  const st=stEl&&stEl.value;
+  if(typeof lcHas==="function"&&lcHas(l)){ if(st&&st!==_leCycleTok(l)){ const S=lcSteps(l), j=/^s(\d+)$/.exec(st);   // LAUNDRY_CYCLE
+      if(j&&+j[1]<S.length){ up.stage=lcStageOf(S,+j[1]); up.step=+j[1]; } else if(st==="fold"){ up.stage="fold"; up.step=S.length; } else if(st==="bin"){ up.stage="bin"; up.step=null; } } }
+  else if(st&&LAUNDRY_EDIT_STAGES.indexOf(st)>=0&&st!==l.stage) up.stage=st;
   const tv=String((tsEl&&tsEl.value)||""), m=/^(\d{1,2}):(\d{2})$/.exec(tv);
   if(m&&tv!==_leHM(l.ts)){
     const d=new Date(); d.setHours(+m[1],+m[2],0,0);
     if(d.getTime()>Date.now()){ if(typeof mwToast==='function') mwToast('🧺 Started at can\'t be later than now'); return null; }
     up.ts=d.getTime();
-  } else if(up.stage) up.ts=Date.now();   // a new stage, clock untouched → that stage starts now (as → Dryer does)
+  } else if(up.stage||up.step!==undefined) up.ts=Date.now();   // a new stage, clock untouched → that stage starts now (as → Dryer does)
   const by=byEl&&byEl.value; if(by&&by!==(l.by||"mom")) up.by=(by==="mom")?null:by;
   if(wetEl&&!!wetEl.checked!==!!l.wet) up.wet=wetEl.checked?true:null;
   laundryEditId=null;
@@ -14693,9 +14867,11 @@ function mdCardLaundry(noAdd){   // 🧺 LAUNDRYADD: noAdd = Mom's Day, where "S
       +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#2563eb;color:#fff;font-weight:800;font-size:13px"><span>🧺</span> Laundry<span style="flex:1"></span><button onclick="laundryEditToggle()" style="border:none;background:rgba(255,255,255,0.22);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:800;cursor:pointer">✎ Times</button></div>'+laundryTimesEditorHTML()+(typeof momTipLaundryHTML==="function"?momTipLaundryHTML():"")
       +'<div style="padding:10px 14px 12px">';
     lids.forEach(id=>{
-      const l=laundryData[id]; const meta=LAUNDRY_STAGE_META[l.stage]||["🧺",l.stage];
+      const l=laundryData[id]; const meta=(typeof laundryMeta==="function")?laundryMeta(l):(LAUNDRY_STAGE_META[l.stage]||["🧺",l.stage]);   // LAUNDRY_CYCLE
       const STG=(l.wet||l.stage==="prewash")?LAUNDRY_WET_STAGES:LAUNDRY_STAGES;   // 💦 WASHTODAY: wet = washed twice
-      const trail=(l.stage==="bin")?'<span style="font-size:10px;font-weight:800;padding:1px 7px;border-radius:8px;background:#fef3c7;color:#92400e">🪣 wash today</span>':STG.map(s=>{
+      const trail=(typeof lcHas==="function"&&lcHas(l)&&l.stage!=="bin")?lcSteps(l).map(function(x,j){ const cur=lcStep(l), on=l.stage==="fold"||j<=cur;   // LAUNDRY_CYCLE: the load's own steps
+          return '<span style="font-size:10px;font-weight:800;padding:1px 7px;border-radius:8px;background:'+(j===cur?'#dbeafe':(on?'#f0fdf4':'#f3f4f6'))+';color:'+(j===cur?'#1d4ed8':(on?'#166534':'#9ca3af'))+'">'+LC_KINDS[x.k][0]+' '+esc(lcStepName(x))+' '+lcMins(x)+'m</span>'; }).join('')
+        :(l.stage==="bin")?'<span style="font-size:10px;font-weight:800;padding:1px 7px;border-radius:8px;background:#fef3c7;color:#92400e">🪣 wash today</span>':STG.map(s=>{
         const on=STG.indexOf(s)<=STG.indexOf(l.stage);
         return '<span style="font-size:10px;font-weight:800;padding:1px 7px;border-radius:8px;background:'+(s===l.stage?'#dbeafe':(on?'#f0fdf4':'#f3f4f6'))+';color:'+(s===l.stage?'#1d4ed8':(on?'#166534':'#9ca3af'))+'">'+(LAUNDRY_STAGE_META[s][0])+' '+s+'</span>';
       }).join('');
@@ -14703,7 +14879,7 @@ function mdCardLaundry(noAdd){   // 🧺 LAUNDRYADD: noAdd = Mom's Day, where "S
         +'<span style="font-size:13px;font-weight:700">'+esc(l.label)+'</span>'+trail
         +'<span style="font-size:10px;color:var(--muted)">'+meta[1]+' since '+laundrySince(l.ts)+laundryDoneTxt(l)+'</span>'
         +'<span style="flex:1"></span>'
-        +((typeof laundryBackBtnHTML==="function")?laundryBackBtnHTML(id,l):'')+'<button onclick="laundryAdvance(\''+id+'\')" style="padding:4px 12px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+laundryAdvanceLabel(l.stage)+'</button>'
+        +((typeof laundryBackBtnHTML==="function")?laundryBackBtnHTML(id,l):'')+'<button onclick="laundryAdvance(\''+id+'\')" style="padding:4px 12px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+laundryAdvanceLabel(l.stage,l)+'</button>'
         +((typeof laundryEditBtnHTML==="function")?laundryEditBtnHTML(id):'')   // ✎ LAUNDRYEDIT (Mom only)
         +'<button onclick="laundryDel(\''+id+'\')" style="border:none;background:none;color:#9ca3af;font-size:14px;cursor:pointer;padding:2px 4px">✕</button>'
         +((typeof laundryEditSheetHTML==="function")?laundryEditSheetHTML(id):'')+'</div>';
@@ -19999,13 +20175,13 @@ function dadSchedLaundry(){
   const place=function(m,o,html){ if(m<0) m=nowM; if(m>=24*60) return; out.push({m:m,o:o,html:html}); };   // Mom's rule: an earlier day → now
   Object.keys(laundryData||{}).forEach(function(id){
     const l=laundryData[id]; if(!l||l.by!=="dad") return;
-    const lbl='<b>'+esc(l.label||"Load")+'</b>', meta=LAUNDRY_STAGE_META[l.stage]||["🧺",l.stage];
+    const lbl='<b>'+esc(l.label||"Load")+'</b>', meta=(typeof laundryMeta==="function")?laundryMeta(l):(LAUNDRY_STAGE_META[l.stage]||["🧺",l.stage]);   // LAUNDRY_CYCLE
     if(l.stage==="bin"||l.stage==="fold"){ place(_lbMin(l.ts||0),0,_lbBox('#eff6ff','#2563eb','<span style="flex:1;font-size:13px">'+meta[0]+' '+lbl+' — '+meta[1].toLowerCase()+'</span>'+_lbBtn(id,l.stage))); return; }
-    if(["washer","dryer","prewash"].indexOf(l.stage)<0) return;
+    if(["washer","dryer","prewash","airdry","custom"].indexOf(l.stage)<0) return;
     place(_lbMin(l.ts||0),0,_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#475569">'+meta[0]+' '+lbl+' — '+meta[1].toLowerCase()+' · started '+laundrySince(l.ts)+'</span>'));
     const da=laundryDoneAt(l); if(!da) return;
     const isDone=Date.now()>=da;
-    place(_lbMin(da),1,_lbBox(isDone?'#ecfdf5':'#f8fafc',isDone?'#16a34a':'#cbd5e1','<span style="flex:1;font-size:13px">'+(isDone?'✅ '+lbl+' is done in the '+(l.stage==="dryer"?'dryer':'washer'):'⏳ '+lbl+' done ~'+laundrySince(da))+'</span>'+(isDone?_lbBtn(id,l.stage):'')));
+    place(_lbMin(da),1,_lbBox(isDone?'#ecfdf5':'#f8fafc',isDone?'#16a34a':'#cbd5e1','<span style="flex:1;font-size:13px">'+(isDone?'✅ '+lbl+((typeof lcMeta==="function"&&lcMeta(l))?' — '+esc(lcStepName(lcSteps(l)[lcStep(l)]))+' done':' is done in the '+(l.stage==="dryer"?'dryer':'washer')):'⏳ '+lbl+' done ~'+laundrySince(da))+'</span>'+(isDone?_lbBtn(id,l.stage):'')));
   });
   return out;
 }

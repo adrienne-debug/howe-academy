@@ -152,10 +152,10 @@ console.log("── edges ──");
   ok("the wash-today bin still draws nothing (no clock, not in the machines)", !/Sheets/.test(T9.A), T9.A); }
 
 console.log("── the code ──");
-ok("laundryBlockStep: washer→move, dryer→fold, fold→putaway", /function laundryBlockStep\(stage\)\{ return stage==="dryer"\?"fold":stage==="fold"\?"putaway":"move"; \}/.test(src));
+ok("laundryBlockStep: washer→move, dryer→fold, fold→putaway", /function laundryBlockStep\(stage\)\{ return \(?stage==="dryer"(\|\|stage==="airdry"\))?\?"fold":stage==="fold"\?"putaway":"move"; \}/.test(src));
 ok("laundryBlockDefault: 5 / 15 / 10", /\(k==="fold"\?15:k==="putaway"\?10:5\)/.test(src));
-ok("the MOMSCHED_LAUNDRY loop takes stage fold and names the fix", /l\.stage!=="prewash"&&l\.stage!=="fold"\)\) return;/.test(MS)&&/LAUNDRY_FOLD \(her report 2026-10-15/.test(MS));
-ok("the finished row says ✓ Put away for a fold block", /b\.stage==="fold"\?'Put away: ':b\.stage==="dryer"\?'Folded: '/.test(MS));
+ok("the MOMSCHED_LAUNDRY loop takes stage fold and names the fix", /l\.stage!=="prewash"&&l\.stage!=="fold"(&&l\.stage!=="airdry"&&l\.stage!=="custom")?\)\) return;/.test(MS)&&/LAUNDRY_FOLD \(her report 2026-10-15/.test(MS));
+ok("the finished row says ✓ Put away for a fold block", /b\.stage==="fold"\?'Put away: ':\(?b\.stage==="dryer"(\|\|b\.stage==="airdry"\))?\?'Folded: '/.test(MS));
 ok("laundryAdvance is untouched (→ Fold still ends the dryer block; ✓ Put away still removes the load)", /laundryBlockDone\(id,l\.stage\)/.test(fn("laundryAdvance"))&&/delete laundryData\[id\]; \/\/ put away — load complete/.test(fn("laundryAdvance")));
 ok("Mom's Day card, the NOW nudge and Dad's schedule are not changed by this fix", /function mdCardLaundry\(noAdd\)\{   \/\/ 🧺 LAUNDRYADD/.test(src)&&/function laundryNudgeKind\(l,now\)\{/.test(src)&&/function dadSchedLaundry\(\)\{/.test(src));
 
