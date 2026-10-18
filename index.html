@@ -13076,7 +13076,10 @@ function llLayDay(Q,iso,closed){
 function llBumps(iso){ const B=(laundryLine&&laundryLine.bump&&laundryLine.bump[iso])||{}, o=llOrder(); return Object.keys(B).filter(function(id){ return o.indexOf(id)>=0&&B[id]; }).sort(function(a,b){ return (B[a]||0)-(B[b]||0); }); }
 function llJumps(iso){ const J=(laundryLine&&laundryLine.jump&&laundryLine.jump[iso])||{}; return Object.keys(J).filter(function(k){ return J[k]; }).sort(function(a,b){ return ((J[a].at)||0)-((J[b].at)||0); }).map(function(k){ return {id:k,label:J[k].label||"Wet load"}; }); }
 // Where the line stands at the start of `day`: the saved carry/next as of asOf, every day from asOf up to `day` folded in.
-function llStateAt(day){ const Q=llQueue(laundryLine&&laundryLine.carry,llNext()); let iso=(laundryLine&&laundryLine.asOf)||day;
+// 📅 homeFrom = the day home days began. Until it is saved, a carry from the old round-and-round is not "missed turns" (the loads were
+// done by the old chores, not the line — her real 10/17 data washed Ellis and Lucy twice): home days start clean from `day`.
+function llHomeFresh(){ return llMode()==="home"&&!(laundryLine&&laundryLine.homeFrom); }
+function llStateAt(day){ const fresh=llHomeFresh(), Q=llQueue(fresh?[]:(laundryLine&&laundryLine.carry),llNext()); let iso=fresh?day:((laundryLine&&laundryLine.asOf)||day);
   if(iso<llAddDays(day,-LL_FOLD_MAX)) iso=llAddDays(day,-LL_FOLD_MAX);
   for(let g=0;iso<day&&g<=LL_FOLD_MAX;g++){ llLayDay(Q,iso,true); iso=llAddDays(iso,1); } return Q; }
 // The re-lay: nDays from fromIso (today). closeToday = it's past 8 PM, so today's unstarted loads are already back at the front.
@@ -13086,9 +13089,9 @@ function llProjectNow(nDays){ return llProject(llToday(),nDays,llNowMin()>=LL_SW
 // The roll, saved: once a day is behind us, write where the line stands so the fold stays short. It is the fold — every device gets the
 // same answer — so two devices writing it agree. Only once the line has been set up (anything saved under laundryLine).
 function llRoll(){ if(!laundryLine||!Object.keys(laundryLine).length) return; const today=llToday(); if(laundryLine.asOf&&laundryLine.asOf>=today) return;
-  const s=llStateAt(today).state(); laundryLine.carry=s.carry; laundryLine.next=s.next; laundryLine.asOf=today; llStore();
+  const fresh=llHomeFresh(), s=llStateAt(today).state(); laundryLine.carry=s.carry; laundryLine.next=s.next; laundryLine.asOf=today; if(fresh) laundryLine.homeFrom=today; llStore();
   if(Object.keys(s.credit).length) laundryLine.credit=s.credit; else delete laundryLine.credit;
-  llWrite({carry:s.carry.length?s.carry:null,next:s.next,asOf:today,credit:Object.keys(s.credit).length?s.credit:null}); }
+  const u={carry:s.carry.length?s.carry:null,next:s.next,asOf:today,credit:Object.keys(s.credit).length?s.credit:null}; if(fresh) u.homeFrom=today; llWrite(u); }
 function llMomGo(go){ if(typeof momHere==="function"&&momHere()) go(); else if(typeof kitPinGate==="function") kitPinGate(go,"The laundry line is set by Mom."); }
 function llWrite(upd){ if(typeof _lbWrite==="function"&&_lbWrite()) db.ref("laundryLine").update(upd); }   // multi-path, targeted keys only
 function llEnsureItems(upd){ if(!(laundryLine.items&&Object.keys(laundryLine.items).length)){ const d=llDefaultItems(); laundryLine.items=d; Object.keys(d).forEach(function(id){ upd["items/"+id]=d[id]; }); } if(!laundryLine.asOf){ laundryLine.asOf=llToday(); upd.asOf=laundryLine.asOf; } }   // first edit writes the six defaults, one path each
@@ -13262,7 +13265,8 @@ function llCyEditorHTML(id){ if(llCyEdit!==id||!llCyDraft) return "";
 // 📅 the home-day chip (tap: Mon → Tue → … → Sun) and the Home days / Plain rotation switch — Mom, re-lay like any change.
 function llHomeNext(id){ llChange(function(){ if(llOrder().indexOf(id)<0) return false; const v=(llHome(id)+1)%7, u={}; llEnsureItems(u); laundryLine.items[id].home=v; if(!u["items/"+id]) u["items/"+id+"/home"]=v; llStore(); llWrite(u); }); }
 function llModeSet(m){ llChange(function(){ if(m!=="home"&&m!=="rotate"||m===llMode()) return false; const u={mode:m}; llEnsureItems(u); laundryLine.mode=m;
-  if(laundryLine.carry){ delete laundryLine.carry; u.carry=null; } if(laundryLine.credit){ delete laundryLine.credit; u.credit=null; } laundryLine.asOf=llToday(); u.asOf=laundryLine.asOf; llStore(); llWrite(u); }); }   // the line starts fresh from today in the new mode
+  if(laundryLine.carry){ delete laundryLine.carry; u.carry=null; } if(laundryLine.credit){ delete laundryLine.credit; u.credit=null; } laundryLine.asOf=llToday(); u.asOf=laundryLine.asOf;
+  if(m==="home"){ laundryLine.homeFrom=llToday(); u.homeFrom=laundryLine.homeFrom; } llStore(); llWrite(u); }); }   // the line starts fresh from today in the new mode
 // ▶ up next = the front of the live line: the first load laid from now on that hasn't gone in (a load moved at 8 PM is the front).
 function llFront(){ const R=llProjectNow(21); for(let i=0;i<R.length;i++){ for(let k=0;k<R[i].loads.length;k++){ if(R[i].started.indexOf(R[i].loads[k])<0) return R[i].loads[k]; } } return llNext(); }
 function llCardHTML(){
