@@ -73,13 +73,13 @@ console.log("4. ↶ back, ✎ edit, the kid moves");
   ok("…and '→ fold pile' finds it in air dry", k.laundryKidMovePick("fold")==="k");
 }
 console.log("5. Mom's and Dad's schedules");
-{ const L={t:Object.assign(wet(),{stage:"airdry",step:2,ts:new Date(2026,9,17,8,0).getTime()})}, c=mk(L,{nowMin:14*60});
+{ const L={t:Object.assign(wet(),{stage:"airdry",step:2,ts:(function(){ const d=new Date(); d.setHours(8,0,0,0); return d.getTime(); })()})}, c=mk(L,{nowMin:14*60});
   const h=c.momSchedLaundry("saturday",[]).map(r=>r.html).join("|");
   ok("Mom: the air-dry row and 'Air dry done. Block out time to fold it?'", /🌬 <b>💦 Towels<\/b> — Air dry \(3 of 3\)/.test(h)&&/Air dry done\. Block out time to fold it\?/.test(h), h.slice(0,600));
-  const W={w:{label:"Rug",stage:"custom",step:0,ts:new Date(2026,9,17,8,0).getTime(),cycle:[{k:"custom",n:"Soak",m:20},{k:"wash"}]}}, w=mk(W,{nowMin:14*60});
+  const W={w:{label:"Rug",stage:"custom",step:0,ts:(function(){ const d=new Date(); d.setHours(8,0,0,0); return d.getTime(); })(),cycle:[{k:"custom",n:"Soak",m:20},{k:"wash"}]}}, w=mk(W,{nowMin:14*60});
   ok("Mom: a Soak done asks to start the wash", /Soak done\. Block out time to start wash\?/.test(w.momSchedLaundry("saturday",[]).map(r=>r.html).join("|")));
   ok("the air-dry block is a fold block (her fold minutes)", c.laundryBlockStep("airdry")==="fold");
-  const D={d:Object.assign(wet(),{stage:"airdry",step:2,by:"dad",ts:new Date(2026,9,17,8,0).getTime()})}, d=mk(D,{nowMin:14*60});
+  const D={d:Object.assign(wet(),{stage:"airdry",step:2,by:"dad",ts:Date.now()-6*3600*1000})}, d=mk(D,{nowMin:14*60});
   ok("Dad's schedule: his air-dry load shows, then '— Air dry done'", /air dry \(3 of 3\)/i.test(d.dadSchedLaundry().map(r=>r.html).join("|"))&&/Air dry done/.test(d.dadSchedLaundry().map(r=>r.html).join("|")), d.dadSchedLaundry().map(r=>r.html));
 }
 console.log("6. A load with no cycle is exactly as before");
