@@ -163,7 +163,8 @@ console.log("\n── _planDropDealt ──");
 
 console.log("\n── guards: return null rather than render something wrong ──");
 ok("not plan-backed → null", run({ planBacked: false }).col === null);
-ok("paused subject → null", run({ subject: { paused: true } }).col === null);
+{ const pc = run({ subject: { paused: true } }).col;   // ⏸ PAUSED (her ask 2026-09-12): a blank future, marked paused — not null (null fell back to the stale stored cells)
+  ok("paused subject → a blank, paused column (no lessons laid)", !!pc && pc.paused === true && pc.blank === true && !Object.keys(pc.byDate).some(d => pc.byDate[d].src !== "card"), pc); }
 ok("a mode the projection cannot lay → null", run({ materialize: null }).col === null);
 {
   const { col } = run({ materialize: { error: "Nothing left to lay — every lesson is finished.", warnings: [] } });
@@ -187,7 +188,7 @@ ok("a mode the projection cannot lay → null", run({ materialize: null }).col =
 console.log("\n── render wiring ──");
 {
   const g = src.indexOf("function renderCurrGrid");
-  const grid = g < 0 ? "" : src.slice(g, g + 60000);
+  const grid = g < 0 ? "" : (function(){ let d=0; for(let k=src.indexOf("{",g);k<src.length;k++){ if(src[k]==="{") d++; else if(src[k]==="}"&&--d===0) return src.slice(g,k+1); } return src.slice(g); })();   // the whole function — it outgrew a 60000-char window (2026-10-17)
   ok("renderCurrGrid exists", g >= 0);
   ok("the derived map is declared", /const _gvDer=\{\};/.test(grid));
   ok("the derived map is FILLED from gvDerivedColumn", /_gvDer\[sk\]\s*=\s*\(typeof gvDerivedColumn/.test(grid), "declared but never populated");

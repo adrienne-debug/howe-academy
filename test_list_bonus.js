@@ -5,7 +5,7 @@
  *   run: node test_list_bonus.js
  */
 const fs = require("fs");
-const src = fs.readFileSync("/Users/adriennehowe/Desktop/howe-academy/index.html", "utf8");
+const src = fs.readFileSync(require("path").join(__dirname,"index.html"), "utf8");
 function slice(name){ const sig="function "+name+"("; const i=src.indexOf(sig); if(i<0) throw new Error("not found: "+name);
   let d=0; for(let k=src.indexOf("{",i);k<src.length;k++){ if(src[k]==="{")d++; else if(src[k]==="}"){ d--; if(d===0) return src.slice(i,k+1);} } throw new Error("unbalanced: "+name); }
 const FNS=["toggleRtStep","rtOpenKey","rtBonusSettle","rtDayLists","rtDayDone","rtDayBonusSettle","rtBonusFor","rtComplete","rtDueOrLate","rtDoneOn","rtStepsFor","rtApplyRot","cadDueOn","cadDowIdx","cadDateNum","routineEditable","slBefore","slSaveChanged"].map(slice).join("\n");

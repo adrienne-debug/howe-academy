@@ -7,7 +7,7 @@
  *   run: node test_math_flip.js
  */
 const fs = require("fs");
-const src = fs.readFileSync("/Users/adriennehowe/Desktop/howe-academy/index.html", "utf8");
+const src = fs.readFileSync(require("path").join(__dirname,"index.html"), "utf8");
 
 function constBlock(name) {
   const i = src.indexOf("const " + name + "={");

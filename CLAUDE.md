@@ -22,12 +22,12 @@ Lucy, Julian; Adrienne = Mom runs it). Read this whole file before touching anyt
 - `notebooks.js` — the kids' weekly notebooks (generateJulian/Lincoln/Ellis/Lucy).
 - `eic.js` (Editor in Chief engine), `library.js` (curriculum library + TOC scans), `play.js`
   (School Room), `esa.js`, `family-config.js`, `sw.js` (service worker).
-- `test_*.js` — ~145 Node tests, no framework. Run one with `node test_x.js`; run all with
+- `test_*.js` — ~400 Node tests, no framework. Run one with `node test_x.js`; run all with
   `for f in test_*.js; do node "$f" >/dev/null 2>&1 || echo "FAIL $f"; done`.
-  **Known pre-existing failures: `test_cell_identity.js` and `test_derived_col.js`.** Everything
-  else must pass before a PR (cloud sessions only: `test_conv_bank`, `test_eic`, `test_list_bonus`, `test_math_flip`,
-  `test_routine_day_guard`, `test_step_window` also stop on a missing Mac path or file — `/Users/adriennehowe/...`,
-  `/usr/share/dict/words`, `~/Desktop/HoweCurriculum` — not a code fault). Every feature ships with its own `test_<feature>.js`.
+  **Every test must pass before a PR — there are no known failures (all green 2026-10-17).** (Cloud sessions only:
+  `test_conv_bank` and `test_eic` stop on a missing Mac file — `/usr/share/dict/words`, `~/Desktop/HoweCurriculum` —
+  not a code fault.) A test reads the `index.html` beside it (`path.join(__dirname,"index.html")`), never a hard-coded
+  `/Users/adriennehowe/...` path — that one reads the main checkout, which can be stale. Every feature ships with its own `test_<feature>.js`.
 - The generator/scheduler is the most sensitive code (Mom loop `MOMLOOP_*`, day start
   `DAYSTART_*`, school-end guard `SCHOOLEND_*`, re-lay `REPROJ_*`). Change it only when asked,
   and add a replay-style test (see `test_momloop_lay.js`, `test_school_end.js`).

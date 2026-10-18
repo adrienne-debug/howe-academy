@@ -107,7 +107,7 @@ console.log("\ngesture wiring — every cell action resolves the DISPLAYED ident
   ok("— guarded before the cell walk", sync.indexOf("planBacked") < sync.indexOf("const newSeq"));
 
   const tapAt = src.indexOf("// Decide by what the cell DISPLAYS");
-  const tap = tapAt < 0 ? "" : src.slice(tapAt, tapAt + 700);
+  const tap = tapAt < 0 ? "" : src.slice(tapAt, tapAt + 2000);   // the block grew past 700 chars (2026-10-17)
   ok("the tap decides menu-vs-editor by the displayed value",
     /_shown/.test(tap) && /gvFilled\(_shown\)/.test(tap));
 }

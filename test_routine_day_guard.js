@@ -5,7 +5,7 @@
  *   run: node test_routine_day_guard.js
  */
 const fs = require("fs");
-const src = fs.readFileSync("/Users/adriennehowe/Desktop/howe-academy/index.html", "utf8");
+const src = fs.readFileSync(require("path").join(__dirname,"index.html"), "utf8");
 
 function slice(name) {
   const sig = "function " + name + "(";

@@ -4,7 +4,7 @@
  *   run: node test_step_window.js
  */
 const fs = require("fs");
-const src = fs.readFileSync("/Users/adriennehowe/Desktop/howe-academy/index.html", "utf8");
+const src = fs.readFileSync(require("path").join(__dirname,"index.html"), "utf8");
 
 function fn(name) {
   const i = src.indexOf("function " + name + "(");
